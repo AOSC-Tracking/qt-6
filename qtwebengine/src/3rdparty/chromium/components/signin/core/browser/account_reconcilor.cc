@@ -140,22 +140,6 @@ AccountReconcilor::Lock::~Lock() {
   }
 }
 
-AccountReconcilor::ScopedSyncedDataDeletion::ScopedSyncedDataDeletion(
-    AccountReconcilor* reconcilor)
-    : reconcilor_(reconcilor->weak_factory_.GetWeakPtr()) {
-  DCHECK(reconcilor_);
-  ++reconcilor_->synced_data_deletion_in_progress_count_;
-}
-
-AccountReconcilor::ScopedSyncedDataDeletion::~ScopedSyncedDataDeletion() {
-  if (!reconcilor_) {
-    return;  // The reconcilor was destroyed.
-  }
-
-  DCHECK_GT(reconcilor_->synced_data_deletion_in_progress_count_, 0);
-  --reconcilor_->synced_data_deletion_in_progress_count_;
-}
-
 #if BUILDFLAG(IS_CHROMEOS)
 AccountReconcilor::AccountReconcilor(
     signin::IdentityManager* identity_manager,
@@ -267,6 +251,8 @@ void AccountReconcilor::Shutdown() {
   DisableReconcile(false /* logout_all_accounts */);
   delegate_.reset();
   DCHECK(WasShutDown());
+  identity_manager_observer_.Reset();
+  identity_manager_ = nullptr;
 }
 
 void AccountReconcilor::RegisterWithContentSettings() {
@@ -301,7 +287,7 @@ void AccountReconcilor::RegisterWithIdentityManager() {
     return;
   }
 
-  identity_manager_->AddObserver(this);
+  identity_manager_observer_.Observe(identity_manager_);
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   pref_observer_.Add(
       prefs::kExplicitBrowserSignin,
@@ -320,7 +306,7 @@ void AccountReconcilor::UnregisterWithIdentityManager() {
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   pref_observer_.RemoveAll();
 #endif
-  identity_manager_->RemoveObserver(this);
+  identity_manager_observer_.Reset();
   registered_with_identity_manager_ = false;
 }
 
@@ -346,11 +332,6 @@ void AccountReconcilor::UnregisterWithAccountManagerFacade() {
 
 AccountReconcilorState AccountReconcilor::GetState() const {
   return state_;
-}
-
-std::unique_ptr<AccountReconcilor::ScopedSyncedDataDeletion>
-AccountReconcilor::GetScopedSyncDataDeletion() {
-  return base::WrapUnique(new ScopedSyncedDataDeletion(this));
 }
 
 void AccountReconcilor::AddObserver(Observer* observer) {
@@ -391,9 +372,8 @@ void AccountReconcilor::OnPrimaryAccountChanged(
   // Perform the "clear on exit" migration if applicable.
   MaybeMigrateClearOnExit(*client_, *identity_manager_);
 
-  if (switches::IsExplicitBrowserSigninUIOnDesktopEnabled() &&
-      event_details.GetEventTypeFor(ConsentLevel::kSignin) ==
-          signin::PrimaryAccountChangeEvent::Type::kCleared) {
+  if (event_details.GetEventTypeFor(ConsentLevel::kSignin) ==
+      signin::PrimaryAccountChangeEvent::Type::kCleared) {
     VLOG(1) << "AccountReconcilor::OnPrimaryAccountChanged";
     StartReconcile(Trigger::kPrimaryAccountChanged);
   }
@@ -687,8 +667,13 @@ void AccountReconcilor::OnAccountsInCookieUpdated(
 }
 
 void AccountReconcilor::OnAccountsCookieDeletedByUserAction() {
-  delegate_->OnAccountsCookieDeletedByUserAction(
-      synced_data_deletion_in_progress_count_ != 0);
+  delegate_->OnAccountsCookieDeletedByUserAction();
+}
+
+void AccountReconcilor::OnIdentityManagerShutdown(
+    signin::IdentityManager* identity_manager) {
+  // Needs to be shutdown before IdentityManager.
+  NOTREACHED(base::NotFatalUntil::M142);
 }
 
 std::vector<CoreAccountId>

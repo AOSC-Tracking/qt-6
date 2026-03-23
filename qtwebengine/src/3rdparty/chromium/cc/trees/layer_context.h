@@ -9,8 +9,13 @@
 #include "cc/trees/commit_state.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
 
+namespace gfx {
+class Rect;
+}  // namespace gfx
+
 namespace viz {
 class ClientResourceProvider;
+class LocalSurfaceId;
 class RasterContextProvider;
 }  // namespace viz
 
@@ -33,14 +38,16 @@ class CC_EXPORT LayerContext {
   virtual void UpdateDisplayTreeFrom(
       LayerTreeImpl& tree,
       viz::ClientResourceProvider& resource_provider,
-      viz::RasterContextProvider& context_provider) = 0;
+      viz::RasterContextProvider& context_provider,
+      const gfx::Rect& viewport_damage_rect,
+      const viz::LocalSurfaceId& target_local_surface_id) = 0;
 
   // Pushes an update to a single tile in the context's display tree.
-  virtual void UpdateDisplayTile(
-      PictureLayerImpl& layer,
-      const Tile& tile,
-      viz::ClientResourceProvider& resource_provider,
-      viz::RasterContextProvider& context_provider) = 0;
+  virtual void UpdateDisplayTile(PictureLayerImpl& layer,
+                                 const Tile& tile,
+                                 viz::ClientResourceProvider& resource_provider,
+                                 viz::RasterContextProvider& context_provider,
+                                 bool update_damage) = 0;
 };
 
 }  // namespace cc

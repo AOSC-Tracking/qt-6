@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmldebugserverfactory.h"
 
@@ -17,7 +18,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QPluginLoader>
 #include <QtCore/QStringList>
-#include <QtCore/QVector>
+#include <QtCore/QList>
 #include <QtCore/qwaitcondition.h>
 
 QT_BEGIN_NAMESPACE
@@ -620,6 +621,8 @@ bool QQmlDebugServerImpl::addService(const QString &name, QQmlDebugService *serv
 
 bool QQmlDebugServerImpl::removeService(const QString &name)
 {
+    if (m_thread.isRunning())
+        qFatal("QML debugging framework was not cleaned up. Did you leak your QCoreApplication?");
     // to be executed after thread ends
     Q_ASSERT(!m_thread.isRunning());
 

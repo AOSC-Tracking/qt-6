@@ -16,10 +16,6 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 
-namespace base {
-class WaitableEvent;
-}
-
 namespace cc {
 
 class RasterBuffer;
@@ -56,12 +52,6 @@ class CC_EXPORT RasterBufferProvider {
       bool depends_on_hardware_accelerated_jpeg_candidates,
       bool depends_on_hardware_accelerated_webp_candidates) = 0;
 
-  // Returns the format to use for the tiles.
-  virtual viz::SharedImageFormat GetFormat() const = 0;
-
-  // Determines if the resource is premultiplied.
-  virtual bool IsResourcePremultiplied() const = 0;
-
   // Determine if the RasterBufferProvider can handle partial raster into
   // the Resource provided in AcquireBufferForRaster.
   virtual bool CanPartialRasterIntoProvidedResource() const = 0;
@@ -80,12 +70,6 @@ class CC_EXPORT RasterBufferProvider {
       const std::vector<const ResourcePool::InUsePoolResource*>& resources,
       base::OnceClosure callback,
       uint64_t pending_callback_id) = 0;
-
-  // Sets an event, guaranteed to live past this object's lifetime, that is
-  // signalled when the TileManger is cancelling tasks. Subclasses can use
-  // this as an argument to GpuMemoryBufferManager::CreateGpuMemoryBuffer to
-  // avoid deadlocks when TileManager is cancelling tasks.
-  virtual void SetShutdownEvent(base::WaitableEvent* shutdown_event) {}
 
   // Shutdown for doing cleanup.
   virtual void Shutdown() = 0;

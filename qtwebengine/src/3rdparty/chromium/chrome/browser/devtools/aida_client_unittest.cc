@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <utility>
+#include <variant>
 
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
@@ -24,8 +25,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 const char kEmail[] = "alice@example.com";
-const char kEndpointUrlWithPath[] = "https://example.com/foo";
-const char kEndpointUrl[] = "https://example.com/";
 const char kScope[] = "bar";
 
 class AidaClientTest : public testing::Test {
@@ -72,17 +71,17 @@ class Delegate {
 
   void FinishCallback(
       base::RunLoop* run_loop,
-      absl::variant<network::ResourceRequest, std::string> response) {
+      std::variant<network::ResourceRequest, std::string> response) {
     response_ = response;
-    succeed_ = absl::holds_alternative<network::ResourceRequest>(response);
+    succeed_ = std::holds_alternative<network::ResourceRequest>(response);
     if (succeed_) {
-      url_ = absl::get<network::ResourceRequest>(response).url;
+      url_ = std::get<network::ResourceRequest>(response).url;
       authorization_header_ =
-          absl::get<network::ResourceRequest>(response)
+          std::get<network::ResourceRequest>(response)
               .headers.GetHeader(net::HttpRequestHeaders::kAuthorization)
               .value();
     } else {
-      error_ = absl::get<std::string>(response);
+      error_ = std::get<std::string>(response);
     }
     if (run_loop) {
       run_loop->Quit();
@@ -94,7 +93,7 @@ class Delegate {
   GURL url_;
   std::string authorization_header_;
   std::string error_;
-  absl::variant<network::ResourceRequest, std::string> response_;
+  std::variant<network::ResourceRequest, std::string> response_;
 };
 
 constexpr char kOAuthToken[] = "5678";
@@ -104,8 +103,7 @@ TEST_F(AidaClientTest, FailsIfNotAuthorized) {
   Delegate delegate;
 
   AidaClient aida_client(profile_.get());
-  aida_client.OverrideAidaEndpointAndScopeForTesting("https://example.com/foo",
-                                                     kScope);
+  aida_client.OverrideAidaScopeForTesting(kScope);
   aida_client.PrepareRequestOrFail(base::BindOnce(
       &Delegate::FinishCallback, base::Unretained(&delegate), &run_loop));
   identity_test_env_->WaitForAccessTokenRequestIfNecessaryAndRespondWithError(
@@ -113,7 +111,7 @@ TEST_F(AidaClientTest, FailsIfNotAuthorized) {
 
   EXPECT_EQ(
       R"({"error": "Cannot get OAuth credentials", "detail": "Request canceled."})",
-      absl::get<std::string>(delegate.response_));
+      std::get<std::string>(delegate.response_));
 }
 
 TEST_F(AidaClientTest, NotAvailableWithEnterprise) {
@@ -256,8 +254,7 @@ TEST_F(AidaClientTest, Succeeds) {
   Delegate delegate;
 
   AidaClient aida_client(profile_.get());
-  aida_client.OverrideAidaEndpointAndScopeForTesting(kEndpointUrlWithPath,
-                                                     kScope);
+  aida_client.OverrideAidaScopeForTesting(kScope);
   aida_client.PrepareRequestOrFail(base::BindOnce(
       &Delegate::FinishCallback, base::Unretained(&delegate), &run_loop));
   identity_test_env_
@@ -266,7 +263,7 @@ TEST_F(AidaClientTest, Succeeds) {
           std::string() /*id_token*/, signin::ScopeSet{kScope});
   run_loop.Run();
 
-  EXPECT_EQ(kEndpointUrlWithPath, delegate.url_);
+  EXPECT_TRUE(delegate.succeed_);
 }
 
 TEST_F(AidaClientTest, ReusesOAuthToken) {
@@ -274,7 +271,7 @@ TEST_F(AidaClientTest, ReusesOAuthToken) {
   Delegate delegate;
 
   AidaClient aida_client(profile_.get());
-  aida_client.OverrideAidaEndpointAndScopeForTesting(kEndpointUrl, kScope);
+  aida_client.OverrideAidaScopeForTesting(kScope);
   aida_client.PrepareRequestOrFail(base::BindOnce(
       &Delegate::FinishCallback, base::Unretained(&delegate), &run_loop));
   identity_test_env_
@@ -291,7 +288,7 @@ TEST_F(AidaClientTest, ReusesOAuthToken) {
       &Delegate::FinishCallback, base::Unretained(&delegate), &run_loop2));
   run_loop2.Run();
   EXPECT_TRUE(
-      absl::holds_alternative<network::ResourceRequest>(delegate.response_));
+      std::holds_alternative<network::ResourceRequest>(delegate.response_));
   std::string another_authorization_header;
   EXPECT_EQ(authorization_header, delegate.authorization_header_);
 }
@@ -301,7 +298,7 @@ TEST_F(AidaClientTest, RefetchesTokenWhenExpired) {
   Delegate delegate;
 
   AidaClient aida_client(profile_.get());
-  aida_client.OverrideAidaEndpointAndScopeForTesting(kEndpointUrl, kScope);
+  aida_client.OverrideAidaScopeForTesting(kScope);
   aida_client.PrepareRequestOrFail(base::BindOnce(
       &Delegate::FinishCallback, base::Unretained(&delegate), &run_loop));
   identity_test_env_
@@ -311,7 +308,7 @@ TEST_F(AidaClientTest, RefetchesTokenWhenExpired) {
   run_loop.Run();
 
   EXPECT_TRUE(
-      absl::holds_alternative<network::ResourceRequest>(delegate.response_));
+      std::holds_alternative<network::ResourceRequest>(delegate.response_));
   std::string authorization_header = delegate.authorization_header_;
 
   base::RunLoop run_loop2;

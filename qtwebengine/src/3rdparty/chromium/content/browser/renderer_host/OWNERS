@@ -4,6 +4,8 @@ kenrb@chromium.org
 
 # Touch input and gesture relatated code.
 jonross@chromium.org
+amanvr@google.com
+kartarsingh@google.com
 
 # Surface ID propagation and synchronization, and compositing embedding
 # via DelegatedFrame*.
@@ -11,7 +13,6 @@ jonross@chromium.org
 
 # RenderFrameHost and navigation-related code.
 alexmos@chromium.org
-altimin@chromium.org
 arthursonzogni@chromium.org
 creis@chromium.org
 nasko@chromium.org
@@ -51,3 +52,6 @@ per-file *_sandboxed*.*=set noparent
 per-file *_sandboxed*.*=file://sandbox/OWNERS
 
 per-file render_process_host_sandbox_policy_win_browsertest.cc=file://sandbox/win/OWNERS
+
+# View transitions test.
+per-file view_transition_browsertest.cc=vmpstr@chromium.org

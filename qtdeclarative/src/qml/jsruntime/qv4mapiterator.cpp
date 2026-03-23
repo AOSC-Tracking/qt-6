@@ -1,5 +1,6 @@
 // Copyright (C) 2018 Crimson AS <info@crimson.no>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include <private/qv4iterator_p.h>
 #include <private/qv4estable_p.h>
@@ -36,7 +37,7 @@ ReturnedValue MapIteratorPrototype::method_next(const FunctionObject *b, const V
         return IteratorPrototype::createIterResultObject(scope.engine, undefined, true);
     }
 
-    Value *arguments = scope.alloc(2);
+    Value *arguments = scope.constructUndefined(2);
 
     while (index < s->d()->esTable->size()) {
         s->d()->esTable->iterate(index, &arguments[0], &arguments[1]);

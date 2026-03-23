@@ -45,7 +45,6 @@ class BlobURLStoreImplTestP
     InitializeScopedFeatureList();
 
     context_ = std::make_unique<BlobStorageContext>();
-    agent_cluster_id_ = base::UnguessableToken::Create();
 
     mojo::SetDefaultProcessErrorHandler(base::BindRepeating(
         &BlobURLStoreImplTestP::OnBadMessage, base::Unretained(this)));
@@ -75,17 +74,18 @@ class BlobURLStoreImplTestP
   bool BlockCrossPartitionBlobUrlFetchingEnabled() {
     switch (test_case_) {
       case PartitionedBlobUrlTestCase::
-          kBlockCrossPartitionBlobUrlFetchingDisabled:
-      case PartitionedBlobUrlTestCase::
           kBlockCrossPartitionBlobUrlFetchingEnabled:
         return true;
+      case PartitionedBlobUrlTestCase::
+          kBlockCrossPartitionBlobUrlFetchingDisabled:
       default:
         return false;
     }
   }
 
   bool StoragePartitioningEnabled() {
-    return test_case_ != PartitionedBlobUrlTestCase::kPartitioningDisabled;
+    return test_case_ == PartitionedBlobUrlTestCase::
+                             kBlockCrossPartitionBlobUrlFetchingEnabled;
   }
 
   void TearDown() override {
@@ -124,8 +124,12 @@ class BlobURLStoreImplTestP
 
   mojo::PendingRemote<BlobURLStore> CreateURLStore() {
     mojo::PendingRemote<BlobURLStore> result;
-    url_registry_.AddReceiver(kStorageKey, kStorageKey.origin(), /*rph_id=*/0,
-                              result.InitWithNewPipeAndPassReceiver());
+    url_registry_.AddReceiver(
+        kStorageKey, kStorageKey.origin(), /*render_process_host_id=*/0,
+        result.InitWithNewPipeAndPassReceiver(),
+        /*context_type_for_debugging=*/"",
+        /*storage_key_debug_string_callback=*/
+        base::BindRepeating([]() -> std::string { return ""; }));
     return result;
   }
 
@@ -133,8 +137,7 @@ class BlobURLStoreImplTestP
                    mojo::PendingRemote<blink::mojom::Blob> blob,
                    const GURL& url) {
     base::RunLoop loop;
-    store->Register(std::move(blob), url, agent_cluster_id_,
-                    net::SchemefulSite(), loop.QuitClosure());
+    store->Register(std::move(blob), url, loop.QuitClosure());
     loop.Run();
   }
 
@@ -159,7 +162,6 @@ class BlobURLStoreImplTestP
   std::unique_ptr<BlobStorageContext> context_;
   BlobUrlRegistry url_registry_;
   std::vector<std::string> bad_messages_;
-  base::UnguessableToken agent_cluster_id_;
 };
 
 TEST_P(BlobURLStoreImplTestP, BasicRegisterRevoke) {
@@ -301,20 +303,8 @@ TEST_P(BlobURLStoreImplTestP, ResolveAsURLLoaderFactoryNonExistentURL) {
   BlobURLStoreImpl url_store(kStorageKey, kStorageKey.origin(), /*rph_id=*/0,
                              url_registry_.AsWeakPtr());
   mojo::Remote<network::mojom::URLLoaderFactory> factory;
-  base::RunLoop resolve_loop;
-  url_store.ResolveAsURLLoaderFactory(
-      kValidUrl, factory.BindNewPipeAndPassReceiver(),
-      base::BindOnce(
-          [](base::OnceClosure done,
-             const std::optional<base::UnguessableToken>&
-                 unsafe_agent_cluster_id,
-             const std::optional<net::SchemefulSite>& unsafe_top_level_site) {
-            EXPECT_FALSE(unsafe_agent_cluster_id.has_value());
-            EXPECT_FALSE(unsafe_top_level_site.has_value());
-            std::move(done).Run();
-          },
-          resolve_loop.QuitClosure()));
-  resolve_loop.Run();
+  url_store.ResolveAsURLLoaderFactory(kValidUrl,
+                                      factory.BindNewPipeAndPassReceiver());
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = kValidUrl;
   auto loader = network::SimpleURLLoader::Create(std::move(request),
@@ -332,20 +322,8 @@ TEST_P(BlobURLStoreImplTestP, ResolveAsURLLoaderFactoryInvalidURL) {
   BlobURLStoreImpl url_store(kStorageKey, kStorageKey.origin(), /*rph_id=*/0,
                              url_registry_.AsWeakPtr());
   mojo::Remote<network::mojom::URLLoaderFactory> factory;
-  base::RunLoop resolve_loop;
-  url_store.ResolveAsURLLoaderFactory(
-      kInvalidUrl, factory.BindNewPipeAndPassReceiver(),
-      base::BindOnce(
-          [](base::OnceClosure done,
-             const std::optional<base::UnguessableToken>&
-                 unsafe_agent_cluster_id,
-             const std::optional<net::SchemefulSite>& unsafe_top_level_site) {
-            EXPECT_FALSE(unsafe_agent_cluster_id.has_value());
-            EXPECT_FALSE(unsafe_top_level_site.has_value());
-            std::move(done).Run();
-          },
-          resolve_loop.QuitClosure()));
-  resolve_loop.Run();
+  url_store.ResolveAsURLLoaderFactory(kInvalidUrl,
+                                      factory.BindNewPipeAndPassReceiver());
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = kInvalidUrl;
   auto loader = network::SimpleURLLoader::Create(std::move(request),
@@ -369,20 +347,8 @@ TEST_P(BlobURLStoreImplTestP, ResolveAsURLLoaderFactory) {
   RegisterURL(&url_store, std::move(blob), kValidUrl);
 
   mojo::Remote<network::mojom::URLLoaderFactory> factory;
-  base::RunLoop resolve_loop;
-  url_store.ResolveAsURLLoaderFactory(
-      kValidUrl, factory.BindNewPipeAndPassReceiver(),
-      base::BindOnce(
-          [](base::OnceClosure done,
-             const base::UnguessableToken& agent_registered,
-             const std::optional<base::UnguessableToken>&
-                 unsafe_agent_cluster_id,
-             const std::optional<net::SchemefulSite>& unsafe_top_level_site) {
-            EXPECT_EQ(agent_registered, unsafe_agent_cluster_id);
-            std::move(done).Run();
-          },
-          resolve_loop.QuitClosure(), agent_cluster_id_));
-  resolve_loop.Run();
+  url_store.ResolveAsURLLoaderFactory(kValidUrl,
+                                      factory.BindNewPipeAndPassReceiver());
 
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = kValidUrl;
@@ -415,23 +381,9 @@ TEST_P(BlobURLStoreImplTestP,
   RegisterURL(&url_store1, std::move(blob), kValidUrl);
 
   mojo::Remote<network::mojom::URLLoaderFactory> factory;
-  base::RunLoop resolve_loop;
-  url_store2.ResolveAsURLLoaderFactory(
-      kValidUrl, factory.BindNewPipeAndPassReceiver(),
-      base::BindLambdaForTesting(
-          [&](const std::optional<base::UnguessableToken>&
-                  unsafe_agent_cluster_id,
-              const std::optional<net::SchemefulSite>& unsafe_top_level_site) {
-            if (BlockCrossPartitionBlobUrlFetchingEnabled()) {
-              EXPECT_FALSE(unsafe_agent_cluster_id.has_value());
-              EXPECT_FALSE(unsafe_top_level_site.has_value());
-            } else {
-              EXPECT_EQ(*unsafe_agent_cluster_id, agent_cluster_id_);
-            }
-            resolve_loop.Quit();
-          }));
+  url_store2.ResolveAsURLLoaderFactory(kValidUrl,
+                                       factory.BindNewPipeAndPassReceiver());
 
-  resolve_loop.Run();
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = kValidUrl;
   auto loader = network::SimpleURLLoader::Create(std::move(request),
@@ -464,25 +416,9 @@ TEST_P(BlobURLStoreImplTestP, ResolveAsURLLoaderFactoryWithFragmentUrl) {
   RegisterURL(url_store2.get(), std::move(blob), kFragmentUrl);
 
   mojo::Remote<network::mojom::URLLoaderFactory> factory;
-  base::RunLoop resolve_loop;
-  url_store1.ResolveAsURLLoaderFactory(
-      kFragmentUrl, factory.BindNewPipeAndPassReceiver(),
-      base::BindLambdaForTesting(
-          [&](const std::optional<base::UnguessableToken>&
-                  unsafe_agent_cluster_id,
-              const std::optional<net::SchemefulSite>& unsafe_top_level_site) {
-            // TODO(crbug.com/40775506): Fix fragment URL bug.
-            if (BlockCrossPartitionBlobUrlFetchingEnabled() ||
-                !StoragePartitioningEnabled()) {
-              EXPECT_FALSE(unsafe_agent_cluster_id.has_value());
-              EXPECT_FALSE(unsafe_top_level_site.has_value());
-            } else {
-              EXPECT_EQ(*unsafe_agent_cluster_id, agent_cluster_id_);
-            }
-            resolve_loop.Quit();
-          }));
+  url_store1.ResolveAsURLLoaderFactory(kFragmentUrl,
+                                       factory.BindNewPipeAndPassReceiver());
 
-  resolve_loop.Run();
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = kFragmentUrl;
   auto loader = network::SimpleURLLoader::Create(std::move(request),
@@ -511,21 +447,10 @@ TEST_P(BlobURLStoreImplTestP, ResolveForNavigation) {
                              url_registry_.AsWeakPtr());
   RegisterURL(&url_store, std::move(blob), kValidUrl);
 
-  base::RunLoop loop0;
   mojo::Remote<blink::mojom::BlobURLToken> token_remote;
-  url_store.ResolveForNavigation(
-      kValidUrl, token_remote.BindNewPipeAndPassReceiver(),
-      /*is_top_level_navigation=*/false,
-      base::BindOnce(
-          [](base::OnceClosure done,
-             const base::UnguessableToken& agent_registered,
-             const std::optional<base::UnguessableToken>&
-                 unsafe_agent_cluster_id) {
-            EXPECT_EQ(agent_registered, unsafe_agent_cluster_id);
-            std::move(done).Run();
-          },
-          loop0.QuitClosure(), agent_cluster_id_));
-  loop0.Run();
+  url_store.ResolveAsBlobURLToken(kValidUrl,
+                                  token_remote.BindNewPipeAndPassReceiver(),
+                                  /*is_top_level_navigation=*/false);
 
   base::UnguessableToken token;
   base::RunLoop loop;

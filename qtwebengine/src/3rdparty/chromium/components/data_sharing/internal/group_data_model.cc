@@ -6,6 +6,8 @@
 
 #include <iterator>
 
+#include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_forward.h"
@@ -25,6 +27,7 @@ namespace data_sharing {
 namespace {
 
 const size_t kMaxRecordedGroupEvents = 1000;
+const size_t kReadGroupsBatchSize = 50;
 
 VersionToken ComputeVersionToken(
     const sync_pb::CollaborationGroupSpecifics& specifics) {
@@ -53,6 +56,7 @@ GroupDataModel::GroupDataModel(
       collaboration_group_sync_bridge_(collaboration_group_sync_bridge),
       sdk_delegate_(sdk_delegate) {
   CHECK(collaboration_group_sync_bridge_);
+  CHECK(sdk_delegate_);
   collaboration_group_sync_bridge_->AddObserver(this);
 
   if (collaboration_group_sync_bridge_->IsDataLoaded()) {
@@ -111,6 +115,12 @@ GroupDataModel::GetPossiblyRemovedGroupMember(
     return std::nullopt;
   }
   for (const auto& member : group_data_opt->members) {
+    if (member.gaia_id == member_gaia_id) {
+      return GroupMemberPartialData::FromGroupMember(member);
+    }
+  }
+
+  for (const auto& member : group_data_opt->former_members) {
     if (member.gaia_id == member_gaia_id) {
       return GroupMemberPartialData::FromGroupMember(member);
     }
@@ -272,17 +282,35 @@ void GroupDataModel::ScheduleNextPeriodicPolling() {
 void GroupDataModel::FetchGroupsFromSDK(
     const std::vector<GroupId>& added_or_updated_groups) {
   has_ongoing_group_fetch_ = true;
+  outstanding_batches_ = static_cast<size_t>(
+      std::ceil(static_cast<double>(added_or_updated_groups.size()) /
+                kReadGroupsBatchSize));
 
+  // The ReadGroups API has a restrictions groups that can be
+  // fetched in one request. So, we break the request into batches and issue
+  // them in parallel.
+  for (size_t i = 0; i < added_or_updated_groups.size();
+       i += kReadGroupsBatchSize) {
+    std::vector<GroupId> batch(
+        added_or_updated_groups.begin() + i,
+        added_or_updated_groups.begin() +
+            std::min(i + kReadGroupsBatchSize, added_or_updated_groups.size()));
+
+    FetchBatchOfGroupsFromSDK(batch);
+  }
+}
+
+void GroupDataModel::FetchBatchOfGroupsFromSDK(
+    const std::vector<GroupId>& batch) {
   std::map<GroupId, VersionToken> group_versions;
   data_sharing_pb::ReadGroupsParams params;
-  for (const GroupId& group_id : added_or_updated_groups) {
+  for (const GroupId& group_id : batch) {
     auto collaboration_group_specifics_opt =
         collaboration_group_sync_bridge_->GetSpecifics(group_id);
     CHECK(collaboration_group_specifics_opt.has_value());
     group_versions[group_id] =
         ComputeVersionToken(*collaboration_group_specifics_opt);
 
-    params.add_group_ids(group_id.value());
     data_sharing_pb::ReadGroupsParams::GroupParams* group_params =
         params.add_group_params();
     group_params->set_group_id(group_id.value());
@@ -290,23 +318,19 @@ void GroupDataModel::FetchGroupsFromSDK(
         collaboration_group_specifics_opt->consistency_token());
   }
 
-  sdk_delegate_.ReadGroups(
-      params, base::BindOnce(&GroupDataModel::OnGroupsFetchedFromSDK,
+  sdk_delegate_->ReadGroups(
+      params, base::BindOnce(&GroupDataModel::OnBatchOfGroupsFetchedFromSDK,
                              weak_ptr_factory_.GetWeakPtr(), group_versions,
                              base::Time::Now()));
 }
 
-void GroupDataModel::OnGroupsFetchedFromSDK(
+void GroupDataModel::OnBatchOfGroupsFetchedFromSDK(
     const std::map<GroupId, VersionToken>& requested_groups_and_versions,
     const base::Time& requested_at_timestamp,
     const base::expected<data_sharing_pb::ReadGroupsResult, absl::Status>&
         read_groups_result) {
   if (!read_groups_result.has_value()) {
-    has_ongoing_group_fetch_ = false;
-    if (has_pending_changes_) {
-      // Some changes happened while the fetch was in flight, process them now.
-      ProcessGroupChanges(/*is_initial_load=*/false);
-    }
+    HandleBatchCompletion();
     // TODO(crbug.com/301390275): handle entire request failure.
     return;
   }
@@ -328,7 +352,7 @@ void GroupDataModel::OnGroupsFetchedFromSDK(
 
     const auto old_group_data_opt = group_data_store_.GetGroupData(group_id);
     group_data_store_.StoreGroupData(requested_groups_and_versions.at(group_id),
-                                     requested_at_timestamp, group_data);
+                                     requested_at_timestamp, group_data_proto);
     for (auto& observer : observers_) {
       // TODO(crbug.com/377215683): pass the actual event time (at least derived
       // from CollaborationGroupSpecifics).
@@ -345,54 +369,71 @@ void GroupDataModel::OnGroupsFetchedFromSDK(
     }
   }
 
-  has_ongoing_group_fetch_ = false;
-  if (has_pending_changes_) {
-    // Some changes happened while the fetch was in flight, process them now.
-    ProcessGroupChanges(/*is_initial_load=*/false);
+  HandleBatchCompletion();
+}
+
+void GroupDataModel::HandleBatchCompletion() {
+  if (--outstanding_batches_ == 0) {
+    has_ongoing_group_fetch_ = false;
+    if (has_pending_changes_) {
+      // Some changes happened while the fetch was in flight, process them now.
+      ProcessGroupChanges(/*is_initial_load=*/false);
+    }
   }
 }
 
 void GroupDataModel::NotifyObserversAboutChangedMembers(
     const GroupData& old_group_data,
     const GroupData& new_group_data) {
-  std::vector<GaiaId> old_members_gaia_ids;
+  std::set<GaiaId> old_members_gaia_ids;
   for (const auto& member : old_group_data.members) {
-    old_members_gaia_ids.push_back(member.gaia_id);
+    old_members_gaia_ids.insert(member.gaia_id);
   }
-  std::vector<GaiaId> new_members_gaia_ids;
+  std::map<GaiaId, base::Time> new_members;
   for (const auto& member : new_group_data.members) {
-    new_members_gaia_ids.push_back(member.gaia_id);
+    new_members.emplace(member.gaia_id, member.last_updated_time);
+  }
+  std::map<GaiaId, base::Time> past_members;
+  for (const auto& member : new_group_data.former_members) {
+    past_members.emplace(member.gaia_id, member.last_updated_time);
   }
 
-  std::vector<GaiaId> added_members_gaia_ids;
-  std::ranges::set_difference(
-      new_members_gaia_ids.begin(), new_members_gaia_ids.end(),
-      old_members_gaia_ids.begin(), old_members_gaia_ids.end(),
-      std::back_inserter(added_members_gaia_ids));
+  std::vector<std::pair<GaiaId, base::Time>> added_members;
+  for (const auto& new_pair : new_members) {
+    if (!base::Contains(old_members_gaia_ids, new_pair.first)) {
+      added_members.push_back(new_pair);
+    }
+  }
 
-  std::vector<GaiaId> removed_members_gaia_ids;
-  std::ranges::set_difference(
-      old_members_gaia_ids.begin(), old_members_gaia_ids.end(),
-      new_members_gaia_ids.begin(), new_members_gaia_ids.end(),
-      std::back_inserter(removed_members_gaia_ids));
+  std::vector<std::pair<GaiaId, base::Time>> removed_members;
+  for (const auto& old_gaia_id : old_members_gaia_ids) {
+    if (new_members.find(old_gaia_id) == new_members.end()) {
+      auto iter = past_members.find(old_gaia_id);
+      base::Time event_time =
+          iter != past_members.end() ? iter->second : base::Time::Now();
+      removed_members.push_back(std::make_pair(old_gaia_id, event_time));
+    }
+  }
 
-  // TODO(crbug.com/377215683): pass the actual event time (at least derived
-  // from CollaborationGroupSpecifics).
-  const base::Time event_time = base::Time::Now();
   for (auto& observer : observers_) {
-    for (auto& member_gaia_id : added_members_gaia_ids) {
+    for (const auto& added_pair : added_members) {
+      base::Time event_time =
+          added_pair.second.is_null() ? base::Time::Now() : added_pair.second;
       MaybeRecordGroupEvent(new_group_data.group_token.group_id,
                             GroupEvent::EventType::kMemberAdded, event_time,
-                            member_gaia_id);
+                            added_pair.first);
       observer.OnMemberAdded(new_group_data.group_token.group_id,
-                             member_gaia_id, event_time);
+                             added_pair.first, event_time);
     }
-    for (auto& member_gaia_id : removed_members_gaia_ids) {
+    for (const auto& removed_pair : removed_members) {
+      base::Time event_time = removed_pair.second.is_null()
+                                  ? base::Time::Now()
+                                  : removed_pair.second;
       MaybeRecordGroupEvent(new_group_data.group_token.group_id,
                             GroupEvent::EventType::kMemberRemoved, event_time,
-                            member_gaia_id);
+                            removed_pair.first);
       observer.OnMemberRemoved(new_group_data.group_token.group_id,
-                               member_gaia_id, event_time);
+                               removed_pair.first, event_time);
     }
   }
 }

@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_BUFFER_MANAGER_H
 #define QSSG_RENDER_BUFFER_MANAGER_H
@@ -21,6 +23,8 @@
 #include <QtQuick3DRuntimeRender/private/qssgrendermesh_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendererutil_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendershadercache_p.h>
+#include <QtQuick3DRuntimeRender/private/qssguserrenderpassmanager_p.h>
+#include <QtQuick3DRuntimeRender/private/qssgrenderuserpass_p.h>
 #include <QtQuick3DUtils/private/qssgmesh_p.h>
 
 #include <QtQuick3DUtils/private/qquick3dprofiler_p.h>
@@ -126,6 +130,7 @@ public:
     QSSGRenderImageTexture loadRenderImage(const QSSGRenderImage *image,
                                            MipMode inMipMode = MipModeFollowRenderImage,
                                            LoadRenderImageFlags flags = LoadWithFlippedY);
+    QSSGRenderImageTexture loadTextureData(QSSGRenderTextureData *data, MipMode inMipMode);
     QSSGRenderImageTexture loadLightmap(const QSSGRenderModel &model);
     QSSGRenderImageTexture loadSkinmap(QSSGRenderTextureData *skin);
 
@@ -143,6 +148,7 @@ public:
     void releaseTextureData(const QSSGRenderTextureData *data);
     void releaseTextureData(const CustomImageCacheKey &key);
     void releaseExtensionResult(const QSSGRenderExtension &rext);
+    void releaseUserRenderPass(const QSSGRenderUserPass &upass);
 
     void commitBufferResourceUpdates();
 
@@ -181,6 +187,8 @@ public:
     void setLightmapSource(const QString &source);
     void setCurrentlyLightmapBaking(bool value);
 
+    void registerUserRenderPassManager(const QSSGUserRenderPassManagerPtr &userPassManager);
+
 private:
     void clear();
     QRhiResourceUpdateBatch *meshBufferUpdateBatch();
@@ -203,7 +211,6 @@ private:
     QSSGRenderMesh *loadRenderMesh(QSSGRenderGeometry *geometry, QSSGMeshProcessingOptions options);
 
     QSSGRenderMesh *createRenderMesh(const QSSGMesh::Mesh &mesh, const QString &debugObjectName = {});
-    QSSGRenderImageTexture loadTextureData(QSSGRenderTextureData *data, MipMode inMipMode);
     bool createEnvironmentMap(const QSSGLoadedTexture *inImage, QSSGRenderImageTexture *outTexture, const QString &debugObjectName);
 
     void releaseMesh(const QSSGRenderPath &inSourcePath);
@@ -218,6 +225,9 @@ private:
     QHash<const QSSGRenderExtension *, ImageData> renderExtensionTexture; // Textures (from QQuick3DRenderExtension)
     QHash<QSSGRenderPath, MeshData> meshMap;                    // Meshes (specififed by path)
     QHash<QSSGRenderGeometry *, MeshData> customMeshMap;        // Meshes (QQuick3DGeometry)
+
+    using QSSGUserRenderPassManagerWeakPtr = std::weak_ptr<QSSGUserRenderPassManager>;
+    std::vector<QSSGUserRenderPassManagerWeakPtr> userRenderPassManagers;
 
     QRhiResourceUpdateBatch *meshBufferUpdates = nullptr;
     QMutex meshBufferMutex;

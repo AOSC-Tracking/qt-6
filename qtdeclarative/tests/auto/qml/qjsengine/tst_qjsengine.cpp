@@ -355,6 +355,7 @@ private slots:
 #endif
 
     void evalInGlobalContext();
+    void truncateArrayData();
 
 public:
     Q_INVOKABLE QJSValue throwingCppMethod1();
@@ -633,7 +634,7 @@ void tst_QJSEngine::toScriptValueBuiltin_data()
     vm.clear(); vm.insert("point1", QPointF(42.24, 24.42)); vm.insert("point2", QPointF(42.24, 24.42));
     QTest::newRow("qvariantmap_point") << QVariant(vm);
     QTest::newRow("qvariant") << QVariant(QVariant(42));
-    QTest::newRow("QList<QString>") << QVariant::fromValue(QVector<QString>() << "1" << "2" << "3" << "4");
+    QTest::newRow("QList<QString>") << QVariant::fromValue(QList<QString>() << "1" << "2" << "3" << "4");
     QTest::newRow("QStringList") << QVariant::fromValue(QStringList() << "1" << "2" << "3" << "4");
     QTest::newRow("QMap<QString, QString>") << QVariant::fromValue(QMap<QString, QString>{{ "1", "2" }, { "3", "4" }});
     QTest::newRow("QHash<QString, QString>") << QVariant::fromValue(QHash<QString, QString>{{ "1", "2" }, { "3", "4" }});
@@ -766,6 +767,8 @@ void tst_QJSEngine::toScriptValuenotroundtripped()
 
 void tst_QJSEngine::newVariant()
 {
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED
     QJSEngine eng;
     {
         QJSValue opaque = eng.toScriptValue(QVariant(QPoint(1, 2)));
@@ -777,6 +780,7 @@ void tst_QJSEngine::newVariant()
         QCOMPARE(opaque.prototype().isVariant(), false);
         QVERIFY(opaque.property("valueOf").callWithInstance(opaque).equals(opaque));
     }
+    QT_WARNING_POP
 }
 
 void tst_QJSEngine::newVariant_valueOfToString()
@@ -1072,12 +1076,13 @@ public:
         One,
         Two
     };
+    Q_ENUM(Enum1)
     enum Enum2 {
         A = 0,
         B,
         C
     };
-    Q_ENUMS(Enum1 Enum2)
+    Q_ENUM(Enum2)
 
     Q_INVOKABLE TestQMetaObject() {}
     Q_INVOKABLE TestQMetaObject(int)
@@ -1114,7 +1119,7 @@ void tst_QJSEngine::newQObjectPropertyCache()
         engine.newQObject(obj.data());
         QVERIFY(QQmlData::get(obj.data())->propertyCache);
     }
-    QVERIFY(!QQmlData::get(obj.data())->propertyCache);
+    QVERIFY(QQmlData::get(obj.data())->propertyCache);
 }
 
 void tst_QJSEngine::newQMetaObject() {
@@ -1683,7 +1688,7 @@ Q_DECLARE_METATYPE(Foo)
 Q_DECLARE_METATYPE(Foo*)
 
 Q_DECLARE_METATYPE(QList<Foo>)
-Q_DECLARE_METATYPE(QVector<QChar>)
+Q_DECLARE_METATYPE(QList<QChar>)
 Q_DECLARE_METATYPE(QStack<int>)
 Q_DECLARE_METATYPE(QQueue<char>)
 
@@ -6913,6 +6918,35 @@ void tst_QJSEngine::evalInGlobalContext()
     const QJSValue fun = myEngine.globalObject().property(QLatin1String("eval"));
     const QJSValue ret = fun.call({ QLatin1String("99") });
     QCOMPARE(ret.toString(), QLatin1String("99"));
+}
+
+void tst_QJSEngine::truncateArrayData()
+{
+    QJSEngine engine;
+
+    QJSValue array = engine.newArray();
+    array.setProperty(0, QJSValue::NullValue);
+    array.setProperty(1, QJSValue(14));
+    array.setProperty(2, QJSValue(QLatin1String("aaa")));
+
+    // Append a JavaScript-owned object to the array and don't keep a local reference.
+    QJSValue object = engine.newQObject(new QObject());
+    QSignalSpy spy(object.toQObject(), &QObject::destroyed);
+    // std::move won't do here because setProperty() doesn't accept rvalue refs
+    array.setProperty(3, std::exchange(object, QJSValue()));
+    QVERIFY(object.isUndefined());
+
+    QCOMPARE(array.property("length").toInt(), 4);
+
+    gc(*engine.handle());
+    QCOMPARE(spy.count(), 0);
+    QCOMPARE(array.property("length").toInt(), 4);
+
+    // Truncating the array allows the GC to collect the QObject, which results in its deletion.
+    array.setProperty("length", 3);
+    QCOMPARE(array.property("length").toInt(), 3);
+    gc(*engine.handle());
+    QCOMPARE(spy.count(), 1);
 }
 
 QTEST_MAIN(tst_QJSEngine)

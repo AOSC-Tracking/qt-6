@@ -42,17 +42,20 @@
 
 namespace dawn::wire::client {
 namespace {
-WGPUBuffer CreateErrorBufferOOMAtClient(Device* device, const WGPUBufferDescriptor* descriptor) {
+
+// Returns either an error buffer or null, depending on mappedAtCreation.
+[[nodiscard]] WGPUBuffer ReturnOOMAtClient(Device* device, const WGPUBufferDescriptor* descriptor) {
     if (descriptor->mappedAtCreation) {
         return nullptr;
     }
     WGPUBufferDescriptor errorBufferDescriptor = *descriptor;
     WGPUDawnBufferDescriptorErrorInfoFromWireClient errorInfo = {};
     errorInfo.chain.sType = WGPUSType_DawnBufferDescriptorErrorInfoFromWireClient;
-    errorInfo.outOfMemory = true;
+    errorInfo.outOfMemory = static_cast<WGPUBool>(true);
     errorBufferDescriptor.nextInChain = &errorInfo.chain;
-    return device->CreateErrorBuffer(&errorBufferDescriptor);
+    return device->APICreateErrorBuffer(&errorBufferDescriptor);
 }
+
 }  // anonymous namespace
 
 class Buffer::MapAsyncEvent : public TrackedEvent {
@@ -133,7 +136,7 @@ class Buffer::MapAsyncEvent : public TrackedEvent {
   private:
     void CompleteImpl(FutureID futureID, EventCompletionType completionType) override {
         if (completionType == EventCompletionType::Shutdown) {
-            mStatus = WGPUMapAsyncStatus_InstanceDropped;
+            mStatus = WGPUMapAsyncStatus_CallbackCancelled;
             mMessage = "A valid external Instance reference no longer exists.";
         }
 
@@ -186,11 +189,25 @@ class Buffer::MapAsyncEvent : public TrackedEvent {
 WGPUBuffer Buffer::Create(Device* device, const WGPUBufferDescriptor* descriptor) {
     Client* wireClient = device->GetClient();
 
+    bool fakeOOMAtWireClientMap = false;
+    for (const auto* chain = descriptor->nextInChain; chain != nullptr; chain = chain->next) {
+        switch (chain->sType) {
+            case WGPUSType_DawnFakeBufferOOMForTesting: {
+                auto oomForTesting =
+                    reinterpret_cast<const WGPUDawnFakeBufferOOMForTesting*>(chain);
+                fakeOOMAtWireClientMap = (oomForTesting->fakeOOMAtWireClientMap != 0u);
+            } break;
+            default:
+                break;
+        }
+    }
+
     bool mappable =
         (descriptor->usage & (WGPUBufferUsage_MapRead | WGPUBufferUsage_MapWrite)) != 0 ||
-        descriptor->mappedAtCreation;
-    if (mappable && descriptor->size >= std::numeric_limits<size_t>::max()) {
-        return CreateErrorBufferOOMAtClient(device, descriptor);
+        wgpu::Bool(descriptor->mappedAtCreation);
+    if (mappable &&
+        (descriptor->size >= std::numeric_limits<size_t>::max() || fakeOOMAtWireClientMap)) {
+        return ReturnOOMAtClient(device, descriptor);
     }
 
     std::unique_ptr<MemoryTransferService::ReadHandle> readHandle = nullptr;
@@ -212,7 +229,7 @@ WGPUBuffer Buffer::Create(Device* device, const WGPUBufferDescriptor* descriptor
             readHandle.reset(
                 wireClient->GetMemoryTransferService()->CreateReadHandle(descriptor->size));
             if (readHandle == nullptr) {
-                return CreateErrorBufferOOMAtClient(device, descriptor);
+                return ReturnOOMAtClient(device, descriptor);
             }
             readHandleCreateInfoLength = readHandle->SerializeCreateSize();
             cmd.readHandleCreateInfoLength = readHandleCreateInfoLength;
@@ -223,7 +240,7 @@ WGPUBuffer Buffer::Create(Device* device, const WGPUBufferDescriptor* descriptor
             writeHandle.reset(
                 wireClient->GetMemoryTransferService()->CreateWriteHandle(descriptor->size));
             if (writeHandle == nullptr) {
-                return CreateErrorBufferOOMAtClient(device, descriptor);
+                return ReturnOOMAtClient(device, descriptor);
             }
             writeHandleCreateInfoLength = writeHandle->SerializeCreateSize();
             cmd.writeHandleCreateInfoLength = writeHandleCreateInfoLength;
@@ -276,6 +293,15 @@ WGPUBuffer Buffer::Create(Device* device, const WGPUBufferDescriptor* descriptor
 
 // static
 WGPUBuffer Buffer::CreateError(Device* device, const WGPUBufferDescriptor* descriptor) {
+    if (descriptor->mappedAtCreation) {
+        // This codepath isn't used (at the time of this writing). Just return nullptr
+        // (pretend there was a mapping OOM), so we don't have to bother mapping the ErrorBuffer
+        // (would have to return nullptr anyway if there was actually an OOM).
+        std::string error = "mappedAtCreation is not implemented for CreateErrorBuffer";
+        device->HandleLogging(WGPULoggingType_Error, WGPUStringView{error.data(), error.size()});
+        return nullptr;
+    }
+
     Client* client = device->GetClient();
     Ref<Buffer> buffer = client->Make<Buffer>(device->GetEventManagerHandle(), device, descriptor);
 
@@ -297,7 +323,7 @@ Buffer::Buffer(const ObjectBaseParams& params,
       mUsage(static_cast<WGPUBufferUsage>(descriptor->usage)),
       // This flag is for the write handle created by mappedAtCreation
       // instead of MapWrite usage. We don't have such a case for read handle.
-      mDestructWriteHandleOnUnmap(descriptor->mappedAtCreation &&
+      mDestructWriteHandleOnUnmap(wgpu::Bool(descriptor->mappedAtCreation) &&
                                   ((descriptor->usage & WGPUBufferUsage_MapWrite) == 0)),
       mDevice(device) {}
 
@@ -327,10 +353,10 @@ void Buffer::SetFutureStatus(WGPUMapAsyncStatus status, std::string_view message
                    futureID, status, ToOutputStringView(message)) == WireResult::Success);
 }
 
-WGPUFuture Buffer::MapAsync(WGPUMapMode mode,
-                            size_t offset,
-                            size_t size,
-                            const WGPUBufferMapCallbackInfo& callbackInfo) {
+WGPUFuture Buffer::APIMapAsync(WGPUMapMode mode,
+                               size_t offset,
+                               size_t size,
+                               const WGPUBufferMapCallbackInfo& callbackInfo) {
     Client* client = GetClient();
     auto [futureIDInternal, tracked] =
         GetEventManager().TrackEvent(std::make_unique<MapAsyncEvent>(callbackInfo, this));
@@ -384,14 +410,14 @@ WireResult Client::DoBufferMapAsyncCallback(ObjectHandle eventManager,
                                                readDataUpdateInfo);
 }
 
-void* Buffer::GetMappedRange(size_t offset, size_t size) {
+void* Buffer::APIGetMappedRange(size_t offset, size_t size) {
     if (!IsMappedForWriting() || !CheckGetMappedRangeOffsetSize(offset, size)) {
         return nullptr;
     }
     return static_cast<uint8_t*>(mMappedData) + offset;
 }
 
-const void* Buffer::GetConstMappedRange(size_t offset, size_t size) {
+const void* Buffer::APIGetConstMappedRange(size_t offset, size_t size) {
     if (!(IsMappedForWriting() || IsMappedForReading()) ||
         !CheckGetMappedRangeOffsetSize(offset, size)) {
         return nullptr;
@@ -399,7 +425,27 @@ const void* Buffer::GetConstMappedRange(size_t offset, size_t size) {
     return static_cast<uint8_t*>(mMappedData) + offset;
 }
 
-void Buffer::Unmap() {
+WGPUStatus Buffer::APIWriteMappedRange(size_t offset, void const* data, size_t size) {
+    void* range = APIGetMappedRange(offset, size);
+    if (range == nullptr) {
+        return WGPUStatus_Error;
+    }
+
+    memcpy(range, data, size);
+    return WGPUStatus_Success;
+}
+
+WGPUStatus Buffer::APIReadMappedRange(size_t offset, void* data, size_t size) {
+    const void* range = APIGetConstMappedRange(offset, size);
+    if (range == nullptr) {
+        return WGPUStatus_Error;
+    }
+
+    memcpy(data, range, size);
+    return WGPUStatus_Success;
+}
+
+void Buffer::APIUnmap() {
     // Invalidate the local pointer, and cancel all other in-flight requests that would
     // turn into errors anyway (you can't double map). This prevents race when the following
     // happens, where the application code would have unmapped a buffer but still receive a
@@ -460,7 +506,7 @@ void Buffer::Unmap() {
     SetFutureStatus(WGPUMapAsyncStatus_Aborted, "Buffer was unmapped before mapping was resolved.");
 }
 
-void Buffer::Destroy() {
+void Buffer::APIDestroy() {
     Client* client = GetClient();
 
     // Remove the current mapping and destroy Read/WriteHandles.
@@ -474,15 +520,15 @@ void Buffer::Destroy() {
                     "Buffer was destroyed before mapping was resolved.");
 }
 
-WGPUBufferUsage Buffer::GetUsage() const {
+WGPUBufferUsage Buffer::APIGetUsage() const {
     return mUsage;
 }
 
-uint64_t Buffer::GetSize() const {
+uint64_t Buffer::APIGetSize() const {
     return mSize;
 }
 
-WGPUBufferMapState Buffer::GetMapState() const {
+WGPUBufferMapState Buffer::APIGetMapState() const {
     switch (mMappedState) {
         case MapState::MappedForRead:
         case MapState::MappedForWrite:

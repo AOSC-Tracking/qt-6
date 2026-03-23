@@ -16,8 +16,12 @@ qt_internal_add_module(Grpc
         qgrpcchanneloptions.h qgrpcchanneloptions.cpp
         qtgrpcglobal.h
         qtgrpclogging_p.h qtgrpclogging.cpp
-        qtgrpcnamespace.h
+        qtgrpcnamespace.h qtgrpcnamespace.cpp
         qgrpcserializationformat.h qgrpcserializationformat.cpp
+        qgrpcinterceptor.h qgrpcinterceptor.cpp
+        qgrpcinterceptorchain.h qgrpcinterceptorchain_p.h qgrpcinterceptorchain.cpp
+        qgrpcinterceptorengine_p.h
+        compat/removed_api.cpp
     LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
@@ -26,6 +30,8 @@ qt_internal_add_module(Grpc
         Qt::Core
         Qt::Protobuf
         Qt::Network
+    NO_PCH_SOURCES
+        compat/removed_api.cpp
     QT_LICENSE_ID QT_COMMERCIAL_OR_GPL3
 )
 

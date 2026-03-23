@@ -304,10 +304,8 @@ function(qt_internal_add_plugin target)
         PUBLIC_LIBRARIES ${arg_PUBLIC_LIBRARIES}
         DEFINES
             ${arg_DEFINES}
-            ${deprecation_define}
         PUBLIC_DEFINES
             ${arg_PUBLIC_DEFINES}
-        FEATURE_DEPENDENCIES ${arg_FEATURE_DEPENDENCIES}
         DBUS_ADAPTOR_SOURCES ${arg_DBUS_ADAPTOR_SOURCES}
         DBUS_ADAPTOR_FLAGS ${arg_DBUS_ADAPTOR_FLAGS}
         DBUS_INTERFACE_SOURCES ${arg_DBUS_INTERFACE_SOURCES}
@@ -343,8 +341,10 @@ function(qt_internal_add_plugin target)
         list(APPEND qt_register_target_dependencies_args PUBLIC ${arg_PUBLIC_LIBRARIES})
     endif()
     if(qt_libs_private)
-        qt_internal_wrap_private_modules(qt_libs_private ${qt_libs_private})
-        list(APPEND qt_register_target_dependencies_args PRIVATE ${qt_libs_private})
+        qt_internal_wrap_private_modules("${target}"
+            OUT_VAR qt_libs_private
+            LIBRARIES ${qt_libs_private})
+        list(APPEND qt_register_target_depentdencies_args PRIVATE ${qt_libs_private})
     endif()
     qt_internal_register_target_dependencies("${target}"
         ${qt_register_target_dependencies_args})
@@ -381,6 +381,7 @@ function(qt_internal_add_plugin target)
 
         # For test plugins we need to make sure plugins are not loaded from the Qt installation
         # when building standalone tests.
+        set(test_plugin_arg "")
         if(QT_INTERNAL_CONFIGURING_TESTS OR arg_TEST_PLUGIN)
             if(NOT arg_TEST_PLUGIN)
                 message(WARNING "The installable test plugin ${target} is built as part of a test"
@@ -388,13 +389,7 @@ function(qt_internal_add_plugin target)
                     "\nThis warning will soon become an error."
                 )
             endif()
-            set(skip_internal_test_plugin
-"if(QT_BUILD_STANDALONE_TESTS AND \"\${PROJECT_NAME}\" STREQUAL \"${PROJECT_NAME}\")
-    message(DEBUG \"Skipping loading ${target}Config.cmake during \"
-        \"standalone tests run of ${PROJECT_NAME}\")
-    return()
-endif()"
-            )
+            set(test_plugin_arg TEST_PLUGIN)
         endif()
 
         configure_package_config_file(
@@ -402,6 +397,20 @@ endif()"
             "${config_build_dir}/${INSTALL_CMAKE_NAMESPACE}${target}Config.cmake"
             INSTALL_DESTINATION "${config_install_dir}"
         )
+
+        qt_configure_file(
+            OUTPUT "${config_build_dir}/${INSTALL_CMAKE_NAMESPACE}${target}TargetsPrecheck.cmake"
+            CONTENT
+# TODO: Remove the CHECK_QT_NO_CREATE_TARGETS once a better approach is developed
+"
+_qt_internal_should_include_targets(
+    TARGETS ${target}
+    NAMESPACE ${INSTALL_CMAKE_NAMESPACE}::
+    PROJECT_NAME ${PROJECT_NAME}
+    OUT_VAR_SHOULD_SKIP __qt_${target}_skip_include_targets_file
+    ${test_plugin_arg}
+)
+")
         write_basic_package_version_file(
             "${config_build_dir}/${INSTALL_CMAKE_NAMESPACE}${target}ConfigVersionImpl.cmake"
             VERSION ${PROJECT_VERSION}
@@ -416,6 +425,7 @@ endif()"
             "${config_build_dir}/${INSTALL_CMAKE_NAMESPACE}${target}Config.cmake"
             "${config_build_dir}/${INSTALL_CMAKE_NAMESPACE}${target}ConfigVersion.cmake"
             "${config_build_dir}/${INSTALL_CMAKE_NAMESPACE}${target}ConfigVersionImpl.cmake"
+            "${config_build_dir}/${INSTALL_CMAKE_NAMESPACE}${target}TargetsPrecheck.cmake"
             DESTINATION "${config_install_dir}"
             COMPONENT Devel
         )
@@ -456,7 +466,7 @@ endif()"
 
     if(QT_GENERATE_SBOM)
         set(sbom_args "")
-        list(APPEND sbom_args TYPE QT_PLUGIN)
+        list(APPEND sbom_args DEFAULT_SBOM_ENTITY_TYPE QT_PLUGIN)
 
         qt_get_cmake_configurations(configs)
         foreach(config IN LISTS configs)
@@ -613,7 +623,11 @@ function(qt_internal_add_darwin_permission_plugin permission)
     set_property(TARGET ${plugin_target} APPEND PROPERTY
         EXPORT_PROPERTIES _qt_darwin_permissison_separate_request
     )
-    set(permission_request_symbol "_QDarwin${permission}PermissionRequest")
+    if (QT_NAMESPACE)
+        set(permission_request_symbol "_QDarwin${permission}PermissionRequest_${QT_NAMESPACE}")
+    else()
+        set(permission_request_symbol "_QDarwin${permission}PermissionRequest")
+    endif()
     set(permission_request_flag "-Wl,-u,${permission_request_symbol}")
     set(has_usage_description_property "_qt_has_${plugin_target}_usage_description")
     set(has_usage_description_genex "$<BOOL:$<TARGET_PROPERTY:${has_usage_description_property}>>")

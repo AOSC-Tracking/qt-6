@@ -47,6 +47,12 @@ class FakeDataSharingSDKDelegate : public DataSharingSDKDelegate {
                   base::OnceCallback<void(
                       const base::expected<data_sharing_pb::ReadGroupsResult,
                                            absl::Status>&)> callback) override;
+  void ReadGroupWithToken(
+      const data_sharing_pb::ReadGroupWithTokenParams& params,
+      base::OnceCallback<
+          void(const base::expected<data_sharing_pb::ReadGroupsResult,
+                                    absl::Status>&)> callback) override;
+
   void AddMember(
       const data_sharing_pb::AddMemberParams& params,
       base::OnceCallback<void(const absl::Status&)> callback) override;
@@ -71,6 +77,8 @@ class FakeDataSharingSDKDelegate : public DataSharingSDKDelegate {
                                     absl::Status>&)> callback) override;
 
   void SetUserGaiaId(const GaiaId& gaia_id);
+
+  std::map<GroupId, data_sharing_pb::GroupData>* groups() { return &groups_; }
 
  private:
   std::map<GroupId, data_sharing_pb::GroupData> groups_;

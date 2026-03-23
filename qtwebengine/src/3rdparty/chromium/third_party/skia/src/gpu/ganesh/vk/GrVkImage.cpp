@@ -7,6 +7,7 @@
 
 #include "src/gpu/ganesh/vk/GrVkImage.h"
 
+#include "build/build_config.h"
 #include "include/core/SkSize.h"
 #include "include/gpu/vk/VulkanMutableTextureState.h"
 #include "src/gpu/ganesh/vk/GrVkCaps.h"
@@ -503,7 +504,7 @@ bool GrVkImage::InitImageInfo(GrVkGpu* gpu, const ImageDesc& imageDesc, GrVkImag
         createflags |= VK_IMAGE_CREATE_PROTECTED_BIT;
     }
 
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
     // The initialLayout should be undefined for the external image.
     // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkImageCreateInfo.html#VUID-VkImageCreateInfo-pNext-01443
     initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -516,11 +517,11 @@ bool GrVkImage::InitImageInfo(GrVkGpu* gpu, const ImageDesc& imageDesc, GrVkImag
 #else
             VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR;
 #endif  // defined(SK_BUILD_FOR_WIN)
-#endif  // defined(TOOLKIT_QT)
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
 
     const VkImageCreateInfo imageCreateInfo = {
         VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,         // sType
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
         &externalMemoryImageCreateInfo,              // pNext
 #else
         nullptr,                                     // pNext

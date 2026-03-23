@@ -17,6 +17,7 @@
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_command_line.h"
 #include "base/test/test_file_util.h"
@@ -58,6 +59,7 @@
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/base/signin_switches.h"
+#include "components/signin/public/identity_manager/account_capabilities_test_mutator.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/signin/public/identity_manager/identity_test_utils.h"
@@ -84,7 +86,7 @@ namespace {
 
 const char kEmail[] = "foo@gmail.com";
 const char kPreviousEmail[] = "notme@bar.com";
-const char kPreviousGaiaId[] = "gaia_id_for_not_me_at_bar_com";
+const GaiaId::Literal kPreviousGaiaId("gaia_id_for_not_me_at_bar_com");
 const char kEnterpriseEmail[] = "enterprise@managed.com";
 const char kEnterpriseHostedDomain[] = "managed.com";
 const char kUserAffiliationId[] = "user-affiliation-id";
@@ -543,6 +545,8 @@ class TurnSyncOnHelperTest : public testing::Test {
         identity_manager()->FindExtendedAccountInfo(core_account_info);
     EXPECT_FALSE(account_info.IsEmpty());
     account_info.hosted_domain = kEnterpriseHostedDomain;
+    AccountCapabilitiesTestMutator(&account_info.capabilities)
+        .set_is_subject_to_enterprise_features(true);
     signin::UpdateAccountInfoForAccount(identity_manager(), account_info);
   }
 
@@ -1154,7 +1158,7 @@ TEST_F(TurnSyncOnHelperTest, CrossAccountAbort) {
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingUsername,
                                    kPreviousEmail);
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingGaiaId,
-                                   kPreviousGaiaId);
+                                   kPreviousGaiaId.ToString());
   // Signin flow.
   CreateTurnOnSyncHelper(TurnSyncOnHelper::SigninAbortedMode::REMOVE_ACCOUNT);
   WaitUntilFlowCompletion();
@@ -1176,7 +1180,7 @@ TEST_F(TurnSyncOnHelperTest, CrossAccountAbortAlreadyManaged) {
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingUsername,
                                    kPreviousEmail);
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingGaiaId,
-                                   kPreviousGaiaId);
+                                   kPreviousGaiaId.ToString());
   user_policy_signin_service()->set_dm_token("foo");
   user_policy_signin_service()->set_client_id("bar");
   enterprise_util::SetUserAcceptedAccountManagement(profile(), true);
@@ -1204,7 +1208,7 @@ TEST_F(TurnSyncOnHelperTest, CrossAccountContinue) {
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingUsername,
                                    kPreviousEmail);
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingGaiaId,
-                                   kPreviousGaiaId);
+                                   kPreviousGaiaId.ToString());
   // Signin flow.
   CreateTurnOnSyncHelper(TurnSyncOnHelper::SigninAbortedMode::REMOVE_ACCOUNT);
   WaitUntilFlowCompletion();
@@ -1231,7 +1235,7 @@ TEST_F(TurnSyncOnHelperTest, CrossAccountContinueAlreadyManaged) {
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingUsername,
                                    kPreviousEmail);
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingGaiaId,
-                                   kPreviousGaiaId);
+                                   kPreviousGaiaId.ToString());
   user_policy_signin_service()->set_dm_token("foo");
   user_policy_signin_service()->set_client_id("bar");
   enterprise_util::SetUserAcceptedAccountManagement(profile(), true);
@@ -1267,7 +1271,7 @@ TEST_F(TurnSyncOnHelperTest, CrossAccountNewProfile) {
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingUsername,
                                    kPreviousEmail);
   profile()->GetPrefs()->SetString(prefs::kGoogleServicesLastSyncingGaiaId,
-                                   kPreviousGaiaId);
+                                   kPreviousGaiaId.ToString());
   // Signin flow.
   ProfileWaiter profile_waiter;
   CreateTurnOnSyncHelper(TurnSyncOnHelper::SigninAbortedMode::KEEP_ACCOUNT);
@@ -1290,9 +1294,7 @@ TEST_F(TurnSyncOnHelperTest, CrossAccountNewProfile) {
   CheckDelegateCalls();
   CheckSigninMetrics(
       {.sign_in_access_point =
-           switches::IsExplicitBrowserSigninUIOnDesktopEnabled()
-               ? signin_metrics::AccessPoint::kSigninInterceptFirstRunExperience
-               : kAccessPoint,
+           signin_metrics::AccessPoint::kSigninInterceptFirstRunExperience,
        .sign_in_recorded = true,
        .sync_opt_in_started = true});
 }
@@ -1304,6 +1306,28 @@ TEST_F(TurnSyncOnHelperTest, EnterpriseConfirmationAbort) {
   // Configure the test.
   user_policy_signin_service()->set_dm_token("foo");
   user_policy_signin_service()->set_client_id("bar");
+  // Signin flow.
+  CreateTurnOnSyncHelper(TurnSyncOnHelper::SigninAbortedMode::REMOVE_ACCOUNT);
+  WaitUntilFlowCompletion();
+
+  // Check expectations.
+  EXPECT_FALSE(
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
+  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(account_id()));
+  CheckDelegateCalls();
+  CheckSigninMetrics({});
+}
+
+// Abort after the enterprise confirmation prompt.
+TEST_F(TurnSyncOnHelperTest, EnterpriseConfirmationAbortSeparationEnforced) {
+  // Set expectations.
+  expected_enterprise_confirmation_email_ = kEmail;
+  // Configure the test.
+  user_policy_signin_service()->set_dm_token("foo");
+  user_policy_signin_service()->set_client_id("bar");
+
+  SetIsProfileCreationRequiredByPolicy(true);
+
   // Signin flow.
   CreateTurnOnSyncHelper(TurnSyncOnHelper::SigninAbortedMode::REMOVE_ACCOUNT);
   WaitUntilFlowCompletion();
@@ -1372,9 +1396,7 @@ TEST_F(TurnSyncOnHelperTest, EnterpriseConfirmationNewProfile) {
   CheckDelegateCalls();
   CheckSigninMetrics(
       {.sign_in_access_point =
-           switches::IsExplicitBrowserSigninUIOnDesktopEnabled()
-               ? signin_metrics::AccessPoint::kSigninInterceptFirstRunExperience
-               : kAccessPoint,
+           signin_metrics::AccessPoint::kSigninInterceptFirstRunExperience,
        .sign_in_recorded = true,
        .sync_opt_in_started = true});
 }
@@ -1466,16 +1488,11 @@ TEST_F(TurnSyncOnHelperTest, SignedInAccountUndoSyncKeepAccount) {
   CheckDelegateCalls();
   CheckSigninMetrics(
       {.sign_in_access_point =
-           switches::IsExplicitBrowserSigninUIOnDesktopEnabled()
-               ? signin_metrics::AccessPoint::kSigninInterceptFirstRunExperience
-               : kAccessPoint,
+           signin_metrics::AccessPoint::kSigninInterceptFirstRunExperience,
        .sign_in_recorded = true,
        .sync_opt_in_started = true,
-       .profile_signout =
-           switches::IsExplicitBrowserSigninUIOnDesktopEnabled()
-               ? std::optional<signin_metrics::ProfileSignout>(
-                     signin_metrics::ProfileSignout::kMovePrimaryAccount)
-               : std::nullopt});
+       .profile_signout = std::optional<signin_metrics::ProfileSignout>(
+           signin_metrics::ProfileSignout::kMovePrimaryAccount)});
 }
 
 // Test that the unconsented primary account is removed is not forced to have a

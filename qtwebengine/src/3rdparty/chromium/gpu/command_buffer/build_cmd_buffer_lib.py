@@ -51,6 +51,23 @@ _allow_unsafe_buffers_filenames = [
     "gpu/command_buffer/service/raster_decoder_autogen.h",
 ]
 
+# TODO(crbug.com/390223051): Remove this and generate code using safer
+# constructs.
+_ALLOW_UNSAFE_LIBC_CALLS = """
+
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
+"""
+_allow_unsafe_libc_calls_filenames = [
+    "gpu/command_buffer/common/gles2_cmd_format_test_autogen.h",
+    "gpu/command_buffer/common/raster_cmd_format_autogen.h",
+    "gpu/command_buffer/common/raster_cmd_format_test_autogen.h",
+    "gpu/command_buffer/common/webgpu_cmd_format_autogen.h",
+]
+
 # This string is copied directly out of the gl2.h file from GLES2.0
 #
 # Edits:
@@ -829,6 +846,8 @@ class CWriter():
     self._ENTER_MSG = _LICENSE % year + _DO_NOT_EDIT_WARNING % _lower_prefix
     if (filename in _allow_unsafe_buffers_filenames):
         self._ENTER_MSG += _ALLOW_UNSAFE_BUFFERS
+    if (filename in _allow_unsafe_libc_calls_filenames):
+        self._ENTER_MSG += _ALLOW_UNSAFE_LIBC_CALLS
     self._EXIT_MSG = ""
     try:
       os.makedirs(os.path.dirname(filename))
@@ -1956,20 +1975,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 """
-      if func.GetInfo("gen_func"):
-          valid_test += """
-TEST_P(%(test_name)s, %(name)sValidArgsNewId) {
-  EXPECT_CALL(*gl_, %(gl_func_name)s(kNewServiceId));
-  EXPECT_CALL(*gl_, %(gl_gen_func_name)s(1, _))
-     .WillOnce(SetArgPointee<1>(kNewServiceId));
-  SpecializedSetup<cmds::%(name)s, 0>(true);
-  cmds::%(name)s cmd;
-  cmd.Init(kNewClientId);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  EXPECT_TRUE(Get%(resource_type)s(kNewClientId) != nullptr);
-}
-"""
+
       self.WriteValidUnitTest(func, f, valid_test, {
           'resource_type': func.GetOriginalArgs()[0].resource_type,
           'gl_gen_func_name': func.GetInfo("gen_func"),
@@ -1983,21 +1989,6 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
   cmd.Init(%(args)s);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
-}
-"""
-      if func.GetInfo("gen_func"):
-        valid_test += """
-TEST_P(%(test_name)s, %(name)sValidArgsNewId) {
-  EXPECT_CALL(*gl_,
-              %(gl_func_name)s(%(gl_args_with_new_id)s));
-  EXPECT_CALL(*gl_, %(gl_gen_func_name)s(1, _))
-     .WillOnce(SetArgPointee<1>(kNewServiceId));
-  SpecializedSetup<cmds::%(name)s, 0>(true);
-  cmds::%(name)s cmd;
-  cmd.Init(%(args_with_new_id)s);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  EXPECT_TRUE(Get%(resource_type)s(kNewClientId) != nullptr);
 }
 """
 

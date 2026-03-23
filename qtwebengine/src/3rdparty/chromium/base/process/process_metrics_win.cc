@@ -19,6 +19,7 @@
 #include "base/notreached.h"
 #include "base/system/sys_info.h"
 #include "base/threading/scoped_blocking_call.h"
+#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "build/build_config.h"
 
@@ -179,6 +180,7 @@ ProcessMetrics::GetMemoryInfo() const {
 
 base::expected<TimeDelta, ProcessCPUUsageError>
 ProcessMetrics::GetCumulativeCPUUsage() {
+  TRACE_EVENT("base", "GetCumulativeCPUUsage");
 #if defined(ARCH_CPU_ARM64)
   // Precise CPU usage is not available on Arm CPUs because they don't support
   // constant rate TSC.
@@ -236,16 +238,12 @@ ProcessMetrics::ProcessMetrics(ProcessHandle process) {
 }
 
 size_t GetSystemCommitCharge() {
-  // Get the System Page Size.
-  SYSTEM_INFO system_info;
-  GetSystemInfo(&system_info);
-
   PERFORMANCE_INFORMATION info;
-  if (!GetPerformanceInfo(&info, sizeof(info))) {
+  if (!::GetPerformanceInfo(&info, sizeof(info))) {
     DLOG(ERROR) << "Failed to fetch internal performance info.";
     return 0;
   }
-  return (info.CommitTotal * system_info.dwPageSize) / 1024;
+  return (info.CommitTotal * info.PageSize) / 1024;
 }
 
 // This function uses the following mapping between MEMORYSTATUSEX and
@@ -280,31 +278,6 @@ SystemPerformanceInfo::SystemPerformanceInfo(
     const SystemPerformanceInfo& other) = default;
 SystemPerformanceInfo& SystemPerformanceInfo::operator=(
     const SystemPerformanceInfo& other) = default;
-
-Value::Dict SystemPerformanceInfo::ToDict() const {
-  Value::Dict result;
-
-  // Write out uint64_t variables as doubles.
-  // Note: this may discard some precision, but for JS there's no other option.
-  result.Set("idle_time", strict_cast<double>(idle_time));
-  result.Set("read_transfer_count", strict_cast<double>(read_transfer_count));
-  result.Set("write_transfer_count", strict_cast<double>(write_transfer_count));
-  result.Set("other_transfer_count", strict_cast<double>(other_transfer_count));
-  result.Set("read_operation_count", strict_cast<double>(read_operation_count));
-  result.Set("write_operation_count",
-             strict_cast<double>(write_operation_count));
-  result.Set("other_operation_count",
-             strict_cast<double>(other_operation_count));
-  result.Set("pagefile_pages_written",
-             strict_cast<double>(pagefile_pages_written));
-  result.Set("pagefile_pages_write_ios",
-             strict_cast<double>(pagefile_pages_write_ios));
-  result.Set("available_pages", strict_cast<double>(available_pages));
-  result.Set("pages_read", strict_cast<double>(pages_read));
-  result.Set("page_read_ios", strict_cast<double>(page_read_ios));
-
-  return result;
-}
 
 // Retrieves performance counters from the operating system.
 // Fills in the provided |info| structure. Returns true on success.

@@ -11,6 +11,7 @@ import android.util.Pair;
 import android.view.View;
 import android.view.ViewGroup.LayoutParams;
 
+import org.chromium.build.annotations.NullMarked;
 import org.chromium.components.payments.R;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.modelutil.PropertyKey;
@@ -23,6 +24,7 @@ import org.chromium.ui.text.SpanApplier.SpanInfo;
  * The view binder of the SecurePaymentConfirmation Authn UI, which is stateless. It is called to
  * bind a given model to a given view. Should contain as little business logic as possible.
  */
+@NullMarked
 /* package */ class SecurePaymentConfirmationAuthnViewBinder {
     /* package */ static void bind(
             PropertyModel model, SecurePaymentConfirmationAuthnView view, PropertyKey propertyKey) {
@@ -67,6 +69,19 @@ import org.chromium.ui.text.SpanApplier.SpanInfo;
                         model.get(SecurePaymentConfirmationAuthnProperties.CANCEL_BUTTON_CALLBACK)
                                 .run();
                     });
+        } else if (SecurePaymentConfirmationAuthnProperties.TITLE == propertyKey) {
+            view.mTitle.setText(model.get(SecurePaymentConfirmationAuthnProperties.TITLE));
+        } else if (SecurePaymentConfirmationAuthnProperties.CONTINUE_BUTTON_LABEL == propertyKey) {
+            view.mContinueButton.setText(
+                    model.get(SecurePaymentConfirmationAuthnProperties.CONTINUE_BUTTON_LABEL));
+        } else if (SecurePaymentConfirmationAuthnProperties.FOOTNOTE == propertyKey) {
+            if (model.get(SecurePaymentConfirmationAuthnProperties.FOOTNOTE) == null) {
+                view.mFootnote.setVisibility(View.GONE);
+            } else {
+                view.mFootnote.setVisibility(View.VISIBLE);
+                view.mFootnote.setText(
+                        model.get(SecurePaymentConfirmationAuthnProperties.FOOTNOTE));
+            }
         }
     }
 

@@ -12,6 +12,7 @@ set(qml_files
     "controls/DefaultCheckBox.qml"
     "controls/DefaultComboBox.qml"
     "controls/DefaultDial.qml"
+    "controls/DefaultDoubleSpinBox.qml"
     "controls/DefaultFrame.qml"
     "controls/DefaultGroupBox.qml"
     "controls/DefaultItemDelegate.qml"
@@ -58,6 +59,7 @@ qt_internal_add_qml_module(qtquickcontrols2nativestyleplugin
         items/qquickstyleitembutton.cpp items/qquickstyleitembutton.h
         items/qquickstyleitemcheckbox.cpp items/qquickstyleitemcheckbox.h
         items/qquickstyleitemdelaybutton.cpp items/qquickstyleitemdelaybutton.h
+        items/qquickstyleitemdoublespinbox.cpp items/qquickstyleitemdoublespinbox.h
         items/qquickstyleitemcheckdelegate.cpp items/qquickstyleitemcheckdelegate.h
         items/qquickstyleitemdial.cpp items/qquickstyleitemdial.h
         items/qquickstyleitemframe.cpp items/qquickstyleitemframe.h
@@ -72,7 +74,7 @@ qt_internal_add_qml_module(qtquickcontrols2nativestyleplugin
         qstyle/qquickcommonstyle.cpp qstyle/qquickcommonstyle.h qstyle/qquickcommonstyle_p.h
         qstyle/qquickcommonstylepixmaps_p.h
         qstyle/qquickdrawutil.cpp qstyle/qquickdrawutil.h
-        qstyle/qquicknativestyle.cpp qstyle/qquicknativestyle.h
+        qstyle/qquicknativestyle.cpp qstyle/qquicknativestyle_p.h
         qstyle/qquickstyle.cpp qstyle/qquickstyle.h qstyle/qquickstyle_p.h
         qstyle/qquickstylehelper.cpp qstyle/qquickstylehelper_p.h
         qstyle/qquickstyleoption.cpp qstyle/qquickstyleoption.h
@@ -113,6 +115,7 @@ qt_internal_extend_target(qtquickcontrols2nativestyleplugin CONDITION MACOS
         qstyle/mac/qquickmacstyle_mac.mm qstyle/mac/qquickmacstyle_mac_p.h
         qstyle/mac/qquickmacstyle_mac_p_p.h
         util/qquickmacfocusframe.h util/qquickmacfocusframe.mm
+        util/qquickstyleconstants.h util/qquickstyleconstants.mm
     INCLUDE_DIRECTORIES
         qstyle/mac
     LIBRARIES

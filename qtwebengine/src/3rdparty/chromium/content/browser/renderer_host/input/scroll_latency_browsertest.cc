@@ -6,6 +6,7 @@
 
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -33,7 +34,7 @@
 #include "third_party/blink/public/common/input/synthetic_web_input_event_builders.h"
 #include "third_party/blink/public/common/switches.h"
 #include "ui/base/ui_base_features.h"
-#include "ui/native_theme/native_theme_features.h"
+#include "ui/native_theme/features/native_theme_features.h"
 
 #if BUILDFLAG(IS_MAC)
 #include "ui/base/test/scoped_preferred_scroller_style_mac.h"

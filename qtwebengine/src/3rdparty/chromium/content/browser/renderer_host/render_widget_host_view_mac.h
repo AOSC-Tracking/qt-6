@@ -8,6 +8,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
@@ -160,7 +161,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void InvalidateLocalSurfaceIdAndAllocationGroup() override;
   void ClearFallbackSurfaceForCommitPending() override;
   void ResetFallbackToFirstNavigationSurface() override;
-  bool RequestRepaintForTesting() override;
+  bool RequestRepaintOnNewSurface() override;
   gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() override;
   gfx::NativeViewAccessible AccessibilityGetNativeViewAccessibleForWindow()
       override;
@@ -232,11 +233,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
                                     bool did_update_state) override;
   void OnImeCancelComposition(TextInputManager* text_input_manager,
                               RenderWidgetHostViewBase* updated_view) override;
-  void OnImeCompositionRangeChanged(
-      TextInputManager* text_input_manager,
-      RenderWidgetHostViewBase* updated_view,
-      bool character_bounds_changed,
-      const std::optional<std::vector<gfx::Rect>>& line_bounds) override;
+  void OnImeCompositionRangeChanged(TextInputManager* text_input_manager,
+                                    RenderWidgetHostViewBase* updated_view,
+                                    bool character_bounds_changed) override;
   void OnSelectionBoundsChanged(
       TextInputManager* text_input_manager,
       RenderWidgetHostViewBase* updated_view) override;
@@ -304,10 +303,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
     return browser_compositor_.get();
   }
 
-  // Set when the currently-displayed frame is the minimum scale. Used to
-  // determine if pinch gestures need to be thresholded.
-  bool page_at_minimum_scale_;
-
   MouseWheelPhaseHandler mouse_wheel_phase_handler_;
 
   // Used to set the mouse_wheel_phase_handler_ timer timeout for testing.
@@ -340,11 +335,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       const blink::WebMouseWheelEvent& web_event) override;
   void ForwardMouseEvent(const blink::WebMouseEvent& web_event) override;
   void ForwardWheelEvent(const blink::WebMouseWheelEvent& web_event) override;
-  void GestureBegin(blink::WebGestureEvent begin_event,
-                    bool is_synthetically_injected) override;
-  void GestureUpdate(blink::WebGestureEvent update_event) override;
-  void GestureEnd(blink::WebGestureEvent end_event) override;
-  void SmartMagnify(const blink::WebGestureEvent& smart_magnify_event) override;
+  void PinchEvent(blink::WebGestureEvent event,
+                  bool is_synthetically_injected) override;
+  void SmartMagnifyEvent(
+      const blink::WebGestureEvent& smart_magnify_event) override;
 
   // mojom::RenderWidgetHostNSViewHost implementation.
   void SyncIsWidgetForMainFrame(
@@ -375,13 +369,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       std::unique_ptr<blink::WebCoalescedInputEvent> event) override;
   void ForwardWheelEvent(
       std::unique_ptr<blink::WebCoalescedInputEvent> event) override;
-  void GestureBegin(std::unique_ptr<blink::WebCoalescedInputEvent> event,
-                    bool is_synthetically_injected) override;
-  void GestureUpdate(
-      std::unique_ptr<blink::WebCoalescedInputEvent> event) override;
-  void GestureEnd(
-      std::unique_ptr<blink::WebCoalescedInputEvent> event) override;
-  void SmartMagnify(
+  void PinchEvent(std::unique_ptr<blink::WebCoalescedInputEvent> event,
+                  bool is_synthetically_injected) override;
+  void SmartMagnifyEvent(
       std::unique_ptr<blink::WebCoalescedInputEvent> event) override;
   void ImeSetComposition(const std::u16string& text,
                          const std::vector<ui::ImeTextSpan>& ime_text_spans,
@@ -545,7 +535,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void UpdateBackgroundColor() override;
   bool HasFallbackSurface() const override;
   std::optional<DisplayFeature> GetDisplayFeature() override;
-  void SetDisplayFeatureForTesting(
+  void DisableDisplayFeatureOverrideForEmulation() override;
+  void OverrideDisplayFeatureForEmulation(
       const DisplayFeature* display_feature) override;
   void NotifyHostAndDelegateOnWasShown(
       blink::mojom::RecordContentToVisibleTimeRequestPtr visible_time_request)
@@ -557,7 +548,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Gets a textual view of the page's contents, and passes it to the callback
   // provided.
-  using SpeechCallback = base::OnceCallback<void(const std::u16string&)>;
+  using SpeechCallback = base::OnceCallback<void(std::u16string_view)>;
   void GetPageTextForSpeech(SpeechCallback callback);
 
   // Calls RenderWidgetHostNSView::SetTooltipText and call the observer's
@@ -652,18 +643,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   bool in_keyboard_event_ = false;
   int32_t keyboard_event_widget_process_id_ = 0;
   int32_t keyboard_event_widget_routing_id_ = 0;
-
-  // When a gesture starts, the system does not inform the view of which type
-  // of gesture is happening (magnify, rotate, etc), rather, it just informs
-  // the view that some as-yet-undefined gesture is starting. Capture the
-  // information about the gesture's beginning event here. It will be used to
-  // create a specific gesture begin event later.
-  std::unique_ptr<blink::WebGestureEvent> gesture_begin_event_;
-
-  // This is set if a GesturePinchBegin event has been sent in the lifetime of
-  // |gesture_begin_event__|. If set, a GesturePinchEnd will be sent when the
-  // gesture ends.
-  bool gesture_begin_pinch_sent_ = false;
 
   // To avoid accidental pinches, require that a certain zoom threshold be
   // reached before forwarding it to the browser. Use |pinch_unused_amount_| to

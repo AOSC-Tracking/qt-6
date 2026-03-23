@@ -15,7 +15,7 @@
 #ifndef OPENSSL_HEADER_DSA_H
 #define OPENSSL_HEADER_DSA_H
 
-#include <openssl/base.h>
+#include <openssl/base.h>   // IWYU pragma: export
 
 #include <openssl/ex_data.h>
 
@@ -56,7 +56,7 @@ OPENSSL_EXPORT int DSA_up_ref(DSA *dsa);
 
 // OPENSSL_DSA_MAX_MODULUS_BITS is the maximum supported DSA group modulus, in
 // bits.
-#define OPENSSL_DSA_MAX_MODULUS_BITS 10000
+#define OPENSSL_DSA_MAX_MODULUS_BITS 8192
 
 // DSA_bits returns the size of |dsa|'s group modulus, in bits.
 OPENSSL_EXPORT unsigned DSA_bits(const DSA *dsa);

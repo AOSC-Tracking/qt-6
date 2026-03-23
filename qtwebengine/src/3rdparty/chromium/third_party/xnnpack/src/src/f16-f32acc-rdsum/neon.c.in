@@ -4,13 +4,15 @@
 // LICENSE file in the root directory of this source tree.
 
 $ABC = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-#include <assert.h>
-
 #include <arm_neon.h>
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/reduce.h"
-#include "xnnpack/math.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/reduce.h"
 
 
 $UNROLL = CHANNELS_BATCH >> 2
@@ -21,14 +23,14 @@ void xnn_f16_f32acc_rdsum_ukernel_${ACCUMULATORS}p${ACCUMULATORS}x__neonfp16arit
     size_t input_stride,
     const xnn_float16* zero,
     float* output,
-    const struct xnn_f16_f32acc_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_f32acc_scale_params* restrict params)
 {
   assert(rows != 0);
   assert(channels != 0);
   assert(input != NULL);
   assert(output != NULL);
 
-  const float32x4_t vscale = vld1q_dup_f32(&params->scalar.scale);
+  const float32x4_t vscale = vdupq_n_f32(params->scalar.scale);
 
   size_t input_increment = ${ACCUMULATORS} * input_stride;
   for (; channels >= ${CHANNELS_BATCH}; channels -= ${CHANNELS_BATCH}) {

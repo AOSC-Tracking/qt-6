@@ -48,7 +48,6 @@
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/mojom/view_type.mojom.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "ipc/ipc_message_macros.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/mojom/page/draggable_region.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -463,10 +462,6 @@ void AppWindow::RequestPointerLock(WebContents* web_contents,
 bool AppWindow::PreHandleGestureEvent(WebContents* source,
                                       const blink::WebGestureEvent& event) {
   return AppWebContentsHelper::ShouldSuppressGestureEvent(event);
-}
-
-bool AppWindow::TakeFocus(WebContents* source, bool reverse) {
-  return app_delegate_->TakeFocus(source, reverse);
 }
 
 content::PictureInPictureResult AppWindow::EnterPictureInPicture(

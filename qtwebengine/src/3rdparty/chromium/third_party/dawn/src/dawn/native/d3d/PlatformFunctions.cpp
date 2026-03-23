@@ -59,9 +59,8 @@ PlatformFunctions::PlatformFunctions() : mCurrentBuildNumber(0) {}
 
 PlatformFunctions::~PlatformFunctions() = default;
 
-MaybeError PlatformFunctions::LoadFunctions() {
+MaybeError PlatformFunctions::Initialize() {
     DAWN_TRY(LoadDXGI());
-    DAWN_TRY(LoadFXCompiler());
     InitWindowsVersion();
     return {};
 }
@@ -79,7 +78,7 @@ MaybeError PlatformFunctions::LoadDXGI() {
     createDxgiFactory2 = &CreateDXGIFactory2;
 #else
     std::string error;
-    if (!mDXGILib.Open("dxgi.dll", &error) ||
+    if (!mDXGILib.OpenSystemLibrary(L"dxgi.dll", &error) ||
         !mDXGILib.GetProc(&dxgiGetDebugInterface1, "DXGIGetDebugInterface1", &error) ||
         !mDXGILib.GetProc(&createDxgiFactory2, "CreateDXGIFactory2", &error)) {
         return DAWN_INTERNAL_ERROR(error.c_str());
@@ -89,7 +88,12 @@ MaybeError PlatformFunctions::LoadDXGI() {
     return {};
 }
 
-MaybeError PlatformFunctions::LoadFXCompiler() {
+MaybeError PlatformFunctions::EnsureFXC() {
+    if (mFXCompilerLib.Valid()) {
+        // The library is already loaded, no need to load it again.
+        return {};
+    }
+
 #if DAWN_PLATFORM_IS(WINUWP)
     d3dCompile = &D3DCompile;
     d3dDisassemble = &D3DDisassemble;

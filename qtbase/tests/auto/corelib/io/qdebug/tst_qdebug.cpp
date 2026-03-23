@@ -8,6 +8,7 @@
 #include <QtCore/QtDebug>
 
 #include <QTest>
+#include <QtCore/qbuffer.h>
 #include <QtConcurrentRun>
 #include <QFutureSynchronizer>
 #include <QVariant>
@@ -77,6 +78,7 @@ private slots:
     void warningWithoutDebug() const;
     void criticalWithoutDebug() const;
     void basics() const;
+    void constructors() const;
     void debugWithBool() const;
     void debugSpaceHandling() const;
     void debugNoQuotes() const;
@@ -255,6 +257,57 @@ void tst_QDebug::basics() const
 
     qDebug() << nullptr;
     QCOMPARE(s_msg, "(nullptr)");
+}
+
+void tst_QDebug::constructors() const
+{
+    const char input[] = "testing QDebug constructors";
+    const QLatin1StringView expected{"testing QDebug constructors "};
+
+    // QDebug(QString *); no buffering for a QTextStream that operates on a QString,
+    // so flushing is no-op, see QTextStream::flush()
+    {
+        QString str;
+        QDebug d(&str);
+        d << input;
+        QCOMPARE(str, expected);
+    }
+
+    // QDebug(QByteArray *)
+    {
+        QByteArray ba;
+        QDebug d(&ba);
+        d << input << Qt::flush;
+        QCOMPARE(ba, expected);
+    }
+    {
+        QByteArray ba;
+        {
+            QDebug d(&ba);
+            d << input;
+        }
+        QCOMPARE(ba, expected);
+    }
+
+    // QDebug(QIODevice *)
+    {
+        QByteArray ba;
+        QBuffer buf(&ba);
+        QVERIFY(buf.open(QIODevice::WriteOnly));
+        QDebug d(&buf);
+        d << input << Qt::flush;
+        QCOMPARE(ba, expected);
+    }
+    {
+        QByteArray ba;
+        QBuffer buf(&ba);
+        QVERIFY(buf.open(QIODevice::WriteOnly));
+        {
+            QDebug d(&buf);
+            d << input;
+        }
+        QCOMPARE(ba, expected);
+    }
 }
 
 void tst_QDebug::debugWithBool() const
@@ -1623,6 +1676,8 @@ void tst_QDebug::threadSafety() const
 #ifdef Q_OS_WASM
     QSKIP("threadSafety does not run on wasm");
 #else
+    s_messages = {};
+
     MessageHandlerSetter mhs(threadSafeMessageHandler);
     const int numThreads = 10;
     QThreadPool::globalInstance()->setMaxThreadCount(numThreads);

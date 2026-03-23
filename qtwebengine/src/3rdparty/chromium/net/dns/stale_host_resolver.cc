@@ -14,6 +14,7 @@
 #include "base/check_op.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
@@ -46,11 +47,12 @@ class StaleHostResolver::RequestImpl : public HostResolver::ResolveHostRequest {
 
   // HostResolver::ResolveHostRequest implementation:
   int Start(CompletionOnceCallback result_callback) override;
-  const AddressList* GetAddressResults() const override;
-  const HostResolverEndpointResults* GetEndpointResults() const override;
-  const std::vector<std::string>* GetTextResults() const override;
-  const std::vector<HostPortPair>* GetHostnameResults() const override;
-  const std::set<std::string>* GetDnsAliasResults() const override;
+  const AddressList& GetAddressResults() const override;
+  base::span<const HostResolverEndpointResult> GetEndpointResults()
+      const override;
+  base::span<const std::string> GetTextResults() const override;
+  base::span<const HostPortPair> GetHostnameResults() const override;
+  const std::set<std::string>& GetDnsAliasResults() const override;
   ResolveErrorInfo GetResolveErrorInfo() const override;
   const std::optional<HostCache::EntryStaleness>& GetStaleInfo() const override;
   void ChangeRequestPriority(RequestPriority priority) override;
@@ -176,7 +178,7 @@ int StaleHostResolver::RequestImpl::Start(
   return network_rv;
 }
 
-const AddressList* StaleHostResolver::RequestImpl::GetAddressResults() const {
+const AddressList& StaleHostResolver::RequestImpl::GetAddressResults() const {
   if (network_request_) {
     return network_request_->GetAddressResults();
   }
@@ -185,7 +187,7 @@ const AddressList* StaleHostResolver::RequestImpl::GetAddressResults() const {
   return cache_request_->GetAddressResults();
 }
 
-const HostResolverEndpointResults*
+base::span<const HostResolverEndpointResult>
 StaleHostResolver::RequestImpl::GetEndpointResults() const {
   if (network_request_) {
     return network_request_->GetEndpointResults();
@@ -195,7 +197,7 @@ StaleHostResolver::RequestImpl::GetEndpointResults() const {
   return cache_request_->GetEndpointResults();
 }
 
-const std::vector<std::string>* StaleHostResolver::RequestImpl::GetTextResults()
+base::span<const std::string> StaleHostResolver::RequestImpl::GetTextResults()
     const {
   if (network_request_) {
     return network_request_->GetTextResults();
@@ -205,7 +207,7 @@ const std::vector<std::string>* StaleHostResolver::RequestImpl::GetTextResults()
   return cache_request_->GetTextResults();
 }
 
-const std::vector<HostPortPair>*
+base::span<const HostPortPair>
 StaleHostResolver::RequestImpl::GetHostnameResults() const {
   if (network_request_) {
     return network_request_->GetHostnameResults();
@@ -215,7 +217,7 @@ StaleHostResolver::RequestImpl::GetHostnameResults() const {
   return cache_request_->GetHostnameResults();
 }
 
-const std::set<std::string>*
+const std::set<std::string>&
 StaleHostResolver::RequestImpl::GetDnsAliasResults() const {
   if (network_request_) {
     return network_request_->GetDnsAliasResults();
@@ -321,10 +323,13 @@ void StaleHostResolver::RequestImpl::OnStaleDelayElapsed() {
   std::move(result_callback_).Run(cache_error_);
 }
 
+// NOTE: Don't change these values without checking with all browsers using it.
+// Currently this is being used but android_webview and Cronet.
 StaleHostResolver::StaleOptions::StaleOptions()
-    : allow_other_network(false),
-      max_stale_uses(0),
-      use_stale_on_name_not_resolved(false) {}
+    : max_expired_time(base::Hours(6)),
+      allow_other_network(true),
+      max_stale_uses(1),
+      use_stale_on_name_not_resolved(true) {}
 
 StaleHostResolver::StaleHostResolver(
     std::unique_ptr<ContextHostResolver> inner_resolver,
@@ -383,8 +388,17 @@ base::Value::Dict StaleHostResolver::GetDnsConfigAsValue() const {
   return inner_resolver_->GetDnsConfigAsValue();
 }
 
+std::unique_ptr<HostResolver::ProbeRequest>
+StaleHostResolver::CreateDohProbeRequest() {
+  return inner_resolver_->CreateDohProbeRequest();
+}
+
 void StaleHostResolver::SetRequestContext(URLRequestContext* request_context) {
   inner_resolver_->SetRequestContext(request_context);
+}
+
+bool StaleHostResolver::IsHappyEyeballsV3Enabled() const {
+  return inner_resolver_->IsHappyEyeballsV3Enabled();
 }
 
 void StaleHostResolver::SetTickClockForTesting(

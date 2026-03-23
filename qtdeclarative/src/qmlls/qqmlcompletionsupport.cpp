@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qqmlcompletionsupport_p.h"
 #include "qqmllsutils_p.h"
@@ -39,8 +40,8 @@ bool CompletionRequest::fillFrom(QmlLsp::OpenDocument doc, const Parameters &par
     return true;
 }
 
-QmlCompletionSupport::QmlCompletionSupport(QmlLsp::QQmlCodeModel *codeModel)
-    : BaseT(codeModel), m_completionEngine(codeModel->pluginLoader())
+QmlCompletionSupport::QmlCompletionSupport(QmlLsp::QQmlCodeModelManager *codeModelManager)
+    : BaseT(codeModelManager), m_completionEngine(codeModelManager->pluginLoader())
 {
 }
 
@@ -72,7 +73,7 @@ void QmlCompletionSupport::setupCapabilities(
 void QmlCompletionSupport::process(RequestPointerArgument req)
 {
     QmlLsp::OpenDocumentSnapshot doc =
-            m_codeModel->snapshotByUrl(req->m_parameters.textDocument.uri);
+            m_codeModelManager->snapshotByUrl(req->m_parameters.textDocument.uri);
     req->sendCompletions(req->completions(doc, m_completionEngine));
 }
 

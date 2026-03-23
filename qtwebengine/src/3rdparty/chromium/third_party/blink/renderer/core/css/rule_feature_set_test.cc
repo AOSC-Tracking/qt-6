@@ -42,7 +42,7 @@ class RuleFeatureSetTest : public testing::Test {
     html->AppendChild(MakeGarbageCollected<HTMLBodyElement>(*document_));
     document_->AppendChild(html);
 
-    document_->body()->setInnerHTML("<b><i></i></b>");
+    document_->body()->SetInnerHTMLWithoutTrustedTypes("<b><i></i></b>");
   }
 
   SelectorPreMatch CollectFeatures(
@@ -901,37 +901,20 @@ TEST_F(RuleFeatureSetTest, tagName) {
   EXPECT_TRUE(HasTagNameInvalidation("e", invalidation_lists.descendants));
 }
 
-TEST_F(RuleFeatureSetTest, nonMatchingHost) {
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches, CollectFeatures(".a:host"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches, CollectFeatures("*:host(.a)"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches, CollectFeatures("*:host .a"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches, CollectFeatures("div :host .a"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches, CollectFeatures(":host:hover .a"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches,
-            CollectFeatures(":host:has(.b):hover .a"));
+TEST_F(RuleFeatureSetTest, mayMatchHostAndHostContext) {
+  EXPECT_EQ(SelectorPreMatch::kMayMatch, CollectFeatures(":host"));
+  EXPECT_EQ(SelectorPreMatch::kMayMatch, CollectFeatures(":has(.a):host"));
+  EXPECT_EQ(SelectorPreMatch::kMayMatch, CollectFeatures(":has(.a):host .b"));
+  EXPECT_EQ(SelectorPreMatch::kMayMatch,
+            CollectFeatures(":has(.a):host:has(.b) .c"));
 
-  InvalidationLists invalidation_lists;
-  CollectInvalidationSetsForClass(invalidation_lists, "a");
-  EXPECT_TRUE(HasNoInvalidation(invalidation_lists.descendants));
-}
-
-TEST_F(RuleFeatureSetTest, nonMatchingHostContext) {
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches,
-            CollectFeatures(".a:host-context(*)"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches,
-            CollectFeatures("*:host-context(.a)"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches,
-            CollectFeatures("*:host-context(*) .a"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches,
-            CollectFeatures("div :host-context(div) .a"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches,
-            CollectFeatures(":host-context(div):hover .a"));
-  EXPECT_EQ(SelectorPreMatch::kNeverMatches,
-            CollectFeatures(":host-context(div):has(.b):hover .a"));
-
-  InvalidationLists invalidation_lists;
-  CollectInvalidationSetsForClass(invalidation_lists, "a");
-  EXPECT_TRUE(HasNoInvalidation(invalidation_lists.descendants));
+  EXPECT_EQ(SelectorPreMatch::kMayMatch, CollectFeatures(":host-context(div)"));
+  EXPECT_EQ(SelectorPreMatch::kMayMatch,
+            CollectFeatures(":has(.a):host-context(div)"));
+  EXPECT_EQ(SelectorPreMatch::kMayMatch,
+            CollectFeatures(":has(.a):host-context(div) .b"));
+  EXPECT_EQ(SelectorPreMatch::kMayMatch,
+            CollectFeatures(":has(.a):host-context(div):has(.b) .c"));
 }
 
 TEST_F(RuleFeatureSetTest, emptyIsWhere) {

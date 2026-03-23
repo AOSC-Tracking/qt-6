@@ -12,6 +12,7 @@
 #include "base/format_macros.h"
 #include "base/functional/bind.h"
 #include "base/notreached.h"
+#include "base/strings/escape.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/types/optional_util.h"
@@ -726,7 +727,8 @@ ExtensionFunction::ResponseAction UserScriptsExecuteFunction::Run() {
     // JS files don't require localization.
     constexpr bool kRequiresLocalization = false;
     scripting::CheckAndLoadFiles(
-        std::move(file_sources), *extension(), kRequiresLocalization,
+        std::move(file_sources), script_parsing::ContentScriptType::kJs,
+        *extension(), kRequiresLocalization,
         base::BindOnce(&UserScriptsExecuteFunction::DidLoadResources, this,
                        script_executor, frame_scope, std::move(frame_ids),
                        std::move(sources)),
@@ -762,7 +764,8 @@ void UserScriptsExecuteFunction::DidLoadResources(
       CHECK_LT(file_index, static_cast<int>(file_sources.size()));
       source = mojom::JSSource::New(
           std::move(*file_sources[file_index].data),
-          extension()->GetResourceURL(file_sources[file_index].file_name));
+          extension()->GetResourceURL(
+              base::EscapePath(file_sources[file_index].file_name)));
       file_index++;
     }
   }

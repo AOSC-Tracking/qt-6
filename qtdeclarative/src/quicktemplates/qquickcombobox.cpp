@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickcombobox_p.h"
 #include "qquickcontrol_p_p.h"
@@ -43,6 +44,7 @@ Q_STATIC_LOGGING_CATEGORY(lcCalculateWidestTextWidth, "qt.quick.controls.combobo
     \brief Combined button and popup list for selecting options.
 
     \image qtquickcontrols-combobox.gif
+           {Combo box expanding to show dropdown list}
 
     ComboBox is a combined button and popup list. It provides a means of
     presenting a list of options to the user in a way that takes up the
@@ -1379,6 +1381,8 @@ void QQuickComboBox::setValueRole(const QString &role)
     }
     \endcode
 
+    \include delegate-ownership.qdocinc {no-ownership-since-6.11} {ComboBox}
+
     \sa ItemDelegate, {Customizing ComboBox}
 */
 QQmlComponent *QQuickComboBox::delegate() const
@@ -1393,7 +1397,6 @@ void QQuickComboBox::setDelegate(QQmlComponent* delegate)
     if (d->delegate == delegate)
         return;
 
-    delete d->delegate;
     d->delegate = delegate;
     QQmlDelegateModel *delegateModel = qobject_cast<QQmlDelegateModel*>(d->delegateModel);
     if (delegateModel)

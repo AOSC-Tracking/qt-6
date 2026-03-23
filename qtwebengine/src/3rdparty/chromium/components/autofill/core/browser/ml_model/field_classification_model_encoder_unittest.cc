@@ -13,6 +13,7 @@
 #include "base/strings/string_split.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/ml_model/field_classification_model_encoder_test_api.h"
 #include "components/autofill/core/browser/test_utils/autofill_form_test_utils.h"
 #include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
 #include "components/autofill/core/common/form_field_data.h"
@@ -262,38 +263,50 @@ using StandardizeStringTest = TestWithParam<StandardizeStringTestCase>;
 INSTANTIATE_TEST_SUITE_P(
     FieldClassificationModelEncoderTest,
     StandardizeStringTest,
-    testing::ValuesIn<StandardizeStringTestCase>(
-        {{
-             .input = u"Hello World",
-             .expected = u"Hello World",
-         },
-         {
-             .split_on_camel_case = true,
-             .input = u"HelloWorld thisIsACamelCaseTest ABCHello",
-             .expected = u"Hello World this Is A Camel Case Test ABC Hello",
-         },
-         {
-             // Test that casting to UTF8 does not break Japanese characters.
-             // This happens in the CamelCase splitting implementation.
-             .split_on_camel_case = true,
-             .input = u"やまもと HelloWorld",
-             .expected = u"やまもと Hello World",
-         },
-         {
-             .lowercase = true,
-             .input = u"AbCd123",
-             .expected = u"abcd123",
-         },
-         {
-             .replace_chars_with_whitespace = "_.-",
-             .input = u"Chars_are-replaced.by-.whitespace",
-             .expected = u"Chars are replaced by  whitespace",
-         },
-         {
-             .remove_chars = "@!",
-             .input = u"@Chars are! @removed!",
-             .expected = u"Chars are removed",
-         }}));
+    testing::ValuesIn<StandardizeStringTestCase>({
+        {
+            .input = u"Hello World",
+            .expected = u"Hello World",
+        },
+        {
+            .split_on_camel_case = true,
+            .input = u"HelloWorld thisIsACamelCaseTest ABCHello",
+            .expected = u"Hello World this Is A Camel Case Test ABC Hello",
+        },
+        {
+            // Test that casting to UTF8 does not break Japanese characters.
+            // This happens in the CamelCase splitting implementation.
+            .split_on_camel_case = true,
+            .input = u"やまもと HelloWorld",
+            .expected = u"やまもと Hello World",
+        },
+        {
+            .lowercase = true,
+            .input = u"AbCd123",
+            .expected = u"abcd123",
+        },
+        {
+            .replace_chars_with_whitespace = "_.-",
+            .input = u"Chars_are-replaced.by-.whitespace",
+            .expected = u"Chars are replaced by  whitespace",
+        },
+        {
+            .remove_chars = "@!",
+            .input = u"@Chars are! @removed!",
+            .expected = u"Chars are removed",
+        },
+        {
+            // Test that camel case splitting supports non ASCII chars.
+            .split_on_camel_case = true,
+            .input = u"новыйПарольЗБСПароль",
+            .expected = u"новый Пароль ЗБС Пароль",
+        },
+        {
+            .lowercase = true,
+            .input = u"Новый ПАРОЛЬ",
+            .expected = u"новый пароль",
+        },
+    }));
 
 TEST_P(StandardizeStringTest, ReturnsExpectedResult) {
   const StandardizeStringTestCase& test_case = GetParam();
@@ -306,7 +319,8 @@ TEST_P(StandardizeStringTest, ReturnsExpectedResult) {
   encoding_parameters.set_remove_chars(test_case.remove_chars);
   FieldClassificationModelEncoder encoder({}, encoding_parameters);
 
-  EXPECT_EQ(encoder.StandardizeString(test_case.input), test_case.expected);
+  EXPECT_EQ(test_api(encoder).StandardizeString(test_case.input),
+            test_case.expected);
 }
 
 }  // namespace autofill

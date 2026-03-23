@@ -42,7 +42,7 @@
 #include "./centipede/runner_result.h"
 #include "./centipede/runner_sancov_object.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 
 // Like std::lock_guard, but for pthread_mutex_t.
 class LockGuard {
@@ -70,6 +70,8 @@ struct RunTimeFlags {
   std::atomic<uint64_t> rss_limit_mb;
   uint64_t crossover_level;
   uint64_t skip_seen_features : 1;
+  uint64_t ignore_timeout_reports : 1;
+  uint64_t max_len;
 };
 
 // One such object is created in runner's TLS.
@@ -161,25 +163,28 @@ struct GlobalRunnerState {
 
   // Flags.
   RunTimeFlags run_time_flags = {
-      .path_level = std::min(ThreadLocalRunnerState::kBoundedPathLength,
-                             HasIntFlag(":path_level=", 0)),
-      .use_pc_features = HasFlag(":use_pc_features:"),
-      .use_dataflow_features = HasFlag(":use_dataflow_features:"),
-      .use_cmp_features = HasFlag(":use_cmp_features:"),
-      .callstack_level = HasIntFlag(":callstack_level=", 0),
-      .use_counter_features = HasFlag(":use_counter_features:"),
-      .use_auto_dictionary = HasFlag(":use_auto_dictionary:"),
-      .timeout_per_input = HasIntFlag(":timeout_per_input=", 0),
-      .timeout_per_batch = HasIntFlag(":timeout_per_batch=", 0),
-      .stack_limit_kb = HasIntFlag(":stack_limit_kb=", 0),
-      .rss_limit_mb = HasIntFlag(":rss_limit_mb=", 0),
-      .crossover_level = HasIntFlag(":crossover_level=", 50),
-      .skip_seen_features = HasFlag(":skip_seen_features:")};
+      /*path_level=*/std::min(ThreadLocalRunnerState::kBoundedPathLength,
+                              HasIntFlag(":path_level=", 0)),
+      /*use_pc_features=*/HasFlag(":use_pc_features:"),
+      /*use_dataflow_features=*/HasFlag(":use_dataflow_features:"),
+      /*use_cmp_features=*/HasFlag(":use_cmp_features:"),
+      /*callstack_level=*/HasIntFlag(":callstack_level=", 0),
+      /*use_counter_features=*/HasFlag(":use_counter_features:"),
+      /*use_auto_dictionary=*/HasFlag(":use_auto_dictionary:"),
+      /*timeout_per_input=*/HasIntFlag(":timeout_per_input=", 0),
+      /*timeout_per_batch=*/HasIntFlag(":timeout_per_batch=", 0),
+      /*stack_limit_kb=*/HasIntFlag(":stack_limit_kb=", 0),
+      /*rss_limit_mb=*/HasIntFlag(":rss_limit_mb=", 0),
+      /*crossover_level=*/HasIntFlag(":crossover_level=", 50),
+      /*skip_seen_features=*/HasFlag(":skip_seen_features:"),
+      /*ignore_timeout_reports=*/HasFlag(":ignore_timeout_reports:"),
+      /*max_len=*/HasIntFlag(":max_len=", 4000),
+  };
 
   // Returns true iff `flag` is present.
   // Typical usage: pass ":some_flag:", i.e. the flag name surrounded with ':'.
   // TODO(ussuri): Refactor `char *` into a `string_view`.
-  bool HasFlag(absl::Nonnull<const char *> flag) const {
+  bool HasFlag(const char *absl_nonnull flag) const {
     if (!centipede_runner_flags) return false;
     return strstr(centipede_runner_flags, flag) != nullptr;
   }
@@ -188,7 +193,7 @@ struct GlobalRunnerState {
   // otherwise returns `default_value`.
   // Typical usage: pass ":some_flag=".
   // TODO(ussuri): Refactor `char *` into a `string_view`.
-  uint64_t HasIntFlag(absl::Nonnull<const char *> flag,
+  uint64_t HasIntFlag(const char *absl_nonnull flag,
                       uint64_t default_value) const {
     if (!centipede_runner_flags) return default_value;
     const char *beg = strstr(centipede_runner_flags, flag);
@@ -201,8 +206,7 @@ struct GlobalRunnerState {
   // it in `this` to avoid a leak.
   // Typical usage: pass ":some_flag=".
   // TODO(ussuri): Refactor `char *` into a `string_view`.
-  absl::Nullable<const char *> GetStringFlag(
-      absl::Nonnull<const char *> flag) const {
+  const char *absl_nullable GetStringFlag(const char *absl_nonnull flag) const {
     if (!centipede_runner_flags) return nullptr;
     // Extract "value" from ":flag=value:" inside centipede_runner_flags.
     const char *beg = strstr(centipede_runner_flags, flag);
@@ -213,7 +217,7 @@ struct GlobalRunnerState {
     return strndup(value_beg, end - value_beg);
   }
 
-  pthread_mutex_t execution_result_override_mu;
+  pthread_mutex_t execution_result_override_mu = PTHREAD_MUTEX_INITIALIZER;
   // If not nullptr, it points to a batch result with either zero or one
   // execution. When an execution result present, it will be passed as the
   // execution result of the current test input. The object is owned and cleaned
@@ -225,7 +229,8 @@ struct GlobalRunnerState {
   ThreadLocalRunnerState *tls_list;
   // Doubly linked list of detached TLSs.
   ThreadLocalRunnerState *detached_tls_list;
-  pthread_mutex_t tls_list_mu;  // Guards tls_list and detached_tls_list.
+  // Guards `tls_list` and `detached_tls_list`.
+  pthread_mutex_t tls_list_mu = PTHREAD_MUTEX_INITIALIZER;
   // Iterates all TLS objects under tls_list_mu, except those with `ignore` set.
   // Calls `callback()` on every TLS.
   template <typename Callback>
@@ -359,6 +364,6 @@ extern __thread ThreadLocalRunnerState tls;
 // Check for stack limit for the stack pointer `sp` in the current thread.
 void CheckStackLimit(uintptr_t sp);
 
-}  // namespace centipede
+}  // namespace fuzztest::internal
 
 #endif  // THIRD_PARTY_CENTIPEDE_RUNNER_H_

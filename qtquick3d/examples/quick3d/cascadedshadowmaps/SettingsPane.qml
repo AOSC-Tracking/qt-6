@@ -9,6 +9,8 @@ Item {
     id: root
     width: settingsDrawer.width
     height: parent.height
+    property alias drawerVisible: settingsDrawer.visible
+    property bool drawerOpen: settingsDrawer.position === 1.0
 
     property real shadowFactor: sliderDirectionaLightShadowFactor.value
     property vector3d eulerRotation: Qt.vector3d(sliderDirectionalLightRotX.value,
@@ -266,8 +268,6 @@ Item {
                             ListElement { text: "PCF4" }
                             ListElement { text: "PCF8" }
                             ListElement { text: "PCF16" }
-                            ListElement { text: "PCF32" }
-                            ListElement { text: "PCF64" }
                         }
                         currentIndex: 3
                     }
@@ -284,6 +284,7 @@ Item {
                             ListElement { text: "Medium" }
                             ListElement { text: "High" }
                             ListElement { text: "VeryHigh" }
+                            ListElement { text: "Ultra" }
                         }
                         currentIndex: 2
                     }

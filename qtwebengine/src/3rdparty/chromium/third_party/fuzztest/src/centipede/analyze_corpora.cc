@@ -38,7 +38,7 @@
 #include "./common/logging.h"
 #include "./common/remote_file.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 
 namespace {
 
@@ -131,14 +131,13 @@ AnalyzeCorporaResults AnalyzeCorpora(const BinaryInfo &binary_info,
             << VV(b_shared_indices.size()) << VV(b_unique_indices.size());
 
   // Sort PCs to put them in the canonical order, as in pc_table.
-  AnalyzeCorporaResults ret = {
-      .a_pcs = std::vector<size_t>{a_pcs.begin(), a_pcs.end()},
-      .b_pcs = std::vector<size_t>{b_pcs.begin(), b_pcs.end()},
-      .a_only_pcs = std::vector<size_t>{a_only_pcs.begin(), a_only_pcs.end()},
-      .b_only_pcs = std::vector<size_t>{b_only_pcs.begin(), b_only_pcs.end()},
-      .a_pc_to_corpus_record = std::move(a_pc_to_corpus),
-      .b_pc_to_corpus_record = std::move(b_pc_to_corpus),
-  };
+  AnalyzeCorporaResults ret;
+  ret.a_pcs = std::vector<size_t>{a_pcs.begin(), a_pcs.end()};
+  ret.b_pcs = std::vector<size_t>{b_pcs.begin(), b_pcs.end()};
+  ret.a_only_pcs = std::vector<size_t>{a_only_pcs.begin(), a_only_pcs.end()};
+  ret.b_only_pcs = std::vector<size_t>{b_only_pcs.begin(), b_only_pcs.end()};
+  ret.a_pc_to_corpus_record = std::move(a_pc_to_corpus);
+  ret.b_pc_to_corpus_record = std::move(b_pc_to_corpus);
   std::sort(ret.a_pcs.begin(), ret.a_pcs.end());
   std::sort(ret.b_pcs.begin(), ret.b_pcs.end());
   std::sort(ret.a_only_pcs.begin(), ret.a_only_pcs.end());
@@ -160,8 +159,8 @@ CoverageResults GetCoverage(const std::vector<CorpusRecord> &corpus_records,
     }
   }
   CoverageResults ret = {
-      .pcs = {pcs.begin(), pcs.end()},
-      .binary_info = std::move(binary_info),
+      /*pcs=*/{pcs.begin(), pcs.end()},
+      /*binary_info=*/std::move(binary_info),
   };
   // Sort PCs to put them in the canonical order, as in pc_table.
   std::sort(ret.pcs.begin(), ret.pcs.end());
@@ -181,13 +180,16 @@ void DumpCoverageReport(const CoverageResults &coverage_results,
                         std::string_view coverage_report_path) {
   LOG(INFO) << "Dump coverage to file: " << coverage_report_path;
 
-  const centipede::PCTable &pc_table = coverage_results.binary_info.pc_table;
-  const centipede::SymbolTable &symbols = coverage_results.binary_info.symbols;
+  const fuzztest::internal::PCTable &pc_table =
+      coverage_results.binary_info.pc_table;
+  const fuzztest::internal::SymbolTable &symbols =
+      coverage_results.binary_info.symbols;
 
-  centipede::SymbolTable coverage_symbol_table;
+  fuzztest::internal::SymbolTable coverage_symbol_table;
   for (const PCIndex pc : coverage_results.pcs) {
     CHECK_LE(pc, symbols.size());
-    if (!pc_table[pc].has_flag(centipede::PCInfo::kFuncEntry)) continue;
+    if (!pc_table[pc].has_flag(fuzztest::internal::PCInfo::kFuncEntry))
+      continue;
     const SymbolTable::Entry entry = symbols.entry(pc);
     coverage_symbol_table.AddEntry(entry.func, entry.file_line_col());
   }
@@ -256,4 +258,4 @@ void AnalyzeCorporaToLog(std::string_view binary_name,
   }
 }
 
-}  // namespace centipede
+}  // namespace fuzztest::internal

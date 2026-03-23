@@ -1,5 +1,7 @@
 // Copyright (C) 2015 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+// Qt-Security score:significant reason:default
+
 
 #include <qstringlist.h>
 #include <qlist.h>
@@ -10,6 +12,8 @@
 #include <string.h>
 
 #include <qt_windows.h>
+
+#include <QtCore/private/qcomptr_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -97,17 +101,15 @@ bool qax_startServer(QAxFactory::ServerType type)
     classRegistration = new DWORD[keyCount];
     qsizetype object = 0;
     for (object = 0; object < keyCount; ++object) {
-        IUnknown* p = nullptr;
+        ComPtr<IUnknown> p;
         CLSID clsid = qAxFactory()->classID(keys.at(object));
 
         // Create a QClassFactory (implemented in qaxserverbase.cpp)
-        HRESULT hRes = GetClassObject(clsid, IID_IClassFactory, reinterpret_cast<void **>(&p));
+        HRESULT hRes = GetClassObject(clsid, IID_IClassFactory, &p);
         if (SUCCEEDED(hRes))
-            hRes = CoRegisterClassObject(clsid, p, CLSCTX_LOCAL_SERVER,
+            hRes = CoRegisterClassObject(clsid, p.Get(), CLSCTX_LOCAL_SERVER,
                 type == QAxFactory::MultipleInstances ? REGCLS_MULTIPLEUSE : REGCLS_SINGLEUSE,
                 classRegistration+object);
-        if (p)
-            p->Release();
     }
 
     qAxIsServer = true;
@@ -177,7 +179,8 @@ struct Arg {
 
     ~Arg()
     {
-        for (int i = 0, last = argv.size() - 1; i < last; ++i)
+        // Note: QGuiApplication may shift the array when removing Qt arguments
+        for (int i = 0, last = argv.size() - 1; i < last && argv.at(i) != nullptr; ++i)
             free(argv.at(i));
     }
 
@@ -254,12 +257,10 @@ EXTERN_C int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /* hPrevInstance */, 
 #endif
             // Disable C++ & SEH exception handling by the COM runtime for out-of-process COM controls.
             // Done to prevent silent crashes and enable crash dump generation.
-            IGlobalOptions *globalOptions = nullptr;
+            ComPtr<IGlobalOptions> globalOptions;
             if (SUCCEEDED(CoCreateInstance(CLSID_GlobalOptions, nullptr, CLSCTX_INPROC_SERVER,
-                                           IID_IGlobalOptions, reinterpret_cast<void **>(&globalOptions)))) {
+                                           IID_IGlobalOptions, &globalOptions))) {
                 globalOptions->Set(COMGLB_EXCEPTION_HANDLING, COMGLB_EXCEPTION_DONOT_HANDLE_ANY);
-                globalOptions->Release();
-                globalOptions = nullptr;
             }
 
             {

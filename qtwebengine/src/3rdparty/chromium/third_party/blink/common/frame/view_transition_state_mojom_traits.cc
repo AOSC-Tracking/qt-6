@@ -34,6 +34,9 @@ bool StructTraits<blink::mojom::ViewTransitionElementDataView,
       !data.ReadCapturedRectInLayoutSpace(
           &out->captured_rect_in_layout_space) ||
       !data.ReadCapturedCssProperties(&out->captured_css_properties) ||
+      !data.ReadGroupChildrenCssProperties(
+          &out->group_children_css_properties) ||
+      !data.ReadBorderOffset(&out->border_offset) ||
       !data.ReadClassList(&out->class_list) ||
       !data.ReadContainingGroupName(&out->containing_group_name) ||
       !data.ReadLayeredBoxProperties(&out->layered_box_properties)) {
@@ -54,7 +57,8 @@ bool StructTraits<blink::mojom::ViewTransitionStateDataView,
          data.ReadTransitionToken(&out->transition_token) &&
          data.ReadSnapshotRootSizeAtCapture(
              &out->snapshot_root_size_at_capture) &&
-         data.ReadSubframeSnapshotId(&out->subframe_snapshot_id);
+         data.ReadSubframeSnapshotId(&out->subframe_snapshot_id) &&
+         data.ReadIdToAutoNameMap(&out->id_to_auto_name_map);
 }
 
 }  // namespace mojo

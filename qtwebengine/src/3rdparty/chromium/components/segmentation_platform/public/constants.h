@@ -112,6 +112,10 @@ const char kComposePromotionUmaName[] = "ComposePromotion";
 
 const char kEphemeralHomeModuleBackendKey[] = "ephemeral_home_module_backend";
 
+const char kIosDefaultBrowserPromoKey[] = "ios_default_browser_promo";
+const char kIosDefaultBrowserPromoUmaName[] = "IosDefaultBrowserPromo";
+const char kIosDefaultBrowserPromoShowLabel[] = "ShowIosDefaultBrowserPromo";
+
 // The key is used to decide whether the user would use FedCM.
 const char kFedCmUserKey[] = "fedcm_user";
 const char kFedCmUserUmaName[] = "FedCmUser";
@@ -160,12 +164,14 @@ const char kAdaptiveToolbarModelLabelVoice[] = "Voice";
 const char kAdaptiveToolbarModelLabelTranslate[] = "Translate";
 const char kAdaptiveToolbarModelLabelAddToBookmarks[] = "AddToBookmarks";
 const char kAdaptiveToolbarModelLabelReadAloud[] = "ReadAloud";
+const char kAdaptiveToolbarModelLabelOpenInBrowser[] = "OpenInBrowser";
 
 // Labels for contextual page actions model.
 const char kContextualPageActionModelLabelDiscounts[] = "discounts";
 const char kContextualPageActionModelLabelPriceTracking[] = "price_tracking";
 const char kContextualPageActionModelLabelReaderMode[] = "reader_mode";
 const char kContextualPageActionModelLabelPriceInsights[] = "price_insights";
+const char kContextualPageActionModelLabelTabGrouping[] = "tab_grouping";
 
 // Labels for cross device segment.
 const char kNoCrossDeviceUsage[] = "NoCrossDeviceUsage";
@@ -204,14 +210,12 @@ const char kTabletProductivityUserModelLabelHigh[] = "High";
 // Labels for Android Home modules for ranking.
 const char kSingleTab[] = "SingleTab";
 const char kPriceChange[] = "PriceChange";
-const char kTabResumptionForAndroidHome[] = "TabResumption";
 const char kSafetyHub[] = "SafetyHub";
 const char kAuxiliarySearch[] = "AuxiliarySearch";
 
 // Input Context keys for freshness for Android Home modules.
 const char kSingleTabFreshness[] = "single_tab_freshness";
 const char kPriceChangeFreshness[] = "price_change_freshness";
-const char kTabResumptionForAndroidHomeFreshness[] = "tab_resumption_freshness";
 const char kSafetyHubFreshness[] = "safety_hub_freshness";
 const char kAuxiliarySearchFreshness[] = "auxiliary_search_freshness";
 
@@ -222,6 +226,7 @@ const char kSafetyCheck[] = "SafetyCheck";
 const char kTabResumption[] = "TabResumption";
 const char kParcelTracking[] = "ParcelTracking";
 const char kPriceTrackingPromo[] = "PriceTrackingPromo";
+const char kShopCard[] = "ShopCard";
 
 // Input Context keys for freshness for IOS modules.
 const char kMostVisitedTilesFreshness[] = "most_visited_tiles_freshness";
@@ -230,6 +235,7 @@ const char kSafetyCheckFreshness[] = "safety_check_freshness";
 const char kTabResumptionFreshness[] = "tab_resumption_freshness";
 const char kParcelTrackingFreshness[] = "parcel_tracking_freshness";
 const char kIsShowingStartSurface[] = "is_showing_start_surface";
+const char kShopCardFreshness[] = "shop_card_freshness";
 
 // Labels for desktop new tab page drive module model.
 // Any updates to these strings need to also update the field trials allowlist
@@ -243,6 +249,8 @@ const char kContextualPageActionModelInputReaderMode[] = "has_reader_mode";
 const char kContextualPageActionModelInputPriceInsights[] =
     "has_price_insights";
 const char kContextualPageActionModelInputDiscounts[] = "has_discounts";
+const char kContextualPageActionModelInputTabGrouping[] =
+    "has_tab_grouping_suggestion";
 
 const char kComposePrmotionLabelShow[] = "Show";
 const char kComposePrmotionLabelDontShow[] = "DontShow";
@@ -254,6 +262,17 @@ constexpr char kModelExecutionSamplingRateKey[] =
 // Finch parameter key for introducing delay(in ms) in model initialization at
 // startup.
 constexpr char kModelInitializationDelay[] = "model_initialization_delay";
+
+// Input Context keys for FedCM.
+const char kFedCmHost[] = "host";
+const char kFedCmUrl[] = "url";
+const char kFedCmPerPageLoadClickthroughRate[] =
+    "per_page_load_clickthrough_rate";
+const char kFedCmPerClientClickthroughRate[] = "per_client_clickthrough_rate";
+const char kFedCmPerImpressionClickthroughRate[] =
+    "per_impression_clickthrough_rate";
+const char kFedCmLikelyToSignin[] = "likely_to_signin";
+const char kFedCmLikelyInsufficientData[] = "likely_insufficient_data";
 
 }  // namespace segmentation_platform
 

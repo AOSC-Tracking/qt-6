@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-rdsum/rvv.c.in
 //   Generator: tools/xngen
@@ -11,8 +12,8 @@
 
 #include <riscv_vector.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/reduce.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/reduce.h"
 
 
 void xnn_f32_rdsum_ukernel_7p7x__rvv_u1v(
@@ -22,7 +23,7 @@ void xnn_f32_rdsum_ukernel_7p7x__rvv_u1v(
     size_t input_stride,
     const float* zero,
     float* output,
-    const struct xnn_f32_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_scale_params* restrict params)
 {
   assert(rows != 0);
   assert(channels != 0);

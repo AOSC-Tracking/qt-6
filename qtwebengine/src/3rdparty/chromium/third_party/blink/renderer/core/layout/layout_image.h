@@ -30,13 +30,11 @@
 #include "third_party/blink/renderer/core/layout/layout_image_resource.h"
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/natural_sizing_info.h"
-#include "third_party/blink/renderer/platform/loader/fetch/resource_client.h"
 
 namespace blink {
 
 class HTMLAreaElement;
 class HTMLMapElement;
-class SVGImage;
 
 // LayoutImage is used to display any image type.
 //
@@ -94,7 +92,7 @@ class CORE_EXPORT LayoutImage : public LayoutReplaced {
     return image_device_pixel_ratio_;
   }
 
-  void IntrinsicSizeChanged() override {
+  void NaturalSizeChanged() override {
     NOT_DESTROYED();
     // The replaced content transform depends on the intrinsic size (see:
     // FragmentPaintPropertyTreeBuilder::UpdateReplacedContentTransform).
@@ -102,6 +100,13 @@ class CORE_EXPORT LayoutImage : public LayoutReplaced {
     if (image_resource_)
       ImageChanged(image_resource_->ImagePtr(), CanDeferInvalidation::kNo);
   }
+
+  ResourcePriority ComputeResourcePriority() const final;
+  ResourcePriority CachedResourcePriority() const final;
+  gfx::Size ComputeSpeculativeDecodeSize() const final;
+  gfx::Size CachedSpeculativeDecodeSize() const final;
+  InterpolationQuality ComputeSpeculativeDecodeQuality() const final;
+  InterpolationQuality CachedSpeculativeDecodeQuality() const final;
 
   const char* GetName() const override {
     NOT_DESTROYED();
@@ -123,7 +128,6 @@ class CORE_EXPORT LayoutImage : public LayoutReplaced {
   }
 
  protected:
-  SVGImage* EmbeddedSVGImage() const;
   PhysicalNaturalSizingInfo GetNaturalDimensions() const override;
 
   void ImageChanged(WrappedImagePtr, CanDeferInvalidation) override;
@@ -168,9 +172,10 @@ class CORE_EXPORT LayoutImage : public LayoutReplaced {
                    const PhysicalOffset& accumulated_offset,
                    HitTestPhase) final;
 
-  void InvalidatePaintAndMarkForLayoutIfNeeded(CanDeferInvalidation);
+  void InvalidatePaintWithoutLayoutChange(CanDeferInvalidation);
   bool UpdateNaturalSizeIfNeeded();
   bool NeedsLayoutOnNaturalSizeChange() const;
+  bool InvalidateLayoutOnNaturalSizeChange();
 
   // The natural dimensions for the image.
   PhysicalNaturalSizingInfo natural_dimensions_;
@@ -193,6 +198,12 @@ class CORE_EXPORT LayoutImage : public LayoutReplaced {
 
   friend class MutableForPainting;
   PhysicalRect last_paint_rect_;
+
+  mutable struct {
+    ResourcePriority cached_resource_priority;
+    gfx::Size cached_speculative_decode_size;
+    InterpolationQuality cached_speculative_decode_quality;
+  } speculative_decode_parameters_;
 };
 
 template <>

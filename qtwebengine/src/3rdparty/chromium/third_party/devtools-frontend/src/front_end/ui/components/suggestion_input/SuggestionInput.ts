@@ -3,19 +3,11 @@
 // found in the LICENSE file.
 
 import * as CodeHighlighter from '../../../ui/components/code_highlighter/code_highlighter.js';
-import codeHighlighterStylesRaw from '../../../ui/components/code_highlighter/codeHighlighter.css.js';
+import codeHighlighterStyles from '../../../ui/components/code_highlighter/codeHighlighter.css.js';
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 
-import contentEditableStylesRaw from './suggestionInput.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const codeHighlighterStyles = new CSSStyleSheet();
-codeHighlighterStyles.replaceSync(codeHighlighterStylesRaw.cssContent);
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const contentEditableStyles = new CSSStyleSheet();
-contentEditableStyles.replaceSync(contentEditableStylesRaw.cssContent);
+import contentEditableStyles from './suggestionInput.css.js';
 
 const mod = (a: number, n: number): number => {
   return ((a % n) + n) % n;
@@ -128,8 +120,8 @@ class SuggestEvent extends Event {
  */
 class SuggestionInitEvent extends Event {
   static readonly eventName = 'suggestioninit';
-  listeners: [string, (event: Event) => void][];
-  constructor(listeners: [string, (event: Event) => void][]) {
+  listeners: Array<[string, (event: Event) => void]>;
+  constructor(listeners: Array<[string, (event: Event) => void]>) {
     super(SuggestionInitEvent.eventName);
     this.listeners = listeners;
   }
@@ -146,9 +138,7 @@ const defaultSuggestionFilter = (option: string, query: string): boolean =>
  */
 @customElement('devtools-suggestion-box')
 class SuggestionBox extends LitElement {
-  static override styles = [contentEditableStyles];
-
-  @property(jsonPropertyOptions) declare options: Readonly<string[]>;
+  @property(jsonPropertyOptions) declare options: readonly string[];
   @property() declare expression: string;
   @property() declare suggestionFilter?: SuggestionFilter;
 
@@ -226,7 +216,7 @@ class SuggestionBox extends LitElement {
       return;
     }
 
-    return html`<ul class="suggestions">
+    return html`<style>${contentEditableStyles}</style><ul class="suggestions">
       ${this.#suggestions.map((suggestion, index) => {
       return html`<li
           class=${classMap({
@@ -251,12 +241,10 @@ export class SuggestionInput extends LitElement {
     delegatesFocus: true,
   } as const;
 
-  static override styles = [contentEditableStyles, codeHighlighterStyles];
-
   /**
    * State passed to devtools-suggestion-box.
    */
-  @property(jsonPropertyOptions) declare options: Readonly<string[]>;
+  @property(jsonPropertyOptions) declare options: readonly string[];
   @property({type: Boolean}) declare autocomplete?: boolean;
   @property() declare suggestionFilter?: SuggestionFilter;
   @state() declare expression: string;
@@ -353,7 +341,9 @@ export class SuggestionInput extends LitElement {
 
   protected override render(): Lit.TemplateResult {
     // clang-format off
-    return html`<devtools-editable-content
+    return html`<style>${contentEditableStyles}</style>
+      <style>${codeHighlighterStyles}</style>
+      <devtools-editable-content
         ?disabled=${this.disabled}
         class=${classMap({
           strikethrough: !this.strikethrough,

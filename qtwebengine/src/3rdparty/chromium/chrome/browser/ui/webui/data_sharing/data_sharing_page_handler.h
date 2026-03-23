@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_DATA_SHARING_DATA_SHARING_PAGE_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_DATA_SHARING_DATA_SHARING_PAGE_HANDLER_H_
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/ui/webui/data_sharing/data_sharing.mojom.h"
@@ -40,6 +41,11 @@ class DataSharingPageHandler : public data_sharing::mojom::PageHandler {
 
   void ApiInitComplete() override;
 
+  void MakeTabGroupShared(const std::string& tab_group_id,
+                          const std::string& group_id,
+                          const std::string& access_token,
+                          MakeTabGroupSharedCallback callback) override;
+
   void GetShareLink(const std::string& group_id,
                     const std::string& access_token,
                     GetShareLinkCallback callback) override;
@@ -48,10 +54,11 @@ class DataSharingPageHandler : public data_sharing::mojom::PageHandler {
                           const std::string& access_token,
                           GetTabGroupPreviewCallback callback) override;
 
-  void AssociateTabGroupWithGroupId(const std::string& tab_group_id,
-                                    const std::string& group_id) override;
-
   void OpenTabGroup(const std::string& group_id) override;
+
+  void AboutToUnShareTabGroup(const std::string& tab_group_id) override;
+
+  void OnTabGroupUnShareComplete(const std::string& tab_group_id) override;
 
   void ReadGroups(data_sharing::mojom::ReadGroupsParamsPtr read_groups_params,
                   data_sharing::mojom::Page::ReadGroupsCallback callback);
@@ -61,6 +68,14 @@ class DataSharingPageHandler : public data_sharing::mojom::PageHandler {
 
   void LeaveGroup(std::string group_id,
                   data_sharing::mojom::Page::LeaveGroupCallback callback);
+
+  void ReadGroupWithToken(
+      data_sharing::mojom::ReadGroupWithTokenParamPtr param,
+      data_sharing::mojom::Page::ReadGroupWithTokenCallback callback);
+
+  void OnGroupAction(
+      data_sharing::mojom::GroupAction action,
+      data_sharing::mojom::GroupActionProgress progress) override;
 
  private:
   Profile* GetProfile();
@@ -79,6 +94,9 @@ class DataSharingPageHandler : public data_sharing::mojom::PageHandler {
   mojo::Remote<data_sharing::mojom::Page> page_;
 
   bool api_initialized_ = false;
+
+  // Whether the renderer has attempted to make tab group shared.
+  bool has_made_tab_group_shared_ = false;
 
   base::WeakPtrFactory<DataSharingPageHandler> weak_ptr_factory_{this};
 };

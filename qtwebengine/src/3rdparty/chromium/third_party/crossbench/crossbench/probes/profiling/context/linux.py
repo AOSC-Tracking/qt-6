@@ -9,12 +9,14 @@ import json
 import logging
 import multiprocessing
 import time
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Optional
+
+from typing_extensions import override
 
 from crossbench import plt
-from crossbench.browsers.chrome.version import ChromeVersion
+from crossbench.browsers.chromium.version import ChromiumVersion
+from crossbench.cli import ui
 from crossbench.helper import fs_helper
-from crossbench.helper.spinner import Spinner
 from crossbench.probes.profiling.context.base import PosixProfilingContext
 from crossbench.probes.profiling.enum import CleanupMode
 
@@ -23,7 +25,7 @@ if TYPE_CHECKING:
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
-V8_PERF_PROF_PATH_FLAG_MIN_VERSION = ChromeVersion((118, 0, 5993, 48))
+V8_PERF_PROF_PATH_FLAG_MIN_VERSION = ChromiumVersion((118, 0, 5993, 48))
 PERF_DATA_PATTERN = "*.perf.data"
 JIT_DUMP_PATTERN = "jit-*.dump"
 
@@ -35,6 +37,7 @@ class LinuxProfilingContext(PosixProfilingContext):
       JIT_DUMP_PATTERN,
   )
 
+  @override
   def get_default_result_path(self) -> pth.AnyPath:
     result_dir = super().get_default_result_path()
     self.browser_platform.mkdir(result_dir)
@@ -42,9 +45,9 @@ class LinuxProfilingContext(PosixProfilingContext):
 
   @property
   def has_perf_prof_path(self) -> bool:
-    # TODO: replace with full version comparison
-    return self.browser.major_version > V8_PERF_PROF_PATH_FLAG_MIN_VERSION.major
+    return self.browser.version > V8_PERF_PROF_PATH_FLAG_MIN_VERSION
 
+  @override
   def setup(self) -> None:
     self.setup_v8_log_path()
     if self.has_perf_prof_path:
@@ -72,7 +75,7 @@ class LinuxProfilingContext(PosixProfilingContext):
 
   def stop_process(self) -> None:
     if self._profiling_process:
-      self.browser_platform.wait_and_kill(self._profiling_process)
+      self.browser_platform.terminate_gracefully(self._profiling_process)
       self._profiling_process = None
 
   def teardown(self) -> ProbeResult:
@@ -85,11 +88,11 @@ class LinuxProfilingContext(PosixProfilingContext):
                    "You might get partial profiles")
     time.sleep(2)
 
-    perf_files: List[pth.AnyPath] = fs_helper.sort_by_file_size(
+    perf_files: list[pth.AnyPath] = fs_helper.sort_by_file_size(
         list(self.browser_platform.glob(self.result_path, PERF_DATA_PATTERN)),
         self.browser_platform)
     raw_perf_files = perf_files
-    urls: List[str] = []
+    urls: list[str] = []
     try:
       if self.probe.sample_js:
         perf_files = self._inject_v8_symbols(self.run, perf_files)
@@ -108,11 +111,11 @@ class LinuxProfilingContext(PosixProfilingContext):
     return self.browser_result(trace=perf_files)
 
   def _inject_v8_symbols(self, run: Run,
-                         perf_files: List[pth.AnyPath]) -> List[pth.AnyPath]:
+                         perf_files: list[pth.AnyPath]) -> list[pth.AnyPath]:
     with run.actions(
         f"Probe {self.probe.name}: "
         f"Injecting V8 symbols into {len(perf_files)} profiles",
-        verbose=True), Spinner():
+        verbose=True), ui.spinner():
       # Filter out empty files
       perf_files = [
           file for file in perf_files
@@ -132,20 +135,20 @@ class LinuxProfilingContext(PosixProfilingContext):
       return [file for file in perf_jitted_files if file is not None]
 
   def _export_to_pprof(self, run: Run,
-                       perf_files: List[pth.AnyPath]) -> List[str]:
+                       perf_files: list[pth.AnyPath]) -> list[str]:
     assert self.probe.run_pprof
     run_details_json = json.dumps(run.get_browser_details_json())
     with run.actions(
         f"Probe {self.probe.name}: "
         f"exporting {len(perf_files)} profiles to pprof (slow)",
-        verbose=True), Spinner():
+        verbose=True), ui.spinner():
       self.browser_platform.sh(
           "gcertstatus >&/dev/null || "
           "(echo 'Authenticating with gcert:'; gcert)",
           shell=True)
       size = len(perf_files)
       items = zip(perf_files, [run_details_json] * size)
-      urls: List[str] = []
+      urls: list[str] = []
       if self.browser_platform.is_remote:
         # Use loop, as we cannot easily serialize the remote platform.
         for perf_data_file, run_details in items:
@@ -182,8 +185,8 @@ class LinuxProfilingContext(PosixProfilingContext):
 
 
 def prepare_linux_perf_env(platform: plt.Platform,
-                           cwd: pth.AnyPath) -> Dict[str, str]:
-  env: Dict[str, str] = dict(platform.environ)
+                           cwd: pth.AnyPath) -> dict[str, str]:
+  env: dict[str, str] = dict(platform.environ)
   env["JITDUMPDIR"] = str(platform.absolute(cwd))
   return env
 
@@ -263,6 +266,6 @@ def linux_perf_probe_pprof(
     logging.info("PPROF (with js-symbols):")
   else:
     logging.info("PPROF (no js-symbols):")
-  logging.info("  linux-perf:   %s %s", perf_data_file.name, size)
+  logging.info("  linux-perf:   %s [%s]", perf_data_file.name, size)
   logging.info("  pprof result: %s", url)
   return url

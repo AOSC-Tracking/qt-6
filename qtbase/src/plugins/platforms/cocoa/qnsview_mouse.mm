@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // This file is included from qnsview.mm, and only used to organize the code
 
@@ -289,8 +290,7 @@ static const QPointingDevice *pointingDeviceFor(qint64 deviceID)
         if (qIsNaN(windowPoint.x) || qIsNaN(windowPoint.y)) {
             screenPoint = [NSEvent mouseLocation];
         } else {
-            NSRect screenRect = [[theEvent window] convertRectToScreen:NSMakeRect(windowPoint.x, windowPoint.y, 1, 1)];
-            screenPoint = screenRect.origin;
+            screenPoint = [theEvent.window convertPointToScreen:windowPoint];
         }
     } else {
         screenPoint = [NSEvent mouseLocation];

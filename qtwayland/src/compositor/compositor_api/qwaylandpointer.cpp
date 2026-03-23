@@ -275,6 +275,15 @@ QPointF QWaylandPointer::currentSpacePosition() const
 }
 
 /*!
+ * \property QWaylandPointer::isButtonPressed
+ *
+ * This property holds whether any mouse button is currently pressed.
+ *
+ * The value is \c true if at least one mouse button is pressed; otherwise
+ * \c false.
+ */
+
+/*!
  * Returns true if any button is currently pressed. Otherwise returns false.
  */
 bool QWaylandPointer::isButtonPressed() const

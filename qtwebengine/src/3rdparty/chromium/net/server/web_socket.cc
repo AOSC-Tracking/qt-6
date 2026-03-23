@@ -11,6 +11,7 @@
 #include "base/check.h"
 #include "base/hash/sha1.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_view_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_byteorder.h"
 #include "net/server/http_connection.h"
@@ -117,7 +118,7 @@ WebSocketParseResult WebSocket::Read(std::string* message) {
 
   WebSocketParseResult result = WebSocketParseResult::FRAME_OK_MIDDLE;
   HttpConnection::ReadIOBuffer* read_buf = connection_->read_buf();
-  std::string_view frame(read_buf->StartOfBuffer(), read_buf->GetSize());
+  std::string_view frame = base::as_string_view(read_buf->readable_bytes());
   int bytes_consumed = 0;
   result = encoder_->DecodeFrame(frame, &bytes_consumed, message);
   read_buf->DidConsume(bytes_consumed);

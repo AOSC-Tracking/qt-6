@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #include "qqmljslintercodegen_p.h"
 
@@ -7,7 +8,6 @@
 #include <QtQmlCompiler/private/qqmljsshadowcheck_p.h>
 #include <QtQmlCompiler/private/qqmljsstoragegeneralizer_p.h>
 #include <QtQmlCompiler/private/qqmljsstorageinitializer_p.h>
-#include <QtQmlCompiler/private/qqmljstypepropagator_p.h>
 #include <QtQmlCompiler/private/qqmljsfunctioninitializer_p.h>
 #include <QtQmlCompiler/private/qqmljsbasicblocks_p.h>
 
@@ -19,10 +19,11 @@ using namespace Qt::StringLiterals;
 
 QQmlJSLinterCodegen::QQmlJSLinterCodegen(QQmlJSImporter *importer, const QString &fileName,
                                          const QStringList &qmldirFiles, QQmlJSLogger *logger,
-                                         const QQmlJS::ContextProperties &knownContextProperties)
+                                         const ContextPropertyInfo &contextPropertyInfo)
     : QQmlJSAotCompiler(importer, fileName, qmldirFiles, logger),
-      m_knownContextProperties(knownContextProperties)
+      m_contextPropertyInfo(contextPropertyInfo)
 {
+    m_flags |= QQmlJSAotCompiler::IsLintCompiler;
 }
 
 void QQmlJSLinterCodegen::setDocument(const QmlIR::JSCodeGen *codegen,
@@ -101,7 +102,7 @@ void QQmlJSLinterCodegen::analyzeFunction(const QV4::Compiler::Context *context,
     blocksAndAnnotations =
             QQmlJSTypePropagator(m_unitGenerator, &m_typeResolver, m_logger,
                                  blocksAndAnnotations.basicBlocks, blocksAndAnnotations.annotations,
-                                 m_passManager, m_knownContextProperties)
+                                 m_passManager, m_contextPropertyInfo)
                     .run(function);
 
     if (m_logger->isCategoryIgnored(qmlCompiler))

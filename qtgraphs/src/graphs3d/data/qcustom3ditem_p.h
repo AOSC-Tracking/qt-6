@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //
 //  W A R N I N G
@@ -65,6 +67,7 @@ public:
     QVector3D m_scaling;
     bool m_scalingAbsolute;
     QQuaternion m_rotation;
+    bool m_rotationAbsolute;
     bool m_visible;
     bool m_shadowCasting;
 

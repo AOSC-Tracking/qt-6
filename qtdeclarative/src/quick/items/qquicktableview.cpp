@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicktableview_p.h"
 #include "qquicktableview_p_p.h"
@@ -580,7 +581,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::forceLayout
+    \qmlmethod void QtQuick::TableView::forceLayout()
 
     Responding to changes in the model are batched so that they are handled
     only once per frame. This means the TableView delays showing any changes
@@ -859,7 +860,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::positionViewAtCell(point cell, PositionMode mode, point offset, rect subRect)
+    \qmlmethod void QtQuick::TableView::positionViewAtCell(point cell, PositionMode mode, point offset, rect subRect)
 
     Positions \l {Flickable::}{contentX} and \l {Flickable::}{contentY} such
     that \a cell is at the position specified by \a mode. \a mode
@@ -918,7 +919,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::positionViewAtIndex(QModelIndex index, PositionMode mode, point offset, rect subRect)
+    \qmlmethod void QtQuick::TableView::positionViewAtIndex(QModelIndex index, PositionMode mode, point offset, rect subRect)
     \since 6.5
 
     Positions the view such that \a index is at the position specified
@@ -962,14 +963,14 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::positionViewAtCell(int column, int row, PositionMode mode, point offset, rect subRect)
+    \qmlmethod void QtQuick::TableView::positionViewAtCell(int column, int row, PositionMode mode, point offset, rect subRect)
     \deprecated
 
     Use \l {positionViewAtIndex()}{positionViewAtIndex(index(row, column), ...)} instead.
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::positionViewAtRow(int row, PositionMode mode, real offset, rect subRect)
+    \qmlmethod void QtQuick::TableView::positionViewAtRow(int row, PositionMode mode, real offset, rect subRect)
 
     Positions \l {Flickable::}{contentY} such that \a row is at the position specified
     by \a mode, \a offset and \a subRect.
@@ -981,7 +982,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::positionViewAtColumn(int column, PositionMode mode, real offset, rect subRect)
+    \qmlmethod void QtQuick::TableView::positionViewAtColumn(int column, PositionMode mode, real offset, rect subRect)
 
     Positions \l {Flickable::}{contentX} such that \a column is at the position specified
     by \a mode, \a offset and \a subRect.
@@ -993,7 +994,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::moveColumn(int source, int destination)
+    \qmlmethod void QtQuick::TableView::moveColumn(int source, int destination)
     \since 6.8
 
     Moves a column from the \a source to the \a destination position.
@@ -1004,7 +1005,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::clearColumnReordering()
+    \qmlmethod void QtQuick::TableView::clearColumnReordering()
     \since 6.8
 
     Resets any previously applied column reordering.
@@ -1014,7 +1015,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::moveRow(int source, int destination)
+    \qmlmethod void QtQuick::TableView::moveRow(int source, int destination)
     \since 6.8
 
     Moves a row from the \a source to the \a destination position.
@@ -1025,7 +1026,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::clearRowReordering()
+    \qmlmethod void QtQuick::TableView::clearRowReordering()
     \since 6.8
 
     Resets any previously applied row reordering.
@@ -1156,7 +1157,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::setColumnWidth(int column, real size)
+    \qmlmethod void QtQuick::TableView::setColumnWidth(int column, real size)
 
     Sets the explicit column width of column \a column to \a size.
 
@@ -1202,7 +1203,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::clearColumnWidths()
+    \qmlmethod void QtQuick::TableView::clearColumnWidths()
 
     Clears all the column widths set with \l setColumnWidth().
 
@@ -1212,7 +1213,7 @@
 */
 
 /*!
-    \qmlmethod qreal QtQuick::TableView::explicitColumnWidth(int column)
+    \qmlmethod real QtQuick::TableView::explicitColumnWidth(int column)
 
     Returns the width of the \a column set with \l setColumnWidth(). This width might
     differ from the actual width of the column, if a \l columnWidthProvider
@@ -1228,7 +1229,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::setRowHeight(int row, real size)
+    \qmlmethod void QtQuick::TableView::setRowHeight(int row, real size)
 
     Sets the explicit row height of row \a row to \a size.
 
@@ -1274,7 +1275,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::clearRowHeights()
+    \qmlmethod void QtQuick::TableView::clearRowHeights()
 
     Clears all the row heights set with \l setRowHeight().
 
@@ -1284,7 +1285,7 @@
 */
 
 /*!
-    \qmlmethod qreal QtQuick::TableView::explicitRowHeight(int row)
+    \qmlmethod real QtQuick::TableView::explicitRowHeight(int row)
 
     Returns the height of the \a row set with \l setRowHeight(). This height might
     differ from the actual height of the column, if a \l rowHeightProvider
@@ -1382,7 +1383,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::edit(QModelIndex modelIndex)
+    \qmlmethod void QtQuick::TableView::edit(QModelIndex modelIndex)
     \since 6.5
 
     This function starts an editing session for the cell that represents
@@ -1400,7 +1401,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TableView::closeEditor()
+    \qmlmethod void QtQuick::TableView::closeEditor()
     \since 6.5
 
     If the user is editing a cell, calling this function will
@@ -4573,32 +4574,37 @@ void QQuickTableViewPrivate::syncDelegateModelAccess()
 
 QVariant QQuickTableViewPrivate::modelImpl() const
 {
-    return assignedModel;
+    if (needsModelSynchronization)
+        return assignedModel;
+    if (tableModel)
+        return tableModel->model();
+    return QVariant::fromValue(model);
 }
 
 void QQuickTableViewPrivate::setModelImpl(const QVariant &newModel)
 {
     assignedModel = newModel;
+    needsModelSynchronization = true;
     scheduleRebuildTable(QQuickTableViewPrivate::RebuildOption::All);
     emit q_func()->modelChanged();
 }
 
 void QQuickTableViewPrivate::syncModel()
 {
-    if (compareModel(modelVariant, assignedModel))
+    if (tableModel) {
+        if (tableModel->model() == assignedModel)
+            return;
+    } else if (QVariant::fromValue(model) == assignedModel) {
         return;
+    }
 
     if (model) {
         disconnectFromModel();
         releaseLoadedItems(QQmlTableInstanceModel::NotReusable);
     }
 
-    modelVariant = assignedModel;
-    QVariant effectiveModelVariant = modelVariant;
-    if (effectiveModelVariant.userType() == qMetaTypeId<QJSValue>())
-        effectiveModelVariant = effectiveModelVariant.value<QJSValue>().toVariant();
-
-    const auto instanceModel = qobject_cast<QQmlInstanceModel *>(qvariant_cast<QObject*>(effectiveModelVariant));
+    const auto instanceModel = qobject_cast<QQmlInstanceModel *>(
+                qvariant_cast<QObject *>(assignedModel));
 
     if (instanceModel) {
         if (tableModel) {
@@ -4609,9 +4615,10 @@ void QQuickTableViewPrivate::syncModel()
     } else {
         if (!tableModel)
             createWrapperModel();
-        tableModel->setModel(effectiveModelVariant);
+        tableModel->setModel(assignedModel);
     }
 
+    needsModelSynchronization = false;
     connectToModel();
 }
 
@@ -4748,6 +4755,11 @@ void QQuickTableViewPrivate::connectToModel()
     } else {
         QObjectPrivate::connect(model, &QQmlInstanceModel::modelUpdated, this, &QQuickTableViewPrivate::modelUpdated);
     }
+
+    if (tableModel) {
+        QObject::connect(tableModel, &QQmlTableInstanceModel::modelChanged,
+                         q, &QQuickTableView::modelChanged);
+    }
 }
 
 void QQuickTableViewPrivate::disconnectFromModel()
@@ -4773,6 +4785,11 @@ void QQuickTableViewPrivate::disconnectFromModel()
         disconnect(aim, &QAbstractItemModel::layoutChanged, this, &QQuickTableViewPrivate::layoutChangedCallback);
     } else {
         QObjectPrivate::disconnect(model, &QQmlInstanceModel::modelUpdated, this, &QQuickTableViewPrivate::modelUpdated);
+    }
+
+    if (tableModel) {
+        QObject::disconnect(tableModel, &QQmlTableInstanceModel::modelChanged,
+                            q, &QQuickTableView::modelChanged);
     }
 }
 
@@ -4873,13 +4890,6 @@ void QQuickTableViewPrivate::modelResetCallback()
     Q_Q(QQuickTableView);
     q->closeEditor();
     scheduleRebuildTable(RebuildOption::All);
-}
-
-bool QQuickTableViewPrivate::compareModel(const QVariant& model1, const QVariant& model2) const
-{
-    return (model1 == model2 ||
-            (model1.userType() == qMetaTypeId<QJSValue>() && model2.userType() == qMetaTypeId<QJSValue>() &&
-                                 model1.value<QJSValue>().strictlyEquals(model2.value<QJSValue>())));
 }
 
 void QQuickTableViewPrivate::positionViewAtRow(int row, Qt::Alignment alignment, qreal offset, const QRectF subRect)
@@ -5111,7 +5121,7 @@ void QQuickTableViewPrivate::init()
     // being hovered/dragged. For those cases, we fall back to setting the current index
     // on tap instead. A double tap on a resize area should also revert the section size
     // back to its implicit size.
-    QObject::connect(tapHandler, &QQuickTapHandler::pressedChanged, [this, q, tapHandler] {
+    QObject::connect(tapHandler, &QQuickTapHandler::pressedChanged, q, [this, q, tapHandler] {
         if (!tapHandler->isPressed())
             return;
 
@@ -5122,12 +5132,12 @@ void QQuickTableViewPrivate::init()
             handleTap(tapHandler->point());
     });
 
-    QObject::connect(tapHandler, &QQuickTapHandler::singleTapped, [this, q, tapHandler] {
+    QObject::connect(tapHandler, &QQuickTapHandler::singleTapped, q, [this, q, tapHandler] {
         if (q->isInteractive())
             handleTap(tapHandler->point());
     });
 
-    QObject::connect(tapHandler, &QQuickTapHandler::doubleTapped, [this, q, tapHandler] {
+    QObject::connect(tapHandler, &QQuickTapHandler::doubleTapped, q, [this, q, tapHandler] {
         const bool resizeRow = resizableRows && hoverHandler->m_row != -1;
         const bool resizeColumn = resizableColumns && hoverHandler->m_column != -1;
 
@@ -5798,11 +5808,16 @@ QVariant QQuickTableView::model() const
 void QQuickTableView::setModel(const QVariant &newModel)
 {
     Q_D(QQuickTableView);
-    if (d->compareModel(newModel, d->assignedModel))
+
+    QVariant model = newModel;
+    if (model.userType() == qMetaTypeId<QJSValue>())
+        model = model.value<QJSValue>().toVariant();
+
+    if (model == d->assignedModel)
         return;
 
     closeEditor();
-    d->setModelImpl(newModel);
+    d->setModelImpl(model);
     if (d->selectionModel)
         d->selectionModel->setModel(d->selectionSourceModel());
 }
@@ -5842,6 +5857,7 @@ void QQuickTableView::setEditTriggers(QQuickTableView::EditTriggers editTriggers
 
 /*!
     \qmlproperty enumeration QtQuick::TableView::delegateModelAccess
+    \since 6.10
 
     \include delegatemodelaccess.qdocinc
 */
@@ -6792,7 +6808,7 @@ void QQuickTableView::edit(const QModelIndex &index)
     if (!d->editModel) {
         d->editModel = new QQmlTableInstanceModel(qmlContext(this));
         d->editModel->useImportVersion(d->resolveImportVersion());
-        QObject::connect(d->editModel, &QQmlInstanceModel::initItem,
+        QObject::connect(d->editModel, &QQmlInstanceModel::initItem, this,
                          [this, d] (int serializedModelIndex, QObject *object) {
             // initItemCallback will call setRequiredProperty for each required property in the
             // delegate, both for this class, but also also for any subclasses. setRequiredProperty
@@ -7106,7 +7122,7 @@ QQuickTableViewHoverHandler::QQuickTableViewHoverHandler(QQuickTableView *view)
 {
     setMargin(5);
 
-    connect(this, &QQuickHoverHandler::hoveredChanged, [this] {
+    connect(this, &QQuickHoverHandler::hoveredChanged, this, [this] {
         if (!isHoveringGrid())
             return;
         m_row = -1;
@@ -7279,7 +7295,9 @@ void QQuickTableViewResizeHandler::updateDrag(QPointerEvent *event, QEventPoint 
         // pointer handlers to do flicking, so setting an exclusive grab (together
         // with grab permissions) doens't work ATM.
         tableView->setFiltersChildMouseEvents(false);
+#if QT_CONFIG(cursor)
         tableViewPrivate->setActivePointerHandler(this);
+#endif
         break;
     case DraggingStarted:
         setExclusiveGrab(event, point, true);
@@ -7301,8 +7319,8 @@ void QQuickTableViewResizeHandler::updateDrag(QPointerEvent *event, QEventPoint 
         break; }
     case DraggingFinished: {
         tableView->setFiltersChildMouseEvents(true);
-        tableViewPrivate->setActivePointerHandler(nullptr);
 #if QT_CONFIG(cursor)
+        tableViewPrivate->setActivePointerHandler(nullptr);
         tableViewPrivate->updateCursor();
 #endif
         break; }
@@ -7494,7 +7512,7 @@ void QQuickTableViewSectionDragHandler::handleEventPoint(QPointerEvent *event, Q
                                 &QQuickTableViewSectionDragHandler::handleDragDropAction);
                     }
                     // Connect the timer for scroling
-                    QObject::connect(&m_scrollTimer, &QTimer::timeout, [&]{
+                    QObject::connect(&m_scrollTimer, &QTimer::timeout, this, [&]{
                         const QSizeF dist = tableViewPrivate->scrollTowardsPoint(m_dragPoint, m_step);
                         m_dragPoint.rx() += dist.width() > 0 ? m_step.width() : -m_step.width();
                         m_dragPoint.ry() += dist.height() > 0 ? m_step.height() : -m_step.height();

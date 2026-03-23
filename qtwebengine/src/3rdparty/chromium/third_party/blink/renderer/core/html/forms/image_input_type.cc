@@ -66,10 +66,8 @@ void ImageInputType::AppendToFormData(FormData& form_data) const {
     return;
   }
 
-  DEFINE_STATIC_LOCAL(String, dot_x_string, (".x"));
-  DEFINE_STATIC_LOCAL(String, dot_y_string, (".y"));
-  form_data.AppendFromElement(name + dot_x_string, click_location_.x());
-  form_data.AppendFromElement(name + dot_y_string, click_location_.y());
+  form_data.AppendFromElement(StrCat({name, ".x"}), click_location_.x());
+  form_data.AppendFromElement(StrCat({name, ".y"}), click_location_.y());
 }
 
 String ImageInputType::ResultForDialogSubmit() const {
@@ -180,9 +178,7 @@ unsigned ImageInputType::Height() const {
     // If the image is available, use its height.
     HTMLImageLoader* image_loader = GetElement().ImageLoader();
     if (image_loader && image_loader->GetContent()) {
-      return image_loader->GetContent()
-          ->IntrinsicSize(kRespectImageOrientation)
-          .height();
+      return image_loader->AccessNaturalSize().height();
     }
   }
 
@@ -206,9 +202,7 @@ unsigned ImageInputType::Width() const {
     // If the image is available, use its width.
     HTMLImageLoader* image_loader = GetElement().ImageLoader();
     if (image_loader && image_loader->GetContent()) {
-      return image_loader->GetContent()
-          ->IntrinsicSize(kRespectImageOrientation)
-          .width();
+      return image_loader->AccessNaturalSize().width();
     }
   }
 

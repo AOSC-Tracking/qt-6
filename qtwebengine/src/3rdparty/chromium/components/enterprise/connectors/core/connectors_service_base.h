@@ -46,12 +46,23 @@ class ConnectorsServiceBase {
   // affiliation.
   EnterpriseRealTimeUrlCheckMode GetAppliedRealTimeUrlCheck() const;
 
+  // Returns the policy scope of enterprise real-time URL check
+  std::optional<policy::PolicyScope> GetRealtimeUrlCheckScope() const;
+
   // Returns whether the Connectors are enabled.
   virtual bool IsConnectorEnabled(AnalysisConnector connector) const = 0;
 
   std::vector<std::string> GetReportingServiceProviderNames();
 
   virtual std::optional<ReportingSettings> GetReportingSettings();
+
+  virtual std::optional<std::string> GetBrowserDmToken() const = 0;
+
+  // Obtain a ClientMetadata instance corresponding to the current
+  // OnSecurityEvent policy value.  `is_cloud` is true when using a cloud-
+  // based service provider and false when using a local service provider.
+  virtual std::unique_ptr<ClientMetadata> BuildClientMetadata(
+      bool is_cloud) = 0;
 
 #if !BUILDFLAG(IS_CHROMEOS)
   std::optional<std::string> GetProfileDmToken() const;
@@ -96,6 +107,11 @@ class ConnectorsServiceBase {
   // one exists.
   virtual policy::CloudPolicyManager* GetManagedUserCloudPolicyManager()
       const = 0;
+
+  void PopulateBrowserMetadata(bool include_device_info,
+                               ClientMetadata::Browser* browser_proto);
+  void PopulateDeviceMetadata(const std::string& client_id,
+                              ClientMetadata::Device* device_proto);
 };
 
 }  // namespace enterprise_connectors

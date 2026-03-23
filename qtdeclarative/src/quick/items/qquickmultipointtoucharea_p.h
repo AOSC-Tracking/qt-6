@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKMULTIPOINTTOUCHAREA_H
 #define QQUICKMULTIPOINTTOUCHAREA_H
@@ -281,7 +282,7 @@ private:
     QList<QObject*> _movedTouchPoints;
     int _minimumTouchPoints;
     int _maximumTouchPoints;
-    QVector<int> _lastFilterableTouchPointIds;
+    QList<int> _lastFilterableTouchPointIds;
     QPointer<QQuickTouchPoint> _mouseTouchPoint; // exists when mouse button is down and _mouseEnabled is true; null otherwise
     QEventPoint _mouseQpaTouchPoint; // synthetic QPA touch point to hold state and position of the mouse
     const QPointingDevice *_touchMouseDevice;

@@ -18,9 +18,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>  // NOLINT
-#include <optional>
 #include <string>
-#include <system_error>
+#include <system_error>  // NOLINT
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -34,8 +33,9 @@
 #include "absl/strings/substitute.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "./domain_tests/domain_testing.h"
+#include "./common/temp_dir.h"
 #include "./e2e_tests/test_binary_util.h"
+#include "./fuzztest/internal/escaping.h"
 #include "./fuzztest/internal/io.h"
 #include "./fuzztest/internal/logging.h"
 #include "./fuzztest/internal/printer.h"
@@ -79,8 +79,8 @@ absl::flat_hash_map<std::string, std::string> WithTestSanitizerOptions(
 void ExpectTargetAbort(TerminationStatus status, absl::string_view std_err) {
 #ifdef FUZZTEST_USE_CENTIPEDE
   EXPECT_THAT(status, Ne(ExitCode(0)));
-  EXPECT_TRUE(
-      RE2::PartialMatch(std_err, absl::StrCat("Exit code\\s*:\\s*", SIGABRT)))
+  EXPECT_TRUE(RE2::PartialMatch(std_err,
+                                absl::StrCat("[Ee]xit code\\s*:\\s*", SIGABRT)))
       << std_err;
 #else
   EXPECT_THAT(status, Eq(Signal(SIGABRT)));
@@ -622,48 +622,6 @@ TEST_F(UnitTestModeTest, InputsAreSkippedWhenRequestedInTests) {
   EXPECT_THAT(std_err, HasSubstr("Skipped input"));
 }
 
-class GetRandomValueTest : public UnitTestModeTest {
- protected:
-  int GetValueFromInnerTest(
-      const absl::flat_hash_map<std::string, std::string>& env = {}) {
-    auto [status, std_out, std_err] =
-        Run("DomainTest.GetRandomValue",
-            /*target_binary=*/"testdata/domain_tests", env);
-    int val = 0;
-    FUZZTEST_INTERNAL_CHECK(
-        RE2::PartialMatch(
-            std_out, R"re(==<domain\.GetRandomValue\(\): (-?\d+)>==)re", &val),
-        "Failed to match a value from DomainTest.GetRandomValue!");
-    return val;
-  }
-};
-
-TEST_F(GetRandomValueTest, DestabilizesBitGen) {
-  int val = GetValueFromInnerTest();
-  int other_val = val;
-  for (int i = 0;
-       i < IterationsToHitAll(/*num_cases=*/1, /*hit_probability=*/2.0 / 3);
-       ++i) {
-    other_val = GetValueFromInnerTest();
-    if (other_val != val) break;
-  }
-
-  EXPECT_NE(val, other_val);
-}
-
-TEST_F(GetRandomValueTest, SettingPrngSeedReproducesValue) {
-  int val =
-      GetValueFromInnerTest(/*env=*/
-                            {{"FUZZTEST_PRNG_SEED",
-                              "pJJCK_iNZeUJGe8M42hjOcQ8T2pCXSrQ4Y1dsU3M2_g"}});
-  int other_val =
-      GetValueFromInnerTest(/*env=*/
-                            {{"FUZZTEST_PRNG_SEED",
-                              "pJJCK_iNZeUJGe8M42hjOcQ8T2pCXSrQ4Y1dsU3M2_g"}});
-
-  EXPECT_EQ(val, other_val);
-}
-
 // Tests for the FuzzTest command line interface.
 class GenericCommandLineInterfaceTest : public ::testing::Test {
  protected:
@@ -676,10 +634,11 @@ class GenericCommandLineInterfaceTest : public ::testing::Test {
           {}) {
     flags["print_subprocess_log"] = "true";
     return RunBinary(BinaryPath(binary),
-                     RunOptions{.flags = non_fuzztest_flags,
-                                .fuzztest_flags = flags,
-                                .env = WithTestSanitizerOptions(env),
-                                .timeout = timeout});
+                     RunOptions{/*flags=*/non_fuzztest_flags,
+                                /*fuzztest_flags=*/flags,
+                                /*raw_args=*/{},
+                                /*env=*/WithTestSanitizerOptions(env),
+                                /*timeout=*/timeout});
   }
 };
 
@@ -784,16 +743,17 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, LimitsFuzzingRunsWhenTimeoutIsSet) {
   EXPECT_THAT(std_err, HasSubstr("Fuzzing timeout set to: 1s")) << std_err;
 }
 
-TEST_F(FuzzingModeCommandLineInterfaceTest, ReproducerIsDumpedWhenEnvVarIsSet) {
+TEST_F(FuzzingModeCommandLineInterfaceTest,
+       ReproducerIsDumpedWhenReproducersOutDirEnvVarIsSet) {
   TempDir out_dir;
 
   auto [status, std_out, std_err] =
       RunWith({{"fuzz", "MySuite.StringFast"}},
-              {{"FUZZTEST_REPRODUCERS_OUT_DIR", out_dir.dirname()}});
+              {{"FUZZTEST_REPRODUCERS_OUT_DIR", out_dir.path()}});
   EXPECT_THAT(std_err, HasSubstr("argument 0: \"Fuzz"));
   ExpectTargetAbort(status, std_err);
 
-  auto replay_files = ReadFileOrDirectory(out_dir.dirname());
+  auto replay_files = ReadFileOrDirectory(out_dir.path().c_str());
   ASSERT_EQ(replay_files.size(), 1) << std_err;
   auto parsed = IRObject::FromString(replay_files[0].data);
   ASSERT_TRUE(parsed) << std_err;
@@ -803,7 +763,35 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, ReproducerIsDumpedWhenEnvVarIsSet) {
               AllOf(HasSubstr("Reproducer file was dumped at:"),
                     HasSubstr(replay_files[0].path),
                     HasSubstr(absl::StrCat("--test_env=FUZZTEST_REPLAY=",
-                                           replay_files[0].path))));
+                                           replay_files[0].path))))
+      << std_err;
+}
+
+TEST_F(FuzzingModeCommandLineInterfaceTest,
+       ReproducerIsDumpedWhenUndeclaredOutputsEnvVarIsSet) {
+  TempDir out_dir;
+
+  auto [status, std_out, std_err] =
+      RunWith({{"fuzz", "MySuite.StringFast"}},
+              {{"TEST_UNDECLARED_OUTPUTS_DIR", out_dir.path()}});
+  EXPECT_THAT(std_err, HasSubstr("argument 0: \"Fuzz"));
+  ExpectTargetAbort(status, std_err);
+
+  auto replay_files = ReadFileOrDirectory(out_dir.path().c_str());
+  ASSERT_EQ(replay_files.size(), 1) << std_err;
+  auto parsed = IRObject::FromString(replay_files[0].data);
+  ASSERT_TRUE(parsed) << std_err;
+  auto args = parsed->ToCorpus<std::tuple<std::string>>();
+  EXPECT_THAT(args, Optional(FieldsAre(StartsWith("Fuzz")))) << std_err;
+  EXPECT_THAT(std_err,
+              AllOf(HasSubstr("Reproducer file was dumped under "
+                              "TEST_UNDECLARED_OUTPUTS_DIR"
+                              ),
+                    HasSubstr(replay_files[0].path),
+                    HasSubstr(absl::StrCat(
+                        "--test_env=FUZZTEST_REPLAY=/tmp/fuzztest_repro/",
+                        Basename(replay_files[0].path)))))
+      << std_err;
 }
 
 TEST_F(FuzzingModeCommandLineInterfaceTest, SavesCorpusWhenEnvVarIsSet) {
@@ -815,9 +803,9 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, SavesCorpusWhenEnvVarIsSet) {
   // find the crash without saving some corpus.
   auto [status, std_out, std_err] =
       RunWith({{"fuzz", "MySuite.String"}},
-              {{"FUZZTEST_TESTSUITE_OUT_DIR", out_dir.dirname()}});
+              {{"FUZZTEST_TESTSUITE_OUT_DIR", out_dir.path()}});
 
-  auto corpus_files = ReadFileOrDirectory(out_dir.dirname());
+  auto corpus_files = ReadFileOrDirectory(out_dir.path().c_str());
   EXPECT_THAT(corpus_files, Not(IsEmpty())) << std_err;
 }
 
@@ -857,14 +845,14 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, RestoresCorpusWhenEnvVarIsSet) {
   // find the crash without saving some corpus.
   auto [producer_status, producer_std_out, producer_std_err] =
       RunWith({{"fuzz", "MySuite.String"}, {"fuzz_for", "10s"}},
-              {{"FUZZTEST_TESTSUITE_OUT_DIR", corpus_dir.dirname()}});
+              {{"FUZZTEST_TESTSUITE_OUT_DIR", corpus_dir.path()}});
 
-  auto corpus_files = ReadFileOrDirectory(corpus_dir.dirname());
+  auto corpus_files = ReadFileOrDirectory(corpus_dir.path().c_str());
   ASSERT_THAT(corpus_files, Not(IsEmpty())) << producer_std_err;
 
   auto [consumer_status, consumer_std_out, consumer_std_err] =
       RunWith({{"fuzz", "MySuite.String"}},
-              {{"FUZZTEST_TESTSUITE_IN_DIR", corpus_dir.dirname()},
+              {{"FUZZTEST_TESTSUITE_IN_DIR", corpus_dir.path()},
                {"FUZZTEST_MAX_FUZZING_RUNS", "0"}});
   ExpectCorpusInputMessageInLogs(consumer_std_err, corpus_files.size());
 }
@@ -876,9 +864,9 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, MinimizesCorpusWhenEnvVarIsSet) {
   // find the crash without saving some corpus.
   auto [producer_status, producer_std_out, producer_std_err] =
       RunWith({{"fuzz", "MySuite.String"}, {"fuzz_for", "10s"}},
-              {{"FUZZTEST_TESTSUITE_OUT_DIR", corpus_dir.dirname()}});
+              {{"FUZZTEST_TESTSUITE_OUT_DIR", corpus_dir.path()}});
 
-  auto corpus_files = ReadFileOrDirectory(corpus_dir.dirname());
+  auto corpus_files = ReadFileOrDirectory(corpus_dir.path().c_str());
   ASSERT_THAT(corpus_files, Not(IsEmpty())) << producer_std_err;
   std::vector<std::string> corpus_data;
   for (const FilePathAndData& corpus_file : corpus_files) {
@@ -887,11 +875,11 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, MinimizesCorpusWhenEnvVarIsSet) {
 
   auto [minimizer_status, minimizer_std_out, minimizer_std_err] =
       RunWith({{"fuzz", "MySuite.String"}},
-              {{"FUZZTEST_MINIMIZE_TESTSUITE_DIR", corpus_dir.dirname()},
-               {"FUZZTEST_TESTSUITE_OUT_DIR", minimized_corpus_dir.dirname()}});
+              {{"FUZZTEST_MINIMIZE_TESTSUITE_DIR", corpus_dir.path()},
+               {"FUZZTEST_TESTSUITE_OUT_DIR", minimized_corpus_dir.path()}});
 
   auto minimized_corpus_files =
-      ReadFileOrDirectory(minimized_corpus_dir.dirname());
+      ReadFileOrDirectory(minimized_corpus_dir.path().c_str());
   EXPECT_THAT(minimized_corpus_files,
               AllOf(Not(IsEmpty()), SizeIs(Le(corpus_files.size()))))
       << minimizer_std_err;
@@ -916,9 +904,9 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, MinimizesDuplicatedCorpus) {
   // find the crash without saving some corpus.
   auto [producer_status, producer_std_out, producer_std_err] =
       RunWith({{"fuzz", "MySuite.String"}, {"fuzz_for", "10s"}},
-              {{"FUZZTEST_TESTSUITE_OUT_DIR", corpus_dir.dirname()}});
+              {{"FUZZTEST_TESTSUITE_OUT_DIR", corpus_dir.path()}});
 
-  auto corpus_files = ReadFileOrDirectory(corpus_dir.dirname());
+  auto corpus_files = ReadFileOrDirectory(corpus_dir.path().c_str());
   ASSERT_THAT(corpus_files, Not(IsEmpty())) << producer_std_err;
   for (const auto& corpus_file : corpus_files) {
     ASSERT_TRUE(WriteFile(corpus_file.path + "_dup", corpus_file.data));
@@ -926,11 +914,11 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, MinimizesDuplicatedCorpus) {
 
   auto [minimizer_status, minimizer_std_out, minimizer_std_err] =
       RunWith({{"fuzz", "MySuite.String"}},
-              {{"FUZZTEST_MINIMIZE_TESTSUITE_DIR", corpus_dir.dirname()},
-               {"FUZZTEST_TESTSUITE_OUT_DIR", minimized_corpus_dir.dirname()}});
+              {{"FUZZTEST_MINIMIZE_TESTSUITE_DIR", corpus_dir.path()},
+               {"FUZZTEST_TESTSUITE_OUT_DIR", minimized_corpus_dir.path()}});
 
   auto minimized_corpus_files =
-      ReadFileOrDirectory(minimized_corpus_dir.dirname());
+      ReadFileOrDirectory(minimized_corpus_dir.path().c_str());
   EXPECT_THAT(minimized_corpus_files,
               AllOf(Not(IsEmpty()), SizeIs(Le(corpus_files.size()))))
       << minimizer_std_err;
@@ -948,7 +936,7 @@ class ReplayFile {
  public:
   template <typename T>
   ReplayFile(std::in_place_t, const T& corpus) {
-    filename_ = absl::StrCat(dir_.dirname(), "/replay_file");
+    filename_ = dir_.path() / "replay_file";
     WriteFile(filename_, internal::IRObject::FromCorpus(corpus).ToString());
   }
 
@@ -996,11 +984,11 @@ TEST_F(FuzzingModeCommandLineInterfaceTest,
 
   auto [status, std_out, std_err] =
       RunWith({{"fuzz", "MySuite.WithDomainClass"}},
-              {{"FUZZTEST_REPRODUCERS_OUT_DIR", out_dir.dirname()}});
+              {{"FUZZTEST_REPRODUCERS_OUT_DIR", out_dir.path()}});
   EXPECT_THAT(std_err, HasSubstr("argument 0: 10")) << std_err;
   EXPECT_THAT(status, Ne(ExitCode(0))) << std_err;
 
-  auto replay_files = ReadFileOrDirectory(out_dir.dirname());
+  auto replay_files = ReadFileOrDirectory(out_dir.path().c_str());
   ASSERT_EQ(replay_files.size(), 1) << std_err;
   auto parsed = IRObject::FromString(replay_files[0].data);
   ASSERT_TRUE(parsed) << std_err;
@@ -1033,14 +1021,14 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, MinimizerFindsSmallerInput) {
     TempDir out_dir;
     ReplayFile replay(std::in_place, std::tuple<std::string>{current_input});
     auto env = replay.GetMinimizeEnv();
-    env["FUZZTEST_REPRODUCERS_OUT_DIR"] = out_dir.dirname();
+    env["FUZZTEST_REPRODUCERS_OUT_DIR"] = out_dir.path();
 
     auto [status, std_out, std_err] =
         RunWith({{"fuzz", "MySuite.Minimizer"}}, env);
     ASSERT_THAT(std_err, HasSubstr("argument 0: \""));
     ASSERT_THAT(status, Eq(Signal(SIGABRT)));
 
-    auto replay_files = ReadFileOrDirectory(out_dir.dirname());
+    auto replay_files = ReadFileOrDirectory(out_dir.path().c_str());
     ASSERT_EQ(replay_files.size(), 1) << std_err;
     auto parsed = IRObject::FromString(replay_files[0].data);
     ASSERT_TRUE(parsed) << std_err;
@@ -1113,32 +1101,6 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, ConfiguresStackLimitByFlag) {
 }
 
 TEST_F(FuzzingModeCommandLineInterfaceTest,
-       ConfiguresStackLimitByEnvVarWithWarning) {
-  auto [status, std_out, std_err] =
-      RunWith({{"fuzz", "MySuite.DataDependentStackOverflow"}},
-              {{"FUZZTEST_STACK_LIMIT", "512000"}});
-  EXPECT_THAT(std_err, HasSubstr("argument 0: "));
-  EXPECT_THAT(std_err,
-              HasSubstr(absl::StrCat(
-                  "Stack limit is set by FUZZTEST_STACK_LIMIT env var - this "
-                  "is going to be deprecated soon. Consider switching to ",
-                  CreateFuzzTestFlag("stack_limit_kb", ""), " flag.")));
-  ExpectStackLimitExceededMessage(std_err, 512000);
-  ExpectTargetAbort(status, std_err);
-}
-
-TEST_F(FuzzingModeCommandLineInterfaceTest,
-       ConfiguresStackLimitByEnvVarAndOverridesFlag) {
-  auto [status, std_out, std_err] =
-      RunWith({{"fuzz", "MySuite.DataDependentStackOverflow"},
-               {"stack_limit_kb", "1000"}},
-              {{"FUZZTEST_STACK_LIMIT", "512000"}});
-  EXPECT_THAT(std_err, HasSubstr("argument 0: "));
-  ExpectStackLimitExceededMessage(std_err, 512000);
-  ExpectTargetAbort(status, std_err);
-}
-
-TEST_F(FuzzingModeCommandLineInterfaceTest,
        DoesNotPrintWarningForDisabledLimitFlagsByDefault) {
   auto [status, std_out, std_err] = RunWith(
       {{"fuzz", "MySuite.PassesWithPositiveInput"}, {"fuzz_for", "10s"}},
@@ -1205,13 +1167,13 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, CorpusDoesNotContainSkippedInputs) {
   // find the crash without saving some corpus.
   auto [producer_status, producer_std_out, producer_std_err] =
       RunWith({{"fuzz", "MySuite.SkipInputs"}, {"fuzz_for", "10s"}},
-              {{"FUZZTEST_TESTSUITE_OUT_DIR", corpus_dir.dirname()}});
+              {{"FUZZTEST_TESTSUITE_OUT_DIR", corpus_dir.path()}});
 
   ASSERT_THAT(producer_std_err, HasSubstr("Skipped input"));
 
   auto [replayer_status, replayer_std_out, replayer_std_err] =
       RunWith({{"fuzz", "MySuite.SkipInputs"}},
-              {{"FUZZTEST_REPLAY", corpus_dir.dirname()}});
+              {{"FUZZTEST_REPLAY", corpus_dir.path()}});
 
   EXPECT_THAT(replayer_std_err, Not(HasSubstr("Skipped input")));
 }
@@ -1224,7 +1186,7 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, UsesCentipedeBinaryWhenEnvIsSet) {
   auto [status, std_out, std_err] = RunWith(
       {
           {"fuzz_for", "1s"},
-          {"corpus_database", temp_dir.dirname()},
+          {"corpus_database", temp_dir.path()},
       },
       {{"FUZZTEST_CENTIPEDE_BINARY", CentipedePath()}},
       /*timeout=*/absl::Minutes(1), "testdata/unit_test_and_fuzz_tests");
@@ -1236,16 +1198,36 @@ TEST_F(FuzzingModeCommandLineInterfaceTest, UsesCentipedeBinaryWhenEnvIsSet) {
   EXPECT_THAT(status, Eq(ExitCode(0)));
 }
 
+TEST_F(FuzzingModeCommandLineInterfaceTest,
+       UsesCentipedeBinaryWhenCentipedeBinaryPathFlagIsSet) {
+#ifndef FUZZTEST_USE_CENTIPEDE
+  GTEST_SKIP() << "Skipping Centipede-specific test";
+#endif
+  TempDir temp_dir;
+  auto [status, std_out, std_err] = RunWith(
+      {
+          {"fuzz_for", "1s"},
+          {"corpus_database", temp_dir.path()},
+          {"internal_centipede_command", ShellEscape(CentipedePath())},
+      },
+      /*env=*/{},
+      /*timeout=*/absl::Minutes(1), "testdata/unit_test_and_fuzz_tests");
+  EXPECT_THAT(std_err, HasSubstr("Running Centipede command")) << std_err;
+  EXPECT_THAT(std_err, HasSubstr("FuzzTest.AlwaysPasses"));
+  EXPECT_THAT(status, Eq(ExitCode(0)));
+}
+
 enum class ExecutionModelParam {
-  kSingleBinary,
-  kWithCentipedeBinary,
+  kTestBinary,
+  kTestBinaryInvokingCentipedeBinary,
+  kCentipedeBinary,
 };
 
 std::vector<ExecutionModelParam> GetAvailableExecutionModels() {
-  std::vector<ExecutionModelParam> results = {
-      ExecutionModelParam::kSingleBinary};
+  std::vector<ExecutionModelParam> results = {ExecutionModelParam::kTestBinary};
 #ifdef FUZZTEST_USE_CENTIPEDE
-  results.push_back(ExecutionModelParam::kWithCentipedeBinary);
+  results.push_back(ExecutionModelParam::kTestBinaryInvokingCentipedeBinary);
+  results.push_back(ExecutionModelParam::kCentipedeBinary);
 #endif
   return results;
 }
@@ -1272,7 +1254,7 @@ class FuzzingModeFixtureTest
 
   RunResults Run(absl::string_view test_name, int iterations) {
     switch (GetParam()) {
-      case ExecutionModelParam::kSingleBinary: {
+      case ExecutionModelParam::kTestBinary: {
         RunOptions run_options;
         run_options.fuzztest_flags = {{"fuzz", std::string(test_name)},
                                       {"print_subprocess_log", "true"}};
@@ -1281,13 +1263,24 @@ class FuzzingModeFixtureTest
         run_options.timeout = absl::InfiniteDuration();
         return RunBinary(BinaryPath(kDefaultTargetBinary), run_options);
       }
-      case ExecutionModelParam::kWithCentipedeBinary: {
+      case ExecutionModelParam::kTestBinaryInvokingCentipedeBinary: {
+        RunOptions run_options;
+        run_options.fuzztest_flags = {
+            {"fuzz", std::string(test_name)},
+            {"print_subprocess_log", "true"},
+            {"internal_centipede_command", ShellEscape(CentipedePath())}};
+        run_options.env = {
+            {"FUZZTEST_MAX_FUZZING_RUNS", absl::StrCat(iterations)}};
+        run_options.timeout = absl::InfiniteDuration();
+        return RunBinary(BinaryPath(kDefaultTargetBinary), run_options);
+      }
+      case ExecutionModelParam::kCentipedeBinary: {
         TempDir workdir;
         RunOptions run_options;
         run_options.flags = {
             {"print_runner_log", "true"},
             {"exit_on_crash", "true"},
-            {"workdir", workdir.dirname()},
+            {"workdir", workdir.path()},
             {"binary", absl::StrCat(BinaryPath(kDefaultTargetBinary), " ",
                                     CreateFuzzTestFlag("fuzz", test_name))},
             {"num_runs", absl::StrCat(iterations)}};
@@ -1330,10 +1323,19 @@ TEST_P(FuzzingModeFixtureTest,
 TEST_P(FuzzingModeFixtureTest, FixtureGoesThroughCompleteLifecycle) {
   auto [status, std_out, std_err] = Run("FixtureTest.NeverFails",
                                         /*iterations=*/10);
-  EXPECT_GT(CountTargetRuns(std_err), 0);
-  EXPECT_EQ(CountTargetRuns(std_err),
+#ifdef FUZZTEST_USE_CENTIPEDE
+  // In the single binary execution model there is a target process running in
+  // controller mode, where no FuzzTest fixture object is created.
+  const int target_controller_runs =
+      GetParam() == ExecutionModelParam::kTestBinary ||
+      GetParam() == ExecutionModelParam::kTestBinaryInvokingCentipedeBinary;
+#else
+  const int target_controller_runs = 0;
+#endif
+  EXPECT_GT(CountTargetRuns(std_err) - target_controller_runs, 0);
+  EXPECT_EQ(CountTargetRuns(std_err) - target_controller_runs,
             CountSubstrs(std_err, "<<FixtureTest::FixtureTest()>>"));
-  EXPECT_EQ(CountTargetRuns(std_err),
+  EXPECT_EQ(CountTargetRuns(std_err) - target_controller_runs,
             CountSubstrs(std_err, "<<FixtureTest::~FixtureTest()>>"));
 }
 
@@ -1419,27 +1421,31 @@ class FuzzingModeCrashFindingTest
     // There are however env vars that we do want to propagate, which
     // we now need to do explicitly.
     env = WithTestSanitizerOptions(std::move(env));
-    if (GetParam() == ExecutionModelParam::kWithCentipedeBinary) {
+    if (GetParam() == ExecutionModelParam::kCentipedeBinary) {
       TempDir workdir;
       RunOptions run_options;
       run_options.flags = {
           {"exit_on_crash", "true"},
           {"timeout_per_input", "0"},
           {"stop_at", absl::StrCat(absl::Now() + timeout)},
-          {"workdir", workdir.dirname()},
+          {"workdir", workdir.path()},
           {"binary", absl::StrCat(BinaryPath(target_binary), " ",
                                   CreateFuzzTestFlag("fuzz", test_name))}};
       run_options.env = std::move(env);
       run_options.timeout = timeout + absl::Seconds(10);
       return RunBinary(CentipedePath(), run_options);
-    } else {
+    }
       RunOptions run_options;
       run_options.fuzztest_flags = {{"fuzz", std::string(test_name)},
                                     {"fuzz_for", absl::StrCat(timeout)}};
       run_options.env = std::move(env);
       run_options.timeout = timeout + absl::Seconds(10);
+      if (GetParam() ==
+          ExecutionModelParam::kTestBinaryInvokingCentipedeBinary) {
+        run_options.fuzztest_flags["internal_centipede_command"] =
+            ShellEscape(CentipedePath());
+      }
       return RunBinary(BinaryPath(target_binary), run_options);
-    }
   }
 };
 
@@ -1582,6 +1588,12 @@ TEST_P(FuzzingModeCrashFindingTest, BitvectorValueTestFindsAbortInFuzzingMode) {
 TEST_P(FuzzingModeCrashFindingTest, VectorValueTestFindsAbortInFuzzingMode) {
   auto [status, std_out, std_err] = Run("MySuite.VectorValue");
   EXPECT_THAT(std_err, HasSubstr("argument 0: {'F'"));
+  ExpectTargetAbort(status, std_err);
+}
+
+TEST_P(FuzzingModeCrashFindingTest, BitGenRefTestFindsAbortInFuzzingMode) {
+  auto [status, std_out, std_err] = Run("MySuite.BitGenRef");
+  EXPECT_THAT(std_err, HasSubstr("argument 0: absl::BitGenRef{}"));
   ExpectTargetAbort(status, std_err);
 }
 
@@ -1790,8 +1802,7 @@ TEST_P(FuzzingModeCrashFindingTest, InputsAreSkippedWhenRequestedInTests) {
 
 TEST_P(FuzzingModeCrashFindingTest, AsanCrashMetadataIsDumpedIfEnvVarIsSet) {
   TempDir out_dir;
-  const std::string crash_metadata_path =
-      std::filesystem::path(out_dir.dirname()) / "crash_metadata";
+  const std::string crash_metadata_path = out_dir.path() / "crash_metadata";
   auto [status, std_out, std_err] =
       Run("MySuite.BufferOverreadWithString", kDefaultTargetBinary,
           {{"FUZZTEST_CRASH_METADATA_PATH", crash_metadata_path}});
@@ -1802,8 +1813,7 @@ TEST_P(FuzzingModeCrashFindingTest, AsanCrashMetadataIsDumpedIfEnvVarIsSet) {
 
 TEST_P(FuzzingModeCrashFindingTest, SignalCrashMetadataIsDumpedIfEnvVarIsSet) {
   TempDir out_dir;
-  const std::string crash_metadata_path =
-      std::filesystem::path(out_dir.dirname()) / "crash_metadata";
+  const std::string crash_metadata_path = out_dir.path() / "crash_metadata";
   auto [status, std_out, std_err] =
       Run("MySuite.Aborts", kDefaultTargetBinary,
           {{"FUZZTEST_CRASH_METADATA_PATH", crash_metadata_path}});
@@ -1813,14 +1823,25 @@ TEST_P(FuzzingModeCrashFindingTest, SignalCrashMetadataIsDumpedIfEnvVarIsSet) {
 
 TEST_P(FuzzingModeCrashFindingTest, GTestCrashMetadataIsDumpedIfEnvVarIsSet) {
   TempDir out_dir;
-  const std::string crash_metadata_path =
-      std::filesystem::path(out_dir.dirname()) / "crash_metadata";
+  const std::string crash_metadata_path = out_dir.path() / "crash_metadata";
   auto [status, std_out, std_err] =
       Run("MySuite.GoogleTestExpect", kDefaultTargetBinary,
           {{"FUZZTEST_CRASH_METADATA_PATH", crash_metadata_path}});
 
   EXPECT_THAT(ReadFile(crash_metadata_path),
               Optional(Eq("GoogleTest assertion failure")));
+}
+
+TEST_P(FuzzingModeCrashFindingTest,
+       SetupFailureCrashMetadataIsDumpedIfEnvVarIsSet) {
+  TempDir out_dir;
+  const std::string crash_metadata_path = out_dir.path() / "crash_metadata";
+  auto [status, std_out, std_err] =
+      Run("FaultySetupTest.NoOp", kDefaultTargetBinary,
+          {{"FUZZTEST_CRASH_METADATA_PATH", crash_metadata_path}});
+
+  EXPECT_THAT(ReadFile(crash_metadata_path),
+              Optional(Eq("SETUP FAILURE: SIGABRT")));
 }
 
 TEST_P(FuzzingModeCrashFindingTest,
@@ -1833,6 +1854,34 @@ TEST_P(FuzzingModeCrashFindingTest,
           },
           /*timeout=*/absl::Seconds(30));
   EXPECT_THAT(std_err, HasSubstr("argument 0: \"ahmfn\""));
+  ExpectTargetAbort(status, std_err);
+}
+
+TEST_P(FuzzingModeCrashFindingTest, FlatbuffersFailsWhenFieldsAreNotDefault) {
+  TempDir out_dir;
+  auto [status, std_out, std_err] =
+      Run("MySuite.FlatbuffersFailsWhenFieldsAreNotDefault");
+  EXPECT_THAT(std_err,
+              AllOf(HasSubstr("argument 0: {b: ("),  // b
+                    HasSubstr("i8: ("),              // i8
+                    HasSubstr("i16: ("),             // i16
+                    HasSubstr("i32: ("),             // i32
+                    HasSubstr("i64: ("),             // i64
+                    HasSubstr("u8: ("),              // u8
+                    HasSubstr("u16: ("),             // u16
+                    HasSubstr("u32: ("),             // u32
+                    HasSubstr("u64: ("),             // u64
+                    HasSubstr("f: ("),               // f
+                    HasSubstr("d: ("),               // d
+                    HasSubstr("str: "),              // str
+                    HasSubstr("ei8: ("),             // ei8
+                    HasSubstr("ei16: ("),            // ei16
+                    HasSubstr("ei32: ("),            // ei32
+                    HasSubstr("ei64: ("),            // ei64
+                    HasSubstr("eu8: ("),             // eu8
+                    HasSubstr("eu16: ("),            // eu16
+                    HasSubstr("eu32: ("),            // eu32
+                    HasSubstr("eu64: (")));          // eu64
   ExpectTargetAbort(status, std_err);
 }
 

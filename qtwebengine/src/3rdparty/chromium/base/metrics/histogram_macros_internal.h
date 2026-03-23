@@ -15,6 +15,7 @@
 #include "base/dcheck_is_on.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/no_destructor.h"
 #include "base/time/time.h"
 #include "base/types/cxx23_to_underlying.h"
 
@@ -28,16 +29,16 @@ namespace base::internal {
 template <typename Enum>
   requires(std::is_enum_v<Enum>)
 struct EnumSizeTraits {
-  static constexpr Enum Count() {
+  static constexpr uintmax_t Count() {
     if constexpr (requires { Enum::kMaxValue; }) {
       // Since the UMA histogram macros expect a value one larger than the max
       // defined enumerator value, add one.
-      return static_cast<Enum>(base::to_underlying(Enum::kMaxValue) + 1);
+      return static_cast<uintmax_t>(base::to_underlying(Enum::kMaxValue) + 1);
     } else {
       static_assert(
           sizeof(Enum) == 0,
           "enumerator must define kMaxValue enumerator to use this macro!");
-      return Enum();
+      return 0;
     }
   }
 };
@@ -56,9 +57,9 @@ struct EnumSizeTraits {
 // process.
 
 // In some cases (integration into 3rd party code), it's useful to separate the
-// definition of |atomic_histogram_pointer| from its use. To achieve this we
-// define HISTOGRAM_POINTER_USE, which uses an |atomic_histogram_pointer|, and
-// STATIC_HISTOGRAM_POINTER_BLOCK, which defines an |atomic_histogram_pointer|
+// definition of `atomic_histogram_pointer` from its use. To achieve this we
+// define HISTOGRAM_POINTER_USE, which uses an `atomic_histogram_pointer`, and
+// STATIC_HISTOGRAM_POINTER_BLOCK, which defines an `atomic_histogram_pointer`
 // and forwards to HISTOGRAM_POINTER_USE.
 #define HISTOGRAM_POINTER_USE(                                           \
     atomic_histogram_pointer, constant_histogram_name,                   \
@@ -70,7 +71,7 @@ struct EnumSizeTraits {
     if (!histogram_pointer) {                                            \
       /*                                                                 \
        * This is the slow path, which will construct OR find the         \
-       * matching histogram. |histogram_factory_get_invocation| includes \
+       * matching histogram. `histogram_factory_get_invocation` includes \
        * locks on a global histogram name map and is completely thread   \
        * safe.                                                           \
        */                                                                \
@@ -91,7 +92,7 @@ struct EnumSizeTraits {
   } while (0)
 
 // This is a helper macro used by other macros and shouldn't be used directly.
-// Defines the static |atomic_histogram_pointer| and forwards to
+// Defines the static `atomic_histogram_pointer` and forwards to
 // HISTOGRAM_POINTER_USE.
 #define STATIC_HISTOGRAM_POINTER_BLOCK(constant_histogram_name,               \
                                        histogram_add_method_invocation,       \
@@ -161,9 +162,8 @@ struct EnumSizeTraits {
                                   scale,                                       \
                                   flag) {}                                     \
     };                                                                         \
-    static base::LazyInstance<ScaledLinearHistogramInstance>::Leaky            \
-        scaled_leaky;                                                          \
-    scaled_leaky.Get().AddScaledCount(sample, count);                          \
+    static base::NoDestructor<ScaledLinearHistogramInstance> scaled_leaky;     \
+    scaled_leaky->AddScaledCount(sample, count);                               \
   } while (0)
 
 // Helper for 'overloading' UMA_HISTOGRAM_ENUMERATION with a variable number of
@@ -177,7 +177,7 @@ struct EnumSizeTraits {
       base::internal::EnumSizeTraits<std::decay_t<decltype(sample)>>::Count(), \
       flags)
 
-// Note: The value in |sample| must be strictly less than |enum_size|.
+// Note: The value in `sample` must be strictly less than `enum_size`.
 #define INTERNAL_UMA_HISTOGRAM_ENUMERATION_SPECIFY_BOUNDARY(name, sample,     \
                                                             enum_size, flags) \
   INTERNAL_HISTOGRAM_ENUMERATION_WITH_FLAG(name, sample, enum_size, flags)
@@ -237,28 +237,49 @@ struct EnumSizeTraits {
   INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_UNIQUE(name, timing, key)
 
 // This is a helper macro used by other macros and shouldn't be used directly.
-#define INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_UNIQUE(name, timing, key)      \
-  class ScopedHistogramTimer##key {                                        \
-   public:                                                                 \
-    ScopedHistogramTimer##key() : constructed_(base::TimeTicks::Now()) {}  \
-    ~ScopedHistogramTimer##key() {                                         \
-      base::TimeDelta elapsed = base::TimeTicks::Now() - constructed_;     \
-      switch (timing) {                                                    \
-        case ScopedHistogramTiming::kMicrosecondTimes:                     \
-          UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(                         \
-              name, elapsed, base::Microseconds(1), base::Seconds(1), 50); \
-          break;                                                           \
-        case ScopedHistogramTiming::kMediumTimes:                          \
-          UMA_HISTOGRAM_TIMES(name, elapsed);                              \
-          break;                                                           \
-        case ScopedHistogramTiming::kLongTimes:                            \
-          UMA_HISTOGRAM_LONG_TIMES_100(name, elapsed);                     \
-          break;                                                           \
-      }                                                                    \
-    }                                                                      \
-                                                                           \
-   private:                                                                \
-    base::TimeTicks constructed_;                                          \
-  } scoped_histogram_timer_##key
+#define INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_UNIQUE(name, timing, key)  \
+  INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_UNIQUE_DEFINE(name, timing, key) \
+  scoped_histogram_timer_##key
+
+// This is a helper macro used by other macros and shouldn't be used directly.
+#define INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_UNIQUE_DEFINE(name, timing, key) \
+  class ScopedHistogramTimer##key {                                          \
+   public:                                                                   \
+    ScopedHistogramTimer##key() : constructed_(base::TimeTicks::Now()) {}    \
+    ~ScopedHistogramTimer##key() {                                           \
+      base::TimeDelta elapsed = base::TimeTicks::Now() - constructed_;       \
+      switch (timing) {                                                      \
+        case ScopedHistogramTiming::kMicrosecondTimes:                       \
+          UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(                           \
+              name, elapsed, base::Microseconds(1), base::Seconds(1), 50);   \
+          break;                                                             \
+        case ScopedHistogramTiming::kMediumTimes:                            \
+          UMA_HISTOGRAM_TIMES(name, elapsed);                                \
+          break;                                                             \
+        case ScopedHistogramTiming::kLongTimes:                              \
+          UMA_HISTOGRAM_LONG_TIMES_100(name, elapsed);                       \
+          break;                                                             \
+      }                                                                      \
+    }                                                                        \
+                                                                             \
+   private:                                                                  \
+    base::TimeTicks constructed_;                                            \
+  }
+
+// This is a helper macro used by other macros and shouldn't be used directly.
+// This is necessary to expand __COUNTER__ to an actual value.
+#define INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_SUBSAMPLED_EXPANDER(             \
+    name, should_sample, timing, key)                                        \
+  INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_SUBSAMPLED_UNIQUE(name, should_sample, \
+                                                        timing, key)
+
+// This is a helper macro used by other macros and shouldn't be used directly.
+#define INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_SUBSAMPLED_UNIQUE(           \
+    name, should_sample, timing, key)                                    \
+  INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_UNIQUE_DEFINE(name, timing, key);  \
+  std::optional<ScopedHistogramTimer##key> scoped_histogram_timer_##key; \
+  if (should_sample) {                                                   \
+    scoped_histogram_timer_##key.emplace();                              \
+  }
 
 #endif  // BASE_METRICS_HISTOGRAM_MACROS_INTERNAL_H_

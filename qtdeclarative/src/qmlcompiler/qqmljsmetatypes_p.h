@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSMETATYPES_P_H
 #define QQMLJSMETATYPES_P_H
@@ -59,6 +60,7 @@ class QQmlJSMetaEnum
     QString m_alias;
     QString m_typeName;
     QSharedPointer<const QQmlJSScope> m_type;
+    int m_lineNumber = 0;
     bool m_isFlag = false;
     bool m_isScoped = false;
     bool m_isQml = false;
@@ -99,6 +101,9 @@ public:
 
     QSharedPointer<const QQmlJSScope> type() const { return m_type; }
     void setType(const QSharedPointer<const QQmlJSScope> &type) { m_type = type; }
+
+    int lineNumber() const { return m_lineNumber; }
+    void setLineNumber(int lineNumber) { m_lineNumber = lineNumber; }
 
     friend bool operator==(const QQmlJSMetaEnum &a, const QQmlJSMetaEnum &b)
     {
@@ -283,8 +288,8 @@ public:
 
     bool isValid() const { return !m_name.isEmpty(); }
 
-    const QVector<QQmlJSAnnotation>& annotations() const { return m_annotations; }
-    void setAnnotations(QVector<QQmlJSAnnotation> annotations) { m_annotations = annotations; }
+    const QList<QQmlJSAnnotation>& annotations() const { return m_annotations; }
+    void setAnnotations(QList<QQmlJSAnnotation> annotations) { m_annotations = annotations; }
 
     void setJsFunctionIndex(RelativeFunctionIndex index)
     {
@@ -397,12 +402,14 @@ class QQmlJSMetaProperty
     QWeakPointer<const QQmlJSScope> m_aliasTargetScope;
     QWeakPointer<const QQmlJSScope> m_type;
     QQmlJS::SourceLocation m_sourceLocation;
-    QVector<QQmlJSAnnotation> m_annotations;
+    QList<QQmlJSAnnotation> m_annotations;
     bool m_isList = false;
     bool m_isWritable = false;
     bool m_isPointer = false;
     bool m_isTypeConstant = false;
     bool m_isFinal = false;
+    bool m_isVirtual = false;
+    bool m_isOverride = false;
     bool m_isPropertyConstant = false;
     int m_revision = 0;
     int m_index = -1; // relative property index within owning QQmlJSScope
@@ -476,6 +483,12 @@ public:
     void setIsFinal(bool isFinal) { m_isFinal = isFinal; }
     bool isFinal() const { return m_isFinal; }
 
+    void setIsOverride(bool isOverride) { m_isOverride = isOverride; }
+    bool isOverride() const { return m_isOverride; }
+
+    void setIsVirtual(bool isVirtual) { m_isVirtual = isVirtual; }
+    bool isVirtual() const { return m_isVirtual; }
+
     void setIsPropertyConstant(bool isPropertyConstant) { m_isPropertyConstant = isPropertyConstant; }
     bool isPropertyConstant() const { return m_isPropertyConstant; }
 
@@ -511,15 +524,6 @@ public:
     }
 };
 
-/*!
-    \class QQmlJSMetaPropertyBinding
-
-    \internal
-
-    Represents a single QML binding of a specific type. Typically, when you
-    create a new binding, you know all the details of it already, so you should
-    just set all the data at once.
-*/
 class Q_QMLCOMPILER_EXPORT QQmlJSMetaPropertyBinding
 {
     using BindingType = QQmlSA::BindingType;

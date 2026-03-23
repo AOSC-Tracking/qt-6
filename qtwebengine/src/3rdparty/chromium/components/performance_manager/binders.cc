@@ -21,6 +21,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "mojo/public/cpp/bindings/binder_map.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 
 namespace performance_manager {
@@ -38,15 +39,11 @@ void BindRenderProcessCoordinationUnit(
   RenderProcessUserData* user_data =
       RenderProcessUserData::GetForRenderProcessHost(render_process_host);
 
-  DCHECK(PerformanceManagerImpl::IsAvailable());
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&ProcessNodeImpl::BindRenderProcessCoordinationUnit,
-                     base::Unretained(user_data->process_node()),
-                     std::move(receiver)));
+  user_data->process_node()->BindRenderProcessCoordinationUnit(
+      std::move(receiver));
 }
 
-void BindChildProcessCoordinationUnitOnPMSequence(
+void BindChildProcessCoordinationUnit(
     base::WeakPtr<ProcessNode> process_node,
     mojo::PendingReceiver<mojom::ChildProcessCoordinationUnit> receiver) {
   if (process_node) {
@@ -58,27 +55,18 @@ void BindChildProcessCoordinationUnitOnPMSequence(
 void BindChildProcessCoordinationUnitForRenderProcessHost(
     content::ChildProcessId render_process_host_id,
     mojo::PendingReceiver<mojom::ChildProcessCoordinationUnit> receiver) {
-  DCHECK(PerformanceManagerImpl::IsAvailable());
-  PerformanceManagerImpl::CallOnGraph(
-      FROM_HERE,
-      base::BindOnce(
-          &BindChildProcessCoordinationUnitOnPMSequence,
-          PerformanceManagerImpl::GetProcessNodeForRenderProcessHostId(
-              render_process_host_id),
-          std::move(receiver)));
+  BindChildProcessCoordinationUnit(
+      PerformanceManagerImpl::GetProcessNodeForRenderProcessHostId(
+          render_process_host_id),
+      std::move(receiver));
 }
 
 void BindChildProcessCoordinationUnitForBrowserChildProcessHost(
     content::BrowserChildProcessHost* host,
     mojo::PendingReceiver<mojom::ChildProcessCoordinationUnit> receiver) {
-  DCHECK(PerformanceManagerImpl::IsAvailable());
-  PerformanceManagerImpl::CallOnGraph(
-      FROM_HERE,
-      base::BindOnce(
-          &BindChildProcessCoordinationUnitOnPMSequence,
-          PerformanceManagerImpl::GetProcessNodeForBrowserChildProcessHost(
-              host),
-          std::move(receiver)));
+  BindChildProcessCoordinationUnit(
+      PerformanceManagerImpl::GetProcessNodeForBrowserChildProcessHost(host),
+      std::move(receiver));
 }
 
 void BindDocumentCoordinationUnit(
@@ -112,14 +100,13 @@ void Binders::ExposeInterfacesToRendererProcess(
 
 void Binders::ExposeInterfacesToBrowserChildProcess(
     mojo::BinderMapWithContext<content::BrowserChildProcessHost*>* map) {
-  map->Add<mojom::ChildProcessCoordinationUnit>(base::BindRepeating(
-      &BindChildProcessCoordinationUnitForBrowserChildProcessHost));
+  map->Add<mojom::ChildProcessCoordinationUnit>(
+      &BindChildProcessCoordinationUnitForBrowserChildProcessHost);
 }
 
 void Binders::ExposeInterfacesToRenderFrame(
     mojo::BinderMapWithContext<content::RenderFrameHost*>* map) {
-  map->Add<mojom::DocumentCoordinationUnit>(
-      base::BindRepeating(&BindDocumentCoordinationUnit));
+  map->Add<mojom::DocumentCoordinationUnit>(&BindDocumentCoordinationUnit);
 }
 
 }  // namespace performance_manager

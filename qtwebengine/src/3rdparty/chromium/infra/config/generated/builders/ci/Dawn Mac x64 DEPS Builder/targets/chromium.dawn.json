@@ -14,6 +14,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_implicit_device_sync_tests",
         "swarming": {
           "dimensions": {
@@ -43,6 +44,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_skip_validation_tests",
         "swarming": {
           "dimensions": {
@@ -71,6 +73,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_tests",
         "swarming": {
           "dimensions": {
@@ -91,34 +94,6 @@
       },
       {
         "args": [
-          "--enable-toggles=use_tint_ir",
-          "--use-gpu-in-tests",
-          "--exclusive-device-type-preference=discrete,integrated",
-          "--test-launcher-retry-limit=0",
-          "--test-launcher-batch-limit=512"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_gtest_merge.py"
-        },
-        "name": "dawn_end2end_use_tint_ir_tests",
-        "swarming": {
-          "dimensions": {
-            "cpu": "x86-64",
-            "display_attached": "1",
-            "gpu": "1002:7340",
-            "hidpi": "1",
-            "os": "Mac-14.4.1",
-            "pool": "chromium.tests.gpu"
-          },
-          "hard_timeout": 1800,
-          "io_timeout": 1800,
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "dawn_end2end_tests",
-        "test_id_prefix": "ninja://third_party/dawn/src/dawn/tests:dawn_end2end_tests/"
-      },
-      {
-        "args": [
           "--enable-backend-validation",
           "--use-gpu-in-tests",
           "--exclusive-device-type-preference=discrete,integrated",
@@ -128,6 +103,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_validation_layers_tests",
         "swarming": {
           "dimensions": {
@@ -157,6 +133,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_wire_tests",
         "swarming": {
           "dimensions": {
@@ -184,6 +161,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//gpu:gl_tests/",
         "name": "gl_tests_passthrough",
         "swarming": {
           "dimensions": {
@@ -210,6 +188,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//ui/gl:gl_unittests/",
         "name": "gl_unittests",
         "precommit_args": [
           "--gerrit-issue=${patch_issue}",
@@ -246,6 +225,7 @@
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_perf_tests/",
         "name": "dawn_perf_tests",
         "swarming": {
           "dimensions": {
@@ -267,6 +247,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_unittests/",
         "name": "telemetry_gpu_unittests",
         "resultdb": {
           "enable": true
@@ -291,8 +272,7 @@
       {
         "args": [
           "--flag-specific=webgpu",
-          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000",
-          "--platform=mac-mac11"
+          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000"
         ],
         "merge": {
           "args": [
@@ -300,6 +280,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
+        "module_name": "//:webgpu_blink_web_tests/",
         "name": "webgpu_blink_web_tests",
         "resultdb": {
           "enable": true
@@ -324,8 +305,7 @@
         "args": [
           "--flag-specific=webgpu-with-backend-validation",
           "--timeout-ms=30000",
-          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000",
-          "--platform=mac-mac11"
+          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000"
         ],
         "merge": {
           "args": [
@@ -333,6 +313,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
+        "module_name": "//:webgpu_blink_web_tests/",
         "name": "webgpu_blink_web_tests_with_backend_validation",
         "resultdb": {
           "enable": true
@@ -369,6 +350,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test/",
         "name": "webgpu_cts_tests",
         "resultdb": {
           "enable": true,
@@ -409,6 +391,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test/",
         "name": "webgpu_cts_with_validation_tests",
         "resultdb": {
           "enable": true,
@@ -435,8 +418,7 @@
       {
         "args": [
           "--flag-specific=webgpu-swiftshader",
-          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000",
-          "--platform=mac-mac11"
+          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000"
         ],
         "merge": {
           "args": [
@@ -444,6 +426,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
+        "module_name": "//:webgpu_blink_web_tests/",
         "name": "webgpu_swiftshader_blink_web_tests",
         "resultdb": {
           "enable": true
@@ -468,8 +451,7 @@
         "args": [
           "--flag-specific=webgpu-swiftshader-with-backend-validation",
           "--timeout-ms=30000",
-          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000",
-          "--platform=mac-mac11"
+          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000"
         ],
         "merge": {
           "args": [
@@ -477,6 +459,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
+        "module_name": "//:webgpu_blink_web_tests/",
         "name": "webgpu_swiftshader_blink_web_tests_with_backend_validation",
         "resultdb": {
           "enable": true
@@ -515,6 +498,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test/",
         "name": "webgpu_swiftshader_web_platform_cts_tests",
         "resultdb": {
           "enable": true,
@@ -557,6 +541,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test/",
         "name": "webgpu_swiftshader_web_platform_cts_with_validation_tests",
         "resultdb": {
           "enable": true,
@@ -596,6 +581,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_implicit_device_sync_tests",
         "swarming": {
           "dimensions": {
@@ -623,6 +609,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_skip_validation_tests",
         "swarming": {
           "dimensions": {
@@ -649,6 +636,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_tests",
         "swarming": {
           "dimensions": {
@@ -667,32 +655,6 @@
       },
       {
         "args": [
-          "--enable-toggles=use_tint_ir",
-          "--use-gpu-in-tests",
-          "--exclusive-device-type-preference=discrete,integrated",
-          "--test-launcher-retry-limit=0",
-          "--test-launcher-batch-limit=512"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_gtest_merge.py"
-        },
-        "name": "dawn_end2end_use_tint_ir_tests",
-        "swarming": {
-          "dimensions": {
-            "cpu": "x86-64",
-            "display_attached": "1",
-            "gpu": "8086:3e9b",
-            "os": "Mac-14.5"
-          },
-          "hard_timeout": 1800,
-          "io_timeout": 1800,
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "dawn_end2end_tests",
-        "test_id_prefix": "ninja://third_party/dawn/src/dawn/tests:dawn_end2end_tests/"
-      },
-      {
-        "args": [
           "--enable-backend-validation",
           "--use-gpu-in-tests",
           "--exclusive-device-type-preference=discrete,integrated",
@@ -702,6 +664,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_validation_layers_tests",
         "swarming": {
           "dimensions": {
@@ -729,6 +692,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_end2end_tests/",
         "name": "dawn_end2end_wire_tests",
         "swarming": {
           "dimensions": {
@@ -754,6 +718,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//gpu:gl_tests/",
         "name": "gl_tests_passthrough",
         "swarming": {
           "dimensions": {
@@ -778,6 +743,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "module_name": "//ui/gl:gl_unittests/",
         "name": "gl_unittests",
         "precommit_args": [
           "--gerrit-issue=${patch_issue}",
@@ -812,6 +778,7 @@
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
+        "module_name": "//third_party/dawn/src/dawn/tests:dawn_perf_tests/",
         "name": "dawn_perf_tests",
         "swarming": {
           "dimensions": {
@@ -831,6 +798,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_unittests/",
         "name": "telemetry_gpu_unittests",
         "resultdb": {
           "enable": true
@@ -853,8 +821,7 @@
       {
         "args": [
           "--flag-specific=webgpu",
-          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000",
-          "--platform=mac-mac11"
+          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000"
         ],
         "merge": {
           "args": [
@@ -862,6 +829,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
+        "module_name": "//:webgpu_blink_web_tests/",
         "name": "webgpu_blink_web_tests",
         "resultdb": {
           "enable": true
@@ -884,8 +852,7 @@
         "args": [
           "--flag-specific=webgpu-with-backend-validation",
           "--timeout-ms=30000",
-          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000",
-          "--platform=mac-mac11"
+          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000"
         ],
         "merge": {
           "args": [
@@ -893,6 +860,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
+        "module_name": "//:webgpu_blink_web_tests/",
         "name": "webgpu_blink_web_tests_with_backend_validation",
         "resultdb": {
           "enable": true
@@ -927,6 +895,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test/",
         "name": "webgpu_cts_tests",
         "resultdb": {
           "enable": true,
@@ -965,6 +934,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test/",
         "name": "webgpu_cts_with_validation_tests",
         "resultdb": {
           "enable": true,
@@ -989,8 +959,7 @@
       {
         "args": [
           "--flag-specific=webgpu-swiftshader",
-          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000",
-          "--platform=mac-mac11"
+          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000"
         ],
         "merge": {
           "args": [
@@ -998,6 +967,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
+        "module_name": "//:webgpu_blink_web_tests/",
         "name": "webgpu_swiftshader_blink_web_tests",
         "resultdb": {
           "enable": true
@@ -1020,8 +990,7 @@
         "args": [
           "--flag-specific=webgpu-swiftshader-with-backend-validation",
           "--timeout-ms=30000",
-          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000",
-          "--platform=mac-mac11"
+          "--initialize-webgpu-adapter-at-startup-timeout-ms=60000"
         ],
         "merge": {
           "args": [
@@ -1029,6 +998,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
+        "module_name": "//:webgpu_blink_web_tests/",
         "name": "webgpu_swiftshader_blink_web_tests_with_backend_validation",
         "resultdb": {
           "enable": true
@@ -1065,6 +1035,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test/",
         "name": "webgpu_swiftshader_web_platform_cts_tests",
         "resultdb": {
           "enable": true,
@@ -1105,6 +1076,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test/",
         "name": "webgpu_swiftshader_web_platform_cts_with_validation_tests",
         "resultdb": {
           "enable": true,

@@ -37,7 +37,7 @@ QT_BEGIN_NAMESPACE
  *
  * For other use cases, consider using IviApplication or XdgShell instead.
  *
- * \qml
+ * \code
  * import QtWayland.Compositor.QtShell
  *
  * WaylandCompositor {
@@ -48,7 +48,7 @@ QT_BEGIN_NAMESPACE
  *         }
  *     }
  * }
- * \endqml
+ * \endcode
  */
 QWaylandQtShell::QWaylandQtShell()
     : QWaylandCompositorExtensionTemplate<QWaylandQtShell>(*new QWaylandQtShellPrivate())
@@ -286,6 +286,12 @@ void QWaylandQtShellSurface::initialize(QWaylandQtShell *qtShell, QWaylandSurfac
  *
  * This property holds the surface associated with this QtShellSurface.
  */
+
+/*!
+ * \property QWaylandQtShellSurface::surface
+ *
+ * This property holds the surface associated with this QWaylandQtShellSurface.
+ */
 QWaylandSurface *QWaylandQtShellSurface::surface() const
 {
     Q_D(const QWaylandQtShellSurface);
@@ -300,6 +306,12 @@ QWaylandQtShell *QWaylandQtShellSurface::shell() const
 
 /*!
  * \qmlproperty point QtShellSurface::windowPosition
+ *
+ * This property holds the position of the shell surface relative to its output.
+ */
+
+/*!
+ * \property QWaylandQtShellSurface::windowPosition
  *
  * This property holds the position of the shell surface relative to its output.
  */
@@ -328,6 +340,12 @@ void QWaylandQtShellSurface::setWindowPosition(const QPoint &position)
  *
  * This property holds the window geometry of the shell surface.
  */
+
+/*!
+ * \property QWaylandQtShellSurface::windowGeometry
+ *
+ * This property holds the window geometry of the shell surface.
+ */
 QRect QWaylandQtShellSurface::windowGeometry() const
 {
     Q_D(const QWaylandQtShellSurface);
@@ -339,6 +357,13 @@ QRect QWaylandQtShellSurface::windowGeometry() const
  *
  * The minimum size of the window if the client has specified one. Otherwise an invalid size.
  */
+
+/*!
+ * \property QWaylandQtShellSurface::minimumSize
+ *
+ * The minimum size of the window if the client has specified one. Otherwise an
+ * invalid size.
+ */
 QSize QWaylandQtShellSurface::minimumSize() const
 {
     Q_D(const QWaylandQtShellSurface);
@@ -349,6 +374,13 @@ QSize QWaylandQtShellSurface::minimumSize() const
  * \qmlproperty size QtShellSurface::maximumSize
  *
  * The maximum size of the window if the client has specified one. Otherwise an invalid size.
+ */
+
+/*!
+ * \property QWaylandQtShellSurface::maximumSize
+ *
+ * The maximum size of the window if the client has specified one. Otherwise an
+ * invalid size.
  */
 QSize QWaylandQtShellSurface::maximumSize() const
 {
@@ -406,6 +438,12 @@ void QWaylandQtShellSurface::setFrameMargins(const QMargins &margins)
  *
  *  This holds the window frame margin to the left of the surface.
  */
+
+/*!
+ * \property QWaylandQtShellSurface::frameMarginLeft
+ *
+ * This property holds the window frame margin to the left of the surface.
+ */
 void QWaylandQtShellSurface::setFrameMarginLeft(int left)
 {
     Q_D(QWaylandQtShellSurface);
@@ -428,6 +466,12 @@ int QWaylandQtShellSurface::frameMarginLeft() const
  *  \qmlproperty int QtShellSurface::frameMarginRight
  *
  *  This holds the window frame margin to the right of the surface.
+ */
+
+/*!
+ * \property QWaylandQtShellSurface::frameMarginRight
+ *
+ * This property holds the window frame margin to the right of the surface.
  */
 void QWaylandQtShellSurface::setFrameMarginRight(int right)
 {
@@ -453,6 +497,11 @@ int QWaylandQtShellSurface::frameMarginRight() const
  *  This holds the window frame margin above the surface.
  */
 
+/*!
+ * \property QWaylandQtShellSurface::frameMarginTop
+ *
+ * This property holds the window frame margin above the surface.
+ */
 void QWaylandQtShellSurface::setFrameMarginTop(int top)
 {
     Q_D(QWaylandQtShellSurface);
@@ -475,6 +524,12 @@ int QWaylandQtShellSurface::frameMarginTop() const
  *
  *  This holds the window frame margin below the surface.
  */
+
+/*!
+ * \property QWaylandQtShellSurface::frameMarginBottom
+ *
+ * This property holds the window frame margin below the surface.
+ */
 void QWaylandQtShellSurface::setFrameMarginBottom(int bottom)
 {
     Q_D(QWaylandQtShellSurface);
@@ -486,6 +541,15 @@ void QWaylandQtShellSurface::setFrameMarginBottom(int bottom)
     emit frameMarginChanged();
 }
 
+/*!
+ * \property QWaylandQtShellSurface::positionAutomatic
+ *
+ * This property holds whether the window position is automatically determined
+ * by the compositor.
+ *
+ * The value is \c true if the position has not been explicitly set; otherwise
+ * \c false.
+ */
 bool QWaylandQtShellSurface::positionAutomatic() const
 {
     Q_D(const QWaylandQtShellSurface);
@@ -502,6 +566,12 @@ int QWaylandQtShellSurface::frameMarginBottom() const
  *  \qmlproperty int QtShellSurface::windowFlags
  *
  *  This property holds the window flags of the QtShellSurface.
+ */
+
+/*!
+ * \property QWaylandQtShellSurface::windowFlags
+ *
+ * This property holds the window flags of the QWaylandQtShellSurface.
  */
 uint QWaylandQtShellSurface::windowFlags() const
 {
@@ -525,6 +595,12 @@ void QWaylandQtShellSurface::sendClose()
  *
  *  This property holds the window title of the QtShellSurface.
  */
+
+/*!
+ * \property QWaylandQtShellSurface::windowTitle
+ *
+ * This property holds the window title of the QWaylandQtShellSurface.
+ */
 QString QWaylandQtShellSurface::windowTitle() const
 {
     Q_D(const QWaylandQtShellSurface);
@@ -539,6 +615,18 @@ QString QWaylandQtShellSurface::windowTitle() const
  *  \note There are no restrictions in QtShellSurface that prevents multiple surfaces from being
  *  active simultaneously. Such logic must either be implemented by the compositor itself, or by
  *  using the QtShellChrome type, which will automatically manage the activation state of surfaces.
+ */
+
+/*!
+ * \property QWaylandQtShellSurface::active
+ *
+ * This property holds whether the surface is currently considered active.
+ *
+ * \note There are no restrictions in QWaylandQtShellSurface that prevent
+ *       multiple surfaces from being active simultaneously. Such logic must
+ *       either be implemented by the compositor itself, or by using the
+ *       QWaylandQtShellChrome type, which will automatically manage the
+ *       activation state of surfaces.
  */
 void QWaylandQtShellSurface::setActive(bool active)
 {
@@ -575,6 +663,24 @@ bool QWaylandQtShellSurface::active() const
  *       through the \l{startResize()} signal.
  * \endlist
  */
+
+/*!
+ * \property QWaylandQtShellSurface::capabilities
+ *
+ * This property holds the capabilities of the compositor. By default, no
+ * special capabilities are enabled.
+ *
+ * \list
+ *   \li QWaylandQtShellSurface::InteractiveMove The client can trigger a
+ *       server-side interactive move operation using
+ *       QWindow::startSystemMove(). The compositor will be notified of this
+ *       through the startMove() signal.
+ *   \li QWaylandQtShellSurface::InteractiveResize The client can trigger a
+ *       server-side interactive resize operation using
+ *       QWindow::startSystemResize(). The compositor will be notified of this
+ *       through the startResize() signal.
+ * \endlist
+ */
 void QWaylandQtShellSurface::setCapabilities(CapabilityFlags capabilities)
 {
     Q_D(QWaylandQtShellSurface);
@@ -600,6 +706,16 @@ QWaylandQtShellSurface::CapabilityFlags QWaylandQtShellSurface::capabilities() c
  *
  *  \note When \l{requestWindowGeometry()} is called to update state of the surface, the
  *  \c windowState property will not be updated until the client has acknowledged the state change.
+ */
+
+/*!
+ * \property QWaylandQtShellSurface::windowState
+ *
+ * This property holds the window state of the QWaylandQtShellSurface.
+ *
+ * \note When requestWindowGeometry() is called to update state of the surface,
+ *       the windowState property will not be updated until the client has
+ *       acknowledged the state change.
  */
 uint QWaylandQtShellSurface::windowState() const
 {
@@ -662,6 +778,7 @@ void QWaylandQtShellSurface::surfaceCommitted()
 }
 
 /*!
+ * \internal
  * Returns the Wayland interface for the QWaylandQtShellSurface.
  */
 const wl_interface *QWaylandQtShellSurface::interface()
@@ -675,6 +792,7 @@ QByteArray QWaylandQtShellSurface::interfaceName()
 }
 
 /*!
+ * \internal
  * Returns the surface role for the QWaylandQtShellSurface.
  */
 QWaylandSurfaceRole *QWaylandQtShellSurface::role()
@@ -683,6 +801,7 @@ QWaylandSurfaceRole *QWaylandQtShellSurface::role()
 }
 
 /*!
+ * \internal
  * Returns the QWaylandQtShellSurface corresponding to the \a resource.
  */
 QWaylandQtShellSurface *QWaylandQtShellSurface::fromResource(wl_resource *resource)

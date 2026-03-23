@@ -29,6 +29,7 @@
 #define SRC_DAWN_NATIVE_VULKAN_DEVICEVK_H_
 
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <string>
 #include <utility>
@@ -52,6 +53,7 @@ namespace dawn::native::vulkan {
 
 class BufferUploader;
 class FencedDeleter;
+class FramebufferCache;
 class RenderPassCache;
 class ResourceMemoryAllocator;
 
@@ -75,6 +77,7 @@ class Device final : public DeviceBase {
     uint32_t GetGraphicsQueueFamily() const;
 
     MutexProtected<FencedDeleter>& GetFencedDeleter() const;
+    FramebufferCache* GetFramebufferCache() const;
     RenderPassCache* GetRenderPassCache() const;
     MutexProtected<ResourceMemoryAllocator>& GetResourceMemoryAllocator() const;
     external_semaphore::Service* GetExternalSemaphoreService() const;
@@ -98,13 +101,13 @@ class Device final : public DeviceBase {
 
     MaybeError TickImpl() override;
 
-    MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
-                                           uint64_t sourceOffset,
-                                           BufferBase* destination,
-                                           uint64_t destinationOffset,
-                                           uint64_t size) override;
+    MaybeError CopyFromStagingToBuffer(BufferBase* source,
+                                       uint64_t sourceOffset,
+                                       BufferBase* destination,
+                                       uint64_t destinationOffset,
+                                       uint64_t size) override;
     MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
-                                            const TextureDataLayout& src,
+                                            const TexelCopyBufferLayout& src,
                                             const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
 
@@ -117,13 +120,22 @@ class Device final : public DeviceBase {
 
     float GetTimestampPeriodInNS() const override;
 
+    AllocatorMemoryInfo GetAllocatorMemoryInfo() const override;
+
     void SetLabelImpl() override;
+    bool ReduceMemoryUsageImpl() override;
     void PerformIdleTasksImpl() override;
 
     void OnDebugMessage(std::string message);
 
     // Used to associate this device with validation layer messages.
     const char* GetDebugPrefix() { return mDebugPrefix.c_str(); }
+
+    bool CanAddStorageUsageToBufferWithoutSideEffects(wgpu::BufferUsage storageUsage,
+                                                      wgpu::BufferUsage originalUsage,
+                                                      size_t bufferSize) const override;
+
+    QuerySetBase* GetEmptyPassQuerySet();
 
   private:
     Device(AdapterBase* adapter,
@@ -145,8 +157,7 @@ class Device final : public DeviceBase {
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
         const std::vector<tint::wgsl::Extension>& internalExtensions,
-        ShaderModuleParseResult* parseResult,
-        OwnedCompilationMessages* compilationMessages) override;
+        ShaderModuleParseResult* parseResult) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
         SwapChainBase* previousSwapChain,
@@ -169,8 +180,7 @@ class Device final : public DeviceBase {
     ResultOrError<Ref<SharedFenceBase>> ImportSharedFenceImpl(
         const SharedFenceDescriptor* baseDescriptor) override;
 
-    ResultOrError<VulkanDeviceKnobs> CreateDevice(wgpu::FeatureLevel featureLevel,
-                                                  VkPhysicalDevice vkPhysicalDevice);
+    ResultOrError<VulkanDeviceKnobs> CreateDevice(VkPhysicalDevice vkPhysicalDevice);
 
     MaybeError CheckDebugLayerAndGenerateErrors();
     void AppendDebugLayerMessages(ErrorData* error) override;
@@ -193,6 +203,7 @@ class Device final : public DeviceBase {
         mDescriptorAllocatorsPendingDeallocation;
     std::unique_ptr<MutexProtected<FencedDeleter>> mDeleter;
     std::unique_ptr<MutexProtected<ResourceMemoryAllocator>> mResourceMemoryAllocator;
+    std::unique_ptr<FramebufferCache> mFramebufferCache;
     std::unique_ptr<RenderPassCache> mRenderPassCache;
 
     std::unique_ptr<external_memory::Service> mExternalMemoryService;
@@ -202,7 +213,10 @@ class Device final : public DeviceBase {
     const std::string mDebugPrefix;
     std::vector<std::string> mDebugMessages;
 
+    std::once_flag mMonolithicPipelineCacheFlag;
     Ref<PipelineCache> mMonolithicPipelineCache;
+
+    Ref<QuerySetBase> mEmptyPassQuerySet;
 
     MaybeError ImportExternalImage(const ExternalImageDescriptorVk* descriptor,
                                    ExternalMemoryHandle memoryHandle,

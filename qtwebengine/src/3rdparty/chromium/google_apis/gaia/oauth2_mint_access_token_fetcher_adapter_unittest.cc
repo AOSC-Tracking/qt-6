@@ -16,6 +16,7 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "google_apis/gaia/gaia_auth_util.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_id.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
@@ -49,10 +50,20 @@ constexpr char kTestAssertion[] = "test_assertion";
 
 constexpr char kAssertionSentinel[] = "DBSC_CHALLENGE_IF_REQUIRED";
 
-constexpr char kFetchAuthErrorHistogram[] =
+constexpr char kBoundFetchAuthErrorHistogram[] =
     "Signin.OAuth2MintToken.BoundFetchAuthError";
-constexpr char kFetchEncryptionErrorHistogram[] =
+constexpr std::string_view kChallengeSentinelHistogramSuffix =
+    ".ChallengeSentinel";
+constexpr std::string_view kAssertionFailedHistogramSuffix = ".AssertionFailed";
+constexpr std::string_view kSignedAssertionHistogramSuffix = ".SignedAssertion";
+constexpr std::string_view kNoAssertionHistogramSuffix = ".NoAssertion";
+constexpr std::string_view kBoundFetchEncryptionErrorHistogram =
     "Signin.OAuth2MintToken.BoundFetchEncryptionError";
+
+constexpr char kUnboundFetchAuthErrorHistogram[] =
+    "Signin.OAuth2MintToken.UnboundFetchAuthError";
+constexpr std::string_view kUnboundFetchEncryptionErrorHistogram =
+    "Signin.OAuth2MintToken.UnboundFetchEncryptionError";
 
 class MockOAuth2AccessTokenConsumer : public OAuth2AccessTokenConsumer {
  public:
@@ -153,6 +164,20 @@ Matcher<const OAuth2MintTokenFlow::Parameters&> ParamsEq(
             expected.bound_oauth_token));
 }
 
+OAuth2MintTokenFlow::Parameters GetTestOAuth2MintTokenFlowParameters(
+    std::string_view bound_oauth_token) {
+  OAuth2MintTokenFlow::Parameters params;
+  params.client_id = kTestClientId;
+  params.version = kTestVersion;
+  params.channel = kTestChannel;
+  params.device_id = kTestDeviceId;
+  params.enable_granular_permissions = false;
+  params.mode = OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE;
+  params.scopes = {kTestScope};
+  params.bound_oauth_token = bound_oauth_token;
+  return params;
+}
+
 }  // namespace
 
 class OAuth2MintAccessTokenFetcherAdapterTest : public testing::Test {
@@ -160,11 +185,12 @@ class OAuth2MintAccessTokenFetcherAdapterTest : public testing::Test {
   OAuth2MintAccessTokenFetcherAdapterTest() = default;
   ~OAuth2MintAccessTokenFetcherAdapterTest() override = default;
 
-  std::unique_ptr<OAuth2MintAccessTokenFetcherAdapter> CreateFetcher() {
+  std::unique_ptr<OAuth2MintAccessTokenFetcherAdapter> CreateFetcher(
+      bool is_refresh_token_bound = true) {
     auto fetcher = std::make_unique<OAuth2MintAccessTokenFetcherAdapter>(
         &mock_consumer_, url_loader_factory_.GetSafeWeakWrapper(),
-        kTestUserGaiaId, kTestRefreshToken, kTestDeviceId, kTestVersion,
-        kTestChannel);
+        kTestUserGaiaId, kTestRefreshToken, is_refresh_token_bound,
+        kTestDeviceId, kTestVersion, kTestChannel);
     fetcher->SetOAuth2MintTokenFlowFactoryForTesting(base::BindRepeating(
         &OAuth2MintAccessTokenFetcherAdapterTest::CreateMockFlow,
         base::Unretained(this)));
@@ -180,6 +206,28 @@ class OAuth2MintAccessTokenFetcherAdapterTest : public testing::Test {
     mock_flow_ = mock_flow->GetWeakPtr();
     EXPECT_CALL(*mock_flow_, Start(_, kTestRefreshToken));
     return mock_flow;
+  }
+
+  void VerifyBoundFetchAuthErrorHistograms(GoogleServiceAuthError::State error,
+                                           std::string_view histogram_suffix) {
+    histogram_tester().ExpectUniqueSample(kBoundFetchAuthErrorHistogram, error,
+                                          /*expected_bucket_count=*/1);
+    histogram_tester().ExpectUniqueSample(
+        base::StrCat({kBoundFetchAuthErrorHistogram, histogram_suffix}), error,
+        /*expected_bucket_count=*/1);
+  }
+
+  void VerifyUnboundFetchAuthErrorHistograms(
+      GoogleServiceAuthError::State error) {
+    histogram_tester().ExpectUniqueSample(kUnboundFetchAuthErrorHistogram,
+                                          error,
+                                          /*expected_bucket_count=*/1);
+    // Only the ".NoAssertion" version is expected for unbound fetches.
+    histogram_tester().ExpectUniqueSample(
+        base::StrCat(
+            {kUnboundFetchAuthErrorHistogram, kNoAssertionHistogramSuffix}),
+        error,
+        /*expected_bucket_count=*/1);
   }
 
   MockOAuth2AccessTokenConsumer* mock_consumer() { return &mock_consumer_; }
@@ -204,16 +252,9 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, Params) {
   // Need to start a fetcher to create a mock flow.
   fetcher->Start(kTestClientId, kTestClientSecret, {kTestScope});
   EXPECT_TRUE(mock_flow());
-  OAuth2MintTokenFlow::Parameters expected_params;
-  expected_params.client_id = kTestClientId;
-  expected_params.version = kTestVersion;
-  expected_params.channel = kTestChannel;
-  expected_params.device_id = kTestDeviceId;
-  expected_params.enable_granular_permissions = false;
-  expected_params.mode = OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE;
-  expected_params.scopes = {kTestScope};
-  expected_params.bound_oauth_token = gaia::CreateBoundOAuthToken(
-      kTestUserGaiaId, kTestRefreshToken, kAssertionSentinel);
+  OAuth2MintTokenFlow::Parameters expected_params =
+      GetTestOAuth2MintTokenFlowParameters(gaia::CreateBoundOAuthToken(
+          kTestUserGaiaId, kTestRefreshToken, kAssertionSentinel));
   EXPECT_THAT(mock_flow()->params(), ParamsEq(expected_params));
 }
 
@@ -222,16 +263,19 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, ParamsWithBindingKeyAssertion) {
   fetcher->SetBindingKeyAssertion(kTestAssertion);
   fetcher->Start(kTestClientId, kTestClientSecret, {kTestScope});
   EXPECT_TRUE(mock_flow());
-  OAuth2MintTokenFlow::Parameters expected_params;
-  expected_params.client_id = kTestClientId;
-  expected_params.version = kTestVersion;
-  expected_params.channel = kTestChannel;
-  expected_params.device_id = kTestDeviceId;
-  expected_params.enable_granular_permissions = false;
-  expected_params.mode = OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE;
-  expected_params.scopes = {kTestScope};
-  expected_params.bound_oauth_token = gaia::CreateBoundOAuthToken(
-      kTestUserGaiaId, kTestRefreshToken, kTestAssertion);
+  OAuth2MintTokenFlow::Parameters expected_params =
+      GetTestOAuth2MintTokenFlowParameters(gaia::CreateBoundOAuthToken(
+          kTestUserGaiaId, kTestRefreshToken, kTestAssertion));
+  EXPECT_THAT(mock_flow()->params(), ParamsEq(expected_params));
+}
+
+TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, ParamsUnbound) {
+  auto fetcher = CreateFetcher(/*is_refresh_token_bound=*/false);
+  // Need to start a fetcher to create a mock flow.
+  fetcher->Start(kTestClientId, kTestClientSecret, {kTestScope});
+  EXPECT_TRUE(mock_flow());
+  OAuth2MintTokenFlow::Parameters expected_params =
+      GetTestOAuth2MintTokenFlowParameters(/*bound_oauth_token=*/std::string());
   EXPECT_THAT(mock_flow()->params(), ParamsEq(expected_params));
 }
 
@@ -244,9 +288,37 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, Success) {
   mock_flow()->SimulateMintTokenSuccess(kTestAccessToken, {kTestScope},
                                         kTimeToLive.InSeconds(),
                                         /*is_encrypted=*/false);
-  histogram_tester().ExpectUniqueSample(kFetchAuthErrorHistogram,
-                                        GoogleServiceAuthError::NONE,
-                                        /*expected_bucket_count=*/1);
+  VerifyBoundFetchAuthErrorHistograms(GoogleServiceAuthError::NONE,
+                                      kChallengeSentinelHistogramSuffix);
+}
+
+TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, SuccessWithSignedAssertion) {
+  auto fetcher = CreateFetcher();
+  fetcher->Start(kTestClientId, kTestClientSecret, {kTestScope});
+  fetcher->SetBindingKeyAssertion("test_assertion");
+  base::TimeDelta kTimeToLive = base::Hours(4);
+  EXPECT_CALL(*mock_consumer(), OnGetTokenSuccess(HasAccessTokenWithTtl(
+                                    kTestAccessToken, kTimeToLive)));
+  mock_flow()->SimulateMintTokenSuccess(kTestAccessToken, {kTestScope},
+                                        kTimeToLive.InSeconds(),
+                                        /*is_encrypted=*/false);
+  VerifyBoundFetchAuthErrorHistograms(GoogleServiceAuthError::NONE,
+                                      kSignedAssertionHistogramSuffix);
+}
+
+TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, SuccessWithFailedAssertion) {
+  auto fetcher = CreateFetcher();
+  fetcher->Start(kTestClientId, kTestClientSecret, {kTestScope});
+  fetcher->SetBindingKeyAssertion(
+      std::string(GaiaConstants::kTokenBindingAssertionFailedPlaceholder));
+  base::TimeDelta kTimeToLive = base::Hours(4);
+  EXPECT_CALL(*mock_consumer(), OnGetTokenSuccess(HasAccessTokenWithTtl(
+                                    kTestAccessToken, kTimeToLive)));
+  mock_flow()->SimulateMintTokenSuccess(kTestAccessToken, {kTestScope},
+                                        kTimeToLive.InSeconds(),
+                                        /*is_encrypted=*/false);
+  VerifyBoundFetchAuthErrorHistograms(GoogleServiceAuthError::NONE,
+                                      kAssertionFailedHistogramSuffix);
 }
 
 TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, SuccessWithEncryption) {
@@ -264,11 +336,10 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, SuccessWithEncryption) {
   mock_flow()->SimulateMintTokenSuccess(kTestEncryptedToken, {kTestScope},
                                         kTimeToLive.InSeconds(),
                                         /*is_encrypted=*/true);
-  histogram_tester().ExpectUniqueSample(kFetchAuthErrorHistogram,
-                                        GoogleServiceAuthError::NONE,
-                                        /*expected_bucket_count=*/1);
+  VerifyBoundFetchAuthErrorHistograms(GoogleServiceAuthError::NONE,
+                                      kChallengeSentinelHistogramSuffix);
   histogram_tester().ExpectUniqueSample(
-      kFetchEncryptionErrorHistogram,
+      kBoundFetchEncryptionErrorHistogram,
       TokenBindingResponseEncryptionError::kSuccessfullyDecrypted,
       /*expected_bucket_count=*/1);
 }
@@ -286,11 +357,26 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, SuccessDecryptorUnused) {
   mock_flow()->SimulateMintTokenSuccess(kTestAccessToken, {kTestScope},
                                         kTimeToLive.InSeconds(),
                                         /*is_encrypted=*/false);
-  histogram_tester().ExpectUniqueSample(kFetchAuthErrorHistogram,
-                                        GoogleServiceAuthError::NONE,
-                                        /*expected_bucket_count=*/1);
+  VerifyBoundFetchAuthErrorHistograms(GoogleServiceAuthError::NONE,
+                                      kChallengeSentinelHistogramSuffix);
   histogram_tester().ExpectUniqueSample(
-      kFetchEncryptionErrorHistogram,
+      kBoundFetchEncryptionErrorHistogram,
+      TokenBindingResponseEncryptionError::kSuccessNoEncryption,
+      /*expected_bucket_count=*/1);
+}
+
+TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, SuccessUnbound) {
+  auto fetcher = CreateFetcher(/*is_refresh_token_bound=*/false);
+  fetcher->Start(kTestClientId, kTestClientSecret, {kTestScope});
+  base::TimeDelta kTimeToLive = base::Hours(4);
+  EXPECT_CALL(*mock_consumer(), OnGetTokenSuccess(HasAccessTokenWithTtl(
+                                    kTestAccessToken, kTimeToLive)));
+  mock_flow()->SimulateMintTokenSuccess(kTestAccessToken, {kTestScope},
+                                        kTimeToLive.InSeconds(),
+                                        /*is_encrypted=*/false);
+  VerifyUnboundFetchAuthErrorHistograms(GoogleServiceAuthError::NONE);
+  histogram_tester().ExpectUniqueSample(
+      kUnboundFetchEncryptionErrorHistogram,
       TokenBindingResponseEncryptionError::kSuccessNoEncryption,
       /*expected_bucket_count=*/1);
 }
@@ -304,10 +390,22 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, Failure) {
               CREDENTIALS_REJECTED_BY_SERVER);
   EXPECT_CALL(*mock_consumer(), OnGetTokenFailure(error));
   mock_flow()->SimulateMintTokenFailure(error);
-  histogram_tester().ExpectUniqueSample(
-      kFetchAuthErrorHistogram,
+  VerifyBoundFetchAuthErrorHistograms(
       GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
-      /*expected_bucket_count=*/1);
+      kChallengeSentinelHistogramSuffix);
+}
+
+TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, FailureUnbound) {
+  auto fetcher = CreateFetcher(/*is_refresh_token_bound=*/false);
+  fetcher->Start(kTestClientId, kTestClientSecret, {kTestScope});
+  GoogleServiceAuthError error =
+      GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+          GoogleServiceAuthError::InvalidGaiaCredentialsReason::
+              CREDENTIALS_REJECTED_BY_SERVER);
+  EXPECT_CALL(*mock_consumer(), OnGetTokenFailure(error));
+  mock_flow()->SimulateMintTokenFailure(error);
+  VerifyUnboundFetchAuthErrorHistograms(
+      GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
 }
 
 TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, ChallengeRequired) {
@@ -317,10 +415,9 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, ChallengeRequired) {
       GoogleServiceAuthError::FromTokenBindingChallenge("challenge");
   EXPECT_CALL(*mock_consumer(), OnGetTokenFailure(error));
   mock_flow()->SimulateMintTokenFailure(error);
-  histogram_tester().ExpectUniqueSample(
-      kFetchAuthErrorHistogram,
+  VerifyBoundFetchAuthErrorHistograms(
       GoogleServiceAuthError::CHALLENGE_RESPONSE_REQUIRED,
-      /*expected_bucket_count=*/1);
+      kChallengeSentinelHistogramSuffix);
 }
 
 TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, DecryptionFailure) {
@@ -340,12 +437,11 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, DecryptionFailure) {
   mock_flow()->SimulateMintTokenSuccess(kTestEncryptedToken, {kTestScope},
                                         kTimeToLive.InSeconds(),
                                         /*is_encrypted=*/true);
-  histogram_tester().ExpectUniqueSample(
-      kFetchAuthErrorHistogram,
+  VerifyBoundFetchAuthErrorHistograms(
       GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE,
-      /*expected_bucket_count=*/1);
+      kChallengeSentinelHistogramSuffix);
   histogram_tester().ExpectUniqueSample(
-      kFetchEncryptionErrorHistogram,
+      kBoundFetchEncryptionErrorHistogram,
       TokenBindingResponseEncryptionError::kDecryptionFailed,
       /*expected_bucket_count=*/1);
 }
@@ -361,12 +457,11 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, NoDecryptorFailure) {
   mock_flow()->SimulateMintTokenSuccess(kTestAccessToken, {kTestScope},
                                         kTimeToLive.InSeconds(),
                                         /*is_encrypted=*/true);
-  histogram_tester().ExpectUniqueSample(
-      kFetchAuthErrorHistogram,
+  VerifyBoundFetchAuthErrorHistograms(
       GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE,
-      /*expected_bucket_count=*/1);
+      kChallengeSentinelHistogramSuffix);
   histogram_tester().ExpectUniqueSample(
-      kFetchEncryptionErrorHistogram,
+      kBoundFetchEncryptionErrorHistogram,
       TokenBindingResponseEncryptionError::kResponseUnexpectedlyEncrypted,
       /*expected_bucket_count=*/1);
 }
@@ -377,12 +472,11 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, UnexpectedConsentResult) {
   EXPECT_CALL(*mock_consumer(),
               OnGetTokenFailure(Property(
                   "state", &GoogleServiceAuthError::state,
-                  GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE)));
+                  GoogleServiceAuthError::SCOPE_LIMITED_UNRECOVERABLE_ERROR)));
   mock_flow()->SimulateRemoteConsentSuccess(RemoteConsentResolutionData());
-  histogram_tester().ExpectUniqueSample(
-      kFetchAuthErrorHistogram,
-      GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE,
-      /*expected_bucket_count=*/1);
+  VerifyBoundFetchAuthErrorHistograms(
+      GoogleServiceAuthError::SCOPE_LIMITED_UNRECOVERABLE_ERROR,
+      kChallengeSentinelHistogramSuffix);
 }
 
 TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, CancelRequest) {
@@ -390,6 +484,7 @@ TEST_F(OAuth2MintAccessTokenFetcherAdapterTest, CancelRequest) {
   fetcher->Start(kTestClientId, kTestClientSecret, {kTestScope});
   fetcher->CancelRequest();
   EXPECT_FALSE(mock_flow());
-  histogram_tester().ExpectTotalCount(kFetchAuthErrorHistogram,
-                                      /*expected_count=*/0);
+  EXPECT_THAT(
+      histogram_tester().GetTotalCountsForPrefix(kBoundFetchAuthErrorHistogram),
+      testing::IsEmpty());
 }

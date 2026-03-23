@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWEBVIEWPLUGIN_H
 #define QWEBVIEWPLUGIN_H
@@ -16,7 +17,8 @@
 //
 
 #include "qwebview_global.h"
-#include "qabstractwebview_p.h"
+#include "qwebview_p.h"
+#include "qwebviewfactory_p.h"
 
 #include <QtCore/qobject.h>
 
@@ -31,7 +33,8 @@ public:
     explicit QWebViewPlugin(QObject *parent = nullptr);
     virtual ~QWebViewPlugin();
 
-    virtual QAbstractWebView *create(const QString &key) const = 0;
+    virtual QWebViewPrivate *create(const QString &key, QWebView *view,
+                                    QWebViewFactory::Hint hint) const = 0;
 
     virtual void prepare() const;
 };

@@ -12,6 +12,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/to_string.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "ui/accessibility/ax_enums.mojom.h"
@@ -186,6 +187,7 @@ std::string IntAttrToString(const ui::AXNode& node,
     case ax::mojom::IntAttribute::kTextSelStart:
     case ax::mojom::IntAttribute::kTextStyle:
     case ax::mojom::IntAttribute::kMaxLength:
+    case ax::mojom::IntAttribute::kPaintOrder:
     case ax::mojom::IntAttribute::kNone:
       break;
   }
@@ -755,7 +757,7 @@ std::string AccessibilityTreeFormatterBlink::ProcessTreeForOutput(
     }
     WriteAttribute(false,
                    base::StringPrintf("%s=%s", ui::ToString(attr),
-                                      *bool_value ? "true" : "false"),
+                                      base::ToString(*bool_value)),
                    &line);
   }
 

@@ -65,11 +65,6 @@ gfx::SizeF SVGViewportResolver::ResolveViewport() const {
       }
       return inner_svg->Viewport().size();
     }
-    if (auto* hidden_container = DynamicTo<LayoutSVGHiddenContainer>(*object)) {
-      if (IsA<SVGSymbolElement>(*hidden_container->GetElement())) {
-        return gfx::SizeF();
-      }
-    }
   }
   return gfx::SizeF();
 }
@@ -95,7 +90,7 @@ float SVGViewportResolver::ViewportDimension(SVGLengthMode mode) const {
 float ValueForLength(const Length& length, float zoom, float dimension) {
   DCHECK_NE(zoom, 0);
   // Only "specified" lengths have meaning for SVG.
-  if (!length.IsSpecified()) {
+  if (!length.HasOnlyFixedAndPercent()) {
     return 0;
   }
   return FloatValueForLength(length, dimension * zoom) / zoom;

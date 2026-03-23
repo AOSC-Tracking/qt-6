@@ -34,20 +34,24 @@
 #include "media/capture/video/video_capture_device_client.h"
 #include "media/capture/video/video_frame_receiver.h"
 #include "media/capture/video/video_frame_receiver_on_task_runner.h"
-#include "services/video_effects/public/mojom/video_effects_processor.mojom-forward.h"
+#include "services/video_effects/public/cpp/buildflags.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
+
+#if BUILDFLAG(ENABLE_VIDEO_EFFECTS)
+#include "services/video_effects/public/mojom/video_effects_processor.mojom-forward.h"
+#endif
 
 #if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
 #include "content/browser/media/capture/desktop_capture_device_uma_types.h"
 #include "content/browser/media/capture/web_contents_video_capture_device.h"
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_IOS)
 #if defined(USE_AURA)
 #include "content/browser/media/capture/aura_window_video_capture_device.h"
 #endif  // defined(USE_AURA)
 #if BUILDFLAG(ENABLE_WEBRTC)
 #include "content/browser/media/capture/desktop_capture_device.h"
 #endif  // BUILDFLAG(ENABLE_WEBRTC)
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#endif  // !BUILDFLAG(IS_IOS)
 #if BUILDFLAG(IS_MAC)
 #include "base/mac/mac_util.h"
 #include "content/browser/media/capture/desktop_capture_device_mac.h"
@@ -93,20 +97,8 @@ std::unique_ptr<media::VideoCaptureJpegDecoder> CreateGpuJpegDecoder(
 const int kMaxNumberOfBuffers = media::kVideoCaptureDefaultMaxBufferPoolSize;
 
 #if BUILDFLAG(IS_MAC)
-BASE_FEATURE(kScreenCaptureKitMac,
-             "ScreenCaptureKitMac",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-// If this feature is enabled, ScreenCaptureKit will be used for window
-// capturing even if kScreenCaptureKitMac is disabled. Please note that this
-// feature has no effect if kScreenCaptureKitMac is enabled.
-BASE_FEATURE(kScreenCaptureKitMacWindow,
-             "ScreenCaptureKitMacWindow",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // If this feature is enabled, ScreenCaptureKit will be used for screen
-// capturing even if kScreenCaptureKitMac is disabled. Please note that this
-// feature has no effect if kScreenCaptureKitMac is enabled.
+// capturing.
 BASE_FEATURE(kScreenCaptureKitMacScreen,
              "ScreenCaptureKitMacScreen",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -205,13 +197,8 @@ DesktopCaptureImplementation CreatePlatformDependentVideoCaptureDevice(
 
   // Prefer using ScreenCaptureKit. After that try DesktopCaptureDeviceMac, and
   // if both fail, use the generic DesktopCaptureDevice.
-  // Although ScreenCaptureKit is available in 12.3 there were some bugs that
-  // were not fixed until 13.2
 #if BUILDFLAG(USE_SCK)
-  // ### Requires macOS sdk 12.3:
-  if (base::FeatureList::IsEnabled(kScreenCaptureKitMac) ||
-      (desktop_id.type == DesktopMediaID::TYPE_WINDOW &&
-       base::FeatureList::IsEnabled(kScreenCaptureKitMacWindow)) ||
+  if (desktop_id.type == DesktopMediaID::TYPE_WINDOW ||
       (desktop_id.type == DesktopMediaID::TYPE_SCREEN &&
        base::FeatureList::IsEnabled(kScreenCaptureKitMacScreen))) {
     device_out = CreateScreenCaptureKitDeviceMac(desktop_id);
@@ -219,16 +206,17 @@ DesktopCaptureImplementation CreatePlatformDependentVideoCaptureDevice(
       return kScreenCaptureKitDeviceMac;
     }
   }
-#endif //BUILDFLAG(USE_SCK)
+#endif  // BUILDFLAG(USE_SCK)
   if ((device_out = CreateDesktopCaptureDeviceMac(desktop_id))) {
     return kDesktopCaptureDeviceMac;
   }
 #endif  // BUILDFLAG(IS_MAC)
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+
+#if !BUILDFLAG(IS_IOS)
   if ((device_out = DesktopCaptureDevice::Create(desktop_id))) {
     return kLegacyDesktopCaptureDevice;
   }
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#endif  // !BUILDFLAG(IS_IOS)
 #endif  //  BUILDFLAG(ENABLE_WEBRTC)
   return kNoImplementation;
 }
@@ -255,8 +243,10 @@ void InProcessVideoCaptureDeviceLauncher::LaunchDeviceAsync(
     base::OnceClosure /* connection_lost_cb */,
     Callbacks* callbacks,
     base::OnceClosure done_cb,
+#if BUILDFLAG(ENABLE_VIDEO_EFFECTS)
     mojo::PendingRemote<video_effects::mojom::VideoEffectsProcessor>
         video_effects_processor,
+#endif
     mojo::PendingRemote<media::mojom::ReadonlyVideoEffectsManager>
         readonly_video_effects_manager) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);

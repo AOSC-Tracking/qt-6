@@ -12,17 +12,67 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {time, duration, TimeSpan} from '../base/time';
-import {Dataset, DatasetSchema} from '../trace_processor/dataset';
-import {Engine} from '../trace_processor/engine';
-import {ColumnDef, Sorting, ThreadStateExtra} from './aggregation';
-import {TrackDescriptor} from './track';
+import m from 'mithril';
+import {arrayEquals} from '../base/array_utils';
+import {duration, time, TimeSpan} from '../base/time';
+import {Track} from './track';
+
+export interface ContentWithLoadingFlag {
+  readonly isLoading: boolean;
+  readonly content: m.Children;
+}
+
+export interface AreaSelectionTab {
+  // Unique id for this tab.
+  readonly id: string;
+
+  // A name for this tab.
+  readonly name: string;
+
+  // Defines the sort order of this tab - higher values appear first.
+  readonly priority?: number;
+
+  /**
+   * Called every Mithril render cycle to render the content of the tab. The
+   * returned content will be displayed inside the current selection tab.
+   *
+   * If undefined is returned then the tab handle will be hidden, which gives
+   * the tab the option to dynamically remove itself from the list of tabs if it
+   * has nothing relevant to show.
+   *
+   * The |isLoading| flag is used to avoid flickering. If set to true, we keep
+   * hold of the the previous vnodes, rendering them instead, for up to 50ms
+   * before switching to the new content. This avoids very fast load times
+   * from causing flickering loading screens, which can be somewhat jarring.
+   */
+  render(selection: AreaSelection): ContentWithLoadingFlag | undefined;
+}
+
+/**
+ * Compare two area selections for equality. Returns true if the selections are
+ * equivalent, false otherwise.
+ */
+export function areaSelectionsEqual(a: AreaSelection, b: AreaSelection) {
+  if (a.start !== b.start) return false;
+  if (a.end !== b.end) return false;
+  if (!arrayEquals(a.trackUris, b.trackUris)) {
+    return false;
+  }
+  return true;
+}
 
 export interface SelectionManager {
   readonly selection: Selection;
 
-  findTimeRangeOfSelection(): TimeSpan | undefined;
-  clear(): void;
+  /**
+   * Provides a list of registered area selection tabs.
+   */
+  readonly areaSelectionTabs: ReadonlyArray<AreaSelectionTab>;
+
+  /**
+   * Clears the current selection, selects nothing.
+   */
+  clearSelection(): void;
 
   /**
    * Select a track event.
@@ -62,59 +112,24 @@ export interface SelectionManager {
    */
   selectArea(args: Area, opts?: SelectionOpts): void;
 
-  scrollToCurrentSelection(): void;
-  registerAreaSelectionAggregator(aggr: AreaSelectionAggregator): void;
-}
-
-/**
- * Aggregator tabs are displayed in descending order of specificity, determined
- * by the following precedence hierarchy:
- * 1. Aggregators explicitly defining a `trackKind` string take priority over
- *    those that do not.
- * 2. Otherwise, aggregators with schemas containing a greater number of keys
- *    (higher specificity) are prioritized over those with fewer keys.
- * 3. In cases of identical specificity, tabs are ranked based on their
- *    registration order.
- */
-export interface AreaSelectionAggregator {
-  readonly id: string;
-
   /**
-   * If defined, the dataset passed to `createAggregateView` will only contain
-   * tracks with a matching `kind` tag.
+   * Scroll the timeline horizontally and vertically to reveal the currently
+   * selected entity.
    */
-  readonly trackKind?: string;
+  scrollToSelection(): void;
 
   /**
-   * If defined, the dataset passed to `createAggregateView` will only contain
-   * tracks that export datasets that implement this schema.
-   */
-  readonly schema?: DatasetSchema;
-
-  /**
-   * Creates a view for the aggregated data corresponding to the selected area.
+   * Returns the smallest time span that contains the currently selected entity.
    *
-   * The dataset provided will be filtered based on the `trackKind` and `schema`
-   * if these properties are defined.
-   *
-   * @param engine - The query engine used to execute queries.
-   * @param area - The currently selected area to aggregate.
-   * @param dataset - The dataset representing a union of the data in the
-   * selected tracks.
+   * @returns The time span, if a timeline entity is selected, otherwise
+   * undefined.
    */
-  createAggregateView(
-    engine: Engine,
-    area: AreaSelection,
-    dataset?: Dataset,
-  ): Promise<boolean>;
-  getExtra(
-    engine: Engine,
-    area: AreaSelection,
-    dataset?: Dataset,
-  ): Promise<ThreadStateExtra | void>;
-  getTabName(): string;
-  getDefaultSorting(): Sorting;
-  getColumnDefinitions(): ColumnDef[];
+  getTimeSpanOfSelection(): TimeSpan | undefined;
+
+  /**
+   * Register a new tab under the area selection details panel.
+   */
+  registerAreaSelectionTab(tab: AreaSelectionTab): void;
 }
 
 export type Selection =
@@ -150,30 +165,20 @@ export interface TrackEventDetails {
   // undefined if this selection has no duration, i.e. profile / counter
   // samples.
   readonly dur?: duration;
-
-  // Optional additional information.
-  // TODO(stevegolton): Find an elegant way of moving this information out of
-  // the core.
-  readonly wakeupTs?: time;
-  readonly wakerCpu?: number;
-  readonly utid?: number;
 }
 
 export interface Area {
   readonly start: time;
   readonly end: time;
-  // TODO(primiano): this should be ReadonlyArray<> after the pivot table state
-  // doesn't use State/Immer anymore.
-  readonly trackUris: string[];
+  readonly trackUris: ReadonlyArray<string>;
 }
 
 export interface AreaSelection extends Area {
   readonly kind: 'area';
 
-  // This array contains the resolved TrackDescriptor from Area.trackUris.
-  // The resolution is done by SelectionManager whenever a kind='area' selection
-  // is performed.
-  readonly tracks: ReadonlyArray<TrackDescriptor>;
+  // This array contains the resolved Tracks from Area.trackUris. The resolution
+  // is done by SelectionManager whenever a kind='area' selection is performed.
+  readonly tracks: ReadonlyArray<Track>;
 }
 
 export interface NoteSelection {

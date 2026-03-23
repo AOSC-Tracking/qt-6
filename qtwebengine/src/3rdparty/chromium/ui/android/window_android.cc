@@ -15,6 +15,7 @@
 #include "base/observer_list.h"
 #include "ui/android/color_utils_android.h"
 #include "ui/android/display_android_manager.h"
+#include "ui/android/view_android.h"
 #include "ui/android/window_android_compositor.h"
 #include "ui/android/window_android_observer.h"
 #include "ui/base/ui_base_features.h"
@@ -68,6 +69,14 @@ void WindowAndroid::ScopedWindowAndroidForTesting::SetModalDialogManager(
       env, window_->GetJavaObject(), modal_dialog_manager);
 }
 
+WindowAndroid::AdaptiveRefreshRateInfo::AdaptiveRefreshRateInfo() = default;
+WindowAndroid::AdaptiveRefreshRateInfo::AdaptiveRefreshRateInfo(
+    const AdaptiveRefreshRateInfo& other) = default;
+WindowAndroid::AdaptiveRefreshRateInfo::~AdaptiveRefreshRateInfo() = default;
+WindowAndroid::AdaptiveRefreshRateInfo&
+WindowAndroid::AdaptiveRefreshRateInfo::operator=(
+    const AdaptiveRefreshRateInfo& other) = default;
+
 // static
 WindowAndroid* WindowAndroid::FromJavaWindowAndroid(
     const JavaParamRef<jobject>& jwindow_android) {
@@ -79,7 +88,7 @@ WindowAndroid* WindowAndroid::FromJavaWindowAndroid(
 }
 
 WindowAndroid::WindowAndroid(JNIEnv* env,
-                             jobject obj,
+                             const base::android::JavaRef<jobject>& obj,
                              int display_id,
                              float scroll_factor,
                              bool window_is_wide_color_gamut)
@@ -92,7 +101,7 @@ WindowAndroid::WindowAndroid(JNIEnv* env,
                         : kDefaultMouseWheelTickMultiplier * GetDipScale();
 }
 
-void WindowAndroid::Destroy(JNIEnv* env, const JavaParamRef<jobject>& obj) {
+void WindowAndroid::Destroy(JNIEnv* env) {
   delete this;
 }
 
@@ -104,6 +113,7 @@ WindowAndroid::~WindowAndroid() {
   DCHECK(parent_ == nullptr) << "WindowAndroid must be a root view.";
   DCHECK(!compositor_);
   RemoveAllChildren(true);
+  DCHECK(!pointer_locking_view_);
   Java_WindowAndroid_clearNativePointer(AttachCurrentThread(), GetJavaObject());
 }
 
@@ -130,8 +140,6 @@ void WindowAndroid::AttachCompositor(WindowAndroidCompositor* compositor) {
 
   compositor_ = compositor;
   observer_list_.Notify(&WindowAndroidObserver::OnAttachCompositor);
-
-  compositor_->SetVSyncPaused(vsync_paused_);
 }
 
 void WindowAndroid::DetachCompositor() {
@@ -186,43 +194,26 @@ void WindowAndroid::Animate(base::TimeTicks begin_frame_time) {
   observer_list_.Notify(&WindowAndroidObserver::OnAnimate, begin_frame_time);
 }
 
-void WindowAndroid::OnVisibilityChanged(JNIEnv* env,
-                                        const JavaParamRef<jobject>& obj,
-                                        bool visible) {
+void WindowAndroid::OnVisibilityChanged(JNIEnv* env, bool visible) {
   observer_list_.Notify(&WindowAndroidObserver::OnRootWindowVisibilityChanged,
                         visible);
 }
 
-void WindowAndroid::OnActivityStopped(JNIEnv* env,
-                                      const JavaParamRef<jobject>& obj) {
+void WindowAndroid::OnActivityStopped(JNIEnv* env) {
   observer_list_.Notify(&WindowAndroidObserver::OnActivityStopped);
 }
 
-void WindowAndroid::OnActivityStarted(JNIEnv* env,
-                                      const JavaParamRef<jobject>& obj) {
+void WindowAndroid::OnActivityStarted(JNIEnv* env) {
   observer_list_.Notify(&WindowAndroidObserver::OnActivityStarted);
 }
 
-void WindowAndroid::SetVSyncPaused(JNIEnv* env,
-                                   const JavaParamRef<jobject>& obj,
-                                   bool paused) {
-  vsync_paused_ = paused;
-
-  if (compositor_)
-    compositor_->SetVSyncPaused(paused);
-}
-
-void WindowAndroid::OnUpdateRefreshRate(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj,
-    float refresh_rate) {
+void WindowAndroid::OnUpdateRefreshRate(JNIEnv* env, float refresh_rate) {
   if (compositor_)
     compositor_->OnUpdateRefreshRate(refresh_rate);
 }
 
 void WindowAndroid::OnSupportedRefreshRatesUpdated(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj,
     const JavaParamRef<jfloatArray>& j_supported_refresh_rates) {
   std::vector<float> supported_refresh_rates;
   if (j_supported_refresh_rates) {
@@ -233,9 +224,17 @@ void WindowAndroid::OnSupportedRefreshRatesUpdated(
     compositor_->OnUpdateSupportedRefreshRates(supported_refresh_rates);
 }
 
-void WindowAndroid::OnOverlayTransformUpdated(
+void WindowAndroid::OnAdaptiveRefreshRateInfoChanged(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+    jboolean supports_adaptive_refresh_rate,
+    jfloat suggested_frame_rate_high) {
+  adaptive_refresh_rate_info_.supports_adaptive_refresh_rate =
+      supports_adaptive_refresh_rate;
+  adaptive_refresh_rate_info_.suggested_frame_rate_high =
+      suggested_frame_rate_high;
+}
+
+void WindowAndroid::OnOverlayTransformUpdated(JNIEnv* env) {
   if (compositor_)
     compositor_->OnUpdateOverlayTransform();
 }
@@ -325,6 +324,47 @@ display::Display WindowAndroid::GetDisplayWithWindowColorSpace() {
       display.GetColorSpaces().SupportsHDR(),
       display.GetColorSpaces().GetHDRMaxLuminanceRelative());
   return display;
+}
+
+bool WindowAndroid::RequestPointerLock(ViewAndroid& view_android) {
+  DCHECK(view_android.GetWindowAndroid() == this);
+  DCHECK(view_android.GetContainerView());
+  DCHECK(pointer_locking_view_ == nullptr);
+
+  JNIEnv* env = AttachCurrentThread();
+  bool has_lock = Java_WindowAndroid_requestPointerLock(
+      env, GetJavaObject(), view_android.GetContainerView());
+
+  if (has_lock) {
+    pointer_locking_view_ = &view_android;
+  }
+
+  return has_lock;
+}
+
+bool WindowAndroid::HasPointerLock(ViewAndroid& view_android) {
+  return pointer_locking_view_ == &view_android;
+}
+
+void WindowAndroid::ReleasePointerLock(ViewAndroid& view_android) {
+  DCHECK(&view_android == pointer_locking_view_);
+  pointer_locking_view_ = nullptr;
+
+  JNIEnv* env = AttachCurrentThread();
+  return Java_WindowAndroid_releasePointerLock(env, GetJavaObject(),
+                                               view_android.GetContainerView());
+}
+
+void WindowAndroid::OnWindowPointerLockRelease(JNIEnv* env) {
+  DCHECK(pointer_locking_view_);
+  pointer_locking_view_->OnPointerLockRelease();
+  pointer_locking_view_ = nullptr;
+}
+
+bool WindowAndroid::SetHasKeyboardCapture(bool keyboard_capture) {
+  JNIEnv* env = AttachCurrentThread();
+  return Java_WindowAndroid_setHasKeyboardCapture(env, GetJavaObject(),
+                                                  keyboard_capture);
 }
 
 void WindowAndroid::SetTestHooks(TestHooks* hooks) {

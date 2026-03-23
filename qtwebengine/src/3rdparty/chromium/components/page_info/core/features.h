@@ -24,15 +24,6 @@ BASE_DECLARE_FEATURE(kPageInfoAboutThisSiteMoreLangs);
 // Whether we show hard-coded content for some sites like https://example.com.
 extern const base::FeatureParam<bool> kShowSampleContent;
 
-#if !BUILDFLAG(IS_ANDROID)
-// Enables the history section for Page Info on desktop.
-BASE_DECLARE_FEATURE(kPageInfoHistoryDesktop);
-
-// Hides site settings row.
-BASE_DECLARE_FEATURE(kPageInfoHideSiteSettings);
-
-#endif  // !BUILDFLAG(IS_ANDROID)
-
 // Enables the merchant trust section for Page Info.
 BASE_DECLARE_FEATURE(kMerchantTrust);
 
@@ -44,6 +35,14 @@ extern const base::FeatureParam<bool> kMerchantTrustForceShowUIForTesting;
 
 extern const char kMerchantTrustEnableOmniboxChipName[];
 extern const base::FeatureParam<bool> kMerchantTrustEnableOmniboxChip;
+
+// Enables the merchant trust UI even when the shopper voice summary is missing.
+extern const char kMerchantTrustWithoutSummaryName[];
+extern const base::FeatureParam<bool> kMerchantTrustWithoutSummary;
+
+// Whether the merchant trust UI should be shown even when the shopper voice
+// summary is missing.
+extern bool IsMerchantTrustWithoutSummaryEnabled();
 
 // Whether the merchant trust section for Page Info based on country and locale.
 extern bool IsMerchantTrustFeatureEnabled(const std::string& country_code,

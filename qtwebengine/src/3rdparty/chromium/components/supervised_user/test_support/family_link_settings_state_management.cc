@@ -12,6 +12,7 @@
 #include "base/functional/bind.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/strings/to_string.h"
 #include "base/task/task_traits.h"
 #include "base/test/bind.h"
 #include "base/version_info/channel.h"
@@ -101,7 +102,7 @@ constexpr FetcherConfig kDefineChromeTestStateConfig{
     .method = FetcherConfig::Method::kPost,
     .traffic_annotation = TestStateSeedTag,
     .access_token_config =
-        {
+        AccessTokenConfig{
             .mode = signin::PrimaryAccountAccessTokenFetcher::Mode::kImmediate,
             // TODO(b/284523446): Refer to GaiaConstants rather than literal.
             .oauth2_scope = "https://www.googleapis.com/auth/kid.permission",
@@ -115,7 +116,7 @@ constexpr FetcherConfig kResetChromeTestStateConfig{
     .method = FetcherConfig::Method::kPost,
     .traffic_annotation = TestStateSeedTag,
     .access_token_config =
-        {
+        AccessTokenConfig{
             .mode = signin::PrimaryAccountAccessTokenFetcher::Mode::kImmediate,
             // TODO(b/284523446): Refer to GaiaConstants rather than
             // literal.
@@ -139,15 +140,7 @@ inline void AddWebsiteException(
 }
 
 bool AreSafeSitesConfigured(const FamilyLinkSettingsState::Services& services) {
-  if (!IsSafeSitesEnabled(services.pref_service.get())) {
-    return false;
-  }
-
-  SupervisedUserURLFilter* url_filter =
-      services.supervised_user_service->GetURLFilter();
-  CHECK(url_filter);
-
-  return url_filter->GetDefaultFilteringBehavior() == FilteringBehavior::kAllow;
+  return IsSafeSitesEnabled(services.pref_service.get());
 }
 
 bool IsUrlConfigured(SupervisedUserURLFilter& url_filter,
@@ -203,7 +196,10 @@ bool UrlFiltersAreConfigured(const FamilyLinkSettingsState::Services& services,
 }
 
 bool UrlFiltersAreEmpty(const FamilyLinkSettingsState::Services& services) {
-  return services.supervised_user_service->GetURLFilter()->IsManualHostsEmpty();
+  return services.supervised_user_service->GetURLFilter()
+             ->GetFilteringStatistics()
+             .GetManagedSiteList() ==
+         SupervisedUserURLFilter::ManagedSiteList::kEmpty;
 }
 
 bool ToggleHasExpectedValue(const FamilyLinkSettingsState::Services& services,
@@ -358,7 +354,7 @@ bool FamilyLinkSettingsState::ResetIntent::Check(
     const FamilyLinkSettingsState::Services& services) const {
   bool result = UrlFiltersAreEmpty(services);
   LOG(WARNING) << "FamilyLinkSettingsState::ResetIntent = "
-               << (result ? "true" : "false");
+               << base::ToString(result);
   return result;
 }
 
@@ -410,7 +406,7 @@ bool FamilyLinkSettingsState::DefineManualSiteListIntent::Check(
     const FamilyLinkSettingsState::Services& services) const {
   bool result = UrlFiltersAreConfigured(services, allowed_url_, blocked_url_);
   LOG(WARNING) << "FamilyLinkSettingsState::DefineManualSiteListIntent = "
-               << (result ? "true" : "false");
+               << base::ToString(result);
   return result;
 }
 
@@ -446,7 +442,7 @@ std::string FamilyLinkSettingsState::ToggleIntent::ToString() const {
   bits.push_back("Define[");
   for (const auto& toggle : toggle_list_) {
     bits.push_back(GetToggleAbbrev(toggle.type) + " = ");
-    bits.push_back((static_cast<bool>(toggle.state) ? "true" : "false") +
+    bits.push_back(base::ToString(static_cast<bool>(toggle.state)) +
                    std::string(" "));
   }
   bits.push_back("]");
@@ -463,7 +459,7 @@ bool FamilyLinkSettingsState::ToggleIntent::Check(
     if (!toggle_has_expected_value) {
       LOG(WARNING) << "FamilyLinkSettingsState::ToggleIntent[" +
                           GetToggleAbbrev(toggle.type) + "] = "
-                   << (toggle_has_expected_value ? "true" : "false");
+                   << base::ToString(toggle_has_expected_value);
     }
     result = result && toggle_has_expected_value;
   }

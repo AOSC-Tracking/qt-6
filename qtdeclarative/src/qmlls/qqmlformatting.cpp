@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <qqmlformatting_p.h>
 #include <qqmlcodemodel_p.h>
@@ -14,8 +15,8 @@ QT_BEGIN_NAMESPACE
 
 Q_LOGGING_CATEGORY(formatLog, "qt.languageserver.formatting")
 
-QQmlDocumentFormatting::QQmlDocumentFormatting(QmlLsp::QQmlCodeModel *codeModel)
-    : QQmlBaseModule(codeModel)
+QQmlDocumentFormatting::QQmlDocumentFormatting(QmlLsp::QQmlCodeModelManager *codeModelManager)
+    : QQmlBaseModule(codeModelManager)
 {
 }
 
@@ -43,13 +44,13 @@ void QQmlDocumentFormatting::process(RequestPointerArgument request)
     ResponseScopeGuard guard(result, request->m_response);
 
     using namespace QQmlJS::Dom;
-    QmlLsp::OpenDocument doc = m_codeModel->openDocumentByUrl(
-                QQmlLSUtils::lspUriToQmlUrl(request->m_parameters.textDocument.uri));
+    QmlLsp::OpenDocument doc = m_codeModelManager->openDocumentByUrl(
+            QQmlLSUtils::lspUriToQmlUrl(request->m_parameters.textDocument.uri));
 
     DomItem file = doc.snapshot.doc.fileObject(GoTo::MostLikely);
     if (!file) {
         guard.setError(QQmlLSUtils::ErrorMessage{
-                0, u"Could not find the file %1"_s.arg(doc.snapshot.doc.canonicalFilePath()) });
+                0, u"Could not find the file %1."_s.arg(doc.snapshot.doc.canonicalFilePath()) });
         return;
     }
     if (!file.field(Fields::isValid).value().toBool(false)) {
@@ -68,7 +69,7 @@ void QQmlDocumentFormatting::process(RequestPointerArgument request)
                 },
                 true);
         guard.setError(QQmlLSUtils::ErrorMessage{
-                0, u"Failed to parse %1"_s.arg(file.canonicalFilePath()) });
+                0, u"Failed to parse %1."_s.arg(file.canonicalFilePath()) });
         return;
     }
 
@@ -83,7 +84,7 @@ void QQmlDocumentFormatting::process(RequestPointerArgument request)
     QLspSpecification::TextEdit formattedText;
     LineWriter lw([&formattedText](QStringView s) { formattedText.newText += s.toUtf8(); },
                   QString(), currentFormatOptions.optionsForCode(qmlFile->code()));
-    OutWriter ow(lw);
+    OutWriter ow(qmlFile, lw);
     file.writeOutForFile(ow, WriteOutCheck::None);
     ow.flush();
     const auto &code = qmlFile->code();

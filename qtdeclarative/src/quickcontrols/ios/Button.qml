@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -20,8 +21,6 @@ T.Button {
 
     icon.width: 17
     icon.height: 17
-    icon.color: control.flat ? (control.down ? control.palette.highlight : control.palette.button)
-                             : control.palette.buttonText
 
     contentItem: IconLabel {
         spacing: control.spacing
@@ -29,10 +28,11 @@ T.Button {
         display: control.display
 
         icon: control.icon
+        defaultIconColor: control.flat ? (control.down ? control.palette.highlight : control.palette.button)
+            : control.palette.buttonText
         text: control.text
         font: control.font
-        color: control.flat ? (control.down ? control.palette.highlight : control.palette.button)
-                            : control.palette.buttonText
+        color: defaultIconColor
     }
 
     background: Rectangle {

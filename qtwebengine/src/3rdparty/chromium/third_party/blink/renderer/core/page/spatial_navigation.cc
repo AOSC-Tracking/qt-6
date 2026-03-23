@@ -26,13 +26,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
 
+#include "base/compiler_specific.h"
 #include "base/containers/adapters.h"
 #include "third_party/blink/public/mojom/scroll/scrollbar_mode.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
@@ -45,7 +41,6 @@
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -53,6 +48,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "ui/gfx/geometry/rect.h"
 
 namespace blink {
@@ -231,10 +227,6 @@ gfx::RectF RectInViewport(const Node& node) {
 // offscreen activeElement. When activeElement is offscreen, spatnav doesn't use
 // it as the search origin; the search will start at an edge of the visual
 // viewport instead.
-// TODO(crbug.com/889840): Fix VisibleBoundsInVisualViewport().
-// If VisibleBoundsInVisualViewport() would have taken "element-clips" into
-// account, spatnav could have called it directly; no need to check the
-// LayoutObject's VisibleContentRect.
 bool IsOffscreen(const Node* node) {
   DCHECK(node);
   return RectInViewport(*node).IsEmpty();
@@ -775,7 +767,7 @@ PhysicalRect FirstVisibleFragment(const PhysicalRect& visibility,
     physical_fragment.Intersect(visibility);
     if (!physical_fragment.IsEmpty())
       return physical_fragment;
-    ++fragment;
+    UNSAFE_TODO(++fragment);
   }
   return visibility;
 }

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef VERIFY_HEAP
+
 #include "src/heap/heap-verifier.h"
 
 #include <optional>
@@ -35,7 +37,10 @@
 #include "src/objects/slots-inl.h"
 #include "src/objects/string-table.h"
 
-#ifdef VERIFY_HEAP
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/wasm/wasm-export-wrapper-cache.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
+
 namespace v8 {
 namespace internal {
 
@@ -356,15 +361,7 @@ void HeapVerification::Verify() {
     CHECK(maybe_rtt.IsWeak());
     CHECK(IsMap(maybe_rtt.GetHeapObjectAssumeWeak()));
   }
-
-  // js_to_wasm_wrappers holds weak references to code or cleared values.
-  Tagged<WeakFixedArray> wrappers = heap()->js_to_wasm_wrappers();
-  for (int i = 0, e = wrappers->length(); i < e; ++i) {
-    Tagged<MaybeObject> maybe_wrapper = wrappers->get(i);
-    if (maybe_wrapper.IsCleared()) continue;
-    CHECK(maybe_wrapper.IsWeak());
-    CHECK(IsCodeWrapper(maybe_wrapper.GetHeapObjectAssumeWeak()));
-  }
+  wasm::WasmExportWrapperCache::Verify(heap());
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   // The heap verifier can't deal with partially deserialized objects, so
@@ -410,9 +407,11 @@ void HeapVerification::VerifyPage(const MemoryChunkMetadata* chunk_metadata) {
   const MemoryChunk* chunk = chunk_metadata->Chunk();
 
   CHECK(!current_chunk_.has_value());
-  CHECK(!chunk->IsFlagSet(MemoryChunk::PAGE_NEW_OLD_PROMOTION));
   CHECK(!chunk->IsFlagSet(MemoryChunk::FROM_PAGE));
-  CHECK(!chunk->IsQuarantined());
+  CHECK(!chunk_metadata->will_be_promoted());
+  CHECK(!chunk_metadata->is_quarantined());
+  CHECK_EQ(chunk_metadata->is_evacuation_candidate(),
+           chunk->IsEvacuationCandidate());
   if (chunk->InReadOnlySpace()) {
     CHECK_NULL(chunk_metadata->owner());
   } else {
@@ -481,7 +480,9 @@ void HeapVerification::VerifyOutgoingPointers(Tagged<HeapObject> object) {
 void HeapVerification::VerifyObjectMap(Tagged<HeapObject> object) {
   // The first word should be a map, and we expect all map pointers to be
   // in map space or read-only space.
-  Tagged<Map> map = object->map(cage_base_);
+  MapWord map_word = object->map_word(cage_base_, kRelaxedLoad);
+  CHECK(!map_word.IsForwardingAddress());
+  Tagged<Map> map = map_word.ToMap();
   CHECK(IsMap(map, cage_base_));
   CHECK(ReadOnlyHeap::Contains(map) || old_space()->Contains(map) ||
         (shared_space() && shared_space()->Contains(map)));
@@ -689,6 +690,8 @@ void CollectSlots(MutablePageMetadata* chunk, Address start, Address end,
 class SlotCollectingVisitor final : public HeapVisitor<SlotCollectingVisitor> {
  public:
   explicit SlotCollectingVisitor(Isolate* isolate) : HeapVisitor(isolate) {}
+
+  static constexpr bool ShouldUseUncheckedCast() { return true; }
 
   void VisitPointers(Tagged<HeapObject> host, ObjectSlot start,
                      ObjectSlot end) override {
@@ -906,13 +909,9 @@ void HeapVerifier::VerifySafeMapTransition(Heap* heap,
   // Check that the set of slots before and after the transition match.
   SlotCollectingVisitor old_visitor(heap->isolate());
   old_visitor.Visit(object);
-  MapWord old_map_word = object->map_word(cage_base, kRelaxedLoad);
-  // Temporarily set the new map to iterate new slots.
-  object->set_map_word(new_map, kRelaxedStore);
+  // Collect slots in object for new map.
   SlotCollectingVisitor new_visitor(heap->isolate());
-  new_visitor.Visit(object);
-  // Restore the old map.
-  object->set_map_word(old_map_word.ToMap(), kRelaxedStore);
+  new_visitor.Visit(new_map, object);
   CHECK_EQ(new_visitor.number_of_slots(), old_visitor.number_of_slots());
   for (int i = 0; i < new_visitor.number_of_slots(); i++) {
     CHECK_EQ(new_visitor.slot(i), old_visitor.slot(i));

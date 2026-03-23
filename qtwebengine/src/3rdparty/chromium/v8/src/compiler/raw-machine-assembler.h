@@ -47,7 +47,7 @@ class SourcePositionTable;
 class V8_EXPORT_PRIVATE RawMachineAssembler {
  public:
   RawMachineAssembler(
-      Isolate* isolate, Graph* graph, CallDescriptor* call_descriptor,
+      Isolate* isolate, TFGraph* graph, CallDescriptor* call_descriptor,
       MachineRepresentation word = MachineType::PointerRepresentation(),
       MachineOperatorBuilder::Flags flags =
           MachineOperatorBuilder::Flag::kNoFlags,
@@ -60,7 +60,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
   RawMachineAssembler& operator=(const RawMachineAssembler&) = delete;
 
   Isolate* isolate() const { return isolate_; }
-  Graph* graph() const { return graph_; }
+  TFGraph* graph() const { return graph_; }
   Zone* zone() const { return graph()->zone(); }
   MachineOperatorBuilder* machine() { return &machine_; }
   CommonOperatorBuilder* common() { return &common_; }
@@ -74,7 +74,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
   // Finalizes the schedule and transforms it into a graph that's suitable for
   // it to be used for Turbofan optimization and re-scheduling. Note that this
   // RawMachineAssembler becomes invalid after export.
-  Graph* ExportForOptimization();
+  TFGraph* ExportForOptimization();
 
   // ===========================================================================
   // The following utility methods create new nodes with specific operators and
@@ -211,7 +211,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     DCHECK_NE(rep, MachineRepresentation::kIndirectPointer);
     AddNode(simplified()->StoreField(
                 FieldAccess(BaseTaggedness::kTaggedBase, offset,
-                            MaybeHandle<Name>(), OptionalMapRef(), Type::Any(),
+                            MaybeHandle<Name>(), OptionalMapRef(), compiler::Type::Any(),
                             MachineType::TypeForRepresentation(rep),
                             write_barrier, "OptimizedStoreField")),
             object, value);
@@ -223,7 +223,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     DCHECK(write_barrier == WriteBarrierKind::kNoWriteBarrier ||
            write_barrier == WriteBarrierKind::kIndirectPointerWriteBarrier);
     FieldAccess access(BaseTaggedness::kTaggedBase, offset, MaybeHandle<Name>(),
-                       OptionalMapRef(), Type::Any(),
+                       OptionalMapRef(), compiler::Type::Any(),
                        MachineType::IndirectPointer(), write_barrier,
                        "OptimizedStoreIndirectPointerField");
     access.indirect_pointer_tag = tag;
@@ -1210,12 +1210,12 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
 
   Schedule* schedule() { return schedule_; }
 
-  static void OptimizeControlFlow(Schedule* schedule, Graph* graph,
+  static void OptimizeControlFlow(Schedule* schedule, TFGraph* graph,
                                   CommonOperatorBuilder* common);
 
   Isolate* isolate_;
 
-  Graph* graph_;
+  TFGraph* graph_;
   Schedule* schedule_;
   SourcePositionTable* source_positions_;
   MachineOperatorBuilder machine_;

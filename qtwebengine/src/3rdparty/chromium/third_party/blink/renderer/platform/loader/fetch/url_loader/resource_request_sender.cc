@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/containers/to_vector.h"
 #include "base/debug/alias.h"
+#include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_forward.h"
@@ -40,6 +41,7 @@
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/blink/public/common/client_hints/client_hints.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/loader/inter_process_time_ticks_converter.h"
 #include "third_party/blink/public/common/loader/referrer_utils.h"
 #include "third_party/blink/public/common/loader/resource_type_util.h"
@@ -55,6 +57,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/code_cache_host.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_utils.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/code_cache_fetcher.h"
+#include "third_party/blink/renderer/platform/loader/fetch/url_loader/content_decoding_url_loader_throttle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/mojo_url_loader_client.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/resource_request_client.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/sync_load_context.h"
@@ -67,13 +70,12 @@
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
-namespace WTF {
+namespace blink {
 
 template <>
-struct CrossThreadCopier<
-    std::vector<std::unique_ptr<blink::URLLoaderThrottle>>> {
+struct CrossThreadCopier<std::vector<std::unique_ptr<URLLoaderThrottle>>> {
   STATIC_ONLY(CrossThreadCopier);
-  using Type = std::vector<std::unique_ptr<blink::URLLoaderThrottle>>;
+  using Type = std::vector<std::unique_ptr<URLLoaderThrottle>>;
   static Type Copy(Type&& value) { return std::move(value); }
 };
 
@@ -88,14 +90,10 @@ struct CrossThreadCopier<net::NetworkTrafficAnnotationTag>
 };
 
 template <>
-struct CrossThreadCopier<std::vector<blink::WebString>>
-    : public CrossThreadCopierPassThrough<std::vector<blink::WebString>> {
+struct CrossThreadCopier<std::vector<WebString>>
+    : public CrossThreadCopierPassThrough<std::vector<WebString>> {
   STATIC_ONLY(CrossThreadCopier);
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 namespace {
 
@@ -185,16 +183,16 @@ void ResourceRequestSender::SendSync(
   SyncLoadContext* context_for_redirect = nullptr;
   PostCrossThreadTask(
       *task_runner, FROM_HERE,
-      WTF::CrossThreadBindOnce(
-          &SyncLoadContext::StartAsyncWithWaitableEvent, std::move(request),
-          task_runner, traffic_annotation, loader_options,
-          std::move(pending_factory), std::move(throttles),
-          CrossThreadUnretained(response),
-          CrossThreadUnretained(&context_for_redirect),
-          CrossThreadUnretained(&redirect_or_response_event),
-          CrossThreadUnretained(terminate_sync_load_event), timeout,
-          std::move(download_to_blob_registry), cors_exempt_header_list,
-          std::move(resource_load_info_notifier_wrapper)));
+      CrossThreadBindOnce(&SyncLoadContext::StartAsyncWithWaitableEvent,
+                          std::move(request), task_runner, traffic_annotation,
+                          loader_options, std::move(pending_factory),
+                          std::move(throttles), CrossThreadUnretained(response),
+                          CrossThreadUnretained(&context_for_redirect),
+                          CrossThreadUnretained(&redirect_or_response_event),
+                          CrossThreadUnretained(terminate_sync_load_event),
+                          timeout, std::move(download_to_blob_registry),
+                          cors_exempt_header_list,
+                          std::move(resource_load_info_notifier_wrapper)));
 
   // `redirect_or_response_event` will signal when each redirect completes, and
   // when the final response is complete.
@@ -265,6 +263,19 @@ int ResourceRequestSender::SendAsync(
   loading_task_runner_ = loading_task_runner;
   CheckSchemeForReferrerPolicy(*request);
 
+  if (base::FeatureList::IsEnabled(
+          network::features::kRendererSideContentDecoding)) {
+    // When RendererSideContentDecoding is enabled, set the
+    // `client_side_content_decoding_enabled` flag on the ResourceRequest to
+    // prevent the network service from performing decoding, and add a
+    // ContentDecodingURLLoaderThrottle to the beginning of the throttle chain
+    // to handle decoding of the response before other throttles process it.
+    // The cost of inserting entry in the top of vector is O(n). But size of
+    // `throttles` is not so large. So the cost should be acceptable.
+    request->client_side_content_decoding_enabled = true;
+    throttles.insert(throttles.begin(),
+                     std::make_unique<ContentDecodingURLLoaderThrottle>());
+  }
 #if BUILDFLAG(IS_ANDROID)
   // TODO(crbug.com/1286053): This used to be a DCHECK asserting "Main frame
   // shouldn't come here", but after removing and re-landing the DCHECK later it
@@ -281,13 +292,11 @@ int ResourceRequestSender::SendAsync(
     }
   }
 #endif
-  if (code_cache_host) {
-    used_code_cache_fetcher_ = true;
-    code_cache_fetcher_ = CodeCacheFetcher::TryCreateAndStart(
-        *request, *code_cache_host,
-        WTF::BindOnce(&ResourceRequestSender::DidReceiveCachedCode,
-                      weak_factory_.GetWeakPtr()));
-  }
+  code_cache_fetcher_ = CodeCacheFetcher::TryCreateAndStart(
+      *request, code_cache_host, loading_task_runner_,
+      WTF::BindOnce(&ResourceRequestSender::DidReceiveCachedCode,
+                    weak_factory_.GetWeakPtr()));
+  used_code_cache_fetcher_ = !!code_cache_fetcher_;
 
   // Compute a unique request_id for this renderer process.
   int request_id = GenerateRequestId();

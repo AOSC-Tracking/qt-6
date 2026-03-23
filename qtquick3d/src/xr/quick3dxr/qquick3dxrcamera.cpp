@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dxrcamera_p.h"
 #include "qquick3dxrorigin_p.h"
@@ -28,7 +30,7 @@ QT_BEGIN_NAMESPACE
 */
 
 QQuick3DXrEyeCamera::QQuick3DXrEyeCamera(QQuick3DXrOrigin *parent)
-    : QQuick3DCamera(*(new QQuick3DNodePrivate(QQuick3DNodePrivate::Type::CustomCamera)), parent)
+    : QQuick3DCamera(*(new QQuick3DNodePrivate(QQuick3DNodePrivate::Type::CustomCamera, QQuick3DContentLayer::LayerAll)), parent)
 {
 }
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKCOLORDIALOGIMPL_P_H
 #define QQUICKCOLORDIALOGIMPL_P_H
@@ -92,6 +93,8 @@ Q_SIGNALS:
     void specChanged();
 
 private:
+    void itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &data) override;
+
     Q_DISABLE_COPY(QQuickColorDialogImpl)
     Q_DECLARE_PRIVATE(QQuickColorDialogImpl)
 };

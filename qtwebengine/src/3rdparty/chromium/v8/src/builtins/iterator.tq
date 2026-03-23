@@ -104,6 +104,19 @@ transitioning builtin CreateAsyncFromSyncIteratorBaseline(syncIterator: JSAny):
   return CreateAsyncFromSyncIterator(context, syncIterator);
 }
 
+struct ForOfNextResult {
+  done: Object;
+  value: Object;
+}
+
+extern transitioning macro ForOfNextHelper(Context, Object, Object):
+    ForOfNextResult;
+
+transitioning builtin ForOfNextBaseline(
+    context: Context, iterator: JSAny, next: JSFunction): ForOfNextResult {
+  return ForOfNextHelper(context, iterator, next);
+}
+
 @export
 transitioning macro GetIteratorRecordAfterCreateAsyncFromSyncIterator(
     context: Context, asyncIterator: IteratorRecord): IteratorRecord {
@@ -140,10 +153,10 @@ transitioning builtin CallIteratorWithFeedback(
 // being thrown.
 @export
 transitioning macro IteratorCloseOnException(
-    implicit context: Context)(iterator: IteratorRecord): void {
+    implicit context: Context)(iteratorObject: JSReceiver): void {
   try {
     // 3. Let innerResult be GetMethod(iterator, "return").
-    const method = GetProperty(iterator.object, kReturnString);
+    const method = GetProperty(iteratorObject, kReturnString);
 
     // 4. If innerResult.[[Type]] is normal, then
     //   a. Let return be innerResult.[[Value]].
@@ -152,7 +165,7 @@ transitioning macro IteratorCloseOnException(
 
     //   c. Set innerResult to Call(return, iterator).
     // If an exception occurs, the original exception remains bound
-    Call(context, method, iterator.object);
+    Call(context, method, iteratorObject);
   } catch (_e, _message) {
     // Swallow the exception.
   }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 ChoosingCoffeeForm {
-    required property var appFlow
+    required property ApplicationFlow appFlow
     state: Config.mode
     cappuccino.cupsLeft: appFlow.cappuccinos
     latte.cupsLeft: appFlow.lattes

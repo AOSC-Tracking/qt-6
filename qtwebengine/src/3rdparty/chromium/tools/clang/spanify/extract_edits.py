@@ -5,26 +5,60 @@
 """Script to extract edits from clang spanification tool output.
 
 The edits have the following format:
-    ...
-    e{lhs_node1}@{rhs_node2}           # Edge from node 1 to node 2.
-    e{lhs_node2}@{rhs_node3}           # Edge from node 2 to node 3.
-    e{lhs_node3}@{rhs_node4}           # Edge from node 3 to node 4.
-    ...
-    s{node_1}                          # Source node of the graph that triggers
-                                       # a rewrite (i.e. buffer usage)
-    ...
-    f{lhs_key}@{rhs_key}@{replacement} # Span frontier replacement applied if
-                                       # lhs_key is not rewritten but rhs_key
-                                       # is.
-    ...
-Where lhs_node, rhs_node, and node_n represent a node's text representation
-generated using the spanification tool's Node::ToString() function.
+```
+  e lhs_node1 rhs_node2           # Edge from node 1 to node 2.
+  e lhs_node2 rhs_node3           # Edge from node 2 to node 3.
+  e lhs_node3 rhs_node4           # Edge from node 3 to node 4.
+  ...
+  s node_1                        # Source node of the graph that triggers a
+                                  # rewrite (i.e. buffer usage)
+  ...
+  i node_4                        # Sink node. A rewrite from a source
+                                  # requires the ultimate end nodes to be
+                                  # sink. They represent nodes we know can
+                                  # be rewrite because the buffer's size
+                                  # is known.
+  ...
+  f lhs_node rhs_node replacement # Span frontier replacement applied if
+                                  # lhs_node is not rewritten but rhs_node
+                                  # is.
+  ...
+  r node_1 replacement            # A replacement associated with a node.
+```
 
-A node has the following format:
-size_info_available\,is_dependent,(\,replacement)+
+Where all the `*node*` are abstract ID that represents a node in the graph.
 
-size_info_available: 0 or 1
-is_dependent: 0 or 1
+Real example:
+```
+  s 0008244:DBKYJas7
+  s 0008303:GWkNbhQ4
+  e 0001450:8-AxbSn3 0008303:GWkNbhQ4
+  e 0001518:BUQKDaXe 0008244:DBKYJas7
+  e 0001518:L97i_bwg 0008303:GWkNbhQ4
+  f 0001450:8-AxbSn3 0008303:GWkNbhQ4 r:::../../base/memory/shared_memory_mapping.h:::8684:::0:::0:::.data()
+  f 0001518:BUQKDaXe 0008244:DBKYJas7 r:::../../base/memory/shared_memory_mapping.h:::8535:::15:::0:::(data() + size()).data()
+  f 0001518:L97i_bwg 0008303:GWkNbhQ4 r:::../../base/memory/shared_memory_mapping.h:::8686:::15:::0:::(data() + size()).data()
+  r 0001518:BUQKDaXe include-user-header:::../../base/containers/checked_iterators.h:::-1:::-1:::base/containers/span.h
+  r 0001518:BUQKDaXe r:::../../base/containers/checked_iterators.h:::1518:::9:::0:::base::span<const unsigned char>
+  r 0001946:gKWdIpwv r:::../../base/containers/checked_iterators.h:::1946:::9:::0:::base::span<const unsigned char>
+```
+
+**Important Note on "r:::" Replacement Directive:**
+The `replacement_directive` strings starting with `r:::` (which can appear in
+`r` lines or as the third argument in `f` lines) have been extended and are
+slightly different from the format accepted by apply_edits.py. There is an
+additional `precedence` field before the replacement text.
+
+This `<precedence>` value is used by `extract_edits.py` to merge conflicting
+insertions. If multiple `r` directives are insertions (i.e., `<length>` is
+"0") and target the exact same file and offset:
+    Their `<text>` components are merged into a single replacement.
+    Directives with a lower numerical `<precedence>` value have their text
+    inserted *earlier* (further to the left) in the final merged text.
+
+The `<precedence>` field is **removed** by `extract_edits.py` from all `r`
+directives before they are included in the final list of edits output by this
+script.
 
 extract_edits.py takes input that is concatenated from multiple tool
 invocations and extract just the edits with the following steps:
@@ -54,6 +88,7 @@ import urllib.parse
 
 from os.path import expanduser
 import pprint
+from collections import defaultdict
 
 
 # The connected components in the graph. This is useful to split the rewrite
@@ -79,13 +114,9 @@ class Node:
     # Mapping in between the node's key and the node.
     key_to_node = dict()
 
-    def __init__(self, size_info_available, is_dependent,
-                 *replacements) -> None:
-        self.replacements = replacements
-        for replacement in replacements:
-            assert_valid_replacement(replacement)
-
-        self.is_dependent = is_dependent
+    def __init__(self, key) -> None:
+        self.key = key
+        self.replacements = set()
 
         # Neighbors of the node in the graph. The graph is directed,
         # flowing from lhs to rhs.
@@ -96,70 +127,46 @@ class Node:
         # This is set from DFS(...)
         self.visited = False
 
-        # See SizeInfoAvailable(...) for more details.
-        self.size_info_available = size_info_available
-        self.size_info_step = False
+        # The size info is available for a node if all the paths through the
+        # graph are leading to a sink. This is initially set to None, and then
+        # set by ComputeSizeInfoAvailable(...).
+        self.size_info_available = None
+        # Track whether this node is currently on the stack of the
+        # `ComputeSizeInfoAvailable` recursive function. This is used to detect
+        # cycles in the graph.
+        self.size_info_visiting = False
 
         # Identify the connected component this node belongs to. This is set in
         # the main function.
         self.component = None
 
-    # The key of the node is the first replacement.
-    def key(self) -> str:
-        return self.replacements[0]
-
-    def __eq__(self, other):
-        if isinstance(other, Node):
-            return self.key() == other.key()
-        return False
-
-    def __hash__(self) -> int:
-        return hash(self.key())
+    def add_replacement(self, replacement: str):
+        assert_valid_replacement(replacement)
+        self.replacements.add(replacement)
 
     # Static method to get a node from a replacement key.
     @classmethod
-    def from_key(cls: type, replacement: str):
-        return cls.key_to_node.get(replacement)
+    def from_key(cls: type, key: str):
+        # Deduplicate nodes, as they will appear multiple times in the input.
+        node = Node.key_to_node.get(key)
+        if node is not None:
+            return node
 
-    # Static method to create a node from its string representation. This
-    # deduplicate nodes by storing them in a dictionary.
-    @classmethod
-    def get_or_create(cls: type, txt: str):
-        x = txt.split('\\,')
-
-        # Expect exactly 6 elements that correspond to the following node
-        # attributes:
-        # - size_info_available
-        # - is_dependent
-        # - replacements+
-        assert len(x) >= 3, txt
-
-        # Value are escaped to avoid conflicts with the separator. Unescape
-        # them.
-        x = [urllib.parse.unquote(y) for y in x]
-
-        # `./apply-edits.py` expects `\n` to be escaped.
-        x = [y.replace('\n', '\0') for y in x]
-
-        node = Node(*x)
-
-        # Deduplicate nodes, as they might appear multiple times in the input.
-        if (Node.key_to_node.get(node.key()) is None):
-            Node.key_to_node[node.key()] = node
-
-        return Node.key_to_node[node.key()]
+        node = Node(key)
+        Node.key_to_node[key] = node
+        return node
 
     def __repr__(self) -> str:
         result = [
             f"Node {hash(self)} {{",
-            f"  key: {self.key()}",
+            f"  key: {self.key}",
             f"  size_info_available: {self.size_info_available}",
             f"  neighbors_directed: {pprint.pformat([hash(n) for n in self.neighbors_directed], indent=4)}",
             "}",
         ]
         return "\n".join(result)
 
-    # This is not parsable by get_or_create but is useful for debugging the
+    # This is not parsable by from_key but is useful for debugging the
     # graph of nodes.
     def to_debug_string(self) -> str:
         return repr(self)
@@ -183,58 +190,52 @@ def DFS(node: Node):
         return
     node.visited = True
 
-    if not node.key().endswith('<empty>'):
-        for replacement in node.replacements:
-            node.component.changes.add(replacement)
+    for replacement in node.replacements:
+        node.component.changes.add(replacement)
 
     for neighbour in node.neighbors_directed:
         DFS(neighbour)
 
 
-def SizeInfoAvailable(node: Node):
+def ComputeSizeInfoAvailable(node: Node):
     """
     Determines whether size information is available for a source node and its
     neighbors_directed. Updates the node's size_info_available attribute.
 
     Args:
         node: The current node's being processed.
-
-    Returns:
-        None if a cycle is detected,
-        '1' if size information is available for the node and its neighbors,
-        '0' otherwise,
     """
 
-    # If we reached a node that contains size info, just return that.
-    if node.size_info_available == '1':
-        return '1'
+    # Memoization: node.size_info_available has already been computed. Return.
+    if node.size_info_available:
+        return
 
-    # Cycle detection: If the node is currently being visited, there's a cycle.
-    # We can't determine the size info for this node.
-    if node.size_info_step == 'visiting':
-        return None
+    # If there are no dependencies, the size info is definitely not available
+    # for this node.
+    if not node.neighbors_directed:
+        node.size_info_available = False
+        return
 
-    # Memoization: If the node has already been visited, return the result
-    # immediately.
-    if node.size_info_step == 'visited':
-        return node.size_info_available
+    # Cycle: If the node is currently being visited, it means it depends on
+    # itself, and there's a cycle. We can't determine the size info for this
+    # node with the current implementation.
+    if node.size_info_visiting:
+        return
 
-    node.size_info_step = 'visiting'
-    size_info_available = '0'
-    # Check neighbors. If any neighbor doesn't have size info or there's a
-    # cycle, the current node also doesn't.
+    # The size info is available for a node if all the paths through the graph
+    # are leading to a sink. Locally, it means all the dependencies have their
+    # size info available.
+    node.size_info_visiting = True
     for neighbour in node.neighbors_directed:
-        # Break as soon as we encounter a neighbor for which size info is not
-        # available.
-        if SizeInfoAvailable(neighbour) == '0':
-            size_info_available = '0'
-            break
-        size_info_available = '1'
+        ComputeSizeInfoAvailable(neighbour)
+    node.size_info_visiting = False
 
-    node.size_info_available = size_info_available
-    node.size_info_step = 'visited'
-    return size_info_available
-
+    # This node can be rewritten if all of its dependencies can.
+    # Dependencies with `size_info_available == None` are nodes that are part
+    # of an isolated cycle. Isolated cycle are rewritten.
+    node.size_info_available = not any(
+        neighbour.size_info_available == False
+        for neighbour in node.neighbors_directed)
 
 # Assert a replacement follows the expected format:
 # - r:::<file path>:::<offset>:::<length>:::<replacement text>
@@ -243,16 +244,102 @@ def SizeInfoAvailable(node: Node):
 def assert_valid_replacement(replacement: str):
     try:
         parts = replacement.split(':::')
-        assert len(parts) == 5
-        assert parts[0] in [
+        directive_type = parts[0]
+
+        assert directive_type in [
             'r', 'include-user-header', 'include-system-header'
-        ]
-        assert parts[1] != ''  # File path
-        int(parts[2].isdigit())  # Offset
-        int(parts[3].isdigit())  # Length
+        ], f"Unknown directive type '{directive_type}'"
+
+        assert len(parts) > 1
+        assert parts[1] != '', "File path must not be empty."
+
+        if directive_type == 'r':
+            assert len(
+                parts
+            ) == 6, f"Directive 'r' must have 6 parts, got {len(parts)}"
+
+            # Validate offset.
+            assert parts[2].isdigit()
+
+            # Validate length.
+            assert parts[3].isdigit()
+
+            # Validate precedence. Can be a negative or positive integer.
+            try:
+                int(parts[4])  # Check if it's a valid integer representation
+            except ValueError:
+                raise AssertionError(
+                    f"Precedence '{parts[4]}' must be a valid integer string.")
+        else:
+            assert len(parts) == 5
     except:
         # Augment the error with the replacement text for better debugging.
         assert False, f"Invalid replacement: \"{replacement}\""
+
+
+def merge_insertions_and_remove_precedence_field(changes: set) -> set:
+    """
+    Merges conflicting insertions at the same code location.
+
+    The merge order is determined as follows:
+    Handles "associativity" by grouping insertions based on precedence sign.
+        The final text is formed by concatenating all positive-precedence
+        insertions (i.e., "closing" parts), then zero-precedence, then all
+        negative-precedence insertions ("opening" parts). This ensures that
+        a closing bracket from a left expression is placed before an opening
+        bracket from a right expression (e.g., `...>[...`).
+    Also removes the precedence field from the final replacement directives.
+    """
+    replacements_by_range = defaultdict(list)
+    result = set()
+
+    for change in changes:
+        assert_valid_replacement(change)
+        parts = change.split(':::')
+        directive_type = parts[0]
+
+        if directive_type == 'r':
+            _, file_path, offset, length, precedence, text = parts
+            precedence = int(precedence)
+            # Key identifies the exact code range being replaced
+            key = (file_path, offset, length)
+            replacements_by_range[key].append((precedence, text))
+        else:
+            result.add(change)
+
+    for key, candidates in replacements_by_range.items():
+        assert candidates, "A key should always have at least one candidate."
+
+        file_path, offset, length = key
+
+        if len(candidates) == 1:
+            # No conflict.
+            _, text = candidates[0]
+            reconstructed_directive = f"r:::{file_path}:::{offset}:::{length}:::{text}"
+            result.add(reconstructed_directive)
+            continue
+
+        if int(length) == 0:
+            # Conflicting insertion detected.
+
+            # Assert uniqueness of precedence values to ensure determinism.
+            precedences = [p for p, _ in candidates]
+            assert len(precedences) == len(
+                set(precedences)
+            ), "Conflicting insertions need to have unique precedece values."
+
+            merged_texts = [t for _, t in sorted(candidates)]
+            reconstructed_directive = f"r:::{file_path}:::{offset}:::{length}:::{''.join(merged_texts)}"
+            result.add(reconstructed_directive)
+        else:
+            # Conflicting non-insertion replacement. This is an unresolvable
+            # conflict for now. Just remove the precedence field.
+            for _, text in candidates:
+                reconstructed_directive = f"r:::{file_path}:::{offset}:::{length}:::{text}"
+                result.add(reconstructed_directive)
+
+    return result
+
 
 def main():
     # Since the tool is invoked from multiple compile units, we are using sets
@@ -260,6 +347,11 @@ def main():
 
     # A set of source nodes that trigger the rewrite.
     sources = set()
+
+    # A set of sink nodes. A rewrite from a source requires all the end nodes
+    # to be sink. They represent nodes where the rewrite could be applied,
+    # because the size info is available.
+    sinks = set()
 
     # Change to apply at the edge in between rewritten and non-rewritten nodes.
     frontiers = set()
@@ -269,24 +361,39 @@ def main():
         line = line.rstrip('\n\r')
 
         # The first character of the line denotes the type of the line:
+        # - 'r': Replacement associated with a node.
         # - 'e': Edge in between two nodes.
         # - 's': Source node of the graph triggering the rewrite.
         # - 'f': Span frontier change.
-        assert line[0] in ['e', 's', 'f'], "Unknown line type: " +\
+        # - 'i': Sink node. A rewrite from a source requires the ultimate end
+        #        nodes to be sink. They represent nodes we know can be rewrite
+        #        because the buffer's size is known.
+        assert line[0] in ['r', 'e', 's', 'i', 'f'], "Unknown line type: " +\
                line[0] + " in line: " + line
+
+        # Replacement associated with a node:
+        if line[0] == 'r':
+            (_, key, replacement) = line.split(' ', 2)
+            Node.from_key(key).add_replacement(replacement)
+            continue
+
+        # Sink node:
+        if line[0] == 'i':
+            (_, key) = line.split(' ')
+            sinks.add(key)
+            continue
 
         # Source node:
         if line[0] == 's':
-            assert_valid_replacement(line[1:])
-            sources.add(line[1:])
+            (_, key) = line.split(' ')
+            sources.add(key)
             continue
 
         # Edge in between two nodes:
         if line[0] == 'e':
-            nodes = line[1:].split('@')
-            assert len(nodes) == 2, "Invalid edge: " + line
-            lhs = Node.get_or_create(nodes[0])
-            rhs = Node.get_or_create(nodes[1])
+            (_, lhs_key, rhs_key) = line.split(' ')
+            lhs = Node.from_key(lhs_key)
+            rhs = Node.from_key(rhs_key)
 
             # Directed edge:
             lhs.neighbors_directed.add(rhs)
@@ -298,28 +405,23 @@ def main():
 
         # Span frontier change:
         if line[0] == 'f':
-            frontiers.add(line[1:])
+            frontiers.add(line)
             continue
 
         assert False, "Unreachable code"
+
+    # Mark the sink nodes as rewritable.
+    for sink in sinks:
+        Node.from_key(sink).size_info_available = True
 
     # Mark the source nodes:
     source_nodes = []
     for source in sources:
         source_node = Node.from_key(source)
-        # When using templates, it is possible the source isn't part of any
-        # edges. In this case, it can't be rewritten, because we don't know
-        # if its size info is available.
-        #
-        # This is a limitation of the current implementation. We could improve
-        # this by adding a new line that indicates whether the node's size
-        # information is available. It shouldn't be part of the edges.
-        if source_node is None:
-            continue
         source_nodes.append(source_node)
 
         # Determine whether size information is available from this source.
-        SizeInfoAvailable(source_node)
+        ComputeSizeInfoAvailable(source_node)
 
     # Identify all the connected components in the undirected graph. This is
     # exploring the graph in depth-first search and assigning the same component
@@ -340,29 +442,15 @@ def main():
     # Collect the changes to apply. Starting from sources nodes whose size info
     # could be determined.
     for node in source_nodes:
-        # Some sources might not have their size info available. We can't
-        # rewrite those.
-        if node.size_info_available != '1':
-            continue
-
         # Collect the changes to apply. We start from sources nodes whose size
         # info is available and explore the graph in depth-first search.
-        DFS(node)
-
-    # Iterate over the dependent nodes and then check if their only neighbor was
-    # visited. Visited nodes here are nodes who's type was rewritten to span.
-    # In that case, the dependent expression needs to be adapted/rewritten.
-    for node in Node.all():
-        if node.is_dependent == '1':
-            neighbor = list(node.neighbors_directed)[0]
-            if neighbor.visited:
-                for replacement in node.replacements:
-                    neighbor.component.changes.add(replacement)
+        if node.size_info_available:
+            DFS(node)
 
     # At the edge in between rewritten and non-rewritten nodes, we need
     # to add a call to `.data()` to access the pointer from the span:
     for frontier in frontiers:
-        (lhs_key, rhs_key, replacement) = frontier.split('@')
+        (_, lhs_key, rhs_key, replacement) = frontier.split(' ', 3)
         lhs_node = Node.from_key(lhs_key)
         rhs_node = Node.from_key(rhs_key)
 
@@ -397,13 +485,16 @@ def main():
     ]
 
     for index, component in enumerate(component_with_changes):
-        for text in component.changes:
+        merged_component_changes = merge_insertions_and_remove_precedence_field(
+            component.changes)
+
+        for text in merged_component_changes:
             print(text)
 
-        summary_file.write(f'patch_{index}: {len(component.changes)}\n')
+        summary_file.write(f'patch_{index}: {len(merged_component_changes)}\n')
 
         with open(expanduser(f'~/scratch/patch_{index}.txt'), 'w') as f:
-            f.write('\n'.join(component.changes))
+            f.write('\n'.join(merged_component_changes))
 
     summary_file.close()
 

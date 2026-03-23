@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef RENDER_WIDGET_HOST_VIEW_QT_H
 #define RENDER_WIDGET_HOST_VIEW_QT_H
@@ -16,6 +17,8 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "ui/events/gesture_detection/filtered_gesture_provider.h"
+
+QT_FORWARD_DECLARE_CLASS(QWebEngineSettings)
 
 namespace content {
 class RenderFrameHost;
@@ -58,7 +61,7 @@ public:
     void SetSize(const gfx::Size& size) override;
     void SetBounds(const gfx::Rect&) override;
     gfx::NativeView GetNativeView() override;
-    gfx::NativeViewAccessible GetNativeViewAccessible() override { return nullptr; }
+    gfx::NativeViewAccessible GetNativeViewAccessible() override { return {}; }
     void Focus() override;
     bool HasFocus() override;
     bool IsPointerLocked() override;
@@ -80,9 +83,9 @@ public:
     input::CursorManager *GetCursorManager() override;
     void SetIsLoading(bool) override;
     void ImeCancelComposition() override;
-    void ImeCompositionRangeChanged(const gfx::Range &,
-                                    const std::optional<std::vector<gfx::Rect>> &,
-                                    const std::optional<std::vector<gfx::Rect>> &) override;
+    void ImeCompositionRangeChanged(
+        const gfx::Range &range,
+        const std::optional<std::vector<gfx::Rect>> &character_bounds) override;
     void RenderProcessGone() override;
     bool TransformPointToCoordSpaceForView(const gfx::PointF &point,
                                            input::RenderWidgetHostViewInput *target_view,
@@ -117,7 +120,8 @@ public:
     std::unique_ptr<content::SyntheticGestureTarget> CreateSyntheticGestureTarget() override;
     ui::Compositor *GetCompositor() override;
     std::optional<content::DisplayFeature> GetDisplayFeature() override;
-    void SetDisplayFeatureForTesting(const content::DisplayFeature*) override;
+    void DisableDisplayFeatureOverrideForEmulation() override {}
+    void OverrideDisplayFeatureForEmulation(const content::DisplayFeature*) override {}
     content::WebContentsAccessibility *GetWebContentsAccessibility() override;
 #if BUILDFLAG(IS_MAC)
     void ShowSharePicker(
@@ -168,6 +172,11 @@ public:
     void handleWheelEvent(QWheelEvent *);
     void processMotionEvent(const ui::MotionEvent &motionEvent);
     void resetInputManagerState() { m_imState = 0; }
+    const ui::mojom::TextInputState *getTextInputState() const
+    {
+        return text_input_manager_ ? text_input_manager_->GetTextInputState() : nullptr;
+    }
+    Qt::InputMethodHints inputMethodHints() const;
 
     // Called from WebContentsAdapter.
     gfx::SizeF lastContentsSize() const { return m_lastContentsSize; }
@@ -176,7 +185,6 @@ public:
     ui::TouchSelectionController *getTouchSelectionController() const { return m_touchSelectionController.get(); }
     TouchSelectionControllerClientQt *getTouchSelectionControllerClient() const { return m_touchSelectionControllerClient.get(); }
     blink::mojom::FrameWidgetInputHandler *getFrameWidgetInputHandler();
-    ui::TextInputType getTextInputType() const;
 
     void synchronizeVisualProperties(
             const std::optional<viz::LocalSurfaceId> &childSurfaceId);
@@ -239,6 +247,7 @@ class WebContentsAccessibilityQt : public content::WebContentsAccessibility
 public:
     WebContentsAccessibilityQt(RenderWidgetHostViewQt *rwhv) : m_rwhv(rwhv) {}
     QObject *accessibilityParentObject() const;
+    QWebEngineSettings *webEngineSettings() const;
 };
 
 } // namespace QtWebEngineCore

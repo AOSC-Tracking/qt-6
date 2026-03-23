@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qlogvalue3daxisformatter_p.h"
 #include "qvalue3daxis_p.h"
@@ -150,7 +152,7 @@ void QLogValue3DAxisFormatter::setBase(qreal base)
                   qUtf8Printable(QLatin1String(__FUNCTION__)), base);
         return;
     }
-    if (qFuzzyCompare(d->m_base, base)) {
+    if (qFuzzyCompare(d->m_base + 1, base + 1)) {
         qCDebug(lcAProperties3D,
                 "%s Base value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), base);
@@ -318,8 +320,8 @@ void QLogValue3DAxisFormatterPrivate::recalculate()
         qreal minDiff = qCeil(logMin) - logMin;
         qreal maxDiff = logMax - qFloor(logMax);
 
-        m_evenMinSegment = qFuzzyCompare(qreal(0.0), minDiff);
-        m_evenMaxSegment = qFuzzyCompare(qreal(0.0), maxDiff);
+        m_evenMinSegment = qFuzzyIsNull(minDiff);
+        m_evenMaxSegment = qFuzzyIsNull(maxDiff);
 
         segmentCount = qRound(logRangeNormalizer - minDiff - maxDiff);
 
@@ -452,3 +454,5 @@ float QLogValue3DAxisFormatterPrivate::valueAt(float position) const
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qlogvalue3daxisformatter.cpp"

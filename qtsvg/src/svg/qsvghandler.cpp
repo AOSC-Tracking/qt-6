@@ -6,7 +6,7 @@
 
 #include "qsvghandler_p.h"
 
-#include "qsvgtinydocument_p.h"
+#include "qsvgdocument_p.h"
 #include "qsvgstructure_p.h"
 #include "qsvggraphics_p.h"
 #include "qsvgfilter_p.h"
@@ -27,11 +27,9 @@
 #include "qdir.h"
 #include "qdebug.h"
 #include "qmath.h"
-#include "qnumeric.h"
 #include <qregularexpression.h>
 #include "qtransform.h"
 #include "qvarlengtharray.h"
-#include "private/qmath_p.h"
 #include "qimagereader.h"
 
 #include "float.h"
@@ -152,8 +150,6 @@ bool qsvg_get_hex_rgb(const QChar *str, int len, QRgb *rgb)
 }
 
 // ======== end of qcolor_p duplicate
-
-static bool parsePathDataFast(QStringView data, QPainterPath &path, bool limitLength = true);
 
 static inline QString someId(const QXmlStreamAttributes &attributes)
 {
@@ -364,37 +360,6 @@ static QList<qreal> parseNumbersList(const QChar *&str)
     return points;
 }
 
-static inline void parseNumbersArray(const QChar *&str, QVarLengthArray<qreal, 8> &points,
-                                     const char *pattern = nullptr)
-{
-    const size_t patternLen = qstrlen(pattern);
-    while (str->isSpace())
-        ++str;
-    while (QSvgUtils::isDigit(str->unicode()) ||
-           *str == QLatin1Char('-') || *str == QLatin1Char('+') ||
-           *str == QLatin1Char('.')) {
-
-        if (patternLen && pattern[points.size() % patternLen] == 'f') {
-            // flag expected, may only be 0 or 1
-            if (*str != QLatin1Char('0') && *str != QLatin1Char('1'))
-                return;
-            points.append(*str == QLatin1Char('0') ? 0.0 : 1.0);
-            ++str;
-        } else {
-            points.append(QSvgUtils::toDouble(str));
-        }
-
-        while (str->isSpace())
-            ++str;
-        if (*str == QLatin1Char(','))
-            ++str;
-
-        //eat the rest of space
-        while (str->isSpace())
-            ++str;
-    }
-}
-
 static QList<qreal> parsePercentageList(const QChar *&str)
 {
     QList<qreal> points;
@@ -513,18 +478,22 @@ static bool resolveColor(QStringView colorStr, QColor &color, QSvgHandler *handl
     return color.isValid();
 }
 
+void setAlpha(QStringView opacity, QColor *color)
+{
+    bool ok = true;
+    qreal op = qBound(qreal(0.0), QSvgUtils::toDouble(opacity, &ok), qreal(1.0));
+    if (!ok)
+        op = 1.0;
+    color->setAlphaF(op);
+}
+
 static bool constructColor(QStringView colorStr, QStringView opacity,
                            QColor &color, QSvgHandler *handler)
 {
     if (!resolveColor(colorStr, color, handler))
         return false;
-    if (!opacity.isEmpty()) {
-        bool ok = true;
-        qreal op = qMin(qreal(1.0), qMax(qreal(0.0), QSvgUtils::toDouble(opacity, &ok)));
-        if (!ok)
-            op = 1.0;
-        color.setAlphaF(op);
-    }
+    if (!opacity.isEmpty())
+        setAlpha(opacity, &color);
     return true;
 }
 
@@ -538,20 +507,29 @@ static inline qreal convertToNumber(QStringView str, bool *ok = NULL)
     return num;
 }
 
-static bool createSvgGlyph(QSvgFont *font, const QXmlStreamAttributes &attributes)
+static bool createSvgGlyph(QSvgFont *font, const QXmlStreamAttributes &attributes,
+                           bool isMissingGlyph)
 {
     QStringView uncStr = attributes.value(QLatin1String("unicode"));
     QStringView havStr = attributes.value(QLatin1String("horiz-adv-x"));
     QStringView pathStr = attributes.value(QLatin1String("d"));
 
-    QChar unicode = (uncStr.isEmpty()) ? u'\0' : uncStr.at(0);
     qreal havx = (havStr.isEmpty()) ? -1 : QSvgUtils::toDouble(havStr);
-    QPainterPath path;
+    QPainterPath path = QSvgUtils::parsePathDataFast(pathStr).value_or(QPainterPath());
+
     path.setFillRule(Qt::WindingFill);
-    parsePathDataFast(pathStr, path);
 
-    font->addGlyph(unicode, path, havx);
+    if (isMissingGlyph) {
+        if (!uncStr.isEmpty())
+            qWarning("Ignoring missing-glyph's 'unicode' attribute");
+        return font->addMissingGlyph(path, havx);
+    }
 
+    if (uncStr.isEmpty()) {
+        qWarning("glyph does not define a non-empty 'unicode' attribute and will be ignored");
+        return false;
+    }
+    font->addGlyph(uncStr.toString(), path, havx);
     return true;
 }
 
@@ -699,7 +677,7 @@ static QTransform parseTransformationMatrix(QStringView value)
             goto error;
         ++str;
         QVarLengthArray<qreal, 8> points;
-        parseNumbersArray(str, points);
+        QSvgUtils::parseNumbersArray(str, points);
         if (*str != QLatin1Char(')'))
             goto error;
         ++str;
@@ -914,7 +892,7 @@ static void parseFont(QSvgNode *node,
 
     QSvgFontStyle *fontStyle = nullptr;
     if (!attributes.fontFamily.isEmpty()) {
-        QSvgTinyDocument *doc = node->document();
+        QSvgDocument *doc = node->document();
         if (doc) {
             QSvgFont *svgFont = doc->svgFont(attributes.fontFamily.toString());
             if (svgFont)
@@ -1024,479 +1002,6 @@ static void parseVisibility(QSvgNode *node,
         node->setVisible(true);
 }
 
-static void pathArcSegment(QPainterPath &path,
-                           qreal xc, qreal yc,
-                           qreal th0, qreal th1,
-                           qreal rx, qreal ry, qreal xAxisRotation)
-{
-    qreal sinTh, cosTh;
-    qreal a00, a01, a10, a11;
-    qreal x1, y1, x2, y2, x3, y3;
-    qreal t;
-    qreal thHalf;
-
-    sinTh = qSin(xAxisRotation * (Q_PI / 180.0));
-    cosTh = qCos(xAxisRotation * (Q_PI / 180.0));
-
-    a00 =  cosTh * rx;
-    a01 = -sinTh * ry;
-    a10 =  sinTh * rx;
-    a11 =  cosTh * ry;
-
-    thHalf = 0.5 * (th1 - th0);
-    t = (8.0 / 3.0) * qSin(thHalf * 0.5) * qSin(thHalf * 0.5) / qSin(thHalf);
-    x1 = xc + qCos(th0) - t * qSin(th0);
-    y1 = yc + qSin(th0) + t * qCos(th0);
-    x3 = xc + qCos(th1);
-    y3 = yc + qSin(th1);
-    x2 = x3 + t * qSin(th1);
-    y2 = y3 - t * qCos(th1);
-
-    path.cubicTo(a00 * x1 + a01 * y1, a10 * x1 + a11 * y1,
-                 a00 * x2 + a01 * y2, a10 * x2 + a11 * y2,
-                 a00 * x3 + a01 * y3, a10 * x3 + a11 * y3);
-}
-
-// the arc handling code underneath is from XSVG (BSD license)
-/*
- * Copyright  2002 USC/Information Sciences Institute
- *
- * Permission to use, copy, modify, distribute, and sell this software
- * and its documentation for any purpose is hereby granted without
- * fee, provided that the above copyright notice appear in all copies
- * and that both that copyright notice and this permission notice
- * appear in supporting documentation, and that the name of
- * Information Sciences Institute not be used in advertising or
- * publicity pertaining to distribution of the software without
- * specific, written prior permission.  Information Sciences Institute
- * makes no representations about the suitability of this software for
- * any purpose.  It is provided "as is" without express or implied
- * warranty.
- *
- * INFORMATION SCIENCES INSTITUTE DISCLAIMS ALL WARRANTIES WITH REGARD
- * TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL INFORMATION SCIENCES
- * INSTITUTE BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL
- * DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA
- * OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
- * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
- * PERFORMANCE OF THIS SOFTWARE.
- *
- */
-static void pathArc(QPainterPath &path,
-                    qreal               rx,
-                    qreal               ry,
-                    qreal               x_axis_rotation,
-                    int         large_arc_flag,
-                    int         sweep_flag,
-                    qreal               x,
-                    qreal               y,
-                    qreal curx, qreal cury)
-{
-    const qreal Pr1 = rx * rx;
-    const qreal Pr2 = ry * ry;
-
-    if (!Pr1 || !Pr2)
-        return;
-
-    qreal sin_th, cos_th;
-    qreal a00, a01, a10, a11;
-    qreal x0, y0, x1, y1, xc, yc;
-    qreal d, sfactor, sfactor_sq;
-    qreal th0, th1, th_arc;
-    int i, n_segs;
-    qreal dx, dy, dx1, dy1, Px, Py, check;
-
-    rx = qAbs(rx);
-    ry = qAbs(ry);
-
-    sin_th = qSin(x_axis_rotation * (Q_PI / 180.0));
-    cos_th = qCos(x_axis_rotation * (Q_PI / 180.0));
-
-    dx = (curx - x) / 2.0;
-    dy = (cury - y) / 2.0;
-    dx1 =  cos_th * dx + sin_th * dy;
-    dy1 = -sin_th * dx + cos_th * dy;
-    Px = dx1 * dx1;
-    Py = dy1 * dy1;
-    /* Spec : check if radii are large enough */
-    check = Px / Pr1 + Py / Pr2;
-    if (check > 1) {
-        rx = rx * qSqrt(check);
-        ry = ry * qSqrt(check);
-    }
-
-    a00 =  cos_th / rx;
-    a01 =  sin_th / rx;
-    a10 = -sin_th / ry;
-    a11 =  cos_th / ry;
-    x0 = a00 * curx + a01 * cury;
-    y0 = a10 * curx + a11 * cury;
-    x1 = a00 * x + a01 * y;
-    y1 = a10 * x + a11 * y;
-    /* (x0, y0) is current point in transformed coordinate space.
-       (x1, y1) is new point in transformed coordinate space.
-
-       The arc fits a unit-radius circle in this space.
-    */
-    d = (x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0);
-    if (!d)
-        return;
-    sfactor_sq = 1.0 / d - 0.25;
-    if (sfactor_sq < 0) sfactor_sq = 0;
-    sfactor = qSqrt(sfactor_sq);
-    if (sweep_flag == large_arc_flag) sfactor = -sfactor;
-    xc = 0.5 * (x0 + x1) - sfactor * (y1 - y0);
-    yc = 0.5 * (y0 + y1) + sfactor * (x1 - x0);
-    /* (xc, yc) is center of the circle. */
-
-    th0 = qAtan2(y0 - yc, x0 - xc);
-    th1 = qAtan2(y1 - yc, x1 - xc);
-
-    th_arc = th1 - th0;
-    if (th_arc < 0 && sweep_flag)
-        th_arc += 2 * Q_PI;
-    else if (th_arc > 0 && !sweep_flag)
-        th_arc -= 2 * Q_PI;
-
-    n_segs = qCeil(qAbs(th_arc / (Q_PI * 0.5 + 0.001)));
-
-    for (i = 0; i < n_segs; i++) {
-        pathArcSegment(path, xc, yc,
-                       th0 + i * th_arc / n_segs,
-                       th0 + (i + 1) * th_arc / n_segs,
-                       rx, ry, x_axis_rotation);
-    }
-}
-
-static bool parsePathDataFast(QStringView dataStr, QPainterPath &path, bool limitLength)
-{
-    const int maxElementCount = 0x7fff; // Assume file corruption if more path elements than this
-    qreal x0 = 0, y0 = 0;              // starting point
-    qreal x = 0, y = 0;                // current point
-    char lastMode = 0;
-    QPointF ctrlPt;
-    const QChar *str = dataStr.constData();
-    const QChar *end = str + dataStr.size();
-
-    bool ok = true;
-    while (ok && str != end) {
-        while (str->isSpace() && (str + 1) != end)
-            ++str;
-        QChar pathElem = *str;
-        ++str;
-        QChar endc = *end;
-        *const_cast<QChar *>(end) = u'\0'; // parseNumbersArray requires 0-termination that QStringView cannot guarantee
-        const char *pattern = nullptr;
-        if (pathElem == QLatin1Char('a') || pathElem == QLatin1Char('A'))
-            pattern = "rrrffrr";
-        QVarLengthArray<qreal, 8> arg;
-        parseNumbersArray(str, arg, pattern);
-        *const_cast<QChar *>(end) = endc;
-        if (pathElem == QLatin1Char('z') || pathElem == QLatin1Char('Z'))
-            arg.append(0);//dummy
-        const qreal *num = arg.constData();
-        int count = arg.size();
-        while (ok && count > 0) {
-            qreal offsetX = x;        // correction offsets
-            qreal offsetY = y;        // for relative commands
-            switch (pathElem.unicode()) {
-            case 'm': {
-                if (count < 2) {
-                    ok = false;
-                    break;
-                }
-                x = x0 = num[0] + offsetX;
-                y = y0 = num[1] + offsetY;
-                num += 2;
-                count -= 2;
-                path.moveTo(x0, y0);
-
-                 // As per 1.2  spec 8.3.2 The "moveto" commands
-                 // If a 'moveto' is followed by multiple pairs of coordinates without explicit commands,
-                 // the subsequent pairs shall be treated as implicit 'lineto' commands.
-                 pathElem = QLatin1Char('l');
-            }
-                break;
-            case 'M': {
-                if (count < 2) {
-                    ok = false;
-                    break;
-                }
-                x = x0 = num[0];
-                y = y0 = num[1];
-                num += 2;
-                count -= 2;
-                path.moveTo(x0, y0);
-
-                // As per 1.2  spec 8.3.2 The "moveto" commands
-                // If a 'moveto' is followed by multiple pairs of coordinates without explicit commands,
-                // the subsequent pairs shall be treated as implicit 'lineto' commands.
-                pathElem = QLatin1Char('L');
-            }
-                break;
-            case 'z':
-            case 'Z': {
-                x = x0;
-                y = y0;
-                count--; // skip dummy
-                num++;
-                path.closeSubpath();
-            }
-                break;
-            case 'l': {
-                if (count < 2) {
-                    ok = false;
-                    break;
-                }
-                x = num[0] + offsetX;
-                y = num[1] + offsetY;
-                num += 2;
-                count -= 2;
-                path.lineTo(x, y);
-
-            }
-                break;
-            case 'L': {
-                if (count < 2) {
-                    ok = false;
-                    break;
-                }
-                x = num[0];
-                y = num[1];
-                num += 2;
-                count -= 2;
-                path.lineTo(x, y);
-            }
-                break;
-            case 'h': {
-                x = num[0] + offsetX;
-                num++;
-                count--;
-                path.lineTo(x, y);
-            }
-                break;
-            case 'H': {
-                x = num[0];
-                num++;
-                count--;
-                path.lineTo(x, y);
-            }
-                break;
-            case 'v': {
-                y = num[0] + offsetY;
-                num++;
-                count--;
-                path.lineTo(x, y);
-            }
-                break;
-            case 'V': {
-                y = num[0];
-                num++;
-                count--;
-                path.lineTo(x, y);
-            }
-                break;
-            case 'c': {
-                if (count < 6) {
-                    ok = false;
-                    break;
-                }
-                QPointF c1(num[0] + offsetX, num[1] + offsetY);
-                QPointF c2(num[2] + offsetX, num[3] + offsetY);
-                QPointF e(num[4] + offsetX, num[5] + offsetY);
-                num += 6;
-                count -= 6;
-                path.cubicTo(c1, c2, e);
-                ctrlPt = c2;
-                x = e.x();
-                y = e.y();
-                break;
-            }
-            case 'C': {
-                if (count < 6) {
-                    ok = false;
-                    break;
-                }
-                QPointF c1(num[0], num[1]);
-                QPointF c2(num[2], num[3]);
-                QPointF e(num[4], num[5]);
-                num += 6;
-                count -= 6;
-                path.cubicTo(c1, c2, e);
-                ctrlPt = c2;
-                x = e.x();
-                y = e.y();
-                break;
-            }
-            case 's': {
-                if (count < 4) {
-                    ok = false;
-                    break;
-                }
-                QPointF c1;
-                if (lastMode == 'c' || lastMode == 'C' ||
-                    lastMode == 's' || lastMode == 'S')
-                    c1 = QPointF(2*x-ctrlPt.x(), 2*y-ctrlPt.y());
-                else
-                    c1 = QPointF(x, y);
-                QPointF c2(num[0] + offsetX, num[1] + offsetY);
-                QPointF e(num[2] + offsetX, num[3] + offsetY);
-                num += 4;
-                count -= 4;
-                path.cubicTo(c1, c2, e);
-                ctrlPt = c2;
-                x = e.x();
-                y = e.y();
-                break;
-            }
-            case 'S': {
-                if (count < 4) {
-                    ok = false;
-                    break;
-                }
-                QPointF c1;
-                if (lastMode == 'c' || lastMode == 'C' ||
-                    lastMode == 's' || lastMode == 'S')
-                    c1 = QPointF(2*x-ctrlPt.x(), 2*y-ctrlPt.y());
-                else
-                    c1 = QPointF(x, y);
-                QPointF c2(num[0], num[1]);
-                QPointF e(num[2], num[3]);
-                num += 4;
-                count -= 4;
-                path.cubicTo(c1, c2, e);
-                ctrlPt = c2;
-                x = e.x();
-                y = e.y();
-                break;
-            }
-            case 'q': {
-                if (count < 4) {
-                    ok = false;
-                    break;
-                }
-                QPointF c(num[0] + offsetX, num[1] + offsetY);
-                QPointF e(num[2] + offsetX, num[3] + offsetY);
-                num += 4;
-                count -= 4;
-                path.quadTo(c, e);
-                ctrlPt = c;
-                x = e.x();
-                y = e.y();
-                break;
-            }
-            case 'Q': {
-                if (count < 4) {
-                    ok = false;
-                    break;
-                }
-                QPointF c(num[0], num[1]);
-                QPointF e(num[2], num[3]);
-                num += 4;
-                count -= 4;
-                path.quadTo(c, e);
-                ctrlPt = c;
-                x = e.x();
-                y = e.y();
-                break;
-            }
-            case 't': {
-                if (count < 2) {
-                    ok = false;
-                    break;
-                }
-                QPointF e(num[0] + offsetX, num[1] + offsetY);
-                num += 2;
-                count -= 2;
-                QPointF c;
-                if (lastMode == 'q' || lastMode == 'Q' ||
-                    lastMode == 't' || lastMode == 'T')
-                    c = QPointF(2*x-ctrlPt.x(), 2*y-ctrlPt.y());
-                else
-                    c = QPointF(x, y);
-                path.quadTo(c, e);
-                ctrlPt = c;
-                x = e.x();
-                y = e.y();
-                break;
-            }
-            case 'T': {
-                if (count < 2) {
-                    ok = false;
-                    break;
-                }
-                QPointF e(num[0], num[1]);
-                num += 2;
-                count -= 2;
-                QPointF c;
-                if (lastMode == 'q' || lastMode == 'Q' ||
-                    lastMode == 't' || lastMode == 'T')
-                    c = QPointF(2*x-ctrlPt.x(), 2*y-ctrlPt.y());
-                else
-                    c = QPointF(x, y);
-                path.quadTo(c, e);
-                ctrlPt = c;
-                x = e.x();
-                y = e.y();
-                break;
-            }
-            case 'a': {
-                if (count < 7) {
-                    ok = false;
-                    break;
-                }
-                qreal rx = (*num++);
-                qreal ry = (*num++);
-                qreal xAxisRotation = (*num++);
-                qreal largeArcFlag  = (*num++);
-                qreal sweepFlag = (*num++);
-                qreal ex = (*num++) + offsetX;
-                qreal ey = (*num++) + offsetY;
-                count -= 7;
-                qreal curx = x;
-                qreal cury = y;
-                pathArc(path, rx, ry, xAxisRotation, int(largeArcFlag),
-                        int(sweepFlag), ex, ey, curx, cury);
-
-                x = ex;
-                y = ey;
-            }
-                break;
-            case 'A': {
-                if (count < 7) {
-                    ok = false;
-                    break;
-                }
-                qreal rx = (*num++);
-                qreal ry = (*num++);
-                qreal xAxisRotation = (*num++);
-                qreal largeArcFlag  = (*num++);
-                qreal sweepFlag = (*num++);
-                qreal ex = (*num++);
-                qreal ey = (*num++);
-                count -= 7;
-                qreal curx = x;
-                qreal cury = y;
-                pathArc(path, rx, ry, xAxisRotation, int(largeArcFlag),
-                        int(sweepFlag), ex, ey, curx, cury);
-
-                x = ex;
-                y = ey;
-            }
-                break;
-            default:
-                ok = false;
-                break;
-            }
-            lastMode = pathElem.toLatin1();
-            if (limitLength && path.elementCount() > maxElementCount)
-                ok = false;
-        }
-    }
-    return ok;
-}
-
 static bool parseStyle(QSvgNode *node,
                        const QXmlStreamAttributes &attributes,
                        QSvgHandler *handler);
@@ -1528,20 +1033,40 @@ static void parseCssAnimations(QSvgNode *node,
                                const QXmlStreamAttributes &attributes,
                                QSvgHandler *handler)
 {
-    QSvgCssAnimationProperties cssAnimProps(attributes);
-    QList<QSvgAnimationProperty> parsedProperties = cssAnimProps.parse();
+    QSvgCssProperties cssAnimProps(attributes);
+    QList<QSvgAnimationProperty> parsedProperties = cssAnimProps.animations();
 
-    for (QSvgAnimationProperty property : parsedProperties) {
+    for (auto &property : parsedProperties) {
         QSvgCssAnimation *anim = handler->cssHandler().createAnimation(property.name);
         if (!anim)
             continue;
 
         anim->setRunningTime(property.delay, property.duration);
         anim->setIterationCount(property.iteration);
+        QSvgCssEasingPtr easing = handler->cssHandler().createEasing(property.easingFunction, property.easingValues);
+        anim->setEasing(std::move(easing));
+
         handler->setAnimPeriod(property.delay, property.delay + property.duration);
         handler->document()->animator()->appendAnimation(node, anim);
         handler->document()->setAnimated(true);
     }
+}
+
+static void parseOffsetPath(QSvgNode *node,
+                            const QXmlStreamAttributes &attributes)
+{
+    QSvgCssProperties cssProperties(attributes);
+    QSvgOffsetProperty offset = cssProperties.offset();
+
+    if (!offset.path)
+        return;
+
+    QSvgOffsetStyle *offsetStyle = new QSvgOffsetStyle();
+    offsetStyle->setPath(offset.path.value());
+    offsetStyle->setRotateAngle(offset.angle);
+    offsetStyle->setRotateType(offset.rotateType);
+    offsetStyle->setDistance(offset.distance);
+    node->appendStyleProperty(offsetStyle, QString());
 }
 
 #endif // QT_NO_CSSPARSER
@@ -1833,6 +1358,7 @@ static bool parseStyle(QSvgNode *node,
         handler->cssHandler().parseCSStoXMLAttrs(style.toString(), cssAttributes);
     svgAttributes.setAttributes(cssAttributes, handler);
 
+    parseOffsetPath(node, cssAttributes);
     if (!handler->options().testFlag(QtSvg::DisableCSSAnimations))
         parseCssAnimations(node, cssAttributes, handler);
 #endif
@@ -1962,7 +1488,10 @@ static QSvgNode *createAnimateColorNode(QSvgNode *parent,
     QSvgAnimateColor *anim = new QSvgAnimateColor(parent);
     anim->appendProperty(prop);
 
-    parseBaseAnimate(parent, attributes, anim, handler);
+    if (!parseBaseAnimate(parent, attributes, anim, handler)) {
+        delete anim;
+        return nullptr;
+    }
 
     return anim;
 }
@@ -2079,7 +1608,10 @@ static QSvgNode *createAnimateTransformNode(QSvgNode *parent,
     QSvgAnimateTransform *anim = new QSvgAnimateTransform(parent);
     anim->appendProperty(prop);
 
-    parseBaseAnimate(parent, attributes, anim, handler);
+    if (!parseBaseAnimate(parent, attributes, anim, handler)) {
+        delete anim;
+        return nullptr;
+    }
 
     return anim;
 }
@@ -2167,7 +1699,7 @@ static QSvgStyleProperty *createFontNode(QSvgNode *parent,
     }
 
     if (parent && !myId.isEmpty()) {
-        QSvgTinyDocument *doc = static_cast<QSvgTinyDocument*>(parent);
+        QSvgDocument *doc = static_cast<QSvgDocument*>(parent);
         QSvgFont *font = doc->svgFont(myId);
         if (!font) {
             font = new QSvgFont(horizAdvX);
@@ -2272,8 +1804,7 @@ static bool parseGlyphNode(QSvgStyleProperty *parent,
 
     QSvgFontStyle *style = static_cast<QSvgFontStyle*>(parent);
     QSvgFont *font = style->svgFont();
-    createSvgGlyph(font, attributes);
-    return true;
+    return createSvgGlyph(font, attributes, false);
 }
 
 static bool parseHandlerNode(QSvgNode *parent,
@@ -2332,7 +1863,7 @@ static QSvgNode *createImageNode(QSvgNode *parent,
     if (filename.startsWith(QLatin1String("data"))) {
         QString mimeType;
         QByteArray data;
-        if (qDecodeDataUrl(filename, mimeType, data)) {
+        if (qDecodeDataUrl(QUrl{filename}, mimeType, data)) {
             image = QImage::fromData(data);
             filenameType = LoadedFromData;
         }
@@ -2505,8 +2036,7 @@ static bool parseMissingGlyphNode(QSvgStyleProperty *parent,
 
     QSvgFontStyle *style = static_cast<QSvgFontStyle*>(parent);
     QSvgFont *font = style->svgFont();
-    createSvgGlyph(font, attributes);
-    return true;
+    return createSvgGlyph(font, attributes, true);
 }
 
 static bool parseMpathNode(QSvgNode *parent,
@@ -2534,7 +2064,7 @@ static bool parseMarkerNode(QSvgNode *,
 
 static QSvgNode *createMaskNode(QSvgNode *parent,
                           const QXmlStreamAttributes &attributes,
-                          QSvgHandler *)
+                          QSvgHandler *handler)
 {
     const QStringView x      = attributes.value(QLatin1String("x"));
     const QStringView y      = attributes.value(QLatin1String("y"));
@@ -2562,7 +2092,7 @@ static QSvgNode *createMaskNode(QSvgNode *parent,
         nx = -0.1;
         nmUx = QtSvg::UnitTypes::objectBoundingBox;
     } else if (type == QSvgUtils::LengthType::LT_PERCENT && nmU == QtSvg::UnitTypes::userSpaceOnUse) {
-        nx = nx / 100. * parent->document()->viewBox().width();
+        nx = nx / 100. * handler->document()->viewBox().width();
     } else if (type == QSvgUtils::LengthType::LT_PERCENT) {
         nx = nx / 100.;
     }
@@ -2573,7 +2103,7 @@ static QSvgNode *createMaskNode(QSvgNode *parent,
         ny = -0.1;
         nmUy = QtSvg::UnitTypes::objectBoundingBox;
     } else if (type == QSvgUtils::LengthType::LT_PERCENT && nmU == QtSvg::UnitTypes::userSpaceOnUse) {
-        ny = ny / 100. * parent->document()->viewBox().height();
+        ny = ny / 100. * handler->document()->viewBox().height();
     } else if (type == QSvgUtils::LengthType::LT_PERCENT) {
         ny = ny / 100.;
     }
@@ -2584,7 +2114,7 @@ static QSvgNode *createMaskNode(QSvgNode *parent,
         nwidth = 1.2;
         nmUw = QtSvg::UnitTypes::objectBoundingBox;
     } else if (type == QSvgUtils::LengthType::LT_PERCENT && nmU == QtSvg::UnitTypes::userSpaceOnUse) {
-        nwidth = nwidth / 100. * parent->document()->viewBox().width();
+        nwidth = nwidth / 100. * handler->document()->viewBox().width();
     } else if (type == QSvgUtils::LengthType::LT_PERCENT) {
         nwidth = nwidth / 100.;
     }
@@ -2595,7 +2125,7 @@ static QSvgNode *createMaskNode(QSvgNode *parent,
         nheight = 1.2;
         nmUh = QtSvg::UnitTypes::objectBoundingBox;
     } else if (type == QSvgUtils::LengthType::LT_PERCENT && nmU == QtSvg::UnitTypes::userSpaceOnUse) {
-        nheight = nheight / 100. * parent->document()->viewBox().height();
+        nheight = nheight / 100. * handler->document()->viewBox().height();
     } else if (type == QSvgUtils::LengthType::LT_PERCENT) {
         nheight = nheight / 100.;
     }
@@ -2609,8 +2139,7 @@ static QSvgNode *createMaskNode(QSvgNode *parent,
     return mask;
 }
 
-static void parseFilterBounds(QSvgNode *, const QXmlStreamAttributes &attributes,
-                              QSvgHandler *, QSvgRectF *rect)
+static void parseFilterBounds(const QXmlStreamAttributes &attributes, QSvgRectF *rect)
 {
     const QStringView xStr        = attributes.value(QLatin1String("x"));
     const QStringView yStr        = attributes.value(QLatin1String("y"));
@@ -2693,8 +2222,8 @@ static QSvgNode *createFilterNode(QSvgNode *parent,
     // If ‘width’ or ‘height’ is not specified, the effect is as if a value of 120% were specified.
     QSvgRectF rect;
     if (filterUnits == QtSvg::UnitTypes::userSpaceOnUse) {
-        qreal width = parent->document()->viewBox().width();
-        qreal height = parent->document()->viewBox().height();
+        qreal width = handler->document()->viewBox().width();
+        qreal height = handler->document()->viewBox().height();
         rect = QSvgRectF(QRectF(-0.1 * width, -0.1 * height, 1.2 * width, 1.2 * height),
                          QtSvg::UnitTypes::userSpaceOnUse, QtSvg::UnitTypes::userSpaceOnUse,
                          QtSvg::UnitTypes::userSpaceOnUse, QtSvg::UnitTypes::userSpaceOnUse);
@@ -2704,15 +2233,14 @@ static QSvgNode *createFilterNode(QSvgNode *parent,
                          QtSvg::UnitTypes::objectBoundingBox, QtSvg::UnitTypes::objectBoundingBox);
     }
 
-    parseFilterBounds(parent, attributes, handler, &rect);
+    parseFilterBounds(attributes, &rect);
 
     QSvgNode *filter = new QSvgFilterContainer(parent, rect, filterUnits, primitiveUnits);
     return filter;
 }
 
-static void parseFilterAttributes(QSvgNode *parent, const QXmlStreamAttributes &attributes,
-                                  QSvgHandler *handler, QString *inString, QString *outString,
-                                  QSvgRectF *rect)
+static void parseFilterAttributes(const QXmlStreamAttributes &attributes, QString *inString,
+                                  QString *outString, QSvgRectF *rect)
 {
     *inString = attributes.value(QLatin1String("in")).toString();
     *outString = attributes.value(QLatin1String("result")).toString();
@@ -2727,12 +2255,12 @@ static void parseFilterAttributes(QSvgNode *parent, const QXmlStreamAttributes &
     // if we recognize unit == unknown we use the filter as a reference instead of the item, see
     // QSvgFeFilterPrimitive::localSubRegion
 
-    parseFilterBounds(parent, attributes, handler, rect);
+    parseFilterBounds(attributes, rect);
 }
 
 static QSvgNode *createFeColorMatrixNode(QSvgNode *parent,
                                         const QXmlStreamAttributes &attributes,
-                                        QSvgHandler *handler)
+                                        QSvgHandler *)
 {
     const QStringView typeString   = attributes.value(QLatin1String("type"));
     const QStringView valuesString = attributes.value(QLatin1String("values"));
@@ -2745,8 +2273,7 @@ static QSvgNode *createFeColorMatrixNode(QSvgNode *parent,
     QSvgFeColorMatrix::Matrix values;
     values.fill(0);
 
-    parseFilterAttributes(parent, attributes, handler,
-                          &inputString, &outputString, &rect);
+    parseFilterAttributes(attributes, &inputString, &outputString, &rect);
 
     if (typeString.startsWith(QLatin1String("saturate")))
         type = QSvgFeColorMatrix::ColorShiftType::Saturate;
@@ -2778,7 +2305,7 @@ static QSvgNode *createFeColorMatrixNode(QSvgNode *parent,
 
 static QSvgNode *createFeGaussianBlurNode(QSvgNode *parent,
                                           const QXmlStreamAttributes &attributes,
-                                          QSvgHandler *handler)
+                                          QSvgHandler *)
 {
     const QStringView edgeModeString     = attributes.value(QLatin1String("edgeMode"));
     const QStringView stdDeviationString = attributes.value(QLatin1String("stdDeviation"));
@@ -2789,8 +2316,7 @@ static QSvgNode *createFeGaussianBlurNode(QSvgNode *parent,
 
     QSvgFeGaussianBlur::EdgeMode edgemode = QSvgFeGaussianBlur::EdgeMode::Duplicate;
 
-    parseFilterAttributes(parent, attributes, handler,
-                          &inputString, &outputString, &rect);
+    parseFilterAttributes(attributes, &inputString, &outputString, &rect);
     qreal stdDeviationX = 0;
     qreal stdDeviationY = 0;
     if (stdDeviationString.contains(QStringLiteral(" "))){
@@ -2812,7 +2338,7 @@ static QSvgNode *createFeGaussianBlurNode(QSvgNode *parent,
 
 static QSvgNode *createFeOffsetNode(QSvgNode *parent,
                                     const QXmlStreamAttributes &attributes,
-                                    QSvgHandler *handler)
+                                    QSvgHandler *)
 {
     QStringView dxString = attributes.value(QLatin1String("dx"));
     QStringView dyString = attributes.value(QLatin1String("dy"));
@@ -2821,8 +2347,7 @@ static QSvgNode *createFeOffsetNode(QSvgNode *parent,
     QString outputString;
     QSvgRectF rect;
 
-    parseFilterAttributes(parent, attributes, handler,
-                          &inputString, &outputString, &rect);
+    parseFilterAttributes(attributes, &inputString, &outputString, &rect);
 
     qreal dx = 0;
     if (!dxString.isEmpty()) {
@@ -2847,7 +2372,7 @@ static QSvgNode *createFeOffsetNode(QSvgNode *parent,
 
 static QSvgNode *createFeCompositeNode(QSvgNode *parent,
                                   const QXmlStreamAttributes &attributes,
-                                  QSvgHandler *handler)
+                                  QSvgHandler *)
 {
     const QStringView in2String      = attributes.value(QLatin1String("in2"));
     const QStringView operatorString = attributes.value(QLatin1String("operator"));
@@ -2860,8 +2385,7 @@ static QSvgNode *createFeCompositeNode(QSvgNode *parent,
     QString outputString;
     QSvgRectF rect;
 
-    parseFilterAttributes(parent, attributes, handler,
-                          &inputString, &outputString, &rect);
+    parseFilterAttributes(attributes, &inputString, &outputString, &rect);
 
     QSvgFeComposite::Operator op = QSvgFeComposite::Operator::Over;
     if (operatorString.startsWith(QLatin1String("in")))
@@ -2903,14 +2427,13 @@ static QSvgNode *createFeCompositeNode(QSvgNode *parent,
 
 static QSvgNode *createFeMergeNode(QSvgNode *parent,
                                    const QXmlStreamAttributes &attributes,
-                                   QSvgHandler *handler)
+                                   QSvgHandler *)
 {
     QString inputString;
     QString outputString;
     QSvgRectF rect;
 
-    parseFilterAttributes(parent, attributes, handler,
-                          &inputString, &outputString, &rect);
+    parseFilterAttributes(attributes, &inputString, &outputString, &rect);
 
     QSvgNode *filter = new QSvgFeMerge(parent, inputString, outputString, rect);
     return filter;
@@ -2926,18 +2449,17 @@ static QSvgNode *createFeFloodNode(QSvgNode *parent,
     QColor color;
     if (!constructColor(colorStr, opacityStr, color, handler)) {
         color = QColor(Qt::black);
-        bool ok;
-        qreal op = qMin(qreal(1.0), qMax(qreal(0.0), QSvgUtils::toDouble(opacityStr, &ok)));
-        if (ok)
-            color.setAlphaF(op);
+        if (opacityStr.isEmpty())
+            color.setAlphaF(1.0);
+        else
+            setAlpha(opacityStr, &color);
     }
 
     QString inputString;
     QString outputString;
     QSvgRectF rect;
 
-    parseFilterAttributes(parent, attributes, handler,
-                          &inputString, &outputString, &rect);
+    parseFilterAttributes(attributes, &inputString, &outputString, &rect);
 
     QSvgNode *filter = new QSvgFeFlood(parent, inputString, outputString, rect, color);
     return filter;
@@ -2945,14 +2467,13 @@ static QSvgNode *createFeFloodNode(QSvgNode *parent,
 
 static QSvgNode *createFeMergeNodeNode(QSvgNode *parent,
                                        const QXmlStreamAttributes &attributes,
-                                       QSvgHandler *handler)
+                                       QSvgHandler *)
 {
     QString inputString;
     QString outputString;
     QSvgRectF rect;
 
-    parseFilterAttributes(parent, attributes, handler,
-                          &inputString, &outputString, &rect);
+    parseFilterAttributes(attributes, &inputString, &outputString, &rect);
 
     QSvgNode *filter = new QSvgFeMergeNode(parent, inputString, outputString, rect);
     return filter;
@@ -2960,7 +2481,7 @@ static QSvgNode *createFeMergeNodeNode(QSvgNode *parent,
 
 static QSvgNode *createFeBlendNode(QSvgNode *parent,
                                    const QXmlStreamAttributes &attributes,
-                                   QSvgHandler *handler)
+                                   QSvgHandler *)
 {
     const QStringView in2String = attributes.value(QLatin1String("in2"));
     const QStringView modeString = attributes.value(QLatin1String("mode"));
@@ -2969,8 +2490,7 @@ static QSvgNode *createFeBlendNode(QSvgNode *parent,
     QString outputString;
     QSvgRectF rect;
 
-    parseFilterAttributes(parent, attributes, handler,
-                          &inputString, &outputString, &rect);
+    parseFilterAttributes(attributes, &inputString, &outputString, &rect);
 
     QSvgFeBlend::Mode mode = QSvgFeBlend::Mode::Normal;
     if (modeString.startsWith(QLatin1StringView("multiply")))
@@ -2989,14 +2509,13 @@ static QSvgNode *createFeBlendNode(QSvgNode *parent,
 
 static QSvgNode *createFeUnsupportedNode(QSvgNode *parent,
                                          const QXmlStreamAttributes &attributes,
-                                         QSvgHandler *handler)
+                                         QSvgHandler *)
 {
     QString inputString;
     QString outputString;
     QSvgRectF rect;
 
-    parseFilterAttributes(parent, attributes, handler,
-                          &inputString, &outputString, &rect);
+    parseFilterAttributes(attributes, &inputString, &outputString, &rect);
 
     QSvgNode *filter = new QSvgFeUnsupported(parent, inputString, outputString, rect);
     return filter;
@@ -3209,12 +2728,15 @@ static QSvgNode *createPathNode(QSvgNode *parent,
 {
     QStringView data = attributes.value(QLatin1String("d"));
 
-    QPainterPath qpath;
-    qpath.setFillRule(Qt::WindingFill);
-    if (!parsePathDataFast(data, qpath, !handler->trustedSourceMode()))
+    std::optional<QPainterPath> qpath = QSvgUtils::parsePathDataFast(data,
+                                                !handler->trustedSourceMode());
+    if (!qpath) {
         qCWarning(lcSvgHandler, "Invalid path data; path truncated.");
+        return nullptr;
+    }
 
-    QSvgNode *path = new QSvgPath(parent, qpath);
+    qpath.value().setFillRule(Qt::WindingFill);
+    QSvgNode *path = new QSvgPath(parent, qpath.value());
     return path;
 }
 
@@ -3413,6 +2935,9 @@ static bool parseStopNode(QSvgStyleProperty *parent,
     attrs.setAttributes(styleCssAttributes, handler);
 #endif
 
+    //TODO: Handle style parsing for gradients stop like the rest of the nodes.
+    parseColor(&dummy, attrs, handler);
+
     QSvgGradientStyle *gradientStyle =
         static_cast<QSvgGradientStyle*>(parent);
     QStringView colorStr    = attrs.stopColor;
@@ -3422,12 +2947,12 @@ static bool parseStopNode(QSvgStyleProperty *parent,
     qreal offset = convertToNumber(attrs.offset, &ok);
     if (!ok)
         offset = 0.0;
-    QString black = QString::fromLatin1("#000000");
-    if (colorStr.isEmpty()) {
-        colorStr = black;
-    }
 
-    constructColor(colorStr, attrs.stopOpacity, color, handler);
+    if (!constructColor(colorStr, attrs.stopOpacity, color, handler)) {
+        color = Qt::black;
+        if (!attrs.stopOpacity.isEmpty())
+            setAlpha(attrs.stopOpacity, &color);
+    }
 
     QGradient *grad = gradientStyle->qgradient();
 
@@ -3477,7 +3002,7 @@ static QSvgNode *createSvgNode(QSvgNode *parent,
 {
     Q_UNUSED(parent); Q_UNUSED(attributes);
 
-    QSvgTinyDocument *node = new QSvgTinyDocument(handler->options(), handler->animatorType());
+    QSvgDocument *node = new QSvgDocument(handler->options(), handler->animatorType());
     const QStringView widthStr  = attributes.value(QLatin1String("width"));
     const QStringView heightStr = attributes.value(QLatin1String("height"));
     const QStringView viewBoxStr = attributes.value(QLatin1String("viewBox"));
@@ -4045,8 +3570,8 @@ static bool detectCycles(const QSvgNode *node, QList<const QSvgNode *> active = 
             active.append(node);
 
         auto *g = static_cast<const QSvgStructureNode*>(node);
-        for (auto *r : g->renderers()) {
-            if (detectCycles(r, active))
+        for (auto &node : g->renderers()) {
+            if (detectCycles(node.get(), active))
                 return true;
         }
     }
@@ -4090,7 +3615,7 @@ static bool detectCyclesAndWarn(const QSvgNode *node) {
 }
 
 // Having too many unfinished elements will cause a stack overflow
-// in the dtor of QSvgTinyDocument, see oss-fuzz issue 24000.
+// in the dtor of QSvgDocument, see oss-fuzz issue 24000.
 static const int unfinishedElementsLimit = 2048;
 
 void QSvgHandler::parse()
@@ -4186,7 +3711,7 @@ bool QSvgHandler::startElement(const QStringView localName,
             node = method(nullptr, attributes, this);
             if (node) {
                 Q_ASSERT(node->type() == QSvgNode::Doc);
-                m_doc = static_cast<QSvgTinyDocument*>(node);
+                m_doc = static_cast<QSvgDocument*>(node);
             }
         } else {
             switch (m_nodes.top()->type()) {
@@ -4203,7 +3728,7 @@ bool QSvgHandler::startElement(const QStringView localName,
                 if (node) {
                     QSvgStructureNode *group =
                         static_cast<QSvgStructureNode*>(m_nodes.top());
-                    group->addChild(node, someId(attributes));
+                    group->addChild(std::unique_ptr<QSvgNode>(node), someId(attributes));
                 }
             }
                 break;
@@ -4223,79 +3748,74 @@ bool QSvgHandler::startElement(const QStringView localName,
     } else if (FactoryMethod method = findGraphicsFactory(localName, options())) {
         //rendering element
         Q_ASSERT(!m_nodes.isEmpty());
-        node = method(m_nodes.top(), attributes, this);
-        if (node) {
-            switch (m_nodes.top()->type()) {
-            case QSvgNode::Doc:
-            case QSvgNode::Group:
-            case QSvgNode::Defs:
-            case QSvgNode::Switch:
-            case QSvgNode::Mask:
-            case QSvgNode::Symbol:
-            case QSvgNode::Marker:
-            case QSvgNode::Pattern:
-            {
-                if (node->type() == QSvgNode::Tspan) {
-                    const QByteArray msg = QByteArrayLiteral("\'tspan\' element in wrong context.");
-                    qCWarning(lcSvgHandler, "%s", prefixMessage(msg, xml).constData());
-                    delete node;
-                    node = 0;
-                    break;
-                }
+        switch (m_nodes.top()->type()) {
+        case QSvgNode::Doc:
+        case QSvgNode::Group:
+        case QSvgNode::Defs:
+        case QSvgNode::Switch:
+        case QSvgNode::Mask:
+        case QSvgNode::Symbol:
+        case QSvgNode::Marker:
+        case QSvgNode::Pattern:
+        {
+            if (localName == QLatin1String("tspan")) {
+                const QByteArray msg = QByteArrayLiteral("\'tspan\' element in wrong context.");
+                qCWarning(lcSvgHandler, "%s", prefixMessage(msg, xml).constData());
+                break;
+            }
+            node = method(m_nodes.top(), attributes, this);
+            if (node) {
                 QSvgStructureNode *group =
                     static_cast<QSvgStructureNode*>(m_nodes.top());
-                group->addChild(node, someId(attributes));
+                group->addChild(std::unique_ptr<QSvgNode>(node), someId(attributes));
             }
-                break;
-            case QSvgNode::Text:
-            case QSvgNode::Textarea:
-                if (node->type() == QSvgNode::Tspan) {
+        }
+            break;
+        case QSvgNode::Text:
+        case QSvgNode::Textarea:
+            if (localName == QLatin1String("tspan")) {
+                node = method(m_nodes.top(), attributes, this);
+                if (node) {
                     static_cast<QSvgText *>(m_nodes.top())->addTspan(static_cast<QSvgTspan *>(node));
-                } else {
-                    const QByteArray msg = QByteArrayLiteral("\'text\' or \'textArea\' element contains invalid element type.");
-                    qCWarning(lcSvgHandler, "%s", prefixMessage(msg, xml).constData());
-                    delete node;
-                    node = 0;
                 }
-                break;
-            default:
-                const QByteArray msg = QByteArrayLiteral("Could not add child element to parent element because the types are incorrect.");
+            } else {
+                const QByteArray msg = QByteArrayLiteral("\'text\' or \'textArea\' element contains invalid element type.");
                 qCWarning(lcSvgHandler, "%s", prefixMessage(msg, xml).constData());
-                delete node;
-                node = 0;
-                break;
             }
+            break;
+        default:
+            const QByteArray msg = QByteArrayLiteral("Could not add child element to parent element because the types are incorrect.");
+            qCWarning(lcSvgHandler, "%s", prefixMessage(msg, xml).constData());
+            break;
+        }
 
-            if (node) {
-                parseCoreNode(node, attributes);
-                parseStyle(node, attributes, this);
-                if (node->type() == QSvgNode::Text || node->type() == QSvgNode::Textarea) {
-                    static_cast<QSvgText *>(node)->setWhitespaceMode(m_whitespaceMode.top());
-                } else if (node->type() == QSvgNode::Tspan) {
-                    static_cast<QSvgTspan *>(node)->setWhitespaceMode(m_whitespaceMode.top());
-                } else if (node->type() == QSvgNode::Use) {
-                    auto useNode = static_cast<QSvgUse *>(node);
-                    if (!useNode->isResolved())
-                        m_toBeResolved.append(useNode);
-                }
+        if (node) {
+            parseCoreNode(node, attributes);
+            parseStyle(node, attributes, this);
+            if (node->type() == QSvgNode::Text || node->type() == QSvgNode::Textarea) {
+                static_cast<QSvgText *>(node)->setWhitespaceMode(m_whitespaceMode.top());
+            } else if (node->type() == QSvgNode::Tspan) {
+                static_cast<QSvgTspan *>(node)->setWhitespaceMode(m_whitespaceMode.top());
+            } else if (node->type() == QSvgNode::Use) {
+                auto useNode = static_cast<QSvgUse *>(node);
+                if (!useNode->isResolved())
+                    m_toBeResolved.append(useNode);
             }
         }
     } else if (FactoryMethod method = findFilterFactory(localName, options())) {
         //filter nodes to be aded to be filtercontainer
         Q_ASSERT(!m_nodes.isEmpty());
-        node = method(m_nodes.top(), attributes, this);
-        if (node) {
-            if (m_nodes.top()->type() == QSvgNode::Filter ||
-                (m_nodes.top()->type() == QSvgNode::FeMerge && node->type() == QSvgNode::FeMergenode)) {
+        if (m_nodes.top()->type() == QSvgNode::Filter ||
+            (m_nodes.top()->type() == QSvgNode::FeMerge && localName == QLatin1String("feMergeNode"))) {
+            node = method(m_nodes.top(), attributes, this);
+            if (node) {
                 QSvgStructureNode *container =
                     static_cast<QSvgStructureNode*>(m_nodes.top());
-                container->addChild(node, someId(attributes));
-            } else {
-                const QByteArray msg = QByteArrayLiteral("Could not add child element to parent element because the types are incorrect.");
-                qCWarning(lcSvgHandler, "%s", prefixMessage(msg, xml).constData());
-                delete node;
-                node = 0;
+                container->addChild(std::unique_ptr<QSvgNode>(node), someId(attributes));
             }
+        } else {
+            const QByteArray msg = QByteArrayLiteral("Could not add child element to parent element because the types are incorrect.");
+            qCWarning(lcSvgHandler, "%s", prefixMessage(msg, xml).constData());
         }
     } else if (AnimationMethod method = findAnimationFactory(localName, options())) {
         Q_ASSERT(!m_nodes.isEmpty());
@@ -4382,9 +3902,8 @@ void QSvgHandler::resolvePaintServers(QSvgNode *node, int nestedDepth)
 
     QSvgStructureNode *structureNode = static_cast<QSvgStructureNode *>(node);
 
-    const QList<QSvgNode *> ren = structureNode->renderers();
-    for (auto it = ren.begin(); it != ren.end(); ++it) {
-        QSvgFillStyle *fill = static_cast<QSvgFillStyle *>((*it)->styleProperty(QSvgStyleProperty::FILL));
+    for (auto &node : structureNode->renderers()) {
+        QSvgFillStyle *fill = static_cast<QSvgFillStyle *>(node->styleProperty(QSvgStyleProperty::FILL));
         if (fill && !fill->isPaintStyleResolved()) {
             QString id = fill->paintStyleId();
             QSvgPaintStyleProperty *style = structureNode->styleProperty(id);
@@ -4396,7 +3915,7 @@ void QSvgHandler::resolvePaintServers(QSvgNode *node, int nestedDepth)
             }
         }
 
-        QSvgStrokeStyle *stroke = static_cast<QSvgStrokeStyle *>((*it)->styleProperty(QSvgStyleProperty::STROKE));
+        QSvgStrokeStyle *stroke = static_cast<QSvgStrokeStyle *>(node->styleProperty(QSvgStyleProperty::STROKE));
         if (stroke && !stroke->isPaintStyleResolved()) {
             QString id = stroke->paintStyleId();
             QSvgPaintStyleProperty *style = structureNode->styleProperty(id);
@@ -4409,7 +3928,7 @@ void QSvgHandler::resolvePaintServers(QSvgNode *node, int nestedDepth)
         }
 
         if (nestedDepth < 2048)
-            resolvePaintServers(*it, nestedDepth + 1);
+            resolvePaintServers(node.get(), nestedDepth + 1);
     }
 }
 
@@ -4439,8 +3958,8 @@ void QSvgHandler::resolveNodes()
             useNode->setLink(link);
         } else if (node->type() == QSvgNode::Filter) {
             QSvgFilterContainer *filter = static_cast<QSvgFilterContainer *>(node);
-            for (const QSvgNode *renderer : filter->renderers()) {
-                const QSvgFeFilterPrimitive *primitive = QSvgFeFilterPrimitive::castToFilterPrimitive(renderer);
+            for (auto &renderer : filter->renderers()) {
+                const QSvgFeFilterPrimitive *primitive = QSvgFeFilterPrimitive::castToFilterPrimitive(renderer.get());
                 if (!primitive || primitive->type() == QSvgNode::FeUnsupported) {
                     filter->setSupported(false);
                     break;
@@ -4449,8 +3968,13 @@ void QSvgHandler::resolveNodes()
         } else if (node->type() == QSvgNode::AnimateTransform || node->type() == QSvgNode::AnimateColor) {
             QSvgAnimateNode *anim = static_cast<QSvgAnimateNode *>(node);
             QSvgNode *targetNode = m_doc->namedNode(anim->linkId());
-            if (targetNode)
+            if (targetNode) {
                 m_doc->animator()->appendAnimation(targetNode, anim);
+            } else {
+                qCWarning(lcSvgHandler, "Cannot find target for link #%s!",
+                          qPrintable(anim->linkId()));
+                delete anim;
+            }
         }
     }
     m_toBeResolved.clear();
@@ -4481,7 +4005,7 @@ QIODevice *QSvgHandler::device() const
     return xml->device();
 }
 
-QSvgTinyDocument *QSvgHandler::document() const
+QSvgDocument *QSvgHandler::document() const
 {
     return m_doc;
 }

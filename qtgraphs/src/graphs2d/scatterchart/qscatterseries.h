@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QTGRAPHS_QSCATTERSERIES_H
 #define QTGRAPHS_QSCATTERSERIES_H
@@ -20,7 +22,6 @@ public:
     explicit QScatterSeries(QObject *parent = nullptr);
     ~QScatterSeries() override;
     QAbstractSeries::SeriesType type() const override;
-
 
 protected:
     QScatterSeries(QScatterSeriesPrivate &dd, QObject *parent = nullptr);

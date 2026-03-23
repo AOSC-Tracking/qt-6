@@ -14,7 +14,6 @@
 
 namespace ui {
 class LatencyInfo;
-struct DidOverscrollParams;
 }  // namespace ui
 
 namespace input {
@@ -50,7 +49,7 @@ class COMPONENT_EXPORT(INPUT) InputRouterClient {
 
   // Called when the router has received an overscroll notification from the
   // renderer.
-  virtual void DidOverscroll(const ui::DidOverscrollParams& params) = 0;
+  virtual void DidOverscroll(blink::mojom::DidOverscrollParamsPtr params) = 0;
 
   // Called when the router has received an allowed touch action notification
   // from the renderer.
@@ -105,8 +104,7 @@ class COMPONENT_EXPORT(INPUT) InputRouterClient {
   virtual void OnImeCancelComposition() = 0;
   virtual void OnImeCompositionRangeChanged(
       const gfx::Range& range,
-      const std::optional<std::vector<gfx::Rect>>& character_bounds,
-      const std::optional<std::vector<gfx::Rect>>& line_bounds) = 0;
+      const std::optional<std::vector<gfx::Rect>>& character_bounds) = 0;
   virtual StylusInterface* GetStylusInterface() = 0;
   virtual void OnStartStylusWriting() = 0;
 

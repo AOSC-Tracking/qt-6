@@ -34,6 +34,7 @@
 #include <optional>
 
 #include "base/time/time.h"
+#include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "third_party/blink/public/mojom/timing/resource_timing.mojom-blink-forward.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/events/pointer_event.h"
@@ -42,23 +43,25 @@
 #include "third_party/blink/renderer/core/page/page_visibility_observer.h"
 #include "third_party/blink/renderer/core/timing/event_counts.h"
 #include "third_party/blink/renderer/core/timing/memory_info.h"
+#include "third_party/blink/renderer/core/timing/navigation_id_generator.h"
 #include "third_party/blink/renderer/core/timing/performance.h"
 #include "third_party/blink/renderer/core/timing/performance_entry.h"
 #include "third_party/blink/renderer/core/timing/performance_event_timing.h"
 #include "third_party/blink/renderer/core/timing/performance_navigation.h"
 #include "third_party/blink/renderer/core/timing/performance_timing.h"
-#include "third_party/blink/renderer/core/timing/performance_timing_for_reporting.h"
 #include "third_party/blink/renderer/core/timing/responsiveness_metrics.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 
 namespace viz {
-struct FrameTimingDetails;
+class FrameTimingDetails;
 }
 
 namespace blink {
 
 class AnimationFrameTimingInfo;
+class InteractiveDetector;
+class PerformanceTimingForReporting;
 
 class CORE_EXPORT WindowPerformance final : public Performance,
                                             public PerformanceMonitor::Client,
@@ -84,6 +87,9 @@ class CORE_EXPORT WindowPerformance final : public Performance,
   EventCounts* eventCounts() override;
   uint64_t interactionCount() const override;
 
+  void PopulateContainerTimingEntries() override;
+  void SetHasContainerTimingChanges();
+
   bool FirstInputDetected() const { return !!first_input_timing_; }
 
   void WillShowModalDialog();
@@ -108,7 +114,7 @@ class CORE_EXPORT WindowPerformance final : public Performance,
   void SetCommitFinishTimeStampForPendingEvents(
       base::TimeTicks commit_finish_time);
 
-  void UpdatePendingEventTimingsWithFallbackTime(base::TimeTicks fallback_time);
+  void ReportEventTimingsWithoutNextPaint(base::TimeTicks fallback_time);
 
   // Set render start time for all pending events that have finished processing.
   void SetRenderStartTimeForPendingEvents(base::TimeTicks render_start_time);
@@ -126,16 +132,21 @@ class CORE_EXPORT WindowPerformance final : public Performance,
                         const AtomicString& id,
                         Element*);
 
+  void AddContainerTiming(const DOMPaintTimingInfo& paint_timing_info,
+                          const gfx::Rect& rect,
+                          uint64_t size,
+                          const AtomicString& identifier,
+                          Element* last_painted_element,
+                          const DOMPaintTimingInfo& first_paint_timing_info);
+
   void OnBodyLoadFinished(int64_t encoded_body_size, int64_t decoded_body_size);
   void QueueLongAnimationFrameTiming(
       AnimationFrameTimingInfo*,
       std::optional<DOMPaintTimingInfo> paint_timing_info = std::nullopt);
-  void AddFirstPaintTiming(const DOMPaintTimingInfo& paint_timing_info,
-                           bool is_triggered_by_soft_navigation);
+  void AddFirstPaintTiming(const DOMPaintTimingInfo& paint_timing_info);
 
   void AddFirstContentfulPaintTiming(
-      const DOMPaintTimingInfo& paint_timing_info,
-      bool is_triggered_by_soft_navigation);
+      const DOMPaintTimingInfo& paint_timing_info);
 
   // PerformanceMonitor::Client implementation.
   void ReportLongTask(base::TimeTicks start_time,
@@ -146,7 +157,23 @@ class CORE_EXPORT WindowPerformance final : public Performance,
   void AddLayoutShiftEntry(LayoutShift*);
   void AddVisibilityStateEntry(bool is_visible, base::TimeTicks start_time);
   void AddSoftNavigationEntry(const AtomicString& name,
-                              base::TimeTicks start_time);
+                              base::TimeTicks start_time,
+                              const DOMPaintTimingInfo& paint_timing_info);
+
+  // For soft navigations and back-forward cache restoration. This increments
+  // the navigation ID, as specified in
+  // https://w3c.github.io/performance-timeline/.
+  void IncrementNavigationId() {
+    navigation_id_generator_.IncrementNavigationId();
+  }
+
+  // Returns the navigation ID, as specified in
+  // https://w3c.github.io/performance-timeline/; this appears as navigationId
+  // in https://developer.mozilla.org/en-US/docs/Web/API/PerformanceEntry
+  // instances.
+  uint32_t NavigationId() const override {
+    return navigation_id_generator_.NavigationId();
+  }
 
   // PageVisibilityObserver
   void PageVisibilityChanged() override;
@@ -159,8 +186,14 @@ class CORE_EXPORT WindowPerformance final : public Performance,
       base::TimeTicks load_time,
       const AtomicString& id,
       const String& url,
-      Element*,
-      bool is_triggered_by_soft_navigation);
+      Element*);
+  void OnInteractionContentfulPaintUpdated(
+      std::optional<DOMPaintTimingInfo> paint_timing_info,
+      uint64_t paint_size,
+      base::TimeTicks load_time,
+      const AtomicString& id,
+      const String& url,
+      Element*);
 
   void Trace(Visitor*) const override;
 
@@ -264,10 +297,16 @@ class CORE_EXPORT WindowPerformance final : public Performance,
   // these interactions.
   bool autoscroll_active_ = false;
 
+  bool has_container_timing_changes_ = false;
+
   // Calculate responsiveness metrics and record UKM for them.
   Member<ResponsivenessMetrics> responsiveness_metrics_;
   // The event we are currently processing.
   WeakMember<const Event> current_event_;
+
+  // Implements the "assign a new navigation id" algorithm described in
+  // https://w3c.github.io/performance-timeline/
+  NavigationIdGenerator navigation_id_generator_;
 };
 
 }  // namespace blink

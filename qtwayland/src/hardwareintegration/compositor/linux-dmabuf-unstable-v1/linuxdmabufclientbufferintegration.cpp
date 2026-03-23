@@ -360,7 +360,7 @@ QtWayland::ClientBuffer *LinuxDmabufClientBufferIntegration::createBufferFor(wl_
 {
     auto it = m_importedBuffers.find(resource);
     if (it != m_importedBuffers.end())
-        return new LinuxDmabufClientBuffer(this, it.value()->resource()->handle, m_importedBuffers.value(resource));
+        return new LinuxDmabufClientBuffer(this, resource, it.value());
 
     return nullptr;
 }

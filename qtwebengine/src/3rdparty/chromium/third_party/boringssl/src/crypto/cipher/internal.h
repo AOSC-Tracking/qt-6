@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef OPENSSL_HEADER_CIPHER_EXTRA_INTERNAL_H
-#define OPENSSL_HEADER_CIPHER_EXTRA_INTERNAL_H
+#ifndef OPENSSL_HEADER_CRYPTO_CIPHER_INTERNAL_H
+#define OPENSSL_HEADER_CRYPTO_CIPHER_INTERNAL_H
 
 #include <assert.h>
 #include <stdlib.h>
 
 #include <openssl/base.h>
+#include <openssl/sha.h>
 
 #include "../internal.h"
 
@@ -129,7 +130,7 @@ union chacha20_poly1305_seal_data {
   } out;
 };
 
-#if (defined(OPENSSL_X86_64) || defined(OPENSSL_AARCH64)) &&  \
+#if (defined(OPENSSL_X86_64) || defined(OPENSSL_AARCH64)) && \
     !defined(OPENSSL_NO_ASM)
 
 static_assert(sizeof(union chacha20_poly1305_open_data) == 48,
@@ -237,4 +238,4 @@ inline void chacha20_poly1305_seal(uint8_t *out_ciphertext,
 }  // extern C
 #endif
 
-#endif  // OPENSSL_HEADER_CIPHER_EXTRA_INTERNAL_H
+#endif  // OPENSSL_HEADER_CRYPTO_CIPHER_INTERNAL_H

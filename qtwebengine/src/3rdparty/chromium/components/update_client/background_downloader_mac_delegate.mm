@@ -14,6 +14,7 @@
 #include "base/functional/callback.h"
 #include "base/hash/hash.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "components/update_client/update_client_errors.h"
@@ -138,7 +139,7 @@ GURL GURLWithNSURL(NSURL* url) {
 
 base::FilePath URLToFilename(const GURL& url) {
   uint32_t hash = base::PersistentHash(url.spec());
-  return base::FilePath::FromASCII(
+  return base::FilePath(
       base::HexEncode(reinterpret_cast<uint8_t*>(&hash), sizeof(hash)));
 }
 

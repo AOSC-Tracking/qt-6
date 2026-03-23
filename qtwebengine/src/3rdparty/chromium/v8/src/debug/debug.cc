@@ -59,7 +59,7 @@ class Debug::TemporaryObjectsTracker : public HeapObjectAllocationTracker {
 
   void MoveEvent(Address from, Address to, int size) override {
     if (from == to) return;
-    base::SpinningMutexGuard guard(&mutex_);
+    base::MutexGuard guard(&mutex_);
     if (RemoveFromRegions(from, from + size)) {
       // We had the object tracked as temporary, so we will track the
       // new location as temporary, too.
@@ -165,7 +165,7 @@ class Debug::TemporaryObjectsTracker : public HeapObjectAllocationTracker {
   // (exclusive) address of regions. We index by end address for faster lookup.
   // Map: end address => start address
   std::map<Address, Address> regions_;
-  base::SpinningMutex mutex_;
+  base::Mutex mutex_;
 };
 
 Debug::Debug(Isolate* isolate)
@@ -178,7 +178,8 @@ Debug::Debug(Isolate* isolate)
       break_on_uncaught_exception_(false),
       side_effect_check_failed_(false),
       debug_infos_(isolate),
-      isolate_(isolate) {
+      isolate_(isolate),
+      isolate_id_(0) {
   ThreadInit();
 }
 
@@ -327,7 +328,8 @@ BreakIterator::BreakIterator(Handle<DebugInfo> debug_info)
     : debug_info_(debug_info),
       break_index_(-1),
       source_position_iterator_(
-          debug_info->DebugBytecodeArray(isolate())->SourcePositionTable()) {
+          debug_info->DebugBytecodeArray(Isolate::Current())
+              ->SourcePositionTable()) {
   position_ = debug_info->shared()->StartPosition();
   statement_position_ = position_;
   // There is at least one break location.
@@ -358,6 +360,7 @@ void BreakIterator::Next() {
     if (!first) source_position_iterator_.Advance();
     first = false;
     if (Done()) return;
+    if (!source_position_iterator_.is_breakable()) continue;
     position_ = source_position_iterator_.source_position().ScriptOffset();
     if (source_position_iterator_.is_statement()) {
       statement_position_ = position_;
@@ -373,7 +376,7 @@ void BreakIterator::Next() {
 
 DebugBreakType BreakIterator::GetDebugBreakType() {
   Tagged<BytecodeArray> bytecode_array =
-      debug_info_->OriginalBytecodeArray(isolate());
+      debug_info_->OriginalBytecodeArray(Isolate::Current());
   interpreter::Bytecode bytecode =
       interpreter::Bytecodes::FromByte(bytecode_array->get(code_offset()));
 
@@ -409,26 +412,27 @@ void BreakIterator::SkipToPosition(int position) {
 
 void BreakIterator::SetDebugBreak() {
   DCHECK(GetDebugBreakType() >= DEBUGGER_STATEMENT);
-  HandleScope scope(isolate());
-  Handle<BytecodeArray> bytecode_array(
-      debug_info_->DebugBytecodeArray(isolate()), isolate());
+  Isolate* isolate = Isolate::Current();
+  HandleScope scope(isolate);
+  Handle<BytecodeArray> bytecode_array(debug_info_->DebugBytecodeArray(isolate),
+                                       isolate);
   interpreter::BytecodeArrayIterator(bytecode_array, code_offset())
       .ApplyDebugBreak();
 }
 
 void BreakIterator::ClearDebugBreak() {
   DCHECK(GetDebugBreakType() >= DEBUGGER_STATEMENT);
+  Isolate* isolate = Isolate::Current();
   Tagged<BytecodeArray> bytecode_array =
-      debug_info_->DebugBytecodeArray(isolate());
-  Tagged<BytecodeArray> original =
-      debug_info_->OriginalBytecodeArray(isolate());
+      debug_info_->DebugBytecodeArray(isolate);
+  Tagged<BytecodeArray> original = debug_info_->OriginalBytecodeArray(isolate);
   bytecode_array->set(code_offset(), original->get(code_offset()));
 }
 
 BreakLocation BreakIterator::GetBreakLocation() {
+  Isolate* isolate = Isolate::Current();
   Handle<AbstractCode> code(
-      Cast<AbstractCode>(debug_info_->DebugBytecodeArray(isolate())),
-      isolate());
+      Cast<AbstractCode>(debug_info_->DebugBytecodeArray(isolate)), isolate);
   DebugBreakType type = GetDebugBreakType();
   int generator_object_reg_index = -1;
   int generator_suspend_id = -1;
@@ -439,9 +443,9 @@ BreakLocation BreakIterator::GetBreakLocation() {
     // bytecode array, and we'll read the actual generator object off the
     // interpreter stack frame in GetGeneratorObjectForSuspendedFrame.
     Tagged<BytecodeArray> bytecode_array =
-        debug_info_->OriginalBytecodeArray(isolate());
-    interpreter::BytecodeArrayIterator iterator(
-        handle(bytecode_array, isolate()), code_offset());
+        debug_info_->OriginalBytecodeArray(isolate);
+    interpreter::BytecodeArrayIterator iterator(handle(bytecode_array, isolate),
+                                                code_offset());
 
     DCHECK_EQ(iterator.current_bytecode(),
               interpreter::Bytecode::kSuspendGenerator);
@@ -455,8 +459,6 @@ BreakLocation BreakIterator::GetBreakLocation() {
   return BreakLocation(code, type, code_offset(), position_,
                        generator_object_reg_index, generator_suspend_id);
 }
-
-Isolate* BreakIterator::isolate() { return debug_info_->GetIsolate(); }
 
 // Threading support.
 void Debug::ThreadInit() {
@@ -546,7 +548,7 @@ void Debug::Iterate(RootVisitor* v, ThreadLocal* thread_local_data) {
 void DebugInfoCollection::Insert(Tagged<SharedFunctionInfo> sfi,
                                  Tagged<DebugInfo> debug_info) {
   DisallowGarbageCollection no_gc;
-  base::SpinningMutexGuard mutex_guard(isolate_->shared_function_info_access());
+  base::MutexGuard mutex_guard(isolate_->shared_function_info_access());
 
   DCHECK_EQ(sfi, debug_info->shared());
   DCHECK(!Contains(sfi));
@@ -591,7 +593,7 @@ Tagged<DebugInfo> DebugInfoCollection::EntryAsDebugInfo(size_t index) const {
 }
 
 void DebugInfoCollection::DeleteIndex(size_t index) {
-  base::SpinningMutexGuard mutex_guard(isolate_->shared_function_info_access());
+  base::MutexGuard mutex_guard(isolate_->shared_function_info_access());
 
   Tagged<DebugInfo> debug_info = EntryAsDebugInfo(index);
   Tagged<SharedFunctionInfo> sfi = debug_info->shared();
@@ -1132,7 +1134,7 @@ bool Debug::SetBreakpointForFunction(Handle<SharedFunctionInfo> shared,
       isolate_->factory()->NewBreakPoint(*id, condition);
   int source_position = 0;
 #if V8_ENABLE_WEBASSEMBLY
-  if (shared->HasWasmExportedFunctionData()) {
+  if (shared->HasWasmExportedFunctionData(isolate_)) {
     Tagged<WasmExportedFunctionData> function_data =
         shared->wasm_exported_function_data();
     int func_index = function_data->function_index();
@@ -1756,7 +1758,7 @@ void Debug::DiscardBaselineCode(Tagged<SharedFunctionInfo> shared) {
     if (IsJSFunction(obj)) {
       Tagged<JSFunction> fun = Cast<JSFunction>(obj);
       if (fun->shared() == shared && fun->ActiveTierIsBaseline(isolate_)) {
-        fun->UpdateCode(*trampoline);
+        fun->UpdateCode(isolate_, *trampoline);
       }
     }
   }
@@ -1774,7 +1776,7 @@ void Debug::DiscardAllBaselineCode() {
     if (IsJSFunction(obj)) {
       Tagged<JSFunction> fun = Cast<JSFunction>(obj);
       if (fun->ActiveTierIsBaseline(isolate_)) {
-        fun->UpdateCode(*trampoline);
+        fun->UpdateCode(isolate_, *trampoline);
       }
     } else if (IsSharedFunctionInfo(obj)) {
       Tagged<SharedFunctionInfo> shared = Cast<SharedFunctionInfo>(obj);
@@ -1895,7 +1897,7 @@ void Debug::InstallDebugBreakTrampoline() {
         if (!fun->is_compiled(isolate_)) {
           needs_compile.push_back(handle(fun, isolate_));
         } else {
-          fun->UpdateCode(*trampoline);
+          fun->UpdateCode(isolate_, *trampoline);
         }
       } else if (IsJSObject(obj)) {
         Tagged<JSObject> object = Cast<JSObject>(obj);
@@ -1932,13 +1934,13 @@ void Debug::InstallDebugBreakTrampoline() {
     DirectHandle<Object> getter = AccessorPair::GetComponent(
         isolate_, native_context, accessor_pair, ACCESSOR_GETTER);
     if (IsJSFunctionAndNeedsTrampoline(isolate_, *getter)) {
-      Cast<JSFunction>(getter)->UpdateCode(*trampoline);
+      Cast<JSFunction>(getter)->UpdateCode(isolate_, *trampoline);
     }
 
     DirectHandle<Object> setter = AccessorPair::GetComponent(
         isolate_, native_context, accessor_pair, ACCESSOR_SETTER);
     if (IsJSFunctionAndNeedsTrampoline(isolate_, *setter)) {
-      Cast<JSFunction>(setter)->UpdateCode(*trampoline);
+      Cast<JSFunction>(setter)->UpdateCode(isolate_, *trampoline);
     }
   }
 
@@ -1949,7 +1951,7 @@ void Debug::InstallDebugBreakTrampoline() {
     Compiler::Compile(isolate_, fun, Compiler::CLEAR_EXCEPTION,
                       &is_compiled_scope);
     DCHECK(is_compiled_scope.is_compiled());
-    fun->UpdateCode(*trampoline);
+    fun->UpdateCode(isolate_, *trampoline);
   }
 }
 
@@ -2568,17 +2570,16 @@ void Debug::OnException(DirectHandle<Object> exception,
           }
           break;  // Stop at first debuggable function
         }
-      }
 #if V8_ENABLE_WEBASSEMBLY
-      else if (it.frame()->is_wasm()) {
+      } else if (it.frame()->is_wasm()) {
         const WasmFrame* frame = WasmFrame::cast(it.frame());
         if (IsMutedAtWasmLocation(frame->script(), frame->position())) {
           return;
         }
         // Wasm is always subject to debugging
         break;
-      }
 #endif  // V8_ENABLE_WEBASSEMBLY
+      }
     }
 
     if (it.done()) return;  // Do not trigger an event with an empty stack.
@@ -2964,7 +2965,7 @@ DebugScope::DebugScope(Debug* debug)
 
   // Create the new break info. If there is no proper frames there is no break
   // frame id.
-  DebuggableStackFrameIterator it(isolate());
+  DebuggableStackFrameIterator it(Isolate::Current());
   bool has_frames = !it.done();
   debug_->thread_local_.break_frame_id_ =
       has_frames ? it.frame()->id() : StackFrameId::NO_ID;
@@ -3053,8 +3054,10 @@ void Debug::StartSideEffectCheckMode() {
   DirectHandle<RegExpMatchInfo> current_match_info(
       isolate_->native_context()->regexp_last_match_info(), isolate_);
   int register_count = current_match_info->number_of_capture_registers();
-  regexp_match_info_ = RegExpMatchInfo::New(
-      isolate_, JSRegExp::CaptureCountForRegisters(register_count));
+  regexp_match_info_ = indirect_handle(
+      RegExpMatchInfo::New(isolate_,
+                           JSRegExp::CaptureCountForRegisters(register_count)),
+      isolate_);
   DCHECK_EQ(regexp_match_info_->number_of_capture_registers(),
             current_match_info->number_of_capture_registers());
   regexp_match_info_->set_last_subject(current_match_info->last_subject());
@@ -3317,7 +3320,7 @@ bool Debug::PerformSideEffectCheckAtBytecode(InterpretedFrame* frame) {
   }
   interpreter::Register reg;
   switch (bytecode) {
-    case Bytecode::kStaCurrentContextSlot:
+    case Bytecode::kStaCurrentContextSlotNoCell:
       reg = interpreter::Register::current_context();
       break;
     default:

@@ -160,7 +160,7 @@ chromium-metrics-reviews@google.com.
   <int value="106" label="ToggleOverview"/>
   <int value="107" label="ToggleProjectorMarker"/>
   <int value="108" label="ToggleResizeLockMenu"/>
-  <int value="109" label="CreateSnapGroup"/>
+  <int value="109" label="ToggleSnapGroup"/>
   <int value="110" label="ToggleSnapGroupWindowsMinimizeAndRestore"/>
   <int value="111" label="ToggleSpokenFeedback"/>
   <int value="112" label="ToggleStylusTools"/>
@@ -192,6 +192,7 @@ chromium-metrics-reviews@google.com.
   <int value="138" label="ToggleGeminiApp"/>
   <int value="139" label="ToggleDoNotDisturb"/>
   <int value="140" label="ToggleCameraAllowed"/>
+  <int value="141" label="StartSunfishSession"/>
   <int value="9000" label="DebugClearUseKMeansPref"/>
   <int value="9001" label="DebugKeyboardBacklightToggle"/>
   <int value="9002" label="DebugMicrophoneMuteToggle"/>
@@ -221,6 +222,7 @@ chromium-metrics-reviews@google.com.
   <int value="9026" label="DevToggleUnifiedDesktop"/>
   <int value="9027" label="DebugToggleFocusModeState"/>
   <int value="9028" label="DebugStartSunfishSession"/>
+  <int value="9029" label="DebugShowTestWindow"/>
 </enum>
 
 <enum name="ArcIntentHandlerDestinationPlatform">
@@ -344,6 +346,31 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="kBlurAndRelight"/>
 </enum>
 
+<enum name="CertProvBackendError">
+  <int value="0" label="Error unspecified"/>
+  <int value="1" label="Invalid operation"/>
+  <int value="2" label="Incosistent data"/>
+  <int value="3" label="Identity verification error"/>
+  <int value="4" label="CPP already exists"/>
+  <int value="5" label="Bad public key"/>
+  <int value="6" label="Invalid signature"/>
+  <int value="7" label="Instruction not yet available"/>
+  <int value="8" label="CA unavailable"/>
+  <int value="9" label="CA failure"/>
+  <int value="10" label="Profile not found"/>
+  <int value="11" label="User primary email not found"/>
+  <int value="12" label="CA connection not found"/>
+  <int value="13" label="Pubsub topic not found"/>
+  <int value="14" label="Bad adapter certifciate received"/>
+  <int value="15" label="Certificate provisioning process not found"/>
+  <int value="16" label="Immediate retry error zero"/>
+  <int value="17" label="Immediate retry error one"/>
+  <int value="18" label="Immediate retry error two"/>
+  <int value="19" label="Immediate retry error three"/>
+  <int value="20" label="Immediate retry error four"/>
+  <int value="21" label="Missing pubsub publisher permission"/>
+</enum>
+
 <enum name="CertProvisioningEvent">
   <int value="0" label="kRegisteredToInvalidationTopic"/>
   <int value="1" label="kInvalidationReceived"/>
@@ -375,6 +402,8 @@ chromium-metrics-reviews@google.com.
   <int value="15" label="kImportCertificateInstructionReceived"/>
 </enum>
 
+<!-- LINT.IfChange(ChromeOSCameraClientType) -->
+
 <enum name="ChromeOSCameraClientType">
   <int value="0" label="Unknown"/>
   <int value="1" label="Testing"/>
@@ -382,8 +411,10 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="Android"/>
   <int value="4" label="PluginVM"/>
   <int value="5" label="AshChrome"/>
-  <int value="6" label="LacrosChrome"/>
+  <int value="6" label="DEPRECATED: LacrosChrome"/>
 </enum>
+
+<!-- LINT.ThenChange(//media/capture/video/chromeos/mojom/cros_camera_service.mojom:CameraClientType) -->
 
 <enum name="ChromeOSCameraErrorType">
   <int value="1" label="Device"/>
@@ -412,6 +443,25 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="Beta"/>
   <int value="4" label="Stable"/>
 </enum>
+
+<!-- LINT.IfChange(ChromeOSFallbackCountry) -->
+
+<enum name="ChromeOSFallbackCountry">
+  <int value="0" label="No statistics provider is available"/>
+  <int value="1" label="Statistics provider hasn't finished loading data"/>
+  <int value="2"
+      label="Loaded region is a group and not an individual country"/>
+  <int value="3"
+      label="Region in VPD is non-empty but too short for country code"/>
+  <int value="4" label="Region in VPD is too long for country code"/>
+  <int value="5" label="Valid country code parsed from VPD"/>
+  <int value="6" label="[Deprecated] Removed subkey from country information"/>
+  <int value="7" label="Region in VPD is absent"/>
+  <int value="8" label="Region in VPD is empty"/>
+  <int value="9" label="Region in VPD is not a valid country code"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/regional_capabilities/regional_capabilities_service_client_chromeos.h:ChromeOSFallbackCountry) -->
 
 <enum name="ChromeOSIioServiceSensorUsage">
   <int value="0" label="ACCEL_base"/>
@@ -782,6 +832,12 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="kLocked"/>
 </enum>
 
+<enum name="ClassManagementEnabled">
+  <int value="0" label="Class Management disabled"/>
+  <int value="1" label="Class Management enabled for student"/>
+  <int value="2" label="Class Management enabled for teacher"/>
+</enum>
+
 <enum name="ComboDeviceClassification">
   <int value="0" label="KnownKeyboardImposter"/>
   <int value="1" label="KnownMouseImposter"/>
@@ -1124,6 +1180,17 @@ chromium-metrics-reviews@google.com.
   <int value="7" label="PWA selected"/>
   <int value="8" label="PWA selected and preferred"/>
 </enum>
+
+<!-- LINT.IfChange(K12AgeClassificationSegment) -->
+
+<enum name="K12UserAgeClassificationMatrix">
+  <summary>List of K12 user age classification.</summary>
+  <int value="0" label="K12 user age unspecified"/>
+  <int value="1" label="K12 user age under 18"/>
+  <int value="2" label="K12 user age equal or above 18"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/metrics/k12_age_classification_metrics_provider.h:K12AgeClassificationSegment,//components/policy/proto/device_management_backend.proto:K12AgeClassificationSegment) -->
 
 <enum name="KcerError">
   <summary>List of errors generated by the Kcer component.</summary>

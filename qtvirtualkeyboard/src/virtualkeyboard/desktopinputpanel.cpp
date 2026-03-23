@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtVirtualKeyboard/private/qvirtualkeyboard_global_p.h>
 #include <QtVirtualKeyboard/private/desktopinputpanel_p.h>
@@ -127,7 +128,11 @@ void DesktopInputPanel::createView()
             break;
         }
         d->view->setColor(QColor(Qt::transparent));
+#if defined(QT_STATIC)
         d->view->setSource(QUrl(QLatin1String("qrc:///qt-project.org/imports/QtQuick/VirtualKeyboard/InputPanel.qml")));
+#else
+        d->view->loadFromModule("QtQuick.VirtualKeyboard", "InputPanel");
+#endif
         if (QGuiApplication *app = qGuiApp)
             connect(app, SIGNAL(aboutToQuit()), SLOT(destroyView()));
     }

@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #include "qqmljsoptimizations_p.h"
 #include "qqmljsbasicblocks_p.h"
@@ -364,15 +365,16 @@ void QQmlJSOptimizations::adjustTypes()
         // Now we don't adjust the type we store, but rather the type we expect to read. We
         // can do this because we've tracked the read type when we defined the array in
         // QQmlJSTypePropagator.
-        if (QQmlJSScope::ConstPtr valueType = it->trackedTypes[0].containedType()->valueType()) {
+        if (const QQmlJSScope::ConstPtr elementType
+                = it->trackedTypes[0].containedType()->elementType()) {
             const QQmlJSRegisterContent content = annotation.readRegisters.begin().value().content;
             const QQmlJSScope::ConstPtr contained = content.containedType();
 
             // If it's the 1-arg Array ctor, and the argument is a number, that's special.
             if (mode != ObjectOrArrayDefinition::ArrayConstruct1ArgId
                     || contained != m_typeResolver->realType()) {
-                if (!m_typeResolver->adjustTrackedType(content, valueType))
-                    addError(adjustErrorMessage(content, valueType));
+                if (!m_typeResolver->adjustTrackedType(content, elementType))
+                    addError(adjustErrorMessage(content, elementType));
             }
         }
 
@@ -479,7 +481,7 @@ void QQmlJSOptimizations::adjustTypes()
 
             QQmlJSScope::ConstPtr newResult;
             const auto content = conversion->second.content;
-            if (content.isConversion()) {
+            if (content.isConversion() && !content.original().isValid()) {
                 const auto conversionOrigins = content.conversionOrigins();
                 for (const auto &origin : conversionOrigins)
                     newResult = m_typeResolver->merge(newResult, origin.containedType());

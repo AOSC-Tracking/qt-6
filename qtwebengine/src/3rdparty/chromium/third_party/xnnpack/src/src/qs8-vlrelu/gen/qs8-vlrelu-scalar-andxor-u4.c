@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-vlrelu/scalar-andxor.c.in
 //   Generator: tools/xngen
@@ -8,16 +9,20 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/math.h"
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/vunary.h"
 
 
 void xnn_qs8_vlrelu_ukernel__scalar_andxor_u4(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const struct xnn_qs8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_qs8_lrelu_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);

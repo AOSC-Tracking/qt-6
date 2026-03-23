@@ -182,7 +182,7 @@ void QWaylandCompositorPrivate::init()
         if (socket_name.isEmpty())
             socket_name = qgetenv("WAYLAND_DISPLAY");
     }
-    wl_compositor::init(display, 4);
+    wl_compositor::init(display, 5);
     wl_subcompositor::init(display, 1);
 
 #if QT_CONFIG(wayland_datadevice)
@@ -650,7 +650,7 @@ QByteArray QWaylandCompositor::socketName() const
 }
 
 /*!
- * \qmlmethod QtWayland.Compositor::WaylandCompositor::addSocketDescriptor(fd)
+ * \qmlmethod void QtWayland.Compositor::WaylandCompositor::addSocketDescriptor(fd)
  * \since 5.12
  *
  * Listen for client connections on a file descriptor, \a fd, referring to a
@@ -713,7 +713,7 @@ QList<QWaylandClient *>QWaylandCompositor::clients() const
 }
 
 /*!
- * \qmlmethod QtWayland.Compositor::WaylandCompositor::destroyClientForSurface(surface)
+ * \qmlmethod void QtWayland.Compositor::WaylandCompositor::destroyClientForSurface(surface)
  *
  * Destroys the client for the WaylandSurface \a surface.
  */
@@ -727,7 +727,7 @@ void QWaylandCompositor::destroyClientForSurface(QWaylandSurface *surface)
 }
 
 /*!
- * \qmlmethod QtWayland.Compositor::WaylandCompositor::destroyClient(client)
+ * \qmlmethod void QtWayland.Compositor::WaylandCompositor::destroyClient(client)
  *
  * Destroys the given WaylandClient \a client.
  */
@@ -814,13 +814,17 @@ QWaylandOutput *QWaylandCompositor::defaultOutput() const
 void QWaylandCompositor::setDefaultOutput(QWaylandOutput *output)
 {
     Q_D(QWaylandCompositor);
+    if (Q_UNLIKELY(!output)) {
+        qWarning("Changing default output to null is not supported");
+        return;
+    }
     if (d->outputs.size() && d->outputs.first() == output)
         return;
     bool alreadyAdded = d->outputs.removeOne(output);
     d->outputs.prepend(output);
-    emit defaultOutputChanged();
     if (!alreadyAdded)
         emit outputAdded(output);
+    emit defaultOutputChanged();
 }
 
 /*!

@@ -28,7 +28,7 @@
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 
 #include "gmock/gmock.h"
-#include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
@@ -1470,6 +1470,42 @@ TEST_F(ResolverValidationTest, ShiftLeft_I32_CompoundAssign_Invalid) {
     EXPECT_EQ(
         r()->error(),
         R"(1:2 error: shift left value must be less than the bit width of the lhs, which is 32)");
+}
+
+TEST_F(ResolverValidationTest, WorkgroupUniformLoad_ArraySize_NamedOverride) {
+    // override size = 10u;
+    // var<workgroup> a : array<u32, size>;
+    auto* override = Override("size", Expr(10_u));
+    auto* a = GlobalVar(Source{{7, 3}}, "a", ty.array(ty.u32(), override),
+                        core::AddressSpace::kWorkgroup);
+
+    auto* call = Call("workgroupUniformLoad", AddressOf(a));
+    WrapInFunction(call);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(error: no matching call to 'workgroupUniformLoad(ptr<workgroup, array<u32, size>, read_write>)'
+
+2 candidate functions:
+ • 'workgroupUniformLoad(ptr<workgroup, T, read_write>  ✗ ) -> T' where:
+      ✗  'T' is 'any concrete constructible type'
+ • 'workgroupUniformLoad(ptr<workgroup, atomic<T>, read_write>  ✗ ) -> T' where:
+      ✗  'T' is 'i32' or 'u32'
+)");
+}
+
+TEST_F(ResolverValidationTest, WorkgroupUniformLoad_ArraySize_NamedConstant) {
+    // const size = 10u;
+    // var<workgroup> a : array<u32, size>;
+    auto* const_exp = GlobalConst("size", Expr(10_u));
+    auto* a = GlobalVar(Source{{7, 3}}, "a", ty.array(ty.u32(), const_exp),
+                        core::AddressSpace::kWorkgroup);
+
+    auto* call = Call("workgroupUniformLoad", AddressOf(a));
+    WrapInFunction(call);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
 }  // namespace

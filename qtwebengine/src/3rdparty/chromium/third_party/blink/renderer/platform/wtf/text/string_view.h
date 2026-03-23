@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_TEXT_STRING_VIEW_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_TEXT_STRING_VIEW_H_
 
@@ -18,6 +13,7 @@
 #include "base/dcheck_is_on.h"
 #include "base/numerics/safe_conversions.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
+#include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/get_ptr.h"
 #include "third_party/blink/renderer/platform/wtf/text/code_point_iterator.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_impl.h"
@@ -26,11 +22,9 @@
 #include "base/memory/scoped_refptr.h"
 #endif
 
-namespace WTF {
+namespace blink {
 
-class AtomicString;
 class CodePointIterator;
-class String;
 
 enum class Utf8ConversionMode : uint8_t {
   // Unpaired surrogates are encoded using the standard UTF-8 encoding scheme,
@@ -68,7 +62,7 @@ class WTF_EXPORT StringView {
       size_t size = length * sizeof(CharT);
       if (size > sizeof(stackbuf16_)) [[unlikely]] {
         heapbuf_.reset(reinterpret_cast<char*>(
-            WTF::Partitions::BufferMalloc(size, "StackBackingStore")));
+            Partitions::BufferMalloc(size, "StackBackingStore")));
         // SAFETY: `heapbuf_` is the result of BufferMalloc() for `length`.
         return UNSAFE_BUFFERS(
             base::span(reinterpret_cast<CharT*>(heapbuf_.get()), length));
@@ -87,7 +81,7 @@ class WTF_EXPORT StringView {
 
    public:
     struct BufferDeleter {
-      void operator()(void* buffer) { WTF::Partitions::BufferFree(buffer); }
+      void operator()(void* buffer) { Partitions::BufferFree(buffer); }
     };
 
     static_assert(sizeof(UChar) != sizeof(char),
@@ -116,12 +110,14 @@ class WTF_EXPORT StringView {
   // From a non-null StringImpl.
   StringView(const StringImpl& impl)
       : impl_(const_cast<StringImpl*>(&impl)),
-        bytes_(impl.Bytes()),
+        bytes_(impl.RawByteSpan().data()),
         length_(impl.length()) {}
 
   // From a non-null StringImpl, avoids the null check.
   StringView(StringImpl& impl)
-      : impl_(&impl), bytes_(impl.Bytes()), length_(impl.length()) {}
+      : impl_(&impl),
+        bytes_(impl.RawByteSpan().data()),
+        length_(impl.length()) {}
   StringView(StringImpl&, unsigned offset);
   StringView(StringImpl&, unsigned offset, unsigned length);
 
@@ -147,15 +143,10 @@ class WTF_EXPORT StringView {
         bytes_(chars.data()),
         length_(base::checked_cast<wtf_size_t>(chars.size())) {}
   // NOLINTNEXTLINE(google-explicit-constructor)
-  StringView(const LChar* chars)
+  StringView(const char* chars)
       : impl_(StringImpl::empty_),
         bytes_(chars),
-        length_(chars ? base::checked_cast<unsigned>(
-                            strlen(reinterpret_cast<const char*>(chars)))
-                      : 0) {}
-  // NOLINTNEXTLINE(google-explicit-constructor)
-  StringView(const char* chars)
-      : StringView(reinterpret_cast<const LChar*>(chars)) {}
+        length_(chars ? base::checked_cast<unsigned>(strlen(chars)) : 0) {}
 
   // From a wide literal string or UChar buffer.
   explicit StringView(base::span<const UChar> chars)
@@ -190,14 +181,7 @@ class WTF_EXPORT StringView {
 
   bool IsAtomic() const { return SharedImpl() && SharedImpl()->IsAtomic(); }
 
-  bool IsLowerASCII() const {
-    if (StringImpl* impl = SharedImpl())
-      return impl->IsLowerASCII();
-    if (Is8Bit())
-      return WTF::IsLowerASCII(Characters8(), length());
-    return WTF::IsLowerASCII(Characters16(), length());
-  }
-
+  bool IsLowerASCII() const;
   bool ContainsOnlyASCIIOrEmpty() const;
 
   bool SubstringContainsOnlyWhitespaceOrEmpty(unsigned from, unsigned to) const;
@@ -206,29 +190,43 @@ class WTF_EXPORT StringView {
 
   UChar operator[](unsigned i) const {
     SECURITY_DCHECK(i < length());
-    if (Is8Bit())
-      return Characters8()[i];
-    return Characters16()[i];
+    // SAFETY: safe when i < length().
+    UNSAFE_BUFFERS({
+      if (Is8Bit()) {
+        return static_cast<const LChar*>(bytes_)[i];
+      }
+      return static_cast<const UChar*>(bytes_)[i];
+    })
   }
 
-  const LChar* Characters8() const {
+  // Use Span16() instead.
+  UNSAFE_BUFFER_USAGE const LChar* Characters8() const {
     DCHECK(Is8Bit());
     return static_cast<const LChar*>(bytes_);
   }
 
-  const UChar* Characters16() const {
+  // Use Span16() instead.
+  UNSAFE_BUFFER_USAGE const UChar* Characters16() const {
     DCHECK(!Is8Bit());
     return static_cast<const UChar*>(bytes_);
   }
 
   base::span<const LChar> Span8() const {
     DCHECK(Is8Bit());
-    return {static_cast<const LChar*>(bytes_), length_};
+    // SAFETY: bytes_ have length_ elements.
+    return UNSAFE_BUFFERS({static_cast<const LChar*>(bytes_), length_});
   }
 
   base::span<const UChar> Span16() const {
     DCHECK(!Is8Bit());
-    return {static_cast<const UChar*>(bytes_), length_};
+    // SAFETY: bytes_ have length_ elements.
+    return UNSAFE_BUFFERS({static_cast<const UChar*>(bytes_), length_});
+  }
+
+  base::span<const uint16_t> SpanUint16() const {
+    DCHECK(!Is8Bit());
+    // SAFETY: bytes_ have length_ elements.
+    return UNSAFE_BUFFERS({static_cast<const uint16_t*>(bytes_), length_});
   }
 
   // Returns the Unicode code point starting at the specified offset of this
@@ -241,11 +239,18 @@ class WTF_EXPORT StringView {
   // Returns i+1 otherwise.
   unsigned NextCodePointOffset(unsigned i) const;
 
+  // Does `CodepointAt()`, and the specified `i` is updated by
+  // `NextCodePointOffset()`.
+  UChar32 CodePointAtAndNext(unsigned& i) const;
+
   const void* Bytes() const { return bytes_; }
 
   base::span<const uint8_t> RawByteSpan() const {
-    return {reinterpret_cast<const uint8_t*>(bytes_),
-            length_ * (Is8Bit() ? sizeof(LChar) : sizeof(UChar))};
+    if (Is8Bit()) {
+      return base::as_byte_span(Span8());
+    }
+
+    return base::as_byte_span(Span16());
   }
 
   // This is not named impl() like String because it has different semantics.
@@ -256,8 +261,9 @@ class WTF_EXPORT StringView {
     // If this StringView is backed by a StringImpl, and was constructed
     // with a zero offset and the same length we can just access the impl
     // directly since this == StringView(m_impl).
-    if (impl_->Bytes() == Bytes() && length_ == impl_->length())
+    if (impl_->RawByteSpan().data() == Bytes() && length_ == impl_->length()) {
       return GetPtr(impl_);
+    }
     return nullptr;
   }
 
@@ -320,10 +326,14 @@ inline StringView::StringView(const StringView& view,
     : impl_(view.impl_), length_(length) {
   SECURITY_DCHECK(offset <= view.length());
   SECURITY_DCHECK(length <= view.length() - offset);
-  if (Is8Bit())
-    bytes_ = view.Characters8() + offset;
-  else
-    bytes_ = view.Characters16() + offset;
+  // SAFETY: Invariants are checked last two line.
+  UNSAFE_BUFFERS({
+    if (Is8Bit()) {
+      bytes_ = view.Characters8() + offset;
+    } else {
+      bytes_ = view.Characters16() + offset;
+    }
+  });
 }
 
 inline StringView::StringView(const StringImpl* impl) {
@@ -333,7 +343,7 @@ inline StringView::StringView(const StringImpl* impl) {
   }
   impl_ = const_cast<StringImpl*>(impl);
   length_ = impl->length();
-  bytes_ = impl->Bytes();
+  bytes_ = impl->RawByteSpan().data();
 }
 
 inline StringView::StringView(const StringImpl* impl, unsigned offset) {
@@ -369,10 +379,14 @@ inline void StringView::Set(const StringImpl& impl,
   SECURITY_DCHECK(length <= impl.length() - offset);
   length_ = length;
   impl_ = const_cast<StringImpl*>(&impl);
-  if (impl.Is8Bit())
-    bytes_ = impl.Characters8() + offset;
-  else
-    bytes_ = impl.Characters16() + offset;
+  // SAFETY: Invariants are checked at beginning of this method.
+  UNSAFE_BUFFERS({
+    if (impl.Is8Bit()) {
+      bytes_ = impl.Characters8() + offset;
+    } else {
+      bytes_ = impl.Characters16() + offset;
+    }
+  });
 }
 
 // Unicode aware case insensitive string matching. Non-ASCII characters might
@@ -412,39 +426,21 @@ inline bool operator!=(const StringView& a, const StringView& b) {
 
 inline wtf_size_t StringView::Find(CharacterMatchFunctionPtr match_function,
                                    wtf_size_t start) const {
-  return Is8Bit() ? WTF::Find(Span8(), match_function, start)
-                  : WTF::Find(Span16(), match_function, start);
-}
-
-template <bool isSpecialCharacter(UChar), typename CharacterType>
-inline bool IsAllSpecialCharacters(const CharacterType* characters,
-                                   size_t length) {
-  for (size_t i = 0; i < length; ++i) {
-    if (!isSpecialCharacter(characters[i]))
-      return false;
-  }
-  return true;
+  return Is8Bit() ? blink::Find(Span8(), match_function, start)
+                  : blink::Find(Span16(), match_function, start);
 }
 
 template <bool isSpecialCharacter(UChar)>
 inline bool StringView::IsAllSpecialCharacters() const {
-  size_t len = length();
-  if (!len)
+  if (empty()) {
     return true;
-
-  return Is8Bit() ? WTF::IsAllSpecialCharacters<isSpecialCharacter, LChar>(
-                        Characters8(), len)
-                  : WTF::IsAllSpecialCharacters<isSpecialCharacter, UChar>(
-                        Characters16(), len);
+  }
+  return Is8Bit() ? std::ranges::all_of(Span8(), isSpecialCharacter)
+                  : std::ranges::all_of(Span16(), isSpecialCharacter);
 }
 
 WTF_EXPORT std::ostream& operator<<(std::ostream&, const StringView&);
 
-}  // namespace WTF
-
-using WTF::StringView;
-using WTF::EqualIgnoringASCIICase;
-using WTF::DeprecatedEqualIgnoringCase;
-using WTF::IsAllSpecialCharacters;
+}  // namespace blink
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_TEXT_STRING_VIEW_H_

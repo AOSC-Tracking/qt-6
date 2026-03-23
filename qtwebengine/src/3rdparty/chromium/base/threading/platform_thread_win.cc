@@ -62,7 +62,7 @@ void SetNameInternal(PlatformThreadId thread_id, const char* name) {
   THREADNAME_INFO info;
   info.dwType = 0x1000;
   info.szName = name;
-  info.dwThreadID = thread_id;
+  info.dwThreadID = thread_id.raw();
   info.dwFlags = 0;
 
   __try {
@@ -238,7 +238,7 @@ void AssertMemoryPriority(HANDLE thread, int memory_priority) {
 
 // static
 PlatformThreadId PlatformThread::CurrentId() {
-  return ::GetCurrentThreadId();
+  return PlatformThreadId(::GetCurrentThreadId());
 }
 
 // static
@@ -387,12 +387,14 @@ void SetCurrentThreadPriority(ThreadType thread_type,
     case ThreadType::kUtility:
       desired_priority = THREAD_PRIORITY_BELOW_NORMAL;
       break;
-    case ThreadType::kResourceEfficient:
     case ThreadType::kDefault:
       desired_priority = THREAD_PRIORITY_NORMAL;
       break;
     case ThreadType::kDisplayCritical:
       desired_priority = THREAD_PRIORITY_ABOVE_NORMAL;
+      break;
+    case ThreadType::kInteractive:
+      desired_priority = THREAD_PRIORITY_HIGHEST;
       break;
     case ThreadType::kRealtimeAudio:
       desired_priority = THREAD_PRIORITY_TIME_CRITICAL;
@@ -421,8 +423,9 @@ void SetCurrentThreadPriority(ThreadType thread_type,
     // and I/O priorities but not the CPU priority (kernel bug?). Use
     // THREAD_PRIORITY_LOWEST to also lower the CPU priority.
     // https://crbug.com/901483
-    if (PlatformThread::GetCurrentThreadPriorityForTest() !=
-        ThreadPriorityForTest::kBackground) {
+    if (::GetThreadPriority(
+            PlatformThread::CurrentHandle().platform_handle()) >=
+        THREAD_PRIORITY_BELOW_NORMAL) {
       ::SetThreadPriority(thread_handle, THREAD_PRIORITY_LOWEST);
       // We used to DCHECK that memory priority is MEMORY_PRIORITY_VERY_LOW
       // here, but found that it is not always the case (e.g. in the installer).
@@ -437,11 +440,11 @@ void SetCurrentThreadQualityOfService(ThreadType thread_type) {
   switch (thread_type) {
     case ThreadType::kBackground:
     case ThreadType::kUtility:
-    case ThreadType::kResourceEfficient:
       desire_ecoqos = true;
       break;
     case ThreadType::kDefault:
     case ThreadType::kDisplayCritical:
+    case ThreadType::kInteractive:
     case ThreadType::kRealtimeAudio:
       desire_ecoqos = false;
       break;
@@ -521,10 +524,10 @@ ThreadPriorityForTest PlatformThread::GetCurrentThreadPriorityForTest() {
     case kWinDisplayPriority1:
       [[fallthrough]];
     case kWinDisplayPriority2:
-      return ThreadPriorityForTest::kDisplay;
     case THREAD_PRIORITY_ABOVE_NORMAL:
-    case THREAD_PRIORITY_HIGHEST:
       return ThreadPriorityForTest::kDisplay;
+    case THREAD_PRIORITY_HIGHEST:
+      return ThreadPriorityForTest::kInteractive;
     case THREAD_PRIORITY_TIME_CRITICAL:
       return ThreadPriorityForTest::kRealtimeAudio;
     case THREAD_PRIORITY_ERROR_RETURN:

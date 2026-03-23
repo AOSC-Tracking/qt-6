@@ -7,6 +7,7 @@
 #include <atomic>
 #include <memory>
 #include <utility>
+#include <variant>
 
 #include "base/check_op.h"
 #include "base/containers/heap_array.h"
@@ -18,6 +19,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/sequence_checker.h"
 #include "base/state_transitions.h"
+#include "base/strings/string_view_util.h"
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
@@ -27,7 +29,6 @@
 #include "mojo/public/cpp/system/data_pipe_drainer.h"
 #include "mojo/public/cpp/system/wait.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/page/v8_compile_hints_histograms.h"
 #include "third_party/blink/public/mojom/script/script_type.mojom-blink-forward.h"
@@ -66,17 +67,6 @@
 #include "third_party/blink/renderer/platform/wtf/shared_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding_registry.h"
-
-namespace WTF {
-
-template <>
-struct CrossThreadCopier<mojo_base::BigBuffer> {
-  STATIC_ONLY(CrossThreadCopier);
-  using Type = mojo_base::BigBuffer;
-  static Type Copy(Type&& value) { return std::move(value); }
-};
-
-}  // namespace WTF
 
 namespace blink {
 namespace {
@@ -169,13 +159,13 @@ class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
           // the client once the streaming completes.
           Vector<char> copy_for_decoder;
           copy_for_decoder.AppendSpan(base::as_chars(buffer));
-          if (absl::holds_alternative<ScriptDecoder*>(script_decoder_)) {
-            absl::get<ScriptDecoder*>(script_decoder_)
+          if (std::holds_alternative<ScriptDecoder*>(script_decoder_)) {
+            std::get<ScriptDecoder*>(script_decoder_)
                 ->DidReceiveData(std::move(copy_for_decoder));
           } else {
-            CHECK(absl::holds_alternative<ScriptDecoderWithClient*>(
+            CHECK(std::holds_alternative<ScriptDecoderWithClient*>(
                 script_decoder_));
-            absl::get<ScriptDecoderWithClient*>(script_decoder_)
+            std::get<ScriptDecoderWithClient*>(script_decoder_)
                 ->DidReceiveData(std::move(copy_for_decoder),
                                  /*send_to_client=*/true);
           }
@@ -334,7 +324,7 @@ class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
   base::HeapArray<uint8_t> initial_data_;
 
   mojo::ScopedDataPipeConsumerHandle data_pipe_;
-  absl::variant<ScriptDecoderWithClient*, ScriptDecoder*> script_decoder_;
+  std::variant<ScriptDecoderWithClient*, ScriptDecoder*> script_decoder_;
 };
 
 std::tuple<ScriptStreamer*, ScriptStreamer::NotStreamingReason>
@@ -607,10 +597,19 @@ bool ResourceScriptStreamer::TryStartStreamingTask() {
   // Skip non-JS modules based on the mime-type.
   // TODO(crbug/1132413),TODO(crbug/1061857): Disable streaming for non-JS
   // based the specific import statements.
+
+  AtomicString mime_type = script_resource_->GetResponse().HttpContentType();
   if (script_type_ == v8::ScriptType::kModule &&
-      !MIMETypeRegistry::IsSupportedJavaScriptMIMEType(
-          script_resource_->GetResponse().HttpContentType())) {
+      !MIMETypeRegistry::IsSupportedJavaScriptMIMEType(mime_type)) {
     SuppressStreaming(NotStreamingReason::kNonJavascriptModule);
+    return false;
+  }
+
+  if (base::FeatureList::IsEnabled(
+          blink::features::kJavaScriptSourcePhaseImports) &&
+      MIMETypeRegistry::IsWasmMIMEType(mime_type)) {
+    // Suppress streaming if the Wasm source was requested as a classic script.
+    SuppressStreaming(NotStreamingReason::kNonModuleWithWasmMimeType);
     return false;
   }
 
@@ -635,7 +634,7 @@ bool ResourceScriptStreamer::TryStartStreamingTask() {
     std::unique_ptr<TextResourceDecoder> decoder(
         std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
             TextResourceDecoderOptions::kPlainTextContent,
-            WTF::TextEncoding(script_resource_->Encoding()))));
+            TextEncoding(script_resource_->Encoding()))));
     decoder->CheckForBOM(maybe_bom);
 
     // The encoding may change when we see the BOM. Check for BOM now
@@ -1025,9 +1024,13 @@ BackgroundInlineScriptStreamer::BackgroundInlineScriptStreamer(
                              : v8::ScriptCompiler::StreamedSource::TWO_BYTE);
 
   // We don't generate code caches for inline scripts, so we never pass the
-  // kFollowCompileHintsMagicComment compile option.
-  CHECK((compile_options &
-         v8::ScriptCompiler::kFollowCompileHintsMagicComment) == 0);
+  // kFollowCompileHintsMagicComment /
+  // kFollowCompileHintsPerFunctionMagicComment compile options.
+  CHECK_EQ(
+      compile_options & v8::ScriptCompiler::kFollowCompileHintsMagicComment, 0);
+  CHECK_EQ(compile_options &
+               v8::ScriptCompiler::kFollowCompileHintsPerFunctionMagicComment,
+           0);
   task_ = base::WrapUnique(v8::ScriptCompiler::StartStreaming(
       isolate, source_.get(), v8::ScriptType::kClassic, compile_options));
 }
@@ -1118,10 +1121,10 @@ BuildCompileHintsForStreaming(
               : nullptr,
           metadata && V8CodeCache::HasHotTimestamp(*metadata, encoding));
   if (metadata) {
-    absl::variant<Vector<uint8_t>, mojo_base::BigBuffer> drained_data =
+    std::variant<Vector<uint8_t>, mojo_base::BigBuffer> drained_data =
         std::move(*metadata).DrainSerializedData();
-    CHECK(absl::holds_alternative<mojo_base::BigBuffer>(drained_data));
-    big_buffer = std::move(absl::get<mojo_base::BigBuffer>(drained_data));
+    CHECK(std::holds_alternative<mojo_base::BigBuffer>(drained_data));
+    big_buffer = std::move(std::get<mojo_base::BigBuffer>(drained_data));
   }
   return result;
 }
@@ -1153,7 +1156,7 @@ class BackgroundResourceScriptStreamer::BackgroundProcessor final
       const String script_url_string,
       uint64_t script_resource_identifier,
       v8::Isolate* isolate,
-      WTF::TextEncoding encoding,
+      TextEncoding encoding,
       std::unique_ptr<v8_compile_hints::CompileHintsForStreaming::Builder>
           compile_hints_builder,
       CrossThreadWeakHandle<BackgroundResourceScriptStreamer> streamer_handle);
@@ -1223,7 +1226,7 @@ class BackgroundResourceScriptStreamer::BackgroundProcessor final
   const uint64_t script_resource_identifier_;
 
   v8::Isolate* isolate_;
-  WTF::TextEncoding encoding_;
+  TextEncoding encoding_;
 
   SourceStream* source_stream_ptr_ = nullptr;
 
@@ -1299,7 +1302,7 @@ class BackgroundResourceScriptStreamer::BackgroundProcessorFactory final
   const String script_url_string_;
   const uint64_t script_resource_identifier_;
   v8::Isolate* isolate_;
-  const WTF::TextEncoding encoding_;
+  const TextEncoding encoding_;
   std::unique_ptr<v8_compile_hints::CompileHintsForStreaming::Builder>
       compile_hints_builder_;
   CrossThreadWeakHandle<BackgroundResourceScriptStreamer> streamer_handle_;
@@ -1310,7 +1313,7 @@ BackgroundResourceScriptStreamer::BackgroundProcessor::BackgroundProcessor(
     const String script_url_string,
     uint64_t script_resource_identifier,
     v8::Isolate* isolate,
-    WTF::TextEncoding encoding,
+    TextEncoding encoding,
     std::unique_ptr<v8_compile_hints::CompileHintsForStreaming::Builder>
         compile_hints_builder,
     CrossThreadWeakHandle<BackgroundResourceScriptStreamer> streamer_handle)
@@ -1405,17 +1408,24 @@ bool BackgroundResourceScriptStreamer::BackgroundProcessor::
   SetState(BackgroundProcessorState::kResponseReceived);
 
   client_ = client;
-
+  std::string mime_type;
+  const bool has_mime_type = head->headers->GetMimeType(&mime_type);
   if (script_type_ == v8::ScriptType::kModule) {
-    std::string mime_type;
-    if (!head->headers->GetMimeType(&mime_type) ||
+    if (!has_mime_type ||
         !MIMETypeRegistry::IsSupportedJavaScriptMIMEType(String(mime_type))) {
       SuppressStreaming(NotStreamingReason::kNonJavascriptModuleBackground);
       return false;
     }
   }
+  if (base::FeatureList::IsEnabled(
+          blink::features::kJavaScriptSourcePhaseImports) &&
+      has_mime_type && MIMETypeRegistry::IsWasmMIMEType(String(mime_type))) {
+    // Suppress streaming if the Wasm source was requested as a classic script.
+    SuppressStreaming(NotStreamingReason::kNonModuleWithWasmMimeType);
+    return false;
+  }
   if (!head->charset.empty()) {
-    WTF::TextEncoding new_encoding = WTF::TextEncoding(String(head->charset));
+    TextEncoding new_encoding = TextEncoding(String(head->charset));
     if (new_encoding.IsValid()) {
       encoding_ = new_encoding;
     }
@@ -1758,10 +1768,10 @@ BackgroundResourceScriptStreamer::BackgroundProcessor::
     }
   }
   // Keep the buffer alive while V8 reads from it.
-  absl::variant<Vector<uint8_t>, mojo_base::BigBuffer> drained_data =
+  std::variant<Vector<uint8_t>, mojo_base::BigBuffer> drained_data =
       std::move(*metadata).DrainSerializedData();
-  CHECK(absl::holds_alternative<mojo_base::BigBuffer>(drained_data));
-  cached_metadata_ = std::move(absl::get<mojo_base::BigBuffer>(drained_data));
+  CHECK(std::holds_alternative<mojo_base::BigBuffer>(drained_data));
+  cached_metadata_ = std::move(std::get<mojo_base::BigBuffer>(drained_data));
   return task;
 }
 

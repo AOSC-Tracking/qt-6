@@ -36,7 +36,7 @@ CANONICAL_HOMEPAGE_STRING = "This is the canonical"
 
 # Packages that have bad homepages that don't start with CANONICAL_HOMEPAGE_STRING
 PACKAGES_TO_CLEAN_BAD_URL = [
-    'PSM (Private Set Membership) client side',
+    'psm (private set membership) client side',
 ]
 
 # Some packages don't have a license file, but their license is a known SPDX
@@ -44,7 +44,12 @@ PACKAGES_TO_CLEAN_BAD_URL = [
 OVERRIDE_LICENSE_FILE_METADATA_KEY = "Override License File"
 PACKAGES_TO_OVERRIDE_LICENSE_FILE_WITH_ID = [
     'libdrm',
+    'mini_chromium',
 ]
+
+# Command to find the first "Baseline" git commit in src/3rdparty
+FIND_BASELINE_COMMIT_GIT_COMMAND = \
+  ['git', 'rev-list', '-n1', '--first-parent', '--grep=^BASELINE: Update Chromium', 'HEAD', '--']
 
 # Hardcoded metadata for GN
 GN_BASE_METADATA = {
@@ -63,14 +68,10 @@ DIRECTORIES_TO_SKIP_BECAUSE_THEY_HAVE_VARIOUS_PARSING_ISSUES = [
     os.path.join('third_party', 'catapult'),
     os.path.join('third_party', 'crashpad', 'crashpad', 'third_party', 'lss'),
     os.path.join('third_party', 'crashpad', 'crashpad', 'third_party', 'zlib'),
-    os.path.join('third_party', 'crashpad', 'crashpad', 'third_party', 'mini_chromium'),
     os.path.join('third_party', 'devtools-frontend', 'src', 'front_end', 'third_party', 'chromium'),
     os.path.join('third_party', 'perfetto', 'protos', 'third_party', 'chromium'),
-
-    # Missing URL (no homepage)
-    os.path.join('third_party', 'webrtc', 'modules', 'third_party', 'g711'),
-    os.path.join('third_party', 'webrtc', 'modules', 'third_party', 'g722'),
-    os.path.join('third_party', 'webrtc', 'rtc_base', 'third_party', 'base64'),
+    os.path.join('third_party', 'rust'),
+    os.path.join('third_party', 'tflite'),
 ]
 
 # Wrappers for Chromium's package and SPDX writer tools
@@ -142,7 +143,7 @@ class ExtendedSpdxJsonWriter(spdx_writer._SPDXJSONWriter):
 
 def GetDirectoryRevisionInfo(d):
   git_rev_list_result = subprocess.check_output(
-      ['git', 'rev-list', '-n1', '--first-parent', '--grep=BASELINE: Update Chromium', 'HEAD', '--', d],
+      FIND_BASELINE_COMMIT_GIT_COMMAND + [d],
       cwd=ROOT,
       encoding='utf-8')
   commit_sha = git_rev_list_result.strip()
@@ -179,6 +180,13 @@ def CleanupLicenseMetadata(dep_metadata):
   else:
     dep_metadata['License File'] = dep_metadata['License File'][0]
 
+def IsChromiumSubmoduleGitHistoryAvailable():
+  baseline_cmd_result = subprocess.run(
+      FIND_BASELINE_COMMIT_GIT_COMMAND + ['.'],
+      cwd=ROOT,
+      capture_output=True,
+      encoding='utf-8')
+  return baseline_cmd_result.returncode == 0 and baseline_cmd_result.stdout.strip()
 
 def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
   optional_keys = list(CHROMIUM_TO_SPDX_KEY.keys()) + ['Short Name', 'CPEPrefix']
@@ -187,6 +195,12 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
   os.chdir(gn_out_dir)
   third_party_dirs = license_tools.FindThirdPartyDeps(gn_binary, gn_out_dir, gn_target, True, 'all')
   os.chdir(prev_cwd)
+
+  # If src/3rdparty is not a git repo, skip adding revision info since it would fail on trying
+  # to invoke git.
+  can_include_git_info = IsChromiumSubmoduleGitHistoryAvailable()
+  if not can_include_git_info:
+      logger.warning("Could not find git history for '%s', git revision info will be missing" % os.path.join(ROOT, '..'))
 
   metadatas = {}
   for d in third_party_dirs:
@@ -201,7 +215,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
       if not dir_metadata:
         logger.warning("Parsing '%s' returned nothing" % d)
       metadatas[d] = dir_metadata
-      git_revision_info = GetDirectoryRevisionInfo(d)
+      git_revision_info = GetDirectoryRevisionInfo(d) if can_include_git_info else None
       for dep_metadata in dir_metadata:
         CleanupLicenseMetadata(dep_metadata)
 
@@ -212,6 +226,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
         # be quite long.
         if 'Short Name' in dep_metadata:
           dep_metadata['Name'] = dep_metadata['Short Name']
+        dep_metadata['Name'] = dep_metadata['Name'].lower()
         if dep_metadata['Name'] in PACKAGES_TO_CLEAN_BAD_URL or CANONICAL_HOMEPAGE_STRING in dep_metadata['URL']:
           logger.info("Cleaning bad URL from package: %s" % dep_metadata['Name'])
           del dep_metadata['URL']
@@ -254,10 +269,11 @@ def CreateSpdxText(targets_and_metadatas, package_id: str, doc_namespace: str, g
           continue
 
         child_pkg_name = make_pkg_name(dep_metadata.pop('Name'))
-        if child_pkg_name not in already_added_packages:
+        child_pkg_key = directory + ':' + child_pkg_name
+        if child_pkg_key not in already_added_packages:
           child_pkg_id = writer.add_package(ExtendedPackage(child_pkg_name, license_file, dep_metadata))
-          already_added_packages[child_pkg_name] = child_pkg_id
-        writer.add_dependency(top_level_pkg_id, already_added_packages[child_pkg_name])
+          already_added_packages[child_pkg_key] = child_pkg_id
+        writer.add_dependency(top_level_pkg_id, already_added_packages[child_pkg_key])
 
 
   # Manually add GN package

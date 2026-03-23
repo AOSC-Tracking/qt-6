@@ -61,7 +61,7 @@ std::vector<MIV*> GetMenuItemsFromChildren(const View::Views& children) {
 SubmenuView::SubmenuView(MenuItemView* parent) : parent_menu_item_(parent) {
   CHECK(parent_menu_item_);
   // We'll delete ourselves, otherwise the ScrollView would delete us on close.
-  set_owned_by_client();
+  set_owned_by_client(OwnedByClientPassKey());
 
   // Menus in Chrome are always traversed in a vertical direction.
   GetViewAccessibility().SetIsVertical(true);
@@ -503,11 +503,11 @@ void SubmenuView::ShowAt(const MenuHost::InitParams& init_params) {
   // is not exposed as a kMenu, but as a kMenuBar for most platforms and a
   // kNone on the Mac. See MenuScrollViewContainer::GetAccessibleNodeData.
   if (!GetMenuItem()->GetParentMenuItem()) {
-    GetScrollViewContainer()->NotifyAccessibilityEvent(
+    GetScrollViewContainer()->NotifyAccessibilityEventDeprecated(
         ax::mojom::Event::kMenuStart, true);
   }
   // Fire kMenuPopupStart for each menu/submenu that is shown.
-  NotifyAccessibilityEvent(ax::mojom::Event::kMenuPopupStart, true);
+  NotifyAccessibilityEventDeprecated(ax::mojom::Event::kMenuPopupStart, true);
 
   GetMenuItem()->UpdateAccessibleExpandedCollapsedState();
 
@@ -544,13 +544,13 @@ void SubmenuView::Hide() {
     // remove its focus override before AXPlatformNodeAuraLinux needs to access
     // the previously-focused node while handling kMenuPopupEnd.
     if (!GetMenuItem()->GetParentMenuItem()) {
-      GetScrollViewContainer()->NotifyAccessibilityEvent(
+      GetScrollViewContainer()->NotifyAccessibilityEventDeprecated(
           ax::mojom::Event::kMenuEnd, true);
       GetViewAccessibility().EndPopupFocusOverride();
     }
     // Fire these kMenuPopupEnd for each menu/submenu that closes/hides.
     if (host_->IsVisible()) {
-      NotifyAccessibilityEvent(ax::mojom::Event::kMenuPopupEnd, true);
+      NotifyAccessibilityEventDeprecated(ax::mojom::Event::kMenuPopupEnd, true);
     }
 
     host_->HideMenuHost();
@@ -627,7 +627,7 @@ MenuScrollViewContainer* SubmenuView::GetScrollViewContainer() {
   if (!scroll_view_container_) {
     scroll_view_container_ = std::make_unique<MenuScrollViewContainer>(this);
     // Otherwise MenuHost would delete us.
-    scroll_view_container_->set_owned_by_client();
+    scroll_view_container_->set_owned_by_client(OwnedByClientPassKey());
     scroll_view_container_->SetBorderColorId(border_color_id_);
   }
   return scroll_view_container_.get();

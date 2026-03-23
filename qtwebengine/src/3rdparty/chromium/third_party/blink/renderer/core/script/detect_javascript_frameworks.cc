@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_meta_element.h"
+#include "third_party/blink/renderer/platform/bindings/dom_data_store.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
@@ -36,7 +37,7 @@ constexpr char kSquarespace[] = "Squarespace";
 
 bool IsFrameworkVariableUsed(v8::Local<v8::Context> context,
                              const String& framework_variable_name) {
-  v8::Isolate* isolate = context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   v8::Local<v8::Object> global = context->Global();
   v8::TryCatch try_catch(isolate);
   bool has_property;

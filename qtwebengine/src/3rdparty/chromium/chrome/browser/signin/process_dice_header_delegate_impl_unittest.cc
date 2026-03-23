@@ -114,8 +114,7 @@ class ProcessDiceHeaderDelegateImplTest
         show_error_called_(false),
         email_("foo@bar.com"),
         auth_error_(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS) {
-    std::string kGaiaId = "12345";
-    account_info_.gaia = GaiaId(kGaiaId);
+    account_info_.gaia = GaiaId("12345");
     account_info_.account_id = CoreAccountId::FromGaiaId(account_info_.gaia);
     account_info_.email = "email@gmail.com";
   }
@@ -167,6 +166,8 @@ class ProcessDiceHeaderDelegateImplTest
           base::BindRepeating(
               &ProcessDiceHeaderDelegateImplTest::StartSyncCallback,
               base::Unretained(this)),
+          // TODO(crbug.com/419203245): Update the history sync optin callback.
+          /*history_sync_optin_callback=*/base::NullCallback(),
           base::BindRepeating(
               &ProcessDiceHeaderDelegateImplTest::OnSigninHeaderReceived,
               base::Unretained(this)),
@@ -186,6 +187,7 @@ class ProcessDiceHeaderDelegateImplTest
           web_contents(), /*is_sync_signin_tab=*/false,
           signin_metrics::AccessPoint::kWebSignin, kTestPromoAction, GURL(),
           ProcessDiceHeaderDelegateImpl::EnableSyncCallback(),
+          ProcessDiceHeaderDelegateImpl::EnableHistorySyncOptinCallback(),
           base::BindRepeating(
               &ProcessDiceHeaderDelegateImplTest::OnSigninHeaderReceived,
               base::Unretained(this)),

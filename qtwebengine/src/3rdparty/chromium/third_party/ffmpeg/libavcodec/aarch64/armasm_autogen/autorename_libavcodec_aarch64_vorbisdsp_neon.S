@@ -851,6 +851,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1022,7 +1025,7 @@
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_vorbis_inverse_coupling_neon
 

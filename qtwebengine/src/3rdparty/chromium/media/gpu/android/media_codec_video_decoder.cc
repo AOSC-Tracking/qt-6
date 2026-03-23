@@ -5,6 +5,7 @@
 #include "media/gpu/android/media_codec_video_decoder.h"
 
 #include <memory>
+#include <variant>
 
 #include "base/android/build_info.h"
 #include "base/command_line.h"
@@ -15,6 +16,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
@@ -219,10 +221,12 @@ PendingDecode::~PendingDecode() = default;
 // static
 std::vector<SupportedVideoDecoderConfig>
 MediaCodecVideoDecoder::GetSupportedConfigs() {
-  static const auto configs = GenerateSupportedConfigs(
-      DeviceInfo::GetInstance(),
-      base::FeatureList::IsEnabled(media::kAllowMediaCodecSoftwareDecoder));
-  return configs;
+  static const base::NoDestructor<std::vector<SupportedVideoDecoderConfig>>
+      configs(GenerateSupportedConfigs(
+          DeviceInfo::GetInstance(),
+          base::FeatureList::IsEnabled(
+              media::kAllowMediaCodecSoftwareDecoder)));
+  return *configs;
 }
 
 MediaCodecVideoDecoder::MediaCodecVideoDecoder(
@@ -463,16 +467,15 @@ void MediaCodecVideoDecoder::SetCdm(CdmContext* cdm_context, InitCB init_cb) {
 
 void MediaCodecVideoDecoder::OnMediaCryptoReady(
     InitCB init_cb,
-    JavaObjectPtr media_crypto,
+    base::android::ScopedJavaGlobalRef<jobject> media_crypto,
     bool requires_secure_video_codec) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DVLOG(1) << __func__
            << ": requires_secure_video_codec = " << requires_secure_video_codec;
 
   DCHECK(state_ == State::kInitializing);
-  DCHECK(media_crypto);
 
-  if (media_crypto->is_null()) {
+  if (!media_crypto) {
     media_crypto_context_->SetMediaCryptoReadyCB(base::NullCallback());
     media_crypto_context_ = nullptr;
 
@@ -491,7 +494,7 @@ void MediaCodecVideoDecoder::OnMediaCryptoReady(
     return;
   }
 
-  media_crypto_ = *media_crypto;
+  media_crypto_ = std::move(media_crypto);
   requires_secure_codec_ = requires_secure_video_codec;
 
   // Request a secure surface in all cases.  For L3, it's okay if we fall back
@@ -980,7 +983,7 @@ bool MediaCodecVideoDecoder::QueueInput() {
   if (base::FeatureList::IsEnabled(kMediaCodecElideEOS) &&
       pending_buffer->end_of_stream() && pending_buffer->next_config()) {
     const auto new_config =
-        absl::get<VideoDecoderConfig>(*pending_buffer->next_config());
+        std::get<VideoDecoderConfig>(*pending_buffer->next_config());
 
     // The underlying MediaCodec must remain the same in order for us to elide
     // the end of stream flush.

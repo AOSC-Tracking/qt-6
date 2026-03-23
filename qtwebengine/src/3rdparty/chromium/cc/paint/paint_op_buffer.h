@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef CC_PAINT_PAINT_OP_BUFFER_H_
 #define CC_PAINT_PAINT_OP_BUFFER_H_
 
@@ -18,6 +13,7 @@
 
 #include "base/bits.h"
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/functional/callback.h"
 #include "base/memory/aligned_memory.h"
 #include "base/memory/stack_allocated.h"
@@ -90,6 +86,9 @@ struct CC_PAINT_EXPORT PlaybackParams {
   std::optional<bool> save_layer_alpha_should_preserve_lcd_text;
   const ScrollOffsetMap* raster_inducing_scroll_offsets = nullptr;
   bool is_analyzing = false;
+
+  // The HDR headroom to tone map to.
+  float destination_hdr_headroom = 0.f;
 };
 
 class CC_PAINT_EXPORT SharedImageProvider {
@@ -167,10 +166,6 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
     // True if the deserialization is happening on a privileged gpu channel.
     // e.g. in the case of UI.
     bool is_privileged = false;
-    // The HDR headroom to apply when deserializing.
-    // TODO(crbug.com/40281980): Move this to playback instead of
-    // deserialization.
-    float hdr_headroom = 1.f;
     SharedImageProvider* shared_image_provider = nullptr;
   };
 
@@ -373,7 +368,7 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
     if (used_ + aligned_size > reserved_) {
       return AllocatePaintOpSlowPath(aligned_size);
     } else {
-      void* op = data_.get() + used_;
+      void* op = UNSAFE_TODO(data_.get() + used_);
       used_ += aligned_size;
       op_count_++;
       return op;

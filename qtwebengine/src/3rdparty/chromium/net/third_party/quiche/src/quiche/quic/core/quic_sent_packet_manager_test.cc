@@ -5,31 +5,51 @@
 #include "quiche/quic/core/quic_sent_packet_manager.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/base/macros.h"
 #include "absl/strings/string_view.h"
+#include "quiche/quic/core/congestion_control/loss_detection_interface.h"
+#include "quiche/quic/core/congestion_control/rtt_stats.h"
+#include "quiche/quic/core/crypto/crypto_protocol.h"
+#include "quiche/quic/core/crypto/quic_random.h"
 #include "quiche/quic/core/frames/quic_ack_frame.h"
 #include "quiche/quic/core/frames/quic_ack_frequency_frame.h"
+#include "quiche/quic/core/frames/quic_frame.h"
+#include "quiche/quic/core/frames/quic_message_frame.h"
+#include "quiche/quic/core/frames/quic_path_challenge_frame.h"
+#include "quiche/quic/core/frames/quic_ping_frame.h"
+#include "quiche/quic/core/frames/quic_stream_frame.h"
+#include "quiche/quic/core/quic_bandwidth.h"
+#include "quiche/quic/core/quic_constants.h"
 #include "quiche/quic/core/quic_packet_number.h"
+#include "quiche/quic/core/quic_packets.h"
+#include "quiche/quic/core/quic_tag.h"
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
+#include "quiche/quic/core/quic_unacked_packet_map.h"
 #include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_test.h"
+#include "quiche/quic/test_tools/mock_clock.h"
 #include "quiche/quic/test_tools/quic_config_peer.h"
 #include "quiche/quic/test_tools/quic_sent_packet_manager_peer.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
-#include "quiche/common/platform/api/quiche_mem_slice.h"
+#include "quiche/common/platform/api/quiche_test.h"
+#include "quiche/common/quiche_buffer_allocator.h"
+#include "quiche/common/quiche_mem_slice.h"
+#include "quiche/common/simple_buffer_allocator.h"
 
 using testing::_;
 using testing::AnyNumber;
 using testing::Invoke;
 using testing::InvokeWithoutArgs;
 using testing::IsEmpty;
-using testing::Not;
 using testing::Pointwise;
 using testing::Return;
 using testing::StrictMock;
@@ -131,7 +151,8 @@ class QuicSentPacketManagerTest : public QuicTest {
     EXPECT_CALL(notifier_, HasUnackedCryptoData())
         .WillRepeatedly(Return(false));
     EXPECT_CALL(notifier_, OnStreamFrameRetransmitted(_)).Times(AnyNumber());
-    EXPECT_CALL(notifier_, OnFrameAcked(_, _, _)).WillRepeatedly(Return(true));
+    EXPECT_CALL(notifier_, OnFrameAcked(_, _, _, _))
+        .WillRepeatedly(Return(true));
   }
 
   ~QuicSentPacketManagerTest() override {}
@@ -442,7 +463,7 @@ TEST_F(QuicSentPacketManagerTest, RetransmitThenAckPrevious) {
   EXPECT_TRUE(manager_.HasInFlightPackets());
   VerifyRetransmittablePackets(nullptr, 0);
   // Ack 2 causes 2 be considered as spurious retransmission.
-  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _)).WillOnce(Return(false));
+  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _, _)).WillOnce(Return(false));
   ExpectAck(2);
   manager_.OnAckFrameStart(QuicPacketNumber(2), QuicTime::Delta::Infinite(),
                            clock_.Now());
@@ -582,7 +603,7 @@ TEST_F(QuicSentPacketManagerTest, RetransmitTwiceThenAckFirst) {
   // Ensure packet 2 is lost when 4 is sent and 3 and 4 are acked.
   SendDataPacket(4);
   // No new data gets acked in packet 3.
-  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _))
+  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _, _))
       .WillOnce(Return(false))
       .WillRepeatedly(Return(true));
   uint64_t acked[] = {3, 4};
@@ -687,7 +708,7 @@ TEST_F(QuicSentPacketManagerTest, AckOriginalTransmission) {
     // data gets acked.
     ExpectAck(5);
     EXPECT_CALL(*loss_algorithm, DetectLosses(_, _, _, _, _, _));
-    EXPECT_CALL(notifier_, OnFrameAcked(_, _, _)).WillOnce(Return(false));
+    EXPECT_CALL(notifier_, OnFrameAcked(_, _, _, _)).WillOnce(Return(false));
     manager_.OnAckFrameStart(QuicPacketNumber(5), QuicTime::Delta::Infinite(),
                              clock_.Now());
     manager_.OnAckRange(QuicPacketNumber(3), QuicPacketNumber(6));
@@ -708,7 +729,8 @@ TEST_F(QuicSentPacketManagerTest, GetLeastUnackedUnacked) {
 }
 
 TEST_F(QuicSentPacketManagerTest, AckAckAndUpdateRtt) {
-  EXPECT_FALSE(manager_.largest_packet_peer_knows_is_acked().IsInitialized());
+  EXPECT_FALSE(manager_.GetLargestPacketPeerKnowsIsAcked(ENCRYPTION_INITIAL)
+                   .IsInitialized());
   SendDataPacket(1);
   SendAckPacket(2, 1);
 
@@ -721,7 +743,8 @@ TEST_F(QuicSentPacketManagerTest, AckAckAndUpdateRtt) {
   EXPECT_EQ(PACKETS_NEWLY_ACKED,
             manager_.OnAckFrameEnd(clock_.Now(), QuicPacketNumber(1),
                                    ENCRYPTION_INITIAL, kEmptyCounts));
-  EXPECT_EQ(QuicPacketNumber(1), manager_.largest_packet_peer_knows_is_acked());
+  EXPECT_EQ(QuicPacketNumber(1),
+            manager_.GetLargestPacketPeerKnowsIsAcked(ENCRYPTION_INITIAL));
 
   SendAckPacket(3, 3);
 
@@ -735,7 +758,7 @@ TEST_F(QuicSentPacketManagerTest, AckAckAndUpdateRtt) {
             manager_.OnAckFrameEnd(clock_.Now(), QuicPacketNumber(2),
                                    ENCRYPTION_INITIAL, kEmptyCounts));
   EXPECT_EQ(QuicPacketNumber(3u),
-            manager_.largest_packet_peer_knows_is_acked());
+            manager_.GetLargestPacketPeerKnowsIsAcked(ENCRYPTION_INITIAL));
 }
 
 TEST_F(QuicSentPacketManagerTest, Rtt) {
@@ -1351,7 +1374,7 @@ TEST_F(QuicSentPacketManagerTest, NegotiateClientCongestionControlFromOptions) {
   EXPECT_EQ(kCubicBytes, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
                              ->GetCongestionControlType());
 
-  // Test that kPRGC is not overriden by other options.
+  // Test that kPRGC is not overridden by other options.
   options.clear();
   options.push_back(kPRGC);
   options.push_back(kTBBR);
@@ -1361,7 +1384,7 @@ TEST_F(QuicSentPacketManagerTest, NegotiateClientCongestionControlFromOptions) {
   EXPECT_EQ(kPragueCubic, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
                               ->GetCongestionControlType());
 
-  // Test that kCQBC is not overriden by other options.
+  // Test that kCQBC is not overridden by other options.
   options.clear();
   options.push_back(kCQBC);
   options.push_back(kTBBR);
@@ -1593,7 +1616,7 @@ TEST_F(QuicSentPacketManagerTest,
       *send_algorithm_,
       OnCongestionEvent(/*rtt_updated=*/true, kDefaultLength, _, _, _, _, _));
   EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
-  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _));
+  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _, _));
   EXPECT_EQ(PACKETS_NEWLY_ACKED,
             manager_.OnAckFrameEnd(clock_.Now(), QuicPacketNumber(3),
                                    ENCRYPTION_FORWARD_SECURE, kEmptyCounts));
@@ -1627,7 +1650,7 @@ TEST_F(QuicSentPacketManagerTest,
   EXPECT_CALL(*send_algorithm_,
               OnCongestionEvent(/*rtt_updated=*/false, 0, _, _, _, _, _));
   EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
-  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _));
+  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _, _));
   EXPECT_EQ(PACKETS_NEWLY_ACKED,
             manager_.OnAckFrameEnd(clock_.Now(), QuicPacketNumber(3),
                                    ENCRYPTION_FORWARD_SECURE, kEmptyCounts));
@@ -2099,6 +2122,51 @@ TEST_F(QuicSentPacketManagerTest, IW10ForUpAndDown) {
   EXPECT_EQ(10u, manager_.initial_congestion_window());
 }
 
+TEST_F(QuicSentPacketManagerTest, ServerCongestionWindowDoubledWithIW2X) {
+  SetQuicReloadableFlag(quic_allow_client_enabled_2x_initial_cwnd, true);
+  QuicConfig config;
+  QuicConfigPeer::SetReceivedConnectionOptions(&config, {kIW2X});
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+  EXPECT_CALL(*send_algorithm_, SetInitialCongestionWindowInPackets(
+                                    kInitialCongestionWindow * 2));
+  EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
+  manager_.SetFromConfig(config);
+
+  EXPECT_EQ(manager_.initial_congestion_window(), kInitialCongestionWindow * 2);
+}
+
+TEST_F(QuicSentPacketManagerTest,
+       ServerCongestionWindowIsDefaultWithIW2XAndNoFlag) {
+  SetQuicReloadableFlag(quic_allow_client_enabled_2x_initial_cwnd, false);
+  QuicConfig config;
+  QuicConfigPeer::SetReceivedConnectionOptions(&config, {kIW2X});
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+  EXPECT_CALL(*send_algorithm_, SetInitialCongestionWindowInPackets(_))
+      .Times(0);
+  EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
+  manager_.SetFromConfig(config);
+
+  EXPECT_EQ(manager_.initial_congestion_window(), kInitialCongestionWindow);
+}
+
+TEST_F(QuicSentPacketManagerTest,
+       ClientCongestionWindowIsDefaultWithIW2XAndNoFlag) {
+  QuicSentPacketManagerPeer::SetPerspective(&manager_, Perspective::IS_CLIENT);
+  SetQuicReloadableFlag(quic_allow_client_enabled_2x_initial_cwnd, false);
+  QuicConfig config;
+  config.SetConnectionOptionsToSend({kIW2X});
+  config.SetClientConnectionOptions({});
+
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+  EXPECT_CALL(*send_algorithm_,
+              SetInitialCongestionWindowInPackets(kInitialCongestionWindow * 2))
+      .Times(0);
+  EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
+  manager_.SetFromConfig(config);
+
+  EXPECT_EQ(manager_.initial_congestion_window(), kInitialCongestionWindow);
+}
+
 TEST_F(QuicSentPacketManagerTest, ClientMultiplePacketNumberSpacePtoTimeout) {
   manager_.EnableMultiplePacketNumberSpacesSupport();
   EXPECT_CALL(*send_algorithm_, PacingRate(_))
@@ -2531,10 +2599,10 @@ TEST_F(QuicSentPacketManagerTest, SetHandshakeConfirmed) {
 
   SendDataPacket(2, ENCRYPTION_HANDSHAKE);
 
-  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _))
+  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _, _))
       .WillOnce(
           Invoke([](const QuicFrame& /*frame*/, QuicTime::Delta ack_delay_time,
-                    QuicTime receive_timestamp) {
+                    QuicTime receive_timestamp, bool) {
             EXPECT_TRUE(ack_delay_time.IsZero());
             EXPECT_EQ(receive_timestamp, QuicTime::Zero());
             return true;
@@ -2549,7 +2617,7 @@ TEST_F(QuicSentPacketManagerTest, NeuterUnencryptedPackets) {
   SendCryptoPacket(1);
   SendPingPacket(2, ENCRYPTION_INITIAL);
   // Crypto data has been discarded but ping does not.
-  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _))
+  EXPECT_CALL(notifier_, OnFrameAcked(_, _, _, _))
       .Times(2)
       .WillOnce(Return(false))
       .WillOnce(Return(true));
@@ -2845,7 +2913,7 @@ SerializedPacket MakePacketWithAckFrequencyFrame(
     int packet_number, int ack_frequency_sequence_number,
     QuicTime::Delta max_ack_delay) {
   auto* ack_frequency_frame = new QuicAckFrequencyFrame();
-  ack_frequency_frame->max_ack_delay = max_ack_delay;
+  ack_frequency_frame->requested_max_ack_delay = max_ack_delay;
   ack_frequency_frame->sequence_number = ack_frequency_sequence_number;
   SerializedPacket packet(QuicPacketNumber(packet_number),
                           PACKET_4BYTE_PACKET_NUMBER, nullptr, kDefaultLength,
@@ -3053,6 +3121,9 @@ TEST_F(QuicSentPacketManagerTest, ClearDataInMessageFrameAfterPacketSent) {
   EXPECT_EQ(message_frame->message_length, 0);
 }
 
+// TODO(b/389762349): Re-enable these tests when sending AckFrequency is
+// restored.
+#if 0
 TEST_F(QuicSentPacketManagerTest, BuildAckFrequencyFrame) {
   SetQuicReloadableFlag(quic_can_send_ack_frequency, true);
   EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
@@ -3074,11 +3145,12 @@ TEST_F(QuicSentPacketManagerTest, BuildAckFrequencyFrame) {
       /*now=*/QuicTime::Zero() + QuicTime::Delta::FromMilliseconds(24));
 
   auto frame = manager_.GetUpdatedAckFrequencyFrame();
-  EXPECT_EQ(frame.max_ack_delay,
+  EXPECT_EQ(frame.requested_max_ack_delay,
             std::max(rtt_stats->min_rtt() * 0.25,
                      QuicTime::Delta::FromMilliseconds(1u)));
-  EXPECT_EQ(frame.packet_tolerance, 10u);
+  EXPECT_EQ(frame.ack_eliciting_threshold, 10u);
 }
+#endif
 
 TEST_F(QuicSentPacketManagerTest, SmoothedRttIgnoreAckDelay) {
   QuicConfig config;
@@ -3192,6 +3264,9 @@ TEST_F(QuicSentPacketManagerTest, IgnorePeerMaxAckDelayDuringHandshake) {
   EXPECT_EQ(kTestRTT, manager_.GetRttStats()->latest_rtt());
 }
 
+// TODO(b/389762349): Re-enable these tests when sending AckFrequency is
+// restored.
+#if 0
 TEST_F(QuicSentPacketManagerTest, BuildAckFrequencyFrameWithSRTT) {
   SetQuicReloadableFlag(quic_can_send_ack_frequency, true);
   EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
@@ -3216,10 +3291,11 @@ TEST_F(QuicSentPacketManagerTest, BuildAckFrequencyFrameWithSRTT) {
       /*now=*/QuicTime::Zero() + QuicTime::Delta::FromMilliseconds(24));
 
   auto frame = manager_.GetUpdatedAckFrequencyFrame();
-  EXPECT_EQ(frame.max_ack_delay,
+  EXPECT_EQ(frame.requested_max_ack_delay,
             std::max(rtt_stats->SmoothedOrInitialRtt() * 0.25,
                      QuicTime::Delta::FromMilliseconds(1u)));
 }
+#endif
 
 TEST_F(QuicSentPacketManagerTest, SetInitialRtt) {
   // Upper bounds.
@@ -3554,6 +3630,85 @@ TEST_F(QuicSentPacketManagerTest, EcnAckedButNoMarksReported) {
   EXPECT_EQ(PACKETS_NEWLY_ACKED,
             manager_.OnAckFrameEnd(clock_.Now(), QuicPacketNumber(1),
                                    ENCRYPTION_FORWARD_SECURE, ecn_counts));
+}
+
+// Test that the path degrading delay is set correctly when the path degrading
+// connection option is set.
+TEST_F(QuicSentPacketManagerTest, GetPathDegradingDelayUsingPTO) {
+  QuicConfig client_config;
+  QuicTagVector all_path_dergradation_options = {kPDE2, kPDE3, kPDE5};
+  uint8_t pto_count = 2;
+  for (QuicTag current_dergradation_option : all_path_dergradation_options) {
+    QuicTagVector client_options;
+    client_options.push_back(current_dergradation_option);
+    QuicSentPacketManagerPeer::SetPerspective(&manager_,
+                                              Perspective::IS_CLIENT);
+    client_config.SetClientConnectionOptions(client_options);
+    EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+    EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
+    manager_.SetFromConfig(client_config);
+    QuicTime::Delta expected_delay = pto_count * manager_.GetPtoDelay();
+    EXPECT_EQ(expected_delay, manager_.GetPathDegradingDelay());
+    pto_count++;
+    if (pto_count == 4) {
+      pto_count++;
+    }
+  }
+}
+
+static constexpr float kDefaultOverhead = 0.05f;
+
+TEST_F(QuicSentPacketManagerTest, DefaultOverhead) {
+  manager_.EnableOverheadMeasurement();
+  EXPECT_NEAR(manager_.GetOverheadEstimate(), kDefaultOverhead, 1e-6);
+}
+
+TEST_F(QuicSentPacketManagerTest, OverheadFromStreamFrames) {
+  manager_.EnableOverheadMeasurement();
+  EXPECT_CALL(*send_algorithm_, OnPacketSent).Times(AnyNumber());
+  std::string buffer(kDefaultLength / 2, '\0');
+  for (int i = 1; i < 1000; ++i) {
+    SerializedPacket packet(QuicPacketNumber(i), PACKET_4BYTE_PACKET_NUMBER,
+                            nullptr, kDefaultLength, false, false);
+    packet.encryption_level = ENCRYPTION_FORWARD_SECURE;
+    packet.retransmittable_frames.push_back(
+        QuicFrame(QuicStreamFrame(kStreamId, false, 0, buffer)));
+    manager_.OnPacketSent(&packet, clock_.Now(), NOT_RETRANSMISSION,
+                          HAS_RETRANSMITTABLE_DATA, true, ECN_NOT_ECT);
+  }
+  EXPECT_NEAR(manager_.GetOverheadEstimate(), 0.5, 0.01);
+}
+
+TEST_F(QuicSentPacketManagerTest, OverheadFromDatagramFrames) {
+  manager_.EnableOverheadMeasurement();
+  EXPECT_CALL(*send_algorithm_, OnPacketSent).Times(AnyNumber());
+  std::string buffer(kDefaultLength / 2, '\0');
+  for (int i = 1; i < 1000; ++i) {
+    SerializedPacket packet(QuicPacketNumber(i), PACKET_4BYTE_PACKET_NUMBER,
+                            nullptr, kDefaultLength, false, false);
+    packet.encryption_level = ENCRYPTION_FORWARD_SECURE;
+    packet.retransmittable_frames.push_back(QuicFrame(
+        new QuicMessageFrame(i, quiche::QuicheMemSlice::Copy(buffer))));
+    manager_.OnPacketSent(&packet, clock_.Now(), NOT_RETRANSMISSION,
+                          HAS_RETRANSMITTABLE_DATA, true, ECN_NOT_ECT);
+  }
+  EXPECT_NEAR(manager_.GetOverheadEstimate(), 0.5, 0.01);
+}
+
+TEST_F(QuicSentPacketManagerTest, IgnoreNon1RttFrames) {
+  manager_.EnableOverheadMeasurement();
+  EXPECT_CALL(*send_algorithm_, OnPacketSent).Times(AnyNumber());
+  std::string buffer(kDefaultLength / 2, '\0');
+  for (int i = 1; i < 1000; ++i) {
+    SerializedPacket packet(QuicPacketNumber(i), PACKET_4BYTE_PACKET_NUMBER,
+                            nullptr, kDefaultLength, false, false);
+    packet.encryption_level = ENCRYPTION_INITIAL;
+    packet.retransmittable_frames.push_back(
+        QuicFrame(QuicStreamFrame(kStreamId, false, 0, buffer)));
+    manager_.OnPacketSent(&packet, clock_.Now(), NOT_RETRANSMISSION,
+                          HAS_RETRANSMITTABLE_DATA, true, ECN_NOT_ECT);
+  }
+  EXPECT_NEAR(manager_.GetOverheadEstimate(), kDefaultOverhead, 1e-6);
 }
 
 }  // namespace

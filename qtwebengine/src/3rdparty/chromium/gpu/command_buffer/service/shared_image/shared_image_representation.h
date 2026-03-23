@@ -18,7 +18,6 @@
 #include "build/build_config.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_backing.h"
-#include "gpu/command_buffer/service/shared_image/shared_image_manager.h"
 #include "gpu/gpu_gles2_export.h"
 #include "gpu/vulkan/buildflags.h"
 #include "skia/buildflags.h"
@@ -59,6 +58,7 @@ extern "C" typedef struct AHardwareBuffer AHardwareBuffer;
 
 #if BUILDFLAG(IS_WIN)
 #include <d3d11.h>
+#include <d3d12.h>
 #include <wrl/client.h>
 #endif
 
@@ -76,6 +76,7 @@ class NativePixmap;
 }  // namespace gfx
 
 namespace gpu {
+class SharedImageManager;
 class TextureBase;
 
 namespace gles2 {
@@ -199,12 +200,8 @@ class SharedImageRepresentationFactoryRef : public SharedImageRepresentation {
     backing()->CopyToGpuMemoryBufferAsync(std::move(callback));
   }
   void GetGpuMemoryBufferHandleInfo(gfx::GpuMemoryBufferHandle& handle,
-                                    viz::SharedImageFormat& format,
-                                    gfx::Size& size,
                                     gfx::BufferUsage& buffer_usage) {
     handle = backing()->GetGpuMemoryBufferHandle();
-    format = backing()->format();
-    size = backing()->size();
     buffer_usage = backing()->buffer_usage();
   }
   bool PresentSwapChain() { return backing()->PresentSwapChain(); }
@@ -333,6 +330,22 @@ class GPU_GLES2_EXPORT GLTexturePassthroughImageRepresentation
 class GPU_GLES2_EXPORT SkiaImageRepresentation
     : public SharedImageRepresentation {
  public:
+  // Object that holds skgpu::graphite::BackendTexture.
+  class GPU_GLES2_EXPORT GraphiteTextureHolder
+      : public base::RefCountedThreadSafe<GraphiteTextureHolder> {
+   public:
+    explicit GraphiteTextureHolder(skgpu::graphite::BackendTexture texture)
+        : texture_(std::move(texture)) {}
+
+    const skgpu::graphite::BackendTexture& texture() { return texture_; }
+
+   protected:
+    friend class base::RefCountedThreadSafe<GraphiteTextureHolder>;
+    virtual ~GraphiteTextureHolder() = default;
+
+    skgpu::graphite::BackendTexture texture_;
+  };
+
   class GPU_GLES2_EXPORT ScopedWriteAccess
       : public ScopedAccessBase<SkiaImageRepresentation> {
    public:
@@ -355,7 +368,12 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
     }
 
     skgpu::graphite::BackendTexture graphite_texture(int plane_index) const {
-      return graphite_textures_[plane_index];
+      return graphite_texture_holder(plane_index)->texture();
+    }
+
+    const scoped_refptr<GraphiteTextureHolder>& graphite_texture_holder(
+        int plane_index) const {
+      return graphite_texture_holders_[plane_index];
     }
 
     // Return the representations's implementation.
@@ -377,7 +395,7 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
         std::vector<sk_sp<GrPromiseImageTexture>> promise_image_textures);
     ScopedWriteAccess(
         SkiaImageRepresentation* representation,
-        std::vector<skgpu::graphite::BackendTexture> graphite_textures);
+        std::vector<scoped_refptr<GraphiteTextureHolder>> graphite_textures);
 
     // A vector of surfaces, promise textures and graphite backend textures
     // corresponding to the number of planes in SharedImageFormat.
@@ -385,7 +403,7 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
     // NOTE: Used only for Ganesh.
     std::vector<sk_sp<GrPromiseImageTexture>> promise_image_textures_;
     // NOTE: Used only for Graphite.
-    std::vector<skgpu::graphite::BackendTexture> graphite_textures_;
+    std::vector<scoped_refptr<GraphiteTextureHolder>> graphite_texture_holders_;
   };
 
   class GPU_GLES2_EXPORT ScopedReadAccess
@@ -406,7 +424,12 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
       return graphite_texture(0);
     }
     skgpu::graphite::BackendTexture graphite_texture(int plane_index) const {
-      return graphite_textures_[plane_index];
+      return graphite_texture_holder(plane_index)->texture();
+    }
+
+    const scoped_refptr<GraphiteTextureHolder>& graphite_texture_holder(
+        int plane_index) const {
+      return graphite_texture_holders_[plane_index];
     }
 
     // Return the representations's implementation.
@@ -440,13 +463,13 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
         std::vector<sk_sp<GrPromiseImageTexture>> promise_image_textures);
     ScopedReadAccess(
         SkiaImageRepresentation* representation,
-        std::vector<skgpu::graphite::BackendTexture> graphite_textures);
+        std::vector<scoped_refptr<GraphiteTextureHolder>> graphite_textures);
 
     // A vector of promise textures and graphite backend textures corresponding
     // to the number of planes in SharedImageFormat. NOTE: Used only for Ganesh.
     std::vector<sk_sp<GrPromiseImageTexture>> promise_image_textures_;
     // NOTE: Used only for Graphite.
-    std::vector<skgpu::graphite::BackendTexture> graphite_textures_;
+    std::vector<scoped_refptr<GraphiteTextureHolder>> graphite_texture_holders_;
   };
 
   SkiaImageRepresentation(SharedImageManager* manager,
@@ -483,6 +506,7 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
       std::vector<GrBackendSemaphore>* begin_semaphores,
       std::vector<GrBackendSemaphore>* end_semaphores) = 0;
 
+  // Return whether we need to submit graphite's commands before EndAccess.
   // NOTE: Implemented only for Graphite.
   virtual bool NeedGraphiteContextSubmitBeforeEndAccess() = 0;
 
@@ -673,7 +697,7 @@ class GPU_GLES2_EXPORT SkiaGraphiteImageRepresentation
     ScopedGraphiteWriteAccess(
         base::PassKey<SkiaGraphiteImageRepresentation> pass_key,
         SkiaImageRepresentation* representation,
-        std::vector<skgpu::graphite::BackendTexture> graphite_textures);
+        std::vector<scoped_refptr<GraphiteTextureHolder>> graphite_textures);
     ~ScopedGraphiteWriteAccess() override;
 
     bool HasBackendSurfaceEndState() override;
@@ -685,7 +709,7 @@ class GPU_GLES2_EXPORT SkiaGraphiteImageRepresentation
     ScopedGraphiteReadAccess(
         base::PassKey<SkiaGraphiteImageRepresentation> pass_key,
         SkiaImageRepresentation* representation,
-        std::vector<skgpu::graphite::BackendTexture> graphite_textures);
+        std::vector<scoped_refptr<GraphiteTextureHolder>> graphite_textures);
     ~ScopedGraphiteReadAccess() override;
 
     // Creates an SkImage from BackendTexture for single planar formats or if
@@ -757,10 +781,27 @@ class GPU_GLES2_EXPORT SkiaGraphiteImageRepresentation
   virtual std::vector<sk_sp<SkSurface>> BeginWriteAccess(
       const SkSurfaceProps& surface_props,
       const gfx::Rect& update_rect) = 0;
-  virtual std::vector<skgpu::graphite::BackendTexture> BeginWriteAccess() = 0;
 
-  // Returns an empty vector on failure.
-  virtual std::vector<skgpu::graphite::BackendTexture> BeginReadAccess() = 0;
+  // Returns a vector of ref counted GraphiteTextureHolder that holds
+  // skgpu::graphite::BackendTexture which graphite can use for writing.
+  // Notes:
+  // - If `NeedGraphiteContextSubmitBeforeEndAccess()` returns true: it's only
+  // safe to use the contained BackendTexture within the access' scope.
+  // - If `NeedGraphiteContextSubmitBeforeEndAccess()` returns false: the
+  // contained BackendTexture is safe to be used as long as the holder is
+  // intact. For example, in some scenarios the BackendTexture would be used in
+  // a command buffer, but its submission needs to be deferred later, even after
+  // the SI's backing is destroyed. In those cases, we can pass
+  // refptr<GraphiteTextureHolder> to Graphite's release proc in order to keep
+  // the BackendTexture alive until Graphite finishes using it.
+  // - This function will return an empty vector on failure.
+  virtual std::vector<scoped_refptr<GraphiteTextureHolder>>
+  BeginWriteAccess() = 0;
+
+  // Same as above but return holders of skgpu::graphite::BackendTexture for
+  // reading in graphite.
+  virtual std::vector<scoped_refptr<GraphiteTextureHolder>>
+  BeginReadAccess() = 0;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -823,8 +864,6 @@ class GPU_GLES2_EXPORT DawnImageRepresentation
       AllowUnclearedAccess allow_uncleared,
       const gfx::Rect& update_rect);
 
-  virtual bool SupportsMultipleConcurrentReadAccess();
-
  private:
   friend class WrappedDawnCompoundImageRepresentation;
 
@@ -872,6 +911,21 @@ class GPU_GLES2_EXPORT DawnBufferRepresentation
  private:
   virtual wgpu::Buffer BeginAccess(wgpu::BufferUsage usage) = 0;
   virtual void EndAccess() = 0;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+// WebNNTensorRepresentation
+
+class GPU_GLES2_EXPORT WebNNTensorRepresentation
+    : public SharedImageRepresentation {
+ public:
+  WebNNTensorRepresentation(SharedImageManager* manager,
+                            SharedImageBacking* backing,
+                            MemoryTypeTracker* tracker)
+      : SharedImageRepresentation(manager, backing, tracker) {}
+#if BUILDFLAG(IS_WIN)
+  virtual Microsoft::WRL::ComPtr<ID3D12Resource> GetD3D12Buffer() const;
+#endif  // BUILDFLAG(IS_WIN)
 };
 
 ///////////////////////////////////////////////////////////////////////////////

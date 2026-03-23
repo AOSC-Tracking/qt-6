@@ -19,41 +19,41 @@ namespace internal {
 RUNTIME_FUNCTION(Runtime_GetSubstitution) {
   HandleScope scope(isolate);
   DCHECK_EQ(5, args.length());
-  Handle<String> matched = args.at<String>(0);
-  Handle<String> subject = args.at<String>(1);
+  DirectHandle<String> matched = args.at<String>(0);
+  DirectHandle<String> subject = args.at<String>(1);
   int position = args.smi_value_at(2);
-  Handle<String> replacement = args.at<String>(3);
+  DirectHandle<String> replacement = args.at<String>(3);
   int start_index = args.smi_value_at(4);
 
   // A simple match without captures.
   class SimpleMatch : public String::Match {
    public:
-    SimpleMatch(Handle<String> match, Handle<String> prefix,
-                Handle<String> suffix)
+    SimpleMatch(DirectHandle<String> match, DirectHandle<String> prefix,
+                DirectHandle<String> suffix)
         : match_(match), prefix_(prefix), suffix_(suffix) {}
 
-    Handle<String> GetMatch() override { return match_; }
-    Handle<String> GetPrefix() override { return prefix_; }
-    Handle<String> GetSuffix() override { return suffix_; }
+    DirectHandle<String> GetMatch() override { return match_; }
+    DirectHandle<String> GetPrefix() override { return prefix_; }
+    DirectHandle<String> GetSuffix() override { return suffix_; }
 
     int CaptureCount() override { return 0; }
     bool HasNamedCaptures() override { return false; }
-    MaybeHandle<String> GetCapture(int i, bool* capture_exists) override {
+    MaybeDirectHandle<String> GetCapture(int i, bool* capture_exists) override {
       *capture_exists = false;
       return match_;  // Return arbitrary string handle.
     }
-    MaybeHandle<String> GetNamedCapture(DirectHandle<String> name,
-                                        CaptureState* state) override {
+    MaybeDirectHandle<String> GetNamedCapture(DirectHandle<String> name,
+                                              CaptureState* state) override {
       UNREACHABLE();
     }
 
    private:
-    Handle<String> match_, prefix_, suffix_;
+    DirectHandle<String> match_, prefix_, suffix_;
   };
 
-  Handle<String> prefix =
+  DirectHandle<String> prefix =
       isolate->factory()->NewSubString(subject, 0, position);
-  Handle<String> suffix = isolate->factory()->NewSubString(
+  DirectHandle<String> suffix = isolate->factory()->NewSubString(
       subject, position + matched->length(), subject->length());
   SimpleMatch match(matched, prefix, suffix);
 
@@ -62,32 +62,32 @@ RUNTIME_FUNCTION(Runtime_GetSubstitution) {
       String::GetSubstitution(isolate, &match, replacement, start_index));
 }
 
-// This may return an empty MaybeHandle if an exception is thrown or
+// This may return an empty MaybeDirectHandle if an exception is thrown or
 // we abort due to reaching the recursion limit.
-MaybeHandle<String> StringReplaceOneCharWithString(
-    Isolate* isolate, Handle<String> subject, Handle<String> search,
-    Handle<String> replace, bool* found, int recursion_limit) {
+MaybeDirectHandle<String> StringReplaceOneCharWithString(
+    Isolate* isolate, DirectHandle<String> subject, DirectHandle<String> search,
+    DirectHandle<String> replace, bool* found, int recursion_limit) {
   StackLimitCheck stackLimitCheck(isolate);
   if (stackLimitCheck.HasOverflowed() || (recursion_limit == 0)) {
-    return MaybeHandle<String>();
+    return MaybeDirectHandle<String>();
   }
   recursion_limit--;
   if (IsConsString(*subject)) {
     Tagged<ConsString> cons = Cast<ConsString>(*subject);
-    Handle<String> first = handle(cons->first(), isolate);
-    Handle<String> second = handle(cons->second(), isolate);
-    Handle<String> new_first;
+    DirectHandle<String> first(cons->first(), isolate);
+    DirectHandle<String> second(cons->second(), isolate);
+    DirectHandle<String> new_first;
     if (!StringReplaceOneCharWithString(isolate, first, search, replace, found,
                                         recursion_limit).ToHandle(&new_first)) {
-      return MaybeHandle<String>();
+      return MaybeDirectHandle<String>();
     }
     if (*found) return isolate->factory()->NewConsString(new_first, second);
 
-    Handle<String> new_second;
+    DirectHandle<String> new_second;
     if (!StringReplaceOneCharWithString(isolate, second, search, replace, found,
                                         recursion_limit)
              .ToHandle(&new_second)) {
-      return MaybeHandle<String>();
+      return MaybeDirectHandle<String>();
     }
     if (*found) return isolate->factory()->NewConsString(first, new_second);
 
@@ -96,11 +96,12 @@ MaybeHandle<String> StringReplaceOneCharWithString(
     int index = String::IndexOf(isolate, subject, search, 0);
     if (index == -1) return subject;
     *found = true;
-    Handle<String> first = isolate->factory()->NewSubString(subject, 0, index);
-    Handle<String> cons1;
+    DirectHandle<String> first =
+        isolate->factory()->NewSubString(subject, 0, index);
+    DirectHandle<String> cons1;
     ASSIGN_RETURN_ON_EXCEPTION(
         isolate, cons1, isolate->factory()->NewConsString(first, replace));
-    Handle<String> second =
+    DirectHandle<String> second =
         isolate->factory()->NewSubString(subject, index + 1, subject->length());
     return isolate->factory()->NewConsString(cons1, second);
   }
@@ -109,9 +110,9 @@ MaybeHandle<String> StringReplaceOneCharWithString(
 RUNTIME_FUNCTION(Runtime_StringReplaceOneCharWithString) {
   HandleScope scope(isolate);
   DCHECK_EQ(3, args.length());
-  Handle<String> subject = args.at<String>(0);
-  Handle<String> search = args.at<String>(1);
-  Handle<String> replace = args.at<String>(2);
+  DirectHandle<String> subject = args.at<String>(0);
+  DirectHandle<String> search = args.at<String>(1);
+  DirectHandle<String> replace = args.at<String>(2);
 
   // If the cons string tree is too deep, we simply abort the recursion and
   // retry with a flattened subject string.
@@ -143,7 +144,7 @@ RUNTIME_FUNCTION(Runtime_StringLastIndexOf) {
 RUNTIME_FUNCTION(Runtime_StringSubstring) {
   HandleScope scope(isolate);
   DCHECK_EQ(3, args.length());
-  Handle<String> string = args.at<String>(0);
+  DirectHandle<String> string = args.at<String>(0);
   int start = args.smi_value_at(1);
   int end = args.smi_value_at(2);
   DCHECK_LE(0, start);
@@ -153,30 +154,136 @@ RUNTIME_FUNCTION(Runtime_StringSubstring) {
 }
 
 RUNTIME_FUNCTION(Runtime_StringAdd) {
-  // This is used by Wasm.
-  SaveAndClearThreadInWasmFlag non_wasm_scope(isolate);
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
-  Handle<String> str1 = args.at<String>(0);
-  Handle<String> str2 = args.at<String>(1);
+  DirectHandle<String> str1 = args.at<String>(0);
+  DirectHandle<String> str2 = args.at<String>(1);
   RETURN_RESULT_OR_FAILURE(isolate,
                            isolate->factory()->NewConsString(str1, str2));
 }
 
+namespace {
+
+using ASVariant = AddStringConstantAndInternalizeVariant;
+
+Tagged<Object> StringAdd_StringConstant_Internalize(
+    Isolate* isolate, DirectHandle<Object> lhs, DirectHandle<Object> rhs,
+    Handle<HeapObject> maybe_feedback_vector, int slot_index,
+    ASVariant as_variant) {
+  const bool lhs_is_string_constant =
+      as_variant == ASVariant::kLhsIsStringConstant;
+  DirectHandle<Object> const_str_operand = lhs_is_string_constant ? lhs : rhs;
+  DirectHandle<Object> other_operand = lhs_is_string_constant ? rhs : lhs;
+  DCHECK(IsInternalizedString(*const_str_operand));
+
+  DirectHandle<String> other_operand_string;
+  if (IsString(*other_operand)) {
+    other_operand_string = Cast<String>(other_operand);
+  } else {
+    // According to spec we first have to do ToPrimitive and only then
+    // ToString.
+    // https://tc39.es/ecma262/#sec-applystringornumericbinaryoperator
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, other_operand, Object::ToPrimitive(isolate, other_operand));
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, other_operand_string,
+        Object::ToString(isolate, other_operand));
+  }
+
+  auto f = isolate->factory();
+  auto other_operand_internalize =
+      IsInternalizedString(*other_operand_string)
+          ? Cast<InternalizedString>(other_operand_string)
+          : f->InternalizeString(other_operand_string);
+
+  auto lhs_internalize = lhs_is_string_constant
+                             ? Cast<String>(const_str_operand)
+                             : Cast<String>(other_operand_internalize);
+  auto rhs_internalize = lhs_is_string_constant
+                             ? Cast<String>(other_operand_internalize)
+                             : Cast<String>(const_str_operand);
+
+  if (IsUndefined(*maybe_feedback_vector)) {
+    DirectHandle<String> cons;
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, cons, f->NewConsString(lhs_internalize, rhs_internalize));
+    return *f->InternalizeString(cons);
+  }
+
+  auto feedback_vector = Cast<FeedbackVector>(maybe_feedback_vector);
+
+  FeedbackSlot cache_slot(FeedbackVector::ToSlot(
+      slot_index + kAdd_StringConstant_Internalize_CacheSlotOffset));
+  DCHECK_LT(cache_slot.ToInt(), feedback_vector->length());
+  Handle<Object> cache_obj(Cast<Object>(feedback_vector->Get(cache_slot)),
+                           isolate);
+  Handle<SimpleNameDictionary> cache;
+  if (*cache_obj == ReadOnlyRoots{isolate}.uninitialized_symbol()) {
+    cache = SimpleNameDictionary::New(isolate, 1);
+    feedback_vector->SynchronizedSet(cache_slot, *cache);
+  } else {
+    cache = Cast<SimpleNameDictionary>(cache_obj);
+  }
+
+  InternalIndex entry = cache->FindEntry(isolate, other_operand_internalize);
+  if (entry.is_found()) {
+    auto result = cache->ValueAt(entry);
+    DCHECK(IsInternalizedString(result));
+    return result;
+  }
+
+  DirectHandle<String> cons;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, cons, f->NewConsString(lhs_internalize, rhs_internalize));
+
+  auto internalized = f->InternalizeString(cons);
+  auto new_cache = SimpleNameDictionary::Set(
+      isolate, cache, other_operand_internalize, internalized);
+  if (*new_cache != *cache) {
+    feedback_vector->SynchronizedSet(cache_slot, *new_cache);
+  }
+
+  return *internalized;
+}
+
+}  // namespace
+
+RUNTIME_FUNCTION(Runtime_StringAdd_LhsIsStringConstant_Internalize) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(4, args.length());
+  DirectHandle<String> lhs = args.at<String>(0);
+  DirectHandle<Object> rhs = args.at<Object>(1);
+  Handle<HeapObject> maybe_feedback_vector = args.at<HeapObject>(2);
+  int slot_index = args.tagged_index_value_at(3);
+  return StringAdd_StringConstant_Internalize(isolate, lhs, rhs,
+                                              maybe_feedback_vector, slot_index,
+                                              ASVariant::kLhsIsStringConstant);
+}
+
+RUNTIME_FUNCTION(Runtime_StringAdd_RhsIsStringConstant_Internalize) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(4, args.length());
+  DirectHandle<Object> lhs = args.at<Object>(0);
+  DirectHandle<String> rhs = args.at<String>(1);
+  Handle<HeapObject> maybe_feedback_vector = args.at<HeapObject>(2);
+  int slot_index = args.tagged_index_value_at(3);
+  return StringAdd_StringConstant_Internalize(isolate, lhs, rhs,
+                                              maybe_feedback_vector, slot_index,
+                                              ASVariant::kRhsIsStringConstant);
+}
 
 RUNTIME_FUNCTION(Runtime_InternalizeString) {
   HandleScope handles(isolate);
   DCHECK_EQ(1, args.length());
-  Handle<String> string = args.at<String>(0);
+  DirectHandle<String> string = args.at<String>(0);
   return *isolate->factory()->InternalizeString(string);
 }
 
 RUNTIME_FUNCTION(Runtime_StringCharCodeAt) {
-  SaveAndClearThreadInWasmFlag non_wasm_scope(isolate);
   HandleScope handle_scope(isolate);
   DCHECK_EQ(2, args.length());
 
-  Handle<String> subject = args.at<String>(0);
+  DirectHandle<String> subject = args.at<String>(0);
   uint32_t i = NumberToUint32(args[1]);
 
   // Flatten the string.  If someone wants to get a char at an index
@@ -195,7 +302,7 @@ RUNTIME_FUNCTION(Runtime_StringCodePointAt) {
   HandleScope handle_scope(isolate);
   DCHECK_EQ(2, args.length());
 
-  Handle<String> subject = args.at<String>(0);
+  DirectHandle<String> subject = args.at<String>(0);
   uint32_t i = NumberToUint32(args[1]);
 
   // Flatten the string.  If someone wants to get a char at an index
@@ -288,7 +395,7 @@ RUNTIME_FUNCTION(Runtime_StringBuilderConcat) {
 RUNTIME_FUNCTION(Runtime_StringToArray) {
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
-  Handle<String> s = args.at<String>(0);
+  DirectHandle<String> s = args.at<String>(0);
   uint32_t limit = NumberToUint32(args[1]);
 
   s = String::Flatten(isolate, s);
@@ -307,11 +414,9 @@ RUNTIME_FUNCTION(Runtime_StringToArray) {
     // a LookupSingleCharacterStringFromCode for each of the characters.
     if (content.IsOneByte()) {
       base::Vector<const uint8_t> chars = content.ToOneByteVector();
-      Tagged<FixedArray> one_byte_table =
-          isolate->heap()->single_character_string_table();
+      ReadOnlyRoots roots(isolate);
       for (int i = 0; i < length; ++i) {
-        Tagged<Object> value = one_byte_table->get(chars[i]);
-        DCHECK(IsString(value));
+        Tagged<String> value = roots.single_character_string(chars[i]);
         DCHECK(ReadOnlyHeap::Contains(Cast<HeapObject>(value)));
         // The single-character strings are in RO space so it should
         // be safe to skip the write barriers.
@@ -383,16 +488,29 @@ RUNTIME_FUNCTION(Runtime_StringGreaterThanOrEqual) {
 }
 
 RUNTIME_FUNCTION(Runtime_StringEqual) {
-  SaveAndClearThreadInWasmFlag non_wasm_scope(isolate);
   HandleScope handle_scope(isolate);
   DCHECK_EQ(2, args.length());
-  DirectHandle<String> x = args.at<String>(0);
-  DirectHandle<String> y = args.at<String>(1);
+  // This function can be called from Wasm: optimized Wasm code calls
+  // straight to the "StringEqual" builtin, which tail-calls here. So on
+  // the stack, the CEntryStub's EXIT frame will sit right on top of the
+  // Wasm frame; and Wasm frames don't scan their outgoing parameters (in
+  // order to support tail-calls between Wasm functions), while the EXIT
+  // frame doesn't scan its incoming parameters (because it expects to be
+  // called from JS).
+  // Working around this by calling through a trampoline builtin is slow.
+  // Teaching the stack walker to be smarter has proven to be difficult.
+  // In the future, Conservative Stack Scanning will trivially solve the
+  // problem. In the meantime, we can work around it by explicitly creating
+  // handles here (rather than treating the on-stack arguments as handles).
+  //
+  // TODO(42203211): Don't create new handles here once direct handles and CSS
+  // are enabled by default.
+  DirectHandle<String> x(*args.at<String>(0), isolate);
+  DirectHandle<String> y(*args.at<String>(1), isolate);
   return isolate->heap()->ToBoolean(String::Equals(isolate, x, y));
 }
 
 RUNTIME_FUNCTION(Runtime_StringCompare) {
-  SaveAndClearThreadInWasmFlag non_wasm_scope(isolate);
   DCHECK_EQ(2, args.length());
   HandleScope scope(isolate);
   DirectHandle<String> lhs(Cast<String>(args[0]), isolate);
@@ -405,7 +523,7 @@ RUNTIME_FUNCTION(Runtime_StringCompare) {
 RUNTIME_FUNCTION(Runtime_FlattenString) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
-  Handle<String> str = args.at<String>(0);
+  DirectHandle<String> str = args.at<String>(0);
   return *String::Flatten(isolate, str);
 }
 

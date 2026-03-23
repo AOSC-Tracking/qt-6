@@ -63,8 +63,7 @@ class GPU_GLES2_EXPORT TextureOwner
   enum class Mode {
     kAImageReaderInsecure,
     kAImageReaderInsecureSurfaceControl,
-    kAImageReaderSecureSurfaceControl,
-    kSurfaceTextureInsecure
+    kAImageReaderSecureSurfaceControl
   };
 
   static scoped_refptr<TextureOwner> Create(
@@ -146,6 +145,8 @@ class GPU_GLES2_EXPORT TextureOwner
   AbstractTextureAndroid* texture() const { return texture_.get(); }
 
   int tracing_id() const { return tracing_id_; }
+
+  static constexpr char kMemoryDumpPrefix[] = "gpu/media_texture_owner_0x%x";
 
  private:
   friend class MockTextureOwner;

@@ -6,19 +6,76 @@
 
 #include <algorithm>
 
+#include "base/containers/map_util.h"
 #include "base/notreached.h"
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/enterprise/connectors/core/connectors_prefs.h"
+#include "components/signin/public/base/consent_level.h"
+#include "components/signin/public/identity_manager/identity_manager.h"
 
 #if BUILDFLAG(USE_BLINK)
-#include "components/download/public/common/download_item.h"
+#include "components/download/public/common/download_item.h"  // nogncheck
 #endif  // BUILDFLAG(USE_BLINK)
 
 namespace enterprise_connectors {
 
 namespace {
+
+inline constexpr auto kUmaEnumToStringMap =
+    base::MakeFixedFlatMap<EnterpriseReportingEventType, std::string_view>({
+        {EnterpriseReportingEventType::kPasswordReuseEvent,
+         kPasswordReuseUmaMetricName},
+        {EnterpriseReportingEventType::kPasswordChangedEvent,
+         kPasswordChangedUmaMetricName},
+        {EnterpriseReportingEventType::kDangerousDownloadEvent,
+         kDangerousDownloadUmaMetricName},
+        {EnterpriseReportingEventType::kInterstitialEvent,
+         kInterstitialUmaMetricName},
+        {EnterpriseReportingEventType::kSensitiveDataEvent,
+         kSensitiveDataUmaMetricName},
+        {EnterpriseReportingEventType::kUnscannedFileEvent,
+         kUnscannedFileUmaMetricName},
+        {EnterpriseReportingEventType::kLoginEvent, kLoginUmaMetricName},
+        {EnterpriseReportingEventType::kPasswordBreachEvent,
+         kPasswordBreachUmaMetricName},
+        {EnterpriseReportingEventType::kUrlFilteringInterstitialEvent,
+         kUrlFilteringInterstitialUmaMetricName},
+        {EnterpriseReportingEventType::kExtensionInstallEvent,
+         kExtensionInstallUmaMetricName},
+        {EnterpriseReportingEventType::kBrowserCrashEvent,
+         kBrowserCrashUmaMetricName},
+        {EnterpriseReportingEventType::kExtensionTelemetryEvent,
+         kExtensionTelemetryUmaMetricName},
+    });
+
+inline constexpr auto kEventCaseToUmaEnumMap =
+    base::MakeFixedFlatMap<EventCase, EnterpriseReportingEventType>({
+        {EventCase::kPasswordReuseEvent,
+         EnterpriseReportingEventType::kPasswordReuseEvent},
+        {EventCase::kPasswordChangedEvent,
+         EnterpriseReportingEventType::kPasswordChangedEvent},
+        {EventCase::kDangerousDownloadEvent,
+         EnterpriseReportingEventType::kDangerousDownloadEvent},
+        {EventCase::kInterstitialEvent,
+         EnterpriseReportingEventType::kInterstitialEvent},
+        {EventCase::kSensitiveDataEvent,
+         EnterpriseReportingEventType::kSensitiveDataEvent},
+        {EventCase::kUnscannedFileEvent,
+         EnterpriseReportingEventType::kUnscannedFileEvent},
+        {EventCase::kLoginEvent, EnterpriseReportingEventType::kLoginEvent},
+        {EventCase::kPasswordBreachEvent,
+         EnterpriseReportingEventType::kPasswordBreachEvent},
+        {EventCase::kUrlFilteringInterstitialEvent,
+         EnterpriseReportingEventType::kUrlFilteringInterstitialEvent},
+        {EventCase::kBrowserExtensionInstallEvent,
+         EnterpriseReportingEventType::kExtensionInstallEvent},
+        {EventCase::kBrowserCrashEvent,
+         EnterpriseReportingEventType::kBrowserCrashEvent},
+        {EventCase::kExtensionTelemetryEvent,
+         EnterpriseReportingEventType::kExtensionTelemetryEvent},
+    });
 
 ContentAnalysisAcknowledgement::FinalAction RuleActionToAckAction(
     TriggeredRule::Action action) {
@@ -330,6 +387,14 @@ EnterpriseReportingEventType GetUmaEnumFromEventName(
              : EnterpriseReportingEventType::kUnknownEvent;
 }
 
+
+EnterpriseReportingEventType GetUmaEnumFromEventCase(EventCase eventCase) {
+  auto it = kEventCaseToUmaEnumMap.find(eventCase);
+  return it != kEventCaseToUmaEnumMap.end()
+             ? it->second
+             : EnterpriseReportingEventType::kUnknownEvent;
+}
+
 std::string EventResultToString(EventResult result) {
   switch (result) {
     case EventResult::UNKNOWN:
@@ -342,6 +407,50 @@ std::string EventResultToString(EventResult result) {
       return "EVENT_RESULT_BLOCKED";
     case EventResult::BYPASSED:
       return "EVENT_RESULT_BYPASSED";
+  }
+  NOTREACHED();
+}
+
+std::string GetProfileEmail(signin::IdentityManager* identity_manager) {
+  // If the profile is not signed in, GetPrimaryAccountInfo() returns an
+  // empty account info.
+  return identity_manager
+             ? identity_manager
+                   ->GetPrimaryAccountInfo(signin::ConsentLevel::kSignin)
+                   .email
+             : std::string();
+}
+
+std::string GetSuccessfulUploadDurationUmaMetricName(
+    EnterpriseReportingEventType event_type) {
+  auto* metric_name = base::FindOrNull(kUmaEnumToStringMap, event_type);
+  return metric_name
+             ? base::StrCat({*metric_name, "UploadSuccess.Duration"})
+             : base::StrCat({kUnknownUmaMetricName, "UploadSuccess.Duration"});
+}
+
+std::string GetFailedUploadDurationUmaMetricName(
+    EnterpriseReportingEventType event_type) {
+  auto* metric_name = base::FindOrNull(kUmaEnumToStringMap, event_type);
+  return metric_name
+             ? base::StrCat({*metric_name, "UploadFailure.Duration"})
+             : base::StrCat({kUnknownUmaMetricName, "UploadFailure.Duration"});
+}
+
+std::string DeepScanAccessPointToString(DeepScanAccessPoint access_point) {
+  switch (access_point) {
+    case DeepScanAccessPoint::DOWNLOAD:
+      return "Download";
+    case DeepScanAccessPoint::UPLOAD:
+      return "Upload";
+    case DeepScanAccessPoint::DRAG_AND_DROP:
+      return "DragAndDrop";
+    case DeepScanAccessPoint::PASTE:
+      return "Paste";
+    case DeepScanAccessPoint::PRINT:
+      return "Print";
+    case DeepScanAccessPoint::FILE_TRANSFER:
+      return "FileTransfer";
   }
   NOTREACHED();
 }

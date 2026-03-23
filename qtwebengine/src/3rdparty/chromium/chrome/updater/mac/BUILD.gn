@@ -42,6 +42,11 @@ mac_info_plist("launcher_plist") {
       [ "MAC_BUNDLE_IDENTIFIER=$mac_updater_bundle_identifier" ]
 }
 
+bundle_data("updater_app_icon") {
+  sources = [ "$updater_app_icon_path" ]
+  outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
+}
+
 mac_app_bundle("updater_bundle") {
   info_plist_target = ":updater_plist"
   output_name = updater_product_full_name
@@ -54,6 +59,7 @@ mac_app_bundle("updater_bundle") {
     ":keystone_agent_bundle_resource_plist",
     ":ksadmin",
     ":ksadmin_link",
+    ":updater_app_icon",
     ":updater_bundle_helpers",
     ":updater_bundle_keystone_executable",
     ":updater_bundle_keystone_helpers_ksinstall",
@@ -76,6 +82,7 @@ mac_app_bundle("updater_bundle_test") {
     ":keystone_agent_bundle_resource_executable_test",
     ":keystone_agent_bundle_resource_plist",
     ":ksadmin_test_copy",
+    ":updater_app_icon",
     ":updater_bundle_helpers_launcher_test",
     ":updater_bundle_keystone_executable",
     ":updater_bundle_keystone_helpers_ksinstall",
@@ -185,9 +192,9 @@ action("updater_install_script") {
 
   args = [
     "-i",
-    rebase_path("setup/.install.sh"),
+    rebase_path("setup/.install.sh", root_build_dir),
     "-o",
-    rebase_path(root_out_dir + "/chrome/updater/.install"),
+    rebase_path(root_out_dir + "/chrome/updater/.install", root_build_dir),
     "-p",
     updater_product_full_name,
   ]
@@ -205,9 +212,9 @@ action("updater_test_install_script") {
 
   args = [
     "-i",
-    rebase_path("setup/.install.sh"),
+    rebase_path("setup/.install.sh", root_build_dir),
     "-o",
-    rebase_path(root_out_dir + "/.install"),
+    rebase_path(root_out_dir + "/.install", root_build_dir),
     "-p",
     updater_product_full_name + "_test",
   ]
@@ -225,10 +232,11 @@ action("browser_install_script") {
 
   args = [
     "-i",
-    rebase_path(".install.sh"),
+    rebase_path(".install.sh", root_build_dir),
     "-o",
     rebase_path(
-        root_out_dir + "/$browser_product_name Packaging/updater/.install"),
+        root_out_dir + "/$browser_product_name Packaging/updater/.install",
+        root_build_dir),
     "-v",
     chrome_version_full,
   ]
@@ -331,6 +339,7 @@ source_set("ksadmin_lib") {
     "//chrome/updater:base_app",
     "//chrome/updater:ks_ticket",
     "//chrome/updater:public_sources",
+    "//chrome/updater:tagging",
     "//chrome/updater:version_header",
   ]
 

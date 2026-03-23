@@ -177,7 +177,7 @@ SecurityOrigin::SecurityOrigin(const String& protocol,
   // code. The only problem is that can_load_local_resources_ would be set for
   // Local schemes and not LocalAccessAllowed schemes.
   if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(
-          StringUTF8Adaptor(protocol_).AsStringView())) {
+          StringUtf8Adaptor(protocol_).AsStringView())) {
     if (cs->has_port_component()) {
       if (!port_) {
         port_ = cs->default_port;
@@ -444,8 +444,7 @@ bool SecurityOrigin::CanDisplay(const KURL& url) const {
     return true;
 
   // Data URLs can always be displayed.
-  if (base::FeatureList::IsEnabled(features::kOptimizeLoadingDataUrls) &&
-      url.ProtocolIsData()) {
+  if (url.ProtocolIsData()) {
     return true;
   }
 
@@ -546,7 +545,7 @@ void SecurityOrigin::BuildRawString(StringBuilder& builder) const {
   //
   // Should match url::SchemeHostPort::Serialize().
   if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(
-          StringUTF8Adaptor(protocol_).AsStringView())) {
+          StringUtf8Adaptor(protocol_).AsStringView())) {
     builder.Append(protocol_);
     builder.Append(":");
     if (!cs->has_host_component()) {
@@ -761,11 +760,11 @@ String SecurityOrigin::CanonicalizeSpecialHost(const String& host,
   url::Component out_host;
   url::RawCanonOutputT<char> canon_output;
   if (host.Is8Bit()) {
-    StringUTF8Adaptor utf8(host);
+    StringUtf8Adaptor utf8(host);
     *success = url::CanonicalizeSpecialHost(
         utf8.data(), url::Component(0, utf8.size()), canon_output, out_host);
   } else {
-    *success = url::CanonicalizeSpecialHost(host.Characters16(),
+    *success = url::CanonicalizeSpecialHost(UNSAFE_TODO(host.Characters16()),
                                             url::Component(0, host.length()),
                                             canon_output, out_host);
   }
@@ -782,11 +781,11 @@ String SecurityOrigin::CanonicalizeHost(const String& host,
   url::Component out_host;
   url::RawCanonOutputT<char> canon_output;
   if (host.Is8Bit()) {
-    StringUTF8Adaptor utf8(host);
+    StringUtf8Adaptor utf8(host);
     *success = url::CanonicalizeFileHost(
         utf8.data(), url::Component(0, utf8.size()), canon_output, out_host);
   } else {
-    *success = url::CanonicalizeFileHost(host.Characters16(),
+    *success = url::CanonicalizeFileHost(UNSAFE_TODO(host.Characters16()),
                                          url::Component(0, host.length()),
                                          canon_output, out_host);
   }

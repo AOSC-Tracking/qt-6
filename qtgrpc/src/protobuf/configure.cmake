@@ -7,6 +7,7 @@ set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)
 qt_find_package(protobuf
     MODULE_NAME global
     NAMES protobuf Protobuf
+    VCPKG_PORT protobuf
 )
 if(NOT protobuf_FOUND)
     # Attempt looking in MODULE mode
@@ -44,6 +45,7 @@ int main(void)
 qt_config_compile_test(libprotoc
     LIBRARIES
         protobuf::libprotoc
+        protobuf::libprotobuf
     CODE
 "#include <google/protobuf/compiler/plugin.h>
 

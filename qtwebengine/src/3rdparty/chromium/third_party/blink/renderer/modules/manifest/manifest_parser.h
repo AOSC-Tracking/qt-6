@@ -11,12 +11,11 @@
 #include <string>
 
 #include "base/types/strong_alias.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
 #include "third_party/blink/public/common/manifest/manifest.h"
-#include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
 #include "third_party/blink/public/common/safe_url_pattern.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom-blink.h"
-#include "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom-blink.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
@@ -277,6 +276,14 @@ class MODULES_EXPORT ManifestParser {
   Vector<mojom::blink::ManifestImageResourcePtr> ParseIcons(
       const JSONObject* object);
 
+  // Parses the 'icons_localized' field of a Manifest, as defined in:
+  // https://w3c.github.io/manifest/#dfn-process-a-_localized-image-resource-member
+  // Returns a map of locale strings to vectors of ManifestImageResourcePtr with
+  // the successfully parsed localized icons, if any. An empty map is returned
+  // if the field was not present or empty.
+  HashMap<String, Vector<mojom::blink::ManifestImageResourcePtr>>
+  ParseIconsLocalized(const JSONObject* object);
+
   // Parses the 'screenshots' field of a Manifest, as defined in:
   // https://www.w3.org/TR/manifest-app-info/#screenshots-member
   // Returns a vector of ManifestImageResourcePtr with the successfully parsed
@@ -528,8 +535,8 @@ class MODULES_EXPORT ManifestParser {
   // Parses the 'permissions_policy' field of the manifest.
   // This outsources semantic parsing of the policy to the
   // PermissionsPolicyParser.
-  Vector<blink::ParsedPermissionsPolicyDeclaration> ParseIsolatedAppPermissions(
-      const JSONObject* object);
+  Vector<network::ParsedPermissionsPolicyDeclaration>
+  ParseIsolatedAppPermissions(const JSONObject* object);
   Vector<String> ParseOriginAllowlist(const JSONArray* allowlist,
                                       const String& feature);
 
@@ -559,6 +566,18 @@ class MODULES_EXPORT ManifestParser {
   // Helper method to parse individual scope patterns.
   std::optional<SafeUrlPattern> ParseScopePattern(const PatternInit& init,
                                                   const KURL& base_url);
+
+  HashMap<String, mojom::blink::ManifestLocalizedTextObjectPtr>
+  ParseLocalizedField(const JSONObject* object, const String& field_name);
+
+  HashMap<String, mojom::blink::ManifestLocalizedTextObjectPtr>
+  ParseNameLocalized(const JSONObject* object);
+
+  HashMap<String, mojom::blink::ManifestLocalizedTextObjectPtr>
+  ParseShortNameLocalized(const JSONObject* object);
+
+  HashMap<String, mojom::blink::ManifestLocalizedTextObjectPtr>
+  ParseDescriptionLocalized(const JSONObject* object);
 
   std::optional<PatternInit> MaybeCreatePatternInit(
       const JSONObject* pattern_object);

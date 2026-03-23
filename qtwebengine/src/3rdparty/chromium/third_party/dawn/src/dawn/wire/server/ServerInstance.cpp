@@ -51,7 +51,7 @@ WireResult Server::DoInstanceRequestAdapter(Known<WGPUInstance> instance,
     mProcs.instanceRequestAdapter(
         instance->handle, options,
         {nullptr, WGPUCallbackMode_AllowSpontaneous,
-         ForwardToServer2<&Server::OnRequestAdapterCallback>, userdata.release(), nullptr});
+         ForwardToServer<&Server::OnRequestAdapterCallback>, userdata.release(), nullptr});
     return WireResult::Success;
 }
 
@@ -73,7 +73,7 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
 
     // Assign the handle and allocated status if the adapter is created successfully.
     if (FillReservation(data->adapterObjectId, adapter) == WireResult::FatalError) {
-        cmd.status = WGPURequestAdapterStatus_InstanceDropped;
+        cmd.status = WGPURequestAdapterStatus_CallbackCancelled;
         cmd.message = ToOutputStringView("Destroyed before request was fulfilled.");
         SerializeCommand(cmd);
         return;
@@ -113,35 +113,34 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
         propertiesChain = &(*propertiesChain)->next;
     }
 
-    // Query AdapterPropertiesSubgroups if the feature is supported.
-    WGPUAdapterPropertiesSubgroups subgroupsProperties = {};
-    subgroupsProperties.chain.sType = WGPUSType_AdapterPropertiesSubgroups;
-    if (mProcs.adapterHasFeature(adapter, WGPUFeatureName_Subgroups)) {
-        *propertiesChain = &subgroupsProperties.chain;
+    // Query AdapterPropertiesSubgroupMatrixConfigs if the feature is supported.
+    FreeMembers<WGPUAdapterPropertiesSubgroupMatrixConfigs> subgroupMatrixConfigs(mProcs);
+    // WGPUAdapterPropertiesSubgroupMatrixConfigs subgroupMatrixConfigs{};
+    subgroupMatrixConfigs.chain.sType = WGPUSType_AdapterPropertiesSubgroupMatrixConfigs;
+    if (mProcs.adapterHasFeature(adapter, WGPUFeatureName_ChromiumExperimentalSubgroupMatrix)) {
+        *propertiesChain = &subgroupMatrixConfigs.chain;
         propertiesChain = &(*propertiesChain)->next;
     }
+
+    WGPUDawnAdapterPropertiesPowerPreference powerProperties = {};
+    powerProperties.chain.sType = WGPUSType_DawnAdapterPropertiesPowerPreference;
+    *propertiesChain = &powerProperties.chain;
+    propertiesChain = &(*propertiesChain)->next;
 
     mProcs.adapterGetInfo(adapter, &info);
     cmd.info = &info;
 
-    // Query and report the adapter limits, including DawnExperimentalSubgroupLimits,
-    // DawnExperimentalImmediateDataLimits, and DawnTexelCopyBufferRowAlignmentLimits.
-    WGPUSupportedLimits limits = {};
-
-    // TODO(crbug.com/354751907) Remove this, as it is now in AdapterInfo.
-    WGPUDawnExperimentalSubgroupLimits experimentalSubgroupLimits = {};
-    experimentalSubgroupLimits.chain.sType = WGPUSType_DawnExperimentalSubgroupLimits;
-    limits.nextInChain = &experimentalSubgroupLimits.chain;
-
-    // Chained DawnExperimentalImmediateDataLimits.
-    WGPUDawnExperimentalImmediateDataLimits experimentalImmediateDataLimits = {};
-    experimentalImmediateDataLimits.chain.sType = WGPUSType_DawnExperimentalImmediateDataLimits;
-    experimentalSubgroupLimits.chain.next = &experimentalImmediateDataLimits.chain;
-
+    // Query and report the adapter limits, including all known extension limits.
+    // TODO(crbug.com/421950205): Use dawn::utils::ComboLimits here.
+    WGPULimits limits = {};
+    // Chained CompatibilityModeLimits.
+    WGPUCompatibilityModeLimits compatLimits = WGPU_COMPATIBILITY_MODE_LIMITS_INIT;
+    compatLimits.chain.sType = WGPUSType_CompatibilityModeLimits;
+    limits.nextInChain = &compatLimits.chain;
     // Chained DawnTexelCopyBufferRowAlignmentLimits.
-    WGPUDawnTexelCopyBufferRowAlignmentLimits texelCopyBufferRowAlignmentLimits = {};
-    texelCopyBufferRowAlignmentLimits.chain.sType = WGPUSType_DawnTexelCopyBufferRowAlignmentLimits;
-    experimentalImmediateDataLimits.chain.next = &texelCopyBufferRowAlignmentLimits.chain;
+    WGPUDawnTexelCopyBufferRowAlignmentLimits texelCopyBufferRowAlignmentLimits =
+        WGPU_DAWN_TEXEL_COPY_BUFFER_ROW_ALIGNMENT_LIMITS_INIT;
+    compatLimits.chain.next = &texelCopyBufferRowAlignmentLimits.chain;
 
     mProcs.adapterGetLimits(adapter, &limits);
     cmd.limits = &limits;

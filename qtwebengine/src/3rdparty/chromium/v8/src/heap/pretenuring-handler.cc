@@ -9,6 +9,7 @@
 #include "src/flags/flags.h"
 #include "src/handles/global-handles-inl.h"
 #include "src/heap/gc-tracer-inl.h"
+#include "src/heap/heap-layout.h"
 #include "src/heap/new-spaces.h"
 #include "src/objects/allocation-site-inl.h"
 
@@ -142,8 +143,9 @@ void PretenuringHandler::MergeAllocationSitePretenuringFeedback(
   Tagged<AllocationSite> site;
   for (auto& site_and_count : local_pretenuring_feedback) {
     site = site_and_count.first;
-    MapWord map_word = site->map_word(cage_base, kRelaxedLoad);
+    MapWord map_word = site->map_word(kRelaxedLoad);
     if (map_word.IsForwardingAddress()) {
+      DCHECK(!HeapLayout::IsSelfForwarded(site, map_word));
       site = Cast<AllocationSite>(map_word.ToForwardingAddress(site));
     }
 

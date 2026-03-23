@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_WASM_WASM_FEATURES_H_
+#define V8_WASM_WASM_FEATURES_H_
+
 #if !V8_ENABLE_WEBASSEMBLY
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
-
-#ifndef V8_WASM_WASM_FEATURES_H_
-#define V8_WASM_WASM_FEATURES_H_
 
 #include <iosfwd>
 #include <string>
@@ -28,8 +28,13 @@
   V(relaxed_simd)                        \
   V(gc)                                  \
   V(typed_funcref)                       \
-  V(js_inlining)                         \
-  V(multi_memory)
+  V(multi_memory)                        \
+  V(multi_value)                         \
+  V(memory64)                            \
+  V(bulk_memory)                         \
+  V(mutable_globals)                     \
+  V(non_trapping_float_to_int)           \
+  V(sign_extension_ops)
 
 // All features, including features that do not have flags.
 #define FOREACH_WASM_FEATURE(V) \
@@ -84,12 +89,15 @@ class WasmEnabledFeatures : public base::EnumSet<WasmEnabledFeature> {
 
 // Set of detected features. This includes features that have a flag plus
 // features in FOREACH_WASM_NON_FLAG_FEATURE.
-class WasmDetectedFeatures : public base::EnumSet<WasmDetectedFeature> {
+class WasmDetectedFeatures
+    : public base::EnumSet<WasmDetectedFeature, uint64_t> {
  public:
   constexpr WasmDetectedFeatures() = default;
   // Construct from an enum set.
-  constexpr WasmDetectedFeatures(base::EnumSet<WasmDetectedFeature> features)
-      : base::EnumSet<WasmDetectedFeature>(features) {}
+  // NOLINTNEXTLINE(runtime/explicit)
+  constexpr WasmDetectedFeatures(
+      base::EnumSet<WasmDetectedFeature, uint64_t> features)
+      : base::EnumSet<WasmDetectedFeature, uint64_t>(features) {}
 
   // Simplified getters and setters. Use {add_foo()} and {has_foo()} instead of
   // {Add(WasmDetectedFeature::foo)} or {contains(WasmDetectedFeature::foo)}.
@@ -135,6 +143,7 @@ enum class CompileTimeImport {
   kStringConstants,
   kTextEncoder,
   kTextDecoder,
+  kJsPrototypes,
   // Not really an import, but needs the same handling as compile-time imports.
   kDisableDenormalFloats,
 };

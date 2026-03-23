@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <memory>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/containers/span.h"
@@ -23,6 +24,7 @@
 #include "media/formats/mp4/avc.h"
 #include "media/formats/mp4/box_definitions.h"
 #include "media/formats/mp4/box_reader.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
 #include "media/parsers/h265_parser.h"
 #else
@@ -231,6 +233,10 @@ bool HEVCDecoderConfigurationRecord::ParseInternal(BufferReader* reader,
   // Parse the color space and hdr metadata.
   std::vector<uint8_t> param_sets;
   HEVC::ConvertConfigToAnnexB(*this, &param_sets);
+  if (param_sets.empty()) {
+    // No parameters, nothing to parse below.
+    return true;
+  }
   H265Parser parser;
   H265NALU nalu;
   parser.SetStream(param_sets.data(), param_sets.size());
@@ -279,18 +285,18 @@ bool HEVCDecoderConfigurationRecord::ParseInternal(BufferReader* reader,
           DVLOG(1) << "Could not parse SEI";
           break;
         }
-        for (auto& sei_msg : sei.msgs) {
-          switch (sei_msg.type) {
-            case H265SEIMessage::kSEIContentLightLevelInfo:
-              hdr_metadata.cta_861_3 = sei_msg.content_light_level_info.ToGfx();
-              break;
-            case H265SEIMessage::kSEIMasteringDisplayInfo:
-              hdr_metadata.smpte_st_2086 =
-                  sei_msg.mastering_display_info.ToGfx();
-              break;
-            default:
-              break;
-          }
+        for (const auto& sei_msg : sei.msgs) {
+          std::visit(absl::Overload{
+                         [](const H265SEIAlphaChannelInfo& info) {},
+                         [&](const H265SEIContentLightLevelInfo& info) {
+                           hdr_metadata.cta_861_3 = info.ToGfx();
+                         },
+                         [&](const H265SEIMasteringDisplayInfo& info) {
+                           hdr_metadata.smpte_st_2086 = info.ToGfx();
+                         },
+                         [](std::monostate) {},
+                     },
+                     sei_msg);
         }
         break;
       }
@@ -378,7 +384,7 @@ bool HEVC::InsertParamSetsAnnexB(
   // Clear |parser| and |start| since they aren't needed anymore and
   // will hold stale pointers once the insert happens.
   parser.reset();
-  start = NULL;
+  start = nullptr;
 
   std::vector<uint8_t> param_sets;
   HEVC::ConvertConfigToAnnexB(hevc_config, &param_sets);
@@ -389,7 +395,8 @@ bool HEVC::InsertParamSetsAnnexB(
   if (subsamples && !subsamples->empty()) {
     int subsample_index = AVC::FindSubsampleIndex(*buffer, subsamples,
                                                   &(*config_insert_point));
-    // Update the size of the subsample where VPS/SPS/PPS is to be inserted.
+    // Update the size of the subsample where VPS/SPS/PPS and SEI messages are
+    // to be inserted.
     (*subsamples)[subsample_index].clear_bytes += param_sets.size();
   }
 

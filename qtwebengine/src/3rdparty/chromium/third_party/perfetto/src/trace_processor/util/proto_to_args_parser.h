@@ -17,15 +17,24 @@
 #ifndef SRC_TRACE_PROCESSOR_UTIL_PROTO_TO_ARGS_PARSER_H_
 #define SRC_TRACE_PROCESSOR_UTIL_PROTO_TO_ARGS_PARSER_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <optional>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <vector>
 
 #include "perfetto/base/status.h"
 #include "perfetto/protozero/field.h"
-#include "protos/perfetto/trace/interned_data/interned_data.pbzero.h"
+#include "perfetto/protozero/proto_utils.h"
 #include "src/trace_processor/util/descriptors.h"
+#include "src/trace_processor/util/interned_message_view.h"
 
-namespace perfetto {
-namespace trace_processor {
+#include "protos/perfetto/trace/interned_data/interned_data.pbzero.h"
+
+namespace perfetto::trace_processor {
 
 // TODO(altimin): Move InternedMessageView into trace_processor/util.
 class InternedMessageView;
@@ -248,20 +257,13 @@ class ProtoToArgsParser {
                                  ParsingOverrideForType parsing_override);
 
  private:
-  base::Status ParseField(const FieldDescriptor& field_descriptor,
-                          int repeated_field_number,
-                          protozero::Field field,
-                          Delegate& delegate,
-                          int* unknown_extensions,
-                          bool add_defaults);
+  struct WorkItem;
 
   base::Status ParsePackedField(
       const FieldDescriptor& field_descriptor,
       std::unordered_map<size_t, int>& repeated_field_index,
       protozero::Field field,
-      Delegate& delegate,
-      int* unknown_extensions,
-      bool add_defaults);
+      Delegate& delegate);
 
   std::optional<base::Status> MaybeApplyOverrideForField(
       const protozero::Field&,
@@ -273,21 +275,12 @@ class ProtoToArgsParser {
       const protozero::ConstBytes& data,
       Delegate& delegate);
 
-  // A type override can call |key.RemoveFieldSuffix()| if it wants to exclude
-  // the overriden field's name from the parsed args' keys.
-  base::Status ParseMessageInternal(ScopedNestedKeyContext& key,
-                                    const protozero::ConstBytes& cb,
-                                    const std::string& type,
-                                    const std::vector<uint32_t>* fields,
-                                    Delegate& delegate,
-                                    int* unknown_extensions,
-                                    bool add_defaults = false);
-
-  base::Status ParseSimpleField(const FieldDescriptor& desciptor,
+  base::Status ParseSimpleField(const FieldDescriptor& descriptor,
                                 const protozero::Field& field,
                                 Delegate& delegate);
 
-  base::Status AddDefault(const FieldDescriptor& desciptor, Delegate& delegate);
+  base::Status AddDefault(const FieldDescriptor& descriptor,
+                          Delegate& delegate);
 
   base::Status AddEnum(const FieldDescriptor& descriptor,
                        int32_t value,
@@ -300,7 +293,6 @@ class ProtoToArgsParser {
 };
 
 }  // namespace util
-}  // namespace trace_processor
-}  // namespace perfetto
+}  // namespace perfetto::trace_processor
 
 #endif  // SRC_TRACE_PROCESSOR_UTIL_PROTO_TO_ARGS_PARSER_H_

@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -17,7 +18,6 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
 #include "build/buildflag.h"
-#include "crypto/ec_private_key.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/completion_repeating_callback.h"
 #include "net/base/net_error_details.h"
@@ -82,15 +82,14 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   void DoneReading() override;
   const HttpResponseInfo* GetResponseInfo() const override;
   LoadState GetLoadState() const override;
-  void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
+  void PopulateLoadTimingInternalInfo(
+      LoadTimingInternalInfo* load_timing_internal_info) const override;
   bool GetRemoteEndpoint(IPEndPoint* endpoint) const override;
   void PopulateNetErrorDetails(NetErrorDetails* details) const override;
   void SetPriority(RequestPriority priority) override;
   void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
-  void SetBeforeNetworkStartCallback(
-      BeforeNetworkStartCallback callback) override;
   void SetConnectedCallback(const ConnectedCallback& callback) override;
   void SetRequestHeadersCallback(RequestHeadersCallback callback) override;
   void SetEarlyResponseHeadersCallback(
@@ -100,7 +99,6 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
       base::RepeatingCallback<void(HttpRequestHeaders*)> callback) override;
   void SetIsSharedDictionaryReadAllowedCallback(
       base::RepeatingCallback<bool()> callback) override;
-  int ResumeNetworkStart() override;
   void CloseConnectionOnDestruction() override;
   bool IsMdlMatchForMetrics() const override;
 
@@ -124,9 +122,6 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   void OnNeedsClientAuth(SSLCertRequestInfo* cert_info) override;
 
   void OnQuicBroken() override;
-
-  void OnSwitchesToHttpStreamPool(
-      HttpStreamPoolRequestInfo request_info) override;
 
   ConnectionAttempts GetConnectionAttempts() const override;
 
@@ -154,7 +149,6 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
                            FlowControlNegativeSendWindowSize);
 
   enum State {
-    STATE_NOTIFY_BEFORE_CREATE_STREAM,
     STATE_CREATE_STREAM,
     STATE_CREATE_STREAM_COMPLETE,
     STATE_INIT_STREAM,
@@ -196,13 +190,12 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // argument receive the result from the previous state.  If a method returns
   // ERR_IO_PENDING, then the result from OnIOComplete will be passed to the
   // next state method as the result arg.
-  int DoNotifyBeforeCreateStream();
   int DoCreateStream();
   int DoCreateStreamComplete(int result);
-  int DoInitStream();
-  int DoInitStreamComplete(int result);
   int DoConnectedCallback();
   int DoConnectedCallbackComplete(int result);
+  int DoInitStream();
+  int DoInitStreamComplete(int result);
   int DoGenerateProxyAuthToken();
   int DoGenerateProxyAuthTokenComplete(int result);
   int DoGenerateServerAuthToken();
@@ -352,6 +345,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   void RecordStreamRequestResult(int result);
 
+  void ProcessAltSvcHeader();
+
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
   enum class QuicProtocolErrorRetryStatus {
@@ -366,8 +361,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   static void SetProxyInfoInResponse(const ProxyInfo& proxy_info,
                                      HttpResponseInfo* response_info);
 
-  scoped_refptr<HttpAuthController>
-      auth_controllers_[HttpAuth::AUTH_NUM_TARGETS];
+  std::array<scoped_refptr<HttpAuthController>, HttpAuth::AUTH_NUM_TARGETS>
+      auth_controllers_;
 
   // Whether this transaction is waiting for proxy auth, server auth, or is
   // not waiting for any auth at all. |pending_auth_target_| is read and
@@ -446,8 +441,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // transaction.
   int64_t total_sent_bytes_ = 0;
 
-  // When the transaction started creating a stream.
+  // When the transaction started / finished creating a stream.
   base::TimeTicks create_stream_start_time_;
+  base::TimeTicks create_stream_end_time_;
 
   // When the transaction started / finished sending the request, including
   // the body, if present. |send_start_time_| is set to |base::TimeTicks()|
@@ -468,7 +464,11 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   // Enable pooling to a SpdySession with matching IP and certificate
   // even if the SpdySessionKey is different.
-  bool enable_ip_based_pooling_ = true;
+  // While QUIC also has a notion of IP based pooling / connection aliasing,
+  // this field does not affect QUIC. `enable_alternative_services_` is always
+  // set to false when this field is, which disables QUIC. If that ever changes,
+  // this field should probably be wired up to QUIC sessions as well.
+  bool enable_ip_based_pooling_for_h2_ = true;
 
   // Enable using alternative services for the request.
   bool enable_alternative_services_ = true;
@@ -482,7 +482,6 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   raw_ptr<WebSocketHandshakeStreamBase::CreateHelper>
       websocket_handshake_stream_base_create_helper_ = nullptr;
 
-  BeforeNetworkStartCallback before_network_start_callback_;
   ConnectedCallback connected_callback_;
   RequestHeadersCallback request_headers_callback_;
   ResponseHeadersCallback early_response_headers_callback_;
@@ -520,9 +519,17 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   base::TimeTicks dns_resolution_start_time_override_;
   base::TimeTicks dns_resolution_end_time_override_;
 
+  // The time at which initialize stream started / ended.
+  base::TimeTicks initialize_stream_start_time_;
+  base::TimeTicks initialize_stream_end_time_;
+
   base::TimeTicks blocked_initialize_stream_start_time_;
   base::TimeTicks blocked_generate_proxy_auth_token_start_time_;
   base::TimeTicks blocked_generate_server_auth_token_start_time_;
+
+  // Timing information for the connected callback.
+  base::TimeTicks connected_callback_start_time_;
+  base::TimeTicks connected_callback_end_time_;
 
   // The number of bytes of the body received from network.
   int64_t received_body_bytes_ = 0;

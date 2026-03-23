@@ -26,9 +26,9 @@
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 
 #include <array>
+#include <string_view>
 
 #include "base/trace_event/trace_event.h"
-#include "third_party/blink/renderer/core/clipboard/clipboard_mime_types.h"
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer_access_policy.h"
@@ -98,6 +98,7 @@
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/unicode.h"
+#include "ui/base/clipboard/clipboard_constants.h"
 
 namespace blink {
 
@@ -105,12 +106,12 @@ using mojom::blink::FormControlType;
 
 namespace {
 
-std::ostream& operator<<(std::ostream& os, PositionMoveType type) {
-  static const std::array<const char*, 3> kTexts = {
+std::string_view ToString(PositionMoveType type) {
+  static const std::array<std::string_view, 3> kTexts = {
       "CodeUnit", "BackwardDeletion", "GraphemeCluster"};
   DCHECK_LT(static_cast<size_t>(type), kTexts.size())
       << "Unknown PositionMoveType value";
-  return os << kTexts[static_cast<size_t>(type)];
+  return kTexts[static_cast<size_t>(type)];
 }
 
 UChar WhitespaceRebalancingCharToAppend(const String& string,
@@ -124,19 +125,20 @@ UChar WhitespaceRebalancingCharToAppend(const String& string,
     return string[index];
 
   if (!index && start_is_start_of_paragraph)
-    return kNoBreakSpaceCharacter;
+    return uchar::kNoBreakSpace;
   if (index + 1 == string.length() && should_emit_nbsp_before_end)
-    return kNoBreakSpaceCharacter;
+    return uchar::kNoBreakSpace;
 
   // Generally, alternate between space and no-break space.
   if (previous == ' ')
-    return kNoBreakSpaceCharacter;
-  if (previous == kNoBreakSpaceCharacter)
+    return uchar::kNoBreakSpace;
+  if (previous == uchar::kNoBreakSpace) {
     return ' ';
+  }
 
   // Run of two or more spaces starts with a no-break space (crbug.com/453042).
   if (index + 1 < string.length() && IsWhitespace(string[index + 1]))
-    return kNoBreakSpaceCharacter;
+    return uchar::kNoBreakSpace;
 
   return ' ';
 }
@@ -190,6 +192,21 @@ bool IsNodeFullyContained(const EphemeralRange& range, const Node& node) {
          Position::AfterNode(node) <= range.EndPosition();
 }
 
+bool EnsureNodeVisibility(HTMLElement* container) {
+  bool style_changed = false;
+  if (container->GetComputedStyle()->Visibility() == EVisibility::kHidden) {
+    container->SetInlineStyleProperty(CSSPropertyID::kVisibility,
+                                      CSSValueID::kVisible, true);
+    style_changed = true;
+  }
+  if (container->GetComputedStyle()->Display() == EDisplay::kNone) {
+    container->SetInlineStyleProperty(CSSPropertyID::kDisplay,
+                                      CSSValueID::kInline, true);
+    style_changed = true;
+  }
+  return style_changed;
+}
+
 // TODO(editing-dev): We should implement real version which refers
 // "user-select" CSS property.
 bool IsUserSelectContain(const Node& node) {
@@ -211,8 +228,17 @@ static bool HasEditableLevel(const Node& node, EditableLevel editable_level) {
   // would fire in the middle of Document::setFocusedNode().
 
   for (const Node& ancestor : NodeTraversal::InclusiveAncestorsOf(node)) {
-    if (!(ancestor.IsHTMLElement() || ancestor.IsDocumentNode()))
+    if (!(ancestor.IsHTMLElement() || ancestor.IsDocumentNode())) {
       continue;
+    }
+    // If the `ancestor` is a child of the shadow host and does not have a slot
+    // assigned, it should use the style of the shadow host and therefore be
+    // skipped.
+    // See https://issues.chromium.org/issues/392725745 for more details.
+    if (RuntimeEnabledFeatures::UseShadowHostStyleCheckEditableEnabled() &&
+        ancestor.IsChildOfShadowHost() && !ancestor.AssignedSlot()) {
+      continue;
+    }
     if (const ComputedStyle* style =
             GetComputedStyleForElementOrLayoutObject(ancestor)) {
       switch (style->UsedUserModify()) {
@@ -734,7 +760,7 @@ PositionTemplate<Strategy> PreviousPositionOfAlgorithm(
         return PositionTemplate<Strategy>(
             node, PreviousGraphemeBoundaryOf(*node, offset));
       default:
-        NOTREACHED() << "Unhandled moveType: " << move_type;
+        NOTREACHED() << "Unhandled moveType: " << ToString(move_type);
     }
   }
 
@@ -796,7 +822,7 @@ PositionTemplate<Strategy> NextPositionOfAlgorithm(
         return PositionTemplate<Strategy>::EditingPositionOf(
             node, NextGraphemeBoundaryOf(*node, offset));
       default:
-        NOTREACHED() << "Unhandled moveType: " << move_type;
+        NOTREACHED() << "Unhandled moveType: " << ToString(move_type);
     }
   }
 
@@ -1597,7 +1623,7 @@ gfx::QuadF LocalToAbsoluteQuadOf(const LocalCaretRect& caret_rect) {
   return caret_rect.layout_object->LocalRectToAbsoluteQuad(caret_rect.rect);
 }
 
-const StaticRangeVector* TargetRangesForInputEvent(const Node& node) {
+const GCedStaticRangeVector* TargetRangesForInputEvent(const Node& node) {
   // TODO(editing-dev): The use of UpdateStyleAndLayout
   // needs to be audited. see http://crbug.com/590369 for more details.
   node.GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
@@ -1610,14 +1636,15 @@ const StaticRangeVector* TargetRangesForInputEvent(const Node& node) {
                                 .ComputeVisibleSelectionInDOMTree());
   if (range.IsNull())
     return nullptr;
-  return MakeGarbageCollected<StaticRangeVector>(1, StaticRange::Create(range));
+  return MakeGarbageCollected<GCedStaticRangeVector>(
+      1, StaticRange::Create(range));
 }
 
 DispatchEventResult DispatchBeforeInputInsertText(
     Node* target,
     const String& data,
     InputEvent::InputType input_type,
-    const StaticRangeVector* ranges) {
+    const GCedStaticRangeVector* ranges) {
   if (!target)
     return DispatchEventResult::kNotCanceled;
   // TODO(editing-dev): Pass appropriate |ranges| after it's defined on spec.
@@ -1631,7 +1658,7 @@ DispatchEventResult DispatchBeforeInputInsertText(
 DispatchEventResult DispatchBeforeInputEditorCommand(
     Node* target,
     InputEvent::InputType input_type,
-    const StaticRangeVector* ranges) {
+    const GCedStaticRangeVector* ranges) {
   if (!target)
     return DispatchEventResult::kNotCanceled;
   InputEvent* before_input_event = InputEvent::CreateBeforeInput(
@@ -1660,7 +1687,7 @@ DispatchEventResult DispatchBeforeInputDataTransfer(
         input_type, data_transfer, InputEvent::EventIsComposing::kNotComposing,
         TargetRangesForInputEvent(*target));
   } else {
-    const String& data = data_transfer->getData(kMimeTypeTextPlain);
+    const String& data = data_transfer->getData(ui::kMimeTypePlainText);
     // TODO(editing-dev): Pass appropriate |ranges| after it's defined on spec.
     // http://w3c.github.io/editing/input-events.html#dom-inputevent-inputtype
     before_input_event = InputEvent::CreateBeforeInput(

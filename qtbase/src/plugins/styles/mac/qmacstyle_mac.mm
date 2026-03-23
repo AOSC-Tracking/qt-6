@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 /*
   Note: The qdoc comments for QMacStyle are contained in
@@ -17,6 +18,7 @@
 #include <QtCore/qoperatingsystemversion.h>
 #include <QtCore/qvariant.h>
 #include <QtCore/qvarlengtharray.h>
+#include <QtCore/qloggingcategory.h>
 
 #include <QtCore/private/qcore_mac_p.h>
 
@@ -47,6 +49,8 @@
 #include <cmath>
 
 QT_USE_NAMESPACE
+
+Q_STATIC_LOGGING_CATEGORY(lcMacStyle, "qt.widgets.styles.macos");
 
 @interface QT_MANGLE_NAMESPACE(QIndeterminateProgressIndicator) : NSProgressIndicator
 
@@ -763,6 +767,18 @@ static bool qt_macWindowMainWindow(const QWidget *window)
         }
     }
     return false;
+}
+
+static NSUserInterfaceLayoutDirection qt_macLayoutDirectionFromQt(Qt::LayoutDirection direction)
+{
+    switch (direction) {
+    case Qt::LeftToRight:
+        return NSUserInterfaceLayoutDirectionLeftToRight;
+    case Qt::RightToLeft:
+        return NSUserInterfaceLayoutDirectionRightToLeft;
+    case Qt::LayoutDirectionAuto:
+        return [NSApp userInterfaceLayoutDirection];
+    }
 }
 
 /*****************************************************************************
@@ -1741,10 +1757,16 @@ QRectF QMacStylePrivate::CocoaControl::adjustedControlFrame(const QRectF &rect) 
 QMarginsF QMacStylePrivate::CocoaControl::titleMargins() const
 {
     if (type == QMacStylePrivate::Button_PushButton) {
-        if (size == QStyleHelper::SizeLarge)
+        if (size == QStyleHelper::SizeLarge) {
+            if (qt_apple_runningWithLiquidGlass())
+                return QMarginsF(12, 6, 12, 8);
             return QMarginsF(12, 5, 12, 9);
-        if (size == QStyleHelper::SizeSmall)
+        }
+        if (size == QStyleHelper::SizeSmall) {
+            if (qt_apple_runningWithLiquidGlass())
+                return QMarginsF(12, 6, 12, 7);
             return QMarginsF(12, 4, 12, 9);
+        }
         if (size == QStyleHelper::SizeMini)
             return QMarginsF(10, 1, 10, 2);
     }
@@ -2135,6 +2157,10 @@ void QMacStylePrivate::drawNSViewInRect(NSView *view, const QRectF &rect, QPaint
                                         __attribute__((noescape)) DrawRectBlock drawRectBlock) const
 {
     QMacCGContext ctx(p);
+    if (!ctx) {
+        qCWarning(lcMacStyle) << "Invalid (nullptr) graphics context, cannot draw NSView.";
+        return;
+    }
     setupNSGraphicsContext(ctx, YES);
 
     // FIXME: The rect that we get in is relative to the widget that we're drawing
@@ -3167,6 +3193,9 @@ void QMacStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPai
 {
     Q_D(const QMacStyle);
     QMacCGContext cg(p);
+    if (!cg)
+        qCWarning(lcMacStyle) << "drawPrimitive:" << pe << "invalid (nullptr) graphics context";
+
     QWindow *window = w && w->window() ? w->window()->windowHandle() : nullptr;
     d->resolveCurrentNSView(window);
     switch (pe) {
@@ -3401,6 +3430,8 @@ void QMacStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPai
         }
         break;
     case PE_IndicatorMenuCheckMark: {
+        if (!cg) // CoreGraphics does not like nullptr contexts.
+            break;
         QColor pc;
         if (opt->state & State_On)
             pc = opt->palette.highlightedText().color();
@@ -3487,11 +3518,14 @@ void QMacStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPai
     case PE_IndicatorBranch: {
         if (!(opt->state & State_Children))
             break;
+        if (!cg)
+            break;
         const auto cw = QMacStylePrivate::CocoaControl(QMacStylePrivate::Button_Disclosure, QStyleHelper::SizeLarge);
         NSButtonCell *triangleCell = static_cast<NSButtonCell *>(d->cocoaCell(cw));
         [triangleCell setState:(opt->state & State_Open) ? NSControlStateValueOn : NSControlStateValueOff];
         bool viewHasFocus = (w && w->hasFocus()) || (opt->state & State_HasFocus);
         [triangleCell setBackgroundStyle:((opt->state & State_Selected) && viewHasFocus) ? NSBackgroundStyleEmphasized : NSBackgroundStyleNormal];
+        [triangleCell setUserInterfaceLayoutDirection:qt_macLayoutDirectionFromQt(opt->direction)];
 
         d->setupNSGraphicsContext(cg, NO);
 
@@ -3705,6 +3739,9 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
     Q_D(const QMacStyle);
     const QMacAutoReleasePool pool;
     QMacCGContext cg(p);
+    if (!cg)
+        qCWarning(lcMacStyle) << "drawControl:" << ce << "invalid (nullptr) graphics context";
+
     QWindow *window = w && w->window() ? w->window()->windowHandle() : nullptr;
     d->resolveCurrentNSView(window);
     switch (ce) {
@@ -4705,7 +4742,7 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
 
                 if (qt_apple_runningWithLiquidGlass()) {
                     d->drawProgressBar(p, pb);
-                } else {
+                } else if (cg) {
                     if (vertical)
                       rect = rect.transposed();
                     d->setupNSGraphicsContext(cg, NO);
@@ -5440,12 +5477,15 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
 {
     Q_D(const QMacStyle);
     QMacCGContext cg(p);
+    if (!cg)
+        qCWarning(lcMacStyle) << "drawComplexControl:" << cc << "invalid (nullptr) graphics context";
     QWindow *window = widget && widget->window() ? widget->window()->windowHandle() : nullptr;
     d->resolveCurrentNSView(window);
     switch (cc) {
     case CC_ScrollBar:
         if (const QStyleOptionSlider *sb = qstyleoption_cast<const QStyleOptionSlider *>(opt)) {
-
+            if (!cg) // Scroll bar rendering is either using NSControl or CoreGraphics directly ...
+                break;
             const bool drawTrack = sb->subControls & SC_ScrollBarGroove;
             const bool drawKnob = sb->subControls & SC_ScrollBarSlider && sb->minimum != sb->maximum;
             if (!drawTrack && !drawKnob)
@@ -5802,12 +5842,16 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
             if (sb->subControls & (SC_SpinBoxUp | SC_SpinBoxDown)) {
                 const QRect updown = proxy()->subControlRect(CC_SpinBox, sb, SC_SpinBoxUp, widget)
                                    | proxy()->subControlRect(CC_SpinBox, sb, SC_SpinBoxDown, widget);
-
+                if (!cg) // Using controls or CoreGraphics, needs a valid context.
+                    break;
                 d->setupNSGraphicsContext(cg, NO);
 
                 const auto aquaSize = d->effectiveAquaSizeConstrain(opt, widget);
                 const auto cw = QMacStylePrivate::CocoaControl(QMacStylePrivate::Stepper, aquaSize);
                 NSStepperCell *cell = static_cast<NSStepperCell *>(d->cocoaCell(cw));
+                const auto controlSize = cell.controlSize;
+                if (qt_apple_runningWithLiquidGlass())
+                    cell.controlSize = NSControlSizeMini;
                 cell.enabled = (sb->state & State_Enabled);
 
                 const CGRect newRect = [cell drawingRectForBounds:updown.toCGRect()];
@@ -5828,6 +5872,8 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
                     [cell stopTracking:pressPoint at:pressPoint inView:d->backingStoreNSView mouseIsUp:NO];
 
                 d->restoreNSGraphicsContext(cg);
+                if (qt_apple_runningWithLiquidGlass())
+                    cell.controlSize = controlSize;
             }
         }
         break;
@@ -6915,30 +6961,6 @@ bool QMacStyle::event(QEvent *e)
             d->focusWidget->setWidget(0);
     }
     return false;
-}
-
-QIcon QMacStyle::standardIcon(StandardPixmap standardIcon, const QStyleOption *opt,
-                              const QWidget *widget) const
-{
-    switch (standardIcon) {
-    default:
-        return QCommonStyle::standardIcon(standardIcon, opt, widget);
-    case SP_ToolBarHorizontalExtensionButton:
-    case SP_ToolBarVerticalExtensionButton: {
-        QPixmap pixmap(QLatin1String(":/qt-project.org/styles/macstyle/images/toolbar-ext-macstyle.png"));
-        if (standardIcon == SP_ToolBarVerticalExtensionButton) {
-            QPixmap pix2(pixmap.height(), pixmap.width());
-            pix2.setDevicePixelRatio(pixmap.devicePixelRatio());
-            pix2.fill(Qt::transparent);
-            QPainter p(&pix2);
-            p.translate(pix2.width(), 0);
-            p.rotate(90);
-            p.drawPixmap(0, 0, pixmap);
-            return pix2;
-        }
-        return pixmap;
-    }
-    }
 }
 
 int QMacStyle::layoutSpacing(QSizePolicy::ControlType control1,

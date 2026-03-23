@@ -15,6 +15,7 @@
  * pre-defined list of header files.
  */
 
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -721,7 +722,7 @@ public:
             if (generateVersionHeader(versionFile)) {
                 if (!generateAliasedHeaderFileIfTimestampChanged(
                             m_commandLineArgs->includeDir() + '/' + versionHeaderCamel,
-                            versionHeaderFilename, originalStamp)) {
+                            versionFile, originalStamp)) {
                     error = SyncFailed;
                 }
                 m_masterHeaderContents[versionHeaderFilename] = {};
@@ -1533,10 +1534,12 @@ public:
         for (const auto &headerContents : m_masterHeaderContents) {
             if (!headerContents.second.empty()) {
                 buffer << "#if QT_CONFIG(" << headerContents.second << ")\n"
-                       << "#include \"" << headerContents.first << "\"\n"
+                       << "#include <" << m_commandLineArgs->moduleName() << "/"
+                       << headerContents.first << ">\n"
                        << "#endif\n";
             } else {
-                buffer << "#include \"" << headerContents.first << "\"\n";
+                buffer << "#include <" << m_commandLineArgs->moduleName() << "/"
+                       << headerContents.first << ">\n";
             }
         }
         buffer << "#endif\n";
@@ -1670,7 +1673,7 @@ public:
 void SyncScanner::updateSymbolDescriptor(const std::string &symbol, const std::string &file,
                                          SymbolDescriptor::SourceType type)
 {
-    if (m_commandLineArgs->showOnly())
+    if (m_commandLineArgs->showOnly() || m_commandLineArgs->debug())
         std::cout << "    SYMBOL: " << symbol << std::endl;
     m_symbols[symbol].update(file, type);
 }
@@ -1730,9 +1733,16 @@ bool SyncScanner::generateQtCamelCaseFileIfContentChanged(const std::string &out
     if (m_commandLineArgs->showOnly())
         return true;
 
-    std::string buffer = "#include \"";
+    // Safety check: aliasedFilePath should not be empty
+    if (aliasedFilePath.empty()) {
+        std::cerr << "ERROR: Empty aliasedFilePath for " << outputFilePath << std::endl;
+        return false;
+    }
+
+    std::string buffer = "#include <";
+    buffer += m_commandLineArgs->moduleName() + "/";
     buffer += aliasedFilePath;
-    buffer += "\" // IWYU pragma: export\n";
+    buffer += "> // IWYU pragma: export\n";
 
     return writeIfDifferent(outputFilePath, buffer);
 }
@@ -1747,6 +1757,17 @@ bool SyncScanner::generateAliasedHeaderFileIfTimestampChanged(const std::string 
     if (m_commandLineArgs->showOnly())
         return true;
 
+    std::filesystem::path aliased(aliasedFilePath);
+    std::filesystem::path includeDir(m_commandLineArgs->includeDir());
+
+    // Check if paths have the same root (drive on Windows).
+    // If they don't, the alias cannot be inside includeDir, so use absolute path.
+    bool sameRoot = !aliased.is_absolute() || includeDir.root_name() == aliased.root_name();
+
+    auto relativePath = sameRoot ? std::filesystem::relative(aliased, includeDir).generic_string()
+                                 : std::string();
+    bool aliasIsInsideIncludeDir = sameRoot && relativePath.find("../") != 0;
+
     if (std::filesystem::exists({ outputFilePath })
         && std::filesystem::last_write_time({ outputFilePath }) >= originalStamp) {
         return true;
@@ -1759,7 +1780,13 @@ bool SyncScanner::generateAliasedHeaderFileIfTimestampChanged(const std::string 
         std::cerr << "Unable to write header file alias: " << outputFilePath << std::endl;
         return false;
     }
-    ofs << "#include \"" << aliasedFilePath << "\" // IWYU pragma: export\n";
+
+    ofs << "#include ";
+    if (aliasIsInsideIncludeDir)
+        ofs << "<" << m_commandLineArgs->moduleName() + "/" << relativePath << ">";
+    else
+        ofs << "\"" << aliasedFilePath << "\"";
+    ofs << " // IWYU pragma: export\n";
     ofs.close();
     return true;
 }

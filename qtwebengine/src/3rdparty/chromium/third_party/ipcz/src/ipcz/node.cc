@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "ipcz/node.h"
 
 #include <optional>
@@ -469,7 +474,7 @@ bool Node::RelayMessage(const NodeName& from_node, msg::RelayMessage& relay) {
 
 bool Node::AcceptRelayedMessage(msg::AcceptRelayedMessage& accept) {
   if (auto link = GetLink(accept.v0()->source)) {
-    link->DispatchRelayedMessage(accept);
+    return link->DispatchRelayedMessage(accept);
   }
   return true;
 }

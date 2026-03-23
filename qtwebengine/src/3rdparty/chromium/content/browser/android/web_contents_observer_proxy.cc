@@ -11,6 +11,7 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/feature_list.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/named_trigger.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/android/navigation_handle_proxy.h"
 #include "content/browser/media/session/media_session_android.h"
@@ -38,9 +39,10 @@ namespace content {
 // TODO(dcheng): File a bug. This class incorrectly passes just a frame ID,
 // which is not sufficient to identify a frame (since frame IDs are scoped per
 // render process, and so may collide).
-WebContentsObserverProxy::WebContentsObserverProxy(JNIEnv* env,
-                                                   jobject obj,
-                                                   WebContents* web_contents)
+WebContentsObserverProxy::WebContentsObserverProxy(
+    JNIEnv* env,
+    const base::android::JavaRef<jobject>& obj,
+    WebContents* web_contents)
     : WebContentsObserver(web_contents) {
   DCHECK(obj);
   java_observer_.Reset(env, obj);
@@ -62,8 +64,7 @@ jlong JNI_WebContentsObserverProxy_Init(
   return reinterpret_cast<intptr_t>(native_observer);
 }
 
-void WebContentsObserverProxy::Destroy(JNIEnv* env,
-                                       const JavaParamRef<jobject>& obj) {
+void WebContentsObserverProxy::Destroy(JNIEnv* env) {
   delete this;
 }
 
@@ -87,6 +88,12 @@ void WebContentsObserverProxy::RenderFrameDeleted(
   Java_WebContentsObserverProxy_renderFrameDeleted(
       env, java_observer_, render_frame_host->GetProcess()->GetDeprecatedID(),
       render_frame_host->GetRoutingID());
+}
+
+void WebContentsObserverProxy::PrimaryPageChanged(content::Page& page) {
+  JNIEnv* env = AttachCurrentThread();
+  Java_WebContentsObserverProxy_primaryPageChanged(env, java_observer_,
+                                                   page.GetJavaPage());
 }
 
 void WebContentsObserverProxy::PrimaryMainFrameRenderProcessGone(
@@ -167,6 +174,7 @@ void WebContentsObserverProxy::DidFinishNavigation(
   TRACE_EVENT0("browser", "Java_WebContentsObserverProxy_didFinishNavigation");
 
   if (navigation_handle->IsInPrimaryMainFrame()) {
+    base::trace_event::EmitNamedTrigger("did-finish-navigation-in-pmf");
     Java_WebContentsObserverProxy_didFinishNavigationInPrimaryMainFrame(
         AttachCurrentThread(), java_observer_,
         navigation_handle->GetJavaNavigationHandle());
@@ -182,7 +190,8 @@ void WebContentsObserverProxy::DidFinishLoad(RenderFrameHost* render_frame_host,
 
   if (render_frame_host->IsInPrimaryMainFrame()) {
     Java_WebContentsObserverProxy_didFinishLoadInPrimaryMainFrame(
-        env, java_observer_, render_frame_host->GetProcess()->GetDeprecatedID(),
+        env, java_observer_, render_frame_host->GetPage().GetJavaPage(),
+        render_frame_host->GetProcess()->GetDeprecatedID(),
         render_frame_host->GetRoutingID(),
         url::GURLAndroid::FromNativeGURL(env, url), assume_valid,
         static_cast<jint>(render_frame_host->GetLifecycleState()));
@@ -194,10 +203,17 @@ void WebContentsObserverProxy::DOMContentLoaded(
   if (render_frame_host->IsInPrimaryMainFrame()) {
     Java_WebContentsObserverProxy_documentLoadedInPrimaryMainFrame(
         AttachCurrentThread(), java_observer_,
+        render_frame_host->GetPage().GetJavaPage(),
         render_frame_host->GetProcess()->GetDeprecatedID(),
         render_frame_host->GetRoutingID(),
         static_cast<jint>(render_frame_host->GetLifecycleState()));
   }
+}
+
+void WebContentsObserverProxy::OnFirstContentfulPaintInPrimaryMainFrame() {
+  Java_WebContentsObserverProxy_firstContentfulPaintInPrimaryMainFrame(
+      AttachCurrentThread(), java_observer_,
+      web_contents()->GetPrimaryPage().GetJavaPage());
 }
 
 void WebContentsObserverProxy::NavigationEntryCommitted(

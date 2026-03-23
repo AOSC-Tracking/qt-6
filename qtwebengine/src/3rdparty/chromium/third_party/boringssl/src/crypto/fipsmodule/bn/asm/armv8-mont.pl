@@ -60,7 +60,7 @@ open OUT,"| \"$^X\" \"$xlate\" $flavour \"$output\"";
  $lo1,$hi1,$nj,$m1,$nlo,$nhi,
  $ovf, $i,$j,$tp,$tj) = map("x$_",6..17,19..24);
 
-# int bn_mul_mont(
+# void bn_mul_mont_words(
 $rp="x0";	# BN_ULONG *rp,
 $ap="x1";	# const BN_ULONG *ap,
 $bp="x2";	# const BN_ULONG *bp,
@@ -69,14 +69,12 @@ $n0="x4";	# const BN_ULONG *n0,
 $num="x5";	# size_t num);
 
 $code.=<<___;
-#include <openssl/arm_arch.h>
-
 .text
 
-.globl	bn_mul_mont
-.type	bn_mul_mont,%function
+.globl	bn_mul_mont_words
+.type	bn_mul_mont_words,%function
 .align	5
-bn_mul_mont:
+bn_mul_mont_words:
 	AARCH64_SIGN_LINK_REGISTER
 	tst	$num,#7
 	b.eq	__bn_sqr8x_mont
@@ -272,12 +270,12 @@ bn_mul_mont:
 	ldp	x19,x20,[x29,#16]
 	mov	sp,x29
 	ldp	x21,x22,[x29,#32]
-	mov	x0,#1
+	// No return value
 	ldp	x23,x24,[x29,#48]
 	ldr	x29,[sp],#64
 	AARCH64_VALIDATE_LINK_REGISTER
 	ret
-.size	bn_mul_mont,.-bn_mul_mont
+.size	bn_mul_mont_words,.-bn_mul_mont_words
 ___
 {
 ########################################################################
@@ -294,7 +292,7 @@ $code.=<<___;
 .align	5
 __bn_sqr8x_mont:
 	// Not adding AARCH64_SIGN_LINK_REGISTER here because __bn_sqr8x_mont is jumped to
-	// only from bn_mul_mont which has already signed the return address.
+	// only from bn_mul_mont_words which has already signed the return address.
 	cmp	$ap,$bp
 	b.ne	__bn_mul4x_mont
 .Lsqr8x_mont:
@@ -1046,7 +1044,7 @@ $code.=<<___;
 	ldp	x19,x20,[x29,#16]
 	mov	sp,x29
 	ldp	x21,x22,[x29,#32]
-	mov	x0,#1
+	// No return value
 	ldp	x23,x24,[x29,#48]
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
@@ -1077,7 +1075,7 @@ $code.=<<___;
 .align	5
 __bn_mul4x_mont:
 	// Not adding AARCH64_SIGN_LINK_REGISTER here because __bn_mul4x_mont is jumped to
-	// only from bn_mul_mont or __bn_mul8x_mont which have already signed the
+	// only from bn_mul_mont_words or __bn_mul8x_mont which have already signed the
 	// return address.
 	stp	x29,x30,[sp,#-128]!
 	add	x29,sp,#0
@@ -1507,7 +1505,7 @@ __bn_mul4x_mont:
 	ldp	x19,x20,[x29,#16]
 	mov	sp,x29
 	ldp	x21,x22,[x29,#32]
-	mov	x0,#1
+	// No return value
 	ldp	x23,x24,[x29,#48]
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]

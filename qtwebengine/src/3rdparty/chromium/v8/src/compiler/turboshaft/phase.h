@@ -24,6 +24,7 @@
 #include "src/compiler/turboshaft/graph.h"
 #include "src/compiler/turboshaft/sidetable.h"
 #include "src/compiler/turboshaft/zone-with-name.h"
+#include "src/interpreter/interpreter.h"
 #include "src/logging/runtime-call-stats.h"
 #include "src/zone/accounting-allocator.h"
 #include "src/zone/zone.h"
@@ -118,10 +119,11 @@ struct ComponentWithZone {
 
 struct BuiltinComponent {
   const CallDescriptor* call_descriptor;
-  std::optional<BytecodeHandlerData> bytecode_handler_data;
+  std::optional<interpreter::BytecodeHandlerData> bytecode_handler_data;
 
-  BuiltinComponent(const CallDescriptor* call_descriptor,
-                   std::optional<BytecodeHandlerData> bytecode_handler_data)
+  BuiltinComponent(
+      const CallDescriptor* call_descriptor,
+      std::optional<interpreter::BytecodeHandlerData> bytecode_handler_data)
       : call_descriptor(call_descriptor),
         bytecode_handler_data(std::move(bytecode_handler_data)) {}
 };
@@ -133,6 +135,7 @@ struct GraphComponent : public ComponentWithZone<kGraphZoneName> {
   Pointer<SourcePositionTable> source_positions = nullptr;
   Pointer<NodeOriginTable> node_origins = nullptr;
   bool graph_has_special_rpo = false;
+  bool graph_has_lowered_fast_api_calls = false;
 };
 
 struct CodegenComponent : public ComponentWithZone<kCodegenZoneName> {
@@ -171,6 +174,7 @@ enum class TurboshaftPipelineKind { kJS, kWasm, kCSA, kTSABuiltin, kJSToWasm };
 
 class LoopUnrollingAnalyzer;
 class WasmRevecAnalyzer;
+class WasmShuffleAnalyzer;
 
 class V8_EXPORT_PRIVATE PipelineData {
   using BuiltinComponent = detail::BuiltinComponent;
@@ -213,7 +217,8 @@ class V8_EXPORT_PRIVATE PipelineData {
 
   void InitializeBuiltinComponent(
       const CallDescriptor* call_descriptor,
-      std::optional<BytecodeHandlerData> bytecode_handler_data = {}) {
+      std::optional<interpreter::BytecodeHandlerData> bytecode_handler_data =
+          {}) {
     DCHECK(!builtin_component_.has_value());
     builtin_component_.emplace(call_descriptor,
                                std::move(bytecode_handler_data));
@@ -299,6 +304,14 @@ class V8_EXPORT_PRIVATE PipelineData {
     }
   }
 
+  void InitializeInstructionComponentWithSequence(
+      InstructionSequence* sequence) {
+    DCHECK(!instruction_component_.has_value());
+    instruction_component_.emplace(zone_stats());
+    instruction_component_->sequence =
+        InstructionComponent::Pointer<InstructionSequence>(sequence);
+  }
+
   void ClearInstructionComponent() {
     DCHECK(instruction_component_.has_value());
     instruction_component_.reset();
@@ -331,7 +344,7 @@ class V8_EXPORT_PRIVATE PipelineData {
     DCHECK(builtin_component_.has_value());
     return builtin_component_->call_descriptor;
   }
-  std::optional<BytecodeHandlerData>& bytecode_handler_data() {
+  std::optional<interpreter::BytecodeHandlerData>& bytecode_handler_data() {
     DCHECK(builtin_component_.has_value());
     return builtin_component_->bytecode_handler_data;
   }
@@ -437,6 +450,18 @@ class V8_EXPORT_PRIVATE PipelineData {
 
   void clear_wasm_revec_analyzer() { wasm_revec_analyzer_ = nullptr; }
 #endif  // V8_ENABLE_WASM_SIMD256_REVEC
+
+  WasmShuffleAnalyzer* wasm_shuffle_analyzer() const {
+    DCHECK_NOT_NULL(wasm_shuffle_analyzer_);
+    return wasm_shuffle_analyzer_;
+  }
+
+  void set_wasm_shuffle_analyzer(WasmShuffleAnalyzer* wasm_shuffle_analyzer) {
+    DCHECK_NULL(wasm_shuffle_analyzer_);
+    wasm_shuffle_analyzer_ = wasm_shuffle_analyzer;
+  }
+
+  void clear_wasm_shuffle_analyzer() { wasm_shuffle_analyzer_ = nullptr; }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   bool is_wasm() const {
@@ -473,6 +498,12 @@ class V8_EXPORT_PRIVATE PipelineData {
   void set_graph_has_special_rpo() {
     graph_component_->graph_has_special_rpo = true;
   }
+  bool graph_has_lowered_fast_api_calls() const {
+    return graph_component_->graph_has_lowered_fast_api_calls;
+  }
+  void set_graph_has_lowered_fast_api_calls() {
+    graph_component_->graph_has_lowered_fast_api_calls = true;
+  }
 
  private:
   ZoneStats* zone_stats_;
@@ -507,6 +538,7 @@ class V8_EXPORT_PRIVATE PipelineData {
   const wasm::CanonicalSig* wasm_canonical_sig_ = nullptr;
   const wasm::WasmModule* wasm_module_ = nullptr;
   bool wasm_shared_ = false;
+  WasmShuffleAnalyzer* wasm_shuffle_analyzer_ = nullptr;
 #ifdef V8_ENABLE_WASM_SIMD256_REVEC
 
   WasmRevecAnalyzer* wasm_revec_analyzer_ = nullptr;

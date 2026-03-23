@@ -22,7 +22,7 @@
 #include "ui/gl/gl_angle_util_vulkan.h"
 #include "ui/gl/gl_switches.h"
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 #include <sys/sysmacros.h>
 #endif
 
@@ -156,6 +156,12 @@ bool VulkanInstance::CreateInstance(
           VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
     }
   }
+
+  skia_features_.init(app_info.apiVersion);
+  skia_features_.addToInstanceExtensions(
+      vulkan_info_.instance_extensions.data(),
+      vulkan_info_.instance_extensions.size(),
+      vulkan_info_.enabled_instance_extensions);
 
 #if DCHECK_IS_ON()
   for (const char* enabled_extension :
@@ -453,7 +459,7 @@ bool VulkanInstance::CollectDeviceInfo(VkPhysicalDevice physical_device) {
       };
       vkGetPhysicalDeviceProperties2(device, &properties2);
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
       if (has_drm_extension &&
           (drm_properties.hasRender || drm_properties.hasPrimary)) {
         static_assert(sizeof(dev_t) <= sizeof(info.drm_device_id),

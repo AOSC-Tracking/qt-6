@@ -8,6 +8,8 @@
 
 #include "base/check_deref.h"
 #include "base/notreached.h"
+#include "ui/events/android/events_android_utils.h"
+#include "ui/events/android/motion_event_android_factory.h"
 #include "ui/events/android/motion_event_android_native.h"
 
 namespace viz {
@@ -38,7 +40,9 @@ AndroidStateTransferHandler::TransferState::TransferState(
   transfer_state = std::move(other.transfer_state);
 }
 
-AndroidStateTransferHandler::AndroidStateTransferHandler() = default;
+AndroidStateTransferHandler::AndroidStateTransferHandler(
+    AndroidStateTransferHandlerClient& client)
+    : client_(client) {}
 
 AndroidStateTransferHandler::~AndroidStateTransferHandler() = default;
 
@@ -49,17 +53,16 @@ void AndroidStateTransferHandler::StateOnTouchTransfer(
 
   EmitPendingTransfersHistogram();
 
-  // TODO(crbug.com/383323530): Convert it to CHECK once we are using
-  // AssociatedRemotes for passing state from Browser to Viz.
   const bool state_received_out_of_order =
       (!pending_transferred_states_.empty() &&
        (state->down_time_ms <
         pending_transferred_states_.back().transfer_state->down_time_ms));
+
   if (state_received_out_of_order) {
+    // We don't expect to receive `StateOnTouchTransfer` mojo calls coming out
+    // of order. But it's possible the timestamps provided by Android platform
+    // are the issue.
     TRACE_EVENT_INSTANT("viz", "OutOfOrderTransferStateDropped");
-    // Drop out of order state received.
-    // It is possible since the state transfers coming from different web
-    // contents come over different mojo pipes.
     return;
   }
 
@@ -94,10 +97,24 @@ void AndroidStateTransferHandler::StateOnTouchTransfer(
 bool AndroidStateTransferHandler::OnMotionEvent(
     base::android::ScopedInputEvent input_event,
     const FrameSinkId& root_frame_sink_id) {
-  TRACE_EVENT("input", "AndroidStateTransferHandler::OnMotionEvent");
+  TRACE_EVENT("input", "AndroidStateTransferHandler::OnMotionEvent",
+              [&](perfetto::EventContext& ctx) {
+                auto* chrome_track_event =
+                    ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
+                auto* forwarder = chrome_track_event->set_event_forwarder();
+
+                input_event.WriteIntoTrace(ctx.Wrap(forwarder));
+              });
 
   const int action = AMotionEvent_getAction(input_event.a_input_event()) &
                      AMOTION_EVENT_ACTION_MASK;
+
+  // Viz only handles touch events, actions like button press/release are not
+  // supported and should ideally not be arriving.
+  if (!IsExpectedMotionEventAction(action)) {
+    return true;
+  }
+
   if (ignore_remaining_touch_sequence_) {
     if (action == AMOTION_EVENT_ACTION_CANCEL ||
         action == AMOTION_EVENT_ACTION_UP) {
@@ -106,8 +123,6 @@ bool AndroidStateTransferHandler::OnMotionEvent(
     }
     return true;
   }
-
-  ValidateRootFrameSinkId(root_frame_sink_id);
 
   if (state_for_curr_sequence_.has_value() ||
       CanStartProcessingVizEvents(input_event)) {
@@ -134,13 +149,27 @@ bool AndroidStateTransferHandler::OnMotionEvent(
   return true;
 }
 
+bool AndroidStateTransferHandler::IsExpectedMotionEventAction(int action) {
+  switch (action) {
+    case AMOTION_EVENT_ACTION_DOWN:
+    case AMOTION_EVENT_ACTION_UP:
+    case AMOTION_EVENT_ACTION_MOVE:
+    case AMOTION_EVENT_ACTION_CANCEL:
+    case AMOTION_EVENT_ACTION_POINTER_DOWN:
+    case AMOTION_EVENT_ACTION_POINTER_UP:
+      return true;
+    default:
+      break;
+  }
+
+  base::UmaHistogramEnumeration(kDroppedNonTouchActions,
+                                ui::FromAndroidAction(action));
+  return false;
+}
+
 bool AndroidStateTransferHandler::CanStartProcessingVizEvents(
     const base::android::ScopedInputEvent& event) {
   CHECK(!state_for_curr_sequence_.has_value());
-
-  if (pending_transferred_states_.empty()) {
-    return false;
-  }
 
   const jlong j_event_down_time =
       base::TimeTicks::FromJavaNanoTime(
@@ -149,15 +178,30 @@ bool AndroidStateTransferHandler::CanStartProcessingVizEvents(
   base::TimeTicks event_down_time =
       base::TimeTicks::FromUptimeMillis(j_event_down_time);
 
+  // Drop states with smaller down time i.e. the states corresponding to pointer
+  // down events.
+  while (!pending_transferred_states_.empty() &&
+         (pending_transferred_states_.front().transfer_state->down_time_ms <
+          event_down_time)) {
+    pending_transferred_states_.pop();
+  }
+
+  if (pending_transferred_states_.empty()) {
+    return false;
+  }
+
   auto& state = pending_transferred_states_.front();
   // Touch event corresponding to previous state transfer should be
   // processed before next sequence starts.
   if (event_down_time == state.transfer_state->down_time_ms) {
+    if (state.transfer_state->browser_would_have_handled) {
+      client_->TransferInputBackToBrowser();
+      ignore_remaining_touch_sequence_ = true;
+    }
     state_for_curr_sequence_.emplace(std::move(state));
     pending_transferred_states_.pop();
     return true;
   }
-  CHECK_LT(event_down_time, state.transfer_state->down_time_ms);
   return false;
 }
 
@@ -189,13 +233,19 @@ void AndroidStateTransferHandler::EmitPendingTransfersHistogram() {
 
 void AndroidStateTransferHandler::HandleTouchEvent(
     base::android::ScopedInputEvent input_event) {
-  CHECK(state_for_curr_sequence_.has_value() &&
-        GetEventDowntime(input_event) ==
-            state_for_curr_sequence_->transfer_state->down_time_ms);
+  // TODO(crbug.com/406986388) : Add flow events to track the events starting
+  // from when they were first were processed by Viz.
+  TRACE_EVENT("input", "AndroidStateTransferHandler::HandleTouchEvent");
+  CHECK(state_for_curr_sequence_.has_value());
+  const int action = AMotionEvent_getAction(input_event.a_input_event()) &
+                     AMOTION_EVENT_ACTION_MASK;
+
+  if (GetEventDowntime(input_event) !=
+      state_for_curr_sequence_->transfer_state->down_time_ms) {
+    TRACE_EVENT_INSTANT("input,input.scrolling", "DifferentDownTimeInSequence");
+  }
 
   if (!state_for_curr_sequence_->rir_support) {
-    const int action = AMotionEvent_getAction(input_event.a_input_event()) &
-                       AMOTION_EVENT_ACTION_MASK;
     if (action == AMOTION_EVENT_ACTION_CANCEL ||
         action == AMOTION_EVENT_ACTION_UP) {
       state_for_curr_sequence_.reset();
@@ -206,19 +256,25 @@ void AndroidStateTransferHandler::HandleTouchEvent(
     return;
   }
 
-  const float viz_y_offset_pix =
-      AMotionEvent_getY(input_event.a_input_event(), /*pointer_index=*/0) -
-      AMotionEvent_getRawY(input_event.a_input_event(), /*pointer_index=*/0);
-  // Offset added to points in Android's view coordinate system to convert them
-  // into coordinates relative to web contents. This is used to accommodate for
-  // browser top controls when visible.
-  const float web_contents_y_offset_pix =
-      state_for_curr_sequence_->transfer_state->raw_y_offset - viz_y_offset_pix;
-  CHECK_LE(web_contents_y_offset_pix, 0);
-  auto event = ui::MotionEventAndroidNative::Create(
+  // Ignore any already queued events for the touch sequence. This can happen if
+  // we are returning the sequence back to browser.
+  if (ignore_remaining_touch_sequence_) {
+    return;
+  }
+
+  std::optional<ui::MotionEventAndroid::EventTimes> event_times = std::nullopt;
+  if (action == AMOTION_EVENT_ACTION_DOWN) {
+    event_times = ui::MotionEventAndroid::EventTimes();
+    // AMotionEvent_getDownTime returns down time in nanoseconds precision.
+    event_times->latest = base::TimeTicks::FromJavaNanoTime(
+        AMotionEvent_getDownTime(input_event.a_input_event()));
+    event_times->oldest = event_times->latest;
+  }
+  auto event = ui::MotionEventAndroidFactory::CreateFromNative(
       std::move(input_event),
       1.f / state_for_curr_sequence_->transfer_state->dip_scale,
-      web_contents_y_offset_pix);
+      state_for_curr_sequence_->transfer_state->web_contents_y_offset_pix,
+      event_times);
 
   state_for_curr_sequence_->rir_support->OnTouchEvent(
       *event.get(), /* emit_histograms= */ true);
@@ -226,17 +282,6 @@ void AndroidStateTransferHandler::HandleTouchEvent(
   if (event->GetAction() == ui::MotionEvent::Action::UP ||
       event->GetAction() == ui::MotionEvent::Action::CANCEL) {
     state_for_curr_sequence_.reset();
-  }
-}
-
-void AndroidStateTransferHandler::ValidateRootFrameSinkId(
-    const FrameSinkId& root_frame_sink_id) {
-  // TODO(crbug.com/388478270): Relax this CHECK to handle activity restart mid
-  // sequence.
-  CHECK(root_frame_sink_id.is_valid());
-  if (active_root_frame_sink_id_ != root_frame_sink_id) {
-    CHECK(!active_root_frame_sink_id_.is_valid());
-    active_root_frame_sink_id_ = root_frame_sink_id;
   }
 }
 

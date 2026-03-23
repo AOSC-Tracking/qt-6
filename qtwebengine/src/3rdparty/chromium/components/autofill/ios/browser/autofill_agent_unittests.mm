@@ -5,6 +5,7 @@
 #import "components/autofill/ios/browser/autofill_agent.h"
 
 #import <string>
+#import <variant>
 
 #import "base/apple/bundle_locations.h"
 #import "base/json/json_writer.h"
@@ -18,7 +19,8 @@
 #import "base/test/ios/wait_util.h"
 #import "base/test/test_timeouts.h"
 #import "base/values.h"
-#import "components/autofill/core/browser/data_model/credit_card.h"
+#import "components/autofill/core/browser/autofill_field.h"
+#import "components/autofill/core/browser/data_model/payments/credit_card.h"
 #import "components/autofill/core/browser/filling/filling_product.h"
 #import "components/autofill/core/browser/foundations/test_autofill_client.h"
 #import "components/autofill/core/browser/suggestions/suggestion.h"
@@ -30,7 +32,7 @@
 #import "components/autofill/core/common/autofill_prefs.h"
 #import "components/autofill/core/common/field_data_manager.h"
 #import "components/autofill/core/common/form_data.h"
-#include "components/autofill/core/common/form_field_data.h"
+#import "components/autofill/core/common/form_field_data.h"
 #import "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #import "components/autofill/core/common/unique_ids.h"
 #import "components/autofill/ios/browser/autofill_driver_ios.h"
@@ -54,7 +56,6 @@
 #import "testing/gmock/include/gmock/gmock.h"
 #import "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
-#import "third_party/abseil-cpp/absl/types/variant.h"
 #import "ui/base/resource/resource_bundle.h"
 #import "ui/gfx/image/image_unittest_util.h"
 #import "url/gurl.h"
@@ -64,6 +65,7 @@ using autofill::FieldDataManager;
 using autofill::FieldRendererId;
 using autofill::FillingProduct;
 using autofill::FormRendererId;
+using autofill::Section;
 using autofill::SuggestionType;
 using base::test::ios::WaitUntilConditionOrTimeout;
 
@@ -71,6 +73,8 @@ namespace {
 
 using autofill::AutofillDriverIOS;
 using autofill::AutofillDriverIOSFactory;
+
+constexpr char kTestFrameId[] = "11111111111111111111111111111111";
 
 // Returns the minimal FormData content for testing filling.
 std::vector<autofill::FormFieldData::FillData>
@@ -146,7 +150,7 @@ class AutofillAgentTests : public web::WebTest {
 
     GURL url("https://example.com");
     fake_web_state_.SetCurrentURL(url);
-    auto main_frame = web::FakeWebFrame::Create("frameID", true, url);
+    auto main_frame = web::FakeWebFrame::Create(kTestFrameId, true, url);
     main_frame->set_browser_state(GetBrowserState());
     fake_main_frame_ = main_frame.get();
     AddWebFrame(std::move(main_frame));
@@ -236,13 +240,14 @@ TEST_F(AutofillAgentTests,
   fill_data.push_back(autofill::FormFieldData::FillData(field));
 
   [autofill_agent_ fillData:fill_data
+                    section:Section()
                     inFrame:fake_web_frames_manager_->GetMainWebFrame()];
   fake_web_state_.WasShown();
 
-  EXPECT_EQ(u"__gCrWeb.autofill.fillForm({\"fields\":{\"2\":{\"hostFormId\":0,"
-            u"\"section\":\"-default\",\"value\":\"number_value\"},\"3\":{"
-            u"\"hostFormId\":0,\"section\":\"-default\","
-            u"\"value\":\"name_value\"}}}, 0);",
+  EXPECT_EQ(u"__gCrWeb.callFunctionInGcrWeb('autofill', 'fillForm', "
+            u"[{\"fields\":{\"2\":{\"hostFormId\":0,\"section\":\"-default\","
+            u"\"value\":\"number_value\"},\"3\":{\"hostFormId\":0,\"section\":"
+            u"\"-default\",\"value\":\"name_value\"}}}, 0]);",
             fake_main_frame_->GetLastJavaScriptCall());
 }
 
@@ -264,9 +269,10 @@ TEST_F(AutofillAgentTests, FillSpecificFormField) {
                   withValue:u"mattwashere"
                     inFrame:fake_web_frames_manager_->GetMainWebFrame()];
   fake_web_state_.WasShown();
-  EXPECT_EQ(u"__gCrWeb.autofill.fillSpecificFormField({\"renderer_id\":"
-            u"2,\"value\":\"mattwashere\"});",
-            fake_main_frame_->GetLastJavaScriptCall());
+  EXPECT_EQ(
+      u"__gCrWeb.callFunctionInGcrWeb('autofill', 'fillSpecificFormField', "
+      u"[{\"renderer_id\":2,\"value\":\"mattwashere\"}]);",
+      fake_main_frame_->GetLastJavaScriptCall());
 }
 
 // Test that the updates are applied when filling specific form field is done
@@ -355,15 +361,25 @@ TEST_F(AutofillAgentTests, DriverFillSpecificFormField) {
   AutofillDriverIOS* main_frame_driver =
       AutofillDriverIOS::FromWebStateAndWebFrame(
           &fake_web_state_, fake_web_frames_manager_->GetMainWebFrame());
+  field.set_host_frame(main_frame_driver->GetFrameToken());
+
+  autofill::FormData form;
+  form.set_host_frame(main_frame_driver->GetFrameToken());
+  form.set_renderer_id(autofill::FormRendererId(1));
+  field.set_host_form_id(form.renderer_id());
+  form.set_fields({field});
+  main_frame_driver->FormsSeen({form}, {});
+
   main_frame_driver->ApplyFieldAction(
       autofill::mojom::FieldActionType::kReplaceAll,
       autofill::mojom::ActionPersistence::kFill, field.global_id(),
       u"mattwashere");
 
   fake_web_state_.WasShown();
-  EXPECT_EQ(u"__gCrWeb.autofill.fillSpecificFormField({\"renderer_id\":"
-            u"2,\"value\":\"mattwashere\"});",
-            fake_main_frame_->GetLastJavaScriptCall());
+  EXPECT_EQ(
+      u"__gCrWeb.callFunctionInGcrWeb('autofill', 'fillSpecificFormField', "
+      u"[{\"renderer_id\":2,\"value\":\"mattwashere\"}]);",
+      fake_main_frame_->GetLastJavaScriptCall());
 }
 
 // Tests that `ApplyFieldAction` with `ActionPersistence::kPreview`in
@@ -382,6 +398,15 @@ TEST_F(AutofillAgentTests, DriverPreviewSpecificFormField) {
   AutofillDriverIOS* main_frame_driver =
       AutofillDriverIOS::FromWebStateAndWebFrame(
           &fake_web_state_, fake_web_frames_manager_->GetMainWebFrame());
+  field.set_host_frame(main_frame_driver->GetFrameToken());
+
+  autofill::FormData form;
+  form.set_host_frame(main_frame_driver->GetFrameToken());
+  form.set_renderer_id(autofill::FormRendererId(1));
+  field.set_host_form_id(form.renderer_id());
+  form.set_fields({field});
+  main_frame_driver->FormsSeen({form}, {});
+
   // Preview is not currently supported; no JS should be run.
   main_frame_driver->ApplyFieldAction(
       autofill::mojom::FieldActionType::kReplaceAll,
@@ -400,16 +425,16 @@ TEST_F(AutofillAgentTests,
   __block BOOL completion_handler_success = NO;
   __block BOOL completion_handler_called = NO;
 
-  FormSuggestionProviderQuery* form_query =
-      [[FormSuggestionProviderQuery alloc] initWithFormName:@"form"
-                                             formRendererID:FormRendererId(1)
-                                            fieldIdentifier:@"address"
-                                            fieldRendererID:FieldRendererId(2)
-                                                  fieldType:@"text"
-                                                       type:@"focus"
-                                                 typedValue:@""
-                                                    frameID:@"frameID"
-                                               onlyPassword:NO];
+  FormSuggestionProviderQuery* form_query = [[FormSuggestionProviderQuery alloc]
+      initWithFormName:@"form"
+        formRendererID:FormRendererId(1)
+       fieldIdentifier:@"address"
+       fieldRendererID:FieldRendererId(2)
+             fieldType:@"text"
+                  type:@"focus"
+            typedValue:@""
+               frameID:base::SysUTF8ToNSString(kTestFrameId)
+          onlyPassword:NO];
   [autofill_agent_ checkIfSuggestionsAvailableForForm:form_query
                                        hasUserGesture:NO
                                              webState:&fake_web_state_
@@ -425,55 +450,6 @@ TEST_F(AutofillAgentTests,
         return completion_handler_called;
       }));
   EXPECT_FALSE(completion_handler_success);
-}
-
-// Tests that "Show credit cards from account" opt-in is shown.
-TEST_F(AutofillAgentTests, onSuggestionsReady_ShowAccountCards) {
-  __block NSArray<FormSuggestion*>* completion_handler_suggestions = nil;
-  __block BOOL completion_handler_called = NO;
-
-  autofill::MockAutofillSuggestionDelegate mock_delegate;
-  EXPECT_CALL(mock_delegate, OnSuggestionsShown);
-
-  // Make the suggestions available to AutofillAgent.
-  std::vector<autofill::Suggestion> autofillSuggestions;
-  autofillSuggestions.push_back(
-      autofill::Suggestion("", "", autofill::Suggestion::Icon::kNoIcon,
-                           SuggestionType::kShowAccountCards));
-  [autofill_agent_ showAutofillPopup:autofillSuggestions
-                  suggestionDelegate:mock_delegate.GetWeakPtr()];
-
-  // Retrieves the suggestions.
-  auto completionHandler = ^(NSArray<FormSuggestion*>* suggestions,
-                             id<FormSuggestionProvider> delegate) {
-    completion_handler_suggestions = [suggestions copy];
-    completion_handler_called = YES;
-  };
-  FormSuggestionProviderQuery* form_query =
-      [[FormSuggestionProviderQuery alloc] initWithFormName:@"form"
-                                             formRendererID:FormRendererId(1)
-                                            fieldIdentifier:@"address"
-                                            fieldRendererID:FieldRendererId(2)
-                                                  fieldType:@"text"
-                                                       type:@"focus"
-                                                 typedValue:@""
-                                                    frameID:@"frameID"
-                                               onlyPassword:NO];
-  [autofill_agent_ retrieveSuggestionsForForm:form_query
-                                     webState:&fake_web_state_
-                            completionHandler:completionHandler];
-  fake_web_state_.WasShown();
-
-  // Wait until the expected handler is called.
-  ASSERT_TRUE(
-      WaitUntilConditionOrTimeout(TestTimeouts::action_timeout(), ^bool() {
-        return completion_handler_called;
-      }));
-
-  // "Show credit cards from account" should be the only suggestion.
-  EXPECT_EQ(1U, completion_handler_suggestions.count);
-  EXPECT_EQ(SuggestionType::kShowAccountCards,
-            completion_handler_suggestions[0].type);
 }
 
 // Tests that virtual cards are being served as suggestions with the
@@ -500,12 +476,12 @@ TEST_F(AutofillAgentTests, showAutofillPopup_ShowVirtualCards) {
       {autofill::test::NextMonth(), "/", autofill::test::NextYear().substr(2)});
 
   // Initialize suggestion.
+  std::vector<std::string> minor_texts = {"Quicksilver ••1111"};
   std::vector<autofill::Suggestion> autofillSuggestions = {
-      autofill::Suggestion("Virtual card", "Quicksilver ••1111",
-                           expiration_date_label,
+      autofill::Suggestion("Virtual card", minor_texts, expiration_date_label,
                            autofill::Suggestion::Icon::kCardVisa,
                            autofill::SuggestionType::kVirtualCreditCardEntry),
-      autofill::Suggestion("Quicksilver ••1111", "", expiration_date_label,
+      autofill::Suggestion("Quicksilver ••1111", expiration_date_label,
                            autofill::Suggestion::Icon::kCardVisa,
                            autofill::SuggestionType::kCreditCardEntry),
   };
@@ -573,58 +549,6 @@ TEST_F(AutofillAgentTests, showAutofillPopup_ShowVirtualCards) {
   EXPECT_EQ(autofill::Suggestion::Payload(), credit_card_suggestion.payload);
   EXPECT_EQ(false, credit_card_suggestion.requiresReauth);
   EXPECT_NSEQ(nil, credit_card_suggestion.acceptanceA11yAnnouncement);
-}
-
-// Tests that only credit card suggestions would have icons.
-TEST_F(AutofillAgentTests,
-       showAutofillPopup_ShowIconForCreditCardSuggestionsOnly) {
-  __block UIImage* completion_handler_icon = nil;
-
-  // Mock different popup types.
-  testing::NiceMock<autofill::MockAutofillSuggestionDelegate> mock_delegate;
-  EXPECT_CALL(mock_delegate, GetMainFillingProduct)
-      .WillOnce(testing::Return(FillingProduct::kCreditCard))
-      .WillOnce(testing::Return(FillingProduct::kAddress))
-      .WillOnce(testing::Return(FillingProduct::kNone));
-  // Initialize suggestion.
-  std::vector<autofill::Suggestion> autofillSuggestions = {
-      autofill::Suggestion("", "", autofill::Suggestion::Icon::kCardVisa,
-                           autofill::SuggestionType::kCreditCardEntry),
-      // This suggestion has a valid credit card icon, but the Suggestion type
-      // (kShowAccountCards) is wrong.
-      autofill::Suggestion("", "", autofill::Suggestion::Icon::kCardVisa,
-                           autofill::SuggestionType::kShowAccountCards),
-  };
-  // Completion handler to retrieve suggestions.
-  auto completionHandler = ^(NSArray<FormSuggestion*>* suggestions,
-                             id<FormSuggestionProvider> delegate) {
-    ASSERT_EQ(2U, suggestions.count);
-    completion_handler_icon = [suggestions[0].icon copy];
-    // The non-credit card suggestion should never have an icon.
-    EXPECT_EQ(nil, suggestions[1].icon);
-  };
-
-  // Make credit card suggestion.
-  [autofill_agent_ showAutofillPopup:autofillSuggestions
-                  suggestionDelegate:mock_delegate.GetWeakPtr()];
-  [autofill_agent_ retrieveSuggestionsForForm:nil
-                                     webState:&fake_web_state_
-                            completionHandler:completionHandler];
-  EXPECT_NE(nil, completion_handler_icon);
-  // Make address suggestion.
-  [autofill_agent_ showAutofillPopup:autofillSuggestions
-                  suggestionDelegate:mock_delegate.GetWeakPtr()];
-  [autofill_agent_ retrieveSuggestionsForForm:nil
-                                     webState:&fake_web_state_
-                            completionHandler:completionHandler];
-  EXPECT_EQ(nil, completion_handler_icon);
-  // Make unspecified suggestion.
-  [autofill_agent_ showAutofillPopup:autofillSuggestions
-                  suggestionDelegate:mock_delegate.GetWeakPtr()];
-  [autofill_agent_ retrieveSuggestionsForForm:nil
-                                     webState:&fake_web_state_
-                            completionHandler:completionHandler];
-  EXPECT_EQ(nil, completion_handler_icon);
 }
 
 // Tests that an empty network icon in a credit card suggestion will not cause
@@ -738,9 +662,9 @@ TEST_F(AutofillAgentTests,
       autofill::Suggestion("", "", suggestion_network_icon,
                            autofill::SuggestionType::kCreditCardEntry)};
   ASSERT_TRUE(
-      absl::holds_alternative<gfx::Image>(autofillSuggestions[0].custom_icon));
+      std::holds_alternative<gfx::Image>(autofillSuggestions[0].custom_icon));
   ASSERT_TRUE(
-      absl::get<gfx::Image>(autofillSuggestions[0].custom_icon).IsEmpty());
+      std::get<gfx::Image>(autofillSuggestions[0].custom_icon).IsEmpty());
 
   // When the custom icon is not present, the default icon should be used.
   [autofill_agent_ showAutofillPopup:autofillSuggestions
@@ -790,16 +714,16 @@ TEST_F(AutofillAgentTests, onSuggestionsReady_ClearForm) {
     completion_handler_suggestions = [suggestions copy];
     completion_handler_called = YES;
   };
-  FormSuggestionProviderQuery* form_query =
-      [[FormSuggestionProviderQuery alloc] initWithFormName:@"form"
-                                             formRendererID:FormRendererId(1)
-                                            fieldIdentifier:@"address"
-                                            fieldRendererID:FieldRendererId(2)
-                                                  fieldType:@"text"
-                                                       type:@"focus"
-                                                 typedValue:@""
-                                                    frameID:@"frameID"
-                                               onlyPassword:NO];
+  FormSuggestionProviderQuery* form_query = [[FormSuggestionProviderQuery alloc]
+      initWithFormName:@"form"
+        formRendererID:FormRendererId(1)
+       fieldIdentifier:@"address"
+       fieldRendererID:FieldRendererId(2)
+             fieldType:@"text"
+                  type:@"focus"
+            typedValue:@""
+               frameID:base::SysUTF8ToNSString(kTestFrameId)
+          onlyPassword:NO];
   [autofill_agent_ retrieveSuggestionsForForm:form_query
                                      webState:&fake_web_state_
                             completionHandler:completionHandler];
@@ -849,16 +773,16 @@ TEST_F(AutofillAgentTests, onSuggestionsReady_ClearFormWithGPay) {
     completion_handler_suggestions = [suggestions copy];
     completion_handler_called = YES;
   };
-  FormSuggestionProviderQuery* form_query =
-      [[FormSuggestionProviderQuery alloc] initWithFormName:@"form"
-                                             formRendererID:FormRendererId(1)
-                                            fieldIdentifier:@"address"
-                                            fieldRendererID:FieldRendererId(2)
-                                                  fieldType:@"text"
-                                                       type:@"focus"
-                                                 typedValue:@""
-                                                    frameID:@"frameID"
-                                               onlyPassword:NO];
+  FormSuggestionProviderQuery* form_query = [[FormSuggestionProviderQuery alloc]
+      initWithFormName:@"form"
+        formRendererID:FormRendererId(1)
+       fieldIdentifier:@"address"
+       fieldRendererID:FieldRendererId(2)
+             fieldType:@"text"
+                  type:@"focus"
+            typedValue:@""
+               frameID:base::SysUTF8ToNSString(kTestFrameId)
+          onlyPassword:NO];
   [autofill_agent_ retrieveSuggestionsForForm:form_query
                                      webState:&fake_web_state_
                             completionHandler:completionHandler];
@@ -1039,7 +963,7 @@ TEST_F(AutofillAgentTests, FillData_UpdateWithResults) {
   fake_web_state_.WasShown();
 
   // Fill form data.
-  [autofill_agent_ fillData:fields inFrame:fake_main_frame_];
+  [autofill_agent_ fillData:fields section:Section() inFrame:fake_main_frame_];
 
   // Run queues to yield the filling results.
   web::test::WaitForBackgroundTasks();
@@ -1080,7 +1004,7 @@ TEST_F(AutofillAgentTests, FillData_UnknowFieldIdInResults) {
   fake_web_state_.WasShown();
 
   // Fill form data.
-  [autofill_agent_ fillData:fields inFrame:fake_main_frame_];
+  [autofill_agent_ fillData:fields section:Section() inFrame:fake_main_frame_];
 
   // Run queues to yield the filling results.
   web::test::WaitForBackgroundTasks();
@@ -1110,8 +1034,7 @@ TEST_F(AutofillAgentTests, DidSelectSuggestion_AutocompleteEntry) {
                         formRendererID:form_id
                        fieldIdentifier:@"username-field-1"
                        fieldRendererID:field1_id
-                               frameID:base::SysUTF8ToNSString(
-                                           fake_main_frame_->GetFrameId())
+                               frameID:base::SysUTF8ToNSString(kTestFrameId)
                      completionHandler:^() {
                        completion_handler_called = YES;
                      }];
@@ -1164,8 +1087,7 @@ TEST_F(AutofillAgentTests, DidSelectSuggestion_ClearFormEntry) {
                         formRendererID:form_id
                        fieldIdentifier:@"username-field-1"
                        fieldRendererID:field1_id
-                               frameID:base::SysUTF8ToNSString(
-                                           fake_main_frame_->GetFrameId())
+                               frameID:base::SysUTF8ToNSString(kTestFrameId)
                      completionHandler:^() {
                        completion_handler_called = YES;
                      }];

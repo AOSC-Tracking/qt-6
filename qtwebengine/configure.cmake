@@ -6,13 +6,18 @@ if(QT_CONFIGURE_RUNNING)
    endfunction()
 endif()
 
+#### Versions
+
 qt_webengine_set_version(cmake ${QT_SUPPORTED_MIN_CMAKE_VERSION_FOR_BUILDING_WEBENGINE})
+qt_webengine_set_version(android_ndk 27)
+qt_webengine_set_version(android_ndk_api_level 28)
 qt_webengine_set_version(ninja 1.7.2)
 qt_webengine_set_version(python3 3.8)
-qt_webengine_set_version(nodejs 14.9)
+qt_webengine_set_version(nodejs 20.0)
 qt_webengine_set_version(nss 3.26)
 qt_webengine_set_version(gcc 10.0)
-qt_webengine_set_version(gcc-pdf 9.0)
+qt_webengine_set_version(clang 17.0)
+qt_webengine_set_version(gcc_for_pdf 10.0)
 qt_webengine_set_version(glib 2.32.0)
 qt_webengine_set_version(glibc 2.16)
 qt_webengine_set_version(harfbuzz 4.3.0)
@@ -28,8 +33,13 @@ qt_webengine_set_version(libavformat 60.16.100)
 qt_webengine_set_version(openh264 2.4.1)
 qt_webengine_set_version(windows_sdk 26100) # we only care about minor number "10.0.26100.0"
 
+
+#### find_package checks
+
 if(QT_CONFIGURE_RUNNING)
     function(qt_webengine_configure_check)
+    endfunction()
+    function(qt_webengine_configure_check_for_optional_unix)
     endfunction()
     function(qt_webengine_configure_check_for_ulimit)
     endfunction()
@@ -52,7 +62,12 @@ else()
         OUT_VAR_DEPS_FOUND sbom_deps_found
         OUT_VAR_REASON_FAILURE_MESSAGE sbom_missing_deps_message
     )
+    find_package(Rust)
+    find_package(Bindgen)
+    find_package(QWELibClang)
 endif()
+
+#### pkg_config checks
 
 if(PkgConfig_FOUND)
     pkg_check_modules(DBUS dbus-1)
@@ -96,6 +111,8 @@ if(PkgConfig_FOUND)
     pkg_check_modules(OPENH264 openh264>=${QT_CONFIGURE_CHECK_openh264_version})
 endif()
 
+#### Tests
+
 if(Python3_EXECUTABLE)
     execute_process(
         COMMAND ${Python3_EXECUTABLE} -c "import html5lib"
@@ -103,8 +120,6 @@ if(Python3_EXECUTABLE)
         OUTPUT_QUIET
     )
 endif()
-
-#### Tests
 
 if(LINUX)
    qt_webengine_configure_check_for_ulimit()
@@ -260,7 +275,7 @@ int main(void) {
 }"
 )
 
-#### Support Checks
+#### Support Checks (required)
 
 qt_webengine_configure_check("compiler-cxx20"
     MODULES QtWebEngine QtPdf
@@ -340,6 +355,12 @@ if(QT_GENERATE_SBOM AND QT_SBOM_GENERATE_JSON AND QT_SBOM_REQUIRE_GENERATE_JSON)
             "SBOM JSON file generation requirements missing, but JSON files were explicitly required. ${sbom_missing_deps_message}"
     )
 endif()
+qt_webengine_configure_check("ninja"
+    MODULES QtWebEngine QtPdf
+    CONDITION Ninja_FOUND
+    MESSAGE "Ninja version ${QT_CONFIGURE_CHECK_ninja_version} or later is required."
+    DOCUMENTATION "Ninja version ${QT_CONFIGURE_CHECK_python3_version} or later."
+)
 qt_webengine_configure_check("python3-html5lib"
     MODULES QtWebEngine
     CONDITION Python3_EXECUTABLE AND NOT html5lib_NOT_FOUND
@@ -367,31 +388,15 @@ qt_webengine_configure_check("pkg-config"
     MODULES QtWebEngine QtPdf
     CONDITION NOT LINUX OR PkgConfig_FOUND
     MESSAGE "A pkg-config support is required."
-    DOCUMENTATION "A pkg-config binary on Linux."
+    DOCUMENTATION "A pkg-config binary."
     TAGS LINUX_PLATFORM
 )
 qt_webengine_configure_check("glibc"
     MODULES QtWebEngine
     CONDITION NOT LINUX OR TEST_glibc
     MESSAGE "A suitable version >= ${QT_CONFIGURE_CHECK_glibc_version} of glibc is required."
-    DOCUMENTATION "glibc library at least ${QT_CONFIGURE_CHECK_glibc_version} version or later."
+    DOCUMENTATION "Glibc library at least ${QT_CONFIGURE_CHECK_glibc_version} version or later."
     TAGS LINUX_PLATFORM
-)
-qt_webengine_configure_check("glib"
-    MODULES QtWebEngine
-    CONDITION NOT UNIX OR GLIB_FOUND
-    MESSAGE "No glib library at least ${QT_CONFIGURE_CHECK_glib_version} version or later. Using build-in one"
-    DOCUMENTATION "glib library at least ${QT_CONFIGURE_CHECK_glib_version} version or later."
-    TAGS PLATFROM_MACOS PLATFORM_LINUX
-    OPTIONAL
-)
-qt_webengine_configure_check("harfbuzz"
-    MODULES QtWebEngine QtPdf
-    CONDITION NOT UNIX OR HARFBUZZ_FOUND
-    MESSAGE "No harfbuzz library at least ${QT_CONFIGURE_CHECK_harfbuzz_version} version or later. Using build-in one"
-    DOCUMENTATION "harfbuzz library at least ${QT_CONFIGURE_CHECK_harfbuzz_version} version or later."
-    TAGS PLATFORM_MACOS PLATFORM_LINUX
-    OPTIONAL
 )
 qt_webengine_configure_check("mesa-headers"
     MODULES QtWebEngine
@@ -411,7 +416,7 @@ qt_webengine_configure_check("nss"
     MODULES QtWebEngine
     CONDITION NOT LINUX OR NSS_FOUND
     MESSAGE "Build requires nss >= ${QT_CONFIGURE_CHECK_nss_version}."
-    DOCUMENTATION "Nss library are least ${QT_CONFIGURE_CHECK_nss_version} version."
+    DOCUMENTATION "Nss library is at least ${QT_CONFIGURE_CHECK_nss_version} version."
     TAGS LINUX_PLATFORM
 )
 qt_webengine_configure_check("dbus"
@@ -421,36 +426,6 @@ qt_webengine_configure_check("dbus"
     DOCUMENTATION "Dbus"
     TAGS LINUX_PKG_CONFIG
 )
-qt_webengine_configure_check("libudev"
-    MODULES QtWebEngine
-    CONDITION NOT UNIX OR LIBUDEV_FOUND
-    MESSAGE "No libudev found."
-    DOCUMENTATION "libudev library."
-    TAGS PLATFROM_MACOS PLATFORM_LINUX
-    OPTIONAL
-)
-
-# Only check for the 'xcb' feature if the Gui targets exists, aka Qt was not configured with
-# -no-gui.
-set(x_libs X11 LIBDRM XCOMPOSITE XCURSOR XRANDR XI XPROTO XSHMFENCE XTST XKBCOMMON XKBFILE XCBDRI3)
-set(qpa_xcb_support_check TRUE)
-foreach(x_lib ${x_libs})
-    string(TOLOWER ${x_lib} x)
-    qt_webengine_configure_check("${x}"
-        MODULES QtWebEngine
-        CONDITION NOT TARGET Qt6::Gui OR NOT LINUX OR NOT QT_FEATURE_xcb OR ${x_lib}_FOUND
-        MESSAGE "Could not find ${x} library for qpa-xcb support."
-        DOCUMENTATION "${x}"
-        TAGS LINUX_XCB
-        OPTIONAL
-    )
-    if(qpa_xcb_support_check AND NOT QT_CONFIGURE_CHECK_${x})
-        set(qpa_xcb_support_check FALSE)
-    endif()
-    unset(x)
-endforeach()
-unset(x_libs)
-
 qt_webengine_configure_check("compiler"
     MODULES QtWebEngine
     CONDITION MSVC OR
@@ -474,7 +449,7 @@ qt_webengine_configure_check("compiler"
 )
 qt_webengine_configure_check("visual-studio"
     MODULES QtWebEngine QtPdf
-    CONDITION NOT WIN32 OR NOT MSVC OR MSVC_TOOLSET_VERSION EQUAL 142 OR MSVC_TOOLSET_VERSION EQUAL 143
+    CONDITION NOT WIN32 OR NOT MSVC OR MSVC_TOOLSET_VERSION GREATER_EQUAL 142
     MESSAGE "Build requires Visual Studio 2019 or higher."
     DOCUMENTATION "Visual Studio 2019 or higher."
     TAGS WINDOWS_PLATFORM
@@ -498,18 +473,45 @@ qt_webengine_configure_check("gcc"
     MODULES QtWebEngine
     CONDITION NOT (LINUX OR MINGW) OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
               NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${QT_CONFIGURE_CHECK_gcc_version}
-    MESSAGE "GCC version must be at least ${QT_CONFIGURE_CHECK_gcc_version}"
-    DOCUMENTATION "GCC version must be at least ${QT_CONFIGURE_CHECK_gcc_version}"
+    MESSAGE "Gcc version must be at least ${QT_CONFIGURE_CHECK_gcc_version}"
+    DOCUMENTATION "Gcc version must be at least ${QT_CONFIGURE_CHECK_gcc_version} to compile QtWebEngine."
     TAGS LINUX_PLATFORM
 )
 
-qt_webengine_configure_check("gcc-pdf"
+qt_webengine_configure_check("clang"
+    MODULES QtWebEngine
+    CONDITION NOT (LINUX OR MINGW) OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "CLANG" OR
+              NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${QT_CONFIGURE_CHECK_calng_version}
+    MESSAGE "Clang version must be at least ${QT_CONFIGURE_CHECK_clang_version}"
+    DOCUMENTATION "Clang version must be at least ${QT_CONFIGURE_CHECK_clang_version} to compile QtWebEngine."
+    TAGS LINUX_PLATFORM
+)
+
+qt_webengine_configure_check("gcc_for_pdf"
     MODULES QtPdf
     CONDITION NOT (LINUX OR MINGW) OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
-              NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${QT_CONFIGURE_CHECK_gcc-pdf_version}
-    MESSAGE "GCC version must be at least ${QT_CONFIGURE_CHECK_gcc-pdf_version}"
-    DOCUMENTATION "GCC version must be at least ${QT_CONFIGURE_CHECK_gcc-pdf_version}"
+              NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${QT_CONFIGURE_CHECK_gcc_for_pdf_version}
+    MESSAGE "GCC version must be at least ${QT_CONFIGURE_CHECK_gcc_for_pdf_version}"
+    DOCUMENTATION "Gcc version must be at least ${QT_CONFIGURE_CHECK_gcc_for_pdf_version}"
     TAGS LINUX_PLATFORM
+)
+
+qt_webengine_configure_check("android-ndk"
+    MODULES QtPdf
+    CONDITION NOT ANDROID OR NOT CMAKE_ANDROID_NDK_VERSION
+        VERSION_LESS ${QT_CONFIGURE_CHECK_android_ndk_version}
+    MESSAGE "Android NDK must be at least ${QT_CONFIGURE_CHECK_android_ndk_version}, found: ${CMAKE_ANDROID_NDK_VERSION}"
+    DOCUMENTATION "Android NDK at least version ${QT_CONFIGURE_CHECK_android_ndk_version}"
+    TAGS ANDROID_PALTFORM
+)
+
+qt_webengine_configure_check("android-ndk-api-level"
+    MODULES QtPdf
+    CONDITION NOT ANDROID OR NOT ANDROID_NATIVE_API_LEVEL
+        VERSION_LESS ${QT_CONFIGURE_CHECK_android_ndk_api_level_version}
+    MESSAGE "Android NDK api level must be at least ${QT_CONFIGURE_CHECK_android_ndk_api_level_version}, found: ${ANDROID_NATIVE_API_LEVEL}"
+    DOCUMENTATION "Android NDK api level at least version ${QT_CONFIGURE_CHECK_android_ndk_api_level_version}"
+    TAGS ANDROID_PALTFORM
 )
 
 if(WIN32)
@@ -526,6 +528,43 @@ qt_webengine_configure_check("windows-sdk"
     TAGS WINDOWS_PLATFORM
 )
 unset(sdk_minor)
+
+### Support Checks (optional)
+
+# Only check for the 'xcb' feature if the Gui targets exists, aka Qt was not configured with
+# -no-gui.
+set(x_libs X11 LIBDRM XCOMPOSITE XCURSOR XRANDR XI XPROTO XSHMFENCE XTST XKBCOMMON XKBFILE XCBDRI3)
+set(qpa_xcb_support_check TRUE)
+foreach(x_lib ${x_libs})
+    string(TOLOWER ${x_lib} lib)
+    qt_webengine_configure_check("${lib}"
+        MODULES QtWebEngine
+        CONDITION NOT TARGET Qt6::Gui OR NOT LINUX OR NOT QT_FEATURE_xcb OR ${x_lib}_FOUND
+        MESSAGE "Could not find ${lib} library for qpa-xcb support."
+        DOCUMENTATION "${lib}"
+        TAGS LINUX_XCB
+        OPTIONAL
+    )
+    if(qpa_xcb_support_check AND NOT QT_CONFIGURE_CHECK_${lib})
+        set(qpa_xcb_support_check FALSE)
+    endif()
+endforeach()
+unset(lib)
+unset(x_libs)
+
+qt_webengine_configure_check_for_optional_unix(glib GLIB_FOUND)
+qt_webengine_configure_check_for_optional_unix(harfbuzz HARFBUZZ_FOUND)
+qt_webengine_configure_check_for_optional_unix(libudev LIBUDEV_FOUND)
+qt_webengine_configure_check_for_optional_unix(libpng PNG_FOUND)
+qt_webengine_configure_check_for_optional_unix(libtiff TIFF_FOUND)
+qt_webengine_configure_check_for_optional_unix(re2 TEST_re2)
+qt_webengine_configure_check_for_optional_unix(icu ICU_FOUND)
+qt_webengine_configure_check_for_optional_unix(opus OPUS_FOUND)
+qt_webengine_configure_check_for_optional_unix(vpx VPX_FOUND)
+qt_webengine_configure_check_for_optional_unix(libavutil FFMPEG_FOUND)
+qt_webengine_configure_check_for_optional_unix(libavcodec FFMPEG_FOUND)
+qt_webengine_configure_check_for_optional_unix(libavformat FFMPEG_FOUND)
+qt_webengine_configure_check_for_optional_unix(openh264 OPENH264_FOUND)
 
 #### Features
 
@@ -608,7 +647,7 @@ qt_feature("webengine-system-re2" PRIVATE
 qt_feature("webengine-system-icu" PRIVATE
     LABEL "icu"
     AUTODETECT FALSE
-    CONDITION UNIX AND NOT APPLE AND ICU_FOUND
+    CONDITION UNIX AND ICU_FOUND
 )
 qt_feature("webengine-system-libwebp" PRIVATE
     LABEL "libwebp, libwebpmux and libwebpdemux"
@@ -725,6 +764,12 @@ qt_feature("webengine-system-openh264" PRIVATE
     CONDITION UNIX AND OPENH264_FOUND
 )
 
+qt_feature("webengine-rust-build" PRIVATE
+    LABEL "Build with rust"
+    AUTODETECT OFF
+    CONDITION Rust_FOUND AND Bindgen_FOUND AND QWELibClang_FOUND
+)
+
 qt_feature("webengine-ozone-x11" PRIVATE
     LABEL "Support X11 on qpa-xcb"
     CONDITION LINUX
@@ -733,11 +778,18 @@ qt_feature("webengine-ozone-x11" PRIVATE
         AND qpa_xcb_support_check
 )
 
+qt_feature("webengine-precompiled-headers" PRIVATE
+    LABEL "Use precompiled headers for 3rdparty"
+    CONDITION BUILD_WITH_PCH
+)
+
+#FIXME: fix version numbers when qt_feature_with_configure_check megred as
+#it requires diffrent evaluation order
 qt_feature("webengine-gcc-legacy-support" PRIVATE
     LABEL "gcc-legacy-support"
     CONDITION UNIX AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
         AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10.0
-        AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL ${QT_CONFIGURE_CHECK_gcc-pdf_version}
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9.0
 )
 
 #### Summary
@@ -747,6 +799,8 @@ qt_configure_add_summary_section(NAME "WebEngine Repository Build Options")
 qt_configure_add_summary_entry(ARGS "webengine-build-gn")
 qt_configure_add_summary_entry(ARGS "webengine-jumbo-build")
 qt_configure_add_summary_entry(ARGS "webengine-developer-build")
+qt_configure_add_summary_entry(ARGS "webengine-rust-build")
+qt_configure_add_summary_entry(ARGS "webengine-precompiled-headers")
 qt_configure_add_summary_section(NAME "Build QtWebEngine Modules")
 qt_configure_add_summary_entry(ARGS "qtwebengine-core-build")
 qt_configure_add_summary_entry(ARGS "qtwebengine-widgets-build")

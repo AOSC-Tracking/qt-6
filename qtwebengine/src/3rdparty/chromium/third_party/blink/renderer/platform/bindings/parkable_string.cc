@@ -20,6 +20,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/process/memory.h"
+#include "base/strings/string_view_util.h"
 #include "base/synchronization/lock.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
@@ -124,7 +125,8 @@ void AsanPoisonString(const String& string) {
   if (string.Impl()->IsAtomic())
     return;
 
-  ASAN_POISON_MEMORY_REGION(string.Bytes(), string.CharactersSizeInBytes());
+  ASAN_POISON_MEMORY_REGION(string.RawByteSpan().data(),
+                            string.CharactersSizeInBytes());
 #endif  // defined(ADDRESS_SANITIZER)
 }
 
@@ -133,7 +135,8 @@ void AsanUnpoisonString(const String& string) {
   if (string.IsNull())
     return;
 
-  ASAN_UNPOISON_MEMORY_REGION(string.Bytes(), string.CharactersSizeInBytes());
+  ASAN_UNPOISON_MEMORY_REGION(string.RawByteSpan().data(),
+                              string.CharactersSizeInBytes());
 #endif  // defined(ADDRESS_SANITIZER)
 }
 
@@ -146,7 +149,7 @@ class NullableCharBuffer final {
 
   explicit NullableCharBuffer(size_t size) {
     data_ = reinterpret_cast<char*>(
-        WTF::Partitions::BufferPartition()
+        Partitions::BufferPartition()
             ->AllocInline<partition_alloc::AllocFlags::kReturnNull>(
                 size, "NullableCharBuffer"));
     size_ = size;
@@ -157,7 +160,7 @@ class NullableCharBuffer final {
 
   ~NullableCharBuffer() {
     if (data_)
-      WTF::Partitions::BufferPartition()->Free(data_);
+      Partitions::BufferPartition()->Free(data_);
   }
 
   // May return nullptr.
@@ -417,24 +420,43 @@ size_t ParkableStringImpl::CharactersSizeInBytes() const {
   return metadata_->length_ * (is_8bit() ? sizeof(LChar) : sizeof(UChar));
 }
 
-size_t ParkableStringImpl::MemoryFootprintForDump() const {
+namespace {
+void RecordStringImplMemoryUsage(ParkableStringImpl::MemoryUsage* result,
+                                 const String& string) {
+  if (StringImpl* impl = string.Impl()) {
+    result->string_impl = impl;
+    result->string_impl_size = sizeof(*impl) + impl->CharactersSizeInBytes();
+  }
+}
+}  // namespace
+
+ParkableStringImpl::MemoryUsage ParkableStringImpl::MemoryUsageForSnapshot()
+    const {
   AssertOnValidThread();
-  size_t size = sizeof(ParkableStringImpl);
+  MemoryUsage result = {0, nullptr, 0};
+  result.this_size = sizeof(ParkableStringImpl);
 
-  if (!may_be_parked())
-    return size + string_.CharactersSizeInBytes();
+  if (!may_be_parked()) {
+    RecordStringImplMemoryUsage(&result, string_);
+    return result;
+  }
 
-  size += sizeof(ParkableMetadata);
+  result.this_size += sizeof(ParkableMetadata);
 
   base::AutoLock locker(metadata_->lock_);
-  if (!is_parked_no_lock()) {
-    size += string_.CharactersSizeInBytes();
+  if (!is_parked_no_lock() && !is_on_disk_no_lock()) {
+    RecordStringImplMemoryUsage(&result, string_);
   }
 
   if (metadata_->compressed_)
-    size += metadata_->compressed_->size();
+    result.this_size += metadata_->compressed_->size();
 
-  return size;
+  return result;
+}
+
+size_t ParkableStringImpl::MemoryFootprintForDump() const {
+  MemoryUsage usage = MemoryUsageForSnapshot();
+  return usage.this_size + usage.string_impl_size;
 }
 
 ParkableStringImpl::AgeOrParkResult ParkableStringImpl::MaybeAgeOrParkString() {
@@ -1058,7 +1080,7 @@ void ParkableString::OnMemoryDump(WebProcessMemoryDump* pmd,
 
   const char* parent_allocation =
       may_be_parked() ? ParkableStringManager::kAllocatorDumpName
-                      : WTF::Partitions::kAllocatedObjectPoolName;
+                      : Partitions::kAllocatedObjectPoolName;
   pmd->AddSuballocation(dump->Guid(), parent_allocation);
 }
 

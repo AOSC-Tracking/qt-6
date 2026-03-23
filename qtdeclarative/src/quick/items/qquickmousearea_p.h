@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKMOUSEAREA_P_H
 #define QQUICKMOUSEAREA_P_H
@@ -34,7 +35,7 @@ class Q_QUICK_EXPORT QQuickMouseArea : public QQuickItem
     Q_PROPERTY(qreal mouseY READ mouseY NOTIFY mouseYChanged)
     Q_PROPERTY(bool containsMouse READ hovered NOTIFY hoveredChanged)
     Q_PROPERTY(bool pressed READ isPressed NOTIFY pressedChanged)
-    Q_PROPERTY(bool enabled READ isEnabled WRITE setEnabled NOTIFY enabledChanged)
+    Q_PROPERTY(bool enabled READ isEnabled WRITE setEnabled NOTIFY enabledChanged OVERRIDE)
     Q_PROPERTY(bool scrollGestureEnabled READ isScrollGestureEnabled WRITE setScrollGestureEnabled NOTIFY scrollGestureEnabledChanged REVISION(2, 5))
     Q_PROPERTY(Qt::MouseButtons pressedButtons READ pressedButtons NOTIFY pressedButtonsChanged)
     Q_PROPERTY(Qt::MouseButtons acceptedButtons READ acceptedButtons WRITE setAcceptedButtons NOTIFY acceptedButtonsChanged)

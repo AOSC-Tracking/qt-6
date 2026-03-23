@@ -9,6 +9,7 @@
 
 #include "media/parsers/h264_parser.h"
 
+#include <array>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -67,13 +68,12 @@ void H264SPS::GetLevelConfigFromProfileLevel(VideoCodecProfile profile,
   }
 }
 
-H264SPS::H264SPS() {
-  memset(this, 0, sizeof(*this));
-}
-
+H264SPS::H264SPS() = default;
+H264SPS::H264SPS(const H264SPS&) = default;
 H264SPS& H264SPS::operator=(const H264SPS&) = default;
-
 H264SPS::H264SPS(H264SPS&&) noexcept = default;
+H264SPS& H264SPS::operator=(H264SPS&&) noexcept = default;
+bool H264SPS::operator==(const H264SPS&) const = default;
 
 // Based on T-REC-H.264 7.4.2.1.1, "Sequence parameter set data semantics",
 // available from http://www.itu.int/rec/T-REC-H.264.
@@ -209,22 +209,18 @@ bool H264SPS::CheckIndicatedLevelWithinTarget(uint8_t target_level) const {
   return level <= target_level;
 }
 
-H264PPS::H264PPS() {
-  memset(this, 0, sizeof(*this));
-}
-
+H264PPS::H264PPS() = default;
+H264PPS::H264PPS(const H264PPS&) = default;
+H264PPS& H264PPS::operator=(const H264PPS&) = default;
 H264PPS::H264PPS(H264PPS&&) noexcept = default;
+H264PPS& H264PPS::operator=(H264PPS&&) noexcept = default;
+bool H264PPS::operator==(const H264PPS&) const = default;
 
-H264SliceHeader::H264SliceHeader() {
-  memset(this, 0, sizeof(*this));
-}
-
-H264SliceHeader::H264SliceHeader(const H264SliceHeader& t) = default;
-H264SliceHeader& H264SliceHeader::operator=(const H264SliceHeader& t) = default;
-
-H264SEIMessage::H264SEIMessage() {
-  memset(this, 0, sizeof(*this));
-}
+H264SliceHeader::H264SliceHeader() = default;
+H264SliceHeader::H264SliceHeader(const H264SliceHeader&) = default;
+H264SliceHeader& H264SliceHeader::operator=(const H264SliceHeader&) = default;
+H264SliceHeader::H264SliceHeader(H264SliceHeader&&) = default;
+H264SliceHeader& H264SliceHeader::operator=(H264SliceHeader&&) = default;
 
 gfx::HdrMetadataCta861_3 H264SEIContentLightLevelInfo::ToGfx() const {
   return gfx::HdrMetadataCta861_3(max_content_light_level,
@@ -254,10 +250,44 @@ H264SEI::~H264SEI() = default;
 
 // ISO 14496 part 10
 // VUI parameters: Table E-1 "Meaning of sample aspect ratio indicator"
-static const int kTableSarWidth[] = {0,  1,  12, 10, 16,  40, 24, 20, 32,
-                                     80, 18, 15, 64, 160, 4,  3,  2};
-static const int kTableSarHeight[] = {0,  1,  11, 11, 11, 33, 11, 11, 11,
-                                      33, 11, 11, 33, 99, 3,  2,  1};
+const auto kTableSarWidth = std::to_array<int>({
+    0,
+    1,
+    12,
+    10,
+    16,
+    40,
+    24,
+    20,
+    32,
+    80,
+    18,
+    15,
+    64,
+    160,
+    4,
+    3,
+    2,
+});
+const auto kTableSarHeight = std::to_array<int>({
+    0,
+    1,
+    11,
+    11,
+    11,
+    33,
+    11,
+    11,
+    11,
+    33,
+    11,
+    11,
+    33,
+    99,
+    3,
+    2,
+    1,
+});
 static_assert(std::size(kTableSarWidth) == std::size(kTableSarHeight),
               "sar tables must have the same size");
 
@@ -556,83 +586,83 @@ H264Parser::Result H264Parser::AdvanceToNextNALU(H264NALU* nalu) {
 }
 
 // Default scaling lists (per spec).
-static const uint8_t kDefault4x4Intra[kH264ScalingList4x4Length] = {
-    6, 13, 13, 20, 20, 20, 28, 28, 28, 28, 32, 32, 32, 37, 37, 42,
-};
+static const std::array<uint8_t, kH264ScalingList4x4Length> kDefault4x4Intra = {
+    {6, 13, 13, 20, 20, 20, 28, 28, 28, 28, 32, 32, 32, 37, 37, 42}};
 
-static const uint8_t kDefault4x4Inter[kH264ScalingList4x4Length] = {
-    10, 14, 14, 20, 20, 20, 24, 24, 24, 24, 27, 27, 27, 30, 30, 34,
-};
+static const std::array<uint8_t, kH264ScalingList4x4Length> kDefault4x4Inter = {
+    {10, 14, 14, 20, 20, 20, 24, 24, 24, 24, 27, 27, 27, 30, 30, 34}};
 
-static const uint8_t kDefault8x8Intra[kH264ScalingList8x8Length] = {
-    6,  10, 10, 13, 11, 13, 16, 16, 16, 16, 18, 18, 18, 18, 18, 23,
-    23, 23, 23, 23, 23, 25, 25, 25, 25, 25, 25, 25, 27, 27, 27, 27,
-    27, 27, 27, 27, 29, 29, 29, 29, 29, 29, 29, 31, 31, 31, 31, 31,
-    31, 33, 33, 33, 33, 33, 36, 36, 36, 36, 38, 38, 38, 40, 40, 42,
-};
+static const std::array<uint8_t, kH264ScalingList8x8Length> kDefault8x8Intra = {
+    {
+        6,  10, 10, 13, 11, 13, 16, 16, 16, 16, 18, 18, 18, 18, 18, 23,
+        23, 23, 23, 23, 23, 25, 25, 25, 25, 25, 25, 25, 27, 27, 27, 27,
+        27, 27, 27, 27, 29, 29, 29, 29, 29, 29, 29, 31, 31, 31, 31, 31,
+        31, 33, 33, 33, 33, 33, 36, 36, 36, 36, 38, 38, 38, 40, 40, 42,
+    }};
 
-static const uint8_t kDefault8x8Inter[kH264ScalingList8x8Length] = {
-    9,  13, 13, 15, 13, 15, 17, 17, 17, 17, 19, 19, 19, 19, 19, 21,
-    21, 21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 24, 24, 24, 24,
-    24, 24, 24, 24, 25, 25, 25, 25, 25, 25, 25, 27, 27, 27, 27, 27,
-    27, 28, 28, 28, 28, 28, 30, 30, 30, 30, 32, 32, 32, 33, 33, 35,
-};
+static const std::array<uint8_t, kH264ScalingList8x8Length> kDefault8x8Inter = {
+    {
+        9,  13, 13, 15, 13, 15, 17, 17, 17, 17, 19, 19, 19, 19, 19, 21,
+        21, 21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 24, 24, 24, 24,
+        24, 24, 24, 24, 25, 25, 25, 25, 25, 25, 25, 27, 27, 27, 27, 27,
+        27, 28, 28, 28, 28, 28, 30, 30, 30, 30, 32, 32, 32, 33, 33, 35,
+    }};
 
 static inline void DefaultScalingList4x4(
     int i,
-    uint8_t scaling_list4x4[][kH264ScalingList4x4Length]) {
+    std::array<std::array<uint8_t, kH264ScalingList4x4Length>, 6>&
+        scaling_list4x4) {
   DCHECK_LT(i, 6);
 
   if (i < 3)
-    memcpy(scaling_list4x4[i], kDefault4x4Intra, sizeof(kDefault4x4Intra));
+    scaling_list4x4[i] = kDefault4x4Intra;
   else if (i < 6)
-    memcpy(scaling_list4x4[i], kDefault4x4Inter, sizeof(kDefault4x4Inter));
+    scaling_list4x4[i] = kDefault4x4Inter;
 }
 
 static inline void DefaultScalingList8x8(
     int i,
-    uint8_t scaling_list8x8[][kH264ScalingList8x8Length]) {
+    std::array<std::array<uint8_t, kH264ScalingList8x8Length>, 6>&
+        scaling_list8x8) {
   DCHECK_LT(i, 6);
 
   if (i % 2 == 0)
-    memcpy(scaling_list8x8[i], kDefault8x8Intra, sizeof(kDefault8x8Intra));
+    scaling_list8x8[i] = kDefault8x8Intra;
   else
-    memcpy(scaling_list8x8[i], kDefault8x8Inter, sizeof(kDefault8x8Inter));
+    scaling_list8x8[i] = kDefault8x8Inter;
 }
 
 static void FallbackScalingList4x4(
     int i,
-    const uint8_t default_scaling_list_intra[],
-    const uint8_t default_scaling_list_inter[],
-    uint8_t scaling_list4x4[][kH264ScalingList4x4Length]) {
-  static const int kScalingList4x4ByteSize =
-      sizeof(scaling_list4x4[0][0]) * kH264ScalingList4x4Length;
-
+    const std::array<uint8_t, kH264ScalingList4x4Length>&
+        default_scaling_list_intra,
+    const std::array<uint8_t, kH264ScalingList4x4Length>&
+        default_scaling_list_inter,
+    std::array<std::array<uint8_t, kH264ScalingList4x4Length>, 6>&
+        scaling_list4x4) {
   switch (i) {
     case 0:
-      memcpy(scaling_list4x4[i], default_scaling_list_intra,
-             kScalingList4x4ByteSize);
+      scaling_list4x4[i] = default_scaling_list_intra;
       break;
 
     case 1:
-      memcpy(scaling_list4x4[i], scaling_list4x4[0], kScalingList4x4ByteSize);
+      scaling_list4x4[i] = scaling_list4x4[0];
       break;
 
     case 2:
-      memcpy(scaling_list4x4[i], scaling_list4x4[1], kScalingList4x4ByteSize);
+      scaling_list4x4[i] = scaling_list4x4[1];
       break;
 
     case 3:
-      memcpy(scaling_list4x4[i], default_scaling_list_inter,
-             kScalingList4x4ByteSize);
+      scaling_list4x4[i] = default_scaling_list_inter;
       break;
 
     case 4:
-      memcpy(scaling_list4x4[i], scaling_list4x4[3], kScalingList4x4ByteSize);
+      scaling_list4x4[i] = scaling_list4x4[3];
       break;
 
     case 5:
-      memcpy(scaling_list4x4[i], scaling_list4x4[4], kScalingList4x4ByteSize);
+      scaling_list4x4[i] = scaling_list4x4[4];
       break;
 
     default:
@@ -642,37 +672,35 @@ static void FallbackScalingList4x4(
 
 static void FallbackScalingList8x8(
     int i,
-    const uint8_t default_scaling_list_intra[],
-    const uint8_t default_scaling_list_inter[],
-    uint8_t scaling_list8x8[][kH264ScalingList8x8Length]) {
-  static const int kScalingList8x8ByteSize =
-      sizeof(scaling_list8x8[0][0]) * kH264ScalingList8x8Length;
-
+    const std::array<uint8_t, kH264ScalingList8x8Length>&
+        default_scaling_list_intra,
+    const std::array<uint8_t, kH264ScalingList8x8Length>&
+        default_scaling_list_inter,
+    std::array<std::array<uint8_t, kH264ScalingList8x8Length>, 6>&
+        scaling_list8x8) {
   switch (i) {
     case 0:
-      memcpy(scaling_list8x8[i], default_scaling_list_intra,
-             kScalingList8x8ByteSize);
+      scaling_list8x8[i] = default_scaling_list_intra;
       break;
 
     case 1:
-      memcpy(scaling_list8x8[i], default_scaling_list_inter,
-             kScalingList8x8ByteSize);
+      scaling_list8x8[i] = default_scaling_list_inter;
       break;
 
     case 2:
-      memcpy(scaling_list8x8[i], scaling_list8x8[0], kScalingList8x8ByteSize);
+      scaling_list8x8[i] = scaling_list8x8[0];
       break;
 
     case 3:
-      memcpy(scaling_list8x8[i], scaling_list8x8[1], kScalingList8x8ByteSize);
+      scaling_list8x8[i] = scaling_list8x8[1];
       break;
 
     case 4:
-      memcpy(scaling_list8x8[i], scaling_list8x8[2], kScalingList8x8ByteSize);
+      scaling_list8x8[i] = scaling_list8x8[2];
       break;
 
     case 5:
-      memcpy(scaling_list8x8[i], scaling_list8x8[3], kScalingList8x8ByteSize);
+      scaling_list8x8[i] = scaling_list8x8[3];
       break;
 
     default:
@@ -680,9 +708,9 @@ static void FallbackScalingList8x8(
   }
 }
 
-H264Parser::Result H264Parser::ParseScalingList(int size,
-                                                uint8_t* scaling_list,
-                                                bool* use_default) {
+H264Parser::Result H264Parser::ParseScalingList(
+    base::span<uint8_t> scaling_list,
+    bool* use_default) {
   // See chapter 7.3.2.1.1.1.
   int last_scale = 8;
   int next_scale = 8;
@@ -690,7 +718,7 @@ H264Parser::Result H264Parser::ParseScalingList(int size,
 
   *use_default = false;
 
-  for (int j = 0; j < size; ++j) {
+  for (size_t j = 0; j < scaling_list.size(); ++j) {
     if (next_scale != 0) {
       READ_SE_OR_RETURN(&delta_scale);
       IN_RANGE_OR_RETURN(delta_scale, -128, 127);
@@ -720,8 +748,7 @@ H264Parser::Result H264Parser::ParseSPSScalingLists(H264SPS* sps) {
     READ_BOOL_OR_RETURN(&seq_scaling_list_present_flag);
 
     if (seq_scaling_list_present_flag) {
-      res = ParseScalingList(std::size(sps->scaling_list4x4[i]),
-                             sps->scaling_list4x4[i], &use_default);
+      res = ParseScalingList(sps->scaling_list4x4[i], &use_default);
       if (res != kOk)
         return res;
 
@@ -739,8 +766,7 @@ H264Parser::Result H264Parser::ParseSPSScalingLists(H264SPS* sps) {
     READ_BOOL_OR_RETURN(&seq_scaling_list_present_flag);
 
     if (seq_scaling_list_present_flag) {
-      res = ParseScalingList(std::size(sps->scaling_list8x8[i]),
-                             sps->scaling_list8x8[i], &use_default);
+      res = ParseScalingList(sps->scaling_list8x8[i], &use_default);
       if (res != kOk)
         return res;
 
@@ -767,8 +793,7 @@ H264Parser::Result H264Parser::ParsePPSScalingLists(const H264SPS& sps,
     READ_BOOL_OR_RETURN(&pic_scaling_list_present_flag);
 
     if (pic_scaling_list_present_flag) {
-      res = ParseScalingList(std::size(pps->scaling_list4x4[i]),
-                             pps->scaling_list4x4[i], &use_default);
+      res = ParseScalingList(pps->scaling_list4x4[i], &use_default);
       if (res != kOk)
         return res;
 
@@ -793,8 +818,7 @@ H264Parser::Result H264Parser::ParsePPSScalingLists(const H264SPS& sps,
       READ_BOOL_OR_RETURN(&pic_scaling_list_present_flag);
 
       if (pic_scaling_list_present_flag) {
-        res = ParseScalingList(std::size(pps->scaling_list8x8[i]),
-                               pps->scaling_list8x8[i], &use_default);
+        res = ParseScalingList(pps->scaling_list8x8[i], &use_default);
         if (res != kOk)
           return res;
 
@@ -925,10 +949,12 @@ H264Parser::Result H264Parser::ParseVUIParameters(H264SPS* sps) {
 }
 
 static void FillDefaultSeqScalingLists(H264SPS* sps) {
-  static_assert(sizeof(sps->scaling_list4x4[0][0]) == sizeof(uint8_t));
-  memset(sps->scaling_list4x4, 16, sizeof(sps->scaling_list4x4));
-  static_assert(sizeof(sps->scaling_list8x8[0][0]) == sizeof(uint8_t));
-  memset(sps->scaling_list8x8, 16, sizeof(sps->scaling_list8x8));
+  for (auto& arr : sps->scaling_list4x4) {
+    arr.fill(16);
+  }
+  for (auto& arr : sps->scaling_list8x8) {
+    arr.fill(16);
+  }
 }
 
 H264Parser::Result H264Parser::ParseSPS(int* sps_id) {
@@ -1062,6 +1088,7 @@ H264Parser::Result H264Parser::ParsePPS(int* pps_id) {
   std::unique_ptr<H264PPS> pps(new H264PPS());
 
   READ_UE_OR_RETURN(&pps->pic_parameter_set_id);
+  IN_RANGE_OR_RETURN(pps->pic_parameter_set_id, 0, 255);
   READ_UE_OR_RETURN(&pps->seq_parameter_set_id);
   TRUE_OR_RETURN(pps->seq_parameter_set_id < 32);
 
@@ -1133,6 +1160,7 @@ H264Parser::Result H264Parser::ParsePPS(int* pps_id) {
       }
 
       READ_SE_OR_RETURN(&pps->second_chroma_qp_index_offset);
+      IN_RANGE_OR_RETURN(pps->second_chroma_qp_index_offset, -12, 12);
     }
   }
 
@@ -1207,7 +1235,7 @@ H264Parser::Result H264Parser::ParseRefPicListModifications(
     READ_BOOL_OR_RETURN(&shdr->ref_pic_list_modification_flag_l0);
     if (shdr->ref_pic_list_modification_flag_l0) {
       res = ParseRefPicListModification(shdr->num_ref_idx_l0_active_minus1,
-                                        shdr->ref_list_l0_modifications);
+                                        shdr->ref_list_l0_modifications.data());
       if (res != kOk)
         return res;
     }
@@ -1217,7 +1245,7 @@ H264Parser::Result H264Parser::ParseRefPicListModifications(
     READ_BOOL_OR_RETURN(&shdr->ref_pic_list_modification_flag_l1);
     if (shdr->ref_pic_list_modification_flag_l1) {
       res = ParseRefPicListModification(shdr->num_ref_idx_l1_active_minus1,
-                                        shdr->ref_list_l1_modifications);
+                                        shdr->ref_list_l1_modifications.data());
       if (res != kOk)
         return res;
     }
@@ -1386,8 +1414,10 @@ H264Parser::Result H264Parser::ParseSliceHeader(const H264NALU& nalu,
     }
   }
 
-  if (shdr->idr_pic_flag)
+  if (shdr->idr_pic_flag) {
     READ_UE_OR_RETURN(&shdr->idr_pic_id);
+    IN_RANGE_OR_RETURN(shdr->idr_pic_id, 0, 65535);
+  }
 
   size_t bits_left_at_pic_order_cnt_start = br_.NumBitsLeft();
   if (sps->pic_order_cnt_type == 0) {
@@ -1511,75 +1541,82 @@ H264Parser::Result H264Parser::ParseSEI(H264SEI* sei) {
   // the parsed SEI messages, so we have to set a limit here.
   constexpr int kMaxParsedSEIMessages = 64;
   do {
+    int type = 0;
+    READ_BITS_OR_RETURN(8, &byte);
+    while (byte == 0xff) {
+      type += 255;
+      READ_BITS_OR_RETURN(8, &byte);
+    }
+    type += byte;
+
+    int payload_size = 0;
+    READ_BITS_OR_RETURN(8, &byte);
+    while (byte == 0xff) {
+      payload_size += 255;
+      READ_BITS_OR_RETURN(8, &byte);
+    }
+    payload_size += byte;
+    int num_bits_remain = payload_size * 8;
+
+    DVLOG(4) << "Found SEI message type: " << type
+             << " payload size: " << payload_size;
+
+    enum Type {
+      kSEIRecoveryPoint = 6,
+      kSEIMasteringDisplayInfo = 137,
+      kSEIContentLightLevelInfo = 144,
+    };
+
     H264SEIMessage sei_msg;
-    sei_msg.type = 0;
-    READ_BITS_OR_RETURN(8, &byte);
-    while (byte == 0xff) {
-      sei_msg.type += 255;
-      READ_BITS_OR_RETURN(8, &byte);
-    }
-    sei_msg.type += byte;
-
-    sei_msg.payload_size = 0;
-    READ_BITS_OR_RETURN(8, &byte);
-    while (byte == 0xff) {
-      sei_msg.payload_size += 255;
-      READ_BITS_OR_RETURN(8, &byte);
-    }
-    sei_msg.payload_size += byte;
-    int num_bits_remain = sei_msg.payload_size * 8;
-
-    DVLOG(4) << "Found SEI message type: " << sei_msg.type
-             << " payload size: " << sei_msg.payload_size;
-
-    switch (sei_msg.type) {
-      case H264SEIMessage::kSEIRecoveryPoint:
+    switch (type) {
+      case kSEIRecoveryPoint: {
+        auto recovery_point = sei_msg.emplace<H264SEIRecoveryPoint>();
         READ_UE_AND_MINUS_BITS_READ_OR_RETURN(
-            &sei_msg.recovery_point.recovery_frame_cnt, &num_bits_remain);
+            &recovery_point.recovery_frame_cnt, &num_bits_remain);
         READ_BOOL_AND_MINUS_BITS_READ_OR_RETURN(
-            &sei_msg.recovery_point.exact_match_flag, &num_bits_remain);
+            &recovery_point.exact_match_flag, &num_bits_remain);
         READ_BOOL_AND_MINUS_BITS_READ_OR_RETURN(
-            &sei_msg.recovery_point.broken_link_flag, &num_bits_remain);
+            &recovery_point.broken_link_flag, &num_bits_remain);
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
-            2, &sei_msg.recovery_point.changing_slice_group_idc,
-            &num_bits_remain);
+            2, &recovery_point.changing_slice_group_idc, &num_bits_remain);
+        IN_RANGE_OR_RETURN(recovery_point.changing_slice_group_idc, 0, 2);
         break;
-      case H264SEIMessage::kSEIContentLightLevelInfo:
+      }
+      case kSEIContentLightLevelInfo: {
+        auto& info = sei_msg.emplace<H264SEIContentLightLevelInfo>();
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
-            16, &sei_msg.content_light_level_info.max_content_light_level,
-            &num_bits_remain);
+            16, &info.max_content_light_level, &num_bits_remain);
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
-            16,
-            &sei_msg.content_light_level_info.max_picture_average_light_level,
-            &num_bits_remain);
+            16, &info.max_picture_average_light_level, &num_bits_remain);
         break;
-      case H264SEIMessage::kSEIMasteringDisplayInfo:
-        for (auto& primary : sei_msg.mastering_display_info.display_primaries) {
+      }
+      case kSEIMasteringDisplayInfo: {
+        auto& info = sei_msg.emplace<H264SEIMasteringDisplayInfo>();
+        for (auto& primary : info.display_primaries) {
           for (auto& component : primary) {
             READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(16, &component,
                                                     &num_bits_remain);
           }
         }
-        READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
-            16, &sei_msg.mastering_display_info.white_points[0],
-            &num_bits_remain);
-        READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
-            16, &sei_msg.mastering_display_info.white_points[1],
-            &num_bits_remain);
+        READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(16, &info.white_points[0],
+                                                &num_bits_remain);
+        READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(16, &info.white_points[1],
+                                                &num_bits_remain);
         uint32_t luminace_high_31bits, luminance_low_1bit;
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(31, &luminace_high_31bits,
                                                 &num_bits_remain);
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(1, &luminance_low_1bit,
                                                 &num_bits_remain);
-        sei_msg.mastering_display_info.max_luminance =
+        info.max_luminance =
             (luminace_high_31bits << 1) + (luminance_low_1bit & 0x1);
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(31, &luminace_high_31bits,
                                                 &num_bits_remain);
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(1, &luminance_low_1bit,
                                                 &num_bits_remain);
-        sei_msg.mastering_display_info.min_luminance =
+        info.min_luminance =
             (luminace_high_31bits << 1) + (luminance_low_1bit & 0x1);
         break;
+      }
       default:
         DVLOG(4) << "Unsupported SEI message";
         break;
@@ -1589,8 +1626,9 @@ H264Parser::Result H264Parser::ParseSEI(H264SEI* sei) {
     if (num_bits_remain > 0)
       SKIP_BITS_OR_RETURN(num_bits_remain);
     // Only add parsed SEI messages.
-    if (num_bits_remain < sei_msg.payload_size * 8)
+    if (num_bits_remain < payload_size * 8) {
       sei->msgs.push_back(sei_msg);
+    }
     // In case the loop endless.
     if (++num_parsed_sei_msg > kMaxParsedSEIMessages)
       return kInvalidStream;

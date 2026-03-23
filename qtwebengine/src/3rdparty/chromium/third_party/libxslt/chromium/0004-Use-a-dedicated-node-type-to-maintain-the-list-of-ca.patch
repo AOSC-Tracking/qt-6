@@ -21,10 +21,10 @@ Change-Id: Iaacbe617905a3f844367cc56b2cbcf525d4818b6
  .../libxslt/src/libxslt/xsltInternals.h       |  23 +-
  3 files changed, 199 insertions(+), 130 deletions(-)
 
-diff --git a/chromium/third_party/libxslt/src/libxslt/transform.c b/chromium/third_party/libxslt/src/libxslt/transform.c
+diff --git a/third_party/libxslt/src/libxslt/transform.c b/third_party/libxslt/src/libxslt/transform.c
 index 6ce73d2526e32..ac89c9b96bac4 100644
---- a/chromium/third_party/libxslt/src/libxslt/transform.c
-+++ b/chromium/third_party/libxslt/src/libxslt/transform.c
+--- a/third_party/libxslt/src/libxslt/transform.c
++++ b/third_party/libxslt/src/libxslt/transform.c
 @@ -518,19 +518,20 @@ xsltTransformCacheFree(xsltTransformCachePtr cache)
      /*
      * Free tree fragments.
@@ -225,10 +225,10 @@ index 6ce73d2526e32..ac89c9b96bac4 100644
  	    xsltReleaseLocalRVTs(ctxt, oldLocalFragmentTop);
      }
  
-diff --git a/chromium/third_party/libxslt/src/libxslt/variables.c b/chromium/third_party/libxslt/src/libxslt/variables.c
+diff --git a/third_party/libxslt/src/libxslt/variables.c b/third_party/libxslt/src/libxslt/variables.c
 index eb98aab2fdc90..6696d9a1315c8 100644
---- a/chromium/third_party/libxslt/src/libxslt/variables.c
-+++ b/chromium/third_party/libxslt/src/libxslt/variables.c
+--- a/third_party/libxslt/src/libxslt/variables.c
++++ b/third_party/libxslt/src/libxslt/variables.c
 @@ -47,6 +47,21 @@ static const xmlChar *xsltComputingGlobalVarMarker =
  #define XSLT_VAR_IN_SELECT (1<<1)
  #define XSLT_TCTXT_VARIABLE(c) ((xsltStackElemPtr) (c)->contextVariable)
@@ -625,10 +625,10 @@ index eb98aab2fdc90..6696d9a1315c8 100644
  }
 -
 -
-diff --git a/chromium/third_party/libxslt/src/libxslt/xsltInternals.h b/chromium/third_party/libxslt/src/libxslt/xsltInternals.h
+diff --git a/third_party/libxslt/src/libxslt/xsltInternals.h b/third_party/libxslt/src/libxslt/xsltInternals.h
 index 6faa07db52995..ec84e1dfff4f5 100644
---- a/chromium/third_party/libxslt/src/libxslt/xsltInternals.h
-+++ b/chromium/third_party/libxslt/src/libxslt/xsltInternals.h
+--- a/third_party/libxslt/src/libxslt/xsltInternals.h
++++ b/third_party/libxslt/src/libxslt/xsltInternals.h
 @@ -1410,6 +1410,8 @@ struct _xsltStylePreComp {
  
  #endif /* XSLT_REFACTORED */

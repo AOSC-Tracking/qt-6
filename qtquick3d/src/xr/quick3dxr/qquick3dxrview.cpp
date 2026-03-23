@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qtquick3dxrglobal_p.h"
 #include "qquick3dxritem_p.h"
@@ -87,6 +89,241 @@ QQuick3DViewport *QQuick3DXrView::view3d() const
     return m_xrManager.m_vrViewport;
 }
 
+namespace {
+
+struct ClosestPointResult
+{
+    bool grab = false;
+    bool inside = false;
+    float distance = 0;
+    QVector3D position;
+    QVector3D scenePosition;
+    QVector3D normal;
+    QVector3D sceneNormal;
+    QVector2D uvPosition;
+    QPointF point2D;
+    QQuickItem *quickItem = nullptr;
+};
+
+// We can assume that the transform for an XrItem always has uniform scaling,
+// so the closest point in local space is also closest in scene space
+// We're not interested in hits from the side; but we probably want a margin around the item
+static ClosestPointResult closestPointOnXrItem(const QQuick3DXrItem *xrItem, const QVector3D &pos, const float margin = 0)
+{
+    const auto mappedPos = xrItem->mapPositionFromScene(pos);
+    const qreal width = xrItem->width();
+    const qreal height = xrItem->height();
+
+    const float x = mappedPos.x();
+    const float y = mappedPos.y();
+    const float z = mappedPos.z();
+
+    const float x1 = 0;
+    const float y1 = -height;
+    const float x2 = width;
+    const float y2 = 0;
+
+    const bool insideMargin = x1 - margin <= x && x <= x2 + margin && y1 - margin <= y && y <= y2 + margin;
+    if (!insideMargin)
+        return {};
+    const bool inside = x1 <= x && x <= x2 && y1 <= y && y <= y2 && z <= 0;
+
+    const float distance = mappedPos.z();
+
+    const QVector3D position{ mappedPos.x(), mappedPos.y(), 0 };
+    const QVector3D scenePosition = xrItem->mapPositionToScene(position);
+    const QVector3D normal{ 0, 0, 1 };
+    const QVector3D sceneNormal = xrItem->mapDirectionToScene(normal);
+
+    return {
+        true,
+        inside,
+        distance,
+        position,
+        scenePosition,
+        normal,
+        sceneNormal,
+        QVector2D{},
+        QPointF{mappedPos.x(), -mappedPos.y()},
+        xrItem->contentItem()
+    };
+}
+
+
+static ClosestPointResult closestPointOnModel(QQuick3DXrView *view, QQuick3DModel *model, const QVector3D &pos, const float radius = 0)
+{
+    auto pickResult = view->closestPointPick(pos, radius, model);
+    if (pickResult.objectHit() != model)
+        return {};
+
+    const QVector3D offset = pos - pickResult.scenePosition();
+
+    const float signedDistance = QVector3D::dotProduct(offset, pickResult.sceneNormal());
+    const bool inside = signedDistance < 0;
+
+    QPointF quickPoint;
+    QQuickItem *quickItem = pickResult.itemHit();
+    auto uv = pickResult.uvPosition();
+    if (quickItem) {
+        quickPoint = QPointF(quickItem->x() + uv.x() * quickItem->width(),
+                             quickItem->y() - uv.y() * quickItem->height() + quickItem->height());
+    }
+    return {
+        true,
+        inside,
+        signedDistance,
+        pickResult.position(),
+        pickResult.scenePosition(),
+        pickResult.normal(),
+        pickResult.sceneNormal().normalized(), //#### TODO: fix sceneNormal
+        uv,
+        quickPoint,
+        quickItem
+    };
+}
+
+
+static inline ClosestPointResult closestPointOnItem(QQuick3DXrView *view, QQuick3DXrView::TouchTarget target, const QVector3D &pos, const float margin)
+{
+    if (auto *asXrItem = std::get_if<QQuick3DXrItem*>(&target))
+        return closestPointOnXrItem(*asXrItem, pos, margin);
+    if (auto *asModel =std::get_if<QQuick3DModel*>(&target))
+        return closestPointOnModel(view, *asModel, pos, margin);
+    return {};
+}
+
+static inline void sendTouch(QQuick3DXrView *view, const ClosestPointResult &point, int pointId, bool active)
+{
+    if (point.quickItem)
+        view->setTouchpoint(point.quickItem, point.point2D, pointId, active);
+}
+
+} // anonymous namespace
+
+
+// Sends appropriate touch events.
+// Updates the touchState and returns true if this target grabs the touch point.
+// touchState is input/output, and input contains the previous state if touchState->grabbed is true
+bool QQuick3DXrView::handleVirtualTouch(TouchTarget target, const QVector3D &pos, TouchState *touchState, QVector3D *offset)
+{
+    constexpr qreal sideMargin = 10;
+    constexpr qreal hoverHeight = 10;
+    constexpr qreal cancelDepth = 50;
+
+    constexpr qreal releaseHeight = 2; // Minimum vertical movement to count as a press/release when below
+    constexpr qreal releaseHeightSquared = releaseHeight * releaseHeight;
+    constexpr qreal smallDistance = 0.5; // Any movement shorter than this distance is insignificant
+    constexpr qreal sidewaysMax = 3; // Any horizontal movement larger than this distance means this is never going to be a press/release below the surface
+    constexpr qreal sidewaysMaxSquared = sidewaysMax * sidewaysMax;
+    constexpr qreal releaseSpeed = 5.0 / 1000; // Minimum vertical speed (cm/ms) to classify as a press/release
+    constexpr int interval = 100; // Time between checks to determine insignificant movement
+
+    const bool wasGrabbed = touchState->grabbed;
+    const bool wasPressed = touchState->pressed;
+    const qreal wasInside = wasGrabbed && touchState->touchDepth < 0.0;
+
+    const QVector3D oldScenePos = touchState->previous;
+    const QVector3D oldSceneNormal = touchState->normal;
+
+    // Note: We always grab the closest point on the surface. This means that for thin and flat models,
+    // we will snap to the backside, which is probably not what the user wants. If this turns out to
+    // be a problem when we evaluate this, we can change this algorithm to ignore points that have a
+    // normal vector pointing the wrong way.
+
+    auto closest = closestPointOnItem(this, target, pos, sideMargin);
+
+    bool grab = false;
+    bool pressed = false;
+
+    bool resetTimer = false;
+    float z = closest.distance; // assumes signed distance
+
+    if (wasGrabbed) {
+        // maintain grab as long as we don't move outside
+        grab = closest.grab && z > -cancelDepth && z < hoverHeight;
+
+        // if grab is false, we're definitely not pressed
+        if (grab) {
+            // We do a press/release transition if we
+            // 1. Moved between outside and inside
+            // OR
+            // 2. Had a fast enough vertical movement below the surface, without a horizontal movement
+
+            if (wasInside && closest.inside) {
+                // We stayed inside; let's see if we've had a strong vertical movement
+                int duration = touchState->timer.elapsed();
+                pressed = wasPressed; // We maintain pressed state unless proven otherwise
+                const QVector3D movement = pos - oldScenePos; // Movement is positive away from the surface
+                const qreal verticalDistance = QVector3D::dotProduct(movement, oldSceneNormal);
+                const qreal verticalDistanceSquared = verticalDistance * verticalDistance;
+                const qreal horizontalDistanceSquared = movement.lengthSquared() - verticalDistance*verticalDistance;
+
+                if (verticalDistanceSquared >= releaseHeightSquared && horizontalDistanceSquared < releaseHeightSquared) {
+                    // We have moved a significant distance vertically, without moving horizontally,
+                    // so this is a press/release (no-op if it's a press when already pressed)
+                    pressed = verticalDistance < 0;
+                    resetTimer = true;
+                } else if (duration >= interval) {
+                    // Check to see if this can become a press/release in the future
+                    if (horizontalDistanceSquared >= sidewaysMaxSquared) {
+                        // This is sideways motion, and not a press/release
+                        resetTimer = true;
+                    } else if (pressed ? verticalDistance < smallDistance : verticalDistance > -smallDistance ) {
+                        // we haven't had a significant vertical movement in the right direction (positive when pressed),
+                        // so this is not the start of a press/release
+                        resetTimer = true;
+                    } else {
+                        // If the speed is high enough, this can still become a press/release in the future
+                        // (If we're pressed, we're looking for positive speed)
+                        const qreal verticalSpeed = verticalDistance / duration;
+                        const bool sufficientSpeed = pressed ? verticalSpeed > releaseSpeed : verticalSpeed < -releaseSpeed;
+                        resetTimer = !sufficientSpeed;
+                    }
+                }
+            } else {
+                // Either hover or move between outside and inside
+                pressed = closest.inside; // closest.inside is only true if z < 0, so we don't have to check for that
+                resetTimer = true;
+            }
+        }
+    } else {
+        // only grab if hovering, not if inside: we only want to register a press
+        // coming from a hover, not when approaching from below
+        grab = closest.grab && closest.distance > 0 && closest.distance < hoverHeight;
+        resetTimer = true;
+    }
+
+    if (grab) {
+        if (offset && z < 0)
+            *offset = closest.scenePosition - pos;
+        touchState->grabbed = true;
+        touchState->target = target;
+        touchState->touchDistance = qMax(z, 0.0); // Documented to be 0 when pressed
+        touchState->touchDepth = z;
+        touchState->pressed = pressed;
+        touchState->cursorPos = closest.point2D;
+        touchState->surfacePoint = closest.scenePosition;
+        touchState->normal = closest.sceneNormal;
+        touchState->uvPosition = closest.uvPosition;
+        if (resetTimer) {
+            touchState->previous = pos;
+            touchState->timer.start();
+        }
+
+        sendTouch(this, closest, touchState->pointId, pressed);
+        return true;
+    }
+
+    if (wasGrabbed) {
+        touchState->grabbed = false;
+        touchState->pressed = false;
+        touchState->target = {};
+        sendTouch(this, closest, touchState->pointId, false);
+    }
+
+    return false;
+}
+
 /*!
     \qmlproperty bool QtQuick3D.Xr::XrView::passthroughEnabled
     \summary Holds whether passthrough is enabled for the XR view.
@@ -163,9 +400,11 @@ void QQuick3DXrView::setPassthroughEnabled(bool enable)
     }
 
     const bool orgPassthroughEnabled = m_xrManager.isPassthroughEnabled();
-    // bail if passthrough is not supported
     if (!m_xrManager.setPassthroughEnabled(enable)) {
-        qWarning("Enabling Passthrough is not supported.");
+        if (enable)
+            qWarning("Enabling passthrough is not supported.");
+        else
+            qWarning("Disabling passthrough is not supported.");
         return;
     }
 
@@ -367,6 +606,9 @@ bool QQuick3DXrView::init()
  */
 QQuick3DPickResult QQuick3DXrView::rayPick(const QVector3D &origin, const QVector3D &direction) const
 {
+    if (!m_xrManager.m_vrViewport)
+        return QQuick3DPickResult();
+
     return m_xrManager.m_vrViewport->rayPick(origin, direction);
 }
 
@@ -386,11 +628,48 @@ QQuick3DPickResult QQuick3DXrView::rayPick(const QVector3D &origin, const QVecto
  */
 QList<QQuick3DPickResult> QQuick3DXrView::rayPickAll(const QVector3D &origin, const QVector3D &direction) const
 {
+    if (!m_xrManager.m_vrViewport)
+        return {};
+
     return m_xrManager.m_vrViewport->rayPickAll(origin, direction);
 }
 
 /*!
-    \qmlmethod XrView::setTouchpoint(Item target, point position, int pointId, bool pressed)
+    \qmlmethod pickResult XrView::rayPick(vector3d origin, vector3d direction, Model model)
+
+    This method will "shoot" a ray into the scene starting at \a origin and in
+    \a direction and return information about the intersection between the ray and the specified \a model.
+
+    \since 6.11
+*/
+QQuick3DPickResult QQuick3DXrView::rayPick(const QVector3D &origin, const QVector3D &direction, QQuick3DModel *model) const
+{
+    if (!m_xrManager.m_vrViewport)
+        return QQuick3DPickResult();
+
+    return m_xrManager.m_vrViewport->rayPick(origin, direction, model);
+}
+
+/*!
+    \qmlmethod pickResult XrView::closestPointPick(vector3d origin, float radius, Model model)
+
+    This method will find the point on the surface of \a model that is nearest to \a origin, within a distance of
+    \a radius. If \a model is \c null, the closest object within \a radius will be found.
+
+    If no such object exists, \c null is returned.
+
+    \since 6.11
+*/
+QQuick3DPickResult QQuick3DXrView::closestPointPick(const QVector3D &origin, float radius, QQuick3DModel *model) const
+{
+    if (!m_xrManager.m_vrViewport)
+        return QQuick3DPickResult();
+
+    return m_xrManager.m_vrViewport->closestPointPick(origin, radius, model);
+}
+
+/*!
+    \qmlmethod void XrView::setTouchpoint(Item target, point position, int pointId, bool pressed)
 
     Sends a synthetic touch event to \a target, moving the touch point with ID \a pointId to \a position,
     with \a pressed determining if the point is pressed.
@@ -404,17 +683,18 @@ void QQuick3DXrView::setTouchpoint(QQuickItem *target, const QPointF &position, 
 }
 
 // TODO: Maybe do a proper QQuick3DXrViewPrivate instead
-struct QQuick3DXrView::XrTouchState
+struct QQuick3DXrView::XrTouchStates
 {
-    QHash<int, QQuick3DXrItem::TouchState> points;
+    QHash<int, TouchState> points;
 };
 
 /*!
     \qmlmethod vector3d XrView::processTouch(vector3d position, int pointId)
 
-    This method will search for an XrItem near \a position and send a virtual
-    touch event with touch point ID \a pointId if \a position maps to a point
-    on the surface.
+    This method will search for an XrItem, or a Model with a
+    \l{Texture::sourceItem}{sourceItem texture}, near \a position and send a
+    virtual touch event with touch point ID \a pointId if \a position maps to
+    a point on the surface.
 
     The return value is the offset between \a position and the touched point on
     the surface. This can be used to prevent a hand model from passing through
@@ -427,24 +707,33 @@ struct QQuick3DXrView::XrTouchState
 QVector3D QQuick3DXrView::processTouch(const QVector3D &pos, int pointId)
 {
     QVector3D offset;
-    if (m_xrItems.isEmpty())
-        return offset;
 
-    if (!m_touchState)
-        m_touchState = new XrTouchState;
-    QQuick3DXrItem::TouchState &state = m_touchState->points[pointId];
+    if (!m_touchStates)
+        m_touchStates = new XrTouchStates;
+    TouchState &state = m_touchStates->points[pointId];
     state.pointId = pointId; // in case it's a new point that was default-constructed
 
-    auto *prevTarget = state.target;
     bool grabbed = false;
+    const bool prevTarget = !std::holds_alternative<std::monostate>(state.target);
     if (prevTarget) {
-        grabbed = prevTarget->handleVirtualTouch(this, pos, &state, &offset);
+        grabbed = handleVirtualTouch(state.target, pos, &state, &offset);
     }
-    for (auto *item : std::as_const(m_xrItems)) {
-        if (grabbed)
-            break;
-        if (item != prevTarget)
-            grabbed = item->handleVirtualTouch(this, pos, &state, &offset);
+    if (!grabbed) {
+        for (auto *item : std::as_const(m_xrItems)) {
+            // For simplicity, try handleVirtualTouch on target again, even if we know it's not going to be different
+            if (item->visible())
+                grabbed = handleVirtualTouch(item, pos, &state, &offset);
+            if (grabbed)
+                break;
+        }
+    }
+
+    if (!grabbed) {
+        constexpr float pickRadius = 10.0;
+        auto pickResult = closestPointPick(pos, pickRadius);
+        //qDebug() << "pick result" << pickResult.objectHit() << pickResult.position();
+        if (QQuick3DModel *obj = pickResult.objectHit())
+            grabbed = handleVirtualTouch(obj, pos, &state, &offset); // will call closestPointPick again, but this makes the code simpler
     }
 
     return offset;
@@ -468,7 +757,7 @@ QVector3D QQuick3DXrView::processTouch(const QVector3D &pos, int pointId)
     \row
     \li \c target
     \li XrItem
-    \li The item that is grabbing the touch point.
+    \li The item that is grabbing the touch point, or \c null if there is no XrItem.
     \row
     \li \c pressed
     \li \c bool
@@ -481,24 +770,46 @@ QVector3D QQuick3DXrView::processTouch(const QVector3D &pos, int pointId)
     \li \c touchDistance
     \li \c real
     \li The distance from the plane to the touch point. It will be \c 0 if \c pressed is \c true.
+    \row
+    \li \c surfacePoint
+    \li \c vector3d
+    \li The position of the touch point in scene space. [since 6.11]
+    \row
+    \li \c normal
+    \li \c vector3d
+    \li The normal vector at the touch point in scene space. [since 6.11]
+    \row
+    \li \c uvPosition
+    \li \c vector2d
+    \li The UV position at the touch point. [since 6.11]
+    \row
+    \li \c model
+    \li \c Model
+    \li The model that is grabbing the touch point, or \c null if there is no Model. [since 6.11]
     \endtable
-
  */
 
 #define Q_TOUCHPOINT_STATE(prop) { QStringLiteral(#prop), QVariant::fromValue(it->prop) }
 QVariantMap QQuick3DXrView::touchpointState(int pointId) const
 {
-    auto constexpr end = QHash<int, QQuick3DXrItem::TouchState>::const_iterator();
-    auto it = m_touchState ? m_touchState->points.constFind(pointId) : end;
+    auto constexpr end = QHash<int, TouchState>::const_iterator();
+    auto it = m_touchStates ? m_touchStates->points.constFind(pointId) : end;
 
     if (it == end)
         return { { QStringLiteral("grabbed"), QVariant::fromValue(false) } };
-
-    return { Q_TOUCHPOINT_STATE(target),
+    auto *itemPointer = std::get_if<QQuick3DXrItem *>(&it->target);
+    QQuick3DXrItem *xrItem = itemPointer ? *itemPointer : nullptr;
+    auto *modelPointer = std::get_if<QQuick3DModel *>(&it->target);
+    QQuick3DModel *model = modelPointer ? *modelPointer : nullptr;
+    return { { QStringLiteral("target"), QVariant::fromValue(xrItem) },
              Q_TOUCHPOINT_STATE(grabbed),
              Q_TOUCHPOINT_STATE(pressed),
              Q_TOUCHPOINT_STATE(cursorPos),
-             Q_TOUCHPOINT_STATE(touchDistance) };
+             Q_TOUCHPOINT_STATE(surfacePoint),
+             Q_TOUCHPOINT_STATE(normal),
+             Q_TOUCHPOINT_STATE(touchDistance),
+             Q_TOUCHPOINT_STATE(uvPosition),
+             { QStringLiteral("model"), QVariant::fromValue(model) }};
 }
 #undef Q_TOUCHPOINT_STATE
 
@@ -520,6 +831,17 @@ QVariantMap QQuick3DXrView::touchpointState(int pointId) const
 
     \c ReferenceSpaceLocalFloor is mainly useful for stationary applications (seated or standing) where the content is
     positioned relative to the floor. The content will move when the user resets the view.
+
+    \note On visionOS, the reference space is always \c ReferenceSpaceLocalFloor and
+    cannot be changed. This means that applications designed with \c ReferenceSpaceLocal
+    will have their origin at floor level on visionOS, which can cause content to appear
+    at an unexpected position. To handle this, applications can check the
+    \l referenceSpace property at runtime and adjust the vertical position of their
+    content accordingly. For example:
+
+    \code
+    y: xrView.referenceSpace === XrView.ReferenceSpaceLocalFloor ? 130 : 0
+    \endcode
 
     \default XrView.ReferenceSpaceLocal
 */

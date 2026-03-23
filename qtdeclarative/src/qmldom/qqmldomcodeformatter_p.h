@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLDOMCODEFORMATTER_P_H
 #define QQMLDOMCODEFORMATTER_P_H
@@ -23,7 +24,6 @@
 #include <QtCore/QStack>
 #include <QtCore/QList>
 #include <QtCore/QSet>
-#include <QtCore/QVector>
 #include <QtCore/QMetaObject>
 
 QT_BEGIN_NAMESPACE
@@ -171,7 +171,7 @@ public:
     {
         return FormatTextStatus {
             Scanner::State {},
-            QVector<State>({ State { quint16(baseIndent), StateType::TopmostIntro } }), baseIndent
+            QList<State>({ State { quint16(baseIndent), StateType::TopmostIntro } }), baseIndent
         };
     }
 
@@ -196,7 +196,7 @@ public:
     }
 
     Scanner::State lexerState = {};
-    QVector<State> states;
+    QList<State> states;
     int finalIndent = 0;
 };
 

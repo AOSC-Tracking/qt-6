@@ -63,11 +63,15 @@ class AutofillSaveCardInfoBarDelegateMobile : public ConfirmInfoBarDelegate {
   const std::u16string& expiration_date_year() const {
     return ui_info_.expiration_date_year;
   }
+  const std::u16string& card_cvc() const { return ui_info_.card_cvc; }
   const std::u16string& displayed_target_account_email() const {
     return ui_info_.displayed_target_account_email;
   }
   const gfx::Image& displayed_target_account_avatar() const {
     return ui_info_.displayed_target_account_avatar;
+  }
+  const std::u16string& logo_icon_description() const {
+    return ui_info_.logo_icon_description;
   }
 
   // Called when a link in the legal message text was clicked.

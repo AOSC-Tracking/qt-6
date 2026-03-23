@@ -58,6 +58,7 @@ class StylePropertyShorthand;
 class StyleResolver;
 class StyleTimeline;
 class WritingDirectionMode;
+class AnimationTrigger;
 
 class CORE_EXPORT CSSAnimations final {
   DISALLOW_NEW();
@@ -464,6 +465,15 @@ class CORE_EXPORT CSSAnimations final {
       TransitionUpdateState& state,
       const PropertyHandle& transitioning_property);
 
+  // TODO(crbug.com/429392773): Uncomment and use this function.
+  // static AnimationTrigger* ComputeTimelineTrigger(
+  //     Element* element,
+  //     const CSSAnimationData* data,
+  //     wtf_size_t animation_index,
+  //     const CSSAnimationUpdate& update,
+  //     AnimationTrigger* existing_trigger,
+  //     float zoom);
+
   class AnimationEventDelegate final : public AnimationEffect::EventDelegate {
    public:
     AnimationEventDelegate(
@@ -518,7 +528,7 @@ class CORE_EXPORT CSSAnimations final {
     void Trace(Visitor*) const override;
 
    private:
-    void EnqueueEvent(const WTF::AtomicString& type,
+    void EnqueueEvent(const AtomicString& type,
                       const AnimationTimeDelta& elapsed_time);
 
     const Element& TransitionTarget() const { return *transition_target_; }

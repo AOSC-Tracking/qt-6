@@ -22,7 +22,7 @@ ReadCounter {
             --accesses;
         }
 
-        // 2 accesses
+        // 1 or 2 accesses
         bindable.push("foo");
         // 1 accesses
         finalLength = bindableReference.length;

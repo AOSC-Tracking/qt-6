@@ -8,6 +8,8 @@
 #include "base/memory/weak_ptr.h"
 #include "components/user_education/common/feature_promo/feature_promo_lifecycle.h"
 #include "components/user_education/common/feature_promo/feature_promo_result.h"
+#include "components/user_education/common/feature_promo/feature_promo_specification.h"
+#include "components/user_education/common/user_education_context.h"
 
 namespace user_education {
 
@@ -26,12 +28,15 @@ FeaturePromoController20::CanShowPromoOutputs::~CanShowPromoOutputs() = default;
 struct FeaturePromoController20::QueuedPromoData {
   using PromoInfo = FeaturePromoPriorityProvider::PromoPriorityInfo;
 
-  QueuedPromoData(FeaturePromoParams params_, PromoInfo info_)
-      : params(std::move(params_)), info(info_) {}
+  QueuedPromoData(FeaturePromoParams params_,
+                  UserEducationContextPtr context_,
+                  PromoInfo info_)
+      : params(std::move(params_)), context(std::move(context_)), info(info_) {}
   QueuedPromoData(QueuedPromoData&& other) noexcept = default;
   ~QueuedPromoData() = default;
 
   FeaturePromoParams params;
+  UserEducationContextPtr context;
   PromoInfo info;
 };
 
@@ -58,7 +63,8 @@ FeaturePromoController20::~FeaturePromoController20() {
 }
 
 void FeaturePromoController20::MaybeShowStartupPromo(
-    FeaturePromoParams params) {
+    FeaturePromoParams params,
+    UserEducationContextPtr context) {
   const base::Feature* const iph_feature = &params.feature.get();
 
   // No point in queueing a disabled feature.
@@ -86,7 +92,7 @@ void FeaturePromoController20::MaybeShowStartupPromo(
   }
 
   // Queue the promo.
-  queued_promos_.emplace_back(std::move(params),
+  queued_promos_.emplace_back(std::move(params), std::move(context),
                               session_policy()->GetPromoPriorityInfo(*spec));
 
   // This will fire immediately if the tracker is initialized.
@@ -97,6 +103,7 @@ void FeaturePromoController20::MaybeShowStartupPromo(
 
 FeaturePromoResult FeaturePromoController20::CanShowPromoCommon(
     const FeaturePromoParams& params,
+    const UserEducationContextPtr& context,
     ShowSource source,
     CanShowPromoOutputs* outputs) const {
   const bool for_demo = source == ShowSource::kDemo;
@@ -205,17 +212,24 @@ FeaturePromoResult FeaturePromoController20::CanShowPromoCommon(
     anchor_spec = &*spec->rotating_promos().at(index);
   }
 
+  // Ensure that the context is still valid; the anchor cannot be visible if the
+  // surface is gone.
+  if (!context->IsValid()) {
+    return FeaturePromoResult::kAnchorNotVisible;
+  }
+
   // Fetch the anchor element. Instead of using the index parameter, use the
   // anchor spec that has already been found.
   ui::TrackedElement* const anchor_element =
-      anchor_spec->GetAnchorElement(GetAnchorContext(), std::nullopt);
+      anchor_spec->GetAnchorElement(context->GetElementContext(), std::nullopt);
   if (!anchor_element) {
-    return FeaturePromoResult::kBlockedByUi;
+    return FeaturePromoResult::kAnchorNotVisible;
   }
 
   // Some contexts and anchors are not appropriate for showing normal promos.
-  if (!CanShowPromoForElement(anchor_element)) {
-    return FeaturePromoResult::kBlockedByUi;
+  if (const auto result = CanShowPromoForElement(anchor_element, context);
+      !result) {
+    return result;
   }
 
   // Output additional information it was requested.
@@ -230,15 +244,17 @@ FeaturePromoResult FeaturePromoController20::CanShowPromoCommon(
   return FeaturePromoResult::Success();
 }
 
-void FeaturePromoController20::MaybeShowPromo(FeaturePromoParams params) {
+void FeaturePromoController20::MaybeShowPromo(FeaturePromoParams params,
+                                              UserEducationContextPtr context) {
   auto callback = std::move(params.show_promo_result_callback);
-  PostShowPromoResult(
-      std::move(callback),
-      MaybeShowPromoImpl(std::move(params), ShowSource::kNormal));
+  PostShowPromoResult(std::move(callback),
+                      MaybeShowPromoImpl(std::move(params), std::move(context),
+                                         ShowSource::kNormal));
 }
 
 void FeaturePromoController20::MaybeShowPromoForDemoPage(
-    FeaturePromoParams params) {
+    FeaturePromoParams params,
+    UserEducationContextPtr context) {
   // Override all queued promos.
   for (auto& data : queued_promos_) {
     auto& cb = data.params.show_promo_result_callback;
@@ -250,12 +266,15 @@ void FeaturePromoController20::MaybeShowPromoForDemoPage(
 
   auto callback = std::move(params.show_promo_result_callback);
   PostShowPromoResult(std::move(callback),
-                      MaybeShowPromoImpl(std::move(params), ShowSource::kDemo));
+                      MaybeShowPromoImpl(std::move(params), std::move(context),
+                                         ShowSource::kDemo));
 }
 
 FeaturePromoResult FeaturePromoController20::CanShowPromo(
-    const FeaturePromoParams& params) const {
-  auto result = CanShowPromoCommon(params, ShowSource::kNormal, nullptr);
+    const FeaturePromoParams& params,
+    const UserEducationContextPtr& context) const {
+  auto result =
+      CanShowPromoCommon(params, context, ShowSource::kNormal, nullptr);
   if (result &&
       !feature_engagement_tracker()->WouldTriggerHelpUI(*params.feature)) {
     result = FeaturePromoResult::kBlockedByConfig;
@@ -382,13 +401,14 @@ void FeaturePromoController20::MaybeShowQueuedPromo() {
   // Store the data that is needed to show the promo and then remove it from
   // the queue.
   FeaturePromoParams params = std::move(next->params);
+  UserEducationContextPtr context = std::move(next->context);
   queued_promos_.erase(next);
   ShowPromoResultCallback callback =
       std::move(params.show_promo_result_callback);
 
   // Try to start the promo, assuming the tracker was successfully initialized.
-  const FeaturePromoResult result =
-      MaybeShowPromoImpl(std::move(params), ShowSource::kQueue);
+  const FeaturePromoResult result = MaybeShowPromoImpl(
+      std::move(params), std::move(context), ShowSource::kQueue);
   if (callback) {
     std::move(callback).Run(result);
   }
@@ -402,10 +422,11 @@ void FeaturePromoController20::MaybeShowQueuedPromo() {
 
 FeaturePromoResult FeaturePromoController20::MaybeShowPromoCommon(
     FeaturePromoParams params,
+    UserEducationContextPtr context,
     ShowSource source) {
   // Perform common checks.
   CanShowPromoOutputs outputs;
-  auto result = CanShowPromoCommon(params, source, &outputs);
+  auto result = CanShowPromoCommon(params, context, source, &outputs);
   if (!result) {
     return result;
   }
@@ -427,8 +448,12 @@ FeaturePromoResult FeaturePromoController20::MaybeShowPromoCommon(
 
   // TODO(crbug.com/40200981): Currently this must be called before
   // ShouldTriggerHelpUI() below. See bug for details.
-  const bool screen_reader_available =
-      CheckScreenReaderPromptAvailable(for_demo || in_iph_demo_mode_);
+  bool screen_reader_available = false;
+  if (outputs.display_spec->promo_type() !=
+      FeaturePromoSpecification::PromoType::kCustomUi) {
+    screen_reader_available =
+        CheckExtendedPropertiesPromptAvailable(for_demo || in_iph_demo_mode_);
+  }
 
   if (!for_demo && !feature_engagement_tracker()->ShouldTriggerHelpUI(
                        params.feature.get())) {
@@ -440,17 +465,20 @@ FeaturePromoResult FeaturePromoController20::MaybeShowPromoCommon(
   DCHECK(!current_promo());
   set_current_promo(std::move(outputs.lifecycle));
   // Construct the parameters for the promotion.
-  ShowPromoBubbleParams show_params;
-  show_params.spec = outputs.display_spec;
-  show_params.anchor_element = outputs.anchor_element;
-  show_params.screen_reader_prompt_available = screen_reader_available;
-  show_params.body_format = std::move(params.body_params);
-  show_params.screen_reader_format = std::move(params.screen_reader_params);
-  show_params.title_format = std::move(params.title_params);
-  show_params.can_snooze = current_promo()->CanSnooze();
+  FeaturePromoSpecification::BuildHelpBubbleParams build_params;
+  build_params.spec = outputs.display_spec;
+  build_params.anchor_element = outputs.anchor_element;
+  build_params.screen_reader_prompt_available = screen_reader_available;
+  build_params.body_format = std::move(params.body_params);
+  build_params.screen_reader_format = std::move(params.screen_reader_params);
+  build_params.title_format = std::move(params.title_params);
+  build_params.can_snooze = current_promo()->CanSnooze();
+  build_params.arrow =
+      build_params.spec->GetBubbleArrow(build_params.anchor_element);
 
   // Try to show the bubble and bail out if we cannot.
-  auto bubble = ShowPromoBubbleImpl(std::move(show_params));
+  auto bubble =
+      ShowPromoBubbleImpl(std::move(build_params), std::move(context));
   if (!bubble) {
     set_current_promo(nullptr);
     if (!for_demo) {
@@ -478,9 +506,11 @@ FeaturePromoResult FeaturePromoController20::MaybeShowPromoCommon(
 
 FeaturePromoResult FeaturePromoController20::MaybeShowPromoImpl(
     FeaturePromoParams params,
+    UserEducationContextPtr context,
     ShowSource source) {
   const char* feature_name = params.feature.get().name;
-  auto result = MaybeShowPromoCommon(std::move(params), source);
+  auto result =
+      MaybeShowPromoCommon(std::move(params), std::move(context), source);
   auto failure = result.failure();
   if (failure.has_value()) {
     RecordPromoNotShown(feature_name, failure.value());
@@ -554,10 +584,11 @@ FeaturePromoController20::GetCommonWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-bool FeaturePromoController20::CanShowPromoForElement(
-    ui::TrackedElement* anchor_element) const {
+FeaturePromoResult FeaturePromoController20::CanShowPromoForElement(
+    ui::TrackedElement* anchor_element,
+    const UserEducationContextPtr& context) const {
   // Default implementation for testing.
-  return true;
+  return FeaturePromoResult::Success();
 }
 
 }  // namespace user_education

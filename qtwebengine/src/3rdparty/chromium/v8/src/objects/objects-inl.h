@@ -1,16 +1,18 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-//
+
+#ifndef V8_OBJECTS_OBJECTS_INL_H_
+#define V8_OBJECTS_OBJECTS_INL_H_
+
 // Review notes:
 //
 // - The use of macros in these inline functions may seem superfluous
 // but it is absolutely needed to make sure gcc generates optimal
 // code. gcc is not happy when attempting to inline too deep.
-//
 
-#ifndef V8_OBJECTS_OBJECTS_INL_H_
-#define V8_OBJECTS_OBJECTS_INL_H_
+#include "src/objects/objects.h"
+// Include the non-inl header before the rest of the headers.
 
 #include "include/v8-internal.h"
 #include "src/base/bits.h"
@@ -26,6 +28,7 @@
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/heap/read-only-heap-inl.h"
 #include "src/numbers/conversions-inl.h"
+#include "src/objects/allocation-site.h"
 #include "src/objects/casting.h"
 #include "src/objects/deoptimization-data.h"
 #include "src/objects/heap-number-inl.h"
@@ -36,12 +39,13 @@
 #include "src/objects/keys.h"
 #include "src/objects/literal-objects.h"
 #include "src/objects/lookup-inl.h"  // TODO(jkummerow): Drop.
+#include "src/objects/number-string-cache-inl.h"
 #include "src/objects/object-list-macros.h"
-#include "src/objects/objects.h"
 #include "src/objects/oddball-inl.h"
 #include "src/objects/property-details.h"
 #include "src/objects/property.h"
 #include "src/objects/regexp-match-info-inl.h"
+#include "src/objects/scope-info-inl.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/slots-inl.h"
 #include "src/objects/slots.h"
@@ -195,10 +199,12 @@ bool IsNullOrUndefined(Tagged<HeapObject> obj) {
 bool IsZero(Tagged<Object> obj) { return obj == Smi::zero(); }
 
 bool IsPublicSymbol(Tagged<Object> obj) {
-  return IsSymbol(obj) && !Cast<Symbol>(obj)->is_private();
+  Tagged<Symbol> symbol;
+  return TryCast<Symbol>(obj, &symbol) && !symbol->is_private();
 }
 bool IsPrivateSymbol(Tagged<Object> obj) {
-  return IsSymbol(obj) && Cast<Symbol>(obj)->is_private();
+  Tagged<Symbol> symbol;
+  return TryCast<Symbol>(obj, &symbol) && symbol->is_private();
 }
 
 bool IsNoSharedNameSentinel(Tagged<Object> obj) {
@@ -218,6 +224,7 @@ bool IsNoSharedNameSentinel(Tagged<Object> obj) {
   };
 HEAP_OBJECT_ORDINARY_TYPE_LIST(IS_HELPER_DEF)
 HEAP_OBJECT_TRUSTED_TYPE_LIST(IS_HELPER_DEF)
+VIRTUAL_OBJECT_TYPE_LIST(IS_HELPER_DEF)
 ODDBALL_LIST(IS_HELPER_DEF)
 
 #define IS_HELPER_DEF_STRUCT(NAME, Name, name) IS_HELPER_DEF(Name)
@@ -254,6 +261,14 @@ struct CastTraits<JSAny> {
     return IsPrimitive(value) || IsJSReceiver(value);
   }
 };
+template <>
+struct CastTraits<AllocationSiteWithWeakNext> {
+  template <typename From>
+  static inline bool AllowFrom(Tagged<From> value) {
+    Tagged<AllocationSite> site;
+    return TryCast<AllocationSite>(value, &site) && site->HasWeakNext();
+  }
+};
 
 template <>
 struct CastTraits<FieldType> {
@@ -288,6 +303,8 @@ template <>
 struct CastTraits<FreshlyAllocatedBigInt> : public CastTraits<BigInt> {};
 template <>
 struct CastTraits<JSIteratorResult> : public CastTraits<JSObject> {};
+template <>
+struct CastTraits<JSUint8ArraySetFromResult> : public CastTraits<JSObject> {};
 
 template <>
 struct CastTraits<DeoptimizationFrameTranslation>
@@ -395,16 +412,6 @@ bool IsJSObjectThatCanBeTrackedAsPrototype(Tagged<HeapObject> obj) {
   // threadsafe. Objects in the shared heap have fixed layouts and their maps
   // never change.
   return IsJSObject(obj) && !HeapLayout::InWritableSharedSpace(*obj);
-}
-
-bool IsJSApiWrapperObject(Tagged<Map> map) {
-  const InstanceType instance_type = map->instance_type();
-  return InstanceTypeChecker::IsJSAPIObjectWithEmbedderSlots(instance_type) ||
-         InstanceTypeChecker::IsJSSpecialObject(instance_type);
-}
-
-bool IsJSApiWrapperObject(Tagged<HeapObject> js_obj) {
-  return IsJSApiWrapperObject(js_obj->map());
 }
 
 DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsUniqueName) {
@@ -628,11 +635,17 @@ DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsUndetectable) {
 DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsAccessCheckNeeded) {
   if (IsJSGlobalProxy(obj, cage_base)) {
     const Tagged<JSGlobalProxy> proxy = Cast<JSGlobalProxy>(obj);
-    Tagged<JSGlobalObject> global =
-        proxy->GetIsolate()->context()->global_object();
-    return proxy->IsDetachedFrom(global);
+    Isolate* isolate = Isolate::Current();
+    // TODO(ishell): compare security tokens here in order to allow ICs to
+    // take fast paths for cross context accesses.
+    Tagged<JSGlobalObject> global = isolate->context()->global_object();
+    return proxy->IsDetachedFrom(isolate, global);
   }
   return obj->map(cage_base)->is_access_check_needed();
+}
+
+DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsSmiStringCache) {
+  return IsFixedArray(obj);
 }
 
 #define MAKE_STRUCT_PREDICATE(NAME, Name, name)                             \
@@ -648,6 +661,12 @@ DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsAccessCheckNeeded) {
   }                                                                         \
   bool Is##Name(HeapObject obj, PtrComprCageBase cage_base) {               \
     static_assert(kTaggedCanConvertToRawObjects);                           \
+    return Is##Name(Tagged<HeapObject>(obj), cage_base);                    \
+  }                                                                         \
+  bool Is##Name(const HeapObjectLayout* obj) {                              \
+    return Is##Name(Tagged<HeapObject>(obj));                               \
+  }                                                                         \
+  bool Is##Name(const HeapObjectLayout* obj, PtrComprCageBase cage_base) {  \
     return Is##Name(Tagged<HeapObject>(obj), cage_base);                    \
   }
 // static
@@ -670,6 +689,17 @@ double Object::NumberValue(Tagged<HeapNumber> obj) {
 }
 double Object::NumberValue(Tagged<Smi> obj) {
   return NumberValue(Cast<Number>(obj));
+}
+
+// static
+template <typename T, template <typename> typename HandleType>
+  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+Maybe<double> Object::IntegerValue(Isolate* isolate, HandleType<T> input) {
+  ASSIGN_RETURN_ON_EXCEPTION(isolate, input, ConvertToNumber(isolate, input));
+  if (IsSmi(*input)) {
+    return Just(static_cast<double>(Cast<Smi>(*input).value()));
+  }
+  return Just(DoubleToInteger(Cast<HeapNumber>(*input)->value()));
 }
 
 // static
@@ -783,7 +813,7 @@ bool Object::ToUint32(Tagged<Object> obj, uint32_t* value) {
 template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<JSReceiver>::MaybeType Object::ToObject(
     Isolate* isolate, HandleType<T> object, const char* method_name) {
-  if (IsJSReceiver(*object)) return Cast<JSReceiver>(object);
+  if (V8_LIKELY(IsJSReceiver(*object))) return Cast<JSReceiver>(object);
   return ToObjectImpl(isolate, object, method_name);
 }
 
@@ -981,6 +1011,19 @@ void HeapObject::SetupLazilyInitializedExternalPointerField(size_t offset) {
 #endif  // V8_ENABLE_SANDBOX
 }
 
+bool HeapObject::IsLazilyInitializedExternalPointerFieldInitialized(
+    size_t offset) const {
+#ifdef V8_ENABLE_SANDBOX
+  auto location =
+      reinterpret_cast<ExternalPointerHandle*>(field_address(offset));
+  ExternalPointerHandle handle = base::AsAtomic32::Relaxed_Load(location);
+  return handle != kNullExternalPointerHandle;
+#else
+  return ReadMaybeUnalignedValue<Address>(field_address(offset)) !=
+         kNullAddress;
+#endif  // V8_ENABLE_SANDBOX
+}
+
 template <ExternalPointerTag tag>
 void HeapObject::WriteLazilyInitializedExternalPointerField(
     size_t offset, IsolateForSandbox isolate, Address value) {
@@ -1024,13 +1067,32 @@ void HeapObject::WriteLazilyInitializedCppHeapPointerField(
                                                value, tag);
 }
 
-void HeapObject::InitSelfIndirectPointerField(size_t offset,
-                                              IsolateForSandbox isolate) {
+#if V8_ENABLE_SANDBOX
+
+void HeapObject::InitSelfIndirectPointerField(
+    size_t offset, IsolateForSandbox isolate,
+    TrustedPointerPublishingScope* opt_publishing_scope) {
   DCHECK(IsExposedTrustedObject(*this));
   InstanceType instance_type = map()->instance_type();
-  IndirectPointerTag tag = IndirectPointerTagFromInstanceType(instance_type);
-  i::InitSelfIndirectPointerField(field_address(offset), isolate, *this, tag);
+  bool shared = HeapLayout::InAnySharedSpace(*this);
+  IndirectPointerTag tag =
+      IndirectPointerTagFromInstanceType(instance_type, shared);
+  i::InitSelfIndirectPointerField(field_address(offset), isolate, *this, tag,
+                                  opt_publishing_scope);
 }
+
+void HeapObjectLayout::InitSelfIndirectPointerField(
+    std::atomic<IndirectPointerHandle>* field_ptr, IsolateForSandbox isolate,
+    TrustedPointerPublishingScope* opt_publishing_scope) {
+  DCHECK(IsExposedTrustedObject(this));
+  InstanceType instance_type = map()->instance_type();
+  bool shared = HeapLayout::InAnySharedSpace(this);
+  IndirectPointerTag tag =
+      IndirectPointerTagFromInstanceType(instance_type, shared);
+  i::InitSelfIndirectPointerField(reinterpret_cast<Address>(field_ptr), isolate,
+                                  this, tag, opt_publishing_scope);
+}
+#endif  // V8_ENABLE_SANDBOX
 
 template <IndirectPointerTag tag>
 Tagged<ExposedTrustedObject> HeapObject::ReadTrustedPointerField(
@@ -1087,6 +1149,17 @@ bool HeapObject::IsTrustedPointerFieldEmpty(size_t offset) const {
 #endif
 }
 
+bool HeapObject::IsTrustedPointerFieldUnpublished(
+    size_t offset, IndirectPointerTag tag, IsolateForSandbox isolate) const {
+#ifdef V8_ENABLE_SANDBOX
+  IndirectPointerHandle handle = ACQUIRE_READ_UINT32_FIELD(*this, offset);
+  const TrustedPointerTable& table = isolate.GetTrustedPointerTableFor(tag);
+  return table.IsUnpublished(handle);
+#else
+  return false;
+#endif
+}
+
 void HeapObject::ClearTrustedPointerField(size_t offset) {
 #ifdef V8_ENABLE_SANDBOX
   RELEASE_WRITE_UINT32_FIELD(*this, offset, kNullIndirectPointerHandle);
@@ -1128,24 +1201,26 @@ void HeapObject::WriteCodeEntrypointViaCodePointerField(size_t offset,
   i::WriteCodeEntrypointViaCodePointerField(field_address(offset), value, tag);
 }
 
-void HeapObject::AllocateAndInstallJSDispatchHandle(size_t offset,
-                                                    Isolate* isolate,
-                                                    uint16_t parameter_count,
-                                                    Tagged<Code> code,
-                                                    WriteBarrierMode mode) {
+// static
+template <typename ObjectType>
+JSDispatchHandle HeapObject::AllocateAndInstallJSDispatchHandle(
+    ObjectType host, size_t offset, Isolate* isolate, uint16_t parameter_count,
+    DirectHandle<Code> code, WriteBarrierMode mode) {
 #ifdef V8_ENABLE_LEAPTIERING
-  JSDispatchTable* jdt = IsolateGroup::current()->js_dispatch_table();
   JSDispatchTable::Space* space =
-      isolate->GetJSDispatchTableSpaceFor(field_address(offset));
+      isolate->GetJSDispatchTableSpaceFor(host->field_address(offset));
   JSDispatchHandle handle =
-      jdt->AllocateAndInitializeEntry(space, parameter_count, code);
+      isolate->factory()->NewJSDispatchHandle(parameter_count, code, space);
 
   // Use a Release_Store to ensure that the store of the pointer into the table
   // is not reordered after the store of the handle. Otherwise, other threads
   // may access an uninitialized table entry and crash.
-  auto location = reinterpret_cast<JSDispatchHandle*>(field_address(offset));
+  auto location =
+      reinterpret_cast<JSDispatchHandle*>(host->field_address(offset));
   base::AsAtomic32::Release_Store(location, handle);
-  CONDITIONAL_JS_DISPATCH_HANDLE_WRITE_BARRIER(*this, handle, mode);
+  CONDITIONAL_JS_DISPATCH_HANDLE_WRITE_BARRIER(*host, handle, mode);
+
+  return handle;
 #else
   UNREACHABLE();
 #endif  // V8_ENABLE_LEAPTIERING
@@ -1261,6 +1336,33 @@ void HeapObject::VerifySmiField(int offset) {
 
 #endif
 
+// static
+bool JSArray::MayHaveReadOnlyLength(Tagged<Map> js_array_map) {
+  DCHECK(IsJSArrayMap(js_array_map));
+  if (V8_UNLIKELY(
+          js_array_map->instance_descriptors()->number_of_descriptors() == 0)) {
+    return true;
+  }
+  DCHECK(!js_array_map->is_dictionary_map());
+
+  // Fast path: "length" is the first fast property of arrays with non
+  // dictionary properties. Since it's not configurable, it's guaranteed to be
+  // the first in the descriptor array.
+  InternalIndex first(0);
+  DCHECK(js_array_map->instance_descriptors()->GetKey(first) ==
+         GetReadOnlyRoots().length_string());
+  return V8_UNLIKELY(
+      js_array_map->instance_descriptors()->GetDetails(first).IsReadOnly());
+}
+
+bool JSArray::HasReadOnlyLength(DirectHandle<JSArray> array) {
+  Tagged<Map> map = array->map();
+
+  // If map guarantees that there can't be a read-only length, we are done.
+  if (!MayHaveReadOnlyLength(map)) return false;
+  return V8_UNLIKELY(HasReadOnlyLengthSlowPath(array));
+}
+
 ReadOnlyRoots HeapObject::EarlyGetReadOnlyRoots() const {
   return ReadOnlyHeap::EarlyGetReadOnlyRoots(*this);
 }
@@ -1290,6 +1392,11 @@ Tagged<Map> HeapObjectLayout::map() const {
 Tagged<Map> HeapObjectLayout::map(AcquireLoadTag) const {
   // TODO(leszeks): Support MapWord members and access via that instead.
   return Tagged<HeapObject>(this)->map(kAcquireLoad);
+}
+
+MapWord HeapObjectLayout::map_word(RelaxedLoadTag) const {
+  // TODO(leszeks): Support MapWord members and access via that instead.
+  return Tagged<HeapObject>(this)->map_word(kRelaxedLoad);
 }
 
 void HeapObjectLayout::set_map(Isolate* isolate, Tagged<Map> value) {
@@ -1453,6 +1560,10 @@ DEF_ACQUIRE_GETTER(HeapObject, map, Tagged<Map>) {
   return map_word(cage_base, kAcquireLoad).ToMap();
 }
 
+ObjectSlot HeapObjectLayout::map_slot() const {
+  return Tagged<HeapObject>(this)->map_slot();
+}
+
 ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
@@ -1611,29 +1722,55 @@ WriteBarrierMode HeapObject::GetWriteBarrierMode(
 }
 
 // static
-AllocationAlignment HeapObject::RequiredAlignment(Tagged<Map> map) {
+AllocationAlignment HeapObject::RequiredAlignment(AllocationSpace space,
+                                                  Tagged<Map> map) {
+  return RequiredAlignment(
+      IsAnySharedSpace(space) ? kInSharedSpace : kNotInSharedSpace, map);
+}
+
+// static
+AllocationAlignment HeapObject::RequiredAlignment(InSharedSpace in_shared_space,
+                                                  Tagged<Map> map) {
   // TODO(v8:4153): We should think about requiring double alignment
   // in general for ByteArray, since they are used as backing store for typed
   // arrays now.
   // TODO(ishell, v8:8875): Consider using aligned allocations for BigInt.
-  if (USE_ALLOCATION_ALIGNMENT_BOOL) {
+  if (USE_ALLOCATION_ALIGNMENT_HEAP_NUMBER_BOOL) {
     int instance_type = map->instance_type();
 
-    static_assert(!USE_ALLOCATION_ALIGNMENT_BOOL ||
+    static_assert(!USE_ALLOCATION_ALIGNMENT_HEAP_NUMBER_BOOL ||
                   (sizeof(FixedDoubleArray::Header) & kDoubleAlignmentMask) ==
                       kTaggedSize);
     if (instance_type == FIXED_DOUBLE_ARRAY_TYPE) return kDoubleAligned;
 
-    static_assert(!USE_ALLOCATION_ALIGNMENT_BOOL ||
+    static_assert(!USE_ALLOCATION_ALIGNMENT_HEAP_NUMBER_BOOL ||
                   (offsetof(HeapNumber, value_) & kDoubleAlignmentMask) ==
                       kTaggedSize);
     if (instance_type == HEAP_NUMBER_TYPE) return kDoubleUnaligned;
   }
+#if V8_ENABLE_WEBASSEMBLY
+  if (in_shared_space && v8_flags.experimental_wasm_shared) [[unlikely]] {
+    int instance_type = map->instance_type();
+    if (instance_type == WASM_STRUCT_TYPE) {
+      // The map of a shared wasm struct needs to be in the shared space.
+      DCHECK(HeapLayout::InWritableSharedSpace(map));
+      return kDoubleAligned;
+    } else if (instance_type == WASM_ARRAY_TYPE) {
+      // The map of a shared wasm array needs to be in the shared space.
+      DCHECK(HeapLayout::InWritableSharedSpace(map));
+      return kDoubleUnaligned;
+    }
+  }
+#endif
   return kTaggedAligned;
 }
 
 bool HeapObject::CheckRequiredAlignment(PtrComprCageBase cage_base) const {
-  AllocationAlignment alignment = HeapObject::RequiredAlignment(map(cage_base));
+  const InSharedSpace in_shared_space = HeapLayout::InWritableSharedSpace(*this)
+                                            ? kInSharedSpace
+                                            : kNotInSharedSpace;
+  AllocationAlignment alignment =
+      HeapObject::RequiredAlignment(in_shared_space, map(cage_base));
   CHECK_EQ(0, Heap::GetFillToAlign(address(), alignment));
   return true;
 }
@@ -1713,7 +1850,12 @@ Maybe<bool> Object::LessThanOrEqual(Isolate* isolate, DirectHandle<Object> x,
 MaybeHandle<Object> Object::GetPropertyOrElement(Isolate* isolate,
                                                  DirectHandle<JSAny> object,
                                                  DirectHandle<Name> name) {
-  PropertyKey key(isolate, name);
+  return GetPropertyOrElement(isolate, object, PropertyKey(isolate, name));
+}
+
+MaybeHandle<Object> Object::GetPropertyOrElement(Isolate* isolate,
+                                                 DirectHandle<JSAny> object,
+                                                 PropertyKey key) {
   LookupIterator it(isolate, object, key);
   return GetProperty(&it);
 }
@@ -1722,19 +1864,17 @@ MaybeDirectHandle<Object> Object::SetPropertyOrElement(
     Isolate* isolate, DirectHandle<JSAny> object, DirectHandle<Name> name,
     DirectHandle<Object> value, Maybe<ShouldThrow> should_throw,
     StoreOrigin store_origin) {
-  PropertyKey key(isolate, name);
+  return SetPropertyOrElement(isolate, object, PropertyKey(isolate, name),
+                              value, should_throw, store_origin);
+}
+
+MaybeDirectHandle<Object> Object::SetPropertyOrElement(
+    Isolate* isolate, DirectHandle<JSAny> object, PropertyKey key,
+    DirectHandle<Object> value, Maybe<ShouldThrow> should_throw,
+    StoreOrigin store_origin) {
   LookupIterator it(isolate, object, key);
   MAYBE_RETURN_NULL(SetProperty(&it, value, store_origin, should_throw));
   return value;
-}
-
-MaybeDirectHandle<Object> Object::GetPropertyOrElement(
-    DirectHandle<JSAny> receiver, DirectHandle<Name> name,
-    DirectHandle<JSReceiver> holder) {
-  Isolate* isolate = holder->GetIsolate();
-  PropertyKey key(isolate, name);
-  LookupIterator it(isolate, receiver, key, holder);
-  return GetProperty(&it);
 }
 
 // static
@@ -1776,6 +1916,10 @@ Tagged<Object> Object::GetSimpleHash(Tagged<Object> object) {
   } else if (InstanceTypeChecker::IsScript(instance_type)) {
     int id = Cast<Script>(object)->id();
     return Smi::FromInt(ComputeUnseededHash(id) & Smi::kMaxValue);
+  } else if (InstanceTypeChecker::IsTemplateInfo(instance_type)) {
+    uint32_t hash = Cast<TemplateInfo>(object)->GetHash();
+    DCHECK_EQ(hash, hash & Smi::kMaxValue);
+    return Smi::FromInt(hash);
   }
 
   DCHECK(!InstanceTypeChecker::IsHole(instance_type));
@@ -1824,6 +1968,11 @@ bool IsShared(Tagged<Object> obj) {
     case SHARED_UNCACHED_EXTERNAL_ONE_BYTE_STRING_TYPE:
       DCHECK(HeapLayout::InAnySharedSpace(object));
       return true;
+#if V8_ENABLE_WEBASSEMBLY
+    case WASM_STRUCT_TYPE:
+    case WASM_ARRAY_TYPE:
+      return HeapLayout::InAnySharedSpace(object);
+#endif
     case INTERNALIZED_TWO_BYTE_STRING_TYPE:
     case INTERNALIZED_ONE_BYTE_STRING_TYPE:
     case EXTERNAL_INTERNALIZED_TWO_BYTE_STRING_TYPE:
@@ -1859,10 +2008,15 @@ bool Object::CanBeHeldWeakly(Tagged<Object> obj) {
     // TODO(v8:12547) Shared structs and arrays should only be able to point
     // to shared values in weak collections. For now, disallow them as weak
     // collection keys.
-    if (v8_flags.harmony_struct) {
-      return !IsJSSharedStruct(obj) && !IsJSSharedArray(obj);
+#if V8_ENABLE_WEBASSEMBLY
+    if (v8_flags.experimental_wasm_shared &&
+        (IsWasmStruct(obj) || IsWasmArray(obj)) &&
+        HeapLayout::InAnySharedSpace(Cast<HeapObject>(obj))) {
+      return false;
     }
-    return true;
+#endif
+    return (!v8_flags.harmony_struct ||
+            (!IsJSSharedStruct(obj) && !IsJSSharedArray(obj)));
   }
   return IsSymbol(obj) && !Cast<Symbol>(obj)->is_in_public_symbol_table();
 }

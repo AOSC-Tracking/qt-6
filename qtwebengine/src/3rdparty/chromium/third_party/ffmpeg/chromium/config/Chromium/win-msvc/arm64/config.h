@@ -779,6 +779,7 @@
 #define CONFIG_VP3DSP 0
 #define CONFIG_VP56DSP 0
 #define CONFIG_VP8DSP 0
+#define CONFIG_VVC_SEI 0
 #define CONFIG_WMA_FREQS 0
 #define CONFIG_WMV2DSP 0
 #endif /* FFMPEG_CONFIG_H */

@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qqmltablemodel_p.h"
 
@@ -139,7 +140,7 @@ QQmlTableModel::~QQmlTableModel()
     = default;
 
 /*!
-    \qmlproperty object TableModel::rows
+    \qmlproperty var TableModel::rows
 
     This property holds the model data in the form of an array of rows:
 
@@ -154,13 +155,11 @@ QVariant QQmlTableModel::rows() const
 
 void QQmlTableModel::setRows(const QVariant &rows)
 {
-    if (rows.userType() != qMetaTypeId<QJSValue>()) {
-        qmlWarning(this) << "setRows(): \"rows\" must be an array; actual type is " << rows.typeName();
+    const std::optional<QVariantList> validated = validateRowsArgument(rows);
+    if (!validated)
         return;
-    }
 
-    const auto rowsAsJSValue = rows.value<QJSValue>();
-    const QVariantList rowsAsVariantList = rowsAsJSValue.toVariant().toList();
+    const QVariantList rowsAsVariantList = *validated;
     if (rowsAsVariantList == mRows) {
         // No change.
         return;
@@ -235,7 +234,7 @@ void QQmlTableModel::setDataPrivate(const QModelIndex &index, const QString &rol
 
 // TODO: Turn this into a snippet that compiles in CI
 /*!
-    \qmlmethod TableModel::appendRow(object row)
+    \qmlmethod void TableModel::appendRow(var row)
 
     Adds a new row to the end of the model, with the
     values (cells) in \a row.
@@ -261,7 +260,7 @@ void QQmlTableModel::appendRow(const QVariant &row)
 }
 
 /*!
-    \qmlmethod TableModel::clear()
+    \qmlmethod void TableModel::clear()
 
     Removes all rows from the model.
 
@@ -275,7 +274,7 @@ void QQmlTableModel::clear()
 }
 
 /*!
-    \qmlmethod object TableModel::getRow(int rowIndex)
+    \qmlmethod var TableModel::getRow(int rowIndex)
 
     Returns the row at \a rowIndex in the model.
 
@@ -303,7 +302,7 @@ QVariant QQmlTableModel::getRow(int rowIndex)
 }
 
 /*!
-    \qmlmethod TableModel::insertRow(int rowIndex, object row)
+    \qmlmethod void TableModel::insertRow(int rowIndex, var row)
 
     Adds a new row to the model at position \a rowIndex, with the
     values (cells) in \a row.
@@ -356,7 +355,7 @@ void QQmlTableModel::doInsert(int rowIndex, const QVariant &row)
 }
 
 /*!
-    \qmlmethod TableModel::moveRow(int fromRowIndex, int toRowIndex, int rows)
+    \qmlmethod void TableModel::moveRow(int fromRowIndex, int toRowIndex, int rows)
 
     Moves \a rows from the index at \a fromRowIndex to the index at
     \a toRowIndex.
@@ -420,7 +419,7 @@ void QQmlTableModel::moveRow(int fromRowIndex, int toRowIndex, int rows)
         rows = from - to;
     }
 
-    QVector<QVariant> store;
+    QList<QVariant> store;
     store.reserve(rows);
     for (int i = 0; i < (toRowIndex - fromRowIndex); ++i)
         store.append(mRows.at(fromRowIndex + rows + i));
@@ -436,7 +435,7 @@ void QQmlTableModel::moveRow(int fromRowIndex, int toRowIndex, int rows)
 }
 
 /*!
-    \qmlmethod TableModel::removeRow(int rowIndex, int rows = 1)
+    \qmlmethod void TableModel::removeRow(int rowIndex, int rows = 1)
 
     Removes a number of \a rows at \a rowIndex from the model.
 
@@ -476,7 +475,7 @@ void QQmlTableModel::removeRow(int rowIndex, int rows)
 }
 
 /*!
-    \qmlmethod TableModel::setRow(int rowIndex, object row)
+    \qmlmethod void TableModel::setRow(int rowIndex, var row)
 
     Changes the row at \a rowIndex in the model with \a row.
 
@@ -623,7 +622,7 @@ int QQmlTableModel::columnCount(const QModelIndex &parent) const
     \qmlmethod bool TableModel::setData(QModelIndex index, variant value, string role)
 
     Inserts or updates the data field named by \a role in the table cell at the
-    given \a index with \a value. Returns true if sucessful, false if not.
+    given \a index with \a value. Returns true if successful, false if not.
 
     \sa data(), index()
 */

@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "ui/ozone/platform/wayland/common/wayland_util.h"
 
@@ -353,9 +349,7 @@ bool MaybeHandlePlatformEventForDrag(const ui::PlatformEvent& event,
   //    in addition to the actual dnd drop events, in which case the event is
   //    suppressed, otherwise it leads to broken UI state, as observed for
   //    example in https://crbug.com/329703410.
-  if (!event->IsSynthesized() &&
-      (event->type() == ui::EventType::kMouseReleased ||
-       event->type() == ui::EventType::kTouchReleased)) {
+  if (EventShouldCancelDrag(event)) {
     if (!start_drag_ack_received) {
       std::move(cancel_drag_cb).Run();
     } else {
@@ -363,6 +357,12 @@ bool MaybeHandlePlatformEventForDrag(const ui::PlatformEvent& event,
     }
   }
   return false;
+}
+
+bool EventShouldCancelDrag(const ui::PlatformEvent& event) {
+  return !event->IsSynthesized() &&
+         (event->type() == ui::EventType::kMouseReleased ||
+          event->type() == ui::EventType::kTouchReleased);
 }
 
 void RecordConnectionMetrics(wl_display* display) {
@@ -406,6 +406,7 @@ void RecordConnectionMetrics(wl_display* display) {
         {"cosmic", WaylandCompositor::kCosmic},
         {"dwl", WaylandCompositor::kDwl},
         {"gamescope", WaylandCompositor::kGamescope},
+        {"gnome", WaylandCompositor::kMutter},
         {"hyprland", WaylandCompositor::kHyprland},
         {"kwin", WaylandCompositor::kKWin},
         {"labwc", WaylandCompositor::kLabwc},

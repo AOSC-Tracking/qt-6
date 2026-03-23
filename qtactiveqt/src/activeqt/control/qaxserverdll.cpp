@@ -1,5 +1,7 @@
 // Copyright (C) 2015 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+// Qt-Security score:significant reason:default
+
 
 #include <qapplication.h>
 #include <private/qcoreapplication_p.h>
@@ -81,7 +83,7 @@ STDAPI DllCanUnloadNow()
     for (qsizetype w = 0; w < widgets.size(); ++w) {
         // remove all Qt generated widgets
         QWidget *widget = widgets.at(w);
-        if (widget->windowType() == Qt::Desktop || widget->objectName() == QLatin1String("Qt internal tablet widget"))
+        if (widget->objectName() == QLatin1String("Qt internal tablet widget"))
             count--;
     }
     if (count)

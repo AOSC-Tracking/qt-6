@@ -30,6 +30,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/metrics_hashes.h"
 #include "base/no_destructor.h"
+#include "base/notreached.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/process/process.h"
@@ -220,7 +221,7 @@ ResultCode AddDefaultConfigForSandboxedProcess(TargetConfig* config) {
 
   config->AddKernelObjectToClose(HandleToClose::kDeviceApi);
 
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_QTWEBENGINE)
   // Disable alternate window station due to QTBUG-83300
   config->SetDesktop(Desktop::kAlternateDesktop);
 #else
@@ -477,11 +478,7 @@ ResultCode GenerateConfigForSandboxedProcess(const base::CommandLine& cmd_line,
   if (!delegate->CetCompatible())
     mitigations |= MITIGATION_CET_DISABLED;
 
-  const Sandbox sandbox_type = delegate->GetSandboxType();
-
-  if (sandbox_type == Sandbox::kRenderer &&
-      base::FeatureList::IsEnabled(
-          sandbox::policy::features::kWinSboxRestrictCoreSharingOnRenderer)) {
+  if (delegate->RestrictCoreSharing()) {
     mitigations |= MITIGATION_RESTRICT_CORE_SHARING;
   }
 
@@ -491,6 +488,7 @@ ResultCode GenerateConfigForSandboxedProcess(const base::CommandLine& cmd_line,
 
   // Post-startup mitigations.
   mitigations = MITIGATION_DLL_SEARCH_ORDER;
+  const Sandbox sandbox_type = delegate->GetSandboxType();
   if (!cmd_line.HasSwitch(switches::kAllowThirdPartyModules) &&
       sandbox_type != Sandbox::kScreenAI &&
       sandbox_type != Sandbox::kSpeechRecognition &&
@@ -1083,6 +1081,7 @@ std::string SandboxWin::GetSandboxTypeInEnglish(
     case Sandbox::kWindowsSystemProxyResolver:
       return "Windows System Proxy Resolver";
   }
+  NOTREACHED();
 }
 
 // static

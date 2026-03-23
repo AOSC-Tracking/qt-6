@@ -5,24 +5,26 @@
 #include "chrome/browser/ui/webui/devtools/devtools_ui.h"
 
 #include "base/command_line.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
+#include "chrome/browser/devtools/devtools_availability_checker.h"
 #include "chrome/browser/devtools/url_constants.h"
 #endif
 #include "chrome/browser/ui/webui/devtools/devtools_ui_data_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "components/embedder_support/user_agent_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/bindings_policy.h"
-#include "content/public/common/user_agent.h"
 
 // static
 GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   GURL url(frontend_url);
   if (url.scheme() == content::kChromeDevToolsScheme &&
       url.host() == chrome::kChromeUIDevToolsHost) {
@@ -42,10 +44,10 @@ GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
 
 // static
 GURL DevToolsUI::GetRemoteBaseURL() {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return GURL(base::StringPrintf("%s%s/%s/", kRemoteFrontendBase,
                                  kRemoteFrontendPath,
-                                 content::GetChromiumGitRevision().c_str()));
+                                 embedder_support::GetChromiumGitRevision().c_str()));
 #else
   return GURL();
 #endif
@@ -82,13 +84,19 @@ DevToolsUI::DevToolsUI(content::WebUI* web_ui)
 #endif
 {
   web_ui->SetBindings(content::BindingsPolicySet());
-  auto factory = web_ui->GetWebContents()
-                     ->GetBrowserContext()
-                     ->GetDefaultStoragePartition()
-                     ->GetURLLoaderFactoryForBrowserProcess();
-  content::URLDataSource::Add(
-      web_ui->GetWebContents()->GetBrowserContext(),
-      std::make_unique<DevToolsDataSource>(std::move(factory)));
+  content::BrowserContext* browser_context =
+      web_ui->GetWebContents()->GetBrowserContext();
+#if !BUILDFLAG(IS_QTWEBENGINE)
+   if (IsInspectionAllowed(Profile::FromBrowserContext(browser_context),
+                           static_cast<content::WebContents*>(nullptr)))
+#endif
+  {
+    auto factory = browser_context->GetDefaultStoragePartition()
+                       ->GetURLLoaderFactoryForBrowserProcess();
+    content::URLDataSource::Add(
+        browser_context,
+        std::make_unique<DevToolsDataSource>(std::move(factory)));
+  }
 }
 
 DevToolsUI::~DevToolsUI() = default;

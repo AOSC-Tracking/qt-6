@@ -4,6 +4,8 @@
 
 #include "chrome/browser/devtools/protocol/page_handler.h"
 
+#include <variant>
+
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
@@ -58,7 +60,8 @@ void PageHandler::ToggleAdBlocking(bool enabled) {
       ->ToggleForceActivation(enabled);
 }
 
-protocol::Response PageHandler::Enable() {
+protocol::Response PageHandler::Enable(
+    std::optional<bool> enable_file_chooser_opened_event) {
   enabled_ = true;
   // Do not mark the command as handled. Let it fall through instead, so that
   // the handler in content gets a chance to process the command.
@@ -68,7 +71,7 @@ protocol::Response PageHandler::Enable() {
 protocol::Response PageHandler::Disable() {
   enabled_ = false;
   ToggleAdBlocking(false /* enable */);
-  SetSPCTransactionMode(protocol::Page::AutoResponseModeEnum::None);
+  SetSPCTransactionMode(protocol::Page::SetSPCTransactionMode::ModeEnum::None);
   // Do not mark the command as handled. Let it fall through instead, so that
   // the handler in content gets a chance to process the command.
   return protocol::Response::FallThrough();
@@ -87,19 +90,24 @@ protocol::Response PageHandler::SetSPCTransactionMode(
     return protocol::Response::ServerError("No web contents to host a dialog.");
 
   payments::SPCTransactionMode spc_mode = payments::SPCTransactionMode::NONE;
-  if (mode == protocol::Page::AutoResponseModeEnum::AutoAccept) {
+  if (mode == protocol::Page::SetSPCTransactionMode::ModeEnum::AutoAccept) {
     spc_mode = payments::SPCTransactionMode::AUTOACCEPT;
-  } else if (mode == protocol::Page::AutoResponseModeEnum::AutoReject) {
+  } else if (mode == protocol::Page::SetSPCTransactionMode::ModeEnum::
+                         AutoChooseToAuthAnotherWay) {
+    spc_mode = payments::SPCTransactionMode::AUTOAUTHANOTHERWAY;
+  } else if (mode ==
+             protocol::Page::SetSPCTransactionMode::ModeEnum::AutoReject) {
     spc_mode = payments::SPCTransactionMode::AUTOREJECT;
-  } else if (mode == protocol::Page::AutoResponseModeEnum::AutoOptOut) {
+  } else if (mode ==
+             protocol::Page::SetSPCTransactionMode::ModeEnum::AutoOptOut) {
     spc_mode = payments::SPCTransactionMode::AUTOOPTOUT;
-  } else if (mode != protocol::Page::AutoResponseModeEnum::None) {
+  } else if (mode != protocol::Page::SetSPCTransactionMode::ModeEnum::None) {
     return protocol::Response::ServerError("Unrecognized mode value");
   }
 
   auto* payment_request_manager =
       payments::PaymentRequestWebContentsManager::GetOrCreateForWebContents(
-          *web_contents_);
+          web_contents_.get());
   payment_request_manager->SetSPCTransactionMode(spc_mode);
   return protocol::Response::Success();
 }
@@ -112,11 +120,12 @@ protocol::Response PageHandler::SetRPHRegistrationMode(
 
   custom_handlers::RphRegistrationMode rph_mode =
       custom_handlers::RphRegistrationMode::kNone;
-  if (mode == protocol::Page::AutoResponseModeEnum::AutoAccept) {
+  if (mode == protocol::Page::SetRPHRegistrationMode::ModeEnum::AutoAccept) {
     rph_mode = custom_handlers::RphRegistrationMode::kAutoAccept;
-  } else if (mode == protocol::Page::AutoResponseModeEnum::AutoReject) {
+  } else if (mode ==
+             protocol::Page::SetRPHRegistrationMode::ModeEnum::AutoReject) {
     rph_mode = custom_handlers::RphRegistrationMode::kAutoReject;
-  } else if (mode != protocol::Page::AutoResponseModeEnum::None) {
+  } else if (mode != protocol::Page::SetRPHRegistrationMode::ModeEnum::None) {
     return protocol::Response::ServerError("Unrecognized mode value");
   }
 
@@ -226,20 +235,20 @@ void PageHandler::PrintToPDF(std::optional<bool> landscape,
     return;
   }
 
-  absl::variant<printing::mojom::PrintPagesParamsPtr, std::string>
+  std::variant<printing::mojom::PrintPagesParamsPtr, std::string>
       print_pages_params = print_to_pdf::GetPrintPagesParams(
           web_contents_->GetPrimaryMainFrame()->GetLastCommittedURL(),
           landscape, display_header_footer, print_background, scale,
           paper_width, paper_height, margin_top, margin_bottom, margin_left,
           margin_right, header_template, footer_template, prefer_css_page_size,
           generate_tagged_pdf, generate_document_outline);
-  if (absl::holds_alternative<std::string>(print_pages_params)) {
+  if (std::holds_alternative<std::string>(print_pages_params)) {
     callback->sendFailure(protocol::Response::InvalidParams(
-        absl::get<std::string>(print_pages_params)));
+        std::get<std::string>(print_pages_params)));
     return;
   }
 
-  DCHECK(absl::holds_alternative<printing::mojom::PrintPagesParamsPtr>(
+  DCHECK(std::holds_alternative<printing::mojom::PrintPagesParamsPtr>(
       print_pages_params));
 
   bool return_as_stream =
@@ -254,8 +263,8 @@ void PageHandler::PrintToPDF(std::optional<bool> landscape,
           web_contents_.get())) {
     print_manager->PrintToPdf(
         web_contents_->GetPrimaryMainFrame(), page_ranges.value_or(""),
-        std::move(absl::get<printing::mojom::PrintPagesParamsPtr>(
-            print_pages_params)),
+        std::move(
+            std::get<printing::mojom::PrintPagesParamsPtr>(print_pages_params)),
         base::BindOnce(&PageHandler::OnPDFCreated,
                        weak_ptr_factory_.GetWeakPtr(), return_as_stream,
                        std::move(callback)));
@@ -268,8 +277,8 @@ void PageHandler::PrintToPDF(std::optional<bool> landscape,
           ActivePrintManager::FromWebContents(web_contents_.get())) {
     print_manager->PrintToPdf(
         web_contents_->GetPrimaryMainFrame(), page_ranges.value_or(""),
-        std::move(absl::get<printing::mojom::PrintPagesParamsPtr>(
-            print_pages_params)),
+        std::move(
+            std::get<printing::mojom::PrintPagesParamsPtr>(print_pages_params)),
         base::BindOnce(&PageHandler::OnPDFCreated,
                        weak_ptr_factory_.GetWeakPtr(), return_as_stream,
                        std::move(callback)));

@@ -24,7 +24,6 @@
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "device/bluetooth/bluetooth_advertisement.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_discovery_filter.h"
@@ -753,6 +752,12 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
                                    base::OnceClosure callback,
                                    ErrorCallback error_callback) = 0;
 
+  // When enabled, start accepting simple secure pairing (Just Works) requests
+  // from nearby devices. Disabled by default
+  virtual void SetSimpleSecurePairingEnabled(bool enabled,
+                                             base::OnceClosure callback,
+                                             ErrorCallback error_callback) = 0;
+
   // Returns |kSupported| if the device supports the offloading of filtering and
   // other scanning logic to the Bluetooth hardware. This brings the benefit of
   // reduced power consumption for BluetoothLowEnergyScanSession. Returns
@@ -790,13 +795,11 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
 
   // Returns a list of all the roles that are supported by the adapter.
   virtual std::vector<BluetoothRole> GetSupportedRoles() = 0;
-#endif  // BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  // Set the adapter name to one chosen from the system information. Only Ash
-  // needs to do this.
+  // Set the adapter name to one chosen from the system information.
   virtual void SetStandardChromeOSAdapterName() = 0;
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
   // The timeout in seconds used by RemoveTimedOutDevices.
   static const base::TimeDelta timeoutSec;

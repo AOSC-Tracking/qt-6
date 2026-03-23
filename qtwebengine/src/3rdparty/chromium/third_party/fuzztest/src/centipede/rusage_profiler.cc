@@ -39,7 +39,7 @@
 #include "./centipede/periodic_action.h"
 #include "./centipede/rusage_stats.h"
 
-namespace centipede::perf {
+namespace fuzztest::internal {
 
 //------------------------------------------------------------------------------
 //                          RUsageProfiler::Snapshot
@@ -129,7 +129,7 @@ class ProfileReportGenerator {
  public:
   ProfileReportGenerator(                                     //
       const std::deque<RUsageProfiler::Snapshot>& snapshots,  //
-      absl::Nonnull<RUsageProfiler::ReportSink*> report_sink)
+      RUsageProfiler::ReportSink* absl_nonnull report_sink)
       : snapshots_{snapshots}, report_sink_{report_sink} {
     for (const auto& snapshot : snapshots_) {
       timing_low_ = RUsageTiming::LowWater(  //
@@ -402,18 +402,16 @@ const RUsageProfiler::Snapshot& RUsageProfiler::TakeSnapshot(  //
     }
   }
 
-  Snapshot snapshot{
-      .id = static_cast<int64_t>(snapshots_.size()),
-      .title = std::move(title),
-      .location = loc,
-      .time = absl::Now(),
-      .profiler_id = id_,
-      .profiler_desc = description_,
-      .timing = snap_timing,
-      .delta_timing = delta_timing,
-      .memory = snap_memory,
-      .delta_memory = delta_memory,
-  };
+  Snapshot snapshot{/*id=*/static_cast<int64_t>(snapshots_.size()),
+                    /*title=*/std::move(title),
+                    /*location=*/loc,
+                    /*time=*/absl::Now(),
+                    /*profiler_id=*/id_,
+                    /*profiler_desc=*/description_,
+                    /*timing=*/snap_timing,
+                    /*delta_timing=*/delta_timing,
+                    /*memory=*/snap_memory,
+                    /*delta_memory=*/delta_memory};
 
   return snapshots_.emplace_back(std::move(snapshot));
 }
@@ -484,7 +482,7 @@ void RUsageProfiler::PrintReport(  //
 }
 
 void RUsageProfiler::GenerateReport(
-    absl::Nonnull<ReportSink*> report_sink) const {
+    ReportSink* absl_nonnull report_sink) const {
   absl::ReaderMutexLock lock{&mutex_};
   // Prevent interleaved reports from multiple concurrent RUsageProfilers.
   ABSL_CONST_INIT static absl::Mutex report_generation_mutex_{absl::kConstInit};
@@ -549,4 +547,4 @@ void RUsageProfiler::GenerateReport(
   }
 }
 
-}  // namespace centipede::perf
+}  // namespace fuzztest::internal

@@ -285,9 +285,11 @@ class ClientProxy final {
 
   std::string Dump();
 
-  const location::nearby::connections::OsInfo& GetLocalOsInfo() const;
+  virtual const location::nearby::connections::OsInfo& GetLocalOsInfo() const;
   std::optional<location::nearby::connections::OsInfo> GetRemoteOsInfo(
       absl::string_view endpoint_id) const;
+  void SetLocalOsType(
+      const location::nearby::connections::OsInfo::OsType& os_type);
   void SetRemoteOsInfo(
       absl::string_view endpoint_id,
       const location::nearby::connections::OsInfo& remote_os_info);
@@ -338,6 +340,20 @@ class ClientProxy final {
 
   // Sets the WebRTC non cellular network status.
   void SetWebRtcNonCellular(bool webrtc_non_cellular);
+
+  // Returns true if DCT advertising/scanning is enabled.
+  bool IsDctEnabled() const;
+
+  // Gets the DCT dedup value. This is used to dedup the same device name when
+  // scanning for multiple devices.
+  // It is 7 bits derived from the local endpoint ID.
+  uint8_t GetDctDedup() const;
+
+  // Updates the DCT device name before advertising.
+  void UpdateDctDeviceName(absl::string_view device_name);
+
+  std::optional<location::nearby::connections::MediumRole> GetMediumRole(
+      absl::string_view endpoint_id) const;
 
   /** Bitmask for bt multiplex connection support. */
   // Note. Deprecates the first and second bit of BT_MULTIPLEX_ENABLED and
@@ -436,6 +452,15 @@ class ClientProxy final {
 
   std::string ToString(PayloadProgressInfo::Status status) const;
 
+  std::optional<std::string> GetEndpointIdForDct() const;
+
+  // The device name used for DCT advertising.
+  std::string dct_device_name_;
+  // The dedup value used for DCT advertising.
+  uint8_t dct_dedup_ = 0;
+  // The endpoint ID used for DCT advertising.
+  std::string dct_endpoint_id_;
+
   mutable RecursiveMutex mutex_;
   std::int64_t client_id_;
   std::string local_endpoint_id_;
@@ -521,6 +546,8 @@ class ClientProxy final {
   std::int32_t local_safe_to_disconnect_version_;
   // Allowed to use WebRTC over non-cellular networks.
   bool webrtc_non_cellular_ = false;
+  // Whether DCT is enabled.
+  bool is_dct_enabled_ = false;
 };
 
 }  // namespace connections

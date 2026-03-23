@@ -7,16 +7,15 @@
 #include <utility>
 
 #include "base/time/time.h"
+#include "base/types/expected.h"
 #include "base/unguessable_token.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_encoded_audio_frame_metadata.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_encoded_audio_frame_options.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
-#include "third_party/blink/renderer/core/timing/dom_window_performance.h"
-#include "third_party/blink/renderer/core/timing/performance.h"
-#include "third_party/blink/renderer/core/timing/worker_global_scope_performance.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+#include "third_party/blink/renderer/modules/peerconnection/peer_connection_util.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_encoded_audio_frame_delegate.h"
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
@@ -36,8 +35,6 @@ struct SetMetadataValidationOutcome {
 SetMetadataValidationOutcome IsAllowedSetMetadataChange(
     const RTCEncodedAudioFrameMetadata* current_metadata,
     const RTCEncodedAudioFrameMetadata* new_metadata) {
-  // Only changing the RTP Timestamp is supported.
-
   if (new_metadata->hasSynchronizationSource() !=
           current_metadata->hasSynchronizationSource() ||
       (new_metadata->hasSynchronizationSource() &&
@@ -52,26 +49,13 @@ SetMetadataValidationOutcome IsAllowedSetMetadataChange(
            new_metadata->contributingSources())) {
     return SetMetadataValidationOutcome{false, "Bad contributingSources"};
   }
-  if (new_metadata->hasPayloadType() != current_metadata->hasPayloadType() ||
-      (new_metadata->hasPayloadType() &&
-       current_metadata->payloadType() != new_metadata->payloadType())) {
-    return SetMetadataValidationOutcome{false, "Bad payloadType"};
-  }
   if (new_metadata->hasSequenceNumber() !=
           current_metadata->hasSequenceNumber() ||
       (new_metadata->hasSequenceNumber() &&
        current_metadata->sequenceNumber() != new_metadata->sequenceNumber())) {
     return SetMetadataValidationOutcome{false, "Bad sequenceNumber"};
   }
-  if (RuntimeEnabledFeatures::RTCEncodedAudioFrameAbsCaptureTimeEnabled()) {
-    if (new_metadata->hasAbsCaptureTime() !=
-            current_metadata->hasAbsCaptureTime() ||
-        (new_metadata->hasAbsCaptureTime() &&
-         current_metadata->absCaptureTime() !=
-             new_metadata->absCaptureTime())) {
-      return SetMetadataValidationOutcome{false, "Bad absoluteCaptureTime"};
-    }
-  }
+  // TODO(https://crbug.com/420408159): Make rtpTimestamp optional.
   if (!new_metadata->hasRtpTimestamp()) {
     return SetMetadataValidationOutcome{false, "Bad rtpTimestamp"};
   }
@@ -81,17 +65,15 @@ SetMetadataValidationOutcome IsAllowedSetMetadataChange(
          current_metadata->receiveTime() != new_metadata->receiveTime())) {
       return SetMetadataValidationOutcome{false, "Bad receiveTime"};
     }
+    if (new_metadata->hasSenderCaptureTimeOffset() !=
+            current_metadata->hasSenderCaptureTimeOffset() ||
+        (new_metadata->hasSenderCaptureTimeOffset() &&
+         current_metadata->senderCaptureTimeOffset() !=
+             new_metadata->senderCaptureTimeOffset())) {
+      return SetMetadataValidationOutcome{false, "Bad senderCaptureTimeOffset"};
+    }
   }
   return SetMetadataValidationOutcome{true, String()};
-}
-
-Performance* GetPerformanceFromExecutionContext(ExecutionContext* context) {
-  if (auto* window = DynamicTo<LocalDOMWindow>(context)) {
-    return DOMWindowPerformance::performance(*window);
-  } else if (auto* worker = DynamicTo<WorkerGlobalScope>(context)) {
-    return WorkerGlobalScopePerformance::performance(*worker);
-  }
-  NOTREACHED();
 }
 
 }  // namespace
@@ -182,23 +164,29 @@ RTCEncodedAudioFrameMetadata* RTCEncodedAudioFrame::getMetadata(
   if (delegate_->SequenceNumber()) {
     metadata->setSequenceNumber(*delegate_->SequenceNumber());
   }
-  if (RuntimeEnabledFeatures::RTCEncodedAudioFrameAbsCaptureTimeEnabled()) {
-    if (delegate_->AbsCaptureTime()) {
-      metadata->setAbsCaptureTime(*delegate_->AbsCaptureTime());
-    }
-  }
   metadata->setRtpTimestamp(delegate_->RtpTimestamp());
   if (delegate_->MimeType()) {
     metadata->setMimeType(WTF::String::FromUTF8(*delegate_->MimeType()));
   }
   if (RuntimeEnabledFeatures::RTCEncodedFrameTimestampsEnabled()) {
-    Performance* performance =
-        GetPerformanceFromExecutionContext(execution_context);
     if (std::optional<base::TimeTicks> receive_time =
             delegate_->ReceiveTime()) {
-      metadata->setReceiveTime(
-          performance->MonotonicTimeToDOMHighResTimeStamp(*receive_time));
+      metadata->setReceiveTime(RTCEncodedFrameTimestampFromTimeTicks(
+          execution_context, *receive_time));
     }
+    if (std::optional<CaptureTimeInfo> capture_time_info =
+            delegate_->CaptureTime()) {
+      metadata->setCaptureTime(RTCEncodedFrameTimestampFromCaptureTimeInfo(
+          execution_context, *capture_time_info));
+    }
+    if (std::optional<base::TimeDelta> sender_capture_time_offset =
+            delegate_->SenderCaptureTimeOffset()) {
+      metadata->setSenderCaptureTimeOffset(CalculateRTCEncodedFrameTimeDelta(
+          execution_context, *sender_capture_time_offset));
+    }
+  }
+  if (std::optional<double> audio_level_dbov = delegate_->AudioLevel()) {
+    metadata->setAudioLevel(*audio_level_dbov);
   }
   return metadata;
 }
@@ -214,7 +202,7 @@ base::expected<void, String> RTCEncodedAudioFrame::SetMetadata(
         validation.error_msg);
   }
 
-  return delegate_->SetRtpTimestamp(metadata->rtpTimestamp());
+  return delegate_->SetWebRtcFrameMetadata(execution_context, metadata);
 }
 
 void RTCEncodedAudioFrame::setMetadata(ExecutionContext* execution_context,

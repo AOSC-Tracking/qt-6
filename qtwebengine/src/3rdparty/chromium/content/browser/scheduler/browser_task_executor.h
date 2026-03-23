@@ -29,7 +29,9 @@ class CONTENT_EXPORT BrowserTaskExecutor {
   // owns a BrowserUIThreadScheduler. This facilitates posting tasks to a
   // BrowserThread via //base/task/post_task.h.
   // TODO(crbug.com/40108370): Clean this up now that post_task.h is deprecated.
-  // All BrowserThread::UI task queues except best effort ones are also enabled.
+  // By default, BrowserThread::UI task queues except best effort ones are also
+  // enabled. The ContentBrowserClient may decide to defer enabling the task
+  // queues.
   // TODO(carlscab): These queues should be enabled in
   // BrowserMainLoop::InitializeMainThread() but some Android tests fail if we
   // do so.
@@ -111,6 +113,10 @@ class CONTENT_EXPORT BrowserTaskExecutor {
       std::unique_ptr<BrowserUIThreadScheduler> browser_ui_thread_scheduler,
       std::unique_ptr<BrowserIOThreadDelegate> browser_io_thread_delegate);
 
+  // This must be called after the FeatureList has been initialized in order
+  // for scheduling experiments to function.
+  static void InstallPartitionAllocSchedulerLoopQuarantineTaskObserver();
+
   // Winds down the BrowserTaskExecutor, after this no tasks can be executed
   // and the base::TaskExecutor APIs are non-functional but won't crash if
   // called. In unittests however we need to clean up, so
@@ -133,6 +139,8 @@ class CONTENT_EXPORT BrowserTaskExecutor {
       BrowserThread::ID identifier);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(BrowserTaskExecutorWithCustomSchedulerTest,
+                           OnlyDefaultTaskRunnerActiveAfterCreationForIO);
   friend class BrowserIOThreadDelegate;
 
   static void CreateInternal(

@@ -63,6 +63,19 @@ DelegateModel {
         property int y: 12
     }
 
+    function xAt0() : real {
+        switch (modelIndex) {
+        case Model.Singular:
+        case Model.List:
+            return model.get(0).x
+        case Model.Array:
+            return model[0].x
+        case Model.Object:
+            return model.x
+        }
+        return -1;
+    }
+
     property int modelIndex: Model.None
     property int delegateIndex: Delegate.None
 

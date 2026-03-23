@@ -67,6 +67,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   void UnblockDomainFrom3DAPIs(const GURL& url);
   void DisableHardwareAcceleration();
   bool HardwareAccelerationEnabled() const;
+  bool IsGpuRasterizationForUIEnabled() const;
 
   void UpdateGpuInfo(
       const gpu::GPUInfo& gpu_info,
@@ -135,6 +136,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   gpu::GpuMode GetGpuMode() const;
   void FallBackToNextGpuMode();
+  void FallBackToNextGpuModeDueToCrash();
 
   bool CanFallback() const { return !fallback_modes_.empty(); }
 
@@ -149,7 +151,6 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
 #if BUILDFLAG(IS_LINUX)
   bool IsGpuMemoryBufferNV12Supported();
-  void SetGpuMemoryBufferNV12Supported(bool supported);
 #endif  // BUILDFLAG(IS_LINUX)
 
   void DisableDomainBlockingFor3DAPIsForTesting();
@@ -183,8 +184,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
                            MultipleTDRsCanBeUnblocked);
 
   // Indicates the reason that access to a given client API (like
-  // WebGL or Pepper 3D) was blocked or not. This state is distinct
-  // from blocklisting of an entire feature.
+  // WebGL) was blocked or not. This state is distinct from blocklisting of an
+  // entire feature.
   enum class DomainBlockStatus {
     kBlocked,
     kAllDomainsBlocked,
@@ -314,6 +315,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 #if BUILDFLAG(IS_LINUX)
   bool is_gpu_memory_buffer_NV12_supported_ = false;
 #endif  // BUILDFLAG(IS_LINUX)
+
+  bool is_gpu_rasterization_for_ui_enabled_ = true;
 };
 
 }  // namespace content

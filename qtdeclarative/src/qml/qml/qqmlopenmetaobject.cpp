@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlopenmetaobject_p.h"
 #include <private/qqmlpropertycache_p.h>
@@ -76,7 +77,7 @@ QQmlPropertyCache::Ptr QQmlOpenMetaObjectType::cache() const
     return d->cache;
 }
 
-void QQmlOpenMetaObjectType::createProperties(const QVector<QByteArray> &names)
+void QQmlOpenMetaObjectType::createProperties(const QList<QByteArray> &names)
 {
     for (int i = 0; i < names.size(); ++i) {
         const QByteArray &name = names.at(i);
@@ -211,10 +212,10 @@ public:
 
     QQmlOpenMetaObject *q;
     QDynamicMetaObjectData *parent = nullptr;
-    QVector<Property> data;
+    QList<Property> data;
     QObject *object;
     QQmlRefPointer<QQmlOpenMetaObjectType> type;
-    QVector<QByteArray> *deferredPropertyNames = nullptr;
+    QList<QByteArray> *deferredPropertyNames = nullptr;
     bool autoCreate = true;
     bool cacheProperties = false;
 };
@@ -359,7 +360,7 @@ bool QQmlOpenMetaObject::setValue(const QByteArray &name, const QVariant &val, b
 
 void QQmlOpenMetaObject::setValues(const QHash<QByteArray, QVariant> &values, bool force)
 {
-    QVector<QByteArray> missingProperties;
+    QList<QByteArray> missingProperties;
     d->deferredPropertyNames = &missingProperties;
     const auto &names = d->type->d->names;
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWASMEVENT_H
 #define QWASMEVENT_H
@@ -17,14 +18,13 @@
 #include <emscripten/val.h>
 
 QT_BEGIN_NAMESPACE
-
-class QWasmDeadKeySupport;
 class QWindow;
 
 enum class EventType {
     DragEnd,
     DragOver,
     DragStart,
+    DragEnter,
     DragLeave,
     Drop,
     KeyDown,
@@ -56,7 +56,7 @@ struct Event
 {
     Event(EventType type, emscripten::val webEvent);
 
-    bool isTargetedForQtElement() const;
+    bool isTargetedForElement(emscripten::val element) const;
 
     emscripten::val webEvent;
     EventType type;
@@ -65,13 +65,15 @@ struct Event
 
 struct KeyEvent : public Event
 {
-    KeyEvent(EventType type, emscripten::val webEvent, QWasmDeadKeySupport *deadKeySupport);
+    KeyEvent(EventType type, emscripten::val webEvent);
 
     Qt::Key key;
     QFlags<Qt::KeyboardModifier> modifiers;
     bool deadKey;
     QString text;
     bool autoRepeat;
+    bool isComposing;
+    int keyCode;
 };
 
 struct MouseEvent : public Event

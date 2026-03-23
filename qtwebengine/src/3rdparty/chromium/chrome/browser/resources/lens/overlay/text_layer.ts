@@ -27,7 +27,10 @@ import {CursorType} from './selection_utils.js';
 import type {GestureEvent} from './selection_utils.js';
 import type {BackgroundImageData, Line, Paragraph, Text, TranslatedLine, TranslatedParagraph, Word} from './text.mojom-webui.js';
 import {Alignment, WritingDirection} from './text.mojom-webui.js';
+import type {HighlightedLine} from './text_highlights.js';
 import {getTemplate} from './text_layer.html.js';
+import type {TextCopyCallback, TextLayerBase} from './text_layer_base.js';
+import {getTextSeparator, isWordRenderable, translateWords} from './text_rendering.js';
 import type {TranslateState} from './translate_button.js';
 import {toPercent} from './values_converter.js';
 
@@ -73,28 +76,6 @@ function rotateCoordinateAroundOrigin(
   return {x: newX, y: newY};
 }
 
-// Returns true if the word has a valid bounding box and is renderable by the
-// TextLayer.
-function isWordRenderable(word: Word): boolean {
-  // For a word to be renderable, it must have a bounding box with normalized
-  // coordinates.
-  // TODO(b/330183480): Add rendering for IMAGE CoordinateType
-  const wordBoundingBox = word.geometry?.boundingBox;
-  if (!wordBoundingBox) {
-    return false;
-  }
-
-  return wordBoundingBox.coordinateType ===
-      CenterRotatedBox_CoordinateType.kNormalized;
-}
-
-// Return the text separator if there is one, else returns a space.
-function getTextSeparator(word: Word): string {
-  return (word.textSeparator !== null && word.textSeparator !== undefined) ?
-      word.textSeparator :
-      ' ';
-}
-
 // Returns true if index is in the range [start, end]. End index may be lesser
 // than start index.
 function isInRange(index: number, start: number, end: number): boolean {
@@ -107,14 +88,6 @@ export interface TextLayerElement {
     translateContainer: DomRepeat,
     wordsContainer: DomRepeat,
   };
-}
-
-interface HighlightedLine {
-  height: number;
-  left: number;
-  top: number;
-  width: number;
-  rotation: number;
 }
 
 interface TranslatedLineData {
@@ -133,7 +106,7 @@ interface TranslatedWordData {
 /*
  * Element responsible for highlighting and selection text.
  */
-export class TextLayerElement extends PolymerElement {
+export class TextLayerElement extends PolymerElement implements TextLayerBase {
   static get is() {
     return 'lens-text-layer';
   }
@@ -144,6 +117,7 @@ export class TextLayerElement extends PolymerElement {
 
   static get properties() {
     return {
+      currentTranslateLanguage: String,
       renderedWords: {
         type: Array,
         value: () => [],
@@ -153,6 +127,7 @@ export class TextLayerElement extends PolymerElement {
         reflectToAttribute: true,
       },
       highlightedLines: Array,
+      renderedTranslateLines: Array,
       selectionStartIndex: {
         type: Number,
         value: -1,
@@ -182,17 +157,17 @@ export class TextLayerElement extends PolymerElement {
   // text.
   private context: CanvasRenderingContext2D;
   // The words rendered in this layer.
-  private renderedWords: Word[];
+  declare private renderedWords: Word[];
   // Whether to render the translated text received on the overlay rather than
   // the detected text.
-  private shouldRenderTranslateWords: boolean;
+  declare private shouldRenderTranslateWords: boolean;
   // The current target language the user requested to translate to.
-  private currentTranslateLanguage: string;
+  declare private currentTranslateLanguage: string;
   // All of the translated words returned in OnTextReceived with failed
   // translations replaced with their non-translated counterpart.
   private renderedTranslateWords: Word[];
   // The rendered translated lines in order from OnTextReceived.
-  private renderedTranslateLines: TranslatedLineData[];
+  declare private renderedTranslateLines: TranslatedLineData[];
   // The rendered translated paragraphs keyed by the paragraph number.
   private renderedTranslateParagraphs:
       {[paragraphNumber: number]: TranslatedParagraph};
@@ -201,18 +176,19 @@ export class TextLayerElement extends PolymerElement {
   // detected words when rendering the translated text.
   private detectedWordToTranslateIndex: {[detectedWordIndex: number]: number};
   // The currently selected lines.
-  private highlightedLines: HighlightedLine[];
+  declare private highlightedLines: HighlightedLine[];
   // The index of the word in renderedWords at the start of the current
   // selection. -1 if no current selection.
-  private selectionStartIndex: number;
+  declare private selectionStartIndex: number;
   // The index of the word in renderedWords at the end of the current selection.
   // -1 if no current selection.
-  private selectionEndIndex: number;
+  declare private selectionEndIndex: number;
+  declare private debugMode: boolean;
   // Whether the user is currently selecting text.
-  private isSelectingText: boolean;
+  declare private isSelectingText: boolean;
   // The bounds of the parent element. This is updated by the parent to avoid
   // this class needing to call getBoundingClientRect()
-  private selectionOverlayRect: DOMRect;
+  declare private selectionOverlayRect: DOMRect;
 
   // An array that corresponds 1:1 to renderedWords, where lineNumbers[i] is the
   // line number for renderedWords[i]. In addition, the index at lineNumbers[i]
@@ -595,14 +571,23 @@ export class TextLayerElement extends PolymerElement {
           },
         }));
 
-    BrowserProxyImpl.getInstance().handler.issueTranslateSelectionRequest(
-        this.getHighlightedText().replaceAll('\r\n', ' '), this.contentLanguage,
-        this.selectionStartIndex, this.selectionEndIndex);
-    recordLensOverlayInteraction(INVOCATION_SOURCE, UserAction.kTranslateText);
+    translateWords(
+        this.getHighlightedText(), this.contentLanguage,
+        this.selectionStartIndex, this.selectionEndIndex, this.browserProxy);
   }
 
   cancelGesture() {
     this.unselectWords();
+  }
+
+  onSelectionStart(): void {
+    // Do nothing.
+    return;
+  }
+
+  onSelectionFinish(): void {
+    // Do nothing.
+    return;
   }
 
   private unselectWords() {
@@ -1334,19 +1319,13 @@ export class TextLayerElement extends PolymerElement {
     return isRtlLanguage(language) ? 'rtl' : 'ltr';
   }
 
-  // Testing method to get the words on the page.
-  getWordNodesForTesting() {
-    return this.shadowRoot!.querySelectorAll('.word');
+  onCopyDetectedText(
+      _startIndex: number, _endIndex: number, _callbackFn: TextCopyCallback) {
+    // This layer does not support copying detected text. Only selected text.
   }
 
-  // Testing method to get the translated words on the page.
-  getTranslatedWordNodesForTesting() {
-    return this.shadowRoot!.querySelectorAll('.translated-word');
-  }
-
-  // Testing method to get the highlighted words on the page.
-  getHighlightedNodesForTesting() {
-    return this.shadowRoot!.querySelectorAll('.highlighted-line');
+  getElementForTesting(): Element {
+    return this;
   }
 }
 

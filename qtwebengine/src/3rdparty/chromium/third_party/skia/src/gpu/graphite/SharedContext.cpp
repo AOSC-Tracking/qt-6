@@ -22,11 +22,13 @@ static Layout get_binding_layout(const Caps* caps) {
     return caps->storageBufferSupport() ? reqs.fStorageBufferLayout : reqs.fUniformBufferLayout;
 }
 
-SharedContext::SharedContext(std::unique_ptr<const Caps> caps, BackendApi backend)
+SharedContext::SharedContext(std::unique_ptr<const Caps> caps,
+                             BackendApi backend,
+                             SkSpan<sk_sp<SkRuntimeEffect>> userDefinedKnownRuntimeEffects)
     : fCaps(std::move(caps))
     , fBackend(backend)
     , fGlobalCache()
-    , fShaderDictionary(get_binding_layout(fCaps.get())) {}
+    , fShaderDictionary(get_binding_layout(fCaps.get()), userDefinedKnownRuntimeEffects) {}
 
 SharedContext::~SharedContext() {
     // TODO: add disconnect?
@@ -40,6 +42,12 @@ void SharedContext::setRendererProvider(std::unique_ptr<RendererProvider> render
     // Should only be called once and be non-null
     SkASSERT(rendererProvider && !fRendererProvider);
     fRendererProvider = std::move(rendererProvider);
+}
+
+void SharedContext::setCaptureManager(sk_sp<SkCaptureManager> captureManager) {
+    // Should only be called once and be non-null
+    SkASSERT(captureManager && !fCaptureManager);
+    fCaptureManager = captureManager;
 }
 
 } // namespace skgpu::graphite

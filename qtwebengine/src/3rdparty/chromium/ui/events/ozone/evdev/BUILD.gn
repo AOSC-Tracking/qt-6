@@ -100,6 +100,8 @@ component("evdev") {
     "touch_filter/edge_touch_filter.h",
     "touch_filter/false_touch_finder.cc",
     "touch_filter/false_touch_finder.h",
+    "touch_filter/heatmap_palm_detection_filter.cc",
+    "touch_filter/heatmap_palm_detection_filter.h",
     "touch_filter/heuristic_stylus_palm_detection_filter.cc",
     "touch_filter/heuristic_stylus_palm_detection_filter.h",
     "touch_filter/neural_stylus_palm_detection_filter.cc",
@@ -131,7 +133,7 @@ component("evdev") {
     ":keyboard_mouse_combo_metrics",
     ":mouse_button_property",
     "//base",
-    "//third_party/re2:re2",
+    "//third_party/re2",
     "//ui/display",
     "//ui/events",
     "//ui/events:dom_keycode_converter",
@@ -212,6 +214,10 @@ component("evdev") {
     "//ui/events/*",
     "//ui/ozone/*",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("mouse_button_property") {
@@ -311,6 +317,7 @@ source_set("unittests") {
     "testing/fake_cursor_delegate_evdev.h",
     "touch_event_converter_evdev_unittest.cc",
     "touch_filter/false_touch_finder_unittest.cc",
+    "touch_filter/heatmap_palm_detection_filter_unittest.cc",
     "touch_filter/heuristic_stylus_palm_detection_filter_unittest.cc",
     "touch_filter/neural_stylus_palm_detection_filter_unittest.cc",
     "touch_filter/neural_stylus_palm_detection_filter_util_unittest.cc",
@@ -327,7 +334,7 @@ source_set("unittests") {
     "//base/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
-    "//third_party/re2:re2",
+    "//third_party/re2",
     "//ui/events",
     "//ui/events:dom_keycode_converter",
     "//ui/events/devices",

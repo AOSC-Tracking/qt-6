@@ -7,6 +7,7 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/active_style_sheets.h"
+#include "third_party/blink/renderer/core/css/quiet_mutation_scope.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
@@ -19,6 +20,7 @@ class CSSStyleSheet;
 class Document;
 class ExecutionContext;
 class TreeScope;
+class InspectorGhostRuleTest;
 
 // Ghost Rules are style rules that exist only during getMatchedStylesForNode
 // in order to surface the CSSNestedDeclaration rules that *could* be there,
@@ -50,13 +52,18 @@ class CORE_EXPORT InspectorGhostRules {
   STACK_ALLOCATED();
 
  public:
-  // Insert CSSNestedDeclaration rules in any place where they can occur.
+  // Attempts to call Populate() on every sheet.
   //
-  // Note that this *quietly* inserts rules (see CSSStyleRule/CSSGroupingRule::
-  // QuietlyInsertRule), which means that no style invalidation will take place
-  // as a result of calling this function. The ghost rules are instead made
-  // available for rule matching by `Activate`.
-  void Populate(CSSStyleSheet&);
+  // A return value of 'true' means every sheet was populated, and a return
+  // value of 'false' means *some* CSSStyleSheets were skipped due to invalid
+  // StyleSheetContents sharing (crbug.com/417619104). Some sheets being skipped
+  // is non-fatal: those sheets will just not contain any ghost rules, but are
+  // as normal otherwise.
+  [[nodiscard]] bool PopulateSheets(HeapVector<Member<CSSStyleSheet>>);
+
+  // Like PopulateSheets, does DCHECK+DumpWithoutCrashing on failure.
+  // TODO(crbug.com/417619104): Remove when investigation is done.
+  void PopulateSheetsWithAssertion(HeapVector<Member<CSSStyleSheet>>);
 
   // Temporarily make rules inserted by `Populate` available for rule matching.
   // Like `Populate`, this is a "quiet" process, causing no invalidation.
@@ -70,18 +77,28 @@ class CORE_EXPORT InspectorGhostRules {
   }
 
  private:
+  friend class InspectorGhostRuleTest;
+
+  // Insert CSSNestedDeclaration rules in any place where they can occur.
+  //
+  // Note that this *quietly* inserts rules (see CSSStyleRule/CSSGroupingRule::
+  // QuietlyInsertRule), which means that no style invalidation will take place
+  // as a result of calling this function. The ghost rules are instead made
+  // available for rule matching by `Activate`.
+  void Populate(CSSStyleSheet&);
+
   void PopulateSheet(const ExecutionContext&, CSSStyleSheet&);
   void DepopulateSheet(CSSStyleSheet&);
 
   void ActivateTreeScope(TreeScope&);
 
+  QuietMutationScope quiet_mutation_scope_;
   HeapHashSet<Member<CSSStyleSheet>> affected_stylesheets_;
   HeapHashSet<Member<CSSNestedDeclarationsRule>> inserted_rules_;
   // The inner CSSStyleRule for each item in `inserted_rules_`.
   HeapHashSet<Member<CSSStyleRule>> inner_rules_;
 
-  HeapHashMap<Member<TreeScope>, Member<ActiveStyleSheetVector>>
-      affected_tree_scopes;
+  HeapHashMap<Member<TreeScope>, ActiveStyleSheetVector> affected_tree_scopes;
 };
 
 }  // namespace blink

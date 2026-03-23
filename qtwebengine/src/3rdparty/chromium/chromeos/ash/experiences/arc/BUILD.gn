@@ -2,9 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
-assert(is_chromeos_ash)
+assert(is_chromeos)
 
 static_library("arc") {
   sources = [
@@ -52,8 +50,12 @@ static_library("arc") {
     "crash_collector/arc_crash_collector_bridge.h",
     "disk_space/arc_disk_space_bridge.cc",
     "disk_space/arc_disk_space_bridge.h",
-    "dlc_install_notification/arc_dlc_install_notification_manager.cc",
-    "dlc_install_notification/arc_dlc_install_notification_manager.h",
+    "dlc_installer/arc_dlc_install_hardware_checker.cc",
+    "dlc_installer/arc_dlc_install_hardware_checker.h",
+    "dlc_installer/arc_dlc_install_notification_manager.cc",
+    "dlc_installer/arc_dlc_install_notification_manager.h",
+    "dlc_installer/arc_dlc_installer.cc",
+    "dlc_installer/arc_dlc_installer.h",
     "ime/arc_ime_bridge.h",
     "ime/arc_ime_bridge_impl.cc",
     "ime/arc_ime_bridge_impl.h",
@@ -151,22 +153,29 @@ static_library("arc") {
     "//chromeos/ash/components/dbus/concierge:concierge_proto",
     "//chromeos/ash/components/dbus/cros_disks",
     "//chromeos/ash/components/dbus/cryptohome",
+    "//chromeos/ash/components/dbus/dlcservice",
+    "//chromeos/ash/components/dbus/dlcservice:dlcservice_proto",
     "//chromeos/ash/components/dbus/patchpanel",
     "//chromeos/ash/components/dbus/patchpanel:patchpanel_proto",
     "//chromeos/ash/components/dbus/resourced",
     "//chromeos/ash/components/dbus/session_manager",
     "//chromeos/ash/components/dbus/shill",
-    "//chromeos/ash/components/dbus/spaced:spaced",
+    "//chromeos/ash/components/dbus/spaced",
     "//chromeos/ash/components/dbus/spaced:spaced_proto",
-    "//chromeos/ash/components/dbus/upstart:upstart",
+    "//chromeos/ash/components/dbus/upstart",
     "//chromeos/ash/components/dbus/userdataauth",
     "//chromeos/ash/components/dbus/userdataauth:userdataauth_proto",
     "//chromeos/ash/components/disks",
+    "//chromeos/ash/components/install_attributes",
     "//chromeos/ash/components/login/login_state",
     "//chromeos/ash/components/network",
+    "//chromeos/ash/components/policy",
+    "//chromeos/ash/components/settings",
     "//chromeos/ash/experiences/arc/vector_icons",
+    "//chromeos/ash/services/cros_healthd/public/cpp",
+    "//chromeos/ash/services/cros_healthd/public/mojom",
     "//chromeos/components/disks:prefs",
-    "//chromeos/components/sensors:sensors",
+    "//chromeos/components/sensors",
     "//chromeos/dbus/permission_broker",
     "//chromeos/dbus/power",
     "//chromeos/dbus/power:power_manager_proto",
@@ -188,7 +197,7 @@ static_library("arc") {
     "//third_party/re2",
     "//ui/base",
     "//ui/base/ime/ash",
-    "//ui/chromeos:chromeos",
+    "//ui/chromeos",
     "//ui/chromeos/strings",
     "//ui/chromeos/styles:cros_styles_views",
     "//ui/chromeos/styles:cros_tokens_color_mappings",
@@ -238,21 +247,22 @@ static_library("arc_base_utils") {
 
   public_deps = [ ":arc_features" ]
   deps = [
-    "//ash:ash",
+    "//ash",
     "//ash/constants",
     "//ash/public/cpp",
     "//base",
     "//chromeos/ash/components/dbus",
-    "//chromeos/ash/components/dbus/concierge:concierge",
+    "//chromeos/ash/components/dbus/concierge",
     "//chromeos/ash/components/dbus/concierge:concierge_proto",
     "//chromeos/ash/components/dbus/debug_daemon",
     "//chromeos/ash/components/dbus/session_manager",
-    "//chromeos/ash/components/dbus/upstart:upstart",
+    "//chromeos/ash/components/dbus/upstart",
     "//chromeos/ash/experiences/arc:prefs",
     "//chromeos/ash/experiences/arc/session:arc_base_enums",
     "//chromeos/version",
     "//components/exo",
-    "//components/prefs:prefs",
+    "//components/prefs",
+    "//components/session_manager/core",
     "//ui/aura",
   ]
 }
@@ -337,8 +347,8 @@ static_library("arc_test_support") {
     "test/fake_app_instance.h",
     "test/fake_arc_bridge_host.cc",
     "test/fake_arc_bridge_host.h",
-    "test/fake_arc_dlc_install_notification_delegate.cc",
-    "test/fake_arc_dlc_install_notification_delegate.h",
+    "test/fake_arc_dlc_install_hardware_checker.cc",
+    "test/fake_arc_dlc_install_hardware_checker.h",
     "test/fake_arc_icon_cache.cc",
     "test/fake_arc_icon_cache.h",
     "test/fake_arc_intent_helper_mojo.cc",
@@ -400,6 +410,7 @@ static_library("arc_test_support") {
     "test/fake_wallpaper_instance.h",
     "test/fake_webapk_instance.cc",
     "test/fake_webapk_instance.h",
+    "test/mock_arc_dlc_install_hardware_checker.h",
   ]
 
   data = [
@@ -431,7 +442,7 @@ static_library("arc_test_support") {
     "//mojo/public/cpp/platform",
     "//mojo/public/cpp/system",
     "//ui/base",
-    "//ui/message_center/public/cpp:cpp",
+    "//ui/message_center/public/cpp",
     "//ui/views",
   ]
 }
@@ -468,7 +479,9 @@ source_set("unit_tests") {
     "compat_mode/touch_mode_mouse_rewriter_unittest.cc",
     "crash_collector/arc_crash_collector_bridge_unittest.cc",
     "disk_space/arc_disk_space_bridge_unittest.cc",
-    "dlc_install_notification/arc_dlc_install_notification_manager_unittest.cc",
+    "dlc_installer/arc_dlc_install_hardware_checker_unittest.cc",
+    "dlc_installer/arc_dlc_install_notification_manager_unittest.cc",
+    "dlc_installer/arc_dlc_installer_unittest.cc",
     "ime/arc_ime_service_unittest.cc",
     "ime/key_event_result_receiver_unittest.cc",
     "keyboard/arc_input_method_surface_manager_unittest.cc",
@@ -511,21 +524,28 @@ source_set("unit_tests") {
     "//chromeos/ash/components/audio",
     "//chromeos/ash/components/dbus/concierge",
     "//chromeos/ash/components/dbus/cros_disks",
+    "//chromeos/ash/components/dbus/dlcservice",
     "//chromeos/ash/components/dbus/patchpanel",
     "//chromeos/ash/components/dbus/resourced",
     "//chromeos/ash/components/dbus/session_manager",
     "//chromeos/ash/components/dbus/shill",
-    "//chromeos/ash/components/dbus/spaced:spaced",
+    "//chromeos/ash/components/dbus/spaced",
     "//chromeos/ash/components/dbus/spaced:spaced_proto",
     "//chromeos/ash/components/dbus/upstart",
     "//chromeos/ash/components/dbus/userdataauth",
     "//chromeos/ash/components/disks:test_support",
+    "//chromeos/ash/components/install_attributes",
     "//chromeos/ash/components/install_attributes:test_support",
     "//chromeos/ash/components/login/login_state",
+    "//chromeos/ash/components/mojo_service_manager:fake_mojo_service_manager",
     "//chromeos/ash/components/network:test_support",
+    "//chromeos/ash/components/policy/external_storage:test_support",
+    "//chromeos/ash/components/settings",
+    "//chromeos/ash/components/settings:test_support",
     "//chromeos/ash/experiences/arc:arc_test_support",
     "//chromeos/ash/experiences/arc/media_session",
     "//chromeos/ash/experiences/arc/message_center",
+    "//chromeos/ash/services/cros_healthd/public/cpp:fakes",
     "//chromeos/components/disks:prefs",
     "//chromeos/dbus/power",
     "//chromeos/dbus/power:power_manager_proto",
@@ -535,7 +555,7 @@ source_set("unit_tests") {
     "//components/exo:test_support",
     "//components/keyed_service/content",
     "//components/prefs:test_support",
-    "//components/session_manager/core:core",
+    "//components/session_manager/core",
     "//components/strings:components_strings_grit",
     "//components/user_manager",
     "//components/user_manager:test_support",
@@ -543,7 +563,7 @@ source_set("unit_tests") {
     "//content/public/common",
     "//content/test:test_support",
     "//device/bluetooth",
-    "//mojo/public/cpp/system:system",
+    "//mojo/public/cpp/system",
     "//services/device/public/cpp:test_support",
     "//services/device/public/mojom",
     "//testing/gmock",
@@ -556,7 +576,12 @@ source_set("unit_tests") {
     "//ui/events",
     "//ui/events:dom_keycode_converter",
     "//ui/events:test_support",
+    "//ui/message_center:test_support",
     "//ui/views:test_support",
-    "//url:url",
+    "//url",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

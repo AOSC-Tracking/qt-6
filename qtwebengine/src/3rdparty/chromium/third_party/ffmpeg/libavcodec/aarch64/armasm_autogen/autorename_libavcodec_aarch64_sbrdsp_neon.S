@@ -849,6 +849,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1112,7 +1115,7 @@ phi_noise_3
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_sum64x5_neon
 
@@ -1155,7 +1158,7 @@ temp_label_0
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_sum_square_neon
 
@@ -1188,7 +1191,7 @@ temp_label_1
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_neg_odd_64_neon
 
@@ -1242,7 +1245,7 @@ ff_sbr_neg_odd_64_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_qmf_pre_shuffle_neon
 
@@ -1332,7 +1335,7 @@ ff_sbr_qmf_pre_shuffle_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_qmf_post_shuffle_neon
 
@@ -1370,7 +1373,7 @@ temp_label_2
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_qmf_deint_neg_neon
 
@@ -1410,7 +1413,7 @@ temp_label_3
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_qmf_deint_bfly_neon
 
@@ -1452,7 +1455,7 @@ temp_label_4
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_hf_gen_neon
 
@@ -1531,7 +1534,7 @@ temp_label_5
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_hf_g_filt_neon
 
@@ -1567,7 +1570,7 @@ temp_label_6
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_autocorrelate_neon
 
@@ -1657,7 +1660,7 @@ temp_label_7
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_hf_apply_noise_0_neon
 
@@ -1748,7 +1751,7 @@ temp_label_8
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_hf_apply_noise_1_neon
 
@@ -1841,7 +1844,7 @@ temp_label_9
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_hf_apply_noise_2_neon
 
@@ -1932,7 +1935,7 @@ temp_label_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_sbr_hf_apply_noise_3_neon
 

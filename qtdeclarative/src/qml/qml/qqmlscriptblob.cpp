@@ -1,10 +1,10 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include <private/qqmlengine_p.h>
 #include <private/qqmlirbuilder_p.h>
 #include <private/qqmlscriptblob_p.h>
-#include <private/qqmlscriptdata_p.h>
 #include <private/qqmlsourcecoordinate_p.h>
 #include <private/qqmlcontextdata_p.h>
 #include <private/qv4runtimecodegen_p.h>
@@ -17,7 +17,7 @@ QT_BEGIN_NAMESPACE
 Q_LOGGING_CATEGORY(DBG_DISK_CACHE, "qt.qml.diskcache")
 
 QQmlScriptBlob::QQmlScriptBlob(const QUrl &url, QQmlTypeLoader *loader, IsESModule isESModule)
-    : QQmlTypeLoader::Blob(url, JavaScriptFile, loader)
+    : QQmlNotifyingBlob(url, JavaScriptFile, loader)
     , m_isModule(isESModule == IsESModule::Yes)
 {
 }
@@ -26,21 +26,11 @@ QQmlScriptBlob::~QQmlScriptBlob()
 {
 }
 
-QQmlRefPointer<QQmlScriptData> QQmlScriptBlob::scriptData() const
-{
-    return m_scriptData;
-}
-
 void QQmlScriptBlob::dataReceived(const SourceCodeData &data)
 {
     assertTypeLoaderThread();
 
     if (data.isCacheable()) {
-        if (auto unit = QQmlMetaType::obtainCompilationUnit(url())) {
-            initializeFromCompilationUnit(std::move(unit));
-            return;
-        }
-
         if (m_typeLoader->readCacheFile()) {
             auto unit = QQml::makeRefPointer<QV4::CompiledData::CompilationUnit>();
             QString error;
@@ -90,9 +80,15 @@ void QQmlScriptBlob::dataReceived(const SourceCodeData &data)
         irUnit.jsParserEngine.setDirectives(&collector);
 
         QList<QQmlError> errors;
+        const QString fragment = finalUrl().fragment();
         irUnit.javaScriptCompilationUnit = QV4::Script::precompile(
                      &irUnit.jsModule, &irUnit.jsParserEngine, &irUnit.jsGenerator, urlString(),
-                     source, &errors, QV4::Compiler::ContextType::ScriptImportedByQML);
+                     source, &errors, fragment == QLatin1String("global")
+                        ? QV4::Compiler::ContextType::Global
+                        : QV4::Compiler::ContextType::ScriptImportedByQML,
+                     fragment == QLatin1String("include")
+                        ? QV4::Script::InheritContext::Yes
+                        : QV4::Script::InheritContext::No);
 
         source.clear();
         if (!errors.isEmpty()) {
@@ -138,7 +134,10 @@ void QQmlScriptBlob::done()
     // Check all script dependencies for errors
     for (int ii = 0; ii < m_scripts.size(); ++ii) {
         const ScriptReference &script = m_scripts.at(ii);
-        Q_ASSERT(script.script->isCompleteOrError());
+        // We would like to assert on isCompleteOrError() here, but since ECMAScript dependencies
+        // can be cyclic, we need to live with certain scripts formally not being complete.
+        // However, since we only omit the dependency if the compilation unit already exists when
+        // loading, we will still catch all errors here.
         if (script.script->isError()) {
             QList<QQmlError> errors = script.script->errors();
             QQmlError error;
@@ -173,12 +172,15 @@ void QQmlScriptBlob::done()
 
         m_importCache->populateCache(m_scriptData->typeNameCache.data());
     }
-    m_scripts.clear();
 
     if (auto cu = m_scriptData->compilationUnit()) {
         cu->qmlType = QQmlMetaType::findCompositeType(url(), cu, QQmlMetaType::JavaScript);
+        for (const auto &script : std::as_const(m_scripts))
+            cu->dependentScripts.append(script.script->scriptData());
         QQmlMetaType::registerInternalCompositeType(cu);
     }
+
+    m_scripts.clear();
 }
 
 QString QQmlScriptBlob::stringAt(int index) const
@@ -233,13 +235,13 @@ void QQmlScriptBlob::initializeFromCompilationUnit(
     const QStringList moduleRequests = unit->moduleRequests();
     for (const QString &request: moduleRequests) {
         const QUrl relativeRequest(request);
-        const QUrl absoluteRequest = unit->finalUrl().resolved(relativeRequest);
+        QUrl absoluteRequest = unit->finalUrl().resolved(relativeRequest);
+        if (!request.endsWith(QLatin1String(".mjs")))
+            absoluteRequest.setFragment(QLatin1String("module"));
         QQmlRefPointer<QQmlScriptBlob> absoluteBlob
                 = typeLoader()->getScript(absoluteRequest, relativeRequest);
-        if (absoluteBlob->m_scriptData && absoluteBlob->m_scriptData->m_precompiledScript)
-            continue;
-
-        addDependency(absoluteBlob.data());
+        if (!absoluteBlob->m_scriptData || !absoluteBlob->m_scriptData->m_precompiledScript)
+            addDependency(absoluteBlob.data());
         scriptImported(
                 absoluteBlob, /* ### */QV4::CompiledData::Location(), /*qualifier*/QString(),
                 /*namespace*/QString());

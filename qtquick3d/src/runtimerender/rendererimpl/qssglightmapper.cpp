@@ -1,5 +1,7 @@
 ﻿// Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssglightmapper_p.h"
 #include <QtQuick3DRuntimeRender/private/qssgrenderer_p.h>
@@ -51,6 +53,7 @@ static constexpr int DIRECT_MAP_UPSCALE_FACTOR = 4;
 static constexpr int MAX_TILE_SIZE = 1024;
 static constexpr quint32 PIXEL_VOID = 0; // Pixel not part of any mask
 static constexpr quint32 PIXEL_UNSET = -1; // Pixel part of mask, but not yet set
+static constexpr char KEY_SCENE_METADATA[] = "_qt_scene_metadata";
 
 static void floodFill(quint32 *maskUintPtr, const int rows, const int cols)
 {
@@ -188,7 +191,7 @@ struct ProgressTracker
         progress = fractionDirect + fractionIndirect + (fractionDenoise * double(i) / n);
     }
 
-    void indirectTexelDone(qint64 i, qint64 n)
+    void indirectTexelDone(quint64 i, quint64 n)
     {
         Q_ASSERT(stage == Stage::Indirect);
         progressIndirect = double(i) / n;
@@ -308,19 +311,18 @@ struct QSSGLightmapperPrivate
 
     QVector<QVector<ModelTexel>> modelTexels; // commit geom
     QVector<bool> modelHasBaseColorTransparency;
+    quint32 emissiveModelCount = 0; // Models that has any ModelTexel with emission > 0.
     QVector<quint32> numValidTexels;
 
     QVector<int> geomLightmapMap; // [geomId] -> index in lightmaps (NB lightmap is per-model, geomId is per-submesh)
     QVector<float> subMeshOpacityMap; // [geomId] -> opacity
 
     bool denoiseOnly = false;
-    int totalUnusedEntries = 0;
+
     double totalProgress = 0; // [0-1]
     qint64 estimatedTimeRemaining = -1; // ms
-    qint64 texelsDone = 0;
-
-    qint64 totalIncrementsToBeMade = 0;
-    qint64 incrementsDone = 0;
+    quint64 indirectTexelsTotal = 0;
+    quint64 indirectTexelsDone = 0;
 
     inline const ModelTexel &texelForLightmapUV(unsigned int geomId, float u, float v) const
     {
@@ -348,6 +350,7 @@ struct QSSGLightmapperPrivate
     void updateStage(const QString &newStage);
     bool commitGeometry();
     bool prepareLightmaps();
+    bool verifyLights() const;
     QVector<QVector3D> computeDirectLight(int lmIdx);
     QVector<QVector3D> computeIndirectLight(int lmIdx,
                                             int wgSizePerGroup,
@@ -359,6 +362,7 @@ struct QSSGLightmapperPrivate
                                 QVector2D minUVRegion = QVector2D(0, 0),
                                 QVector2D maxUVRegion = QVector2D(1, 1));
 
+    bool storeSceneMetadata(QSharedPointer<QSSGLightmapWriter> writer);
     bool storeMetadata(int lmIdx, QSharedPointer<QSSGLightmapWriter> tempFile);
     bool storeDirectLightData(int lmIdx, const QVector<QVector3D> &directLight, QSharedPointer<QSSGLightmapWriter> tempFile);
     bool storeIndirectLightData(int lmIdx, const QVector<QVector3D> &indirectLight, QSharedPointer<QSSGLightmapWriter> tempFile);
@@ -372,6 +376,7 @@ struct QSSGLightmapperPrivate
     QString stage = QStringLiteral("Initializing");
 
     ProgressTracker progressTracker;
+    qint64 bakeStartTime = 0;
 };
 
 // Used to output progress ETA during baking.
@@ -450,6 +455,7 @@ void QSSGLightmapper::reset()
     d->lights.clear();
 
     d->modelHasBaseColorTransparency.clear();
+    d->emissiveModelCount = 0;
     d->meshes.clear();
 
     d->geomLightmapMap.clear();
@@ -465,7 +471,6 @@ void QSSGLightmapper::reset()
     }
 
     d->bakingControl.cancelled = false;
-    d->totalUnusedEntries = 0;
     d->totalProgress = 0.0;
     d->estimatedTimeRemaining = -1;
 }
@@ -571,7 +576,7 @@ bool QSSGLightmapperPrivate::commitGeometry()
         return false;
     }
 
-    sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Geometry setup..."));
+    sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Preparing geometry..."));
     QElapsedTimer geomPrepTimer;
     geomPrepTimer.start();
 
@@ -820,10 +825,6 @@ bool QSSGLightmapperPrivate::commitGeometry()
         }
     } // end loop over models used in the lightmap
 
-    sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Found %1 models for the lightmapped scene").arg(bakedLightingModelCount));
-
-    sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Found %1 lights enabled for baking").arg(lights.size()));
-
     rdev = rtcNewDevice(nullptr);
     if (!rdev) {
         sendOutputInfo(QSSGLightmapper::BakingStatus::Warning, QStringLiteral("Failed to create Embree device"));
@@ -910,7 +911,7 @@ bool QSSGLightmapperPrivate::commitGeometry()
             subMeshOpacityMap[subMeshInfo.geomId] = subMeshInfo.opacity;
     }
 
-    sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Geometry setup done. Time taken: %1").arg(formatDuration(geomPrepTimer.elapsed())));
+    sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Geometry ready. Time taken: %1").arg(formatDuration(geomPrepTimer.elapsed())));
     return true;
 }
 
@@ -1015,7 +1016,7 @@ QSSGLightmapperPrivate::RasterResult QSSGLightmapperPrivate::rasterizeLightmap(i
         const SubMeshInfo &subMeshInfo(subMeshInfos[lmIdx][subMeshIdx]);
         qint32 hasBaseColorMap = subMeshInfo.baseColorMap ? 1 : 0;
         qint32 hasEmissiveMap = subMeshInfo.emissiveMap ? 1 : 0;
-        qint32 hasNormalMap = subMeshInfo.normalMap ? 1 : 0;
+        qint32 hasNormalMap = subMeshInfo.normalMap && hasTangentAndBinormal ? 1 : 0;
         const float minRegionU = minUVRegion.x();
         const float minRegionV = minUVRegion.y();
         const float maxRegionU = maxUVRegion.x();
@@ -1253,6 +1254,8 @@ bool QSSGLightmapperPrivate::prepareLightmaps()
     }
 
     sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Preparing lightmaps..."));
+    QElapsedTimer lightmapPrepTimer;
+    lightmapPrepTimer.start();
     const int bakedLightingModelCount = bakedLightingModels.size();
     Q_ASSERT(drawInfos.size() == bakedLightingModelCount);
     Q_ASSERT(subMeshInfos.size() == bakedLightingModelCount);
@@ -1278,6 +1281,8 @@ bool QSSGLightmapperPrivate::prepareLightmaps()
         constexpr int maxTileSize = MAX_TILE_SIZE;
         const int numTilesX = (w + maxTileSize - 1) / maxTileSize;
         const int numTilesY = (h + maxTileSize - 1) / maxTileSize;
+
+        bool isEmissive = false;
 
         // Render tiled to make sure enough GPU memory is available
         for (int tileY = 0; tileY < numTilesY; ++tileY) {
@@ -1323,18 +1328,24 @@ bool QSSGLightmapperPrivate::prepareLightmaps()
 
                         lmPix.worldPos = worldPositions[srcPixelI].toVector3D();
                         lmPix.normal = normals[srcPixelI].toVector3D();
+                        if (lmPix.isValid())
+                            ++numValidTexels[lmIdx];
+
                         lmPix.baseColor = baseColors[srcPixelI];
                         if (lmPix.baseColor[3] < 1.0f)
                             modelHasBaseColorTransparency[lmIdx] = true;
-                        lmPix.emission = emissions[srcPixelI].toVector3D();
 
-                        lmPix.isValid() ? ++numValidTexels[lmIdx] : ++unusedEntries;
+                        lmPix.emission = emissions[srcPixelI].toVector3D();
+                        if (!isEmissive && !qFuzzyIsNull(lmPix.emission.length()))
+                            isEmissive = true;
                     }
                 }
             }
         }
 
-        totalUnusedEntries += unusedEntries;
+        if (isEmissive)
+            ++emissiveModelCount;
+
         sendOutputInfo(QSSGLightmapper::BakingStatus::Info,
                        QStringLiteral(
                                "Successfully rasterized %1/%2 lightmap texels for model %3, lightmap size %4 in %5")
@@ -1350,8 +1361,15 @@ bool QSSGLightmapperPrivate::prepareLightmaps()
         }
     }
 
-    sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Lightmap preparing done"));
+    sendOutputInfo(QSSGLightmapper::BakingStatus::Info,
+                   QStringLiteral("Lightmaps ready. Time taken: %1")
+                       .arg(formatDuration(lightmapPrepTimer.elapsed())));
     return true;
+}
+
+bool QSSGLightmapperPrivate::verifyLights() const {
+
+    return !lights.empty() || emissiveModelCount > 0;
 }
 
 bool QSSGLightmapper::setupLights(const QSSGRenderer &renderer)
@@ -1412,12 +1430,6 @@ bool QSSGLightmapper::setupLights(const QSSGRenderer &renderer)
 
     d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info,
                       QStringLiteral("Total lights registered: %1").arg(d->lights.size()));
-
-    if (d->lights.isEmpty()) {
-        d->sendOutputInfo(QSSGLightmapper::BakingStatus::Failed,
-                          QStringLiteral("No lights with baking enabled"));
-        return false;
-    }
 
     return true;
 }
@@ -2062,7 +2074,7 @@ QVector<QVector3D> QSSGLightmapperPrivate::computeIndirectLight(int lmIdx, int w
         if (!lmPix.isValid())
             continue;
 
-        ++incrementsDone;
+        ++indirectTexelsDone;
         for (int wgIdx = 0; wgIdx < wgCount; ++wgIdx) {
             const int beginIdx = wgIdx * wgSizePerGroup;
             const int endIdx = qMin(beginIdx + wgSizePerGroup, options.indirectLightSamples);
@@ -2154,7 +2166,7 @@ QVector<QVector3D> QSSGLightmapperPrivate::computeIndirectLight(int lmIdx, int w
         if (bakingControl.cancelled)
             return {};
 
-        progressTracker.indirectTexelDone(incrementsDone, totalIncrementsToBeMade);
+        progressTracker.indirectTexelDone(indirectTexelsDone, indirectTexelsTotal);
     }
 
     return result;
@@ -2214,6 +2226,30 @@ bool QSSGLightmapperPrivate::storeMeshes(QSharedPointer<QSSGLightmapWriter> writ
     return true;
 }
 
+bool QSSGLightmapperPrivate::storeSceneMetadata(QSharedPointer<QSSGLightmapWriter> writer)
+{
+    QVariantMap metadata;
+
+    metadata[QStringLiteral("qt_version")] = QString::fromUtf8(QT_VERSION_STR);
+    metadata[QStringLiteral("bake_start_time")] = bakeStartTime;
+    metadata[QStringLiteral("bake_end_time")] = QDateTime::currentMSecsSinceEpoch();
+
+    QVariantMap metadata2;
+    metadata2[QStringLiteral("opacityThreshold")] = options.opacityThreshold;
+    metadata2[QStringLiteral("bias")] = options.bias;
+    metadata2[QStringLiteral("useAdaptiveBias")] = options.useAdaptiveBias;
+    metadata2[QStringLiteral("indirectLightEnabled")] = options.indirectLightEnabled;
+    metadata2[QStringLiteral("indirectLightSamples")] = options.indirectLightSamples;
+    metadata2[QStringLiteral("indirectLightWorkgroupSize")] = options.indirectLightWorkgroupSize;
+    metadata2[QStringLiteral("indirectLightBounces")] = options.indirectLightBounces;
+    metadata2[QStringLiteral("indirectLightFactor")] = options.indirectLightFactor;
+    metadata2[QStringLiteral("denoiseSigma")] = options.sigma;
+    metadata2[QStringLiteral("texelsPerUnit")] = options.texelsPerUnit;
+
+    metadata[QStringLiteral("options")] = metadata2;
+    return writer->writeMap(QString::fromUtf8(KEY_SCENE_METADATA), QSSGLightmapIODataTag::SceneMetadata, metadata);
+}
+
 bool QSSGLightmapperPrivate::storeMetadata(int lmIdx, QSharedPointer<QSSGLightmapWriter> writer)
 {
     const QSSGBakedLightingModel &lm(bakedLightingModels[lmIdx]);
@@ -2224,7 +2260,7 @@ bool QSSGLightmapperPrivate::storeMetadata(int lmIdx, QSharedPointer<QSSGLightma
     metadata[QStringLiteral("height")] = drawInfos[lmIdx].lightmapSize.height();
     metadata[QStringLiteral("mesh_key")] = indexToMeshKey(drawInfo.meshIndex);
 
-    return writer->writeMetadata(lm.model->lightmapKey, metadata);
+    return writer->writeMap(lm.model->lightmapKey, QSSGLightmapIODataTag::Metadata, metadata);
 }
 
 bool QSSGLightmapperPrivate::storeDirectLightData(int lmIdx, const QVector<QVector3D> &directLight, QSharedPointer<QSSGLightmapWriter> writer)
@@ -2430,6 +2466,8 @@ bool QSSGLightmapperPrivate::denoiseLightmaps()
 
     QSet<QString> lightmapKeys;
     for (const auto &[key, tag] : tmpFile->getKeys()) {
+        if (tag == QSSGLightmapIODataTag::SceneMetadata) continue; // Will write at end
+
         if (tag != QSSGLightmapIODataTag::Texture_Direct && tag != QSSGLightmapIODataTag::Texture_Indirect
             && tag != QSSGLightmapIODataTag::Mask) {
             // Clone meshes and metadata for final file
@@ -2459,6 +2497,9 @@ bool QSSGLightmapperPrivate::denoiseLightmaps()
     }
     Q_ASSERT(shader.isValid());
 
+    QVariantMap sceneMetadata = tmpFile->readMap(QString::fromUtf8(KEY_SCENE_METADATA), QSSGLightmapIODataTag::SceneMetadata);
+    sceneMetadata[QStringLiteral("denoise_start_time")] = QDateTime::currentMSecsSinceEpoch();
+
     int lmIdx = -1;
     for (const QString &key : lightmapKeys) {
         ++lmIdx;
@@ -2470,7 +2511,7 @@ bool QSSGLightmapperPrivate::denoiseLightmaps()
         sendOutputInfo(QSSGLightmapper::BakingStatus::Info,
                        QStringLiteral("[%2/%3] denoising '%1'").arg(key).arg(lmIdx + 1).arg(bakedLightingModelCount));
 
-        QVariantMap metadata = tmpFile->readMetadata(key);
+        QVariantMap metadata = tmpFile->readMap(key, QSSGLightmapIODataTag::Metadata);
         QByteArray indirect = tmpFile->readF32Image(key, QSSGLightmapIODataTag::Texture_Indirect);
         QByteArray direct = tmpFile->readF32Image(key, QSSGLightmapIODataTag::Texture_Direct);
         QByteArray mask = tmpFile->readU32Image(key, QSSGLightmapIODataTag::Mask);
@@ -2631,6 +2672,13 @@ bool QSSGLightmapperPrivate::denoiseLightmaps()
         finalFile->writeF32Image(key, QSSGLightmapIODataTag::Texture_Final, final);
     }
 
+    sceneMetadata[QStringLiteral("denoise_end_time")] = QDateTime::currentMSecsSinceEpoch();
+    auto optionsMap = sceneMetadata[QStringLiteral("options")].toMap();
+    optionsMap[QStringLiteral("denoiseSigma")] = options.sigma;
+    sceneMetadata[QStringLiteral("options")] = optionsMap;
+
+    finalFile->writeMap(QString::fromUtf8(KEY_SCENE_METADATA), QSSGLightmapIODataTag::SceneMetadata, sceneMetadata);
+
     if (!finalFile->close()) {
         sendOutputInfo(QSSGLightmapper::BakingStatus::Error, QStringLiteral("Could not save file '%1'").arg(outPath));
         return false;
@@ -2719,9 +2767,10 @@ void QSSGLightmapperPrivate::updateStage(const QString &newStage)
 bool QSSGLightmapper::bake()
 {
     d->totalTimer.start();
+    d->bakeStartTime = QDateTime::currentMSecsSinceEpoch();
 
     d->updateStage(QStringLiteral("Preparing"));
-    d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Bake starting..."));
+    d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Preparing for bake..."));
 
     if (!isValidSavePath(d->outputPath)) {
         d->updateStage(QStringLiteral("Failed"));
@@ -2729,10 +2778,6 @@ bool QSSGLightmapper::bake()
                           QStringLiteral("Source path %1 is not a writable location").arg(d->outputPath));
         return false;
     }
-
-    d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Source path: %1").arg(d->options.source));
-    d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Output path: %1").arg(d->outputPath));
-    d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Total models registered: %1").arg(d->bakedLightingModels.size()));
 
     if (d->bakedLightingModels.isEmpty()) {
         d->updateStage(QStringLiteral("Failed"));
@@ -2799,6 +2844,17 @@ bool QSSGLightmapper::bake()
         return false;
     }
 
+    if (!d->verifyLights()) {
+        d->sendOutputInfo(QSSGLightmapper::BakingStatus::Failed,
+                          QStringLiteral("Did not find any lights with baking enabled or any "
+                                         "emissive models in the scene."));
+        return false;
+    }
+
+    d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info,
+                      QStringLiteral("Total emissive models registered: %1")
+                          .arg(d->emissiveModelCount));
+
     // indirect lighting is slow, so parallelize per groups of samples,
     // e.g. if sample count is 256 and workgroup size is 32, then do up to
     // 8 sets in parallel, each calculating 32 samples (how many of the 8
@@ -2824,6 +2880,7 @@ bool QSSGLightmapper::bake()
     d->updateStage(QStringLiteral("Storing Metadata"));
     d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Storing metadata..."));
     auto writer = QSSGLightmapWriter::open(workFile);
+
     for (int lmIdx = 0; lmIdx < bakedLightingModelCount; ++lmIdx) {
         if (d->userCancelled()) {
             d->updateStage(QStringLiteral("Cancelled"));
@@ -2923,7 +2980,7 @@ bool QSSGLightmapper::bake()
     // ------------- Indirect compute / store -------------
 
     if (d->options.indirectLightEnabled) {
-        d->totalIncrementsToBeMade = std::accumulate(d->numValidTexels.begin(), d->numValidTexels.end(), 0);
+        d->indirectTexelsTotal = std::accumulate(d->numValidTexels.begin(), d->numValidTexels.end(), quint64(0));
         d->updateStage(QStringLiteral("Computing Indirect Light"));
         d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info,
                           QStringLiteral("Computing indirect light..."));
@@ -2984,6 +3041,16 @@ bool QSSGLightmapper::bake()
     if (d->userCancelled()) {
         d->updateStage(QStringLiteral("Cancelled"));
         return false;
+    }
+
+    // ------------- Scene Metadata ---------
+
+    d->updateStage(QStringLiteral("Storing Scene Metadata"));
+    d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Storing scene metadata..."));
+    if (!d->storeSceneMetadata(writer)) {
+        d->updateStage(QStringLiteral("Failed"));
+        d->sendOutputInfo(QSSGLightmapper::BakingStatus::Failed,
+                          QStringLiteral("Failed to store scene metadata"));
     }
 
     // ------------- Copy file from tmp -------------
@@ -3048,17 +3115,17 @@ bool QSSGLightmapper::denoise() {
 
     d->progressTracker.initDenoise();
     d->progressTracker.setStage(Stage::Denoise);
-    d->updateStage(QStringLiteral("Denoising"));
+    d->updateStage("Denoising"_L1);
     d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Denoise starting..."));
 
     if (!d->denoiseLightmaps()) {
-        d->updateStage(QStringLiteral("Failed"));
+        d->updateStage("Failed"_L1);
         d->sendOutputInfo(QSSGLightmapper::BakingStatus::Failed, QStringLiteral("Denoising failed"));
         return false;
     }
 
     d->totalProgress = 1;
-    d->updateStage(QStringLiteral("Done"));
+    d->updateStage("Done"_L1);
     d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Denoising took %1 ms").arg(totalTimer.elapsed()));
     d->sendOutputInfo(QSSGLightmapper::BakingStatus::Complete, std::nullopt);
     return true;
@@ -3094,6 +3161,7 @@ void QSSGLightmapper::run(QOffscreenSurface *fallbackSurface)
     }
 
     d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Source path: %1").arg(d->outputPath));
+    d->sendOutputInfo(QSSGLightmapper::BakingStatus::Info, QStringLiteral("Output path: %1").arg(d->outputPath));
 
     const QRhi::Flags flags = QRhi::EnableTimestamps | QRhi::EnableDebugMarkers;
 #if QT_CONFIG(vulkan)

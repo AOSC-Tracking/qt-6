@@ -6,11 +6,11 @@
 #include <assert.h>
 #include <stddef.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/config.h"
-#include "xnnpack/fill.h"
-#include "xnnpack/init-once.h"
-#include "xnnpack/microfnptr.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/config.h"
+#include "src/xnnpack/fill.h"
+#include "src/xnnpack/init-once.h"
+#include "src/xnnpack/microfnptr.h"
 
 static struct xnn_xx_fill_config xx_fill_config = {0};
 
@@ -20,9 +20,9 @@ static void init_xx_fill_config(void) {
   #if XNN_ARCH_ARM
     const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
     assert(hardware_config != NULL);
-    if (hardware_config->use_arm_neon) {
+    if ((hardware_config->arch_flags & xnn_arch_arm_neon)) {
       xx_fill_config.ukernel = (xnn_fill_ukernel_fn) xnn_xx_fill_ukernel__neon_u64;
-    } else if (!XNN_PLATFORM_MOBILE) {
+    } else {
       xx_fill_config.ukernel = (xnn_fill_ukernel_fn) xnn_xx_fill_ukernel__scalar_u16;
     }
   #elif XNN_ARCH_ARM64
@@ -31,8 +31,6 @@ static void init_xx_fill_config(void) {
     xx_fill_config.ukernel = (xnn_fill_ukernel_fn) xnn_xx_fill_ukernel__sse2_u64;
   #elif XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
     xx_fill_config.ukernel = (xnn_fill_ukernel_fn) xnn_xx_fill_ukernel__wasmsimd_u64;
-  #elif XNN_ARCH_WASM
-    xx_fill_config.ukernel = (xnn_fill_ukernel_fn) xnn_xx_fill_ukernel__scalar_u16;
   #elif XNN_ARCH_RISCV
     xx_fill_config.ukernel = (xnn_fill_ukernel_fn) xnn_xx_fill_ukernel__scalar_u16;
   #else

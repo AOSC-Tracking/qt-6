@@ -26,6 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/var.h"
+#include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/f32.h"
@@ -126,6 +127,23 @@ void unused_entry_point() {
 )");
 }
 
+TEST_F(HlslWriterTest, VarBindingArraySampledTexture) {
+    auto* sampled_texture = ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32());
+    auto* v = b.Var("v", ty.ptr<handle>(ty.binding_array(sampled_texture, 4_u)));
+    v->SetBindingPoint(0, 0);
+
+    b.ir.root_block->Append(v);
+
+    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    EXPECT_EQ(output_.hlsl, R"(
+Texture2D<float4> v[4] : register(t0);
+[numthreads(1, 1, 1)]
+void unused_entry_point() {
+}
+
+)");
+}
+
 struct HlslDepthTextureData {
     core::type::TextureDimension dim;
     std::string result;
@@ -141,7 +159,7 @@ using VarDepthTextureTest = HlslWriterTestWithParam<HlslDepthTextureData>;
 TEST_P(VarDepthTextureTest, Emit) {
     auto params = GetParam();
 
-    auto* s = b.Var("tex", ty.ptr<handle>(ty.Get<core::type::DepthTexture>(params.dim)));
+    auto* s = b.Var("tex", ty.ptr<handle>(ty.depth_texture(params.dim)));
     s->SetBindingPoint(2, 1);
 
     b.ir.root_block->Append(s);
@@ -167,8 +185,8 @@ INSTANTIATE_TEST_SUITE_P(
                                          "TextureCubeArray tex : register(t1, space2);"}));
 
 TEST_F(HlslWriterTest, VarDepthMultiSampled) {
-    auto* s = b.Var("tex", ty.ptr<handle>(ty.Get<core::type::DepthMultisampledTexture>(
-                               core::type::TextureDimension::k2d)));
+    auto* s = b.Var(
+        "tex", ty.ptr<handle>(ty.depth_multisampled_texture(core::type::TextureDimension::k2d)));
     s->SetBindingPoint(2, 1);
 
     b.ir.root_block->Append(s);
@@ -201,7 +219,7 @@ using VarSampledTextureTest = HlslWriterTestWithParam<HlslSampledTextureData>;
 TEST_P(VarSampledTextureTest, Emit) {
     auto params = GetParam();
 
-    const core::type::Type* datatype;
+    const core::type::Type* datatype = nullptr;
     switch (params.datatype) {
         case TextureDataType::F32:
             datatype = ty.f32();
@@ -214,8 +232,7 @@ TEST_P(VarSampledTextureTest, Emit) {
             break;
     }
 
-    auto* s =
-        b.Var("tex", ty.ptr<handle>(ty.Get<core::type::SampledTexture>(params.dim, datatype)));
+    auto* s = b.Var("tex", ty.ptr<handle>(ty.sampled_texture(params.dim, datatype)));
     s->SetBindingPoint(2, 1);
 
     b.ir.root_block->Append(s);
@@ -324,8 +341,9 @@ INSTANTIATE_TEST_SUITE_P(HlslWriterTest,
                              }));
 
 TEST_F(HlslWriterTest, VarMultisampledTexture) {
-    auto* s = b.Var("tex", ty.ptr<handle>(ty.Get<core::type::MultisampledTexture>(
-                               core::type::TextureDimension::k2d, ty.f32())));
+    auto* s =
+        b.Var("tex",
+              ty.ptr<handle>(ty.multisampled_texture(core::type::TextureDimension::k2d, ty.f32())));
     s->SetBindingPoint(2, 1);
 
     b.ir.root_block->Append(s);
@@ -358,8 +376,8 @@ using VarStorageTextureTest = HlslWriterTestWithParam<HlslStorageTextureData>;
 TEST_P(VarStorageTextureTest, Emit) {
     auto params = GetParam();
 
-    auto* s = b.Var("tex", ty.ptr<handle>(ty.Get<core::type::StorageTexture>(
-                               params.dim, params.imgfmt, params.access, ty.f32())));
+    auto* s =
+        b.Var("tex", ty.ptr<handle>(ty.storage_texture(params.dim, params.imgfmt, params.access)));
     s->SetBindingPoint(2, 1);
 
     b.ir.root_block->Append(s);

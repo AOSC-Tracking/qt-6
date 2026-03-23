@@ -58,6 +58,7 @@ void NinjaBinaryTargetWriter::Run() {
   writer.Run();
 
   const std::vector<std::string> types = target_->rsp_types();
+  const std::string pattern = target_->lflags_remove_pattern();
   if (!types.empty()) {
     for (const std::string& str_type : types) {
       base::FilePath p_file(
@@ -68,6 +69,8 @@ void NinjaBinaryTargetWriter::Run() {
       std::ostream p_stream(&storage);
       const RspTargetWriter::Type& type = RspTargetWriter::strToType(str_type);
       RspTargetWriter p_writer(&writer, target_, type, p_stream);
+      if (type == RspTargetWriter::LFLAGS)
+        p_writer.set_lflags_remove_pattern(pattern);
       p_writer.Run();
       if (p_stream.tellp() != std::streampos(0))
         storage.WriteToFileIfChanged(p_file, nullptr);
@@ -233,7 +236,10 @@ void NinjaBinaryTargetWriter::AddSourceSetFiles(
   // the tool if there are more than one.
   for (const auto& source : source_set->sources()) {
     const char* tool_name = Tool::kToolNone;
-    if (source_set->GetOutputFilesForSource(source, &tool_name, &tool_outputs))
+    // Do not add .pcm files as they are not object files linked to final
+    // binaries.
+    if (source.GetType() != SourceFile::SOURCE_MODULEMAP &&
+        source_set->GetOutputFilesForSource(source, &tool_name, &tool_outputs))
       obj_files->push_back(tool_outputs[0]);
   }
 

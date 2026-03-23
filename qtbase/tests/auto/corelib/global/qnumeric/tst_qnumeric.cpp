@@ -990,12 +990,6 @@ using ushort = unsigned short;
 using uint = unsigned int;
 using ulong = unsigned long;
 
-#if CHAR_MAX == 127 // char is signed
-SIGNED_TYPE_TEST(char, CHAR_MIN, CHAR_MAX)
-#else
-UNSIGNED_TYPE_TEST(char, CHAR_MAX)
-#endif
-
 SIGNED_TYPE_TEST(schar, SCHAR_MIN, SCHAR_MAX)
 UNSIGNED_TYPE_TEST(uchar, UCHAR_MAX)
 
@@ -1017,7 +1011,7 @@ SUB_OVERFLOW_UNSIGNED_TYPE_TEST(ulong, ULONG_MAX)
 
 #if defined(QT_HAS_128_BIT_MULTIPLICATION)
 // Compiling this causes an ICE in MSVC, so skipping it
-#if !defined(Q_CC_MSVC) || Q_CC_MSVC > 1944
+#if !defined(Q_CC_MSVC) || Q_CC_MSVC > 1950
 SIGNED_TYPE_TEST(qlonglong, LLONG_MIN, LLONG_MAX)
 UNSIGNED_TYPE_TEST(qulonglong, ULLONG_MAX)
 #endif

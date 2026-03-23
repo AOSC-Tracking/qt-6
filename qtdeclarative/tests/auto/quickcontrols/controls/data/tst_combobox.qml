@@ -2456,4 +2456,30 @@ TestCase {
             ignoreWarning(/ComboBox\.qml\:[0-9]+\:[0-9]+\: Unable to assign QQmlDMAbstractItemModelData to QString/);
         compare(control.popup.contentItem.itemAtIndex(0).text, "");
     }
+
+    Component {
+        id: delegateComponent1
+
+        ItemDelegate {}
+    }
+
+    Component {
+        id: delegateComponent2
+
+        ItemDelegate {}
+    }
+
+    function test_dontDeleteDelegates() {
+        let control = createTemporaryObject(
+            comboBox, testCase, { model: fruitarray, textRole: "color", delegate: delegateComponent1 })
+        verify(control)
+
+        // When setting a new delegate, the old one shouldn't be destroyed.
+        control.delegate = delegateComponent2
+        verify(delegateComponent1)
+
+        // The same goes for the new delegate: it shouldn't be destroyed when setting the old one.
+        control.delegate = delegateComponent1
+        verify(delegateComponent2)
+    }
 }

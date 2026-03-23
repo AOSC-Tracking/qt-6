@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/containers/flat_map.h"
+#include "base/feature_list.h"
 #include "base/functional/callback.h"
 #include "base/notreached.h"
 #include "base/profiler/stack_sampling_profiler.h"
@@ -13,6 +14,10 @@
 #include "build/build_config.h"
 #include "chrome/common/profiler/process_type.h"
 #include "components/sampling_profiler/process_type.h"
+
+BASE_FEATURE(kSamplingProfilerOnWorkerThreads,
+             "SamplingProfilerOnWorkerThreads",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 namespace {
 
@@ -119,10 +124,8 @@ bool DefaultPlatformConfiguration::IsEnabledForThread(
     sampling_profiler::ProfilerProcessType process,
     sampling_profiler::ProfilerThreadType thread,
     std::optional<version_info::Channel> release_channel) const {
-  // TODO(crbug.com/40226611): Remove exception once ThreadPoolWorker profile
-  // sampling is enabled for thread pool worker.
   if (thread == sampling_profiler::ProfilerThreadType::kThreadPoolWorker) {
-    return false;
+    return base::FeatureList::IsEnabled(kSamplingProfilerOnWorkerThreads);
   }
   // Enable for all supported threads.
   return true;
@@ -213,9 +216,23 @@ AndroidPlatformConfiguration::GetEnableRates(
     return RelativePopulations{0.0, 100.0, 0.0};
   }
 
-  CHECK(*release_channel == version_info::Channel::CANARY ||
-        *release_channel == version_info::Channel::DEV ||
-        *release_channel == version_info::Channel::BETA);
+  CHECK(*release_channel != version_info::Channel::UNKNOWN);
+
+  if (*release_channel == version_info::Channel::STABLE) {
+// Only enable for arm64, as this does not require DFM installation.
+#if defined(ARCH_CPU_ARM64)
+    // For 100% of population
+    // - 1/2 within the subgroup, i.e. 50.0% of total population, enable
+    // profiling.
+    // - 1/2 within the subgroup, disable profiling.
+    // This results a total of 0.00005% enable rate.
+    static constexpr double experiment_rate = 0.0001;
+    return RelativePopulations{100.0 - experiment_rate, 0.0, experiment_rate};
+#else
+    // Don't enable for arm32.
+    return RelativePopulations{100.0, 0.0, 0.0};
+#endif
+  }
 
   if (*release_channel == version_info::Channel::BETA) {
     // For 100% of population
@@ -276,14 +293,13 @@ bool AndroidPlatformConfiguration::IsEnabledForThread(
     sampling_profiler::ProfilerProcessType process,
     sampling_profiler::ProfilerThreadType thread,
     std::optional<version_info::Channel> release_channel) const {
-  if (!release_channel.has_value() || browser_test_mode_enabled()) {
-    return true;
+  if (!DefaultPlatformConfiguration::IsEnabledForThread(process, thread,
+                                                        release_channel)) {
+    return false;
   }
 
-  // TODO(crbug.com/40226611): Remove exception once ThreadPoolWorker profile
-  // sampling is enabled for thread pool worker.
-  if (thread == sampling_profiler::ProfilerThreadType::kThreadPoolWorker) {
-    return false;
+  if (!release_channel.has_value() || browser_test_mode_enabled()) {
+    return true;
   }
 
   switch (*release_channel) {
@@ -310,11 +326,15 @@ bool AndroidPlatformConfiguration::IsSupportedForChannel(
     return true;
   }
 
-  // Canary, dev, and beta channels are supported in release builds.
+  // Canary, dev, beta, stable channels are supported in release builds, with
+  // stable only support on arm64.
   switch (*release_channel) {
     case version_info::Channel::CANARY:
     case version_info::Channel::DEV:
     case version_info::Channel::BETA:
+#if defined(ARCH_CPU_ARM64)
+    case version_info::Channel::STABLE:
+#endif
       return true;
 
     default:

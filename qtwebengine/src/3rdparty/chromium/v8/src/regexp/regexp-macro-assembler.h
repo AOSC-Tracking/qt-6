@@ -42,10 +42,11 @@ class RegExpMacroAssembler {
   static constexpr int kUseCharactersValue = -1;
 
   RegExpMacroAssembler(Isolate* isolate, Zone* zone);
+  RegExpMacroAssembler(const RegExpMacroAssembler& other) V8_NOEXCEPT = default;
   virtual ~RegExpMacroAssembler() = default;
 
-  virtual Handle<HeapObject> GetCode(Handle<String> source,
-                                     RegExpFlags flags) = 0;
+  virtual DirectHandle<HeapObject> GetCode(DirectHandle<String> source,
+                                           RegExpFlags flags) = 0;
 
   // This function is called when code generation is aborted, so that
   // the assembler could clean up internal data structures.
@@ -72,7 +73,7 @@ class RegExpMacroAssembler {
                                       Label* on_equal) = 0;
   virtual void CheckCharacterGT(base::uc16 limit, Label* on_greater) = 0;
   virtual void CheckCharacterLT(base::uc16 limit, Label* on_less) = 0;
-  virtual void CheckGreedyLoop(Label* on_tos_equals_current_position) = 0;
+  virtual void CheckFixedLengthLoop(Label* on_tos_equals_current_position) = 0;
   virtual void CheckAtStart(int cp_offset, Label* on_at_start) = 0;
   virtual void CheckNotAtStart(int cp_offset, Label* on_not_at_start) = 0;
   virtual void CheckNotBackReference(int start_reg, bool read_backward,

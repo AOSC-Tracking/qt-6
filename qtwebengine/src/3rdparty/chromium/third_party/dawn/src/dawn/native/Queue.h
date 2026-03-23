@@ -32,13 +32,13 @@
 
 #include "dawn/common/MutexProtected.h"
 #include "dawn/common/SerialMap.h"
+#include "dawn/common/WeakRefSupport.h"
 #include "dawn/native/CallbackTaskManager.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/ExecutionQueue.h"
 #include "dawn/native/Forward.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/ObjectBase.h"
-#include "dawn/native/SystemEvent.h"
 #include "partition_alloc/pointers/raw_ptr.h"
 
 #include "dawn/native/DawnNative.h"
@@ -62,7 +62,9 @@ struct TrackTaskCallback : CallbackTask {
     ExecutionSerial mSerial = kMaxExecutionSerial;
 };
 
-class QueueBase : public ApiObjectBase, public ExecutionQueueBase {
+class QueueBase : public ApiObjectBase,
+                  public ExecutionQueueBase,
+                  public WeakRefSupport<QueueBase> {
   public:
     ~QueueBase() override;
 
@@ -75,17 +77,17 @@ class QueueBase : public ApiObjectBase, public ExecutionQueueBase {
     void APISubmit(uint32_t commandCount, CommandBufferBase* const* commands);
     Future APIOnSubmittedWorkDone(const WGPUQueueWorkDoneCallbackInfo& callbackInfo);
     void APIWriteBuffer(BufferBase* buffer, uint64_t bufferOffset, const void* data, size_t size);
-    void APIWriteTexture(const ImageCopyTexture* destination,
+    void APIWriteTexture(const TexelCopyTextureInfo* destination,
                          const void* data,
                          size_t dataSize,
-                         const TextureDataLayout* dataLayout,
+                         const TexelCopyBufferLayout* dataLayout,
                          const Extent3D* writeSize);
-    void APICopyTextureForBrowser(const ImageCopyTexture* source,
-                                  const ImageCopyTexture* destination,
+    void APICopyTextureForBrowser(const TexelCopyTextureInfo* source,
+                                  const TexelCopyTextureInfo* destination,
                                   const Extent3D* copySize,
                                   const CopyTextureForBrowserOptions* options);
     void APICopyExternalTextureForBrowser(const ImageCopyExternalTexture* source,
-                                          const ImageCopyTexture* destination,
+                                          const TexelCopyTextureInfo* destination,
                                           const Extent3D* copySize,
                                           const CopyTextureForBrowserOptions* options);
 
@@ -93,6 +95,7 @@ class QueueBase : public ApiObjectBase, public ExecutionQueueBase {
                            uint64_t bufferOffset,
                            const void* data,
                            size_t size);
+
     // Ensure a flush occurs if needed, and track this task as complete after the
     // scheduled work is complete.
     void TrackTaskAfterEventualFlush(std::unique_ptr<TrackTaskCallback> task);
@@ -119,32 +122,32 @@ class QueueBase : public ApiObjectBase, public ExecutionQueueBase {
                                        uint64_t bufferOffset,
                                        const void* data,
                                        size_t size);
-    virtual MaybeError WriteTextureImpl(const ImageCopyTexture& destination,
+    virtual MaybeError WriteTextureImpl(const TexelCopyTextureInfo& destination,
                                         const void* data,
                                         size_t dataSize,
-                                        const TextureDataLayout& dataLayout,
+                                        const TexelCopyBufferLayout& dataLayout,
                                         const Extent3D& writeSize);
 
   private:
-    MaybeError WriteTextureInternal(const ImageCopyTexture* destination,
+    MaybeError WriteTextureInternal(const TexelCopyTextureInfo* destination,
                                     const void* data,
                                     size_t dataSize,
-                                    const TextureDataLayout& dataLayout,
+                                    const TexelCopyBufferLayout& dataLayout,
                                     const Extent3D* writeSize);
-    MaybeError CopyTextureForBrowserInternal(const ImageCopyTexture* source,
-                                             const ImageCopyTexture* destination,
+    MaybeError CopyTextureForBrowserInternal(const TexelCopyTextureInfo* source,
+                                             const TexelCopyTextureInfo* destination,
                                              const Extent3D* copySize,
                                              const CopyTextureForBrowserOptions* options);
     MaybeError CopyExternalTextureForBrowserInternal(const ImageCopyExternalTexture* source,
-                                                     const ImageCopyTexture* destination,
+                                                     const TexelCopyTextureInfo* destination,
                                                      const Extent3D* copySize,
                                                      const CopyTextureForBrowserOptions* options);
 
     MaybeError ValidateSubmit(uint32_t commandCount, CommandBufferBase* const* commands) const;
     MaybeError ValidateOnSubmittedWorkDone() const;
-    MaybeError ValidateWriteTexture(const ImageCopyTexture* destination,
+    MaybeError ValidateWriteTexture(const TexelCopyTextureInfo* destination,
                                     size_t dataSize,
-                                    const TextureDataLayout& dataLayout,
+                                    const TexelCopyBufferLayout& dataLayout,
                                     const Extent3D* writeSize) const;
 
     MaybeError SubmitInternal(uint32_t commandCount, CommandBufferBase* const* commands);

@@ -1,6 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "QtWidgets/qapplication.h"
 #include "QtWidgets/qwidget.h"
@@ -1965,7 +1966,6 @@ bool QDockAreaLayoutInfo::restoreState(QDataStream &stream, QList<QDockWidget*> 
                 QPlaceHolderItem *placeHolder = new QPlaceHolderItem;
                 QDockAreaLayoutItem item(placeHolder);
 
-                placeHolder->objectName = name;
                 placeHolder->window = flags & StateFlagFloating;
                 placeHolder->hidden = !(flags & StateFlagVisible);
                 if (placeHolder->window) {
@@ -1978,6 +1978,7 @@ bool QDockAreaLayoutInfo::restoreState(QDataStream &stream, QList<QDockWidget*> 
                 }
                 if (item.size != -1)
                     item.flags |= QDockAreaLayoutItem::KeepSize;
+                placeHolder->objectName = std::move(name);
                 if (!testing)
                     item_list.append(item);
             } else {

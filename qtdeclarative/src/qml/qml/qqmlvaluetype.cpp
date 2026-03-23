@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlvaluetype_p.h"
 
@@ -449,9 +450,24 @@ void QQmlMarginsValueType::setBottom(int bottom)
 }
 
 #if QT_CONFIG(easingcurve)
-QQmlEasingEnums::Type QQmlEasingValueType::type() const
+qreal QQmlEasing::valueForProgress(Type type, qreal progress) const
 {
-    return (QQmlEasingEnums::Type)QEasingCurve::type();
+    return QEasingCurve(static_cast<QEasingCurve::Type>(type)).valueForProgress(progress);
+}
+
+QQmlEasingValueType::QQmlEasingValueType(QQmlEasing::Type type)
+    : QEasingCurve(static_cast<QEasingCurve::Type>(type))
+{
+}
+
+qreal QQmlEasingValueType::valueForProgress(qreal progress)
+{
+    return QEasingCurve::valueForProgress(progress);
+}
+
+QQmlEasing::Type QQmlEasingValueType::type() const
+{
+    return (QQmlEasing::Type)QEasingCurve::type();
 }
 
 qreal QQmlEasingValueType::amplitude() const
@@ -469,7 +485,7 @@ qreal QQmlEasingValueType::period() const
     return QEasingCurve::period();
 }
 
-void QQmlEasingValueType::setType(QQmlEasingEnums::Type type)
+void QQmlEasingValueType::setType(QQmlEasing::Type type)
 {
     QEasingCurve::setType((QEasingCurve::Type)type);
 }
@@ -519,7 +535,7 @@ void QQmlEasingValueType::setBezierCurve(const QList<qreal> &customCurveVariant)
 QList<qreal> QQmlEasingValueType::bezierCurve() const
 {
     QList<qreal> rv;
-    const QVector<QPointF> points = QEasingCurve::toCubicSpline();
+    const QList<QPointF> points = QEasingCurve::toCubicSpline();
     rv.reserve(points.size() * 2);
     for (const auto &point : points)
         rv << point.x() << point.y();

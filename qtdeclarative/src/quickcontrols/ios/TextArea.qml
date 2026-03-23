@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -24,6 +25,10 @@ T.TextArea {
     selectedTextColor: control.palette.highlightedText
     placeholderTextColor: control.palette.placeholderText
     cursorDelegate: CursorDelegate {}
+
+    ContextMenu.menu: TextEditingContextMenu {
+        editor: control
+    }
 
     PlaceholderText {
         id: placeholder

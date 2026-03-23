@@ -37,7 +37,7 @@ import {getTemplate} from './lens_overlay_app.html.js';
 import {recordLensOverlayInteraction, recordTimeToWebUIReady} from './metrics_utils.js';
 import {PageContentType} from './page_content_type.mojom-webui.js';
 import {PerformanceTracker} from './performance_tracker.js';
-import {handleEscapeSearchbox, onSearchboxKeydown} from './searchbox_utils.js';
+import {handleEscapeSearchbox} from './searchbox_utils.js';
 import type {SelectionOverlayElement} from './selection_overlay.js';
 import {focusShimmerOnRegion, ShimmerControlRequester, unfocusShimmer} from './selection_utils.js';
 import type {TranslateButtonElement} from './translate_button.js';
@@ -75,17 +75,37 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
 
   static get properties() {
     return {
+      autocompleteRequestStarted: {
+        type: Boolean,
+        value: false,
+      },
+      enableBorderGlow: {
+        type: Boolean,
+        value: () => loadTimeData.getBoolean('enableBorderGlow'),
+      },
+      enableCsbMotionTweaks: {
+        reflectToAttribute: true,
+        type: Boolean,
+        value: () => loadTimeData.getBoolean('enableCsbMotionTweaks'),
+      },
+      forceHideSearchBox: {
+        type: Boolean,
+        value: false,
+      },
       isImageRendered: {
         type: Boolean,
         reflectToAttribute: true,
+        value: false,
       },
       initialFlashAnimationHasEnded: {
         type: Boolean,
         reflectToAttribute: true,
+        value: false,
       },
       sidePanelOpened: {
         type: Boolean,
         reflectToAttribute: true,
+        value: false,
       },
       searchBoxHidden: {
         type: Boolean,
@@ -96,16 +116,26 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
       isClosing: {
         type: Boolean,
         reflectToAttribute: true,
+        value: false,
       },
       moreOptionsMenuVisible: {
         type: Boolean,
         reflectToAttribute: true,
+        value: false,
+      },
+      isPointerDown: {
+        type: Boolean,
+        value: false,
       },
       isTranslateButtonEnabled: {
         type: Boolean,
         value: () => loadTimeData.getBoolean('enableOverlayTranslateButton'),
         readOnly: true,
         reflectToAttribute: true,
+      },
+      isTranslateModeActive: {
+        type: Boolean,
+        value: false,
       },
       shouldFadeOutButtons: {
         type: Boolean,
@@ -123,6 +153,7 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
       isLensOverlayContextualSearchboxVisible: {
         type: Boolean,
         reflectToAttribute: true,
+        value: false,
       },
       theme: {
         type: Object,
@@ -136,19 +167,29 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
       isSearchboxFocused: {
         type: Boolean,
         reflectToAttribute: true,
+        value: false,
       },
       suppressGhostLoader: {
         type: Boolean,
         value: false,
       },
+      enableGhostLoader: {
+        type: Boolean,
+        value: () => loadTimeData.getBoolean('enableGhostLoader'),
+      },
       showGhostLoader: {
         type: Boolean,
         computed: `computeShowGhostLoader(
+                enableGhostLoader,
                 isSearchboxFocused,
                 autocompleteRequestStarted,
                 showErrorState,
                 suppressGhostLoader)`,
         reflectToAttribute: true,
+      },
+      pageContentType: {
+        type: Number,
+        value: PageContentType.kUnknown,
       },
       placeholderText: {
         type: String,
@@ -159,64 +200,115 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
         value: false,
         notify: true,
       },
-      areLanguagePickersOpen: Boolean,
-      toastMessage: String,
+      areLanguagePickersOpen: {
+        type: Boolean,
+        value: false,
+      },
+      toastMessage: {
+        type: String,
+        value: '',
+      },
+      enableCloseButtonTweaks: {
+        type: Boolean,
+        value: () => loadTimeData.getBoolean('enableCloseButtonTweaks'),
+        reflectToAttribute: true,
+      },
+      enableVisualSelectionUpdates: {
+        type: Boolean,
+        value: () => loadTimeData.getBoolean('enableVisualSelectionUpdates'),
+        reflectToAttribute: true,
+      },
+      searchboxSuggestionCount: {
+        type: Number,
+        value: 0,
+      },
+      canAnimateInCloseButton: {
+        type: Boolean,
+        value: false,
+        reflectToAttribute: true,
+      },
     };
   }
 
+  // Whether the border glow is enabled via feature flag.
+  declare enableBorderGlow: boolean;
   // Whether the user is currently focused into the searchbox.
-  isSearchboxFocused: boolean = false;
+  // Whether CSB motion tweaks are enabled via feature flag.
+  declare enableCsbMotionTweaks: boolean;
+  declare isSearchboxFocused: boolean;
   // Whether to purposely suppress the ghost loader. Done when escaping from
   // the searchbox when there's text (this doesn't create a zero suggset
   // request).
-  suppressGhostLoader: boolean;
+  declare suppressGhostLoader: boolean;
   // Whether the ghost loader should show its error state.
-  showErrorState: boolean;
+  declare showErrorState: boolean;
   // Whether this is an in flight request to autocomplete.
-  private autocompleteRequestStarted: boolean = false;
+  declare private autocompleteRequestStarted: boolean;
   // Whether the translate button is enabled.
-  private isTranslateButtonEnabled: boolean;
+  declare private isTranslateButtonEnabled: boolean;
   // Whether the image has finished rendering.
-  private isImageRendered: boolean = false;
+  declare private isImageRendered: boolean;
   // Whether the initial flash animation has ended on the selection overlay.
-  private initialFlashAnimationHasEnded: boolean = false;
+  declare private initialFlashAnimationHasEnded: boolean;
   // Whether the side panel has been opened.
-  private sidePanelOpened: boolean = false;
+  declare private sidePanelOpened: boolean;
   // Whether the search box should be hidden.
-  private searchBoxHidden: boolean = false;
+  declare private searchBoxHidden: boolean;
   // Whether the search box should be forced to hide. Used to prevent the search
   // box from showing when we know the side panel will be opened.
-  private forceHideSearchBox: boolean = false;
+  declare private forceHideSearchBox: boolean;
   // Whether the overlay is being shut down.
-  private isClosing: boolean = false;
+  declare private isClosing: boolean;
   // Whether more options menu should be shown.
-  private moreOptionsMenuVisible: boolean = false;
+  declare private moreOptionsMenuVisible: boolean;
   // Whether the translate mode on the lens overlay has been activated. Updated
   // in response to events dispatched from the translate button.
-  private isTranslateModeActive: boolean = false;
+  declare private isTranslateModeActive: boolean;
   // Whether the user is pressing down on the selection overlay. Updated in
   // response to events dispatched from the selection overlay.
-  private isPointerDown: boolean = false;
+  declare private isPointerDown: boolean;
   // Whether the button containers should be faded out.
-  private shouldFadeOutButtons: boolean = false;
+  declare private shouldFadeOutButtons: boolean;
+  declare private darkMode: boolean;
   // The overlay theme.
-  private theme: OverlayTheme;
+  declare private theme: OverlayTheme;
   // Whether the contextual searchbox feature is enabled.
-  private isLensOverlayContextualSearchboxEnabled: boolean;
+  declare private isLensOverlayContextualSearchboxEnabled: boolean;
   // Whether the contextual searchbox is visible to the user.
-  private isLensOverlayContextualSearchboxVisible: boolean = false;
-  private toastMessage: string = '';
+  declare private isLensOverlayContextualSearchboxVisible: boolean;
+  // Whether the contextual searchbox should be auto-focused when the overlay is
+  // first opened.
+  private autoFocusSearchbox: boolean =
+      loadTimeData.getValue('autoFocusSearchbox');
+  declare private toastMessage: string;
+  declare private enableCloseButtonTweaks: boolean;
+  declare private enableVisualSelectionUpdates: boolean;
+  // The number of suggestions currently being shown to the user.
+  declare private searchboxSuggestionCount: number;
+  // Whether the close button can animate in. This is used in the new CSB
+  // animation to ensure the close button animates in with the searchbox. Cannot
+  // rely solely on isLensOverlayContextualSearchboxVisible because that might
+  // never become true, which would prevent the close button from animating in.
+  declare private canAnimateInCloseButton: boolean;
   // What the current page content type is.
-  private pageContentType: PageContentType = PageContentType.kUnknown;
+  declare private pageContentType: PageContentType;
+  // Whether the ghost loader is enabled via feature flag.
+  declare private enableGhostLoader: boolean;
   // Whether to show the ghost loader.
-  private showGhostLoader: boolean;
+  declare private showGhostLoader: boolean;
   // What the placeholder text should be.
-  private placeholderText: string;
+  declare private placeholderText: string;
   // Whether the translate language pickers are open.
-  private areLanguagePickersOpen: boolean = false;
+  declare private areLanguagePickersOpen: boolean;
 
   // The performance tracker used to log performance metrics for the overlay.
   private performanceTracker: PerformanceTracker = new PerformanceTracker();
+
+  // Whether the overlay has received notice that the handshake with the Lens
+  // backend has completed. The handshake is required to send suggest requests.
+  private isBackendHandshakeComplete = false;
+  // Whether to trigger the autocomplete request when suggest inputs are ready.
+  private triggerSuggestOnInputReady = false;
 
   private eventTracker_: EventTracker = new EventTracker();
 
@@ -225,7 +317,7 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
   private invocationTime: number = loadTimeData.getValue('invocationTime');
 
   private searchboxBoundingClientRectObserver: ResizeObserver =
-      new ResizeObserver(this.focusShimmerOnSearchbox.bind(this));
+      new ResizeObserver(this.onSearchboxBoundsChanged.bind(this));
 
   // The ID returned by requestAnimationFrame for the updateCursorPosition
   // function.
@@ -248,6 +340,8 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
       callbackRouter.themeReceived.addListener(this.themeReceived.bind(this)),
       callbackRouter.shouldShowContextualSearchBox.addListener(
           this.shouldShowContextualSearchBox.bind(this)),
+      callbackRouter.notifyHandshakeComplete.addListener(
+          this.onBackendHandshakeComplete.bind(this)),
       callbackRouter.notifyResultsPanelOpened.addListener(
           this.onNotifyResultsPanelOpened.bind(this)),
       callbackRouter.notifyOverlayClosing.addListener(() => {
@@ -288,11 +382,6 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
     this.eventTracker_.add(document, 'language-picker-opened', () => {
       this.handleLanguagePickersOpened();
     });
-    this.eventTracker_.add(document, 'keydown', (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' && this.isSearchboxFocused) {
-        onSearchboxKeydown(this, this.$.searchbox);
-      }
-    });
     this.eventTracker_.add(
         document, 'query-autocomplete',
         this.handleQueryAutocomplete.bind(this));
@@ -300,7 +389,6 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
         document, 'pointermove', this.updateCursorPosition.bind(this));
     this.eventTracker_.add(this.$.searchbox, 'mousedown', () => {
       this.suppressGhostLoader = false;
-      this.showErrorState = false;
     });
 
     this.performanceTracker.startSession();
@@ -359,8 +447,26 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
   }
 
   // Called when the searchbox requests autocomplete suggestions.
-  private handleQueryAutocomplete() {
-    this.autocompleteRequestStarted = true;
+  private handleQueryAutocomplete(e: CustomEvent) {
+    // A request is only started for zero suggest, which is when the input value
+    // is empty.
+    this.autocompleteRequestStarted = !e.detail.inputValue;
+
+    if (this.autocompleteRequestStarted && !window.navigator.onLine) {
+      // If the user doesn't have an internet connection, the suggest request
+      // will fail, so immediately show the error state.
+      this.showErrorState = true;
+      return;
+    }
+
+    this.showErrorState = false;
+  }
+
+  private onSearchboxBoundsChanged() {
+    this.focusShimmerOnSearchbox();
+
+    this.searchboxSuggestionCount =
+        this.$.searchbox.getSuggestionsElement().selectableMatchElements.length;
   }
 
   private focusShimmerOnSearchbox() {
@@ -466,7 +572,9 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
   }
 
   private computeShowGhostLoader(): boolean {
-    if (this.suppressGhostLoader) {
+    // Ghost loader is disabled by the feature flag or suppressed by the
+    // LensOverlayController.
+    if (!this.enableGhostLoader || this.suppressGhostLoader) {
       return false;
     }
     // Show the ghost loader if there is focus on the searchbox, and there is
@@ -516,6 +624,22 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
     recordLensOverlayInteraction(INVOCATION_SOURCE, UserAction.kMyActivity);
   }
 
+  private onBackendHandshakeComplete() {
+    if (this.isBackendHandshakeComplete) {
+      // The handshake should only be completed once on invocation. Ignore
+      // subsequent calls just in case.
+      return;
+    }
+    this.isBackendHandshakeComplete = true;
+
+    // Trigger autocomplete if the handshake completed while the user is waiting
+    // for suggest results.
+    if (this.triggerSuggestOnInputReady && this.isSearchboxFocused) {
+      this.triggerSearchboxSuggestions();
+    }
+    this.triggerSuggestOnInputReady = false;
+  }
+
   private onNotifyResultsPanelOpened() {
     this.sidePanelOpened = true;
   }
@@ -527,6 +651,7 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
   private shouldShowContextualSearchBox(shouldShow: boolean) {
     this.isLensOverlayContextualSearchboxVisible =
         this.isLensOverlayContextualSearchboxEnabled && shouldShow;
+    this.canAnimateInCloseButton = true;
   }
 
   // The user started making a selection on the selection overlay.
@@ -538,18 +663,65 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
 
   // The user finished making their selection on the selection overlay.
   private handleSelectionFinished() {
-    this.$.initialGradient.triggerHideScrimAnimation();
+    if (!this.enableBorderGlow) {
+      this.$.initialGradient.triggerHideScrimAnimation();
+    }
     this.$.cursorTooltip.setPauseTooltipChanges(false);
     this.isPointerDown = false;
   }
 
   private onScreenshotRendered() {
     this.isImageRendered = true;
+    // Focus the searchbox simultaneously with the initial flash animation.
+    if (this.enableCsbMotionTweaks && this.autoFocusSearchbox &&
+        this.isLensOverlayContextualSearchboxVisible) {
+      this.focusSearchbox();
+    }
   }
 
   private onInitialFlashAnimationEnd() {
     this.initialFlashAnimationHasEnded = true;
-    this.$.initialGradient.setScrimVisible();
+    if (!this.enableBorderGlow) {
+      this.$.initialGradient.setScrimVisible();
+    }
+    // The searchbox is not focusable until the animation has ended.
+    // Only called here if not already called in onScreenshotRendered
+    if (this.autoFocusSearchbox &&
+        this.isLensOverlayContextualSearchboxVisible &&
+        !this.enableCsbMotionTweaks) {
+      this.focusSearchbox();
+    }
+  }
+
+  private triggerSearchboxSuggestions() {
+    // If the user doesn't have an internet connection, the suggest request will
+    // fail, so immediately show the error state.
+    if (!window.navigator.onLine) {
+      this.showErrorState = true;
+      return;
+    }
+
+    // If the backend handshake has completed, then it is safe to issue the
+    // autocomplete query immediately.
+    if (this.isBackendHandshakeComplete) {
+      this.$.searchbox.queryAutocomplete();
+      return;
+    }
+
+    // Since the backend handshake has not completed, set the
+    // triggerSuggestOnInputReady flag so that the autocomplete query is
+    // triggered when the handshake completes. Also set the autocomplete request
+    // started flag to true so that the ghost loader is shown to hide the
+    // handshake latency from the user.
+    this.triggerSuggestOnInputReady = true;
+    this.autocompleteRequestStarted = true;
+  }
+
+  private focusSearchbox() {
+    this.shadowRoot!.querySelector<HTMLElement>('cr-searchbox')
+        ?.shadowRoot!.querySelector<HTMLElement>('input')
+        ?.focus();
+    this.triggerSearchboxSuggestions();
   }
 
   private computeShouldFadeOutButtons(): boolean {
@@ -615,7 +787,7 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
   private getSearchboxAriaDescription(): string {
     // Get the the text from the ghost loader to add to the searchbox aria
     // description.
-    return this.$.searchboxGhostLoader.getText();
+    return this.showGhostLoader ? this.$.searchboxGhostLoader.getText() : '';
   }
 
   setSearchboxFocusForTesting(isFocused: boolean) {

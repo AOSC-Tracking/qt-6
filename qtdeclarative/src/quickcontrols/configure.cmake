@@ -50,6 +50,12 @@ qt_feature("quickcontrols2-fluentwinui3" PRIVATE
     PURPOSE "Provides a style based on the Fluent design and Windows UI 3 style."
     CONDITION QT_FEATURE_quickcontrols2_fusion
 )
+qt_feature("quickcontrols2-stylekit" PRIVATE
+    SECTION "Quick Controls 2"
+    LABEL "StyleKit"
+    PURPOSE "Provides a styling framework."
+    CONDITION QT_FEATURE_quickcontrols2_basic
+)
 qt_feature("quickcontrols2-macos" PRIVATE
     SECTION "Quick Controls 2"
     LABEL "macOS"
@@ -66,7 +72,7 @@ qt_feature("quickcontrols2-windows" PRIVATE
     SECTION "Quick Controls 2"
     LABEL "Windows"
     PURPOSE "Provides a native Windows desktop style."
-    CONDITION QT_FEATURE_quickcontrols2_basic AND WIN32
+    CONDITION QT_FEATURE_quickcontrols2_fusion AND WIN32
 )
 qt_configure_add_summary_section(NAME "Qt Quick Controls 2")
 qt_configure_add_summary_entry(
@@ -74,4 +80,5 @@ qt_configure_add_summary_entry(
     ARGS "quickcontrols2-basic quickcontrols2-fusion quickcontrols2-fluentwinui3 quickcontrols2-imagine quickcontrols2-ios quickcontrols2-material quickcontrols2-universal quickcontrols2-macos quickcontrols2-windows"
     MESSAGE "Styles"
 )
+qt_configure_add_summary_entry(ARGS "quickcontrols2-stylekit")
 qt_configure_end_summary_section() # end of "Qt Quick Controls 2" section

@@ -40,7 +40,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty VariantMap QDeclarativeGeoLocation::extendedAttributes
+    \qmlproperty VariantMap QtPositioning::Location::extendedAttributes
 
     This property holds the extended attributes for this Location.
     Extended attributes are backend-dependent and can be location-dependent.
@@ -148,9 +148,6 @@ QDeclarativeGeoAddress *QDeclarativeGeoLocation::address() const
     \qmlproperty coordinate QtPositioning::Location::coordinate
 
     This property holds the exact geographical coordinate of the location which can be used to retrieve the latitude, longitude and altitude of the location.
-
-    \note this property's changed() signal is currently emitted only if the
-    whole object changes, not if only the contents of the object change.
 */
 void QDeclarativeGeoLocation::setCoordinate(const QGeoCoordinate coordinate)
 {
@@ -170,23 +167,20 @@ QGeoCoordinate QDeclarativeGeoLocation::coordinate() const
 /*!
     \since QtPositioning 6.2
 
-    \qmlproperty geoshape QtPositioning::Location::boundingShape
+    \qmlproperty geoShape QtPositioning::Location::boundingShape
 
     This property holds the recommended region to use when displaying the location.
     For example, a building's location may have a region centered around the building,
     but the region is large enough to show it's immediate surrounding geographical
     context.
 
-    \note This property's changed() signal is currently emitted only if the
-    whole object changes, not if only the contents of the object change.
-
     \note This property was introduced in Qt6 instead of boundingBox property.
-    It returns a \l geoshape instead of a \l georectangle.
+    It returns a \l geoShape instead of a \l geoRectangle.
     Use \l QGeoShape::boundingGeoRectangle() to obtain a bounding
-    \l georectangle for the shape.
+    \l geoRectangle for the shape.
 
     If you need to convert the returned shape to a specific type, use the
-    \c type property of \l geoshape together with convenience
+    \c type property of \l geoShape together with convenience
     methods from \l [QML]{QtPositioning} like
     \l {QtPositioning::shapeToRectangle}{QtPositioning.shapeToRectangle()}.
 */

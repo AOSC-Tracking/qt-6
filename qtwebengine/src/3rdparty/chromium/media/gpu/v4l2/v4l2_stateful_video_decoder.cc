@@ -21,6 +21,7 @@
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/notimplemented.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
@@ -30,6 +31,7 @@
 #include "media/base/media_switches.h"
 #include "media/gpu/chromeos/video_frame_resource.h"
 #include "media/gpu/macros.h"
+#include "media/gpu/v4l2/v4l2_device.h"
 #include "media/gpu/v4l2/v4l2_framerate_control.h"
 #include "media/gpu/v4l2/v4l2_queue.h"
 #include "media/gpu/v4l2/v4l2_utils.h"
@@ -173,8 +175,9 @@ scoped_refptr<media::DecoderBuffer> ReassembleFragments(
   auto temp_buffer = base::HeapArray<uint8_t>::Uninit(frame_size);
   uint8_t* dst = temp_buffer.data();
   for (const auto& fragment : fragments) {
-    memcpy(dst, fragment->data(), fragment->size());
-    dst += fragment->size();
+    auto fragment_span = base::span(*fragment);
+    memcpy(dst, fragment_span.data(), fragment_span.size());
+    dst += fragment_span.size();
   }
 
   auto reassembled_frame =
@@ -313,9 +316,7 @@ void V4L2StatefulVideoDecoder::Initialize(const VideoDecoderConfig& config,
   }
 
   if (!device_fd_.is_valid()) {
-    constexpr char kVideoDeviceDriverPath[] = "/dev/video-dec0";
-    device_fd_.reset(HANDLE_EINTR(
-        open(kVideoDeviceDriverPath, O_RDWR | O_NONBLOCK | O_CLOEXEC)));
+    device_fd_ = V4L2Device::OpenFDForType(V4L2Device::Type::kDecoder);
     if (!device_fd_.is_valid()) {
       std::move(init_cb).Run(DecoderStatus::Codes::kFailedToCreateDecoder);
       return;
@@ -1142,10 +1143,12 @@ bool V4L2StatefulVideoDecoder::TryAndEnqueueOUTPUTQueueBuffers() {
 
       CHECK_EQ(v4l2_buffer->PlanesCount(), 1u);
       uint8_t* dst = static_cast<uint8_t*>(v4l2_buffer->GetPlaneMapping(0));
-      CHECK_GE(v4l2_buffer->GetPlaneSize(/*plane=*/0), media_buffer->size());
-      memcpy(dst, media_buffer->data(), media_buffer->size());
-      v4l2_buffer->SetPlaneBytesUsed(0, media_buffer->size());
-      VLOGF(4) << "Enqueuing " << media_buffer->size() << " bytes.";
+      auto media_buffer_span = base::span(*media_buffer);
+      CHECK_GE(v4l2_buffer->GetPlaneSize(/*plane=*/0),
+               media_buffer_span.size());
+      memcpy(dst, media_buffer_span.data(), media_buffer_span.size());
+      v4l2_buffer->SetPlaneBytesUsed(0, media_buffer_span.size());
+      VLOGF(4) << "Enqueuing " << media_buffer_span.size() << " bytes.";
       v4l2_buffer->SetTimeStamp(TimeDeltaToTimeVal(media_buffer->timestamp()));
 
       const int64_t flat_timespec = media_buffer->timestamp().InMilliseconds();
@@ -1192,9 +1195,7 @@ int V4L2StatefulVideoDecoder::GetMaxNumDecoderInstances() {
   if (!base::FeatureList::IsEnabled(media::kLimitConcurrentDecoderInstances)) {
     return std::numeric_limits<int>::max();
   }
-  constexpr char kVideoDeviceDriverPath[] = "/dev/video-dec0";
-  base::ScopedFD device_fd(HANDLE_EINTR(
-      open(kVideoDeviceDriverPath, O_RDWR | O_NONBLOCK | O_CLOEXEC)));
+  auto device_fd = V4L2Device::OpenFDForType(V4L2Device::Type::kDecoder);
   if (!device_fd.is_valid()) {
     return std::numeric_limits<int>::max();
   }

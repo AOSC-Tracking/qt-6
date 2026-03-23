@@ -245,8 +245,6 @@ class BASE_EXPORT CurrentThread {
   raw_ptr<sequence_manager::internal::SequenceManagerImpl> current_;
 };
 
-#if !BUILDFLAG(IS_NACL)
-
 // UI extension of CurrentThread.
 class BASE_EXPORT CurrentUIThread : public CurrentThread {
  public:
@@ -300,8 +298,6 @@ class BASE_EXPORT CurrentUIThread : public CurrentThread {
   MessagePumpForUI* GetMessagePumpForUI() const;
 };
 
-#endif  // !BUILDFLAG(IS_NACL)
-
 // ForIO extension of CurrentThread.
 class BASE_EXPORT CurrentIOThread : public CurrentThread {
  public:
@@ -313,8 +309,6 @@ class BASE_EXPORT CurrentIOThread : public CurrentThread {
   static bool IsSet();
 
   CurrentIOThread* operator->() { return this; }
-
-#if !BUILDFLAG(IS_NACL)
 
 #if BUILDFLAG(IS_WIN)
   // Please see MessagePumpWin for definitions of these methods.
@@ -331,7 +325,8 @@ class BASE_EXPORT CurrentIOThread : public CurrentThread {
                            MessagePumpForIO::FdWatcher* delegate);
 #endif  // BUILDFLAG(IS_WIN)
 
-#if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD))
+#if BUILDFLAG(IS_MAC) || \
+    (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD) && !BUILDFLAG(IS_IOS_TVOS))
   bool WatchMachReceivePort(
       mach_port_t port,
       MessagePumpForIO::MachPortWatchController* controller,
@@ -346,8 +341,6 @@ class BASE_EXPORT CurrentIOThread : public CurrentThread {
                      MessagePumpForIO::ZxHandleWatchController* controller,
                      MessagePumpForIO::ZxHandleWatcher* delegate);
 #endif  // BUILDFLAG(IS_FUCHSIA)
-
-#endif  // !BUILDFLAG(IS_NACL)
 
  private:
   explicit CurrentIOThread(

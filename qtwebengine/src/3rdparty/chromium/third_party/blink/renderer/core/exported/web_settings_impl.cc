@@ -30,6 +30,8 @@
 
 #include "third_party/blink/renderer/core/exported/web_settings_impl.h"
 
+#include <optional>
+
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -159,8 +161,9 @@ void WebSettingsImpl::SetTextAutosizingEnabled(bool enabled) {
   dev_tools_emulator_->SetTextAutosizingEnabled(enabled);
 }
 
+// TODO(pdr): Rename this OSTextScaleFactor.
 void WebSettingsImpl::SetAccessibilityFontScaleFactor(float font_scale_factor) {
-  settings_->SetAccessibilityFontScaleFactor(font_scale_factor);
+  dev_tools_emulator_->SetAccessibilityFontScaleFactor(font_scale_factor);
 }
 
 void WebSettingsImpl::SetAccessibilityTextSizeContrastFactor(
@@ -638,8 +641,8 @@ void WebSettingsImpl::SetTargetBlankImpliesNoOpenerEnabledWillBeRemoved(
   settings_->SetTargetBlankImpliesNoOpenerEnabledWillBeRemoved(enabled);
 }
 
-void WebSettingsImpl::SetAllowNonEmptyNavigatorPlugins(bool enabled) {
-  settings_->SetAllowNonEmptyNavigatorPlugins(enabled);
+void WebSettingsImpl::SetIgnorePermissionForDeviceChangedEvent(bool enabled) {
+  settings_->SetIgnorePermissionForDeviceChangedEvent(enabled);
 }
 
 void WebSettingsImpl::SetCaretBrowsingEnabled(bool enabled) {
@@ -807,6 +810,11 @@ void WebSettingsImpl::
         bool is_required) {
   settings_->SetRequireTransientActivationAndAuthorizationForSubAppsAPI(
       is_required);
+}
+
+void WebSettingsImpl::SetRootScrollbarThemeColor(
+    std::optional<SkColor> theme_color) {
+  settings_->SetRootScrollbarThemeColor(theme_color);
 }
 
 }  // namespace blink

@@ -867,6 +867,10 @@ bool QRhiD3D12::isFeatureSupported(QRhi::Feature feature) const
     case QRhi::PerRenderTargetBlending:
     case QRhi::SampleVariables:
         return true;
+    case QRhi::InstanceIndexIncludesBaseInstance:
+        return false;
+    case QRhi::DepthClamp:
+        return true;
     }
     return false;
 }
@@ -1145,6 +1149,15 @@ void QRhiD3D12::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBind
 
     QD3D12ShaderResourceBindings *srbD = QRHI_RES(QD3D12ShaderResourceBindings, srb);
 
+    bool pipelineChanged = false;
+    if (gfxPsD) {
+        pipelineChanged = srbD->lastUsedGraphicsPipeline != gfxPsD;
+        srbD->lastUsedGraphicsPipeline = gfxPsD;
+    } else {
+        pipelineChanged = srbD->lastUsedComputePipeline != compPsD;
+        srbD->lastUsedComputePipeline = compPsD;
+    }
+
     for (int i = 0, ie = srbD->m_bindings.size(); i != ie; ++i) {
         const QRhiShaderResourceBinding::Data *b = shaderResourceBindingData(srbD->m_bindings[i]);
         switch (b->type) {
@@ -1249,7 +1262,7 @@ void QRhiD3D12::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBind
     const bool srbChanged = gfxPsD ? (cbD->currentGraphicsSrb != srb) : (cbD->currentComputeSrb != srb);
     const bool srbRebuilt = cbD->currentSrbGeneration != srbD->generation;
 
-    if (srbChanged || srbRebuilt || srbD->hasDynamicOffset) {
+    if (pipelineChanged || srbChanged || srbRebuilt || srbD->hasDynamicOffset) {
         const QD3D12ShaderStageData *stageData = gfxPsD ? gfxPsD->stageData.data() : &compPsD->stageData;
 
         // The order of root parameters must match
@@ -3785,6 +3798,7 @@ void QRhiD3D12::enqueueResourceUpdates(QD3D12CommandBuffer *cbD, QRhiResourceUpd
                             QSize size = subresDesc.sourceSize().isEmpty() ? img.size() : subresDesc.sourceSize();
                             size.setWidth(qMin(size.width(), img.width() - srcPos.x()));
                             size.setHeight(qMin(size.height(), img.height() - srcPos.y()));
+                            size = clampedSubResourceUploadSize(size, dstPos, level, texD->m_pixelSize);
 
                             footprint.Width = size.width();
                             footprint.Height = size.height();
@@ -6154,6 +6168,7 @@ bool QD3D12GraphicsPipeline::create()
     struct {
         QD3D12PipelineStateSubObject<ID3D12RootSignature *, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE> rootSig;
         QD3D12PipelineStateSubObject<D3D12_INPUT_LAYOUT_DESC, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_INPUT_LAYOUT> inputLayout;
+        QD3D12PipelineStateSubObject<D3D12_INDEX_BUFFER_STRIP_CUT_VALUE, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_IB_STRIP_CUT_VALUE> primitiveRestartValue;
         QD3D12PipelineStateSubObject<D3D12_PRIMITIVE_TOPOLOGY_TYPE, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PRIMITIVE_TOPOLOGY> primitiveTopology;
         QD3D12PipelineStateSubObject<D3D12_SHADER_BYTECODE, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VS> VS;
         QD3D12PipelineStateSubObject<D3D12_SHADER_BYTECODE, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_HS> HS;
@@ -6212,6 +6227,8 @@ bool QD3D12GraphicsPipeline::create()
     stream.inputLayout.object.NumElements = inputDescs.count();
     stream.inputLayout.object.pInputElementDescs = inputDescs.isEmpty() ? nullptr : inputDescs.constData();
 
+    stream.primitiveRestartValue.object = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFFFFFF;
+
     stream.primitiveTopology.object = toD3DTopologyType(m_topology);
     topology = toD3DTopology(m_topology, m_patchControlPointCount);
 
@@ -6249,7 +6266,7 @@ bool QD3D12GraphicsPipeline::create()
     stream.rasterizerState.object.FrontCounterClockwise = m_frontFace == CCW;
     stream.rasterizerState.object.DepthBias = m_depthBias;
     stream.rasterizerState.object.SlopeScaledDepthBias = m_slopeScaledDepthBias;
-    stream.rasterizerState.object.DepthClipEnable = TRUE;
+    stream.rasterizerState.object.DepthClipEnable = m_depthClamp ? FALSE : TRUE;
     stream.rasterizerState.object.MultisampleEnable = sampleDesc.Count > 1;
 
     stream.depthStencilState.object.DepthEnable = m_depthTest;

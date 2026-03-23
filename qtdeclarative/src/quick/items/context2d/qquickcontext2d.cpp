@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickcontext2d_p.h"
 #include "qquickcontext2dcommandbuffer_p.h"
@@ -496,7 +497,11 @@ struct QQuickContext2DStyle : Object {
 struct QQuickJSContext2DPixelData : Object {
     void init();
     void destroy() {
-        delete image;
+        if (image) {
+            auto *mm = internalClass->engine->memoryManager;
+            mm->changeUnmanagedHeapSizeUsage(-image->sizeInBytes());
+            delete image;
+        }
         Object::destroy();
     }
 
@@ -692,7 +697,7 @@ struct QQuickContext2DStyle : public QV4::Object
 
 DEFINE_OBJECT_VTABLE(QQuickContext2DStyle);
 
-QImage qt_image_convolute_filter(const QImage& src, const QVector<qreal>& weights, int radius = 0)
+QImage qt_image_convolute_filter(const QImage& src, const QList<qreal>& weights, int radius = 0)
 {
     // weights 3x3 => delta 1
     int delta = radius ? radius : qFloor(qSqrt(weights.size()) / qreal(2));
@@ -773,7 +778,7 @@ void qt_image_boxblur(QImage& image, int radius, bool quality)
     int passes = quality? 3: 1;
     int filterSize = 2 * radius + 1;
     for (int i = 0; i < passes; ++i)
-        image = qt_image_convolute_filter(image, QVector<qreal>() << 1.0 / (filterSize * filterSize), radius);
+        image = qt_image_convolute_filter(image, QList<qreal>() << 1.0 / (filterSize * filterSize), radius);
 }
 
 static QPainter::CompositionMode qt_composite_mode_from_string(const QString &compositeOperator)
@@ -939,6 +944,7 @@ static QV4::ReturnedValue qt_create_image_data(qreal w, qreal h, QV4::ExecutionE
     QV4::Scope scope(v4);
     QQuickContext2DEngineData *ed = engineData(scope.engine);
     QV4::Scoped<QQuickJSContext2DPixelData> pixelData(scope, scope.engine->memoryManager->allocate<QQuickJSContext2DPixelData>());
+    v4->memoryManager->changeUnmanagedHeapSizeUsage(image.sizeInBytes());
     QV4::ScopedObject p(scope, ed->pixelArrayProto.value());
     pixelData->setPrototypeOf(p);
 
@@ -2040,7 +2046,7 @@ QV4::ReturnedValue QQuickJSContext2DPrototype::method_getLineDash(const QV4::Fun
     QV4::Scoped<QQuickJSContext2D> r(scope, *thisObject);
     CHECK_CONTEXT(r)
 
-    const QVector<qreal> pattern = r->d()->context()->state.lineDash;
+    const QList<qreal> pattern = r->d()->context()->state.lineDash;
     QV4::ScopedArrayObject array(scope, scope.engine->newArrayObject(pattern.size()));
     array->arrayReserve(pattern.size());
     for (int i = 0; i < pattern.size(); i++)
@@ -2052,7 +2058,7 @@ QV4::ReturnedValue QQuickJSContext2DPrototype::method_getLineDash(const QV4::Fun
 }
 
 /*!
-    \qmlmethod QtQuick::Context2D::setLineDash(array pattern)
+    \qmlmethod void QtQuick::Context2D::setLineDash(array pattern)
     \since QtQuick 2.11
     Sets the dash pattern to the given pattern.
 
@@ -2090,7 +2096,7 @@ QV4::ReturnedValue QQuickJSContext2DPrototype::method_setLineDash(const QV4::Fun
 
     QV4::ScopedValue v(scope);
     const uint arrayLength = array->getLength();
-    QVector<qreal> dashes;
+    QList<qreal> dashes;
     dashes.reserve(arrayLength);
     for (uint i = 0; i < arrayLength; ++i) {
         v = array->get(i);
@@ -3063,7 +3069,7 @@ QV4::ReturnedValue QQuickJSContext2DPrototype::method_measureText(const QV4::Fun
 
 // drawing images
 /*!
-  \qmlmethod QtQuick::Context2D::drawImage(variant image, real dx, real dy)
+  \qmlmethod void QtQuick::Context2D::drawImage(variant image, real dx, real dy)
   Draws the given \a image on the canvas at position (\a dx, \a dy).
   Note:
   The \a image type can be an Image item, an image url or a CanvasImageData object.
@@ -3080,7 +3086,7 @@ QV4::ReturnedValue QQuickJSContext2DPrototype::method_measureText(const QV4::Fun
   \sa {http://www.w3.org/TR/2dcontext/#dom-context-2d-drawimage}{W3C 2d context standard for drawImage}
   */
 /*!
-  \qmlmethod QtQuick::Context2D::drawImage(variant image, real dx, real dy, real dw, real dh)
+  \qmlmethod void QtQuick::Context2D::drawImage(variant image, real dx, real dy, real dw, real dh)
   This is an overloaded function.
   Draws the given item as \a image onto the canvas at point (\a dx, \a dy) and with width \a dw,
   height \a dh.
@@ -3100,7 +3106,7 @@ QV4::ReturnedValue QQuickJSContext2DPrototype::method_measureText(const QV4::Fun
   \sa {http://www.w3.org/TR/2dcontext/#dom-context-2d-drawimage}{W3C 2d context standard for drawImage}
   */
 /*!
-  \qmlmethod QtQuick::Context2D::drawImage(variant image, real sx, real sy, real sw, real sh, real dx, real dy, real dw, real dh)
+  \qmlmethod void QtQuick::Context2D::drawImage(variant image, real sx, real sy, real sw, real sh, real dx, real dy, real dw, real dh)
   This is an overloaded function.
   Draws the given item as \a image from source point (\a sx, \a sy) and source width \a sw, source height \a sh
   onto the canvas at point (\a dx, \a dy) and with width \a dw, height \a dh.

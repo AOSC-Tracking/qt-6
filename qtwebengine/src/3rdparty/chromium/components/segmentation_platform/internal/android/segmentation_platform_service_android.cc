@@ -12,14 +12,18 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/functional/bind.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/metrics/histogram_base.h"
 #include "components/segmentation_platform/public/android/input_context_android.h"
 #include "components/segmentation_platform/public/android/prediction_options_android.h"
 #include "components/segmentation_platform/public/android/segmentation_platform_conversion_bridge.h"
+#include "components/segmentation_platform/public/android/training_labels_android.h"
 #include "components/segmentation_platform/public/input_context.h"
 #include "components/segmentation_platform/public/prediction_options.h"
+#include "components/segmentation_platform/public/proto/segmentation_platform.pb.h"
 #include "components/segmentation_platform/public/result.h"
 #include "components/segmentation_platform/public/segment_selection_result.h"
 #include "components/segmentation_platform/public/segmentation_platform_service.h"
+#include "components/segmentation_platform/public/trigger.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "components/segmentation_platform/internal/jni_headers/SegmentationPlatformServiceImpl_jni.h"
@@ -86,8 +90,7 @@ SegmentationPlatformServiceAndroid::SegmentationPlatformServiceAndroid(
   DCHECK(segmentation_platform_service_);
   JNIEnv* env = base::android::AttachCurrentThread();
   java_obj_.Reset(env, Java_SegmentationPlatformServiceImpl_create(
-                           env, reinterpret_cast<int64_t>(this))
-                           .obj());
+                           env, reinterpret_cast<int64_t>(this)));
 }
 
 SegmentationPlatformServiceAndroid::~SegmentationPlatformServiceAndroid() {
@@ -97,7 +100,6 @@ SegmentationPlatformServiceAndroid::~SegmentationPlatformServiceAndroid() {
 
 void SegmentationPlatformServiceAndroid::GetSelectedSegment(
     JNIEnv* env,
-    const JavaParamRef<jobject>& jcaller,
     const JavaParamRef<jstring>& j_segmentation_key,
     const JavaParamRef<jobject>& jcallback) {
   segmentation_platform_service_->GetSelectedSegment(
@@ -108,7 +110,6 @@ void SegmentationPlatformServiceAndroid::GetSelectedSegment(
 
 void SegmentationPlatformServiceAndroid::GetClassificationResult(
     JNIEnv* env,
-    const JavaParamRef<jobject>& j_caller,
     const JavaParamRef<jstring>& j_segmentation_key,
     const JavaParamRef<jobject>& j_prediction_options,
     const JavaParamRef<jobject>& j_input_context,
@@ -129,7 +130,6 @@ void SegmentationPlatformServiceAndroid::GetClassificationResult(
 ScopedJavaLocalRef<jobject>
 SegmentationPlatformServiceAndroid::GetCachedSegmentResult(
     JNIEnv* env,
-    const JavaParamRef<jobject>& jcaller,
     const JavaParamRef<jstring>& j_segmentation_key) {
   return SegmentationPlatformConversionBridge::CreateJavaSegmentSelectionResult(
       env, segmentation_platform_service_->GetCachedSegmentResult(
@@ -143,6 +143,24 @@ void SegmentationPlatformServiceAndroid::GetInputKeysForModel(
   segmentation_platform_service_->GetInputKeysForModel(
       ConvertJavaStringToUTF8(env, j_segmentation_key),
       base::BindOnce(&RunInputKeysForModelCallback,
+                     ScopedJavaGlobalRef<jobject>(j_callback)));
+}
+
+void SegmentationPlatformServiceAndroid::CollectTrainingData(
+    JNIEnv* env,
+    jint j_segment_id,
+    jlong j_request_id,
+    jlong j_ukm_source_id,
+    const JavaParamRef<jobject>& j_param,
+    const JavaParamRef<jobject>& j_callback) {
+  segmentation_platform::TrainingLabels training_labels =
+      TrainingLabelsAndroid::ToNativeTrainingLabels(env, j_param);
+
+  segmentation_platform_service_->CollectTrainingData(
+      static_cast<proto::SegmentId>(j_segment_id),
+      segmentation_platform::TrainingRequestId::FromUnsafeValue(j_request_id),
+      j_ukm_source_id, std::move(training_labels),
+      base::BindOnce(&base::android::RunBooleanCallbackAndroid,
                      ScopedJavaGlobalRef<jobject>(j_callback)));
 }
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKFONTDIALOGIMPL_P_H
 #define QQUICKFONTDIALOGIMPL_P_H
@@ -60,6 +61,7 @@ Q_SIGNALS:
 private:
     void keyReleaseEvent(QKeyEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
+    void itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &data) override;
 
     Q_DISABLE_COPY(QQuickFontDialogImpl)
     Q_DECLARE_PRIVATE(QQuickFontDialogImpl)

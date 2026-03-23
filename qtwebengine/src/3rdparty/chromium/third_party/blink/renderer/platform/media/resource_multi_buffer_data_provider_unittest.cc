@@ -2,30 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.h"
 
 #include <stdint.h>
 
 #include <algorithm>
+#include <array>
 #include <string>
 #include <utility>
 
 #include "base/containers/contains.h"
 #include "base/containers/heap_array.h"
 #include "base/format_macros.h"
-#include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "media/base/media_log.h"
+#include "media/base/media_switches.h"
 #include "media/base/seekable_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -40,6 +38,7 @@
 #include "third_party/blink/renderer/platform/media/testing/mock_resource_fetch_context.h"
 #include "third_party/blink/renderer/platform/media/testing/mock_web_associated_url_loader.h"
 #include "third_party/blink/renderer/platform/media/url_index.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -70,7 +69,12 @@ static bool CorrectAcceptEncoding(const WebURLRequest& request) {
 
 class ResourceMultiBufferDataProviderTest : public testing::Test {
  public:
-  ResourceMultiBufferDataProviderTest() {
+  ResourceMultiBufferDataProviderTest()
+      : task_environment_(base::test::TaskEnvironment::TimeSource::MOCK_TIME),
+        url_index_(std::make_unique<UrlIndex>(
+            &fetch_context_,
+            0,
+            task_environment_.GetMainThreadTaskRunner())) {
     for (int i = 0; i < kDataSize; ++i) {
       data_[i] = i;
     }
@@ -87,12 +91,12 @@ class ResourceMultiBufferDataProviderTest : public testing::Test {
   void Initialize(const char* url, int first_position) {
     url_ = KURL(url);
     url_data_ =
-        url_index_.GetByUrl(url_, UrlData::CORS_UNSPECIFIED, UrlData::kNormal);
+        url_index_->GetByUrl(url_, UrlData::CORS_UNSPECIFIED, UrlData::kNormal);
     url_data_->set_etag(kEtag);
     DCHECK(url_data_);
     url_data_->OnRedirect(
-        base::BindOnce(&ResourceMultiBufferDataProviderTest::RedirectCallback,
-                       base::Unretained(this)));
+        WTF::BindOnce(&ResourceMultiBufferDataProviderTest::RedirectCallback,
+                      WTF::Unretained(this)));
 
     first_position_ = first_position;
 
@@ -159,10 +163,11 @@ class ResourceMultiBufferDataProviderTest : public testing::Test {
     response.SetHttpStatusCode(kHttpPartialContent);
     loader_->DidReceiveResponse(response);
 
-    EXPECT_EQ(instance_size, url_data_->length());
-
     // A valid partial response should always result in this being true.
-    EXPECT_TRUE(url_data_->range_supported());
+    if (url_index_) {
+      EXPECT_EQ(instance_size, url_data_->length());
+      EXPECT_TRUE(url_data_->range_supported());
+    }
   }
 
   void Redirect(const char* url) {
@@ -204,14 +209,13 @@ class ResourceMultiBufferDataProviderTest : public testing::Test {
   int32_t first_position_;
 
   NiceMock<MockResourceFetchContext> fetch_context_;
-  UrlIndex url_index_{&fetch_context_, 0,
-                      task_environment_.GetMainThreadTaskRunner()};
+  std::unique_ptr<UrlIndex> url_index_;
   scoped_refptr<UrlData> url_data_;
   scoped_refptr<UrlData> redirected_to_;
   // The loader is owned by the UrlData above.
   raw_ptr<ResourceMultiBufferDataProvider> loader_;
 
-  uint8_t data_[kDataSize];
+  std::array<uint8_t, kDataSize> data_;
 };
 
 TEST_F(ResourceMultiBufferDataProviderTest, StartStop) {
@@ -233,6 +237,39 @@ TEST_F(ResourceMultiBufferDataProviderTest, BadHttpResponse) {
   loader_->DidReceiveResponse(response);
 }
 
+TEST_F(ResourceMultiBufferDataProviderTest, DestructedUrlIndexFullResponse) {
+  Initialize(kHttpUrl, 100);
+  Start();
+  url_index_.reset();
+  EXPECT_CALL(*this, RedirectCallback(testing::IsNull()));
+  FullResponse(1024, false);
+}
+
+TEST_F(ResourceMultiBufferDataProviderTest, DestructedUrlIndexPartialResponse) {
+  Initialize(kHttpUrl, 100);
+  Start();
+  url_index_.reset();
+  EXPECT_CALL(*this, RedirectCallback(testing::IsNull()));
+  PartialResponse(100, 200, 1024);
+}
+
+TEST_F(ResourceMultiBufferDataProviderTest, DestructedUrlIndexDidFail) {
+  Initialize(kHttpUrl, 100);
+  Start();
+  url_index_.reset();
+  EXPECT_CALL(*this, RedirectCallback(testing::IsNull()));
+  loader_->DidFail(WebURLError(net::ERR_ABORTED, url_));
+}
+
+TEST_F(ResourceMultiBufferDataProviderTest, DestructedUrlIndexDidFinish) {
+  Initialize(kHttpUrl, 100);
+  Start();
+  FullResponse(1024, true);
+  url_index_.reset();
+  EXPECT_CALL(*this, RedirectCallback(testing::IsNull()));
+  loader_->DidFinishLoading();
+}
+
 // Tests that partial content is requested but not fulfilled.
 TEST_F(ResourceMultiBufferDataProviderTest, NotPartialResponse) {
   Initialize(kHttpUrl, 100);
@@ -243,6 +280,13 @@ TEST_F(ResourceMultiBufferDataProviderTest, NotPartialResponse) {
 // Tests that a 200 response is received.
 TEST_F(ResourceMultiBufferDataProviderTest, FullResponse) {
   Initialize(kHttpUrl, 0);
+  Start();
+  FullResponse(1024);
+  StopWhenLoad();
+}
+
+TEST_F(ResourceMultiBufferDataProviderTest, FullResponse_FileUrl) {
+  Initialize("file://test.ogv", 0);
   Start();
   FullResponse(1024);
   StopWhenLoad();

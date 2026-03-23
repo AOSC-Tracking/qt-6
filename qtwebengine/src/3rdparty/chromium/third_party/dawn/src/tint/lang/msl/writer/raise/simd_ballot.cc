@@ -27,8 +27,6 @@
 
 #include "src/tint/lang/msl/writer/raise/simd_ballot.h"
 
-#include <utility>
-
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/referenced_module_vars.h"
 #include "src/tint/lang/core/ir/validator.h"
@@ -160,7 +158,12 @@ struct State {
 }  // namespace
 
 Result<SuccessType> SimdBallot(core::ir::Module& ir) {
-    auto result = ValidateAndDumpIfNeeded(ir, "msl.SimdBallot");
+    auto result = ValidateAndDumpIfNeeded(ir, "msl.SimdBallot",
+                                          tint::core::ir::Capabilities{
+                                              core::ir::Capability::kAllow8BitIntegers,
+                                              core::ir::Capability::kAllowDuplicateBindings,
+                                              core::ir::Capability::kAllowNonCoreTypes,
+                                          });
     if (result != Success) {
         return result.Failure();
     }

@@ -32,6 +32,7 @@
 #include <utility>
 
 #include "gtest/gtest.h"
+#include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/reader/lower/lower.h"
@@ -50,10 +51,10 @@ class IRProgramTestBase : public BASE, public ProgramBuilder {
 
     /// Builds a core-dialect module from this ProgramBuilder.
     /// @returns the generated core-dialect module
-    tint::Result<core::ir::Module> Build() {
+    Result<core::ir::Module> Build() {
         Program program{resolver::Resolve(*this)};
         if (!program.IsValid()) {
-            return Failure{program.Diagnostics()};
+            return Failure{program.Diagnostics().Str()};
         }
 
         auto result = wgsl::reader::ProgramToIR(program);
@@ -70,7 +71,7 @@ class IRProgramTestBase : public BASE, public ProgramBuilder {
         if (validate != Success) {
             return validate.Failure();
         }
-        return result;
+        return result.Move();
     }
 
     /// Build the module from the given WGSL.
@@ -79,14 +80,21 @@ class IRProgramTestBase : public BASE, public ProgramBuilder {
     Result<core::ir::Module> Build(std::string wgsl) {
         Source::File file("test.wgsl", std::move(wgsl));
         auto result = wgsl::reader::WgslToIR(&file);
-        if (result == Success) {
-            auto validated = core::ir::Validate(result.Get(), kCapabilities);
-            if (validated != Success) {
-                return validated.Failure();
-            }
+        if (result != Success) {
+            return result.Failure();
         }
-        return result;
+        auto validated = core::ir::Validate(result.Get(), kCapabilities);
+        if (validated != Success) {
+            return validated.Failure();
+        }
+
+        return result.Move();
     }
+
+    /// Helper to disassemble a module into a string representation
+    /// @param m the module to disassemble.
+    /// @returns the string representation
+    std::string Dis(core::ir::Module& m) { return core::ir::Disassembler(m).Plain(); }
 
     core::ir::Capabilities kCapabilities =
         core::ir::Capabilities{core::ir::Capability::kAllowOverrides};

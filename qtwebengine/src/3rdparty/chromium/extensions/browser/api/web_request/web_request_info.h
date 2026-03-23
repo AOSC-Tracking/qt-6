@@ -15,11 +15,12 @@
 #include "base/containers/flat_map.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/values.h"
+#include "content/public/browser/child_process_id.h"
 #include "content/public/browser/global_routing_id.h"
 #include "extensions/browser/api/declarative_net_request/request_action.h"
 #include "extensions/browser/api/web_request/web_request_resource_type.h"
 #include "extensions/browser/extension_api_frame_id_map.h"
-#include "ipc/ipc_message.h"
+#include "ipc/constants.mojom.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -59,7 +60,7 @@ struct WebRequestInfoInitParams {
   uint64_t id = 0;
   GURL url;
   int render_process_id = -1;
-  int frame_routing_id = MSG_ROUTING_NONE;
+  int frame_routing_id = IPC::mojom::kRoutingIdNone;
   std::string method;
   bool is_navigation_request = false;
   std::optional<url::Origin> initiator;
@@ -70,7 +71,7 @@ struct WebRequestInfoInitParams {
   bool is_web_view = false;
   int web_view_instance_id = -1;
   int web_view_rules_registry_id = -1;
-  int web_view_embedder_process_id = -1;
+  content::ChildProcessId web_view_embedder_process_id;
   ExtensionApiFrameIdMap::FrameData frame_data;
   bool is_service_worker_script = false;
   std::optional<int64_t> navigation_id;
@@ -127,8 +128,8 @@ struct WebRequestInfo {
   const int render_process_id;
 
   // The frame routing ID of the frame which initiated this request, or
-  // MSG_ROUTING_NONE if the request was not initiated by a frame.
-  const int frame_routing_id = MSG_ROUTING_NONE;
+  // IPC::mojom::kRoutingIdNone if the request was not initiated by a frame.
+  const int frame_routing_id = IPC::mojom::kRoutingIdNone;
 
   // The HTTP method used for the request, if applicable.
   const std::string method;
@@ -174,12 +175,11 @@ struct WebRequestInfo {
   // Indicates whether this request was initiated by a <webview> instance.
   const bool is_web_view;
 
-  // If |is_web_view| is true, the instance ID, rules registry ID, and embedder
-  // process ID pertaining to the webview instance. Note that for browser-side
-  // navigation requests, |web_view_embedder_process_id| is always -1.
+  // If `is_web_view` is true, the instance ID, rules registry ID, and embedder
+  // process ID pertain to the webview instance.
   const int web_view_instance_id;
   const int web_view_rules_registry_id;
-  const int web_view_embedder_process_id;
+  const content::ChildProcessId web_view_embedder_process_id;
 
   // The Declarative Net Request (DNR) actions associated with this request that
   // are matched during the onBeforeRequest stage. Mutable since this is lazily

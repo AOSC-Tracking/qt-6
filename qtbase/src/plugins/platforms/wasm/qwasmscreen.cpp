@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwasmscreen.h"
 
@@ -30,8 +31,7 @@ QWasmScreen::QWasmScreen(const emscripten::val &containerOrCanvas)
     : m_container(containerOrCanvas),
       m_intermediateContainer(emscripten::val::undefined()),
       m_shadowContainer(emscripten::val::undefined()),
-      m_compositor(new QWasmCompositor(this)),
-      m_deadKeySupport(std::make_unique<QWasmDeadKeySupport>())
+      m_compositor(new QWasmCompositor(this))
 {
     auto document = m_container["ownerDocument"];
 

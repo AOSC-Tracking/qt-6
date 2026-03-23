@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/check_op.h"
 #include "base/containers/heap_array.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
@@ -58,6 +59,7 @@ class FakeTraceWriter : public perfetto::TraceWriterBase,
   void FinishTracePacket() override { NOTREACHED(); }
   void Flush(std::function<void()> callback = {}) override {}
   uint64_t written() const override { return 0u; }
+  uint64_t drop_count() const override { return 0u; }
 
   // protozero::MessageFinalizationListener:
   void OnMessageFinalized(protozero::Message* message) override {
@@ -91,46 +93,68 @@ struct CSwitchData {
   uint32_t old_thread_id;
 };
 
+struct ReadyThreadData {
+  uint32_t t_thread_id;
+};
+
 // Returns the MOF encoding of a sid, including the leading uint32_t and
 // TOKEN_USER.
-base::HeapArray<uint8_t> EncodeSid() {
-  static constexpr uint8_t kBytes[] = {
-      0x04, 0x00, 0x00, 0x00, 0x20, 0xA8, 0xA4, 0x5C, 0x86, 0xD1, 0xFF,
-      0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x12, 0x00, 0x00, 0x00};
-  return base::HeapArray<uint8_t>::CopiedFrom({kBytes});
+base::HeapArray<uint8_t> EncodeSid(size_t pointer_size) {
+  static constexpr uint8_t kLeadingBytes[] = {0x04, 0x00, 0x00, 0x00};
+  static constexpr uint8_t kTokenUserBytes[] = {
+      0x20, 0xA8, 0xA4, 0x5C, 0x86, 0xD1, 0xFF, 0xFF,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  static constexpr uint8_t kSidBytes[] = {0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
+                                          0x00, 0x05, 0x12, 0x00, 0x00, 0x00};
+
+  std::vector<uint8_t> buffer;
+  auto iter = std::back_inserter(buffer);
+  std::ranges::copy(base::as_byte_span(kLeadingBytes), iter);
+  std::ranges::copy(base::span(kTokenUserBytes).first(2 * pointer_size), iter);
+  std::ranges::copy(base::as_byte_span(kSidBytes), iter);
+
+  return base::HeapArray<uint8_t>::CopiedFrom({buffer});
 }
 
-// Returns the MOF encoding of a Process event (v4 by default).
+// Returns the MOF encoding of a Process event.
 base::HeapArray<uint8_t> EncodeProcess(const ProcessData& process,
-                                       int version = 4) {
+                                       int version,
+                                       size_t pointer_size) {
   std::vector<uint8_t> buffer;
   auto iter = std::back_inserter(buffer);
   if (version == 0) {
     // ProcessId and ParentId are pointer-sized in version 0.
-    uintptr_t value = process.process_id;
-    std::ranges::copy(base::byte_span_from_ref(value), iter);
-    value = process.parent_id;
-    std::ranges::copy(base::byte_span_from_ref(value), iter);
-    std::ranges::copy(EncodeSid(), iter);
+    if (pointer_size == sizeof(uint64_t)) {
+      uint64_t value = process.process_id;
+      std::ranges::copy(base::byte_span_from_ref(value), iter);
+      value = process.parent_id;
+      std::ranges::copy(base::byte_span_from_ref(value), iter);
+    } else {
+      CHECK_EQ(pointer_size, sizeof(uint32_t));
+      uint32_t value = process.process_id;
+      std::ranges::copy(base::byte_span_from_ref(value), iter);
+      value = process.parent_id;
+      std::ranges::copy(base::byte_span_from_ref(value), iter);
+    }
+    std::ranges::copy(EncodeSid(pointer_size), iter);
     std::ranges::copy(process.image_file_name, iter);
     buffer.insert(buffer.end(), '\0');  // ImageFileName terminator
   } else {
     if (version == 1) {
       // PageDirectoryBase
-      buffer.insert(buffer.end(), sizeof(void*), 0);
+      buffer.insert(buffer.end(), pointer_size, 0);
     } else if (version >= 2) {
       // UniqueProcessKey
-      buffer.insert(buffer.end(), sizeof(void*), 0);
+      buffer.insert(buffer.end(), pointer_size, 0);
     }
     std::ranges::copy(base::byte_span_from_ref(process.process_id), iter);
     std::ranges::copy(base::byte_span_from_ref(process.parent_id), iter);
     std::ranges::copy(base::byte_span_from_ref(process.session_id), iter);
     buffer.insert(buffer.end(), sizeof(int32_t), 0);  // ExitStatus
     if (version >= 3) {
-      buffer.insert(buffer.end(), sizeof(void*), 0);  // DirectoryTableBase
+      buffer.insert(buffer.end(), pointer_size, 0);  // DirectoryTableBase
     }
-    std::ranges::copy(EncodeSid(), iter);
+    std::ranges::copy(EncodeSid(pointer_size), iter);
     std::ranges::copy(process.image_file_name, iter);
     buffer.insert(buffer.end(), '\0');  // ImageFileName terminator
     if (version >= 2) {
@@ -225,6 +249,19 @@ base::HeapArray<uint8_t> EncodeCSwitch(const CSwitchData& c_switch) {
   return base::HeapArray<uint8_t>::CopiedFrom({buffer});
 }
 
+// Returns the MOF encoding of a v2 ReadyThread event.
+base::HeapArray<uint8_t> EncodeReadyThread(
+    const ReadyThreadData& ready_thread) {
+  std::vector<uint8_t> buffer;
+  auto iter = std::back_inserter(buffer);
+  std::ranges::copy(base::byte_span_from_ref(ready_thread.t_thread_id), iter);
+  buffer.insert(buffer.end(), 0x01);                   // AdjustReason
+  buffer.insert(buffer.end(), 0);                      // AdjustIncrement
+  buffer.insert(buffer.end(), 0x01);                   // Flag = THREAD_READIED
+  buffer.insert(buffer.end(), sizeof(uint8_t), 0x42);  // Reserved
+  return base::HeapArray<uint8_t>::CopiedFrom({buffer});
+}
+
 }  // namespace
 
 // A test fixture that instantiates an EtwConsumer and sends it some events to
@@ -304,20 +341,11 @@ class EtwConsumerTest : public testing::Test {
     SendProcessDcEndEvent(EncodeProcess({.process_id = kSystemPid}));
   }
 
-  // Generates an ETW CSwitch event with `packet_data` as its payload and sends
-  // it to the EtwConsumer for processing. If the EtwConsumer generates a
-  // TracePacket containing a `CSwitchEtwEvent`, `cswitch_decoder` is
-  // constructed from it.
-  void ProcessCSwitchEvent(base::span<const uint8_t> packet_data) {
-    SendThreadEvent(/*version=*/2u, /*opcode=*/36u, packet_data);
-  }
-
-  // Validates the TracePacket processed by `decoder` and populates `c_switch`
+  // Validates the TracePacket processed by `decoder` and populates `event`
   // with a decoder for the first ETW event contained therein.
-  void ValidateAndDecodeCSwitch(
+  void ValidateAndDecodeEtwEvent(
       const MessageAndDecoder& decoder,
-      std::optional<perfetto::protos::pbzero::CSwitchEtwEvent::Decoder>&
-          c_switch) {
+      std::optional<perfetto::protos::pbzero::EtwTraceEvent::Decoder>& event) {
     auto& trace_packet_decoder = decoder.decoder();
 
     ASSERT_TRUE(trace_packet_decoder.has_timestamp());
@@ -326,50 +354,91 @@ class EtwConsumerTest : public testing::Test {
     perfetto::protos::pbzero::EtwTraceEventBundle::Decoder bundle(
         trace_packet_decoder.etw_events());
     ASSERT_TRUE(bundle.has_event());
-    perfetto::protos::pbzero::EtwTraceEvent::Decoder event(*bundle.event());
-    ASSERT_TRUE(event.has_timestamp());
-    ASSERT_TRUE(event.has_cpu());
-    ASSERT_EQ(event.cpu(), kTestProcessorIndex);
-    ASSERT_TRUE(event.has_c_switch());
-    c_switch.emplace(event.c_switch());
+    event.emplace(*bundle.event());
+    ASSERT_TRUE(event->has_timestamp());
+    ASSERT_TRUE(event->has_cpu());
+    ASSERT_EQ(event->cpu(), kTestProcessorIndex);
+  }
+
+  // Generates an ETW CSwitch event with `packet_data` as its payload and sends
+  // it to the EtwConsumer for processing. If the EtwConsumer generates a
+  // TracePacket containing a `CSwitchEtwEvent`, a new decoder is constructed
+  // from it.
+  void ProcessCSwitchEvent(base::span<const uint8_t> packet_data) {
+    SendThreadEvent(/*version=*/2u, /*opcode=*/36u, kSystemTid, packet_data);
+  }
+
+  // Validates the TracePacket processed by `decoder` and populates `c_switch`
+  // with a decoder for the first ETW event contained therein.
+  void ValidateAndDecodeCSwitch(
+      const MessageAndDecoder& decoder,
+      std::optional<perfetto::protos::pbzero::CSwitchEtwEvent::Decoder>&
+          c_switch) {
+    std::optional<perfetto::protos::pbzero::EtwTraceEvent::Decoder> event;
+    ValidateAndDecodeEtwEvent(decoder, event);
+
+    ASSERT_TRUE(event->has_c_switch());
+    c_switch.emplace(event->c_switch());
+  }
+
+  // Generates an ETW ReadyThread event with `packet_data` as its payload and
+  // sends it to the EtwConsumer for processing. If the EtwConsumer generates a
+  // TracePacket containing a `ReadyThreadEtwEvent`, a new decoder is
+  // constructed from it.
+  void ProcessReadyThreadEvent(uint32_t thread_id,
+                               base::span<const uint8_t> packet_data) {
+    SendThreadEvent(/*version=*/2u, /*opcode=*/50u, thread_id, packet_data);
+  }
+
+  // Validates the TracePacket processed by `decoder` and populates
+  // `ready_thread` with a decoder for the first ETW event contained therein.
+  void ValidateAndDecodeReadyThread(
+      const MessageAndDecoder& decoder,
+      std::optional<perfetto::protos::pbzero::EtwTraceEvent::Decoder>& event,
+      std::optional<perfetto::protos::pbzero::ReadyThreadEtwEvent::Decoder>&
+          ready_thread) {
+    ValidateAndDecodeEtwEvent(decoder, event);
+
+    ASSERT_TRUE(event->has_ready_thread());
+    ready_thread.emplace(event->ready_thread());
   }
 
   void SendProcessStartEvent(base::span<const uint8_t> packet_data) {
-    SendProcessEvent(/*version=*/4u, /*opcode=*/1u, packet_data);
+    SendProcessEvent(/*version=*/4u, /*opcode=*/1u, kSystemTid, packet_data);
   }
 
   void SendProcessEndEvent(base::span<const uint8_t> packet_data) {
-    SendProcessEvent(/*version=*/4u, /*opcode=*/2u, packet_data);
+    SendProcessEvent(/*version=*/4u, /*opcode=*/2u, kSystemTid, packet_data);
   }
 
   void SendProcessDcStartEvent(base::span<const uint8_t> packet_data) {
-    SendProcessEvent(/*version=*/4u, /*opcode=*/3u, packet_data);
+    SendProcessEvent(/*version=*/4u, /*opcode=*/3u, kSystemTid, packet_data);
   }
 
   void SendProcessDcEndEvent(base::span<const uint8_t> packet_data) {
-    SendProcessEvent(/*version=*/4u, /*opcode=*/4u, packet_data);
+    SendProcessEvent(/*version=*/4u, /*opcode=*/4u, kSystemTid, packet_data);
   }
 
   void SendThreadStartEvent(base::span<const uint8_t> packet_data) {
-    SendThreadEvent(/*version=*/4u, /*opcode=*/1u, packet_data);
+    SendThreadEvent(/*version=*/4u, /*opcode=*/1u, kSystemTid, packet_data);
   }
 
   void SendThreadEndEvent(base::span<const uint8_t> packet_data) {
-    SendThreadEvent(/*version=*/4u, /*opcode=*/2u, packet_data);
+    SendThreadEvent(/*version=*/4u, /*opcode=*/2u, kSystemTid, packet_data);
   }
 
   void SendThreadDcStartEvent(base::span<const uint8_t> packet_data) {
-    SendThreadEvent(/*version=*/4u, /*opcode=*/3u, packet_data);
+    SendThreadEvent(/*version=*/4u, /*opcode=*/3u, kSystemTid, packet_data);
   }
 
   void SendThreadDcEndEvent(base::span<const uint8_t> packet_data) {
-    SendThreadEvent(/*version=*/4u, /*opcode=*/4u, packet_data);
+    SendThreadEvent(/*version=*/4u, /*opcode=*/4u, kSystemTid, packet_data);
   }
 
   void SendThreadSetName(uint32_t process_id,
                          uint32_t thread_id,
                          base::wcstring_view thread_name) {
-    SendThreadEvent(/*version=*/2, /*opcode=*/72,
+    SendThreadEvent(/*version=*/2, /*opcode=*/72, kSystemTid,
                     EncodeThreadSetName(process_id, thread_id, thread_name));
   }
 
@@ -389,28 +458,41 @@ class EtwConsumerTest : public testing::Test {
   // `decoder` is constructed from it.
   void SendThreadEvent(uint8_t version,
                        uint8_t opcode,
+                       uint32_t thread_id,
                        base::span<const uint8_t> packet_data) {
     ProcessEvent({0x3d6fa8d1,
                   0xfe05,
                   0x11d0,
                   {0x9d, 0xda, 0x00, 0xc0, 0x4f, 0xd7, 0xba, 0x7c}},
-                 version, opcode, packet_data);
+                 version, opcode, thread_id, packet_data);
   }
 
   // Generates an ETW Process event with `packet_data` as its payload and sends
   // it to the EtwConsumer for processing.
   void SendProcessEvent(uint8_t version,
                         uint8_t opcode,
+                        uint32_t thread_id,
                         base::span<const uint8_t> packet_data) {
     ProcessEvent({0x3d6fa8d0,
                   0xfe05,
                   0x11d0,
                   {0x9d, 0xda, 0x00, 0xc0, 0x4f, 0xd7, 0xba, 0x7c}},
-                 version, opcode, packet_data);
+                 version, opcode, thread_id, packet_data);
+  }
+
+  // Returns the MOF encoding of a Process event (v4 by default).
+  base::HeapArray<uint8_t> EncodeProcess(const ProcessData& process,
+                                         int version = 4) {
+    // We are using EVENT_HEADER_FLAG_64_BIT_HEADER flag, so the pointer size
+    // should be 8 bytes.
+    const size_t pointer_size = EtwConsumer::GetPointerSize(kEventHeaderFlags);
+    CHECK_EQ(pointer_size, sizeof(uint64_t));
+    return ::tracing::EncodeProcess(process, version, pointer_size);
   }
 
  private:
   static constexpr uint16_t kTestProcessorIndex = 47;
+  static constexpr uint16_t kEventHeaderFlags = EVENT_HEADER_FLAG_64_BIT_HEADER;
 
   // Generates an ETW EVENT_RECORD for a given trace provider of a particular
   // version and opcode with `packet_data` as its payload and sends it to the
@@ -419,9 +501,11 @@ class EtwConsumerTest : public testing::Test {
   void ProcessEvent(const GUID& provider,
                     uint8_t version,
                     uint8_t opcode,
+                    uint32_t thread_id,
                     base::span<const uint8_t> packet_data) {
     EVENT_RECORD event_record = {
-        .EventHeader = {.Flags = EVENT_HEADER_FLAG_64_BIT_HEADER,
+        .EventHeader = {.Flags = kEventHeaderFlags,
+                        .ThreadId = thread_id,
                         .ProviderId = provider,
                         .EventDescriptor = {.Version = version,
                                             .Opcode = opcode}},
@@ -480,11 +564,11 @@ TEST_F(EtwConsumerTest, CSwitchEvent) {
   EXPECT_EQ(0x02, c_switch->old_thread_priority());
   EXPECT_EQ(0x03u, c_switch->previous_c_state());
   EXPECT_EQ(perfetto::protos::pbzero::CSwitchEtwEvent::WR_RUNDOWN,
-            c_switch->old_thread_wait_reason());
+            c_switch->old_thread_wait_reason_int());
   EXPECT_EQ(perfetto::protos::pbzero::CSwitchEtwEvent::USER_MODE,
-            c_switch->old_thread_wait_mode());
+            c_switch->old_thread_wait_mode_int());
   EXPECT_EQ(perfetto::protos::pbzero::CSwitchEtwEvent::DEFERRED_READY,
-            c_switch->old_thread_state());
+            c_switch->old_thread_state_int());
   EXPECT_EQ(0x04, c_switch->old_thread_wait_ideal_processor());
   EXPECT_EQ(0x05u, c_switch->new_thread_wait_time());
 }
@@ -520,6 +604,73 @@ TEST_F(EtwConsumerTest, CSwitchFiltering) {
   EXPECT_TRUE(c_switch->has_old_thread_id());
 }
 
+// Tests that no ReadyThreadEtwEvent is emitted for an empty ReadyThread ETW
+// event.
+TEST_F(EtwConsumerTest, ReadyThreadEventIsEmpty) {
+  ProcessReadyThreadEvent(kClientTid, {});
+  ASSERT_TRUE(decoders().empty());
+}
+
+// Tests that no ReadyThreadEtwEvent is emitted for a small ReadyThread ETW
+// event.
+TEST_F(EtwConsumerTest, ReadyThreadEventIsTooShort) {
+  static constexpr uint8_t kData[] = {0x00, 23};
+  ProcessReadyThreadEvent(kClientTid, {kData});
+  ASSERT_TRUE(decoders().empty());
+}
+
+// Tests that CSwitchEtwEvent is emitted for a CSwitch ETW event.
+TEST_F(EtwConsumerTest, ReadyThreadEvent) {
+  ProcessReadyThreadEvent(kClientTid,
+                          EncodeReadyThread({.t_thread_id = kClientTid2}));
+  ASSERT_EQ(decoders().size(), 1u);
+
+  std::optional<perfetto::protos::pbzero::EtwTraceEvent::Decoder> event;
+  std::optional<perfetto::protos::pbzero::ReadyThreadEtwEvent::Decoder>
+      ready_thread;
+  ASSERT_NO_FATAL_FAILURE(
+      ValidateAndDecodeReadyThread(*decoders().front(), event, ready_thread));
+
+  EXPECT_EQ(kClientTid, event->thread_id());
+  EXPECT_EQ(kClientTid2, ready_thread->t_thread_id());
+  EXPECT_EQ(0x01, ready_thread->adjust_reason_int());
+  EXPECT_EQ(0, ready_thread->adjust_increment());
+  EXPECT_EQ(0x01, ready_thread->flag_int());
+}
+
+// Tests that ReadyThread events have the thread IDs filtered as appropriate.
+TEST_F(EtwConsumerTest, ReadyThreadFiltering) {
+  // Target TID is masked if it doesn't belong to Chrome.
+  ProcessReadyThreadEvent(kClientTid,
+                          EncodeReadyThread({.t_thread_id = kSystemTid}));
+  ASSERT_EQ(decoders().size(), 1u);
+  std::optional<perfetto::protos::pbzero::EtwTraceEvent::Decoder> event;
+  std::optional<perfetto::protos::pbzero::ReadyThreadEtwEvent::Decoder>
+      ready_thread;
+  ASSERT_NO_FATAL_FAILURE(
+      ValidateAndDecodeReadyThread(*decoders().back(), event, ready_thread));
+  EXPECT_TRUE(event->has_thread_id());
+  EXPECT_FALSE(ready_thread->has_t_thread_id());
+
+  // Both TID and target TID are masked if neither belongs to Chrome.
+  ProcessReadyThreadEvent(kOtherTid,
+                          EncodeReadyThread({.t_thread_id = kSystemTid}));
+  ASSERT_EQ(decoders().size(), 2u);
+  ASSERT_NO_FATAL_FAILURE(
+      ValidateAndDecodeReadyThread(*decoders().back(), event, ready_thread));
+  EXPECT_FALSE(event->has_thread_id());
+  EXPECT_FALSE(ready_thread->has_t_thread_id());
+
+  // TID is masked if it doesn't belong to Chrome.
+  ProcessReadyThreadEvent(kOtherTid,
+                          EncodeReadyThread({.t_thread_id = kClientTid}));
+  ASSERT_EQ(decoders().size(), 3u);
+  ASSERT_NO_FATAL_FAILURE(
+      ValidateAndDecodeReadyThread(*decoders().back(), event, ready_thread));
+  EXPECT_FALSE(event->has_thread_id());
+  EXPECT_TRUE(ready_thread->has_t_thread_id());
+}
+
 TEST_F(EtwConsumerTest, ThreadSetName) {
   SendThreadSetName(kClientPid, kClientTid, L"kaboom");
   ASSERT_EQ(active_processes().GetThreadName(kClientTid), L"kaboom");
@@ -539,9 +690,11 @@ TEST_F(EtwConsumerTest, ProcessVersions) {
                                   .parent_id = kSystemPid,
                                   .image_file_name = "himom"},
                                  /*version=*/version);
-    SendProcessEvent(/*version=*/version, /*opcode=*/1u, payload);  // Start
+    SendProcessEvent(/*version=*/version, /*opcode=*/1u, kSystemTid,
+                     payload);  // Start
     ASSERT_EQ(active_processes().GetProcessImageFileName(kPid), "himom");
-    SendProcessEvent(/*version=*/version, /*opcode=*/2u, payload);  // End
+    SendProcessEvent(/*version=*/version, /*opcode=*/2u, kSystemTid,
+                     payload);  // End
     ASSERT_TRUE(active_processes().GetProcessImageFileName(kPid).empty());
   }
 }
@@ -555,10 +708,12 @@ TEST_F(EtwConsumerTest, ThreadVersions) {
     auto payload = EncodeThread(
         {.process_id = kClientPid, .thread_id = kTid, .thread_name = {}},
         /*version=*/version);
-    SendThreadEvent(/*version=*/version, /*opcode=*/1u, payload);  // Start
+    SendThreadEvent(/*version=*/version, /*opcode=*/1u, kSystemTid,
+                    payload);  // Start
     ASSERT_EQ(active_processes().GetThreadCategory(kTid),
               ActiveProcesses::Category::kClient);
-    SendThreadEvent(/*version=*/version, /*opcode=*/2u, payload);  // End
+    SendThreadEvent(/*version=*/version, /*opcode=*/2u, kSystemTid,
+                    payload);  // End
     ASSERT_EQ(active_processes().GetThreadCategory(kTid),
               ActiveProcesses::Category::kOther);
   }

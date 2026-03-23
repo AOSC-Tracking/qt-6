@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef OPENSSL_HEADER_CRYPTO_BCM_INTERFACE_H
-#define OPENSSL_HEADER_CRYPTO_BCM_INTERFACE_H
+#ifndef OPENSSL_HEADER_CRYPTO_FIPSMODULE_BCM_INTERFACE_H
+#define OPENSSL_HEADER_CRYPTO_FIPSMODULE_BCM_INTERFACE_H
 
+// For the moment, we reach out for AES_KEY.
+#include <openssl/aes.h>
 #include <openssl/bcm_public.h>
+
 
 // This header will eventually become the interface between BCM and the
 // rest of libcrypto. More cleanly separating the two is still a work in
@@ -55,6 +58,9 @@ inline bcm_status_t bcm_as_approved_status(int result) {
   return result ? bcm_status::approved : bcm_status::failure;
 }
 
+inline bcm_status_t bcm_as_not_approved_status(int result) {
+  return result ? bcm_status::not_approved : bcm_status::failure;
+}
 
 // Random number generator.
 
@@ -251,6 +257,9 @@ bcm_infallible BCM_sha512_256_final(uint8_t out[BCM_SHA512_256_DIGEST_LENGTH],
 // BCM_MLDSA_SEED_BYTES is the number of bytes in an ML-DSA seed value.
 #define BCM_MLDSA_SEED_BYTES 32
 
+// BCM_MLDSA_MU_BYTES is the number of bytes in an ML-DSA mu value.
+#define BCM_MLDSA_MU_BYTES 64
+
 // BCM_MLDSA65_PRIVATE_KEY_BYTES is the number of bytes in an encoded ML-DSA-65
 // private key.
 #define BCM_MLDSA65_PRIVATE_KEY_BYTES 4032
@@ -277,6 +286,13 @@ struct BCM_mldsa65_public_key {
   } opaque;
 };
 
+struct BCM_mldsa65_prehash {
+  union {
+    uint8_t bytes[200 + 4 + 4 + 4 * sizeof(size_t)];
+    uint64_t alignment;
+  } opaque;
+};
+
 OPENSSL_EXPORT bcm_status BCM_mldsa65_generate_key(
     uint8_t out_encoded_public_key[BCM_MLDSA65_PUBLIC_KEY_BYTES],
     uint8_t out_seed[BCM_MLDSA_SEED_BYTES],
@@ -290,6 +306,18 @@ OPENSSL_EXPORT bcm_status BCM_mldsa65_public_from_private(
     struct BCM_mldsa65_public_key *out_public_key,
     const struct BCM_mldsa65_private_key *private_key);
 
+OPENSSL_EXPORT bcm_status
+BCM_mldsa65_check_key_fips(struct BCM_mldsa65_private_key *private_key);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa65_generate_key_fips(
+    uint8_t out_encoded_public_key[BCM_MLDSA65_PUBLIC_KEY_BYTES],
+    uint8_t out_seed[BCM_MLDSA_SEED_BYTES],
+    struct BCM_mldsa65_private_key *out_private_key);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa65_private_key_from_seed_fips(
+    struct BCM_mldsa65_private_key *out_private_key,
+    const uint8_t seed[BCM_MLDSA_SEED_BYTES]);
+
 OPENSSL_EXPORT bcm_status BCM_mldsa65_sign(
     uint8_t out_encoded_signature[BCM_MLDSA65_SIGNATURE_BYTES],
     const struct BCM_mldsa65_private_key *private_key, const uint8_t *msg,
@@ -299,6 +327,24 @@ OPENSSL_EXPORT bcm_status BCM_mldsa65_verify(
     const struct BCM_mldsa65_public_key *public_key,
     const uint8_t signature[BCM_MLDSA65_SIGNATURE_BYTES], const uint8_t *msg,
     size_t msg_len, const uint8_t *context, size_t context_len);
+
+OPENSSL_EXPORT void BCM_mldsa65_prehash_init(
+    struct BCM_mldsa65_prehash *out_prehash_ctx,
+    const struct BCM_mldsa65_public_key *public_key, const uint8_t *context,
+    size_t context_len);
+
+OPENSSL_EXPORT void BCM_mldsa65_prehash_update(
+    struct BCM_mldsa65_prehash *inout_prehash_ctx, const uint8_t *msg,
+    size_t msg_len);
+
+OPENSSL_EXPORT void BCM_mldsa65_prehash_finalize(
+    uint8_t out_msg_rep[BCM_MLDSA_MU_BYTES],
+    struct BCM_mldsa65_prehash *inout_prehash_ctx);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa65_sign_message_representative(
+    uint8_t out_encoded_signature[BCM_MLDSA65_SIGNATURE_BYTES],
+    const struct BCM_mldsa65_private_key *private_key,
+    const uint8_t msg_rep[BCM_MLDSA_MU_BYTES]);
 
 OPENSSL_EXPORT bcm_status BCM_mldsa65_marshal_public_key(
     CBB *out, const struct BCM_mldsa65_public_key *public_key);
@@ -313,6 +359,11 @@ OPENSSL_EXPORT bcm_status BCM_mldsa65_parse_private_key(
 // using the given seed, writes the encoded public key to
 // |out_encoded_public_key| and sets |out_private_key| to the private key.
 OPENSSL_EXPORT bcm_status BCM_mldsa65_generate_key_external_entropy(
+    uint8_t out_encoded_public_key[BCM_MLDSA65_PUBLIC_KEY_BYTES],
+    struct BCM_mldsa65_private_key *out_private_key,
+    const uint8_t entropy[BCM_MLDSA_SEED_BYTES]);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa65_generate_key_external_entropy_fips(
     uint8_t out_encoded_public_key[BCM_MLDSA65_PUBLIC_KEY_BYTES],
     struct BCM_mldsa65_private_key *out_private_key,
     const uint8_t entropy[BCM_MLDSA_SEED_BYTES]);
@@ -370,6 +421,13 @@ struct BCM_mldsa87_public_key {
   } opaque;
 };
 
+struct BCM_mldsa87_prehash {
+  union {
+    uint8_t bytes[200 + 4 + 4 + 4 * sizeof(size_t)];
+    uint64_t alignment;
+  } opaque;
+};
+
 OPENSSL_EXPORT bcm_status BCM_mldsa87_generate_key(
     uint8_t out_encoded_public_key[BCM_MLDSA87_PUBLIC_KEY_BYTES],
     uint8_t out_seed[BCM_MLDSA_SEED_BYTES],
@@ -383,6 +441,18 @@ OPENSSL_EXPORT bcm_status BCM_mldsa87_public_from_private(
     struct BCM_mldsa87_public_key *out_public_key,
     const struct BCM_mldsa87_private_key *private_key);
 
+OPENSSL_EXPORT bcm_status
+BCM_mldsa87_check_key_fips(struct BCM_mldsa87_private_key *private_key);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa87_generate_key_fips(
+    uint8_t out_encoded_public_key[BCM_MLDSA87_PUBLIC_KEY_BYTES],
+    uint8_t out_seed[BCM_MLDSA_SEED_BYTES],
+    struct BCM_mldsa87_private_key *out_private_key);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa87_private_key_from_seed_fips(
+    struct BCM_mldsa87_private_key *out_private_key,
+    const uint8_t seed[BCM_MLDSA_SEED_BYTES]);
+
 OPENSSL_EXPORT bcm_status BCM_mldsa87_sign(
     uint8_t out_encoded_signature[BCM_MLDSA87_SIGNATURE_BYTES],
     const struct BCM_mldsa87_private_key *private_key, const uint8_t *msg,
@@ -392,6 +462,24 @@ OPENSSL_EXPORT bcm_status
 BCM_mldsa87_verify(const struct BCM_mldsa87_public_key *public_key,
                    const uint8_t *signature, const uint8_t *msg, size_t msg_len,
                    const uint8_t *context, size_t context_len);
+
+OPENSSL_EXPORT void BCM_mldsa87_prehash_init(
+    struct BCM_mldsa87_prehash *out_prehash_ctx,
+    const struct BCM_mldsa87_public_key *public_key, const uint8_t *context,
+    size_t context_len);
+
+OPENSSL_EXPORT void BCM_mldsa87_prehash_update(
+    struct BCM_mldsa87_prehash *inout_prehash_ctx, const uint8_t *msg,
+    size_t msg_len);
+
+OPENSSL_EXPORT void BCM_mldsa87_prehash_finalize(
+    uint8_t out_msg_rep[BCM_MLDSA_MU_BYTES],
+    struct BCM_mldsa87_prehash *inout_prehash_ctx);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa87_sign_message_representative(
+    uint8_t out_encoded_signature[BCM_MLDSA87_SIGNATURE_BYTES],
+    const struct BCM_mldsa87_private_key *private_key,
+    const uint8_t msg_rep[BCM_MLDSA_MU_BYTES]);
 
 OPENSSL_EXPORT bcm_status BCM_mldsa87_marshal_public_key(
     CBB *out, const struct BCM_mldsa87_public_key *public_key);
@@ -406,6 +494,11 @@ OPENSSL_EXPORT bcm_status BCM_mldsa87_parse_private_key(
 // using the given seed, writes the encoded public key to
 // |out_encoded_public_key| and sets |out_private_key| to the private key.
 OPENSSL_EXPORT bcm_status BCM_mldsa87_generate_key_external_entropy(
+    uint8_t out_encoded_public_key[BCM_MLDSA87_PUBLIC_KEY_BYTES],
+    struct BCM_mldsa87_private_key *out_private_key,
+    const uint8_t entropy[BCM_MLDSA_SEED_BYTES]);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa87_generate_key_external_entropy_fips(
     uint8_t out_encoded_public_key[BCM_MLDSA87_PUBLIC_KEY_BYTES],
     struct BCM_mldsa87_private_key *out_private_key,
     const uint8_t entropy[BCM_MLDSA_SEED_BYTES]);
@@ -435,6 +528,140 @@ OPENSSL_EXPORT bcm_status BCM_mldsa87_verify_internal(
 // NIST format for ML-DSA-87 private keys.
 OPENSSL_EXPORT bcm_status BCM_mldsa87_marshal_private_key(
     CBB *out, const struct BCM_mldsa87_private_key *private_key);
+
+// BCM_MLDSA44_PRIVATE_KEY_BYTES is the number of bytes in an encoded ML-DSA-44
+// private key.
+#define BCM_MLDSA44_PRIVATE_KEY_BYTES 2560
+
+// BCM_MLDSA44_PUBLIC_KEY_BYTES is the number of bytes in an encoded ML-DSA-44
+// public key.
+#define BCM_MLDSA44_PUBLIC_KEY_BYTES 1312
+
+// BCM_MLDSA44_SIGNATURE_BYTES is the number of bytes in an encoded ML-DSA-44
+// signature.
+#define BCM_MLDSA44_SIGNATURE_BYTES 2420
+
+struct BCM_mldsa44_private_key {
+  union {
+    uint8_t bytes[32 + 32 + 64 + 256 * 4 * (4 + 4 + 4)];
+    uint32_t alignment;
+  } opaque;
+};
+
+struct BCM_mldsa44_public_key {
+  union {
+    uint8_t bytes[32 + 64 + 256 * 4 * 4];
+    uint32_t alignment;
+  } opaque;
+};
+
+struct BCM_mldsa44_prehash {
+  union {
+    uint8_t bytes[200 + 4 + 4 + 4 * sizeof(size_t)];
+    uint64_t alignment;
+  } opaque;
+};
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_generate_key(
+    uint8_t out_encoded_public_key[BCM_MLDSA44_PUBLIC_KEY_BYTES],
+    uint8_t out_seed[BCM_MLDSA_SEED_BYTES],
+    struct BCM_mldsa44_private_key *out_private_key);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_private_key_from_seed(
+    struct BCM_mldsa44_private_key *out_private_key,
+    const uint8_t seed[BCM_MLDSA_SEED_BYTES]);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_public_from_private(
+    struct BCM_mldsa44_public_key *out_public_key,
+    const struct BCM_mldsa44_private_key *private_key);
+
+OPENSSL_EXPORT bcm_status
+BCM_mldsa44_check_key_fips(struct BCM_mldsa44_private_key *private_key);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_generate_key_fips(
+    uint8_t out_encoded_public_key[BCM_MLDSA44_PUBLIC_KEY_BYTES],
+    uint8_t out_seed[BCM_MLDSA_SEED_BYTES],
+    struct BCM_mldsa44_private_key *out_private_key);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_private_key_from_seed_fips(
+    struct BCM_mldsa44_private_key *out_private_key,
+    const uint8_t seed[BCM_MLDSA_SEED_BYTES]);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_sign(
+    uint8_t out_encoded_signature[BCM_MLDSA44_SIGNATURE_BYTES],
+    const struct BCM_mldsa44_private_key *private_key, const uint8_t *msg,
+    size_t msg_len, const uint8_t *context, size_t context_len);
+
+OPENSSL_EXPORT bcm_status
+BCM_mldsa44_verify(const struct BCM_mldsa44_public_key *public_key,
+                   const uint8_t *signature, const uint8_t *msg, size_t msg_len,
+                   const uint8_t *context, size_t context_len);
+
+OPENSSL_EXPORT void BCM_mldsa44_prehash_init(
+    struct BCM_mldsa44_prehash *out_prehash_ctx,
+    const struct BCM_mldsa44_public_key *public_key, const uint8_t *context,
+    size_t context_len);
+
+OPENSSL_EXPORT void BCM_mldsa44_prehash_update(
+    struct BCM_mldsa44_prehash *inout_prehash_ctx, const uint8_t *msg,
+    size_t msg_len);
+
+OPENSSL_EXPORT void BCM_mldsa44_prehash_finalize(
+    uint8_t out_msg_rep[BCM_MLDSA_MU_BYTES],
+    struct BCM_mldsa44_prehash *inout_prehash_ctx);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_sign_message_representative(
+    uint8_t out_encoded_signature[BCM_MLDSA44_SIGNATURE_BYTES],
+    const struct BCM_mldsa44_private_key *private_key,
+    const uint8_t msg_rep[BCM_MLDSA_MU_BYTES]);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_marshal_public_key(
+    CBB *out, const struct BCM_mldsa44_public_key *public_key);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_parse_public_key(
+    struct BCM_mldsa44_public_key *public_key, CBS *in);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_parse_private_key(
+    struct BCM_mldsa44_private_key *private_key, CBS *in);
+
+// BCM_mldsa44_generate_key_external_entropy generates a public/private key pair
+// using the given seed, writes the encoded public key to
+// |out_encoded_public_key| and sets |out_private_key| to the private key.
+OPENSSL_EXPORT bcm_status BCM_mldsa44_generate_key_external_entropy(
+    uint8_t out_encoded_public_key[BCM_MLDSA44_PUBLIC_KEY_BYTES],
+    struct BCM_mldsa44_private_key *out_private_key,
+    const uint8_t entropy[BCM_MLDSA_SEED_BYTES]);
+
+OPENSSL_EXPORT bcm_status BCM_mldsa44_generate_key_external_entropy_fips(
+    uint8_t out_encoded_public_key[BCM_MLDSA44_PUBLIC_KEY_BYTES],
+    struct BCM_mldsa44_private_key *out_private_key,
+    const uint8_t entropy[BCM_MLDSA_SEED_BYTES]);
+
+// BCM_mldsa44_sign_internal signs |msg| using |private_key| and writes the
+// signature to |out_encoded_signature|. The |context_prefix| and |context| are
+// prefixed to the message, in that order, before signing. The |randomizer|
+// value can be set to zero bytes in order to make a deterministic signature, or
+// else filled with entropy for the usual |MLDSA_sign| behavior.
+OPENSSL_EXPORT bcm_status BCM_mldsa44_sign_internal(
+    uint8_t out_encoded_signature[BCM_MLDSA44_SIGNATURE_BYTES],
+    const struct BCM_mldsa44_private_key *private_key, const uint8_t *msg,
+    size_t msg_len, const uint8_t *context_prefix, size_t context_prefix_len,
+    const uint8_t *context, size_t context_len,
+    const uint8_t randomizer[BCM_MLDSA_SIGNATURE_RANDOMIZER_BYTES]);
+
+// BCM_mldsa44_verify_internal verifies that |encoded_signature| is a valid
+// signature of |msg| by |public_key|. The |context_prefix| and |context| are
+// prefixed to the message before verification, in that order.
+OPENSSL_EXPORT bcm_status BCM_mldsa44_verify_internal(
+    const struct BCM_mldsa44_public_key *public_key,
+    const uint8_t encoded_signature[BCM_MLDSA44_SIGNATURE_BYTES],
+    const uint8_t *msg, size_t msg_len, const uint8_t *context_prefix,
+    size_t context_prefix_len, const uint8_t *context, size_t context_len);
+
+// BCM_mldsa44_marshal_private_key serializes |private_key| to |out| in the
+// NIST format for ML-DSA-44 private keys.
+OPENSSL_EXPORT bcm_status BCM_mldsa44_marshal_private_key(
+    CBB *out, const struct BCM_mldsa44_private_key *private_key);
 
 
 // ML-KEM
@@ -492,6 +719,8 @@ struct BCM_mlkem768_private_key {
   } opaque;
 };
 
+
+
 OPENSSL_EXPORT bcm_infallible BCM_mlkem768_generate_key(
     uint8_t out_encoded_public_key[BCM_MLKEM768_PUBLIC_KEY_BYTES],
     uint8_t optional_out_seed[BCM_MLKEM_SEED_BYTES],
@@ -500,6 +729,14 @@ OPENSSL_EXPORT bcm_infallible BCM_mlkem768_generate_key(
 OPENSSL_EXPORT bcm_status BCM_mlkem768_private_key_from_seed(
     struct BCM_mlkem768_private_key *out_private_key, const uint8_t *seed,
     size_t seed_len);
+
+OPENSSL_EXPORT bcm_status BCM_mlkem768_generate_key_fips(
+    uint8_t out_encoded_public_key[BCM_MLKEM768_PUBLIC_KEY_BYTES],
+    uint8_t optional_out_seed[BCM_MLKEM_SEED_BYTES],
+    struct BCM_mlkem768_private_key *out_private_key);
+
+OPENSSL_EXPORT bcm_status
+BCM_mlkem768_check_fips(const struct BCM_mlkem768_private_key *private_key);
 
 OPENSSL_EXPORT bcm_infallible BCM_mlkem768_public_from_private(
     struct BCM_mlkem768_public_key *out_public_key,
@@ -575,6 +812,14 @@ OPENSSL_EXPORT bcm_infallible BCM_mlkem1024_generate_key(
     uint8_t out_encoded_public_key[BCM_MLKEM1024_PUBLIC_KEY_BYTES],
     uint8_t optional_out_seed[BCM_MLKEM_SEED_BYTES],
     struct BCM_mlkem1024_private_key *out_private_key);
+
+OPENSSL_EXPORT bcm_status BCM_mlkem1024_generate_key_fips(
+    uint8_t out_encoded_public_key[BCM_MLKEM1024_PUBLIC_KEY_BYTES],
+    uint8_t optional_out_seed[BCM_MLKEM_SEED_BYTES],
+    struct BCM_mlkem1024_private_key *out_private_key);
+
+OPENSSL_EXPORT bcm_status
+BCM_mlkem1024_check_fips(const struct BCM_mlkem1024_private_key *private_key);
 
 OPENSSL_EXPORT bcm_status BCM_mlkem1024_private_key_from_seed(
     struct BCM_mlkem1024_private_key *out_private_key, const uint8_t *seed,
@@ -658,10 +903,18 @@ OPENSSL_EXPORT bcm_status BCM_mlkem1024_marshal_private_key(
 // SLH-DSA-SHA2-128s signature.
 #define BCM_SLHDSA_SHA2_128S_SIGNATURE_BYTES 7856
 
-// SLHDSA_SHA2_128S_generate_key_from_seed generates an SLH-DSA-SHA2-128s key
-// pair from a 48-byte seed and writes the result to |out_public_key| and
+// BCM_slhdsa_sha2_128s_generate_key_from_seed generates an SLH-DSA-SHA2-128s
+// key pair from a 48-byte seed and writes the result to |out_public_key| and
 // |out_secret_key|.
 OPENSSL_EXPORT bcm_infallible BCM_slhdsa_sha2_128s_generate_key_from_seed(
+    uint8_t out_public_key[BCM_SLHDSA_SHA2_128S_PUBLIC_KEY_BYTES],
+    uint8_t out_secret_key[BCM_SLHDSA_SHA2_128S_PRIVATE_KEY_BYTES],
+    const uint8_t seed[3 * BCM_SLHDSA_SHA2_128S_N]);
+
+// BCM_slhdsa_sha2_128s_generate_key_from_seed_fips does the same thing as
+// `BCM_slhdsa_sha2_128s_generate_key_from_seed` but implements the required
+// second check before generating a key by testing for nullptr arguments.
+OPENSSL_EXPORT bcm_status BCM_slhdsa_sha2_128s_generate_key_from_seed_fips(
     uint8_t out_public_key[BCM_SLHDSA_SHA2_128S_PUBLIC_KEY_BYTES],
     uint8_t out_secret_key[BCM_SLHDSA_SHA2_128S_PRIVATE_KEY_BYTES],
     const uint8_t seed[3 * BCM_SLHDSA_SHA2_128S_N]);
@@ -690,6 +943,10 @@ OPENSSL_EXPORT bcm_status BCM_slhdsa_sha2_128s_verify_internal(
     size_t context_len, const uint8_t *msg, size_t msg_len);
 
 OPENSSL_EXPORT bcm_infallible BCM_slhdsa_sha2_128s_generate_key(
+    uint8_t out_public_key[BCM_SLHDSA_SHA2_128S_PUBLIC_KEY_BYTES],
+    uint8_t out_private_key[BCM_SLHDSA_SHA2_128S_PRIVATE_KEY_BYTES]);
+
+OPENSSL_EXPORT bcm_status BCM_slhdsa_sha2_128s_generate_key_fips(
     uint8_t out_public_key[BCM_SLHDSA_SHA2_128S_PUBLIC_KEY_BYTES],
     uint8_t out_private_key[BCM_SLHDSA_SHA2_128S_PRIVATE_KEY_BYTES]);
 
@@ -722,8 +979,34 @@ OPENSSL_EXPORT bcm_status BCM_slhdsa_sha2_128s_prehash_verify(
     const uint8_t *context, size_t context_len);
 
 
+// AES
+
+// BCM_aes_encrypt encrypts a single block from |in| to |out| with |key|. The
+// |in| and |out| pointers may overlap.
+OPENSSL_EXPORT bcm_infallible BCM_aes_encrypt(const uint8_t *in, uint8_t *out,
+                                              const AES_KEY *key);
+// BCM_aes_decrypt decrypts a single block from |in| to |out| with |key|. The
+// |in| and |out| pointers may overlap.
+OPENSSL_EXPORT bcm_infallible BCM_aes_decrypt(const uint8_t *in, uint8_t *out,
+                                              const AES_KEY *key);
+
+// BCM_aes_set_encrypt_key configures |aeskey| to encrypt with the |bits|-bit
+// key, |key|. |key| must point to |bits|/8 bytes. It will return failure if
+// |bits| is an invalid AES key size.
+OPENSSL_EXPORT bcm_status BCM_aes_set_encrypt_key(const uint8_t *key,
+                                                  unsigned bits,
+                                                  AES_KEY *aeskey);
+
+// BCM_aes_set_decrypt_key configures |aeskey| to decrypt with the |bits|-bit
+// key, |key|. |key| must point to |bits|/8 bytes. It will return failure if
+// |bits| is an invalid AES key size.
+OPENSSL_EXPORT bcm_status BCM_aes_set_decrypt_key(const uint8_t *key,
+                                                  unsigned bits,
+                                                  AES_KEY *aeskey);
+
+
 #if defined(__cplusplus)
 }  // extern C
 #endif
 
-#endif  // OPENSSL_HEADER_CRYPTO_BCM_INTERFACE_H
+#endif  // OPENSSL_HEADER_CRYPTO_FIPSMODULE_BCM_INTERFACE_H

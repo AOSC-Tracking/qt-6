@@ -38,11 +38,8 @@
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
+#include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "ui/gfx/geometry/rect.h"
-
-namespace WTF {
-class String;
-}  // namespace WTF
 
 namespace blink {
 
@@ -62,7 +59,9 @@ class PagePopupController : public ScriptWrappable, public Supplement<Page> {
 
   static PagePopupController* From(Page&);
 
-  void setValueAndClosePopup(int num_value, const WTF::String& string_value);
+  void setValueAndClosePopup(int num_value,
+                             const WTF::String& string_value,
+                             bool is_keyboard_event);
   void setValue(const WTF::String&);
   void closePopup();
   WTF::String localizeNumberString(const WTF::String&);

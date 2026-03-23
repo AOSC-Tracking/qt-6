@@ -17,6 +17,9 @@
 # It will expand later to have utilities around `Status` like `StatusOr`,
 # `StatusBuilder` and macros.
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(
     "//absl:copts/configure_copts.bzl",
     "ABSL_DEFAULT_COPTS",
@@ -86,6 +89,17 @@ cc_test(
     ],
 )
 
+cc_binary(
+    name = "status_benchmark",
+    testonly = True,
+    srcs = ["status_benchmark.cc"],
+    tags = ["benchmark"],
+    deps = [
+        ":status",
+        "@google_benchmark//:benchmark_main",
+    ],
+)
+
 cc_library(
     name = "statusor",
     srcs = [
@@ -129,6 +143,18 @@ cc_test(
         "//absl/utility",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
+    ],
+)
+
+cc_binary(
+    name = "statusor_benchmark",
+    testonly = True,
+    srcs = ["statusor_benchmark.cc"],
+    tags = ["benchmark"],
+    deps = [
+        ":status",
+        ":statusor",
+        "@google_benchmark//:benchmark_main",
     ],
 )
 

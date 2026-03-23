@@ -583,8 +583,6 @@ QString qtDiag(unsigned flags)
     DUMP_CPU_FEATURE(AVX512IFMA, "AVX512IFMA");
     DUMP_CPU_FEATURE(AVX512VBMI2, "AVX512VBMI2");
     DUMP_CPU_FEATURE(AVX512FP16, "AVX512FP16");
-    DUMP_CPU_FEATURE(RDRND, "RDRAND");
-    DUMP_CPU_FEATURE(RDSEED, "RDSEED");
     DUMP_CPU_FEATURE(AES, "AES");
     DUMP_CPU_FEATURE(VAES, "VAES");
     DUMP_CPU_FEATURE(SHA, "SHA");
@@ -684,7 +682,6 @@ QString qtDiag(unsigned flags)
     DUMP_CAPABILITY(str, platformIntegration, NativeWidgets)
     DUMP_CAPABILITY(str, platformIntegration, WindowManagement)
     DUMP_CAPABILITY(str, platformIntegration, SyncState)
-    DUMP_CAPABILITY(str, platformIntegration, RasterGLSurface)
     DUMP_CAPABILITY(str, platformIntegration, AllGLFunctionsQueryable)
     DUMP_CAPABILITY(str, platformIntegration, ApplicationIcon)
     DUMP_CAPABILITY(str, platformIntegration, SwitchableWidgetComposition)

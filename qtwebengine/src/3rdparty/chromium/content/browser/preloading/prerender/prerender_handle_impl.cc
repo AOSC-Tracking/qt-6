@@ -39,7 +39,6 @@ bool ShouldFireErrorCallback(PrerenderFinalStatus status) {
     case PrerenderFinalStatus::kInvalidSchemeRedirect:
     case PrerenderFinalStatus::kInvalidSchemeNavigation:
     case PrerenderFinalStatus::kNavigationRequestBlockedByCsp:
-    case PrerenderFinalStatus::kMainFrameNavigation:
     case PrerenderFinalStatus::kMojoBinderPolicy:
     case PrerenderFinalStatus::kRendererProcessCrashed:
     case PrerenderFinalStatus::kRendererProcessKilled:
@@ -112,8 +111,8 @@ bool ShouldFireErrorCallback(PrerenderFinalStatus status) {
       return true;
 
     // These are used for speculation rules, not for embedder triggers.
-    case PrerenderFinalStatus::kMaxNumOfRunningEagerPrerendersExceeded:
-    case PrerenderFinalStatus::kMaxNumOfRunningNonEagerPrerendersExceeded:
+    case PrerenderFinalStatus::kMaxNumOfRunningImmediatePrerendersExceeded:
+    case PrerenderFinalStatus::kMaxNumOfRunningNonImmediatePrerendersExceeded:
       NOTREACHED();
 
     case PrerenderFinalStatus::kMaxNumOfRunningEmbedderPrerendersExceeded:
@@ -135,9 +134,16 @@ bool ShouldFireErrorCallback(PrerenderFinalStatus status) {
     case PrerenderFinalStatus::kOtherPrerenderedPageActivated:
       return false;
 
-    case PrerenderFinalStatus::kV8OptimizerDisabled:
     case PrerenderFinalStatus::kPrerenderFailedDuringPrefetch:
       return true;
+
+    // Prerendering is intentionally canceled by the Delete Browsing Data
+    // option or with Clear-Site-Data response headers.
+    case PrerenderFinalStatus::kBrowsingDataRemoved:
+      return false;
+    // The PrerenderHost is reused by another prerender request.
+    case PrerenderFinalStatus::kPrerenderHostReused:
+      return false;
   }
 }
 
@@ -146,11 +152,13 @@ bool ShouldFireErrorCallback(PrerenderFinalStatus status) {
 PrerenderHandleImpl::PrerenderHandleImpl(
     base::WeakPtr<PrerenderHostRegistry> prerender_host_registry,
     FrameTreeNodeId frame_tree_node_id,
-    const GURL& prerendering_url)
+    const GURL& prerendering_url,
+    std::optional<net::HttpNoVarySearchData> no_vary_search_hint)
     : handle_id_(GetNextHandleId()),
       prerender_host_registry_(std::move(prerender_host_registry)),
       frame_tree_node_id_(frame_tree_node_id),
-      prerendering_url_(prerendering_url) {
+      prerendering_url_(prerendering_url),
+      no_vary_search_hint_(std::move(no_vary_search_hint)) {
   CHECK(!prerendering_url_.is_empty());
   // PrerenderHandleImpl is now designed only for embedder triggers. If you use
   // this handle for other triggers, please make sure to update the logging etc.
@@ -161,6 +169,10 @@ PrerenderHandleImpl::PrerenderHandleImpl(
 }
 
 PrerenderHandleImpl::~PrerenderHandleImpl() {
+  // GetPrerenderHost() fetches the PrerenderHost by the frame_tree_node_id_.
+  // If the underlying PrerenderHost is reused, frame_tree_node_id_ will
+  // be reset and prerender_host will be nullptr. The reused host will
+  // not be cancelled.
   PrerenderHost* prerender_host = GetPrerenderHost();
   if (!prerender_host) {
     return;
@@ -177,6 +189,11 @@ int32_t PrerenderHandleImpl::GetHandleId() const {
 
 const GURL& PrerenderHandleImpl::GetInitialPrerenderingUrl() const {
   return prerendering_url_;
+}
+
+const std::optional<net::HttpNoVarySearchData>&
+PrerenderHandleImpl::GetNoVarySearchHint() const {
+  return no_vary_search_hint_;
 }
 
 base::WeakPtr<PrerenderHandle> PrerenderHandleImpl::GetWeakPtr() {
@@ -252,6 +269,14 @@ void PrerenderHandleImpl::OnFailed(PrerenderFinalStatus status) {
   for (auto& callback : callbacks) {
     std::move(callback).Run();
   }
+}
+
+void PrerenderHandleImpl::OnHostReused() {
+  // Since the frame_tree_node_id_ is reused by the new PrerenderHost, we will
+  // stop tracking the FrameTree and reset frame_tree_node_id_.
+  // TODO(crbug.com/434826191): Add a new unique identifier for the
+  // PrerenderHost.
+  frame_tree_node_id_ = FrameTreeNodeId();
 }
 
 PrerenderHost* PrerenderHandleImpl::GetPrerenderHost() {

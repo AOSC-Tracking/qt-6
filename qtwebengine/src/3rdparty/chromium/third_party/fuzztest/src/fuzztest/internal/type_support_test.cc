@@ -14,7 +14,6 @@
 
 #include "./fuzztest/internal/type_support.h"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <complex>
@@ -102,7 +101,7 @@ using IntegralTypes = testing::Types<signed char, unsigned char,     //
                                      long long, unsigned long long,  //
                                      absl::int128, absl::uint128>;
 
-TYPED_TEST_SUITE(IntegralTest, IntegralTypes);
+TYPED_TEST_SUITE(IntegralTest, IntegralTypes, );
 
 TYPED_TEST(IntegralTest, Printer) {
   for (auto v : {TypeParam{0}, std::numeric_limits<TypeParam>::min(),
@@ -141,7 +140,7 @@ class FloatingTest : public testing::Test {};
 
 using FloatingTypes = testing::Types<float, double, long double>;
 
-TYPED_TEST_SUITE(FloatingTest, FloatingTypes);
+TYPED_TEST_SUITE(FloatingTest, FloatingTypes, );
 
 TYPED_TEST(FloatingTest, Printer) {
   absl::string_view suffix = std::is_same_v<float, TypeParam>    ? "f"
@@ -246,11 +245,12 @@ TEST(ProtobufTest, Printer) {
   proto.add_rep_subproto()->set_subproto_i32(17);
   std::string proto_text;
   ASSERT_TRUE(google::protobuf::TextFormat::PrintToString(proto, &proto_text));
-  EXPECT_THAT(TestPrintValue(proto),
-              ElementsAre(absl::StrCat("(", proto_text, ")"),
-                          MatchesRegex(absl::StrCat(
-                              R"re(.*ParseTe[sx]tProto.*\(R"pb\()re",
-                              proto_text, R"re(\)pb"\))re"))));
+  EXPECT_THAT(
+      TestPrintValue(proto),
+      ElementsAre(
+          MatchesRegex(absl::StrCat("\\(.*\n?", proto_text, "\\)")),
+          MatchesRegex(absl::StrCat(R"re(.*ParseTe[sx]tProto.*\(R"pb\(.*\n?)re",
+                                    proto_text, R"re(\)pb"\))re"))));
 }
 
 TEST(ProtobufEnumTest, Printer) {
@@ -271,6 +271,19 @@ TEST(ProtobufEnumTest, Printer) {
 
   auto bare_domain = Arbitrary<internal::BareEnum>();
   EXPECT_THAT(TestPrintValue(internal::BareEnum::LABEL_OTHER, bare_domain),
+              ElementsAre("fuzztest::internal::BareEnum::LABEL_OTHER (10)",
+                          "fuzztest::internal::BareEnum::LABEL_OTHER"));
+
+  auto element_domain = ElementOf(
+      {internal::TestProtobuf::Label3, internal::TestProtobuf::Label4});
+  using corpus_type = corpus_type_t<decltype(element_domain)>;
+  EXPECT_THAT(TestPrintValue(corpus_type(0), element_domain),
+              ElementsAre("fuzztest::internal::TestProtobuf::Label3 (2)",
+                          "fuzztest::internal::TestProtobuf::Label3"));
+
+  auto bare_element_domain = ElementOf({internal::BareEnum::LABEL_OTHER});
+  using corpus_type = corpus_type_t<decltype(bare_element_domain)>;
+  EXPECT_THAT(TestPrintValue(corpus_type(0), bare_element_domain),
               ElementsAre("fuzztest::internal::BareEnum::LABEL_OTHER (10)",
                           "fuzztest::internal::BareEnum::LABEL_OTHER"));
 }

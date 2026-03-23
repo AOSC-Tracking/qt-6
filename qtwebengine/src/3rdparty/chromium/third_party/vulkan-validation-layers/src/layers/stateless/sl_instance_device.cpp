@@ -16,9 +16,11 @@
  * limitations under the License.
  */
 
+#include "generated/vk_extension_helper.h"
 #include "stateless/stateless_validation.h"
 #include "generated/enum_flag_bits.h"
 #include "generated/dispatch_functions.h"
+#include "containers/container_utils.h"
 
 namespace stateless {
 // Traits objects to allow string_join to operate on collections of const char *
@@ -80,7 +82,7 @@ bool Instance::ValidateExtensionReqs(const ExtensionState &extensions, const cha
     if (extension == vvl::Extension::Empty) {
         return skip;
     }
-    auto info = ExtensionState::GetInfo(extension);
+    auto info = extensions.GetInfo(extension);
 
     if (!info.state) {
         return skip;  // Unknown extensions cannot be checked so report OK
@@ -103,9 +105,8 @@ bool Instance::ValidateExtensionReqs(const ExtensionState &extensions, const cha
     return skip;
 }
 
-template <typename ExtensionState>
-ExtEnabled ExtensionStateByName(const ExtensionState &extensions, vvl::Extension extension) {
-    auto info = ExtensionState::GetInfo(extension);
+ExtEnabled ExtensionStateByName(const DeviceExtensions &extensions, vvl::Extension extension) {
+    auto info = extensions.GetInfo(extension);
     // unknown extensions can't be enabled in extension struct
     ExtEnabled state = info.state ? extensions.*(info.state) : kNotEnabled;
     return state;
@@ -208,31 +209,30 @@ bool Instance::PreCallValidateCreateInstance(const VkInstanceCreateInfo *pCreate
     // avoid redundant pNext-pNext errors from the cases where we have specific VUs by returning early
     const auto *debug_report_callback = vku::FindStructInPNextChain<VkDebugReportCallbackCreateInfoEXT>(pCreateInfo->pNext);
     if (debug_report_callback && !instance_extensions.vk_ext_debug_report) {
-        skip |= LogError("VUID-VkInstanceCreateInfo-pNext-04925", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
-                         "does not include VK_EXT_debug_report, but the pNext chain includes VkDebugReportCallbackCreateInfoEXT.");
+        skip |=
+            LogError("VUID-VkInstanceCreateInfo-pNext-04925", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
+                     "does not include VK_EXT_debug_report, but the pNext chain includes VkDebugReportCallbackCreateInfoEXT.\n%s",
+                     PrintPNextChain(Struct::VkInstanceCreateInfo, pCreateInfo->pNext).c_str());
         return skip;
     }
     const auto *debug_utils_messenger = vku::FindStructInPNextChain<VkDebugUtilsMessengerCreateInfoEXT>(pCreateInfo->pNext);
     if (debug_utils_messenger && !instance_extensions.vk_ext_debug_utils) {
-        skip |= LogError("VUID-VkInstanceCreateInfo-pNext-04926", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
-                         "does not include VK_EXT_debug_utils, but the pNext chain includes VkDebugUtilsMessengerCreateInfoEXT.");
+        skip |=
+            LogError("VUID-VkInstanceCreateInfo-pNext-04926", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
+                     "does not include VK_EXT_debug_utils, but the pNext chain includes VkDebugUtilsMessengerCreateInfoEXT.\n%s",
+                     PrintPNextChain(Struct::VkInstanceCreateInfo, pCreateInfo->pNext).c_str());
         return skip;
     }
     const auto *direct_driver_loading_list = vku::FindStructInPNextChain<VkDirectDriverLoadingListLUNARG>(pCreateInfo->pNext);
     if (direct_driver_loading_list && !instance_extensions.vk_lunarg_direct_driver_loading) {
         skip |= LogError(
             "VUID-VkInstanceCreateInfo-pNext-09400", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
-            "does not include VK_LUNARG_direct_driver_loading, but the pNext chain includes VkDirectDriverLoadingListLUNARG.");
+            "does not include VK_LUNARG_direct_driver_loading, but the pNext chain includes VkDirectDriverLoadingListLUNARG.\n%s",
+            PrintPNextChain(Struct::VkInstanceCreateInfo, pCreateInfo->pNext).c_str());
         return skip;
     }
 
-    const auto *validation_features = vku::FindStructInPNextChain<VkValidationFeaturesEXT>(pCreateInfo->pNext);
-    if (validation_features && !instance_extensions.vk_ext_validation_features) {
-        skip |= LogError("VUID-VkInstanceCreateInfo-pNext-10243", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
-                         "does not include VK_EXT_validation_features, but the pNext chain includes VkValidationFeaturesEXT");
-        return skip;
-    }
-    if (validation_features) {
+    if (const auto *validation_features = vku::FindStructInPNextChain<VkValidationFeaturesEXT>(pCreateInfo->pNext)) {
         bool debug_printf = false;
         bool gpu_assisted = false;
         bool reserve_slot = false;
@@ -335,140 +335,24 @@ void Instance::PreCallRecordDestroyInstance(VkInstance instance, const VkAllocat
     }
 }
 
-void Instance::PostCallRecordCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
-                                          const VkAllocationCallbacks *pAllocator, VkDevice *pDevice,
-                                          const RecordObject &record_obj) {
-    auto device_data = vvl::dispatch::GetData(*pDevice);
-    if (record_obj.result != VK_SUCCESS) return;
-    auto stateless_device = static_cast<Device *>(device_data->GetValidationObject(container_type));
-
-    VkPhysicalDeviceProperties device_properties = {};
-    // Need to get instance and do a getlayerdata call...
-    DispatchGetPhysicalDeviceProperties(physicalDevice, &device_properties);
-    memcpy(&stateless_device->device_limits, &device_properties.limits, sizeof(VkPhysicalDeviceLimits));
-
-    if (IsExtEnabled(extensions.vk_nv_shading_rate_image)) {
-        // Get the needed shading rate image limits
-        VkPhysicalDeviceShadingRateImagePropertiesNV shading_rate_image_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&shading_rate_image_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.shading_rate_image_props = shading_rate_image_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_nv_mesh_shader)) {
-        // Get the needed mesh shader limits
-        VkPhysicalDeviceMeshShaderPropertiesNV mesh_shader_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&mesh_shader_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.mesh_shader_props_nv = mesh_shader_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_ext_mesh_shader)) {
-        // Get the needed mesh shader EXT limits
-        VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_props_ext = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&mesh_shader_props_ext);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.mesh_shader_props_ext = mesh_shader_props_ext;
-    }
-
-    if (IsExtEnabled(extensions.vk_nv_ray_tracing)) {
-        // Get the needed ray tracing limits
-        VkPhysicalDeviceRayTracingPropertiesNV ray_tracing_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&ray_tracing_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.ray_tracing_props_nv = ray_tracing_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_khr_ray_tracing_pipeline)) {
-        // Get the needed ray tracing limits
-        VkPhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&ray_tracing_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.ray_tracing_props_khr = ray_tracing_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_khr_acceleration_structure)) {
-        // Get the needed ray tracing acc structure limits
-        VkPhysicalDeviceAccelerationStructurePropertiesKHR acc_structure_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&acc_structure_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.acc_structure_props = acc_structure_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_ext_transform_feedback)) {
-        // Get the needed transform feedback limits
-        VkPhysicalDeviceTransformFeedbackPropertiesEXT transform_feedback_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&transform_feedback_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.transform_feedback_props = transform_feedback_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_khr_vertex_attribute_divisor)) {
-        // Get the needed vertex attribute divisor limits
-        VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR vertex_attribute_divisor_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&vertex_attribute_divisor_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.vertex_attribute_divisor_props = vertex_attribute_divisor_props;
-    } else if (IsExtEnabled(extensions.vk_ext_vertex_attribute_divisor)) {
-        // Get the needed vertex attribute divisor limits
-        VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT vertex_attribute_divisor_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&vertex_attribute_divisor_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.vertex_attribute_divisor_props = vku::InitStructHelper();
-        stateless_device->phys_dev_ext_props.vertex_attribute_divisor_props.maxVertexAttribDivisor =
-            vertex_attribute_divisor_props.maxVertexAttribDivisor;
-    }
-
-    if (IsExtEnabled(extensions.vk_khr_fragment_shading_rate)) {
-        VkPhysicalDeviceFragmentShadingRatePropertiesKHR fragment_shading_rate_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&fragment_shading_rate_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.fragment_shading_rate_props = fragment_shading_rate_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_khr_depth_stencil_resolve)) {
-        VkPhysicalDeviceDepthStencilResolveProperties depth_stencil_resolve_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&depth_stencil_resolve_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.depth_stencil_resolve_props = depth_stencil_resolve_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_ext_external_memory_host)) {
-        VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&external_memory_host_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.external_memory_host_props = external_memory_host_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_ext_device_generated_commands)) {
-        VkPhysicalDeviceDeviceGeneratedCommandsPropertiesEXT device_generated_commands_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&device_generated_commands_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.device_generated_commands_props = device_generated_commands_props;
-    }
-
-    if (IsExtEnabled(extensions.vk_arm_render_pass_striped)) {
-        VkPhysicalDeviceRenderPassStripedPropertiesARM renderpass_striped_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&renderpass_striped_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
-        stateless_device->phys_dev_ext_props.renderpass_striped_props = renderpass_striped_props;
-    }
-
-    GetEnabledDeviceFeatures(pCreateInfo, &stateless_device->enabled_features, api_version);
+void Device::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) {
+    memcpy(&device_limits, &phys_dev_props.limits, sizeof(VkPhysicalDeviceLimits));
 
     std::vector<VkExtensionProperties> ext_props{};
     uint32_t ext_count = 0;
-    DispatchEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &ext_count, nullptr);
+    DispatchEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_count, nullptr);
     ext_props.resize(ext_count);
-    DispatchEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &ext_count, ext_props.data());
+    DispatchEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_count, ext_props.data());
     for (const auto &prop : ext_props) {
         vvl::Extension extension = GetExtension(prop.extensionName);
         if (extension == vvl::Extension::_VK_EXT_discard_rectangles) {
-            stateless_device->discard_rectangles_extension_version = prop.specVersion;
+            discard_rectangles_extension_version = prop.specVersion;
         } else if (extension == vvl::Extension::_VK_NV_scissor_exclusive) {
-            stateless_device->scissor_exclusive_extension_version = prop.specVersion;
+            scissor_exclusive_extension_version = prop.specVersion;
         }
     }
+
+    has_zero_queues = pCreateInfo->queueCreateInfoCount == 0;
 }
 
 bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
@@ -556,15 +440,16 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
     if (pCreateInfo->pNext != nullptr && pCreateInfo->pEnabledFeatures && features2) {
         // Cannot include VkPhysicalDeviceFeatures2 and have non-null pEnabledFeatures
         skip |= LogError("VUID-VkDeviceCreateInfo-pNext-00373", physicalDevice, create_info_loc.dot(Field::pNext),
-                         "includes a VkPhysicalDeviceFeatures2 struct when pCreateInfo->pEnabledFeatures is not NULL.");
+                         "includes a VkPhysicalDeviceFeatures2 struct when pCreateInfo->pEnabledFeatures is not NULL.\n%s",
+                         PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
     }
 
     const VkPhysicalDeviceFeatures *features = features2 ? &features2->features : pCreateInfo->pEnabledFeatures;
 
     if (const auto *robustness2_features =
-            vku::FindStructInPNextChain<VkPhysicalDeviceRobustness2FeaturesEXT>(pCreateInfo->pNext)) {
+            vku::FindStructInPNextChain<VkPhysicalDeviceRobustness2FeaturesKHR>(pCreateInfo->pNext)) {
         if (features && robustness2_features->robustBufferAccess2 && !features->robustBufferAccess) {
-            skip |= LogError("VUID-VkPhysicalDeviceRobustness2FeaturesEXT-robustBufferAccess2-04000", physicalDevice,
+            skip |= LogError("VUID-VkPhysicalDeviceRobustness2FeaturesKHR-robustBufferAccess2-04000", physicalDevice,
                              error_obj.location, "If robustBufferAccess2 is enabled then robustBufferAccess must be enabled.");
         }
     }
@@ -604,8 +489,11 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
             if (IsValueIn(current->sType, illegal_feature_structs_with_11)) {
                 skip |= LogError("VUID-VkDeviceCreateInfo-pNext-02829", physicalDevice, error_obj.location,
                                  "If the pNext chain includes a VkPhysicalDeviceVulkan11Features structure, then "
-                                 "it must not include a %s structure",
-                                 string_VkStructureType(current->sType));
+                                 "it must not include a %s structure. The features in %s were promoted in Vulkan 1.1 and is also "
+                                 "found in VkPhysicalDeviceVulkan11Features. To prevent one feature setting something to VK_TRUE "
+                                 "and the other to VK_FALSE, only one struct containing the feature is allowed.\n%s",
+                                 string_VkStructureName(current->sType), string_VkStructureName(current->sType),
+                                 PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
                 break;
             }
             current = reinterpret_cast<const VkBaseOutStructure *>(current->pNext);
@@ -641,8 +529,11 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
             if (IsValueIn(current->sType, illegal_feature_structs_with_12)) {
                 skip |= LogError("VUID-VkDeviceCreateInfo-pNext-02830", physicalDevice, create_info_loc.dot(Field::pNext),
                                  "chain includes a VkPhysicalDeviceVulkan12Features structure, then it must not "
-                                 "include a %s structure",
-                                 string_VkStructureType(current->sType));
+                                 "include a %s structure. The features in %s were promoted in Vulkan 1.2 and is also found in "
+                                 "VkPhysicalDeviceVulkan12Features. To prevent one feature setting something to VK_TRUE and the "
+                                 "other to VK_FALSE, only one struct containing the feature is allowed.\n%s",
+                                 string_VkStructureName(current->sType), string_VkStructureName(current->sType),
+                                 PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
                 break;
             }
             current = reinterpret_cast<const VkBaseOutStructure *>(current->pNext);
@@ -717,8 +608,11 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
             if (IsValueIn(current->sType, illegal_feature_structs_with_13)) {
                 skip |= LogError("VUID-VkDeviceCreateInfo-pNext-06532", physicalDevice, create_info_loc.dot(Field::pNext),
                                  "chain includes a VkPhysicalDeviceVulkan13Features structure, then it must not "
-                                 "include a %s structure",
-                                 string_VkStructureType(current->sType));
+                                 "include a %s structure. The features in %s were promoted in Vulkan 1.3 and is also found in "
+                                 "VkPhysicalDeviceVulkan13Features. To prevent one feature setting something to VK_TRUE and the "
+                                 "other to VK_FALSE, only one struct containing the feature is allowed.\n%s",
+                                 string_VkStructureName(current->sType), string_VkStructureName(current->sType),
+                                 PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
                 break;
             }
             current = reinterpret_cast<const VkBaseOutStructure *>(current->pNext);
@@ -747,11 +641,20 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
             if (IsValueIn(current->sType, illegal_feature_structs_with_14)) {
                 skip |= LogError("VUID-VkDeviceCreateInfo-pNext-10360", physicalDevice, create_info_loc.dot(Field::pNext),
                                  "chain includes a VkPhysicalDeviceVulkan14Features structure, then it must not "
-                                 "include a %s structure",
-                                 string_VkStructureType(current->sType));
+                                 "include a %s structure. The features in %s were promoted in Vulkan 1.4 and is also found in "
+                                 "VkPhysicalDeviceVulkan14Features. To prevent one feature setting something to VK_TRUE and the "
+                                 "other to VK_FALSE, only one struct containing the feature is allowed.\n%s",
+                                 string_VkStructureName(current->sType), string_VkStructureName(current->sType),
+                                 PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
                 break;
             }
             current = reinterpret_cast<const VkBaseOutStructure *>(current->pNext);
+        }
+        if (vulkan_14_features->pushDescriptor == VK_FALSE &&
+            enabled_extensions.find(vvl::Extension::_VK_KHR_push_descriptor) != enabled_extensions.end()) {
+            skip |= LogError("VUID-VkDeviceCreateInfo-ppEnabledExtensionNames-10858", physicalDevice, error_obj.location,
+                             "%s is enabled but VkPhysicalDeviceVulkan14Features::pushDescriptor is not VK_TRUE.",
+                             VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
         }
     }
 
@@ -859,7 +762,7 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
     if (features && features->robustBufferAccess && any_update_after_bind_feature) {
         VkPhysicalDeviceDescriptorIndexingProperties di_props = vku::InitStructHelper();
         VkPhysicalDeviceProperties2 props2 = vku::InitStructHelper(&di_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &props2);
+        DispatchGetPhysicalDeviceProperties2Helper(api_version, physicalDevice, &props2);
         if (!di_props.robustBufferAccessUpdateAfterBind) {
             skip |= LogError("VUID-VkDeviceCreateInfo-robustBufferAccess-10247", physicalDevice, error_obj.location,
                              "robustBufferAccessUpdateAfterBind is false, but both robustBufferAccess and a "
@@ -963,7 +866,7 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
     if (cache_control && cache_control->disableInternalCache) {
         VkPhysicalDevicePipelineBinaryPropertiesKHR pipeline_binary_props = vku::InitStructHelper();
         VkPhysicalDeviceProperties2 props2 = vku::InitStructHelper(&pipeline_binary_props);
-        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &props2);
+        DispatchGetPhysicalDeviceProperties2Helper(api_version, physicalDevice, &props2);
 
         if (!pipeline_binary_props.pipelineBinaryInternalCacheControl) {
             skip |= LogError("VUID-VkDevicePipelineBinaryInternalCacheControlKHR-disableInternalCache-09602", physicalDevice,
@@ -1000,8 +903,9 @@ bool Instance::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(
             if (pImageFormatInfo->tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
                 skip |= LogError("VUID-VkPhysicalDeviceImageFormatInfo2-tiling-02249", physicalDevice,
                                  format_info_loc.dot(Field::tiling),
-                                 "(%s) but no VkPhysicalDeviceImageDrmFormatModifierInfoEXT in pNext chain.",
-                                 string_VkImageTiling(pImageFormatInfo->tiling));
+                                 "(%s) but no VkPhysicalDeviceImageDrmFormatModifierInfoEXT in pNext chain.\n%s",
+                                 string_VkImageTiling(pImageFormatInfo->tiling),
+                                 PrintPNextChain(Struct::VkPhysicalDeviceImageFormatInfo2, pImageFormatInfo->pNext).c_str());
             }
             if (image_drm_format->sharingMode == VK_SHARING_MODE_CONCURRENT) {
                 if (image_drm_format->queueFamilyIndexCount <= 1) {
@@ -1018,7 +922,8 @@ bool Instance::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(
                         image_drm_format->queueFamilyIndexCount);
                 } else {
                     uint32_t queue_family_property_count = 0;
-                    DispatchGetPhysicalDeviceQueueFamilyProperties2Helper(physicalDevice, &queue_family_property_count, nullptr);
+                    DispatchGetPhysicalDeviceQueueFamilyProperties2Helper(api_version, physicalDevice, &queue_family_property_count,
+                                                                          nullptr);
                     vvl::unordered_set<uint32_t> queue_family_indices_set;
                     for (uint32_t i = 0; i < image_drm_format->queueFamilyIndexCount; i++) {
                         const uint32_t queue_index = image_drm_format->pQueueFamilyIndices[i];
@@ -1046,7 +951,8 @@ bool Instance::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(
                 skip |= LogError("VUID-VkPhysicalDeviceImageFormatInfo2-tiling-02249", physicalDevice,
                                  format_info_loc.dot(Field::tiling),
                                  "is VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, but pNext chain not include "
-                                 "VkPhysicalDeviceImageDrmFormatModifierInfoEXT.");
+                                 "VkPhysicalDeviceImageDrmFormatModifierInfoEXT.\n%s",
+                                 PrintPNextChain(Struct::VkPhysicalDeviceImageFormatInfo2, pImageFormatInfo->pNext).c_str());
             }
         }
         if (pImageFormatInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT &&

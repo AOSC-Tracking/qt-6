@@ -11,10 +11,7 @@
 #include "base/format_macros.h"
 #include "base/rand_util.h"
 #include "build/build_config.h"
-
-#if !BUILDFLAG(IS_NACL)
 #include "third_party/boringssl/src/include/openssl/mem.h"
-#endif
 
 namespace base {
 
@@ -60,15 +57,9 @@ std::optional<UnguessableToken> UnguessableToken::DeserializeFromString(
 std::strong_ordering UnguessableToken::operator<=>(const UnguessableToken& other) const = default;
 
 bool UnguessableToken::operator==(const UnguessableToken& other) const {
-#if BUILDFLAG(IS_NACL)
-  // BoringSSL is unavailable for NaCl builds so it remains timing dependent.
-  return token_ == other.token_;
-#else
   auto bytes = token_.AsBytes();
   auto other_bytes = other.token_.AsBytes();
-
   return CRYPTO_memcmp(bytes.data(), other_bytes.data(), bytes.size()) == 0;
-#endif
 }
 
 std::ostream& operator<<(std::ostream& out, const UnguessableToken& token) {

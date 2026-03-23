@@ -5,8 +5,15 @@
 #ifndef CONTENT_PUBLIC_BROWSER_PRERENDER_HANDLE_H_
 #define CONTENT_PUBLIC_BROWSER_PRERENDER_HANDLE_H_
 
+#include <cstdint>
+#include <optional>
+
 #include "base/functional/callback_forward.h"
-#include "content/public/browser/preloading_data.h"
+#include "base/memory/weak_ptr.h"
+#include "content/public/browser/preloading.h"
+#include "net/http/http_no_vary_search_data.h"
+
+class GURL;
 
 namespace content {
 
@@ -22,6 +29,11 @@ class PrerenderHandle {
   // Returns the initial URL that is passed to PrerenderHostRegistry for
   // starting a prerendering page.
   virtual const GURL& GetInitialPrerenderingUrl() const = 0;
+
+  // Returns the No-Vary-Search hint specified on this prerendering attempt.
+  // https://wicg.github.io/nav-speculation/speculation-rules.html#speculation-rule-no-vary-search-hint
+  virtual const std::optional<net::HttpNoVarySearchData>& GetNoVarySearchHint()
+      const = 0;
 
   virtual base::WeakPtr<PrerenderHandle> GetWeakPtr() = 0;
   virtual void SetPreloadingAttemptFailureReason(

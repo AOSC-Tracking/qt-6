@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(
     "//absl:copts/configure_copts.bzl",
     "ABSL_DEFAULT_COPTS",
@@ -41,6 +44,7 @@ cc_library(
     deps = [
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:endian",
     ],
 )
 
@@ -55,7 +59,6 @@ cc_binary(
         "//absl/base:core_headers",
         "//absl/random",
         "@google_benchmark//:benchmark_main",
-        "@googletest//:gtest",
     ],
 )
 
@@ -114,8 +117,9 @@ cc_test(
     ],
 )
 
-cc_test(
+cc_binary(
     name = "int128_benchmark",
+    testonly = True,
     srcs = ["int128_benchmark.cc"],
     copts = ABSL_TEST_COPTS,
     linkopts = ABSL_DEFAULT_LINKOPTS,
@@ -123,8 +127,8 @@ cc_test(
     deps = [
         ":int128",
         "//absl/base:config",
+        "//absl/random",
         "@google_benchmark//:benchmark_main",
-        "@googletest//:gtest",
     ],
 )
 

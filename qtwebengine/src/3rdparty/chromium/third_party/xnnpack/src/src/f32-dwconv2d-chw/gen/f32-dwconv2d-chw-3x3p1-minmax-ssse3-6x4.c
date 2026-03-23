@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-dwconv2d-chw/3x3p1-ssse3.c.in
 //   Generator: tools/xngen
@@ -8,11 +9,15 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <tmmintrin.h>
 
-#include "xnnpack/dwconv.h"
-#include "xnnpack/math.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/dwconv.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
 
 
 void xnn_f32_dwconv2d_chw_ukernel_3x3p1__ssse3_6x4(
@@ -23,7 +28,7 @@ void xnn_f32_dwconv2d_chw_ukernel_3x3p1__ssse3_6x4(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_minmax_params* restrict params) XNN_OOB_READS
 {
   assert(input_height != 0);
   assert(input_width != 0);

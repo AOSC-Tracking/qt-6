@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 #include <tuple>
+#include <variant>
 
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram_functions.h"
@@ -242,8 +243,9 @@ bool IsValidSources(
           return false;
         }
         break;
-      case network::mojom::ServiceWorkerRouterSourceType::kRace:
-        if (!s.race_source) {
+      case network::mojom::ServiceWorkerRouterSourceType::
+          kRaceNetworkAndFetchEvent:
+        if (!s.race_network_and_fetch_event_source) {
           RecordSetupError(
               ServiceWorkerRouterEvaluatorErrorEnums::kInvalidSource);
           return false;
@@ -258,6 +260,13 @@ bool IsValidSources(
         break;
       case network::mojom::ServiceWorkerRouterSourceType::kCache:
         if (!s.cache_source) {
+          RecordSetupError(
+              ServiceWorkerRouterEvaluatorErrorEnums::kInvalidSource);
+          return false;
+        }
+        break;
+      case network::mojom::ServiceWorkerRouterSourceType::kRaceNetworkAndCache:
+        if (!s.race_network_and_cache_source) {
           RecordSetupError(
               ServiceWorkerRouterEvaluatorErrorEnums::kInvalidSource);
           return false;
@@ -577,20 +586,20 @@ class ConditionObject {
   }
   bool Match(const network::ResourceRequest& request,
              std::optional<blink::EmbeddedWorkerStatus> running_status) const {
-    return absl::visit(
+    return std::visit(
         [&request, running_status](const auto& condition) {
           return condition.Match(request, running_status);
         },
         value_);
   }
   bool need_running_status() const {
-    return absl::visit(
+    return std::visit(
         [](const auto& condition) { return condition.need_running_status(); },
         value_);
   }
 
  private:
-  absl::variant<BaseCondition, OrCondition, NotCondition> value_;
+  std::variant<BaseCondition, OrCondition, NotCondition> value_;
 };
 
 ServiceWorkerRouterEvaluatorErrorEnums OrCondition::Set(
@@ -732,9 +741,8 @@ void ServiceWorkerRouterEvaluator::Compile() {
           (s.type ==
            network::mojom::ServiceWorkerRouterSourceType::kFetchEvent);
       bool has_race_network_and_fetch_event =
-          (s.type == network::mojom::ServiceWorkerRouterSourceType::kRace &&
-           s.race_source->target == blink::ServiceWorkerRouterRaceSource::
-                                        TargetEnum::kNetworkAndFetchHandler);
+          (s.type == network::mojom::ServiceWorkerRouterSourceType::
+                         kRaceNetworkAndFetchEvent);
       require_fetch_handler_ |=
           (has_fetch_event | has_race_network_and_fetch_event);
       has_non_fetch_event_source_ |= !has_fetch_event;
@@ -794,10 +802,8 @@ base::Value ServiceWorkerRouterEvaluator::ToValue() const {
         case network::mojom::ServiceWorkerRouterSourceType::kNetwork:
           source.Append("network");
           break;
-        case network::mojom::ServiceWorkerRouterSourceType::kRace:
-          CHECK_EQ(s.race_source->target,
-                   blink::ServiceWorkerRouterRaceSource::TargetEnum::
-                       kNetworkAndFetchHandler);
+        case network::mojom::ServiceWorkerRouterSourceType::
+            kRaceNetworkAndFetchEvent:
           source.Append("race-network-and-fetch-handler");
           break;
         case network::mojom::ServiceWorkerRouterSourceType::kFetchEvent:
@@ -810,6 +816,18 @@ base::Value ServiceWorkerRouterEvaluator::ToValue() const {
             source.Append(std::move(out_s));
           } else {
             source.Append("cache");
+          }
+          break;
+        case network::mojom::ServiceWorkerRouterSourceType::
+            kRaceNetworkAndCache:
+          if (s.race_network_and_cache_source->cache_source.cache_name) {
+            base::Value::Dict out_s;
+            out_s.Set(
+                "race_network_and_cache_cache_name",
+                *s.race_network_and_cache_source->cache_source.cache_name);
+            source.Append(std::move(out_s));
+          } else {
+            source.Append("race-network-and-cache");
           }
           break;
       }

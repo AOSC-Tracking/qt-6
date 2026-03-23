@@ -1,13 +1,13 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 #ifndef QTGRAPHS_QPIEMODELMAPPER_H
 #define QTGRAPHS_QPIEMODELMAPPER_H
 
 #include <QtCore/qobject.h>
 #include <QtGraphs/qgraphsglobal.h>
 #include <QtQmlIntegration/qqmlintegration.h>
-Q_MOC_INCLUDE(<QtGraphs / qpieseries.h>)
-Q_MOC_INCLUDE(<QtCore / qabstractitemmodel.h>)
 
 QT_BEGIN_NAMESPACE
 

@@ -9,7 +9,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "chrome/browser/apps/link_capturing/link_capturing_feature_test_support.h"
-#include "chrome/browser/apps/link_capturing/link_capturing_features.h"
+#include "chrome/browser/web_applications/link_capturing_features.h"
 #include "chrome/browser/web_applications/mojom/user_display_mode.mojom-shared.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
 #include "chrome/browser/web_applications/test/web_app_test.h"
@@ -27,9 +27,9 @@
 #include "ui/webui/resources/cr_components/app_management/app_management.mojom.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
-#include "chrome/browser/apps/app_service/app_service_proxy.h"
-#include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
-#include "chrome/browser/apps/app_service/app_service_test.h"
+#include "chrome/browser/apps/app_service/app_service_proxy.h"  // nogncheck
+#include "chrome/browser/apps/app_service/app_service_proxy_factory.h"  // nogncheck
+#include "chrome/browser/apps/app_service/app_service_test.h"  // nogncheck
 #include "chrome/browser/ash/app_list/arc/arc_app_list_prefs.h"
 #include "chrome/browser/ash/app_list/arc/arc_app_test.h"
 #include "chrome/browser/ash/app_list/arc/arc_app_utils.h"

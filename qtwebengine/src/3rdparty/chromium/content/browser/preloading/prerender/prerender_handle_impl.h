@@ -23,12 +23,15 @@ class PrerenderHandleImpl final : public PrerenderHandle,
   PrerenderHandleImpl(
       base::WeakPtr<PrerenderHostRegistry> prerender_host_registry,
       FrameTreeNodeId frame_tree_node_id,
-      const GURL& url);
+      const GURL& url,
+      std::optional<net::HttpNoVarySearchData> no_vary_search_hint);
   ~PrerenderHandleImpl() override;
 
   // PrerenderHandle:
   int32_t GetHandleId() const override;
   const GURL& GetInitialPrerenderingUrl() const override;
+  const std::optional<net::HttpNoVarySearchData>& GetNoVarySearchHint()
+      const override;
   base::WeakPtr<PrerenderHandle> GetWeakPtr() override;
   void SetPreloadingAttemptFailureReason(
       PreloadingFailureReason reason) override;
@@ -39,6 +42,7 @@ class PrerenderHandleImpl final : public PrerenderHandle,
   // PrerenderHost::Observer:
   void OnActivated() override;
   void OnFailed(PrerenderFinalStatus status) override;
+  void OnHostReused() override;
 
   FrameTreeNodeId frame_tree_node_id_for_testing() const {
     return frame_tree_node_id_;
@@ -52,9 +56,10 @@ class PrerenderHandleImpl final : public PrerenderHandle,
   base::WeakPtr<PrerenderHostRegistry> prerender_host_registry_;
   // `frame_tree_node_id_` is the root FrameTreeNode id of the prerendered
   // page.
-  const FrameTreeNodeId frame_tree_node_id_;
+  FrameTreeNodeId frame_tree_node_id_;
 
   const GURL prerendering_url_;
+  const std::optional<net::HttpNoVarySearchData> no_vary_search_hint_;
 
   enum class State { kValid, kActivated, kCanceled };
   State state_ = State::kValid;

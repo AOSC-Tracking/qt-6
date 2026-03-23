@@ -15,7 +15,7 @@
 use crate::decoder::*;
 use crate::*;
 
-pub const MAX_AV1_LAYER_COUNT: usize = 4;
+use std::num::NonZeroU32;
 
 #[derive(Debug, Default)]
 pub struct DecodeSample {
@@ -65,15 +65,7 @@ impl DecodeSample {
 pub struct DecodeInput {
     pub samples: Vec<DecodeSample>,
     pub all_layers: bool,
-    pub category: Category,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Grid {
-    pub rows: u32,
-    pub columns: u32,
-    pub width: u32,
-    pub height: u32,
+    pub decoding_item: DecodingItem,
 }
 
 #[derive(Debug, Default)]
@@ -85,12 +77,52 @@ pub struct Overlay {
     pub vertical_offsets: Vec<i32>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum SampleTransformUnaryOp {
+    // Unary operators. L is the operand.
+    Negation, // S = -L
+    Absolute, // S = |L|
+    Not,      // S = ~L
+    BSR,      // S = L<=0 ? 0 : truncate(log2(L)) (Bit Scan Reverse)
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum SampleTransformBinaryOp {
+    Sum,        // S = L + R
+    Difference, // S = L - R
+    Product,    // S = L * R
+    Quotient,   // S = R==0 ? L : truncate(L / R)
+    And,        // S = L & R
+    Or,         // S = L | R
+    Xor,        // S = L ^ R
+    Pow,        // S = L==0 ? 0 : truncate(pow(L, R))
+    Min,        // S = L<=R ? L : R
+    Max,        // S = L<=R ? R : L
+}
+
+#[derive(Debug)]
+pub enum SampleTransformToken {
+    Constant(i64),
+    ImageItem(usize), // item_idx in source items
+    UnaryOp(SampleTransformUnaryOp),
+    BinaryOp(SampleTransformBinaryOp),
+}
+
 #[derive(Debug, Default)]
-pub struct TileInfo {
+pub struct SampleTransform {
+    pub bit_depth: u8,
+    pub num_inputs: usize, // Number of input images.
+    pub tokens: Vec<SampleTransformToken>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct TileInfo {
     pub tile_count: u32,
     pub decoded_tile_count: u32,
     pub grid: Grid,
     pub overlay: Overlay,
+    pub gainmap_metadata: GainMapMetadata,
+    pub sample_transform: SampleTransform,
 }
 
 impl TileInfo {
@@ -100,6 +132,14 @@ impl TileInfo {
 
     pub(crate) fn is_overlay(&self) -> bool {
         !self.overlay.horizontal_offsets.is_empty() && !self.overlay.vertical_offsets.is_empty()
+    }
+
+    pub(crate) fn is_sample_transform(&self) -> bool {
+        !self.sample_transform.tokens.is_empty()
+    }
+
+    pub(crate) fn is_derived_image(&self) -> bool {
+        self.is_grid() || self.is_overlay() || self.is_sample_transform()
     }
 
     pub(crate) fn grid_tile_count(&self) -> AvifResult<u32> {
@@ -143,7 +183,7 @@ impl Tile {
     pub(crate) fn create_from_item(
         item: &mut Item,
         allow_progressive: bool,
-        image_count_limit: u32,
+        image_count_limit: Option<NonZeroU32>,
         size_hint: u64,
     ) -> AvifResult<Tile> {
         if size_hint != 0 && item.size as u64 > size_hint {
@@ -239,10 +279,12 @@ impl Tile {
         } else if item.progressive && allow_progressive {
             // Progressive image. Decode all layers and expose them all to the
             // user.
-            if image_count_limit != 0 && layer_count as u32 > image_count_limit {
-                return Err(AvifError::BmffParseFailed(
-                    "exceeded image_count_limit (progressive)".into(),
-                ));
+            if let Some(limit) = image_count_limit {
+                if layer_count as u32 > limit.get() {
+                    return Err(AvifError::BmffParseFailed(
+                        "exceeded image_count_limit (progressive)".into(),
+                    ));
+                }
             }
             tile.input.all_layers = true;
             let mut offset = 0;
@@ -275,9 +317,9 @@ impl Tile {
 
     pub(crate) fn create_from_track(
         track: &Track,
-        mut image_count_limit: u32,
+        image_count_limit: Option<NonZeroU32>,
         size_hint: u64,
-        category: Category,
+        decoding_item: DecodingItem,
     ) -> AvifResult<Tile> {
         let properties = track
             .get_properties()
@@ -290,7 +332,7 @@ impl Tile {
             height: track.height,
             operating_point: 0, // No way to set operating point via tracks
             input: DecodeInput {
-                category,
+                decoding_item,
                 ..DecodeInput::default()
             },
             codec_config,
@@ -298,7 +340,8 @@ impl Tile {
         };
         let sample_table = &track.sample_table.unwrap_ref();
 
-        if image_count_limit != 0 {
+        if let Some(limit) = image_count_limit {
+            let mut limit = limit.get();
             for (chunk_index, _chunk_offset) in sample_table.chunk_offsets.iter().enumerate() {
                 // Figure out how many samples are in this chunk.
                 let sample_count = sample_table.get_sample_count_of_chunk(chunk_index as u32);
@@ -307,12 +350,12 @@ impl Tile {
                         "chunk with 0 samples found".into(),
                     ));
                 }
-                if sample_count > image_count_limit {
+                if sample_count > limit {
                     return Err(AvifError::BmffParseFailed(
                         "exceeded image_count_limit".into(),
                     ));
                 }
-                image_count_limit -= sample_count;
+                limit -= sample_count;
             }
         }
 
@@ -353,8 +396,7 @@ impl Tile {
             // sample_table.sync_samples is 1-based.
             if index == 0 || index > tile.input.samples.len() {
                 return Err(AvifError::BmffParseFailed(format!(
-                    "invalid sync sample number {}",
-                    index
+                    "invalid sync sample number {index}"
                 )));
             }
             tile.input.samples[index - 1].sync = true;

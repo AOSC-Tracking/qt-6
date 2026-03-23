@@ -1,6 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // Copyright (C) 2024 Jie Liu <liujie01@kylinos.cn>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwaylanddisplay_p.h"
 
@@ -32,7 +33,6 @@
 #include "qwaylandtextinputv3_p.h"
 #include "qwaylandinputcontext_p.h"
 #include "qwaylandinputmethodcontext_p.h"
-#include "qwaylandeventdispatcher_p.h"
 
 #include "qwaylandwindowmanagerintegration_p.h"
 #include "qwaylandshellintegration_p.h"
@@ -54,6 +54,7 @@
 #include <QtWaylandClient/private/qwayland-fractional-scale-v1.h>
 #include <QtWaylandClient/private/qwayland-viewporter.h>
 #include <QtWaylandClient/private/qwayland-cursor-shape-v1.h>
+#include <QtWaylandClient/private/qwayland-xx-session-management-v1.h>
 #include <QtWaylandClient/private/qwayland-xdg-system-bell-v1.h>
 #include <QtWaylandClient/private/qwayland-xdg-toplevel-drag-v1.h>
 #include <QtWaylandClient/private/qwayland-wlr-data-control-unstable-v1.h>
@@ -484,19 +485,24 @@ void QWaylandDisplay::reconnect()
 
     connect(
             this, &QWaylandDisplay::connected, this,
-            [&allPlatformWindows] {
+            [this, &allPlatformWindows] {
                 for (auto &window : std::as_const(allPlatformWindows)) {
-                    window->initializeWlSurface();
+                    window->initializeWlSurface(false);
+                }
+                forceRoundTrip(); // we need a roundtrip to receive the color space features the compositor supports
+                for (auto &window : std::as_const(allPlatformWindows)) {
+                    window->initializeColorSpace();
                 }
             },
             Qt::SingleShotConnection);
 
     setupConnection();
-    initialize();
 
     if (m_frameEventQueue)
         wl_event_queue_destroy(m_frameEventQueue);
     initEventThread();
+
+    initialize();
 
     auto needsRecreate = [](QPlatformWindow *window) {
         auto waylandWindow = static_cast<QWaylandWindow *>(window);
@@ -520,7 +526,6 @@ void QWaylandDisplay::reconnect()
 void QWaylandDisplay::flushRequests()
 {
     m_eventThread->readAndDispatchEvents();
-    QWindowSystemInterface::flushWindowSystemEvents(QWaylandEventDispatcher::eventDispatcher->flags());
 }
 
 // We have to wait until we have an eventDispatcher before creating the eventThread,
@@ -796,14 +801,20 @@ void QWaylandDisplay::registry_global(uint32_t id, const QString &interface, uin
             inputDevice->setDataControlDevice(mGlobals.dataControlManager->createDevice(inputDevice));
         }
 #endif
-    } else if (interface == QLatin1String(QtWayland::xx_color_manager_v4::interface()->name)) {
+    } else if (interface == QLatin1String(QtWayland::wp_color_manager_v1::interface()->name)) {
         mGlobals.colorManager = std::make_unique<ColorManager>(registry, id, 1);
-        // we need a roundtrip to receive the features the compositor supports
-        forceRoundTrip();
     } else if (interface == QLatin1String(QtWayland::wp_pointer_warp_v1::interface()->name)) {
         mGlobals.pointerWarp.reset(new WithDestructor<QtWayland::wp_pointer_warp_v1, wp_pointer_warp_v1_destroy>(
                 registry, id, 1));
     }
+#ifndef QT_NO_SESSIONMANAGER
+       else if (interface == QLatin1String(QtWayland::xx_session_manager_v1::interface()->name)
+               && qEnvironmentVariableIntValue("QT_WAYLAND_ENABLE_XX_SESSION_MANAGER") > 0) {
+        mGlobals.xxSessionManager.reset(
+                new WithDestructor<QtWayland::xx_session_manager_v1, xx_session_manager_v1_destroy>(
+                        registry, id, 1));
+    }
+#endif
 
 
     mRegistryGlobals.append(RegistryGlobal(id, interface, version, registry));

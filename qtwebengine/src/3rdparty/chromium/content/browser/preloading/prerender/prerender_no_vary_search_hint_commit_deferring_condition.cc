@@ -8,7 +8,6 @@
 #include <optional>
 
 #include "base/check.h"
-#include "base/feature_list.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
@@ -43,11 +42,6 @@ PrerenderNoVarySearchHintCommitDeferringCondition::MaybeCreate(
     NavigationRequest& navigation_request,
     NavigationType navigation_type,
     std::optional<FrameTreeNodeId> candidate_prerender_frame_tree_node_id) {
-  // Don't create if No-Vary-Search support for prerender is not enabled.
-  if (!base::FeatureList::IsEnabled(blink::features::kPrerender2NoVarySearch)) {
-    return nullptr;
-  }
-
   // Don't create if this navigation is not for prerender page activation.
   if (navigation_type != NavigationType::kPrerenderedPageActivation) {
     return nullptr;
@@ -102,8 +96,8 @@ PrerenderNoVarySearchHintCommitDeferringCondition::
   if (waiting_on_headers_) {
     waiting_on_headers_ = false;
     prerender_host.OnWaitingForHeadersFinished(
-        GetNavigationHandle(), PrerenderHost::WaitingForHeadersFinishedReason::
-                                   kMaybeNavigationCancelled);
+        PrerenderHost::WaitingForHeadersFinishedReason::
+            kMaybeNavigationCancelled);
   }
 }
 
@@ -114,7 +108,6 @@ PrerenderNoVarySearchHintCommitDeferringCondition::
     : CommitDeferringCondition(navigation_request),
       candidate_prerender_frame_tree_node_id_(
           candidate_prerender_frame_tree_node_id) {
-  CHECK(base::FeatureList::IsEnabled(blink::features::kPrerender2NoVarySearch));
   CHECK(candidate_prerender_frame_tree_node_id_);
   FrameTreeNode* prerender_frame_tree_node =
       GetRootPrerenderFrameTreeNodePNVSHCDC(candidate_prerender_frame_tree_node_id_);
@@ -184,7 +177,8 @@ PrerenderNoVarySearchHintCommitDeferringCondition::TraceEventName() const {
   return "PrerenderNoVarySearchHintCommitDeferringCondition";
 }
 
-void PrerenderNoVarySearchHintCommitDeferringCondition::OnHeadersReceived() {
+void PrerenderNoVarySearchHintCommitDeferringCondition::OnHeadersReceived(
+    NavigationHandle& navigation_handle) {
   // Verify all conditions are met:
   // * headers should have been received and
   // * the prerender_frame_tree_node is still alive.
@@ -206,9 +200,11 @@ void PrerenderNoVarySearchHintCommitDeferringCondition::OnHeadersReceived() {
   if (waiting_on_headers_) {
     waiting_on_headers_ = false;
 
+    auto* navigation_request = NavigationRequest::From(&navigation_handle);
+
     // Determine the finished reason.
     using FinishedReason = PrerenderHost::WaitingForHeadersFinishedReason;
-    std::optional<FinishedReason> reason;
+    FinishedReason reason = FinishedReason::kUnknownFailure;
     if (prerender_host.no_vary_search_parse_error().has_value()) {
       using ParseError = network::mojom::NoVarySearchParseError;
       switch (prerender_host.no_vary_search_parse_error().value()) {
@@ -241,9 +237,10 @@ void PrerenderNoVarySearchHintCommitDeferringCondition::OnHeadersReceived() {
       } else {
         reason = FinishedReason::kNoVarySearchHeaderReceivedButNotMatched;
       }
+    } else if (navigation_request->DidEncounterError()) {
+      reason = FinishedReason::kPrerenderNavigationFailed;
     }
-    CHECK(reason.has_value());
-    prerender_host.OnWaitingForHeadersFinished(GetNavigationHandle(), *reason);
+    prerender_host.OnWaitingForHeadersFinished(reason);
   }
 
   // We don't need the timer anymore.
@@ -275,7 +272,6 @@ void PrerenderNoVarySearchHintCommitDeferringCondition::OnHostDestroyed(
       // the associated prerender's headers.
       waiting_on_headers_ = false;
       prerender_host.OnWaitingForHeadersFinished(
-          GetNavigationHandle(),
           PrerenderHost::WaitingForHeadersFinishedReason::kHostDestroyed);
     }
   } else {
@@ -308,7 +304,6 @@ void PrerenderNoVarySearchHintCommitDeferringCondition::
     // Let the `prerender_host` know that this navigation is done waiting on the
     // associated prerender's headers.
     prerender_host.OnWaitingForHeadersFinished(
-        GetNavigationHandle(),
         PrerenderHost::WaitingForHeadersFinishedReason::kTimeoutElapsed);
   }
 

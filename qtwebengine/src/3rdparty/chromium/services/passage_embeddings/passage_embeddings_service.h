@@ -32,6 +32,9 @@ class PassageEmbeddingsService : public mojom::PassageEmbeddingsService {
   mojo::Receiver<mojom::PassageEmbeddingsService> receiver_;
 
 #if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
+  // Called when the embedder remote disconnects.
+  void OnEmbedderDisconnect();
+
   std::unique_ptr<PassageEmbedder> embedder_;
 #endif
 };

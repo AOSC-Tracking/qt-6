@@ -1,10 +1,14 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtCore/QPointF>
 #include "QSplineSeries"
 #include "private/qsplinecontrolanimation_p.h"
 #include "private/qsplineseries_p.h"
+
+QT_BEGIN_NAMESPACE
 
 /*!
     \qmltype SplineControlAnimation
@@ -135,3 +139,7 @@ void QSplineControlAnimation::valueUpdated(const QVariant &value)
 
     emit series->update();
 }
+
+QT_END_NAMESPACE
+
+#include "moc_qsplinecontrolanimation_p.cpp"

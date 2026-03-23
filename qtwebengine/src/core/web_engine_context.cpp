@@ -1,11 +1,10 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "web_engine_context.h"
 
-#include <map>
 #include <math.h>
-#include <QtGui/private/qrhi_p.h>
 
 #include "base/base_switches.h"
 #include "base/functional/bind.h"
@@ -23,7 +22,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "content/common/features.h"
 #include "content/common/process_visibility_tracker.h"
-#include "content/gpu/gpu_child_thread.h"
+#include "content/browser/memory_coordinator/browser_memory_consumer_registry.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/compositor/viz_process_transport_factory.h"
 #include "components/viz/host/host_frame_sink_manager.h"
@@ -44,7 +43,7 @@
 #include "content/browser/scheduler/browser_task_executor.h"
 #include "content/browser/startup_data_impl.h"
 #include "content/browser/startup_helper.h"
-#include "content/browser/utility_process_host.h"
+#include "content/browser/service_host/utility_process_host.h"
 #include "content/gpu/in_process_gpu_thread.h"
 #include "content/browser/tracing/memory_instrumentation_util.h"
 #include "content/public/app/content_main.h"
@@ -52,9 +51,6 @@
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
-#if QT_CONFIG(webengine_pepper_plugins)
-#include "content/public/browser/plugin_service.h"
-#endif
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_features.h"
@@ -73,12 +69,13 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/public/mojom/network_context.mojom.h"
+#include "services/tracing/public/cpp/perfetto/perfetto_traced_process.h"
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "services/tracing/public/cpp/tracing_features.h"
 #include "third_party/blink/public/common/features.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/events/event_switches.h"
-#include "ui/native_theme/native_theme_features.h"
+#include "ui/native_theme/features/native_theme_features.h"
 #include "ui/gl/gl_utils.h"
 #include "ui/gl/gl_switches.h"
 #include "url/url_features.h"
@@ -102,6 +99,7 @@
 #include "media_capture_devices_dispatcher.h"
 #include "net/webui_controller_factory_qt.h"
 #include "profile_adapter.h"
+#include "rhi_gpu_info.h"
 #include "type_conversion.h"
 #include "web_engine_library_info.h"
 
@@ -114,16 +112,11 @@
 #include <QNetworkProxy>
 #include <QtGui/qpa/qplatformintegration.h>
 #include <QtGui/private/qguiapplication_p.h>
-#include <QtQuick/private/qsgrhisupport_p.h>
 #include <QLoggingCategory>
 
-#if QT_CONFIG(opengl)
-#include <QOffscreenSurface>
-
-#if BUILDFLAG(IS_OZONE)
+#if QT_CONFIG(opengl) && BUILDFLAG(IS_OZONE)
 #include "ozone/ozone_util_qt.h"
-#endif // BUILDFLAG(IS_OZONE)
-#endif // QT_CONFIG(opengl)
+#endif // QT_CONFIG(opengl) && BUILDFLAG(IS_OZONE)
 
 #define STRINGIFY_LITERAL(x) #x
 #define STRINGIFY_EXPANDED(x) STRINGIFY_LITERAL(x)
@@ -133,226 +126,6 @@ using namespace Qt::StringLiterals;
 namespace QtWebEngineCore {
 
 Q_WEBENGINE_LOGGING_CATEGORY(webEngineContextLog, "qt.webenginecontext")
-
-class GPUInfo
-{
-public:
-    enum Vendor {
-        Unknown = -1,
-
-        // PCI-SIG-registered vendors
-        AMD,
-        Apple,
-        ARM,
-        Google,
-        ImgTec,
-        Intel,
-        Microsoft,
-        Nvidia,
-        Qualcomm,
-        Samsung,
-        Broadcom,
-        VMware,
-        VirtIO,
-
-        // Khronos-registered vendors
-        Vivante,
-        VeriSilicon,
-        Kazan,
-        CodePlay,
-        Mesa,
-        PoCL,
-    };
-
-    static GPUInfo *instance()
-    {
-        static GPUInfo instance;
-        return &instance;
-    }
-
-    static Vendor vendorIdToVendor(quint64 vendorId)
-    {
-        // clang-format off
-        // Based on //third_party/angle/src/gpu_info_util/SystemInfo.h
-        static const std::map<quint64, Vendor> vendorIdMap = {
-            {0x0, Unknown},
-            {0x1002, AMD},
-            {0x106B, Apple},
-            {0x13B5, ARM},
-            {0x1AE0, Google},
-            {0x1010, ImgTec},
-            {0x8086, Intel},
-            {0x1414, Microsoft},
-            {0x10DE, Nvidia},
-            {0x5143, Qualcomm},
-            {0x144D, Samsung},
-            {0x14E4, Broadcom},
-            {0x15AD, VMware},
-            {0x1AF4, VirtIO},
-            {0x10001, Vivante},
-            {0x10002, VeriSilicon},
-            {0x10003, Kazan},
-            {0x10004, CodePlay},
-            {0x10005, Mesa},
-            {0x10006, PoCL},
-        };
-        // clang-format on
-
-        auto it = vendorIdMap.find(vendorId);
-        if (it != vendorIdMap.end())
-            return it->second;
-
-        qWarning("Unknown Vendor ID: 0x%llx", vendorId);
-        return Unknown;
-    }
-
-    static Vendor deviceNameToVendor(QLatin1StringView deviceName)
-    {
-        // TODO: Test and add more vendors to the list.
-        if (deviceName.contains("AMD"_L1, Qt::CaseInsensitive))
-            return AMD;
-        if (deviceName.contains("Intel"_L1, Qt::CaseInsensitive))
-            return Intel;
-        if (deviceName.contains("Nvidia"_L1, Qt::CaseInsensitive))
-            return Nvidia;
-        if (deviceName.contains("VMware"_L1, Qt::CaseInsensitive))
-            return VMware;
-
-#if BUILDFLAG(IS_OZONE)
-        if (deviceName.contains("Mesa llvmpipe"_L1))
-            return Mesa;
-#endif
-
-#if defined(Q_OS_MACOS)
-        if (deviceName.contains("Apple"_L1))
-            return Apple;
-#endif
-
-        return Unknown;
-    }
-
-    static std::string vendorToString(Vendor vendor)
-    {
-        // clang-format off
-        static const std::map<Vendor, std::string> vendorNameMap = {
-            {Unknown, "Unknown"},
-            {AMD, "AMD"},
-            {Apple, "Apple"},
-            {ARM, "ARM"},
-            {Google, "Google"},
-            {ImgTec, "Img Tec"},
-            {Intel, "Intel"},
-            {Microsoft, "Microsoft"},
-            {Nvidia, "Nvidia"},
-            {Qualcomm, "Qualcomm"},
-            {Samsung, "Samsung"},
-            {Broadcom, "Broadcom"},
-            {VMware, "VMware"},
-            {VirtIO, "VirtIO"},
-            {Vivante, "Vivante"},
-            {VeriSilicon, "VeriSilicon"},
-            {Kazan, "Kazan"},
-            {CodePlay, "CodePlay"},
-            {Mesa, "Mesa"},
-            {PoCL, "PoCL"},
-        };
-        // clang-format on
-
-        auto it = vendorNameMap.find(vendor);
-        if (it != vendorNameMap.end())
-            return it->second;
-
-        Q_UNREACHABLE_RETURN("Unknown");
-    }
-
-    Vendor vendor() const { return m_vendor; }
-    QString deviceName() const { return m_deviceName; }
-    QString getAdapterLuid() const { return m_adapterLuid; }
-
-private:
-    GPUInfo()
-    {
-#if defined(Q_OS_WIN)
-        {
-            static const bool preferSoftwareDevice =
-                    qEnvironmentVariableIntValue("QSG_RHI_PREFER_SOFTWARE_RENDERER");
-            QRhiD3D11InitParams params;
-            QRhi::Flags flags;
-            if (preferSoftwareDevice) {
-                flags |= QRhi::PreferSoftwareRenderer;
-            }
-            QScopedPointer<QRhi> d3d11Rhi(QRhi::create(QRhi::D3D11, &params, flags, nullptr));
-            // mimic what QSGRhiSupport and QBackingStoreRhi does
-            if (!d3d11Rhi && !preferSoftwareDevice) {
-                flags |= QRhi::PreferSoftwareRenderer;
-                d3d11Rhi.reset(QRhi::create(QRhi::D3D11, &params, flags, nullptr));
-            }
-            if (d3d11Rhi) {
-                m_vendor = vendorIdToVendor(d3d11Rhi->driverInfo().vendorId);
-                m_deviceName = QString::fromUtf8(d3d11Rhi->driverInfo().deviceName);
-
-                const QRhiD3D11NativeHandles *handles =
-                        static_cast<const QRhiD3D11NativeHandles *>(d3d11Rhi->nativeHandles());
-                Q_ASSERT(handles);
-                m_adapterLuid = QString::number(handles->adapterLuidHigh) % QLatin1Char(',')
-                        % QString::number(handles->adapterLuidLow);
-            }
-        }
-#elif defined(Q_OS_MACOS)
-        {
-            QRhiMetalInitParams params;
-            QScopedPointer<QRhi> metalRhi(
-                    QRhi::create(QRhi::Metal, &params, QRhi::Flags(), nullptr));
-            if (metalRhi) {
-                m_vendor = deviceNameToVendor(QLatin1StringView(metalRhi->driverInfo().deviceName));
-                m_deviceName = QString::fromUtf8(metalRhi->driverInfo().deviceName);
-            }
-        }
-#endif
-
-#if QT_CONFIG(opengl)
-        if (m_vendor == Unknown) {
-            QRhiGles2InitParams params;
-            params.fallbackSurface = QRhiGles2InitParams::newFallbackSurface();
-            QScopedPointer<QRhi> glRhi(
-                    QRhi::create(QRhi::OpenGLES2, &params, QRhi::Flags(), nullptr));
-            if (glRhi) {
-                m_vendor = deviceNameToVendor(QLatin1StringView(glRhi->driverInfo().deviceName));
-                m_deviceName = QString::fromUtf8(glRhi->driverInfo().deviceName);
-            }
-        }
-#endif
-
-#if QT_CONFIG(webengine_vulkan)
-        if (m_vendor == Unknown) {
-            QVulkanInstance vulkanInstance;
-            vulkanInstance.setApiVersion(QVersionNumber(1, 1));
-            if (vulkanInstance.create()) {
-                QRhiVulkanInitParams params;
-                params.inst = &vulkanInstance;
-                QScopedPointer<QRhi> vulkanRhi(
-                        QRhi::create(QRhi::Vulkan, &params, QRhi::Flags(), nullptr));
-                if (vulkanRhi) {
-                    // TODO: The primary GPU is not necessarily the one which is connected to the
-                    // display in case of a Multi-GPU setup on Linux. This can be workarounded by
-                    // installing the Mesa's Device Selection Layer,
-                    // see https://www.phoronix.com/news/Mesa-20.1-Vulkan-Dev-Selection
-                    // Try to detect this case and at least warn about it.
-                    m_vendor = vendorIdToVendor(vulkanRhi->driverInfo().vendorId);
-                    m_deviceName = QString::fromUtf8(vulkanRhi->driverInfo().deviceName);
-                }
-            }
-        }
-#endif
-
-        if (m_vendor == Unknown)
-            qWarning("Unable to detect GPU vendor.");
-    }
-
-    Vendor m_vendor = Unknown;
-    QString m_deviceName;
-    QString m_adapterLuid;
-};
 
 static bool isFeatureEnabled(const std::string &feature, const base::CommandLine &commandLine)
 {
@@ -452,12 +225,6 @@ static std::string getANGLEType(const base::CommandLine &cmd)
     return "disabled";
 }
 
-#if QT_CONFIG(webengine_pepper_plugins)
-void dummyGetPluginCallback(const std::vector<content::WebPluginInfo>&)
-{
-}
-#endif
-
 static void logContext(const base::CommandLine &cmd)
 {
     if (Q_UNLIKELY(webEngineContextLog().isDebugEnabled())) {
@@ -469,19 +236,19 @@ static void logContext(const base::CommandLine &cmd)
         log += "Chromium Vulkan Backend: "_L1 + QLatin1StringView(getVulkanType(cmd)) + u'\n';
         log += u'\n';
 
-        log += "QSG RHI Backend: "_L1 + QSGRhiSupport::instance()->rhiBackendName() + u'\n';
+        log += "QSG RHI Backend: "_L1 + RhiGpuInfo::instance()->backendName() + u'\n';
         log += "QSG RHI Backend Supported: "_L1 + (usingSupportedSGBackend() ? "yes"_L1 : "no"_L1)
                 + u'\n';
-        log += "QSG RHI Device: "_L1 + GPUInfo::instance()->deviceName() + u'\n';
-        log += "QSG RHI GPU Vendor: "_L1
-                + QLatin1StringView(GPUInfo::vendorToString(GPUInfo::instance()->vendor())) + u'\n';
+        log += "QSG RHI Device: "_L1 + RhiGpuInfo::instance()->deviceName() + u'\n';
+        log += "QSG RHI GPU Vendor: "_L1 + RhiGpuInfo::instance()->vendorName() + u'\n';
         log += u'\n';
 
 #if QT_CONFIG(opengl)
 #if BUILDFLAG(IS_OZONE)
         log += "Using GLX: "_L1 + (OzoneUtilQt::usingGLX() ? "yes"_L1 : "no"_L1) + u'\n';
         log += "Using EGL: "_L1 + (OzoneUtilQt::usingEGL() ? "yes"_L1 : "no"_L1) + u'\n';
-        log += "Using GBM: "_L1 + (WebEngineContext::isGbmSupported() ? "yes"_L1 : "no"_L1) + u'\n';
+        log += "Using GBM: "_L1 + (RhiGpuInfo::instance()->isGbmSupported() ? "yes"_L1 : "no"_L1)
+                + u'\n';
 #endif // BUILDFLAG(IS_OZONE)
         log += "Using Shared GL: "_L1 + (QOpenGLContext::globalShareContext() ? "yes"_L1 : "no"_L1)
                 + u'\n';
@@ -522,23 +289,6 @@ static void setupProxyPac(base::CommandLine &commandLine)
             }
         }
     }
-}
-
-static void cleanupVizProcess()
-{
-    auto gpuChildThread = content::GpuChildThread::instance();
-    if (!gpuChildThread)
-        return;
-    content::GetHostFrameSinkManager()->SetConnectionLostCallback(base::DoNothing());
-    auto factory = static_cast<content::VizProcessTransportFactory*>(content::ImageTransportFactory::GetInstance());
-    factory->PrepareForShutDown();
-
-    // Wait for viz destroy tasks to be completed on the GPU thread.
-    base::WaitableEvent event(base::WaitableEvent::ResetPolicy::MANUAL,
-                              base::WaitableEvent::InitialState::NOT_SIGNALED);
-    gpuChildThread->main_thread_runner()->PostTask(
-            FROM_HERE, base::BindOnce([](base::WaitableEvent *event) { event->Signal(); }, &event));
-    event.Wait();
 }
 
 static QStringList parseEnvCommandLine(const QString &cmdLine)
@@ -626,7 +376,7 @@ void WebEngineContext::addProfileAdapter(ProfileAdapter *profileAdapter)
     if (content::RenderProcessHost::run_renderer_in_process()){
         if (!m_profileAdapters.isEmpty())
             qFatal("Single mode supports only single profile.");
-        // there is only one profle therefore make it 'default'
+        // there is only one profile therefore make it 'default'
         m_defaultProfileAdapter.reset(profileAdapter);
     }
     m_profileAdapters.append(profileAdapter);
@@ -653,8 +403,22 @@ void WebEngineContext::destroy()
 
     // Normally the GPU thread is shut down when the GpuProcessHost is destroyed
     // on IO thread (triggered by ~BrowserMainRunner). But by that time the UI
-    // task runner is not working anymore so we need to do this earlier.
-    cleanupVizProcess();
+    // task runner is not working anymore so we need to clean Viz up earlier.
+    if (m_mainDelegate->gpuClient() && m_mainDelegate->gpuClient()->gpuTaskRunner()) {
+        content::GetHostFrameSinkManager()->SetConnectionLostCallback(base::DoNothing());
+        auto factory = static_cast<content::VizProcessTransportFactory *>(
+                content::ImageTransportFactory::GetInstance());
+        factory->PrepareForShutDown();
+
+        // Wait for viz destroy tasks to be completed on the GPU thread.
+        base::WaitableEvent event(base::WaitableEvent::ResetPolicy::MANUAL,
+                                  base::WaitableEvent::InitialState::NOT_SIGNALED);
+        m_mainDelegate->gpuClient()->gpuTaskRunner()->PostTask(
+                FROM_HERE,
+                base::BindOnce([](base::WaitableEvent *event) { event->Signal(); }, &event));
+        event.Wait();
+    }
+
     // Flush the UI message loop before quitting.
     flushMessages();
 
@@ -665,7 +429,7 @@ void WebEngineContext::destroy()
 
     // Delete the global object and thus custom profiles
     // In case of single process ~RenderProcessHostImpl (there is only one instance)
-    // is called expliclty by BrowserMainLoop::ShutdownThreadsAndCleanUp and requires browser context.
+    // is called explicitly by BrowserMainLoop::ShutdownThreadsAndCleanUp and requires browser context.
     // therefore delete browser context on PostMainMessageLoopRun.
     if (!content::RenderProcessHost::run_renderer_in_process()) {
         m_defaultProfileAdapter.reset();
@@ -677,7 +441,7 @@ void WebEngineContext::destroy()
     }
 
     // Handle any events posted by browser-context shutdown.
-    // This should deliver all nessesery calls of DeleteSoon from PostTask
+    // This should deliver all necessary calls of DeleteSoon from PostTask
     flushMessages();
 
     m_devtoolsServer.reset();
@@ -778,6 +542,10 @@ ProxyAuthentication WebEngineContext::qProxyNetworkAuthentication(QString host, 
 
 const static char kChromiumFlagsEnv[] = "QTWEBENGINE_CHROMIUM_FLAGS";
 const static char kDisableSandboxEnv[] = "QTWEBENGINE_DISABLE_SANDBOX";
+
+bool ShouldAllowSystemTracingConsumer() {
+    return false;
+}
 
 static void initializeFeatureList(base::CommandLine &commandLine,
                                   std::vector<std::string> enableFeatures,
@@ -908,10 +676,12 @@ WebEngineContext::WebEngineContext()
     disableFeatures.push_back(features::kWebOTP.name);
     disableFeatures.push_back(features::kWebPayments.name);
     disableFeatures.push_back(features::kWebUsb.name);
-
-    // Currently causing more issues than it fixes.
-    // Probably will be removed in 134, tst_origins should be updated in this case.
-    disableFeatures.push_back(url::kStandardCompliantNonSpecialSchemeURLParsing.name);
+#if defined(Q_OS_MACOS)
+    // Skia Graphite is enabled by default on macOS, but we do not yet support Dawn
+    // (or any) Graphite backend. This currently breaks hardware rendering.
+    // TODO: Re-enable once we support Dawn on macOS.
+    disableFeatures.push_back(features::kSkiaGraphite.name);
+#endif
 
     if (useEmbeddedSwitches) {
         // embedded switches are based on the switches for Android, see content/browser/android/content_startup_flags.cc
@@ -922,7 +692,7 @@ WebEngineContext::WebEngineContext()
     }
 
 #if BUILDFLAG(IS_OZONE)
-    if (!isGbmSupported()) {
+    if (!RhiGpuInfo::instance()->isGbmSupported()) {
         disableFeatures.push_back(media::kAcceleratedVideoDecodeLinux.name);
         parsedCommandLine.AppendSwitch(switches::kDisableGpuMemoryBufferVideoFrames);
     }
@@ -950,19 +720,28 @@ WebEngineContext::WebEngineContext()
             qWarning("--use-gl=%s is set with --disable-gpu. Expect troubles!", glType.c_str());
     }
 
-#if BUILDFLAG(IS_OZONE) && QT_CONFIG(webengine_vulkan)
+#if BUILDFLAG(IS_OZONE)
     if (QQuickWindow::graphicsApi() == QSGRendererInterface::OpenGL && usingSupportedSGBackend()) {
         const bool disableGpu = parsedCommandLine.HasSwitch(switches::kDisableGpu);
         const bool usingVulkan = isFeatureEnabled(features::kVulkan.name, parsedCommandLine);
-        if (!disableGpu && !usingVulkan && !isGbmSupported()) {
-            qWarning("GBM is not supported with the current configuration. "
-                     "Fallback to Vulkan rendering in Chromium.");
-            parsedCommandLine.AppendSwitchASCII(switches::kUseVulkan,
-                                                switches::kVulkanImplementationNameNative);
-            enableFeatures.push_back(features::kVulkan.name);
+        if (!disableGpu && !usingVulkan && !RhiGpuInfo::instance()->isGbmSupported()) {
+#if QT_CONFIG(webengine_vulkan)
+            if (RhiGpuInfo::isVulkanSupported()) {
+                qWarning("GBM is not supported with the current configuration. "
+                         "Fallback to Vulkan rendering in Chromium.");
+                parsedCommandLine.AppendSwitchASCII(switches::kUseVulkan,
+                                                    switches::kVulkanImplementationNameNative);
+                enableFeatures.push_back(features::kVulkan.name);
+            } else
+#endif
+            {
+                qWarning("GBM is not supported with the current configuration and Vulkan is not "
+                         "available. Fallback to software rendering.");
+                parsedCommandLine.AppendSwitch(switches::kDisableGpu);
+            }
         }
     }
-
+#if QT_CONFIG(webengine_vulkan)
     if (QQuickWindow::graphicsApi() == QSGRendererInterface::Vulkan && usingSupportedSGBackend()) {
         // TODO: Try not to force Chromium's Vulkan backend on Linux.
         //       Currently we force it because OzoneImageBackingFactory does not support to create
@@ -992,12 +771,13 @@ WebEngineContext::WebEngineContext()
             qputenv(deviceExtensionsVar, requiredDeviceExtensions.join(';'));
         }
     }
-#endif // BUILDFLAG(IS_OZONE) && QT_CONFIG(webengine_vulkan)
+#endif // QT_CONFIG(webengine_vulkan)
+#endif // BUILDFLAG(IS_OZONE)
 
 #if defined(Q_OS_WIN)
     if (QQuickWindow::graphicsApi() == QSGRendererInterface::Direct3D11
         || QQuickWindow::graphicsApi() == QSGRendererInterface::Vulkan) {
-        const QString luid = GPUInfo::instance()->getAdapterLuid();
+        const QString luid = RhiGpuInfo::instance()->getAdapterLuid();
         if (!luid.isEmpty())
             parsedCommandLine.AppendSwitchASCII(switches::kUseAdapterLuid, luid.toStdString());
     }
@@ -1035,6 +815,9 @@ WebEngineContext::WebEngineContext()
     mojo::core::Init(mojoConfiguration);
 
     // This block mirrors ContentMainRunnerImpl::RunBrowser():
+
+    m_browserMemoryConsumerRegistry =
+            std::make_unique<base::ScopedMemoryConsumerRegistry<content::BrowserMemoryConsumerRegistry>>();
     m_mainDelegate->PreBrowserMain();
     base::MessagePump::OverrideMessagePumpForUIFactory(messagePumpFactory);
     content::BrowserTaskExecutor::Create();
@@ -1045,7 +828,9 @@ WebEngineContext::WebEngineContext()
     }
     m_mainDelegate->PostEarlyInitialization({});
     content::StartBrowserThreadPool();
-    tracing::InitTracingPostThreadPoolStartAndFeatureList(false);
+    tracing::InitTracingPostFeatureList(/*enable_consumer=*/true, /*will_trace_thread_restart=*/false);
+    tracing::PerfettoTracedProcess::Get().SetAllowSystemTracingConsumerCallback(
+            base::BindRepeating(&ShouldAllowSystemTracingConsumer));
     base::PowerMonitor::GetInstance()->Initialize(MakePowerMonitorDeviceSource());
     content::ProcessVisibilityTracker::GetInstance();
     m_discardableSharedMemoryManager = std::make_unique<discardable_memory::DiscardableSharedMemoryManager>();
@@ -1076,16 +861,6 @@ WebEngineContext::WebEngineContext()
 
 #if defined(Q_OS_LINUX)
     media::AudioManager::SetGlobalAppName(QCoreApplication::applicationName().toStdString());
-#endif
-
-#if QT_CONFIG(webengine_pepper_plugins)
-    // Creating pepper plugins from the page (which calls PluginService::GetPluginInfoArray)
-    // might fail unless the page queried the list of available plugins at least once
-    // (which ends up calling PluginService::GetPlugins). Since the plugins list can only
-    // be created from the FILE thread, and that GetPluginInfoArray is synchronous, it
-    // can't loads plugins synchronously from the IO thread to serve the render process' request
-    // and we need to make sure that it happened beforehand.
-    content::PluginService::GetInstance()->GetPlugins(base::BindOnce(&dummyGetPluginCallback));
 #endif
 
 #if QT_CONFIG(webengine_printing_and_pdf)
@@ -1175,46 +950,6 @@ bool WebEngineContext::closingDown()
     return m_closingDown;
 }
 
-#if BUILDFLAG(IS_OZONE)
-bool WebEngineContext::isGbmSupported()
-{
-    static bool supported = []() {
-        const static char kForceGbmEnv[] = "QTWEBENGINE_FORCE_USE_GBM";
-        if (Q_UNLIKELY(qEnvironmentVariableIsSet(kForceGbmEnv))) {
-            qWarning("%s environment variable is set and it is for debugging purposes only.",
-                     kForceGbmEnv);
-            bool ok;
-            int forceGbm = qEnvironmentVariableIntValue(kForceGbmEnv, &ok);
-            if (ok) {
-                qWarning("GBM support is force %s.", forceGbm != 0 ? "enabled" : "disabled");
-                return (forceGbm != 0);
-            }
-
-            qWarning("Ignoring invalid value of %s and do not force GBM. "
-                     "Use 0 to force disable or 1 to force enable.",
-                     kForceGbmEnv);
-        }
-
-        if (GPUInfo::instance()->vendor() == GPUInfo::Nvidia) {
-            // FIXME: This disables GBM for Nvidia. Remove this when Nvidia fixes its GBM support.
-            //
-            // "Buffer allocation and submission to DRM KMS using gbm is not currently supported."
-            // See: https://download.nvidia.com/XFree86/Linux-x86_64/570.86.16/README/kms.html"
-            //
-            // Chromium uses GBM to allocate scanout buffers. Scanout requires DRM KMS. If KMS is
-            // enabled, gbm_device and gbm_buffer are created without any issues but rendering to
-            // the buffer will malfunction. It is not known how to detect this problem before
-            // rendering so we just disable GBM for Nvidia.
-            return false;
-        }
-
-        return true;
-    }();
-
-    return supported;
-}
-#endif
-
 void WebEngineContext::registerMainThreadFactories()
 {
     content::UtilityProcessHost::RegisterUtilityMainThreadFactory(content::CreateInProcessUtilityThread);
@@ -1242,7 +977,7 @@ const char *qWebEngineChromiumVersion() noexcept
 
 const char *qWebEngineChromiumSecurityPatchVersion() noexcept
 {
-    return "140.0.7339.207"; // FIXME: Remember to update
+    return "146.0.7680.80"; // FIXME: Remember to update
 }
 
 QT_END_NAMESPACE

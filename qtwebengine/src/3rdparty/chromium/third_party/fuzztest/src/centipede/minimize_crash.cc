@@ -38,7 +38,7 @@
 #include "./common/hash.h"
 #include "./common/logging.h"  // IWYU pragma: keep
 
-namespace centipede {
+namespace fuzztest::internal {
 
 // Work queue for the minimizer.
 // Thread-safe.
@@ -115,9 +115,8 @@ static void MinimizeCrash(const Environment &env,
     // discarding all inputs that are too large.
     // TODO(kcc): modify the Mutate() interface such that max_len can be passed.
     //
-    std::vector<ByteArray> mutants;
-    callbacks->Mutate(GetMutationInputRefsFromDataInputs(recent_crashers),
-                      env.batch_size, mutants);
+    const std::vector<ByteArray> mutants = callbacks->Mutate(
+        GetMutationInputRefsFromDataInputs(recent_crashers), env.batch_size);
     std::vector<ByteArray> smaller_mutants;
     for (const auto &m : mutants) {
       if (m.size() < min_known_size) smaller_mutants.push_back(m);
@@ -167,4 +166,4 @@ int MinimizeCrash(ByteSpan crashy_input, const Environment &env,
   return queue.SmallerCrashesFound() ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
-}  // namespace centipede
+}  // namespace fuzztest::internal

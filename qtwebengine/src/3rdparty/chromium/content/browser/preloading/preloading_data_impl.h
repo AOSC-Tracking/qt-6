@@ -72,7 +72,6 @@ class CONTENT_EXPORT PreloadingDataImpl
       PreloadingPredictor predictor,
       PreloadingType preloading_type,
       PreloadingURLMatchCallback url_match_predicate,
-      std::optional<PreloadingType> planned_max_preloading_type,
       ukm::SourceId triggering_primary_page_source_id) override;
   void AddPreloadingPrediction(
       PreloadingPredictor predictor,
@@ -95,14 +94,13 @@ class CONTENT_EXPORT PreloadingDataImpl
 
   // A version of `AddPreloadingAttempt` which takes two PreloadingPredictors in
   // the case where one predictor creates a preloading candidate which is
-  // enacted by another predictor (e.g. a non-eager speculation rule creates a
-  // candidate which is enacted by a pointer down heuristic).
+  // enacted by another predictor (e.g. a non-immediate speculation rule creates
+  // a candidate which is enacted by a pointer down heuristic).
   PreloadingAttemptImpl* AddPreloadingAttempt(
       const PreloadingPredictor& creating_predictor,
       const PreloadingPredictor& enacting_predictor,
       PreloadingType preloading_type,
       PreloadingURLMatchCallback url_match_predicate,
-      std::optional<PreloadingType> planned_max_preloading_type,
       ukm::SourceId triggering_primary_page_source_id);
 
   void CopyPredictorDomains(const PreloadingDataImpl& other,

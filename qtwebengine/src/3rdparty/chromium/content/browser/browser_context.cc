@@ -25,6 +25,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/notreached.h"
+#include "base/trace_event/trace_event.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "components/download/public/common/in_progress_download_manager.h"
@@ -35,7 +36,6 @@
 #include "content/browser/child_process_host_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/in_memory_federated_permission_context.h"
-#include "content/browser/media/browser_feature_provider.h"
 #include "content/browser/preloading/prefetch/prefetch_container.h"
 #include "content/browser/preloading/prefetch/prefetch_service.h"
 #include "content/browser/preloading/prefetch/prefetch_type.h"
@@ -53,6 +53,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition_config.h"
+#include "content/public/browser/webid/identity_request_dialog_controller.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "media/base/media_switches.h"
@@ -191,12 +192,18 @@ StoragePartition* BrowserContext::GetDefaultStoragePartition() {
   return GetStoragePartition(StoragePartitionConfig::CreateDefault(this));
 }
 
-void BrowserContext::StartBrowserPrefetchRequest(
+std::unique_ptr<content::PrefetchHandle>
+BrowserContext::StartBrowserPrefetchRequest(
     const GURL& url,
+    const std::string& embedder_histogram_suffix,
     bool javascript_enabled,
     std::optional<net::HttpNoVarySearchData> no_vary_search_hint,
+    std::optional<PrefetchPriority> priority,
     const net::HttpRequestHeaders& additional_headers,
-    std::unique_ptr<PrefetchRequestStatusListener> request_status_listener) {
+    std::unique_ptr<PrefetchRequestStatusListener> request_status_listener,
+    base::TimeDelta ttl,
+    bool should_append_variations_header,
+    bool should_disable_block_until_head_timeout) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   TRACE_EVENT0("loading", "BrowserContext::StartBrowserPrefetchRequest");
 
@@ -204,19 +211,22 @@ void BrowserContext::StartBrowserPrefetchRequest(
       BrowserContextImpl::From(this)->GetPrefetchService();
   if (!prefetch_service) {
     if (request_status_listener) {
-      request_status_listener->OnPrefetchStartFailed();
+      request_status_listener->OnPrefetchStartFailedGeneric();
     }
-    return;
+    return nullptr;
   }
 
   PrefetchType prefetch_type(PreloadingTriggerType::kEmbedder,
                              /*use_prefetch_proxy=*/false);
   auto container = std::make_unique<PrefetchContainer>(
-      this, url, prefetch_type, blink::mojom::Referrer(), javascript_enabled,
+      this, url, prefetch_type, embedder_histogram_suffix,
+      blink::mojom::Referrer(), javascript_enabled,
       /*referring_origin=*/std::nullopt, std::move(no_vary_search_hint),
+      std::move(priority),
       /*attempt=*/nullptr, additional_headers,
-      std::move(request_status_listener));
-  prefetch_service->AddPrefetchContainer(std::move(container));
+      std::move(request_status_listener), ttl, should_append_variations_header,
+      should_disable_block_until_head_timeout);
+  return prefetch_service->AddPrefetchContainerWithHandle(std::move(container));
 }
 
 void BrowserContext::UpdatePrefetchServiceDelegateAcceptLanguageHeader(
@@ -228,6 +238,17 @@ void BrowserContext::UpdatePrefetchServiceDelegateAcceptLanguageHeader(
   }
   prefetch_service->GetPrefetchServiceDelegate()->SetAcceptLanguageHeader(
       accept_language_header);
+}
+
+bool BrowserContext::IsPrefetchDuplicate(
+    GURL& url,
+    std::optional<net::HttpNoVarySearchData> no_vary_search_hint) {
+  PrefetchService* prefetch_service =
+      BrowserContextImpl::From(this)->GetPrefetchService();
+  // `CHECK` is used here because this method should not be called unless there
+  // is a `prefetch_service` created for `this` browser context.
+  CHECK(prefetch_service);
+  return prefetch_service->IsPrefetchDuplicate(url, no_vary_search_hint);
 }
 
 void BrowserContext::CreateMemoryBackedBlob(base::span<const uint8_t> data,
@@ -349,10 +370,6 @@ media::WebrtcVideoPerfHistory* BrowserContext::GetWebrtcVideoPerfHistory() {
   return impl()->GetWebrtcVideoPerfHistory();
 }
 
-media::learning::LearningSession* BrowserContext::GetLearningSession() {
-  return impl()->GetLearningSession();
-}
-
 std::unique_ptr<download::InProgressDownloadManager>
 BrowserContext::RetrieveInProgressDownloadManager() {
   return nullptr;
@@ -428,8 +445,7 @@ BrowserContext::CreateVideoDecodePerfHistory() {
         GetPath().Append(FILE_PATH_LITERAL("VideoDecodeStats")), db_provider);
   }
 
-  return std::make_unique<media::VideoDecodePerfHistory>(
-      std::move(stats_db), BrowserFeatureProvider::GetFactoryCB());
+  return std::make_unique<media::VideoDecodePerfHistory>(std::move(stats_db));
 }
 
 FederatedIdentityApiPermissionContextDelegate*

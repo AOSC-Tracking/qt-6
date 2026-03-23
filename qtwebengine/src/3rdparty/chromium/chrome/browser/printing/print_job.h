@@ -93,7 +93,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
                           uint32_t page_count);
 
 #if BUILDFLAG(IS_WIN)
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void StartConversionToNativeFormat(
       scoped_refptr<base::RefCountedMemory> print_data,
       const gfx::Size& page_size,
@@ -226,7 +226,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
 
   void HoldUntilStopIsCalled();
 
-#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   virtual void StartPdfToEmfConversion(
       scoped_refptr<base::RefCountedMemory> bytes,
       const gfx::Size& page_size,
@@ -279,7 +279,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // the notified calls Cancel() again.
   bool is_canceling_ = false;
 
-#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   class PdfConversionState;
   std::unique_ptr<PdfConversionState> pdf_conversion_state_;
   std::vector<uint32_t> pdf_page_mapping_;

@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -525,11 +526,7 @@ TEST_P(FrameThrottlingTest, ThrottledFrameCompositing) {
   EXPECT_FALSE(frame_view->CanThrottleRendering());
   auto* root_layer = WebView().MainFrameImpl()->GetFrameView()->RootCcLayer();
   EXPECT_EQ(0u, CcLayersByDOMElementId(root_layer, "container").size());
-  if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled()) {
-    EXPECT_TRUE(CcLayerByOwnerNodeId(root_layer, frame_doc->GetDomNodeId()));
-  } else {
-    EXPECT_EQ(1u, CcLayersByDOMElementId(root_layer, "inner_frame").size());
-  }
+  EXPECT_TRUE(CcLayerByOwnerNodeId(root_layer, frame_doc->GetDomNodeId()));
 
   // First make the child hidden to enable throttling, and composite
   // the container.
@@ -541,11 +538,7 @@ TEST_P(FrameThrottlingTest, ThrottledFrameCompositing) {
   CompositeFrame();
   EXPECT_TRUE(frame_view->CanThrottleRendering());
   EXPECT_EQ(1u, CcLayersByDOMElementId(root_layer, "container").size());
-  if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled()) {
-    EXPECT_TRUE(CcLayerByOwnerNodeId(root_layer, frame_doc->GetDomNodeId()));
-  } else {
-    EXPECT_EQ(1u, CcLayersByDOMElementId(root_layer, "inner_frame").size());
-  }
+  EXPECT_TRUE(CcLayerByOwnerNodeId(root_layer, frame_doc->GetDomNodeId()));
 
   // Then bring it back on-screen, and decomposite container.
   container_element->setAttribute(kStyleAttr, g_empty_atom);
@@ -554,11 +547,7 @@ TEST_P(FrameThrottlingTest, ThrottledFrameCompositing) {
   CompositeFrame();
   EXPECT_FALSE(frame_view->CanThrottleRendering());
   EXPECT_EQ(0u, CcLayersByDOMElementId(root_layer, "container").size());
-  if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled()) {
-    EXPECT_TRUE(CcLayerByOwnerNodeId(root_layer, frame_doc->GetDomNodeId()));
-  } else {
-    EXPECT_EQ(1u, CcLayersByDOMElementId(root_layer, "inner_frame").size());
-  }
+  EXPECT_TRUE(CcLayerByOwnerNodeId(root_layer, frame_doc->GetDomNodeId()));
 }
 
 TEST_P(FrameThrottlingTest, MutatingThrottledFrameDoesNotCauseAnimation) {

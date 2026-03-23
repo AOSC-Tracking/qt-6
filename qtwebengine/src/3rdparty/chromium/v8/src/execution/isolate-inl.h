@@ -6,8 +6,11 @@
 #define V8_EXECUTION_ISOLATE_INL_H_
 
 #include "src/execution/isolate.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/objects/contexts-inl.h"
 #include "src/objects/js-function.h"
+#include "src/objects/lookup-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/oddball.h"
 #include "src/objects/property-cell.h"
@@ -20,8 +23,7 @@
 #include "src/runtime/runtime-utils.h"
 #endif
 
-namespace v8 {
-namespace internal {
+namespace v8::internal {
 
 // static
 V8_INLINE Isolate::PerIsolateThreadData*
@@ -230,9 +232,11 @@ bool Isolate::IsInitialArrayPrototype(Tagged<JSArray> array) {
 
 #define NATIVE_CONTEXT_FIELD_ACCESSOR(index, type, name)              \
   Handle<UNPAREN(type)> Isolate::name() {                             \
+    DCHECK(!raw_native_context().is_null());                          \
     return Handle<UNPAREN(type)>(raw_native_context()->name(), this); \
   }                                                                   \
   bool Isolate::is_##name(Tagged<UNPAREN(type)> value) {              \
+    DCHECK(!raw_native_context().is_null());                          \
     return raw_native_context()->is_##name(value);                    \
   }
 NATIVE_CONTEXT_FIELDS(NATIVE_CONTEXT_FIELD_ACCESSOR)
@@ -248,7 +252,6 @@ SetCurrentIsolateScope::~SetCurrentIsolateScope() {
   Isolate::SetCurrent(previous_isolate_);
 }
 
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal
 
 #endif  // V8_EXECUTION_ISOLATE_INL_H_

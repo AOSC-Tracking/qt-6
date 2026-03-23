@@ -512,6 +512,7 @@
     //none
     //
     // The order must match the order found in IsDisplayOutside().
+    // "block" also a keyword for caret-shape
     "inline",
     "block",
     // The order must match the order found in IsDisplayInside().
@@ -785,6 +786,9 @@
     "max-content",
     "fit-content",
 
+    // contain-intrinsic-size
+    "from-element",
+
     //
     // text-autospace
     //
@@ -908,6 +912,9 @@
     // <select>. It should be renamed when a standardized name is chosen.
     "base-select",
     "-internal-auto-base",
+    // Used to set the `content` property of the pseudo-element "hint" given to
+    // elements with partial interest (via `interestfor` keyboard activation).
+    "-internal-partial-interest-content",
 
     //
     // background-clip/background-origin
@@ -1089,6 +1096,7 @@
     "under",
     //right
     //left
+    //auto
 
     // -webkit-text-emphasis-style
     "filled",
@@ -1204,6 +1212,15 @@
     // column-fill
     "balance",
 
+    // corner-shape
+    // "bevel",
+    "notch",
+    // "round",
+    "scoop",
+    "squircle",
+    // "square",
+    "superellipse",
+
     // -webkit-app-region
     "drag",
     "no-drag",
@@ -1235,11 +1252,6 @@
     // alpha
     // luminance
     "match-source",
-
-    // masonry-auto-tracks
-    // min-content
-    // max-content
-    // auto
 
     // masonry-direction
     // row
@@ -1279,10 +1291,19 @@
     "hanging",
     "mathematical",
 
+    // gap-rule-paint-order
+    "row-over-column",
+    "column-over-row",
+
     // column-rule-break
     // none
     "intersection",
     "spanning-item",
+
+    // row-rule-break
+    // none
+    // intersection
+    // spanning-item
 
     // dominant-baseline
     // auto
@@ -1613,6 +1634,7 @@
     "size",
     "block-size",
     "inline-size",
+    "view-transition",
 
     // @container
     // size
@@ -1626,6 +1648,7 @@
     "block-end",
     // inline-start,
     // inline-end,
+    "anchored",
 
     // grid auto-repeat
     "auto-fill",
@@ -1761,7 +1784,8 @@
     // ([video]-dynamic-range) media feature, and dynamic-range-limit property
     "standard",
     "high",
-    "constrained-high",
+    "no-limit",
+    "constrained",
     "dynamic-range-limit-mix",
 
     // Layered @import rule
@@ -1846,6 +1870,7 @@
     // normal,
     // size,
     // scroll-state,
+    // anchored,
 
     // (scripting:) media feature
     "enabled",
@@ -1944,10 +1969,19 @@
     "grid-rows",
     "grid-columns",
     "grid-order",
+    "source-order",
 
     // fill / stroke
     "context-fill",
     "context-stroke",
+
+    // text-grow / text-shrink
+    "per-line",
+    "consistent",
+    // "scale",
+    "font-size",
+    "scale-inline",
+    "letter-spacing",
 
     // media-progress()
     "media-progress",
@@ -1971,6 +2005,9 @@
     "sibling-count",
     "sibling-index",
 
+    // https://drafts.csswg.org/css-values-5/#ident
+    "ident",
+
     // @function
     "returns",
 
@@ -1983,5 +2020,18 @@
     // inline conditional
     "if",
     "else",
+    "media",
+
+    // scroll-marker-group navigation/a11y modes
+    "tabs",
+    "links",
+
+    // caret-shape
+    // block is elsewhere
+    "bar",
+    "underscore",
+
+    // continue
+    "-webkit-legacy",
   ],
 }

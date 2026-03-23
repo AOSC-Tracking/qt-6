@@ -944,10 +944,12 @@ void tst_SceneGraph::unexposeDuringPolish()
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
-    connect(&view, &QQuickWindow::afterAnimating, this,
-            [this, &view]() { QVERIFY(view.isExposed()); });
-    connect(&view, &QQuickWindow::beforeSynchronizing, this,
-            [this, &view]() { QVERIFY(view.isExposed()); });
+    connect(&view, &QQuickWindow::afterAnimating, this, [&view]() {
+        QVERIFY(view.isExposed());
+    });
+    connect(&view, &QQuickWindow::beforeSynchronizing, this, [&view]() {
+        QVERIFY(view.isExposed());
+    });
 
     QQuickItem *rootItem = view.rootObject();
     rootItem->setProperty("contentsRect", QRectF());

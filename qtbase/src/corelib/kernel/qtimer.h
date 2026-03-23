@@ -74,7 +74,7 @@ public:
                                   Functor &&slot)
     {
         using Prototype = void(*)();
-        singleShotImpl(interval, timerType, receiver,
+        singleShotImpl(toDuration(interval), timerType, receiver,
                        QtPrivate::makeCallableObject<Prototype>(std::forward<Functor>(slot)));
     }
 #endif
@@ -154,6 +154,11 @@ private:
 
     static std::chrono::nanoseconds from_msecs(std::chrono::milliseconds);
 
+    static std::chrono::nanoseconds toDuration(int msecs) noexcept
+    { return std::chrono::milliseconds(msecs); }
+    static std::chrono::nanoseconds toDuration(std::chrono::nanoseconds ns) noexcept
+    { return ns; }
+
     inline int startTimer(int){ return -1;}
     inline void killTimer(int){}
 
@@ -176,10 +181,11 @@ private:
         return interval >= 2s ? Qt::CoarseTimer : Qt::PreciseTimer;
     }
 
-    QT_CORE_INLINE_SINCE(6, 8)
+#if QT_CORE_REMOVED_SINCE(6, 11)
+    // was: QT_CORE_INLINE_SINCE(6, 8)
     static void singleShotImpl(int msec, Qt::TimerType timerType,
                                const QObject *receiver, QtPrivate::QSlotObjectBase *slotObj);
-
+#endif
 #if QT_CORE_REMOVED_SINCE(6, 8)
     static void singleShotImpl(std::chrono::milliseconds interval, Qt::TimerType timerType,
                                const QObject *receiver, QtPrivate::QSlotObjectBase *slotObj);
@@ -195,12 +201,6 @@ void QTimer::singleShot(int msec, const QObject *receiver, const char *member)
 void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiver,
                         const char *member)
 { singleShot(std::chrono::milliseconds{msec}, timerType, receiver, member); }
-
-void QTimer::singleShotImpl(int msec, Qt::TimerType timerType,
-                            const QObject *receiver, QtPrivate::QSlotObjectBase *slotObj)
-{
-    singleShotImpl(std::chrono::milliseconds{msec}, timerType, receiver, slotObj);
-}
 #endif
 
 QT_END_NAMESPACE

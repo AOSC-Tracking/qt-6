@@ -19,12 +19,25 @@ namespace blink {
 
 class Frame;
 
+enum class FallbackReason {
+  kNone,
+  kUnexpectedFrameSource,
+  kVisibilityChange,
+  kModalDialog,
+  kSwapPromiseBroken,
+  kMacOSArtificialEvent,
+  kDoesNotNeedNextPaint,
+};
+
 class CORE_EXPORT PerformanceEventTiming final : public PerformanceEntry {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
   // Information used for event timing reporting purpose only.
   struct EventTimingReportingInfo {
+    // The reason(s) why fallback time was used.
+    FallbackReason fallback_reason = FallbackReason::kNone;
+
     // Presentation promise index in which the entry in |event_timing_| was
     // added.
     uint64_t presentation_index = 0;
@@ -81,17 +94,21 @@ class CORE_EXPORT PerformanceEventTiming final : public PerformanceEntry {
                                         EventTimingReportingInfo reporting_info,
                                         bool cancelable,
                                         Node* target,
-                                        DOMWindow* source);
+                                        DOMWindow* source,
+                                        uint32_t navigation_id);
 
   static PerformanceEventTiming* CreateFirstInputTiming(
       PerformanceEventTiming* entry);
+
+  static String FallbackReasonToString(FallbackReason reason);
 
   PerformanceEventTiming(const AtomicString& event_type,
                          const AtomicString& entry_type,
                          EventTimingReportingInfo repoerting_info,
                          bool cancelable,
                          Node* target,
-                         DOMWindow* source);
+                         DOMWindow* source,
+                         uint32_t navigation_id);
 
   ~PerformanceEventTiming() override;
 
@@ -107,9 +124,9 @@ class CORE_EXPORT PerformanceEventTiming final : public PerformanceEntry {
 
   void SetTarget(Node* target);
 
-  uint32_t interactionId() const;
+  uint64_t interactionId() const;
 
-  void SetInteractionId(uint32_t interaction_id);
+  void SetInteractionId(uint64_t interaction_id);
 
   bool HasKnownInteractionID() const;
 
@@ -119,7 +136,7 @@ class CORE_EXPORT PerformanceEventTiming final : public PerformanceEntry {
 
   base::TimeTicks GetEndTime() const;
 
-  void UpdateFallbackTime(base::TimeTicks fallback_time);
+  void UpdateFallbackTime(base::TimeTicks fallback_time, FallbackReason reason);
 
   uint32_t interactionOffset() const;
 
@@ -152,7 +169,7 @@ class CORE_EXPORT PerformanceEventTiming final : public PerformanceEntry {
   mutable DOMHighResTimeStamp processing_end_ = 0;
   bool cancelable_;
   WeakMember<Node> target_;
-  std::optional<uint32_t> interaction_id_ = std::nullopt;
+  std::optional<uint64_t> interaction_id_ = std::nullopt;
   uint32_t interaction_offset_ = 0;
 
   EventTimingReportingInfo reporting_info_;

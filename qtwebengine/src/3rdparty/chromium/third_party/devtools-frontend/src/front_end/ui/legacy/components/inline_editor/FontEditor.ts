@@ -1,13 +1,13 @@
 // Copyright 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../legacy.js';
 
 import * as Common from '../../../../core/common/common.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
 import * as Platform from '../../../../core/platform/platform.js';
-import * as SDK from '../../../../core/sdk/sdk.js';
 import * as IconButton from '../../../components/icon_button/icon_button.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
@@ -115,22 +115,19 @@ const UIStrings = {
    *@description Label for Font Editor alert in CSS Properties section when toggling inputs
    */
   sliderInputMode: 'Slider Input Mode',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/inline_editor/FontEditor.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class FontEditor extends Common.ObjectWrapper.eventMixin<EventTypes, typeof UI.Widget.VBox>(UI.Widget.VBox) {
-  private readonly selectedNode: SDK.DOMModel.DOMNode|null;
   private readonly propertyMap: Map<string, string>;
   private readonly fontSelectorSection: HTMLElement;
   private fontSelectors: FontEditor.FontSelectorObject[];
-  private fontsList: Map<string, string[]>[]|null;
+  private fontsList: Array<Map<string, string[]>>|null;
 
   constructor(propertyMap: Map<string, string>) {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(fontEditorStyles);
-    this.selectedNode = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
-
     this.propertyMap = propertyMap;
     this.contentElement.tabIndex = 0;
     this.contentElement.setAttribute(
@@ -199,7 +196,7 @@ export class FontEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.resizePopout();
   }
 
-  private async createFontsList(): Promise<Map<string, string[]>[]> {
+  private async createFontsList(): Promise<Array<Map<string, string[]>>> {
     const computedFontArray = await FontEditorUtils.generateComputedFontArray();
     const computedMap = new Map<string, string[]>();
     const splicedArray = this.splitComputedFontArray(computedFontArray);
@@ -230,7 +227,7 @@ export class FontEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
         array.push(fontFamilyValue.replace(/"/g, ''));
       }
     }
-    return array as string[];
+    return array;
   }
 
   private async createFontSelector(value: string, isPrimary?: boolean): Promise<void> {
@@ -266,7 +263,7 @@ export class FontEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
     let fontSelectorObject: FontEditor.FontSelectorObject = this.fontSelectors[index];
     const isPrimary = index === 0;
     if (fontSelectorObject.input.value === '' && !isGlobalValue) {
-      UI.ARIAUtils.alert(i18nString(UIStrings.thereIsNoValueToDeleteAtIndexS, {PH1: index}));
+      UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.thereIsNoValueToDeleteAtIndexS, {PH1: index}));
       return;
     }
     if (isPrimary) {
@@ -292,7 +289,7 @@ export class FontEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
           this.updateFontSelectorList();
         }
       }
-      UI.ARIAUtils.alert(i18nString(UIStrings.fontSelectorDeletedAtIndexS, {PH1: index}));
+      UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.fontSelectorDeletedAtIndexS, {PH1: index}));
     }
     this.onFontSelectorChanged();
     this.resizePopout();
@@ -332,10 +329,10 @@ export class FontEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
   }
 
   private createSelector(
-      field: Element, label: string, options: Map<string, string[]>[], currentValue: string,
+      field: Element, label: string, options: Array<Map<string, string[]>>, currentValue: string,
       jslogContext: string): void {
     const index = this.fontSelectors.length;
-    const selectInput = (UI.UIUtils.createSelect(label, options) as HTMLSelectElement);
+    const selectInput = (UI.UIUtils.createSelect(label, options));
     selectInput.value = currentValue;
     selectInput.setAttribute('jslog', `${VisualLogging.dropDown(jslogContext).track({click: true, change: true})}`);
     const selectLabel = UI.UIUtils.createLabel(label, 'shadow-editor-label', selectInput);
@@ -459,7 +456,6 @@ class FontPropertyInputs {
   private initialRange: FontEditor.PropertyRange;
   private readonly boundUpdateCallback: (arg0: string, arg1: string) => void;
   private readonly boundResizeCallback: () => void;
-  private readonly selectedNode: SDK.DOMModel.DOMNode|null;
   private sliderInput: HTMLInputElement;
   private textBoxInput: HTMLInputElement;
   private unitInput: HTMLSelectElement;
@@ -495,7 +491,6 @@ class FontPropertyInputs {
 
     this.boundUpdateCallback = updateCallback;
     this.boundResizeCallback = resizeCallback;
-    this.selectedNode = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
     const propertyLabel = UI.UIUtils.createLabel(label, 'shadow-editor-label');
     propertyField.append(propertyLabel);
     this.sliderInput = this.createSliderInput(propertyField, propertyName);
@@ -515,12 +510,10 @@ class FontPropertyInputs {
         this.textBoxInput.classList.add('error-input');
         this.boundResizeCallback();
       }
-    } else {
-      if (!this.errorText.hidden) {
-        this.errorText.hidden = true;
-        this.textBoxInput.classList.remove('error-input');
-        this.boundResizeCallback();
-      }
+    } else if (!this.errorText.hidden) {
+      this.errorText.hidden = true;
+      this.textBoxInput.classList.remove('error-input');
+      this.boundResizeCallback();
     }
   }
 
@@ -761,7 +754,7 @@ class FontPropertyInputs {
       this.unitInput.hidden = true;
       this.selectorInput.hidden = false;
       this.showSliderMode = false;
-      UI.ARIAUtils.alert(i18nString(UIStrings.selectorInputMode));
+      UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.selectorInputMode));
     } else {
       // Show sliderinput type
       this.sliderInput.hidden = false;
@@ -769,7 +762,7 @@ class FontPropertyInputs {
       this.unitInput.hidden = false;
       this.selectorInput.hidden = true;
       this.showSliderMode = true;
-      UI.ARIAUtils.alert(i18nString(UIStrings.sliderInputMode));
+      UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.sliderInputMode));
     }
   }
 

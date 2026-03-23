@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qabstractitemview.h"
 
@@ -170,6 +171,43 @@ void QAbstractItemViewPrivate::checkMouseMove(const QPersistentModelIndex &index
         enteredIndex = index;
     }
 }
+
+#if QT_CONFIG(accessibility)
+void QAbstractItemViewPrivate::updateItemAccessibility(const QModelIndex &index,
+                                                       const QList<int> &roles)
+{
+    Q_Q(QAbstractItemView);
+
+    if (!QAccessible::isActive())
+        return;
+
+    const int childIndex = accessibleChildIndex(index);
+    if (childIndex < 0)
+        return;
+
+    // see QAccessibleTableCell for how role data are mapped to the a11y layer
+
+    for (int role : roles) {
+        if (role == Qt::AccessibleTextRole
+            || (role == Qt::DisplayRole
+                && index.data(Qt::AccessibleTextRole).toString().isEmpty())) {
+            QAccessibleEvent event(q, QAccessible::NameChanged);
+            event.setChild(childIndex);
+            QAccessible::updateAccessibility(&event);
+        } else if (role == Qt::AccessibleDescriptionRole) {
+            QAccessibleEvent event(q, QAccessible::DescriptionChanged);
+            event.setChild(childIndex);
+            QAccessible::updateAccessibility(&event);
+        } else if (role == Qt::CheckStateRole) {
+            QAccessible::State state;
+            state.checked = true;
+            QAccessibleStateChangeEvent event(q, state);
+            event.setChild(childIndex);
+            QAccessible::updateAccessibility(&event);
+        }
+    }
+}
+#endif
 
 #if QT_CONFIG(gestures) && QT_CONFIG(scroller)
 
@@ -2071,9 +2109,9 @@ void QAbstractItemView::dragMoveEvent(QDragMoveEvent *event)
             if (d->selectionBehavior == QAbstractItemView::SelectRows
                 && d->dropIndicatorPosition != OnViewport
                 && (d->dropIndicatorPosition != OnItem || event->source() == this)) {
-                if (index.column() > 0)
-                    rect = visualRect(index.siblingAtColumn(0));
-                rect.setWidth(viewport()->width() - 1 - rect.x());
+                const int maxCol = d->model->columnCount(index.parent()) - 1;
+                const auto idx = index.column() > 0 ? index.siblingAtColumn(0) : index;
+                rect = d->intersectedRect(viewport()->rect(), idx, idx.siblingAtColumn(maxCol));
             }
             switch (d->dropIndicatorPosition) {
             case AboveItem:
@@ -3107,7 +3145,8 @@ void QAbstractItemView::keyboardSearch(const QString &search)
     QModelIndex startMatch;
     QModelIndexList previous;
     do {
-        match = d->model->match(current, Qt::DisplayRole, d->keyboardInput);
+        match = d->model->match(current, Qt::DisplayRole, d->keyboardInput, 1,
+                                d->keyboardSearchFlags);
         if (match == previous)
             break;
         firstMatch = match.value(0);
@@ -3250,6 +3289,30 @@ void QAbstractItemView::setUpdateThreshold(int threshold)
 }
 
 /*!
+    \property QAbstractItemView::keyboardSearchFlags
+    \since 6.11
+    This property determines how the default implementation of
+    keyboardSearch() matches the given string against the model's data.
+
+    The default value is \c{Qt::MatchStartsWith|Qt::MatchWrap}.
+
+    \sa keyboardSearch()
+    \sa QAbstractItemModel::match()
+*/
+
+Qt::MatchFlags QAbstractItemView::keyboardSearchFlags() const
+{
+    Q_D(const QAbstractItemView);
+    return d->keyboardSearchFlags;
+}
+
+void QAbstractItemView::setKeyboardSearchFlags(Qt::MatchFlags searchFlags)
+{
+    Q_D(QAbstractItemView);
+    d->keyboardSearchFlags = searchFlags;
+}
+
+/*!
     Opens a persistent editor on the item at the given \a index.
     If no editor exists, the delegate will create a new editor.
 
@@ -3297,7 +3360,8 @@ void QAbstractItemView::closePersistentEditor(const QModelIndex &index)
 bool QAbstractItemView::isPersistentEditorOpen(const QModelIndex &index) const
 {
     Q_D(const QAbstractItemView);
-    return d->editorForIndex(index).widget;
+    QWidget *editor = d->editorForIndex(index).widget;
+    return editor && d->persistent.contains(editor);
 }
 
 /*!
@@ -3468,6 +3532,10 @@ void QAbstractItemView::dataChanged(const QModelIndex &topLeft, const QModelInde
         accessibleEvent.setLastRow(bottomRight.row());
         accessibleEvent.setLastColumn(bottomRight.column());
         QAccessible::updateAccessibility(&accessibleEvent);
+
+        // send accessibility events as needed when current item is modified
+        if (topLeft.isValid() && topLeft == bottomRight && topLeft == currentIndex())
+            d->updateItemAccessibility(topLeft, roles);
     }
 #endif
     d->updateGeometry();
@@ -4737,6 +4805,7 @@ QPixmap QAbstractItemViewPrivate::renderToPixmap(const QModelIndexList &indexes,
 
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
+    painter.setLayoutDirection(q->layoutDirection());
     QStyleOptionViewItem option;
     q->initViewItemOption(&option);
     option.state |= QStyle::State_Selected;

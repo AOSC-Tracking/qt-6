@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QTGRAPHS_QAREASERIES_H
 #define QTGRAPHS_QAREASERIES_H
@@ -11,6 +13,7 @@
 QT_BEGIN_NAMESPACE
 
 class QAreaSeriesPrivate;
+class QQuickShapeGradient;
 
 class Q_GRAPHS_EXPORT QAreaSeries : public QAbstractSeries
 {
@@ -29,8 +32,13 @@ class Q_GRAPHS_EXPORT QAreaSeries : public QAbstractSeries
                    upperSeriesChanged FINAL)
     Q_PROPERTY(QXYSeries *lowerSeries READ lowerSeries WRITE setLowerSeries NOTIFY
                    lowerSeriesChanged FINAL)
+    Q_PROPERTY(QQuickShapeGradient *gradient READ gradient WRITE setGradient NOTIFY
+                   gradientChanged REVISION(6, 11))
+    Q_PROPERTY(QQuickShapeGradient *selectedGradient READ selectedGradient WRITE setSelectedGradient NOTIFY
+                   selectedGradientChanged REVISION(6, 11))
 
     QML_NAMED_ELEMENT(AreaSeries)
+
 public:
     explicit QAreaSeries(QObject *parent = nullptr);
     ~QAreaSeries() override;
@@ -60,6 +68,12 @@ public:
     QXYSeries *lowerSeries() const;
     void setLowerSeries(QXYSeries *newLowerSeries);
 
+    QQuickShapeGradient *gradient() const;
+    void setGradient(QQuickShapeGradient *newGradient);
+
+    QQuickShapeGradient *selectedGradient() const;
+    void setSelectedGradient(QQuickShapeGradient *newSelectedGradient);
+
 Q_SIGNALS:
     void colorChanged(QColor newColor);
     void selectedColorChanged(QColor newSelectedColor);
@@ -69,6 +83,8 @@ Q_SIGNALS:
     void selectedChanged();
     void upperSeriesChanged();
     void lowerSeriesChanged();
+    Q_REVISION(6, 11) void gradientChanged(QQuickShapeGradient *newGradient);
+    Q_REVISION(6, 11) void selectedGradientChanged(QQuickShapeGradient *newGradient);
 
     Q_REVISION(6, 9) void clicked(QPoint point);
     Q_REVISION(6, 9) void doubleClicked(QPoint point);

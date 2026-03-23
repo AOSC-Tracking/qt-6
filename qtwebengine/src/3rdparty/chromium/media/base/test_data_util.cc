@@ -2,24 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "media/base/test_data_util.h"
 
 #include <stdint.h>
 
+#include <array>
 #include <optional>
 #include <ostream>
 
 #include "base/check_op.h"
 #include "base/containers/flat_map.h"
 #include "base/files/file_util.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/no_destructor.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
+#include "media/base/decoder_buffer.h"
 
 namespace media {
 
@@ -173,12 +172,44 @@ const FileToMimeTypeMap& GetFileToMimeTypeMap() {
 }
 
 // Key used to encrypt test files.
-const uint8_t kSecretKey[] = {0xeb, 0xdd, 0x62, 0xf1, 0x68, 0x14, 0xd2, 0x7b,
-                              0x68, 0xef, 0x12, 0x2a, 0xfc, 0xe4, 0xae, 0x3c};
+const auto kSecretKey = std::to_array<uint8_t>({
+    0xeb,
+    0xdd,
+    0x62,
+    0xf1,
+    0x68,
+    0x14,
+    0xd2,
+    0x7b,
+    0x68,
+    0xef,
+    0x12,
+    0x2a,
+    0xfc,
+    0xe4,
+    0xae,
+    0x3c,
+});
 
 // The key ID for all encrypted files.
-const uint8_t kKeyId[] = {0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
-                          0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35};
+const auto kKeyId = std::to_array<uint8_t>({
+    0x30,
+    0x31,
+    0x32,
+    0x33,
+    0x34,
+    0x35,
+    0x36,
+    0x37,
+    0x38,
+    0x39,
+    0x30,
+    0x31,
+    0x32,
+    0x33,
+    0x34,
+    0x35,
+});
 
 }  // namespace
 
@@ -238,7 +269,7 @@ scoped_refptr<DecoderBuffer> ReadTestDataFile(std::string_view name) {
 
   int file_size = base::checked_cast<int>(tmp.value());
 
-  scoped_refptr<DecoderBuffer> buffer(new DecoderBuffer(file_size));
+  auto buffer = base::MakeRefCounted<DecoderBuffer>(file_size);
   auto* data = reinterpret_cast<char*>(buffer->writable_data());
   CHECK_EQ(file_size, base::ReadFile(file_path, data, file_size))
       << "Failed to read '" << name << "'";
@@ -256,13 +287,17 @@ scoped_refptr<DecoderBuffer> ReadTestDataFile(std::string_view name,
 bool LookupTestKeyVector(const std::vector<uint8_t>& key_id,
                          bool allow_rotation,
                          std::vector<uint8_t>* key) {
-  std::vector<uint8_t> starting_key_id(kKeyId, kKeyId + std::size(kKeyId));
+  std::vector<uint8_t> starting_key_id(
+      kKeyId.data(),
+      base::span<const uint8_t>(kKeyId).subspan(std::size(kKeyId)).data());
   size_t rotate_limit = allow_rotation ? starting_key_id.size() : 1;
   for (size_t pos = 0; pos < rotate_limit; ++pos) {
     std::rotate(starting_key_id.begin(), starting_key_id.begin() + pos,
                 starting_key_id.end());
     if (key_id == starting_key_id) {
-      key->assign(kSecretKey, kSecretKey + std::size(kSecretKey));
+      key->assign(kSecretKey.data(), base::span<const uint8_t>(kSecretKey)
+                                         .subspan(std::size(kSecretKey))
+                                         .data());
       std::rotate(key->begin(), key->begin() + pos, key->end());
       return true;
     }

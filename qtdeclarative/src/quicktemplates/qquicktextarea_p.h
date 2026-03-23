@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKTEXTAREA_P_H
 #define QQUICKTEXTAREA_P_H
@@ -29,7 +30,7 @@ class QQuickTextAreaAttached;
 class Q_QUICKTEMPLATES2_EXPORT QQuickTextArea : public QQuickTextEdit
 {
     Q_OBJECT
-    Q_PROPERTY(QFont font READ font WRITE setFont NOTIFY fontChanged) // override
+    Q_PROPERTY(QFont font READ font WRITE setFont NOTIFY fontChanged OVERRIDE) // override
     Q_PROPERTY(qreal implicitWidth READ implicitWidth WRITE setImplicitWidth NOTIFY implicitWidthChanged3 FINAL)
     Q_PROPERTY(qreal implicitHeight READ implicitHeight WRITE setImplicitHeight NOTIFY implicitHeightChanged3 FINAL)
     Q_PROPERTY(QQuickItem *background READ background WRITE setBackground NOTIFY backgroundChanged FINAL)

@@ -5,7 +5,6 @@
 #ifndef UI_OZONE_PLATFORM_WAYLAND_TEST_MOCK_SURFACE_H_
 #define UI_OZONE_PLATFORM_WAYLAND_TEST_MOCK_SURFACE_H_
 
-#include <linux-explicit-synchronization-unstable-v1-server-protocol.h>
 #include <wayland-server-protocol.h>
 
 #include "base/containers/flat_map.h"
@@ -96,19 +95,13 @@ class MockSurface : public ServerObject {
   gfx::Rect input_region() const { return input_region_; }
 
   void set_frame_callback(wl_resource* callback_resource) {
+    if (allow_resetting_frame_callback_ && frame_callback_) {
+      wl_resource_destroy(frame_callback_);
+      frame_callback_ = nullptr;
+    }
     DCHECK(!frame_callback_);
     frame_callback_ = callback_resource;
   }
-
-  void set_linux_buffer_release(wl_resource* buffer,
-                                wl_resource* linux_buffer_release) {
-    DCHECK(!linux_buffer_releases_.contains(buffer));
-    linux_buffer_releases_.emplace(buffer, linux_buffer_release);
-  }
-  bool has_linux_buffer_release() const {
-    return !linux_buffer_releases_.empty();
-  }
-  void ClearBufferReleases();
 
   wl_resource* attached_buffer() const { return attached_buffer_; }
   wl_resource* prev_attached_buffer() const { return prev_attached_buffer_; }
@@ -120,9 +113,8 @@ class MockSurface : public ServerObject {
   void AttachNewBuffer(wl_resource* buffer_resource, int32_t x, int32_t y);
   void DestroyPrevAttachedBuffer();
   void ReleaseBuffer(wl_resource* buffer);
-  void ReleaseBufferFenced(wl_resource* buffer,
-                           gfx::GpuFenceHandle release_fence);
   void SendFrameCallback();
+  void AllowResettingFrameCallback() { allow_resetting_frame_callback_ = true; }
 
   int32_t buffer_scale() const { return buffer_scale_; }
   void set_buffer_scale(int32_t buffer_scale) { buffer_scale_ = buffer_scale; }
@@ -140,8 +132,7 @@ class MockSurface : public ServerObject {
   gfx::Rect input_region_ = {-1, -1, 0, 0};
 
   raw_ptr<wl_resource, AcrossTasksDanglingUntriaged> frame_callback_ = nullptr;
-  base::flat_map<wl_resource*, raw_ptr<wl_resource, CtnExperimental>>
-      linux_buffer_releases_;
+  bool allow_resetting_frame_callback_ = false;
 
   raw_ptr<wl_resource, AcrossTasksDanglingUntriaged> attached_buffer_ = nullptr;
   raw_ptr<wl_resource, AcrossTasksDanglingUntriaged> prev_attached_buffer_ =

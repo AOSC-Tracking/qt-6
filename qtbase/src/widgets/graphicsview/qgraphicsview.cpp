@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 static const int QGRAPHICSVIEW_REGION_RECT_THRESHOLD = 50;
 
@@ -95,7 +96,7 @@ static const int QGRAPHICSVIEW_PREALLOC_STYLE_OPTIONS = 503; // largest prime < 
     each frame. Call QOpenGLWidget::currentTargetBuffer() to query which buffer
     is currently being drawn to.
 
-    \image graphicsview-view.png
+    \image graphicsview-view.png {Grid of computer chips}
 
     \note Using an OpenGL viewport limits the ability to use QGraphicsProxyWidget.
     Not all combinations of widgets and styles can be supported with such a setup.
@@ -869,7 +870,7 @@ void QGraphicsViewPrivate::populateSceneDragDropEvent(QGraphicsSceneDragDropEven
 #if QT_CONFIG(draganddrop)
     Q_Q(QGraphicsView);
     dest->setScenePos(q->mapToScene(source->position().toPoint()));
-    dest->setScreenPos(q->mapToGlobal(source->position().toPoint()));
+    dest->setScreenPos(q->mapToGlobal(source->position()).toPoint());
     dest->setButtons(source->buttons());
     dest->setModifiers(source->modifiers());
     dest->setPossibleActions(source->possibleActions());
@@ -1116,6 +1117,12 @@ void QGraphicsViewPrivate::freeStyleOptionsArray(QStyleOptionGraphicsItem *array
 }
 
 Q_GUI_EXPORT extern QPainterPath qt_regionToPath(const QRegion &region);
+
+/*!
+    \class QGraphicsViewPrivate
+    \inmodule QtWidgets
+    \internal
+*/
 
 /*!
     ### Adjustments in findItems: mapToScene(QRect) forces us to adjust the
@@ -3286,7 +3293,7 @@ void QGraphicsView::mouseMoveEvent(QMouseEvent *event)
         if (d->handScrolling) {
             QScrollBar *hBar = horizontalScrollBar();
             QScrollBar *vBar = verticalScrollBar();
-            QPoint delta = event->position().toPoint() - d->lastMouseEvent->position().toPoint();
+            QPoint delta = (event->position() - d->lastMouseEvent->position()).toPoint();
             hBar->setValue(hBar->value() + (isRightToLeft() ? delta.x() : -delta.x()));
             vBar->setValue(vBar->value() - delta.y());
 

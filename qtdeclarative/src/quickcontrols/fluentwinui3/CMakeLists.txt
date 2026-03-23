@@ -15,6 +15,7 @@ set(qml_files
     "DelayButton.qml"
     "Dialog.qml"
     "DialogButtonBox.qml"
+    "DoubleSpinBox.qml"
     "Frame.qml"
     "GroupBox.qml"
     "ItemDelegate.qml"
@@ -57,6 +58,10 @@ set_source_files_properties(SearchField.qml PROPERTIES
     QT_QML_SOURCE_VERSIONS "6.10"
 )
 
+set_source_files_properties(DoubleSpinBox.qml PROPERTIES
+    QT_QML_SOURCE_VERSIONS "6.11"
+)
+
 file(GLOB light_theme_resources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "light/images/*.png")
 file(GLOB dark_theme_resources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "dark/images/*.png")
 file(GLOB icons_theme_resources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "icons/*.png")
@@ -95,6 +100,7 @@ qt_internal_add_qml_module(qtquickcontrols2fluentwinui3styleplugin
         Qt::QuickControls2Private
         Qt::QuickPrivate
         Qt::QuickTemplates2Private
+        Qt::QuickControls2FusionPrivate
 )
 
 _qt_internal_add_qml_static_plugin_dependency(qtquickcontrols2fluentwinui3styleplugin

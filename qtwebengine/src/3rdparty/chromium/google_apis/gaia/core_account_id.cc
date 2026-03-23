@@ -7,8 +7,14 @@
 #include "base/check.h"
 #include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
+#include "build/build_config.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_id.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/jni_string.h"
+#include "google_apis/gaia/android/jni_headers/CoreAccountId_jni.h"
+#endif
 
 namespace {
 // Returns whether the string looks like an email (the test is
@@ -49,7 +55,7 @@ CoreAccountId CoreAccountId::FromRobotEmail(const std::string& robot_email) {
   return CoreAccountId::FromString(robot_email);
 }
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 // static
 CoreAccountId CoreAccountId::FromEmail(const std::string& email) {
   if (email.empty())
@@ -84,3 +90,21 @@ std::vector<std::string> ToStringList(
     const std::vector<CoreAccountId>& account_ids) {
   return base::ToVector(account_ids, &CoreAccountId::ToString);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+base::android::ScopedJavaLocalRef<jobject> ConvertToJavaCoreAccountId(
+    JNIEnv* env,
+    const CoreAccountId& account_id) {
+  CHECK(!account_id.empty());
+  return Java_CoreAccountId_Constructor(env, GaiaId(account_id.ToString()));
+}
+
+// Constructs a C++ CoreAccountId from the provided Java CoreAccountId.
+CoreAccountId ConvertFromJavaCoreAccountId(
+    JNIEnv* env,
+    const base::android::JavaRef<jobject>& j_core_account_id) {
+  CHECK(j_core_account_id);
+  return CoreAccountId::FromGaiaId(
+      Java_CoreAccountId_getId(env, j_core_account_id));
+}
+#endif  // BUILDFLAG(IS_ANDROID)

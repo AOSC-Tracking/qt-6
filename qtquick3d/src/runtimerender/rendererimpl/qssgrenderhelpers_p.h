@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRENDERHELPERS_P_H
 #define QSSGRENDERHELPERS_P_H
@@ -26,6 +28,7 @@ class QSSGRhiContext;
 class QSSGRenderShadowMap;
 class QRhiRenderPassDescriptor;
 class QSSGRenderReflectionMap;
+class QSSGRenderMotionVectorMap;
 class QSSGLayerRenderData;
 struct QSSGReflectionMapEntry;
 class QSSGRhiShaderPipeline;
@@ -72,6 +75,17 @@ void rhiRenderDepthPass(QSSGRhiContext *rhiCtx, const QSSGRhiGraphicsPipelineSta
                         const QSSGRenderableObjectList &sortedTransparentObjects,
                         bool *needsSetViewport);
 
+bool rhiPrepareNormalPass(QSSGRhiContext *rhiCtx,
+                          QSSGPassKey passKey,
+                          const QSSGRhiGraphicsPipelineState &basePipelineState,
+                          QRhiRenderPassDescriptor *rpDesc,
+                          QSSGLayerRenderData &inData,
+                          const QSSGRenderableObjectList &sortedOpaqueObjects);
+
+void rhiRenderNormalPass(QSSGRhiContext *rhiCtx, const QSSGRhiGraphicsPipelineState &ps,
+                         const QSSGRenderableObjectList &sortedOpaqueObjects,
+                         bool *needsSetViewport);
+
 bool rhiPrepareAoTexture(QSSGRhiContext *rhiCtx,
                          const QSize &size,
                          QSSGRhiRenderableTexture *renderableTex,
@@ -93,18 +107,21 @@ bool rhiPrepareScreenTexture(QSSGRhiContext *rhiCtx,
                              QSSGRhiRenderableTexture *renderableTex,
                              quint8 viewCount);
 
+void addAccumulatorImageBindings(QSSGRhiShaderPipeline *shaderPipeline,
+                                 QSSGRhiShaderResourceBindingList &bindings);
+
 void rhiPrepareGrid(QSSGRhiContext *rhiCtx,
                     QSSGPassKey passKey,
                     QSSGRenderLayer &layer,
                     QSSGRenderCameraList &cameras,
                     QSSGRenderer &renderer);
 
-
 void rhiPrepareSkyBox(QSSGRhiContext *rhiCtx,
                       QSSGPassKey passKey,
                       QSSGRenderLayer &layer,
                       QSSGRenderCameraList &cameras,
-                      QSSGRenderer &renderer);
+                      QSSGRenderer &renderer,
+                      uint tonemapMode = 0);
 
 void rhiPrepareSkyBoxForReflectionMap(QSSGRhiContext *rhiCtx,
                                       QSSGPassKey passKey,
@@ -113,6 +130,37 @@ void rhiPrepareSkyBoxForReflectionMap(QSSGRhiContext *rhiCtx,
                                       QSSGRenderer &renderer,
                                       QSSGReflectionMapEntry *entry,
                                       QSSGRenderTextureCubeFace cubeFace);
+
+void rhiPrepareOverrideMaterialUserPass(QSSGRhiContext *rhiCtx,
+                                        QSSGPassKey passKey,
+                                        const QSSGRhiGraphicsPipelineState &basePipelineState,
+                                        QRhiRenderPassDescriptor *rpDesc,
+                                        QSSGRenderGraphObject *overrideMaterial,
+                                        QSSGLayerRenderData &inData,
+                                        QSSGRenderableObjectList &inObjects,
+                                        QSSGShaderFeatures featureSet,
+                                        size_t index);
+
+void rhiPrepareOriginalMaterialUserPass(QSSGRhiContext *rhiCtx,
+                                        QSSGPassKey passKey,
+                                        const QSSGRhiGraphicsPipelineState &basePipelineState,
+                                        QRhiRenderPassDescriptor *rpDesc,
+                                        const QSSGLayerRenderData &inData,
+                                        QSSGRenderableObjectList &inObjects,
+                                        QSSGShaderFeatures featureSet,
+                                        size_t index);
+
+void rhiPrepareAugmentedUserPass(QSSGRhiContext *rhiCtx,
+                                 QSSGPassKey passKey,
+                                 const QSSGRhiGraphicsPipelineState &basePipelineState,
+                                 QRhiRenderPassDescriptor *rpDesc,
+                                 const QSSGUserShaderAugmentation &shaderAugmentation,
+                                 const QSSGLayerRenderData &inData,
+                                 QSSGRenderableObjectList &inObjects,
+                                 QSSGShaderFeatures featureSet, size_t index);
+
+void rhiRenderUserAugmentedPass(QSSGRhiContext *rhiCtx,
+                               QSSGRenderableObjectList &inObjects);
 
 Q_QUICK3DRUNTIMERENDER_EXPORT void rhiPrepareRenderable(QSSGRhiContext *rhiCtx,
                                                         QSSGPassKey passKey,
@@ -133,7 +181,8 @@ Q_QUICK3DRUNTIMERENDER_EXPORT void rhiRenderRenderable(QSSGRhiContext *rhiCtx,
                                                        const QSSGRhiGraphicsPipelineState &state,
                                                        QSSGRenderableObject &object,
                                                        bool *needsSetViewport,
-                                                       QSSGRenderTextureCubeFace cubeFace = QSSGRenderTextureCubeFaceNone);
+                                                       QSSGRenderTextureCubeFace cubeFace = QSSGRenderTextureCubeFaceNone,
+                                                       qsizetype userPassIndex = -1);
 
 bool rhiPrepareDepthTexture(QSSGRhiContext *rhiCtx,
                             const QSize &size,
@@ -141,11 +190,48 @@ bool rhiPrepareDepthTexture(QSSGRhiContext *rhiCtx,
                             quint8 viewCount,
                             int samples = 1);
 
+bool rhiPrepareMotionVectorTexture(QSSGRhiContext *rhiCtx,
+                                   const QSize &size,
+                                   QSSGRhiRenderableTexture *renderableTex);
+
+void rhiPrepareMotionVectorRenderable(QSSGRhiContext *rhiCtx,
+                                      QSSGPassKey passKey,
+                                      const QSSGLayerRenderData &inData,
+                                      const QMatrix4x4 &viewProjection,
+                                      QSSGRenderableObject &inObject,
+                                      QRhiRenderPassDescriptor *renderPassDescriptor,
+                                      QSSGRhiGraphicsPipelineState *ps,
+                                      QSSGRenderMotionVectorMap &motionVectorMapManager);
+
+void rhiRenderMotionVector(QSSGRhiContext *rhiCtx,
+                           const QSSGRhiGraphicsPipelineState &state,
+                           const QSSGRenderableObjectList *motionVectorPassObjects,
+                           int bucketsCount);
+
 inline QRect correctViewportCoordinates(const QRectF &layerViewport, const QRect &deviceRect)
 {
     const int y = deviceRect.bottom() - layerViewport.bottom() + 1;
     return QRect(layerViewport.x(), y, layerViewport.width(), layerViewport.height());
 }
+
+inline quint32 rhiCalculateABufferSize(int nodeCount)
+{
+    quint32 s = nodeCount;
+    quint32 s_sqrt = qSqrt(s);
+    quint32 s2 = s_sqrt * s_sqrt;
+    while (s2 < s) {
+        s_sqrt += 1;
+        s2 = s_sqrt * s_sqrt;
+    }
+    return s_sqrt;
+}
+
+inline quint32 rhiCalculateABufferSize(const QSize &size, int levels)
+{
+    quint32 s = size.width() * size.height() * levels;
+    return rhiCalculateABufferSize(s);
+}
+
 }
 
 QT_END_NAMESPACE

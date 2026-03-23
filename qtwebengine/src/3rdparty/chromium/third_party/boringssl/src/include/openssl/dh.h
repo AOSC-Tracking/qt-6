@@ -15,9 +15,7 @@
 #ifndef OPENSSL_HEADER_DH_H
 #define OPENSSL_HEADER_DH_H
 
-#include <openssl/base.h>
-
-#include <openssl/thread.h>
+#include <openssl/base.h>   // IWYU pragma: export
 
 #if defined(__cplusplus)
 extern "C" {
@@ -56,7 +54,7 @@ OPENSSL_EXPORT int DH_up_ref(DH *dh);
 
 // OPENSSL_DH_MAX_MODULUS_BITS is the maximum supported Diffie-Hellman group
 // modulus, in bits.
-#define OPENSSL_DH_MAX_MODULUS_BITS 10000
+#define OPENSSL_DH_MAX_MODULUS_BITS 8192
 
 // DH_bits returns the size of |dh|'s group modulus, in bits.
 OPENSSL_EXPORT unsigned DH_bits(const DH *dh);

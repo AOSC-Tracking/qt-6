@@ -48,7 +48,7 @@ void MarkingVerifierBase::VerifyMarkingOnPage(const PageMetadata* page,
     CHECK(IsMarked(object));
     CHECK(current >= next_object_must_be_here_or_later);
     VisitObject(heap_->isolate(), object, this);
-    next_object_must_be_here_or_later = current + size;
+    next_object_must_be_here_or_later = current + size.value();
     // The object is either part of a black area of black allocation or a
     // regular black object
     CHECK(bitmap(page)->AllBitsSetInRange(
@@ -142,7 +142,7 @@ bool IsCppHeapMarkingFinished(
   const auto* cpp_heap = CppHeap::From(heap->cpp_heap());
   if (!cpp_heap) return true;
 
-  return cpp_heap->IsTracingDone() && local_marking_worklists->IsWrapperEmpty();
+  return cpp_heap->IsMarkingDone() && local_marking_worklists->IsWrapperEmpty();
 }
 
 #if DEBUG

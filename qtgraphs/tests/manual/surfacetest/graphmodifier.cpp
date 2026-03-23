@@ -7,6 +7,7 @@
 #include <QtGraphs/QSurface3DSeries>
 #include <QtGraphs/QGraphsTheme>
 
+#include <limits>
 #include <qmath.h>
 #include <qrandom.h>
 #include <QLinearGradient>
@@ -730,6 +731,13 @@ void GraphModifier::adjustZMin(int min)
     qDebug() << "Z Minimum =" << min;
 }
 
+void GraphModifier::adjustCutoffMargin(int margin)
+{
+    m_graph->setCutoffMargin(float(margin) / 100.0f);
+
+    qDebug() << "Cutogg margin" << float(margin) / 100.0f;
+}
+
 void GraphModifier::gradientPressed()
 {
     static QGraphsTheme::ColorStyle colorStyle = QGraphsTheme::ColorStyle::Uniform;
@@ -1159,6 +1167,27 @@ void GraphModifier::populateRisingSeries(QSurface3DSeries *series, int rows, int
     }
     series->dataProxy()->resetArray(dataArray);
 
+}
+
+void GraphModifier::populateNanSeries(QSurface3DSeries *series, int rows, int columns)
+{
+    QSurfaceDataArray dataArray;
+    dataArray.reserve(rows);
+    float minValue = 0.0f;
+    float maxValue = 50.0f;
+    float range = maxValue - minValue;
+    int arraySize = rows * columns;
+    for (int i = 0; i < rows; i++) {
+        QSurfaceDataRow dataRow(columns);
+        for (int j = 0; j < columns; j++) {
+            float xValue = float(j);
+            float yValue = i % 2 == 0 ? minValue + (range * i * j / arraySize) : std::numeric_limits<float>::quiet_NaN();
+            float zValue = float(i);
+            dataRow[j].setPosition(QVector3D(xValue, yValue, zValue));
+        }
+        dataArray.append(dataRow);
+    }
+    series->dataProxy()->resetArray(dataArray);
 }
 
 void GraphModifier::changeRows()
@@ -1736,6 +1765,39 @@ void GraphModifier::testAxisReverse()
     counter++;
 }
 
+void GraphModifier::testNanSeries()
+{
+    static bool initalized = false;
+    static bool enabled = false;
+    const int rowCount = 20;
+    const int colCount = 20;
+
+    if (!initalized) {
+        m_nanSeries = new QSurface3DSeries;
+        populateNanSeries(m_nanSeries, rowCount, colCount);
+        initalized = true;
+    }
+
+    if (!enabled) {
+        const auto axes = m_graph->axes();
+        for (const auto &axis : axes)
+            m_graph->releaseAxis(axis);
+        m_graph->addSeries(m_nanSeries);
+        enabled = true;
+    } else {
+        const auto axes = m_graph->axes();
+        for (const auto &axis : axes)
+            m_graph->releaseAxis(axis);
+        m_graph->removeSeries(m_nanSeries);
+        enabled = false;
+    }
+}
+
+void GraphModifier::setRowSanitization(int enabled) {
+    if (m_nanSeries)
+        m_nanSeries->setRowsSanitized(enabled);
+}
+
 void GraphModifier::testDataOrdering()
 {
     static int counter = 0;
@@ -1879,4 +1941,20 @@ void GraphModifier::setSurfaceTexture(int enabled)
         m_multiseries[3]->setTexture(QImage(":/maps/mapimage"));
     else
         m_multiseries[3]->setTexture(QImage());
+}
+
+void GraphModifier::setSurfaceAlphaTexture(int enabled)
+{
+    if (enabled)
+        m_multiseries[2]->setTexture(QImage(":/maps/opacitymask"));
+    else
+        m_multiseries[2]->setTexture(QImage());
+}
+
+void GraphModifier::setSurfaceAlphaTextureFile(int enabled)
+{
+    if (enabled)
+        m_multiseries[1]->setTextureFile(":/maps/opacitymask");
+    else
+        m_multiseries[1]->setTextureFile("");
 }

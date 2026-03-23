@@ -7,7 +7,7 @@ import type * as CPUProfile from '../../cpu_profile/cpu_profile.js';
 import * as Types from '../types/types.js';
 
 import {milliToMicro} from './Timing.js';
-import {extractSampleTraceId, makeProfileCall, mergeEventsInOrder} from './Trace.js';
+import {extractSampleTraceId, makeProfileCall, mergeEventsInOrder, sortTraceEventsInPlace} from './Trace.js';
 
 /**
  * This is a helper that integrates CPU profiling data coming in the
@@ -32,7 +32,7 @@ import {extractSampleTraceId, makeProfileCall, mergeEventsInOrder} from './Trace
  * the duration of the calls in the tracking stack.
  *
  * note: Although this approach has been implemented since long ago, and
- * is relatively efficent (adds a complexity over the trace parsing of
+ * is relatively efficient (adds a complexity over the trace parsing of
  * O(n) where n is the number of samples) it has proven to be faulty.
  * It might be worthwhile experimenting with improvements or with a
  * completely different approach. Improving the approach is tracked in
@@ -40,7 +40,7 @@ import {extractSampleTraceId, makeProfileCall, mergeEventsInOrder} from './Trace
  */
 export class SamplesIntegrator {
   /**
-   * The result of runing the samples integrator. Holds the JS calls
+   * The result of running the samples integrator. Holds the JS calls
    * with their approximated duration after integrating samples into the
    * trace event tree.
    */
@@ -70,12 +70,6 @@ export class SamplesIntegrator {
    * in the stack before the event came.
    */
   #lockedJsStackDepth: number[] = [];
-  /**
-   * For samples with a trace id, creates a profile call and keeps it
-   * in a record keyed by that id. The value is typed as an union with
-   * undefined to avoid nullish accesses when a key is not present.
-   */
-  #callsByTraceIds: Record<number, Types.Events.SyntheticProfileCall|undefined> = {};
   /**
    * Used to keep track when samples should be integrated even if they
    * are not children of invocation trace events. This is useful in
@@ -126,7 +120,7 @@ export class SamplesIntegrator {
       // Because instant trace events have no duration, they don't provide
       // useful information for possible changes in the duration of calls
       // in the JS stack.
-      if (event.ph === Types.Events.Phase.INSTANT) {
+      if (event.ph === Types.Events.Phase.INSTANT && !extractSampleTraceId(event)) {
         continue;
       }
       if (stack.length === 0) {
@@ -168,6 +162,7 @@ export class SamplesIntegrator {
         this.#onTraceEventEnd(last);
       }
     }
+    sortTraceEventsInPlace(this.jsSampleEvents);
     return this.#constructedProfileCalls;
   }
 
@@ -237,7 +232,6 @@ export class SamplesIntegrator {
   callsFromProfileSamples(): Types.Events.SyntheticProfileCall[] {
     const samples = this.#profileModel.samples;
     const timestamps = this.#profileModel.timestamps;
-    const debugModeEnabled = this.#engineConfig.debugMode;
     if (!samples) {
       return [];
     }
@@ -249,16 +243,10 @@ export class SamplesIntegrator {
       if (!node) {
         continue;
       }
-      const maybeTraceId = this.#profileModel.traceIds?.[i];
       const call = makeProfileCall(node, this.#profileId, i, timestamp, this.#processId, this.#threadId);
-      // Separate samples with trace ids so that they are only used when
-      // processing the owner event.
-      if (maybeTraceId === undefined) {
-        calls.push(call);
-      } else {
-        this.#callsByTraceIds[maybeTraceId] = call;
-      }
-      if (debugModeEnabled) {
+      calls.push(call);
+
+      if (this.#engineConfig.debugMode) {
         const traceId = this.#profileModel.traceIds?.[i];
         this.jsSampleEvents.push(this.#makeJSSampleEvent(call, timestamp, traceId));
       }
@@ -281,7 +269,7 @@ export class SamplesIntegrator {
    * returned stack (last position), meaning that any other frames that
    * were effectively above it are omitted.
    * @param profileCall
-   * @param overrideTimeStamp a custom timestamp to use for the returned
+   * @param overrideTimeStamp - a custom timestamp to use for the returned
    * profile calls. If not defined, the timestamp of the input
    * profileCall is used instead. This param is useful for example when
    * creating the profile calls for a sample with a trace id, since the
@@ -322,6 +310,19 @@ export class SamplesIntegrator {
     return callFrames;
   }
 
+  #getStackForSampleTraceId(traceId: number, timestamp: Types.Timing.Micro): Types.Events.SyntheticProfileCall[]|null {
+    const nodeId = this.#profileModel.traceIds?.[traceId];
+    const node = nodeId && this.#profileModel.nodeById(nodeId);
+    const maybeCallForTraceId =
+        node && makeProfileCall(node, this.#profileId, -1, timestamp, this.#processId, this.#threadId);
+    if (!maybeCallForTraceId) {
+      return null;
+    }
+    if (this.#engineConfig.debugMode) {
+      this.jsSampleEvents.push(this.#makeJSSampleEvent(maybeCallForTraceId, timestamp, traceId));
+    }
+    return this.#makeProfileCallsForStack(maybeCallForTraceId);
+  }
   /**
    * Update tracked stack using this event's call stack.
    */
@@ -331,11 +332,9 @@ export class SamplesIntegrator {
       stackTrace = this.#makeProfileCallsForStack(event);
     }
     const traceId = extractSampleTraceId(event);
-    if (traceId !== null) {
-      const maybeCallForTraceId = this.#callsByTraceIds[traceId];
-      if (maybeCallForTraceId) {
-        stackTrace = this.#makeProfileCallsForStack(maybeCallForTraceId, event.ts);
-      }
+    const maybeCallForTraceId = traceId && this.#getStackForSampleTraceId(traceId, event.ts);
+    if (maybeCallForTraceId) {
+      stackTrace = maybeCallForTraceId;
     }
 
     SamplesIntegrator.filterStackFrames(stackTrace, this.#engineConfig);
@@ -409,10 +408,10 @@ export class SamplesIntegrator {
    * setting the ending time of its call frames and removing the top
    * call frames that aren't shared with the new call stack. This way,
    * we can update the tracked stack with the new call frames on top.
-   * @param depth the amount of call frames from bottom to top that
+   * @param depth - the amount of call frames from bottom to top that
    * should be kept in the tracking stack trace. AKA amount of shared
    * call frames between two stacks.
-   * @param time the new end of the call frames in the stack.
+   * @param time - the new end of the call frames in the stack.
    */
   #truncateJSStack(depth: number, time: Types.Timing.Micro): void {
     if (this.#lockedJsStackDepth.length) {
@@ -458,12 +457,12 @@ export class SamplesIntegrator {
     return runtimeCallStatsEnabled && Boolean(SamplesIntegrator.nativeGroup(name));
   }
 
-  static nativeGroup(nativeName: string): 'Parse'|'Compile'|null {
+  static nativeGroup(nativeName: string): SamplesIntegrator.NativeGroups|null {
     if (nativeName.startsWith('Parse')) {
-      return 'Parse';
+      return SamplesIntegrator.NativeGroups.PARSE;
     }
     if (nativeName.startsWith('Compile') || nativeName.startsWith('Recompile')) {
-      return 'Compile';
+      return SamplesIntegrator.NativeGroups.COMPILE;
     }
     return null;
   }
@@ -495,5 +494,51 @@ export class SamplesIntegrator {
       stack[j++] = stack[i];
     }
     stack.length = j;
+  }
+
+  static createFakeTraceFromCpuProfile(profile: Protocol.Profiler.Profile, tid: Types.Events.ThreadID):
+      Types.File.TraceFile {
+    if (!profile) {
+      return {traceEvents: [], metadata: {}};
+    }
+    // The |Name.CPU_PROFILE| will let MetaHandler to set |traceIsGeneric| to false
+    // The start time and duration is important here because we'll use them to determine the traceBounds
+    // We use the start and end time of the profile (which is longer than all samples), so the Performance
+    // panel won't truncate this time period.
+    const cpuProfileEvent: Types.Events.SyntheticCpuProfile = {
+      cat: 'disabled-by-default-devtools.timeline',
+      name: Types.Events.Name.CPU_PROFILE,
+      ph: Types.Events.Phase.COMPLETE,
+      pid: Types.Events.ProcessID(1),
+      tid,
+      ts: Types.Timing.Micro(profile.startTime),
+      dur: Types.Timing.Micro(profile.endTime - profile.startTime),
+      args: {data: {cpuProfile: profile}},
+      // Create an arbitrary profile id.
+      id: '0x1' as Types.Events.ProfileID,
+    };
+
+    return {
+      traceEvents: [cpuProfileEvent],
+      metadata: {
+        dataOrigin: Types.File.DataOrigin.CPU_PROFILE,
+      }
+    };
+  }
+
+  static extractCpuProfileFromFakeTrace(traceEvents: readonly Types.Events.Event[]): Protocol.Profiler.Profile {
+    const profileEvent = traceEvents.find(e => Types.Events.isSyntheticCpuProfile(e));
+    const profile = profileEvent?.args.data.cpuProfile;
+    if (!profile) {
+      throw new Error('Missing cpuProfile data');
+    }
+    return profile;
+  }
+}
+
+export namespace SamplesIntegrator {
+  export const enum NativeGroups {
+    COMPILE = 'Compile',
+    PARSE = 'Parse',
   }
 }

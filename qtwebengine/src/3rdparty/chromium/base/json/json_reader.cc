@@ -4,117 +4,121 @@
 
 #include "base/json/json_reader.h"
 
+#include <optional>
 #include <string_view>
 #include <utility>
 
-#include "base/features.h"
-#include "base/json/json_parser.h"
+#include "base/feature_list_buildflags.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 
-#if !BUILDFLAG(IS_NACL) && !BUILDFLAG(IS_QTWEBENGINE)
+#if !BUILDFLAG(ENABLE_RUST)
+#include "base/json/json_parser.h"
+#else
 #include "base/strings/string_view_rust.h"
 #include "third_party/rust/serde_json_lenient/v0_2/wrapper/functions.h"
 #include "third_party/rust/serde_json_lenient/v0_2/wrapper/lib.rs.h"
 #endif
 
-namespace base {
 
-// TODO(crbug.com/40811643): Move the C++ parser into components/nacl to just
-// run in-process there. Don't compile base::JSONReader on NaCL at all.
-#if !BUILDFLAG(IS_NACL) && !BUILDFLAG(IS_QTWEBENGINE)
+#if BUILDFLAG(ENABLE_RUST)
+
+namespace base {
+namespace {
+const char kSecurityJsonParsingTime[] = "Security.JSONParser.ParsingTime";
+}  // namespace
+}  // namespace base
+
+// This namespace defines FFI-friendly functions that are be called from Rust in
+// //third_party/rust/serde_json_lenient/v0_2/wrapper/.
+namespace serde_json_lenient {
+
+base::Value::List& list_append_list(base::Value::List& ctx) {
+  ctx.Append(base::Value::List());
+  return ctx.back().GetList();
+}
+
+base::Value::Dict& list_append_dict(base::Value::List& ctx) {
+  ctx.Append(base::Value::Dict());
+  return ctx.back().GetDict();
+}
+
+void list_append_none(base::Value::List& ctx) {
+  ctx.Append(base::Value());
+}
+
+void list_append_bool(base::Value::List& ctx, bool val) {
+  ctx.Append(val);
+}
+
+void list_append_i32(base::Value::List& ctx, int32_t val) {
+  ctx.Append(val);
+}
+
+void list_append_f64(base::Value::List& ctx, double val) {
+  ctx.Append(val);
+}
+
+void list_append_str(base::Value::List& ctx, rust::Str val) {
+  ctx.Append(std::string(val));
+}
+
+base::Value::List& dict_set_list(base::Value::Dict& ctx, rust::Str key) {
+  base::Value* value =
+      ctx.Set(base::RustStrToStringView(key), base::Value::List());
+  return value->GetList();
+}
+
+base::Value::Dict& dict_set_dict(base::Value::Dict& ctx, rust::Str key) {
+  base::Value* value =
+      ctx.Set(base::RustStrToStringView(key), base::Value::Dict());
+  return value->GetDict();
+}
+
+void dict_set_none(base::Value::Dict& ctx, rust::Str key) {
+  ctx.Set(base::RustStrToStringView(key), base::Value());
+}
+
+void dict_set_bool(base::Value::Dict& ctx, rust::Str key, bool val) {
+  ctx.Set(base::RustStrToStringView(key), val);
+}
+
+void dict_set_i32(base::Value::Dict& ctx, rust::Str key, int32_t val) {
+  ctx.Set(base::RustStrToStringView(key), val);
+}
+
+void dict_set_f64(base::Value::Dict& ctx, rust::Str key, double val) {
+  ctx.Set(base::RustStrToStringView(key), val);
+}
+
+void dict_set_str(base::Value::Dict& ctx, rust::Str key, rust::Str val) {
+  ctx.Set(base::RustStrToStringView(key), std::string(val));
+}
 
 namespace {
-using serde_json_lenient::ContextPointer;
 
-const char kSecurityJsonParsingTime[] = "Security.JSONParser.ParsingTime";
-
-ContextPointer& ListAppendList(ContextPointer& ctx) {
-  auto& value = reinterpret_cast<base::Value&>(ctx);
-  value.GetList().Append(base::Value::List());
-  return reinterpret_cast<ContextPointer&>(value.GetList().back());
-}
-
-ContextPointer& ListAppendDict(ContextPointer& ctx) {
-  auto& value = reinterpret_cast<base::Value&>(ctx);
-  value.GetList().Append(base::Value::Dict());
-  return reinterpret_cast<ContextPointer&>(value.GetList().back());
-}
-
-void ListAppendNone(ContextPointer& ctx) {
-  auto& value = reinterpret_cast<base::Value&>(ctx);
-  value.GetList().Append(base::Value());
-}
-
-template <class T, class As = T>
-void ListAppendValue(ContextPointer& ctx, T v) {
-  auto& value = reinterpret_cast<base::Value&>(ctx);
-  value.GetList().Append(As{v});
-}
-
-ContextPointer& DictSetList(ContextPointer& ctx, rust::Str key) {
-  auto& dict = reinterpret_cast<base::Value&>(ctx).GetDict();
-  base::Value* value =
-      dict.Set(base::RustStrToStringView(key), base::Value::List());
-  return reinterpret_cast<ContextPointer&>(*value);
-}
-
-ContextPointer& DictSetDict(ContextPointer& ctx, rust::Str key) {
-  auto& dict = reinterpret_cast<base::Value&>(ctx).GetDict();
-  base::Value* value =
-      dict.Set(base::RustStrToStringView(key), base::Value::Dict());
-  return reinterpret_cast<ContextPointer&>(*value);
-}
-
-void DictSetNone(ContextPointer& ctx, rust::Str key) {
-  auto& dict = reinterpret_cast<base::Value&>(ctx).GetDict();
-  dict.Set(base::RustStrToStringView(key), base::Value());
-}
-
-template <class T, class As = T>
-void DictSetValue(ContextPointer& ctx, rust::Str key, T v) {
-  auto& dict = reinterpret_cast<base::Value&>(ctx).GetDict();
-  dict.Set(base::RustStrToStringView(key), base::Value(As{v}));
-}
-
-JSONReader::Result DecodeJSONInRust(std::string_view json,
-                                    int options,
-                                    size_t max_depth) {
-  const serde_json_lenient::JsonOptions rust_options = {
+base::JSONReader::Result DecodeJSONInRust(std::string_view json,
+                                          int options,
+                                          size_t max_depth) {
+  const JsonOptions rust_options = {
       .allow_trailing_commas =
           (options & base::JSON_ALLOW_TRAILING_COMMAS) != 0,
       .replace_invalid_characters =
           (options & base::JSON_REPLACE_INVALID_CHARACTERS) != 0,
       .allow_comments = (options & base::JSON_ALLOW_COMMENTS) != 0,
       .allow_newlines = (options & base::JSON_ALLOW_NEWLINES_IN_STRINGS) != 0,
-      .allow_control_chars = (options & base::JSON_ALLOW_CONTROL_CHARS) != 0,
       .allow_vert_tab = (options & base::JSON_ALLOW_VERT_TAB) != 0,
       .allow_x_escapes = (options & base::JSON_ALLOW_X_ESCAPES) != 0,
       .max_depth = max_depth,
   };
-  static constexpr serde_json_lenient::Functions functions = {
-      .list_append_none_fn = ListAppendNone,
-      .list_append_bool_fn = ListAppendValue<bool>,
-      .list_append_i32_fn = ListAppendValue<int32_t>,
-      .list_append_f64_fn = ListAppendValue<double>,
-      .list_append_str_fn = ListAppendValue<rust::Str, std::string>,
-      .list_append_list_fn = ListAppendList,
-      .list_append_dict_fn = ListAppendDict,
-      .dict_set_none_fn = DictSetNone,
-      .dict_set_bool_fn = DictSetValue<bool>,
-      .dict_set_i32_fn = DictSetValue<int32_t>,
-      .dict_set_f64_fn = DictSetValue<double>,
-      .dict_set_str_fn = DictSetValue<rust::Str, std::string>,
-      .dict_set_list_fn = DictSetList,
-      .dict_set_dict_fn = DictSetDict,
-  };
 
-  base::Value value(base::Value::Type::LIST);
-  auto& ctx = reinterpret_cast<ContextPointer&>(value);
-  serde_json_lenient::DecodeError error;
-  bool ok = serde_json_lenient::decode_json(
-      base::StringViewToRustSlice(json), rust_options, functions, ctx, error);
+  base::Value::List list;
+  DecodeError error;
+  bool ok =
+      decode_json(base::StringViewToRustSlice(json), rust_options, list, error);
 
   if (!ok) {
     return base::unexpected(base::JSONReader::Error{
@@ -124,33 +128,38 @@ JSONReader::Result DecodeJSONInRust(std::string_view json,
     });
   }
 
-  return std::move(std::move(value.GetList()).back());
+  return std::move(list.back());
 }
 
-}  // anonymous namespace
+}  // namespace
+}  // namespace serde_json_lenient
 
-#endif  // !BUILDFLAG(IS_NACL)
+#endif  // BUILDFLAG(ENABLE_RUST)
+
+namespace base {
+
+std::string JSONReader::Error::ToString() const {
+  return base::StrCat({"line ", base::NumberToString(line), ", column ",
+                       base::NumberToString(column), ": ", message});
+}
 
 // static
 std::optional<Value> JSONReader::Read(std::string_view json,
                                       int options,
                                       size_t max_depth) {
-#if BUILDFLAG(IS_NACL) || BUILDFLAG(IS_QTWEBENGINE)
+#if !BUILDFLAG(ENABLE_RUST)
   internal::JSONParser parser(options, max_depth);
   return parser.Parse(json);
-#else   // BUILDFLAG(IS_NACL)
+#else
   SCOPED_UMA_HISTOGRAM_TIMER_MICROS(kSecurityJsonParsingTime);
-  if (UsingRust()) {
-    JSONReader::Result result = DecodeJSONInRust(json, options, max_depth);
-    if (!result.has_value()) {
-      return std::nullopt;
-    }
-    return std::move(*result);
-  } else {
-    internal::JSONParser parser(options, max_depth);
-    return parser.Parse(json);
+
+  JSONReader::Result result =
+      serde_json_lenient::DecodeJSONInRust(json, options, max_depth);
+  if (!result.has_value()) {
+    return std::nullopt;
   }
-#endif  // BUILDFLAG(IS_NACL)
+  return std::move(*result);
+#endif
 }
 
 // static
@@ -165,10 +174,21 @@ std::optional<Value::Dict> JSONReader::ReadDict(std::string_view json,
 }
 
 // static
+std::optional<Value::List> JSONReader::ReadList(std::string_view json,
+                                                int options,
+                                                size_t max_depth) {
+  std::optional<Value> value = Read(json, options, max_depth);
+  if (!value || !value->is_list()) {
+    return std::nullopt;
+  }
+  return std::move(*value).TakeList();
+}
+
+// static
 JSONReader::Result JSONReader::ReadAndReturnValueWithError(
     std::string_view json,
     int options) {
-#if BUILDFLAG(IS_NACL) || BUILDFLAG(IS_QTWEBENGINE)
+#if !BUILDFLAG(ENABLE_RUST)
   internal::JSONParser parser(options);
   auto value = parser.Parse(json);
   if (!value) {
@@ -180,38 +200,10 @@ JSONReader::Result JSONReader::ReadAndReturnValueWithError(
   }
 
   return std::move(*value);
-#else   // BUILDFLAG(IS_NACL)
-  SCOPED_UMA_HISTOGRAM_TIMER_MICROS(kSecurityJsonParsingTime);
-  if (UsingRust()) {
-    return DecodeJSONInRust(json, options, internal::kAbsoluteMaxDepth);
-  } else {
-    internal::JSONParser parser(options);
-    auto value = parser.Parse(json);
-    if (!value) {
-      Error error;
-      error.message = parser.GetErrorMessage();
-      error.line = parser.error_line();
-      error.column = parser.error_column();
-      return base::unexpected(std::move(error));
-    }
-
-    return std::move(*value);
-  }
-#endif  // BUILDFLAG(IS_NACL)
-}
-
-// static
-bool JSONReader::UsingRust() {
-  // If features have not yet been enabled, we cannot check the feature, so fall
-  // back to the C++ parser. In practice, this seems to apply to
-  // `ReadPrefsFromDisk()`, which is parsing trusted JSON.
-  if (!base::FeatureList::GetInstance()) {
-    return false;
-  }
-#if BUILDFLAG(IS_NACL) || BUILDFLAG(IS_QTWEBENGINE)
-  return false;
 #else
-  return base::FeatureList::IsEnabled(base::features::kUseRustJsonParser);
+  SCOPED_UMA_HISTOGRAM_TIMER_MICROS(kSecurityJsonParsingTime);
+  return serde_json_lenient::DecodeJSONInRust(json, options,
+                                              internal::kAbsoluteMaxDepth);
 #endif
 }
 

@@ -17,6 +17,7 @@ TestVotesUploader::~TestVotesUploader() = default;
 
 void TestVotesUploader::UploadVote(
     std::unique_ptr<FormStructure> submitted_form,
+    std::vector<AutofillUploadContents> upload_contents,
     base::TimeTicks initial_interaction_timestamp,
     base::TimeTicks submission_timestamp,
     bool observed_submission,
@@ -35,9 +36,7 @@ void TestVotesUploader::UploadVote(
     for (size_t i = 0; i < expected_submitted_field_types_.size(); ++i) {
       SCOPED_TRACE(base::StringPrintf(
           "Field %d with value %s", static_cast<int>(i),
-          base::UTF16ToUTF8(
-              submitted_form->field(i)->value(ValueSemantics::kCurrent))
-              .c_str()));
+          base::UTF16ToUTF8(submitted_form->field(i)->value()).c_str()));
       const FieldTypeSet& possible_types =
           submitted_form->field(i)->possible_types();
       EXPECT_EQ(expected_submitted_field_types_[i].size(),
@@ -49,10 +48,29 @@ void TestVotesUploader::UploadVote(
     }
   }
 
-  VotesUploader::UploadVote(std::move(submitted_form),
-                            initial_interaction_timestamp, submission_timestamp,
-                            observed_submission, last_unlocked_credit_card_cvc,
-                            source_id);
+  last_uploaded_form_associations_ = {};
+  for (const AutofillUploadContents& upload : upload_contents) {
+    if (!last_uploaded_form_associations_.last_address_form_submitted &&
+        upload.has_last_address_form_submitted()) {
+      last_uploaded_form_associations_.last_address_form_submitted =
+          FormSignature(upload.last_address_form_submitted());
+    }
+    if (!last_uploaded_form_associations_.second_last_address_form_submitted &&
+        upload.has_second_last_address_form_submitted()) {
+      last_uploaded_form_associations_.second_last_address_form_submitted =
+          FormSignature(upload.second_last_address_form_submitted());
+    }
+    if (!last_uploaded_form_associations_.last_credit_card_form_submitted &&
+        upload.last_credit_card_form_submitted()) {
+      last_uploaded_form_associations_.last_credit_card_form_submitted =
+          FormSignature(upload.last_credit_card_form_submitted());
+    }
+  }
+
+  VotesUploader::UploadVote(
+      std::move(submitted_form), std::move(upload_contents),
+      initial_interaction_timestamp, submission_timestamp, observed_submission,
+      last_unlocked_credit_card_cvc, source_id);
 }
 
 bool TestVotesUploader::MaybeStartVoteUploadProcess(

@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_DYNAMIC_OBJECT_SYSTEM_H
 #define QSSG_RENDER_DYNAMIC_OBJECT_SYSTEM_H
@@ -54,6 +56,9 @@ struct QSSGCustomShaderMetaData
         UsesClearcoatFresnelScaleBias = 1 << 16,
         UsesFresnelScaleBias = 1 << 17,
         UsesTransmission = 1 << 18,
+        UsesViewMatrix = 1 << 19,
+        UsesNormalTexture = 1 << 20,
+        UsesMotionVectorTexture = 1 << 21
     };
     Q_DECLARE_FLAGS(Flags, Flag)
 
@@ -85,6 +90,8 @@ public:
     explicit QSSGShaderLibraryManager();
 
     ~QSSGShaderLibraryManager();
+
+    QQsbCollection::EntryMap getParticleShaderEntries() const;
 
     void setShaderSource(const QByteArray &inShaderPathKey, QSSGShaderCache::ShaderType type,
                          const QByteArray &inSource, const QSSGCustomShaderMetaData &meta);

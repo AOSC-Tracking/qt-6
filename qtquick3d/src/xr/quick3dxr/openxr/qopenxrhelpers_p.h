@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QOPENXRHELPERS_H
 #define QOPENXRHELPERS_H
@@ -28,6 +30,7 @@ namespace OpenXRHelpers
 {
 QString getXrResultAsString(XrResult result, XrInstance instance);
 bool checkXrResult(XrResult result, XrInstance instance);
+bool resolveXrFunction(XrInstance instance, const char *name, PFN_xrVoidFunction *function);
 
 inline QQuaternion toQQuaternion(const XrQuaternionf &q)
 {

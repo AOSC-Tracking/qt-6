@@ -20,6 +20,10 @@
 
 class PrefService;
 
+namespace data_sharing {
+class Logger;
+}  // namespace data_sharing
+
 namespace syncer {
 class DataTypeControllerDelegate;
 }  // namespace syncer
@@ -41,6 +45,7 @@ class TabGroupSyncBridgeMediator : public SavedTabGroupModelObserver {
   TabGroupSyncBridgeMediator(
       SavedTabGroupModel* model,
       PrefService* pref_service,
+      data_sharing::Logger* logger,
       std::unique_ptr<SyncDataTypeConfiguration> saved_tab_group_configuration,
       std::unique_ptr<SyncDataTypeConfiguration>
           shared_tab_group_configuration);
@@ -58,14 +63,14 @@ class TabGroupSyncBridgeMediator : public SavedTabGroupModelObserver {
   // SavedTabGroupSyncBridge specific getters.
   bool IsSavedBridgeSyncing() const;
   std::optional<std::string> GetLocalCacheGuidForSavedBridge() const;
-  std::optional<GaiaId> GetAccountIdForSavedBridge() const;
+  std::optional<GaiaId> GetGaiaIdForSavedBridge() const;
 
   // SharedTabGroupDataSyncBridge specific getters.
 
   // Returns the obfuscated Gaia ID of the account that is currently syncing
   // shared tab groups. Returns nullopt if the bridge is not syncing (including
   // if the bridge has not downloaded any data yet).
-  std::optional<GaiaId> GetTrackingAccountIdForSharedBridge() const;
+  std::optional<GaiaId> GetTrackingGaiaIdForSharedBridge() const;
 
   // SavedTabGroupModelObserver overrides.
   void SavedTabGroupAddedLocally(const base::Uuid& guid) override;
@@ -79,6 +84,10 @@ class TabGroupSyncBridgeMediator : public SavedTabGroupModelObserver {
   void SavedTabGroupLocalIdChanged(const base::Uuid& group_guid) override;
   void SavedTabGroupLastUserInteractionTimeUpdated(
       const base::Uuid& group_guid) override;
+
+  // Called to untrack entities for a given collaboration from sync server.
+  void UntrackEntitiesForCollaboration(
+      const syncer::CollaborationId& collaboration_id);
 
  private:
   // Populates loaded entries to the model when all data is loaded.

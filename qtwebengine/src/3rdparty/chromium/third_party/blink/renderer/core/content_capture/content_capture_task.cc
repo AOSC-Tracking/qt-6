@@ -8,6 +8,7 @@
 
 #include "base/auto_reset.h"
 #include "base/feature_list.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/trees/layer_tree_host.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/web/web_content_capture_client.h"
@@ -113,6 +114,16 @@ bool ContentCaptureTask::CaptureContent() {
   return result;
 }
 
+void ContentCaptureTask::EndBatchContent(
+    TaskSession::DocumentSession& doc_session) {
+  auto* document = doc_session.GetDocument();
+  CHECK(document);
+  auto* client = GetWebContentCaptureClient(*document);
+  CHECK(client);
+
+  client->DidCompleteBatchCaptureContent();
+}
+
 void ContentCaptureTask::SendContent(
     TaskSession::DocumentSession& doc_session) {
   auto* document = doc_session.GetDocument();
@@ -177,12 +188,15 @@ bool ContentCaptureTask::ProcessDocumentSession(
          doc_session.HasUnsentChangedContent()) {
     SendContent(doc_session);
     if (ShouldPause()) {
+      EndBatchContent(doc_session);
       return !doc_session.HasUnsentData();
     }
   }
   // Sent the detached nodes.
-  if (doc_session.HasUnsentDetachedNodes())
+  if (doc_session.HasUnsentDetachedNodes()) {
     content_capture_client->DidRemoveContent(doc_session.MoveDetachedNodes());
+  }
+  EndBatchContent(doc_session);
   DCHECK(!doc_session.HasUnsentData());
   return true;
 }

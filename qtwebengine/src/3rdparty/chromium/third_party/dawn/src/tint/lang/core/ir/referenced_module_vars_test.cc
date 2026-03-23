@@ -30,7 +30,6 @@
 #include <string>
 
 #include "gmock/gmock.h"
-#include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/ir_helper_test.h"
 
 namespace tint::core::ir {
@@ -41,11 +40,7 @@ using ::testing::ElementsAre;
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
 
-class IR_ReferencedModuleVarsTest : public IRTestHelper {
-  protected:
-    /// @returns the module as a disassembled string
-    std::string Disassemble() const { return "\n" + ir::Disassembler(mod).Plain(); }
-};
+using IR_ReferencedModuleVarsTest = IRTestHelper;
 
 TEST_F(IR_ReferencedModuleVarsTest, EmptyRootBlock) {
     auto* foo = b.Function("foo", ty.void_());
@@ -60,7 +55,7 @@ TEST_F(IR_ReferencedModuleVarsTest, EmptyRootBlock) {
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleVars<Module> vars(mod);
     auto& foo_vars = vars.TransitiveReferences(foo);
@@ -83,9 +78,9 @@ TEST_F(IR_ReferencedModuleVarsTest, DirectUse) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<workgroup, u32, read_write> = var
-  %c:ptr<workgroup, u32, read_write> = var
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<workgroup, u32, read_write> = var undef
+  %c:ptr<workgroup, u32, read_write> = var undef
 }
 
 %foo = func():void {
@@ -96,7 +91,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleVars<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a, var_b));
@@ -121,11 +116,11 @@ TEST_F(IR_ReferencedModuleVarsTest, DirectUse_DeclarationOrder) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<workgroup, u32, read_write> = var
-  %c:ptr<workgroup, u32, read_write> = var
-  %d:ptr<workgroup, u32, read_write> = var
-  %e:ptr<workgroup, u32, read_write> = var
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<workgroup, u32, read_write> = var undef
+  %c:ptr<workgroup, u32, read_write> = var undef
+  %d:ptr<workgroup, u32, read_write> = var undef
+  %e:ptr<workgroup, u32, read_write> = var undef
 }
 
 %foo = func():void {
@@ -139,7 +134,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleVars<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a, var_b, var_c, var_d, var_e));
@@ -171,9 +166,9 @@ TEST_F(IR_ReferencedModuleVarsTest, DirectUse_MultipleFunctions) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<workgroup, u32, read_write> = var
-  %c:ptr<workgroup, u32, read_write> = var
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<workgroup, u32, read_write> = var undef
+  %c:ptr<workgroup, u32, read_write> = var undef
 }
 
 %foo = func():void {
@@ -196,7 +191,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleVars<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a, var_b));
@@ -238,10 +233,10 @@ TEST_F(IR_ReferencedModuleVarsTest, DirectUse_NestedInControlFlow) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<workgroup, u32, read_write> = var
-  %c:ptr<workgroup, u32, read_write> = var
-  %c_1:ptr<workgroup, u32, read_write> = var  # %c_1: 'c'
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<workgroup, u32, read_write> = var undef
+  %c:ptr<workgroup, u32, read_write> = var undef
+  %c_1:ptr<workgroup, u32, read_write> = var undef  # %c_1: 'c'
 }
 
 %foo = func():void {
@@ -273,7 +268,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleVars<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a, var_b, var_c, var_d));
@@ -308,9 +303,9 @@ TEST_F(IR_ReferencedModuleVarsTest, IndirectUse) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<workgroup, u32, read_write> = var
-  %c:ptr<workgroup, u32, read_write> = var
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<workgroup, u32, read_write> = var undef
+  %c:ptr<workgroup, u32, read_write> = var undef
 }
 
 %bar = func():void {
@@ -333,7 +328,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleVars<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(bar), ElementsAre(var_b));
@@ -354,19 +349,19 @@ TEST_F(IR_ReferencedModuleVarsTest, NoFunctionVars) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
+  %a:ptr<workgroup, u32, read_write> = var undef
 }
 
 %foo = func():void {
   $B2: {
-    %b:ptr<function, u32, read_write> = var
+    %b:ptr<function, u32, read_write> = var undef
     %4:u32 = load %a
     %5:u32 = load %b
     ret
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleVars<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a));
@@ -391,11 +386,11 @@ TEST_F(IR_ReferencedModuleVarsTest, Predicate) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<private, u32, read_write> = var
-  %c:ptr<workgroup, u32, read_write> = var
-  %d:ptr<private, u32, read_write> = var
-  %e:ptr<workgroup, u32, read_write> = var
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<private, u32, read_write> = var undef
+  %c:ptr<workgroup, u32, read_write> = var undef
+  %d:ptr<private, u32, read_write> = var undef
+  %e:ptr<workgroup, u32, read_write> = var undef
 }
 
 %foo = func():void {
@@ -409,10 +404,10 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleVars<Module> vars(mod, [](const Var* var) {
-        auto* view = var->Result(0)->Type()->As<type::MemoryView>();
+        auto* view = var->Result()->Type()->As<type::MemoryView>();
         return view->AddressSpace() == AddressSpace::kPrivate;
     });
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_b, var_d));
@@ -431,7 +426,7 @@ TEST_F(IR_ReferencedModuleVarsTest, ReferencesForNullFunction) {
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleVars<Module> vars(mod);
     auto& null_vars = vars.TransitiveReferences(nullptr);

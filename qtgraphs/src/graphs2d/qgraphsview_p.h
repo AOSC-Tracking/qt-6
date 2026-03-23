@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QGRAPHSVIEW_H
 #define QGRAPHSVIEW_H
@@ -35,7 +37,9 @@ class BarsRenderer;
 class PointRenderer;
 class PieRenderer;
 class AreaRenderer;
+class CustomRenderer;
 class QQuickPinchHandler;
+class QCustomSeries;
 
 class Q_GRAPHS_EXPORT QGraphsView : public QQuickItem
 {
@@ -142,6 +146,9 @@ public:
 #ifdef USE_AREAGRAPH
     void createAreaRenderer();
 #endif
+#ifdef USE_CUSTOMGRAPH
+    void createCustomRenderer();
+#endif
 
     qreal axisXSmoothing() const;
     void setAxisXSmoothing(qreal smoothing);
@@ -193,7 +200,13 @@ public:
     qreal zoomSensitivity() const;
     void setZoomSensitivity(qreal newZoomSensitivity);
 
-    void calculateAxisCounts(int *xCount, int *yCount, int *leftCount, int *topCount);
+    void calculateAxisCounts(int *xCount, int *yCount, int *leftCount, int *topCount,
+                             int *xTitleCount, int *yTitleCount, int *leftTitleCount, int *topTitleCount);
+
+    qreal mapX(QCustomSeries *series, qreal x);
+    qreal mapY(QCustomSeries *series, qreal y);
+
+    CustomRenderer *customRenderer() const;
 
 protected:
     void handleHoverEnter(const QString &seriesName, QPointF position, QPointF value);
@@ -248,6 +261,7 @@ private:
     friend class BarsRenderer;
     friend class PointRenderer;
     friend class AreaRenderer;
+    friend class CustomRenderer;
     friend class QAbstractAxis;
 
     void polishAndUpdate();
@@ -261,12 +275,14 @@ private:
     static constexpr qreal m_defaultAxisLabelsHeight = 25;
     static constexpr qreal m_defaultAxisXLabelsMargin = 0;
     static constexpr qreal m_defaultAxisYLabelsMargin = 5;
+    static constexpr qreal m_defaultAxisTitleMargin = 25;
 
     AxisRenderer *m_axisRenderer = nullptr;
     BarsRenderer *m_barsRenderer = nullptr;
     PointRenderer *m_pointRenderer = nullptr;
     PieRenderer *m_pieRenderer = nullptr;
     AreaRenderer *m_areaRenderer = nullptr;
+    CustomRenderer *m_customRenderer = nullptr;
     QList<QObject *> m_seriesList;
     QHash<int, QList<QAbstractSeries *>> m_cleanupSeriesList;
     QQuickRectangle *m_backgroundRectangle = nullptr;
@@ -308,6 +324,7 @@ private:
     qreal m_axisLabelsHeight = m_defaultAxisLabelsHeight;
     qreal m_axisXLabelsMargin = m_defaultAxisXLabelsMargin;
     qreal m_axisYLabelsMargin = m_defaultAxisYLabelsMargin;
+    qreal m_axisTitleMargin = m_defaultAxisTitleMargin;
     // Calculated based the the above
     qreal m_axisWidth = 0;
     qreal m_axisHeight = 0;

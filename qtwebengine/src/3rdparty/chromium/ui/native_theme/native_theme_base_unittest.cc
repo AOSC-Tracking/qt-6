@@ -7,7 +7,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/native_theme/native_theme_features.h"
+#include "ui/native_theme/features/native_theme_features.h"
 
 namespace ui {
 
@@ -100,15 +100,6 @@ TEST_F(NativeThemeBaseTest, GetContrastingPressedOrHoveredTransparencies) {
       }
     }
   }
-}
-
-// Tests that colors are not modified if the feature flag is disabled.
-TEST_F(NativeThemeBaseTest, GetContrastingPressedOrHoveredDisableFeature) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature(
-      ::features::kModifyScrollbarCssColorOnHoverOrPress);
-  EXPECT_EQ(GetContrastingPressedOrHoveredColor(SK_ColorRED, SK_ColorBLACK),
-            SK_ColorRED);
 }
 
 }  // namespace ui

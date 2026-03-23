@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QV4SEQUENCEWRAPPER_P_H
 #define QV4SEQUENCEWRAPPER_P_H
@@ -37,10 +38,17 @@ struct Q_QML_EXPORT SequencePrototype : public QV4::Object
 
     static ReturnedValue method_valueOf(const FunctionObject *, const Value *thisObject, const Value *argv, int argc);
     static ReturnedValue method_shift(const FunctionObject *b, const Value *thisObject, const Value *, int);
+    static ReturnedValue method_unshift(
+            const FunctionObject *f, const Value *thisObject, const Value *argv, int argc);
+    static ReturnedValue method_push(
+            const FunctionObject *f, const Value *thisObject, const Value *argv, int argc);
+    static ReturnedValue method_pop(
+            const FunctionObject *f, const Value *thisObject, const Value *argv, int argc);
     static ReturnedValue method_getLength(
             const FunctionObject *b, const Value *thisObject, const Value *, int);
     static ReturnedValue method_setLength(
             const FunctionObject *f, const Value *thisObject, const Value *argv, int argc);
+
 
     static ReturnedValue newSequence(
         QV4::ExecutionEngine *engine, QMetaType type, QMetaSequence metaSequence, const void *data,

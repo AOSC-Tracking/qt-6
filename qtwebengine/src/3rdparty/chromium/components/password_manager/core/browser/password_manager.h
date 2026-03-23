@@ -54,11 +54,11 @@ class FormData;
 
 namespace password_manager {
 
+class BrowserSavePasswordProgressLogger;
 class PasswordManagerClient;
 class PasswordManagerDriver;
 class PasswordFormManagerForUI;
 class PasswordFormManager;
-class PasswordManagerMetricsRecorder;
 struct PasswordForm;
 struct PossibleUsernameData;
 
@@ -79,6 +79,21 @@ constexpr void operator|=(PasswordVsOtpFormType& lhs,
   lhs = static_cast<PasswordVsOtpFormType>(static_cast<int>(lhs) |
                                            static_cast<int>(rhs));
 }
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+//
+// LINT.IfChange(LogInWithChangedPasswordOutcome)
+enum class LogInWithChangedPasswordOutcome {
+  kPrimaryPasswordFailed = 0,
+  kPrimaryPasswordSucceeded = 1,
+  kBackupPasswordFailed = 2,
+  kBackupPasswordSucceeded = 3,
+  kUnknownPasswordFailed = 4,
+  kUnknownPasswordSucceeded = 5,
+  kMaxValue = kUnknownPasswordSucceeded
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/password/enums.xml:LogInWithChangedPasswordOutcome)
 
 // Per-tab password manager. Handles creation and management of UI elements,
 // receiving password form data from the renderer and managing the password
@@ -133,6 +148,7 @@ class PasswordManager : public PasswordManagerInterface {
   bool HaveFormManagersReceivedData(
       const PasswordManagerDriver* driver) const override;
 
+  void OnResourceLoadingFailed(PasswordManagerDriver* driver, const GURL& url);
   PasswordManagerClient* GetClient() override;
 #if BUILDFLAG(IS_IOS)
   void OnSubframeFormSubmission(PasswordManagerDriver* driver,
@@ -305,7 +321,13 @@ class PasswordManager : public PasswordManagerInterface {
 
   // Called when the login was considered unsuccessful. Takes care of logging
   // and reporting metrics and resets the submitted manager data.
-  void OnLoginFailed(BrowserSavePasswordProgressLogger* logger);
+  void OnLoginFailed(PasswordManagerDriver* driver,
+                     BrowserSavePasswordProgressLogger* logger);
+
+  // Similar to OnLoginFailed() but doesn't report metrics and doesn't reset the
+  // submitted manager data.
+  void OnLoginPotentiallyFailed(PasswordManagerDriver* driver,
+                                BrowserSavePasswordProgressLogger* logger);
 
   // Checks for every form in |forms_data| whether |pending_login_managers_|
   // already contain a manager for that form. If not, adds a manager for each
@@ -321,6 +343,8 @@ class PasswordManager : public PasswordManagerInterface {
 
   // Create PasswordFormManager for |form|, adds the newly created one to
   // |form_managers_| and returns it.
+  // Returns nullptr if the manager should not be created for a form (e.g. when
+  // filling is disabled).
   PasswordFormManager* CreateFormManager(PasswordManagerDriver* driver,
                                          const autofill::FormData& form);
 
@@ -352,12 +376,6 @@ class PasswordManager : public PasswordManagerInterface {
   // TODO(crbug.com/40570965): Remove when the old PasswordFormManager is
   // gone.
   std::unique_ptr<PasswordFormManagerForUI> MoveOwnedSubmittedManager();
-
-  // Records provisional save failure using current |client_| and
-  // |main_frame_url_|.
-  void RecordProvisionalSaveFailure(
-      PasswordManagerMetricsRecorder::ProvisionalSaveFailure failure,
-      const GURL& form_origin);
 
   // Returns the manager which manages |form_id|. |driver| is needed to
   // determine the match. Returns nullptr when no matched manager is found.
@@ -459,12 +477,6 @@ class PasswordManager : public PasswordManagerInterface {
   const raw_ptr<PasswordManagerClient> client_;
 
   const base::CallbackListSubscription account_store_cb_list_subscription_;
-
-  // Records all visible forms seen during a page load, in all frames of the
-  // page. When the page stops loading, the password manager checks if one of
-  // the recorded forms matches the login form from the previous page
-  // (to see if the login was a failure), and clears the vector.
-  std::vector<autofill::FormData> visible_forms_data_;
 
   // Server predictions for the forms on the page.
   std::map<autofill::FormSignature, FormPredictions> server_predictions_;

@@ -19,12 +19,15 @@
 #include <QtQuick/private/qquickshadereffectsource_p.h>
 #include <QtQuick/private/qquicktaphandler_p.h>
 #include <QtQuick/private/qquickwindow_p.h>
+#include <QtQuick/private/qquickitem_p.h>
 #include <QtQuickTest/quicktest.h>
 #include <QtQuickTestUtils/private/qmlutils_p.h>
 #include <QtQuickTestUtils/private/visualtestutils_p.h>
 #include <QtQuickTestUtils/private/viewtestutils_p.h>
 
 Q_LOGGING_CATEGORY(lcTests, "qt.quick.tests")
+
+using namespace Qt::StringLiterals;
 
 // On one hand, uncommenting this will make troubleshooting easier (avoid the 60FPS hover events).
 // On the other hand, if anything actually breaks when hover events are enabled, that's also a bug.
@@ -154,6 +157,8 @@ private slots:
     void deleteTargetOnPress();
     void compoundControlsFocusInSubscene();
     void hoverEventGlobalPosition();
+    void layerEnabledHoverCrash();
+    void mouseMoveHoverEfficiency();
 
 private:
     std::unique_ptr<QPointingDevice> touchscreen{QTest::createTouchDevice()};
@@ -706,7 +711,140 @@ void tst_qquickdeliveryagent::hoverEventGlobalPosition()
     QTest::mouseMove(&window, point);
     QCOMPARE(child.hoverEnter, true);
     QTest::mousePress(&window, Qt::LeftButton, {}, point);
-    QCOMPARE(child.globalHoverPosition, child.globalMousePosition);
+    QCOMPARE(child.globalHoverPosition.toPoint(), child.globalMousePosition.toPoint());
+}
+
+void tst_qquickdeliveryagent::layerEnabledHoverCrash() // QTBUG-139561
+{
+    QQuickView window;
+    QVERIFY(QQuickTest::showView(window, testFileUrl("layerEnabledHoverCrash.qml")));
+    QSignalSpy swapSpy(&window, &QQuickView::frameSwapped);
+    QQuickItem *testRect = window.rootObject()->findChild<QQuickRectangle*>();
+    QVERIFY(testRect);
+    QQuickMouseArea *mouseArea = window.rootObject()->findChild<QQuickMouseArea*>();
+    QVERIFY(mouseArea);
+    QVERIFY(mouseArea->hoverEnabled());
+    QQuickItemLayer *layer = qvariant_cast<QQuickItemLayer*>(testRect->property("layer"));
+    QVERIFY(layer);
+
+    for (int i = 0; i < 8; ++i) {
+        swapSpy.clear();
+        QTest::mouseMove(&window, QPoint(150, 130));
+        QTRY_COMPARE_GE(swapSpy.size(), 1);
+        QCOMPARE(mouseArea->hovered(), true);
+        QCOMPARE(layer->enabled(), true);
+        QTest::mouseMove(&window, QPoint(10, 10));
+        // hover delivery is frame-synchronous, so wait for rendering to ensure it has a chance to crash :-/
+        QTRY_COMPARE_GE(swapSpy.size(), 2);
+        QCOMPARE(mouseArea->hovered(), false);
+        QCOMPARE(layer->enabled(), false);
+        QTest::qWait(50); // visually verify that it gets un-hovered
+    }
+}
+
+// This test is more like a benchmark: it's important to
+// avoid calling QQuickItem::mapTo... functions too often.
+void tst_qquickdeliveryagent::mouseMoveHoverEfficiency() // QTBUG-140340
+{
+    // reset counters
+#ifdef QT_BUILD_INTERNAL
+    QQuickItemPrivate::eventHandlingChildrenWithinBounds_counter = 0;
+    QQuickItemPrivate::itemToParentTransform_counter = 0;
+    QQuickItemPrivate::itemToWindowTransform_counter = 0;
+    QQuickItemPrivate::windowToItemTransform_counter = 0;
+    QQuickItemPrivate::effectiveClippingSkips_counter = 0;
+#endif
+
+    QQuickWindow window;
+    auto deliveryAgent = QQuickWindowPrivate::get(&window)->deliveryAgentPrivate();
+    window.resize(400, 200);
+
+    QList<HoverItem*> outerItems(100);
+    QList<HoverItem*> nestedItems(100);
+
+    // arrange a grid of 100 nested items that care about hover
+    for (int i = 0; i < 100; ++i) {
+        int row = i / 10;
+        int col = i % 10;
+        HoverItem *hi = new HoverItem(window.contentItem());
+        outerItems[i] = hi;
+        hi->setAcceptHoverEvents(true);
+        hi->setSize({38, 18});
+        hi->setPosition({col * 40.0, row * 20.0});
+        hi->setObjectName("outer  %1, %2"_L1.arg(QString::number(col)).arg(row));
+        HoverItem *ni = new HoverItem(hi);
+        ni->setAcceptHoverEvents(true);
+        ni->setPosition({2, 2});
+        ni->setSize({34, 14});
+        ni->setObjectName("nested %1, %2"_L1.arg(QString::number(col)).arg(row));
+        nestedItems[i] = ni;
+    }
+
+    // indices of items to hover
+    int i1 = 0;
+    int i2 = 11;
+
+    window.show();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+#if QT_CONFIG(cursor) // Get the cursor out of the way. But it's not possible on Wayland
+    QCursor::setPos(window.geometry().topRight() + QPoint(100, 100));
+#endif
+
+    const QPoint h1 = nestedItems[i1]->mapToScene({10, 10}).toPoint();
+    const QPoint h2 = nestedItems[i2]->mapToScene({10, 10}).toPoint();
+
+    // move the mouse back and forth between hover positions
+    for (int i = 0; i < 100; ++i) {
+        const bool first = !(i % 2);
+        const QPoint p = first ? h1 : h2;
+        deliveryAgent->flushFrameSynchronousEvents(&window);
+        QTest::mouseMove(&window, p);
+        HoverItem *tEntered = nestedItems[first ? i1 : i2];
+        HoverItem *tLeft = nestedItems[first ? i2 : i1];
+        QCOMPARE(tEntered->hoverEnter, true);
+        QCOMPARE(tEntered->hoverLeave, false);
+        QCOMPARE(tLeft->hoverEnter, false);
+        if (i > 0)
+            QCOMPARE(tLeft->hoverLeave, true);
+        QCOMPARE(static_cast<HoverItem *>(tEntered->parentItem())->hoverEnter, true);
+        QCOMPARE(static_cast<HoverItem *>(tLeft->parentItem())->hoverEnter, false);
+
+        // reset flags for next time
+        outerItems[i1]->hoverEnter = false;
+        outerItems[i2]->hoverEnter = false;
+        outerItems[i1]->hoverLeave = false;
+        outerItems[i2]->hoverLeave = false;
+        nestedItems[i1]->hoverEnter = false;
+        nestedItems[i2]->hoverEnter = false;
+        nestedItems[i1]->hoverLeave = false;
+        nestedItems[i2]->hoverLeave = false;
+
+#ifdef QT_BUILD_INTERNAL
+        qCDebug(lcTests) << "step" << i << ": counters"
+            << QQuickItemPrivate::eventHandlingChildrenWithinBounds_counter
+            << QQuickItemPrivate::itemToParentTransform_counter
+            << QQuickItemPrivate::itemToWindowTransform_counter
+            << QQuickItemPrivate::windowToItemTransform_counter
+            << QQuickItemPrivate::effectiveClippingSkips_counter;
+
+        // Example counts at step 99: 103 10353 603 198 9350
+#endif
+    }
+
+#ifdef QT_BUILD_INTERNAL
+    // Check that the items were detected as contained within their parents
+    QCOMPARE_GT(QQuickItemPrivate::eventHandlingChildrenWithinBounds_counter, 100u);
+
+    // Check that  we didn't call the transform functions exceessively often
+    // (these numbers can be adjusted if we do something that causes a moderate increase,
+    // but try to avoid really pessimizing it again)
+    QCOMPARE_LT(QQuickItemPrivate::itemToParentTransform_counter, 11000ull);
+    QCOMPARE_LT(QQuickItemPrivate::itemToWindowTransform_counter, 700ull);
+    QCOMPARE_LT(QQuickItemPrivate::windowToItemTransform_counter, 220ull);
+    // Check that we were able to skip hover delivery to many of the items because
+    // effectivelyClipsEventHandlingChildren() was true and the mouse position was outside.
+    QCOMPARE_GE(QQuickItemPrivate::effectiveClippingSkips_counter, 9000ull);
+#endif
 }
 
 QTEST_MAIN(tst_qquickdeliveryagent)

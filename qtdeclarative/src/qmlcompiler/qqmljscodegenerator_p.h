@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:critical reason:code-generation
 
 #ifndef QQMLJSCODEGENERATOR_P_H
 #define QQMLJSCODEGENERATOR_P_H
@@ -334,6 +335,16 @@ private:
     void rejectIfNonQObjectOut(const QString &error);
     void rejectIfBadArray();
 
+    struct GeneratePragmaWarningBlock {
+        Q_DISABLE_COPY_MOVE(GeneratePragmaWarningBlock)
+        GeneratePragmaWarningBlock(QQmlJSCodeGenerator *generator);
+        ~GeneratePragmaWarningBlock();
+
+        void silenceDivideByZero();
+
+        QQmlJSCodeGenerator *m_generator;
+    };
+
 
     QString eqIntExpression(int lhsConst);
 
@@ -365,7 +376,10 @@ private:
             const QQmlJSMetaMethod &ctor, const QList<QQmlJSRegisterContent> &argumentTypes,
             const QStringList &arguments, const QString &metaType, const QString &metaObject);
 
-    QString generateVariantMapLookup(const QString &map, const int nameIndex);
+    QString generateVariantMapGetLookup(const QString &map, const int nameIndex);
+    QString generateVariantMapSetLookup(
+            const QString &map, const int nameIndex, const QQmlJSScope::ConstPtr &property,
+            const QString &variableIn);
 
     QQmlJSRegisterContent originalType(QQmlJSRegisterContent tracked)
     {

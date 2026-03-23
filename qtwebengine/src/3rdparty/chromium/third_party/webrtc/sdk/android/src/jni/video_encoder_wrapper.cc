@@ -25,7 +25,9 @@
 #include "sdk/android/generated_video_jni/VideoEncoder_jni.h"
 #include "sdk/android/native_api/jni/class_loader.h"
 #include "sdk/android/native_api/jni/java_types.h"
+#include "sdk/android/native_api/jni/jvm.h"
 #include "sdk/android/src/jni/encoded_image.h"
+#include "sdk/android/src/jni/jni_helpers.h"
 #include "sdk/android/src/jni/video_codec_status.h"
 #include "sdk/android/src/jni/video_frame.h"
 
@@ -163,7 +165,7 @@ int32_t VideoEncoderWrapper::Encode(
       Java_EncodeInfo_Constructor(jni, j_frame_types);
 
   FrameExtraInfo info;
-  info.capture_time_ns = frame.timestamp_us() * rtc::kNumNanosecsPerMicrosec;
+  info.capture_time_ns = frame.timestamp_us() * kNumNanosecsPerMicrosec;
   info.timestamp_rtp = frame.rtp_timestamp();
   {
     MutexLock lock(&frame_extra_infos_lock_);
@@ -307,7 +309,7 @@ void VideoEncoderWrapper::OnEncodedFrame(
   EncodedImage frame_copy = frame;
 
   frame_copy.SetRtpTimestamp(frame_extra_info.timestamp_rtp);
-  frame_copy.capture_time_ms_ = capture_time_ns / rtc::kNumNanosecsPerMillisec;
+  frame_copy.capture_time_ms_ = capture_time_ns / kNumNanosecsPerMillisec;
 
   if (frame_copy.qp_ < 0)
     frame_copy.qp_ = ParseQp(frame);
@@ -343,7 +345,7 @@ int32_t VideoEncoderWrapper::HandleReturnCode(JNIEnv* jni,
   return WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE;
 }
 
-int VideoEncoderWrapper::ParseQp(rtc::ArrayView<const uint8_t> buffer) {
+int VideoEncoderWrapper::ParseQp(ArrayView<const uint8_t> buffer) {
   int qp;
   bool success;
   switch (codec_settings_.codecType) {

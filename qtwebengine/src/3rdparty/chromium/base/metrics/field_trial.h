@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 // The FieldTrial class handles the lower level configuration of running A/B
 // tests.
 //
@@ -190,10 +185,10 @@ class BASE_EXPORT FieldTrial : public RefCounted<FieldTrial> {
 
     // Return a pointer to the data area immediately following the entry.
     uint8_t* GetPickledDataPtr() {
-      return reinterpret_cast<uint8_t*>(this + 1);
+      return UNSAFE_TODO(reinterpret_cast<uint8_t*>(this + 1));
     }
     const uint8_t* GetPickledDataPtr() const {
-      return reinterpret_cast<const uint8_t*>(this + 1);
+      return UNSAFE_TODO(reinterpret_cast<const uint8_t*>(this + 1));
     }
 
     // Whether or not this field trial is activated. This is really just a
@@ -747,6 +742,7 @@ class BASE_EXPORT FieldTrialList {
                            SerializeSharedMemoryRegionMetadata);
   friend int SerializeSharedMemoryRegionMetadata();
   FRIEND_TEST_ALL_PREFIXES(FieldTrialListTest, CheckReadOnlySharedMemoryRegion);
+  FRIEND_TEST_ALL_PREFIXES(TestFeatureVisitor, FeatureHasParams);
 
   // Required so that |FieldTrialListIncludingLowAnonymity| can expose APIs from
   // this class to its friends.

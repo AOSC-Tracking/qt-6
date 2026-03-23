@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "torusgeometry_p.h"
 #include <limits>
@@ -234,6 +236,7 @@ void TorusGeometry::updateGeometry(const GeometryData &geometryData)
         Q_EMIT statusChanged();
     }
     update();
+    emit geometryChanged();
 }
 
 const size_t FLOAT_SIZE = sizeof(float);

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:low-level-memory-management
 #ifndef QV4MMDEFS_P_H
 #define QV4MMDEFS_P_H
 
@@ -36,7 +37,7 @@ typedef void(*ClassDestroyStatsCallback)(const char *);
  * is a simple masking operation. Each Chunk has 4 bitmaps for managing purposes,
  * and 32byte wide slots for the objects following afterwards.
  *
- * The gray and black bitmaps are used for mark/sweep.
+ * The black bitmaps are used for mark/sweep.
  * The object bitmap has a bit set if this location represents the start of a Heap object.
  * The extends bitmap denotes the extend of an object. It has a cleared bit at the start of the object
  * and a set bit for all following slots used by the object.

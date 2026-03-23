@@ -12,6 +12,7 @@
 #include "base/check.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/string_view_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/os_crypt/sync/os_crypt_metrics.h"
 #include "crypto/aes_cbc.h"
@@ -71,6 +72,10 @@ bool OSCrypt::DecryptString16(const std::string& ciphertext,
 // (FreeBSD, others).
 bool OSCrypt::EncryptString(const std::string& plaintext,
                             std::string* ciphertext) {
+  if (!IsEncryptionAvailable()) {
+    return false;
+  }
+
   if (plaintext.empty()) {
     *ciphertext = std::string();
     return true;
@@ -85,6 +90,10 @@ bool OSCrypt::EncryptString(const std::string& plaintext,
 
 bool OSCrypt::DecryptString(const std::string& ciphertext,
                             std::string* plaintext) {
+  if (!IsEncryptionAvailable()) {
+    return false;
+  }
+
   if (ciphertext.empty()) {
     *plaintext = std::string();
     return true;

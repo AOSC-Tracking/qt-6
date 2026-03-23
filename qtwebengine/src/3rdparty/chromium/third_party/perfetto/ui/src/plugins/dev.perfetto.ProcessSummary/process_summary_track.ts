@@ -20,7 +20,7 @@ import {TrackData} from '../../components/tracks/track_data';
 import {TimelineFetcher} from '../../components/tracks/track_helper';
 import {checkerboardExcept} from '../../components/checkerboard';
 import {Engine} from '../../trace_processor/engine';
-import {Track} from '../../public/track';
+import {TrackRenderer} from '../../public/track';
 import {LONG, NUM} from '../../trace_processor/query_result';
 import {uuidv4Sql} from '../../base/uuid';
 import {TrackRenderContext} from '../../public/track';
@@ -48,7 +48,7 @@ const RECT_HEIGHT = 30;
 const TRACK_HEIGHT = MARGIN_TOP * 2 + RECT_HEIGHT;
 const SUMMARY_HEIGHT = TRACK_HEIGHT - MARGIN_TOP;
 
-export class ProcessSummaryTrack implements Track {
+export class ProcessSummaryTrack implements TrackRenderer {
   private fetcher = new TimelineFetcher<Data>(this.onBoundsChange.bind(this));
   private engine: Engine;
   private config: Config;
@@ -82,13 +82,17 @@ export class ProcessSummaryTrack implements Track {
 
     const trash = new AsyncDisposableStack();
     trash.use(
-      await createPerfettoTable(this.engine, `tmp_${this.uuid}`, getQuery()),
+      await createPerfettoTable({
+        engine: this.engine,
+        name: `tmp_${this.uuid}`,
+        as: getQuery(),
+      }),
     );
     trash.use(
-      await createPerfettoTable(
-        this.engine,
-        `changes_${this.uuid}`,
-        `
+      await createPerfettoTable({
+        engine: this.engine,
+        name: `changes_${this.uuid}`,
+        as: `
           select ts, 1.0 as value
           from tmp_${this.uuid}
           cross join slice using (track_id)
@@ -99,12 +103,12 @@ export class ProcessSummaryTrack implements Track {
           cross join slice using (track_id)
           where slice.depth = 0
         `,
-      ),
+      }),
     );
-    await createVirtualTable(
-      this.engine,
-      `process_summary_${this.uuid}`,
-      `__intrinsic_counter_mipmap((
+    await createVirtualTable({
+      engine: this.engine,
+      name: `process_summary_${this.uuid}`,
+      using: `__intrinsic_counter_mipmap((
         select
           ts,
           sum(value) over (order by ts) / (
@@ -113,7 +117,7 @@ export class ProcessSummaryTrack implements Track {
         from changes_${this.uuid}
         order by ts
       ))`,
-    );
+    });
     await trash.asyncDispose();
   }
 

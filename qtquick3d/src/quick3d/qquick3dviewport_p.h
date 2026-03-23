@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGVIEW3D_H
 #define QSSGVIEW3D_H
@@ -62,6 +64,7 @@ class Q_QUICK3D_EXPORT QQuick3DViewport : public QQuickItem
     Q_PROPERTY(int explicitTextureWidth READ explicitTextureWidth WRITE setExplicitTextureWidth NOTIFY explicitTextureWidthChanged FINAL REVISION(6, 7))
     Q_PROPERTY(int explicitTextureHeight READ explicitTextureHeight WRITE setExplicitTextureHeight NOTIFY explicitTextureHeightChanged FINAL REVISION(6, 7))
     Q_PROPERTY(QSize effectiveTextureSize READ effectiveTextureSize NOTIFY effectiveTextureSizeChanged FINAL REVISION(6, 7))
+    Q_PROPERTY(RenderOverrides renderOverrides READ renderOverrides WRITE setRenderOverrides NOTIFY renderOverridesChanged FINAL REVISION(6, 11))
     Q_CLASSINFO("DefaultProperty", "data")
 
     QML_NAMED_ELEMENT(View3D)
@@ -74,6 +77,14 @@ public:
         Inline
     };
     Q_ENUM(RenderMode)
+
+    enum class RenderOverride {
+        None = 0x0,
+        DisableInternalPasses = 0x1,
+    };
+    Q_ENUM(RenderOverride)
+    Q_DECLARE_FLAGS(RenderOverrides, RenderOverride)
+    Q_FLAG(RenderOverrides)
 
     explicit QQuick3DViewport(QQuickItem *parent = nullptr);
     ~QQuick3DViewport() override;
@@ -106,6 +117,10 @@ public:
     Q_REVISION(6, 2) Q_INVOKABLE QQuick3DPickResult rayPick(const QVector3D &origin, const QVector3D &direction) const;
     Q_REVISION(6, 2) Q_INVOKABLE QList<QQuick3DPickResult> rayPickAll(const QVector3D &origin, const QVector3D &direction) const;
 
+    Q_REVISION(6, 11) Q_INVOKABLE QQuick3DPickResult rayPick(const QVector3D &origin, const QVector3D &direction, QQuick3DModel *model) const;
+    Q_REVISION(6, 11) Q_INVOKABLE QQuick3DPickResult closestPointPick(const QVector3D &origin, float radius, QQuick3DModel *model = nullptr) const;
+    Q_REVISION(6, 11) Q_INVOKABLE QList<QQuick3DObject *> pickInRect(const QPointF &start, const QPointF &end) const;
+
     void processPointerEventFromRay(const QVector3D &origin, const QVector3D &direction, QPointerEvent *event) const;
     bool singlePointPick(QSinglePointEvent *event, const QVector3D &origin, const QVector3D &direction);
 
@@ -135,6 +150,9 @@ public:
     [[nodiscard]] bool isXrViewInstance() const { return m_isXrViewInstance; }
 
     static void updateCameraForLayer(const QQuick3DViewport &view3D, QSSGRenderLayer &layerNode);
+
+    RenderOverrides renderOverrides() const;
+    void setRenderOverrides(RenderOverrides newRenderOverrides);
 
 protected:
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
@@ -176,6 +194,8 @@ Q_SIGNALS:
     Q_REVISION(6, 7) void explicitTextureHeightChanged();
     Q_REVISION(6, 7) void effectiveTextureSizeChanged();
 
+    void renderOverridesChanged();
+
 private:
     void setMultiViewCameras(QQuick3DCamera **firstCamera, int count);
     template <size_t N>
@@ -202,7 +222,7 @@ private:
     void setupDirectRenderer(RenderMode mode);
     bool checkIsVisible() const;
     bool internalPick(QPointerEvent *event, const QVector3D &origin = QVector3D(), const QVector3D &direction = QVector3D()) const;
-    QPair<QQuickItem *, QPointF> getItemAndPosition(const QSSGRenderPickResult &pickResult);
+    QPair<QQuickItem *, QPointF> getItemAndPosition(const QSSGRenderPickResult &pickResult) const;
     QVarLengthArray<QSSGRenderPickResult, 20> getPickResults(QQuick3DSceneRenderer *renderer, const QVector3D &origin, const QVector3D &direction) const;
     QVarLengthArray<QSSGRenderPickResult, 20> getPickResults(QQuick3DSceneRenderer *renderer, const QEventPoint &eventPoint) const;
     bool forwardEventToSubscenes(QPointerEvent *event,
@@ -256,6 +276,7 @@ private:
 
     QPointer<QQuickItem> m_prevMouseItem = nullptr;
     QPointF m_prevMousePos;
+    RenderOverrides m_renderOverrides;
 
     Q_QUICK3D_PROFILE_ID
 };

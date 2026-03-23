@@ -17,7 +17,6 @@
 
 #include <mach-o/loader.h>
 #include <mach/mach.h>
-#include <signal.h>
 #include <sys/types.h>
 
 #include <map>
@@ -152,6 +151,15 @@ class InProcessIntermediateDumpHandler final {
   //! \brief Write Crashpad annotations list.
   static void WriteCrashpadAnnotationsList(IOSIntermediateDumpWriter* writer,
                                            CrashpadInfo* crashpad_info);
+
+  //! \brief Write Crashpad extra memory data.
+  static void WriteCrashpadExtraMemoryRanges(IOSIntermediateDumpWriter* writer,
+                                             CrashpadInfo* crashpad_info);
+
+  //! \brief Write Crashpad intermediate dump extra memory data.
+  static void WriteCrashpadIntermediateDumpExtraMemoryRanges(
+      IOSIntermediateDumpWriter* writer,
+      CrashpadInfo* crashpad_info);
 };
 
 }  // namespace internal

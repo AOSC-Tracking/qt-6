@@ -34,11 +34,9 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/drop_data.h"
-#include "ipc/ipc_message.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 #include "skia/ext/skia_utils_base.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/blink/public/mojom/clipboard/clipboard.mojom.h"
 #include "third_party/blink/public/mojom/drag/drag.mojom-forward.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -70,7 +68,7 @@ std::u16string ExtractText(ui::ClipboardBuffer clipboard_buffer,
                                    clipboard_buffer, data_dst.get())) {
     clipboard->ReadText(clipboard_buffer, data_dst.get(), &result);
   } else {
-#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
     if (clipboard->IsFormatAvailable(ui::ClipboardFormatType::PlainTextAType(),
                                      clipboard_buffer, data_dst.get())) {
       std::string ascii;
@@ -151,6 +149,10 @@ void ClipboardHostImpl::Create(
 
 ClipboardHostImpl::~ClipboardHostImpl() {
   clipboard_writer_->Reset();
+  if (listening_to_clipboard_) {
+    ui::ClipboardMonitor::GetInstance()->RemoveObserver(this);
+    listening_to_clipboard_ = false;
+  }
 }
 
 void ClipboardHostImpl::GetSequenceNumber(ui::ClipboardBuffer clipboard_buffer,
@@ -167,29 +169,39 @@ void ClipboardHostImpl::ReadAvailableTypes(
   auto* clipboard = ui::Clipboard::GetForCurrentThread();
   auto data_endpoint = CreateDataEndpoint();
 
-  // ReadAvailableTypes() returns 'text/uri-list' if either files are provided,
-  // or if it was set as a custom web type. If it is set because files are
-  // available, do not include other types such as text/plain which contain the
-  // full path on some platforms (http://crbug.com/1214108). But do not exclude
-  // other types when it is set as a custom web type (http://crbug.com/1241671).
-  bool file_type_only =
-      clipboard->IsFormatAvailable(ui::ClipboardFormatType::FilenamesType(),
-                                   clipboard_buffer, data_endpoint.get());
+  // If an enterprise Data Controls rule modified the clipboard, get the last
+  // replaced clipboard types instead.
+  if (auto policy_types =
+          static_cast<RenderFrameHostImpl&>(render_frame_host())
+              .GetClipboardTypesIfPolicyApplied(
+                  clipboard->GetSequenceNumber(clipboard_buffer))) {
+    types = std::move(*policy_types);
+  } else {
+    // ReadAvailableTypes() returns 'text/uri-list' if either files are
+    // provided, or if it was set as a custom web type. If it is set because
+    // files are available, do not include other types such as text/plain which
+    // contain the full path on some platforms (http://crbug.com/1214108). But
+    // do not exclude other types when it is set as a custom web type
+    // (http://crbug.com/1241671).
+    bool file_type_only =
+        clipboard->IsFormatAvailable(ui::ClipboardFormatType::FilenamesType(),
+                                     clipboard_buffer, data_endpoint.get());
 
 #if BUILDFLAG(IS_CHROMEOS)
-  // ChromeOS FilesApp must include the custom 'fs/sources', etc data for
-  // paste that it put on the clipboard during copy (b/271078230).
-  if (render_frame_host().GetMainFrame()->GetLastCommittedURL().SchemeIs(
-          kChromeUIScheme)) {
-    file_type_only = false;
-  }
+    // ChromeOS FilesApp must include the custom 'fs/sources', etc data for
+    // paste that it put on the clipboard during copy (crbug.com/271078230).
+    if (render_frame_host().GetMainFrame()->GetLastCommittedURL().SchemeIs(
+            kChromeUIScheme)) {
+      file_type_only = false;
+    }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-  if (file_type_only) {
-    types = {base::UTF8ToUTF16(ui::kMimeTypeURIList)};
-  } else {
-    clipboard->ReadAvailableTypes(clipboard_buffer, data_endpoint.get(),
-                                  &types);
+    if (file_type_only) {
+      types = {ui::kMimeTypeUriList16};
+    } else {
+      clipboard->ReadAvailableTypes(clipboard_buffer, data_endpoint.get(),
+                                    &types);
+    }
   }
   std::move(callback).Run(types);
 }
@@ -205,7 +217,7 @@ void ClipboardHostImpl::IsFormatAvailable(blink::mojom::ClipboardFormat format,
       result =
           clipboard->IsFormatAvailable(ui::ClipboardFormatType::PlainTextType(),
                                        clipboard_buffer, data_endpoint.get());
-#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
       result |= clipboard->IsFormatAvailable(
           ui::ClipboardFormatType::PlainTextAType(), clipboard_buffer,
           data_endpoint.get());
@@ -611,6 +623,12 @@ bool ClipboardHostImpl::IsRendererPasteAllowed(
 
 void ClipboardHostImpl::ReadAvailableCustomAndStandardFormats(
     ReadAvailableCustomAndStandardFormatsCallback callback) {
+  if (!IsRendererPasteAllowed(ui::ClipboardBuffer::kCopyPaste,
+                              render_frame_host())) {
+    std::move(callback).Run(std::vector<std::u16string>());
+    return;
+  }
+
   std::vector<std::u16string> format_types =
       ui::Clipboard::GetForCurrentThread()
           ->ReadAvailableStandardAndCustomFormatNames(
@@ -621,10 +639,18 @@ void ClipboardHostImpl::ReadAvailableCustomAndStandardFormats(
 void ClipboardHostImpl::ReadUnsanitizedCustomFormat(
     const std::u16string& format,
     ReadUnsanitizedCustomFormatCallback callback) {
+  if (!IsRendererPasteAllowed(ui::ClipboardBuffer::kCopyPaste,
+                              render_frame_host())) {
+    std::move(callback).Run(mojo_base::BigBuffer());
+    return;
+  }
+
   // `kMaxFormatSize` includes the null terminator as well so we check if
   // the `format` size is strictly less than `kMaxFormatSize` or not.
-  if (format.length() >= blink::mojom::ClipboardHost::kMaxFormatSize)
+  if (format.length() >= blink::mojom::ClipboardHost::kMaxFormatSize) {
+    std::move(callback).Run(mojo_base::BigBuffer());
     return;
+  }
 
   // Extract the custom format names and then query the web custom format
   // corresponding to the MIME type.
@@ -636,15 +662,19 @@ void ClipboardHostImpl::ReadUnsanitizedCustomFormat(
   std::string web_custom_format_string;
   if (custom_format_names.find(format_name) != custom_format_names.end())
     web_custom_format_string = custom_format_names[format_name];
-  if (web_custom_format_string.empty())
+  if (web_custom_format_string.empty()) {
+    std::move(callback).Run(mojo_base::BigBuffer());
     return;
+  }
 
   std::string result;
   ui::Clipboard::GetForCurrentThread()->ReadData(
       ui::ClipboardFormatType::CustomPlatformType(web_custom_format_string),
       data_endpoint.get(), &result);
-  if (result.size() >= blink::mojom::ClipboardHost::kMaxDataSize)
+  if (result.size() >= blink::mojom::ClipboardHost::kMaxDataSize) {
+    std::move(callback).Run(mojo_base::BigBuffer());
     return;
+  }
   base::span<const uint8_t> span = base::as_byte_span(result);
   mojo_base::BigBuffer buffer = mojo_base::BigBuffer(span);
   std::move(callback).Run(std::move(buffer));
@@ -803,6 +833,41 @@ void ClipboardHostImpl::AddSourceDataToClipboardWriter() {
   clipboard_writer_->WritePickledData(
       render_frame_host().GetGlobalFrameToken().ToPickle(),
       SourceRFHTokenType());
+}
+
+void ClipboardHostImpl::OnClipboardDataChanged() {
+  if (!listening_to_clipboard_) {
+    return;
+  }
+  if (clipboard_listener_) {
+    clipboard_listener_->OnClipboardDataChanged();
+  }
+}
+
+void ClipboardHostImpl::RegisterClipboardListener(
+    mojo::PendingRemote<blink::mojom::ClipboardListener> listener) {
+  // Replace the current listener with the new one
+  clipboard_listener_.reset();
+  clipboard_listener_.Bind(std::move(listener));
+
+  // Set up connection error handler to stop observing when connection is closed
+  clipboard_listener_.set_disconnect_handler(
+      base::BindOnce(&ClipboardHostImpl::StopObservingClipboard,
+                     weak_ptr_factory_.GetWeakPtr()));
+
+  // Start listening for clipboard changes if not already doing so
+  if (!listening_to_clipboard_) {
+    ui::ClipboardMonitor::GetInstance()->AddObserver(this);
+    listening_to_clipboard_ = true;
+  }
+}
+
+void ClipboardHostImpl::StopObservingClipboard() {
+  if (listening_to_clipboard_) {
+    ui::ClipboardMonitor::GetInstance()->RemoveObserver(this);
+    listening_to_clipboard_ = false;
+  }
+  clipboard_listener_.reset();
 }
 
 }  // namespace content

@@ -84,6 +84,8 @@ enum FieldTypeGroupForMetrics {
   GROUP_ADDRESS_HOME_HOUSE_NUMBER_AND_APT = 46,
   GROUP_STANDALONE_CREDIT_CARD_VERIFICATION = 47,
   GROUP_AUTOFILL_AI = 48,
+  GROUP_LOYALTY_CARD = 49,
+  GROUP_ONE_TIME_PASSWORD = 50,
   // Note: if adding an enum value here, run
   // tools/metrics/histograms/update_autofill_enums.py
   NUM_FIELD_TYPE_GROUPS_FOR_METRICS
@@ -224,6 +226,10 @@ int GetFieldTypeGroupPredictionQualityMetric(FieldType field_type,
       group = GROUP_AUTOFILL_AI;
       break;
 
+    case FieldTypeGroup::kLoyaltyCard:
+      group = GROUP_LOYALTY_CARD;
+      break;
+
     case FieldTypeGroup::kAddress:
       switch (field_type) {
         case ADDRESS_HOME_LINE1:
@@ -253,6 +259,8 @@ int GetFieldTypeGroupPredictionQualityMetric(FieldType field_type,
           group = GROUP_ADDRESS_STATE;
           break;
         case ADDRESS_HOME_ZIP:
+        case ADDRESS_HOME_ZIP_PREFIX:
+        case ADDRESS_HOME_ZIP_SUFFIX:
           group = GROUP_ADDRESS_ZIP;
           break;
         case ADDRESS_HOME_COUNTRY:
@@ -354,7 +362,6 @@ int GetFieldTypeGroupPredictionQualityMetric(FieldType field_type,
         case CREDIT_CARD_TYPE:
         case CREDIT_CARD_VERIFICATION_CODE:
         case COMPANY_NAME:
-        case FIELD_WITH_DEFAULT_VALUE:
         case MERCHANT_EMAIL_SIGNUP:
         case MERCHANT_PROMO_CODE:
         case PASSWORD:
@@ -388,15 +395,34 @@ int GetFieldTypeGroupPredictionQualityMetric(FieldType field_type,
         case CREDIT_CARD_STANDALONE_VERIFICATION_CODE:
         case SINGLE_USERNAME_FORGOT_PASSWORD:
         case SINGLE_USERNAME_WITH_INTERMEDIATE_VALUES:
-        case IMPROVED_PREDICTION:
         case PASSPORT_NAME_TAG:
         case PASSPORT_NUMBER:
-        case PASSPORT_ISSUING_COUNTRY_TAG:
-        case PASSPORT_EXPIRATION_DATE_TAG:
-        case PASSPORT_ISSUE_DATE_TAG:
+        case PASSPORT_ISSUING_COUNTRY:
+        case PASSPORT_EXPIRATION_DATE:
+        case PASSPORT_ISSUE_DATE:
         case LOYALTY_MEMBERSHIP_PROGRAM:
         case LOYALTY_MEMBERSHIP_PROVIDER:
         case LOYALTY_MEMBERSHIP_ID:
+        case VEHICLE_OWNER_TAG:
+        case VEHICLE_LICENSE_PLATE:
+        case VEHICLE_VIN:
+        case VEHICLE_MAKE:
+        case VEHICLE_MODEL:
+        case VEHICLE_YEAR:
+        case VEHICLE_PLATE_STATE:
+        case DRIVERS_LICENSE_NAME_TAG:
+        case DRIVERS_LICENSE_REGION:
+        case DRIVERS_LICENSE_NUMBER:
+        case DRIVERS_LICENSE_EXPIRATION_DATE:
+        case DRIVERS_LICENSE_ISSUE_DATE:
+        case EMAIL_OR_LOYALTY_MEMBERSHIP_ID:
+        case NATIONAL_ID_CARD_NUMBER:
+        case NATIONAL_ID_CARD_EXPIRATION_DATE:
+        case NATIONAL_ID_CARD_ISSUE_DATE:
+        case NATIONAL_ID_CARD_ISSUING_COUNTRY:
+        case REDRESS_NUMBER:
+        case KNOWN_TRAVELER_NUMBER:
+        case KNOWN_TRAVELER_NUMBER_EXPIRATION_DATE:
           NOTREACHED() << field_type << " type is not in that group.";
       }
       break;
@@ -451,6 +477,10 @@ int GetFieldTypeGroupPredictionQualityMetric(FieldType field_type,
 
     case FieldTypeGroup::kUnfillable:
       group = GROUP_UNFILLABLE;
+      break;
+
+    case FieldTypeGroup::kOneTimePassword:
+      group = GROUP_ONE_TIME_PASSWORD;
       break;
 
     case FieldTypeGroup::kTransaction:
@@ -677,7 +707,8 @@ void LogPredictionQualityMetrics(
 
   const FieldTypeSet& possible_types =
       metric_type == TYPE_AUTOCOMPLETE_BASED
-          ? FieldTypeSet{AutofillType(field.html_type()).GetStorableType()}
+          ? FieldTypeSet{HtmlFieldTypeToBestCorrespondingFieldType(
+                field.html_type())}
           : field.possible_types();
 
   // Get the best type classification we can for the field.
@@ -794,10 +825,12 @@ void LogOverallPredictionQualityMetrics(
     const FormStructure& form,
     const AutofillField& field,
     QualityMetricType metric_type) {
-  LogPredictionQualityMetrics(
-      PREDICTION_SOURCE_OVERALL, field.Type().GetStorableType(),
-      form_interactions_ukm_logger, source_id, form, field, metric_type,
-      /*log_rationalization_metrics=*/true);
+  for (FieldType field_type : field.Type().GetTypes()) {
+    LogPredictionQualityMetrics(PREDICTION_SOURCE_OVERALL, field_type,
+                                form_interactions_ukm_logger, source_id, form,
+                                field, metric_type,
+                                /*log_rationalization_metrics=*/true);
+  }
 }
 
 void LogEmailFieldPredictionMetrics(const AutofillField& field) {
@@ -808,7 +841,7 @@ void LogEmailFieldPredictionMetrics(const AutofillField& field) {
   }
 
   bool is_valid_email = IsValidEmailAddress(value);
-  bool is_email_prediction = field.Type().GetStorableType() == EMAIL_ADDRESS;
+  bool is_email_prediction = field.Type().GetTypes().contains(EMAIL_ADDRESS);
 
   if (is_email_prediction) {
     EmailPredictionConfusionMatrix prediction_precision =
@@ -897,16 +930,27 @@ void LogFieldPredictionOverlapMetrics(const AutofillField& field) {
                                       autocomplete_agrees);
 
   std::string_view field_type_str = FieldTypeToStringView(submitted_field_type);
+  std::string prediction_source =
+      field.PredictionSource().has_value()
+          ? base::StrCat({AutofillPredictionSourceToStringView(
+                              *field.PredictionSource()),
+                          "Active."})
+          : "NoPredictionExists.";
 
-  // TODO(crbug.com/376432267): Add per active source histogram as well.
+  // Autocomplete-aggreated histograms:
   {
-    // Autocomplete-aggreated histograms:
     std::string prefix =
         base::StrCat({kFieldPredictionOverlapPrefix, kAutocompleteAggregate});
+    // Sources aggregated:
     base::UmaHistogramEnumeration(
         base::StrCat({prefix, kSourcesOverall, kAllTypes}), sample);
     base::UmaHistogramEnumeration(
         base::StrCat({prefix, kSourcesOverall, field_type_str}), sample);
+    // Source-specific:
+    base::UmaHistogramEnumeration(
+        base::StrCat({prefix, prediction_source, kAllTypes}), sample);
+    base::UmaHistogramEnumeration(
+        base::StrCat({prefix, prediction_source, field_type_str}), sample);
   }
 
   // Autocomplete-specific histograms:
@@ -914,10 +958,16 @@ void LogFieldPredictionOverlapMetrics(const AutofillField& field) {
     std::string prefix = base::StrCat(
         {kFieldPredictionOverlapPrefix,
          autocomplete_present ? kAutocompletePresent : kAutocompleteAbsent});
+    // Sources aggregated:
     base::UmaHistogramEnumeration(
         base::StrCat({prefix, kSourcesOverall, kAllTypes}), sample);
     base::UmaHistogramEnumeration(
         base::StrCat({prefix, kSourcesOverall, field_type_str}), sample);
+    // Source-specific:
+    base::UmaHistogramEnumeration(
+        base::StrCat({prefix, prediction_source, kAllTypes}), sample);
+    base::UmaHistogramEnumeration(
+        base::StrCat({prefix, prediction_source, field_type_str}), sample);
   }
 }
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4object_p.h"
 #include "qv4function_p.h"
@@ -346,7 +347,7 @@ ReturnedValue FunctionPrototype::method_apply(const QV4::FunctionObject *b, cons
     const int len = v4->safeForAllocLength(arr->getLength());
     CHECK_EXCEPTION();
 
-    Value *arguments = scope.alloc<Scope::Uninitialized>(len);
+    Value *arguments = scope.alloc(len);
     if (len) {
         if (ArgumentsObject::isNonStrictArgumentsObject(arr) && !arr->cast<ArgumentsObject>()->fullyCreated()) {
             QV4::ArgumentsObject *a = arr->cast<ArgumentsObject>();

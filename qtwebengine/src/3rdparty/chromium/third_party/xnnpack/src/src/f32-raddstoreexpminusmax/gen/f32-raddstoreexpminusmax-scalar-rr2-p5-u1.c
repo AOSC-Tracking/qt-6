@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-raddstoreexpminusmax/scalar-rr2-p5.c.in
 //   Generator: tools/xngen
@@ -8,10 +9,12 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
-#include "xnnpack/raddstoreexpminusmax.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/raddstoreexpminusmax.h"
 
 
 void xnn_f32_raddstoreexpminusmax_ukernel__scalar_rr2_p5_u1(

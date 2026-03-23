@@ -1,6 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // Copyright (C) 2018 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include <qv4compiler_p.h>
 #include <qv4codegen_p.h>
@@ -379,7 +380,7 @@ QV4::CompiledData::Unit *QV4::Compiler::JSUnitGenerator::generateUnit(GeneratorO
     }
 
     {
-        const auto populateExportEntryTable = [this, dataPtr](const QVector<Compiler::ExportEntry> &table, quint32_le offset) {
+        const auto populateExportEntryTable = [this, dataPtr](const QList<Compiler::ExportEntry> &table, quint32_le offset) {
             CompiledData::ExportEntry *entryToWrite = reinterpret_cast<CompiledData::ExportEntry *>(dataPtr + offset);
             for (const Compiler::ExportEntry &entry: table) {
                 entryToWrite->exportName = getStringId(entry.exportName);
@@ -528,7 +529,7 @@ void QV4::Compiler::JSUnitGenerator::writeClass(char *b, const QV4::Compiler::Cl
 
     quint32 currentOffset = sizeof(QV4::CompiledData::Class);
 
-    QVector<Class::Method> allMethods = c.staticMethods;
+    QList<Class::Method> allMethods = c.staticMethods;
     allMethods += c.methods;
 
     cls->constructorFunction = c.constructorIndex;

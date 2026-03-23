@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSTYPEPROPAGATOR_P_H
 #define QQMLJSTYPEPROPAGATOR_P_H
@@ -18,11 +19,18 @@
 #include <private/qqmljsscope_p.h>
 #include <private/qqmljscompilepass_p.h>
 #include <private/qqmljscontextproperties_p.h>
+#include <private/qqmljsusercontextproperties_p.h>
 
 QT_BEGIN_NAMESPACE
 
 namespace QQmlSA {
 class PassManager;
+};
+
+struct ContextPropertyInfo
+{
+    QQmlJS::HeuristicContextProperties heuristicContextProperties;
+    QQmlJS::UserContextProperties userContextProperties;
 };
 
 struct Q_QMLCOMPILER_EXPORT QQmlJSTypePropagator : public QQmlJSCompilePass
@@ -32,7 +40,7 @@ struct Q_QMLCOMPILER_EXPORT QQmlJSTypePropagator : public QQmlJSCompilePass
                          const BasicBlocks &basicBlocks = {},
                          const InstructionAnnotations &annotations = {},
                          QQmlSA::PassManager *passManager = nullptr,
-                         const QQmlJS::ContextProperties &knownContextProperties = {});
+                         const ContextPropertyInfo &contextPropertyInfo = {});
 
     BlocksAndAnnotations run(const Function *m_function);
 
@@ -194,6 +202,7 @@ private:
     };
 
     void handleUnqualifiedAccess(const QString &name, bool isMethod) const;
+    void handleUnqualifiedAccessAndContextProperties(const QString &name, bool isMethod) const;
     void checkDeprecated(QQmlJSScope::ConstPtr scope, const QString &name, bool isMethod) const;
     bool isCallingProperty(QQmlJSScope::ConstPtr scope, const QString &name) const;
 
@@ -305,7 +314,7 @@ private:
 
     InstructionAnnotations m_prevStateAnnotations;
     PassState m_state;
-    QQmlJS::ContextProperties m_knownContextProperties;
+    ContextPropertyInfo m_contextPropertyInfo;
 };
 
 QT_END_NAMESPACE

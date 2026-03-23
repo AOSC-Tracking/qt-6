@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/buildflag_header.gni")
-import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
 import("//build/config/logging.gni")
 import("//build/config/ui.gni")
@@ -18,11 +17,17 @@ buildflag_header("buildflags") {
   header = "buildflags.h"
 
   flags = [
+    "USE_AV1_HW_DECODER=$use_av1_hw_decoder",
     "USE_VAAPI=$use_vaapi",
     "USE_VAAPI_IMAGE_CODECS=$use_vaapi_image_codecs",
     "USE_V4L2_CODEC=$use_v4l2_codec",
     "USE_LIBV4L2=$use_v4lplugin",
+    "USE_LINUX_VIDEO_ACCELERATION=$use_linux_video_acceleration",
   ]
+}
+
+if (use_linux_video_acceleration) {
+  assert(is_linux || is_chromeos)
 }
 
 component("gpu") {
@@ -43,6 +48,7 @@ component("gpu") {
     "//content/gpu:*",
     "//content/renderer:*",
     "//media/audio:unit_tests",
+    "//media/gpu/fuzzers/av1_builder/*",
     "//media/gpu/ipc/*",
     "//media/gpu/test/*",
     "//media/gpu/vaapi/*",
@@ -78,12 +84,16 @@ component("gpu") {
     "gpu_video_encode_accelerator_factory.h",
   ]
 
+  configs += [
+    "//build/config/compiler:wexit_time_destructors",
+    "//build/config/compiler:wglobal_constructors",
+  ]
+
   public_deps = [
     ":buildflags",
     ":command_buffer_helper",
     ":common",
     "//base",
-    "//gpu",
     "//media",
     "//third_party/angle:includes",
     "//ui/gfx/geometry",
@@ -177,11 +187,11 @@ component("gpu") {
       # TODO(crbug.com/40552063): This can be removed once CdmManager is removed.
       "//gpu/ipc/common",
       "//media/mojo:buildflags",
-      "//services/service_manager/public/cpp:cpp",
+      "//services/service_manager/public/cpp",
       "//third_party/libgav1:libgav1_parser",
     ]
     if (enable_vulkan) {
-      deps += [ "//gpu/vulkan:vulkan" ]
+      deps += [ "//gpu/vulkan" ]
     }
 
     if (enable_webrtc) {
@@ -288,8 +298,12 @@ component("gpu") {
       sources += [
         "windows/d3d12_video_encode_accelerator.cc",
         "windows/d3d12_video_encode_accelerator.h",
+        "windows/d3d12_video_encode_av1_delegate.cc",
+         "windows/d3d12_video_encode_av1_delegate.h",
         "windows/d3d12_video_encode_delegate.cc",
         "windows/d3d12_video_encode_delegate.h",
+        "windows/d3d12_video_encode_h264_delegate.cc",
+        "windows/d3d12_video_encode_h264_delegate.h",
         "windows/d3d12_video_encoder_wrapper.cc",
         "windows/d3d12_video_encoder_wrapper.h",
       ]
@@ -298,10 +312,12 @@ component("gpu") {
       sources += [
         "windows/d3d11_h265_accelerator.cc",
         "windows/d3d11_h265_accelerator.h",
+        "windows/d3d12_video_encode_h265_delegate.cc",
+        "windows/d3d12_video_encode_h265_delegate.h",
       ]
     }
     deps += [
-      "//gpu/ipc/common:common",
+      "//gpu/ipc/common",
       "//media/base/win:color_space_util_win",
       "//third_party/angle:includes",
       "//third_party/libaom:libaomrc",
@@ -380,6 +396,11 @@ source_set("common") {
     ]
   }
 
+  configs += [
+    "//build/config/compiler:wexit_time_destructors",
+    "//build/config/compiler:wglobal_constructors",
+  ]
+
   visibility = [
     ":gpu",
     "//media/gpu/*",
@@ -401,7 +422,6 @@ source_set("common") {
   deps = [
     ":buildflags",
     "//base",
-    "//build:chromeos_buildflags",
     "//media",
     "//ui/gfx:buffer_types",
     "//ui/gfx:memory_buffer",
@@ -437,19 +457,21 @@ source_set("common") {
   }
 }
 
-# The buffer validation functionality is in its own component so that it can be
-# depended on without pulling the entire //media/gpu target.
-component("buffer_validation") {
-  defines = [ "IS_MEDIA_GPU_BUFFER_VALIDATION_IMPL" ]
-  sources = [
-    "buffer_validation.cc",
-    "buffer_validation.h",
-  ]
+if (is_linux || is_chromeos) {
+  # The buffer validation functionality is in its own component so that it can be
+  # depended on without pulling the entire //media/gpu target.
+  component("buffer_validation") {
+    defines = [ "IS_MEDIA_GPU_BUFFER_VALIDATION_IMPL" ]
+    sources = [
+      "buffer_validation.cc",
+      "buffer_validation.h",
+    ]
 
-  public_deps = [
-    "//base",
-    "//media",
-  ]
+    public_deps = [
+      "//base",
+      "//media",
+    ]
+  }
 }
 
 source_set("command_buffer_helper") {
@@ -457,6 +479,11 @@ source_set("command_buffer_helper") {
   sources = [
     "command_buffer_helper.cc",
     "command_buffer_helper.h",
+  ]
+
+  configs += [
+    "//build/config/compiler:wexit_time_destructors",
+    "//build/config/compiler:wglobal_constructors",
   ]
 
   public_deps = [
@@ -498,6 +525,11 @@ if (use_v4l2_codec || use_vaapi) {
       "video_frame_mapper.cc",
       "video_frame_mapper.h",
       "video_frame_mapper_factory.h",
+    ]
+
+    configs += [
+      "//build/config/compiler:wexit_time_destructors",
+      "//build/config/compiler:wglobal_constructors",
     ]
 
     public_deps = [
@@ -583,7 +615,7 @@ source_set("android_video_decode_accelerator_unittests") {
       "//media:test_support",
       "//testing/gmock",
       "//testing/gtest",
-      "//third_party/libyuv:libyuv",
+      "//third_party/libyuv",
       "//ui/gl",
       "//ui/gl/init",
     ]
@@ -653,10 +685,7 @@ source_set("unit_tests") {
 
   if (use_av1_hw_decoder && media_use_ffmpeg) {
     sources += [ "av1_decoder_unittest.cc" ]
-    deps += [
-      "//build:chromeos_buildflags",
-      "//third_party/ffmpeg",
-    ]
+    deps += [ "//third_party/ffmpeg" ]
   }
 
   if (is_win) {
@@ -671,8 +700,10 @@ source_set("unit_tests") {
       "windows/d3d11_video_processor_proxy_unittest.cc",
       "windows/d3d12_helpers_unittest.cc",
       "windows/d3d12_video_encode_accelerator_unittest.cc",
+      "windows/d3d12_video_encode_av1_delegate_unittest.cc",
       "windows/d3d12_video_encode_delegate_unittest.cc",
       "windows/d3d12_video_encode_delegate_unittest.h",
+      "windows/d3d12_video_encode_h264_delegate_unittest.cc",
       "windows/mf_audio_encoder_unittest.cc",
       "windows/mf_video_processor_accelerator_unittest.cc",
       "windows/scoped_d3d_buffers_unittest.cc",
@@ -683,6 +714,13 @@ source_set("unit_tests") {
       "dxguid.lib",
       "d3d12.lib",
     ]
+
+    if (enable_hevc_parser_and_hw_decoder) {
+      sources += [
+        "h265_builder_unittest.cc",
+        "windows/d3d12_video_encode_h265_delegate_unittest.cc",
+      ]
+    }
   }
 
   if (is_apple) {
@@ -696,6 +734,10 @@ source_set("unit_tests") {
       "svc_layers_unittest.cc",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (enable_hevc_parser_and_hw_decoder) {
@@ -752,4 +794,11 @@ fuzzer_test("media_vp9_decoder_fuzzer") {
     "//media:test_support",
   ]
   seed_corpuses = [ "//media/test/data" ]
+}
+
+if (is_win || use_vaapi) {
+  group("stream_builder_fuzzers") {
+    testonly = true
+    public_deps = [ "//media/gpu/fuzzers/av1_builder:av1_builder_fuzzer" ]
+  }
 }

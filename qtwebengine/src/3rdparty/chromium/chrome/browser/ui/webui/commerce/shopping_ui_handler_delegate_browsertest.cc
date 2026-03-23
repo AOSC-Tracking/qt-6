@@ -11,6 +11,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/webui/feedback/feedback_dialog.h"
+#include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/chrome_test_utils.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -171,9 +172,8 @@ IN_PROC_BROWSER_TEST_F(ShoppingUiHandlerDelegateBrowserTest,
   EXPECT_EQ(valid_url, web_contents()->GetLastCommittedURL());
 }
 
-// The feedback dialog on CrOS & LaCrOS happens at the system level,
-// which cannot be easily tested here. LaCrOS has a separate feedback
-// browser test which gives us some coverage.
+// The feedback dialog on CrOS happens at the system level, which cannot be
+// easily tested here.
 #if !BUILDFLAG(IS_CHROMEOS)
 IN_PROC_BROWSER_TEST_F(ShoppingUiHandlerDelegateBrowserTest,
                        TestShowFeedbackForProductSpecifications) {

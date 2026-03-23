@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSIMPORTER_P_H
 #define QQMLJSIMPORTER_P_H
@@ -164,6 +165,11 @@ public:
     void clearCache();
 
     QQmlJSScope::ConstPtr jsGlobalObject();
+    QString pathOfModule(const QString &moduleName, QTypeRevision revision) const
+    {
+        const auto it = m_seenImports.constFind({ moduleName, revision });
+        return it != m_seenImports.constEnd() ? *it : QString();
+    }
 
     struct ImportVisitorPrerequisites
     {
@@ -253,7 +259,7 @@ private:
     Import readQmldir(const QString &dirname);
     Import readDirectory(const QString &directory);
 
-    QQmlJSScope::Ptr localFile2ScopeTree(const QString &filePath);
+    QQmlJSScope::Ptr localFile2QQmlJSScope(const QString &filePath);
     static void setQualifiedNamesOn(const Import &import);
 
     QStringList m_importPaths;

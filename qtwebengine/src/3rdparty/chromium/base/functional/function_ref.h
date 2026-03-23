@@ -6,7 +6,6 @@
 #define BASE_FUNCTIONAL_FUNCTION_REF_H_
 
 #include <concepts>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -16,6 +15,15 @@
 
 namespace base {
 
+#if defined(_MSC_VER)
+template <typename R, typename... Args>
+class FunctionRef<R(Args...)> : public absl::FunctionRef<R(Args...)>
+{
+ public:
+  using absl::FunctionRef<R(Args...)>::FunctionRef;
+};
+
+#else
 template <typename Signature>
 class FunctionRef;
 
@@ -91,6 +99,10 @@ class FunctionRef<R(Args...)> {
   // NOLINTNEXTLINE(google-explicit-constructor)
   FunctionRef(Func* func) : wrapped_func_ref_(func) {}
 
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  FunctionRef(const absl::FunctionRef<R(Args...)>& func LIFETIME_BOUND)
+      : wrapped_func_ref_(func) {}
+
   // Null FunctionRefs are not allowed.
   FunctionRef() = delete;
 
@@ -105,7 +117,7 @@ class FunctionRef<R(Args...)> {
  private:
   absl::FunctionRef<R(Args...)> wrapped_func_ref_;
 };
-
+#endif
 }  // namespace base
 
 #endif  // BASE_FUNCTIONAL_FUNCTION_REF_H_

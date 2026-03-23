@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqml.h"
 
@@ -25,7 +26,7 @@
 #include <QtQml/qqmlprivate.h>
 
 #include <QtCore/qmutex.h>
-#include <QtCore/qsequentialiterable.h>
+#include <QtCore/qmetasequence.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -117,23 +118,23 @@ QQmlAttachedPropertiesFunc qmlAttachedPropertiesFunction(QObject *object,
                                                          const QMetaObject *attachedMetaObject)
 {
     QQmlEngine *engine = object ? qmlEngine(object) : nullptr;
-    return QQmlMetaType::attachedPropertiesFunc(engine ? QQmlEnginePrivate::get(engine) : nullptr,
-                                                attachedMetaObject);
+    return QQmlMetaType::attachedPropertiesFunc(
+            engine ? QQmlTypeLoader::get(engine) : nullptr, attachedMetaObject);
 }
 
-QObject *qmlAttachedPropertiesObject(QObject *object, QQmlAttachedPropertiesFunc func, bool create)
+QObject *qmlAttachedPropertiesObject(QObject *object, QQmlAttachedPropertiesFunc func, bool createIfMissing)
 {
     if (!object)
         return nullptr;
 
-    QQmlData *data = QQmlData::get(object, create);
+    QQmlData *data = QQmlData::get(object, createIfMissing);
 
     // Attached properties are only on objects created by QML,
     // unless explicitly requested (create==true)
     if (!data)
         return nullptr;
 
-    return resolveAttachedProperties(func, data, object, create);
+    return resolveAttachedProperties(func, data, object, createIfMissing);
 }
 
 /*!
@@ -508,7 +509,7 @@ int qmlTypeId(const char *uri, int versionMajor, int versionMinor, const char *q
        Types; internal code should use QQmlMetaType API.
     */
     QQmlEngine engine;
-    QQmlTypeLoader *typeLoader = &QQmlEnginePrivate::get(&engine)->typeLoader;
+    QQmlTypeLoader *typeLoader = QQmlTypeLoader::get(&engine);
     auto loadHelper = QQml::makeRefPointer<LoadHelper>(
             typeLoader, uri, qmlName, QQmlTypeLoader::Synchronous);
     const QQmlType type = loadHelper->type();
@@ -578,9 +579,9 @@ QObject *QQmlPrivate::SingletonInstanceFunctor::operator()(QQmlEngine *qeng, QJS
     return m_object;
 };
 
-static QVector<QTypeRevision> availableRevisions(const QMetaObject *metaObject)
+static QList<QTypeRevision> availableRevisions(const QMetaObject *metaObject)
 {
-    QVector<QTypeRevision> revisions;
+    QList<QTypeRevision> revisions;
     if (!metaObject)
         return revisions;
     const int propertyOffset = metaObject->propertyOffset();
@@ -619,18 +620,18 @@ void assignVersions(Registration *registration, QTypeRevision revision,
     registration->revision = revision;
 }
 
-static QVector<QTypeRevision> prepareRevisions(const QMetaObject *metaObject, QTypeRevision added)
+static QList<QTypeRevision> prepareRevisions(const QMetaObject *metaObject, QTypeRevision added)
 {
     auto revisions = availableRevisions(metaObject);
     revisions.append(added);
     return revisions;
 }
 
-static void uniqueRevisions(QVector<QTypeRevision> *revisions, QTypeRevision defaultVersion,
+static void uniqueRevisions(QList<QTypeRevision> *revisions, QTypeRevision defaultVersion,
                             QTypeRevision added)
 {
     bool revisionsHaveMajorVersions = false;
-    for (QTypeRevision revision : QVector<QTypeRevision>(*revisions)) { // yes, copy
+    for (QTypeRevision revision : QList<QTypeRevision>(*revisions)) { // yes, copy
         // allow any minor version for each explicitly specified past major one
         if (revision.hasMajorVersion()) {
             revisionsHaveMajorVersions = true;
@@ -670,7 +671,7 @@ static QQmlType::SingletonInstanceInfo::ConstPtr singletonInstanceInfo(
         const QQmlPrivate::RegisterCompositeSingletonType &type)
 {
     QQmlType::SingletonInstanceInfo::Ptr siinfo = QQmlType::SingletonInstanceInfo::create();
-    siinfo->url = QQmlTypeLoader::normalize(type.url);
+    siinfo->url = QQmlMetaType::normalizedUrl(type.url);
     siinfo->typeName = type.typeName;
     return QQmlType::SingletonInstanceInfo::ConstPtr(
             siinfo.take(), QQmlType::SingletonInstanceInfo::ConstPtr::Adopt);
@@ -1115,7 +1116,7 @@ namespace QQmlPrivate {
 template<>
 void qmlRegisterTypeAndRevisions<QQmlTypeNotAvailable, void>(
         const char *uri, int versionMajor, const QMetaObject *classInfoMetaObject,
-        QVector<int> *qmlTypeIds, const QMetaObject *extension, bool)
+        QList<int> *qmlTypeIds, const QMetaObject *extension, bool)
 {
     using T = QQmlTypeNotAvailable;
 
@@ -1186,8 +1187,7 @@ void AOTCompiledContext::setInstructionPointer(int offset) const
 
 void AOTCompiledContext::setLocals(const AOTTrackedLocalsStorage *locals) const
 {
-    if (auto *frame = engine->handle()->currentStackFrame)
-        frame->locals = locals;
+    static_cast<QV4::MetaTypesStackFrame *>(engine->handle()->currentStackFrame)->setLocals(locals);
 }
 
 void AOTCompiledContext::setReturnValueUndefined() const
@@ -1218,7 +1218,8 @@ static void iterateVariant(const QVariant &element, std::vector<QVariant> *eleme
 #define ADD_CASE(Type, id, T) \
     case QMetaType::Type:
 
-    switch (element.metaType().id()) {
+    const QMetaType elementMetaType = element.metaType();
+    switch (elementMetaType.id()) {
     case QMetaType::QVariantMap:
         for (const QVariant &variant : *static_cast<const QVariantMap *>(element.constData()))
             elements->push_back(variant);
@@ -1241,14 +1242,22 @@ static void iterateVariant(const QVariant &element, std::vector<QVariant> *eleme
         break;
     }
 
-    QSequentialIterable iterable;
-    if (!QMetaType::convert(
-                element.metaType(), element.constData(),
-                QMetaType::fromType<QSequentialIterable>(), &iterable)) {
+    if (elementMetaType == QMetaType::fromType<QJSValue>()
+            || elementMetaType == QMetaType::fromType<QJSManagedValue>()
+            || elementMetaType == QMetaType::fromType<QJSPrimitiveValue>()) {
+        // QJSValue and QJSManagedValue effectively hold persistent values anyway.
+        // QJSPrimitiveValue can only hold primitives or QString.
         return;
     }
 
-    switch (iterable.valueMetaType().id()) {
+    QMetaSequence::Iterable iterable;
+    if (!QMetaType::convert(
+                element.metaType(), element.constData(),
+                QMetaType::fromType<QMetaSequence::Iterable>(), &iterable)) {
+        return;
+    }
+
+    switch (iterable.metaContainer().valueMetaType().id()) {
     QT_FOR_EACH_STATIC_PRIMITIVE_TYPE(ADD_CASE)
     QT_FOR_EACH_STATIC_CORE_CLASS(ADD_CASE)
     QT_FOR_EACH_STATIC_GUI_CLASS(ADD_CASE)
@@ -1274,10 +1283,10 @@ void AOTCompiledContext::mark(const QVariant &variant, QV4::MarkStack *markStack
     iterateVariant(variant, &stack);
 
     while (!stack.empty()) {
-        const QVariant &element = std::as_const(stack).back();
+        const QVariant element = std::as_const(stack).back();
+        stack.pop_back();
         if (!markPointer(element, markStack))
             iterateVariant(element, &stack);
-        stack.pop_back();
     }
 }
 
@@ -1377,16 +1386,16 @@ struct FallbackPropertyQmlData
 
 static FallbackPropertyQmlData findFallbackPropertyQmlData(QV4::Lookup *lookup, QObject *object)
 {
-    QQmlData *qmlData = QQmlData::get(object);
-    if (qmlData && qmlData->isQueuedForDeletion)
-        return {qmlData, nullptr, PropertyResult::Deleted};
+    // We've just initialized the lookup. So everything must be fine here.
 
+    QQmlData *qmlData = QQmlData::get(object);
+
+    Q_ASSERT(!qmlData || !qmlData->isQueuedForDeletion);
     Q_ASSERT(!QQmlData::wasDeleted(object));
 
     const QMetaObject *metaObject
             = reinterpret_cast<const QMetaObject *>(lookup->qobjectFallbackLookup.metaObject - 1);
-    if (!metaObject || metaObject != object->metaObject())
-        return {qmlData, nullptr, PropertyResult::NeedsInit};
+    Q_ASSERT(metaObject == object->metaObject());
 
     return {qmlData, metaObject, PropertyResult::OK};
 }
@@ -1403,7 +1412,7 @@ static PropertyResult loadFallbackProperty(
         data.qmlData->flushPendingBinding(coreIndex);
 
     captureFallbackProperty(object, coreIndex, lookup->qobjectFallbackLookup.notifyIndex,
-                            lookup->qobjectFallbackLookup.isConstant, aotContext);
+                            lookup->qobjectFallbackLookup.isConstantOrResettable, aotContext);
 
     void *a[] = { target, nullptr };
     data.metaObject->metacall(object, QMetaObject::ReadProperty, coreIndex, a);
@@ -1450,12 +1459,9 @@ PropertyResult writeBackObjectAsVariant(QV4::Lookup *lookup, QObject *object, vo
 PropertyResult loadFallbackAsVariant(
         QV4::Lookup *lookup, QObject *object, void *target, const AOTCompiledContext *aotContext)
 {
-    const QMetaObject *metaObject
-            = reinterpret_cast<const QMetaObject *>(lookup->qobjectFallbackLookup.metaObject - 1);
-    Q_ASSERT(metaObject);
-
     QVariant *variant = static_cast<QVariant *>(target);
-    const QMetaType propType = metaObject->property(lookup->qobjectFallbackLookup.coreIndex).metaType();
+    const QMetaType propType(reinterpret_cast<const QtPrivate::QMetaTypeInterface *>(
+            lookup->qobjectFallbackLookup.metaType - 1));
     if (propType == QMetaType::fromType<QVariant>())
         return loadFallbackProperty(lookup, object, variant, aotContext);
 
@@ -1465,12 +1471,9 @@ PropertyResult loadFallbackAsVariant(
 
 PropertyResult writeBackFallbackAsVariant(QV4::Lookup *lookup, QObject *object, void *source)
 {
-    const QMetaObject *metaObject
-            = reinterpret_cast<const QMetaObject *>(lookup->qobjectFallbackLookup.metaObject - 1);
-    Q_ASSERT(metaObject);
-
     QVariant *variant = static_cast<QVariant *>(source);
-    const QMetaType propType = metaObject->property(lookup->qobjectFallbackLookup.coreIndex).metaType();
+    const QMetaType propType(reinterpret_cast<const QtPrivate::QMetaTypeInterface *>(
+            lookup->qobjectFallbackLookup.metaType - 1));
     if (propType == QMetaType::fromType<QVariant>())
         return writeBackFallbackProperty(lookup, object, variant);
 
@@ -1539,16 +1542,18 @@ static PropertyResult storeFallbackProperty(QV4::Lookup *l, QObject *object, voi
 }
 
 static PropertyResult resetFallbackProperty(
-        QV4::Lookup *l, QObject *object, const QMetaProperty *property, QV4::ExecutionEngine *v4)
+        QV4::Lookup *l, QObject *object, QV4::ExecutionEngine *v4)
 {
     return changeFallbackProperty(l, object, [&](const QMetaObject *metaObject, int coreIndex) {
-        if (property->isResettable()) {
+        if (l->qobjectFallbackLookup.isConstantOrResettable) {
             void *args[] = { nullptr };
             metaObject->metacall(object, QMetaObject::ResetProperty, coreIndex, args);
         } else {
+            const QMetaType propType(reinterpret_cast<const QtPrivate::QMetaTypeInterface *>(
+                    l->qobjectFallbackLookup.metaType - 1));
             v4->throwError(
                     QLatin1String("Cannot assign [undefined] to ") +
-                    QLatin1String(property->typeName()));
+                    QLatin1String(propType.name()));
         }
     });
 }
@@ -1671,17 +1676,13 @@ static PropertyResult storeFallbackAsVariant(
 {
     QVariant *variant = static_cast<QVariant *>(value);
 
-    const QMetaObject *metaObject
-            = reinterpret_cast<const QMetaObject *>(lookup->qobjectFallbackLookup.metaObject - 1);
-    Q_ASSERT(metaObject);
-
-    const QMetaProperty property = metaObject->property(lookup->qobjectFallbackLookup.coreIndex);
-    const QMetaType propType = property.metaType();
+    const QMetaType propType(reinterpret_cast<const QtPrivate::QMetaTypeInterface *>(
+            lookup->qobjectFallbackLookup.metaType - 1));
     if (propType == QMetaType::fromType<QVariant>())
         return storeFallbackProperty(lookup, object, variant);
 
     if (!variant->isValid())
-        return resetFallbackProperty(lookup, object, &property, v4);
+        return resetFallbackProperty(lookup, object, v4);
 
     if (isTypeCompatible(variant->metaType(), propType))
         return storeFallbackProperty(lookup, object, variant->data());
@@ -1704,6 +1705,7 @@ enum class ObjectLookupResult {
     Fallback,
 };
 
+template<QV4::Lookup::Call FallbackCall>
 static ObjectLookupResult initObjectLookup(
         const AOTCompiledContext *aotContext, QV4::Lookup *lookup, QObject *object)
 {
@@ -1746,10 +1748,17 @@ static ObjectLookupResult initObjectLookup(
         lookup->releasePropertyCache();
         // & 1 to tell the gc that this is not heap allocated; see markObjects in qv4lookup_p.h
         lookup->qobjectFallbackLookup.metaObject = quintptr(metaObject) + 1;
+        lookup->qobjectFallbackLookup.metaType = quintptr(property.metaType().iface()) + 1;
         lookup->qobjectFallbackLookup.coreIndex = coreIndex;
         lookup->qobjectFallbackLookup.notifyIndex =
                 QMetaObjectPrivate::signalIndex(property.notifySignal());
-        lookup->qobjectFallbackLookup.isConstant = property.isConstant() ? 1 : 0;
+
+        if constexpr (FallbackCall == QV4::Lookup::Call::ContextGetterScopeObjectPropertyFallback
+                      || FallbackCall == QV4::Lookup::Call::GetterQObjectPropertyFallback) {
+            lookup->qobjectFallbackLookup.isConstantOrResettable = property.isConstant() ? 1 : 0;
+        } else if constexpr (FallbackCall == QV4::Lookup::Call::SetterQObjectPropertyFallback) {
+            lookup->qobjectFallbackLookup.isConstantOrResettable = property.isResettable() ? 1 : 0;
+        }
         return ObjectLookupResult::Fallback;
     }
 
@@ -1771,7 +1780,7 @@ void initObjectLookup(const AOTCompiledContext *aotContext, uint index, QObject 
     }
 
     QV4::Lookup *lookup = aotContext->compilationUnit->runtimeLookups + index;
-    switch (initObjectLookup(aotContext, lookup, object)) {
+    switch (initObjectLookup<FallbackCall>(aotContext, lookup, object)) {
     case ObjectLookupResult::Object:
         lookup->call = ObjectCall;
         lookup->asVariant = (Type == LookupType::Variant);
@@ -1821,7 +1830,7 @@ bool AOTCompiledContext::captureLookup(uint index, QObject *object) const
         QQmlData::flushPendingBinding(object, coreIndex);
         captureFallbackProperty(
                     object, coreIndex, lookup->qobjectFallbackLookup.notifyIndex,
-                    lookup->qobjectFallbackLookup.isConstant, this);
+                    lookup->qobjectFallbackLookup.isConstantOrResettable, this);
         return true;
     }
     default:
@@ -1845,7 +1854,7 @@ bool AOTCompiledContext::captureQmlContextPropertyLookup(uint index) const
         const int coreIndex = lookup->qobjectFallbackLookup.coreIndex;
         QQmlData::flushPendingBinding(qmlScopeObject, coreIndex);
         captureFallbackProperty(qmlScopeObject, coreIndex, lookup->qobjectFallbackLookup.notifyIndex,
-                                lookup->qobjectFallbackLookup.isConstant, this);
+                                lookup->qobjectFallbackLookup.isConstantOrResettable, this);
         return true;
     }
     default:
@@ -1889,10 +1898,9 @@ QMetaType AOTCompiledContext::lookupResultMetaType(uint index) const
         return QMetaType::fromType<QObject *>();
     case QV4::Lookup::Call::GetterQObjectPropertyFallback:
     case QV4::Lookup::Call::ContextGetterScopeObjectPropertyFallback: {
-        const QMetaObject *metaObject
-                = reinterpret_cast<const QMetaObject *>(lookup->qobjectFallbackLookup.metaObject - 1);
-        const int coreIndex = lookup->qobjectFallbackLookup.coreIndex;
-        return metaObject->property(coreIndex).metaType();
+        // We can do this because the fallback lookup gets invalidated for every call.
+        return QMetaType(reinterpret_cast<const QtPrivate::QMetaTypeInterface *>(
+                lookup->qobjectFallbackLookup.metaType - 1));
     }
     case QV4::Lookup::Call::GetterQObjectMethod:
     case QV4::Lookup::Call::GetterQObjectMethodFallback:
@@ -1946,7 +1954,8 @@ void AOTCompiledContext::storeNameSloppy(uint nameIndex, void *value, QMetaType 
     PropertyResult storeResult = PropertyResult::NeedsInit;
     QMetaType propType;
 
-    switch (initObjectLookup(this, &lookup, qmlScopeObject)) {
+    switch (initObjectLookup<QV4::Lookup::Call::SetterQObjectPropertyFallback>(
+                this, &lookup, qmlScopeObject)) {
     case ObjectLookupResult::Object: {
         propType = lookup.qobjectLookup.propertyData->propType();
         if (isTypeCompatible(type, propType)) {
@@ -1976,18 +1985,15 @@ void AOTCompiledContext::storeNameSloppy(uint nameIndex, void *value, QMetaType 
         break;
     }
     case ObjectLookupResult::Fallback: {
-        const QMetaObject *metaObject
-                = reinterpret_cast<const QMetaObject *>(lookup.qobjectFallbackLookup.metaObject - 1);
-        const QMetaProperty property = metaObject->property(lookup.qobjectFallbackLookup.coreIndex);
-        propType = property.metaType();
+        propType = QMetaType(reinterpret_cast<const QtPrivate::QMetaTypeInterface *>(
+                lookup.qobjectFallbackLookup.metaType - 1));
         if (isTypeCompatible(type, propType)) {
             storeResult = storeFallbackProperty(&lookup, qmlScopeObject, value);
         } else if (isUndefined(value, type)) {
 
             // NB: In order to have a meaningful reset() here, the type needs to be a wrapper type
             //     that can hold undefined. For example QVariant. The caller must not unwrap it.
-            storeResult = resetFallbackProperty(
-                    &lookup, qmlScopeObject, &property, engine->handle());
+            storeResult = resetFallbackProperty(&lookup, qmlScopeObject, engine->handle());
 
         } else {
 
@@ -2140,8 +2146,13 @@ static bool callQObjectMethodAsVariant(
     QV4::Scope scope(engine);
     QV4::ScopedValue wrappedObject(scope, QV4::QObjectWrapper::wrap(scope.engine, thisObject));
     QV4::ScopedFunctionObject function(scope, lookup->getter(scope.engine, wrappedObject));
-    Q_ASSERT(function);
-    Q_ASSERT(lookup->asVariant); // The getter mustn't reset the isVariant flag
+
+    // The getter mustn't reset the isVariant flag
+    Q_ASSERT(lookup->asVariant);
+
+    // Since we have an asVariant lookup, the function may have been overridden in the mean time.
+    if (!function)
+        return false;
 
     Q_ALLOCA_VAR(QMetaType, types, (argc + 1) * sizeof(QMetaType));
     std::fill(types, types + argc + 1, QMetaType::fromType<QVariant>());
@@ -2233,30 +2244,14 @@ static bool callArrowFunction(
     Q_UNREACHABLE_RETURN(false);
 }
 
-static bool callArrowFunctionAsVariant(
-        QV4::ExecutionEngine *engine, QV4::ArrowFunction *function,
-        QObject *thisObject, void **args, int argc)
+static void throwIsNotAFunctionError(
+        const AOTCompiledContext *aotContext, QV4::Lookup *lookup, const QString &object)
 {
-    QV4::Function *v4Function = function->function();
-    Q_ASSERT(v4Function);
-
-    switch (v4Function->kind) {
-    case QV4::Function::JsUntyped:
-        // We cannot assert anything here because the method can be shadowed.
-        // That's why we wrap everything in QVariant.
-    case QV4::Function::AotCompiled:
-    case QV4::Function::JsTyped: {
-        Q_ALLOCA_VAR(QMetaType, types, (argc + 1) * sizeof(QMetaType));
-        std::fill(types, types + argc + 1, QMetaType::fromType<QVariant>());
-        function->call(thisObject, args, types, argc);
-        return !engine->hasException;
-    }
-    case QV4::Function::Eval:
-        break;
-    }
-
-    Q_UNREACHABLE_RETURN(false);
-}
+    aotContext->engine->handle()->throwTypeError(
+            QStringLiteral("Property '%1' of object %2 is not a function").arg(
+                    aotContext->compilationUnit->runtimeStrings[lookup->nameIndex]->toQString(),
+                    object));
+};
 
 bool AOTCompiledContext::callQmlContextPropertyLookup(uint index, void **args, int argc) const
 {
@@ -2265,22 +2260,23 @@ bool AOTCompiledContext::callQmlContextPropertyLookup(uint index, void **args, i
     if (lookup->call == QV4::Lookup::Call::ContextGetterScopeObjectMethod)
         return callQObjectMethod(engine->handle(), lookup, qmlScopeObject, args, argc);
 
-    const auto doCall = [&](auto &&call) {
+    if (lookup->call == QV4::Lookup::Call::ContextGetterScopeObjectProperty) {
         QV4::Scope scope(engine->handle());
         QV4::ScopedValue undefined(scope);
         QV4::Scoped<QV4::ArrowFunction> function(
                 scope, lookup->contextGetter(scope.engine, undefined));
-        Q_ASSERT(function);
-        return call(scope.engine, function, qmlScopeObject, args, argc);
-    };
+        if (function)
+            return callArrowFunction(scope.engine, function, qmlScopeObject, args, argc);
 
-    if (lookup->call == QV4::Lookup::Call::ContextGetterScopeObjectProperty)
-        return doCall(&callArrowFunction);
+        QV4::Scoped<QV4::QObjectWrapper> object(
+                scope, QV4::QObjectWrapper::wrap(scope.engine, qmlScopeObject));
+        throwIsNotAFunctionError(this, lookup, object->toQStringNoThrow());
+    }
 
     return false;
 }
 
-enum MatchScore { NoMatch, VariantMatch, ExactMatch, };
+enum MatchScore { NoMatch, ExactMatch, };
 
 static MatchScore resolveQObjectMethodOverload(
         QV4::QObjectMethod *method, QV4::Lookup *lookup, int relativeMethodIndex)
@@ -2353,9 +2349,9 @@ void AOTCompiledContext::initCallQmlContextPropertyLookup(uint index, int relati
         return;
     }
 
-    scope.engine->throwTypeError(
-            QStringLiteral("Property '%1' of object [null] is not a function").arg(
-                    compilationUnit->runtimeStrings[lookup->nameIndex]->toQString()));
+    QV4::Scoped<QV4::QObjectWrapper> object(
+            scope, QV4::QObjectWrapper::wrap(scope.engine, qmlScopeObject));
+    throwIsNotAFunctionError(this, lookup, object->toQStringNoThrow());
 }
 
 bool AOTCompiledContext::loadContextIdLookup(uint index, void *target) const
@@ -2437,16 +2433,25 @@ bool AOTCompiledContext::callObjectPropertyLookup(
                 : callQObjectMethod(engine->handle(), lookup, object, args, argc);
     case QV4::Lookup::Call::GetterQObjectProperty:
     case QV4::Lookup::Call::GetterQObjectPropertyFallback: {
-        const bool asVariant = lookup->asVariant;
-        // Here we always retrieve a fresh method via the getter. No need to re-init.
+        if (lookup->asVariant) {
+            // If the method can be shadowed, the overridden method can be taken away, too.
+            // In that case we might end up with a QObjectMethod or random other values instead.
+            // callQObjectMethodAsVariant is flexible enough to handle that.
+            return callQObjectMethodAsVariant(engine->handle(), lookup, object, args, argc);
+        }
+
+        // Here we always retrieve a fresh ArrowFunction via the getter.
         QV4::Scope scope(engine->handle());
         QV4::ScopedValue thisObject(scope, QV4::QObjectWrapper::wrap(scope.engine, object));
         QV4::Scoped<QV4::ArrowFunction> function(scope, lookup->getter(scope.engine, thisObject));
-        Q_ASSERT(function);
-        Q_ASSERT(lookup->asVariant == asVariant); // The getter mustn't touch the asVariant bit
-        return asVariant
-                ? callArrowFunctionAsVariant(scope.engine, function, qmlScopeObject, args, argc)
-                : callArrowFunction(scope.engine, function, qmlScopeObject, args, argc);
+
+        // The getter mustn't touch the asVariant bit
+        Q_ASSERT(!lookup->asVariant);
+
+        if (function)
+            return callArrowFunction(scope.engine, function, object, args, argc);
+
+        throwIsNotAFunctionError(this, lookup, thisObject->toQStringNoThrow());
     }
     default:
         break;
@@ -2465,16 +2470,10 @@ void AOTCompiledContext::initCallObjectPropertyLookupAsVariant(uint index, QObje
     QV4::Lookup *lookup = compilationUnit->runtimeLookups + index;
     QV4::Scope scope(engine->handle());
 
-    const auto throwInvalidObjectError = [&]() {
-        scope.engine->throwTypeError(
-                QStringLiteral("Property '%1' of object [object Object] is not a function")
-                        .arg(compilationUnit->runtimeStrings[lookup->nameIndex]->toQString()));
-    };
-
     const auto *ddata = QQmlData::get(object, false);
     if (ddata && ddata->hasVMEMetaObject && ddata->jsWrapper.isNullOrUndefined()) {
         // We cannot lookup functions on an object with VME metaobject but no QObjectWrapper
-        throwInvalidObjectError();
+        throwIsNotAFunctionError(this, lookup, QStringLiteral("[object Object]"));
         return;
     }
 
@@ -2492,7 +2491,7 @@ void AOTCompiledContext::initCallObjectPropertyLookupAsVariant(uint index, QObje
         return;
     }
 
-    throwInvalidObjectError();
+    throwIsNotAFunctionError(this, lookup, thisObject->toQStringNoThrow());
 }
 
 void AOTCompiledContext::initCallObjectPropertyLookup(
@@ -2506,16 +2505,10 @@ void AOTCompiledContext::initCallObjectPropertyLookup(
     QV4::Lookup *lookup = compilationUnit->runtimeLookups + index;
     QV4::Scope scope(engine->handle());
 
-    const auto throwInvalidObjectError = [&]() {
-        scope.engine->throwTypeError(
-                QStringLiteral("Property '%1' of object [object Object] is not a function")
-                        .arg(compilationUnit->runtimeStrings[lookup->nameIndex]->toQString()));
-    };
-
     const auto *ddata = QQmlData::get(object, false);
     if (ddata && ddata->hasVMEMetaObject && ddata->jsWrapper.isNullOrUndefined()) {
         // We cannot lookup functions on an object with VME metaobject but no QObjectWrapper
-        throwInvalidObjectError();
+        throwIsNotAFunctionError(this, lookup, QStringLiteral("[object Object]"));
         return;
     }
 
@@ -2534,7 +2527,7 @@ void AOTCompiledContext::initCallObjectPropertyLookup(
         return;
     }
 
-    throwInvalidObjectError();
+    throwIsNotAFunctionError(this, lookup, thisObject->toQStringNoThrow());
 }
 
 bool AOTCompiledContext::loadGlobalLookup(uint index, void *target) const
@@ -2581,6 +2574,7 @@ bool AOTCompiledContext::loadScopeObjectPropertyLookup(uint index, void *target)
         break;
     case QV4::Lookup::Call::ContextGetterScopeObjectPropertyFallback:
         result = loadFallbackProperty(lookup, qmlScopeObject, target, this);
+        lookup->call = QV4::Lookup::Call::ContextGetterGeneric;
         break;
     default:
         return false;
@@ -2612,6 +2606,7 @@ bool AOTCompiledContext::writeBackScopeObjectPropertyLookup(uint index, void *so
         break;
     case QV4::Lookup::Call::ContextGetterScopeObjectPropertyFallback:
         result = writeBackFallbackProperty(lookup, qmlScopeObject, source);
+        lookup->call = QV4::Lookup::Call::ContextGetterGeneric;
         break;
     default:
         return false;
@@ -2729,8 +2724,7 @@ bool AOTCompiledContext::loadAttachedLookup(uint index, QObject *object, void *t
     QV4::Scoped<QV4::QQmlTypeWrapper> wrapper(scope, lookup->qmlTypeLookup.qmlTypeWrapper);
     Q_ASSERT(wrapper);
     *static_cast<QObject **>(target) = qmlAttachedPropertiesObject(
-                object, wrapper->d()->type().attachedPropertiesFunction(
-                    QQmlEnginePrivate::get(qmlEngine())));
+                object, wrapper->d()->type().attachedPropertiesFunction(scope.engine->typeLoader()));
     return true;
 }
 
@@ -2812,6 +2806,7 @@ bool AOTCompiledContext::getObjectLookup(uint index, QObject *object, void *targ
         result = lookup->asVariant
                 ? loadFallbackAsVariant(lookup, object, target, this)
                 : loadFallbackProperty(lookup, object, target, this);
+        lookup->call = QV4::Lookup::Call::GetterGeneric;
         break;
     default:
         return false;
@@ -2846,6 +2841,7 @@ bool AOTCompiledContext::writeBackObjectLookup(uint index, QObject *object, void
         result = lookup->asVariant
                 ? writeBackFallbackAsVariant(lookup, object, source)
                 : writeBackFallbackProperty(lookup, object, source);
+        lookup->call = QV4::Lookup::Call::GetterGeneric;
         break;
     default:
         return false;
@@ -3006,6 +3002,7 @@ bool AOTCompiledContext::setObjectLookup(uint index, QObject *object, void *valu
         result = lookup->asVariant
                 ? storeFallbackAsVariant(engine->handle(), lookup, object, value)
                 : storeFallbackProperty(lookup, object, value);
+        lookup->call = QV4::Lookup::Call::SetterGeneric;
         break;
     default:
         return false;
@@ -3539,13 +3536,13 @@ void AOTCompiledContext::setObjectImplicitDestructible(QObject *object) const
 */
 
 /*!
-    \fn template<typename T> QObject *qmlAttachedPropertiesObject(const QObject *attachee, bool create)
+    \fn template<typename T> QObject *qmlAttachedPropertiesObject(const QObject *attachee, bool createIfMissing)
     \relates <qqml.h>
 
     The form of this template function is:
 
     \code
-    template<typename T> QObject *qmlAttachedPropertiesObject(const QObject *attachee, bool create = true)
+    template<typename T> QObject *qmlAttachedPropertiesObject(const QObject *attachee, bool createIfMissing = true)
     \endcode
 
     This returns the attached object instance that has been attached to the specified
@@ -3554,8 +3551,9 @@ void AOTCompiledContext::setObjectImplicitDestructible(QObject *object) const
     If \a attachee is \nullptr, returns \nullptr.
 
     If an existing attached object instance of type \e T exists, it will return
-    it. Otherwise, it will return a newly created instance if \a create is
-    \c true and \e T is a valid attaching type, or \nullptr if it's not.
+    it. Otherwise, it will return a newly created instance if
+    \a createIfMissing is \c true and \e T is a valid attaching type, or
+    \nullptr if it's not.
 
     \sa QML_ATTACHED(), {Providing Attached Properties}
 */

@@ -17,7 +17,7 @@ namespace v8::internal {
 
 DirectHandle<JSRegExpResultIndices> JSRegExpResultIndices::BuildIndices(
     Isolate* isolate, DirectHandle<RegExpMatchInfo> match_info,
-    Handle<Object> maybe_names) {
+    DirectHandle<Object> maybe_names) {
   DirectHandle<JSRegExpResultIndices> indices(
       Cast<JSRegExpResultIndices>(isolate->factory()->NewJSObjectFromMap(
           isolate->regexp_result_indices_map())));
@@ -31,7 +31,7 @@ DirectHandle<JSRegExpResultIndices> JSRegExpResultIndices::BuildIndices(
   int num_results = num_indices >> 1;
   DirectHandle<FixedArray> indices_array =
       isolate->factory()->NewFixedArray(num_results);
-  JSArray::SetContent(indices, indices_array);
+  JSArray::SetContent(isolate, indices, indices_array);
 
   for (int i = 0; i < num_results; i++) {
     const int start_offset =
@@ -68,13 +68,13 @@ DirectHandle<JSRegExpResultIndices> JSRegExpResultIndices::BuildIndices(
   // their corresponding capture indices.
   auto names = Cast<FixedArray>(maybe_names);
   int num_names = names->length() >> 1;
-  Handle<HeapObject> group_names;
+  DirectHandle<HeapObject> group_names;
   if constexpr (V8_ENABLE_SWISS_NAME_DICTIONARY_BOOL) {
     group_names = isolate->factory()->NewSwissNameDictionary(num_names);
   } else {
     group_names = isolate->factory()->NewNameDictionary(num_names);
   }
-  Handle<PropertyDictionary> group_names_dict =
+  DirectHandle<PropertyDictionary> group_names_dict =
       Cast<PropertyDictionary>(group_names);
   for (int i = 0; i < num_names; i++) {
     int base_offset = i * 2;
@@ -82,8 +82,8 @@ DirectHandle<JSRegExpResultIndices> JSRegExpResultIndices::BuildIndices(
     int index_offset = base_offset + 1;
     DirectHandle<String> name(Cast<String>(names->get(name_offset)), isolate);
     Tagged<Smi> smi_index = Cast<Smi>(names->get(index_offset));
-    Handle<Object> capture_indices(indices_array->get(smi_index.value()),
-                                   isolate);
+    DirectHandle<Object> capture_indices(indices_array->get(smi_index.value()),
+                                         isolate);
     if (!IsUndefined(*capture_indices, isolate)) {
       capture_indices = Cast<JSArray>(capture_indices);
     }
@@ -120,8 +120,8 @@ DirectHandle<JSRegExpResultIndices> JSRegExpResultIndices::BuildIndices(
 }
 
 // static
-std::optional<JSRegExp::Flags> JSRegExp::FlagsFromString(Isolate* isolate,
-                                                         Handle<String> flags) {
+std::optional<JSRegExp::Flags> JSRegExp::FlagsFromString(
+    Isolate* isolate, DirectHandle<String> flags) {
   const int length = flags->length();
 
   // A longer flags string cannot be valid.
@@ -141,32 +141,33 @@ std::optional<JSRegExp::Flags> JSRegExp::FlagsFromString(Isolate* isolate,
 }
 
 // static
-Handle<String> JSRegExp::StringFromFlags(Isolate* isolate,
-                                         JSRegExp::Flags flags) {
+DirectHandle<String> JSRegExp::StringFromFlags(Isolate* isolate,
+                                               JSRegExp::Flags flags) {
   FlagsBuffer buffer;
   return isolate->factory()->NewStringFromAsciiChecked(
       FlagsToString(flags, &buffer));
 }
 
 // static
-MaybeHandle<JSRegExp> JSRegExp::New(Isolate* isolate, Handle<String> pattern,
-                                    Flags flags, uint32_t backtrack_limit) {
+MaybeDirectHandle<JSRegExp> JSRegExp::New(Isolate* isolate,
+                                          DirectHandle<String> pattern,
+                                          Flags flags,
+                                          uint32_t backtrack_limit) {
   DirectHandle<JSFunction> constructor = isolate->regexp_function();
-  Handle<JSRegExp> regexp =
+  DirectHandle<JSRegExp> regexp =
       Cast<JSRegExp>(isolate->factory()->NewJSObject(constructor));
 
   // Clear the data field, as a GC can be triggered before the field is set
   // during compilation.
   regexp->clear_data();
 
-  return JSRegExp::Initialize(regexp, pattern, flags, backtrack_limit);
+  return JSRegExp::Initialize(isolate, regexp, pattern, flags, backtrack_limit);
 }
 
 // static
-MaybeDirectHandle<JSRegExp> JSRegExp::Initialize(Handle<JSRegExp> regexp,
-                                                 Handle<String> source,
-                                                 Handle<String> flags_string) {
-  Isolate* isolate = regexp->GetIsolate();
+MaybeDirectHandle<JSRegExp> JSRegExp::Initialize(
+    Isolate* isolate, DirectHandle<JSRegExp> regexp,
+    DirectHandle<String> source, DirectHandle<String> flags_string) {
   std::optional<Flags> flags = JSRegExp::FlagsFromString(isolate, flags_string);
   if (!flags.has_value() ||
       !RegExp::VerifyFlags(JSRegExp::AsRegExpFlags(flags.value()))) {
@@ -174,7 +175,7 @@ MaybeDirectHandle<JSRegExp> JSRegExp::Initialize(Handle<JSRegExp> regexp,
         isolate,
         NewSyntaxError(MessageTemplate::kInvalidRegExpFlags, flags_string));
   }
-  return Initialize(regexp, source, flags.value());
+  return Initialize(isolate, regexp, source, flags.value());
 }
 
 namespace {
@@ -310,9 +311,22 @@ MaybeDirectHandle<String> EscapeRegExpSource(Isolate* isolate,
       one_byte ? CountAdditionalEscapeChars<uint8_t>(source, &needs_escapes)
                : CountAdditionalEscapeChars<base::uc16>(source, &needs_escapes);
   if (!needs_escapes) return source;
-  DCHECK_LE(static_cast<uint64_t>(source->length()) + additional_escape_chars,
+  uint32_t original_length = source->length();
+  uint32_t length = original_length + additional_escape_chars;
+  // The maximum |additional_escape_chars| is 5 * String::kMaxLength, so the
+  // maximum |length| is 6 * String::kMaxLength.
+  // It is guaranteed that 6 * String::kMaxLength doesn't overflow an uint32_t,
+  // therefore (signed) |length| will never be both: positive and less than
+  // |original_length|.
+  // Note that |length| as signed integer can be negative. This case is handled
+  // in the factory method and we raise an exception.
+  static_assert(uint64_t{String::kMaxLength} * 6 <
+                std::numeric_limits<decltype(length)>::max());
+  DCHECK_LE(additional_escape_chars, 5 * String::kMaxLength);
+  DCHECK_LE(length, 6 * String::kMaxLength);
+  DCHECK_LE(static_cast<uint64_t>(original_length) + additional_escape_chars,
             std::numeric_limits<uint32_t>::max());
-  uint32_t length = source->length() + additional_escape_chars;
+  DCHECK(static_cast<int>(length) < 0 || length >= original_length);
   if (one_byte) {
     DirectHandle<SeqOneByteString> result;
     ASSIGN_RETURN_ON_EXCEPTION(isolate, result,
@@ -329,10 +343,11 @@ MaybeDirectHandle<String> EscapeRegExpSource(Isolate* isolate,
 }  // namespace
 
 // static
-MaybeHandle<JSRegExp> JSRegExp::Initialize(Handle<JSRegExp> regexp,
-                                           Handle<String> source, Flags flags,
-                                           uint32_t backtrack_limit) {
-  Isolate* isolate = regexp->GetIsolate();
+MaybeDirectHandle<JSRegExp> JSRegExp::Initialize(Isolate* isolate,
+                                                 DirectHandle<JSRegExp> regexp,
+                                                 DirectHandle<String> source,
+                                                 Flags flags,
+                                                 uint32_t backtrack_limit) {
   Factory* factory = isolate->factory();
   // If source is the empty string we set it to "(?:)" instead as
   // suggested by ECMA-262, 5th, section 15.10.4.1.

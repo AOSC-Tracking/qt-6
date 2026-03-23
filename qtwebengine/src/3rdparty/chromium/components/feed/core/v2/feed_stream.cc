@@ -286,6 +286,7 @@ feedwire::DiscoverLaunchResult FeedStream::TriggerStreamLoad(
 
 void FeedStream::InitializeComplete(WaitForStoreInitializeTask::Result result) {
   metadata_ = *std::move(result.startup_data.metadata);
+  delegate_->SetFeedLaunchCuiMetadata(metadata_.feed_launch_cui_metadata());
   for (const feedstore::StreamData& stream_data :
        result.startup_data.stream_data) {
     StreamType stream_type =
@@ -446,6 +447,7 @@ const feedstore::Metadata& FeedStream::GetMetadata() const {
 void FeedStream::SetMetadata(feedstore::Metadata metadata) {
   metadata_ = std::move(metadata);
   store_->WriteMetadata(metadata_, base::DoNothing());
+  delegate_->SetFeedLaunchCuiMetadata(metadata_.feed_launch_cui_metadata());
 }
 
 void FeedStream::SetStreamStale(const StreamType& stream_type, bool is_stale) {
@@ -957,6 +959,32 @@ base::Time FeedStream::GetLastFetchTime(SurfaceId surface_id) {
       feedstore::GetLastFetchTime(metadata_, surface->GetStreamType());
   // Ignore impossible time values.
   return (fetch_time > base::Time::Now()) ? base::Time() : fetch_time;
+}
+
+std::vector<std::string> FeedStream::GetFeedUrls(SurfaceId surface_id) {
+  FeedStreamSurface* surface = FindSurface(surface_id);
+  if (!surface) {
+    return {};
+  }
+  Stream& stream = GetStream(surface->GetStreamType());
+  if (!stream.model) {
+    return {};
+  }
+
+  std::vector<std::string> urls;
+  for (ContentRevision content_revision : stream.model->GetContentList()) {
+    const feedstore::Content* content =
+        stream.model->FindContent(content_revision);
+    if (content) {
+      std::string url = content->prefetch_metadata(0).uri();
+      // Exclude video streaming cards.
+      if (!url.starts_with("https://www.youtube.com") &&
+          !url.starts_with("https://m.youtube.com")) {
+        urls.push_back(url);
+      }
+    }
+  }
+  return urls;
 }
 
 void FeedStream::LoadModelForTesting(const StreamType& stream_type,
@@ -1625,6 +1653,10 @@ void FeedStream::ReportOtherUserAction(SurfaceId surface_id,
 void FeedStream::ReportOtherUserAction(const StreamType& stream_type,
                                        FeedUserActionType action_type) {
   metrics_reporter_->OtherUserAction(stream_type, action_type);
+}
+
+void FeedStream::ReportOtherUserAction(FeedUserActionType action_type) {
+  metrics_reporter_->OtherUserAction(action_type);
 }
 
 void FeedStream::ReportInfoCardTrackViewStarted(SurfaceId surface_id,

@@ -5,17 +5,20 @@
 from __future__ import annotations
 
 import subprocess
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING
+
+from typing_extensions import override
 
 if TYPE_CHECKING:
   from crossbench.path import AnyPathLike, LocalPath
-  from crossbench.plt.base import CmdArg, ListCmdArgs, Platform
+  from crossbench.plt.base import Platform
   from crossbench.plt.signals import Signals
+  from crossbench.plt.types import CmdArg, ListCmdArgs
 
 
 class RemotePlatformMixin:
 
-  def __init__(self, host_platform: Platform):
+  def __init__(self, host_platform: Platform) -> None:
     super().__init__()
     self._host_platform: Platform = host_platform
 
@@ -30,7 +33,7 @@ class RemotePlatformMixin:
   def host_path(self, path: AnyPathLike) -> LocalPath:
     return self._host_platform.local_path(path)
 
-  def build_shell_cmd(self, *args: CmdArg) -> ListCmdArgs:
+  def build_shell_cmd(self, *args: CmdArg, shell: bool = False) -> ListCmdArgs:
     raise NotImplementedError()
 
 
@@ -46,14 +49,14 @@ class RemotePopen(subprocess.Popen):
   def __init__(self,
                platform: Platform,
                args: ListCmdArgs,
-               bufsize=-1,
+               bufsize: int = -1,
                stdout=None,
                stderr=None,
-               stdin=None):
+               stdin=None) -> None:
     self._platform: Platform = platform
     assert self._platform.is_remote, (
         f"Cannot create remote process on local platform {self._platform}")
-    self._remote_pid: Optional[int] = None
+    self._remote_pid: int | None = None
     super().__init__(
         args, bufsize=bufsize, stdout=stdout, stderr=stderr, stdin=stdin)
 
@@ -66,12 +69,15 @@ class RemotePopen(subprocess.Popen):
     assert self._remote_pid, "remote process has no PID"
     return self._remote_pid
 
-  def send_signal(self, signal: Union[int, Signals]) -> None:
+  @override
+  def send_signal(self, signal: int | Signals) -> None:
     signal = self._platform.signals(signal)
     self._platform.send_signal(self.remote_pid, signal)
 
+  @override
   def terminate(self) -> None:
     self._platform.terminate(self.remote_pid)
 
+  @override
   def kill(self) -> None:
     self._platform.kill(self.remote_pid)

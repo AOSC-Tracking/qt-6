@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwindowsscreen.h"
 #include "qwindowscontext.h"
@@ -7,6 +8,7 @@
 #include "qwindowsintegration.h"
 #include "qwindowscursor.h"
 #include "qwindowstheme.h"
+#include "qwindowswindowclassregistry.h"
 
 #include <QtCore/qt_windows.h>
 
@@ -553,12 +555,14 @@ void QWindowsScreen::handleChanges(const QWindowsScreenData &newData)
     const bool orientationChanged = m_data.orientation != newData.orientation;
     const bool primaryChanged = (newData.flags & QWindowsScreenData::PrimaryScreen)
             && !(m_data.flags & QWindowsScreenData::PrimaryScreen);
+    const bool refreshRateChanged = m_data.refreshRateHz != newData.refreshRateHz;
     m_data.dpi = newData.dpi;
     m_data.orientation = newData.orientation;
     m_data.geometry = newData.geometry;
     m_data.availableGeometry = newData.availableGeometry;
     m_data.flags = (m_data.flags & ~QWindowsScreenData::PrimaryScreen)
             | (newData.flags & QWindowsScreenData::PrimaryScreen);
+    m_data.refreshRateHz = newData.refreshRateHz;
 
     if (dpiChanged) {
         QWindowSystemInterface::handleScreenLogicalDotsPerInchChange(screen(),
@@ -573,6 +577,9 @@ void QWindowsScreen::handleChanges(const QWindowsScreenData &newData)
     }
     if (primaryChanged)
         QWindowSystemInterface::handlePrimaryScreenChanged(this);
+
+    if (refreshRateChanged)
+        QWindowSystemInterface::handleScreenRefreshRateChange(screen(), newData.refreshRateHz);
 }
 
 HMONITOR QWindowsScreen::handle() const
@@ -697,8 +704,8 @@ void QWindowsScreenManager::initialize()
 {
     qCDebug(lcQpaScreen) << "Initializing screen manager";
 
-    auto className = QWindowsContext::instance()->registerWindowClass(
-        QWindowsContext::classNamePrefix() + QLatin1String("ScreenChangeObserverWindow"),
+    auto className = QWindowsWindowClassRegistry::instance()->registerWindowClass(
+        "ScreenChangeObserverWindow"_L1,
         qDisplayChangeObserverWndProc);
 
     // HWND_MESSAGE windows do not get WM_DISPLAYCHANGE, so we need to create
@@ -777,7 +784,7 @@ void QWindowsScreenManager::addScreen(const QWindowsScreenData &screenData)
     // change here, now that we are processing the WM_DISPLAYCHANGE.
     const auto allWindows = QGuiApplication::allWindows();
     for (QWindow *w : allWindows) {
-        if (w->isVisible() && w->handle() && w->type() != Qt::Desktop) {
+        if (w->isVisible() && w->handle()) {
             if (QWindowsWindow *window = QWindowsWindow::windowsWindowOf(w))
                 window->checkForScreenChanged(QWindowsWindow::ScreenChangeMode::FromScreenAdded);
         }
@@ -801,7 +808,7 @@ void QWindowsScreenManager::removeScreen(int index)
         unsigned movedWindowCount = 0;
         const QWindowList tlws = QGuiApplication::topLevelWindows();
         for (QWindow *w : tlws) {
-            if (w->screen() == screen && w->handle() && w->type() != Qt::Desktop) {
+            if (w->screen() == screen && w->handle()) {
                 if (w->isVisible() && w->windowState() != Qt::WindowMinimized
                     && (QWindowsWindow::baseWindowOf(w)->exStyle() & WS_EX_TOOLWINDOW)) {
                     moveToVirtualScreen(w, primaryScreen);
@@ -869,9 +876,8 @@ const QWindowsScreen *QWindowsScreenManager::screenAtDp(const QPoint &p) const
     return nullptr;
 }
 
-const QWindowsScreen *QWindowsScreenManager::screenForHwnd(HWND hwnd) const
+const QWindowsScreen *QWindowsScreenManager::screenForMonitor(HMONITOR hMonitor) const
 {
-    HMONITOR hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL);
     if (hMonitor == nullptr)
         return nullptr;
     const auto it =
@@ -882,6 +888,20 @@ const QWindowsScreen *QWindowsScreenManager::screenForHwnd(HWND hwnd) const
                              && (s->data().flags & QWindowsScreenData::VirtualDesktop) != 0;
                      });
     return it != m_screens.cend() ? *it : nullptr;
+}
+
+const QWindowsScreen *QWindowsScreenManager::screenForHwnd(HWND hwnd) const
+{
+    HMONITOR hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL);
+    return screenForMonitor(hMonitor);
+}
+
+const QWindowsScreen *QWindowsScreenManager::screenForRect(const RECT *rect) const
+{
+    if (rect == nullptr)
+        return nullptr;
+    HMONITOR hMonitor = MonitorFromRect(rect, MONITOR_DEFAULTTONULL);
+    return screenForMonitor(hMonitor);
 }
 
 QT_END_NAMESPACE

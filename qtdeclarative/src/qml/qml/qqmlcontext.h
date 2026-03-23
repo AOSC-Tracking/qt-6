@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLCONTEXT_H
 #define QQMLCONTEXT_H
@@ -36,6 +37,7 @@ public:
 
     QQmlEngine *engine() const;
     QQmlContext *parentContext() const;
+    QList<QQmlContext *> childContexts() const;
 
     QObject *contextObject() const;
     void setContextObject(QObject *);
@@ -47,6 +49,9 @@ public:
 
     QString nameForObject(const QObject *) const;
     QObject *objectForName(const QString &) const;
+
+    QObject *findObjectRecursively(const QString &id) const;
+    QList<QObject *> findObjectsRecursively(const QString &id) const;
 
     QUrl resolvedUrl(const QUrl &) const;
 

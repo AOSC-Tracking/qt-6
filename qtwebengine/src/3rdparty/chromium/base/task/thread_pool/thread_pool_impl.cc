@@ -23,6 +23,7 @@
 #include "base/strings/string_util.h"
 #include "base/system/sys_info.h"
 #include "base/task/scoped_set_task_priority_for_current_thread.h"
+#include "base/task/task_traits.h"
 #include "base/task/thread_pool/pooled_parallel_task_runner.h"
 #include "base/task/thread_pool/pooled_sequenced_task_runner.h"
 #include "base/task/thread_pool/task.h"
@@ -136,7 +137,7 @@ void ThreadPoolImpl::Start(const ThreadPoolInstance::InitParams& init_params,
   // FileDescriptorWatcher in the scope in which tasks run.
   ServiceThread::Options service_thread_options;
   service_thread_options.message_pump_type =
-#if (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
       MessagePumpType::IO;
 #else
       MessagePumpType::DEFAULT;
@@ -292,6 +293,24 @@ scoped_refptr<SingleThreadTaskRunner> ThreadPoolImpl::CreateCOMSTATaskRunner(
 scoped_refptr<UpdateableSequencedTaskRunner>
 ThreadPoolImpl::CreateUpdateableSequencedTaskRunner(const TaskTraits& traits) {
   return MakeRefCounted<PooledSequencedTaskRunner>(traits, this);
+}
+
+scoped_refptr<SequencedTaskRunner>
+ThreadPoolImpl::CreateSequencedTaskRunnerForResource(
+    const TaskTraits& traits,
+    const base::FilePath& path) {
+  AutoLock lock(sequences_for_resources_lock_);
+  auto iter = sequences_for_resources_.find(path);
+  if (iter != sequences_for_resources_.end()) {
+    // The sequence must use the same traits.
+    CHECK(iter->second->sequence()->traits() == traits);
+    return iter->second;
+  }
+
+  scoped_refptr<PooledSequencedTaskRunner> task_runner =
+      MakeRefCounted<PooledSequencedTaskRunner>(traits, this);
+  sequences_for_resources_[path] = task_runner;
+  return task_runner;
 }
 
 std::optional<TimeTicks> ThreadPoolImpl::NextScheduledRunTimeForTesting()

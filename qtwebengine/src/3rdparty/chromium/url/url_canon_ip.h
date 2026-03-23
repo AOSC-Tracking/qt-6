@@ -7,8 +7,14 @@
 #pragma allow_unsafe_buffers
 #endif
 
+#include <array>
+
 #ifndef URL_URL_CANON_IP_H_
 #define URL_URL_CANON_IP_H_
+
+#include <cstdint>
+#include <limits>
+#include <type_traits>
 
 #include "base/component_export.h"
 #include "url/third_party/mozilla/url_parse.h"
@@ -21,7 +27,7 @@ namespace internal {
 
 // Converts one of the character types that represent a numerical base to the
 // corresponding base.
-constexpr int BaseForType(SharedCharTypes type) {
+constexpr uint8_t BaseForType(SharedCharTypes type) {
   switch (type) {
     case CHAR_HEX:
       return 16;
@@ -92,7 +98,7 @@ constexpr CanonHostInfo::Family IPv4ComponentToNumber(
 
     // We know the input is 7-bit, so convert to narrow (if this is the wide
     // version of the template) by casting.
-    char input = static_cast<char>(spec[i]);
+    auto input = static_cast<unsigned char>(spec[i]);
 
     // Validate that this character is OK for the given base.
     if (!IsCharOfType(input, base)) {
@@ -108,7 +114,7 @@ constexpr CanonHostInfo::Family IPv4ComponentToNumber(
     // Fill the buffer, if there's space remaining. This check allows us to
     // verify that all characters are numeric, even those that don't fit.
     if (dest_i < kMaxComponentLen) {
-      buf[dest_i++] = input;
+      buf[dest_i++] = static_cast<char>(input);
     }
   }
 
@@ -118,9 +124,9 @@ constexpr CanonHostInfo::Family IPv4ComponentToNumber(
 
   buf[dest_i] = '\0';
 
-  // Use the 64-bit strtoi so we get a big number (no hex, decimal, or octal
-  // number can overflow a 64-bit number in <= 16 characters).
-  uint64_t num = _strtoui64(buf, NULL, BaseForType(base));
+  // Use the 64-bit StringToUint64WithBase so we get a big number (no hex,
+  // decimal, or octal number can overflow a 64-bit number in <= 16 characters).
+  uint64_t num = StringToUint64WithBase(buf, BaseForType(base));
 
   // Check for 32-bit overflow.
   if (num > std::numeric_limits<uint32_t>::max()) {
@@ -153,8 +159,12 @@ constexpr CanonHostInfo::Family DoIPv4AddressToNumber(
   // populated front to back, with the first one corresponding to the last
   // component, which allows for early exit if the last component isn't a
   // number.
-  uint32_t component_values[4];
-  int existing_components = 0;
+  std::array<uint32_t, 4> component_values;
+  uint8_t existing_components = 0;
+  // `existing_components` is used to index `component_values`.
+  // All possible values must be in range.
+  static_assert(std::numeric_limits<decltype(existing_components)>::max() >=
+                sizeof(component_values) / sizeof(component_values[0]));
 
   int current_component_end = host.end();
   int current_position = current_component_end;
@@ -202,7 +212,7 @@ constexpr CanonHostInfo::Family DoIPv4AddressToNumber(
 
   // First, process all components but the last, while making sure each fits
   // within an 8-bit field.
-  for (int i = existing_components - 1; i > 0; i--) {
+  for (decltype(existing_components) i = existing_components - 1; i > 0; --i) {
     if (component_values[i] > std::numeric_limits<uint8_t>::max()) {
       return CanonHostInfo::BROKEN;
     }
@@ -274,10 +284,12 @@ struct IPv6Parsed {
   }
 
   // There can be up to 8 hex components (colon separated) in the literal.
-  Component hex_components[8];
+  std::array<Component, 8> hex_components;
 
   // The count of hex components present. Ranges from [0,8].
-  int num_hex_components;
+  uint8_t num_hex_components;
+  static_assert(std::numeric_limits<decltype(num_hex_components)>::max() >=
+                sizeof(hex_components) / sizeof(hex_components[0]));
 
   // The index of the hex component that the "::" contraction precedes, or
   // -1 if there is no contraction.
@@ -443,7 +455,7 @@ constexpr uint16_t IPv6HexComponentToNumber(const CHAR* spec,
 
   // Convert it to a number (overflow is not possible, since with 4 hex
   // characters we can at most have a 16 bit number).
-  return static_cast<uint16_t>(_strtoui64(buf, NULL, 16));
+  return static_cast<uint16_t>(StringToUint64WithBase(buf, 16));
 }
 
 // Converts an IPv6 address to a 128-bit number (network byte order), returning
@@ -479,7 +491,8 @@ constexpr bool DoIPv6AddressToNumber(const CHAR* spec,
   int cur_index_in_address = 0;
 
   // Loop through each hex components, and contraction in order.
-  for (int i = 0; i <= ipv6_parsed.num_hex_components; ++i) {
+  for (decltype(ipv6_parsed.num_hex_components) i = 0;
+       i <= ipv6_parsed.num_hex_components; ++i) {
     // Append the contraction if it appears before this component.
     if (i == ipv6_parsed.index_of_contraction) {
       for (int j = 0; j < num_bytes_of_contraction; ++j) {

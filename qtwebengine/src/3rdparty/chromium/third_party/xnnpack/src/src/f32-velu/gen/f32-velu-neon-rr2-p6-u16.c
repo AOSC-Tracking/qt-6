@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-velu/neon-p6.c.in
 //   Generator: tools/xngen
@@ -7,19 +8,21 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <assert.h>
-
 #include <arm_neon.h>
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/vunary.h"
-#include "xnnpack/common.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/vunary.h"
 
 
 void xnn_f32_velu_ukernel__neon_rr2_p6_u16(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_elu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_elu_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -51,9 +54,9 @@ void xnn_f32_velu_ukernel__neon_rr2_p6_u16(
   XNN_FORCE_REALIZATION(vminus_ln2_hi);
   XNN_FORCE_REALIZATION(vminus_ln2_lo);
 
-  const float32x4_t vprescale = vld1q_dup_f32(&params->scalar.prescale);
-  const float32x4_t valpha = vld1q_dup_f32(&params->scalar.alpha);
-  const float32x4_t vbeta = vld1q_dup_f32(&params->scalar.beta);
+  const float32x4_t vprescale = vdupq_n_f32(params->scalar.prescale);
+  const float32x4_t valpha = vdupq_n_f32(params->scalar.alpha);
+  const float32x4_t vbeta = vdupq_n_f32(params->scalar.beta);
 
   for (; batch >= 16 * sizeof(float); batch -= 16 * sizeof(float)) {
     float32x4_t vx0123 = vld1q_f32(input); input += 4;

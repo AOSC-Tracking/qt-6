@@ -11,8 +11,8 @@ namespace v8 {
 namespace internal {
 
 RegExpMacroAssemblerTracer::RegExpMacroAssemblerTracer(
-    Isolate* isolate, RegExpMacroAssembler* assembler)
-    : RegExpMacroAssembler(isolate, assembler->zone()), assembler_(assembler) {
+    RegExpMacroAssembler* assembler)
+    : RegExpMacroAssembler(*assembler), assembler_(assembler) {
   PrintF("RegExpMacroAssembler%s();\n",
          ImplementationToString(assembler->Implementation()));
 }
@@ -43,12 +43,10 @@ void RegExpMacroAssemblerTracer::AdvanceCurrentPosition(int by) {
   assembler_->AdvanceCurrentPosition(by);
 }
 
-
-void RegExpMacroAssemblerTracer::CheckGreedyLoop(Label* label) {
-  PrintF(" CheckGreedyLoop(label[%08x]);\n\n", LabelToInt(label));
-  assembler_->CheckGreedyLoop(label);
+void RegExpMacroAssemblerTracer::CheckFixedLengthLoop(Label* label) {
+  PrintF(" CheckFixedLengthLoop(label[%08x]);\n\n", LabelToInt(label));
+  assembler_->CheckFixedLengthLoop(label);
 }
-
 
 void RegExpMacroAssemblerTracer::PopCurrentPosition() {
   PrintF(" PopCurrentPosition();\n");
@@ -467,8 +465,8 @@ RegExpMacroAssembler::IrregexpImplementation
   return assembler_->Implementation();
 }
 
-Handle<HeapObject> RegExpMacroAssemblerTracer::GetCode(Handle<String> source,
-                                                       RegExpFlags flags) {
+DirectHandle<HeapObject> RegExpMacroAssemblerTracer::GetCode(
+    DirectHandle<String> source, RegExpFlags flags) {
   DirectHandle<String> flags_str =
       JSRegExp::StringFromFlags(isolate(), JSRegExp::AsJSRegExpFlags(flags));
   PrintF(" GetCode('%s', '%s');\n", source->ToCString().get(),

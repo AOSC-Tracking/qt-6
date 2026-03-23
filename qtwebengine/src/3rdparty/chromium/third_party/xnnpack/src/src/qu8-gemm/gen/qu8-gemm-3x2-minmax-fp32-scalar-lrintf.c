@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-gemm/scalar.c.in
 //   Generator: tools/xngen
@@ -9,10 +10,15 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/gemm.h"
-#include "xnnpack/math.h"
-#include "xnnpack/unaligned.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/gemm.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+
+#include "src/xnnpack/unaligned.h"
 
 
 void xnn_qu8_gemm_minmax_fp32_ukernel_3x2__scalar_lrintf(
@@ -25,7 +31,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_3x2__scalar_lrintf(
     uint8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params* restrict params)
 {
   assert(mr != 0);
   assert(mr <= 3);

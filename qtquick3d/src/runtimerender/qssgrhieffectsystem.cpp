@@ -1,10 +1,15 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtQuick3DRuntimeRender/private/qssgrhieffectsystem_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderer_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrhiquadrenderer_p.h>
+#include <QtQuick3DRuntimeRender/private/qssgrendercamera_p.h>
+#include <QtQuick3DRuntimeRender/private/qssglayerrenderdata_p.h>
+
 #include "qssgrendercontextcore.h"
 #include "qssgrendershadercodegenerator_p.h"
 #include <qtquick3d_tracepoints_p.h>
@@ -164,7 +169,8 @@ void QSSGRhiEffectSystem::releaseTextures()
 QRhiTexture *QSSGRhiEffectSystem::process(const QSSGRenderLayer &layer,
                                           QRhiTexture *inTexture,
                                           QRhiTexture *inDepthTexture,
-                                          QVector2D cameraClipRange)
+                                          QRhiTexture *inNormalTexture,
+                                          QRhiTexture *inMotionVectorTexture)
 {
     QSSG_ASSERT(m_sgContext != nullptr, return inTexture);
     QSSG_ASSERT(layer.firstEffect != nullptr, return inTexture);
@@ -172,10 +178,40 @@ QRhiTexture *QSSGRhiEffectSystem::process(const QSSGRenderLayer &layer,
     const auto &renderer = m_sgContext->renderer();
     QSSG_ASSERT(rhiContext && renderer, return inTexture);
 
-    m_depthTexture = inDepthTexture;
-    m_cameraClipRange = cameraClipRange;
-
     const auto viewCount = layer.viewCount;
+
+    m_depthTexture = inDepthTexture;
+    m_normalTexture = inNormalTexture;
+    m_motionVectorTexture = inMotionVectorTexture;
+    m_cameraClipRange = layer.renderedCameras[0]->clipPlanes;
+
+    bool usesProjectionMatrix = false;
+    bool usesViewMatrix = false;
+    for (const QSSGRenderEffect *eff = layer.firstEffect; eff; eff = eff->m_nextEffect) {
+        if (eff->testFlag(QSSGRenderEffect::Flags::UsesProjectionMatrix)
+            || eff->testFlag(QSSGRenderEffect::Flags::UsesInverseProjectionMatrix))
+        {
+            usesProjectionMatrix = true;
+        }
+        if (eff->testFlag(QSSGRenderEffect::Flags::UsesViewMatrix))
+            usesViewMatrix = true;
+    }
+
+    if (usesProjectionMatrix) {
+        m_projectionMatrices.resize(viewCount);
+        const QMatrix4x4 clipSpaceCorrMatrix = rhiContext->rhi()->clipSpaceCorrMatrix();
+        for (int viewIndex = 0; viewIndex < viewCount; ++viewIndex)
+            m_projectionMatrices[viewIndex] = clipSpaceCorrMatrix * layer.renderedCameras[viewIndex]->projection;
+    }
+
+    if (usesViewMatrix) {
+        QMatrix4x4 camGlobalTransforms[2] { QMatrix4x4{Qt::Uninitialized}, QMatrix4x4{Qt::Uninitialized} };
+        for (int viewIndex = 0; viewIndex < viewCount; ++viewIndex)
+            camGlobalTransforms[viewIndex] = layer.renderData->getGlobalTransform(*layer.renderedCameras[viewIndex]);
+        m_viewMatrices.resize(viewCount);
+        for (int viewIndex = 0; viewIndex < viewCount; ++viewIndex)
+            m_viewMatrices[viewIndex] = camGlobalTransforms[viewIndex].inverted();
+    }
 
     m_currentUbufIndex = 0;
     // FIXME: Keeping the change minimal for now, but we should avoid the need for this cast.
@@ -205,10 +241,9 @@ void QSSGRhiEffectSystem::releaseResources()
 QSSGRenderTextureFormat::Format QSSGRhiEffectSystem::overriddenOutputFormat(const QSSGRenderEffect *inEffect)
 {
     QSSGRenderTextureFormat::Format format = QSSGRenderTextureFormat::Unknown;
-    for (const QSSGRenderEffect::Command &c : inEffect->commands) {
-        QSSGCommand *cmd = c.command;
+    for (const QSSGCommand *cmd : inEffect->commands) {
         if (cmd->m_type == CommandType::BindTarget) {
-            QSSGBindTarget *targetCmd = static_cast<QSSGBindTarget *>(cmd);
+            const QSSGBindTarget *targetCmd = static_cast<const QSSGBindTarget *>(cmd);
             format = targetCmd->m_outputFormat == QSSGRenderTextureFormat::Unknown
                     ? inEffect->outputFormat : targetCmd->m_outputFormat.format;
         }
@@ -225,17 +260,16 @@ QSSGRhiEffectTexture *QSSGRhiEffectSystem::doRenderEffect(const QSSGRenderEffect
     QSSGRhiEffectTexture *finalOutputTexture = nullptr;
     QSSGRhiEffectTexture *currentOutput = nullptr;
     QSSGRhiEffectTexture *currentInput = inTexture;
-    for (const QSSGRenderEffect::Command &c : inEffect->commands) {
-        QSSGCommand *theCommand = c.command;
+    for (const QSSGCommand *theCommand : inEffect->commands) {
         qCDebug(lcEffectSystem).noquote() << "    >" << theCommand->typeAsString() << "--" << theCommand->debugString();
 
         switch (theCommand->m_type) {
         case CommandType::AllocateBuffer:
-            allocateBufferCmd(static_cast<QSSGAllocateBuffer *>(theCommand), inTexture, inEffect, viewCount);
+            allocateBufferCmd(static_cast<const QSSGAllocateBuffer *>(theCommand), inTexture, inEffect, viewCount);
             break;
 
         case CommandType::ApplyBufferValue: {
-            auto *applyCommand = static_cast<QSSGApplyBufferValue *>(theCommand);
+            auto *applyCommand = static_cast<const QSSGApplyBufferValue *>(theCommand);
 
             /*
                 BufferInput { buffer: buf }
@@ -257,25 +291,25 @@ QSSGRhiEffectTexture *QSSGRhiEffectSystem::doRenderEffect(const QSSGRenderEffect
         }
 
         case CommandType::ApplyInstanceValue:
-            applyInstanceValueCmd(static_cast<QSSGApplyInstanceValue *>(theCommand), inEffect);
+            applyInstanceValueCmd(static_cast<const QSSGApplyInstanceValue *>(theCommand), inEffect);
             break;
 
         case CommandType::ApplyValue:
-            applyValueCmd(static_cast<QSSGApplyValue *>(theCommand), inEffect);
+            applyValueCmd(static_cast<const QSSGApplyValue *>(theCommand), inEffect);
             break;
 
         case CommandType::BindBuffer: {
-            auto *bindCmd = static_cast<QSSGBindBuffer *>(theCommand);
+            auto *bindCmd = static_cast<const QSSGBindBuffer *>(theCommand);
             currentOutput = findTexture(bindCmd->m_bufferName);
             break;
         }
 
         case CommandType::BindShader:
-            bindShaderCmd(static_cast<QSSGBindShader *>(theCommand), inEffect, viewCount);
+            bindShaderCmd(static_cast<const QSSGBindShader *>(theCommand), inEffect, viewCount);
             break;
 
         case CommandType::BindTarget: {
-            auto targetCmd = static_cast<QSSGBindTarget*>(theCommand);
+            auto targetCmd = static_cast<const QSSGBindTarget*>(theCommand);
             // matches overriddenOutputFormat()
             QSSGRenderTextureFormat::Format f = targetCmd->m_outputFormat == QSSGRenderTextureFormat::Unknown ?
                         inEffect->outputFormat : targetCmd->m_outputFormat.format;
@@ -291,7 +325,7 @@ QSSGRhiEffectTexture *QSSGRhiEffectSystem::doRenderEffect(const QSSGRenderEffect
         }
 
         case CommandType::Render:
-            renderCmd(currentInput, currentOutput, viewCount);
+            renderCmd(inEffect, currentInput, currentOutput, viewCount);
             currentInput = inTexture; // default input for each new pass is defined to be original input
             break;
 
@@ -424,6 +458,7 @@ QSSGRhiShaderPipelinePtr QSSGRhiEffectSystem::buildShaderForEffect(const QSSGBin
                                                 shaderLib,
                                                 shaderCache,
                                                 QSSGRhiShaderPipeline::UsedWithoutIa,
+                                                {},
                                                 viewCount,
                                                 false);
 }
@@ -526,7 +561,7 @@ void QSSGRhiEffectSystem::bindShaderCmd(const QSSGBindShader *inCmd, const QSSGR
     QSSGRhiContextStats::get(*rhiContext).registerEffectShaderGenerationTime(timer.elapsed());
 }
 
-void QSSGRhiEffectSystem::renderCmd(QSSGRhiEffectTexture *inTexture, QSSGRhiEffectTexture *target, quint8 viewCount)
+void QSSGRhiEffectSystem::renderCmd(const QSSGRenderEffect *inEffect, QSSGRhiEffectTexture *inTexture, QSSGRhiEffectTexture *target, quint8 viewCount)
 {
     if (!m_currentShaderPipeline)
         return;
@@ -564,7 +599,7 @@ void QSSGRhiEffectSystem::renderCmd(QSSGRhiEffectTexture *inTexture, QSSGRhiEffe
 
     const QSize inputSize = inTexture->texture->pixelSize();
     const QSize outputSize = target->texture->pixelSize();
-    addCommonEffectUniforms(inputSize, outputSize);
+    addCommonEffectUniforms(inEffect, inputSize, outputSize, viewCount);
 
     QSSGRhiContextPrivate *rhiCtxD = QSSGRhiContextPrivate::get(rhiContext.get());
 
@@ -609,7 +644,7 @@ void QSSGRhiEffectSystem::renderCmd(QSSGRhiEffectTexture *inTexture, QSSGRhiEffe
     Q_QUICK3D_PROFILE_END_WITH_STRING(QQuick3DProfiler::Quick3DRenderPass, 0, QByteArrayLiteral("post_processing_effect"));
 }
 
-void QSSGRhiEffectSystem::addCommonEffectUniforms(const QSize &inputSize, const QSize &outputSize)
+void QSSGRhiEffectSystem::addCommonEffectUniforms(const QSSGRenderEffect *inEffect, const QSize &inputSize, const QSize &outputSize, quint8 viewCount)
 {
     const auto &rhiContext = m_sgContext->rhiContext();
     QRhi *rhi = rhiContext->rhi();
@@ -618,6 +653,33 @@ void QSSGRhiEffectSystem::addCommonEffectUniforms(const QSize &inputSize, const 
     if (rhi->isYUpInFramebuffer() != rhi->isYUpInNDC())
         mvp.data()[5] = -1.0f;
     m_currentShaderPipeline->setUniformValue(m_currentUBufData, "qt_modelViewProjection", mvp, QSSGRenderShaderValue::Matrix4x4);
+
+    const bool usesProjectionMatrix = inEffect->testFlag(QSSGRenderEffect::Flags::UsesProjectionMatrix);
+    const bool usesInverseProjectionMatrix = inEffect->testFlag(QSSGRenderEffect::Flags::UsesInverseProjectionMatrix);
+    if (usesProjectionMatrix || usesInverseProjectionMatrix) {
+        if (viewCount < 2) {
+            if (usesProjectionMatrix)
+                m_currentShaderPipeline->setUniformValue(m_currentUBufData, "qt_projectionMatrix", m_projectionMatrices[0], QSSGRenderShaderValue::Matrix4x4);
+            if (usesInverseProjectionMatrix)
+                m_currentShaderPipeline->setUniformValue(m_currentUBufData, "qt_inverseProjectionMatrix", m_projectionMatrices[0].inverted(), QSSGRenderShaderValue::Matrix4x4);
+        } else {
+            if (usesProjectionMatrix)
+                m_currentShaderPipeline->setUniformArray(m_currentUBufData, "qt_projectionMatrix", m_projectionMatrices.constData(), viewCount, QSSGRenderShaderValue::Matrix4x4);
+            if (usesInverseProjectionMatrix) {
+                 QVarLengthArray<QMatrix4x4, 2> invertedProjections(viewCount);
+                 for (quint8 viewIndex = 0; viewIndex < viewCount; ++viewIndex)
+                    invertedProjections[viewIndex] = m_projectionMatrices[viewIndex].inverted();
+                m_currentShaderPipeline->setUniformArray(m_currentUBufData, "qt_inverseProjectionMatrix", invertedProjections.constData(), viewCount, QSSGRenderShaderValue::Matrix4x4);
+            }
+        }
+    }
+
+    if (inEffect->testFlag(QSSGRenderEffect::Flags::UsesViewMatrix)) {
+        if (viewCount < 2)
+            m_currentShaderPipeline->setUniformValue(m_currentUBufData, "qt_viewMatrix", m_viewMatrices[0], QSSGRenderShaderValue::Matrix4x4);
+        else
+            m_currentShaderPipeline->setUniformArray(m_currentUBufData, "qt_viewMatrix", m_viewMatrices.constData(), viewCount, QSSGRenderShaderValue::Matrix4x4);
+    }
 
     QVector2D size(inputSize.width(), inputSize.height());
     m_currentShaderPipeline->setUniformValue(m_currentUBufData, "qt_inputSize", size, QSSGRenderShaderValue::Vec2);
@@ -639,6 +701,14 @@ void QSSGRhiEffectSystem::addCommonEffectUniforms(const QSize &inputSize, const 
     const float nearClip = rhi->isClipDepthZeroToOne() ? 0.0f : -1.0f;
     m_currentShaderPipeline->setUniformValue(m_currentUBufData, "qt_nearClipValue", nearClip, QSSGRenderShaderValue::Float);
 
+    const QVector4D rhiProperties(
+        rhi->isYUpInFramebuffer() ? 1.0f : -1.0f,
+        rhi->isYUpInNDC() ? 1.0f : -1.0f,
+        rhi->isClipDepthZeroToOne() ? 0.0f : -1.0f,
+        0.0f // unused
+    );
+    m_currentShaderPipeline->setUniformValue(m_currentUBufData, "qt_rhi_properties", rhiProperties, QSSGRenderShaderValue::Vec4);
+
     if (m_depthTexture) {
         static const QSSGRhiSamplerDescription depthSamplerDesc {
                     QRhiSampler::Nearest, QRhiSampler::Nearest,
@@ -647,6 +717,23 @@ void QSSGRhiEffectSystem::addCommonEffectUniforms(const QSize &inputSize, const 
         };
         addTextureToShaderPipeline("qt_depthTexture", m_depthTexture, depthSamplerDesc);
         addTextureToShaderPipeline("qt_depthTextureArray", m_depthTexture, depthSamplerDesc);
+    }
+
+    if (m_normalTexture) {
+        static const QSSGRhiSamplerDescription normalSamplerDesc {
+            QRhiSampler::Nearest, QRhiSampler::Nearest,
+            QRhiSampler::None,
+            QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge, QRhiSampler::Repeat
+        };
+        addTextureToShaderPipeline("qt_normalTexture", m_normalTexture, normalSamplerDesc);
+    }
+    if (m_motionVectorTexture) {
+        static const QSSGRhiSamplerDescription motionVectorSamplerDesc {
+            QRhiSampler::Linear, QRhiSampler::Linear,
+            QRhiSampler::None,
+            QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge, QRhiSampler::Repeat
+        };
+        addTextureToShaderPipeline("qt_motionVectorTexture", m_motionVectorTexture, motionVectorSamplerDesc);
     }
 }
 

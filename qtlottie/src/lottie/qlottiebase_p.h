@@ -17,6 +17,7 @@
 
 #include <QJsonObject>
 #include <QList>
+#include <QSize>
 
 #include <QtLottie/qtlottieexports.h>
 #include <QtLottie/private/qlottieconstants_p.h>
@@ -40,7 +41,9 @@ public:
 
     int type() const;
     void setType(int type);
-    virtual void parse(const QJsonObject &definition);
+    bool isShapeElement() const;
+    bool isPathElement() const;
+    virtual int parse(const QJsonObject &definition);
 
     const QJsonObject& definition() const;
 
@@ -59,6 +62,7 @@ public:
 
     virtual void updateProperties(int frame);
     virtual void render(QLottieRenderer &renderer) const;
+    virtual QSize layerSize() const;
 
     bool isStructureDumping() const;
 
@@ -66,6 +70,9 @@ protected:
     void resolveTopRoot();
     QLottieBase *topRoot() const;
     const QJsonObject resolveExpression(const QJsonObject& definition);
+    void renderChildren(QLottieRenderer &renderer) const;
+    bool checkRequiredKeys(const QJsonObject &definition, const QLatin1StringView type,
+                           const QList<QLatin1StringView> &keys, const QString &name = QString()) const;
 
 protected:
     QJsonObject m_definition;

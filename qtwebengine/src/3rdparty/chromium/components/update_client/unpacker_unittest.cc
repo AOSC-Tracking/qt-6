@@ -34,6 +34,7 @@ TEST_F(UnpackerTest, UnpackFullCrx) {
   SEQUENCE_CHECKER(sequence_checker);
   base::RunLoop loop;
   Unpacker::Unpack(
+      "jebgalgnebhfojomionfpkfelancnnkf",
       std::vector<uint8_t>(std::begin(jebg_hash), std::end(jebg_hash)),
       GetTestFilePath("jebgalgnebhfojomionfpkfelancnnkf.crx"),
       base::MakeRefCounted<update_client::UnzipChromiumFactory>(
@@ -49,11 +50,12 @@ TEST_F(UnpackerTest, UnpackFullCrx) {
         EXPECT_TRUE(base::DirectoryExists(unpack_path));
         EXPECT_EQ(result.public_key, jebg_public_key);
 
-        std::optional<int64_t> file_size =
-            base::GetFileSize(unpack_path.AppendASCII("component1.dll"));
+        std::optional<int64_t> file_size = base::GetFileSize(
+            unpack_path.Append(FILE_PATH_LITERAL("component1.dll")));
         ASSERT_TRUE(file_size.has_value());
         EXPECT_EQ(file_size.value(), 1024);
-        file_size = base::GetFileSize(unpack_path.AppendASCII("manifest.json"));
+        file_size = base::GetFileSize(
+            unpack_path.Append(FILE_PATH_LITERAL("manifest.json")));
         ASSERT_TRUE(file_size.has_value());
         EXPECT_EQ(file_size.value(), 169);
 
@@ -67,6 +69,7 @@ TEST_F(UnpackerTest, UnpackFileNotFound) {
   SEQUENCE_CHECKER(sequence_checker);
   base::RunLoop loop;
   Unpacker::Unpack(
+      "jebgalgnebhfojomionfpkfelancnnkf",
       std::vector<uint8_t>(std::begin(jebg_hash), std::end(jebg_hash)),
       GetTestFilePath("file_not_found.crx"), nullptr,
       crx_file::VerifierFormat::CRX3,
@@ -88,6 +91,7 @@ TEST_F(UnpackerTest, UnpackFileHashMismatch) {
   SEQUENCE_CHECKER(sequence_checker);
   base::RunLoop loop;
   Unpacker::Unpack(
+      "jebgalgnebhfojomionfpkfelancnnkf",
       std::vector<uint8_t>(std::begin(abag_hash), std::end(abag_hash)),
       GetTestFilePath("jebgalgnebhfojomionfpkfelancnnkf.crx"), nullptr,
       crx_file::VerifierFormat::CRX3,
@@ -108,7 +112,7 @@ TEST_F(UnpackerTest, UnpackWithVerifiedContents) {
   SEQUENCE_CHECKER(sequence_checker);
   base::RunLoop loop;
   Unpacker::Unpack(
-      std::vector<uint8_t>(),
+      "gndmhdcefbhlchkhipcnnbkcmicncehk", std::vector<uint8_t>(),
       GetTestFilePath("gndmhdcefbhlchkhipcnnbkcmicncehk_22_314.crx3"),
       base::MakeRefCounted<update_client::UnzipChromiumFactory>(
           base::BindRepeating(&unzip::LaunchInProcessUnzipper))
@@ -121,7 +125,8 @@ TEST_F(UnpackerTest, UnpackWithVerifiedContents) {
         EXPECT_FALSE(unpack_path.empty());
         EXPECT_TRUE(base::DirectoryExists(unpack_path));
         std::optional<int64_t> file_size = base::GetFileSize(
-            unpack_path.AppendASCII("_metadata/verified_contents.json"));
+            unpack_path.Append(FILE_PATH_LITERAL("_metadata"))
+                .Append(FILE_PATH_LITERAL("verified_contents.json")));
         ASSERT_TRUE(file_size.has_value());
         EXPECT_EQ(file_size.value(), 1538);
         EXPECT_TRUE(base::DeletePathRecursively(unpack_path));

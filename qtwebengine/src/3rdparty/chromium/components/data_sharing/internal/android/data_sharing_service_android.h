@@ -33,12 +33,6 @@ class DataSharingServiceAndroid : public base::SupportsUserData::Data {
   void CreateGroup(JNIEnv* env,
                    const JavaParamRef<jstring>& group_name,
                    const JavaParamRef<jobject>& j_callback);
-  void LeaveGroup(JNIEnv* env,
-                  const JavaParamRef<jstring>& group_id,
-                  const JavaParamRef<jobject>& j_callback);
-  void DeleteGroup(JNIEnv* env,
-                   const JavaParamRef<jstring>& group_id,
-                   const JavaParamRef<jobject>& j_callback);
   void InviteMember(JNIEnv* env,
                     const JavaParamRef<jstring>& group_id,
                     const JavaParamRef<jstring>& invitee_email,
@@ -51,7 +45,7 @@ class DataSharingServiceAndroid : public base::SupportsUserData::Data {
                     const JavaParamRef<jstring>& group_id,
                     const JavaParamRef<jstring>& member_email,
                     const JavaParamRef<jobject>& j_callback);
-  bool IsEmptyService(JNIEnv* env, const JavaParamRef<jobject>& j_caller);
+  bool IsEmptyService(JNIEnv* env);
   ScopedJavaLocalRef<jobject> GetNetworkLoader(JNIEnv* env);
   ScopedJavaLocalRef<jobject> GetDataSharingUrl(
       JNIEnv* env,
@@ -68,6 +62,13 @@ class DataSharingServiceAndroid : public base::SupportsUserData::Data {
                                 const JavaParamRef<jstring>& access_token,
                                 const JavaParamRef<jobject>& j_callback);
   ScopedJavaLocalRef<jobject> GetUiDelegate(JNIEnv* env);
+  void Log(JNIEnv* env,
+           /*logger_common::mojom::LogSource*/ jint source,
+           const JavaParamRef<jstring>& message);
+
+  void SetSharedEntitiesPreviewForTesting(
+      JNIEnv* env,
+      const JavaParamRef<jstring>& j_group_id);
 
   // Returns the DataSharingServiceImpl java object.
   ScopedJavaLocalRef<jobject> GetJavaObject();

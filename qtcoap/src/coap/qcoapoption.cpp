@@ -158,7 +158,7 @@ QCoapOption &QCoapOption::operator=(QCoapOption &&other) noexcept
  */
 void QCoapOption::swap(QCoapOption &other) noexcept
 {
-    qSwap(d_ptr, other.d_ptr);
+    qt_ptr_swap(d_ptr, other.d_ptr);
 }
 
 /*!

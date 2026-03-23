@@ -174,6 +174,15 @@ class FormFieldParser {
       const std::vector<std::unique_ptr<AutofillField>>& fields,
       FieldCandidatesMap& field_candidates);
 
+  // Search for standalone loyalty card fields inside `fields`. Standalone
+  // loyalty card fields are fields that should exclusively accept loyalty card
+  // numbers, differentiating them from multi-purpose input fields that might
+  // also accept emails or other data types
+  static void ParseStandaloneLoyaltyCardFields(
+      ParsingContext& context,
+      const std::vector<std::unique_ptr<AutofillField>>& fields,
+      FieldCandidatesMap& field_candidates);
+
   // Search for standalone CVC fields inside `fields`. Standalone CVC fields
   // are CVC fields that should appear without any credit card field or email
   // address in the same form. Each field has a derived unique name that is
@@ -202,13 +211,26 @@ class FormFieldParser {
       std::initializer_list<MatchParams (*)(const MatchParams&)> projections =
           {});
 
+  // Removes entries from `field_candidates` in case
+  // - not enough fields were classified by local heuristics.
+  // - fields were not explicitly allow-listed because they appear in
+  //   contexts that don't contain enough fields (e.g. forms with only an
+  //   email address).
+  static void ClearCandidatesIfHeuristicsDidNotFindEnoughFields(
+      const std::vector<std::unique_ptr<AutofillField>>& fields,
+      FieldCandidatesMap& field_candidates,
+      bool is_form_tag,
+      GeoIpCountryCode client_country,
+      LogManager* log_manager);
+
  protected:
   friend class FormFieldParserTestApi;
 
   // Initial values assigned to FieldCandidates by their corresponding parsers.
   // There's an implicit precedence determined by the values assigned here.
   // Email is currently the most important followed by Phone, Travel, Address,
-  // Credit Card, IBAN, Price, Name, Merchant promo code, and Search.
+  // Credit Card, IBAN, Price, Loyalty Card, Name, Merchant promo code, and
+  // Search.
   static constexpr float kBaseEmailParserScore = 1.4f;
   static constexpr float kBasePhoneParserScore = 1.3f;
   static constexpr float kBaseTravelParserScore = 1.2f;
@@ -216,6 +238,7 @@ class FormFieldParser {
   static constexpr float kBaseCreditCardParserScore = 1.0f;
   static constexpr float kBaseIbanParserScore = 0.975f;
   static constexpr float kBasePriceParserScore = 0.95f;
+  static constexpr float kBaseLoyaltyCardParserScore = 0.95f;
   static constexpr float kBaseNameParserScore = 0.9f;
   static constexpr float kBaseMerchantPromoCodeParserScore = 0.85f;
   static constexpr float kBaseSearchParserScore = 0.8f;
@@ -278,9 +301,6 @@ class FormFieldParser {
                                      DenseSet<FormControlType> match_type);
 
  protected:
-  // Returns true if |field_type| is a single field parseable type.
-  static bool IsSingleFieldParseableType(FieldType field_type);
-
   // Derived classes must implement this interface to supply field type
   // information.  |ParseFormFields| coordinates the parsing and extraction
   // of types from an input vector of |AutofillField| objects and delegates
@@ -294,17 +314,6 @@ class FormFieldParser {
   typedef std::unique_ptr<FormFieldParser> ParseFunction(
       ParsingContext& context,
       AutofillScanner* scanner);
-
-  // Removes entries from `field_candidates` in case
-  // - not enough fields were classified by local heuristics.
-  // - fields were not explicitly allow-listed because they appear in
-  //   contexts that don't contain enough fields (e.g. forms with only an
-  //   email address).
-  static void ClearCandidatesIfHeuristicsDidNotFindEnoughFields(
-      ParsingContext& context,
-      const std::vector<std::unique_ptr<AutofillField>>& fields,
-      FieldCandidatesMap& field_candidates,
-      bool is_form_tag);
 
   // Removes checkable fields and returns fields to be processed for field
   // detection.

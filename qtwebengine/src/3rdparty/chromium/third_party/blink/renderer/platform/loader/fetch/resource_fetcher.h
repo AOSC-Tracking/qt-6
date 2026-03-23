@@ -183,6 +183,11 @@ class PLATFORM_EXPORT ResourceFetcher
     return freezable_task_runner_;
   }
 
+  const scoped_refptr<base::SingleThreadTaskRunner>& GetUnfreezableTaskRunner()
+      const {
+    return unfreezable_task_runner_;
+  }
+
   // Create a loader. This cannot be called after ClearContext is called.
   std::unique_ptr<URLLoader> CreateURLLoader(
       const network::ResourceRequest&,
@@ -321,7 +326,7 @@ class PLATFORM_EXPORT ResourceFetcher
   // counting.
   void PrepareForLeakDetection();
 
-  using ResourceFetcherSet = HeapHashSet<WeakMember<ResourceFetcher>>;
+  using ResourceFetcherSet = GCedHeapHashSet<WeakMember<ResourceFetcher>>;
   static const ResourceFetcherSet& MainThreadFetchers();
 
   mojom::blink::BlobRegistry* GetBlobRegistry();
@@ -379,6 +384,12 @@ class PLATFORM_EXPORT ResourceFetcher
   // changed such that the load should no longer be deferred.
   void ReloadImagesIfNotDeferred();
 
+  void MaybeStartSpeculativeImageDecode();
+
+  // Populates the provided request's permissions policy.
+  void PopulateResourceRequestPermissionsPolicy(
+      network::ResourceRequest* request);
+
   // Check if a resource is preloaded by earlyhints when response received.
   void MarkEarlyHintConsumedIfNeeded(uint64_t inspector_id,
                                      Resource* resource,
@@ -387,6 +398,7 @@ class PLATFORM_EXPORT ResourceFetcher
   void EnableDeferUnusedPreloadForTesting() {
     defer_unused_preload_enabled_for_testing_ = true;
   }
+
   using LcppDeferUnusedPreloadPreloadedReason =
       features::LcppDeferUnusedPreloadPreloadedReason;
   void SetDeferUnusedPreloadPreloadedReasonForTesting(
@@ -467,7 +479,10 @@ class PLATFORM_EXPORT ResourceFetcher
                                       ResourceRequestBlockedReason,
                                       ResourceClient*);
 
-  Resource* MatchPreload(const FetchParameters& params, ResourceType);
+  Resource* MatchPreload(
+      const FetchParameters& params,
+      ResourceType,
+      HeapHashMap<PreloadKey, Member<Resource>>::iterator it);
   void PrintPreloadMismatch(Resource*, Resource::MatchStatus);
   void InsertAsPreloadIfNecessary(Resource*,
                                   const FetchParameters& params,
@@ -480,7 +495,6 @@ class PLATFORM_EXPORT ResourceFetcher
 
   void MaybeSaveResourceToStrongReference(Resource* resource);
 
-  void MaybeStartSpeculativeImageDecode();
   void SpeculativeImageDecodeFinished();
 
   enum class RevalidationPolicy {
@@ -554,8 +568,7 @@ class PLATFORM_EXPORT ResourceFetcher
                               RevalidationPolicyForMetrics,
                               const FetchParameters&,
                               const ResourceFactory&,
-                              bool is_static_data,
-                              bool same_top_frame_site_resource_cached) const;
+                              bool is_static_data) const;
 
   void ScheduleStaleRevalidate(Resource* stale_resource);
   void RevalidateStaleResource(Resource* stale_resource);
@@ -594,10 +607,6 @@ class PLATFORM_EXPORT ResourceFetcher
       ResourceType resource_type,
       bool handled_by_serviceworker,
       const blink::ServiceWorkerRouterInfo* router_info);
-
-  void RecordResourceHistogram(std::string_view prefix,
-                               ResourceType type,
-                               RevalidationPolicyForMetrics policy) const;
 
   void ScheduleLoadingPotentiallyUnusedPreload(Resource*);
   void StartLoadAndFinishIfFailed(Resource*,
@@ -695,9 +704,7 @@ class PLATFORM_EXPORT ResourceFetcher
   bool allow_stale_resources_ : 1;
   bool image_fetched_ : 1;
   bool stale_while_revalidate_enabled_ : 1;
-  const bool transparent_image_optimization_enabled_ : 1;
-  bool speculative_decode_in_flight_ : 1;
-  // 26 bits left (decrease the count when you add bit fields above)
+  // 28 bits left (decrease the count when you add bit fields above)
 
   static constexpr uint32_t kKeepaliveInflightBytesQuota = 64 * 1024;
 

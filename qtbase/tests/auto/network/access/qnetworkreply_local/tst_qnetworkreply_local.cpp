@@ -1,12 +1,16 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
+#define QTEST_THROW_ON_FAIL
+
 #include <QtNetwork/qtnetworkglobal.h>
 
 #include <QtTest/qtest.h>
 
 #include <QtNetwork/qnetworkreply.h>
 #include <QtNetwork/qnetworkaccessmanager.h>
+
+#include <QtCore/qbuffer.h>
 
 #include "minihttpserver.h"
 
@@ -24,6 +28,8 @@ private slots:
 
     void get();
     void post();
+    void emptyDeviceUpload_data();
+    void emptyDeviceUpload();
 
 #if QT_CONFIG(localserver)
     void fullServerName_data();
@@ -49,14 +55,20 @@ static std::unique_ptr<MiniHttpServerV2> getServerForCurrentScheme()
     if (scheme.startsWith("unix"_L1) || scheme.startsWith("local"_L1)) {
 #if QT_CONFIG(localserver)
         QLocalServer *localServer = new QLocalServer(server.get());
-        localServer->listen(u"qt_networkreply_test_"_s
-                            % QLatin1StringView(QTest::currentTestFunction())
-                            % QString::number(QCoreApplication::applicationPid()));
+        const size_t hash = qHashMulti(0, QByteArrayView(QTest::currentTestFunction()),
+                                       QCoreApplication::applicationPid());
+        bool listening = localServer->listen(u"qt_networkreply_test_"_s
+                                             % QString::number(hash, 16));
+        if (!listening) {
+            QFAIL(qPrintable(
+                    u"Failed to listen on local server: %1"_s.arg(localServer->errorString())));
+        }
         server->bind(localServer);
 #endif
     } else if (scheme == "http") {
         QTcpServer *tcpServer = new QTcpServer(server.get());
-        tcpServer->listen(QHostAddress::LocalHost, 0);
+        if (!tcpServer->listen(QHostAddress::LocalHost, 0))
+            QFAIL(qPrintable(u"Failed to listen on TCP port: %1"_s.arg(tcpServer->errorString())));
         server->bind(tcpServer);
     }
     return server;
@@ -113,6 +125,97 @@ void tst_QNetworkReply_local::post()
     QCOMPARE(firstRequest.receivedData.last(payload.size() + 4), "\r\n\r\n" + payload);
 }
 
+enum Method {
+    Get,
+    Put,
+    Post,
+    Custom,
+};
+void tst_QNetworkReply_local::emptyDeviceUpload_data()
+{
+    QTest::addColumn<Method>("method");
+    QTest::addColumn<QString>("customVerb");
+    QTest::addColumn<bool>("contentLengthExpected");
+    QTest::addColumn<bool>("sequential");
+    for (auto sequential : { false, true }) {
+        const char *suffix = sequential ? "sequential" : "non-sequential";
+        QTest::addRow("get-%s", suffix) << Get << "" << false << sequential;
+        QTest::addRow("put-%s", suffix) << Put << "" << true << sequential;
+        QTest::addRow("post-%s", suffix) << Post << "" << true << sequential;
+        QTest::addRow("custom-get-%s", suffix) << Custom << "get" << false << sequential;
+        QTest::addRow("custom-post-%s", suffix) << Custom << "post" << true << sequential;
+        QTest::addRow("custom-connect-%s", suffix) << Custom << "cOnNeCt" << false << sequential;
+    }
+}
+
+class EmptySequentialDevice : public QIODevice {
+public:
+    EmptySequentialDevice() = default;
+    bool isSequential() const override { return true; }
+
+protected:
+    qint64 readData(char *buf, qint64 len) override
+    {
+        Q_UNUSED(buf);
+        Q_UNUSED(len);
+        return -1;
+    }
+    qint64 writeData(const char *buf, qint64 len) override
+    {
+        Q_UNUSED(buf);
+        Q_UNUSED(len);
+        return -1;
+    }
+};
+
+void tst_QNetworkReply_local::emptyDeviceUpload()
+{
+    QFETCH(const Method, method);
+    QFETCH(const QString, customVerb);
+    QFETCH(const bool, contentLengthExpected);
+    QFETCH(const bool, sequential);
+    std::unique_ptr<MiniHttpServerV2> server = getServerForCurrentScheme();
+    const QUrl url = getUrlForCurrentScheme(server.get());
+
+    QNetworkAccessManager manager;
+
+    QBuffer emptyDevice;
+    emptyDevice.open(QIODevice::ReadOnly);
+
+    EmptySequentialDevice emptySequentialDevice;
+    emptySequentialDevice.open(QIODevice::ReadOnly);
+
+    QIODevice *device = sequential ? static_cast<QIODevice *>(&emptySequentialDevice)
+                                   : static_cast<QIODevice *>(&emptyDevice);
+    auto reply = [&]() -> std::unique_ptr<QNetworkReply> {
+        using unique_ptr = std::unique_ptr<QNetworkReply>;
+        switch (method) {
+        case Get:
+            return unique_ptr{ manager.get(QNetworkRequest(url), device) };
+        case Put:
+            return unique_ptr{ manager.put(QNetworkRequest(url), device) };
+        case Post:
+            return unique_ptr{ manager.post(QNetworkRequest(url), device) };
+        case Custom:
+            return unique_ptr{ manager.sendCustomRequest(QNetworkRequest(url), customVerb.toUtf8(),
+                                                         device) };
+        }
+        Q_UNREACHABLE_RETURN({});
+    }();
+
+    QTRY_VERIFY(reply->isFinished());
+
+    auto printErrorOnFail = qScopeGuard([reply = reply.get()]() {
+        qWarning() << "Error in the reply:" << reply->errorString();
+    });
+    QCOMPARE(reply->readAll(), QByteArray("Hello World!"));
+    QCOMPARE(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(), 200);
+    const QList<MiniHttpServerV2::State> peerStates = server->peerStates();
+    QCOMPARE(peerStates.size(), 1);
+    QCOMPARE(peerStates[0].foundContentLength, contentLengthExpected);
+    printErrorOnFail.dismiss();
+}
+
 #if QT_CONFIG(localserver)
 void tst_QNetworkReply_local::fullServerName_data()
 {
@@ -167,7 +270,7 @@ void tst_QNetworkReply_local::fullServerName()
     QVERIFY(receivedData.startsWith(expectedGet));
 
     const QByteArray expectedHost = "host: " % url.host().toUtf8() % "\r\n";
-    QVERIFY(receivedData.contains(expectedHost));
+    QVERIFY(receivedData.toLower().contains(expectedHost));
 }
 #endif
 

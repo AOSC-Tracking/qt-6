@@ -50,6 +50,12 @@ namespace prefs {
 class DictionaryValueUpdate;
 }
 
+namespace safe_browsing {
+class ExtensionTelemetryService;
+FORWARD_DECLARE_TEST(ExtensionTelemetryServiceTest,
+                     TestExtensionInfoProtoConstruction);
+}  // namespace safe_browsing
+
 namespace user_prefs {
 class PrefRegistrySyncable;
 }
@@ -169,22 +175,26 @@ class ExtensionPrefs : public KeyedService {
 
    private:
     DisableReasonRawManipulationPasskey() = default;
+    friend class ChromeExtensionRegistrarDelegate;
     friend class ::ExtensionSyncService;
     friend class ExtensionPrefs;
     friend class ExtensionRegistrar;
     friend class ExtensionService;
+    friend class safe_browsing::ExtensionTelemetryService;
     friend class UpdateDataProviderTest;
     FRIEND_TEST_ALL_PREFIXES(ExtensionPrefsSimpleTest,
                              DisableReasonsRawManipulation);
     FRIEND_TEST_ALL_PREFIXES(::ExtensionSyncServiceTest,
                              ProcessSyncDataEnableDisable);
+    FRIEND_TEST_ALL_PREFIXES(safe_browsing::ExtensionTelemetryServiceTest,
+                             TestExtensionInfoProtoConstruction);
   };
 
   // Creates an ExtensionPrefs object.
-  // Does not take ownership of |prefs| or |extension_pref_value_map|.
-  // If |extensions_disabled| is true, extension controlled preferences and
+  // Does not take ownership of `prefs` or `extension_pref_value_map`.
+  // If `extensions_disabled` is true, extension controlled preferences and
   // content settings do not become effective. EarlyExtensionPrefsObservers
-  // should be included in |early_observers| if they need to observe events
+  // should be included in `early_observers` if they need to observe events
   // which occur during initialization of the ExtensionPrefs object.
   static std::unique_ptr<ExtensionPrefs> Create(
       content::BrowserContext* browser_context,
@@ -231,12 +241,12 @@ class ExtensionPrefs : public KeyedService {
   // user.
   bool IsExternalExtensionUninstalled(const ExtensionId& id) const;
 
-  // Clears any recording of extension with |id| as being an externally
+  // Clears any recording of extension with `id` as being an externally
   // installed extension uninstalled by the user. Returns whether any change was
   // made.
   bool ClearExternalExtensionUninstalled(const ExtensionId& id);
 
-  // Checks whether |extension_id| is disabled. If there's no state pref for
+  // Checks whether `extension_id` is disabled. If there's no state pref for
   // the extension, this will return false. Generally you should use
   // ExtensionService::IsExtensionEnabled instead.
   // Note that blocklisted extensions are NOT marked as disabled!
@@ -250,22 +260,22 @@ class ExtensionPrefs : public KeyedService {
   void SetPinnedExtensions(const ExtensionIdList& extension_ids);
 
   // Called when an extension is installed, so that prefs get created.
-  // If |page_ordinal| is invalid then a page will be found for the App.
-  // |install_flags| are a bitmask of extension::InstallFlags.
-  // |ruleset_install_prefs| contains install prefs needed for the Declarative
+  // If `page_ordinal` is invalid then a page will be found for the App.
+  // `install_flags` are a bitmask of extension::InstallFlags.
+  // `ruleset_install_prefs` contains install prefs needed for the Declarative
   // Net Request API.
   void OnExtensionInstalled(const Extension* extension,
-                            Extension::State initial_state,
+                            const base::flat_set<int>& disable_reasons,
                             const syncer::StringOrdinal& page_ordinal,
                             int install_flags,
                             const std::string& install_parameter,
                             base::Value::Dict ruleset_install_prefs);
-  // OnExtensionInstalled with no install flags and |ruleset_install_prefs|.
+  // OnExtensionInstalled with no install flags and `ruleset_install_prefs`.
   void OnExtensionInstalled(const Extension* extension,
-                            Extension::State initial_state,
+                            const base::flat_set<int>& disable_reasons,
                             const syncer::StringOrdinal& page_ordinal,
                             const std::string& install_parameter) {
-    OnExtensionInstalled(extension, initial_state, page_ordinal,
+    OnExtensionInstalled(extension, disable_reasons, page_ordinal,
                          kInstallFlagNone, install_parameter, {});
   }
 
@@ -275,15 +285,15 @@ class ExtensionPrefs : public KeyedService {
                               bool external_uninstall);
 
   // Gets the value of a bit map pref. Gets the value of
-  // |extension_id| from |pref_key|. If the value is not found or invalid,
-  // return the |default_bit|.
+  // `extension_id` from `pref_key`. If the value is not found or invalid,
+  // return the `default_bit`.
   int GetBitMapPrefBits(const ExtensionId& extension_id,
                         std::string_view pref_key,
                         int default_bit) const;
-  // Modifies the extensions bit map pref |pref_key| to add a new bit value,
-  // remove an existing bit value, or clear all bits. If |operation| is
+  // Modifies the extensions bit map pref `pref_key` to add a new bit value,
+  // remove an existing bit value, or clear all bits. If `operation` is
   // BitMapPrefOperation::kClear, then `pending_bits` are ignored. If the
-  // updated pref value is the same as the |default_bit|, the pref value will be
+  // updated pref value is the same as the `default_bit`, the pref value will be
   // set to null.
   void ModifyBitMapPrefBits(const ExtensionId& extension_id,
                             int pending_bits,
@@ -380,15 +390,15 @@ class ExtensionPrefs : public KeyedService {
   const base::Value::Dict* ReadPrefAsDict(const ExtensionId& extension_id,
                                           std::string_view pref_key) const;
 
-  // Interprets the list pref, |pref_key| in |extension_id|'s preferences, as a
-  // URLPatternSet. The |valid_schemes| specify how to parse the URLPatterns.
+  // Interprets the list pref, `pref_key` in `extension_id`'s preferences, as a
+  // URLPatternSet. The `valid_schemes` specify how to parse the URLPatterns.
   bool ReadPrefAsURLPatternSet(const ExtensionId& extension_id,
                                std::string_view pref_key,
                                URLPatternSet* result,
                                int valid_schemes) const;
 
-  // Converts |set| to a list of strings and sets the |pref_key| pref belonging
-  // to |extension_id|. If |set| is empty, the preference for |pref_key| is
+  // Converts `set` to a list of strings and sets the `pref_key` pref belonging
+  // to `extension_id`. If `set` is empty, the preference for `pref_key` is
   // cleared.
   void SetExtensionPrefURLPatternSet(const ExtensionId& extension_id,
                                      std::string_view pref_key,
@@ -399,55 +409,49 @@ class ExtensionPrefs : public KeyedService {
   // Did the extension ask to escalate its permission during an upgrade?
   bool DidExtensionEscalatePermissions(const ExtensionId& id) const;
 
-  // Sets the extension's state to enabled and clears disable reasons.
-  void SetExtensionEnabled(const ExtensionId& extension_id);
+  // Getters and setters for disable reasons.
 
-  // Sets the extension's state to disabled and sets the disable reasons.
-  // However, if the current state is EXTERNAL_EXTENSION_UNINSTALLED then that
-  // is preserved (but the disable reasons are still set).
-  void SetExtensionDisabled(const ExtensionId& extension_id,
-                            const DisableReasonSet& disable_reasons);
-
-  // Getters and setters for disabled reason.
-  // Note that you should rarely need to modify disable reasons directly -
-  // pass the proper value to SetExtensionState instead when you enable/disable
-  // an extension. In particular, AddDisableReason(s) is only legal when the
-  // extension is not enabled.
+  // Returns the set of reasons for which an extension is disabled. If there are
+  // unknown reasons in the prefs (e.g. reasons which were synced from a newer
+  // version of the browser), they will be collapsed to DISABLE_UNKNOWN before
+  // returning.
   DisableReasonSet GetDisableReasons(const ExtensionId& extension_id) const;
+
+  // Returns true if the extension has `disable_reason` in its disable reasons.
   bool HasDisableReason(const ExtensionId& extension_id,
                         disable_reason::DisableReason disable_reason) const;
+
+  // Returns true if the extension has only `disable_reason` in its disable
+  // reasons.
+  bool HasOnlyDisableReason(const ExtensionId& extension_id,
+                            disable_reason::DisableReason disable_reason) const;
+
   void AddDisableReason(const ExtensionId& extension_id,
                         disable_reason::DisableReason disable_reason);
   void AddDisableReasons(const ExtensionId& extension_id,
                          const DisableReasonSet& disable_reasons);
+
   void RemoveDisableReason(const ExtensionId& extension_id,
-                           disable_reason::DisableReason disable_reason);
-  void ReplaceDisableReasons(const ExtensionId& extension_id,
-                             const DisableReasonSet& disable_reasons);
+                           disable_reason::DisableReason to_remove);
+  void RemoveDisableReasons(const ExtensionId& extension_id,
+                            const DisableReasonSet& to_remove);
+
   void ClearDisableReasons(const ExtensionId& extension_id);
 
-  // The methods above will start returning / accepting a `flat_set` of
-  // `DisableReason` soon (see crbug.com/372186532). When that happens, all
-  // unknown reasons in prefs will be collapsed to `DISABLE_UNKNOWN` before
-  // returning. Writing unknown reasons to prefs will be disallowed. This is
-  // because casting unknown reasons (integer) to `DisableReason` enum is
-  // undefined behavior. This isn't a problem in the bitflag representation
-  // because there is no casting involved.
-  //
-  // Any code which needs to read or write unknown reasons should use the
+  // Any code which needs to read / write unknown reasons should use the
   // methods below, which operate on raw integers. This is needed for scenarios
   // like Sync where unknown reasons can be synced from newer versions of the
-  // browser to older versions. Most code should use the above methods. We want
-  // to limit the use of the methods below, so they are guarded by a passkey.
-  base::flat_set<int> GetDisableReasons(DisableReasonRawManipulationPasskey,
-                                        const ExtensionId& extension_id) const;
-  void ReplaceDisableReasons(DisableReasonRawManipulationPasskey,
-                             const ExtensionId& extension_id,
-                             const base::flat_set<int>& disable_reasons);
-  void AddDisableReasons(DisableReasonRawManipulationPasskey,
-                         const ExtensionId& extension_id,
-                         const base::flat_set<int>& disable_reasons);
-  void SetExtensionDisabled(DisableReasonRawManipulationPasskey,
+  // browser to older versions. The methods above will trigger undefined
+  // behavior when unknown values are casted to DisableReason while constructing
+  // DisableReasonSet. Most code should use the methods above. We want to limit
+  // the usage of the methods below, so they are guarded by a passkey.
+  base::flat_set<int> GetRawDisableReasons(
+      DisableReasonRawManipulationPasskey,
+      const ExtensionId& extension_id) const;
+  void ReplaceRawDisableReasons(DisableReasonRawManipulationPasskey,
+                                const ExtensionId& extension_id,
+                                const base::flat_set<int>& disable_reasons);
+  void AddRawDisableReasons(DisableReasonRawManipulationPasskey,
                             const ExtensionId& extension_id,
                             const base::flat_set<int>& disable_reasons);
 
@@ -521,19 +525,19 @@ class ExtensionPrefs : public KeyedService {
   bool GetActiveBit(const ExtensionId& extension_id) const;
   void SetActiveBit(const ExtensionId& extension_id, bool active);
 
-  // Returns the granted permission set for the extension with |extension_id|,
-  // and NULL if no preferences were found for |extension_id|.
+  // Returns the granted permission set for the extension with `extension_id`,
+  // and NULL if no preferences were found for `extension_id`.
   // This passes ownership of the returned set to the caller.
   std::unique_ptr<PermissionSet> GetGrantedPermissions(
       const ExtensionId& extension_id) const;
 
-  // Adds |permissions| to the granted permissions set for the extension with
-  // |extension_id|. The new granted permissions set will be the union of
-  // |permissions| and the already granted permissions.
+  // Adds `permissions` to the granted permissions set for the extension with
+  // `extension_id`. The new granted permissions set will be the union of
+  // `permissions` and the already granted permissions.
   void AddGrantedPermissions(const ExtensionId& extension_id,
                              const PermissionSet& permissions);
 
-  // As above, but subtracts the given |permissions| from the granted set.
+  // As above, but subtracts the given `permissions` from the granted set.
   void RemoveGrantedPermissions(const ExtensionId& extension_id,
                                 const PermissionSet& permissions);
 
@@ -570,9 +574,9 @@ class ExtensionPrefs : public KeyedService {
   // permissions should call PermissionsManager::HasWithheldHostPermissions
   // instead. This is because host permission prefs are only used if host
   // permissions can affect the extension. E.g. Say user installs extension with
-  // host permissions and withhelds them (pref is set). Then the extension
+  // host permissions and withholds them (pref is set). Then the extension
   // updates to no longer need host permissions. Pref still appears as
-  // witholding permissions, but extension cannot be affected by host
+  // withholding permissions, but extension cannot be affected by host
   // permissions.
   void SetWithholdingPermissions(const ExtensionId& extension_id,
                                  bool should_withhold);
@@ -614,7 +618,11 @@ class ExtensionPrefs : public KeyedService {
   // instead of this method.
   bool IsIncognitoEnabled(const ExtensionId& extension_id) const;
   void SetIsIncognitoEnabled(const ExtensionId& extension_id, bool enabled);
-
+#if BUILDFLAG(IS_CHROMEOS)
+  void SetIsIncognitoEnabledDelayed(const ExtensionId& extension_id,
+                                    bool enabled);
+  bool HasIncognitoEnabledPendingUpdate(const ExtensionId& extension_id) const;
+#endif
   // Returns true if the user has chosen to allow this extension to inject
   // scripts into pages with file URLs.
   //
@@ -623,6 +631,10 @@ class ExtensionPrefs : public KeyedService {
   bool AllowFileAccess(const ExtensionId& extension_id) const;
   void SetAllowFileAccess(const ExtensionId& extension_id, bool allow);
   bool HasAllowFileAccessSetting(const ExtensionId& extension_id) const;
+#if BUILDFLAG(IS_CHROMEOS)
+  void SetAllowFileAccessDelayed(const ExtensionId& extension_id, bool allow);
+  bool HasAllowFileAccessPendingUpdate(const ExtensionId& extension_id) const;
+#endif
 
   // Saves ExtensionInfo for each installed extension with the path to the
   // version directory and the location. Blocklisted extensions won't be saved
@@ -640,9 +652,9 @@ class ExtensionPrefs : public KeyedService {
   // We've downloaded an updated .crx file for the extension, but are waiting
   // to install it.
   //
-  // |install_flags| are a bitmask of extension::InstallFlags.
+  // `install_flags` are a bitmask of extension::InstallFlags.
   void SetDelayedInstallInfo(const Extension* extension,
-                             Extension::State initial_state,
+                             const base::flat_set<int>& disable_reasons,
                              int install_flags,
                              DelayReason delay_reason,
                              const syncer::StringOrdinal& page_ordinal,
@@ -650,7 +662,7 @@ class ExtensionPrefs : public KeyedService {
                              base::Value::Dict ruleset_install_prefs = {});
 
   // Removes any delayed install information we have for the given
-  // |extension_id|. Returns true if there was info to remove; false otherwise.
+  // `extension_id`. Returns true if there was info to remove; false otherwise.
   bool RemoveDelayedInstallInfo(const ExtensionId& extension_id);
 
   // Update the prefs to finish the update for an extension.
@@ -658,7 +670,7 @@ class ExtensionPrefs : public KeyedService {
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns the ExtensionInfo from the prefs for delayed install information
-  // for |extension_id|, if we have any. Otherwise returns std::nullopt.
+  // for `extension_id`, if we have any. Otherwise returns std::nullopt.
   std::optional<ExtensionInfo> GetDelayedInstallInfo(
       const ExtensionId& extension_id) const;
 
@@ -669,7 +681,7 @@ class ExtensionPrefs : public KeyedService {
   ExtensionsInfo GetAllDelayedInstallInfo() const;
 
   // Returns true if there is an extension which controls the preference value
-  //  for |pref_key| *and* it is specific to incognito mode.
+  //  for `pref_key` *and* it is specific to incognito mode.
   bool HasIncognitoPrefValue(const std::string& pref_key) const;
 
   // Returns the creation flags mask for the extension.
@@ -700,11 +712,6 @@ class ExtensionPrefs : public KeyedService {
   // The underlying AppSorting.
   AppSorting* app_sorting() const;
 
-  // Schedules garbage collection of an extension's on-disk data on the next
-  // start of this ExtensionService. Applies only to extensions with isolated
-  // storage.
-  bool NeedsStorageGarbageCollection() const;
-
   // Used by AppWindowGeometryCache to persist its cache. These methods
   // should not be called directly.
   const base::Value::Dict* GetGeometryCache(
@@ -717,7 +724,7 @@ class ExtensionPrefs : public KeyedService {
   const base::Value::Dict& GetInstallSignature() const;
   void SetInstallSignature(base::Value::Dict* signature);
 
-  // Whether the extension with the given |extension_id| needs to be synced.
+  // Whether the extension with the given `extension_id` needs to be synced.
   // This is set when the state (such as enabled/disabled or allowed in
   // incognito) is changed before Sync is ready.
   bool NeedsSync(const ExtensionId& extension_id) const;
@@ -738,22 +745,23 @@ class ExtensionPrefs : public KeyedService {
   // TODO(crbug.com/372186532): Remove this around M140.
   void MaybeMigrateDisableReasonsBitflagToList();
 
+  // Performs a one-time cleanup of the extension's "state" pref. Also adds a
+  // disable reason if the pref disagrees with the list of disable reasons.
+  // TODO(crbug.com/40554334): Remove this around M140.
+  void MaybeClearExtensionStatePref();
+
   // Iterates over the extension pref entries and removes any obsolete keys. We
   // need to do this here specially (rather than in
   // MigrateObsoleteProfilePrefs()) because these entries are subkeys of the
   // extension's dictionary, which is keyed on the extension ID.
   void MigrateObsoleteExtensionPrefs();
 
-  // Updates an extension to use the new withholding pref key if it doesn't have
-  // it yet, removing the old key in the process.
-  // TODO(tjudkins): Remove this and the obsolete key in M83.
-  void MigrateToNewWithholdingPref();
-
-  // Migrates to the new way of recording explicit user uninstalls of external
-  // extensions (by using a list of IDs rather than a bit set in each extension
-  // dictionary).
-  // TODO(devlin): Remove this once clients are migrated over, around M84.
-  void MigrateToNewExternalUninstallPref();
+#if BUILDFLAG(IS_CHROMEOS)
+  // Updates pref that were scheduled to be applied after Chrome restarts. This
+  // function should only be called from the constructor of the ExtensionPrefs
+  // class.
+  void ApplyPendingUpdates();
+#endif
 
   // Returns true if the given component extension should be installed, even
   // though it has been obsoleted. Installing it allows us to ensure it is
@@ -767,7 +775,7 @@ class ExtensionPrefs : public KeyedService {
       const ExtensionId& extension_id,
       const mojom::ManifestLocation location);
 
-  // Join |parts| to get a prefs key
+  // Join `parts` to get a prefs key
   static std::string JoinPrefs(const std::vector<std::string_view>& parts);
 
   // TODO(blee@igalia.com) Need to move all the DNR related codes to the helper.
@@ -801,7 +809,7 @@ class ExtensionPrefs : public KeyedService {
 
   // Helper function used by GetInstalledExtensionInfo() and
   // GetDelayedInstallInfo() to construct an ExtensionInfo from the provided
-  // |extension| dictionary.
+  // `extension` dictionary.
   std::optional<ExtensionInfo> GetInstalledInfoHelper(
       const ExtensionId& extension_id,
       const base::Value::Dict& extension,
@@ -812,14 +820,14 @@ class ExtensionPrefs : public KeyedService {
   bool ReadPrefAsBooleanAndReturn(const ExtensionId& extension_id,
                                   std::string_view pref_key) const;
 
-  // Interprets |pref_key| in |extension_id|'s preferences as an
+  // Interprets `pref_key` in `extension_id`'s preferences as an
   // PermissionSet, and passes ownership of the set to the caller.
   std::unique_ptr<PermissionSet> ReadPrefAsPermissionSet(
       const ExtensionId& extension_id,
       std::string_view pref_key) const;
 
-  // Converts the |new_value| to its value and sets the |pref_key| pref
-  // belonging to |extension_id|.
+  // Converts the `new_value` to its value and sets the `pref_key` pref
+  // belonging to `extension_id`.
   void SetExtensionPrefPermissionSet(const ExtensionId& extension_id,
                                      std::string_view pref_key,
                                      const PermissionSet& new_value);
@@ -834,19 +842,21 @@ class ExtensionPrefs : public KeyedService {
                                    const PermissionSet& permissions,
                                    const char* pref_name);
 
-  // Returns an immutable dictionary for extension |id|'s prefs, or NULL if it
+  // Returns an immutable dictionary for extension `id`'s prefs, or NULL if it
   // doesn't exist.
   const base::Value::Dict* GetExtensionPref(
       const ExtensionId& extension_id) const;
 
-  // Returns an immutable base::Value for extension |id|'s prefs, or nullptr if
+  // Returns an immutable base::Value for extension `id`'s prefs, or nullptr if
   // it doesn't exist.
   const base::Value* GetPrefAsValue(const ExtensionId& extension_id,
                                     std::string_view pref_key) const;
 
   // Helper function to notify observers that the disable reasons for an
   // extension have changed.
-  void NotifyDisableReasonsChanged(const ExtensionId& extension_id);
+  void OnDisableReasonsChanged(const ExtensionId& extension_id,
+                               const base::flat_set<int>& old_reasons,
+                               const base::flat_set<int>& new_reasons);
 
   // Helper methods to read and write disable reasons to prefs.
   base::flat_set<int> ReadDisableReasonsFromPrefs(
@@ -855,29 +865,24 @@ class ExtensionPrefs : public KeyedService {
   void WriteDisableReasonsToPrefs(const ExtensionId& extension_id,
                                   const base::flat_set<int>& disable_reasons);
 
-  // Installs the persistent extension preferences into |prefs_|'s extension
+  // Installs the persistent extension preferences into `prefs_`'s extension
   // pref store. Does nothing if extensions_disabled_ is true.
   void InitPrefStore();
 
-  // Checks whether there is a state pref for the extension and if so, whether
-  // it matches |check_state|.
-  bool DoesExtensionHaveState(const ExtensionId& extension_id,
-                              Extension::State check_state) const;
-
-  // Reads the list of strings for |pref| from user prefs into
-  // |id_container_out|. Returns false if the pref wasn't found in the user
+  // Reads the list of strings for `pref` from user prefs into
+  // `id_container_out`. Returns false if the pref wasn't found in the user
   // pref store.
   template <class ExtensionIdContainer>
   bool GetUserExtensionPrefIntoContainer(
       const char* pref,
       ExtensionIdContainer* id_container_out) const;
 
-  // Writes the list of strings contained in |strings| to |pref| in prefs.
+  // Writes the list of strings contained in `strings` to `pref` in prefs.
   template <class ExtensionIdContainer>
   void SetExtensionPrefFromContainer(const char* pref,
                                      const ExtensionIdContainer& strings);
 
-  // Helper function to populate |extension_dict| with the values needed
+  // Helper function to populate `extension_dict` with the values needed
   // by a newly installed extension. Work is broken up between this
   // function and FinishExtensionInfoPrefs() to accommodate delayed
   // installations.
@@ -890,7 +895,7 @@ class ExtensionPrefs : public KeyedService {
   // `kDelayedInstallInfo`.
   void PopulateExtensionInfoPrefs(const Extension* extension,
                                   const base::Time install_time,
-                                  Extension::State initial_state,
+                                  const base::flat_set<int>& disable_reasons,
                                   int install_flags,
                                   const std::string& install_parameter,
                                   base::Value::Dict ruleset_install_prefs,
@@ -899,12 +904,12 @@ class ExtensionPrefs : public KeyedService {
 
   void InitExtensionControlledPrefs(const ExtensionsInfo& extensions_info);
 
-  // Loads preferences for the given |extension_id| into the pref value map.
+  // Loads preferences for the given `extension_id` into the pref value map.
   void LoadExtensionControlledPrefs(const ExtensionId& extension_id,
                                     ChromeSettingScope scope);
 
   // Helper function to complete initialization of the values in
-  // |extension_dict| for an extension install. Also see
+  // `extension_dict` for an extension install. Also see
   // PopulateExtensionInfoPrefs().
   void FinishExtensionInfoPrefs(
       const ExtensionId& extension_id,
@@ -925,6 +930,9 @@ class ExtensionPrefs : public KeyedService {
 
   // Base extensions install directory.
   base::FilePath install_directory_;
+
+  const DisableReasonRawManipulationPasskey
+      disable_reason_raw_manipulation_passkey_;
 
   // Weak pointer, owned by BrowserContext.
   raw_ptr<ExtensionPrefValueMap, AcrossTasksDanglingUntriaged>

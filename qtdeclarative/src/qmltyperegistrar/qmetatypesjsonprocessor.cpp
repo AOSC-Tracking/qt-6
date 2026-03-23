@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #include "qmetatypesjsonprocessor_p.h"
 
@@ -624,7 +625,7 @@ void MetaTypesJsonProcessor::addRelatedTypes()
     }
 }
 
-void MetaTypesJsonProcessor::sortTypes(QVector<MetaType> &types)
+void MetaTypesJsonProcessor::sortTypes(QList<MetaType> &types)
 {
     std::sort(types.begin(), types.end(), qualifiedClassNameLessThan);
 }
@@ -757,8 +758,11 @@ Property::Property(const QCborMap &cbor)
     , bindable(cbor[S_BINDABLE].toStringView())
     , privateClass(cbor[S_PRIVATE_CLASS].toStringView())
     , index(cbor[S_INDEX].toInteger(-1))
+    , lineNumber(cbor[S_LINENUMBER].toInteger(0))
     , revision(getRevision(cbor))
     , isFinal(cbor[S_FINAL].toBool())
+    , isVirtual(cbor[S_VIRTUAL].toBool())
+    , isOverride(cbor[S_OVERRIDE].toBool())
     , isConstant(cbor[S_CONSTANT].toBool())
     , isRequired(cbor[S_REQUIRED].toBool())
 {
@@ -774,6 +778,7 @@ Method::Method(const QCborMap &cbor, bool isConstructor)
     : name(cbor[S_NAME].toStringView())
     , returnType(cbor[S_RETURN_TYPE].toStringView())
     , index(cbor[S_INDEX].toInteger(InvalidIndex))
+    , lineNumber(cbor[S_LINENUMBER].toInteger(0))
     , revision(getRevision(cbor))
     , access(getAccess(cbor))
     , isCloned(cbor[S_IS_CLONED].toBool())
@@ -798,6 +803,7 @@ Enum::Enum(const QCborMap &cbor)
     : name(cbor[S_NAME].toStringView())
     , alias(cbor[S_ALIAS].toStringView())
     , type(cbor[S_TYPE].toStringView())
+    , lineNumber(cbor[S_LINENUMBER].toInteger(0))
     , isFlag(cbor[S_IS_FLAG].toBool())
     , isClass(cbor[S_IS_CLASS].toBool())
 {

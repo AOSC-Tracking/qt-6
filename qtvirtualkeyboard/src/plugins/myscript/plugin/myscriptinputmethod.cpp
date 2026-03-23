@@ -2,6 +2,7 @@
 // Copyright (C) 2017 Klaralvdalens Datakonsult AB (KDAB). Contact: https://www.qt.io/licensing/
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "myscriptinputmethod_p.h"
 #include "myscriptinputmethod_p_p.h"
@@ -1378,7 +1379,7 @@ MyScriptRecognizeController::MyScriptRecognizeController(MyScriptInputMethodPriv
     connect(this, &MyScriptRecognizeController::recognitionCommitted, worker, &MyScriptRecognizeWorker::manageRecognitionCommitted);
     connect(worker, &MyScriptRecognizeWorker::recognitionEnded, this, &MyScriptRecognizeController::handleRecognitionEnded);
     connect(worker, &MyScriptRecognizeWorker::recognitionCommitted, this, &MyScriptRecognizeController::handleRecognitionCommitted);
-    connect(worker, &MyScriptRecognizeWorker::gestureDetected, this, &MyScriptRecognizeController::handelGestureDetected);
+    connect(worker, &MyScriptRecognizeWorker::gestureDetected, this, &MyScriptRecognizeController::handleGestureDetected);
     connect(worker, &MyScriptRecognizeWorker::preeditChanged, this, &MyScriptRecognizeController::handlePreeditChanged);
     connect(worker, &MyScriptRecognizeWorker::clearItem, this, &MyScriptRecognizeController::handleClearItem);
     connect(worker, &MyScriptRecognizeWorker::newItem, this, &MyScriptRecognizeController::handleNewItem);
@@ -1415,7 +1416,7 @@ void MyScriptRecognizeController::handleRecognitionCommitted()
     d->m_isProcessing = false;
 }
 
-void MyScriptRecognizeController::handelGestureDetected(const int gestureType, const int gestureCount)
+void MyScriptRecognizeController::handleGestureDetected(const int gestureType, const int gestureCount)
 {
     qCDebug(qlcVKMyScript) << Q_FUNC_INFO;
     emit d->q_ptr->gestureDetected(gestureType, gestureCount);

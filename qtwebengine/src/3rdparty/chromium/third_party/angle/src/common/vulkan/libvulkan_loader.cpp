@@ -31,9 +31,9 @@ void *OpenLibVulkan()
 #endif
     };
 
-#if !defined(TOOLKIT_QT)
+#if !defined(ANGLE_PLATFORM_QTWEBENGINE)
     constexpr SearchType kSearchTypes[] = {
-// On Android, Fuchsia and GGP we use the system libvulkan.
+// On Android and Fuchsia we use the system libvulkan.
 #if defined(ANGLE_USE_CUSTOM_LIBVULKAN)
         SearchType::ModuleDir,
 #else
@@ -56,7 +56,7 @@ void *OpenLibVulkan()
     }
 
     constexpr SearchType kSearchTypes[] = { SearchType::SystemDir };
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !defined(ANGLE_PLATFORM_QTWEBENGINE)
 
     for (angle::SearchType searchType : kSearchTypes)
     {

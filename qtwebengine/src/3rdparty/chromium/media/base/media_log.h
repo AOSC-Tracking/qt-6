@@ -27,7 +27,6 @@
 #include "media/base/media_log_properties.h"
 #include "media/base/media_log_record.h"
 #include "media/base/pipeline_status.h"
-#include "url/gurl.h"
 
 #if BUILDFLAG(IS_APPLE)
 #include "base/apple/osstatus_logging.h"
@@ -180,6 +179,8 @@ class MEDIA_EXPORT MediaLog {
   void InvalidateLog();
 
   struct ParentLogRecord : base::RefCountedThreadSafe<ParentLogRecord> {
+    REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
+
     explicit ParentLogRecord(MediaLog* log);
 
     ParentLogRecord(const ParentLogRecord&) = delete;

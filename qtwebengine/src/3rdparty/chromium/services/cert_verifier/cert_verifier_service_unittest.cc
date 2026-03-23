@@ -106,6 +106,16 @@ class DummyCertVerifier : public net::CertVerifierWithUpdatableProc {
     *out_req = std::move(dummy_req);
     return net::ERR_IO_PENDING;
   }
+  void Verify2QwacBinding(
+      const std::string& binding,
+      const std::string& hostname,
+      const scoped_refptr<net::X509Certificate>& tls_cert,
+      base::OnceCallback<void(const scoped_refptr<net::X509Certificate>&)>
+          callback,
+      const net::NetLogWithSource& net_log) override {
+    ADD_FAILURE();
+    std::move(callback).Run(nullptr);
+  }
   void SetConfig(const Config& config) override { config_ = config; }
   void AddObserver(Observer* observer) override {
     EXPECT_FALSE(observer_);
@@ -457,15 +467,15 @@ TEST_F(CertVerifierServiceTest, TestCVServiceDisconnection) {
 // call to the underlying net::CertVerifier.
 TEST_F(CertVerifierServiceTest, StoresConfig) {
   CreateImpl(/*wait_for_update=*/false);
-  ASSERT_FALSE(dummy_cv()->config()->disable_symantec_enforcement);
+  ASSERT_FALSE(dummy_cv()->config()->require_rev_checking_local_anchors);
 
   net::CertVerifier::Config config;
-  config.disable_symantec_enforcement = true;
+  config.require_rev_checking_local_anchors = true;
 
   cv_service_remote()->SetConfig(config);
   cv_service_remote().FlushForTesting();
 
-  ASSERT_TRUE(dummy_cv()->config()->disable_symantec_enforcement);
+  ASSERT_TRUE(dummy_cv()->config()->require_rev_checking_local_anchors);
 }
 
 // CertVerifierService should register an Observer on the underlying

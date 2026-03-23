@@ -306,12 +306,14 @@
 ./tools/webdriver/webdriver/bidi/modules/bluetooth.py
 ./tools/webdriver/webdriver/bidi/modules/browser.py
 ./tools/webdriver/webdriver/bidi/modules/browsing_context.py
+./tools/webdriver/webdriver/bidi/modules/emulation.py
 ./tools/webdriver/webdriver/bidi/modules/input.py
 ./tools/webdriver/webdriver/bidi/modules/network.py
 ./tools/webdriver/webdriver/bidi/modules/permissions.py
 ./tools/webdriver/webdriver/bidi/modules/script.py
 ./tools/webdriver/webdriver/bidi/modules/session.py
 ./tools/webdriver/webdriver/bidi/modules/storage.py
+./tools/webdriver/webdriver/bidi/modules/web_extension.py
 ./tools/webdriver/webdriver/bidi/protocol.py
 ./tools/webdriver/webdriver/bidi/transport.py
 ./tools/webdriver/webdriver/bidi/undefined.py
@@ -420,7 +422,6 @@
 ./tools/wptrunner/wptrunner/expectedtree.py
 ./tools/wptrunner/wptrunner/font.py
 ./tools/wptrunner/wptrunner/formatters/__init__.py
-./tools/wptrunner/wptrunner/formatters/chromium.py
 ./tools/wptrunner/wptrunner/formatters/wptreport.py
 ./tools/wptrunner/wptrunner/formatters/wptscreenshot.py
 ./tools/wptrunner/wptrunner/instruments.py
@@ -470,6 +471,9 @@
 ./tools/wptrunner/wptrunner/wpttest.py
 ./tools/wptserve/LICENSE
 ./tools/wptserve/README.md
+./tools/wptserve/wptserve/cgi/LICENSE
+./tools/wptserve/wptserve/cgi/__init__.py
+./tools/wptserve/wptserve/cgi/cgi.py
 ./tools/wptserve/wptserve/__init__.py
 ./tools/wptserve/wptserve/config.py
 ./tools/wptserve/wptserve/constants.py

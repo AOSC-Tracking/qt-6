@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgvertexpipelineimpl_p.h"
 
@@ -122,9 +124,23 @@ static inline void insertVertexInstancedMainArgs(QByteArray &snippet)
 static inline const char *customMainCallWithArguments(bool usesInstancing)
 {
     if (usesInstancing)
-        return  "    qt_customMain(qt_vertPosition.xyz, qt_vertNormal, qt_vertUV0, qt_vertUV1, qt_vertTangent, qt_vertBinormal, qt_vertJoints, qt_vertWeights, qt_vertColor, qt_instancedModelMatrix, qt_instancedMVPMatrix);";
+        return "    qt_customMain(qt_vertPosition.xyz, qt_vertNormal, qt_vertUV0, qt_vertUV1, qt_vertTangent, qt_vertBinormal, qt_vertJoints, qt_vertWeights, qt_vertColor, qt_instancedModelMatrix, qt_instancedMVPMatrix);";
     else
         return "    qt_customMain(qt_vertPosition.xyz, qt_vertNormal, qt_vertUV0, qt_vertUV1, qt_vertTangent, qt_vertBinormal, qt_vertJoints, qt_vertWeights, qt_vertColor);\n";
+}
+
+static inline QByteArray extractSharedVarsTypeDefinition(QByteArray &snippet, QSSGShaderMaterialAdapter *materialAdapter) {
+    if (materialAdapter->usesSharedVariables()) {
+        // Extract shared variables from the custom shader snippet
+        static QRegularExpression re(QString::fromLocal8Bit(R"(struct\s+QT_SHARED_VARS\s*\{[\s\S]*?\};)"), QRegularExpression::DotMatchesEverythingOption);
+        QRegularExpressionMatch match = re.match(QString::fromLocal8Bit(snippet));
+        if (!match.hasMatch())
+            return QByteArray();
+        QString typeDefinition = match.captured(0);
+        snippet.remove(match.capturedStart(0), match.capturedLength(0));
+        return typeDefinition.toLocal8Bit();
+    }
+    return QByteArray();
 }
 
 void QSSGMaterialVertexPipeline::beginVertexGeneration(const QSSGShaderDefaultMaterialKey &inKey,
@@ -272,7 +288,7 @@ void QSSGMaterialVertexPipeline::beginVertexGeneration(const QSSGShaderDefaultMa
     }
 
     // The custom fragment main should be skipped if this is a
-    // depth pass, but not if it is also a OpaqueDepthPrePass
+    // depth (or normal texture) pass, but not if it is also a OpaqueDepthPrePass
     // because then we need to know the real alpha values
     skipCustomFragmentSnippet = false;
     const bool isDepthPass = inFeatureSet.isSet(QSSGShaderFeatures::Feature::DepthPass);
@@ -438,13 +454,25 @@ void QSSGMaterialVertexPipeline::beginFragmentGeneration(QSSGShaderLibraryManage
             insertDirectionalLightProcessorArgs(snippet, materialAdapter);
             insertFragmentMainArgs(snippet, materialAdapter);
             insertPostProcessorArgs(snippet, materialAdapter);
+            auto sharedVars = extractSharedVarsTypeDefinition(snippet, materialAdapter);
+            fragment().addTypeDeclaration("QT_SHARED_VARS", sharedVars);
         }
         fragment() << snippet;
     }
+
     if (oitMethod != QSSGRenderLayer::OITMethod::None) {
+        if (oitMethod == QSSGRenderLayer::OITMethod::LinkedList) {
+            // Early tests are required since we can't undo modifications to
+            // the image data structures after running the fragment shader.
+            // Modifying depth in fragment shader is not possible then.
+            fragment() << "layout(early_fragment_tests) in;" << "\n";
+        }
         if (oitMethod == QSSGRenderLayer::OITMethod::WeightedBlended) {
             fragment().addDefinition("QSSG_OIT_METHOD", "QSSG_OIT_WEIGHTED_BLENDED");
             fragment() << "layout(location = 1) out vec4 revealageOutput;" << "\n";
+        } else if (oitMethod == QSSGRenderLayer::OITMethod::LinkedList) {
+            fragment() << "#extension GL_ARB_shading_language_packing : enable" << "\n";
+            fragment().addDefinition("QSSG_OIT_METHOD", "QSSG_OIT_LINKED_LIST");
         }
     }
     fragment() << "void main()"

@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-igemm/sse-shuffle.c.in
 //   Generator: tools/xngen
@@ -8,10 +9,14 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <xmmintrin.h>
 
-#include "xnnpack/igemm.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/igemm.h"
 
 
 void xnn_f32_igemm_minmax_ukernel_4x8s4__sse(
@@ -26,7 +31,7 @@ void xnn_f32_igemm_minmax_ukernel_4x8s4__sse(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_minmax_params* restrict params) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 4);

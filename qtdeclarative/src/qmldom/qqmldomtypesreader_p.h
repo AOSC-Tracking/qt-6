@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLDOMTYPESREADER_H
 #define QQMLDOMTYPESREADER_H
@@ -32,8 +33,8 @@ class QmltypesReader
 {
     Q_DECLARE_TR_FUNCTIONS(TypeDescriptionReader)
 public:
-    explicit QmltypesReader(const DomItem &qmltypesFile)
-        : m_qmltypesFilePtr(qmltypesFile.ownerAs<QmltypesFile>()), m_qmltypesFile(qmltypesFile)
+    explicit QmltypesReader(const std::shared_ptr<QmltypesFile> &qmltypesFile)
+        : m_qmltypesFilePtr(qmltypesFile)
     {
     }
 
@@ -49,8 +50,7 @@ private:
                          const QList<QQmlJSScope::Export> &exportsList);
     EnumDecl enumFromMetaEnum(const QQmlJSMetaEnum &metaEnum);
 
-    std::shared_ptr<QmltypesFile> qmltypesFilePtr() { return m_qmltypesFilePtr; }
-    DomItem &qmltypesFile() { return m_qmltypesFile; }
+    const std::shared_ptr<QmltypesFile> &qmltypesFilePtr() const { return m_qmltypesFilePtr; }
     ErrorHandler handler()
     {
         return [this](const ErrorMessage &m) { this->addError(ErrorMessage(m)); };
@@ -58,7 +58,6 @@ private:
 
 private:
     std::shared_ptr<QmltypesFile> m_qmltypesFilePtr;
-    DomItem m_qmltypesFile;
     Path m_currentPath;
 };
 

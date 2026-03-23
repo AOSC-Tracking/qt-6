@@ -211,8 +211,8 @@ std::unique_ptr<IDBValue> CreateIDBValue(v8::Isolate* isolate,
                                          Vector<char>&& wire_bytes,
                                          double primary_key,
                                          const String& key_path) {
-  auto value =
-      std::make_unique<IDBValue>(std::move(wire_bytes), Vector<WebBlobInfo>());
+  auto value = std::make_unique<IDBValue>();
+  value->SetData(std::move(wire_bytes));
   value->SetInjectedPrimaryKey(IDBKey::CreateNumber(primary_key),
                                IDBKeyPath(key_path));
 
@@ -480,7 +480,7 @@ TEST(IDBKeyFromValue, Exceptions) {
   };
 
   for (const char* source : cases) {
-    DummyExceptionStateForTesting exception_state;
+    ExceptionState exception_state(scope.GetIsolate());
     auto key = CreateIDBKeyFromValue(scope.GetIsolate(),
                                      EvaluateScriptAsObject(scope, source),
                                      exception_state);

@@ -23,11 +23,6 @@ public:
     QMetaObject::Connection metadataUpdateConnection;
 };
 
-/*!
-    \class QQmlGrpcCallOptions
-    \internal
-*/
-
 QQmlGrpcCallOptions::QQmlGrpcCallOptions(QObject *parent)
     : QObject(*(new QQmlGrpcCallOptionsPrivate), parent)
 {

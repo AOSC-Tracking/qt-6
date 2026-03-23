@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // Portions copyright 2015 The Chromium Embedded Framework Authors.
 // Portions copyright 2014 The Chromium Authors. All rights reserved.
@@ -26,6 +27,7 @@ public:
     ~ExtensionsBrowserClientQt() override;
 
     // ExtensionsBrowserClient overrides:
+    void Init() override;
     bool IsShuttingDown() override;
     bool AreExtensionsDisabled(const base::CommandLine &command_line,
                                content::BrowserContext *context) override;
@@ -112,6 +114,7 @@ public:
                                         content::BrowserContext *browser_context) override;
 
     void CreateExtensionWebContentsObserver(content::WebContents *) override;
+    extensions::SafeBrowsingDelegate* GetSafeBrowsingDelegate() override { return nullptr; }
 
 private:
     // Support for extension APIs.

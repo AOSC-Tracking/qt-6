@@ -83,19 +83,19 @@ export class CustomizeChromeComboboxElement extends CrLitElement {
     };
   }
 
-  defaultOptionLabel: string = '';
-  protected expanded_: boolean = false;
-  private expandedGroups_: {[groupIndex: number]: boolean} = {};
+  accessor defaultOptionLabel: string = '';
+  protected accessor expanded_: boolean = false;
+  private accessor expandedGroups_: {[groupIndex: number]: boolean} = {};
   private highlightableElements_: HTMLElement[] = [];
-  private highlightedElement_: HTMLElement|null = null;
-  protected indentDefaultOption_: boolean = false;
-  items: ComboboxGroup[]|ComboboxItem[] = [];
-  label: string = '';
-  rightAlignDropbox: boolean = false;
+  private accessor highlightedElement_: HTMLElement|null = null;
+  protected accessor indentDefaultOption_: boolean = false;
+  accessor items: ComboboxGroup[]|ComboboxItem[] = [];
+  accessor label: string = '';
+  accessor rightAlignDropbox: boolean = false;
   private lastHighlightWasByKeyboard_: boolean = false;
   private domObserver_: MutationObserver|null = null;
-  private selectedElement_: OptionElement|null = null;
-  value: string|undefined;
+  private accessor selectedElement_: OptionElement|null = null;
+  accessor value: string|undefined;
 
   override connectedCallback() {
     super.connectedCallback();
@@ -223,7 +223,7 @@ export class CustomizeChromeComboboxElement extends CrLitElement {
 
   private onDomChange_() {
     this.highlightableElements_ =
-        Array.from(this.shadowRoot!.querySelectorAll<HTMLElement>(
+        Array.from(this.shadowRoot.querySelectorAll<HTMLElement>(
             HIGHLIGHTABLE_ITEMS_SELECTOR));
 
     this.highlightableElements_.forEach(element => {
@@ -441,7 +441,7 @@ export class CustomizeChromeComboboxElement extends CrLitElement {
     await this.updateComplete;
     this.selectItem_(
         Array
-            .from(this.shadowRoot!.querySelectorAll<OptionElement>(
+            .from(this.shadowRoot.querySelectorAll<OptionElement>(
                 SELECTABLE_ITEMS_SELECTOR))
             .find(option => option.value === this.value) ||
         null);

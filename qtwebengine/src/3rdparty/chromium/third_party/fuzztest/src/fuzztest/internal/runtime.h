@@ -28,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/functional/function_ref.h"
 #include "absl/random/bit_gen_ref.h"
@@ -36,6 +37,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "./fuzztest/internal/configuration.h"
@@ -63,9 +65,9 @@ namespace internal {
 class FuzzTestFuzzer {
  public:
   virtual ~FuzzTestFuzzer() = default;
-  // Returns ture if no error were detected by the FuzzTest, false otherwise.
+  // Returns true if no error were detected by the FuzzTest, false otherwise.
   virtual bool RunInUnitTestMode(const Configuration& configuration) = 0;
-  // Returns ture if no error were detected by the FuzzTest, false otherwise.
+  // Returns true if no error were detected by the FuzzTest, false otherwise.
   virtual bool RunInFuzzingMode(int* argc, char*** argv,
                                 const Configuration& configuration) = 0;
 };
@@ -156,11 +158,11 @@ class Runtime {
     return termination_requested_.load(std::memory_order_relaxed);
   }
 
-  void StartWatchdog();
-
   void SetRunMode(RunMode run_mode) { run_mode_ = run_mode; }
   RunMode run_mode() const { return run_mode_; }
 
+  // Enables the crash reporter.
+  // REQUIRES: `SetCurrentTest()` has been called with non-null arguments.
   void EnableReporter(const RuntimeStats* stats, absl::Time (*clock_fn)()) {
     reporter_enabled_ = true;
     stats_ = stats;
@@ -176,11 +178,12 @@ class Runtime {
     UntypedDomain& domain;
   };
 
+  // Sets the current test and configuration.
+  // REQUIRES: Before passing null arguments, the reporter must be disabled by
+  // calling `DisableReporter()`.
   void SetCurrentTest(const FuzzTest* test, const Configuration* configuration);
-  void OnTestIterationStart(const absl::Time& start_time) {
-    current_iteration_start_time_ = start_time;
-    test_iteration_started_ = true;
-  }
+
+  void OnTestIterationStart(const absl::Time& start_time);
   void OnTestIterationEnd();
 
   void SetCurrentArgs(Args* args) { current_args_ = args; }
@@ -203,15 +206,21 @@ class Runtime {
   }
   void ResetCrashType() { crash_type_ = std::nullopt; }
 
+  class Watchdog;
+  // Returns a watchdog that periodically checks the time and memory limits in a
+  // separate thread. The watchdog handles the logic of starting and joining the
+  // thread. The runtime must outlive the watchdog.
+  Watchdog CreateWatchdog();
+
  private:
   Runtime();
 
+  // Checks time and memory limits. Aborts the process if any limit is exceeded.
   void CheckWatchdogLimits();
-  void Watchdog();
 
   // Returns the file path of the reproducer.
-  // Returns empty string if writing the file failed.
-  std::string DumpReproducer(absl::string_view outdir) const;
+  // Returns empty string if no reproducer file is dumped.
+  std::string DumpReproducer() const;
 
   // Some failures are not necessarily detected by signal handlers or by
   // sanitizers. For example, we could have test framework failures like
@@ -237,7 +246,6 @@ class Runtime {
   std::atomic<bool> termination_requested_ = false;
 
   RunMode run_mode_ = RunMode::kUnitTest;
-  std::atomic<bool> watchdog_thread_started = false;
 
   absl::Time creation_time_ = absl::Now();
   size_t test_counter_ = 0;
@@ -246,17 +254,51 @@ class Runtime {
   Args* current_args_ = nullptr;
   const FuzzTest* current_test_ = nullptr;
   const Configuration* current_configuration_;
-  absl::Time current_iteration_start_time_;
-  std::atomic<bool> test_iteration_started_ = false;
-  std::atomic_flag watchdog_spinlock_ = ATOMIC_FLAG_INIT;
   const RuntimeStats* stats_ = nullptr;
   absl::Time (*clock_fn_)() = nullptr;
+
+  // We use a simple custom spinlock instead of absl::Mutex to reduce
+  // dependencies and avoid potential issues with code instrumentation.
+  class ABSL_LOCKABLE Spinlock {
+   public:
+    Spinlock() = default;
+    Spinlock(const Spinlock&) = delete;
+    Spinlock& operator=(const Spinlock&) = delete;
+
+    void Lock() ABSL_EXCLUSIVE_LOCK_FUNCTION();
+    void Unlock() ABSL_UNLOCK_FUNCTION();
+
+   private:
+    std::atomic_flag locked_ = ATOMIC_FLAG_INIT;
+  };
+
+  Spinlock watchdog_spinlock_;
+  absl::Time current_iteration_start_time_ ABSL_GUARDED_BY(watchdog_spinlock_);
+  bool test_iteration_started_ ABSL_GUARDED_BY(watchdog_spinlock_) = false;
+  bool watchdog_limit_exceeded_ ABSL_GUARDED_BY(watchdog_spinlock_) = false;
 
   // A registry of crash metadata listeners.
   std::vector<CrashMetadataListener> crash_metadata_listeners_;
   // In case of a crash, contains the crash type.
   std::optional<std::string> crash_type_;
 };
+
+struct ReproducerOutputLocation {
+  std::string dir_path;
+  enum class Type {
+    kUnspecified,
+    kUserSpecified,
+    kTestUndeclaredOutputs,
+    kReportToController
+  };
+  Type type = Type::kUnspecified;
+};
+
+ReproducerOutputLocation GetReproducerOutputLocation();
+
+void PrintReproducerIfRequested(absl::FormatRawSink out, const FuzzTest& test,
+                                const Configuration* configuration,
+                                std::string reproducer_path);
 
 extern void (*crash_handler_hook)();
 
@@ -388,8 +430,6 @@ class FuzzTestFuzzerImpl : public FuzzTestFuzzer {
   friend class CentipedeAdaptorRunnerCallbacks;
   friend class CentipedeAdaptorEngineCallbacks;
 };
-
-size_t GetStackLimitFromEnvOrConfiguration(const Configuration& configuration);
 
 // A reproduction command template will include these placeholders. These
 // placeholders then will be replaced by the proper test filter when creating

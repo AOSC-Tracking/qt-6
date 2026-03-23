@@ -60,7 +60,10 @@ source_set("common") {
   }
 
   if (is_chromeos) {
-    sources += [ "it2me_confirmation_dialog_chromeos.cc" ]
+    sources += [
+      "it2me_confirmation_dialog_chromeos.cc",
+      "it2me_confirmation_dialog_chromeos.h",
+    ]
   }
 
   if (is_mac) {
@@ -86,32 +89,31 @@ source_set("common") {
     "//components/policy:policy_code_generate",
     "//components/webrtc:thread_wrapper",
     "//extensions/browser/api/messaging:native_messaging",
-    "//google_apis:google_apis",
+    "//google_apis",
     "//mojo/core/embedder",
     "//net",
     "//remoting/base",
     "//remoting/base:authorization",
     "//remoting/host:common",
     "//remoting/host/base",
-    "//remoting/host/native_messaging:native_messaging",
+    "//remoting/host/native_messaging",
     "//remoting/proto/ftl/v1:ftl_messages",
     "//remoting/protocol",
     "//remoting/resources",
     "//remoting/signaling",
-    "//services/network/public/cpp:cpp",
+    "//services/network/public/cpp",
   ]
 
   if (use_gtk) {
     deps += [
       "//build/config/linux/gtk",
       "//remoting/host/linux:platform_impls",
-      "//remoting/host/linux:wayland",
-      "//ui/base:base",
+      "//ui/base",
 
       # GTK pulls pangoft2, which requires HarfBuzz symbols. When linking
       # our own HarfBuzz avoid mixing symbols from system HarfBuzz and
       # our own through the indirect dependency to harfbuzz-ng here.
-      "//third_party:freetype_harfbuzz",
+      "//third_party/harfbuzz-ng",
     ]
   }
   if (is_chromeos) {
@@ -125,7 +127,7 @@ source_set("common") {
     ]
   }
   if (is_mac) {
-    deps += [ "//ui/base:base" ]
+    deps += [ "//ui/base" ]
   }
   if (is_win) {
     deps += [
@@ -148,12 +150,12 @@ if (is_chromeos) {
     deps = [
       ":common",
       "//extensions/browser/api/messaging:native_messaging",
-      "//remoting/base:base",
+      "//remoting/base",
       "//remoting/host:common",
       "//remoting/host:enterprise_params",
       "//remoting/host/chromeos:browser_interop",
       "//remoting/host/chromeos:features",
-      "//remoting/host/mojom:mojom",
+      "//remoting/host/mojom",
       "//remoting/host/native_messaging",
       "//skia",
     ]
@@ -194,9 +196,6 @@ if (!is_chromeos && enable_remoting_host) {
       "//ui/gfx",
     ]
 
-    if (is_linux) {
-      deps += [ "//remoting/host/linux:wayland" ]
-    }
     if (is_linux && remoting_use_x11) {
       defines = [ "REMOTING_USE_X11" ]
       deps += [
@@ -321,12 +320,10 @@ if (!is_chromeos && enable_remoting_host) {
 
       sources = [ "it2me_native_messaging_host_entry_point.cc" ]
 
-      deps = [ ":main_headers" ]
-      if (is_mac) {
-        deps += [ ":main" ]
-      } else {
-        deps += [ "//remoting/host:remoting_core" ]
-      }
+      deps = [
+        ":main_headers",
+        "//remoting/host:remoting_core",
+      ]
 
       if (is_mac) {
         foreach(locale, remoting_locales_with_underscores) {

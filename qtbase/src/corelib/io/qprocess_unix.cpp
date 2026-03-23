@@ -425,6 +425,8 @@ QChildProcess::CharPointerList::CharPointerList(const QProcessEnvironmentPrivate
     if (!environment)
         return;
 
+    QProcessEnvironmentPrivate::MutexLocker locker(environment);
+
     const QProcessEnvironmentPrivate::Map &env = environment->vars;
     qsizetype count = env.size();
     pointers.reset(new char *[count + 1]);
@@ -527,18 +529,15 @@ bool QProcessPrivate::openChannel(Channel &channel)
             if (&channel == &stdinChannel) {
                 channel.notifier = new QSocketNotifier(QSocketNotifier::Write, q);
                 channel.notifier->setSocket(channel.pipe[1]);
-                QObject::connect(channel.notifier, SIGNAL(activated(QSocketDescriptor)),
-                                 q, SLOT(_q_canWrite()));
+                QObjectPrivate::connect(channel.notifier, &QSocketNotifier::activated, this,
+                                        &QProcessPrivate::_q_canWrite);
             } else {
                 channel.notifier = new QSocketNotifier(QSocketNotifier::Read, q);
                 channel.notifier->setSocket(channel.pipe[0]);
-                const char *receiver;
-                if (&channel == &stdoutChannel)
-                    receiver = SLOT(_q_canReadStandardOutput());
-                else
-                    receiver = SLOT(_q_canReadStandardError());
-                QObject::connect(channel.notifier, SIGNAL(activated(QSocketDescriptor)),
-                                 q, receiver);
+                auto receiver = &channel == &stdoutChannel ? &QProcessPrivate::_q_canReadStandardOutput
+                                                           : &QProcessPrivate::_q_canReadStandardError;
+                QObjectPrivate::connect(channel.notifier, &QSocketNotifier::activated, this,
+                                        receiver);
             }
         }
 
@@ -750,8 +749,8 @@ void QProcessPrivate::startProcess()
         // notifier to watch the fork_fd for expected death.
         stateNotifier = new QSocketNotifier(childStartedPipe[0],
                                             QSocketNotifier::Read, q);
-        QObject::connect(stateNotifier, SIGNAL(activated(QSocketDescriptor)),
-                         q, SLOT(_q_startupNotification()));
+        QObjectPrivate::connect(stateNotifier, &QSocketNotifier::activated, this,
+                                &QProcessPrivate::_q_startupNotification);
     }
 
     // Prepare the arguments and the environment
@@ -1003,8 +1002,8 @@ bool QProcessPrivate::processStarted(QString *errorMessage)
 
     if (ret <= 0) {  // process successfully started
         if (stateNotifier) {
-            QObject::connect(stateNotifier, SIGNAL(activated(QSocketDescriptor)),
-                             q, SLOT(_q_processDied()));
+            QObjectPrivate::connect(stateNotifier, &QSocketNotifier::activated, this,
+                                    &QProcessPrivate::_q_processDied);
             stateNotifier->setSocket(forkfd);
             stateNotifier->setEnabled(true);
         }

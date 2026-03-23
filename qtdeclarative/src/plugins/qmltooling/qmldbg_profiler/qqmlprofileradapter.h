@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 //
 //  W A R N I N G
@@ -27,12 +28,12 @@ public:
     QQmlProfilerAdapter(QQmlProfilerService *service, QQmlTypeLoader *loader);
     qint64 sendMessages(qint64 until, QList<QByteArray> &messages) override;
 
-    void receiveData(const QVector<QQmlProfilerData> &new_data,
+    void receiveData(const QList<QQmlProfilerData> &new_data,
                      const QQmlProfiler::LocationHash &locations);
 
 private:
     void init(QQmlProfilerService *service, QQmlProfiler *profiler);
-    QVector<QQmlProfilerData> data;
+    QList<QQmlProfilerData> data;
     QQmlProfiler::LocationHash locations;
     int next;
 };

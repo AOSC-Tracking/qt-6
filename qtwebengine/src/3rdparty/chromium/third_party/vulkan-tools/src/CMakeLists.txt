@@ -15,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ~~~
-cmake_minimum_required(VERSION 3.17.2)
+cmake_minimum_required(VERSION 3.22.1)
 
 project(Vulkan-Tools)
 
@@ -56,7 +56,6 @@ endif()
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 find_package(VulkanHeaders QUIET REQUIRED CONFIG)
-find_package(volk QUIET REQUIRED CONFIG)
 if ((APPLE OR BUILD_TESTS) AND NOT ANDROID)
     find_package(VulkanLoader QUIET REQUIRED CONFIG)
 endif()

@@ -89,6 +89,7 @@ public:
     static bool checkAndClearExceptions(JNIEnv *env, OutputMode outputMode = OutputMode::Verbose);
 
     static JNIEnv *getJniEnv();
+    static QStringList stackTrace(jthrowable exception);
 
 private:
     Q_DISABLE_COPY_MOVE(QJniEnvironment)

@@ -2,16 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "device/bluetooth/floss/floss_adapter_client.h"
 
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
@@ -175,7 +171,7 @@ class FlossAdapterClientTest : public testing::Test {
     // Exported callback methods that we don't need to invoke.  This will need
     // to be updated once new callbacks are added.
     // TODO(b/233124093): Reduce this count by 2 when SDP tests are added.
-    EXPECT_CALL(*exported_callbacks_.get(), ExportMethod).Times(14);
+    EXPECT_CALL(*exported_callbacks_.get(), ExportMethod).Times(15);
 
     // Save the method handlers of exported callbacks that we need to invoke in
     // test.
@@ -735,10 +731,8 @@ TEST_F(FlossAdapterClientTest, HandlesClearedDevices) {
   EXPECT_EQ(test_observer.cleared_device_.address, device_id.address);
 }
 
-// Block the event in LaCrOS so it won't race with AshChrome. See b/308988818.
 // TODO(b/274706838): Redesign DBus API so it's only received by the correct
 // client.
-#if !BUILDFLAG(IS_CHROMEOS_LACROS)
 TEST_F(FlossAdapterClientTest, HandlesSsp) {
   TestAdapterObserver test_observer(client_.get());
   client_->Init(bus_.get(), kAdapterInterface, adapter_index_, GetCurrVersion(),
@@ -768,7 +762,6 @@ TEST_F(FlossAdapterClientTest, HandlesSsp) {
   EXPECT_EQ(test_observer.variant_, variant);
   EXPECT_EQ(test_observer.passkey_, passkey);
 }
-#endif  // !BUILDFLAG(IS_CHROMEOS_LACROS)
 
 TEST_F(FlossAdapterClientTest, CreateBond) {
   client_->Init(bus_.get(), kAdapterInterface, adapter_index_, GetCurrVersion(),
@@ -1065,9 +1058,9 @@ TEST_F(FlossAdapterClientTest, GenericMethodSetPasskey) {
                       {.address = kFakeDeviceAddr, .name = kFakeDeviceName}),
                   param1);
         EXPECT_EQ(kFakeBoolParam, param2);
-        EXPECT_EQ(
+        UNSAFE_TODO(EXPECT_EQ(
             std::vector<uint8_t>(kFakeBytes, kFakeBytes + sizeof(kFakeBytes)),
-            std::vector<uint8_t>(param3, param3 + param3_len));
+            std::vector<uint8_t>(param3, param3 + param3_len)));
         EXPECT_FALSE(msg.HasMoreData());
         // Create a fake response with no return value.
         auto response = ::dbus::Response::CreateEmpty();
@@ -1082,7 +1075,8 @@ TEST_F(FlossAdapterClientTest, GenericMethodSetPasskey) {
       }),
       FlossDeviceId({.address = kFakeDeviceAddr, .name = kFakeDeviceName}),
       kFakeBoolParam,
-      std::vector<uint8_t>(kFakeBytes, kFakeBytes + sizeof(kFakeBytes)));
+      std::vector<uint8_t>(kFakeBytes,
+                           UNSAFE_TODO(kFakeBytes + sizeof(kFakeBytes))));
   run_loop.Run();
 }
 

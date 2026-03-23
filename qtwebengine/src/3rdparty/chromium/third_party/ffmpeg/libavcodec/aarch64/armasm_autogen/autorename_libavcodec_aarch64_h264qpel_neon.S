@@ -852,6 +852,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1065,7 +1068,7 @@
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_h_lowpass_neon_packed
@@ -1083,7 +1086,7 @@ put_h264_qpel16_h_lowpass_neon_packed
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_h_lowpass_neon
@@ -1100,7 +1103,7 @@ put_h264_qpel16_h_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_h_lowpass_neon
@@ -1137,7 +1140,7 @@ temp_label_0
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_h_lowpass_neon
@@ -1154,7 +1157,7 @@ avg_h264_qpel16_h_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_h_lowpass_neon
@@ -1198,7 +1201,7 @@ temp_label_1
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_h_lowpass_l2_neon
@@ -1217,7 +1220,7 @@ put_h264_qpel16_h_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_h_lowpass_l2_neon
@@ -1258,7 +1261,7 @@ temp_label_2
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_h_lowpass_l2_neon
@@ -1277,7 +1280,7 @@ avg_h264_qpel16_h_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_h_lowpass_l2_neon
@@ -1324,7 +1327,7 @@ temp_label_3
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_v_lowpass_neon_packed
@@ -1345,7 +1348,7 @@ put_h264_qpel16_v_lowpass_neon_packed
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_v_lowpass_neon
@@ -1365,7 +1368,7 @@ put_h264_qpel16_v_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_v_lowpass_neon
@@ -1445,7 +1448,7 @@ put_h264_qpel8_v_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_v_lowpass_neon
@@ -1465,7 +1468,7 @@ avg_h264_qpel16_v_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_v_lowpass_neon
@@ -1564,7 +1567,7 @@ avg_h264_qpel8_v_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_v_lowpass_l2_neon
@@ -1586,7 +1589,7 @@ put_h264_qpel16_v_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_v_lowpass_l2_neon
@@ -1684,7 +1687,7 @@ put_h264_qpel8_v_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_v_lowpass_l2_neon
@@ -1706,7 +1709,7 @@ avg_h264_qpel16_v_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_v_lowpass_l2_neon
@@ -1822,7 +1825,7 @@ avg_h264_qpel8_v_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_hv_lowpass_neon_top
@@ -2225,7 +2228,7 @@ put_h264_qpel8_hv_lowpass_neon_top
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_hv_lowpass_neon
@@ -2245,7 +2248,7 @@ put_h264_qpel8_hv_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_hv_lowpass_neon
@@ -2284,7 +2287,7 @@ avg_h264_qpel8_hv_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_hv_lowpass_l2_neon
@@ -2316,7 +2319,7 @@ put_h264_qpel8_hv_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_hv_lowpass_l2_neon
@@ -2367,7 +2370,7 @@ avg_h264_qpel8_hv_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_hv_lowpass_neon
@@ -2388,7 +2391,7 @@ put_h264_qpel16_hv_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_hv_lowpass_l2_neon
@@ -2409,7 +2412,7 @@ put_h264_qpel16_hv_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_hv_lowpass_neon
@@ -2430,7 +2433,7 @@ avg_h264_qpel16_hv_lowpass_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_hv_lowpass_l2_neon
@@ -2453,7 +2456,7 @@ avg_h264_qpel16_hv_lowpass_l2_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc10_neon
 
@@ -2484,7 +2487,7 @@ ff_put_h264_qpel8_mc10_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc20_neon
 
@@ -2515,7 +2518,7 @@ ff_put_h264_qpel8_mc20_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc30_neon
 
@@ -2546,7 +2549,7 @@ ff_put_h264_qpel8_mc30_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc01_neon
 
@@ -2580,7 +2583,7 @@ put_h264_qpel8_mc01
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc11_neon
 
@@ -2626,7 +2629,7 @@ put_h264_qpel8_mc11
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc21_neon
 
@@ -2673,7 +2676,7 @@ put_h264_qpel8_mc21
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc31_neon
 
@@ -2703,7 +2706,7 @@ ff_put_h264_qpel8_mc31_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc02_neon
 
@@ -2735,7 +2738,7 @@ ff_put_h264_qpel8_mc02_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc12_neon
 
@@ -2781,7 +2784,7 @@ put_h264_qpel8_mc12
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc22_neon
 
@@ -2813,7 +2816,7 @@ ff_put_h264_qpel8_mc22_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc32_neon
 
@@ -2842,7 +2845,7 @@ ff_put_h264_qpel8_mc32_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc03_neon
 
@@ -2869,7 +2872,7 @@ ff_put_h264_qpel8_mc03_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc13_neon
 
@@ -2898,7 +2901,7 @@ ff_put_h264_qpel8_mc13_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc23_neon
 
@@ -2927,7 +2930,7 @@ ff_put_h264_qpel8_mc23_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc33_neon
 
@@ -2957,7 +2960,7 @@ ff_put_h264_qpel8_mc33_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc10_neon
 
@@ -2988,7 +2991,7 @@ ff_avg_h264_qpel8_mc10_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc20_neon
 
@@ -3019,7 +3022,7 @@ ff_avg_h264_qpel8_mc20_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc30_neon
 
@@ -3050,7 +3053,7 @@ ff_avg_h264_qpel8_mc30_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc01_neon
 
@@ -3084,7 +3087,7 @@ avg_h264_qpel8_mc01
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc11_neon
 
@@ -3130,7 +3133,7 @@ avg_h264_qpel8_mc11
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc21_neon
 
@@ -3177,7 +3180,7 @@ avg_h264_qpel8_mc21
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc31_neon
 
@@ -3207,7 +3210,7 @@ ff_avg_h264_qpel8_mc31_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc02_neon
 
@@ -3239,7 +3242,7 @@ ff_avg_h264_qpel8_mc02_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc12_neon
 
@@ -3285,7 +3288,7 @@ avg_h264_qpel8_mc12
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc22_neon
 
@@ -3317,7 +3320,7 @@ ff_avg_h264_qpel8_mc22_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc32_neon
 
@@ -3346,7 +3349,7 @@ ff_avg_h264_qpel8_mc32_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc03_neon
 
@@ -3373,7 +3376,7 @@ ff_avg_h264_qpel8_mc03_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc13_neon
 
@@ -3402,7 +3405,7 @@ ff_avg_h264_qpel8_mc13_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc23_neon
 
@@ -3431,7 +3434,7 @@ ff_avg_h264_qpel8_mc23_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc33_neon
 
@@ -3463,7 +3466,7 @@ ff_avg_h264_qpel8_mc33_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc10_neon
 
@@ -3493,7 +3496,7 @@ ff_put_h264_qpel16_mc10_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc20_neon
 
@@ -3523,7 +3526,7 @@ ff_put_h264_qpel16_mc20_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc30_neon
 
@@ -3553,7 +3556,7 @@ ff_put_h264_qpel16_mc30_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc01_neon
 
@@ -3587,7 +3590,7 @@ put_h264_qpel16_mc01
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc11_neon
 
@@ -3632,7 +3635,7 @@ put_h264_qpel16_mc11
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc21_neon
 
@@ -3676,7 +3679,7 @@ put_h264_qpel16_mc21
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc31_neon
 
@@ -3706,7 +3709,7 @@ ff_put_h264_qpel16_mc31_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc02_neon
 
@@ -3738,7 +3741,7 @@ ff_put_h264_qpel16_mc02_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc12_neon
 
@@ -3783,7 +3786,7 @@ put_h264_qpel16_mc12
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc22_neon
 
@@ -3818,7 +3821,7 @@ ff_put_h264_qpel16_mc22_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc32_neon
 
@@ -3847,7 +3850,7 @@ ff_put_h264_qpel16_mc32_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc03_neon
 
@@ -3874,7 +3877,7 @@ ff_put_h264_qpel16_mc03_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc13_neon
 
@@ -3903,7 +3906,7 @@ ff_put_h264_qpel16_mc13_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc23_neon
 
@@ -3932,7 +3935,7 @@ ff_put_h264_qpel16_mc23_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc33_neon
 
@@ -3962,7 +3965,7 @@ ff_put_h264_qpel16_mc33_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc10_neon
 
@@ -3992,7 +3995,7 @@ ff_avg_h264_qpel16_mc10_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc20_neon
 
@@ -4022,7 +4025,7 @@ ff_avg_h264_qpel16_mc20_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc30_neon
 
@@ -4052,7 +4055,7 @@ ff_avg_h264_qpel16_mc30_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc01_neon
 
@@ -4086,7 +4089,7 @@ avg_h264_qpel16_mc01
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc11_neon
 
@@ -4131,7 +4134,7 @@ avg_h264_qpel16_mc11
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc21_neon
 
@@ -4175,7 +4178,7 @@ avg_h264_qpel16_mc21
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc31_neon
 
@@ -4205,7 +4208,7 @@ ff_avg_h264_qpel16_mc31_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc02_neon
 
@@ -4237,7 +4240,7 @@ ff_avg_h264_qpel16_mc02_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc12_neon
 
@@ -4282,7 +4285,7 @@ avg_h264_qpel16_mc12
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc22_neon
 
@@ -4317,7 +4320,7 @@ ff_avg_h264_qpel16_mc22_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc32_neon
 
@@ -4346,7 +4349,7 @@ ff_avg_h264_qpel16_mc32_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc03_neon
 
@@ -4373,7 +4376,7 @@ ff_avg_h264_qpel16_mc03_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc13_neon
 
@@ -4402,7 +4405,7 @@ ff_avg_h264_qpel16_mc13_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc23_neon
 
@@ -4431,7 +4434,7 @@ ff_avg_h264_qpel16_mc23_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc33_neon
 
@@ -4466,7 +4469,7 @@ ff_avg_h264_qpel16_mc33_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_h_lowpass_neon_packed_10
@@ -4484,7 +4487,7 @@ put_h264_qpel16_h_lowpass_neon_packed_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_h_lowpass_neon_10
@@ -4501,7 +4504,7 @@ put_h264_qpel16_h_lowpass_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_h_lowpass_neon_10
@@ -4547,7 +4550,7 @@ temp_label_4
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_h_lowpass_neon_10
@@ -4564,7 +4567,7 @@ avg_h264_qpel16_h_lowpass_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_h_lowpass_neon_10
@@ -4617,7 +4620,7 @@ temp_label_5
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_h_lowpass_l2_neon_10
@@ -4636,7 +4639,7 @@ put_h264_qpel16_h_lowpass_l2_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_h_lowpass_l2_neon_10
@@ -4686,7 +4689,7 @@ temp_label_6
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_h_lowpass_l2_neon_10
@@ -4705,7 +4708,7 @@ avg_h264_qpel16_h_lowpass_l2_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_h_lowpass_l2_neon_10
@@ -4761,7 +4764,7 @@ temp_label_7
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_v_lowpass_neon_packed_10
@@ -4782,7 +4785,7 @@ put_h264_qpel16_v_lowpass_neon_packed_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_v_lowpass_neon_10
@@ -4802,7 +4805,7 @@ put_h264_qpel16_v_lowpass_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_v_lowpass_neon_10
@@ -4919,7 +4922,7 @@ put_h264_qpel8_v_lowpass_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_v_lowpass_neon_10
@@ -4939,7 +4942,7 @@ avg_h264_qpel16_v_lowpass_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_v_lowpass_neon_10
@@ -5075,7 +5078,7 @@ avg_h264_qpel8_v_lowpass_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel16_v_lowpass_l2_neon_10
@@ -5097,7 +5100,7 @@ put_h264_qpel16_v_lowpass_l2_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 put_h264_qpel8_v_lowpass_l2_neon_10
@@ -5231,7 +5234,7 @@ put_h264_qpel8_v_lowpass_l2_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel16_v_lowpass_l2_neon_10
@@ -5253,7 +5256,7 @@ avg_h264_qpel16_v_lowpass_l2_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
 
 avg_h264_qpel8_v_lowpass_l2_neon_10
@@ -5406,7 +5409,7 @@ avg_h264_qpel8_v_lowpass_l2_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc10_neon_10
 
@@ -5437,7 +5440,7 @@ ff_put_h264_qpel8_mc10_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc20_neon_10
 
@@ -5468,7 +5471,7 @@ ff_put_h264_qpel8_mc20_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc30_neon_10
 
@@ -5499,7 +5502,7 @@ ff_put_h264_qpel8_mc30_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc01_neon_10
 
@@ -5533,7 +5536,7 @@ put_h264_qpel8_mc01_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc11_neon_10
 
@@ -5579,7 +5582,7 @@ put_h264_qpel8_mc11_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc31_neon_10
 
@@ -5609,7 +5612,7 @@ ff_put_h264_qpel8_mc31_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc02_neon_10
 
@@ -5641,7 +5644,7 @@ ff_put_h264_qpel8_mc02_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc03_neon_10
 
@@ -5668,7 +5671,7 @@ ff_put_h264_qpel8_mc03_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc13_neon_10
 
@@ -5697,7 +5700,7 @@ ff_put_h264_qpel8_mc13_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc33_neon_10
 
@@ -5727,7 +5730,7 @@ ff_put_h264_qpel8_mc33_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc10_neon_10
 
@@ -5758,7 +5761,7 @@ ff_avg_h264_qpel8_mc10_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc20_neon_10
 
@@ -5789,7 +5792,7 @@ ff_avg_h264_qpel8_mc20_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc30_neon_10
 
@@ -5820,7 +5823,7 @@ ff_avg_h264_qpel8_mc30_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc01_neon_10
 
@@ -5854,7 +5857,7 @@ avg_h264_qpel8_mc01_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc11_neon_10
 
@@ -5900,7 +5903,7 @@ avg_h264_qpel8_mc11_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc31_neon_10
 
@@ -5930,7 +5933,7 @@ ff_avg_h264_qpel8_mc31_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc02_neon_10
 
@@ -5962,7 +5965,7 @@ ff_avg_h264_qpel8_mc02_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc03_neon_10
 
@@ -5989,7 +5992,7 @@ ff_avg_h264_qpel8_mc03_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc13_neon_10
 
@@ -6018,7 +6021,7 @@ ff_avg_h264_qpel8_mc13_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc33_neon_10
 
@@ -6050,7 +6053,7 @@ ff_avg_h264_qpel8_mc33_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc10_neon_10
 
@@ -6080,7 +6083,7 @@ ff_put_h264_qpel16_mc10_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc20_neon_10
 
@@ -6110,7 +6113,7 @@ ff_put_h264_qpel16_mc20_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc30_neon_10
 
@@ -6140,7 +6143,7 @@ ff_put_h264_qpel16_mc30_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc01_neon_10
 
@@ -6174,7 +6177,7 @@ put_h264_qpel16_mc01_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc11_neon_10
 
@@ -6219,7 +6222,7 @@ put_h264_qpel16_mc11_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc31_neon_10
 
@@ -6249,7 +6252,7 @@ ff_put_h264_qpel16_mc31_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc02_neon_10
 
@@ -6281,7 +6284,7 @@ ff_put_h264_qpel16_mc02_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc03_neon_10
 
@@ -6308,7 +6311,7 @@ ff_put_h264_qpel16_mc03_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc13_neon_10
 
@@ -6337,7 +6340,7 @@ ff_put_h264_qpel16_mc13_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc33_neon_10
 
@@ -6367,7 +6370,7 @@ ff_put_h264_qpel16_mc33_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc10_neon_10
 
@@ -6397,7 +6400,7 @@ ff_avg_h264_qpel16_mc10_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc20_neon_10
 
@@ -6427,7 +6430,7 @@ ff_avg_h264_qpel16_mc20_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc30_neon_10
 
@@ -6457,7 +6460,7 @@ ff_avg_h264_qpel16_mc30_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc01_neon_10
 
@@ -6491,7 +6494,7 @@ avg_h264_qpel16_mc01_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc11_neon_10
 
@@ -6536,7 +6539,7 @@ avg_h264_qpel16_mc11_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc31_neon_10
 
@@ -6566,7 +6569,7 @@ ff_avg_h264_qpel16_mc31_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc02_neon_10
 
@@ -6598,7 +6601,7 @@ ff_avg_h264_qpel16_mc02_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc03_neon_10
 
@@ -6625,7 +6628,7 @@ ff_avg_h264_qpel16_mc03_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc13_neon_10
 
@@ -6654,7 +6657,7 @@ ff_avg_h264_qpel16_mc13_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc33_neon_10
 

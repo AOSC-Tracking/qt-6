@@ -27,6 +27,7 @@
 #include <initializer_list>
 #include <limits>
 #include <new>
+#include <optional>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -35,7 +36,6 @@
 #include <openssl/curve25519.h>
 #include <openssl/err.h>
 #include <openssl/hpke.h>
-#include <openssl/lhash.h>
 #include <openssl/mem.h>
 #include <openssl/span.h>
 #include <openssl/ssl.h>
@@ -44,14 +44,13 @@
 #include "../crypto/err/internal.h"
 #include "../crypto/internal.h"
 #include "../crypto/lhash/internal.h"
+#include "../crypto/mem_internal.h"
 #include "../crypto/spake2plus/internal.h"
 
 
 #if defined(OPENSSL_WINDOWS)
 // Windows defines struct timeval in winsock2.h.
-OPENSSL_MSVC_PRAGMA(warning(push, 3))
 #include <winsock2.h>
-OPENSSL_MSVC_PRAGMA(warning(pop))
 #else
 #include <sys/time.h>
 #endif
@@ -65,445 +64,6 @@ struct SSL_PROTOCOL_METHOD;
 struct SSL_X509_METHOD;
 
 // C++ utilities.
-
-// New behaves like |new| but uses |OPENSSL_malloc| for memory allocation. It
-// returns nullptr on allocation error. It only implements single-object
-// allocation and not new T[n].
-//
-// Note: unlike |new|, this does not support non-public constructors.
-template <typename T, typename... Args>
-T *New(Args &&...args) {
-  void *t = OPENSSL_malloc(sizeof(T));
-  if (t == nullptr) {
-    return nullptr;
-  }
-  return new (t) T(std::forward<Args>(args)...);
-}
-
-// Delete behaves like |delete| but uses |OPENSSL_free| to release memory.
-//
-// Note: unlike |delete| this does not support non-public destructors.
-template <typename T>
-void Delete(T *t) {
-  if (t != nullptr) {
-    t->~T();
-    OPENSSL_free(t);
-  }
-}
-
-// All types with kAllowUniquePtr set may be used with UniquePtr. Other types
-// may be C structs which require a |BORINGSSL_MAKE_DELETER| registration.
-namespace internal {
-template <typename T>
-struct DeleterImpl<T, std::enable_if_t<T::kAllowUniquePtr>> {
-  static void Free(T *t) { Delete(t); }
-};
-}  // namespace internal
-
-// MakeUnique behaves like |std::make_unique| but returns nullptr on allocation
-// error.
-template <typename T, typename... Args>
-UniquePtr<T> MakeUnique(Args &&...args) {
-  return UniquePtr<T>(New<T>(std::forward<Args>(args)...));
-}
-
-// Array<T> is an owning array of elements of |T|.
-template <typename T>
-class Array {
- public:
-  // Array's default constructor creates an empty array.
-  Array() {}
-  Array(const Array &) = delete;
-  Array(Array &&other) { *this = std::move(other); }
-
-  ~Array() { Reset(); }
-
-  Array &operator=(const Array &) = delete;
-  Array &operator=(Array &&other) {
-    Reset();
-    other.Release(&data_, &size_);
-    return *this;
-  }
-
-  const T *data() const { return data_; }
-  T *data() { return data_; }
-  size_t size() const { return size_; }
-  bool empty() const { return size_ == 0; }
-
-  const T &operator[](size_t i) const {
-    BSSL_CHECK(i < size_);
-    return data_[i];
-  }
-  T &operator[](size_t i) {
-    BSSL_CHECK(i < size_);
-    return data_[i];
-  }
-
-  T *begin() { return data_; }
-  const T *begin() const { return data_; }
-  T *end() { return data_ + size_; }
-  const T *end() const { return data_ + size_; }
-
-  void Reset() { Reset(nullptr, 0); }
-
-  // Reset releases the current contents of the array and takes ownership of the
-  // raw pointer supplied by the caller.
-  void Reset(T *new_data, size_t new_size) {
-    std::destroy_n(data_, size_);
-    OPENSSL_free(data_);
-    data_ = new_data;
-    size_ = new_size;
-  }
-
-  // Release releases ownership of the array to a raw pointer supplied by the
-  // caller.
-  void Release(T **out, size_t *out_size) {
-    *out = data_;
-    *out_size = size_;
-    data_ = nullptr;
-    size_ = 0;
-  }
-
-  // Init replaces the array with a newly-allocated array of |new_size|
-  // value-constructed copies of |T|. It returns true on success and false on
-  // error. If |T| is a primitive type like |uint8_t|, value-construction means
-  // it will be zero-initialized.
-  [[nodiscard]] bool Init(size_t new_size) {
-    if (!InitUninitialized(new_size)) {
-      return false;
-    }
-    std::uninitialized_value_construct_n(data_, size_);
-    return true;
-  }
-
-  // InitForOverwrite behaves like |Init| but it default-constructs each element
-  // instead. This means that, if |T| is a primitive type, the array will be
-  // uninitialized and thus must be filled in by the caller.
-  [[nodiscard]] bool InitForOverwrite(size_t new_size) {
-    if (!InitUninitialized(new_size)) {
-      return false;
-    }
-    std::uninitialized_default_construct_n(data_, size_);
-    return true;
-  }
-
-  // CopyFrom replaces the array with a newly-allocated copy of |in|. It returns
-  // true on success and false on error.
-  [[nodiscard]] bool CopyFrom(Span<const T> in) {
-    if (!InitUninitialized(in.size())) {
-      return false;
-    }
-    std::uninitialized_copy(in.begin(), in.end(), data_);
-    return true;
-  }
-
-  // Shrink shrinks the stored size of the array to |new_size|. It crashes if
-  // the new size is larger. Note this does not shrink the allocation itself.
-  void Shrink(size_t new_size) {
-    if (new_size > size_) {
-      abort();
-    }
-    std::destroy_n(data_ + new_size, size_ - new_size);
-    size_ = new_size;
-  }
-
- private:
-  // InitUninitialized replaces the array with a newly-allocated array of
-  // |new_size| elements, but whose constructor has not yet run. On success, the
-  // elements must be constructed before returning control to the caller.
-  bool InitUninitialized(size_t new_size) {
-    Reset();
-    if (new_size == 0) {
-      return true;
-    }
-
-    if (new_size > std::numeric_limits<size_t>::max() / sizeof(T)) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_OVERFLOW);
-      return false;
-    }
-    data_ = reinterpret_cast<T *>(OPENSSL_malloc(new_size * sizeof(T)));
-    if (data_ == nullptr) {
-      return false;
-    }
-    size_ = new_size;
-    return true;
-  }
-
-  T *data_ = nullptr;
-  size_t size_ = 0;
-};
-
-// Vector<T> is a resizable array of elements of |T|.
-template <typename T>
-class Vector {
- public:
-  Vector() = default;
-  Vector(const Vector &) = delete;
-  Vector(Vector &&other) { *this = std::move(other); }
-  ~Vector() { clear(); }
-
-  Vector &operator=(const Vector &) = delete;
-  Vector &operator=(Vector &&other) {
-    clear();
-    std::swap(data_, other.data_);
-    std::swap(size_, other.size_);
-    std::swap(capacity_, other.capacity_);
-    return *this;
-  }
-
-  const T *data() const { return data_; }
-  T *data() { return data_; }
-  size_t size() const { return size_; }
-  bool empty() const { return size_ == 0; }
-
-  const T &operator[](size_t i) const {
-    BSSL_CHECK(i < size_);
-    return data_[i];
-  }
-  T &operator[](size_t i) {
-    BSSL_CHECK(i < size_);
-    return data_[i];
-  }
-
-  T *begin() { return data_; }
-  const T *begin() const { return data_; }
-  T *end() { return data_ + size_; }
-  const T *end() const { return data_ + size_; }
-
-  void clear() {
-    std::destroy_n(data_, size_);
-    OPENSSL_free(data_);
-    data_ = nullptr;
-    size_ = 0;
-    capacity_ = 0;
-  }
-
-  // Push adds |elem| at the end of the internal array, growing if necessary. It
-  // returns false when allocation fails.
-  [[nodiscard]] bool Push(T elem) {
-    if (!MaybeGrow()) {
-      return false;
-    }
-    new (&data_[size_]) T(std::move(elem));
-    size_++;
-    return true;
-  }
-
-  // CopyFrom replaces the contents of the array with a copy of |in|. It returns
-  // true on success and false on allocation error.
-  [[nodiscard]] bool CopyFrom(Span<const T> in) {
-    Array<T> copy;
-    if (!copy.CopyFrom(in)) {
-      return false;
-    }
-
-    clear();
-    copy.Release(&data_, &size_);
-    capacity_ = size_;
-    return true;
-  }
-
- private:
-  // If there is no room for one more element, creates a new backing array with
-  // double the size of the old one and copies elements over.
-  bool MaybeGrow() {
-    // No need to grow if we have room for one more T.
-    if (size_ < capacity_) {
-      return true;
-    }
-    size_t new_capacity = kDefaultSize;
-    if (capacity_ > 0) {
-      // Double the array's size if it's safe to do so.
-      if (capacity_ > std::numeric_limits<size_t>::max() / 2) {
-        OPENSSL_PUT_ERROR(SSL, ERR_R_OVERFLOW);
-        return false;
-      }
-      new_capacity = capacity_ * 2;
-    }
-    if (new_capacity > std::numeric_limits<size_t>::max() / sizeof(T)) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_OVERFLOW);
-      return false;
-    }
-    T *new_data =
-        reinterpret_cast<T *>(OPENSSL_malloc(new_capacity * sizeof(T)));
-    if (new_data == nullptr) {
-      return false;
-    }
-    size_t new_size = size_;
-    std::uninitialized_move(begin(), end(), new_data);
-    clear();
-    data_ = new_data;
-    size_ = new_size;
-    capacity_ = new_capacity;
-    return true;
-  }
-
-  // data_ is a pointer to |capacity_| objects of size |T|, the first |size_| of
-  // which are constructed.
-  T *data_ = nullptr;
-  // |size_| is the number of elements stored in this Vector.
-  size_t size_ = 0;
-  // |capacity_| is the number of elements allocated in this Vector.
-  size_t capacity_ = 0;
-  // |kDefaultSize| is the default initial size of the backing array.
-  static constexpr size_t kDefaultSize = 16;
-};
-
-// A PackedSize is an integer that can store values from 0 to N, represented as
-// a minimal-width integer.
-template <size_t N>
-using PackedSize = std::conditional_t<
-    N <= 0xff, uint8_t,
-    std::conditional_t<N <= 0xffff, uint16_t,
-                       std::conditional_t<N <= 0xffffffff, uint32_t, size_t>>>;
-
-// An InplaceVector is like a Vector, but stores up to N elements inline in the
-// object. It is inspired by std::inplace_vector in C++26.
-template <typename T, size_t N>
-class InplaceVector {
- public:
-  InplaceVector() = default;
-  InplaceVector(const InplaceVector &other) { *this = other; }
-  InplaceVector(InplaceVector &&other) { *this = std::move(other); }
-  ~InplaceVector() { clear(); }
-  InplaceVector &operator=(const InplaceVector &other) {
-    if (this != &other) {
-      CopyFrom(other);
-    }
-    return *this;
-  }
-  InplaceVector &operator=(InplaceVector &&other) {
-    clear();
-    std::uninitialized_move(other.begin(), other.end(), data());
-    size_ = other.size();
-    return *this;
-  }
-
-  const T *data() const { return reinterpret_cast<const T *>(storage_); }
-  T *data() { return reinterpret_cast<T *>(storage_); }
-  size_t size() const { return size_; }
-  static constexpr size_t capacity() { return N; }
-  bool empty() const { return size_ == 0; }
-
-  const T &operator[](size_t i) const {
-    BSSL_CHECK(i < size_);
-    return data()[i];
-  }
-  T &operator[](size_t i) {
-    BSSL_CHECK(i < size_);
-    return data()[i];
-  }
-
-  T *begin() { return data(); }
-  const T *begin() const { return data(); }
-  T *end() { return data() + size_; }
-  const T *end() const { return data() + size_; }
-
-  void clear() { Shrink(0); }
-
-  // Shrink resizes the vector to |new_size|, which must not be larger than the
-  // current size. Unlike |Resize|, this can be called when |T| is not
-  // default-constructible.
-  void Shrink(size_t new_size) {
-    BSSL_CHECK(new_size <= size_);
-    std::destroy_n(data() + new_size, size_ - new_size);
-    size_ = static_cast<PackedSize<N>>(new_size);
-  }
-
-  // TryResize resizes the vector to |new_size| and returns true, or returns
-  // false if |new_size| is too large. Any newly-added elements are
-  // value-initialized.
-  [[nodiscard]] bool TryResize(size_t new_size) {
-    if (new_size <= size_) {
-      Shrink(new_size);
-      return true;
-    }
-    if (new_size > capacity()) {
-      return false;
-    }
-    std::uninitialized_value_construct_n(data() + size_, new_size - size_);
-    size_ = static_cast<PackedSize<N>>(new_size);
-    return true;
-  }
-
-  // TryResizeForOverwrite behaves like |TryResize|, but newly-added elements
-  // are default-initialized, so POD types may contain uninitialized values that
-  // the caller is responsible for filling in.
-  [[nodiscard]] bool TryResizeForOverwrite(size_t new_size) {
-    if (new_size <= size_) {
-      Shrink(new_size);
-      return true;
-    }
-    if (new_size > capacity()) {
-      return false;
-    }
-    std::uninitialized_default_construct_n(data() + size_, new_size - size_);
-    size_ = static_cast<PackedSize<N>>(new_size);
-    return true;
-  }
-
-  // TryCopyFrom sets the vector to a copy of |in| and returns true, or returns
-  // false if |in| is too large.
-  [[nodiscard]] bool TryCopyFrom(Span<const T> in) {
-    if (in.size() > capacity()) {
-      return false;
-    }
-    clear();
-    std::uninitialized_copy(in.begin(), in.end(), data());
-    size_ = in.size();
-    return true;
-  }
-
-  // TryPushBack appends |val| to the vector and returns a pointer to the
-  // newly-inserted value, or nullptr if the vector is at capacity.
-  [[nodiscard]] T *TryPushBack(T val) {
-    if (size() >= capacity()) {
-      return nullptr;
-    }
-    T *ret = &data()[size_];
-    new (ret) T(std::move(val));
-    size_++;
-    return ret;
-  }
-
-  // The following methods behave like their |Try*| counterparts, but abort the
-  // program on failure.
-  void Resize(size_t size) { BSSL_CHECK(TryResize(size)); }
-  void ResizeForOverwrite(size_t size) {
-    BSSL_CHECK(TryResizeForOverwrite(size));
-  }
-  void CopyFrom(Span<const T> in) { BSSL_CHECK(TryCopyFrom(in)); }
-  T &PushBack(T val) {
-    T *ret = TryPushBack(std::move(val));
-    BSSL_CHECK(ret != nullptr);
-    return *ret;
-  }
-
-  template <typename Pred>
-  void EraseIf(Pred pred) {
-    // See if anything needs to be erased at all. This avoids a self-move.
-    auto iter = std::find_if(begin(), end(), pred);
-    if (iter == end()) {
-      return;
-    }
-
-    // Elements before the first to be erased may be left as-is.
-    size_t new_size = iter - begin();
-    // Swap all subsequent elements in if they are to be kept.
-    for (size_t i = new_size + 1; i < size(); i++) {
-      if (!pred((*this)[i])) {
-        (*this)[new_size] = std::move((*this)[i]);
-        new_size++;
-      }
-    }
-
-    Shrink(new_size);
-  }
-
- private:
-  alignas(T) char storage_[sizeof(T[N])];
-  PackedSize<N> size_ = 0;
-};
 
 // An MRUQueue maintains a queue of up to |N| objects of type |T|. If the queue
 // is at capacity, adding to the queue pops the least recently added element.
@@ -1094,7 +654,7 @@ class DTLSReplayBitmap {
   // to |max_seq_num_ - i|.
   std::bitset<256> map_;
   // max_seq_num_ is the largest sequence number seen so far as a 64-bit
-  // integer.
+  // integer, or zero if none have been seen.
   uint64_t max_seq_num_ = 0;
 };
 
@@ -1178,6 +738,7 @@ struct DTLSReadEpoch {
   UniquePtr<SSLAEADContext> aead;
   UniquePtr<RecordNumberEncrypter> rn_encrypter;
   DTLSReplayBitmap bitmap;
+  InplaceVector<uint8_t, SSL_MAX_MD_SIZE> traffic_secret;
 };
 
 struct DTLSWriteEpoch {
@@ -1188,6 +749,7 @@ struct DTLSWriteEpoch {
   DTLSRecordNumber next_record;
   UniquePtr<SSLAEADContext> aead;
   UniquePtr<RecordNumberEncrypter> rn_encrypter;
+  InplaceVector<uint8_t, SSL_MAX_MD_SIZE> traffic_secret;
 };
 
 // ssl_record_prefix_len returns the length of the prefix before the ciphertext
@@ -1275,6 +837,11 @@ size_t dtls_seal_prefix_len(const SSL *ssl, uint16_t epoch);
 // dtls_seal_max_input_len returns the maximum number of input bytes that can
 // fit in a record of up to |max_out| bytes, or zero if none may fit.
 size_t dtls_seal_max_input_len(const SSL *ssl, uint16_t epoch, size_t max_out);
+
+// dtls_get_read_epoch and dtls_get_write_epoch return the epoch corresponding
+// to |epoch| or nullptr if there is none.
+DTLSReadEpoch *dtls_get_read_epoch(const SSL *ssl, uint16_t epoch);
+DTLSWriteEpoch *dtls_get_write_epoch(const SSL *ssl, uint16_t epoch);
 
 // dtls_seal_record implements |tls_seal_record| for DTLS. |epoch| selects which
 // epoch's cipher state to use. Unlike |tls_seal_record|, |in| and |out| may
@@ -1659,7 +1226,7 @@ bool tls13_derive_resumption_secret(SSL_HANDSHAKE *hs);
 
 // tls13_export_keying_material provides an exporter interface to use the
 // |exporter_secret|.
-bool tls13_export_keying_material(SSL *ssl, Span<uint8_t> out,
+bool tls13_export_keying_material(const SSL *ssl, Span<uint8_t> out,
                                   Span<const uint8_t> secret,
                                   std::string_view label,
                                   Span<const uint8_t> context);
@@ -1942,11 +1509,17 @@ struct ssl_credential_st : public bssl::RefCounted<ssl_credential_st> {
   // |ClaimPAKEAttempt| call.
   void RestorePAKEAttempt() const;
 
+  // trust_anchor_id, if non-empty, is the trust anchor ID for the root of the
+  // chain in |chain|.
+  bssl::Array<uint8_t> trust_anchor_id;
+
   CRYPTO_EX_DATA ex_data;
 
   // must_match_issuer is a flag indicating that this credential should be
   // considered only when it matches a peer request for a particular issuer via
   // a negotiation mechanism (such as the certificate_authorities extension).
+  // This also implies that chain is a certificate path ending in a certificate
+  // issued by the certificate with that trust anchor identifier.
   bool must_match_issuer = false;
 
  private:
@@ -1956,19 +1529,35 @@ struct ssl_credential_st : public bssl::RefCounted<ssl_credential_st> {
 
 BSSL_NAMESPACE_BEGIN
 
-// ssl_get_credential_list computes |hs|'s credential list. On success, it
-// writes it to |*out| and returns true. Otherwise, it returns false. The
-// credential list may be empty, in which case this function will successfully
-// return an empty array.
+// ssl_get_full_credential_list computes |hs|'s full credential list, including
+// the legacy credential. On success, it writes it to |*out| and returns true.
+// Otherwise, it returns false. The credential list may be empty, in which case
+// this function will successfully output an empty array.
+//
+// This function should be called at most once during the handshake and is
+// intended to be used for certificate-based credentials. It runs the
+// auto-chaining logic as part of finishing the legacy credential. Other uses of
+// the credential list (e.g. PAKE credentials) should iterate over
+// |hs->config->cert->credentials|.
 //
 // The pointers in the result are only valid until |hs| is next mutated.
-bool ssl_get_credential_list(SSL_HANDSHAKE *hs, Array<SSL_CREDENTIAL *> *out);
+bool ssl_get_full_credential_list(SSL_HANDSHAKE *hs,
+                                  Array<SSL_CREDENTIAL *> *out);
 
 // ssl_credential_matches_requested_issuers returns true if |cred| is a
 // usable match for any requested issuers in |hs|, and false with an error
 // otherwise.
 bool ssl_credential_matches_requested_issuers(SSL_HANDSHAKE *hs,
                                               const SSL_CREDENTIAL *cred);
+
+// ssl_check_tls13_credential_ignoring_issuer returns true if |cred| is usable
+// as the certificate in a TLS 1.3 handshake, ignoring the issuer check.
+// |out_sigalg| will be set to a matching signature algorithm if true is
+// returned.
+bool ssl_check_tls13_credential_ignoring_issuer(SSL_HANDSHAKE *hs,
+                                                const SSL_CREDENTIAL *cred,
+                                                uint16_t *out_sigalg);
+
 
 // Handshake functions.
 
@@ -2259,6 +1848,16 @@ struct SSL_HANDSHAKE {
   // extension in our peer's CertificateRequest or ClientHello message
   UniquePtr<STACK_OF(CRYPTO_BUFFER)> ca_names;
 
+  // peer_requested_trust_anchors, if not nullopt, contains the trust anchor IDs
+  // (possibly none) the peer requested in ClientHello or CertificateRequest. If
+  // nullopt, the peer did not send the extension.
+  std::optional<Array<uint8_t>> peer_requested_trust_anchors;
+
+  // peer_available_trust_anchors, if not empty, is the list of trust anchor IDs
+  // the peer reported as available in EncryptedExtensions. This is only sent by
+  // servers to clients.
+  Array<uint8_t> peer_available_trust_anchors;
+
   // cached_x509_ca_names contains a cache of parsed versions of the elements of
   // |ca_names|. This pointer is left non-owning so only
   // |ssl_crypto_x509_method| needs to link against crypto/x509.
@@ -2406,6 +2005,14 @@ struct SSL_HANDSHAKE {
   // received_hello_verify_request is true if we received a HelloVerifyRequest
   // message from the server.
   bool received_hello_verify_request : 1;
+
+  // matched_peer_trust_anchor indicates that we have matched a trust anchor
+  // the peer requested in the trust anchors extension.
+  bool matched_peer_trust_anchor : 1;
+
+  // peer_matched_trust_anchor is true if the peer indicated a match with one of
+  // our requested trust anchors.
+  bool peer_matched_trust_anchor : 1;
 
   // client_version is the value sent or received in the ClientHello version.
   uint16_t client_version = 0;
@@ -2619,6 +2226,10 @@ bool ssl_get_local_application_settings(const SSL_HANDSHAKE *hs,
 bool ssl_negotiate_alps(SSL_HANDSHAKE *hs, uint8_t *out_alert,
                         const SSL_CLIENT_HELLO *client_hello);
 
+// ssl_is_valid_trust_anchor_list returns whether |in| is a valid trust anchor
+// identifiers list.
+bool ssl_is_valid_trust_anchor_list(Span<const uint8_t> in);
+
 struct SSLExtension {
   SSLExtension(uint16_t type_arg, bool allowed_arg = true)
       : type(type_arg), allowed(allowed_arg), present(false) {
@@ -2666,6 +2277,43 @@ const SSL_SESSION *ssl_handshake_session(const SSL_HANDSHAKE *hs);
 void ssl_done_writing_client_hello(SSL_HANDSHAKE *hs);
 
 
+// Flags.
+
+// SSLFlags is a bitmask of flags that can be encoded with the TLS flags
+// extension, draft-ietf-tls-tlsflags-14. For now, our in-memory representation
+// matches the wire representation, and we only support flags up to 32. If
+// higher values are needed, we can increase the size of the bitmask, or only
+// store the flags we implement in the bitmask.
+using SSLFlags = uint32_t;
+inline constexpr SSLFlags kSSLFlagResumptionAcrossNames = 1 << 8;
+
+// ssl_add_flags_extension encodes a tls_flags extension (including the header)
+// containing the flags in |flags|. It returns true on success and false on
+// error. If |flags| is zero (no flags set), it returns true without adding
+// anything to |cbb|.
+bool ssl_add_flags_extension(CBB *cbb, SSLFlags flags);
+
+// ssl_parse_flags_extension_request parses tls_flags extension value (excluding
+// the header) from |cbs|, for a request message (ClientHello,
+// CertificateRequest, or NewSessionTicket). Unrecognized flags will be ignored.
+//
+// On success, it sets |*out| to the parsed flags and returns true. On error, it
+// sets |*out_alert| to a TLS alert and returns false.
+bool ssl_parse_flags_extension_request(const CBS *cbs, SSLFlags *out,
+                                       uint8_t *out_alert);
+
+// ssl_parse_flags_extension_response parses tls_flags extension value
+// (excluding the header) from |cbs|, for a response message (HelloRetryRequest,
+// ServerHello, EncryptedExtensions, or Certificate). Only the flags in
+// |allowed_flags| may be present.
+//
+// On success, it sets |*out| to the parsed flags and returns true. On error, it
+// sets |*out_alert| to a TLS alert and returns false.
+bool ssl_parse_flags_extension_response(const CBS *cbs, SSLFlags *out,
+                                        uint8_t *out_alert,
+                                        SSLFlags allowed_flags);
+
+
 // SSLKEYLOGFILE functions.
 
 // ssl_log_secret logs |secret| with label |label|, if logging is enabled for
@@ -2675,12 +2323,6 @@ bool ssl_log_secret(const SSL *ssl, const char *label,
 
 
 // ClientHello functions.
-
-// ssl_client_hello_init parses |body| as a ClientHello message, excluding the
-// message header, and writes the result to |*out|. It returns true on success
-// and false on error. This function is exported for testing.
-OPENSSL_EXPORT bool ssl_client_hello_init(const SSL *ssl, SSL_CLIENT_HELLO *out,
-                                          Span<const uint8_t> body);
 
 bool ssl_parse_client_hello_with_trailing_data(const SSL *ssl, CBS *cbs,
                                                SSL_CLIENT_HELLO *out);
@@ -3614,6 +3256,9 @@ struct SSL_CONFIG {
   // moment we are not crossing those streams.
   UniquePtr<STACK_OF(CRYPTO_BUFFER)> CA_names;
 
+  // Trust anchor IDs to be requested in the trust_anchors extension.
+  std::optional<Array<uint8_t>> requested_trust_anchors;
+
   Array<uint16_t> supported_group_list;  // our list
 
   // channel_id_private is the client's Channel ID private key, or null if
@@ -3711,15 +3356,6 @@ struct SSL_CONFIG {
   // alps_use_new_codepoint if set indicates we use new ALPS extension codepoint
   // to negotiate and convey application settings.
   bool alps_use_new_codepoint : 1;
-
-  // check_client_certificate_type indicates whether the client, in TLS 1.2 and
-  // below, will check its certificate against the server's requested
-  // certificate types.
-  bool check_client_certificate_type : 1;
-
-  // check_ecdsa_curve indicates whether the server, in TLS 1.2 and below, will
-  // check its certificate against the client's supported ECDSA curves.
-  bool check_ecdsa_curve : 1;
 };
 
 // From RFC 8446, used in determining PSK modes.
@@ -4156,6 +3792,9 @@ struct ssl_ctx_st : public bssl::RefCounted<ssl_ctx_st> {
   // What we put in client hello in the CA extension.
   bssl::UniquePtr<STACK_OF(CRYPTO_BUFFER)> CA_names;
 
+  // What we request in the trust_anchors extension.
+  std::optional<bssl::Array<uint8_t>> requested_trust_anchors;
+
   // Default values to use in SSL structures follow (these are copied by
   // SSL_new)
 
@@ -4360,6 +3999,10 @@ struct ssl_ctx_st : public bssl::RefCounted<ssl_ctx_st> {
   // |aes_hw_override| is true.
   bool aes_hw_override_value : 1;
 
+  // resumption_across_names_enabled indicates whether a TLS 1.3 server should
+  // signal its sessions may be resumed across names in the server certificate.
+  bool resumption_across_names_enabled : 1;
+
  private:
   friend RefCounted;
   ~ssl_ctx_st();
@@ -4447,6 +4090,10 @@ struct ssl_st {
 
   // If enable_early_data is true, early data can be sent and accepted.
   bool enable_early_data : 1;
+
+  // resumption_across_names_enabled indicates whether a TLS 1.3 server should
+  // signal its sessions may be resumed across names in the server certificate.
+  bool resumption_across_names_enabled : 1;
 };
 
 struct ssl_session_st : public bssl::RefCounted<ssl_session_st> {
@@ -4539,7 +4186,7 @@ struct ssl_session_st : public bssl::RefCounted<ssl_session_st> {
   // original_handshake_hash contains the handshake hash (either SHA-1+MD5 or
   // SHA-2, depending on TLS version) for the original, full handshake that
   // created a session. This is used by Channel IDs during resumption.
-  bssl::InplaceVector<uint8_t, EVP_MAX_MD_SIZE> original_handshake_hash;
+  bssl::InplaceVector<uint8_t, SSL_MAX_MD_SIZE> original_handshake_hash;
 
   uint32_t ticket_lifetime_hint = 0;  // Session lifetime hint in seconds
 
@@ -4586,6 +4233,10 @@ struct ssl_session_st : public bssl::RefCounted<ssl_session_st> {
   // has_application_settings indicates whether ALPS was negotiated in this
   // session.
   bool has_application_settings : 1;
+
+  // is_resumable_across_names indicates whether the session may be resumed for
+  // any of the identities presented in the certificate.
+  bool is_resumable_across_names : 1;
 
   // quic_early_data_context is used to determine whether early data must be
   // rejected when performing a QUIC handshake.

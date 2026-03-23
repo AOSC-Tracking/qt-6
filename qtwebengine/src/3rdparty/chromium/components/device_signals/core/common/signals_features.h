@@ -13,6 +13,25 @@ namespace enterprise_signals::features {
 // Allows the reporting of client certificates for managed users.
 BASE_DECLARE_FEATURE(kAllowClientCertificateReportingForUsers);
 
+BASE_DECLARE_FEATURE(kProfileSignalsReportingEnabled);
+BASE_DECLARE_FEATURE(kBrowserSignalsReportingEnabled);
+BASE_DECLARE_FEATURE(kDetectedAgentSignalCollectionEnabled);
+
+// Signals reporting related feature parameters.
+extern const base::FeatureParam<bool> kTriggerOnCookieChange;
+extern const base::FeatureParam<base::TimeDelta>
+    kProfileSignalsReportingInterval;
+
+// Returns true if additional device signals reporting for profile-level Chrome
+// reports has been enabled.
+bool IsProfileSignalsReportingEnabled();
+// Returns true if additional device signals reporting for browser-level Chrome
+// reports has been enabled.
+bool IsBrowserSignalsReportingEnabled();
+// Returns true if detected agent signal collection has been
+// enabled.
+bool IsDetectedAgentSignalCollectionEnabled();
+
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_CHROMEOS)
 BASE_DECLARE_FEATURE(kDeviceSignalsConsentDialog);

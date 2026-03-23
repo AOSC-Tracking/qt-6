@@ -1,6 +1,7 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // Copyright (C) 2016 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qapplication.h"
 #include "qapplication_p.h"
@@ -24,13 +25,14 @@
 #include "qstylehints.h"
 #if QT_CONFIG(accessibility)
 # include "qaccessible.h"
+# include <private/qaccessiblecache_p.h>
 #endif
 #include <qpa/qplatformwindow.h>
 #include <qpa/qplatformwindow_p.h>
 #include "private/qwidgetwindow_p.h"
 #include "qpainter.h"
 #if QT_CONFIG(tooltip)
-#include "qtooltip.h"
+#include "private/qtooltip_p.h"
 #endif
 #if QT_CONFIG(whatsthis)
 #include "qwhatsthis.h"
@@ -160,6 +162,7 @@ QWidgetPrivate::QWidgetPrivate(decltype(QObjectPrivateVersion) version)
       , childrenHiddenByWState(0)
       , childrenShownByExpose(0)
       , dontSetExplicitShowHide(0)
+      , inheritStyleRecursionGuard(0)
 #if defined(Q_OS_WIN)
       , noPaintOnScreen(0)
 #endif
@@ -387,7 +390,9 @@ void QWidget::setAutoFillBackground(bool enabled)
     example, it is possible to display a button as a top-level window, but most
     people prefer to put their buttons inside other widgets, such as QDialog.
 
-    \image parent-child-widgets.png A parent widget containing various child widgets.
+    \image parent-child-widgets.png
+           {Appointment widget with labeled child widgets}
+    \caption A parent widget containing various child widgets.
 
     The diagram above shows a QGroupBox widget being used to hold various child
     widgets in a layout provided by QGridLayout. The QLabel child widgets have
@@ -687,6 +692,8 @@ void QWidget::setAutoFillBackground(bool enabled)
     can be fine-tuned to achieve different effects.
 
     \image propagation-custom.png
+           {Three pixmaps of a house with different background properties:
+           transparent, filled with white, and uninitialized}
 
     In the above diagram, a semi-transparent rectangular child widget with an
     area removed is constructed and added to a parent widget (a QLabel showing
@@ -730,6 +737,8 @@ void QWidget::setAutoFillBackground(bool enabled)
     in a non-standard way, as shown in the diagram below.
 
     \image propagation-standard.png
+           {One widget has a transparent background
+           and the other widget has a filled background}
 
     The scope for customizing the painting behavior of standard Qt widgets,
     without resorting to subclassing, is slightly less than that possible for
@@ -932,6 +941,14 @@ void QWidgetPrivate::init(QWidget *parentWidget, Qt::WindowFlags f)
     isWidget = true;
     wasWidget = true;
 
+#if QT_DEPRECATED_SINCE(6, 11)
+    QT_IGNORE_DEPRECATIONS(
+    Q_ASSERT_X(!f.testFlag(Qt::WindowType::Desktop), Q_FUNC_INFO, "Qt::WindowType::Desktop is not allowed.");
+    if (f.testFlag(Qt::WindowType::Desktop))
+        f.setFlag(Qt::WindowType::Desktop, false);
+    )
+#endif
+
     Q_ASSERT_X(q != parentWidget, Q_FUNC_INFO, "Cannot parent a QWidget to itself");
 
     if (Q_UNLIKELY(!qobject_cast<QApplication *>(QCoreApplication::instance())))
@@ -979,9 +996,7 @@ void QWidgetPrivate::init(QWidget *parentWidget, Qt::WindowFlags f)
     data.crect = parentWidget ? QRect(0,0,100,30) : QRect(0,0,640,480);
     initFocusChain();
 
-    if ((f & Qt::WindowType_Mask) == Qt::Desktop)
-        q->create();
-    else if (parentWidget)
+    if (parentWidget)
         q->setParent(parentWidget, data.window_flags);
     else {
         adjustFlags(data.window_flags, q);
@@ -1199,7 +1214,11 @@ void QWidget::create(WId window, bool initializeWindow, bool destroyOldWindow)
     if (QApplicationPrivate::testAttribute(Qt::AA_NativeWindows))
         setAttribute(Qt::WA_NativeWindow);
 
-    if (isWindow()) {
+    if (isWindow()
+#if QT_CONFIG(graphicsview)
+        && !graphicsProxyWidget()
+#endif
+    ) {
         // Make top levels automatically respect safe areas by default
         auto *topExtra = d->maybeTopData();
         if (!topExtra || !topExtra->explicitContentsMarginsRespectsSafeArea) {
@@ -1214,7 +1233,7 @@ void QWidget::create(WId window, bool initializeWindow, bool destroyOldWindow)
     d->create();
 
     // A real toplevel window needs a paint manager
-    if (isWindow() && windowType() != Qt::Desktop)
+    if (isWindow())
         d->topData()->repaintManager.reset(new QWidgetRepaintManager(this));
 
     d->setModal_sys();
@@ -1232,12 +1251,10 @@ void QWidget::create(WId window, bool initializeWindow, bool destroyOldWindow)
         d->setWindowTitle_helper(d->topData()->caption);
     if (isWindow() && !d->topData()->filePath.isEmpty())
         d->setWindowFilePath_helper(d->topData()->filePath);
-    if (windowType() != Qt::Desktop) {
-        d->updateSystemBackground();
+    d->updateSystemBackground();
 
-        if (isWindow() && !testAttribute(Qt::WA_SetWindowIcon))
-            d->setWindowIcon_sys();
-    }
+    if (isWindow() && !testAttribute(Qt::WA_SetWindowIcon))
+        d->setWindowIcon_sys();
 
     // Frame strut update needed in cases where there are native widgets such as QGLWidget,
     // as those force native window creation on their ancestors before they are shown.
@@ -1316,10 +1333,8 @@ void QWidgetPrivate::create()
     if (win->isTopLevel()) {
         QScreen *targetScreen = topData()->initialScreen;
         topData()->initialScreen = nullptr;
-        if (!targetScreen) {
-            targetScreen = q->windowType() != Qt::Desktop
-                ? q->screen() : nullptr;
-        }
+        if (!targetScreen)
+            targetScreen = q->screen();
         win->setScreen(targetScreen);
     }
 
@@ -1345,12 +1360,10 @@ void QWidgetPrivate::create()
     qt_window_private(win)->positionPolicy = topData()->posIncludesFrame ?
         QWindowPrivate::WindowFrameInclusive : QWindowPrivate::WindowFrameExclusive;
 
-    if (q->windowType() != Qt::Desktop || q->testAttribute(Qt::WA_NativeWindow)) {
-        win->create();
-        // Enable nonclient-area events for QDockWidget and other NonClientArea-mouse event processing.
-        if (QPlatformWindow *platformWindow = win->handle())
-            platformWindow->setFrameStrutEventsEnabled(true);
-    }
+    win->create();
+    // Enable nonclient-area events for QDockWidget and other NonClientArea-mouse event processing.
+    if (QPlatformWindow *platformWindow = win->handle())
+        platformWindow->setFrameStrutEventsEnabled(true);
 
     data.window_flags = win->flags();
 
@@ -1360,23 +1373,25 @@ void QWidgetPrivate::create()
             xcbWindow->setWindowRole(topData()->role);
     }
 #endif
+#if QT_CONFIG(wayland)
+    if (!topData()->role.isNull()) {
+        if (auto *waylandWindow = dynamic_cast<QWaylandWindow*>(win->handle()))
+            waylandWindow->setSessionRestoreId(topData()->role);
+    }
+#endif
 
     QBackingStore *store = q->backingStore();
     usesRhiFlush = false;
 
-    if (q->windowType() == Qt::Desktop) {
-        q->setAttribute(Qt::WA_PaintOnScreen, true);
-    } else {
-        if (!store && q->isWindow())
-            q->setBackingStore(new QBackingStore(win));
+    if (!store && q->isWindow())
+        q->setBackingStore(new QBackingStore(win));
 
-        QPlatformBackingStoreRhiConfig rhiConfig;
-        usesRhiFlush = q_evaluateRhiConfig(q, &rhiConfig, nullptr);
-        if (usesRhiFlush && q->backingStore()) {
-            // Trigger creation of support infrastructure up front,
-            // now that we have a specific RHI configuration.
-            q->backingStore()->handle()->createRhi(win, rhiConfig);
-        }
+    QPlatformBackingStoreRhiConfig rhiConfig;
+    usesRhiFlush = q_evaluateRhiConfig(q, &rhiConfig, nullptr);
+    if (usesRhiFlush && q->backingStore()) {
+        // Trigger creation of support infrastructure up front,
+        // now that we have a specific RHI configuration.
+        q->backingStore()->handle()->createRhi(win, rhiConfig);
     }
 
     setWindowModified_helper();
@@ -1422,7 +1437,9 @@ void QWidgetPrivate::createTLSysExtra()
         if (extra->topextra->opacity != 255 && q->isWindow())
             extra->topextra->window->setOpacity(qreal(extra->topextra->opacity) / qreal(255));
 
-        const bool isTipLabel = q->inherits("QTipLabel");
+#if QT_CONFIG(tooltip)
+        const bool isTipLabel = qobject_cast<const QTipLabel *>(q) != nullptr;
+#endif
         const bool isAlphaWidget = !isTipLabel && q->inherits("QAlphaWidget");
 #ifdef Q_OS_WIN
         // Pass on native parent handle for Widget embedded into Active X.
@@ -1451,6 +1468,11 @@ QWidget::~QWidget()
 {
     Q_D(QWidget);
     d->data.in_destructor = true;
+
+#if QT_CONFIG(accessibility)
+    if (QGuiApplicationPrivate::is_app_running && !QGuiApplicationPrivate::is_app_closing && QAccessible::isActive())
+        QAccessibleCache::instance()->sendObjectDestroyedEvent(this);
+#endif
 
 #if defined (QT_CHECK_STATE)
     if (Q_UNLIKELY(paintingActive()))
@@ -2676,7 +2698,7 @@ void QWidgetPrivate::setStyle_helper(QStyle *newStyle, bool propagate)
     extra->style = newStyle;
 
     // repolish
-    if (polished && q->windowType() != Qt::Desktop && oldStyle != q->style()) {
+    if (polished) {
         oldStyle->unpolish(q);
         q->style()->polish(q);
     }
@@ -2724,6 +2746,12 @@ void QWidgetPrivate::inheritStyle()
         proxy->repolish(q);
         return;
     }
+    if (inheritStyleRecursionGuard)
+        return;
+    inheritStyleRecursionGuard = true;
+    const auto resetGuard = qScopeGuard([&]() {
+            inheritStyleRecursionGuard = false;
+        });
 
     QStyle *origStyle = proxy ? proxy->base : extraStyle;
     QWidget *parent = q->parentWidget();
@@ -3377,8 +3405,25 @@ QAction *QWidget::addAction(const QIcon &icon, const QString &text, const QKeySe
 void QWidget::setEnabled(bool enable)
 {
     Q_D(QWidget);
+
+#if QT_CONFIG(accessibility)
+    const bool wasEnabled = !testAttribute(Qt::WA_ForceDisabled);
+#endif
+
     setAttribute(Qt::WA_ForceDisabled, !enable);
     d->setEnabled_helper(enable);
+
+#if QT_CONFIG(accessibility)
+    // A widget is enabled if it's parent and itself is enabled.
+    // We do not send state changed events recursively. It is up
+    // to the receiver of the events to check children if required.
+    if (QAccessible::isActive() && wasEnabled != enable) {
+        QAccessible::State states;
+        states.disabled = 1;
+        QAccessibleStateChangeEvent scEvent(this, states);
+        QAccessible::updateAccessibility(&scEvent);
+    }
+#endif
 }
 
 void QWidgetPrivate::setEnabled_helper(bool enable)
@@ -3436,10 +3481,6 @@ void QWidgetPrivate::setEnabled_helper(bool enable)
 
     Setting this property to true announces to the system that this
     widget \e may be able to accept drop events.
-
-    If the widget is the desktop (windowType() == Qt::Desktop), this may
-    fail if another application is using the desktop; you can call
-    acceptDrops() to test if this occurs.
 
     \warning Do not modify this property in a drag and drop event handler.
 
@@ -6342,17 +6383,24 @@ QString QWidget::windowRole() const
 */
 void QWidget::setWindowRole(const QString &role)
 {
-#if QT_CONFIG(xcb)
+#if QT_CONFIG(xcb) || QT_CONFIG(wayland)
     Q_D(QWidget);
     d->createTLExtra();
     d->topData()->role = role;
-    if (windowHandle()) {
-        if (auto *xcbWindow = dynamic_cast<QXcbWindow*>(windowHandle()->handle()))
-            xcbWindow->setWindowRole(role);
-    }
 #else
     Q_UNUSED(role);
 #endif
+
+    if (windowHandle()) {
+#if QT_CONFIG(xcb)
+        if (auto *xcbWindow = dynamic_cast<QXcbWindow*>(windowHandle()->handle()))
+            xcbWindow->setWindowRole(role);
+#endif
+#if QT_CONFIG(wayland)
+        if (auto *waylandWindow = dynamic_cast<QWaylandWindow*>(windowHandle()->handle()))
+           waylandWindow->setSessionRestoreId(role);
+#endif
+    }
 }
 
 /*!
@@ -7716,6 +7764,14 @@ QRect QWidget::contentsRect() const
 QMargins QWidgetPrivate::safeAreaMargins() const
 {
     Q_Q(const QWidget);
+
+#if QT_CONFIG(graphicsview)
+    // Don't report margins for proxied widgets, as the logic
+    // below doesn't handle that case (yet).
+    if (nearestGraphicsProxyWidget(q))
+        return QMargins();
+#endif
+
     QWidget *nativeWidget = q->window();
     if (!nativeWidget->windowHandle())
         return QMargins();
@@ -9210,8 +9266,7 @@ bool QWidget::event(QEvent *event)
         d->resolveFont();
         break;
     case QEvent::ApplicationPaletteChange:
-        if (!(windowType() == Qt::Desktop))
-            d->resolvePalette();
+        d->resolvePalette();
         break;
 
     case QEvent::ToolBarChange:
@@ -9459,7 +9514,7 @@ void QWidget::changeEvent(QEvent * event)
         break;
 
     case QEvent::ThemeChange:
-        if (QGuiApplication::desktopSettingsAware() && windowType() != Qt::Desktop
+        if (QGuiApplication::desktopSettingsAware()
             && qApp && !QCoreApplication::closingDown()) {
             if (testAttribute(Qt::WA_WState_Polished))
                 QApplication::style()->unpolish(this);
@@ -10577,6 +10632,10 @@ void QWidget::setWindowFlags(Qt::WindowFlags flags)
     Sets the window flag \a flag on this widget if \a on is true;
     otherwise clears the flag.
 
+    \note This function calls setParent() when changing the flags for
+    a window, causing the widget to be hidden. You must call show() to make
+    the widget visible again.
+
     \sa setWindowFlags(), windowFlags(), windowType()
 */
 void QWidget::setWindowFlag(Qt::WindowType flag, bool on)
@@ -10595,6 +10654,15 @@ void QWidget::setWindowFlag(Qt::WindowType flag, bool on)
 void QWidgetPrivate::setWindowFlags(Qt::WindowFlags flags)
 {
     Q_Q(QWidget);
+#if QT_DEPRECATED_SINCE(6, 11)
+    QT_IGNORE_DEPRECATIONS(
+    if (flags.testFlag(Qt::WindowType::Desktop)) {
+        qWarning() << "Qt::WindowType::Desktop has been deprecated in Qt 6. Ignoring.";
+        flags.setFlag(Qt::WindowType::Desktop, false);
+    }
+    )
+#endif
+
     if (q->data->window_flags == flags)
         return;
 
@@ -10729,12 +10797,9 @@ void QWidget::setParent(QWidget *parent, Qt::WindowFlags f)
     if (f & Qt::Window) // Frame geometry likely changes, refresh.
         d->data.fstrut_dirty = true;
 
-    QWidget *desktopWidget = nullptr;
-    if (parent && parent->windowType() == Qt::Desktop)
-        desktopWidget = parent;
-    bool newParent = (parent != parentWidget()) || desktopWidget;
+    bool newParent = (parent != parentWidget());
 
-    if (newParent && parent && !desktopWidget) {
+    if (newParent && parent) {
         if (testAttribute(Qt::WA_NativeWindow) && !QCoreApplication::testAttribute(Qt::AA_DontCreateNativeWidgetSiblings))
             parent->d_func()->enforceNativeChildren();
         else if (parent->d_func()->nativeChildrenForced() || parent->testAttribute(Qt::WA_PaintOnScreen))
@@ -10778,9 +10843,6 @@ void QWidget::setParent(QWidget *parent, Qt::WindowFlags f)
         focusWidget()->clearFocus();
 
     d->setParent_sys(parent, f);
-
-    if (desktopWidget)
-        parent = nullptr;
 
     if (d->textureChildSeen && parent) {
         // set the textureChildSeen flag up the whole parent chain
@@ -10924,6 +10986,14 @@ void QWidget::setParent(QWidget *parent, Qt::WindowFlags f)
             }
         }
     }
+
+#if QT_CONFIG(accessibility)
+    if (QGuiApplicationPrivate::is_app_running && !QGuiApplicationPrivate::is_app_closing) {
+        QAccessibleEvent qaEvent(this, QAccessible::ParentChanged);
+        QAccessible::updateAccessibility(&qaEvent);
+    }
+#endif
+
 }
 
 void QWidgetPrivate::setParent_sys(QWidget *newparent, Qt::WindowFlags f)
@@ -10934,14 +11004,6 @@ void QWidgetPrivate::setParent_sys(QWidget *newparent, Qt::WindowFlags f)
     bool wasCreated = q->testAttribute(Qt::WA_WState_Created);
 
     QScreen *targetScreen = nullptr;
-    // Handle a request to move the widget to a particular screen
-    if (newparent && newparent->windowType() == Qt::Desktop) {
-        // make sure the widget is created on the same screen as the
-        // programmer specified desktop widget
-        targetScreen = newparent->screen();
-        newparent = nullptr;
-    }
-
     setWinId(0);
 
     if (!newparent) {
@@ -11111,6 +11173,7 @@ void QWidget::scroll(int dx, int dy)
         for (const QRect &rect : d->dirty)
             proxy->update(rect.translated(dx, dy));
         proxy->scroll(dx, dy, proxy->subWidgetRect(this));
+        d->scrollChildren(dx, dy); // QTBUG-138381: scroll item view cell widgets
         return;
     }
 #endif
@@ -11386,7 +11449,7 @@ void QWidget::setAttribute(Qt::WidgetAttribute attribute, bool on)
                       "QWidgetPrivate::high_attributes[] too small to contain all attributes in WidgetAttribute");
 #ifdef Q_OS_WIN
     // ### Don't use PaintOnScreen+paintEngine() to do native painting in some future release
-    if (attribute == Qt::WA_PaintOnScreen && on && windowType() != Qt::Desktop && !inherits("QGLWidget")) {
+    if (attribute == Qt::WA_PaintOnScreen && on && !inherits("QGLWidget")) {
         // see ::paintEngine for details
         paintEngine();
         if (d->noPaintOnScreen)
@@ -12209,7 +12272,7 @@ void QWidgetPrivate::stackUnder_sys(QWidget*)
 QRect QWidgetPrivate::frameStrut() const
 {
     Q_Q(const QWidget);
-    if (!q->isWindow() || (q->windowType() == Qt::Desktop) || q->testAttribute(Qt::WA_DontShowOnScreen)) {
+    if (!q->isWindow() || q->testAttribute(Qt::WA_DontShowOnScreen)) {
         // x2 = x1 + w - 1, so w/h = 1
         return QRect(0, 0, 1, 1);
     }
@@ -12608,28 +12671,26 @@ void QWidget::destroy(bool destroyWindow, bool destroySubWindows)
 
     setAttribute(Qt::WA_WState_Created, false);
 
-    if (windowType() != Qt::Desktop) {
-        if (destroySubWindows) {
-            QObjectList childList(children());
-            for (int i = 0; i < childList.size(); i++) {
-                QWidget *widget = qobject_cast<QWidget *>(childList.at(i));
-                if (widget && widget->testAttribute(Qt::WA_NativeWindow)) {
-                    if (widget->windowHandle()) {
-                        widget->destroy();
-                    }
+    if (destroySubWindows) {
+        QObjectList childList(children());
+        for (int i = 0; i < childList.size(); i++) {
+            QWidget *widget = qobject_cast<QWidget *>(childList.at(i));
+            if (widget && widget->testAttribute(Qt::WA_NativeWindow)) {
+                if (widget->windowHandle()) {
+                    widget->destroy();
                 }
             }
         }
-        if (destroyWindow) {
-            d->deleteTLSysExtra();
-        } else {
-            if (parentWidget() && parentWidget()->testAttribute(Qt::WA_WState_Created)) {
-                d->hide_sys();
-            }
-        }
-
-        d->setWinId(0);
     }
+    if (destroyWindow) {
+        d->deleteTLSysExtra();
+    } else {
+        if (parentWidget() && parentWidget()->testAttribute(Qt::WA_WState_Created)) {
+            d->hide_sys();
+        }
+    }
+
+    d->setWinId(0);
 }
 
 /*!
@@ -13089,11 +13150,22 @@ int QWidget::metric(PaintDeviceMetric m) const
 void QWidget::initPainter(QPainter *painter) const
 {
     const QPalette &pal = palette();
-    painter->d_func()->state->pen = QPen(pal.brush(foregroundRole()), 1);
-    painter->d_func()->state->bgBrush = pal.brush(backgroundRole());
-    QFont f(font(), const_cast<QWidget *>(this));
-    painter->d_func()->state->deviceFont = f;
-    painter->d_func()->state->font = f;
+    QPainterPrivate *painterPrivate = QPainterPrivate::get(painter);
+
+    painterPrivate->state->pen = QPen(pal.brush(foregroundRole()), 1);
+    painterPrivate->state->bgBrush = pal.brush(backgroundRole());
+    QFont f(font(), this);
+    painterPrivate->state->deviceFont = f;
+    painterPrivate->state->font = f;
+
+    painterPrivate->setEngineDirtyFlags({
+        QPaintEngine::DirtyPen,
+        QPaintEngine::DirtyBrush,
+        QPaintEngine::DirtyFont,
+    });
+
+    if (painterPrivate->extended)
+        painterPrivate->extended->penChanged();
 }
 
 /*!

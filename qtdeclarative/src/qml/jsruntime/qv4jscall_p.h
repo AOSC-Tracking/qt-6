@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 #ifndef QV4JSCALL_H
 #define QV4JSCALL_H
 
@@ -37,10 +38,10 @@ QT_BEGIN_NAMESPACE
 namespace QV4 {
 
 template<typename Args>
-CallData *callDatafromJS(const Scope &scope, const Args *args, const FunctionObject *f = nullptr)
+CallData *callDatafromJS(const Scope &scope, const Args *args, const FunctionObject *f)
 {
     int size = int(offsetof(QV4::CallData, args)/sizeof(QV4::Value)) + args->argc;
-    CallData *ptr = reinterpret_cast<CallData *>(scope.alloc<Scope::Uninitialized>(size));
+    CallData *ptr = reinterpret_cast<CallData *>(scope.alloc(size));
     ptr->function = Encode::undefined();
     ptr->context = Encode::undefined();
     ptr->accumulator = Encode::undefined();
@@ -57,7 +58,7 @@ CallData *callDatafromJS(const Scope &scope, const Args *args, const FunctionObj
 struct JSCallArguments
 {
     JSCallArguments(const Scope &scope, int argc = 0)
-        : thisObject(scope.alloc()), args(scope.alloc(argc)), argc(argc)
+        : thisObject(scope.constructUndefined(1)), args(scope.constructUndefined (argc)), argc(argc)
     {
     }
 

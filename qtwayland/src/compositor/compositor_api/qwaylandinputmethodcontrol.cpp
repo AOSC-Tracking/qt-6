@@ -71,6 +71,15 @@ void QWaylandInputMethodControl::inputMethodEvent(QInputMethodEvent *event)
     }
 }
 
+/*!
+ * \property QWaylandInputMethodControl::enabled
+ *
+ * This property indicates whether the input method control is enabled for the
+ * surface.
+ *
+ * The property is \c true when text input is enabled for the associated
+ * surface; otherwise \c false.
+ */
 bool QWaylandInputMethodControl::enabled() const
 {
     Q_D(const QWaylandInputMethodControl);

@@ -15,7 +15,6 @@
 #include "components/viz/common/features.h"
 #include "components/viz/common/gpu/vulkan_context_provider.h"
 #include "components/viz/common/switches.h"
-#include "gpu/command_buffer/service/service_utils.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/ipc/common/gpu_client_ids.h"
 #include "gpu/ipc/service/gpu_channel_manager.h"
@@ -39,14 +38,9 @@
 namespace viz {
 
 // static
-std::unique_ptr<CompositorGpuThread> CompositorGpuThread::MaybeCreate(
+std::unique_ptr<CompositorGpuThread> CompositorGpuThread::Create(
     const CreateParams& params) {
   DCHECK(params.gpu_channel_manager);
-
-  if (!features::IsDrDcEnabled() ||
-      params.gpu_channel_manager->gpu_driver_bug_workarounds().disable_drdc) {
-    return nullptr;
-  }
 
 #if DCHECK_IS_ON()
 #if BUILDFLAG(IS_ANDROID)
@@ -136,7 +130,6 @@ CompositorGpuThread::GetSharedContextState() {
   const auto& gpu_preferences = gpu_channel_manager_->gpu_preferences();
 
   const bool use_passthrough_decoder =
-      gpu::gles2::PassthroughCommandDecoderSupported() &&
       gpu_preferences.use_passthrough_cmd_decoder;
   gl::GLContextAttribs attribs =
       gpu::gles2::GenerateGLContextAttribsForCompositor(
@@ -197,7 +190,9 @@ CompositorGpuThread::GetSharedContextState() {
 #else
       /*dawn_context_provider=*/nullptr,
 #endif
-      /*peak_memory_monitor=*/weak_ptr_factory_.GetWeakPtr(),
+      /*peak_memory_monitor=*/
+      gpu_channel_manager_->peak_memory_monitor(),
+      /*direct_rendering_display_compositor_enabled=*/true,
       /*created_on_compositor_gpu_thread=*/true);
 
   auto gles2_feature_info = base::MakeRefCounted<gpu::gles2::FeatureInfo>(
@@ -225,6 +220,16 @@ bool CompositorGpuThread::Initialize() {
   // Setup thread options.
   base::Thread::Options thread_options(base::MessagePumpType::DEFAULT, 0);
   thread_options.thread_type = base::ThreadType::kDisplayCritical;
+
+#if BUILDFLAG(IS_MAC)
+  thread_options.message_pump_type = base::MessagePumpType::NS_RUNLOOP;
+
+  // Note: The WorkBatchSize is different from GpuMain thread set. Revisit the
+  // following code if any regression is found. See GpuMain() and
+  // crbug.com/40668161.
+  // std::unique_ptr<base::SingleThreadTaskExecutor> thread_task_executor;
+  // thread_task_executor->SetWorkBatchSize(2);
+#endif
   StartWithOptions(std::move(thread_options));
 
   // Wait until thread is started and Init() is executed in order to return
@@ -277,15 +282,6 @@ void CompositorGpuThread::CleanUp() {
 
   // WatchDogThread destruction should happen on the CompositorGpuThread.
   watchdog_thread_.reset();
-}
-
-void CompositorGpuThread::OnMemoryAllocatedChange(
-    gpu::CommandBufferId id,
-    uint64_t old_size,
-    uint64_t new_size,
-    gpu::GpuPeakMemoryAllocationSource source) {
-  gpu_channel_manager_->GetOnMemoryAllocatedChangeCallback().Run(
-      id, old_size, new_size, source);
 }
 
 void CompositorGpuThread::OnBackgrounded() {

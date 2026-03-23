@@ -39,9 +39,10 @@
 
 #include "glslang/Public/ResourceLimits.h"
 
-TBuiltInResource Resources;
+namespace QtShaderTools {
+static TBuiltInResource Resources;
 
-const TBuiltInResource DefaultTBuiltInResource = {
+static const TBuiltInResource DefaultTBuiltInResource = {
     /* .MaxLights = */ 32,
     /* .MaxClipPlanes = */ 6,
     /* .MaxTextureUnits = */ 32,
@@ -540,3 +541,6 @@ const TBuiltInResource* GetDefaultResources()
 {
     return &DefaultTBuiltInResource;
 }
+
+} // namespace QtShaderTools
+

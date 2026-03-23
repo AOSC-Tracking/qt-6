@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/nacl/config.gni")  # To see if jumbo should be turned off
-
 declare_args() {
   # If true, use a jumbo build (files compiled together) to speed up
   # compilation.
@@ -75,11 +73,6 @@ template("internal_jumbo_target") {
     use_jumbo_build_for_target = true
   }
   if (defined(invoker.never_build_jumbo) && invoker.never_build_jumbo) {
-    use_jumbo_build_for_target = false
-  }
-  if (is_nacl_irt) {
-    # The code is barely compatible with the nacl toolchain anymore and we
-    # don't want to stress it further with jumbo compilation units.
     use_jumbo_build_for_target = false
   }
 

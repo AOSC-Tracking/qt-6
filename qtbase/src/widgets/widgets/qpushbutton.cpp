@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qapplication.h"
 #include "qbitmap.h"
@@ -45,6 +46,7 @@ QT_BEGIN_NAMESPACE
     \inmodule QtWidgets
 
     \image fusion-pushbutton.png
+           {Push button for creating a new document}
 
     The push button, or command button, is perhaps the most commonly
     used widget in any graphical user interface. Push (click) a button
@@ -288,14 +290,7 @@ void QPushButton::initStyleOption(QStyleOptionButton *option) const
         option->features |= QStyleOptionButton::AutoDefaultButton;
     if (d->defaultButton)
         option->features |= QStyleOptionButton::DefaultButton;
-    if (d->down || d->menuOpen)
-        option->state |= QStyle::State_Sunken;
-    if (d->checked)
-        option->state |= QStyle::State_On;
-    if (!d->flat && !d->down)
-        option->state |= QStyle::State_Raised;
-    if (underMouse() && hasMouseTracking())
-        option->state.setFlag(QStyle::State_MouseOver, d->hovering);
+    option->state = d->styleButtonState(option->state);
     option->text = d->text;
     option->icon = d->icon;
     option->iconSize = iconSize();
@@ -512,7 +507,8 @@ bool QPushButton::hitButton(const QPoint &pos) const
 
     Ownership of the menu is \e not transferred to the push button.
 
-    \image fusion-pushbutton-menu.png Screenshot of a Fusion style push button with popup menu.
+    \image fusion-pushbutton-menu.png
+           {Push button with popup menu}
     A push button with popup menus shown in the \l{Qt Widget Gallery}
     {Fusion widget style}.
 
@@ -640,6 +636,21 @@ void QPushButtonPrivate::resetLayoutItemMargins()
     QStyleOptionButton opt;
     q->initStyleOption(&opt);
     setLayoutItemMargins(QStyle::SE_PushButtonLayoutItem, &opt);
+}
+
+QStyle::State QPushButtonPrivate::styleButtonState(QStyle::State state) const
+{
+    Q_Q(const QPushButton);
+    state = QAbstractButtonPrivate::styleButtonState(state);
+    if (menuOpen)
+        state |= QStyle::State_Sunken;
+    if (checked)
+        state |= QStyle::State_On;
+    if (!flat && !down)
+        state |= QStyle::State_Raised;
+    if (q->underMouse() && q->hasMouseTracking())
+        state.setFlag(QStyle::State_MouseOver, hovering);
+    return state;
 }
 
 void QPushButton::setFlat(bool flat)

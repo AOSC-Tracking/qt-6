@@ -224,6 +224,20 @@ TEST(UrlUtilTest, GetValueForKeyInQueryInvalidURL) {
   EXPECT_FALSE(GetValueForKeyInQuery(url, "test", &value));
 }
 
+TEST(UrlUtilTest, GetValueForKeyInQueryNoOutputValue) {
+  GURL url(
+      "http://example.com/path?name=value&boolParam&"
+      "url=http://test.com/q?n1%3Dv1%26n2");
+
+  // False when getting a non-existent query param.
+  EXPECT_FALSE(GetValueForKeyInQuery(url, "non-exist", nullptr));
+
+  // True when query param exists.
+  EXPECT_TRUE(GetValueForKeyInQuery(url, "name", nullptr));
+  EXPECT_TRUE(GetValueForKeyInQuery(url, "boolParam", nullptr));
+  EXPECT_TRUE(GetValueForKeyInQuery(url, "url", nullptr));
+}
+
 TEST(UrlUtilTest, ParseQuery) {
   const GURL url("http://example.com/path?name=value&boolParam&"
                  "url=http://test.com/q?n1%3Dv1%26n2&"
@@ -721,6 +735,45 @@ TEST(UrlUtilTest, SimplifyUrlForRequest) {
   }
 }
 
+TEST(UrlUtilTest, RemoveCredentialsFromUrl) {
+  const struct {
+    GURL input_url;
+    GURL output_url;
+  } kTests[] = {
+      {
+          // Everything other than the username/password should be left alone.
+          GURL("http://a.test:78/foobar?query=1#hash"),
+          GURL("http://a.test:78/foobar?query=1#hash"),
+      },
+      {
+          // Strip username/password.
+          GURL("http://user:pass@a.test"),
+          GURL("http://a.test/"),
+      },
+      {
+          // Try an HTTPS URL.
+          GURL("https://user:pass@a.test:80/sup?yo#hash"),
+          GURL("https://a.test:80/sup?yo#hash"),
+      },
+      {
+          // Try an FTP URL. GURL removes references from these, so don't
+          // include one.
+          GURL("ftp://user:pass@a.test:80/sup?yo"),
+          GURL("ftp://a.test:80/sup?yo"),
+      },
+      {
+          // Try a non-special URL. GURL removes references from these, so don't
+          // include one.
+          GURL("foobar://user:pass@a.test:80/sup?yo"),
+          GURL("foobar://a.test:80/sup?yo"),
+      },
+  };
+  for (const auto& test : kTests) {
+    SCOPED_TRACE(test.input_url.spec());
+    EXPECT_EQ(test.output_url, RemoveCredentialsFromUrl(test.input_url));
+  }
+}
+
 TEST(UrlUtilTest, ChangeWebSocketSchemeToHttpScheme) {
   struct {
     const char* const input_url;
@@ -766,6 +819,42 @@ TEST(UrlUtilTest, SchemeHasNetworkHost) {
   EXPECT_FALSE(IsStandardSchemeWithNetworkHost(kCustomSchemeWithHost));
   EXPECT_FALSE(IsStandardSchemeWithNetworkHost(kCustomSchemeWithoutAuthority));
   EXPECT_FALSE(IsStandardSchemeWithNetworkHost(kNonStandardScheme));
+}
+
+TEST(UrlUtilTest, GetOriginRelation) {
+  using enum OriginRelation;
+
+  const url::Origin kExampleOrigin =
+      url::Origin::Create(GURL("https://example.test"));
+  EXPECT_EQ(GetOriginRelation(kExampleOrigin, kExampleOrigin), kSameOrigin);
+
+  EXPECT_EQ(GetOriginRelation(
+                kExampleOrigin,
+                url::Origin::Create(GURL("https://other.example.test"))),
+            kSameSite);
+
+  EXPECT_EQ(
+      GetOriginRelation(kExampleOrigin,
+                        url::Origin::Create(GURL("https://cross-site.test"))),
+      kCrossSite);
+
+  // Same-site rules about schemes are followed.
+  const url::Origin cross_scheme_origin =
+      url::Origin::Create(GURL("http://example.test"));
+  EXPECT_EQ(GetOriginRelation(kExampleOrigin, cross_scheme_origin), kCrossSite);
+
+  // Same-site rules about opaque origins are followed.
+  EXPECT_EQ(
+      GetOriginRelation(kExampleOrigin, kExampleOrigin.DeriveNewOpaqueOrigin()),
+      kCrossSite);
+
+  // Cross-port origins are same-site.
+  EXPECT_EQ(
+      GetOriginRelation(kExampleOrigin,
+                        url::Origin::CreateFromNormalizedTuple(
+                            kExampleOrigin.scheme(), kExampleOrigin.host(),
+                            kExampleOrigin.port() + 1)),
+      kSameSite);
 }
 
 TEST(UrlUtilTest, GetIdentityFromURL) {

@@ -21,7 +21,7 @@ namespace internal {
 namespace compiler {
 
 CommonOperatorReducer::CommonOperatorReducer(
-    Editor* editor, Graph* graph, JSHeapBroker* broker,
+    Editor* editor, TFGraph* graph, JSHeapBroker* broker,
     CommonOperatorBuilder* common, MachineOperatorBuilder* machine,
     Zone* temp_zone, BranchSemantics default_branch_semantics)
     : AdvancedReducer(editor),
@@ -32,7 +32,7 @@ CommonOperatorReducer::CommonOperatorReducer(
       dead_(graph->NewNode(common->Dead())),
       zone_(temp_zone),
       default_branch_semantics_(default_branch_semantics) {
-  NodeProperties::SetType(dead_, Type::None());
+  NodeProperties::SetType(dead_, compiler::Type::None());
 }
 
 Reduction CommonOperatorReducer::Reduce(Node* node) {

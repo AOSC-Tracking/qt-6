@@ -10,10 +10,13 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/types/id_type.h"
+#include "base/types/pass_key.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browsing_instance_id.h"
 #include "content/public/browser/child_process_security_policy.h"
+#include "content/public/browser/process_allocation_context.h"
 #include "content/public/browser/site_instance_process_assignment.h"
+#include "content/public/browser/site_instance_process_creation_client.h"
 #include "content/public/browser/storage_partition_config.h"
 #include "url/gurl.h"
 
@@ -111,30 +114,31 @@ class CONTENT_EXPORT SiteInstance : public base::RefCounted<SiteInstance> {
   virtual BrowsingInstanceId GetBrowsingInstanceId() = 0;
 
   // Whether this SiteInstance has a running process associated with it.
-  // This may return true before the first call to GetOrCreateProcess(), in
-  // cases where we use process-per-site and there is an existing process
-  // available.
+  // This may return true before the first call to
+  // SiteInstanceImpl::GetOrCreateProcess(), in cases where we use
+  // process-per-site and there is an existing process available.
   virtual bool HasProcess() = 0;
 
   // Returns the current RenderProcessHost being used to render pages for this
   // SiteInstance. If there is no RenderProcessHost (because either none has
   // yet been created or there was one but it was cleanly destroyed (e.g. when
   // it is not actively being used)), this method will crash.
-  // Use `GetOrCreateProcess` instead if renderer process creation is
-  // required.
+  // For non-test code trying to create a renderer process, the
+  // GetOrCreateProcess() function in the content-internal class
+  // SiteInstanceImpl shall be used.
   virtual RenderProcessHost* GetProcess() = 0;
 
   // Returns the current RenderProcessHost being used to render pages for this
-  // SiteInstance.  If there is no RenderProcessHost (because either none has
-  // yet been created or there was one but it was cleanly destroyed (e.g. when
-  // it is not actively being used)), this method will create a new
-  // RenderProcessHost (and a new ID).  Note that renderer process crashes leave
-  // the current RenderProcessHost (and ID) in place.
-  //
-  // For sites that require process-per-site mode (e.g., NTP), this will
-  // ensure only one RenderProcessHost for the site exists within the
-  // BrowserContext.
-  virtual RenderProcessHost* GetOrCreateProcess() = 0;
+  // SiteInstance. This method will create a renderer process if there is not
+  // one. The function is exported only for the renderer prelauncher in cast.
+  // TODO(crbug.com/424051832): Remove the function after migrating
+  // RendererPrelauncher to use the spare renderer.
+  virtual RenderProcessHost* GetOrCreateProcess(
+      base::PassKey<SiteInstanceProcessCreationClient>) = 0;
+
+  // Test-only function that returns the current RenderProcessHost for this
+  // SiteInstance and creates one if there is no RenderProcessHost.
+  virtual RenderProcessHost* GetOrCreateProcessForTesting() = 0;
 
   // Returns the ID of the SiteInstanceGroup this SiteInstance belongs to. If
   // the SiteInstance has no group, return 0, which is an invalid

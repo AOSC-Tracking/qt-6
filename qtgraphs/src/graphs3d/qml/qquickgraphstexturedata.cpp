@@ -1,12 +1,25 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "commonutils_p.h"
 #include "qquickgraphstexturedata_p.h"
 
 #include <QtGraphs/private/qgraphsglobal_p.h>
 
+#include <qtgraphs_tracepoints_p.h>
+
 QT_BEGIN_NAMESPACE
+
+Q_TRACE_PREFIX(qtgraphs,
+                   "QT_BEGIN_NAMESPACE" \
+                   "class QQuickGraphsTextureData;" \
+                   "QT_END_NAMESPACE"
+               )
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DCreateGradient_entry, QSize textureSize);
+Q_TRACE_POINT(qtgraphs, QGraphs3DCreateGradient_exit);
 
 QQuickGraphsTextureData::QQuickGraphsTextureData() {}
 
@@ -15,6 +28,7 @@ QQuickGraphsTextureData::~QQuickGraphsTextureData() {}
 void QQuickGraphsTextureData::createGradient(QLinearGradient gradient)
 {
     const qreal textureWidth = CommonUtils::maxTextureSize();
+    Q_TRACE_SCOPE(QGraphs3DCreateGradient, QSize(textureWidth, gradientTextureHeight));
     setSize(QSize(textureWidth, gradientTextureHeight));
     setFormat(QQuick3DTextureData::RGBA8);
     setHasTransparency(false);
@@ -67,3 +81,5 @@ QColor QQuickGraphsTextureData::linearInterpolate(QColor startColor, QColor endC
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qquickgraphstexturedata_p.cpp"

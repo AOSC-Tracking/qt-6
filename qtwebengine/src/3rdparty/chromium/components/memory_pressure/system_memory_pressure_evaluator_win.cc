@@ -26,12 +26,6 @@ namespace win {
 
 namespace {
 
-// Whether to use available memory commit instead of available physical
-// memory for Windows memory pressure detection.
-BASE_FEATURE(kCommitAvailableMemoryPressure,
-             "UseAvailableMemoryThresholds",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // When enabled, allows setting custom thresholds for commit-based
 // memory pressure detection via the |kCommitAvailableCriticalThresholdMB|
 // and |kCommitAvailableModerateThresholdMB| parameters.
@@ -61,7 +55,24 @@ BASE_FEATURE_PARAM(int,
                    "CommitAvailableModerateThresholdMB",
                    kDefaultCommitAvailableModerateThresholdMb);
 
+// Controls the frequency at which memory pressure is evaluated on Windows.
+BASE_FEATURE(kWindowsMemoryPressurePeriod,
+             "WinMemoryPressurePeriod",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE_PARAM(base::TimeDelta,
+                   kWinMemoryPressurePeriodParam,
+                   &kWindowsMemoryPressurePeriod,
+                   "period",
+                   SystemMemoryPressureEvaluator::kDefaultPeriod);
+
 static const DWORDLONG kMBBytes = 1024 * 1024;
+
+// Constant for early exit commit threshold. Represents 2GB in MB. Used for the
+// initial pressure check to avoid activating the feature study group for users
+// with ample memory. Value based on Memory.CommitAvailableMB UMA, aiming to
+// capture a population similar in size (~13%) to the existing physical memory
+// signal.
+const int kEarlyExitCommitThresholdMb = 2048;
 
 // Implements ObjectWatcher::Delegate by forwarding to a provided callback.
 class MemoryPressureWatcherDelegate
@@ -114,10 +125,6 @@ void MemoryPressureWatcherDelegate::OnObjectSignaled(HANDLE handle) {
 
 }  // namespace
 
-// Check the amount of RAM left every 5 seconds.
-const base::TimeDelta SystemMemoryPressureEvaluator::kMemorySamplingPeriod =
-    base::Seconds(5);
-
 // The following constants have been lifted from similar values in the ChromeOS
 // memory pressure monitor. The values were determined experimentally to ensure
 // sufficient responsiveness of the memory pressure subsystem, and minimal
@@ -125,41 +132,22 @@ const base::TimeDelta SystemMemoryPressureEvaluator::kMemorySamplingPeriod =
 const base::TimeDelta SystemMemoryPressureEvaluator::kModeratePressureCooldown =
     base::Seconds(10);
 
-// TODO(chrisha): Explore the following constants further with an experiment.
-
-// A system is considered 'high memory' if it has more than 1.5GB of system
-// memory available for use by the memory manager (not reserved for hardware
-// and drivers). This is a fuzzy version of the ~2GB discussed below.
-const int SystemMemoryPressureEvaluator::kLargeMemoryThresholdMb = 1536;
-
-// These are the default thresholds used for systems with < ~2GB of physical
-// memory. Such systems have been observed to always maintain ~100MB of
-// available memory, paging until that is the case. To try to avoid paging a
-// threshold slightly above this is chosen. The moderate threshold is slightly
-// less grounded in reality and chosen as 2.5x critical.
+// Many years ago, we observed that Windows maintain ~300MB of available memory,
+// paging until that is the case (this may not be accurate at the time of
+// writing this). Therefore, we consider that there is critical memory pressure
+// when approaching this amount of available memory.
 const int
-    SystemMemoryPressureEvaluator::kSmallMemoryDefaultModerateThresholdMb = 500;
-const int
-    SystemMemoryPressureEvaluator::kSmallMemoryDefaultCriticalThresholdMb = 200;
-
-// These are the default thresholds used for systems with >= ~2GB of physical
-// memory. Such systems have been observed to always maintain ~300MB of
-// available memory, paging until that is the case.
-const int
-    SystemMemoryPressureEvaluator::kLargeMemoryDefaultModerateThresholdMb =
+    SystemMemoryPressureEvaluator::kPhysicalMemoryDefaultModerateThresholdMb =
         1000;
 const int
-    SystemMemoryPressureEvaluator::kLargeMemoryDefaultCriticalThresholdMb = 400;
+    SystemMemoryPressureEvaluator::kPhysicalMemoryDefaultCriticalThresholdMb =
+        400;
 
 SystemMemoryPressureEvaluator::SystemMemoryPressureEvaluator(
     std::unique_ptr<MemoryPressureVoter> voter)
-    : memory_pressure::SystemMemoryPressureEvaluator(std::move(voter)),
-      moderate_threshold_mb_(0),
-      critical_threshold_mb_(0),
-      moderate_pressure_repeat_count_(0) {
-  InferThresholds();
-  StartObserving();
-}
+    : SystemMemoryPressureEvaluator(kPhysicalMemoryDefaultModerateThresholdMb,
+                                    kPhysicalMemoryDefaultCriticalThresholdMb,
+                                    std::move(voter)) {}
 
 SystemMemoryPressureEvaluator::SystemMemoryPressureEvaluator(
     int moderate_threshold_mb,
@@ -178,31 +166,11 @@ SystemMemoryPressureEvaluator::~SystemMemoryPressureEvaluator() {
   StopObserving();
 }
 
-void SystemMemoryPressureEvaluator::InferThresholds() {
-  // Default to a 'high' memory situation, which uses more conservative
-  // thresholds.
-  bool high_memory = true;
-  MEMORYSTATUSEX mem_status = {};
-  if (GetSystemMemoryStatus(&mem_status)) {
-    static const DWORDLONG kLargeMemoryThresholdBytes =
-        static_cast<DWORDLONG>(kLargeMemoryThresholdMb) * kMBBytes;
-    high_memory = mem_status.ullTotalPhys >= kLargeMemoryThresholdBytes;
-  }
-
-  if (high_memory) {
-    moderate_threshold_mb_ = kLargeMemoryDefaultModerateThresholdMb;
-    critical_threshold_mb_ = kLargeMemoryDefaultCriticalThresholdMb;
-  } else {
-    moderate_threshold_mb_ = kSmallMemoryDefaultModerateThresholdMb;
-    critical_threshold_mb_ = kSmallMemoryDefaultCriticalThresholdMb;
-  }
-}
-
 void SystemMemoryPressureEvaluator::StartObserving() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   timer_.Start(
-      FROM_HERE, kMemorySamplingPeriod,
+      FROM_HERE, kWinMemoryPressurePeriodParam.Get(),
       BindRepeating(&SystemMemoryPressureEvaluator::CheckMemoryPressure,
                     weak_ptr_factory_.GetWeakPtr()));
 }
@@ -238,7 +206,7 @@ void SystemMemoryPressureEvaluator::CheckMemoryPressure() {
         // Already in moderate pressure, only notify if sustained over the
         // cooldown period.
         const int kModeratePressureCooldownCycles =
-            kModeratePressureCooldown / kMemorySamplingPeriod;
+            kModeratePressureCooldown / kWinMemoryPressurePeriodParam.Get();
         if (++moderate_pressure_repeat_count_ ==
             kModeratePressureCooldownCycles) {
           moderate_pressure_repeat_count_ = 0;
@@ -277,14 +245,14 @@ SystemMemoryPressureEvaluator::CalculateCurrentPressureLevel() {
       static_cast<int>(mem_status.ullAvailPageFile / kMBBytes);
 
   if (phys_free_mb > moderate_threshold_mb_ &&
-      commit_available_mb > kCommitAvailableModerateThresholdMB.Get()) {
+      commit_available_mb > kEarlyExitCommitThresholdMb) {
     // No memory pressure under any of the 2 detection systems. Return
     // early to avoid activating the experiment for clients who don't
     // have memory pressure.
     return base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE;
   }
 
-  if (base::FeatureList::IsEnabled(kCommitAvailableMemoryPressure)) {
+  if (base::FeatureList::IsEnabled(kCommitAvailableMemoryPressureThresholds)) {
     if (commit_available_mb < kCommitAvailableCriticalThresholdMB.Get()) {
       return base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL;
     }

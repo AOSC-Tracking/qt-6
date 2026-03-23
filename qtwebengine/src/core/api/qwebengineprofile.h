@@ -11,13 +11,13 @@
 #include <QtCore/qobject.h>
 #include <QtCore/qscopedpointer.h>
 #include <QtCore/qstring.h>
+#include <QtNetwork/qsslcertificate.h>
 
 #include <functional>
 #include <memory>
 
 QT_BEGIN_NAMESPACE
 
-class QSslCertificate;
 class QUrl;
 class QWebEngineClientCertificateStore;
 class QWebEngineClientHints;
@@ -49,7 +49,8 @@ public:
     enum PersistentCookiesPolicy {
         NoPersistentCookies,
         AllowPersistentCookies,
-        ForcePersistentCookies
+        ForcePersistentCookies,
+        OnlyPersistentCookies,
     };
     Q_ENUM(PersistentCookiesPolicy)
 

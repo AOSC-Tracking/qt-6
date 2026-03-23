@@ -25,7 +25,6 @@
 #include "ipc/ipc_message.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "services/network/public/mojom/fetch_api.mojom-forward.h"
-#include "services/service_manager/public/cpp/bind_source_info.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/public/mojom/css/preferred_color_scheme.mojom.h"
@@ -36,7 +35,6 @@
 #include "third_party/blink/public/mojom/loader/resource_load_info.mojom-forward.h"
 #include "third_party/blink/public/mojom/media/capture_handle_config.mojom-forward.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/accessibility/ax_location_and_scroll_updates.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 
@@ -64,6 +62,10 @@ enum class VirtualKeyboardMode;
 namespace net::device_bound_sessions {
 struct SessionAccess;
 }  // namespace net::device_bound_sessions
+
+namespace network {
+struct ResourceRequest;
+}  // namespace network
 
 namespace network::mojom {
 class SharedDictionaryAccessDetails;
@@ -241,8 +243,10 @@ class CONTENT_EXPORT WebContentsObserver : public base::CheckedObserver {
 
   // This method is invoked when a write-access Captured Surface Control API is
   // successfully invoked by a tab-capturing Web application. These include:
-  // * CaptureController.sendWheel()
-  // * CaptureController.setZoomLevel()
+  // * CaptureController.forwardWheel()
+  // * CaptureController.increaseZoomLevel()
+  // * CaptureController.decreaseZoomLevel()
+  // * CaptureController.resetZoomLevel()
   //
   // Observing this occurrence allows us to update the UX accordingly; for
   // example, show the user an indicator that the capturing tab is being
@@ -515,6 +519,9 @@ class CONTENT_EXPORT WebContentsObserver : public base::CheckedObserver {
   // Called when a network request issued by the navigation reads or sets a
   // cookie. If a notification is received after the navigation has committed,
   // it will be attributed to the RenderFrameHost created by the navigation.
+  // This method not only includes accesses from the navigation's
+  // request/response, but also accesses from other requests/responses triggered
+  // by the navigation e.g. early hints requests.
   virtual void OnCookiesAccessed(NavigationHandle* navigation_handle,
                                  const CookieAccessDetails& details) {}
 
@@ -674,11 +681,6 @@ class CONTENT_EXPORT WebContentsObserver : public base::CheckedObserver {
   // (a primary main frame of a WebContents, a fenced frame or a MPArch guest).
   virtual void TitleWasSetForMainFrame(RenderFrameHost* render_frame_host) {}
 
-  // These methods are invoked when a Pepper plugin instance is created/deleted
-  // in the DOM.
-  virtual void PepperInstanceCreated() {}
-  virtual void PepperInstanceDeleted() {}
-
   // This method is called when the viewport fit of a WebContents changes.
   virtual void ViewportFitChanged(blink::mojom::ViewportFit value) {}
 
@@ -691,25 +693,6 @@ class CONTENT_EXPORT WebContentsObserver : public base::CheckedObserver {
   // in the viewport meta tag.
   virtual void VirtualKeyboardModeChanged(ui::mojom::VirtualKeyboardMode mode) {
   }
-
-  // Notification that a plugin has crashed.
-  // |plugin_pid| is the process ID identifying the plugin process. Note that
-  // this ID is supplied by the renderer process, so should not be trusted.
-  // Besides, the corresponding process has probably died at this point. The ID
-  // may even have been reused by a new process.
-  virtual void PluginCrashed(const base::FilePath& plugin_path,
-                             base::ProcessId plugin_pid) {}
-
-  // Notification that the given plugin has hung or become unhung. This
-  // notification is only for Pepper plugins.
-  //
-  // The plugin_child_id is the unique child process ID from the plugin. Note
-  // that this ID is supplied by the renderer process, so should be validated
-  // before it's used for anything in case there's an exploited renderer
-  // process.
-  virtual void PluginHungStatusChanged(int plugin_child_id,
-                                       const base::FilePath& plugin_path,
-                                       bool is_hung) {}
 
   // Notifies that an inner WebContents instance has been created with the
   // observed WebContents as its container. |inner_web_contents| has not been
@@ -893,6 +876,12 @@ class CONTENT_EXPORT WebContentsObserver : public base::CheckedObserver {
       const MediaPlayerInfo& video_type,
       const MediaPlayerId& id,
       WebContentsObserver::MediaStoppedReason reason) {}
+
+  // Invoked when the set of tracks in the media has changed. Possible reasons
+  // include adding/removing a track via MediaStream.addTrack()/removeTrack().
+  virtual void MediaMetadataChanged(const MediaPlayerInfo& video_type,
+                                    const MediaPlayerId& id) {}
+
   virtual void MediaResized(const gfx::Size& size, const MediaPlayerId& id) {}
   // Invoked when media enters or exits fullscreen. We must use a heuristic
   // to determine this as it is not trivial for media with custom controls.
@@ -1000,6 +989,18 @@ class CONTENT_EXPORT WebContentsObserver : public base::CheckedObserver {
 
   // Called when a first contentful paint happened in the primary main frame.
   virtual void OnFirstContentfulPaintInPrimaryMainFrame() {}
+
+  // Invoked when a fetch keepalive request is created in this WebContents.
+  //
+  // Note that such request is usually initiated from corresponding renderer
+  // process. This method just captures the time when the request is proxied in
+  // the browser process.
+  //
+  // `resource_request` is the fetch keepalive request that is created.
+  // `initiator_rfh` is the RenderFrameHost that initiates the request.
+  virtual void OnKeepAliveRequestCreated(
+      const network::ResourceRequest& resource_request,
+      RenderFrameHost* initiator_rfh) {}
 
   WebContents* web_contents() const;
 

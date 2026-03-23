@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:low-level-memory-management
 
 #ifndef QV4GC_H
 #define QV4GC_H
@@ -20,13 +21,63 @@
 #include <private/qv4scopedvalue_p.h>
 #include <private/qv4object_p.h>
 #include <private/qv4mmdefs_p.h>
-#include <QVector>
+#include <QList>
 
 #define MM_DEBUG 0
 
 QT_BEGIN_NAMESPACE
 
 namespace QV4 {
+
+// Iterate a potentially growing container without querying the size on each iteration.
+// Return the first index where p doesn't hold, or the end of the container.
+template<typename Container, typename UnaryPred>
+typename Container::size_type reiterate(
+        Container &container, typename Container::size_type first, UnaryPred &&p)
+{
+    auto last = container.size();
+    while (first < last) {
+        do {
+            if (!p(first))
+                return first;
+        } while (++first < last);
+
+        Q_ASSERT(first == last);
+
+        // Re-fetch the container size.
+        // If the container hasn't grown, we're done since last == first, still.
+        // Otherwise, do one more round via the "while (first < last)" above.
+        last = container.size();
+    }
+
+    // Returning last here allows input of an out of range first, saving us
+    // one size check ahead of running this.
+    return last;
+}
+
+// index based version of partition to handle potential growth at the end
+template<typename Container, class UnaryPred>
+typename Container::size_type partition(Container &container, UnaryPred &&p)
+{
+    // Figure out the first entry where p doesn't hold.
+    auto first = reiterate(container, 0, p);
+
+    // Iterate the remaining entries and swap any entry where p holds
+    // to the (moving) end of the front section of the container.
+    // Any time we do that, the front section grows by 1. Therefore, the back
+    // section can only contain entries where p doesn't hold in the end.
+    reiterate(container, first + 1, [&p, &container, &first](const auto i) {
+        if (p(i)) {
+            // It's important to re-resolve container.at(i) for the std::swap.
+            // The container may have grown as result of determining p, thereby
+            // invalidating any reference to an entry taken before.
+            std::swap(container.at(i), container.at(first++));
+        }
+        return true;
+    });
+
+    return first;
+}
 
 struct GCData { virtual ~GCData(){};};
 
@@ -49,6 +100,11 @@ public:
         MarkDrain,
         MarkReady,
         InitCallDestroyObjects,
+        // The following needs to be after InitCallDestroyObjects,
+        // even if it normally would run before it, to ensure that in
+        // a normal incremental run the stack is redrained before this
+        // is run as we make use of that knowledge in a test.
+        CrossValidateIncrementalMarkPhase,
         CallDestroyObjects,
         FreeWeakMaps,
         FreeWeakSets,
@@ -79,6 +135,11 @@ public:
     MemoryManager *mm = nullptr;
     ExtraData stateData; // extra date for specific states
     bool collectTimings = false;
+    #ifdef QT_BUILD_INTERNAL
+    // This is used only to simplify testing.
+    using BitmapError = std::tuple<std::size_t, std::size_t, quintptr>;
+    std::vector<BitmapError> bitmapErrors;
+    #endif
 
     GCStateMachine();
 
@@ -330,7 +391,7 @@ public:
 
     void dumpStats() const;
 
-    size_t getUsedMem() const;
+    size_t getRegularItemsMem() const;
     size_t getAllocatedMem() const;
     size_t getLargeItemsMem() const;
 
@@ -419,7 +480,7 @@ public:
     HugeItemAllocator hugeItemAllocator;
     PersistentValueStorage *m_persistentValues;
     PersistentValueStorage *m_weakValues;
-    QVector<Value *> m_pendingFreedObjectWrapperValue;
+    QList<Value *> m_pendingFreedObjectWrapperValue;
     Heap::MapObject *weakMaps = nullptr;
     Heap::SetObject *weakSets = nullptr;
 
@@ -433,18 +494,34 @@ public:
     enum Blockness : quint8 {Unblocked, NormalBlocked, InCriticalSection };
     Blockness gcBlocked = Unblocked;
     bool aggressiveGC = false;
-    bool gcStats = false;
-    bool gcCollectorStats = false;
+    bool crossValidateIncrementalGC = false;
 
     int allocationCount = 0;
     size_t lastAllocRequestedSlots = 0;
 
-    struct {
-        size_t maxReservedMem = 0;
+    struct Statistics {
         size_t maxAllocatedMem = 0;
-        size_t maxUsedMem = 0;
+        size_t maxUsedBeforeGC = 0;
+        size_t maxUsedAfterGC = 0;
         uint allocations[BlockAllocator::NumBins];
-    } statistics;
+    };
+
+    struct CollectorStatistics
+    {
+        qint64 gcTime = 0;
+        size_t oldUnmanagedSize = 0;
+        size_t regularItemsBefore = 0;
+        size_t largeItemsBefore = 0;
+        size_t oldChunks = 0;
+        bool triggeredByUnmanagedHeap = false;
+
+        void start(MemoryManager *mm);
+        void step(MemoryManager *mm);
+        void end(MemoryManager *mm);
+    };
+
+    std::unique_ptr<Statistics> statistics;
+    std::unique_ptr<CollectorStatistics> collectorStatistics;
 };
 
 /*!

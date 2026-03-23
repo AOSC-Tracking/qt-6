@@ -21,6 +21,7 @@
 #include "base/json/json_writer.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
+#include "base/notimplemented.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -550,7 +551,7 @@ class RenderViewImplScaleFactorTest : public RenderViewImplTest {
     visual_properties.new_size_device_px =
         gfx::ScaleToCeiledSize(gfx::Size(100, 100), dsf);
     visual_properties.compositor_viewport_pixel_rect = gfx::Rect(200, 200);
-    visual_properties.visible_viewport_size =
+    visual_properties.visible_viewport_size_device_px =
         visual_properties.new_size_device_px;
     visual_properties.auto_resize_enabled = web_view_->AutoResizeMode();
     visual_properties.min_size_for_auto_resize = min_size_for_autoresize_;
@@ -959,7 +960,7 @@ TEST_F(RenderViewImplTest, BeginNavigationForWebUI) {
   popup_request.SetRequestContext(blink::mojom::RequestContextType::INTERNAL);
   blink::WebView* new_web_view = frame()->CreateNewWindow(
       popup_request, blink::WebWindowFeatures(), "foo",
-      blink::kWebNavigationPolicyNewForegroundTab,
+      gfx::Rect(0, 0, 100, 100), blink::kWebNavigationPolicyNewForegroundTab,
       network::mojom::WebSandboxFlags::kNone,
       blink::AllocateSessionStorageNamespaceId(), consumed_user_gesture,
       std::nullopt, std::nullopt, /*base_url=*/blink::WebURL());
@@ -1135,9 +1136,10 @@ TEST_F(RenderViewImplScaleFactorTest, DeviceScaleCorrectAfterCrossOriginNav) {
       /*opener_frame_token=*/std::nullopt,
       /*parent_frame_token=*/std::nullopt,
       /*previous_sibling_frame_token=*/std::nullopt,
-      base::UnguessableToken::Create(), blink::mojom::TreeScopeType::kDocument,
-      std::move(replication_state), std::move(widget_params),
-      blink::mojom::FrameOwnerProperties::New(),
+      base::UnguessableToken::Create(),
+      /*navigation_metrics_token=*/base::UnguessableToken::Create(),
+      blink::mojom::TreeScopeType::kDocument, std::move(replication_state),
+      std::move(widget_params), blink::mojom::FrameOwnerProperties::New(),
       /*is_on_initial_empty_document=*/true, blink::DocumentToken(),
       CreateStubPolicyContainer(), /*is_for_nested_main_frame=*/false);
 
@@ -1205,8 +1207,9 @@ TEST_F(RenderViewImplTest, DetachingProxyAlsoDestroysProvisionalFrame) {
       /*opener_frame_token=*/std::nullopt,
       /*parent_frame_token=*/web_frame->GetFrameToken(),
       /*previous_sibling_frame_token=*/std::nullopt,
-      base::UnguessableToken::Create(), blink::mojom::TreeScopeType::kDocument,
-      std::move(replication_state),
+      base::UnguessableToken::Create(),
+      /*navigation_metrics_token=*/base::UnguessableToken::Create(),
+      blink::mojom::TreeScopeType::kDocument, std::move(replication_state),
       /*widget_params=*/nullptr, blink::mojom::FrameOwnerProperties::New(),
       /*is_on_initial_empty_document=*/true, blink::DocumentToken(),
       CreateStubPolicyContainer(), /*is_for_nested_main_frame=*/false);
@@ -1379,61 +1382,6 @@ TEST_F(RenderViewImplTextInputStateChanged, OnImeTypeChanged) {
       EXPECT_EQ(test_case.expected_mode, input_mode);
     }
   }
-}
-
-TEST_F(RenderViewImplTextInputStateChanged,
-       ShouldSuppressKeyboardIsPropagated) {
-  class TestAutofillClient : public blink::WebAutofillClient {
-   public:
-    TestAutofillClient() = default;
-    ~TestAutofillClient() override = default;
-
-    bool ShouldSuppressKeyboard(const blink::WebFormControlElement&) override {
-      return should_suppress_keyboard_;
-    }
-
-    void SetShouldSuppressKeyboard(bool should_suppress_keyboard) {
-      should_suppress_keyboard_ = should_suppress_keyboard;
-    }
-
-   private:
-    bool should_suppress_keyboard_ = false;
-  };
-
-  // Set-up the fake autofill client.
-  TestAutofillClient client;
-  GetMainFrame()->SetAutofillClient(&client);
-
-  // Load an HTML page consisting of one input fields.
-  LoadHTML(
-      "<html>"
-      "<head>"
-      "</head>"
-      "<body>"
-      "<input id=\"test\" type=\"text\"></input>"
-      "</body>"
-      "</html>");
-
-  // Focus the text field, trigger a state update and check that the right IPC
-  // is sent.
-  ExecuteJavaScriptForTests("document.getElementById('test').focus();");
-  main_frame_widget()->UpdateTextInputState();
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(1u, updated_states().size());
-  EXPECT_FALSE(updated_states()[0]->always_hide_ime);
-  ClearState();
-
-  // Tell the client to suppress the keyboard. Check whether always_hide_ime is
-  // set correctly.
-  client.SetShouldSuppressKeyboard(true);
-  main_frame_widget()->UpdateTextInputState();
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(1u, updated_states().size());
-  EXPECT_TRUE(updated_states()[0]->always_hide_ime);
-
-  // Explicitly clean-up the autofill client, as otherwise a use-after-free
-  // happens.
-  GetMainFrame()->SetAutofillClient(nullptr);
 }
 
 TEST_F(RenderViewImplTextInputStateChanged,

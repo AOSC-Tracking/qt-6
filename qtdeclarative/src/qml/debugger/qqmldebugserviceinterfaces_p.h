@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLDEBUGSERVICEINTERFACES_P_H
 #define QQMLDEBUGSERVICEINTERFACES_P_H
@@ -120,8 +121,22 @@ protected:
         QQmlDebugService(s_key, version, parent) {}
 };
 
-class Q_QML_EXPORT QQmlEngineDebugService : public QQmlDebugService
+class Q_QML_EXPORT QQuickEventReplayService : public QQmlDebugService
 {
+    Q_OBJECT
+public:
+    ~QQuickEventReplayService() override;
+
+    static const QString s_key;
+
+protected:
+    friend class QQmlDebugConnector;
+
+    explicit QQuickEventReplayService(float version, QObject *parent = nullptr) :
+          QQmlDebugService(s_key, version, parent) {}
+};
+
+class Q_QML_EXPORT QQmlEngineDebugService : public QQmlDebugService{
     Q_OBJECT
 public:
     ~QQmlEngineDebugService() override;

@@ -53,8 +53,8 @@ struct FieldDescription {
   std::vector<SelectOption> select_options;
   std::vector<SelectOption> datalist_options;
   FieldPropertiesMask properties_mask = 0;
-  FormFieldData::CheckStatus check_status =
-      FormFieldData::CheckStatus::kNotCheckable;
+  bool checked = false;
+  std::optional<int32_t> form_control_ax_id;
 };
 
 // Attributes provided to the test form.
@@ -120,9 +120,6 @@ using FormStructureTestCase = internal::FormStructureTestCase<>;
 // Describes the |form_data|. Use this in SCOPED_TRACE if other logging
 // messages might refer to the form.
 testing::Message DescribeFormData(const FormData& form_data);
-
-// Returns the form field relevant to the |role|.
-FormFieldData CreateFieldByRole(FieldType role);
 
 // Creates a FormFieldData to be fed to the parser.
 FormFieldData GetFormFieldData(const FieldDescription& fd);

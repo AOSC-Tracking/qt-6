@@ -96,20 +96,20 @@ async function createPerfettoTableForTrack(
     order by ts
   `;
 
-  return await createPerfettoTable(engine, tableName, query);
+  return await createPerfettoTable({engine, name: tableName, as: query});
 }
 
-class SqlTableCounterTrack extends BaseCounterTrack {
+export class SqlTableCounterTrack extends BaseCounterTrack {
   constructor(
     trace: Trace,
     uri: string,
-    private readonly sqlTableName: string,
+    private readonly sqlSource: string,
     options?: Partial<CounterOptions>,
   ) {
     super(trace, uri, options);
   }
 
   getSqlSource(): string {
-    return `select * from ${this.sqlTableName}`;
+    return `select * from (${this.sqlSource})`;
   }
 }

@@ -35,13 +35,13 @@
 #include "./fuzztest/domain_core.h"
 #include "./domain_tests/domain_testing.h"
 #include "./fuzztest/internal/table_of_recent_compares.h"
-#include "./fuzztest/internal/type_support.h"
 
 namespace fuzztest {
 namespace {
 
 using ::testing::Contains;
 using ::testing::Gt;
+using ::testing::Not;
 using ::testing::SizeIs;
 using ::testing::UnorderedElementsAre;
 
@@ -59,7 +59,7 @@ using ContainerTypes = testing::Types<
     std::map<int, int>, std::unordered_map<int, int>,
     absl::flat_hash_map<std::string, int>>;
 
-TYPED_TEST_SUITE(ContainerTest, ContainerTypes);
+TYPED_TEST_SUITE(ContainerTest, ContainerTypes, );
 
 TYPED_TEST(ContainerTest, Arbitrary) {
   using T = TypeParam;
@@ -74,7 +74,7 @@ TYPED_TEST(ContainerTest, Arbitrary) {
     // Basic checks to make sure we have a few sizes and values.
     // TODO: Check these values in a more principled way.
     absl::flat_hash_map<size_t, size_t> size_distribution;
-    absl::flat_hash_map<internal::value_type_t<T>, size_t> value_distribution;
+    absl::flat_hash_map<typename T::value_type, size_t> value_distribution;
     for (const auto& s : values) {
       ++size_distribution[s.user_value.size()];
       for (const auto& v : s.user_value) ++value_distribution[v];
@@ -151,7 +151,7 @@ TYPED_TEST(ContainerTest, SettingSizesLimitsOutput) {
   TestMinMaxContainerSize(Arbitrary<T>().WithMaxSize(7), 0, 7);
   TestMinMaxContainerSize(Arbitrary<T>().WithMinSize(3).WithMaxSize(7), 3, 7);
 
-  auto inner = Arbitrary<internal::value_type_t<T>>();
+  auto inner = Arbitrary<typename T::value_type>();
 
   TestMinMaxContainerSize(ContainerOf<T>(inner).WithSize(7), 7, 7);
   TestMinMaxContainerSize(ContainerOf<T>(inner).WithMinSize(7), 7, ~size_t{});
@@ -251,7 +251,7 @@ TEST(Container, MemoryDictionaryMutationMutatesEveryPossibleMatch) {
   std::vector<std::string> mutants;
   for (int i = 0; i < 1000000; ++i) {
     std::string mutant = "abcdabcdabcdabcd";
-    domain.Mutate(mutant, bitgen, {.cmp_tables = &cmp_tables}, false);
+    domain.Mutate(mutant, bitgen, {/*cmp_tables=*/&cmp_tables}, false);
     mutants.push_back(std::move(mutant));
   }
 
@@ -261,6 +261,41 @@ TEST(Container, MemoryDictionaryMutationMutatesEveryPossibleMatch) {
                            "abcdabcd1234abcd",
                            "abcdabcdabcd1234",
                        }));
+}
+
+TEST(Container, ValidatesMemoryDictionaryMutationForInnerDomain) {
+  auto domain = VectorOf(InRange<uint8_t>(10, 128));
+  internal::TablesOfRecentCompares cmp_tables;
+  std::vector<std::vector<uint8_t>> cmp_entries = {{10, 11, 12, 13},
+                                                   {129, 129, 129, 129},
+                                                   {10, 11, 12, 13},
+                                                   {17, 31, 113, 71}};
+  // Fill the table with the same entries repeatly.
+  for (int i = 0; i < cmp_tables.GetMutable<0>().kTableSize; ++i) {
+    cmp_tables.GetMutable<0>().Insert(cmp_entries[0].data(),
+                                      cmp_entries[1].data(), 4);
+    cmp_tables.GetMutable<0>().Insert(cmp_entries[2].data(),
+                                      cmp_entries[3].data(), 4);
+  }
+
+  absl::BitGen bitgen;
+  std::vector<std::vector<uint8_t>> mutants;
+  const double hit_probability =  //
+      1.0 / 4                     // to use dictionaries
+      * 1.0 / 4                   // to use cmp tables
+      * 1.0 / 2                   // to pick the memcmp table
+      * 1.0 / 2                   // to pick one of the entries
+      * 1.0 / 2                   // to apply replacement
+      ;
+  for (int i = 0; i < 1 * IterationsToHitAll(/*num_cases=*/2, hit_probability);
+       ++i) {
+    std::vector<uint8_t> mutant = {10, 11, 12, 13};
+    domain.Mutate(mutant, bitgen, {/*cmp_tables=*/&cmp_tables}, false);
+    mutants.push_back(std::move(mutant));
+  }
+
+  EXPECT_THAT(mutants, Contains(std::vector<uint8_t>{17, 31, 113, 71}));
+  EXPECT_THAT(mutants, Not(Contains(std::vector<uint8_t>{129, 129, 129, 129})));
 }
 
 }  // namespace

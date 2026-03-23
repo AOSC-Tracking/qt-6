@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //
 //  W A R N I N G
@@ -16,6 +18,7 @@
 
 #include "qabstract3dseries_p.h"
 #include "qsurface3dseries.h"
+#include "qvalue3daxis.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -36,10 +39,18 @@ public:
     void setDrawMode(QSurface3DSeries::DrawFlags mode);
     void setTexture(const QImage &texture);
     void setWireframeColor(QColor color);
+    void setRowsSanitized(bool enabled);
 
     void setDataArray(const QSurfaceDataArray &newDataArray);
     void clearRow(qsizetype rowIndex);
     void clearArray();
+
+    void setAxisX(QValue3DAxis *axis);
+    void setAxisY(QValue3DAxis *axis);
+    void setAxisZ(QValue3DAxis *axis);
+    void resetAxisX();
+    void resetAxisY();
+    void resetAxisZ();
 
 private:
     QSurfaceDataArray m_dataArray;
@@ -49,6 +60,10 @@ private:
     QImage m_texture;
     QString m_textureFile;
     QColor m_wireframeColor;
+    bool m_rowsSanitized;
+    QValue3DAxis *m_axisX = nullptr;
+    QValue3DAxis *m_axisY = nullptr;
+    QValue3DAxis *m_axisZ = nullptr;
 };
 
 QT_END_NAMESPACE

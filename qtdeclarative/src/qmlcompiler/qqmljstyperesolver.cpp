@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #include "qqmljstyperesolver_p.h"
 
@@ -136,7 +137,7 @@ QQmlJSTypeResolver::QQmlJSTypeResolver(QQmlJSImporter *importer)
     m_listPropertyType = m_qObjectType->listType();
     Q_ASSERT(m_listPropertyType->internalName() == u"QQmlListProperty<QObject>"_s);
     Q_ASSERT(m_listPropertyType->accessSemantics() == QQmlJSScope::AccessSemantics::Sequence);
-    Q_ASSERT(m_listPropertyType->valueTypeName() == u"QObject"_s);
+    Q_ASSERT(m_listPropertyType->elementTypeName() == u"QObject"_s);
     assertExtension(m_listPropertyType, "Array"_L1);
 
     QQmlJSScope::Ptr emptyType = QQmlJSScope::create();
@@ -788,8 +789,8 @@ bool QQmlJSTypeResolver::canHold(
     if (container == m_qObjectListType || container == m_listPropertyType) {
         if (contained->accessSemantics() != QQmlJSScope::AccessSemantics::Sequence)
             return false;
-        if (QQmlJSScope::ConstPtr value = contained->valueType())
-            return value->isReferenceType();
+        if (QQmlJSScope::ConstPtr element = contained->elementType())
+            return element->isReferenceType();
         return false;
     }
 
@@ -1049,22 +1050,6 @@ QQmlJSScope::ConstPtr QQmlJSTypeResolver::resolveParentProperty(
 
 /*!
  * \internal
- * We can generally determine the relevant component boundaries for each scope. However,
- * if the scope or any of its parents is assigned to a property of which we cannot see the
- * type, we don't know whether the type of that property happens to be Component. In that
- * case, we can't say.
- */
-bool QQmlJSTypeResolver::canFindComponentBoundaries(const QQmlJSScope::ConstPtr &scope) const
-{
-    for (QQmlJSScope::ConstPtr parent = scope; parent; parent = parent->parentScope()) {
-        if (parent->isAssignedToUnknownProperty())
-            return false;
-    }
-    return true;
-}
-
-/*!
- * \internal
  *
  * Retrieves the type of whatever \a name signifies in the given \a scope.
  * \a name can be an ID, a property of the scope, a singleton, an attachment,
@@ -1097,11 +1082,17 @@ QQmlJSScope::ConstPtr QQmlJSTypeResolver::scopedType(
         const QQmlJSScope::ConstPtr &scope, const QString &name,
         QQmlJSScopesByIdOptions options) const
 {
-    if (!canFindComponentBoundaries(scope))
+    QQmlJSScopesById::CertainCallback<QQmlJSScope::ConstPtr> identified;
+    if (m_objectsById.possibleScopes(name, scope, options, identified)
+            != QQmlJSScopesById::Success::Yes) {
+        // Could not determine component boundaries
         return {};
+    }
 
-    if (QQmlJSScope::ConstPtr identified = m_objectsById.scope(name, scope, options))
-        return identified;
+    if (identified.result) {
+        // Found a definite match
+        return identified.result;
+    }
 
     if (QQmlJSScope::ConstPtr base = QQmlJSScope::findCurrentQMLScope(scope)) {
         QQmlJSScope::ConstPtr result;
@@ -1159,12 +1150,18 @@ QQmlJSRegisterContent QQmlJSTypeResolver::scopedType(QQmlJSRegisterContent scope
                                                      QQmlJSScopesByIdOptions options) const
 {
     const QQmlJSScope::ConstPtr contained = scope.containedType();
-    if (!canFindComponentBoundaries(contained))
-        return {};
 
-    if (QQmlJSScope::ConstPtr identified = m_objectsById.scope(name, contained, options)) {
+    QQmlJSScopesById::CertainCallback<QQmlJSScope::ConstPtr> identified;
+    if (m_objectsById.possibleScopes(name, contained, options, identified)
+            != QQmlJSScopesById::Success::Yes) {
+        // Could not determine component boundaries
+        return {};
+    }
+
+    if (identified.result) {
+        // Found a definite match
         return m_pool->createType(
-                identified, lookupIndex, QQmlJSRegisterContent::ObjectById, scope);
+                identified.result, lookupIndex, QQmlJSRegisterContent::ObjectById, scope);
     }
 
     if (QQmlJSScope::ConstPtr base = QQmlJSScope::findCurrentQMLScope(contained)) {
@@ -1253,7 +1250,7 @@ bool QQmlJSTypeResolver::checkEnums(
 
     const auto enums = scope.containedType()->ownEnumerations();
     for (const auto &enumeration : enums) {
-        if ((enumeration.isScoped() || enumeration.isQml()) && enumeration.name() == name) {
+        if (enumeration.name() == name) {
             *result = m_pool->createEnumeration(
                     enumeration, QString(),
                     QQmlJSRegisterContent::Enum,
@@ -1261,8 +1258,8 @@ bool QQmlJSTypeResolver::checkEnums(
             return true;
         }
 
-        if ((!enumeration.isScoped() || enumeration.isQml()
-             || !scope.containedType()->enforcesScopedEnums()) && enumeration.hasKey(name)) {
+        if (!(scope.containedType()->enforcesScopedEnums() && enumeration.isScoped())
+            && enumeration.hasKey(name)) {
             *result = m_pool->createEnumeration(
                     enumeration, name,
                     QQmlJSRegisterContent::Enum,
@@ -1424,10 +1421,12 @@ bool QQmlJSTypeResolver::canPrimitivelyConvertFromTo(
         return true;
     if (isNumeric(from) && isNumeric(to))
         return true;
-    if (isNumeric(from) && to == m_boolType)
+    // We can convert everything to bool.
+    if (to == m_boolType)
         return true;
+
     if (from->accessSemantics() == QQmlJSScope::AccessSemantics::Reference
-            && (to == m_boolType || to == m_stringType)) {
+            && to == m_stringType) {
         return true;
     }
 
@@ -1513,27 +1512,24 @@ bool QQmlJSTypeResolver::canPrimitivelyConvertFromTo(
     if (canConvertFromTo(from, m_jsPrimitiveType) && canConvertFromTo(m_jsPrimitiveType, to))
         return true;
 
-    // We can convert everything to bool.
-    if (to == m_boolType)
-        return true;
-
     if (areEquivalentLists(from, to))
         return true;
 
     if (from->isListProperty()
             && to->accessSemantics() == QQmlJSScope::AccessSemantics::Sequence
-            && canConvertFromTo(from->valueType(), to->valueType())) {
+            && canConvertFromTo(from->elementType(), to->elementType())) {
         return true;
     }
 
     // it is possible to assing a singlar object to a list property if it could be stored in the list
     if (to->accessSemantics() == QQmlJSScope::AccessSemantics::Sequence
-        && from->accessSemantics()  == QQmlJSScope::AccessSemantics::Reference
-        &&  from->inherits(to->valueType()))
+            && from->accessSemantics()  == QQmlJSScope::AccessSemantics::Reference
+            && from->inherits(to->elementType())) {
         return true;
+    }
 
     if (to == m_stringType && from->accessSemantics() == QQmlJSScope::AccessSemantics::Sequence)
-        return canConvertFromTo(from->valueType(), m_stringType);
+        return canConvertFromTo(from->elementType(), m_stringType);
 
     return false;
 }
@@ -1560,7 +1556,7 @@ QQmlJSRegisterContent QQmlJSTypeResolver::memberType(
 
     // If we got a plain type reference we have to check the enums of the _scope_.
     if (contained == metaObjectType())
-        return {};
+        return memberEnumType(type.scope(), name);
 
     if (contained == variantMapType() || contained->inherits(qmlPropertyMapType())) {
         QQmlJSMetaProperty prop;
@@ -1619,7 +1615,7 @@ QQmlJSRegisterContent QQmlJSTypeResolver::memberType(
         return result;
 
     for (auto scope = contained;
-         scope && (scope->scopeType() == QQmlSA::ScopeType::JSFunctionScope
+         scope && (QQmlSA::isFunctionScope(scope->scopeType())
                    || scope->scopeType() == QQmlSA::ScopeType::JSLexicalScope);
          scope = scope->parentScope()) {
         if (auto ownIdentifier = scope->ownJSIdentifier(name)) {
@@ -1634,6 +1630,12 @@ QQmlJSRegisterContent QQmlJSTypeResolver::memberType(
                     QQmlJSRegisterContent::Property,
                     parentScope(scope, type));
         }
+    }
+
+    // check enums before checking attached types of attached types (chained attached types)
+    if (type.isType()) {
+        if (auto result = memberEnumType(type.scope(), name); result.isValid())
+            return result;
     }
 
     if (QQmlJSScope::ConstPtr attachedBase = typeForName(name)) {
@@ -1685,15 +1687,8 @@ QQmlJSRegisterContent QQmlJSTypeResolver::memberEnumType(
 QQmlJSRegisterContent QQmlJSTypeResolver::memberType(
         QQmlJSRegisterContent type, const QString &name, int lookupIndex) const
 {
-    if (type.isType()) {
-        const auto result = memberType(type, name, type.resultLookupIndex(), lookupIndex);
-        if (result.isValid())
-            return result;
-
-        // If we didn't find anything and it's an attached type,
-        // we might have an enum of the attaching type.
-        return memberEnumType(type.scope(), name);
-    }
+    if (type.isType())
+        return memberType(type, name, type.resultLookupIndex(), lookupIndex);
     if (type.isProperty() || type.isMethodCall())
         return memberType(type, name, type.resultLookupIndex(), lookupIndex);
     if (type.isEnumeration()) {
@@ -1742,19 +1737,19 @@ QQmlJSRegisterContent QQmlJSTypeResolver::memberType(
     Q_UNREACHABLE_RETURN({});
 }
 
-QQmlJSRegisterContent QQmlJSTypeResolver::valueType(QQmlJSRegisterContent list) const
+QQmlJSRegisterContent QQmlJSTypeResolver::elementType(QQmlJSRegisterContent list) const
 {
     QQmlJSScope::ConstPtr value;
 
     auto valueType = [&](const QQmlJSScope::ConstPtr &scope) -> QQmlJSScope::ConstPtr {
         if (scope->accessSemantics() == QQmlJSScope::AccessSemantics::Sequence)
-            return scope->valueType();
+            return scope->elementType();
 
         if (scope == m_forInIteratorPtr)
             return m_sizeType;
 
         if (scope == m_forOfIteratorPtr)
-            return list.scopeType()->valueType();
+            return list.scopeType()->elementType();
 
         if (scope == m_jsValueType || scope == m_varType)
             return m_jsValueType;
@@ -1829,7 +1824,7 @@ QQmlJSRegisterContent QQmlJSTypeResolver::iteratorPointer(
 {
     const QQmlJSScope::ConstPtr value = (type == QQmlJS::AST::ForEachType::In)
             ? m_int32Type
-            : valueType(listType).containedType();
+            : elementType(listType).containedType();
 
     QQmlJSScope::ConstPtr iteratorPointer = type == QQmlJS::AST::ForEachType::In
             ? m_forInIteratorPtr

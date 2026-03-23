@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 
 #ifndef QQMLPREVIEWCLIENT_P_H
@@ -36,7 +37,8 @@ public:
         Directory,
         ClearCache,
         Zoom,
-        Fps
+        Fps,
+        AnimationSpeed,
     };
 
     struct FpsInfo {
@@ -61,6 +63,7 @@ public:
     void triggerLoad(const QUrl &url);
     void triggerRerun();
     void triggerZoom(float factor);
+    void triggerAnimationSpeed(float factor);
 
 Q_SIGNALS:
     void request(const QString &path);

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLGLOBAL_H
 #define QQMLGLOBAL_H
@@ -170,26 +171,6 @@ do { \
 } while (0)
 
 /*!
-    Returns true if the case of \a fileName is equivalent to the file case of
-    \a fileName on disk, and false otherwise.
-
-    This is used to ensure that the behavior of QML on a case-insensitive file
-    system is the same as on a case-sensitive file system.  This function
-    performs a "best effort" attempt to determine the real case of the file.
-    It may have false positives (say the case is correct when it isn't), but it
-    should never have a false negative (say the case is incorrect when it is
-    correct).
-
-    Length specifies specifies the number of characters to be checked from
-    behind. That is, if a file name results from a relative path specification
-    like "foo/bar.qml" and is made absolute, the original length (11) should
-    be passed indicating that only the last part of the relative path should
-    be checked.
-
-*/
-bool QQml_isFileCaseCorrect(const QString &fileName, int length = -1);
-
-/*!
     Makes the \a object a child of \a parent.  Note that when using this method,
     neither \a parent nor the object's previous parent (if it had one) will
     receive ChildRemoved or ChildAdded events.
@@ -222,7 +203,7 @@ public:
     static QVariant createValueType(const QJSValue &, QMetaType);
     static QVariant createValueType(const QString &, QMetaType);
     static QVariant createValueType(const QV4::Value &, QMetaType, QV4::ExecutionEngine *);
-    static QVariant createValueType(const QVariant &, QMetaType, QV4::ExecutionEngine *);
+    static QVariant Q_AUTOTEST_EXPORT createValueType(const QVariant &, QMetaType, QV4::ExecutionEngine *);
 };
 
 class Q_QML_EXPORT QQmlColorProvider

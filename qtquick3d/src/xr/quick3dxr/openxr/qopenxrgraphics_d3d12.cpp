@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qopenxrgraphics_d3d12_p.h"
 
@@ -18,20 +20,14 @@ QOpenXRGraphicsD3D12::QOpenXRGraphicsD3D12()
     m_graphicsRequirements.type = XR_TYPE_GRAPHICS_REQUIREMENTS_D3D12_KHR;
 }
 
-bool QOpenXRGraphicsD3D12::isExtensionSupported(const QVector<XrExtensionProperties> &extensions) const
+bool QOpenXRGraphicsD3D12::initialize(const QVector<XrExtensionProperties> &extensions)
 {
-    for (const auto &extension : extensions) {
-        if (!strcmp(XR_KHR_D3D12_ENABLE_EXTENSION_NAME,
-                    extension.extensionName))
-            return true;
-    }
-    return false;
+    return hasExtension(extensions, XR_KHR_D3D12_ENABLE_EXTENSION_NAME);
 }
 
-
-const char *QOpenXRGraphicsD3D12::extensionName() const
+QVector<const char *> QOpenXRGraphicsD3D12::getRequiredExtensions() const
 {
-    return XR_KHR_D3D12_ENABLE_EXTENSION_NAME;
+    return { XR_KHR_D3D12_ENABLE_EXTENSION_NAME };
 }
 
 

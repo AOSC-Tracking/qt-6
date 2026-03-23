@@ -73,6 +73,12 @@ class QUICHE_EXPORT HpackEncoder {
   std::unique_ptr<ProgressiveEncoder> EncodeRepresentations(
       const Representations& representations);
 
+  // Applies an upper bound on the possible size of the encoder's header table.
+  // The actual table size used will be the minimum of this value and the value
+  // in SETTINGS_HEADER_TABLE_SIZE from the peer. A value of 0 will disable
+  // dynamic table compression.
+  void SetHeaderTableSizeBound(size_t max_size);
+
   // Called upon a change to SETTINGS_HEADER_TABLE_SIZE. Specifically, this
   // is to be called after receiving (and sending an acknowledgement for) a
   // SETTINGS_HEADER_TABLE_SIZE update from the remote decoding endpoint.
@@ -95,7 +101,12 @@ class QUICHE_EXPORT HpackEncoder {
     listener_ = std::move(listener);
   }
 
-  void DisableCompression() { enable_compression_ = false; }
+  void DisableCompression() {
+    enable_dynamic_table_ = false;
+    enable_huffman_ = false;
+  }
+
+  void DisableHuffman() { enable_huffman_ = false; }
 
   // Disables the deconstruction of Cookie header values into individual
   // components, as described in
@@ -121,8 +132,7 @@ class QUICHE_EXPORT HpackEncoder {
 
   // Emits a literal representation (Section 7.2).
   void EmitIndexedLiteral(const Representation& representation);
-  void EmitNonIndexedLiteral(const Representation& representation,
-                             bool enable_compression);
+  void EmitNonIndexedLiteral(const Representation& representation);
   void EmitLiteral(const Representation& representation);
 
   // Emits a Huffman or identity string (whichever is smaller).
@@ -143,10 +153,12 @@ class QUICHE_EXPORT HpackEncoder {
   HpackHeaderTable header_table_;
   HpackOutputStream output_stream_;
 
+  size_t table_size_upper_bound_;
   size_t min_table_size_setting_received_;
   HeaderListener listener_;
   IndexingPolicy should_index_;
-  bool enable_compression_;
+  bool enable_dynamic_table_;
+  bool enable_huffman_;
   bool should_emit_table_size_;
   bool crumble_cookies_;
 };

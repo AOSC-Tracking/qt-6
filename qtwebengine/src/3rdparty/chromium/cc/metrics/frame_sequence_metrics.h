@@ -14,7 +14,6 @@
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
-#include "base/trace_event/traced_value.h"
 #include "cc/cc_export.h"
 #include "cc/metrics/frame_info.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
@@ -121,7 +120,8 @@ class CC_EXPORT FrameSequenceMetrics {
   bool HasEnoughDataForReporting() const;
   bool HasDataLeftForReporting() const;
   // Report related metrics: throughput, checkboarding...
-  void ReportMetrics();
+  // Returns PercentDroppedFrames4.AllSequences metric.
+  int ReportMetrics();
 
   void AddSortedFrame(const viz::BeginFrameArgs& args,
                       const FrameInfo& frame_info);
@@ -193,7 +193,8 @@ class CC_EXPORT FrameSequenceMetrics {
     void Advance(base::TimeTicks start_timestamp,
                  base::TimeTicks new_timestamp,
                  uint32_t expected,
-                 uint32_t dropped,
+                 uint32_t dropped_v3,
+                 uint32_t dropped_v4,
                  uint64_t sequence_number,
                  const char* histogram_name);
     void Terminate(const V3& v3,

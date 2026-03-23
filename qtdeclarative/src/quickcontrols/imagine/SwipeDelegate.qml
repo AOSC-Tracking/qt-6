@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -30,7 +31,6 @@ T.SwipeDelegate {
 
     icon.width: 24
     icon.height: 24
-    icon.color: control.palette.text
 
     swipe.transition: Transition { SmoothedAnimation { velocity: 3; easing.type: Easing.InOutCubic } }
 
@@ -41,9 +41,10 @@ T.SwipeDelegate {
         alignment: control.display === IconLabel.IconOnly || control.display === IconLabel.TextUnderIcon ? Qt.AlignCenter : Qt.AlignLeft
 
         icon: control.icon
+        defaultIconColor: control.palette.text
         text: control.text
         font: control.font
-        color: control.palette.text
+        color: defaultIconColor
     }
 
     background: NinePatchImage {

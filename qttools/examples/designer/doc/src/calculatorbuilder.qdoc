@@ -10,7 +10,8 @@
 
     \brief Creating a user interface from a \QD form at run-time.
 
-    \image calculatorbuilder-example.webp
+    \image calculatorbuilder-example.webp {Screenshot showing a calculator
+           application that adds two numbers and outputs the sum}
 
     We use the form created in the \l{calculatorform}{Calculator Form}
     example to show that the same user interface can be generated when the
@@ -54,7 +55,7 @@
     \snippet calculatorbuilder/main.cpp 1
 
     By including the user interface in the example's resources, we ensure
-    that it will be present when the example is run. The \l{QUiLoader::}{QUiLoader().load()}
+    that it will be present when the example is run. The \l{QUiLoader::load()}
     function takes the user interface description contained in the file
     and constructs the form widget as a child widget of the \c{CalculatorForm}.
 

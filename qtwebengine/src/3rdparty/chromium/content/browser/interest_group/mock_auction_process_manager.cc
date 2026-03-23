@@ -22,7 +22,9 @@
 #include "content/browser/interest_group/auction_process_manager.h"
 #include "content/public/browser/site_instance.h"
 #include "content/services/auction_worklet/public/mojom/auction_worklet_service.mojom.h"
+#include "content/services/auction_worklet/public/mojom/bidder_worklet.mojom-forward.h"
 #include "content/services/auction_worklet/public/mojom/bidder_worklet.mojom.h"
+#include "content/services/auction_worklet/public/mojom/in_progress_auction_download.mojom.h"
 #include "content/services/auction_worklet/public/mojom/private_aggregation_request.mojom.h"
 #include "content/services/auction_worklet/public/mojom/real_time_reporting.mojom.h"
 #include "content/services/auction_worklet/public/mojom/seller_worklet.mojom.h"
@@ -83,10 +85,12 @@ void MockBidderWorklet::BeginGenerateBid(
     const url::Origin& browser_signal_seller_origin,
     const std::optional<url::Origin>& browser_signal_top_level_seller_origin,
     const base::TimeDelta browser_signal_recency,
+    bool browser_signal_for_debugging_only_sampling,
     blink::mojom::BiddingBrowserSignalsPtr bidding_browser_signals,
     base::Time auction_start_time,
     const std::optional<blink::AdSize>& requested_ad_size,
     uint16_t multi_bid_limit,
+    uint64_t group_by_origin_id,
     uint64_t trace_id,
     mojo::PendingAssociatedRemote<auction_worklet::mojom::GenerateBidClient>
         generate_bid_client,
@@ -142,8 +146,7 @@ void MockBidderWorklet::ReportWin(
     const std::optional<std::string>&
         direct_from_seller_auction_signals_header_ad_slot,
     const std::string& seller_signals_json,
-    auction_worklet::mojom::KAnonymityBidMode kanon_mode,
-    bool bid_is_kanon,
+    auction_worklet::mojom::KAnonymityStatus kanon_status,
     const GURL& browser_signal_render_url,
     double browser_signal_bid,
     const std::optional<blink::AdCurrency>& browser_signal_bid_currency,
@@ -347,11 +350,12 @@ void MockBidderWorklet::InvokeReportWinCallback(
     base::flat_map<std::string, std::string> ad_macro_map,
     std::vector<auction_worklet::mojom::PrivateAggregationRequestPtr>
         pa_requests,
+    auction_worklet::mojom::PrivateModelTrainingRequestDataPtr pmt_request_data,
     std::vector<std::string> errors) {
   DCHECK(report_win_callback_);
   std::move(report_win_callback_)
       .Run(report_url, std::move(ad_beacon_map), std::move(ad_macro_map),
-           std::move(pa_requests),
+           std::move(pa_requests), std::move(pmt_request_data),
            auction_worklet::mojom::BidderTimingMetrics::New(
                /*js_fetch_latency=*/js_fetch_latency_,
                /*wasm_fetch_latency=*/wasm_fetch_latency_,
@@ -428,7 +432,10 @@ void MockSellerWorklet::ScoreAd(
         browser_signal_buyer_and_seller_reporting_id,
     uint32_t browser_signal_bidding_duration_msecs,
     bool browser_signal_for_debugging_only_in_cooldown_or_lockout,
+    bool browser_signal_for_debugging_only_sampling,
     const std::optional<base::TimeDelta> seller_timeout,
+    uint64_t group_by_origin_id,
+    bool allow_group_by_origin_mode,
     uint64_t trace_id,
     const url::Origin& bidder_joining_origin,
     mojo::PendingRemote<auction_worklet::mojom::ScoreAdClient>
@@ -582,8 +589,8 @@ void MockAuctionProcessManager::LoadBidderWorklet(
         pending_url_loader_factory,
     mojo::PendingRemote<auction_worklet::mojom::AuctionNetworkEventsHandler>
         auction_network_events_handler,
-    const GURL& script_source_url,
-    const std::optional<GURL>& bidding_wasm_helper_url,
+    auction_worklet::mojom::InProgressAuctionDownloadPtr script_load,
+    auction_worklet::mojom::InProgressAuctionDownloadPtr wasm_load,
     const std::optional<GURL>& trusted_bidding_signals_url,
     const std::string& trusted_bidding_signals_slot_size_param,
     const url::Origin& top_window_origin,
@@ -591,6 +598,8 @@ void MockAuctionProcessManager::LoadBidderWorklet(
         permissions_policy_state,
     std::optional<uint16_t> experiment_group_id,
     auction_worklet::mojom::TrustedSignalsPublicKeyPtr public_key) {
+  // `script_load` and `wasm_load` are destroyed without using them.
+
   load_bidder_worklet_count_++;
   last_load_bidder_worklet_threads_count_ = shared_storage_hosts.size();
 
@@ -600,17 +609,16 @@ void MockAuctionProcessManager::LoadBidderWorklet(
   // origin.
   WorkletProcess* worklet_process = receiver_set_.current_context().get();
   if (worklet_process) {
-    EXPECT_EQ(worklet_process->origin(),
-              url::Origin::Create(script_source_url));
+    EXPECT_EQ(worklet_process->origin(), url::Origin::Create(script_load->url));
     EXPECT_EQ(worklet_process->worklet_type(),
               AuctionProcessManager::WorkletType::kBidder);
   }
 
-  EXPECT_EQ(0u, bidder_worklets_.count(script_source_url));
+  EXPECT_EQ(0u, bidder_worklets_.count(script_load->url));
   bidder_worklets_.emplace(
-      script_source_url, std::make_unique<MockBidderWorklet>(
-                             std::move(bidder_worklet_receiver),
-                             expected_per_buyer_timeouts_, skip_generate_bid_));
+      script_load->url, std::make_unique<MockBidderWorklet>(
+                            std::move(bidder_worklet_receiver),
+                            expected_per_buyer_timeouts_, skip_generate_bid_));
   MaybeQuitWaitForWorkletsRunLoop();
 }
 
@@ -625,7 +633,7 @@ void MockAuctionProcessManager::LoadSellerWorklet(
         pending_url_loader_factory,
     mojo::PendingRemote<auction_worklet::mojom::AuctionNetworkEventsHandler>
         auction_network_events_handler,
-    const GURL& script_source_url,
+    auction_worklet::mojom::InProgressAuctionDownloadPtr script_load,
     const std::optional<GURL>& trusted_scoring_signals_url,
     const url::Origin& top_window_origin,
     auction_worklet::mojom::AuctionWorkletPermissionsPolicyStatePtr
@@ -635,7 +643,9 @@ void MockAuctionProcessManager::LoadSellerWorklet(
     auction_worklet::mojom::TrustedSignalsPublicKeyPtr public_key,
     mojo::PendingRemote<auction_worklet::mojom::LoadSellerWorkletClient>
         load_seller_worklet_client) {
-  EXPECT_EQ(0u, seller_worklets_.count(script_source_url));
+  // `script_load` is destroyed without using it.
+
+  EXPECT_EQ(0u, seller_worklets_.count(script_load->url));
 
   if (load_seller_worklet_client) {
     mojo::Remote<auction_worklet::mojom::LoadSellerWorkletClient>(
@@ -649,14 +659,13 @@ void MockAuctionProcessManager::LoadSellerWorklet(
   // origin.
   WorkletProcess* worklet_process = receiver_set_.current_context().get();
   if (worklet_process) {
-    EXPECT_EQ(worklet_process->origin(),
-              url::Origin::Create(script_source_url));
+    EXPECT_EQ(worklet_process->origin(), url::Origin::Create(script_load->url));
     EXPECT_EQ(worklet_process->worklet_type(),
               AuctionProcessManager::WorkletType::kSeller);
   }
 
   seller_worklets_.emplace(
-      script_source_url,
+      script_load->url,
       std::make_unique<MockSellerWorklet>(std::move(seller_worklet_receiver)));
 
   MaybeQuitWaitForWorkletsRunLoop();

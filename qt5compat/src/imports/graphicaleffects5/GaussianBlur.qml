@@ -1,6 +1,7 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // Copyright (C) 2017 Jolla Ltd, author: <gunnar.sletta@jollamobile.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Window
@@ -10,9 +11,13 @@ import Qt5Compat.GraphicalEffects.private
     \qmltype GaussianBlur
     \inqmlmodule Qt5Compat.GraphicalEffects
     \since QtGraphicalEffects 1.0
-    \inherits QtQuick2::Item
+    \inherits QtQuick::Item
     \ingroup qtgraphicaleffects-blur
     \brief Applies a higher quality blur effect.
+
+    \note The MultiEffect component provides a blur effect with some performance
+    advantages. For new code, it should be considered as an alternative to using Qt Graphical
+    Effects.
 
     GaussianBlur effect softens the image by blurring it with an algorithm that
     uses the Gaussian function to calculate the effect. The effect produces

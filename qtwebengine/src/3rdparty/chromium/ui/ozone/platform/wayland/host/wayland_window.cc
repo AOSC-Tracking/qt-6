@@ -21,6 +21,7 @@
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/run_loop.h"
+#include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/cursor/mojom/cursor_type.mojom.h"
@@ -134,6 +135,13 @@ WaylandWindow::~WaylandWindow() {
 
   for (auto bubble : child_bubbles_) {
     bubble->set_parent_window(nullptr);
+  }
+
+  if (focus_client_) {
+    focus_client_->OnKeyboardFocusChanged(false);
+    if (connection_->SupportsTextInputFocus()) {
+      focus_client_->OnTextInputFocusChanged(false);
+    }
   }
 }
 
@@ -319,6 +327,18 @@ void WaylandWindow::OnPointerFocusChanged(bool focused) {
   }
 }
 
+void WaylandWindow::OnKeyboardFocusChanged(bool focused) {
+  if (focus_client_) {
+    focus_client_->OnKeyboardFocusChanged(focused);
+  }
+}
+
+void WaylandWindow::OnTextInputFocusChanged(bool focused) {
+  if (focus_client_) {
+    focus_client_->OnTextInputFocusChanged(focused);
+  }
+}
+
 bool WaylandWindow::HasPointerFocus() const {
   return this ==
          connection_->window_manager()->GetCurrentPointerFocusedWindow();
@@ -396,6 +416,37 @@ void WaylandWindow::Hide() {
     subsurface->Hide();
   }
   frame_manager_->Hide();
+
+  // Per https://wayland.app/protocols/xdg-shell#xdg_surface, the process of
+  // mapping a shell surface comprises the following steps:
+  //
+  // (1) Ensuring no buffer is attached to its associated wl_surface.
+  // (2) Creating the xdg_surface and its specific role surface (eg:
+  //     xdg_toplevel), and set its metadata (eg: app_id, title, etc).
+  // (3) Committing its wl_surface state; and then
+  // (4) Waiting for the initial configure sequence. After that, a non-null
+  //     buffer can be produced and attached to its underlying wl_surface.
+  //
+  // As `root_surface_` is reused for the whole WaylandWindow's lifetime, a
+  // null buffer must be attached here and no buffer should be attached to it
+  // until it is shown again.
+  //
+  // Note: `wl_surface_attach` is used directly here to ensure that the null
+  // buffer attach request is actually issued. This is required for 2 reasons:
+  //
+  // - There are synchronization issues in interactive ui tests (eg: tab drag),
+  // which lead to dnd start before a non-null buffer is attached to the origin
+  // surface, i.e: `root_surface_->buffer_id() == 0` here.
+  // - Weston, used in interactive ui infra, does not properly handle wl_surface
+  // reuse, and raises a protocol error when no buffer is attached before a
+  // previous surface unmapping.
+  //
+  // TODO(crbug.com/400894502): Investigate the issues described above.
+
+  if (root_surface_) {
+    wl_surface_attach(root_surface_->surface(), nullptr, 0, 0);
+    root_surface_->Commit(false);
+  }
 }
 
 void WaylandWindow::ClearInFlightRequestsSerial() {
@@ -685,7 +736,7 @@ uint32_t WaylandWindow::DispatchEvent(const PlatformEvent& native_event) {
       // need it to traverse menu options, or type in text boxes.
       auto* bubble = active_bubble();
       while (bubble->active_bubble()) {
-        bubble = active_bubble();
+        bubble = bubble->active_bubble();
       }
       return bubble->DispatchEventToDelegate(event);
     } else {
@@ -1241,6 +1292,9 @@ void WaylandWindow::ProcessPendingConfigureState(uint32_t serial) {
   if (pending_configure_state_.size_px.has_value()) {
     state.size_px = pending_configure_state_.size_px.value();
   }
+  if (pending_configure_state_.tiled_edges.has_value()) {
+    state.tiled_edges = pending_configure_state_.tiled_edges.value();
+  }
 
   if (state.bounds_dip.IsEmpty() &&
       GetPlatformWindowState() == PlatformWindowState::kMinimized &&
@@ -1264,9 +1318,10 @@ void WaylandWindow::ProcessPendingConfigureState(uint32_t serial) {
 
   // If we get a configure which is immediately applied and latched (meaning
   // that the configure does nothing), we will have immediately acked it, and we
-  // can immediately commit it. See crbug.com/340500574.
+  // can immediately commit it if the window is already mapped. See
+  // crbug.com/340500574.
   if (state == applied_state_ && state == latched_state_ &&
-      in_flight_requests_.empty()) {
+      in_flight_requests_.empty() && root_surface()->has_buffer()) {
     root_surface_->Commit(/*flush=*/true);
   }
 }
@@ -1471,9 +1526,11 @@ void WaylandWindow::LatchStateRequest(const StateRequest& req) {
   auto old_state = latched_state_;
   latched_state_ = req.state;
 
-  // Update the geometry if the bounds or the insets are changed since the last
-  // latched request.
+  // Update the geometry if:
+  // - either bounds, tiling or insets has changed since the latest latched
+  //   request.
   if (req.state.bounds_dip.size() != old_state.bounds_dip.size() ||
+      req.state.tiled_edges != old_state.tiled_edges ||
       delegate()->CalculateInsetsInDIP(req.state.window_state) !=
           delegate()->CalculateInsetsInDIP(old_state.window_state)) {
     SetWindowGeometry(req.state);

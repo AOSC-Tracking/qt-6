@@ -174,36 +174,6 @@ class CC_EXPORT InputHandlerClient {
   InputHandlerClient() = default;
 };
 
-// Data passed from the input handler to the main thread.  Used to notify the
-// main thread about changes that have occurred as a result of input since the
-// last commit.
-struct InputHandlerCommitData {
-  // Defined in input_handler.cc to avoid inlining since flat_set has
-  // non-trivial size destructor.
-  InputHandlerCommitData();
-  ~InputHandlerCommitData();
-
-  // Unconsumed scroll delta since the last commit.
-  gfx::Vector2dF overscroll_delta;
-
-  // Elements that have scroll snapped to a new target since the last commit.
-  base::flat_set<ElementId> updated_snapped_elements;
-
-  // If a scroll was active at any point since the last commit, this will
-  // identify the scroller (even if it has since ended).
-  ElementId last_latched_scroller;
-
-  // True if a scroll gesture has ended since the last commit.
-  bool scroll_gesture_did_end = false;
-
-  // The following bits are set if a gesture of any type was started since
-  // the last commit.
-  bool has_pinch_zoomed = false;
-  bool has_scrolled_by_wheel = false;
-  bool has_scrolled_by_touch = false;
-  bool has_scrolled_by_precisiontouchpad = false;
-};
-
 // The InputHandler is a way for the embedders to interact with the input system
 // running on the compositor thread. Each instance of a compositor (i.e. a
 // LayerTreeHostImpl) is associated with one InputHandler instance. The
@@ -471,7 +441,7 @@ class CC_EXPORT InputHandler : public InputDelegateForCompositor {
 
   // Notifies when any input event is received, irrespective of whether it is
   // being handled by the InputHandler or not.
-  virtual void NotifyInputEvent();
+  virtual void NotifyInputEvent(bool is_fling);
 
   // Returns true if ScrollbarController is in the middle of a scroll operation.
   virtual bool ScrollbarScrollIsActive();
@@ -494,14 +464,19 @@ class CC_EXPORT InputHandler : public InputDelegateForCompositor {
                        const ScrollNode& scroll_node);
   // Returns the amount of delta that can be applied to scroll_node, taking
   // page scale into account.
-  gfx::Vector2dF ComputeScrollDelta(const ScrollNode& scroll_node,
-                                    const gfx::Vector2dF& delta);
+  gfx::Vector2dF ComputeScrollDelta(
+      const ScrollNode& scroll_node,
+      const gfx::Vector2dF& delta,
+      const ScrollState* scroll_state = nullptr) const;
 
   gfx::Vector2dF ScrollSingleNode(const ScrollNode& scroll_node,
                                   const gfx::Vector2dF& delta,
                                   const gfx::Point& viewport_point,
                                   bool is_direct_manipulation);
 
+  // Returns the size of one page of the given scroll node in physical pixels
+  // for the purposes of scrolling.
+  gfx::Size PageSize(const ScrollNode& scroll_node) const;
   float LineStep() const;
 
   // Resolves a delta in the given granularity for the |scroll_node| into
@@ -770,6 +745,10 @@ class CC_EXPORT InputHandler : public InputDelegateForCompositor {
   // |CurrentlyScrollingNode()|.
   void ScrollEnd(ScrollNode* scroll_node, bool should_snap = false);
 
+  void LimitDeltaToScrollerSize(const ScrollState& scroll_state,
+                                const ScrollNode& scroll_node,
+                                gfx::Vector2dF& delta) const;
+
   // The input handler is owned by the delegate so their lifetimes are tied
   // together.
   const raw_ref<CompositorDelegateForInput> compositor_delegate_;
@@ -846,11 +825,6 @@ class CC_EXPORT InputHandler : public InputDelegateForCompositor {
   // over.
   bool deferred_scroll_end_ = false;
 
-  // Set to true when a scroll gesture being handled on the compositor has
-  // ended. i.e. When a GSE has arrived and any ongoing scroll animation has
-  // ended.
-  bool scroll_gesture_did_end_ = false;
-
   // True iff some of the delta has been consumed for the current scroll
   // sequence on the specific axis.
   bool did_scroll_x_for_scroll_gesture_ = false;
@@ -910,6 +884,8 @@ class CC_EXPORT InputHandler : public InputDelegateForCompositor {
   // The set of scroll containers for which an impl scroll ended between the
   // last commit and the next one.
   base::flat_set<ElementId> pending_scrollend_containers_;
+
+  base::TimeTicks last_scroll_begin_time_;
 
   // Must be the last member to ensure this is destroyed first in the
   // destruction order and invalidates all weak pointers.

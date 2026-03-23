@@ -1,5 +1,6 @@
 // Copyright (C) 2016 Pelagicore AG
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qeglfskmsegldevicescreen.h"
 #include "qeglfskmsegldevice.h"
@@ -71,7 +72,7 @@ QEglFSKmsEglDeviceScreen::~QEglFSKmsEglDeviceScreen()
     }
 
     const int remainingScreenCount = qGuiApp->screens().size();
-    qCDebug(qLcEglfsKmsDebug, "Screen dtor. Remaining screens: %d", remainingScreenCount);
+    qCDebug(qLcEglfsKmsDebug, "Screen dtor. %p Remaining screens: %d", this, remainingScreenCount);
     if (!remainingScreenCount && !device()->screenConfig()->separateScreens())
         static_cast<QEglFSKmsEglDevice *>(device())->destroyGlobalCursor();
 }

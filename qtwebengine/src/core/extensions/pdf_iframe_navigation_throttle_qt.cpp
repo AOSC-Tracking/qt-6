@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // based on //chrome/browser/plugins/pdf_iframe_navigation_throttle.cc
 // Copyright 2017 The Chromium Authors. All rights reserved.
@@ -95,15 +96,15 @@ std::string GetPDFPlaceholderHTML(const GURL &pdf_url)
 
 // static
 std::unique_ptr<content::NavigationThrottle>
-PDFIFrameNavigationThrottleQt::MaybeCreateThrottleFor(content::NavigationHandle *handle)
+PDFIFrameNavigationThrottleQt::MaybeCreateThrottleFor(content::NavigationThrottleRegistry &registry)
 {
-    if (handle->IsInMainFrame())
+    if (registry.GetNavigationHandle().IsInMainFrame())
         return nullptr;
-    return std::make_unique<PDFIFrameNavigationThrottleQt>(handle);
+    return std::make_unique<PDFIFrameNavigationThrottleQt>(registry);
 }
 
-PDFIFrameNavigationThrottleQt::PDFIFrameNavigationThrottleQt(content::NavigationHandle *handle)
-    : content::NavigationThrottle(handle)
+PDFIFrameNavigationThrottleQt::PDFIFrameNavigationThrottleQt(content::NavigationThrottleRegistry &registry)
+    : content::NavigationThrottle(registry)
 {
 }
 

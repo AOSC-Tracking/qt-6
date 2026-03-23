@@ -11,8 +11,8 @@ $XINT8_T = {"QS8": "int8_t", "QU8": "uint8_t"}[DATATYPE]
 
 #include <riscv_vector.h>
 
-#include "xnnpack/math.h"
-#include "xnnpack/vcvt.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/vcvt.h"
 
 
 $OUTPUT_MIN = {"QS8": -128, "QU8": 0}[DATATYPE]
@@ -21,7 +21,7 @@ void xnn_f32_${DATATYPE.lower()}_vcvt_ukernel__rvv_u${LMUL}v(
     size_t batch,
     const float* input,
     ${XINT8_T}* output,
-    const struct xnn_f32_${DATATYPE.lower()}_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_${DATATYPE.lower()}_cvt_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

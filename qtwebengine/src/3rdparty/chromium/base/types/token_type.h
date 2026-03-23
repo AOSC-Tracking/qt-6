@@ -6,6 +6,7 @@
 #define BASE_TYPES_TOKEN_TYPE_H_
 
 #include <type_traits>
+#include <utility>
 
 #include "base/check.h"
 #include "base/types/strong_alias.h"
@@ -41,6 +42,11 @@ class TokenType : public StrongAlias<TypeMarker, UnguessableToken> {
   // StrongAlias doesn't define <=> because not all underlying types will
   // implement it. TokenType can define it using UnguessableToken's
   // implementation, though.
+
+  template <typename H>
+  friend H AbslHashValue(H h, const TokenType& token_type) {
+    return H::combine(std::move(h), token_type.value());
+  }
 
   // Hash functor for use in unordered containers.
   struct Hasher {

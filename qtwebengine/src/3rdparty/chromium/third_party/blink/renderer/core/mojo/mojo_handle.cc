@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/core/mojo/mojo_handle.h"
 
+#include "base/compiler_specific.h"
+#include "base/memory/platform_shared_memory_region.h"
 #include "base/numerics/safe_math.h"
+#include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/cpp/bindings/message.h"
+#include "mojo/public/cpp/system/buffer.h"
 #include "mojo/public/cpp/system/message_pipe.h"
+#include "mojo/public/cpp/system/platform_handle.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_mojo_create_shared_buffer_result.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_mojo_discard_data_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_mojo_duplicate_buffer_handle_options.h"
@@ -132,7 +132,7 @@ MojoReadMessageResult* MojoHandle::readMessage(
       DOMArrayBuffer::CreateUninitializedOrNull(num_bytes, 1);
   if (num_bytes) {
     CHECK(buffer);
-    memcpy(buffer->Data(), bytes, num_bytes);
+    UNSAFE_TODO(memcpy(buffer->Data(), bytes, num_bytes));
   }
   result_dict->setBuffer(buffer);
 

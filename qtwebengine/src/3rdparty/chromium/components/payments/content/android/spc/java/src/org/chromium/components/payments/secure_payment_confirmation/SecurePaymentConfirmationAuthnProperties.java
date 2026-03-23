@@ -5,8 +5,10 @@
 package org.chromium.components.payments.secure_payment_confirmation;
 
 import android.graphics.drawable.Drawable;
+import android.text.SpannableString;
 import android.util.Pair;
 
+import org.chromium.build.annotations.NullMarked;
 import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyModel.ReadableObjectPropertyKey;
 
@@ -14,6 +16,7 @@ import org.chromium.ui.modelutil.PropertyModel.ReadableObjectPropertyKey;
  * The properties of the SecurePaymentConfirmation Authn UI, which fully describe the state of the
  * UI.
  */
+@NullMarked
 /* package */ class SecurePaymentConfirmationAuthnProperties {
     /** The store value of the UI. */
     /* package */ static final ReadableObjectPropertyKey<String> STORE_LABEL =
@@ -51,6 +54,18 @@ import org.chromium.ui.modelutil.PropertyModel.ReadableObjectPropertyKey;
     /* package */ static final ReadableObjectPropertyKey<Runnable> CANCEL_BUTTON_CALLBACK =
             new ReadableObjectPropertyKey<>();
 
+    /** The title text for the UI. */
+    /* package */ static final ReadableObjectPropertyKey<String> TITLE =
+            new ReadableObjectPropertyKey<>();
+
+    /** The label for the continue button. */
+    /* package */ static final ReadableObjectPropertyKey<String> CONTINUE_BUTTON_LABEL =
+            new ReadableObjectPropertyKey<>();
+
+    /** The footnote for the UI. */
+    /* package */ static final ReadableObjectPropertyKey<SpannableString> FOOTNOTE =
+            new ReadableObjectPropertyKey<>();
+
     /* package */ static final PropertyKey[] ALL_KEYS =
             new PropertyKey[] {
                 STORE_LABEL,
@@ -60,7 +75,10 @@ import org.chromium.ui.modelutil.PropertyModel.ReadableObjectPropertyKey;
                 CURRENCY,
                 OPT_OUT_INFO,
                 CONTINUE_BUTTON_CALLBACK,
-                CANCEL_BUTTON_CALLBACK
+                CANCEL_BUTTON_CALLBACK,
+                TITLE,
+                CONTINUE_BUTTON_LABEL,
+                FOOTNOTE,
             };
 
     // Prevent instantiation.

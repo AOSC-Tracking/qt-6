@@ -22,6 +22,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/system/sys_info.h"
+#include "build/build_config.h"
 #include "content/browser/mac_helpers.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
@@ -35,7 +36,7 @@
 
 namespace content {
 
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
 base::FilePath getSandboxPath();
 #endif
 
@@ -112,7 +113,7 @@ void SetupCommonSandboxParameters(
   CHECK(
       serializer->SetParameter(sandbox::policy::kParamBundlePath, bundle_path));
 
-  std::string bundle_id = base::apple::BaseBundleID();
+  std::string bundle_id(base::apple::BaseBundleID());
   DCHECK(!bundle_id.empty()) << "base::apple::OuterBundle is unset";
   CHECK(serializer->SetParameter(sandbox::policy::kParamBundleId, bundle_id));
 
@@ -135,7 +136,7 @@ void SetupCommonSandboxParameters(
   CHECK(serializer->SetParameter(sandbox::policy::kParamComponentPath,
                                  component_path_canonical));
 #endif
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
   // Allow read access to files under the Qt path.
   const base::FilePath qt_prefix_path = getSandboxPath();
   const std::string qt_prefix_path_canonical =
@@ -151,13 +152,6 @@ void SetupCommonSandboxParameters(
       sandbox::policy::GetCanonicalPath(base::GetHomeDir()).value();
   CHECK(serializer->SetParameter(sandbox::policy::kParamHomedirAsLiteral,
                                  homedir));
-
-  CHECK(serializer->SetBooleanParameter(
-      sandbox::policy::kParamFilterSyscalls,
-      base::FeatureList::IsEnabled(features::kMacSyscallSandbox)));
-
-  CHECK(serializer->SetBooleanParameter(
-      sandbox::policy::kParamFilterSyscallsDebug, false));
 }
 
 void SetupNetworkSandboxParameters(sandbox::SandboxSerializer* serializer,

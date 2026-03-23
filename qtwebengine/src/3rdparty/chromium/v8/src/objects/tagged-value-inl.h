@@ -6,6 +6,7 @@
 #define V8_OBJECTS_TAGGED_VALUE_INL_H_
 
 #include "src/objects/tagged-value.h"
+// Include the non-inl header before the rest of the headers.
 
 #include "include/v8-internal.h"
 #include "src/common/ptr-compr-inl.h"
@@ -32,7 +33,7 @@ Tagged<Object> StrongTaggedValue::ToObject(Isolate* isolate,
                                            StrongTaggedValue object) {
 #ifdef V8_COMPRESS_POINTERS
   return Tagged<Object>(
-      V8HeapCompressionScheme::DecompressTagged(isolate, object.ptr()));
+      V8HeapCompressionScheme::DecompressTagged(object.ptr()));
 #else
   return Tagged<Object>(object.ptr());
 #endif
@@ -52,7 +53,7 @@ Tagged<MaybeObject> TaggedValue::ToMaybeObject(Isolate* isolate,
                                                TaggedValue object) {
 #ifdef V8_COMPRESS_POINTERS
   return Tagged<MaybeObject>(
-      V8HeapCompressionScheme::DecompressTagged(isolate, object.ptr()));
+      V8HeapCompressionScheme::DecompressTagged(object.ptr()));
 #else
   return Tagged<MaybeObject>(object.ptr());
 #endif

@@ -186,9 +186,9 @@ base::span<const SearchConcept> GetAboutReportIssueSearchConcepts() {
 
 // Returns the link to the safety info for the device (if it exists).
 std::string GetSafetyInfoLink() {
-  const std::vector<std::string_view> board =
-      base::SplitStringPiece(base::SysInfo::GetLsbReleaseBoard(), "-",
-                             base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  const std::string release_board = base::SysInfo::GetLsbReleaseBoard();
+  const std::vector<std::string_view> board = base::SplitStringPiece(
+      release_board, "-", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
   if (board[0] == "nocturne") {
     return chrome::kChromeUISafetyPixelSlateURL;
   }
@@ -255,6 +255,8 @@ void AboutSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
       {"aboutDiagnostics", IDS_SETTINGS_ABOUT_PAGE_DIAGNOSTICS},
       {"aboutDiagnosticseDescription", IDS_OS_SETTINGS_DIAGNOSTICS_DESCRIPTION},
       {"aboutFirmwareUpdates", IDS_SETTINGS_ABOUT_PAGE_FIRMWARE_UPDATES},
+      {"aboutFirmwareUpdatesDisabledDescription",
+       IDS_OS_SETTINGS_FIRMWARE_DISABLED_DESCRIPTION},
       {"aboutFirmwareUpToDateDescription",
        IDS_OS_SETTINGS_FIRMWARE_UP_TO_DATE_DESCRIPTION},
       {"aboutFirmwareUpdateAvailableDescription",

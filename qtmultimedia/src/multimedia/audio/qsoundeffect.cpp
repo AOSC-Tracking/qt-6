@@ -91,16 +91,16 @@ QSoundEffectPrivate *makeSoundEffectPrivate(QSoundEffect *fx, const QAudioDevice
 
     Typically the sound effect should be reused, which allows all the
     parsing and preparation to be done ahead of time, and only triggered
-    when necessary.  This is easy to achieve with QML, since you can declare your
+    when necessary. This is easy to achieve with QML, since you can declare your
     SoundEffect instance and refer to it elsewhere.
 
     The following example plays a WAV file on mouse click.
 
     \snippet multimedia-snippets/soundeffect.qml complete snippet
 
-    Since SoundEffect requires slightly more resources to achieve lower
-    latency playback, the platform may limit the number of simultaneously playing
-    sound effects.
+    \note QSoundEffect only supports mono or stereo sound files. Using sound files with
+    a sampling rate of 48000hz is recommended, as this is the typical native sampling rate
+    on most platforms (\l QAudioDevice::preferredFormat()).
 */
 
 /*!
@@ -389,7 +389,7 @@ bool QSoundEffect::isLoaded() const
 }
 
 /*!
-    \qmlmethod QtMultimedia::SoundEffect::play()
+    \qmlmethod void QtMultimedia::SoundEffect::play()
 
     Start playback of the sound effect, looping the effect for the number of
     times as specified in the loops property.
@@ -470,7 +470,7 @@ QSoundEffect::Status QSoundEffect::status() const
 }
 
 /*!
-  \qmlmethod QtMultimedia::SoundEffect::stop()
+  \qmlmethod void QtMultimedia::SoundEffect::stop()
 
   Stop current playback.
 

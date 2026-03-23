@@ -99,25 +99,25 @@ void MutableMesh::SetFloatVertexAttribute(uint32_t vertex_index,
   const float* src = value.Values().data();
   switch (attr.type) {
     case MeshFormat::AttributeType::kFloat1Unpacked:
-    case MeshFormat::AttributeType::kFloat1PackedIn1UnsignedByte:
+    case MeshFormat::AttributeType::kFloat1PackedInOneUnsignedByte:
       std::memcpy(dst, src, sizeof(float));
       break;
     case MeshFormat::AttributeType::kFloat2Unpacked:
-    case MeshFormat::AttributeType::kFloat2PackedIn1Float:
-    case MeshFormat::AttributeType::kFloat2PackedIn3UnsignedBytes_XY12:
-    case MeshFormat::AttributeType::kFloat2PackedIn4UnsignedBytes_X12_Y20:
+    case MeshFormat::AttributeType::kFloat2PackedInOneFloat:
+    case MeshFormat::AttributeType::kFloat2PackedInThreeUnsignedBytes_XY12:
+    case MeshFormat::AttributeType::kFloat2PackedInFourUnsignedBytes_X12_Y20:
       std::memcpy(dst, src, 2 * sizeof(float));
       break;
     case MeshFormat::AttributeType::kFloat3Unpacked:
-    case MeshFormat::AttributeType::kFloat3PackedIn1Float:
-    case MeshFormat::AttributeType::kFloat3PackedIn2Floats:
-    case MeshFormat::AttributeType::kFloat3PackedIn4UnsignedBytes_XYZ10:
+    case MeshFormat::AttributeType::kFloat3PackedInOneFloat:
+    case MeshFormat::AttributeType::kFloat3PackedInTwoFloats:
+    case MeshFormat::AttributeType::kFloat3PackedInFourUnsignedBytes_XYZ10:
       std::memcpy(dst, src, 3 * sizeof(float));
       break;
     case MeshFormat::AttributeType::kFloat4Unpacked:
-    case MeshFormat::AttributeType::kFloat4PackedIn1Float:
-    case MeshFormat::AttributeType::kFloat4PackedIn2Floats:
-    case MeshFormat::AttributeType::kFloat4PackedIn3Floats:
+    case MeshFormat::AttributeType::kFloat4PackedInOneFloat:
+    case MeshFormat::AttributeType::kFloat4PackedInTwoFloats:
+    case MeshFormat::AttributeType::kFloat4PackedInThreeFloats:
       std::memcpy(dst, src, 4 * sizeof(float));
       break;
   }
@@ -268,8 +268,8 @@ struct FlippedTriangleCorrectionData {
   // Pointers to the mesh we're packing, and the packing params used to do so.
   // The owner of this object is responsible for ensuring that the mesh and
   // packing params outlive this.
-  absl::Nonnull<const MutableMesh*> mesh;
-  absl::Nonnull<const MeshAttributeCodingParams*> packing_params;
+  const MutableMesh* absl_nonnull mesh;
+  const MeshAttributeCodingParams* absl_nonnull packing_params;
   // The vertex positions of the mesh, rescaled to the range [0, 2^n_bits - 1]
   // and rounded to the nearest integer.
   std::vector<Point> quantized_vertex_positions;

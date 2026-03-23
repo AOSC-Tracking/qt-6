@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef DOMTOP_H
 #define DOMTOP_H
@@ -859,6 +860,7 @@ public:
 
     void clearReferenceCache();
     void setLoadPaths(const QStringList &v);
+    void setResourceFiles(const QStringList &v);
 
     // Helper structure reflecting the change in the map once loading / fetching is completed
     // formerItem - DomItem representing value (ExternalItemInfo) existing in the map before the
@@ -955,9 +957,9 @@ private:
                   std::optional<DomType> fileType = std::optional<DomType>(),
                   const ErrorHandler &h = nullptr);
 
-    void loadModuleDependency(const DomItem &self, const QString &uri, Version v,
-                              Callback loadCallback = nullptr, Callback endCallback = nullptr,
-                              const ErrorHandler & = nullptr);
+    void loadModuleDependency(
+            const DomItem &self, const QString &uri, Version v, const Callback &loadCallback = nullptr,
+            const Callback &endCallback = nullptr, const ErrorHandler & = nullptr);
 
     template <typename T>
     QSet<QString> getStrings(function_ref<QSet<QString>()> getBase, const QMap<QString, T> &selfMap,
@@ -1124,6 +1126,7 @@ private:
     {
         SemanticAnalysis(const QStringList &loadPaths);
         void updateLoadPaths(const QStringList &loadPaths);
+        void setResourceFiles(const QStringList &qrcFiles);
 
         std::shared_ptr<QQmlJSResourceFileMapper> m_mapper;
         std::shared_ptr<QQmlJSImporter> m_importer;
@@ -1131,6 +1134,9 @@ private:
     std::optional<SemanticAnalysis> m_semanticAnalysis;
 public:
     SemanticAnalysis semanticAnalysis();
+
+private:
+    SemanticAnalysis semanticAnalysisUnlocked();
 };
 Q_DECLARE_OPERATORS_FOR_FLAGS(DomEnvironment::Options)
 

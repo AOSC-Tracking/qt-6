@@ -36,6 +36,7 @@ class DummyWidgetScheduler final : public WidgetScheduler {
   DummyWidgetScheduler& operator=(const DummyWidgetScheduler&) = delete;
   ~DummyWidgetScheduler() override = default;
 
+  void WillShutdown() override {}
   void Shutdown() override {}
   // Returns the input task runner.
   scoped_refptr<base::SingleThreadTaskRunner> InputTaskRunner() override {
@@ -71,7 +72,7 @@ class DummyFrameScheduler : public FrameScheduler {
   DummyFrameScheduler& operator=(const DummyFrameScheduler&) = delete;
 
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType) override {
-    DCHECK(WTF::IsMainThread());
+    DCHECK(IsMainThread());
     return base::SingleThreadTaskRunner::GetCurrentDefault();
   }
 
@@ -125,12 +126,11 @@ class DummyFrameScheduler : public FrameScheduler {
   void OnStartedUsingNonStickyFeature(
       SchedulingPolicy::Feature feature,
       const SchedulingPolicy& policy,
-      std::unique_ptr<SourceLocation> source_location,
+      SourceLocation* source_location,
       SchedulingAffectingFeatureHandle* handle) override {}
-  void OnStartedUsingStickyFeature(
-      SchedulingPolicy::Feature feature,
-      const SchedulingPolicy& policy,
-      std::unique_ptr<SourceLocation> source_location) override {}
+  void OnStartedUsingStickyFeature(SchedulingPolicy::Feature feature,
+                                   const SchedulingPolicy& policy,
+                                   SourceLocation* source_location) override {}
   void OnStoppedUsingNonStickyFeature(
       SchedulingAffectingFeatureHandle* handle) override {}
   base::WeakPtr<FrameOrWorkerScheduler> GetFrameOrWorkerSchedulerWeakPtr()
@@ -187,12 +187,12 @@ class DummyPageScheduler : public PageScheduler {
     return false;
   }
   bool IsInBackForwardCache() const override { return false; }
-  bool RequestBeginMainFrameNotExpected(bool) override { return false; }
   AgentGroupScheduler& GetAgentGroupScheduler() override {
     return *agent_group_scheduler_;
   }
   VirtualTimeController* GetVirtualTimeController() override { return nullptr; }
-  scoped_refptr<WidgetScheduler> CreateWidgetScheduler() override {
+  scoped_refptr<WidgetScheduler> CreateWidgetScheduler(
+      WidgetScheduler::Delegate*) override {
     return base::MakeRefCounted<DummyWidgetScheduler>();
   }
 
@@ -231,13 +231,13 @@ class SimpleMainThread : public MainThread {
     if (main_thread_task_runner_for_testing_) {
       return main_thread_task_runner_for_testing_;
     }
-    DCHECK(WTF::IsMainThread());
+    DCHECK(IsMainThread());
     return base::SingleThreadTaskRunner::GetCurrentDefault();
   }
 
   ThreadScheduler* Scheduler() override { return scheduler_ptr_; }
 
-  bool IsCurrentThread() const { return WTF::IsMainThread(); }
+  bool IsCurrentThread() const { return IsMainThread(); }
 
   void SetMainThreadTaskRunnerForTesting(
       scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
@@ -278,8 +278,6 @@ class DummyWebMainThreadScheduler : public WebThreadScheduler,
   void PostDelayedIdleTask(const base::Location&,
                            base::TimeDelta delay,
                            Thread::IdleTask) override {}
-  void PostNonNestableIdleTask(const base::Location&,
-                               Thread::IdleTask) override {}
   void RemoveCancelledIdleTasks() override {}
   void AddRAILModeObserver(RAILModeObserver*) override {}
   void RemoveRAILModeObserver(RAILModeObserver const*) override {}
@@ -293,17 +291,17 @@ class DummyWebMainThreadScheduler : public WebThreadScheduler,
 
   scoped_refptr<base::SingleThreadTaskRunner> DeprecatedDefaultTaskRunner()
       override {
-    DCHECK(WTF::IsMainThread());
+    DCHECK(IsMainThread());
     return base::SingleThreadTaskRunner::GetCurrentDefault();
   }
 
   scoped_refptr<base::SingleThreadTaskRunner> V8TaskRunner() override {
-    DCHECK(WTF::IsMainThread());
+    DCHECK(IsMainThread());
     return base::SingleThreadTaskRunner::GetCurrentDefault();
   }
 
   scoped_refptr<base::SingleThreadTaskRunner> CleanupTaskRunner() override {
-    DCHECK(WTF::IsMainThread());
+    DCHECK(IsMainThread());
     return base::SingleThreadTaskRunner::GetCurrentDefault();
   }
 
@@ -322,7 +320,7 @@ class DummyWebMainThreadScheduler : public WebThreadScheduler,
   }
 
   scoped_refptr<base::SingleThreadTaskRunner> NonWakingTaskRunner() override {
-    DCHECK(WTF::IsMainThread());
+    DCHECK(IsMainThread());
     return base::SingleThreadTaskRunner::GetCurrentDefault();
   }
 
@@ -373,11 +371,11 @@ class DummyAgentGroupScheduler : public AgentGroupScheduler {
     return CreateDummyPageScheduler(Isolate());
   }
   scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override {
-    DCHECK(WTF::IsMainThread());
+    DCHECK(IsMainThread());
     return base::SingleThreadTaskRunner::GetCurrentDefault();
   }
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override {
-    DCHECK(WTF::IsMainThread());
+    DCHECK(IsMainThread());
     return base::SingleThreadTaskRunner::GetCurrentDefault();
   }
   WebThreadScheduler& GetMainThreadScheduler() override {

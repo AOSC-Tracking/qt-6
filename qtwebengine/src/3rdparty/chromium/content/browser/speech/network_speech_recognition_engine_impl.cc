@@ -129,7 +129,7 @@ void NetworkSpeechRecognitionEngineImpl::StartRecognition() {
 
 void NetworkSpeechRecognitionEngineImpl::UpdateRecognitionContext(
     const media::SpeechRecognitionRecognitionContext& recognition_context) {
-  // TODO(crbug.com/383911744): Show a not-supported error to the client.
+  Abort(media::mojom::SpeechRecognitionErrorCode::kPhrasesNotSupported);
 }
 
 void NetworkSpeechRecognitionEngineImpl::EndRecognition() {

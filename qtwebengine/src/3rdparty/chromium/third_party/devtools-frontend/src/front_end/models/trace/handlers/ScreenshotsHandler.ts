@@ -38,7 +38,9 @@ export async function finalize(): Promise<void> {
   const pipelineReporterEvents = Helpers.Trace.createMatchedSortedSyntheticEvents(unpairedAsyncEvents);
 
   frameSequenceToTs = Object.fromEntries(pipelineReporterEvents.map(evt => {
-    const frameSequenceId = evt.args.data.beginEvent.args.chrome_frame_reporter.frame_sequence;
+    const args = evt.args.data.beginEvent.args;
+    const frameReporter = 'frame_reporter' in args ? args.frame_reporter : args.chrome_frame_reporter;
+    const frameSequenceId = frameReporter.frame_sequence;
     const presentationTs = Types.Timing.Micro(evt.ts + evt.dur);
     return [frameSequenceId, presentationTs];
   }));
@@ -53,7 +55,7 @@ export async function finalize(): Promise<void> {
       ph,
       pid,
       tid,
-      // TODO(paulirish, crbug.com/41363012): investigate why getPresentationTimestamp(snapshotEvent) seems less accurate. Resolve screenshot timing innaccuracy.
+      // TODO(paulirish, crbug.com/41363012): investigate why getPresentationTimestamp(snapshotEvent) seems less accurate. Resolve screenshot timing inaccuracy.
       // `getPresentationTimestamp(snapshotEvent) - snapshotEvent.ts` is how many microsec the screenshot should be adjusted to the right/later
       ts: snapshotEvent.ts,
       args: {

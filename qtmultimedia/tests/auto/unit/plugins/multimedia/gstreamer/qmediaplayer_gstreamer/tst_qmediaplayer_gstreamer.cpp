@@ -95,6 +95,8 @@ void tst_QMediaPlayerGStreamer::videoSink_constructor_overridesConversionElement
         "identity name=myConverter",
     };
 
+    player.reset(new QMediaPlayer);
+
     QVideoSink sink;
     player->setVideoSink(&sink);
     player->setSource(QUrl("qrc:/testdata/color_matrix.mp4"));
@@ -118,6 +120,8 @@ void tst_QMediaPlayerGStreamer::
         "identity name=myConverter ! identity name=myConverter2",
     };
 
+    player.reset(new QMediaPlayer);
+
     QVideoSink sink;
     player->setVideoSink(&sink);
     player->setSource(QUrl("qrc:/testdata/color_matrix.mp4"));
@@ -134,7 +138,7 @@ void tst_QMediaPlayerGStreamer::
 
 void tst_QMediaPlayerGStreamer::setSource_customGStreamerPipeline_videoTest()
 {
-    player->setSource(u"gstreamer-pipeline: videotestsrc name=testsrc"_s);
+    player->setSource(QUrl{u"gstreamer-pipeline: videotestsrc name=testsrc"_s});
 
     QGstPipeline pipeline = getPipeline();
     QTEST_ASSERT(pipeline);
@@ -147,7 +151,9 @@ void tst_QMediaPlayerGStreamer::setSource_customGStreamerPipeline_videoTest()
 void tst_QMediaPlayerGStreamer::setSource_customGStreamerPipeline_uriDecodeBin()
 {
     player->setSource(
-            u"gstreamer-pipeline: uridecodebin uri=http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4 name=testsrc"_s);
+        QUrl{u"gstreamer-pipeline: uridecodebin "
+              "uri=http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4 "
+              "name=testsrc"_s});
 
     QGstPipeline pipeline = getPipeline();
     QTEST_ASSERT(pipeline);

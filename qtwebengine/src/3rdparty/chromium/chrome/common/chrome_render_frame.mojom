@@ -4,6 +4,8 @@
 
 module chrome.mojom;
 
+[EnableIfNot=is_android]
+import "chrome/common/actor.mojom";
 import "components/lens/lens_metadata.mojom";
 import "mojo/public/mojom/base/string16.mojom";
 import "skia/public/mojom/bitmap.mojom";
@@ -98,4 +100,17 @@ interface ChromeRenderFrame {
   // Sets whether the frame needs to defer media loading when it is in
   // background.
   SetShouldDeferMediaLoad(bool should_defer);
+
+  // Requests invoking of a tool from the actor automation framework. See
+  // chrome/browser/actor
+  [EnableIfNot=is_android]
+  InvokeTool(actor.mojom.ToolInvocation request) =>
+      (actor.mojom.ActionResult result);
+
+  // Requests actor automation framework journaling. Journaling can be
+  // stopped by disconnecting the passed in remote. We use an associated
+  // remote here to keep this consistent with navigation events. The
+  // journal will record the last committed URL in the logs.
+  [EnableIfNot=is_android] StartActorJournal(
+    pending_associated_remote<actor.mojom.JournalClient> client);
 };

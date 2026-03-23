@@ -8,6 +8,8 @@ import { ShaderValidationTest } from '../shader_validation_test.js';
 export const g = makeTestGroup(ShaderValidationTest);
 
 const kCollectiveOps = [
+  { op: 'control_case_compute', stage: 'compute' },
+  { op: 'control_case_fragment', stage: 'fragment' },
   { op: 'textureSample', stage: 'fragment' },
   { op: 'textureSampleBias', stage: 'fragment' },
   { op: 'textureSampleCompare', stage: 'fragment' },
@@ -115,6 +117,11 @@ function generateCondition(condition: string): string {
 
 function generateOp(op: string): string {
   switch (op) {
+    case 'control_case':
+    case 'control_case_compute':
+    case 'control_case_fragment': {
+      return ``;
+    }
     case 'textureSample': {
       return `let x = ${op}(tex, s, vec2(0,0));\n`;
     }
@@ -243,7 +250,7 @@ g.test('basics')
  @group(2) @binding(0) var ro_storage_texture : texture_storage_2d<rgba8unorm, read>;
  @group(2) @binding(1) var rw_storage_texture : texture_storage_2d<rgba8unorm, read_write>;
 
- var<private> priv_var : array<f32, 4> = array(0,0,0,0);
+ var<private> priv_var : array<u32, 4> = array(0,0,0,0);
 
  const c = false;
  override o : f32;
@@ -272,10 +279,11 @@ g.test('basics')
 
     code += `\n}\n`;
 
-    t.expectCompileResult(t.params.expectation, code);
+    t.expectCompileResult(t.params.expectation || t.params.op.startsWith('control_case'), code);
   });
 
 const kSubgroupOps = [
+  'control_case',
   'subgroupAdd',
   'subgroupInclusiveAdd',
   'subgroupExclusiveAdd',
@@ -313,9 +321,6 @@ g.test('basics,subgroups')
       .combine('op', kSubgroupOps)
       .combine('stage', ['compute', 'fragment'] as const)
   )
-  .beforeAllSubcases(t => {
-    t.selectDeviceOrSkipTestCase('subgroups' as GPUFeatureName);
-  })
   .fn(t => {
     let code = `
  enable subgroups;
@@ -332,7 +337,7 @@ g.test('basics,subgroups')
  @group(2) @binding(0) var ro_storage_texture : texture_storage_2d<rgba8unorm, read>;
  @group(2) @binding(1) var rw_storage_texture : texture_storage_2d<rgba8unorm, read_write>;
 
- var<private> priv_var : array<f32, 4> = array(0,0,0,0);
+ var<private> priv_var : array<u32, 4> = array(0,0,0,0);
 
  const c = false;
  override o : f32;
@@ -361,7 +366,7 @@ g.test('basics,subgroups')
 
     code += `\n}\n`;
 
-    t.expectCompileResult(t.params.expectation, code);
+    t.expectCompileResult(t.params.expectation || t.params.op.startsWith('control_case'), code);
   });
 
 const kFragmentBuiltinValues = [
@@ -399,10 +404,6 @@ g.test('fragment_builtin_values')
       t.isCompatibility && ['sample_index', 'sample_mask'].includes(t.params.builtin),
       'compatibility mode does not support sample_index or sample_mask'
     );
-    const builtin = t.params.builtin;
-    if (builtin.includes('subgroup')) {
-      t.selectDeviceOrSkipTestCase('subgroups' as GPUFeatureName);
-    }
   })
   .fn(t => {
     let cond = ``;
@@ -486,11 +487,6 @@ const kComputeBuiltinValues = [
 g.test('compute_builtin_values')
   .desc(`Test uniformity of compute built-in values`)
   .params(u => u.combineWithParams(kComputeBuiltinValues).beginSubcases())
-  .beforeAllSubcases(t => {
-    if (t.params.builtin.includes('subgroup')) {
-      t.selectDeviceOrSkipTestCase('subgroups' as GPUFeatureName);
-    }
-  })
   .fn(t => {
     let cond = ``;
     switch (t.params.type) {
@@ -589,6 +585,11 @@ const kPointerCases: Record<string, PointerCase> = {
   wg_uniform_load_is_uniform: {
     code: `let test_val = workgroupUniformLoad(&wg_scalar);`,
     check: `contents`,
+    uniform: true,
+  },
+  wg_uniform_load_atomic_is_uniform: {
+    code: `let ptr = &wg_atomic;`,
+    check: `address`,
     uniform: true,
   },
   contents_scalar_uniform1: {
@@ -950,6 +951,7 @@ g.test('pointers')
     const code = `
 var<workgroup> wg_scalar : u32;
 var<workgroup> wg_array : array<u32, 16>;
+var<workgroup> wg_atomic : atomic<u32>;
 
 struct Inner {
   x : array<u32, 4>
@@ -2819,9 +2821,6 @@ g.test('subgroups,parameters')
       .combine('op', ['subgroupShuffleUp', 'subgroupShuffleDown', 'subgroupShuffleXor'] as const)
       .combine('uniform', [false, true] as const)
   )
-  .beforeAllSubcases(t => {
-    t.selectDeviceOrSkipTestCase('subgroups' as GPUFeatureName);
-  })
   .fn(t => {
     const wgsl = `
 enable subgroups;

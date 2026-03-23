@@ -3,10 +3,10 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2024 The Khronos Group Inc.
- * Copyright (c) 2015-2024 Valve Corporation
- * Copyright (c) 2015-2024 LunarG, Inc.
- * Copyright (c) 2015-2024 Google Inc.
+ * Copyright (c) 2015-2025 The Khronos Group Inc.
+ * Copyright (c) 2015-2025 Valve Corporation
+ * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (c) 2015-2025 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,8 +78,12 @@ static const VkDebugReportObjectTypeEXT kDebugReportLookup[kVulkanObjectTypeMax]
     VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR_EXT,  // kVulkanObjectTypeAccelerationStructureKHR
     VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA_EXT,   // kVulkanObjectTypeBufferCollectionFUCHSIA
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,                     // kVulkanObjectTypeMicromapEXT
+    VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,                     // kVulkanObjectTypeTensorARM
+    VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,                     // kVulkanObjectTypeTensorViewARM
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,                     // kVulkanObjectTypeOpticalFlowSessionNV
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,                     // kVulkanObjectTypeShaderEXT
+    VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,                     // kVulkanObjectTypeDataGraphPipelineSessionARM
+    VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,                     // kVulkanObjectTypeExternalComputeQueueNV
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,                     // kVulkanObjectTypeIndirectExecutionSetEXT
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,                     // kVulkanObjectTypeIndirectCommandsLayoutEXT
 };
@@ -136,8 +140,12 @@ static const char* const kVulkanObjectTypeStrings[kVulkanObjectTypeMax] = {
     "VkAccelerationStructureKHR",
     "VkBufferCollectionFUCHSIA",
     "VkMicromapEXT",
+    "VkTensorARM",
+    "VkTensorViewARM",
     "VkOpticalFlowSessionNV",
     "VkShaderEXT",
+    "VkDataGraphPipelineSessionARM",
+    "VkExternalComputeQueueNV",
     "VkIndirectExecutionSetEXT",
     "VkIndirectCommandsLayoutEXT",
 };
@@ -145,5 +153,9 @@ static const char* const kVulkanObjectTypeStrings[kVulkanObjectTypeMax] = {
 VkDebugReportObjectTypeEXT GetDebugReport(VulkanObjectType type) { return kDebugReportLookup[type]; }
 
 const char* string_VulkanObjectType(VulkanObjectType type) { return kVulkanObjectTypeStrings[type]; }
+
+const char* string_VkObjectTypeHandleName(VkObjectType type) {
+    return string_VulkanObjectType(ConvertCoreObjectToVulkanObject(type));
+}
 
 // NOLINTEND

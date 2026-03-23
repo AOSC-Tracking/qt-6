@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QCOMOBJECT_P_H
 #define QCOMOBJECT_P_H
@@ -80,18 +81,21 @@ public:
         return tryQueryInterface<TFirstInterface, TAdditionalInterfaces...>(riid, ppvObject);
     }
 
-    // clang-format off
     STDMETHODIMP_(ULONG) AddRef() override
     {
-        return ++m_referenceCount;
+        return m_referenceCount.fetch_add(1, std::memory_order_relaxed) + 1;
     }
-    // clang-format on
 
     STDMETHODIMP_(ULONG) Release() override
     {
-        const LONG referenceCount = --m_referenceCount;
-        if (referenceCount == 0)
+        const LONG referenceCount = m_referenceCount.fetch_sub(1, std::memory_order_release) - 1;
+        if (referenceCount == 0) {
+            // This acquire fence synchronizes with the release operation in other threads.
+            // It ensures that all memory writes made to this object by other threads
+            // are visible to this thread before we proceed to delete it.
+            std::atomic_thread_fence(std::memory_order_acquire);
             delete this;
+        }
 
         return referenceCount;
     }
@@ -102,6 +106,9 @@ protected:
     // Destructor is not public. Caller should call Release.
     // Derived class should make its destructor private to force this behavior.
     virtual ~QComObject() = default;
+
+    // allow derived classes to access the reference count
+    std::atomic<LONG> m_referenceCount = 1;
 
 private:
     template <typename TInterface, typename... TRest>
@@ -121,8 +128,6 @@ private:
 
         return E_NOINTERFACE;
     }
-
-    std::atomic<LONG> m_referenceCount = 1;
 };
 
 QT_END_NAMESPACE

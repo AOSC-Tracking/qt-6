@@ -18,6 +18,7 @@
 #include "chrome/browser/ui/webui/device_log/device_log_ui.h"
 #include "chrome/browser/ui/webui/devtools/devtools_ui.h"
 #include "chrome/browser/ui/webui/net_internals/net_internals_ui.h"
+#include "chrome/browser/ui/webui/usb_internals/usb_internals_ui.h"
 #include "chrome/browser/ui/webui/user_actions/user_actions_ui.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
@@ -99,6 +100,9 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI *web_ui, Profile *profile, co
     if (url.host_piece() == chrome::kChromeUIDeviceLogHost)
         return &NewWebUI<chromeos::DeviceLogUI>;
 
+    if (url.host_piece() == chrome::kChromeUIUsbInternalsHost)
+        return &NewWebUI<UsbInternalsUI>;
+
     if (url.host_piece() == chrome::kChromeUIVersionQtHost)
         return &NewWebUI<VersionUIQt>;
 
@@ -109,12 +113,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI *web_ui, Profile *profile, co
 //    if (url.host_piece() == chrome::kChromeUICertificateViewerHost)
 //        return &NewWebUI<CertificateViewerUI>;
 //#endif  // USE_NSS_CERTS && USE_AURA
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if QT_CONFIG(webengine_extensions)
     if (url.host_piece() == chrome::kChromeUIExtensionsHost) {
-        if (profile->IsIncognitoProfile()) {
-            qWarning("chrome://extensions is not supported with an off-the-record profile.");
-            return nullptr;
-        }
         return &NewWebUI<ExtensionsUIQt>;
     }
 #endif

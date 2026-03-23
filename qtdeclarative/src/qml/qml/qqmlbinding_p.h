@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLBINDING_P_H
 #define QQMLBINDING_P_H
@@ -102,7 +103,7 @@ public:
      *
      * Call this method from the UI thread.
      */
-    QVector<QQmlProperty> dependencies() const;
+    QList<QQmlProperty> dependencies() const;
     // This method is used internally to check whether a binding is constant and can be removed
     virtual bool hasDependencies() const;
 

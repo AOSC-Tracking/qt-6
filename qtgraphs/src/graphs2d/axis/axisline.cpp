@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "axisline_p.h"
 
@@ -50,7 +52,7 @@ qreal AxisLine::smoothing() const
 
 void AxisLine::setSmoothing(qreal newSmoothing)
 {
-    if (qFuzzyCompare(m_smoothing, newSmoothing))
+    if (QtPrivate::fuzzyCompare(m_smoothing, newSmoothing))
         return;
     m_smoothing = newSmoothing;
     emit smoothingChanged();
@@ -76,7 +78,7 @@ qreal AxisLine::lineWidth() const
 
 void AxisLine::setLineWidth(qreal newLineWidth)
 {
-    if (qFuzzyCompare(m_lineWidth, newLineWidth))
+    if (QtPrivate::fuzzyCompare(m_lineWidth, newLineWidth))
         return;
     m_lineWidth = newLineWidth;
     emit lineWidthChanged();
@@ -96,3 +98,5 @@ void AxisLine::setIsHorizontal(bool newIsHorizontal)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_axisline_p.cpp"

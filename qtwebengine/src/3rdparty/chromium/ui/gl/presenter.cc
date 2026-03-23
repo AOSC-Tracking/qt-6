@@ -4,6 +4,7 @@
 
 #include "ui/gl/presenter.h"
 
+#include "base/notimplemented.h"
 #include "ui/gfx/gpu_fence.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -44,9 +45,16 @@ bool Presenter::ScheduleCALayer(const ui::CARendererLayerParams& params) {
   return false;
 }
 
-void Presenter::ScheduleDCLayer(std::unique_ptr<DCLayerOverlayParams> params) {
+#if BUILDFLAG(IS_WIN)
+void Presenter::ScheduleDCLayers(std::vector<DCLayerOverlayParams> overlays) {
   NOTIMPLEMENTED();
 }
+
+bool Presenter::DestroyDCLayerTree() {
+  NOTIMPLEMENTED();
+  return false;
+}
+#endif
 
 bool Presenter::Resize(const gfx::Size& size,
                        float scale_factor,

@@ -62,7 +62,7 @@ Handle<SharedFunctionInfo> FunctionTemplateInfo::GetOrCreateSharedFunctionInfo(
 bool FunctionTemplateInfo::IsTemplateFor(Tagged<Map> map) const {
   RCS_SCOPE(
       LocalHeap::Current() == nullptr
-          ? GetIsolateChecked()->counters()->runtime_call_stats()
+          ? Isolate::Current()->counters()->runtime_call_stats()
           : LocalIsolate::FromHeap(LocalHeap::Current())->runtime_call_stats(),
       RuntimeCallCounterId::kIsTemplateFor);
 
@@ -124,6 +124,21 @@ bool FunctionTemplateInfo::IsLeafTemplateForApiObject(
 }
 
 // static
+void FunctionTemplateInfo::SealAndPrepareForPromotionToReadOnly(
+    Isolate* isolate, DirectHandle<FunctionTemplateInfo> info) {
+  if (info->should_promote_to_read_only()) return;
+  CHECK(!HeapLayout::InReadOnlySpace(*info));
+
+  info->EnsureHasSerialNumber(isolate);
+
+  GetOrCreateSharedFunctionInfo(isolate, info,
+                                isolate->factory()->empty_string());
+
+  info->set_should_promote_to_read_only(true);
+  info->set_published(true);
+}
+
+// static
 Tagged<FunctionTemplateRareData>
 FunctionTemplateInfo::AllocateFunctionTemplateRareData(
     Isolate* isolate,
@@ -170,6 +185,16 @@ const CFunctionInfo* FunctionTemplateInfo::GetCSignature(Isolate* isolate,
   return v8::ToCData<CFunctionInfo*, kCFunctionInfoTag>(
       isolate, Cast<FixedArray>(GetCFunctionOverloads())
                    ->get(index * kFunctionOverloadEntrySize + 1));
+}
+
+// static
+void ObjectTemplateInfo::SealAndPrepareForPromotionToReadOnly(
+    Isolate* isolate, DirectHandle<ObjectTemplateInfo> info) {
+  if (info->should_promote_to_read_only()) return;
+  CHECK(!HeapLayout::InReadOnlySpace(*info));
+
+  info->EnsureHasSerialNumber(isolate);
+  info->set_should_promote_to_read_only(true);
 }
 
 // static
@@ -222,7 +247,7 @@ DirectHandle<JSObject> DictionaryTemplateInfo::NewInstance(
     DirectHandle<NativeContext> context,
     DirectHandle<DictionaryTemplateInfo> self,
     const MemorySpan<MaybeLocal<Value>>& property_values) {
-  Isolate* isolate = context->GetIsolate();
+  Isolate* isolate = Isolate::Current();
   DirectHandle<FixedArray> property_names(self->property_names(), isolate);
 
   const int property_names_len = property_names->length();
@@ -240,8 +265,7 @@ DirectHandle<JSObject> DictionaryTemplateInfo::NewInstance(
   MaybeDirectHandle<Map> maybe_cached_map;
   if (V8_LIKELY(can_use_map_cache)) {
     maybe_cached_map = TemplateInfo::ProbeInstantiationsCache<Map>(
-        isolate, context, self->serial_number(),
-        TemplateInfo::CachingMode::kUnlimited);
+        isolate, context, self, TemplateInfo::CachingMode::kUnlimited);
   }
   DirectHandle<Map> cached_map;
   if (V8_LIKELY(can_use_map_cache && maybe_cached_map.ToHandle(&cached_map))) {

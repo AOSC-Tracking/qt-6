@@ -3,7 +3,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include "xnnpack/microparams-init.h"
+#include "src/xnnpack/microparams-init.h"
 
 #include <assert.h>
 #include <math.h>
@@ -11,15 +11,15 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
-#include "xnnpack/microparams.h"
-#include "xnnpack/requantization.h"
-#include "xnnpack/unaligned.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/requantization.h"
+#include "src/xnnpack/unaligned.h"
 
 size_t xnn_init_qs8_qc8w_conv_minmax_fp32_scalar_params(
-  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_qc8w_conv_minmax_params* params,
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -32,7 +32,7 @@ size_t xnn_init_qs8_qc8w_conv_minmax_fp32_scalar_params(
 
 #if XNN_ARCH_ARM
 size_t xnn_init_qs8_qc8w_conv_minmax_fp32_armsimd32_params(
-  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_qc8w_conv_minmax_params* params,
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -47,7 +47,7 @@ size_t xnn_init_qs8_qc8w_conv_minmax_fp32_armsimd32_params(
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 size_t xnn_init_qs8_qc8w_conv_minmax_fp32_neon_params(
-  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_qc8w_conv_minmax_params* params,
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -60,7 +60,7 @@ size_t xnn_init_qs8_qc8w_conv_minmax_fp32_neon_params(
 }
 
 size_t xnn_init_qs8_qc8w_conv_minmax_fp32_neonv8_params(
-  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_qc8w_conv_minmax_params* params,
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -73,7 +73,7 @@ size_t xnn_init_qs8_qc8w_conv_minmax_fp32_neonv8_params(
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 
 size_t xnn_init_qs8_conv_minmax_fp32_scalar_params(
-  union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_conv_minmax_params* params,
   float scale,
   int8_t output_zero_point,
   int8_t output_min,
@@ -90,7 +90,7 @@ size_t xnn_init_qs8_conv_minmax_fp32_scalar_params(
 }
 
 size_t xnn_init_qs8_conv_minmax_rndnu_scalar_params(
-  union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_conv_minmax_params* params,
   float scale,
   int8_t output_zero_point,
   int8_t output_min,
@@ -122,7 +122,7 @@ size_t xnn_init_qs8_conv_minmax_rndnu_scalar_params(
 }
 
 size_t xnn_init_qu8_conv_minmax_rndnu16_scalar_params(
-  union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qu8_conv_minmax_params* params,
   uint8_t kernel_zero_point,
   float scale,
   uint8_t output_zero_point,
@@ -149,7 +149,7 @@ size_t xnn_init_qu8_conv_minmax_rndnu16_scalar_params(
 
 #if XNN_ARCH_ARM
 size_t xnn_init_qs8_conv_minmax_fp32_armsimd32_params(
-  union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_conv_minmax_params* params,
   float scale,
   int8_t output_zero_point,
   int8_t output_min,
@@ -169,7 +169,7 @@ size_t xnn_init_qs8_conv_minmax_fp32_armsimd32_params(
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 size_t xnn_init_qs8_conv_minmax_fp32_neon_params(
-  union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_conv_minmax_params* params,
   float scale,
   int8_t output_zero_point,
   int8_t output_min,
@@ -187,7 +187,7 @@ size_t xnn_init_qs8_conv_minmax_fp32_neon_params(
 }
 
 size_t xnn_init_qs8_conv_minmax_fp32_neonv8_params(
-  union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_conv_minmax_params* params,
   float scale,
   int8_t output_zero_point,
   int8_t output_min,
@@ -204,7 +204,7 @@ size_t xnn_init_qs8_conv_minmax_fp32_neonv8_params(
 }
 
 size_t xnn_init_qs8_conv_minmax_rndnu_neon_params(
-  union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qs8_conv_minmax_params* params,
   float scale,
   int8_t output_zero_point,
   int8_t output_min,
@@ -241,7 +241,7 @@ size_t xnn_init_qs8_conv_minmax_rndnu_neon_params(
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 
 size_t xnn_init_qu8_conv_minmax_fp32_scalar_params(
-  union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qu8_conv_minmax_params* params,
   uint8_t kernel_zero_point,
   float scale,
   uint8_t output_zero_point,
@@ -260,7 +260,7 @@ size_t xnn_init_qu8_conv_minmax_fp32_scalar_params(
 }
 
 size_t xnn_init_qu8_conv_minmax_rndnu_scalar_params(
-  union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qu8_conv_minmax_params* params,
   uint8_t kernel_zero_point,
   float scale,
   uint8_t output_zero_point,
@@ -297,7 +297,7 @@ size_t xnn_init_qu8_conv_minmax_rndnu_scalar_params(
 
 #if XNN_ARCH_ARM
 size_t xnn_init_qu8_conv_minmax_fp32_armsimd32_params(
-  union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qu8_conv_minmax_params* params,
   uint8_t kernel_zero_point,
   float scale,
   uint8_t output_zero_point,
@@ -320,7 +320,7 @@ size_t xnn_init_qu8_conv_minmax_fp32_armsimd32_params(
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 size_t xnn_init_qu8_conv_minmax_fp32_neon_params(
-  union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qu8_conv_minmax_params* params,
   uint8_t kernel_zero_point,
   float scale,
   uint8_t output_zero_point,
@@ -340,7 +340,7 @@ size_t xnn_init_qu8_conv_minmax_fp32_neon_params(
 }
 
 size_t xnn_init_qu8_conv_minmax_fp32_neonv8_params(
-  union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qu8_conv_minmax_params* params,
   uint8_t kernel_zero_point,
   float scale,
   uint8_t output_zero_point,
@@ -359,7 +359,7 @@ size_t xnn_init_qu8_conv_minmax_fp32_neonv8_params(
 }
 
 size_t xnn_init_qu8_conv_minmax_rndnu_neon_params(
-  union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  union xnn_qu8_conv_minmax_params* params,
   uint8_t kernel_zero_point,
   float scale,
   uint8_t output_zero_point,
@@ -400,102 +400,55 @@ size_t xnn_init_qu8_conv_minmax_rndnu_neon_params(
 void xnn_init_qs8_qc8w_scale_fp32_params(
   size_t channels,
   size_t channels_tile,
-  size_t channels_subtile,
   size_t stride,
-  size_t substride,
-  size_t stride_offset,
-  const float scale[XNN_MIN_ELEMENTS(1)],
+  const float* scale,
   void* packed_w)
 {
-  const size_t tiled_channels = round_down_po2(channels, channels_tile);
-  size_t tile_start = 0;
-  for (; tile_start < tiled_channels; tile_start += channels_tile) {
-    const size_t tile_size = channels_tile;
+  for (size_t tile_start = 0; tile_start < channels; tile_start += channels_tile) {
+    const size_t tile_size = min(channels - tile_start, channels_tile);
     for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
       unaligned_indexed_store_f32(packed_w, tile_offset, scale[tile_start + tile_offset]);
     }
     packed_w = (void*) ((uintptr_t) packed_w + stride);
-  }
-
-  packed_w = (void*) ((uintptr_t) packed_w - stride_offset);
-
-  for (; tile_start < channels; tile_start += channels_subtile) {
-    const size_t tile_size = min(channels - tile_start, channels_subtile);
-    for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
-      unaligned_indexed_store_f32(packed_w, tile_offset, scale[tile_start + tile_offset]);
-    }
-    packed_w = (void*) ((uintptr_t) packed_w + substride);
   }
 }
 
 void xnn_init_qs8_to_qs8_qc8w_scale_fp32_params(
   size_t channels,
   size_t channels_tile,
-  size_t channels_subtile,
   size_t stride,
-  size_t substride,
-  size_t stride_offset,
-  const float scale[XNN_MIN_ELEMENTS(1)],
+  const float* scale,
   void* packed_w)
 {
-  const size_t tiled_channels = round_down_po2(channels, channels_tile);
-  size_t tile_start = 0;
-  for (; tile_start < tiled_channels; tile_start += channels_tile) {
-    const size_t tile_size = channels_tile;
+  for (size_t tile_start = 0; tile_start < channels; tile_start += channels_tile) {
+    const size_t tile_size = min(channels - tile_start, channels_tile);
     for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
       unaligned_indexed_store_f32(packed_w, tile_offset, *scale);
     }
     packed_w = (void*) ((uintptr_t) packed_w + stride);
-  }
-
-  packed_w = (void*) ((uintptr_t) packed_w - stride_offset);
-
-  for (; tile_start < channels; tile_start += channels_subtile) {
-    const size_t tile_size = min(channels - tile_start, channels_subtile);
-    for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
-      unaligned_indexed_store_f32(packed_w, tile_offset, *scale);
-    }
-    packed_w = (void*) ((uintptr_t) packed_w + substride);
   }
 }
 
 void xnn_init_blockwise_scale_fp32_params(
   size_t channels,
   size_t channels_tile,
-  size_t channels_subtile,
   size_t stride,
-  size_t substride,
   size_t num_blocks,
   size_t block_stride,
-  size_t stride_offset,
-  const float scale[XNN_MIN_ELEMENTS(1)],
+  const float* scale,
   void* packed_w)
 {
   void* packed_w_saved = packed_w;
   for (size_t block_start = 0; block_start < num_blocks; block_start++) {
     packed_w = (void*)((uintptr_t) packed_w_saved + block_start * block_stride);
-    const size_t tiled_channels = round_down_po2(channels, channels_tile);
-    size_t tile_start = 0;
-    for (; tile_start < tiled_channels; tile_start += channels_tile) {
-      const size_t tile_size = channels_tile;
+    for (size_t tile_start = 0; tile_start < channels; tile_start += channels_tile) {
+      const size_t tile_size = min(channels - tile_start, channels_tile);
       for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
         size_t scale_index = (tile_start + tile_offset) * num_blocks + block_start;
         // 1/16 because the weight are << 4 in the innermost loop to save a shift
         unaligned_indexed_store_f32(packed_w, tile_offset, scale[scale_index] / 16.0f);
       }
       packed_w = (void*) ((uintptr_t) packed_w + stride);
-    }
-
-    packed_w = (void*) ((uintptr_t) packed_w - stride_offset);
-
-    for (; tile_start < channels; tile_start += channels_subtile) {
-      const size_t tile_size = min(channels - tile_start, channels_subtile);
-      for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
-        size_t scale_index = (tile_start + tile_offset) * num_blocks + block_start;
-        // 1/16 because the weight are << 4 in the innermost loop to save a shift
-        unaligned_indexed_store_f32(packed_w, tile_offset, scale[scale_index] / 16.0f);
-      }
-      packed_w = (void*) ((uintptr_t) packed_w + substride);
     }
   }
 }
@@ -503,22 +456,17 @@ void xnn_init_blockwise_scale_fp32_params(
 void xnn_init_blockwise_scale_bf16_params(
   size_t channels,
   size_t channels_tile,
-  size_t channels_subtile,
   size_t stride,
-  size_t substride,
   size_t num_blocks,
   size_t block_stride,
-  size_t stride_offset,
-  const xnn_bfloat16 scale[XNN_MIN_ELEMENTS(1)],
+  const xnn_bfloat16* scale,
   void* packed_w)
 {
   void* packed_w_saved = packed_w;
   for (size_t block_start = 0; block_start < num_blocks; block_start++) {
     packed_w = (void*)((uintptr_t) packed_w_saved + block_start * block_stride);
-    const size_t tiled_channels = round_down_po2(channels, channels_tile);
-    size_t tile_start = 0;
-    for (; tile_start < tiled_channels; tile_start += channels_tile) {
-      const size_t tile_size = channels_tile;
+    for (size_t tile_start = 0; tile_start < channels; tile_start += channels_tile) {
+      const size_t tile_size = min(channels - tile_start, channels_tile);
       for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
         size_t scale_index = (tile_start + tile_offset) * num_blocks + block_start;
         // 1/16 because the weight are << 4 in the innermost loop to save a shift
@@ -527,55 +475,11 @@ void xnn_init_blockwise_scale_bf16_params(
       }
       packed_w = (void*) ((uintptr_t) packed_w + stride);
     }
-
-    packed_w = (void*) ((uintptr_t) packed_w - stride_offset);
-
-    for (; tile_start < channels; tile_start += channels_subtile) {
-      const size_t tile_size = min(channels - tile_start, channels_subtile);
-      for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
-        size_t scale_index = (tile_start + tile_offset) * num_blocks + block_start;
-        // 1/16 because the weight are << 4 in the innermost loop to save a shift
-        float scale_16 = math_cvt_bf16_fp32(xnn_bfloat16_to_float(scale[scale_index]) / 16.0f);
-        unaligned_indexed_store_u16(packed_w, tile_offset, scale_16);
-      }
-      packed_w = (void*) ((uintptr_t) packed_w + substride);
-    }
   }
 }
 
-size_t xnn_init_qu8_avgpool_minmax_fp32_scalar_params(
-  struct xnn_qu8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)],
-  int32_t init_bias,
-  float scale,
-  uint8_t output_zero_point,
-  uint8_t output_min,
-  uint8_t output_max)
-{
-  assert(scale >= 0x1.0p-32f);
-  assert(scale < 256.0f);
-
-  params->fp32_scalar.init_bias = init_bias;
-  params->fp32_scalar.scale = scale;
-  params->fp32_scalar.output_zero_point = output_zero_point;
-  params->fp32_scalar.output_min = output_min;
-  params->fp32_scalar.output_max = output_max;
-  return sizeof(params->fp32_scalar);
-}
-
-void xnn_update_qu8_avgpool_minmax_fp32_scalar_params(
-  struct xnn_qu8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)],
-  int32_t init_bias,
-  float scale)
-{
-  assert(scale >= 0x1.0p-32f);
-  assert(scale < 256.0f);
-
-  params->fp32_scalar.init_bias = init_bias;
-  params->fp32_scalar.scale = scale;
-}
-
 size_t xnn_init_f16_scale_scalar_params(
-  struct xnn_f16_scale_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f16_scale_params* params,
   xnn_float16 scale)
 {
   params->scalar.scale = scale;
@@ -583,7 +487,7 @@ size_t xnn_init_f16_scale_scalar_params(
 }
 
 size_t xnn_init_f16_f32acc_scale_scalar_params(
-  struct xnn_f16_f32acc_scale_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f16_f32acc_scale_params* params,
   float scale)
 {
   params->scalar.scale = scale;
@@ -591,7 +495,7 @@ size_t xnn_init_f16_f32acc_scale_scalar_params(
 }
 
 size_t xnn_init_f32_scale_scalar_params(
-  struct xnn_f32_scale_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f32_scale_params* params,
   float scale)
 {
   params->scalar.scale = scale;
@@ -599,14 +503,14 @@ size_t xnn_init_f32_scale_scalar_params(
 }
 
 void xnn_update_f32_scaleminmax_scalar_params(
-  struct xnn_f32_scaleminmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f32_scaleminmax_params* params,
   float scale)
 {
   params->scalar.scale = scale;
 }
 
 size_t xnn_init_f16_scaleminmax_scalar_params(
-  struct xnn_f16_scaleminmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f16_scaleminmax_params* params,
   xnn_float16 scale,
   xnn_float16 min,
   xnn_float16 max)
@@ -618,7 +522,7 @@ size_t xnn_init_f16_scaleminmax_scalar_params(
 }
 
 void xnn_update_f16_scaleminmax_scalar_params(
-  struct xnn_f16_scaleminmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f16_scaleminmax_params* params,
   xnn_float16 scale)
 {
   params->scalar.scale = scale;
@@ -626,7 +530,7 @@ void xnn_update_f16_scaleminmax_scalar_params(
 
 
 size_t xnn_init_f32_scaleminmax_scalar_params(
-  struct xnn_f32_scaleminmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f32_scaleminmax_params* params,
   float scale,
   float min,
   float max)
@@ -638,7 +542,7 @@ size_t xnn_init_f32_scaleminmax_scalar_params(
 }
 
 size_t xnn_init_bf16_minmax_scalar_params(
-  struct xnn_bf16_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_bf16_minmax_params* params,
   xnn_bfloat16 output_min,
   xnn_bfloat16 output_max)
 {
@@ -648,7 +552,7 @@ size_t xnn_init_bf16_minmax_scalar_params(
 }
 
 size_t xnn_init_f16_minmax_scalar_params(
-  union xnn_f16_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f16_minmax_params* params,
   xnn_float16 min,
   xnn_float16 max)
 {
@@ -658,7 +562,7 @@ size_t xnn_init_f16_minmax_scalar_params(
 }
 
 size_t xnn_init_f16_qc4w_minmax_scalar_params(
-  struct xnn_f16_qc4w_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f16_qc4w_minmax_params* params,
   xnn_float16 output_min,
   xnn_float16 output_max,
   uint8_t kernel_zero_point)
@@ -670,7 +574,7 @@ size_t xnn_init_f16_qc4w_minmax_scalar_params(
 }
 
 size_t xnn_init_f16_qb4w_minmax_scalar_params(
-  struct xnn_f16_qb4w_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f16_qb4w_minmax_params* params,
   xnn_float16 output_min,
   xnn_float16 output_max,
   uint8_t kernel_zero_point,
@@ -684,7 +588,7 @@ size_t xnn_init_f16_qb4w_minmax_scalar_params(
 }
 
 size_t xnn_init_f32_minmax_scalar_params(
-  union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f32_minmax_params* params,
   float output_min,
   float output_max)
 {
@@ -694,7 +598,7 @@ size_t xnn_init_f32_minmax_scalar_params(
 }
 
 size_t xnn_init_f32_qc4w_minmax_scalar_params(
-  struct xnn_f32_qc4w_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f32_qc4w_minmax_params* params,
   float output_min,
   float output_max,
   uint8_t kernel_zero_point)
@@ -707,7 +611,7 @@ size_t xnn_init_f32_qc4w_minmax_scalar_params(
 }
 
 size_t xnn_init_f32_qb4w_minmax_scalar_params(
-  struct xnn_f32_qb4w_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_f32_qb4w_minmax_params* params,
   float output_min,
   float output_max,
   uint8_t kernel_zero_point,
@@ -880,7 +784,7 @@ size_t xnn_init_f32_clamp_scalar_params(
 }
 
 size_t xnn_init_s8_minmax_scalar_params(
-  struct xnn_s8_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_s8_minmax_params* params,
   int8_t output_min,
   int8_t output_max)
 {
@@ -892,7 +796,7 @@ size_t xnn_init_s8_minmax_scalar_params(
 }
 
 size_t xnn_init_u8_minmax_scalar_params(
-  struct xnn_u8_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_u8_minmax_params* params,
   uint8_t output_min,
   uint8_t output_max)
 {
@@ -904,7 +808,7 @@ size_t xnn_init_u8_minmax_scalar_params(
 }
 
 size_t xnn_init_f16_minmax_binary_params(
-    union xnn_f16_minmax_params uparams[XNN_MIN_ELEMENTS(1)],
+    struct xnn_f16_minmax_params* uparams,
     const struct xnn_quantization_params* a_quantization,
     const struct xnn_quantization_params* b_quantization,
     const struct xnn_quantization_params* output_quantization) {
@@ -914,7 +818,7 @@ size_t xnn_init_f16_minmax_binary_params(
 }
 
 size_t xnn_init_f32_minmax_binary_params(
-    union xnn_f32_minmax_params uparams[XNN_MIN_ELEMENTS(1)],
+    struct xnn_f32_minmax_params* uparams,
     const struct xnn_quantization_params* a_quantization,
     const struct xnn_quantization_params* b_quantization,
     const struct xnn_quantization_params* output_quantization) {
@@ -924,7 +828,7 @@ size_t xnn_init_f32_minmax_binary_params(
 }
 
 size_t xnn_init_qu8_add_minmax_scalar_params(
-    struct xnn_qu8_add_minmax_params uparams[XNN_MIN_ELEMENTS(1)],
+    struct xnn_qu8_add_minmax_params* uparams,
     const struct xnn_quantization_params* a_quantization,
     const struct xnn_quantization_params* b_quantization,
     const struct xnn_quantization_params* output_quantization) {
@@ -978,7 +882,7 @@ size_t xnn_init_qu8_add_minmax_scalar_params(
 }
 
 size_t xnn_init_qs8_add_minmax_scalar_params(
-    struct xnn_qs8_add_minmax_params uparams[XNN_MIN_ELEMENTS(1)],
+    struct xnn_qs8_add_minmax_params* uparams,
     const struct xnn_quantization_params* a_quantization,
     const struct xnn_quantization_params* b_quantization,
     const struct xnn_quantization_params* output_quantization) {
@@ -1030,8 +934,32 @@ size_t xnn_init_qs8_add_minmax_scalar_params(
   return sizeof(uparams->scalar);
 }
 
+size_t xnn_init_qs8_vprelu_scalar_params(
+    union xnn_qs8_vprelu_scalar_params* uparams,
+    const struct xnn_quantization_params* a_quantization,
+    const struct xnn_quantization_params* b_quantization,
+    const struct xnn_quantization_params* output_quantization) {
+  assert(a_quantization);
+  assert(b_quantization);
+  assert(output_quantization);
+  const float negative_product_scale = (a_quantization->scale * b_quantization->scale) / output_quantization->scale;
+  const float positive_product_scale = a_quantization->scale / output_quantization->scale;
+  const float rprelu_positive_product_scale = b_quantization->scale / output_quantization->scale;
+  assert(negative_product_scale >= 0x1.0p-16f);
+  assert(negative_product_scale < 0x1.0p+8f);
+  uparams->scalar.input_zero_point = a_quantization->zero_point;
+  uparams->scalar.slope_zero_point = b_quantization->zero_point;
+  uparams->scalar.negative_multiplier = negative_product_scale;
+  uparams->scalar.positive_multiplier = positive_product_scale;
+  uparams->scalar.rprelu_positive_multiplier = rprelu_positive_product_scale;
+  uparams->scalar.output_zero_point = output_quantization->zero_point;
+  uparams->scalar.output_min = INT8_MIN;
+  uparams->scalar.output_max = INT8_MAX;
+  return sizeof(uparams->scalar);
+}
+
 size_t xnn_init_qu8_mul_minmax_scalar_params(
-    union xnn_qu8_mul_minmax_params uparams[XNN_MIN_ELEMENTS(1)],
+    union xnn_qu8_mul_minmax_params* uparams,
     const struct xnn_quantization_params* a_quantization,
     const struct xnn_quantization_params* b_quantization,
     const struct xnn_quantization_params* output_quantization) {
@@ -1054,7 +982,7 @@ size_t xnn_init_qu8_mul_minmax_scalar_params(
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 size_t xnn_init_qu8_mul_minmax_rndnu_neon_params(
-    union xnn_qu8_mul_minmax_params uparams[XNN_MIN_ELEMENTS(1)],
+    union xnn_qu8_mul_minmax_params* uparams,
     const struct xnn_quantization_params* a_quantization,
     const struct xnn_quantization_params* b_quantization,
     const struct xnn_quantization_params* output_quantization) {
@@ -1096,8 +1024,33 @@ size_t xnn_init_qu8_mul_minmax_rndnu_neon_params(
 }
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 
+size_t xnn_init_qu8_vprelu_scalar_params(
+    union xnn_qs8_vprelu_scalar_params* uparams,
+    const struct xnn_quantization_params* a_quantization,
+    const struct xnn_quantization_params* b_quantization,
+    const struct xnn_quantization_params* output_quantization) {
+  assert(a_quantization);
+  assert(b_quantization);
+  assert(output_quantization);
+  const float negative_product_scale = (a_quantization->scale * b_quantization->scale) / output_quantization->scale;
+  const float positive_product_scale = a_quantization->scale / output_quantization->scale;
+  const float rprelu_positive_product_scale = b_quantization->scale / output_quantization->scale;
+  assert(negative_product_scale >= 0x1.0p-16f);
+  assert(negative_product_scale < 0x1.0p+8f);
+  uparams->scalar.input_zero_point = a_quantization->zero_point;
+  uparams->scalar.slope_zero_point = b_quantization->zero_point;
+  uparams->scalar.negative_multiplier = negative_product_scale;
+  uparams->scalar.positive_multiplier = positive_product_scale;
+  uparams->scalar.rprelu_positive_multiplier = rprelu_positive_product_scale;
+  uparams->scalar.output_zero_point = output_quantization->zero_point;
+  uparams->scalar.output_min = 0;
+  uparams->scalar.output_max = UINT8_MAX;
+  return sizeof(uparams->scalar);
+}
+
+
 size_t xnn_init_qs8_mul_minmax_scalar_params(
-    union xnn_qs8_mul_minmax_params uparams[XNN_MIN_ELEMENTS(1)],
+    union xnn_qs8_mul_minmax_params* uparams,
     const struct xnn_quantization_params* a_quantization,
     const struct xnn_quantization_params* b_quantization,
     const struct xnn_quantization_params* output_quantization) {
@@ -1120,7 +1073,7 @@ size_t xnn_init_qs8_mul_minmax_scalar_params(
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 size_t xnn_init_qs8_mul_minmax_rndnu_neon_params(
-    union xnn_qs8_mul_minmax_params uparams[XNN_MIN_ELEMENTS(1)],
+    union xnn_qs8_mul_minmax_params* uparams,
     const struct xnn_quantization_params* a_quantization,
     const struct xnn_quantization_params* b_quantization,
     const struct xnn_quantization_params* output_quantization) {
@@ -1193,7 +1146,7 @@ size_t xnn_init_f32_qs8_cvt_scalar_params(
 }
 
 size_t xnn_init_qs8_reduce_scalar_params(
-  struct xnn_reduce_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_reduce_params* params,
   const struct xnn_quantization_params* input_quantization,
   const struct xnn_quantization_params* output_quantization)
 {
@@ -1205,7 +1158,7 @@ size_t xnn_init_qs8_reduce_scalar_params(
 }
 
 size_t xnn_init_qu8_reduce_scalar_params(
-  struct xnn_reduce_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_reduce_params* params,
   const struct xnn_quantization_params* input_quantization,
   const struct xnn_quantization_params* output_quantization)
 {
@@ -1217,7 +1170,7 @@ size_t xnn_init_qu8_reduce_scalar_params(
 }
 
 size_t xnn_update_f32_reduce_scalar_params(
-  struct xnn_reduce_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_reduce_params* params,
   float scale)
 {
   params->f32.scale = scale;
@@ -1225,7 +1178,7 @@ size_t xnn_update_f32_reduce_scalar_params(
 }
 
 size_t xnn_update_qs8_reduce_scalar_params(
-  struct xnn_reduce_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_reduce_params* params,
   float scale)
 {
   params->qs8.scale = params->qs8.input_output_scale * scale;
@@ -1233,7 +1186,7 @@ size_t xnn_update_qs8_reduce_scalar_params(
 }
 
 size_t xnn_update_qu8_reduce_scalar_params(
-  struct xnn_reduce_params params[XNN_MIN_ELEMENTS(1)],
+  struct xnn_reduce_params* params,
   float scale)
 {
   params->qu8.scale = params->qs8.input_output_scale * scale;

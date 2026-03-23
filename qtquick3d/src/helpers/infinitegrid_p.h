@@ -1,5 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QQUICK3DINFINITEGRID_H
 #define QQUICK3DINFINITEGRID_H
@@ -15,13 +17,14 @@
 // We mean it.
 //
 
+#include <QtQuick3DHelpers/qtquick3dhelpersexports.h>
 #include <QQuick3DObject>
 
 QT_BEGIN_NAMESPACE
 
 class QQuick3DSceneEnvironment;
 
-class QQuick3DInfiniteGrid : public QObject, public QQmlParserStatus
+class Q_QUICK3DHELPERS_EXPORT QQuick3DInfiniteGrid : public QObject, public QQmlParserStatus
 {
     Q_OBJECT
     Q_INTERFACES(QQmlParserStatus)

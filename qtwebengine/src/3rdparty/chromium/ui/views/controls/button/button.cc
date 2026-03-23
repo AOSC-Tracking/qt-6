@@ -5,14 +5,14 @@
 #include "ui/views/controls/button/button.h"
 
 #include <utility>
+#include <variant>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
-#include "base/functional/overloaded.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/actions/actions.h"
@@ -124,13 +124,13 @@ Button::PressedCallback& Button::PressedCallback::operator=(PressedCallback&&) =
 Button::PressedCallback::~PressedCallback() = default;
 
 Button::PressedCallback::operator bool() const {
-  return absl::visit([](const auto& callback) { return !callback.is_null(); },
-                     callback_);
+  return std::visit([](const auto& callback) { return !callback.is_null(); },
+                    callback_);
 }
 
 void Button::PressedCallback::Run(const ui::Event& event) {
-  return absl::visit(
-      base::Overloaded{
+  return std::visit(
+      absl::Overload{
           [](base::OnceClosure& closure) { std::move(closure).Run(); },
           [](const base::RepeatingClosure& closure) { closure.Run(); },
           [&](const Callback& callback) { callback.Run(event); },
@@ -384,7 +384,7 @@ void Button::SetHotTracked(bool is_hot_tracked) {
   }
 
   if (is_hot_tracked) {
-    NotifyAccessibilityEvent(ax::mojom::Event::kHover, true);
+    NotifyAccessibilityEventDeprecated(ax::mojom::Event::kHover, true);
   }
 }
 
@@ -778,11 +778,12 @@ base::WeakPtr<Button> Button::GetWeakPtr() {
 }
 
 void Button::OnEnabledChanged() {
-  if (GetEnabled() ? (state_ != STATE_DISABLED) : (state_ == STATE_DISABLED)) {
+  if (GetEnabledInViewsSubtree() ? (state_ != STATE_DISABLED)
+                                 : (state_ == STATE_DISABLED)) {
     return;
   }
 
-  if (GetEnabled()) {
+  if (GetEnabledInViewsSubtree()) {
     bool should_enter_hover_state = ShouldEnterHoveredState();
     SetState(should_enter_hover_state ? STATE_HOVERED : STATE_NORMAL);
     InkDrop::Get(ink_drop_view_)
@@ -818,7 +819,7 @@ void Button::SetDefaultActionVerb(ax::mojom::DefaultActionVerb verb) {
 }
 
 void Button::UpdateAccessibleDefaultActionVerb() {
-  if (GetEnabled()) {
+  if (GetEnabledInViewsSubtree()) {
     GetViewAccessibility().SetDefaultActionVerb(default_action_verb_);
   } else {
     GetViewAccessibility().RemoveDefaultActionVerb();
@@ -835,9 +836,9 @@ ButtonActionViewInterface::ButtonActionViewInterface(Button* action_view)
 void ButtonActionViewInterface::ActionItemChangedImpl(
     actions::ActionItem* action_item) {
   BaseActionViewInterface::ActionItemChangedImpl(action_item);
-  std::u16string tooltip_text = action_item->GetTooltipText();
+  std::u16string tooltip_text(action_item->GetTooltipText());
   if (!tooltip_text.empty()) {
-    action_view_->SetTooltipText(tooltip_text);
+    action_view_->SetTooltipText(std::move(tooltip_text));
   }
 }
 

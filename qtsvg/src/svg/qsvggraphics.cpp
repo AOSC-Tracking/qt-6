@@ -1,5 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qsvggraphics_p.h"
 #include "qsvgstructure_p.h"
@@ -18,7 +20,6 @@
 #include <QLoggingCategory>
 
 #include <math.h>
-#include <limits.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -67,7 +68,7 @@ void QSvgEllipse::drawCommand(QPainter *p, QSvgExtraStates &)
     p->drawEllipse(m_bounds);
 }
 
-bool QSvgEllipse::separateFillStroke() const
+bool QSvgEllipse::separateFillStroke(const QSvgExtraStates &) const
 {
     return true;
 }
@@ -118,17 +119,24 @@ QSvgPath::QSvgPath(QSvgNode *parent, const QPainterPath &qpath)
 
 void QSvgPath::drawCommand(QPainter *p, QSvgExtraStates &states)
 {
+    const qreal oldOpacity = p->opacity();
+    const bool drawingInOnePass = !separateFillStroke(states);
+    if (drawingInOnePass)
+        p->setOpacity(oldOpacity * states.fillOpacity);
     m_path.setFillRule(states.fillRule);
     if (m_path.boundingRect().isNull() && p->pen().capStyle() != Qt::FlatCap)
         p->drawPoint(m_path.boundingRect().topLeft());
     else
         p->drawPath(m_path);
-    QSvgMarker::drawMarkersForNode(this, p, states);
+    if (!path().isEmpty())
+        QSvgMarker::drawMarkersForNode(this, p, states);
+    if (drawingInOnePass)
+        p->setOpacity(oldOpacity);
 }
 
-bool QSvgPath::separateFillStroke() const
+bool QSvgPath::separateFillStroke(const QSvgExtraStates &s) const
 {
-    return true;
+    return !qFuzzyCompare(s.fillOpacity, s.strokeOpacity);
 }
 
 QRectF QSvgPath::internalFastBounds(QPainter *p, QSvgExtraStates &) const
@@ -205,7 +213,7 @@ void QSvgPolygon::drawCommand(QPainter *p, QSvgExtraStates &states)
     QSvgMarker::drawMarkersForNode(this, p, states);
 }
 
-bool QSvgPolygon::separateFillStroke() const
+bool QSvgPolygon::separateFillStroke(const QSvgExtraStates &) const
 {
     return true;
 }
@@ -229,7 +237,7 @@ void QSvgPolyline::drawCommand(QPainter *p, QSvgExtraStates &states)
     }
 }
 
-bool QSvgPolyline::separateFillStroke() const
+bool QSvgPolyline::separateFillStroke(const QSvgExtraStates &) const
 {
     return true;
 }
@@ -275,7 +283,7 @@ void QSvgRect::drawCommand(QPainter *p, QSvgExtraStates &)
         p->drawRect(m_rect);
 }
 
-bool QSvgRect::separateFillStroke() const
+bool QSvgRect::separateFillStroke(const QSvgExtraStates &) const
 {
     return true;
 }
@@ -285,8 +293,8 @@ QSvgTspan * const QSvgText::LINEBREAK = 0;
 QSvgText::QSvgText(QSvgNode *parent, const QPointF &coord)
     : QSvgNode(parent)
     , m_coord(coord)
-    , m_type(Text)
     , m_size(0, 0)
+    , m_type(Text)
     , m_mode(Default)
 {
 }
@@ -368,7 +376,7 @@ bool QSvgText::shouldDrawNode(QPainter *p, QSvgExtraStates &) const
     return true;
 }
 
-bool QSvgText::separateFillStroke() const
+bool QSvgText::separateFillStroke(const QSvgExtraStates &) const
 {
     return true;
 }
@@ -397,7 +405,7 @@ void QSvgText::draw_helper(QPainter *p, QSvgExtraStates &states, QRectF *boundin
             bounds = QRectF(0, py, 1, m_size.height()); // x and width are not used.
 
         bool appendSpace = false;
-        QList<QString> paragraphs;
+        QStringList paragraphs;
         QList<QList<QTextLayout::FormatRange> > formatRanges(1);
         paragraphs.push_back(QString());
 
@@ -472,18 +480,14 @@ void QSvgText::draw_helper(QPainter *p, QSvgExtraStates &states, QRectF *boundin
 
         if (states.svgFont) {
             // SVG fonts not fully supported...
-            QString text = paragraphs.front();
-            for (int i = 1; i < paragraphs.size(); ++i) {
-                text.append(QLatin1Char('\n'));
-                text.append(paragraphs[i]);
-            }
+            if (!m_glyphsToDraw)
+                m_glyphsToDraw = states.svgFont->toGlyphs(paragraphs.join(QLatin1Char('\n')));
             if (isPainting) {
-                states.svgFont->draw(
-                        p, m_coord, text, p->font().pointSizeF(), states.textAnchor);
-            }
-            if (boundingRect) {
-                *boundingRect = states.svgFont->boundingRect(
-                        p, m_coord, text, p->font().pointSizeF(), states.textAnchor);
+                states.svgFont->draw(p, m_coord, m_glyphsToDraw.value(),
+                                     p->font().pointSizeF(), states.textAnchor);
+            } else {
+                *boundingRect = states.svgFont->boundingRect(p, m_coord, m_glyphsToDraw.value(),
+                                                             p->font().pointSizeF(), states.textAnchor);
             }
         } else {
             QRectF brect;

@@ -223,7 +223,7 @@ QuicAckFrame MakeAckFrameWithGaps(uint64_t gap_size, size_t max_num_gaps,
                                   uint64_t largest_acked);
 
 // Returns the encryption level that corresponds to the header type in
-// |header|. If the header is for GOOGLE_QUIC_PACKET instead of an
+// |header|. If the header is for GOOGLE_QUIC_Q043_PACKET instead of an
 // IETF-invariants packet, this function returns ENCRYPTION_INITIAL.
 EncryptionLevel HeaderToEncryptionLevel(const QuicPacketHeader& header);
 
@@ -973,11 +973,8 @@ class MockQuicSpdySession : public QuicSpdySession {
               (override));
   MOCK_METHOD(QuicSpdyStream*, CreateOutgoingBidirectionalStream, (),
               (override));
-  MOCK_METHOD(QuicSpdyStream*, CreateOutgoingUnidirectionalStream, (),
-              (override));
   MOCK_METHOD(bool, ShouldCreateIncomingStream, (QuicStreamId id), (override));
   MOCK_METHOD(bool, ShouldCreateOutgoingBidirectionalStream, (), (override));
-  MOCK_METHOD(bool, ShouldCreateOutgoingUnidirectionalStream, (), (override));
   MOCK_METHOD(QuicConsumedData, WritevData,
               (QuicStreamId id, size_t write_length, QuicStreamOffset offset,
                StreamSendingState state, TransmissionType type,
@@ -1049,7 +1046,7 @@ class MockHttp3DebugVisitor : public Http3DebugVisitor {
               (override));
   MOCK_METHOD(void, OnHeadersFrameReceived, (QuicStreamId, QuicByteCount),
               (override));
-  MOCK_METHOD(void, OnHeadersDecoded, (QuicStreamId, QuicHeaderList),
+  MOCK_METHOD(void, OnHeadersDecoded, (QuicStreamId, const QuicHeaderList&),
               (override));
   MOCK_METHOD(void, OnUnknownFrameReceived,
               (QuicStreamId, uint64_t, QuicByteCount), (override));
@@ -1083,8 +1080,6 @@ class TestQuicSpdyServerSession : public QuicServerSessionBase {
   MOCK_METHOD(QuicSpdyStream*, CreateIncomingStream, (PendingStream*),
               (override));
   MOCK_METHOD(QuicSpdyStream*, CreateOutgoingBidirectionalStream, (),
-              (override));
-  MOCK_METHOD(QuicSpdyStream*, CreateOutgoingUnidirectionalStream, (),
               (override));
   MOCK_METHOD(std::vector<absl::string_view>::const_iterator, SelectAlpn,
               (const std::vector<absl::string_view>&), (const, override));
@@ -1151,11 +1146,8 @@ class TestQuicSpdyClientSession : public QuicSpdyClientSessionBase {
               (override));
   MOCK_METHOD(QuicSpdyStream*, CreateOutgoingBidirectionalStream, (),
               (override));
-  MOCK_METHOD(QuicSpdyStream*, CreateOutgoingUnidirectionalStream, (),
-              (override));
   MOCK_METHOD(bool, ShouldCreateIncomingStream, (QuicStreamId id), (override));
   MOCK_METHOD(bool, ShouldCreateOutgoingBidirectionalStream, (), (override));
-  MOCK_METHOD(bool, ShouldCreateOutgoingUnidirectionalStream, (), (override));
   MOCK_METHOD(std::vector<std::string>, GetAlpnsToOffer, (), (const, override));
   MOCK_METHOD(void, OnAlpnSelected, (absl::string_view), (override));
   MOCK_METHOD(void, OnConfigNegotiated, (), (override));
@@ -1448,8 +1440,8 @@ class MockSessionNotifier : public SessionNotifierInterface {
   MockSessionNotifier();
   ~MockSessionNotifier() override;
 
-  MOCK_METHOD(bool, OnFrameAcked, (const QuicFrame&, QuicTime::Delta, QuicTime),
-              (override));
+  MOCK_METHOD(bool, OnFrameAcked,
+              (const QuicFrame&, QuicTime::Delta, QuicTime, bool), (override));
   MOCK_METHOD(void, OnStreamFrameRetransmitted, (const QuicStreamFrame&),
               (override));
   MOCK_METHOD(void, OnFrameLost, (const QuicFrame&), (override));
@@ -1651,7 +1643,9 @@ StreamType DetermineStreamType(QuicStreamId id, ParsedQuicVersion version,
 
 // Creates a MemSlice using a singleton trivial buffer allocator.  Performs a
 // copy.
-quiche::QuicheMemSlice MemSliceFromString(absl::string_view data);
+// TODO: remove once all uses are replaced with QuicheMemSlice::Copy.
+[[deprecated]] quiche::QuicheMemSlice MemSliceFromString(
+    absl::string_view data);
 
 // Used to compare ReceivedPacketInfo.
 MATCHER_P(ReceivedPacketInfoEquals, info, "") {
@@ -2229,6 +2223,37 @@ class SavingConnectIpVisitor : public QuicSpdyStream::ConnectIpVisitor {
   std::vector<quiche::RouteAdvertisementCapsule>
       received_route_advertisement_capsules_;
   bool headers_written_ = false;
+};
+
+class SavingConnectUdpBindVisitor
+    : public QuicSpdyStream::ConnectUdpBindVisitor {
+ public:
+  const std::vector<quiche::CompressionAssignCapsule>&
+  received_compression_assign_capsules() const {
+    return received_compression_assign_capsules_;
+  }
+  const std::vector<quiche::CompressionCloseCapsule>&
+  received_compression_close_capsules() const {
+    return received_compression_close_capsules_;
+  }
+
+  bool OnCompressionAssignCapsule(
+      const quiche::CompressionAssignCapsule& capsule) override {
+    received_compression_assign_capsules_.push_back(capsule);
+    return true;
+  }
+
+  bool OnCompressionCloseCapsule(
+      const quiche::CompressionCloseCapsule& capsule) override {
+    received_compression_close_capsules_.push_back(capsule);
+    return true;
+  }
+
+ private:
+  std::vector<quiche::CompressionAssignCapsule>
+      received_compression_assign_capsules_;
+  std::vector<quiche::CompressionCloseCapsule>
+      received_compression_close_capsules_;
 };
 
 inline std::string EscapeTestParamName(absl::string_view name) {

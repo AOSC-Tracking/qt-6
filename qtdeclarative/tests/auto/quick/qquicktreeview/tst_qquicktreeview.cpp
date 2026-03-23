@@ -65,6 +65,7 @@ private slots:
     void expandAndCollapseRoot();
     void toggleExpanded();
     void expandAndCollapseChildren();
+    void expandChildDuringInsert();
     void expandChildPendingToBeVisible();
     void expandRecursivelyRoot_data();
     void expandRecursivelyRoot();
@@ -98,6 +99,9 @@ private slots:
     void editUsingEditTriggers();
     void editOnNonEditableCell_data();
     void editOnNonEditableCell();
+    void delegateModelAccess_data();
+    void delegateModelAccess();
+    void nullModel();
 };
 
 tst_qquicktreeview::tst_qquicktreeview()
@@ -245,6 +249,34 @@ void tst_qquicktreeview::expandAndCollapseChildren()
     treeView->collapse(0);
     WAIT_UNTIL_POLISHED;
     QCOMPARE(treeView->rows(), 1);
+}
+
+void tst_qquicktreeview::expandChildDuringInsert()
+{
+    LOAD_TREEVIEW("expandRowInDelegate.qml");
+    // Check that the view only has one row loaded so far (the root of the tree)
+    QCOMPARE(treeViewPrivate->loadedRows.count(), 1);
+
+    // Expand the root
+    treeView->expand(0);
+    WAIT_UNTIL_POLISHED;
+    // We now expect 5 rows, the root pluss it's 4 children
+    QCOMPARE(treeViewPrivate->loadedRows.count(), 5);
+
+    int rowToExpand = view->rootObject()->property("rowToExpand").toInt();
+    QCOMPARE(rowToExpand, -1);
+
+    view->rootObject()->setProperty("rowToExpand", 2);
+    rowToExpand = view->rootObject()->property("rowToExpand").toInt();
+    QCOMPARE(rowToExpand, 2);
+
+    // Add a new item to the child node and verify whether the tree has n+1 nodes (and not
+    // more than 1 as mentioned in the bug report QTBUG-139344)
+    const QModelIndex childNode = model->index(1, 0, model->index(0, 0, QModelIndex()));
+    model->insertRows(0, 1, childNode);
+    WAIT_UNTIL_POLISHED;
+
+    QCOMPARE(treeView->rows(), 6);
 }
 
 void tst_qquicktreeview::requiredPropertiesRoot()
@@ -1641,6 +1673,144 @@ void tst_qquicktreeview::editOnNonEditableCell()
         QVERIFY(!treeView->property(kEditItem).value<QQuickItem *>());
         QVERIFY(!treeView->property(kEditIndex).value<QModelIndex>().isValid());
     }
+}
+
+
+namespace Model {
+Q_NAMESPACE
+QML_ELEMENT
+enum Kind : qint8
+{
+    None = -1,
+    Singular,
+    List,
+};
+Q_ENUM_NS(Kind)
+}
+
+namespace Delegate {
+Q_NAMESPACE
+QML_ELEMENT
+enum Kind : qint8
+{
+    None = -1,
+    Untyped,
+    Typed
+};
+Q_ENUM_NS(Kind)
+}
+
+template<typename Enum>
+const char *enumKey(Enum value) {
+    const QMetaObject *mo = qt_getEnumMetaObject(value);
+    const QMetaEnum metaEnum = mo->enumerator(mo->indexOfEnumerator(qt_getEnumName(value)));
+    return metaEnum.valueToKey(value);
+}
+
+void tst_qquicktreeview::delegateModelAccess_data()
+{
+    QTest::addColumn<QQmlDelegateModel::DelegateModelAccess>("access");
+    QTest::addColumn<Model::Kind>("modelKind");
+    QTest::addColumn<Delegate::Kind>("delegateKind");
+
+    using Access = QQmlDelegateModel::DelegateModelAccess;
+    for (auto access : { Access::Qt5ReadWrite, Access::ReadOnly, Access::ReadWrite }) {
+        for (auto model : { Model::Singular, Model::List }) {
+            for (auto delegate : { Delegate::Untyped, Delegate::Typed }) {
+                QTest::addRow("%s-%s-%s", enumKey(access), enumKey(model), enumKey(delegate))
+                << access << model << delegate;
+            }
+        }
+    }
+}
+
+void tst_qquicktreeview::delegateModelAccess()
+{
+    static const bool initialized = []() {
+        qmlRegisterNamespaceAndRevisions(&Model::staticMetaObject, "Test", 1);
+        qmlRegisterNamespaceAndRevisions(&Delegate::staticMetaObject, "Test", 1);
+        return true;
+    }();
+    QVERIFY(initialized);
+
+    QFETCH(QQmlDelegateModel::DelegateModelAccess, access);
+    QFETCH(Model::Kind, modelKind);
+    QFETCH(Delegate::Kind, delegateKind);
+
+    const QUrl url = testFileUrl("delegateModelAccess.qml");
+    LOAD_TREEVIEW("delegateModelAccess.qml");
+
+    QSignalSpy modelChangedSpy(treeView, &QQuickTreeView::modelChanged);
+
+    if (access == QQmlDelegateModel::ReadOnly) {
+        const QRegularExpression message(
+                url.toString() + ":[0-9]+: TypeError: Cannot assign to read-only property \"a\"");
+
+        QTest::ignoreMessage(QtWarningMsg, message);
+        if (delegateKind == Delegate::Untyped)
+            QTest::ignoreMessage(QtWarningMsg, message);
+    }
+
+    treeView->setProperty("delegateModelAccess", access);
+    treeView->setProperty("modelIndex", modelKind);
+    treeView->setProperty("delegateIndex", delegateKind);
+
+    WAIT_UNTIL_POLISHED;
+
+    QCOMPARE(QQuickTreeViewPrivate::get(treeView)->loadedItems.size(), 1);
+    QObject *delegate = QQuickTreeViewPrivate::get(treeView)->loadedItems.begin().value()->item;
+    QVERIFY(delegate);
+
+    const bool modelWritable = access != QQmlDelegateModel::ReadOnly;
+    const bool immediateWritable = (delegateKind == Delegate::Untyped)
+            ? access != QQmlDelegateModel::ReadOnly
+            : access == QQmlDelegateModel::ReadWrite;
+
+    double expected = 11;
+
+    // Initial setting of the model, signals one update. Beyond that, no updates are signaled
+    // because we only accept QAIM and the model object doesn't change.
+    QCOMPARE(modelChangedSpy.count(), 1);
+
+    QCOMPARE(delegate->property("immediateX").toDouble(), expected);
+    QCOMPARE(delegate->property("modelX").toDouble(), expected);
+
+    if (modelWritable)
+        expected = 3;
+
+    QMetaObject::invokeMethod(delegate, "writeThroughModel");
+    QCOMPARE(delegate->property("immediateX").toDouble(), expected);
+    QCOMPARE(delegate->property("modelX").toDouble(), expected);
+    QCOMPARE(modelChangedSpy.count(), 1);
+
+    double aAt0 = -1;
+    QMetaObject::invokeMethod(treeView, "aAt0", Q_RETURN_ARG(double, aAt0));
+    QCOMPARE(aAt0, expected);
+
+    if (immediateWritable)
+        expected = 1;
+
+    QMetaObject::invokeMethod(delegate, "writeImmediate");
+
+    // Writes to required properties always succeed, but might not be propagated to the model
+    QCOMPARE(delegate->property("immediateX").toDouble(),
+             delegateKind == Delegate::Untyped ? expected : 1);
+
+    QCOMPARE(delegate->property("modelX").toDouble(), expected);
+    QCOMPARE(modelChangedSpy.count(), 1);
+
+    aAt0 = -1;
+    QMetaObject::invokeMethod(treeView, "aAt0", Q_RETURN_ARG(double, aAt0));
+    QCOMPARE(aAt0, expected);
+}
+
+void tst_qquicktreeview::nullModel()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, testFileUrl("nullModel.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> object(component.create());
+    QVERIFY(object);
 }
 
 QTEST_MAIN(tst_qquicktreeview)

@@ -25,7 +25,10 @@ class MockCollaborationControllerDelegate
               (const ErrorInfo& error, ResultCallback result),
               (override));
   MOCK_METHOD(void, Cancel, (ResultCallback result), (override));
-  MOCK_METHOD(void, ShowAuthenticationUi, (ResultCallback result), (override));
+  MOCK_METHOD(void,
+              ShowAuthenticationUi,
+              (FlowType flow_type, ResultCallback result),
+              (override));
   MOCK_METHOD(void, NotifySignInAndSyncStatusChange, (), (override));
   MOCK_METHOD(void,
               ShowJoinDialog,
@@ -48,6 +51,16 @@ class MockCollaborationControllerDelegate
               (override));
   MOCK_METHOD(void,
               ShowManageDialog,
+              (const tab_groups::EitherGroupID& either_id,
+               ResultCallback result),
+              (override));
+  MOCK_METHOD(void,
+              ShowLeaveDialog,
+              (const tab_groups::EitherGroupID& either_id,
+               ResultCallback result),
+              (override));
+  MOCK_METHOD(void,
+              ShowDeleteDialog,
               (const tab_groups::EitherGroupID& either_id,
                ResultCallback result),
               (override));

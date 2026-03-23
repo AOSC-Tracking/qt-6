@@ -97,14 +97,12 @@ ServiceWorkerControlleeRequestHandler::ServiceWorkerControlleeRequestHandler(
     std::string fetch_event_client_id,
     base::WeakPtr<ServiceWorkerClient> service_worker_client,
     bool skip_service_worker,
-    FrameTreeNodeId frame_tree_node_id,
     ServiceWorkerAccessedCallback service_worker_accessed_callback)
     : context_(std::move(context)),
       fetch_event_client_id_(std::move(fetch_event_client_id)),
       service_worker_client_(std::move(service_worker_client)),
       skip_service_worker_(skip_service_worker),
       force_update_started_(false),
-      frame_tree_node_id_(frame_tree_node_id),
       service_worker_accessed_callback_(
           std::move(service_worker_accessed_callback)) {
   TRACE_EVENT_WITH_FLOW0("ServiceWorker",
@@ -196,7 +194,7 @@ void ServiceWorkerControlleeRequestHandler::MaybeCreateLoader(
       tentative_resource_request.url.spec());
 
   // Look up a registration.
-  context_->registry()->FindRegistrationForClientUrl(
+  context_->registry().FindRegistrationForClientUrl(
       ServiceWorkerRegistry::Purpose::kNavigation,
       service_worker_client_->url(), service_worker_client_->key(),
       base::BindOnce(
@@ -271,7 +269,8 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithRegistration(
           registration->scope(),
           service_worker_security_utils::site_for_cookies(
               service_worker_client_->key()),
-          service_worker_client_->top_frame_origin(), /*script_url=*/GURL(),
+          service_worker_client_->top_frame_origin(),
+          service_worker_client_->key(), /*script_url=*/GURL(),
           context_->wrapper()->browser_context());
 
   service_worker_accessed_callback_.Run(registration->scope(),
@@ -509,8 +508,7 @@ void ServiceWorkerControlleeRequestHandler::CreateLoaderAndStartRequest(
   loader_wrapper_ = std::make_unique<ServiceWorkerMainResourceLoaderWrapper>(
       std::make_unique<ServiceWorkerMainResourceLoader>(
           std::move(fallback_callback_), fetch_event_client_id_,
-          service_worker_client_, frame_tree_node_id_,
-          std::move(find_registration_start_time)));
+          service_worker_client_, std::move(find_registration_start_time)));
   std::move(loader_callback_)
       .Run(NavigationLoaderInterceptor::Result(
           base::MakeRefCounted<network::SingleRequestURLLoaderFactory>(
@@ -550,7 +548,7 @@ void ServiceWorkerControlleeRequestHandler::DidUpdateRegistration(
       !original_registration->installing_version()) {
     // Update failed. Look up the registration again since the original
     // registration was possibly unregistered in the meantime.
-    context_->registry()->FindRegistrationForClientUrl(
+    context_->registry().FindRegistrationForClientUrl(
         ServiceWorkerRegistry::Purpose::kNotForNavigation,
         service_worker_client_->url(), service_worker_client_->key(),
         base::BindOnce(
@@ -608,7 +606,7 @@ void ServiceWorkerControlleeRequestHandler::OnUpdatedVersionStatusChanged(
     // When the status is REDUNDANT, the update failed (eg: script error), we
     // continue with the incumbent version.
     // In case unregister job may have run, look up the registration again.
-    context_->registry()->FindRegistrationForClientUrl(
+    context_->registry().FindRegistrationForClientUrl(
         ServiceWorkerRegistry::Purpose::kNotForNavigation,
         service_worker_client_->url(), service_worker_client_->key(),
         base::BindOnce(

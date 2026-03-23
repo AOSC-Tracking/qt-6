@@ -5,13 +5,15 @@
 #ifndef V8_OBJECTS_INSTRUCTION_STREAM_INL_H_
 #define V8_OBJECTS_INSTRUCTION_STREAM_INL_H_
 
+#include "src/objects/instruction-stream.h"
+// Include the non-inl header before the rest of the headers.
+
 #include <optional>
 
 #include "src/common/ptr-compr-inl.h"
 #include "src/heap/heap-layout-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/code.h"
-#include "src/objects/instruction-stream.h"
 #include "src/objects/objects-inl.h"  // For HeapObject::IsInstructionStream.
 
 // Has to be the last include (doesn't have include guards):
@@ -20,7 +22,6 @@
 namespace v8::internal {
 
 OBJECT_CONSTRUCTORS_IMPL(InstructionStream, TrustedObject)
-NEVER_READ_ONLY_SPACE_IMPL(InstructionStream)
 
 uint32_t InstructionStream::body_size() const {
   return ReadField<uint32_t>(kBodySizeOffset);

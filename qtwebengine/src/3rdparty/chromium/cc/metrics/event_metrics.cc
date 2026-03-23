@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "cc/metrics/event_metrics.h"
 
 #include <algorithm>
@@ -17,6 +12,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
 #include "base/time/default_tick_clock.h"
@@ -366,29 +362,32 @@ void EventMetrics::SetHighLatencyStage(const std::string& stage) {
 }
 
 void EventMetrics::SetDispatchStageTimestamp(DispatchStage stage) {
-  DCHECK(dispatch_stage_timestamps_[static_cast<size_t>(stage)].is_null());
+  DCHECK(UNSAFE_TODO(dispatch_stage_timestamps_[static_cast<size_t>(stage)])
+             .is_null());
 
-  dispatch_stage_timestamps_[static_cast<size_t>(stage)] =
+  UNSAFE_TODO(dispatch_stage_timestamps_[static_cast<size_t>(stage)]) =
       tick_clock_->NowTicks();
 }
 
 void EventMetrics::SetDispatchStageTimestamp(DispatchStage stage,
                                              base::TimeTicks timestamp) {
-  DCHECK(dispatch_stage_timestamps_[static_cast<size_t>(stage)].is_null());
+  DCHECK(UNSAFE_TODO(dispatch_stage_timestamps_[static_cast<size_t>(stage)])
+             .is_null());
 
-  dispatch_stage_timestamps_[static_cast<size_t>(stage)] = timestamp;
+  UNSAFE_TODO(dispatch_stage_timestamps_[static_cast<size_t>(stage)]) =
+      timestamp;
 }
 
 base::TimeTicks EventMetrics::GetDispatchStageTimestamp(
     DispatchStage stage) const {
-  return dispatch_stage_timestamps_[static_cast<size_t>(stage)];
+  return UNSAFE_TODO(dispatch_stage_timestamps_[static_cast<size_t>(stage)]);
 }
 
 void EventMetrics::ResetToDispatchStage(DispatchStage stage) {
   for (size_t stage_index = static_cast<size_t>(stage) + 1;
        stage_index <= static_cast<size_t>(DispatchStage::kMaxValue);
        stage_index++) {
-    dispatch_stage_timestamps_[stage_index] = base::TimeTicks();
+    UNSAFE_TODO(dispatch_stage_timestamps_[stage_index] = base::TimeTicks());
   }
 }
 
@@ -427,10 +426,10 @@ std::unique_ptr<EventMetrics> EventMetrics::Clone() const {
 void EventMetrics::CopyTimestampsFrom(const EventMetrics& other,
                                       DispatchStage last_dispatch_stage) {
   DCHECK_LE(last_dispatch_stage, DispatchStage::kMaxValue);
-  std::copy(other.dispatch_stage_timestamps_,
-            other.dispatch_stage_timestamps_ +
-                static_cast<size_t>(last_dispatch_stage) + 1,
-            dispatch_stage_timestamps_);
+  UNSAFE_TODO(std::copy(other.dispatch_stage_timestamps_,
+                        other.dispatch_stage_timestamps_ +
+                            static_cast<size_t>(last_dispatch_stage) + 1,
+                        dispatch_stage_timestamps_));
 }
 
 // ScrollEventMetrics
@@ -850,9 +849,11 @@ std::unique_ptr<EventMetrics> PinchEventMetrics::Clone() const {
 EventMetricsSet::EventMetricsSet() = default;
 EventMetricsSet::~EventMetricsSet() = default;
 EventMetricsSet::EventMetricsSet(EventMetrics::List main_thread_event_metrics,
-                                 EventMetrics::List impl_thread_event_metrics)
+                                 EventMetrics::List impl_thread_event_metrics,
+                                 EventMetrics::List raster_thread_event_metrics)
     : main_event_metrics(std::move(main_thread_event_metrics)),
-      impl_event_metrics(std::move(impl_thread_event_metrics)) {}
+      impl_event_metrics(std::move(impl_thread_event_metrics)),
+      raster_event_metrics(std::move(raster_thread_event_metrics)) {}
 EventMetricsSet::EventMetricsSet(EventMetricsSet&& other) = default;
 EventMetricsSet& EventMetricsSet::operator=(EventMetricsSet&& other) = default;
 

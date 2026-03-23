@@ -68,7 +68,7 @@ const char kDisable2dCanvasAntialiasing[]   = "disable-canvas-aa";
 // Disables Canvas2D rendering into a scanout buffer for overlay support.
 const char kDisable2dCanvasImageChromium[] = "disable-2d-canvas-image-chromium";
 
-// Disables client-visible 3D APIs, in particular WebGL and Pepper 3D.
+// Disables client-visible 3D APIs, in particular WebGL.
 // This is controlled by policy and is kept separate from the other
 // enable/disable switches to avoid accidentally regressing the policy
 // support for controlling access to these APIs.
@@ -111,9 +111,6 @@ const char kDisableBackForwardCache[] = "disable-back-forward-cache";
 // Applied after kEnableBlinkFeatures, and after other flags that change these
 // features.
 const char kDisableBlinkFeatures[]          = "disable-blink-features";
-
-// Disables HTML5 DB support.
-const char kDisableDatabases[]              = "disable-databases";
 
 // Disable the per-domain blocking for 3D APIs after GPU reset.
 // This switch is intended only for tests.
@@ -173,6 +170,11 @@ const char kDisableGpuWatchdog[] = "disable-gpu-watchdog";
 // can be used.
 const char kDisableIpcFloodingProtection[] = "disable-ipc-flooding-protection";
 
+// Disables the IgnoreDuplicateNavs feature. This prevent navigations from
+// being unintentionally ignored in tests.
+const char kDisableIgnoreDuplicateNavsForTesting[] =
+    "disable-ignore-duplicate-navs-for-testing";
+
 // Disable the RenderThread's HistogramCustomizer.
 const char kDisableHistogramCustomizer[]    = "disable-histogram-customizer";
 
@@ -205,8 +207,11 @@ const char kDisableNewContentRenderingTimeout[] =
 // Disables the Web Notification and the Push APIs.
 const char kDisableNotifications[]          = "disable-notifications";
 
-// Disable Pepper3D.
-const char kDisablePepper3d[]               = "disable-pepper-3d";
+// Disables the activation of browser and web accessibility via interactions
+// with the platform's accessibility integration (i.e., a screenreader will not
+// be able to function with the browser).
+const char kDisablePlatformAccessibilityIntegration[] =
+    "disable-platform-accessibility-integration";
 
 // Disables the Presentation API.
 const char kDisablePresentationAPI[]        = "disable-presentation-api";
@@ -546,21 +551,6 @@ const char kOverrideLanguageDetection[] = "override-language-detection";
 // Renderer process that runs the non-PPAPI PDF plugin.
 const char kPdfRenderer[] = "pdf-renderer";
 
-// Runs PPAPI (Pepper) plugins in-process.
-const char kPpapiInProcess[]                = "ppapi-in-process";
-
-// Specifies a command that should be used to launch the ppapi plugin process.
-// Useful for running the plugin process through purify or quantify.  Ex:
-//   --ppapi-plugin-launcher="path\to\purify /Run=yes"
-const char kPpapiPluginLauncher[]           = "ppapi-plugin-launcher";
-
-// Argument to the process type that indicates a PPAPI plugin process type.
-const char kPpapiPluginProcess[]            = "ppapi";
-
-// Causes the PPAPI sub process to display a dialog on launch. Be sure to use
-// --no-sandbox as well or the sandbox won't allow the dialog to display.
-const char kPpapiStartupDialog[]            = "ppapi-startup-dialog";
-
 // Causes the Private Aggregation API to run without reporting delays.
 const char kPrivateAggregationDeveloperMode[] =
     "private-aggregation-developer-mode";
@@ -602,9 +592,13 @@ const char kProtectedAudiencesConsentedDebugToken[] =
 // Defaults to disabled.
 const char kPullToRefresh[] = "pull-to-refresh";
 
-// Reduce the accept-language http header, and only send one language in the
-// request header: https://github.com/Tanych/accept-language.
+// Reduce the accept-language for HTTP header and JS navigator.languages, and
+// only most preferred language: https://github.com/Tanych/accept-language.
 const char kReduceAcceptLanguage[] = "reduce-accept-language";
+
+// Reduce the accept-language for HTTP header, and only send most preferred
+// language in the request header: https://github.com/Tanych/accept-language.
+const char kReduceAcceptLanguageHTTP[] = "reduce-accept-language-http";
 
 // Reduce the minor version number in the User-Agent string. This flag
 // implements phase 4 of User-Agent reduction:
@@ -615,9 +609,6 @@ const char kReduceUserAgentMinorVersion[] = "reduce-user-agent-minor-version";
 // implements phase 5 of User-Agent reduction:
 // https://blog.chromium.org/2021/09/user-agent-reduction-origin-trial-and-dates.html.
 const char kReduceUserAgentPlatformOsCpu[] = "reduce-user-agent-platform-oscpu";
-
-// Register Pepper plugins (see pepper_plugin_list.cc for its format).
-const char kRegisterPepperPlugins[]         = "register-pepper-plugins";
 
 // Enables remote debug over stdio pipes [in=3, out=4] or over the remote pipes
 // specified in the 'remote-debugging-io-pipes' switch.
@@ -734,6 +725,9 @@ const char kSkiaFontCacheLimitMb[] = "skia-font-cache-limit-mb";
 // exceeds this limit.
 const char kSkiaResourceCacheLimitMb[] = "skia-resource-cache-limit-mb";
 
+// Allows web tests to specify the target device scale for the test cases.
+const char kTargetDeviceScaleForTesting[] = "target-device-scale-for-testing";
+
 // Type of the current test harness ("browser" or "ui" or "gpu").
 const char kTestType[]                      = "test-type";
 
@@ -774,12 +768,6 @@ const char kUseFakeUIForFedCM[] = "use-fake-ui-for-fedcm";
 // with screen/tab capture.
 const char kUseFakeUIForMediaStream[]     = "use-fake-ui-for-media-stream";
 
-#if BUILDFLAG(IS_WIN)
-// This will replace the existing font manager with FontDataManager in the
-// renderer.
-const char kUseFontDataManager[] = "use-font-data-manager";
-#endif
-
 // Texture target for CHROMIUM_image backed video frame textures.
 const char kVideoImageTextureTarget[] = "video-image-texture-target";
 
@@ -789,9 +777,6 @@ const char kVideoImageTextureTarget[] = "video-image-texture-target";
 // features have not yet been loaded.
 const char kUseContextSnapshotSwitch[] = "use-context-snapshot";
 #endif
-
-// Set when Chromium should use a mobile user agent.
-const char kUseMobileUserAgent[] = "use-mobile-user-agent";
 
 // Use the MockCertVerifier. This only works in test code.
 const char kUseMockCertVerifierForTesting[] =
@@ -808,9 +793,13 @@ const char kUtilityProcess[]                = "utility";
 const char kUtilityStartupDialog[] = "utility-startup-dialog";
 
 // This switch indicates the type of a utility process. It does not affect the
-// services offered by the process, but is added to the command line for
-// debugging and profiling purposes.
+// services offered by the process, but is added to the command line to make
+// it easier to identify the purpose of the utility process.
 const char kUtilitySubType[] = "utility-sub-type";
+
+// Crash the Utility process early in start-up, for testing.
+const char kUtilityImmediateCrashForTesting[] =
+    "utility-immediate-crash-for-testing";
 
 // Causes tests to attempt to verify pixel output.
 const char kVerifyPixels[] = "browser-ui-tests-verify-pixels";
@@ -839,6 +828,9 @@ const char kWebglAntialiasingMode[] = "webgl-antialiasing-mode";
 
 // Set a default sample count for webgl if msaa is enabled.
 const char kWebglMSAASampleCount[] = "webgl-msaa-sample-count";
+
+// Allows web tests to specify additional web settings for the test cases.
+const char kWebSettingsForTesting[] = "web-settings-for-testing";
 
 // The prefix used when starting the zygote process. (i.e. 'gdb --args')
 const char kZygoteCmdPrefix[] = "zygote-cmd-prefix";
@@ -974,15 +966,6 @@ const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
 // This switch allows us to pass the shared memory handle to the renderer.
 const char kFontCacheSharedHandle[] = "font-cache-shared-handle";
 
-// The boolean value (0/1) of FontRenderParams::antialiasing to be passed to
-// Ppapi processes.
-const char kPpapiAntialiasedTextEnabled[] = "ppapi-antialiased-text-enabled";
-
-// The enum value of FontRenderParams::subpixel_rendering to be passed to Ppapi
-// processes.
-const char kPpapiSubpixelRenderingSetting[] =
-    "ppapi-subpixel-rendering-setting";
-
 // Raise the timer interrupt frequency in all Chrome processes, for experimental
 // purposes. This feature is needed because as of Windows 10 2004 the scheduling
 // effects of changing the timer interrupt frequency are not global, and this
@@ -1011,7 +994,7 @@ const char kIpcDumpDirectory[] = "ipc-dump-directory";
 const char kIpcFuzzerTestcase[] = "ipc-fuzzer-testcase";
 #endif
 
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
 // Pass on parent application name
 const char kApplicationName[] = "application-name";
 // Preload widevinepaths for sandbox

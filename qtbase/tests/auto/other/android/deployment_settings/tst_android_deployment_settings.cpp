@@ -60,7 +60,7 @@ void tst_android_deployment_settings::DeploymentSettings_data()
     QTest::addColumn<QString>("value");
 
     QTest::newRow("sdkBuildToolsRevision") << "sdkBuildToolsRevision"
-                                           << "23.0.2";
+                                           << "28.0.3";
     QTest::newRow("deployment-dependencies") << "deployment-dependencies"
                                              << "dep1.so,dep2.so,dep3.so";
     QTest::newRow("android-extra-plugins")
@@ -78,15 +78,19 @@ void tst_android_deployment_settings::DeploymentSettings_data()
     QTest::newRow("android-target-sdk-version") << "android-target-sdk-version"
                                                 << "2";
     QTest::newRow("android-compile-sdk-version") << "android-compile-sdk-version"
-                                                << "35";
+                                                << "36";
     QTest::newRow("android-package-name") << "android-package-name"
                                           << "org.qtproject.android_deployment_settings_test";
     QTest::newRow("android-app-name") << "android-app-name"
                                           << "Android Deployment Settings Test";
-    QTest::newRow("permissions") << "permissions"
-                        << "[{\"name\":\"PERMISSION_WITH_ATTRIBUTES\","
-                           "\"extras\":\"android:minSdkVersion='32' android:maxSdkVersion='34' \"},"
-                           "{\"name\":\"PERMISSION_WITHOUT_ATTRIBUTES\"}]";
+    QTest::newRow("android-legacy-packaging") << "android-legacy-packaging"
+                                              << "false";
+    QTest::newRow("permissions")
+            << "permissions"
+            << "[{\"maxSdkVersion\":\"34\",\"minSdkVersion\":\"32\",\"name\":\"PERMISSION_WITH_"
+               "ATTRIBUTES\"},{\"name\":\"PERMISSION_WITHOUT_ATTRIBUTES\"},{\"name\":\"android."
+               "permission.WRITE_EXTERNAL_STORAGE\"},{\"name\":\"android."
+               "permission.INTERNET\"}]";
 }
 
 void tst_android_deployment_settings::DeploymentSettings()
@@ -96,6 +100,9 @@ void tst_android_deployment_settings::DeploymentSettings()
     QJsonValue keyValue = jsonDoc[key];
     if (keyValue.type() == QJsonValue::Type::String) {
         QCOMPARE(keyValue.toString(), value);
+    } else if (keyValue.type() == QJsonValue::Type::Bool) {
+        bool valueToBool = value == "true" ? true : false;
+        QCOMPARE(keyValue.toBool(), valueToBool);
     } else if (keyValue.type() == QJsonValue::Type::Array) {
         QJsonParseError parseError;
         // For robustness (field order, whitespaces etc.) make comparison between QJsonDocuments

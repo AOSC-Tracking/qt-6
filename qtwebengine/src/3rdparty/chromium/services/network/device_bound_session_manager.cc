@@ -38,25 +38,29 @@ void DeviceBoundSessionManager::GetAllSessions(
 }
 
 void DeviceBoundSessionManager::DeleteSession(
+    net::device_bound_sessions::DeletionReason reason,
     const net::device_bound_sessions::SessionKey& session_key) {
   service_->DeleteSessionAndNotify(
-      session_key.site, net::device_bound_sessions::Session::Id(session_key.id),
+      reason,
+      {session_key.site,
+       net::device_bound_sessions::Session::Id(session_key.id)},
       base::NullCallback());
 }
 
 void DeviceBoundSessionManager::DeleteAllSessions(
+    net::device_bound_sessions::DeletionReason reason,
     std::optional<base::Time> created_after_time,
     std::optional<base::Time> created_before_time,
     network::mojom::ClearDataFilterPtr filter,
     base::OnceClosure completion_callback) {
-  base::RepeatingCallback<bool(const net::SchemefulSite&)> site_matcher;
+  base::RepeatingCallback<bool(const url::Origin&, const net::SchemefulSite&)>
+      origin_and_site_matcher;
   if (filter) {
-    site_matcher = base::BindRepeating(
+    origin_and_site_matcher = base::BindRepeating(
         // TODO(crbug.com/384437667): Consolidate ClearDataFilter matching logic
-        [](const mojom::ClearDataFilter& filter,
+        [](const mojom::ClearDataFilter& filter, const url::Origin& origin,
            const net::SchemefulSite& site) {
-          bool is_match = base::Contains(filter.origins,
-                                         url::Origin::Create(site.GetURL()));
+          bool is_match = base::Contains(filter.origins, origin);
           if (!is_match && !filter.domains.empty()) {
             const std::string etld1_for_origin =
                 net::registry_controlled_domains::GetDomainAndRegistry(
@@ -75,8 +79,9 @@ void DeviceBoundSessionManager::DeleteAllSessions(
         *filter);
   }
 
-  service_->DeleteAllSessions(created_after_time, created_before_time,
-                              site_matcher, std::move(completion_callback));
+  service_->DeleteAllSessions(reason, created_after_time, created_before_time,
+                              origin_and_site_matcher,
+                              std::move(completion_callback));
 }
 
 DeviceBoundSessionManager::ObserverRegistration::ObserverRegistration() =

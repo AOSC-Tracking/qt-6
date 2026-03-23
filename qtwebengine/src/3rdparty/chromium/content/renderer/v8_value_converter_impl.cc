@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "content/renderer/v8_value_converter_impl.h"
 
 #include <stddef.h>
@@ -18,8 +13,10 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -228,18 +225,19 @@ v8::Local<v8::Value> V8ValueConverterImpl::ToV8Value(
     base::ValueView value,
     v8::Local<v8::Context> context) {
   v8::Context::Scope context_scope(context);
-  v8::EscapableHandleScope handle_scope(context->GetIsolate());
-  return handle_scope.Escape(
-      ToV8ValueImpl(context->GetIsolate(), context->Global(), value));
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  v8::EscapableHandleScope handle_scope(isolate);
+  return handle_scope.Escape(ToV8ValueImpl(isolate, context->Global(), value));
 }
 
 std::unique_ptr<base::Value> V8ValueConverterImpl::FromV8Value(
     v8::Local<v8::Value> val,
     v8::Local<v8::Context> context) {
   v8::Context::Scope context_scope(context);
-  v8::HandleScope handle_scope(context->GetIsolate());
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  v8::HandleScope handle_scope(isolate);
   FromV8ValueState state(avoid_identity_hash_for_testing_);
-  return FromV8ValueImpl(&state, val, context->GetIsolate());
+  return FromV8ValueImpl(&state, val, isolate);
 }
 
 v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
@@ -251,7 +249,7 @@ v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
     raw_ptr<v8::Isolate> isolate;
     v8::Local<v8::Object> creation_context;
 
-    v8::Local<v8::Value> operator()(absl::monostate value) {
+    v8::Local<v8::Value> operator()(std::monostate value) {
       return v8::Null(isolate);
     }
 
@@ -518,7 +516,7 @@ std::unique_ptr<base::Value> V8ValueConverterImpl::FromV8ArrayBuffer(
     const auto* data = static_cast<const uint8_t*>(array_buffer->Data());
     const size_t byte_length = array_buffer->ByteLength();
     return base::Value::ToUniquePtrValue(
-        base::Value(base::span(data, byte_length)));
+        base::Value(UNSAFE_TODO(base::span(data, byte_length))));
   }
   if (val->IsArrayBufferView()) {
     v8::Local<v8::ArrayBufferView> view = val.As<v8::ArrayBufferView>();

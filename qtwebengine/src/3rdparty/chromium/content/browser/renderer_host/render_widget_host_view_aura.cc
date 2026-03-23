@@ -17,6 +17,7 @@
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/notimplemented.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -776,7 +777,7 @@ void RenderWidgetHostViewAura::ObserveDevicePosturePlatformProvider() {
 
 void RenderWidgetHostViewAura::OnDisplayFeatureBoundsChanged(
     const gfx::Rect& display_feature_bounds) {
-  if (display_feature_overridden_for_testing_) {
+  if (display_feature_overridden_for_emulation_) {
     return;
   }
 
@@ -797,7 +798,7 @@ void RenderWidgetHostViewAura::OnDisplayFeatureBoundsChanged(
 
 void RenderWidgetHostViewAura::ComputeDisplayFeature() {
   if (display_feature_bounds_.IsEmpty() ||
-      display_feature_overridden_for_testing_) {
+      display_feature_overridden_for_emulation_) {
     return;
   }
 
@@ -848,14 +849,29 @@ std::optional<DisplayFeature> RenderWidgetHostViewAura::GetDisplayFeature() {
   return display_feature_;
 }
 
-void RenderWidgetHostViewAura::SetDisplayFeatureForTesting(
+void RenderWidgetHostViewAura::DisableDisplayFeatureOverrideForEmulation() {
+  if (!display_feature_overridden_for_emulation_) {
+    return;
+  }
+
+  display_feature_overridden_for_emulation_ = false;
+  display_feature_ = std::nullopt;
+  // Restore the platform display feature if there is one.
+  ComputeDisplayFeature();
+  SynchronizeVisualProperties(cc::DeadlinePolicy::UseDefaultDeadline(),
+                              window_->GetLocalSurfaceId());
+}
+
+void RenderWidgetHostViewAura::OverrideDisplayFeatureForEmulation(
     const DisplayFeature* display_feature) {
   if (display_feature) {
     display_feature_ = *display_feature;
   } else {
     display_feature_ = std::nullopt;
   }
-  display_feature_overridden_for_testing_ = true;
+  display_feature_overridden_for_emulation_ = true;
+  SynchronizeVisualProperties(cc::DeadlinePolicy::UseDefaultDeadline(),
+                              window_->GetLocalSurfaceId());
 }
 
 void RenderWidgetHostViewAura::WindowTitleChanged() {
@@ -1071,7 +1087,7 @@ void RenderWidgetHostViewAura::ResetFallbackToFirstNavigationSurface() {
   delegated_frame_host_->ResetFallbackToFirstNavigationSurface();
 }
 
-bool RenderWidgetHostViewAura::RequestRepaintForTesting() {
+bool RenderWidgetHostViewAura::RequestRepaintOnNewSurface() {
   return SynchronizeVisualProperties(cc::DeadlinePolicy::UseDefaultDeadline(),
                                      std::nullopt);
 }
@@ -1998,7 +2014,6 @@ bool RenderWidgetHostViewAura::AddGrammarFragments(
 
 #endif
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
 void RenderWidgetHostViewAura::GetActiveTextInputControlLayoutBounds(
     std::optional<gfx::Rect>* control_bounds,
     std::optional<gfx::Rect>* selection_bounds) {
@@ -2021,7 +2036,6 @@ void RenderWidgetHostViewAura::GetActiveTextInputControlLayoutBounds(
     }
   }
 }
-#endif
 
 #if BUILDFLAG(IS_WIN)
 void RenderWidgetHostViewAura::SetActiveCompositionForAccessibility(
@@ -2248,6 +2262,15 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
       return;
     }
     last_mouse_move_location_ = event->location();
+  }
+
+  // Stylus Handwriting applies exclusively to pen input. On Windows, mouse
+  // events get fired right before the pen makes contact. This serves as an
+  // indication that the user is using a pen to interact with the browser and is
+  // likely to perform handwriting. As such, we instantiate the handwriting
+  // singleton. Also, see crbug.com/40854538 for more context.
+  if (event->pointer_details().pointer_type == ui::EventPointerType::kPen) {
+    StylusHandwritingControllerWin::Initialize();
   }
 #endif
   last_pointer_type_ = ui::EventPointerType::kMouse;
@@ -3029,21 +3052,18 @@ void RenderWidgetHostViewAura::ForwardKeyboardEventWithLatencyInfo(
 
 #if BUILDFLAG(IS_LINUX)
   auto* linux_ui = ui::LinuxUi::instance();
-  std::vector<ui::TextEditCommandAuraLinux> commands;
-  if (!event.skip_if_unhandled && linux_ui && event.os_event &&
-      linux_ui->GetTextEditCommandsForEvent(*event.os_event,
-                                            GetTextInputFlags(), &commands)) {
-    // Transform from ui/ types to content/ types.
-    std::vector<blink::mojom::EditCommandPtr> edit_commands;
-    for (std::vector<ui::TextEditCommandAuraLinux>::const_iterator it =
-             commands.begin(); it != commands.end(); ++it) {
-      edit_commands.push_back(blink::mojom::EditCommand::New(
-          it->GetCommandString(), it->argument()));
+  if (!event.skip_if_unhandled && linux_ui && event.os_event) {
+    const auto command = linux_ui->GetTextEditCommandForEvent(
+        *event.os_event, GetTextInputFlags());
+    if (command != ui::TextEditCommand::INVALID_COMMAND) {
+      // Transform from ui/ types to content/ types.
+      std::vector<blink::mojom::EditCommandPtr> commands;
+      commands.push_back(blink::mojom::EditCommand::New(
+          ui::TextEditCommandToString(command), ""));
+      target_host->ForwardKeyboardEventWithCommands(
+          event, latency, std::move(commands), update_event);
+      return;
     }
-
-    target_host->ForwardKeyboardEventWithCommands(
-        event, latency, std::move(edit_commands), update_event);
-    return;
   }
 #endif
 

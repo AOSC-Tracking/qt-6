@@ -310,6 +310,17 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//content/browser/interest_group/interest_group_storage.cc:InterestGroupStorageVacuumResult) -->
 
+<!-- LINT.IfChange(LevelDBCleanupSchedulerPhase) -->
+
+<enum name="LevelDBCleanupSchedulerPhase">
+  <int value="0" label="Run scheduled"/>
+  <int value="1" label="Tombstone sweeper"/>
+  <int value="2" label="Database compaction"/>
+  <int value="3" label="Logging and cleanup"/>
+</enum>
+
+<!-- LINT.ThenChange(//content/browser/indexed_db/instance/leveldb_cleanup_scheduler.h:Phase) -->
+
 <enum name="RequestStorageResult">
   <int value="0" label="Approved due to existing storage access"/>
   <int value="1" label="Approved with new grant"/>
@@ -764,18 +775,6 @@ chromium-metrics-reviews@google.com.
   <int value="0" label="The bubble was shown."/>
   <int value="1" label="The user ignored the bubble."/>
   <int value="2" label="The user clicked on the positive button."/>
-</enum>
-
-<enum name="SyncFileSystemNotificationSource">
-  <int value="0" label="XMPP"/>
-  <int value="1" label="Polling"/>
-</enum>
-
-<enum name="SyncFileSystemSyncAction">
-  <int value="0" label="None"/>
-  <int value="1" label="Added"/>
-  <int value="2" label="Updated"/>
-  <int value="3" label="Deleted"/>
 </enum>
 
 <enum name="TopLevelStorageAccessRequestOutcome">

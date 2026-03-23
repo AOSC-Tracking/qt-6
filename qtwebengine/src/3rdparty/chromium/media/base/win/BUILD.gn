@@ -29,7 +29,6 @@ jumbo_component("media_foundation_util") {
   deps = [
     "//base",
     "//gpu/ipc/common",
-    "//media:shared_memory_support",
     "//media/base",
     "//media/gpu:command_buffer_helper",
     "//third_party/libyuv",
@@ -55,7 +54,6 @@ component("color_space_util_win") {
   ]
   configs += [ "//media:media_config" ]
   deps = [
-    "//media:shared_memory_support",
     "//media/base",
     "//ui/gfx:color_space",
   ]

@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickcontrol_p_p.h"
 #include "qquickoverlay_p.h"
@@ -340,12 +341,26 @@ void QQuickOverlay::setModeless(QQmlComponent *modeless)
     emit modelessChanged();
 }
 
-QQuickOverlay *QQuickOverlay::overlay(QQuickWindow *window)
+QQuickOverlay *QQuickOverlay::overlay(QQuickWindow *window, QQuickItem *parent)
 {
     if (!window)
         return nullptr;
 
     const char *name = "_q_QQuickOverlay";
+
+    if (QQuickItemPrivate::customOverlayRequested) {
+        while (parent) {
+            if (QQuickItemPrivate::get(parent)->customOverlay) {
+                QQuickOverlay *overlay = parent->property(name).value<QQuickOverlay *>();
+                if (!overlay) {
+                    overlay = new QQuickOverlay(parent);
+                    parent->setProperty(name, QVariant::fromValue(overlay));
+                }
+                return overlay;
+            }
+            parent = parent->parentItem();
+        }
+    }
     QQuickOverlay *overlay = window->property(name).value<QQuickOverlay *>();
     if (!overlay) {
         QQuickItem *content = window->contentItem();
@@ -528,8 +543,10 @@ bool QQuickOverlay::eventFilter(QObject *object, QEvent *event)
 
         // allow non-modal popups to close on touch release outside
         if (!d->mouseGrabberPopup) {
-            for (const QTouchEvent::TouchPoint &point : static_cast<QTouchEvent *>(event)->points()) {
+            QTouchEvent *touchEvent = static_cast<QTouchEvent *>(event);
+            for (const QTouchEvent::TouchPoint &point : touchEvent->points()) {
                 if (point.state() == QEventPoint::Released) {
+                    QQuickDeliveryAgentPrivate::translateTouchEvent(touchEvent);
                     if (d->handleRelease(d->window->contentItem(), event, nullptr))
                         break;
                 }
@@ -601,7 +618,7 @@ bool QQuickOverlay::eventFilter(QObject *object, QEvent *event)
         // eat the event. There is no scenario where the top most item is blocked
         // by a popup, but an item further down in the drawing order is not.
         QWheelEvent *we = static_cast<QWheelEvent *>(event);
-        const QVector<QQuickItem *> targetItems = d->deliveryAgentPrivate()->pointerTargets(
+        const QList<QQuickItem *> targetItems = d->deliveryAgentPrivate()->pointerTargets(
                                     d->window->contentItem(), we, we->point(0), false, false);
         if (targetItems.isEmpty())
             break;
@@ -649,29 +666,38 @@ public:
     Q_DECLARE_PUBLIC(QQuickOverlayAttached)
 
     void setWindow(QQuickWindow *newWindow);
+    void setWindowAndParent(QQuickWindow *newWindow, QQuickItem *parent);
 
     QQuickWindow *window = nullptr;
     QQmlComponent *modal = nullptr;
     QQmlComponent *modeless = nullptr;
+    QQuickItem *parentItem = nullptr;
 };
 
 void QQuickOverlayAttachedPrivate::setWindow(QQuickWindow *newWindow)
+{
+    setWindowAndParent(newWindow, parentItem);
+}
+
+void QQuickOverlayAttachedPrivate::setWindowAndParent(QQuickWindow *newWindow, QQuickItem *parent)
 {
     Q_Q(QQuickOverlayAttached);
     if (window == newWindow)
         return;
 
-    if (QQuickOverlay *oldOverlay = QQuickOverlay::overlay(window)) {
+    if (QQuickOverlay *oldOverlay = QQuickOverlay::overlay(window, parent)) {
         QObject::disconnect(oldOverlay, &QQuickOverlay::pressed, q, &QQuickOverlayAttached::pressed);
         QObject::disconnect(oldOverlay, &QQuickOverlay::released, q, &QQuickOverlayAttached::released);
     }
 
-    if (QQuickOverlay *newOverlay = QQuickOverlay::overlay(newWindow)) {
+    if (QQuickOverlay *newOverlay = QQuickOverlay::overlay(newWindow, parent)) {
         QObject::connect(newOverlay, &QQuickOverlay::pressed, q, &QQuickOverlayAttached::pressed);
         QObject::connect(newOverlay, &QQuickOverlay::released, q, &QQuickOverlayAttached::released);
     }
 
     window = newWindow;
+    if (parent)
+        parentItem = parent;
     emit q->overlayChanged();
 }
 
@@ -704,10 +730,10 @@ QQuickOverlayAttached::QQuickOverlayAttached(QObject *parent)
 {
     Q_D(QQuickOverlayAttached);
     if (QQuickItem *item = qobject_cast<QQuickItem *>(parent)) {
-        d->setWindow(item->window());
+        d->setWindowAndParent(item->window(), item);
         QObjectPrivate::connect(item, &QQuickItem::windowChanged, d, &QQuickOverlayAttachedPrivate::setWindow);
     } else if (QQuickPopup *popup = qobject_cast<QQuickPopup *>(parent)) {
-        d->setWindow(popup->window());
+        d->setWindowAndParent(popup->window(), popup->parentItem());
         QObjectPrivate::connect(popup, &QQuickPopup::windowChanged, d, &QQuickOverlayAttachedPrivate::setWindow);
     } else {
         d->setWindow(qobject_cast<QQuickWindow *>(parent));
@@ -726,7 +752,7 @@ QQuickOverlayAttached::QQuickOverlayAttached(QObject *parent)
 QQuickOverlay *QQuickOverlayAttached::overlay() const
 {
     Q_D(const QQuickOverlayAttached);
-    return QQuickOverlay::overlay(d->window);
+    return QQuickOverlay::overlay(d->window, d->parentItem);
 }
 
 /*!

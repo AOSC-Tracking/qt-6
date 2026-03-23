@@ -39,6 +39,7 @@
 
 #ifndef V8_CODEGEN_S390_ASSEMBLER_S390_H_
 #define V8_CODEGEN_S390_ASSEMBLER_S390_H_
+
 #include <stdio.h>
 #include <memory>
 #if V8_HOST_ARCH_S390X && !V8_OS_ZOS
@@ -1460,7 +1461,7 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   void bind_to(Label* L, int pos);
   void next(Label* L);
 
-  void AllocateAndInstallRequestedHeapNumbers(LocalIsolate* isolate);
+  void PatchInHeapNumberRequest(Address pc, Handle<HeapNumber> object) override;
 
   int WriteCodeComments();
 

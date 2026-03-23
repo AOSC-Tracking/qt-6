@@ -13,6 +13,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_forward.h"
+#include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/notimplemented.h"
@@ -25,10 +26,12 @@
 #include "components/user_education/common/feature_promo/feature_promo_result.h"
 #include "components/user_education/common/feature_promo/feature_promo_session_policy.h"
 #include "components/user_education/common/feature_promo/feature_promo_specification.h"
+#include "components/user_education/common/help_bubble/custom_help_bubble.h"
 #include "components/user_education/common/help_bubble/help_bubble_factory_registry.h"
 #include "components/user_education/common/help_bubble/help_bubble_params.h"
 #include "components/user_education/common/tutorial/tutorial.h"
 #include "components/user_education/common/tutorial/tutorial_service.h"
+#include "components/user_education/common/user_education_context.h"
 #include "components/user_education/common/user_education_data.h"
 #include "components/user_education/common/user_education_storage_service.h"
 #include "ui/accessibility/ax_mode.h"
@@ -38,6 +41,38 @@
 #include "ui/base/l10n/l10n_util.h"
 
 namespace user_education {
+
+namespace {
+
+// Returns the most relevant valid context for a bubble that is already showing.
+//
+// Typically, this is the `bubble_context` - i.e. the context of the surface
+// the bubble is actually showing in - but in some cases the context may be
+// missing or invalid, in which case fall back to the `original_context` - the
+// context of the surface the IPH was invoked from.
+//
+// If both contexts are missing or invalid, returns null. If a non-null value is
+// returned, the context is guaranteed to be valid.
+//
+// It is not possible to always rely on the `original_context` because an IPH
+// can be triggered from a browser window but appear on e.g. an App window, and
+// while the promo is visible, the original browser window could be closed. The
+// logic here provides the greatest chance at success in that situation, as well
+// as ensuring that, if possible, follow-ups such as custom actions and
+// tutorials will take place in the same window as the IPH.
+UserEducationContextPtr ResolveContext(
+    const UserEducationContextPtr& original_context,
+    const UserEducationContextPtr& bubble_context) {
+  if (bubble_context && bubble_context->IsValid()) {
+    return bubble_context;
+  }
+  if (original_context->IsValid()) {
+    return original_context;
+  }
+  return nullptr;
+}
+
+}  // namespace
 
 FeaturePromoController::FeaturePromoController() = default;
 FeaturePromoController::~FeaturePromoController() = default;
@@ -54,13 +89,6 @@ void FeaturePromoController::PostShowPromoResult(
             std::move(callback), result));
   }
 }
-
-FeaturePromoControllerCommon::ShowPromoBubbleParams::ShowPromoBubbleParams() =
-    default;
-FeaturePromoControllerCommon::ShowPromoBubbleParams::ShowPromoBubbleParams(
-    ShowPromoBubbleParams&& other) noexcept = default;
-FeaturePromoControllerCommon::ShowPromoBubbleParams::~ShowPromoBubbleParams() =
-    default;
 
 FeaturePromoControllerCommon::FeaturePromoControllerCommon(
     feature_engagement::Tracker* feature_engagement_tracker,
@@ -85,7 +113,7 @@ FeaturePromoControllerCommon::~FeaturePromoControllerCommon() = default;
 FeaturePromoStatus FeaturePromoControllerCommon::GetPromoStatus(
     const base::Feature& iph_feature) const {
   if (IsPromoQueued(iph_feature)) {
-    return FeaturePromoStatus::kQueuedForStartup;
+    return FeaturePromoStatus::kQueued;
   }
   if (GetCurrentPromoFeature() != &iph_feature) {
     return FeaturePromoStatus::kNotRunning;
@@ -232,10 +260,10 @@ FeaturePromoControllerCommon::CloseBubbleAndContinuePromoWithReason(
   return FeaturePromoHandle(GetAsWeakPtr(), &iph_feature);
 }
 
-bool FeaturePromoControllerCommon::CheckScreenReaderPromptAvailable(
+bool FeaturePromoControllerCommon::CheckExtendedPropertiesPromptAvailable(
     bool for_demo) const {
   if (!ui::AXPlatform::GetInstance().GetMode().has_mode(
-          ui::AXMode::kScreenReader)) {
+          ui::AXMode::kExtendedProperties)) {
     return false;
   }
 
@@ -276,103 +304,153 @@ FeaturePromoControllerCommon::CreateLifecycleFor(
 }
 
 std::unique_ptr<HelpBubble> FeaturePromoControllerCommon::ShowPromoBubbleImpl(
-    ShowPromoBubbleParams params) {
+    FeaturePromoSpecification::BuildHelpBubbleParams params,
+    UserEducationContextPtr context) {
+  CHECK(context && context->IsValid());
   const auto& spec = *params.spec;
-  HelpBubbleParams bubble_params;
-  bubble_params.body_text = FeaturePromoSpecification::FormatString(
-      spec.bubble_body_string_id(), std::move(params.body_format));
-  bubble_params.title_text = FeaturePromoSpecification::FormatString(
-      spec.bubble_title_string_id(), std::move(params.title_format));
-  if (spec.screen_reader_accelerator()) {
-    CHECK(spec.screen_reader_string_id());
-    CHECK(std::holds_alternative<FeaturePromoSpecification::NoSubstitution>(
-        params.screen_reader_format))
-        << "Accelerator and substitution are not compatible for screen "
-           "reader text.";
-    bubble_params.screenreader_text =
-        l10n_util::GetStringFUTF16(spec.screen_reader_string_id(),
-                                   spec.screen_reader_accelerator()
-                                       .GetAccelerator(GetAcceleratorProvider())
-                                       .GetShortcutText());
-  } else {
-    bubble_params.screenreader_text = FeaturePromoSpecification::FormatString(
-        spec.screen_reader_string_id(), std::move(params.screen_reader_format));
-  }
-  bubble_params.close_button_alt_text =
-      l10n_util::GetStringUTF16(IDS_CLOSE_PROMO);
-  bubble_params.body_icon = spec.bubble_icon();
-  if (spec.bubble_body_string_id()) {
-    bubble_params.body_icon_alt_text = GetBodyIconAltText();
-  }
-  bubble_params.arrow = spec.bubble_arrow();
-  bubble_params.focus_on_show_hint = spec.focus_on_show_override();
-
-  bubble_params.timeout_callback =
-      base::BindOnce(&FeaturePromoControllerCommon::OnHelpBubbleTimeout,
-                     GetCommonWeakPtr(), base::Unretained(spec.feature()));
-
-  // Feature isn't present for some critical promos.
-  if (spec.feature()) {
-    bubble_params.dismiss_callback =
-        base::BindOnce(&FeaturePromoControllerCommon::OnHelpBubbleDismissed,
-                       GetCommonWeakPtr(), base::Unretained(spec.feature()),
-                       /* via_action_button =*/false);
-  }
-
-  switch (spec.promo_type()) {
-    case FeaturePromoSpecification::PromoType::kToast: {
-      // Rotating toast promos require a "got it" button.
-      if (current_promo_ &&
-          current_promo_->promo_type() ==
-              FeaturePromoSpecification::PromoType::kRotating) {
-        bubble_params.buttons = CreateRotatingToastButtons(*spec.feature());
-        // If no hint is set, promos with buttons take focus. However, toasts do
-        // not take focus by default. So if the hint isn't already set, set the
-        // promo not to take focus.
-        bubble_params.focus_on_show_hint =
-            bubble_params.focus_on_show_hint.value_or(false);
-      }
-      break;
-    }
-    case FeaturePromoSpecification::PromoType::kSnooze:
-      CHECK(spec.feature());
-      bubble_params.buttons =
-          CreateSnoozeButtons(*spec.feature(), params.can_snooze);
-      break;
-    case FeaturePromoSpecification::PromoType::kTutorial:
-      CHECK(spec.feature());
-      bubble_params.buttons = CreateTutorialButtons(
-          *spec.feature(), params.can_snooze, spec.tutorial_id());
-      bubble_params.dismiss_callback = base::BindOnce(
-          &FeaturePromoControllerCommon::OnTutorialHelpBubbleDismissed,
-          GetCommonWeakPtr(), base::Unretained(spec.feature()),
-          spec.tutorial_id());
-      break;
-    case FeaturePromoSpecification::PromoType::kCustomAction:
-      CHECK(spec.feature());
-      bubble_params.buttons = CreateCustomActionButtons(
-          *spec.feature(), spec.custom_action_caption(),
-          spec.custom_action_callback(), spec.custom_action_is_default(),
-          spec.custom_action_dismiss_string_id());
-      break;
-    case FeaturePromoSpecification::PromoType::kUnspecified:
-    case FeaturePromoSpecification::PromoType::kLegacy:
-      break;
-    case FeaturePromoSpecification::PromoType::kRotating:
-      NOTREACHED() << "Not implemented; should never reach this code.";
-  }
+  const auto* const accelerator_provider = context->GetAcceleratorProvider();
+  const auto bubble_context = GetContextForHelpBubble(params.anchor_element);
 
   bool had_screen_reader_promo = false;
-  if (spec.promo_type() == FeaturePromoSpecification::PromoType::kTutorial) {
-    bubble_params.keyboard_navigation_hint = GetTutorialScreenReaderHint();
-  } else if (params.screen_reader_prompt_available) {
-    bubble_params.keyboard_navigation_hint = GetFocusHelpBubbleScreenReaderHint(
-        spec.promo_type(), params.anchor_element);
-    had_screen_reader_promo = !bubble_params.keyboard_navigation_hint.empty();
+  std::unique_ptr<HelpBubble> help_bubble;
+  if (spec.promo_type() == FeaturePromoSpecification::PromoType::kCustomUi) {
+    auto result = spec.BuildCustomHelpBubble(context, std::move(params));
+    help_bubble = std::move(std::get<std::unique_ptr<HelpBubble>>(result));
+    CHECK(help_bubble);
+    auto* const ui = std::get<base::WeakPtr<CustomHelpBubbleUi>>(result).get();
+    CHECK(ui);
+    custom_ui_result_subscription_ =
+        ui->AddUserActionCallback(base::BindRepeating(
+            [](FeaturePromoControllerCommon* controller,
+               const FeaturePromoSpecification* spec,
+               const UserEducationContextPtr& context,
+               const UserEducationContextPtr& bubble_context,
+               CustomHelpBubbleUi::UserAction action) {
+              switch (action) {
+                case CustomHelpBubbleUi::UserAction::kCancel:
+                  controller->OnHelpBubbleDismissed(spec->feature(), false);
+                  break;
+                case CustomHelpBubbleUi::UserAction::kDismiss:
+                  controller->OnHelpBubbleDismissed(spec->feature(), true);
+                  break;
+                case CustomHelpBubbleUi::UserAction::kAction:
+                  CHECK(!spec->custom_action_callback().is_null())
+                      << "FeaturePromoSpecification for custom UI must "
+                         "specify custom action callback if custom UI "
+                         "generates `kAction` result type.";
+                  controller->OnCustomAction(spec->feature(), context,
+                                             bubble_context,
+                                             spec->custom_action_callback());
+                  break;
+                case CustomHelpBubbleUi::UserAction::kSnooze:
+                  controller->OnHelpBubbleSnoozed(spec->feature());
+                  break;
+              }
+            },
+            base::Unretained(this), base::Unretained(&spec), context,
+            bubble_context));
+  } else {
+    HelpBubbleParams bubble_params;
+    bubble_params.body_text = FeaturePromoSpecification::FormatString(
+        spec.bubble_body_string_id(), std::move(params.body_format));
+    bubble_params.title_text = FeaturePromoSpecification::FormatString(
+        spec.bubble_title_string_id(), std::move(params.title_format));
+    if (spec.screen_reader_accelerator()) {
+      CHECK(spec.screen_reader_string_id());
+      CHECK(std::holds_alternative<FeaturePromoSpecification::NoSubstitution>(
+          params.screen_reader_format))
+          << "Accelerator and substitution are not compatible for screen "
+             "reader text.";
+      bubble_params.screenreader_text =
+          l10n_util::GetStringFUTF16(spec.screen_reader_string_id(),
+                                     spec.screen_reader_accelerator()
+                                         .GetAccelerator(accelerator_provider)
+                                         .GetShortcutText());
+    } else {
+      bubble_params.screenreader_text = FeaturePromoSpecification::FormatString(
+          spec.screen_reader_string_id(),
+          std::move(params.screen_reader_format));
+    }
+    bubble_params.close_button_alt_text =
+        l10n_util::GetStringUTF16(IDS_CLOSE_PROMO);
+    bubble_params.body_icon = spec.bubble_icon();
+    if (bubble_params.body_icon) {
+      bubble_params.body_icon_alt_text = GetBodyIconAltText();
+    }
+    bubble_params.arrow = params.arrow;
+    bubble_params.focus_on_show_hint = spec.focus_on_show_override();
+
+    bubble_params.timeout_callback =
+        base::BindOnce(&FeaturePromoControllerCommon::OnHelpBubbleTimeout,
+                       GetCommonWeakPtr(), base::Unretained(spec.feature()));
+
+    // Feature isn't present for some critical promos.
+    if (spec.feature()) {
+      bubble_params.dismiss_callback =
+          base::BindOnce(&FeaturePromoControllerCommon::OnHelpBubbleDismissed,
+                         GetCommonWeakPtr(), base::Unretained(spec.feature()),
+                         /* via_action_button =*/false);
+    }
+
+    switch (spec.promo_type()) {
+      case FeaturePromoSpecification::PromoType::kToast: {
+        // Rotating toast promos require a "got it" button.
+        if (current_promo_ &&
+            current_promo_->promo_type() ==
+                FeaturePromoSpecification::PromoType::kRotating) {
+          bubble_params.buttons = CreateRotatingToastButtons(*spec.feature());
+          // If no hint is set, promos with buttons take focus. However, toasts
+          // do not take focus by default. So if the hint isn't already set, set
+          // the promo not to take focus.
+          bubble_params.focus_on_show_hint =
+              bubble_params.focus_on_show_hint.value_or(false);
+        }
+        break;
+      }
+      case FeaturePromoSpecification::PromoType::kSnooze:
+        CHECK(spec.feature());
+        bubble_params.buttons =
+            CreateSnoozeButtons(*spec.feature(), params.can_snooze);
+        break;
+      case FeaturePromoSpecification::PromoType::kTutorial:
+        CHECK(spec.feature());
+        bubble_params.buttons =
+            CreateTutorialButtons(*spec.feature(), context, bubble_context,
+                                  params.can_snooze, spec.tutorial_id());
+        bubble_params.dismiss_callback = base::BindOnce(
+            &FeaturePromoControllerCommon::OnTutorialHelpBubbleDismissed,
+            GetCommonWeakPtr(), base::Unretained(spec.feature()),
+            spec.tutorial_id());
+        break;
+      case FeaturePromoSpecification::PromoType::kCustomAction:
+        CHECK(spec.feature());
+        bubble_params.buttons = CreateCustomActionButtons(
+            *spec.feature(), context, bubble_context,
+            spec.custom_action_caption(), spec.custom_action_callback(),
+            spec.custom_action_is_default(),
+            spec.custom_action_dismiss_string_id());
+        break;
+      case FeaturePromoSpecification::PromoType::kCustomUi:
+      case FeaturePromoSpecification::PromoType::kUnspecified:
+      case FeaturePromoSpecification::PromoType::kLegacy:
+        break;
+      case FeaturePromoSpecification::PromoType::kRotating:
+        NOTREACHED() << "Not implemented; should never reach this code.";
+    }
+
+    if (spec.promo_type() == FeaturePromoSpecification::PromoType::kTutorial) {
+      bubble_params.keyboard_navigation_hint =
+          GetTutorialScreenReaderHint(accelerator_provider);
+    } else if (params.screen_reader_prompt_available) {
+      bubble_params.keyboard_navigation_hint =
+          GetFocusHelpBubbleScreenReaderHint(
+              spec.promo_type(), params.anchor_element, accelerator_provider);
+      had_screen_reader_promo = !bubble_params.keyboard_navigation_hint.empty();
+    }
+    help_bubble = bubble_factory_registry_->CreateHelpBubble(
+        params.anchor_element, std::move(bubble_params));
   }
 
-  auto help_bubble = bubble_factory_registry_->CreateHelpBubble(
-      params.anchor_element, std::move(bubble_params));
   if (help_bubble) {
     // TODO(crbug.com/40200981): Rewrite this when we have the ability for FE
     // promos to ignore other active promos.
@@ -459,10 +537,14 @@ void FeaturePromoControllerCommon::OnHelpBubbleTimeout(
 
 void FeaturePromoControllerCommon::OnCustomAction(
     const base::Feature* feature,
+    const UserEducationContextPtr& context,
+    const UserEducationContextPtr& bubble_context,
     FeaturePromoSpecification::CustomActionCallback callback) {
-  callback.Run(GetAnchorContext(),
-               CloseBubbleAndContinuePromoWithReason(
-                   *feature, FeaturePromoClosedReason::kAction));
+  if (auto actual_context = ResolveContext(context, bubble_context)) {
+    callback.Run(actual_context,
+                 CloseBubbleAndContinuePromoWithReason(
+                     *feature, FeaturePromoClosedReason::kAction));
+  }
 }
 
 void FeaturePromoControllerCommon::OnTutorialHelpBubbleSnoozed(
@@ -482,19 +564,23 @@ void FeaturePromoControllerCommon::OnTutorialHelpBubbleDismissed(
 
 void FeaturePromoControllerCommon::OnTutorialStarted(
     const base::Feature* iph_feature,
+    const UserEducationContextPtr& context,
+    const UserEducationContextPtr& bubble_context,
     TutorialIdentifier tutorial_id) {
   DCHECK_EQ(GetCurrentPromoFeature(), iph_feature);
   tutorial_promo_handle_ = CloseBubbleAndContinuePromoWithReason(
       *iph_feature, FeaturePromoClosedReason::kAction);
   DCHECK(tutorial_promo_handle_.is_valid());
-  tutorial_service_->StartTutorial(
-      tutorial_id, GetAnchorContext(),
-      base::BindOnce(&FeaturePromoControllerCommon::OnTutorialComplete,
-                     GetCommonWeakPtr(), base::Unretained(iph_feature)),
-      base::BindOnce(&FeaturePromoControllerCommon::OnTutorialAborted,
-                     GetCommonWeakPtr(), base::Unretained(iph_feature)));
-  if (tutorial_service_->IsRunningTutorial()) {
-    tutorial_service_->LogIPHLinkClicked(tutorial_id, true);
+  if (auto actual_context = ResolveContext(context, bubble_context)) {
+    tutorial_service_->StartTutorial(
+        tutorial_id, context->GetElementContext(),
+        base::BindOnce(&FeaturePromoControllerCommon::OnTutorialComplete,
+                       GetCommonWeakPtr(), base::Unretained(iph_feature)),
+        base::BindOnce(&FeaturePromoControllerCommon::OnTutorialAborted,
+                       GetCommonWeakPtr(), base::Unretained(iph_feature)));
+    if (tutorial_service_->IsRunningTutorial()) {
+      tutorial_service_->LogIPHLinkClicked(tutorial_id, true);
+    }
   }
 }
 
@@ -554,6 +640,8 @@ FeaturePromoControllerCommon::CreateSnoozeButtons(const base::Feature& feature,
 std::vector<HelpBubbleButtonParams>
 FeaturePromoControllerCommon::CreateCustomActionButtons(
     const base::Feature& feature,
+    const UserEducationContextPtr& context,
+    const UserEducationContextPtr& bubble_context,
     const std::u16string& custom_action_caption,
     FeaturePromoSpecification::CustomActionCallback custom_action_callback,
     bool custom_action_is_default,
@@ -564,9 +652,10 @@ FeaturePromoControllerCommon::CreateCustomActionButtons(
   HelpBubbleButtonParams action_button;
   action_button.text = custom_action_caption;
   action_button.is_default = custom_action_is_default;
-  action_button.callback = base::BindOnce(
-      &FeaturePromoControllerCommon::OnCustomAction, GetCommonWeakPtr(),
-      base::Unretained(&feature), custom_action_callback);
+  action_button.callback =
+      base::BindOnce(&FeaturePromoControllerCommon::OnCustomAction,
+                     GetCommonWeakPtr(), base::Unretained(&feature), context,
+                     bubble_context, custom_action_callback);
   buttons.push_back(std::move(action_button));
 
   HelpBubbleButtonParams dismiss_button;
@@ -585,6 +674,8 @@ FeaturePromoControllerCommon::CreateCustomActionButtons(
 std::vector<HelpBubbleButtonParams>
 FeaturePromoControllerCommon::CreateTutorialButtons(
     const base::Feature& feature,
+    const UserEducationContextPtr& context,
+    const UserEducationContextPtr& bubble_context,
     bool can_snooze,
     TutorialIdentifier tutorial_id) {
   std::vector<HelpBubbleButtonParams> buttons;
@@ -610,7 +701,7 @@ FeaturePromoControllerCommon::CreateTutorialButtons(
   tutorial_button.is_default = true;
   tutorial_button.callback = base::BindRepeating(
       &FeaturePromoControllerCommon::OnTutorialStarted, GetCommonWeakPtr(),
-      base::Unretained(&feature), tutorial_id);
+      base::Unretained(&feature), context, bubble_context, tutorial_id);
   buttons.push_back(std::move(tutorial_button));
 
   return buttons;
@@ -641,61 +732,7 @@ void FeaturePromoControllerCommon::RecordPromoNotShown(
 
   // Record Failure as user action
   std::string failure_action_name = "UserEducation.MessageNotShown.";
-  switch (failure) {
-    case FeaturePromoResult::kCanceled:
-      failure_action_name.append("Canceled");
-      break;
-    case FeaturePromoResult::kError:
-      failure_action_name.append("Error");
-      break;
-    case FeaturePromoResult::kBlockedByUi:
-      failure_action_name.append("BlockedByUi");
-      break;
-    case FeaturePromoResult::kBlockedByPromo:
-      failure_action_name.append("BlockedByPromo");
-      break;
-    case FeaturePromoResult::kBlockedByConfig:
-      failure_action_name.append("BlockedByConfig");
-      break;
-    case FeaturePromoResult::kSnoozed:
-      failure_action_name.append("Snoozed");
-      break;
-    case FeaturePromoResult::kBlockedByContext:
-      failure_action_name.append("BlockedByContext");
-      break;
-    case FeaturePromoResult::kFeatureDisabled:
-      failure_action_name.append("FeatureDisabled");
-      break;
-    case FeaturePromoResult::kPermanentlyDismissed:
-      failure_action_name.append("PermanentlyDismissed");
-      break;
-    case FeaturePromoResult::kBlockedByGracePeriod:
-      failure_action_name.append("BlockedByGracePeriod");
-      break;
-    case FeaturePromoResult::kBlockedByCooldown:
-      failure_action_name.append("BlockedByCooldown");
-      break;
-    case FeaturePromoResult::kRecentlyAborted:
-      failure_action_name.append("RecentlyAborted");
-      break;
-    case FeaturePromoResult::kExceededMaxShowCount:
-      failure_action_name.append("ExceededMaxShowCount");
-      break;
-    case FeaturePromoResult::kBlockedByNewProfile:
-      failure_action_name.append("BlockedByNewProfile");
-      break;
-    case FeaturePromoResult::kBlockedByReshowDelay:
-      failure_action_name.append("BlockedByReshowDelay");
-      break;
-    case FeaturePromoResult::kTimedOut:
-      failure_action_name.append("TimedOut");
-      break;
-    case FeaturePromoResult::kAlreadyQueued:
-      failure_action_name.append("AlreadyQueued");
-      break;
-    default:
-      NOTREACHED();
-  }
+  failure_action_name.append(FeaturePromoResult::GetFailureName(failure));
   base::RecordComputedAction(failure_action_name);
 }
 
@@ -729,8 +766,8 @@ std::ostream& operator<<(std::ostream& os, FeaturePromoStatus status) {
     case FeaturePromoStatus::kNotRunning:
       os << "kNotRunning";
       break;
-    case FeaturePromoStatus::kQueuedForStartup:
-      os << "kQueuedForStartup";
+    case FeaturePromoStatus::kQueued:
+      os << "kQueued";
       break;
   }
   return os;

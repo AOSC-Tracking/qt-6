@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "graphs2d/qabstractseries.h"
 #include "graphs2d/qabstractseries_p.h"
@@ -27,6 +29,10 @@
 #ifdef USE_POINTS
 #include <private/pointrenderer_p.h>
 #endif
+#ifdef USE_CUSTOMGRAPH
+#include <QtGraphs/qcustomseries.h>
+#include <private/customrenderer_p.h>
+#endif
 #include <QTimer>
 #include <QtQuick/private/qquickpinchhandler_p.h>
 #include <QtQuick/private/qquickrectangle_p.h>
@@ -34,7 +40,45 @@
 #include <private/qabstractaxis_p.h>
 #include <private/qgraphsview_p.h>
 
+#include <qtgraphs_tracepoints_p.h>
+
 QT_BEGIN_NAMESPACE
+
+Q_TRACE_PREFIX(qtgraphs,
+              "QT_BEGIN_NAMESPACE" \
+               "class QGraphsView;" \
+              "QT_END_NAMESPACE"
+          )
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsVieUpdatePolish_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsVieUpdatePolish_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewComponentComplete_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewComponentComplete_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewInsertSeries_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewInsertSeries_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreateBarsRenderer_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreateBarsRenderer_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreateAxisRenderer_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreateAxisRenderer_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreatePointRenderer_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreatePointRenderer_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreatePieRenderer_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreatePieRenderer_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreateAreaRenderer_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DGraphsViewCreateAreaRenderer_exit);
+
+/*!
+    \class QGraphsView
+    \inmodule QtGraphs
+    \internal
+*/
 
 /*!
     \qmltype GraphsView
@@ -106,7 +150,7 @@ void QGraphsView::onPinchGrabChanged(QPointingDevice::GrabTransition transition,
 }
 
 /*!
-    \qmlmethod GraphsView::addSeries(AbstractSeries series)
+    \qmlmethod void GraphsView::addSeries(AbstractSeries series)
     Appends a \a series into GraphsView.
     If the \a series is null, it will not be added. If the \a series already
     belongs to the graph, it will be moved into the end.
@@ -122,7 +166,7 @@ void QGraphsView::addSeries(QObject *series)
 }
 
 /*!
-    \qmlmethod GraphsView::insertSeries(int index, AbstractSeries series)
+    \qmlmethod void GraphsView::insertSeries(int index, AbstractSeries series)
     Inserts a \a series at the position specified by \a index.
     If the \a series is null, it will not be inserted. If the \a series already
     belongs to the graph, it will be moved into \a index.
@@ -135,6 +179,7 @@ void QGraphsView::addSeries(QObject *series)
 void QGraphsView::insertSeries(qsizetype index, QObject *object)
 {
     if (auto series = qobject_cast<QAbstractSeries *>(object)) {
+        Q_TRACE(QGraphs2DGraphsViewInsertSeries_entry);
         series->setGraph(this);
         if (m_seriesList.contains(series)) {
             qsizetype oldIndex = m_seriesList.indexOf(series);
@@ -150,6 +195,10 @@ void QGraphsView::insertSeries(qsizetype index, QObject *object)
         } else {
             m_seriesList.insert(index, series);
 
+            QObject::connect(series,
+                             &QAbstractSeries::update,
+                             this,
+                             &QGraphsView::updateComponentSizes);
             QObject::connect(series, &QAbstractSeries::update,
                              this, &QGraphsView::polishAndUpdate);
             QObject::connect(series, &QAbstractSeries::hoverEnter,
@@ -165,13 +214,15 @@ void QGraphsView::insertSeries(qsizetype index, QObject *object)
 #endif
             qCDebug(lcGraphs2D) << series << "added to a list at index of" << index;
         }
+        Q_TRACE(QGraphs2DGraphsViewInsertSeries_exit);
+
         updateComponentSizes();
         polishAndUpdate();
     }
 }
 
 /*!
-    \qmlmethod GraphsView::removeSeries(AbstractSeries series)
+    \qmlmethod void GraphsView::removeSeries(AbstractSeries series)
     Removes the \a series from the graph.
 */
 /*!
@@ -196,7 +247,7 @@ void QGraphsView::removeSeries(QObject *object)
 }
 
 /*!
-    \qmlmethod GraphsView::removeSeries(int index)
+    \qmlmethod void GraphsView::removeSeries(int index)
     Removes the series specified by \a index from the graph.
 */
 /*!
@@ -242,22 +293,19 @@ void QGraphsView::addAxis(QAbstractAxis *axis)
         createAxisRenderer();
         polishAndUpdate();
         QObject::connect(axis, &QAbstractAxis::update, this, &QGraphsView::polishAndUpdate);
-        QObject::connect(axis,
-                         &QAbstractAxis::visibleChanged,
-                         this,
-                         &QGraphsView::updateComponentSizes);
+        QObject::connect(axis, &QAbstractAxis::update, this, &QGraphsView::updateComponentSizes);
     }
 }
 
 void QGraphsView::removeAxis(QAbstractAxis *axis)
 {
-    if (m_axisX == axis || m_axisY == axis) {
+    if (axis) {
         axis->d_func()->setGraph(nullptr);
         QObject::disconnect(axis, &QAbstractAxis::update, this, &QGraphsView::polishAndUpdate);
         QObject::disconnect(axis,
-                            &QAbstractAxis::visibleChanged,
+                            &QAbstractAxis::update,
                             this,
-                            &QGraphsView::updateComponentSizes);
+                             &QGraphsView::updateComponentSizes);
     }
 
     if (m_axisX == axis)
@@ -283,6 +331,7 @@ void QGraphsView::setGraphSeriesCount(qsizetype count)
 #ifdef USE_BARGRAPH
 void QGraphsView::createBarsRenderer()
 {
+    Q_TRACE_SCOPE(QGraphs2DGraphsViewCreateBarsRenderer);
     if (!m_barsRenderer) {
         qCDebug(lcGraphs2D, "creating bars renderer");
         m_barsRenderer = new BarsRenderer(this, clipPlotArea());
@@ -293,6 +342,7 @@ void QGraphsView::createBarsRenderer()
 
 void QGraphsView::createAxisRenderer()
 {
+    Q_TRACE_SCOPE(QGraphs2DGraphsViewCreateAxisRenderer);
     if (!m_axisRenderer) {
         qCDebug(lcGraphs2D) << "creating axis renderer.";
         m_axisRenderer = new AxisRenderer(this);
@@ -304,6 +354,7 @@ void QGraphsView::createAxisRenderer()
 #ifdef USE_POINTS
 void QGraphsView::createPointRenderer()
 {
+    Q_TRACE_SCOPE(QGraphs2DGraphsViewCreatePointRenderer);
     if (!m_pointRenderer) {
         qCDebug(lcGraphs2D, "creating point renderer.");
         m_pointRenderer = new PointRenderer(this, clipPlotArea());
@@ -315,6 +366,7 @@ void QGraphsView::createPointRenderer()
 #ifdef USE_PIEGRAPH
 void QGraphsView::createPieRenderer()
 {
+    Q_TRACE_SCOPE(QGraphs2DGraphsViewCreatePieRenderer);
     if (!m_pieRenderer) {
         qCDebug(lcGraphs2D, "creating pie renderer.");
         m_pieRenderer = new PieRenderer(this, clipPlotArea());
@@ -326,9 +378,21 @@ void QGraphsView::createPieRenderer()
 #ifdef USE_AREAGRAPH
 void QGraphsView::createAreaRenderer()
 {
+    Q_TRACE_SCOPE(QGraphs2DGraphsViewCreateAreaRenderer);
     if (!m_areaRenderer) {
         qCDebug(lcGraphs2D, "creating area renderer.");
         m_areaRenderer = new AreaRenderer(this, clipPlotArea());
+        updateComponentSizes();
+    }
+}
+#endif
+
+#ifdef USE_CUSTOMGRAPH
+void QGraphsView::createCustomRenderer()
+{
+    if (!m_customRenderer) {
+        qCDebug(lcGraphs2D, "creating custom renderer.");
+        m_customRenderer = new CustomRenderer(this, clipPlotArea());
         updateComponentSizes();
     }
 }
@@ -351,7 +415,7 @@ qreal QGraphsView::axisXSmoothing() const
 
 void QGraphsView::setAxisXSmoothing(qreal smoothing)
 {
-    if (qFuzzyCompare(m_axisXSmoothing, smoothing)) {
+    if (QtPrivate::fuzzyCompare(m_axisXSmoothing, smoothing)) {
         qCDebug(lcViewProperties2D, "%s axis smoothing is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)),
                 smoothing);
@@ -379,7 +443,7 @@ qreal QGraphsView::axisYSmoothing() const
 
 void QGraphsView::setAxisYSmoothing(qreal smoothing)
 {
-    if (qFuzzyCompare(m_axisYSmoothing, smoothing)) {
+    if (QtPrivate::fuzzyCompare(m_axisYSmoothing, smoothing)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), smoothing);
         return;
@@ -406,7 +470,7 @@ qreal QGraphsView::gridSmoothing() const
 
 void QGraphsView::setGridSmoothing(qreal smoothing)
 {
-    if (qFuzzyCompare(m_gridSmoothing, smoothing)) {
+    if (QtPrivate::fuzzyCompare(m_gridSmoothing, smoothing)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), smoothing);
         return;
@@ -487,7 +551,7 @@ qreal QGraphsView::shadowBarWidth() const
 
 void QGraphsView::setShadowBarWidth(qreal newShadowBarWidth)
 {
-    if (qFuzzyCompare(m_shadowBarWidth, newShadowBarWidth)) {
+    if (QtPrivate::fuzzyCompare(m_shadowBarWidth, newShadowBarWidth)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newShadowBarWidth);
         return;
@@ -514,7 +578,7 @@ qreal QGraphsView::shadowXOffset() const
 
 void QGraphsView::setShadowXOffset(qreal newShadowXOffset)
 {
-    if (qFuzzyCompare(m_shadowXOffset, newShadowXOffset)) {
+    if (QtPrivate::fuzzyCompare(m_shadowXOffset, newShadowXOffset)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newShadowXOffset);
         return;
@@ -541,7 +605,7 @@ qreal QGraphsView::shadowYOffset() const
 
 void QGraphsView::setShadowYOffset(qreal newShadowYOffset)
 {
-    if (qFuzzyCompare(m_shadowYOffset, newShadowYOffset)) {
+    if (QtPrivate::fuzzyCompare(m_shadowYOffset, newShadowYOffset)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newShadowYOffset);
         return;
@@ -568,7 +632,7 @@ qreal QGraphsView::shadowSmoothing() const
 
 void QGraphsView::setShadowSmoothing(qreal smoothing)
 {
-    if (qFuzzyCompare(m_shadowSmoothing, smoothing)) {
+    if (QtPrivate::fuzzyCompare(m_shadowSmoothing, smoothing)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), smoothing);
         return;
@@ -653,10 +717,20 @@ void QGraphsView::updateComponentSizes()
 
     }
 #endif
+#ifdef USE_CUSTOMGRAPH
+    if (m_customRenderer) {
+        m_customRenderer->setX(m_plotArea.x());
+        m_customRenderer->setY(m_plotArea.y());
+        m_customRenderer->setSize(m_plotArea.size());
+        qCDebug(lcEvents2D) << "custom graph size:" << m_plotArea.size();
+        qCDebug(lcEvents2D, "customaRenderer plotArea x: %f y: %f", m_plotArea.x(), m_plotArea.y());
+    }
+#endif
 }
 
 void QGraphsView::componentComplete()
 {
+    Q_TRACE(QGraphs2DGraphsViewComponentComplete_entry);
     if (!m_zoomAreaDelegate && !m_zoomAreaItem) {
         const QString qmlData = QLatin1StringView(R"QML(
             import QtQuick;
@@ -682,6 +756,8 @@ void QGraphsView::componentComplete()
         QObject::connect(m_theme, &QGraphsTheme::update, this, &QQuickItem::update);
         m_theme->resetColorTheme();
     }
+    Q_TRACE(QGraphs2DGraphsViewComponentComplete_exit);
+
     QQuickItem::componentComplete();
 
     qCDebug(lcEvents2D, "QGraphsView::componentComplete.");
@@ -805,6 +881,13 @@ QSGNode *QGraphsView::updatePaintNode(QSGNode *oldNode, QQuickItem::UpdatePaintN
                 m_areaRenderer->updateSeries(areaSeries);
         }
 #endif
+
+#ifdef USE_CUSTOMGRAPH
+        if (m_customRenderer) {
+            if (auto customSeries = qobject_cast<QCustomSeries *>(series))
+                m_customRenderer->updateSeries(customSeries);
+        }
+#endif
     }
 
 #ifdef USE_BARGRAPH
@@ -838,6 +921,14 @@ QSGNode *QGraphsView::updatePaintNode(QSGNode *oldNode, QQuickItem::UpdatePaintN
     }
 #endif
 
+#ifdef USE_CUSTOMGRAPH
+    if (m_customRenderer) {
+        auto &cleanupSeriesList = m_cleanupSeriesList[4];
+        m_customRenderer->afterUpdate(cleanupSeriesList);
+        cleanupSeriesList.clear();
+    }
+#endif
+
     // Now possibly dirty theme has been taken into use
     m_theme->resetThemeDirty();
 
@@ -848,6 +939,7 @@ void QGraphsView::updatePolish()
 {
     qCDebug(lcEvents2D, "QGraphsView::updatePolish. Start Update and polish.");
 
+    Q_TRACE_SCOPE(QGraphs2DGraphsVieUpdatePolish);
     if (m_axisRenderer) {
         m_axisRenderer->handlePolish();
         // Initialize shaders after system's event queue
@@ -893,15 +985,23 @@ void QGraphsView::updatePolish()
     float highestPointZ = -std::numeric_limits<float>::max();
     float highestPieZ = -std::numeric_limits<float>::max();
     float highestAreaZ = -std::numeric_limits<float>::max();
+    float highestCustomZ = -std::numeric_limits<float>::max();
 
     // Polish for all series
+#ifdef USE_BARGRAPH
+    int barSeriesIndex = 0;
+    int barSeriesCount =
+            std::count_if(m_seriesList.begin(), m_seriesList.end(),
+                          [](const auto &series) { return qobject_cast<QBarSeries *>(series); });
+#endif
     for (auto series : std::as_const(m_seriesList)) {
 #ifdef USE_BARGRAPH
         if (m_barsRenderer) {
             if (auto barSeries = qobject_cast<QBarSeries *>(series)) {
-                m_barsRenderer->handlePolish(barSeries);
+                m_barsRenderer->handlePolish(barSeries, barSeriesIndex, barSeriesCount);
                 if (barSeries->zValue() > highestBarsZ)
                     highestBarsZ = barSeries->zValue();
+                barSeriesIndex++;
             }
         }
 #endif
@@ -953,6 +1053,16 @@ void QGraphsView::updatePolish()
             }
         }
 #endif
+
+#ifdef USE_CUSTOMGRAPH
+        if (m_customRenderer) {
+            if (auto customSeries = qobject_cast<QCustomSeries *>(series)) {
+                m_customRenderer->handlePolish(customSeries);
+                if (customSeries->zValue() > highestCustomZ)
+                    highestCustomZ = customSeries->zValue();
+            }
+        }
+#endif
     }
 
 #ifdef USE_BARGRAPH
@@ -985,6 +1095,14 @@ void QGraphsView::updatePolish()
         m_pieRenderer->afterPolish(cleanupSeriesList);
         if (highestPieZ > -std::numeric_limits<float>::max())
             m_pieRenderer->setZ(highestPieZ);
+    }
+#endif
+#ifdef USE_CUSTOMGRAPH
+    if (m_customRenderer) {
+        auto &cleanupSeriesList = m_cleanupSeriesList[4];
+        m_customRenderer->afterPolish(cleanupSeriesList);
+        if (highestCustomZ > -std::numeric_limits<float>::max())
+            m_customRenderer->setZ(highestCustomZ);
     }
 #endif
 }
@@ -1086,7 +1204,7 @@ qreal QGraphsView::marginTop() const
 
 void QGraphsView::setMarginTop(qreal newMarginTop)
 {
-    if (qFuzzyCompare(m_marginTop, newMarginTop)) {
+    if (QtPrivate::fuzzyCompare(m_marginTop, newMarginTop)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newMarginTop);
         return;
@@ -1109,7 +1227,7 @@ qreal QGraphsView::marginBottom() const
 
 void QGraphsView::setMarginBottom(qreal newMarginBottom)
 {
-    if (qFuzzyCompare(m_marginBottom, newMarginBottom)) {
+    if (QtPrivate::fuzzyCompare(m_marginBottom, newMarginBottom)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newMarginBottom);
         return;
@@ -1132,7 +1250,7 @@ qreal QGraphsView::marginLeft() const
 
 void QGraphsView::setMarginLeft(qreal newMarginLeft)
 {
-    if (qFuzzyCompare(m_marginLeft, newMarginLeft)) {
+    if (QtPrivate::fuzzyCompare(m_marginLeft, newMarginLeft)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newMarginLeft);
         return;
@@ -1155,7 +1273,7 @@ qreal QGraphsView::marginRight() const
 
 void QGraphsView::setMarginRight(qreal newMarginRight)
 {
-    if (qFuzzyCompare(m_marginRight, newMarginRight)) {
+    if (QtPrivate::fuzzyCompare(m_marginRight, newMarginRight)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newMarginRight);
         return;
@@ -1213,6 +1331,10 @@ void QGraphsView::setClipPlotArea(bool enabled)
     if (m_barsRenderer)
         m_barsRenderer->setClip(m_clipPlotArea);
 #endif
+#ifdef USE_CUSTOMGRAPH
+    if (m_customRenderer)
+        m_customRenderer->setClip(m_clipPlotArea);
+#endif
 }
 
 /*!
@@ -1268,14 +1390,26 @@ void QGraphsView::updateAxisAreas()
     int yCount = 0;
     int topCount = 0;
     int leftCount = 0;
+    int xTitleCount = 0;
+    int yTitleCount = 0;
+    int topTitleCount = 0;
+    int leftTitleCount = 0;
 
-    calculateAxisCounts(&xCount, &yCount, &leftCount, &topCount);
+    calculateAxisCounts(&xCount,
+                        &yCount,
+                        &leftCount,
+                        &topCount,
+                        &xTitleCount,
+                        &yTitleCount,
+                        &leftTitleCount,
+                        &topTitleCount);
 
-    m_x1AxisArea = { r.x(),
-                     r.y() + r.height() + m_axisHeight * (2 - xCount)
-                        - m_axisHeight * (2 - topCount),
-                     r.width() - m_axisWidth * yCount,
-                     m_axisHeight };
+    m_x1AxisArea = {r.x(),
+                    r.y() + r.height() + m_axisHeight * (2 - xCount)
+                        + m_axisTitleMargin * (2 - xTitleCount) - m_axisHeight * (2 - topCount)
+                        - m_axisTitleMargin * (2 - topTitleCount),
+                    r.width() - m_axisWidth * yCount - m_axisTitleMargin * yTitleCount,
+                    m_axisHeight};
     m_x1AxisLabelsArea = { m_x1AxisArea.x(),
                          m_x1AxisArea.y() + m_axisTickersHeight + m_axisXLabelsMargin,
                          m_x1AxisArea.width(),
@@ -1285,7 +1419,10 @@ void QGraphsView::updateAxisAreas()
                           m_x1AxisArea.width(),
                           m_axisTickersHeight };
 
-    m_x2AxisArea = { r.x(), r.y(), r.width() - m_axisWidth * yCount, m_axisHeight };
+    m_x2AxisArea = {r.x(),
+                    r.y(),
+                    r.width() - m_axisWidth * yCount - m_axisTitleMargin * yTitleCount,
+                    m_axisHeight};
     m_x2AxisLabelsArea = { m_x2AxisArea.x(),
                           m_x2AxisArea.y(),
                           m_x2AxisArea.width(),
@@ -1295,7 +1432,10 @@ void QGraphsView::updateAxisAreas()
                            m_x2AxisArea.width(),
                            m_axisTickersHeight };
 
-    m_y1AxisArea = { r.x(), r.y(), m_axisWidth, r.height() - m_axisHeight * xCount };
+    m_y1AxisArea = {r.x(),
+                    r.y(),
+                    m_axisWidth,
+                    r.height() - m_axisHeight * xCount - m_axisTitleMargin * xTitleCount};
     m_y1AxisLabelsArea = { m_y1AxisArea.x(),
                           m_y1AxisArea.y(),
                           m_axisLabelsWidth,
@@ -1305,11 +1445,12 @@ void QGraphsView::updateAxisAreas()
                            m_axisTickersWidth,
                            m_y1AxisArea.height() };
 
-    m_y2AxisArea = { r.x() + r.width() + m_axisWidth * (2 - yCount)
-                        - m_axisWidth * (2 - leftCount),
-                     r.y(),
-                     m_axisWidth,
-                     r.height() - m_axisHeight * xCount };
+    m_y2AxisArea = {r.x() + r.width() + m_axisWidth * (2 - yCount)
+                        + m_axisTitleMargin * (2 - yTitleCount) - m_axisWidth * (2 - leftCount)
+                        - m_axisTitleMargin * (2 - leftTitleCount),
+                    r.y(),
+                    m_axisWidth,
+                    r.height() - m_axisHeight * xCount - m_axisTitleMargin * xTitleCount};
     m_y2AxisLabelsArea = { m_y2AxisArea.x() + m_axisTickersWidth + m_axisYLabelsMargin,
                           m_y2AxisArea.y(),
                           m_axisLabelsWidth,
@@ -1332,13 +1473,24 @@ void QGraphsView::updatePlotArea()
     int yCount = 0;
     int topCount = 0;
     int leftCount = 0;
+    int xTitleCount = 0;
+    int yTitleCount = 0;
+    int topTitleCount = 0;
+    int leftTitleCount = 0;
 
-    calculateAxisCounts(&xCount, &yCount, &leftCount, &topCount);
+    calculateAxisCounts(&xCount,
+                        &yCount,
+                        &leftCount,
+                        &topCount,
+                        &xTitleCount,
+                        &yTitleCount,
+                        &leftTitleCount,
+                        &topTitleCount);
 
-    y += m_axisHeight * topCount;
-    x += m_axisWidth * leftCount;
-    h -= m_axisHeight * xCount;
-    w -= m_axisWidth * yCount;
+    y += m_axisHeight * topCount + m_axisTitleMargin * topTitleCount;
+    x += m_axisWidth * leftCount + m_axisTitleMargin * leftTitleCount;
+    h -= m_axisHeight * xCount + m_axisTitleMargin * xTitleCount;
+    w -= m_axisWidth * yCount + m_axisTitleMargin * yTitleCount;
 
     w = qMax(w, 0.0);
     h = qMax(h, 0.0);
@@ -1354,11 +1506,15 @@ void QGraphsView::updatePlotArea()
     \brief X-axis of this view.
 
     The x-axis used for the series inside this view.
+
+    \note Setting the same axis to multiple QGraphsViews is not supported.
 */
 /*!
     \qmlproperty AbstractAxis GraphsView::axisX
     The x-axis used for the series inside this view.
     \sa axisY
+
+    \note Setting the same axis to multiple GraphsViews is not supported.
 */
 
 QAbstractAxis *QGraphsView::axisX() const
@@ -1392,11 +1548,15 @@ void QGraphsView::setAxisX(QAbstractAxis *axis)
     \brief Y-axis of this view.
 
     The y-axis used for the series inside this view.
+
+    \note Setting the same axis to multiple QGraphsViews is not supported.
 */
 /*!
     \qmlproperty AbstractAxis GraphsView::axisY
     The y-axis used for the series inside this view.
     \sa axisX
+
+    \note Setting the same axis to multiple GraphsViews is not supported.
 */
 
 QAbstractAxis *QGraphsView::axisY() const
@@ -1460,6 +1620,25 @@ void QGraphsView::setOrientation(Qt::Orientation newOrientation)
     update();
     updateComponentSizes();
     polishAndUpdate();
+}
+
+/*
+    mapX and mapY functions are used to map custom series data values
+    to the real pixel values of the GraphsView
+*/
+qreal QGraphsView::mapX(QCustomSeries *series, qreal x)
+{
+    return m_customRenderer->mapX(m_axisRenderer, series, x);
+}
+
+qreal QGraphsView::mapY(QCustomSeries *series, qreal y)
+{
+    return m_customRenderer->mapY(m_axisRenderer, series, y);
+}
+
+CustomRenderer *QGraphsView::customRenderer() const
+{
+    return m_customRenderer;
 }
 
 /*!
@@ -1641,7 +1820,7 @@ qreal QGraphsView::zoomSensitivity() const
 
 void QGraphsView::setZoomSensitivity(qreal newZoomSensitivity)
 {
-    if (qFuzzyCompare(m_zoomSensitivity, newZoomSensitivity)) {
+    if (QtPrivate::fuzzyCompare(m_zoomSensitivity, newZoomSensitivity)) {
         qCDebug(lcViewProperties2D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newZoomSensitivity);
         return;
@@ -1650,36 +1829,57 @@ void QGraphsView::setZoomSensitivity(qreal newZoomSensitivity)
     emit zoomSensitivityChanged();
 }
 
-void QGraphsView::calculateAxisCounts(int *xCount, int *yCount, int *leftCount, int *topCount)
+void QGraphsView::calculateAxisCounts(int *xCount, int *yCount, int *leftCount, int *topCount,
+                                      int *xTitleCount, int *yTitleCount, int *leftTitleCount, int *topTitleCount)
 {
     if (axisY()) {
         (*yCount)++;
+        if (axisY()->isTitleVisible() && !axisY()->titleText().isEmpty())
+            (*yTitleCount)++;
 
-        if (axisY()->alignment() == Qt::AlignLeft)
+        if (axisY()->alignment() == Qt::AlignLeft) {
             (*leftCount)++;
+            if (axisY()->isTitleVisible() && !axisY()->titleText().isEmpty())
+                (*leftTitleCount)++;
+        }
     }
 
     if (axisX()) {
         (*xCount)++;
+        if (axisX()->isTitleVisible() && !axisX()->titleText().isEmpty())
+            (*xTitleCount)++;
 
-        if (axisX()->alignment() == Qt::AlignTop)
+        if (axisX()->alignment() == Qt::AlignTop) {
             (*topCount)++;
+            if (axisX()->isTitleVisible() && !axisX()->titleText().isEmpty())
+                (*topTitleCount)++;
+        }
     }
 
     for (auto&& s : m_seriesList) {
         if (auto series = qobject_cast<QAbstractSeries *>(s)) {
             if (series->axisY() && series->axisY() != axisY()) {
                 (*yCount)++;
+                if (series->axisY()->isTitleVisible() && !series->axisY()->titleText().isEmpty())
+                    (*yTitleCount)++;
 
-                if (series->axisY()->alignment() == Qt::AlignLeft)
+                if (series->axisY()->alignment() == Qt::AlignLeft) {
                     (*leftCount)++;
+                    if (series->axisY()->isTitleVisible() && !series->axisY()->titleText().isEmpty())
+                        (*leftTitleCount)++;
+                }
             }
 
             if (series->axisX() && series->axisX() != axisX()) {
                 (*xCount)++;
+                if (series->axisX()->isTitleVisible() && !series->axisX()->titleText().isEmpty())
+                    (*xTitleCount)++;
 
-                if (series->axisX()->alignment() == Qt::AlignTop)
+                if (series->axisX()->alignment() == Qt::AlignTop) {
                     (*topCount)++;
+                    if (series->axisX()->isTitleVisible() && !series->axisX()->titleText().isEmpty())
+                        (*topTitleCount)++;
+                }
             }
         }
     }
@@ -1687,7 +1887,27 @@ void QGraphsView::calculateAxisCounts(int *xCount, int *yCount, int *leftCount, 
     if (m_orientation == Qt::Horizontal) {
         qSwap((*xCount), (*yCount));
         qSwap((*leftCount), (*topCount));
+        qSwap((*xTitleCount), (*yTitleCount));
+        qSwap((*leftTitleCount), (*topTitleCount));
     }
+
+    if ((*xTitleCount) > 0) {
+        (*xTitleCount)--;
+        if ((*xTitleCount) > 0)
+            (*xTitleCount)--;
+    }
+
+    if ((*yTitleCount) > 0) {
+        (*yTitleCount)--;
+        if ((*yTitleCount) > 0)
+            (*yTitleCount)--;
+    }
+
+    if ((*leftTitleCount) > 0)
+        (*leftTitleCount)--;
+
+    if ((*topTitleCount) > 0)
+        (*topTitleCount)--;
 }
 
 int QGraphsView::getSeriesRendererIndex(QAbstractSeries *series)
@@ -1709,9 +1929,14 @@ int QGraphsView::getSeriesRendererIndex(QAbstractSeries *series)
         case QAbstractSeries::SeriesType::Pie:
             index = 3;
             break;
+        case QAbstractSeries::SeriesType::Custom:
+            index = 4;
+            break;
         }
     }
     return index;
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qgraphsview_p.cpp"

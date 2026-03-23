@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicktaphandler_p.h"
 #include "qquicksinglepointhandler_p_p.h"
@@ -30,7 +31,7 @@ int QQuickTapHandler::m_touchMultiTapDistanceSquared(-1);
 
     Detection of a valid tap gesture depends on \l gesturePolicy.  The default
     value is DragThreshold, which requires the press and release to be close
-    together in both space and time.  In this case, DragHandler is able to
+    together in both space and time.  In this case, TapHandler is able to
     function using only a passive grab, and therefore does not interfere with
     event delivery to any other Items or Input Handlers.  So the default
     gesturePolicy is useful when you want to modify behavior of an existing

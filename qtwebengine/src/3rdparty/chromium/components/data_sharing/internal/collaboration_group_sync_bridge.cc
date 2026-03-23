@@ -61,6 +61,7 @@ CollaborationGroupSyncBridge::MergeFullSyncData(
     syncer::EntityChangeList entity_change_list) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(ids_to_specifics_.empty());
+
   // This is a read-only data type, meaning that no data originates locally,
   // hence there is nothing to merge.
   for (auto& observer : observers_) {
@@ -156,13 +157,13 @@ CollaborationGroupSyncBridge::GetAllDataForDebugging() {
 }
 
 std::string CollaborationGroupSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return GetStorageKey(entity_data);
 }
 
 std::string CollaborationGroupSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(entity_data.specifics.has_collaboration_group());
   return entity_data.specifics.collaboration_group().collaboration_id();
@@ -229,8 +230,7 @@ void CollaborationGroupSyncBridge::OnReadAllData(
   for (const auto& record : *record_list) {
     sync_pb::CollaborationGroupSpecifics specifics;
     if (!specifics.ParseFromString(record.value)) {
-      change_processor()->ReportError(
-          {FROM_HERE, "Failed to deserialize database record as specifics."});
+      change_processor()->ReportError(*error);
       return;
     }
     ids_to_specifics_[specifics.collaboration_id()] = std::move(specifics);
@@ -289,6 +289,22 @@ CollaborationGroupSyncBridge::GetSpecifics(const GroupId& group_id) const {
 
 bool CollaborationGroupSyncBridge::IsDataLoaded() const {
   return is_data_loaded_;
+}
+
+void CollaborationGroupSyncBridge::RemoveGroupLocally(const GroupId& group_id) {
+  ids_to_specifics_.erase(group_id.value());
+
+  std::unique_ptr<syncer::DataTypeStore::WriteBatch> batch =
+      data_type_store_->CreateWriteBatch();
+  batch->DeleteData(group_id.value());
+  data_type_store_->CommitWriteBatch(
+      std::move(batch),
+      base::BindOnce(&CollaborationGroupSyncBridge::OnDataTypeStoreCommit,
+                     weak_ptr_factory_.GetWeakPtr()));
+  for (auto& observer : observers_) {
+    observer.OnGroupsUpdated(std::vector<GroupId>(), std::vector<GroupId>(),
+                             std::vector<GroupId>{group_id});
+  }
 }
 
 void CollaborationGroupSyncBridge::AddObserver(Observer* observer) {

@@ -139,12 +139,14 @@ StubPasswordManagerClient::GetPasswordFeatureManager() {
   return &password_feature_manager_;
 }
 
+#if BUILDFLAG(SAFE_BROWSING_AVAILABLE) || BUILDFLAG(IS_IOS)
 safe_browsing::PasswordProtectionService*
 StubPasswordManagerClient::GetPasswordProtectionService() const {
   return nullptr;
 }
+#endif
 
-#if defined(ON_FOCUS_PING_ENABLED)
+#if defined(ON_FOCUS_PING_ENABLED) && BUILDFLAG(SAFE_BROWSING_AVAILABLE)
 void StubPasswordManagerClient::CheckSafeBrowsingReputation(
     const GURL& form_action,
     const GURL& frame_url) {}
@@ -176,6 +178,11 @@ signin::IdentityManager* StubPasswordManagerClient::GetIdentityManager() {
   return nullptr;
 }
 
+const signin::IdentityManager* StubPasswordManagerClient::GetIdentityManager()
+    const {
+  return nullptr;
+}
+
 scoped_refptr<network::SharedURLLoaderFactory>
 StubPasswordManagerClient::GetURLLoaderFactory() {
   return nullptr;
@@ -202,6 +209,8 @@ version_info::Channel StubPasswordManagerClient::GetChannel() const {
     BUILDFLAG(IS_CHROMEOS)
 void StubPasswordManagerClient::OpenPasswordDetailsBubble(
     const password_manager::PasswordForm& form) {}
+void StubPasswordManagerClient::MaybeShowSavePasswordPrimingPromo(
+    const GURL& current_url) {}
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
         // BUILDFLAG(IS_CHROMEOS)
 
@@ -218,5 +227,10 @@ StubPasswordManagerClient::ShowCrossDomainConfirmationPopup(
   return nullptr;
 }
 #endif  // !BUILDFLAG(IS_IOS)
+
+password_manager::UndoPasswordChangeController*
+StubPasswordManagerClient::GetUndoPasswordChangeController() {
+  return &undo_password_change_controller_;
+}
 
 }  // namespace password_manager

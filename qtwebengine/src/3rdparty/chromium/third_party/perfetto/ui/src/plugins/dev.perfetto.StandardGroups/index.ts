@@ -26,10 +26,26 @@ export type StandardGroup =
   | 'CPU'
   | 'GPU'
   | 'NETWORK'
+  | 'DEVICE_STATE'
   | 'SYSTEM';
 
 export default class implements PerfettoPlugin {
   static readonly id = 'dev.perfetto.StandardGroups';
+
+  private readonly groups: Record<StandardGroup, TrackNode> = {
+    // Expand this group by default
+    USER_INTERACTION: makeGroupNode('User Interaction', false),
+    THERMALS: makeGroupNode('Thermals'),
+    POWER: makeGroupNode('Power'),
+    CPU: makeGroupNode('CPU'),
+    GPU: makeGroupNode('GPU'),
+    HARDWARE: makeGroupNode('Hardware'),
+    IO: makeGroupNode('IO'),
+    MEMORY: makeGroupNode('Memory'),
+    NETWORK: makeGroupNode('Network'),
+    DEVICE_STATE: makeGroupNode('Device State'),
+    SYSTEM: makeGroupNode('System'),
+  };
 
   async onTraceLoad() {}
 
@@ -42,63 +58,17 @@ export default class implements PerfettoPlugin {
     workspace: Workspace,
     group: StandardGroup,
   ): TrackNode {
-    switch (group) {
-      case 'USER_INTERACTION':
-        // Expand this by default
-        return getOrCreateGroup(
-          workspace,
-          '/standard_group_user_interaction',
-          'User Interaction',
-          false,
-        );
-      case 'THERMALS':
-        return getOrCreateGroup(
-          workspace,
-          '/standard_group_thermal',
-          'Thermals',
-        );
-      case 'POWER':
-        return getOrCreateGroup(workspace, '/standard_group_power', 'Power');
-      case 'CPU':
-        return getOrCreateGroup(workspace, '/standard_group_cpu', 'CPU');
-      case 'GPU':
-        return getOrCreateGroup(workspace, '/standard_group_gpu', 'GPU');
-      case 'HARDWARE':
-        return getOrCreateGroup(
-          workspace,
-          '/standard_group_hardware',
-          'Hardware',
-        );
-      case 'IO':
-        return getOrCreateGroup(workspace, '/standard_group_io', 'IO');
-      case 'MEMORY':
-        return getOrCreateGroup(workspace, '/standard_group_memory', 'Memory');
-      case 'NETWORK':
-        return getOrCreateGroup(
-          workspace,
-          '/standard_group_network',
-          'Network',
-        );
-      case 'SYSTEM':
-        return getOrCreateGroup(workspace, '/standard_group_system', 'System');
+    const node = this.groups[group];
+
+    // Only add the group if it's not already been added
+    if (node.parent === undefined) {
+      workspace.addChildInOrder(node);
     }
+
+    return node;
   }
 }
 
-// Internal utility function to avoid duplicating the logic to get or create a
-// group by ID.
-function getOrCreateGroup(
-  workspace: Workspace,
-  id: string,
-  title: string,
-  collapsed: boolean = true,
-): TrackNode {
-  const group = workspace.getTrackById(id);
-  if (group) {
-    return group;
-  } else {
-    const group = new TrackNode({id, title, isSummary: true, collapsed});
-    workspace.addChildInOrder(group);
-    return group;
-  }
+function makeGroupNode(name: string, collapsed = true) {
+  return new TrackNode({name, isSummary: true, collapsed});
 }

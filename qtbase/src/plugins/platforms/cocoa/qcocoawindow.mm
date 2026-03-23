@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <AppKit/AppKit.h>
 #include <QuartzCore/QuartzCore.h>
@@ -329,6 +330,13 @@ QMargins QCocoaWindow::safeAreaMargins() const
     // merge them.
     auto screenRect = m_view.window.screen.frame;
     auto screenInsets = m_view.window.screen.safeAreaInsets;
+    auto screenSafeArea = QCocoaScreen::mapFromNative(NSMakeRect(
+        NSMinX(screenRect) + screenInsets.left,
+        NSMinY(screenRect) + screenInsets.bottom, // Non-flipped
+        NSWidth(screenRect) - screenInsets.left - screenInsets.right,
+        NSHeight(screenRect) - screenInsets.top - screenInsets.bottom
+    ));
+
     auto screenRelativeViewBounds = QCocoaScreen::mapFromNative(
         [m_view.window convertRectToScreen:
             [m_view convertRect:m_view.bounds toView:nil]]
@@ -338,20 +346,10 @@ QMargins QCocoaWindow::safeAreaMargins() const
     // Note that we do not want represent the area outside of the
     // screen as being outside of the safe area.
     QMarginsF screenSafeAreaMargins = {
-        screenInsets.left ?
-            qMax(0.0f, screenInsets.left - screenRelativeViewBounds.left())
-            : 0.0f,
-        screenInsets.top ?
-            qMax(0.0f, screenInsets.top - screenRelativeViewBounds.top())
-            : 0.0f,
-        screenInsets.right ?
-            qMax(0.0f, screenInsets.right
-                - (screenRect.size.width - screenRelativeViewBounds.right()))
-            : 0.0f,
-        screenInsets.bottom ?
-            qMax(0.0f, screenInsets.bottom
-                - (screenRect.size.height - screenRelativeViewBounds.bottom()))
-            : 0.0f
+        qMin(screenSafeArea.left() - screenRelativeViewBounds.left(), screenInsets.left),
+        qMin(screenSafeArea.top() - screenRelativeViewBounds.top(), screenInsets.top),
+        qMin(screenRelativeViewBounds.right() - screenSafeArea.right(), screenInsets.right),
+        qMin(screenRelativeViewBounds.bottom() - screenSafeArea.bottom(), screenInsets.bottom)
     };
 
     return (screenSafeAreaMargins | viewSafeAreaMargins).toMargins();
@@ -1072,8 +1070,9 @@ void QCocoaWindow::setWindowIcon(const QIcon &icon)
         iconButton.image = [NSWorkspace.sharedWorkspace iconForFile:m_view.window.representedFilename];
     } else {
         // Fall back to a size that looks good on the highest resolution screen available
-        auto fallbackSize = iconButton.frame.size.height * qGuiApp->devicePixelRatio();
-        iconButton.image = [NSImage imageFromQIcon:icon withSize:fallbackSize];
+        // for icon engines that don't have an intrinsic size (like SVG).
+        auto fallbackSize = QSizeF::fromCGSize(iconButton.frame.size) * qGuiApp->devicePixelRatio();
+        iconButton.image = [NSImage imageFromQIcon:icon withSize:fallbackSize.toSize()];
     }
 }
 
@@ -1690,15 +1689,14 @@ void QCocoaWindow::recreateWindowIfNeeded()
 
     if (shouldBeContentView && !m_nsWindow) {
         // Move view to new NSWindow if needed
-        if (auto *newWindow = createNSWindow(shouldBePanel)) {
-            qCDebug(lcQpaWindow) << "Ensuring that" << m_view << "is content view for" << newWindow;
-            [m_view setPostsFrameChangedNotifications:NO];
-            [newWindow setContentView:m_view];
-            [m_view setPostsFrameChangedNotifications:YES];
+        auto *newWindow = createNSWindow(shouldBePanel);
+        qCDebug(lcQpaWindow) << "Ensuring that" << m_view << "is content view for" << newWindow;
+        [m_view setPostsFrameChangedNotifications:NO];
+        [newWindow setContentView:m_view];
+        [m_view setPostsFrameChangedNotifications:YES];
 
-            m_nsWindow = newWindow;
-            Q_ASSERT(m_view.window == m_nsWindow);
-        }
+        m_nsWindow = newWindow;
+        Q_ASSERT(m_view.window == m_nsWindow);
     }
 
     if (parentCocoaWindow) {
@@ -1732,6 +1730,7 @@ bool QCocoaWindow::updatesWithDisplayLink() const
 void QCocoaWindow::deliverUpdateRequest()
 {
     qCDebug(lcQpaDrawing) << "Delivering update request to" << window();
+    QScopedValueRollback<bool> blocker(m_deliveringUpdateRequest, true);
 
     if (auto *qtMetalLayer = qt_objc_cast<QMetalLayer*>(contentLayer())) {
         // We attempt a read lock here, so that the animation/render thread is

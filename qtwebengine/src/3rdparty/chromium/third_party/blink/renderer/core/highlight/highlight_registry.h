@@ -27,6 +27,7 @@ namespace blink {
 using HighlightRegistryMap =
     HeapLinkedHashSet<Member<HighlightRegistryMapEntry>>;
 using HighlightRegistryMapIterable = Maplike<HighlightRegistry>;
+class HighlightHitResult;
 class HighlightsFromPointOptions;
 class LocalFrame;
 class Text;
@@ -93,12 +94,14 @@ class CORE_EXPORT HighlightRegistry : public ScriptWrappable,
     HeapVector<Member<HighlightRegistryMapEntry>> highlights_snapshot_;
   };
 
-  HeapVector<Member<Highlight>> highlightsFromPoint(
+  HeapVector<Member<HighlightHitResult>> highlightsFromPoint(
       float x,
       float y,
       const HighlightsFromPointOptions* options);
 
  private:
+  bool IsAbstractRangePaintable(AbstractRange*, Document*) const;
+
   HighlightRegistryMap highlights_;
   Member<LocalFrame> frame_;
   // Only valid after ValidateHighlightMarkers(), used to optimize painting.

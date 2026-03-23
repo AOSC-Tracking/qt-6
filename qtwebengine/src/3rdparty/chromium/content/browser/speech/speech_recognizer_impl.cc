@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "content/browser/speech/speech_recognizer_impl.h"
 
 #include <stdint.h>
@@ -14,6 +9,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -29,6 +25,7 @@
 #include "media/base/audio_bus.h"
 #include "media/base/audio_converter.h"
 #include "media/base/audio_parameters.h"
+#include "media/base/audio_sample_types.h"
 #include "media/mojo/mojom/audio_logging.mojom.h"
 #include "services/audio/public/cpp/device_factory.h"
 
@@ -109,7 +106,7 @@ bool DetectClipping(const AudioChunk& chunk) {
   int clipping_samples = 0;
 
   for (int i = 0; i < num_samples; ++i) {
-    if (samples[i] <= -32767 || samples[i] >= 32767) {
+    if (UNSAFE_TODO(samples[i] <= -32767 || samples[i] >= 32767)) {
       if (++clipping_samples > kThreshold)
         return true;
     }

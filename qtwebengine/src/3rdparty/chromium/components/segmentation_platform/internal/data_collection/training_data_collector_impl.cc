@@ -12,7 +12,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/metrics_hashes.h"
 #include "base/metrics/user_metrics.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "base/rand_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/clock.h"
@@ -241,7 +241,7 @@ void TrainingDataCollectorImpl::OnGetSegmentsInfoList(
 }
 
 void TrainingDataCollectorImpl::OnHistogramSignalUpdated(
-    const std::string& histogram_name,
+    std::string_view histogram_name,
     base::HistogramBase::Sample32 sample) {
   // Report training data for all models which output collection is triggered by
   // |histogram_name|.

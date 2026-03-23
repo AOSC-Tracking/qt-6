@@ -290,7 +290,7 @@ TEST_F(TextOffsetMappingTest, ForwardRangesWithTextControl) {
 
   // InlineContents for positions inside text control should not escape the text
   // control in forward iteration.
-  const Element* input = GetDocument().QuerySelector(AtomicString("input"));
+  const Element* input = QuerySelector("input");
   const PositionInFlatTree inside_first =
       PositionInFlatTree::FirstPositionInNode(*input);
   const TextOffsetMapping::InlineContents inside_contents =
@@ -318,7 +318,7 @@ TEST_F(TextOffsetMappingTest, BackwardRangesWithTextControl) {
 
   // InlineContents for positions inside text control should not escape the text
   // control in backward iteration.
-  const Element* input = GetDocument().QuerySelector(AtomicString("input"));
+  const Element* input = QuerySelector("input");
   const PositionInFlatTree inside_last =
       PositionInFlatTree::LastPositionInNode(*input);
   const TextOffsetMapping::InlineContents inside_contents =
@@ -482,11 +482,10 @@ TEST_F(TextOffsetMappingTest, RangeWithNestedPosition) {
 // http://crbug.com/834623
 TEST_F(TextOffsetMappingTest, RangeWithSelect1) {
   SetBodyContent("<select></select>foo");
-  Element* select = GetDocument().QuerySelector(AtomicString("select"));
+  Element* select = QuerySelector("select");
   const auto& expected_outer =
       "^<select>"
       "<div aria-hidden=\"true\"></div>"
-      "<slot id=\"select-options\"></slot>"
       "<slot id=\"select-button\"></slot>"
       "<div popover=\"auto\" pseudo=\"picker(select)\">"
       "<slot id=\"select-popover-options\"></slot>"
@@ -498,7 +497,6 @@ TEST_F(TextOffsetMappingTest, RangeWithSelect1) {
   const auto& expected_inner =
       "<select>"
       "<div aria-hidden=\"true\">^|</div>"
-      "<slot id=\"select-options\"></slot>"
       "<slot id=\"select-button\"></slot>"
       "<div popover=\"auto\" pseudo=\"picker(select)\">"
       "<slot id=\"select-popover-options\"></slot>"
@@ -514,14 +512,13 @@ TEST_F(TextOffsetMappingTest, RangeWithSelect1) {
 
 TEST_F(TextOffsetMappingTest, RangeWithSelect2) {
   SetBodyContent("<select>bar</select>foo");
-  Element* select = GetDocument().QuerySelector(AtomicString("select"));
+  Element* select = QuerySelector("select");
   const auto& expected_outer =
       "^<select>"
       "<div aria-hidden=\"true\"></div>"
-      "<slot id=\"select-options\"></slot>"
       "<slot id=\"select-button\"></slot>"
       "<div popover=\"auto\" pseudo=\"picker(select)\">"
-      "<slot id=\"select-popover-options\"></slot>"
+      "<slot id=\"select-popover-options\">bar</slot>"
       "</div>"
       "<div popover=\"manual\" pseudo=\"-internal-select-autofill-preview\">"
       "<div pseudo=\"-internal-select-autofill-preview-text\"></div>"
@@ -530,10 +527,9 @@ TEST_F(TextOffsetMappingTest, RangeWithSelect2) {
   const auto& expected_inner =
       "<select>"
       "<div aria-hidden=\"true\">^|</div>"
-      "<slot id=\"select-options\"></slot>"
       "<slot id=\"select-button\"></slot>"
       "<div popover=\"auto\" pseudo=\"picker(select)\">"
-      "<slot id=\"select-popover-options\"></slot>"
+      "<slot id=\"select-popover-options\">bar</slot>"
       "</div>"
       "<div popover=\"manual\" pseudo=\"-internal-select-autofill-preview\">"
       "<div pseudo=\"-internal-select-autofill-preview-text\"></div>"
@@ -623,7 +619,7 @@ TEST_F(TextOffsetMappingTest, InlineContentsWithDocumentBoundary) {
 // https://crbug.com/1224206
 TEST_F(TextOffsetMappingTest, ComputeTextOffsetWithBrokenImage) {
   SetBodyContent("A<img alt='X'>B<div>C</div>D");
-  Element* img = GetDocument().QuerySelector(AtomicString("img"));
+  Element* img = QuerySelector("img");
   To<HTMLImageElement>(img)->EnsureCollapsedOrFallbackContent();
   UpdateAllLifecyclePhasesForTest();
   ShadowRoot* shadow = img->UserAgentShadowRoot();

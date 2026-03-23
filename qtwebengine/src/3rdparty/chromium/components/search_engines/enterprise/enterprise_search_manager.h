@@ -23,7 +23,10 @@ class PrefRegistrySyncable;
 class EnterpriseSearchManager {
  public:
   static const char kSiteSearchSettingsPrefName[];
+  static const char kSiteSearchSettingsOverriddenKeywordsPrefName[];
   static const char kEnterpriseSearchAggregatorSettingsPrefName[];
+  static const char
+      kEnterpriseSearchAggregatorSettingsRequireShortcutPrefName[];
 
   using OwnedTemplateURLDataVector =
       std::vector<std::unique_ptr<TemplateURLData>>;
@@ -51,6 +54,16 @@ class EnterpriseSearchManager {
   // Registers prefs needed for tracking the site search engines.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
+  // Returns the `require_shortcut` value. If set by policy, the preference
+  // value is returned. Otherwise, if a valid mock search engine is defined, the
+  // mock setting's value is used. Defaults to preference default if neither is
+  // set.
+  bool GetRequireShortcutValue() const;
+
+  // Adds a keyword to the `kSiteSearchSettingsOverriddenKeywordsPrefName`
+  // pref, indicating that the user has overridden the associated engine.
+  void AddOverriddenKeyword(const std::string& keyword);
+
  private:
   // Handles changes to managed prefs due to policy updates. Calls
   // NotifyObserver() if search providers may have changed. Invokes
@@ -63,6 +76,10 @@ class EnterpriseSearchManager {
 
   LoadingResult LoadSearchAggregator(
       EnterpriseSearchManager::OwnedTemplateURLDataVector* search_engines);
+
+  // Updates the `kSiteSearchSettingsOverriddenKeywordsPrefName` pref based
+  // on the provided list of site search engines.
+  void LoadOverriddenKeywordsPref(const base::Value::List& engine_list);
 
   raw_ptr<PrefService> pref_service_;
   PrefChangeRegistrar pref_change_registrar_;

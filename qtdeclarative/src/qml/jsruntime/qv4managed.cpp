@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4managed_p.h"
 #include <private/qv4mm_p.h>
@@ -10,11 +11,9 @@ DEFINE_MANAGED_VTABLE(Managed);
 
 DEFINE_MANAGED_VTABLE(InternalClass);
 
-
-QString Managed::className() const
-{
+QString Managed::typeToString(Type t) {
     const char *s = nullptr;
-    switch (Type(vtable()->type)) {
+    switch (t) {
     case Type_Invalid:
         return QString();
     case Type_String:
@@ -118,8 +117,23 @@ QString Managed::className() const
     case Type_QMLValueTypeWrapper:
         s = "QMLValueTypeWrapper";
         break;
+    case Type_MemberData:
+        s = "__MemberData";
+        break;
+    case Type_ArrayData:
+        s = "__ArrayData";
+        break;
+    case Type_StringOrSymbol:
+        s = "__StringOrSymbol";
+        break;
     }
     return QString::fromLatin1(s);
+
+}
+
+QString Managed::className() const
+{
+   return typeToString(Type(vtable()->type));
 }
 
 bool Managed::virtualIsEqualTo(Managed *, Managed *)

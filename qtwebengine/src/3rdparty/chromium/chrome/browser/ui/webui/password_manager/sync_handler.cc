@@ -52,8 +52,6 @@ BatchUploadService::EntryPoint ToBatchUploadEntryPoint(
 }  // namespace
 #endif
 
-using password_manager::features_util::ShouldShowAccountStorageSettingToggle;
-
 SyncHandler::SyncHandler(Profile* profile) : profile_(profile) {}
 
 SyncHandler::~SyncHandler() = default;
@@ -100,6 +98,7 @@ void SyncHandler::OnJavascriptAllowed() {
 void SyncHandler::OnJavascriptDisallowed() {
   sync_service_observation_.Reset();
   identity_manager_observation_.Reset();
+  weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
 base::Value SyncHandler::GetTrustedVaultBannerState() const {
@@ -134,14 +133,9 @@ base::Value::Dict SyncHandler::GetSyncInfo() const {
     return dict;
   }
 
-  PrefService* pref_service = profile_->GetPrefs();
   syncer::UserSelectableTypeSet types =
       sync_service->GetUserSettings()->GetSelectedTypes();
 
-  auto* identity_manager = IdentityManagerFactory::GetForProfile(profile_);
-  dict.Set("isEligibleForAccountStorage",
-           (!identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync) &&
-            ShouldShowAccountStorageSettingToggle(pref_service, sync_service)));
   dict.Set("isSyncingPasswords",
            (sync_service->IsSyncFeatureEnabled() &&
             types.Has(syncer::UserSelectableType::kPasswords)));
@@ -182,6 +176,7 @@ void SyncHandler::HandleGetAccountInfo(const base::Value::List& args) {
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 void SyncHandler::HandleOpenBatchUploadDialog(const base::Value::List& args) {
+  AllowJavascript();
   CHECK_EQ(1U, args.size());
   CHECK(args[0].is_int());
   int entry_point_int = args[0].GetInt();
@@ -212,8 +207,8 @@ void SyncHandler::HandleGetLocalPasswordCount(const base::Value::List& args) {
 
   sync_service->GetLocalDataDescriptions(
       {syncer::PASSWORDS},
-      base::BindOnce(&SyncHandler::HandleOnGetLocalDataDescriptionReceived,
-                     base::Unretained(this), callback_id.Clone()));
+      base::BindOnce(&SyncHandler::OnGetLocalDataDescriptionReceived,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id.Clone()));
 }
 
 void SyncHandler::OnStateChanged(syncer::SyncService* sync_service) {
@@ -229,7 +224,7 @@ void SyncHandler::OnStateChanged(syncer::SyncService* sync_service) {
     sync_service->GetLocalDataDescriptions(
         {syncer::PASSWORDS},
         base::BindOnce(&SyncHandler::FireOnGetLocalDataDescriptionReceived,
-                       base::Unretained(this)));
+                       weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
@@ -243,7 +238,7 @@ void SyncHandler::FireOnGetLocalDataDescriptionReceived(
                     base::Value(local_password_count));
 }
 
-void SyncHandler::HandleOnGetLocalDataDescriptionReceived(
+void SyncHandler::OnGetLocalDataDescriptionReceived(
     base::Value callback_id,
     std::map<syncer::DataType, syncer::LocalDataDescription> data) {
   int local_password_count =

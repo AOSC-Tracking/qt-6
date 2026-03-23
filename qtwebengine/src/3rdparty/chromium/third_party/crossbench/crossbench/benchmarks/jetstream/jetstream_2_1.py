@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Type
+from typing import TYPE_CHECKING, Type
+
+from typing_extensions import override
 
 from crossbench.benchmarks.jetstream.jetstream_2 import (JetStream2Benchmark,
                                                          JetStream2Probe,
@@ -12,11 +14,14 @@ from crossbench.benchmarks.jetstream.jetstream_2 import (JetStream2Benchmark,
                                                          JetStream2Story,
                                                          ProbeClsTupleT)
 
+if TYPE_CHECKING:
+  from crossbench.benchmarks.base import VersionParts
 
 class JetStream21Probe(JetStream2Probe):
   __doc__ = JetStream2Probe.__doc__
   NAME: str = "jetstream_2.1"
 
+  @override
   def get_context_cls(self) -> Type[JetStream21ProbeContext]:
     return JetStream21ProbeContext
 
@@ -30,6 +35,7 @@ class JetStream21Story(JetStream2Story):
   NAME: str = "jetstream_2.1"
   URL: str = "https://chromium-workloads.web.app/jetstream/v2.1/"
   URL_OFFICIAL: str = "https://browserbench.org/JetStream2.1/"
+  URL_CHROME_FORK: str = "https://chromium-workloads.web.app/jetstream/v2.1-custom/"
 
 
 class JetStream21Benchmark(JetStream2Benchmark):
@@ -42,5 +48,6 @@ class JetStream21Benchmark(JetStream2Benchmark):
   PROBES: ProbeClsTupleT = (JetStream21Probe,)
 
   @classmethod
-  def version(cls) -> Tuple[int, ...]:
+  @override
+  def version(cls) -> VersionParts:
     return (2, 1)

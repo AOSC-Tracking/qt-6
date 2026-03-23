@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwasmintegration.h"
 #include "qwasmeventdispatcher.h"
@@ -187,11 +188,11 @@ bool QWasmIntegration::hasCapability(QPlatformIntegration::Capability cap) const
     case ThreadedPixmaps: return true;
     case OpenGL: return true;
     case ThreadedOpenGL: return false;
-    case RasterGLSurface: return false; // to enable this you need to fix qopenglwidget and quickwidget for wasm
     case MultipleWindows: return true;
     case WindowManagement: return true;
     case ForeignWindows: return true;
     case OpenGLOnRasterSurface: return true;
+    case OffscreenSurface: return true;
     default: return QPlatformIntegration::hasCapability(cap);
     }
 }
@@ -200,7 +201,7 @@ QWasmWindow *QWasmIntegration::createWindow(QWindow *window, WId nativeHandle) c
 {
     auto *wasmScreen = QWasmScreen::get(window->screen());
     QWasmCompositor *compositor = wasmScreen->compositor();
-    return new QWasmWindow(window, wasmScreen->deadKeySupport(), compositor,
+    return new QWasmWindow(window, compositor,
                            m_backingStores.value(window), nativeHandle);
 }
 

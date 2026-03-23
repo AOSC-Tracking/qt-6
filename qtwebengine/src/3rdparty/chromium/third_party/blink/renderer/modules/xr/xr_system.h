@@ -89,9 +89,6 @@ class XRSystem final : public EventTarget,
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(devicechange, kDevicechange)
 
-  ScriptPromise<IDLUndefined> supportsSession(ScriptState*,
-                                              const V8XRSessionMode&,
-                                              ExceptionState& exception_state);
   ScriptPromise<IDLBoolean> isSessionSupported(ScriptState*,
                                                const V8XRSessionMode&,
                                                ExceptionState& exception_state);
@@ -149,6 +146,8 @@ class XRSystem final : public EventTarget,
   void AddWebXrInternalsMessage(const String& message);
 
  private:
+  void DisableBackForwardCache();
+
   enum SensorRequirement {
     kNone,
     kOptional,
@@ -190,7 +189,7 @@ class XRSystem final : public EventTarget,
     PendingRequestSessionQuery& operator=(const PendingRequestSessionQuery&) =
         delete;
 
-    virtual ~PendingRequestSessionQuery() = default;
+    ~PendingRequestSessionQuery() = default;
 
     // Resolves underlying promise with passed in XR session.
     // If metrics are to be recorded for this session, an
@@ -255,9 +254,13 @@ class XRSystem final : public EventTarget,
 
     void SetDepthSensingConfiguration(
         const Vector<device::mojom::XRDepthUsage>& preferred_usage,
-        const Vector<device::mojom::XRDepthDataFormat>& preferred_format) {
+        const Vector<device::mojom::XRDepthDataFormat>& preferred_format,
+        const Vector<device::mojom::XRDepthType>& type_request,
+        bool match_depth_view) {
       preferred_usage_ = preferred_usage;
       preferred_format_ = preferred_format;
+      depth_type_request_ = type_request;
+      match_depth_view_ = match_depth_view;
     }
 
     const Vector<device::mojom::XRDepthUsage>& PreferredUsage() const {
@@ -268,9 +271,15 @@ class XRSystem final : public EventTarget,
       return preferred_format_;
     }
 
+    const Vector<device::mojom::XRDepthType>& DepthTypeRequest() const {
+      return depth_type_request_;
+    }
+
+    bool MatchDepthView() const { return match_depth_view_; }
+
     uint64_t TraceId() const { return trace_id_; }
 
-    virtual void Trace(Visitor*) const;
+    void Trace(Visitor*) const;
 
    private:
     void ParseSensorRequirement();
@@ -300,6 +309,8 @@ class XRSystem final : public EventTarget,
 
     Vector<device::mojom::XRDepthUsage> preferred_usage_;
     Vector<device::mojom::XRDepthDataFormat> preferred_format_;
+    Vector<device::mojom::XRDepthType> depth_type_request_;
+    bool match_depth_view_;
   };
 
   static device::mojom::blink::XRSessionOptionsPtr XRSessionOptionsFromQuery(
@@ -313,14 +324,13 @@ class XRSystem final : public EventTarget,
       : public GarbageCollected<PendingSupportsSessionQuery> {
    public:
     PendingSupportsSessionQuery(ScriptPromiseResolverBase*,
-                                device::mojom::blink::XRSessionMode,
-                                bool throw_on_unsupported);
+                                device::mojom::blink::XRSessionMode);
 
     PendingSupportsSessionQuery(const PendingSupportsSessionQuery&) = delete;
     PendingSupportsSessionQuery& operator=(const PendingSupportsSessionQuery&) =
         delete;
 
-    virtual ~PendingSupportsSessionQuery() = default;
+    ~PendingSupportsSessionQuery() = default;
 
     // Resolves underlying promise.
     void Resolve(bool supported, ExceptionState* exception_state = nullptr);
@@ -351,13 +361,11 @@ class XRSystem final : public EventTarget,
     void RejectWithTypeError(const String& message,
                              ExceptionState* exception_state);
 
-    bool ThrowOnUnsupported() const { return throw_on_unsupported_; }
-
     device::mojom::blink::XRSessionMode mode() const;
 
     uint64_t TraceId() const { return trace_id_; }
 
-    virtual void Trace(Visitor*) const;
+    void Trace(Visitor*) const;
 
    private:
     Member<ScriptPromiseResolverBase> resolver_;
@@ -365,19 +373,11 @@ class XRSystem final : public EventTarget,
 
     // Used for trace calls in order to correlate this request across processes.
     const uint64_t trace_id_;
-
-    // Only set when calling the deprecated supportsSession method.
-    const bool throw_on_unsupported_ = false;
   };
 
   // Helper, logs message to the console as well as DVLOGs.
   void AddConsoleMessage(mojom::blink::ConsoleMessageLevel error_level,
                          const String& message);
-
-  void InternalIsSessionSupported(ScriptPromiseResolverBase*,
-                                  const V8XRSessionMode&,
-                                  ExceptionState& exception_state,
-                                  bool throw_on_unsupported);
 
   const char* CheckInlineSessionRequestAllowed(
       LocalFrame* frame,

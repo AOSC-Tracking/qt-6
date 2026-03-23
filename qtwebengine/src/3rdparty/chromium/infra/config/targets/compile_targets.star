@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/targets.star", "targets")
+load("@chromium-luci//targets.star", "targets")
 
 targets.compile_target(
     name = "all",
@@ -68,6 +68,13 @@ targets.compile_target(
 targets.compile_target(
     name = "cast_browser_apk",
     label = "//chromecast:cast_browser_apk",
+    # All references have been moved to starlark
+    skip_usage_check = True,
+)
+
+targets.compile_target(
+    name = "cast_browser_dist_aar",
+    label = "//chromecast:cast_browser_dist_aar",
     # All references have been moved to starlark
     skip_usage_check = True,
 )
@@ -207,6 +214,13 @@ targets.compile_target(
 )
 
 targets.compile_target(
+    name = "content_shell",
+    label = "//content/shell:content_shell",
+    # All references have been moved to starlark
+    skip_usage_check = True,
+)
+
+targets.compile_target(
     name = "content_nocompile_tests",
     label = "//content/test:content_nocompile_tests",
     # All references have been moved to starlark
@@ -341,11 +355,6 @@ targets.compile_target(
 )
 
 targets.compile_target(
-    name = "ondevice_model_example",
-    label = "//components/optimization_guide/internal:ondevice_model_example",
-)
-
-targets.compile_target(
     name = "pdf_fuzzers",
     label = "//pdf/pdfium/fuzzers:pdf_fuzzers",
     # All references have been moved to starlark
@@ -445,13 +454,6 @@ targets.compile_target(
 targets.compile_target(
     name = "video_decode_accelerator_perf_tests",
     label = "//media/gpu/test:video_decode_accelerator_perf_tests",
-    # All references have been moved to starlark
-    skip_usage_check = True,
-)
-
-targets.compile_target(
-    name = "video_encode_accelerator_tests",
-    label = "//media/gpu/test:video_encode_accelerator_tests",
     # All references have been moved to starlark
     skip_usage_check = True,
 )

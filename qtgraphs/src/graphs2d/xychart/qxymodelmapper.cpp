@@ -1,12 +1,36 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 #include <QtCore/QAbstractItemModel>
 #include <QtGraphs/QXYModelMapper>
 #include <QtGraphs/QXYSeries>
 #include "qxymodelmapper_p.h"
 #include "qxyseries_p.h"
 
+#include <qtgraphs_tracepoints_p.h>
+
 QT_BEGIN_NAMESPACE
+
+Q_LOGGING_CATEGORY(lcModelMapper2D, "qt.graphs2d.modelmapper")
+
+Q_TRACE_PREFIX(qtgraphs,
+            "QT_BEGIN_NAMESPACE" \
+            "class QXYModelMapper;" \
+            "QT_END_NAMESPACE"
+          )
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DXYModelMappeInitXYFromModel_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DXYModelMappeInitXYFromModel_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DXYModelMappeRemoveData_entry, int start, int end);
+Q_TRACE_POINT(qtgraphs, QGraphs2DXYModelMappeRemoveData_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DXYModelMappeInsertData_entry, int start, int end);
+Q_TRACE_POINT(qtgraphs, QGraphs2DXYModelMappeInsertData_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DXYModelMapperOnModelUpdated_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DXYModelMapperOnModelUpdated_exit);
 
 /*!
     \class QXYModelMapper
@@ -163,7 +187,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlsignal QXYModelMapper::seriesChanged()
+    \qmlsignal XYModelMapper::seriesChanged()
 
     This signal is emitted when the series that the mapper is connected to changes.
 */
@@ -571,6 +595,7 @@ void QXYModelMapperPrivate::onModelUpdated(QModelIndex topLeft, QModelIndex bott
     if (m_modelSignalsBlock)
         return;
 
+    Q_TRACE_SCOPE(QGraphs2DXYModelMapperOnModelUpdated);
     blockSeriesSignals();
     QModelIndex index;
     QPointF newPoint;
@@ -686,6 +711,7 @@ void QXYModelMapperPrivate::insertData(int start, int end)
     if (m_count != -1 && start >= m_first + m_count) {
         return;
     } else {
+        Q_TRACE_SCOPE(QGraphs2DXYModelMappeInsertData, start, end);
         int addedCount = end - start + 1;
         if (m_count != -1 && addedCount > m_count)
             addedCount = m_count;
@@ -721,6 +747,7 @@ void QXYModelMapperPrivate::removeData(int start, int end)
     if (m_count != -1 && start >= m_first + m_count) {
         return;
     } else {
+        Q_TRACE_SCOPE(QGraphs2DXYModelMappeRemoveData, start, end);
         int toRemove = qMin(int(m_series->count()),
                             removedCount); // first find how many items can actually be removed
         int first = qMax(start, m_first);  // get the index of the first item that will be removed.
@@ -762,6 +789,8 @@ void QXYModelMapperPrivate::initializeXYFromModel()
     if (m_model == 0 || m_series == 0)
         return;
 
+    Q_TRACE_SCOPE(QGraphs2DXYModelMappeInitXYFromModel);
+
     blockSeriesSignals();
     // clear current content
     m_series->clear();
@@ -791,10 +820,10 @@ void QXYModelMapperPrivate::initializeXYFromModel()
         int count = m_orientation == Qt::Vertical ? m_model->rowCount() : m_model->columnCount();
         if (count > 0) {
             if (!xIndex.isValid()) {
-                qWarning("%ls Invalid X coordinate index in model mapper.",
+                qCWarning(lcModelMapper2D, "%ls Invalid X coordinate index in model mapper.",
                          qUtf16Printable(QString::fromUtf8(__func__)));
             } else if (!yIndex.isValid()) {
-                qWarning("%ls Invalid Y coordinate index in model mapper.",
+                qCWarning(lcModelMapper2D, "%ls Invalid Y coordinate index in model mapper.",
                          qUtf16Printable(QString::fromUtf8(__func__)));
             }
         }
@@ -802,4 +831,7 @@ void QXYModelMapperPrivate::initializeXYFromModel()
 
     blockSeriesSignals(false);
 }
+
 QT_END_NAMESPACE
+
+#include "moc_qxymodelmapper.cpp"

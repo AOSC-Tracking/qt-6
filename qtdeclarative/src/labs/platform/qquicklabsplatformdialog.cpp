@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicklabsplatformdialog_p.h"
 
@@ -18,6 +19,7 @@ QT_BEGIN_NAMESPACE
 //! \nativetype QQuickLabsPlatformDialog
     \inqmlmodule Qt.labs.platform
     \since 5.8
+    \deprecated [6.11] Use \l [QtQuickDialogs] {Dialog}{QtQuick.Dialogs Dialog} instead.
     \brief The base class of native dialogs.
 
     The Dialog type provides common QML API for native platform dialogs.

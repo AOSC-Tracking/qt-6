@@ -55,7 +55,8 @@ class CONTENT_EXPORT ServiceWorkerMainResourceHandle {
   }
 
   void set_service_worker_client(
-      ScopedServiceWorkerClient scoped_service_worker_client);
+      ScopedServiceWorkerClient scoped_service_worker_client,
+      const net::IsolationInfo& isolation_info);
 
   base::WeakPtr<ServiceWorkerClient> service_worker_client();
 
@@ -77,6 +78,16 @@ class CONTENT_EXPORT ServiceWorkerMainResourceHandle {
   base::WeakPtr<ServiceWorkerMainResourceHandle> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
   }
+
+  // Updates `ServiceWorkerClient` and `isolation_info_` for the next request.
+  // Must be called on the initial request and every redirect requests.
+  // `client_for_prefetch` is non-null when serving the request from prefetch
+  // and inheriting the controller from `client_for_prefetch`.
+  // Returns `false` if `client_for_prefetch` is set but can't be used. In such
+  // cases, `this` and underlying `service_worker_client()` remains unchanged.
+  bool InitializeForRequest(
+      const network::ResourceRequest& tentative_resource_request,
+      const ServiceWorkerClient* client_for_prefetch);
 
  private:
   // In term of the spec, this is the request's reserved client
@@ -107,6 +118,13 @@ class CONTENT_EXPORT ServiceWorkerMainResourceHandle {
   // But this hasn't been the case in the implementation, so currently they are
   // plumbed separately here.
   const std::string fetch_event_client_id_;
+
+  // Updated on redirects.
+  // TODO(https://crbug.com/367755492): This is managed separately from
+  // `network::ResourceRequest::TrustedParams::isolation_info` but both of the
+  // two `IsolationInfo`s are used/mixed in the code. Investigate why and
+  // clarify the logic.
+  net::IsolationInfo isolation_info_;
 
   const ServiceWorkerAccessedCallback service_worker_accessed_callback_;
 

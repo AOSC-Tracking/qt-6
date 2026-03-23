@@ -27,7 +27,7 @@ export default class implements PerfettoPlugin {
 
   async onTraceLoad(ctx: Trace): Promise<void> {
     const kernel = new TrackNode({
-      title: 'Linux Kernel',
+      name: 'Linux Kernel',
       isSummary: true,
     });
     const rpm = await this.addRpmTracks(ctx);
@@ -55,25 +55,27 @@ export default class implements PerfettoPlugin {
       trackId: NUM,
     });
     const rpm = new TrackNode({
-      title: 'Runtime Power Management',
+      name: 'Runtime Power Management',
       isSummary: true,
     });
     for (; it.valid(); it.next()) {
       const trackId = it.trackId;
-      const title = it.deviceName ?? `${trackId}`;
-
-      const uri = `/linux/rpm/${title}`;
+      const name = it.deviceName ?? `${trackId}`;
+      const uri = `/linux/rpm/${name}`;
       ctx.tracks.registerTrack({
         uri,
-        title,
-        track: createTraceProcessorSliceTrack(ctx, uri, 0, [trackId]),
+        renderer: await createTraceProcessorSliceTrack({
+          trace: ctx,
+          uri,
+          trackIds: [trackId],
+        }),
         tags: {
           kind: SLICE_TRACK_KIND,
           trackIds: [trackId],
           groupName: `Linux Kernel Devices`,
         },
       });
-      const track = new TrackNode({uri, title});
+      const track = new TrackNode({uri, name: name});
       rpm.addChildInOrder(track);
     }
     return rpm;

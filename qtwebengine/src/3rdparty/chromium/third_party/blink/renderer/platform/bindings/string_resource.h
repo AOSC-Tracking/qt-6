@@ -61,6 +61,35 @@ class StringResourceBase {
     memory_accounter_.Decrease(isolate, reduced_external_memory);
   }
 
+  size_t EstimateMemoryUsage() const { return sizeof(*this); }
+
+  void EstimateSharedMemoryUsage(
+      v8::String::ExternalStringResourceBase::SharedMemoryUsageRecorder*
+          recorder) const {
+    if (ParkableStringImpl* parkable_impl = parkable_string_.Impl()) {
+      // The ParkableStringImpl may have a pointer to a ref-counted StringImpl,
+      // which could also be referred to from elsewhere, so the two impls should
+      // be recorded separately.
+      ParkableStringImpl::MemoryUsage usage =
+          parkable_impl->MemoryUsageForSnapshot();
+      recorder->RecordSharedMemoryUsage(parkable_impl, usage.this_size);
+      if (usage.string_impl) {
+        recorder->RecordSharedMemoryUsage(usage.string_impl,
+                                          usage.string_impl_size);
+      }
+    }
+    if (StringImpl* plain_impl = plain_string_.Impl()) {
+      recorder->RecordSharedMemoryUsage(
+          plain_impl,
+          sizeof(*plain_impl) + plain_impl->CharactersSizeInBytes());
+    }
+    if (StringImpl* atomic_impl = atomic_string_.Impl()) {
+      recorder->RecordSharedMemoryUsage(
+          atomic_impl,
+          sizeof(*atomic_impl) + atomic_impl->CharactersSizeInBytes());
+    }
+  }
+
   virtual ~StringResourceBase() = default;
 
   String GetWTFString() {
@@ -154,6 +183,15 @@ class StringResource16Base : public StringResourceBase,
   void Unaccount(v8::Isolate* isolate) override {
     StringResourceBase::Unaccount(isolate);
   }
+
+  size_t EstimateMemoryUsage() const override {
+    return StringResourceBase::EstimateMemoryUsage();
+  }
+
+  void EstimateSharedMemoryUsage(
+      SharedMemoryUsageRecorder* recorder) const override {
+    return StringResourceBase::EstimateSharedMemoryUsage(recorder);
+  }
 };
 
 class StringResource16 final : public StringResource16Base {
@@ -169,7 +207,7 @@ class StringResource16 final : public StringResource16Base {
 
   size_t length() const override { return GetStringImpl()->length(); }
   const uint16_t* data() const override {
-    return reinterpret_cast<const uint16_t*>(GetStringImpl()->Characters16());
+    return GetStringImpl()->SpanUint16().data();
   }
 };
 
@@ -192,8 +230,7 @@ class ParkableStringResource16 final : public StringResource16Base {
   size_t length() const override { return GetParkableString().length(); }
 
   const uint16_t* data() const override {
-    return reinterpret_cast<const uint16_t*>(
-        GetParkableString().Characters16());
+    return GetParkableString().SpanUint16().data();
   }
 };
 
@@ -216,6 +253,15 @@ class StringResource8Base : public StringResourceBase,
   void Unaccount(v8::Isolate* isolate) override {
     StringResourceBase::Unaccount(isolate);
   }
+
+  size_t EstimateMemoryUsage() const override {
+    return StringResourceBase::EstimateMemoryUsage();
+  }
+
+  void EstimateSharedMemoryUsage(
+      SharedMemoryUsageRecorder* recorder) const override {
+    return StringResourceBase::EstimateSharedMemoryUsage(recorder);
+  }
 };
 
 class StringResource8 final : public StringResource8Base {
@@ -231,7 +277,7 @@ class StringResource8 final : public StringResource8Base {
 
   size_t length() const override { return GetStringImpl()->length(); }
   const char* data() const override {
-    return reinterpret_cast<const char*>(GetStringImpl()->Characters8());
+    return base::as_chars(GetStringImpl()->Span8()).data();
   }
 };
 
@@ -254,7 +300,7 @@ class ParkableStringResource8 final : public StringResource8Base {
   size_t length() const override { return GetParkableString().length(); }
 
   const char* data() const override {
-    return reinterpret_cast<const char*>(GetParkableString().Characters8());
+    return GetParkableString().SpanChar().data();
   }
 };
 

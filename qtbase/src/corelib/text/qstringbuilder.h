@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include <QtCore/qstring.h>
 
@@ -100,8 +101,10 @@ private:
             // so we're special casing this one out, QTBUG-114206
             return T();
         }
-
-        const qsizetype len = Concatenable::size(*this);
+        return convertToImpl<T>(Concatenable::size(*this));
+    }
+    template <typename T> T convertToImpl(const qsizetype len) const
+    {
         T s(len, Qt::Uninitialized);
 
         // Using data_ptr() here (private API) so we can bypass the

@@ -1,7 +1,7 @@
-/* Copyright (c) 2021-2024 The Khronos Group Inc.
- * Copyright (c) 2021-2024 Valve Corporation
- * Copyright (c) 2021-2024 LunarG, Inc.
- * Copyright (C) 2021-2022 Google Inc.
+/* Copyright (c) 2021-2025 The Khronos Group Inc.
+ * Copyright (c) 2021-2025 Valve Corporation
+ * Copyright (c) 2021-2025 LunarG, Inc.
+ * Copyright (C) 2021-2025 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,10 @@
 
 #include "generated/error_location_helper.h"
 #include "logging.h"
-#include "containers/custom_containers.h"
 #include "chassis/chassis_handle_data.h"
 #include "utils/hash_util.h"
+#include "containers/small_vector.h"
+#include "containers/limits.h"
 
 // Holds the 'Location' of where the code is inside a function/struct/etc
 // see docs/error_object.md for more details
@@ -57,7 +58,11 @@ struct Location {
           debug_region(&debug_region) {}
 
     void AppendFields(std::ostream &out) const;
+
+    // Returns concatenated fields, does not include function part.
     std::string Fields() const;
+
+    // Returns location representation as it appears in the error message. Used by the LogError().
     std::string Message() const;
 
     // the dot() method is for walking down into a structure that is being validated
@@ -85,6 +90,8 @@ struct Location {
     const char* StringStruct() const { return vvl::String(structure); }
     const char* StringField() const { return vvl::String(field); }
 };
+
+std::string PrintPNextChain(vvl::Struct in_struct, const void* in_pNext);
 
 // Contains the base information needed for errors to be logged out
 // Created for each function as a starting point to build off of
@@ -121,8 +128,12 @@ struct LocationVuidAdapter {
 
 struct LocationCapture {
     LocationCapture(const Location& loc);
-    LocationCapture(const LocationCapture &other);
-    LocationCapture(LocationCapture &&other);
+    LocationCapture(const LocationCapture& other);
+    LocationCapture(LocationCapture&& other);
+    LocationCapture& operator=(LocationCapture&& other);
+
+    // Currently not needed, implement if required (compiler generated default is not valid)
+    LocationCapture& operator=(const LocationCapture& other) = delete;
 
     const Location& Get() const { return capture.back(); }
 

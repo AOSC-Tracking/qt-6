@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/html/forms/internal_popup_menu.h"
 
 #include "base/containers/span.h"
+#include "base/strings/string_view_util.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -20,7 +21,7 @@
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
-#include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/web_frame_widget_impl.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
@@ -43,6 +44,7 @@
 #include "third_party/blink/renderer/platform/fonts/font_selector_client.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 #include "third_party/blink/renderer/platform/wtf/shared_buffer.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -334,7 +336,7 @@ void InternalPopupMenu::WriteDocument(SegmentedBuffer& data) {
           owner_element, owner_element.GetComputedStyle(), temp_scrollbar,
           target.first);
       if (part_style) {
-        AppendOwnerElementPseudoStyles(target.second + ":hover", data,
+        AppendOwnerElementPseudoStyles(StrCat({target.second, ":hover"}), data,
                                        *part_style);
       }
     }
@@ -344,35 +346,31 @@ void InternalPopupMenu::WriteDocument(SegmentedBuffer& data) {
 
   data.Append(ChooserResourceLoader::GetPickerCommonStyleSheet());
   data.Append(ChooserResourceLoader::GetListPickerStyleSheet());
-  if (taller_options_) {
-    int padding = static_cast<int>(roundf(4 * scale_factor));
-    int min_height = static_cast<int>(roundf(24 * scale_factor));
-    PagePopupClient::AddString(String::Format("option, optgroup {"
-                                              "padding-top: %dpx;"
-                                              "}\n"
-                                              "option {"
-                                              "padding-bottom: %dpx;"
-                                              "min-block-size: %dpx;"
-                                              "display: flex;"
-                                              "align-items: center;"
-                                              "}\n",
-                                              padding, padding, min_height),
-                               data);
-    // Sets the min target size of <option> to 24x24 CSS pixels to meet
-    // Accessibility standards.
-    if (RuntimeEnabledFeatures::SelectOptionAccessibilityTargetSizeEnabled()) {
-      PagePopupClient::AddString(
-          String::Format("option {"
-                         "display: block;"
-                         "align-content: center;"
-                         "min-inline-size: %dpx;"
-                         "min-block-size: %dpx;"
-                         "box-sizing: border-box;"
-                         "}\n",
-                         min_height, std::max(24, min_height)),
-          data);
-    }
-  }
+  int padding = static_cast<int>(roundf(4 * scale_factor));
+  int min_height = static_cast<int>(roundf(24 * scale_factor));
+  PagePopupClient::AddString(String::Format("option, optgroup {"
+                                            "padding-top: %dpx;"
+                                            "}\n"
+                                            "option {"
+                                            "padding-bottom: %dpx;"
+                                            "min-block-size: %dpx;"
+                                            "display: flex;"
+                                            "align-items: center;"
+                                            "}\n",
+                                            padding, padding, min_height),
+                             data);
+  // Sets the min target size of <option> to 24x24 CSS pixels to meet
+  // Accessibility standards.
+  PagePopupClient::AddString(
+      String::Format("option {"
+                     "display: block;"
+                     "align-content: center;"
+                     "min-inline-size: %dpx;"
+                     "min-block-size: %dpx;"
+                     "box-sizing: border-box;"
+                     "}\n",
+                     min_height, std::max(24, min_height)),
+      data);
 
   PagePopupClient::AddString(
       "</style></head><body><div id=main>Loading...</div><script>\n"
@@ -554,7 +552,7 @@ void InternalPopupMenu::AppendOwnerElementPseudoStyles(
     const String& target,
     SegmentedBuffer& data,
     const ComputedStyle& style) {
-  PagePopupClient::AddString(target + "{ \n", data);
+  PagePopupClient::AddString(StrCat({target, "{ \n"}), data);
 
   const CSSPropertyID serialize_targets[] = {
       CSSPropertyID::kDisplay,        CSSPropertyID::kBackgroundColor,
@@ -579,7 +577,8 @@ CSSFontSelector* InternalPopupMenu::CreateCSSFontSelector(
 }
 
 void InternalPopupMenu::SetValueAndClosePopup(int num_value,
-                                              const String& string_value) {
+                                              const String& string_value,
+                                              bool is_keyboard_event) {
   DCHECK(popup_);
   DCHECK(owner_element_);
   if (!string_value.empty()) {
@@ -608,9 +607,17 @@ void InternalPopupMenu::SetValueAndClosePopup(int num_value,
     event.SetTimeStamp(base::TimeTicks::Now());
     Element* owner = &OwnerElement();
     if (LocalFrame* frame = owner->GetDocument().GetFrame()) {
-      frame->GetEventHandler().HandleTargetedMouseEvent(
-          owner, event, event_type_names::kMouseup, Vector<WebMouseEvent>(),
-          Vector<WebMouseEvent>());
+      // Only dispatch mouseup event when the interaction was not keyboard
+      // initiated.
+      // https://crbug.com/40698108
+      if (!RuntimeEnabledFeatures::
+              SelectNoMouseUpForKeyboardSelectionEnabled() ||
+          !is_keyboard_event) {
+        frame->GetEventHandler().HandleTargetedMouseEvent(
+            owner, event, event_type_names::kMouseup, Vector<WebMouseEvent>(),
+            Vector<WebMouseEvent>());
+      }
+
       frame->GetEventHandler().HandleTargetedMouseEvent(
           owner, event, event_type_names::kClick, Vector<WebMouseEvent>(),
           Vector<WebMouseEvent>());
@@ -659,10 +666,6 @@ void InternalPopupMenu::Dispose() {
 
 void InternalPopupMenu::Show(PopupMenu::ShowEventType type) {
   DCHECK(!popup_);
-  taller_options_ =
-      type == PopupMenu::kTouch ||
-      RuntimeEnabledFeatures::ForceTallerSelectPopupEnabled() ||
-      RuntimeEnabledFeatures::SelectOptionAccessibilityTargetSizeEnabled();
   popup_ = chrome_client_->OpenPagePopup(this);
 }
 
@@ -754,14 +757,8 @@ void InternalPopupMenu::SetMenuListOptionsBoundsInAXTree(
   // We need to make sure we take into account any iframes. Since OOPIF and
   // srcdoc iframes aren't allowed to access the root viewport, we need to
   // iterate through the frame owner's parent nodes and accumulate the offsets.
-  Frame* frame = owner_element_->GetDocument().GetFrame();
-  while (frame->Owner()) {
-    if (auto* frame_view = frame->View()) {
-      gfx::Point frame_point = frame_view->Location();
-      popup_origin.Offset(-frame_point.x(), -frame_point.y());
-    }
-    frame = frame->Parent();
-  }
+  owner_element_->GetDocument().GetFrame()->AdjustOffsetByAncestorFrames(
+      &popup_origin);
 
   for (auto& option_bounds : options_bounds) {
     option_bounds.Offset(popup_origin.x(), popup_origin.y());

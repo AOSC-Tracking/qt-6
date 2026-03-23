@@ -62,9 +62,9 @@ PRUNE_PATHS = set([
     # Only binaries, used during development.
     os.path.join('third_party', 'valgrind'),
 
-    # Not actually a third party dependency. Supplies configuration for
-    # enabling or disabling field trials and features in Chromium projects.
-    os.path.join('third_party', 'chromium-variations'),
+    # Supplies configuration setting for enabling or disabling field trials and
+    # features in Chromium projects.
+    os.path.join('components', 'variations', 'test_data', 'cipd'),
 
     # Used for development and test, not in the shipping product.
     os.path.join('build', 'secondary'),
@@ -144,6 +144,7 @@ ADDITIONAL_PATHS = (
     os.path.join('chrome', 'test', 'chromeos', 'autotest'),
     os.path.join('chrome', 'test', 'data'),
     os.path.join('native_client'),
+    os.path.join('third_party', 'android_deps', 'autorolled'),
     os.path.join('third_party', 'boringssl', 'src', 'third_party', 'fiat'),
     os.path.join('third_party', 'devtools-frontend', 'src', 'front_end',
                  'third_party'),
@@ -412,7 +413,6 @@ KNOWN_NON_IOS_LIBRARIES = set([
     os.path.join('third_party', 'flot'),
     os.path.join('third_party', 'gtk+'),
     os.path.join('third_party', 'iaccessible2'),
-    os.path.join('third_party', 'iccjpeg'),
     os.path.join('third_party', 'isimpledom'),
     os.path.join('third_party', 'jsoncpp'),
     os.path.join('third_party', 'khronos'),
@@ -894,15 +894,16 @@ def FindThirdPartyDeps(gn_binary : str,
   # Generate gn project in temp directory and use it to find dependencies.
   # Current gn directory cannot be used when we run this script in a gn action
   # rule, because gn always evaluate *.gn/*.gni and causes side-effect
-  # by `write_file`, `exec_script` or so, and "gn desc" requires "gn gen".
+  # by `write_file`, `exec_script` or so, and "gn desc" requires "build.ninja".
   # If only "args.gn", it fails with "ERROR Not a build directory."
   with tempfile.TemporaryDirectory(
       dir=os.path.join(gn_out_dir, '..')) as tmp_dir:
     shutil.copy(os.path.join(gn_out_dir, "args.gn"), tmp_dir)
     if not gn_generate:
-        subprocess.check_output(
-            [gn_binary, "gen",
-            "--root=%s" % _REPOSITORY_ROOT, tmp_dir])
+      # "gn desc" requires "build.ninja", but ok with empty "build.ninja".
+      # "gn gen" is slow and requires too much memory.
+      with open(os.path.join(tmp_dir, "build.ninja"), "w") as w:
+        pass
     else:
        tmp_dir = gn_out_dir
     gn_deps = subprocess.check_output([

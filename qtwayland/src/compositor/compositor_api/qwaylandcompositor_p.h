@@ -186,6 +186,8 @@ void QWaylandCompositorPrivate::addOutput(QWaylandOutput *output)
         return;
     outputs.append(output);
     emit q->outputAdded(output);
+    if (!outputs.isEmpty() && outputs.first() == output)
+        emit q->defaultOutputChanged();
 }
 
 void QWaylandCompositorPrivate::removeOutput(QWaylandOutput *output)
@@ -193,8 +195,12 @@ void QWaylandCompositorPrivate::removeOutput(QWaylandOutput *output)
     Q_ASSERT(output);
     Q_ASSERT(outputs.count(output) == 1);
     Q_Q(QWaylandCompositor);
-    if (outputs.removeOne(output))
-        emit q->outputRemoved(output);
+    bool wasDefault = !outputs.isEmpty() && outputs.first() == output;
+    if (!outputs.removeOne(output))
+        return;
+    emit q->outputRemoved(output);
+    if (wasDefault)
+        emit q->defaultOutputChanged();
 }
 
 QT_END_NAMESPACE

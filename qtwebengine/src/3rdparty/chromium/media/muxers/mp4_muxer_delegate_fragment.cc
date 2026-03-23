@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "media/muxers/mp4_muxer_delegate_fragment.h"
 
 #include "base/notreached.h"
@@ -256,13 +251,16 @@ void Mp4MuxerDelegateFragment::AddDataToMdat(
   // a giant blob of memory to hold them all. We should only have one
   // copy into the final muxed output buffer in an ideal world.
   size_t current_size = track_data.size();
-  if (current_size + encoded_data.size() > track_data.capacity()) {
-    track_data.reserve((current_size + encoded_data.size()) * 1.5);
+  auto encoded_data_span = base::span(encoded_data);
+  if (current_size + encoded_data_span.size() > track_data.capacity()) {
+    track_data.reserve((current_size + encoded_data_span.size()) * 1.5);
   }
 
   // TODO(crbug.com/40273983): encoded stream needs to be movable container.
-  track_data.resize(current_size + encoded_data.size());
-  memcpy(&track_data[current_size], encoded_data.data(), encoded_data.size());
+  track_data.resize(current_size + encoded_data_span.size());
+  base::span(track_data)
+      .subspan(current_size)
+      .copy_from_nonoverlapping(encoded_data_span);
 }
 
 void Mp4MuxerDelegateFragment::AddLastTimestamp(

@@ -11,6 +11,7 @@
 #include <QtGui/QPainter>
 
 #include <QTest>
+#include <QtTest/private/qtesthelpers_p.h>
 #include <QSignalSpy>
 #include <QEvent>
 #include <QStyleHints>
@@ -714,7 +715,7 @@ void tst_QWindow::geometryAfterWmUpdateAndDestroyCreate()
     QRect modifiedGeometry = geometryAfterShow.translated(42, 42);
     modifiedGeometry.setSize(modifiedGeometry.size() + QSize(42, 42));
     QWindowSystemInterface::handleGeometryChange<QWindowSystemInterface::SynchronousDelivery>(
-        &window, modifiedGeometry);
+        &window, QHighDpi::toNativeWindowGeometry(modifiedGeometry, &window));
 
     window.destroy();
     window.show();
@@ -1237,6 +1238,7 @@ void tst_QWindow::testInputEvents()
     window.setGeometry(QRect(m_availableTopLeft + QPoint(80, 80), m_testWindowSize));
     window.showNormal();
     QTRY_VERIFY(window.isActive());
+    QVERIFY(QTestPrivate::ensurePositionTopLeft(&window));
 
     QTest::keyClick(&window, Qt::Key_A, Qt::NoModifier);
     QCoreApplication::processEvents();
@@ -2503,6 +2505,8 @@ void tst_QWindow::modalWithChildWindow()
 
 void tst_QWindow::modalWindowModallity()
 {
+    if (isPlatformWayland() && qgetenv("XDG_CURRENT_DESKTOP").toLower().contains("ubuntu:gnome"))
+        QSKIP("Wayland: This will trigger a 'X is ready' system notification in GNOME.");
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
         QSKIP("QWindow::requestActivate() is not supported.");
 
@@ -2580,7 +2584,7 @@ void tst_QWindow::modalWindowEnterEventOnHide_QTBUG35109()
     if (isPlatformOffscreenOrMinimal())
         QSKIP("Can't test window focusing on offscreen/minimal");
 
-    if (isPlatformEglFS())
+    if (isPlatformEglFS() || isPlatformWayland())
         QSKIP("QCursor::setPos() is not supported on this platform");
 
     const QPoint center = QGuiApplication::primaryScreen()->availableGeometry().center();
@@ -3104,7 +3108,7 @@ void tst_QWindow::stateChangeSignal()
     // - wait for signal spy to have reached target count
     // - extract state from signal and compare to target
 #define CHECK_STATE(State)\
-    QTRY_VERIFY(QTest::qWaitFor([&w](){return (w.windowState() == State); }));\
+    QVERIFY(QTest::qWaitFor([&w](){return (w.windowState() == State); }));\
     CHECK_SIGNAL(State)
 #define CHECK_SIGNAL(State)\
     QTRY_COMPARE(spy.count(), signalCount);\
@@ -3240,7 +3244,6 @@ void tst_QWindow::enterLeaveOnWindowShowHide()
         QSKIP("We can't move the cursor");
 
     window.show();
-    window.requestActivate();
     QVERIFY(QTest::qWaitForWindowActive(&window));
 
     ++expectedEnter;
@@ -3273,12 +3276,14 @@ void tst_QWindow::windowExposedAfterReparent()
     QVERIFY(QTest::qWaitForWindowExposed(&parent));
     QVERIFY(QTest::qWaitForWindowExposed(&child));
 
+    // Close the child before reparenting it to ensure it is correctly converted
+    // to a toplevel window by the window manager.
+    child.close();
     child.setParent(nullptr);
-    QCoreApplication::processEvents();
+    child.show();
     QVERIFY(QTest::qWaitForWindowExposed(&child));
 
     child.setParent(&parent);
-    QCoreApplication::processEvents();
     QVERIFY(QTest::qWaitForWindowExposed(&child));
 }
 

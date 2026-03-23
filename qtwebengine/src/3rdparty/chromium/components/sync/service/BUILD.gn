@@ -111,12 +111,12 @@ jumbo_static_library("service") {
     "//components/policy/core/browser",
     "//components/prefs",
     "//components/saved_tab_groups/public:prefs",
+    "//components/signin/public/base",
     "//components/signin/public/identity_manager",
     "//components/strings:components_strings_grit",
     "//components/sync/invalidations",
     "//components/version_info",
     "//components/version_info:generate_version_info",
-    "//crypto",
     "//services/network/public/cpp",
     "//ui/base",
   ]

@@ -93,6 +93,9 @@ Vector<String> DocumentChunker::Chunk(const Node& tree) {
   if (max_passages_ != 0 && passages.size() > max_passages_) {
     passages.Shrink(max_passages_);
   }
+  for (String& passage : passages) {
+    passage.Truncate(1024);
+  }
 
   return passages;
 }
@@ -123,10 +126,9 @@ DocumentChunker::AggregateNode DocumentChunker::ProcessNode(
   if (const Text* text = DynamicTo<Text>(node)) {
     String simplified_text = text->data().SimplifyWhiteSpace();
     if (!simplified_text.empty()) {
-      current_node.num_words =
-          WTF::VisitCharacters(simplified_text, [](auto chars) {
-            return std::count(chars.begin(), chars.end(), ' ') + 1;
-          });
+      current_node.num_words = VisitCharacters(simplified_text, [](auto chars) {
+        return std::count(chars.begin(), chars.end(), ' ') + 1;
+      });
       current_node.segments.push_back(simplified_text);
     }
     return current_node;

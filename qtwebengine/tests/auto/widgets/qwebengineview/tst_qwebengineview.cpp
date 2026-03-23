@@ -55,6 +55,8 @@
 #include <QtCore/qregularexpression.h>
 #include <QtTest/private/qemulationdetector_p.h>
 
+using namespace Qt::StringLiterals;
+
 #define VERIFY_INPUTMETHOD_HINTS(actual, expect) \
     QVERIFY(actual == (expect | Qt::ImhNoPredictiveText | Qt::ImhNoTextHandles | Qt::ImhNoEditMenu));
 
@@ -65,6 +67,10 @@ do { \
         __fail_block\
     QCOMPARE((__expr), __expected); \
 } while (0)
+
+// The 100 ms autofill throttle in AutofillAgent::ShouldThrottleAskForValuesToFill() requires
+// a delay between AutofillAgent::ShowSuggestions() triggering events.
+#define SKIP_AUTOFILL_THROTTLE() QTest::qWait(100);
 
 QT_BEGIN_NAMESPACE
 namespace QTest {
@@ -114,6 +120,7 @@ private Q_SLOTS:
     void setLoadedPage();
     void microFocusCoordinates();
     void focusInputTypes();
+    void inputModes();
     void unhandledKeyEventPropagation();
     void horizontalScrollbarTest();
 
@@ -711,6 +718,87 @@ void tst_QWebEngineView::focusInputTypes()
     VERIFY_INPUTMETHOD_HINTS(webView.focusProxy()->inputMethodHints(), (Qt::ImhMultiLine | Qt::ImhPreferLowercase));
     QVERIFY(webView.focusProxy()->testAttribute(Qt::WA_InputMethodEnabled));
     QTRY_VERIFY(inputMethodQuery(Qt::ImEnabled).toBool());
+}
+
+void tst_QWebEngineView::inputModes()
+{
+    QWebEngineView webView;
+    webView.resize(200, 600);
+    webView.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&webView));
+
+    QSignalSpy loadFinishedSpy(&webView, SIGNAL(loadFinished(bool)));
+    webView.load(QUrl(u"qrc:///resources/input_modes.html"_s));
+    QVERIFY(loadFinishedSpy.wait());
+
+    auto inputMethodQuery = [&webView](Qt::InputMethodQuery query) {
+        QInputMethodQueryEvent event(query);
+        QApplication::sendEvent(webView.focusProxy(), &event);
+        return event.value(query);
+    };
+
+    // inputmode=none
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"noneMode"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"noneMode"_s);
+    // Should not trigger the virtual keyboard.
+    QTRY_VERIFY(!inputMethodQuery(Qt::ImEnabled).toBool());
+
+    // inputmode=text
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"textMode"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"textMode"_s);
+    QTRY_VERIFY(inputMethodQuery(Qt::ImEnabled).toBool());
+    VERIFY_INPUTMETHOD_HINTS(webView.focusProxy()->inputMethodHints(), Qt::ImhPreferLowercase);
+
+    // inputmode=tel
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"telMode"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"telMode"_s);
+    QTRY_VERIFY(inputMethodQuery(Qt::ImEnabled).toBool());
+    VERIFY_INPUTMETHOD_HINTS(webView.focusProxy()->inputMethodHints(),
+                             Qt::ImhDialableCharactersOnly);
+
+    // inputmode=url
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"urlMode"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"urlMode"_s);
+    QTRY_VERIFY(inputMethodQuery(Qt::ImEnabled).toBool());
+    VERIFY_INPUTMETHOD_HINTS(webView.focusProxy()->inputMethodHints(),
+                             Qt::ImhUrlCharactersOnly | Qt::ImhNoAutoUppercase);
+
+    // inputmode=email
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"emailMode"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"emailMode"_s);
+    QTRY_VERIFY(inputMethodQuery(Qt::ImEnabled).toBool());
+    VERIFY_INPUTMETHOD_HINTS(webView.focusProxy()->inputMethodHints(), Qt::ImhEmailCharactersOnly);
+
+    // inputmode=numeric
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"numericMode"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"numericMode"_s);
+    QTRY_VERIFY(inputMethodQuery(Qt::ImEnabled).toBool());
+    VERIFY_INPUTMETHOD_HINTS(webView.focusProxy()->inputMethodHints(), Qt::ImhDigitsOnly);
+
+    // inputmode=decimal
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"decimalMode"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"decimalMode"_s);
+    QTRY_VERIFY(inputMethodQuery(Qt::ImEnabled).toBool());
+    VERIFY_INPUTMETHOD_HINTS(webView.focusProxy()->inputMethodHints(), Qt::ImhFormattedNumbersOnly);
+
+    // inputmode=search
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"searchMode"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"searchMode"_s);
+    QTRY_VERIFY(inputMethodQuery(Qt::ImEnabled).toBool());
+    VERIFY_INPUTMETHOD_HINTS(webView.focusProxy()->inputMethodHints(),
+                             Qt::ImhPreferLowercase | Qt::ImhNoAutoUppercase);
+
+    // inputmode=none
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"noneMode"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"noneMode"_s);
+    // Should hide the virtual keyboard.
+    QTRY_VERIFY(!inputMethodQuery(Qt::ImEnabled).toBool());
+
+    // inputmode=numeric overrides <input type="text">
+    QTest::mouseClick(webView.focusProxy(), Qt::LeftButton, {}, elementCenter(webView.page(), u"override"_s));
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), u"document.activeElement.id"_s).toString(), u"override"_s);
+    QTRY_VERIFY(inputMethodQuery(Qt::ImEnabled).toBool());
+    VERIFY_INPUTMETHOD_HINTS(webView.focusProxy()->inputMethodHints(), Qt::ImhDigitsOnly);
 }
 
 class KeyEventRecordingWidget : public QWidget {
@@ -1352,6 +1440,9 @@ void tst_QWebEngineView::changeLocale()
     QStringList errorLines;
     QUrl url("http://non.existent/");
 
+    auto restoreLocale = qScopeGuard([original = QLocale()] {
+        QLocale::setDefault(original);
+    });
     QLocale::setDefault(QLocale("de"));
     QWebEngineView viewDE;
     QSignalSpy loadFinishedSpyDE(&viewDE, SIGNAL(loadFinished(bool)));
@@ -1389,6 +1480,9 @@ void tst_QWebEngineView::mixLangLocale()
     QFETCH(QString, locale);
     QFETCH(QByteArray, formattedNumber);
 
+    auto restoreLocale = qScopeGuard([original = QLocale()] {
+        QLocale::setDefault(original);
+    });
     QLocale::setDefault(QLocale(locale));
 
     QWebEngineView view;
@@ -1412,8 +1506,6 @@ void tst_QWebEngineView::mixLangLocale()
     if (locale == "eu-ES")
         QEXPECT_FAIL("", "Basque number formatting is somehow dependent on environment", Continue);
     QCOMPARE(evaluateJavaScriptSync(view.page(), "Number(1234567890).toLocaleString()").toByteArray(), formattedNumber);
-
-    QLocale::setDefault(QLocale("en"));
 }
 
 void tst_QWebEngineView::inputMethodsTextFormat_data()
@@ -1512,19 +1604,19 @@ void tst_QWebEngineView::keyboardEvents()
     // Move back to the radio buttons with the Shift+Tab key combination
     for (int i = 0; i < 10; ++i)
         QTest::keyPress(view.focusProxy(), Qt::Key_Tab, Qt::ShiftModifier);
-    QTRY_COMPARE(evaluateJavaScriptSync(view.page(), "document.activeElement.id").toString(), QStringLiteral("radio2"));
+    QTRY_COMPARE(evaluateJavaScriptSync(view.page(), "document.activeElement.id").toString(), QStringLiteral("radio1"));
 
     // Test the Space key by checking a radio button
-    QVERIFY(!evaluateJavaScriptSync(view.page(), "document.getElementById('radio2').checked").toBool());
+    QVERIFY(!evaluateJavaScriptSync(view.page(), "document.getElementById('radio1').checked").toBool());
     QTest::keyClick(view.focusProxy(), Qt::Key_Space);
-    QTRY_VERIFY(evaluateJavaScriptSync(view.page(), "document.getElementById('radio2').checked").toBool());
+    QTRY_VERIFY(evaluateJavaScriptSync(view.page(), "document.getElementById('radio1').checked").toBool());
 
     // Test the Left key by switching the radio button
-    QVERIFY(!evaluateJavaScriptSync(view.page(), "document.getElementById('radio1').checked").toBool());
-    QTest::keyPress(view.focusProxy(), Qt::Key_Left);
-    QTRY_COMPARE(evaluateJavaScriptSync(view.page(), "document.activeElement.id").toString(), QStringLiteral("radio1"));
     QVERIFY(!evaluateJavaScriptSync(view.page(), "document.getElementById('radio2').checked").toBool());
-    QVERIFY(evaluateJavaScriptSync(view.page(), "document.getElementById('radio1').checked").toBool());
+    QTest::keyPress(view.focusProxy(), Qt::Key_Left);
+    QTRY_COMPARE(evaluateJavaScriptSync(view.page(), "document.activeElement.id").toString(), QStringLiteral("radio2"));
+    QVERIFY(!evaluateJavaScriptSync(view.page(), "document.getElementById('radio1').checked").toBool());
+    QVERIFY(evaluateJavaScriptSync(view.page(), "document.getElementById('radio2').checked").toBool());
 
     // Test the Space key by unchecking a checkbox
     evaluateJavaScriptSync(view.page(), "document.getElementById('checkbox1').focus()");
@@ -2436,6 +2528,7 @@ void tst_QWebEngineView::textSelectionOutOfInputField()
     view.hide();
     view.page()->setLifecycleState(QWebEnginePage::LifecycleState::Discarded);
     view.show();
+    QVERIFY(loadFinishedSpy.wait());
     QTRY_COMPARE(selectionChangedSpy.size(), 4);
     QVERIFY(!view.hasSelection());
     QVERIFY(view.page()->selectedText().isEmpty());
@@ -3366,8 +3459,13 @@ void tst_QWebEngineView::webUIURLs_data()
     QTest::newRow("discards") << QUrl("chrome://discards") << true << false;
     QTest::newRow("download-internals") << QUrl("chrome://download-internals") << true << false;
     QTest::newRow("downloads") << QUrl("chrome://downloads") << true << false;
-    QTest::newRow("extensions OTR") << QUrl("chrome://extensions") << true << false;
+#if QT_CONFIG(webengine_extensions)
+    QTest::newRow("extensions OTR") << QUrl("chrome://extensions") << true << true;
     QTest::newRow("extensions non-OTR") << QUrl("chrome://extensions") << false << true;
+#else
+    QTest::newRow("extensions OTR") << QUrl("chrome://extensions") << true << false;
+    QTest::newRow("extensions non-OTR") << QUrl("chrome://extensions") << false << false;
+#endif // QT_CONFIG(webengine_extensions)
     QTest::newRow("extensions-internals") << QUrl("chrome://extensions-internals") << true << false;
     QTest::newRow("flags") << QUrl("chrome://flags") << true << false;
     QTest::newRow("gcm-internals") << QUrl("chrome://gcm-internals") << true << false;
@@ -3420,16 +3518,20 @@ void tst_QWebEngineView::webUIURLs_data()
     QTest::newRow("tracing") << QUrl("chrome://tracing") << true << true;
     QTest::newRow("translate-internals") << QUrl("chrome://translate-internals") << true << false;
     QTest::newRow("ukm") << QUrl("chrome://ukm") << true << true;
-    QTest::newRow("usb-internals") << QUrl("chrome://usb-internals") << true << false;
+    QTest::newRow("usb-internals") << QUrl("chrome://usb-internals") << true << true;
     QTest::newRow("user-actions") << QUrl("chrome://user-actions") << true << true;
     QTest::newRow("version") << QUrl("chrome://version") << true << false;
     QTest::newRow("web-app-internals") << QUrl("chrome://web-app-internals") << true << false;
 #if QT_CONFIG(webengine_webrtc)
     QTest::newRow("webrtc-internals") << QUrl("chrome://webrtc-internals") << true << true;
-#if QT_CONFIG(webengine_extensions)
-    QTest::newRow("webrtc-logs") << QUrl("chrome://webrtc-logs") << true << true;
-#endif // QT_CONFIG(webengine_extensions)
+#else
+    QTest::newRow("webrtc-internals") << QUrl("chrome://webrtc-internals") << true << false;
 #endif // QT_CONFIG(webengine_webrtc)
+#if QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
+    QTest::newRow("webrtc-logs") << QUrl("chrome://webrtc-logs") << true << true;
+#else
+    QTest::newRow("webrtc-logs") << QUrl("chrome://webrtc-logs") << true << false;
+#endif // QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
     QTest::newRow("whats-new") << QUrl("chrome://whats-new") << true << false;
 }
 
@@ -3925,6 +4027,7 @@ void tst_QWebEngineView::datalist()
     QTRY_VERIFY(!listView());
 
     // The first Key Down opens the popup.
+    SKIP_AUTOFILL_THROTTLE()
     QTest::keyClick(view.windowHandle(), Qt::Key_Down);
     QTRY_VERIFY(listView());
 
@@ -3951,6 +4054,7 @@ void tst_QWebEngineView::datalist()
                      ->data(listView()->currentIndex())
                      .toString(),
              QStringLiteral("Chrome"));
+    SKIP_AUTOFILL_THROTTLE()
     QTest::keyClick(view.windowHandle(), Qt::Key_Enter);
     QTRY_COMPARE(
             evaluateJavaScriptSync(view.page(), "document.getElementById('browserInput').value")
@@ -3964,6 +4068,7 @@ void tst_QWebEngineView::datalist()
     QVERIFY(!listView());
 
     // Filter suggestions.
+    SKIP_AUTOFILL_THROTTLE()
     QTest::keyClick(view.windowHandle(), Qt::Key_F);
     QTRY_VERIFY(listView());
     QCOMPARE(listView()->model()->rowCount(), 2);
@@ -3976,6 +4081,7 @@ void tst_QWebEngineView::datalist()
                      ->data(listView()->model()->index(1, 0))
                      .toString(),
              QStringLiteral("Safari"));
+    SKIP_AUTOFILL_THROTTLE()
     QTest::keyClick(view.windowHandle(), Qt::Key_I);
     QTRY_COMPARE(listView()->model()->rowCount(), 1);
     QCOMPARE(listView()->currentIndex(), QModelIndex());
@@ -3983,6 +4089,7 @@ void tst_QWebEngineView::datalist()
                      ->data(listView()->model()->index(0, 0))
                      .toString(),
              QStringLiteral("Firefox"));
+    SKIP_AUTOFILL_THROTTLE()
     QTest::keyClick(view.windowHandle(), Qt::Key_L);
     // Mismatch should close popup.
     QTRY_VERIFY(!listView());

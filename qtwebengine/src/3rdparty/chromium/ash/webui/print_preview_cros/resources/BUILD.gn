@@ -2,10 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
 import("//ui/webui/resources/tools/build_webui.gni")
 
-assert(is_chromeos_ash, "Print Preview CrOS is ChromeOS only")
+assert(is_chromeos, "Print Preview CrOS is ChromeOS only")
 
 build_webui("build") {
   static_files = [
@@ -15,7 +14,7 @@ build_webui("build") {
 
   css_files = [ "css/print_preview_cros_shared.css" ]
 
-  non_web_component_files = [
+  ts_files = [
     "js/data/capabilities_manager.ts",
     "js/data/destination_constants.ts",
     "js/data/destination_manager.ts",

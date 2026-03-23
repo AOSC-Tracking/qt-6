@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -14,6 +15,7 @@
 #include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_address.h"
@@ -332,6 +334,14 @@ void ProxyResolvingClientSocket::OnNeedsProxyAuth(
   connect_job_.reset();
 
   OnIOComplete(net::ERR_PROXY_AUTH_REQUESTED);
+}
+
+net::Error ProxyResolvingClientSocket::OnDestinationDnsAliasesResolved(
+    const std::set<std::string>& aliases,
+    net::ConnectJob* job) {
+  // Ignore DNS aliases for proxy hostnames since higher-level layers will not
+  // take action on these.
+  return net::OK;
 }
 
 int ProxyResolvingClientSocket::ReconsiderProxyAfterError(int error) {

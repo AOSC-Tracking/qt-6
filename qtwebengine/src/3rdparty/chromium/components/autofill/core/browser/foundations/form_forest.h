@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <optional>
+#include <variant>
 #include <vector>
 
 #include "base/containers/flat_map.h"
@@ -18,7 +19,6 @@
 #include "components/autofill/core/browser/foundations/autofill_driver.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/unique_ids.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace autofill::internal {
 
@@ -212,7 +212,7 @@ class FormForest {
     // frame. When a parent form can Resolve() a child's FrameToken, it sets
     // itself as the parent of the child frame, even if no form in this frame
     // has been seen yet.
-    std::optional<FormGlobalId> parent_form = std::nullopt;
+    std::optional<FormGlobalId> parent_form;
     // Pointer to the frame's AutofillDriver. This may be null because an
     // empty FrameData is created when a parent form can Resolve() a child's
     // LocalFrameToken and no form from that child frame has been seen yet.
@@ -389,7 +389,7 @@ class FormForest {
   // erased before its ancestors, since otherwise |frame_or_form| is
   // disconnected from its root already.
   void EraseReferencesTo(
-      absl::variant<LocalFrameToken, FormGlobalId> frame_or_form,
+      std::variant<LocalFrameToken, FormGlobalId> frame_or_form,
       base::flat_set<FormGlobalId>* forms_with_removed_fields);
 
   // Adds |renderer_form| and |driver| to the relevant tree, where |driver| must

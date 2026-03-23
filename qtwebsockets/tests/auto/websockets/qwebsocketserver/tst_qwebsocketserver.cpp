@@ -18,6 +18,8 @@
 #include <QtWebSockets/QWebSocketCorsAuthenticator>
 #include <QtWebSockets/qwebsocketprotocol.h>
 
+using namespace Qt::StringLiterals;
+
 QT_USE_NAMESPACE
 
 Q_DECLARE_METATYPE(QWebSocketProtocol::Version)
@@ -289,6 +291,7 @@ void tst_QWebSocketServer::tst_listening()
 #ifndef QT_NO_SSL
     QSignalSpy peerVerifyErrorSpy(&server, SIGNAL(peerVerifyError(QSslError)));
     QSignalSpy sslErrorsSpy(&server, SIGNAL(sslErrors(QList<QSslError>)));
+    QSignalSpy sslErrorsOccurredSpy(&server, SIGNAL(sslErrorsOccurred(QSslSocket*, QList<QSslError>)));
 #endif
 
     QVERIFY(server.listen());   //listen on all network interface, choose an appropriate port
@@ -310,6 +313,7 @@ void tst_QWebSocketServer::tst_listening()
 #ifndef QT_NO_SSL
     QCOMPARE(peerVerifyErrorSpy.size(), 0);
     QCOMPARE(sslErrorsSpy.size(), 0);
+    QCOMPARE(sslErrorsOccurredSpy.size(), 0);
 #endif
     QCOMPARE(serverErrorSpy.size(), 1);
     QCOMPARE(serverClosedSpy.size(), 1);
@@ -330,6 +334,7 @@ void tst_QWebSocketServer::tst_connectivity()
 #ifndef QT_NO_SSL
     QSignalSpy peerVerifyErrorSpy(&server, SIGNAL(peerVerifyError(QSslError)));
     QSignalSpy sslErrorsSpy(&server, SIGNAL(sslErrors(QList<QSslError>)));
+    QSignalSpy sslErrorsOccurredSpy(&server, SIGNAL(sslErrorsOccurred(QSslSocket*, QList<QSslError>)));
 #endif
     QWebSocket socket;
     QSignalSpy socketConnectedSpy(&socket, SIGNAL(connected()));
@@ -339,7 +344,7 @@ void tst_QWebSocketServer::tst_connectivity()
     QCOMPARE(server.serverUrl(), QUrl(QStringLiteral("ws://") + QHostAddress(QHostAddress::LocalHost).toString() +
                                  QStringLiteral(":").append(QString::number(server.serverPort()))));
 
-    socket.open(server.serverUrl().toString());
+    socket.open(server.serverUrl());
 
     QTRY_COMPARE(socketConnectedSpy.size(), 1);
     QCOMPARE(socket.state(), QAbstractSocket::ConnectedState);
@@ -354,6 +359,7 @@ void tst_QWebSocketServer::tst_connectivity()
 #ifndef QT_NO_SSL
     QCOMPARE(peerVerifyErrorSpy.size(), 0);
     QCOMPARE(sslErrorsSpy.size(), 0);
+    QCOMPARE(sslErrorsOccurredSpy.size(), 0);
 #endif
     QCOMPARE(serverErrorSpy.size(), 0);
 }
@@ -460,6 +466,7 @@ void tst_QWebSocketServer::tst_preSharedKey()
                               SIGNAL(serverError(QWebSocketProtocol::CloseCode)));
     QSignalSpy serverClosedSpy(&server, &QWebSocketServer::closed);
     QSignalSpy sslErrorsSpy(&server, SIGNAL(sslErrors(QList<QSslError>)));
+    QSignalSpy sslErrorsOccurredSpy(&server, SIGNAL(sslErrorsOccurred(QSslSocket*, QList<QSslError>)));
 
     QWebSocket socket;
     QSslConfiguration socketConfig = QSslConfiguration::defaultConfiguration();
@@ -481,7 +488,7 @@ void tst_QWebSocketServer::tst_preSharedKey()
     QCOMPARE(server.serverUrl(), QUrl(QString::asprintf("wss://%ls:%d",
                                  qUtf16Printable(QHostAddress(QHostAddress::LocalHost).toString()), server.serverPort())));
 
-    socket.open(server.serverUrl().toString());
+    socket.open(server.serverUrl());
 
     QTRY_COMPARE(socketConnectedSpy.size(), 1);
     QCOMPARE(socket.state(), QAbstractSocket::ConnectedState);
@@ -495,6 +502,7 @@ void tst_QWebSocketServer::tst_preSharedKey()
 
     QTRY_COMPARE(serverClosedSpy.size(), 1);
     QCOMPARE(sslErrorsSpy.size(), 0);
+    QCOMPARE(sslErrorsOccurredSpy.size(), 0);
     QCOMPARE(serverErrorSpy.size(), 0);
 }
 #endif
@@ -517,6 +525,7 @@ void tst_QWebSocketServer::tst_maxPendingConnections()
 #ifndef QT_NO_SSL
     QSignalSpy peerVerifyErrorSpy(&server, SIGNAL(peerVerifyError(QSslError)));
     QSignalSpy sslErrorsSpy(&server, SIGNAL(sslErrors(QList<QSslError>)));
+    QSignalSpy sslErrorsOccurredSpy(&server, SIGNAL(sslErrorsOccurred(QSslSocket*, QList<QSslError>)));
 #endif
     QSignalSpy serverAcceptErrorSpy(&server, SIGNAL(acceptError(QAbstractSocket::SocketError)));
 
@@ -530,18 +539,18 @@ void tst_QWebSocketServer::tst_maxPendingConnections()
 
     QVERIFY(server.listen());
 
-    socket1.open(server.serverUrl().toString());
+    socket1.open(server.serverUrl());
 
     QTRY_COMPARE(socket1ConnectedSpy.size(), 1);
     QCOMPARE(socket1.state(), QAbstractSocket::ConnectedState);
     QCOMPARE(serverConnectionSpy.size(), 1);
     QCOMPARE(corsAuthenticationSpy.size(), 1);
-    socket2.open(server.serverUrl().toString());
+    socket2.open(server.serverUrl());
     QTRY_COMPARE(socket2ConnectedSpy.size(), 1);
     QCOMPARE(socket2.state(), QAbstractSocket::ConnectedState);
     QCOMPARE(serverConnectionSpy.size(), 2);
     QCOMPARE(corsAuthenticationSpy.size(), 2);
-    socket3.open(server.serverUrl().toString());
+    socket3.open(server.serverUrl());
     QVERIFY(!socket3ConnectedSpy.wait(250));
     QCOMPARE(socket3ConnectedSpy.size(), 0);
     QCOMPARE(socket3.state(), QAbstractSocket::UnconnectedState);
@@ -573,6 +582,7 @@ void tst_QWebSocketServer::tst_maxPendingConnections()
 #ifndef QT_NO_SSL
     QCOMPARE(peerVerifyErrorSpy.size(), 0);
     QCOMPARE(sslErrorsSpy.size(), 0);
+    QCOMPARE(sslErrorsOccurredSpy.size(), 0);
 #endif
     QCOMPARE(serverAcceptErrorSpy.size(), 0);
 }
@@ -597,7 +607,7 @@ void tst_QWebSocketServer::tst_serverDestroyedWhileSocketConnected()
     QCOMPARE(server->serverUrl(), QUrl(QStringLiteral("ws://") + QHostAddress(QHostAddress::LocalHost).toString() +
                                   QStringLiteral(":").append(QString::number(server->serverPort()))));
 
-    socket.open(server->serverUrl().toString());
+    socket.open(server->serverUrl());
 
     QTRY_COMPARE(socketConnectedSpy.size(), 1);
     QCOMPARE(socket.state(), QAbstractSocket::ConnectedState);
@@ -641,7 +651,7 @@ void tst_QWebSocketServer::tst_scheme()
     QVERIFY(plainServer.listen());
 
     QWebSocket plainSocket;
-    plainSocket.open(plainServer.serverUrl().toString());
+    plainSocket.open(plainServer.serverUrl());
 
     QTRY_COMPARE(plainServerConnectionSpy.size(), 1);
     QScopedPointer<QWebSocket> plainServerSocket(plainServer.nextPendingConnection());
@@ -665,7 +675,7 @@ void tst_QWebSocketServer::tst_scheme()
                 secureSocket.ignoreSslErrors();
                 sessionCipher = secureSocket.sslConfiguration().sessionCipher();
             });
-    secureSocket.open(secureServer.serverUrl().toString());
+    secureSocket.open(secureServer.serverUrl());
 
     QTRY_COMPARE(secureServerConnectionSpy.size(), 1);
     QScopedPointer<QWebSocket> secureServerSocket(secureServer.nextPendingConnection());
@@ -673,6 +683,35 @@ void tst_QWebSocketServer::tst_scheme()
     QCOMPARE(secureServerSocket->requestUrl().scheme(), QStringLiteral("wss"));
     secureServer.close();
     QVERIFY(!sessionCipher.isNull());
+
+    QWebSocketServer selfSignedServer(QString(), QWebSocketServer::SecureMode);
+    QSslConfiguration sslConfiguration;
+    QFile certFile(QStringLiteral(":/selfsigned.cert"));
+    QFile keyFile(QStringLiteral(":/selfsigned.key"));
+    QVERIFY(certFile.open(QIODevice::ReadOnly));
+    QVERIFY(keyFile.open(QIODevice::ReadOnly));
+    QSslCertificate certificate(&certFile, QSsl::Pem);
+    QSslKey sslKey(&keyFile, QSsl::Rsa, QSsl::Pem);
+    certFile.close();
+    keyFile.close();
+    sslConfiguration.setLocalCertificate(certificate);
+    sslConfiguration.setPrivateKey(sslKey);
+    sslConfiguration.setPeerVerifyMode(QSslSocket::VerifyPeer);
+    selfSignedServer.setSslConfiguration(sslConfiguration);
+    QSignalSpy selfSignedServerConnectionSpy(&selfSignedServer, SIGNAL(newConnection()));
+    QSignalSpy selfSignedServerSslErrorsOccurredSpy(
+        &selfSignedServer, SIGNAL(sslErrorsOccurred(QSslSocket*, QList<QSslError>)));
+
+    QVERIFY(selfSignedServer.listen());
+
+    QWebSocket selfSignedSocket;
+    sslConfiguration.setPeerVerifyMode(QSslSocket::VerifyNone);
+    selfSignedSocket.setSslConfiguration(sslConfiguration);
+    QObject::connect(&selfSignedSocket, &QWebSocket::sslErrors,
+                     &selfSignedSocket, qOverload<>(&QWebSocket::ignoreSslErrors));
+    selfSignedSocket.open(selfSignedServer.serverUrl());
+
+    QTRY_COMPARE(selfSignedServerSslErrorsOccurredSpy.size(), 1);
 #endif
 }
 
@@ -683,14 +722,14 @@ void tst_QWebSocketServer::tst_handleConnection()
 
     QTcpServer tcpServer;
     connect(&tcpServer, &QTcpServer::newConnection,
-            [&tcpServer, &wsServer]() {
+            &wsServer, [&tcpServer, &wsServer]() {
         wsServer.handleConnection(tcpServer.nextPendingConnection());
     });
     QVERIFY(tcpServer.listen());
 
     QWebSocket webSocket;
     QSignalSpy wsConnectedSpy(&webSocket, &QWebSocket::connected);
-    webSocket.open(QStringLiteral("ws://localhost:%1").arg(tcpServer.serverPort()));
+    webSocket.open(QUrl{u"ws://localhost:%1"_s.arg(tcpServer.serverPort())});
     QTRY_COMPARE(wsConnectedSpy.size(), 1);
 
     QTRY_COMPARE(wsServerConnectionSpy.size(), 1);
@@ -753,7 +792,7 @@ void tst_QWebSocketServer::tst_handshakeTimeout()
         QVERIFY(plainServer.listen());
 
         QWebSocket socket;
-        socket.open(plainServer.serverUrl().toString());
+        socket.open(plainServer.serverUrl());
 
         QTRY_COMPARE(plainServerConnectionSpy.size(), 1);
         QScopedPointer<QWebSocket> plainServerSocket(plainServer.nextPendingConnection());
@@ -783,7 +822,7 @@ void tst_QWebSocketServer::tst_handshakeTimeout()
         QCOMPARE(plainServerConnectionSpy.size(), 0);
 
         QWebSocket socket;
-        socket.open(plainServer.serverUrl().toString());
+        socket.open(plainServer.serverUrl());
 
         /* Check that a real websocket will be processed after some non-websocket
          * TCP connections timeout. */
@@ -819,7 +858,7 @@ void tst_QWebSocketServer::tst_handshakeTimeout()
 
         QWebSocket secureSocket;
         connect(&secureSocket, &QWebSocket::errorOccurred,
-                [](QAbstractSocket::SocketError error) {
+                this, [](QAbstractSocket::SocketError error) {
                     // This shouldn't print but it's useful for debugging when/if it does.
                     qDebug() << "Error occurred in the client:" << error;
                 });
@@ -827,7 +866,7 @@ void tst_QWebSocketServer::tst_handshakeTimeout()
         config.setPeerVerifyMode(QSslSocket::VerifyNone);
         secureSocket.setSslConfiguration(config);
 
-        secureSocket.open(secureServer.serverUrl().toString());
+        secureSocket.open(secureServer.serverUrl());
 
         QTRY_COMPARE(secureServerConnectionSpy.size(), 1);
         QScopedPointer<QWebSocket> serverSocket(secureServer.nextPendingConnection());
@@ -849,7 +888,7 @@ void tst_QWebSocketServer::tst_handshakeTimeout()
         QWebSocket socket;
         QSignalSpy socketConnectedSpy(&socket, &QWebSocket::connected);
         QSignalSpy socketDisconnectedSpy(&socket, &QWebSocket::disconnected);
-        socket.open(plainServer.serverUrl().toString());
+        socket.open(plainServer.serverUrl());
 
         QTRY_COMPARE(plainServerConnectionSpy.size(), 1);
         QTRY_COMPARE(socketConnectedSpy.size(), 1);
@@ -902,7 +941,7 @@ void tst_QWebSocketServer::multipleFrames()
     QWebSocket socket;
     QSignalSpy socketConnectedSpy(&socket, &QWebSocket::connected);
     QSignalSpy messageReceivedSpy(&socket, &QWebSocket::binaryMessageReceived);
-    socket.open(server.serverUrl().toString());
+    socket.open(server.serverUrl());
 
     QVERIFY(serverConnectionSpy.wait());
     QVERIFY(socketConnectedSpy.wait());

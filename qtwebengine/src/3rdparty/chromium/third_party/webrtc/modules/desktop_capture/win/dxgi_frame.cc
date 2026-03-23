@@ -10,12 +10,15 @@
 
 #include "modules/desktop_capture/win/dxgi_frame.h"
 
-#include <string.h>
-
+#include <cstring>
+#include <memory>
 #include <utility>
 
+#include "modules/desktop_capture/desktop_capturer.h"
 #include "modules/desktop_capture/desktop_frame.h"
-#include "modules/desktop_capture/win/dxgi_duplicator_controller.h"
+#include "modules/desktop_capture/desktop_geometry.h"
+#include "modules/desktop_capture/shared_desktop_frame.h"
+#include "modules/desktop_capture/shared_memory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -25,9 +28,7 @@ DxgiFrame::DxgiFrame(SharedMemoryFactory* factory) : factory_(factory) {}
 
 DxgiFrame::~DxgiFrame() = default;
 
-bool DxgiFrame::Prepare(DesktopSize size,
-                        DesktopCapturer::SourceId source_id,
-                        std::optional<int32_t> device_scale_factor) {
+bool DxgiFrame::Prepare(DesktopSize size, DesktopCapturer::SourceId source_id) {
   if (source_id != source_id_) {
     // Once the source has been changed, the entire source should be copied.
     source_id_ = source_id;
@@ -59,7 +60,6 @@ bool DxgiFrame::Prepare(DesktopSize size,
     } else {
       frame.reset(new BasicDesktopFrame(size));
     }
-    frame->set_device_scale_factor(device_scale_factor);
     frame_ = SharedDesktopFrame::Wrap(std::move(frame));
   }
 

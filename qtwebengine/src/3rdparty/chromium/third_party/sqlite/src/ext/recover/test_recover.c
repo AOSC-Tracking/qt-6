@@ -14,8 +14,7 @@
 
 #include "sqlite3recover.h"
 #include "sqliteInt.h"
-
-#include <tcl.h>
+#include "tclsqlite.h"
 #include <assert.h>
 
 #ifndef SQLITE_OMIT_VIRTUALTABLE
@@ -59,7 +58,7 @@ static int xSqlCallback(void *pSqlArg, const char *zSql){
 static int getDbPointer(Tcl_Interp *interp, Tcl_Obj *pObj, sqlite3 **pDb){
   Tcl_CmdInfo info;
   if( 0==Tcl_GetCommandInfo(interp, Tcl_GetString(pObj), &info) ){
-    Tcl_AppendResult(interp, "no such handle: ", Tcl_GetString(pObj), 0);
+    Tcl_AppendResult(interp, "no such handle: ", Tcl_GetString(pObj), NULL);
     return TCL_ERROR;
   }
   *pDb = *(sqlite3 **)info.objClientData;
@@ -308,4 +307,3 @@ int TestRecover_Init(Tcl_Interp *interp){
 #endif
   return TCL_OK;
 }
-

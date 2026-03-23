@@ -204,7 +204,7 @@ DnsConfig CreateValidDnsConfig();
 
 DnsResourceRecord BuildTestDnsRecord(std::string name,
                                      uint16_t type,
-                                     std::string rdata,
+                                     base::span<const uint8_t> rdata,
                                      base::TimeDelta ttl = base::Days(1));
 
 DnsResourceRecord BuildTestCnameRecord(std::string name,
@@ -229,6 +229,9 @@ std::pair<uint16_t, std::string> BuildTestHttpsServiceAlpnParam(
 
 std::pair<uint16_t, std::string> BuildTestHttpsServiceEchConfigParam(
     base::span<const uint8_t> ech_config_list);
+
+std::pair<uint16_t, std::string> BuildTestHttpsServiceTrustAnchorIDsParam(
+    const std::vector<std::vector<uint8_t>>& trust_anchor_ids);
 
 std::pair<uint16_t, std::string> BuildTestHttpsServiceMandatoryParam(
     std::vector<uint16_t> param_key_list);

@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRENDERERIMPLSHADERS_P_H
 #define QSSGRENDERERIMPLSHADERS_P_H
@@ -43,12 +45,13 @@ public:
 
     QSSGRhiShaderPipelinePtr getRhiGridShader(int viewCount);
     QSSGRhiShaderPipelinePtr getRhiSsaoShader(int viewCount);
-    QSSGRhiShaderPipelinePtr getRhiSkyBoxCubeShader(int viewCount);
+    QSSGRhiShaderPipelinePtr getRhiSkyBoxCubeShader(QSSGRenderLayer::TonemapMode tonemapMode, bool isLinear, int viewCount);
     QSSGRhiShaderPipelinePtr getRhiSkyBoxShader(QSSGRenderLayer::TonemapMode tonemapMode, bool isRGBE, int viewCount);
     QSSGRhiShaderPipelinePtr getRhiSupersampleResolveShader(int viewCount);
     QSSGRhiShaderPipelinePtr getRhiProgressiveAAShader();
-    QSSGRhiShaderPipelinePtr getRhiParticleShader(QSSGRenderParticles::FeatureLevel featureLevel, int viewCount, QSSGRenderLayer::OITMethod method);
-    QSSGRhiShaderPipelinePtr getRhiSimpleQuadShader(int viewCount);
+    QSSGRhiShaderPipelinePtr getRhiMotionVectorShader(bool skin, bool instance, bool morph);
+    QSSGRhiShaderPipelinePtr getRhiTemporalAAShader();
+    QSSGRhiShaderPipelinePtr getRhiSimpleQuadShader(int viewCount, QSSGRenderLayer::TonemapMode tonemapMode = QSSGRenderLayer::TonemapMode::None);
     QSSGRhiShaderPipelinePtr getRhiLightmapUVRasterizationShader(LightmapUVRasterizationShaderMode mode);
     QSSGRhiShaderPipelinePtr getRhiLightmapDilateShader();
     QSSGRhiShaderPipelinePtr getRhiDebugObjectShader(int viewCount);
@@ -56,7 +59,11 @@ public:
     QSSGRhiShaderPipelinePtr getRhienvironmentmapPreFilterShader(bool isRGBE);
     QSSGRhiShaderPipelinePtr getRhiEnvironmentmapShader();
     QSSGRhiShaderPipelinePtr getRhiClearMRTShader();
-    QSSGRhiShaderPipelinePtr getRhiOitCompositeShader(QSSGRenderLayer::OITMethod method, bool multisample);
+    QSSGRhiShaderPipelinePtr getRhiOitCompositeShader(QSSGRenderLayer::OITMethod method, bool multisample, bool use_buffers = false);
+    QSSGRhiShaderPipelinePtr getRhiCubeMapToAtlasShader();
+    QSSGRhiShaderPipelinePtr getRhiClearShadowMapShader();
+    QSSGRhiShaderPipelinePtr getRhiClearImageShader();
+    QSSGRhiShaderPipelinePtr getRhiClearBufferShader();
 
 private:
     QSSGShaderCache &m_shaderCache; // We're owned by the shadercache
@@ -69,10 +76,12 @@ private:
     };
 
     QSSGRhiShaderPipelinePtr getBuiltinRhiShader(const QByteArray &name,
-                                                BuiltinShader &storage,
-                                                int viewCount = 1);
+                                                 BuiltinShader &storage,
+                                                 int viewCount = 1,
+                                                 QSSGRhiShaderPipeline::StageFlags vertexStageFlags = QSSGRhiShaderPipeline::UsedWithoutIa);
+    static constexpr int motionvectorShaderCount = 8; // (int(skin) << 2) | (int(instance) << 1) | int(morph);
     static constexpr int particleShaderCount = 2;
-    static constexpr int compositeShaderCount = 2;
+    static constexpr int compositeShaderCount = 6;
     struct {
         BuiltinShader gridShader;
         BuiltinShader ssaoRhiShader;
@@ -92,21 +101,14 @@ private:
         BuiltinShader environmentmapPreFilterShader[2];
         BuiltinShader environmentmapShader;
 
-        BuiltinShader particlesNoLightingSimpleRhiShader[particleShaderCount];
-        BuiltinShader particlesNoLightingMappedRhiShader[particleShaderCount];
-        BuiltinShader particlesNoLightingAnimatedRhiShader[particleShaderCount];
-        BuiltinShader particlesVLightingSimpleRhiShader[particleShaderCount];
-        BuiltinShader particlesVLightingMappedRhiShader[particleShaderCount];
-        BuiltinShader particlesVLightingAnimatedRhiShader[particleShaderCount];
-        BuiltinShader lineParticlesRhiShader[particleShaderCount];
-        BuiltinShader lineParticlesMappedRhiShader[particleShaderCount];
-        BuiltinShader lineParticlesAnimatedRhiShader[particleShaderCount];
-        BuiltinShader lineParticlesVLightRhiShader[particleShaderCount];
-        BuiltinShader lineParticlesMappedVLightRhiShader[particleShaderCount];
-        BuiltinShader lineParticlesAnimatedVLightRhiShader[particleShaderCount];
-
         BuiltinShader clearMRTShader;
         BuiltinShader oitCompositeShader[compositeShaderCount];
+        BuiltinShader cubeMapToAtlasShader;
+        BuiltinShader clearShadowMapShader;
+        BuiltinShader clearImageShader;
+        BuiltinShader clearBufferShader;
+        BuiltinShader motionVectorRhiShader[motionvectorShaderCount];
+        BuiltinShader temporalAARhiShader;
     } m_cache;
 };
 

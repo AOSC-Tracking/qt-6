@@ -315,16 +315,46 @@ class DAWN_NATIVE_EXPORT MemoryDump {
 };
 DAWN_NATIVE_EXPORT void DumpMemoryStatistics(WGPUDevice device, MemoryDump* dump);
 
-// Unlike memory dumps which include detailed information about allocations, this only returns the
-// total estimated memory usage, and is intended for background tracing for UMA.
-DAWN_NATIVE_EXPORT uint64_t ComputeEstimatedMemoryUsage(WGPUDevice device);
+// Intended for background tracing for UMA that returns the estimated memory usage.
+struct DAWN_NATIVE_EXPORT MemoryUsageInfo {
+    // Total memory usage.
+    uint64_t totalUsage;
+    // Total depth stencil textures' memory.
+    uint64_t depthStencilTexturesUsage;
+    // Total MSAA textures' memory.
+    uint64_t msaaTexturesUsage;
+    // Number of MSAA textures.
+    uint64_t msaaTexturesCount;
+    // Largest MSAA texture's memory.
+    uint64_t largestMsaaTextureUsage;
+    // Total textures' memory.
+    uint64_t texturesUsage;
+    // Total buffers' memory.
+    uint64_t buffersUsage;
+};
+DAWN_NATIVE_EXPORT MemoryUsageInfo ComputeEstimatedMemoryUsageInfo(WGPUDevice device);
 
-// Free any unused GPU memory like staging buffers, cached resources, etc.
-DAWN_NATIVE_EXPORT void ReduceMemoryUsage(WGPUDevice device);
+// Memory information gathered from backend specific allocators.
+// - memory allocated by clients for objects such as buffers, textures.
+// - heap memory used by the allocator for allocations.
+struct DAWN_NATIVE_EXPORT AllocatorMemoryInfo {
+    uint64_t totalUsedMemory = 0;
+    uint64_t totalAllocatedMemory = 0;
+    uint64_t totalLazyAllocatedMemory = 0;
+    uint64_t totalLazyUsedMemory = 0;
+};
+DAWN_NATIVE_EXPORT AllocatorMemoryInfo GetAllocatorMemoryInfo(WGPUDevice device);
+
+// Free any unused GPU memory like staging buffers, cached resources, etc. Returns true if there are
+// still objects to delete and ReduceMemoryUsage() should be run again after a short delay to allow
+// submitted work to complete.
+DAWN_NATIVE_EXPORT bool ReduceMemoryUsage(WGPUDevice device);
 
 // Perform tasks that are appropriate to do when idle like serializing pipeline
 // caches, etc.
 DAWN_NATIVE_EXPORT void PerformIdleTasks(const wgpu::Device& device);
+
+DAWN_NATIVE_EXPORT bool IsDeviceLost(WGPUDevice device);
 
 }  // namespace dawn::native
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmldomscanner_p.h"
 #include "qqmldomerrormessage_p.h"
@@ -319,11 +320,22 @@ bool Token::lexKindIsIdentifier(int kind)
     case QQmlJSGrammar::T_AS:
     case QQmlJSGrammar::T_PRAGMA:
     case QQmlJSGrammar::T_IMPORT:
-    case QQmlJSGrammar::T_RESERVED_WORD:
+    case QQmlJSGrammar::T_ENUM:
+    case QQmlJSGrammar::T_PACKAGE:
+    case QQmlJSGrammar::T_ABSTRACT:
+    case QQmlJSGrammar::T_INTERFACE:
+    case QQmlJSGrammar::T_IMPLEMENTS:
+    case QQmlJSGrammar::T_PUBLIC:
+    case QQmlJSGrammar::T_PROTECTED:
+    case QQmlJSGrammar::T_PRIVATE:
+    case QQmlJSGrammar::T_NATIVE:
+    case QQmlJSGrammar::T_VOLATILE:
+    case QQmlJSGrammar::T_TRANSIENT:
+    case QQmlJSGrammar::T_SYNCHRONIZED:
+    case QQmlJSGrammar::T_THROWS:
     case QQmlJSGrammar::T_SET:
     case QQmlJSGrammar::T_SIGNAL:
     case QQmlJSGrammar::T_PROPERTY:
-    case QQmlJSGrammar::T_PUBLIC:
     case QQmlJSGrammar::T_READONLY:
     case QQmlJSGrammar::T_NULL:
     case QQmlJSGrammar::T_OF:

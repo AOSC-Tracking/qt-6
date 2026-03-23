@@ -143,10 +143,12 @@ scoped_refptr<VideoFrame> CreateSharedImageI420Frame(
   auto* sii = context_provider->SharedImageInterface();
   auto* ri = context_provider->RasterInterface();
   // These SharedImages will be read by the raster interface to create
-  // intermediate copies in copy to canvas and 2-copy upload to WebGL.
+  // intermediate copies in copy to canvas and 2-copy upload to WebGL and
+  // written to through WritePixelsYUV.
   // In the context of the tests using these SharedImages, GPU rasterization is
   // always used.
   auto usages = gpu::SHARED_IMAGE_USAGE_RASTER_READ |
+                gpu::SHARED_IMAGE_USAGE_RASTER_WRITE |
                 gpu::SHARED_IMAGE_USAGE_OOP_RASTERIZATION;
 #if !BUILDFLAG(IS_ANDROID)
   // These SharedImages may be read by the GLES2 interface for 1-copy upload to
@@ -160,7 +162,8 @@ scoped_refptr<VideoFrame> CreateSharedImageI420Frame(
       sii->CreateSharedImage({viz::MultiPlaneFormat::kI420, coded_size,
                               gfx::ColorSpace(), usages, "I420Frame"},
                              gpu::kNullSurfaceHandle);
-  ri->WaitSyncTokenCHROMIUM(sii->GenUnverifiedSyncToken().GetConstData());
+  auto ri_access = shared_image->BeginRasterAccess(
+      ri, shared_image->creation_sync_token(), /*readonly=*/false);
 
   SkPixmap pixmaps[SkYUVAInfo::kMaxPlanes] = {};
   // SkColorType is always Alpha8 for I420 8 bit video frames.
@@ -181,8 +184,8 @@ scoped_refptr<VideoFrame> CreateSharedImageI420Frame(
   SkYUVAPixmaps yuv_pixmap = SkYUVAPixmaps::FromExternalPixmaps(info, pixmaps);
   ri->WritePixelsYUV(shared_image->mailbox(), yuv_pixmap);
 
-  gpu::SyncToken sync_token;
-  ri->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
+  gpu::SyncToken sync_token =
+      gpu::RasterScopedAccess::EndAccess(std::move(ri_access));
 
   return CreateSharedImageFrame(
       VideoPixelFormat::PIXEL_FORMAT_I420, shared_image, sync_token,
@@ -229,10 +232,12 @@ scoped_refptr<VideoFrame> CreateSharedImageNV12Frame(
   auto* sii = context_provider->SharedImageInterface();
   auto* ri = context_provider->RasterInterface();
   // These SharedImages will be read by the raster interface to create
-  // intermediate copies in copy to canvas and 2-copy upload to WebGL.
+  // intermediate copies in copy to canvas and 2-copy upload to WebGL and
+  // written to through WritePixelsYUV.
   // In the context of the tests using these SharedImages, GPU rasterization is
   // always used.
   auto usages = gpu::SHARED_IMAGE_USAGE_RASTER_READ |
+                gpu::SHARED_IMAGE_USAGE_RASTER_WRITE |
                 gpu::SHARED_IMAGE_USAGE_OOP_RASTERIZATION;
 #if !BUILDFLAG(IS_ANDROID)
   // These SharedImages may be read by the GLES2 interface for 1-copy upload to
@@ -245,7 +250,8 @@ scoped_refptr<VideoFrame> CreateSharedImageNV12Frame(
       sii->CreateSharedImage({viz::MultiPlaneFormat::kNV12, coded_size,
                               gfx::ColorSpace(), usages, "NV12Frame"},
                              gpu::kNullSurfaceHandle);
-  ri->WaitSyncTokenCHROMIUM(sii->GenUnverifiedSyncToken().GetConstData());
+  auto ri_access = shared_image->BeginRasterAccess(
+      ri, shared_image->creation_sync_token(), /*readonly=*/false);
 
   SkPixmap pixmaps[SkYUVAInfo::kMaxPlanes] = {};
   SkImageInfo y_info =
@@ -263,8 +269,8 @@ scoped_refptr<VideoFrame> CreateSharedImageNV12Frame(
   SkYUVAPixmaps yuv_pixmap = SkYUVAPixmaps::FromExternalPixmaps(info, pixmaps);
   ri->WritePixelsYUV(shared_image->mailbox(), yuv_pixmap);
 
-  gpu::SyncToken sync_token;
-  ri->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
+  gpu::SyncToken sync_token =
+      gpu::RasterScopedAccess::EndAccess(std::move(ri_access));
 
   return CreateSharedImageFrame(
       VideoPixelFormat::PIXEL_FORMAT_NV12, shared_image, sync_token,

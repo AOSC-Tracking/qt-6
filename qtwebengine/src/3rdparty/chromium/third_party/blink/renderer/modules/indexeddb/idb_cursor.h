@@ -33,7 +33,6 @@
 #include "base/dcheck_is_on.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
-#include "mojo/public/cpp/bindings/associated_remote.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_idb_cursor_direction.h"
@@ -79,11 +78,6 @@ class MODULES_EXPORT IDBCursor : public ScriptWrappable {
 
   void Trace(Visitor*) const override;
   void ContextWillBeDestroyed();
-
-  [[nodiscard]] v8::Local<v8::Object> AssociateWithWrapper(
-      v8::Isolate*,
-      const WrapperTypeInfo*,
-      v8::Local<v8::Object> wrapper) override;
 
   // Implement the IDL
   V8IDBCursorDirection direction() const;

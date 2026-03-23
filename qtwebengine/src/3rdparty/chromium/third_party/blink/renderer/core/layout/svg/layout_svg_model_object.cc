@@ -168,9 +168,13 @@ void LayoutSVGModelObject::StyleDidChange(StyleDifference diff,
           StyleRef().HasBlendMode() ? kDescendantIsolationRequired
                                     : kDescendantIsolationNeedsUpdate);
     }
-    if (StyleRef().HasCurrentTransformRelatedAnimation() &&
-        !old_style->HasCurrentTransformRelatedAnimation()) {
-      Parent()->SetSVGDescendantMayHaveTransformRelatedAnimation();
+    if ((StyleRef().HasCurrentTransformRelatedAnimation() &&
+         !old_style->HasCurrentTransformRelatedAnimation()) ||
+        (RuntimeEnabledFeatures::
+             SvgAvoidCullingElementsWithTransformOperationsEnabled() &&
+         StyleRef().HasNonIdentityTransformOperation() &&
+         !old_style->HasNonIdentityTransformOperation())) {
+      Parent()->SetSVGDescendantMayHaveTransformRelatedOperations();
     }
   }
 
@@ -181,13 +185,6 @@ void LayoutSVGModelObject::StyleDidChange(StyleDifference diff,
 void LayoutSVGModelObject::InsertedIntoTree() {
   NOT_DESTROYED();
   LayoutObject::InsertedIntoTree();
-  if (!RuntimeEnabledFeatures::SvgViewportOptimizationEnabled()) {
-    // Ensure that the viewport dependency flag gets set on the ancestor chain.
-    if (SVGSelfOrDescendantHasViewportDependency()) {
-      ClearSVGSelfOrDescendantHasViewportDependency();
-      SetSVGSelfOrDescendantHasViewportDependency();
-    }
-  }
   LayoutSVGResourceContainer::MarkForLayoutAndParentResourceInvalidation(*this,
                                                                          false);
   if (StyleRef().HasSVGEffect())

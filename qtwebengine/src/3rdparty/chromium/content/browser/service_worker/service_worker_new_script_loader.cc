@@ -2,17 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/377326291): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "content/browser/service_worker/service_worker_new_script_loader.h"
 
 #include <memory>
 #include <vector>
 
 #include "base/containers/span.h"
+#include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -55,8 +51,8 @@ const uint32_t ServiceWorkerNewScriptLoader::kReadBufferSize = 32768;
 class ServiceWorkerNewScriptLoader::WrappedIOBuffer
     : public net::WrappedIOBuffer {
  public:
-  WrappedIOBuffer(const char* data, size_t size)
-      : net::WrappedIOBuffer(base::span(data, size)) {}
+  explicit WrappedIOBuffer(base::span<const char> data)
+      : net::WrappedIOBuffer(data) {}
 
  private:
   ~WrappedIOBuffer() override = default;
@@ -153,10 +149,14 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
     resource_request.load_flags |= net::LOAD_VALIDATE_CACHE;
   }
 
+  // Because the flag indicating whether decoding has occurred is not stored in
+  // Service Worker Storage, we always decode on the network service side.
+  resource_request.client_side_content_decoding_enabled = false;
+
   mojo::Remote<storage::mojom::ServiceWorkerResourceWriter> writer;
   version_->context()
       ->registry()
-      ->GetRemoteStorageControl()
+      .GetRemoteStorageControl()
       ->CreateResourceWriter(cache_resource_id,
                              writer.BindNewPipeAndPassReceiver());
 
@@ -296,7 +296,7 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
              ->browser()
              ->ShouldServiceWorkerInheritPolicyContainerFromCreator(
                  request_url_)) {
-      version_->set_policy_container_host(
+      version_->SetPolicyContainerHost(
           base::MakeRefCounted<PolicyContainerHost>(
               // TODO(crbug.com/40235036): Add DCHECK to parsed_headers
               response_head->parsed_headers
@@ -577,8 +577,7 @@ void ServiceWorkerNewScriptLoader::WriteData(
     scoped_refptr<network::MojoToNetPendingBuffer> pending_buffer,
     uint32_t bytes_available) {
   auto buffer = base::MakeRefCounted<WrappedIOBuffer>(
-      pending_buffer ? pending_buffer->buffer() : nullptr,
-      pending_buffer ? pending_buffer->size() : 0);
+      pending_buffer ? base::span(*pending_buffer) : base::span<const char>());
 
   // Cap the buffer size up to |kReadBufferSize|. The remaining will be written
   // next time.

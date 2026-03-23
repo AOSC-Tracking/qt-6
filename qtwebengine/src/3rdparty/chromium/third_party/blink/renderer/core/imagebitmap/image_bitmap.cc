@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 
 #include <memory>
@@ -39,9 +34,8 @@
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
-#include "third_party/blink/renderer/platform/graphics/graphics_types.h"
+#include "third_party/blink/renderer/platform/graphics/graphics_context_types.h"
 #include "third_party/blink/renderer/platform/graphics/image.h"
-#include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_transform.h"
 #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/video_frame_image_util.h"
@@ -51,6 +45,7 @@
 #include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/worker_pool.h"
+#include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_gfx.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_skia.h"
@@ -63,15 +58,6 @@
 #include "third_party/skia/include/core/SkSwizzle.h"
 
 namespace blink {
-
-constexpr const char* kImageOrientationFlipY = "flipY";
-constexpr const char* kImageOrientationFromImage = "from-image";
-constexpr const char* kImageBitmapOptionNone = "none";
-constexpr const char* kImageBitmapOptionDefault = "default";
-constexpr const char* kImageBitmapOptionPremultiply = "premultiply";
-constexpr const char* kImageBitmapOptionResizeQualityHigh = "high";
-constexpr const char* kImageBitmapOptionResizeQualityMedium = "medium";
-constexpr const char* kImageBitmapOptionResizeQualityPixelated = "pixelated";
 
 namespace {
 
@@ -105,40 +91,43 @@ ImageBitmap::ParsedOptions ParseOptions(const ImageBitmapOptions* options,
                                         ImageOrientation source_orientation,
                                         bool source_is_unpremul) {
   ImageBitmap::ParsedOptions parsed_options;
-  if (options->imageOrientation() == kImageOrientationFlipY) {
+  if (options->imageOrientation() == V8ImageOrientation::Enum::kFlipY) {
     parsed_options.flip_y = true;
     parsed_options.orientation_from_image = true;
     parsed_options.source_orientation = source_orientation;
   } else {
-    DCHECK(options->imageOrientation() == kImageOrientationFromImage ||
-           options->imageOrientation() == kImageBitmapOptionNone);
+    DCHECK(options->imageOrientation() ==
+               V8ImageOrientation::Enum::kFromImage ||
+           options->imageOrientation() == V8ImageOrientation::Enum::kNone);
     parsed_options.flip_y = false;
     parsed_options.orientation_from_image = true;
     parsed_options.source_orientation = source_orientation;
     if (base::FeatureList::IsEnabled(
             features::kCreateImageBitmapOrientationNone) &&
-        options->imageOrientation() == kImageBitmapOptionNone) {
+        options->imageOrientation() == V8ImageOrientation::Enum::kNone) {
       parsed_options.orientation_from_image = false;
       parsed_options.source_orientation = ImageOrientation();
     }
   }
 
   parsed_options.source_is_unpremul = source_is_unpremul;
-  if (options->premultiplyAlpha() == kImageBitmapOptionNone) {
-    parsed_options.premultiply_alpha = false;
-  } else {
-    parsed_options.premultiply_alpha = true;
-    DCHECK(options->premultiplyAlpha() == kImageBitmapOptionDefault ||
-           options->premultiplyAlpha() == kImageBitmapOptionPremultiply);
+  switch (options->premultiplyAlpha().AsEnum()) {
+    case V8PremultiplyAlpha::Enum::kNone:
+      parsed_options.premultiply_alpha = false;
+      break;
+    case V8PremultiplyAlpha::Enum::kDefault:
+    case V8PremultiplyAlpha::Enum::kPremultiply:
+      parsed_options.premultiply_alpha = true;
+      break;
   }
 
-  parsed_options.has_color_space_conversion =
-      (options->colorSpaceConversion() != kImageBitmapOptionNone);
-  if (options->colorSpaceConversion() != kImageBitmapOptionNone &&
-      options->colorSpaceConversion() != kImageBitmapOptionDefault) {
-    NOTREACHED()
-        << "Invalid ImageBitmap creation attribute colorSpaceConversion: "
-        << IDLEnumAsString(options->colorSpaceConversion());
+  switch (options->colorSpaceConversion().AsEnum()) {
+    case V8ColorSpaceConversion::Enum::kNone:
+      parsed_options.has_color_space_conversion = false;
+      break;
+    case V8ColorSpaceConversion::Enum::kDefault:
+      parsed_options.has_color_space_conversion = true;
+      break;
   }
 
   parsed_options.source_size =
@@ -172,14 +161,20 @@ ImageBitmap::ParsedOptions ParseOptions(const ImageBitmapOptions* options,
   }
   parsed_options.should_scale_input = true;
 
-  if (options->resizeQuality() == kImageBitmapOptionResizeQualityHigh)
-    parsed_options.resize_quality = cc::PaintFlags::FilterQuality::kHigh;
-  else if (options->resizeQuality() == kImageBitmapOptionResizeQualityMedium)
-    parsed_options.resize_quality = cc::PaintFlags::FilterQuality::kMedium;
-  else if (options->resizeQuality() == kImageBitmapOptionResizeQualityPixelated)
-    parsed_options.resize_quality = cc::PaintFlags::FilterQuality::kNone;
-  else
-    parsed_options.resize_quality = cc::PaintFlags::FilterQuality::kLow;
+  switch (options->resizeQuality().AsEnum()) {
+    case V8ResizeQuality::Enum::kHigh:
+      parsed_options.resize_quality = cc::PaintFlags::FilterQuality::kHigh;
+      break;
+    case V8ResizeQuality::Enum::kMedium:
+      parsed_options.resize_quality = cc::PaintFlags::FilterQuality::kMedium;
+      break;
+    case V8ResizeQuality::Enum::kLow:
+      parsed_options.resize_quality = cc::PaintFlags::FilterQuality::kLow;
+      break;
+    case V8ResizeQuality::Enum::kPixelated:
+      parsed_options.resize_quality = cc::PaintFlags::FilterQuality::kNone;
+      break;
+  }
 
   parsed_options.sampling = cc::PaintFlags::FilterQualityToSkSamplingOptions(
       parsed_options.resize_quality);
@@ -190,21 +185,18 @@ ImageBitmap::ParsedOptions ParseOptions(const ImageBitmapOptions* options,
                                         std::optional<gfx::Rect> crop_rect,
                                         scoped_refptr<Image> input) {
   const auto info = input->PaintImageForCurrentFrame().GetSkImageInfo();
-  return ParseOptions(options, crop_rect,
-                      gfx::Size(info.width(), info.height()),
-                      input->CurrentFrameOrientation(),
-                      info.alphaType() == kUnpremul_SkAlphaType);
+  return ParseOptions(
+      options, crop_rect, gfx::Size(info.width(), info.height()),
+      input->Orientation(), info.alphaType() == kUnpremul_SkAlphaType);
 }
 
 ImageBitmap::ParsedOptions ParseOptions(
     const ImageBitmapOptions* options,
     std::optional<gfx::Rect> crop_rect,
     scoped_refptr<StaticBitmapImage> input) {
-  auto info = input->GetSkImageInfo();
-  return ParseOptions(options, crop_rect,
-                      gfx::Size(info.width(), info.height()),
-                      input->CurrentFrameOrientation(),
-                      info.alphaType() == kUnpremul_SkAlphaType);
+  return ParseOptions(options, crop_rect, input->GetSize(),
+                      input->Orientation(),
+                      input->GetAlphaType() == kUnpremul_SkAlphaType);
 }
 
 // The function dstBufferSizeHasOverflow() is being called at the beginning of
@@ -347,7 +339,7 @@ ImageBitmap::ImageBitmap(ImageElementBase* image,
   }
 
   auto static_input = UnacceleratedStaticBitmapImage::Create(
-      std::move(paint_image), input->CurrentFrameOrientation());
+      std::move(paint_image), input->Orientation());
 
   image_ = ApplyTransformsFromOptions(static_input, parsed_options);
   if (!image_)
@@ -366,7 +358,7 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video,
   const bool allow_accelerated_images =
       !options->hasResizeWidth() && !options->hasResizeHeight();
   const bool reinterpret_as_srgb =
-      (options->colorSpaceConversion() == kImageBitmapOptionNone);
+      (options->colorSpaceConversion() == V8ColorSpaceConversion::Enum::kNone);
   auto input = video->CreateStaticBitmapImage(
       allow_accelerated_images, /*size=*/std::nullopt, reinterpret_as_srgb);
   if (!input)
@@ -389,9 +381,8 @@ ImageBitmap::ImageBitmap(HTMLCanvasElement* canvas,
                          std::optional<gfx::Rect> crop_rect,
                          const ImageBitmapOptions* options) {
   SourceImageStatus status;
-  scoped_refptr<Image> image_input =
-      canvas->GetSourceImageForCanvas(FlushReason::kCreateImageBitmap, &status,
-                                      gfx::SizeF(), kPremultiplyAlpha);
+  scoped_refptr<Image> image_input = canvas->GetSourceImageForCanvas(
+      FlushReason::kCreateImageBitmap, &status, gfx::SizeF());
   if (status != kNormalSourceImageStatus)
     return;
   DCHECK(IsA<StaticBitmapImage>(image_input.get()));
@@ -665,13 +656,11 @@ ScriptPromise<ImageBitmap> ImageBitmap::CreateAsync(
 
   // apply the orientation from EXIF metadata if needed.
   if (!parsed_options.orientation_from_image &&
-      input->CurrentFrameOrientation() !=
-          ImageOrientationEnum::kOriginTopLeft) {
-    auto affineTransform =
-        input->CurrentFrameOrientation().TransformFromDefault(
-            gfx::SizeF(draw_dst_rect.size()));
-    canvas->concat(AffineTransformToSkM44(affineTransform));
-    if (input->CurrentFrameOrientation().UsesWidthAsHeight()) {
+      input->Orientation() != ImageOrientationEnum::kOriginTopLeft) {
+    auto affineTransform = input->Orientation().TransformFromDefault(
+        gfx::SizeF(draw_dst_rect.size()));
+    canvas->concat(affineTransform.ToSkM44());
+    if (input->Orientation().UsesWidthAsHeight()) {
       draw_dst_rect.set_size(gfx::TransposeSize(draw_dst_rect.size()));
     }
   }
@@ -707,13 +696,6 @@ void ImageBitmap::close() {
   image_ = nullptr;
   is_neutered_ = true;
   UpdateImageBitmapMemoryUsage();
-}
-
-// static
-ImageBitmap* ImageBitmap::Take(ScriptPromiseResolverBase*,
-                               sk_sp<SkImage> image) {
-  return MakeGarbageCollected<ImageBitmap>(
-      UnacceleratedStaticBitmapImage::Create(std::move(image)));
 }
 
 SkImageInfo ImageBitmap::GetBitmapSkImageInfo() const {
@@ -773,18 +755,9 @@ ScriptPromise<ImageBitmap> ImageBitmap::CreateImageBitmap(
 scoped_refptr<Image> ImageBitmap::GetSourceImageForCanvas(
     FlushReason reason,
     SourceImageStatus* status,
-    const gfx::SizeF&,
-    const AlphaDisposition alpha_disposition) {
+    const gfx::SizeF&) {
   *status = kNormalSourceImageStatus;
-  if (!image_)
-    return nullptr;
-
-  scoped_refptr<StaticBitmapImage> image = image_;
-
-  // If the alpha_disposition is already correct, or the image is opaque, this
-  // is a no-op.
-  return StaticBitmapImageTransform::GetWithAlphaDisposition(
-      reason, std::move(image), alpha_disposition);
+  return image_;
 }
 
 gfx::SizeF ImageBitmap::ElementSize(

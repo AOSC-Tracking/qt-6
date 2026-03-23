@@ -24,6 +24,7 @@ import {PerfettoPlugin} from '../../public/plugin';
 import {TrackNode} from '../../public/workspace';
 import {DatasetSliceTrack} from '../../components/tracks/dataset_slice_track';
 import {SourceDataset} from '../../trace_processor/dataset';
+import {ThreadSliceDetailsPanel} from '../../components/details/thread_slice_details_tab';
 
 export default class implements PerfettoPlugin {
   static readonly id = 'dev.perfetto.GpuByProcess';
@@ -57,11 +58,9 @@ export default class implements PerfettoPlugin {
       }
 
       const uri = `dev.perfetto.GpuByProcess#${upid}`;
-      const title = `GPU ${processName}`;
       ctx.tracks.registerTrack({
         uri,
-        title,
-        track: new DatasetSliceTrack({
+        renderer: new DatasetSliceTrack({
           trace: ctx,
           uri,
           dataset: new SourceDataset({
@@ -79,9 +78,13 @@ export default class implements PerfettoPlugin {
               eq: upid,
             },
           }),
+          detailsPanel: () => new ThreadSliceDetailsPanel(ctx),
         }),
       });
-      const track = new TrackNode({uri, title});
+      const track = new TrackNode({
+        uri,
+        name: `GPU ${processName}`,
+      });
       ctx.workspace.addChildInOrder(track);
     }
   }

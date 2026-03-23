@@ -31,9 +31,9 @@ class WebGpuDevice final {
   };
 
   using DeviceCallback = base::OnceCallback<void(wgpu::Device)>;
-  using ErrorCallback = base::OnceCallback<void(Error, std::string_view)>;
+  using ErrorCallback = base::OnceCallback<void(Error, std::string)>;
   using DeviceLostCallback =
-      base::OnceCallback<void(wgpu::DeviceLostReason, std::string_view)>;
+      base::OnceCallback<void(wgpu::DeviceLostReason, std::string)>;
 
   // `context_provider` provides access to the GPU context (command buffer).
   // `device_lost_cb` is invoked if the GPU context was lost with the reason and
@@ -60,27 +60,21 @@ class WebGpuDevice final {
  private:
   void OnRequestAdapter(wgpu::RequestAdapterStatus status,
                         wgpu::Adapter adapter,
-                        std::string_view message,
+                        std::string message,
                         DeviceCallback device_cb,
                         ErrorCallback error_cb);
 
   void OnRequestDevice(wgpu::RequestDeviceStatus status,
                        wgpu::Device device,
-                       std::string_view message,
+                       std::string message,
                        DeviceCallback device_cb,
                        ErrorCallback error_cb);
 
   void OnDeviceLost(const wgpu::Device& device,
                     wgpu::DeviceLostReason reason,
-                    std::string_view message);
+                    std::string message);
 
-#ifdef WGPU_BREAKING_CHANGE_LOGGING_CALLBACK_TYPE
   static void LoggingCallback(wgpu::LoggingType type, wgpu::StringView message);
-#else
-  static void LoggingCallback(WGPULoggingType type,
-                              WGPUStringView message,
-                              void* userdata);
-#endif
 
   void EnsureFlush();
 

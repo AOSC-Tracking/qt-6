@@ -26,6 +26,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_COLOR_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_COLOR_H_
 
+#include <array>
 #include <iosfwd>
 #include <optional>
 #include <string_view>
@@ -39,10 +40,6 @@
 #include "third_party/blink/renderer/platform/wtf/hash_functions.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_uchar.h"
 #include "third_party/skia/include/core/SkColor.h"
-
-namespace WTF {
-class String;
-}  // namespace WTF
 
 namespace blink {
 
@@ -190,11 +187,6 @@ class PLATFORM_EXPORT Color {
                  ClampInt255(g) << 8 | ClampInt255(b));
   }
 
-  static Color FromRGBALegacy(std::optional<int> r,
-                              std::optional<int> g,
-                              std::optional<int> b,
-                              std::optional<int> alpha);
-
   // Create a color using the rgba() syntax, with float arguments. All
   // parameters will be clamped to the [0, 1] interval.
   static constexpr Color FromRGBAFloat(float r, float g, float b, float a) {
@@ -340,17 +332,20 @@ class PLATFORM_EXPORT Color {
   }
 
   RGBA32 Rgb() const;
-  void GetRGBA(float& r, float& g, float& b, float& a) const;
-  void GetRGBA(double& r, double& g, double& b, double& a) const;
 
-  // Access the color as though it were created using the hsl() syntax.
-  void GetHSL(double& h, double& s, double& l) const;
-
-  // Access the color as though it were created using the hwb() syntax.
-  void GetHWB(double& h, double& w, double& b) const;
+  // Get the lightness of the color in the specified colorspace. The colorspace
+  // can be any that has a lightness component (Lab, OkLab, Lch, OkLch or HSL).
+  float GetLightness(ColorSpace lightness_colorspace) const;
 
   Color Light() const;
   Color Dark() const;
+
+  Color MakeOpaque() const {
+    Color opaque = *this;
+    opaque.SetAlpha(1.0f);
+    return opaque;
+  }
+  Color InvertSRGB() const;
 
   // This is an implementation of Porter-Duff's "source-over" equation
   // TODO(https://crbug.com/1333988): Implement CSS Color level 4 blending,
@@ -390,6 +385,8 @@ class PLATFORM_EXPORT Color {
   ColorSpace GetColorSpace() const { return color_space_; }
   void ConvertToColorSpace(ColorSpace destination_color_space,
                            bool resolve_missing_components = true);
+
+  void ConvertToColorSpaceForInterpolation(ColorSpace destination_color_space);
 
   // Colors can parse calc(NaN) and calc(Infinity). At computed value time this
   // function is called which resolves all NaNs to zero and +/-infinities to
@@ -431,7 +428,6 @@ class PLATFORM_EXPORT Color {
   static constexpr int ClampInt255(int x) {
     return x < 0 ? 0 : (x > 255 ? 255 : x);
   }
-  void GetHueMaxMin(double&, double&, double&) const;
 
   std::tuple<float, float, float> ExportAsXYZD50Floats() const;
 
@@ -452,9 +448,19 @@ class PLATFORM_EXPORT Color {
   // According the Spec https://www.w3.org/TR/css-color-4/#interpolation-missing
   // we have to do a special treatment of when to carry forward the 'noneness'
   // of a component, given if it's an 'analog component'.
-  static void CarryForwardAnalogousMissingComponents(
-      Color color,
-      ColorSpace prev_color_space);
+
+  // Get the analogous missing components for this color with respect to the
+  // specified interpolation color space. Returns an array with the 'none'-ness
+  // for each parameter in the interpolation color space, suitable for passing
+  // to CarryForwardAnalogousMissingComponents() after converting the color to
+  // the interpolation color space.
+  std::array<bool, 3> GetAnalogousMissingComponents(
+      ColorSpace interpolation_space) const;
+
+  // Set param[0..2]_is_none_ to true if the corresponding entry in the array
+  // is true.
+  void CarryForwardAnalogousMissingComponents(
+      const std::array<bool, 3>& missing_components);
 
   // https://www.w3.org/TR/css-color-4/#interpolation-missing
   // If a color with a carried forward missing component is interpolated
@@ -466,10 +472,10 @@ class PLATFORM_EXPORT Color {
 
   // Whether or not color parameters were specified as none (this only affects
   // interpolation behavior, the parameter values area always valid).
-  unsigned param0_is_none_ : 1;
-  unsigned param1_is_none_ : 1;
-  unsigned param2_is_none_ : 1;
-  unsigned alpha_is_none_ : 1;
+  uint8_t param0_is_none_ : 1;
+  uint8_t param1_is_none_ : 1;
+  uint8_t param2_is_none_ : 1;
+  uint8_t alpha_is_none_ : 1;
 
   // The color parameters.
   float param0_ = 0.f;
@@ -484,8 +490,6 @@ class PLATFORM_EXPORT Color {
 PLATFORM_EXPORT std::ostream& operator<<(std::ostream& os, const Color& color);
 
 PLATFORM_EXPORT int DifferenceSquared(const Color&, const Color&);
-PLATFORM_EXPORT Color ColorFromPremultipliedARGB(RGBA32);
-PLATFORM_EXPORT RGBA32 PremultipliedARGBFromColor(const Color&);
 
 }  // namespace blink
 

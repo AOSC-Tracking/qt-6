@@ -33,12 +33,13 @@ const char kSystemFontFamily[] = "system-font-family";
 #if BUILDFLAG(IS_LINUX)
 // Specify the toolkit used to construct the Linux GUI.
 const char kUiToolkitFlag[] = "ui-toolkit";
+// Specify the GTK version to be loaded.
+const char kGtkVersionFlag[] = "gtk-version";
+// Specify the QT version to be loaded.
+const char kQtVersionFlag[] = "qt-version";
 // Disables GTK IME integration.
 const char kDisableGtkIme[] = "disable-gtk-ime";
 #endif
-
-// Disables touch event based drag and drop.
-const char kDisableTouchDragDrop[] = "disable-touch-drag-drop";
 
 // Disable re-use of non-exact resources to fulfill ResourcePool requests.
 // Intended only for use in layout or pixel tests to reduce noise.
@@ -48,9 +49,6 @@ const char kDisallowNonExactResourceReuse[] =
 // Treats DRM virtual connector as external to enable display mode change in VM.
 const char kDRMVirtualConnectorIsExternal[] =
     "drm-virtual-connector-is-external";
-
-// Enables touch event based drag and drop.
-const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
 
 // Forces the caption style for WebVTT captions.
 const char kForceCaptionStyle[] = "force-caption-style";

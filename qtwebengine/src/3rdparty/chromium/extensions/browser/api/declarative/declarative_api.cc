@@ -13,7 +13,7 @@
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
-#include "base/metrics/histogram_macros.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/values.h"
@@ -23,6 +23,7 @@
 #include "extensions/browser/api/declarative/rules_registry_service.h"
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/rules_registry_ids.h"
 #include "extensions/common/api/events.h"
 #include "extensions/common/extension_api.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -63,7 +64,7 @@ enum class DeclarativeAPIType {
 // Describes the possible types of declarative API function calls.
 // These values are recorded as UMA. New enum values can be added, but existing
 // enum values must never be renumbered or deleted and reused.
-enum DeclarativeAPIFunctionType {
+enum class DeclarativeAPIFunctionType {
   kDeclarativeContentAddRules = 0,
   kDeclarativeContentRemoveRules = 1,
   kDeclarativeContentGetRules = 2,
@@ -73,7 +74,8 @@ enum DeclarativeAPIFunctionType {
   kDeclarativeWebRequestWebviewAddRules = 6,
   kDeclarativeWebRequestWebviewRemoveRules = 7,
   kDeclarativeWebRequestWebviewGetRules = 8,
-  kDeclarativeApiFunctionCallTypeMax,
+
+  kMaxValue = kDeclarativeWebRequestWebviewGetRules,
 };
 
 DeclarativeAPIType GetDeclarativeAPIType(const std::string& event_name) {
@@ -90,9 +92,8 @@ DeclarativeAPIType GetDeclarativeAPIType(const std::string& event_name) {
 }
 
 void RecordUMAHelper(DeclarativeAPIFunctionType type) {
-  DCHECK_LT(type, kDeclarativeApiFunctionCallTypeMax);
-  UMA_HISTOGRAM_ENUMERATION("Extensions.DeclarativeAPIFunctionCalls", type,
-                            kDeclarativeApiFunctionCallTypeMax);
+  DCHECK_LE(type, DeclarativeAPIFunctionType::kMaxValue);
+  base::UmaHistogramEnumeration("Extensions.DeclarativeAPIFunctionCalls", type);
 }
 
 void ConvertBinaryDictValuesToBase64(base::Value::Dict& dict);
@@ -162,7 +163,7 @@ ExtensionFunction::ResponseAction RulesFunction::Run() {
   RecordUMA(event_name);
 
   // If we are not operating on a particular <webview>, then the key is 0.
-  int rules_registry_id = RulesRegistryService::kDefaultRulesRegistryID;
+  int rules_registry_id = rules_registry_ids::kDefaultRulesRegistryID;
 
 #if BUILDFLAG(ENABLE_GUEST_VIEW)
   bool from_web_view = web_view_instance_id != 0;
@@ -201,7 +202,7 @@ EventsEventAddRulesFunction::EventsEventAddRulesFunction() = default;
 EventsEventAddRulesFunction::~EventsEventAddRulesFunction() = default;
 
 bool EventsEventAddRulesFunction::CreateParams() {
-  ConvertBinaryListElementsToBase64(mutable_args());
+  ConvertBinaryListElementsToBase64(GetMutableArgs());
   params_ = AddRules::Params::Create(args());
   return params_.has_value();
 }
@@ -223,16 +224,16 @@ ExtensionFunction::ResponseValue EventsEventAddRulesFunction::RunInternal() {
 
 void EventsEventAddRulesFunction::RecordUMA(
     const std::string& event_name) const {
-  DeclarativeAPIFunctionType type = kDeclarativeApiFunctionCallTypeMax;
+  DeclarativeAPIFunctionType type;
   switch (GetDeclarativeAPIType(event_name)) {
     case DeclarativeAPIType::kContent:
-      type = kDeclarativeContentAddRules;
+      type = DeclarativeAPIFunctionType::kDeclarativeContentAddRules;
       break;
     case DeclarativeAPIType::kWebRequest:
-      type = kDeclarativeWebRequestAddRules;
+      type = DeclarativeAPIFunctionType::kDeclarativeWebRequestAddRules;
       break;
     case DeclarativeAPIType::kWebRequestWebview:
-      type = kDeclarativeWebRequestWebviewAddRules;
+      type = DeclarativeAPIFunctionType::kDeclarativeWebRequestWebviewAddRules;
       break;
     case DeclarativeAPIType::kUnknown:
       NOTREACHED();
@@ -263,16 +264,17 @@ ExtensionFunction::ResponseValue EventsEventRemoveRulesFunction::RunInternal() {
 
 void EventsEventRemoveRulesFunction::RecordUMA(
     const std::string& event_name) const {
-  DeclarativeAPIFunctionType type = kDeclarativeApiFunctionCallTypeMax;
+  DeclarativeAPIFunctionType type;
   switch (GetDeclarativeAPIType(event_name)) {
     case DeclarativeAPIType::kContent:
-      type = kDeclarativeContentRemoveRules;
+      type = DeclarativeAPIFunctionType::kDeclarativeContentRemoveRules;
       break;
     case DeclarativeAPIType::kWebRequest:
-      type = kDeclarativeWebRequestRemoveRules;
+      type = DeclarativeAPIFunctionType::kDeclarativeWebRequestRemoveRules;
       break;
     case DeclarativeAPIType::kWebRequestWebview:
-      type = kDeclarativeWebRequestWebviewRemoveRules;
+      type =
+          DeclarativeAPIFunctionType::kDeclarativeWebRequestWebviewRemoveRules;
       break;
     case DeclarativeAPIType::kUnknown:
       NOTREACHED();
@@ -307,16 +309,16 @@ ExtensionFunction::ResponseValue EventsEventGetRulesFunction::RunInternal() {
 
 void EventsEventGetRulesFunction::RecordUMA(
     const std::string& event_name) const {
-  DeclarativeAPIFunctionType type = kDeclarativeApiFunctionCallTypeMax;
+  DeclarativeAPIFunctionType type;
   switch (GetDeclarativeAPIType(event_name)) {
     case DeclarativeAPIType::kContent:
-      type = kDeclarativeContentGetRules;
+      type = DeclarativeAPIFunctionType::kDeclarativeContentGetRules;
       break;
     case DeclarativeAPIType::kWebRequest:
-      type = kDeclarativeWebRequestGetRules;
+      type = DeclarativeAPIFunctionType::kDeclarativeWebRequestGetRules;
       break;
     case DeclarativeAPIType::kWebRequestWebview:
-      type = kDeclarativeWebRequestWebviewGetRules;
+      type = DeclarativeAPIFunctionType::kDeclarativeWebRequestWebviewGetRules;
       break;
     case DeclarativeAPIType::kUnknown:
       NOTREACHED();

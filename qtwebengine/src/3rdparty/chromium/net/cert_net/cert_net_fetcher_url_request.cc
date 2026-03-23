@@ -69,7 +69,6 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/not_fatal_until.h"
 #include "base/numerics/safe_math.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/single_thread_task_runner.h"
@@ -464,7 +463,7 @@ void Job::DetachRequest(CertNetFetcherURLRequest::RequestCore* request) {
   std::unique_ptr<Job> delete_this;
 
   auto it = std::ranges::find(requests_, request);
-  CHECK(it != requests_.end(), base::NotFatalUntil::M130);
+  CHECK(it != requests_.end());
   requests_.erase(it);
 
   // If there are no longer any requests attached to the job then
@@ -635,7 +634,7 @@ bool Job::ConsumeBytesRead(URLRequest* request, int num_bytes) {
 
   // Append the data to |response_body_|.
   response_body_.reserve(response_body_.size() + num_bytes_s);
-  base::Extend(response_body_, read_buffer_->span().first(num_bytes_s));
+  base::Extend(response_body_, read_buffer_->first(num_bytes_s));
   return true;
 }
 

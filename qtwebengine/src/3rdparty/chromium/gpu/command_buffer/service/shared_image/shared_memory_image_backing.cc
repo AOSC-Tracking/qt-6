@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "components/viz/common/resources/resource_sizes.h"
@@ -74,10 +75,29 @@ class OverlayImageRepresentationImpl : public OverlayImageRepresentation {
     const auto& shm_wrapper = static_cast<SharedMemoryImageBacking*>(backing())
                                   ->shared_memory_wrapper();
     return std::make_optional<gl::DCLayerOverlayImage>(
-        size(), shm_wrapper.GetMemory(0), shm_wrapper.GetStride(0));
+        size(), shm_wrapper.GetMemoryPlanes(), shm_wrapper.GetStride(0));
   }
 #endif
 };
+
+std::vector<SkPixmap> GetSkPixmaps(viz::SharedImageFormat format,
+                                   const gfx::Size& size,
+                                   const gfx::ColorSpace& color_space,
+                                   SkAlphaType alpha_type,
+                                   const SharedMemoryRegionWrapper& wrapper) {
+  DCHECK(wrapper.IsValid());
+  std::vector<SkPixmap> pixmaps;
+
+  for (int plane = 0; plane < format.NumberOfPlanes(); ++plane) {
+    gfx::Size plane_size = format.GetPlaneSize(plane, size);
+    auto info = SkImageInfo::Make(gfx::SizeToSkISize(plane_size),
+                                  viz::ToClosestSkColorType(format, plane),
+                                  alpha_type, color_space.ToSkColorSpace());
+    pixmaps.push_back(wrapper.MakePixmapForPlane(info, plane));
+  }
+
+  return pixmaps;
+}
 
 }  // namespace
 
@@ -210,16 +230,11 @@ SharedMemoryImageBacking::SharedMemoryImageBacking(
                          false,
                          std::move(buffer_usage)),
       shared_memory_wrapper_(std::move(wrapper)),
-      handle_(std::move(handle)) {
-  DCHECK(shared_memory_wrapper_.IsValid());
-
-  for (int plane = 0; plane < format.NumberOfPlanes(); ++plane) {
-    gfx::Size plane_size = format.GetPlaneSize(plane, size);
-    auto info = SkImageInfo::Make(gfx::SizeToSkISize(plane_size),
-                                  viz::ToClosestSkColorType(format, plane),
-                                  alpha_type, color_space.ToSkColorSpace());
-    pixmaps_.push_back(shared_memory_wrapper_.MakePixmapForPlane(info, plane));
-  }
-}
+      handle_(std::move(handle)),
+      pixmaps_(GetSkPixmaps(format,
+                            size,
+                            color_space,
+                            alpha_type,
+                            shared_memory_wrapper_)) {}
 
 }  // namespace gpu

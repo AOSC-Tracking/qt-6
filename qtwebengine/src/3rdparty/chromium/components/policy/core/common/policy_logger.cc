@@ -49,6 +49,8 @@ std::string GetLogSourceValue(const PolicyLogger::Log::Source log_source) {
       return "OIDC Enrollment";
     case PolicyLogger::Log::Source::kExtensibleSSO:
       return "Extensible SSO";
+    case PolicyLogger::Log::Source::kReporting:
+      return "Reporting";
   }
 }
 
@@ -206,6 +208,9 @@ void PolicyLogger::DeleteOldLogs() {
 }
 
 void PolicyLogger::ScheduleOldLogsDeletion() {
+  if (!base::SequencedTaskRunner::HasCurrentDefault()) {
+    return;
+  }
   base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&PolicyLogger::DeleteOldLogs, weak_factory_.GetWeakPtr()),

@@ -22,7 +22,6 @@
 #include "base/base_export.h"
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/lazy_instance.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_base.h"
@@ -74,7 +73,12 @@ class BASE_EXPORT StatisticsRecorder {
   // about a histogram sample. This is used in conjunction with
   // ScopedHistogramSampleObserver to get notified when a sample is collected.
   using OnSampleCallback =
-      base::RepeatingCallback<void(const char* /*=histogram_name*/,
+      base::RepeatingCallback<void(std::string_view /*=histogram_name*/,
+                                   uint64_t /*=name_hash*/,
+                                   HistogramBase::Sample32)>;
+  using OnSampleWithEventCallback =
+      base::RepeatingCallback<void(std::optional<uint64_t> event_id,
+                                   std::string_view /*=histogram_name*/,
                                    uint64_t /*=name_hash*/,
                                    HistogramBase::Sample32)>;
 
@@ -89,24 +93,29 @@ class BASE_EXPORT StatisticsRecorder {
    public:
     // Constructor. Called with the desired histogram name and the callback to
     // be invoked when a sample is recorded.
-    explicit ScopedHistogramSampleObserver(const std::string& histogram_name,
-                                           OnSampleCallback callback);
+    ScopedHistogramSampleObserver(std::string_view histogram_name,
+                                  OnSampleCallback callback);
+    ScopedHistogramSampleObserver(std::string_view histogram_name,
+                                  OnSampleWithEventCallback callback);
+    ScopedHistogramSampleObserver(std::string_view histogram_name,
+                                  base::RepeatingClosure callback);
     ~ScopedHistogramSampleObserver();
 
    private:
     friend class StatisticsRecorder;
 
     // Runs the callback.
-    void RunCallback(const char* histogram_name,
+    void RunCallback(std::string_view histogram_name,
                      uint64_t name_hash,
-                     HistogramBase::Sample32 sample);
+                     HistogramBase::Sample32 sample,
+                     std::optional<uint64_t> event_id);
 
     // The name of the histogram to observe.
     const std::string histogram_name_;
 
     // The client supplied callback that is invoked when the histogram sample is
     // collected.
-    const OnSampleCallback callback_;
+    const OnSampleWithEventCallback callback_;
   };
 
   typedef std::vector<HistogramBase*> Histograms;
@@ -186,6 +195,12 @@ class BASE_EXPORT StatisticsRecorder {
   // This method is thread safe.
   static HistogramBase* FindHistogram(std::string_view name);
 
+  // Finds a histogram by hash and name. Matches the exact name. Returns a null
+  // pointer if a matching histogram is not found.
+  //
+  // This method is thread safe.
+  static HistogramBase* FindHistogram(uint64_t hash, std::string_view name);
+
   // Imports histograms from providers. If |async| is true, the providers may do
   // the work asynchronously (though this is not guaranteed and it is up to the
   // providers to decide). If false, the work will be done synchronously.
@@ -216,9 +231,10 @@ class BASE_EXPORT StatisticsRecorder {
   //
   // This method is thread safe.
   static void FindAndRunHistogramCallbacks(base::PassKey<HistogramBase>,
-                                           const char* histogram_name,
+                                           std::string_view histogram_name,
                                            uint64_t name_hash,
-                                           HistogramBase::Sample32 sample);
+                                           HistogramBase::Sample32 sample,
+                                           std::optional<uint64_t> event_id);
 
   // Returns the number of known histograms.
   //
@@ -262,7 +278,8 @@ class BASE_EXPORT StatisticsRecorder {
   // Checks if the given histogram should be recorded based on the
   // ShouldRecord() method of the record checker. If the record checker is not
   // set, returns true.
-  // |histogram_hash| corresponds to the result of HashMetricNameAs32Bits().
+  // |histogram_hash| corresponds to the result of HashMetricNameAs32Bits() or
+  // ParseMetricHashTo32Bits().
   //
   // This method is thread safe.
   static bool ShouldRecordHistogram(uint32_t histogram_hash);
@@ -275,12 +292,13 @@ class BASE_EXPORT StatisticsRecorder {
   // |case_sensitive| determines whether the matching should be done in a
   // case sensitive way.
   static Histograms WithName(Histograms histograms,
-                             const std::string& query,
+                             std::string_view query,
                              bool case_sensitive = true);
 
-  using GlobalSampleCallback = void (*)(const char* /*=histogram_name*/,
+  using GlobalSampleCallback = void (*)(std::string_view /*=histogram_name*/,
                                         uint64_t /*=name_hash*/,
-                                        HistogramBase::Sample32);
+                                        HistogramBase::Sample32,
+                                        std::optional<uint64_t> /*=event_id*/);
   // Installs a global callback which will be called for every added
   // histogram sample. The given callback is a raw function pointer in order
   // to be accessed lock-free and can be called on any thread.
@@ -301,8 +319,11 @@ class BASE_EXPORT StatisticsRecorder {
   }
 
  private:
-  static Lock& GetLock() { return lock_.Get(); }
-  static void AssertLockHeld() { lock_.Get().AssertAcquired(); }
+  // Global lock for internal synchronization.
+  // Note: Care must be taken to not read or write anything to persistent memory
+  // while holding this lock, as that could cause a file I/O stall.
+  static Lock& GetLock();
+  static void AssertLockHeld();
 
   // Returns the histogram registered with |hash|, if there is one. Returns
   // nullptr otherwise.
@@ -381,11 +402,6 @@ class BASE_EXPORT StatisticsRecorder {
 
   // Previous global recorder that existed when this one was created.
   raw_ptr<StatisticsRecorder> previous_ = nullptr;
-
-  // Global lock for internal synchronization.
-  // Note: Care must be taken to not read or write anything to persistent memory
-  // while holding this lock, as that could cause a file I/O stall.
-  static LazyInstance<Lock>::Leaky lock_;
 
   // Current global recorder. This recorder is used by static methods. When a
   // new global recorder is created by CreateTemporaryForTesting(), then the

@@ -39,17 +39,17 @@ class LimitsAndFeatures {
     LimitsAndFeatures();
     ~LimitsAndFeatures();
 
-    WGPUStatus GetLimits(WGPUSupportedLimits* limits) const;
+    WGPUStatus GetLimits(WGPULimits* limits) const;
     bool HasFeature(WGPUFeatureName feature) const;
     void ToSupportedFeatures(WGPUSupportedFeatures* supportedFeatures) const;
 
-    void SetLimits(const WGPUSupportedLimits* limits);
+    void SetLimits(const WGPULimits* limits);
     void SetFeatures(const WGPUFeatureName* features, uint32_t featuresCount);
 
   private:
-    WGPUSupportedLimits mLimits;
-    WGPUDawnExperimentalSubgroupLimits mExperimentalSubgroupLimits;
-    WGPUDawnExperimentalImmediateDataLimits mExperimentalImmediateDataLimits;
+    // TODO(crbug.com/421950205): Use dawn::utils::ComboLimits here.
+    WGPULimits mLimits;
+    WGPUCompatibilityModeLimits mCompatLimits;
     WGPUDawnTexelCopyBufferRowAlignmentLimits mTexelCopyBufferRowAlignmentLimits;
     absl::flat_hash_set<WGPUFeatureName> mFeatures;
 };

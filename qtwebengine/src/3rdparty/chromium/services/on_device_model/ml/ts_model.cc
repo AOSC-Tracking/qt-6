@@ -26,11 +26,11 @@
 #include "services/on_device_model/public/mojom/on_device_model.mojom.h"
 #include "services/on_device_model/public/mojom/on_device_model_service.mojom.h"
 
-using on_device_model::mojom::LoadModelResult;
-
 namespace ml {
 
 namespace {
+
+namespace mojom = ::on_device_model::mojom;
 
 language_detection::Prediction PredictLanguage(
     language_detection::LanguageDetectionModel& tflite_model,
@@ -46,31 +46,33 @@ language_detection::Prediction PredictLanguage(
 
 }  // namespace
 
-class TsModel final : public on_device_model::mojom::TextSafetyModel {
+class TsModel final : public mojom::TextSafetyModel,
+                      public mojom::TextSafetySession {
  public:
   ~TsModel() override;
 
   static std::unique_ptr<TsModel> Create(
       const ChromeML& chrome_ml,
-      on_device_model::mojom::TextSafetyModelParamsPtr params);
+      mojom::TextSafetyModelParamsPtr params);
 
-  // on_device_model::mojom::TextSafetyModel
+  // mojom::TextSafetyModel
+  void StartSession(
+      mojo::PendingReceiver<mojom::TextSafetySession> session) override;
+
+  // mojom::TextSafetySession
   void ClassifyTextSafety(const std::string& text,
                           ClassifyTextSafetyCallback callback) override;
   void DetectLanguage(const std::string& text,
                       DetectLanguageCallback callback) override;
+  void Clone(mojo::PendingReceiver<mojom::TextSafetySession> session) override;
 
-  on_device_model::mojom::SafetyInfoPtr ClassifyTextSafety(
-      const std::string& text);
-  on_device_model::mojom::LanguageDetectionResultPtr DetectLanguage(
-      std::string_view text);
+  mojom::SafetyInfoPtr ClassifyTextSafety(const std::string& text);
+  mojom::LanguageDetectionResultPtr DetectLanguage(std::string_view text);
 
  private:
   explicit TsModel(const ChromeML& chrome_ml);
-  bool InitLanguageDetection(
-      on_device_model::mojom::LanguageModelAssetsPtr assets);
-  bool InitTextSafetyModel(
-      on_device_model::mojom::TextSafetyModelAssetsPtr assets);
+  bool InitLanguageDetection(mojom::LanguageModelAssetsPtr assets);
+  bool InitTextSafetyModel(mojom::TextSafetyModelAssetsPtr assets);
 
   const raw_ref<const ChromeML> chrome_ml_;
   ChromeMLTSModel model_ = 0;
@@ -79,6 +81,7 @@ class TsModel final : public on_device_model::mojom::TextSafetyModel {
 #endif
   base::MemoryMappedFile data_;
   base::MemoryMappedFile sp_model_;
+  mojo::ReceiverSet<mojom::TextSafetySession> sessions_;
 };
 
 TsModel::TsModel(const ChromeML& chrome_ml) : chrome_ml_(chrome_ml) {}
@@ -93,7 +96,7 @@ TsModel::~TsModel() {
 // static
 std::unique_ptr<TsModel> TsModel::Create(
     const ChromeML& chrome_ml,
-    on_device_model::mojom::TextSafetyModelParamsPtr params) {
+    mojom::TextSafetyModelParamsPtr params) {
   auto ts_model = base::WrapUnique(new TsModel(chrome_ml));
   if (params->language_assets &&
       !ts_model->InitLanguageDetection(std::move(params->language_assets))) {
@@ -106,8 +109,7 @@ std::unique_ptr<TsModel> TsModel::Create(
   return ts_model;
 }
 
-bool TsModel::InitLanguageDetection(
-    on_device_model::mojom::LanguageModelAssetsPtr assets) {
+bool TsModel::InitLanguageDetection(mojom::LanguageModelAssetsPtr assets) {
 #if !BUILDFLAG(USE_ML)
   return false;
 #else
@@ -118,12 +120,11 @@ bool TsModel::InitLanguageDetection(
   language_detector_ = std::make_unique<translate::LanguageDetectionModel>(
       std::move(tflite_model));
   return language_detector_->IsAvailable();
-#endfi
+#endif
 }
 
 DISABLE_CFI_DLSYM
-bool TsModel::InitTextSafetyModel(
-    on_device_model::mojom::TextSafetyModelAssetsPtr assets) {
+bool TsModel::InitTextSafetyModel(mojom::TextSafetyModelAssetsPtr assets) {
   if (!data_.Initialize(std::move(assets->data)) ||
       !sp_model_.Initialize(std::move(assets->sp_model))) {
     return false;
@@ -136,6 +137,11 @@ bool TsModel::InitTextSafetyModel(
   return bool(model_);
 }
 
+void TsModel::StartSession(
+    mojo::PendingReceiver<mojom::TextSafetySession> session) {
+  sessions_.Add(this, std::move(session));
+}
+
 void TsModel::ClassifyTextSafety(const std::string& text,
                                  ClassifyTextSafetyCallback callback) {
   std::move(callback).Run(ClassifyTextSafety(text));
@@ -145,9 +151,12 @@ void TsModel::DetectLanguage(const std::string& text,
   std::move(callback).Run(DetectLanguage(text));
 }
 
+void TsModel::Clone(mojo::PendingReceiver<mojom::TextSafetySession> session) {
+  StartSession(std::move(session));
+}
+
 DISABLE_CFI_DLSYM
-on_device_model::mojom::SafetyInfoPtr TsModel::ClassifyTextSafety(
-    const std::string& text) {
+mojom::SafetyInfoPtr TsModel::ClassifyTextSafety(const std::string& text) {
   if (!model_) {
     return nullptr;
   }
@@ -160,7 +169,7 @@ on_device_model::mojom::SafetyInfoPtr TsModel::ClassifyTextSafety(
     return nullptr;
   }
 
-  auto safety_info = on_device_model::mojom::SafetyInfo::New();
+  auto safety_info = mojom::SafetyInfo::New();
   safety_info->class_scores.resize(num_scores);
   const auto result = chrome_ml_->api().ts_api.ClassifyTextSafety(
       model_, text.c_str(), safety_info->class_scores.data(), &num_scores);
@@ -174,31 +183,29 @@ on_device_model::mojom::SafetyInfoPtr TsModel::ClassifyTextSafety(
   return safety_info;
 }
 
-on_device_model::mojom::LanguageDetectionResultPtr TsModel::DetectLanguage(
+mojom::LanguageDetectionResultPtr TsModel::DetectLanguage(
     std::string_view text) {
   if (!language_detector_) {
     return nullptr;
   }
   language_detection::Prediction prediction =
       PredictLanguage(language_detector_->tflite_model(), text);
-  return on_device_model::mojom::LanguageDetectionResult::New(
-      prediction.language, prediction.score);
+  return mojom::LanguageDetectionResult::New(prediction.language,
+                                             prediction.score);
 }
 
 TsHolder::TsHolder(raw_ref<const ChromeML> chrome_ml) : chrome_ml_(chrome_ml) {}
 TsHolder::~TsHolder() = default;
 
 // static
-base::SequenceBound<TsHolder> TsHolder::Create(
-    raw_ref<const ChromeML> chrome_ml) {
+base::SequenceBound<TsHolder> TsHolder::Create(const ChromeML& chrome_ml) {
   return base::SequenceBound<TsHolder>(
       base::ThreadPool::CreateSequencedTaskRunner({base::MayBlock()}),
-      chrome_ml);
+      ToRawRef(chrome_ml));
 }
 
-void TsHolder::Reset(
-    on_device_model::mojom::TextSafetyModelParamsPtr params,
-    mojo::PendingReceiver<on_device_model::mojom::TextSafetyModel> model) {
+void TsHolder::Reset(mojom::TextSafetyModelParamsPtr params,
+                     mojo::PendingReceiver<mojom::TextSafetyModel> model) {
   model_.Clear();
   auto impl = TsModel::Create(*chrome_ml_, std::move(params));
   if (impl) {

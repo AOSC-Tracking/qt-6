@@ -89,6 +89,7 @@ set(subprograms
     printdatatags
     printdatatagswithglobaltags
     qexecstringlist
+    selected
     silent
     silent_fatal
     signaldumper
@@ -116,6 +117,13 @@ if(NOT QT_FEATURE_sanitize_address)
         # valgrind and asan are incompatible:
         #   "ASan runtime does not come first in initial library list;"
         benchlibcallgrind
+    )
+endif()
+
+if(FEATURE_concurrent AND FEATURE_future)
+    list(APPEND subprograms
+        # This test needs exceptions, QException, and QtConcurrent::run()
+        throwonfailandskip
     )
 endif()
 

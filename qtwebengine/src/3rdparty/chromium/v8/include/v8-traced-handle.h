@@ -183,7 +183,7 @@ class TracedReference : public BasicTracedReference<T> {
    */
   template <class S>
   TracedReference(Isolate* isolate, Local<S> that) : BasicTracedReference<T>() {
-    static_assert(std::is_base_of<T, S>::value, "type check");
+    static_assert(std::is_base_of_v<T, S>, "type check");
     if (V8_UNLIKELY(that.IsEmpty())) {
       return;
     }
@@ -204,7 +204,7 @@ class TracedReference : public BasicTracedReference<T> {
   template <class S>
   TracedReference(Isolate* isolate, Local<S> that, IsDroppable)
       : BasicTracedReference<T>() {
-    static_assert(std::is_base_of<T, S>::value, "type check");
+    static_assert(std::is_base_of_v<T, S>, "type check");
     if (V8_UNLIKELY(that.IsEmpty())) {
       return;
     }
@@ -353,7 +353,7 @@ V8_INLINE bool operator!=(const v8::Local<U>& lhs,
 template <class T>
 template <class S>
 void TracedReference<T>::Reset(Isolate* isolate, const Local<S>& other) {
-  static_assert(std::is_base_of<T, S>::value, "type check");
+  static_assert(std::is_base_of_v<T, S>, "type check");
   this->Reset();
   if (V8_UNLIKELY(other.IsEmpty())) {
     return;
@@ -368,7 +368,7 @@ template <class T>
 template <class S>
 void TracedReference<T>::Reset(Isolate* isolate, const Local<S>& other,
                                IsDroppable) {
-  static_assert(std::is_base_of<T, S>::value, "type check");
+  static_assert(std::is_base_of_v<T, S>, "type check");
   this->Reset();
   if (V8_UNLIKELY(other.IsEmpty())) {
     return;
@@ -383,7 +383,7 @@ template <class T>
 template <class S>
 TracedReference<T>& TracedReference<T>::operator=(
     TracedReference<S>&& rhs) noexcept {
-  static_assert(std::is_base_of<T, S>::value, "type check");
+  static_assert(std::is_base_of_v<T, S>, "type check");
   *this = std::move(rhs.template As<T>());
   return *this;
 }
@@ -392,7 +392,7 @@ template <class T>
 template <class S>
 TracedReference<T>& TracedReference<T>::operator=(
     const TracedReference<S>& rhs) {
-  static_assert(std::is_base_of<T, S>::value, "type check");
+  static_assert(std::is_base_of_v<T, S>, "type check");
   *this = rhs.template As<T>();
   return *this;
 }

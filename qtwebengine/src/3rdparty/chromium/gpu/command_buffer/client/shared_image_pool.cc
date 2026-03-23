@@ -51,11 +51,13 @@ const SharedImagePoolId& ClientImage::GetPoolIdForTesting() const {
 SharedImagePoolBase::SharedImagePoolBase(
     const SharedImagePoolId& pool_id,
     const ImageInfo& image_info,
+    std::string_view debug_label,
     const scoped_refptr<SharedImageInterface> sii,
     std::optional<uint8_t> max_pool_size,
     std::optional<base::TimeDelta> unused_resource_expiration_time)
     : pool_id_(pool_id),
       image_info_(image_info),
+      debug_label_(debug_label),
       sii_(std::move(sii)),
       max_pool_size_(std::move(max_pool_size)),
       unused_resource_expiration_time_(
@@ -84,13 +86,13 @@ SharedImagePoolBase::CreateSharedImageInternal() {
     return sii_->CreateSharedImage(
         {image_info_.format, image_info_.size, image_info_.color_space,
          image_info_.surface_origin, image_info_.alpha_type, image_info_.usage,
-         "SharedImagePoolMappable"},
+         debug_label_ + "Mappable"},
         gpu::kNullSurfaceHandle, image_info_.buffer_usage.value());
   } else {
     return sii_->CreateSharedImage(
         {image_info_.format, image_info_.size, image_info_.color_space,
          image_info_.surface_origin, image_info_.alpha_type, image_info_.usage,
-         "SharedImagePool"},
+         debug_label_},
         gpu::kNullSurfaceHandle);
   }
 }
@@ -133,9 +135,9 @@ void SharedImagePoolBase::ReleaseImageInternal(
 void SharedImagePoolBase::ClearInternal() {
   image_pool_.clear();
   CHECK(sii_);
-  // A pool might contain several images. Hence Flush() to ensure that the
-  // deferred IPCs are sent to the GPU process and GPU memory is reclaimed.
-  sii_->Flush();
+  // ClientSharedImage destructor calls DestroySharedImage which in turn ensures
+  // that the deferred destroy request is flushed. Thus, clients don't need to
+  // call SharedImageInterface::Flush explicitly.
 }
 
 void SharedImagePoolBase::ReconfigureInternal(const ImageInfo& image_info) {
@@ -173,14 +175,11 @@ void SharedImagePoolBase::ClearOldUnusedResources() {
                               unused_resource_expiration_time_.value();
                      });
 
-  const bool cleared_resources = new_end != image_pool_.end();
-
   // Erase the "removed" elements from the vector.
   image_pool_.erase(new_end, image_pool_.end());
-
-  if (cleared_resources) {
-    sii_->Flush();
-  }
+  // ClientSharedImage destructor calls DestroySharedImage which in turn ensures
+  // that the deferred destroy request is flushed. Thus, clients don't need to
+  // call SharedImageInterface::Flush explicitly.
 
   // Reclaim unused resource again.
   MaybePostUnusedResourcesReclaimTask();

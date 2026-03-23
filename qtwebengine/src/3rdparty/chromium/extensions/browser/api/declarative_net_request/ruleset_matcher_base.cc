@@ -9,6 +9,7 @@
 #include <tuple>
 
 #include "base/strings/strcat.h"
+#include "base/strings/string_util.h"
 #include "components/url_pattern_index/flat/url_pattern_index_generated.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
@@ -185,7 +186,11 @@ GURL GetTransformedURL(const RequestParams& params,
   } else if (transform.query()) {
     replacements.SetQueryStr(transform.query()->string_view());
   } else if (GetModifiedQuery(*params.url, transform, &query)) {
-    replacements.SetQueryStr(query);
+    if (query.empty()) {
+      replacements.ClearQuery();
+    } else {
+      replacements.SetQueryStr(query);
+    }
   }
 
   DCHECK(!(transform.clear_fragment() && transform.fragment()));

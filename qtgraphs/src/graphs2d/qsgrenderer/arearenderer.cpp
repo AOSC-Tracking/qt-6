@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtGraphs/qareaseries.h>
 #include <QtGraphs/qsplineseries.h>
@@ -11,8 +13,27 @@
 #include <private/qgraphsview_p.h>
 #include <private/qxyseries_p.h>
 #include <QtQuick/private/qquicktaphandler_p.h>
+#include <qtgraphs_tracepoints_p.h>
 
 QT_BEGIN_NAMESPACE
+
+Q_TRACE_PREFIX(qtgraphs,
+              "QT_BEGIN_NAMESPACE" \
+              "class AreaRenderer;" \
+              "QT_END_NAMESPACE"
+          )
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DAreaRenderePointInArea_entry, int x, int y);
+Q_TRACE_POINT(qtgraphs, QGraphs2DAreaRenderePointInArea_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DAreaRendereAfterPolish_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DAreaRendereAfterPolish_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DAreaRendererCalculateSeriesU_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DAreaRendererCalculateSeriesU_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DAreaRendererCalculateSeriesL_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs2DAreaRendererCalculateSeriesL_exit);
 
 AreaRenderer::AreaRenderer(QGraphsView *graph, bool clipPlotArea)
     : QQuickItem(graph)
@@ -143,10 +164,14 @@ void AreaRenderer::handlePolish(QAreaSeries *series)
             ? series->borderColor()
             : borderColors.at(index);
 
+    QQuickShapeGradient *gradient = series->gradient();
+
     if (series->isSelected()) {
         color = series->selectedColor().alpha() != 0 ? series->selectedColor() : color.lighter();
         borderColor = series->selectedBorderColor().alpha() != 0 ? series->selectedBorderColor()
                                                                  : borderColor.lighter();
+        if (series->selectedGradient())
+            gradient = series->selectedGradient();
     }
 
     qreal borderWidth = series->borderWidth();
@@ -156,6 +181,7 @@ void AreaRenderer::handlePolish(QAreaSeries *series)
     group->shapePath->setStrokeWidth(borderWidth);
     group->shapePath->setStrokeColor(borderColor);
     group->shapePath->setFillColor(color);
+    group->shapePath->setFillGradient(gradient);
     group->shapePath->setCapStyle(QQuickShapePath::CapStyle::SquareCap);
 
     auto &&upperPoints = upper->points();
@@ -169,6 +195,7 @@ void AreaRenderer::handlePolish(QAreaSeries *series)
 
     if (series->isVisible()) {
         qreal prevUpperY = 0;
+        Q_TRACE_SCOPE(QGraphs2DAreaRendererCalculateSeriesU);
         for (int i = 0, j = 0; i < upperPoints.size() + extraPointCount; ++i, ++j) {
             qreal x;
             qreal y;
@@ -221,6 +248,7 @@ void AreaRenderer::handlePolish(QAreaSeries *series)
     }
 
     if (lower && series->isVisible()) {
+        Q_TRACE_SCOPE(QGraphs2DAreaRendererCalculateSeriesL);
         auto &&lowerPoints = lower->points();
         QList<QPointF> fittedPoints;
 #ifdef USE_SPLINEGRAPH
@@ -269,6 +297,8 @@ void AreaRenderer::handlePolish(QAreaSeries *series)
 
 void AreaRenderer::afterPolish(QList<QAbstractSeries *> &cleanupSeries)
 {
+    Q_TRACE_SCOPE(QGraphs2DAreaRendereAfterPolish);
+
     for (auto series : cleanupSeries) {
         auto areaSeries = qobject_cast<QAreaSeries *>(series);
         if (areaSeries && m_groups.contains(areaSeries)) {
@@ -318,6 +348,7 @@ bool pointInTriangle(QPoint pt, QPoint v1, QPoint v2, QPoint v3)
 
 bool AreaRenderer::pointInArea(QPoint pt, QAreaSeries *series) const
 {
+    Q_TRACE_SCOPE(QGraphs2DAreaRenderePointInArea, pt.x(), pt.y());
     QList<QPointF> upperPoints = series->upperSeries()->points();
     QList<QPointF> lowerPoints;
 
@@ -511,3 +542,5 @@ void AreaRenderer::onPressedChanged()
 }
 
 QT_END_NAMESPACE
+
+#include "moc_arearenderer_p.cpp"

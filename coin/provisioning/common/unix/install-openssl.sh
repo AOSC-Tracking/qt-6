@@ -6,16 +6,19 @@
 # Requires GCC and Perl to be in PATH.
 set -ex
 os="$1"
+version=${2:-"3.0.7"}
+sha=${3:-"f20736d6aae36bcbfa9aba0d358c71601833bf27"}
+
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 # shellcheck source=../unix/DownloadURL.sh
 source "${BASH_SOURCE%/*}/../unix/DownloadURL.sh"
 # shellcheck source=../unix/SetEnvVar.sh
 source "${BASH_SOURCE%/*}/../unix/SetEnvVar.sh"
-version="3.0.7"
-officialUrl="https://www.openssl.org/source/openssl-$version.tar.gz"
+
+officialUrl="https://github.com/openssl/openssl/releases/download/openssl-$version/openssl-$version.tar.gz"
 cachedUrl="http://ci-files01-hki.ci.qt.io/input/openssl/openssl-$version.tar.gz"
 targetFile="/tmp/openssl-$version.tar.gz"
-sha="f20736d6aae36bcbfa9aba0d358c71601833bf27"
+
 opensslHome="${HOME}/openssl-${version}"
 opensslSource="${opensslHome}-src"
 DownloadURL "$cachedUrl" "$officialUrl" "$sha" "$targetFile"
@@ -34,6 +37,7 @@ if [[ "$os" == "linux" ]]; then
     make && make install_sw install_ssldirs
     SetEnvVar "OPENSSL_HOME" "$opensslHome"
     SetEnvVar "PATH" "\"$opensslHome/bin:\$PATH\""
+    SetEnvVar "PKG_CONFIG_PATH" "\"$opensslHome/lib64/pkgconfig:\$PKG_CONFIG_PATH\""
     if uname -a |grep -q "Debian"; then
         SetEnvVar "LD_LIBRARY_PATH" "\"$opensslHome/lib:$LD_LIBRARY_PATH\""
     else

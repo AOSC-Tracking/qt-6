@@ -1,6 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // Copyright (C) 2017 Jolla Ltd, author: <gunnar.sletta@jollamobile.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import Qt5Compat.GraphicalEffects.private
@@ -9,7 +10,7 @@ import Qt5Compat.GraphicalEffects.private
     \qmltype Glow
     \inqmlmodule Qt5Compat.GraphicalEffects
     \since QtGraphicalEffects 1.0
-    \inherits QtQuick2::Item
+    \inherits QtQuick::Item
     \ingroup qtgraphicaleffects-glow
     \brief Generates a blurred and colorized image of the source and places it
     behind the original, giving impression that the source is glowing.

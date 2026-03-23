@@ -14,8 +14,8 @@
 
 #include <algorithm>
 
-#include "source/enum_string_mapping.h"
 #include "source/opcode.h"
+#include "source/table2.h"
 #include "source/val/instruction.h"
 #include "source/val/validate.h"
 #include "source/val/validation_state.h"
@@ -258,7 +258,8 @@ spv_result_t ValidateFunctionCall(ValidationState_t& _,
               _.HasCapability(spv::Capability::VariablePointers) &&
               sc == spv::StorageClass::Workgroup;
           const bool uc_ptr = sc == spv::StorageClass::UniformConstant;
-          if (!ssbo_vptr && !wg_vptr && !uc_ptr) {
+          if (!_.options()->before_hlsl_legalization && !ssbo_vptr &&
+              !wg_vptr && !uc_ptr) {
             return _.diag(SPV_ERROR_INVALID_ID, inst)
                    << "Pointer operand " << _.getIdName(argument_id)
                    << " must be a memory object declaration";

@@ -33,18 +33,20 @@ class QJsonObject;
 class Q_LOTTIE_EXPORT QLottieFreeFormShape : public QLottieShape
 {
 public:
-    QLottieFreeFormShape();
     explicit QLottieFreeFormShape(const QLottieFreeFormShape &other);
-    QLottieFreeFormShape(const QJsonObject &definition, QLottieBase *parent = nullptr);
+    QLottieFreeFormShape(QLottieBase *parent = nullptr);
 
     QLottieBase *clone() const override;
 
-    void construct(const QJsonObject &definition);
+    int parse(const QJsonObject &definition) override;
 
     void updateProperties(int frame) override;
     void render(QLottieRenderer &renderer) const override;
 
     bool acceptsTrim() const override;
+
+    bool isAnimated() const;
+    QLottieProperty2D<QPointF> startPointProperty() const { return m_vertexList.value(0).pos; };
 
 protected:
     struct VertexInfo {
@@ -77,6 +79,8 @@ private:
     QJsonObject createKeyframe(QJsonArray startValue, QJsonArray endValue,
                                int startFrame, QJsonObject easingIn,
                                QJsonObject easingOut);
+
+    void addCurve(QPointF start, QPointF ctlOffset1, QPointF ctlOffset2, QPointF end);
 };
 
 QT_END_NAMESPACE

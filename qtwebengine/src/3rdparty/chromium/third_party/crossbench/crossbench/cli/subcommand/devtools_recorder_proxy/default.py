@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import enum
 import json
@@ -14,19 +13,19 @@ import secrets
 import shlex
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Any, Coroutine, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Coroutine, Optional
 
 from websockets import server as websockets
 
-from crossbench import compat
 from crossbench import path as pth
 from crossbench import plt
 from crossbench.helper.state import BaseState, StateMachine
 
 if TYPE_CHECKING:
+  import argparse
   from asyncio.subprocess import Process
 
-  from crossbench.plt.base import ListCmdArgs
+  from crossbench.plt.types import ListCmdArgs
   from crossbench.types import JsonDict
 
 
@@ -40,7 +39,7 @@ class State(BaseState):
 
 
 @enum.unique
-class Response(compat.StrEnum):
+class Response(enum.StrEnum):
   STATUS = "status"
   OUTPUT = "output"
 
@@ -53,13 +52,12 @@ class CrossbenchDevToolsRecorderProxy:
   DEFAULT_PORT = 44645
 
   @classmethod
-  def add_subcommand(cls, subparsers) -> argparse.ArgumentParser:
+  def add_cli_parser(cls, subparsers) -> argparse.ArgumentParser:
     parser = subparsers.add_parser(
         "devtools-recorder-proxy",
         aliases=["devtools"],
         help=("Starts a local server to communicate with the "
               "DevTools Recorder extension."))
-    parser.set_defaults(subcommand_fn=cls._subcommand)
     parser.add_argument(
         "--disable-token-authentication",
         dest="use_auth_token",
@@ -70,7 +68,7 @@ class CrossbenchDevToolsRecorderProxy:
     return parser
 
   @classmethod
-  def _subcommand(cls, args: argparse.Namespace) -> None:
+  def run_subcommand(cls, args: argparse.Namespace) -> None:
     instance: CrossbenchDevToolsRecorderProxy = cls(
         use_auth_token=args.use_auth_token)
     instance.run()
@@ -83,8 +81,8 @@ class CrossbenchDevToolsRecorderProxy:
     self._print_cmd_output: bool = False
     self._port: int = self.DEFAULT_PORT
     self._state = StateMachine(State.CONNECTED)
-    self._crossbench_task: Optional[asyncio.Task] = None
-    self._crossbench_process: Optional[Process] = None
+    self._crossbench_task: asyncio.Task | None = None
+    self._crossbench_process: Process | None = None
     self._tmp_json = pth.LocalPath(
         tempfile.mkdtemp("crossbench_proxy")) / "devtools_recorder.json"
 
@@ -121,11 +119,11 @@ class CrossbenchDevToolsRecorderProxy:
       await self._send_message(self._handle_message(message))
 
   async def _send_message(
-      self, coroutine: Coroutine[Any, Any, Optional[Tuple[Response,
+      self, coroutine: Coroutine[Any, Any, Optional[tuple[Response,
                                                           Any]]]) -> None:
     response: JsonDict = {"success": False, "payload": None, "error": None}
     try:
-      result: Optional[Tuple[Response, Any]] = await coroutine
+      result: Optional[tuple[Response, Any]] = await coroutine
       response["success"] = True
       if result:
         response_type, payload = result
@@ -145,10 +143,11 @@ class CrossbenchDevToolsRecorderProxy:
     logging.debug("SEND Response: %s", response_json)
     await self._websocket.send(response_json)
 
-  async def _handle_message(self, message) -> Optional[Tuple[Response, Any]]:
+  async def _handle_message(
+      self, message: bytearray | bytes | str) -> Optional[tuple[Response, Any]]:
     logging.debug("RECEIVE Message: %s", message)
     try:
-      payload: Dict[str, Any] = json.loads(message)
+      payload: dict[str, Any] = json.loads(message)
     except json.JSONDecodeError as e:
       logging.error("Could not parse JSON response: %s", e)
       raise e
@@ -168,14 +167,14 @@ class CrossbenchDevToolsRecorderProxy:
     logging.error("Unknown command: %s", command)
     return None
 
-  async def _stop_command(self) -> Tuple[Response, str]:
+  async def _stop_command(self) -> tuple[Response, str]:
     if process := self._crossbench_process:
       logging.info("# CROSSBENCH COMMAND: KILL")
-      plt.PLATFORM.wait_and_terminate(process)
+      plt.PLATFORM.terminate_gracefully(process)
     self._state.transition(State.CONNECTED, State.CONNECTED, to=State.CONNECTED)
     return await self._status_command()
 
-  async def _run_command(self, args) -> Tuple[Response, str]:
+  async def _run_command(self, args) -> tuple[Response, str]:
     self._state.transition(State.CONNECTED, to=State.RUNNING)
     assert self._crossbench_process is None
     cb_path = CROSSBENCH_ROOT / "cb.py"
@@ -209,7 +208,7 @@ class CrossbenchDevToolsRecorderProxy:
 
   async def _send_output(
       self, stdout_str: Optional[str],
-      stderr_str: Optional[str]) -> Optional[Tuple[Response, Dict[str, str]]]:
+      stderr_str: Optional[str]) -> Optional[tuple[Response, dict[str, str]]]:
     if self._state != State.RUNNING:
       return None
     if self._print_cmd_output:
@@ -257,5 +256,5 @@ class CrossbenchDevToolsRecorderProxy:
       stderr_str = stderr_data.decode("utf-8")
       await self._send_message(self._send_output(None, stderr_str))
 
-  async def _status_command(self) -> Tuple[Response, str]:
+  async def _status_command(self) -> tuple[Response, str]:
     return Response.STATUS, str(self._state.name)

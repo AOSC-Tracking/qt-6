@@ -4,10 +4,11 @@
 
 #include "extensions/browser/extension_navigation_registry.h"
 
+#include <cstdint>
 #include <optional>
 
-#include "base/feature_list.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_features.h"
 
 namespace extensions {
@@ -36,19 +37,13 @@ ExtensionNavigationRegistry::GetFactoryInstance() {
 
 void ExtensionNavigationRegistry::RecordExtensionRedirect(
     int64_t navigation_handle_id,
-    const GURL& target_url) {
-  if (!IsEnabled()) {
-    return;
-  }
-
-  redirect_metadata_.emplace(navigation_handle_id, target_url);
+    const GURL& target_url,
+    const ExtensionId& extension_id) {
+  redirect_metadata_.emplace(navigation_handle_id,
+                             Metadata(target_url, extension_id));
 }
 
 void ExtensionNavigationRegistry::Erase(int64_t navigation_handle_id) {
-  if (!IsEnabled()) {
-    return;
-  }
-
   auto it = redirect_metadata_.find(navigation_handle_id);
   if (it == redirect_metadata_.end()) {
     return;
@@ -56,24 +51,42 @@ void ExtensionNavigationRegistry::Erase(int64_t navigation_handle_id) {
   redirect_metadata_.erase(it);
 }
 
-std::optional<GURL> ExtensionNavigationRegistry::GetAndErase(
-    int64_t navigation_handle_id) {
-  if (!IsEnabled()) {
-    return std::nullopt;
-  }
-
+std::optional<ExtensionNavigationRegistry::Metadata>
+ExtensionNavigationRegistry::GetAndErase(int64_t navigation_handle_id) {
   auto it = redirect_metadata_.find(navigation_handle_id);
   if (it == redirect_metadata_.end()) {
     return std::nullopt;
   }
-  GURL result = it->second;
+
+  Metadata metadata = it->second;
   redirect_metadata_.erase(it);
-  return result;
+  return metadata;
 }
 
-bool ExtensionNavigationRegistry::IsEnabled() {
-  return base::FeatureList::IsEnabled(
-      extensions_features::kExtensionWARForRedirect);
+bool ExtensionNavigationRegistry::CanRedirect(int64_t navigation_id,
+                                              const GURL& gurl,
+                                              const Extension& extension) {
+  std::optional<Metadata> extension_redirect_recorded =
+      GetAndErase(navigation_id);
+
+  // Block requests for navigations unaltered by webRequest.
+  if (!extension_redirect_recorded.has_value()) {
+    return false;
+  }
+
+  // Block requests if the extension or url are unexpected.
+  // TODO(crbug.com/40060076): Verify WAR access for the recorded extension
+  // instead of checking for equality with the target extension.
+  auto metadata = extension_redirect_recorded.value();
+  if (metadata.gurl != gurl) {
+    return false;
+  }
+
+  if (metadata.extension_id == extension.id()) {
+    return true;
+  }
+
+  return true;
 }
 
 }  // namespace extensions

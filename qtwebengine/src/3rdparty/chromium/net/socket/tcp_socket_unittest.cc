@@ -2,20 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "net/socket/tcp_socket.h"
 
 #include <stddef.h>
 #include <string.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/test/bind.h"
@@ -262,11 +259,10 @@ class TCPSocketTest
     for (size_t i = 0; i < num_messages; ++i) {
       // Use a 1 byte message so that the watcher is notified at most once per
       // message.
-      const std::string message("t");
+      static constexpr std::string_view message = "t";
 
-      scoped_refptr<IOBufferWithSize> write_buffer =
-          base::MakeRefCounted<IOBufferWithSize>(message.size());
-      memmove(write_buffer->data(), message.data(), message.size());
+      auto write_buffer =
+          base::MakeRefCounted<VectorIOBuffer>(base::as_byte_span(message));
 
       TestCompletionCallback write_callback;
       int write_result = accepted_socket->Write(
@@ -329,7 +325,7 @@ class TCPSocketTest
         ASSERT_LE(total_received + read_result, expected_size);
         received_data_buffer.subspan(total_received)
             .copy_prefix_from(
-                read_buffer->span().first(static_cast<size_t>(read_result)));
+                read_buffer->first(static_cast<size_t>(read_result)));
 
         total_received += read_result;
         DVLOG(1) << "Copied data in while loop. Size " << total_received;
@@ -610,7 +606,7 @@ TEST_P(TCPSocketTest, DestroyWithPendingWrite) {
   scoped_refptr<IOBufferWithDestructionCallback> write_buffer(
       base::MakeRefCounted<IOBufferWithDestructionCallback>(
           run_loop.QuitClosure()));
-  memset(write_buffer->data(), '1', write_buffer->size());
+  std::ranges::fill(write_buffer->span(), '1');
   TestCompletionCallback write_callback;
   while (true) {
     int result = connecting_socket->Write(
@@ -671,7 +667,7 @@ TEST_P(TCPSocketTest, CancelPendingReadIfReady) {
   }
 
   ASSERT_EQ(static_cast<int>(kMsg.size()), read_result);
-  ASSERT_EQ(read_buffer->span().first(static_cast<size_t>(read_result)),
+  ASSERT_EQ(read_buffer->first(static_cast<size_t>(read_result)),
             base::as_byte_span(kMsg));
 }
 
@@ -948,8 +944,7 @@ TEST_P(TCPSocketTest, LargeDataReadWithCancelReadIfReady) {
       // Append received data to the buffer using spans.
       base::span<uint8_t>(received_data)
           .subspan(received_data_size, static_cast<size_t>(read_result))
-          .copy_from(
-              read_buffer->span().first(static_cast<size_t>(read_result)));
+          .copy_from(read_buffer->first(static_cast<size_t>(read_result)));
       received_data_size += read_result;
       chunk_received += read_result;
     }
@@ -1042,7 +1037,7 @@ TEST_P(TCPSocketTest, ReadBiggerRead) {
 
   ASSERT_EQ(static_cast<int>(kMsg.size()), read_result);
   ASSERT_EQ(base::span(kMsg),
-            read_buffer->span().first(static_cast<uint8_t>(read_result)));
+            read_buffer->first(static_cast<uint8_t>(read_result)));
 }
 
 // This test is similar to ReadComplete, but with a smaller buffer size than the
@@ -1208,12 +1203,22 @@ TEST_P(TCPSocketTest, IsConnected) {
 
   // Wait until |connecting_socket| is signalled as having data to read.
   fd_set read_fds;
-  FD_ZERO(&read_fds);
+  // SAFETY: The implementations are different on different platforms. However,
+  // they are all operations on the read_fds object itself. No out-of-bounds
+  // behavior will occur.
+  UNSAFE_BUFFERS(FD_ZERO(&read_fds));
   SocketDescriptor connecting_fd =
       connecting_socket.SocketDescriptorForTesting();
-  FD_SET(connecting_fd, &read_fds);
+  // SAFETY: There is an fd array in read_fds, which has different sizes on
+  // different platforms, but is always greater than 1. It will record and check
+  // the number of current fds internally. Since the memory layout and structure
+  // of different platforms are inconsistent, we still use the system standard
+  // interface.
+  UNSAFE_BUFFERS(FD_SET(connecting_fd, &read_fds));
   ASSERT_EQ(select(FD_SETSIZE, &read_fds, nullptr, nullptr, nullptr), 1);
-  ASSERT_TRUE(FD_ISSET(connecting_fd, &read_fds));
+  // SAFETY: Check if this fd exists in read_fds. The system has already handled
+  // the edge cases.
+  ASSERT_TRUE(UNSAFE_BUFFERS(FD_ISSET(connecting_fd, &read_fds)));
 
   // It should now be reported as connected, but not as idle.
   EXPECT_TRUE(connecting_socket.IsConnected());

@@ -6,6 +6,7 @@
 
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/service/scheduler.h"
 
@@ -66,7 +67,6 @@ void BlockingSequenceRunner::RunAllTasks() {
 
 BlockingSequenceRunner::Sequence::Sequence(Scheduler* scheduler)
     : TaskGraph::Sequence(scheduler->task_graph(),
-                          base::DoNothing(),
                           /*validation_runner=*/{}),
       scheduler_(scheduler) {}
 

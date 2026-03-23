@@ -6,6 +6,7 @@ import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import '/strings.m.js';
 
 import {MouseHoverableMixinLit} from 'chrome://resources/cr_elements/mouse_hoverable_mixin_lit.js';
+import {assert} from 'chrome://resources/js/assert.js';
 import {getFaviconForPageURL} from 'chrome://resources/js/icon.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
@@ -34,6 +35,11 @@ function deepGet(obj: Record<string, any>, path: string): any {
   return value;
 }
 
+export enum TabSearchItemSize {
+  COMPACT = 'compact',
+  MEDIUM = 'medium',
+  LARGE = 'large',
+}
 
 export interface TabSearchItemElement {
   $: {
@@ -62,22 +68,20 @@ export class TabSearchItemElement extends TabSearchItemBase {
     return {
       data: {type: Object},
       buttonRipples_: {type: Boolean},
-      inSuggestedGroup: {type: Boolean},
+      hideTimestamp: {type: Boolean},
       hideUrl: {type: Boolean},
+      hideCloseButton: {type: Boolean},
       closeButtonAriaLabel: {type: String},
       closeButtonTooltip: {type: String},
       closeButtonIcon: {type: String},
-
-      compact: {
-        type: Boolean,
-        reflect: true,
-      },
+      size: {type: String, reflect: true},
     };
   }
 
-  data: TabData = new TabData(
+  accessor data: TabData = new TabData(
       {
         active: false,
+        visible: false,
         faviconUrl: null,
         groupId: null,
         alertStates: [],
@@ -86,19 +90,22 @@ export class TabSearchItemElement extends TabSearchItemBase {
         lastActiveElapsedText: '',
         lastActiveTimeTicks: {internalValue: BigInt(0)},
         pinned: false,
+        split: false,
         showIcon: false,
         tabId: 1,
         title: '',
         url: {url: ''},
       },
       TabItemType.OPEN_TAB, '');
-  protected buttonRipples_: boolean = loadTimeData.getBoolean('useRipples');
-  inSuggestedGroup: boolean = false;
-  compact: boolean = false;
-  hideUrl: boolean = false;
-  closeButtonIcon: string = 'tab-search:close';
-  closeButtonAriaLabel: string = '';
-  closeButtonTooltip: string = '';
+  protected accessor buttonRipples_: boolean =
+      loadTimeData.getBoolean('useRipples');
+  accessor hideTimestamp: boolean = false;
+  accessor size: TabSearchItemSize = TabSearchItemSize.MEDIUM;
+  accessor hideUrl: boolean = false;
+  accessor hideCloseButton: boolean = false;
+  accessor closeButtonIcon: string = 'tab-search:close';
+  accessor closeButtonAriaLabel: string = '';
+  accessor closeButtonTooltip: string = '';
 
   override willUpdate(changedProperties: PropertyValues<this>) {
     super.willUpdate(changedProperties);
@@ -108,6 +115,10 @@ export class TabSearchItemElement extends TabSearchItemBase {
         this.style.setProperty(
             '--group-dot-color',
             `var(--tab-group-color-${colorName(this.data.tabGroup.color)})`);
+      }
+
+      if (changedProperties.has('size')) {
+        assert(Object.values(TabSearchItemSize).includes(this.size));
       }
     }
   }
@@ -124,7 +135,7 @@ export class TabSearchItemElement extends TabSearchItemBase {
    * @return Whether a close action can be performed on the item.
    */
   protected isCloseable_(): boolean {
-    return this.data.type === TabItemType.OPEN_TAB;
+    return !this.hideCloseButton && this.data.type === TabItemType.OPEN_TAB;
   }
 
   /**
@@ -218,7 +229,7 @@ export class TabSearchItemElement extends TabSearchItemBase {
     ([
       ['tab.title', this.$.primaryText],
       ['hostname', this.$.secondaryText],
-      ['tabGroup.title', this.shadowRoot!.querySelector('#groupTitle')],
+      ['tabGroup.title', this.shadowRoot.querySelector('#groupTitle')],
     ] as Array<[string, HTMLElement | null]>)
         .forEach(([path, element]) => {
           if (element) {

@@ -29,11 +29,12 @@
 
 QT_BEGIN_NAMESPACE
 
-QHostAddressPrivate::QHostAddressPrivate()
-    : a(0), protocol(QHostAddress::UnknownNetworkLayerProtocol)
-{
-    memset(&a6, 0, sizeof(a6));
-}
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+const QAbstractSocket::NetworkLayerProtocol QHostAddress::IPv4Protocol;
+const QAbstractSocket::NetworkLayerProtocol QHostAddress::IPv6Protocol;
+const QAbstractSocket::NetworkLayerProtocol QHostAddress::AnyIPProtocol;
+const QAbstractSocket::NetworkLayerProtocol QHostAddress::UnknownNetworkLayerProtocol;
+#endif
 
 QT_DEFINE_QESDP_SPECIALIZATION_DTOR(QHostAddressPrivate)
 
@@ -137,13 +138,6 @@ bool QHostAddressPrivate::parse(const QString &ipString)
     }
 
     return false;
-}
-
-void QHostAddressPrivate::clear()
-{
-    a = 0;
-    protocol = QHostAddress::UnknownNetworkLayerProtocol;
-    memset(&a6, 0, sizeof(a6));
 }
 
 AddressClassification QHostAddressPrivate::classify() const
@@ -912,6 +906,10 @@ bool QHostAddress::isNull() const
     Returns \c true if this IP is in the subnet described by the network
     prefix \a subnet and netmask \a netmask.
 
+    The \a netmask parameter is the prefix length - the number of leading
+    bits used to identify the network portion of the address. For IPv4,
+    valid values range from 0 to 32; for IPv6, from 0 to 128.
+
     An IP is considered to belong to a subnet if it is contained
     between the lowest and the highest address in that subnet. In the
     case of IP version 4, the lowest address is the network address,
@@ -921,7 +919,7 @@ bool QHostAddress::isNull() const
     address (the lowest address in the subnet). It can be any valid IP
     belonging to that subnet. In particular, if it is equal to the IP
     address held by this object, this function will always return true
-    (provided the netmask is a valid value).
+    (provided the prefix length is a valid value).
 
     \sa parseSubnet()
 */

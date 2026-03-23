@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRENDERSHADERMETADATA_P_H
 #define QSSGRENDERSHADERMETADATA_P_H
@@ -40,6 +42,14 @@ struct Uniform
     static Condition conditionFromString(const QString &condition);
 };
 
+struct Image : public Uniform
+{
+    Image() {};
+    Image(const Uniform &u) : Uniform(u) {}
+    QByteArray imageType;
+    QByteArray qualifiers;
+};
+
 struct InputOutput
 {
     QByteArray type;
@@ -53,6 +63,7 @@ struct InputOutput
 struct ShaderMetaData
 {
     QVector<Uniform> uniforms;
+    QVector<Image> images;
     QVector<InputOutput> inputs;
     QVector<InputOutput> outputs;
 };

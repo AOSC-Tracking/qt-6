@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <optional>
 #include <utility>
+#include <variant>
 
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
@@ -55,7 +56,6 @@
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "third_party/blink/public/common/client_hints/client_hints.h"
 #include "third_party/blink/public/common/features.h"
-#include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
 #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
 #include "third_party/blink/public/mojom/blob/blob_registry.mojom-blink.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom-blink.h"
@@ -102,7 +102,7 @@
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/shared_buffer.h"
-#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "url/url_constants.h"
 
 namespace blink {
@@ -134,39 +134,6 @@ bool IsThrottlableRequestContext(mojom::blink::RequestContextType context) {
          context != mojom::blink::RequestContextType::XML_HTTP_REQUEST &&
          context != mojom::blink::RequestContextType::VIDEO &&
          context != mojom::blink::RequestContextType::AUDIO;
-}
-
-void LogMixedAutoupgradeMetrics(blink::MixedContentAutoupgradeStatus status,
-                                std::optional<int> response_or_error_code,
-                                ukm::SourceId source_id,
-                                ukm::UkmRecorder* recorder,
-                                Resource* resource) {
-  UMA_HISTOGRAM_ENUMERATION("MixedAutoupgrade.ResourceRequest.Status", status);
-  switch (status) {
-    case MixedContentAutoupgradeStatus::kStarted:
-      UMA_HISTOGRAM_ENUMERATION("MixedAutoupgrade.ResourceRequest.Start.Type",
-                                resource->GetType());
-      break;
-    case MixedContentAutoupgradeStatus::kFailed:
-      UMA_HISTOGRAM_ENUMERATION("MixedAutoupgrade.ResourceRequest.Failure.Type",
-                                resource->GetType());
-      UMA_HISTOGRAM_BOOLEAN("MixedAutoupgrade.ResourceRequest.Failure.IsAd",
-                            resource->GetResourceRequest().IsAdResource());
-      break;
-    case MixedContentAutoupgradeStatus::kResponseReceived:
-      UMA_HISTOGRAM_ENUMERATION(
-          "MixedAutoupgrade.ResourceRequest.Response.Type",
-          resource->GetType());
-  };
-  ukm::builders::MixedContentAutoupgrade_ResourceRequest builder(source_id);
-  builder.SetStatus(static_cast<int64_t>(status));
-  if (response_or_error_code.has_value()) {
-    base::UmaHistogramSparse(
-        "MixedAutoupgrade.ResourceRequest.ErrorOrResponseCode",
-        response_or_error_code.value());
-    builder.SetCode(response_or_error_code.value());
-  }
-  builder.Record(recorder);
 }
 
 bool RequestContextObserveResponse(mojom::blink::RequestContextType type) {
@@ -270,7 +237,7 @@ ResourceLoader::ResourceLoader(ResourceFetcher* fetcher,
       is_cache_aware_loading_activated_(
           ShouldActivateCacheAwareLoading(fetcher, resource)),
       progress_receiver_(this, context),
-      cancel_timer_(fetcher_->GetTaskRunner(),
+      cancel_timer_(fetcher_->GetUnfreezableTaskRunner(),
                     this,
                     &ResourceLoader::CancelTimerFired) {
   DCHECK(resource_);
@@ -324,6 +291,8 @@ void ResourceLoader::Start() {
 
   if (!resource_->Url().ProtocolIsData()) {
     network_resource_request_ = CreateNetworkRequest(request, request_body_);
+    fetcher_->PopulateResourceRequestPermissionsPolicy(
+        network_resource_request_.get());
     if (is_cache_aware_loading_activated_) {
       // Override cache policy for cache-aware loading. If this request fails, a
       // reload with original request will be triggered in DidFail().
@@ -363,11 +332,6 @@ void ResourceLoader::Start() {
     throttle_option = ResourceLoadScheduler::ThrottleOption::kStoppable;
   }
 
-  if (request.IsAutomaticUpgrade()) {
-    LogMixedAutoupgradeMetrics(MixedContentAutoupgradeStatus::kStarted,
-                               std::nullopt, request.GetUkmSourceId(),
-                               fetcher_->UkmRecorder(), resource_);
-  }
   if (resource_->GetResourceRequest().IsDownloadToNetworkCacheOnly()) {
     // The download-to-cache requests are throttled in net/, they are fire-and
     // forget, and cannot unregister properly from the scheduler once they are
@@ -662,9 +626,11 @@ bool ResourceLoader::WillFollowRedirect(
 
     // CanRequest() checks only enforced CSP, so check report-only here to
     // ensure that violations are sent.
+    // CanRequest() will also perform IntegrityPolicy verifications if needed.
     Context().CheckCSPForRequest(
-        request_context, request_destination, new_url_prior_upgrade, options,
-        reporting_disposition, url_before_redirects,
+        request_context, request_destination, request_mode,
+        new_url_prior_upgrade, options, reporting_disposition,
+        url_before_redirects,
         ResourceRequest::RedirectStatus::kFollowedRedirect);
 
     std::optional<ResourceRequestBlockedReason> blocked_reason =
@@ -673,8 +639,8 @@ bool ResourceLoader::WillFollowRedirect(
                              new_request->GetRedirectInfo());
 
     if (Context().CalculateIfAdSubresource(
-            *new_request, std::nullopt /* alias_url */, resource_type,
-            options.initiator_info)) {
+            *new_request, /*alias_url=*/std::nullopt, resource_type,
+            options.initiator_info, /*out_rule=*/nullptr)) {
       new_request->SetIsAdResource();
     }
 
@@ -766,7 +732,7 @@ FetchContext& ResourceLoader::Context() const {
 
 void ResourceLoader::DidReceiveResponse(
     const WebURLResponse& response,
-    absl::variant<mojo::ScopedDataPipeConsumerHandle, SegmentedBuffer> body,
+    std::variant<mojo::ScopedDataPipeConsumerHandle, SegmentedBuffer> body,
     std::optional<mojo_base::BigBuffer> cached_metadata) {
   DCHECK(!response.IsNull());
 
@@ -794,24 +760,24 @@ void ResourceLoader::DidReceiveResponse(
     // the body of 304 Not Modified response. And Blink don't fetch the
     // revalidating request when the page is controlled by a service worker.
     // So, We don't need to handle the body for 304 Not Modified responses.
-    if (absl::holds_alternative<SegmentedBuffer>(body)) {
-      CHECK(absl::get<SegmentedBuffer>(body).empty());
+    if (std::holds_alternative<SegmentedBuffer>(body)) {
+      CHECK(std::get<SegmentedBuffer>(body).empty());
     } else {
-      CHECK(absl::holds_alternative<mojo::ScopedDataPipeConsumerHandle>(body));
+      CHECK(std::holds_alternative<mojo::ScopedDataPipeConsumerHandle>(body));
       // If the `body` is released here, the network service will treat the
       // disconnection of the `body` handle as if the request was cancelled. So
       // we keeps the `body` handle.
       empty_body_handle_for_revalidation_ =
-          std::move(absl::get<mojo::ScopedDataPipeConsumerHandle>(body));
+          std::move(std::get<mojo::ScopedDataPipeConsumerHandle>(body));
     }
     return;
   }
-  if (absl::holds_alternative<SegmentedBuffer>(body)) {
-    DidReceiveDataImpl(std::move(absl::get<SegmentedBuffer>(body)));
+  if (std::holds_alternative<SegmentedBuffer>(body)) {
+    DidReceiveDataImpl(std::move(std::get<SegmentedBuffer>(body)));
     return;
   }
   mojo::ScopedDataPipeConsumerHandle body_handle =
-      std::move(absl::get<mojo::ScopedDataPipeConsumerHandle>(body));
+      std::move(std::get<mojo::ScopedDataPipeConsumerHandle>(body));
   if (!body_handle) {
     return;
   }
@@ -889,15 +855,27 @@ void ResourceLoader::DidReceiveResponseInternal(
         mojom::WebFeature::kAuthorizationCoveredByWildcard);
   }
 
+  if (response.HttpHeaderField(http_names::kSecSessionRegistration)) {
+    fetcher_->GetUseCounter().CountUse(
+        WebFeature::kDeviceBoundSessionRegistered);
+  }
+
+  switch (response.DeviceBoundSessionUsage()) {
+    case network::mojom::DeviceBoundSessionUsage::kDeferred:
+      fetcher_->GetUseCounter().CountUse(
+          WebFeature::kDeviceBoundSessionRequestDeferral);
+      [[fallthrough]];
+    case network::mojom::DeviceBoundSessionUsage::kInScopeNotDeferred:
+      fetcher_->GetUseCounter().CountUse(
+          WebFeature::kDeviceBoundSessionRequestInScope);
+      break;
+    case network::mojom::DeviceBoundSessionUsage::kNoUsage:
+    case network::mojom::DeviceBoundSessionUsage::kUnknown:
+      break;
+  }
+
   CountPrivateNetworkAccessPreflightResult(
       response.PrivateNetworkAccessPreflightResult());
-
-  if (request.IsAutomaticUpgrade()) {
-    LogMixedAutoupgradeMetrics(MixedContentAutoupgradeStatus::kResponseReceived,
-                               response.HttpStatusCode(),
-                               request.GetUkmSourceId(),
-                               fetcher_->UkmRecorder(), resource_);
-  }
 
   ResourceType resource_type = resource_->GetType();
 
@@ -907,6 +885,7 @@ void ResourceLoader::DidReceiveResponseInternal(
       initial_request.GetRequestContext();
   network::mojom::RequestDestination request_destination =
       initial_request.GetRequestDestination();
+  network::mojom::RequestMode request_mode = initial_request.GetMode();
 
   const ResourceLoaderOptions& options = resource_->Options();
 
@@ -921,20 +900,6 @@ void ResourceLoader::DidReceiveResponseInternal(
           CheckResponseNosniff(request_context, nosniffed_response)) {
     HandleError(ResourceError::CancelledDueToAccessCheckError(
         response.CurrentRequestUrl(), blocked_reason.value()));
-    return;
-  }
-
-  // https://wicg.github.io/cross-origin-embedder-policy/#integration-html
-  // TODO(crbug.com/1064920): Remove this once PlzDedicatedWorker ships.
-  if (options.reject_coep_unsafe_none &&
-      !network::CompatibleWithCrossOriginIsolated(
-          response.GetCrossOriginEmbedderPolicy()) &&
-      !response.CurrentRequestUrl().ProtocolIsData() &&
-      !response.CurrentRequestUrl().ProtocolIs("blob")) {
-    DCHECK(!base::FeatureList::IsEnabled(features::kPlzDedicatedWorker));
-    HandleError(ResourceError::BlockedByResponse(
-        response.CurrentRequestUrl(), network::mojom::BlockedByResponseReason::
-                                          kCoepFrameResourceNeedsCoepHeader));
     return;
   }
 
@@ -969,10 +934,11 @@ void ResourceLoader::DidReceiveResponseInternal(
     //
     // CanRequest() below only checks enforced policies: check report-only
     // here to ensure violations are sent.
+    // CanRequest() will also perform IntegrityPolicy verifications if needed.
     const KURL& response_url = response.ResponseUrl();
     Context().CheckCSPForRequest(
-        request_context, request_destination, response_url, options,
-        ReportingDisposition::kReport, original_url,
+        request_context, request_destination, request_mode, response_url,
+        options, ReportingDisposition::kReport, original_url,
         ResourceRequest::RedirectStatus::kFollowedRedirect);
 
     std::optional<ResourceRequestBlockedReason> blocked_reason =
@@ -1000,7 +966,11 @@ void ResourceLoader::DidReceiveResponseInternal(
   // A response should not serve partial content if it was not requested via a
   // Range header: https://fetch.spec.whatwg.org/#main-fetch
   if (response.GetType() == network::mojom::FetchResponseType::kOpaque &&
-      response.HttpStatusCode() == 206 && response.HasRangeRequested() &&
+      (response.HttpStatusCode() == 206 ||
+       (base::FeatureList::IsEnabled(
+            features::kBlockPartialResponseWithoutRange) &&
+        response.HttpStatusCode() == 416)) &&
+      response.HasRangeRequested() &&
       !initial_request.HttpHeaderFields().Contains(http_names::kRange)) {
     HandleError(ResourceError::CancelledDueToAccessCheckError(
         response.CurrentRequestUrl(), ResourceRequestBlockedReason::kOther));
@@ -1068,22 +1038,22 @@ void ResourceLoader::DidReceiveData(base::span<const char> data) {
 }
 
 void ResourceLoader::DidReceiveDataImpl(
-    absl::variant<SegmentedBuffer, base::span<const char>> data) {
+    std::variant<SegmentedBuffer, base::span<const char>> data) {
   size_t data_size = 0;
   // If a BackgroundResponseProcessor consumed the body data on the background
   // thread, this method is called with a SegmentedBuffer data. Otherwise, it is
   // called with a span<const char> data several times.
-  if (absl::holds_alternative<SegmentedBuffer>(data)) {
-    data_size = absl::get<SegmentedBuffer>(data).size();
+  if (std::holds_alternative<SegmentedBuffer>(data)) {
+    data_size = std::get<SegmentedBuffer>(data).size();
     if (auto* observer = fetcher_->GetResourceLoadObserver()) {
-      for (const auto& span : absl::get<SegmentedBuffer>(data)) {
+      for (const auto& span : std::get<SegmentedBuffer>(data)) {
         observer->DidReceiveData(resource_->InspectorId(),
                                  base::SpanOrSize(span));
       }
     }
   } else {
-    CHECK(absl::holds_alternative<base::span<const char>>(data));
-    base::span<const char> span = absl::get<base::span<const char>>(data);
+    CHECK(std::holds_alternative<base::span<const char>>(data));
+    base::span<const char> span = std::get<base::span<const char>>(data);
     data_size = span.size();
     if (auto* observer = fetcher_->GetResourceLoadObserver()) {
       observer->DidReceiveData(resource_->InspectorId(),
@@ -1182,14 +1152,7 @@ void ResourceLoader::DidFail(const WebURLError& error,
                              int64_t encoded_data_length,
                              uint64_t encoded_body_length,
                              int64_t decoded_body_length) {
-  const ResourceRequestHead& request = resource_->GetResourceRequest();
   response_end_time_for_error_cases_ = response_end_time;
-
-  if (request.IsAutomaticUpgrade()) {
-    LogMixedAutoupgradeMetrics(MixedContentAutoupgradeStatus::kFailed,
-                               error.reason(), request.GetUkmSourceId(),
-                               fetcher_->UkmRecorder(), resource_);
-  }
 
   CountPrivateNetworkAccessPreflightResult(
       error.private_network_access_preflight_result());
@@ -1501,11 +1464,11 @@ ResourceLoader::CheckResponseNosniff(
     fetcher_->GetConsoleLogger().AddConsoleMessage(
         mojom::ConsoleMessageSource::kSecurity,
         mojom::ConsoleMessageLevel::kError,
-        "Refused to apply style from '" +
-            response.CurrentRequestUrl().ElidedString() +
-            "' because its MIME type ('" + mime_type + "') " +
-            "is not a supported stylesheet MIME type, and strict MIME checking "
-            "is enabled.");
+        StrCat({"Refused to apply style from '",
+                response.CurrentRequestUrl().ElidedString(),
+                "' because its MIME type ('", mime_type,
+                "') is not a supported stylesheet MIME type, and strict "
+                "MIME checking is enabled."}));
     return ResourceRequestBlockedReason::kContentType;
   }
   // TODO(mkwst): Move the 'nosniff' bit of 'AllowedByNosniff::MimeTypeAsScript'
@@ -1612,9 +1575,9 @@ bool ResourceLoader::ShouldBlockRequestBasedOnSubresourceFilterDnsAliasCheck(
     }
 
     if (!resource_->GetResourceRequest().IsAdResource() &&
-        Context().CalculateIfAdSubresource(resource_->GetResourceRequest(),
-                                           alias_url, resource_type,
-                                           options.initiator_info)) {
+        Context().CalculateIfAdSubresource(
+            resource_->GetResourceRequest(), alias_url, resource_type,
+            options.initiator_info, /*out_rule=*/nullptr)) {
       resource_->SetIsAdResource();
       cname_alias_info_for_testing_.was_ad_tagged_based_on_alias = true;
     }

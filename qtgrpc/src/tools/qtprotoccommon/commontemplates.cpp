@@ -186,13 +186,21 @@ const char *CommonTemplates::EnumClassForwardDeclarationTemplate()
 
 const char *CommonTemplates::ClassMessageQmlBeginDeclarationTemplate()
 {
-    return "    QML_VALUE_TYPE($classname_low_case$)\n";
+    return "    QML_STRUCTURED_VALUE\n"
+           "    QML_VALUE_TYPE($classname_low_case$)\n";
+}
+
+const char *CommonTemplates::NonFinalClassMessageBeginDeclarationTemplate()
+{
+    return "\nclass $dataclassname$;\n"
+           "class $classname$ : public QProtobufMessage\n"
+           "{\n";
 }
 
 const char *CommonTemplates::ClassMessageBeginDeclarationTemplate()
 {
     return "\nclass $dataclassname$;\n"
-           "class $classname$ : public QProtobufMessage\n"
+           "class $classname$ final : public QProtobufMessage\n"
            "{\n";
 }
 
@@ -972,6 +980,13 @@ const char *CommonTemplates::QDateTimeExtrasTemplate()
 {
     return "$export_macro$static Timestamp fromDateTime(const QDateTime &dateTime);\n"
            "$export_macro$QDateTime toDateTime() const;\n";
+}
+
+const char *CommonTemplates::DurationExtrasTemplate()
+{
+    return "\n$export_macro$static bool isValid(QtProtobuf::int64 seconds, "
+           "QtProtobuf::int32 nanos);\n"
+           "bool isValid() const { return isValid(seconds(), nanos()); }\n";
 }
 
 // Those marked "Limited" have limited usage in QML, since QML only supports signed integers.

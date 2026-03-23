@@ -63,13 +63,13 @@ export class CoverageDecorationManager {
    * Returns the coverage per line of the provided uiSourceCode. The resulting array has the same length
    * as the provided `lines` array.
    *
-   * @param uiSourceCode The UISourceCode for which to get the coverage info.
-   * @param lineMappings The caller might have applied formatting to the UISourceCode. Each entry
+   * @param uiSourceCode - The UISourceCode for which to get the coverage info.
+   * @param lineMappings - The caller might have applied formatting to the UISourceCode. Each entry
    *                     in this array represents one line and the range specifies where it's found in
    *                     the original content.
    */
   async usageByLine(uiSourceCode: Workspace.UISourceCode.UISourceCode, lineMappings: TextUtils.TextRange.TextRange[]):
-      Promise<(boolean | undefined)[]> {
+      Promise<Array<boolean|undefined>> {
     const result = [];
     await this.updateTexts(uiSourceCode, lineMappings);
 
@@ -141,7 +141,7 @@ export class CoverageDecorationManager {
     const contentType = uiSourceCode.contentType();
     if (contentType.hasScripts()) {
       let locations = await this.#debuggerBinding.uiLocationToRawLocations(uiSourceCode, line, column);
-      locations = locations.filter(location => Boolean(location.script()));
+      locations = locations.filter(location => !!location.script());
       for (const location of locations) {
         const script = location.script();
         if (!script) {

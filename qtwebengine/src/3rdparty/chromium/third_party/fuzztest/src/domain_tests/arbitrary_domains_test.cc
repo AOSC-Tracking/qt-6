@@ -37,9 +37,6 @@
 #include "absl/time/time.h"
 #include "./fuzztest/domain_core.h"  // IWYU pragma: keep
 #include "./domain_tests/domain_testing.h"
-#include "./fuzztest/internal/domains/absl_helpers.h"
-#include "./fuzztest/internal/domains/arbitrary_impl.h"
-#include "./fuzztest/internal/domains/container_mutation_helpers.h"
 #include "./fuzztest/internal/domains/domain_base.h"
 #include "./fuzztest/internal/serialization.h"
 #include "./fuzztest/internal/test_protobuf.pb.h"
@@ -147,7 +144,7 @@ using CompoundTypeTypes =
                    std::optional<int>, std::unique_ptr<std::string>, MyStruct,
                    std::vector<bool>>;
 
-TYPED_TEST_SUITE(CompoundTypeTest, CompoundTypeTypes);
+TYPED_TEST_SUITE(CompoundTypeTest, CompoundTypeTypes, );
 
 TYPED_TEST(CompoundTypeTest, Arbitrary) {
   Domain<TypeParam> domain = Arbitrary<TypeParam>();
@@ -177,7 +174,7 @@ class MonostateTypeTest : public testing::Test {};
 using MonostateTypeTypes = testing::Types<std::true_type, std::false_type,
                                           std::array<int, 0>, std::tuple<>>;
 
-TYPED_TEST_SUITE(MonostateTypeTest, MonostateTypeTypes);
+TYPED_TEST_SUITE(MonostateTypeTest, MonostateTypeTypes, );
 
 TYPED_TEST(MonostateTypeTest, Arbitrary) {
   absl::BitGen bitgen;

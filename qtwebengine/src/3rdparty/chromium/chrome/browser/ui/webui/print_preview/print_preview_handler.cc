@@ -82,11 +82,11 @@
 #endif  // BUILDFLAG(IS_MAC)
 #endif
 #if BUILDFLAG(IS_CHROMEOS)
-#include "chrome/browser/ash/crosapi/browser_util.h"
 #include "chrome/browser/ash/crosapi/crosapi_ash.h"
 #include "chrome/browser/ash/crosapi/crosapi_manager.h"
 #include "chrome/browser/ash/crosapi/local_printer_ash.h"
 #include "chrome/browser/ash/drive/drive_integration_service.h"
+#include "chrome/browser/ash/drive/drive_integration_service_factory.h"
 #include "chromeos/crosapi/mojom/local_printer.mojom.h"
 #endif
 
@@ -652,9 +652,6 @@ void PrintPreviewHandler::HandleGetPreview(const base::Value::List& args) {
   base::Value::Dict settings = GetSettingsDictionary(json_str);
   int request_id = settings.FindInt(kPreviewRequestID).value();
   CHECK_GT(request_id, -1);
-  mojom::PrinterType printer_type = static_cast<mojom::PrinterType>(
-      settings.FindInt(kSettingPrinterType).value());
-  CHECK_NE(printer_type, mojom::PrinterType::kCloudDeprecated);
 
   CHECK(!base::Contains(preview_callbacks_, request_id));
   preview_callbacks_[request_id] = callback_id;
@@ -955,11 +952,8 @@ void PrintPreviewHandler::SendInitialSettings(
   initial_settings.Set(kSettingPreviewModifiable,
                        request_params->is_modifiable);
 #if BUILDFLAG(IS_CHROMEOS)
-  bool source_is_arc = request_params->is_from_arc;
-#else
-  bool source_is_arc = false;
+  initial_settings.Set(kSettingPreviewIsFromArc, request_params->is_from_arc);
 #endif
-  initial_settings.Set(kSettingPreviewIsFromArc, source_is_arc);
   initial_settings.Set(kSettingPrinterName, default_printer);
   initial_settings.Set(kDocumentHasSelection, request_params->has_selection);
   initial_settings.Set(kSettingShouldPrintSelectionOnly,

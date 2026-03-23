@@ -25,7 +25,7 @@ const UIStrings = {
    *@description Title of the Laptop with MDPI screen device
    */
   laptopWithMDPIScreen: 'Laptop with MDPI screen',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('models/emulation/EmulatedDevices.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
 
@@ -124,7 +124,7 @@ export class EmulatedDevice {
           throw new Error('color has wrong a value: ' + result.a);
         }
 
-        return result as SDK.OverlayModel.HighlightColor;
+        return result;
       }
 
       function parseHinge(json: any): SDK.OverlayModel.Hinge {
@@ -158,7 +158,7 @@ export class EmulatedDevice {
           result.outlineColor = parseRGBA(json['outlineColor']);
         }
 
-        return result as SDK.OverlayModel.Hinge;
+        return result;
       }
 
       function parseOrientation(json: any): Orientation {
@@ -187,7 +187,7 @@ export class EmulatedDevice {
           result.hinge = parseHinge(parseValue(json, 'hinge', 'object', undefined));
         }
 
-        return result as Orientation;
+        return result;
       }
 
       const result = new EmulatedDevice();
@@ -682,7 +682,7 @@ const emulatedDevices = [
     },
     'capabilities': ['touch', 'mobile'],
     'user-agent':
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
     'type': 'phone',
   },
   {
@@ -702,7 +702,7 @@ const emulatedDevices = [
     },
     'capabilities': ['touch', 'mobile'],
     'user-agent':
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
     'type': 'phone',
   },
   {
@@ -722,7 +722,7 @@ const emulatedDevices = [
     },
     'capabilities': ['touch', 'mobile'],
     'user-agent':
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
     'type': 'phone',
   },
   {
@@ -742,7 +742,7 @@ const emulatedDevices = [
     },
     'capabilities': ['touch', 'mobile'],
     'user-agent':
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
     'type': 'phone',
   },
   {
@@ -850,7 +850,7 @@ const emulatedDevices = [
     },
     'capabilities': ['touch', 'mobile'],
     'user-agent':
-        'Mozilla/5.0 (iPad; CPU OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (iPad; CPU OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
     'type': 'tablet',
   },
   {
@@ -868,9 +868,9 @@ const emulatedDevices = [
         'height': 1180,
       },
     },
-    'capabilities': ['touch'],
+    'capabilities': ['touch', 'mobile'],
     'user-agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15',
     'type': 'tablet',
   },
   {
@@ -888,9 +888,9 @@ const emulatedDevices = [
         'height': 1366,
       },
     },
-    'capabilities': ['touch'],
+    'capabilities': ['touch', 'mobile'],
     'user-agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15',
     'type': 'tablet',
   },
   {

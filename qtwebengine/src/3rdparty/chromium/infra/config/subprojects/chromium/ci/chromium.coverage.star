@@ -2,14 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/branches.star", "branches")
-load("//lib/builder_config.star", "builder_config")
-load("//lib/builder_health_indicators.star", "health_spec")
-load("//lib/builders.star", "cpu", "os", "siso")
-load("//lib/ci.star", "ci")
-load("//lib/consoles.star", "consoles")
-load("//lib/gn_args.star", "gn_args")
-load("//lib/targets.star", "targets")
+load("@chromium-luci//args.star", "args")
+load("@chromium-luci//branches.star", "branches")
+load("@chromium-luci//builder_config.star", "builder_config")
+load("@chromium-luci//builder_health_indicators.star", "health_spec")
+load("@chromium-luci//builders.star", "cpu", "os")
+load("@chromium-luci//ci.star", "ci")
+load("@chromium-luci//consoles.star", "consoles")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//targets.star", "targets")
+load("//lib/ci_constants.star", "ci_constants")
+load("//lib/gardener_rotations.star", "gardener_rotations")
+load("//lib/siso.star", "siso")
 load("//lib/xcode.star", "xcode")
 load("//project.star", "settings")
 
@@ -37,17 +41,16 @@ luci.gitiles_poller(
 )
 
 ci.defaults.set(
-    executable = ci.DEFAULT_EXECUTABLE,
+    executable = ci_constants.DEFAULT_EXECUTABLE,
     builder_group = "chromium.coverage",
-    pool = ci.DEFAULT_POOL,
+    pool = ci_constants.DEFAULT_POOL,
     cores = 32,
     ssd = True,
     execution_timeout = 20 * time.hour,
-    health_spec = health_spec.DEFAULT,
-    priority = ci.DEFAULT_FYI_PRIORITY,
-    service_account = ci.DEFAULT_SERVICE_ACCOUNT,
-    shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
-    siso_enabled = True,
+    health_spec = health_spec.default(),
+    priority = ci_constants.DEFAULT_FYI_PRIORITY,
+    service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,
+    shadow_service_account = ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
 )
@@ -126,11 +129,12 @@ coverage_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "android_pie_coverage_instrumentation_tests",
+            "android_coverage_instrumentation_tests",
             "chromium_junit_tests_scripts",
+            "gtests_once",
         ],
         mixins = [
-            "chromium_pixel_2_pie",
+            "chromium_pixel_2_q",
             "has_native_resultdb_integration",
             "isolate_profile_data",
         ],
@@ -195,7 +199,7 @@ coverage_webview_builder(
             "webview_fyi_bot_all_gtests",
         ],
         mixins = [
-            "chromium_pixel_2_pie",
+            "chromium_pixel_2_q",
             "has_native_resultdb_integration",
             "isolate_profile_data",
         ],
@@ -218,6 +222,7 @@ coverage_webview_builder(
 
 coverage_builder(
     name = "android-x86-code-coverage",
+    description_html = "Builder for creating x86 Android code coverage builds.",
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
@@ -251,7 +256,7 @@ coverage_builder(
             "x86",
             "strip_debug_info",
             "android_fastbuild",
-            "webview_monochrome",
+            "webview_trichrome",
             "webview_shell",
             "use_java_coverage",
         ],
@@ -260,8 +265,8 @@ coverage_builder(
         targets = [
             targets.bundle(
                 targets = [
-                    "android_oreo_emulator_gtests",
-                    "oreo_isolated_scripts",
+                    "android_10_emulator_gtests",
+                    "android_10_isolated_scripts",
                 ],
                 mixins = targets.mixin(
                     args = [
@@ -270,6 +275,7 @@ coverage_builder(
                 ),
             ),
             "chromium_android_scripts",
+            "gtests_once",
         ],
         additional_compile_targets = [
             "chrome_nocompile_tests",
@@ -277,104 +283,119 @@ coverage_builder(
         mixins = [
             "has_native_resultdb_integration",
             "isolate_profile_data",
-            "oreo-x86-emulator",
+            "10-x86-emulator",
             "emulator-4-cores",
             "linux-jammy",
             "x86-64",
         ],
         per_test_modifications = {
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "android_browsertests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.android_browsertests.filter",
+                ],
                 ci_only = True,
                 swarming = targets.swarming(
                     shards = 9,
                 ),
             ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "android_sync_integration_tests": targets.mixin(
                 ci_only = True,
                 swarming = targets.swarming(
                     shards = 2,
                 ),
             ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "chrome_public_test_apk": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o.chrome_public_test_apk.filter",
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.chrome_public_test_apk.filter",
                 ],
                 swarming = targets.swarming(
                     dimensions = {
+                        # use 8-core to shorten runtime
                         "cores": "8",
                     },
                     shards = 75,
                 ),
             ),
-            # Keep this same as android-oreo-x86-rel
-            "chrome_public_unit_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o.chrome_public_unit_test_apk.filter",
-                ],
-            ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "components_browsertests": targets.mixin(
                 swarming = targets.swarming(
                     shards = 4,
                 ),
             ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "content_browsertests": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o.content_browsertests.filter",
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.content_browsertests.filter",
                 ],
                 swarming = targets.swarming(
                     dimensions = {
+                        # use 8-core to shorten runtime
                         "cores": "8",
                     },
                     shards = 75,
                 ),
             ),
+            # Keep this same as android-10-x86-rel
             "content_shell_crash_test": targets.remove(
                 reason = "crbug.com/1084353",
             ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "content_shell_test_apk": targets.mixin(
                 swarming = targets.swarming(
                     dimensions = {
+                        # use 8-core to shorten runtime
                         "cores": "8",
                     },
                     shards = 6,
                 ),
             ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
+            "content_unittests": targets.mixin(
+                ci_only = True,
+            ),
+            # Keep this same as android-10-x86-rel
             "gl_tests_validating": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o_p_10.gl_tests.filter",
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.gl_tests.filter",
                 ],
             ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "perfetto_unittests": targets.mixin(
                 args = [
+                    # TODO(crbug.com/40201873): Fix the failed test
                     "--gtest_filter=-ScopedDirTest.CloseOutOfScope",
                 ],
             ),
-            # Keep this same as android-oreo-x86-rel
-            "services_unittests": targets.mixin(
+            # Keep this same as android-10-x86-rel
+            "media_unittests": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o.services_unittests.filter",
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.media_unittests.filter",
                 ],
+                ci_only = True,
+            ),
+            # Keep this same as android-10-x86-rel
+            "services_unittests": targets.mixin(
+                ci_only = True,
                 swarming = targets.swarming(
                     shards = 3,
                 ),
             ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
+            "system_webview_shell_layout_test_apk": targets.mixin(
+                args = [
+                    # TODO(crbug.com/390676579): Fix the failed test
+                    "--gtest_filter=-org.chromium.webview_shell.test.WebViewLayoutTest.*",
+                ],
+                ci_only = True,
+            ),
+            # Keep this same as android-10-x86-rel
             "telemetry_chromium_minidump_unittests": targets.mixin(
                 ci_only = True,
             ),
-            # Keep this same as android-oreo-x86-rel
-            "telemetry_monochrome_minidump_unittests": targets.mixin(
-                ci_only = True,
-            ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "telemetry_perf_unittests_android_chrome": targets.mixin(
                 # For whatever reason, automatic browser selection on this bot chooses
                 # webview instead of the full browser, so explicitly specify it here.
@@ -383,20 +404,23 @@ coverage_builder(
                 ],
                 ci_only = True,
             ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
                 args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.webview_instrumentation_test_apk.filter",
                     "--use-persistent-shell",
                 ],
                 swarming = targets.swarming(
                     shards = 18,
                 ),
             ),
-            # Keep this same as android-oreo-x86-rel
+            # Keep this same as android-10-x86-rel
             "webview_instrumentation_test_apk_single_process_mode": targets.mixin(
                 args = [
                     "--use-persistent-shell",
                 ],
+                # Only multiple process tests run in CQ.
+                ci_only = True,
                 swarming = targets.swarming(
                     shards = 9,
                 ),
@@ -413,6 +437,7 @@ coverage_builder(
             short_name = "x86",
         ),
     ],
+    contact_team_email = "clank-engprod@google.com",
     coverage_test_types = ["overall", "unit"],
     export_coverage_to_zoss = True,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
@@ -463,9 +488,10 @@ coverage_builder(
     targets = targets.bundle(
         targets = [
             "chromium_android_gtests",
+            "gtests_once",
         ],
         mixins = [
-            "chromium_pixel_2_pie",
+            "chromium_pixel_2_q",
             "has_native_resultdb_integration",
             "isolate_profile_data",
         ],
@@ -499,18 +525,6 @@ coverage_builder(
             ),
             "content_shell_test_apk": targets.remove(
                 reason = "Does not generate profraw data.",
-            ),
-            "gin_unittests": targets.mixin(
-                args = [
-                    # https://crbug.com/1404782
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.pie_arm64.gin_unittests.filter",
-                ],
-            ),
-            "gl_tests_validating": targets.mixin(
-                args = [
-                    # https://crbug.com/1034007
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.pie_arm64_rel.gl_tests.filter",
-                ],
             ),
             "mojo_test_apk": targets.remove(
                 reason = "Does not generate profraw data.",
@@ -603,7 +617,7 @@ coverage_webview_builder(
             "webview_native_coverage_bot_gtests",
         ],
         mixins = [
-            "chromium_pixel_2_pie",
+            "chromium_pixel_2_q",
             "has_native_resultdb_integration",
             "isolate_profile_data",
         ],
@@ -669,6 +683,7 @@ coverage_builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "cronet_android",
             "debug_static_builder",
             "remoteexec",
@@ -693,13 +708,14 @@ coverage_builder(
         os_type = targets.os_type.ANDROID,
     ),
     os = os.LINUX_DEFAULT,
+    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = [
         consoles.console_view_entry(
             category = "cronet",
-            short_name = "x64",
+            short_name = "java",
         ),
     ],
-    contact_team_email = "woa-engprod@google.com",
+    contact_team_email = "cronet-team@google.com",
     coverage_test_types = ["overall", "unit"],
     export_coverage_to_zoss = True,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
@@ -736,6 +752,7 @@ coverage_builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "cronet_android",
             "debug_static_builder",
             "remoteexec",
@@ -760,13 +777,14 @@ coverage_builder(
         os_type = targets.os_type.ANDROID,
     ),
     os = os.LINUX_DEFAULT,
+    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = [
         consoles.console_view_entry(
             category = "cronet",
-            short_name = "x64",
+            short_name = "native",
         ),
     ],
-    contact_team_email = "woa-engprod@google.com",
+    contact_team_email = "cronet-team@google.com",
     coverage_test_types = ["overall", "unit"],
     export_coverage_to_zoss = True,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
@@ -808,6 +826,7 @@ coverage_builder(
     targets = targets.bundle(
         targets = [
             "fuchsia_gtests",
+            "gtests_once",
             targets.bundle(
                 targets = "gpu_angle_fuchsia_unittests_isolated_scripts",
                 mixins = "expand-as-isolated-script",
@@ -1020,6 +1039,7 @@ coverage_builder(
     targets = targets.bundle(
         targets = [
             "linux_chromeos_gtests",
+            "gtests_once",
         ],
         additional_compile_targets = [
             "gn_all",
@@ -1214,6 +1234,109 @@ coverage_builder(
     notifies = ["chrome-fuzzing-core"],
     properties = {
         "collect_fuzz_coverage": True,
+        "fuzz_engine": "libfuzzer",
+    },
+)
+
+# Experimental builder. Does not export_coverage_to_zoss.
+coverage_builder(
+    name = "linux-centipede-fuzz-coverage",
+    description_html = "This builder collects code coverage for centipede.",
+    executable = "recipe:chromium/fuzz",
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = ["use_clang_coverage"],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium_clang",
+            apply_configs = [
+                "clobber",
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.LINUX,
+        ),
+    ),
+    gn_args = gn_args.config(
+        configs = [
+            "use_clang_coverage",
+            "static",
+            "mojo_fuzzer",
+            "centipede",
+            "dcheck_off",
+            "remoteexec",
+            "chromeos_codecs",
+            "pdf_xfa",
+            "release",
+            "linux",
+            "x64",
+        ],
+    ),
+    builderless = True,
+    os = os.LINUX_DEFAULT,
+    console_view_entry = [
+        consoles.console_view_entry(
+            category = "linux-fuzz",
+            short_name = "centipede",
+        ),
+    ],
+    contact_team_email = "chrome-fuzzing-core@google.com",
+    notifies = ["chrome-fuzzing-core"],
+    properties = {
+        "collect_fuzz_coverage": True,
+        "fuzz_engine": "centipede",
+    },
+)
+
+# Experimental builder. Does not export_coverage_to_zoss.
+coverage_builder(
+    name = "linux-x64-fuzzilli-coverage",
+    description_html = "This builder collects code coverage for V8 Fuzzilli tests.",
+    executable = "recipe:chromium/fuzz",
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = ["use_clang_coverage"],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium_clang",
+            apply_configs = [
+                "clobber",
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.LINUX,
+        ),
+    ),
+    gn_args = gn_args.config(
+        configs = [
+            "dcheck_always_on",
+            "v8_backtrace",
+            "v8_debug",
+            "v8_heap",
+            "v8_static",
+            "use_clang_coverage",
+            "remoteexec",
+            "linux",
+            "x64",
+        ],
+    ),
+    builderless = True,
+    os = os.LINUX_DEFAULT,
+    console_view_entry = [
+        consoles.console_view_entry(
+            category = "linux-fuzz",
+            short_name = "fuzzlli-x64",
+        ),
+    ],
+    contact_team_email = "v8-security@google.com",
+    notifies = ["chrome-fuzzing-core"],
+    properties = {
+        "collect_fuzz_coverage": True,
+        "fuzz_engine": "fuzzilli",
     },
 )
 
@@ -1255,6 +1378,7 @@ coverage_builder(
             "chromium_linux_gtests",
             "chromium_linux_rel_isolated_scripts_code_coverage",
             "gpu_dawn_webgpu_cts",
+            "gtests_once",
             "chromium_linux_scripts",
         ],
         mixins = [
@@ -1333,7 +1457,16 @@ coverage_builder(
                 "linux_nvidia_gtx_1660_stable",
             ],
             "webgpu_cts_with_validation_tests": targets.remove(
-                reason = "Don't need validation layers on code coverage bots",
+                reason = "Don't need validation layers on code coverage bots.",
+            ),
+            "webgpu_cts_dedicated_worker_tests": [
+                "linux_nvidia_gtx_1660_stable",
+            ],
+            "webgpu_cts_service_worker_tests": targets.remove(
+                reason = "Dedicated worker tests are probably sufficient.",
+            ),
+            "webgpu_cts_shared_worker_tests": targets.remove(
+                reason = "Dedicated worker tests are probably sufficient.",
             ),
         },
     ),
@@ -1386,6 +1519,7 @@ coverage_builder(
             "chromium_mac_gtests",
             "chromium_mac_rel_isolated_scripts_code_coverage",
             # TODO(crbug.com/40249801): Enable gpu_dawn_webgpu_cts
+            "gtests_once",
         ],
         mixins = [
             "isolate_profile_data",
@@ -1461,6 +1595,7 @@ coverage_builder(
             "chromium_win_gtests",
             "chromium_win_rel_isolated_scripts_code_coverage",
             "gpu_dawn_webgpu_cts",
+            "gtests_once",
         ],
         mixins = [
             "isolate_profile_data",
@@ -1532,13 +1667,22 @@ coverage_builder(
                 "win10_nvidia_gtx_1660_stable",
             ],
             "webgpu_blink_web_tests_with_backend_validation": targets.remove(
-                reason = "Remove from bots where capacity is constrained.",
+                reason = "Don't need validation layers on code coverage bots.",
             ),
             "webgpu_cts_tests": [
                 "win10_nvidia_gtx_1660_stable",
             ],
             "webgpu_cts_with_validation_tests": targets.remove(
-                reason = "Don't need validation layers on code coverage bots",
+                reason = "Don't need validation layers on code coverage bots.",
+            ),
+            "webgpu_cts_dedicated_worker_tests": [
+                "win10_nvidia_gtx_1660_stable",
+            ],
+            "webgpu_cts_service_worker_tests": targets.remove(
+                reason = "Dedicated worker tests are probably sufficient.",
+            ),
+            "webgpu_cts_shared_worker_tests": targets.remove(
+                reason = "Dedicated worker tests are probably sufficient.",
             ),
             "webkit_unit_tests": targets.mixin(
                 swarming = targets.swarming(

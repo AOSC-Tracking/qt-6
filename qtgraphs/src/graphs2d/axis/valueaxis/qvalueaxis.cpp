@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtGraphs/QValueAxis>
 #include <private/qvalueaxis_p.h>
@@ -179,6 +181,44 @@ QT_BEGIN_NAMESPACE
 
   The pan value moves the center of the axis without affecting intervals
   of grid and labels. The default value is 0.
+*/
+
+/*!
+ \property QValueAxis::visualMin
+ \readonly
+ \since 6.11
+ \brief The visual minimum value of the axis.
+
+ This property holds a a visual minimum axis value when axis has been
+ panned or zoomed. The default value is \l{QValueAxis::min}
+*/
+/*!
+ \qmlproperty real ValueAxis::visualMin
+ \readonly
+ \since 6.11
+ The visual minimum value of the axis.
+
+ This property holds a a visual minimum axis value when axis has been
+ panned or zoomed. The default value is \l min
+*/
+
+/*!
+ \property QValueAxis::visualMax
+ \readonly
+ \since 6.11
+ \brief The visual maximum value of the axis.
+
+ This property holds a a visual maximum axis value when axis has been
+ panned or zoomed. The default value is \l{QValueAxis::max}
+*/
+/*!
+ \qmlproperty real ValueAxis::visualMax
+ \readonly
+ \since 6.11
+ The visual maximum value of the axis.
+
+ This property holds a a visual maximum axis value when axis has been
+ panned or zoomed. The default value is \l max
 */
 
 /*!
@@ -366,6 +406,7 @@ void QValueAxis::setZoom(qreal zoom)
     Q_D(QValueAxis);
     if (d->m_zoom != zoom) {
         d->m_zoom = zoom;
+        d->calculateVisualRange();
         emit update();
         emit zoomChanged(zoom);
     } else {
@@ -385,6 +426,7 @@ void QValueAxis::setPan(qreal pan)
     Q_D(QValueAxis);
     if (d->m_pan != pan) {
         d->m_pan = pan;
+        d->calculateVisualRange();
         emit update();
         emit panChanged(pan);
     } else {
@@ -397,6 +439,18 @@ qreal QValueAxis::pan() const
 {
     Q_D(const QValueAxis);
     return d->m_pan;
+}
+
+qreal QValueAxis::visualMin() const
+{
+    Q_D(const QValueAxis);
+    return d->m_visualMin;
+}
+
+qreal QValueAxis::visualMax() const
+{
+    Q_D(const QValueAxis);
+    return d->m_visualMax;
 }
 
 /*!
@@ -477,8 +531,28 @@ void QValueAxisPrivate::setRange(qreal min, qreal max)
         emit q->maxChanged(max);
     }
 
-    if (changed)
+    if (changed) {
+        calculateVisualRange();
         emit q->rangeChanged(min, max);
+    }
+}
+
+void QValueAxisPrivate::calculateVisualRange()
+{
+    Q_Q(QValueAxis);
+    qreal diff = m_max - m_min;
+    qreal center = diff / 2.0f + m_min + m_pan;
+    diff /= m_zoom;
+    qreal min = center - diff / 2.0f;
+    qreal max = center + diff / 2.0f;
+    if (!QtPrivate::fuzzyCompare(m_visualMin, min)) {
+        m_visualMin = min;
+        emit q->visualMinChanged(min);
+    }
+    if (!QtPrivate::fuzzyCompare(m_visualMax, max)) {
+        m_visualMax = max;
+        emit q->visualMaxChanged(max);
+    }
 }
 
 QT_END_NAMESPACE

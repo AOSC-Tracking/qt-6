@@ -124,7 +124,9 @@ class LRUCacheBase {
   // Retrieves the contents of the given key, or end() if not found. This method
   // has the side effect of moving the requested item to the front of the
   // recency list.
-  iterator Get(const key_type& key) {
+  template <typename K = key_type>
+    requires requires(KeyIndex index, K key) { index.find(key); }
+  iterator Get(const K& key) {
     typename KeyIndex::iterator index_iter = index_.find(key);
     if (index_iter == index_.end()) {
       return end();
@@ -138,7 +140,9 @@ class LRUCacheBase {
 
   // Retrieves the item associated with a given key and returns it via
   // result without affecting the ordering (unlike Get()).
-  iterator Peek(const key_type& key) {
+  template <typename K = key_type>
+    requires requires(KeyIndex index, K key) { index.find(key); }
+  iterator Peek(const K& key) {
     typename KeyIndex::const_iterator index_iter = index_.find(key);
     if (index_iter == index_.end()) {
       return end();
@@ -146,7 +150,9 @@ class LRUCacheBase {
     return index_iter->second;
   }
 
-  const_iterator Peek(const key_type& key) const {
+  template <typename K = key_type>
+    requires requires(KeyIndex index, K key) { index.find(key); }
+  const_iterator Peek(const K& key) const {
     typename KeyIndex::const_iterator index_iter = index_.find(key);
     if (index_iter == index_.end()) {
       return end();
@@ -163,6 +169,9 @@ class LRUCacheBase {
 
   // Erases the item referenced by the given iterator. An iterator to the item
   // following it will be returned. The iterator must be valid.
+  // Note that caller should avoid using std::remove_if() with this container as
+  // the iterator from begin()/end() is not designed to have the key modified,
+  // see comment on begin().
   iterator Erase(iterator pos) {
     index_.erase(GetKeyFromValue()(*pos));
     return ordering_.erase(pos);
@@ -205,6 +214,10 @@ class LRUCacheBase {
   // Note that since these iterators are actually iterators over a list, you
   // can keep them as you insert or delete things (as long as you don't delete
   // the one you are pointing to) and they will still be valid.
+  // Also, caller should avoid moving the order of items around, or any
+  // operation that modifies the key in the value with these iterators, such as
+  // using std::remove_if(). This is because the key in index_ is not updated
+  // and the container will be corrupted.
   iterator begin() { return ordering_.begin(); }
   const_iterator begin() const { return ordering_.begin(); }
   iterator end() { return ordering_.end(); }
@@ -239,11 +252,6 @@ class LRUCacheBase {
       const LruCacheType&);
 
   ValueList ordering_;
-  // TODO(crbug.com/40069408): Remove annotation once crbug.com/1472363 is
-  // fixed.
-#if !defined(COMPILER_MSVC)
-  __attribute__((annotate("blink_gc_plugin_ignore")))
-#endif
   KeyIndex index_;
 
   size_type max_size_;

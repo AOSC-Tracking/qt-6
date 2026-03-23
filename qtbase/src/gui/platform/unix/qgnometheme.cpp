@@ -1,11 +1,14 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qgnometheme_p.h"
 #include <qpa/qplatformdialoghelper.h>
 #include <qpa/qplatformfontdatabase.h>
-#if QT_CONFIG(dbus)
+#if QT_CONFIG(dbus) && QT_CONFIG(systemtrayicon)
 #  include <private/qdbustrayicon_p.h>
+#endif
+#if QT_CONFIG(dbus)
 #  include <private/qdbusmenubar_p.h>
 #endif
 #include <qpa/qwindowsysteminterface.h>

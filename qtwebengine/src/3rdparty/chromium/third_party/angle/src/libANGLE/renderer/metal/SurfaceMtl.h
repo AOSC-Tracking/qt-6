@@ -29,7 +29,7 @@ class DisplayMtl;
     {                                                          \
         if (ANGLE_UNLIKELY((EXPR) != angle::Result::Continue)) \
         {                                                      \
-            return egl::EglBadSurface();                       \
+            return egl::Error(EGL_BAD_SURFACE);                \
         }                                                      \
     } while (0)
 
@@ -47,7 +47,7 @@ class SurfaceMtl : public SurfaceImpl
 
     egl::Error makeCurrent(const gl::Context *context) override;
     egl::Error unMakeCurrent(const gl::Context *context) override;
-    egl::Error swap(const gl::Context *context) override;
+    egl::Error swap(const gl::Context *context, SurfaceSwapFeedback *feedback) override;
     egl::Error postSubBuffer(const gl::Context *context,
                              EGLint x,
                              EGLint y,
@@ -64,9 +64,6 @@ class SurfaceMtl : public SurfaceImpl
     void setSwapInterval(const egl::Display *display, EGLint interval) override;
     void setFixedWidth(EGLint width) override;
     void setFixedHeight(EGLint height) override;
-
-    EGLint getWidth() const override;
-    EGLint getHeight() const override;
 
     EGLint isPostSubBufferSupported() const override;
     EGLint getSwapBehavior() const override;
@@ -139,7 +136,7 @@ class WindowSurfaceMtl : public SurfaceMtl
 
     egl::Error initialize(const egl::Display *display) override;
 
-    egl::Error swap(const gl::Context *context) override;
+    egl::Error swap(const gl::Context *context, SurfaceSwapFeedback *feedback) override;
 
     void setSwapInterval(const egl::Display *display, EGLint interval) override;
     EGLint getSwapBehavior() const override;
@@ -148,9 +145,8 @@ class WindowSurfaceMtl : public SurfaceMtl
                                      GLenum binding,
                                      const gl::ImageIndex &imageIndex) override;
 
-    // width and height can change with client window resizing
-    EGLint getWidth() const override;
-    EGLint getHeight() const override;
+    // size can change with client window resizing
+    gl::Extents getSize() const override;
     angle::Result getAttachmentRenderTarget(const gl::Context *context,
                                             GLenum binding,
                                             const gl::ImageIndex &imageIndex,
@@ -177,9 +173,9 @@ class WindowSurfaceMtl : public SurfaceMtl
     // Check if metal layer has been resized.
     bool checkIfLayerResized(const gl::Context *context);
 
-    mtl::AutoObjCObj<CAMetalLayer> mMetalLayer = nil;
+    angle::ObjCPtr<CAMetalLayer> mMetalLayer = nil;
     CALayer *mLayer;
-    mtl::AutoObjCPtr<id<CAMetalDrawable>> mCurrentDrawable = nil;
+    angle::ObjCPtr<id<CAMetalDrawable>> mCurrentDrawable = nil;
 
     // Cache last known drawable size that is used by GL context. Can be used to detect resize
     // event. We don't use mMetalLayer.drawableSize directly since it might be changed internally by
@@ -200,10 +196,9 @@ class OffscreenSurfaceMtl : public SurfaceMtl
 
     void destroy(const egl::Display *display) override;
 
-    EGLint getWidth() const override;
-    EGLint getHeight() const override;
+    gl::Extents getSize() const override;
 
-    egl::Error swap(const gl::Context *context) override;
+    egl::Error swap(const gl::Context *context, SurfaceSwapFeedback *feedback) override;
 
     egl::Error bindTexImage(const gl::Context *context,
                             gl::Texture *texture,

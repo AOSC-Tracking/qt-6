@@ -61,7 +61,7 @@ bool VerifyParameterValues(const T& value,
     return true;
   }
 
-  WTF::StringBuilder error_builder;
+  StringBuilder error_builder;
   error_builder.Append(error_message_base_base);
   error_builder.Append(" Supported values: ");
   for (auto i = 0u; i < supported_values.size(); i++) {
@@ -576,7 +576,7 @@ void AudioEncoder::ProcessReconfigure(Request* request) {
   // Audio decoders don't currently support any meaningful reconfiguring
 }
 
-AudioEncoder::ParsedConfig* AudioEncoder::ParseConfig(
+AudioEncoder::ParsedConfig* AudioEncoder::OnNewConfigure(
     const AudioEncoderConfig* opts,
     ExceptionState& exception_state) {
   return ParseConfigStatic(opts, exception_state);
@@ -594,6 +594,9 @@ bool AudioEncoder::VerifyCodecSupport(ParsedConfig* config,
                                       String* js_error_message) {
   return VerifyCodecSupportStatic(config, js_error_message);
 }
+
+void AudioEncoder::OnNewEncode(InputType* input,
+                               ExceptionState& exception_state) {}
 
 void AudioEncoder::CallOutputCallback(
     ParsedConfig* active_config,

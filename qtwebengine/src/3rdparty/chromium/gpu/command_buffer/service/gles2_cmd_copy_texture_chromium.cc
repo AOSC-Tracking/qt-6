@@ -33,7 +33,7 @@ namespace {
 
 enum {
   SAMPLER_2D,
-  SAMPLER_RECTANGLE_ARB,
+  SAMPLER_RECTANGLE_ANGLE,
   SAMPLER_EXTERNAL_OES,
   NUM_SAMPLERS
 };
@@ -132,8 +132,8 @@ ShaderId GetFragmentShaderId(unsigned glslVersion,
     case GL_TEXTURE_2D:
       targetIndex = SAMPLER_2D;
       break;
-    case GL_TEXTURE_RECTANGLE_ARB:
-      targetIndex = SAMPLER_RECTANGLE_ARB;
+    case GL_TEXTURE_RECTANGLE_ANGLE:
+      targetIndex = SAMPLER_RECTANGLE_ANGLE;
       break;
     case GL_TEXTURE_EXTERNAL_OES:
       targetIndex = SAMPLER_EXTERNAL_OES;
@@ -414,7 +414,7 @@ std::string GetFragmentShaderSource(unsigned glslVersion,
       case GL_TEXTURE_EXTERNAL_OES:
         source += "#define TextureLookup texture2D\n";
         break;
-      case GL_TEXTURE_RECTANGLE_ARB:
+      case GL_TEXTURE_RECTANGLE_ANGLE:
         source += "#define TextureLookup texture2DRect\n";
         break;
       default:
@@ -433,7 +433,7 @@ std::string GetFragmentShaderSource(unsigned glslVersion,
     case GL_TEXTURE_2D:
       source += "#define SamplerType sampler2D\n";
       break;
-    case GL_TEXTURE_RECTANGLE_ARB:
+    case GL_TEXTURE_RECTANGLE_ANGLE:
       source += "#define SamplerType sampler2DRect\n";
       break;
     case GL_TEXTURE_EXTERNAL_OES:
@@ -495,7 +495,8 @@ void DeleteShader(GLuint shader) {
     glDeleteShader(shader);
 }
 
-bool BindFramebufferTexture2D(GLenum target,
+bool BindFramebufferTexture2D(DecoderContext* decoder,
+                              GLenum target,
                               GLuint texture_id,
                               GLint level,
                               GLuint framebuffer) {
@@ -503,7 +504,7 @@ bool BindFramebufferTexture2D(GLenum target,
       gpu::gles2::GLES2Util::GLFaceTargetToTextureTarget(target);
 
   DCHECK(binding_target == GL_TEXTURE_2D ||
-         binding_target == GL_TEXTURE_RECTANGLE_ARB ||
+         binding_target == GL_TEXTURE_RECTANGLE_ANGLE ||
          binding_target == GL_TEXTURE_CUBE_MAP);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(binding_target, texture_id);
@@ -515,7 +516,7 @@ bool BindFramebufferTexture2D(GLenum target,
   glTexParameterf(binding_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTexParameteri(binding_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri(binding_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, framebuffer);
+  decoder->BindFramebuffer(GL_FRAMEBUFFER, framebuffer);
   glFramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, target,
                             texture_id, level);
 
@@ -549,7 +550,7 @@ void DoCopyTexImage2D(
   DCHECK(dest_binding_target == GL_TEXTURE_2D ||
          dest_binding_target == GL_TEXTURE_CUBE_MAP);
   DCHECK(source_level == 0 || decoder->GetFeatureInfo()->IsES3Capable());
-  if (BindFramebufferTexture2D(source_target, source_id, source_level,
+  if (BindFramebufferTexture2D(decoder, source_target, source_id, source_level,
                                framebuffer)) {
     glBindTexture(dest_binding_target, dest_id);
     glTexParameterf(dest_binding_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -601,13 +602,13 @@ void DoCopyTexSubImage2D(
     GLuint framebuffer,
     gpu::gles2::CopyTexImageResourceManager* luma_emulation_blitter) {
   DCHECK(source_target == GL_TEXTURE_2D ||
-         source_target == GL_TEXTURE_RECTANGLE_ARB);
+         source_target == GL_TEXTURE_RECTANGLE_ANGLE);
   GLenum dest_binding_target =
       gpu::gles2::GLES2Util::GLFaceTargetToTextureTarget(dest_target);
   DCHECK(dest_binding_target == GL_TEXTURE_2D ||
          dest_binding_target == GL_TEXTURE_CUBE_MAP);
   DCHECK(source_level == 0 || decoder->GetFeatureInfo()->IsES3Capable());
-  if (BindFramebufferTexture2D(source_target, source_id, source_level,
+  if (BindFramebufferTexture2D(decoder, source_target, source_id, source_level,
                                framebuffer)) {
     glBindTexture(dest_binding_target, dest_id);
     glTexParameterf(dest_binding_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -771,7 +772,7 @@ void DoReadbackAndTexImage(TexImageCommandType command_type,
   DCHECK(dest_binding_target == GL_TEXTURE_2D ||
          dest_binding_target == GL_TEXTURE_CUBE_MAP);
   DCHECK(source_level == 0 || decoder->GetFeatureInfo()->IsES3Capable());
-  if (BindFramebufferTexture2D(source_target, source_id, source_level,
+  if (BindFramebufferTexture2D(decoder, source_target, source_id, source_level,
                                framebuffer)) {
     glBindTexture(dest_binding_target, dest_id);
     glTexParameterf(dest_binding_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -1212,10 +1213,10 @@ void CopyTextureResourceManagerImpl::DoCopyTextureInternal(
     bool unpremultiply_alpha,
     gpu::gles2::CopyTexImageResourceManager* luma_emulation_blitter) {
   DCHECK(source_target == GL_TEXTURE_2D ||
-         source_target == GL_TEXTURE_RECTANGLE_ARB ||
+         source_target == GL_TEXTURE_RECTANGLE_ANGLE ||
          source_target == GL_TEXTURE_EXTERNAL_OES);
   DCHECK(dest_target == GL_TEXTURE_2D ||
-         dest_target == GL_TEXTURE_RECTANGLE_ARB ||
+         dest_target == GL_TEXTURE_RECTANGLE_ANGLE ||
          (dest_target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X &&
           dest_target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z));
   DCHECK_GE(source_level, 0);
@@ -1306,7 +1307,7 @@ void CopyTextureResourceManagerImpl::DoCopyTextureInternal(
   // The target subrange in the source texture has coordinates [x, x + width].
   // The full source texture has range [0, source_width]. We need to transform
   // the subrange into texture space ([0, M]), assuming that [0, source_width]
-  // gets mapped to [0, M]. If source_target == GL_TEXTURE_RECTANGLE_ARB, M =
+  // gets mapped to [0, M]. If source_target == GL_TEXTURE_RECTANGLE_ANGLE, M =
   // source_width. Otherwise, M = 1.
   //
   // We want to find A and B such that:
@@ -1335,8 +1336,8 @@ void CopyTextureResourceManagerImpl::DoCopyTextureInternal(
   //   A = (-w/2) * M / source_width
   //
   // So everything is the same but the sign of A is flipped.
-  GLfloat m_x = source_target == GL_TEXTURE_RECTANGLE_ARB ? source_width : 1;
-  GLfloat m_y = source_target == GL_TEXTURE_RECTANGLE_ARB ? source_height : 1;
+  GLfloat m_x = source_target == GL_TEXTURE_RECTANGLE_ANGLE ? source_width : 1;
+  GLfloat m_y = source_target == GL_TEXTURE_RECTANGLE_ANGLE ? source_height : 1;
   GLfloat sign_a = flip_y ? -1 : 1;
   glUniform2f(info->vertex_source_mult_handle, width / 2.f * m_x / source_width,
               height / 2.f * m_y / source_height * sign_a);
@@ -1345,7 +1346,7 @@ void CopyTextureResourceManagerImpl::DoCopyTextureInternal(
               (y + height / 2.f) * m_y / source_height);
 
   DCHECK(dest_level == 0 || decoder->GetFeatureInfo()->IsES3Capable());
-  if (BindFramebufferTexture2D(dest_target, dest_id, dest_level,
+  if (BindFramebufferTexture2D(decoder, dest_target, dest_id, dest_level,
                                framebuffer_)) {
 #ifndef NDEBUG
     // glValidateProgram of MACOSX validates FBO unlike other platforms, so

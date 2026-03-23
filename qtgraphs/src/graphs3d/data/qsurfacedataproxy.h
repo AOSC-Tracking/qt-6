@@ -1,13 +1,13 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QTGRAPHS_QSURFACEDATAPROXY_H
 #define QTGRAPHS_QSURFACEDATAPROXY_H
 
 #include <QtGraphs/qabstractdataproxy.h>
 #include <QtGraphs/qsurfacedataitem.h>
-
-Q_MOC_INCLUDE(<QtGraphs/qsurface3dseries.h>)
 
 QT_BEGIN_NAMESPACE
 

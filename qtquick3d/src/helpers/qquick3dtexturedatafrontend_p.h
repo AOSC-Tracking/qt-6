@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //
 //  W A R N I N G
@@ -15,6 +17,7 @@
 #ifndef QQUICK3DTEXTUREDATAFRONTEND_H
 #define QQUICK3DTEXTUREDATAFRONTEND_H
 
+#include <QtQuick3DHelpers/qtquick3dhelpersexports.h>
 #include <QtQuick3D/QQuick3DTextureData>
 #include <QtQml/QQmlEngine>
 
@@ -22,7 +25,7 @@
 
 QT_BEGIN_NAMESPACE
 
-class QQuick3DTextureDataFrontend : public QQuick3DTextureData
+class Q_QUICK3DHELPERS_EXPORT QQuick3DTextureDataFrontend : public QQuick3DTextureData
 {
     Q_OBJECT
     Q_PROPERTY(QQuick3DTextureData::Format format READ format WRITE setFormat NOTIFY formatChanged)

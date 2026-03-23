@@ -44,7 +44,7 @@ namespace base {
 
 // TODO(jrg): Find out if setproctitle or equivalent is available on Android.
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_SOLARIS) && \
-    !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_NACL)
+    !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_FUCHSIA)
 
 void SetProcessTitleFromCommandLine(const char** main_argv) {
   // Build a single string which consists of all the arguments separated
@@ -54,7 +54,8 @@ void SetProcessTitleFromCommandLine(const char** main_argv) {
   bool have_argv0 = false;
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
-  DCHECK_EQ(base::PlatformThread::CurrentId(), getpid());
+  DCHECK_EQ(base::PlatformThread::CurrentId(),
+            base::PlatformThreadId(getpid()));
 
   if (main_argv) {
     setproctitle_init(main_argv);

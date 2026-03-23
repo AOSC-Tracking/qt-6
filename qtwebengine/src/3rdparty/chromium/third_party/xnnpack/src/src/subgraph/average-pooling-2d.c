@@ -8,22 +8,21 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack.h"
-#include "xnnpack/common.h"
-#include "xnnpack/log.h"
-#include "xnnpack/node-type.h"
-#include "xnnpack/operator-type.h"
-#include "xnnpack/operator.h"
-#include "xnnpack/subgraph-validation.h"
-#include "xnnpack/subgraph.h"
-#include "pthreadpool.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/node-type.h"
+#include "src/xnnpack/operator-type.h"
+#include "src/xnnpack/operator.h"
+#include "src/xnnpack/subgraph-validation.h"
+#include "src/xnnpack/subgraph.h"
+#include <pthreadpool.h>
 
 static enum xnn_status create_average_pooling_operator(
   const struct xnn_node* node,
-  const struct xnn_value* values,
+  const struct xnn_runtime_value* values,
   size_t num_values,
   struct xnn_operator_data* opdata,
-  struct xnn_code_cache* code_cache,
   xnn_weights_cache_t weights_cache)
 {
   assert(node->num_inputs == 1);
@@ -33,7 +32,7 @@ static enum xnn_status create_average_pooling_operator(
   enum xnn_status status;
   const uint32_t input_id = opdata->inputs[0];
   assert(input_id < num_values);
-  const struct xnn_value *input_value = &values[input_id];
+  const struct xnn_runtime_value *input_value = &values[input_id];
   switch (input_value->datatype) {
     case xnn_datatype_fp16:
       status = xnn_create_average_pooling2d_nhwc_f16(
@@ -73,7 +72,7 @@ static enum xnn_status create_average_pooling_operator(
 
 static enum xnn_status reshape_average_pooling_operator(
   struct xnn_operator_data* opdata,
-  struct xnn_value* values,
+  struct xnn_runtime_value* values,
   size_t num_values,
   pthreadpool_t threadpool)
 {
@@ -83,8 +82,8 @@ static enum xnn_status reshape_average_pooling_operator(
   const uint32_t output_id = opdata->outputs[0];
   assert(output_id < num_values);
 
-  const struct xnn_value* input_value = values + input_id;
-  struct xnn_value* output_value = values + output_id;
+  const struct xnn_runtime_value* input_value = values + input_id;
+  struct xnn_runtime_value* output_value = values + output_id;
 
   const size_t batch_size = input_value->shape.dim[0];
   const size_t input_height = input_value->shape.dim[1];
@@ -92,7 +91,6 @@ static enum xnn_status reshape_average_pooling_operator(
   const size_t channel_dim = input_value->shape.dim[3];
 
   enum xnn_status status = xnn_status_invalid_state;
-  const size_t old_workspace_size = opdata->workspace_size;
   size_t output_height, output_width;
   switch (opdata->operator_objects[0]->type) {
     case xnn_operator_type_average_pooling_nhwc_f16:
@@ -102,8 +100,6 @@ static enum xnn_status reshape_average_pooling_operator(
         input_height,
         input_width,
         /*channels=*/channel_dim, /*input_pixel_stride=*/channel_dim, /*output_pixel_stride=*/channel_dim,
-        &opdata->workspace_size,
-        &opdata->workspace_alignment,
         &output_height,
         &output_width,
         threadpool);
@@ -115,8 +111,6 @@ static enum xnn_status reshape_average_pooling_operator(
         input_height,
         input_width,
         /*channels=*/channel_dim, /*input_pixel_stride=*/channel_dim, /*output_pixel_stride=*/channel_dim,
-        &opdata->workspace_size,
-        &opdata->workspace_alignment,
         &output_height,
         &output_width,
         threadpool);
@@ -134,8 +128,8 @@ static enum xnn_status reshape_average_pooling_operator(
   output_value->shape.dim[3] = channel_dim;
 
   output_value->shape.num_dims = 4;
-  const size_t new_size = xnn_tensor_get_size(output_value);
-  if (new_size > output_value->size || opdata->workspace_size > old_workspace_size) {
+  const size_t new_size = xnn_runtime_tensor_get_size(output_value);
+  if (new_size > output_value->size) {
     output_value->size = new_size;
     return xnn_status_reallocation_required;
   }
@@ -144,7 +138,7 @@ static enum xnn_status reshape_average_pooling_operator(
 
 static enum xnn_status setup_average_pooling_operator(
   const struct xnn_operator_data* opdata,
-  const struct xnn_value* values,
+  const struct xnn_runtime_value* values,
   size_t num_values,
   pthreadpool_t threadpool)
 {
@@ -156,11 +150,11 @@ static enum xnn_status setup_average_pooling_operator(
   assert(output_id != XNN_INVALID_VALUE_ID);
   assert(output_id < num_values);
 
-  const struct xnn_value* input_value = values + input_id;
+  const struct xnn_runtime_value* input_value = values + input_id;
   const void* input_data = input_value->data;
   assert(input_data != NULL);
 
-  const struct xnn_value* output_value = values + output_id;
+  const struct xnn_runtime_value* output_value = values + output_id;
   void* output_data = output_value->data;
   assert(output_data != NULL);
 
@@ -168,13 +162,11 @@ static enum xnn_status setup_average_pooling_operator(
     case xnn_operator_type_average_pooling_nhwc_f16:
       return xnn_setup_average_pooling2d_nhwc_f16(
         opdata->operator_objects[0],
-        opdata->workspace,
         input_data,
         output_data);
     case xnn_operator_type_average_pooling_nhwc_f32:
       return xnn_setup_average_pooling2d_nhwc_f32(
         opdata->operator_objects[0],
-        opdata->workspace,
         input_data,
         output_data);
     default:

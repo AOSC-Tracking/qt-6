@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qqmltreemodel_p.h"
 #include "qqmltreerow_p.h"
@@ -65,7 +66,7 @@ QQmlTreeModel::QQmlTreeModel(QObject *parent)
 QQmlTreeModel::~QQmlTreeModel() = default;
 
 /*!
-    \qmlproperty object TreeModel::rows
+    \qmlproperty var TreeModel::rows
 
     This property holds the model data in the form of an array of rows.
 
@@ -82,13 +83,11 @@ QVariant QQmlTreeModel::rows() const
 
 void QQmlTreeModel::setRows(const QVariant &rows)
 {
-    if (rows.userType() != qMetaTypeId<QJSValue>()) {
-        qmlWarning(this) << "setRows(): \"rows\" must be an array; actual type is " << rows.typeName();
+    const std::optional<QVariantList> validated = validateRowsArgument(rows);
+    if (!validated)
         return;
-    }
 
-    const auto rowsAsJSValue = rows.value<QJSValue>();
-    const QVariantList rowsAsVariantList = rowsAsJSValue.toVariant().toList();
+    const QVariantList rowsAsVariantList = *validated;
 
     if (!mComponentCompleted) {
         // Store the rows until we can call setRowsPrivate() after component completion.
@@ -155,7 +154,7 @@ void QQmlTreeModel::setDataPrivate(const QModelIndex &index, const QString &role
 
 // TODO: Turn this into a snippet that compiles in CI
 /*!
-    \qmlmethod TreeModel::appendRow(QModelIndex parent, object treeRow)
+    \qmlmethod void TreeModel::appendRow(parent, var treeRow)
 
     Appends a new treeRow to \a parent, with the values (cells) in \a treeRow.
 
@@ -185,6 +184,7 @@ void QQmlTreeModel::setDataPrivate(const QModelIndex &index, const QString &role
         });
     \endcode
 
+    \a parent is an anonymous QML type backed by \l QModelIndex.
     If \a parent is invalid, \a treeRow gets appended to the root node.
 
     \sa setRow(), removeRow()
@@ -229,7 +229,7 @@ void QQmlTreeModel::appendRow(QModelIndex parent, const QVariant &row)
 }
 
 /*!
-    \qmlmethod TreeModel::appendRow(object treeRow)
+    \qmlmethod void TreeModel::appendRow(var treeRow)
 
     Appends \a treeRow to the root node.
 
@@ -241,7 +241,7 @@ void QQmlTreeModel::appendRow(const QVariant &row)
 }
 
 /*!
-    \qmlmethod TreeModel::clear()
+    \qmlmethod void TreeModel::clear()
 
     Removes all rows from the model.
 
@@ -255,9 +255,10 @@ void QQmlTreeModel::clear()
 }
 
 /*!
-    \qmlmethod object TreeModel::getRow(const QModelIndex &rowIndex)
+    \qmlmethod var TreeModel::getRow(rowIndex)
 
-    Returns the treeRow at \a rowIndex in the model.
+    Returns the treeRow at specified index in the model.
+    \a rowIndex is an anonymous QML type backed by \l QModelIndex.
 
     \note the returned object cannot be used to modify the contents of the
     model; use setTreeRow() instead.
@@ -284,9 +285,10 @@ void QQmlTreeModel::setInitialRows()
 }
 
 /*!
-    \qmlmethod TreeModel::removeRow(QModelIndex rowIndex)
+    \qmlmethod void TreeModel::removeRow(rowIndex)
 
     Removes the TreeRow referenced by \a rowIndex from the model.
+    \a rowIndex is an anonymous QML type backed by \l QModelIndex.
 
     \code
         treeModel.removeTreeRow(rowIndex)
@@ -320,9 +322,11 @@ void QQmlTreeModel::removeRow(QModelIndex rowIndex)
 // TODO: Turn this into a snippet that compiles in CI
 
 /*!
-    \qmlmethod TreeModel::setRow(QModelIndex rowIndex, object treeRow)
+    \qmlmethod void TreeModel::setRow(rowIndex, var treeRow)
 
     Replaces the TreeRow at \a rowIndex in the model with \a treeRow.
+    \a rowIndex is an anonymous QML type back by \l QModelIndex.
+
     A row with child rows will be rejected.
 
     All columns/cells must be present in \c treeRow, and in the correct order.
@@ -369,11 +373,13 @@ void QQmlTreeModel::setRow(QModelIndex rowIndex, const QVariant &rowData)
 }
 
 /*!
-    \qmlmethod QModelIndex TreeModel::index(int row, int column, object parent)
+    \qmlmethod QModelIndex TreeModel::index(int row, int column, var parent)
 
-    Returns a \l QModelIndex object referencing the given \a row and \a column of
+    Returns an object referencing the given \a row and \a column of
     a given \a parent which can be passed to the data() function to get the data
     from that cell, or to setData() to edit the contents of that cell.
+
+    The returned object is of an anonymous QML type backed by \l QModelIndex.
 
     \sa {QModelIndex and related Classes in QML}, data()
 */
@@ -396,9 +402,11 @@ QModelIndex QQmlTreeModel::index(int row, int column, const QModelIndex &parent)
 /*!
     \qmlmethod QModelIndex TreeModel::index(list<int> treeIndex, int column)
 
-    Returns a \l QModelIndex object referencing the given \a treeIndex and \a column,
+    Returns an object referencing the given \a treeIndex and \a column,
     which can be passed to the data() function to get the data from that cell,
     or to setData() to edit the contents of that cell.
+
+    The returned object is of an anonymous QML type backed by \l QModelIndex.
 
     The first parameter \a treeIndex represents a path of row numbers tracing from
     the root to the desired row and is used for navigation inside the tree.
@@ -505,19 +513,23 @@ int QQmlTreeModel::columnCount(const QModelIndex &parent) const
 }
 
 /*!
-    \qmlmethod variant TreeModel::data(QModelIndex index, string role)
+    \qmlmethod variant TreeModel::data(index, string role)
 
     Returns the data from the TreeModel at the given \a index belonging to the
     given \a role.
+
+    \a index is an anonymous QML type backed by \l QModelIndex.
 
     \sa index(), setData()
 */
 
 /*!
-    \qmlmethod bool TreeModel::setData(QModelIndex index, variant value, string role)
+    \qmlmethod bool TreeModel::setData(index, variant value, string role)
 
     Inserts or updates the data field named by \a role in the TreeRow at the
-    given \a index with \a value. Returns true if sucessful, false if not.
+    given \a index with \a value. Returns true if successful, false if not.
+
+    \a index is an anonymous QML type backed by \l QModelIndex.
 
     \sa data(), index()
 */

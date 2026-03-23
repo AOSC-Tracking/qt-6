@@ -12,7 +12,6 @@
 #include "components/viz/common/resources/shared_image_format.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
-#include "gpu/command_buffer/service/service_utils.h"
 #include "gpu/command_buffer/service/shared_image/gl_texture_holder.h"
 #include "gpu/config/gpu_preferences.h"
 #include "ui/gfx/color_space.h"
@@ -101,8 +100,7 @@ GLCommonImageBackingFactory::GLCommonImageBackingFactory(
     const gles2::FeatureInfo* feature_info,
     gl::ProgressReporter* progress_reporter)
     : SharedImageBackingFactory(supported_usages),
-      use_passthrough_(gpu_preferences.use_passthrough_cmd_decoder &&
-                       gles2::PassthroughCommandDecoderSupported()),
+      use_passthrough_(gpu_preferences.use_passthrough_cmd_decoder),
       workarounds_(workarounds),
       gl_format_caps_(GLFormatCaps(feature_info)),
       use_webgpu_adapter_(gpu_preferences.use_webgpu_adapter),
@@ -168,10 +166,10 @@ GLCommonImageBackingFactory::GLCommonImageBackingFactory(
     if (enable_texture_storage && !info.is_compressed &&
         validators->texture_internal_format_storage.IsValid(
             info.storage_internal_format)) {
-      // GL_ALPHA8 requires EXT_texture_storage even with ES3. We should not
+      // GL_ALPHA8_EXT requires EXT_texture_storage even with ES3. We should not
       // rely on validating command decoder logic that allows GL_ALPHA8, but
       // working around here for now until proper fix.
-      if (info.storage_internal_format == GL_ALPHA8 && use_passthrough_) {
+      if (info.storage_internal_format == GL_ALPHA8_EXT && use_passthrough_) {
         continue;
       }
 

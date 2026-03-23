@@ -9,10 +9,10 @@
 #include <utility>
 
 #include "base/containers/contains.h"
-#include "base/debug/stack_trace.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
+#include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_hid_delegate_observer.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/content_browser_client.h"
@@ -24,7 +24,7 @@
 #include "mojo/public/cpp/bindings/message.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "services/device/public/cpp/device_features.h"
-#include "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom.h"
+#include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
 
 namespace content {
 
@@ -78,6 +78,19 @@ HidService::HidService(
     : render_frame_host_(render_frame_host),
       service_worker_version_(std::move(service_worker_version)),
       origin_(origin) {
+  if (render_frame_host &&
+      base::FeatureList::IsEnabled(
+          features::kWebHidAttributeAllowsBackForwardCache)) {
+    // Prevent `render_frame_host` from entering the back forward cache once the
+    // HidService is created.
+    // TODO(crbug.com/40232335): Remove after WebHID API has been updated to
+    // handle system and device state changes that occur while the frame is
+    // in the back forward cache.
+    back_forward_cache_feature_handle_ =
+        render_frame_host->RegisterBackForwardCacheDisablingNonStickyFeature(
+            blink::scheduler::WebSchedulerTrackedFeature::kWebHID);
+  }
+
   watchers_.set_disconnect_handler(base::BindRepeating(
       &HidService::OnWatcherRemoved, base::Unretained(this),
       /* cleanup_watcher_ids=*/true, /*watchers_removed=*/1));

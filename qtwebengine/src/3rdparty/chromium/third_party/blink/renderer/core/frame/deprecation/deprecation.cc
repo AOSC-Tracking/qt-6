@@ -8,7 +8,6 @@
 #include "build/build_config.h"
 #include "third_party/blink/public/common/switches.h"
 #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
-#include "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom-blink.h"
 #include "third_party/blink/public/mojom/reporting/reporting.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
@@ -43,8 +42,7 @@ void SendToBrowser(ExecutionContext* context, const DeprecationInfo& info) {
 
   if (auto* window = DynamicTo<LocalDOMWindow>(context)) {
     if (LocalFrame* frame = window->GetFrame()) {
-      std::unique_ptr<SourceLocation> source_location =
-          CaptureSourceLocation(context);
+      SourceLocation* source_location = CaptureSourceLocation(context);
       frame->GetLocalFrameHostRemote().SendLegacyTechEvent(
           info.type_.ToString(),
           mojom::blink::LegacyTechEventCodeLocation::New(
@@ -102,11 +100,6 @@ void Deprecation::CountDeprecation(ExecutionContext* context,
     if (window->GetFrame())
       deprecation = &window->GetFrame()->GetPage()->GetDeprecation();
   } else if (auto* scope = DynamicTo<WorkerOrWorkletGlobalScope>(context)) {
-    // TODO(crbug.com/1146824): Remove this once PlzDedicatedWorker and
-    // PlzServiceWorker ship.
-    if (!scope->IsInitialized()) {
-      return;
-    }
     deprecation = &scope->GetDeprecation();
   }
 

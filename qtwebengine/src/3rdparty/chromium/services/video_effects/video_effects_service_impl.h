@@ -33,12 +33,6 @@ class VideoEffectsProcessorImpl;
 class VideoEffectsServiceImpl : public mojom::VideoEffectsService,
                                 public GpuChannelHostProvider::Observer {
  public:
-  // Similarly to `VideoCaptureServiceImpl`, `VideoEfffectsServiceImpl` needs
-  // to receive something that returns `gpu::GpuChannelHost` instances in order
-  // to be able to communicate with the GPU service - this is passed in via the
-  // `gpu_channel_host_provider`.
-  // `receiver` is the receiving end of the mojo pipe used to communicate with
-  // this instance.
   explicit VideoEffectsServiceImpl(
       mojo::PendingReceiver<mojom::VideoEffectsService> receiver,
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner);
@@ -65,8 +59,8 @@ class VideoEffectsServiceImpl : public mojom::VideoEffectsService,
 
   // Callback functions for WebGpuDevice.
   void OnDeviceCreated(wgpu::Device device);
-  void OnDeviceError(WebGpuDevice::Error error, std::string_view msg);
-  void OnDeviceLost(wgpu::DeviceLostReason reason, std::string_view msg);
+  void OnDeviceError(WebGpuDevice::Error error, std::string msg);
+  void OnDeviceLost(wgpu::DeviceLostReason reason, std::string msg);
 
   // Finishes creation of pending effects processors in `pending_processors_`.
   void FinishCreatingEffectsProcessors();

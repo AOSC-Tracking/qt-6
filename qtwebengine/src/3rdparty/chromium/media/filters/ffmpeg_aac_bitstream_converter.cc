@@ -176,15 +176,15 @@ FFmpegAACBitstreamConverter::FFmpegAACBitstreamConverter(
 FFmpegAACBitstreamConverter::~FFmpegAACBitstreamConverter() = default;
 
 bool FFmpegAACBitstreamConverter::ConvertPacket(AVPacket* packet) {
-  if (packet == NULL || !packet->data) {
+  if (packet == nullptr || !packet->data) {
     return false;
   }
 
   int header_plus_packet_size =
       packet->size + kAdtsHeaderSize;
   if (!stream_codec_parameters_->extradata) {
-    DLOG(ERROR) << "extradata is null";
-    return false;
+    DVLOG(3) << "extradata is null";
+    return true;
   }
   if (stream_codec_parameters_->extradata_size < 2) {
     DLOG(ERROR) << "extradata too small to contain MP4A header";

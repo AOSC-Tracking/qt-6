@@ -11,6 +11,10 @@ let runtimePlatform = '';
 let runtimeInstance: Runtime|undefined;
 let isNode: boolean|undefined;
 
+/** Returns the base URL (similar to `<base>`).
+ * Used to resolve the relative URLs of any additional DevTools files (locale strings, etc) needed.
+ * See: https://cs.chromium.org/remoteBase+f:devtools_window
+ */
 export function getRemoteBase(location: string = self.location.toString()): {
   base: string,
   version: string,
@@ -37,6 +41,15 @@ export function isNodeEntry(pathname: string): boolean {
   const nodeEntryPoints = ['node_app', 'js_app'];
   return nodeEntryPoints.some(component => pathname.includes(component));
 }
+
+export const getChromeVersion = (): string => {
+  const chromeRegex = /(?:^|\W)(?:Chrome|HeadlessChrome)\/(\S+)/;
+  const chromeMatch = navigator.userAgent.match(chromeRegex);
+  if (chromeMatch && chromeMatch.length > 1) {
+    return chromeMatch[1];
+  }
+  return '';
+};
 
 export class Runtime {
   private constructor() {
@@ -80,12 +93,7 @@ export class Runtime {
     return runtimePlatform;
   }
 
-  static isDescriptorEnabled(
-      descriptor: {
-        experiment: ((string | undefined)|null),
-        condition?: Condition,
-      },
-      config?: HostConfig): boolean {
+  static isDescriptorEnabled(descriptor: {experiment?: string|null, condition?: Condition}): boolean {
     const {experiment} = descriptor;
     if (experiment === '*') {
       return true;
@@ -97,13 +105,19 @@ export class Runtime {
       return false;
     }
     const {condition} = descriptor;
-    return condition ? condition(config) : true;
+    return condition ? condition(hostConfig) : true;
   }
 
-  loadLegacyModule(modulePath: string): Promise<void> {
+  loadLegacyModule(modulePath: string): Promise<unknown> {
+    // eslint-disable-next-line no-console
+    console.log('Loading legacy module: ' + modulePath);
     const importPath =
         `../../${modulePath}`;  // Extracted as a variable so esbuild doesn't attempt to bundle all the things.
-    return import(importPath);
+    return import(importPath).then(m => {
+      // eslint-disable-next-line no-console
+      console.log('Loaded legacy module: ' + modulePath);
+      return m;
+    });
   }
 }
 
@@ -136,7 +150,7 @@ export class ExperimentsSupport {
       experimentName: string, experimentTitle: string, unstable?: boolean, docLink?: string,
       feedbackLink?: string): void {
     if (this.#experimentNames.has(experimentName)) {
-      throw new Error(`Duplicate registraction of experiment '${experimentName}'`);
+      throw new Error(`Duplicate registration of experiment '${experimentName}'`);
     }
     this.#experimentNames.add(experimentName);
     this.#experiments.push(new Experiment(
@@ -298,25 +312,22 @@ export const enum ExperimentName {
   ALL = '*',
   PROTOCOL_MONITOR = 'protocol-monitor',
   FULL_ACCESSIBILITY_TREE = 'full-accessibility-tree',
-  STYLES_PANE_CSS_CHANGES = 'styles-pane-css-changes',
   HEADER_OVERRIDES = 'header-overrides',
   INSTRUMENTATION_BREAKPOINTS = 'instrumentation-breakpoints',
   AUTHORED_DEPLOYED_GROUPING = 'authored-deployed-grouping',
   JUST_MY_CODE = 'just-my-code',
   HIGHLIGHT_ERRORS_ELEMENTS_PANEL = 'highlight-errors-elements-panel',
   USE_SOURCE_MAP_SCOPES = 'use-source-map-scopes',
-  NETWORK_PANEL_FILTER_BAR_REDESIGN = 'network-panel-filter-bar-redesign',
-  AUTOFILL_VIEW = 'autofill-view',
   TIMELINE_SHOW_POST_MESSAGE_EVENTS = 'timeline-show-postmessage-events',
   TIMELINE_DEBUG_MODE = 'timeline-debug-mode',
   TIMELINE_ENHANCED_TRACES = 'timeline-enhanced-traces',
-  TIMELINE_SERVER_TIMINGS = 'timeline-server-timings',
-  FLOATING_ENTRY_POINTS_FOR_AI_ASSISTANCE = 'floating-entry-points-for-ai-assistance',
-  TIMELINE_EXPERIMENTAL_INSIGHTS = 'timeline-experimental-insights',
-  TIMELINE_DIM_UNRELATED_EVENTS = 'timeline-dim-unrelated-events',
-  TIMELINE_ALTERNATIVE_NAVIGATION = 'timeline-alternative-navigation',
-  TIMELINE_THIRD_PARTY_DEPENDENCIES = 'timeline-third-party-dependencies',
-  // when adding to this enum, you'll need to also add to REGISTERED_EXPERIMENTS in EnvironmentHelpers.ts
+  TIMELINE_COMPILED_SOURCES = 'timeline-compiled-sources',
+  TIMELINE_SAVE_AS_GZ = 'timeline-save-as-gz',
+  VERTICAL_DRAWER = 'vertical-drawer',
+  // Adding or removing an entry from this enum?
+  // You will need to update:
+  // 1. REGISTERED_EXPERIMENTS in EnvironmentHelpers.ts (to create this experiment in the test env)
+  // 2. DevToolsExperiments enum in host/UserMetrics.ts
 }
 
 export enum GenAiEnterprisePolicyValue {
@@ -333,6 +344,8 @@ export interface AidaAvailability {
   disallowLogging: boolean;
   enterprisePolicyValue: number;
 }
+
+type Channel = 'stable'|'beta'|'dev'|'canary';
 
 export interface HostConfigConsoleInsights {
   modelId: string;
@@ -352,6 +365,11 @@ export interface HostConfigFreestyler {
   enabled: boolean;
   userTier: string;
   executionMode?: HostConfigFreestylerExecutionMode;
+  patching?: boolean;
+  multimodal?: boolean;
+  multimodalUploadInput?: boolean;
+  functionCalling?: boolean;
+  featureName?: string;
 }
 
 export interface HostConfigAiAssistanceNetworkAgent {
@@ -359,6 +377,7 @@ export interface HostConfigAiAssistanceNetworkAgent {
   temperature: number;
   enabled: boolean;
   userTier: string;
+  featureName?: string;
 }
 
 export interface HostConfigAiAssistancePerformanceAgent {
@@ -366,6 +385,9 @@ export interface HostConfigAiAssistancePerformanceAgent {
   temperature: number;
   enabled: boolean;
   userTier: string;
+  // Introduced in crrev.com/c/6243415
+  insightsEnabled?: boolean;
+  featureName?: string;
 }
 
 export interface HostConfigAiAssistanceFileAgent {
@@ -373,15 +395,30 @@ export interface HostConfigAiAssistanceFileAgent {
   temperature: number;
   enabled: boolean;
   userTier: string;
+  featureName?: string;
 }
 
-export interface HostConfigImprovedWorkspaces {
+export interface HostConfigAiCodeCompletion {
+  modelId: string;
+  temperature: number;
+  enabled: boolean;
+  userTier: string;
+}
+
+export interface HostConfigDeepLinksViaExtensibilityApi {
   enabled: boolean;
 }
 
 export interface HostConfigVeLogging {
   enabled: boolean;
   testing: boolean;
+}
+
+/**
+ * @see https://goo.gle/devtools-json-design
+ */
+export interface HostConfigWellKnown {
+  enabled: boolean;
 }
 
 export interface HostConfigPrivacyUI {
@@ -404,22 +441,54 @@ export interface HostConfigThirdPartyCookieControls {
   managedBlockThirdPartyCookies: string|boolean;
 }
 
-// We use `RecursivePartial` here to enforce that DevTools code is able to
-// handle `HostConfig` objects of an unexpected shape. This can happen if
-// the implementation in the Chromium backend is changed without correctly
-// updating the DevTools frontend. Or if remote debugging a different version
-// of Chrome, resulting in the local browser window and the local DevTools
-// window being of different versions, and consequently potentially having
-// differently shaped `HostConfig`s.
+interface AiGeneratedTimelineLabels {
+  enabled: boolean;
+}
+
+interface AllowPopoverForcing {
+  enabled: boolean;
+}
+
+interface AiSubmenuPrompts {
+  enabled: boolean;
+  featureName?: string;
+}
+
+interface IpProtectionInDevTools {
+  enabled: boolean;
+}
+
+interface AiDebugWithAi {
+  enabled: boolean;
+  featureName?: string;
+}
+
+/**
+ * The host configuration that we expect from the DevTools back-end.
+ *
+ * We use `RecursivePartial` here to enforce that DevTools code is able to
+ * handle `HostConfig` objects of an unexpected shape. This can happen if
+ * the implementation in the Chromium backend is changed without correctly
+ * updating the DevTools frontend. Or if remote debugging a different version
+ * of Chrome, resulting in the local browser window and the local DevTools
+ * window being of different versions, and consequently potentially having
+ * differently shaped `HostConfig`s.
+ *
+ * @see hostConfig
+ */
 export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   aidaAvailability: AidaAvailability,
+  channel: Channel,
   devToolsConsoleInsights: HostConfigConsoleInsights,
+  devToolsDeepLinksViaExtensibilityApi: HostConfigDeepLinksViaExtensibilityApi,
   devToolsFreestyler: HostConfigFreestyler,
   devToolsAiAssistanceNetworkAgent: HostConfigAiAssistanceNetworkAgent,
+  devToolsAiDebugWithAi: AiDebugWithAi,
   devToolsAiAssistanceFileAgent: HostConfigAiAssistanceFileAgent,
   devToolsAiAssistancePerformanceAgent: HostConfigAiAssistancePerformanceAgent,
-  devToolsImprovedWorkspaces: HostConfigImprovedWorkspaces,
+  devToolsAiCodeCompletion: HostConfigAiCodeCompletion,
   devToolsVeLogging: HostConfigVeLogging,
+  devToolsWellKnown: HostConfigWellKnown,
   devToolsPrivacyUI: HostConfigPrivacyUI,
   /**
    * OffTheRecord here indicates that the user's profile is either incognito,
@@ -429,7 +498,27 @@ export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   devToolsEnableOriginBoundCookies: HostConfigEnableOriginBoundCookies,
   devToolsAnimationStylesInStylesTab: HostConfigAnimationStylesInStylesTab,
   thirdPartyCookieControls: HostConfigThirdPartyCookieControls,
+  devToolsAiGeneratedTimelineLabels: AiGeneratedTimelineLabels,
+  devToolsAllowPopoverForcing: AllowPopoverForcing,
+  devToolsAiSubmenuPrompts: AiSubmenuPrompts,
+  devToolsIpProtectionInDevTools: IpProtectionInDevTools,
 }>;
+
+/**
+ * The host configuration for this DevTools instance.
+ *
+ * This is initialized early during app startup and should not be modified
+ * afterwards. In some cases it can be necessary to re-request the host
+ * configuration from Chrome while DevTools is already running. In these
+ * cases, the new host configuration should be reflected here, e.g.:
+ *
+ * ```js
+ * const config = await new Promise<Root.Runtime.HostConfig>(
+ *   resolve => InspectorFrontendHostInstance.getHostConfig(resolve));
+ * Object.assign(Root.runtime.hostConfig, config);
+ * ```
+ */
+export const hostConfig: Platform.TypeScriptUtilities.RecursiveReadonly<HostConfig> = Object.create(null);
 
 /**
  * When defining conditions make sure that objects used by the function have

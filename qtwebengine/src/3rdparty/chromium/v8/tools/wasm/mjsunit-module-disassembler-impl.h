@@ -273,19 +273,21 @@ class MjsunitNamesProvider {
   }
 
   // Format: HeapType::* enum value, JS global constant.
-#define ABSTRACT_TYPE_LIST(V)                                     \
-  V(kAny, kWasmAnyRef, kAnyRefCode)                               \
-  V(kArray, kWasmArrayRef, kArrayRefCode)                         \
-  V(kEq, kWasmEqRef, kEqRefCode)                                  \
-  V(kExn, kWasmExnRef, kExnRefCode)                               \
-  V(kExtern, kWasmExternRef, kExternRefCode)                      \
-  V(kFunc, kWasmFuncRef, kFuncRefCode)                            \
-  V(kI31, kWasmI31Ref, kI31RefCode)                               \
-  V(kNone, kWasmNullRef, kNullRefCode)                            \
-  V(kNoExn, kWasmNullExnRef, kNullExnRefCode)                     \
-  V(kNoExtern, kWasmNullExternRef, kNullExternRefCode)            \
-  V(kNoFunc, kWasmNullFuncRef, kNullFuncRefCode)                  \
-  V(kString, kWasmStringRef, kStringRefCode)                      \
+#define ABSTRACT_TYPE_LIST(V)                          \
+  V(kAny, kWasmAnyRef, kAnyRefCode)                    \
+  V(kArray, kWasmArrayRef, kArrayRefCode)              \
+  V(kCont, kWasmContRef, kContRefCode)                 \
+  V(kEq, kWasmEqRef, kEqRefCode)                       \
+  V(kExn, kWasmExnRef, kExnRefCode)                    \
+  V(kExtern, kWasmExternRef, kExternRefCode)           \
+  V(kFunc, kWasmFuncRef, kFuncRefCode)                 \
+  V(kI31, kWasmI31Ref, kI31RefCode)                    \
+  V(kNoCont, kWasmNullContRef, kNullContRefCode)       \
+  V(kNoExn, kWasmNullExnRef, kNullExnRefCode)          \
+  V(kNoExtern, kWasmNullExternRef, kNullExternRefCode) \
+  V(kNoFunc, kWasmNullFuncRef, kNullFuncRefCode)       \
+  V(kNone, kWasmNullRef, kNullRefCode)                 \
+  V(kString, kWasmStringRef, kStringRefCode)           \
   V(kStruct, kWasmStructRef, kStructRefCode)
 
 // Same, but for types where the shorthand is non-nullable.
@@ -296,9 +298,13 @@ class MjsunitNamesProvider {
 
   void PrintHeapType(StringBuilder& out, HeapType type, OutputContext mode) {
     switch (type.representation()) {
-#define CASE(kCpp, JS, JSCode)                       \
-  case HeapType::kCpp:                               \
-    out << (mode == kEmitWireBytes ? #JSCode : #JS); \
+#define CASE(kCpp, JS, JSCode)                                             \
+  case HeapType::kCpp:                                                     \
+    out << (mode == kEmitWireBytes ? #JSCode : #JS);                       \
+    return;                                                                \
+  case HeapType::kCpp##Shared:                                             \
+    out << (mode == kEmitWireBytes ? "kWasmSharedTypeForm, " #JSCode       \
+                                   : "wasmRefNullType(" #JS ").shared()"); \
     return;
       ABSTRACT_TYPE_LIST(CASE)
       ABSTRACT_NN_TYPE_LIST(CASE)
@@ -325,29 +331,44 @@ class MjsunitNamesProvider {
       // clang-format on
       case kRefNull:
         switch (type.heap_representation()) {
-#define CASE(kCpp, _, _2) case HeapType::kCpp:
-          ABSTRACT_TYPE_LIST(CASE)
-#undef CASE
-          return PrintHeapType(out, type.heap_type(), mode);
           case HeapType::kBottom:
           case HeapType::kTop:
             UNREACHABLE();
+#define CASE(kCpp, _, _2) case HeapType::kCpp:
+            ABSTRACT_TYPE_LIST(CASE)
+#undef CASE
+            if (!type.is_exact()) {
+              return PrintHeapType(out, type.heap_type(), mode);
+            }
+            [[fallthrough]];
           default:
-            out << (mode == kEmitObjects ? "wasmRefNullType("
-                                         : "kWasmRefNull, ");
+            if (mode == kEmitObjects) {
+              out << "wasmRefNullType(";
+            } else {
+              out << "kWasmRefNull, ";
+              if (type.is_exact()) out << "kWasmExact, ";
+            }
             break;
         }
         break;
       case kRef:
         switch (type.heap_representation()) {
+          case HeapType::kBottom:
+            UNREACHABLE();
 #define CASE(kCpp, _, _2) case HeapType::kCpp:
           ABSTRACT_NN_TYPE_LIST(CASE)
 #undef CASE
-          return PrintHeapType(out, type.heap_type(), mode);
-          case HeapType::kBottom:
-            UNREACHABLE();
+          if (!type.is_exact()) {
+            return PrintHeapType(out, type.heap_type(), mode);
+          }
+          [[fallthrough]];
           default:
-            out << (mode == kEmitObjects ? "wasmRefType(" : "kWasmRef, ");
+            if (mode == kEmitObjects) {
+              out << "wasmRefType(";
+            } else {
+              out << "kWasmRef, ";
+              if (type.is_exact()) out << "kWasmExact, ";
+            }
             break;
         }
         break;
@@ -355,12 +376,14 @@ class MjsunitNamesProvider {
         out << "/*<bot>*/";
         return;
       case kTop:
-      case kRtt:
       case kVoid:
         UNREACHABLE();
     }
     PrintHeapType(out, type.heap_type(), mode);
-    if (mode == kEmitObjects) out << ")";
+    if (mode == kEmitObjects) {
+      out << ")";
+      if (type.is_exact()) out << ".exact()";
+    }
   }
 
   void PrintMakeSignature(StringBuilder& out, const FunctionSig* sig) {
@@ -519,8 +542,6 @@ class MjsunitFunctionDis : public WasmDecoder<Decoder::FullValidationTag> {
         indentation_(indentation) {}
 
   void WriteMjsunit(MultiLineStringBuilder& out);
-
-  // TODO(jkummerow): Support for compilation hints is missing.
 
   void DecodeGlobalInitializer(StringBuilder& out);
 
@@ -814,27 +835,26 @@ class MjsunitImmediatesPrinter {
     }
   }
 
-  void HeapType(HeapTypeImmediate& imm) {
+  void HeapType(HeapType type) {
     out_ << " ";
-    names()->PrintHeapType(out_, imm.type, kEmitWireBytes);
+    names()->PrintHeapType(out_, type, kEmitWireBytes);
     out_ << ",";
   }
+  void HeapType(HeapTypeImmediate& imm) { HeapType(imm.type); }
 
-  void ValueType(HeapTypeImmediate& imm, bool is_nullable) {
+  void ValueType(ValueType type) {
     if (owner_->current_opcode_ == kExprBrOnCast ||
-        owner_->current_opcode_ == kExprBrOnCastFail) {
+        owner_->current_opcode_ == kExprBrOnCastFail ||
+        owner_->current_opcode_ == kExprBrOnCastDesc ||
+        owner_->current_opcode_ == kExprBrOnCastDescFail) {
       // We somewhat incorrectly use the {ValueType} callback rather than
-      // {HeapType()} for br_on_cast[_fail], because that's convenient
+      // {HeapType()} for br_on_cast[_desc][_fail], because that's convenient
       // for disassembling to the text format. For module builder output,
       // fix that hack here, by dispatching back to {HeapType()}.
-      return HeapType(imm);
+      return HeapType(type.heap_type());
     }
     out_ << " ";
-    names()->PrintValueType(
-        out_,
-        ValueType::RefMaybeNull(imm.type,
-                                is_nullable ? kNullable : kNonNullable),
-        kEmitWireBytes);
+    names()->PrintValueType(out_, type, kEmitWireBytes);
     out_ << ",";
   }
 
@@ -897,6 +917,36 @@ class MjsunitImmediatesPrinter {
     owner_->indentation_.decrease();
   }
 
+  void EffectHandlerTable(EffectHandlerTableImmediate& imm) {
+    const uint8_t* pc = imm.table;
+    owner_->indentation_.increase();
+    owner_->indentation_.increase();
+
+    for (uint32_t i = 0; i < imm.table_count; i++) {
+      out_ << "\n" << owner_->indentation_;
+
+      uint8_t kind = owner_->read_u8<ValidationTag>(pc);
+      pc += 1;
+      if (kind == kOnSuspend) {
+        out_ << "kOnSuspend, ";
+        auto [tag, taglength] = owner_->read_u32v<ValidationTag>(pc);
+        pc += taglength;
+        names()->PrintTagReferenceLeb(out_, tag);
+        out_ << ", ";
+        auto [target, label_length] = owner_->read_u32v<ValidationTag>(pc);
+        pc += label_length;
+        out_ << target << ",";
+      } else {
+        out_ << "kOnSwitch, ";
+        auto [tag, length] = owner_->read_u32v<ValidationTag>(pc);
+        names()->PrintTagReferenceLeb(out_, tag);
+        out_ << ", ";
+      }
+    }
+    owner_->indentation_.decrease();
+    owner_->indentation_.decrease();
+  }
+
   void CallIndirect(CallIndirectImmediate& imm) {
     PrintSignature(imm.sig_imm.index);
     TableIndex(imm.table_imm);
@@ -924,6 +974,18 @@ class MjsunitImmediatesPrinter {
       DCHECK_LE(imm.offset, std::numeric_limits<uint32_t>::max());
       WriteUnsignedLEB(static_cast<uint32_t>(imm.offset));
     }
+  }
+
+  void MemoryOrder(const MemoryOrderImmediate& memory_order) {
+    switch (memory_order.order) {
+      case AtomicMemoryOrder::kAcqRel:
+        out_ << " kAtomicAcqRel,";
+        return;
+      case AtomicMemoryOrder::kSeqCst:
+        out_ << " kAtomicSeqCst,";
+        return;
+    }
+    out_ << " /* INVALID */ " << static_cast<int>(memory_order.order) << ',';
   }
 
   void SimdLane(SimdLaneImmediate& imm) { out_ << " " << imm.lane << ","; }
@@ -1146,7 +1208,7 @@ class MjsunitModuleDis {
             "that can be\n"
             "// found in the LICENSE file.\n"
             "\n"
-            "// Flags: --wasm-staging --wasm-inlining-call-indirect"
+            "// Flags: --experimental-fuzzing --wasm-staging"
          << extra_flags
          << "\n\n"
             "d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');\n"
@@ -1176,16 +1238,20 @@ class MjsunitModuleDis {
       needed_at[ht.ref_index().index] = here;
     };
     for (uint32_t i = 0; i < module_->types.size(); i++) {
+      const TypeDefinition& type = module_->types[i];
+      if (type.has_descriptor()) needed_at[type.descriptor.index] = i;
+      if (type.is_descriptor()) needed_at[type.describes.index] = i;
+      if (type.supertype != kNoSuperType) needed_at[type.supertype.index] = i;
       if (module_->has_struct(ModuleTypeIndex{i})) {
-        const StructType* struct_type = module_->types[i].struct_type;
+        const StructType* struct_type = type.struct_type;
         for (uint32_t fi = 0; fi < struct_type->field_count(); fi++) {
           MarkAsNeededHere(struct_type->field(fi), i);
         }
       } else if (module_->has_array(ModuleTypeIndex{i})) {
-        MarkAsNeededHere(module_->types[i].array_type->element_type(), i);
+        MarkAsNeededHere(type.array_type->element_type(), i);
       } else {
         DCHECK(module_->has_signature(ModuleTypeIndex{i}));
-        const FunctionSig* sig = module_->types[i].function_sig;
+        const FunctionSig* sig = type.function_sig;
         for (size_t pi = 0; pi < sig->parameter_count(); pi++) {
           MarkAsNeededHere(sig->GetParam(pi), i);
         }
@@ -1230,9 +1296,10 @@ class MjsunitModuleDis {
           out_.NextLine(0);
         }
       }
-      ModuleTypeIndex supertype = module_->types[i].supertype;
-      bool is_final = module_->types[i].is_final;
-      if (needed_at[i] == kMaxUInt32) {
+      const TypeDefinition& type = module_->types[i];
+      ModuleTypeIndex supertype = type.supertype;
+      bool is_final = type.is_final;
+      if (needed_at[i] > i) {
         out_ << "let ";
         names()->PrintTypeVariableName(out_, ModuleTypeIndex{i});
         out_ << " = ";
@@ -1242,8 +1309,8 @@ class MjsunitModuleDis {
         out_ << " */ ";
       }
       if (module_->has_struct(ModuleTypeIndex{i})) {
-        const StructType* struct_type = module_->types[i].struct_type;
-        out_ << "builder.addStruct([";
+        const StructType* struct_type = type.struct_type;
+        out_ << "builder.addStruct({fields: [";
         for (uint32_t fi = 0; fi < struct_type->field_count(); fi++) {
           if (fi > 0) out_ << ", ";
           out_ << "makeField(";
@@ -1251,13 +1318,22 @@ class MjsunitModuleDis {
           out_ << ", " << (struct_type->mutability(fi) ? "true" : "false");
           out_ << ")";
         }
-        out_ << "], ";
+        out_ << "]";
         if (supertype != kNoSuperType) {
-          names()->PrintTypeIndex(out_, supertype, kEmitObjects);
-        } else {
-          out_ << "kNoSuperType";
+          out_ << ", supertype: ";
+          names()->PrintTypeVariableName(out_, supertype);
         }
-        out_ << ", " << (is_final ? "true" : "false") << ");";
+        if (is_final) out_ << ", final: true";
+        if (type.is_shared) out_ << ", shared: true";
+        if (type.has_descriptor()) {
+          out_ << ", descriptor: ";
+          names()->PrintTypeVariableName(out_, type.descriptor);
+        }
+        if (type.is_descriptor()) {
+          out_ << ", describes: ";
+          names()->PrintTypeVariableName(out_, type.describes);
+        }
+        out_ << "});";
         out_.NextLine(0);
       } else if (module_->has_array(ModuleTypeIndex{i})) {
         const ArrayType* array_type = module_->types[i].array_type;
@@ -1747,7 +1823,7 @@ class MjsunitModuleDis {
         break;
       case ConstantExpression::Kind::kRefNull:
         out_ << "[kExprRefNull, ";
-        names()->PrintHeapType(out_, HeapType(init.repr()), kEmitWireBytes);
+        names()->PrintHeapType(out_, init.type(), kEmitWireBytes);
         out_ << "]";
         break;
       case ConstantExpression::Kind::kRefFunc:

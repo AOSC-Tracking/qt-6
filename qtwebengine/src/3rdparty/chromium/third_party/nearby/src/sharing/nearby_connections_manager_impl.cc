@@ -16,7 +16,6 @@
 
 #include <stdint.h>
 
-#include <filesystem>  // NOLINT(build/c++17)
 #include <functional>
 #include <memory>
 #include <optional>
@@ -28,10 +27,10 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/bind_front.h"
-#include "absl/meta/type_traits.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "internal/base/file_path.h"
 #include "internal/flags/nearby_flags.h"
 #include "internal/platform/device_info.h"
 #include "internal/platform/mutex_lock.h"
@@ -252,15 +251,17 @@ void NearbyConnectionsManagerImpl::StartAdvertising(
 
   nearby_connections_service_->StartAdvertising(
       kServiceId, endpoint_info,
-      AdvertisingOptions(
-          kStrategy, std::move(allowed_mediums), auto_upgrade_bandwidth,
-          /*enforce_topology_constraints=*/true,
-          /*enable_bluetooth_listening=*/use_ble,
-          /*enable_webrtc_listening=*/
-          ShouldEnableWebRtc(connectivity_manager_, data_usage, power_level),
-          /*use_stable_endpoint_id=*/use_stable_endpoint_id,
-          /*fast_advertisement_service_uuid=*/
-          fast_advertisement_service_uuid),
+      {
+          .strategy = kStrategy,
+          .allowed_mediums = std::move(allowed_mediums),
+          .auto_upgrade_bandwidth = auto_upgrade_bandwidth,
+          .enforce_topology_constraints = true,
+          .enable_bluetooth_listening = use_ble,
+          .enable_webrtc_listening = ShouldEnableWebRtc(
+              connectivity_manager_, data_usage, power_level),
+          .use_stable_endpoint_id = use_stable_endpoint_id,
+          .fast_advertisement_service_uuid = fast_advertisement_service_uuid,
+      },
       std::move(connection_listener), std::move(callback));
 }
 
@@ -278,6 +279,7 @@ void NearbyConnectionsManagerImpl::StopAdvertising(
 
 void NearbyConnectionsManagerImpl::StartDiscovery(
     DiscoveryListener* listener, DataUsage data_usage,
+    std::optional<uint16_t> alternate_service_uuid,
     ConnectionsCallback callback) {
   DCHECK(listener);
 
@@ -310,9 +312,14 @@ void NearbyConnectionsManagerImpl::StartDiscovery(
 
   nearby_connections_service_->StartDiscovery(
       kServiceId,
-      DiscoveryOptions(kStrategy, std::move(allowed_mediums),
-                       Uuid(kFastAdvertisementServiceUuid),
-                       /*is_out_of_band_connection=*/false),
+      {
+          .strategy = kStrategy,
+          .allowed_mediums = std::move(allowed_mediums),
+          .fast_advertisement_service_uuid =
+              Uuid(kFastAdvertisementServiceUuid),
+          .is_out_of_band_connection = false,
+          .alternate_service_uuid = std::move(alternate_service_uuid),
+      },
       std::move(service_discovery_listener), std::move(callback));
 }
 
@@ -406,12 +413,12 @@ void NearbyConnectionsManagerImpl::Connect(
 
   nearby_connections_service_->RequestConnection(
       kServiceId, endpoint_info, endpoint_id,
-      ConnectionOptions(
-          std::move(allowed_mediums), std::move(bluetooth_mac_address),
-          /*keep_alive_interval=*/std::nullopt,
-          /*keep_alive_timeout=*/std::nullopt,
-          IsTransportTypeFlagsSet(transport_type,
-                                  TransportType::kHighQualityNonDisruptive)),
+      {
+          .allowed_mediums = std::move(allowed_mediums),
+          .remote_bluetooth_mac_address = std::move(bluetooth_mac_address),
+          .non_disruptive_hotspot_mode = IsTransportTypeFlagsSet(
+              transport_type, TransportType::kHighQualityNonDisruptive),
+      },
       std::move(connection_listener),
       [this, endpoint_id = std::string(endpoint_id)](ConnectionsStatus status) {
         MutexLock lock(&mutex_);
@@ -817,7 +824,7 @@ void NearbyConnectionsManagerImpl::DeleteUnknownFilePayloadAndCancel(
 
 void NearbyConnectionsManagerImpl::ProcessUnknownFilePathsToDelete(
     PayloadStatus status, PayloadContent::Type type,
-    const std::filesystem::path& path) {
+    const FilePath& path) {
   // Unknown payload comes as kInProgress and kCanceled status with kFile type
   // from NearbyConnections. Delete it.
   if ((status == PayloadStatus::kCanceled ||
@@ -969,13 +976,13 @@ void NearbyConnectionsManagerImpl::SetCustomSavePath(
       });
 }
 
-absl::flat_hash_set<std::filesystem::path>
+absl::flat_hash_set<FilePath>
 NearbyConnectionsManagerImpl::GetUnknownFilePathsToDelete() {
   MutexLock lock(&mutex_);
   return file_paths_to_delete_;
 }
 
-absl::flat_hash_set<std::filesystem::path>
+absl::flat_hash_set<FilePath>
 NearbyConnectionsManagerImpl::GetAndClearUnknownFilePathsToDelete() {
   MutexLock lock(&mutex_);
   auto file_paths_to_delete = std::move(file_paths_to_delete_);
@@ -983,20 +990,19 @@ NearbyConnectionsManagerImpl::GetAndClearUnknownFilePathsToDelete() {
   return file_paths_to_delete;
 }
 
-absl::flat_hash_set<std::filesystem::path>
+absl::flat_hash_set<FilePath>
 NearbyConnectionsManagerImpl::GetUnknownFilePathsToDeleteForTesting() {
   return GetUnknownFilePathsToDelete();
 }
 
 void NearbyConnectionsManagerImpl::AddUnknownFilePathsToDeleteForTesting(
-    std::filesystem::path file_path) {
+    FilePath file_path) {
   MutexLock lock(&mutex_);
   file_paths_to_delete_.insert(file_path);
 }
 
 void NearbyConnectionsManagerImpl::ProcessUnknownFilePathsToDeleteForTesting(
-    PayloadStatus status, PayloadContent::Type type,
-    const std::filesystem::path& path) {
+    PayloadStatus status, PayloadContent::Type type, const FilePath& path) {
   ProcessUnknownFilePathsToDelete(status, type, path);
 }
 

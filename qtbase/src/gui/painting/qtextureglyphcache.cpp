@@ -210,12 +210,13 @@ void QTextureGlyphCache::fillInPendingGlyphs()
 
     int requiredHeight = m_h;
     int requiredWidth = m_w; // Use a minimum size to avoid a lot of initial reallocations
+    const int padding = glyphPadding();
     {
         QHash<GlyphAndSubPixelPosition, Coord>::iterator iter = m_pendingGlyphs.begin();
         while (iter != m_pendingGlyphs.end()) {
             Coord c = iter.value();
-            requiredHeight = qMax(requiredHeight, c.y + c.h);
-            requiredWidth = qMax(requiredWidth, c.x + c.w);
+            requiredHeight = qMax(requiredHeight, c.y + c.h + padding);
+            requiredWidth = qMax(requiredWidth, c.x + c.w + padding);
             ++iter;
         }
     }
@@ -301,6 +302,8 @@ void QImageTextureGlyphCache::fillTexture(const Coord &c,
                                           const QFixedPoint &subPixelPosition)
 {
     QImage mask = textureMapForGlyph(g, subPixelPosition);
+    if (mask.isNull())
+        return;
 
 #ifdef CACHE_DEBUG
     printf("fillTexture of %dx%d at %d,%d in the cache of %dx%d\n", c.w, c.h, c.x, c.y, m_image.width(), m_image.height());

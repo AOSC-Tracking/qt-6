@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_COMPILER_WASM_COMPILER_H_
+#define V8_COMPILER_WASM_COMPILER_H_
+
 #if !V8_ENABLE_WEBASSEMBLY
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
-
-#ifndef V8_COMPILER_WASM_COMPILER_H_
-#define V8_COMPILER_WASM_COMPILER_H_
 
 #include <memory>
 #include <utility>
@@ -40,7 +40,7 @@ class TurbofanCompilationJob;
 namespace compiler {
 // Forward declarations for some compiler data structures.
 class CallDescriptor;
-class Graph;
+class TFGraph;
 class MachineGraph;
 class Node;
 class NodeOriginTable;
@@ -69,8 +69,8 @@ namespace compiler {
 
 // Compiles an import call wrapper, which allows Wasm to call imports.
 V8_EXPORT_PRIVATE wasm::WasmCompilationResult CompileWasmImportCallWrapper(
-    wasm::ImportCallKind, const wasm::CanonicalSig*, bool source_positions,
-    int expected_arity, wasm::Suspend);
+    wasm::ImportCallKind, const wasm::CanonicalSig*, int expected_arity,
+    wasm::Suspend);
 
 // Compiles a host call wrapper, which allows Wasm to call host functions.
 wasm::WasmCompilationResult CompileWasmCapiCallWrapper(
@@ -83,7 +83,8 @@ wasm::WasmCompilationResult CompileWasmJSFastCallWrapper(
 
 // Returns a TurboshaftCompilationJob object for a JS to Wasm wrapper.
 std::unique_ptr<OptimizedCompilationJob> NewJSToWasmCompilationJob(
-    Isolate* isolate, const wasm::CanonicalSig* sig);
+    Isolate* isolate, const wasm::CanonicalSig* sig,
+    bool receiver_is_first_param);
 
 enum CWasmEntryParameters {
   kCodeEntry,
@@ -203,7 +204,7 @@ class WasmGraphBuilder {
   bool has_simd() const { return has_simd_; }
 
   MachineGraph* mcgraph() { return mcgraph_; }
-  Graph* graph();
+  TFGraph* graph();
   Zone* graph_zone();
 
  protected:
@@ -236,10 +237,6 @@ class WasmGraphBuilder {
                                       Node** parameters, int parameter_count);
 
   TrapId GetTrapIdForTrap(wasm::TrapReason reason);
-
-  void BuildModifyThreadInWasmFlag(bool new_value);
-  void BuildModifyThreadInWasmFlagHelper(Node* thread_in_wasm_flag_address,
-                                         bool new_value);
 
   Node* BuildChangeInt64ToBigInt(Node* input, StubCallMode stub_mode);
 

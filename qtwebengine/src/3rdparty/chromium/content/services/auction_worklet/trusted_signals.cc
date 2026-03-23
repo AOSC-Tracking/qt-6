@@ -10,7 +10,6 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -21,8 +20,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/strings/escape.h"
-#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
@@ -30,12 +27,13 @@
 #include "content/services/auction_worklet/auction_v8_helper.h"
 #include "content/services/auction_worklet/public/cpp/auction_downloader.h"
 #include "content/services/auction_worklet/public/cpp/auction_network_events_delegate.h"
+#include "content/services/auction_worklet/public/cpp/creative_info.h"
+#include "content/services/auction_worklet/public/mojom/in_progress_auction_download.mojom.h"
 #include "content/services/auction_worklet/public/mojom/seller_worklet.mojom.h"
 #include "gin/converter.h"
 #include "gin/dictionary.h"
 #include "net/base/parse_number.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
-#include "third_party/blink/public/common/interest_group/ad_display_size_utils.h"
 #include "url/gurl.h"
 #include "v8/include/v8-context.h"
 #include "v8/include/v8-json.h"
@@ -45,60 +43,6 @@
 namespace auction_worklet {
 
 namespace {
-
-// Creates a query param of the form `&<name>=<values in comma-delimited list>`.
-// Uses `proj` to extract out the values to add from items in `keys`.
-// Returns an empty string if `keys` is empty. `name` will not be escaped, but
-// the extracted values will be will be.
-template <typename Container, typename Proj = std::identity>
-std::string CreateQueryParam(std::string_view name,
-                             const Container& keys,
-                             Proj proj = {},
-                             bool escape = true) {
-  if (keys.empty()) {
-    return std::string();
-  }
-
-  std::string query_param = base::StrCat({"&", name, "="});
-  bool first_key = true;
-  for (const auto& key : keys) {
-    if (first_key) {
-      first_key = false;
-    } else {
-      query_param.append(",");
-    }
-    if (escape) {
-      query_param.append(
-          base::EscapeQueryParamValue(proj(key), /*use_plus=*/true));
-    } else {
-      query_param.append(proj(key));
-    }
-  }
-  return query_param;
-}
-
-GURL SetQueryParam(const GURL& base_url, const std::string& new_query_params) {
-  GURL::Replacements replacements;
-  replacements.SetQueryStr(new_query_params);
-  return base_url.ReplaceComponents(replacements);
-}
-
-// If creative scanning metadata is not being set, it's important that the
-// AdDescriptors used have everything but the URL discarded, so we don't
-// needlessly duplicate creative URLs, which might cause compatibility
-// problems.
-bool ContainsNonUrlInfo(
-    const std::set<TrustedSignals::CreativeInfo>& creative_info_set) {
-  for (const auto& creative_info : creative_info_set) {
-    if (creative_info.ad_descriptor.size.has_value() ||
-        !creative_info.creative_scanning_metadata.empty() ||
-        creative_info.interest_group_owner.has_value() ||
-        !creative_info.buyer_and_seller_reporting_id.empty()) {
-      return true;
-    }
-  }
-  return false;
-}
 
 // Extracts key/value pairs from `v8_object`, using values in `keys` as keys.
 // Does not add entries to the map for keys with missing values.
@@ -382,172 +326,20 @@ v8::Local<v8::Value> TrustedSignals::Result::WrapCrossOriginSignals(
 
 TrustedSignals::Result::~Result() = default;
 
-TrustedSignals::CreativeInfo::CreativeInfo() = default;
-TrustedSignals::CreativeInfo::CreativeInfo(
-    blink::AdDescriptor ad_descriptor,
-    std::string creative_scanning_metadata,
-    std::optional<url::Origin> interest_group_owner,
-    std::string buyer_and_seller_reporting_id)
-    : ad_descriptor(std::move(ad_descriptor)),
-      creative_scanning_metadata(std::move(creative_scanning_metadata)),
-      interest_group_owner(std::move(interest_group_owner)),
-      buyer_and_seller_reporting_id(std::move(buyer_and_seller_reporting_id)) {}
-
-TrustedSignals::CreativeInfo::CreativeInfo(
-    bool send_creative_scanning_metadata,
-    const mojom::CreativeInfoWithoutOwner& mojo_creative_info,
-    const url::Origin& in_interest_group_owner,
-    const std::optional<std::string>&
-        browser_signal_buyer_and_seller_reporting_id) {
-  ad_descriptor.url = mojo_creative_info.ad_descriptor.url;
-  if (send_creative_scanning_metadata) {
-    ad_descriptor.size = mojo_creative_info.ad_descriptor.size;
-    creative_scanning_metadata =
-        mojo_creative_info.creative_scanning_metadata.value_or(std::string());
-    interest_group_owner = in_interest_group_owner;
-    buyer_and_seller_reporting_id =
-        browser_signal_buyer_and_seller_reporting_id.value_or(std::string());
-  }
-}
-
-TrustedSignals::CreativeInfo::~CreativeInfo() = default;
-
-TrustedSignals::CreativeInfo::CreativeInfo(CreativeInfo&&) = default;
-TrustedSignals::CreativeInfo::CreativeInfo(const CreativeInfo&) = default;
-TrustedSignals::CreativeInfo& TrustedSignals::CreativeInfo::operator=(
-    CreativeInfo&&) = default;
-TrustedSignals::CreativeInfo& TrustedSignals::CreativeInfo::operator=(
-    const CreativeInfo&) = default;
-
-bool TrustedSignals::CreativeInfo::operator<(
-    const TrustedSignals::CreativeInfo& other) const {
-  return std::tie(ad_descriptor, creative_scanning_metadata,
-                  interest_group_owner, buyer_and_seller_reporting_id) <
-         std::tie(other.ad_descriptor, other.creative_scanning_metadata,
-                  other.interest_group_owner,
-                  other.buyer_and_seller_reporting_id);
-}
-
-GURL TrustedSignals::BuildTrustedBiddingSignalsURL(
-    const std::string& hostname,
-    const GURL& trusted_bidding_signals_url,
-    const std::set<std::string>& interest_group_names,
-    const std::set<std::string>& bidding_signals_keys,
-    std::optional<uint16_t> experiment_group_id,
-    const std::string& trusted_bidding_signals_slot_size_param) {
-  std::string query_params = base::StrCat(
-      {"hostname=", base::EscapeQueryParamValue(hostname, /*use_plus=*/true),
-       CreateQueryParam("keys", bidding_signals_keys),
-       CreateQueryParam("interestGroupNames", interest_group_names)});
-
-  if (experiment_group_id.has_value()) {
-    base::StrAppend(&query_params,
-                    {"&experimentGroupId=",
-                     base::NumberToString(experiment_group_id.value())});
-  }
-  if (!trusted_bidding_signals_slot_size_param.empty()) {
-    base::StrAppend(&query_params,
-                    {"&", trusted_bidding_signals_slot_size_param});
-  }
-  GURL full_signals_url =
-      SetQueryParam(trusted_bidding_signals_url, query_params);
-
-  return full_signals_url;
-}
-
-GURL TrustedSignals::BuildTrustedScoringSignalsURL(
-    bool send_creative_scanning_metadata,
-    const std::string& hostname,
-    const GURL& trusted_scoring_signals_url,
-    const std::set<CreativeInfo>& ads,
-    const std::set<CreativeInfo>& component_ads,
-    std::optional<uint16_t> experiment_group_id) {
-  // TODO(crbug.com/40264073): Find a way to rename renderUrls to renderURLs.
-
-  auto extract_render_url =
-      [](const CreativeInfo& creative_info) -> const std::string& {
-    return creative_info.ad_descriptor.url.spec();
-  };
-
-  std::string query_params = base::StrCat(
-      {"hostname=", base::EscapeQueryParamValue(hostname, /*use_plus=*/true),
-       CreateQueryParam("renderUrls", ads, extract_render_url),
-       CreateQueryParam("adComponentRenderUrls", component_ads,
-                        extract_render_url)});
-  if (experiment_group_id.has_value()) {
-    base::StrAppend(&query_params,
-                    {"&experimentGroupId=",
-                     base::NumberToString(experiment_group_id.value())});
-  }
-  if (send_creative_scanning_metadata) {
-    auto extract_creative_scan_metadata =
-        [](const CreativeInfo& creative_info) -> const std::string& {
-      return creative_info.creative_scanning_metadata;
-    };
-    auto extract_size = [](const CreativeInfo& creative_info) -> std::string {
-      // When no size is provided we return "," and not an empty string so that
-      // splitting size params by , will always produce 2 entries for each
-      // creative.
-      return creative_info.ad_descriptor.size.has_value()
-                 ? blink::ConvertAdSizeToString(
-                       *creative_info.ad_descriptor.size)
-                 : std::string(",");
-    };
-    auto extract_buyer = [](const CreativeInfo& creative_info) -> std::string {
-      DCHECK(creative_info.interest_group_owner.has_value());
-      return creative_info.interest_group_owner->Serialize();
-    };
-
-    auto extract_buyer_and_seller_reporting_id =
-        [](const CreativeInfo& creative_info) -> const std::string& {
-      return creative_info.buyer_and_seller_reporting_id;
-    };
-
-    base::StrAppend(
-        &query_params,
-        {CreateQueryParam("adCreativeScanningMetadata", ads,
-                          extract_creative_scan_metadata),
-         CreateQueryParam("adComponentCreativeScanningMetadata", component_ads,
-                          extract_creative_scan_metadata),
-         CreateQueryParam("adSizes", ads, extract_size,
-                          /*escape=*/false),
-         CreateQueryParam("adComponentSizes", component_ads, extract_size,
-                          /*escape=*/false),
-         CreateQueryParam("adBuyer", ads, extract_buyer),
-         CreateQueryParam("adComponentBuyer", component_ads, extract_buyer),
-         CreateQueryParam("adBuyerAndSellerReportingIds", ads,
-                          extract_buyer_and_seller_reporting_id)});
-  } else {
-    DCHECK(!ContainsNonUrlInfo(ads));
-    DCHECK(!ContainsNonUrlInfo(component_ads));
-  }
-  GURL full_signals_url =
-      SetQueryParam(trusted_scoring_signals_url, query_params);
-
-  return full_signals_url;
-}
-
-std::unique_ptr<TrustedSignals> TrustedSignals::LoadBiddingSignals(
+scoped_refptr<TrustedSignals> TrustedSignals::LoadBiddingSignals(
     network::mojom::URLLoaderFactory* url_loader_factory,
     mojo::PendingRemote<auction_worklet::mojom::AuctionNetworkEventsHandler>
         devtools_pending_remote,
     std::set<std::string> interest_group_names,
     std::set<std::string> bidding_signals_keys,
-    const std::string& hostname,
     const GURL& trusted_bidding_signals_url,
-    std::optional<uint16_t> experiment_group_id,
-    const std::string& trusted_bidding_signals_slot_size_param,
+    const GURL& full_signals_url,
     scoped_refptr<AuctionV8Helper> v8_helper,
     LoadSignalsCallback load_signals_callback) {
   DCHECK(!interest_group_names.empty());
 
-  GURL full_signals_url = TrustedSignals::BuildTrustedBiddingSignalsURL(
-      hostname, trusted_bidding_signals_url, interest_group_names,
-      bidding_signals_keys, experiment_group_id,
-      trusted_bidding_signals_slot_size_param);
-
-  std::unique_ptr<TrustedSignals> trusted_signals =
-      base::WrapUnique(new TrustedSignals(
+  scoped_refptr<TrustedSignals> trusted_signals =
+      base::WrapRefCounted(new TrustedSignals(
           std::move(interest_group_names), std::move(bidding_signals_keys),
           /*render_urls=*/std::nullopt,
           /*ad_component_render_urls=*/std::nullopt,
@@ -562,26 +354,50 @@ std::unique_ptr<TrustedSignals> TrustedSignals::LoadBiddingSignals(
   return trusted_signals;
 }
 
-std::unique_ptr<TrustedSignals> TrustedSignals::LoadScoringSignals(
+scoped_refptr<TrustedSignals> TrustedSignals::CreateFromBiddingSignalsLoad(
+    network::mojom::URLLoaderFactory* url_loader_factory,
+    mojo::PendingRemote<auction_worklet::mojom::AuctionNetworkEventsHandler>
+        auction_network_events_handler,
+    mojom::InProgressAuctionDownloadPtr download,
+    std::set<std::string> interest_group_names,
+    std::set<std::string> bidding_signals_keys,
+    const GURL& trusted_bidding_signals_url,
+    scoped_refptr<AuctionV8Helper> v8_helper,
+    LoadSignalsCallback load_signals_callback) {
+  DCHECK(!interest_group_names.empty());
+
+  scoped_refptr<TrustedSignals> trusted_signals =
+      base::WrapRefCounted(new TrustedSignals(
+          std::move(interest_group_names), std::move(bidding_signals_keys),
+          /*render_urls=*/std::nullopt,
+          /*ad_component_render_urls=*/std::nullopt,
+          trusted_bidding_signals_url,
+          std::move(auction_network_events_handler), std::move(v8_helper),
+          std::move(load_signals_callback)));
+
+  base::UmaHistogramCounts100000(
+      "Ads.InterestGroup.Net.RequestUrlSizeBytes.TrustedBidding",
+      download->url.spec().size());
+  trusted_signals->AdoptDownload(url_loader_factory, std::move(download));
+
+  return trusted_signals;
+}
+
+scoped_refptr<TrustedSignals> TrustedSignals::LoadScoringSignals(
     network::mojom::URLLoaderFactory* url_loader_factory,
     mojo::PendingRemote<auction_worklet::mojom::AuctionNetworkEventsHandler>
         auction_network_events_handler,
     std::set<CreativeInfo> ads,
     std::set<CreativeInfo> ad_components,
-    const std::string& hostname,
     const GURL& trusted_scoring_signals_url,
-    std::optional<uint16_t> experiment_group_id,
+    const GURL& full_signals_url,
     bool send_creative_scanning_metadata,
     scoped_refptr<AuctionV8Helper> v8_helper,
     LoadSignalsCallback load_signals_callback) {
   DCHECK(!ads.empty());
 
-  GURL full_signals_url = BuildTrustedScoringSignalsURL(
-      send_creative_scanning_metadata, hostname, trusted_scoring_signals_url,
-      ads, ad_components, experiment_group_id);
-
-  std::unique_ptr<TrustedSignals> trusted_signals =
-      base::WrapUnique(new TrustedSignals(
+  scoped_refptr<TrustedSignals> trusted_signals =
+      base::WrapRefCounted(new TrustedSignals(
           /*interest_group_names=*/std::nullopt,
           /*bidding_signals_keys=*/std::nullopt, std::move(ads),
           std::move(ad_components), trusted_scoring_signals_url,
@@ -715,8 +531,36 @@ void TrustedSignals::StartDownload(
       AuctionDownloader::DownloadMode::kActualDownload,
       AuctionDownloader::MimeType::kJson,
       /*post_body=*/std::nullopt, /*content_type=*/std::nullopt,
-      /*is_trusted_bidding_signals_kvv1_download=*/
-      interest_group_names_.has_value(),
+      /*num_igs_for_trusted_bidding_signals_kvv1=*/
+      interest_group_names_.has_value() ? interest_group_names_->size()
+                                        : std::optional<size_t>(),
+      AuctionDownloader::ResponseStartedCallback(),
+      base::BindOnce(&TrustedSignals::OnDownloadComplete,
+                     base::Unretained(this)),
+      /*network_events_delegate=*/std::move(network_events_delegate));
+}
+
+void TrustedSignals::AdoptDownload(
+    network::mojom::URLLoaderFactory* url_loader_factory,
+    mojom::InProgressAuctionDownloadPtr download) {
+  // This isn't accurate, but it's the closest we have.
+  download_start_time_ = base::TimeTicks::Now();
+
+  std::unique_ptr<MojoNetworkEventsDelegate> network_events_delegate;
+
+  if (auction_network_events_handler_.is_valid()) {
+    network_events_delegate = std::make_unique<MojoNetworkEventsDelegate>(
+        std::move(auction_network_events_handler_),
+        download->devtools_request_id);
+  }
+
+  auction_downloader_ = std::make_unique<AuctionDownloader>(
+      url_loader_factory, std::move(download),
+      AuctionDownloader::DownloadMode::kActualDownload,
+      AuctionDownloader::MimeType::kJson,
+      /*num_igs_for_trusted_bidding_signals_kvv1=*/
+      interest_group_names_.has_value() ? interest_group_names_->size()
+                                        : std::optional<size_t>(),
       AuctionDownloader::ResponseStartedCallback(),
       base::BindOnce(&TrustedSignals::OnDownloadComplete,
                      base::Unretained(this)),

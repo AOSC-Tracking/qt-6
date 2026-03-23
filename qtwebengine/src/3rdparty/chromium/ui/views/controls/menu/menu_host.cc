@@ -11,7 +11,7 @@
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "base/scoped_observation.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -21,6 +21,7 @@
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/controls/menu/menu_host_root_view.h"
@@ -141,7 +142,11 @@ void MenuHost::InitMenuHost(const InitParams& init_params) {
   params.opacity = (bubble_border || corner_radius)
                        ? Widget::InitParams::WindowOpacity::kTranslucent
                        : Widget::InitParams::WindowOpacity::kOpaque;
-  params.corner_radius = corner_radius;
+  // bubble_border draws rounded corners if it exists. Otherwise, let the
+  // platform draw the corners.
+  if (!bubble_border) {
+    params.rounded_corners = gfx::RoundedCornersF(corner_radius);
+  }
   params.parent = init_params.parent ? init_params.parent->GetNativeView()
                                      : gfx::NativeView();
   params.context = init_params.context ? init_params.context->GetNativeWindow()
@@ -372,7 +377,7 @@ gfx::Insets MenuHost::GetCustomInsetsInDIP() const {
 void MenuHost::OnWidgetDestroying(Widget* widget) {
   DCHECK_EQ(GetOwner(), widget);
   owner_observation_.Reset();
-  native_view_for_gestures_ = nullptr;
+  native_view_for_gestures_ = gfx::NativeView();
 }
 
 Widget* MenuHost::GetOwner() {

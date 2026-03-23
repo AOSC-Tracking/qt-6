@@ -2,16 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "net/extras/sqlite/sqlite_persistent_shared_dictionary_store.h"
 
 #include "base/containers/span.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/files/file_path.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/pickle.h"
 #include "base/strings/strcat.h"
@@ -39,10 +35,10 @@ constexpr char kTableName[] = "dictionaries";
 // metadata because calculating the total size is an expensive operation.
 constexpr char kTotalDictSizeKey[] = "total_dict_size";
 
-const int kCurrentVersionNumberSPSDS = 3;
-const int kCompatibleVersionNumberSPSDS = 3;
+const int kCurrentVersionNumberSPSDS = 4;
+const int kCompatibleVersionNumberSPSDS = 4;
 
-bool CreateV3Schema(sql::Database* db, sql::MetaTable* meta_table) {
+bool CreateV4Schema(sql::Database* db, sql::MetaTable* meta_table) {
   CHECK(!db->DoesTableExist(kTableName));
 
   static constexpr char kCreateTableQuery[] =
@@ -132,10 +128,10 @@ bool CreateV3Schema(sql::Database* db, sql::MetaTable* meta_table) {
 std::optional<SHA256HashValue> ToSHA256HashValue(
     base::span<const uint8_t> sha256_bytes) {
   SHA256HashValue sha256_hash;
-  if (sha256_bytes.size() != sizeof(sha256_hash.data)) {
+  if (sha256_bytes.size() != sha256_hash.size()) {
     return std::nullopt;
   }
-  memcpy(sha256_hash.data, sha256_bytes.data(), sha256_bytes.size());
+  base::span(sha256_hash).copy_from_nonoverlapping(sha256_bytes);
   return sha256_hash;
 }
 
@@ -400,7 +396,7 @@ class SQLitePersistentSharedDictionaryStore::Backend
 
 bool SQLitePersistentSharedDictionaryStore::Backend::CreateDatabaseSchema() {
   if (!db()->DoesTableExist(kTableName) &&
-      !CreateV3Schema(db(), meta_table())) {
+      !CreateV4Schema(db(), meta_table())) {
     return false;
   }
   return true;
@@ -409,17 +405,23 @@ bool SQLitePersistentSharedDictionaryStore::Backend::CreateDatabaseSchema() {
 std::optional<int>
 SQLitePersistentSharedDictionaryStore::Backend::DoMigrateDatabaseSchema() {
   int cur_version = meta_table()->GetVersionNumber();
-  if (cur_version == 1 || cur_version == 2) {
+  if (cur_version == 1 || cur_version == 2 || cur_version == 3) {
     sql::Transaction transaction(db());
     if (!transaction.Begin() ||
         !db()->Execute("DROP TABLE IF EXISTS dictionaries") ||
         !meta_table()->DeleteKey(kTotalDictSizeKey)) {
       return std::nullopt;
     }
-    // The version 1 is used during the Origin Trial period (M119-M122).
-    // The version 2 is used during the Origin Trial period (M123-M124).
-    // We don't need to migrate the data from version 1 and 2.
-    cur_version = 3;
+    // We don't need to migrate the data from version 1 and 2 and 3.
+    // - The version 1 is used during the Origin Trial period (M119-M122).
+    // - The version 2 is used during the Origin Trial period (M123-M124).
+    // - The version 3 is used until M139. Unfortunately, there was a bug
+    //   until M139 that incorrectly saved compressed dictionaries when the
+    //   RendererSideContentDecoding feature was enabled (crbug.com/423743105).
+    //   Because the RendererSideContentDecoding experiment was conducted on
+    //   Canary/Dev/Beta, we discarded the version 3 database and introduced
+    //   a version 4 database with the exact same schema as version 3.
+    cur_version = 4;
     if (!meta_table()->SetVersionNumber(cur_version) ||
         !meta_table()->SetCompatibleVersionNumber(
             std::min(cur_version, kCompatibleVersionNumberSPSDS)) ||
@@ -570,7 +572,7 @@ SQLitePersistentSharedDictionaryStore::Backend::RegisterDictionaryImpl(
   statement.BindTime(9, dictionary_info.GetExpirationTime());
   statement.BindTime(10, dictionary_info.last_used_time());
   statement.BindInt64(11, dictionary_info.size());
-  statement.BindBlob(12, base::span(dictionary_info.hash().data));
+  statement.BindBlob(12, base::span(dictionary_info.hash()));
   // There is no `sql::Statement::BindUint64()` method. So we cast to int64_t.
   int64_t token_high = static_cast<int64_t>(
       dictionary_info.disk_cache_key_token().GetHighForSerialization());
@@ -1006,7 +1008,7 @@ SQLitePersistentSharedDictionaryStore::Backend::GetOriginsBetweenImpl(
 
   std::set<url::Origin> origins;
   while (statement.Step()) {
-    const std::string frame_origin_string = statement.ColumnString(0);
+    const std::string_view frame_origin_string = statement.ColumnStringView(0);
     origins.insert(url::Origin::Create(GURL(frame_origin_string)));
   }
   return base::ok(std::vector<url::Origin>(origins.begin(), origins.end()));

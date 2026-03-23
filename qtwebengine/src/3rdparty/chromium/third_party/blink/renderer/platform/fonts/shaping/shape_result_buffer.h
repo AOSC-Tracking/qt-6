@@ -17,7 +17,6 @@ struct CharacterRange;
 class FontDescription;
 struct GlyphData;
 class ShapeResultBloberizer;
-class TextRun;
 
 class PLATFORM_EXPORT ShapeResultBuffer {
   STACK_ALLOCATED();
@@ -34,22 +33,30 @@ class PLATFORM_EXPORT ShapeResultBuffer {
 
   bool HasVerticalOffsets() const { return has_vertical_offsets_; }
 
-  int OffsetForPosition(const TextRun& run,
-                        float target_x,
-                        IncludePartialGlyphsOption,
-                        BreakGlyphsOption) const;
   CharacterRange GetCharacterRange(const StringView& text,
                                    TextDirection,
                                    float total_width,
                                    unsigned from,
                                    unsigned to) const;
 
-  HeapVector<ShapeResult::RunFontData> GetRunFontData() const;
-
-  wtf_size_t ShapeResultSize() const { return results_.size(); }
-  ShapeResultView* ViewAt(wtf_size_t index) const;
-
   GlyphData EmphasisMarkGlyphData(const FontDescription&) const;
+
+  struct CharacterRangeContext {
+    const StringView& text;
+    const bool is_rtl;
+    int from;
+    int to;
+    float current_x;
+    unsigned total_num_characters = 0;
+    std::optional<float> from_x;
+    std::optional<float> to_x;
+    float min_y = 0;
+    float max_y = 0;
+  };
+  // A helper for GetCharacterRange().
+  static void ComputeRangeIn(const ShapeResult& result,
+                             const gfx::RectF& ink_bounds,
+                             CharacterRangeContext& context);
 
  private:
   friend class ShapeResultBloberizer;

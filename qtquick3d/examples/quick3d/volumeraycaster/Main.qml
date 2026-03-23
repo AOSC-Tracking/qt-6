@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 import QtQuick
 import QtQuick3D
-import QtQuick3D.Helpers
 import QtQuick.Controls
 import QtQuick.Dialogs
-import Qt.labs.folderlistmodel
 import QtQuick.Controls.Universal
 
 import VolumetricExample
@@ -22,7 +20,7 @@ ApplicationWindow {
     FileDialog {
         id: fileDialog
         onAccepted: {
-            loadFile(selectedFile)
+            window.loadFile(selectedFile)
         }
     }
 
@@ -191,7 +189,7 @@ ApplicationWindow {
                     texture: Texture {
                         id: colormapTexture
                         tilingModeHorizontal: Texture.ClampToEdge
-                        source: getColormapSource(colormapCombo.currentIndex)
+                        source: window.getColormapSource(colormapCombo.currentIndex)
                     }
                 }
                 property real stepLength: Math.max(0.0001, parseFloat(
@@ -203,14 +201,14 @@ ApplicationWindow {
 
                 property real tMin: tSlider.first.value
                 property real tMax: tSlider.second.value
-                property vector3d sliceMin: sliceSliderMin(
+                property vector3d sliceMin: window.sliceSliderMin(
                                                 xSliceSlider.value,
                                                 xSliceWidthSlider.value,
                                                 ySliceSlider.value,
                                                 ySliceWidthSlider.value,
                                                 zSliceSlider.value,
                                                 zSliceWidthSlider.value)
-                property vector3d sliceMax: sliceSliderMax(
+                property vector3d sliceMax: window.sliceSliderMax(
                                                 xSliceSlider.value,
                                                 xSliceWidthSlider.value,
                                                 ySliceSlider.value,
@@ -252,7 +250,7 @@ ApplicationWindow {
                 }
                 receivesShadows: false
                 castsShadows: false
-                position: sliceBoxPosition(xSliceSlider.value,
+                position: window.sliceBoxPosition(xSliceSlider.value,
                                            ySliceSlider.value,
                                            zSliceSlider.value,
                                            xSliceWidthSlider.value,
@@ -316,8 +314,8 @@ ApplicationWindow {
             }
 
             function toNDC(x, y) {
-                return Qt.vector2d((2.0 * x / width) - 1.0,
-                                   1.0 - (2.0 * y / height))
+                return Qt.vector2d((2.0 * x / view.width) - 1.0,
+                                   1.0 - (2.0 * y / view.height))
             }
         }
 
@@ -416,8 +414,8 @@ ApplicationWindow {
         NumberAnimation on x {
             id: settingsPaneAnimation
             running: false
-            from: width
-            to: width
+            from: view.width
+            to: view.width
             duration: 100
         }
 
@@ -444,7 +442,7 @@ ApplicationWindow {
             Image {
                 width: tSlider.width
                 height: 20
-                source: getColormapSource(colormapCombo.currentIndex)
+                source: window.getColormapSource(colormapCombo.currentIndex)
             }
 
             Label {

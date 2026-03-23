@@ -147,7 +147,8 @@ void VirtualAddressSpace::FreeSharedPages(Address address, size_t size) {
 
 std::unique_ptr<v8::VirtualAddressSpace> VirtualAddressSpace::AllocateSubspace(
     Address hint, size_t size, size_t alignment,
-    PagePermissions max_page_permissions) {
+    PagePermissions max_page_permissions,
+    std::optional<MemoryProtectionKeyId> key) {
   DCHECK(IsAligned(alignment, allocation_granularity()));
   DCHECK(IsAligned(hint, alignment));
   DCHECK(IsAligned(size, allocation_granularity()));
@@ -158,8 +159,13 @@ std::unique_ptr<v8::VirtualAddressSpace> VirtualAddressSpace::AllocateSubspace(
           static_cast<OS::MemoryPermission>(max_page_permissions));
   if (!reservation.has_value())
     return std::unique_ptr<v8::VirtualAddressSpace>();
-  return std::unique_ptr<v8::VirtualAddressSpace>(
-      new VirtualAddressSubspace(*reservation, this, max_page_permissions));
+  return std::unique_ptr<v8::VirtualAddressSpace>(new VirtualAddressSubspace(
+      *reservation, this, max_page_permissions, key));
+}
+
+std::optional<VirtualAddressSpace::MemoryProtectionKeyId>
+VirtualAddressSpace::ActiveMemoryProtectionKey() {
+  return std::nullopt;
 }
 
 bool VirtualAddressSpace::RecommitPages(Address address, size_t size,
@@ -191,7 +197,8 @@ void VirtualAddressSpace::FreeSubspace(VirtualAddressSubspace* subspace) {
 
 VirtualAddressSubspace::VirtualAddressSubspace(
     AddressSpaceReservation reservation, VirtualAddressSpaceBase* parent_space,
-    PagePermissions max_page_permissions)
+    PagePermissions max_page_permissions,
+    std::optional<MemoryProtectionKeyId> key)
     : VirtualAddressSpaceBase(parent_space->page_size(),
                               parent_space->allocation_granularity(),
                               reinterpret_cast<Address>(reservation.base()),
@@ -200,7 +207,8 @@ VirtualAddressSubspace::VirtualAddressSubspace(
       region_allocator_(reinterpret_cast<Address>(reservation.base()),
                         reservation.size(),
                         parent_space->allocation_granularity()),
-      parent_space_(parent_space) {
+      parent_space_(parent_space),
+      pkey_(key) {
 #if V8_OS_WIN
   // On Windows, the address space reservation needs to be split and merged at
   // the OS level as well.
@@ -213,6 +221,18 @@ VirtualAddressSubspace::VirtualAddressSubspace(
     CHECK(reservation_.MergePlaceholders(reinterpret_cast<void*>(start), size));
   });
 #endif  // V8_OS_WIN
+
+  if (pkey_) {
+#if V8_HAS_PKU_SUPPORT
+    // Here we assume that the initial page permissions are kNoAccess, which is
+    // currently always the case.
+    CHECK(base::MemoryProtectionKey::HasMemoryProtectionKeyAPIs());
+    base::MemoryProtectionKey::SetPermissionsAndKey(
+        {base(), size()}, PagePermissions::kNoAccess, *pkey_);
+#else
+    UNREACHABLE();
+#endif  // V8_HAS_PKU_SUPPORT
+  }
 }
 
 VirtualAddressSubspace::~VirtualAddressSubspace() {
@@ -224,12 +244,12 @@ VirtualAddressSubspace::~VirtualAddressSubspace() {
 }
 
 void VirtualAddressSubspace::SetRandomSeed(int64_t seed) {
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
   rng_.SetSeed(seed);
 }
 
 Address VirtualAddressSubspace::RandomPageAddress() {
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
   // Note: the random numbers generated here aren't uniformly distributed if the
   // size isn't a power of two.
   Address addr = base() + (static_cast<uint64_t>(rng_.NextInt64()) % size());
@@ -244,7 +264,7 @@ Address VirtualAddressSubspace::AllocatePages(Address hint, size_t size,
   DCHECK(IsAligned(size, allocation_granularity()));
   DCHECK(IsSubset(permissions, max_page_permissions()));
 
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
 
   Address address = region_allocator_.AllocateRegion(hint, size, alignment);
   if (address == RegionAllocator::kAllocationFailure) return kNullAddress;
@@ -263,7 +283,7 @@ void VirtualAddressSubspace::FreePages(Address address, size_t size) {
   DCHECK(IsAligned(address, allocation_granularity()));
   DCHECK(IsAligned(size, allocation_granularity()));
 
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
   // The order here is important: on Windows, the allocation first has to be
   // freed to a placeholder before the placeholder can be merged (during the
   // merge_callback) with any surrounding placeholder mappings.
@@ -273,6 +293,19 @@ void VirtualAddressSubspace::FreePages(Address address, size_t size) {
     FatalOOM(OOMType::kProcess, "VirtualAddressSubspace::FreePages");
   }
   CHECK_EQ(size, region_allocator_.FreeRegion(address));
+
+#if V8_HAS_PKU_SUPPORT
+  if (pkey_) {
+    // Freeing pages in a subspace effectively means replacing them with fresh
+    // pages. As such, we need to re-set the protection key on the new pages.
+    //
+    // TODO(saelo): consider making AddressSpaceReservation aware of memory
+    // protection keys to move this logic closer to where the pages are
+    // replaced to make this more clear.
+    CHECK(base::MemoryProtectionKey::SetPermissionsAndKey(
+        {address, size}, PagePermissions::kNoAccess, *pkey_));
+  }
+#endif  // V8_HAS_PKU_SUPPORT
 }
 
 bool VirtualAddressSubspace::SetPagePermissions(Address address, size_t size,
@@ -290,7 +323,7 @@ bool VirtualAddressSubspace::AllocateGuardRegion(Address address, size_t size) {
   DCHECK(IsAligned(address, allocation_granularity()));
   DCHECK(IsAligned(size, allocation_granularity()));
 
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
 
   // It is guaranteed that reserved address space is inaccessible, so we just
   // need to mark the region as in-use in the region allocator.
@@ -301,7 +334,7 @@ void VirtualAddressSubspace::FreeGuardRegion(Address address, size_t size) {
   DCHECK(IsAligned(address, allocation_granularity()));
   DCHECK(IsAligned(size, allocation_granularity()));
 
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
   CHECK_EQ(size, region_allocator_.FreeRegion(address));
 }
 
@@ -312,7 +345,7 @@ Address VirtualAddressSubspace::AllocateSharedPages(
   DCHECK(IsAligned(size, allocation_granularity()));
   DCHECK(IsAligned(offset, allocation_granularity()));
 
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
 
   Address address =
       region_allocator_.AllocateRegion(hint, size, allocation_granularity());
@@ -332,7 +365,7 @@ void VirtualAddressSubspace::FreeSharedPages(Address address, size_t size) {
   DCHECK(IsAligned(address, allocation_granularity()));
   DCHECK(IsAligned(size, allocation_granularity()));
 
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
   // The order here is important: on Windows, the allocation first has to be
   // freed to a placeholder before the placeholder can be merged (during the
   // merge_callback) with any surrounding placeholder mappings.
@@ -341,15 +374,24 @@ void VirtualAddressSubspace::FreeSharedPages(Address address, size_t size) {
 }
 
 std::unique_ptr<v8::VirtualAddressSpace>
-VirtualAddressSubspace::AllocateSubspace(Address hint, size_t size,
-                                         size_t alignment,
-                                         PagePermissions max_page_permissions) {
+VirtualAddressSubspace::AllocateSubspace(
+    Address hint, size_t size, size_t alignment,
+    PagePermissions max_page_permissions,
+    std::optional<MemoryProtectionKeyId> key) {
+#if V8_HAS_PKU_SUPPORT
+  // We don't allow subspaces with different keys as that could be unexpected.
+  // If we ever want to support this, we should probably require specifying
+  // some flag like kSubspacesMayUseDifferentMemoryProtectionKey when creating
+  // the initial subspace and checking that flag here.
+  CHECK_IMPLIES(pkey_, pkey_ == key);
+#endif  // V8_HAS_PKU_SUPPORT
+
   DCHECK(IsAligned(alignment, allocation_granularity()));
   DCHECK(IsAligned(hint, alignment));
   DCHECK(IsAligned(size, allocation_granularity()));
   DCHECK(IsSubset(max_page_permissions, this->max_page_permissions()));
 
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
 
   Address address = region_allocator_.AllocateRegion(hint, size, alignment);
   if (address == RegionAllocator::kAllocationFailure) {
@@ -364,8 +406,13 @@ VirtualAddressSubspace::AllocateSubspace(Address hint, size_t size,
     CHECK_EQ(size, region_allocator_.FreeRegion(address));
     return nullptr;
   }
-  return std::unique_ptr<v8::VirtualAddressSpace>(
-      new VirtualAddressSubspace(*reservation, this, max_page_permissions));
+  return std::unique_ptr<v8::VirtualAddressSpace>(new VirtualAddressSubspace(
+      *reservation, this, max_page_permissions, key));
+}
+
+std::optional<VirtualAddressSpace::MemoryProtectionKeyId>
+VirtualAddressSubspace::ActiveMemoryProtectionKey() {
+  return pkey_;
 }
 
 bool VirtualAddressSubspace::RecommitPages(Address address, size_t size,
@@ -391,11 +438,28 @@ bool VirtualAddressSubspace::DecommitPages(Address address, size_t size) {
   DCHECK(IsAligned(address, page_size()));
   DCHECK(IsAligned(size, page_size()));
 
-  return reservation_.DecommitPages(reinterpret_cast<void*>(address), size);
+  bool success =
+      reservation_.DecommitPages(reinterpret_cast<void*>(address), size);
+
+#if V8_HAS_PKU_SUPPORT
+  if (success && pkey_) {
+    // Decommitting pages in a subspace effectively means replacing them with
+    // fresh pages. As such, we need to re-set the protection key on the new
+    // pages.
+    //
+    // TODO(saelo): consider making AddressSpaceReservation aware of memory
+    // protection keys to move this logic closer to where the pages are
+    // replaced to make this more clear.
+    CHECK(base::MemoryProtectionKey::SetPermissionsAndKey(
+        {address, size}, PagePermissions::kNoAccess, *pkey_));
+  }
+#endif  // V8_HAS_PKU_SUPPORT
+
+  return success;
 }
 
 void VirtualAddressSubspace::FreeSubspace(VirtualAddressSubspace* subspace) {
-  SpinningMutexGuard guard(&mutex_);
+  MutexGuard guard(&mutex_);
 
   AddressSpaceReservation reservation = subspace->reservation_;
   Address base = reinterpret_cast<Address>(reservation.base());

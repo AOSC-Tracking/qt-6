@@ -6,9 +6,9 @@
 
 #include <sys/select.h>
 
-#include "base/apple/bridging.h"
 #include "base/apple/foundation_util.h"
 #include "base/base_paths.h"
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -69,7 +69,7 @@ void ReadLaunchEventsFromFifo(
       // No data was read, wait for the file descriptor to become readable
       // again.
       fd_set fds;
-      FD_ZERO(&fds);
+      UNSAFE_TODO(FD_ZERO(&fds));
       FD_SET(f.GetPlatformFile(), &fds);
       select(FD_SETSIZE, &fds, nullptr, nullptr, nullptr);
     }
@@ -165,15 +165,8 @@ class LaunchApplicationTest : public testing::Test {
     // little bit of time for this to happen, and some tests might fail if the
     // app wasn't registered yet.
     while (true) {
-      NSArray<NSURL*>* apps = nil;
-      if (@available(macOS 12.0, *)) {
-        apps = [[NSWorkspace sharedWorkspace]
-            URLsForApplicationsWithBundleIdentifier:helper_bundle_id_];
-      } else {
-        apps =
-            apple::CFToNSOwnershipCast(LSCopyApplicationURLsForBundleIdentifier(
-                apple::NSToCFPtrCast(helper_bundle_id_), /*outError=*/nullptr));
-      }
+      NSArray<NSURL*>* apps = [NSWorkspace.sharedWorkspace
+          URLsForApplicationsWithBundleIdentifier:helper_bundle_id_];
       if (apps.count > 0) {
         break;
       }
@@ -390,24 +383,8 @@ TEST_F(LaunchApplicationTest, UrlSpecs) {
   EXPECT_NSEQ(LaunchEventName(1), @"applicationDidFinishLaunching");
   EXPECT_NSEQ(LaunchEventName(2), @"openURLs");
 
-  if (MacOSMajorVersion() == 11) {
-    // macOS 11 (and only macOS 11) appears to sometimes trigger the openURLs
-    // calls in reverse order.
-    std::vector<std::string> received_urls;
-    for (NSString* url in apple::ObjCCastStrict<NSArray>(
-             LaunchEventData(0)[@"urls"])) {
-      received_urls.push_back(SysNSStringToUTF8(url));
-    }
-    EXPECT_EQ(received_urls.size(), 1u);
-    for (NSString* url in apple::ObjCCastStrict<NSArray>(
-             LaunchEventData(2)[@"urls"])) {
-      received_urls.push_back(SysNSStringToUTF8(url));
-    }
-    EXPECT_THAT(received_urls, testing::UnorderedElementsAreArray(urls));
-  } else {
-    EXPECT_NSEQ(LaunchEventData(0)[@"urls"], @[ @"https://example.com" ]);
-    EXPECT_NSEQ(LaunchEventData(2)[@"urls"], @[ @"x-chrome-launch://1" ]);
-  }
+  EXPECT_NSEQ(LaunchEventData(0)[@"urls"], @[ @"https://example.com" ]);
+  EXPECT_NSEQ(LaunchEventData(2)[@"urls"], @[ @"x-chrome-launch://1" ]);
 }
 
 TEST_F(LaunchApplicationTest, CreateNewInstance) {

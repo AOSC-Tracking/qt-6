@@ -60,7 +60,7 @@ static uintptr_t StripPointerAuthenticationBits(uintptr_t ptr) {
   // with and without pointer authentication). xpaclri is used here because it's
   // in the HINT space and treated as a no-op on older Arm cores (unlike the
   // more generic xpaci which has a new encoding). The downside is that ptr has
-  // to be moved to x30 to use this instruction. TODO(richard.townsend@arm.com):
+  // to be moved to x30 to use this instruction. TODO(ritownsend@google.com):
   // replace with an intrinsic once that is available.
   register uintptr_t x30 __asm("x30") = ptr;
   asm("xpaclri" : "+r"(x30));
@@ -206,7 +206,7 @@ uintptr_t GetStackEnd() {
   // values from its pthread_t argument.
   static uintptr_t main_stack_end = 0;
 
-  bool is_main_thread = GetCurrentProcId() == PlatformThread::CurrentId();
+  bool is_main_thread = GetCurrentProcId() == PlatformThread::CurrentId().raw();
   if (is_main_thread && main_stack_end) {
     return main_stack_end;
   }
@@ -234,7 +234,8 @@ uintptr_t GetStackEnd() {
 #else
 
 #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) && defined(__GLIBC__)
-  if (GetCurrentProcId() == PlatformThread::CurrentId()) {
+  static_assert(std::is_same_v<ProcessId, PlatformThreadId::UnderlyingType>);
+  if (GetCurrentProcId() == PlatformThread::CurrentId().raw()) {
     // For the main thread we have a shortcut.
     return reinterpret_cast<uintptr_t>(__libc_stack_end);
   }
@@ -263,7 +264,7 @@ StackTrace::StackTrace(span<const void* const> trace)
 
 // static
 bool StackTrace::WillSymbolizeToStreamForTesting() {
-#if BUILDFLAG(SYMBOL_LEVEL) == 0
+#if BUILDFLAG(HAS_SYMBOLS) == 0
   // Symbols are not expected to be reliable when gn args specifies
   // symbol_level=0.
   return false;

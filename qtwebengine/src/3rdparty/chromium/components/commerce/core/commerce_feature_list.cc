@@ -40,22 +40,27 @@ const CountryLocaleMap& GetAllowedCountryToLocaleMap() {
   static const base::NoDestructor<CountryLocaleMap> allowed_map([] {
     CountryLocaleMap map;
 
-    map[&kCommerceMerchantViewerRegionLaunched] = {{"us", {"en-us"}}};
-    map[&kEnableDiscountInfoApiRegionLaunched] = {{"us", {"en-us"}}};
+#if BUILDFLAG(IS_ANDROID)
+    map[&kCommerceMerchantViewer] = {{"us", {"en-us"}}};
+    map[&kPriceAnnotations] = {{"us", {"en-us"}}};
+#endif  // BUILDFLAG(IS_ANDROID)
+
+#if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
+    map[&kEnableDiscountInfoApi] = {{"us", {"en-us"}}};
+#endif  // !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
+
     map[&ntp_features::kNtpChromeCartModule] = {{"us", {"en-us"}}};
-    map[&kParcelTrackingRegionLaunched] = {{"us", {"en-us"}}};
-    map[&kPriceAnnotationsRegionLaunched] = {{"us", {"en-us"}}};
-    map[&kPriceInsightsRegionLaunched] = {{"us", {"en-us"}}};
-    map[&kProductSpecifications] = {{"us", {"en-us"}}};
-    map[&kShoppingListRegionLaunched] = {{"us", {"en-us"}}};
-    map[&kShoppingPageTypesRegionLaunched] = {{"us", {"en-us"}}};
-    map[&kShoppingPDPMetricsRegionLaunched] = {{"us", {"en-us"}}};
-    map[&kSubscriptionsApiRegionLaunched] = {
-        {"us", {"en", "en-gb", "en-us"}},
-        {"au", {"en", "en-au", "en-gb", "en-us"}},
-        {"ca", {"en", "en-ca", "en-gb", "en-us"}},
-        {"in", {"en", "en-gb", "en-in", "en-us"}},
-        {"jp", {"ja", "ja-jp"}}};
+    map[&kPriceInsights] = {{"us", {"en-us"}}};
+    map[&kProductSpecifications] = {};
+    map[&kShoppingList] = {{"us", {"en-us"}}};
+    map[&kShoppingPageTypes] = {{"us", {"en-us"}}};
+    map[&kShoppingPDPMetrics] = {{"us", {"en-us"}}};
+    map[&kSubscriptionsApi] = {{"us", {"en", "en-gb", "en-us"}},
+                               {"au", {"en", "en-au", "en-gb", "en-us"}},
+                               {"ca", {"en", "en-ca", "en-gb", "en-us"}},
+                               {"in", {"en", "en-gb", "en-in", "en-us"}},
+                               {"jp", {"ja", "ja-jp"}}};
+    map[&kDiscountAutofill] = {};
 
     return map;
   }());
@@ -125,15 +130,6 @@ BASE_FEATURE(kCommerceAllowOnDemandBookmarkUpdates,
 BASE_FEATURE(kCommerceMerchantViewer,
              "CommerceMerchantViewer",
              base::FEATURE_DISABLED_BY_DEFAULT);
-#if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kCommerceMerchantViewerRegionLaunched,
-             "CommerceMerchantViewerRegionLaunched",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#else
-BASE_FEATURE(kCommerceMerchantViewerRegionLaunched,
-             "CommerceMerchantViewerRegionLaunched",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_ANDROID)
 
 BASE_FEATURE(kCommerceLocalPDPDetection,
              "CommerceLocalPDPDetection",
@@ -143,29 +139,10 @@ BASE_FEATURE(kPriceAnnotations,
              "PriceAnnotations",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-#if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kPriceAnnotationsRegionLaunched,
-             "PriceAnnotationsRegionLaunched",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#else
-BASE_FEATURE(kPriceAnnotationsRegionLaunched,
-             "PriceAnnotationsRegionLaunched",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_ANDROID)
-
 BASE_FEATURE(kPriceInsights,
              "PriceInsights",
              base::FEATURE_DISABLED_BY_DEFAULT);
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_IOS)
-BASE_FEATURE(kPriceInsightsRegionLaunched,
-             "PriceInsightsRegionLaunched",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#else
-BASE_FEATURE(kPriceInsightsRegionLaunched,
-             "PriceInsightsRegionLaunched",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif
+
 const char kPriceInsightsDelayChipParam[] = "price-inishgts-delay-chip";
 const base::FeatureParam<bool> kPriceInsightsDelayChip{
     &commerce::kPriceInsights, kPriceInsightsDelayChipParam, false};
@@ -181,10 +158,24 @@ const char kPriceInsightsUseCacheParam[] = "price-insights-use-cache";
 const base::FeatureParam<bool> kPriceInsightsUseCache{
     &commerce::kPriceInsights, kPriceInsightsUseCacheParam, true};
 
+// Discount Autofill at Checkout
+BASE_FEATURE(kDiscountAutofill,
+             "DiscountAutofill",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Promotion in Magic Stack for Price Tracking users from other platforms.
 BASE_FEATURE(kPriceTrackingPromo,
              "PriceTrackingPromo",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+// ShopCard in Magic Stack, including shopping features like price drop,
+// reviews, etc.
+BASE_FEATURE(kShopCard, "ShopCard", base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Impression limits on ShopCards
+BASE_FEATURE(kShopCardImpressionLimits,
+             "ShopCardImpressionLimits",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kProductSpecifications,
              "ProductSpecifications",
@@ -198,43 +189,32 @@ BASE_FEATURE(kProductSpecificationsClearMetadataOnNewlySupportedFields,
 
 BASE_FEATURE(kCompareConfirmationToast,
              "CompareConfirmationToast",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kProductSpecificationsCache,
              "ProductSpecificationsCache",
              base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Moves the table management interface from history to chrome://compare and
-// enables a new context menu for comparison tables under Bookmarks and Lists.
-BASE_FEATURE(kCompareManagementInterface,
-             "CompareManagementInterface",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Discount on navigation
 BASE_FEATURE(kEnableDiscountInfoApi,
              "EnableDiscountInfoApi",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// Force traffic to alternate Chrome shopping server.
+BASE_FEATURE(kShoppingAlternateServer,
+             "ShoppingAlternateServer",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// TODO(crbug.com/406555154): Clean up this flag when discount on clank launched.
 const char kDiscountOnShoppyPageParam[] = "discount-on-shoppy-page";
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 const base::FeatureParam<bool> kDiscountOnShoppyPage{
     &kEnableDiscountInfoApi, kDiscountOnShoppyPageParam, true};
 #else
 const base::FeatureParam<bool> kDiscountOnShoppyPage{
     &kEnableDiscountInfoApi, kDiscountOnShoppyPageParam, false};
-#endif
-
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
-BASE_FEATURE(kEnableDiscountInfoApiRegionLaunched,
-             "EnableDiscountInfoApiRegionLaunched",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#else
-BASE_FEATURE(kEnableDiscountInfoApiRegionLaunched,
-             "EnableDiscountInfoApiRegionLaunched",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 const char kHistoryClustersBehaviorParam[] = "history-cluster-behavior";
@@ -282,20 +262,10 @@ const base::FeatureParam<bool> kDeleteAllMerchantsOnClearBrowsingHistory{
     &kCommerceMerchantViewer, "delete_all_merchants_on_clear_history", false};
 
 BASE_FEATURE(kShoppingList, "ShoppingList", base::FEATURE_DISABLED_BY_DEFAULT);
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
-    BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_IOS)
-BASE_FEATURE(kShoppingListRegionLaunched,
-             "ShoppingListRegionLaunched",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#else
-BASE_FEATURE(kShoppingListRegionLaunched,
-             "ShoppingListRegionLaunched",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif
 
 BASE_FEATURE(kPriceTrackingSubscriptionServiceLocaleKey,
              "PriceTrackingSubscriptionServiceLocaleKey",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kPriceTrackingSubscriptionServiceProductVersion,
              "PriceTrackingSubscriptionServiceProductVersion",
@@ -305,20 +275,9 @@ BASE_FEATURE(kShoppingPDPMetrics,
              "ShoppingPDPMetrics",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kShoppingPDPMetricsRegionLaunched,
-             "ShoppingPDPMetricsRegionLaunched",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_DECLARE_FEATURE(kSubscriptionsApi);
-BASE_DECLARE_FEATURE(kSubscriptionsApiRegionLaunched);
-
 BASE_FEATURE(kSubscriptionsApi,
              "SubscriptionsApi",
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kSubscriptionsApiRegionLaunched,
-             "SubscriptionsApiRegionLaunched",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kTrackByDefaultOnMobile,
              "TrackByDefaultOnMobile",
@@ -338,10 +297,6 @@ BASE_FEATURE(kShoppingPageTypes,
              "ShoppingPageTypes",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kShoppingPageTypesRegionLaunched,
-             "ShoppingPageTypesRegionLaunched",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kRetailCoupons, "RetailCoupons", base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kCommerceDeveloper,
@@ -357,12 +312,16 @@ BASE_FEATURE(kDiscountConsentV2,
 
 BASE_FEATURE(kCodeBasedRBD, "CodeBasedRBD", base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kParcelTracking,
-             "ParcelTracking",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-BASE_FEATURE(kParcelTrackingRegionLaunched,
-             "ParcelTrackingRegionLaunched",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+extern const char kShopCardArm1[] = "arm_1";
+extern const char kShopCardArm2[] = "arm_2";
+extern const char kShopCardArm3[] = "arm_3";
+extern const char kShopCardArm4[] = "arm_4";
+// Regular Tab Resumption with same impression limits as ShopCard
+// (max 3 impressions). So ShopCard variations of Tab Resumption can
+// be conclusively benchmarked against regular Tab Resumption.
+extern const char kShopCardArm5[] = "arm_5";
+extern const char kShopCardFrontPosition[] = "shop_card_front";
+extern const char kShopCardMaxImpressions[] = "max_impressions";
 
 const char kProductSpecificationsSetValidForClusteringTimeParam[] =
     "set-valid-for-clustering-time";
@@ -446,14 +405,23 @@ bool IsEnabledForCountryAndLocale(const base::Feature& feature,
 }
 
 bool IsRegionLockedFeatureEnabled(const base::Feature& feature,
-                                  const base::Feature& feature_region_launched,
                                   const std::string& country_code,
                                   const std::string& locale) {
+  auto* feature_list = base::FeatureList::GetInstance();
+
+  // If the feature has a server-side config, this check will ensure that
+  // we use that state rather than checking the country/region map. If a
+  // client is determined to be in the "default" group, this path is still
+  // taken, but is still subject to the experiment config filters. E.g. a
+  // config starting experimentation and filtering on CA will not affect
+  // launched users in the US.
+  if (feature_list && feature_list->IsFeatureOverridden(feature.name)) {
+    return base::FeatureList::IsEnabled(feature);
+  }
+
   bool flag_enabled = base::FeatureList::IsEnabled(feature);
   bool region_launched =
-      base::FeatureList::IsEnabled(feature_region_launched) &&
-      IsEnabledForCountryAndLocale(feature_region_launched, country_code,
-                                   locale);
+      IsEnabledForCountryAndLocale(feature, country_code, locale);
   return flag_enabled || region_launched;
 }
 

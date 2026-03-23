@@ -1,14 +1,13 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
-#ifndef VULKANSERVERBUFFERINTEGRATION_H
-#define VULKANSERVERBUFFERINTEGRATION_H
+#pragma once
 
 #include <QtWaylandClient/private/qwayland-wayland.h>
 #include "qwayland-qt-vulkan-server-buffer-unstable-v1.h"
 #include <QtWaylandClient/private/qwaylandserverbufferintegration_p.h>
 
-#include "vulkanserverbufferintegration.h"
 #include <QtWaylandClient/private/qwaylanddisplay_p.h>
 #include <QtCore/QTextStream>
 
@@ -62,5 +61,3 @@ private:
 }
 
 QT_END_NAMESPACE
-
-#endif

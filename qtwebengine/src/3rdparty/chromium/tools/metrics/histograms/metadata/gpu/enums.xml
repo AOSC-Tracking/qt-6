@@ -74,6 +74,12 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Missing serial number"/>
 </enum>
 
+<enum name="BooleanANGLECanEmulateGLES3">
+  <summary>Whether ANGLE can emulate GLES3.</summary>
+  <int value="0" label="false"/>
+  <int value="1" label="true"/>
+</enum>
+
 <enum name="BooleanDisplayIdCollision">
   <int value="0" label="No display ID collision"/>
   <int value="1" label="Display ID collision detected"/>
@@ -240,6 +246,16 @@ chromium-metrics-reviews@google.com.
   <int value="8" label="D3D_SHADER_MODEL_6_6"/>
   <int value="9" label="D3D_SHADER_MODEL_6_7"/>
 </enum>
+
+<!-- LINT.IfChange(DawnAdapterFeatureLevel) -->
+
+<enum name="DawnAdapterFeatureLevel">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Compatibility"/>
+  <int value="2" label="Core"/>
+</enum>
+
+<!-- LINT.ThenChange(//gpu/command_buffer/service/dawn_context_provider.cc:DawnAdapterFeatureLevel) -->
 
 <enum name="DCLayerResult">
   <int value="0" label="Success"/>
@@ -414,6 +430,7 @@ chromium-metrics-reviews@google.com.
   <int value="16" label="ANGLE OpenGL ES EGL"/>
   <int value="17" label="ANGLE Metal"/>
   <int value="18" label="ANGLE Metal NULL"/>
+  <int value="19" label="ANGLE D3D11 WARP"/>
 </enum>
 
 <enum name="FrameIntervalMatcherType">
@@ -423,6 +440,8 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="kVideoConference"/>
   <int value="4" label="kOnlyAnimatingImage"/>
   <int value="5" label="kOnlyScrollBarFadeOut"/>
+  <int value="6" label="kUserInputBoost"/>
+  <int value="7" label="kSlowScrollThrottle"/>
 </enum>
 
 <enum name="GLImplementation">
@@ -1102,10 +1121,12 @@ Called by update_gpu_driver_bug_workaround_entries.py.-->
   <int value="9" label="9th Gen"/>
   <int value="10" label="10th Gen"/>
   <int value="11" label="11th Gen"/>
-  <int value="12" label="12th Gen"/>
-  <int value="13" label="13th Gen"/>
-  <int value="14" label="14th Gen"/>
+  <int value="12" label="Xe"/>
+  <int value="13" label="Xe2"/>
+  <int value="14" label="Xe3"/>
 </enum>
+
+<!-- LINT.IfChange(IntelGpuSeriesType) -->
 
 <enum name="IntelGpuSeriesType">
   <summary>
@@ -1146,12 +1167,19 @@ Called by update_gpu_driver_bug_workaround_entries.py.-->
   <int value="32" label="Intel Pantherlake"/>
 </enum>
 
+<!-- LINT.ThenChange(//gpu/config/gpu_info.h:IntelGpuSeriesType) -->
+
 <enum name="MaximumGLESVersion">
   <summary>The maximum GLES version supported.</summary>
   <int value="0" label="GLES2.0"/>
   <int value="1" label="GLES3.0"/>
   <int value="2" label="GLES3.1"/>
   <int value="3" label="GLES3.2"/>
+</enum>
+
+<enum name="MetalFamilyMac">
+  <int value="0" label="Mac1"/>
+  <int value="1" label="Mac2"/>
 </enum>
 
 <enum name="MetalReadWriteTextureSupportTier">
@@ -1394,6 +1422,7 @@ Called by update_gpu_driver_bug_workaround_entries.py.-->
   <int value="5" label="GraphiteDawnMetal"/>
   <int value="6" label="GraphiteDawnD3D11"/>
   <int value="7" label="GraphiteDawnD3D12"/>
+  <int value="8" label="GraphiteMetal"/>
 </enum>
 
 <enum name="SkiaPipelineCreationRace">

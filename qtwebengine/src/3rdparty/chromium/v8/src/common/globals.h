@@ -11,6 +11,7 @@
 #include <limits>
 #include <ostream>
 
+#include "include/cppgc/macros.h"
 #include "include/v8-internal.h"
 #include "src/base/atomic-utils.h"
 #include "src/base/build_config.h"
@@ -18,6 +19,7 @@
 #include "src/base/flags.h"
 #include "src/base/logging.h"
 #include "src/base/macros.h"
+#include "src/base/numbers/double.h"
 #include "src/base/strong-alias.h"
 
 #define V8_INFINITY std::numeric_limits<double>::infinity()
@@ -99,6 +101,12 @@ namespace internal {
 #define COMPRESS_POINTERS_BOOL false
 #endif
 
+#if V8_TARGET_ARCH_X64 && V8_BUILTINS_GEARBOX
+#define V8_ENABLE_GEARBOX true
+#else
+#define V8_ENABLE_GEARBOX false
+#endif  // V8_TARGET_ARCH_X64 && V8_BUILTINS_GEARBOX
+
 #if COMPRESS_POINTERS_BOOL && V8_TARGET_ARCH_X64
 #define DECOMPRESS_POINTER_BY_ADDRESSING_MODE true
 #else
@@ -123,6 +131,12 @@ namespace internal {
 #define V8_CAN_CREATE_SHARED_HEAP_BOOL false
 #endif
 
+#ifdef V8_LOWER_LIMITS_MODE
+#define V8_LOWER_LIMITS_MODE_BOOL true
+#else
+#define V8_LOWER_LIMITS_MODE_BOOL false
+#endif
+
 #ifdef V8_STATIC_ROOTS_GENERATION
 #define V8_STATIC_ROOTS_GENERATION_BOOL true
 #else
@@ -132,14 +146,11 @@ namespace internal {
 #ifdef V8_ENABLE_LEAPTIERING
 #define V8_ENABLE_LEAPTIERING_BOOL true
 
-// If we have predictable and shared builtin objects, then dispatch handles of
-// builtins are stored in the read only segment of the JSDispatchTable.
-// Otherwise, we need a table of per-isolate dispatch handles of builtins.
-#ifdef V8_STATIC_ROOTS
+#ifdef V8_COMPRESS_POINTERS
 #define V8_STATIC_DISPATCH_HANDLES_BOOL true
 #else
 #define V8_STATIC_DISPATCH_HANDLES_BOOL false
-#endif  // !V8_STATIC_ROOTS
+#endif  // !V8_COMPRESS_POINTERS
 
 #else
 #define V8_ENABLE_LEAPTIERING_BOOL false
@@ -161,13 +172,9 @@ static_assert(V8_ENABLE_LEAPTIERING_BOOL);
 #define ENABLE_CONTROL_FLOW_INTEGRITY_BOOL false
 #endif
 
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
-// Set stack limit lower for ARM and ARM64 than for other architectures because:
-//  - on Arm stack allocating MacroAssembler takes 120K bytes.
-//    See issue crbug.com/405338
-//  - on Arm64 when running in single-process mode for Android WebView, when
-//    initializing V8 we already have a large stack and so have to set the
-//    limit lower. See issue crbug.com/v8/10575
+#if V8_TARGET_ARCH_ARM
+// Set stack limit lower for ARM than for other architectures because stack
+// allocating MacroAssembler takes 120K bytes.  See issue crbug.com/405338
 #define V8_DEFAULT_STACK_SIZE_KB 864
 #elif V8_TARGET_ARCH_IA32
 // In mid-2022, we're observing an increase in stack overflow crashes on
@@ -253,11 +260,12 @@ const size_t kShortBuiltinCallsOldSpaceSizeThreshold = size_t{2} * GB;
 #define V8_EXTERNAL_CODE_SPACE_BOOL false
 #endif
 
-// Support for builtin jump table disassembly.
-#if defined(V8_ENABLE_BUILTIN_JUMP_TABLE_SWITCH) && defined(ENABLE_DISASSEMBLER)
-#define V8_BUILTIN_JUMP_TABLE_INFO_BOOL true
+// Support for jump table disassembly.
+#if defined(ENABLE_DISASSEMBLER) && \
+    (defined(V8_TARGET_ARCH_ARM64) || defined(V8_TARGET_ARCH_X64))
+#define V8_JUMP_TABLE_INFO_BOOL true
 #else
-#define V8_BUILTIN_JUMP_TABLE_INFO_BOOL false
+#define V8_JUMP_TABLE_INFO_BOOL false
 #endif
 
 // V8_HEAP_USE_PTHREAD_JIT_WRITE_PROTECT controls how V8 sets permissions for
@@ -311,16 +319,6 @@ const size_t kShortBuiltinCallsOldSpaceSizeThreshold = size_t{2} * GB;
 #define V8_HEAP_USE_PKU_JIT_WRITE_PROTECT false
 #endif
 
-// Enable hardware features to make the sandbox memory temporarily inaccessible.
-// This is currently only used with pkeys and in debug mode.
-// TODO(sroettger): add a gn arg to toggle this once we enable it in non-debug
-//                  builds.
-#if V8_HAS_PKU_JIT_WRITE_PROTECT && defined(V8_ENABLE_SANDBOX) && defined(DEBUG)
-#define V8_ENABLE_SANDBOX_HARDWARE_SUPPORT true
-#else
-#define V8_ENABLE_SANDBOX_HARDWARE_SUPPORT false
-#endif
-
 // Determine whether tagged pointers are 8 bytes (used in Torque layouts for
 // choosing where to insert padding).
 #if V8_TARGET_ARCH_64_BIT && !defined(V8_COMPRESS_POINTERS)
@@ -356,6 +354,8 @@ const size_t kShortBuiltinCallsOldSpaceSizeThreshold = size_t{2} * GB;
 #else
 #define V8_EXPERIMENTAL_UNDEFINED_DOUBLE_BOOL false
 #endif
+
+#define V8_STACK_ALLOCATED CPPGC_STACK_ALLOCATED
 
 // Superclass for classes only using static method functions.
 // The subclass of AllStatic cannot be instantiated at all.
@@ -512,16 +512,6 @@ constexpr size_t kReservedCodeRangePages = 0;
 
 static_assert(kSystemPointerSize == (1 << kSystemPointerSizeLog2));
 
-#ifdef V8_COMPRESS_ZONES
-#define COMPRESS_ZONES_BOOL true
-#else
-#define COMPRESS_ZONES_BOOL false
-#endif  // V8_COMPRESS_ZONES
-
-// The flag controls whether zones pointer compression should be enabled for
-// TurboFan graphs or not.
-static constexpr bool kCompressGraphZone = COMPRESS_ZONES_BOOL;
-
 #ifdef V8_COMPRESS_POINTERS
 static_assert(
     kSystemPointerSize == kInt64Size,
@@ -562,14 +552,15 @@ constexpr int kJSDispatchTableEntrySizeLog2 = 4;
 // The size of the virtual memory reservation for the JSDispatchTable.
 // As with the other tables, a maximum table size in combination with shifted
 // indices allows omitting bounds checks.
-constexpr size_t kJSDispatchTableReservationSize = 128 * MB;
+constexpr size_t kJSDispatchTableReservationSize =
+    (V8_LOWER_LIMITS_MODE_BOOL ? 16 : 256) * MB;
 // The maximum number of entries in a JSDispatchTable.
 constexpr size_t kMaxJSDispatchEntries =
     kJSDispatchTableReservationSize / kJSDispatchTableEntrySize;
 
 #ifdef V8_TARGET_ARCH_64_BIT
 
-constexpr uint32_t kJSDispatchHandleShift = 9;
+constexpr uint32_t kJSDispatchHandleShift = V8_LOWER_LIMITS_MODE_BOOL ? 12 : 8;
 static_assert((1 << (32 - kJSDispatchHandleShift)) == kMaxJSDispatchEntries,
               "kJSDispatchTableReservationSize and kJSDispatchEntryHandleShift "
               "don't match");
@@ -702,6 +693,9 @@ constexpr int kOneByteSize = kCharSize;
 // 128 bit SIMD value size.
 constexpr int kSimd128Size = 16;
 
+// Half of 128 bit SIMD value size.
+constexpr int kSimd128HalfSize = kSimd128Size / 2;
+
 // 256 bit SIMD value size.
 constexpr int kSimd256Size = 32;
 
@@ -799,7 +793,7 @@ enum class StoreOrigin { kMaybeKeyed, kNamed };
 
 enum class TypeofMode { kInside, kNotInside };
 
-enum class ContextKind { kDefault, kScriptContext };
+enum class ContextMode { kNoContextCells, kHasContextCells };
 
 // Whether floating point registers should be saved (and restored).
 enum class SaveFPRegsMode { kIgnore, kSave };
@@ -865,6 +859,7 @@ constexpr int kNoDeoptimizationId = -1;
 //   code is executed.
 enum class DeoptimizeKind : uint8_t {
   kEager,
+  kLazyAfterFastCall,
   kLazy,
 };
 constexpr DeoptimizeKind kFirstDeoptimizeKind = DeoptimizeKind::kEager;
@@ -880,6 +875,8 @@ constexpr const char* ToString(DeoptimizeKind kind) {
       return "Eager";
     case DeoptimizeKind::kLazy:
       return "Lazy";
+    case DeoptimizeKind::kLazyAfterFastCall:
+      return "LazyAfterfastCall";
   }
 }
 inline std::ostream& operator<<(std::ostream& os, DeoptimizeKind kind) {
@@ -966,11 +963,11 @@ const Address kWeakHeapObjectMask = 1 << 1;
 // The lower 32 bits of the cleared weak reference value is always equal to
 // the |kClearedWeakHeapObjectLower32| constant but on 64-bit architectures
 // the value of the upper 32 bits part may be
-// 1) zero when pointer compression is disabled,
-// 2) upper 32 bits of the isolate root value when pointer compression is
-//    enabled.
-// This is necessary to make pointer decompression computation also suitable
-// for cleared weak reference.
+// 1) zero when pointer compression is disabled or for a kClearedWeakValue
+//    constant,
+// 2) upper 32 bits of the respective cage base when pointer compression is
+//    enabled (this is useful for detecting cases when a cleared value loaded
+//    from once cage is written to another cage).
 // Note, that real heap objects can't have lower 32 bits equal to 3 because
 // this offset belongs to page header. So, in either case it's enough to
 // compare only the lower 32 bits of a Tagged<MaybeObject> value in order to
@@ -1185,6 +1182,8 @@ using JSPrimitive =
 // or a FixedArray.
 using JSAny = Union<Smi, HeapNumber, BigInt, String, Symbol, Boolean, Null,
                     Undefined, JSReceiver>;
+using JSAnyNotSmi = Union<HeapNumber, BigInt, String, Symbol, Boolean, Null,
+                          Undefined, JSReceiver>;
 using JSAnyNotNumeric =
     Union<String, Symbol, Boolean, Null, Undefined, JSReceiver>;
 using JSAnyNotNumber =
@@ -1340,6 +1339,10 @@ constexpr bool IsAnySharedSpace(AllocationSpace space) {
 constexpr bool IsAnyNewSpace(AllocationSpace space) {
   return space == NEW_SPACE || space == NEW_LO_SPACE;
 }
+constexpr bool IsAnyLargeSpace(AllocationSpace space) {
+  return space == NEW_LO_SPACE || space == LO_SPACE || space == CODE_LO_SPACE ||
+         space == SHARED_LO_SPACE || space == TRUSTED_LO_SPACE;
+}
 
 constexpr const char* ToString(AllocationSpace space) {
   switch (space) {
@@ -1415,6 +1418,24 @@ inline std::ostream& operator<<(std::ostream& os, AllocationType type) {
   return os << ToString(type);
 }
 
+enum class PerformHeapLimitCheck { kYes, kNo };
+
+class AllocationHint final {
+ public:
+  AllocationHint() = default;
+
+  constexpr V8_WARN_UNUSED_RESULT AllocationHint WithMayGrow() const {
+    return AllocationHint(true);
+  }
+
+  bool MayGrow() const { return may_grow_; }
+
+ private:
+  constexpr explicit AllocationHint(bool may_grow) : may_grow_(may_grow) {}
+
+  bool may_grow_ = false;
+};
+
 // Reason for a garbage collection.
 //
 // These values are persisted to logs. Entries should not be renumbered and
@@ -1450,6 +1471,8 @@ enum class GarbageCollectionReason : int {
   kFinalizeConcurrentMinorMS = 26,
   kCppHeapAllocationFailure = 27,
   kFrozen = 28,
+  kIdleContextDisposal = 29,
+  kFinalizeMinorMSForMajorGC = 30,
 
   NUM_REASONS,
 };
@@ -1514,10 +1537,14 @@ constexpr const char* ToString(GarbageCollectionReason reason) {
       return "background allocation failure";
     case GarbageCollectionReason::kFinalizeConcurrentMinorMS:
       return "finalize concurrent MinorMS";
+    case GarbageCollectionReason::kFinalizeMinorMSForMajorGC:
+      return "finalize MinorMS for major GC";
     case GarbageCollectionReason::kCppHeapAllocationFailure:
       return "CppHeap allocation failure";
     case GarbageCollectionReason::kFrozen:
       return "frozen";
+    case GarbageCollectionReason::kIdleContextDisposal:
+      return "idle context disposal";
     case GarbageCollectionReason::NUM_REASONS:
       UNREACHABLE();
   }
@@ -1537,7 +1564,7 @@ inline constexpr bool IsSharedAllocationType(AllocationType kind) {
          kind == AllocationType::kSharedMap;
 }
 
-enum AllocationAlignment {
+enum AllocationAlignment : uint8_t {
   // The allocated address is kTaggedSize aligned (this is default for most of
   // the allocations).
   kTaggedAligned,
@@ -1551,7 +1578,7 @@ enum AllocationAlignment {
 // allocation alignment inconsistency is fixed. For now we keep using
 // tagged aligned (not double aligned) access since all our supported platforms
 // allow tagged-aligned access to doubles and full words.
-#define USE_ALLOCATION_ALIGNMENT_BOOL false
+#define USE_ALLOCATION_ALIGNMENT_HEAP_NUMBER_BOOL false
 
 enum class AccessMode { ATOMIC, NON_ATOMIC };
 
@@ -1591,7 +1618,7 @@ enum class PageSize { kRegular, kLarge };
 enum class CodeFlushMode {
   kFlushBytecode,
   kFlushBaselineCode,
-  kStressFlushCode,
+  kForceFlush,
 };
 
 enum class ExternalBackingStoreType {
@@ -1613,8 +1640,8 @@ bool inline IsByteCodeFlushingEnabled(base::EnumSet<CodeFlushMode> mode) {
   return mode.contains(CodeFlushMode::kFlushBytecode);
 }
 
-bool inline IsStressFlushingEnabled(base::EnumSet<CodeFlushMode> mode) {
-  return mode.contains(CodeFlushMode::kStressFlushCode);
+bool inline IsForceFlushingEnabled(base::EnumSet<CodeFlushMode> mode) {
+  return mode.contains(CodeFlushMode::kForceFlush);
 }
 
 bool inline IsFlushingDisabled(base::EnumSet<CodeFlushMode> mode) {
@@ -1944,8 +1971,8 @@ constexpr uint32_t kUndefinedNanLower32 = 0xFFFE7FFF;
 constexpr uint32_t kHoleNanUpper32 = 0xFFF7FFFF;
 constexpr uint32_t kHoleNanLower32 = 0xFFF7FFFF;
 #ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
-constexpr uint32_t kUndefinedNanUpper32 = 0xFFFFFFFF;
-constexpr uint32_t kUndefinedNanLower32 = 0xFFFFFFFF;
+constexpr uint32_t kUndefinedNanUpper32 = 0xFFF6FFFF;
+constexpr uint32_t kUndefinedNanLower32 = 0xFFF6FFFF;
 #endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
 #endif
 
@@ -1954,20 +1981,16 @@ constexpr uint64_t kHoleNanInt64 =
 #ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
 constexpr uint64_t kUndefinedNanInt64 =
     (static_cast<uint64_t>(kUndefinedNanUpper32) << 32) | kUndefinedNanLower32;
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
 
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
 // TODO(nicohartmann): Use proper constants.
-inline bool IsUndefinedNan(double d) {
-  uint64_t b;
-  std::memcpy(&b, &d, sizeof(double));
-  return b == kUndefinedNanInt64;
+inline constexpr bool IsUndefinedNan(double d) {
+  return base::double_to_uint64(d) == kUndefinedNanInt64;
 }
-inline double UndefinedNan() {
-  uint64_t b = kUndefinedNanInt64;
-  double d;
-  std::memcpy(&d, &b, sizeof(double));
-  return d;
+inline constexpr double UndefinedNan() {
+  return base::uint64_to_double(kUndefinedNanInt64);
+}
+inline constexpr double HoleNan() {
+  return base::uint64_to_double(kHoleNanInt64);
 }
 #endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
 
@@ -1979,6 +2002,21 @@ constexpr double kMaxSafeInteger = static_cast<double>(kMaxSafeIntegerUint64);
 constexpr double kMinSafeInteger = -kMaxSafeInteger;
 
 constexpr double kMaxUInt32Double = double{kMaxUInt32};
+
+constexpr int64_t kMaxAdditiveSafeInteger = 4503599627370495;  // 2^52 - 1
+static_assert(kMaxAdditiveSafeInteger == (int64_t{1} << 52) - 1);
+constexpr int64_t kMinAdditiveSafeInteger = -4503599627370496;  // - 2^52
+static_assert(kMinAdditiveSafeInteger == -(int64_t{1} << 52));
+constexpr int kAdditiveSafeIntegerBitLength = 53;
+// Number of bits to shift left before addition to detect potential overflow.
+constexpr int kAdditiveSafeIntegerShift = 64 - kAdditiveSafeIntegerBitLength;
+
+static_assert(kMaxAdditiveSafeInteger + kMaxAdditiveSafeInteger <=
+              kMaxSafeInteger);
+// kMinAdditiveSafeInteger + kMinAdditiveSafeInteger would overflow the integer
+// safe addition.
+static_assert(kMinAdditiveSafeInteger + (kMinAdditiveSafeInteger + 1) >=
+              kMinSafeInteger);
 
 // The order of this enum has to be kept in sync with the predicates below.
 enum class VariableMode : uint8_t {
@@ -2030,6 +2068,7 @@ enum class VariableMode : uint8_t {
   kPrivateGetterAndSetter,  // Does not coexist with any other variable with the
                             // same name in the same scope.
 
+  kFirstImmutableLexicalVariableMode = kConst,
   kLastLexicalVariableMode = kAwaitUsing,
 };
 
@@ -2067,6 +2106,19 @@ inline const char* VariableMode2String(VariableMode mode) {
   UNREACHABLE();
 }
 #endif
+
+inline const char* ImmutableLexicalVariableModeToString(VariableMode mode) {
+  switch (mode) {
+    case VariableMode::kConst:
+      return "const";
+    case VariableMode::kUsing:
+      return "using";
+    case VariableMode::kAwaitUsing:
+      return "await using";
+    default:
+      UNREACHABLE();
+  }
+}
 
 enum VariableKind : uint8_t {
   NORMAL_VARIABLE,
@@ -2106,8 +2158,8 @@ inline bool IsSerializableVariableMode(VariableMode mode) {
 }
 
 inline bool IsImmutableLexicalVariableMode(VariableMode mode) {
-  return mode == VariableMode::kConst || mode == VariableMode::kUsing ||
-         mode == VariableMode::kAwaitUsing;
+  return mode >= VariableMode::kFirstImmutableLexicalVariableMode &&
+         mode <= VariableMode::kLastLexicalVariableMode;
 }
 
 inline bool IsImmutableLexicalOrPrivateVariableMode(VariableMode mode) {
@@ -2226,7 +2278,8 @@ inline uint32_t ObjectHash(Address address) {
 // at different points by performing an 'OR' operation. Type feedback moves
 // to a more generic type when we combine feedback.
 //
-//   kSignedSmall -> kSignedSmallInputs -> kNumber  -> kNumberOrOddball -> kAny
+//   kSignedSmall -> kSignedSmallInputs -> kAdditiveSafeInteger
+//                                      -> kNumber ->  kNumberOrOddball -> kAny
 //                                                     kString          -> kAny
 //                                        kBigInt64 -> kBigInt          -> kAny
 //
@@ -2242,14 +2295,15 @@ class BinaryOperationFeedback {
     kNone = 0x0,
     kSignedSmall = 0x1,
     kSignedSmallInputs = 0x3,
-    kNumber = 0x7,
-    kNumberOrOddball = 0xF,
-    kString = 0x10,
+    kAdditiveSafeInteger = 0x7,
+    kNumber = 0xF,
+    kNumberOrOddball = 0x1F,
     kBigInt64 = 0x20,
     kBigInt = 0x60,
-    kStringWrapper = 0x80,
-    kStringOrStringWrapper = 0x90,
-    kAny = 0x7F
+    kString = 0x80,
+    kStringWrapper = 0x100,
+    kStringOrStringWrapper = 0x180,
+    kAny = 0x1FF
   };
 };
 
@@ -2287,6 +2341,7 @@ class CompareOperationFeedback {
 
     kInternalizedString = kInternalizedStringFlag,
     kString = kInternalizedString | kOtherStringFlag,
+    kStringOrOddball = kString | kOddball,
 
     kReceiver = kReceiverFlag,
     kReceiverOrNullOrUndefined = kReceiver | kNullOrUndefined,
@@ -2537,7 +2592,11 @@ enum class CachedTieringDecision : int32_t {
   kNormal,
 };
 
-enum class SpeculationMode { kAllowSpeculation, kDisallowSpeculation };
+enum class SpeculationMode {
+  kAllowSpeculation = 0,
+  kDisallowBoundsCheckSpeculation = 1,
+  kDisallowSpeculation = 3
+};
 enum class CallFeedbackContent { kTarget, kReceiver };
 
 inline std::ostream& operator<<(std::ostream& os,
@@ -2545,6 +2604,8 @@ inline std::ostream& operator<<(std::ostream& os,
   switch (speculation_mode) {
     case SpeculationMode::kAllowSpeculation:
       return os << "SpeculationMode::kAllowSpeculation";
+    case SpeculationMode::kDisallowBoundsCheckSpeculation:
+      return os << "SpeculationMode::kDisallowBoundsCheckSpeculation";
     case SpeculationMode::kDisallowSpeculation:
       return os << "SpeculationMode::kDisallowSpeculation";
   }
@@ -2627,7 +2688,7 @@ enum IsolateAddressId {
   V(TrapArrayTooLarge)             \
   V(TrapStringOffsetOutOfBounds)
 
-enum class KeyedAccessLoadMode {
+enum class KeyedAccessLoadMode : uint8_t {
   kInBounds = 0b00,
   kHandleOOB = 0b01,
   kHandleHoles = 0b10,
@@ -2642,24 +2703,24 @@ inline KeyedAccessLoadMode CreateKeyedAccessLoadMode(bool handle_oob,
 
 inline KeyedAccessLoadMode GeneralizeKeyedAccessLoadMode(
     KeyedAccessLoadMode mode1, KeyedAccessLoadMode mode2) {
-  using T = std::underlying_type<KeyedAccessLoadMode>::type;
+  using T = std::underlying_type_t<KeyedAccessLoadMode>;
   return static_cast<KeyedAccessLoadMode>(static_cast<T>(mode1) |
                                           static_cast<T>(mode2));
 }
 
 inline bool LoadModeHandlesOOB(KeyedAccessLoadMode load_mode) {
-  using T = std::underlying_type<KeyedAccessLoadMode>::type;
+  using T = std::underlying_type_t<KeyedAccessLoadMode>;
   return (static_cast<T>(load_mode) &
           static_cast<T>(KeyedAccessLoadMode::kHandleOOB)) != 0;
 }
 
 inline bool LoadModeHandlesHoles(KeyedAccessLoadMode load_mode) {
-  using T = std::underlying_type<KeyedAccessLoadMode>::type;
+  using T = std::underlying_type_t<KeyedAccessLoadMode>;
   return (static_cast<T>(load_mode) &
           static_cast<T>(KeyedAccessLoadMode::kHandleHoles)) != 0;
 }
 
-enum class KeyedAccessStoreMode {
+enum class KeyedAccessStoreMode : uint8_t {
   kInBounds,
   kGrowAndHandleCOW,
   kIgnoreTypedArrayOOB,
@@ -2858,6 +2919,22 @@ constexpr uint64_t kInvalidWasmSignatureHash = ~uint64_t{0};
 
 enum class CallJumpMode { kCall, kTailCall };
 
+constexpr int kPreallocatedNumberStringTableSize = 100;
+
+enum class SilenceNanMode {
+  kSilenceUndefined,
+  kPreserveUndefined,
+};
+
+inline std::ostream& operator<<(std::ostream& os, SilenceNanMode mode) {
+  switch (mode) {
+    case SilenceNanMode::kSilenceUndefined:
+      return os << "SilenceUndefined";
+    case SilenceNanMode::kPreserveUndefined:
+      return os << "PreserveUndefined";
+  }
+}
+
 }  // namespace internal
 
 // Tag dispatching support for atomic loads and stores.
@@ -2871,6 +2948,13 @@ static constexpr RelaxedLoadTag kRelaxedLoad;
 static constexpr ReleaseStoreTag kReleaseStore;
 static constexpr RelaxedStoreTag kRelaxedStore;
 static constexpr SeqCstAccessTag kSeqCstAccess;
+
+static constexpr int kAdd_StringConstant_Internalize_CacheSlotOffset = 1;
+
+enum class AddStringConstantAndInternalizeVariant : uint8_t {
+  kLhsIsStringConstant = 0,
+  kRhsIsStringConstant = 1,
+};
 
 }  // namespace v8
 

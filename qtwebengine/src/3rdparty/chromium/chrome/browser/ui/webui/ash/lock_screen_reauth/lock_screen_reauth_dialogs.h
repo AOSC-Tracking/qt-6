@@ -23,6 +23,7 @@ namespace ash {
 
 class LockScreenCaptivePortalDialog;
 class LockScreenNetworkDialog;
+class LockScreenReauthHandler;
 
 class LockScreenStartReauthDialog
     : public BaseLockDialog,
@@ -86,6 +87,8 @@ class LockScreenStartReauthDialog
   // Notify test that the dialog is ready for testing.
   void OnReadyForTesting();
 
+  void ForceUpdateStateForTesting(NetworkError::ErrorReason reason);
+
   LockScreenNetworkDialog* get_network_dialog_for_testing() {
     return lock_screen_network_dialog_.get();
   }
@@ -138,6 +141,10 @@ class LockScreenStartReauthDialog
 
   void OnCaptivePortalDialogReadyForTesting();
 
+  bool IsAutoReloadActive();
+
+  LockScreenReauthHandler* GetHandler();
+
   scoped_refptr<NetworkStateInformer> network_state_informer_;
   bool is_network_dialog_visible_ = false;
   bool is_proxy_auth_in_progress_ = false;
@@ -151,8 +158,7 @@ class LockScreenStartReauthDialog
 
   std::unique_ptr<LockScreenCaptivePortalDialog> captive_portal_dialog_;
 
-  // Once Lacros is shipped, this will no longer be necessary.
-  std::unique_ptr<HttpAuthDialog::ScopedEnabler> enable_ash_httpauth_;
+  std::unique_ptr<HttpAuthDialog::ScopedEnabler> enable_system_httpauth_;
 
   // Callbacks and flags that are used in tests to check that the corresponding
   // dialog is loaded or closed.

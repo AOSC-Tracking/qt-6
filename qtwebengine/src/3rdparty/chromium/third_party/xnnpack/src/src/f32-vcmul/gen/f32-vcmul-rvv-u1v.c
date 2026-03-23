@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-vcmul/rvv.c.in
 //   Generator: tools/xngen
@@ -9,7 +10,7 @@
 
 #include <assert.h>
 
-#include "xnnpack/vbinary.h"
+#include "src/xnnpack/vbinary.h"
 #include <riscv_vector.h>
 
 void xnn_f32_vcmul_ukernel__rvv_u1v(
@@ -17,7 +18,7 @@ void xnn_f32_vcmul_ukernel__rvv_u1v(
     const float* input_a,
     const float* input_b,
     float* output,
-    const struct xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_default_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

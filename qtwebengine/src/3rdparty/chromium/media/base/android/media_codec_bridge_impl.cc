@@ -164,10 +164,10 @@ bool GetCodecSpecificDataForAudio(const AudioDecoderConfig& config,
       break;
     }
     case AudioCodec::kAAC: {
-      if (config.aac_extra_data().empty()) {
+      if (config.extra_data().empty()) {
         return false;
       }
-      *output_csd0 = config.aac_extra_data();
+      *output_csd0 = config.extra_data();
       *output_frame_has_adts_header =
           config.profile() != AudioCodecProfile::kXHE_AAC;
       break;
@@ -246,6 +246,24 @@ MediaCodecResult::Codes ConvertToMediaCodecEnum(MediaCodecStatus status) {
     case MEDIA_CODEC_UNKNOWN_MEDIADRM_EXCEPTION:
     case MEDIA_CODEC_UNKNOWN_CODEC_EXCEPTION:
     case MEDIA_CODEC_LINEAR_BLOCK_EXCEPTION:
+    case MEDIA_CODEC_CERTIFICATE_MALFORMED:
+    case MEDIA_CODEC_CERTIFICATE_MISSING:
+    case MEDIA_CODEC_CRYPTO_LIBRARY:
+    case MEDIA_CODEC_INIT_DATA:
+    case MEDIA_CODEC_KEY_NOT_LOADED:
+    case MEDIA_CODEC_LICENSE_POLICY:
+    case MEDIA_CODEC_LICENSE_RELEASE:
+    case MEDIA_CODEC_LICENSE_REQUEST_REJECTED:
+    case MEDIA_CODEC_LICENSE_RESTORE:
+    case MEDIA_CODEC_LICENSE_STATE:
+    case MEDIA_CODEC_PROVISIONING_CERTIFICATE:
+    case MEDIA_CODEC_PROVISIONING_CONFIG:
+    case MEDIA_CODEC_PROVISIONING_PARSE:
+    case MEDIA_CODEC_PROVISIONING_REQUEST_REJECTED:
+    case MEDIA_CODEC_PROVISIONING_RETRY:
+    case MEDIA_CODEC_SECURE_STOP_RELEASE:
+    case MEDIA_CODEC_STORAGE_READ:
+    case MEDIA_CODEC_STORAGE_WRITE:
       return MediaCodecResult::Codes::kError;
   }
 }
@@ -327,7 +345,42 @@ std::string ApplyDescriptiveMessage(MediaCodecStatus status) {
     case MEDIA_CODEC_UNKNOWN_CODEC_EXCEPTION:
       return "Unknown MediaCodec.CodecException.";
     case MEDIA_CODEC_LINEAR_BLOCK_EXCEPTION:
-      return "Error constructing or queuing a LinearBlock";
+      return "Error constructing or queuing a LinearBlock.";
+    case MEDIA_CODEC_CERTIFICATE_MALFORMED:
+    case MEDIA_CODEC_CERTIFICATE_MISSING:
+      return "Certificate missing.";
+    case MEDIA_CODEC_CRYPTO_LIBRARY:
+      return "Error in the Crypto Library.";
+    case MEDIA_CODEC_INIT_DATA:
+      return "Error with the init data.";
+    case MEDIA_CODEC_KEY_NOT_LOADED:
+      return "The key cannot be loaded.";
+    case MEDIA_CODEC_LICENSE_POLICY:
+      return "Error with the license policy.";
+    case MEDIA_CODEC_LICENSE_RELEASE:
+      return "Error with the license release.";
+    case MEDIA_CODEC_LICENSE_REQUEST_REJECTED:
+      return "License request rejected.";
+    case MEDIA_CODEC_LICENSE_RESTORE:
+      return "Error with license restoration.";
+    case MEDIA_CODEC_LICENSE_STATE:
+      return "Error with license state.";
+    case MEDIA_CODEC_PROVISIONING_CERTIFICATE:
+      return "Error provisioning certificate.";
+    case MEDIA_CODEC_PROVISIONING_CONFIG:
+      return "Error with provisioning config.";
+    case MEDIA_CODEC_PROVISIONING_PARSE:
+      return "Error with parsing provisioning.";
+    case MEDIA_CODEC_PROVISIONING_REQUEST_REJECTED:
+      return "Provisioning request rejected.";
+    case MEDIA_CODEC_PROVISIONING_RETRY:
+      return "Error with provisioning retry.";
+    case MEDIA_CODEC_SECURE_STOP_RELEASE:
+      return "Error with secure stop release.";
+    case MEDIA_CODEC_STORAGE_READ:
+      return "Error with MediaCodecs storage read.";
+    case MEDIA_CODEC_STORAGE_WRITE:
+      return "Error with MediaCodecs storage write.";
   }
 }
 
@@ -720,7 +773,7 @@ MediaCodecResult MediaCodecBridgeImpl::QueueSecureInputBuffer(
     if (!data.empty()) {
       ScopedJavaLocalRef<jobject> j_buffer =
           Java_ObtainBlockResult_buffer(env, j_result);
-      base::android::JavaByteBufferToMutableSpan(env, j_buffer.obj())
+      base::android::JavaByteBufferToMutableSpan(env, j_buffer)
           .first(data.size())
           .copy_from_nonoverlapping(data);
     }
@@ -868,7 +921,7 @@ base::span<uint8_t> MediaCodecBridgeImpl::GetInputBuffer(
       Java_MediaCodecBridge_getInputBuffer(env, j_bridge_, input_buffer_index));
   return j_buffer.is_null()
              ? base::span<uint8_t>()
-             : base::android::JavaByteBufferToMutableSpan(env, j_buffer.obj());
+             : base::android::JavaByteBufferToMutableSpan(env, j_buffer);
 }
 
 MediaCodecResult MediaCodecBridgeImpl::CopyFromOutputBuffer(
@@ -881,14 +934,12 @@ MediaCodecResult MediaCodecBridgeImpl::CopyFromOutputBuffer(
   if (j_buffer.is_null()) {
     return {MediaCodecResult::Codes::kError, "Unable to get output buffer."};
   }
-  auto src_span = base::android::JavaByteBufferToSpan(env, j_buffer.obj());
+  auto src_span = base::android::JavaByteBufferToSpan(env, j_buffer);
   dst.copy_from_nonoverlapping(src_span.subspan(offset, dst.size()));
   return OkStatus();
 }
 
-void MediaCodecBridgeImpl::OnBuffersAvailable(
-    JNIEnv* /* env */,
-    const base::android::JavaParamRef<jobject>& /* obj */) {
+void MediaCodecBridgeImpl::OnBuffersAvailable(JNIEnv* /* env */) {
   on_buffers_available_cb_.Run();
 }
 
@@ -965,7 +1016,7 @@ MediaCodecResult MediaCodecBridgeImpl::QueueInputBlock(
 
   if (!data.empty()) {
     auto j_buffer = Java_ObtainBlockResult_buffer(env, j_result);
-    base::android::JavaByteBufferToMutableSpan(env, j_buffer.obj())
+    base::android::JavaByteBufferToMutableSpan(env, j_buffer)
         .first(data.size())
         .copy_from_nonoverlapping(data);
   }

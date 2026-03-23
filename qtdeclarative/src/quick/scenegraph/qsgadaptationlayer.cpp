@@ -94,19 +94,23 @@ QSGDistanceFieldGlyphCache::Metrics QSGDistanceFieldGlyphCache::glyphMetrics(gly
     return m;
 }
 
-void QSGDistanceFieldGlyphCache::populate(const QVector<glyph_t> &glyphs)
+void QSGDistanceFieldGlyphCache::populate(const QList<glyph_t> &glyphs)
 {
     QSet<glyph_t> referencedGlyphs;
     QSet<glyph_t> newGlyphs;
     int count = glyphs.size();
     for (int i = 0; i < count; ++i) {
         glyph_t glyphIndex = glyphs.at(i);
-        if ((int) glyphIndex >= glyphCount() && glyphCount() > 0) {
-            qWarning("Warning: distance-field glyph is not available with index %d", glyphIndex);
-            continue;
+        const bool isValid = int(glyphIndex) < glyphCount() || glyphCount() <= 0;
+
+        if (!isValid) {
+            qWarning("Warning: distance-field glyph is not available with index %d (glyph count: %d, font: %s)",
+                     glyphIndex,
+                     glyphCount(),
+                     qPrintable(m_referenceFont.familyName()));
         }
 
-        GlyphData &gd = glyphData(glyphIndex);
+        GlyphData &gd = isValid ? glyphData(glyphIndex) : emptyData(glyphIndex);
         ++gd.ref;
         referencedGlyphs.insert(glyphIndex);
 
@@ -128,15 +132,15 @@ void QSGDistanceFieldGlyphCache::populate(const QVector<glyph_t> &glyphs)
         requestGlyphs(newGlyphs);
 }
 
-void QSGDistanceFieldGlyphCache::release(const QVector<glyph_t> &glyphs)
+void QSGDistanceFieldGlyphCache::release(const QList<glyph_t> &glyphs)
 {
     QSet<glyph_t> unusedGlyphs;
-    int count = glyphs.size();
-    for (int i = 0; i < count; ++i) {
-        glyph_t glyphIndex = glyphs.at(i);
-        GlyphData &gd = glyphData(glyphIndex);
-        if (--gd.ref == 0)
-            unusedGlyphs.insert(glyphIndex);
+    for (glyph_t glyphIndex : glyphs) {
+        if (auto it = m_glyphsData.find(glyphIndex); it != m_glyphsData.end()) {
+            GlyphData &gd = it.value();
+            if (--gd.ref == 0)
+                unusedGlyphs.insert(glyphIndex);
+        }
     }
     releaseGlyphs(unusedGlyphs);
 }
@@ -213,7 +217,7 @@ void QSGDistanceFieldGlyphCache::update()
 
 void QSGDistanceFieldGlyphCache::setGlyphsPosition(const QList<GlyphPosition> &glyphs)
 {
-    QVector<quint32> invalidatedGlyphs;
+    QList<quint32> invalidatedGlyphs;
 
     int count = glyphs.size();
     for (int i = 0; i < count; ++i) {
@@ -243,7 +247,7 @@ void QSGDistanceFieldGlyphCache::processPendingGlyphs()
     /* Intentionally empty */
 }
 
-void QSGDistanceFieldGlyphCache::setGlyphsTexture(const QVector<glyph_t> &glyphs, const Texture &tex)
+void QSGDistanceFieldGlyphCache::setGlyphsTexture(const QList<glyph_t> &glyphs, const Texture &tex)
 {
     int i = m_textures.indexOf(tex);
     if (i == -1) {
@@ -254,7 +258,7 @@ void QSGDistanceFieldGlyphCache::setGlyphsTexture(const QVector<glyph_t> &glyphs
     }
     Texture *texture = &(m_textures[i]);
 
-    QVector<quint32> invalidatedGlyphs;
+    QList<quint32> invalidatedGlyphs;
 
     int count = glyphs.size();
     for (int j = 0; j < count; ++j) {
@@ -272,7 +276,7 @@ void QSGDistanceFieldGlyphCache::setGlyphsTexture(const QVector<glyph_t> &glyphs
     }
 }
 
-void QSGDistanceFieldGlyphCache::markGlyphsToRender(const QVector<glyph_t> &glyphs)
+void QSGDistanceFieldGlyphCache::markGlyphsToRender(const QList<glyph_t> &glyphs)
 {
     int count = glyphs.size();
     for (int i = 0; i < count; ++i)

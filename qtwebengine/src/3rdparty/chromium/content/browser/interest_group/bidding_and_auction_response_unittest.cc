@@ -11,6 +11,8 @@
 
 #include "base/containers/flat_map.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/to_string.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
 #include "content/browser/interest_group/interest_group_features.h"
@@ -18,6 +20,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/features_generated.h"
 #include "third_party/blink/public/common/interest_group/interest_group.h"
 #include "third_party/blink/public/mojom/aggregation_service/aggregatable_report.mojom.h"
 #include "url/gurl.h"
@@ -113,7 +116,7 @@ std::ostream& operator<<(std::ostream& os,
                          const BiddingAndAuctionResponse& response) {
   os << "BiddingAndAuctionResponse(";
   os << "nonce: " << testing::PrintToString(response.nonce) << ",";
-  os << "is_chaff: " << (response.is_chaff ? "true" : "false") << ", ";
+  os << "is_chaff: " << base::ToString(response.is_chaff) << ", ";
   os << "ad_render_url: " << response.ad_render_url << ", ";
   os << "ad_components: [";
   for (const auto& component : response.ad_components) {
@@ -308,13 +311,22 @@ base::Value::Dict CreateResponseDictWithDebugReports(
               .Set("adTechOrigin", kOwnerOrigin)
               .Set("reports", base::Value::List().Append(std::move(report)))));
 }
+using ReservedNonErrorEventType =
+    auction_worklet::mojom::ReservedNonErrorEventType;
+using ReservedErrorEventType = auction_worklet::mojom::ReservedErrorEventType;
 
-auction_worklet::mojom::EventTypePtr CreateReservedEventType(
-    auction_worklet::mojom::ReservedEventType reserved_event_type) {
-  return auction_worklet::mojom::EventType::NewReserved(reserved_event_type);
+auction_worklet::mojom::EventTypePtr ToEventTypePtr(
+    ReservedNonErrorEventType reserved_event_type) {
+  return auction_worklet::mojom::EventType::NewReservedNonError(
+      reserved_event_type);
+}
+auction_worklet::mojom::EventTypePtr ToEventTypePtr(
+    ReservedErrorEventType reserved_event_type) {
+  return auction_worklet::mojom::EventType::NewReservedError(
+      reserved_event_type);
 }
 
-auction_worklet::mojom::EventTypePtr CreateNonReservedEventType(
+auction_worklet::mojom::EventTypePtr ToEventTypePtr(
     const std::string& event_type) {
   return auction_worklet::mojom::EventType::NewNonReserved(event_type);
 }
@@ -333,25 +345,20 @@ auction_worklet::mojom::PrivateAggregationRequestPtr CreatePaggForEventRequest(
                       auction_worklet::mojom::ForEventSignalValue::NewIntValue(
                           value),
                       filtering_id, std::move(event))),
-      // TODO(qingxinwu): consider allowing this to be set
-      blink::mojom::AggregationServiceMode::kDefault,
       blink::mojom::DebugModeDetails::New());
 }
 
-auction_worklet::mojom::PrivateAggregationRequestPtr CreatePaggHistogramRequest(
-    absl::uint128 bucket,
-    int value,
-    std::optional<uint64_t> filtering_id) {
-  return auction_worklet::mojom::PrivateAggregationRequest::New(
-      auction_worklet::mojom::AggregatableReportContribution::
-          NewHistogramContribution(
-              blink::mojom::AggregatableReportHistogramContribution::New(
-                  /*bucket=*/bucket,
-                  /*value=*/value,
-                  /*filtering_id=*/filtering_id)),
-      // TODO(qingxinwu): consider allowing this to be set
-      blink::mojom::AggregationServiceMode::kDefault,
-      blink::mojom::DebugModeDetails::New());
+auction_worklet::mojom::FinalizedPrivateAggregationRequestPtr
+CreateFinalizedPaggHistogramRequest(absl::uint128 bucket,
+                                    int value,
+                                    std::optional<uint64_t> filtering_id) {
+  return auction_worklet::mojom::FinalizedPrivateAggregationRequest::New(
+      blink::mojom::AggregatableReportHistogramContribution::New(
+          /*bucket=*/bucket,
+          /*value=*/value,
+          /*filtering_id=*/filtering_id),
+      blink::mojom::DebugModeDetails::New(),
+      /*error_event=*/std::nullopt);
 }
 
 MATCHER_P(EqualsReportingURLS,
@@ -480,9 +487,12 @@ MATCHER_P(EqualsKAnonGhostWinner,
 template <typename... Ts>
 auto ElementsAreRequests(Ts&... requests) {
   static_assert(
-      std::conjunction<std::is_same<
-          std::remove_const_t<Ts>,
-          auction_worklet::mojom::PrivateAggregationRequestPtr>...>::value);
+      std::conjunction<std::disjunction<
+          std::is_same<std::remove_const_t<Ts>,
+                       auction_worklet::mojom::PrivateAggregationRequestPtr>,
+          std::is_same<std::remove_const_t<Ts>,
+                       auction_worklet::mojom::
+                           FinalizedPrivateAggregationRequestPtr>>...>::value);
   // Need to use `std::ref` as `mojo::StructPtr`s are move-only.
   return testing::UnorderedElementsAre(testing::Eq(std::ref(requests))...);
 }
@@ -641,12 +651,12 @@ MATCHER_P(EqualsBiddingAndAuctionResponse,
 
 TEST(BiddingAndAuctionResponseTest, ParseFails) {
   static const base::Value kTestCases[] = {
-      base::Value(1),                                          // Not a dict
-      base::Value(base::Value::Dict()),                        // empty
-      base::Value(base::Value::Dict().Set("isChaff", 1)),      // wrong type
-      base::Value(base::Value::Dict().Set("isChaff", false)),  // missing fields
+      base::Value(1),                                      // Not a dict
+      base::Value(base::Value::Dict().Set("isChaff", 1)),  // wrong type
       base::Value(
           CreateValidResponseDict().Set("adRenderURL", 1)),  // not a string
+      base::Value(
+          CreateValidResponseDict().Set("adRenderURL", "")),  // empty string
       base::Value(
           CreateValidResponseDict().Set("adRenderURL", "not a valid URL")),
       base::Value(CreateValidResponseDict().Set("components", "not a list")),
@@ -712,6 +722,11 @@ TEST(BiddingAndAuctionResponseTest, ParseSucceeds) {
             return response;
           }(),
       },
+      {
+          base::Value(base::Value::Dict()),
+          {},
+      },
+      {base::Value(base::Value::Dict().Set("isChaff", false)), {}},
       {
           base::Value(CreateValidResponseDict()),
           CreateExpectedValidResponse(),
@@ -1236,11 +1251,8 @@ TEST(BiddingAndAuctionResponseTest, ParseSucceeds) {
 
 TEST(BiddingAndAuctionResponseTest, SelectedBuyerAndSellerReportingId) {
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeatures(
-      /*enabled_features=*/
-      {blink::features::kFledgeAuctionDealSupport,
-       features::kEnableBandADealSupport},
-      /*disabled_features=*/{});
+  scoped_feature_list.InitAndEnableFeature(
+      blink::features::kFledgeAuctionDealSupport);
 
   base::Value::Dict response = CreateValidResponseDict().Set(
       "selectedBuyerAndSellerReportingId", "selectable");
@@ -1256,28 +1268,8 @@ TEST(BiddingAndAuctionResponseTest, SelectedBuyerAndSellerReportingId) {
 
 TEST(BiddingAndAuctionResponseTest, DealsDisabled) {
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeatures(
-      /*enabled_features=*/
-      {features::kEnableBandADealSupport},
-      /*disabled_features=*/{blink::features::kFledgeAuctionDealSupport});
-
-  base::Value::Dict response = CreateValidResponseDict().Set(
-      "selectedBuyerAndSellerReportingId", "selectable");
-  std::optional<BiddingAndAuctionResponse> result =
-      BiddingAndAuctionResponse::TryParse(base::Value(response.Clone()),
-                                          GroupNames(),
-                                          /*group_pagg_coordinators=*/{});
-  ASSERT_TRUE(result);
-  BiddingAndAuctionResponse output = CreateExpectedValidResponse();
-  EXPECT_THAT(*result, EqualsBiddingAndAuctionResponse(std::ref(output)));
-}
-
-TEST(BiddingAndAuctionResponseTest, BAndADealsDisabled) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeatures(
-      /*enabled_features=*/
-      {blink::features::kFledgeAuctionDealSupport},
-      /*disabled_features=*/{features::kEnableBandADealSupport});
+  scoped_feature_list.InitAndDisableFeature(
+      blink::features::kFledgeAuctionDealSupport);
 
   base::Value::Dict response = CreateValidResponseDict().Set(
       "selectedBuyerAndSellerReportingId", "selectable");
@@ -1804,7 +1796,6 @@ TEST(BiddingAndAuctionResponseTest, kAnonGhostWinners) {
                                      /*bucket=*/1025,
                                      /*value=*/2,
                                      /*filtering_id=*/std::nullopt)),
-                     blink::mojom::AggregationServiceMode::kDefault,
                      blink::mojom::DebugModeDetails::New()));
          return response;
        }()},
@@ -1840,7 +1831,6 @@ TEST(BiddingAndAuctionResponseTest, kAnonGhostWinners) {
                                      /*bucket=*/1025,
                                      /*value=*/2,
                                      /*filtering_id=*/std::nullopt)),
-                     blink::mojom::AggregationServiceMode::kDefault,
                      blink::mojom::DebugModeDetails::New()));
          response.k_anon_ghost_winner->non_kanon_private_aggregation_requests
              .emplace_back(
@@ -1852,7 +1842,6 @@ TEST(BiddingAndAuctionResponseTest, kAnonGhostWinners) {
                                      /*bucket=*/1538,
                                      /*value=*/4,
                                      /*filtering_id=*/std::nullopt)),
-                     blink::mojom::AggregationServiceMode::kDefault,
                      blink::mojom::DebugModeDetails::New()));
          return response;
        }()},
@@ -2298,8 +2287,7 @@ TEST_F(BiddingAndAuctionPAggResponseTest, ParsePAggResponse) {
       PrivateAggregationPhase::kNonTopLevelSeller,
       url::Origin::Create(GURL(kAggregationCoordinator2))};
   auction_worklet::mojom::PrivateAggregationRequestPtr request1 =
-      CreatePaggForEventRequest(1, 123, std::nullopt,
-                                CreateNonReservedEventType("click"));
+      CreatePaggForEventRequest(1, 123, std::nullopt, ToEventTypePtr("click"));
   EXPECT_THAT(result->component_win_pagg_requests[std::move(phase_key1)],
               ElementsAreRequests(request1));
 
@@ -2310,8 +2298,7 @@ TEST_F(BiddingAndAuctionPAggResponseTest, ParsePAggResponse) {
   auction_worklet::mojom::PrivateAggregationRequestPtr request2 =
       CreatePaggForEventRequest(
           1, 123, std::nullopt,
-          CreateReservedEventType(
-              auction_worklet::mojom::ReservedEventType::kReservedWin));
+          ToEventTypePtr(ReservedNonErrorEventType::kReservedWin));
   EXPECT_THAT(result->component_win_pagg_requests[std::move(phase_key2)],
               ElementsAreRequests(request2));
 
@@ -2319,8 +2306,9 @@ TEST_F(BiddingAndAuctionPAggResponseTest, ParsePAggResponse) {
   PrivateAggregationKey key = {
       url::Origin::Create(GURL(kOwnerOrigin)),
       url::Origin::Create(GURL(kAggregationCoordinator))};
-  auction_worklet::mojom::PrivateAggregationRequestPtr histogram_request =
-      CreatePaggHistogramRequest(1, 123, std::nullopt);
+  auction_worklet::mojom::FinalizedPrivateAggregationRequestPtr
+      histogram_request =
+          CreateFinalizedPaggHistogramRequest(1, 123, std::nullopt);
   EXPECT_THAT(result->server_filtered_pagg_requests_reserved[std::move(key)],
               ElementsAreRequests(histogram_request));
 
@@ -2434,8 +2422,7 @@ TEST_F(BiddingAndAuctionPAggResponseTest, ParsePAggResponseContribution) {
           123,
           CreatePaggForEventRequest(
               absl::MakeUint128(1, 2), 123, 123,
-              CreateReservedEventType(
-                  auction_worklet::mojom::ReservedEventType::kReservedWin)),
+              ToEventTypePtr(ReservedNonErrorEventType::kReservedWin)),
       },
       {
           "bucket is bigger than 128 bits",
@@ -2467,8 +2454,7 @@ TEST_F(BiddingAndAuctionPAggResponseTest, ParsePAggResponseContribution) {
           std::nullopt,
           CreatePaggForEventRequest(
               absl::MakeUint128(1, 2), 123, std::nullopt,
-              CreateReservedEventType(
-                  auction_worklet::mojom::ReservedEventType::kReservedWin)),
+              ToEventTypePtr(ReservedNonErrorEventType::kReservedWin)),
       },
       {
           "Invalid filtering_id",
@@ -2532,22 +2518,19 @@ TEST_F(BiddingAndAuctionPAggResponseTest, ParsePAggResponseComponentWinEvents) {
           "reserved.win",
           CreatePaggForEventRequest(
               1, 123, std::nullopt,
-              CreateReservedEventType(
-                  auction_worklet::mojom::ReservedEventType::kReservedWin)),
+              ToEventTypePtr(ReservedNonErrorEventType::kReservedWin)),
       },
       {
           "reserved.always",
           CreatePaggForEventRequest(
               1, 123, std::nullopt,
-              CreateReservedEventType(
-                  auction_worklet::mojom::ReservedEventType::kReservedAlways)),
+              ToEventTypePtr(ReservedNonErrorEventType::kReservedAlways)),
       },
       {
           "reserved.loss",
           CreatePaggForEventRequest(
               1, 123, std::nullopt,
-              CreateReservedEventType(
-                  auction_worklet::mojom::ReservedEventType::kReservedLoss)),
+              ToEventTypePtr(ReservedNonErrorEventType::kReservedLoss)),
       },
       {
           "click",
@@ -2585,23 +2568,23 @@ TEST_F(BiddingAndAuctionPAggResponseTest,
       url::Origin::Create(GURL(kAggregationCoordinator2))};
   static const struct {
     std::string event;
-    auction_worklet::mojom::PrivateAggregationRequestPtr pagg_request;
+    auction_worklet::mojom::FinalizedPrivateAggregationRequestPtr pagg_request;
   } kTestCases[] = {
       {
           "reserved.win",
-          CreatePaggHistogramRequest(1, 123, std::nullopt),
+          CreateFinalizedPaggHistogramRequest(1, 123, std::nullopt),
       },
       {
           "reserved.always",
-          CreatePaggHistogramRequest(1, 123, std::nullopt),
+          CreateFinalizedPaggHistogramRequest(1, 123, std::nullopt),
       },
       {
           "reserved.loss",
-          CreatePaggHistogramRequest(1, 123, std::nullopt),
+          CreateFinalizedPaggHistogramRequest(1, 123, std::nullopt),
       },
       {
           "click",
-          CreatePaggHistogramRequest(1, 123, std::nullopt),
+          CreateFinalizedPaggHistogramRequest(1, 123, std::nullopt),
       },
   };
   for (const auto& test_case : kTestCases) {
@@ -2629,6 +2612,115 @@ TEST_F(BiddingAndAuctionPAggResponseTest,
           result->server_filtered_pagg_requests_non_reserved[test_case.event],
           ElementsAreRequests(test_case.pagg_request));
     }
+  }
+}
+
+TEST_F(BiddingAndAuctionPAggResponseTest, ParsePAggResponseErrorReporting) {
+  base::test::ScopedFeatureList scoped_feature_list{
+      blink::features::kPrivateAggregationApiErrorReporting};
+
+  const std::vector<uint8_t> bucket_byte_string = base::Value::BlobStorage(
+      {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+       0x00, 0x00, 0x00, 0x02});
+  BiddingAndAuctionResponse output = CreateExpectedValidResponse();
+  static const struct {
+    std::string event_string;
+    ReservedErrorEventType error_event_type;
+  } kTestCases[] = {
+      {"reserved.report-success", ReservedErrorEventType::kReportSuccess},
+      {"reserved.too-many-contributions",
+       ReservedErrorEventType::kTooManyContributions},
+      {"reserved.empty-report-dropped",
+       ReservedErrorEventType::kEmptyReportDropped},
+      {"reserved.pending-report-limit-reached",
+       ReservedErrorEventType::kPendingReportLimitReached},
+      {"reserved.insufficient-budget",
+       ReservedErrorEventType::kInsufficientBudget},
+      {"reserved.uncaught-error", ReservedErrorEventType::kUncaughtError},
+  };
+
+  PrivateAggregationPhaseKey key = {
+      url::Origin::Create(GURL(kOwnerOrigin)),
+      PrivateAggregationPhase::kNonTopLevelSeller,
+      url::Origin::Create(GURL(kAggregationCoordinator2))};
+  for (const auto& test_case : kTestCases) {
+    SCOPED_TRACE(test_case.event_string);
+    base::Value::Dict contribution;
+    contribution.Set("bucket", base::Value(bucket_byte_string));
+    contribution.Set("value", 123);
+    contribution.Set("filteringId", 45);
+
+    base::Value::List contributions;
+    contributions.Append(std::move(contribution));
+    base::Value::Dict response = CreateResponseDictWithPAggResponse(
+        std::move(contributions), test_case.event_string,
+        /*component_win=*/true);
+
+    std::optional<BiddingAndAuctionResponse> result =
+        BiddingAndAuctionResponse::TryParse(base::Value(response.Clone()),
+                                            GroupNames(),
+                                            GroupAggregationCoordinators());
+    ASSERT_TRUE(result);
+    EXPECT_THAT(*result, EqualsBiddingAndAuctionResponse(std::ref(output)));
+
+    auction_worklet::mojom::PrivateAggregationRequestPtr expected_pagg_request =
+        CreatePaggForEventRequest(absl::MakeUint128(1, 2), 123, 45,
+                                  ToEventTypePtr(test_case.error_event_type));
+
+    EXPECT_EQ(1u, result->component_win_pagg_requests.size());
+    EXPECT_THAT(result->component_win_pagg_requests[key],
+                ElementsAreRequests(expected_pagg_request));
+
+    EXPECT_TRUE(result->server_filtered_pagg_requests_reserved.empty());
+    EXPECT_TRUE(result->server_filtered_pagg_requests_non_reserved.empty());
+  }
+}
+
+TEST_F(BiddingAndAuctionPAggResponseTest,
+       ParsePAggResponseErrorReporting_FeatureDisabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(
+      blink::features::kPrivateAggregationApiErrorReporting);
+
+  const std::vector<uint8_t> bucket_byte_string = base::Value::BlobStorage(
+      {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+       0x00, 0x00, 0x00, 0x02});
+  BiddingAndAuctionResponse output = CreateExpectedValidResponse();
+
+  std::string kEventTestCases[] = {
+      "reserved.report-success",       "reserved.too-many-contributions",
+      "reserved.empty-report-dropped", "reserved.pending-report-limit-reached",
+      "reserved.insufficient-budget",  "reserved.uncaught-error",
+  };
+
+  PrivateAggregationPhaseKey key = {
+      url::Origin::Create(GURL(kOwnerOrigin)),
+      PrivateAggregationPhase::kNonTopLevelSeller,
+      url::Origin::Create(GURL(kAggregationCoordinator2))};
+  for (const auto& event_string : kEventTestCases) {
+    SCOPED_TRACE(event_string);
+    base::Value::Dict contribution;
+    contribution.Set("bucket", base::Value(bucket_byte_string));
+    contribution.Set("value", 123);
+    contribution.Set("filteringId", 45);
+
+    base::Value::List contributions;
+    contributions.Append(std::move(contribution));
+    base::Value::Dict response = CreateResponseDictWithPAggResponse(
+        std::move(contributions), event_string,
+        /*component_win=*/true);
+
+    std::optional<BiddingAndAuctionResponse> result =
+        BiddingAndAuctionResponse::TryParse(base::Value(response.Clone()),
+                                            GroupNames(),
+                                            GroupAggregationCoordinators());
+    ASSERT_TRUE(result);
+    EXPECT_THAT(*result, EqualsBiddingAndAuctionResponse(std::ref(output)));
+
+    EXPECT_TRUE(result->component_win_pagg_requests.empty());
+
+    EXPECT_TRUE(result->server_filtered_pagg_requests_reserved.empty());
+    EXPECT_TRUE(result->server_filtered_pagg_requests_non_reserved.empty());
   }
 }
 

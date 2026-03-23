@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2024 The Khronos Group Inc.
- * Copyright (c) 2015-2024 Valve Corporation
- * Copyright (c) 2015-2024 LunarG, Inc.
+/* Copyright (c) 2015-2025 The Khronos Group Inc.
+ * Copyright (c) 2015-2025 Valve Corporation
+ * Copyright (c) 2015-2025 LunarG, Inc.
  * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -18,6 +18,7 @@
  */
 #pragma once
 #include "state_tracker/state_object.h"
+#include "error_message/error_location.h"
 #include <vulkan/utility/vk_safe_struct.hpp>
 #include <vector>
 
@@ -35,17 +36,25 @@ class SurfacelessQueryState {
 
 namespace vvl {
 
+// The order here means something, the CallState value can only go to a higher value
+enum class CallState {
+    Uncalled = 0,      // Function has not been called
+    QueryCount = 1,    // Function called once to query a count
+    QueryDetails = 2,  // Function called w/ a count to query details
+};
+
 class PhysicalDevice : public StateObject {
   public:
     uint32_t queue_family_known_count = 1;  // spec implies one QF must always be supported
     const std::vector<VkQueueFamilyProperties> queue_family_properties;
     const VkQueueFlags supported_queues;
-    // TODO These are currently used by CoreChecks, but should probably be refactored
-    bool vkGetPhysicalDeviceDisplayPlanePropertiesKHR_called = false;
     uint32_t display_plane_property_count = 0;
+    uint32_t surface_formats_count = 0;
+    // This is a special case not to use SpecialSupported because it is required at an instance level
+    bool has_maintenance9 = false;
 
     // Map of queue family index to QueueFamilyPerfCounters
-    unordered_map<uint32_t, std::unique_ptr<QueueFamilyPerfCounters>> perf_counters;
+    vvl::unordered_map<uint32_t, std::unique_ptr<QueueFamilyPerfCounters>> perf_counters;
 
     // Surfaceless Query extension needs 'global' surface_state data
     SurfacelessQueryState surfaceless_query_state{};
@@ -54,7 +63,19 @@ class PhysicalDevice : public StateObject {
 
     VkPhysicalDevice VkHandle() const { return handle_.Cast<VkPhysicalDevice>(); }
 
+    void SetCallState(vvl::Func func, CallState new_state);
+    void SetCallState(vvl::Func func, bool has_ptr);
+    CallState GetCallState(vvl::Func func) const;
+    bool WasUncalled(vvl::Func func) const;
+    bool WasCalled(vvl::Func func) const;
+
   private:
+    // Multiple threads can be querying GetPhysicalDevice type functions
+    // We, as VVL, use this time to update things on the first query, so we need to make sure things are thread safe
+    // We could use concurrent_unordered_map, but not with the currently limited interface
+    mutable std::shared_mutex call_state_lock_;
+    vvl::unordered_map<Func, CallState> call_state_;
+
     const std::vector<VkQueueFamilyProperties> GetQueueFamilyProps(VkPhysicalDevice phys_dev);
     VkQueueFlags GetSupportedQueues();
 };

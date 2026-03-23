@@ -4,8 +4,6 @@
 
 package org.chromium.components.browser_ui.settings;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
@@ -34,7 +32,7 @@ public class ClickableSpansTextMessagePreference extends ChromeBasePreference {
     private TextViewWithClickableSpans mSummaryView;
 
     /** Constructor for inflating from XML. */
-    public ClickableSpansTextMessagePreference(Context context, AttributeSet attrs) {
+    public ClickableSpansTextMessagePreference(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
         setLayoutResource(R.layout.clickable_spans_text_message_preference_layout);
         setSelectable(false);
@@ -45,9 +43,8 @@ public class ClickableSpansTextMessagePreference extends ChromeBasePreference {
     public void onBindViewHolder(PreferenceViewHolder holder) {
         super.onBindViewHolder(holder);
 
-        mTitleView = (TextViewWithClickableSpans) assumeNonNull(holder.findViewById(R.id.title));
-        mSummaryView =
-                (TextViewWithClickableSpans) assumeNonNull(holder.findViewById(R.id.summary));
+        mTitleView = (TextViewWithClickableSpans) holder.findViewById(R.id.title);
+        mSummaryView = (TextViewWithClickableSpans) holder.findViewById(R.id.summary);
 
         if (!TextUtils.isEmpty(mTitle)) {
             mTitleView.setText(mTitle);

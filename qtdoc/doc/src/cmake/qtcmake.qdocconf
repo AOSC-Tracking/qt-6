@@ -33,12 +33,15 @@ depends += \
     qtgui \
     qtinterfaceframework \
     qtlinguist \
+    qtlottieanimation \
     qtmultimedia \
     qtnetwork \
+    qtopenapi \
     qtprotobuf \
     qtgrpc \
     qtqml \
     qtquick \
+    qtquick3d \
     qtremoteobjects \
     qtscxml \
     qtshadertools \

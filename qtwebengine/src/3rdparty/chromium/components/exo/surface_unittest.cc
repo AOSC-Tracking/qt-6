@@ -50,7 +50,6 @@
 #include "ui/gfx/geometry/test/geometry_util.h"
 #include "ui/gfx/gpu_fence.h"
 #include "ui/gfx/gpu_fence_handle.h"
-#include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/wm/core/window_util.h"
 
 namespace exo {
@@ -101,13 +100,9 @@ std::string TransformToString(Transform transform) {
 }
 
 class SurfaceTest : public test::ExoTestBase,
-                    public ::testing::WithParamInterface<
-                        std::tuple<test::FrameSubmissionType, float>> {
+                    public ::testing::WithParamInterface<float> {
  public:
-  SurfaceTest() {
-    test::SetFrameSubmissionFeatureFlags(&feature_list_,
-                                         GetFrameSubmissionType());
-  }
+  SurfaceTest() = default;
 
   SurfaceTest(const SurfaceTest&) = delete;
   SurfaceTest& operator=(const SurfaceTest&) = delete;
@@ -127,10 +122,7 @@ class SurfaceTest : public test::ExoTestBase,
     display::Display::ResetForceDeviceScaleFactorForTesting();
   }
 
-  test::FrameSubmissionType GetFrameSubmissionType() const {
-    return std::get<0>(GetParam());
-  }
-  float device_scale_factor() const { return std::get<1>(GetParam()); }
+  float device_scale_factor() const { return GetParam(); }
 
   gfx::Rect ToPixel(const gfx::Rect rect) {
     return gfx::ToEnclosingRect(
@@ -182,14 +174,8 @@ class SurfaceTest : public test::ExoTestBase,
   base::test::ScopedFeatureList feature_list_;
 };
 
-// Instantiate the values of frame submission types and device scale factor in
-// the parameterized tests.
-INSTANTIATE_TEST_SUITE_P(
-    All,
-    SurfaceTest,
-    testing::Combine(testing::Values(test::FrameSubmissionType::kNoReactive,
-                                     test::FrameSubmissionType::kReactive),
-                     testing::Values(1.0f, 1.25f, 2.0f)));
+// Instantiate the values of device scale factor in the parameterized tests.
+INSTANTIATE_TEST_SUITE_P(All, SurfaceTest, testing::Values(1.0f, 1.25f, 2.0f));
 
 TEST_P(SurfaceTest, AttachOffset) {
   gfx::Size buffer_size(256, 256);
@@ -1134,10 +1120,6 @@ TEST_P(SurfaceTest, OverlayCandidate) {
   ASSERT_EQ(1u, frame.render_pass_list.back()->quad_list.size());
   viz::DrawQuad* draw_quad = frame.render_pass_list.back()->quad_list.back();
   ASSERT_EQ(viz::DrawQuad::Material::kTextureContent, draw_quad->material);
-
-  const viz::TextureDrawQuad* texture_quad =
-      viz::TextureDrawQuad::MaterialCast(draw_quad);
-  EXPECT_FALSE(texture_quad->resource_size_in_pixels().IsEmpty());
 }
 
 TEST_P(SurfaceTest, SetAlpha) {
@@ -1819,228 +1801,7 @@ TEST_P(SurfaceTest, SimpleSurfaceGraphicsOcclusion) {
   }
 }
 
-// This test makes sure that when we associate 1 or more rect with the same sqs
-// we do so only for canonical rects that form a sealed single layer.
-TEST_P(SurfaceTest, LayerSharedQuadState) {
-  auto canonical_form_check = [](const auto& frame) {
-    EXPECT_EQ(1u, frame.render_pass_list.size());
-    auto& quad_list = frame.render_pass_list.back()->quad_list;
-    bool is_canonical_form = true;
-    for (auto it = quad_list.begin(); it != quad_list.end(); ++it) {
-      // For this test we assume that a 1x1 quad indicates a AA quad. This
-      // assumption is only valid for this test because of our input rects are
-      // not 1x1.
-      is_canonical_form &= (*it)->rect != gfx::Rect(1, 1);
-    }
-    return is_canonical_form;
-  };
-
-  // This parent is merely the background for our children and plays no role in
-  // this test.
-  gfx::Size buffer_size(256, 256);
-  auto buffer = test::ExoTestHelper::CreateBuffer(buffer_size);
-  auto surface = std::make_unique<Surface>();
-  auto shell_surface = std::make_unique<ShellSurface>(surface.get());
-  surface->Attach(buffer.get());
-  surface->SetViewport(gfx::SizeF(13, 13));
-
-  // Test layer joining in x.
-  auto child_buffer_a = test::ExoTestHelper::CreateBuffer(gfx::Size(64, 64));
-  auto child_surface_a = std::make_unique<Surface>();
-  auto sub_surface_a =
-      std::make_unique<SubSurface>(child_surface_a.get(), surface.get());
-  child_surface_a->Attach(child_buffer_a.get());
-  child_surface_a->SetOverlayPriorityHint(OverlayPriority::LOW);
-  sub_surface_a->SetPosition(gfx::PointF(20, 10));
-  child_surface_a->SetViewport(gfx::SizeF(20, 10));
-  child_surface_a->Commit();
-
-  auto child_buffer_b = test::ExoTestHelper::CreateBuffer(gfx::Size(64, 64));
-  auto child_surface_b = std::make_unique<Surface>();
-  auto sub_surface_b =
-      std::make_unique<SubSurface>(child_surface_b.get(), surface.get());
-  child_surface_b->Attach(child_buffer_b.get());
-  child_surface_b->SetOverlayPriorityHint(OverlayPriority::LOW);
-  sub_surface_b->SetPosition(gfx::PointF(40, 10));
-  child_surface_b->SetViewport(gfx::SizeF(20, 10));
-  child_surface_b->Commit();
-
-  surface->Commit();
-  test::WaitForLastFrameAck(shell_surface.get());
-  {
-    const viz::CompositorFrame& frame =
-        GetFrameFromSurface(shell_surface.get());
-    bool const is_canonical_form = canonical_form_check(frame);
-    auto const kExpectedNumSQSs = is_canonical_form ? 2u : 3u;
-    ASSERT_EQ(kExpectedNumSQSs,
-              frame.render_pass_list.back()->shared_quad_state_list.size());
-  }
-
-  // Test Layer joining in y.
-  sub_surface_a->SetPosition(gfx::PointF(20, 10));
-  child_surface_a->SetViewport(gfx::SizeF(20, 10));
-  child_surface_a->Commit();
-
-  sub_surface_b->SetPosition(gfx::PointF(20, 20));
-  child_surface_b->SetViewport(gfx::SizeF(20, 10));
-  child_surface_b->Commit();
-
-  surface->Commit();
-  test::WaitForLastFrameAck(shell_surface.get());
-  {
-    const viz::CompositorFrame& frame =
-        GetFrameFromSurface(shell_surface.get());
-    bool const is_canonical_form = canonical_form_check(frame);
-    auto const kExpectedNumSQSs = is_canonical_form ? 2u : 3u;
-    ASSERT_EQ(kExpectedNumSQSs,
-              frame.render_pass_list.back()->shared_quad_state_list.size());
-  }
-
-  // Test Layer joining with overlapping rects but still sealed.
-  sub_surface_a->SetPosition(gfx::PointF(20, 10));
-  child_surface_a->SetViewport(gfx::SizeF(20, 10));
-  child_surface_a->Commit();
-
-  sub_surface_b->SetPosition(gfx::PointF(30, 10));
-  child_surface_b->SetViewport(gfx::SizeF(20, 10));
-  child_surface_b->Commit();
-
-  surface->Commit();
-  test::WaitForLastFrameAck(shell_surface.get());
-  {
-    const viz::CompositorFrame& frame =
-        GetFrameFromSurface(shell_surface.get());
-    bool const is_canonical_form = canonical_form_check(frame);
-    auto const kExpectedNumSQSs = is_canonical_form ? 2u : 3u;
-    ASSERT_EQ(kExpectedNumSQSs,
-              frame.render_pass_list.back()->shared_quad_state_list.size());
-  }
-
-  // Fail overlapping but not sealed.
-  sub_surface_a->SetPosition(gfx::PointF(20, 10));
-  child_surface_a->SetViewport(gfx::SizeF(20, 10));
-  child_surface_a->Commit();
-
-  sub_surface_b->SetPosition(gfx::PointF(30, 16));
-  child_surface_b->SetViewport(gfx::SizeF(20, 10));
-  child_surface_b->Commit();
-
-  surface->Commit();
-  test::WaitForLastFrameAck(shell_surface.get());
-  {
-    const viz::CompositorFrame& frame =
-        GetFrameFromSurface(shell_surface.get());
-    ASSERT_EQ(1u, frame.render_pass_list.size());
-    ASSERT_EQ(3u, frame.render_pass_list.back()->shared_quad_state_list.size());
-  }
-
-  // Fail non overlapping rects
-  sub_surface_a->SetPosition(gfx::PointF(20, 10));
-  child_surface_a->SetViewport(gfx::SizeF(20, 10));
-  child_surface_a->Commit();
-
-  sub_surface_b->SetPosition(gfx::PointF(42, 10));
-  child_surface_b->SetViewport(gfx::SizeF(20, 10));
-  child_surface_b->Commit();
-
-  surface->Commit();
-  test::WaitForLastFrameAck(shell_surface.get());
-  {
-    const viz::CompositorFrame& frame =
-        GetFrameFromSurface(shell_surface.get());
-    ASSERT_EQ(1u, frame.render_pass_list.size());
-    ASSERT_EQ(3u, frame.render_pass_list.back()->shared_quad_state_list.size());
-  }
-
-  // Let us prove that we can join more than 2 rects by having 3 rects
-  // that should form a single layer.
-  sub_surface_a->SetPosition(gfx::PointF(20, 10));
-  child_surface_a->SetViewport(gfx::SizeF(20, 10));
-  child_surface_a->Commit();
-
-  sub_surface_b->SetPosition(gfx::PointF(20, 20));
-  child_surface_b->SetViewport(gfx::SizeF(20, 10));
-  child_surface_b->Commit();
-
-  auto child_buffer_c = test::ExoTestHelper::CreateBuffer(gfx::Size(64, 64));
-  auto child_surface_c = std::make_unique<Surface>();
-  auto sub_surface_c =
-      std::make_unique<SubSurface>(child_surface_c.get(), surface.get());
-  child_surface_c->Attach(child_buffer_c.get());
-  sub_surface_c->SetPosition(gfx::PointF(20, 30));
-  child_surface_c->SetViewport(gfx::SizeF(20, 10));
-  child_surface_c->SetOverlayPriorityHint(OverlayPriority::LOW);
-  child_surface_c->Commit();
-
-  surface->Commit();
-  test::WaitForLastFrameAck(shell_surface.get());
-  {
-    const viz::CompositorFrame& frame =
-        GetFrameFromSurface(shell_surface.get());
-    bool const is_canonical_form = canonical_form_check(frame);
-    auto const kExpectedNumSQSs = is_canonical_form ? 2u : 4u;
-    ASSERT_EQ(kExpectedNumSQSs,
-              frame.render_pass_list.back()->shared_quad_state_list.size());
-  }
-
-  // Setting overlay on the middle quad should cause all to get a unique sqs.
-  child_surface_a->Commit();
-  child_surface_b->SetOverlayPriorityHint(OverlayPriority::REGULAR);
-  child_surface_b->Commit();
-  child_surface_c->Commit();
-  surface->Commit();
-  test::WaitForLastFrameAck(shell_surface.get());
-  {
-    const viz::CompositorFrame& frame =
-        GetFrameFromSurface(shell_surface.get());
-    auto const kExpectedNumSQSs = 4u;
-    ASSERT_EQ(kExpectedNumSQSs,
-              frame.render_pass_list.back()->shared_quad_state_list.size());
-  }
-
-  // Setting overlay on the first quad should cause quad b and quad c to still
-  // use the same sqs.
-  child_surface_a->SetOverlayPriorityHint(OverlayPriority::REGULAR);
-  child_surface_a->Commit();
-  child_surface_b->SetOverlayPriorityHint(OverlayPriority::LOW);
-  child_surface_b->Commit();
-  child_surface_c->Commit();
-  surface->Commit();
-  test::WaitForLastFrameAck(shell_surface.get());
-  {
-    const viz::CompositorFrame& frame =
-        GetFrameFromSurface(shell_surface.get());
-    bool const is_canonical_form = canonical_form_check(frame);
-    auto const kExpectedNumSQSs = is_canonical_form ? 3u : 4u;
-    ASSERT_EQ(kExpectedNumSQSs,
-              frame.render_pass_list.back()->shared_quad_state_list.size());
-  }
-}
-
-// Tests that only apply if ExoReactiveFrameSubmission is enabled.
-class ReactiveFrameSubmissionSurfaceTest : public SurfaceTest {
- public:
-  ReactiveFrameSubmissionSurfaceTest() {
-    DCHECK_EQ(GetFrameSubmissionType(), test::FrameSubmissionType::kReactive);
-  }
-
-  ReactiveFrameSubmissionSurfaceTest(
-      const ReactiveFrameSubmissionSurfaceTest&) = delete;
-  ReactiveFrameSubmissionSurfaceTest& operator=(
-      const ReactiveFrameSubmissionSurfaceTest&) = delete;
-
-  ~ReactiveFrameSubmissionSurfaceTest() override = default;
-};
-
-// Instantiate the values of frame submission types and device scale factor in
-// the parameterized tests.
-INSTANTIATE_TEST_SUITE_P(
-    All,
-    ReactiveFrameSubmissionSurfaceTest,
-    testing::Combine(testing::Values(test::FrameSubmissionType::kReactive),
-                     testing::Values(1.0f, 1.25f, 2.0f)));
-
-TEST_P(ReactiveFrameSubmissionSurfaceTest, FullDamageAfterDiscardingFrame) {
+TEST_P(SurfaceTest, FullDamageAfterDiscardingFrame) {
   gfx::Size buffer_size(256, 256);
   auto buffer = test::ExoTestHelper::CreateBuffer(buffer_size);
   std::unique_ptr<Surface> surface(new Surface);

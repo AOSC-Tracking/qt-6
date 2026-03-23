@@ -26,17 +26,20 @@ QT_BEGIN_NAMESPACE
 class Q_LOTTIE_EXPORT QLottieStroke : public QLottieShape
 {
 public:
-    QLottieStroke() = default;
     explicit QLottieStroke(const QLottieStroke &other);
-    QLottieStroke(const QJsonObject &definition, QLottieBase *parent = nullptr);
+    QLottieStroke(QLottieBase *parent = nullptr);
 
     QLottieBase *clone() const override;
 
     void updateProperties(int frame) override;
     void render(QLottieRenderer &renderer) const override;
+    int parse(const QJsonObject &definition) override;
 
     QPen pen() const;
     qreal opacity() const;
+
+    QLottieProperty4D<QVector4D> colorProperty() const { return m_color; }
+    QLottieProperty<qreal> opacityProperty() const { return m_opacity; }
 
 protected:
     QColor getColor() const;

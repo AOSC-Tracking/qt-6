@@ -113,11 +113,42 @@ TEST_F(ContentScriptsManifestTest, FailLoadingNonUTF8Scripts) {
   scoped_refptr<Extension> extension(
       file_util::LoadExtension(install_dir, mojom::ManifestLocation::kUnpacked,
                                Extension::NO_FLAGS, &error));
-  ASSERT_TRUE(extension.get() == nullptr);
+  ASSERT_EQ(extension.get(), nullptr);
   ASSERT_STREQ(
       "Could not load file 'bad_encoding.js' for content script. "
       "It isn't UTF-8 encoded.",
       error.c_str());
+}
+
+TEST_F(ContentScriptsManifestTest, FailLoadingNonJsScripts) {
+  static constexpr char kWarning[] =
+      "Invalid script mime type: 'Could not load file 'files/bad_script.json' "
+      "for content script, content scripts can only be loaded from supported "
+      "JavaScript files such as .js files.'";
+  scoped_refptr<Extension> extension =
+      LoadAndExpectWarning("mime_type/bad_content_script.json", kWarning);
+
+  const UserScriptList& user_scripts =
+      ContentScriptsInfo::GetContentScripts(extension.get());
+  EXPECT_TRUE(user_scripts.empty());
+}
+
+TEST_F(ContentScriptsManifestTest, AllowLoadingScssStyleSheets) {
+  scoped_refptr<Extension> extension =
+      LoadAndExpectWarnings("mime_type/good_scss_style_sheet.json", {});
+
+  const UserScriptList& user_scripts =
+      ContentScriptsInfo::GetContentScripts(extension.get());
+  EXPECT_EQ(1u, user_scripts.size());
+}
+
+TEST_F(ContentScriptsManifestTest, AllowLoadingUserJsContentScripts) {
+  scoped_refptr<Extension> extension =
+      LoadAndExpectWarnings("mime_type/good_user_js_script.json", {});
+
+  const UserScriptList& user_scripts =
+      ContentScriptsInfo::GetContentScripts(extension.get());
+  EXPECT_EQ(1u, user_scripts.size());
 }
 
 TEST_F(ContentScriptsManifestTest, MatchOriginAsFallback) {

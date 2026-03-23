@@ -56,7 +56,7 @@ class V8_EXPORT_PRIVATE RegExpBytecodeGenerator : public RegExpMacroAssembler {
                               Label* on_equal) override;
   void CheckCharacterGT(base::uc16 limit, Label* on_greater) override;
   void CheckCharacterLT(base::uc16 limit, Label* on_less) override;
-  void CheckGreedyLoop(Label* on_tos_equals_current_position) override;
+  void CheckFixedLengthLoop(Label* on_tos_equals_current_position) override;
   void CheckAtStart(int cp_offset, Label* on_at_start) override;
   void CheckNotAtStart(int cp_offset, Label* on_not_at_start) override;
   void CheckNotCharacter(unsigned c, Label* on_not_equal) override;
@@ -98,7 +98,8 @@ class V8_EXPORT_PRIVATE RegExpBytecodeGenerator : public RegExpMacroAssembler {
   void IfRegisterEqPos(int register_index, Label* if_eq) override;
 
   IrregexpImplementation Implementation() override;
-  Handle<HeapObject> GetCode(Handle<String> source, RegExpFlags flags) override;
+  DirectHandle<HeapObject> GetCode(DirectHandle<String> source,
+                                   RegExpFlags flags) override;
 
  private:
   void ExpandBuffer();

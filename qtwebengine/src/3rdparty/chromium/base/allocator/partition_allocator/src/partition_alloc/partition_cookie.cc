@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/partition_cookie.h"
 
 #include <cstdint>
@@ -12,12 +17,12 @@
 #if PA_BUILDFLAG(USE_PARTITION_COOKIE)
 namespace partition_alloc::internal {
 [[noreturn]] PA_NOINLINE PA_NOT_TAIL_CALLED void CookieCorruptionDetected(
-    unsigned char* cookie_ptr,
+    const unsigned char* cookie_ptr,
     size_t slot_usable_size) {
   using CookieValue = std::conditional_t<kCookieSize == 4, uint32_t, uint64_t>;
   static_assert(sizeof(CookieValue) <= kCookieSize);
   CookieValue cookie =
-      *static_cast<CookieValue*>(static_cast<void*>(cookie_ptr));
+      *static_cast<const CookieValue*>(static_cast<const void*>(cookie_ptr));
   PA_DEBUG_DATA_ON_STACK("slotsize", slot_usable_size);
   PA_DEBUG_DATA_ON_STACK("cookie", cookie);
 

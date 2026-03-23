@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3ddirectionallight_p.h"
 #include "qquick3dobject_p.h"
@@ -64,6 +66,7 @@ QT_BEGIN_NAMESPACE
     direction of the DirectionalLight node's Z axis.
 
     \image directionallight-1.png
+           {Green circle showing directional light emitting along Z axis}
 
     Rotating 60 degrees around the X axis would lead to the following. Instead
     of emitting straight in the direction of the Z axis, the light is now
@@ -76,6 +79,7 @@ QT_BEGIN_NAMESPACE
     \endqml
 
     \image directionallight-2.png
+           {Green circle with shading showing rotated directional light}
 
     For further usage examples, see \l{Qt Quick 3D - Lights Example}.
 

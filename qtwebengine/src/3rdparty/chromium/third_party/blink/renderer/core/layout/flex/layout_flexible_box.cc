@@ -10,11 +10,11 @@
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/html_hr_element.h"
 #include "third_party/blink/renderer/core/html/html_slot_element.h"
-#include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/layout/block_node.h"
 #include "third_party/blink/renderer/core/layout/constraint_space.h"
 #include "third_party/blink/renderer/core/layout/flex/flex_layout_algorithm.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_result.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/oof_positioned_node.h"
@@ -27,7 +27,7 @@ LayoutFlexibleBox::LayoutFlexibleBox(Element* element) : LayoutBlock(element) {}
 namespace {
 
 LogicalToPhysical<bool> GetOverflowConverter(const ComputedStyle& style) {
-  const bool is_wrap_reverse = style.FlexWrap() == EFlexWrap::kWrapReverse;
+  const bool is_wrap_reverse = style.ResolvedIsFlexWrapReverse();
   const bool is_direction_reverse = style.ResolvedIsReverseFlexDirection();
 
   bool inline_start = false;
@@ -72,11 +72,13 @@ void MergeAnonymousFlexItems(LayoutObject* remove_child) {
   // are text nodes wrapped in anonymous flex items, the adjacent text nodes
   // need to be merged into the same flex item.
   LayoutObject* prev = remove_child->PreviousSibling();
-  if (!prev || !prev->IsAnonymousBlock())
+  if (!prev || !prev->IsAnonymousBlockFlow()) {
     return;
+  }
   LayoutObject* next = remove_child->NextSibling();
-  if (!next || !next->IsAnonymousBlock())
+  if (!next || !next->IsAnonymousBlockFlow()) {
     return;
+  }
   To<LayoutBoxModelObject>(next)->MoveAllChildrenTo(
       To<LayoutBoxModelObject>(prev));
   next->Destroy();
@@ -88,25 +90,19 @@ bool LayoutFlexibleBox::IsChildAllowed(LayoutObject* object,
                                        const ComputedStyle& style) const {
   const auto* select = DynamicTo<HTMLSelectElement>(GetNode());
   if (select && select->UsesMenuList()) [[unlikely]] {
-    if (select->IsAppearanceBaseButton(
-            HTMLSelectElement::StyleUpdateBehavior::kDontUpdateStyle)) {
-      CHECK(RuntimeEnabledFeatures::CustomizableSelectEnabled());
-
-      // we want to include elements which are descendants of the SlottedButton,
-      // and include ::before/::after/::picker-icon on select.
-      // we want to exclude nodes which are being slotted into the select's
-      // <slot id=select-options>.
-      Node* child = object->GetNode();
-      if (child && !child->IsPseudoElement()) {
-        if (auto* slot = child->AssignedSlot()) {
-          if (slot->GetIdAttribute() == shadow_element_names::kSelectOptions) {
-            return false;
-          }
-        }
+    if (select->IsAppearanceBase()) {
+      CHECK(HTMLSelectElement::CustomizableSelectEnabled(select));
+      if (IsA<HTMLOptionElement>(object->GetNode()) ||
+          IsA<HTMLOptGroupElement>(object->GetNode()) ||
+          IsA<HTMLHRElement>(object->GetNode())) {
+        // TODO(crbug.com/1511354): Remove this when <option>s are slotted into
+        // the UA <datalist>, which will be hidden by default as a popover.
+        return false;
       }
       // For appearance:base-select <select>, we want to render all children.
       // However, the InnerElement is only used for rendering in
       // appearance:auto, so don't include that one.
+      Node* child = object->GetNode();
       if (child == &select->InnerElement() && select->SlottedButton()) {
         // If the author doesn't provide a button, then we still want to display
         // the InnerElement.
@@ -136,7 +132,7 @@ const DevtoolsFlexInfo* LayoutFlexibleBox::FlexLayoutData() const {
 }
 
 void LayoutFlexibleBox::RemoveChild(LayoutObject* child) {
-  if (!DocumentBeingDestroyed() && !StyleRef().IsDeprecatedFlexbox()) {
+  if (!DocumentBeingDestroyed()) {
     MergeAnonymousFlexItems(child);
   }
 

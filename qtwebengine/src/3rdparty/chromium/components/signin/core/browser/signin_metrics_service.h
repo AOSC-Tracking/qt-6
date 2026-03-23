@@ -68,8 +68,12 @@ class SigninMetricsService : public KeyedService,
   void OnExtendedAccountInfoUpdated(const AccountInfo& info) override;
   void OnRefreshTokenRemovedForAccount(
       const CoreAccountId& account_id) override;
+  void OnRefreshTokensLoaded() override;
 
  private:
+  // KeyedService.
+  void Shutdown() override;
+
   // Helper handling functions for error analysis for different sign in states.
   void HandleSyncErrors(
       const GoogleServiceAuthError& error,
@@ -87,6 +91,8 @@ class SigninMetricsService : public KeyedService,
       const GaiaId& gaia_id,
       signin_metrics::AccessPoint access_point);
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+  void UpdateIsManagedForAllAccounts();
 
   const raw_ref<signin::IdentityManager> identity_manager_;
   const raw_ref<PrefService> pref_service_;

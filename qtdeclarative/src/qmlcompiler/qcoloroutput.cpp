@@ -1,12 +1,15 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #include "qcoloroutput_p.h"
 
 #include <QtCore/qfile.h>
 #include <QtCore/qhash.h>
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#else
 #include <unistd.h>
 #endif
 
@@ -75,17 +78,25 @@ private:
      */
     inline bool isColoringPossible() const
     {
+        static std::optional<bool> canColor;
+        if (canColor.has_value())
+            return canColor.value();
+
 #if defined(Q_OS_WIN)
-        /* Windows doesn't at all support ANSI escape codes, unless
-         * the user install a "device driver". See the Wikipedia links in the
-         * class documentation for details. */
-        return false;
+        HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
+        DWORD mode = 0;
+
+        if (GetConsoleMode(hErr, &mode))
+            canColor = SetConsoleMode(hErr, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        else
+            canColor = false;
 #else
         /* We use QFile::handle() to get the file descriptor. It's a bit unsure
          * whether it's 2 on all platforms and in all cases, so hopefully this layer
          * of abstraction helps handle such cases. */
-        return isatty(fileno(stderr));
+        canColor = isatty(fileno(stderr));
 #endif
+        return canColor.value();
     }
 };
 

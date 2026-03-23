@@ -61,9 +61,6 @@
   <message name="IDS_PAGE_INFO_SECURE_DETAILS" desc="A short paragraph explaining a secure site to the user.">
     Your information (for example, passwords or credit card numbers) is private when it is sent to this site.
   </message>
-  <message name="IDS_PAGE_INFO_ADMIN_PROVIDED_CERT_DETAILS" desc="A short paragraph explaining a site using an administrator-provided certificate to the user.">
-    You have accessed content using an administrator-provided certificate. Data you provide to <ph name="DOMAIN">$1<ex>www.google.com</ex></ph> can be intercepted by your administrator.
-  </message>
   <message name="IDS_PAGE_INFO_MIXED_CONTENT_DETAILS" desc="A short paragraph explaining a partially insecure site to the user.">
     Attackers might be able to see the images you’re looking at on this site and trick you by modifying them.
   </message>
@@ -121,10 +118,10 @@
 
     <!-- Certificate exception decision UI (after clicking through an SSL certificate error) -->
     <!-- TODO(crbug.com/41183997): Support revoking certificate overrides on iOS Page Info. -->
-    <message name="IDS_PAGE_INFO_INVALID_CERTIFICATE_DESCRIPTION" desc="A short paragraph to the user that security warnings are disabled. This is the case when the user has encountered a certificate error for the current site and chosen to override it.">
+    <message name="IDS_PAGE_INFO_INVALID_CERTIFICATE_DESCRIPTION" desc="A short paragraph to the user that security warnings are disabled. This is the case when the user has encountered a certificate error for the current site and chosen to override it." formatter_data="android_java">
       You have chosen to turn off security warnings for this site.
     </message>
-    <message name="IDS_PAGE_INFO_RESET_INVALID_CERTIFICATE_DECISIONS_BUTTON" desc="Text of button in the page info that resets allow/deny decisions of invalid certificates, which will start showing security warnings for the page again.">
+    <message name="IDS_PAGE_INFO_RESET_INVALID_CERTIFICATE_DECISIONS_BUTTON" desc="Text of button in the page info that resets allow/deny decisions of invalid certificates, which will start showing security warnings for the page again." formatter_data="android_java">
       Turn on warnings
     </message>
 
@@ -189,7 +186,6 @@
     </message>
 
     <!-- Certificate Viewer link -->
-    <if expr="not is_android">
       <message name="IDS_PAGE_INFO_CERTIFICATE" desc="Title of the certificate area in the Page Info bubble, shown when a HTTPS site is loaded.">
         Certificate
       </message>
@@ -211,7 +207,7 @@
       <message name="IDS_PAGE_INFO_CERTIFICATE_IS_VALID" desc="Title of the certificate area in the Page Info bubble, shown when a HTTPS site is loaded with a valid certificate.">
         Certificate is valid
       </message>
-      <message name="IDS_PAGE_INFO_CERTIFICATE_DETAILS" desc="Title of the certificate area in the Page Info bubble, shown when a HTTPS site is loaded with an invalid certificate.">
+      <message name="IDS_PAGE_INFO_CERTIFICATE_DETAILS" desc="Title of the certificate area in the Page Info bubble, shown when a HTTPS site is loaded with an invalid certificate." formatter_data="android_java">
         Certificate details
       </message>
       <message name="IDS_PAGE_INFO_CERTIFICATE_VALID_LINK_TOOLTIP" desc="The text of the tooltip on IDS_PAGE_INFO_CERTIFICATE_VALID_LINK.">
@@ -220,7 +216,11 @@
       <message name="IDS_PAGE_INFO_CERTIFICATE_INVALID_LINK_TOOLTIP" desc="The text of the tooltip on IDS_PAGE_INFO_CERTIFICATE_INVALID_LINK.">
         Show certificate
       </message>
-    </if>
+
+    <!-- QWAC Certificate Info strings -->
+    <message name="IDS_PAGE_INFO_QWAC_STATUS_TITLE" desc="The text of the title of the Page Info row that shows EU Qualified Certificate status." formatter_data="android_java">
+      EU Qualified Status
+    </message>
 
     <!-- Certificate Info strings -->
     <if expr="is_android">
@@ -267,9 +267,6 @@
     <message name="IDS_PAGE_INFO_BUTTON_TEXT_ASK_BY_USER" desc="The Page Info popup contains several buttons for opening dropdown menus and changing site permissions. This is the text of such a button if the permission controlled by the button was explicitly set to ask by the user.">
       Ask
     </message>
-    <message name="IDS_PAGE_INFO_BUTTON_TEXT_DETECT_IMPORTANT_CONTENT_BY_USER" desc="The Page Info popup contains several buttons for opening dropdown menus and changing site permissions. This is the text of such a button if the permission controlled by the button was explicitly set to detect important content by the user.">
-      Detect
-    </message>
 
     <message name="IDS_PAGE_INFO_BUTTON_TEXT_ALLOWED_BY_DEFAULT" desc="The Page Info popup contains several buttons for opening dropdown menus and changing site permissions. This is the text of such a button if the permission controlled by the button is set to the default setting and the default settings is allow.">
       Allow (default)
@@ -288,9 +285,6 @@
       Mute (default)
     </message>
     </if>
-    <message name="IDS_PAGE_INFO_BUTTON_TEXT_DETECT_IMPORTANT_CONTENT_BY_DEFAULT" desc="The Page Info popup contains several buttons for opening dropdown menus and changing site permissions. This is the text of such a button if the permission controlled by the button is set to the default setting and the default settings is detect important content.">
-      Detect (default)
-    </message>
 
     <message name="IDS_PAGE_INFO_MENU_ITEM_DEFAULT_ALLOW" desc="The text of the menu item of a permissions menu on the Page Info UI that resets the setting to the default setting which is allow.">
       Use global default (Allow)
@@ -301,9 +295,6 @@
     <message name="IDS_PAGE_INFO_MENU_ITEM_DEFAULT_ASK" desc="The text of the menu item of a permissions menu on the Page Info UI that reset the setting to the default setting which is ask.">
       Use global default (Ask)
     </message>
-    <message name="IDS_PAGE_INFO_MENU_ITEM_DEFAULT_DETECT_IMPORTANT_CONTENT" desc="The text of the menu item of a permissions menu on the Page Info UI that reset the setting to the default setting which is detect important content.">
-      Use global default (Detect)
-    </message>
 
     <message name="IDS_PAGE_INFO_MENU_ITEM_ALLOW" desc="The text of the menu item of a permissions menu on the Page Info UI that sets the setting to allow.">
       Always allow on this site
@@ -313,9 +304,6 @@
     </message>
     <message name="IDS_PAGE_INFO_MENU_ITEM_ASK" desc="The text of the menu item of a permissions menu on the Page Info UI that sets the setting to ask.">
       Always ask on this site
-    </message>
-     <message name="IDS_PAGE_INFO_MENU_ITEM_DETECT_IMPORTANT_CONTENT" desc="The text of the menu item of a permissions menu on the Page Info UI that sets the setting to detect important content.">
-      Always detect important content on this site
     </message>
     <message name="IDS_PAGE_INFO_MENU_ITEM_ADS_BLOCK" desc="The text of the menu item of a permissions menu on the Page Info UI for the ads permission in Block mode">
       Block on this site
@@ -439,6 +427,9 @@
     <message name="IDS_PAGE_INFO_STATE_TEXT_WEB_PRINTING_ASK" desc="The Page Info permission subpage and the main page info page contain a label which shows the state of the site permission. This is the text shown if the bluetooth devices permission is in the ask state and the site can prompt the user to ask if they allow the site to use advanced printer features.">
       Can ask to use advanced printer features
     </message>
+    <message name="IDS_PAGE_INFO_STATE_TEXT_LOCAL_NETWORK_ACCESS_ASK" desc="The Page Info permission subpage and the main page info page contain a label which shows the state of the site permission. This is the text shown if the local network access permission is in the ask state and the site can prompt the user to ask if they allow the site to make local network requests.">
+      Can ask to connect to any device on your local network
+    </message>
 
     <!-- UI for device access granted to the site using the device chooser (e.g. USB, Bluetooth) -->
     <message name="IDS_PAGE_INFO_USB_DEVICE_SECONDARY_LABEL" desc="The label displayed underneath the device name to inform the user that the item refers to a USB device.">
@@ -509,6 +500,9 @@
     </message>
     <message name="IDS_PAGE_INFO_LOCATION_SYSTEM_SETTINGS_DESCRIPTION" desc="The description for the location permission with a link to system settings.">
         To use your location, give Chrome access in <ph name="LINK">$1<ex>system settings</ex></ph>.
+    </message>
+    <message name="IDS_PAGE_INFO_CLIPBOARD_SYSTEM_SETTINGS_DESCRIPTION" desc="The description for the clipboard permission with a link to system settings.">
+        To use your clipboard, give Chrome access in <ph name="LINK">$1<ex>system settings</ex></ph>.
     </message>
     <message name="IDS_PAGE_INFO_SETTINGS_OF_A_SYSTEM_LINK" desc="This is the text of the link pointing to settings of a system. This appears under a permission in the Page Info bubble if the permission is blocked on the system level.">
         system settings
@@ -694,7 +688,7 @@
   <message name="IDS_PAGE_INFO_SECURITY_SUBPAGE_BUTTON" desc="The label of the button to open the Security subpage in Page Info bubble.">
     Show connection details
   </message>
-  <message name="IDS_PAGE_INFO_SECURITY_SUBPAGE_HEADER" desc="The header label of the Security subpage in Page Info bubble.">
+  <message name="IDS_PAGE_INFO_SECURITY_SUBPAGE_HEADER" desc="The header label of the Security subpage in Page Info bubble." formatter_data="android_java">
     Security
   </message>
 
@@ -738,15 +732,6 @@
   <!-- Cookies subpage -->
   <message name="IDS_PAGE_INFO_COOKIES_HEADER" desc="The header label of cookies subpage in Page Info bubble.">
     Cookies and site data
-  </message>
-  <message name="IDS_PAGE_INFO_TRACKING_PROTECTION_SITE_INFO_BUTTON_LABEL_ALLOWED" desc="The label for the Tracking Protection button in the Page Info bubble (which shows when you click the site info icon) detailing that third party cookies are allowed." formatter_data="android_java">
-    Third-party cookies allowed
-  </message>
-  <message name="IDS_PAGE_INFO_TRACKING_PROTECTION_SITE_INFO_BUTTON_LABEL_BLOCKED" desc="The label for the Tracking Protection button in the Page Info bubble (which shows when you click the site info icon) detailing that third party cookies are blocked." formatter_data="android_java">
-    Third-party cookies blocked
-  </message>
-  <message name="IDS_PAGE_INFO_TRACKING_PROTECTION_SITE_INFO_BUTTON_LABEL_LIMITED" desc="The label for the Tracking Protection button in the Page Info bubble (which shows when you click the site info icon) detailing that third party cookies are limited." formatter_data="android_java">
-    Third-party cookies limited
   </message>
   <message name="IDS_PAGE_INFO_COOKIES_DESCRIPTION" desc="The description of cookies in Cookies Subpage with placeholder for link to settings.">
     Cookies and other site data are used to remember you, for example to sign you in or to personalize ads. To manage cookies for all sites, see <ph name="SETTINGS">$1<ex>Settings</ex></ph>.
@@ -825,6 +810,12 @@
   </message>
   <message name="IDS_PAGE_INFO_TRACKING_PROTECTION_COOKIES_PERMANENT_ALLOWED_DESCRIPTION" desc="Descriptive text in the page info Tracking Protection subpage if the user is visiting a site on their third-party cookies allow list.">
     This means site features should work as expected, but you may have less browsing protection.
+  </message>
+  <message name="IDS_PAGE_INFO_COOKIE_SYNC_DESCRIPTION" desc="The disclaimer about cookies for this site being synced across ChromeOS devices.">
+    Cookies for this site are synced across your ChromeOS devices. To manage what you sync, go to <ph name="SYNC_SETTINGS">$1<ex>Sync settings</ex></ph>.
+  </message>
+  <message name="IDS_PAGE_INFO_SYNC_SETTINGS_LINK" desc="The text of the link to Chrome Sync settings.">
+    Sync settings
   </message>
 
   <!-- Merchant trust strings -->

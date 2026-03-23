@@ -15,17 +15,17 @@
 #include <sstream>
 #include <string_view>
 
+#include "base/features.h"
 #include "base/files/safe_base_name.h"
 #include "base/strings/utf_ostream_operators.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/gtest_util.h"
+#include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
-
-#if BUILDFLAG(ENABLE_BASE_TRACING)
-#include "third_party/perfetto/include/perfetto/test/traced_value_test_support.h"  // no-presubmit-check nogncheck
-#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
+#include "third_party/perfetto/include/perfetto/test/traced_value_test_support.h"
 
 #if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 #include "base/test/scoped_locale.h"
@@ -99,11 +99,9 @@ TEST_F(FilePathTest, DirName) {
       {FPL("//aa/bb"), FPL("//aa")},
       {FPL("//aa/"), FPL("//")},
       {FPL("//aa"), FPL("//")},
-#if BUILDFLAG(IS_POSIX)
       {FPL("///aa/"), FPL("/")},
       {FPL("///aa"), FPL("/")},
       {FPL("///"), FPL("/")},
-#endif  // BUILDFLAG(IS_POSIX)
       {FPL("0:"), FPL(".")},
       {FPL("@:"), FPL(".")},
       {FPL("[:"), FPL(".")},
@@ -156,6 +154,8 @@ TEST_F(FilePathTest, DirName) {
       {FPL("c:\\"), FPL("c:\\")},
       {FPL("c:\\\\"), FPL("c:\\\\")},
       {FPL("c:\\\\\\"), FPL("c:\\")},
+      {FPL("c:\\\\aa"), FPL("c:\\\\")},
+      {FPL("c:\\\\\\aa"), FPL("c:\\")},
       {FPL("c:\\aa"), FPL("c:\\")},
       {FPL("c:\\aa\\"), FPL("c:\\")},
       {FPL("c:\\aa\\bb"), FPL("c:\\aa")},
@@ -352,6 +352,124 @@ TEST_F(FilePathTest, Append) {
   }
 }
 
+// Test UTF8 values within a file path.
+class FilePathUTF8Test : public ::testing::TestWithParam<FilePath::StringType> {
+ protected:
+  FilePath::StringType testcase() const { return GetParam(); }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    FilePathUTF8TestCases,
+    FilePathUTF8Test,
+    ::testing::Values(FPL("خطأ في عملية التحقق من التحديث 5555"),
+                      FPL("अपडेट जांच में यह गड़बड़ी है 5555"),
+                      FPL("更新確認エラー 5555。")));
+
+TEST_P(FilePathUTF8Test, Test) {
+  FilePath root(FPL(""));
+  FilePath::StringType leaf(testcase());
+  FilePath observed_str = root.Append(leaf);
+  EXPECT_EQ(FilePath::StringType(testcase()), observed_str.value());
+  FilePath observed_path = root.Append(FilePath(leaf));
+  EXPECT_EQ(FilePath::StringType(testcase()), observed_path.value());
+
+#if BUILDFLAG(IS_WIN)
+  std::string utf8 = WideToUTF8(leaf);
+#else
+  std::string utf8 = leaf;
+#endif
+  EXPECT_DCHECK_DEATH({ observed_str = root.AppendASCII(utf8); });
+  EXPECT_DCHECK_DEATH(
+      { observed_str = root.InsertBeforeExtensionASCII(utf8); });
+  EXPECT_DCHECK_DEATH({ observed_str = root.AddExtensionASCII(utf8); });
+
+  observed_str = root.AppendUTF8(utf8);
+  EXPECT_EQ(FilePath::StringType(testcase()), observed_str.value());
+
+  observed_str = root.InsertBeforeExtensionUTF8(utf8);
+  EXPECT_TRUE(observed_str.empty());
+
+  observed_str = root.AddExtensionUTF8(utf8);
+  EXPECT_TRUE(observed_str.empty());
+}
+
+class FilePathUTF8InvalidTest : public ::testing::TestWithParam<std::string> {
+ protected:
+  std::string invalid_utf8_value() const { return GetParam(); }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    FilePathUTF8InvalidTestCases,
+    FilePathUTF8InvalidTest,
+    ::testing::Values(
+        // Invalid encoding of U+1FFFE (0x8F instead of 0x9F)
+        "\xF0\x8F\xBF\xBE",
+
+        // Surrogate code points
+        "\xED\xA0\x80\xED\xBF\xBF",
+        "\xED\xA0\x8F",
+        "\xED\xBF\xBF",
+
+        // Overlong sequences
+        "\xC0\x80",                  // U+0000
+        "\xC1\x80\xC1\x81",          // "AB"
+        "\xE0\x80\x80",              // U+0000
+        "\xE0\x82\x80",              // U+0080
+        "\xE0\x9F\xBF",              // U+07FF
+        "\xF0\x80\x80\x8D",          // U+000D
+        "\xF0\x80\x82\x91",          // U+0091
+        "\xF0\x80\xA0\x80",          // U+0800
+        "\xF0\x8F\xBB\xBF",          // U+FEFF (BOM)
+        "\xF8\x80\x80\x80\xBF",      // U+003F
+        "\xFC\x80\x80\x80\xA0\xA5",  // U+00A5
+
+        // Beyond U+10FFFF (the upper limit of Unicode codespace)
+        "\xF4\x90\x80\x80",          // U+110000
+        "\xF8\xA0\xBF\x80\xBF",      // 5 bytes
+        "\xFC\x9C\xBF\x80\xBF\x80",  // 6 bytes
+
+        // BOM in UTF-16(BE|LE)
+        "\xFE\xFF",
+        "\xFF\xFE",
+
+        // Strings in legacy encodings. We can certainly make up strings
+        // in a legacy encoding that are valid in UTF-8, but in real data,
+        // most of them are invalid as UTF-8.
+
+        // cafe with U+00E9 in ISO-8859-1
+        "caf\xE9",
+        // U+AC00, U+AC001 in EUC-KR
+        "\xB0\xA1\xB0\xA2",
+        // U+4F60 U+597D in Big5
+        "\xA7\x41\xA6\x6E",
+        // "abc" with U+201[CD] in windows-125[0-8]
+        // clang-format off
+        "\x93" "abc\x94",
+        // clang-format on
+        // U+0639 U+064E U+0644 U+064E in ISO-8859-6
+        "\xD9\xEE\xE4\xEE",
+        // U+03B3 U+03B5 U+03B9 U+03AC in ISO-8859-7
+        "\xE3\xE5\xE9\xDC"));
+
+TEST_P(FilePathUTF8InvalidTest, Test) {
+  FilePath root(FPL(""));
+  FilePath observed_str;
+  EXPECT_DCHECK_DEATH(
+      { observed_str = root.AppendASCII(invalid_utf8_value()); });
+  EXPECT_DCHECK_DEATH({
+    observed_str = root.InsertBeforeExtensionASCII(invalid_utf8_value());
+  });
+  EXPECT_DCHECK_DEATH(
+      { observed_str = root.AddExtensionASCII(invalid_utf8_value()); });
+
+  EXPECT_DCHECK_DEATH(
+      { observed_str = root.AppendUTF8(invalid_utf8_value()); });
+  EXPECT_DCHECK_DEATH(
+      { observed_str = root.InsertBeforeExtensionUTF8(invalid_utf8_value()); });
+  EXPECT_DCHECK_DEATH(
+      { observed_str = root.AddExtensionUTF8(invalid_utf8_value()); });
+}
+
 TEST_F(FilePathTest, StripTrailingSeparators) {
   const auto cases = std::to_array<UnaryTestData>({
       {FPL(""), FPL("")},
@@ -476,9 +594,7 @@ TEST_F(FilePathTest, PathComponentsTest) {
   const auto cases = std::to_array<UnaryTestData>({
       {FPL("//foo/bar/baz/"), FPL("|//|foo|bar|baz")},
       {FPL("///"), FPL("|/")},
-#if BUILDFLAG(IS_POSIX)
       {FPL("///foo//bar/baz"), FPL("|/|foo|bar|baz")},
-#endif  // BUILDFLAG(IS_POSIX)
       {FPL("/foo//bar//baz/"), FPL("|/|foo|bar|baz")},
       {FPL("/foo/bar/baz/"), FPL("|/|foo|bar|baz")},
       {FPL("/foo/bar/baz//"), FPL("|/|foo|bar|baz")},
@@ -492,7 +608,12 @@ TEST_F(FilePathTest, PathComponentsTest) {
 #if defined(FILE_PATH_USES_DRIVE_LETTERS)
       {FPL("e:/foo"), FPL("|e:|/|foo")},
       {FPL("e:/"), FPL("|e:|/")},
+      {FPL("e:foo"), FPL("|e:|foo")},
       {FPL("e:"), FPL("|e:")},
+      {FPL("e://foo"), FPL("|e:|//|foo")},
+      {FPL("e://"), FPL("|e:|//")},
+      {FPL("e:///foo"), FPL("|e:|/|foo")},
+      {FPL("e:///"), FPL("|e:|/")},
 #endif  // FILE_PATH_USES_DRIVE_LETTERS
 #if defined(FILE_PATH_USES_WIN_SEPARATORS)
       {FPL("../foo"), FPL("|..|foo")},
@@ -527,47 +648,109 @@ TEST_F(FilePathTest, PathComponentsTest) {
   }
 }
 
-TEST_F(FilePathTest, IsParentTest) {
+void IsParentTest(bool is_fast) {
+#if defined(FILE_PATH_USES_WIN_SEPARATORS)
+  auto swap_separators = [](const FilePath& path) {
+    FilePath::StringType new_path(path.value());
+    for (auto& character : new_path) {
+      if (character == '/') {
+        character = '\\';
+      } else if (character == '\\') {
+        character = '/';
+      }
+    }
+    return new_path;
+  };
+#endif  // defined(FILE_PATH_USES_WIN_SEPARATORS)
+
   const auto cases = std::to_array<BinaryBooleanTestData>({
-      {{FPL("/"), FPL("/foo/bar/baz")}, true},
-      {{FPL("/foo"), FPL("/foo/bar/baz")}, true},
-      {{FPL("/foo/bar"), FPL("/foo/bar/baz")}, true},
-      {{FPL("/foo/bar/"), FPL("/foo/bar/baz")}, true},
-      {{FPL("//foo/bar/"), FPL("//foo/bar/baz")}, true},
-      {{FPL("/foo/bar"), FPL("/foo2/bar/baz")}, false},
-      {{FPL("/foo/bar.txt"), FPL("/foo/bar/baz")}, false},
-      {{FPL("/foo/bar"), FPL("/foo/bar2/baz")}, false},
-      {{FPL("/foo/bar"), FPL("/foo/bar")}, false},
-      {{FPL("/foo/bar/baz"), FPL("/foo/bar")}, false},
-      {{FPL("foo"), FPL("foo/bar/baz")}, true},
-      {{FPL("foo/bar"), FPL("foo/bar/baz")}, true},
-      {{FPL("foo/bar"), FPL("foo2/bar/baz")}, false},
-      {{FPL("foo/bar"), FPL("foo/bar2/baz")}, false},
+      {{FPL(""), FPL("")}, false},
+      {{FPL(""), FPL(".")}, false},
       {{FPL(""), FPL("foo")}, false},
+      {{FPL("."), FPL("")}, false},
+      {{FPL("."), FPL(".")}, false},
+      // While the 2 cases below are incorrect, they verify that an old behavior
+      // of IsParent() is preserved. We should consider modifying the code so
+      // that the result is `true` for the 2 cases below.
+      {{FPL("."), FPL("./foo")}, false},
+      {{FPL("./"), FPL("./foo")}, false},
+      {{FPL("./"), FPL("/")}, false},
+      {{FPL("./"), FPL("//")}, false},
+      {{FPL("./"), FPL("/foo")}, false},
+      {{FPL("./"), FPL("//foo")}, false},
+      {{FPL("./foo"), FPL("foo/bar")}, true},
+      {{FPL("./foo"), FPL("./foo/bar")}, true},
+      {{FPL("./foo"), FPL("/foo/bar")}, false},
+      {{FPL("./foo"), FPL("//foo/bar")}, false},
+      {{FPL("/"), FPL("/")}, false},
+      {{FPL("/"), FPL("//foo")}, false},
+      {{FPL("/"), FPL("///foo")}, true},
+      {{FPL("/"), FPL("/foo/bar/baz")}, true},
+      {{FPL("//////host/bar/"), FPL("//////HOST/bar/baz")}, true},
+      {{FPL("//host/bar/"), FPL("//host/bar/baz")}, true},
+      {{FPL("//host/bar/"), FPL("//host2/bar/baz")}, false},
+      {{FPL("//host/bar/"), FPL("/HOST/bar/baz")}, false},
+      {{FPL("//host/bar/"), FPL("/host/bar/baz")}, false},
+      {{FPL("//HOST/foo"), FPL("//host/foo/bar")}, true},
+      {{FPL("/foo"), FPL("/foo/bar/baz")}, true},
+      {{FPL("/foo/bar.txt"), FPL("/foo/bar/baz")}, false},
+      {{FPL("/foo/bar"), FPL("/foo//bar/baz")}, true},
+      {{FPL("/foo/bar"), FPL("/FOO//bar/baz/")}, false},
+      {{FPL("/foo/bar"), FPL("/foo//bar/baz/")}, true},
+      {{FPL("/foo/bar"), FPL("/foo/bar")}, false},
+      {{FPL("/foo/bar"), FPL("/foo/bar/baz")}, true},
+      {{FPL("/foo/bar"), FPL("/foo/bar2/baz")}, false},
+      {{FPL("/foo/bar"), FPL("/foo2/bar/baz")}, false},
+      {{FPL("/foo/bar/"), FPL("/foo/bar/baz")}, true},
+      {{FPL("/foo/bar/baz"), FPL("/foo/bar")}, false},
+      {{FPL("foo"), FPL("./foo/bar/baz")}, true},
+      {{FPL("foo"), FPL("")}, false},
+      {{FPL("foo"), FPL(".")}, false},
+      {{FPL("foo"), FPL(".")}, false},
+      {{FPL("foo"), FPL("boo/bar/baz")}, false},
+      {{FPL("foo"), FPL("foo/bar/baz")}, true},
+      {{FPL("foo/b:"), FPL("foo/B:/baz")}, false},
+      {{FPL("foo/bar"), FPL("/foo/bar/baz")}, false},
+      {{FPL("foo/bar"), FPL("foo/bar/baz")}, true},
+      {{FPL("foo/bar"), FPL("foo/bar2/baz")}, false},
+      {{FPL("foo/bar"), FPL("foo2/bar/baz")}, false},
+      {{FPL("foo/bar/../baz"), FPL("foo/baz/aaa")}, false},
 #if defined(FILE_PATH_USES_DRIVE_LETTERS)
-      {{FPL("c:/foo/bar"), FPL("c:/foo/bar/baz")}, true},
-      {{FPL("E:/foo/bar"), FPL("e:/foo/bar/baz")}, true},
-      {{FPL("f:/foo/bar"), FPL("F:/foo/bar/baz")}, true},
-      {{FPL("E:/Foo/bar"), FPL("e:/foo/bar/baz")}, false},
-      {{FPL("f:/foo/bar"), FPL("F:/foo/Bar/baz")}, false},
-      {{FPL("c:/"), FPL("c:/foo/bar/baz")}, true},
+      {{FPL("./c:"), FPL("C:foo")}, true},
+      {{FPL("c:"), FPL("*:/foo/bar/baz")}, false},
+      {{FPL("c:"), FPL("C:/foo")}, true},
       {{FPL("c:"), FPL("c:/foo/bar/baz")}, true},
+      {{FPL("c:"), FPL("C:foo")}, true},
+      {{FPL("c:/"), FPL("C:/foo")}, true},
+      {{FPL("c:/"), FPL("c:/foo/bar/baz")}, true},
+      // IsParentSlow() splits "c:/" -> ["c:", "/"], "C:foo" -> ["C:", "foo"].
+      // Since the components of "c:/" aren't a prefix of the components of
+      // "C:foo", it concludes that it isn't a parent.
+      {{FPL("c:/"), FPL("C:foo")}, false},
+      {{FPL("c:/foo"), FPL("C:foo/bar")}, false},
+      {{FPL("c:/foo/bar"), FPL("c:///foo/bar/baz")}, true},
+      {{FPL("c:/foo/bar"), FPL("c://foo/bar/baz")}, false},
+      {{FPL("c:/foo/bar"), FPL("c:/foo/bar/baz")}, true},
+      {{FPL("c:/foo/bar"), FPL("c:/foo/bar2/baz")}, false},
+      {{FPL("c:/foo/bar"), FPL("c:/foo2/bar/baz")}, false},
       {{FPL("c:/foo/bar"), FPL("d:/foo/bar/baz")}, false},
       {{FPL("c:/foo/bar"), FPL("D:/foo/bar/baz")}, false},
       {{FPL("C:/foo/bar"), FPL("d:/foo/bar/baz")}, false},
-      {{FPL("c:/foo/bar"), FPL("c:/foo2/bar/baz")}, false},
+      {{FPL("c:foo"), FPL("C:/foo/bar")}, false},
+      {{FPL("c:foo"), FPL("C:foo/bar")}, true},
+      {{FPL("c:foo/bar"), FPL("C:foo/bar/baz")}, true},
+      {{FPL("E:/Foo/bar"), FPL("e:/foo/bar/baz")}, false},
+      {{FPL("E:/foo/bar"), FPL("e:/foo/bar/baz")}, true},
       {{FPL("e:/foo/bar"), FPL("E:/foo2/bar/baz")}, false},
+      {{FPL("f:/foo/bar"), FPL("F:/foo/Bar/baz")}, false},
+      {{FPL("f:/foo/bar"), FPL("F:/foo/bar/baz")}, true},
       {{FPL("F:/foo/bar"), FPL("f:/foo2/bar/baz")}, false},
-      {{FPL("c:/foo/bar"), FPL("c:/foo/bar2/baz")}, false},
 #endif  // FILE_PATH_USES_DRIVE_LETTERS
 #if defined(FILE_PATH_USES_WIN_SEPARATORS)
-      {{FPL("\\foo\\bar"), FPL("\\foo\\bar\\baz")}, true},
-      {{FPL("\\foo/bar"), FPL("\\foo\\bar\\baz")}, true},
+      // Mix different types of separators in the same test case.
       {{FPL("\\foo/bar"), FPL("\\foo/bar/baz")}, true},
-      {{FPL("\\"), FPL("\\foo\\bar\\baz")}, true},
-      {{FPL(""), FPL("\\foo\\bar\\baz")}, false},
-      {{FPL("\\foo\\bar"), FPL("\\foo2\\bar\\baz")}, false},
-      {{FPL("\\foo\\bar"), FPL("\\foo\\bar2\\baz")}, false},
+      {{FPL("\\foo/bar"), FPL("\\foo\\bar/baz")}, true},
+      {{FPL("\\foo/bar"), FPL("\\foo\\/\\/bar/baz")}, true},
 #endif  // FILE_PATH_USES_WIN_SEPARATORS
   });
 
@@ -578,7 +761,39 @@ TEST_F(FilePathTest, IsParentTest) {
     EXPECT_EQ(parent.IsParent(child), cases[i].expected)
         << "i: " << i << ", parent: " << parent.value()
         << ", child: " << child.value();
+
+#if defined(FILE_PATH_USES_WIN_SEPARATORS)
+    // Using different separators should not affect the result.
+    FilePath parent_swapped(swap_separators(parent));
+    FilePath child_swapped(swap_separators(child));
+
+    EXPECT_EQ(parent_swapped.IsParent(child_swapped), cases[i].expected)
+        << "i (swapped): " << i << ", parent: " << parent_swapped.value()
+        << ", child: " << child_swapped.value();
+#endif  // defined(FILE_PATH_USES_WIN_SEPARATORS)
   }
+}
+
+TEST_F(FilePathTest, IsParentFastTest) {
+  {
+    test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(features::kFastFilePathIsParent);
+    FilePath::InitializeFeatures();
+    IsParentTest(/*is_fast=*/true);
+  }
+  // Reset feature state.
+  FilePath::InitializeFeatures();
+}
+
+TEST_F(FilePathTest, IsParentSlowTest) {
+  {
+    test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(features::kFastFilePathIsParent);
+    FilePath::InitializeFeatures();
+    IsParentTest(/*is_fast=*/false);
+  }
+  // Reset feature state.
+  FilePath::InitializeFeatures();
 }
 
 TEST_F(FilePathTest, AppendRelativePathTest) {
@@ -1443,11 +1658,9 @@ TEST_F(FilePathTest, PrintToOstream) {
   EXPECT_EQ("foo", ss.str());
 }
 
-#if BUILDFLAG(ENABLE_BASE_TRACING)
 TEST_F(FilePathTest, TracedValueSupport) {
   EXPECT_EQ(perfetto::TracedValueToString(FilePath(FPL("foo"))), "foo");
 }
-#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
 // Test GetHFSDecomposedForm should return empty result for invalid UTF-8
 // strings.

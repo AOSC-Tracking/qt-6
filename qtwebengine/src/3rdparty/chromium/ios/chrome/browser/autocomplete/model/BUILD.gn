@@ -32,16 +32,19 @@ source_set("model") {
 
   deps = [
     "//base",
+    "//components/application_locale_storage",
     "//components/browser_sync",
     "//components/history/core/browser",
     "//components/language/core/browser",
     "//components/omnibox/browser",
     "//components/omnibox/resources:omnibox_pedal_synonyms",
     "//components/prefs",
+    "//components/saved_tab_groups/public",
     "//components/signin/public/identity_manager",
     "//components/strings",
     "//components/sync",
     "//components/unified_consent",
+    "//ios/chrome/browser/aim/model:aim_availability",
     "//ios/chrome/browser/bookmarks/model",
     "//ios/chrome/browser/history/model",
     "//ios/chrome/browser/optimization_guide/model",
@@ -60,5 +63,17 @@ source_set("model") {
     "//ios/web",
     "//ios/web/public",
     "//url",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "remote_suggestions_service_factory_unittest.mm" ]
+  deps = [
+    ":model",
+    "//base/test:test_support",
+    "//ios/chrome/browser/shared/model/profile/test",
+    "//ios/web/public/test",
+    "//testing/gtest",
   ]
 }

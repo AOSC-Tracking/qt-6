@@ -26,8 +26,10 @@
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/interaction/element_tracker.h"
 #include "ui/base/interaction/interactive_test.h"
+#include "ui/base/interaction/interactive_test_definitions.h"
 #include "ui/base/interaction/interactive_test_internal.h"
 #include "ui/base/metadata/metadata_types.h"
+#include "ui/base/test/ui_controls.h"
 #include "ui/views/interaction/element_tracker_views.h"
 #include "ui/views/interaction/interaction_test_util_mouse.h"
 #include "ui/views/interaction/interactive_views_test_internal.h"
@@ -72,6 +74,8 @@ class InteractiveViewsTestApi : public ui::test::InteractiveTestApi {
   // callbacks to ensure completion, and prints an error on failure. The context
   // will be pulled from `context_widget()`.
   template <typename... Args>
+    requires(sizeof...(Args) > 0 &&
+             (ui::test::internal::IsValueOrRvalue<Args> && ...))
   bool RunTestSequence(Args&&... steps);
 
   // Naming views:
@@ -342,9 +346,13 @@ class InteractiveViewsTestApi : public ui::test::InteractiveTestApi {
   //
   // This verb is only available in interactive test suites; see
   // `RequireInteractiveTest()`.
+  //
+  // The optional `modifier_keys` parameter can be set to any combination of
+  // `ui_controls::AcceleratorState`.
   [[nodiscard]] StepBuilder ClickMouse(
       ui_controls::MouseButton button = ui_controls::LEFT,
-      bool release = true);
+      bool release = true,
+      int modifier_keys = ui_controls::kNoAccelerator);
 
   // Depresses the left mouse button at the current cursor position and drags to
   // the target `position`. The `reference` element will be used based on how
@@ -364,39 +372,38 @@ class InteractiveViewsTestApi : public ui::test::InteractiveTestApi {
   //
   // This verb is only available in interactive test suites; see
   // `RequireInteractiveTest()`.
+  //
+  // The optional `modifier_keys` parameter can be set to any combination of
+  // `ui_controls::AcceleratorState`.
   [[nodiscard]] StepBuilder ReleaseMouse(
-      ui_controls::MouseButton button = ui_controls::LEFT);
+      ui_controls::MouseButton button = ui_controls::LEFT,
+      int modifier_keys = ui_controls::kNoAccelerator);
 
   // As IfElement(), but `condition` takes a single argument that is a const
   // View pointer. If `element` is not a view of type V, then the test will
   // fail.
-  template <typename C,
-            typename T,
-            typename U = MultiStep,
-            typename V = internal::ViewArgType<0, C>>
+  template <typename C, typename V = internal::ViewArgType<0, C>>
     requires ui::test::internal::HasSignature<
         C,
         bool(const V*)>  // NOLINT(readability/casting)
   [[nodiscard]] static StepBuilder IfView(ElementSpecifier element,
                                           C&& condition,
-                                          T&& then_steps,
-                                          U&& else_steps = MultiStep());
+                                          ThenBlock then_steps,
+                                          ElseBlock else_steps = Else());
 
   // As IfElementMatches(), but `function` takes a single argument that is a
   // const View pointer. If `element` is not a view of type V, then the test
   // will fail.
   template <typename F,
             typename M,
-            typename T,
-            typename U = MultiStep,
             typename R = ui::test::internal::ReturnTypeOf<F>,
             typename V = internal::ViewArgType<0, F>>
     requires ui::test::internal::HasSignature<F, R(const V*)>
   [[nodiscard]] static StepBuilder IfViewMatches(ElementSpecifier element,
                                                  F&& function,
                                                  M&& matcher,
-                                                 T&& then_steps,
-                                                 U&& else_steps = MultiStep());
+                                                 ThenBlock then_steps,
+                                                 ElseBlock else_steps = Else());
 
   // Executes `then_steps` if `property` of the view `element` (which must be of
   // the correct View type) matches `matcher`, otherwise executes `else_steps`.
@@ -404,18 +411,32 @@ class InteractiveViewsTestApi : public ui::test::InteractiveTestApi {
   // Note that bare literal strings cannot be passed as `matcher` for properties
   // with string values, you will need to either explicitly pass a
   // std::[u16]string or explicitly construct a testing::Eq matcher.
-  template <typename R,
-            typename M,
-            typename V,
-            typename T,
-            typename U = MultiStep>
+  template <typename R, typename M, typename V>
     requires internal::IsView<V>
   [[nodiscard]] static StepBuilder IfViewPropertyMatches(
       ElementSpecifier element,
       R (V::*property)() const,
       M&& matcher,
-      T&& then_steps,
-      U&& else_steps = MultiStep());
+      ThenBlock then_steps,
+      ElseBlock else_steps = Else());
+
+  // On some platforms, context menu operations run in an OS message pump that
+  // ignores non-input events, so async Kombucha does not work, as the posted
+  // tasks won't be run.
+  //
+  // Wrap any context menu operation (including the triggering event, if it is a
+  // `ClickMouse(ui_controls::RIGHT)`) up to and including the step that closes
+  // the context menu in this modifier. If your test fails to close the context
+  // menu, it may hang, as there is no single automated way to clean up context
+  // menus in Views.
+  template <typename... Args>
+  [[nodiscard]] static MultiStep MayInvolveNativeContextMenu(Args&&... args) {
+#if BUILDFLAG(IS_MAC)
+    return WithoutDelay(std::forward<Args>(args)...);
+#else
+    return Steps(std::forward<Args>(args)...);
+#endif
+  }
 
   // Sets the context widget. Must be called before RunTestSequence() or any of
   // the mouse functions.
@@ -516,6 +537,8 @@ const T* InteractiveViewsTestApi::AsView(const ui::TrackedElement* el) {
 }
 
 template <typename... Args>
+  requires(sizeof...(Args) > 0 &&
+           (ui::test::internal::IsValueOrRvalue<Args> && ...))
 bool InteractiveViewsTestApi::RunTestSequence(Args&&... steps) {
   return RunTestSequenceInContext(
       ElementTrackerViews::GetContextForWidget(context_widget()),
@@ -549,7 +572,7 @@ ui::InteractionSequence::StepBuilder InteractiveViewsTestApi::NameViewRelative(
           if (!IsViewClass<V>(view)) {
             LOG(ERROR) << "NameView(): Target View is of type "
                        << view->GetClassName() << " but expected "
-                       << V::MetaData()->type_name();
+                       << V::kViewClassName;
             seq->FailForTesting();
             return;
           }
@@ -595,15 +618,15 @@ ui::InteractionSequence::StepBuilder InteractiveViewsTestApi::WithView(
 }
 
 // static
-template <typename C, typename T, typename U, typename V>
+template <typename C, typename V>
   requires ui::test::internal::HasSignature<
       C,
       bool(const V*)>  // NOLINT(readability/casting)
 ui::InteractionSequence::StepBuilder InteractiveViewsTestApi::IfView(
     ElementSpecifier element,
     C&& condition,
-    T&& then_steps,
-    U&& else_steps) {
+    ThenBlock then_steps,
+    ElseBlock else_steps) {
   return std::move(
       IfElement(element,
                 base::BindOnce(
@@ -614,24 +637,19 @@ ui::InteractionSequence::StepBuilder InteractiveViewsTestApi::IfView(
                       return std::move(condition).Run(view);
                     },
                     ui::test::internal::MaybeBind(std::forward<C>(condition))),
-                std::forward<T>(then_steps), std::forward<U>(else_steps))
+                std::move(then_steps), std::move(else_steps))
           .SetDescription("IfView()"));
 }
 
 // static
-template <typename F,
-          typename M,
-          typename T,
-          typename U,
-          typename R,
-          typename V>
+template <typename F, typename M, typename R, typename V>
   requires ui::test::internal::HasSignature<F, R(const V*)>
 ui::InteractionSequence::StepBuilder InteractiveViewsTestApi::IfViewMatches(
     ElementSpecifier element,
     F&& function,
     M&& matcher,
-    T&& then_steps,
-    U&& else_steps) {
+    ThenBlock then_steps,
+    ElseBlock else_steps) {
   return std::move(
       IfElementMatches(
           element,
@@ -643,30 +661,31 @@ ui::InteractionSequence::StepBuilder InteractiveViewsTestApi::IfViewMatches(
                 return std::move(condition).Run(view);
               },
               ui::test::internal::MaybeBind(std::forward<F>(function))),
-          testing::Matcher<R>(std::forward<M>(matcher)),
-          std::forward<T>(then_steps), std::forward<U>(else_steps))
+          testing::Matcher<ui::test::internal::MatcherTypeFor<R>>(
+              std::forward<M>(matcher)),
+          std::move(then_steps), std::move(else_steps))
           .SetDescription("IfViewMatches()"));
 }
 
 // static
-template <typename R, typename M, typename V, typename T, typename U>
+template <typename R, typename M, typename V>
   requires internal::IsView<V>
 ui::InteractionSequence::StepBuilder
 InteractiveViewsTestApi::IfViewPropertyMatches(ElementSpecifier element,
                                                R (V::*property)() const,
                                                M&& matcher,
-                                               T&& then_steps,
-                                               U&& else_steps) {
+                                               ThenBlock then_steps,
+                                               ElseBlock else_steps) {
   using Return = std::remove_cvref_t<R>;
   base::OnceCallback<Return(const V*)> function = base::BindOnce(
       [](R (V::*property)() const, const V* view) -> Return {
         return (view->*property)();
       },
       std::move(property));
-  return std::move(
-      IfViewMatches(element, std::move(function), std::forward<M>(matcher),
-                    std::forward<T>(then_steps), std::forward<U>(else_steps))
-          .SetDescription("IfViewPropertyMatches()"));
+  return std::move(IfViewMatches(element, std::move(function),
+                                 std::forward<M>(matcher),
+                                 std::move(then_steps), std::move(else_steps))
+                       .SetDescription("IfViewPropertyMatches()"));
 }
 
 // static
@@ -690,7 +709,7 @@ InteractiveViewsTestApi::NameChildViewByType(ElementSpecifier parent,
                                      base::OwnedRef(index)))
                        .SetDescription(base::StringPrintf(
                            "NameChildViewByType<%s>( \"%s\" %zu )",
-                           V::MetaData()->type_name(), name.data(), index)));
+                           V::kViewClassName, name.data(), index)));
 }
 
 // static
@@ -714,7 +733,7 @@ InteractiveViewsTestApi::NameDescendantViewByType(ElementSpecifier ancestor,
                                           base::OwnedRef(index)))
                        .SetDescription(base::StringPrintf(
                            "NameDescendantViewByType<%s>( \"%s\" %zu )",
-                           V::MetaData()->type_name(), name.data(), index)));
+                           V::kViewClassName, name.data(), index)));
 }
 
 // static
@@ -737,17 +756,19 @@ ui::InteractionSequence::StepBuilder InteractiveViewsTestApi::CheckView(
   StepBuilder builder;
   builder.SetDescription("CheckView()");
   ui::test::internal::SpecifyElement(builder, view);
+  using MatcherType = ui::test::internal::MatcherTypeFor<R>;
   builder.SetStartCallback(base::BindOnce(
-      [](base::OnceCallback<R(V*)> function, testing::Matcher<R> matcher,
+      [](base::OnceCallback<R(V*)> function,
+         testing::Matcher<MatcherType> matcher,
          ui::InteractionSequence* seq, ui::TrackedElement* el) {
         if (!ui::test::internal::MatchAndExplain(
                 "CheckView()", matcher,
-                std::move(function).Run(AsView<V>(el)))) {
+                MatcherType(std::move(function).Run(AsView<V>(el))))) {
           seq->FailForTesting();
         }
       },
       ui::test::internal::MaybeBind(std::forward<F>(function)),
-      testing::Matcher<R>(std::forward<M>(matcher))));
+      testing::Matcher<MatcherType>(std::forward<M>(matcher))));
   return builder;
 }
 
@@ -761,15 +782,17 @@ ui::InteractionSequence::StepBuilder InteractiveViewsTestApi::CheckViewProperty(
   StepBuilder builder;
   builder.SetDescription("CheckViewProperty()");
   ui::test::internal::SpecifyElement(builder, view);
+  using MatcherType = ui::test::internal::MatcherTypeFor<R>;
   builder.SetStartCallback(base::BindOnce(
-      [](R (V::*property)() const, testing::Matcher<R> matcher,
+      [](R (V::*property)() const, testing::Matcher<MatcherType> matcher,
          ui::InteractionSequence* seq, ui::TrackedElement* el) {
         if (!ui::test::internal::MatchAndExplain(
-                "CheckViewProperty()", matcher, (AsView<V>(el)->*property)())) {
+                "CheckViewProperty()", matcher,
+                MatcherType((AsView<V>(el)->*property)()))) {
           seq->FailForTesting();
         }
       },
-      property, testing::Matcher<R>(std::forward<M>(matcher))));
+      property, testing::Matcher<MatcherType>(std::forward<M>(matcher))));
   return builder;
 }
 
@@ -794,14 +817,16 @@ InteractiveViewsTestApi::WaitForViewPropertyCallback(
   // The first step will check the property, and either immediately send the
   // event or install the observer that will send the event when the state
   // achieves the correct value.
+  using MatcherType = ui::test::internal::MatcherTypeFor<R>;
   auto observe_property = base::BindOnce(
       [](RefCountedSubscription subscription, R (V::*property)() const,
          base::CallbackListSubscription (V::*add_listener)(
              ui::metadata::PropertyChangedCallback),
-         ui::CustomElementEventType event_type, testing::Matcher<R> matcher,
+         ui::CustomElementEventType event_type,
+         testing::Matcher<MatcherType> matcher,
          ui::TrackedElement* el) {
         auto* const view = AsView<V>(el);
-        if (matcher.Matches((view->*property)())) {
+        if (matcher.Matches(MatcherType((view->*property)()))) {
           // Property is already in the desired state, send event immediately.
           ui::ElementTracker::GetFrameworkDelegate()->NotifyCustomEvent(
               el, event_type);
@@ -810,8 +835,8 @@ InteractiveViewsTestApi::WaitForViewPropertyCallback(
           subscription->data = (view->*add_listener)(base::BindRepeating(
               [](V* view, R (V::*property)() const,
                  ui::CustomElementEventType event_type,
-                 testing::Matcher<R> matcher) {
-                if (matcher.Matches((view->*property)())) {
+                 testing::Matcher<MatcherType> matcher) {
+                if (matcher.Matches(MatcherType((view->*property)()))) {
                   ElementTrackerViews::GetInstance()->NotifyCustomEvent(
                       event_type, view);
                 }
@@ -820,16 +845,16 @@ InteractiveViewsTestApi::WaitForViewPropertyCallback(
         }
       },
       subscription, property, add_listener, event_type,
-      testing::Matcher<R>(std::forward<M>(matcher)));
+      testing::Matcher<MatcherType>(std::forward<M>(matcher)));
 
-  auto steps = Steps(std::move(AfterShow(view, std::move(observe_property))
-                                   .SetMustRemainVisible(true)),
-                     AfterEvent(view, event_type, [subscription]() {
-                       // Need to reference subscription by value so that it is
-                       // not discarded until this step runs or the sequence
-                       // fails.
-                       subscription->data = base::CallbackListSubscription();
-                     }));
+  auto steps = Steps(
+      AfterShow(view, std::move(observe_property)).SetMustRemainVisible(true),
+      AfterEvent(view, event_type, [subscription]() {
+        // Need to reference subscription by value so that it is
+        // not discarded until this step runs or the sequence
+        // fails.
+        subscription->data = base::CallbackListSubscription();
+      }));
   AddDescriptionPrefix(
       steps, base::StrCat({"WaitForProperty( ", event_type.GetName(), ", )"}));
   return steps;

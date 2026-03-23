@@ -1,9 +1,10 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwasmwebview_p.h"
-#include <private/qwebview_p.h>
-#include <private/qwebviewloadrequest_p.h>
+#include <QtWebView/qwebview.h>
+#include <QtWebView/qwebviewloadinginfo.h>
 
 #include <QtCore/qmap.h>
 #include <QtGui/qguiapplication.h>
@@ -15,12 +16,44 @@
 #include <QAbstractEventDispatcher>
 #include <QThread>
 
+#include <emscripten/emscripten.h>
 #include <iostream>
 
 QT_BEGIN_NAMESPACE
 
-QWasmWebViewSettingsPrivate::QWasmWebViewSettingsPrivate(QObject *p) : QAbstractWebViewSettings(p)
+QWasmWebViewSettingsPrivate::QWasmWebViewSettingsPrivate() { }
+
+bool QWasmWebViewSettingsPrivate::doTestAttribute(WebAttribute attribute) const
 {
+    switch (attribute) {
+    case QWebViewSettings::WebAttribute::LocalStorageEnabled:
+        return localStorageEnabled();
+    case QWebViewSettings::WebAttribute::JavaScriptEnabled:
+        return javaScriptEnabled();
+    case QWebViewSettings::WebAttribute::AllowFileAccess:
+        return allowFileAccess();
+    case QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls:
+        return localContentCanAccessFileUrls();
+    }
+    return false;
+}
+
+void QWasmWebViewSettingsPrivate::doSetAttribute(WebAttribute attribute, bool value)
+{
+    switch (attribute) {
+    case QWebViewSettings::WebAttribute::LocalStorageEnabled:
+        setLocalStorageEnabled(value);
+        break;
+    case QWebViewSettings::WebAttribute::JavaScriptEnabled:
+        setJavaScriptEnabled(value);
+        break;
+    case QWebViewSettings::WebAttribute::AllowFileAccess:
+        setAllowFileAccess(value);
+        break;
+    case QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls:
+        setLocalContentCanAccessFileUrls(value);
+        break;
+    }
 }
 
 bool QWasmWebViewSettingsPrivate::localStorageEnabled() const
@@ -71,25 +104,13 @@ void QWasmWebViewSettingsPrivate::setAllowFileAccess(bool enabled)
     qWarning("setAllowFileAccess() not supported on this platform");
 }
 
-QWasmWebViewPrivate::QWasmWebViewPrivate(QObject *p) : QAbstractWebView(p), m_window(0)
+QWasmWebViewPrivate::QWasmWebViewPrivate(QWebView *view) : QWebViewPrivate(view), m_window(view)
 {
-    m_settings = new QWasmWebViewSettingsPrivate(this);
+    m_settings = new QWasmWebViewSettingsPrivate();
+    QMetaObject::invokeMethod(this, &QWasmWebViewPrivate::initializeIFrame, Qt::QueuedConnection);
 }
 
 QWasmWebViewPrivate::~QWasmWebViewPrivate() { }
-
-void QWasmWebViewPrivate::setParentView(QObject *view)
-{
-    m_parentWindow = qobject_cast<QWindow *>(view);
-    if (m_parentWindow)
-        QMetaObject::invokeMethod(this, &QWasmWebViewPrivate::initializeIFrame, Qt::QueuedConnection);
-}
-
-void QWasmWebViewPrivate::geometryChange(const QRectF &geometry)
-{
-    m_geometry = { geometry.toRect() };
-    updateGeometry();
-}
 
 QString QWasmWebViewPrivate::httpUserAgent() const
 {
@@ -103,6 +124,11 @@ void QWasmWebViewPrivate::setHttpUserAgent(const QString &userAgent)
 {
     Q_UNUSED(userAgent);
     qWarning("setHttpUserAgent() not supported on this platform");
+}
+
+QUrl QWasmWebViewPrivate::url() const
+{
+    return m_currentUrl;
 }
 
 void QWasmWebViewPrivate::setUrl(const QUrl &url)
@@ -201,44 +227,51 @@ void QWasmWebViewPrivate::deleteAllCookies()
     qWarning("deleteAllCookies() not supported on this platform");
 }
 
-void QWasmWebViewPrivate::runJavaScriptPrivate(const QString &script, int callbackId)
+void QWasmWebViewPrivate::runJavaScript(const QString &script,
+                                        const std::function<void(const QVariant &)> &resultCallback)
 {
     Q_UNUSED(script);
-    Q_UNUSED(callbackId);
-    qWarning("runJavaScriptPrivate() not supported on this platform");
+    Q_UNUSED(resultCallback);
+    qWarning("runJavaScript() not supported on this platform");
 }
 
-QAbstractWebViewSettings *QWasmWebViewPrivate::getSettings() const
+QWebViewSettingsPrivate *QWasmWebViewPrivate::settings() const
 {
     return m_settings;
 }
 
+// clang-format off
+EM_JS(void, addResizeObservers, (emscripten::EM_VAL clientAreaHandle, emscripten::EM_VAL frameHandle), {
+    var clientArea = Emval.toValue(clientAreaHandle);
+    var frame = Emval.toValue(frameHandle);
+    const resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+            frame.width = entry.contentBoxSize[0].inlineSize;
+            frame.height = entry.contentBoxSize[0].blockSize;
+        }
+    });
+    resizeObserver.observe(clientArea);
+});
+// clang-format on
+
 void QWasmWebViewPrivate::initializeIFrame()
 {
-    if (auto wasmWindow = dynamic_cast<QNativeInterface::Private::QWasmWindow *>(m_parentWindow->handle())) {
-        auto document = wasmWindow->document();
-        auto clientArea = wasmWindow->clientArea();
+    auto wasmWindow = dynamic_cast<QNativeInterface::Private::QWasmWindow *>(m_window->handle());
+    Q_ASSERT(wasmWindow);
 
-        m_iframe = document.call<emscripten::val>("createElement", emscripten::val("iframe"));
-        clientArea.call<void>("appendChild", *m_iframe);
-        (*m_iframe)["style"].set("position", "absolute");
-        (*m_iframe)["style"].set("border", "none");
-        m_window = QWindow::fromWinId(reinterpret_cast<WId>(&m_iframe.value()));
-        Q_EMIT nativeWindowChanged(m_window);
-        updateGeometry();
-        // NOTE: Make sure any pending url is set now.
-        setUrl(m_currentUrl);
-    }
-}
+    auto document = wasmWindow->document();
+    auto clientArea = wasmWindow->clientArea();
 
-void QWasmWebViewPrivate::updateGeometry()
-{
-    if (m_iframe && m_geometry) {
-        (*m_iframe)["style"].set("width", std::to_string(m_geometry->width()) + "px");
-        (*m_iframe)["style"].set("height", std::to_string(m_geometry->height()) + "px");
-        (*m_iframe)["style"].set("top", std::to_string(m_geometry->top()) + "px");
-        (*m_iframe)["style"].set("left", std::to_string(m_geometry->left()) + "px");
-    }
+    m_iframe = document.call<emscripten::val>("createElement", emscripten::val("iframe"));
+    clientArea.call<void>("appendChild", *m_iframe);
+    (*m_iframe)["style"].set("position", "absolute");
+    (*m_iframe)["style"].set("border", "none");
+    (*m_iframe)["style"].set("top", "0px");
+    (*m_iframe)["style"].set("left", "0px");
+    addResizeObservers(clientArea.as_handle(), m_iframe.value().as_handle());
+
+    // NOTE: Make sure any pending url is set now.
+    setUrl(m_currentUrl);
 }
 
 QT_END_NAMESPACE

@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //  W A R N I N G
 //  -------------
@@ -27,6 +29,11 @@ public:
 protected:
     qreal m_width = 2.0;
     Qt::PenCapStyle m_capStyle = Qt::PenCapStyle::SquareCap;
+    Qt::PenJoinStyle m_joinStyle = Qt::PenJoinStyle::BevelJoin;
+    QLineSeries::LineStyle m_lineStyle = QLineSeries::LineStyle::Straight;
+    QLineSeries::StrokeStyle m_strokeStyle = QLineSeries::StrokeStyle::SolidLine;
+    qreal m_dashOffset = 0.0;
+    QList<qreal> m_dashPattern = {4, 2};
 
 private:
     Q_DECLARE_PUBLIC(QLineSeries)

@@ -12,7 +12,10 @@
 #include <optional>
 
 #include "src/common/globals.h"
+#include "src/flags/flags.h"
+#include "src/objects/visitors.h"
 #include "src/utils/allocation.h"
+#include "src/wasm/value-type.h"
 
 namespace v8 {
 class Isolate;
@@ -20,11 +23,15 @@ class Isolate;
 
 namespace v8::internal::wasm {
 
+class StackMemory;
+
 struct JumpBuffer {
   Address sp;
   Address fp;
   Address pc;
   void* stack_limit;
+  StackMemory* parent = nullptr;
+
   // We track the state below to prevent stack corruptions under the sandbox
   // security model.
   // Assuming that the external pointer to the jump buffer has been corrupted
@@ -46,16 +53,8 @@ struct JumpBuffer {
   StackState state;
 };
 
-constexpr int kJmpBufSpOffset = offsetof(JumpBuffer, sp);
-constexpr int kJmpBufFpOffset = offsetof(JumpBuffer, fp);
-constexpr int kJmpBufPcOffset = offsetof(JumpBuffer, pc);
-constexpr int kJmpBufStackLimitOffset = offsetof(JumpBuffer, stack_limit);
-constexpr int kJmpBufStateOffset = offsetof(JumpBuffer, state);
-
 class StackMemory {
  public:
-  static constexpr ExternalPointerTag kManagedTag = kWasmStackMemoryTag;
-
   static std::unique_ptr<StackMemory> New() {
     return std::unique_ptr<StackMemory>(new StackMemory());
   }
@@ -65,14 +64,25 @@ class StackMemory {
   static StackMemory* GetCentralStackView(Isolate* isolate);
 
   ~StackMemory();
-  void* jslimit() const {
-    return (active_segment_ ? active_segment_->limit_ : limit_) +
-           kJSLimitOffsetKB * KB;
-  }
+  void* jslimit() const;
   Address base() const {
-    return active_segment_ ? active_segment_->base()
-                           : reinterpret_cast<Address>(limit_ + size_);
+    Address memory_limit = active_segment_
+                               ? active_segment_->base()
+                               : reinterpret_cast<Address>(limit_ + size_);
+#ifdef USE_SIMULATOR
+    // To perform runtime calls with different signatures, some simulators
+    // prepare a fixed number of arguments which is an upper bound of the actual
+    // parameter count. The extra stack slots contain arbitrary data and are
+    // never used, but with stack-switching this can happen close to the stack
+    // start, so we need to reserve a safety gap to ensure that the addresses
+    // are at least mapped to prevent a crash.
+    constexpr int kStackBaseSafetyOffset = 20 * kSystemPointerSize;
+#else
+    constexpr int kStackBaseSafetyOffset = 0;
+#endif
+    return memory_limit - kStackBaseSafetyOffset;
   }
+  bool IsValidContinuation(Tagged<WasmContinuationObject> cont);
   JumpBuffer* jmpbuf() { return &jmpbuf_; }
   bool Contains(Address addr) {
     if (!owned_) {
@@ -108,9 +118,12 @@ class StackMemory {
       segment = segment->next_segment_;
     }
   }
+  void Iterate(v8::internal::RootVisitor* v, Isolate* isolate);
+
   Address old_fp() { return active_segment_->old_fp; }
-  bool Grow(Address current_fp);
+  bool Grow(Address current_fp, size_t min_size);
   Address Shrink();
+  void ShrinkTo(Address stack_address);
   void Reset();
 
   class StackSegment {
@@ -151,11 +164,22 @@ class StackMemory {
     stack_switch_info_.source_fp = kNullAddress;
   }
 
-#ifdef DEBUG
-  static constexpr int kJSLimitOffsetKB = 80;
-#else
-  static constexpr int kJSLimitOffsetKB = 40;
-#endif
+  static int JSCentralStackLimitMarginKB() { return DEBUG_BOOL ? 80 : 40; }
+
+  static int JSGrowableStackLimitMarginKB() {
+    if (!v8_flags.experimental_wasm_growable_stacks) {
+      return JSCentralStackLimitMarginKB();
+    }
+    // The limiting factor for this margin is the stack space used by outgoing
+    // stack parameters in wasm. They can take up to 16KB (1000 simd
+    // parameters, minus register parameters) and are not taken into account
+    // by stack checks.
+    // TODO(42204615): look into changing the stack check to take outgoing
+    // stack parameters into account.
+    static_assert(kMaxValueTypeSize == 16);
+    static_assert(kV8MaxWasmFunctionParams == 1000);
+    return 20;
+  }
 
   friend class StackPool;
 
@@ -166,6 +190,9 @@ class StackMemory {
   constexpr static uint32_t stack_switch_target_sp_offset() {
     return OFFSET_OF(StackMemory, stack_switch_info_) +
            OFFSET_OF(StackMemory::StackSwitchInfo, target_sp);
+  }
+  constexpr static uint32_t jmpbuf_offset() {
+    return OFFSET_OF(StackMemory, jmpbuf_);
   }
 
  private:
@@ -188,7 +215,21 @@ class StackMemory {
   StackSwitchInfo stack_switch_info_;
   StackSegment* first_segment_ = nullptr;
   StackSegment* active_segment_ = nullptr;
+  Tagged<WasmContinuationObject> current_cont_ = {};
 };
+
+constexpr int kStackSpOffset =
+    wasm::StackMemory::jmpbuf_offset() + offsetof(JumpBuffer, sp);
+constexpr int kStackFpOffset =
+    wasm::StackMemory::jmpbuf_offset() + offsetof(JumpBuffer, fp);
+constexpr int kStackPcOffset =
+    wasm::StackMemory::jmpbuf_offset() + offsetof(JumpBuffer, pc);
+constexpr int kStackLimitOffset =
+    wasm::StackMemory::jmpbuf_offset() + offsetof(JumpBuffer, stack_limit);
+constexpr int kStackParentOffset =
+    wasm::StackMemory::jmpbuf_offset() + offsetof(JumpBuffer, parent);
+constexpr int kStackStateOffset =
+    wasm::StackMemory::jmpbuf_offset() + offsetof(JumpBuffer, state);
 
 // A pool of "finished" stacks, i.e. stacks whose last frame have returned and
 // whose memory can be reused for new suspendable computations.

@@ -8,9 +8,10 @@ qt_configure_add_summary_entry(ARGS "graphs-2d-donut-pie") # These are tightly w
 qt_configure_add_summary_entry(ARGS "graphs-2d-line")
 qt_configure_add_summary_entry(ARGS "graphs-2d-scatter")
 qt_configure_add_summary_entry(ARGS "graphs-2d-spline")
+qt_configure_add_summary_entry(ARGS "graphs-2d-custom")
 qt_configure_end_summary_section() # end of "Qt Graphs 2D" section
 
-if(NOT QT_FEATURE_graphs_2d_area AND NOT QT_FEATURE_graphs_2d_bar AND NOT QT_FEATURE_graphs_2d_donut_pie AND NOT QT_FEATURE_graphs_2d_line AND NOT QT_FEATURE_graphs_2d_scatter AND NOT QT_FEATURE_graphs_2d_spline)
+if(NOT QT_FEATURE_graphs_2d_area AND NOT QT_FEATURE_graphs_2d_bar AND NOT QT_FEATURE_graphs_2d_donut_pie AND NOT QT_FEATURE_graphs_2d_line AND NOT QT_FEATURE_graphs_2d_scatter AND NOT QT_FEATURE_graphs_2d_spline AND NOT QT_FEATURE_graphs_2d_custom)
     message("You must have one of the 2D features ON, or nothing will be built.")
 else()
     qt_internal_extend_target(Graphs
@@ -98,6 +99,72 @@ else()
             animation/qsplinecontrolanimation.cpp animation/qsplinecontrolanimation_p.h
         DEFINES
             USE_SPLINEGRAPH
+    )
+    qt_internal_extend_target(Graphs CONDITION QT_FEATURE_graphs_2d_custom
+        SOURCES
+            customchart/qcustomseries.cpp customchart/qcustomseries.h customchart/qcustomseries_p.h
+            customchart/qcustomseriesdata.cpp customchart/qcustomseriesdata_p.h
+
+            qsgrenderer/customrenderer.cpp qsgrenderer/customrenderer_p.h
+        DEFINES
+            USE_CUSTOMGRAPH
+    )
+
+    set(LOCAL_TRACE_SOURCE_2D
+            graphs2d/qsgrenderer/axisrenderer.cpp
+            graphs2d/qgraphsview.cpp
+    )
+
+
+    if(QT_FEATURE_graphs_2d_bar)
+        set(LOCAL_TRACE_SOURCE_2D
+                ${LOCAL_TRACE_SOURCE_2D}
+                graphs2d/qsgrenderer/barsrenderer.cpp
+                graphs2d/barchart/qbarmodelmapper.cpp
+        )
+    endif()
+
+    if(QT_FEATURE_graphs_2d_donut_pie)
+        set(LOCAL_TRACE_SOURCE_2D
+                ${LOCAL_TRACE_SOURCE_2D}
+                graphs2d/qsgrenderer/pierenderer.cpp
+                graphs2d/piechart/qpiemodelmapper.cpp
+                graphs2d/piechart/qpieseries.cpp
+        )
+    endif()
+
+    if(QT_FEATURE_graphs_2d_spline)
+        set(LOCAL_TRACE_SOURCE_2D
+                ${LOCAL_TRACE_SOURCE_2D}
+                graphs2d/splinechart/qsplineseries.cpp
+        )
+    endif()
+
+    if(QT_FEATURE_graphs_2d_area)
+        set(LOCAL_TRACE_SOURCE_2D
+                ${LOCAL_TRACE_SOURCE_2D}
+                graphs2d/qsgrenderer/arearenderer.cpp
+        )
+    endif()
+    if(QT_FEATURE_graphs_2d_area OR QT_FEATURE_graphs_2d_line OR QT_FEATURE_graphs_2d_scatter
+        OR QT_FEATURE_graphs_2d_spline)
+        set(LOCAL_TRACE_SOURCE_2D
+                ${LOCAL_TRACE_SOURCE_2D}
+                graphs2d/qsgrenderer/pointrenderer.cpp
+                graphs2d/xychart/qxymodelmapper.cpp
+        )
+    endif()
+
+    if(QT_FEATURE_graphs_2d_custom)
+        set(LOCAL_TRACE_SOURCE_2D
+                ${LOCAL_TRACE_SOURCE_2D}
+                graphs2d/qsgrenderer/customrenderer.cpp
+        )
+    endif()
+
+    set(TRACE_SOURCES_2D
+            ${LOCAL_TRACE_SOURCE_2D}
+        PARENT_SCOPE
     )
 endif()
 

@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -39,12 +40,12 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as Bindings from '../../models/bindings/bindings.js';
 import type * as Extensions from '../../models/extensions/extensions.js';
 import * as Logs from '../../models/logs/logs.js';
 import * as Trace from '../../models/trace/trace.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
+import * as Tracing from '../../services/tracing/tracing.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -124,7 +125,7 @@ const UIStrings = {
    * @description Tooltip text that appears when hovering over the largeicon load button in the
    * Network Panel. This action prompts the user to select a HAR file to upload to DevTools.
    */
-  importHarFile: 'Import `HAR` file...',
+  importHarFile: 'Import `HAR` file…',
   /**
    * @description Tooltip text that appears when hovering over the download button in the Network
    * panel, when the setting to allow generating HAR files with sensitive data is enabled. HAR is
@@ -143,14 +144,14 @@ const UIStrings = {
    * the Network panel, when the setting to allow generating HAR files with sensitive data is
    * enabled.
    */
-  exportHarSanitized: 'Export `HAR` (sanitized)...',
+  exportHarSanitized: 'Export `HAR` (sanitized)…',
   /**
    * @description Context menu item in the context menu for the download button of the Network panel,
    * which is only available when the Network setting to allow generating HAR with sensitive data
    * is active. HAR is a file format (HTTP Archive) and should not be translated. This action
    * triggers the download of a HAR file with sensitive data included.
    */
-  exportHarWithSensitiveData: 'Export `HAR` (with sensitive data)...',
+  exportHarWithSensitiveData: 'Export `HAR` (with sensitive data)…',
   /**
    *@description Text for throttling the network
    */
@@ -159,7 +160,7 @@ const UIStrings = {
    *@description Text in Network Panel to tell the user to reload the page to capture screenshots.
    *@example {Ctrl + R} PH1
    */
-  hitSToReloadAndCaptureFilmstrip: 'Hit {PH1} to reload and capture filmstrip.',
+  hitSToReloadAndCaptureFilmstrip: 'Press {PH1} to reload and capture filmstrip.',
   /**
    * @description A context menu item that is shown for resources in other panels
    * to open them in the Network panel.
@@ -176,16 +177,16 @@ const UIStrings = {
   /**
    *@description Text in Network Panel that is displayed whilst the recording is in progress.
    */
-  recordingFrames: 'Recording frames...',
+  recordingFrames: 'Recording frames…',
   /**
    *@description Text in Network Panel that is displayed when frames are being fetched.
    */
-  fetchingFrames: 'Fetching frames...',
+  fetchingFrames: 'Fetching frames…',
   /**
    * @description Text of a button in the Network panel's toolbar that open Network Conditions panel in the drawer.
    */
   moreNetworkConditions: 'More network conditions…',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkPanel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 let networkPanelInstance: NetworkPanel;
@@ -390,10 +391,10 @@ export class NetworkPanel extends UI.Panel.Panel implements
     return networkPanelInstance;
   }
 
-  static revealAndFilter(filters: {
-    filterType: NetworkForward.UIFilter.FilterType|null,
+  static revealAndFilter(filters: Array<{
+    filterType: NetworkForward.UIFilter.FilterType | null,
     filterValue: string,
-  }[]): Promise<void> {
+  }>): Promise<void> {
     const panel = NetworkPanel.instance();
     let filterString = '';
     for (const filter of filters) {
@@ -405,13 +406,6 @@ export class NetworkPanel extends UI.Panel.Panel implements
     }
     panel.networkLogView.setTextFilterValue(filterString);
     return UI.ViewManager.ViewManager.instance().showView('network');
-  }
-
-  static async selectAndShowRequest(
-      request: SDK.NetworkRequest.NetworkRequest, tab: NetworkForward.UIRequestLocation.UIRequestTabs,
-      options?: NetworkForward.UIRequestLocation.FilterOptions): Promise<void> {
-    const panel = NetworkPanel.instance();
-    await panel.selectAndActivateRequest(request, tab, options);
   }
 
   throttlingSelectForTest(): UI.Toolbar.ToolbarComboBox {
@@ -578,7 +572,7 @@ export class NetworkPanel extends UI.Panel.Panel implements
   }
 
   private load(): void {
-    if (this.filmStripRecorder && this.filmStripRecorder.isRecording()) {
+    if (this.filmStripRecorder?.isRecording()) {
       if (this.pendingStopTimer) {
         window.clearTimeout(this.pendingStopTimer);
       }
@@ -688,9 +682,6 @@ export class NetworkPanel extends UI.Panel.Panel implements
     this.hideRequestPanel();
   }
 
-  private onRowSizeChanged(): void {
-    this.updateUI();
-  }
   private onRequestSelected(event: Common.EventTarget.EventTargetEvent<SDK.NetworkRequest.NetworkRequest|null>): void {
     const request = event.data;
     this.currentRequest = request;
@@ -809,8 +800,8 @@ export class NetworkPanel extends UI.Panel.Panel implements
       return;
     }
     if (target instanceof Workspace.UISourceCode.UISourceCode) {
-      const resource = Bindings.ResourceUtils.resourceForURL(target.url());
-      if (resource && resource.request) {
+      const resource = SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(target.url());
+      if (resource?.request) {
         appendRevealItem(resource.request);
       } else {
         appendRevealItemMissingData();
@@ -831,7 +822,7 @@ export class NetworkPanel extends UI.Panel.Panel implements
 
   private onFilmFrameSelected(event: Common.EventTarget.EventTargetEvent<number>): void {
     const timestamp = event.data;
-    this.overviewPane.setWindowTimes(0, timestamp);
+    this.overviewPane.setWindowTimes(Trace.Types.Timing.Milli(0), Trace.Types.Timing.Milli(timestamp));
   }
 
   private onFilmFrameEnter(event: Common.EventTarget.EventTargetEvent<number>): void {
@@ -883,8 +874,8 @@ export class RequestIdRevealer implements Common.Revealer.Revealer<NetworkForwar
 export class NetworkLogWithFilterRevealer implements
     Common.Revealer
         .Revealer<Extensions.ExtensionServer.RevealableNetworkRequestFilter|NetworkForward.UIFilter.UIRequestFilter> {
-  reveal(request: Extensions.ExtensionServer.RevealableNetworkRequestFilter|
-         NetworkForward.UIFilter.UIRequestFilter): Promise<void> {
+  reveal(request: Extensions.ExtensionServer.RevealableNetworkRequestFilter|NetworkForward.UIFilter.UIRequestFilter):
+      Promise<void> {
     if ('filters' in request) {
       return NetworkPanel.revealAndFilter(request.filters);
     }
@@ -892,26 +883,24 @@ export class NetworkLogWithFilterRevealer implements
   }
 }
 
-export class FilmStripRecorder implements Trace.TracingManager.TracingManagerClient {
-  private tracingManager: Trace.TracingManager.TracingManager|null;
-  private resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel|null;
-  private readonly timeCalculator: NetworkTimeCalculator;
-  private readonly filmStripView: PerfUI.FilmStripView.FilmStripView;
-  private callback: ((filmStrip: Trace.Extras.FilmStrip.Data) => void)|null;
+export class FilmStripRecorder implements Tracing.TracingManager.TracingManagerClient {
+  #tracingManager: Tracing.TracingManager.TracingManager|null = null;
+  #resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel|null = null;
+  readonly #timeCalculator: NetworkTimeCalculator;
+  readonly #filmStripView: PerfUI.FilmStripView.FilmStripView;
+  #callback: ((filmStrip: Trace.Extras.FilmStrip.Data) => void)|null = null;
   // Used to fetch screenshots of the page load and show them in the panel.
-  #traceEngine: Trace.TraceModel.Model;
+  #traceEngine: Trace.TraceModel.Model = Trace.TraceModel.Model.createWithSubsetOfHandlers({
+    Screenshots: Trace.Handlers.ModelHandlers.Screenshots,
+  });
   #collectedTraceEvents: Trace.Types.Events.Event[] = [];
 
-  constructor(timeCalculator: NetworkTimeCalculator, filmStripView: PerfUI.FilmStripView.FilmStripView) {
-    this.#traceEngine = Trace.TraceModel.Model.createWithSubsetOfHandlers({
-      Screenshots: Trace.Handlers.ModelHandlers.Screenshots,
-    });
-
-    this.tracingManager = null;
-    this.resourceTreeModel = null;
-    this.timeCalculator = timeCalculator;
-    this.filmStripView = filmStripView;
-    this.callback = null;
+  constructor(
+      timeCalculator: NetworkTimeCalculator,
+      filmStripView: PerfUI.FilmStripView.FilmStripView,
+  ) {
+    this.#timeCalculator = timeCalculator;
+    this.#filmStripView = filmStripView;
   }
 
   traceEventsCollected(events: Trace.Types.Events.Event[]): void {
@@ -919,10 +908,10 @@ export class FilmStripRecorder implements Trace.TracingManager.TracingManagerCli
   }
 
   async tracingComplete(): Promise<void> {
-    if (!this.tracingManager) {
+    if (!this.#tracingManager) {
       return;
     }
-    this.tracingManager = null;
+    this.#tracingManager = null;
     await this.#traceEngine.parse(this.#collectedTraceEvents);
 
     const data = this.#traceEngine.parsedTrace(this.#traceEngine.size() - 1) as
@@ -930,23 +919,23 @@ export class FilmStripRecorder implements Trace.TracingManager.TracingManagerCli
     if (!data) {
       return;
     }
-    const zeroTimeInSeconds = Trace.Types.Timing.Seconds(this.timeCalculator.minimumBoundary());
+    const zeroTimeInSeconds = Trace.Types.Timing.Seconds(this.#timeCalculator.minimumBoundary());
     const filmStrip =
         Trace.Extras.FilmStrip.fromParsedTrace(data, Trace.Helpers.Timing.secondsToMicro(zeroTimeInSeconds));
 
-    if (this.callback) {
-      this.callback(filmStrip);
+    if (this.#callback) {
+      this.#callback(filmStrip);
     }
-    this.callback = null;
+    this.#callback = null;
     // Now we have created the film strip and stored the data, we need to reset
     // the trace processor so that it is ready to record again if the user
     // refreshes the page.
     this.#traceEngine.resetProcessor();
 
-    if (this.resourceTreeModel) {
-      this.resourceTreeModel.resumeReload();
+    if (this.#resourceTreeModel) {
+      this.#resourceTreeModel.resumeReload();
     }
-    this.resourceTreeModel = null;
+    this.#resourceTreeModel = null;
   }
 
   tracingBufferUsage(): void {
@@ -957,36 +946,36 @@ export class FilmStripRecorder implements Trace.TracingManager.TracingManagerCli
 
   startRecording(): void {
     this.#collectedTraceEvents = [];
-    this.filmStripView.reset();
-    this.filmStripView.setStatusText(i18nString(UIStrings.recordingFrames));
+    this.#filmStripView.reset();
+    this.#filmStripView.setStatusText(i18nString(UIStrings.recordingFrames));
     const tracingManager =
-        SDK.TargetManager.TargetManager.instance().scopeTarget()?.model(Trace.TracingManager.TracingManager);
-    if (this.tracingManager || !tracingManager) {
+        SDK.TargetManager.TargetManager.instance().scopeTarget()?.model(Tracing.TracingManager.TracingManager);
+    if (this.#tracingManager || !tracingManager) {
       return;
     }
 
-    this.tracingManager = tracingManager;
-    this.resourceTreeModel = this.tracingManager.target().model(SDK.ResourceTreeModel.ResourceTreeModel);
-    void this.tracingManager.start(this, '-*,disabled-by-default-devtools.screenshot', '');
+    this.#tracingManager = tracingManager;
+    this.#resourceTreeModel = this.#tracingManager.target().model(SDK.ResourceTreeModel.ResourceTreeModel);
+    void this.#tracingManager.start(this, '-*,disabled-by-default-devtools.screenshot');
 
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.FilmStripStartedRecording);
   }
 
   isRecording(): boolean {
-    return Boolean(this.tracingManager);
+    return Boolean(this.#tracingManager);
   }
 
   stopRecording(callback: (filmStrip: Trace.Extras.FilmStrip.Data) => void): void {
-    if (!this.tracingManager) {
+    if (!this.#tracingManager) {
       return;
     }
 
-    this.tracingManager.stop();
-    if (this.resourceTreeModel) {
-      this.resourceTreeModel.suspendReload();
+    this.#tracingManager.stop();
+    if (this.#resourceTreeModel) {
+      this.#resourceTreeModel.suspendReload();
     }
-    this.callback = callback;
-    this.filmStripView.setStatusText(i18nString(UIStrings.fetchingFrames));
+    this.#callback = callback;
+    this.#filmStripView.setStatusText(i18nString(UIStrings.fetchingFrames));
   }
 }
 

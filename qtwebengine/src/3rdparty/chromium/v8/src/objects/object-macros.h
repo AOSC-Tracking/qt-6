@@ -14,6 +14,13 @@
 // for fields that can be written to and read from multiple threads at the same
 // time. See comments in src/base/atomicops.h for the memory ordering sematics.
 
+// First, ensure that we do not include object-macros.h twice without including
+// object-macros-undef.h in between.
+#ifdef V8_OBJECT_MACROS_DEFINED
+#error Include object-macros-undef.h before including object-macros.h again
+#endif
+#define V8_OBJECT_MACROS_DEFINED
+
 #include "src/base/memory.h"
 
 // V8 objects are defined as:
@@ -78,18 +85,6 @@
 #define OBJECT_CONSTRUCTORS_IMPL(Type, Super)                           \
   inline void Type::CheckTypeOnCast() { SLOW_DCHECK(Is##Type(*this)); } \
   inline Type::Type(Address ptr) : Super(ptr) { CheckTypeOnCast(); }
-
-#define NEVER_READ_ONLY_SPACE   \
-  inline Heap* GetHeap() const; \
-  inline Isolate* GetIsolate() const;
-
-// TODO(leszeks): Add checks in the factory that we never allocate these
-// objects in RO space.
-#define NEVER_READ_ONLY_SPACE_IMPL(Type)                                   \
-  Heap* Type::GetHeap() const { return GetHeapFromWritableObject(*this); } \
-  Isolate* Type::GetIsolate() const {                                      \
-    return GetIsolateFromWritableObject(*this);                            \
-  }
 
 #define DECL_PRIMITIVE_GETTER(name, type) inline type name() const;
 
@@ -447,6 +442,53 @@
   }
 
 // Host objects in ReadOnlySpace can't define the isolate-less accessor.
+#define DECL_LAZY_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(name, type) \
+  inline void init_##name();                                                  \
+  inline bool has_##name() const;                                             \
+  inline type name(i::IsolateForSandbox isolate) const;                       \
+  inline void set_##name(i::IsolateForSandbox isolate, const type value);
+
+// Host objects in ReadOnlySpace can't define the isolate-less accessor.
+#define LAZY_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST_CHECKED2(      \
+    holder, name, type, offset, tag, get_condition, set_condition)          \
+  void holder::init_##name() {                                              \
+    HeapObject::SetupLazilyInitializedExternalPointerField(offset);         \
+  }                                                                         \
+  bool holder::has_##name() const {                                         \
+    return HeapObject::IsLazilyInitializedExternalPointerFieldInitialized(  \
+        offset);                                                            \
+  }                                                                         \
+  type holder::name(i::IsolateForSandbox isolate) const {                   \
+    DCHECK(get_condition);                                                  \
+    /* This is a workaround for MSVC error C2440 not allowing  */           \
+    /* reinterpret casts to the same type. */                               \
+    struct C2440 {};                                                        \
+    Address result =                                                        \
+        HeapObject::ReadExternalPointerField<tag>(offset, isolate);         \
+    return reinterpret_cast<type>(reinterpret_cast<C2440*>(result));        \
+  }                                                                         \
+  void holder::set_##name(i::IsolateForSandbox isolate, const type value) { \
+    DCHECK(set_condition);                                                  \
+    /* This is a workaround for MSVC error C2440 not allowing  */           \
+    /* reinterpret casts to the same type. */                               \
+    struct C2440 {};                                                        \
+    Address the_value =                                                     \
+        reinterpret_cast<Address>(reinterpret_cast<const C2440*>(value));   \
+    HeapObject::WriteLazilyInitializedExternalPointerField<tag>(            \
+        offset, isolate, the_value);                                        \
+  }
+
+#define LAZY_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST_CHECKED( \
+    holder, name, type, offset, tag, condition)                       \
+  LAZY_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST_CHECKED2(      \
+      holder, name, type, offset, tag, condition, condition)
+
+#define LAZY_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(    \
+    holder, name, type, offset, tag)                             \
+  LAZY_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST_CHECKED2( \
+      holder, name, type, offset, tag, true, true)
+
+// Host objects in ReadOnlySpace can't define the isolate-less accessor.
 #define DECL_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(name, type) \
   inline type name(i::IsolateForSandbox isolate) const;                  \
   inline void init_##name(i::IsolateForSandbox isolate,                  \
@@ -488,7 +530,7 @@
 
 #define EXTERNAL_POINTER_ACCESSORS(holder, name, type, offset, tag)           \
   type holder::name() const {                                                 \
-    i::IsolateForSandbox isolate = GetIsolateForSandbox(*this);               \
+    i::IsolateForSandbox isolate = GetCurrentIsolateForSandbox();             \
     return holder::name(isolate);                                             \
   }                                                                           \
   EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(holder, name, type, offset, \
@@ -502,7 +544,11 @@
   /* routines for relaxed- and release-acquire semantics in the future. */   \
   inline Tagged<type> name(IsolateForSandbox isolate) const;                 \
   inline Tagged<type> name(IsolateForSandbox isolate, AcquireLoadTag) const; \
-  inline bool has_##name() const;
+  inline bool has_##name() const;                                            \
+  /* Checks if the field in question is populated but unpublished. Most */   \
+  /* code shouldn't need to care (i.e. may assume regularly published */     \
+  /* fields), but some code needs to be robust to both situations. */        \
+  inline bool has_##name##_unpublished(IsolateForSandbox isolate) const;
 
 #define DECL_TRUSTED_POINTER_SETTERS(name, type)                           \
   /* Trusted pointers currently always have release-acquire semantics. */  \
@@ -540,6 +586,9 @@
   bool holder::has_##name() const {                                            \
     return !IsTrustedPointerFieldEmpty(offset);                                \
   }                                                                            \
+  bool holder::has_##name##_unpublished(IsolateForSandbox isolate) const {     \
+    return IsTrustedPointerFieldUnpublished(offset, tag, isolate);             \
+  }                                                                            \
   void holder::clear_##name() { ClearTrustedPointerField(offset); }
 
 #define DECL_CODE_POINTER_ACCESSORS(name) \
@@ -558,7 +607,7 @@
   inline void clear_##name();
 
 #define PROTECTED_POINTER_ACCESSORS(holder, name, type, offset)              \
-  static_assert(std::is_base_of<TrustedObject, holder>::value);              \
+  static_assert(std::is_base_of_v<TrustedObject, holder>);                   \
   Tagged<type> holder::name() const {                                        \
     DCHECK(has_##name());                                                    \
     return Cast<type>(ReadProtectedPointerField(offset));                    \
@@ -581,7 +630,7 @@
 
 #define RELEASE_ACQUIRE_PROTECTED_POINTER_ACCESSORS(holder, name, type,      \
                                                     offset)                  \
-  static_assert(std::is_base_of<TrustedObject, holder>::value);              \
+  static_assert(std::is_base_of_v<TrustedObject, holder>);                   \
   Tagged<type> holder::name(AcquireLoadTag tag) const {                      \
     DCHECK(has_##name(tag));                                                 \
     return Cast<type>(ReadProtectedPointerField(offset, tag));               \

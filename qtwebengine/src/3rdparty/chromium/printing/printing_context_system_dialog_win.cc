@@ -20,7 +20,8 @@ namespace printing {
 
 HWND PrintingContextSystemDialogWin::GetWindow() {
 #if BUILDFLAG(ENABLE_OOP_PRINTING)
-  if (process_behavior() == ProcessBehavior::kOopEnabledPerformSystemCalls) {
+  if (out_of_process_behavior() ==
+      OutOfProcessBehavior::kEnabledPerformSystemCalls) {
     // Delving through the view tree to get to root window happens separately
     // in the browser process (i.e., not in `PrintingContextSystemDialogWin`)
     // before sending the identified window owner to the Print Backend service.
@@ -37,8 +38,8 @@ HWND PrintingContextSystemDialogWin::GetWindow() {
 
 PrintingContextSystemDialogWin::PrintingContextSystemDialogWin(
     Delegate* delegate,
-    ProcessBehavior process_behavior)
-    : PrintingContextWin(delegate, process_behavior) {}
+    OutOfProcessBehavior out_of_process_behavior)
+    : PrintingContextWin(delegate, out_of_process_behavior) {}
 
 PrintingContextSystemDialogWin::~PrintingContextSystemDialogWin() {}
 
@@ -74,7 +75,7 @@ void PrintingContextSystemDialogWin::AskUserForSettings(
   dialog_options.nStartPage = START_PAGE_GENERAL;
   if (max_pages) {
     // Default initialize to print all the pages.
-    memset(ranges, 0, sizeof(ranges));
+    UNSAFE_TODO(memset(ranges, 0, sizeof(ranges)));
     ranges[0].nFromPage = 1;
     ranges[0].nToPage = max_pages;
     dialog_options.nPageRanges = 1;

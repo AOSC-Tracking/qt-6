@@ -4,11 +4,14 @@
 
 #include "content/browser/shared_storage/shared_storage_lock_manager.h"
 
+#include "base/metrics/histogram_functions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/services/storage/shared_storage/shared_storage_database.h"
 #include "components/services/storage/shared_storage/shared_storage_manager.h"
 #include "content/browser/shared_storage/shared_storage_runtime_manager.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/public/browser/frame_tree_node_id.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/shared_storage.mojom.h"
 #include "third_party/blink/public/common/features.h"
 
@@ -16,71 +19,30 @@ namespace content {
 
 namespace {
 
-using AccessScope = SharedStorageLockManager::AccessScope;
-using AccessType =
-    SharedStorageRuntimeManager::SharedStorageObserverInterface::AccessType;
+using AccessScope = blink::SharedStorageAccessScope;
+using AccessMethod =
+    SharedStorageRuntimeManager::SharedStorageObserverInterface::AccessMethod;
 using OperationResult = storage::SharedStorageManager::OperationResult;
+using BatchUpdateResult = storage::SharedStorageManager::BatchUpdateResult;
 
-AccessType GetAccessType(
-    const network::mojom::SharedStorageModifierMethodPtr& method,
-    AccessScope scope) {
+AccessMethod GetAccessMethod(
+    const network::mojom::SharedStorageModifierMethodPtr& method) {
   switch (method->which()) {
-    case network::mojom::SharedStorageModifierMethod::Tag::kSetMethod: {
-      switch (scope) {
-        case AccessScope::kWindow:
-          return AccessType::kDocumentSet;
-        case AccessScope::kSharedStorageWorklet:
-          return AccessType::kWorkletSet;
-        case AccessScope::kProtectedAudienceWorklet:
-          return AccessType::kWorkletSet;
-        case AccessScope::kHeader:
-          return AccessType::kHeaderSet;
-      }
-      break;
-    }
-    case network::mojom::SharedStorageModifierMethod::Tag::kAppendMethod: {
-      switch (scope) {
-        case AccessScope::kWindow:
-          return AccessType::kDocumentAppend;
-        case AccessScope::kSharedStorageWorklet:
-          return AccessType::kWorkletAppend;
-        case AccessScope::kProtectedAudienceWorklet:
-          return AccessType::kWorkletAppend;
-        case AccessScope::kHeader:
-          return AccessType::kHeaderAppend;
-      }
-      break;
-    }
-    case network::mojom::SharedStorageModifierMethod::Tag::kDeleteMethod: {
-      switch (scope) {
-        case AccessScope::kWindow:
-          return AccessType::kDocumentDelete;
-        case AccessScope::kSharedStorageWorklet:
-          return AccessType::kWorkletDelete;
-        case AccessScope::kProtectedAudienceWorklet:
-          return AccessType::kWorkletDelete;
-        case AccessScope::kHeader:
-          return AccessType::kHeaderDelete;
-      }
-      break;
-    }
-    case network::mojom::SharedStorageModifierMethod::Tag::kClearMethod: {
-      switch (scope) {
-        case AccessScope::kWindow:
-          return AccessType::kDocumentClear;
-        case AccessScope::kSharedStorageWorklet:
-          return AccessType::kWorkletClear;
-        case AccessScope::kProtectedAudienceWorklet:
-          return AccessType::kWorkletClear;
-        case AccessScope::kHeader:
-          return AccessType::kHeaderClear;
-      }
-      break;
-    }
+    case network::mojom::SharedStorageModifierMethod::Tag::kSetMethod:
+      return AccessMethod::kSet;
+    case network::mojom::SharedStorageModifierMethod::Tag::kAppendMethod:
+      return AccessMethod::kAppend;
+    case network::mojom::SharedStorageModifierMethod::Tag::kDeleteMethod:
+      return AccessMethod::kDelete;
+    case network::mojom::SharedStorageModifierMethod::Tag::kClearMethod:
+      return AccessMethod::kClear;
   }
 
   NOTREACHED();
 }
+
+constexpr char kBatchUpdateErrorMessage[] =
+    "sharedStorage.batchUpdate() failed";
 
 }  // namespace
 
@@ -102,12 +64,16 @@ void SharedStorageLockManager::SharedStorageUpdate(
         method_with_options,
     const url::Origin& shared_storage_origin,
     AccessScope scope,
-    FrameTreeNodeId main_frame_id,
+    GlobalRenderFrameHostId main_frame_id,
+    const base::UnguessableToken& worklet_devtools_token,
     SharedStorageUpdateCallback callback) {
+  base::UmaHistogramBoolean("Storage.SharedStorage.UpdateMethod.HasLockOption",
+                            !!method_with_options->with_lock);
+
   SharedStorageUpdateHelper(std::move(method_with_options),
                             shared_storage_origin, scope, main_frame_id,
-                            std::move(callback),
-                            /*batch_update_id=*/std::nullopt);
+                            worklet_devtools_token, std::move(callback),
+                            /*legacy_batch_update_id=*/std::nullopt);
 }
 
 void SharedStorageLockManager::SharedStorageBatchUpdate(
@@ -116,12 +82,17 @@ void SharedStorageLockManager::SharedStorageBatchUpdate(
     const std::optional<std::string>& with_lock,
     const url::Origin& shared_storage_origin,
     AccessScope scope,
-    FrameTreeNodeId main_frame_id,
+    GlobalRenderFrameHostId main_frame_id,
+    const base::UnguessableToken& worklet_devtools_token,
     SharedStorageUpdateCallback callback) {
+  base::UmaHistogramBoolean(
+      "Storage.SharedStorage.BatchUpdateMethod.HasLockOption", !!with_lock);
+
   auto ready_to_handle_batch_update_callback = base::BindOnce(
       &SharedStorageLockManager::OnReadyToHandleBatchUpdate,
       weak_ptr_factory_.GetWeakPtr(), std::move(methods_with_options),
-      shared_storage_origin, scope, main_frame_id, std::move(callback));
+      shared_storage_origin, scope, main_frame_id, worklet_devtools_token,
+      std::move(callback), with_lock);
 
   if (!with_lock ||
       !base::FeatureList::IsEnabled(blink::features::kSharedStorageWebLocks)) {
@@ -167,7 +138,7 @@ SharedStorageLockManager::LockRequestReceiverState::LockRequestReceiverState(
 SharedStorageLockManager::LockRequestReceiverState::
     ~LockRequestReceiverState() = default;
 
-SharedStorageLockManager::BatchUpdateState::BatchUpdateState(
+SharedStorageLockManager::LegacyBatchUpdateState::LegacyBatchUpdateState(
     size_t pending_updates_count,
     SharedStorageUpdateCallback callback,
     mojo::AssociatedRemote<blink::mojom::LockHandle> lock_handle,
@@ -178,26 +149,29 @@ SharedStorageLockManager::BatchUpdateState::BatchUpdateState(
       lock_handle(std::move(lock_handle)),
       lock_manager(std::move(lock_manager)) {}
 
-SharedStorageLockManager::BatchUpdateState::BatchUpdateState() = default;
-SharedStorageLockManager::BatchUpdateState::BatchUpdateState(
-    BatchUpdateState&& other) = default;
-SharedStorageLockManager::BatchUpdateState::~BatchUpdateState() = default;
+SharedStorageLockManager::LegacyBatchUpdateState::LegacyBatchUpdateState() =
+    default;
+SharedStorageLockManager::LegacyBatchUpdateState::LegacyBatchUpdateState(
+    LegacyBatchUpdateState&& other) = default;
+SharedStorageLockManager::LegacyBatchUpdateState::~LegacyBatchUpdateState() =
+    default;
 
 void SharedStorageLockManager::SharedStorageUpdateHelper(
     network::mojom::SharedStorageModifierMethodWithOptionsPtr
         method_with_options,
     const url::Origin& shared_storage_origin,
     AccessScope scope,
-    FrameTreeNodeId main_frame_id,
+    GlobalRenderFrameHostId main_frame_id,
+    const base::UnguessableToken& worklet_devtools_token,
     SharedStorageUpdateCallback callback,
-    std::optional<int> batch_update_id) {
+    std::optional<int> legacy_batch_update_id) {
+  const std::optional<std::string>& with_lock = method_with_options->with_lock;
+
   auto ready_to_handle_update_callback = base::BindOnce(
       &SharedStorageLockManager::OnReadyToHandleUpdate,
       weak_ptr_factory_.GetWeakPtr(), std::move(method_with_options->method),
-      shared_storage_origin, scope, main_frame_id, std::move(callback),
-      std::move(batch_update_id));
-
-  const std::optional<std::string>& with_lock = method_with_options->with_lock;
+      shared_storage_origin, scope, main_frame_id, worklet_devtools_token,
+      std::move(callback), with_lock, std::move(legacy_batch_update_id));
 
   if (!with_lock ||
       !base::FeatureList::IsEnabled(blink::features::kSharedStorageWebLocks)) {
@@ -215,12 +189,16 @@ void SharedStorageLockManager::OnReadyToHandleUpdate(
     network::mojom::SharedStorageModifierMethodPtr method,
     url::Origin shared_storage_origin,
     AccessScope scope,
-    FrameTreeNodeId main_frame_id,
+    GlobalRenderFrameHostId main_frame_id,
+    const base::UnguessableToken& worklet_devtools_token,
     SharedStorageUpdateCallback callback,
-    std::optional<int> batch_update_id,
+    std::optional<std::string> with_lock,
+    std::optional<int> legacy_batch_update_id,
     mojo::AssociatedRemote<blink::mojom::LockHandle> lock_handle,
     mojo::Remote<blink::mojom::LockManager> lock_manager) {
-  AccessType access_type = GetAccessType(method, scope);
+  NotifySharedStorageAccessed(method, shared_storage_origin, scope,
+                              main_frame_id, worklet_devtools_token, with_lock,
+                              legacy_batch_update_id);
 
   switch (method->which()) {
     case network::mojom::SharedStorageModifierMethod::Tag::kSetMethod: {
@@ -231,14 +209,6 @@ void SharedStorageLockManager::OnReadyToHandleUpdate(
           set_method->ignore_if_present
               ? storage::SharedStorageDatabase::SetBehavior::kIgnoreIfPresent
               : storage::SharedStorageDatabase::SetBehavior::kDefault;
-
-      storage_partition_->GetSharedStorageRuntimeManager()
-          ->NotifySharedStorageAccessed(
-              access_type, main_frame_id, shared_storage_origin.Serialize(),
-              SharedStorageEventParams::CreateForSet(
-                  base::UTF16ToUTF8(set_method->key),
-                  base::UTF16ToUTF8(set_method->value),
-                  set_method->ignore_if_present));
 
       auto completed_callback = base::BindOnce(
           [](SharedStorageUpdateCallback callback, OperationResult result) {
@@ -262,13 +232,6 @@ void SharedStorageLockManager::OnReadyToHandleUpdate(
       network::mojom::SharedStorageAppendMethodPtr& append_method =
           method->get_append_method();
 
-      storage_partition_->GetSharedStorageRuntimeManager()
-          ->NotifySharedStorageAccessed(
-              access_type, main_frame_id, shared_storage_origin.Serialize(),
-              SharedStorageEventParams::CreateForAppend(
-                  base::UTF16ToUTF8(append_method->key),
-                  base::UTF16ToUTF8(append_method->value)));
-
       auto completed_callback = base::BindOnce(
           [](SharedStorageUpdateCallback callback, OperationResult result) {
             if (result != OperationResult::kSet) {
@@ -290,12 +253,6 @@ void SharedStorageLockManager::OnReadyToHandleUpdate(
       network::mojom::SharedStorageDeleteMethodPtr& delete_method =
           method->get_delete_method();
 
-      storage_partition_->GetSharedStorageRuntimeManager()
-          ->NotifySharedStorageAccessed(
-              access_type, main_frame_id, shared_storage_origin.Serialize(),
-              SharedStorageEventParams::CreateForGetOrDelete(
-                  base::UTF16ToUTF8(delete_method->key)));
-
       auto completed_callback = base::BindOnce(
           [](SharedStorageUpdateCallback callback, OperationResult result) {
             if (result != OperationResult::kSuccess) {
@@ -314,11 +271,6 @@ void SharedStorageLockManager::OnReadyToHandleUpdate(
       break;
     }
     case network::mojom::SharedStorageModifierMethod::Tag::kClearMethod: {
-      storage_partition_->GetSharedStorageRuntimeManager()
-          ->NotifySharedStorageAccessed(
-              access_type, main_frame_id, shared_storage_origin.Serialize(),
-              SharedStorageEventParams::CreateDefault());
-
       auto completed_callback = base::BindOnce(
           [](SharedStorageUpdateCallback callback, OperationResult result) {
             if (result != OperationResult::kSuccess) {
@@ -347,11 +299,12 @@ void SharedStorageLockManager::OnReadyToHandleUpdate(
   // and release any batch lock if this was the final method in the batch. This
   // also removes any associated `blink::mojom::LockRequest` receiver in
   // `lock_request_receivers_`.
-  if (batch_update_id) {
-    auto it = pending_batch_updates_.find(batch_update_id.value());
-    CHECK(it != pending_batch_updates_.end());
+  if (legacy_batch_update_id) {
+    auto it =
+        pending_legacy_batch_updates_.find(legacy_batch_update_id.value());
+    CHECK(it != pending_legacy_batch_updates_.end());
 
-    BatchUpdateState& batch_state = it->second;
+    LegacyBatchUpdateState& batch_state = it->second;
 
     CHECK_GT(batch_state.unstarted_updates_count, 0u);
 
@@ -369,8 +322,10 @@ void SharedStorageLockManager::OnReadyToHandleBatchUpdate(
         methods_with_options,
     url::Origin shared_storage_origin,
     AccessScope scope,
-    FrameTreeNodeId main_frame_id,
+    GlobalRenderFrameHostId main_frame_id,
+    const base::UnguessableToken& worklet_devtools_token,
     SharedStorageUpdateCallback callback,
+    std::optional<std::string> with_lock,
     mojo::AssociatedRemote<blink::mojom::LockHandle> lock_handle,
     mojo::Remote<blink::mojom::LockManager> lock_manager) {
   if (methods_with_options.empty()) {
@@ -383,29 +338,72 @@ void SharedStorageLockManager::OnReadyToHandleBatchUpdate(
   }
 
   int batch_update_id = next_batch_update_id_++;
-  pending_batch_updates_.emplace(
+
+  storage_partition_->GetSharedStorageRuntimeManager()
+      ->NotifySharedStorageAccessed(
+          scope, AccessMethod::kBatchUpdate, main_frame_id,
+          shared_storage_origin.Serialize(),
+          SharedStorageEventParams::CreateForBatchUpdate(
+              worklet_devtools_token, with_lock, batch_update_id,
+              methods_with_options.size()));
+
+  if (base::FeatureList::IsEnabled(
+          network::features::kSharedStorageTransactionalBatchUpdate)) {
+    for (auto& method_with_options : methods_with_options) {
+      auto& method = method_with_options->method;
+      NotifySharedStorageAccessed(method, shared_storage_origin, scope,
+                                  main_frame_id, worklet_devtools_token,
+                                  /*with_lock=*/std::nullopt, batch_update_id);
+    }
+
+    auto completed_callback = base::BindOnce(
+        [](SharedStorageUpdateCallback callback,
+           BatchUpdateResult batch_update_result) {
+          if (batch_update_result.overall_result != OperationResult::kSuccess) {
+            std::move(callback).Run(
+                /*error_message=*/kBatchUpdateErrorMessage);
+            return;
+          }
+
+          std::move(callback).Run(/*error_message=*/{});
+        },
+        std::move(callback));
+
+    storage_partition_->GetSharedStorageManager()->BatchUpdate(
+        shared_storage_origin, std::move(methods_with_options),
+        std::move(completed_callback));
+
+    // Release any batch lock (i.e., `lock_handle` and `lock_manager` are
+    // automatically reset here). This also removes any associated
+    // `blink::mojom::LockRequest` receiver in `lock_request_receivers_`.
+    return;
+  }
+
+  pending_legacy_batch_updates_.emplace(
       batch_update_id,
-      BatchUpdateState(/*pending_updates_count=*/methods_with_options.size(),
-                       std::move(callback), std::move(lock_handle),
-                       std::move(lock_manager)));
+      LegacyBatchUpdateState(
+          /*pending_updates_count=*/methods_with_options.size(),
+          std::move(callback), std::move(lock_handle),
+          std::move(lock_manager)));
 
   for (auto& method_with_options : methods_with_options) {
     SharedStorageUpdateHelper(
         std::move(method_with_options), shared_storage_origin, scope,
-        main_frame_id,
-        base::BindOnce(&SharedStorageLockManager::OnMethodWithinBatchFinished,
-                       weak_ptr_factory_.GetWeakPtr(), batch_update_id),
+        main_frame_id, worklet_devtools_token,
+        base::BindOnce(
+            &SharedStorageLockManager::OnMethodWithinLegacyBatchUpdateFinished,
+            weak_ptr_factory_.GetWeakPtr(), batch_update_id),
         std::make_optional(batch_update_id));
   }
 }
 
-void SharedStorageLockManager::OnMethodWithinBatchFinished(
-    int batch_update_id,
+void SharedStorageLockManager::OnMethodWithinLegacyBatchUpdateFinished(
+    int legacy_batch_update_id,
     const std::string& error_message) {
-  auto it = pending_batch_updates_.find(batch_update_id);
-  CHECK(it != pending_batch_updates_.end());
+  auto it = pending_legacy_batch_updates_.find(legacy_batch_update_id);
+  CHECK(it != pending_legacy_batch_updates_.end());
 
-  BatchUpdateState& batch_state = it->second;
+  LegacyBatchUpdateState& batch_state = it->second;
 
   CHECK_GT(batch_state.unfinished_updates_count, 0u);
 
@@ -416,18 +414,16 @@ void SharedStorageLockManager::OnMethodWithinBatchFinished(
   batch_state.unfinished_updates_count--;
 
   // The last method within the batch has completed. Resolve the callback and
-  // remove the state from `pending_batch_updates_`.
+  // remove the state from `pending_legacy_batch_updates_`.
   if (batch_state.unfinished_updates_count == 0u) {
     if (batch_state.has_error) {
-      // TODO(yaoxia): decide if we want provide more detailed error message
-      // (i.e., failure for each individual method).
       std::move(batch_state.callback)
-          .Run(/*error_message=*/"sharedStorage.batchUpdate() failed");
+          .Run(/*error_message=*/kBatchUpdateErrorMessage);
     } else {
       std::move(batch_state.callback).Run(/*error_message=*/{});
     }
 
-    pending_batch_updates_.erase(it);
+    pending_legacy_batch_updates_.erase(it);
   }
 }
 
@@ -467,6 +463,71 @@ void SharedStorageLockManager::RequestLock(
                                      blink::mojom::LockMode::EXCLUSIVE,
                                      blink::mojom::LockManager::WaitMode::WAIT,
                                      std::move(lock_request_remote));
+}
+
+void SharedStorageLockManager::NotifySharedStorageAccessed(
+    const network::mojom::SharedStorageModifierMethodPtr& method,
+    const url::Origin& shared_storage_origin,
+    AccessScope scope,
+    GlobalRenderFrameHostId main_frame_id,
+    const base::UnguessableToken& worklet_devtools_token,
+    std::optional<std::string> with_lock,
+    std::optional<int> batch_update_id) {
+  AccessMethod access_method = GetAccessMethod(method);
+
+  switch (method->which()) {
+    case network::mojom::SharedStorageModifierMethod::Tag::kSetMethod: {
+      network::mojom::SharedStorageSetMethodPtr& set_method =
+          method->get_set_method();
+
+      storage_partition_->GetSharedStorageRuntimeManager()
+          ->NotifySharedStorageAccessed(
+              scope, access_method, main_frame_id,
+              shared_storage_origin.Serialize(),
+              SharedStorageEventParams::CreateForSet(
+                  base::UTF16ToUTF8(set_method->key),
+                  base::UTF16ToUTF8(set_method->value),
+                  set_method->ignore_if_present, worklet_devtools_token,
+                  with_lock, batch_update_id));
+      break;
+    }
+    case network::mojom::SharedStorageModifierMethod::Tag::kAppendMethod: {
+      network::mojom::SharedStorageAppendMethodPtr& append_method =
+          method->get_append_method();
+
+      storage_partition_->GetSharedStorageRuntimeManager()
+          ->NotifySharedStorageAccessed(
+              scope, access_method, main_frame_id,
+              shared_storage_origin.Serialize(),
+              SharedStorageEventParams::CreateForAppend(
+                  base::UTF16ToUTF8(append_method->key),
+                  base::UTF16ToUTF8(append_method->value),
+                  worklet_devtools_token, with_lock, batch_update_id));
+      break;
+    }
+    case network::mojom::SharedStorageModifierMethod::Tag::kDeleteMethod: {
+      network::mojom::SharedStorageDeleteMethodPtr& delete_method =
+          method->get_delete_method();
+
+      storage_partition_->GetSharedStorageRuntimeManager()
+          ->NotifySharedStorageAccessed(
+              scope, access_method, main_frame_id,
+              shared_storage_origin.Serialize(),
+              SharedStorageEventParams::CreateForDelete(
+                  base::UTF16ToUTF8(delete_method->key), worklet_devtools_token,
+                  with_lock, batch_update_id));
+      break;
+    }
+    case network::mojom::SharedStorageModifierMethod::Tag::kClearMethod: {
+      storage_partition_->GetSharedStorageRuntimeManager()
+          ->NotifySharedStorageAccessed(
+              scope, access_method, main_frame_id,
+              shared_storage_origin.Serialize(),
+              SharedStorageEventParams::CreateForClear(
+                  worklet_devtools_token, with_lock, batch_update_id));
+      break;
+    }
+  }
 }
 
 }  // namespace content

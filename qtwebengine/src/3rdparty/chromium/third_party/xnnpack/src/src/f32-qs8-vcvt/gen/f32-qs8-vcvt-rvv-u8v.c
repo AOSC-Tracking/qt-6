@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-qs8-vcvt/rvv.c.in
 //   Generator: tools/xngen
@@ -11,15 +12,15 @@
 
 #include <riscv_vector.h>
 
-#include "xnnpack/math.h"
-#include "xnnpack/vcvt.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/vcvt.h"
 
 
 void xnn_f32_qs8_vcvt_ukernel__rvv_u8v(
     size_t batch,
     const float* input,
     int8_t* output,
-    const struct xnn_f32_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_qs8_cvt_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

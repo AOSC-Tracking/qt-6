@@ -51,16 +51,6 @@ export class UserMetrics {
     }
   }
 
-  panelShownInLocation(panelName: string, location: 'main'|'drawer'): void {
-    const panelWithLocationName = `${panelName}-${location}`;
-    const panelWithLocation = PanelWithLocation[panelWithLocationName as keyof typeof PanelWithLocation] || 0;
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.PanelShownInLocation,
-        panelWithLocation,
-        PanelWithLocation.MAX_VALUE,
-    );
-  }
-
   settingsPanelShown(settingsViewId: string): void {
     this.panelShown('settings-' + settingsViewId);
   }
@@ -290,11 +280,6 @@ export class UserMetrics {
         EnumeratedHistogram.RecordingCopiedToClipboard, value, RecordingCopiedToClipboard.MAX_VALUE);
   }
 
-  styleTextCopied(value: StyleTextCopied): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.StyleTextCopied, value, StyleTextCopied.MAX_VALUE);
-  }
-
   cssHintShown(type: CSSHintType): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.CSSHintShown, type, CSSHintType.MAX_VALUE);
@@ -310,11 +295,6 @@ export class UserMetrics {
         EnumeratedHistogram.LighthouseCategoryUsed, type, LighthouseCategoryUsed.MAX_VALUE);
   }
 
-  cssPropertyDocumentation(type: CSSPropertyDocumentation): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.CSSPropertyDocumentation, type, CSSPropertyDocumentation.MAX_VALUE);
-  }
-
   swatchActivated(swatch: SwatchType): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.SwatchActivated, swatch, SwatchType.MAX_VALUE);
@@ -323,11 +303,6 @@ export class UserMetrics {
   animationPlaybackRateChanged(playbackRate: AnimationsPlaybackRate): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.AnimationPlaybackRateChanged, playbackRate, AnimationsPlaybackRate.MAX_VALUE);
-  }
-
-  animationPointDragged(dragType: AnimationPointDragType): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.AnimationPointDragged, dragType, AnimationPointDragType.MAX_VALUE);
   }
 
   workspacesPopulated(wallClockTimeInMilliseconds: number): void {
@@ -347,6 +322,21 @@ export class UserMetrics {
 
   freestylerEvalResponseSize(bytes: number): void {
     InspectorFrontendHostInstance.recordCountHistogram('DevTools.Freestyler.EvalResponseSize', bytes, 0, 100_000, 100);
+  }
+
+  performanceAINetworkSummaryResponseSize(bytes: number): void {
+    InspectorFrontendHostInstance.recordCountHistogram(
+        'DevTools.PerformanceAI.NetworkSummaryResponseSize', bytes, 0, 100_000, 100);
+  }
+
+  performanceAINetworkRequestDetailResponseSize(bytes: number): void {
+    InspectorFrontendHostInstance.recordCountHistogram(
+        'DevTools.PerformanceAI.NetworkRequestDetailResponseSize', bytes, 0, 100_000, 100);
+  }
+
+  performanceAIMainThreadActivityResponseSize(bytes: number): void {
+    InspectorFrontendHostInstance.recordCountHistogram(
+        'DevTools.PerformanceAI.MainThreadActivityResponseSize', bytes, 0, 100_000, 100);
   }
 }
 
@@ -545,7 +535,8 @@ export enum Action {
   AiAssistanceSideEffectConfirmed = 179,
   AiAssistanceSideEffectRejected = 180,
   AiAssistanceError = 181,
-  MAX_VALUE = 182,
+  AiAssistanceOpenedFromPerformanceInsight = 182,
+  MAX_VALUE = 183,
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
@@ -617,158 +608,9 @@ export enum PanelCodes {
   'bounce-tracking-mitigations' = 65,
   'developer-resources' = 66,
   'autofill-view' = 67,
+  freestyler = 68,
   /* eslint-enable @typescript-eslint/naming-convention */
-  MAX_VALUE = 68,
-}
-
-export enum PanelWithLocation {
-  /* eslint-disable @typescript-eslint/naming-convention */
-  'elements-main' = 1,
-  'elements-drawer' = 2,
-  'resources-main' = 3,
-  'resources-drawer' = 4,
-  'network-main' = 5,
-  'network-drawer' = 6,
-  'sources-main' = 7,
-  'sources-drawer' = 8,
-  'timeline-main' = 9,
-  'timeline-drawer' = 10,
-  'heap_profiler-main' = 11,
-  'heap_profiler-drawer' = 12,
-  'console-main' = 13,
-  'console-drawer' = 14,
-  'layers-main' = 15,
-  'layers-drawer' = 16,
-  'console-view-main' = 17,
-  'console-view-drawer' = 18,
-  'animations-main' = 19,
-  'animations-drawer' = 20,
-  'network.config-main' = 21,
-  'network.config-drawer' = 22,
-  'rendering-main' = 23,
-  'rendering-drawer' = 24,
-  'sensors-main' = 25,
-  'sensors-drawer' = 26,
-  'sources.search-main' = 27,
-  'sources.search-drawer' = 28,
-  'security-main' = 29,
-  'security-drawer' = 30,
-  'lighthouse-main' = 33,
-  'lighthouse-drawer' = 34,
-  'coverage-main' = 35,
-  'coverage-drawer' = 36,
-  'protocol-monitor-main' = 37,
-  'protocol-monitor-drawer' = 38,
-  'remote-devices-main' = 39,
-  'remote-devices-drawer' = 40,
-  'web-audio-main' = 41,
-  'web-audio-drawer' = 42,
-  'changes.changes-main' = 43,
-  'changes.changes-drawer' = 44,
-  'performance.monitor-main' = 45,
-  'performance.monitor-drawer' = 46,
-  'release-note-main' = 47,
-  'release-note-drawer' = 48,
-  'live_heap_profile-main' = 49,
-  'live_heap_profile-drawer' = 50,
-  'sources.quick-main' = 51,
-  'sources.quick-drawer' = 52,
-  'network.blocked-urls-main' = 53,
-  'network.blocked-urls-drawer' = 54,
-  'settings-preferences-main' = 55,
-  'settings-preferences-drawer' = 56,
-  'settings-workspace-main' = 57,
-  'settings-workspace-drawer' = 58,
-  'settings-experiments-main' = 59,
-  'settings-experiments-drawer' = 60,
-  'settings-blackbox-main' = 61,
-  'settings-blackbox-drawer' = 62,
-  'settings-devices-main' = 63,
-  'settings-devices-drawer' = 64,
-  'settings-throttling-conditions-main' = 65,
-  'settings-throttling-conditions-drawer' = 66,
-  'settings-emulation-locations-main' = 67,
-  'settings-emulation-locations-drawer' = 68,
-  'settings-shortcuts-main' = 69,
-  'settings-shortcuts-drawer' = 70,
-  'issues-pane-main' = 71,
-  'issues-pane-drawer' = 72,
-  'settings-keybinds-main' = 73,
-  'settings-keybinds-drawer' = 74,
-  'cssoverview-main' = 75,
-  'cssoverview-drawer' = 76,
-  'chrome_recorder-main' = 77,
-  'chrome_recorder-drawer' = 78,
-  'trust_tokens-main' = 79,
-  'trust_tokens-drawer' = 80,
-  'reporting_api-main' = 81,
-  'reporting_api-drawer' = 82,
-  'interest_groups-main' = 83,
-  'interest_groups-drawer' = 84,
-  'back_forward_cache-main' = 85,
-  'back_forward_cache-drawer' = 86,
-  'service_worker_cache-main' = 87,
-  'service_worker_cache-drawer' = 88,
-  'background_service_backgroundFetch-main' = 89,
-  'background_service_backgroundFetch-drawer' = 90,
-  'background_service_backgroundSync-main' = 91,
-  'background_service_backgroundSync-drawer' = 92,
-  'background_service_pushMessaging-main' = 93,
-  'background_service_pushMessaging-drawer' = 94,
-  'background_service_notifications-main' = 95,
-  'background_service_notifications-drawer' = 96,
-  'background_service_paymentHandler-main' = 97,
-  'background_service_paymentHandler-drawer' = 98,
-  'background_service_periodicBackgroundSync-main' = 99,
-  'background_service_periodicBackgroundSync-drawer' = 100,
-  'service_workers-main' = 101,
-  'service_workers-drawer' = 102,
-  'app_manifest-main' = 103,
-  'app_manifest-drawer' = 104,
-  'storage-main' = 105,
-  'storage-drawer' = 106,
-  'cookies-main' = 107,
-  'cookies-drawer' = 108,
-  'frame_details-main' = 109,
-  'frame_details-drawer' = 110,
-  'frame_resource-main' = 111,
-  'frame_resource-drawer' = 112,
-  'frame_window-main' = 113,
-  'frame_window-drawer' = 114,
-  'frame_worker-main' = 115,
-  'frame_worker-drawer' = 116,
-  'dom_storage-main' = 117,
-  'dom_storage-drawer' = 118,
-  'indexed_db-main' = 119,
-  'indexed_db-drawer' = 120,
-  'web_sql-main' = 121,
-  'web_sql-drawer' = 122,
-  'performance_insights-main' = 123,
-  'performance_insights-drawer' = 124,
-  'preloading-main' = 125,
-  'preloading-drawer' = 126,
-  'bounce_tracking_mitigations-main' = 127,
-  'bounce_tracking_mitigations-drawer' = 128,
-  'developer-resources-main' = 129,
-  'developer-resources-drawer' = 130,
-  'autofill-view-main' = 131,
-  'autofill-view-drawer' = 132,
-  /* eslint-enable @typescript-eslint/naming-convention */
-  MAX_VALUE = 133,
-}
-
-export enum ElementsSidebarTabCodes {
-  /* eslint-disable @typescript-eslint/naming-convention */
-  OtherSidebarPane = 0,
-  styles = 1,
-  computed = 2,
-  'elements.layout' = 3,
-  'elements.event-listeners' = 4,
-  'elements.dom-breakpoints' = 5,
-  'elements.dom-properties' = 6,
-  'accessibility.view' = 7,
-  /* eslint-enable @typescript-eslint/naming-convention */
-  MAX_VALUE = 8,
+  MAX_VALUE = 69,
 }
 
 export enum MediaTypes {
@@ -936,15 +778,14 @@ export enum KeyboardShortcutAction {
   'chrome-recorder.replay-recording' = 109,
   'chrome-recorder.toggle-code-view' = 110,
   'chrome-recorder.copy-recording-or-step' = 111,
-  'changes.revert' = 112,
-  'changes.copy' = 113,
   'elements.new-style-rule' = 114,
   'elements.refresh-event-listeners' = 115,
   'coverage.clear' = 116,
   'coverage.export' = 117,
   'timeline.dim-third-parties' = 118,
+  'main.toggle-drawer-orientation' = 119,
   /* eslint-enable @typescript-eslint/naming-convention */
-  MAX_VALUE = 119,
+  MAX_VALUE = 120,
 }
 
 export const enum IssueOpener {
@@ -976,35 +817,21 @@ export enum DevtoolsExperiments {
   'full-accessibility-tree' = 42,
   'contrast-issues' = 44,
   'experimental-cookie-features' = 45,
-  'styles-pane-css-changes' = 55,
   'instrumentation-breakpoints' = 61,
   'authored-deployed-grouping' = 63,
   'just-my-code' = 65,
   'highlight-errors-elements-panel' = 73,
   'use-source-map-scopes' = 76,
-  'network-panel-filter-bar-redesign' = 79,
-  'autofill-view' = 82,
   'timeline-show-postmessage-events' = 86,
+  'timeline-save-as-gz' = 108,
   'timeline-enhanced-traces' = 90,
   'timeline-compiled-sources' = 91,
   'timeline-debug-mode' = 93,
-  'timeline-server-timings' = 98,
-  'floating-entry-points-for-ai-assistance' = 101,
-  'timeline-experimental-insights' = 102,
-  'timeline-dim-unrelated-events' = 103,
-  'timeline-alternative-navigation' = 104,
-  'timeline-third-party-dependencies' = 106,
+  'vertical-drawer' = 107,
   /* eslint-enable @typescript-eslint/naming-convention */
 
   // Increment this when new experiments are added.
-  MAX_VALUE = 107,
-}
-
-export const enum CSSPropertyDocumentation {
-  SHOWN = 0,
-  TOGGLED_ON = 1,
-  TOGGLED_OFF = 2,
-  MAX_VALUE = 3,
+  MAX_VALUE = 109,
 }
 
 // Update DevToolsIssuesPanelIssueExpanded from tools/metrics/histograms/enums.xml if new enum is added.
@@ -1124,8 +951,36 @@ export enum IssueCreated {
   'CookieIssue::WarnThirdPartyPhaseout::SetCookie' = 83,
   'CookieIssue::ExcludeThirdPartyPhaseout::ReadCookie' = 84,
   'CookieIssue::ExcludeThirdPartyPhaseout::SetCookie' = 85,
+  'ElementAccessibilityIssue::DisallowedSelectChild' = 86,
+  'ElementAccessibilityIssue::DisallowedOptGroupChild' = 87,
+  'ElementAccessibilityIssue::NonPhrasingContentOptionChild' = 88,
+  'ElementAccessibilityIssue::InteractiveContentOptionChild' = 89,
+  'ElementAccessibilityIssue::InteractiveContentLegendChild' = 90,
+  'SRIMessageSignatureIssue::MissingSignatureHeader' = 91,
+  'SRIMessageSignatureIssue::MissingSignatureInputHeader' = 92,
+  'SRIMessageSignatureIssue::InvalidSignatureHeader' = 93,
+  'SRIMessageSignatureIssue::InvalidSignatureInputHeader' = 94,
+  'SRIMessageSignatureIssue::SignatureHeaderValueIsNotByteSequence' = 95,
+  'SRIMessageSignatureIssue::SignatureHeaderValueIsParameterized' = 96,
+  'SRIMessageSignatureIssue::SignatureHeaderValueIsIncorrectLength' = 97,
+  'SRIMessageSignatureIssue::SignatureInputHeaderMissingLabel' = 98,
+  'SRIMessageSignatureIssue::SignatureInputHeaderValueNotInnerList' = 99,
+  'SRIMessageSignatureIssue::SignatureInputHeaderValueMissingComponents' = 100,
+  'SRIMessageSignatureIssue::SignatureInputHeaderInvalidComponentType' = 101,
+  'SRIMessageSignatureIssue::SignatureInputHeaderInvalidComponentName' = 102,
+  'SRIMessageSignatureIssue::SignatureInputHeaderInvalidHeaderComponentParameter' = 103,
+  'SRIMessageSignatureIssue::SignatureInputHeaderInvalidDerivedComponentParameter' = 104,
+  'SRIMessageSignatureIssue::SignatureInputHeaderKeyIdLength' = 105,
+  'SRIMessageSignatureIssue::SignatureInputHeaderInvalidParameter' = 106,
+  'SRIMessageSignatureIssue::SignatureInputHeaderMissingRequiredParameters' = 107,
+  'SRIMessageSignatureIssue::ValidationFailedSignatureExpired' = 108,
+  'SRIMessageSignatureIssue::ValidationFailedInvalidLength' = 109,
+  'SRIMessageSignatureIssue::ValidationFailedSignatureMismatch' = 110,
+  'CorsIssue::LocalNetworkAccessPermissionDenied' = 111,
+  'SRIMessageSignatureIssue::ValidationFailedIntegrityMismatch' = 112,
+  'ElementAccessibilityIssue::InteractiveContentSummaryDescendant' = 113,
   /* eslint-enable @typescript-eslint/naming-convention */
-  MAX_VALUE = 86,
+  MAX_VALUE = 114,
 }
 
 export const enum DeveloperResourceLoaded {
@@ -1326,20 +1181,6 @@ export const enum RecordingCopiedToClipboard {
   MAX_VALUE = 9,
 }
 
-export const enum StyleTextCopied {
-  DECLARATION_VIA_CHANGED_LINE = 1,
-  ALL_CHANGES_VIA_STYLES_TAB = 2,
-  DECLARATION_VIA_CONTEXT_MENU = 3,
-  PROPERTY_VIA_CONTEXT_MENU = 4,
-  VALUE_VIA_CONTEXT_MENU = 5,
-  DECLARATION_AS_JS_VIA_CONTEXT_MENU = 6,
-  RULE_VIA_CONTEXT_MENU = 7,
-  ALL_DECLARATIONS_VIA_CONTEXT_MENU = 8,
-  ALL_DECLARATINS_AS_JS_VIA_CONTEXT_MENU = 9,
-  SELECTOR_VIA_CONTEXT_MENU = 10,
-  MAX_VALUE = 11,
-}
-
 export enum ManifestSectionCodes {
   /* eslint-disable @typescript-eslint/naming-convention -- Indexed access. */
   OtherSection = 0,
@@ -1422,19 +1263,6 @@ export const enum AnimationsPlaybackRate {
   PERCENT_10 = 2,
   OTHER = 3,
   MAX_VALUE = 4,
-}
-
-export const enum AnimationPointDragType {
-  // Animation is dragged as a whole in the Animations panel.
-  ANIMATION_DRAG = 0,
-  // A keyframe point inside animation timeline is dragged.
-  KEYFRAME_MOVE = 1,
-  // Start point of the animation inside animation timeline is dragged.
-  START_ENDPOINT_MOVE = 2,
-  // Finish point of the animation inside animation timeline is dragged.
-  FINISH_ENDPOINT_MOVE = 3,
-  OTHER = 4,
-  MAX_VALUE = 5,
 }
 
 export const enum TimelineNavigationSetting {

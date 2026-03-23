@@ -20,15 +20,8 @@ RUNTIME_FUNCTION(Runtime_TransitionElementsKind) {
   DirectHandle<JSObject> object = args.at<JSObject>(0);
   DirectHandle<Map> to_map = args.at<Map>(1);
   ElementsKind to_kind = to_map->elements_kind();
-  if (ElementsAccessor::ForKind(to_kind)
-          ->TransitionElementsKind(object, to_map)
-          .IsNothing()) {
-    // TODO(victorgomes): EffectControlLinearizer::LowerTransitionElementsKind
-    // does not handle exceptions.
-    FATAL(
-        "Fatal JavaScript invalid size error when transitioning elements kind");
-    UNREACHABLE();
-  }
+  ElementsAccessor::ForKind(to_kind)->TransitionElementsKind(isolate, object,
+                                                             to_map);
   return *object;
 }
 
@@ -37,7 +30,7 @@ RUNTIME_FUNCTION(Runtime_TransitionElementsKindWithKind) {
   DCHECK_EQ(2, args.length());
   DirectHandle<JSObject> object = args.at<JSObject>(0);
   ElementsKind to_kind = static_cast<ElementsKind>(args.smi_value_at(1));
-  JSObject::TransitionElementsKind(object, to_kind);
+  JSObject::TransitionElementsKind(isolate, object, to_kind);
   return *object;
 }
 
@@ -120,8 +113,13 @@ RUNTIME_FUNCTION(Runtime_NewArray) {
       array, 0, 0, ArrayStorageAllocationMode::DONT_INITIALIZE_ARRAY_ELEMENTS);
 
   ElementsKind old_kind = array->GetElementsKind();
-  RETURN_FAILURE_ON_EXCEPTION(isolate,
-                              ArrayConstructInitializeElements(array, &argv));
+  RETURN_FAILURE_ON_EXCEPTION(
+      isolate, ArrayConstructInitializeElements(isolate, array, &argv));
+  // If we have an allocation site, and the array constructor can't be inlined,
+  // mark this on the allocation site. If there's no allocation site yet, the
+  // optimized code will eventually optimistically try to inline and worst case
+  // will deopt and set the allocation site itself, or set the CallIC disable
+  // speculation bit.
   if (!site.is_null()) {
     if ((old_kind != array->GetElementsKind() || !can_use_type_feedback ||
          !can_inline_array_constructor)) {
@@ -129,17 +127,6 @@ RUNTIME_FUNCTION(Runtime_NewArray) {
       // can't be dealt with in the inlined optimized array constructor case.
       // We must mark the allocationsite as un-inlinable.
       site->SetDoNotInlineCall();
-    }
-  } else {
-    if (old_kind != array->GetElementsKind() || !can_inline_array_constructor) {
-      // We don't have an AllocationSite for this Array constructor invocation,
-      // i.e. it might a call from Array#map or from an Array subclass, so we
-      // just flip the bit on the global protector cell instead.
-      // TODO(bmeurer): Find a better way to mark this. Global protectors
-      // tend to back-fire over time...
-      if (Protectors::IsArrayConstructorIntact(isolate)) {
-        Protectors::InvalidateArrayConstructor(isolate);
-      }
     }
   }
 
@@ -152,7 +139,7 @@ RUNTIME_FUNCTION(Runtime_NormalizeElements) {
   DirectHandle<JSObject> array = args.at<JSObject>(0);
   CHECK(!array->HasTypedArrayOrRabGsabTypedArrayElements());
   CHECK(!IsJSGlobalProxy(*array));
-  JSObject::NormalizeElements(array);
+  JSObject::NormalizeElements(isolate, array);
   return *array;
 }
 
@@ -183,9 +170,9 @@ RUNTIME_FUNCTION(Runtime_GrowArrayElements) {
 
   if (index >= capacity) {
     bool has_grown;
-    MAYBE_ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
         isolate, has_grown,
-        object->GetElementsAccessor()->GrowCapacity(object, index));
+        object->GetElementsAccessor()->GrowCapacity(isolate, object, index));
     if (!has_grown) {
       return Smi::zero();
     }
@@ -262,26 +249,16 @@ RUNTIME_FUNCTION(Runtime_ArrayIncludes_Slow) {
   // produces the value 0.)
   int64_t index = 0;
   if (!IsUndefined(*from_index, isolate)) {
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, from_index,
-                                       Object::ToInteger(isolate, from_index));
+    double start_from;
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, start_from, Object::IntegerValue(isolate, from_index));
 
-    if (V8_LIKELY(IsSmi(*from_index))) {
-      int start_from = Smi::ToInt(*from_index);
+    if (start_from >= len) return ReadOnlyRoots(isolate).false_value();
+    if (V8_LIKELY(std::isfinite(start_from))) {
       if (start_from < 0) {
-        index = std::max<int64_t>(len + start_from, 0);
+        index = static_cast<int64_t>(std::max<double>(start_from + len, 0));
       } else {
         index = start_from;
-      }
-    } else {
-      DCHECK(IsHeapNumber(*from_index));
-      double start_from = Object::NumberValue(*from_index);
-      if (start_from >= len) return ReadOnlyRoots(isolate).false_value();
-      if (V8_LIKELY(std::isfinite(start_from))) {
-        if (start_from < 0) {
-          index = static_cast<int64_t>(std::max<double>(start_from + len, 0));
-        } else {
-          index = start_from;
-        }
       }
     }
 
@@ -364,9 +341,9 @@ RUNTIME_FUNCTION(Runtime_ArrayIndexOf) {
   // produces the value 0.)
   int64_t start_from;
   {
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, from_index,
-                                       Object::ToInteger(isolate, from_index));
-    double fp = Object::NumberValue(*from_index);
+    double fp;
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, fp, Object::IntegerValue(isolate, from_index));
     if (fp > len) return Smi::FromInt(-1);
     if (V8_LIKELY(fp >=
                   static_cast<double>(std::numeric_limits<int64_t>::min()))) {

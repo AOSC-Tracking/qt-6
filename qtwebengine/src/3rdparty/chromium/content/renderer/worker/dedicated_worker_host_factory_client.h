@@ -26,7 +26,7 @@
 
 namespace blink {
 class ChildURLLoaderFactoryBundle;
-class WebDedicatedOrSharedWorkerFetchContext;
+class WebDedicatedOrSharedWorkerGlobalScopeContext;
 class WebDedicatedWorker;
 }  // namespace blink
 
@@ -49,11 +49,6 @@ class DedicatedWorkerHostFactoryClient final
   ~DedicatedWorkerHostFactoryClient() override;
 
   // Implements blink::WebDedicatedWorkerHostFactoryClient.
-  void CreateWorkerHostDeprecated(
-      const blink::DedicatedWorkerToken& dedicated_worker_token,
-      const blink::WebURL& script_url,
-      const blink::WebSecurityOrigin& origin,
-      CreateWorkerHostCallback callback) override;
   void CreateWorkerHost(
       const blink::DedicatedWorkerToken& dedicated_worker_token,
       const blink::WebURL& script_url,
@@ -66,8 +61,8 @@ class DedicatedWorkerHostFactoryClient final
       blink::WebWorkerFetchContext* web_worker_fetch_context,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner) override;
 
-  scoped_refptr<blink::WebDedicatedOrSharedWorkerFetchContext>
-  CreateWorkerFetchContext(
+  scoped_refptr<blink::WebDedicatedOrSharedWorkerGlobalScopeContext>
+  CreateWorkerGlobalScopeContext(
       const blink::RendererPreferences& renderer_preference,
       mojo::PendingReceiver<blink::mojom::RendererPreferenceWatcher>
           watcher_receiver,

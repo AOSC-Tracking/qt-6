@@ -8,43 +8,47 @@ import * as Protocol from '../../generated/protocol.js';
 import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
-import {getMatchedStylesWithStylesheet} from '../../testing/StyleHelpers.js';
+import {getMatchedStylesWithBlankRule, getMatchedStylesWithStylesheet} from '../../testing/StyleHelpers.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 
 import * as Elements from './elements.js';
-
-describe('StylePropertiesSection', () => {
-  it('contains specificity information', async () => {
-    const specificity = {a: 0, b: 1, c: 0};
-    const selectorElement = Elements.StylePropertiesSection.StylePropertiesSection.renderSelectors(
-        [{text: '.child', specificity}], [true], new WeakMap());
-    assert.deepEqual(selectorElement.textContent, '.child');
-    assert.deepEqual(
-        Elements.StylePropertiesSection.StylePropertiesSection.getSpecificityStoredForNodeElement(
-            (selectorElement.firstChild as Element)),
-        specificity);
-  });
-
-  it('renders selectors correctly', async () => {
-    let selectorElement = Elements.StylePropertiesSection.StylePropertiesSection.renderSelectors(
-        [{text: '.child', specificity: {a: 0, b: 2, c: 0}}, {text: '.item', specificity: {a: 0, b: 2, c: 0}}], [true],
-        new WeakMap());
-    assert.deepEqual(selectorElement.textContent, '.child, .item');
-    selectorElement = Elements.StylePropertiesSection.StylePropertiesSection.renderSelectors(
-        [{text: '.child', specificity: {a: 0, b: 2, c: 0}}, {text: '& .item', specificity: {a: 0, b: 2, c: 0}}], [true],
-        new WeakMap());
-    assert.deepEqual(selectorElement.textContent, '.child, & .item');
-    selectorElement = Elements.StylePropertiesSection.StylePropertiesSection.renderSelectors(
-        [{text: '&.child', specificity: {a: 0, b: 2, c: 0}}, {text: '& .item', specificity: {a: 0, b: 2, c: 0}}],
-        [true], new WeakMap());
-    assert.deepEqual(selectorElement.textContent, '&.child, & .item');
-  });
-});
 
 describeWithMockConnection('StylesPropertySection', () => {
   let computedStyleModel: Elements.ComputedStyleModel.ComputedStyleModel;
   beforeEach(() => {
     computedStyleModel = new Elements.ComputedStyleModel.ComputedStyleModel();
+  });
+
+  it('contains specificity information', async () => {
+    const specificity = {a: 0, b: 1, c: 0};
+    const matchedStyles = await getMatchedStylesWithBlankRule({cssModel: new SDK.CSSModel.CSSModel(createTarget())});
+    const section = new Elements.StylePropertiesSection.StylePropertiesSection(
+        new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel), matchedStyles,
+        matchedStyles.nodeStyles()[0], 0, new Map(), new Map());
+    section.renderSelectors([{text: '.child', specificity}], [true], new WeakMap());
+    const selectorElement = section.element.querySelector('.selector');
+    assert.strictEqual(selectorElement?.textContent, '.child');
+    assert.deepEqual(section.element?.querySelector('devtools-tooltip')?.textContent?.trim(), 'Specificity: (0,1,0)');
+  });
+
+  it('renders selectors correctly', async () => {
+    const matchedStyles = await getMatchedStylesWithBlankRule({cssModel: new SDK.CSSModel.CSSModel(createTarget())});
+    const section = new Elements.StylePropertiesSection.StylePropertiesSection(
+        new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel), matchedStyles,
+        matchedStyles.nodeStyles()[0], 0, new Map(), new Map());
+    section.renderSelectors(
+        [{text: '.child', specificity: {a: 0, b: 2, c: 0}}, {text: '.item', specificity: {a: 0, b: 2, c: 0}}], [true],
+        new WeakMap());
+    const selectorElement = section.element.querySelector('.selector');
+    assert.deepEqual(selectorElement?.textContent, '.child, .item');
+    section.renderSelectors(
+        [{text: '.child', specificity: {a: 0, b: 2, c: 0}}, {text: '& .item', specificity: {a: 0, b: 2, c: 0}}], [true],
+        new WeakMap());
+    assert.deepEqual(selectorElement?.textContent, '.child, & .item');
+    section.renderSelectors(
+        [{text: '&.child', specificity: {a: 0, b: 2, c: 0}}, {text: '& .item', specificity: {a: 0, b: 2, c: 0}}],
+        [true], new WeakMap());
+    assert.deepEqual(selectorElement?.textContent, '&.child, & .item');
   });
 
   it('displays the proper sourceURL origin for constructed stylesheets', async () => {
@@ -65,14 +69,14 @@ describeWithMockConnection('StylesPropertySection', () => {
       matchingSelectors: [0],
     }];
     const matchedStyles =
-        await getMatchedStylesWithStylesheet(cssModel, origin, styleSheetId, header, {matchedPayload});
+        await getMatchedStylesWithStylesheet({cssModel, origin, styleSheetId, ...header, matchedPayload});
 
     const rule = matchedStyles.nodeStyles()[0].parentRule;
     const linkifier = sinon.createStubInstance(Components.Linkifier.Linkifier);
     const originNode =
         Elements.StylePropertiesSection.StylePropertiesSection.createRuleOriginNode(matchedStyles, linkifier, rule);
     assert.strictEqual(originNode.textContent, '<style>');
-    assert.isTrue(linkifier.linkifyCSSLocation.calledOnce);
+    sinon.assert.calledOnce(linkifier.linkifyCSSLocation);
     assert.strictEqual(linkifier.linkifyCSSLocation.args[0][0].styleSheetId, styleSheetId);
     assert.strictEqual(linkifier.linkifyCSSLocation.args[0][0].url, 'constructed.css');
   });
@@ -104,7 +108,7 @@ describeWithMockConnection('StylesPropertySection', () => {
       content: url === header.sourceMapURL ? '{"sources": []}' : '',
     }));
     const matchedStyles =
-        await getMatchedStylesWithStylesheet(cssModel, origin, styleSheetId, header, {matchedPayload});
+        await getMatchedStylesWithStylesheet({cssModel, origin, styleSheetId, ...header, matchedPayload});
 
     const styleSheetHeader = cssModel.styleSheetHeaderForId(styleSheetId);
     assert.exists(styleSheetHeader);
@@ -116,7 +120,7 @@ describeWithMockConnection('StylesPropertySection', () => {
     const originNode =
         Elements.StylePropertiesSection.StylePropertiesSection.createRuleOriginNode(matchedStyles, linkifier, rule);
     assert.strictEqual(originNode.textContent, 'constructed stylesheet');
-    assert.isTrue(linkifier.linkifyCSSLocation.calledOnce);
+    sinon.assert.calledOnce(linkifier.linkifyCSSLocation);
     // Since we already asserted that a sourcemap exists for our header, it's sufficient to check that
     // linkifyCSSLocation has been called. Verifying that linkifyCSSLocation applies source mapping is out of scope
     // for this unit under test.
@@ -148,7 +152,7 @@ describeWithMockConnection('StylesPropertySection', () => {
         matchingSelectors: [0],
       }];
       const matchedStyles =
-          await getMatchedStylesWithStylesheet(cssModel, origin, styleSheetId, {...range}, {matchedPayload});
+          await getMatchedStylesWithStylesheet({cssModel, origin, styleSheetId, ...range, matchedPayload});
       const declaration = matchedStyles.nodeStyles()[0];
       assert.exists(declaration);
       const section = new Elements.StylePropertiesSection.StylePropertiesSection(
@@ -171,7 +175,7 @@ describeWithMockConnection('StylesPropertySection', () => {
         matchingSelectors: [0],
       }];
       const matchedStyles =
-          await getMatchedStylesWithStylesheet(cssModel, origin, styleSheetId, {...range}, {matchedPayload});
+          await getMatchedStylesWithStylesheet({cssModel, origin, styleSheetId, ...range, matchedPayload});
       const declaration = matchedStyles.nodeStyles()[0];
       assert.exists(declaration);
       const section = new Elements.StylePropertiesSection.StylePropertiesSection(
@@ -212,8 +216,8 @@ describeWithMockConnection('StylesPropertySection', () => {
       matchingSelectors: [0],
     }];
 
-    const matchedStyles = await getMatchedStylesWithStylesheet(
-        cssModel, origin, styleSheetId, {...range}, {propertyRules, matchedPayload});
+    const matchedStyles =
+        await getMatchedStylesWithStylesheet({cssModel, origin, styleSheetId, ...range, propertyRules, matchedPayload});
 
     function assertIsPropertyRule(rule: SDK.CSSRule.CSSRule|null): asserts rule is SDK.CSSRule.CSSPropertyRule {
       assert.instanceOf(rule, SDK.CSSRule.CSSPropertyRule);
@@ -231,12 +235,12 @@ describeWithMockConnection('StylesPropertySection', () => {
     await section.setHeaderText(rule, propertyName.text);
 
     assert.isTrue(forceUpdateSpy.calledAfter(setNameSpy));
-    assert.isTrue(setNameSpy.calledOnceWithExactly(
-        styleSheetId,
+    sinon.assert.calledOnceWithExactly(
+        setNameSpy, styleSheetId,
         sinon.match(
             (r: TextUtils.TextRange.TextRange) => r.startLine === range.startLine &&
                 r.startColumn === range.startColumn && r.endLine === range.endLine && r.endColumn === range.endColumn),
-        propertyName.text));
+        propertyName.text);
   });
 
   it('renders braces correctly with a non-style-rule section', async () => {
@@ -261,7 +265,7 @@ describeWithMockConnection('StylesPropertySection', () => {
       },
     };
     const matchedStyles =
-        await getMatchedStylesWithStylesheet(cssModel, origin, styleSheetId, {...range}, {fontPaletteValuesRule});
+        await getMatchedStylesWithStylesheet({cssModel, origin, styleSheetId, ...range, fontPaletteValuesRule});
     const declaration = matchedStyles.fontPaletteValuesRule()?.style;
     assert.exists(declaration);
     const section = new Elements.StylePropertiesSection.FontPaletteValuesRuleSection(
@@ -305,7 +309,7 @@ describeWithMockConnection('StylesPropertySection', () => {
       },
     ];
     const matchedStyles =
-        await getMatchedStylesWithStylesheet(cssModel, origin, styleSheetId, {...range}, {positionTryRules});
+        await getMatchedStylesWithStylesheet({cssModel, origin, styleSheetId, ...range, positionTryRules});
     const declaration1 = matchedStyles.positionTryRules()[0].style;
     const declaration2 = matchedStyles.positionTryRules()[1].style;
     assert.exists(declaration1);

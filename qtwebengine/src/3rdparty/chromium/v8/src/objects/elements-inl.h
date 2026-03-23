@@ -5,9 +5,10 @@
 #ifndef V8_OBJECTS_ELEMENTS_INL_H_
 #define V8_OBJECTS_ELEMENTS_INL_H_
 
-#include "src/common/globals.h"
 #include "src/objects/elements.h"
+// Include the non-inl header before the rest of the headers.
 
+#include "src/common/globals.h"
 #include "src/handles/handles-inl.h"
 #include "src/objects/objects-inl.h"
 
@@ -30,10 +31,11 @@ inline MaybeHandle<FixedArray> ElementsAccessor::PrependElementIndices(
                                convert, filter);
 }
 
-inline bool ElementsAccessor::HasElement(Tagged<JSObject> holder,
+inline bool ElementsAccessor::HasElement(Isolate* isolate,
+                                         Tagged<JSObject> holder,
                                          uint32_t index,
                                          PropertyFilter filter) {
-  return HasElement(holder, index, holder->elements(), filter);
+  return HasElement(isolate, holder, index, holder->elements(), filter);
 }
 
 }  // namespace internal

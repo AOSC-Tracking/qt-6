@@ -16,6 +16,7 @@ set(qml_files
     "Dial.qml"
     "Dialog.qml"
     "DialogButtonBox.qml"
+    "DoubleSpinBox.qml"
     "Drawer.qml"
     "Frame.qml"
     "GroupBox.qml"
@@ -103,6 +104,9 @@ set_source_files_properties(VerticalHeaderViewDelegate.qml PROPERTIES
 set_source_files_properties(SearchField.qml PROPERTIES
     QT_QML_SOURCE_VERSIONS "6.10"
 )
+set_source_files_properties(DoubleSpinBox.qml PROPERTIES
+    QT_QML_SOURCE_VERSIONS "6.11"
+)
 
 add_subdirectory(impl)
 
@@ -134,6 +138,7 @@ qt_internal_add_qml_module(QuickControls2Fusion
         Qt::QuickControls2Private
         Qt::QuickPrivate
         Qt::QuickTemplates2Private
+        Qt::QuickControls2BasicPrivate
 )
 
 target_sources(qtquickcontrols2fusionstyleplugin

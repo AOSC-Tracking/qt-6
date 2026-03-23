@@ -19,16 +19,13 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/css/style_rule.h"
 
+#include "base/compiler_specific.h"
 #include "third_party/blink/renderer/core/css/cascade_layer.h"
 #include "third_party/blink/renderer/core/css/css_container_rule.h"
 #include "third_party/blink/renderer/core/css/css_counter_style_rule.h"
+#include "third_party/blink/renderer/core/css/css_custom_media_rule.h"
 #include "third_party/blink/renderer/core/css/css_font_face_rule.h"
 #include "third_party/blink/renderer/core/css/css_font_feature_values_rule.h"
 #include "third_party/blink/renderer/core/css/css_font_palette_values_rule.h"
@@ -53,6 +50,7 @@
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
 #include "third_party/blink/renderer/core/css/css_supports_rule.h"
 #include "third_party/blink/renderer/core/css/css_view_transition_rule.h"
+#include "third_party/blink/renderer/core/css/media_list.h"
 #include "third_party/blink/renderer/core/css/parser/container_query_parser.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
@@ -73,6 +71,7 @@
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
+#include "third_party/blink/renderer/platform/heap/visitor.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/wtf/size_assertions.h"
 
@@ -185,6 +184,9 @@ void StyleRuleBase::Trace(Visitor* visitor) const {
     case kPositionTry:
       To<StyleRulePositionTry>(this)->TraceAfterDispatch(visitor);
       return;
+    case kCustomMedia:
+      To<StyleRuleCustomMedia>(this)->TraceAfterDispatch(visitor);
+      return;
   }
   DUMP_WILL_BE_NOTREACHED();
 }
@@ -275,6 +277,9 @@ void StyleRuleBase::FinalizeGarbageCollectedObject() {
     case kPositionTry:
       To<StyleRulePositionTry>(this)->~StyleRulePositionTry();
       return;
+    case kCustomMedia:
+      To<StyleRuleCustomMedia>(this)->~StyleRuleCustomMedia();
+      return;
   }
   NOTREACHED();
 }
@@ -320,9 +325,9 @@ StyleRuleBase* StyleRuleBase::Copy() const {
       return To<StyleRuleNamespace>(this)->Copy();
     case kCharset:
     case kKeyframe:
-    case kFunction:
     case kMixin:
     case kApplyMixin:
+    case kCustomMedia:
       NOTREACHED();
     case kContainer:
       return To<StyleRuleContainer>(this)->Copy();
@@ -334,6 +339,8 @@ StyleRuleBase* StyleRuleBase::Copy() const {
       return To<StyleRuleViewTransition>(this)->Copy();
     case kPositionTry:
       return To<StyleRulePositionTry>(this)->Copy();
+    case kFunction:
+      return To<StyleRuleFunction>(this)->Copy();
   }
   NOTREACHED();
 }
@@ -441,6 +448,10 @@ CSSRule* StyleRuleBase::CreateCSSOMWrapper(wtf_size_t position_hint,
       rule = MakeGarbageCollected<CSSPositionTryRule>(
           To<StyleRulePositionTry>(self), parent_sheet);
       break;
+    case kCustomMedia:
+      rule = MakeGarbageCollected<CSSCustomMediaRule>(
+          To<StyleRuleCustomMedia>(self), parent_sheet);
+      break;
     case kFontFeature:
     case kKeyframe:
     case kCharset:
@@ -500,14 +511,16 @@ const CSSPropertyValueSet& StyleRule::Properties() const {
 StyleRule::StyleRule(const StyleRule& other, size_t flattened_size)
     : StyleRuleBase(kStyle), properties_(other.Properties().MutableCopy()) {
   for (unsigned i = 0; i < flattened_size; ++i) {
-    new (&SelectorArray()[i]) CSSSelector(other.SelectorArray()[i]);
+    UNSAFE_TODO(new (&SelectorArray()[i])
+                    CSSSelector(other.SelectorArray()[i]));
   }
   if (other.child_rules_ != nullptr) {
     // Since we are getting copied, we also need to copy any child rules
     // so that both old and new can be freely mutated. This also
     // parses them eagerly (see comment in StyleSheetContents'
     // copy constructor).
-    child_rules_ = MakeGarbageCollected<HeapVector<Member<StyleRuleBase>>>();
+    child_rules_ =
+        MakeGarbageCollected<GCedHeapVector<Member<StyleRuleBase>>>();
     child_rules_->ReserveInitialCapacity(other.child_rules_->size());
     for (const StyleRuleBase* child_rule : *other.child_rules_) {
       child_rules_->push_back(child_rule->Copy());
@@ -523,9 +536,8 @@ StyleRule::~StyleRule() {
     selector->~CSSSelector();
     if (is_last) {
       break;
-    } else {
-      ++selector;
     }
+    UNSAFE_TODO(++selector);
   }
 }
 
@@ -535,6 +547,23 @@ MutableCSSPropertyValueSet& StyleRule::MutableProperties() {
     properties_ = properties_->MutableCopy();
   }
   return *To<MutableCSSPropertyValueSet>(properties_.Get());
+}
+
+void StyleRule::WrapperInsertRule(CSSStyleSheet* parent_sheet,
+                                  unsigned index,
+                                  StyleRuleBase* rule) {
+  EnsureChildRules();
+  child_rules_->insert(index, rule);
+  if (parent_sheet) {
+    parent_sheet->Contents()->NotifyRuleChanged(rule);
+  }
+}
+
+void StyleRule::WrapperRemoveRule(CSSStyleSheet* parent_sheet, unsigned index) {
+  if (parent_sheet) {
+    parent_sheet->Contents()->NotifyRuleChanged((*child_rules_)[index]);
+  }
+  child_rules_->erase(UNSAFE_TODO(child_rules_->begin() + index));
 }
 
 bool StyleRule::PropertiesHaveFailedOrCanceledSubresources() const {
@@ -556,7 +585,7 @@ void StyleRule::TraceAfterDispatch(blink::Visitor* visitor) const {
   const CSSSelector* current = SelectorArray();
   do {
     visitor->Trace(*current);
-  } while (!(current++)->IsLastInSelectorList());
+  } while (!(UNSAFE_TODO(current++))->IsLastInSelectorList());
 
   StyleRuleBase::TraceAfterDispatch(visitor);
 }
@@ -596,7 +625,7 @@ StyleRuleBase* StyleRuleBase::Renest(StyleRule* new_parent) {
       }
       auto* new_rule = StyleRule::Create(
           selectors, To<StyleRule>(this)->Properties().ImmutableCopyIfNeeded());
-      if (HeapVector<Member<StyleRuleBase>>* child_rules =
+      if (GCedHeapVector<Member<StyleRuleBase>>* child_rules =
               To<StyleRule>(this)->ChildRules()) {
         for (StyleRuleBase* child_rule : *child_rules) {
           new_rule->AddChildRule(child_rule->Renest(new_rule));
@@ -685,6 +714,7 @@ StyleRuleBase* StyleRuleBase::Renest(StyleRule* new_parent) {
     case kCharset:
     case kViewTransition:
     case kPositionTry:
+    case kCustomMedia:
       // Cannot have any child rules.
       return this;
   }
@@ -1014,6 +1044,7 @@ StyleRuleFunction::StyleRuleFunction(
 void StyleRuleFunction::TraceAfterDispatch(blink::Visitor* visitor) const {
   StyleRuleGroup::TraceAfterDispatch(visitor);
   visitor->Trace(parameters_);
+  visitor->Trace(layer_);
 }
 
 StyleRuleMixin::StyleRuleMixin(AtomicString name, StyleRule* fake_parent_rule)
@@ -1031,6 +1062,22 @@ StyleRuleApplyMixin::StyleRuleApplyMixin(AtomicString name)
 
 void StyleRuleApplyMixin::TraceAfterDispatch(blink::Visitor* visitor) const {
   StyleRuleBase::TraceAfterDispatch(visitor);
+}
+
+StyleRuleCustomMedia::StyleRuleCustomMedia(AtomicString name,
+                                           MediaQuerySet* media_query_set)
+    : StyleRuleBase(kCustomMedia),
+      name_(std::move(name)),
+      value_(media_query_set) {}
+
+StyleRuleCustomMedia::StyleRuleCustomMedia(AtomicString name, bool value)
+    : StyleRuleBase(kCustomMedia), name_(std::move(name)), value_(value) {}
+
+void StyleRuleCustomMedia::TraceAfterDispatch(blink::Visitor* visitor) const {
+  StyleRuleBase::TraceAfterDispatch(visitor);
+  if (IsMediaQueryValue()) {
+    visitor->Trace(std::get<Member<const MediaQuerySet>>(value_));
+  }
 }
 
 }  // namespace blink

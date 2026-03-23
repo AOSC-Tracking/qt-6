@@ -17,12 +17,7 @@ COMPONENT_EXPORT(PERMISSIONS_COMMON)
 BASE_DECLARE_FEATURE(kBackForwardCacheUnblockPermissionRequest);
 
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
-BASE_DECLARE_FEATURE(kOneTimePermission);
-
-#if !BUILDFLAG(IS_ANDROID)
-COMPONENT_EXPORT(PERMISSIONS_COMMON)
 BASE_DECLARE_FEATURE(kKeyboardLockPrompt);
-#endif  // !BUILDFLAG(IS_ANDROID)
 
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
 BASE_DECLARE_FEATURE(kPermissionElementPromptPositioning);
@@ -37,10 +32,16 @@ COMPONENT_EXPORT(PERMISSIONS_COMMON)
 BASE_DECLARE_FEATURE(kPermissionPredictionsV2);
 
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
-BASE_DECLARE_FEATURE(kPermissionPredictionsV3);
+BASE_DECLARE_FEATURE(kPermissionsAIv1);
 
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
-BASE_DECLARE_FEATURE(kPermissionsAIv1);
+BASE_DECLARE_FEATURE(kPermissionsAIv3);
+
+COMPONENT_EXPORT(PERMISSIONS_COMMON)
+BASE_DECLARE_FEATURE(kPermissionsAIv4);
+
+COMPONENT_EXPORT(PERMISSIONS_COMMON)
+BASE_DECLARE_FEATURE(kPermissionPromiseLifetimeModulation);
 
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
 BASE_DECLARE_FEATURE(kPermissionsPromptSurvey);
@@ -75,23 +76,15 @@ BASE_DECLARE_FEATURE(kCpssQuietChipTextUpdate);
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
 BASE_DECLARE_FEATURE(kCpssUseTfliteSignatureRunner);
 
+COMPONENT_EXPORT(PERMISSIONS_COMMON)
+BASE_DECLARE_FEATURE(kFedCmUpdatedCooldownPeriod);
+
+#if BUILDFLAG(IS_ANDROID)
+COMPONENT_EXPORT(PERMISSIONS_COMMON)
+BASE_DECLARE_FEATURE(kOsAdditionalSecurityPermissionKillSwitch);
+#endif
 }  // namespace features
 namespace feature_params {
-
-COMPONENT_EXPORT(PERMISSIONS_COMMON)
-extern const base::FeatureParam<bool> kUseStrongerPromptLanguage;
-
-COMPONENT_EXPORT(PERMISSIONS_COMMON)
-extern const base::FeatureParam<bool> kUseWhileVisitingLanguage;
-
-COMPONENT_EXPORT(PERMISSIONS_COMMON)
-extern const base::FeatureParam<bool> kShowAllowAlwaysAsFirstButton;
-
-COMPONENT_EXPORT(PERMISSIONS_COMMON)
-extern const base::FeatureParam<base::TimeDelta> kOneTimePermissionTimeout;
-
-COMPONENT_EXPORT(PERMISSIONS_COMMON)
-extern const base::FeatureParam<base::TimeDelta> kOneTimePermissionLongTimeout;
 
 enum class PermissionElementPromptPosition {
   kWindowMiddle,
@@ -102,14 +95,6 @@ enum class PermissionElementPromptPosition {
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
 extern const base::FeatureParam<PermissionElementPromptPosition>
     kPermissionElementPromptPositioningParam;
-
-COMPONENT_EXPORT(PERMISSIONS_COMMON)
-extern const base::FeatureParam<double>
-    kPermissionOnDeviceGeolocationPredictionsHoldbackChance;
-
-COMPONENT_EXPORT(PERMISSIONS_COMMON)
-extern const base::FeatureParam<double>
-    kPermissionOnDeviceNotificationPredictionsHoldbackChance;
 
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
 extern const base::FeatureParam<double> kPermissionPredictionsV2HoldbackChance;

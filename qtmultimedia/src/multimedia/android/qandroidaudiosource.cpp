@@ -1,12 +1,13 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#include "qandroidaudiosource_p.h"
-
-#include "qandroidaudioutil_p.h"
+#include <QtMultimedia/private/qandroidaudiosource_p.h>
 
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qpermissions.h>
+
+#include <QtMultimedia/private/qandroidaudiojnitypes_p.h>
+#include <QtMultimedia/private/qandroidaudioutil_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -28,16 +29,16 @@ QAndroidAudioSourceStream::QAndroidAudioSourceStream(QAudioDevice device,
     qCDebug(qLcAndroidAudioSource) << "Creating source for device id:" << m_audioDevice.id()
                                    << ", description:" << m_audioDevice.description();
 
-    // NOTE: Don't set device when creating a stream for the default bluetooth device
-    if (!QAndroidAudioUtil::isDefaultBluetoothDevice(m_audioDevice))
-        builder.deviceId = m_audioDevice.id().toInt();
+    builder.deviceId = m_audioDevice.id().toInt();
 
     // Set buffer parameters
     builder.bufferCapacity = m_hardwareBufferFrames ? *m_hardwareBufferFrames : 1024;
 
     // NOTE: AAudio doesn't support UINT8, so convert to INT16 if that's requested
-    if (format.sampleFormat() == QAudioFormat::UInt8)
-        m_nativeSampleFormat = NativeSampleFormat::int16_t;
+    if (format.sampleFormat() == QAudioFormat::UInt8) {
+        m_hostFormat = format;
+        m_hostFormat->setSampleFormat(QAudioFormat::Int16);
+    }
 
     // Set builder parameters for audio source
     builder.params.sharingMode = AAUDIO_SHARING_MODE_SHARED;
@@ -50,7 +51,9 @@ QAndroidAudioSourceStream::QAndroidAudioSourceStream(QAudioDevice device,
                           int32_t numFrames) -> int {
         auto *stream = reinterpret_cast<QAndroidAudioSourceStream *>(userData);
         Q_ASSERT(stream);
-        return stream->process(audioData, numFrames);
+        auto audioSpan = stream->getHostSpan(audioData, numFrames);
+        return stream->m_audioCallback ? stream->processCallback(audioSpan)
+                                       : stream->processRingbuffer(audioSpan, numFrames);
     };
     builder.errorCallback = [](AAudioStream *, void *userData, aaudio_result_t error) -> void {
         auto *stream = reinterpret_cast<QAndroidAudioSourceStream *>(userData);
@@ -59,7 +62,23 @@ QAndroidAudioSourceStream::QAndroidAudioSourceStream(QAudioDevice device,
     };
 
     builder.setupBuilder();
+
+    if (!QtJniTypes::QtAudioDeviceManager::callStaticMethod<jboolean>("prepareAudioInput",
+                                                                      m_audioDevice.id().toInt()))
+        qCWarning(qLcAndroidAudioSource) << "Preparation failed for device:" << m_audioDevice.id().toInt();
+
     m_stream = std::make_unique<QtAAudio::Stream>(builder);
+    if (builder.format.sampleFormat() != format.sampleFormat()) {
+        // Original sample format unsupported, so doing sample format conversion
+        Q_ASSERT(builder.format.sampleFormat() == QAudioFormat::Float);
+        m_hostFormat = builder.format;
+    }
+}
+
+QAndroidAudioSourceStream::~QAndroidAudioSourceStream()
+{
+    QtJniTypes::QtAudioDeviceManager::callStaticMethod<void>("releaseAudioDevice",
+                                                             m_audioDevice.id().toInt());
 }
 
 bool QAndroidAudioSourceStream::open()
@@ -105,6 +124,19 @@ QIODevice *QAndroidAudioSourceStream::start()
     return start(device) ? device : nullptr;
 }
 
+bool QAndroidAudioSourceStream::start(AudioCallback &&callback)
+{
+    Q_ASSERT(thread()->isCurrentThread());
+    m_audioCallback = std::move(callback);
+
+    if (!m_stream->start()) {
+        requestStop();
+        return false;
+    }
+
+    return true;
+}
+
 void QAndroidAudioSourceStream::suspend()
 {
     Q_ASSERT(thread()->isCurrentThread());
@@ -137,20 +169,42 @@ void QAndroidAudioSourceStream::updateStreamIdle(bool idle)
         m_parent->updateStreamIdle(idle);
 }
 
-aaudio_data_callback_result_t
-QAndroidAudioSourceStream::process(void *audioData, int numFrames) noexcept QT_MM_NONBLOCKING
+QSpan<const std::byte>
+QAndroidAudioSourceStream::getHostSpan(void *audioData,
+                                       int numFrames) const noexcept QT_MM_NONBLOCKING
 {
-    qsizetype bytesForFrames = m_nativeSampleFormat
-            ? (QAudioHelperInternal::bytesPerSample(*m_nativeSampleFormat) * m_format.channelCount()
-               * numFrames)
-            : m_format.bytesForFrames(numFrames);
-    QSpan<std::byte> audioSpan{ reinterpret_cast<std::byte *>(audioData), bytesForFrames };
+    qsizetype byteAmount = m_hostFormat ? m_hostFormat->bytesForFrames(numFrames)
+                                        : m_format.bytesForFrames(numFrames);
+    return QSpan{ reinterpret_cast<const std::byte *>(audioData), byteAmount };
+}
 
-    auto framesWritten =
-            QPlatformAudioSourceStream::process(audioSpan, numFrames, m_nativeSampleFormat);
+aaudio_data_callback_result_t
+QAndroidAudioSourceStream::processRingbuffer(QSpan<const std::byte> audioSpan,
+                                             int numFrames) noexcept QT_MM_NONBLOCKING
+{
+    auto framesWritten = m_hostFormat
+            ? QPlatformAudioSourceStream::process(
+                      audioSpan, numFrames,
+                      QAudioHelperInternal::toNativeSampleFormat(m_hostFormat->sampleFormat()))
+            : QPlatformAudioSourceStream::process(audioSpan, numFrames);
 
     if (framesWritten != static_cast<uint64_t>(numFrames) && isStopRequested())
         return AAUDIO_CALLBACK_RESULT_STOP;
+
+    return AAUDIO_CALLBACK_RESULT_CONTINUE;
+}
+
+aaudio_data_callback_result_t
+QAndroidAudioSourceStream::processCallback(QSpan<const std::byte> audioSpan) noexcept QT_MM_NONBLOCKING
+{
+    if (isStopRequested())
+        return AAUDIO_CALLBACK_RESULT_STOP;
+
+    if (m_hostFormat)
+        QtMultimediaPrivate::runAudioCallback(*m_audioCallback, audioSpan, m_format, volume(),
+                                              *m_hostFormat);
+    else
+        QtMultimediaPrivate::runAudioCallback(*m_audioCallback, audioSpan, m_format, volume());
 
     return AAUDIO_CALLBACK_RESULT_CONTINUE;
 }
@@ -171,6 +225,9 @@ QAndroidAudioSource::QAndroidAudioSource(QAudioDevice device, const QAudioFormat
     : BaseClass(std::move(device), format, parent)
 {
 }
+
+QAndroidAudioSource::~QAndroidAudioSource()
+    = default;
 
 } // namespace QtAAudio
 

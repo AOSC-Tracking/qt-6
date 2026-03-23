@@ -30,27 +30,35 @@
 namespace gwp_asan {
 namespace internal {
 
-static constexpr size_t kMaxMetadata = AllocatorState::kMaxMetadata;
-static constexpr size_t kMaxSlots = AllocatorState::kMaxRequestedSlots;
+static constexpr size_t kMaxMetadata = 2048;
+static constexpr size_t kMaxSlots = 8192;
 
 class BaseGpaTest : public testing::Test {
  protected:
   BaseGpaTest(size_t max_allocated_pages,
               size_t max_metadata,
               size_t max_slots,
-              bool is_partition_alloc) {
-    gpa_.Init(
-        AllocatorSettings{
+              bool is_partition_alloc)
+      : is_partition_alloc_(is_partition_alloc),
+        settings_{AllocatorSettings{
             .max_allocated_pages = max_allocated_pages,
             .num_metadata = max_metadata,
             .total_pages = max_slots,
             .sampling_frequency = 0u,
-        },
-        base::BindLambdaForTesting(
-            [&](size_t allocations) { allocator_oom_ = true; }),
-        is_partition_alloc);
+        }} {}
+
+  void SetUp() override {
+    ASSERT_TRUE(gpa_.Init(settings_,
+                          base::BindLambdaForTesting([&](size_t allocations) {
+                            allocator_oom_ = true;
+                          }),
+                          is_partition_alloc_));
   }
 
+  void TearDown() override { gpa_.DestructForTesting(); }
+
+  const bool is_partition_alloc_;
+  const AllocatorSettings settings_;
   GuardedPageAllocator gpa_;
   bool allocator_oom_ = false;
 };
@@ -97,6 +105,8 @@ INSTANTIATE_TEST_SUITE_P(VaryPartitionAlloc,
                          GuardedPageAllocatorTest,
                          testing::Values(false, true));
 
+#if defined(GTEST_HAS_DEATH_TEST)
+
 TEST_P(GuardedPageAllocatorTest, SingleAllocDealloc) {
   char* buf = reinterpret_cast<char*>(gpa_.Allocate(base::GetPageSize()));
   EXPECT_NE(buf, nullptr);
@@ -115,6 +125,8 @@ TEST_P(GuardedPageAllocatorTest, CrashOnBadDeallocPointer) {
   gpa_.Deallocate(buf);
 }
 
+#endif  // defined(GTEST_HAS_DEATH_TEST)
+
 TEST_P(GuardedPageAllocatorTest, PointerIsMine) {
   void* buf = gpa_.Allocate(1);
   auto malloc_ptr = std::make_unique<char>();
@@ -125,6 +137,8 @@ TEST_P(GuardedPageAllocatorTest, PointerIsMine) {
   EXPECT_FALSE(gpa_.PointerIsMine(&stack_var));
   EXPECT_FALSE(gpa_.PointerIsMine(malloc_ptr.get()));
 }
+
+#if defined(GTEST_HAS_DEATH_TEST)
 
 TEST_P(GuardedPageAllocatorTest, GetRequestedSize) {
   void* buf = gpa_.Allocate(100);
@@ -154,6 +168,8 @@ TEST_P(GuardedPageAllocatorTest, RightAlignedAllocation) {
   EXPECT_DEATH(buf[GuardedPageAllocator::kGpaAllocAlignment] = 'A', "");
   gpa_.Deallocate(buf);
 }
+
+#endif  // defined(GTEST_HAS_DEATH_TEST)
 
 TEST_P(GuardedPageAllocatorTest, AllocationAlignment) {
   const uintptr_t page_size = base::GetPageSize();

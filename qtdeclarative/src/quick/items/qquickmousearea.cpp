@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickmousearea_p.h"
 #include "qquickmousearea_p_p.h"
@@ -108,7 +109,7 @@ bool QQuickMouseAreaPrivate::propagateHelper(QQuickMouseEvent *ev, QQuickItem *i
     Q_Q(const QQuickMouseArea);
     QQuickItemPrivate *itemPrivate = QQuickItemPrivate::get(item);
 
-    if (itemPrivate->flags & QQuickItem::ItemClipsChildrenToShape) {
+    if (itemPrivate->effectivelyClipsEventHandlingChildren()) {
         QPointF p = item->mapFromScene(sp);
         if (!item->contains(p))
             return false;

@@ -220,7 +220,7 @@ class CORE_EXPORT ScriptPromiseResolverBase
   Member<ScriptState> script_state_;
   TraceWrapperV8Reference<v8::Value> value_;
   const ExceptionContext exception_context_;
-  std::unique_ptr<SourceLocation> source_location_;
+  Member<SourceLocation> source_location_;
 
 #if DCHECK_IS_ON()
   bool suppress_detach_check_ = false;
@@ -279,6 +279,18 @@ class ScriptPromiseResolver final : public ScriptPromiseResolverBase {
     }
     ResolveOrReject<IDLResolvedType, IDLResolvedType*>(
         MakeGarbageCollected<IDLResolvedType>(value));
+  }
+
+  // This Resolve() method allows a Promise expecting to be resolved with an
+  // enum type to be resolved with an enum value of that type rather than having
+  // to explicitly construct the enum type.
+  template <typename T = IDLResolvedType>
+    requires std::derived_from<IDLResolvedType, bindings::EnumerationBase>
+  void Resolve(T::Enum value) {
+    if (!PrepareToResolveOrReject<kResolving>()) {
+      return;
+    }
+    ResolveOrReject<IDLResolvedType>(T(value));
   }
 
   // A promise may be resolved with another promise if they are the same type.

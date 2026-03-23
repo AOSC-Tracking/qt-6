@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 pragma ComponentBehavior: Bound
 
@@ -9,6 +10,7 @@ import QtQuick.Controls
 import QtQuick.Controls.impl
 import QtQuick.Templates as T
 import QtQuick.NativeStyle as NativeStyle
+import QtQuick.Controls.Windows.impl
 
 T.ComboBox {
     id: control
@@ -46,6 +48,10 @@ T.ComboBox {
         verticalAlignment: Text.AlignVCenter
 
         readonly property bool __ignoreNotCustomizable: true
+
+        ContextMenu.menu: TextEditingContextMenu {
+            editor: parent
+        }
     }
 
     background: NativeStyle.ComboBox {

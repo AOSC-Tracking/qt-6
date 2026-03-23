@@ -1,12 +1,48 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgshadowmaphelpers_p.h"
 
 #include "qssgdebugdrawsystem_p.h"
 #include "qssgrenderray_p.h"
 
+#include <QVector3D>
+#include <QMatrix4x4>
+#include <QVector4D>
+#include <cmath>
+
 QT_BEGIN_NAMESPACE
+
+static QMatrix4x4 buildOrthonormalBasis(const QVector3D &normal)
+{
+    // Assume normal is already normalized
+    const QVector3D forward = normal;
+
+    // Pick the axis least aligned with forward to use as a reference
+    QVector3D ref;
+    float absX = std::fabs(forward.x());
+    float absY = std::fabs(forward.y());
+    float absZ = std::fabs(forward.z());
+
+    if (absX <= absY && absX <= absZ)
+        ref = QVector3D(1, 0, 0);
+    else if (absY <= absZ)
+        ref = QVector3D(0, 1, 0);
+    else
+        ref = QVector3D(0, 0, 1);
+
+    const QVector3D right = QVector3D::crossProduct(ref, forward).normalized();
+    const QVector3D up = QVector3D::crossProduct(forward, right);
+
+    QMatrix4x4 transform(Qt::Uninitialized);
+    transform.setRow(0, QVector4D(right, 0.0f));
+    transform.setRow(1, QVector4D(up, 0.0f));
+    transform.setRow(2, QVector4D(forward, 0.0f));
+    transform.setRow(3, QVector4D(0.0f, 0.0f, 0.0f, 1.0f));
+    return transform;
+}
 
 // These indices need to match the order in QSSGBounds3::toQSSGBoxPointsNoEmptyCheck()
 static constexpr std::array<std::array<int, 2>, 12> BOX_LINE_INDICES = {
@@ -80,17 +116,6 @@ void ShadowmapHelpers::addDirectionalLightDebugBox(const QSSGBoxPoints &box, QSS
     debugDrawSystem->drawLine(box[7], box[4], colorBox);
 
     debugDrawSystem->setEnabled(true);
-}
-
-void ShadowmapHelpers::addPointLightDebugBox(const QVector3D &lightPos, const float shadowMapFar, QSSGDebugDrawSystem *debugDrawSystem)
-{
-    if (!debugDrawSystem)
-        return;
-
-    QSSGBounds3 bounds;
-    bounds.include(lightPos - QVector3D(shadowMapFar, shadowMapFar, shadowMapFar));
-    bounds.include(lightPos + QVector3D(shadowMapFar, shadowMapFar, shadowMapFar));
-    addDebugBox(bounds.toQSSGBoxPoints(), QColorConstants::Yellow, debugDrawSystem);
 }
 
 static bool lineLineIntersection(QVector2D a, QVector2D b, QVector2D c, QVector2D d)
@@ -244,17 +269,7 @@ static QList<QVector3D> sliceBoxByPlanes(const QList<std::array<QVector3D, 2>> &
             continue;
 
         // Create rotation matrix from plane
-        QMatrix4x4 transform;
-        // we let z (forward) = normal of the plane, the other vectors are
-        // unimportant.
-        const QVector3D forward = normal;
-        const QVector3D right = QVector3D(-forward.y(), forward.x(), 0);
-        const QVector3D up = QVector3D::crossProduct(forward, right);
-        transform.setRow(0, QVector4D(right, 0.0f));
-        transform.setRow(1, QVector4D(up, 0.0f));
-        transform.setRow(2, QVector4D(forward, 0.0f));
-        transform.setRow(3, QVector4D(0.0f, 0.0f, 0.0f, 1.0f));
-
+        const QMatrix4x4 transform = buildOrthonormalBasis(normal);
         planePoints.clear();
         planePoints.reserve(newVertexIndices.length());
         for (auto &p0 : newVertexIndices) {
@@ -309,7 +324,7 @@ static QList<QVector3D> sliceBoxByPlanes(const QList<std::array<QVector3D, 2>> &
         }
 
         // Sanity check and revert if any point is borked
-        for (const Vertex &point : vertices) {
+        for (const Vertex &point : std::as_const(vertices)) {
             if (point.active && (point.borked || !point.allNeighbors())) {
                 vertices = verticesPrev;
                 break;
@@ -319,7 +334,7 @@ static QList<QVector3D> sliceBoxByPlanes(const QList<std::array<QVector3D, 2>> &
 
     QList<QVector3D> result;
     result.reserve(vertices.length());
-    for (const Vertex &vertex : vertices) {
+    for (const Vertex &vertex : std::as_const(vertices)) {
         if (vertex.active)
             result.push_back(vertex.position);
     }

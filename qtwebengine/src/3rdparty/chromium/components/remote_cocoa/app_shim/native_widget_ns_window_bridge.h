@@ -80,8 +80,7 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // Retrieve a NativeWidgetNSWindowBridge* from its id or window.
   static NativeWidgetNSWindowBridge* GetFromId(
       uint64_t bridged_native_widget_id);
-  static NativeWidgetNSWindowBridge* GetFromNativeWindow(
-      gfx::NativeWindow window);
+  static NativeWidgetNSWindowBridge* GetFromNSWindow(NSWindow* window);
 
   // Create an NSWindow for the specified parameters.
   static NativeWidgetMacNSWindow* CreateNSWindow(
@@ -137,10 +136,33 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // changed.
   void OnPositionChanged();
 
+  // Called when the user will start resizing the window.
+  void OnWindowWillStartLiveResize();
+
+  // Called when the user ended resizing the window.
+  void OnWindowDidEndLiveResize();
+
   // Called by the NSWindowDelegate when the visibility of the window may have
   // changed. For example, due to a (de)miniaturize operation, or the window
   // being reordered in (or out of) the screen list.
   void OnVisibilityChanged();
+
+  // Called when -[NSWindow isOnActiveSpace] may have changed.
+  //
+  // This value can change in two main scenarios,
+  //   1. The user switches the active space.
+  //      - Detected using NSWorkspaceActiveSpaceDidChangeNotification.
+  //   2. The user moves the window to a different space (e.g., via Mission
+  //   Control).
+  //      - Detected using -windowDidChangeOcclusionState:.
+  //
+  // Relying solely on windowDidChangeOcclusionState: is insufficient. It
+  // appears that during space switch this notification is sent before
+  // isOnActiveSpace is updated.
+  //
+  // Note that although `onActiveSpace` is a property, it cannot be KVO
+  // observed, thus this callback.
+  void OnSpaceActivationMayHaveChanged();
 
   // Called by the NSWindowDelegate when the system colors change.
   void OnSystemColorsChanged();
@@ -161,7 +183,7 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   remote_cocoa::mojom::TextInputHost* text_input_host() const {
     return text_input_host_;
   }
-  NSWindow* ns_window();
+  NativeWidgetMacNSWindow* ns_window();
 
   remote_cocoa::DragDropClient* drag_drop_client();
   bool is_translucent_window() const { return is_translucent_window_; }
@@ -234,7 +256,9 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   void InitWindow(
       remote_cocoa::mojom::NativeWidgetNSWindowInitParamsPtr params) override;
   void InitCompositorView(InitCompositorViewCallback callback) override;
-  void CreateContentView(uint64_t ns_view_id, const gfx::Rect& bounds) override;
+  void CreateContentView(uint64_t ns_view_id,
+                         const gfx::Rect& bounds,
+                         std::optional<int> corner_radius) override;
   void DestroyContentView() override;
   void CloseWindow() override;
   void CloseWindowNow() override;
@@ -325,6 +349,8 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // with the height of the menu bar if it autohides, or 0 if it doesn't.
   void OnAutohidingMenuBarHeightChanged(int menu_bar_height);
 
+  base::WeakPtr<NativeWidgetNSWindowBridge> GetWeakPtr();
+
  private:
   friend class views::test::BridgedNativeWidgetTestApi;
 
@@ -385,7 +411,7 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   std::unique_ptr<CocoaWindowMoveLoop> window_move_loop_;
   ui::mojom::ModalType modal_type_ = ui::mojom::ModalType::kNone;
   bool is_translucent_window_ = false;
-  id __strong key_down_event_monitor_;
+  id __strong local_event_monitor_;
 
   raw_ptr<NativeWidgetNSWindowBridge> parent_ =
       nullptr;  // Weak. If non-null, owns this.
@@ -418,6 +444,9 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // Stores the value last read from -[NSWindow isVisible], to detect visibility
   // changes.
   bool window_visible_ = false;
+
+  // Stores the value last read from -[NSWindow isOnActiveSpace].
+  bool window_on_active_space_ = false;
 
   // Stores the value last read from -[NSWindow isZoomed], to detect zoomed
   // state changes.

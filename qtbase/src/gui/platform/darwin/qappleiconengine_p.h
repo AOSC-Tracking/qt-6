@@ -31,6 +31,9 @@ class Q_GUI_EXPORT QAppleIconEngine : public QIconEngine
 public:
     QAppleIconEngine(const QString &iconName);
     ~QAppleIconEngine();
+
+    static QIcon fromTheme(const QString &iconName);
+
     QIconEngine *clone() const override;
     QString key() const override;
     QString iconName() override;
@@ -43,6 +46,8 @@ public:
     void paint(QPainter *painter, const QRect &rect, QIcon::Mode mode, QIcon::State state) override;
 
     static QList<QSize> availableIconSizes(double aspectRatio = 1.0);
+
+    void virtual_hook(int hookIdentifier, void *data) override;
 
 private:
     const QString m_iconName;
@@ -71,7 +76,6 @@ private:
     };
     mutable QHash<CacheKey, QPixmap> m_cache;
 };
-
 
 QT_END_NAMESPACE
 

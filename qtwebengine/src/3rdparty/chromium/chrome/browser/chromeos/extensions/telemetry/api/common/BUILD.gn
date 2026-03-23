@@ -62,7 +62,7 @@ source_set("remote_probe_strategy") {
   ]
 
   deps = [
-    "//chrome/browser/ash/crosapi:crosapi",
+    "//chrome/browser/ash/crosapi",
     "//chromeos/ash/components/telemetry_extension/telemetry",
     "//chromeos/crosapi/mojom",
     "//mojo/public/cpp/bindings",
@@ -157,6 +157,7 @@ source_set("unit_tests") {
     "//base/test:test_support",
     "//chrome/browser/ash/login/users:test_support",
     "//chrome/browser/extensions:test_support",
+    "//chrome/browser/web_applications:web_applications_test_support",
     "//chrome/common/chromeos/extensions",
     "//chrome/test:test_support",
     "//chromeos/ash/components/browser_context_helper",
@@ -169,4 +170,8 @@ source_set("unit_tests") {
     "//net:test_support",
     "//testing/gtest",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

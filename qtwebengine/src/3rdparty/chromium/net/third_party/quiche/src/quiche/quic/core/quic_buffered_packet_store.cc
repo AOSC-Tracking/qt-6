@@ -137,7 +137,7 @@ EnqueuePacketResult QuicBufferedPacketStore::EnqueuePacket(
   const QuicSocketAddress& self_address = packet_info.self_address;
   const QuicSocketAddress& peer_address = packet_info.peer_address;
   const ParsedQuicVersion& version = packet_info.version;
-  const bool ietf_quic = packet_info.form != GOOGLE_QUIC_PACKET;
+  const bool ietf_quic = packet_info.form != GOOGLE_QUIC_Q043_PACKET;
   const bool is_chlo = parsed_chlo.has_value();
   const bool is_ietf_initial_packet =
       (version.IsKnown() && packet_info.form == IETF_QUIC_LONG_HEADER_PACKET &&
@@ -314,10 +314,7 @@ void QuicBufferedPacketStore::MaybeAckInitialPacket(
   PacketCollector collector(&send_buffer_allocator);
   QuicPacketCreator creator(server_connection_id, &framer, &collector);
 
-  if (GetQuicReloadableFlag(quic_buffered_store_set_client_cid)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_buffered_store_set_client_cid);
-    creator.SetClientConnectionId(packet_info.source_connection_id);
-  }
+  creator.SetClientConnectionId(packet_info.source_connection_id);
 
   if (!dispatcher_sent_packets.empty()) {
     // Sets the *last sent* packet number, creator will derive the next sending

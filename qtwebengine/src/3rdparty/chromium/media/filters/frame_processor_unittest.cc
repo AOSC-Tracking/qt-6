@@ -7,6 +7,7 @@
 #pragma allow_unsafe_libc_calls
 #endif
 
+#include "media/filters/frame_processor.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -22,6 +23,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/string_view_util.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "media/base/media_log.h"
@@ -31,7 +33,6 @@
 #include "media/base/test_helpers.h"
 #include "media/base/timestamp_constants.h"
 #include "media/filters/chunk_demuxer.h"
-#include "media/filters/frame_processor.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Milliseconds;
@@ -210,10 +211,8 @@ class FrameProcessorTest : public ::testing::TestWithParam<bool> {
       // later verification of possible buffer relocation in presentation
       // timeline due to coded frame processing.
       const std::string payload_string = EncodeTestPayload(pts);
-      const char* pts_as_cstr = payload_string.c_str();
       scoped_refptr<StreamParserBuffer> buffer = StreamParserBuffer::CopyFrom(
-          reinterpret_cast<const uint8_t*>(pts_as_cstr), strlen(pts_as_cstr),
-          is_keyframe, type, track_id);
+          base::as_byte_span(payload_string), is_keyframe, type, track_id);
       CHECK(DecodeTestPayload(base::as_string_view(*buffer)) == pts);
 
       buffer->set_timestamp(pts);
@@ -344,8 +343,10 @@ class FrameProcessorTest : public ::testing::TestWithParam<bool> {
         ss << ":" << original_time_in_ms;
 
       // Detect full-discard preroll buffer.
-      if (last_read_buffer_->discard_padding().first == kInfiniteDuration &&
-          last_read_buffer_->discard_padding().second.is_zero()) {
+      auto discard_padding = last_read_buffer_->discard_padding();
+      if (discard_padding.has_value() &&
+          discard_padding->first == kInfiniteDuration &&
+          discard_padding->second.is_zero()) {
         ss << "P";
       }
 
@@ -429,16 +430,17 @@ class FrameProcessorTest : public ::testing::TestWithParam<bool> {
         audio_ = std::make_unique<ChunkDemuxerStream>(DemuxerStream::AUDIO,
                                                       MediaTrack::Id("1"));
         AudioDecoderConfig decoder_config;
+        static constexpr int kSampleRate = 3000;
         if (support_audio_nonkeyframes) {
           decoder_config = AudioDecoderConfig(
               AudioCodec::kAAC, kSampleFormatPlanarF32, CHANNEL_LAYOUT_STEREO,
-              1000, EmptyExtraData(), EncryptionScheme::kUnencrypted);
+              kSampleRate, EmptyExtraData(), EncryptionScheme::kUnencrypted);
           decoder_config.set_profile(AudioCodecProfile::kXHE_AAC);
         } else {
-          decoder_config =
-              AudioDecoderConfig(AudioCodec::kVorbis, kSampleFormatPlanarF32,
-                                 CHANNEL_LAYOUT_STEREO, 1000, EmptyExtraData(),
-                                 EncryptionScheme::kUnencrypted);
+          decoder_config = AudioDecoderConfig(
+              AudioCodec::kVorbis, kSampleFormatPlanarF32,
+              CHANNEL_LAYOUT_STEREO, kSampleRate, EmptyExtraData(),
+              EncryptionScheme::kUnencrypted);
         }
         frame_processor_->OnPossibleAudioConfigUpdate(decoder_config);
         ASSERT_TRUE(

@@ -23,7 +23,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/stack_allocated.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/notreached.h"
 #include "base/parameter_pack.h"
 #include "base/strings/stringprintf.h"
@@ -61,7 +60,6 @@
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/traced_value.h"
 #include "components/viz/common/view_transition_element_resource_id.h"
-#include "ui/gfx/geometry/box_f.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -253,16 +251,19 @@ void LayerTreeImpl::DidUpdateScrollOffset(
     CHECK_NE(scroll_node->transform_id, kInvalidPropertyNodeId);
     TransformTree& transform_tree = property_trees()->transform_tree_mutable();
     auto* transform_node = transform_tree.Node(scroll_node->transform_id);
-    if (transform_node->scroll_offset !=
+    if (transform_node->scroll_offset() !=
         scroll_tree.current_scroll_offset(id)) {
-      transform_node->scroll_offset = scroll_tree.current_scroll_offset(id);
+      transform_node->SetScrollOffset(scroll_tree.current_scroll_offset(id),
+                                      DamageReason::kCompositorScroll);
       transform_node->needs_local_transform_update = true;
       transform_tree.set_needs_update(true);
     }
-    transform_node->transform_changed = true;
+    transform_node->SetTransformChanged(DamageReason::kCompositorScroll);
     property_trees()->set_changed(true);
     set_needs_update_draw_properties();
-  } else if (can_realize_on_pending_tree) {
+  }
+
+  if (can_realize_on_pending_tree) {
     host_impl_->RequestImplSideInvalidationForRasterInducingScroll(id);
   }
 
@@ -341,6 +342,9 @@ void LayerTreeImpl::UpdateScrollbarGeometries(const ScrollNode& scroll_node) {
               .OffsetFromOrigin();
       gfx::SizeF outer_viewport_bounds(
           scroll_tree.container_bounds(outer_scroll_node->id));
+      // Inner viewport scroll node container bounds are in device space; divide
+      // by page scale factor to get them in content space.
+      viewport_bounds.InvScale(current_page_scale_factor());
       viewport_bounds.SetToMin(outer_viewport_bounds);
       // The scrolling size is only determined by the outer viewport.
       scrolling_size = gfx::SizeF(outer_scroll_node->bounds);
@@ -354,9 +358,11 @@ void LayerTreeImpl::UpdateScrollbarGeometries(const ScrollNode& scroll_node) {
               .OffsetFromOrigin();
       gfx::SizeF inner_viewport_bounds(
           scroll_tree.container_bounds(inner_scroll_node->id));
+      // Inner viewport scroll node container bounds are in device space; divide
+      // by page scale factor to get them in content space.
+      inner_viewport_bounds.InvScale(current_page_scale_factor());
       viewport_bounds.SetToMin(inner_viewport_bounds);
     }
-    viewport_bounds.InvScale(current_page_scale_factor());
     bounds_size = ToCeiledSize(viewport_bounds);
   }
 
@@ -479,35 +485,32 @@ void LayerTreeImpl::UpdateViewportContainerSizes() {
   // The delta to be added to transform matrix if dynamic safe area is
   // supported.
   auto* property_trees = this->property_trees();
-  if (base::FeatureList::IsEnabled(
-          features::kDynamicSafeAreaInsetsSupportedByCC)) {
-    float blink_bottom_content_offset;
-    if (settings().dynamic_safe_area_insets_on_scroll_enabled) {
-      // Blink SAI is based on bottom controls shown ratio. Subtract the delta
-      // added by Blink SAI.
-      blink_bottom_content_offset =
-          bottom_content_offset -
-          bottom_controls_height() * bottom_controls_shown_ratio_->Delta();
-    } else {
-      // Blink did NOT update SAI based on bottom controls shown ratio.
-      blink_bottom_content_offset = bottom_controls_layout_height;
-    }
+  float blink_bottom_content_offset;
+  if (settings().dynamic_safe_area_insets_on_scroll_enabled) {
+    // Blink SAI is based on bottom controls shown ratio. Subtract the delta
+    // added by Blink SAI.
+    blink_bottom_content_offset =
+        bottom_content_offset -
+        bottom_controls_height() * bottom_controls_shown_ratio_->Delta();
+  } else {
+    // Blink did NOT update SAI based on bottom controls shown ratio.
+    blink_bottom_content_offset = bottom_controls_layout_height;
+  }
 
-    const float real_saib =
-        std::max(0.0f, max_safe_area_inset_bottom() - bottom_content_offset);
-    const float blink_saib = std::max(
-        0.0f, max_safe_area_inset_bottom() - blink_bottom_content_offset);
-    const float transform_delta_by_safe_area_inset_bottom =
-        -(real_saib - blink_saib);
+  const float real_saib =
+      std::max(0.0f, max_safe_area_inset_bottom() - bottom_content_offset);
+  const float blink_saib = std::max(
+      0.0f, max_safe_area_inset_bottom() - blink_bottom_content_offset);
+  const float transform_delta_by_safe_area_inset_bottom =
+      -(real_saib - blink_saib);
 
-    const float scaled_transform_delta_by_safe_area_inset_bottom =
-        transform_delta_by_safe_area_inset_bottom / min_page_scale_factor();
+  const float scaled_transform_delta_by_safe_area_inset_bottom =
+      transform_delta_by_safe_area_inset_bottom / min_page_scale_factor();
 
-    if (property_trees->transform_delta_by_safe_area_inset_bottom() !=
-        scaled_transform_delta_by_safe_area_inset_bottom) {
-      property_trees->SetTransformDeltaBySafeAreaInsetBottom(
-          scaled_transform_delta_by_safe_area_inset_bottom);
-    }
+  if (property_trees->transform_delta_by_safe_area_inset_bottom() !=
+      scaled_transform_delta_by_safe_area_inset_bottom) {
+    property_trees->SetTransformDeltaBySafeAreaInsetBottom(
+        scaled_transform_delta_by_safe_area_inset_bottom);
   }
 
   // Adjust the viewport layers by shrinking/expanding the container to account
@@ -599,6 +602,11 @@ gfx::PointF LayerTreeImpl::TotalMaxScrollOffset() const {
 OwnedLayerImplList LayerTreeImpl::DetachLayers() {
   render_surface_list_.clear();
   set_needs_update_draw_properties();
+  // Clear the HUD layer pointer since we're detaching all layers. If there is a
+  // HUD layer, it will be reset during PullLayerTreePropertiesFrom. But we must
+  // clear the ptr before then in case the HUD layer is destroyed, which would
+  // leave a dangling pointer.
+  hud_layer_ = nullptr;
   OwnedLayerImplList result = std::move(layer_list_);
   // TODO(crbug.com/40778609): remove diagnostic CHECK
   CHECK(!layer_list_.size());
@@ -779,7 +787,16 @@ void LayerTreeImpl::PullPropertyTreesFrom(
 }
 
 void LayerTreeImpl::PullLayerTreePropertiesFrom(CommitState& commit_state) {
-  set_needs_full_tree_sync(commit_state.needs_full_tree_sync);
+  if (settings().TreesInVizInClientProcess()) {
+    // With TreesInViz, there can be multiple pull operations in between remote
+    // display tree updates. Once a pull operation requires a full tree sync,
+    // that bit must stay sticky until the update is actually processed by
+    // VizLayerContext::UpdateDisplayTreeFrom() (which will reset the bit).
+    set_needs_full_tree_sync(needs_full_tree_sync_ ||
+                             commit_state.needs_full_tree_sync);
+  } else {
+    set_needs_full_tree_sync(commit_state.needs_full_tree_sync);
+  }
 
   if (commit_state.hud_layer_id != Layer::INVALID_ID) {
     LayerImpl* hud_impl = LayerById(commit_state.hud_layer_id);
@@ -874,9 +891,12 @@ void LayerTreeImpl::PushPropertyTreesTo(LayerTreeImpl* target_tree) {
 
   target_tree->SetPropertyTrees(property_trees_, preserve_change_tracking);
 
-  EventMetrics::List events_metrics;
+  EventMetrics::List events_metrics, raster_event_metrics;
   events_metrics.swap(events_metrics_from_main_thread_);
+  raster_event_metrics.swap(event_metrics_from_raster_thread_);
   target_tree->AppendEventsMetricsFromMainThread(std::move(events_metrics));
+  target_tree->AppendEventMetricsFromRasterThread(
+      std::move(raster_event_metrics));
 }
 
 void LayerTreeImpl::PushSurfaceRangesTo(LayerTreeImpl* target_tree) {
@@ -994,8 +1014,10 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
     target_tree->clear_delegated_ink_metadata();
   }
 
-  for (auto& request : TakeViewTransitionRequests())
+  for (auto& request : TakeViewTransitionRequests(
+           /*should_set_needs_update_draw_properties=*/true)) {
     target_tree->AddViewTransitionRequest(std::move(request));
+  }
 
   // Make sure that property tree based changes are moved to layers
   // and draw properties are invalidated.
@@ -1079,20 +1101,27 @@ ElementListType LayerTreeImpl::GetElementTypeForAnimation() const {
   return IsActiveTree() ? ElementListType::ACTIVE : ElementListType::PENDING;
 }
 
+void LayerTreeImpl::ValidateEffectTreeeMapping(ElementId element_id,
+                                               PropertyMutation mutation) {
+  auto count = property_trees()->effect_tree().element_id_to_node_index().count(
+      element_id);
+
+  if (count != 1) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "Compositing.Animation.MissingPropertyNodeForElementId", mutation);
+  }
+}
+
 void LayerTreeImpl::SetTransformMutated(ElementId element_id,
                                         const gfx::Transform& transform) {
-  // DCHECK_EQ(1u,
-  //           property_trees()->transform_tree().element_id_to_node_index().count(
-  //               element_id));
+  ValidateEffectTreeeMapping(element_id, PropertyMutation::kTransform);
   if (property_trees()->transform_tree_mutable().OnTransformAnimated(element_id,
                                                                      transform))
     set_needs_update_draw_properties();
 }
 
 void LayerTreeImpl::SetOpacityMutated(ElementId element_id, float opacity) {
-  // DCHECK_EQ(1u,
-  //           property_trees()->effect_tree().element_id_to_node_index().count(
-  //               element_id));
+  ValidateEffectTreeeMapping(element_id, PropertyMutation::kOpacity);
   if (property_trees()->effect_tree_mutable().OnOpacityAnimated(element_id,
                                                                 opacity))
     set_needs_update_draw_properties();
@@ -1100,9 +1129,7 @@ void LayerTreeImpl::SetOpacityMutated(ElementId element_id, float opacity) {
 
 void LayerTreeImpl::SetFilterMutated(ElementId element_id,
                                      const FilterOperations& filters) {
-  // DCHECK_EQ(1u,
-  //           property_trees()->effect_tree().element_id_to_node_index().count(
-  //               element_id));
+  ValidateEffectTreeeMapping(element_id, PropertyMutation::kFilter);
   if (property_trees()->effect_tree_mutable().OnFilterAnimated(element_id,
                                                                filters))
     set_needs_update_draw_properties();
@@ -1111,9 +1138,7 @@ void LayerTreeImpl::SetFilterMutated(ElementId element_id,
 void LayerTreeImpl::SetBackdropFilterMutated(
     ElementId element_id,
     const FilterOperations& backdrop_filters) {
-  // DCHECK_EQ(1u,
-  //           property_trees()->effect_tree().element_id_to_node_index().count(
-  //               element_id));
+  ValidateEffectTreeeMapping(element_id, PropertyMutation::kBackdropFilter);
   if (property_trees()->effect_tree_mutable().OnBackdropFilterAnimated(
           element_id, backdrop_filters))
     set_needs_update_draw_properties();
@@ -1293,6 +1318,20 @@ void LayerTreeImpl::PushPageScaleFromMainThread(float page_scale_factor,
                                                 float max_page_scale_factor) {
   PushPageScaleFactorAndLimits(&page_scale_factor, min_page_scale_factor,
                                max_page_scale_factor);
+}
+
+void LayerTreeImpl::SetPageScaleFactorAndLimitsForDisplayTree(
+    float page_scale_factor,
+    float min_page_scale_factor,
+    float max_page_scale_factor) {
+  DCHECK(settings().trees_in_viz_in_viz_process);
+  bool changed_page_scale = page_scale_factor_->SetCurrent(page_scale_factor);
+  changed_page_scale |=
+      SetPageScaleFactorLimits(min_page_scale_factor, max_page_scale_factor);
+
+  if (changed_page_scale) {
+    DidUpdatePageScale();
+  }
 }
 
 void LayerTreeImpl::PushPageScaleFactorAndLimits(const float* page_scale_factor,
@@ -1707,6 +1746,8 @@ bool LayerTreeImpl::UpdateDrawProperties(
             render_surface->EffectTreeIndex());
         draw_property_utils::ConcatInverseSurfaceContentsScale(effect_node,
                                                                &draw_transform);
+        draw_transform.PostTranslate(
+            occlusion_surface->pixel_alignment_offset());
       }
 
       Occlusion occlusion =
@@ -1835,7 +1876,7 @@ void LayerTreeImpl::AddLayerShouldPushProperties(LayerImpl* layer) {
   // into this set when always_push_properties_on_picture_layers() is disabled.
   DCHECK(!always_push_properties_on_picture_layers() ||
          !base::Contains(picture_layers_, layer) ||
-         (IsActiveTree() && settings().UseLayerContextForDisplay()));
+         (IsActiveTree() && settings().TreesInVizInClientProcess()));
   layers_that_should_push_properties_.insert(layer);
 }
 
@@ -1930,8 +1971,8 @@ ImageAnimationController* LayerTreeImpl::image_animation_controller() const {
   return host_impl_->image_animation_controller();
 }
 
-DroppedFrameCounter* LayerTreeImpl::dropped_frame_counter() const {
-  return host_impl_->dropped_frame_counter();
+FrameSorter* LayerTreeImpl::frame_sorter() const {
+  return host_impl_->frame_sorter();
 }
 
 MemoryHistory* LayerTreeImpl::memory_history() const {
@@ -2039,12 +2080,9 @@ bool LayerTreeImpl::use_gpu_rasterization() const {
   return host_impl_->use_gpu_rasterization();
 }
 
-bool LayerTreeImpl::create_low_res_tiling() const {
-  return host_impl_->create_low_res_tiling();
-}
-
 void LayerTreeImpl::SetNeedsRedraw() {
-  host_impl_->SetNeedsRedraw();
+  host_impl_->SetNeedsRedraw(/*animation_only=*/false,
+                             /*skip_if_inside_draw=*/false);
 }
 
 void LayerTreeImpl::GetAllPrioritizedTilesForTracing(
@@ -2058,14 +2096,14 @@ void LayerTreeImpl::GetAllPrioritizedTilesForTracing(
 
 void LayerTreeImpl::AsValueInto(base::trace_event::TracedValue* state) const {
   viz::TracedValue::MakeDictIntoImplicitSnapshot(state, "cc::LayerTreeImpl",
-                                                 this);
+                                                 viz::TracedValue::Id(this));
   state->SetInteger("source_frame_number", source_frame_number_);
 
   state->BeginArray("render_surface_layer_list");
   for (auto* layer : base::Reversed(*this)) {
     if (layer->contributes_to_drawn_render_surface())
       continue;
-    viz::TracedValue::AppendIDRef(layer, state);
+    viz::TracedValue::AppendIDRef(viz::TracedValue::Id(layer), state);
   }
   state->EndArray();
 
@@ -2212,7 +2250,7 @@ void LayerTreeImpl::RegisterPictureLayerImpl(PictureLayerImpl* layer) {
 
 void LayerTreeImpl::UnregisterPictureLayerImpl(PictureLayerImpl* layer) {
   auto it = std::ranges::find(picture_layers_, layer);
-  CHECK(it != picture_layers_.end(), base::NotFatalUntil::M130);
+  CHECK(it != picture_layers_.end());
   picture_layers_.erase(it);
 
   // Make sure that |picture_layers_with_paint_worklets_| doesn't get left with
@@ -2228,8 +2266,7 @@ void LayerTreeImpl::NotifyLayerHasPaintWorkletsChanged(PictureLayerImpl* layer,
     DCHECK(insert_pair.second);
   } else {
     auto it = picture_layers_with_paint_worklets_.find(layer);
-    CHECK(it != picture_layers_with_paint_worklets_.end(),
-          base::NotFatalUntil::M130);
+    CHECK(it != picture_layers_with_paint_worklets_.end());
     picture_layers_with_paint_worklets_.erase(it);
   }
 }
@@ -2972,10 +3009,26 @@ void LayerTreeImpl::AppendEventsMetricsFromMainThread(
       std::make_move_iterator(events_metrics.end()));
 }
 
+void LayerTreeImpl::AppendEventMetricsFromRasterThread(
+    EventMetrics::List event_metrics) {
+  event_metrics_from_raster_thread_.reserve(
+      event_metrics_from_raster_thread_.size() + event_metrics.size());
+  event_metrics_from_raster_thread_.insert(
+      event_metrics_from_raster_thread_.end(),
+      std::make_move_iterator(event_metrics.begin()),
+      std::make_move_iterator(event_metrics.end()));
+}
+
 EventMetrics::List LayerTreeImpl::TakeEventsMetrics() {
   EventMetrics::List main_event_metrics_result;
   main_event_metrics_result.swap(events_metrics_from_main_thread_);
   return main_event_metrics_result;
+}
+
+EventMetrics::List LayerTreeImpl::TakeRasterEventsMetrics() {
+  EventMetrics::List raster_event_metrics_result;
+  raster_event_metrics_result.swap(event_metrics_from_raster_thread_);
+  return raster_event_metrics_result;
 }
 
 bool LayerTreeImpl::TakeForceSendMetadataRequest() {
@@ -2985,7 +3038,6 @@ bool LayerTreeImpl::TakeForceSendMetadataRequest() {
 }
 
 void LayerTreeImpl::ResetAllChangeTracking() {
-  layers_that_should_push_properties_.clear();
   // Iterate over all layers, including masks.
   for (auto* layer : *this)
     layer->ResetChangeTracking();
@@ -3020,7 +3072,11 @@ void LayerTreeImpl::AddViewTransitionRequest(
 }
 
 std::vector<std::unique_ptr<ViewTransitionRequest>>
-LayerTreeImpl::TakeViewTransitionRequests() {
+LayerTreeImpl::TakeViewTransitionRequests(
+    bool should_set_needs_update_draw_properties) {
+  if (HasViewTransitionRequests() && should_set_needs_update_draw_properties) {
+    set_needs_update_draw_properties();
+  }
   return std::move(view_transition_requests_);
 }
 
@@ -3034,8 +3090,25 @@ bool LayerTreeImpl::HasViewTransitionSaveRequest() const {
       return true;
     }
   }
-
   return false;
+}
+
+base::flat_set<blink::ViewTransitionToken>
+LayerTreeImpl::GetCaptureViewTransitionTokens() const {
+  base::flat_set<blink::ViewTransitionToken> result;
+  // This effectively disables the new mode, since none of the capture tokens
+  // will apply.
+  if (!base::FeatureList::IsEnabled(
+          features::kViewTransitionCaptureAndDisplay)) {
+    return result;
+  }
+
+  for (const auto& request : view_transition_requests_) {
+    if (request->type() == ViewTransitionRequest::Type::kSave) {
+      result.insert(request->token());
+    }
+  }
+  return result;
 }
 
 void LayerTreeImpl::SetViewTransitionContentRect(

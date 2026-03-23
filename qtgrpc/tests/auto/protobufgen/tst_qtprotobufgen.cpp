@@ -92,8 +92,8 @@ void qtprotobufgenTest::initTestCase()
     QVERIFY(!cmakeGeneratedPath().isEmpty());
 #if !defined(SKIP_COMMAND_LINE_TESTS)
     QVERIFY(!cmdLineGeneratedPath().isEmpty());
-#endif
     QVERIFY(protocolCompilerAvailableToRun(ProtocPath));
+#endif
 }
 
 void qtprotobufgenTest::cmakeGenerated_data()
@@ -191,6 +191,11 @@ void qtprotobufgenTest::cmdLineGenerated_data()
         << "header_guard_pragma"
         << "qtprotobufgenminimal.proto"
         << "HEADER_GUARD=pragma";
+
+    QTest::addRow("non_final_messages")
+        << "non_final_messages"
+        << "qtprotobufgenminimal.proto"
+        << "GENERATE_NON_FINAL_MESSAGES";
 }
 
 void qtprotobufgenTest::cmdLineGenerated()

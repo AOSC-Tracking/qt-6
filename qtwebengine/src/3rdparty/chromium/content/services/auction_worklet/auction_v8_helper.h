@@ -427,8 +427,13 @@ class CONTENT_EXPORT AuctionV8Helper
   // Helper for formatting script name for debug messages.
   std::string FormatScriptName(v8::Local<v8::UnboundScript> script);
 
-  static std::string FormatExceptionMessage(v8::Local<v8::Context> context,
+  static std::string FormatExceptionMessage(v8::Isolate* isolate,
+                                            v8::Local<v8::Context> context,
                                             v8::Local<v8::Message> message);
+
+  void SetEagerJsCompilation(bool eagerly_compile_js) {
+    eagerly_compile_js_ = eagerly_compile_js;
+  }
 
  private:
   friend class base::RefCountedDeleteOnSequence<AuctionV8Helper>;
@@ -454,6 +459,8 @@ class CONTENT_EXPORT AuctionV8Helper
 
   scoped_refptr<base::SequencedTaskRunner> v8_runner_;
   scoped_refptr<base::SequencedTaskRunner> timer_task_runner_;
+
+  bool eagerly_compile_js_ = false;
 
   // This needs to be invoked after ~IsolateHolder to make sure that V8 is
   // really shut down.

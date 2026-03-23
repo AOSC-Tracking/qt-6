@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qopenxrhelpers_p.h"
 #include <QDebug>
@@ -18,6 +20,17 @@ bool OpenXRHelpers::checkXrResult(XrResult result, XrInstance instance)
 {
     if (result != XrResult::XR_SUCCESS) {
         qWarning().noquote().nospace() << "OpenXR call failed (" << result << "): " << getXrResultAsString(result, instance);
+        return false;
+    }
+    return true;
+}
+
+bool OpenXRHelpers::resolveXrFunction(XrInstance instance, const char *name, PFN_xrVoidFunction *function)
+{
+    XrResult result = xrGetInstanceProcAddr(instance, name, function);
+    if (!checkXrResult(result, instance)) {
+        qWarning("Failed to resolve OpenXR function %s", name);
+        *function = nullptr;
         return false;
     }
     return true;

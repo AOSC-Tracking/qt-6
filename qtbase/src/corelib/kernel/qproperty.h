@@ -766,9 +766,11 @@ public:
         // afterwards.
         if (!(iface->getBinding && iface->setBinding))
             return QUntypedPropertyBinding {};
-        QUntypedPropertyBinding binding = iface->getBinding(data);
-        iface->setBinding(data, QUntypedPropertyBinding{});
-        return binding;
+        return [&] {
+            QUntypedPropertyBinding binding = iface->getBinding(data);
+            iface->setBinding(data, QUntypedPropertyBinding{});
+            return binding;
+        }();
     }
 
     void observe(QPropertyObserver *observer) const

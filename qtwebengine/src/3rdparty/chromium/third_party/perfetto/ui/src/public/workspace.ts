@@ -64,8 +64,7 @@ function createSessionUniqueId(): string {
  */
 
 export interface TrackNodeArgs {
-  title: string;
-  id: string;
+  name: string;
   uri: string;
   headless: boolean;
   sortOrder: number;
@@ -87,13 +86,13 @@ export class TrackNode {
   // A human readable string for this track - displayed in the track shell.
   // TODO(stevegolton): Make this optional, so that if we implement a string for
   // this track then we can implement it here as well.
-  public title: string;
+  public name: string;
 
   // The URI of the track content to display here.
   public uri?: string;
 
   // Optional sort order, which workspaces may or may not take advantage of for
-  // sorting when displaying the workspace.
+  // sorting when displaying the workspace. Higher numbers appear first.
   public sortOrder?: number;
 
   // Don't show the header at all for this track, just show its un-nested
@@ -127,8 +126,7 @@ export class TrackNode {
 
   constructor(args?: Partial<TrackNodeArgs>) {
     const {
-      title = '',
-      id = createSessionUniqueId(),
+      name = '',
       uri,
       headless = false,
       sortOrder,
@@ -137,10 +135,10 @@ export class TrackNode {
       removable = false,
     } = args ?? {};
 
-    this.id = id;
+    this.id = createSessionUniqueId();
     this.uri = uri;
     this.headless = headless;
-    this.title = title;
+    this.name = name;
     this.sortOrder = sortOrder;
     this.isSummary = isSummary;
     this._collapsed = collapsed;
@@ -279,12 +277,12 @@ export class TrackNode {
    * omitted.
    */
   get fullPath(): ReadonlyArray<string> {
-    let fullPath = [this.title];
+    let fullPath = [this.name];
     let parent = this.parent;
     while (parent) {
       // Ignore headless containers as they don't appear in the tree...
-      if (!parent.headless && parent.title !== '') {
-        fullPath = [parent.title, ...fullPath];
+      if (!parent.headless && parent.name !== '') {
+        fullPath = [parent.name, ...fullPath];
       }
       parent = parent.parent;
     }
@@ -577,7 +575,7 @@ export class Workspace {
     // Make a lightweight clone of this track - just the uri and the title.
     const cloned = new TrackNode({
       uri: track.uri,
-      title: track.title,
+      name: track.name,
       removable: track.removable,
     });
     this.pinnedTracksNode.addChildLast(cloned);

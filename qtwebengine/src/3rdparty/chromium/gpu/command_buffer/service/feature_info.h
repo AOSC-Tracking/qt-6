@@ -11,7 +11,6 @@
 
 #include "base/memory/ref_counted.h"
 #include "gpu/command_buffer/common/context_creation_attribs.h"
-#include "gpu/command_buffer/common/gpu_memory_buffer_support.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gles2_cmd_validation.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
@@ -86,7 +85,7 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool map_buffer_range = false;
     bool ext_discard_framebuffer = false;
     bool angle_depth_texture = false;
-    bool is_swiftshader_for_webgl = false;
+    bool is_software_webgl = false;
     bool angle_texture_usage = false;
     bool ext_texture_storage = false;
     bool blend_equation_advanced = false;
@@ -164,6 +163,15 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
                   bool is_passthrough_cmd_decoder,
                   const DisallowedFeatures& disallowed_features,
                   bool force_reinitialize = false);
+
+  // Same as initialize but with a provided `complete_fbo_for_workarounds` to
+  // use with the ensure_previous_framebuffer_not_deleted driver bug workaround.
+  void InitializeWithCompleteFramebufferForWorkarounds(
+      ContextType context_type,
+      bool is_passthrough_cmd_decoder,
+      const DisallowedFeatures& disallowed_features,
+      uint32_t complete_fbo_for_workarounds,
+      bool force_reinitialize = false);
 
   // Helper that defaults to no disallowed features and a GLES2 context.
   void InitializeForTesting();
@@ -249,7 +257,7 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
 
   void AddExtensionString(std::string_view s);
   void InitializeBasicState(const base::CommandLine* command_line);
-  void InitializeFeatures();
+  void InitializeFeatures(uint32_t complete_fbo_for_workarounds);
   void InitializeFloatAndHalfFloatFeatures(const gfx::ExtensionSet& extensions);
 
   void EnableANGLEInstancedArrayIfPossible(const gfx::ExtensionSet& extensions);

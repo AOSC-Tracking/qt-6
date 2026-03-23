@@ -17,7 +17,6 @@
 #include "services/device/fingerprint/fingerprint.h"
 #include "services/device/generic_sensor/platform_sensor_provider.h"
 #include "services/device/generic_sensor/sensor_provider_impl.h"
-#include "services/device/geolocation/geolocation_config.h"
 #include "services/device/geolocation/geolocation_context.h"
 #include "services/device/geolocation/public_ip_address_geolocator.h"
 #include "services/device/geolocation/public_ip_address_location_notifier.h"
@@ -101,16 +100,16 @@ DeviceService::DeviceService(
       base::SingleThreadTaskRunner::GetCurrentDefault());
 #endif  // defined(IS_SERIAL_ENABLED_PLATFORM)
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS_TVOS)
   // Ensure that the battery backend is initialized now; otherwise it may end up
   // getting initialized on access during destruction, when it's no longer safe
   // to initialize.
   device::BatteryStatusService::GetInstance();
-#endif  // !BUILDFLAG(IS_ANDROID)
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS_TVOS)
 }
 
 DeviceService::~DeviceService() {
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_IOS_TVOS)
   // NOTE: We don't call this on Chrome OS due to https://crbug.com/856771, as
   // Shutdown() implicitly depends on DBusThreadManager, which may already be
   // destroyed by the time DeviceService is destroyed. Fortunately on Chrome OS
@@ -150,11 +149,17 @@ void DeviceService::OverrideTimeZoneMonitorBinderForTesting(
   internal::GetTimeZoneMonitorBinderOverride() = std::move(binder);
 }
 
+// static
+void DeviceService::OverrideUsbDeviceManagerBinderForTesting(
+    UsbDeviceManagerBinder binder) {
+  internal::GetUsbDeviceManagerBinderOverride() = std::move(binder);
+}
+
 void DeviceService::BindBatteryMonitor(
     mojo::PendingReceiver<mojom::BatteryMonitor> receiver) {
 #if BUILDFLAG(IS_ANDROID)
   GetJavaInterfaceProvider()->GetInterface(std::move(receiver));
-#else
+#elif !BUILDFLAG(IS_IOS_TVOS)
   BatteryMonitorImpl::Create(std::move(receiver));
 #endif
 }
@@ -232,11 +237,6 @@ void DeviceService::BindInputDeviceManager(
 void DeviceService::BindFingerprint(
     mojo::PendingReceiver<mojom::Fingerprint> receiver) {
   Fingerprint::Create(std::move(receiver));
-}
-
-void DeviceService::BindGeolocationConfig(
-    mojo::PendingReceiver<mojom::GeolocationConfig> receiver) {
-  GeolocationConfig::Create(std::move(receiver));
 }
 
 void DeviceService::BindGeolocationContext(
@@ -335,6 +335,12 @@ void DeviceService::BindWakeLockProvider(
 
 void DeviceService::BindUsbDeviceManager(
     mojo::PendingReceiver<mojom::UsbDeviceManager> receiver) {
+  const auto& binder_override = internal::GetUsbDeviceManagerBinderOverride();
+  if (binder_override) {
+    binder_override.Run(std::move(receiver));
+    return;
+  }
+
   // TODO(crbug.com/40141825): usb::DeviceManagerImpl depends on the
   // permission_broker service on Chromium OS. We will need to redirect
   // connections for LaCrOS here.

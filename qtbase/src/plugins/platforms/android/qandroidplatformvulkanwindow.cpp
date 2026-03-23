@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "androidjnimain.h"
 #include "qandroideventdispatcher.h"
@@ -47,10 +48,10 @@ void QAndroidPlatformVulkanWindow::setGeometry(const QRect &rect)
 
 void QAndroidPlatformVulkanWindow::applicationStateChanged(Qt::ApplicationState state)
 {
-    QAndroidPlatformWindow::applicationStateChanged(state);
     if (state <= Qt::ApplicationHidden) {
         destroyAndClearSurface();
     }
+    QAndroidPlatformWindow::applicationStateChanged(state);
 }
 
 QSurfaceFormat QAndroidPlatformVulkanWindow::format() const
@@ -69,6 +70,8 @@ void QAndroidPlatformVulkanWindow::clearSurface()
         ANativeWindow_release(m_nativeWindow);
         m_nativeWindow = nullptr;
     }
+
+    decrementSurfacesCount();
 }
 
 void QAndroidPlatformVulkanWindow::destroyAndClearSurface()
@@ -133,6 +136,8 @@ VkSurfaceKHR *QAndroidPlatformVulkanWindow::vkSurface()
 
     if (needsExpose)
         sendExpose();
+
+    incrementSurfacesCount();
 
     return &m_vkSurface;
 }

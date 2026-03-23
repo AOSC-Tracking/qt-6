@@ -22,10 +22,13 @@
 #include "base/dcheck_is_on.h"
 #include "base/feature_list_buildflags.h"
 #include "base/gtest_prod_util.h"
-#include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/synchronization/lock.h"
 #include "build/build_config.h"
+
+#if BUILDFLAG(ENABLE_BANNED_BASE_FEATURE_PREFIX)
+#include "base/logging.h"
+#endif
 
 namespace base {
 
@@ -77,12 +80,13 @@ enum FeatureState {
 // Provides a forward declaration for `feature_object_name` in a header file,
 // e.g.
 //
-//   BASE_DECLARE_FEATURE_PARAM(kMyFeatureParam);
+//   BASE_DECLARE_FEATURE_PARAM(int, kMyFeatureParam);
 //
 // If the feature needs to be marked as exported, i.e. it is referenced by
 // multiple components, then write:
 //
-//   COMPONENT_EXPORT(MY_COMPONENT) BASE_DECLARE_FEATURE_PARAM(kMyFeatureParam);
+//   COMPONENT_EXPORT(MY_COMPONENT)
+//   BASE_DECLARE_FEATURE_PARAM(int, kMyFeatureParam);
 //
 // This macro enables optimizations to make the second and later calls faster,
 // but requires additional memory uses. If you obtain the parameter only once,
@@ -95,16 +99,19 @@ enum FeatureState {
 // Provides a definition for `feature_object_name` with `T`, `feature`, `name`
 // and `default_value`, with an internal parsed value cache, e.g.
 //
-//   BASE_FEATURE_PARAM(int, kMyFeatureParam, kMyFeature, "MyFeatureParam", 0);
+//   BASE_FEATURE_PARAM(int, kMyFeatureParam, &kMyFeature, "my_feature_param",
+//                      0);
 //
 // `T` is a parameter type, one of bool, int, size_t, double, std::string, and
 // base::TimeDelta. Enum types are not supported for now.
 //
-// For now, ScopedFeatureList doesn't work to change the value dynamically when
-// the cache is used with this macro.
-//
 // It should *not* be defined in header files; do not use this macro in header
 // files.
+//
+// WARNING: If the feature is not enabled, the parameter is not set, or set to
+// an invalid value (per the param type), then Get() will return the default
+// value passed to this C++ macro. In particular this will typically return the
+// default value regardless of the server-side config in control groups.
 #define BASE_FEATURE_PARAM(T, feature_object_name, feature, name,       \
                            default_value)                               \
   namespace field_trial_params_internal {                               \
@@ -363,19 +370,20 @@ class BASE_EXPORT FeatureList {
 
   // Returns true if the state of |feature_name| has been overridden (regardless
   // of whether the overridden value is the same as the default value) for any
-  // reason (e.g. command line or field trial).
-  bool IsFeatureOverridden(const std::string& feature_name) const;
+  // reason (e.g. command line or field trial). Note: This will return true even
+  // when a feature is overridden with OVERRIDE_USE_DEFAULT (default group).
+  bool IsFeatureOverridden(std::string_view feature_name) const;
 
   // Returns true if the state of |feature_name| has been overridden via
   // |InitFromCommandLine()|. This includes features explicitly
   // disabled/enabled with --disable-features and --enable-features, as well as
   // any extra feature overrides that depend on command line switches.
   bool IsFeatureOverriddenFromCommandLine(
-      const std::string& feature_name) const;
+      std::string_view feature_name) const;
 
   // Returns true if the state |feature_name| has been overridden by
   // |InitFromCommandLine()| and the state matches |state|.
-  bool IsFeatureOverriddenFromCommandLine(const std::string& feature_name,
+  bool IsFeatureOverriddenFromCommandLine(std::string_view feature_name,
                                           OverrideState state) const;
 
   // Associates a field trial for reporting purposes corresponding to the
@@ -503,7 +511,7 @@ class BASE_EXPORT FeatureList {
       std::string_view input);
 
   // Checks and parses the |enable_feature| (e.g.
-  // FeatureName<Study.Group:Param1/value1/) obtained by applying
+  // FeatureName<Study.Group:param1/value1/) obtained by applying
   // SplitFeatureListString() to the |enable_features| flag, and sets
   // |feature_name| to be the feature's name, |study_name| and |group_name| to
   // be the field trial name and its group name if the field trial is specified

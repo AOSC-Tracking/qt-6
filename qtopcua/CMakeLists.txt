@@ -11,12 +11,14 @@ project(QtOpcUa
     LANGUAGES CXX C
 )
 
-find_package(Qt6 ${PROJECT_VERSION} CONFIG REQUIRED COMPONENTS BuildInternals Core Network)
-find_package(Qt6 ${PROJECT_VERSION} CONFIG OPTIONAL_COMPONENTS Gui Quick QuickTest Widgets)
+find_package(Qt6 ${PROJECT_VERSION} CONFIG REQUIRED COMPONENTS BuildInternals)
+
+# This should be called as early as possible, just after find_package(BuildInternals) where it is
+# defined.
 qt_internal_project_setup()
 
-# Needed for qt_opcua_disable_optimizations_in_current_dir.
-include(src/opcua/Qt6OpcUaMacros.cmake)
+find_package(Qt6 ${PROJECT_VERSION} CONFIG REQUIRED COMPONENTS Core Network)
+find_package(Qt6 ${PROJECT_VERSION} CONFIG OPTIONAL_COMPONENTS Gui Quick QuickTest Widgets)
 
 if(QNX)
     message(NOTICE "Skipping the build as the condition \"NOT QNX\" is not met.")
@@ -26,4 +28,8 @@ if(WASM)
     message(NOTICE "Skipping the build as the condition \"NOT WASM\" is not met.")
     return()
 endif()
+
+# Ensure macros are available when configuring tests in-tree with the Qt build
+include(src/opcua/Qt6OpcUaMacros.cmake)
+
 qt_build_repo()

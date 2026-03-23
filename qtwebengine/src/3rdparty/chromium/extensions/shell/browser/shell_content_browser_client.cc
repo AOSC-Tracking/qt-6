@@ -12,11 +12,12 @@
 #include "base/functional/bind.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/sequenced_task_runner.h"
+#include "components/embedder_support/user_agent_utils.h"
 #include "components/guest_view/common/guest_view.mojom.h"
-#include "components/nacl/common/buildflags.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/service_worker_version_base_info.h"
@@ -26,7 +27,6 @@
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "content/public/common/user_agent.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_devtools_manager_delegate.h"
 #include "extensions/browser/api/web_request/web_request_api.h"
@@ -59,16 +59,6 @@
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "url/gurl.h"
-
-#if BUILDFLAG(ENABLE_NACL)
-#include "components/nacl/browser/nacl_browser.h"
-#include "components/nacl/browser/nacl_host_message_filter.h"
-#include "components/nacl/browser/nacl_process_host.h"
-#include "components/nacl/common/nacl_process_type.h"  // nogncheck
-#include "components/nacl/common/nacl_switches.h"      // nogncheck
-#include "content/public/browser/browser_child_process_host.h"
-#include "content/public/browser/child_process_data.h"
-#endif
 
 using base::CommandLine;
 using content::BrowserContext;
@@ -108,20 +98,6 @@ ShellContentBrowserClient::CreateBrowserMainParts(bool is_integration_test) {
   browser_main_parts_ = browser_main_parts.get();
 
   return browser_main_parts;
-}
-
-void ShellContentBrowserClient::RenderProcessWillLaunch(
-    content::RenderProcessHost* host) {
-#if BUILDFLAG(ENABLE_NACL)
-  int render_process_id = host->GetDeprecatedID();
-  BrowserContext* browser_context = browser_main_parts_->browser_context();
-
-  // PluginInfoMessageFilter is not required because app_shell does not have
-  // the concept of disabled plugins.
-  host->AddFilter(new nacl::NaClHostMessageFilter(
-      render_process_id, browser_context->IsOffTheRecord(),
-      browser_context->GetPath()));
-#endif
 }
 
 bool ShellContentBrowserClient::ShouldUseProcessPerSite(
@@ -185,24 +161,6 @@ ShellContentBrowserClient::CreateSpeechRecognitionManagerDelegate() {
   return new speech::ShellSpeechRecognitionManagerDelegate();
 }
 
-content::BrowserPpapiHost*
-ShellContentBrowserClient::GetExternalBrowserPpapiHost(int plugin_process_id) {
-#if BUILDFLAG(ENABLE_NACL)
-  content::BrowserChildProcessHostIterator iter(PROCESS_TYPE_NACL_LOADER);
-  while (!iter.Done()) {
-    nacl::NaClProcessHost* host = static_cast<nacl::NaClProcessHost*>(
-        iter.GetDelegate());
-    if (host->process() &&
-        host->process()->GetData().id == plugin_process_id) {
-      // Found the plugin.
-      return host->browser_ppapi_host();
-    }
-    ++iter;
-  }
-#endif
-  return nullptr;
-}
-
 void ShellContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
     std::vector<std::string>* additional_allowed_schemes) {
   ContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
@@ -251,22 +209,17 @@ void ShellContentBrowserClient::
                           render_frame_host.GetGlobalId()));
 }
 
-std::vector<std::unique_ptr<content::NavigationThrottle>>
-ShellContentBrowserClient::CreateThrottlesForNavigation(
-    content::NavigationHandle* navigation_handle) {
-  std::vector<std::unique_ptr<content::NavigationThrottle>> throttles;
+void ShellContentBrowserClient::CreateThrottlesForNavigation(
+    content::NavigationThrottleRegistry& registry) {
+  content::NavigationHandle& navigation_handle =
+      registry.GetNavigationHandle();
   if (!extensions::ExtensionsBrowserClient::Get()
            ->AreExtensionsDisabledForContext(
-               navigation_handle->GetWebContents()->GetBrowserContext())) {
-    throttles.push_back(
-        std::make_unique<ExtensionNavigationThrottle>(navigation_handle));
+               navigation_handle.GetWebContents()->GetBrowserContext())) {
+    registry.AddThrottle(
+        std::make_unique<ExtensionNavigationThrottle>(registry));
   }
-
-  if (auto throttle =
-          WebViewGuest::MaybeCreateNavigationThrottle(navigation_handle)) {
-    throttles.push_back(std::move(throttle));
-  }
-  return throttles;
+  WebViewGuest::MaybeCreateAndAddNavigationThrottle(registry);
 }
 
 std::unique_ptr<content::NavigationUIData>
@@ -375,9 +328,11 @@ void ShellContentBrowserClient::OverrideURLLoaderFactoryParams(
     content::BrowserContext* browser_context,
     const url::Origin& origin,
     bool is_for_isolated_world,
+    bool is_for_service_worker,
     network::mojom::URLLoaderFactoryParams* factory_params) {
   URLLoaderFactoryManager::OverrideURLLoaderFactoryParams(
-      browser_context, origin, is_for_isolated_world, factory_params);
+      browser_context, origin, is_for_isolated_world, is_for_service_worker,
+      factory_params);
 }
 
 base::FilePath
@@ -388,7 +343,7 @@ ShellContentBrowserClient::GetSandboxedStorageServiceDataDirectory() {
 std::string ShellContentBrowserClient::GetUserAgent() {
   // Must contain a user agent string for version sniffing. For example,
   // pluginless WebRTC Hangouts checks the Chrome version number.
-  return content::BuildUserAgentFromProduct("Chrome/" PRODUCT_VERSION);
+  return embedder_support::GetUserAgent();
 }
 
 std::unique_ptr<ShellBrowserMainParts>
@@ -410,14 +365,6 @@ void ShellContentBrowserClient::AppendRendererSwitches(
   };
   command_line->CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
                                  kSwitchNames);
-
-#if BUILDFLAG(ENABLE_NACL)
-  static const char* const kNaclSwitchNames[] = {
-      ::switches::kEnableNaClDebug,
-  };
-  command_line->CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
-                                 kNaclSwitchNames);
-#endif  // BUILDFLAG(ENABLE_NACL)
 }
 
 const Extension* ShellContentBrowserClient::GetExtension(

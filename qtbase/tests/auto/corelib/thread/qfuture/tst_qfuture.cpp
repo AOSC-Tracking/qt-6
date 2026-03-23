@@ -791,8 +791,12 @@ void tst_QFuture::futureToVoid()
     p.setProgressValue(42);
     p.finish();
 
-    QFuture<void> voidFuture = QFuture<void>(future);
+    QFuture<void> voidFuture = future;
     QCOMPARE(voidFuture.progressValue(), 42);
+
+    QFuture<void> voidFuture2;
+    voidFuture2 = future;
+    QCOMPARE(voidFuture2.progressValue(), 42);
 }
 
 class IntResult : public QFutureInterface<int>
@@ -3994,7 +3998,7 @@ void tst_QFuture::signalConnect()
 #if defined(Q_CC_MSVC_ONLY) && (Q_CC_MSVC < 1940 || !defined(_DEBUG))
 #define EXPECT_FUTURE_CONNECT_FAIL() QEXPECT_FAIL("", "QTBUG-101761, test fails on Windows/MSVC", Continue)
 #else
-        QTest::ignoreMessage(QtWarningMsg, "QObject::connect: signal not found in SenderObject");
+        QTest::ignoreMessage(QtWarningMsg, "QObject::connect(SenderObject, SenderObject): signal not found");
 #define EXPECT_FUTURE_CONNECT_FAIL()
 #endif
 
@@ -5562,6 +5566,113 @@ void tst_QFuture::cancelChain()
         QCOMPARE_EQ(thenCnt, 4);
         QCOMPARE_EQ(onCancelCnt, 0);
     }
+
+    static const auto fakeLongRunningProcess = [] {
+        // Just create a future that is forever pending.
+        QFutureInterface<int> promise(QFutureInterfaceBase::Pending);
+        promise.setProgressValueAndText(5, "fakeLongRun");
+        return promise.future();
+    };
+
+    // The outer future is canceled and the cancelation propagates into the nested future
+    {
+        QPromise<void> p;
+
+        std::optional<QFuture<int>> nestedFuture;
+
+        QFuture<int> f = p.future().then([&nestedFuture]() mutable {
+            nestedFuture = fakeLongRunningProcess();
+            return nestedFuture.value();
+        }).unwrap();
+
+        p.start();
+        p.finish();
+
+        f.cancelChain();
+
+        QVERIFY(f.isCanceled());
+        QVERIFY(!f.isFinished());
+
+        QVERIFY(nestedFuture.has_value());
+        QVERIFY(nestedFuture->isCanceled());
+    }
+
+    // Cancelling a future chain with a nested future while the function
+    // returning the nested future is still in progress correctly propagates the
+    // cancellation.
+    {
+        QPromise<void> p;
+
+        std::optional<QFuture<int>> nestedFuture;
+
+        std::function<void()> triggerCancelChain;
+
+        QFuture<int> f = p.future().then([&triggerCancelChain, &nestedFuture]() mutable {
+            nestedFuture = fakeLongRunningProcess();
+
+            triggerCancelChain();
+
+            return nestedFuture.value();
+        }).unwrap();
+
+        triggerCancelChain = [&] { f.cancelChain(); };
+
+        p.start();
+        p.finish();
+
+        QVERIFY(f.isCanceled());
+
+        QVERIFY(nestedFuture.has_value());
+        QVERIFY(nestedFuture->isCanceled());
+
+        QVERIFY(!f.isFinished());
+    }
+
+    // Propagation of cancellation also works for nested in-progress futures in
+    // a different thread.
+    {
+        QSemaphore start;
+        QSemaphore cont;
+        std::atomic_bool continuationStopped = false;
+        std::atomic_bool unexpectedThenCalled = false;
+        std::atomic_bool expectedOnCanceledCalled = false;
+        QFuture<void> nestedFuture;
+        auto future = QtConcurrent::run([]{
+            QThread::currentThread()->msleep(100);
+        })
+        .then([&]{
+            nestedFuture = QtConcurrent::run([&](QPromise<void> &promise) {
+                start.release(1);
+                while(true) {
+                    if (promise.isCanceled()) {
+                        continuationStopped.store(true, std::memory_order_relaxed);
+                        break;
+                    }
+                    // some atomic work that cannot be interrupted
+                    QThread::currentThread()->msleep(100);
+                }
+            });
+            cont.acquire(1);
+            return nestedFuture;
+        })
+        .unwrap()
+        .then([&]{
+            unexpectedThenCalled.store(true, std::memory_order_relaxed);
+        })
+        .onCanceled([&]{
+            expectedOnCanceledCalled.store(true, std::memory_order_relaxed);
+        });
+
+        start.acquire(1);
+        future.cancelChain();
+        cont.release(1);
+        future.waitForFinished();
+
+        QVERIFY(nestedFuture.isCanceled());
+        QVERIFY(!unexpectedThenCalled.load(std::memory_order_relaxed));
+        QVERIFY(expectedOnCanceledCalled.load(std::memory_order_relaxed));
+        QVERIFY(continuationStopped.load(std::memory_order_relaxed));
+    }
 }
 
 void tst_QFuture::cancelChainWithContext_data()
@@ -5652,6 +5763,12 @@ void tst_QFuture::cancelChainWithContext()
         int onCancelCnt = 0;
         bool unexpectedThread = false;
 
+        // For in-other-thread case we need a semaphore to make sure that
+        // the needed continuation is executed.
+        // Fot the in-main-thread case it's guaranteed by the unwrap()
+        // implementation.
+        QSemaphore sem;
+
         auto f = p1.future()
                          .then(context, [&]() {
                              if (QThread::currentThread() != thread)
@@ -5662,6 +5779,8 @@ void tst_QFuture::cancelChainWithContext()
                              if (QThread::currentThread() != thread)
                                  unexpectedThread = true;
                              ++thenCnt;
+                             if (inOtherThread)
+                                 sem.release();
                              return f;
                          }).unwrap()
                          .then(context, [&]{
@@ -5681,6 +5800,8 @@ void tst_QFuture::cancelChainWithContext()
                          });
 
         p1.finish();
+        if (inOtherThread)
+            sem.acquire();
         f.cancelChain();
         p2.finish();
         f.waitForFinished();
@@ -5732,6 +5853,75 @@ void tst_QFuture::cancelChainWithContext()
         QVERIFY(!unexpectedThread);
         QCOMPARE_EQ(thenCnt, 4);
         QCOMPARE_EQ(onCancelCnt, 0);
+    }
+    // cancelling propagates through unwrap()
+    {
+        QPromise<void> p1, p2;
+        p1.start();
+        p2.start();
+
+        int thenCnt = 0;
+        int onCancelCnt = 0;
+        bool unexpectedThread = false;
+
+        // For in-other-thread case we need a semaphore to make sure that
+        // the first continuation is executed.
+        // Fot the in-main-thread case it's guaranteed by the unwrap()
+        // implementation.
+        QSemaphore sem;
+
+        auto f = p1.future()
+                         .then(context, [&, f2 = p2.future()]() {
+                             if (QThread::currentThread() != thread)
+                                 unexpectedThread = true;
+                             ++thenCnt;
+                             if (inOtherThread)
+                                 sem.release();
+                             return f2;
+                         }).unwrap()
+                         .onCanceled(context, [&] {
+                             if (QThread::currentThread() != thread)
+                                 unexpectedThread = true;
+                             ++onCancelCnt;
+                         })
+                         .then([&]() {
+                             if (QThread::currentThread() != thread)
+                                 unexpectedThread = true;
+                             ++thenCnt;
+                             return QtFuture::makeReadyVoidFuture();
+                         }).unwrap()
+                         .onCanceled([&] {
+                             if (QThread::currentThread() != thread)
+                                 unexpectedThread = true;
+                             ++onCancelCnt;
+                         })
+                         .then(context, [&]{
+                             if (QThread::currentThread() != thread)
+                                 unexpectedThread = true;
+                             ++thenCnt;
+                             return QtFuture::makeReadyVoidFuture();
+                         }).unwrap()
+                         .onCanceled([&] {
+                             if (QThread::currentThread() != thread)
+                                 unexpectedThread = true;
+                             ++onCancelCnt;
+                         })
+                         .then(context, [&]{
+                             if (QThread::currentThread() != thread)
+                                 unexpectedThread = true;
+                             ++thenCnt;
+                         });
+
+        p1.finish();
+        if (inOtherThread)
+            sem.acquire();
+        f.cancelChain();
+        p2.finish();
+        f.waitForFinished();
+
+        QVERIFY(!unexpectedThread);
+        QCOMPARE_EQ(thenCnt, 1);
+        QCOMPARE_EQ(onCancelCnt, 3);
     }
 }
 

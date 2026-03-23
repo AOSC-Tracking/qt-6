@@ -27,6 +27,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "ui/menus/simple_menu_model.h"
 #include "ui/webui/resources/cr_components/history_clusters/history_clusters.mojom.h"
 
 namespace history_clusters {
@@ -271,8 +272,9 @@ IN_PROC_BROWSER_TEST_F(HistoryClustersHandlerBrowserTest,
   EXPECT_EQ(cluster_mojom->related_searches[4]->query, "five");
 }
 
+// TODO(crbug.com/401535901): Test is flaky.
 IN_PROC_BROWSER_TEST_F(HistoryClustersHandlerBrowserTest,
-                       RemoveVisitByUrlAndTime) {
+                       DISABLED_RemoveVisitByUrlAndTime) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL url = embedded_test_server()->GetURL("/simple.html");
   // Open in a new tab to keep the history clusters UI open.

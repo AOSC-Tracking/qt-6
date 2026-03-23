@@ -52,6 +52,14 @@ TEST_F(ProfileOAuth2TokenServiceDelegateTest, FireRefreshTokenRevoked) {
 // mobile where refresh tokens are not accessible. This test checks that refresh
 // tokens are not affected on INVALID_TOKENS Multilogin error.
 TEST_F(ProfileOAuth2TokenServiceDelegateTest, InvalidateTokensForMultilogin) {
+  const CoreAccountId account_id1 =
+      CoreAccountId::FromGaiaId(GaiaId("account_id1"));
+  const CoreAccountId account_id2 =
+      CoreAccountId::FromGaiaId(GaiaId("account_id2"));
+
+  delegate.UpdateCredentials(account_id1, "refresh_token1");
+  delegate.UpdateCredentials(account_id2, "refresh_token2");
+
   // Check that OnAuthErrorChanged is not fired from
   // InvalidateTokensForMultilogin and refresh tokens are not set in error.
   EXPECT_CALL(mock_observer,
@@ -62,14 +70,6 @@ TEST_F(ProfileOAuth2TokenServiceDelegateTest, InvalidateTokensForMultilogin) {
                           CREDENTIALS_REJECTED_BY_SERVER),
                   testing::_))
       .Times(0);
-
-  const CoreAccountId account_id1 =
-      CoreAccountId::FromGaiaId(GaiaId("account_id1"));
-  const CoreAccountId account_id2 =
-      CoreAccountId::FromGaiaId(GaiaId("account_id2"));
-
-  delegate.UpdateCredentials(account_id1, "refresh_token1");
-  delegate.UpdateCredentials(account_id2, "refresh_token2");
 
   delegate.InvalidateTokenForMultilogin(account_id1);
 
@@ -104,7 +104,14 @@ TEST_F(ProfileOAuth2TokenServiceDelegateTest, UpdateAuthErrorPersistenErrors) {
       "table size should match number of auth error types");
 
   for (GoogleServiceAuthError::State state : table) {
-    GoogleServiceAuthError error(state);
+    GoogleServiceAuthError error;
+    if (state == GoogleServiceAuthError::SCOPE_LIMITED_UNRECOVERABLE_ERROR) {
+      error = GoogleServiceAuthError::FromScopeLimitedUnrecoverableErrorReason(
+          GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::
+              kInvalidScope);
+    } else {
+      error = GoogleServiceAuthError(state);
+    }
     if (!error.IsPersistentError() || error.IsScopePersistentError()) {
       continue;
     }
@@ -136,7 +143,14 @@ TEST_F(ProfileOAuth2TokenServiceDelegateTest, UpdateAuthErrorTransientErrors) {
   EXPECT_TRUE(delegate.BackoffEntry());
   int failure_count = 0;
   for (GoogleServiceAuthError::State state : table) {
-    GoogleServiceAuthError error(state);
+    GoogleServiceAuthError error;
+    if (state == GoogleServiceAuthError::SCOPE_LIMITED_UNRECOVERABLE_ERROR) {
+      error = GoogleServiceAuthError::FromScopeLimitedUnrecoverableErrorReason(
+          GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::
+              kInvalidScope);
+    } else {
+      error = GoogleServiceAuthError(state);
+    }
     if (!error.IsTransientError()) {
       continue;
     }
@@ -164,8 +178,10 @@ TEST_F(ProfileOAuth2TokenServiceDelegateTest,
   const CoreAccountId account_id =
       CoreAccountId::FromGaiaId(GaiaId("account_id"));
   delegate.UpdateCredentials(account_id, "refresh_token");
-  GoogleServiceAuthError error(
-      GoogleServiceAuthError::SCOPE_LIMITED_UNRECOVERABLE_ERROR);
+  GoogleServiceAuthError error =
+      GoogleServiceAuthError::FromScopeLimitedUnrecoverableErrorReason(
+          GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::
+              kInvalidScope);
 
   // Scope persistent errors are not persisted or notified as it does not imply
   // that the account is in an error state but the error is only relevant to
@@ -240,9 +256,14 @@ TEST_F(ProfileOAuth2TokenServiceDelegateTest,
 
   {
     testing::InSequence sequence;
-    // `OnAuthErrorChanged()` is not called after adding a new account in tests.
-    EXPECT_CALL(mock_observer, OnAuthErrorChanged).Times(0);
+
     EXPECT_CALL(mock_observer, OnRefreshTokenAvailable(account_id));
+    // `OnAuthErrorChanged()` is called after `OnRefreshTokenAvailable()`
+    // after adding a new account in tests.
+    EXPECT_CALL(
+        mock_observer,
+        OnAuthErrorChanged(account_id, GoogleServiceAuthError::AuthErrorNone(),
+                           testing::_));
     EXPECT_CALL(mock_observer, OnEndBatchChanges());
     delegate.UpdateCredentials(account_id, "first refreshToken");
     testing::Mock::VerifyAndClearExpectations(&mock_observer);
@@ -250,10 +271,12 @@ TEST_F(ProfileOAuth2TokenServiceDelegateTest,
 
   {
     testing::InSequence sequence;
-    // `OnAuthErrorChanged()` is also not called after a token is updated
-    // without changing its error state.
-    EXPECT_CALL(mock_observer, OnAuthErrorChanged).Times(0);
     EXPECT_CALL(mock_observer, OnRefreshTokenAvailable(account_id));
+    // `OnAuthErrorChanged()` is also called when a token is updated.
+    EXPECT_CALL(
+        mock_observer,
+        OnAuthErrorChanged(account_id, GoogleServiceAuthError::AuthErrorNone(),
+                           testing::_));
     EXPECT_CALL(mock_observer, OnEndBatchChanges());
     delegate.UpdateCredentials(account_id, "second refreshToken");
     testing::Mock::VerifyAndClearExpectations(&mock_observer);

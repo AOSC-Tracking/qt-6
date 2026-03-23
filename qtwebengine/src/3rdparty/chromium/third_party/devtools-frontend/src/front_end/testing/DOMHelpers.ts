@@ -9,8 +9,11 @@
  * Note that `resetTestDOM` is automatically run before each test (see `test_setup.ts`).
  **/
 
+import type * as Platform from '../core/platform/platform.js';
 import type * as NodeText from '../ui/components/node_text/node_text.js';
 import * as UI from '../ui/legacy/legacy.js';
+
+import {checkForPendingActivity} from './TrackAsyncOperations.js';
 
 const TEST_CONTAINER_ID = '__devtools-test-container-id';
 
@@ -21,7 +24,8 @@ interface RenderOptions {
 /**
  * Renders a given element into the DOM. By default it will error if it finds an element already rendered but this can be controlled via the options.
  **/
-export function renderElementIntoDOM<E extends Element>(element: E, renderOptions: RenderOptions = {}): E {
+export function renderElementIntoDOM<E extends Node|UI.Widget.Widget>(
+    element: E, renderOptions: RenderOptions = {}): E {
   const container = document.getElementById(TEST_CONTAINER_ID);
 
   if (!container) {
@@ -33,7 +37,12 @@ export function renderElementIntoDOM<E extends Element>(element: E, renderOption
   if (container.childNodes.length !== 0 && !allowMultipleChildren) {
     throw new Error(`renderElementIntoDOM expects the container to be empty ${container.innerHTML}`);
   }
-  container.appendChild(element);
+  if (element instanceof Node) {
+    container.appendChild(element);
+  } else {
+    element.markAsRoot();
+    element.show(container);
+  }
   return element;
 }
 
@@ -55,37 +64,55 @@ function removeChildren(node: Node): void {
     node.removeChild(firstChild);
   }
 }
+
+/**
+ * Sets up the DOM for testing,
+ * If not clean logs an error and cleans itself
+ **/
+export const setupTestDOM = async () => {
+  const previousContainer = document.getElementById(TEST_CONTAINER_ID);
+  if (previousContainer) {
+    // This should not be reachable, unless the
+    // AfterEach hook fails before cleaning the DOM.
+    // Clean it here and report
+    console.error('Non clean test state found!');
+    await cleanTestDOM();
+  }
+  // Tests are run in light mode by default.
+  setColorScheme('light');
+  const newContainer = document.createElement('div');
+  newContainer.id = TEST_CONTAINER_ID;
+
+  // eslint-disable-next-line rulesdir/no-document-body-mutation
+  document.body.appendChild(newContainer);
+};
+
 /**
  * Completely cleans out the test DOM to ensure it's empty for the next test run.
  * This is run automatically between tests - you should not be manually calling this yourself.
  **/
-export const resetTestDOM = () => {
+export const cleanTestDOM = async () => {
   const previousContainer = document.getElementById(TEST_CONTAINER_ID);
   if (previousContainer) {
     removeChildren(previousContainer);
     previousContainer.remove();
   }
-
-  const newContainer = document.createElement('div');
-  newContainer.id = TEST_CONTAINER_ID;
-
-  document.body.appendChild(newContainer);
+  // Tests are run in light mode by default.
+  setColorScheme('light');
+  await raf();
 };
-
-interface Constructor<T> {
-  new(...args: unknown[]): T;
-}
 
 /**
  * Asserts that all emenents of `nodeList` are at least of type `T`.
  */
 export function assertElements<T extends Element>(
-    nodeList: NodeListOf<Element>, elementClass: Constructor<T>): asserts nodeList is NodeListOf<T> {
+    nodeList: NodeListOf<Element>,
+    elementClass: Platform.Constructor.Constructor<T>): asserts nodeList is NodeListOf<T> {
   nodeList.forEach(e => assert.instanceOf(e, elementClass));
 }
 
 export function getElementWithinComponent<T extends HTMLElement, V extends Element>(
-    component: T, selector: string, elementClass: Constructor<V>) {
+    component: T, selector: string, elementClass: Platform.Constructor.Constructor<V>) {
   assert.isNotNull(component.shadowRoot);
   const element = component.shadowRoot.querySelector(selector);
   assert.instanceOf(element, elementClass);
@@ -93,7 +120,7 @@ export function getElementWithinComponent<T extends HTMLElement, V extends Eleme
 }
 
 export function getElementsWithinComponent<T extends HTMLElement, V extends Element>(
-    component: T, selector: string, elementClass: Constructor<V>) {
+    component: T, selector: string, elementClass: Platform.Constructor.Constructor<V>) {
   assert.isNotNull(component.shadowRoot);
   const elements = component.shadowRoot.querySelectorAll(selector);
   assertElements(elements, elementClass);
@@ -162,9 +189,7 @@ export function dispatchFocusOutEvent<T extends Element>(element: T, options: Fo
 export function dispatchKeyDownEvent<T extends Element>(element: T, options: KeyboardEventInit = {}) {
   const clickEvent = new KeyboardEvent('keydown', options);
   const success = element.dispatchEvent(clickEvent);
-  if (!success) {
-    assert.fail('Failed to trigger keydown event successfully.');
-  }
+  assert.isOk(success, 'Failed to trigger keydown event successfully.');
 }
 
 export function dispatchInputEvent<T extends Element>(element: T, options: InputEventInit = {}) {
@@ -232,11 +257,11 @@ export function getEventPromise<T extends Event>(element: HTMLElement, eventName
 }
 
 export async function doubleRaf() {
-  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  return await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
 export async function raf() {
-  return new Promise(resolve => requestAnimationFrame(resolve));
+  return await new Promise(resolve => requestAnimationFrame(resolve));
 }
 
 /**
@@ -263,7 +288,9 @@ export function stripLitHtmlCommentNodes(text: string) {
 export function getCleanTextContentFromElements(el: ShadowRoot|HTMLElement, selector: string): string[] {
   const elements = Array.from(el.querySelectorAll(selector));
   return elements.map(element => {
-    return element.textContent ? element.textContent.trim().replace(/[ \n]{2,}/g, ' ') : '';
+    return ((element instanceof HTMLElement ? element.innerText : element.textContent) ?? '')
+        .trim()
+        .replace(/[ \n]{2,}/g, ' ');
   });
 }
 
@@ -274,7 +301,11 @@ export function getCleanTextContentFromElements(el: ShadowRoot|HTMLElement, sele
 export function getCleanTextContentFromSingleElement(el: ShadowRoot|HTMLElement, selector: string): string {
   const element = el.querySelector(selector);
   assert.isOk(element, `Could not find element with selector ${selector}`);
-  return element.textContent ? element.textContent.trim().replace(/[ \n]{2,}/g, ' ') : '';
+  return element.textContent ? cleanTextContent(element.textContent) : '';
+}
+
+export function cleanTextContent(input: string): string {
+  return input.trim().replace(/[ \n]{2,}/g, ' ');
 }
 
 export function assertNodeTextContent(component: NodeText.NodeText.NodeText, expectedContent: string) {
@@ -290,4 +321,39 @@ export function querySelectorErrorOnMissing<T extends HTMLElement = HTMLElement>
     throw new Error(`Expected element with selector ${selector} not found.`);
   }
   return elem;
+}
+
+/**
+ * Given a filename in the format "<folder>/<image.png>"
+ * this function asserts that a screenshot taken from the element
+ * identified by the TEST_CONTAINER_ID matches a screenshot
+ * in test/interactions/goldens/linux/<folder>/<image.png>.
+ *
+ * Currently, it only asserts screenshots match goldens on Linux.
+ * The function relies on the bindings exposed via the karma config.
+ */
+export async function assertScreenshot(filename: string) {
+  // To avoid a lot of empty space in the screenshot.
+  document.getElementById(TEST_CONTAINER_ID)!.style.width = 'fit-content';
+  let frame: Window|null = window;
+  while (frame) {
+    frame.scrollTo(0, 0);
+    frame = frame.parent !== frame ? frame.parent : null;
+  }
+
+  // For test we load the fonts though the network - front_end/testing/test_setup.ts
+  // Which means we may try to take screenshot while they are loading
+  await document.fonts.ready;
+  await raf();
+  // Pending activity before taking screenshots results in flakiness.
+  await checkForPendingActivity();
+  // @ts-expect-error see karma config.
+  const errorMessage = await window.assertScreenshot(`#${TEST_CONTAINER_ID}`, filename);
+  if (errorMessage) {
+    throw new Error(errorMessage);
+  }
+}
+
+export function setColorScheme(scheme: 'dark'|'light'): void {
+  document.documentElement.classList.toggle('theme-with-dark-background', scheme === 'dark');
 }

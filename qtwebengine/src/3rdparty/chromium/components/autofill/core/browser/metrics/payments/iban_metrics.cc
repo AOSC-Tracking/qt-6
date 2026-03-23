@@ -10,7 +10,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/strcat.h"
-#include "components/autofill/core/browser/data_model/iban.h"
+#include "components/autofill/core/browser/data_model/payments/iban.h"
 #include "components/autofill/core/common/autofill_clock.h"
 
 namespace autofill::autofill_metrics {
@@ -122,7 +122,7 @@ void LogSaveIbanPromptResultMetric(SaveIbanPromptResult metric,
                                    bool is_reshow,
                                    bool is_upload_save) {
   std::string base_histogram_name = base::StrCat(
-      {"Autofill.SaveIbanPromptResult.", is_upload_save ? "Upload" : "Local",
+      {"Autofill.SaveIbanPromptResult2.", is_upload_save ? "Upload" : "Local",
        is_reshow ? ".Reshows" : ".FirstShow"});
   base::UmaHistogramEnumeration(base_histogram_name, metric);
 }

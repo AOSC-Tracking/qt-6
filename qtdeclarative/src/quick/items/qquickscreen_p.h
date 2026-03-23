@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKSCREEN_P_H
 #define QQUICKSCREEN_P_H
@@ -49,7 +50,7 @@ class Q_QUICK_EXPORT QQuickScreenInfo : public QObject
     Q_PROPERTY(int virtualY READ virtualY NOTIFY virtualYChanged REVISION(2, 3) FINAL)
     QML_NAMED_ELEMENT(ScreenInfo)
     QML_ADDED_IN_VERSION(2, 3)
-    QML_UNCREATABLE("ScreenInfo can only be used via the attached property.")
+    QML_UNCREATABLE("ScreenInfo can only be used via the attached property, or by retrieving it from Application's screens property.")
 
 public:
     QQuickScreenInfo(QObject *parent = nullptr, QScreen *wrappedScreen = nullptr);

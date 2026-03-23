@@ -5,16 +5,18 @@
 #include "components/supervised_user/core/browser/supervised_user_utils.h"
 
 #include <optional>
+#include <variant>
 #include <vector>
 
 #include "base/base64.h"
+#include "base/base64url.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/strings/grit/components_strings.h"
-#include "components/supervised_user/core/browser/family_link_user_log_record.h"
+#include "components/supervised_user/core/browser/supervised_user_log_record.h"
 #include "components/supervised_user/core/browser/proto/parent_access_callback.pb.h"
 #include "components/supervised_user/core/browser/proto/transaction_data.pb.h"
 #include "components/supervised_user/core/browser/supervised_user_url_filter.h"
@@ -75,42 +77,43 @@ std::optional<T> GetMergedRecord(const std::vector<std::optional<T>> records,
 }
 
 bool HasSupervisedStatus(
-    std::optional<FamilyLinkUserLogRecord::Segment> segment) {
+    std::optional<SupervisedUserLogRecord::Segment> segment) {
   if (!segment.has_value()) {
     return false;
   }
   switch (segment.value()) {
-    case FamilyLinkUserLogRecord::Segment::kUnsupervised:
-    case FamilyLinkUserLogRecord::Segment::kParent:
+    case SupervisedUserLogRecord::Segment::kUnsupervised:
+    case SupervisedUserLogRecord::Segment::kParent:
       return false;
-    case FamilyLinkUserLogRecord::Segment::kSupervisionEnabledByPolicy:
-    case FamilyLinkUserLogRecord::Segment::kSupervisionEnabledByUser:
+    case SupervisedUserLogRecord::Segment::kSupervisionEnabledByFamilyLinkPolicy:
+    case SupervisedUserLogRecord::Segment::kSupervisionEnabledByFamilyLinkUser:
+    case SupervisedUserLogRecord::Segment::kSupervisionEnabledLocally:
       return true;
-    case FamilyLinkUserLogRecord::Segment::kMixedProfile:
+    case SupervisedUserLogRecord::Segment::kMixedProfile:
       NOTREACHED();
   }
 }
 
-std::optional<FamilyLinkUserLogRecord::Segment> GetLogSegmentForHistogram(
-    const std::vector<FamilyLinkUserLogRecord>& records) {
+std::optional<SupervisedUserLogRecord::Segment> GetLogSegmentForHistogram(
+    const std::vector<SupervisedUserLogRecord>& records) {
   bool has_supervised_status = false;
-  std::optional<FamilyLinkUserLogRecord::Segment> merged_log_segment;
-  for (const FamilyLinkUserLogRecord& record : records) {
-    std::optional<FamilyLinkUserLogRecord::Segment> supervision_status =
+  std::optional<SupervisedUserLogRecord::Segment> merged_log_segment;
+  for (const SupervisedUserLogRecord& record : records) {
+    std::optional<SupervisedUserLogRecord::Segment> supervision_status =
         record.GetSupervisionStatusForPrimaryAccount();
     has_supervised_status |= HasSupervisedStatus(supervision_status);
     if (merged_log_segment.has_value() &&
         merged_log_segment.value() != supervision_status) {
       if (has_supervised_status) {
-        // A Family Link user record is only expected to be mixed if there is at
+        // A supervised user record is only expected to be mixed if there is at
         // least one supervised user.
-        return FamilyLinkUserLogRecord::Segment::kMixedProfile;
+        return SupervisedUserLogRecord::Segment::kMixedProfile;
       }
       CHECK(merged_log_segment.value() ==
-                FamilyLinkUserLogRecord::Segment::kParent ||
+                SupervisedUserLogRecord::Segment::kParent ||
             merged_log_segment.value() ==
-                FamilyLinkUserLogRecord::Segment::kUnsupervised);
-      merged_log_segment = FamilyLinkUserLogRecord::Segment::kParent;
+                SupervisedUserLogRecord::Segment::kUnsupervised);
+      merged_log_segment = SupervisedUserLogRecord::Segment::kParent;
     } else {
       merged_log_segment = supervision_status;
     }
@@ -119,18 +122,18 @@ std::optional<FamilyLinkUserLogRecord::Segment> GetLogSegmentForHistogram(
 }
 
 std::optional<WebFilterType> GetWebFilterForHistogram(
-    const std::vector<FamilyLinkUserLogRecord>& records) {
+    const std::vector<SupervisedUserLogRecord>& records) {
   std::vector<std::optional<WebFilterType>> filter_types;
-  for (const FamilyLinkUserLogRecord& record : records) {
+  for (const SupervisedUserLogRecord& record : records) {
     filter_types.push_back(record.GetWebFilterTypeForPrimaryAccount());
   }
   return GetMergedRecord(filter_types, WebFilterType::kMixed);
 }
 
 std::optional<ToggleState> GetPermissionsToggleStateForHistogram(
-    const std::vector<FamilyLinkUserLogRecord>& records) {
+    const std::vector<SupervisedUserLogRecord>& records) {
   std::vector<std::optional<ToggleState>> permissions_toggle_states;
-  for (const FamilyLinkUserLogRecord& record : records) {
+  for (const SupervisedUserLogRecord& record : records) {
     permissions_toggle_states.push_back(
         record.GetPermissionsToggleStateForPrimaryAccount());
   }
@@ -138,9 +141,9 @@ std::optional<ToggleState> GetPermissionsToggleStateForHistogram(
 }
 
 std::optional<ToggleState> GetExtensionsToggleStateForHistogram(
-    const std::vector<FamilyLinkUserLogRecord>& records) {
+    const std::vector<SupervisedUserLogRecord>& records) {
   std::vector<std::optional<ToggleState>> extensions_toggle_states;
-  for (const FamilyLinkUserLogRecord& record : records) {
+  for (const SupervisedUserLogRecord& record : records) {
     extensions_toggle_states.push_back(
         record.GetExtensionsToggleStateForPrimaryAccount());
   }
@@ -148,10 +151,10 @@ std::optional<ToggleState> GetExtensionsToggleStateForHistogram(
 }
 
 // Returns the text that will be shown as the PACP widget subtitle, containing
-// information about the blocked url and the blocking reason.
+// information about the blocked hostname and the blocking reason.
 std::string GetBlockingReasonSubtitle(
-    const std::string blocked_url,
-    const supervised_user::FilteringBehaviorReason& filtering_reason) {
+    const std::u16string blocked_hostname,
+    supervised_user::FilteringBehaviorReason filtering_reason) {
   int message_id = 0;
   switch (filtering_reason) {
     case FilteringBehaviorReason::DEFAULT:
@@ -163,25 +166,32 @@ std::string GetBlockingReasonSubtitle(
     case FilteringBehaviorReason::MANUAL:
       message_id = IDS_PARENT_WEBSITE_APPROVAL_MANUAL_URL;
       break;
+    case FilteringBehaviorReason::FILTER_DISABLED:
+      NOTREACHED() << "No blocking reason when the filter is disabled";
   }
-  return l10n_util::GetStringFUTF8(message_id, base::UTF8ToUTF16(blocked_url));
+  return l10n_util::GetStringFUTF8(message_id, blocked_hostname);
 }
 
 // Returns a base64-encoded `TransactionData` proto message that encapsulates
 // the blocked url so that PACP can consume it.
 std::string GetBase64EncodedInTransactionalDataForPayload(
-    const std::string blocked_url,
-    const supervised_user::FilteringBehaviorReason& filtering_reason) {
-  CHECK(!blocked_url.empty());
+    const std::u16string blocked_hostname,
+    supervised_user::FilteringBehaviorReason filtering_reason) {
+  CHECK(!blocked_hostname.empty());
   kids::platform::parentaccess::proto::LocalApprovalPayload approval_url;
   approval_url.set_url_approval_context(
-      GetBlockingReasonSubtitle(blocked_url, filtering_reason));
+      GetBlockingReasonSubtitle(blocked_hostname, filtering_reason));
 
   kids::platform::parentaccess::proto::TransactionData transaction_data;
   transaction_data.mutable_payload()->set_value(
       approval_url.SerializeAsString());
   transaction_data.mutable_payload()->set_type_url(kPacpUrlPayloadMessageType);
-  return base::Base64Encode(transaction_data.SerializeAsString());
+  std::string base_64_url_encoded_data;
+  base::Base64UrlEncode(transaction_data.SerializeAsString(),
+                        base::Base64UrlEncodePolicy::INCLUDE_PADDING,
+                        &base_64_url_encoded_data);
+  CHECK(base_64_url_encoded_data.length() > 0);
+  return base_64_url_encoded_data;
 }
 
 // Returns the PACP widget url with the appropriate query parameters.
@@ -189,7 +199,7 @@ GURL GetParentAccessURL(
     const std::string& caller_id,
     const std::string& locale,
     std::optional<GURL> blocked_url,
-    const supervised_user::FilteringBehaviorReason& filtering_reason) {
+    supervised_user::FilteringBehaviorReason filtering_reason) {
   GURL url(kParentAccessBaseURL);
   GURL::Replacements replacements;
   std::string query = base::StrCat({"callerid=", caller_id, "&hl=", locale,
@@ -197,9 +207,16 @@ GURL GetParentAccessURL(
   if (base::FeatureList::IsEnabled(
           kLocalWebApprovalsWidgetSupportsUrlPayload) &&
       blocked_url.has_value() && !blocked_url.value().host().empty()) {
-    query += base::StrCat({"&transaction-data=",
-                           GetBase64EncodedInTransactionalDataForPayload(
-                               blocked_url.value().host(), filtering_reason)});
+    // Prepare blocked URL hostname for user-friendly display, including internationalized
+    // domain name (IDN) conversion if necessary.
+    std::u16string blocked_hostname = url_formatter::FormatUrl(
+        blocked_url.value(),
+        url_formatter::kFormatUrlOmitHTTP | url_formatter::kFormatUrlOmitHTTPS |
+            url_formatter::kFormatUrlOmitDefaults,
+        base::UnescapeRule::SPACES, nullptr, nullptr, nullptr);
+    query += base::StrCat(
+        {"&transaction-data=", GetBase64EncodedInTransactionalDataForPayload(
+                                   blocked_hostname, filtering_reason)});
   }
   replacements.SetQueryStr(query);
   return url.ReplaceComponents(replacements);
@@ -217,18 +234,18 @@ ParentAccessCallbackParsedResult::~ParentAccessCallbackParsedResult() = default;
 
 std::optional<ParentAccessWidgetError>
 ParentAccessCallbackParsedResult::GetError() const {
-  if (absl::holds_alternative<ParentAccessWidgetError>(result_)) {
-    return absl::get<ParentAccessWidgetError>(result_);
+  if (std::holds_alternative<ParentAccessWidgetError>(result_)) {
+    return std::get<ParentAccessWidgetError>(result_);
   }
   return std::nullopt;
 }
 
 std::optional<kids::platform::parentaccess::client::proto::ParentAccessCallback>
 ParentAccessCallbackParsedResult::GetCallback() const {
-  if (absl::holds_alternative<
+  if (std::holds_alternative<
           kids::platform::parentaccess::client::proto::ParentAccessCallback>(
           result_)) {
-    return absl::get<
+    return std::get<
         kids::platform::parentaccess::client::proto::ParentAccessCallback>(
         result_);
   }
@@ -238,11 +255,11 @@ ParentAccessCallbackParsedResult::GetCallback() const {
 // static
 ParentAccessCallbackParsedResult
 ParentAccessCallbackParsedResult::ParseParentAccessCallbackResult(
-    const std::string& encoded_parent_access_callback_proto,
-    base::Base64DecodePolicy decoding_policy) {
+    const std::string& encoded_parent_access_callback_proto) {
   std::string decoded_parent_access_callback;
-  if (!base::Base64Decode(encoded_parent_access_callback_proto,
-                          &decoded_parent_access_callback, decoding_policy)) {
+  if (!base::Base64UrlDecode(encoded_parent_access_callback_proto,
+                             base::Base64UrlDecodePolicy::IGNORE_PADDING,
+                             &decoded_parent_access_callback)) {
     LOG(ERROR) << "ParentAccessHandler::ParentAccessResult: Error decoding "
                   "parent_access_result from base64";
     return ParentAccessCallbackParsedResult(
@@ -299,19 +316,11 @@ GURL NormalizeUrl(const GURL& url) {
   return url_matcher::util::Normalize(effective_url);
 }
 
-bool AreWebFilterPrefsDefault(const PrefService& pref_service) {
-  return pref_service
-             .FindPreference(prefs::kDefaultSupervisedUserFilteringBehavior)
-             ->IsDefaultValue() ||
-         pref_service.FindPreference(prefs::kSupervisedUserSafeSites)
-             ->IsDefaultValue();
-}
-
 bool EmitLogRecordHistograms(
-    const std::vector<FamilyLinkUserLogRecord>& records) {
+    const std::vector<SupervisedUserLogRecord>& records) {
   bool did_emit_histogram = false;
 
-  std::optional<FamilyLinkUserLogRecord::Segment> segment =
+  std::optional<SupervisedUserLogRecord::Segment> segment =
       GetLogSegmentForHistogram(records);
   if (segment.has_value()) {
     base::UmaHistogramEnumeration(kFamilyLinkUserLogSegmentHistogramName,
@@ -380,16 +389,18 @@ GURL UrlFormatter::FormatUrl(const GURL& url) const {
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 }
 
-GURL GetParentAccessURLForIOS(const std::string& locale) {
-  return GetParentAccessURL(
-      kParentAccessIOSCallerID, locale, /*blocked_url*/ std::nullopt,
-      /*filtering_reason*/ supervised_user::FilteringBehaviorReason::DEFAULT);
+GURL GetParentAccessURLForIOS(
+    const std::string& locale,
+    const GURL& blocked_url,
+    supervised_user::FilteringBehaviorReason filtering_reason) {
+  return GetParentAccessURL(kParentAccessIOSCallerID, locale, blocked_url,
+                            filtering_reason);
 }
 
 GURL GetParentAccessURLForDesktop(
     const std::string& locale,
     const GURL& blocked_url,
-    const supervised_user::FilteringBehaviorReason& filtering_reason) {
+    supervised_user::FilteringBehaviorReason filtering_reason) {
   return GetParentAccessURL(kParentAccessDesktopCallerID, locale, blocked_url,
                             filtering_reason);
 }

@@ -58,12 +58,12 @@ public:
     virtual ~Generator();
 
     virtual bool canHandleFormat(const QString &format) { return format == this->format(); }
-    virtual QString format() = 0;
+    virtual QString format() const = 0;
     virtual void generateDocs();
     virtual void initializeGenerator();
     virtual void initializeFormat();
     virtual void terminateGenerator();
-    virtual QString typeString(const Node *node);
+    virtual QString typeString(const Node *node, bool plural = false);
 
     QString fullDocumentLocation(const Node *node);
     QString linkForExampleFile(const QString &path, const QString &fileExt = QString());
@@ -73,6 +73,7 @@ public:
     static void initialize();
     static const QString &outputDir() { return s_outDir; }
     static const QString &outputSubdir() { return s_outSubdir; }
+    static const QString &imagesOutputDir() { return s_imagesOutDir; }
     static void terminate();
     static const QStringList &outputFileNames() { return s_outFileNames; }
     static bool noLinkErrors() { return s_noLinkErrors; }
@@ -196,6 +197,7 @@ private:
     static QList<Generator *> s_generators;
     static QString s_project;
     static QString s_outDir;
+    static QString s_imagesOutDir;
     static QString s_outSubdir;
     static QStringList s_outFileNames;
     static QSet<QString> s_outputFormats;
@@ -204,7 +206,6 @@ private:
     static QHash<QString, QString> s_outputSuffixes;
     static bool s_noLinkErrors;
     static bool s_autolinkErrors;
-    static bool s_redirectDocumentationToDevNull;
     static bool s_useOutputSubdirs;
     static QmlTypeNode *s_qmlTypeContext;
 
@@ -212,6 +213,7 @@ private:
     static void copyTemplateFiles(const QString &configVar, const QString &subDir);
 
 protected:
+    static bool s_redirectDocumentationToDevNull;
     FileResolver& file_resolver;
 
     QDocDatabase *m_qdb { nullptr };
@@ -220,7 +222,6 @@ protected:
     bool m_inSectionHeading { false };
     bool m_inTableHeader { false };
     bool m_threeColumnEnumValueTable { true };
-    bool m_showInternal { false };
     bool m_quoting { false };
     int m_numTableRows { 0 };
     QString m_link {};

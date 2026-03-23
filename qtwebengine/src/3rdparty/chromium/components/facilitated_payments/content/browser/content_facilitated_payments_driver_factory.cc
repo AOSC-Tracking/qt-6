@@ -13,14 +13,10 @@
 namespace payments::facilitated {
 
 ContentFacilitatedPaymentsDriverFactory::
-    ContentFacilitatedPaymentsDriverFactory(
-        content::WebContents* web_contents,
-        FacilitatedPaymentsClient* client,
-        optimization_guide::OptimizationGuideDecider*
-            optimization_guide_decider)
+    ContentFacilitatedPaymentsDriverFactory(content::WebContents* web_contents,
+                                            FacilitatedPaymentsClient* client)
     : content::WebContentsObserver(web_contents),
-      client_(CHECK_DEREF(client)),
-      optimization_guide_decider_(optimization_guide_decider) {}
+      client_(CHECK_DEREF(client)) {}
 
 ContentFacilitatedPaymentsDriverFactory::
     ~ContentFacilitatedPaymentsDriverFactory() {
@@ -38,8 +34,7 @@ ContentFacilitatedPaymentsDriverFactory::GetOrCreateForFrame(
     return *iter->second;
   }
   driver = std::make_unique<ContentFacilitatedPaymentsDriver>(
-      &*client_, optimization_guide_decider_, render_frame_host,
-      std::make_unique<SecurityChecker>());
+      &*client_, render_frame_host, std::make_unique<SecurityChecker>());
   DCHECK_EQ(driver_map_.find(render_frame_host)->second.get(), driver.get());
   return *iter->second;
 }
@@ -86,12 +81,6 @@ void ContentFacilitatedPaymentsDriverFactory::DidFinishNavigation(
 void ContentFacilitatedPaymentsDriverFactory::OnTextCopiedToClipboard(
     content::RenderFrameHost* render_frame_host,
     const std::u16string& copied_text) {
-  // The Facilitated Payments infra is initiated for both Pix and eWallet,
-  // however the Pix payflow should only be initiated if its flag is enabled.
-  if (!base::FeatureList::IsEnabled(kEnablePixPayments)) {
-    return;
-  }
-
   if (render_frame_host != render_frame_host->GetOutermostMainFrame() ||
       !render_frame_host->IsActive()) {
     return;
@@ -100,6 +89,7 @@ void ContentFacilitatedPaymentsDriverFactory::OnTextCopiedToClipboard(
   auto& driver = GetOrCreateForFrame(render_frame_host);
 
   driver.OnTextCopiedToClipboard(render_frame_host->GetLastCommittedURL(),
+                                 render_frame_host->GetLastCommittedOrigin(),
                                  copied_text,
                                  render_frame_host->GetPageUkmSourceId());
 }

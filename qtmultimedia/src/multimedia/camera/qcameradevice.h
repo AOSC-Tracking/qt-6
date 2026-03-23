@@ -10,6 +10,7 @@
 
 QT_BEGIN_NAMESPACE
 
+class QDebug;
 class QCameraFormatPrivate;
 class Q_MULTIMEDIA_EXPORT QCameraFormat
 {
@@ -39,6 +40,10 @@ private:
     friend class QCameraFormatPrivate;
     QCameraFormat(QCameraFormatPrivate *p);
     QExplicitlySharedDataPointer<QCameraFormatPrivate> d;
+
+#ifndef QT_NO_DEBUG_STREAM
+    Q_MULTIMEDIA_EXPORT friend QDebug operator<<(QDebug, const QCameraFormat&);
+#endif
 };
 
 class QCameraDevicePrivate;

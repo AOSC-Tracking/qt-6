@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:critical reason:code-generation
 
 #include "qqmljsloadergenerator_p.h"
 
@@ -8,7 +9,7 @@
 #include <QString>
 #include <QStringList>
 #include <QTextStream>
-#include <QVector>
+#include <QList>
 #include <QtEndian>
 #include <QStack>
 #include <QFileInfo>

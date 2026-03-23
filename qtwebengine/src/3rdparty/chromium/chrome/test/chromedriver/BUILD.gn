@@ -73,7 +73,7 @@ action("embed_mobile_devices_in_cpp") {
 }
 
 minify_js("minify_bidimapper") {
-  deps = [ "//third_party/bidimapper:bidimapper" ]
+  deps = [ "//third_party/bidimapper" ]
   input_dir =
       get_label_info("//third_party/bidimapper:bidimapper", "target_gen_dir")
   in_folder = "$input_dir"
@@ -82,7 +82,7 @@ minify_js("minify_bidimapper") {
 
   if (is_win) {
     # This is workaround for Windows build. Terser converts \x1a to ^Z and
-    # it causes "unexpected end-of-file" error. The "-f ascii_only" terser
+    # it causes "unexpected end-of-file" error. The "ascii_only" terser
     # option prevents the conversion.
     ascii_only = true
   }
@@ -302,6 +302,10 @@ source_set("automation_client_lib") {
     "//url",
   ]
 
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
   if (is_qtwebengine) {
     deps -= [ "//net/traffic_annotation:test_support" ]
 
@@ -376,7 +380,6 @@ source_set("lib") {
     ":automation_client_lib",
     "//base",
     "//build:branding_buildflags",
-    "//build:chromeos_buildflags",
     "//chrome/common:constants",
     "//chrome/common:version_header",
     "//chrome/test/chromedriver/constants:version_header",
@@ -426,6 +429,10 @@ source_set("lib") {
     deps += [ ":buildflags" ]
     frameworks = [ "Carbon.framework" ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (is_linux && !is_qtwebengine) {
@@ -462,7 +469,6 @@ if (is_linux && !is_qtwebengine) {
     deps = [
       ":automation_client_lib",
       ":lib",
-      "//build:chromeos_buildflags",
       "//build/win:default_exe_manifest",
       "//mojo/core/embedder",
       "//net",
@@ -524,7 +530,7 @@ python_library("chromedriver_py_tests") {
   testonly = true
   deps = [
     ":chromedriver_server",
-    "//chrome:chrome",
+    "//chrome",
   ]
 
   pydeps_file = "test/run_py_tests.pydeps"
@@ -542,7 +548,7 @@ python_library("chromedriver_py_tests") {
     data_deps += [ "//chrome:chrome_framework" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     # On Windows, the following target produces the final chrome.exe
     data_deps += [ "//chrome:reorder_imports" ]
   }
@@ -552,7 +558,7 @@ python_library("chromedriver_py_tests_headless_shell") {
   testonly = true
   deps = [
     ":chromedriver_server",
-    "//chrome:chrome",
+    "//chrome",
   ]
 
   pydeps_file = "test/run_py_tests.pydeps"
@@ -662,7 +668,6 @@ test("chromedriver_unittests") {
     "//base",
     "//base/test:run_all_unittests",
     "//base/test:test_support",
-    "//build:chromeos_buildflags",
     "//chrome/common",
     "//mojo/core/embedder",
     "//net",
@@ -678,6 +683,10 @@ test("chromedriver_unittests") {
     "//ui/gfx/geometry",
     "//url",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (is_win || is_posix) {
@@ -697,7 +706,7 @@ if (is_win || is_posix) {
       "test/web_view_impl_integrationtest.cc",
     ]
 
-    data_deps = [ "//chrome:chrome" ]
+    data_deps = [ "//chrome" ]
 
     deps = [
       ":automation_client_lib",

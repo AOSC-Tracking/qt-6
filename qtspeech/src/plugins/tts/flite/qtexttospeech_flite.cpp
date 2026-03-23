@@ -1,9 +1,11 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qtexttospeech_flite.h"
 
-#include <QtCore/QCoreApplication>
+#include <QtCore/qcoreapplication.h>
+#include <QtCore/qsemaphore.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -22,7 +24,7 @@ QTextToSpeechEngineFlite::QTextToSpeechEngineFlite(const QVariantMap &parameters
         m_errorReason = QTextToSpeech::ErrorReason::Playback;
         m_errorString = QCoreApplication::translate("QTextToSpeech", "No audio device available");
     }
-    m_processor.reset(new QTextToSpeechProcessorFlite(audioDevice));
+    m_processor = std::make_unique<QTextToSpeechProcessorFlite>(audioDevice);
 
     // Connect processor to engine for state changes and error
     connect(m_processor.get(), &QTextToSpeechProcessorFlite::stateChanged,
@@ -55,6 +57,7 @@ QTextToSpeechEngineFlite::QTextToSpeechEngineFlite(const QVariantMap &parameters
         m_thread.setObjectName("QTextToSpeechEngineFlite");
         m_processor->moveToThread(&m_thread);
         m_thread.start();
+        m_thread.setPriority(QThread::HighestPriority); // we feed data to the audio sink
     } else {
         m_errorReason = QTextToSpeech::ErrorReason::Configuration;
         m_errorString = QCoreApplication::translate("QTextToSpeech", "No voices available");
@@ -63,6 +66,12 @@ QTextToSpeechEngineFlite::QTextToSpeechEngineFlite(const QVariantMap &parameters
 
 QTextToSpeechEngineFlite::~QTextToSpeechEngineFlite()
 {
+    if (m_processor->thread() != thread()) {
+        QMetaObject::invokeMethod(m_processor.get(), [&] {
+            m_processor.reset(); // ensure destruction on the correct thread
+        }, Qt::BlockingQueuedConnection);
+    }
+
     m_thread.exit();
     m_thread.wait();
 }
@@ -93,14 +102,14 @@ void QTextToSpeechEngineFlite::synthesize(const QString &text)
 
 void QTextToSpeechEngineFlite::stop(QTextToSpeech::BoundaryHint boundaryHint)
 {
-    Q_UNUSED(boundaryHint);
-    QMetaObject::invokeMethod(m_processor.get(), &QTextToSpeechProcessorFlite::stop, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_processor.get(), &QTextToSpeechProcessorFlite::stop,
+                              Qt::QueuedConnection, boundaryHint);
 }
 
 void QTextToSpeechEngineFlite::pause(QTextToSpeech::BoundaryHint boundaryHint)
 {
-    Q_UNUSED(boundaryHint);
-    QMetaObject::invokeMethod(m_processor.get(), &QTextToSpeechProcessorFlite::pause, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_processor.get(), &QTextToSpeechProcessorFlite::pause,
+                              Qt::QueuedConnection, boundaryHint);
 }
 
 void QTextToSpeechEngineFlite::resume()

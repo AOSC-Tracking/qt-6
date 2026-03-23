@@ -32,6 +32,7 @@ source_set("ui_bundled") {
     "//ios/chrome/browser/permissions/ui_bundled",
     "//ios/chrome/browser/permissions/ui_bundled:constants",
     "//ios/chrome/browser/permissions/ui_bundled:permission_info",
+    "//ios/chrome/browser/popup_menu/ui_bundled",
     "//ios/chrome/browser/settings/ui_bundled/cells",
     "//ios/chrome/browser/settings/ui_bundled/privacy:ui",
     "//ios/chrome/browser/shared/model/url:constants",
@@ -41,7 +42,6 @@ source_set("ui_bundled") {
     "//ios/chrome/browser/shared/ui/table_view",
     "//ios/chrome/browser/shared/ui/table_view:utils",
     "//ios/chrome/browser/shared/ui/util",
-    "//ios/chrome/browser/ui/popup_menu",
     "//ios/chrome/common:string_util",
     "//ios/chrome/common/ui/colors",
     "//ios/chrome/common/ui/table_view:cells_constants",
@@ -99,7 +99,7 @@ source_set("coordinator") {
     "//ios/chrome/browser/history/model",
     "//ios/chrome/browser/history/ui_bundled:coordinator",
     "//ios/chrome/browser/main/model",
-    "//ios/chrome/browser/page_info:model",
+    "//ios/chrome/browser/page_info/model",
     "//ios/chrome/browser/page_info/ui_bundled/requirements",
     "//ios/chrome/browser/permissions/ui_bundled",
     "//ios/chrome/browser/permissions/ui_bundled:permission_info",
@@ -177,7 +177,7 @@ source_set("unit_tests") {
     "//ios/chrome/test:test_support",
     "//ios/web/public/permissions",
     "//ios/web/public/test/fakes",
-    "//testing/gtest:gtest",
+    "//testing/gtest",
     "//third_party/ocmock",
   ]
 }
@@ -213,6 +213,10 @@ source_set("eg2_tests") {
     "//net:test_support",
     "//ui/base",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("features") {
@@ -222,7 +226,8 @@ source_set("features") {
   ]
   public_deps = [
     "//base",
-    "//components/page_info/core:core",
+    "//components/application_locale_storage",
+    "//components/page_info/core",
     "//ios/chrome/browser/shared/model/application_context",
   ]
 }
@@ -245,11 +250,11 @@ source_set("eg_app_support+eg2") {
   ]
   deps = [
     "//base",
-    "//components/optimization_guide/core:core",
+    "//components/optimization_guide/core",
     "//components/optimization_guide/core:features",
     "//components/optimization_guide/proto:optimization_guide_proto",
     "//components/page_info/core:proto",
-    "//ios/chrome/browser/optimization_guide/model:model",
+    "//ios/chrome/browser/optimization_guide/model",
     "//ios/chrome/test/app:test_support",
     "//ios/web/common:uikit",
   ]

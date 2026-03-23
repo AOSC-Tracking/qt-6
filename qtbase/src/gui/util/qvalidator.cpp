@@ -1,6 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // Copyright (C) 2012 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include <qdebug.h>
 
@@ -372,7 +373,7 @@ std::optional<QValidator::State> initialResultCheck(T min, T max,
     if (result.state == ParsingResult::Invalid)
         return QValidator::Invalid;
 
-    const CharBuff &buff = result.buff;
+    const QLocaleData::CharBuff &buff = result.buff;
     if (buff.isEmpty())
         return QValidator::Intermediate;
 
@@ -397,7 +398,7 @@ QValidator::State QIntValidator::validate(QString & input, int&) const
     if (opt)
         return *opt;
 
-    const CharBuff &buff = result.buff;
+    const QLocaleData::CharBuff &buff = result.buff;
     QSimpleParsedNumber r = QLocaleData::bytearrayToLongLong(buff, 10);
     if (!r.ok())
         return Invalid;

@@ -28,6 +28,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "connections/implementation/flags/nearby_connections_feature_flags.h"
+#include "connections/implementation/mediums/advertisements/dct_advertisement.h"
 #include "connections/implementation/mediums/ble_v2/advertisement_read_result.h"
 #include "connections/implementation/mediums/ble_v2/ble_advertisement.h"
 #include "connections/implementation/mediums/ble_v2/ble_advertisement_header.h"
@@ -36,6 +37,7 @@
 #include "connections/implementation/mediums/ble_v2/discovered_peripheral_callback.h"
 #include "connections/implementation/mediums/ble_v2/instant_on_lost_advertisement.h"
 #include "connections/implementation/mediums/utils.h"
+#include "connections/implementation/pcp.h"
 #include "internal/flags/nearby_flags.h"
 #include "internal/platform/ble_v2.h"
 #include "internal/platform/bluetooth_adapter.h"
@@ -43,6 +45,7 @@
 #include "internal/platform/count_down_latch.h"
 #include "internal/platform/feature_flags.h"
 #include "internal/platform/implementation/ble_v2.h"
+#include "internal/platform/mac_address.h"
 #include "internal/platform/medium_environment.h"
 #include "internal/platform/mutex.h"
 #include "internal/platform/mutex_lock.h"
@@ -61,6 +64,7 @@ constexpr absl::string_view kServiceIdB = "B";
 constexpr absl::string_view kData = "\x04\x02\x00";
 constexpr absl::string_view kData2 = "\x07\x00\x07";
 constexpr absl::string_view kDeviceToken = "\x04\x20";
+constexpr absl::string_view kDeviceName = "device";
 
 ByteArray CreateFastBleAdvertisement(const ByteArray& data,
                                      const ByteArray& device_token) {
@@ -89,6 +93,13 @@ ByteArray CreateLegacyBleAdvertisement(const std::string& service_id,
       bleutils::GenerateServiceIdHash(service_id,
                                       BleAdvertisement::Version::kV1),
       data, device_token, BleAdvertisementHeader::kDefaultPsmValue));
+}
+
+ByteArray CreateDctAdvertisement(const std::string& service_id,
+                                 const std::string& device_name) {
+  auto dct_advertisement = advertisements::ble::DctAdvertisement::Create(
+      service_id, device_name, 0xf100, 0x01);
+  return ByteArray(dct_advertisement->ToData());
 }
 
 BleAdvertisementHeader CreateFastBleAdvertisementHeader(
@@ -177,8 +188,9 @@ class DiscoveredPeripheralTrackerTest : public testing::TestWithParam<bool> {
   }
 
   BleV2Peripheral CreateBlePeripheral() {
-    return ble_central_->GetRemotePeripheral(
-        adapter_peripheral_->GetMacAddress());
+    MacAddress mac_address;
+    MacAddress::FromString(adapter_peripheral_->GetMacAddress(), mac_address);
+    return BleV2Peripheral(*ble_central_, mac_address.address());
   }
 
   // Simulates to see a fast advertisement.
@@ -300,7 +312,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -329,6 +341,39 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   EXPECT_EQ(GetFetchAdvertisementCallbackCount(), 0);
 }
 
+TEST_P(DiscoveredPeripheralTrackerTest, DctAdvertisementPeripheralDiscovered) {
+  ByteArray dct_advertisement_bytes = CreateDctAdvertisement(
+      std::string(kServiceIdA), std::string(kDeviceName));
+  CountDownLatch found_latch(1);
+  CountDownLatch fetch_latch(1);
+
+  discovered_peripheral_tracker_.StartTracking(
+      std::string(kServiceIdA), true, Pcp::kP2pPointToPoint,
+      {
+          .peripheral_discovered_cb =
+              [&found_latch](BleV2Peripheral peripheral,
+                             const std::string& service_id,
+                             const ByteArray& advertisement_bytes,
+                             bool fast_advertisement) {
+                EXPECT_FALSE(fast_advertisement);
+                found_latch.CountDown();
+              },
+      },
+      Uuid(kFastAdvertisementServiceUuid));
+
+  api::ble_v2::BleAdvertisementData advertisement_data{};
+  advertisement_data.service_data.insert(
+      {bleutils::kDctServiceUuid, dct_advertisement_bytes});
+
+  FindAdvertisement(advertisement_data, {}, fetch_latch);
+
+  // We should receive a client callback of a peripheral discovery without a
+  // GATT read.
+  fetch_latch.Await(kWaitDuration);
+  EXPECT_TRUE(found_latch.Await(kWaitDuration).result());
+  EXPECT_EQ(GetFetchAdvertisementCallbackCount(), 0);
+}
+
 TEST_P(DiscoveredPeripheralTrackerTest,
        ReportFoundLegacyDeviceWhenFoundBleAdvertisementPeripheralDiscovered) {
   DisableBluetoothScanning();
@@ -343,7 +388,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {.peripheral_discovered_cb =
            [&found_latch](
                BleV2Peripheral peripheral, const std::string& service_id,
@@ -381,7 +426,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
 
   // 1st tracking.
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&callback_times, &found_latch](
@@ -406,7 +451,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
 
   // 2nd tracking.
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&callback_times, &found_latch](
@@ -425,7 +470,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
 
   // 3rd tracking.
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&callback_times, &found_latch](
@@ -452,7 +497,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   std::atomic<int> callback_times = 0;
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&callback_times, &found_latch](
@@ -497,7 +542,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   // Start tracking a service ID and then process a discovery containing a valid
   // fast advertisement, but under a different service UUID.
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -540,7 +585,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch_a](BleV2Peripheral peripheral,
@@ -554,7 +599,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
       },
       Uuid(kFastAdvertisementServiceUuid));
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdB),
+      std::string(kServiceIdB), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch_b](BleV2Peripheral peripheral,
@@ -599,7 +644,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -639,7 +684,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](
@@ -680,7 +725,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   std::atomic<int> callback_times = 0;
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&callback_times, &found_latch](
@@ -726,7 +771,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   std::atomic<int> callback_times = 0;
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&callback_times, &found_latch](
@@ -774,7 +819,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](
@@ -811,7 +856,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   std::atomic<int> lost_callback_times = 0;
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -874,7 +919,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -931,7 +976,7 @@ TEST_P(DiscoveredPeripheralTrackerTest, LostPeripheralForAdvertisementLost) {
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -990,7 +1035,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch_a](BleV2Peripheral peripheral,
@@ -1009,7 +1054,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
       },
       Uuid(kFastAdvertisementServiceUuid));
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdB),
+      std::string(kServiceIdB), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch_b](BleV2Peripheral peripheral,
@@ -1071,7 +1116,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -1125,7 +1170,7 @@ TEST_P(DiscoveredPeripheralTrackerTest, LostPeripheralForInstantOnLost) {
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -1158,7 +1203,8 @@ TEST_P(DiscoveredPeripheralTrackerTest, LostPeripheralForInstantOnLost) {
   EXPECT_EQ(GetFetchAdvertisementCallbackCount(), 1);
 
   auto advertisement = InstantOnLostAdvertisement::CreateFromHashes(
-      std::list<std::string>({std::string(advertisement_hash)}));
+      std::list<std::string>({std::string(
+          bleutils::GenerateAdvertisementHash(advertisement_bytes))}));
   ASSERT_OK(advertisement);
   api::ble_v2::BleAdvertisementData loss_advertisement_data{};
   loss_advertisement_data.service_data.insert(
@@ -1190,7 +1236,7 @@ TEST_P(DiscoveredPeripheralTrackerTest, InstantLostPeripheralForInstantOnLost) {
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -1223,7 +1269,8 @@ TEST_P(DiscoveredPeripheralTrackerTest, InstantLostPeripheralForInstantOnLost) {
   EXPECT_EQ(GetFetchAdvertisementCallbackCount(), 1);
 
   auto advertisement = InstantOnLostAdvertisement::CreateFromHashes(
-      std::list<std::string>({std::string(advertisement_hash)}));
+      std::list<std::string>({std::string(
+          bleutils::GenerateAdvertisementHash(advertisement_bytes))}));
   ASSERT_OK(advertisement);
   api::ble_v2::BleAdvertisementData loss_advertisement_data{};
   loss_advertisement_data.service_data.insert(
@@ -1256,7 +1303,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   MockDiscoveredPeripheralCallback mock_callback;
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&mock_callback](BleV2Peripheral peripheral,
@@ -1294,7 +1341,8 @@ TEST_P(DiscoveredPeripheralTrackerTest,
 
   CountDownLatch fetch_latch2(1);
   auto advertisement = InstantOnLostAdvertisement::CreateFromHashes(
-      std::list<std::string>({std::string(advertisement_hash)}));
+      std::list<std::string>({std::string(
+          bleutils::GenerateAdvertisementHash(advertisement_bytes))}));
   ASSERT_OK(advertisement);
   api::ble_v2::BleAdvertisementData loss_advertisement_data{};
   loss_advertisement_data.service_data.insert(
@@ -1334,7 +1382,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -1394,7 +1442,7 @@ TEST_P(DiscoveredPeripheralTrackerTest, HandleDummyAdvertisement) {
   CountDownLatch legacy_device_found_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [](BleV2Peripheral peripheral, const std::string& service_id,
@@ -1430,7 +1478,7 @@ TEST_P(DiscoveredPeripheralTrackerTest, SkipDummyAdvertisement) {
   CountDownLatch legacy_device_found_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [](BleV2Peripheral peripheral, const std::string& service_id,
@@ -1463,7 +1511,7 @@ TEST_P(DiscoveredPeripheralTrackerTest, FetchGattAdvertisementInThread) {
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -1505,7 +1553,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(1);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,
@@ -1554,7 +1602,7 @@ TEST_P(DiscoveredPeripheralTrackerTest,
   CountDownLatch fetch_latch(2);
 
   discovered_peripheral_tracker_.StartTracking(
-      std::string(kServiceIdA),
+      std::string(kServiceIdA), false, Pcp::kP2pPointToPoint,
       {
           .peripheral_discovered_cb =
               [&found_latch](BleV2Peripheral peripheral,

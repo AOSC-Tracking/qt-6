@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f16-rminmax/avx512fp16.c.in
 //   Generator: tools/xngen
@@ -8,18 +9,22 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/reduce.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/reduce.h"
 
 
 void xnn_f16_rminmax_ukernel__avx512fp16_u32(
     size_t batch,
     const xnn_float16* input,
     xnn_float16* output,
-    const struct xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_default_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -28,8 +33,9 @@ void xnn_f16_rminmax_ukernel__avx512fp16_u32(
 
 #if defined(__AVX512FP16__)
   const uint16_t* i = (const uint16_t*) input;
-  __m512h vmin0 = _mm512_castsi512_ph(_mm512_set1_epi16(*i));
-  __m512h vmax0 = vmin0;
+  uint16_t* o = (uint16_t*) output;
+  __m512h vmin0 = _mm512_castsi512_ph(_mm512_set1_epi16(*o));
+  __m512h vmax0 = _mm512_castsi512_ph(_mm512_set1_epi16(o[1]));
   for (; batch >= 32 * sizeof(uint16_t); batch -= 32 * sizeof(uint16_t)) {
     const __m512h vt = _mm512_loadu_ph(i);
     i += 32;

@@ -21,7 +21,7 @@ constexpr uint32_t kTooBigDestLen = 32 * 1024 * 1024 + 1;
 
 uint32_t PixelWeightSum(const CStretchEngine::PixelWeight* weights) {
   uint32_t sum = 0;
-  for (int i = weights->m_SrcStart; i <= weights->m_SrcEnd; ++i) {
+  for (int i = weights->src_start_; i <= weights->src_end_; ++i) {
     sum += weights->GetWeightForPosition(i);
   }
   return sum;
@@ -76,7 +76,7 @@ TEST(CStretchEngine, OverflowInCtor) {
   RetainPtr<CPDF_Stream> stream =
       pdfium::MakeRetain<CPDF_Stream>(std::move(dict_obj));
   auto dib_source = pdfium::MakeRetain<CPDF_DIB>(nullptr, stream);
-  dib_source->Load();
+  EXPECT_FALSE(dib_source->Load());  // Fail to load due to dimensions.
   CStretchEngine engine(nullptr, FXDIB_Format::k8bppRgb, 500, 500, clip_rect,
                         dib_source, FXDIB_ResampleOptions());
   EXPECT_TRUE(engine.GetResampleOptionsForTest().bInterpolateBilinear);

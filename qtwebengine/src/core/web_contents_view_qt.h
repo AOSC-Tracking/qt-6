@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef WEB_CONTENTS_VIEW_QT_H
 #define WEB_CONTENTS_VIEW_QT_H
@@ -52,9 +53,9 @@ public:
 
     gfx::NativeView GetNativeView() const override;
 
-    gfx::NativeView GetContentNativeView() const override { return nullptr; }
+    gfx::NativeView GetContentNativeView() const override { return {}; }
 
-    gfx::NativeWindow GetTopLevelNativeWindow() const override { return nullptr; }
+    gfx::NativeWindow GetTopLevelNativeWindow() const override { return {}; }
 
     gfx::Rect GetContainerBounds() const override;
 
@@ -73,7 +74,6 @@ public:
     void FocusThroughTabTraversal(bool reverse) override;
     void OnCapturerCountChanged() override { QT_NOT_YET_IMPLEMENTED }
     void FullscreenStateChanged(bool) override { }
-    void UpdateWindowControlsOverlay(const gfx::Rect &) override { QT_NOT_YET_IMPLEMENTED }
 
     content::BackForwardTransitionAnimationManager *GetBackForwardTransitionAnimationManager() override { return nullptr; }
 #if BUILDFLAG(IS_MAC)

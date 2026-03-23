@@ -74,6 +74,19 @@
 # define ZSTD_HIDE_ASM_FUNCTION(func)
 #endif
 
+/* Compile time determination of BMI2 support */
+#ifndef STATIC_BMI2
+#  if defined(__BMI2__)
+#    define STATIC_BMI2 1
+#  elif defined(_MSC_VER) && defined(__AVX2__)
+#    define STATIC_BMI2 1 /* MSVC does not have a BMI2 specific flag, but every CPU that supports AVX2 also supports BMI2 */
+#  endif
+#endif
+
+#ifndef STATIC_BMI2
+#  define STATIC_BMI2 0
+#endif
+
 /* Enable runtime BMI2 dispatch based on the CPU.
  * Enabled for clang & gcc >=4.8 on x86 when BMI2 isn't enabled by default.
  */
@@ -153,6 +166,25 @@
 
 #ifndef ZSTD_CET_ENDBRANCH
 # define ZSTD_CET_ENDBRANCH
+#endif
+
+/**
+ * ZSTD_IS_DETERMINISTIC_BUILD must be set to 0 if any compilation macro is
+ * active that impacts the compressed output.
+ *
+ * NOTE: ZSTD_MULTITHREAD is allowed to be set or unset.
+ */
+#if defined(ZSTD_CLEVEL_DEFAULT) \
+    || defined(ZSTD_EXCLUDE_DFAST_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_GREEDY_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_LAZY_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_LAZY2_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_BTLAZY2_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_BTOPT_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_BTULTRA_BLOCK_COMPRESSOR)
+# define ZSTD_IS_DETERMINISTIC_BUILD 0
+#else
+# define ZSTD_IS_DETERMINISTIC_BUILD 1
 #endif
 
 #endif /* ZSTD_PORTABILITY_MACROS_H */

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QCOCOAWINDOW_H
 #define QCOCOAWINDOW_H
@@ -276,6 +277,8 @@ public: // for QNSView
     };
     QHash<quintptr, BorderRange> m_contentBorderAreas; // identifier -> uppper/lower
     QHash<quintptr, bool> m_enabledContentBorderAreas; // identifier -> enabled state (true/false)
+
+    bool m_deliveringUpdateRequest = false;
 
     static inline id s_globalMouseMonitor = 0;
     static inline id s_applicationActivationObserver = 0;

@@ -32,8 +32,6 @@ using ui::WindowAndroidCompositor;
 
 namespace content {
 
-namespace {
-
 class MockCompositor : public WindowAndroidCompositor {
  public:
   ~MockCompositor() override = default;
@@ -52,10 +50,10 @@ class MockCompositor : public WindowAndroidCompositor {
   void AddChildFrameSink(const viz::FrameSinkId& frame_sink_id) override {}
   void RemoveChildFrameSink(const viz::FrameSinkId& frame_sink_id) override {}
   bool IsDrawingFirstVisibleFrame() const override { return false; }
-  void SetVSyncPaused(bool paused) override {}
   void OnUpdateRefreshRate(float refresh_rate) override {}
   void OnUpdateSupportedRefreshRates(
       const std::vector<float>& supported_refresh_rates) override {}
+  void OnAdaptiveRefreshRateInfoChanged() override {}
   std::unique_ptr<ui::CompositorLock> GetCompositorLock(
       base::TimeDelta timeout) override {
     return nullptr;
@@ -87,7 +85,9 @@ class MockGlow : public OverscrollGlow {
 class MockRefresh : public OverscrollRefresh {
  public:
   MockRefresh() : OverscrollRefresh() {}
-  MOCK_METHOD1(OnOverscrolled, void(const cc::OverscrollBehavior& behavior));
+  MOCK_METHOD2(OnOverscrolled,
+               void(const cc::OverscrollBehavior& behavior,
+                    gfx::Vector2dF accumulated_overscroll));
   MOCK_METHOD0(Reset, void());
   MOCK_CONST_METHOD0(IsActive, bool());
   MOCK_CONST_METHOD0(IsAwaitingScrollUpdateAck, bool());
@@ -205,7 +205,7 @@ TEST_F(OverscrollControllerAndroidUnitTest,
 }
 
 TEST_F(OverscrollControllerAndroidUnitTest,
-       ConsumedUpdateDoesNotResetEnabledRefresh) {
+       ConsumedBeginDoesNotResetEnabledRefresh) {
   ui::DidOverscrollParams params = CreateVerticalOverscrollParams();
   params.overscroll_behavior.y = cc::OverscrollBehavior::Type::kAuto;
 
@@ -215,8 +215,8 @@ TEST_F(OverscrollControllerAndroidUnitTest,
   // Enable the refresh effect.
   controller_->OnOverscrolled(params);
 
-  // Generate a consumed scroll update.
-  blink::WebGestureEvent event(blink::WebInputEvent::Type::kGestureScrollUpdate,
+  // Generate a consumed scroll begin.
+  blink::WebGestureEvent event(blink::WebInputEvent::Type::kGestureScrollBegin,
                                blink::WebInputEvent::kNoModifiers,
                                ui::EventTimeForNow());
   controller_->OnGestureEventAck(
@@ -224,7 +224,5 @@ TEST_F(OverscrollControllerAndroidUnitTest,
 
   testing::Mock::VerifyAndClearExpectations(&refresh_);
 }
-
-}  // namespace
 
 }  // namespace content

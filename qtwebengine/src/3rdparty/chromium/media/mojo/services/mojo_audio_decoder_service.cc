@@ -6,10 +6,12 @@
 
 #include <memory>
 #include <utility>
+#include <variant>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/optional_util.h"
 #include "media/base/content_decryption_module.h"
 #include "media/mojo/common/media_type_converters.h"
@@ -161,7 +163,7 @@ void MojoAudioDecoderService::OnReadDone(
   }
 
   if (buffer->end_of_stream() && buffer->next_config() &&
-      !absl::holds_alternative<AudioDecoderConfig>(*buffer->next_config())) {
+      !std::holds_alternative<AudioDecoderConfig>(*buffer->next_config())) {
     std::move(bad_message_callback)
         .Run("Invalid DecoderBuffer::next_config() for audio.");
     return;

@@ -454,39 +454,8 @@ void QScxmlStateMachinePrivate::postEvent(QScxmlEvent *event)
 {
     Q_Q(QScxmlStateMachine);
 
-    if (!event->name().startsWith(QStringLiteral("done.invoke."))) {
-        for (int id = 0, end = static_cast<int>(m_invokedServices.size()); id != end; ++id) {
-            auto service = m_invokedServices[id].service;
-            if (service == nullptr)
-                continue;
-            auto factory = serviceFactory(id);
-            if (event->invokeId() == service->id()) {
-                setEvent(event);
-
-                const QScxmlExecutableContent::ContainerId finalize
-                        = factory->invokeInfo().finalize;
-                if (finalize != QScxmlExecutableContent::NoContainer) {
-                    auto psm = service->parentStateMachine();
-                    qCDebug(qscxmlLog) << psm << "running finalize on event";
-                    auto smp = QScxmlStateMachinePrivate::get(psm);
-                    smp->m_executionEngine->execute(finalize);
-                }
-
-                resetEvent();
-            }
-            if (factory->invokeInfo().autoforward) {
-                qCDebug(qscxmlLog) << q << "auto-forwarding event" << event->name()
-                                   << "from" << q->name()
-                                   << "to child" << service->id();
-                service->postEvent(new QScxmlEvent(*event));
-            }
-        }
-    }
-
-    if (event->eventType() == QScxmlEvent::ExternalEvent)
-        m_router.route(event->name().split(QLatin1Char('.')), event);
-
     if (event->eventType() == QScxmlEvent::ExternalEvent) {
+        m_router.route(event->name().split(QLatin1Char('.')), event);
         qCDebug(qscxmlLog) << q << "posting external event" << event->name();
         m_externalQueue.enqueue(event);
     } else {
@@ -518,11 +487,17 @@ void QScxmlStateMachinePrivate::submitDelayedEvent(QScxmlEvent *event)
 }
 
 /*!
+    \class QScxmlStateMachinePrivate
+    \inmodule QtScxml
+    \internal
+*/
+
+/*!
  * Submits an error event to the external event queue of this state machine.
  *
  * The type of the error is specified by \a type. The value of type has to begin
  * with the string \e error. For example \c {error.execution}. The message,
- * \a message, decribes the error and is passed to the event as the
+ * \a message, describes the error and is passed to the event as the
  * \c errorMessage property. The \a sendId of the message causing the error is specified, if it has
  * one.
  */
@@ -597,6 +572,32 @@ void QScxmlStateMachinePrivate::processEvents()
         } else if (!m_externalQueue.isEmpty()) {
             auto event = m_externalQueue.dequeue();
             setEvent(event);
+
+            for (int id = 0, end = static_cast<int>(m_invokedServices.size()); id != end; ++id) {
+                auto service = m_invokedServices[id].service;
+                if (service == nullptr)
+                    continue;
+                auto factory = serviceFactory(id);
+                if (event->invokeId() == service->id()) {
+                    const QScxmlExecutableContent::ContainerId finalize
+                            = factory->invokeInfo().finalize;
+                    if (finalize != QScxmlExecutableContent::NoContainer) {
+                        auto psm = service->parentStateMachine();
+                        qCDebug(qscxmlLog) << psm << "running finalize on event";
+                        auto smp = QScxmlStateMachinePrivate::get(psm);
+                        smp->m_executionEngine->execute(finalize);
+                    }
+
+                }
+
+                if (factory->invokeInfo().autoforward) {
+                    qCDebug(qscxmlLog) << q << "auto-forwarding event" << event->name()
+                                        << "from" << q->name()
+                                        << "to child" << service->id();
+                    service->postEvent(new QScxmlEvent(*event));
+                }
+            }
+
             selectTransitions(enabledTransitions, configurationInDocumentOrder, event);
             if (!enabledTransitions.isEmpty()) {
                 microstep(enabledTransitions);

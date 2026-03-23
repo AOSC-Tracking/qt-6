@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickdrawutil.h"
 
@@ -364,7 +365,7 @@ void qDrawShadePanel(QPainter *p, int x, int y, int w, int h,
             light = pal.midlight().color();
     }
     QPen oldPen = p->pen();                        // save pen
-    QVector<QLineF> lines;
+    QList<QLineF> lines;
     lines.reserve(2*lineWidth);
 
     if (sunken)

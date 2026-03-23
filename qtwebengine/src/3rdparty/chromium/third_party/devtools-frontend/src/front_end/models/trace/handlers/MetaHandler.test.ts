@@ -309,6 +309,7 @@ describe('MetaHandler', function() {
       }],
     ]);
   });
+
   it('handles multiple renderers from navigations where a process handled multiple URLs ', async function() {
     let traceEvents: readonly Trace.Types.Events.Event[];
     try {
@@ -521,6 +522,17 @@ describe('MetaHandler', function() {
     assert.isFalse(Trace.Handlers.ModelHandlers.Meta.data().traceIsGeneric);
   });
 
+  it('marks a cpu profile as being not generic', async function() {
+    const profile = await TraceLoader.rawCPUProfile(this, 'basic.cpuprofile.gz');
+    const contents = Trace.Helpers.SamplesIntegrator.SamplesIntegrator.createFakeTraceFromCpuProfile(
+        profile, Trace.Types.Events.ThreadID(1));
+    for (const event of contents.traceEvents) {
+      Trace.Handlers.ModelHandlers.Meta.handleEvent(event);
+    }
+    await Trace.Handlers.ModelHandlers.Meta.finalize();
+    assert.isFalse(Trace.Handlers.ModelHandlers.Meta.data().traceIsGeneric);
+  });
+
   it('sets the main frame URL from the TracingStartedInBrowser event', async function() {
     // This trace has the right URL in TracingStartedInBrowser
     const events = await TraceLoader.rawEvents(this, 'web-dev-with-commit.json.gz');
@@ -604,4 +616,35 @@ describe('MetaHandler', function() {
        // But they are not in the primary page.
        assert.strictEqual(data.mainFrameId, '07B7D55F5BE0ADB8AAD6502F2D3859FF');
      });
+
+  it('will detect the final redirect URL for a main frame navigation', async function() {
+    // See crbug.com/402743677 for context.
+    const events = await TraceLoader.rawEvents(this, 'redirects-http-to-https.json.gz');
+    for (const event of events) {
+      Trace.Handlers.ModelHandlers.Meta.handleEvent(event);
+    }
+    await Trace.Handlers.ModelHandlers.Meta.finalize();
+    const data = Trace.Handlers.ModelHandlers.Meta.data();
+
+    assert.strictEqual(data.mainFrameURL, 'https://example.com/');
+    assert.strictEqual(data.mainFrameNavigations[0].args.data?.documentLoaderURL, 'http://paulirish.com/');
+    assert.deepEqual([...data.finalDisplayUrlByNavigationId], [
+      ['832038B69FE671709DE9655B8161EB9A', 'https://www.paulirish.com/'],
+    ]);
+  });
+
+  it('will detect history API navigations for the start of the trace even w/o any navigation', async function() {
+    // See crbug.com/402743677 for context.
+    const events = await TraceLoader.rawEvents(this, 'history-api-no-nav.json.gz');
+    for (const event of events) {
+      Trace.Handlers.ModelHandlers.Meta.handleEvent(event);
+    }
+    await Trace.Handlers.ModelHandlers.Meta.finalize();
+    const data = Trace.Handlers.ModelHandlers.Meta.data();
+
+    assert.strictEqual(data.mainFrameURL, 'http://localhost:10325/test.html');
+    assert.deepEqual([...data.finalDisplayUrlByNavigationId], [
+      ['', 'http://localhost:10325/testing/me?0.7574185139653986'],
+    ]);
+  });
 });

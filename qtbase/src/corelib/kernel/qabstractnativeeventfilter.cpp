@@ -75,9 +75,10 @@ QAbstractNativeEventFilter::~QAbstractNativeEventFilter()
     \b {macOS example}
 
     mycocoaeventfilter.h:
-    \snippet code/src_corelib_kernel_qabstractnativeeventfilter.h 0
+    \snippet code/src_corelib_kernel_qabstractnativeeventfilter.mm mycocoaeventfilter
 
     mycocoaeventfilter.mm:
+    \snippet code/src_corelib_kernel_qabstractnativeeventfilter.mm include
     \snippet code/src_corelib_kernel_qabstractnativeeventfilter.mm 0
 
     myapp.pro:

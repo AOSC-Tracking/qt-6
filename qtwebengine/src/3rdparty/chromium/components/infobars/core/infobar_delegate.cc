@@ -13,7 +13,6 @@
 
 #if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
 #include "ui/gfx/color_palette.h"
-#include "ui/gfx/paint_vector_icon.h"
 #endif
 
 namespace infobars {
@@ -55,6 +54,10 @@ GURL InfoBarDelegate::GetLinkURL() const {
   return GURL();
 }
 
+std::optional<std::u16string> InfoBarDelegate::GetLinkAccessibleText() const {
+  return std::nullopt;
+}
+
 bool InfoBarDelegate::EqualsDelegate(InfoBarDelegate* delegate) const {
   return false;
 }
@@ -83,6 +86,10 @@ bool InfoBarDelegate::IsCloseable() const {
 
 bool InfoBarDelegate::ShouldAnimate() const {
   return true;
+}
+
+bool InfoBarDelegate::ShouldHideInFullscreen() const {
+  return false;
 }
 
 ConfirmInfoBarDelegate* InfoBarDelegate::AsConfirmInfoBarDelegate() {

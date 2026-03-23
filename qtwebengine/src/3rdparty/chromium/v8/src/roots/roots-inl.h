@@ -5,6 +5,9 @@
 #ifndef V8_ROOTS_ROOTS_INL_H_
 #define V8_ROOTS_ROOTS_INL_H_
 
+#include "src/roots/roots.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/common/ptr-compr-inl.h"
 #include "src/execution/isolate.h"
 #include "src/execution/local-isolate.h"
@@ -27,23 +30,18 @@
 #include "src/objects/string.h"
 #include "src/objects/swiss-name-dictionary.h"
 #include "src/objects/tagged.h"
-#include "src/roots/roots.h"
 #include "src/roots/static-roots.h"
-
-#if V8_ENABLE_WEBASSEMBLY
-#include "src/wasm/wasm-objects.h"
-#endif
 
 namespace v8 {
 namespace internal {
 
 V8_INLINE constexpr bool operator<(RootIndex lhs, RootIndex rhs) {
-  using type = typename std::underlying_type<RootIndex>::type;
+  using type = std::underlying_type_t<RootIndex>;
   return static_cast<type>(lhs) < static_cast<type>(rhs);
 }
 
 V8_INLINE RootIndex operator++(RootIndex& index) {
-  using type = typename std::underlying_type<RootIndex>::type;
+  using type = std::underlying_type_t<RootIndex>;
   index = static_cast<RootIndex>(static_cast<type>(index) + 1);
   return index;
 }
@@ -106,7 +104,6 @@ ReadOnlyRoots::ReadOnlyRoots(LocalIsolate* isolate)
 
 #define ROOT_ACCESSOR(Type, name, CamelName)                        \
   Tagged<Type> ReadOnlyRoots::name() const {                        \
-    DCHECK(CheckType_##name());                                     \
     return unchecked_##name();                                      \
   }                                                                 \
   Tagged<Type> ReadOnlyRoots::unchecked_##name() const {            \
@@ -117,6 +114,10 @@ READ_ONLY_ROOT_LIST(ROOT_ACCESSOR)
 
 Tagged<Boolean> ReadOnlyRoots::boolean_value(bool value) const {
   return value ? Tagged<Boolean>(true_value()) : Tagged<Boolean>(false_value());
+}
+
+Tagged<String> ReadOnlyRoots::single_character_string(int code) const {
+  return Cast<String>(object_at(RootsTable::SingleCharacterStringIndex(code)));
 }
 
 Address ReadOnlyRoots::first_name_for_protector() const {
@@ -146,7 +147,6 @@ Tagged<Object> ReadOnlyRoots::object_at(RootIndex root_index) const {
 Address ReadOnlyRoots::address_at(RootIndex root_index) const {
 #if V8_STATIC_ROOTS_BOOL
   return V8HeapCompressionScheme::DecompressTagged(
-      V8HeapCompressionScheme::base(),
       StaticReadOnlyRootsPointerTable[static_cast<int>(root_index)]);
 #else
   size_t index = static_cast<size_t>(root_index);

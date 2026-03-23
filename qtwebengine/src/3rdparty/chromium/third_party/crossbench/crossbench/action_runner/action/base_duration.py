@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
-import datetime as dt
+import functools
 from typing import TYPE_CHECKING, Type
+
+from typing_extensions import override
 
 from crossbench.action_runner.action.action import (ACTION_TIMEOUT, Action,
                                                     ActionT)
@@ -13,6 +15,8 @@ from crossbench.action_runner.action.action_type import ActionType
 from crossbench.parse import DurationParser
 
 if TYPE_CHECKING:
+  import datetime as dt
+
   from crossbench.config import ConfigParser
   from crossbench.types import JsonDict
 
@@ -27,9 +31,11 @@ class BaseDurationAction(Action):
     super().__init__(timeout, index)
 
   @property
+  @override
   def duration(self) -> dt.timedelta:
     return self._duration
 
+  @override
   def validate(self) -> None:
     super().validate()
     self.validate_duration()
@@ -39,6 +45,7 @@ class BaseDurationAction(Action):
       raise ValueError(
           f"{self}.duration should be positive, but got {self.duration}")
 
+  @override
   def to_json(self) -> JsonDict:
     details = super().to_json()
     details["duration"] = self.duration.total_seconds()
@@ -49,6 +56,8 @@ class DurationAction(BaseDurationAction):
   TYPE: ActionType = ActionType.WAIT
 
   @classmethod
+  @override
+  @functools.cache
   def config_parser(cls: Type[ActionT]) -> ConfigParser[ActionT]:
     parser = super().config_parser()
     parser.add_argument(

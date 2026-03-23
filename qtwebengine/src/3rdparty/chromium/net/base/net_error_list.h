@@ -21,6 +21,7 @@
 //   600-699 <Obsolete: FTP errors>
 //   700-799 Certificate manager errors
 //   800-899 DNS resolver errors
+//   900-999 Blob errors
 
 // An asynchronous IO operation is not yet complete.  This usually does not
 // indicate a fatal error.  Typically this error will be generated as a
@@ -121,8 +122,8 @@ NET_ERROR(CLEARTEXT_NOT_PERMITTED, -29)
 // The request was blocked by a Content Security Policy
 NET_ERROR(BLOCKED_BY_CSP, -30)
 
+// NET_ERROR(H2_OR_QUIC_REQUIRED, -31) was removed. It was:
 // The request was blocked because of no H/2 or QUIC session.
-NET_ERROR(H2_OR_QUIC_REQUIRED, -31)
 
 // The request was blocked by CORB or ORB.
 NET_ERROR(BLOCKED_BY_ORB, -32)
@@ -170,7 +171,8 @@ NET_ERROR(ADDRESS_UNREACHABLE, -109)
 // The server requested a client certificate for SSL client authentication.
 NET_ERROR(SSL_CLIENT_AUTH_CERT_NEEDED, -110)
 
-// A tunnel connection through the proxy could not be established.
+// A tunnel connection through the proxy could not be established. For more info
+// see the comment on PROXY_UNABLE_TO_CONNECT_TO_DESTINATION.
 NET_ERROR(TUNNEL_CONNECTION_FAILED, -111)
 
 // No SSL protocol versions are enabled.
@@ -443,6 +445,23 @@ NET_ERROR(ECH_NOT_NEGOTIATED, -183)
 // and additionally did not present a certificate valid for the public name.
 NET_ERROR(ECH_FALLBACK_CERTIFICATE_INVALID, -184)
 
+// Error -185 was removed (PROXY_TUNNEL_REQUEST_FAILED).
+
+// An attempt to proxy a request failed because the proxy wasn't able to
+// successfully connect to the destination. This likely indicates an issue with
+// the request itself (for instance, the hostname failed to resolve to an IP
+// address or the destination server refused the connection). This error code
+// is used to indicate that the error is outside the control of the proxy server
+// and thus the proxy chain should not be marked as bad. This is in contrast to
+// ERR_TUNNEL_CONNECTION_FAILED which is used for general purpose errors
+// connecting to the proxy and by the proxy request response handling when a
+// proxy delegate doesn't indicate via a different error code whether proxy
+// fallback should occur. Note that for IP Protection proxies this error code
+// causes the proxy to be marked as bad since the preference is to fail open for
+// general purpose errors, but for other proxies this error does not cause the
+// proxy to be marked as bad.
+NET_ERROR(PROXY_UNABLE_TO_CONNECT_TO_DESTINATION, -186)
+
 // Certificate error codes
 //
 // The values of certificate error codes must be consecutive.
@@ -550,9 +569,7 @@ NET_ERROR(CERT_VALIDITY_TOO_LONG, -213)
 // did not provide CT information that complied with the policy.
 NET_ERROR(CERTIFICATE_TRANSPARENCY_REQUIRED, -214)
 
-// The certificate chained to a legacy Symantec root that is no longer trusted.
-// https://g.co/chrome/symantecpkicerts
-NET_ERROR(CERT_SYMANTEC_LEGACY, -215)
+// Error -215 was removed (CERT_SYMANTEC_LEGACY)
 
 // -216 was QUIC_CERT_ROOT_NOT_KNOWN which has been renumbered to not be in the
 // certificate error range.
@@ -564,13 +581,17 @@ NET_ERROR(CERT_KNOWN_INTERCEPTION_BLOCKED, -217)
 // -218 was SSL_OBSOLETE_VERSION which is not longer used. TLS 1.0/1.1 instead
 // cause SSL_VERSION_OR_CIPHER_MISMATCH now.
 
+// The certificate is self signed and it's being used for either an RFC1918 IP
+// literal URL, or a url ending in .local.
+NET_ERROR(CERT_SELF_SIGNED_LOCAL_NETWORK, -219)
+
 // Add new certificate error codes here.
 //
 // Update the value of CERT_END whenever you add a new certificate error
 // code.
 
 // The value immediately past the last certificate error code.
-NET_ERROR(CERT_END, -219)
+NET_ERROR(CERT_END, -220)
 
 // The URL is invalid.
 NET_ERROR(INVALID_URL, -300)
@@ -756,6 +777,9 @@ NET_ERROR(PROXY_HTTP_1_1_REQUIRED, -366)
 
 // The PAC script terminated fatally and must be reloaded.
 NET_ERROR(PAC_SCRIPT_TERMINATED, -367)
+
+// Signals that the request requires the IPP proxy.
+NET_ERROR(PROXY_REQUIRED, -368)
 
 // Obsolete. Kept here to avoid reuse.
 // Request is throttled because of a Backoff header.
@@ -1030,6 +1054,35 @@ NET_ERROR(DNS_NO_MATCHING_SUPPORTED_ALPN, -811)
 // When checking whether secure DNS can be used, the response returned for the
 // requested probe record either had no answer or was invalid.
 NET_ERROR(DNS_SECURE_PROBE_RECORD_INVALID, -814)
+
+// The following errors are for mapped from a subset of invalid
+// storage::BlobStatus.
+
+// The construction arguments are invalid. This is considered a bad IPC.
+NET_ERROR(BLOB_INVALID_CONSTRUCTION_ARGUMENTS, -900)
+
+// We don't have enough memory for the blob.
+NET_ERROR(BLOB_OUT_OF_MEMORY, -901)
+
+// We couldn't create or write to a file. File system error, like a full disk.
+NET_ERROR(BLOB_FILE_WRITE_FAILED, -902)
+
+// The renderer was destroyed while data was in transit.
+NET_ERROR(BLOB_SOURCE_DIED_IN_TRANSIT, -903)
+
+// The renderer destructed the blob before it was done transferring, and there
+// were no outstanding references (no one is waiting to read) to keep the
+// blob alive.
+NET_ERROR(BLOB_DEREFERENCED_WHILE_BUILDING, -904)
+
+// A blob that we referenced during construction is broken, or a browser-side
+// builder tries to build a blob with a blob reference that isn't finished
+// constructing.
+NET_ERROR(BLOB_REFERENCED_BLOB_BROKEN, -905)
+
+// A file that we referenced during construction is not accessible to the
+// renderer trying to create the blob.
+NET_ERROR(BLOB_REFERENCED_FILE_UNAVAILABLE, -906)
 
 // CAUTION: Before adding errors here, please check the ranges of errors written
 // in the top of this file.

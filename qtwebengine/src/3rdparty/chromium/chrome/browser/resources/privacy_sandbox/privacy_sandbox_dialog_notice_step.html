@@ -78,16 +78,9 @@
               title="$i18n{m1NoticeEEASiteSuggestedAdsLearnMoreLabel}">
             <ul class="cr-secondary-text">
               <li>$i18nRaw{m1NoticeEEASiteSuggestedAdsLearnMoreBullet1}</li>
-              <template is="dom-if" if="[[isPrivacyPolicyLinkEnabled_]]">
-                <div class="learn-more-bullet-description">
-                  $i18nRaw{m1NoticeEEASiteSuggestedAdsLearnMoreBullet1Description}
-                </div>
-              </template>
-              <template is="dom-if" if="[[!isPrivacyPolicyLinkEnabled_]]">
-                <div class="learn-more-bullet-description">
-                  $i18n{m1NoticeEEASiteSuggestedAdsLearnMoreBullet1DescriptionNoLink}
-                </div>
-              </template>
+              <div class="learn-more-bullet-description">
+                $i18nRaw{m1NoticeEEASiteSuggestedAdsLearnMoreBullet1Description}
+              </div>
               <li>$i18nRaw{m1NoticeEEASiteSuggestedAdsLearnMoreBullet2}</li>
             </ul>
           </privacy-sandbox-dialog-learn-more>
@@ -112,12 +105,11 @@
       </template>
     </div>
     <div class="buttons-container">
-      <cr-button id="settingsButton"
-          class$="[[getSettingsButtonsClass_()]]"
+      <cr-button id="settingsButton" class="tonal-button"
           on-click="onNoticeOpenSettings">
         $i18n{m1NoticeEeaSettingsButton}
       </cr-button>
-      <cr-button id="ackButton" class$="[[getAckButtonsClass_()]]"
+      <cr-button id="ackButton" class="tonal-button"
           on-click="onNoticeAcknowledge">
         $i18n{m1NoticeEeaAckButton}
       </cr-button>
@@ -131,7 +123,7 @@
     <cr-icon icon="cr:expand-more"></cr-icon>
   </cr-button>
 </div>
-<template is="dom-if" if="[[isPrivacyPolicyLinkEnabled_]]">
+<template is="dom-if" if="[[loadPrivacyPolicy_]]">
   <privacy-sandbox-privacy-policy-dialog
       id="privacyPolicyDialog"
       should-show="[[hideNoticePage_]]"

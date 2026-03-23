@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/webui/settings/site_settings_handler.h"
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <optional>
@@ -43,7 +44,6 @@
 #include "chrome/browser/browsing_topics/browsing_topics_service_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/engagement/site_engagement_service_factory.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
 #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
@@ -59,6 +59,7 @@
 #include "chrome/browser/serial/serial_chooser_context.h"
 #include "chrome/browser/serial/serial_chooser_context_factory.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/safety_hub/safety_hub_test_util.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/test/isolated_web_app_test_utils.h"
 #include "chrome/browser/ui/webui/settings/site_settings_helper.h"
@@ -114,17 +115,18 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "content/public/common/buildflags.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_web_ui.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/test/mock_bluetooth_adapter.h"
 #include "device/bluetooth/test/mock_bluetooth_device.h"
+#include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension_builder.h"
 #include "google_apis/gaia/gaia_id.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "services/device/public/cpp/test/fake_hid_manager.h"
 #include "services/device/public/cpp/test/fake_serial_port_manager.h"
 #include "services/device/public/cpp/test/fake_usb_device_manager.h"
@@ -292,9 +294,7 @@ void RemoveModelEntries(
     const std::vector<browsing_data_model_test_util::BrowsingDataEntry>&
         entries_to_remove) {
   for (const auto& entry : entries_to_remove) {
-    model_entries.erase(
-        std::remove(model_entries.begin(), model_entries.end(), entry),
-        model_entries.end());
+    std::erase(model_entries, entry);
   }
 }
 
@@ -345,11 +345,9 @@ class SiteSettingsHandlerBaseTest : public testing::Test {
         TestingBrowserProcess::GetGlobal());
     EXPECT_TRUE(testing_profile_manager_->SetUp());
     profile_ = testing_profile_manager_->CreateTestingProfile(
-        kTestUserEmail,
-        {TestingProfile::TestingFactory{
-            HistoryServiceFactory::GetInstance(),
-            HistoryServiceFactory::GetDefaultFactory()}},
-        /*is_main_profile=*/true);
+        kTestUserEmail, {TestingProfile::TestingFactory{
+                            HistoryServiceFactory::GetInstance(),
+                            HistoryServiceFactory::GetDefaultFactory()}});
     EXPECT_TRUE(profile_);
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -378,6 +376,8 @@ class SiteSettingsHandlerBaseTest : public testing::Test {
     profile()->SetPermissionControllerDelegate(
         permissions::GetPermissionControllerDelegate(profile()));
 
+    safety_hub_test_util::CreateNotificationPermissionsReviewService(profile());
+
     handler_ = std::make_unique<SiteSettingsHandler>(profile());
     handler()->set_web_ui(web_ui());
     handler()->AllowJavascript();
@@ -402,14 +402,14 @@ class SiteSettingsHandlerBaseTest : public testing::Test {
     // On ChromeOS a user account is needed in order to check whether the user
     // account is affiliated with the device owner for the purposes of applying
     // enterprise policy.
-    constexpr char kTestUserGaiaId[] = "1111111111";
+    constexpr GaiaId::Literal kTestUserGaiaId("1111111111");
     auto fake_user_manager = std::make_unique<ash::FakeChromeUserManager>();
     auto* fake_user_manager_ptr = fake_user_manager.get();
     scoped_user_manager_ = std::make_unique<user_manager::ScopedUserManager>(
         std::move(fake_user_manager));
 
     auto account_id =
-        AccountId::FromUserEmailGaiaId(kTestUserEmail, GaiaId(kTestUserGaiaId));
+        AccountId::FromUserEmailGaiaId(kTestUserEmail, kTestUserGaiaId);
     fake_user_manager_ptr->AddUserWithAffiliation(account_id,
                                                   /*is_affiliated=*/true);
     fake_user_manager_ptr->LoginUser(account_id);
@@ -792,7 +792,13 @@ class SiteSettingsHandlerBaseTest : public testing::Test {
 
   void ValidateZoom(const std::vector<ZoomLevel>& zoom_levels,
                     size_t expected_total_calls) {
-    EXPECT_EQ(expected_total_calls, web_ui()->call_data().size());
+    const size_t zoom_changed_count = std::ranges::count_if(
+        web_ui()->call_data(),
+        [](const std::unique_ptr<content::TestWebUI::CallData>& call_data_ptr) {
+          return call_data_ptr && call_data_ptr->arg1() &&
+                 *call_data_ptr->arg1() == "onZoomLevelsChanged";
+        });
+    EXPECT_EQ(expected_total_calls, zoom_changed_count);
 
     const content::TestWebUI::CallData& data = *web_ui()->call_data().back();
     EXPECT_EQ("cr.webUIListenerCallback", data.function_name());
@@ -974,19 +980,16 @@ class SiteSettingsHandlerBaseTest : public testing::Test {
     extensions::TestExtensionSystem* extension_system =
         static_cast<extensions::TestExtensionSystem*>(
             extensions::ExtensionSystem::Get(profile()));
-    extensions::ExtensionService* extension_service =
-        extension_system->CreateExtensionService(
-            base::CommandLine::ForCurrentProcess(), base::FilePath(),
-            /*autoupdate_enabled=*/false);
-    extension_service->AddExtension(extension.get());
+    extension_system->CreateExtensionService(
+        base::CommandLine::ForCurrentProcess(), base::FilePath(),
+        /*autoupdate_enabled=*/false);
+    extensions::ExtensionRegistrar::Get(profile())->AddExtension(
+        extension.get());
     return extension;
   }
 
   void UnloadExtension(std::string extension_id) {
-    auto* extension_service =
-        extensions::ExtensionSystem::Get(profile())->extension_service();
-    ASSERT_TRUE(extension_service);
-    extension_service->UnloadExtension(
+    extensions::ExtensionRegistrar::Get(profile())->RemoveExtension(
         extension_id, extensions::UnloadedExtensionReason::DISABLE);
   }
 
@@ -2389,59 +2392,6 @@ TEST_F(SiteSettingsHandlerTest, IncrementsTrackingProtectionMetrics) {
             1);
 }
 
-class Reset3pcCategoryPermissionTest
-    : public SiteSettingsHandlerBaseTest,
-      public testing::WithParamInterface<bool> {
- public:
-  Reset3pcCategoryPermissionTest() {
-    std::vector<base::test::FeatureRef> enabled_features;
-    enabled_features.push_back(
-        privacy_sandbox::kTrackingProtectionContentSettingUbControl);
-    if (GetParam()) {
-      enabled_features.push_back(
-          privacy_sandbox::kTrackingProtectionContentSettingInSettings);
-    }
-    feature_list_.InitWithFeatures(enabled_features, {});
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-INSTANTIATE_TEST_SUITE_P(All, Reset3pcCategoryPermissionTest, testing::Bool());
-
-TEST_P(Reset3pcCategoryPermissionTest,
-       RemovesTrackingProtectionExceptionsWhenFeatureIsOff) {
-  constexpr char kOrigin[] = "https://www.test.com:443";
-  base::Value::List set_args;
-  set_args.Append("*");      // Primary pattern.
-  set_args.Append(kOrigin);  // Secondary pattern.
-  set_args.Append(kTrackingProtection);
-  set_args.Append(
-      content_settings::ContentSettingToString(CONTENT_SETTING_ALLOW));
-  set_args.Append(false);  // Incognito
-  handler()->HandleSetCategoryPermissionForPattern(set_args);
-  // We should have 1 Tracking Protection exception
-  base::Value::List initial_exceptions;
-  site_settings::GetExceptionsForContentType(
-      ContentSettingsType::TRACKING_PROTECTION, profile(), web_ui(),
-      /*incognito=*/false, &initial_exceptions);
-  EXPECT_EQ(initial_exceptions.size(), 1U);
-
-  base::Value::List reset_args;
-  reset_args.Append("*");      // Primary pattern.
-  reset_args.Append(kOrigin);  // Secondary pattern.
-  reset_args.Append(kCookies);
-  reset_args.Append(false);  // Incognito
-  handler()->HandleResetCategoryPermissionForPattern(reset_args);
-  base::Value::List actual_exceptions;
-  site_settings::GetExceptionsForContentType(
-      ContentSettingsType::TRACKING_PROTECTION, profile(), web_ui(),
-      /*incognito=*/false, &actual_exceptions);
-  // The exception should only have been removed if the feature is off.
-  EXPECT_EQ(actual_exceptions.size(), GetParam() ? 1U : 0U);
-}
-
 // TODO(crbug.com/40688152): Test flakes on TSAN and ASAN.
 #if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
 #define MAYBE_DefaultSettingSource DISABLED_DefaultSettingSource
@@ -3241,9 +3191,8 @@ TEST_F(SiteSettingsHandlerInfobarTest, SettingPermissionsTriggersInfobar) {
       extensions::ExtensionBuilder("Test")
           .SetID("fooooooooooooooooooooooooooooooo")
           .Build();
-  extensions::ExtensionSystem::Get(profile())
-      ->extension_service()
-      ->AddExtension(test_extension.get());
+  extensions::ExtensionRegistrar::Get(profile())->AddExtension(
+      test_extension.get());
 
   //               __________  ______________  ___________________  _______
   //   Window 2:  / insecure '/ origin_query \' example_subdomain \' about \
@@ -4311,134 +4260,6 @@ TEST_F(PersistentPermissionsSiteSettingsHandlerTest,
 
   EXPECT_EQ(updated_data.arg1()->GetString(), kCallbackId);
 }
-
-#if BUILDFLAG(IS_CHROMEOS)
-class SmartCardReaderPermissionsSiteSettingsHandlerTest
-    : public SiteSettingsHandlerBaseTest {
-  void SetUp() override {
-    SiteSettingsHandlerBaseTest::SetUp();
-    handler_ = std::make_unique<SiteSettingsHandler>(profile());
-    handler_->set_web_ui(web_ui());
-    handler_->AllowJavascript();
-    web_ui()->ClearTrackedCalls();
-  }
-
-  void TearDown() override {
-    SiteSettingsHandlerBaseTest::TearDown();
-    handler_->DisallowJavascript();
-  }
-
- protected:
-  void GrantPersistentReaderPermission(SmartCardPermissionContext& context,
-                                       const url::Origin& origin,
-                                       const std::string& reader_name) {
-    return context.GrantPersistentReaderPermission(origin, reader_name);
-  }
-
- protected:
-  std::unique_ptr<SiteSettingsHandler> handler_;
-
- private:
-  base::test::ScopedFeatureList feature_list_{blink::features::kSmartCard};
-};
-
-TEST_F(SmartCardReaderPermissionsSiteSettingsHandlerTest,
-       HandleGetSmartCardReaderGrants) {
-  SmartCardPermissionContext& context =
-      SmartCardPermissionContextFactory::GetForProfile(*profile());
-
-  const auto kTestOrigin0 = url::Origin::Create(
-      GURL("isolated-app://"
-           "amoiebz32b7o24tilu257xne2yf3nkblkploanxzm7ebeglseqpfeaacai/"));
-  const auto kTestOrigin1 =
-      url::Origin::Create(GURL("https://www.example.com"));
-  const std::string kTestOrigin1DisplayName = "www.example.com";
-
-  const std::string kReader0 = "Reader 0";
-  const std::string kReader1 = "Reader 1";
-
-  GrantPersistentReaderPermission(context, kTestOrigin0, kReader0);
-  GrantPersistentReaderPermission(context, kTestOrigin0, kReader1);
-  GrantPersistentReaderPermission(context, kTestOrigin1, kReader1);
-  context.FlushScheduledSaveSettingsCalls();
-
-  handler_->HandleGetSmartCardReaderGrants(
-      base::Value::List().Append(kCallbackId));
-
-  EXPECT_EQ(
-      web_ui()->call_data().back()->arg3()->GetList(),
-      base::Value::List()
-          .Append(base::Value::Dict()
-                      .Set(site_settings::kReaderName, kReader0)
-                      .Set(site_settings::kOrigins,
-                           base::Value::List().Append(
-                               base::Value::Dict()
-                                   .Set(site_settings::kOrigin,
-                                        kTestOrigin0.Serialize())
-                                   .Set(site_settings::kDisplayName,
-                                        kTestOrigin0.Serialize()))))
-          .Append(base::Value::Dict()
-                      .Set(site_settings::kReaderName, kReader1)
-                      .Set(site_settings::kOrigins,
-                           base::Value::List()
-                               .Append(base::Value::Dict()
-                                           .Set(site_settings::kOrigin,
-                                                kTestOrigin0.Serialize())
-                                           .Set(site_settings::kDisplayName,
-                                                kTestOrigin0.Serialize()))
-                               .Append(base::Value::Dict()
-                                           .Set(site_settings::kOrigin,
-                                                kTestOrigin1.Serialize())
-                                           .Set(site_settings::kDisplayName,
-                                                kTestOrigin1DisplayName)))));
-}
-
-TEST_F(SmartCardReaderPermissionsSiteSettingsHandlerTest,
-       HandleRevokeAllSmartCardReaderGrants) {
-  SmartCardPermissionContext& context =
-      SmartCardPermissionContextFactory::GetForProfile(*profile());
-
-  const auto kTestOrigin1 = url::Origin::Create(
-      GURL("isolated-app://"
-           "amoiebz32b7o24tilu257xne2yf3nkblkploanxzm7ebeglseqpfeaacai/"));
-  const auto kTestOrigin2 = url::Origin::Create(
-      GURL("isolated-app://"
-           "anayaszofsyqapbofoli7ljxoxkp32qkothweire2o6t7xy6taz6oaacai/"));
-
-  const std::string kReader1 = "Reader 1";
-  const std::string kReader2 = "Reader 2";
-
-  GrantPersistentReaderPermission(context, kTestOrigin1, kReader1);
-  GrantPersistentReaderPermission(context, kTestOrigin1, kReader2);
-  GrantPersistentReaderPermission(context, kTestOrigin2, kReader2);
-  context.FlushScheduledSaveSettingsCalls();
-
-  EXPECT_EQ(context.GetAllGrantedObjects().size(), 3UL);
-  handler_->HandleRevokeAllSmartCardReaderGrants(base::Value::List());
-  context.FlushScheduledSaveSettingsCalls();
-  EXPECT_TRUE(context.GetAllGrantedObjects().empty());
-}
-
-TEST_F(SmartCardReaderPermissionsSiteSettingsHandlerTest,
-       HandleRevokeSmartCardReaderGrant) {
-  SmartCardPermissionContext& context =
-      SmartCardPermissionContextFactory::GetForProfile(*profile());
-
-  const auto kTestOrigin1 = url::Origin::Create(
-      GURL("isolated-app://"
-           "amoiebz32b7o24tilu257xne2yf3nkblkploanxzm7ebeglseqpfeaacai/"));
-  const std::string kReader1 = "Reader 1";
-
-  GrantPersistentReaderPermission(context, kTestOrigin1, kReader1);
-  context.FlushScheduledSaveSettingsCalls();
-
-  EXPECT_EQ(context.GetAllGrantedObjects().size(), 1UL);
-  handler_->HandleRevokeSmartCardReaderGrant(
-      base::Value::List().Append(kReader1).Append(kTestOrigin1.Serialize()));
-  context.FlushScheduledSaveSettingsCalls();
-  EXPECT_TRUE(context.GetAllGrantedObjects().empty());
-}
-#endif  // BUILDFLAG(IS_CHROMEOS)
 
 namespace {
 

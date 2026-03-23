@@ -127,6 +127,7 @@ void MaglevAssembler::OSRPrologue(Graph* graph) {
 }
 
 void MaglevAssembler::Prologue(Graph* graph) {
+  ASM_CODE_COMMENT(this);
   MaglevAssembler::TemporaryRegisterScope temps(this);
   //  We add two extra registers to the scope. Ideally we could add all the
   //  allocatable general registers, except Context, JSFunction, NewTarget and
@@ -147,6 +148,7 @@ void MaglevAssembler::Prologue(Graph* graph) {
   }
 
   // Tiering support.
+#ifndef V8_ENABLE_LEAPTIERING
   if (v8_flags.turbofan) {
     using D = MaglevOptimizeCodeOrTailCallOptimizedCodeSlotDescriptor;
     Register flags = D::GetRegisterParameter(D::kFlags);
@@ -162,13 +164,15 @@ void MaglevAssembler::Prologue(Graph* graph) {
     DCHECK(!temps.Available().has(feedback_vector));
     Move(feedback_vector,
          compilation_info()->toplevel_compilation_unit()->feedback().object());
-    constexpr Register flag_reg = MaglevAssembler::GetFlagsRegister();
-    Condition needs_processing =
-        LoadFeedbackVectorFlagsAndCheckIfNeedsProcessing(
-            flags, feedback_vector, flag_reg, CodeKind::MAGLEV);
-    TailCallBuiltin(Builtin::kMaglevOptimizeCodeOrTailCallOptimizedCodeSlot,
-                    needs_processing, flag_reg, Operand(zero_reg));
+    Label needs_processing, done;
+    LoadFeedbackVectorFlagsAndJumpIfNeedsProcessing(
+        flags, feedback_vector, CodeKind::MAGLEV, &needs_processing);
+    Jump(&done);
+    bind(&needs_processing);
+    TailCallBuiltin(Builtin::kMaglevOptimizeCodeOrTailCallOptimizedCodeSlot);
+    bind(&done);
   }
+#endif
 
   EnterFrame(StackFrame::MAGLEV);
   // Save arguments in frame.
@@ -226,22 +230,20 @@ void MaglevAssembler::MaybeEmitDeoptBuiltinsCall(size_t eager_deopt_count,
                                                  Label* eager_deopt_entry,
                                                  size_t lazy_deopt_count,
                                                  Label* lazy_deopt_entry) {
+  // On most platforms, we emit two shared tail calls to the eager and lazy
+  // deoptimization builtins and the individual exits just call them to save
+  // space. We do not currently do this on RISC-V, so we don't bind the two
+  // provided labels here. This matches how it is done in the RISC-V variant
+  // of CodeGenerator::PrepareForDeoptimizationExits.
+
+  // We do have to avoid getting the trampoline pool emitted in the middle
+  // of the deoptimization exits, because it destroys our ability to compute
+  // the deoptimization index based on the 'pc' and the offset of the start
+  // of the exits section.
   ForceConstantPoolEmissionWithoutJump();
-
-  DCHECK_GE(Deoptimizer::kLazyDeoptExitSize, Deoptimizer::kEagerDeoptExitSize);
-
-  MaglevAssembler::TemporaryRegisterScope scope(this);
-  Register scratch = scope.AcquireScratch();
-  if (eager_deopt_count > 0) {
-    bind(eager_deopt_entry);
-    LoadEntryFromBuiltin(Builtin::kDeoptimizationEntry_Eager, scratch);
-    MacroAssembler::Jump(scratch);
-  }
-  if (lazy_deopt_count > 0) {
-    bind(lazy_deopt_entry);
-    LoadEntryFromBuiltin(Builtin::kDeoptimizationEntry_Lazy, scratch);
-    MacroAssembler::Jump(scratch);
-  }
+  size_t total_size = eager_deopt_count * Deoptimizer::kEagerDeoptExitSize +
+                      lazy_deopt_count * Deoptimizer::kLazyDeoptExitSize;
+  CheckTrampolinePoolQuick(static_cast<int>(total_size));
 }
 
 void MaglevAssembler::LoadSingleCharacterString(Register result,
@@ -253,9 +255,11 @@ void MaglevAssembler::LoadSingleCharacterString(Register result,
                            Operand(String::kMaxOneByteCharCode));
   }
   Register table = scratch;
-  LoadRoot(table, RootIndex::kSingleCharacterStringTable);
-  LoadTaggedFieldByIndex(result, table, char_code, kTaggedSize,
-                         OFFSET_OF_DATA_START(FixedArray));
+  AddWord(table, kRootRegister,
+          Operand(RootRegisterOffsetForRootIndex(
+              RootIndex::kFirstSingleCharacterString)));
+  CalcScaledAddress(table, table, char_code, kSystemPointerSizeLog2);
+  LoadWord(result, MemOperand(table, 0));
 }
 
 void MaglevAssembler::StringFromCharCode(RegisterSnapshot register_snapshot,
@@ -263,6 +267,7 @@ void MaglevAssembler::StringFromCharCode(RegisterSnapshot register_snapshot,
                                          Register result, Register char_code,
                                          Register scratch,
                                          CharCodeMaskMode mask_mode) {
+  ZeroExtendWord(char_code, char_code);
   AssertZeroExtended(char_code);
   DCHECK_NE(char_code, scratch);
   ZoneLabelRef done(this);
@@ -314,17 +319,21 @@ void MaglevAssembler::IsObjectType(Register object, Register scratch1,
                                    Register scratch2, InstanceType type) {
   ASM_CODE_COMMENT(this);
   constexpr Register flags = MaglevAssembler::GetFlagsRegister();
-#if V8_STATIC_ROOTS_BOOL
-  if (InstanceTypeChecker::UniqueMapOfInstanceType(type)) {
-    LoadCompressedMap(scratch1, object);
-    CompareInstanceTypeWithUniqueCompressedMap(
-        scratch1, scratch1 != scratch2 ? scratch2 : Register::no_reg(), type);
-    return;
-  }
-#endif  // V8_STATIC_ROOTS_BOOL
   Label ConditionMet, Done;
-  CompareObjectTypeAndJump(object, scratch1, scratch2, type, Condition::kEqual,
-                           &ConditionMet, Label::kNear);
+  if (V8_STATIC_ROOTS_BOOL &&
+      InstanceTypeChecker::UniqueMapOfInstanceType(type)) {
+    LoadCompressedMap(scratch1, object);
+    std::optional<RootIndex> expected =
+        InstanceTypeChecker::UniqueMapOfInstanceType(type);
+    Tagged_t expected_ptr = ReadOnlyRootPtr(*expected);
+    li(scratch2, expected_ptr);
+    SignExtendWord(scratch2, scratch2);
+    MacroAssembler::Branch(&ConditionMet, Condition::kEqual, scratch1,
+                           Operand(scratch2), Label::kNear);
+  } else {
+    CompareObjectTypeAndJump(object, scratch1, scratch2, type,
+                             Condition::kEqual, &ConditionMet, Label::kNear);
+  }
   Li(flags, 1);  // Condition is not met by default and
                  // flags is set after a scratch is used,
                  // so no harm if they are aliased.
@@ -339,6 +348,7 @@ void MaglevAssembler::StringCharCodeOrCodePointAt(
     RegisterSnapshot& register_snapshot, Register result, Register string,
     Register index, Register instance_type, [[maybe_unused]] Register scratch2,
     Label* result_fits_one_byte) {
+  ASM_CODE_COMMENT(this);
   ZoneLabelRef done(this);
   Label seq_string;
   Label cons_string;
@@ -453,18 +463,14 @@ void MaglevAssembler::StringCharCodeOrCodePointAt(
     // The result of one-byte string will be the same for both modes
     // (CharCodeAt/CodePointAt), since it cannot be the first half of a
     // surrogate pair.
-    AddWord(result, string, Operand(index));
-    Lbu(result, MemOperand(result, OFFSET_OF_DATA_START(SeqOneByteString) -
-                                       kHeapObjectTag));
+    SeqOneByteStringCharCodeAt(result, string, index);
     MacroAssembler::Branch(result_fits_one_byte);
 
     bind(&two_byte_string);
     // {instance_type} is unused from this point, so we can use as scratch.
     Register scratch = instance_type;
 
-    Register scaled_index = scratch;
-    Sll32(scaled_index, index, Operand(1));
-    AddWord(result, string, Operand(scaled_index));
+    CalcScaledAddress(result, string, index, 1);
     Lhu(result, MemOperand(result, OFFSET_OF_DATA_START(SeqTwoByteString) -
                                        kHeapObjectTag));
 
@@ -481,8 +487,7 @@ void MaglevAssembler::StringCharCodeOrCodePointAt(
                              Label::kNear);
 
       Register second_code_point = scratch;
-      Sll32(second_code_point, index, Operand(1));
-      AddWord(second_code_point, string, second_code_point);
+      CalcScaledAddress(second_code_point, string, index, 1);
       Lhu(second_code_point,
           MemOperand(second_code_point,
                      OFFSET_OF_DATA_START(SeqTwoByteString) - kHeapObjectTag));
@@ -514,6 +519,42 @@ void MaglevAssembler::StringCharCodeOrCodePointAt(
       Li(index, 0xdeadbeef);
     }
   }
+}
+
+void MaglevAssembler::SeqOneByteStringCharCodeAt(Register result,
+                                                 Register string,
+                                                 Register index) {
+  ASM_CODE_COMMENT(this);
+  if (v8_flags.debug_code) {
+    TemporaryRegisterScope scope(this);
+    Register scratch = scope.AcquireScratch();
+    // Check if {string} is a string.
+    AssertNotSmi(string);
+    LoadMap(scratch, string);
+    Check(CompareInstanceTypeRange(scratch, scratch, FIRST_STRING_TYPE,
+                                   LAST_STRING_TYPE),
+          AbortReason::kUnexpectedValue, MaglevAssembler::GetFlagsRegister(),
+          Operand(zero_reg));
+    // Check if {string} is a sequential one-byte string.
+    AndInt32(scratch, kStringRepresentationAndEncodingMask);
+    CompareInt32AndAssert(scratch, kSeqOneByteStringTag, kEqual,
+                          AbortReason::kUnexpectedValue);
+    LoadInt32(scratch, FieldMemOperand(string, offsetof(String, length_)));
+    // Use kMaglevFlagsRegister to avoid no enough scratch reg.
+    scope.IncludeScratch({kMaglevFlagsRegister});
+    CompareInt32AndAssert(index, scratch, kUnsignedLessThan,
+                          AbortReason::kUnexpectedValue);
+  }
+  TemporaryRegisterScope scope(this);
+  Register scratch = scope.AcquireScratch();
+  AddWord(scratch, index,
+          Operand(OFFSET_OF_DATA_START(SeqOneByteString) - kHeapObjectTag));
+  AddWord(scratch, string, Operand(scratch));
+  Lbu(result, MemOperand(scratch, 0));
+}
+
+void MaglevAssembler::CountLeadingZerosInt32(Register dst, Register src) {
+  Clz32(dst, src);
 }
 
 void MaglevAssembler::TruncateDoubleToInt32(Register dst, DoubleRegister src) {

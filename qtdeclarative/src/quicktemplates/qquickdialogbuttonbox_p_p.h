@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKDIALOGBUTTONBOX_P_P_H
 #define QQUICKDIALOGBUTTONBOX_P_P_H
@@ -36,6 +37,7 @@ public:
     void resizeContent() override;
 
     void updateLayout();
+    void updateFocus();
 
     qreal getContentWidth() const override;
     qreal getContentHeight() const override;
@@ -54,7 +56,9 @@ public:
     Qt::Alignment alignment;
     QQuickDialogButtonBox::Position position = QQuickDialogButtonBox::Footer;
     QPlatformDialogHelper::StandardButtons standardButtons = QPlatformDialogHelper::NoButton;
+    QPlatformDialogHelper::StandardButton defaultStandardButton = QPlatformDialogHelper::NoButton;
     QPlatformDialogHelper::ButtonLayout buttonLayout = QPlatformDialogHelper::UnknownLayout;
+    QQuickAbstractButton *defaultButton = nullptr;
     QQmlComponent *delegate = nullptr;
 };
 

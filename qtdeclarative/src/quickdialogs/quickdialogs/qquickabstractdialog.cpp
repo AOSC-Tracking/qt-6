@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickabstractdialog_p.h"
 
@@ -297,7 +298,8 @@ void QQuickAbstractDialog::setResult(int result)
     \qmlproperty enumeration QtQuick.Dialogs::Dialog::popupType
     \since 6.10
 
-    This property can be used to change the \l {QQuickPopup::}{popupType} of the non-native quick dialog.
+    This property can be used to change the \l {QtQuick.Controls::Popup::}{popupType}
+    of the non-native quick dialog.
 
     The available values are:
     \value Popup.Item The dialog will appear as an item in the window of the nearest parent item.

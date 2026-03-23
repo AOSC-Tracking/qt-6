@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicklinearlayout_p.h"
 #include "qquickgridlayoutengine_p.h"
@@ -847,9 +848,10 @@ QQuickLinearLayout::QQuickLinearLayout(Qt::Orientation orientation,
     \qmlproperty enumeration ColumnLayout::layoutDirection
     \since QtQuick.Layouts 1.1
 
-    This property holds the layout direction of the column layout - it controls whether items are laid
-    out from left to right or right to left. If \c Qt.RightToLeft is specified,
-    left-aligned items will be right-aligned and right-aligned items will be left-aligned.
+    This property holds the layout direction of the column layout - it
+    controls the horizontal alignment of items within the column.
+    If \c Qt.RightToLeft is specified,left-aligned items will be
+    right-aligned and right-aligned items will be left-aligned.
 
     Possible values:
 

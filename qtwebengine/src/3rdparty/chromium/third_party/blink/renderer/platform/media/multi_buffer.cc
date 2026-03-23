@@ -7,12 +7,15 @@
 #include <utility>
 
 #include "base/containers/contains.h"
-#include "base/functional/bind.h"
+#include "base/feature_list.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
-#include "base/not_fatal_until.h"
 #include "base/task/single_thread_task_runner.h"
+#include "media/base/media_switches.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
+#include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -26,7 +29,7 @@ enum {
 // Returns the block ID closest to (but less or equal than) |pos| from |index|.
 template <class T>
 static MultiBuffer::BlockId ClosestPreviousEntry(
-    const std::map<MultiBuffer::BlockId, T>& index,
+    const base::flat_map<MultiBuffer::BlockId, T>& index,
     MultiBuffer::BlockId pos) {
   auto i = index.upper_bound(pos);
   DCHECK(i == index.end() || i->first > pos);
@@ -42,7 +45,7 @@ static MultiBuffer::BlockId ClosestPreviousEntry(
 // from |index|.
 template <class T>
 static MultiBuffer::BlockId ClosestNextEntry(
-    const std::map<MultiBuffer::BlockId, T>& index,
+    const base::flat_map<MultiBuffer::BlockId, T>& index,
     MultiBuffer::BlockId pos) {
   auto i = index.lower_bound(pos);
   if (i == index.end()) {
@@ -115,8 +118,10 @@ bool MultiBuffer::GlobalLRU::Pruneable() const {
 
 void MultiBuffer::GlobalLRU::SchedulePrune() {
   if (Pruneable() && !background_pruning_pending_) {
-    task_runner_->PostDelayedTask(
-        FROM_HERE, base::BindOnce(&MultiBuffer::GlobalLRU::PruneTask, this),
+    PostDelayedCrossThreadTask(
+        *task_runner_, FROM_HERE,
+        CrossThreadBindOnce(&MultiBuffer::GlobalLRU::PruneTask,
+                            WTF::RetainedRef(this)),
         base::Seconds(kBlockPruneInterval));
     background_pruning_pending_ = true;
   }
@@ -338,7 +343,7 @@ std::unique_ptr<MultiBuffer::DataProvider> MultiBuffer::RemoveProvider(
     DataProvider* provider) {
   BlockId pos = provider->Tell();
   auto iter = writer_index_.find(pos);
-  CHECK(iter != writer_index_.end(), base::NotFatalUntil::M130);
+  CHECK(iter != writer_index_.end());
   DCHECK_EQ(iter->second.get(), provider);
   std::unique_ptr<DataProvider> ret = std::move(iter->second);
   writer_index_.erase(iter);

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 //
 //  W A R N I N G
@@ -62,7 +63,8 @@ public:
     enum PersistentCookiesPolicy {
         NoPersistentCookies = 0,
         AllowPersistentCookies,
-        ForcePersistentCookies
+        ForcePersistentCookies,
+        OnlyPersistentCookies,
     };
 
     enum VisitedLinksPolicy {
@@ -96,8 +98,12 @@ public:
             PersistentCookiesPolicy persistentCookiesPolicy = AllowPersistentCookies,
             int httpCacheMaximumSize = 0,
             PersistentPermissionsPolicy persistentPermissionPolicy =
-                    PersistentPermissionsPolicy::StoreOnDisk,
-            const QList<QSslCertificate> &additionalTrustedCertificates = {});
+                    PersistentPermissionsPolicy::StoreOnDisk
+#if QT_CONFIG(ssl)
+            ,
+            const QList<QSslCertificate> &additionalTrustedCertificates = {}
+#endif
+    );
     virtual ~ProfileAdapter();
 
     static ProfileAdapter* createDefaultProfileAdapter();
@@ -209,8 +215,8 @@ public:
 #endif
 #if QT_CONFIG(ssl)
     QWebEngineClientCertificateStore *clientCertificateStore();
-#endif
     QList<QSslCertificate> additionalTrustedCertificates() const;
+#endif
 
     QHash<QByteArray, QWeakPointer<UserNotificationController>> &ephemeralNotifications()
     {   return m_ephemeralNotifications; }
@@ -252,7 +258,9 @@ private:
     PersistentCookiesPolicy m_persistentCookiesPolicy;
     PersistentPermissionsPolicy m_persistentPermissionsPolicy;
     VisitedLinksPolicy m_visitedLinksPolicy;
+#if QT_CONFIG(ssl)
     QList<QSslCertificate> m_additionalTrustedCertificates;
+#endif
     QHash<QByteArray, QPointer<QWebEngineUrlSchemeHandler>> m_customUrlSchemeHandlers;
     QHash<QByteArray, QWeakPointer<UserNotificationController>> m_ephemeralNotifications;
     QHash<QByteArray, QSharedPointer<UserNotificationController>> m_persistentNotifications;

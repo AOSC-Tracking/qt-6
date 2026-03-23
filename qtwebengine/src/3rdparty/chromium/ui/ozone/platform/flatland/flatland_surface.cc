@@ -8,11 +8,12 @@
 #include <lib/zx/eventpair.h>
 #include <zircon/types.h>
 
+#include <variant>
+
 #include "base/check_op.h"
 #include "base/fuchsia/fuchsia_logging.h"
 #include "base/fuchsia/process_context.h"
 #include "base/functional/bind.h"
-#include "base/not_fatal_until.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -194,7 +195,7 @@ void FlatlandSurface::Present(
         overlay.pixmap.get(), /*is_primary_plane=*/false);
     const auto image_id = flatland_ids.image_id;
     const auto transform_id = flatland_ids.transform_id;
-    const auto overlay_plane_transform = absl::get<gfx::OverlayTransform>(
+    const auto overlay_plane_transform = std::get<gfx::OverlayTransform>(
         overlay.overlay_plane_data.plane_transform);
 
     if (overlay.gpu_fence) {
@@ -331,7 +332,7 @@ void FlatlandSurface::RemovePixmapResources(FlatlandPixmapId ids) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   auto iter = pixmap_ids_to_flatland_ids_.find(ids);
-  CHECK(iter != pixmap_ids_to_flatland_ids_.end(), base::NotFatalUntil::M130);
+  CHECK(iter != pixmap_ids_to_flatland_ids_.end());
   flatland_.flatland()->ReleaseImage(iter->second.image_id);
   if (iter->second.transform_id.value) {
     flatland_.flatland()->ReleaseTransform(iter->second.transform_id);

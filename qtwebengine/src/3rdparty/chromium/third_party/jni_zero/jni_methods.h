@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// IWYU pragma: private, include "third_party/jni_zero/jni_zero.h"
+
 #ifndef JNI_ZERO_JNI_METHODS_H_
 #define JNI_ZERO_JNI_METHODS_H_
 
@@ -45,13 +47,6 @@ JNI_ZERO_COMPONENT_BUILD_EXPORT void DisableJvmForTesting();
 
 JNI_ZERO_COMPONENT_BUILD_EXPORT void SetExceptionHandler(
     void (*callback)(JNIEnv*));
-
-JNI_ZERO_COMPONENT_BUILD_EXPORT void SetNativeToJavaCallback(
-    void (*callback)(char const*, char const*));
-
-JNI_ZERO_COMPONENT_BUILD_EXPORT void CallNativeToJavaCallback(
-    char const* className,
-    char const* methodName);
 
 // Returns true if an exception is pending in the provided JNIEnv*.
 JNI_ZERO_COMPONENT_BUILD_EXPORT bool HasException(JNIEnv* env);

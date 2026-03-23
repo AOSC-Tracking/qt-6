@@ -12,11 +12,12 @@
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
-#include "base/not_fatal_until.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/observer_list.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "components/input/utils.h"
 #include "components/viz/common/performance_hint_utils.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/host/renderer_settings_creation.h"
@@ -51,6 +52,11 @@ void HostFrameSinkManager::BindAndSetManager(
 
   frame_sink_manager_remote_.set_disconnect_handler(base::BindOnce(
       &HostFrameSinkManager::OnConnectionLost, base::Unretained(this)));
+
+  if (input::InputUtils::IsTransferInputToVizSupported()) {
+    frame_sink_manager_->SetupRendererInputRouterDelegateRegistry(
+        rir_delegate_registry_.BindNewPipeAndPassReceiver());
+  }
 
   if (connection_was_lost_) {
     RegisterAfterConnectionLoss();
@@ -120,6 +126,10 @@ void HostFrameSinkManager::InvalidateFrameSinkId(
     // the platform window (eg. XWindow or HWND) get destroyed before the
     // platform window is destroyed.
     mojo::SyncCallRestrictions::ScopedAllowSyncCall allow_sync_call;
+#if BUILDFLAG(IS_ANDROID)
+    SCOPED_UMA_HISTOGRAM_TIMER(
+        "Viz.SyncDestroyCompositorFrameSink.ExecutionTime");
+#endif
     frame_sink_manager_->DestroyCompositorFrameSink(frame_sink_id);
 
     // Other synchronous IPCs continue to get processed while
@@ -169,6 +179,8 @@ void HostFrameSinkManager::CreateRootCompositorFrameSink(
       maybe_wait_on_destruction && params->gpu_compositing;
 
   if (frame_sink_manager_) {
+    data.is_root = true;
+    data.has_created_compositor_frame_sink = true;
     frame_sink_manager_->CreateRootCompositorFrameSink(std::move(params));
   }
   display_hit_test_query_[frame_sink_id] =
@@ -312,13 +324,15 @@ void HostFrameSinkManager::RequestCopyOfOutput(
 }
 
 void HostFrameSinkManager::SetupRenderInputRouterDelegateConnection(
-    base::UnguessableToken grouping_id,
-    mojo::PendingRemote<input::mojom::RenderInputRouterDelegateClient>
+    const FrameSinkId& frame_sink_id,
+    mojo::PendingAssociatedRemote<input::mojom::RenderInputRouterDelegateClient>
         rir_delegate_client_remote,
-    mojo::PendingReceiver<input::mojom::RenderInputRouterDelegate>
+    mojo::PendingAssociatedReceiver<input::mojom::RenderInputRouterDelegate>
         rir_delegate_receiver) {
-  frame_sink_manager_->SetupRenderInputRouterDelegateConnection(
-      grouping_id, std::move(rir_delegate_client_remote),
+  CHECK(input::InputUtils::IsTransferInputToVizSupported());
+
+  rir_delegate_registry_->SetupRenderInputRouterDelegateConnection(
+      frame_sink_id, std::move(rir_delegate_client_remote),
       std::move(rir_delegate_receiver));
 }
 
@@ -390,6 +404,7 @@ void HostFrameSinkManager::OnConnectionLost() {
   // frame_sink_manager_remote_.reset() to avoid dangling ptr.
   frame_sink_manager_ = nullptr;
   frame_sink_manager_remote_.reset();
+  rir_delegate_registry_.reset();
 
   metrics_recorder_remote_.reset();
 
@@ -472,6 +487,8 @@ void HostFrameSinkManager::OnAggregatedHitTestRegionListUpdated(
 void HostFrameSinkManager::VerifyThreadIdsDoNotBelongToHost(
     const std::vector<int32_t>& thread_ids,
     VerifyThreadIdsDoNotBelongToHostCallback callback) {
+  static_assert(
+      std::is_same_v<int32_t, base::PlatformThreadId::UnderlyingType>);
   base::flat_set<base::PlatformThreadId> tids(thread_ids.begin(),
                                               thread_ids.end());
   std::move(callback).Run(CheckThreadIdsDoNotBelongToCurrentProcess(tids));
@@ -495,7 +512,7 @@ void HostFrameSinkManager::OnScreenshotCaptured(
 uint32_t HostFrameSinkManager::CacheBackBufferForRootSink(
     const FrameSinkId& root_sink_id) {
   auto it = frame_sink_data_map_.find(root_sink_id);
-  CHECK(it != frame_sink_data_map_.end(), base::NotFatalUntil::M130);
+  CHECK(it != frame_sink_data_map_.end());
   DCHECK(it->second.is_root);
   DCHECK(it->second.IsFrameSinkRegistered());
   DCHECK(frame_sink_manager_remote_);

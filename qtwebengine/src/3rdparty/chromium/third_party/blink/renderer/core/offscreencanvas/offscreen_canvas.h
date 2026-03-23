@@ -23,6 +23,7 @@
 #include "third_party/blink/renderer/platform/graphics/dom_node_id.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
+#include "third_party/blink/renderer/platform/text/layout_locale.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace blink {
@@ -94,8 +95,6 @@ class CORE_EXPORT OffscreenCanvas final
     disable_reading_from_canvas_ = true;
   }
 
-  CanvasResourceProvider* GetOrCreateResourceProvider();
-
   void SetFrameSinkId(uint32_t client_id, uint32_t sink_id) {
     client_id_ = client_id;
     sink_id_ = sink_id;
@@ -111,27 +110,11 @@ class CORE_EXPORT OffscreenCanvas final
   DEFINE_ATTRIBUTE_EVENT_LISTENER(contextrestored, kContextrestored)
 
   // CanvasRenderingContextHost implementation.
-  void PreFinalizeFrame() override {}
   void PostFinalizeFrame(FlushReason) override {}
   void DetachContext() override { context_ = nullptr; }
   CanvasRenderingContext* RenderingContext() const override {
     return context_.Get();
   }
-
-  bool PushFrameIfNeeded();
-  bool PushFrame(scoped_refptr<CanvasResource>&& frame,
-                 const SkIRect& damage_rect) override;
-  void DidDraw(const SkIRect&) override;
-  using CanvasRenderingContextHost::DidDraw;
-  void Commit(scoped_refptr<CanvasResource>&& bitmap_image,
-              const SkIRect& damage_rect) override;
-  bool ShouldAccelerate2dContext() const override;
-  CanvasResourceDispatcher* GetOrCreateResourceDispatcher() override;
-  UkmParameters GetUkmParameters() override;
-
-  // Partial CanvasResourceHost implementation
-  void NotifyGpuContextLost() override;
-  void SetNeedsCompositingUpdate() override {}
   // TODO(fserb): Merge this with HTMLCanvasElement::UpdateMemoryUsage
   void UpdateMemoryUsage() override;
   size_t GetMemoryUsage() const override;
@@ -142,9 +125,27 @@ class CORE_EXPORT OffscreenCanvas final
   void SetTransferToGPUTextureWasInvoked() override {
     transfer_to_gpu_texture_was_invoked_ = true;
   }
+  void DiscardResources() override;
+
+  bool PushFrameIfNeeded();
+  bool PushFrame(scoped_refptr<CanvasResource>&& frame,
+                 const SkIRect& damage_rect) override;
+  void DidDraw(const SkIRect&) override;
+  using CanvasRenderingContextHost::DidDraw;
+  bool ShouldAccelerate2dContext() const override;
+  CanvasResourceDispatcher* GetOrCreateResourceDispatcher() override;
+  void DiscardResourceDispatcher() override { frame_dispatcher_ = nullptr; }
+  UkmParameters GetUkmParameters() override;
+  bool IsWebGL1Enabled() const override { return true; }
+  bool IsWebGL2Enabled() const override { return true; }
+  bool IsWebGLBlocked() const override { return false; }
+
+  // CanvasResourceProvider::Delegate implementation
+  void NotifyGpuContextLost() override;
   bool TransferToGPUTextureWasInvoked() override {
     return transfer_to_gpu_texture_was_invoked_;
   }
+  void SetNeedsCompositingUpdate() override {}
 
   // EventTarget implementation
   const AtomicString& InterfaceName() const final {
@@ -169,11 +170,9 @@ class CORE_EXPORT OffscreenCanvas final
                                                ExceptionState&) final;
 
   // CanvasImageSource implementation
-  scoped_refptr<Image> GetSourceImageForCanvas(
-      FlushReason,
-      SourceImageStatus*,
-      const gfx::SizeF&,
-      const AlphaDisposition alpha_disposition = kPremultiplyAlpha) final;
+  scoped_refptr<Image> GetSourceImageForCanvas(FlushReason,
+                                               SourceImageStatus*,
+                                               const gfx::SizeF&) final;
   bool WouldTaintOrigin() const final { return !origin_clean_; }
   gfx::SizeF ElementSize(const gfx::SizeF& default_object_size,
                          const RespectImageOrientationEnum) const final {
@@ -181,23 +180,8 @@ class CORE_EXPORT OffscreenCanvas final
   }
   bool IsOpaque() const final;
 
-  // overrides CanvasImageSource::IsAccelerated()
-  bool IsAccelerated() const final;
-
-  // overrides CanvasRenderingContextHost::EnableAcceleration()
-  bool EnableAcceleration() final;
-
   DispatchEventResult HostDispatchEvent(Event* event) override {
     return DispatchEvent(*event);
-  }
-
-  bool IsWebGL1Enabled() const override { return true; }
-  bool IsWebGL2Enabled() const override { return true; }
-  bool IsWebGLBlocked() const override { return false; }
-
-  void CheckForGpuContextLost();
-  void SetRestoringGpuContext(bool restoring_gpu_context) {
-    restoring_gpu_context_ = restoring_gpu_context;
   }
 
   TextDirection GetTextDirection(const ComputedStyle*) override;
@@ -205,7 +189,10 @@ class CORE_EXPORT OffscreenCanvas final
     text_direction_ = direction;
   }
 
-  FontSelector* GetFontSelector() override;
+  const LayoutLocale* GetLocale() const override;
+  void SetLocale(scoped_refptr<const LayoutLocale> locale);
+
+  UniqueFontSelector* GetFontSelector() override;
 
   void Trace(Visitor*) const override;
 
@@ -272,6 +259,10 @@ class CORE_EXPORT OffscreenCanvas final
   DOMNodeId placeholder_canvas_id_ = kInvalidDOMNodeId;
   std::optional<TextDirection> text_direction_;
 
+  // Required for the TextStyle lang attribute, only non-null if control
+  // was transferred from an HTML canvas.
+  scoped_refptr<const LayoutLocale> locale_ = nullptr;
+
   bool disposing_ = false;
   bool is_neutered_ = false;
   bool origin_clean_ = true;
@@ -297,7 +288,6 @@ class CORE_EXPORT OffscreenCanvas final
   uint32_t client_id_ = 0;
   uint32_t sink_id_ = 0;
 
-  bool restoring_gpu_context_ = false;
   bool transfer_to_gpu_texture_was_invoked_ = false;
 
   NO_UNIQUE_ADDRESS V8ExternalMemoryAccounterBase external_memory_accounter_;

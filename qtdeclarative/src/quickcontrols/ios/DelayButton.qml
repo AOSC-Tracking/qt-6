@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -20,7 +21,6 @@ T.DelayButton {
 
     icon.width: 17
     icon.height: 17
-    icon.color: control.down ? control.palette.highlight : control.palette.button
 
     transition: Transition {
         NumberAnimation {
@@ -34,9 +34,10 @@ T.DelayButton {
         display: control.display
 
         icon: control.icon
+        defaultIconColor: control.down ? control.palette.highlight : control.palette.button
         text: control.text
         font: control.font
-        color: control.palette.buttonText
+        color: defaultIconColor
     }
 
     background: Rectangle {

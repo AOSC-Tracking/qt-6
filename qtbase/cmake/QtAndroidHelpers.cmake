@@ -88,10 +88,78 @@ macro(qt_internal_setup_android_target_properties)
     )
 endmacro()
 
+function(qt_internal_locate_qt_android_base_jar out_var)
+
+    set(datadir "${INSTALL_DATADIR}")
+    if(NOT DEFINED datadir OR datadir STREQUAL "")
+        set(datadir ".")
+    endif()
+    set(qt_ns "${QT_CMAKE_EXPORT_NAMESPACE}")
+    qt_path_join(
+        jar
+        "${QT_TOOLCHAIN_RELOCATABLE_INSTALL_PREFIX}"
+        "${datadir}"
+        "jar"
+        "${qt_ns}Android.jar"
+    )
+
+    # Optional override
+    if(DEFINED ENV{QT_ANDROID_JAR_PATH} AND EXISTS "$ENV{QT_ANDROID_JAR_PATH}")
+        set(jar "$ENV{QT_ANDROID_JAR_PATH}")
+    endif()
+
+    set(${out_var} "${jar}" PARENT_SCOPE)
+endfunction()
+
+function(qt_internal_compute_android_javadoc_classpath out_var)
+
+    if(CMAKE_HOST_WIN32)
+        set(sep ";")
+    else()
+        set(sep ":")
+    endif()
+
+    # The target Qt6Android is already defined = use its build-dir jar.
+    # The target may not yet exist in some qtbase configuration order =
+    # still set the jar path in advance.
+    set(qt_ns "${QT_CMAKE_EXPORT_NAMESPACE}")
+    if(TARGET ${qt_ns}Android OR (QT_BUILDING_QT AND PROJECT_NAME STREQUAL "QtBase"))
+        set(jar "${QT_BUILD_DIR}/jar/${qt_ns}Android.jar")
+        set(${out_var} "${QT_ANDROID_JAR}${sep}${jar}" PARENT_SCOPE)
+        return()
+    endif()
+
+    # Downstream module: use installed jar from the shared locator
+    qt_internal_locate_qt_android_base_jar(qt_classes_jar)
+    if(NOT EXISTS "${qt_classes_jar}")
+        message(FATAL_ERROR
+            "Qt Android JAR not found at:\n  ${qt_classes_jar}")
+    endif()
+
+    set(${out_var} "${QT_ANDROID_JAR}${sep}${qt_classes_jar}" PARENT_SCOPE)
+endfunction()
+
+function(qt_internal_write_android_javadoc_args
+                    response_file
+                    output_dir
+                    source_paths
+                    package_names_space_separated)
+
+    qt_internal_compute_android_javadoc_classpath(class_path)
+
+    file(CONFIGURE
+        OUTPUT  "${response_file}"
+        CONTENT "${package_names_space_separated}
+--class-path \"${class_path}\"
+-d \"${output_dir}\"
+--source-path \"${source_paths}\"
+"
+    )
+endfunction()
+
 function(qt_internal_add_android_permission target)
     _qt_internal_add_android_permission(${ARGV})
 endfunction()
-
 
 function(qt_internal_android_dependencies_content target file_content_out)
     get_target_property(arg_JAR_DEPENDENCIES ${target} QT_ANDROID_JAR_DEPENDENCIES)
@@ -191,21 +259,8 @@ function(qt_internal_android_dependencies_content target file_content_out)
     endif()
 
     # Android Permissions
-    if(arg_PERMISSIONS)
-        foreach(permission IN LISTS arg_PERMISSIONS)
-            # Check if the permission has also extra attributes in addition to the permission name
-            list(LENGTH permission permission_len)
-            if(permission_len EQUAL 1)
-                string(APPEND file_contents "<permission name=\"${permission}\" />\n")
-            elseif(permission_len EQUAL 2)
-                list(GET permission 0 name)
-                list(GET permission 1 extras)
-                string(APPEND file_contents "<permission name=\"${name}\" extras=\"${extras}\"/>\n")
-            else()
-                message(FATAL_ERROR "Invalid permission format: ${permission} ${permission_len}")
-            endif()
-        endforeach()
-    endif()
+    _qt_internal_android_convert_permissions(permissions_string ${target} "DEPENDENCIESXML")
+    string(APPEND file_contents "${permissions_string}")
 
     # Android Features
     if(arg_FEATURES)
@@ -395,21 +450,31 @@ function(qt_internal_add_javadoc_target)
     set(javadoc_output_dir "${arg_OUTPUT_DIR}/android")
     set(response_file "${CMAKE_CURRENT_BINARY_DIR}/doc/.javadocargs")
     string(REPLACE ";" " " package_names_space_separated "${package_names}")
-    file(CONFIGURE
-        OUTPUT "${response_file}"
-        CONTENT "${package_names_space_separated}
---class-path \"${QT_ANDROID_JAR}\"
--d \"${javadoc_output_dir}\"
---source-path \"${source_dirs}\""
-    )
 
     set(module ${arg_MODULE})
     set(javadoc_target android_html_docs_${module})
-    add_custom_target(${javadoc_target} ${command_args}
+
+    # Write the args file
+    qt_internal_write_android_javadoc_args(
+        "${response_file}"
+        "${javadoc_output_dir}"
+        "${source_dirs}"
+        "${package_names_space_separated}"
+    )
+
+    add_custom_target(${javadoc_target}
         COMMAND ${Java_JAVADOC_EXECUTABLE} "@${response_file}"
         COMMENT "Generating Java documentation"
         VERBATIM
     )
+
+    set(qt_ns "${QT_CMAKE_EXPORT_NAMESPACE}")
+    if(QT_BUILDING_QT OR PROJECT_NAME STREQUAL "QtBase")
+        if(TARGET ${qt_ns}Android)
+            add_dependencies(${javadoc_target} ${qt_ns}Android)
+        endif()
+    endif()
+
     add_dependencies(docs_android ${javadoc_target})
 
     if (QT_WILL_INSTALL)
@@ -445,18 +510,27 @@ function(qt_internal_create_source_jar)
     set(module ${arg_MODULE})
     set(jar_target android_source_jar_${module})
     set(jar_name ${CMAKE_INSTALL_NAMESPACE}AndroidSources${module})
+
+    qt_internal_locate_qt_android_base_jar(qt_classes_jar)
+
+    set(include_jars "${QT_ANDROID_JAR}")
+    if(EXISTS "${qt_classes_jar}")
+        list(APPEND include_jars "${qt_classes_jar}")
+    endif()
+
     add_jar(${jar_target}
         SOURCES ${arg_SOURCES}
         VERSION ${PROJECT_VERSION}
-        INCLUDE_JARS "${QT_ANDROID_JAR}"
+        INCLUDE_JARS ${include_jars}
         OUTPUT_NAME ${jar_name}
     )
     set_target_properties(${jar_target} PROPERTIES EXCLUDE_FROM_ALL ON)
     add_dependencies(android_source_jars ${jar_target})
 
     if(QT_WILL_INSTALL)
+        qt_path_join(destination "${INSTALL_DATADIR}" "android" "${module}")
         install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${jar_name}-${PROJECT_VERSION}.jar"
-            DESTINATION "${INSTALL_DATADIR}/android/${module}"
+            DESTINATION "${destination}"
             COMPONENT _install_android_source_jar_${module}
             EXCLUDE_FROM_ALL
         )
@@ -472,4 +546,28 @@ function(qt_internal_create_source_jar)
 
     add_dependencies(install_android_source_jar_${module} ${jar_target})
     add_dependencies(install_android_source_jars install_android_source_jar_${module})
+endfunction()
+
+# The function stores Android permissions that are required by the module target.
+# The stored INTERFACE_QT_ANDROID_PERMISSIONS is the transitive property.
+function(qt_internal_android_add_interface_permissions target)
+    get_target_property(permissions ${target} QT_ANDROID_PERMISSIONS)
+    if(NOT permissions)
+        return()
+    endif()
+
+    qt_internal_set_module_transitive_properties(${target} TYPE LINK PROPERTIES
+        INTERFACE_QT_ANDROID_PERMISSIONS "${permissions}")
+endfunction()
+
+# The function stores Android features that are required by the module target.
+# The stored INTERFACE_QT_ANDROID_FEATURES is the transitive property.
+function(qt_internal_android_add_interface_features target)
+    get_target_property(features ${target} QT_ANDROID_FEATURES)
+    if(NOT features)
+        return()
+    endif()
+
+    qt_internal_set_module_transitive_properties(${target} TYPE LINK PROPERTIES
+        INTERFACE_QT_ANDROID_FEATURES "${features}")
 endfunction()

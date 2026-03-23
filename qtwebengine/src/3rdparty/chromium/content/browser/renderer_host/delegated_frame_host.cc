@@ -10,6 +10,7 @@
 
 #include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -31,7 +32,6 @@
 #include "third_party/blink/public/mojom/widget/record_content_to_visible_time_request.mojom.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/dip_util.h"
 
 namespace content {
@@ -179,7 +179,7 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceAsTexture(
   CopyFromCompositingSurfaceInternal(
       src_subrect, output_size, surface_id,
       viz::CopyOutputRequest::ResultFormat::RGBA,
-      viz::CopyOutputRequest::ResultDestination::kNativeTextures,
+      viz::CopyOutputRequest::ResultDestination::kSharedImage,
       std::move(callback));
 }
 
@@ -192,6 +192,12 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceInternal(
     viz::CopyOutputRequest::CopyOutputRequestCallback callback) {
   auto request = std::make_unique<viz::CopyOutputRequest>(format, destination,
                                                           std::move(callback));
+  // Run result callback on the current thread in case `callback` needs to run
+  // on the current thread. See http://crbug.com/1431363. When we bound a
+  // `ui::Compositor::ScopedKeepSurfaceAliveCallback` it must also be ran on the
+  // current thread.
+  request->set_result_task_runner(
+      base::SingleThreadTaskRunner::GetCurrentDefault());
 
   // It is possible for us to not have a valid surface to copy from. Such as
   // if a navigation fails to complete. In such a case do not attempt to request
@@ -223,12 +229,6 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceInternal(
         gfx::Vector2d(area.width(), area.height()),
         gfx::Vector2d(output_size.width(), output_size.height()));
   }
-
-  // Run result callback on the current thread in case `callback` needs to run
-  // on the current thread. See http://crbug.com/1431363.
-  request->set_result_task_runner(
-      base::SingleThreadTaskRunner::GetCurrentDefault());
-
   CHECK(host_frame_sink_manager_);
   host_frame_sink_manager_->RequestCopyOfOutput(surface_id, std::move(request));
 }
@@ -477,7 +477,7 @@ void DelegatedFrameHost::DidCopyStaleContent(
 
   CHECK_EQ(result->format(), viz::CopyOutputResult::Format::RGBA);
   CHECK_EQ(result->destination(),
-           viz::CopyOutputResult::Destination::kNativeTextures);
+           viz::CopyOutputResult::Destination::kSharedImage);
 
 // TODO(crbug.com/1227661): Revert https://crrev.com/c/3222541 to re-enable this
 // CHECK on CrOS.
@@ -488,13 +488,12 @@ void DelegatedFrameHost::DidCopyStaleContent(
   ContinueDelegatedFrameEviction(
       frame_evictor_->CollectSurfaceIdsForEviction());
 
-  auto transfer_resource = viz::TransferableResource::MakeGpu(
-      result->GetTextureResult()->mailbox, GL_TEXTURE_2D, gpu::SyncToken(),
-      result->size(), viz::SinglePlaneFormat::kRGBA_8888,
-      false /* is_overlay_candidate */,
-      viz::TransferableResource::ResourceSource::kStaleContent);
+  auto transfer_resource = viz::TransferableResource::Make(
+      result->GetSharedImage(),
+      viz::TransferableResource::ResourceSource::kStaleContent,
+      gpu::SyncToken(), /*override=*/{.color_space = gfx::ColorSpace()});
   viz::CopyOutputResult::ReleaseCallbacks release_callbacks =
-      result->TakeTextureOwnership();
+      result->TakeSharedImageOwnership();
   CHECK_EQ(1u, release_callbacks.size());
 
   if (stale_content_layer_->parent() != client_->DelegatedFrameHostGetLayer())
@@ -715,28 +714,6 @@ void DelegatedFrameHost::SetIsFrameSinkIdOwner(bool is_owner) {
     host_frame_sink_manager_->SetFrameSinkDebugLabel(frame_sink_id_,
                                                      "DelegatedFrameHost");
   }
-}
-
-// static
-bool DelegatedFrameHost::ShouldIncludeUiCompositorForEviction() {
-#if BUILDFLAG(IS_WIN)
-  if (!base::FeatureList::IsEnabled(
-          features::kApplyNativeOcclusionToCompositor)) {
-    return false;
-  }
-
-  const std::string type =
-      features::kApplyNativeOcclusionToCompositorType.Get();
-  return type == features::kApplyNativeOcclusionToCompositorTypeRelease ||
-         type ==
-             features::kApplyNativeOcclusionToCompositorTypeThrottleAndRelease;
-#else
-  // ChromeOS does not have native occlusion, and the UI compositor corresponds
-  // to the entire display, so we don't evict it. Linux does not have native
-  // occlusion support, so we don't know when we can evict it, as it may e.g.
-  // be shown in a preview while minimized.
-  return false;
-#endif
 }
 
 }  // namespace content

@@ -1,9 +1,11 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
 import QtQuick.NativeStyle as NativeStyle
+import QtQuick.Controls.Windows.impl as WindowsImpl
 
 T.SpinBox {
     id: control
@@ -49,6 +51,10 @@ T.SpinBox {
         clip: width < implicitWidth
 
         readonly property bool __ignoreNotCustomizable: true
+
+        ContextMenu.menu: WindowsImpl.TextEditingContextMenu {
+            editor: parent
+        }
 
         // Since the indicators are embedded inside the TextField we need to avoid that
         // the TextField consumes mouse events for that area.

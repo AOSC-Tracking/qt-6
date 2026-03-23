@@ -17,8 +17,6 @@ installPackages+=(ca-certificates)
 installPackages+=(git)
 installPackages+=(zlib-devel)
 installPackages+=(glib2-devel)
-installPackages+=(openssl3)
-installPackages+=(openssl3-devel)
 installPackages+=(freetype-devel)
 installPackages+=(fontconfig-devel)
 installPackages+=(curl-devel)
@@ -93,7 +91,7 @@ installPackages+=(python3-html5lib)
 installPackages+=(libatomic)
 installPackages+=(mesa-libgbm-devel-21.3.4-1.el8.x86_64)
 # For Android builds
-installPackages+=(java-17-openjdk-devel-17.0.9.0.9)
+installPackages+=(java-21-openjdk-devel-21.0.9.0.10-1.el9)
 # For receiving shasum
 installPackages+=(perl-Digest-SHA)
 # INTEGRITY requirements
@@ -183,9 +181,6 @@ echo "GCC = $gccVersion" >> versions.txt
 
 glibcVersion="$(ldd --version |grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' |head -n 1)"
 echo "glibc = $glibcVersion" >> versions.txt
-
-OpenSSLVersion="$(openssl3 version |cut -b 9-14)"
-echo "System's OpenSSL = $OpenSSLVersion" >> ~/versions.txt
 
 # List all available updates
 sudo yum -y list updates

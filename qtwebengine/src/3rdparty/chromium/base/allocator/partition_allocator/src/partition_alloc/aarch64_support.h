@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef PARTITION_ALLOC_AARCH64_SUPPORT_H_
 #define PARTITION_ALLOC_AARCH64_SUPPORT_H_
 
@@ -25,7 +30,8 @@ namespace partition_alloc::internal {
 
 constexpr bool IsBtiEnabled(uint64_t ifunc_hwcap,
                             struct __ifunc_arg_t* ifunc_hw) {
-#if PA_BUILDFLAG(PA_ARCH_CPU_ARM64) && defined(HAS_HW_CAPS)
+#if PA_BUILDFLAG(PA_ARCH_CPU_ARM64) && defined(HAS_HW_CAPS) && \
+    !PA_BUILDFLAG(IS_HWASAN)
   return (ifunc_hwcap & _IFUNC_ARG_HWCAP) && (ifunc_hw->_hwcap2 & HWCAP2_BTI);
 #else
   return false;

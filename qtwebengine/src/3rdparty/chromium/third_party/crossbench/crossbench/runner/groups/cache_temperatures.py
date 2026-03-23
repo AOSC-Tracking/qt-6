@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Iterable
+
+from typing_extensions import override
 
 from crossbench.helper import collection_helper
 from crossbench.runner.groups.base import RunGroup
@@ -28,7 +30,7 @@ class CacheTemperaturesRunGroup(RunGroup):
   @classmethod
   def groups(cls,
              runs: Iterable[Run],
-             throw: bool = False) -> Tuple[CacheTemperaturesRunGroup, ...]:
+             throw: bool = False) -> tuple[CacheTemperaturesRunGroup, ...]:
     return tuple(
         collection_helper.group_by(
             runs,
@@ -36,11 +38,11 @@ class CacheTemperaturesRunGroup(RunGroup):
             group=lambda _: cls(throw),
             sort_key=None).values())
 
-  def __init__(self, throw: bool = False):
+  def __init__(self, throw: bool = False) -> None:
     super().__init__(throw)
-    self._runs: List[Run] = []
-    self._story: Optional[Story] = None
-    self._browser: Optional[Browser] = None
+    self._runs: list[Run] = []
+    self._story: Story | None = None
+    self._browser: Browser | None = None
     self._repetition = -1
     self._cache_temperature = ""
 
@@ -57,8 +59,13 @@ class CacheTemperaturesRunGroup(RunGroup):
     self._runs.append(run)
 
   @property
+  @override
   def runs(self) -> Iterable[Run]:
     return iter(self._runs)
+
+  @property
+  def first_run(self) -> Run:
+    return self._runs[0]
 
   @property
   def repetition(self) -> int:
@@ -75,6 +82,7 @@ class CacheTemperaturesRunGroup(RunGroup):
     return self._browser
 
   @property
+  @override
   def info_stack(self) -> exception.TInfoStack:
     return (
         "Merging results from multiple cache temperatures",
@@ -84,6 +92,7 @@ class CacheTemperaturesRunGroup(RunGroup):
     )
 
   @property
+  @override
   def info(self) -> JsonMapping:
     info: JsonDict = {
         "story": str(self.story),
@@ -92,5 +101,6 @@ class CacheTemperaturesRunGroup(RunGroup):
     info.update(super().info)
     return info
 
+  @override
   def _merge_probe_results(self, probe: Probe) -> ProbeResult:
     return probe.merge_cache_temperatures(self)

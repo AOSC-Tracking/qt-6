@@ -14,17 +14,17 @@
 #include "services/webnn/queueable_resource_state.h"
 #include "services/webnn/queueable_resource_state_base.h"
 #include "services/webnn/resource_task.h"
-#include "services/webnn/tflite/buffer_content.h"
+#include "services/webnn/tflite/buffer_content_tflite.h"
 #include "services/webnn/webnn_utils.h"
 #include "third_party/tflite/src/tensorflow/lite/util.h"
 
 namespace webnn::tflite {
 
 // static
-base::expected<std::unique_ptr<WebNNTensorImpl>, mojom::ErrorPtr>
+base::expected<scoped_refptr<WebNNTensorImpl>, mojom::ErrorPtr>
 TensorImplTflite::Create(
     mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-    WebNNContextImpl* context,
+    base::WeakPtr<WebNNContextImpl> context,
     mojom::TensorInfoPtr tensor_info) {
   size_t size = tensor_info->descriptor.PackedByteLength();
   // Invalid values are rejected in GraphBuilder.
@@ -34,18 +34,20 @@ TensorImplTflite::Create(
   auto buffer_state =
       base::MakeRefCounted<QueueableResourceState<BufferContent>>(
           std::move(buffer_content));
-  return std::make_unique<TensorImplTflite>(
-      std::move(receiver), context, std::move(tensor_info),
+  return base::MakeRefCounted<TensorImplTflite>(
+      std::move(receiver), std::move(context), std::move(tensor_info),
       std::move(buffer_state), base::PassKey<TensorImplTflite>());
 }
 
 TensorImplTflite::TensorImplTflite(
     mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-    WebNNContextImpl* context,
+    base::WeakPtr<WebNNContextImpl> context,
     mojom::TensorInfoPtr tensor_info,
     scoped_refptr<QueueableResourceState<BufferContent>> buffer_state,
     base::PassKey<TensorImplTflite>)
-    : WebNNTensorImpl(std::move(receiver), context, std::move(tensor_info)),
+    : WebNNTensorImpl(std::move(receiver),
+                      std::move(context),
+                      std::move(tensor_info)),
       buffer_state_(std::move(buffer_state)) {}
 
 TensorImplTflite::~TensorImplTflite() {

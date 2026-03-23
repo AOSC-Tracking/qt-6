@@ -17,9 +17,16 @@
 #ifndef SRC_TRACE_PROCESSOR_IMPORTERS_PROTO_PACKET_SEQUENCE_STATE_GENERATION_H_
 #define SRC_TRACE_PROCESSOR_IMPORTERS_PROTO_PACKET_SEQUENCE_STATE_GENERATION_H_
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <tuple>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
 
+#include "perfetto/public/compiler.h"
 #include "perfetto/trace_processor/ref_counted.h"
 #include "perfetto/trace_processor/trace_blob_view.h"
 #include "src/trace_processor/importers/proto/track_event_sequence_state.h"
@@ -29,8 +36,7 @@
 #include "protos/perfetto/trace/track_event/thread_descriptor.pbzero.h"
 #include "protos/perfetto/trace/track_event/track_event.pbzero.h"
 
-namespace perfetto {
-namespace trace_processor {
+namespace perfetto::trace_processor {
 
 using InternedMessageMap =
     std::unordered_map<uint64_t /*iid*/, InternedMessageView>;
@@ -42,10 +48,12 @@ class TraceProcessorContext;
 class StackProfileSequenceState;
 class ProfilePacketSequenceState;
 class V8SequenceState;
+struct AndroidKernelWakelockState;
 
 using CustomStateClasses = std::tuple<StackProfileSequenceState,
                                       ProfilePacketSequenceState,
-                                      V8SequenceState>;
+                                      V8SequenceState,
+                                      AndroidKernelWakelockState>;
 
 // This is the public API exposed to packet tokenizers and parsers to access
 // state attached to a packet sequence. This state evolves as packets are
@@ -86,7 +94,7 @@ class PacketSequenceStateGeneration : public RefCounted {
 
     bool pid_and_tid_valid() const { return generation_->pid_and_tid_valid(); }
     int32_t pid() const { return generation_->pid(); }
-    int32_t tid() const { return generation_->tid(); }
+    int64_t tid() const { return generation_->tid(); }
 
    private:
     friend PacketSequenceStateGeneration;
@@ -123,7 +131,7 @@ class PacketSequenceStateGeneration : public RefCounted {
     return track_event_sequence_state_.pid_and_tid_valid();
   }
   int32_t pid() const { return track_event_sequence_state_.pid(); }
-  int32_t tid() const { return track_event_sequence_state_.tid(); }
+  int64_t tid() const { return track_event_sequence_state_.tid(); }
 
   // Returns |nullptr| if the message with the given |iid| was not found (also
   // records a stat in this case).
@@ -205,13 +213,21 @@ class PacketSequenceStateGeneration : public RefCounted {
         .IncrementAndGetTrackEventThreadInstructionCount(delta);
   }
 
+  double IncrementAndGetCounterValue(uint64_t counter_track_uuid,
+                                     double value) {
+    return track_event_sequence_state_.IncrementAndGetCounterValue(
+        counter_track_uuid, value);
+  }
+
   bool track_event_timestamps_valid() const {
     return track_event_sequence_state_.timestamps_valid();
   }
 
   void SetThreadDescriptor(
-      const protos::pbzero::ThreadDescriptor::Decoder& descriptor) {
-    track_event_sequence_state_.SetThreadDescriptor(descriptor);
+      const protos::pbzero::ThreadDescriptor::Decoder& descriptor,
+      bool use_synthetic_tid) {
+    track_event_sequence_state_.SetThreadDescriptor(descriptor,
+                                                    use_synthetic_tid);
   }
 
   // TODO(carlscab): Nobody other than `ProtoTraceReader` should care about
@@ -290,7 +306,6 @@ std::remove_cv_t<T>* PacketSequenceStateGeneration::GetCustomState() {
   return static_cast<std::remove_cv_t<T>*>(ptr.get());
 }
 
-}  // namespace trace_processor
-}  // namespace perfetto
+}  // namespace perfetto::trace_processor
 
 #endif  // SRC_TRACE_PROCESSOR_IMPORTERS_PROTO_PACKET_SEQUENCE_STATE_GENERATION_H_

@@ -13,11 +13,7 @@ qt_internal_add_plugin(QTextToSpeechWinRTPlugin
         Qt::CorePrivate
         Qt::TextToSpeech
         Qt::Multimedia
+        Qt::MultimediaPrivate
         shlwapi
         runtimeobject
-)
-
-qt_internal_extend_target(QTextToSpeechWinRTPlugin CONDITION MSVC
-    COMPILE_OPTIONS
-        /Zc:twoPhase-
 )

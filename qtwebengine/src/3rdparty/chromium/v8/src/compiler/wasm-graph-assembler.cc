@@ -133,7 +133,7 @@ Node* WasmGraphAssembler::Allocate(int size) {
 
 Node* WasmGraphAssembler::Allocate(Node* size) {
   return AddNode(graph()->NewNode(
-      simplified_.AllocateRaw(Type::Any(), AllocationType::kYoung), size,
+      simplified_.AllocateRaw(compiler::Type::Any(), AllocationType::kYoung), size,
       effect(), control()));
 }
 
@@ -436,7 +436,7 @@ Node* WasmGraphAssembler::LoadSharedFunctionInfo(Node* js_function) {
       MachineType::TaggedPointer(), js_function,
       wasm::ObjectAccess::SharedFunctionInfoOffsetInTaggedJSFunction());
 }
-Node* WasmGraphAssembler::LoadContextFromJSFunction(Node* js_function) {
+Node* WasmGraphAssembler::LoadContextNoCellFromJSFunction(Node* js_function) {
   return LoadFromObject(MachineType::TaggedPointer(), js_function,
                         wasm::ObjectAccess::ContextOffsetInTaggedJSFunction());
 }

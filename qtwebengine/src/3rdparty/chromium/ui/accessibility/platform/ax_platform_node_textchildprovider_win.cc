@@ -11,7 +11,7 @@
 #include "ui/base/win/atl_module.h"
 
 #define UIA_VALIDATE_TEXTCHILDPROVIDER_CALL() \
-  if (!owner()->GetDelegate())                \
+  if (owner()->IsDestroyed())                 \
     return UIA_E_ELEMENTNOTAVAILABLE;
 
 namespace ui {
@@ -34,14 +34,13 @@ AXPlatformNodeTextChildProviderWin::AXPlatformNodeTextChildProviderWin() {}
 AXPlatformNodeTextChildProviderWin::~AXPlatformNodeTextChildProviderWin() {}
 
 // static
-AXPlatformNodeTextChildProviderWin* AXPlatformNodeTextChildProviderWin::Create(
-    AXPlatformNodeWin* owner) {
+Microsoft::WRL::ComPtr<AXPlatformNodeTextChildProviderWin>
+AXPlatformNodeTextChildProviderWin::Create(AXPlatformNodeWin* owner) {
   CComObject<AXPlatformNodeTextChildProviderWin>* text_child_provider = nullptr;
   if (SUCCEEDED(CComObject<AXPlatformNodeTextChildProviderWin>::CreateInstance(
           &text_child_provider))) {
     DCHECK(text_child_provider);
     text_child_provider->owner_ = owner;
-    text_child_provider->AddRef();
     return text_child_provider;
   }
 

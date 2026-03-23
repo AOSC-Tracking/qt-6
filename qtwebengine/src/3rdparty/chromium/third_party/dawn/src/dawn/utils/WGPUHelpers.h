@@ -35,6 +35,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "dawn/common/Constants.h"
 #include "dawn/utils/TextureUtils.h"
 
@@ -42,12 +43,6 @@ namespace dawn::utils {
 
 enum Expectation { Success, Failure };
 
-#if TINT_BUILD_SPV_READER
-wgpu::ShaderModule CreateShaderModuleFromASM(
-    const wgpu::Device& device,
-    const char* source,
-    wgpu::DawnShaderModuleSPIRVOptionsDescriptor* spirv_options = nullptr);
-#endif
 wgpu::ShaderModule CreateShaderModule(const wgpu::Device& device, const char* source);
 wgpu::ShaderModule CreateShaderModule(const wgpu::Device& device, const std::string& source);
 
@@ -63,18 +58,20 @@ wgpu::Buffer CreateBufferFromData(const wgpu::Device& device,
     return CreateBufferFromData(device, data.begin(), uint32_t(sizeof(T) * data.size()), usage);
 }
 
-wgpu::ImageCopyBuffer CreateImageCopyBuffer(wgpu::Buffer buffer,
-                                            uint64_t offset = 0,
-                                            uint32_t bytesPerRow = wgpu::kCopyStrideUndefined,
-                                            uint32_t rowsPerImage = wgpu::kCopyStrideUndefined);
-wgpu::ImageCopyTexture CreateImageCopyTexture(
+wgpu::TexelCopyBufferInfo CreateTexelCopyBufferInfo(
+    wgpu::Buffer buffer,
+    uint64_t offset = 0,
+    uint32_t bytesPerRow = wgpu::kCopyStrideUndefined,
+    uint32_t rowsPerImage = wgpu::kCopyStrideUndefined);
+wgpu::TexelCopyTextureInfo CreateTexelCopyTextureInfo(
     wgpu::Texture texture,
     uint32_t level = 0,
     wgpu::Origin3D origin = {0, 0, 0},
     wgpu::TextureAspect aspect = wgpu::TextureAspect::All);
-wgpu::TextureDataLayout CreateTextureDataLayout(uint64_t offset,
-                                                uint32_t bytesPerRow,
-                                                uint32_t rowsPerImage = wgpu::kCopyStrideUndefined);
+wgpu::TexelCopyBufferLayout CreateTexelCopyBufferLayout(
+    uint64_t offset,
+    uint32_t bytesPerRow,
+    uint32_t rowsPerImage = wgpu::kCopyStrideUndefined);
 
 struct ComboRenderPassDescriptor : public wgpu::RenderPassDescriptor {
   public:
@@ -217,6 +214,14 @@ ColorSpaceConversionInfo GetYUVBT709ToRGBSRGBColorSpaceConversionInfo();
 ColorSpaceConversionInfo GetNoopRGBColorSpaceConversionInfo();
 
 bool BackendRequiresCompat(wgpu::BackendType backend);
+
+absl::flat_hash_set<wgpu::FeatureName> FeatureAndImplicitlyEnabled(wgpu::FeatureName featureName);
+
+int8_t ConvertFloatToSnorm8(float value);
+
+int16_t ConvertFloatToSnorm16(float value);
+
+uint16_t ConvertFloatToUnorm16(float value);
 
 }  // namespace dawn::utils
 

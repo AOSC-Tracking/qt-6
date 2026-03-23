@@ -588,13 +588,13 @@ String ReplaceUnmatchedSurrogates(String string) {
     } else if (U16_IS_TRAIL(c)) {
       // 0xDC00 <= c <= 0xDFFF
       // Append to U a U+FFFD REPLACEMENT CHARACTER.
-      u[i] = kReplacementCharacter;
+      u[i] = uchar::kReplacementCharacter;
     } else {
       // 0xD800 <= c <= 0xDBFF
       DCHECK(U16_IS_LEAD(c));
       if (i == n - 1) {
         // 1. If i = n-1, then append to U a U+FFFD REPLACEMENT CHARACTER.
-        u[i] = kReplacementCharacter;
+        u[i] = uchar::kReplacementCharacter;
       } else {
         // 2. Otherwise, i < n-1:
         DCHECK_LT(i, n - 1);
@@ -611,7 +611,7 @@ String ReplaceUnmatchedSurrogates(String string) {
         } else {
           // 3. Otherwise, d < 0xDC00 or d > 0xDFFF. Append to U a U+FFFD
           //    REPLACEMENT CHARACTER.
-          u[i] = kReplacementCharacter;
+          u[i] = uchar::kReplacementCharacter;
         }
       }
     }
@@ -661,7 +661,7 @@ LocalDOMWindow* CurrentDOMWindow(v8::Isolate* isolate) {
 
 ExecutionContext* ToExecutionContext(v8::Local<v8::Context> context) {
   DCHECK(!context.IsEmpty());
-  v8::Isolate* isolate = context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   ScriptState* script_state = ScriptState::MaybeFrom(isolate, context);
   return script_state ? ToExecutionContext(script_state) : nullptr;
 }
@@ -687,7 +687,7 @@ static ScriptState* ToScriptStateImpl(LocalFrame* frame,
   v8::Local<v8::Context> context = ToV8ContextEvenIfDetached(frame, world);
   if (context.IsEmpty())
     return nullptr;
-  v8::Isolate* isolate = context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   ScriptState* script_state = ScriptState::From(isolate, context);
   if (!script_state->ContextIsValid())
     return nullptr;
@@ -796,70 +796,19 @@ ScriptState* ToScriptStateForMainWorld(ExecutionContext* context) {
                        DOMWrapperWorld::MainWorld(context->GetIsolate()));
 }
 
-v8::Local<v8::Function> GetEsIteratorMethod(v8::Isolate* isolate,
-                                            v8::Local<v8::Object> object,
-                                            ExceptionState& exception_state) {
-  const v8::Local<v8::Value> key = v8::Symbol::GetIterator(isolate);
-
-  TryRethrowScope rethrow_scope(isolate, exception_state);
-  v8::Local<v8::Value> iterator_method;
-  if (!object->Get(isolate->GetCurrentContext(), key)
-           .ToLocal(&iterator_method)) {
-    return v8::Local<v8::Function>();
-  }
-
-  if (iterator_method->IsNullOrUndefined())
-    return v8::Local<v8::Function>();
-
-  if (!iterator_method->IsFunction()) {
-    exception_state.ThrowTypeError("Iterator must be callable function");
-    return v8::Local<v8::Function>();
-  }
-
-  return iterator_method.As<v8::Function>();
-}
-
-v8::Local<v8::Object> GetEsIteratorWithMethod(
-    v8::Isolate* isolate,
-    v8::Local<v8::Function> getter_function,
-    v8::Local<v8::Object> object,
-    ExceptionState& exception_state) {
-  TryRethrowScope rethrow_scope(isolate, exception_state);
-  v8::Local<v8::Value> iterator;
-  if (!V8ScriptRunner::CallFunction(
-           getter_function, ToExecutionContext(isolate->GetCurrentContext()),
-           object, 0, nullptr, isolate)
-           .ToLocal(&iterator)) {
-    return v8::Local<v8::Object>();
-  }
-  if (!iterator->IsObject()) {
-    exception_state.ThrowTypeError("Iterator is not an object.");
-    return v8::Local<v8::Object>();
-  }
-  return iterator.As<v8::Object>();
-}
-
-bool HasCallableIteratorSymbol(v8::Isolate* isolate,
-                               v8::Local<v8::Value> value,
-                               ExceptionState& exception_state) {
-  if (!value->IsObject())
-    return false;
-  v8::Local<v8::Function> iterator_method =
-      GetEsIteratorMethod(isolate, value.As<v8::Object>(), exception_state);
-  return !iterator_method.IsEmpty();
-}
-
 v8::Isolate* ToIsolate(const LocalFrame* frame) {
   DCHECK(frame);
   return frame->GetWindowProxyManager()->GetIsolate();
 }
 
 v8::Local<v8::Value> FromJSONString(ScriptState* script_state,
-                                    const String& stringified_json) {
+                                    const String& stringified_json,
+                                    std::optional<v8::ScriptOrigin> origin) {
   auto v8_string = V8String(script_state->GetIsolate(), stringified_json);
   v8::Local<v8::Value> parsed;
-  std::ignore =
-      v8::JSON::Parse(script_state->GetContext(), v8_string).ToLocal(&parsed);
+
+  std::ignore = v8::JSON::Parse(script_state->GetContext(), v8_string, origin)
+                    .ToLocal(&parsed);
   return parsed;
 }
 

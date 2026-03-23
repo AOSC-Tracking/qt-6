@@ -10,6 +10,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/files/scoped_temp_file.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
@@ -220,6 +221,26 @@ class GroupDataModelTest : public testing::Test {
     return id;
   }
 
+  std::vector<GroupId> MimicMultipleGroupsAddedServerSide(
+      size_t number_of_groups) {
+    syncer::EntityChangeList entity_changes;
+    std::vector<GroupId> group_ids;
+    for (size_t i = 0; i < number_of_groups; i++) {
+      std::string display_name = "Group" + base::NumberToString(i);
+      const GroupId id = sdk_delegate_.AddGroupAndReturnId(display_name);
+      group_ids.emplace_back(id);
+
+      entity_changes.push_back(EntityChangeAddFromSpecifics(
+          MakeSpecifics(id, next_changed_at_millis_since_unix_epoch_++)));
+    }
+
+    collaboration_group_bridge_->ApplyIncrementalSyncChanges(
+        collaboration_group_bridge_->CreateMetadataChangeList(),
+        std::move(entity_changes));
+
+    return group_ids;
+  }
+
   void WaitForGroupAdded(const GroupId& group_id) {
     base::RunLoop run_loop;
     EXPECT_CALL(observer_, OnGroupAdded(group_id, NotNullTime()))
@@ -227,9 +248,31 @@ class GroupDataModelTest : public testing::Test {
     run_loop.Run();
   }
 
+  void WaitForMultipleGroupsAdded(size_t number_of_groups) {
+    base::RunLoop run_loop;
+    size_t call_count = 0;
+    EXPECT_CALL(observer_, OnGroupAdded(_, NotNullTime()))
+        .Times(::testing::AtLeast(0))
+        .WillRepeatedly(::testing::DoAll(::testing::Invoke([&]() {
+          ++call_count;
+          if (call_count == number_of_groups) {
+            run_loop.Quit();
+          }
+        })));
+    run_loop.Run();
+  }
+
   void MimicMemberAddedServerSide(const GroupId& group_id,
                                   const GaiaId& member_gaia_id) {
-    sdk_delegate_.AddMember(group_id, member_gaia_id);
+    auto iter = sdk_delegate_.groups()->find(group_id);
+    ASSERT_TRUE(iter != sdk_delegate_.groups()->end());
+
+    data_sharing_pb::GroupMember member;
+    member.set_gaia_id(member_gaia_id.ToString());
+    member.set_role(data_sharing_pb::MEMBER_ROLE_MEMBER);
+    member.set_last_updated_time_unix_epoch_millis(
+        next_changed_at_millis_since_unix_epoch_++);
+    *iter->second.add_members() = member;
 
     syncer::EntityChangeList entity_changes;
     entity_changes.push_back(EntityChangeUpdateFromSpecifics(
@@ -242,6 +285,15 @@ class GroupDataModelTest : public testing::Test {
   void MimicMemberRemovedServerSide(const GroupId& group_id,
                                     const GaiaId& member_gaia_id) {
     sdk_delegate_.RemoveMember(group_id, member_gaia_id);
+
+    auto iter = sdk_delegate_.groups()->find(group_id);
+    ASSERT_TRUE(iter != sdk_delegate_.groups()->end());
+    data_sharing_pb::GroupMember member;
+    member.set_gaia_id(member_gaia_id.ToString());
+    member.set_role(data_sharing_pb::MEMBER_ROLE_FORMER_MEMBER);
+    member.set_last_updated_time_unix_epoch_millis(
+        next_changed_at_millis_since_unix_epoch_++);
+    *iter->second.add_former_members() = member;
 
     syncer::EntityChangeList entity_changes;
     entity_changes.push_back(EntityChangeUpdateFromSpecifics(
@@ -361,6 +413,22 @@ TEST_F(GroupDataModelTest, ShouldGetAllGroups) {
                           HasDisplayName(group_display_name2)));
 }
 
+TEST_F(GroupDataModelTest, FetchWorksCorrectlyForLargeNumberOfGroups) {
+  WaitForModelLoaded();
+
+  EXPECT_TRUE(model().GetAllGroups().empty());
+
+  size_t number_of_groups = 250;
+  const std::vector<GroupId> group_ids =
+      MimicMultipleGroupsAddedServerSide(number_of_groups);
+  ASSERT_EQ(number_of_groups, group_ids.size());
+  WaitForMultipleGroupsAdded(number_of_groups);
+  EXPECT_EQ(number_of_groups, model().GetAllGroups().size());
+  for (const GroupId& group_id : group_ids) {
+    EXPECT_TRUE(model().GetGroup(group_id).has_value());
+  }
+}
+
 TEST_F(GroupDataModelTest, ShouldUpdateGroup) {
   WaitForModelLoaded();
 
@@ -413,15 +481,51 @@ TEST_F(GroupDataModelTest, ShouldNotifyAboutGroupChanges) {
   // Test that OnMemberAdded() is called when a member is added.
   const GaiaId member_gaia_id("gaia_id");
   EXPECT_CALL(model_observer(),
-              OnMemberAdded(group_id, member_gaia_id, NotNullTime()));
+              OnMemberAdded(group_id, member_gaia_id,
+                            base::Time::FromMillisecondsSinceUnixEpoch(1001)));
   MimicMemberAddedServerSide(group_id, member_gaia_id);
   WaitForGroupUpdated(group_id);
   testing::Mock::VerifyAndClearExpectations(&model_observer());
 
   // Test that OnMemberRemoved() is called when a member is removed.
-  EXPECT_CALL(model_observer(),
-              OnMemberRemoved(group_id, member_gaia_id, NotNullTime()));
+  EXPECT_CALL(
+      model_observer(),
+      OnMemberRemoved(group_id, member_gaia_id,
+                      base::Time::FromMillisecondsSinceUnixEpoch(1003)));
   MimicMemberRemovedServerSide(group_id, member_gaia_id);
+  WaitForGroupUpdated(group_id);
+}
+
+TEST_F(GroupDataModelTest,
+       ShouldNotifyAboutGroupChanges_MultipleMembersAddedRemoved) {
+  WaitForModelLoaded();
+
+  const GroupId group_id = MimicGroupAddedServerSide("group");
+  WaitForGroupAdded(group_id);
+
+  // Test that OnMemberAdded() is called when a member is added.
+  const GaiaId member_gaia_id1("gaia_id99");
+  EXPECT_CALL(model_observer(),
+              OnMemberAdded(group_id, member_gaia_id1,
+                            base::Time::FromMillisecondsSinceUnixEpoch(1001)));
+  MimicMemberAddedServerSide(group_id, member_gaia_id1);
+  WaitForGroupUpdated(group_id);
+  testing::Mock::VerifyAndClearExpectations(&model_observer());
+
+  const GaiaId member_gaia_id2("gaia_id2");
+  EXPECT_CALL(model_observer(),
+              OnMemberAdded(group_id, member_gaia_id2,
+                            base::Time::FromMillisecondsSinceUnixEpoch(1003)));
+  MimicMemberAddedServerSide(group_id, member_gaia_id2);
+  WaitForGroupUpdated(group_id);
+  testing::Mock::VerifyAndClearExpectations(&model_observer());
+
+  // Test that OnMemberRemoved() is called when a member is removed.
+  EXPECT_CALL(
+      model_observer(),
+      OnMemberRemoved(group_id, member_gaia_id1,
+                      base::Time::FromMillisecondsSinceUnixEpoch(1005)));
+  MimicMemberRemovedServerSide(group_id, member_gaia_id1);
   WaitForGroupUpdated(group_id);
 }
 

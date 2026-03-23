@@ -53,6 +53,7 @@
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/swap_promise.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/features_generated.h"
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/mojom/frame/intrinsic_sizing_info.mojom-blink.h"
@@ -174,18 +175,14 @@
 #include "ui/gfx/geometry/point.h"
 #endif
 
-namespace WTF {
+namespace blink {
 
 template <>
-struct CrossThreadCopier<blink::WebFrameWidgetImpl::PromiseCallbacks>
+struct CrossThreadCopier<WebFrameWidgetImpl::PromiseCallbacks>
     : public CrossThreadCopierByValuePassThrough<
-          blink::WebFrameWidgetImpl::PromiseCallbacks> {
+          WebFrameWidgetImpl::PromiseCallbacks> {
   STATIC_ONLY(CrossThreadCopier);
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 namespace {
 
@@ -453,6 +450,12 @@ void WebFrameWidgetImpl::Close(DetachReason detach_reason) {
   // prevent delaying the navigation commit, as releasing the LayerTreeView
   // resources blocks on the compositor thread.
   bool delay_release =
+#if BUILDFLAG(IS_ANDROID)
+      // Don't delay if synchronous compositing is enabled, since it doesn't
+      // expect async deletion.
+      !Platform::Current()
+           ->IsSynchronousCompositingEnabledForAndroidWebView() &&
+#endif
       (base::FeatureList::IsEnabled(
            blink::features::kDelayLayerTreeViewDeletionOnLocalSwap) &&
        detach_reason == DetachReason::kNavigation);
@@ -648,7 +651,13 @@ void WebFrameWidgetImpl::DragSourceEndedAt(const gfx::PointF& point_in_viewport,
       WebInputEvent::Type::kMouseMove,
       GetPage()->GetVisualViewport().ViewportToRootFrame(point_in_viewport),
       screen_point, WebPointerProperties::Button::kLeft, 0,
-      WebInputEvent::kNoModifiers, base::TimeTicks::Now());
+      WebInputEvent::kNoModifiers, base::TimeTicks::Now(), kMenuSourceNone,
+      local_root_->GetFrame()
+          ->GetPage()
+          ->GetDragController()
+          .drag_pointer_id()
+          .value_or(WebMouseEvent::kMousePointerId));
+
   fake_mouse_move.SetFrameScale(1);
   local_root_->GetFrame()->GetEventHandler().DragSourceEndedAt(fake_mouse_move,
                                                                operation);
@@ -834,9 +843,19 @@ void WebFrameWidgetImpl::BindWidgetCompositor(
 void WebFrameWidgetImpl::BindInputTargetClient(
     mojo::PendingReceiver<viz::mojom::blink::InputTargetClient> receiver) {
   // Both Browser and Viz attempts to bind this interface. There can be at max
-  // two remotes one for each Browser and Viz, so this check ensures we are not
-  // going past the 2 limit.
-  CHECK_LT(input_target_receivers_.size(), 2u);
+  // two remotes one for each Browser and Viz.
+  // Note: In some cases where GPU restarts due to a crash, there might be a
+  // race between BindInputTargetClient call from the new GPU process and the
+  // renderer running the disconnect handlers on input_target_receivers_ for the
+  // destroyed GPU process, implying there may be 3 receivers transiently. See
+  // crbug.com/424109284 for more details.
+  if (input_target_receivers_.size() >= 2) {
+    // TODO(424109284): Cleanup after investigation.
+    SCOPED_CRASH_KEY_STRING64(
+        "crbug424109284", "receivers_size",
+        base::NumberToString(input_target_receivers_.size()));
+    base::debug::DumpWithoutCrashing();
+  }
   input_target_receivers_.Add(
       std::move(receiver),
       local_root_->GetTaskRunner(TaskType::kInternalInputBlocking));
@@ -1403,44 +1422,6 @@ void WebFrameWidgetImpl::SendOverscrollEventFromImplSide(
   }
 }
 
-void WebFrameWidgetImpl::SendEndOfScrollEventsDeprecated(
-    bool affects_outer_viewport,
-    bool affects_inner_viewport,
-    cc::ElementId scroll_latched_element_id) {
-  Node* target_node = View()->FindNodeFromScrollableCompositorElementId(
-      scroll_latched_element_id);
-  if (!target_node) {
-    return;
-  }
-  if (ScrollableArea* scrollable_area =
-          ScrollableArea::GetForScrolling(target_node->GetLayoutBox())) {
-    scrollable_area->UpdateSnappedTargetsAndEnqueueScrollSnapChange();
-    scrollable_area->SetImplSnapStrategy(nullptr);
-  }
-
-  if (auto* viewport_position_tracker =
-          AnchorElementViewportPositionTracker::MaybeGetOrCreateFor(
-              target_node->GetDocument())) {
-    viewport_position_tracker->OnScrollEnd();
-  }
-
-  if (RuntimeEnabledFeatures::ScrollEndEventsEnabled()) {
-    Node* document_node = View()->MainFrameImpl()
-                              ? View()->MainFrameImpl()->GetDocument()
-                              : nullptr;
-    if (affects_inner_viewport) {
-      target_node->GetDocument().EnqueueVisualViewportScrollEndEvent();
-    }
-    // A scroll gesture that causes the browser controls to show/hide would be
-    // associated with the document but may not have actually caused the
-    // document/outer viewport to scroll. In this case the document should
-    // not receive a scrollend event.
-    if (affects_outer_viewport || target_node != document_node) {
-      target_node->GetDocument().EnqueueScrollEndEventForNode(target_node);
-    }
-  }
-}
-
 void WebFrameWidgetImpl::SendEndOfScrollEvents(
     const cc::CompositorCommitData& commit_data) {
   HeapHashSet<Member<AnchorElementViewportPositionTracker>> handled_trackers;
@@ -1465,12 +1446,10 @@ void WebFrameWidgetImpl::SendEndOfScrollEvents(
       scrollable_area->SetImplSnapStrategy(nullptr);
     }
 
-    if (RuntimeEnabledFeatures::ScrollEndEventsEnabled()) {
-      if (GetPage()->GetVisualViewport().GetScrollElementId() == id) {
-        target_node->GetDocument().EnqueueVisualViewportScrollEndEvent();
-      } else {
-        target_node->GetDocument().EnqueueScrollEndEventForNode(target_node);
-      }
+    if (GetPage()->GetVisualViewport().GetScrollElementId() == id) {
+      target_node->GetDocument().EnqueueVisualViewportScrollEndEvent();
+    } else {
+      target_node->GetDocument().EnqueueScrollEndEventForNode(target_node);
     }
   }
 }
@@ -1529,25 +1508,8 @@ void WebFrameWidgetImpl::UpdateCompositorScrollState(
     NotifyLatchedScrollMarkerGroup(commit_data);
   }
 
-  // TODO(bokan): If a scroll ended and a new one began in the same Blink frame
-  // (e.g. during a long running main thread task), this will erroneously
-  // dispatch the scroll end to the latter (still-scrolling) element.
-  // https://crbug.com/1116780.
-  // With MultiImplyOnlyScrollAnimations support, a non-latched scroll
-  // container might have finished its snap animation, so we don't check that we
-  // have a latched id.
-  if (::features::MultiImplOnlyScrollAnimationsSupported()) {
-    if (commit_data.scroll_end_data.done_containers.size()) {
-      SendEndOfScrollEvents(commit_data);
-    }
-  } else {
-    if (commit_data.scroll_latched_element_id != cc::ElementId() &&
-        commit_data.scroll_end_data.scroll_gesture_did_end) {
-      SendEndOfScrollEventsDeprecated(
-          commit_data.scroll_end_data.gesture_affects_outer_viewport_scroll,
-          commit_data.scroll_end_data.gesture_affects_inner_viewport_scroll,
-          commit_data.scroll_latched_element_id);
-    }
+  if (commit_data.scroll_end_data.done_containers.size()) {
+    SendEndOfScrollEvents(commit_data);
   }
 }
 
@@ -1597,10 +1559,21 @@ WebFrameWidgetImpl::GetAssociatedFrameWidgetHost() const {
   return frame_widget_host_.get();
 }
 
-void WebFrameWidgetImpl::RequestDecode(
-    const cc::DrawImage& image,
-    base::OnceCallback<void(bool)> callback) {
-  widget_base_->LayerTreeHost()->QueueImageDecode(image, std::move(callback));
+void WebFrameWidgetImpl::RequestDecode(const cc::DrawImage& image,
+                                       base::OnceCallback<void(bool)> callback,
+                                       bool speculative) {
+  if (auto* layer_tree_host = widget_base_->LayerTreeHost()) {
+    layer_tree_host->QueueImageDecode(image, std::move(callback), speculative);
+  } else {
+    std::move(callback).Run(false);
+  }
+}
+
+bool WebFrameWidgetImpl::SpeculativeDecodeRequestInFlight() const {
+  if (auto* layer_tree_host = widget_base_->LayerTreeHost()) {
+    return layer_tree_host->SpeculativeDecodeRequestInFlight();
+  }
+  return false;
 }
 
 void WebFrameWidgetImpl::Trace(Visitor* visitor) const {
@@ -1609,9 +1582,7 @@ void WebFrameWidgetImpl::Trace(Visitor* visitor) const {
   visitor->Trace(frame_widget_host_);
   visitor->Trace(receiver_);
   visitor->Trace(input_target_receivers_);
-#if BUILDFLAG(IS_ANDROID)
   visitor->Trace(ime_render_widget_host_);
-#endif
   visitor->Trace(mouse_capture_element_);
   visitor->Trace(device_emulator_);
   visitor->Trace(animation_frame_timing_monitor_);
@@ -1651,19 +1622,6 @@ void WebFrameWidgetImpl::StartPageScaleAnimation(const gfx::Point& destination,
                                                  base::TimeDelta duration) {
   widget_base_->LayerTreeHost()->StartPageScaleAnimation(
       destination, use_anchor, new_page_scale, duration);
-}
-
-void WebFrameWidgetImpl::RequestBeginMainFrameNotExpected(bool request) {
-  if (!View()->does_composite())
-    return;
-  widget_base_->LayerTreeHost()->RequestBeginMainFrameNotExpected(request);
-}
-
-void WebFrameWidgetImpl::DidCommitAndDrawCompositorFrame() {
-  ForEachLocalFrameControlledByWidget(
-      local_root_->GetFrame(), [](WebLocalFrameImpl* local_frame) {
-        local_frame->Client()->DidCommitAndDrawCompositorFrame();
-      });
 }
 
 void WebFrameWidgetImpl::DidObserveFirstScrollDelay(
@@ -1819,7 +1777,7 @@ void WebFrameWidgetImpl::DidCompletePageScaleAnimation() {
     std::move(page_scale_animation_for_testing_callback_).Run();
 }
 
-void WebFrameWidgetImpl::ScheduleAnimation() {
+void WebFrameWidgetImpl::ScheduleAnimation(bool urgent) {
   if (!View()->does_composite()) {
     non_composited_client_->ScheduleNonCompositedAnimation();
     return;
@@ -1829,7 +1787,7 @@ void WebFrameWidgetImpl::ScheduleAnimation() {
     return;
   }
 
-  widget_base_->LayerTreeHost()->SetNeedsAnimate();
+  widget_base_->LayerTreeHost()->SetNeedsAnimate(urgent);
 }
 
 void WebFrameWidgetImpl::FocusChanged(mojom::blink::FocusState focus_state) {
@@ -1853,7 +1811,13 @@ bool WebFrameWidgetImpl::ShouldAckSyntheticInputImmediately() {
 }
 
 void WebFrameWidgetImpl::UpdateVisualProperties(
-    const VisualProperties& visual_properties) {
+    const VisualProperties& properties) {
+  VisualProperties visual_properties(properties);
+  if (browser_controls_top_height_override_) {
+    visual_properties.browser_controls_params.top_controls_height =
+        *browser_controls_top_height_override_;
+  }
+
   SetZoomInternal(visual_properties.zoom_level,
                   visual_properties.css_zoom_factor);
 
@@ -1993,8 +1957,8 @@ void WebFrameWidgetImpl::ApplyVisualPropertiesSizing(
       View()->CancelPagePopup();
     }
 
-    if (auto* device_emulator = DeviceEmulator()) {
-      device_emulator->UpdateVisualProperties(visual_properties);
+    if (DeviceEmulator() && widget_base_ && !widget_base_->WillBeDestroyed()) {
+      DeviceEmulator()->UpdateVisualProperties(visual_properties);
       return;
     }
 
@@ -2014,11 +1978,12 @@ void WebFrameWidgetImpl::ApplyVisualPropertiesSizing(
   // Store this even when auto-resizing, it is the size of the full viewport
   // used for clipping, and this value is propagated down the Widget
   // hierarchy via the VisualProperties waterfall.
-  widget_base_->SetVisibleViewportSize(visual_properties.visible_viewport_size);
+  widget_base_->SetVisibleViewportSize(
+      visual_properties.visible_viewport_size_device_px);
 
-  virtual_keyboard_resize_height_physical_px_ =
-      visual_properties.virtual_keyboard_resize_height_physical_px;
-  DCHECK(!virtual_keyboard_resize_height_physical_px_ || ForTopMostMainFrame());
+  virtual_keyboard_resize_height_device_px_ =
+      visual_properties.virtual_keyboard_resize_height_device_px;
+  DCHECK(!virtual_keyboard_resize_height_device_px_ || ForTopMostMainFrame());
 
   if (ForMainFrame()) {
     if (!AutoResizeMode()) {
@@ -2036,8 +2001,8 @@ void WebFrameWidgetImpl::ApplyVisualPropertiesSizing(
 
   } else {
     // Widgets in a WebView's frame tree without a local main frame
-    // set the size of the WebView to be the |visible_viewport_size|, in order
-    // to limit compositing in (out of process) child frames to what is
+    // set the size of the WebView to be the |visible_viewport_size_device_px|,
+    // in order to limit compositing in (out of process) child frames to what is
     // visible.
     //
     // Note that child frames in the same process/WebView frame tree as the
@@ -2164,6 +2129,14 @@ std::unique_ptr<cc::ScopedPauseRendering> WebFrameWidgetImpl::PauseRendering() {
   if (!View()->does_composite())
     return nullptr;
   return widget_base_->LayerTreeHost()->PauseRendering();
+}
+
+void WebFrameWidgetImpl::SetShouldThrottleFrameRate(bool flag) {
+  if (!View()->does_composite() || flag == throttling_frame_rate_) {
+    return;
+  }
+  throttling_frame_rate_ = flag;
+  return widget_base_->LayerTreeHost()->SetShouldThrottleFrameRate(flag);
 }
 
 std::optional<int> WebFrameWidgetImpl::GetMaxRenderBufferBounds() const {
@@ -2327,6 +2300,9 @@ void WebFrameWidgetImpl::EnableDeviceEmulation(
     const DeviceEmulationParams& parameters) {
   // Device Emaulation is only supported for the main frame.
   DCHECK(ForMainFrame());
+  if (!widget_base_ || widget_base_->WillBeDestroyed()) {
+    return;
+  }
   if (!device_emulator_) {
     gfx::Size size_in_dips = widget_base_->BlinkSpaceToFlooredDIPs(Size());
 
@@ -2339,9 +2315,9 @@ void WebFrameWidgetImpl::EnableDeviceEmulation(
 }
 
 void WebFrameWidgetImpl::DisableDeviceEmulation() {
-  if (!device_emulator_)
-    return;
-  device_emulator_->DisableAndApply();
+  if (device_emulator_ && widget_base_ && !widget_base_->WillBeDestroyed()) {
+    device_emulator_->DisableAndApply();
+  }
   device_emulator_ = nullptr;
 }
 
@@ -2416,6 +2392,7 @@ void WebFrameWidgetImpl::SetZoomInternal(double zoom_level,
         // The local root is responsible for propagating to its connected tree
         // of Frame descendants.
         local_frame->SetLayoutZoomFactor(layout_zoom_factor);
+        local_frame->SetCssZoomFactor(css_zoom_factor_);
       }
     }
   }
@@ -3104,6 +3081,12 @@ WebInputEventResult WebFrameWidgetImpl::HandleInputEvent(
     return WebInputEventResult::kNotHandled;
   }
 
+  // Only unthrottle once to avoid repeatedly posting tasks to the cc impl
+  // thread.
+  if (throttling_frame_rate_) {
+    SetShouldThrottleFrameRate(false);
+  }
+
   base::AutoReset<const WebInputEvent*> current_event_change(
       &CurrentInputEvent::current_input_event_, &input_event);
   UIEventWithKeyState::ClearNewTabModifierSetFromIsolatedWorld();
@@ -3319,14 +3302,16 @@ const display::ScreenInfos& WebFrameWidgetImpl::GetScreenInfos() {
 }
 
 const display::ScreenInfo& WebFrameWidgetImpl::GetOriginalScreenInfo() {
-  if (device_emulator_)
+  if (device_emulator_ && !widget_base_->WillBeDestroyed()) {
     return device_emulator_->GetOriginalScreenInfo();
+  }
   return widget_base_->GetScreenInfo();
 }
 
 const display::ScreenInfos& WebFrameWidgetImpl::GetOriginalScreenInfos() {
-  if (device_emulator_)
+  if (device_emulator_ && !widget_base_->WillBeDestroyed()) {
     return device_emulator_->original_screen_infos();
+  }
   return widget_base_->screen_infos();
 }
 
@@ -3369,8 +3354,9 @@ WebString WebFrameWidgetImpl::GetLastToolTipTextForTesting() const {
 }
 
 float WebFrameWidgetImpl::GetEmulatorScale() {
-  if (device_emulator_)
+  if (device_emulator_ && widget_base_ && !widget_base_->WillBeDestroyed()) {
     return device_emulator_->scale();
+  }
   return 1.0f;
 }
 
@@ -3420,8 +3406,9 @@ void WebFrameWidgetImpl::PresentationCallbackForMeaningfulLayout(
 }
 
 void WebFrameWidgetImpl::RequestAnimationAfterDelay(
-    const base::TimeDelta& delay) {
-  widget_base_->RequestAnimationAfterDelay(delay);
+    const base::TimeDelta& delay,
+    bool urgent) {
+  widget_base_->RequestAnimationAfterDelay(delay, urgent);
 }
 
 void WebFrameWidgetImpl::SetRootLayer(scoped_refptr<cc::Layer> layer) {
@@ -3788,13 +3775,6 @@ WebFrameWidgetImpl::GetLastVirtualKeyboardVisibilityRequest() {
   if (!controller)
     return ui::mojom::blink::VirtualKeyboardVisibilityRequest::NONE;
   return controller->GetLastVirtualKeyboardVisibilityRequest();
-}
-
-bool WebFrameWidgetImpl::ShouldSuppressKeyboardForFocusedElement() {
-  WebLocalFrame* focused_frame = FocusedWebLocalFrameInWidget();
-  if (!focused_frame)
-    return false;
-  return focused_frame->ShouldSuppressKeyboardForFocusedElement();
 }
 
 void WebFrameWidgetImpl::GetEditContextBoundsInWindow(
@@ -4209,31 +4189,12 @@ Vector<gfx::Rect> WebFrameWidgetImpl::CalculateVisibleLineBoundsOnScreen() {
 }
 #endif  // BUILDFLAG(IS_ANDROID)
 
-Vector<gfx::Rect>& WebFrameWidgetImpl::GetVisibleLineBoundsOnScreen() {
-  return input_visible_line_bounds_;
+mojom::blink::InputCursorAnchorInfoPtr&
+WebFrameWidgetImpl::GetLastCursorAnchorInfoForTesting() {
+  return last_cursor_anchor_info_;
 }
 
-void WebFrameWidgetImpl::UpdateLineBounds() {
-#if BUILDFLAG(IS_ANDROID)
-  Vector<gfx::Rect> line_bounds = CalculateVisibleLineBoundsOnScreen();
-  if (line_bounds == input_visible_line_bounds_) {
-    return;
-  }
-  input_visible_line_bounds_.swap(line_bounds);
-  if (RuntimeEnabledFeatures::CursorAnchorInfoMojoPipeEnabled()) {
-    UpdateCursorAnchorInfo();
-    return;
-  }
-  if (mojom::blink::WidgetInputHandlerHost* host =
-          widget_base_->widget_input_handler_manager()
-              ->GetWidgetInputHandlerHost()) {
-    host->ImeCompositionRangeChanged(gfx::Range::InvalidRange(), std::nullopt,
-                                     input_visible_line_bounds_);
-  }
-#endif  // BUILDFLAG(IS_ANDROID)
-}
-
-void WebFrameWidgetImpl::UpdateCursorAnchorInfo() {
+void WebFrameWidgetImpl::UpdateCursorAnchorInfo(bool update_requested) {
 #if BUILDFLAG(IS_ANDROID)
   Element* focused_element = FocusedElement();
   if (!focused_element) {
@@ -4247,6 +4208,7 @@ void WebFrameWidgetImpl::UpdateCursorAnchorInfo() {
 
   Vector<gfx::Rect> character_bounds;
   GetCompositionCharacterBoundsInWindow(&character_bounds);
+  Vector<gfx::Rect> line_bounds = CalculateVisibleLineBoundsOnScreen();
 
   gfx::RectF editor_bounds =
       gfx::RectF(LocalRootImpl()->GetFrameView()->FrameToScreen(
@@ -4269,7 +4231,14 @@ void WebFrameWidgetImpl::UpdateCursorAnchorInfo() {
   mojom::blink::InputCursorAnchorInfoPtr cursor_anchor_info =
       mojom::blink::InputCursorAnchorInfo::New(
           character_bounds, std::move(editor_bounds_info),
-          std::move(text_appearance_info), input_visible_line_bounds_);
+          std::move(text_appearance_info), line_bounds, update_requested);
+
+  if (!update_requested && last_cursor_anchor_info_ == cursor_anchor_info) {
+    return;
+  }
+
+  last_cursor_anchor_info_ = cursor_anchor_info.Clone();
+
   // Since the IME pushes this endpoint to the renderer, it may not be bound
   // yet.
   if (ime_render_widget_host_) {
@@ -4284,8 +4253,9 @@ void WebFrameWidgetImpl::AddImeTextSpansToExistingText(
     uint32_t end,
     const Vector<ui::ImeTextSpan>& ime_text_spans) {
   WebLocalFrame* focused_frame = FocusedWebLocalFrameInWidget();
-  if (!focused_frame)
+  if (!focused_frame) {
     return;
+  }
   focused_frame->AddImeTextSpansToExistingText(base::ToVector(ime_text_spans),
                                                start, end);
 }
@@ -4582,6 +4552,41 @@ void WebFrameWidgetImpl::MoveCaret(const gfx::Point& point_in_dips) {
       widget_base_->DIPsToRoundedBlinkSpace(point_in_dips));
 }
 
+#if BUILDFLAG(IS_IOS)
+void WebFrameWidgetImpl::StartAutoscrollForSelectionToPoint(
+    const gfx::PointF& point_in_dips) {
+  WebLocalFrameImpl* focused_frame = FocusedWebLocalFrameInWidget();
+  if (!focused_frame) {
+    return;
+  }
+  focused_frame->StartAutoscrollForSelectionToPoint(
+      widget_base_->DIPsToBlinkSpace(point_in_dips));
+}
+
+void WebFrameWidgetImpl::StopAutoscroll() {
+  WebLocalFrameImpl* focused_frame = FocusedWebLocalFrameInWidget();
+  if (!focused_frame) {
+    return;
+  }
+  focused_frame->StopAutoscroll();
+}
+
+void WebFrameWidgetImpl::RectForEditFieldChars(
+    const gfx::Range& range,
+    RectForEditFieldCharsCallback callback) {
+  WebLocalFrameImpl* focused_frame = FocusedWebLocalFrameInWidget();
+  if (!focused_frame) {
+    std::move(callback).Run(gfx::Rect());
+    return;
+  }
+  gfx::Rect rect;
+  focused_frame->FirstRectForCharacterRange(
+      base::checked_cast<wtf_size_t>(range.start()),
+      base::checked_cast<wtf_size_t>(range.length()), rect);
+  std::move(callback).Run(widget_base_->BlinkSpaceToEnclosedDIPs(rect));
+}
+#endif  // BUILDFLAG(IS_IOS)
+
 void WebFrameWidgetImpl::SelectAroundCaret(
     mojom::blink::SelectionGranularity granularity,
     bool should_show_handle,
@@ -4821,8 +4826,7 @@ void WebFrameWidgetImpl::UpdateViewportDescription(
 bool WebFrameWidgetImpl::UpdateScreenRects(
     const gfx::Rect& widget_screen_rect,
     const gfx::Rect& window_screen_rect) {
-
-  if (device_emulator_) {
+  if (device_emulator_ && widget_base_ && !widget_base_->WillBeDestroyed()) {
     device_emulator_->OnUpdateScreenRects(widget_screen_rect,
                                           window_screen_rect);
   }
@@ -4838,7 +4842,8 @@ bool WebFrameWidgetImpl::UpdateScreenRects(
 }
 
 void WebFrameWidgetImpl::EnqueueMoveEvent() {
-  if (!RuntimeEnabledFeatures::WindowOnMoveEventEnabled()) {
+  if (!RuntimeEnabledFeatures::
+          DesktopPWAsAdditionalWindowingControlsEnabled()) {
     return;
   }
 
@@ -5035,10 +5040,7 @@ void WebFrameWidgetImpl::NotifyInputObservers(
     return;
 
   const WebInputEvent& input_event = coalesced_event.Event();
-  auto& paint_timing_detector = frame_view->GetPaintTimingDetector();
-
-  if (paint_timing_detector.NeedToNotifyInputOrScroll())
-    paint_timing_detector.NotifyInputEvent(input_event.GetType());
+  frame_view->GetPaintTimingDetector().NotifyInputEvent(input_event.GetType());
 }
 
 Frame* WebFrameWidgetImpl::FocusedCoreFrame() const {
@@ -5166,12 +5168,10 @@ void WebFrameWidgetImpl::PrepareForFinalLifecyclUpdateForTesting() {
         // In a web test, a rendering update may not have occurred before the
         // test finishes so ensure the transition moves out of rendering
         // blocked state.
-        if (RuntimeEnabledFeatures::ViewTransitionOnNavigationEnabled()) {
-          if (ViewTransition* transition =
-                  ViewTransitionUtils::GetTransition(*document);
-              transition && transition->IsForNavigationOnNewDocument()) {
-            transition->ActivateFromSnapshot();
-          }
+        if (ViewTransition* transition =
+                ViewTransitionUtils::GetTransition(*document);
+            transition && transition->IsForNavigationOnNewDocument()) {
+          transition->ActivateFromSnapshot();
         }
       });
 }
@@ -5184,6 +5184,10 @@ void WebFrameWidgetImpl::ApplyLocalSurfaceIdUpdate(
   widget_base_->LayerTreeHost()->SetLocalSurfaceIdFromParent(id);
 }
 
+bool WebFrameWidgetImpl::InsertVisualStateRequest(base::OnceClosure callback) {
+  return widget_base_->InsertVisualStateRequest(std::move(callback));
+}
+
 void WebFrameWidgetImpl::SetMayThrottleIfUndrawnFrames(
     bool may_throttle_if_undrawn_frames) {
   if (!View()->does_composite())
@@ -5193,12 +5197,12 @@ void WebFrameWidgetImpl::SetMayThrottleIfUndrawnFrames(
 }
 
 int WebFrameWidgetImpl::GetVirtualKeyboardResizeHeight() const {
-  DCHECK(!virtual_keyboard_resize_height_physical_px_ || ForTopMostMainFrame());
-  return virtual_keyboard_resize_height_physical_px_;
+  DCHECK(!virtual_keyboard_resize_height_device_px_ || ForTopMostMainFrame());
+  return virtual_keyboard_resize_height_device_px_;
 }
 
 void WebFrameWidgetImpl::SetVirtualKeyboardResizeHeightForTesting(int height) {
-  virtual_keyboard_resize_height_physical_px_ = height;
+  virtual_keyboard_resize_height_device_px_ = height;
 }
 
 bool WebFrameWidgetImpl::GetMayThrottleIfUndrawnFramesForTesting() {
@@ -5235,8 +5239,8 @@ void WebFrameWidgetImpl::PropagateHistorySequenceNumberToCompositor() {
 }
 
 base::ReadOnlySharedMemoryRegion
-WebFrameWidgetImpl::CreateSharedMemoryForSmoothnessUkm() {
-  return LayerTreeHost()->CreateSharedMemoryForSmoothnessUkm();
+WebFrameWidgetImpl::CreateSharedMemoryForDroppedFramesUkm() {
+  return LayerTreeHost()->CreateSharedMemoryForDroppedFramesUkm();
 }
 
 bool WebFrameWidgetImpl::CanComposeInline() {
@@ -5345,6 +5349,11 @@ void WebFrameWidgetImpl::DispatchNonBlockingEventForTesting(
       ->DispatchEventOnInputThreadForTesting(
           std::move(event),
           mojom::blink::WidgetInputHandler::DispatchEventCallback());
+}
+
+void WebFrameWidgetImpl::SetBrowserControlsTopHeightOverride(
+    std::optional<float> height) {
+  browser_controls_top_height_override_ = height;
 }
 
 }  // namespace blink

@@ -16,21 +16,36 @@
 
 #include "src/trace_processor/importers/instruments/instruments_xml_tokenizer.h"
 
-#include <cctype>
-#include <map>
-
 #include <expat.h>
-#include <stdint.h>
+#include <algorithm>
+#include <cctype>
+#include <cinttypes>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <map>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
+#include "perfetto/base/build_config.h"
+#include "perfetto/base/logging.h"
 #include "perfetto/base/status.h"
+#include "perfetto/ext/base/fnv_hash.h"
 #include "perfetto/ext/base/status_or.h"
-#include "perfetto/public/fnv1a.h"
+#include "perfetto/ext/base/string_view.h"
+#include "perfetto/public/compiler.h"
+#include "perfetto/trace_processor/trace_blob_view.h"
 #include "protos/perfetto/trace/clock_snapshot.pbzero.h"
 #include "src/trace_processor/importers/common/clock_tracker.h"
 #include "src/trace_processor/importers/common/stack_profile_tracker.h"
 #include "src/trace_processor/importers/instruments/row.h"
 #include "src/trace_processor/importers/instruments/row_data_tracker.h"
-#include "src/trace_processor/sorter/trace_sorter.h"
+#include "src/trace_processor/sorter/trace_sorter.h"  // IWYU pragma: keep
+#include "src/trace_processor/storage/trace_storage.h"
+#include "src/trace_processor/util/build_id.h"
 
 #if !PERFETTO_BUILDFLAG(PERFETTO_TP_INSTRUMENTS)
 #error \
@@ -59,11 +74,12 @@ std::string MakeTrimmed(const char* chars, int len) {
 //   xctrace export --input /path/to/profile.trace --xpath
 //     '//trace-toc/run/data/table[@schema="os-signpost and
 //        @category="PointsOfInterest"] |
-//      //trace-toc/run/data/table[@schema="time-sample"]'
+//      //trace-toc/run/data/table[@schema="cpu-profile"]'
 //
 // This exports two tables:
 //   1. Points of interest signposts
-//   2. Time samples
+//   2. CPU profile
+// You can also use time-profile instead of cpu-profile if needed.
 //
 // The first is used for clock synchronization -- perfetto emits signpost events
 // during tracing which allow synchronization of the xctrace clock (relative to
@@ -135,9 +151,10 @@ class InstrumentsXmlTokenizer::Impl {
     XML_SetCharacterDataHandler(parser_, CharacterData);
     XML_SetUserData(parser_, this);
 
-    const char* subsystem = "dev.perfetto.instruments_clock";
+    static constexpr std::string_view kSubsystem =
+        "dev.perfetto.instruments_clock";
     clock_ = static_cast<ClockTracker::ClockId>(
-        PerfettoFnv1a(subsystem, strlen(subsystem)) | 0x80000000);
+        base::FnvHasher::Combine(kSubsystem) | 0x80000000);
 
     // Use the above clock if we can, in case there is no other trace and
     // no clock sync events.
@@ -146,11 +163,38 @@ class InstrumentsXmlTokenizer::Impl {
   ~Impl() { XML_ParserFree(parser_); }
 
   base::Status Parse(TraceBlobView view) {
-    if (!XML_Parse(parser_, reinterpret_cast<const char*>(view.data()),
-                   static_cast<int>(view.length()), false)) {
-      return base::ErrStatus("XML parse error at line %lu: %s\n",
-                             XML_GetCurrentLineNumber(parser_),
-                             XML_ErrorString(XML_GetErrorCode(parser_)));
+    const char* data = reinterpret_cast<const char*>(view.data());
+    size_t length = view.length();
+    while (length > 0) {
+      // Handle the data in chunks of at most 32MB. Don't use std::min, to
+      // be robust against length > 2GB.
+      static constexpr int kMaxChunkSize = 32 * 1024 * 1024;
+      int chunk_size = kMaxChunkSize;
+      if (length < kMaxChunkSize) {
+        chunk_size = static_cast<int>(length);
+      }
+      void* buffer;
+      // Allocate an XML parser buffer -- libexpat insists on reading
+      // from a buffer it owns, rather than a user provided one.
+      while (!(buffer = XML_GetBuffer(parser_, chunk_size))) {
+        // Be robust against XML_GetBuffer failing to allocate the chunk size,
+        // and retry with smaller chunk sizes.
+        chunk_size /= 2;
+        if (chunk_size < 1024) {
+          return base::ErrStatus(
+              "XML parse error at line %lu: failed to allocate buffer\n",
+              XML_GetCurrentLineNumber(parser_));
+        }
+      }
+      // Copy the data into libexpat's buffer, and parse it.
+      memcpy(buffer, data, static_cast<size_t>(chunk_size));
+      length -= static_cast<size_t>(chunk_size);
+      data += chunk_size;
+      if (!XML_ParseBuffer(parser_, chunk_size, false)) {
+        return base::ErrStatus("XML parse error at line %lu: %s\n",
+                               XML_GetCurrentLineNumber(parser_),
+                               XML_ErrorString(XML_GetErrorCode(parser_)));
+      }
     }
     return base::OkStatus();
   }
@@ -329,8 +373,7 @@ class InstrumentsXmlTokenizer::Impl {
           PERFETTO_DLOG("Skipping timestamp %" PRId64 ", no clock snapshot yet",
                         current_row_.timestamp_);
         } else {
-          context_->sorter->PushInstrumentsRow(*trace_ts,
-                                               std::move(current_row_));
+          context_->sorter->PushInstrumentsRow(*trace_ts, current_row_);
         }
       } else if (current_subsystem_ref_ != nullptr) {
         // Rows without backtraces are assumed to be signpost events -- filter
@@ -340,7 +383,7 @@ class InstrumentsXmlTokenizer::Impl {
           uint64_t clock_sync_timestamp = *current_os_log_metadata_uint64_ref_;
           if (latest_clock_sync_timestamp_ > clock_sync_timestamp) {
             PERFETTO_DLOG("Skipping timestamp %" PRId64
-                          ", non-monotonic sync deteced",
+                          ", non-monotonic sync detected",
                           current_row_.timestamp_);
           } else {
             latest_clock_sync_timestamp_ = clock_sync_timestamp;
@@ -365,9 +408,7 @@ class InstrumentsXmlTokenizer::Impl {
         // We don't know what the binary's mapping end is, but we know that the
         // current frame is inside of it, so use that.
         PERFETTO_DCHECK(frame->addr > binary->load_addr);
-        if (frame->addr > binary->max_addr) {
-          binary->max_addr = frame->addr;
-        }
+        binary->max_addr = std::max(frame->addr, binary->max_addr);
       }
       current_new_frame_ = kNullId;
     } else if (current_new_thread_ != kNullId && tag_name == "thread") {

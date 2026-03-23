@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/browser/ui/webui/user_education_internals/user_education_internals_page_handler_impl.h"
 
 #include <stdint.h>
@@ -33,11 +28,15 @@
 #include "chrome/browser/ui/webui/user_education_internals/user_education_internals.mojom-forward.h"
 #include "chrome/browser/user_education/user_education_service.h"
 #include "chrome/browser/user_education/user_education_service_factory.h"
+#include "chrome/common/webui_url_constants.h"
 #include "components/feature_engagement/public/tracker.h"
 #include "components/user_education/common/feature_promo/feature_promo_controller.h"
 #include "components/user_education/common/feature_promo/feature_promo_registry.h"
 #include "components/user_education/common/feature_promo/feature_promo_result.h"
 #include "components/user_education/common/feature_promo/feature_promo_specification.h"
+#include "components/user_education/common/ntp_promo/ntp_promo_registry.h"
+#include "components/user_education/common/ntp_promo/ntp_promo_specification.h"
+#include "components/user_education/common/session/user_education_session_manager.h"
 #include "components/user_education/common/tutorial/tutorial_description.h"
 #include "components/user_education/common/user_education_data.h"
 #include "components/user_education/common/user_education_features.h"
@@ -104,6 +103,13 @@ user_education::UserEducationStorageService* GetStorageService(
   return service ? &service->user_education_storage_service() : nullptr;
 }
 
+user_education::UserEducationSessionManager* GetSessionManager(
+    Profile* profile) {
+  auto* const service =
+      UserEducationServiceFactory::GetForBrowserContext(profile);
+  return service ? &service->user_education_session_manager() : nullptr;
+}
+
 std::string GetPromoTypeString(
     const user_education::FeaturePromoSpecification& spec) {
   switch (spec.promo_type()) {
@@ -121,6 +127,8 @@ std::string GetPromoTypeString(
       return "Tutorial";
     case user_education::FeaturePromoSpecification::PromoType::kRotating:
       return "Rotating";
+    case user_education::FeaturePromoSpecification::PromoType::kCustomUi:
+      return "Custom UI";
   }
 }
 
@@ -200,11 +208,8 @@ std::vector<std::string> GetSupportedPlatforms(
       case Platforms::kLinux:
         result.push_back("Linux");
         break;
-      case Platforms::kChromeOSAsh:
-        result.push_back("ChromeOS Ash");
-        break;
-      case Platforms::kChromeOSLacros:
-        result.push_back("ChromeOS Lacros");
+      case Platforms::kChromeOS:
+        result.push_back("ChromeOS");
         break;
     }
   }
@@ -296,13 +301,14 @@ std::vector<std::string> GetPromoInstructions(
       oss << l10n_util::GetStringUTF8(promo->bubble_body_string_id());
       instructions.push_back(oss.str());
     }
+  } else if (spec.promo_type() !=
+             user_education::FeaturePromoSpecification::PromoType::kCustomUi) {
+    instructions.push_back("This is a custom help bubble.");
   } else {
     if (spec.bubble_title_string_id()) {
       instructions.push_back(
           RemoveStringPlaceholders(spec.bubble_title_string_id()));
     }
-    instructions.push_back(
-        RemoveStringPlaceholders(spec.bubble_body_string_id()));
   }
   return instructions;
 }
@@ -423,6 +429,35 @@ std::string GetTutorialTypeString(
   return desc.can_be_restarted ? "Restartable Tutorial" : "Tutorial";
 }
 
+auto GetNtpPromoData(
+    const std::string& id,
+    const user_education::NtpPromoSpecification& spec,
+    Profile* profile,
+    const user_education::UserEducationStorageService& storage) {
+  const auto data = storage.ReadNtpPromoData(id).value_or(
+      user_education::KeyedNtpPromoData());
+  std::vector<FeaturePromoDemoPageDataPtr> result;
+  std::string eligibility = [&]() {
+    switch (spec.eligibility_callback().Run(profile)) {
+      case user_education::NtpPromoSpecification::Eligibility::kEligible:
+        return "Eligible";
+      case user_education::NtpPromoSpecification::Eligibility::kIneligible:
+        return "Not Eligible";
+      case user_education::NtpPromoSpecification::Eligibility::kCompleted:
+        return "Completed";
+    }
+  }();
+  result.emplace_back(FormatDemoPageData("Eligibility:", eligibility));
+  result.emplace_back(
+      FormatDemoPageData("Last top spot session:", data.last_top_spot_session));
+  result.emplace_back(FormatDemoPageData("Top spot session count:",
+                                         data.top_spot_session_count));
+  result.emplace_back(FormatDemoPageData("Last clicked at", data.last_clicked));
+  result.emplace_back(
+      FormatDemoPageData("First seen completed at", data.completed));
+  return result;
+}
+
 }  // namespace
 
 UserEducationInternalsPageHandlerImpl::UserEducationInternalsPageHandlerImpl(
@@ -496,6 +531,8 @@ void UserEducationInternalsPageHandlerImpl::GetSessionData(
     const auto session_data = storage_service->ReadSessionData();
 
     // Current session.
+    data.emplace_back(
+        FormatDemoPageData("Session number", session_data.session_number));
     data.emplace_back(
         FormatDemoPageData("Session start", session_data.start_time));
     data.emplace_back(FormatDemoPageData("Last active at",
@@ -583,20 +620,24 @@ void UserEducationInternalsPageHandlerImpl::ShowFeaturePromo(
     return;
   }
 
-  auto* const interface =
-      BrowserUserEducationInterface::MaybeGetForWebContentsInTab(
-          web_ui_->GetWebContents());
+  auto* const service =
+      UserEducationServiceFactory::GetForBrowserContext(profile_);
   auto* const controller =
-      interface ? interface->GetFeaturePromoController(
-                      base::PassKey<UserEducationInternalsPageHandlerImpl>())
-                : nullptr;
+      service ? service->GetFeaturePromoController(
+                    base::PassKey<UserEducationInternalsPageHandlerImpl>())
+              : nullptr;
 
   user_education::FeaturePromoParams params(*feature);
   params.show_promo_result_callback = base::BindOnce(
       &UserEducationInternalsPageHandlerImpl::OnFeaturePromoShowResult,
       weak_ptr_factory_.GetWeakPtr());
   if (controller) {
-    controller->MaybeShowPromoForDemoPage(std::move(params));
+    auto* const interface =
+        BrowserUserEducationInterface::MaybeGetForWebContentsInTab(
+            web_ui_->GetWebContents());
+    auto context = interface->GetUserEducationContext(
+        base::PassKey<UserEducationInternalsPageHandlerImpl>());
+    controller->MaybeShowPromoForDemoPage(std::move(params), context);
     pending_callback_ = std::move(callback);
   } else {
     std::move(callback).Run(std::string("No controller."));
@@ -616,10 +657,23 @@ void UserEducationInternalsPageHandlerImpl::OnFeaturePromoShowResult(
         reason = "Cannot show IPH in this browser window.";
         break;
       case Failure::kBlockedByPromo:
-        reason = "Failed to show IPH due to high-priority IPH.";
+        reason = "Failed to show IPH due to another high-priority IPH.";
+        break;
+      case Failure::kAnchorSurfaceNotActive:
+        reason = "Anchor window is not active.";
+        break;
+      case Failure::kAnchorNotVisible:
+        reason = "Anchor element for promo is not visible.";
         break;
       case Failure::kBlockedByUi:
-        reason = "Cannot show IPH due to conflicting UI or missing anchor.";
+        reason =
+            "Blocked by some other UI (omnibox drop-down, legal notice, etc.)";
+        break;
+      case Failure::kBlockedByUserActivity:
+        reason = "Blocked by user activity.";
+        break;
+      case Failure::kWindowTooSmall:
+        reason = "Target window is too small/UI is collapsed.";
         break;
       case Failure::kCanceled:
         reason = "IPH was canceled before it could be shown.";
@@ -634,16 +688,35 @@ void UserEducationInternalsPageHandlerImpl::OnFeaturePromoShowResult(
         reason = "Already queued.";
         break;
       case Failure::kBlockedByConfig:
+        reason = "Blocked by Feature Engagement system.";
+        break;
       case Failure::kFeatureDisabled:
+        reason = "IPH feature is disabled.";
+        break;
       case Failure::kPermanentlyDismissed:
+        reason = "Promo has been permanently dismissed.";
+        break;
       case Failure::kSnoozed:
+        reason = "Promo has been recently snoozed.";
+        break;
       case Failure::kBlockedByGracePeriod:
+        reason = "Blocked by startup grace period.";
+        break;
       case Failure::kBlockedByCooldown:
+        reason = "Too little time has passed since the last heavyweight promo.";
+        break;
       case Failure::kRecentlyAborted:
+        reason = "Too little time has passed since the promo was aborted.";
+        break;
       case Failure::kExceededMaxShowCount:
+        reason = "Promo would exceed maximum show count.";
+        break;
       case Failure::kBlockedByNewProfile:
+        reason = "Promo cannot be shown in brand new profile.";
+        break;
       case Failure::kBlockedByReshowDelay:
-        reason = "Unexpected failure (should not happen for demo).";
+        reason = "Promo is inside of minimum reshow time.";
+        break;
     }
   }
   std::move(pending_callback_).Run(reason);
@@ -683,19 +756,64 @@ void UserEducationInternalsPageHandlerImpl::ClearSessionData(
     std::move(callback).Run(std::string("No storage service."));
     return;
   }
+  auto* const session_manager = GetSessionManager(profile_);
+  if (!session_manager) {
+    std::move(callback).Run(std::string("No session manager."));
+    return;
+  }
 
   storage_service->ResetPolicy();
+  storage_service->ResetSession();
+  storage_service->set_profile_creation_time(storage_service->GetCurrentTime());
+  session_manager->MaybeUpdateSessionState();
 
-  // Create a session with start time well in the past to avoid grace period,
-  // and most recent active time as now to prevent a new session from
-  // immediately starting.
-  user_education::UserEducationSessionData session_data;
-  session_data.most_recent_active_time = storage_service->GetCurrentTime();
+  std::move(callback).Run(std::string());
+}
+
+void UserEducationInternalsPageHandlerImpl::RemoveGracePeriods(
+    RemoveGracePeriodsCallback callback) {
+  auto* const storage_service = GetStorageService(profile_);
+  if (!storage_service) {
+    std::move(callback).Run(std::string("No storage service."));
+    return;
+  }
+
+  // Move session start far enough into the past that grace periods don't apply.
+  auto session_data = storage_service->ReadSessionData();
+  session_data.start_time = base::Time();
   storage_service->SaveSessionData(session_data);
+
+  // Move last heavyweight promo far enough into the past that cooldowns don't
+  // apply.
+  auto policy_data = storage_service->ReadPolicyData();
+  policy_data.last_heavyweight_promo_time = base::Time();
+  storage_service->SavePolicyData(policy_data);
 
   // Push the profile creation date far enough into the past that the grace
   // period isn't relevant.
   storage_service->set_profile_creation_time(base::Time());
+
+  std::move(callback).Run(std::string());
+}
+
+void UserEducationInternalsPageHandlerImpl::ForceNewSession(
+    ForceNewSessionCallback callback) {
+  auto* const storage_service = GetStorageService(profile_);
+  if (!storage_service) {
+    std::move(callback).Run(std::string("No storage service."));
+    return;
+  }
+
+  // Create a session with start time well in the past to avoid grace period,
+  // and most recent active time as now to prevent a new session from
+  // immediately starting.
+  user_education::UserEducationSessionData session_data =
+      storage_service->ReadSessionData();
+  const base::Time now = storage_service->GetCurrentTime();
+  session_data.start_time = now;
+  session_data.most_recent_active_time = now;
+  ++session_data.session_number;
+  storage_service->SaveSessionData(session_data);
 
   std::move(callback).Run(std::string());
 }
@@ -802,4 +920,41 @@ void UserEducationInternalsPageHandlerImpl::LaunchWhatsNewStaging() {
   params.browser = chrome::FindBrowserWithTab(web_ui_->GetWebContents());
   Navigate(&params);
 #endif
+}
+
+void UserEducationInternalsPageHandlerImpl::GetNtpPromos(
+    GetNtpPromosCallback callback) {
+  std::vector<FeaturePromoDemoPageInfoPtr> promos;
+
+  auto* const service =
+      UserEducationServiceFactory::GetForBrowserContext(profile_);
+  if (service && service->ntp_promo_registry()) {
+    auto* const registry = service->ntp_promo_registry();
+    auto& storage = service->user_education_storage_service();
+    for (const auto& id : registry->GetNtpPromoIdentifiers()) {
+      const auto& spec = *registry->GetNtpPromoSpecification(id);
+      promos.emplace_back(FeaturePromoDemoPageInfo::New(
+          RemovePrefixAndCamelCase(id, ""),
+          spec.metadata().additional_description, id, "NTP Promo",
+          spec.metadata().launch_milestone,
+          GetSupportedPlatforms(spec.metadata().platforms),
+          GetRequiredFeatures(spec.metadata().required_features),
+          std::vector<std::string>(), "",
+          GetNtpPromoData(id, spec, profile_, storage)));
+    }
+  }
+
+  std::move(callback).Run(std::move(promos));
+}
+
+void UserEducationInternalsPageHandlerImpl::ClearNtpPromoData(
+    const std::string& id,
+    ClearNtpPromoDataCallback callback) {
+  auto* const storage_service = GetStorageService(profile_);
+  if (!storage_service) {
+    std::move(callback).Run(std::string("No storage service."));
+    return;
+  }
+  storage_service->ResetNtpPromoData(id);
+  std::move(callback).Run(std::string());
 }

@@ -29,6 +29,7 @@
 
 #include <memory>
 #include <optional>
+#include <variant>
 
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/trace_event.h"
@@ -125,9 +126,10 @@ void ScanScriptWebBundle(
     scoped_refptr<const PreloadRequest::ExclusionInfo>& exclusion_info) {
   auto rule_or_error =
       ScriptWebBundleRule::ParseJson(inline_text, base_url, /*logger*/ nullptr);
-  if (!absl::holds_alternative<ScriptWebBundleRule>(rule_or_error))
+  if (!std::holds_alternative<ScriptWebBundleRule>(rule_or_error)) {
     return;
-  auto& rule = absl::get<ScriptWebBundleRule>(rule_or_error);
+  }
+  auto& rule = std::get<ScriptWebBundleRule>(rule_or_error);
 
   HashSet<KURL> scopes;
   HashSet<KURL> resources;
@@ -395,8 +397,8 @@ class TokenPreloadScanner::StartTagScanner {
     } else if (!integrity_attr_set_ &&
                Match(attribute_name, html_names::kIntegrityAttr)) {
       integrity_attr_set_ = true;
-      SubresourceIntegrity::ParseIntegrityAttribute(attribute_value,
-                                                    integrity_metadata_);
+      SubresourceIntegrity::ParseIntegrityAttribute(
+          attribute_value, integrity_metadata_, nullptr);
     } else if (Match(attribute_name, html_names::kTypeAttr)) {
       type_attribute_value_ = attribute_value;
     } else if (Match(attribute_name, html_names::kLanguageAttr)) {
@@ -518,8 +520,8 @@ class TokenPreloadScanner::StartTagScanner {
     } else if (!integrity_attr_set_ &&
                Match(attribute_name, html_names::kIntegrityAttr)) {
       integrity_attr_set_ = true;
-      SubresourceIntegrity::ParseIntegrityAttribute(attribute_value,
-                                                    integrity_metadata_);
+      SubresourceIntegrity::ParseIntegrityAttribute(
+          attribute_value, integrity_metadata_, nullptr);
     } else if (Match(attribute_name, html_names::kImagesrcsetAttr) &&
                srcset_attribute_value_.IsNull()) {
       srcset_attribute_value_ = attribute_value;
@@ -1068,17 +1070,14 @@ void TokenPreloadScanner::Scan(const HTMLToken& token,
         seen_body_ = true;
       } else if (Match(tag_impl, html_names::kImgTag)) {
         seen_img_ = true;
-        if (base::FeatureList::IsEnabled(
-                features::kSimplifyLoadingTransparentPlaceholderImage)) {
-          // Skip trying to create a preload request if we know the image is a
-          // data URI, as we do not preload data URIs anyway.
-          const HTMLToken::Attribute* source_attribute =
-              token.GetAttributeItem(html_names::kSrcAttr);
-          if (source_attribute) {
-            String source_attribute_value(source_attribute->Value());
-            if (source_attribute_value.StartsWithIgnoringASCIICase("data:")) {
-              return;
-            }
+        // Skip trying to create a preload request if we know the image is a
+        // data URI, as we do not preload data URIs anyway.
+        const HTMLToken::Attribute* source_attribute =
+            token.GetAttributeItem(html_names::kSrcAttr);
+        if (source_attribute) {
+          String source_attribute_value(source_attribute->Value());
+          if (source_attribute_value.StartsWithIgnoringASCIICase("data:")) {
+            return;
           }
         }
       } else if (Match(tag_impl, html_names::kPictureTag)) {
@@ -1148,27 +1147,12 @@ std::unique_ptr<HTMLPreloadScanner> HTMLPreloadScanner::Create(
     }
   }
 
-  bool skip_preload_scan = IsSkipPreloadScanEnabled(&document);
-  if (skip_preload_scan) {
-    UseCounter::Count(document, WebFeature::kSkippedPreloadScanning);
-  }
-
   return std::make_unique<HTMLPreloadScanner>(
       std::make_unique<HTMLTokenizer>(options), document.Url(),
       std::make_unique<CachedDocumentParameters>(&document),
       std::make_unique<MediaValuesCached::MediaValuesCachedData>(document),
       scanner_type, /* script_token_scanner=*/nullptr, TakePreloadFn(),
-      std::move(locators), skip_preload_scan);
-}
-
-// static
-bool HTMLPreloadScanner::IsSkipPreloadScanEnabled(const Document* document) {
-  if (const auto* context = document->GetExecutionContext()) {
-    if (RuntimeEnabledFeatures::SkipPreloadScanningEnabled(context)) {
-      return true;
-    }
-  }
-  return false;
+      std::move(locators));
 }
 
 // static
@@ -1186,11 +1170,6 @@ HTMLPreloadScanner::BackgroundPtr HTMLPreloadScanner::CreateBackground(
     }
   }
 
-  bool skip_preload_scan = IsSkipPreloadScanEnabled(document);
-  if (skip_preload_scan) {
-    UseCounter::Count(document, WebFeature::kSkippedPreloadScanning);
-  }
-
   return BackgroundPtr(
       new HTMLPreloadScanner(
           std::make_unique<HTMLTokenizer>(options), document->Url(),
@@ -1198,7 +1177,7 @@ HTMLPreloadScanner::BackgroundPtr HTMLPreloadScanner::CreateBackground(
           std::make_unique<MediaValuesCached::MediaValuesCachedData>(*document),
           TokenPreloadScanner::ScannerType::kMainDocument,
           BackgroundHTMLScanner::ScriptTokenScanner::Create(parser),
-          std::move(take_preload), std::move(locators), skip_preload_scan),
+          std::move(take_preload), std::move(locators)),
       Deleter{task_runner});
 }
 
@@ -1212,8 +1191,7 @@ HTMLPreloadScanner::HTMLPreloadScanner(
     std::unique_ptr<BackgroundHTMLScanner::ScriptTokenScanner>
         script_token_scanner,
     TakePreloadFn take_preload,
-    Vector<ElementLocator> locators,
-    bool skip_preload_scanning)
+    Vector<ElementLocator> locators)
     : scanner_(document_url,
                std::move(document_parameters),
                std::move(media_values_cached_data),
@@ -1221,8 +1199,7 @@ HTMLPreloadScanner::HTMLPreloadScanner(
                std::move(locators)),
       tokenizer_(std::move(tokenizer)),
       script_token_scanner_(std::move(script_token_scanner)),
-      take_preload_(std::move(take_preload)),
-      skip_preload_scanning_(skip_preload_scanning) {
+      take_preload_(std::move(take_preload)) {
   TRACE_EVENT_WITH_FLOW0("blink", "HTMLPreloadScanner::HTMLPreloadScanner",
                          TRACE_ID_LOCAL(this), TRACE_EVENT_FLAG_FLOW_OUT);
 }
@@ -1242,11 +1219,6 @@ void HTMLPreloadScanner::AppendToEnd(const SegmentedString& source) {
 std::unique_ptr<PendingPreloadData> HTMLPreloadScanner::Scan(
     const KURL& starting_base_element_url) {
   auto pending_data = std::make_unique<PendingPreloadData>();
-
-  if (skip_preload_scanning_) {
-    // Skip PreloadScan origin trial is enabled.
-    return pending_data;
-  }
 
   TRACE_EVENT_WITH_FLOW1("blink", "HTMLPreloadScanner::scan",
                          TRACE_ID_LOCAL(this),

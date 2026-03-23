@@ -11,7 +11,6 @@
 #include "third_party/blink/public/web/web_frame_load_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
-#include "third_party/blink/renderer/bindings/core/v8/v8_navigation_commit_behavior.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_navigation_focus_reset.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_navigation_scroll_behavior.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_navigation_type.h"
@@ -32,9 +31,11 @@ class AbortSignal;
 class NavigationDestination;
 class NavigateEventInit;
 class NavigationInterceptOptions;
+class NavigationNavigateOptions;
 class ExceptionState;
 class FormData;
 class V8NavigationInterceptHandler;
+class V8NavigationInterceptPrecommitHandler;
 
 class NavigateEvent final : public Event,
                             public ExecutionContextClient,
@@ -72,11 +73,12 @@ class NavigateEvent final : public Event,
   bool hasUAVisualTransition() const { return has_ua_visual_transition_; }
   Element* sourceElement() const { return source_element_.Get(); }
   void intercept(NavigationInterceptOptions*, ExceptionState&);
-  void commit(ExceptionState&);
 
   // If intercept() was called, this is called after dispatch to either commit
   // the navigation or set the appropritate state for a deferred commit.
   void MaybeCommitImmediately(ScriptState*);
+
+  void Redirect(const String& url, NavigationNavigateOptions*, ExceptionState&);
 
   void React(ScriptState* script_state);
 
@@ -87,7 +89,7 @@ class NavigateEvent final : public Event,
   }
   void FinalizeNavigationActionPromisesList();
 
-  void Abort(ScriptState* script_state, ScriptValue error);
+  void Abort(ScriptState*, ScriptValue error, CancelNavigationReason);
 
   // FocusedElementChangeObserver implementation:
   void DidChangeFocus() final;
@@ -98,8 +100,7 @@ class NavigateEvent final : public Event,
  private:
   bool PerformSharedChecks(const String& function_name, ExceptionState&);
 
-  bool ShouldCommitImmediately();
-  void CommitNow();
+  void CommitNow(ScriptState*);
 
   void PotentiallyResetTheFocus();
   void PotentiallyProcessScrollBehavior();
@@ -107,7 +108,7 @@ class NavigateEvent final : public Event,
 
   class FulfillReaction;
   class RejectReaction;
-  void ReactDone(ScriptValue, bool did_fulfill);
+  void ReactDone(ScriptState*, ScriptValue, bool did_fulfill);
 
   void DelayedLoadStartTimerFired();
 
@@ -125,7 +126,6 @@ class NavigateEvent final : public Event,
   Member<Element> source_element_;
   std::optional<V8NavigationFocusReset> focus_reset_behavior_ = std::nullopt;
   std::optional<V8NavigationScrollBehavior> scroll_behavior_ = std::nullopt;
-  std::optional<V8NavigationCommitBehavior> commit_behavior_ = std::nullopt;
 
   Member<NavigateEventDispatchParams> dispatch_params_;
 
@@ -138,10 +138,14 @@ class NavigateEvent final : public Event,
   };
   InterceptState intercept_state_ = InterceptState::kNone;
 
+  HeapVector<Member<V8NavigationInterceptPrecommitHandler>>
+      navigation_action_precommit_handlers_list_;
+
   HeapVector<MemberScriptPromise<IDLUndefined>>
       navigation_action_promises_list_;
   HeapVector<Member<V8NavigationInterceptHandler>>
       navigation_action_handlers_list_;
+
   bool did_change_focus_during_intercept_ = false;
 
   // Used to delay the start of the loading UI when the navigation is

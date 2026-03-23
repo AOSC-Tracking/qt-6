@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLDATABLOB_P_H
 #define QQMLDATABLOB_P_H
@@ -60,6 +61,7 @@ public:
     void startLoading();
 
     QQmlTypeLoader *typeLoader() const { return m_typeLoader; }
+    void resetTypeLoader() { m_typeLoader = nullptr; }
 
     Type type() const;
 
@@ -87,7 +89,7 @@ public:
         QDateTime sourceTimeStamp() const;
         bool exists() const;
         bool isEmpty() const;
-        bool isCacheable() const { return !hasInlineSourceCode; }
+        bool isCacheable() const { return !hasStaticData; }
         bool isValid() const
         {
             return hasInlineSourceCode || !fileInfo.filePath().isEmpty();
@@ -99,6 +101,7 @@ public:
         QString inlineSourceCode;
         QFileInfo fileInfo;
         bool hasInlineSourceCode = false;
+        bool hasStaticData = false;
     };
 
     template<typename Loader = QQmlTypeLoader>
@@ -116,10 +119,17 @@ public:
     }
 
     template<typename Loader = QQmlTypeLoader>
+    void assertEngineThreadIfRunning() const
+    {
+        const Loader *loader = m_typeLoader;
+        Q_ASSERT(!loader || !loader->thread() || loader->thread()->isParentThread());
+    }
+
+    template<typename Loader = QQmlTypeLoader>
     void assertEngineThread() const
     {
         const Loader *loader = m_typeLoader;
-        Q_ASSERT(loader && loader->engine() && loader->engine()->thread()->isCurrentThread());
+        Q_ASSERT(loader && loader->thread() && loader->thread()->isParentThread());
     }
 
 protected:
@@ -265,7 +275,7 @@ protected:
 private:
 
     // List of QQmlDataBlob's that I am waiting for to complete.
-    QVector<QQmlRefPointer<QQmlDataBlob>> m_waitingFor;
+    QList<QQmlRefPointer<QQmlDataBlob>> m_waitingFor;
 
     int m_redirectCount:30;
     bool m_inCallback:1;

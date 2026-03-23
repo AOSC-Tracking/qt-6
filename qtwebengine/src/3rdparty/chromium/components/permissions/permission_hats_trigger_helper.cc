@@ -15,6 +15,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/to_string.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "components/content_settings/core/browser/content_settings_utils.h"
@@ -225,7 +227,8 @@ PermissionHatsTriggerHelper::SurveyProductSpecificData
 PermissionHatsTriggerHelper::SurveyProductSpecificData::PopulateFrom(
     PromptParametersForHats prompt_parameters) {
   static const char* const kProductSpecificBitsFields[] = {
-      kPermissionsPromptSurveyHadGestureKey};
+      kPermissionsPromptSurveyHadGestureKey,
+  };
   static const char* const kProductSpecificStringFields[] = {
       kPermissionsPromptSurveyPromptDispositionKey,
       kPermissionsPromptSurveyPromptDispositionReasonKey,
@@ -236,7 +239,8 @@ PermissionHatsTriggerHelper::SurveyProductSpecificData::PopulateFrom(
       kPermissionPromptSurveyOneTimePromptsDecidedBucketKey,
       kPermissionPromptSurveyPepcPromptPositionKey,
       kPermissionPromptSurveyInitialPermissionStatusKey,
-      kPermissionPromptSurveyUrlKey};
+      kPermissionPromptSurveyUrlKey,
+  };
 
   auto key_to_value_filter_pair = GetKeyToValueFilterPairMap(prompt_parameters);
   std::map<std::string, bool> bits_data;
@@ -307,8 +311,7 @@ void PermissionHatsTriggerHelper::
     IncrementOneTimePermissionPromptsDecidedIfApplicable(
         ContentSettingsType type,
         PrefService* pref_service) {
-  if (base::FeatureList::IsEnabled(features::kOneTimePermission) &&
-      PermissionUtil::DoesSupportTemporaryGrants(type)) {
+  if (PermissionUtil::DoesSupportTemporaryGrants(type)) {
     pref_service->SetInteger(
         prefs::kOneTimePermissionPromptsDecidedCount,
         pref_service->GetInteger(prefs::kOneTimePermissionPromptsDecidedCount) +

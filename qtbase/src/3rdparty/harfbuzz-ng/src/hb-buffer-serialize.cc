@@ -114,6 +114,17 @@ _hb_buffer_serialize_glyphs_json (hb_buffer_t *buffer,
 
   *buf_consumed = 0;
   hb_position_t x = 0, y = 0;
+
+  /* Calculate the advance of the previous glyphs */
+  if (pos && (flags & HB_BUFFER_SERIALIZE_FLAG_NO_ADVANCES))
+  {
+    for (unsigned int i = 0; i < start; i++)
+    {
+      x += pos[i].x_advance;
+      y += pos[i].y_advance;
+    }
+  }
+
   for (unsigned int i = start; i < end; i++)
   {
     char b[1024];
@@ -151,7 +162,7 @@ _hb_buffer_serialize_glyphs_json (hb_buffer_t *buffer,
       p += hb_max (0, snprintf (p, ARRAY_LENGTH (b) - (p - b), ",\"cl\":%u", info[i].cluster));
     }
 
-    if (!(flags & HB_BUFFER_SERIALIZE_FLAG_NO_POSITIONS))
+    if (pos && !(flags & HB_BUFFER_SERIALIZE_FLAG_NO_POSITIONS))
     {
       p += hb_max (0, snprintf (p, ARRAY_LENGTH (b) - (p - b), ",\"dx\":%d,\"dy\":%d",
 		   x+pos[i].x_offset, y+pos[i].y_offset));
@@ -272,6 +283,17 @@ _hb_buffer_serialize_glyphs_text (hb_buffer_t *buffer,
 
   *buf_consumed = 0;
   hb_position_t x = 0, y = 0;
+
+  /* Calculate the advance of the previous glyphs */
+  if (pos && (flags & HB_BUFFER_SERIALIZE_FLAG_NO_ADVANCES))
+  {
+    for (unsigned int i = 0; i < start; i++)
+    {
+      x += pos[i].x_advance;
+      y += pos[i].y_advance;
+    }
+  }
+
   for (unsigned int i = start; i < end; i++)
   {
     char b[1024];
@@ -297,7 +319,7 @@ _hb_buffer_serialize_glyphs_text (hb_buffer_t *buffer,
       p += hb_max (0, snprintf (p, ARRAY_LENGTH (b) - (p - b), "=%u", info[i].cluster));
     }
 
-    if (!(flags & HB_BUFFER_SERIALIZE_FLAG_NO_POSITIONS))
+    if (pos && !(flags & HB_BUFFER_SERIALIZE_FLAG_NO_POSITIONS))
     {
       if (x+pos[i].x_offset || y+pos[i].y_offset)
         p += hb_max (0, snprintf (p, ARRAY_LENGTH (b) - (p - b), "@%d,%d", x+pos[i].x_offset, y+pos[i].y_offset));
@@ -427,7 +449,7 @@ _hb_buffer_serialize_unicode_text (hb_buffer_t *buffer,
  *   #HB_BUFFER_SERIALIZE_FLAG_NO_GLYPH_NAMES flag is set. Then,
  *   - If #HB_BUFFER_SERIALIZE_FLAG_NO_CLUSTERS is not set, `=` then #hb_glyph_info_t.cluster.
  *   - If #HB_BUFFER_SERIALIZE_FLAG_NO_POSITIONS is not set, the #hb_glyph_position_t in the format:
- *     - If both #hb_glyph_position_t.x_offset and #hb_glyph_position_t.y_offset are not 0, `@x_offset,y_offset`. Then,
+ *     - If #hb_glyph_position_t.x_offset and #hb_glyph_position_t.y_offset are not both 0, `@x_offset,y_offset`. Then,
  *     - `+x_advance`, then `,y_advance` if #hb_glyph_position_t.y_advance is not 0. Then,
  *   - If #HB_BUFFER_SERIALIZE_FLAG_GLYPH_EXTENTS is set, the #hb_glyph_extents_t in the format `<x_bearing,y_bearing,width,height>`
  *

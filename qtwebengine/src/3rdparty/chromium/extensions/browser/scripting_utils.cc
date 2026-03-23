@@ -4,6 +4,8 @@
 
 #include "extensions/browser/scripting_utils.h"
 
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -24,7 +26,6 @@
 #include "extensions/common/mojom/match_origin_as_fallback.mojom-shared.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
-#include "extensions/common/utils/content_script_utils.h"
 
 namespace extensions::scripting {
 
@@ -448,12 +449,14 @@ bool CanAccessTarget(const PermissionsData& permissions,
 }
 
 bool CheckAndLoadFiles(std::vector<std::string> files,
+                       script_parsing::ContentScriptType resources_type,
                        const Extension& extension,
                        bool requires_localization,
                        ResourcesLoadedCallback callback,
                        std::string* error_out) {
   std::vector<ExtensionResource> resources;
-  if (!GetFileResources(files, extension, &resources, error_out)) {
+  if (!GetFileResources(files, resources_type, extension, &resources,
+                        error_out)) {
     return false;
   }
 
@@ -466,6 +469,7 @@ bool CheckAndLoadFiles(std::vector<std::string> files,
 }
 
 bool GetFileResources(const std::vector<std::string>& files,
+                      script_parsing::ContentScriptType resources_type,
                       const Extension& extension,
                       std::vector<ExtensionResource>* resources_out,
                       std::string* error_out) {
@@ -481,6 +485,11 @@ bool GetFileResources(const std::vector<std::string>& files,
     ExtensionResource resource = extension.GetResource(file);
     if (resource.extension_root().empty() || resource.relative_path().empty()) {
       *error_out = ErrorUtils::FormatErrorMessage(kCouldNotLoadFileError, file);
+      return false;
+    }
+
+    if (!script_parsing::ValidateMimeTypeFromFileExtension(
+            resource.relative_path(), resources_type, error_out)) {
       return false;
     }
 

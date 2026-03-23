@@ -2,20 +2,23 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qttreepropertybrowser_p.h"
+#include "qtpropertybrowserutils_p.h"
 
-#include <QtCore/QOperatingSystemVersion>
-#include <QtCore/QHash>
-#include <QtGui/QFocusEvent>
-#include <QtGui/QIcon>
-#include <QtGui/QPainter>
-#include <QtGui/QPalette>
-#include <QtGui/QStyleHints>
-#include <QtWidgets/QApplication>
-#include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
-#include <QtWidgets/QItemDelegate>
-#include <QtWidgets/QStyle>
-#include <QtWidgets/QTreeWidget>
+#include <QtWidgets/qapplication.h>
+#include <QtWidgets/qboxlayout.h>
+#include <QtWidgets/qheaderview.h>
+#include <QtWidgets/qstyle.h>
+#include <QtWidgets/qstyleditemdelegate.h>
+#include <QtWidgets/qtreewidget.h>
+
+#include <QtGui/qevent.h>
+#include <QtGui/qicon.h>
+#include <QtGui/qpainter.h>
+#include <QtGui/qpalette.h>
+#include <QtGui/qstylehints.h>
+
+#include <QtCore/qhash.h>
+#include <QtCore/qoperatingsystemversion.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -186,11 +189,11 @@ void QtPropertyEditorView::mousePressEvent(QMouseEvent *event)
 }
 
 // ------------ QtPropertyEditorDelegate
-class QtPropertyEditorDelegate : public QItemDelegate
+class QtPropertyEditorDelegate : public QStyledItemDelegate
 {
     Q_OBJECT
 public:
-    using QItemDelegate::QItemDelegate;
+    using QStyledItemDelegate::QStyledItemDelegate;
 
     void setEditorPrivate(QtTreePropertyBrowserPrivate *editorPrivate)
         { m_editorPrivate = editorPrivate; }
@@ -220,53 +223,25 @@ private slots:
     void slotEditorDestroyed(QObject *object);
 
 private:
-    int indentation(const QModelIndex &index) const;
-
-    using EditorToPropertyMap = QHash<QWidget *, QtProperty *>;
-    mutable EditorToPropertyMap m_editorToProperty;
-
-    using PropertyToEditorMap = QHash<QtProperty *, QWidget *>;
-    mutable PropertyToEditorMap m_propertyToEditor;
     QtTreePropertyBrowserPrivate *m_editorPrivate = nullptr;
     mutable QTreeWidgetItem *m_editedItem = nullptr;
     mutable QWidget *m_editedWidget = nullptr;
+    mutable QtProperty *m_editedProperty = nullptr;
 };
-
-int QtPropertyEditorDelegate::indentation(const QModelIndex &index) const
-{
-    if (!m_editorPrivate)
-        return 0;
-
-    QTreeWidgetItem *item = m_editorPrivate->indexToItem(index);
-    int indent = 0;
-    while (item->parent()) {
-        item = item->parent();
-        ++indent;
-    }
-    if (m_editorPrivate->treeWidget()->rootIsDecorated())
-        ++indent;
-    return indent * m_editorPrivate->treeWidget()->indentation();
-}
 
 void QtPropertyEditorDelegate::slotEditorDestroyed(QObject *object)
 {
-    if (auto *w = qobject_cast<QWidget *>(object)) {
-        const auto it = m_editorToProperty.find(w);
-        if (it != m_editorToProperty.end()) {
-            m_propertyToEditor.remove(it.value());
-            m_editorToProperty.erase(it);
-        }
-        if (m_editedWidget == w) {
-            m_editedWidget = nullptr;
-            m_editedItem = nullptr;
-        }
+    if (m_editedWidget == object) {
+        m_editedWidget = nullptr;
+        m_editedItem = nullptr;
+        m_editedProperty = nullptr;
     }
 }
 
 void QtPropertyEditorDelegate::closeEditor(QtProperty *property)
 {
-    if (QWidget *w = m_propertyToEditor.value(property, nullptr))
-        w->deleteLater();
+    if (property == m_editedProperty)
+        m_editedWidget->deleteLater();
 }
 
 QWidget *QtPropertyEditorDelegate::createEditor(QWidget *parent,
@@ -284,8 +259,7 @@ QWidget *QtPropertyEditorDelegate::createEditor(QWidget *parent,
                 editor->installEventFilter(const_cast<QtPropertyEditorDelegate *>(this));
                 connect(editor, &QObject::destroyed,
                         this, &QtPropertyEditorDelegate::slotEditorDestroyed);
-                m_propertyToEditor[property] = editor;
-                m_editorToProperty[editor] = property;
+                m_editedProperty = property;
                 m_editedItem = item;
                 m_editedWidget = editor;
             }
@@ -295,6 +269,8 @@ QWidget *QtPropertyEditorDelegate::createEditor(QWidget *parent,
     return nullptr;
 }
 
+// Span the entire area, hiding the value icon to ensure no icon
+// is displayed when for example editing using a check box
 void QtPropertyEditorDelegate::updateEditorGeometry(QWidget *editor,
         const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
@@ -334,7 +310,7 @@ void QtPropertyEditorDelegate::paint(QPainter *painter, const QStyleOptionViewIt
     if (c.isValid())
         painter->fillRect(option.rect, c);
     opt.state &= ~QStyle::State_HasFocus;
-    QItemDelegate::paint(painter, opt, index);
+    QStyledItemDelegate::paint(painter, opt, index);
 
     opt.palette.setCurrentColorGroup(QPalette::Active);
     QColor color = static_cast<QRgb>(QApplication::style()->styleHint(QStyle::SH_Table_GridLineColor, &opt));
@@ -350,7 +326,7 @@ void QtPropertyEditorDelegate::paint(QPainter *painter, const QStyleOptionViewIt
 QSize QtPropertyEditorDelegate::sizeHint(const QStyleOptionViewItem &option,
             const QModelIndex &index) const
 {
-    return QItemDelegate::sizeHint(option, index) + QSize(3, 4);
+    return QStyledItemDelegate::sizeHint(option, index) + QSize(3, 4);
 }
 
 bool QtPropertyEditorDelegate::eventFilter(QObject *object, QEvent *event)
@@ -360,7 +336,7 @@ bool QtPropertyEditorDelegate::eventFilter(QObject *object, QEvent *event)
         if (fe->reason() == Qt::ActiveWindowFocusReason)
             return false;
     }
-    return QItemDelegate::eventFilter(object, event);
+    return QStyledItemDelegate::eventFilter(object, event);
 }
 
 //  -------- QtTreePropertyBrowserPrivate implementation
@@ -400,7 +376,7 @@ void QtTreePropertyBrowserPrivate::init(QWidget *parent)
     layout->setContentsMargins(QMargins());
     m_treeWidget = new QtPropertyEditorView(parent);
     m_treeWidget->setEditorPrivate(this);
-    m_treeWidget->setIconSize(QSize(18, 18));
+    m_treeWidget->setIconSize(QtPropertyBrowserUtils::itemViewIconSize);
     layout->addWidget(m_treeWidget);
 
     m_treeWidget->setColumnCount(2);

@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-rsum/scalar.c.in
 //   Generator: tools/xngen
@@ -6,17 +7,19 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
-#include "xnnpack/reduce.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/reduce.h"
 
 
 void xnn_qs8_rsum_ukernel__scalar_u2(
     size_t batch,
     const int8_t* restrict input,
     int32_t* restrict output,
-    const struct xnn_qs8_rsum_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_qs8_rsum_params* restrict params)
 {
   assert(batch != 0);
   assert(input != NULL);

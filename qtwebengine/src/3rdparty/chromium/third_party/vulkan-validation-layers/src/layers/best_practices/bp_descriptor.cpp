@@ -24,15 +24,12 @@ bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const
                                                           VkDescriptorSet* pDescriptorSets, const ErrorObject& error_obj,
                                                           vvl::AllocateDescriptorSetsData& ads_state_data) const {
     bool skip = false;
-    skip |= BaseClass::PreCallValidateAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, error_obj, ads_state_data);
-    if (skip) return skip;
-
-    const auto pool_state = Get<bp_state::DescriptorPool>(pAllocateInfo->descriptorPool);
+    const auto pool_state = Get<vvl::DescriptorPool>(pAllocateInfo->descriptorPool);
     ASSERT_AND_RETURN_SKIP(pool_state);
 
     // if the number of freed sets > 0, it implies they could be recycled instead if desirable
     // this warning is specific to Arm
-    if (VendorCheckEnabled(kBPVendorArm) && (pool_state->freed_count > 0)) {
+    if (VendorCheckEnabled(kBPVendorArm) && (pool_state->GetFreedCount() > 0)) {
         skip |= LogPerformanceWarning(
             "BestPractices-Arm-vkAllocateDescriptorSets-suboptimal-reuse", device, error_obj.location,
             "%s Descriptor set memory was allocated via vkAllocateDescriptorSets() for sets which were previously freed in the "
@@ -60,42 +57,15 @@ bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const
                     "BestPractices-vkAllocateDescriptorSets-EmptyDescriptorPoolType", ads_pool_state->Handle(), error_obj.location,
                     "Unable to allocate %" PRIu32
                     " descriptors of type %s from %s"
-                    ". This pool only has %" PRIu32 " descriptors of this type remaining.",
+                    ". This pool only has %" PRIu32 " descriptors of this type remaining.\n%s",
                     ads_state_data.required_descriptors_by_type.at(it->first), string_VkDescriptorType(VkDescriptorType(it->first)),
-                    FormatHandle(*ads_pool_state).c_str(), available_count);
+                    FormatHandle(*ads_pool_state).c_str(), available_count,
+                    device_state->PrintDescriptorAllocation(*pAllocateInfo, *pool_state, VkDescriptorType(it->first)).c_str());
             }
         }
     }
 
     return skip;
-}
-
-void BestPractices::ManualPostCallRecordAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo* pAllocateInfo,
-                                                               VkDescriptorSet* pDescriptorSets, const RecordObject& record_obj,
-                                                               vvl::AllocateDescriptorSetsData& ads_state) {
-    if (record_obj.result == VK_SUCCESS) {
-        if (auto pool_state = Get<bp_state::DescriptorPool>(pAllocateInfo->descriptorPool)) {
-            // we record successful allocations by subtracting the allocation count from the last recorded free count
-            const auto alloc_count = pAllocateInfo->descriptorSetCount;
-            // clamp the unsigned subtraction to the range [0, last_free_count]
-            if (pool_state->freed_count > alloc_count) {
-                pool_state->freed_count -= alloc_count;
-            } else {
-                pool_state->freed_count = 0;
-            }
-        }
-    }
-}
-
-void BestPractices::PostCallRecordFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, uint32_t descriptorSetCount,
-                                                     const VkDescriptorSet* pDescriptorSets, const RecordObject& record_obj) {
-    BaseClass::PostCallRecordFreeDescriptorSets(device, descriptorPool, descriptorSetCount, pDescriptorSets, record_obj);
-    if (record_obj.result == VK_SUCCESS) {
-        // we want to track frees because we're interested in suggesting re-use
-        if (auto pool_state = Get<bp_state::DescriptorPool>(descriptorPool)) {
-            pool_state->freed_count += descriptorSetCount;
-        }
-    }
 }
 
 bool BestPractices::PreCallValidateCreateSampler(VkDevice device, const VkSamplerCreateInfo* pCreateInfo,
@@ -193,7 +163,27 @@ bool BestPractices::PreCallValidateCreateDescriptorUpdateTemplate(VkDevice devic
     return skip;
 }
 
-std::shared_ptr<vvl::DescriptorPool> BestPractices::CreateDescriptorPoolState(VkDescriptorPool handle,
-                                                                              const VkDescriptorPoolCreateInfo* create_info) {
-    return std::static_pointer_cast<vvl::DescriptorPool>(std::make_shared<bp_state::DescriptorPool>(*this, handle, create_info));
+bool BestPractices::PreCallValidateCreateDescriptorPool(VkDevice device, const VkDescriptorPoolCreateInfo* pCreateInfo,
+                                                        const VkAllocationCallbacks* pAllocator, VkDescriptorPool* pDescriptorPool,
+                                                        const ErrorObject& error_obj) const {
+    bool skip = false;
+
+    const auto* mutable_descriptor_type_ci = vku::FindStructInPNextChain<VkMutableDescriptorTypeCreateInfoEXT>(pCreateInfo->pNext);
+    if (mutable_descriptor_type_ci && mutable_descriptor_type_ci->mutableDescriptorTypeListCount > pCreateInfo->poolSizeCount) {
+        std::stringstream msg;
+        if (pCreateInfo->poolSizeCount == 1) {
+            msg << "first element";
+        } else {
+            msg << "first " << pCreateInfo->poolSizeCount << "elements";
+        }
+
+        skip |= LogWarning(
+            "BestPractices-MutableDescriptor-TypeListCount", device,
+            error_obj.location.pNext(Struct::VkMutableDescriptorTypeCreateInfoEXT, Field::mutableDescriptorTypeListCount),
+            "is %" PRIu32 ", but VkDescriptorPoolCreateInfo::poolSizeCount is only %" PRIu32
+            ". Only %s from VkMutableDescriptorTypeCreateInfoEXT::pMutableDescriptorTypeLists will be used",
+            mutable_descriptor_type_ci->mutableDescriptorTypeListCount, pCreateInfo->poolSizeCount, msg.str().c_str());
+    }
+
+    return skip;
 }

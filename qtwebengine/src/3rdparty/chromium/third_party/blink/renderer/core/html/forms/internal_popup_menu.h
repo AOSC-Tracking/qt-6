@@ -60,7 +60,9 @@ class CORE_EXPORT InternalPopupMenu final : public PopupMenu,
   // PagePopupClient functions:
   void WriteDocument(SegmentedBuffer&) override;
   CSSFontSelector* CreateCSSFontSelector(Document& popup_document) override;
-  void SetValueAndClosePopup(int, const String&) override;
+  void SetValueAndClosePopup(int,
+                             const String&,
+                             bool is_keyboard_event) override;
   void SetValue(const String&) override;
   void CancelPopup() override;
   Element& OwnerElement() override;
@@ -75,7 +77,6 @@ class CORE_EXPORT InternalPopupMenu final : public PopupMenu,
   Member<HTMLSelectElement> owner_element_;
   PagePopup* popup_;
   bool needs_update_;
-  bool taller_options_ = false;
 };
 
 }  // namespace blink

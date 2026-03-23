@@ -10,6 +10,8 @@ import("../../../../../scripts/build/typescript/typescript.gni")
 generate_css("css_files") {
   sources = [
     "baseInsightComponent.css",
+    "checklist.css",
+    "networkDependencyTreeInsight.css",
     "table.css",
   ]
 }
@@ -18,19 +20,25 @@ devtools_module("insights") {
   sources = [
     "BaseInsightComponent.ts",
     "CLSCulprits.ts",
+    "Cache.ts",
+    "Checklist.ts",
     "DOMSize.ts",
     "DocumentLatency.ts",
+    "DuplicatedJavaScript.ts",
     "EventRef.ts",
     "FontDisplay.ts",
     "ForcedReflow.ts",
     "Helpers.ts",
+    "INPBreakdown.ts",
     "ImageDelivery.ts",
-    "InteractionToNextPaint.ts",
+    "LCPBreakdown.ts",
     "LCPDiscovery.ts",
-    "LCPPhases.ts",
-    "LongCriticalNetworkTree.ts",
+    "LegacyJavaScript.ts",
+    "ModernHTTP.ts",
+    "NetworkDependencyTree.ts",
     "NodeLink.ts",
     "RenderBlocking.ts",
+    "ScriptRef.ts",
     "SidebarInsight.ts",
     "SlowCSSSelector.ts",
     "Table.ts",
@@ -75,6 +83,10 @@ ts_library("unittests") {
   sources = [
     "BaseInsightComponent.test.ts",
     "CLSCulprits.test.ts",
+    "INPBreakdown.test.ts",
+    "NetworkDependencyTree.test.ts",
+    "NodeLink.test.ts",
+    "Table.test.ts",
   ]
 
   deps = [

@@ -1,5 +1,6 @@
 // Copyright (C) 2018 Crimson AS <info@crimson.no>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4mapobject_p.h"
 #include "qv4mapiterator_p.h"
@@ -49,7 +50,7 @@ ReturnedValue WeakMapCtor::construct(const FunctionObject *f, const Value *argv,
             Q_ASSERT(iter);
 
             ScopedValue obj(scope);
-            Value *arguments = scope.alloc(2);
+            Value *arguments = scope.constructUndefined(2);
             ScopedValue done(scope);
             forever {
                 done = Runtime::IteratorNext::call(scope.engine, iter, obj);
@@ -278,7 +279,7 @@ ReturnedValue MapPrototype::method_forEach(const FunctionObject *b, const Value 
     if (argc > 1)
         thisArg = ScopedValue(scope, argv[1]);
 
-    Value *arguments = scope.alloc(3);
+    Value *arguments = scope.constructUndefined(3);
     arguments[2] = that;
 
     ESTable::ShiftObserver observer{};

@@ -110,6 +110,10 @@ class FrameStateFunctionInfo {
 
   int local_count() const { return local_count_; }
   uint16_t parameter_count() const { return parameter_count_; }
+  uint16_t parameter_count_without_receiver() const {
+    DCHECK_GT(parameter_count_, 0);
+    return parameter_count_ - 1;
+  }
   uint16_t max_arguments() const { return max_arguments_; }
   IndirectHandle<SharedFunctionInfo> shared_info() const {
     return shared_info_;
@@ -146,6 +150,9 @@ class FrameStateFunctionInfo {
   const IndirectHandle<SharedFunctionInfo> shared_info_;
   const MaybeIndirectHandle<BytecodeArray> bytecode_array_;
 };
+
+V8_EXPORT_PRIVATE bool operator==(FrameStateFunctionInfo const&,
+                                  FrameStateFunctionInfo const&);
 
 #if V8_ENABLE_WEBASSEMBLY
 class JSToWasmFrameStateFunctionInfo : public FrameStateFunctionInfo {
@@ -191,13 +198,20 @@ class FrameStateInfo final {
                             : info_->bytecode_array();
   }
   uint16_t parameter_count() const {
-    return info_ == nullptr ? 0 : info_->parameter_count();
+    DCHECK_NOT_NULL(info_);
+    return info_->parameter_count();
+  }
+  uint16_t parameter_count_without_receiver() const {
+    DCHECK_NOT_NULL(info_);
+    return info_->parameter_count_without_receiver();
   }
   uint16_t max_arguments() const {
-    return info_ == nullptr ? 0 : info_->max_arguments();
+    DCHECK_NOT_NULL(info_);
+    return info_->max_arguments();
   }
   int local_count() const {
-    return info_ == nullptr ? 0 : info_->local_count();
+    DCHECK_NOT_NULL(info_);
+    return info_->local_count();
   }
   int stack_count() const {
     return type() == FrameStateType::kUnoptimizedFunction ? 1 : 0;
@@ -210,14 +224,16 @@ class FrameStateInfo final {
   const FrameStateFunctionInfo* const info_;
 };
 
-bool operator==(FrameStateInfo const&, FrameStateInfo const&);
-bool operator!=(FrameStateInfo const&, FrameStateInfo const&);
+V8_EXPORT_PRIVATE bool operator==(FrameStateInfo const&, FrameStateInfo const&);
+V8_EXPORT_PRIVATE bool operator!=(FrameStateInfo const&, FrameStateInfo const&);
 
 size_t hash_value(FrameStateInfo const&);
 
 std::ostream& operator<<(std::ostream&, FrameStateInfo const&);
 
 enum class ContinuationFrameStateMode { EAGER, LAZY, LAZY_WITH_CATCH };
+
+uint8_t DeoptimizerParameterCountFor(ContinuationFrameStateMode mode);
 
 class FrameState;
 

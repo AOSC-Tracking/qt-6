@@ -25,6 +25,7 @@ component("growth") {
     "//ash/constants",
     "//ash/resources/vector_icons",
     "//ash/webui/mall/resources:resources_grit",
+    "//ash/webui/personalization_app/resources:resources_grit",
     "//ash/webui/print_management/resources:resources_grit",
     "//base",
     "//build:branding_buildflags",
@@ -103,7 +104,7 @@ source_set("unit_tests") {
     "//ash/constants",
     "//base/test:test_support",
     "//components/account_id",
-    "//components/prefs:prefs",
+    "//components/prefs",
     "//components/prefs:test_support",
     "//components/signin/public/identity_manager:tribool",
     "//components/user_manager:test_support",
@@ -115,4 +116,8 @@ source_set("unit_tests") {
     "campaigns_configuration_provider_unittest.cc",
     "campaigns_manager_unittest.cc",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

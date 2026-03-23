@@ -78,7 +78,7 @@ func (cmd) Desc() string {
 
 func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, error) {
 	c.flags.results.RegisterFlags(cfg)
-	c.flags.auth.Register(flag.CommandLine, auth.DefaultAuthOptions())
+	c.flags.auth.Register(flag.CommandLine, auth.DefaultAuthOptions(cfg.OsWrapper))
 	flag.BoolVar(&c.flags.verbose, "verbose", false, "emit additional logging")
 	flag.BoolVar(&c.flags.generateExplicitTags, "generate-explicit-tags", false,
 		"Use the most explicit tags for expectations instead of several broad ones")
@@ -99,9 +99,11 @@ func loadTestList(path string) ([]query.Query, error) {
 	return out, nil
 }
 
+// TODO(crbug.com/344014313): Add unittests once expectations.Load() and
+// expectations.Save() use dependency injection.
 func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 	if len(c.flags.expectations) == 0 {
-		c.flags.expectations = common.DefaultExpectationsPaths()
+		c.flags.expectations = common.DefaultExpectationsPaths(cfg.OsWrapper)
 	}
 
 	// Validate command line arguments
@@ -124,7 +126,7 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 	}
 
 	log.Println("loading test list...")
-	testlist, err := loadTestList(common.DefaultTestListPath())
+	testlist, err := loadTestList(common.DefaultTestListPath(cfg.OsWrapper))
 	if err != nil {
 		return err
 	}

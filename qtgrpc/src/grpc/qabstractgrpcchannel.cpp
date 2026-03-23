@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include <QtGrpc/private/qabstractgrpcchannel_p.h>
-#include <QtGrpc/qabstractgrpcchannel.h>
 #include <QtGrpc/qgrpccalloptions.h>
 #include <QtGrpc/qgrpccallreply.h>
 #include <QtGrpc/qgrpcoperationcontext.h>
@@ -35,7 +34,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn virtual void QAbstractGrpcChannel::call(std::shared_ptr<QGrpcOperationContext> operationContext) = 0
+    \fn virtual void QAbstractGrpcChannel::call(QGrpcOperationContext *operationContext, QByteArray &&messageData) = 0
     \since 6.7
 
 //! [abstract-rpc-desc]
@@ -44,8 +43,9 @@ QT_BEGIN_NAMESPACE
     communicate with the corresponding RPC handler, which is a derived type of
     the QGrpcOperation object.
 
-    This function should start the corresponding RPC on the channel side. The
-    implementation must be asynchronous and must not block the calling thread.
+    This function should start the corresponding RPC on the channel side with
+    the serialized \a messageData. The implementation must be asynchronous and
+    must not block the calling thread.
 
     \note It is the channel's responsibility to support and restrict the subset
     of features that its RPC type allows.
@@ -53,21 +53,21 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn virtual void QAbstractGrpcChannel::serverStream(std::shared_ptr<QGrpcOperationContext> operationContext) = 0
+    \fn virtual void QAbstractGrpcChannel::serverStream(QGrpcOperationContext *operationContext, QByteArray &&messageData) = 0
     \since 6.7
 
     \include qabstractgrpcchannel.cpp abstract-rpc-desc
 */
 
 /*!
-    \fn virtual void QAbstractGrpcChannel::clientStream(std::shared_ptr<QGrpcOperationContext> operationContext) = 0
+    \fn virtual void QAbstractGrpcChannel::clientStream(QGrpcOperationContext *operationContext, QByteArray &&messageData) = 0
     \since 6.7
 
     \include qabstractgrpcchannel.cpp abstract-rpc-desc
 */
 
 /*!
-    \fn virtual void QAbstractGrpcChannel::bidiStream(std::shared_ptr<QGrpcOperationContext> operationContext) = 0
+    \fn virtual void QAbstractGrpcChannel::bidiStream(QGrpcOperationContext *operationContext, QByteArray &&messageData) = 0
     \since 6.7
 
     \include qabstractgrpcchannel.cpp abstract-rpc-desc
@@ -77,7 +77,7 @@ QT_BEGIN_NAMESPACE
     Default-constructs the QAbstractGrpcChannel.
 */
 QAbstractGrpcChannel::QAbstractGrpcChannel()
-    : d_ptr(std::make_unique<QAbstractGrpcChannelPrivate>(QGrpcChannelOptions{}))
+    : d_ptr(std::make_unique<QAbstractGrpcChannelPrivate>(QGrpcChannelOptions{}, this))
 {
 }
 
@@ -96,8 +96,23 @@ QAbstractGrpcChannel::QAbstractGrpcChannel(QAbstractGrpcChannelPrivate &dd) : d_
     Constructs the QAbstractGrpcChannel using the specified \a options.
 */
 QAbstractGrpcChannel::QAbstractGrpcChannel(const QGrpcChannelOptions &options)
-    : d_ptr(std::make_unique<QAbstractGrpcChannelPrivate>(options))
+    : d_ptr(std::make_unique<QAbstractGrpcChannelPrivate>(options, this))
 {
+}
+
+QAbstractGrpcChannel::QAbstractGrpcChannel(QGrpcInterceptorChain interceptorChain)
+    : QAbstractGrpcChannel()
+{
+    Q_D(QAbstractGrpcChannel);
+    d->interceptorEngine.setInterceptorChain(std::move(interceptorChain));
+}
+
+QAbstractGrpcChannel::QAbstractGrpcChannel(const QGrpcChannelOptions &options,
+                                           QGrpcInterceptorChain interceptorChain)
+    : QAbstractGrpcChannel(options)
+{
+    Q_D(QAbstractGrpcChannel);
+    d->interceptorEngine.setInterceptorChain(std::move(interceptorChain));
 }
 
 /*!
@@ -140,100 +155,10 @@ void QAbstractGrpcChannel::setChannelOptions(QGrpcChannelOptions &&options)
     d->channelOptions = std::move(options);
 }
 
-/*!
-    \internal
-
-//! [private-rpc-desc]
-    This function is called when a user initiates a new RPC through the
-    generated client interface via QGrpcClientBase. It creates the
-    QGrpcOperationContext and the corresponding RPC handler, establishing the
-    required connections between the two.
-//! [private-rpc-desc]
-*/
-std::unique_ptr<QGrpcCallReply> QAbstractGrpcChannel::call(QLatin1StringView method,
-                                                           QLatin1StringView service,
-                                                           QByteArrayView arg,
-                                                           const QGrpcCallOptions &options)
+const QGrpcInterceptorChain &QAbstractGrpcChannel::interceptorChain() const & noexcept
 {
-    auto operationContext = std::make_shared<
-        QGrpcOperationContext>(method, service, arg, options, serializer(),
-                               QGrpcOperationContext::PrivateConstructor());
-
-    QObject::connect(operationContext.get(), &QGrpcOperationContext::writeMessageRequested,
-                     operationContext.get(), []() {
-                         Q_ASSERT_X(false, "QAbstractGrpcChannel::call",
-                                    "QAbstractGrpcChannel::call disallows the "
-                                    "'writeMessageRequested' signal from "
-                                    "QGrpcOperationContext");
-                     });
-
-    auto reply = std::make_unique<QGrpcCallReply>(operationContext);
-    call(std::move(operationContext));
-
-    return reply;
-}
-
-/*!
-    \internal
-    \include qabstractgrpcchannel.cpp private-rpc-desc
-*/
-std::unique_ptr<QGrpcServerStream>
-QAbstractGrpcChannel::serverStream(QLatin1StringView method, QLatin1StringView service,
-                                   QByteArrayView arg, const QGrpcCallOptions &options)
-{
-    auto operationContext = std::make_shared<
-        QGrpcOperationContext>(method, service, arg, options, serializer(),
-                               QGrpcOperationContext::PrivateConstructor());
-
-    QObject::connect(operationContext.get(), &QGrpcOperationContext::writeMessageRequested,
-                     operationContext.get(), []() {
-                         Q_ASSERT_X(false, "QAbstractGrpcChannel::serverStream",
-                                    "QAbstractGrpcChannel::serverStream disallows "
-                                    "the 'writeMessageRequested' signal from "
-                                    "QGrpcOperationContext");
-                     });
-
-    auto stream = std::make_unique<QGrpcServerStream>(operationContext);
-    serverStream(std::move(operationContext));
-
-    return stream;
-}
-
-/*!
-    \internal
-    \include qabstractgrpcchannel.cpp private-rpc-desc
-*/
-std::unique_ptr<QGrpcClientStream>
-QAbstractGrpcChannel::clientStream(QLatin1StringView method, QLatin1StringView service,
-                                   QByteArrayView arg, const QGrpcCallOptions &options)
-{
-    auto operationContext = std::make_shared<
-        QGrpcOperationContext>(method, service, arg, options, serializer(),
-                               QGrpcOperationContext::PrivateConstructor());
-
-    auto stream = std::make_unique<QGrpcClientStream>(operationContext);
-    clientStream(std::move(operationContext));
-
-    return stream;
-}
-
-/*!
-    \internal
-    \include qabstractgrpcchannel.cpp private-rpc-desc
-*/
-std::unique_ptr<QGrpcBidiStream> QAbstractGrpcChannel::bidiStream(QLatin1StringView method,
-                                                                  QLatin1StringView service,
-                                                                  QByteArrayView arg,
-                                                                  const QGrpcCallOptions &options)
-{
-    auto operationContext = std::make_shared<
-        QGrpcOperationContext>(method, service, arg, options, serializer(),
-                               QGrpcOperationContext::PrivateConstructor());
-
-    auto stream = std::make_unique<QGrpcBidiStream>(operationContext);
-    bidiStream(std::move(operationContext));
-
-    return stream;
+    Q_D(const QAbstractGrpcChannel);
+    return d->interceptorEngine.interceptorChain();
 }
 
 QT_END_NAMESPACE

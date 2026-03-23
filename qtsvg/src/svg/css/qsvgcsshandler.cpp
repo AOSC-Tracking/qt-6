@@ -13,39 +13,6 @@ QT_BEGIN_NAMESPACE
 
 namespace {
 
-// Parses the angle from a string and convert it to degrees.
-qreal qsvg_parseAngle(QStringView str, bool *ok = nullptr)
-{
-    QStringView numStr = str.trimmed();
-
-    if (numStr.isEmpty()) {
-        if (ok)
-            *ok = false;
-        return false;
-    }
-
-    qreal unitFactor;
-    if (numStr.endsWith(QLatin1String("deg"))) {
-        numStr.chop(3);
-        unitFactor = 1.0;
-    } else if (numStr.endsWith(QLatin1String("grad"))) {
-        numStr.chop(4);
-        // deg = grad * 0.9;
-        unitFactor = 0.9;
-    } else if (numStr.endsWith(QLatin1String("rad"))) {
-        numStr.chop(3);
-        unitFactor = 180.0 / Q_PI;
-    } else if (numStr.endsWith(QLatin1String("turn"))) {
-        numStr.chop(4);
-        // one circle = one turn
-        unitFactor = 360.0;
-    } else {
-        unitFactor = 0.0;
-    }
-
-    return QSvgUtils::toDouble(numStr, ok) * unitFactor;
-}
-
 struct CssKeyFrameValue{
     qreal keyFrame;
     QList<QCss::Value> values;
@@ -174,7 +141,7 @@ bool fillTransformProperty(const QList<CssKeyFrameValue> &keyFrames, QSvgAnimate
                     components.append(component);
                 } else if (transformType == QStringLiteral("rotate")) {
                     QSvgAnimatedPropertyTransform::TransformComponent component;
-                    qreal rotationAngle = qsvg_parseAngle(args.value(0));
+                    qreal rotationAngle = QSvgUtils::parseAngle(args.value(0)).value_or(0);
                     component.type = QSvgAnimatedPropertyTransform::TransformComponent::Rotate;
                     component.values.append(rotationAngle);
                     component.values.append(0);
@@ -182,8 +149,8 @@ bool fillTransformProperty(const QList<CssKeyFrameValue> &keyFrames, QSvgAnimate
                     components.append(component);
                 } else if (transformType == QStringLiteral("skew")) {
                     QSvgAnimatedPropertyTransform::TransformComponent component;
-                    qreal skew0 = qsvg_parseAngle(args.value(0));
-                    qreal skew1 = qsvg_parseAngle(args.value(1));
+                    qreal skew0 = QSvgUtils::parseAngle(args.value(0)).value_or(0);
+                    qreal skew1 = QSvgUtils::parseAngle(args.value(1)).value_or(0);
                     component.type = QSvgAnimatedPropertyTransform::TransformComponent::Skew;
                     component.values.append(skew0);
                     component.values.append(skew1);
@@ -225,6 +192,30 @@ bool fillTransformProperty(const QList<CssKeyFrameValue> &keyFrames, QSvgAnimate
         prop->appendComponents(comp);
     }
     prop->setTransformCount(keyFramesComponents.first().size());
+
+    return true;
+}
+
+bool fillOffsetDistanceProperty(const QList<CssKeyFrameValue> &keyFrames, QSvgAnimatedPropertyFloat *prop)
+{
+    for (CssKeyFrameValue keyFrame : keyFrames) {
+        if (keyFrame.values.size() != 1)
+            return false;
+
+        QString offsetDistance = keyFrame.values.first().toString();
+
+        bool ok = false;
+        qreal distance = offsetDistance.toDouble(&ok);
+        if (!ok)
+            return false;
+
+        QCss::Value::Type type = keyFrame.values.first().type;
+        if (type != QCss::Value::Percentage && !qFuzzyCompare(distance, 0.))
+            return false;
+        distance /= 100;
+        prop->appendValue(distance);
+        prop->appendKeyFrame(keyFrame.keyFrame);
+    }
 
     return true;
 }
@@ -279,6 +270,8 @@ QSvgCssAnimation *QSvgCssHandler::createAnimation(QStringView name)
         else if (property == QLatin1StringView("fill-opacity") || property == QLatin1StringView("stroke-opacity")
                  || property == QLatin1StringView("opacity"))
             result = fillOpacityProperty(keyFrames, static_cast<QSvgAnimatedPropertyFloat*>(prop));
+        else if (property == QLatin1StringView("offset-distance"))
+            result = fillOffsetDistanceProperty(keyFrames, static_cast<QSvgAnimatedPropertyFloat*>(prop));
 
         if (!result) {
             delete prop;
@@ -292,6 +285,30 @@ QSvgCssAnimation *QSvgCssHandler::createAnimation(QStringView name)
         animation->appendProperty(it.value());
 
     return animation;
+}
+
+QSvgCssEasingPtr QSvgCssHandler::createEasing(QSvgCssValues::EasingFunction easingFunction,
+                                              const QSvgCssValues::EasingValues &values)
+{
+    QSvgCssEasingPtr easing;
+
+    switch (easingFunction) {
+    case QSvgCssValues::EasingFunction::Ease:
+    case QSvgCssValues::EasingFunction::EaseIn:
+    case QSvgCssValues::EasingFunction::EaseOut:
+    case QSvgCssValues::EasingFunction::EaseInOut:
+    case QSvgCssValues::EasingFunction::Linear:
+        easing = createEasingFromKeyword(easingFunction);
+        break;
+    case QSvgCssValues::EasingFunction::Steps:
+        easing = createStepsEasing(std::get<QSvgCssValues::StepValues>(values));
+        break;
+    default:
+        easing = createEasingFromKeyword(QSvgCssValues::EasingFunction::Ease);
+        break;
+    }
+
+    return easing;
 }
 
 void QSvgCssHandler::collectAnimations(const QCss::StyleSheet &sheet)
@@ -327,12 +344,20 @@ void QSvgCssHandler::parseCSStoXMLAttrs(const QList<QCss::Declaration> &declarat
         const int valCount = decl.d->values.size();
         for (int i = 0; i < valCount; ++i) {
             QCss::Value val = decl.d->values.at(i);
-            if (val.type == QCss::Value::TermOperatorComma) {
+            switch (val.type) {
+            case QCss::Value::TermOperatorComma:
                 valueStr += QLatin1Char(';');
-            } else if (val.type == QCss::Value::Uri) {
-                valueStr.prepend(QLatin1String("url("));
-                valueStr.append(QLatin1Char(')'));
-            } else if (val.type == QCss::Value::Function) {
+                break;
+            case QCss::Value::Uri:
+            {
+                QString temp = val.toString();
+                temp.prepend(QLatin1String("url("));
+                temp.append(QLatin1Char(')'));
+                valueStr += temp;
+                break;
+            }
+            case QCss::Value::Function:
+            {
                 QStringList lst = val.variant.toStringList();
                 valueStr.append(lst.at(0));
                 valueStr.append(QLatin1Char('('));
@@ -342,16 +367,28 @@ void QSvgCssHandler::parseCSStoXMLAttrs(const QList<QCss::Declaration> &declarat
                         valueStr.append(QLatin1Char(','));
                 }
                 valueStr.append(QLatin1Char(')'));
-            } else if (val.type == QCss::Value::KnownIdentifier) {
+                break;
+            }
+            case QCss::Value::KnownIdentifier:
                 switch (val.variant.toInt()) {
                 case QCss::Value_None:
-                    valueStr = QLatin1String("none");
+                    valueStr += QLatin1String("none");
+                    break;
+                case QCss::Value_Auto:
+                    valueStr += QLatin1String("auto");
                     break;
                 default:
+                    valueStr += val.toString();
                     break;
                 }
-            } else
+                break;
+            case QCss::Value::Percentage:
+                valueStr += val.toString() + QLatin1Char('%');
+                break;
+            default:
                 valueStr += val.toString();
+                break;
+            }
 
             if (i + 1 < valCount)
                 valueStr += QLatin1Char(' ');
@@ -436,6 +473,51 @@ void QSvgCssHandler::styleLookup(QSvgNode *node, QXmlStreamAttributes &attribute
     QList<QCss::Declaration> decls = m_selector->declarationsForNode(cssNode);
 
     parseCSStoXMLAttrs(decls, attributes);
+}
+
+QSvgCssEasingPtr QSvgCssHandler::createEasingFromKeyword(QSvgCssValues::EasingFunction easingFunction)
+{
+    constexpr QPointF easeC1(0.25, 0.1);
+    constexpr QPointF easeC2(0.25, 1);
+    constexpr QPointF easeInC1(0.42, 0);
+    constexpr QPointF easeInC2(1, 1);
+    constexpr QPointF easeOutC1(0, 0);
+    constexpr QPointF easeOutC2(0.58, 1);
+    constexpr QPointF linearC1(0, 0);
+    constexpr QPointF linearC2(1, 1);
+
+    QSvgCssEasingPtr easing;
+
+    switch (easingFunction) {
+    case QSvgCssValues::EasingFunction::Ease:
+        easing = std::make_unique<QSvgCssCubicBezierEasing>(easingFunction, easeC1, easeC2);
+        break;
+    case QSvgCssValues::EasingFunction::EaseIn:
+        easing = std::make_unique<QSvgCssCubicBezierEasing>(easingFunction, easeInC1, easeInC2);
+        break;
+    case QSvgCssValues::EasingFunction::EaseOut:
+        easing = std::make_unique<QSvgCssCubicBezierEasing>(easingFunction, easeOutC1, easeOutC2);
+        break;
+    case QSvgCssValues::EasingFunction::EaseInOut:
+        easing = std::make_unique<QSvgCssCubicBezierEasing>(easingFunction, easeInC1, easeOutC2);
+        break;
+    case QSvgCssValues::EasingFunction::Linear:
+        easing = std::make_unique<QSvgCssCubicBezierEasing>(easingFunction, linearC1, linearC2);
+        break;
+    default:
+        Q_UNREACHABLE();
+        break;
+    }
+
+    return easing;
+}
+
+QSvgCssEasingPtr QSvgCssHandler::createStepsEasing(const QSvgCssValues::StepValues &values)
+{
+    quint32 steps = values.steps;
+    QSvgCssValues::StepPosition position = values.stepPosition;
+
+    return std::make_unique<QSvgCssStepsEasing>(steps, position);
 }
 
 QT_END_NAMESPACE

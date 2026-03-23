@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 #ifndef QV4STRING_H
 #define QV4STRING_H
 
@@ -138,6 +139,7 @@ int String::length() const {
 
 struct Q_QML_EXPORT StringOrSymbol : public Managed {
     V4_MANAGED(StringOrSymbol, Managed)
+    Q_MANAGED_TYPE(StringOrSymbol);
     V4_NEEDS_DESTROY
     enum {
         IsStringOrSymbol = true

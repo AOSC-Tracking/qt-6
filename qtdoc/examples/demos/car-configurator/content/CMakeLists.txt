@@ -1,7 +1,6 @@
 qt_add_library(CarConfiguratorContent STATIC)
 qt6_add_qml_module(CarConfiguratorContent
     URI "content"
-    VERSION 1.0
     RESOURCE_PREFIX "/qt/qml"
     QML_FILES
         App.qml
@@ -21,15 +20,17 @@ qt6_add_qml_module(CarConfiguratorContent
         WallEffect1/WallEffect1.qml
         WallEffect2/WallEffect2.qml
         WallEffect3/WallEffect3.qml
+        SceneRain.qml
     RESOURCES
         images/builtWithQt.png
+        images/dot.png
+        images/ripple.png
         assets/assets_download.json
-)
-
-set(QML_IMPORT_PATH
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}/../imports
-    ${CMAKE_CURRENT_SOURCE_DIR}/../asset_imports
-    CACHE STRING ""
-    FORCE
+    DEPENDENCIES
+        Qt6::Quick3D
+    IMPORT_PATH
+        ${CMAKE_CURRENT_BINARY_DIR}
+        ${CMAKE_CURRENT_BINARY_DIR}/../qml
+        ${CMAKE_CURRENT_BINARY_DIR}/../imports
+        ${CMAKE_CURRENT_BINARY_DIR}/../asset_imports
 )

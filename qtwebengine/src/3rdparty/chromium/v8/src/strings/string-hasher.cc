@@ -52,9 +52,9 @@ struct ConvertTo8BitHashReader {
     _mm_storel_epi64(reinterpret_cast<__m128i *>(&out), _mm_packus_epi16(x, x));
     return out;
 #elif defined(__ARM_NEON__)
-    uint8x8_t x;
+    uint16x4_t x;
     memcpy(&x, p, sizeof(x));
-    uint16x8_t x_wide = vreinterpretq_u16_u64(vcombine_u64(vreinterpret_u64_u8(x), vreinterpret_u64_u8(x)));
+    uint16x8_t x_wide = vcombine_u16(x, x);
     return vget_lane_u32(vreinterpret_u32_u8(vmovn_u16(x_wide)), 0);
 #else
     return (uint64_t{p[0]}) | (uint64_t{p[1]} << 8) | (uint64_t{p[2]} << 16) |
@@ -73,9 +73,9 @@ struct ConvertTo8BitHashReader {
 
 namespace detail {
 uint64_t HashConvertingTo8Bit(const uint16_t* chars, uint32_t length,
-                              uint64_t seed) {
+                              uint64_t seed, const uint64_t secret[3]) {
   return rapidhash<ConvertTo8BitHashReader>(
-      reinterpret_cast<const uint8_t*>(chars), length, seed);
+      reinterpret_cast<const uint8_t*>(chars), length, seed, secret);
 }
 }  // namespace detail
 

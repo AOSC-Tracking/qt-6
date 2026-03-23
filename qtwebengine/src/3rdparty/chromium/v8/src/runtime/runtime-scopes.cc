@@ -151,7 +151,7 @@ RUNTIME_FUNCTION(Runtime_DeclareModuleExports) {
       Cast<SourceTextModule>(context->extension())->regular_exports(), isolate);
 
   int length = declarations->length();
-  FOR_WITH_HANDLE_SCOPE(isolate, int, i = 0, i, i < length, i++, {
+  FOR_WITH_HANDLE_SCOPE(isolate, int i = 0, i, i < length, i++) {
     Tagged<Object> decl = declarations->get(i);
     int index;
     Tagged<Object> value;
@@ -171,7 +171,7 @@ RUNTIME_FUNCTION(Runtime_DeclareModuleExports) {
     }
 
     Cast<Cell>(exports->get(index - 1))->set_value(value);
-  });
+  }
 
   return ReadOnlyRoots(isolate).undefined_value();
 }
@@ -194,7 +194,7 @@ RUNTIME_FUNCTION(Runtime_DeclareGlobals) {
 
   // Traverse the name/value pairs and set the properties.
   int length = declarations->length();
-  FOR_WITH_HANDLE_SCOPE(isolate, int, i = 0, i, i < length, i++, {
+  FOR_WITH_HANDLE_SCOPE(isolate, int i = 0, i, i < length, i++) {
     Handle<Object> decl(declarations->get(i), isolate);
     Handle<String> name;
     Handle<Object> value;
@@ -228,7 +228,7 @@ RUNTIME_FUNCTION(Runtime_DeclareGlobals) {
         DeclareGlobal(isolate, global, name, value, attr, is_var,
                       RedeclarationType::kSyntaxError);
     if (IsException(result)) return result;
-  });
+  }
 
   return ReadOnlyRoots(isolate).undefined_value();
 }
@@ -244,22 +244,14 @@ RUNTIME_FUNCTION(Runtime_InitializeDisposableStack) {
   return *disposable_stack;
 }
 
-Tagged<Object> AddToDisposableStack(Isolate* isolate,
-                                    DirectHandle<JSDisposableStackBase> stack,
-                                    DirectHandle<JSAny> value,
-                                    DisposeMethodCallType type,
-                                    DisposeMethodHint hint) {
-  // a. If V is either null or undefined and hint is sync-dispose, return
-  // unused.
-  if (IsNullOrUndefined(*value) && hint == DisposeMethodHint::kSyncDispose) {
-    return *value;
-  } else if (IsNullOrUndefined(*value) &&
-             hint == DisposeMethodHint::kAsyncDispose) {
-    value = isolate->factory()->undefined_value();
-  }
-
+namespace {
+Maybe<bool> AddToDisposableStack(Isolate* isolate,
+                                 DirectHandle<JSDisposableStackBase> stack,
+                                 DirectHandle<JSAny> value,
+                                 DisposeMethodCallType type,
+                                 DisposeMethodHint hint) {
   DirectHandle<Object> method;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+  ASSIGN_RETURN_ON_EXCEPTION(
       isolate, method,
       JSDisposableStackBase::CheckValueAndGetDisposeMethod(isolate, value,
                                                            hint));
@@ -267,8 +259,9 @@ Tagged<Object> AddToDisposableStack(Isolate* isolate,
   // Return the DisposableResource Record { [[ResourceValue]]: V, [[Hint]]:
   // hint, [[DisposeMethod]]: method }.
   JSDisposableStackBase::Add(isolate, stack, value, method, type, hint);
-  return *value;
+  return Just(true);
 }
+}  // namespace
 
 RUNTIME_FUNCTION(Runtime_AddDisposableValue) {
   HandleScope scope(isolate);
@@ -277,11 +270,15 @@ RUNTIME_FUNCTION(Runtime_AddDisposableValue) {
   DirectHandle<JSDisposableStackBase> stack = args.at<JSDisposableStackBase>(0);
   DirectHandle<JSAny> value = args.at<JSAny>(1);
 
-  // Return the DisposableResource Record { [[ResourceValue]]: V, [[Hint]]:
-  // hint, [[DisposeMethod]]: method }.
-  return AddToDisposableStack(isolate, stack, value,
-                              DisposeMethodCallType::kValueIsReceiver,
-                              DisposeMethodHint::kSyncDispose);
+  // a. If V is either null or undefined and hint is sync-dispose, return
+  // unused.
+  if (!IsNullOrUndefined(*value)) {
+    MAYBE_RETURN(AddToDisposableStack(isolate, stack, value,
+                                      DisposeMethodCallType::kValueIsReceiver,
+                                      DisposeMethodHint::kSyncDispose),
+                 ReadOnlyRoots(isolate).exception());
+  }
+  return *value;
 }
 
 RUNTIME_FUNCTION(Runtime_AddAsyncDisposableValue) {
@@ -291,33 +288,55 @@ RUNTIME_FUNCTION(Runtime_AddAsyncDisposableValue) {
   DirectHandle<JSDisposableStackBase> stack = args.at<JSDisposableStackBase>(0);
   DirectHandle<JSAny> value = args.at<JSAny>(1);
 
-  // Return the DisposableResource Record { [[ResourceValue]]: V, [[Hint]]:
-  // hint, [[DisposeMethod]]: method }.
-  return AddToDisposableStack(isolate, stack, value,
-                              DisposeMethodCallType::kValueIsReceiver,
-                              DisposeMethodHint::kAsyncDispose);
+  // CreateDisposableResource
+  // 1. If method is not present, then
+  //   a. If V is either null or undefined, then
+  //     i. Set V to undefined.
+  //     ii. Set method to undefined.
+  MAYBE_RETURN(AddToDisposableStack(isolate, stack,
+                                    IsNullOrUndefined(*value)
+                                        ? isolate->factory()->undefined_value()
+                                        : value,
+                                    DisposeMethodCallType::kValueIsReceiver,
+                                    DisposeMethodHint::kAsyncDispose),
+               ReadOnlyRoots(isolate).exception());
+  return *value;
 }
 
 RUNTIME_FUNCTION(Runtime_DisposeDisposableStack) {
   HandleScope scope(isolate);
-  DCHECK_EQ(4, args.length());
+  DCHECK_EQ(5, args.length());
 
   DirectHandle<JSDisposableStackBase> disposable_stack =
       args.at<JSDisposableStackBase>(0);
   DirectHandle<Smi> continuation_token = args.at<Smi>(1);
   Handle<Object> continuation_error = args.at<Object>(2);
-  DirectHandle<Smi> has_await_using = args.at<Smi>(3);
+  Handle<Object> continuation_message = args.at<Object>(3);
+  DirectHandle<Smi> has_await_using = args.at<Smi>(4);
+
+  // If state is not kDisposed, then the disposing of the resources has
+  // not started yet. So, if the continuation token is kRethrow we need
+  // to set error and error message on the disposable stack.
+  if (disposable_stack->state() != DisposableStackState::kDisposed &&
+      *continuation_token ==
+          Smi::FromInt(static_cast<int>(
+              interpreter::TryFinallyContinuationToken::kRethrowToken))) {
+    disposable_stack->set_error(*continuation_error);
+    disposable_stack->set_error_message(*continuation_message);
+  }
+
+  DCHECK_IMPLIES(
+      disposable_stack->state() == DisposableStackState::kDisposed,
+      static_cast<DisposableStackResourcesType>(Smi::ToInt(*has_await_using)) ==
+          DisposableStackResourcesType::kAtLeastOneAsync);
+
+  disposable_stack->set_state(DisposableStackState::kDisposed);
 
   DirectHandle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
       JSDisposableStackBase::DisposeResources(
           isolate, disposable_stack,
-          (*continuation_token !=
-           Smi::FromInt(static_cast<int>(
-               interpreter::TryFinallyContinuationToken::kRethrowToken)))
-              ? MaybeHandle<Object>()
-              : continuation_error,
           static_cast<DisposableStackResourcesType>(
               Smi::ToInt(*has_await_using))));
   return *result;
@@ -329,7 +348,7 @@ RUNTIME_FUNCTION(Runtime_HandleExceptionsInDisposeDisposableStack) {
 
   DirectHandle<JSDisposableStackBase> disposable_stack =
       args.at<JSDisposableStackBase>(0);
-  Handle<Object> exception = args.at<Object>(1);
+  DirectHandle<Object> exception = args.at<Object>(1);
   DirectHandle<Object> message = args.at<Object>(2);
 
   if (!isolate->is_catchable_by_javascript(*exception)) {
@@ -407,7 +426,7 @@ Tagged<Object> DeclareEvalHelper(Isolate* isolate, Handle<String> name,
 
     if (index != Context::kNotFound) {
       DCHECK(holder.is_identical_to(context));
-      context->set(index, *value);
+      Context::Set(context, index, value, isolate);
       return ReadOnlyRoots(isolate).undefined_value();
     }
 
@@ -751,7 +770,6 @@ RUNTIME_FUNCTION(Runtime_PushBlockContext) {
   return *isolate->factory()->NewBlockContext(current, scope_info);
 }
 
-
 RUNTIME_FUNCTION(Runtime_DeleteLookupSlot) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
@@ -787,7 +805,6 @@ RUNTIME_FUNCTION(Runtime_DeleteLookupSlot) {
   return isolate->heap()->ToBoolean(result.FromJust());
 }
 
-
 namespace {
 
 MaybeDirectHandle<Object> LoadLookupSlot(
@@ -814,21 +831,15 @@ MaybeDirectHandle<Object> LoadLookupSlot(
     // If the "property" we were looking for is a local variable, the
     // receiver is the global object; see ECMA-262, 3rd., 10.1.6 and 10.2.3.
     Handle<Object> receiver = isolate->factory()->undefined_value();
-    DirectHandle<Object> value =
-        direct_handle(holder_context->get(index), isolate);
     // Check for uninitialized bindings.
-    if (flag == kNeedsInitialization && IsTheHole(*value, isolate)) {
+    if (flag == kNeedsInitialization &&
+        holder_context->IsElementTheHole(index)) {
       THROW_NEW_ERROR(isolate,
                       NewReferenceError(MessageTemplate::kNotDefined, name));
     }
-    DCHECK(!IsTheHole(*value, isolate));
     if (receiver_return) *receiver_return = receiver;
-    if (v8_flags.script_context_mutable_heap_number &&
-        holder_context->IsScriptContext()) {
-      return direct_handle(*Context::LoadScriptContextElement(
-                               holder_context, index, value, isolate),
-                           isolate);
-    }
+    DirectHandle<Object> value = Context::Get(holder_context, index, isolate);
+    DCHECK(!IsTheHole(*value, isolate));
     return value;
   }
 
@@ -864,7 +875,6 @@ MaybeDirectHandle<Object> LoadLookupSlot(
 
 }  // namespace
 
-
 RUNTIME_FUNCTION(Runtime_LoadLookupSlot) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
@@ -873,14 +883,12 @@ RUNTIME_FUNCTION(Runtime_LoadLookupSlot) {
                            LoadLookupSlot(isolate, name, kThrowOnError));
 }
 
-
 RUNTIME_FUNCTION(Runtime_LoadLookupSlotInsideTypeof) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   Handle<String> name = args.at<String>(0);
   RETURN_RESULT_OR_FAILURE(isolate, LoadLookupSlot(isolate, name, kDontThrow));
 }
-
 
 RUNTIME_FUNCTION_RETURN_PAIR(Runtime_LoadLookupSlotForCall) {
   HandleScope scope(isolate);
@@ -946,19 +954,12 @@ MaybeDirectHandle<Object> StoreLookupSlot(
   if (index != Context::kNotFound) {
     auto holder_context = Cast<Context>(holder);
     if (flag == kNeedsInitialization &&
-        IsTheHole(holder_context->get(index), isolate)) {
+        holder_context->IsElementTheHole(index)) {
       THROW_NEW_ERROR(isolate,
                       NewReferenceError(MessageTemplate::kNotDefined, name));
     }
     if ((attributes & READ_ONLY) == 0) {
-      if ((v8_flags.script_context_mutable_heap_number ||
-           v8_flags.const_tracking_let) &&
-          holder_context->IsScriptContext()) {
-        Context::StoreScriptContextAndUpdateSlotProperty(holder_context, index,
-                                                         value, isolate);
-      } else {
-        Cast<Context>(holder)->set(index, *value);
-      }
+      Context::Set(holder_context, index, value, isolate);
     } else if (!is_sloppy_function_name || is_strict(language_mode)) {
       THROW_NEW_ERROR(isolate,
                       NewTypeError(MessageTemplate::kConstAssign, name));
@@ -988,7 +989,6 @@ MaybeDirectHandle<Object> StoreLookupSlot(
 }
 
 }  // namespace
-
 
 RUNTIME_FUNCTION(Runtime_StoreLookupSlot_Sloppy) {
   HandleScope scope(isolate);
@@ -1043,16 +1043,10 @@ RUNTIME_FUNCTION(Runtime_StoreGlobalNoHoleCheckForReplLetOrConst) {
   CHECK(found);
   DirectHandle<Context> script_context(
       script_contexts->get(lookup_result.context_index), isolate);
-  // We need to initialize the side data also for variables declared with
-  // VariableMode::kConst. This is because such variables can be accessed
-  // by functions using the LdaContextSlot bytecode, and such accesses are not
-  // regarded as "immutable" when optimizing.
-  if (v8_flags.script_context_mutable_heap_number ||
-      v8_flags.const_tracking_let) {
-    Context::StoreScriptContextAndUpdateSlotProperty(
-        script_context, lookup_result.slot_index, value, isolate);
+  if (lookup_result.mode == VariableMode::kConst) {
+    script_context->SetNoCell(lookup_result.slot_index, *value);
   } else {
-    script_context->set(lookup_result.slot_index, *value);
+    Context::Set(script_context, lookup_result.slot_index, value, isolate);
   }
   return *value;
 }

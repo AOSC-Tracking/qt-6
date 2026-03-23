@@ -43,8 +43,11 @@ class NotificationsEngagementService : public KeyedService {
   void RecordNotificationDisplayed(const GURL& url, int display_count);
   void RecordNotificationInteraction(const GURL& url);
 
+  static std::map<std::pair<ContentSettingsPattern, ContentSettingsPattern>,
+                  int>
+  GetNotificationCountMapPerPatternPair(const HostContentSettingsMap* hcsm);
   static int GetDailyAverageNotificationCount(
-      ContentSettingPatternSource setting);
+      const base::Value::Dict& engagement);
 
   static std::string GetBucketLabel(base::Time time);
   static std::optional<base::Time> ParsePeriodBeginFromBucketLabel(
@@ -56,7 +59,7 @@ class NotificationsEngagementService : public KeyedService {
                        const int click_count_delta);
 
   static int GetDailyAverageNotificationCount(
-      const base::Value::Dict& engagement);
+      const ContentSettingPatternSource& setting);
 
   raw_ptr<PrefService> pref_service_;
   raw_ptr<content::BrowserContext> browser_context_;

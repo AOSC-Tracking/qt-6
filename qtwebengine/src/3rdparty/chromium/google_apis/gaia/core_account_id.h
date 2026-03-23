@@ -11,8 +11,11 @@
 
 #include "base/component_export.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "google_apis/gaia/gaia_id.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/scoped_java_ref.h"
+#endif  // BUILDFLAG(IS_ANDROID)
 
 // Represent the id of an account for interaction with GAIA.
 //
@@ -60,18 +63,6 @@ struct COMPONENT_EXPORT(GOOGLE_APIS) CoreAccountId {
   // Returns an empty CoreAccountId if |gaia_id| is empty.
   static CoreAccountId FromGaiaId(const GaiaId& gaia_id);
 
-  // Temporary API to construct from a string, while class GaiaId is being
-  // adopted in unit-tests.
-  // TODO(crbug.com/380416867): Remove this API.
-#if defined(UNIT_TEST)
-  static CoreAccountId FromGaiaId(std::string gaia_id) {
-    return FromGaiaId(GaiaId(std::move(gaia_id)));
-  }
-  static CoreAccountId FromGaiaId(const char gaia_id[]) {
-    return FromGaiaId(GaiaId(gaia_id));
-  }
-#endif  // defined(UNIT_TEST)
-
   // Create a CoreAccountId object from an email of a robot account.
   // Returns an empty CoreAccountId if |email| is empty.
   static CoreAccountId FromRobotEmail(const std::string& robot_email);
@@ -80,13 +71,13 @@ struct COMPONENT_EXPORT(GOOGLE_APIS) CoreAccountId {
   // |CoreAccountId::ToString()|.
   static CoreAccountId FromString(const std::string& value);
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   // Only on ChromeOS, CoreAccountId objects may be created from Gaia emails.
   //
   // Create a CoreAccountId object from an email.
   // Returns an empty CoreAccountId if |email| is empty.
   static CoreAccountId FromEmail(const std::string& email);
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
   // ---------------------------------------- ---------------------------------
 
  private:
@@ -122,5 +113,35 @@ struct hash<CoreAccountId> {
   }
 };
 }  // namespace std
+
+#if BUILDFLAG(IS_ANDROID)
+// Constructs a Java CoreAccountId from the provided C++ CoreAccountId.
+COMPONENT_EXPORT(GOOGLE_APIS)
+base::android::ScopedJavaLocalRef<jobject> ConvertToJavaCoreAccountId(
+    JNIEnv* env,
+    const CoreAccountId& account_id);
+
+// Constructs a C++ CoreAccountId from the provided Java CoreAccountId.
+COMPONENT_EXPORT(GOOGLE_APIS)
+CoreAccountId ConvertFromJavaCoreAccountId(
+    JNIEnv* env,
+    const base::android::JavaRef<jobject>& j_core_account_id);
+
+namespace jni_zero {
+template <>
+inline CoreAccountId FromJniType<CoreAccountId>(
+    JNIEnv* env,
+    const base::android::JavaRef<jobject>& j_core_account_id) {
+  return ConvertFromJavaCoreAccountId(env, j_core_account_id);
+}
+
+template <>
+inline ScopedJavaLocalRef<jobject> ToJniType(
+    JNIEnv* env,
+    const CoreAccountId& core_account_id) {
+  return ConvertToJavaCoreAccountId(env, core_account_id);
+}
+}  // namespace jni_zero
+#endif  // BUILDFLAG(IS_ANDROID)
 
 #endif  // GOOGLE_APIS_GAIA_CORE_ACCOUNT_ID_H_

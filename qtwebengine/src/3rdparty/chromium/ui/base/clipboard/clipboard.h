@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "base/component_export.h"
@@ -27,7 +28,6 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/base/big_buffer.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/clipboard_buffer.h"
 #include "ui/base/clipboard/clipboard_format_type.h"
@@ -379,16 +379,15 @@ class COMPONENT_EXPORT(UI_BASE_CLIPBOARD) Clipboard
   // programs.  Documentation on motivation for format ordering is also
   // available here:
   // https://docs.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats#multiple-clipboard-formats
-  using Data = absl::variant<BitmapData,
-                             HtmlData,
-                             RtfData,
-                             BookmarkData,
-                             TextData,
-                             WebkitData,
-                             SvgData,
-                             FilenamesData,
-                             WebCustomFormatMapData
-                             >;
+  using Data = std::variant<BitmapData,
+                            HtmlData,
+                            RtfData,
+                            BookmarkData,
+                            TextData,
+                            WebkitData,
+                            SvgData,
+                            FilenamesData,
+                            WebCustomFormatMapData>;
 
   // TODO (https://crbug.com/994928): Rename ObjectMap-related types.
   struct ObjectMapParams {
@@ -457,11 +456,6 @@ class COMPONENT_EXPORT(UI_BASE_CLIPBOARD) Clipboard
   // Note: |data| may reference shared memory and may be concurrently mutated.
   virtual void WriteData(const ClipboardFormatType& format,
                          base::span<const uint8_t> data) = 0;
-
-  // Prevent data from being written to the clipboard history and cloud.
-  virtual void WriteClipboardHistory() = 0;
-  virtual void WriteUploadCloudClipboard() = 0;
-  virtual void WriteConfidentialDataForPassword() = 0;
 
   void DispatchPortableRepresentation(const ObjectMapParams& params);
   void DispatchPortableRepresentation(const RawData& data);

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "type_conversion.h"
 
@@ -289,42 +290,6 @@ QList<QSslCertificate> toCertificateChain(net::X509Certificate *certificate)
     for (auto &&buffer : certificate->intermediate_buffers())
         chain.append(toCertificate(buffer.get()));
     return chain;
-}
-
-Qt::InputMethodHints toQtInputMethodHints(ui::TextInputType inputType)
-{
-    switch (inputType) {
-    case ui::TEXT_INPUT_TYPE_TEXT:
-        return Qt::ImhPreferLowercase;
-    case ui::TEXT_INPUT_TYPE_SEARCH:
-        return Qt::ImhPreferLowercase | Qt::ImhNoAutoUppercase;
-    case ui::TEXT_INPUT_TYPE_PASSWORD:
-        return Qt::ImhSensitiveData | Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase
-                | Qt::ImhHiddenText;
-    case ui::TEXT_INPUT_TYPE_EMAIL:
-        return Qt::ImhEmailCharactersOnly;
-    case ui::TEXT_INPUT_TYPE_NUMBER:
-        return Qt::ImhFormattedNumbersOnly;
-    case ui::TEXT_INPUT_TYPE_TELEPHONE:
-        return Qt::ImhDialableCharactersOnly;
-    case ui::TEXT_INPUT_TYPE_URL:
-        return Qt::ImhUrlCharactersOnly | Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase;
-    case ui::TEXT_INPUT_TYPE_DATE_TIME:
-    case ui::TEXT_INPUT_TYPE_DATE_TIME_LOCAL:
-    case ui::TEXT_INPUT_TYPE_DATE_TIME_FIELD:
-        return Qt::ImhDate | Qt::ImhTime;
-    case ui::TEXT_INPUT_TYPE_DATE:
-    case ui::TEXT_INPUT_TYPE_MONTH:
-    case ui::TEXT_INPUT_TYPE_WEEK:
-        return Qt::ImhDate;
-    case ui::TEXT_INPUT_TYPE_TIME:
-        return Qt::ImhTime;
-    case ui::TEXT_INPUT_TYPE_TEXT_AREA:
-    case ui::TEXT_INPUT_TYPE_CONTENT_EDITABLE:
-        return Qt::ImhMultiLine | Qt::ImhPreferLowercase;
-    default:
-        return Qt::ImhNone;
-    }
 }
 
 } // namespace QtWebEngineCore

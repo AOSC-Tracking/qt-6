@@ -218,66 +218,6 @@ PositionArea PositionArea::ToPhysical(
   return PositionArea(regions[0], regions[1], regions[2], regions[3]);
 }
 
-std::optional<AnchorQuery> PositionArea::UsedTop() const {
-  switch (FirstStart()) {
-    case PositionAreaRegion::kTop:
-      return std::nullopt;
-    case PositionAreaRegion::kCenter:
-      return AnchorTop();
-    case PositionAreaRegion::kBottom:
-      return AnchorBottom();
-    case PositionAreaRegion::kNone:
-      return std::nullopt;
-    default:
-      NOTREACHED();
-  }
-}
-
-std::optional<AnchorQuery> PositionArea::UsedBottom() const {
-  switch (FirstEnd()) {
-    case PositionAreaRegion::kTop:
-      return AnchorTop();
-    case PositionAreaRegion::kCenter:
-      return AnchorBottom();
-    case PositionAreaRegion::kBottom:
-      return std::nullopt;
-    case PositionAreaRegion::kNone:
-      return std::nullopt;
-    default:
-      NOTREACHED();
-  }
-}
-
-std::optional<AnchorQuery> PositionArea::UsedLeft() const {
-  switch (SecondStart()) {
-    case PositionAreaRegion::kLeft:
-      return std::nullopt;
-    case PositionAreaRegion::kCenter:
-      return AnchorLeft();
-    case PositionAreaRegion::kRight:
-      return AnchorRight();
-    case PositionAreaRegion::kNone:
-      return std::nullopt;
-    default:
-      NOTREACHED();
-  }
-}
-
-std::optional<AnchorQuery> PositionArea::UsedRight() const {
-  switch (SecondEnd()) {
-    case PositionAreaRegion::kLeft:
-      return AnchorLeft();
-    case PositionAreaRegion::kCenter:
-      return AnchorRight();
-    case PositionAreaRegion::kRight:
-      return std::nullopt;
-    case PositionAreaRegion::kNone:
-      return std::nullopt;
-    default:
-      NOTREACHED();
-  }
-}
-
 std::pair<StyleSelfAlignmentData, StyleSelfAlignmentData>
 PositionArea::AlignJustifySelfFromPhysical(
     WritingDirectionMode container_writing_direction,
@@ -291,12 +231,14 @@ PositionArea::AlignJustifySelfFromPhysical(
   StyleSelfAlignmentData justify(ItemPosition::kStart, overflow);
   StyleSelfAlignmentData justify_reverse(ItemPosition::kEnd, overflow);
 
-  if ((FirstStart() == PositionAreaRegion::kTop &&
-       FirstEnd() == PositionAreaRegion::kBottom) ||
-      (FirstStart() == PositionAreaRegion::kCenter &&
-       FirstEnd() == PositionAreaRegion::kCenter)) {
-    // 'center' or 'all' should align with anchor center.
+  if (FirstStart() == PositionAreaRegion::kTop &&
+      FirstEnd() == PositionAreaRegion::kBottom) {
+    // 'all' should align with anchor center.
     align = align_reverse = {ItemPosition::kAnchorCenter, overflow};
+  } else if (FirstStart() == PositionAreaRegion::kCenter &&
+             FirstEnd() == PositionAreaRegion::kCenter) {
+    // 'center' should align with center.
+    align = align_reverse = {ItemPosition::kCenter, overflow};
   } else {
     // 'top' and 'top center' aligns with end, 'bottom' and 'center bottom' with
     // start.
@@ -304,12 +246,15 @@ PositionArea::AlignJustifySelfFromPhysical(
       std::swap(align, align_reverse);
     }
   }
-  if ((SecondStart() == PositionAreaRegion::kLeft &&
-       SecondEnd() == PositionAreaRegion::kRight) ||
-      (SecondStart() == PositionAreaRegion::kCenter &&
-       SecondEnd() == PositionAreaRegion::kCenter)) {
-    // 'center' or 'all' should align with anchor center.
+
+  if (SecondStart() == PositionAreaRegion::kLeft &&
+      SecondEnd() == PositionAreaRegion::kRight) {
+    // 'all' should align with anchor center.
     justify = justify_reverse = {ItemPosition::kAnchorCenter, overflow};
+  } else if (SecondStart() == PositionAreaRegion::kCenter &&
+             SecondEnd() == PositionAreaRegion::kCenter) {
+    // 'center' should align with center.
+    justify = justify_reverse = {ItemPosition::kCenter, overflow};
   } else {
     // 'left' and 'left center' aligns with end, 'right' and 'center right' with
     // start.

@@ -38,6 +38,7 @@
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/keywords.h"
 #include "third_party/blink/renderer/core/loader/frame_client_hints_preferences_context.h"
 #include "third_party/blink/renderer/core/loader/frame_fetch_context.h"
 #include "third_party/blink/renderer/core/loader/http_equiv.h"
@@ -167,7 +168,7 @@ float HTMLMetaElement::ParsePositiveNumber(Document* document,
                                            const String& value_string,
                                            bool* ok) {
   size_t parsed_length;
-  float value = WTF::VisitCharacters(value_string, [&](auto chars) {
+  float value = VisitCharacters(value_string, [&](auto chars) {
     return CharactersToFloat(chars, parsed_length);
   });
   if (!parsed_length) {
@@ -553,6 +554,10 @@ void HTMLMetaElement::NameRemoved(const AtomicString& name_value) {
   } else if (RuntimeEnabledFeatures::AppTitleEnabled(GetExecutionContext()) &&
              EqualIgnoringASCIICase(name_value, "application-title")) {
     GetDocument().UpdateApplicationTitle();
+  } else if (RuntimeEnabledFeatures::ResponsiveIframesEnabled() &&
+             EqualIgnoringASCIICase(name_value,
+                                    keywords::kResponsiveEmbeddedSizing)) {
+    GetDocument().ResponsiveEmbeddedSizingChanged();
   }
 }
 
@@ -667,6 +672,11 @@ void HTMLMetaElement::ProcessContent() {
   if (name_value.empty())
     return;
 
+  if (RuntimeEnabledFeatures::ResponsiveIframesEnabled() &&
+      EqualIgnoringASCIICase(name_value, keywords::kResponsiveEmbeddedSizing)) {
+    GetDocument().ResponsiveEmbeddedSizingChanged();
+  }
+
   if (EqualIgnoringASCIICase(name_value, "theme-color") &&
       GetDocument().GetFrame()) {
     GetDocument().GetFrame()->DidChangeThemeColor(
@@ -733,7 +743,7 @@ void HTMLMetaElement::ProcessContent() {
   }
 }
 
-WTF::TextEncoding HTMLMetaElement::ComputeEncoding() const {
+TextEncoding HTMLMetaElement::ComputeEncoding() const {
   HTMLAttributeList attribute_list;
   for (const Attribute& attr : Attributes())
     attribute_list.push_back(

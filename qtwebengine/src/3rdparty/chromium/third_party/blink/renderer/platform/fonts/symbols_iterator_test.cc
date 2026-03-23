@@ -9,7 +9,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/fonts/font_variant_emoji.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -34,8 +33,6 @@ const bool FontVariantEmojiFlagValues[] = {true, false};
 
 class SymbolsIteratorTest : public testing::Test {
  protected:
-  void SetUp() override { ScopedFontVariantEmojiForTest scoped_feature(true); }
-
   void CheckRuns(const Vector<FallbackTestRun>& runs) {
     StringBuilder text;
     text.Ensure16Bit();
@@ -68,9 +65,6 @@ class SymbolsIteratorTest : public testing::Test {
 class SymbolsIteratorWithFontVariantEmojiParamTest
     : public SymbolsIteratorTest,
       public testing::WithParamInterface<bool> {
-  void SetUp() override {
-    ScopedFontVariantEmojiForTest scoped_feature(GetParam());
-  }
 };
 
 INSTANTIATE_TEST_SUITE_P(SymbolsIteratorTest,

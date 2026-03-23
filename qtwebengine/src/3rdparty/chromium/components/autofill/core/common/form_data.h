@@ -167,13 +167,6 @@ class FormData {
   // Must not be leaked to renderer process. See FormGlobalId for details.
   FormGlobalId global_id() const { return {host_frame(), renderer_id()}; }
 
-  // TODO(crbug.com/40183094): This function is deprecated. Use
-  // FormData::DeepEqual() instead. Returns true if two forms are the same, not
-  // counting the values of the form elements.
-  // TODO(crbug.com/40100455): Remove when
-  // kAutofillUseFewerFormAndFieldComparison is removed.
-  bool SameFormAs(const FormData& other) const;
-
   // Returns a pointer to the field if found, otherwise returns nullptr.
   // Note that FormFieldData::global_id() is not guaranteed to be unique among
   // FormData::fields.
@@ -204,7 +197,6 @@ class FormData {
   void set_name(std::u16string name) { name_ = std::move(name); }
 
   // Titles of form's buttons.
-  // Only populated in Password Manager.
   const ButtonTitleList& button_titles() const { return button_titles_; }
   void set_button_titles(ButtonTitleList button_titles) {
     button_titles_ = std::move(button_titles);
@@ -216,8 +208,7 @@ class FormData {
   void set_url(GURL url) { url_ = std::move(url); }
 
   // The full URL, including query parameters and fragment.
-  // If `kAutofillIncludeUrlInCrowdsourcing` is disabled, this value should only
-  // be set for password forms. This value should not be sent via mojo.
+  // This value should not be sent via mojo.
   const GURL& full_url() const { return full_url_; }
   void set_full_url(GURL full_url) { full_url_ = std::move(full_url); }
 
@@ -297,7 +288,8 @@ class FormData {
   //
   // Usually, FormFieldData::global_id() (in the browser process) and
   // FormFieldData::renderer_id (in the renderer process) uniquely identify
-  // objects in `fields`. This is reliable enough for practical purposes.
+  // objects in `fields`. This is reliable enough for practical purposes, but
+  // not guaranteed.
   //
   // Collisions are possible in rare cases. Two known scenarios are:
   // - The renderer is compromised and sends duplicates.
@@ -382,8 +374,14 @@ class FormData {
 // Whether any of the fields in |form| is a non-empty password field.
 bool FormHasNonEmptyPasswordField(const FormData& form);
 
-// For testing.
 std::ostream& operator<<(std::ostream& os, const FormData& form);
+
+namespace internal {
+std::ostream& PrintWithIndentation(std::ostream& os,
+                                   const FormData& field,
+                                   int indentation,
+                                   std::string_view title = "FormData");
+}  // namespace internal
 
 #if defined(UNIT_TEST)
 inline bool operator==(const FormData& lhs, const FormData& rhs) {

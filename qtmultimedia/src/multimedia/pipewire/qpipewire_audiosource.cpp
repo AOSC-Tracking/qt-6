@@ -46,7 +46,10 @@ QPipewireAudioSourceStream::QPipewireAudioSourceStream(QAudioDevice device, cons
     });
 }
 
-QPipewireAudioSourceStream::~QPipewireAudioSourceStream() = default;
+QPipewireAudioSourceStream::~QPipewireAudioSourceStream()
+{
+    resetStream();
+}
 
 bool QPipewireAudioSourceStream::start(QIODevice *device)
 {
@@ -178,6 +181,11 @@ void QPipewireAudioSourceStream::disconnectStream()
     QObject::disconnect(m_xrunNotification);
 }
 
+void QPipewireAudioSourceStream::finalizeStream()
+{
+    requestStop();
+}
+
 void QPipewireAudioSourceStream::processRingbuffer() noexcept QT_MM_NONBLOCKING
 {
     struct pw_buffer *b = pw_stream_dequeue_buffer(m_stream.get());
@@ -262,6 +270,9 @@ QPipewireAudioSource::QPipewireAudioSource(QAudioDevice device, const QAudioForm
     : BaseClass(std::move(device), format, parent)
 {
 }
+
+QPipewireAudioSource::~QPipewireAudioSource()
+    = default;
 
 void QPipewireAudioSource::reportXRuns(int numberOfXruns)
 {

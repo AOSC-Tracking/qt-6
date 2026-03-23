@@ -100,15 +100,15 @@ class GPUDevice final : public EventTarget,
 
   void Trace(Visitor* visitor) const override;
 
-  // gpu_device.idl
+  // gpu_device.idl {{{
   GPUAdapter* adapter() const;
   GPUSupportedFeatures* features() const;
   GPUSupportedLimits* limits() const { return limits_.Get(); }
   GPUAdapterInfo* adapterInfo() const;
   ScriptPromise<GPUDeviceLostInfo> lost(ScriptState* script_state);
+  // }}} End of WebIDL binding implementation.
 
   GPUQueue* queue();
-  bool destroyed() const;
 
   void destroy(v8::Isolate* isolate);
 
@@ -128,7 +128,6 @@ class GPUDevice final : public EventTarget,
       const GPUBindGroupLayoutDescriptor* descriptor,
       ExceptionState& exception_state);
   GPUPipelineLayout* createPipelineLayout(
-      ScriptState* script_state,
       const GPUPipelineLayoutDescriptor* descriptor);
 
   GPUShaderModule* createShaderModule(
@@ -165,6 +164,8 @@ class GPUDevice final : public EventTarget,
   const AtomicString& InterfaceName() const override;
   ExecutionContext* GetExecutionContext() const override;
 
+  bool IsDestroyed() const;
+  std::string GetFormattedLabel() const;
   void InjectError(wgpu::ErrorType type, const char* message);
   void AddConsoleWarning(const String& message);
   void AddConsoleWarning(const char* message);
@@ -178,8 +179,6 @@ class GPUDevice final : public EventTarget,
                                   ExceptionState& exception_state);
   bool ValidateBlendFactor(V8GPUBlendFactor blend_factor,
                            ExceptionState& exception_state);
-
-  std::string formattedLabel() const;
 
   // Store the buffer in a weak hash set so we can unmap it when the
   // device is destroyed.
@@ -204,11 +203,7 @@ class GPUDevice final : public EventTarget,
   void OnUncapturedError(const wgpu::Device& device,
                          wgpu::ErrorType errorType,
                          wgpu::StringView message);
-#ifdef WGPU_BREAKING_CHANGE_LOGGING_CALLBACK_TYPE
   void OnLogging(wgpu::LoggingType loggingType, wgpu::StringView message);
-#else
-  void OnLogging(WGPULoggingType loggingType, WGPUStringView message);
-#endif
   void OnDeviceLost(
       std::unique_ptr<
           WGPURepeatingCallback<wgpu::UncapturedErrorCallback<void>>>,
@@ -235,7 +230,7 @@ class GPUDevice final : public EventTarget,
       wgpu::ComputePipeline compute_pipeline,
       wgpu::StringView message);
 
-  void setLabelImpl(const String& value) override {
+  void SetLabelImpl(const String& value) override {
     std::string utf8_label = value.Utf8();
     GetHandle().SetLabel(utf8_label.c_str());
   }
@@ -246,13 +241,8 @@ class GPUDevice final : public EventTarget,
   Member<GPUAdapterInfo> adapter_info_;
   Member<GPUQueue> queue_;
   Member<LostProperty> lost_property_;
-#ifdef WGPU_BREAKING_CHANGE_LOGGING_CALLBACK_TYPE
   std::unique_ptr<WGPURepeatingCallback<wgpu::LoggingCallback<void>>>
       logging_callback_;
-#else
-  std::unique_ptr<WGPURepeatingCallback<void(WGPULoggingType, WGPUStringView)>>
-      logging_callback_;
-#endif
 
   static constexpr int kMaxAllowedConsoleWarnings = 500;
   int allowed_console_warnings_remaining_ = kMaxAllowedConsoleWarnings;

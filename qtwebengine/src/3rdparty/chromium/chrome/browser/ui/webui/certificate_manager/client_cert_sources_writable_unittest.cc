@@ -10,11 +10,14 @@
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_future.h"
 #include "chrome/browser/net/nss_service.h"
 #include "chrome/browser/net/nss_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/resources/certificate_manager/certificate_manager.mojom.h"
 #include "chrome/browser/ui/webui/certificate_manager/certificate_manager_utils.h"
 #include "chrome/browser/ui/webui/certificate_manager/client_cert_sources.h"
 #include "chrome/common/pref_names.h"
@@ -37,12 +40,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/fake_select_file_dialog.h"
-#include "ui/webui/resources/cr_components/certificate_manager/certificate_manager_v2.mojom.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_features.h"
 #include "chrome/browser/ash/crosapi/crosapi_manager.h"
-#include "chrome/browser/ash/crosapi/idle_service_ash.h"
 #include "chrome/browser/ash/kcer/kcer_factory_ash.h"
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
 #include "chromeos/ash/components/login/login_state/login_state.h"
@@ -72,7 +73,7 @@ bool SlotContainsCertWithHash(PK11SlotInfo* slot, std::string_view hash_hex) {
     return false;
   }
   net::SHA256HashValue hash;
-  if (!base::HexStringToSpan(hash_hex, hash.data)) {
+  if (!base::HexStringToSpan(hash_hex, hash)) {
     return false;
   }
   for (CERTCertListNode* node = CERT_LIST_HEAD(cert_list);
@@ -89,11 +90,10 @@ std::string HexHash(base::span<const uint8_t> data) {
 }
 
 class FakeCertificateManagerPage
-    : public certificate_manager_v2::mojom::CertificateManagerPage {
+    : public certificate_manager::mojom::CertificateManagerPage {
  public:
   explicit FakeCertificateManagerPage(
-      mojo::PendingReceiver<
-          certificate_manager_v2::mojom::CertificateManagerPage>
+      mojo::PendingReceiver<certificate_manager::mojom::CertificateManagerPage>
           pending_receiver)
       : receiver_(this, std::move(pending_receiver)) {}
 
@@ -109,14 +109,14 @@ class FakeCertificateManagerPage
 
   void set_trigger_reload_callback(
       base::OnceCallback<
-          void(std::vector<certificate_manager_v2::mojom::CertificateSource>)>
+          void(std::vector<certificate_manager::mojom::CertificateSource>)>
           callback) {
     reload_callback_ = std::move(callback);
   }
 
   void TriggerReload(
-      const std::vector<certificate_manager_v2::mojom::CertificateSource>&
-          sources) override {
+      const std::vector<certificate_manager::mojom::CertificateSource>& sources)
+      override {
     if (reload_callback_) {
       std::move(reload_callback_).Run(std::move(sources));
     }
@@ -135,10 +135,9 @@ class FakeCertificateManagerPage
  private:
   std::optional<std::string> password_;
   bool ask_for_confirmation_result_ = false;
-  mojo::Receiver<certificate_manager_v2::mojom::CertificateManagerPage>
-      receiver_;
+  mojo::Receiver<certificate_manager::mojom::CertificateManagerPage> receiver_;
   base::OnceCallback<void(
-      std::vector<certificate_manager_v2::mojom::CertificateSource>)>
+      std::vector<certificate_manager::mojom::CertificateSource>)>
       reload_callback_;
 };
 
@@ -146,14 +145,10 @@ class FakeCertificateManagerPage
 
 class ClientCertSourceWritableUnitTest
     : public ChromeRenderViewHostTestHarness,
-#if BUILDFLAG(IS_CHROMEOS)
-      public testing::WithParamInterface<std::tuple<bool, bool, bool>>
-#else
       // In the non-ChromeOS case, the test does not actually need any
       // parameters, but to allow more commonality between the platforms keep
       // it as a parameterized test with a single param that is ignored.
       public testing::WithParamInterface<bool>
-#endif
 {
  public:
   void SetUp() override {
@@ -163,13 +158,6 @@ class ClientCertSourceWritableUnitTest
     ASSERT_TRUE(test_nss_user_.constructed_successfully());
     test_nss_user_.FinishInit();
 
-    feature_list_.InitWithFeatureStates(
-        {{chromeos::features::kEnablePkcs12ToChapsDualWrite,
-          dual_write_enabled()},
-         { ash::features::kUseKcerClientCertStore,
-           kcer_enabled() }});
-
-    crosapi::IdleServiceAsh::DisableForTesting();
     ash::LoginState::Initialize();
     crosapi_manager_ = std::make_unique<crosapi::CrosapiManager>();
 #endif
@@ -211,9 +199,7 @@ class ClientCertSourceWritableUnitTest
   }
 
 #if BUILDFLAG(IS_CHROMEOS)
-  bool dual_write_enabled() const { return std::get<0>(GetParam()); }
-  bool kcer_enabled() const { return std::get<1>(GetParam()); }
-  bool use_hardware_backed() const { return std::get<2>(GetParam()); }
+  bool use_hardware_backed() const { return GetParam(); }
 
   std::string username_hash() const {
     return user_manager::FakeUserManager::GetFakeUsernameHash(account_);
@@ -236,10 +222,10 @@ class ClientCertSourceWritableUnitTest
 #endif
   }
 
-  std::optional<certificate_manager_v2::mojom::SummaryCertInfoPtr>
+  std::optional<certificate_manager::mojom::SummaryCertInfoPtr>
   GetCertificateInfosForCertHash(std::string_view hash_hex) const {
     base::test::TestFuture<
-        std::vector<certificate_manager_v2::mojom::SummaryCertInfoPtr>>
+        std::vector<certificate_manager::mojom::SummaryCertInfoPtr>>
         get_certs_waiter;
     cert_source_->GetCertificateInfos(get_certs_waiter.GetCallback());
     const auto& certs = get_certs_waiter.Get();
@@ -365,7 +351,7 @@ class ClientCertSourceWritableUnitTest
 
   TestingProfileManager profile_manager_{TestingBrowserProcess::GetGlobal()};
 
-  mojo::Remote<certificate_manager_v2::mojom::CertificateManagerPage>
+  mojo::Remote<certificate_manager::mojom::CertificateManagerPage>
       fake_page_remote_;
   std::unique_ptr<FakeCertificateManagerPage> fake_page_;
   std::unique_ptr<CertificateManagerPageHandler::CertSource> cert_source_;
@@ -373,11 +359,8 @@ class ClientCertSourceWritableUnitTest
 
 #if BUILDFLAG(IS_CHROMEOS)
 TEST_P(ClientCertSourceWritableUnitTest, TriggerReloadOnKcerDbChange) {
-  if (!kcer_enabled()) {
-    return;
-  }
   base::test::TestFuture<
-      std::vector<certificate_manager_v2::mojom::CertificateSource>>
+      std::vector<certificate_manager::mojom::CertificateSource>>
       reload_future;
 
   fake_page_->set_trigger_reload_callback(reload_future.GetCallback());
@@ -385,9 +368,10 @@ TEST_P(ClientCertSourceWritableUnitTest, TriggerReloadOnKcerDbChange) {
       net::GetTestCertsDirectory().AppendASCII("client_1.p12"), "chrome");
   ASSERT_FALSE(client_1_hash_hex.empty());
 
-  EXPECT_THAT(reload_future.Get(),
-              ElementsAre(certificate_manager_v2::mojom::CertificateSource::
-                              kPlatformClientCert));
+  EXPECT_THAT(
+      reload_future.Get(),
+      ElementsAre(
+          certificate_manager::mojom::CertificateSource::kPlatformClientCert));
 }
 #endif
 
@@ -417,7 +401,7 @@ TEST_P(ClientCertSourceWritableUnitTest,
     factory->SetOpenCallback(
         select_file_dialog_opened_waiter.GetRepeatingCallback());
 
-    base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+    base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
         import_waiter;
     DoImport(import_waiter.GetCallback());
     EXPECT_TRUE(select_file_dialog_opened_waiter.Wait());
@@ -427,7 +411,7 @@ TEST_P(ClientCertSourceWritableUnitTest,
     ASSERT_TRUE(fake_file_select_dialog->CallFileSelected(
         net::GetTestCertsDirectory().AppendASCII("client_1.p12"), "p12"));
 
-    certificate_manager_v2::mojom::ActionResultPtr import_result =
+    certificate_manager::mojom::ActionResultPtr import_result =
         import_waiter.Take();
     ASSERT_TRUE(import_result);
     EXPECT_TRUE(import_result->is_success());
@@ -439,7 +423,7 @@ TEST_P(ClientCertSourceWritableUnitTest,
   // already gets imported to Chaps so the dual write isn't needed.)
   EXPECT_EQ(
       profile()->GetPrefs()->GetBoolean(prefs::kNssChapsDualWrittenCertsExist),
-      dual_write_enabled() && !use_hardware_backed());
+      !use_hardware_backed());
 #endif
 
   EXPECT_TRUE(NSSContainsCertWithHash(client_1_hash_hex));
@@ -450,12 +434,12 @@ TEST_P(ClientCertSourceWritableUnitTest,
   // present.
   {
     fake_page_->set_mocked_confirmation_result(true);
-    base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+    base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
         delete_waiter;
     cert_source_->DeleteCertificate("", client_1_hash_hex,
                                     delete_waiter.GetCallback());
 
-    certificate_manager_v2::mojom::ActionResultPtr delete_result =
+    certificate_manager::mojom::ActionResultPtr delete_result =
         delete_waiter.Take();
     ASSERT_TRUE(delete_result);
     ASSERT_TRUE(delete_result->is_success());
@@ -487,12 +471,12 @@ TEST_P(ClientCertSourceWritableUnitTest, PolicyAllAllowsDeletion) {
 
   {
     fake_page_->set_mocked_confirmation_result(true);
-    base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+    base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
         delete_waiter;
     cert_source_->DeleteCertificate("", client_1_hash_hex,
                                     delete_waiter.GetCallback());
 
-    certificate_manager_v2::mojom::ActionResultPtr delete_result =
+    certificate_manager::mojom::ActionResultPtr delete_result =
         delete_waiter.Take();
     ASSERT_TRUE(delete_result);
     ASSERT_TRUE(delete_result->is_success());
@@ -501,12 +485,12 @@ TEST_P(ClientCertSourceWritableUnitTest, PolicyAllAllowsDeletion) {
 
   {
     fake_page_->set_mocked_confirmation_result(true);
-    base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+    base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
         delete_waiter;
     cert_source_->DeleteCertificate("", client_4_hash_hex,
                                     delete_waiter.GetCallback());
 
-    certificate_manager_v2::mojom::ActionResultPtr delete_result =
+    certificate_manager::mojom::ActionResultPtr delete_result =
         delete_waiter.Take();
     ASSERT_TRUE(delete_result);
     ASSERT_TRUE(delete_result->is_success());
@@ -533,25 +517,16 @@ TEST_P(ClientCertSourceWritableUnitTest,
 
   // A client certificate in the system slot should not be deletable.
   EXPECT_TRUE(GetCertificateInfosContainsCertWithHash(client_4_hash_hex));
-  if (kcer_enabled()) {
-    EXPECT_FALSE(GetCertificateInfosIsCertDeletable(client_4_hash_hex));
-  } else {
-    // TODO(crbug.com/40928765): the delete button visibility is not set
-    // properly when kcer is disabled, for system certs with
-    // ClientCertificateManagementAllowed policy set to UserOnly. The policy
-    // should still be enforced correctly when actually attempting to delete
-    // the certificate below.
-    EXPECT_TRUE(GetCertificateInfosIsCertDeletable(client_4_hash_hex));
-  }
+  EXPECT_FALSE(GetCertificateInfosIsCertDeletable(client_4_hash_hex));
 
   {
     fake_page_->set_mocked_confirmation_result(true);
-    base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+    base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
         delete_waiter;
     cert_source_->DeleteCertificate("", client_1_hash_hex,
                                     delete_waiter.GetCallback());
 
-    certificate_manager_v2::mojom::ActionResultPtr delete_result =
+    certificate_manager::mojom::ActionResultPtr delete_result =
         delete_waiter.Take();
     ASSERT_TRUE(delete_result);
     ASSERT_TRUE(delete_result->is_success());
@@ -560,12 +535,12 @@ TEST_P(ClientCertSourceWritableUnitTest,
 
   {
     fake_page_->set_mocked_confirmation_result(true);
-    base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+    base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
         delete_waiter;
     cert_source_->DeleteCertificate("", client_4_hash_hex,
                                     delete_waiter.GetCallback());
 
-    certificate_manager_v2::mojom::ActionResultPtr delete_result =
+    certificate_manager::mojom::ActionResultPtr delete_result =
         delete_waiter.Take();
     ASSERT_TRUE(delete_result);
     ASSERT_TRUE(delete_result->is_error());
@@ -596,12 +571,12 @@ TEST_P(ClientCertSourceWritableUnitTest, PolicyNoneDoesNotAllowDeletion) {
 
   {
     fake_page_->set_mocked_confirmation_result(true);
-    base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+    base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
         delete_waiter;
     cert_source_->DeleteCertificate("", client_1_hash_hex,
                                     delete_waiter.GetCallback());
 
-    certificate_manager_v2::mojom::ActionResultPtr delete_result =
+    certificate_manager::mojom::ActionResultPtr delete_result =
         delete_waiter.Take();
     ASSERT_TRUE(delete_result);
     ASSERT_TRUE(delete_result->is_error());
@@ -613,12 +588,12 @@ TEST_P(ClientCertSourceWritableUnitTest, PolicyNoneDoesNotAllowDeletion) {
 
   {
     fake_page_->set_mocked_confirmation_result(true);
-    base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+    base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
         delete_waiter;
     cert_source_->DeleteCertificate("", client_4_hash_hex,
                                     delete_waiter.GetCallback());
 
-    certificate_manager_v2::mojom::ActionResultPtr delete_result =
+    certificate_manager::mojom::ActionResultPtr delete_result =
         delete_waiter.Take();
     ASSERT_TRUE(delete_result);
     ASSERT_TRUE(delete_result->is_error());
@@ -633,10 +608,10 @@ TEST_P(ClientCertSourceWritableUnitTest, ImportPkcs12NotAllowedByPolicy) {
   profile()->GetPrefs()->SetInteger(
       prefs::kClientCertificateManagementAllowed,
       static_cast<int>(ClientCertificateManagementPermission::kNone));
-  base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+  base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
       import_waiter;
   DoImport(import_waiter.GetCallback());
-  certificate_manager_v2::mojom::ActionResultPtr import_result =
+  certificate_manager::mojom::ActionResultPtr import_result =
       import_waiter.Take();
   ASSERT_TRUE(import_result);
   ASSERT_TRUE(import_result->is_error());
@@ -655,7 +630,7 @@ TEST_P(ClientCertSourceWritableUnitTest, ImportPkcs12PasswordWrong) {
   factory->SetOpenCallback(
       select_file_dialog_opened_waiter.GetRepeatingCallback());
 
-  base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+  base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
       import_waiter;
   DoImport(import_waiter.GetCallback());
   EXPECT_TRUE(select_file_dialog_opened_waiter.Wait());
@@ -664,7 +639,7 @@ TEST_P(ClientCertSourceWritableUnitTest, ImportPkcs12PasswordWrong) {
   ASSERT_TRUE(fake_file_select_dialog->CallFileSelected(
       net::GetTestCertsDirectory().AppendASCII("client_1.p12"), "p12"));
 
-  certificate_manager_v2::mojom::ActionResultPtr import_result =
+  certificate_manager::mojom::ActionResultPtr import_result =
       import_waiter.Take();
   ASSERT_TRUE(import_result);
   ASSERT_TRUE(import_result->is_error());
@@ -685,7 +660,7 @@ TEST_P(ClientCertSourceWritableUnitTest, ImportPkcs12PasswordEntryCancelled) {
   factory->SetOpenCallback(
       select_file_dialog_opened_waiter.GetRepeatingCallback());
 
-  base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+  base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
       import_waiter;
   DoImport(import_waiter.GetCallback());
   EXPECT_TRUE(select_file_dialog_opened_waiter.Wait());
@@ -694,7 +669,7 @@ TEST_P(ClientCertSourceWritableUnitTest, ImportPkcs12PasswordEntryCancelled) {
   ASSERT_TRUE(fake_file_select_dialog->CallFileSelected(
       net::GetTestCertsDirectory().AppendASCII("client_1.p12"), "p12"));
 
-  certificate_manager_v2::mojom::ActionResultPtr import_result =
+  certificate_manager::mojom::ActionResultPtr import_result =
       import_waiter.Take();
   EXPECT_FALSE(import_result);
 }
@@ -707,7 +682,7 @@ TEST_P(ClientCertSourceWritableUnitTest, ImportPkcs12FileNotFound) {
   factory->SetOpenCallback(
       select_file_dialog_opened_waiter.GetRepeatingCallback());
 
-  base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+  base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
       import_waiter;
   DoImport(import_waiter.GetCallback());
   EXPECT_TRUE(select_file_dialog_opened_waiter.Wait());
@@ -716,7 +691,7 @@ TEST_P(ClientCertSourceWritableUnitTest, ImportPkcs12FileNotFound) {
   ASSERT_TRUE(fake_file_select_dialog->CallFileSelected(
       base::FilePath("non-existant-file-name"), "p12"));
 
-  certificate_manager_v2::mojom::ActionResultPtr import_result =
+  certificate_manager::mojom::ActionResultPtr import_result =
       import_waiter.Take();
   ASSERT_TRUE(import_result);
   ASSERT_TRUE(import_result->is_error());
@@ -733,7 +708,7 @@ TEST_P(ClientCertSourceWritableUnitTest, ImportPkcs12FileSelectionCancelled) {
   factory->SetOpenCallback(
       select_file_dialog_opened_waiter.GetRepeatingCallback());
 
-  base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+  base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
       import_waiter;
   DoImport(import_waiter.GetCallback());
   EXPECT_TRUE(select_file_dialog_opened_waiter.Wait());
@@ -741,7 +716,7 @@ TEST_P(ClientCertSourceWritableUnitTest, ImportPkcs12FileSelectionCancelled) {
   ASSERT_TRUE(fake_file_select_dialog);
   fake_file_select_dialog->CallFileSelectionCanceled();
 
-  certificate_manager_v2::mojom::ActionResultPtr import_result =
+  certificate_manager::mojom::ActionResultPtr import_result =
       import_waiter.Take();
   EXPECT_FALSE(import_result);
 }
@@ -761,7 +736,7 @@ TEST_P(ClientCertSourceWritableUnitTest,
     factory->SetOpenCallback(
         select_file_dialog_opened_waiter.GetRepeatingCallback());
 
-    base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+    base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
         import_waiter;
     DoImport(import_waiter.GetCallback());
     EXPECT_TRUE(select_file_dialog_opened_waiter.Wait());
@@ -771,7 +746,7 @@ TEST_P(ClientCertSourceWritableUnitTest,
     ASSERT_TRUE(fake_file_select_dialog->CallFileSelected(
         net::GetTestCertsDirectory().AppendASCII("client_1.p12"), "p12"));
 
-    certificate_manager_v2::mojom::ActionResultPtr import_result =
+    certificate_manager::mojom::ActionResultPtr import_result =
         import_waiter.Take();
     ASSERT_TRUE(import_result);
     EXPECT_TRUE(import_result->is_success());
@@ -783,12 +758,12 @@ TEST_P(ClientCertSourceWritableUnitTest,
 
   // Mock the user cancelling out of the deletion confirmation dialog.
   fake_page_->set_mocked_confirmation_result(false);
-  base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+  base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
       delete_waiter;
   cert_source_->DeleteCertificate("", client_1_hash_hex,
                                   delete_waiter.GetCallback());
 
-  certificate_manager_v2::mojom::ActionResultPtr delete_result =
+  certificate_manager::mojom::ActionResultPtr delete_result =
       delete_waiter.Take();
   // A cancelled action should be signalled with an empty ActionResult.
   EXPECT_FALSE(delete_result);
@@ -797,13 +772,13 @@ TEST_P(ClientCertSourceWritableUnitTest,
 TEST_P(ClientCertSourceWritableUnitTest, DeleteCertificateNotFound) {
   fake_page_->set_mocked_confirmation_result(true);
 
-  base::test::TestFuture<certificate_manager_v2::mojom::ActionResultPtr>
+  base::test::TestFuture<certificate_manager::mojom::ActionResultPtr>
       delete_waiter;
   cert_source_->DeleteCertificate(
       "", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
       delete_waiter.GetCallback());
 
-  certificate_manager_v2::mojom::ActionResultPtr delete_result =
+  certificate_manager::mojom::ActionResultPtr delete_result =
       delete_waiter.Take();
   ASSERT_TRUE(delete_result);
   ASSERT_TRUE(delete_result->is_error());
@@ -813,9 +788,7 @@ TEST_P(ClientCertSourceWritableUnitTest, DeleteCertificateNotFound) {
 INSTANTIATE_TEST_SUITE_P(Foo,
                          ClientCertSourceWritableUnitTest,
 #if BUILDFLAG(IS_CHROMEOS)
-                         testing::Combine(testing::Bool(),
-                                          testing::Bool(),
-                                          testing::Bool())
+                         testing::Bool()
 #else
                          testing::Values(true)
 #endif

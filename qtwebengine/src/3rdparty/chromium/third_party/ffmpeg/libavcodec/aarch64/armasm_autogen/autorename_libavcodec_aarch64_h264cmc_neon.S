@@ -2920,6 +2920,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -3096,7 +3099,7 @@
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_chroma_mc8_neon
 
@@ -3223,7 +3226,7 @@ temp_label_3
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_chroma_mc8_neon
 
@@ -3367,7 +3370,7 @@ temp_label_11
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_chroma_mc4_neon
 
@@ -3500,7 +3503,7 @@ temp_label_19
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_chroma_mc4_neon
 
@@ -3646,7 +3649,7 @@ temp_label_27
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_chroma_mc2_neon
 
@@ -3719,7 +3722,7 @@ temp_label_32
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_chroma_mc2_neon
 

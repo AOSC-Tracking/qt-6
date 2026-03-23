@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtGui/qtguiglobal.h>
 #if QT_CONFIG(opengl)
@@ -13,6 +15,8 @@
 QT_BEGIN_NAMESPACE
 
 static qreal s_maxTextureSize = 0.;
+
+Q_LOGGING_CATEGORY(lcGraphsUtils, "qt.graphs.common.utils")
 
 qreal CommonUtils::maxTextureSize()
 {
@@ -38,7 +42,7 @@ qreal CommonUtils::maxTextureSize()
                 params.inst = &inst;
                 rhi.reset(QRhi::create(QRhi::Vulkan, &params));
             } else {
-                qWarning("Failed to create Vulkan instance");
+                qCWarning(lcGraphsUtils, "Failed to create Vulkan instance");
             }
         }
 #endif

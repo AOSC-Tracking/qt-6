@@ -12,6 +12,7 @@
 #include "src/heap/mutable-page-metadata-inl.h"
 #include "src/heap/read-only-heap.h"
 #include "src/heap/visit-object.h"
+#include "src/objects/allocation-site.h"
 #include "src/objects/code.h"
 #include "src/objects/descriptor-array.h"
 #include "src/objects/instance-type-checker.h"
@@ -148,12 +149,12 @@ void Serializer::SerializeDeferredObjects() {
   if (v8_flags.trace_serializer) {
     PrintF("Serializing deferred objects\n");
   }
-  WHILE_WITH_HANDLE_SCOPE(isolate(), !deferred_objects_.empty(), {
+  WHILE_WITH_HANDLE_SCOPE(isolate(), !deferred_objects_.empty()) {
     Handle<HeapObject> obj = handle(deferred_objects_.Pop(), isolate());
 
     ObjectSerializer obj_serializer(this, obj, &sink_);
     obj_serializer.SerializeDeferred();
-  });
+  }
   sink_.Put(kSynchronize, "Finished with deferred objects");
 }
 
@@ -288,7 +289,7 @@ void Serializer::PutRoot(RootIndex root) {
   // Assert that the first 32 root array items are a conscious choice. They are
   // chosen so that the most common ones can be encoded more efficiently.
   static_assert(static_cast<int>(RootIndex::kArgumentsMarker) ==
-                kRootArrayConstantsCount - 1);
+                kRootArrayConstantsCount);
 
   // TODO(ulan): Check that it works with young large objects.
   if (root_index < kRootArrayConstantsCount &&
@@ -647,8 +648,9 @@ void Serializer::ObjectSerializer::SerializeJSArrayBuffer() {
     backing_store = buffer->backing_store();
     // We cannot store byte_length or max_byte_length larger than uint32 range
     // in the snapshot.
-    CHECK_LE(buffer->byte_length(), std::numeric_limits<uint32_t>::max());
-    uint32_t byte_length = static_cast<uint32_t>(buffer->byte_length());
+    size_t byte_length_size = buffer->GetByteLength();
+    CHECK_LE(byte_length_size, std::numeric_limits<uint32_t>::max());
+    uint32_t byte_length = static_cast<uint32_t>(byte_length_size);
     Maybe<uint32_t> max_byte_length = Nothing<uint32_t>();
     if (buffer->is_resizable_by_js()) {
       CHECK_LE(buffer->max_byte_length(), std::numeric_limits<uint32_t>::max());
@@ -769,23 +771,23 @@ class V8_NODISCARD UnlinkWeakNextScope {
  public:
   explicit UnlinkWeakNextScope(Heap* heap, Tagged<HeapObject> object) {
     Isolate* isolate = heap->isolate();
-    if (IsAllocationSite(object, isolate) &&
-        Cast<AllocationSite>(object)->HasWeakNext()) {
-      object_ = object;
-      next_ = Cast<AllocationSite>(object)->weak_next();
-      Cast<AllocationSite>(object)->set_weak_next(
-          ReadOnlyRoots(isolate).undefined_value());
+    if (TryCast<AllocationSiteWithWeakNext>(object, &object_)) {
+      next_ = object_->weak_next();
+      object_->set_weak_next(ReadOnlyRoots(isolate).undefined_value());
     }
   }
 
   ~UnlinkWeakNextScope() {
     if (next_ == Smi::zero()) return;
-    Cast<AllocationSite>(object_)->set_weak_next(next_, UPDATE_WRITE_BARRIER);
+    object_->set_weak_next(
+        Cast<UnionOf<Undefined, AllocationSiteWithWeakNext>>(next_),
+        UPDATE_WRITE_BARRIER);
   }
 
  private:
-  Tagged<HeapObject> object_;
-  Tagged<Object> next_ = Smi::zero();
+  Tagged<AllocationSiteWithWeakNext> object_;
+  Tagged<UnionOf<Smi, Undefined, AllocationSiteWithWeakNext>> next_ =
+      Smi::zero();
   DISALLOW_GARBAGE_COLLECTION(no_gc_)
 };
 
@@ -912,7 +914,7 @@ void Serializer::ObjectSerializer::SerializeObject() {
 
   // Descriptor arrays have complex element weakness, that is dependent on the
   // maps pointing to them. During deserialization, this can cause them to get
-  // prematurely trimmed one of their owners isn't deserialized yet. We work
+  // prematurely trimmed if one of their owners isn't deserialized yet. We work
   // around this by forcing all descriptor arrays to be serialized as "strong",
   // i.e. no custom weakness, and "re-weaken" them in the deserializer once
   // deserialization completes.
@@ -1072,7 +1074,8 @@ void Serializer::ObjectSerializer::OutputExternalReference(
     Address target, int target_size, bool sandboxify, ExternalPointerTag tag) {
   DCHECK_LE(target_size, sizeof(target));  // Must fit in Address.
   DCHECK_IMPLIES(sandboxify, V8_ENABLE_SANDBOX_BOOL);
-  DCHECK_IMPLIES(sandboxify, tag != kExternalPointerNullTag);
+  DCHECK_IMPLIES(sandboxify,
+                 tag != kExternalPointerNullTag || target == kNullAddress);
   ExternalReferenceEncoder::Value encoded_reference;
   bool encoded_successfully;
 
@@ -1134,7 +1137,7 @@ void Serializer::ObjectSerializer::VisitCppHeapPointer(
   // We serialize the slot as initialized-but-unused slot.  The actual API
   // wrapper serialization is implemented in
   // `ContextSerializer::SerializeApiWrapperFields()`.
-  DCHECK(IsJSApiWrapperObject(object_->map(cage_base)));
+  DCHECK(IsJSApiWrapperObjectMap(object_->map(cage_base)));
   static_assert(kCppHeapPointerSlotSize % kTaggedSize == 0);
   sink_->Put(
       FixedRawDataWithSize::Encode(kCppHeapPointerSlotSize >> kTaggedSizeLog2),
@@ -1151,6 +1154,7 @@ void Serializer::ObjectSerializer::VisitExternalPointer(
   if (InstanceTypeChecker::IsForeign(instance_type) ||
       InstanceTypeChecker::IsJSExternalObject(instance_type) ||
       InstanceTypeChecker::IsAccessorInfo(instance_type) ||
+      InstanceTypeChecker::IsInterceptorInfo(instance_type) ||
       InstanceTypeChecker::IsFunctionTemplateInfo(instance_type)) {
     // Output raw data payload, if any.
     OutputRawData(slot.address());

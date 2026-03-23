@@ -16,10 +16,12 @@
 #define OPENSSL_HEADER_BASE_H
 
 
-// This file should be the first included by all BoringSSL headers.
+// This file should be the first included by all BoringSSL headers. All
+// BoringSSL headers can be assumed to import this file, and this header can be
+// assumed to include stddef.h (size_t) and stdint.h (uint*_t, etc).
 
-#include <stddef.h>
-#include <stdint.h>
+#include <stddef.h>  // IWYU pragma: export
+#include <stdint.h>  // IWYU pragma: export
 #include <stdlib.h>
 #include <sys/types.h>
 
@@ -71,7 +73,7 @@ extern "C" {
 // A consumer may use this symbol in the preprocessor to temporarily build
 // against multiple revisions of BoringSSL at the same time. It is not
 // recommended to do so for longer than is necessary.
-#define BORINGSSL_API_VERSION 34
+#define BORINGSSL_API_VERSION 36
 
 #if defined(BORINGSSL_SHARED_LIBRARY)
 
@@ -141,6 +143,14 @@ extern "C" {
 #endif
 #else
 #define OPENSSL_PRINTF_FORMAT_FUNC(string_index, first_to_check)
+#endif
+
+// OPENSSL_GNUC_CLANG_PRAGMA emits a pragma on GCC or clang and nothing on other
+// compilers.
+#if defined(__GNUC__) || defined(__clang__)
+#define OPENSSL_GNUC_CLANG_PRAGMA(arg) _Pragma(arg)
+#else
+#define OPENSSL_GNUC_CLANG_PRAGMA(arg)
 #endif
 
 // OPENSSL_CLANG_PRAGMA emits a pragma on clang and nothing on other compilers.
@@ -245,6 +255,10 @@ typedef struct asn1_null_st ASN1_NULL;
 #undef X509_NAME
 #endif
 
+// CRYPTO_MUST_BE_NULL is an opaque type that is never returned from BoringSSL.
+// It is used in function parameters that must be NULL.
+typedef struct crypto_must_be_null_st CRYPTO_MUST_BE_NULL;
+
 typedef int ASN1_BOOLEAN;
 typedef struct ASN1_ITEM_st ASN1_ITEM;
 typedef struct asn1_object_st ASN1_OBJECT;
@@ -268,6 +282,8 @@ typedef struct asn1_string_st ASN1_VISIBLESTRING;
 typedef struct asn1_type_st ASN1_TYPE;
 typedef struct AUTHORITY_KEYID_st AUTHORITY_KEYID;
 typedef struct BASIC_CONSTRAINTS_st BASIC_CONSTRAINTS;
+typedef struct CMS_ContentInfo_st CMS_ContentInfo;
+typedef struct CMS_SignerInfo_st CMS_SignerInfo;
 typedef struct DIST_POINT_st DIST_POINT;
 typedef struct DSA_SIG_st DSA_SIG;
 typedef struct GENERAL_NAME_st GENERAL_NAME;

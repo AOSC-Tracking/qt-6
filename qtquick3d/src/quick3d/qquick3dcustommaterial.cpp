@@ -1,11 +1,15 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dcustommaterial_p.h"
 #include <QtQuick3DRuntimeRender/private/qssgrendercustommaterial_p.h>
 #include <ssg/qssgrendercontextcore.h>
 #include <QtQuick3DRuntimeRender/private/qssgshadermaterialadapter_p.h>
 #include <QtQuick/QQuickWindow>
+
+#include <QtQuick3D/QQuick3DTextureProviderExtension>
 
 #include "qquick3dobject_p.h"
 #include "qquick3dviewport_p.h"
@@ -131,6 +135,7 @@ QT_BEGIN_NAMESPACE
     The result is a cylinder that animates its vertices:
 
     \image custommaterial_cylinder.png
+           {Bent cylinder with custom vertex shader}
 
     \section1 Two flavors of custom materials
 
@@ -1012,7 +1017,7 @@ QT_BEGIN_NAMESPACE
         }
     \endcode
 
-    When sampling textures other than \c SCREEN_TEXTURE and \c DEPTH_TEXTURE,
+    When sampling textures other than \c SCREEN_TEXTURE, and \c DEPTH_TEXTURE,
     or when \c FRAGCOORD is used to calculate the texture coordinate (which
     would be the typical use case for accessing the screen and depth textures),
     such an adjustment is not necessary.
@@ -1196,6 +1201,14 @@ QT_BEGIN_NAMESPACE
         #endif
     \endcode
 
+    \li \c NORMAL_ROUGHNESS_TEXTURE - When present, a texture (\c sampler2D)
+    with the world-space normals and the material roughness is exposed to the
+    shader under this name. Only opaque objects are included. The roughness is
+    stored in the alpha channel.
+    For example, a fragment shader could contain the following: \badcode
+        vec3 N = normalize(texture(NORMAL_ROUGHNESS_TEXTURE, uv).rgb);
+    \endcode
+
     \li \c AO_TEXTURE - When present and screen space ambient occlusion is
     enabled (meaning when the AO strength and distance are both non-zero) in
     SceneEnvironment, the SSAO texture (\c sampler2D or \c sampler2DArray) is
@@ -1234,6 +1247,11 @@ QT_BEGIN_NAMESPACE
             DIFFUSE += AO_FACTOR * BASE_COLOR.rgb * textureLod(IBL_TEXTURE, NORMAL, IBL_MAXMIPMAP).rgb;
         }
     \endcode
+
+    \li \c MOTION_VECTOR_TEXTURE — Enables a dedicated rendering pass that computes per-object
+    motion vectors for the scene.
+    The output is a four-channel texture: the R and G components contain the scaled motion vectors
+    of the models, while the B and A components store the unscaled motion vectors.
 
     \li \c VIEW_INDEX - When used in the custom shader code, this is a
     (non-interpolated) uint variable. When \l{Multiview Rendering}{multiview
@@ -1671,6 +1689,8 @@ static void setCustomMaterialFlagsFromShader(QSSGRenderCustomMaterial *material,
         material->m_renderFlags.setFlag(QSSGRenderCustomMaterial::RenderFlag::ScreenMipTexture, true);
     if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesDepthTexture))
         material->m_renderFlags.setFlag(QSSGRenderCustomMaterial::RenderFlag::DepthTexture, true);
+    if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesNormalTexture))
+        material->m_renderFlags.setFlag(QSSGRenderCustomMaterial::RenderFlag::NormalTexture, true);
     if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesAoTexture))
         material->m_renderFlags.setFlag(QSSGRenderCustomMaterial::RenderFlag::AoTexture, true);
     if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesProjectionMatrix))
@@ -1695,6 +1715,8 @@ static void setCustomMaterialFlagsFromShader(QSSGRenderCustomMaterial *material,
         material->m_renderFlags.setFlag(QSSGRenderCustomMaterial::RenderFlag::ClearcoatFresnelScaleBias, true);
     if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesFresnelScaleBias))
         material->m_renderFlags.setFlag(QSSGRenderCustomMaterial::RenderFlag::FresnelScaleBias, true);
+    if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesMotionVectorTexture))
+        material->m_renderFlags.setFlag(QSSGRenderCustomMaterial::RenderFlag::MotionVectorTexture, true);
     if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesTransmission)) {
         material->m_renderFlags.setFlag(QSSGRenderCustomMaterial::RenderFlag::Transmission, true);
         material->m_renderFlags.setFlag(QSSGRenderCustomMaterial::RenderFlag::ScreenTexture, true);
@@ -1722,13 +1744,12 @@ static QByteArray prepareCustomShader(QSSGRenderCustomMaterial *customMaterial,
 
     QByteArray sourceCode = snippet;
     QByteArray buf;
-    auto result = QSSGShaderCustomMaterialAdapter::prepareCustomShader(buf,
-                                                                        sourceCode,
-                                                                        shaderType,
-                                                                        uniforms,
-                                                                        {},
-                                                                        {},
-                                                                        multiViewCompatible);
+
+    QSSGShaderCustomMaterialAdapter::ShaderCodeAndMetaData result;
+    QSSGShaderCustomMaterialAdapter::CustomShaderPrepWorkData scratch;
+    QSSGShaderCustomMaterialAdapter::beginPrepareCustomShader(&scratch, &result, sourceCode, shaderType, multiViewCompatible);
+    QSSGShaderCustomMaterialAdapter::finishPrepareCustomShader(&buf, scratch, result, shaderType, multiViewCompatible, uniforms, {}, {}, {}, {});
+
     sourceCode = result.first;
     sourceCode.append(buf);
     meta = result.second;
@@ -1834,12 +1855,35 @@ QSSGRenderGraphObject *QQuick3DCustomMaterial::updateSpatialNode(QSSGRenderGraph
             } // else already connected
 
             QQuick3DTexture *tex = texture.texture(); // may be null if the TextureInput has no 'texture' set
-            if (tex && QQuick3DObjectPrivate::get(tex)->type == QQuick3DObjectPrivate::Type::ImageCube)
+            if (tex && QQuick3DObjectPrivate::get(tex)->type == QQuick3DObjectPrivate::Type::ImageCube) {
                 uniforms.append({ QByteArrayLiteral("samplerCube"), textureData.name });
-            else if (tex && tex->textureData() && tex->textureData()->depth() > 0)
+            } else if (tex && tex->textureData() && tex->textureData()->depth() > 0) {
                 uniforms.append({ QByteArrayLiteral("sampler3D"), textureData.name });
-            else
+            } else if (tex && tex->textureProvider() && QQuick3DObjectPrivate::get(tex->textureProvider())->type == QQuick3DObjectPrivate::Type::TextureProvider) {
+                auto textureProvider = static_cast<QQuick3DTextureProviderExtension *>(tex->textureProvider());
+                switch (textureProvider->samplerHint()) {
+                case QQuick3DTextureProviderExtension::SamplerHint::Sampler2D:
+                    uniforms.append({ QByteArrayLiteral("sampler2D"), textureData.name });
+                    break;
+                case QQuick3DTextureProviderExtension::SamplerHint::Sampler2DArray:
+                    uniforms.append({ QByteArrayLiteral("sampler2DArray"), textureData.name });
+                    break;
+                case QQuick3DTextureProviderExtension::SamplerHint::Sampler3D:
+                    uniforms.append({ QByteArrayLiteral("sampler3D"), textureData.name });
+                    break;
+                case QQuick3DTextureProviderExtension::SamplerHint::SamplerCube:
+                    uniforms.append({ QByteArrayLiteral("samplerCube"), textureData.name });
+                    break;
+                case QQuick3DTextureProviderExtension::SamplerHint::SamplerCubeArray:
+                    uniforms.append({ QByteArrayLiteral("samplerCubeArray"), textureData.name });
+                    break;
+                case QQuick3DTextureProviderExtension::SamplerHint::SamplerBuffer:
+                    uniforms.append({ QByteArrayLiteral("samplerBuffer"), textureData.name });
+                    break;
+                }
+            } else {
                 uniforms.append({ QByteArrayLiteral("sampler2D"), textureData.name });
+            }
 
             customMaterial->m_textureProperties.push_back(textureData);
         };

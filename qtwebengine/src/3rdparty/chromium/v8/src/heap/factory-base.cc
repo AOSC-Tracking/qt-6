@@ -32,6 +32,7 @@
 #include "src/objects/swiss-name-dictionary-inl.h"
 #include "src/objects/template-objects-inl.h"
 #include "src/roots/roots.h"
+#include "src/sandbox/check.h"
 
 namespace v8 {
 namespace internal {
@@ -42,7 +43,9 @@ Handle<HeapNumber> FactoryBase<Impl>::NewHeapNumber() {
   static_assert(sizeof(HeapNumber) <= kMaxRegularHeapObjectSize);
   Tagged<Map> map = read_only_roots().heap_number_map();
   Tagged<HeapObject> result = AllocateRawWithImmortalMap(
-      sizeof(HeapNumber), allocation, map, kDoubleUnaligned);
+      sizeof(HeapNumber), allocation, map,
+      USE_ALLOCATION_ALIGNMENT_HEAP_NUMBER_BOOL ? kDoubleUnaligned
+                                                : kTaggedAligned);
   return handle(Cast<HeapNumber>(result), isolate());
 }
 
@@ -93,11 +96,12 @@ Handle<Code> FactoryBase<Impl>::NewCode(const NewCodeOptions& options) {
   code->set_metadata_size(options.metadata_size);
   code->set_inlined_bytecode_size(options.inlined_bytecode_size);
   code->set_osr_offset(options.osr_offset);
+  SBXCHECK_IMPLIES(options.deoptimization_data.is_null(),
+                   options.osr_offset.IsNone());
   code->set_handler_table_offset(options.handler_table_offset);
   code->set_constant_pool_offset(options.constant_pool_offset);
   code->set_code_comments_offset(options.code_comments_offset);
-  code->set_builtin_jump_table_info_offset(
-      options.builtin_jump_table_info_offset);
+  code->set_jump_table_info_offset(options.jump_table_info_offset);
   code->set_unwinding_info_offset(options.unwinding_info_offset);
   code->set_parameter_count(options.parameter_count);
 #ifdef V8_ENABLE_LEAPTIERING
@@ -192,9 +196,9 @@ Handle<TrustedFixedArray> FactoryBase<Impl>::NewTrustedFixedArray(
 
 template <typename Impl>
 Handle<ProtectedFixedArray> FactoryBase<Impl>::NewProtectedFixedArray(
-    int length) {
+    int length, bool shared) {
   if (length == 0) return empty_protected_fixed_array();
-  return ProtectedFixedArray::New(isolate(), length);
+  return ProtectedFixedArray::New(isolate(), length, shared);
 }
 
 template <typename Impl>
@@ -443,8 +447,8 @@ FactoryBase<Impl>::NewSloppyArgumentsElements(
 }
 
 template <typename Impl>
-Handle<ArrayList> FactoryBase<Impl>::NewArrayList(int size,
-                                                  AllocationType allocation) {
+DirectHandle<ArrayList> FactoryBase<Impl>::NewArrayList(
+    int size, AllocationType allocation) {
   return ArrayList::New(isolate(), size, allocation);
 }
 
@@ -455,7 +459,8 @@ Handle<SharedFunctionInfo> FactoryBase<Impl>::NewSharedFunctionInfoForLiteral(
   Handle<SharedFunctionInfo> shared =
       NewSharedFunctionInfo(literal->GetName(isolate()), {},
                             Builtin::kCompileLazy, 0, kDontAdapt, kind);
-  shared->set_function_literal_id(literal->function_literal_id());
+  shared->set_function_literal_id(literal->function_literal_id(),
+                                  kRelaxedStore);
   literal->set_shared_function_info(shared);
   SharedFunctionInfo::InitFromFunctionLiteral(isolate(), literal, is_toplevel);
   shared->SetScript(isolate(), read_only_roots(), *script,
@@ -500,7 +505,7 @@ Handle<PreparseData> FactoryBase<Impl>::NewPreparseData(int data_length,
   DisallowGarbageCollection no_gc;
   result->set_data_length(data_length);
   result->set_children_length(children_length);
-  MemsetTagged(result->inner_data_start(), read_only_roots().null_value(),
+  MemsetTagged(ObjectSlot(result->children()), read_only_roots().null_value(),
                children_length);
   result->clear_padding();
   return handle(result, isolate());
@@ -509,41 +514,80 @@ Handle<PreparseData> FactoryBase<Impl>::NewPreparseData(int data_length,
 template <typename Impl>
 DirectHandle<UncompiledDataWithoutPreparseData>
 FactoryBase<Impl>::NewUncompiledDataWithoutPreparseData(
-    Handle<String> inferred_name, int32_t start_position,
+    DirectHandle<String> inferred_name, int32_t start_position,
     int32_t end_position) {
-  return TorqueGeneratedFactory<Impl>::NewUncompiledDataWithoutPreparseData(
-      inferred_name, start_position, end_position, AllocationType::kTrusted);
+  int size = sizeof(UncompiledDataWithoutPreparseData);
+  Tagged<Map> map =
+      read_only_roots().uncompiled_data_without_preparse_data_map();
+  Tagged<UncompiledDataWithoutPreparseData> result =
+      Cast<UncompiledDataWithoutPreparseData>(
+          AllocateRawWithImmortalMap(size, AllocationType::kTrusted, map));
+  DisallowGarbageCollection no_gc;
+  result->init_self_indirect_pointer(isolate());
+  result->set_inferred_name(*inferred_name);
+  result->set_start_position(start_position);
+  result->set_end_position(end_position);
+  return direct_handle(result, isolate());
 }
 
 template <typename Impl>
 DirectHandle<UncompiledDataWithPreparseData>
 FactoryBase<Impl>::NewUncompiledDataWithPreparseData(
-    Handle<String> inferred_name, int32_t start_position, int32_t end_position,
-    Handle<PreparseData> preparse_data) {
-  return TorqueGeneratedFactory<Impl>::NewUncompiledDataWithPreparseData(
-      inferred_name, start_position, end_position, preparse_data,
-      AllocationType::kTrusted);
+    DirectHandle<String> inferred_name, int32_t start_position,
+    int32_t end_position, DirectHandle<PreparseData> preparse_data) {
+  int size = sizeof(UncompiledDataWithPreparseData);
+  Tagged<Map> map = read_only_roots().uncompiled_data_with_preparse_data_map();
+  Tagged<UncompiledDataWithPreparseData> result =
+      Cast<UncompiledDataWithPreparseData>(
+          AllocateRawWithImmortalMap(size, AllocationType::kTrusted, map));
+  DisallowGarbageCollection no_gc;
+  result->init_self_indirect_pointer(isolate());
+  result->set_inferred_name(*inferred_name);
+  result->set_start_position(start_position);
+  result->set_end_position(end_position);
+  result->set_preparse_data(*preparse_data);
+  return direct_handle(result, isolate());
 }
 
 template <typename Impl>
 DirectHandle<UncompiledDataWithoutPreparseDataWithJob>
 FactoryBase<Impl>::NewUncompiledDataWithoutPreparseDataWithJob(
-    Handle<String> inferred_name, int32_t start_position,
+    DirectHandle<String> inferred_name, int32_t start_position,
     int32_t end_position) {
-  return TorqueGeneratedFactory<Impl>::
-      NewUncompiledDataWithoutPreparseDataWithJob(inferred_name, start_position,
-                                                  end_position, kNullAddress,
-                                                  AllocationType::kTrusted);
+  int size = sizeof(UncompiledDataWithoutPreparseDataWithJob);
+  Tagged<Map> map =
+      read_only_roots().uncompiled_data_without_preparse_data_with_job_map();
+  Tagged<UncompiledDataWithoutPreparseDataWithJob> result =
+      Cast<UncompiledDataWithoutPreparseDataWithJob>(
+          AllocateRawWithImmortalMap(size, AllocationType::kTrusted, map));
+  DisallowGarbageCollection no_gc;
+  result->init_self_indirect_pointer(isolate());
+  result->set_inferred_name(*inferred_name);
+  result->set_start_position(start_position);
+  result->set_end_position(end_position);
+  result->set_job(kNullAddress);
+  return direct_handle(result, isolate());
 }
 
 template <typename Impl>
 DirectHandle<UncompiledDataWithPreparseDataAndJob>
 FactoryBase<Impl>::NewUncompiledDataWithPreparseDataAndJob(
-    Handle<String> inferred_name, int32_t start_position, int32_t end_position,
-    Handle<PreparseData> preparse_data) {
-  return TorqueGeneratedFactory<Impl>::NewUncompiledDataWithPreparseDataAndJob(
-      inferred_name, start_position, end_position, preparse_data, kNullAddress,
-      AllocationType::kTrusted);
+    DirectHandle<String> inferred_name, int32_t start_position,
+    int32_t end_position, DirectHandle<PreparseData> preparse_data) {
+  int size = sizeof(UncompiledDataWithPreparseDataAndJob);
+  Tagged<Map> map =
+      read_only_roots().uncompiled_data_with_preparse_data_and_job_map();
+  Tagged<UncompiledDataWithPreparseDataAndJob> result =
+      Cast<UncompiledDataWithPreparseDataAndJob>(
+          AllocateRawWithImmortalMap(size, AllocationType::kTrusted, map));
+  DisallowGarbageCollection no_gc;
+  result->init_self_indirect_pointer(isolate());
+  result->set_inferred_name(*inferred_name);
+  result->set_start_position(start_position);
+  result->set_end_position(end_position);
+  result->set_preparse_data(*preparse_data);
+  result->set_job(kNullAddress);
+  return direct_handle(result, isolate());
 }
 
 template <typename Impl>
@@ -804,7 +848,8 @@ FactoryBase<Impl>::NewOneByteInternalizedStringFromTwoByte(
 template <typename Impl>
 template <typename SeqStringT>
 MaybeHandle<SeqStringT> FactoryBase<Impl>::NewRawStringWithMap(
-    int length, Tagged<Map> map, AllocationType allocation) {
+    int length, Tagged<Map> map, AllocationType allocation,
+    AllocationHint hint) {
   DCHECK(SeqStringT::IsCompatibleMap(map, read_only_roots()));
   DCHECK_IMPLIES(!StringShape(map).IsShared(),
                  RefineAllocationTypeForInPlaceInternalizableString(
@@ -816,8 +861,8 @@ MaybeHandle<SeqStringT> FactoryBase<Impl>::NewRawStringWithMap(
   int size = SeqStringT::SizeFor(length);
   DCHECK_GE(ObjectTraits<SeqStringT>::kMaxSize, size);
 
-  Tagged<SeqStringT> string =
-      Cast<SeqStringT>(AllocateRawWithImmortalMap(size, allocation, map));
+  Tagged<SeqStringT> string = Cast<SeqStringT>(AllocateRawWithImmortalMap(
+      size, allocation, map, AllocationAlignment::kTaggedAligned, hint));
   DisallowGarbageCollection no_gc;
   string->clear_padding_destructively(length);
   string->set_length(length);
@@ -828,20 +873,22 @@ MaybeHandle<SeqStringT> FactoryBase<Impl>::NewRawStringWithMap(
 
 template <typename Impl>
 MaybeHandle<SeqOneByteString> FactoryBase<Impl>::NewRawOneByteString(
-    int length, AllocationType allocation) {
+    int length, AllocationType allocation, AllocationHint hint) {
   Tagged<Map> map = read_only_roots().seq_one_byte_string_map();
   return NewRawStringWithMap<SeqOneByteString>(
       length, map,
-      RefineAllocationTypeForInPlaceInternalizableString(allocation, map));
+      RefineAllocationTypeForInPlaceInternalizableString(allocation, map),
+      hint);
 }
 
 template <typename Impl>
 MaybeHandle<SeqTwoByteString> FactoryBase<Impl>::NewRawTwoByteString(
-    int length, AllocationType allocation) {
+    int length, AllocationType allocation, AllocationHint hint) {
   Tagged<Map> map = read_only_roots().seq_two_byte_string_map();
   return NewRawStringWithMap<SeqTwoByteString>(
       length, map,
-      RefineAllocationTypeForInPlaceInternalizableString(allocation, map));
+      RefineAllocationTypeForInPlaceInternalizableString(allocation, map),
+      hint);
 }
 
 template <typename Impl>
@@ -849,7 +896,7 @@ MaybeHandle<SeqOneByteString> FactoryBase<Impl>::NewRawSharedOneByteString(
     int length) {
   return NewRawStringWithMap<SeqOneByteString>(
       length, read_only_roots().shared_seq_one_byte_string_map(),
-      AllocationType::kSharedOld);
+      AllocationType::kSharedOld, AllocationHint());
 }
 
 template <typename Impl>
@@ -857,17 +904,20 @@ MaybeHandle<SeqTwoByteString> FactoryBase<Impl>::NewRawSharedTwoByteString(
     int length) {
   return NewRawStringWithMap<SeqTwoByteString>(
       length, read_only_roots().shared_seq_two_byte_string_map(),
-      AllocationType::kSharedOld);
+      AllocationType::kSharedOld, AllocationHint());
 }
 
 template <typename Impl>
-MaybeHandle<String> FactoryBase<Impl>::NewConsString(
-    Handle<String> left, Handle<String> right, AllocationType allocation) {
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<String>, DirectHandle<String>>)
+HandleType<String>::MaybeType FactoryBase<Impl>::NewConsString(
+    HandleType<String> left, HandleType<String> right,
+    AllocationType allocation) {
   if (IsThinString(*left)) {
-    left = handle(Cast<ThinString>(*left)->actual(), isolate());
+    left = HandleType<String>(Cast<ThinString>(*left)->actual(), isolate());
   }
   if (IsThinString(*right)) {
-    right = handle(Cast<ThinString>(*right)->actual(), isolate());
+    right = HandleType<String>(Cast<ThinString>(*right)->actual(), isolate());
   }
   uint32_t left_length = left->length();
   if (left_length == 0) return right;
@@ -901,7 +951,7 @@ MaybeHandle<String> FactoryBase<Impl>::NewConsString(
 
     static_assert(ConsString::kMinLength <= String::kMaxLength);
     if (is_one_byte) {
-      Handle<SeqOneByteString> result =
+      HandleType<SeqOneByteString> result =
           NewRawOneByteString(length, allocation).ToHandleChecked();
       DisallowGarbageCollection no_gc;
       SharedStringAccessGuardIfNeeded access_guard(isolate());
@@ -921,7 +971,7 @@ MaybeHandle<String> FactoryBase<Impl>::NewConsString(
       return result;
     }
 
-    Handle<SeqTwoByteString> result =
+    HandleType<SeqTwoByteString> result =
         NewRawTwoByteString(length, allocation).ToHandleChecked();
 
     DisallowGarbageCollection no_gc;
@@ -964,11 +1014,9 @@ Handle<String> FactoryBase<Impl>::NewConsString(DirectHandle<String> left,
 template <typename Impl>
 Handle<String> FactoryBase<Impl>::LookupSingleCharacterStringFromCode(
     uint16_t code) {
-  if (code <= unibrow::Latin1::kMaxChar) {
-    DisallowGarbageCollection no_gc;
-    Tagged<Object> value = single_character_string_table()->get(code);
-    DCHECK_NE(value, *undefined_value());
-    return handle(Cast<String>(value), isolate());
+  if (code <= String::kMaxOneByteCharCode) {
+    return Cast<String>(
+        isolate()->root_handle(RootsTable::SingleCharacterStringIndex(code)));
   }
   uint16_t buffer[] = {code};
   return InternalizeString(base::Vector<const uint16_t>(buffer, 1));
@@ -1019,23 +1067,37 @@ Handle<String> FactoryBase<Impl>::NumberToString(DirectHandle<Object> number,
 
   double double_value = Cast<HeapNumber>(number)->value();
   // Try to canonicalize doubles.
-  int smi_value;
-  if (DoubleToSmiInteger(double_value, &smi_value)) {
-    return SmiToString(Smi::FromInt(smi_value), mode);
-  }
-  return HeapNumberToString(Cast<HeapNumber>(number), double_value, mode);
+  return DoubleToString(double_value, true, mode);
 }
 
 template <typename Impl>
-Handle<String> FactoryBase<Impl>::HeapNumberToString(
-    DirectHandle<HeapNumber> number, double value, NumberCacheMode mode) {
-  int hash = mode == NumberCacheMode::kIgnore
-                 ? 0
-                 : impl()->NumberToStringCacheHash(value);
+Handle<String> FactoryBase<Impl>::DoubleToString(double value,
+                                                 bool canonicalize,
+                                                 NumberCacheMode mode) {
+  if (canonicalize) {
+    // Try to canonicalize doubles.
+    int smi_value;
+    if (DoubleToSmiInteger(value, &smi_value)) {
+      return SmiToString(Smi::FromInt(smi_value), mode);
+    }
+  }
 
-  if (mode == NumberCacheMode::kBoth) {
-    Handle<Object> cached = impl()->NumberToStringCacheGet(*number, hash);
-    if (!IsUndefined(*cached, isolate())) return Cast<String>(cached);
+  // LocalFactory does not have access to number string cache, only
+  // main thread Factory does (since it's a mutable root).
+  constexpr bool kCanUseCache = std::is_same_v<Impl, Factory>;
+
+  InternalIndex entry = InternalIndex::NotFound();
+  uint64_t value_bits = 0;
+  if constexpr (kCanUseCache) {
+    if (mode != NumberCacheMode::kIgnore) {
+      value_bits = base::bit_cast<uint64_t>(value);
+      entry = DoubleStringCache::GetEntryFor(isolate(), value_bits);
+    }
+    if (mode == NumberCacheMode::kBoth) {
+      Handle<Object> cached =
+          DoubleStringCache::Get(isolate(), entry, value_bits);
+      if (!IsUndefined(*cached, isolate())) return Cast<String>(cached);
+    }
   }
 
   Handle<String> result;
@@ -1049,8 +1111,10 @@ Handle<String> FactoryBase<Impl>::HeapNumberToString(
     std::string_view string = DoubleToStringView(value, buffer);
     result = StringViewToString(this, string, mode);
   }
-  if (mode != NumberCacheMode::kIgnore) {
-    impl()->NumberToStringCacheSet(number, hash, result);
+  if constexpr (kCanUseCache) {
+    if (mode != NumberCacheMode::kIgnore) {
+      DoubleStringCache::Set(isolate(), entry, value_bits, result);
+    }
   }
   return result;
 }
@@ -1058,27 +1122,45 @@ Handle<String> FactoryBase<Impl>::HeapNumberToString(
 template <typename Impl>
 inline Handle<String> FactoryBase<Impl>::SmiToString(Tagged<Smi> number,
                                                      NumberCacheMode mode) {
-  int hash = mode == NumberCacheMode::kIgnore
-                 ? 0
-                 : impl()->NumberToStringCacheHash(number);
+  // LINT.IfChange(CheckPreallocatedNumberStrings)
+  {
+    DCHECK_EQ(kPreallocatedNumberStringTableSize,
+              preallocated_number_string_table()->length());
+    int index = number.value();
+    if (static_cast<unsigned>(index) < kPreallocatedNumberStringTableSize) {
+      return handle(
+          Cast<String>(preallocated_number_string_table()->get(index)),
+          isolate());
+    }
+  }
+  // LINT.ThenChange(/src/codegen/code-stub-assembler.cc:CheckPreallocatedNumberStrings)
 
-  if (mode == NumberCacheMode::kBoth) {
-    Handle<Object> cached = impl()->NumberToStringCacheGet(number, hash);
-    if (!IsUndefined(*cached, isolate())) return Cast<String>(cached);
+  // LocalFactory does not have access to the number_string_cache, only
+  // main thread Factory does (since it's a mutable root).
+  constexpr bool kCanUseCache = std::is_same_v<Impl, Factory>;
+
+  InternalIndex entry = InternalIndex::NotFound();
+  if constexpr (kCanUseCache) {
+    if (mode != NumberCacheMode::kIgnore) {
+      entry = SmiStringCache::GetEntryFor(isolate(), number);
+    }
+    if (mode == NumberCacheMode::kBoth) {
+      Handle<Object> cached = SmiStringCache::Get(isolate(), entry, number);
+      if (!IsUndefined(*cached, isolate())) return Cast<String>(cached);
+    }
   }
 
   Handle<String> result;
-  if (number == Smi::zero()) {
-    result = zero_string();
-  } else {
+  {
     char arr[kNumberToStringBufferSize];
     base::Vector<char> buffer(arr, arraysize(arr));
     std::string_view string = IntToStringView(number.value(), buffer);
     result = StringViewToString(this, string, mode);
   }
-  if (mode != NumberCacheMode::kIgnore) {
-    impl()->NumberToStringCacheSet(direct_handle(number, isolate()), hash,
-                                   result);
+  if constexpr (kCanUseCache) {
+    if (mode != NumberCacheMode::kIgnore) {
+      SmiStringCache::Set(isolate(), entry, number, result);
+    }
   }
 
   // Compute the hash here (rather than letting the caller take care of it) so
@@ -1278,21 +1360,23 @@ Tagged<HeapObject> FactoryBase<Impl>::NewWithImmortalMap(
 template <typename Impl>
 Tagged<HeapObject> FactoryBase<Impl>::AllocateRawWithImmortalMap(
     int size, AllocationType allocation, Tagged<Map> map,
-    AllocationAlignment alignment) {
+    AllocationAlignment alignment, AllocationHint hint) {
   // TODO(delphick): Potentially you could also pass an immortal immovable Map
   // from OLD_SPACE here, like external_map or message_object_map, but currently
   // no one does so this check is sufficient.
   DCHECK(ReadOnlyHeap::Contains(map));
-  Tagged<HeapObject> result = AllocateRaw(size, allocation, alignment);
+  Tagged<HeapObject> result = AllocateRaw(size, allocation, alignment, hint);
   DisallowGarbageCollection no_gc;
   result->set_map_after_allocation(isolate(), map, SKIP_WRITE_BARRIER);
   return result;
 }
 
 template <typename Impl>
-Tagged<HeapObject> FactoryBase<Impl>::AllocateRaw(
-    int size, AllocationType allocation, AllocationAlignment alignment) {
-  return impl()->AllocateRaw(size, allocation, alignment);
+Tagged<HeapObject> FactoryBase<Impl>::AllocateRaw(int size,
+                                                  AllocationType allocation,
+                                                  AllocationAlignment alignment,
+                                                  AllocationHint hint) {
+  return impl()->AllocateRaw(size, allocation, alignment, hint);
 }
 
 template <typename Impl>
@@ -1391,10 +1475,43 @@ FactoryBase<Impl>::RefineAllocationTypeForInPlaceInternalizableString(
   return impl()->AllocationTypeForInPlaceInternalizableString();
 }
 
+#ifdef V8_ENABLE_LEAPTIERING
+template <typename Impl>
+JSDispatchHandle FactoryBase<Impl>::NewJSDispatchHandle(
+    uint16_t parameter_count, DirectHandle<Code> code,
+    JSDispatchTable::Space* space) {
+  JSDispatchTable* jdt = isolate()->isolate_group()->js_dispatch_table();
+  auto Allocate = [&]() {
+    return jdt->TryAllocateAndInitializeEntry(space, parameter_count, *code);
+  };
+  // Dispatch entries are only freed on major GCs.
+  AllocationType type = AllocationType::kOld;
+  auto allocator = isolate()->heap()->allocator();
+  return allocator->CustomAllocateWithRetryOrFail(Allocate, type);
+}
+#endif  // V8_ENABLE_LEAPTIERING
+
 // Instantiate FactoryBase for the two variants we want.
 template class EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE) FactoryBase<Factory>;
 template class EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
     FactoryBase<LocalFactory>;
+
+template V8_EXPORT_PRIVATE MaybeIndirectHandle<String>
+FactoryBase<Factory>::NewConsString(IndirectHandle<String> left,
+                                    IndirectHandle<String> right,
+                                    AllocationType allocation);
+template V8_EXPORT_PRIVATE MaybeDirectHandle<String>
+FactoryBase<Factory>::NewConsString(DirectHandle<String> left,
+                                    DirectHandle<String> right,
+                                    AllocationType allocation);
+template V8_EXPORT_PRIVATE MaybeIndirectHandle<String>
+FactoryBase<LocalFactory>::NewConsString(IndirectHandle<String> left,
+                                         IndirectHandle<String> right,
+                                         AllocationType allocation);
+template V8_EXPORT_PRIVATE MaybeDirectHandle<String>
+FactoryBase<LocalFactory>::NewConsString(DirectHandle<String> left,
+                                         DirectHandle<String> right,
+                                         AllocationType allocation);
 
 }  // namespace internal
 }  // namespace v8

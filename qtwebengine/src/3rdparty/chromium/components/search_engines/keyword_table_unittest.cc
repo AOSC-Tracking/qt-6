@@ -127,18 +127,20 @@ class KeywordTableTest : public testing::Test {
 
 
 TEST_F(KeywordTableTest, Keywords) {
-  // The feature is tested elsewhere, force enable to make sure expectations
-  // match.
-  base::test::ScopedFeatureList enable_verification(
-      features::kKeywordTableHashVerification);
-
   TemplateURLData keyword(CreateAndAddKeyword());
 
   base::HistogramTester histograms;
 
   KeywordTable::Keywords keywords(GetKeywords());
+  constexpr base::HistogramBase::Sample32 expected_bucket =
+#if BUILDFLAG(IS_WIN)
+      0;  // HashValidationStatus::kSuccess;
+#else
+      5;  // HashValidationStatus::kNotVerifiedFeatureDisabled;
+#endif  // BUILDFLAG(IS_WIN)
   histograms.ExpectUniqueSample("Search.KeywordTable.HashValidationStatus",
-                                /*HashValidationStatus::kSuccess*/ 0, 1);
+                                expected_bucket, 1);
+
   EXPECT_EQ(1U, keywords.size());
   const TemplateURLData& restored_keyword = keywords.front();
 
@@ -160,8 +162,7 @@ TEST_F(KeywordTableTest, Keywords) {
   EXPECT_EQ(keyword.last_visited.ToTimeT(),
             restored_keyword.last_visited.ToTimeT());
   EXPECT_EQ(keyword.policy_origin, restored_keyword.policy_origin);
-  EXPECT_EQ(keyword.created_from_play_api,
-            restored_keyword.created_from_play_api);
+  EXPECT_EQ(keyword.regulatory_origin, restored_keyword.regulatory_origin);
   EXPECT_EQ(keyword.usage_count, restored_keyword.usage_count);
   EXPECT_EQ(keyword.prepopulate_id, restored_keyword.prepopulate_id);
   EXPECT_EQ(keyword.is_active, restored_keyword.is_active);
@@ -181,7 +182,7 @@ TEST_F(KeywordTableTest, UpdateKeyword) {
   keyword.originating_url = GURL("http://originating.url/");
   keyword.input_encodings.push_back("Shift_JIS");
   keyword.prepopulate_id = 5;
-  keyword.created_from_play_api = true;
+  keyword.regulatory_origin = RegulatoryExtensionType::kAndroidEEA;
   keyword.starter_pack_id = 0;
   keyword.enforced_by_policy = false;
   keyword.featured_by_policy = false;
@@ -201,8 +202,7 @@ TEST_F(KeywordTableTest, UpdateKeyword) {
   EXPECT_EQ(keyword.input_encodings, restored_keyword.input_encodings);
   EXPECT_EQ(keyword.id, restored_keyword.id);
   EXPECT_EQ(keyword.prepopulate_id, restored_keyword.prepopulate_id);
-  EXPECT_EQ(keyword.created_from_play_api,
-            restored_keyword.created_from_play_api);
+  EXPECT_EQ(keyword.regulatory_origin, restored_keyword.regulatory_origin);
   EXPECT_EQ(keyword.is_active, restored_keyword.is_active);
   EXPECT_EQ(keyword.starter_pack_id, restored_keyword.starter_pack_id);
   EXPECT_EQ(keyword.enforced_by_policy, restored_keyword.enforced_by_policy);
@@ -287,31 +287,26 @@ TEST_F(KeywordTableTest, SanitizeShortName) {
   }
 }
 
+#if BUILDFLAG(IS_WIN)
+namespace {
+
 struct TestCase {
   bool encryption_enabled;
-  bool feature_enabled;
   bool tamper;
   base::HistogramBase::Sample32 expected_histogram_sample;
   size_t expected_keyword_count;
 
   std::string Name() const {
     return base::StrCat({encryption_enabled ? "Encryption" : "NoEncryption",
-                         feature_enabled ? "FeatureEnabled" : "FeatureDisabled",
                          tamper ? "Tamper" : "NoTamper"});
   }
 };
 
+}  // namespace
+
 class KeywordTableTestEncryption
     : public KeywordTableTest,
-      public ::testing::WithParamInterface<TestCase> {
- public:
-  KeywordTableTestEncryption() {
-    feature_.InitWithFeatureState(features::kKeywordTableHashVerification,
-                                  GetParam().feature_enabled);
-  }
-
- private:
-  base::test::ScopedFeatureList feature_;
+      public ::testing::WithParamInterface<::TestCase> {
 };
 
 TEST_P(KeywordTableTestEncryption, KeywordBadHash) {
@@ -343,51 +338,25 @@ INSTANTIATE_TEST_SUITE_P(
     /*empty*/,
     KeywordTableTestEncryption,
     ::testing::Values(
-        TestCase{.encryption_enabled = false,
-                 .feature_enabled = false,
-                 .tamper = true,
-                 .expected_histogram_sample = /*kNotVerifiedFeatureDisabled*/ 5,
-                 .expected_keyword_count = 1u},
-        TestCase{.encryption_enabled = false,
-                 .feature_enabled = true,
-                 .tamper = true,
-                 .expected_histogram_sample = /*kNotVerifiedNoCrypto*/ 4,
-                 .expected_keyword_count = 1u},
-        TestCase{.encryption_enabled = true,
-                 .feature_enabled = false,
-                 .tamper = true,
-                 .expected_histogram_sample = /*kNotVerifiedFeatureDisabled*/ 5,
-                 .expected_keyword_count = 1u},
-        TestCase{.encryption_enabled = true,
-                 .feature_enabled = true,
-                 .tamper = true,
-                 .expected_histogram_sample = /*kIncorrectHash*/ 3,
-                 .expected_keyword_count = 0},
-        TestCase{.encryption_enabled = false,
-                 .feature_enabled = false,
-                 .tamper = false,
-                 .expected_histogram_sample = /*kNotVerifiedFeatureDisabled*/ 5,
-                 .expected_keyword_count = 1u},
-        TestCase{.encryption_enabled = false,
-                 .feature_enabled = true,
-                 .tamper = false,
-                 .expected_histogram_sample = /*kNotVerifiedNoCrypto*/ 4,
-                 .expected_keyword_count = 1u},
-        TestCase{.encryption_enabled = true,
-                 .feature_enabled = false,
-                 .tamper = false,
-                 .expected_histogram_sample = /*kNotVerifiedFeatureDisabled*/ 5,
-                 .expected_keyword_count = 1u},
-        TestCase{.encryption_enabled = true,
-                 .feature_enabled = true,
-                 .tamper = false,
-                 .expected_histogram_sample = /*kSuccess*/ 0,
-                 .expected_keyword_count = 1u}),
+        ::TestCase{.encryption_enabled = false,
+                   .tamper = true,
+                   .expected_histogram_sample = /*kNotVerifiedNoCrypto*/ 4,
+                   .expected_keyword_count = 1u},
+        ::TestCase{.encryption_enabled = true,
+                   .tamper = true,
+                   .expected_histogram_sample = /*kIncorrectHash*/ 3,
+                   .expected_keyword_count = 0},
+        ::TestCase{.encryption_enabled = false,
+                   .tamper = false,
+                   .expected_histogram_sample = /*kNotVerifiedNoCrypto*/ 4,
+                   .expected_keyword_count = 1u},
+        ::TestCase{.encryption_enabled = true,
+                   .tamper = false,
+                   .expected_histogram_sample = /*kSuccess*/ 0,
+                   .expected_keyword_count = 1u}),
     [](const auto& info) { return info.param.Name(); });
 
 TEST_F(KeywordTableTest, KeywordBadCrypto) {
-  base::test::ScopedFeatureList enable_verification(
-      features::kKeywordTableHashVerification);
   TemplateURLData keyword(CreateAndAddKeyword());
   {
     KeywordTable::Keywords keywords(GetKeywords());
@@ -410,11 +379,9 @@ TEST_F(KeywordTableTest, KeywordBadCrypto) {
                                   1);
   }
 }
+#endif  // BUILDFLAG(IS_WIN)
 
 TEST_F(KeywordTableTest, KeywordBadUrl) {
-  base::test::ScopedFeatureList enable_verification(
-      features::kKeywordTableHashVerification);
-
   TemplateURLData keyword(CreateAndAddKeyword());
   {
     KeywordTable::Keywords keywords(GetKeywords());

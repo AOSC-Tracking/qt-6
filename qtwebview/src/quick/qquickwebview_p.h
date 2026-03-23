@@ -1,5 +1,6 @@
 // Copyright (C) 2015 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKWEBVIEW_H
 #define QQUICKWEBVIEW_H
@@ -16,19 +17,19 @@
 //
 
 #include <QtWebViewQuick/private/qtwebviewquickglobal_p.h>
-#include <QtWebView/private/qwebview_p.h>
+#include <QtWebView/qwebview.h>
 #include <QtQml/qqmlregistration.h>
 
 #include <QtQuick/private/qquickwindowcontainer_p.h>
 
 Q_MOC_INCLUDE(<QtWebViewQuick/private/qquickwebviewloadrequest_p.h>)
 Q_MOC_INCLUDE(<QtWebViewQuick/private/qquickwebviewsettings_p.h>)
-Q_MOC_INCLUDE(<QtWebView/private/qwebviewloadrequest_p.h>)
+Q_MOC_INCLUDE(<QtWebView/qwebviewloadinginfo.h>)
 
 QT_BEGIN_NAMESPACE
 
 class QQuickWebViewLoadRequest;
-class QWebViewLoadRequestPrivate;
+class QWebViewLoadingInfo;
 class QQuickWebViewSettings;
 
 class Q_WEBVIEWQUICK_EXPORT QQuickWebView : public QQuickWindowContainer
@@ -43,7 +44,6 @@ class Q_WEBVIEWQUICK_EXPORT QQuickWebView : public QQuickWindowContainer
     Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY loadingChanged FINAL)
     Q_PROPERTY(bool canGoForward READ canGoForward NOTIFY loadingChanged FINAL)
     Q_PROPERTY(QQuickWebViewSettings *settings READ settings CONSTANT FINAL REVISION(6, 5))
-    Q_ENUMS(LoadStatus)
     QML_NAMED_ELEMENT(WebView)
     QML_ADDED_IN_VERSION(1, 0)
     QML_EXTRA_VERSION(2, 0)
@@ -55,6 +55,8 @@ public:
         LoadSucceededStatus,
         LoadFailedStatus
     };
+    Q_ENUM(LoadStatus)
+
     QQuickWebView(QQuickItem *parent = nullptr);
     ~QQuickWebView();
 
@@ -70,6 +72,9 @@ public:
     bool canGoForward() const;
     QWindow *nativeWindow();
     QQuickWebViewSettings *settings() const;
+
+protected:
+    void classBegin() override;
 
 public Q_SLOTS:
     void goBack();
@@ -92,22 +97,11 @@ Q_SIGNALS:
     Q_REVISION(6, 3) void cookieAdded(const QString &domain, const QString &name);
     Q_REVISION(6, 3) void cookieRemoved(const QString &domain, const QString &name);
 
-protected:
-#if defined(Q_OS_WASM)
-    void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
-#endif // Q_OS_WASM
-    void itemChange(ItemChange change, const ItemChangeData &value) override;
-    void runJavaScriptPrivate(const QString &script, int callbackId);
-
 private Q_SLOTS:
-    void onRunJavaScriptResult(int id, const QVariant &variant);
-    void onLoadingChanged(const QWebViewLoadRequestPrivate &loadRequest);
-    void onNativeWindowChanged(QWindow *window);
+    void onLoadingChanged(const QWebViewLoadingInfo &loadRequest);
 
 private:
     friend class QWebEngineWebViewPrivate;
-    static QJSValue takeCallback(int id);
-
     QWebView *m_webView;
     QQuickWebViewSettings *m_settings;
 };

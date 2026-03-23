@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qapplication.h"
 #include "qboxlayout.h"
@@ -431,7 +432,7 @@ int QBoxLayoutPrivate::validateIndex(int index) const
     the parentWidget()), divides it up into a row of boxes, and makes
     each managed widget fill one box.
 
-    \image qhboxlayout-with-5-children.png Horizontal box layout with five child widgets
+    \image qhboxlayout-with-5-children.png {Five buttons in horizontal layout}
 
     If the QBoxLayout's orientation is Qt::Horizontal the boxes are
     placed in a row, with suitable sizes. Each widget (or other box)
@@ -439,7 +440,7 @@ int QBoxLayoutPrivate::validateIndex(int index) const
     Any excess space is shared according to the stretch factors (more
     about that below).
 
-    \image qvboxlayout-with-5-children.png Vertical box layout with five child widgets
+    \image qvboxlayout-with-5-children.png {Five buttons in vertical layout}
 
     If the QBoxLayout's orientation is Qt::Vertical, the boxes are
     placed in a column, again with suitable sizes.
@@ -933,7 +934,7 @@ void QBoxLayout::insertLayout(int index, QLayout *layout, int stretch)
 
     If the stretch factor is 0 and nothing else in the QBoxLayout has
     a stretch factor greater than zero, the space is distributed
-    according to the QWidget:sizePolicy() of each widget that's
+    according to the QWidget::sizePolicy() of each widget that's
     involved.
 
     The alignment is specified by \a alignment. The default alignment
@@ -1007,7 +1008,7 @@ void QBoxLayout::addSpacerItem(QSpacerItem *spacerItem)
 
     If the stretch factor is 0 and nothing else in the QBoxLayout has
     a stretch factor greater than zero, the space is distributed
-    according to the QWidget:sizePolicy() of each widget that's
+    according to the QWidget::sizePolicy() of each widget that's
     involved.
 
     The alignment is specified by \a alignment. The default
@@ -1224,7 +1225,8 @@ QBoxLayout::Direction QBoxLayout::direction() const
     object onto \c window. At that point, the widgets in the layout are
     reparented to have \c window as their parent.
 
-    \image qhboxlayout-with-5-children.png Horizontal box layout with five child widgets
+    \image qhboxlayout-with-5-children.png
+           {Five buttons in horizontal layout}
 
     \sa QVBoxLayout, QGridLayout, QStackedLayout, {Layout Management}, {Basic Layouts Example}
 */
@@ -1297,7 +1299,8 @@ QHBoxLayout::~QHBoxLayout()
     object onto \c window. At that point, the widgets in the layout are
     reparented to have \c window as their parent.
 
-    \image qvboxlayout-with-5-children.png Horizontal box layout with five child widgets
+    \image qvboxlayout-with-5-children.png
+           {Horizontal box layout with five child widgets}
 
     \sa QHBoxLayout, QGridLayout, QStackedLayout, {Layout Management}, {Basic Layouts Example}
 */

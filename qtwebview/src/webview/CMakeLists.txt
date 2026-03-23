@@ -10,13 +10,12 @@ qt_internal_add_module(WebView
     DEPENDENCIES
         QtQuick/auto
     SOURCES
-        qabstractwebview_p.h
         qtwebviewfunctions.cpp qtwebviewfunctions.h
-        qwebview.cpp qwebview_p.h
+        qwebview.cpp qwebview.h qwebview_p.h
         qwebview_global.h
         qwebviewfactory.cpp qwebviewfactory_p.h
-        qwebviewinterface_p.h
-        qwebviewloadrequest.cpp qwebviewloadrequest_p.h
+        qwebviewloadinginfo.cpp qwebviewloadinginfo.h
+        qwebviewsettings.cpp qwebviewsettings.h
         qwebviewplugin.cpp qwebviewplugin_p.h
     LIBRARIES
         Qt::CorePrivate
@@ -37,11 +36,10 @@ if(ANDROID)
     set_property(TARGET WebView APPEND PROPERTY QT_ANDROID_LIB_DEPENDENCIES
         ${INSTALL_PLUGINSDIR}/webview/libplugins_webview_qtwebview_android.so
     )
-    set_property(TARGET WebView APPEND PROPERTY QT_ANDROID_PERMISSIONS
-        android.permission.ACCESS_FINE_LOCATION
+    qt_internal_add_android_permission(WebView
+        NAME android.permission.ACCESS_FINE_LOCATION
     )
 endif()
 qt_internal_add_docs(WebView
     doc/qtwebview.qdocconf
 )
-

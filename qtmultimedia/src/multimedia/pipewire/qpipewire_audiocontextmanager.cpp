@@ -113,49 +113,29 @@ PwNodeHandle QAudioContextManager::bindNode(ObjectId id)
     };
 }
 
+PwMetadataHandle QAudioContextManager::bindMetadata(ObjectId id)
+{
+    return PwMetadataHandle{
+        reinterpret_cast<pw_metadata *>(pw_registry_bind(m_registry.get(), id.value,
+                                                         PW_TYPE_INTERFACE_Metadata,
+                                                         PW_VERSION_METADATA, sizeof(void *))),
+    };
+}
+
 void QAudioContextManager::syncRegistry()
 {
-    QSemaphore sync;
+    using namespace std::chrono_literals;
+    CoreEventSyncHelper syncHelper;
 
-    int seqnum{};
-
-    auto handler = [&](uint32_t id, int seq) {
-        Q_ASSERT(isInPwThreadLoop());
-        if (id == PW_ID_CORE && seq == seqnum)
-            sync.release();
-    };
-
-    pw_core_events coreEvents = {};
-    spa_hook coreListener = {};
-    coreEvents.version = PW_VERSION_CORE_EVENTS;
-
-    coreEvents.done = [](void *object, uint32_t id, int seq) {
-        Q_ASSERT(isInPwThreadLoop());
-        (*reinterpret_cast<std::add_pointer_t<decltype(handler)>>(object))(id, seq);
-    };
-
-    bool syncStarted = withEventLoopLock([&] {
-        int status =
-                pw_core_add_listener(m_coreConnection.get(), &coreListener, &coreEvents, &handler);
-        if (status < 0) {
-            qFatal() << "pw_core_add_listener failed" << make_error_code(-status).message();
-            return false;
-        }
-
-        status = pw_core_sync(m_coreConnection.get(), PW_ID_CORE, 0);
-        if (status < 0) {
-            qFatal() << "pw_core_sync failed" << make_error_code(-status).message();
-            return false;
-        }
-
-        seqnum = status;
-        return true;
-    });
-
-    if (syncStarted)
-        sync.acquire();
-
-    spa_hook_remove(&coreListener);
+    auto syncOrErr = syncHelper.sync(m_coreConnection.get(), 3s);
+    if (syncOrErr == true)
+        return;
+    if (syncOrErr == false)
+        qWarning() << "pw_core_sync timed out";
+    else if (syncOrErr.error()) {
+        int err = syncOrErr.error();
+        qWarning() << "CoreEventSyncHelper::sync failed:" << make_error_code(err).message();
+    }
 }
 
 void QAudioContextManager::registerStreamReference(std::shared_ptr<QPipewireAudioStream> stream)
@@ -169,6 +149,11 @@ void QAudioContextManager::unregisterStreamReference(
 {
     std::lock_guard guard{ m_activeStreamMutex };
     m_activeStreams.erase(stream);
+}
+
+const PwCoreConnectionHandle &QAudioContextManager::coreConnection() const
+{
+    return m_coreConnection;
 }
 
 void QAudioContextManager::prepareEventLoop()
@@ -248,7 +233,8 @@ void QAudioContextManager::objectRemovedCb(void *data, uint32_t id)
 
     qCDebug(lcPipewireRegistry) << "objectRemoved" << id;
 
-    reinterpret_cast<QAudioContextManager *>(data)->m_deviceMonitor->objectRemoved(ObjectId{ id });
+    auto *self = reinterpret_cast<QAudioContextManager *>(data);
+    self->objectRemoved(ObjectId{ id });
 }
 
 void QAudioContextManager::objectAdded(ObjectId id, uint32_t permissions, PipewireRegistryType type,
@@ -263,7 +249,7 @@ void QAudioContextManager::objectAdded(ObjectId id, uint32_t permissions, Pipewi
         const char *name = spa_dict_lookup(&props, PW_KEY_METADATA_NAME);
         if (name == std::string_view("default"))
             // the "default" metadata will inform us about the "default" device
-            return startListenDefaultMetadata(id, version);
+            return startListenDefaultMetadataObject(id, version);
         return;
     }
 
@@ -272,10 +258,22 @@ void QAudioContextManager::objectAdded(ObjectId id, uint32_t permissions, Pipewi
     }
 }
 
-void QAudioContextManager::startListenDefaultMetadata(ObjectId id, uint32_t version)
+void QAudioContextManager::objectRemoved(ObjectId id)
 {
-    if (m_defaultMetadata) {
+    m_deviceMonitor->objectRemoved(id);
+}
+
+void QAudioContextManager::startListenDefaultMetadataObject(ObjectId id, uint32_t version)
+{
+    if (m_defaultMetadataObject) {
         qWarning(lcPipewireRegistry) << "metadata already registered";
+        return;
+    }
+
+    if (version < PW_VERSION_METADATA) {
+        Q_UNLIKELY_BRANCH;
+        qWarning(lcPipewireRegistry)
+                << "metadata version too old, cannot listen to default metadata object";
         return;
     }
 
@@ -283,28 +281,28 @@ void QAudioContextManager::startListenDefaultMetadata(ObjectId id, uint32_t vers
         .version = PW_VERSION_METADATA_EVENTS,
         .property = [](void *data, uint32_t subject, const char *key, const char *type,
                        const char *value) -> int {
-        Q_ASSERT(subject == PW_ID_CORE);
+        auto *self = reinterpret_cast<QAudioContextManager *>(data);
 
-        auto self = reinterpret_cast<QAudioContextManager *>(data);
-
-        Q_ASSERT(key);
-        return self->handleMetadata(MetadataRecord{
-                .key = key,
-                .type = type,
-                .value = value,
-        });
+        return self->handleDefaultMetadataObjectEvent(
+                ObjectId{
+                        subject,
+                },
+                MetadataRecord{
+                        .key = key,
+                        .type = type,
+                        .value = value,
+                });
     },
     };
 
-    m_defaultMetadata.reset(reinterpret_cast<pw_metadata *>(pw_registry_bind(
-            m_registry.get(), id.value, PW_TYPE_INTERFACE_Metadata, version, sizeof(this))));
-    if (!m_defaultMetadata) {
+    m_defaultMetadataObject = bindMetadata(id);
+    if (!m_defaultMetadataObject) {
         qFatal() << "cannot bind to metadata";
         return;
     }
 
-    int status = pw_metadata_add_listener(m_defaultMetadata.get(), &m_defaultMetadataListener,
-                                          &metadata_events, this);
+    int status = pw_metadata_add_listener(m_defaultMetadataObject.get(),
+                                          &m_defaultMetadataObjectListener, &metadata_events, this);
     if (status < 0)
         qFatal() << "Failed to add listener" << make_error_code(-status).message();
 }
@@ -356,11 +354,16 @@ std::optional<QByteArray> jsonParseObjectName(const char *json_str)
 
 } // namespace
 
-int QAudioContextManager::handleMetadata(const MetadataRecord &record)
+int QAudioContextManager::handleDefaultMetadataObjectEvent(ObjectId subject,
+                                                           const MetadataRecord &record)
 {
     using namespace std::string_view_literals;
 
-    qDebug(lcPipewireRegistry) << "metadata:" << record.key << record.type << record.value;
+    qCDebug(lcPipewireRegistry) << "metadata for" << subject << " - " << record.key << record.type
+                                << record.value;
+
+    if (subject != ObjectId{ PW_ID_CORE })
+        return 0;
 
     if (record.key == nullptr) {
         // "NULL clears all metadata for the subject"

@@ -12,12 +12,10 @@ qt_internal_get_wayland_extensions_dir(extensions_dir)
 
 qt_internal_add_qml_module(WaylandTextureSharing
     URI "QtWayland.Client.TextureSharing"
-    VERSION "1.${PROJECT_VERSION_MINOR}"
+    PAST_MAJOR_VERSIONS 1
     NO_PLUGIN_OPTIONAL
     NO_GENERATE_PLUGIN_SOURCE
-    NO_GENERATE_QMLTYPES
     PLUGIN_TARGET WaylandTextureSharing
-    # no qmltypes file available, so nothing to install
     CLASS_NAME QWaylandTextureSharingPlugin
     SOURCES
         plugin.cpp

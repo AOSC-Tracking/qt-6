@@ -10,7 +10,6 @@
 #include "base/containers/fixed_flat_set.h"
 #include "build/build_config.h"
 #include "components/commerce/core/commerce_constants.h"
-#include "components/nacl/common/buildflags.h"
 #include "device/vr/buildflags/buildflags.h"
 #include "extensions/buildflags/buildflags.h"
 #include "third_party/blink/public/common/chrome_debug_urls.h"
@@ -40,6 +39,7 @@ bool IsSystemWebUIHost(std::string_view host) {
       kChromeUIBluetoothPairingHost,
       kChromeUIBorealisCreditsHost,
       kChromeUIBorealisInstallerHost,
+      kChromeUIBorealisMOTDHost,
       kChromeUICertificateManagerHost,
       kChromeUICloudUploadHost,
       kChromeUICrostiniCreditsHost,
@@ -76,6 +76,7 @@ base::span<const base::cstring_view> ChromeURLHosts() {
   static constexpr auto kChromeURLHosts = std::to_array<base::cstring_view>({
       kChromeUIAboutHost,
       kChromeUIAccessibilityHost,
+      kChromeUIActorInternalsHost,
 #if !BUILDFLAG(IS_ANDROID)
       kChromeUIAppServiceInternalsHost,
 #endif
@@ -87,6 +88,7 @@ base::span<const base::cstring_view> ChromeURLHosts() {
 #if !BUILDFLAG(IS_QTWEBENGINE)
       commerce::kChromeUICommerceInternalsHost,
 #endif
+      kChromeUIConnectorsInternalsHost,
       kChromeUICrashesHost,
       kChromeUICreditsHost,
 #if BUILDFLAG(IS_CHROMEOS) && !defined(OFFICIAL_BUILD)
@@ -207,8 +209,7 @@ base::span<const base::cstring_view> ChromeURLHosts() {
       kChromeUIAssistantOptInHost,
 #endif
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
-      kChromeUIConnectorsInternalsHost,
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_DESKTOP_ANDROID)
       kChromeUIDiscardsHost,
 #endif
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
@@ -224,10 +225,7 @@ base::span<const base::cstring_view> ChromeURLHosts() {
 #if BUILDFLAG(IS_WIN)
       kChromeUIConflictsHost,
 #endif
-#if BUILDFLAG(ENABLE_NACL)
-      kChromeUINaClHost,
-#endif
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
       kChromeUIExtensionsHost,
       kChromeUIExtensionsInternalsHost,
 #endif
@@ -240,6 +238,9 @@ base::span<const base::cstring_view> ChromeURLHosts() {
 #if BUILDFLAG(IS_CHROMEOS)
       kChromeUIDlpInternalsHost,
 #endif  // BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_ANDROID)
+      kChromeUIWebuiBrowserHost,
+#endif  // !BUILDFLAG(IS_ANDROID)
   });
 
   return base::span(kChromeURLHosts);

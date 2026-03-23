@@ -15,8 +15,8 @@
 
 namespace array {
 class SortState extends HeapObject {
-  transitioning macro Compare(implicit context: Context)(x: JSAny, y: JSAny):
-      Number {
+  transitioning macro Compare(implicit context: Context)(x: JSAny,
+                              y: JSAny): Number {
     if (this.userCmpFn != Undefined) {
       return SortCompareUserFn(context, this.userCmpFn, x, y);
     } else {
@@ -278,7 +278,7 @@ Store<FastDoubleElements>(
     dcheck(kEnableExperimentalUndefinedDouble);
     @if(V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE) {
       dcheck(Is<Undefined>(value));
-      StoreFixedDoubleArrayUndefined(elements, SmiUntag(index));
+      StoreFixedDoubleArrayUndefined(elements, index);
     }
   }
   return kSuccess;
@@ -381,8 +381,8 @@ CanUseSameAccessor<GenericElementsAccessor>(
 
 // Re-loading the stack-size is done in a few places. The small macro allows
 // for easier invariant checks at all use sites.
-macro GetPendingRunsSize(implicit context: Context)(sortState: SortState):
-    Smi {
+macro GetPendingRunsSize(implicit context: Context)(
+                            sortState: SortState): Smi {
   const stackSize: Smi = sortState.pendingRunsSize;
   dcheck(stackSize >= 0);
   return stackSize;
@@ -1384,13 +1384,15 @@ transitioning macro CopyWorkArrayToReceiver(
         context, sortState, index, UnsafeCast<JSAny>(workArray.objects[index]));
   }
 
+  const end: Smi = sortState.sortLength;
+  if (index == end) return;
+
   const numberOfUndefinedEnd: Smi =
       sortState.numberOfUndefined + numberOfNonUndefined;
   for (; index < numberOfUndefinedEnd; ++index) {
     storeFn(context, sortState, index, Undefined);
   }
 
-  const end: Smi = sortState.sortLength;
   let deleteFn: builtin(Context, SortState, Smi) => Smi;
   try {
     if (sortState.isResetToGeneric == True) goto Slow;
@@ -1418,7 +1420,13 @@ transitioning builtin ArrayTimSort(context: Context, sortState: SortState):
   const isToSorted: constexpr bool = false;
   const numberOfNonUndefined: Smi =
       CompactReceiverElementsIntoWorkArray(isToSorted);
-  ArrayTimSortImpl(context, sortState, numberOfNonUndefined);
+
+  if (numberOfNonUndefined < 8) {
+    // Faster for small arrays.
+    BinaryInsertionSort(0, 0, numberOfNonUndefined);
+  } else {
+    ArrayTimSortImpl(context, sortState, numberOfNonUndefined);
+  }
 
   try {
     // The comparison function or toString might have changed the

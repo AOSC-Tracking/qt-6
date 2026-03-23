@@ -5,7 +5,6 @@
 import type * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
-import * as Bindings from '../../models/bindings/bindings.js';
 import * as Persistence from '../../models/persistence/persistence.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as QuickOpen from '../../ui/legacy/components/quick_open/quick_open.js';
@@ -23,7 +22,7 @@ const UIStrings = {
    *@example {compile.html} PH1
    */
   sIgnoreListed: '{PH1} (ignore listed)',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/sources/FilteredUISourceCodeListProvider.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class FilteredUISourceCodeListProvider extends QuickOpen.FilteredListWidget.Provider {
@@ -58,7 +57,7 @@ export class FilteredUISourceCodeListProvider extends QuickOpen.FilteredListWidg
         for (const uiSourceCode of project.uiSourceCodes()) {
           if (this.filterUISourceCode(uiSourceCode)) {
             this.uiSourceCodes.push(uiSourceCode);
-            this.uiSourceCodeIds.add(uiSourceCode.canononicalScriptId());
+            this.uiSourceCodeIds.add(uiSourceCode.canonicalScriptId());
           }
         }
       }
@@ -66,11 +65,11 @@ export class FilteredUISourceCodeListProvider extends QuickOpen.FilteredListWidg
   }
 
   private filterUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): boolean {
-    if (this.uiSourceCodeIds.has(uiSourceCode.canononicalScriptId())) {
+    if (this.uiSourceCodeIds.has(uiSourceCode.canonicalScriptId())) {
       return false;
     }
     if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.JUST_MY_CODE) &&
-        Bindings.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
+        Workspace.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
             uiSourceCode)) {
       return false;
     }
@@ -134,7 +133,7 @@ export class FilteredUISourceCodeListProvider extends QuickOpen.FilteredListWidg
     if (uiSourceCode.contentType().isScript()) {
       // Bonus points for being a script if it is not ignore-listed. Note
       // that ignore listing logic does not apply to non-scripts.
-      if (!Bindings.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
+      if (!Workspace.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
               uiSourceCode)) {
         contentTypeBonus += 50;
       }
@@ -153,7 +152,8 @@ export class FilteredUISourceCodeListProvider extends QuickOpen.FilteredListWidg
     new FilePathScoreFunction(query).calculateScore(fullDisplayName, indexes);
     const fileNameIndex = fullDisplayName.lastIndexOf('/');
     const isIgnoreListed =
-        Bindings.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(uiSourceCode);
+        Workspace.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
+            uiSourceCode);
     let tooltipText = fullDisplayName;
 
     if (isIgnoreListed) {
@@ -228,7 +228,7 @@ export class FilteredUISourceCodeListProvider extends QuickOpen.FilteredListWidg
       return;
     }
     this.uiSourceCodes.push(uiSourceCode);
-    this.uiSourceCodeIds.add(uiSourceCode.canononicalScriptId());
+    this.uiSourceCodeIds.add(uiSourceCode.canonicalScriptId());
     this.refresh();
   }
 

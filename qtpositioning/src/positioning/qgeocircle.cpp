@@ -30,8 +30,7 @@ QT_IMPL_METATYPE_EXTERN(QGeoCircle)
     The circle is considered invalid if the center coordinate is invalid
     or if the radius is less than zero.
 
-    This class is a \l Q_GADGET since Qt 5.5.  It can be
-    \l{Cpp_value_integration_positioning}{directly used from C++ and QML}.
+    This class is also accessible in QML as \l[QML]{geoCircle}.
 */
 
 /*!
@@ -121,7 +120,11 @@ QGeoCircle &QGeoCircle::operator=(const QGeoCircle &other)
     QGeoShape::operator=(other);
     return *this;
 }
-
+/*!
+ * \class QGeoCirclePrivate
+ * \inmodule QtPositioning
+ * \internal
+ */
 bool QGeoCirclePrivate::isValid() const
 {
     return m_center.isValid() && !qIsNaN(m_radius) && m_radius >= -1e-7;
@@ -179,7 +182,7 @@ bool QGeoCirclePrivate::contains(const QGeoCoordinate &coordinate) const
 
     // see QTBUG-41447 for details
     qreal distance = m_center.distanceTo(coordinate);
-    if (qFuzzyCompare(distance, m_radius) || distance <= m_radius)
+    if (distance <= m_radius || QtPrivate::fuzzyCompare(distance, m_radius))
         return true;
 
     return false;

@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QPIESLICE_P_H
 #define QPIESLICE_P_H
@@ -31,12 +33,19 @@ class QQuickText;
 class QPieSlicePrivate : public QObjectPrivate
 {
 public:
+    static QPieSlicePrivate *get(QPieSlice *item) { return item->d_func(); }
+    static const QPieSlicePrivate *get(const QPieSlice *item) { return item->d_func(); }
+
     QPieSlicePrivate();
     ~QPieSlicePrivate() override;
 
     void setPercentage(qreal percentage);
     void setStartAngle(qreal angle);
     void setAngleSpan(qreal span);
+
+    void updateData(bool clearHidden = false);
+    void updateSeries(QPieSeries *series);
+    void handleSliceChange();
 
 private:
     friend class QPieSeries;
@@ -76,6 +85,10 @@ private:
     QPointF m_labelArm;
 
     QPieSeries *m_series = nullptr;
+
+    qreal m_sum = 0;
+    QList<QPieSlice *> m_subSlices;
+    qreal m_subSlicesRatio = 0.7;
 
     Q_DECLARE_PUBLIC(QPieSlice)
 };

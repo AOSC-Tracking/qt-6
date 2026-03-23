@@ -50,7 +50,7 @@ class Q_AUTOTEST_EXPORT QTimeZonePrivate : public QSharedData
 {
     // Nothing should be copy-assigning instances of either this or its derived
     // classes (only clone() should copy, using the copy-constructor):
-    bool operator=(const QTimeZonePrivate &) const = delete;
+    QTimeZonePrivate &operator=(const QTimeZonePrivate &) const = delete;
 protected:
     QTimeZonePrivate(const QTimeZonePrivate &other) = default;
 public:
@@ -162,9 +162,13 @@ public:
         QByteArray ianaId;
         qsizetype nameLength = 0;
         QTimeZone::TimeType timeType = QTimeZone::GenericTime;
+        operator bool() const { return nameLength > 0; }
     };
     static NamePrefixMatch findLongNamePrefix(QStringView text, const QLocale &locale,
                                               std::optional<qint64> atEpochMillis = std::nullopt);
+    static NamePrefixMatch findNarrowOffsetPrefix(QStringView text, const QLocale &locale);
+    // Match the unlocalized long form of QUtcTimeZonePrivate:
+    static NamePrefixMatch findLongUtcPrefix(QStringView text);
 
     // returns "UTC" QString and QByteArray
     [[nodiscard]] static inline QString utcQString()
@@ -204,11 +208,9 @@ protected:
 };
 Q_DECLARE_TYPEINFO(QTimeZonePrivate::Data, Q_RELOCATABLE_TYPE);
 
-template<> QTimeZonePrivate *QSharedDataPointer<QTimeZonePrivate>::clone();
-
 class Q_AUTOTEST_EXPORT QUtcTimeZonePrivate final : public QTimeZonePrivate
 {
-    bool operator=(const QUtcTimeZonePrivate &) const = delete;
+    QUtcTimeZonePrivate &operator=(const QUtcTimeZonePrivate &) const = delete;
     QUtcTimeZonePrivate(const QUtcTimeZonePrivate &other);
 public:
     // Create default UTC time zone
@@ -271,7 +273,7 @@ private:
 #if QT_CONFIG(timezone_tzdb)
 class QChronoTimeZonePrivate final : public QTimeZonePrivate
 {
-    bool operator=(const QChronoTimeZonePrivate &) const = delete;
+    QChronoTimeZonePrivate &operator=(const QChronoTimeZonePrivate &) const = delete;
     QChronoTimeZonePrivate(const QChronoTimeZonePrivate &) = default;
 public:
     QChronoTimeZonePrivate();
@@ -305,7 +307,7 @@ private:
 #elif defined(Q_OS_DARWIN)
 class Q_AUTOTEST_EXPORT QMacTimeZonePrivate final : public QTimeZonePrivate
 {
-    bool operator=(const QMacTimeZonePrivate &) const = delete;
+    QMacTimeZonePrivate &operator=(const QMacTimeZonePrivate &) const = delete;
     QMacTimeZonePrivate(const QMacTimeZonePrivate &other);
 public:
     // Create default time zone
@@ -351,7 +353,7 @@ private:
 #elif defined(Q_OS_ANDROID)
 class QAndroidTimeZonePrivate final : public QTimeZonePrivate
 {
-    bool operator=(const QAndroidTimeZonePrivate &) const = delete;
+    QAndroidTimeZonePrivate &operator=(const QAndroidTimeZonePrivate &) const = delete;
     QAndroidTimeZonePrivate(const QAndroidTimeZonePrivate &) = default;
 public:
     // Create default time zone
@@ -386,7 +388,7 @@ private:
 
     QJniObject androidTimeZone;
 };
-#elif defined(Q_OS_UNIX)
+#elif defined(Q_OS_UNIX) && !defined(Q_OS_VXWORKS)
 struct QTzTransitionTime
 {
     qint64 atMSecsSinceEpoch;
@@ -419,7 +421,7 @@ struct QTzTimeZoneCacheEntry
 
 class Q_AUTOTEST_EXPORT QTzTimeZonePrivate final : public QTimeZonePrivate
 {
-    bool operator=(const QTzTimeZonePrivate &) const = delete;
+    QTzTimeZonePrivate &operator=(const QTzTimeZonePrivate &) const = delete;
     QTzTimeZonePrivate(const QTzTimeZonePrivate &) = default;
 public:
     // Create default time zone
@@ -472,7 +474,7 @@ private:
 #elif QT_CONFIG(icu)
 class Q_AUTOTEST_EXPORT QIcuTimeZonePrivate final : public QTimeZonePrivate
 {
-    bool operator=(const QIcuTimeZonePrivate &) const = delete;
+    QIcuTimeZonePrivate &operator=(const QIcuTimeZonePrivate &) const = delete;
     QIcuTimeZonePrivate(const QIcuTimeZonePrivate &other);
 public:
     // Create default time zone
@@ -516,7 +518,7 @@ private:
 #elif defined(Q_OS_WIN)
 class Q_AUTOTEST_EXPORT QWinTimeZonePrivate final : public QTimeZonePrivate
 {
-    bool operator=(const QWinTimeZonePrivate &) const = delete;
+    QWinTimeZonePrivate &operator=(const QWinTimeZonePrivate &) const = delete;
     QWinTimeZonePrivate(const QWinTimeZonePrivate &) = default;
 public:
     struct QWinTransitionRule {

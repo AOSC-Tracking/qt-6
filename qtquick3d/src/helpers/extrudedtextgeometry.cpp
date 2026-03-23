@@ -1,6 +1,8 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // Copyright (C) 2017 Klaralvdalens Datakonsult AB (KDAB).
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "extrudedtextgeometry_p.h"
 #include <QPainterPath>
@@ -335,6 +337,7 @@ void ExtrudedTextGeometry::updateGeometry(const GeometryData &geometryData)
         Q_EMIT statusChanged();
     }
     update();
+    emit geometryChanged();
 }
 
 ExtrudedTextGeometry::GeometryData ExtrudedTextGeometry::generateExtrudedTextGeometry(const QString &text,

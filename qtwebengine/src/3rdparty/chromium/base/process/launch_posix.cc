@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "base/process/launch.h"
 
 #include <dirent.h>
@@ -34,7 +29,6 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/debugger.h"
-#include "base/debug/stack_trace.h"
 #include "base/files/dir_reader_posix.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
@@ -47,7 +41,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/threading/platform_thread_internal_posix.h"
 #include "base/threading/scoped_blocking_call.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_AIX)
@@ -271,7 +265,7 @@ void CloseSuperfluousFds(const base::InjectiveMultimap& saved_mapping) {
 
     char* endptr;
     errno = 0;
-    const long int fd = strtol(fd_dir.name(), &endptr, 10);
+    const long int fd = UNSAFE_TODO(strtol(fd_dir.name(), &endptr, 10));
     if (fd_dir.name()[0] == 0 || *endptr || fd < 0 || errno ||
         !IsValueInRangeForNumericType<int>(fd)) {
       continue;
@@ -722,6 +716,13 @@ bool GetAppOutputWithExitCode(const CommandLine& cl,
                               exit_code);
 }
 
+bool GetAppOutputWithExitCode(const std::vector<std::string>& argv,
+                              std::string* output,
+                              int* exit_code) {
+  // Run |execve()| with the current environment.
+  return GetAppOutputInternal(argv, nullptr, false, output, true, exit_code);
+}
+
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_AIX)
 namespace {
 
@@ -764,7 +765,7 @@ NOINLINE pid_t CloneAndLongjmpInChild(int flags,
     defined(ARCH_CPU_PPC64_FAMILY) || defined(ARCH_CPU_LOONGARCH_FAMILY) || \
     defined(ARCH_CPU_RISCV_FAMILY)
   // The stack grows downward.
-  void* stack = stack_buf + sizeof(stack_buf);
+  void* stack = UNSAFE_TODO(stack_buf + sizeof(stack_buf));
 #else
 #error "Unsupported architecture"
 #endif

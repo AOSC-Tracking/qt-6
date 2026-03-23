@@ -5,14 +5,18 @@
 #ifndef V8_HEAP_HEAP_WRITE_BARRIER_INL_H_
 #define V8_HEAP_HEAP_WRITE_BARRIER_INL_H_
 
+#include "src/heap/heap-write-barrier.h"
+// Include the non-inl header before the rest of the headers.
+
 // Clients of this interface shouldn't depend on lots of heap internals.
 // Do not include anything from src/heap here!
 
 #include "src/heap/heap-layout-inl.h"
-#include "src/heap/heap-write-barrier.h"
 #include "src/heap/marking-barrier.h"
 #include "src/heap/memory-chunk.h"
 #include "src/objects/compressed-slots-inl.h"
+#include "src/objects/cpp-heap-object-wrapper.h"
+#include "src/objects/descriptor-array.h"
 #include "src/objects/maybe-object-inl.h"
 
 namespace v8::internal {
@@ -345,7 +349,7 @@ void WriteBarrier::MarkingFromTracedHandle(Tagged<Object> value) {
 }
 
 // static
-void WriteBarrier::ForCppHeapPointer(Tagged<JSObject> host,
+void WriteBarrier::ForCppHeapPointer(Tagged<CppHeapPointerWrapperObjectT> host,
                                      CppHeapPointerSlot slot, void* value) {
   // Note: this is currently a combined barrier for marking both the
   // CppHeapPointerTable entry and the referenced object.
@@ -372,8 +376,8 @@ void WriteBarrier::ForCppHeapPointer(Tagged<JSObject> host,
 }
 
 // static
-void WriteBarrier::GenerationalBarrierForCppHeapPointer(Tagged<JSObject> host,
-                                                        void* value) {
+void WriteBarrier::GenerationalBarrierForCppHeapPointer(
+    Tagged<CppHeapPointerWrapperObjectT> host, void* value) {
   if (!value) {
     return;
   }
@@ -381,12 +385,12 @@ void WriteBarrier::GenerationalBarrierForCppHeapPointer(Tagged<JSObject> host,
   if (V8_LIKELY(HeapLayout::InYoungGeneration(memory_chunk, host))) {
     return;
   }
-  auto* cpp_heap = memory_chunk->GetHeap()->cpp_heap();
+  auto* cpp_heap = memory_chunk->Metadata()->heap()->cpp_heap();
   v8::internal::CppHeap::From(cpp_heap)->RememberCrossHeapReferenceIfNeeded(
       host, value);
 }
 
-#ifdef ENABLE_SLOW_DCHECKS
+#if defined(ENABLE_SLOW_DCHECKS) || defined(V8_ENABLE_DEBUG_CODE)
 // static
 template <typename T>
 bool WriteBarrier::IsRequired(Tagged<HeapObject> host, T value) {
@@ -405,6 +409,9 @@ bool WriteBarrier::IsRequired(Tagged<HeapObject> host, T value) {
   }
   return !IsImmortalImmovableHeapObject(target);
 }
+#endif
+
+#ifdef ENABLE_SLOW_DCHECKS
 // static
 template <typename T>
 bool WriteBarrier::IsRequired(const HeapObjectLayout* host, T value) {

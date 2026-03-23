@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_FILLING_FORM_FILLER_TEST_API_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_FILLING_FORM_FILLER_TEST_API_H_
 
+#include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/filling/form_filler.h"
 
 namespace autofill {
@@ -19,12 +20,12 @@ class FormFillerTestApi {
     form_filler_->limit_before_refill_ = limit;
   }
 
-  void AddFormFillEntry(
+  void AddFormFillingEntry(
       base::span<const FormFieldData* const> filled_fields,
       base::span<const AutofillField* const> filled_autofill_fields,
       FillingProduct filling_product,
       bool is_refill) {
-    form_filler_->form_autofill_history_.AddFormFillEntry(
+    form_filler_->form_autofill_history_.AddFormFillingEntry(
         filled_fields, filled_autofill_fields, filling_product, is_refill);
   }
 

@@ -25,6 +25,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "base/containers/span.h"
@@ -35,7 +36,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/pickle.h"
 #include "base/run_loop.h"
-#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
@@ -44,7 +44,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkScalar.h"
@@ -125,7 +124,7 @@ class MockPolicyController : public DataTransferPolicyController {
       PasteIfAllowed,
       void(base::optional_ref<const DataTransferEndpoint> data_src,
            base::optional_ref<const DataTransferEndpoint> data_dst,
-           absl::variant<size_t, std::vector<base::FilePath>> pasted_content,
+           std::variant<size_t, std::vector<base::FilePath>> pasted_content,
            content::RenderFrameHost* rfh,
            base::OnceCallback<void(bool)> callback));
   MOCK_METHOD4(DropIfAllowed,
@@ -177,7 +176,7 @@ TYPED_TEST(ClipboardTest, TextTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeText)));
+              Contains(kMimeTypePlainText16));
   EXPECT_TRUE(this->clipboard().IsFormatAvailable(
       ClipboardFormatType::PlainTextType(), ClipboardBuffer::kCopyPaste,
       /* data_dst = */ nullptr));
@@ -208,7 +207,7 @@ TYPED_TEST(ClipboardTest, HTMLTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeHTML)));
+              Contains(kMimeTypeHtml16));
   EXPECT_TRUE(this->clipboard().IsFormatAvailable(
       ClipboardFormatType::HtmlType(), ClipboardBuffer::kCopyPaste,
       /* data_dst = */ nullptr));
@@ -236,7 +235,7 @@ TYPED_TEST(ClipboardTest, SvgTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeSvg)));
+              Contains(kMimeTypeSvg16));
   EXPECT_TRUE(this->clipboard().IsFormatAvailable(
       ClipboardFormatType::SvgType(), ClipboardBuffer::kCopyPaste,
       /* data_dst = */ nullptr));
@@ -275,7 +274,7 @@ TYPED_TEST(ClipboardTest, RTFTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeRTF)));
+              Contains(kMimeTypeRtf16));
   EXPECT_TRUE(this->clipboard().IsFormatAvailable(
       ClipboardFormatType::RtfType(), ClipboardBuffer::kCopyPaste,
       /* data_dst = */ nullptr));
@@ -310,9 +309,9 @@ TYPED_TEST(ClipboardTest, MultipleBufferTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeText)));
+              Contains(kMimeTypePlainText16));
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kSelection),
-              Contains(ASCIIToUTF16(kMimeTypeHTML)));
+              Contains(kMimeTypeHtml16));
 
   EXPECT_TRUE(this->clipboard().IsFormatAvailable(
       ClipboardFormatType::PlainTextType(), ClipboardBuffer::kCopyPaste,
@@ -356,7 +355,7 @@ TYPED_TEST(ClipboardTest, TrickyHTMLTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeHTML)));
+              Contains(kMimeTypeHtml16));
   EXPECT_TRUE(this->clipboard().IsFormatAvailable(
       ClipboardFormatType::HtmlType(), ClipboardBuffer::kCopyPaste,
       /* data_dst = */ nullptr));
@@ -391,7 +390,7 @@ TYPED_TEST(ClipboardTest, UnicodeHTMLTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeHTML)));
+              Contains(kMimeTypeHtml16));
   EXPECT_TRUE(this->clipboard().IsFormatAvailable(
       ClipboardFormatType::HtmlType(), ClipboardBuffer::kCopyPaste,
       /* data_dst = */ nullptr));
@@ -477,9 +476,9 @@ TYPED_TEST(ClipboardTest, MultiFormatTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeHTML)));
+              Contains(kMimeTypeHtml16));
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeText)));
+              Contains(kMimeTypePlainText16));
   EXPECT_TRUE(this->clipboard().IsFormatAvailable(
       ClipboardFormatType::HtmlType(), ClipboardBuffer::kCopyPaste,
       /* data_dst = */ nullptr));
@@ -521,7 +520,7 @@ TYPED_TEST(ClipboardTest, URLTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeText)));
+              Contains(kMimeTypePlainText16));
   EXPECT_TRUE(this->clipboard().IsFormatAvailable(
       ClipboardFormatType::PlainTextType(), ClipboardBuffer::kCopyPaste,
       /* data_dst = */ nullptr));
@@ -564,23 +563,22 @@ TYPED_TEST(ClipboardTest, ChromiumCustomFormatTest) {
   }
 
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeHTML)));
-  EXPECT_THAT(
-      this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-      testing::Not(Contains(ASCIIToUTF16(kMimeTypeDataTransferCustomData))));
+              Contains(kMimeTypeHtml16));
+  EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
+              testing::Not(Contains(kMimeTypeDataTransferCustomData16)));
   {
     ScopedClipboardWriter clipboard_writer(ClipboardBuffer::kCopyPaste);
     base::flat_map<std::u16string, std::u16string> custom_data;
-    custom_data[ASCIIToUTF16(kMimeTypeDataTransferCustomData)] = u"data";
+    custom_data[kMimeTypeDataTransferCustomData16] = u"data";
     base::Pickle pickle;
     WriteCustomDataToPickle(custom_data, &pickle);
     clipboard_writer.WritePickledData(
         pickle, ClipboardFormatType::DataTransferCustomType());
   }
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              testing::Not(Contains(ASCIIToUTF16(kMimeTypeHTML))));
+              testing::Not(Contains(kMimeTypeHtml16)));
   EXPECT_THAT(this->GetAvailableTypes(ClipboardBuffer::kCopyPaste),
-              Contains(ASCIIToUTF16(kMimeTypeDataTransferCustomData)));
+              Contains(kMimeTypeDataTransferCustomData16));
 }
 #endif  // BUILDFLAG(IS_WIN)
 

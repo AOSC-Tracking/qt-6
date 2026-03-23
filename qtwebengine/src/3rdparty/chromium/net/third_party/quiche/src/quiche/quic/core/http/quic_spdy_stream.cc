@@ -9,8 +9,10 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/base/macros.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
@@ -39,10 +41,12 @@
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_testvalue.h"
 #include "quiche/common/capsule.h"
+#include "quiche/common/http/http_header_block.h"
 #include "quiche/common/platform/api/quiche_flag_utils.h"
 #include "quiche/common/platform/api/quiche_logging.h"
 #include "quiche/common/quiche_mem_slice_storage.h"
 #include "quiche/common/quiche_text_utils.h"
+#include "quiche/web_transport/web_transport_headers.h"
 
 using ::quiche::Capsule;
 using ::quiche::CapsuleType;
@@ -337,7 +341,7 @@ void QuicSpdyStream::WriteOrBufferBody(absl::string_view data, bool fin) {
   if (!AssertNotWebTransportDataStream("writing body data")) {
     return;
   }
-  if (!VersionUsesHttp3(transport_version()) || data.length() == 0) {
+  if (!VersionUsesHttp3(transport_version()) || data.empty()) {
     WriteOrBufferData(data, fin, nullptr);
     return;
   }
@@ -426,6 +430,8 @@ bool QuicSpdyStream::WriteDataFrameHeader(QuicByteCount data_length,
       send_buffer().stream_offset() + header.size());
   QUIC_DVLOG(1) << ENDPOINT << "Stream " << id()
                 << " is writing DATA frame header of length " << header.size();
+  // TODO: b/417402601 - once we always use inlining send buffer, the code below
+  // should always use WriteOrBufferData.
   if (can_write) {
     // Save one copy and allocation if send buffer can accomodate the header.
     quiche::QuicheMemSlice header_slice(std::move(header));
@@ -1038,15 +1044,13 @@ bool QuicSpdyStream::OnDataFrameEnd() {
 }
 
 // TODO(danzh): Remove this override once the flag is deprecated.
-bool QuicSpdyStream::OnStreamFrameAcked(QuicStreamOffset offset,
-                                        QuicByteCount data_length,
-                                        bool fin_acked,
-                                        QuicTime::Delta ack_delay_time,
-                                        QuicTime receive_timestamp,
-                                        QuicByteCount* newly_acked_length) {
+bool QuicSpdyStream::OnStreamFrameAcked(
+    QuicStreamOffset offset, QuicByteCount data_length, bool fin_acked,
+    QuicTime::Delta ack_delay_time, QuicTime receive_timestamp,
+    QuicByteCount* newly_acked_length, bool is_retransmission) {
   const bool new_data_acked = QuicStream::OnStreamFrameAcked(
       offset, data_length, fin_acked, ack_delay_time, receive_timestamp,
-      newly_acked_length);
+      newly_acked_length, is_retransmission);
 
   if (!notify_ack_listener_earlier()) {
     const QuicByteCount newly_acked_header_length =
@@ -1067,9 +1071,11 @@ void QuicSpdyStream::OnNewDataAcked(QuicStreamOffset offset,
                                     QuicByteCount data_length,
                                     QuicByteCount newly_acked_length,
                                     QuicTime receive_timestamp,
-                                    QuicTime::Delta ack_delay_time) {
+                                    QuicTime::Delta ack_delay_time,
+                                    bool is_retransmission) {
   QuicStream::OnNewDataAcked(offset, data_length, newly_acked_length,
-                             receive_timestamp, ack_delay_time);
+                             receive_timestamp, ack_delay_time,
+                             is_retransmission);
   const QuicByteCount newly_acked_header_length =
       GetNumFrameHeadersInInterval(offset, data_length);
   QUICHE_DCHECK_LE(newly_acked_header_length, newly_acked_length);
@@ -1243,6 +1249,11 @@ void QuicSpdyStream::OnWebTransportStreamFrameType(
 
 bool QuicSpdyStream::OnMetadataFrameStart(QuicByteCount header_length,
                                           QuicByteCount payload_length) {
+  if (spdy_session_->debug_visitor()) {
+    spdy_session_->debug_visitor()->OnMetadataFrameStart(header_length,
+                                                         payload_length);
+  }
+
   if (metadata_visitor_ == nullptr) {
     return OnUnknownFrameStart(
         static_cast<uint64_t>(quic::HttpFrameType::METADATA), header_length,
@@ -1262,6 +1273,10 @@ bool QuicSpdyStream::OnMetadataFrameStart(QuicByteCount header_length,
 }
 
 bool QuicSpdyStream::OnMetadataFramePayload(absl::string_view payload) {
+  if (spdy_session_->debug_visitor()) {
+    spdy_session_->debug_visitor()->OnMetadataFramePayload(payload);
+  }
+
   if (metadata_visitor_ == nullptr) {
     return OnUnknownFramePayload(payload);
   }
@@ -1280,6 +1295,10 @@ bool QuicSpdyStream::OnMetadataFramePayload(absl::string_view payload) {
 }
 
 bool QuicSpdyStream::OnMetadataFrameEnd() {
+  if (spdy_session_->debug_visitor()) {
+    spdy_session_->debug_visitor()->OnMetadataFrameEnd();
+  }
+
   if (metadata_visitor_ == nullptr) {
     return OnUnknownFrameEnd();
   }
@@ -1426,6 +1445,9 @@ void QuicSpdyStream::MaybeProcessSentWebTransportHeaders(
     return;
   }
   if (session()->perspective() != Perspective::IS_CLIENT) {
+    if (web_transport_ != nullptr) {
+      web_transport_->MaybeSetSubprotocolFromResponseHeaders(headers);
+    }
     return;
   }
   QUICHE_DCHECK(IsValidWebTransportSessionId(id(), version()));
@@ -1446,6 +1468,23 @@ void QuicSpdyStream::MaybeProcessSentWebTransportHeaders(
 
   web_transport_ =
       std::make_unique<WebTransportHttp3>(spdy_session_, this, id());
+
+  // Store the offered subprotocols so that we can later validate the
+  // server-selected one against those.
+  const auto subprotocol_offer_it =
+      headers.find(webtransport::kSubprotocolRequestHeader);
+  if (subprotocol_offer_it != headers.end()) {
+    absl::StatusOr<std::vector<std::string>> subprotocols_offered =
+        webtransport::ParseSubprotocolRequestHeader(
+            subprotocol_offer_it->second);
+    if (subprotocols_offered.ok()) {
+      web_transport_->set_subprotocols_offered(
+          *std::move(subprotocols_offered));
+    } else {
+      QUIC_DLOG(WARNING) << "Attempting to send WebTransport subprotocols that "
+                            "cannot be parsed.";
+    }
+  }
 }
 
 void QuicSpdyStream::OnCanWriteNewData() {
@@ -1574,7 +1613,18 @@ bool QuicSpdyStream::OnCapsule(const Capsule& capsule) {
       }
       return connect_ip_visitor_->OnRouteAdvertisementCapsule(
           capsule.route_advertisement_capsule());
-
+    case CapsuleType::COMPRESSION_ASSIGN:
+      if (connect_udp_bind_visitor_ == nullptr) {
+        return true;
+      }
+      return connect_udp_bind_visitor_->OnCompressionAssignCapsule(
+          capsule.compression_assign_capsule());
+    case CapsuleType::COMPRESSION_CLOSE:
+      if (connect_udp_bind_visitor_ == nullptr) {
+        return true;
+      }
+      return connect_udp_bind_visitor_->OnCompressionCloseCapsule(
+          capsule.compression_close_capsule());
     // Ignore WebTransport over HTTP/2 capsules.
     case CapsuleType::WT_RESET_STREAM:
     case CapsuleType::WT_STOP_SENDING:
@@ -1702,6 +1752,49 @@ void QuicSpdyStream::ReplaceConnectIpVisitor(ConnectIpVisitor* visitor) {
       << "Attempted to move missing CONNECT-IP visitor on HTTP/3 stream ID "
       << id();
   connect_ip_visitor_ = visitor;
+}
+
+void QuicSpdyStream::RegisterConnectUdpBindVisitor(
+    ConnectUdpBindVisitor* visitor) {
+  if (visitor == nullptr) {
+    QUIC_BUG(null connect - udp visitor)
+        << ENDPOINT << "Null connect-udp-bind visitor for stream ID " << id();
+    return;
+  }
+  QUIC_DLOG(INFO) << ENDPOINT
+                  << "Registering CONNECT-UDP-BIND visitor with stream ID "
+                  << id();
+
+  if (connect_udp_bind_visitor_ != nullptr) {
+    QUIC_BUG(connect - udp double registration)
+        << ENDPOINT
+        << "Attempted to doubly register CONNECT-UDP-BIND with stream ID "
+        << id();
+    return;
+  }
+  connect_udp_bind_visitor_ = visitor;
+}
+
+void QuicSpdyStream::UnregisterConnectUdpBindVisitor() {
+  if (connect_udp_bind_visitor_ == nullptr) {
+    QUIC_BUG(connect - udp visitor empty during unregistration)
+        << ENDPOINT
+        << "Cannot unregister CONNECT-UDP-BIND visitor for stream ID " << id();
+    return;
+  }
+  QUIC_DLOG(INFO) << ENDPOINT
+                  << "Unregistering CONNECT-UDP-BIND visitor for stream ID "
+                  << id();
+  connect_udp_bind_visitor_ = nullptr;
+}
+
+void QuicSpdyStream::ReplaceConnectUdpBindVisitor(
+    ConnectUdpBindVisitor* visitor) {
+  QUIC_BUG_IF(connect - udp unknown move, connect_udp_bind_visitor_ == nullptr)
+      << "Attempted to move missing CONNECT-UDP-BIND visitor on HTTP/3 stream "
+         "ID "
+      << id();
+  connect_udp_bind_visitor_ = visitor;
 }
 
 void QuicSpdyStream::SetMaxDatagramTimeInQueue(
@@ -1862,12 +1955,8 @@ bool QuicSpdyStream::AreHeaderFieldValuesValid(
 
 void QuicSpdyStream::StopReading() {
   QuicStream::StopReading();
-  if (GetQuicReloadableFlag(
-          quic_stop_reading_also_stops_header_decompression) &&
-      VersionUsesHttp3(transport_version()) && !fin_received() &&
+  if (VersionUsesHttp3(transport_version()) && !fin_received() &&
       spdy_session_->qpack_decoder()) {
-    QUIC_RELOADABLE_FLAG_COUNT(
-        quic_stop_reading_also_stops_header_decompression);
     // Clean up Qpack decoding states.
     spdy_session_->qpack_decoder()->OnStreamReset(id());
     qpack_decoded_headers_accumulator_.reset();

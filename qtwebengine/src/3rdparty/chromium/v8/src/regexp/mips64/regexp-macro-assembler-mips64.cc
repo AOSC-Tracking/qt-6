@@ -245,7 +245,7 @@ void RegExpMacroAssemblerMIPS::CheckCharacterLT(base::uc16 limit,
   BranchOrBacktrack(on_less, lt, current_character(), Operand(limit));
 }
 
-void RegExpMacroAssemblerMIPS::CheckGreedyLoop(Label* on_equal) {
+void RegExpMacroAssemblerMIPS::CheckFixedLengthLoop(Label* on_equal) {
   Label backtrack_non_equal;
   __ Lw(a0, MemOperand(backtrack_stackpointer(), 0));
   __ Branch(&backtrack_non_equal, ne, current_input_offset(), Operand(a0));
@@ -699,8 +699,8 @@ void RegExpMacroAssemblerMIPS::PopRegExpBasePointer(Register stack_pointer_out,
   StoreRegExpStackPointerToMemory(stack_pointer_out, scratch);
 }
 
-Handle<HeapObject> RegExpMacroAssemblerMIPS::GetCode(Handle<String> source,
-                                                     RegExpFlags flags) {
+DirectHandle<HeapObject> RegExpMacroAssemblerMIPS::GetCode(
+    DirectHandle<String> source, RegExpFlags flags) {
   Label return_v0;
   if (masm_->has_exception()) {
     // If the code gets corrupted due to long regular expressions and lack of

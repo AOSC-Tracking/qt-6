@@ -1,12 +1,12 @@
 include_rules = [
   # go/keep-sorted start
-  "+components/autofill_ai/core/browser/autofill_ai_features.h",
   "+components/browser_ui/device_lock/android",
   "+components/device_reauth/device_authenticator.h",
   "+components/feature_engagement",
   "+components/google/core/common/google_util.h",
   "+components/grit/components_scaled_resources.h",
   "+components/history/core/browser",
+  "+components/image_fetcher",
   "+components/infobars/core",
   "+components/keyed_service/core",
   "+components/language/core/browser",
@@ -16,6 +16,7 @@ include_rules = [
   "+components/optimization_guide",
   "+components/optimization_guide/core",
   "+components/password_manager/core/browser/features/password_features.h",
+  "+components/payments/core/currency_formatter.h",
   "+components/policy",
   "+components/profile_metrics",
   "+components/resources",
@@ -28,14 +29,13 @@ include_rules = [
   "+components/sync_preferences",
   "+components/translate/core/browser",
   "+components/translate/core/common",
-  "+components/user_annotations",
   "+components/variations",
   "+components/version_info",
   "+components/webdata/common",
   "+components/webdata_services",
+  "+crypto/hash.h",
   "+crypto/hkdf.h",
   "+crypto/random.h",
-  "+crypto/sha2.h",
   "+google_apis/common",
   "+google_apis/gaia",
   "+google_apis/google_api_keys.h",
@@ -45,6 +45,7 @@ include_rules = [
   "+services/network/test",
   "+sql",
   "+third_party/icu/fuzzers/fuzzer_utils.h", # For fuzz-tests.
+  "+third_party/jni_zero",
   "+third_party/libaddressinput", # For address i18n.
   "+third_party/libphonenumber",  # For phone number i18n.
   "+third_party/re2",

@@ -9,8 +9,8 @@ import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import {
   createTarget,
-  getGetHostConfigStub,
   stubNoopSettings,
+  updateHostConfig,
 } from '../../testing/EnvironmentHelpers.js';
 import {expectCall} from '../../testing/ExpectStubCall.js';
 import {
@@ -29,7 +29,7 @@ describeWithMockConnection('FocusDebuggeeActionDelegate', () => {
     const delegate = new InspectorMain.InspectorMain.FocusDebuggeeActionDelegate();
     const bringToFront = sinon.spy(frameTarget.pageAgent(), 'invoke_bringToFront');
     delegate.handleAction({} as UI.Context.Context, 'foo');
-    assert.isTrue(bringToFront.calledOnce);
+    sinon.assert.calledOnce(bringToFront);
   });
 });
 
@@ -76,7 +76,7 @@ describeWithMockConnection('InspectorMainImpl', () => {
     function setBrowserConfig(
         thirdPartyCookieRestrictionEnabled?: boolean, thirdPartyCookieMetadataEnabled?: boolean,
         thirdPartyCookieHeuristicsEnabled?: boolean, managedBlockThirdPartyCookies?: boolean|string) {
-      getGetHostConfigStub({
+      updateHostConfig({
         thirdPartyCookieControls: {
           thirdPartyCookieRestrictionEnabled,
           thirdPartyCookieHeuristicsEnabled,
@@ -111,7 +111,7 @@ describeWithMockConnection('InspectorMainImpl', () => {
       const inspectorMain = InspectorMain.InspectorMain.InspectorMainImpl.instance({forceNew: true});
       await inspectorMain.run();
 
-      assert.isTrue(reloadRequiredInfobarSpy.notCalled);
+      sinon.assert.notCalled(reloadRequiredInfobarSpy);
     });
 
     it('does not show infobar when control setting is undefined', async () => {
@@ -125,7 +125,7 @@ describeWithMockConnection('InspectorMainImpl', () => {
       const inspectorMain = InspectorMain.InspectorMain.InspectorMainImpl.instance({forceNew: true});
       await inspectorMain.run();
 
-      assert.isTrue(reloadRequiredInfobarSpy.notCalled);
+      sinon.assert.notCalled(reloadRequiredInfobarSpy);
     });
 
     it('does not show infobar when control settings match browser settings', async () => {
@@ -140,7 +140,7 @@ describeWithMockConnection('InspectorMainImpl', () => {
       const inspectorMain = InspectorMain.InspectorMain.InspectorMainImpl.instance({forceNew: true});
       await inspectorMain.run();
 
-      assert.isTrue(reloadRequiredInfobarSpy.notCalled);
+      sinon.assert.notCalled(reloadRequiredInfobarSpy);
     });
 
     it('shows infobar when cookie control override differs from browser setting', async () => {
@@ -155,7 +155,7 @@ describeWithMockConnection('InspectorMainImpl', () => {
       const inspectorMain = InspectorMain.InspectorMain.InspectorMainImpl.instance({forceNew: true});
       await inspectorMain.run();
 
-      assert.isTrue(reloadRequiredInfobarSpy.calledOnce);
+      sinon.assert.calledOnce(reloadRequiredInfobarSpy);
     });
 
     it('shows infobar when a mitigation override differs from browser setting', async () => {
@@ -170,14 +170,14 @@ describeWithMockConnection('InspectorMainImpl', () => {
       const inspectorMain = InspectorMain.InspectorMain.InspectorMainImpl.instance({forceNew: true});
       await inspectorMain.run();
 
-      assert.isTrue(reloadRequiredInfobarSpy.calledOnce);
+      sinon.assert.calledOnce(reloadRequiredInfobarSpy);
     });
   });
 
   describe('withNoopSettings', () => {
     beforeEach(() => {
       stubNoopSettings();
-      getGetHostConfigStub({devToolsPrivacyUI: {enabled: false}});
+      updateHostConfig({devToolsPrivacyUI: {enabled: false}});
     });
 
     it('continues only after primary page target is available', async () => {
@@ -238,8 +238,8 @@ describeWithMockConnection('InspectorMainImpl', () => {
       setMockConnectionResponseHandler('Debugger.enable', () => ({debuggerId: DEBUGGER_ID}));
       setMockConnectionResponseHandler('Debugger.pause', debuggerPause);
       await inspectorMain.run();
-      assert.isTrue(waitForDebugger.calledOnce);
-      assert.isTrue(debuggerPause.calledOnce);
+      sinon.assert.calledOnce(waitForDebugger);
+      sinon.assert.calledOnce(debuggerPause);
 
       Root.Runtime.Runtime.setQueryParamForTesting('panel', '');
     });
@@ -261,10 +261,10 @@ describeWithMockConnection('InspectorMainImpl', () => {
 
       assert.notExists(SDK.TargetManager.TargetManager.instance().rootTarget());
       const result = inspectorMain.run();
-      assert.isFalse(debuggerPause.called);
+      sinon.assert.notCalled(debuggerPause);
       debuggerEnable({debuggerId: DEBUGGER_ID, getError: () => undefined});
       await Promise.all([debuggerPauseCalled, result]);
-      assert.isTrue(debuggerPause.calledOnce);
+      sinon.assert.calledOnce(debuggerPause);
       Root.Runtime.Runtime.setQueryParamForTesting('panel', '');
     });
 
@@ -287,7 +287,7 @@ describeWithMockConnection('InspectorMainImpl', () => {
       const runIfWaitingForDebugger = sinon.spy();
       setMockConnectionResponseHandler('Runtime.runIfWaitingForDebugger', runIfWaitingForDebugger);
       await inspectorMain.run();
-      assert.isTrue(runIfWaitingForDebugger.calledOnce);
+      sinon.assert.calledOnce(runIfWaitingForDebugger);
       Root.Runtime.Runtime.setQueryParamForTesting('v8only', '');
     });
 
@@ -296,7 +296,7 @@ describeWithMockConnection('InspectorMainImpl', () => {
       const runIfWaitingForDebugger = sinon.spy();
       setMockConnectionResponseHandler('Runtime.runIfWaitingForDebugger', runIfWaitingForDebugger);
       await inspectorMain.run();
-      assert.isTrue(runIfWaitingForDebugger.calledOnce);
+      sinon.assert.calledOnce(runIfWaitingForDebugger);
     });
 
     it('does not call Runtime.runIfWaitingForDebugger for Tab target', async () => {
@@ -304,7 +304,7 @@ describeWithMockConnection('InspectorMainImpl', () => {
       const runIfWaitingForDebugger = sinon.spy();
       setMockConnectionResponseHandler('Runtime.runIfWaitingForDebugger', runIfWaitingForDebugger);
       await runForTabTarget();
-      assert.isFalse(runIfWaitingForDebugger.called);
+      sinon.assert.notCalled(runIfWaitingForDebugger);
       Root.Runtime.Runtime.setQueryParamForTesting('targetType', '');
     });
 

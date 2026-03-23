@@ -6,8 +6,8 @@
 
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/btm_utils.h"
 #include "content/public/common/content_features.h"
-#include "content/public/common/dips_utils.h"
 
 SystemInfoHandler::SystemInfoHandler(protocol::UberDispatcher* dispatcher) {
   protocol::SystemInfo::Dispatcher::wire(dispatcher, this);
@@ -20,7 +20,6 @@ protocol::Response SystemInfoHandler::GetFeatureState(
     bool* featureEnabled) {
   if (in_featureState == "DIPS") {
     *featureEnabled = base::FeatureList::IsEnabled(features::kBtm) &&
-                      features::kBtmDeletionEnabled.Get() &&
                       (features::kBtmTriggeringAction.Get() !=
                        content::BtmTriggeringAction::kNone);
     return protocol::Response::Success();

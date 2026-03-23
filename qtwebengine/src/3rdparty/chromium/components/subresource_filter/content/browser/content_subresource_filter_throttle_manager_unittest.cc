@@ -47,8 +47,10 @@
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/back_forward_cache_util.h"
+#include "content/public/test/mock_navigation_throttle_registry.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/navigation_simulator.h"
+#include "content/public/test/test_navigation_throttle_inserter.h"
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/test_utils.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
@@ -74,12 +76,6 @@ const char kTestURLWithActivation2[] =
 const char kTestURLWithDryRun[] = "https://www.page-with-dryrun.com/";
 const char kTestURLWithNoActivation[] =
     "https://www.page-without-activation.com/";
-
-const char kReadyToCommitResultsInCommitHistogram[] =
-    "SubresourceFilter.Experimental.ReadyToCommitResultsInCommit2";
-const char kReadyToCommitResultsInCommitRestrictedAdFrameNavigationHistogram[] =
-    "SubresourceFilter.Experimental.ReadyToCommitResultsInCommit2."
-    "RestrictedAdFrameNavigation";
 
 // Enum determining when the mock page state throttle notifies the throttle
 // manager of page level activation state.
@@ -116,8 +112,9 @@ class FakeSubresourceFilterAgent : public mojom::SubresourceFilterAgent {
     return is_ad_frame;
   }
   std::optional<bool> LastActivated() {
-    if (!last_activation_)
+    if (!last_activation_) {
       return std::nullopt;
+    }
     bool activated =
         last_activation_->activation_level != mojom::ActivationLevel::kDisabled;
     last_activation_.reset();
@@ -135,9 +132,9 @@ class FakeSubresourceFilterAgent : public mojom::SubresourceFilterAgent {
 class MockPageStateActivationThrottle : public content::NavigationThrottle {
  public:
   MockPageStateActivationThrottle(
-      content::NavigationHandle* navigation_handle,
+      content::NavigationThrottleRegistry& registry,
       PageActivationNotificationTiming activation_throttle_state)
-      : content::NavigationThrottle(navigation_handle),
+      : content::NavigationThrottle(registry),
         activation_throttle_state_(activation_throttle_state) {
     // Add some default activations.
     mojom::ActivationState enabled_state;
@@ -251,6 +248,13 @@ class ContentSubresourceFilterThrottleManagerTest
 
     Observe(web_contents);
 
+    test_navigation_throttle_inserter_ =
+        std::make_unique<content::TestNavigationThrottleInserter>(
+            web_contents,
+            base::BindRepeating(
+                &ContentSubresourceFilterThrottleManagerTest::InsertThrottle,
+                base::Unretained(this)));
+
     NavigateAndCommit(GURL("https://example.first"));
 
 #if BUILDFLAG(IS_ANDROID)
@@ -261,8 +265,11 @@ class ContentSubresourceFilterThrottleManagerTest
   }
 
   void TearDown() override {
-    throttle_manager_test_support_.reset();
+    // Delete `WebContents` before deleting the dealer handle.
+    DeleteContents();
     dealer_handle_.reset();
+
+    throttle_manager_test_support_.reset();
     base::RunLoop().RunUntilIdle();
     content::RenderViewHostTestHarness::TearDown();
 #if BUILDFLAG(IS_ANDROID)
@@ -359,33 +366,24 @@ class ContentSubresourceFilterThrottleManagerTest
     agent_map_.erase(host);
   }
 
-  void DidStartNavigation(
-      content::NavigationHandle* navigation_handle) override {
-    if (navigation_handle->IsSameDocument())
+  void InsertThrottle(content::NavigationThrottleRegistry& registry) {
+    if (registry.GetNavigationHandle().IsSameDocument()) {
       return;
+    }
 
-    // Inject the proper throttles at this time.
-    std::vector<std::unique_ptr<content::NavigationThrottle>> throttles;
     PageActivationNotificationTiming state =
         ::testing::UnitTest::GetInstance()->current_test_info()->value_param()
             ? GetParam()
             : WILL_PROCESS_RESPONSE;
-    throttles.push_back(std::make_unique<MockPageStateActivationThrottle>(
-        navigation_handle, state));
+    registry.AddThrottle(
+        std::make_unique<MockPageStateActivationThrottle>(registry, state));
 
     ContentSubresourceFilterThrottleManager::FromNavigationHandle(
-        *navigation_handle)
-        ->MaybeAppendNavigationThrottles(navigation_handle, &throttles);
+        registry.GetNavigationHandle())
+        ->MaybeCreateAndAddNavigationThrottles(registry);
 
-    created_safe_browsing_throttle_for_last_navigation_ = false;
-    for (auto& it : throttles) {
-      if (strcmp(it->GetNameForLogging(),
-                 "SafeBrowsingPageActivationThrottle") == 0) {
-        created_safe_browsing_throttle_for_last_navigation_ = true;
-      }
-
-      navigation_handle->RegisterThrottleForTesting(std::move(it));
-    }
+    created_safe_browsing_throttle_for_last_navigation_ =
+        registry.HasThrottle("SafeBrowsingPageActivationThrottle");
   }
 
   void CreateAgentForHost(content::RenderFrameHost* host) {
@@ -428,6 +426,9 @@ class ContentSubresourceFilterThrottleManagerTest
     return ContentSubresourceFilterWebContentsHelper::FromWebContents(
         RenderViewHostTestHarness::web_contents());
   }
+
+  std::unique_ptr<content::TestNavigationThrottleInserter>
+      test_navigation_throttle_inserter_;
 
   testing::TestRulesetCreator test_ruleset_creator_;
   testing::TestRulesetPair test_ruleset_pair_;
@@ -1345,101 +1346,6 @@ TEST_P(ContentSubresourceFilterThrottleManagerTest,
 #if BUILDFLAG(IS_ANDROID)
   ::testing::Mock::VerifyAndClearExpectations(&message_dispatcher_bridge_);
 #endif
-}
-
-TEST_P(ContentSubresourceFilterThrottleManagerTest,
-       NavigationIsReadyToCommitThenFinishes_HistogramIssued) {
-  for (bool does_commit : {true, false}) {
-    base::HistogramTester tester;
-    NavigateAndCommitMainFrame(GURL(kTestURLWithDryRun));
-    ExpectActivationSignalForFrame(main_rfh(), true /* expect_activation */);
-
-    // Make sure main frames are excluded.
-    tester.ExpectTotalCount(kReadyToCommitResultsInCommitHistogram, 0);
-    tester.ExpectTotalCount(
-        kReadyToCommitResultsInCommitRestrictedAdFrameNavigationHistogram, 0);
-
-    CreateSubframeWithTestNavigation(GURL("https://www.example.com/test.html"),
-                                     main_rfh());
-
-    navigation_simulator()->ReadyToCommit();
-
-    if (does_commit) {
-      navigation_simulator()->Commit();
-    } else {
-      navigation_simulator()->AbortFromRenderer();
-    }
-
-    tester.ExpectUniqueSample(kReadyToCommitResultsInCommitHistogram,
-                              does_commit, 1);
-    tester.ExpectTotalCount(
-        kReadyToCommitResultsInCommitRestrictedAdFrameNavigationHistogram, 0);
-  }
-}
-
-TEST_P(
-    ContentSubresourceFilterThrottleManagerTest,
-    RestrictedAdFrameNavigationIsReadyToCommitThenFinishes_HistogramsIssued) {
-  for (bool does_commit : {true, false}) {
-    NavigateAndCommitMainFrame(GURL(kTestURLWithDryRun));
-    ExpectActivationSignalForFrame(main_rfh(), true /* expect_activation */);
-
-    // Ensure frame is tagged as an ad.
-    content::RenderFrameHost* subframe = CreateSubframeWithTestNavigation(
-        GURL("https://www.example.com/disallowed.html"), main_rfh());
-    navigation_simulator()->Commit();
-    subframe = navigation_simulator()->GetFinalRenderFrameHost();
-    EXPECT_TRUE(subframe);
-    EXPECT_TRUE(throttle_manager()->IsRenderFrameHostTaggedAsAd(subframe));
-
-    // Navigate to an allowlisted URL to make it a 'restricted' navigation.
-    base::HistogramTester tester;
-    CreateTestNavigation(GURL("https://www.example.com/not_disallowed.html"),
-                         subframe);
-
-    navigation_simulator()->ReadyToCommit();
-
-    if (does_commit) {
-      navigation_simulator()->Commit();
-    } else {
-      navigation_simulator()->AbortFromRenderer();
-    }
-
-    tester.ExpectUniqueSample(kReadyToCommitResultsInCommitHistogram,
-                              does_commit, 1);
-    tester.ExpectUniqueSample(
-        kReadyToCommitResultsInCommitRestrictedAdFrameNavigationHistogram,
-        does_commit, 1);
-  }
-}
-
-TEST_P(ContentSubresourceFilterThrottleManagerTest,
-       ReadyToCommitNavigationThenRenderFrameDeletes_MetricsNotRecorded) {
-  NavigateAndCommitMainFrame(GURL(kTestURLWithDryRun));
-  ExpectActivationSignalForFrame(main_rfh(), true /* expect_activation */);
-
-  // Ensure frame is tagged as an ad.
-  content::RenderFrameHost* subframe = CreateSubframeWithTestNavigation(
-      GURL("https://www.example.com/disallowed.html"), main_rfh());
-  navigation_simulator()->Commit();
-  subframe = navigation_simulator()->GetFinalRenderFrameHost();
-  EXPECT_TRUE(subframe);
-  EXPECT_TRUE(throttle_manager()->IsRenderFrameHostTaggedAsAd(subframe));
-
-  // Navigate to an allowlisted URL to make it a 'restricted' navigation.
-  base::HistogramTester tester;
-  CreateTestNavigation(GURL("https://www.example.com/not_disallowed.html"),
-                       subframe);
-
-  navigation_simulator()->ReadyToCommit();
-
-  static_cast<content::MockRenderProcessHost*>(
-      navigation_simulator()->GetFinalRenderFrameHost()->GetProcess())
-      ->SimulateCrash();
-
-  tester.ExpectTotalCount(kReadyToCommitResultsInCommitHistogram, 0);
-  tester.ExpectTotalCount(
-      kReadyToCommitResultsInCommitRestrictedAdFrameNavigationHistogram, 0);
 }
 
 // Basic test of throttle manager lifetime and getter methods. Ensure a new

@@ -5,9 +5,10 @@
 #include "chrome/browser/ui/webui/interstitials/interstitial_ui.h"
 
 #include <memory>
+#include <optional>
 #include <utility>
 
-#include "base/atomic_sequence_num.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_number_conversions.h"
@@ -51,6 +52,7 @@
 #include "components/security_interstitials/core/unsafe_resource_locator.h"
 #include "components/supervised_user/core/browser/supervised_user_error_page.h"  // nogncheck
 #include "components/supervised_user/core/browser/supervised_user_interstitial.h"
+#include "components/supervised_user/core/browser/supervised_user_service.h"
 #include "components/supervised_user/core/browser/supervised_user_utils.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/render_frame_host.h"
@@ -59,7 +61,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "crypto/rsa_private_key.h"
 #include "net/base/net_errors.h"
 #include "net/base/url_util.h"
 #include "net/cert/x509_certificate.h"
@@ -88,28 +89,15 @@ using security_interstitials::TestSafeBrowsingBlockingPageQuiet;
 using security_interstitials::UnsafeResourceLocator;
 
 InterstitialUIConfig::InterstitialUIConfig()
-    : DefaultWebUIConfig(content::kChromeUIScheme,
-                         chrome::kChromeUIInterstitialHost) {}
+    : DefaultInternalWebUIConfig(chrome::kChromeUIInterstitialHost) {}
 
 namespace {
 
-// NSS requires that serial numbers be unique even for the same issuer;
-// as all fake certificates will contain the same issuer name, it's
-// necessary to ensure the serial number is unique, as otherwise
-// NSS will fail to parse.
-base::AtomicSequenceNumber g_serial_number;
-
 scoped_refptr<net::X509Certificate> CreateFakeCert() {
-  std::unique_ptr<crypto::RSAPrivateKey> unused_key;
-  std::string cert_der;
-  if (!net::x509_util::CreateKeyAndSelfSignedCert(
-          "CN=Error", static_cast<uint32_t>(g_serial_number.GetNext()),
-          base::Time::Now() - base::Minutes(5),
-          base::Time::Now() + base::Minutes(5), &unused_key, &cert_der)) {
-    return nullptr;
-  }
+  std::vector<uint8_t> cert_der =
+      net::x509_util::CreateUnusableCert("CN=Error");
 
-  return net::X509Certificate::CreateFromBytes(base::as_byte_span(cert_der));
+  return net::X509Certificate::CreateFromBytes(cert_der);
 }
 
 // Implementation of chrome://interstitials demonstration pages. This code is
@@ -134,7 +122,12 @@ class InterstitialHTMLSource : public content::URLDataSource {
       content::URLDataSource::GotDataCallback callback) override;
 
  private:
-  std::string GetSupervisedUserInterstitialHTML(const std::string& path);
+  std::string GetSupervisedUserAskParentInterstitialHTML(
+      const std::string& path);
+#if BUILDFLAG(IS_ANDROID)
+  std::string GetSupervisedUserSiteBlockedInterstitialHTML(
+      const std::string& path);
+#endif  // BUILDFLAG(IS_ANDROID)
 };
 
 std::unique_ptr<SSLBlockingPage> CreateSslBlockingPage(
@@ -287,12 +280,16 @@ CreateInsecureFormPage(content::WebContents* web_contents) {
 std::unique_ptr<security_interstitials::HttpsOnlyModeBlockingPage>
 CreateHttpsOnlyModePage(content::WebContents* web_contents) {
   GURL request_url("http://example.com");
-  return std::make_unique<security_interstitials::HttpsOnlyModeBlockingPage>(
-      web_contents, request_url,
-      std::make_unique<HttpsOnlyModeControllerClient>(web_contents,
-                                                      request_url),
-      security_interstitials::https_only_mode::HttpInterstitialState{},
-      /*use_new_interstitial=*/IsNewHttpsFirstModeInterstitialEnabled());
+  std::string type_param;
+  security_interstitials::https_only_mode::HttpInterstitialState state;
+  net::GetValueForKeyInQuery(web_contents->GetVisibleURL(), "type",
+                             &type_param);
+  ChromeSecurityBlockingPageFactory blocking_page_factory;
+  return blocking_page_factory.CreateHttpsOnlyModeBlockingPage(
+      web_contents, request_url, state,
+      type_param.empty() ? std::nullopt
+                         : std::make_optional<std::string>(type_param),
+      /*metrics_callback=*/base::DoNothing());
 }
 
 #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
@@ -657,10 +654,15 @@ void InterstitialHTMLSource::StartDataRequest(
         CreateSafeBrowsingQuietBlockingPage(web_contents);
     html = blocking_page->GetHTML();
     interstitial_delegate = std::move(blocking_page);
-  } else
-#endif
+  } else if (path_without_query == "/supervised-user-ask-parent") {
+#else
   if (path_without_query == "/supervised-user-ask-parent") {
-    html = GetSupervisedUserInterstitialHTML(path);
+#endif  // BUILDFLAG(SAFE_BROWSING_AVAILABLE)
+    html = GetSupervisedUserAskParentInterstitialHTML(path);
+#if BUILDFLAG(IS_ANDROID)
+  } else if (path_without_query == "/supervised-user-site-blocked") {
+    html = GetSupervisedUserSiteBlockedInterstitialHTML(path);
+#endif  // BUILDFLAG(IS_ANDROID)
   } else if (interstitial_delegate.get()) {
     html = interstitial_delegate.get()->GetHTMLContents();
   } else {
@@ -672,7 +674,7 @@ void InterstitialHTMLSource::StartDataRequest(
   std::move(callback).Run(html_bytes.get());
 }
 
-std::string InterstitialHTMLSource::GetSupervisedUserInterstitialHTML(
+std::string InterstitialHTMLSource::GetSupervisedUserAskParentInterstitialHTML(
     const std::string& path) {
   GURL url("https://localhost/" + path);
 
@@ -683,10 +685,10 @@ std::string InterstitialHTMLSource::GetSupervisedUserInterstitialHTML(
     allow_access_requests = allow_access_requests_string == "1";
   }
 
-  std::string custodian = "Alice";
-  net::GetValueForKeyInQuery(url, "custodian", &custodian);
-  std::string second_custodian = "Bob";
-  net::GetValueForKeyInQuery(url, "second_custodian", &second_custodian);
+  std::string custodian_name = "Alice";
+  net::GetValueForKeyInQuery(url, "custodian", &custodian_name);
+  std::string second_custodian_name = "Bob";
+  net::GetValueForKeyInQuery(url, "second_custodian", &second_custodian_name);
   std::string custodian_email = "alice.bloggs@gmail.com";
   net::GetValueForKeyInQuery(url, "custodian_email", &custodian_email);
   std::string second_custodian_email = "bob.bloggs@gmail.com";
@@ -710,10 +712,24 @@ std::string InterstitialHTMLSource::GetSupervisedUserInterstitialHTML(
     }
   }
 
-  return supervised_user::BuildErrorPageHtml(
-      allow_access_requests, profile_image_url, profile_image_url2, custodian,
-      custodian_email, second_custodian, second_custodian_email, reason,
+  supervised_user::Custodian first_custodian(custodian_name, custodian_email,
+                                             profile_image_url);
+  supervised_user::Custodian second_custodian(
+      second_custodian_name, second_custodian_email, profile_image_url2);
+
+  return supervised_user::BuildErrorPageHtmlWithApprovals(
+      allow_access_requests, first_custodian, second_custodian, reason,
       g_browser_process->GetApplicationLocale(),
       /*already_sent_remote_request=*/false,
-      /*is_main_frame=*/true);
+      /*is_main_frame=*/true, /*ios_font_size_multiplier=*/std::nullopt);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+std::string
+InterstitialHTMLSource::GetSupervisedUserSiteBlockedInterstitialHTML(
+    const std::string& path) {
+  return supervised_user::BuildErrorPageHtmlWithoutApprovals(
+      GURL("https://localhost/" + path),
+      g_browser_process->GetApplicationLocale());
+}
+#endif  // BUILDFLAG(IS_ANDROID)

@@ -411,8 +411,7 @@ static QStringList get_colornames()
     of the provided QRgb, and the qGray() function calculates and
     return a gray value based on the given value.
 
-    QColor is platform and device independent. The QColormap class
-    maps the color to the hardware.
+    QColor is platform and device independent.
 
     For more information about painting in general, see the \l{Paint
     System} documentation.
@@ -441,7 +440,8 @@ static QStringList get_colornames()
 
     The code above produces the following output:
 
-    \image alphafill.png
+    \image alphafill.png {An image that contains four square sections,
+           with the colors purple, blue, red and white}
 
     The alpha channel of a color can be retrieved and set using the
     alpha() and setAlpha() functions if its value is an integer, and
@@ -2173,11 +2173,6 @@ QColor QColor::toRgb() const noexcept
     return color;
 }
 
-
-#define Q_MAX_3(a, b, c) ( ( a > b && a > c) ? a : (b > c ? b : c) )
-#define Q_MIN_3(a, b, c) ( ( a < b && a < c) ? a : (b < c ? b : c) )
-
-
 /*!
     Creates and returns an HSV QColor based on this color.
 
@@ -2196,34 +2191,35 @@ QColor QColor::toHsv() const noexcept
     color.ct.ahsv.alpha = ct.argb.alpha;
     color.ct.ahsv.pad = 0;
 
-    const float r = ct.argb.red   / float(USHRT_MAX);
-    const float g = ct.argb.green / float(USHRT_MAX);
-    const float b = ct.argb.blue  / float(USHRT_MAX);
-    const float max = Q_MAX_3(r, g, b);
-    const float min = Q_MIN_3(r, g, b);
-    const float delta = max - min;
-    color.ct.ahsv.value = qRound(max * USHRT_MAX);
-    if (qFuzzyIsNull(delta)) {
+    const ushort r = ct.argb.red;
+    const ushort g = ct.argb.green;
+    const ushort b = ct.argb.blue;
+
+    // cf. https://en.wikipedia.org/wiki/HSL_and_HSV#From_RGB
+    const auto [min, max] = std::minmax({r, g, b});
+    const auto value = max;
+    color.ct.ahsv.value = value;
+    if (max == min) {
         // achromatic case, hue is undefined
         color.ct.ahsv.hue = USHRT_MAX;
         color.ct.ahsv.saturation = 0;
     } else {
         // chromatic case
-        float hue = 0;
-        color.ct.ahsv.saturation = qRound((delta / max) * USHRT_MAX);
-        if (qFuzzyCompare(r, max)) {
-            hue = ((g - b) /delta);
-        } else if (qFuzzyCompare(g, max)) {
-            hue = (2.0f + (b - r) / delta);
-        } else if (qFuzzyCompare(b, max)) {
-            hue = (4.0f + (r - g) / delta);
+        const float chroma = max - min; // cannot overflow
+        float hue;
+        color.ct.ahsv.saturation = qRound((chroma / value) * USHRT_MAX);
+        if (value == r) {
+            hue = 0 + (g - b) / chroma;
+            // hue = hue mod 6:
+            if (hue < 0)
+                hue += 6;
+        } else if (value == g) {
+            hue = 2 + (b - r) / chroma;
         } else {
-            Q_ASSERT_X(false, "QColor::toHsv", "internal error");
+            Q_ASSERT(value == b); // by construction, `value` is one of r, g, and b!
+            hue = 4 + (r - g) / chroma;
         }
-        hue *= 60.0f;
-        if (hue < 0.0f)
-            hue += 360.0f;
-        color.ct.ahsv.hue = qRound(hue * 100.0f);
+        color.ct.ahsv.hue = qRound(hue * (60 * 100));
     }
 
     return color;
@@ -2247,39 +2243,38 @@ QColor QColor::toHsl() const noexcept
     color.ct.ahsl.alpha = ct.argb.alpha;
     color.ct.ahsl.pad = 0;
 
-    const float r = ct.argb.red   / float(USHRT_MAX);
-    const float g = ct.argb.green / float(USHRT_MAX);
-    const float b = ct.argb.blue  / float(USHRT_MAX);
-    const float max = Q_MAX_3(r, g, b);
-    const float min = Q_MIN_3(r, g, b);
-    const float delta = max - min;
-    const float delta2 = max + min;
-    const float lightness = 0.5f * delta2;
-    color.ct.ahsl.lightness = qRound(lightness * USHRT_MAX);
-    if (qFuzzyIsNull(delta)) {
+    const ushort r = ct.argb.red;
+    const ushort g = ct.argb.green;
+    const ushort b = ct.argb.blue;
+
+    // cf. https://en.wikipedia.org/wiki/HSL_and_HSV#From_RGB
+    const auto [min, max] = std::minmax({r, g, b});
+    const auto value = max;
+    if (min == max) {
         // achromatic case, hue is undefined
         color.ct.ahsl.hue = USHRT_MAX;
         color.ct.ahsl.saturation = 0;
+        color.ct.ahsl.lightness = value;
     } else {
         // chromatic case
-        float hue = 0;
-        if (lightness < 0.5f)
-            color.ct.ahsl.saturation = qRound((delta / delta2) * USHRT_MAX);
-        else
-            color.ct.ahsl.saturation = qRound((delta / (2.0f - delta2)) * USHRT_MAX);
-        if (qFuzzyCompare(r, max)) {
-            hue = ((g - b) /delta);
-        } else if (qFuzzyCompare(g, max)) {
-            hue = (2.0f + (b - r) / delta);
-        } else if (qFuzzyCompare(b, max)) {
-            hue = (4.0f + (r - g) / delta);
+        const float chroma = max - min;
+        const float lightness = 0.5f * (uint{max} + min); // use uint to avoid overflow
+        color.ct.ahsl.lightness = qRound(lightness);
+        const float saturation = 0.5f * chroma / (std::min)(lightness, USHRT_MAX - lightness);
+        color.ct.ahsl.saturation = qRound(saturation * USHRT_MAX);
+        float hue;
+        if (value == r) {
+            hue = 0 + (g - b) / chroma;
+            // hue = hue mod 6
+            if (hue < 0)
+                hue += 6;
+        } else if (value == g) {
+            hue = 2 + (b - r) / chroma;
         } else {
-            Q_ASSERT_X(false, "QColor::toHsv", "internal error");
+            Q_ASSERT(value == b); // by construction, `value` is one of r, g, and b!
+            hue = 4 + (r - g) / chroma;
         }
-        hue *= 60.0f;
-        if (hue < 0.0f)
-            hue += 360.0f;
-        color.ct.ahsl.hue = qRound(hue * 100.0f);
+        color.ct.ahsl.hue = qRound(hue * (60 * 100));
     }
 
     return color;

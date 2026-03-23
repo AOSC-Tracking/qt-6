@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import Qt.labs.folderlistmodel
 import QtQuick
@@ -47,6 +48,7 @@ FileDialogImpl {
         footer: DialogButtonBox {
             alignment: Qt.AlignHCenter
             standardButtons: DialogButtonBox.Yes | DialogButtonBox.No
+            defaultStandardButton: DialogButtonBox.Yes
         }
 
         Overlay.modal: Rectangle {
@@ -63,6 +65,7 @@ FileDialogImpl {
           in C++) because we'd need to copy (and hence duplicate code in) DialogButtonBox.qml.
     */
     FileDialogImpl.buttonBox: buttonBox
+    FileDialogImpl.filterLabel: filterLabel
     FileDialogImpl.nameFiltersComboBox: nameFiltersComboBox
     FileDialogImpl.fileDialogListView: fileDialogListView
     FileDialogImpl.breadcrumbBar: breadcrumbBar
@@ -194,6 +197,7 @@ FileDialogImpl {
         }
 
         Label {
+            id: filterLabel
             text: qsTr("Filter")
             Layout.column: 0
             Layout.row: 1

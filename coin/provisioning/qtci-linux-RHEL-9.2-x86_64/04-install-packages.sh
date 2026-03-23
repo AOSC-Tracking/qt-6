@@ -100,7 +100,7 @@ installPackages+=(python3-html5lib)
 installPackages+=(libstdc++-static)
 installPackages+=(mesa-libgbm-devel-21.3.4-2.el9.x86_64)
 # For Android builds
-installPackages+=(java-17-openjdk-devel-17.0.9.0.9)
+installPackages+=(java-21-openjdk-devel-21.0.9.0.10-1.el9)
 # For receiving shasum
 installPackages+=(perl-Digest-SHA)
 # INTEGRITY requirements
@@ -166,6 +166,8 @@ installPackages+=(zip)
 installPackages+=(perl-IPC-Cmd)
 # password management support for Qt Creator
 installPackages+=(libsecret-devel)
+# for license-service library
+installPackages+=(libuuid-devel)
 # For Firebird in RTA
 installPackages+=(libtommath-devel)
 
@@ -195,6 +197,9 @@ sudo /usr/bin/pip3 install -r "${BASH_SOURCE%/*}/../common/shared/requirements.t
 # hence the explicit assignment to SBOM_PYTHON_APPS_PATH.
 source "${BASH_SOURCE%/*}/../common/unix/SetEnvVar.sh"
 SetEnvVar "SBOM_PYTHON_APPS_PATH" "/usr/local/bin"
+
+# Set SBOM_PYTHON_INTERP_PATH to Python3 instance which was used to install SBOM packages from requirements
+SetEnvVar "SBOM_PYTHON_INTERP_PATH" "/usr/bin/python3"
 
 # Make FindPython3.cmake to find python3
 sudo ln -s /usr/bin/python3 /usr/local/bin/python3

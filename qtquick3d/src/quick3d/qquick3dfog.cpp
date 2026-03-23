@@ -1,5 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dfog_p.h"
 
@@ -12,11 +14,12 @@ QT_BEGIN_NAMESPACE
     \brief Specifies fog settings for a scene.
     \since 6.5
 
-    When the \l{QQuick3DSceneEnvironment::fog}{fog} property of a \l
+    When the \l{SceneEnvironment::fog}{fog} property of a \l
     SceneEnvironment is set to a valid Fog object, the properties are used to
     configure the rendering of fog.
 
     \image fog.jpg
+           {Scene with fog effect}
 
     The simple fog provided by this type is implemented by the materials. It is
     not a post-processing effect, meaning it does not involve additional render
@@ -105,10 +108,13 @@ void QQuick3DFog::setEnabled(bool newEnabled)
     The color of the fog. The default value is "#8099b3"
 
     \image fog_color_1.jpg
+           {Scene with slightly desaturated blue fog}
+
 
     The same scene with color changed to be more blueish:
 
     \image fog_color_2.jpg
+           {Scene with blue fog}
 
     \sa density
  */
@@ -143,10 +149,12 @@ void QQuick3DFog::setColor(const QColor &newColor)
     An example scene with density set to \c{0.95}:
 
     \image fog_density_095.jpg
+           {Scene with fog density of 95 percent}
 
     The same scene with density reduced to \c{0.15}:
 
     \image fog_density_015.jpg
+           {Scene with fog density of 15 percent}
 
     \sa color
  */
@@ -198,12 +206,14 @@ void QQuick3DFog::setDepthEnabled(bool newDepthEnabled)
     As an example, take this scene, first with a higher depthNear value.
 
     \image fog_depthnear_higher.jpg
+           {Scene with higher depthNear fog value}
 
     Decreasing the value of depthNear results in the fog effectively "moving
     closer" to the camera as it now starts from a smaller distance from the
     camera:
 
     \image fog_depthnear_lower.jpg
+           {Scene with lower depthNear fog value}
 
     \note The scene, including the camera and the models, are expected to be set
     up accordingly, so that sensible ranges can be defined by properties such
@@ -337,12 +347,14 @@ void QQuick3DFog::setHeightEnabled(bool newHeightEnabled)
     of the Sponza scene.
 
     \image fog_height_least_y_smaller.jpg
+           {Scene with lower leastIntenseY fog value}
 
     Increasing the value of leastIntenseY makes the fog spread higher since it
     now effectively starts at a higher Y position in the scene. (remember that
     the Y axis points upwards)
 
     \image fog_height_least_y_bigger.jpg
+           {Scene with higher leastIntenseY fog value}
 
     \note As with depth fog, the scene is expected to be set up accordingly, so
     that sensible Y coordinate ranges can be defined by leastIntenseY and

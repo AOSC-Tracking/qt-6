@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickrepeater_p.h"
 #include "qquickrepeater_p_p.h"
@@ -16,7 +17,6 @@ QT_BEGIN_NAMESPACE
 QQuickRepeaterPrivate::QQuickRepeaterPrivate()
     : model(nullptr)
     , ownModel(false)
-    , dataSourceIsObject(false)
     , delegateValidated(false)
     , explicitDelegate(false)
     , explicitDelegateModelAccess(false)
@@ -152,12 +152,11 @@ QVariant QQuickRepeater::model() const
 {
     Q_D(const QQuickRepeater);
 
-    if (d->dataSourceIsObject) {
-        QObject *o = d->dataSourceAsObject;
-        return QVariant::fromValue(o);
-    }
-
-    return d->dataSource;
+    if (d->ownModel)
+        return static_cast<QQmlDelegateModel *>(d->model.data())->model();
+    if (d->model)
+        return QVariant::fromValue(d->model.data());
+    return QVariant();
 }
 
 void QQuickRepeater::setModel(const QVariant &m)
@@ -167,20 +166,20 @@ void QQuickRepeater::setModel(const QVariant &m)
     if (model.userType() == qMetaTypeId<QJSValue>())
         model = model.value<QJSValue>().toVariant();
 
-    if (d->dataSource == model)
+    QQmlDelegateModelPointer oldModel(d->model);
+    if (d->ownModel) {
+        if (oldModel.delegateModel()->model() == model)
+            return;
+    } else if (QVariant::fromValue(d->model) == model) {
         return;
+    }
 
     clear();
 
-    QQmlDelegateModelPointer oldModel(d->model);
     d->disconnectModel(this, &oldModel);
-
     d->model = nullptr;
-    d->dataSource = model;
 
     QObject *object = qvariant_cast<QObject *>(model);
-    d->dataSourceAsObject = object;
-    d->dataSourceIsObject = object != nullptr;
 
     QQmlDelegateModelPointer newModel(qobject_cast<QQmlInstanceModel *>(object));
     if (newModel) {
@@ -217,10 +216,11 @@ void QQuickRepeater::setModel(const QVariant &m)
         }
         d->model = newModel.instanceModel();
     } else if (d->ownModel) {
+        // d->ownModel can only be set if the old model is a QQmlDelegateModel.
+        Q_ASSERT(oldModel.delegateModel());
         newModel = oldModel;
         d->model = newModel.instanceModel();
-        if (QQmlDelegateModel *delegateModel = newModel.delegateModel())
-            delegateModel->setModel(model);
+        newModel.delegateModel()->setModel(model);
     } else {
         newModel = QQmlDelegateModel::createForView(this, d);
         if (d->explicitDelegate) {
@@ -471,6 +471,10 @@ void QQuickRepeaterPrivate::connectModel(QQuickRepeater *q, QQmlDelegateModelPoi
         QObjectPrivate::connect(
                 dataModel, &QQmlDelegateModel::delegateModelAccessChanged,
                 this, &QQuickRepeaterPrivate::applyDelegateModelAccessChange);
+        if (ownModel) {
+            QObject::connect(dataModel, &QQmlDelegateModel::modelChanged,
+                             q, &QQuickRepeater::modelChanged);
+        }
     }
     q->regenerate();
 }
@@ -494,6 +498,10 @@ void QQuickRepeaterPrivate::disconnectModel(QQuickRepeater *q, QQmlDelegateModel
         QObjectPrivate::disconnect(
                 delegateModel, &QQmlDelegateModel::delegateModelAccessChanged,
                 this, &QQuickRepeaterPrivate::applyDelegateModelAccessChange);
+        if (ownModel) {
+            QObject::disconnect(delegateModel, &QQmlDelegateModel::modelChanged,
+                                q, &QQuickRepeater::modelChanged);
+        }
     }
 }
 
@@ -534,7 +542,7 @@ void QQuickRepeater::initItem(int index, QObject *object)
         // If the item comes from an ObjectModel, it might be used as
         // ComboBox/Menu/TabBar's contentItem. These types unconditionally cull items
         // that are inserted, so account for that here.
-        if (d->dataSourceIsObject)
+        if (d->model && !d->ownModel)
             QQuickItemPrivate::get(item)->setCulled(false);
         if (index > 0 && d->deletables.at(index-1)) {
             item->stackAfter(d->deletables.at(index-1));
@@ -566,7 +574,7 @@ void QQuickRepeater::modelUpdated(const QQmlChangeSet &changeSet, bool reset)
     }
 
     int difference = 0;
-    QHash<int, QVector<QPointer<QQuickItem> > > moved;
+    QHash<int, QList<QPointer<QQuickItem> > > moved;
     for (const QQmlChangeSet::Change &remove : changeSet.removes()) {
         int index = qMin(remove.index, d->deletables.size());
         int count = qMin(remove.index + remove.count, d->deletables.size()) - index;
@@ -592,7 +600,7 @@ void QQuickRepeater::modelUpdated(const QQmlChangeSet &changeSet, bool reset)
     for (const QQmlChangeSet::Change &insert : changeSet.inserts()) {
         int index = qMin(insert.index, d->deletables.size());
         if (insert.isMove()) {
-            QVector<QPointer<QQuickItem> > items = moved.value(insert.moveId);
+            QList<QPointer<QQuickItem> > items = moved.value(insert.moveId);
             d->deletables = d->deletables.mid(0, index) + items + d->deletables.mid(index);
             QQuickItem *stackBefore = index + items.size() < d->deletables.size()
                     ? d->deletables.at(index + items.size())
@@ -623,6 +631,7 @@ void QQuickRepeater::modelUpdated(const QQmlChangeSet &changeSet, bool reset)
 
 /*!
     \qmlproperty enumeration QtQuick::Repeater::delegateModelAccess
+    \since 6.10
 
     \include delegatemodelaccess.qdocinc
 */

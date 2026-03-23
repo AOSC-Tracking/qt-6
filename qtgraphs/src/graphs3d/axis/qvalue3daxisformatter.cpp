@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qvalue3daxis_p.h"
 #include "qvalue3daxisformatter_p.h"
@@ -602,3 +604,5 @@ void QValue3DAxisFormatterPrivate::markDirty(bool labelsChange)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qvalue3daxisformatter.cpp"

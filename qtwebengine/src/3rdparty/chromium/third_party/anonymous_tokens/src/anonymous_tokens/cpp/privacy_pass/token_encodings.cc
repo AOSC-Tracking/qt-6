@@ -674,7 +674,7 @@ absl::StatusOr<ExtendedTokenRequest> UnmarshalExtendedTokenRequest(
 }
 
 absl::Status ValidateExtensionsOrderAndValues(
-    const Extensions& extensions, absl::Span<uint16_t> expected_types,
+    const Extensions& extensions, absl::Span<const uint16_t> expected_types,
     absl::Time now) {
   if (expected_types.size() != extensions.extensions.size()) {
     return absl::InvalidArgumentError(
@@ -727,8 +727,10 @@ absl::Status ValidateExtensionsValues(const Extensions& extensions,
           }
         }
         for (const char& c : geo_hint->region) {
-          if (!absl::ascii_isupper(c) && !absl::ascii_ispunct(c)) {
-            return absl::InvalidArgumentError("Region is not uppercase");
+          if (!absl::ascii_isupper(c) && !absl::ascii_ispunct(c) &&
+              !absl::ascii_isdigit(c)) {
+            return absl::InvalidArgumentError(
+                "Region is not ascii uppercase, numerals, or punctuation");
           }
         }
         break;

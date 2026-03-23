@@ -134,11 +134,7 @@ V8_OBJECT class MutableBigInt : public FreshlyAllocatedBigInt {
 
   static_assert(std::is_same_v<bigint::digit_t, BigIntBase::digit_t>,
                 "We must be able to call BigInt library functions");
-
-  NEVER_READ_ONLY_SPACE
 } V8_OBJECT_END;
-
-NEVER_READ_ONLY_SPACE_IMPL(MutableBigInt)
 
 template <>
 struct CastTraits<MutableBigInt> : public CastTraits<BigInt> {};
@@ -306,7 +302,7 @@ void MutableBigInt::Canonicalize(Tagged<MutableBigInt> result) {
   while (new_length > 0 && result->digit(new_length - 1) == 0) new_length--;
   uint32_t to_trim = old_length - new_length;
   if (to_trim != 0) {
-    Heap* heap = result->GetHeap();
+    Heap* heap = Isolate::Current()->heap();
     if (!heap->IsLargeObject(result)) {
       uint32_t old_size =
           ALIGN_TO_ALLOCATION_ALIGNMENT(BigInt::SizeFor(old_length));
@@ -493,8 +489,9 @@ MaybeHandle<BigInt> BigInt::Remainder(Isolate* isolate, DirectHandle<BigInt> x,
   }
   // 2. Return the BigInt representing x modulo y.
   // See https://github.com/tc39/proposal-bigint/issues/84 though.
-  if (bigint::Compare(x->digits(), y->digits()) < 0)
+  if (bigint::Compare(x->digits(), y->digits()) < 0) {
     return indirect_handle(x, isolate);
+  }
   if (y->length() == 1 && y->digit(0) == 1) return Zero(isolate);
   Handle<MutableBigInt> remainder;
   uint32_t result_length = bigint::ModuloResultLength(y->digits());
@@ -993,12 +990,16 @@ typename HandleType<BigInt>::MaybeType BigInt::FromObject(
         constexpr uint32_t kMaxRenderedLength = 1000;
         if (str->length() > kMaxRenderedLength) {
           Factory* factory = isolate->factory();
-          Handle<String> prefix =
+          DirectHandle<String> prefix =
               factory->NewProperSubString(str, 0, kMaxRenderedLength);
-          Handle<SeqTwoByteString> ellipsis =
+          DirectHandle<SeqTwoByteString> ellipsis =
               factory->NewRawTwoByteString(1).ToHandleChecked();
           ellipsis->SeqTwoByteStringSet(0, 0x2026);
-          str = factory->NewConsString(prefix, ellipsis).ToHandleChecked();
+          // TODO(42203211): The cast below should not be necessary. Let's
+          // remove it, when NewConsString is not templatized by the handle
+          // type.
+          str = factory->NewConsString(prefix, Cast<String>(ellipsis))
+                    .ToHandleChecked();
         }
         THROW_NEW_ERROR(
             isolate, NewSyntaxError(MessageTemplate::kBigIntFromObject, str));
@@ -1244,7 +1245,7 @@ void BigInt::SerializeDigits(uint8_t* storage, size_t storage_length) {
 
 // The serialization format MUST NOT CHANGE without updating the format
 // version in value-serializer.cc!
-MaybeHandle<BigInt> BigInt::FromSerializedDigits(
+MaybeDirectHandle<BigInt> BigInt::FromSerializedDigits(
     Isolate* isolate, uint32_t bitfield,
     base::Vector<const uint8_t> digits_storage) {
   uint32_t bytelength = LengthBits::decode(bitfield);
@@ -1291,9 +1292,9 @@ DirectHandle<BigInt> BigInt::AsIntN(Isolate* isolate, uint64_t n,
                                     DirectHandle<BigInt> x) {
   if (x->is_zero() || n > kMaxLengthBits) return x;
   if (n == 0) return MutableBigInt::Zero(isolate);
-  int needed_length =
-      bigint::AsIntNResultLength(x->digits(), x->sign(), static_cast<int>(n));
-  if (needed_length == -1) return x;
+  int needed_length = bigint::AsIntNResultLength(x->digits(), x->sign(),
+                                                 static_cast<uint32_t>(n));
+  if (needed_length < 0) return x;
   Handle<MutableBigInt> result =
       MutableBigInt::New(isolate, needed_length).ToHandleChecked();
   bool negative = bigint::AsIntN(result->rw_digits(), x->digits(), x->sign(),
@@ -1311,16 +1312,19 @@ MaybeDirectHandle<BigInt> BigInt::AsUintN(Isolate* isolate, uint64_t n,
     if (n > kMaxLengthBits) {
       return ThrowBigIntTooBig<BigInt>(isolate);
     }
-    int result_length = bigint::AsUintN_Neg_ResultLength(static_cast<int>(n));
+    uint32_t result_length =
+        bigint::AsUintN_Neg_ResultLength(static_cast<uint32_t>(n));
     result = MutableBigInt::New(isolate, result_length).ToHandleChecked();
-    bigint::AsUintN_Neg(result->rw_digits(), x->digits(), static_cast<int>(n));
+    bigint::AsUintN_Neg(result->rw_digits(), x->digits(),
+                        static_cast<uint32_t>(n));
   } else {
     if (n >= kMaxLengthBits) return x;
     int result_length =
-        bigint::AsUintN_Pos_ResultLength(x->digits(), static_cast<int>(n));
+        bigint::AsUintN_Pos_ResultLength(x->digits(), static_cast<uint32_t>(n));
     if (result_length < 0) return x;
     result = MutableBigInt::New(isolate, result_length).ToHandleChecked();
-    bigint::AsUintN_Pos(result->rw_digits(), x->digits(), static_cast<int>(n));
+    bigint::AsUintN_Pos(result->rw_digits(), x->digits(),
+                        static_cast<uint32_t>(n));
   }
   DCHECK(!result->sign());
   return MutableBigInt::MakeImmutable(result);
@@ -1369,7 +1373,7 @@ MaybeDirectHandle<BigInt> BigInt::FromWords64(Isolate* isolate, int sign_bit,
   static_assert(kDigitBits == 64 || kDigitBits == 32);
   uint32_t length = (64 / kDigitBits) * words64_count;
   DCHECK_GT(length, 0);
-  if (kDigitBits == 32 && words[words64_count - 1] <= (1ULL << 32)) length--;
+  if (kDigitBits == 32 && words[words64_count - 1] < (1ULL << 32)) length--;
 
   Handle<MutableBigInt> result;
   if (!MutableBigInt::New(isolate, length).ToHandle(&result)) return {};
@@ -1409,8 +1413,9 @@ void BigInt::ToWordsArray64(int* sign_bit, uint32_t* words64_count,
 
   uint32_t len = length();
   if (kDigitBits == 64) {
-    for (uint32_t i = 0; i < len && i < available_words; ++i)
+    for (uint32_t i = 0; i < len && i < available_words; ++i) {
       words[i] = digit(i);
+    }
   } else {
     for (uint32_t i = 0; i < len && available_words > 0; i += 2) {
       uint64_t lo = digit(i);
@@ -1514,11 +1519,7 @@ int32_t MutableBigInt_AbsoluteMulAndCanonicalize(Address result_addr,
   Tagged<MutableBigInt> result =
       Cast<MutableBigInt>(Tagged<Object>(result_addr));
 
-  Isolate* isolate;
-  if (!GetIsolateFromHeapObject(x, &isolate)) {
-    // We should always get the isolate from the BigInt.
-    UNREACHABLE();
-  }
+  Isolate* isolate = Isolate::Current();
 
   bigint::Status status = isolate->bigint_processor()->Multiply(
       result->rw_digits(), x->digits(), y->digits());
@@ -1540,11 +1541,7 @@ int32_t MutableBigInt_AbsoluteDivAndCanonicalize(Address result_addr,
   DCHECK_GE(result->length(),
             bigint::DivideResultLength(x->digits(), y->digits()));
 
-  Isolate* isolate;
-  if (!GetIsolateFromHeapObject(x, &isolate)) {
-    // We should always get the isolate from the BigInt.
-    UNREACHABLE();
-  }
+  Isolate* isolate = Isolate::Current();
 
   bigint::Status status = isolate->bigint_processor()->Divide(
       result->rw_digits(), x->digits(), y->digits());
@@ -1564,11 +1561,7 @@ int32_t MutableBigInt_AbsoluteModAndCanonicalize(Address result_addr,
   Tagged<MutableBigInt> result =
       Cast<MutableBigInt>(Tagged<Object>(result_addr));
 
-  Isolate* isolate;
-  if (!GetIsolateFromHeapObject(x, &isolate)) {
-    // We should always get the isolate from the BigInt.
-    UNREACHABLE();
-  }
+  Isolate* isolate = Isolate::Current();
 
   bigint::Status status = isolate->bigint_processor()->Modulo(
       result->rw_digits(), x->digits(), y->digits());

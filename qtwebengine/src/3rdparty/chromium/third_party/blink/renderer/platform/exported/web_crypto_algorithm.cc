@@ -28,10 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "third_party/blink/public/platform/web_crypto_algorithm.h"
 
@@ -49,8 +45,7 @@ namespace blink {
 namespace {
 
 // A mapping from the algorithm ID to information about the algorithm.
-constexpr auto kAlgorithmIdToInfo =
-    std::to_array<WebCryptoAlgorithmInfo>({
+constexpr std::array<WebCryptoAlgorithmInfo,18> kAlgorithmIdToInfo = {{
         {// Index 0
          "AES-CBC",
          {
@@ -325,7 +320,7 @@ constexpr auto kAlgorithmIdToInfo =
              WebCryptoAlgorithmInfo::kUndefined,                // WrapKey
              WebCryptoAlgorithmInfo::kUndefined                 // UnwrapKey
          }},
-    });
+    }};
 
 // Initializing the algorithmIdToInfo table above depends on knowing the enum
 // values for algorithm IDs. If those ever change, the table will need to be

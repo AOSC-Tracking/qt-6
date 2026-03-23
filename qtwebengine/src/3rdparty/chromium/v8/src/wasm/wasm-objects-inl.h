@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_WASM_WASM_OBJECTS_INL_H_
+#define V8_WASM_WASM_OBJECTS_INL_H_
+
 #if !V8_ENABLE_WEBASSEMBLY
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
 
-#ifndef V8_WASM_WASM_OBJECTS_INL_H_
-#define V8_WASM_WASM_OBJECTS_INL_H_
+#include "src/wasm/wasm-objects.h"
+// Include the non-inl header before the rest of the headers.
 
 #include <type_traits>
 
@@ -26,7 +29,6 @@
 #include "src/roots/roots.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-module.h"
-#include "src/wasm/wasm-objects.h"
 #include "third_party/fp16/src/include/fp16.h"
 
 #if V8_ENABLE_DRUMBRAKE
@@ -43,7 +45,6 @@ namespace v8::internal {
 TQ_OBJECT_CONSTRUCTORS_IMPL(AsmWasmData)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmArray)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmCapiFunctionData)
-TQ_OBJECT_CONSTRUCTORS_IMPL(WasmContinuationObject)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmExceptionTag)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmExportedFunctionData)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmFunctionData)
@@ -62,6 +63,7 @@ TQ_OBJECT_CONSTRUCTORS_IMPL(WasmResumeData)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmStruct)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmSuspenderObject)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmSuspendingObject)
+TQ_OBJECT_CONSTRUCTORS_IMPL(WasmContinuationObject)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmTableObject)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmTagObject)
 TQ_OBJECT_CONSTRUCTORS_IMPL(WasmTypeInfo)
@@ -90,15 +92,6 @@ const std::shared_ptr<wasm::NativeModule>&
 WasmModuleObject::shared_native_module() const {
   return managed_native_module()->get();
 }
-const wasm::WasmModule* WasmModuleObject::module() const {
-  // TODO(clemensb): Remove this helper (inline in callers).
-  return native_module()->module();
-}
-bool WasmModuleObject::is_asm_js() {
-  bool asm_js = is_asmjs_module(module());
-  DCHECK_EQ(asm_js, script()->IsUserJavaScript());
-  return asm_js;
-}
 
 // WasmMemoryObject
 ACCESSORS(WasmMemoryObject, instances, Tagged<WeakArrayList>, kInstancesOffset)
@@ -120,7 +113,7 @@ wasm::ValueType WasmGlobalObject::type() const {
   // technically sandbox violations, we should still try to avoid them to keep
   // fuzzers happy. This SBXCHECK accomplishes that.
   wasm::ValueType type = wasm::ValueType::FromRawBitField(raw_type());
-  SBXCHECK(is_valid(type.kind()));
+  SBXCHECK(type.is_valid());
   return type;
 }
 void WasmGlobalObject::set_type(wasm::ValueType value) {
@@ -156,10 +149,10 @@ uint8_t* WasmGlobalObject::GetS128RawBytes() {
   return reinterpret_cast<uint8_t*>(address());
 }
 
-Handle<Object> WasmGlobalObject::GetRef() {
+DirectHandle<Object> WasmGlobalObject::GetRef() {
   // We use this getter for externref, funcref, and stringref.
   DCHECK(type().is_reference());
-  return handle(tagged_buffer()->get(offset()), GetIsolate());
+  return direct_handle(tagged_buffer()->get(offset()), Isolate::Current());
 }
 
 void WasmGlobalObject::SetI32(int32_t value) {
@@ -229,8 +222,8 @@ PRIMITIVE_ACCESSORS(WasmTrustedInstanceData, break_on_entry, uint8_t,
 
 OPTIONAL_ACCESSORS(WasmTrustedInstanceData, instance_object,
                    Tagged<WasmInstanceObject>, kInstanceObjectOffset)
-ACCESSORS(WasmTrustedInstanceData, native_context, Tagged<Context>,
-          kNativeContextOffset)
+OPTIONAL_ACCESSORS(WasmTrustedInstanceData, native_context, Tagged<Context>,
+                   kNativeContextOffset)
 ACCESSORS(WasmTrustedInstanceData, memory_objects, Tagged<FixedArray>,
           kMemoryObjectsOffset)
 OPTIONAL_ACCESSORS(WasmTrustedInstanceData, untagged_globals_buffer,
@@ -326,11 +319,11 @@ TRUSTED_POINTER_ACCESSORS(WasmInstanceObject, trusted_data,
 // incorrect WasmModule! For security-relevant code, prefer reading
 // {native_module()} from a {WasmTrustedInstanceData}.
 const wasm::WasmModule* WasmInstanceObject::module() const {
-  return module_object()->module();
+  return module_object()->native_module()->module();
 }
 
 ImportedFunctionEntry::ImportedFunctionEntry(
-    Handle<WasmTrustedInstanceData> instance_data, int index)
+    DirectHandle<WasmTrustedInstanceData> instance_data, int index)
     : instance_data_(instance_data), index_(index) {
   DCHECK_GE(index, 0);
   DCHECK_LT(index, instance_data->module()->num_imported_functions);
@@ -358,13 +351,6 @@ void WasmDispatchTable::set_table_type(wasm::CanonicalValueType type) {
   WriteField(kTableTypeOffset, type.raw_bit_field());
 }
 
-void WasmDispatchTable::clear_entry_padding(int index) {
-  static_assert(kEntryPaddingBytes == 0 || kEntryPaddingBytes == kIntSize);
-  if constexpr (kEntryPaddingBytes != 0) {
-    WriteField<int>(OffsetOf(index) + kEntryPaddingOffset, 0);
-  }
-}
-
 int WasmDispatchTable::length(AcquireLoadTag) const {
   return ACQUIRE_READ_INT32_FIELD(*this, kLengthOffset);
 }
@@ -387,6 +373,7 @@ inline Tagged<Object> WasmDispatchTable::implicit_arg(int index) const {
 inline WasmCodePointer WasmDispatchTable::target(int index) const {
   DCHECK_LT(index, length());
   if (v8_flags.wasm_jitless) return wasm::kInvalidWasmCodePointer;
+  static_assert(sizeof(WasmCodePointer) == sizeof(uint32_t));
   return WasmCodePointer{ReadField<uint32_t>(OffsetOf(index) + kTargetBias)};
 }
 
@@ -559,8 +546,12 @@ Tagged<WasmFuncRef> WasmExternalFunction::func_ref() const {
 }
 
 // WasmTypeInfo
+wasm::CanonicalValueType WasmTypeInfo::type() const {
+  return wasm::CanonicalValueType::FromRawBitField(canonical_type());
+}
+
 wasm::CanonicalTypeIndex WasmTypeInfo::type_index() const {
-  return wasm::CanonicalTypeIndex{canonical_type_index()};
+  return type().ref_index();
 }
 
 wasm::CanonicalValueType WasmTypeInfo::element_type() const {
@@ -579,6 +570,13 @@ TRUSTED_POINTER_ACCESSORS(WasmTableObject, trusted_data,
 TRUSTED_POINTER_ACCESSORS(WasmTableObject, trusted_dispatch_table,
                           WasmDispatchTable, kTrustedDispatchTableOffset,
                           kWasmDispatchTableIndirectPointerTag)
+
+TRUSTED_POINTER_ACCESSORS(WasmResumeData, trusted_suspender,
+                          WasmSuspenderObject, kTrustedSuspenderOffset,
+                          kWasmSuspenderIndirectPointerTag)
+
+PROTECTED_POINTER_ACCESSORS(WasmSuspenderObject, parent, WasmSuspenderObject,
+                            kParentOffset)
 
 wasm::ValueType WasmTableObject::type(const wasm::WasmModule* module) {
   wasm::ValueType type = unsafe_type();
@@ -602,7 +600,7 @@ wasm::ValueType WasmTableObject::unsafe_type() {
   // technically sandbox violations, we should still try to avoid them to keep
   // fuzzers happy. This SBXCHECK accomplishes that.
   wasm::ValueType type = wasm::ValueType::FromRawBitField(raw_type());
-  SBXCHECK(is_valid(type.kind()));
+  SBXCHECK(type.is_valid());
   return type;
 }
 
@@ -686,10 +684,6 @@ DirectHandle<Object> WasmObject::ReadValueAt(Isolate* isolate,
       return direct_handle(slot.load(isolate), isolate);
     }
 
-    case wasm::kRtt:
-      // Rtt values are not supposed to be made available to JavaScript side.
-      UNREACHABLE();
-
     case wasm::kVoid:
     case wasm::kTop:
     case wasm::kBottom:
@@ -708,11 +702,11 @@ ElementType WasmObject::FromNumber(Tagged<Object> value) {
 
   } else if (IsHeapNumber(value)) {
     double double_value = Cast<HeapNumber>(value)->value();
-    if (std::is_same<ElementType, double>::value ||
-        std::is_same<ElementType, float>::value) {
+    if (std::is_same_v<ElementType, double> ||
+        std::is_same_v<ElementType, float>) {
       return static_cast<ElementType>(double_value);
     } else {
-      CHECK(std::is_integral<ElementType>::value);
+      CHECK(std::is_integral_v<ElementType>);
       return static_cast<ElementType>(DoubleToInt32(double_value));
     }
   }
@@ -752,10 +746,20 @@ ObjectSlot WasmStruct::RawField(int raw_offset) {
   return ObjectSlot(RawFieldAddress(raw_offset));
 }
 
+void WasmStruct::SetTaggedFieldValue(int raw_offset, Tagged<Object> value,
+                                     WriteBarrierMode mode) {
+  int offset = WasmStruct::kHeaderSize + raw_offset;
+  TaggedField<Object>::store(*this, offset, value);
+  CONDITIONAL_WRITE_BARRIER(*this, offset, value, mode);
+}
+
+ACCESSORS_CHECKED(WasmStruct, described_rtt, Tagged<Map>, kHeaderSize,
+                  GcSafeType(map())->is_descriptor())
+
 wasm::CanonicalTypeIndex WasmArray::type_index(Tagged<Map> map) {
   DCHECK_EQ(WASM_ARRAY_TYPE, map->instance_type());
   Tagged<WasmTypeInfo> type_info = map->wasm_type_info();
-  return type_info->type_index();
+  return type_info->type().ref_index();
 }
 
 const wasm::CanonicalValueType WasmArray::GcSafeElementType(Tagged<Map> map) {
@@ -812,15 +816,15 @@ int WasmArray::DecodeElementSizeFromMap(Tagged<Map> map) {
   return map->WasmByte1();
 }
 
+EXTERNAL_POINTER_ACCESSORS(WasmSuspenderObject, stack, wasm::StackMemory*,
+                           kStackOffset, kWasmStackMemoryTag)
+
+EXTERNAL_POINTER_ACCESSORS(WasmContinuationObject, stack, wasm::StackMemory*,
+                           kStackOffset, kWasmStackMemoryTag)
+
 TRUSTED_POINTER_ACCESSORS(WasmTagObject, trusted_data, WasmTrustedInstanceData,
                           kTrustedDataOffset,
                           kWasmTrustedInstanceDataIndirectPointerTag)
-
-EXTERNAL_POINTER_ACCESSORS(WasmContinuationObject, jmpbuf, Address,
-                           kJmpbufOffset, kWasmContinuationJmpbufTag)
-
-EXTERNAL_POINTER_ACCESSORS(WasmContinuationObject, stack, Address, kStackOffset,
-                           kWasmStackMemoryTag)
 
 #include "src/objects/object-macros-undef.h"
 

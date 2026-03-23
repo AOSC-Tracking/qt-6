@@ -6,13 +6,11 @@
 
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "components/text_encoder/text_encoder.h"
 #include "gin/arguments.h"
 #include "services/accessibility/features/text_decoder.h"
+#include "services/accessibility/features/text_encoder.h"
 #include "v8/include/v8-object.h"
 #include "v8/include/v8-template.h"
-
-using text_encoder::TextEncoder;
 
 namespace ax {
 
@@ -45,26 +43,6 @@ static void ConsoleWarn(gin::Arguments* args) {
 static void ConsoleError(gin::Arguments* args) {
   LOG(ERROR) << "AccessibilityService V8: Error: " << PrintArgs(args);
 }
-
-// WrappedTextEncoder wraps a TextEncoder but properly schedules destruction
-// using a RegisteredWrappable.
-class WrappedTextEncoder : public RegisteredWrappable {
- public:
-  static gin::Handle<TextEncoder> Create(v8::Local<v8::Context> context) {
-    std::unique_ptr<TextEncoder> text_encoder;
-    gin::Handle<TextEncoder> handle =
-        TextEncoder::Create(context, &text_encoder);
-    new WrappedTextEncoder(std::move(text_encoder), context);
-    return handle;
-  }
-
- private:
-  explicit WrappedTextEncoder(std::unique_ptr<TextEncoder> text_encoder,
-                              v8::Local<v8::Context> context)
-      : RegisteredWrappable(context), text_encoder_(std::move(text_encoder)) {}
-
-  std::unique_ptr<TextEncoder> text_encoder_;
-};
 
 }  // namespace
 
@@ -109,9 +87,9 @@ void BindingsUtils::CreateTextEncoderCallback(
   // Check this is a constructor call: JS should always request
   // `new TextEncoder()` rather than just `TextEncoder`.
   DCHECK(info.IsConstructCall());
-  gin::Handle<TextEncoder> text_encoder =
-      WrappedTextEncoder::Create(info.GetIsolate()->GetCurrentContext());
-  info.GetReturnValue().Set(text_encoder.ToV8());
+  v8::Local<v8::Object> text_encoder =
+      TextEncoder::Create(info.GetIsolate());
+  info.GetReturnValue().Set(text_encoder);
 }
 
 // static
@@ -120,9 +98,9 @@ void BindingsUtils::CreateTextDecoderCallback(
   // Check this is a constructor call: JS should always request
   // `new TextDecoder()` rather than just `TextDecoder`.
   DCHECK(info.IsConstructCall());
-  gin::Handle<TextDecoder> text_decoder =
-      TextDecoder::Create(info.GetIsolate()->GetCurrentContext());
-  info.GetReturnValue().Set(text_decoder.ToV8());
+  v8::Local<v8::Object> text_decoder =
+      TextDecoder::Create(info.GetIsolate());
+  info.GetReturnValue().Set(text_decoder);
 }
 
 }  // namespace ax

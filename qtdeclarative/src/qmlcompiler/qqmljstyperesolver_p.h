@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSTYPERESOLVER_P_H
 #define QQMLJSTYPERESOLVER_P_H
@@ -139,9 +140,7 @@ public:
             const QQmlJSScope::ConstPtr &scope, const QString &name,
             QQmlJSScopesByIdOptions options = Default) const
     {
-        return canFindComponentBoundaries(scope)
-                ? m_objectsById.scope(name, scope, options)
-                : QQmlJSScope::ConstPtr();
+        return m_objectsById.scope(name, scope, options);
     }
 
     const QQmlJSScopesById &objectsById() const { return m_objectsById; }
@@ -242,7 +241,7 @@ public:
             QQmlJSRegisterContent type, const QString &name,
             int lookupIndex = QQmlJSRegisterContent::InvalidLookupIndex) const;
 
-    QQmlJSRegisterContent valueType(QQmlJSRegisterContent list) const;
+    QQmlJSRegisterContent elementType(QQmlJSRegisterContent list) const;
 
     QQmlJSRegisterContent returnType(
             const QQmlJSMetaMethod &method, const QQmlJSScope::ConstPtr &returnType,
@@ -300,8 +299,6 @@ protected:
     QQmlJSScope::ConstPtr resolveParentProperty(
             const QString &name, const QQmlJSScope::ConstPtr &base,
             const QQmlJSScope::ConstPtr &propType) const;
-
-    bool canFindComponentBoundaries(const QQmlJSScope::ConstPtr &scope) const;
 
     std::unique_ptr<QQmlJSRegisterContentPool> m_pool;
 

@@ -65,8 +65,8 @@ source_set("eg2_tests") {
     "//base/test:test_support",
     "//components/strings",
     "//ios/chrome/browser/find_in_page/model:util",
+    "//ios/chrome/browser/popup_menu/ui_bundled:constants",
     "//ios/chrome/browser/toolbar/ui_bundled/accessory:constants",
-    "//ios/chrome/browser/ui/popup_menu:constants",
     "//ios/chrome/test/earl_grey:eg_test_support+eg2",
     "//ios/testing/earl_grey:eg_test_support+eg2",
     "//ios/web/public/test/http_server",
@@ -74,6 +74,10 @@ source_set("eg2_tests") {
     "//ui/base",
   ]
   frameworks = [ "UIKit.framework" ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("eg_app_support+eg2") {

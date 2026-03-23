@@ -6,7 +6,6 @@
 
 #include "base/feature_list.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "sandbox/features.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -15,7 +14,7 @@
 
 namespace sandbox::policy::features {
 
-#if defined(TOOLKIT_QT) || (!BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_FUCHSIA))
+#if BUILDFLAG(IS_QTWEBENGINE) || (!BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_FUCHSIA))
 // Enables network service sandbox.
 // (Only causes an effect when feature kNetworkServiceInProcess is disabled.)
 BASE_FEATURE(kNetworkServiceSandbox,
@@ -118,22 +117,16 @@ BASE_FEATURE(kWinSboxParallelProcessLaunch,
 BASE_FEATURE(kEnableCsrssLockdown,
              "EnableCsrssLockdown",
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-// Filters most environment variables out for kService and kServiceWithJit
-// sandboxed processes. Flag retained as a kill-switch.
-BASE_FEATURE(kWinSboxFilterServiceEnvironment,
-             "WinSboxFilterServiceEnvironment",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_WIN)
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 // Controls whether the Spectre variant 2 mitigation is enabled. We use a USE
 // flag on some Chrome OS boards to disable the mitigation by disabling this
 // feature in exchange for system performance.
 BASE_FEATURE(kSpectreVariant2Mitigation,
              "SpectreVariant2Mitigation",
              base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 // Increase the renderer sandbox memory limit. As of 2023, there are no limits
@@ -148,15 +141,11 @@ BASE_FEATURE(kHigherRendererMemoryLimit,
 
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(IS_MAC)
-// Enables caching compiled sandbox profiles. Only some profiles support this,
-// as controlled by CanCacheSandboxPolicy().
-BASE_FEATURE(kCacheMacSandboxProfiles,
-             "CacheMacSandboxProfiles",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_MAC)
-
 #if BUILDFLAG(IS_ANDROID)
+// Enables the experimental Android GPU sandbox using Landlock.
+BASE_FEATURE(kAndroidGpuSandbox,
+             "AndroidGpuSandbox",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 // Enables the renderer on Android to use a separate seccomp policy.
 BASE_FEATURE(kUseRendererProcessPolicy,
              "UseRendererProcessPolicy",
@@ -194,7 +183,7 @@ bool IsNetworkSandboxSupported() {
   if (!supported) {
     return false;
   }
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
   // Not supported in QWE
   if (!sandbox::features::IsAppContainerSandboxSupported()) {
     return false;
@@ -209,7 +198,7 @@ bool IsNetworkSandboxSupported() {
 #endif  // BUILDFLAG(IS_WIN)
 
 bool IsNetworkSandboxEnabled() {
-#if !defined(TOOLKIT_QT) && (BUILDFLAG(IS_MAC) || BUILDFLAG(IS_FUCHSIA))
+#if !BUILDFLAG(IS_QTWEBENGINE) && (BUILDFLAG(IS_MAC) || BUILDFLAG(IS_FUCHSIA))
   return true;
 #else
 #if BUILDFLAG(IS_WIN)

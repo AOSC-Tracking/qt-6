@@ -9,7 +9,9 @@ import io
 import logging
 import subprocess
 import time
-from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple, Union, cast
+from typing import TYPE_CHECKING, Iterable, Optional, cast
+
+from typing_extensions import override
 
 from crossbench.browsers.chromium_based.chromium_based import ChromiumBased
 from crossbench.probes.profiling.context.base import PosixProfilingContext
@@ -17,15 +19,15 @@ from crossbench.probes.profiling.enum import CallGraphMode, TargetMode
 
 if TYPE_CHECKING:
   import crossbench.path as pth
-  from crossbench.plt.base import ListCmdArgs
+  from crossbench.plt.types import ListCmdArgs
   from crossbench.probes.results import ProbeResult
 
 
 class AndroidProfilingContext(PosixProfilingContext):
 
   def _generate_command_line(self) -> ListCmdArgs:
-    renderer_pid: Optional[int] = None
-    renderer_main_tid: Optional[int] = None
+    renderer_pid: int | None = None
+    renderer_main_tid: int | None = None
     if self.probe.target in (TargetMode.RENDERER_MAIN_ONLY,
                              TargetMode.RENDERER_PROCESS_ONLY):
       renderer_pid, renderer_main_tid = self.renderer_pid_tid
@@ -59,9 +61,9 @@ class AndroidProfilingContext(PosixProfilingContext):
           logging.error(error_msg)
       raise ValueError(f"Unable to start simpleperf. {error_msg}")
     atexit.register(self.stop_process)
-    self.browser.performance_mark("crossbench-probe-profiling-start")
+    self.browser.performance_mark("probe-profiling-start")
 
-  def _get_simpleperf_pids(self) -> List[int]:
+  def _get_simpleperf_pids(self) -> list[int]:
     simpleperf_pids = []
     for process in self.browser_platform.processes():
       if process["name"] == "simpleperf":
@@ -81,7 +83,7 @@ class AndroidProfilingContext(PosixProfilingContext):
       mask |= (1 << cpu)
     return f"{mask:x}"
 
-  def _pin_renderer_main_core(self, cpu: int):
+  def _pin_renderer_main_core(self, cpu: int) -> None:
     _, renderer_main_tid = self.renderer_pid_tid
     self.browser_platform.sh("taskset", "-p", self._cpu_mask([cpu]),
                              str(renderer_main_tid))
@@ -92,20 +94,21 @@ class AndroidProfilingContext(PosixProfilingContext):
   def setup(self) -> None:
     assert self.browser.platform.is_android, (
         f"Expected Android platform, found {type(self.browser.platform)}.")
-    assert self.browser.attributes.is_chromium_based, (
+    assert self.browser.attributes().is_chromium_based, (
         f"Expected Chromium-based browser, found {type(self.browser)}.")
     if (self.browser.platform.is_android and
-        self.browser.attributes.is_chromium_based):
+        self.browser.attributes().is_chromium_based):
       chromium = cast(ChromiumBased, self.browser)
-      # Set `--enable-benchmarking` explicitly for
+      # Set `--enable-benchmarking-extension` explicitly for
       # retrieving Renderer PID, if needed.
-      chromium.flags.set("--enable-benchmarking")
+      chromium.flags.enable_benchmarking_api()
     self._stop_existing_simpleperf()
 
   def start(self) -> None:
     if not self.probe.start_profiling_after_setup:
       self._start_simpleperf()
 
+  @override
   def start_story_run(self) -> None:
     super().start_story_run()
     if self.probe.pin_renderer_main_core is not None:
@@ -119,12 +122,12 @@ class AndroidProfilingContext(PosixProfilingContext):
 
   def stop_process(self) -> None:
     if self._profiling_process:
-      self.browser_platform.wait_and_kill(
+      self.browser_platform.terminate_gracefully(
           self._profiling_process,
           timeout=30,
           signal=self.browser_platform.signals.SIGINT)
       self._profiling_process = None
-      self.browser.performance_mark("crossbench-probe-profiling-stop")
+      self.browser.performance_mark("probe-profiling-stop")
 
   def teardown(self) -> ProbeResult:
     return self.browser_result(trace=[self.result_path])
@@ -136,12 +139,12 @@ def generate_simpleperf_command_line(
     renderer_pid: Optional[int],
     renderer_main_tid: Optional[int],
     call_graph_mode: CallGraphMode,
-    frequency: Optional[Union[int, str]],
+    frequency: Optional[int | str],
     count: Optional[int],
-    cpus: Tuple[int, ...],
-    events: Tuple[str, ...],
-    grouped_events: Tuple[str, ...],
-    add_counters: Tuple[str, ...],
+    cpus: tuple[int, ...],
+    events: tuple[str, ...],
+    grouped_events: tuple[str, ...],
+    add_counters: tuple[str, ...],
     output_path: pth.AnyPath,
 ) -> ListCmdArgs:
   command_line: ListCmdArgs = ["simpleperf", "record"]

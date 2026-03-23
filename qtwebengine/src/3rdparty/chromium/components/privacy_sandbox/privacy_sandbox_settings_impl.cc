@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "base/containers/contains.h"
@@ -25,6 +26,8 @@
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/pref_names.h"
+#include "components/metrics/dwa/dwa_builders.h"
+#include "components/metrics/dwa/dwa_recorder.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -197,11 +200,6 @@ PrivacySandboxSettingsImpl::PrivacySandboxSettingsImpl(
       prefs::kPrivacySandboxRelatedWebsiteSetsEnabled,
       base::BindRepeating(
           &PrivacySandboxSettingsImpl::OnRelatedWebsiteSetsEnabledPrefChanged,
-          base::Unretained(this)));
-  pref_change_registrar_.Add(
-      prefs::kCookieControlsMode,
-      base::BindRepeating(
-          &PrivacySandboxSettingsImpl::OnCookieControlsModePrefChanged,
           base::Unretained(this)));
 }
 
@@ -424,12 +422,20 @@ bool PrivacySandboxSettingsImpl::IsAttributionReportingAllowed(
           "Attestation check for Attribution Reporting on " +
               reporting_origin.Serialize() + " failed.");
     }
+    dwa::builders::PrivacySandbox_IsAttributionReportingAllowed()
+        .SetContent(reporting_origin.Serialize())
+        .SetStatus(static_cast<int64_t>(attestation_status))
+        .Record(metrics::dwa::DwaRecorder::Get());
     return false;
   }
 
   Status status =
       GetM1AdMeasurementAllowedStatus(top_frame_origin, reporting_origin);
   JoinHistogram(kIsAttributionReportingAllowedHistogram, status);
+  dwa::builders::PrivacySandbox_IsAttributionReportingAllowed()
+      .SetContent(reporting_origin.Serialize())
+      .SetStatus(static_cast<int64_t>(status))
+      .Record(metrics::dwa::DwaRecorder::Get());
   return IsAllowed(status);
 }
 
@@ -474,11 +480,24 @@ bool PrivacySandboxSettingsImpl::
         bool& can_bypass) const {
   content_settings::CookieSettingsBase::CookieSettingWithMetadata
       cookie_setting_with_metadata;
+  // With what is available here, we can create a cookie_partition_key for the
+  // given top_frame_origin and we can assume the ancestor chain bit is
+  // cross_site since the `IsFullCookieAccessAllowed` call below uses a null
+  // `SiteForCookies`, which means that we will always be in a cross site
+  // context.
+  net::SchemefulSite top_frame_site(top_frame_origin);
+  std::optional<net::CookiePartitionKey> cookie_partition_key =
+      net::CookiePartitionKey::FromStorageKeyComponents(
+          top_frame_site,
+          net::CookiePartitionKey::BoolToAncestorChainBit(/*cross_site=*/true),
+          /*nonce=*/std::nullopt);
+
   // Third party cookies must also be available for this context. An empty site
   // for cookies is provided so the context is always treated as a third party.
   bool allowed = cookie_settings_->IsFullCookieAccessAllowed(
       reporting_origin.GetURL(), net::SiteForCookies(), top_frame_origin,
-      net::CookieSettingOverrides(), &cookie_setting_with_metadata);
+      net::CookieSettingOverrides(), cookie_partition_key,
+      &cookie_setting_with_metadata);
 
   if (base::FeatureList::IsEnabled(
           kAttributionDebugReportingCookieDeprecationTesting)) {
@@ -789,6 +808,10 @@ bool PrivacySandboxSettingsImpl::IsPrivateAggregationAllowed(
       attestation_status, out_block_is_site_setting_specific);
   if (!IsAllowed(attestation_status)) {
     JoinHistogram(kIsPrivateAggregationAllowedHistogram, attestation_status);
+    dwa::builders::PrivacySandbox_IsPrivateAggregationAllowed()
+        .SetContent(reporting_origin.Serialize())
+        .SetStatus(static_cast<int64_t>(attestation_status))
+        .Record(metrics::dwa::DwaRecorder::Get());
     return false;
   }
 
@@ -797,6 +820,10 @@ bool PrivacySandboxSettingsImpl::IsPrivateAggregationAllowed(
   SetOutBlockIsSiteSettingSpecificFromStatus(
       status, out_block_is_site_setting_specific);
   JoinHistogram(kIsPrivateAggregationAllowedHistogram, status);
+  dwa::builders::PrivacySandbox_IsPrivateAggregationAllowed()
+      .SetContent(reporting_origin.Serialize())
+      .SetStatus(static_cast<int64_t>(status))
+      .Record(metrics::dwa::DwaRecorder::Get());
   return IsAllowed(status);
 }
 
@@ -816,6 +843,17 @@ bool PrivacySandboxSettingsImpl::IsPrivateAggregationDebugModeAllowed(
           kPrivateAggregationDebugReportingIgnoreSiteExceptions)) {
     top_frame_origin_to_query = top_frame_origin;
   }
+  // With what is available here, we can create a cookie_partition_key for the
+  // given top_frame_origin and we can assume the ancestor chain bit is
+  // cross_site since the `IsFullCookieAccessAllowed` call below uses a null
+  // `SiteForCookies`, which means that we will always be in a cross site
+  // context.
+  net::SchemefulSite top_frame_site(top_frame_origin);
+  std::optional<net::CookiePartitionKey> cookie_partition_key =
+      net::CookiePartitionKey::FromStorageKeyComponents(
+          top_frame_site,
+          net::CookiePartitionKey::BoolToAncestorChainBit(/*cross_site=*/true),
+          /*nonce=*/std::nullopt);
 
   // Third party cookies must also be available for this context. An empty site
   // for cookies and empty top-frame origin is provided so the context is always
@@ -826,7 +864,7 @@ bool PrivacySandboxSettingsImpl::IsPrivateAggregationDebugModeAllowed(
   if (cookie_settings_->IsFullCookieAccessAllowed(
           reporting_origin.GetURL(), net::SiteForCookies(),
           top_frame_origin_to_query, net::CookieSettingOverrides(),
-          &cookie_setting_with_metadata)) {
+          cookie_partition_key, &cookie_setting_with_metadata)) {
     return true;
   }
 
@@ -872,23 +910,6 @@ void PrivacySandboxSettingsImpl::OnCookiesCleared() {
 void PrivacySandboxSettingsImpl::OnRelatedWebsiteSetsEnabledPrefChanged() {
   for (auto& observer : observers_) {
     observer.OnRelatedWebsiteSetsEnabledChanged(AreRelatedWebsiteSetsEnabled());
-  }
-}
-
-void PrivacySandboxSettingsImpl::OnCookieControlsModePrefChanged() {
-  if (!base::FeatureList::IsEnabled(privacy_sandbox::kAddLimit3pcsSetting)) {
-    return;
-  }
-
-  CookieControlsMode mode = static_cast<CookieControlsMode>(
-      pref_change_registrar_.prefs()->GetInteger(prefs::kCookieControlsMode));
-  if (mode == CookieControlsMode::kOff ||
-      mode == CookieControlsMode::kIncognitoOnly) {
-    return;
-  }
-
-  for (Observer& obs : observers_) {
-    obs.OnRelatedWebsiteSetsEnabledChanged(AreRelatedWebsiteSetsEnabled());
   }
 }
 
@@ -1004,11 +1025,9 @@ void PrivacySandboxSettingsImpl::OnBlockAllThirdPartyCookiesChanged() {
 }
 
 bool PrivacySandboxSettingsImpl::AreRelatedWebsiteSetsEnabled() const {
-  if (tracking_protection_settings_->IsTrackingProtection3pcdEnabled() ||
-      base::FeatureList::IsEnabled(privacy_sandbox::kAddLimit3pcsSetting)) {
+  if (tracking_protection_settings_->IsTrackingProtection3pcdEnabled()) {
     return cookie_settings_->AreThirdPartyCookiesLimited();
   }
-
   return pref_service_->GetBoolean(
       prefs::kPrivacySandboxRelatedWebsiteSetsEnabled);
 }

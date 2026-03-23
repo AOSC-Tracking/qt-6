@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qtoolbar.h"
 
@@ -308,9 +309,10 @@ bool QToolBarPrivate::mouseMoveEvent(QMouseEvent *event)
     if (layout->pluggingWidget == nullptr
         && (event->position().toPoint() - state->pressPos).manhattanLength() > QApplication::startDragDistance()) {
             const bool wasDragging = state->dragging;
+            const auto evPos = event->position().toPoint();
             const bool moving = !q->isWindow() && (orientation == Qt::Vertical ?
-                event->position().toPoint().x() >= 0 && event->position().toPoint().x() < q->width() :
-                event->position().toPoint().y() >= 0 && event->position().toPoint().y() < q->height());
+                evPos.x() >= 0 && evPos.x() < q->width() :
+                evPos.y() >= 0 && evPos.y() < q->height());
 
             startDrag(moving);
             if (!moving && !wasDragging)

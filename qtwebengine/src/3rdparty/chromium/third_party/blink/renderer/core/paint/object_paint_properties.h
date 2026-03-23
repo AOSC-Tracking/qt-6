@@ -8,7 +8,6 @@
 #include <array>
 #include <memory>
 #include <utility>
-#include <variant>
 
 #include "base/dcheck_is_on.h"
 #include "base/functional/function_ref.h"
@@ -164,8 +163,9 @@ class CORE_EXPORT ObjectPaintProperties
     kInnerBorderRadiusClip = 30,
     kOverflowClip = 31,
     kCssClipFixedPosition = 32,
-    kLastClip = kCssClipFixedPosition,
-    kClipAlias = 33,
+    kInnerBorderShapeClip = 33,
+    kLastClip = kInnerBorderShapeClip,
+    kClipAlias = 34,
 
     // Should be updated whenever a higher value NodeType is added.
     kNumFields = kClipAlias + 1,
@@ -282,16 +282,18 @@ class CORE_EXPORT ObjectPaintProperties
   //   |   Provides the root stacking context for a local subframe with an
   //   |   active ViewTransition. This is used to implement the view transition
   //  /    layer stacking context:
-  // |     https://drafts.csswg.org/css-view-transitions-1/#view-transition-layer
+  // | https://drafts.csswg.org/css-view-transitions-1/#view-transition-layer
   // +-[ ViewTransitionEffect ]
   //   |   Provides the stacking context to paint all content for a Document,
   //   |   including top layer elements, into an image used for ViewTransition.
   //  /    This implements the capturing the image for the document element at:
-  // |     https://drafts.csswg.org/css-view-transitions-1/#capture-the-image-algorithm
+  // |
+  // https://drafts.csswg.org/css-view-transitions-1/#capture-the-image-algorithm
   // +-[ Effect ]
   //   |   Isolated group to apply various CSS effects, including opacity,
-  //  /    mix-blend-mode, backdrop-filter, and for isolation if a mask needs
-  // |     to be applied or backdrop-dependent children are present.
+  //   |   mix-blend-mode, backdrop-filter, and for isolation if a mask needs
+  //  /    to be applied or backdrop-dependent children are present, or to
+  // |     induce a render surface for cc 2D transform quality optimizations.
   // +-[ Mask ]
   //   |   Isolated group for painting the CSS mask or the mask-based CSS
   //  /    clip-path. This node will have SkBlendMode::kDstIn and shall paint
@@ -366,6 +368,9 @@ class CORE_EXPORT ObjectPaintProperties
   //     +-[ InnerBorderRadiusClip ]
   //       |   Clip created by a rounded border with overflow clip. This clip is
   //       |   not inset by scrollbars.
+  //     +-[ InnerBorderShapeClip ]
+  //       |   Clip created by a border-shape with overflow clip. This clip is
+  //       |   not inset by scrollbars.
   //       +-[ OverflowClip ]
   //             Clip created by overflow clip and is inset by the scrollbar.
   //   [ CssClipFixedPosition ]
@@ -384,6 +389,7 @@ class CORE_EXPORT ObjectPaintProperties
   ADD_CLIP(PixelMovingFilterClipExpander,
            NodeId::kPixelMovingFilterClipExpander)
   ADD_CLIP(InnerBorderRadiusClip, NodeId::kInnerBorderRadiusClip)
+  ADD_CLIP(InnerBorderShapeClip, NodeId::kInnerBorderShapeClip)
   ADD_CLIP(OverflowClip, NodeId::kOverflowClip)
   ADD_CLIP(CssClipFixedPosition, NodeId::kCssClipFixedPosition)
   ADD_ALIAS_NODE(Clip, ClipIsolationNode, NodeId::kClipAlias)
@@ -538,46 +544,47 @@ class CORE_EXPORT ObjectPaintProperties
 #endif
 };
 
-  template <>
-  struct ObjectPaintProperties::NodeIdRange<PaintPropertyNode> {
-    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstTransform;
-    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kClipAlias;
-  };
-  template <>
-  struct ObjectPaintProperties::NodeIdRange<TransformPaintPropertyNodeOrAlias> {
-    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstTransform;
-    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kTransformAlias;
-  };
-  template <>
-  struct ObjectPaintProperties::NodeIdRange<TransformPaintPropertyNode> {
-    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstTransform;
-    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kLastTransform;
-  };
-  template <>
-  struct ObjectPaintProperties::NodeIdRange<ScrollPaintPropertyNode> {
-    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstScroll;
-    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kLastScroll;
-  };
-  template <>
-  struct ObjectPaintProperties::NodeIdRange<EffectPaintPropertyNodeOrAlias> {
-    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstEffect;
-    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kEffectAlias;
-  };
-  template <>
-  struct ObjectPaintProperties::NodeIdRange<EffectPaintPropertyNode> {
-    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstEffect;
-    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kLastEffect;
-  };
-  template <>
-  struct ObjectPaintProperties::NodeIdRange<ClipPaintPropertyNodeOrAlias> {
-    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstClip;
-    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kClipAlias;
-  };
-  template <>
-  struct ObjectPaintProperties::NodeIdRange<ClipPaintPropertyNode> {
-    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstClip;
-    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kLastClip;
-  };
+template <>
+struct ObjectPaintProperties::NodeIdRange<PaintPropertyNode> {
+  static constexpr NodeId kFirst = NodeId::kFirstTransform;
+  static constexpr NodeId kLast = NodeId::kClipAlias;
+};
+template <>
+struct ObjectPaintProperties::NodeIdRange<TransformPaintPropertyNodeOrAlias> {
+  static constexpr NodeId kFirst = NodeId::kFirstTransform;
+  static constexpr NodeId kLast = NodeId::kTransformAlias;
+};
+template <>
+struct ObjectPaintProperties::NodeIdRange<TransformPaintPropertyNode> {
+  static constexpr NodeId kFirst = NodeId::kFirstTransform;
+  static constexpr NodeId kLast = NodeId::kLastTransform;
+};
+template <>
+struct ObjectPaintProperties::NodeIdRange<ScrollPaintPropertyNode> {
+  static constexpr NodeId kFirst = NodeId::kFirstScroll;
+  static constexpr NodeId kLast = NodeId::kLastScroll;
+};
+template <>
+struct ObjectPaintProperties::NodeIdRange<EffectPaintPropertyNodeOrAlias> {
+  static constexpr NodeId kFirst = NodeId::kFirstEffect;
+  static constexpr NodeId kLast = NodeId::kEffectAlias;
+};
+template <>
+struct ObjectPaintProperties::NodeIdRange<EffectPaintPropertyNode> {
+  static constexpr NodeId kFirst = NodeId::kFirstEffect;
+  static constexpr NodeId kLast = NodeId::kLastEffect;
+};
+template <>
+struct ObjectPaintProperties::NodeIdRange<ClipPaintPropertyNodeOrAlias> {
+  static constexpr NodeId kFirst = NodeId::kFirstClip;
+  static constexpr NodeId kLast = NodeId::kClipAlias;
+};
+template <>
+struct ObjectPaintProperties::NodeIdRange<ClipPaintPropertyNode> {
+  static constexpr NodeId kFirst = NodeId::kFirstClip;
+  static constexpr NodeId kLast = NodeId::kLastClip;
+};
+
 
 }  // namespace blink
 

@@ -11,29 +11,25 @@
 //! [linux]
 \table 80%
     \header \li Distribution \li Architecture \li Compiler \li Notes
-    \row \li \tm{Red Hat} 8.6
-        \li \c x86_64
-        \li GCC 10 (toolset)
-        \li
-    \row \li \tm{Red Hat} 8.8
-        \li \c x86_64
-        \li GCC 10 (toolset)
-        \li
     \row \li \tm{Red Hat} 8.10
         \li \c x86_64
         \li GCC 10 (toolset)
         \li
-    \row \li \tm{Red Hat} 9.2
+    \row \li \tm{Red Hat} 9.6
         \li \c x86_64
         \li GCC 11
         \li
-    \row \li \tm{Red Hat} 9.4
+    \row \li \tm{Red Hat} 10.0
         \li \c x86_64
-        \li GCC 11
+        \li GCC 14
         \li
     \row \li openSUSE 15.6
         \li \c x86_64
         \li GCC 9, GCC 10, GCC 11, GCC 12
+        \li
+    \row \li openSUSE 16.0
+        \li \c x86_64
+        \li GCC 15
         \li
     \row \li SUSE Linux Enterprise Server 15 SP6
         \li \c x86_64
@@ -42,17 +38,24 @@
     \row \li Ubuntu 22.04
         \li \c x86_64
         \li GCC as provided by Canonical, GCC 11.x
-        \li
+        \li See also: \l {Enterprise Qt Debian Packages}.
     \row \li Ubuntu 24.04
         \li \c {x86_64, arm64}
         \li GCC as provided by Canonical, GCC 13.x
-        \li See the \l {linux-on-arm-desktop-support}{note}.
+        \li See the \l {linux-on-arm-desktop-support}{note} regarding Linux on
+            Arm desktop support.
     \row \li Debian 11.6
         \li \c {x86_64, arm64}
         \li GCC 10
-        \li Technology Preview
+        \li See the \l {linux-on-arm-desktop-support}{note} regarding Linux on
+            Arm desktop support.
+    \row \li Debian 12
+        \li \c {x86_64, arm64}
+        \li GCC 12
+        \li See also: \l {Enterprise Qt Debian Packages}.
 
-            See also: \l {Enterprise Qt Debian Packages}.
+            See the \l {linux-on-arm-desktop-support}{note} regarding Linux on
+            Arm desktop support.
 \endtable
 
 \target linux-on-arm-desktop-support
@@ -60,9 +63,9 @@
     Ubuntu 24.04 as a reference platform. If you have an issue with another
     hardware, please try to reproduce the issue on Raspberry Pi 5. We plan to
     move to regular platform support when a wider range of ARM-based desktop
-    hardware becomes available. The official binaries are built on Ubuntu
-    24.04 which ships with glibc 2.39, if your glibc is older than what we
-    build with, you need to rebuild from sources.
+    hardware becomes available. The official binaries in \QOI are built on
+    Ubuntu 24.04 which ships with glibc 2.39, if your glibc is older than what
+    we build with, you need to rebuild from sources.
 
 //! [linux]
 
@@ -182,7 +185,7 @@ Support (LTS) releases. To get support for these targets in non-LTS releases, co
 \list
     \li Issues on reference targets are given a higher priority than lower
     tier targets.
-    \li Covered under \l{Qt Support Terms and Conditions}{Standard Support}.
+    \li Covered under \l{Standard support}.
     \li Releases are available via \QOI.
 \endlist
 
@@ -198,11 +201,12 @@ Support (LTS) releases. To get support for these targets in non-LTS releases, co
 \endtable
 
 \section3 Tier 2: Verified Targets
+\target {embedded-platforms-tier2}
 
 \list
     \li Issues on verified targets are given a lower priority than
     \l{Tier 1: Reference Targets}.
-    \li Covered under \l{Qt Support Terms and Conditions}{Premium Support}.
+    \li Covered under \l{Premium support}.
     \li Releases are available via \QOI.
 \endlist
 
@@ -210,11 +214,14 @@ Support (LTS) releases. To get support for these targets in non-LTS releases, co
     \header \li{5,1} Tier 2: Verified Targets
     \header \li Vendor \li Board \li OS / Other \li Product \li Supported by
     \row \li NVIDIA \li Jetson AGX Orin Developer Kit \li Debian 12 \li \l{Enterprise Qt Debian Packages} \li Qt Group
+    \row \li NXP \li i.MX 8M Plus LPDDR4 EVK \li Yocto 5.2 \li \l{Boot to Qt} \li Qt Group
     \row \li NXP \li i.MX 93 11x11 LPDDR4X EVK \li Yocto 5.2 \li \l{Boot to Qt} \li Qt Group
+    \row \li Qualcomm \li RB3 Gen 2 Vision Kit \li Yocto 5.0 \li \l{Boot to Qt} \li Qt Group
     \row \li Raspberry Pi \li Raspberry Pi 4 64-bit \li Yocto 5.2 \li \l{Boot to Qt} \li Qt Group
     \row \li ST \li STM32MP15 Discovery \li Yocto 5.0 \li \l{Boot to Qt} \li Qt Group
     \row \li TI \li SK-AM62 \li Yocto 5.0 \li \l{Boot to Qt} \li Qt Group
     \row \li Toradex \li Apalis iMX6 \li Yocto 5.0 \li \l{Boot to Qt} \li Qt Group
+    \row \li Toradex \li i.MX 95 Verdin \li Yocto 5.0 \li \l{Boot to Qt} \li Qt Group
 \endtable
 
 \section3 Tier 3: Other Targets
@@ -233,13 +240,10 @@ Support (LTS) releases. To get support for these targets in non-LTS releases, co
     \row \li NVIDIA \li Jetson Orin Nano Developer Kit \li Yocto 5.2 \li \l{Boot to Qt} \li Qt Group
     \row \li NXP \li i.MX 8M Mini LPDDR4 EVK \li Yocto 5.2 \li \l{Boot to Qt} \li Qt Group
     \row \li NXP \li i.MX 8M Nano LPDDR4 EVK \li Yocto 5.2 \li \l{Boot to Qt} \li Qt Group
-    \row \li NXP \li i.MX 8M Plus LPDDR4 EVK \li Yocto 5.2 \li \l{Boot to Qt} \li Qt Group
-    \row \li Qualcomm \li RB3 Gen 2 Vision Kit \li Yocto 5.0 \li \l{Boot to Qt} \li Qt Group
     \row \li ST \li STM32MP15 Evaluation \li Yocto 5.0 \li \l{Boot to Qt} \li Qt Group
     \row \li StarFive \li VisionFive 2 \li Yocto 5.2 \li \l{Boot to Qt} \li Qt Group
     \row \li Toradex \li Apalis iMX8 \li Yocto 5.0 \li \l{Boot to Qt} \li Qt Group
     \row \li Toradex \li Colibri iMX6 ULL \li Yocto 5.0 \li \l{Boot to Qt} \li Qt Group
-    \row \li Toradex \li i.MX 95 Verdin Evaluation Kit \li Yocto 5.2 \li \l{Boot to Qt} \li Qt Group
 \endtable
 
 
@@ -291,19 +295,26 @@ documentation.
     \row \li Free RTOS
     \li Platform specific. For details, see \l {Supported Qt for MCUs platforms}.
     \li Platform specific. For details, see \l {Supported Qt for MCUs platforms}.
-    \li \l{Qt for MCUs}
+    \li \l{Qt for MCUs documentation}{Qt for MCUs}
     \row \li VxWorks 24.03
     \li
         \list
             \li \c armv7 (i.mx6)
-            \li \c x86_64 (Intel SkyLake)
         \endlist
     \li Clang version 17.0.6.1
+    \li \l{Qt for VxWorks}
+    \row \li VxWorks 25.03
+    \li
+        \list
+            \li \c armv7 (i.mx6)
+            \li \c x86_64 (Intel SkyLake, Intel KabyLake with Intel GPU)
+        \endlist
+    \li Clang version 17.0.6.3
     \li \l{Qt for VxWorks}
     \row \li Zephyr
     \li Platform specific. For details, see \l {Supported Qt for MCUs platforms}.
     \li Platform specific. For details, see \l {Supported Qt for MCUs platforms}.
-    \li \l{Qt for MCUs}
+    \li \l{Qt for MCUs documentation}{Qt for MCUs}
 \endtable
 
 //! [embedded]

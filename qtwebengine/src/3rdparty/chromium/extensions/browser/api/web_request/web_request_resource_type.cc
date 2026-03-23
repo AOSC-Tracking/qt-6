@@ -10,6 +10,7 @@
 #include "base/check_op.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
 
 namespace extensions {
@@ -20,7 +21,7 @@ struct ResourceTypes {
   const char* const name;
   const WebRequestResourceType type;
 };
-constexpr auto kResourceTypes = std::to_array<ResourceTypes>({
+constexpr std::array<ResourceTypes, 15> kResourceTypes{{
     {"main_frame", WebRequestResourceType::MAIN_FRAME},
     {"sub_frame", WebRequestResourceType::SUB_FRAME},
     {"stylesheet", WebRequestResourceType::STYLESHEET},
@@ -36,7 +37,7 @@ constexpr auto kResourceTypes = std::to_array<ResourceTypes>({
     {"webtransport", WebRequestResourceType::WEB_TRANSPORT},
     {"webbundle", WebRequestResourceType::WEBBUNDLE},
     {"other", WebRequestResourceType::OTHER},
-});
+}};
 
 constexpr size_t kResourceTypesLength = std::size(kResourceTypes);
 

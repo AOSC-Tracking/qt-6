@@ -69,6 +69,9 @@ class tst_qqmljsscope : public QQmlDataTest
         QQmlJSLogger logger;
         logger.setFilePath(resolvedFile);
         logger.setCode(sourceCode);
+        // some files shadow properties on purpose
+        logger.setCategoryIgnored(qmlShadow, true);
+        logger.setCategoryIgnored(qmlPropertyOverride, true);
         logger.setSilent(expectErrorsOrWarnings);
         QQmlJSScope::Ptr target = QQmlJSScope::create();
         target->setOwnModuleName(u"HelloModule"_s);
@@ -124,6 +127,7 @@ private Q_SLOTS:
     void javaScriptBuiltinFlag();
     void isRoot();
     void idLocation();
+    void lineNumber();
 
 public:
     tst_qqmljsscope()
@@ -491,7 +495,7 @@ void tst_qqmljsscope::attachedSignalHandler()
 
     const auto binding = std::find_if(root->childScopesBegin(), root->childScopesEnd(),
                                       [](const QQmlJSScope::ConstPtr &child) {
-                                          return child->baseTypeName() == "changeHandler"_L1;
+                                          return child->baseTypeName() == "signalHandler"_L1;
                                       });
     QCOMPARE_NE(binding, root->childScopesEnd());
 
@@ -734,10 +738,19 @@ void tst_qqmljsscope::extensions()
     QCOMPARE(childScopes[4]->attachedTypeName(), QString());
     QVERIFY(!childScopes[4]->attachedType());
 
-    auto [owner, ownerKind] = QQmlJSScope::ownerOfProperty(childScopes[4], u"count"_s);
-    QVERIFY(owner);
-    QCOMPARE(ownerKind, QQmlJSScope::ExtensionType);
-    QCOMPARE(owner, childScopes[4]->baseType()->extensionType().scope);
+    {
+        auto [owner, ownerKind] = QQmlJSScope::ownerOfProperty(childScopes[4], u"count"_s);
+        QVERIFY(owner);
+        QCOMPARE(ownerKind, QQmlJSScope::ExtensionType);
+        QCOMPARE(owner, childScopes[4]->baseType()->extensionType().scope);
+    }
+
+    {
+        auto [owner, ownerKind] = QQmlJSScope::ownerOfMethod(childScopes[4], u"myInvokable"_s);
+        QVERIFY(owner);
+        QCOMPARE(ownerKind, QQmlJSScope::ExtensionType);
+        QCOMPARE(owner, childScopes[4]->baseType()->extensionType().scope);
+    }
 }
 
 void tst_qqmljsscope::emptyBlockBinding()
@@ -945,7 +958,7 @@ void tst_qqmljsscope::attachedTypeResolution()
     const auto &implicitImportDirectory = QQmlJSImportVisitor::implicitImportDirectory(
             logger->filePath(), importer.resourceFileMapper());
     QQmlJSImportVisitor v{
-        QQmlJSScope::create(), &importer, logger.get(), implicitImportDirectory, {}
+        &importer, logger.get(), implicitImportDirectory, {}
     };
 
     PassManagerPtr manager(
@@ -1003,7 +1016,7 @@ void tst_qqmljsscope::builtinTypeResolution()
     const auto &implicitImportDirectory = QQmlJSImportVisitor::implicitImportDirectory({}, nullptr);
     QQmlJSLogger logger;
     QQmlJSImportVisitor v{
-        QQmlJSScope::create(), &importer, &logger, implicitImportDirectory, {}
+        &importer, &logger, implicitImportDirectory, {}
     };
 
     PassManagerPtr manager(
@@ -1051,7 +1064,6 @@ void tst_qqmljsscope::modulePrefixes()
     logger.setFilePath(url);
     logger.setCode(sourceCode);
 
-    QQmlJSScope::Ptr target = QQmlJSScope::create();
     QmlIR::Document document(url, url, false);
     QQmlJSSaveFunction noop([](auto &&...) { return true; });
     QQmlJSCompileError error;
@@ -1061,7 +1073,7 @@ void tst_qqmljsscope::modulePrefixes()
     if (!error.message.isEmpty())
         return;
 
-    QQmlJSImportVisitor visitor(target, &m_importer, &logger, dataDirectory());
+    QQmlJSImportVisitor visitor(&m_importer, &logger, dataDirectory());
     QQmlJSTypeResolver typeResolver{ &m_importer };
     typeResolver.init(&visitor, document.program);
 
@@ -1078,7 +1090,6 @@ void tst_qqmljsscope::javaScriptBuiltinFlag()
     logger.setFilePath(url);
     logger.setCode(loadFile(url));
 
-    QQmlJSScope::Ptr target = QQmlJSScope::create();
     QmlIR::Document document(url, url, false);
     QQmlJSSaveFunction noop([](auto &&...) { return true; });
     QQmlJSCompileError error;
@@ -1088,7 +1099,7 @@ void tst_qqmljsscope::javaScriptBuiltinFlag()
     if (!error.message.isEmpty())
         return;
 
-    QQmlJSImportVisitor visitor(target, &m_importer, &logger, dataDirectory());
+    QQmlJSImportVisitor visitor( &m_importer, &logger, dataDirectory());
     QQmlJSTypeResolver typeResolver{ &m_importer };
     typeResolver.init(&visitor, document.program);
 
@@ -1121,6 +1132,19 @@ void tst_qqmljsscope::idLocation()
     QCOMPARE(actual.startLine, 7);
     QCOMPARE(actual.startColumn, 25);
     QCOMPARE(actual.length, 10);
+}
+
+void tst_qqmljsscope::lineNumber()
+{
+    const auto jsscope = run(u"UseTypeWithProperties.qml"_s, false);
+    const auto baseFromCpp = jsscope->baseType();
+    QVERIFY(baseFromCpp);
+    QCOMPARE(baseFromCpp->lineNumber(), 13);
+    QCOMPARE(baseFromCpp->property("a").sourceLocation().startLine, 18);
+    QCOMPARE(baseFromCpp->methods("myInvokable").front().sourceLocation().startLine, 26);
+    QCOMPARE(baseFromCpp->enumeration("MyEnum").lineNumber(), 28);
+    QCOMPARE(baseFromCpp->methods("aChanged").front().sourceLocation().startLine, 32);
+    QCOMPARE(baseFromCpp->methods("mySlot").front().sourceLocation().startLine, 34);
 }
 
 QTEST_MAIN(tst_qqmljsscope)

@@ -1,5 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RHI_PARTICLES_H
 #define QSSG_RHI_PARTICLES_H
@@ -31,7 +33,7 @@ class QSSGRenderCamera;
 struct QSSGReflectionMapEntry;
 class QRhiTexture;
 
-class QSSGParticleRenderer
+class Q_QUICK3DRUNTIMERENDER_EXPORT QSSGParticleRenderer
 {
 public:
     static void updateUniformsForParticles(const QSSGLayerRenderData &inData, QSSGRhiShaderPipeline &shaderPipeline,
@@ -43,6 +45,16 @@ public:
                                                char *ubufData,
                                                const QSSGRenderModel *model, quint32 offset);
 
+    static QSSGRhiShaderPipelinePtr getShaderPipelineParticles(QSSGRenderer &renderer,
+                                                               QSSGParticlesRenderable &inRenderable,
+                                                               const QSSGShaderFeatures &inFeatureSet);
+
+    static QSSGRhiShaderPipelinePtr generateRhiShaderPipeline(QSSGRenderer &renderer,
+                                                              QSSGParticlesRenderable &inRenderable,
+                                                              const QSSGShaderFeatures &inFeatureSet,
+                                                              QByteArray &shaderString,
+                                                              const QSSGShaderParticleMaterialKeyProperties &shaderKeyProperties);
+
     static void rhiPrepareRenderable(QSSGRhiShaderPipeline &shaderPipeline, QSSGPassKey passKey,
                                      QSSGRhiContext *rhiCtx,
                                      QSSGRhiGraphicsPipelineState *ps,
@@ -53,7 +65,8 @@ public:
                                      int viewCount,
                                      QSSGRenderCamera *alteredCamera = nullptr,
                                      QSSGRenderTextureCubeFace cubeFace = QSSGRenderTextureCubeFaceNone,
-                                     QSSGReflectionMapEntry *entry = nullptr);
+                                     QSSGReflectionMapEntry *entry = nullptr,
+                                     bool oit = false);
     static void rhiRenderRenderable(QSSGRhiContext *rhiCtx,
                                     QSSGParticlesRenderable &renderable,
                                     bool *needsSetViewport,
@@ -63,6 +76,8 @@ public:
                                          QSSGRhiContext *rhiCtx,
                                          QSSGRhiShaderResourceBindingList &bindings,
                                          const QSSGRenderModel *model);
+    static QSSGShaderFeatures particleShaderFeatures(const QSSGShaderFeatures& features);
+    static void setShaderCacheEnabled(bool enabled);
 };
 
 QT_END_NAMESPACE

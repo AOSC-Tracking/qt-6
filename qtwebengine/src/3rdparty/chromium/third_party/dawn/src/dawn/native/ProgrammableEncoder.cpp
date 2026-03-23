@@ -29,7 +29,6 @@
 
 #include <cstring>
 
-#include "dawn/common/BitSetIterator.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/Buffer.h"
@@ -37,6 +36,7 @@
 #include "dawn/native/Commands.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectType_autogen.h"
+#include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/native/utils/WGPUHelpers.h"
 
@@ -116,6 +116,46 @@ void ProgrammableEncoder::APIPushDebugGroup(StringView groupLabelIn) {
         "encoding %s.PushDebugGroup(%s).", this, groupLabel);
 }
 
+void ProgrammableEncoder::APISetImmediateData(uint32_t offset, const void* data, size_t size) {
+    mEncodingContext->TryEncode(
+        this,
+        [&](CommandAllocator* allocator) -> MaybeError {
+            if (IsValidationEnabled()) {
+                uint32_t maxImmediateSize = GetDevice()->GetLimits().v1.maxImmediateSize;
+                DAWN_INVALID_IF(maxImmediateSize == 0,
+                                "immediates are not enabled (the device's maxImmediateSize is 0; "
+                                "AllowUnsafeAPIs may be needed to raise the adapter limit)");
+
+                // Validate offset and size are aligned to 4 bytes.
+                DAWN_INVALID_IF(offset % 4 != 0, "offset (%u) is not a multiple of 4", offset);
+                DAWN_INVALID_IF(size % 4 != 0, "size (%u) is not a multiple of 4", size);
+
+                // Validate OOB
+                DAWN_INVALID_IF(offset > maxImmediateSize,
+                                "offset (%u) is larger than maxImmediateSize (%u).", offset,
+                                maxImmediateSize);
+                DAWN_INVALID_IF(size > maxImmediateSize - offset,
+                                "offset (%u) + size (%u): is larger than maxImmediateSize (%u).",
+                                offset, size, maxImmediateSize);
+            }
+
+            // Skip SetImmediateData when uploading constants are empty.
+            if (size == 0) {
+                return {};
+            }
+
+            SetImmediateDataCmd* cmd =
+                allocator->Allocate<SetImmediateDataCmd>(Command::SetImmediateData);
+            cmd->offset = offset;
+            cmd->size = size;
+            uint8_t* immediateDatas = allocator->AllocateData<uint8_t>(cmd->size);
+            memcpy(immediateDatas, data, size);
+
+            return {};
+        },
+        "encoding %s.SetImmediateData(%u, %u, ...).", this, offset, size);
+}
+
 MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,
                                                      BindGroupBase* group,
                                                      uint32_t dynamicOffsetCountIn,
@@ -158,6 +198,7 @@ MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,
             case wgpu::BufferBindingType::Storage:
             case wgpu::BufferBindingType::ReadOnlyStorage:
             case kInternalStorageBufferBinding:
+            case kInternalReadOnlyStorageBufferBinding:
                 requiredAlignment = GetDevice()->GetLimits().v1.minStorageBufferOffsetAlignment;
                 break;
             case wgpu::BufferBindingType::BindingNotUsed:

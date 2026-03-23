@@ -23,28 +23,31 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-
-#if !BUILDFLAG(IS_NACL)
 #include "third_party/boringssl/src/include/openssl/rand.h"
-#endif
 
 namespace memory_simulator {
 class MemoryHolder;
+}
+
+namespace gwp_asan::internal {
+class ExtremeLightweightDetectorQuarantineBranch;
 }
 
 namespace base {
 
 namespace internal {
 
-#if !BUILDFLAG(IS_NACL)
 void ConfigureBoringSSLBackedRandBytesFieldTrial();
-#endif
 
 // Returns a random double in range [0, 1). For use in allocator shim to avoid
 // infinite recursion. Thread-safe.
 BASE_EXPORT double RandDoubleAvoidAllocation();
 
 }  // namespace internal
+
+namespace test {
+class InsecureRandomGenerator;
+}  // namespace test
 
 // Returns a random number in range [0, UINT64_MAX]. Thread-safe.
 BASE_EXPORT uint64_t RandUint64();
@@ -108,8 +111,11 @@ T RandomizeByPercentage(T value, double percentage) {
   // adjustment may not fit in a `T`. The clamped value described in pseudocode
   // step (2) above will always fit in a `uint64_t`, so do math in `uint64_t`s.
   const uint64_t abs_value = SafeUnsignedAbs(value);
+  // Explicitly cast to double to avoid implicit conversion warnings on stricter
+  // toolchains. The potential precision loss from converting a large uint64_t
+  // is acceptable for this percentage-based randomization.
   const uint64_t max_abs_adjustment =
-      ClampRound<uint64_t>(abs_value * percentage / 100);
+      ClampRound<uint64_t>(static_cast<double>(abs_value) * percentage / 100.0);
   if (!max_abs_adjustment) {
     return value;
   }
@@ -185,7 +191,6 @@ class RandomBitGenerator {
   ~RandomBitGenerator() = default;
 };
 
-#if !BUILDFLAG(IS_NACL)
 class NonAllocatingRandomBitGenerator {
  public:
   using result_type = uint64_t;
@@ -201,7 +206,6 @@ class NonAllocatingRandomBitGenerator {
   NonAllocatingRandomBitGenerator() = default;
   ~NonAllocatingRandomBitGenerator() = default;
 };
-#endif
 
 // Shuffles [first, last) randomly. Thread-safe.
 template <typename Itr>
@@ -268,6 +272,10 @@ class BASE_EXPORT InsecureRandomGenerator {
   friend class memory_simulator::MemoryHolder;
   // Uses the generator to sub-sample metrics.
   friend class MetricsSubSampler;
+  // test::InsecureRandomGenerator can be used for testing.
+  friend class test::InsecureRandomGenerator;
+
+  friend class gwp_asan::internal::ExtremeLightweightDetectorQuarantineBranch;
 
   FRIEND_TEST_ALL_PREFIXES(RandUtilTest,
                            InsecureRandomGeneratorProducesBothValuesOfAllBits);
@@ -287,6 +295,8 @@ class BASE_EXPORT MetricsSubSampler {
  public:
   MetricsSubSampler();
   bool ShouldSample(double probability) const;
+
+  void Reseed();
 
   // Make any call to ShouldSample for any instance of MetricsSubSampler
   // return true for testing. Cannot be used in conjunction with
@@ -309,6 +319,23 @@ class BASE_EXPORT MetricsSubSampler {
  private:
   InsecureRandomGenerator generator_;
 };
+
+// Returns true with `probability` using a pseudo-random number generator (or
+// always/never returns true if a `ScopedAlwaysSampleForTesting` or
+// `ScopedNeverSampleForTesting` is in scope). Valid values for `probability`
+// are in range [0, 1].
+//
+// This function is intended for sub-sampled metric recording only. Do not use
+// it for any other purpose, especially where cryptographic randomness is
+// required.
+//
+// Uses a thread local MetricsSubSampler.
+BASE_EXPORT bool ShouldRecordSubsampledMetric(double probability);
+
+// Reseeds the MetricsSubsampler used by ShouldRecordSubsampledMetric. Used
+// after forking a zygote to avoid having multiple processes sharing initial
+// RNG state.
+BASE_EXPORT void ReseedSharedMetricsSubsampler();
 
 }  // namespace base
 

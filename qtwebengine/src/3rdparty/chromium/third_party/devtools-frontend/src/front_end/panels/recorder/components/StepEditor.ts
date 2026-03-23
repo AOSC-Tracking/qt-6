@@ -14,7 +14,7 @@ import * as Controllers from '../controllers/controllers.js';
 import * as Models from '../models/models.js';
 import * as Util from '../util/util.js';
 
-import stepEditorStylesRaw from './stepEditor.css.js';
+import stepEditorStyles from './stepEditor.css.js';
 import {
   ArrayAssignments,
   assert,
@@ -28,10 +28,6 @@ import {
   type OptionalKeys,
   type RequiredKeys,
 } from './util.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const stepEditorStyles = new CSSStyleSheet();
-stepEditorStyles.replaceSync(stepEditorStylesRaw.cssContent);
 
 const {html, Decorators, Directives, LitElement} = Lit;
 const {customElement, property, state} = Decorators;
@@ -135,7 +131,7 @@ const defaultValuesByAttribute = deepFreeze({
 
 const attributesByType = deepFreeze<{
   [Type in Models.Schema.StepType]:
-      {required: Exclude<RequiredKeys<StepFor<Type>>, 'type'>[], optional: OptionalKeys<StepFor<Type>>[]};
+      {required: Array<Exclude<RequiredKeys<StepFor<Type>>, 'type'>>, optional: Array<OptionalKeys<StepFor<Type>>>};
 }>({
   [Models.Schema.StepType.Click]: {
     required: ['selectors', 'offsetX', 'offsetY'],
@@ -274,7 +270,7 @@ const UIStrings = {
    *@description The error message display when a user enters a type in the input not associates with any existing types.
    */
   unknownActionType: 'Unknown action type.',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/recorder/components/StepEditor.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -368,7 +364,7 @@ export class EditorState {
       attribute: Attribute): Promise<DeepImmutable<typeof defaultValuesByAttribute[Attribute]>>;
   static async defaultByAttribute(_state: DeepImmutable<EditorState>, attribute: keyof typeof defaultValuesByAttribute):
       Promise<unknown> {
-    return this.#puppeteer.run(puppeteer => {
+    return await this.#puppeteer.run(puppeteer => {
       switch (attribute) {
         case 'assertedEvents': {
           return immutableDeepAssign(defaultValuesByAttribute.assertedEvents, new ArrayAssignments({
@@ -401,7 +397,7 @@ export class EditorState {
     const state = structuredClone(step) as EditorState;
     for (const key of ['parameters', 'properties'] as Array<'properties'>) {
       if (key in step && step[key] !== undefined) {
-        // @ts-ignore Potential infinite type instantiation.
+        // @ts-expect-error Potential infinite type instantiation.
         state[key] = JSON.stringify(step[key]);
       }
     }
@@ -419,7 +415,7 @@ export class EditorState {
         return [...selector];
       });
     }
-    return deepFreeze(state as EditorState);
+    return deepFreeze(state);
   }
 
   static toStep(state: DeepImmutable<EditorState>): Models.Schema.Step {
@@ -468,8 +464,6 @@ export class EditorState {
  */
 @customElement('devtools-recorder-selector-picker-button')
 class RecorderSelectorPickerButton extends LitElement {
-  static override styles = [stepEditorStyles];
-
   @property({type: Boolean}) declare disabled: boolean;
 
   #picker = new Controllers.SelectorPicker.SelectorPicker(this);
@@ -494,7 +488,8 @@ class RecorderSelectorPickerButton extends LitElement {
     if (this.disabled) {
       return;
     }
-    return html`<devtools-button
+    // clang-format off
+    return html`<style>${stepEditorStyles}</style><devtools-button
       @click=${this.#handleClickEvent}
       .title=${i18nString(UIStrings.selectorPicker)}
       class="selector-picker"
@@ -506,6 +501,7 @@ class RecorderSelectorPickerButton extends LitElement {
       click: true,
     })}
     ></devtools-button>`;
+    // clang-format on
   }
 }
 
@@ -515,15 +511,13 @@ class RecorderSelectorPickerButton extends LitElement {
  */
 @customElement('devtools-recorder-step-editor')
 export class StepEditor extends LitElement {
-  static override styles = [stepEditorStyles];
-
   @state() private declare state: DeepImmutable<EditorState>;
   @state() private declare error: string|undefined;
 
   @property({type: Boolean}) declare isTypeEditable: boolean;
   @property({type: Boolean}) declare disabled: boolean;
 
-  #renderedAttributes: Set<Attribute> = new Set();
+  #renderedAttributes = new Set<Attribute>();
 
   constructor() {
     super();
@@ -1169,7 +1163,8 @@ export class StepEditor extends LitElement {
 
     // clang-format off
     const result = html`
-      <div class="wrapper" jslog=${VisualLogging.tree('step-editor')}>
+      <style>${stepEditorStyles}</style>
+      <div class="wrapper" jslog=${VisualLogging.tree('step-editor')} >
         ${this.#renderTypeRow(this.isTypeEditable)} ${this.#renderRow('target')}
         ${this.#renderFrameRow()} ${this.#renderSelectorsRow()}
         ${this.#renderRow('deviceType')} ${this.#renderRow('button')}

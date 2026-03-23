@@ -1,61 +1,60 @@
-# Build Instructions
+# Build Instructions <!-- omit from toc -->
 
 Instructions for building this repository on Linux, Windows, and MacOS.
 
-## Table Of Contents
+## Table Of Contents <!-- omit from toc -->
 
-- [Build Instructions](#build-instructions)
-  - [Table Of Contents](#table-of-contents)
-  - [Contributing to the Repository](#contributing-to-the-repository)
-  - [Repository Content](#repository-content)
-    - [Installed Files](#installed-files)
-  - [Build Requirements](#build-requirements)
-    - [Test Requirements](#test-requirements)
-  - [Repository Set-Up](#repository-set-up)
-    - [Display Drivers](#display-drivers)
-    - [Repository Dependencies](#repository-dependencies)
-      - [Vulkan-Headers](#vulkan-headers)
-      - [Test Dependencies](#test-dependencies)
-    - [Warnings as errors off by default!](#warnings-as-errors-off-by-default)
-    - [Build and Install Directory Locations](#build-and-install-directory-locations)
-    - [Building Dependent Repositories with Known-Good Revisions](#building-dependent-repositories-with-known-good-revisions)
-      - [Automatically](#automatically)
-      - [Manually](#manually)
-        - [Notes About the Manual Option](#notes-about-the-manual-option)
-    - [Generated source code](#generated-source-code)
-    - [Build Options](#build-options)
-  - [Building On Windows](#building-on-windows)
-    - [Windows Development Environment Requirements](#windows-development-environment-requirements)
-    - [Windows Build - Microsoft Visual Studio](#windows-build---microsoft-visual-studio)
-      - [Windows Quick Start](#windows-quick-start)
-      - [Use `CMake` to Create the Visual Studio Project Files](#use-cmake-to-create-the-visual-studio-project-files)
-      - [Build the Solution From the Command Line](#build-the-solution-from-the-command-line)
-      - [Build the Solution With Visual Studio](#build-the-solution-with-visual-studio)
-      - [Windows Install Target](#windows-install-target)
-  - [Building On Linux](#building-on-linux)
-    - [Linux Development Environment Requirements](#linux-development-environment-requirements)
-      - [Required Package List](#required-package-list)
-    - [Linux Build](#linux-build)
-      - [Linux Quick Start](#linux-quick-start)
-      - [Use CMake to Create the Make Files](#use-cmake-to-create-the-make-files)
-      - [Build the Project](#build-the-project)
-    - [Linux Notes](#linux-notes)
-      - [WSI Support Build Options](#wsi-support-build-options)
-      - [Linux Install to System Directories](#linux-install-to-system-directories)
-      - [Linux 32-bit support](#linux-32-bit-support)
-  - [Building on MacOS](#building-on-macos)
-    - [MacOS Development Environment Requirements](#macos-development-environment-requirements)
-    - [Clone the Repository](#clone-the-repository)
-    - [MacOS build](#macos-build)
-      - [Building with the Unix Makefiles Generator](#building-with-the-unix-makefiles-generator)
-      - [Building with the Xcode Generator](#building-with-the-xcode-generator)
-  - [Building on Fuchsia](#building-on-fuchsia)
-    - [SDK Symbols](#sdk-symbols)
-  - [Building on QNX](#building-on-qnx)
-  - [Cross Compilation](#cross-compilation)
-    - [Unknown function handling which requires explicit assembly implementations](#unknown-function-handling-which-requires-explicit-assembly-implementations)
-      - [Platforms which fully support unknown function handling](#platforms-which-fully-support-unknown-function-handling)
-  - [Tests](#tests)
+- [Contributing to the Repository](#contributing-to-the-repository)
+- [Repository Content](#repository-content)
+  - [Installed Files](#installed-files)
+- [Build Requirements](#build-requirements)
+  - [Building with Code Generation Requirements](#building-with-code-generation-requirements)
+  - [Test Requirements](#test-requirements)
+- [Repository Set-Up](#repository-set-up)
+  - [Display Drivers](#display-drivers)
+  - [Repository Dependencies](#repository-dependencies)
+    - [Vulkan-Headers](#vulkan-headers)
+    - [Test Dependencies](#test-dependencies)
+  - [Warnings as errors off by default!](#warnings-as-errors-off-by-default)
+  - [Build and Install Directory Locations](#build-and-install-directory-locations)
+  - [Building Dependent Repositories with Known-Good Revisions](#building-dependent-repositories-with-known-good-revisions)
+    - [Automatically](#automatically)
+    - [Manually](#manually)
+      - [Notes About the Manual Option](#notes-about-the-manual-option)
+  - [Generated source code](#generated-source-code)
+  - [Build Options](#build-options)
+- [Building On Windows](#building-on-windows)
+  - [Windows Development Environment Requirements](#windows-development-environment-requirements)
+  - [Windows Build - Microsoft Visual Studio](#windows-build---microsoft-visual-studio)
+    - [Windows Quick Start](#windows-quick-start)
+    - [Use `CMake` to Create the Visual Studio Project Files](#use-cmake-to-create-the-visual-studio-project-files)
+    - [Build the Solution From the Command Line](#build-the-solution-from-the-command-line)
+    - [Build the Solution With Visual Studio](#build-the-solution-with-visual-studio)
+    - [Windows Install Target](#windows-install-target)
+- [Building On Linux](#building-on-linux)
+  - [Linux Development Environment Requirements](#linux-development-environment-requirements)
+    - [Required Package List](#required-package-list)
+  - [Linux Build](#linux-build)
+    - [Linux Quick Start](#linux-quick-start)
+    - [Use CMake to Create the Make Files](#use-cmake-to-create-the-make-files)
+    - [Build the Project](#build-the-project)
+  - [Linux Notes](#linux-notes)
+    - [WSI Support Build Options](#wsi-support-build-options)
+    - [Linux Install to System Directories](#linux-install-to-system-directories)
+    - [Linux 32-bit support](#linux-32-bit-support)
+- [Building on MacOS](#building-on-macos)
+  - [MacOS Development Environment Requirements](#macos-development-environment-requirements)
+  - [Clone the Repository](#clone-the-repository)
+  - [MacOS build](#macos-build)
+    - [Building with the Unix Makefiles Generator](#building-with-the-unix-makefiles-generator)
+    - [Building with the Xcode Generator](#building-with-the-xcode-generator)
+- [Building on Fuchsia](#building-on-fuchsia)
+  - [SDK Symbols](#sdk-symbols)
+- [Building on QNX](#building-on-qnx)
+- [Cross Compilation](#cross-compilation)
+  - [Unknown function handling which requires explicit assembly implementations](#unknown-function-handling-which-requires-explicit-assembly-implementations)
+    - [Platforms which fully support unknown function handling](#platforms-which-fully-support-unknown-function-handling)
+- [Tests](#tests)
 
 
 ## Contributing to the Repository
@@ -81,8 +80,14 @@ indicated by *install_dir*:
 ## Build Requirements
 
 1. `C99` capable compiler
-2. `CMake` version 3.17.2 or greater
+2. `CMake` version 3.22.1 or greater
 3. `Git`
+
+### Building with Code Generation Requirements
+
+1. `Python 3.11`
+2. `clang-format` version 14 or higher
+   * Only required when submitting changes
 
 ### Test Requirements
 
@@ -225,6 +230,11 @@ cmake -S . -B build -D LOADER_CODEGEN=ON
 cmake --build . --target loader_codegen
 ```
 
+`clang-format` is run on generated code files so that the generator scripts do
+not need format their output manually.
+If `clang-format` is not available when running code generation, a warning will
+be issued but does not stop code generation from occuring.
+
 ### Build Options
 
 When generating build files through CMake, several options can be specified to
@@ -271,7 +281,7 @@ These variables should be set using the `-D` option when invoking CMake to gener
     - [2019](https://www.visualstudio.com/vs/older-downloads/)
   - The Community Edition of each of the above versions is sufficient, as
     well as any more capable edition.
-- [CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-win64-x64.zip) is recommended.
+- [CMake 3.22.1](https://cmake.org/files/v3.22.1/cmake-3.22.1-win64-x64.zip) is recommended.
   - Use the installer option to add CMake to the system PATH
 - Git Client Support
   - [Git for Windows](http://git-scm.com/download/win) is a popular solution
@@ -382,7 +392,7 @@ This repository has been built and tested on the two most recent Ubuntu LTS
 versions, although earlier versions may work.
 It is be straightforward to adapt this repository to other Linux distributions.
 
-[CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Linux-x86_64.tar.gz) is recommended.
+[CMake 3.22.1](https://cmake.org/files/v3.22.1/cmake-3.22.1-Linux-x86_64.tar.gz) is recommended.
 
 #### Required Package List
 
@@ -522,22 +532,22 @@ If not already installed, install the following 32-bit development libraries:
 
 `gcc-multilib gcc-multilib g++-multilib libc6:i386 libc6-dev-i386 libgcc-s1:i386 libwayland-dev:i386 libxrandr-dev:i386`
 
-This list may vary depending on your distribution and which windowing systems
-you are building for.
+This list may vary depending on your distribution and which windowing systems you are building for.
 
-Set up your environment for building 32-bit targets:
+Set up your environment for building 32-bit targets when configuring your build:
 
-    export CFLAGS=-m32
-    export CXXFLAGS=-m32
-    export LDFLAGS=-m32
-    export ASFLAGS=--32
+      cmake ... -D CMAKE_CXX_FLAGS=-m32 -D CMAKE_C_FLAGS=-m32
+
+However, you may find that pkg-config picks incorrect libraries. This is due to a CMake implementation issue:
+https://gitlab.kitware.com/cmake/cmake/-/issues/25317
 
 Your PKG_CONFIG configuration may be different, depending on your distribution.
 
+You can the `PKG_CONFIG_PATH` environment variable to address this issue.
+
 Finally, build the repository normally as explained above.
 
-These notes are taken from the Github Actions workflow `linux-32` which is run
-regularly as a part of CI.
+These notes are taken from the Github Actions workflow `linux-32` which is run regularly as a part of CI.
 
 ## Building on MacOS
 
@@ -561,7 +571,7 @@ Clone the Vulkan-Loader repository:
 
 ### MacOS build
 
-[CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Darwin-x86_64.tar.gz) is recommended.
+[CMake 3.22.1](https://cmake.org/files/v3.22.1/cmake-3.22.1-Darwin-x86_64.tar.gz) is recommended.
 
 #### Building with the Unix Makefiles Generator
 

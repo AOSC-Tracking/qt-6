@@ -18,6 +18,7 @@
 #include "build/build_config.h"
 #include "net/base/net_export.h"
 #include "net/base/network_handle.h"
+#include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #include "net/base/address_map_linux.h"
@@ -332,19 +333,10 @@ class NET_EXPORT NetworkChangeNotifier {
         observer_list_;
   };
 
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-  // TODO(crbug.com/40232923): Remove this section and align the behavior
-  // with other platforms or confirm that Lacros needs to be separated.
-  static constexpr ConnectionType kDefaultInitialConnectionType =
-      CONNECTION_UNKNOWN;
-  static constexpr ConnectionSubtype kDefaultInitialConnectionSubtype =
-      SUBTYPE_UNKNOWN;
-#else
   static constexpr ConnectionType kDefaultInitialConnectionType =
       CONNECTION_NONE;
   static constexpr ConnectionSubtype kDefaultInitialConnectionSubtype =
       SUBTYPE_NONE;
-#endif
 
   NetworkChangeNotifier(const NetworkChangeNotifier&) = delete;
   NetworkChangeNotifier& operator=(const NetworkChangeNotifier&) = delete;
@@ -716,6 +708,8 @@ class NET_EXPORT NetworkChangeNotifier {
       handles::NetworkHandle network);
   void NotifyObserversOfConnectionCostChangeImpl(ConnectionCost cost);
   void NotifyObserversOfDefaultNetworkActiveImpl();
+
+  const perfetto::NamedTrack track_;
 
   raw_ptr<SystemDnsConfigChangeNotifier> system_dns_config_notifier_;
   std::unique_ptr<SystemDnsConfigObserver> system_dns_config_observer_;

@@ -57,14 +57,12 @@ target(link_target_type, "gpu_sources") {
     "//content/common:mojo_bindings",
     "//content/public/child:child_sources",
     "//content/public/common:common_sources",
-    "//gpu:gpu",
     "//gpu/ipc/common:command_buffer_traits",
     "//gpu/ipc/service",
     "//ipc",
     "//media:media_buildflags",
     "//media/gpu",
     "//media/mojo:buildflags",
-    "//media/mojo/mojom:remoting",
 
     # TODO(jrummell): As //media/gpu/ipc/service is a source_set in a
     # component build, determine if it should not be included here.
@@ -72,13 +70,12 @@ target(link_target_type, "gpu_sources") {
     "//components/viz/service/main",
     "//components/services/quarantine/public/mojom",
     "//media/gpu/ipc/service",
-    "//media/mojo/clients:clients",
+    "//media/mojo/clients",
     "//sandbox/policy:chromecast_sandbox_allowlist_buildflags",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/mojom",
     "//services/tracing/public/cpp",
     "//services/viz/privileged/mojom",
-    "//services/cert_verifier/public/mojom",
     "//skia",
     "//third_party/angle:angle_gpu_info_util",
     "//ui/gfx/ipc",
@@ -112,6 +109,7 @@ target(link_target_type, "gpu_sources") {
     deps += [
       "//components/tracing:graphics_provider",
       "//media",
+      "//sandbox/linux:sandbox_services",
     ]
   }
 

@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Host from '../../core/host/host.js';
 import * as Root from '../../core/root/root.js';
 
+import {DebugLoggingFormat} from './Debugging.js';
 import {knownContextValues} from './KnownContextValues.js';
 
 const LOGGING_ATTRIBUTE = 'jslog';
@@ -59,7 +61,7 @@ export enum VisualElements {
   Gutter = 22,
   MetricsBox = 23,
   MetricsBoxPart = 24,
-  /* 25 used to be DOMBreakpointsPane, but free to grab now */
+  Badge = 25,
   DOMBreakpoint = 26,
   /* 27 used to be ElementPropertiesPane, but free to grab now */
   /* 28 used to be EventListenersPane, but free to grab now */
@@ -119,14 +121,15 @@ function resolveVe(ve: string): number {
   return VisualElements[ve as VisualElementName] ?? 0;
 }
 
-const reportedUnknownVeContext: Set<string> = new Set();
+const reportedUnknownVeContext = new Set<string>();
 
 function checkContextValue(context: string|number|undefined): void {
   if (typeof context !== 'string' || !context.length || knownContextValues.has(context) ||
       reportedUnknownVeContext.has(context)) {
     return;
   }
-  if (Root.Runtime.Runtime.queryParam('debugFrontend')) {
+  if (Root.Runtime.Runtime.queryParam('debugFrontend') || Host.InspectorFrontendHost.isUnderTest() ||
+      localStorage.getItem('veDebugLoggingEnabled') === DebugLoggingFormat.TEST) {
     const stack = (new Error().stack || '').split('\n').slice(3).join('\n');
     console.error(`Unknown VE context: ${context}${stack}`);
   }
@@ -143,7 +146,7 @@ export function parseJsLog(jslog: string): LoggingConfig {
   }
   const config: LoggingConfig = {ve};
   const context = getComponent('context:');
-  if (context && context.trim().length) {
+  if (context?.trim().length) {
     checkContextValue(context);
     config.context = context;
   }
@@ -173,7 +176,7 @@ export interface ConfigStringBuilder {
    * Specifies an optional context for the visual element. For string contexts
    * the convention is to use kebap case (e.g. `foo-bar`).
    *
-   * @param value Optional context, which can be either a string or a number.
+   * @param value - Optional context, which can be either a string or a number.
    * @returns The builder itself.
    */
   context: (value: string|number|undefined) => ConfigStringBuilder;
@@ -181,7 +184,7 @@ export interface ConfigStringBuilder {
   /**
    * Speficies the name of a `ParentProvider` used to lookup the parent visual element.
    *
-   * @param value The name of a previously registered `ParentProvider`.
+   * @param value - The name of a previously registered `ParentProvider`.
    * @returns The builder itself.
    */
   parent: (value: string) => ConfigStringBuilder;
@@ -189,7 +192,7 @@ export interface ConfigStringBuilder {
   /**
    * Specifies which DOM events to track for this visual element.
    *
-   * @param options The set of DOM events to track.
+   * @param options - The set of DOM events to track.
    * @returns The builder itself.
    */
   track: (options: TrackConfig) => ConfigStringBuilder;

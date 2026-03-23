@@ -43,9 +43,9 @@
                             \li \l {Qt Configure Options}
                             \li \l {Building Optimized Qt}
                         \endlist
-                    \li \l {Install Qt Design Studio}
                 \endlist
-            \li \l {Solutions for Application Development}
+            \li \l {Add, update, and remove installed Qt components}{Add, Update, and Remove Components}
+            \li \l {Solutions for Developers}
             \li \l {Mobile Development}
             \li \l {Tools for Qt Quick UIs}
             \li \l {Create Your First Applications}
@@ -67,6 +67,7 @@
                     \li \l {Qt for Linux/X11}
                         \list
                             \li \l {Qt for X11 Requirements}{Requirements}
+                            \li \l {Qt for Linux - Alternative ways of installing Qt}{Alternative ways of installing Qt}
                             \li \l {Qt for Linux/X11 - Building from Source}{Building from source}
                             \li \l {Qt for Linux/X11 - Deployment}{Deployment}
                             \li \l {Qt for Linux/X11 - Specific Issues}{Specific issues}
@@ -77,6 +78,7 @@
                     \li \l {Qt for \macos}
                         \list
                             \li \l {Qt for \macos - Building from Source}{Building from source}
+                            \li \l {Qt for \macos - Alternative ways of installing Qt}{Alternative ways of installing Qt}
                             \li \l {Qt for \macos - Deployment}{Deployment}
                             \li \l {Qt for \macos - Specific Issues}{Specific issues}
                         \endlist
@@ -101,7 +103,6 @@
                     \li \l {Qt for iOS}
                         \list
                             \li \l {Qt for iOS - Building from Source}{Building from Source}
-                            \li \l {Porting to iOS}
                             \li \l {Platform Notes - iOS}{Platform Notes}
                         \endlist
                     \li \l {Qt for Embedded Linux}
@@ -198,6 +199,8 @@
             \li \l {Graphics}{Graphics and Printing}
                 \list
                     \li \l {High DPI}
+                    \li \l {2D Graphics in Qt}{2D Graphics}
+                    \li \l {Vector Image Formats in Qt}{Vector Image Formats}
                 \endlist
             \li \l {Internationalization with Qt}{Internationalization}
                 \list

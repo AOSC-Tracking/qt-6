@@ -9,10 +9,10 @@
 #include <algorithm>
 
 #include "base/functional/callback.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "media/base/video_frame.h"
 
 namespace media {
@@ -248,7 +248,7 @@ bool VideoEncodeAccelerator::IsFlushSupported() {
 }
 
 bool VideoEncodeAccelerator::IsGpuFrameResizeSupported() {
-#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
   // TODO(crbug.com/40164413) Add proper method overrides in
   // MojoVideoEncodeAccelerator and other subclasses that might return true.
   return true;
@@ -261,6 +261,9 @@ void VideoEncodeAccelerator::SetCommandBufferHelperCB(
     base::RepeatingCallback<scoped_refptr<CommandBufferHelper>()>
         get_command_buffer_helper_cb,
     scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner) {}
+
+void VideoEncodeAccelerator::SetSharedImageInterfaceForTesting(
+    scoped_refptr<gpu::SharedImageInterface> sii) {}
 
 void VideoEncodeAccelerator::RequestEncodingParametersChange(
     const VideoBitrateAllocation& bitrate_allocation,

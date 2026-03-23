@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4profiling_p.h"
 #include <private/qv4mm_p.h>
@@ -31,8 +32,8 @@ FunctionCallProperties FunctionCall::properties() const
 Profiler::Profiler(QV4::ExecutionEngine *engine) : featuresEnabled(0), m_engine(engine)
 {
     static const int metatypes[] = {
-        qRegisterMetaType<QVector<QV4::Profiling::FunctionCallProperties> >(),
-        qRegisterMetaType<QVector<QV4::Profiling::MemoryAllocationProperties> >(),
+        qRegisterMetaType<QList<QV4::Profiling::FunctionCallProperties> >(),
+        qRegisterMetaType<QList<QV4::Profiling::MemoryAllocationProperties> >(),
         qRegisterMetaType<FunctionLocationHash>()
     };
     Q_UNUSED(metatypes);
@@ -56,7 +57,7 @@ bool operator<(const FunctionCall &call1, const FunctionCall &call2)
 void Profiler::reportData()
 {
     std::sort(m_data.begin(), m_data.end());
-    QVector<FunctionCallProperties> properties;
+    QList<FunctionCallProperties> properties;
     FunctionLocationHash locations;
     properties.reserve(m_data.size());
 
@@ -89,7 +90,7 @@ void Profiler::startProfiling(quint64 features)
                                                HeapPage};
             m_memory_data.append(heap);
             MemoryAllocationProperties smallP = {timestamp,
-                                                (qint64)m_engine->memoryManager->getUsedMem(),
+                                                (qint64)m_engine->memoryManager->getRegularItemsMem(),
                                                 SmallItem};
             m_memory_data.append(smallP);
             MemoryAllocationProperties large = {timestamp,

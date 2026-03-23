@@ -13,9 +13,6 @@ group("sync") {
     "//components/sync/nigori",
     "//components/sync/service",
   ]
-  if (is_chromeos) {
-    public_deps += [ "//components/sync/chromeos" ]
-  }
 }
 
 static_library("test_support") {
@@ -24,6 +21,8 @@ static_library("test_support") {
   sources = [
     "test/bookmark_entity_builder.cc",
     "test/bookmark_entity_builder.h",
+    "test/collaboration_group_util.cc",
+    "test/collaboration_group_util.h",
     "test/data_type_manager_mock.cc",
     "test/data_type_manager_mock.h",
     "test/data_type_store_test_util.cc",
@@ -155,7 +154,7 @@ static_library("test_support") {
     "//net",
     "//net:test_support",
     "//services/network:test_support",
-    "//services/network/public/cpp:cpp",
+    "//services/network/public/cpp",
     "//testing/gtest",
     "//ui/gfx",
     "//url",
@@ -239,6 +238,7 @@ source_set("unit_tests") {
     "service/data_type_manager_impl_unittest.cc",
     "service/glue/sync_engine_impl_unittest.cc",
     "service/glue/sync_transport_data_prefs_unittest.cc",
+    "service/history_sync_session_durations_metrics_recorder_unittest.cc",
     "service/local_data_description_unittest.cc",
     "service/local_data_migration_item_queue_unittest.cc",
     "service/model_load_manager_unittest.cc",
@@ -258,10 +258,6 @@ source_set("unit_tests") {
     "service/syncable_service_based_data_type_controller_unittest.cc",
     "service/trusted_vault_synthetic_field_trial_unittest.cc",
   ]
-
-  if (is_chromeos) {
-    sources += [ "chromeos/explicit_passphrase_mojo_utils_unittest.cc" ]
-  }
 
   configs += [ "//build/config:precompiled_headers" ]
 
@@ -289,7 +285,7 @@ source_set("unit_tests") {
     "//components/version_info:generate_version_info",
     "//components/version_info:version_string",
     "//google_apis:test_support",
-    "//google_apis/gcm:gcm",
+    "//google_apis/gcm",
     "//net",
     "//net:test_support",
     "//services/network:test_support",
@@ -315,6 +311,25 @@ source_set("unit_tests") {
     deps += [
       "//components/policy:generated",
       "//components/policy/core/browser",
+    ]
+  }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+}
+
+if (!is_android && !is_ios && !is_fuchsia) {
+  test("sync_full_proto_unittests") {
+    sources =
+        [ "protocol/shared_tab_group_data_specifics_full_proto_unittest.cc" ]
+
+    deps = [
+      "//base",
+      "//components/sync/protocol:full_proto",
+      "//testing/gtest",
+      "//testing/gtest:gtest_main",
+      "//third_party/protobuf:protobuf_full",
     ]
   }
 }

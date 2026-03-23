@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QJSLIST_H
 #define QJSLIST_H
@@ -217,10 +218,10 @@ struct QJSList<QQmlListProperty<QObject>, QObject *>  : private QJSListIndexClam
 
     QString join(const QString &separator = QStringLiteral(",")) const
     {
-        if (!m_list->count || !m_list->at)
-            return QString();
-
         QString result;
+        if (!m_list->count || !m_list->at)
+            return result;
+
         for (qsizetype i = 0, end = m_list->count(m_list); i < end; ++i) {
             if (i != 0)
                 result += separator;
@@ -236,12 +237,12 @@ struct QJSList<QQmlListProperty<QObject>, QObject *>  : private QJSListIndexClam
     }
     QObjectList slice(qsizetype start) const
     {
+        QObjectList result;
         if (!m_list->count || !m_list->at)
-            return QObjectList();
+            return result;
 
         const qsizetype size = m_list->count(m_list);
         const qsizetype clampedStart = clamp(start, size);
-        QObjectList result;
         result.reserve(size - clampedStart);
         for (qsizetype i = clampedStart; i < size; ++i)
             result.append(m_list->at(m_list, i));
@@ -249,13 +250,13 @@ struct QJSList<QQmlListProperty<QObject>, QObject *>  : private QJSListIndexClam
     }
     QObjectList slice(qsizetype start, qsizetype end) const
     {
+        QObjectList result;
         if (!m_list->count || !m_list->at)
-            return QObjectList();
+            return result;
 
         const qsizetype size = m_list->count(m_list);
         const qsizetype clampedStart = clamp(start, size);
         const qsizetype clampedEnd = clamp(end, size, clampedStart);
-        QObjectList result;
         result.reserve(clampedEnd - clampedStart);
         for (qsizetype i = clampedStart; i < clampedEnd; ++i)
             result.append(m_list->at(m_list, i));

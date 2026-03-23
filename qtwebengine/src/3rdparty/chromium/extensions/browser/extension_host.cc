@@ -21,7 +21,6 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
-#include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/bad_message.h"
 #include "extensions/browser/event_router.h"
@@ -30,10 +29,12 @@
 #include "extensions/browser/extension_host_observer.h"
 #include "extensions/browser/extension_host_queue.h"
 #include "extensions/browser/extension_host_registry.h"
+#include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_web_contents_observer.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/safe_browsing_delegate.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_urls.h"
@@ -48,7 +49,6 @@
 #include "ui/color/color_provider_utils.h"
 
 using content::RenderProcessHost;
-using content::SiteInstance;
 using content::WebContents;
 
 namespace extensions {
@@ -130,7 +130,6 @@ void EmitDispatchTimeMetrics(const EventDispatchSource& dispatch_source,
 }  // namespace
 
 ExtensionHost::ExtensionHost(const Extension* extension,
-                             SiteInstance* site_instance,
                              content::BrowserContext* browser_context,
                              const GURL& url,
                              mojom::ViewType host_type)
@@ -144,16 +143,11 @@ ExtensionHost::ExtensionHost(const Extension* extension,
          host_type == mojom::ViewType::kOffscreenDocument ||
          host_type == mojom::ViewType::kExtensionPopup ||
          host_type == mojom::ViewType::kExtensionSidePanel);
-  // NOTE: `site_instance` may be null if the kRemoveRootSiteInstance feature
-  // is active. `WebContents::CreateParams` handles a null SiteInstance the
-  // same as if no SiteInstance argument were passed.
-  if (site_instance) {
-    // If a SiteInstance is passed, it must match the `browser_context`
-    // associated with the ExtensionHost.
-    CHECK_EQ(browser_context_, site_instance->GetBrowserContext());
-  }
-  host_contents_ = WebContents::Create(
-      WebContents::CreateParams(browser_context_, site_instance));
+  WebContents::CreateParams create_params(browser_context_);
+  create_params.is_never_composited =
+      host_type == mojom::ViewType::kExtensionBackgroundPage ||
+      host_type == mojom::ViewType::kOffscreenDocument;
+  host_contents_ = WebContents::Create(create_params);
   host_contents_->SetOwnerLocationForDebug(FROM_HERE);
   content::WebContentsObserver::Observe(host_contents_.get());
   host_contents_->SetDelegate(this);
@@ -176,8 +170,9 @@ ExtensionHost::ExtensionHost(const Extension* extension,
 
   // Create password reuse detection manager when new extension web contents are
   // created.
-  ExtensionsBrowserClient::Get()->CreatePasswordReuseDetectionManager(
-      host_contents_.get());
+  ExtensionsBrowserClient::Get()
+      ->GetSafeBrowsingDelegate()
+      ->CreatePasswordReuseDetectionManager(host_contents_.get());
 
   ExtensionHostRegistry::Get(browser_context_)->ExtensionHostCreated(this);
 }
@@ -241,7 +236,8 @@ void ExtensionHost::CreateRendererNow() {
   if (IsBackgroundPage()) {
     DCHECK(IsRendererLive());
     // Connect orphaned dev-tools instances.
-    delegate_->OnMainFrameCreatedForBackgroundPage(this);
+    ExtensionRegistrar::Get(browser_context())
+        ->DidCreateMainFrameForBackgroundPage(this);
   }
 }
 
@@ -251,8 +247,9 @@ void ExtensionHost::Close() {
   // handler once, ignore subsequent calls. If we haven't called the handler
   // once, the handler should be present.
   DCHECK(close_handler_ || called_close_handler_);
-  if (called_close_handler_)
+  if (called_close_handler_) {
     return;
+  }
 
   called_close_handler_ = true;
   std::move(close_handler_).Run(this);
@@ -338,8 +335,9 @@ bool ExtensionHost::IsBackgroundPage() const {
 
 void ExtensionHost::OnExtensionReady(content::BrowserContext* browser_context,
                                      const Extension* extension) {
-  if (is_renderer_creation_pending_)
+  if (is_renderer_creation_pending_) {
     CreateRendererNow();
+  }
 }
 
 void ExtensionHost::OnExtensionUnloaded(
@@ -361,8 +359,9 @@ void ExtensionHost::PrimaryMainFrameRenderProcessGone(
   // Do nothing.
   RenderProcessHost* process_host =
       host_contents_->GetPrimaryMainFrame()->GetProcess();
-  if (process_host && process_host->FastShutdownStarted())
+  if (process_host && process_host->FastShutdownStarted()) {
     return;
+  }
 
   // In certain cases, multiple ExtensionHost objects may have pointed to
   // the same Extension at some point (one with a background page and a
@@ -370,8 +369,9 @@ void ExtensionHost::PrimaryMainFrameRenderProcessGone(
   // is unloaded, and any other host that pointed to that extension will have
   // its pointer to it null'd out so that any attempt to unload a dirty pointer
   // will be averted.
-  if (!extension_)
+  if (!extension_) {
     return;
+  }
 
   // TODO(aa): This is suspicious. There can be multiple views in an extension,
   // and they aren't all going to use ExtensionHost. This should be in someplace
@@ -406,8 +406,9 @@ void ExtensionHost::OnDidStopFirstLoad() {
 void ExtensionHost::PrimaryMainDocumentElementAvailable() {
   // If the document has already been marked as available for this host, then
   // bail. No need for the redundant setup. http://crbug.com/31170
-  if (document_element_available_)
+  if (document_element_available_) {
     return;
+  }
   document_element_available_ = true;
 
   ExtensionHostRegistry::Get(browser_context_)
@@ -512,9 +513,10 @@ void ExtensionHost::OnEventAck(int event_id,
   }
 
   EventRouter* router = EventRouter::Get(browser_context_);
-  if (router)
+  if (router) {
     router->OnEventAck(browser_context_, extension_id(),
                        unacked_message_data.event_name);
+  }
 
   for (auto& observer : observer_list_)
     observer.OnBackgroundEventAcked(this, event_id);
@@ -575,8 +577,9 @@ void ExtensionHost::RenderFrameCreated(content::RenderFrameHost* frame_host) {
   // Only consider the main frame. Ignore all other frames, including
   // speculative main frames (which might replace the main frame, but that
   // scenario is handled in `RenderFrameHostChanged`).
-  if (frame_host != main_frame_host_)
+  if (frame_host != main_frame_host_) {
     return;
+  }
 
   MaybeNotifyRenderProcessReady();
 }
@@ -584,8 +587,9 @@ void ExtensionHost::RenderFrameCreated(content::RenderFrameHost* frame_host) {
 void ExtensionHost::RenderFrameHostChanged(content::RenderFrameHost* old_host,
                                            content::RenderFrameHost* new_host) {
   // Only the primary main frame is tracked, so ignore any other frames.
-  if (old_host != main_frame_host_)
+  if (old_host != main_frame_host_) {
     return;
+  }
 
   main_frame_host_ = new_host;
 
@@ -626,12 +630,6 @@ bool ExtensionHost::CheckMediaAccessPermission(
     blink::mojom::MediaStreamType type) {
   return delegate_->CheckMediaAccessPermission(
       render_frame_host, security_origin, type, extension());
-}
-
-bool ExtensionHost::IsNeverComposited(content::WebContents* web_contents) {
-  mojom::ViewType view_type = extensions::GetViewType(web_contents);
-  return view_type == mojom::ViewType::kExtensionBackgroundPage ||
-         view_type == mojom::ViewType::kOffscreenDocument;
 }
 
 content::PictureInPictureResult ExtensionHost::EnterPictureInPicture(

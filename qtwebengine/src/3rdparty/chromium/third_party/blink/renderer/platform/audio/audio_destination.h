@@ -122,7 +122,7 @@ class PLATFORM_EXPORT AudioDestination final
   void StartWithWorkletTaskRunner(
       scoped_refptr<base::SingleThreadTaskRunner> worklet_task_runner);
 
-  bool IsPlaying();
+  bool IsPlaying() const;
 
   // This is the context sample rate, not the device one.
   double SampleRate() const;
@@ -148,8 +148,23 @@ class PLATFORM_EXPORT AudioDestination final
   // from the constructor of AudioContext and AudioContext.setSinkId() method.
   media::OutputDeviceStatus MaybeCreateSinkAndGetStatus();
 
+  // Returns the elapsed frames of the destination. This only gets called when
+  // switching sink devices. (i.e. stopped destinations)
+  size_t FramesElapsed() const;
+
+  // Transfer the elapsed frame from the previous platform destination to
+  // the new one. This ensures the timestamp, which is based on the frame
+  // count, does not go backward. This only gets called when switching sink
+  // devices.
+  void TransferElapsedFramesFrom(
+      const scoped_refptr<AudioDestination> previous_platform_destination);
+
   const PushPullFIFOStateForTest GetPushPullFIFOStateForTest() {
     return fifo_->GetStateForTest();
+  }
+
+  MediaMultiChannelResampler* GetResamplerForTesting() {
+    return resampler_.get();
   }
 
  private:
@@ -169,7 +184,8 @@ class PLATFORM_EXPORT AudioDestination final
                          size_t frames_to_render,
                          base::TimeDelta delay,
                          base::TimeTicks delay_timestamp,
-                         const media::AudioGlitchInfo& glitch_info);
+                         const media::AudioGlitchInfo& glitch_info,
+                         base::TimeTicks request_timestamp);
 
   // Returns true if it was able to provide audio, false otherwise (this would
   // happen if and only if rendering is stopping or stopped.
@@ -178,6 +194,7 @@ class PLATFORM_EXPORT AudioDestination final
                      base::TimeDelta delay,
                      base::TimeTicks delay_timestamp,
                      const media::AudioGlitchInfo& glitch_info,
+                     base::TimeTicks request_timestamp,
                      bool has_fifo_underrun_occurred = false);
 
   // Provide input to the resampler (if used).
@@ -249,7 +266,7 @@ class PLATFORM_EXPORT AudioDestination final
   AudioCallbackMetricReporter metric_reporter_;
   AudioDestinationUmaReporter uma_reporter_;
 
-  // Collect the device latency matric only from the initial callback.
+  // Collect the device latency metric only from the initial callback.
   bool is_latency_metric_collected_ = false;
 
   // This WaitableEvent is only for use with the kWebAudioBypassOutputBuffering

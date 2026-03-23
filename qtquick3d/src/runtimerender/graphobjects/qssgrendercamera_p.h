@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_CAMERA_H
 #define QSSG_RENDER_CAMERA_H
@@ -116,11 +118,14 @@ public:
 
     enum class DirtyFlag : quint8
     {
-        CameraDirty = 0x1
+        CameraDirty = 0x1,
+        LayerMaskDirty = 0x2,
     };
     using FlagT = std::underlying_type_t<DirtyFlag>;
 
     static constexpr DirtyFlag DirtyMask { std::numeric_limits<FlagT>::max() };
+
+    static constexpr quint32 LayerMaskAll = 0xFFFFFFFF; // Default to all layers
 
     class ClipPlanes : public QVector2D
     {
@@ -230,6 +235,7 @@ public:
     Magnification magnification;
     QMatrix4x4 projection;
     float levelOfDetailPixelThreshold = 1.0;
+    quint32 layerMask = LayerMaskAll;
     bool enableFrustumClipping = true;
 
 private:

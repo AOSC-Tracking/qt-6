@@ -1,5 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dquaternionutils_p.h"
 #include <QtQuick3DUtils/private/qssgutils_p.h>
@@ -111,13 +113,15 @@ QQuaternion QQuick3DQuaternionUtils::lookAt(const QVector3D &sourcePosition,
     QVector3D targetDirection = targetPosition - sourcePosition;
     targetDirection.normalize();
 
-    QVector3D rotationAxis = QVector3D::crossProduct(forwardDirection, targetDirection);
+    const QVector3D forwardDirectionNormal = forwardDirection.normalized();
+    QVector3D rotationAxis = QVector3D::crossProduct(forwardDirectionNormal, targetDirection);
 
     const QVector3D normalizedAxis = rotationAxis.normalized();
     if (qFuzzyIsNull(normalizedAxis.lengthSquared()))
         rotationAxis = upDirection;
 
-    float dot = QVector3D::dotProduct(forwardDirection, targetDirection);
+    float dot = QVector3D::dotProduct(forwardDirectionNormal, targetDirection);
+    dot = qBound(-1.0f, dot, 1.0f);
     float rotationAngle = qRadiansToDegrees(qAcos(dot));
 
     return QQuaternion::fromAxisAndAngle(rotationAxis, rotationAngle);

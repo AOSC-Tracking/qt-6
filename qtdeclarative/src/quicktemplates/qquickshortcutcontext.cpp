@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickshortcutcontext_p_p.h"
 #include "qquickoverlay_p_p.h"
@@ -26,7 +27,7 @@ static bool isBlockedByPopup(QQuickItem *item)
     if (!item || !item->window())
         return false;
 
-    QQuickOverlay *overlay = QQuickOverlay::overlay(item->window());
+    QQuickOverlay *overlay = QQuickOverlay::overlay(item->window(), item);
     auto popups = QQuickOverlayPrivate::get(overlay)->stackingOrderPopups();
 
     for (QWindow *popupWindow : QGuiApplicationPrivate::popup_list) {

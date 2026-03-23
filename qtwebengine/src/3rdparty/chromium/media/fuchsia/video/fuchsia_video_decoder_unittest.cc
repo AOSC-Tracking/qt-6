@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/raw_ptr.h"
-
 #ifdef UNSAFE_BUFFERS_BUILD
 // TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
 #pragma allow_unsafe_buffers
@@ -23,6 +21,8 @@
 #include "base/fuchsia/process_context.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/memory/raw_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/notreached.h"
 #include "base/process/process_handle.h"
 #include "base/test/bind.h"
@@ -44,7 +44,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/client_native_pixmap_factory.h"
 #include "ui/gfx/gpu_fence.h"
-#include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_pixmap_handle.h"
 
 namespace media {
@@ -55,6 +54,8 @@ class TestRasterContextProvider
     : public base::RefCountedThreadSafe<TestRasterContextProvider>,
       public viz::RasterContextProvider {
  public:
+  REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
+
   TestRasterContextProvider()
       : shared_image_interface_(
             base::MakeRefCounted<gpu::TestSharedImageInterface>()) {}

@@ -8,6 +8,7 @@
 #include <initializer_list>
 #include <memory>
 #include <string_view>
+#include <variant>
 
 #include "base/check.h"
 #include "base/strings/strcat.h"
@@ -893,24 +894,24 @@ TEST_F(WebIDLCompatTest, BigIntOrLong) {
 
   {
     // Number goes towards long.
-    absl::variant<int32_t, v8::Local<v8::BigInt>> out;
+    std::variant<int32_t, v8::Local<v8::BigInt>> out;
     auto in_value = MakeValueFromScript(context, "make = () => -123");
     auto res =
         IdlConvert::Convert(v8_helper_->isolate(), "test1", {}, in_value, out);
     EXPECT_TRUE(res.is_success());
-    ASSERT_TRUE(absl::holds_alternative<int32_t>(out));
-    EXPECT_EQ(-123, absl::get<int32_t>(out));
+    ASSERT_TRUE(std::holds_alternative<int32_t>(out));
+    EXPECT_EQ(-123, std::get<int32_t>(out));
   }
 
   {
     // BigInt goes towards bigint.
-    absl::variant<int32_t, v8::Local<v8::BigInt>> out;
+    std::variant<int32_t, v8::Local<v8::BigInt>> out;
     auto in_value = MakeValueFromScript(context, "make = () => BigInt(-123)");
     auto res =
         IdlConvert::Convert(v8_helper_->isolate(), "test2", {}, in_value, out);
     EXPECT_TRUE(res.is_success());
-    ASSERT_TRUE(absl::holds_alternative<v8::Local<v8::BigInt>>(out));
-    v8::Local<v8::BigInt> bigint_out = absl::get<v8::Local<v8::BigInt>>(out);
+    ASSERT_TRUE(std::holds_alternative<v8::Local<v8::BigInt>>(out));
+    v8::Local<v8::BigInt> bigint_out = std::get<v8::Local<v8::BigInt>>(out);
     bool lossless = false;
     ASSERT_FALSE(bigint_out.IsEmpty());
     EXPECT_EQ(-123, bigint_out->Int64Value(&lossless));
@@ -919,7 +920,7 @@ TEST_F(WebIDLCompatTest, BigIntOrLong) {
 
   {
     // Other things may need conversions.
-    absl::variant<int32_t, v8::Local<v8::BigInt>> out;
+    std::variant<int32_t, v8::Local<v8::BigInt>> out;
     auto in_value = MakeValueFromScript(context, R"(
       make = () => {
         return {
@@ -936,7 +937,7 @@ TEST_F(WebIDLCompatTest, BigIntOrLong) {
 
   {
     // Conversion produces BigInt.
-    absl::variant<int32_t, v8::Local<v8::BigInt>> out;
+    std::variant<int32_t, v8::Local<v8::BigInt>> out;
     auto in_value = MakeValueFromScript(context, R"(
       make = () => {
         return {
@@ -947,8 +948,8 @@ TEST_F(WebIDLCompatTest, BigIntOrLong) {
     auto res =
         IdlConvert::Convert(v8_helper_->isolate(), "test4", {}, in_value, out);
     EXPECT_TRUE(res.is_success());
-    ASSERT_TRUE(absl::holds_alternative<v8::Local<v8::BigInt>>(out));
-    v8::Local<v8::BigInt> bigint_out = absl::get<v8::Local<v8::BigInt>>(out);
+    ASSERT_TRUE(std::holds_alternative<v8::Local<v8::BigInt>>(out));
+    v8::Local<v8::BigInt> bigint_out = std::get<v8::Local<v8::BigInt>>(out);
     bool lossless = false;
     ASSERT_FALSE(bigint_out.IsEmpty());
     EXPECT_EQ(456, bigint_out->Int64Value(&lossless));
@@ -957,7 +958,7 @@ TEST_F(WebIDLCompatTest, BigIntOrLong) {
 
   {
     // Conversion produces a bool --- that goes towards the number branch.
-    absl::variant<int32_t, v8::Local<v8::BigInt>> out;
+    std::variant<int32_t, v8::Local<v8::BigInt>> out;
     auto in_value = MakeValueFromScript(context, R"(
       make = () => {
         return {
@@ -968,13 +969,13 @@ TEST_F(WebIDLCompatTest, BigIntOrLong) {
     auto res =
         IdlConvert::Convert(v8_helper_->isolate(), "test5", {}, in_value, out);
     EXPECT_TRUE(res.is_success());
-    ASSERT_TRUE(absl::holds_alternative<int32_t>(out));
-    EXPECT_EQ(1, absl::get<int32_t>(out));
+    ASSERT_TRUE(std::holds_alternative<int32_t>(out));
+    EXPECT_EQ(1, std::get<int32_t>(out));
   }
 
   {
     // Conversion produces a string that converts to a number.
-    absl::variant<int32_t, v8::Local<v8::BigInt>> out;
+    std::variant<int32_t, v8::Local<v8::BigInt>> out;
     auto in_value = MakeValueFromScript(context, R"(
       make = () => {
         return {
@@ -985,8 +986,8 @@ TEST_F(WebIDLCompatTest, BigIntOrLong) {
     auto res =
         IdlConvert::Convert(v8_helper_->isolate(), "test6", {}, in_value, out);
     EXPECT_TRUE(res.is_success());
-    ASSERT_TRUE(absl::holds_alternative<int32_t>(out));
-    EXPECT_EQ(789, absl::get<int32_t>(out));
+    ASSERT_TRUE(std::holds_alternative<int32_t>(out));
+    EXPECT_EQ(789, std::get<int32_t>(out));
   }
 }
 
@@ -1049,16 +1050,17 @@ TEST_F(WebIDLCompatTest, PropagateErrorsToV8Timeout) {
 }
 
 TEST_F(WebIDLCompatTest, PropagateErrorsToV8ErrorMessage) {
+  v8::Isolate* isolate = v8_helper_->isolate();
   v8::Local<v8::Context> context = v8_helper_->CreateContext();
   v8::Context::Scope ctx(context);
-  v8::TryCatch try_catch(v8_helper_->isolate());
+  v8::TryCatch try_catch(isolate);
   IdlConvert::Status::MakeErrorMessage("Bad bug.")
       .PropagateErrorsToV8(v8_helper_.get());
   EXPECT_TRUE(try_catch.HasCaught());
   EXPECT_FALSE(try_catch.HasTerminated());
-  EXPECT_EQ(
-      "undefined:0 Uncaught TypeError: Bad bug.",
-      AuctionV8Helper::FormatExceptionMessage(context, try_catch.Message()));
+  EXPECT_EQ("undefined:0 Uncaught TypeError: Bad bug.",
+            AuctionV8Helper::FormatExceptionMessage(isolate, context,
+                                                    try_catch.Message()));
 }
 
 TEST_F(WebIDLCompatTest, PropagateErrorsToV8Exception) {
@@ -1075,9 +1077,9 @@ TEST_F(WebIDLCompatTest, PropagateErrorsToV8Exception) {
   status.PropagateErrorsToV8(v8_helper_.get());
   EXPECT_TRUE(try_catch.HasCaught());
   EXPECT_FALSE(try_catch.HasTerminated());
-  EXPECT_EQ(
-      "undefined:0 Uncaught SyntaxError: typo.",
-      AuctionV8Helper::FormatExceptionMessage(context, try_catch.Message()));
+  EXPECT_EQ("undefined:0 Uncaught SyntaxError: typo.",
+            AuctionV8Helper::FormatExceptionMessage(isolate, context,
+                                                    try_catch.Message()));
   EXPECT_EQ("undefined:0 Uncaught SyntaxError: typo.",
             status.ConvertToErrorString(isolate));
 }

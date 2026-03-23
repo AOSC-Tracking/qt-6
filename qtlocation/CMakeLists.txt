@@ -11,8 +11,13 @@ project(QtLocation
 # Make sure we use the fixed BASE argument of qt_add_resource.
 set(QT_USE_FIXED_QT_ADD_RESOURCE_BASE TRUE)
 
-find_package(Qt6 ${PROJECT_VERSION} CONFIG REQUIRED COMPONENTS BuildInternals Core)
+find_package(Qt6 ${PROJECT_VERSION} CONFIG REQUIRED COMPONENTS BuildInternals)
+
+# This should be called as early as possible, just after find_package(BuildInternals) where it is
+# defined.
 qt_internal_project_setup()
+
+find_package(Qt6 ${PROJECT_VERSION} CONFIG REQUIRED COMPONENTS Core)
 
 if(WASM)
     message(NOTICE "Skipping the build as the condition \"NOT WASM\" is not met.")
@@ -27,7 +32,7 @@ endif()
 # Need to search for positioning only after we make sure that it's not WASM.
 # Otherwise we'll get an "QtPositioning not found" error in WASM build.
 find_package(Qt6 ${PROJECT_VERSION} CONFIG OPTIONAL_COMPONENTS
-    Qml Quick Network Test QuickTest Positioning PositioningQuick QuickShapesPrivate
+    Qml Quick Network Test QuickTest Positioning PositioningQuick QuickShapes
 )
 
 find_package(Qt6 ${PROJECT_VERSION} QUIET CONFIG OPTIONAL_COMPONENTS
@@ -43,6 +48,6 @@ macro(assertTargets)
     endforeach()
 endmacro()
 
-assertTargets(Qml Quick Network Test QuickTest Positioning PositioningQuick QuickShapesPrivate)
+assertTargets(Qml Quick Network Test QuickTest Positioning PositioningQuick QuickShapes)
 
 qt_build_repo()

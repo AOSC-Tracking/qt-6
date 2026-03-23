@@ -105,7 +105,7 @@ ElementsTestRunner.findNode = async function(matchFunction, callback) {
 
 /**
  * @param {function(!Element): boolean} matchFunction
- * @param {!Promise}
+ * @returns {!Promise}
  */
 ElementsTestRunner.findNodePromise = function(matchFunction) {
   return new Promise(resolve => ElementsTestRunner.findNode(matchFunction, resolve));
@@ -188,7 +188,7 @@ ElementsTestRunner.computedStyleWidget = function() {
   return Elements.ElementsPanel.ElementsPanel.instance().computedStyleWidget;
 };
 
-ElementsTestRunner.dumpComputedStyle = async function(doNotAutoExpand, printInnerText) {
+ElementsTestRunner.dumpComputedStyle = async function(doNotAutoExpand) {
   const computed = ElementsTestRunner.computedStyleWidget();
   const treeOutline = computed.propertiesOutline.querySelector('devtools-tree-outline');
   const children = treeOutline.shadowRoot.querySelector('[role="treeitem"]');
@@ -229,7 +229,7 @@ ElementsTestRunner.dumpComputedStyle = async function(doNotAutoExpand, printInne
   }
 
   function text(node) {
-    return printInnerText ? node.innerText : node.textContent;
+    return node.innerText;
   }
 };
 
@@ -471,11 +471,11 @@ ElementsTestRunner.dumpRenderedMatchedStyles = function() {
 };
 
 ElementsTestRunner.dumpSelectedElementStyles =
-    async function(excludeComputed, excludeMatched, omitLonghands, includeSelectorGroupMarks, printInnerText) {
+    async function(excludeComputed, excludeMatched, omitLonghands, includeSelectorGroupMarks) {
   const sectionBlocks = Elements.ElementsPanel.ElementsPanel.instance().stylesWidget.sectionBlocks;
 
   if (!excludeComputed) {
-    await ElementsTestRunner.dumpComputedStyle(false /* doNotAutoExpand */, printInnerText);
+    await ElementsTestRunner.dumpComputedStyle(false /* doNotAutoExpand */);
   }
 
   for (const block of sectionBlocks) {
@@ -494,16 +494,16 @@ ElementsTestRunner.dumpSelectedElementStyles =
         TestRunner.addResult('======== ' + text(section.element.previousSibling) + nodeDescription + ' ========');
       }
 
-      await printStyleSection(section, omitLonghands, includeSelectorGroupMarks, printInnerText);
+      await printStyleSection(section, omitLonghands, includeSelectorGroupMarks);
     }
   }
 
   function text(node) {
-    return printInnerText ? node.innerText : node.textContent;
+    return node.innerText;
   }
 };
 
-async function printStyleSection(section, omitLonghands, includeSelectorGroupMarks, printInnerText) {
+async function printStyleSection(section, omitLonghands, includeSelectorGroupMarks) {
   if (!section) {
     return;
   }
@@ -524,7 +524,7 @@ async function printStyleSection(section, omitLonghands, includeSelectorGroupMar
   const selector =
       section.titleElement.querySelector('.selector') || section.titleElement.querySelector('.keyframe-key');
   let selectorText = (includeSelectorGroupMarks ? buildMarkedSelectors(selector) : text(selector));
-  selectorText += text(selector.nextSibling);
+  selectorText += text(selector.nextSibling.nextSibling);
   const anchor = section.element.querySelector('.styles-section-subtitle');
 
   if (anchor) {
@@ -533,14 +533,14 @@ async function printStyleSection(section, omitLonghands, includeSelectorGroupMar
   }
 
   TestRunner.addResult(selectorText);
-  ElementsTestRunner.dumpStyleTreeOutline(section.propertiesTreeOutline, (omitLonghands ? 1 : 2), printInnerText);
+  ElementsTestRunner.dumpStyleTreeOutline(section.propertiesTreeOutline, (omitLonghands ? 1 : 2));
   if (!section.showAllButton.classList.contains('hidden')) {
     TestRunner.addResult(text(section.showAllButton));
   }
   TestRunner.addResult('');
 
   function text(node) {
-    return printInnerText ? node.innerText : node.textContent;
+    return node.innerText;
   }
 }
 
@@ -688,17 +688,16 @@ ElementsTestRunner.getFirstPropertyTreeItemForSection = function(section, proper
   return null;
 };
 
-ElementsTestRunner.dumpStyleTreeOutline = function(treeItem, depth, printInnerText) {
+ElementsTestRunner.dumpStyleTreeOutline = function(treeItem, depth) {
   const children = treeItem.rootElement().children();
 
   for (let i = 0; i < children.length; ++i) {
-    ElementsTestRunner.dumpStyleTreeItem(children[i], '', depth || 2, printInnerText);
+    ElementsTestRunner.dumpStyleTreeItem(children[i], '', depth || 2);
   }
 };
 
-ElementsTestRunner.dumpStyleTreeItem = function(treeItem, prefix, depth, printInnerText) {
-  const textContent = printInnerText ? treeItem.listItemElement.innerText :
-                                       TestRunner.textContentWithoutStyles(treeItem.listItemElement);
+ElementsTestRunner.dumpStyleTreeItem = function(treeItem, prefix, depth) {
+  const textContent = treeItem.listItemElement.innerText;
   if (textContent.indexOf(' width:') !== -1 || textContent.indexOf(' height:') !== -1) {
     return;
   }
@@ -1233,7 +1232,7 @@ function onBlankSection(selector, callback) {
  * To pick which properties to dump: dumpInspectorHighlightJSON(idValue, ['prop'], callback).
  *
  * @param {string} idValue
- * @param {?Array<string>} attributes List of top-level property names to include in the result
+ * @param {?Array<string>} attributes - List of top-level property names to include in the result
  * @param {?Function=} maybeCallback
  */
 ElementsTestRunner.dumpInspectorHighlightJSON = function(idValue, attributes, maybeCallback) {
@@ -1262,24 +1261,6 @@ ElementsTestRunner.dumpInspectorGridHighlightsJSON = async function(idValues, ca
   const result = await TestRunner.OverlayAgent.getGridHighlightObjectsForTest(nodeIds);
   TestRunner.addResult(JSON.stringify(result, null, 2));
   callback();
-};
-
-ElementsTestRunner.dumpInspectorDistanceJSON = function(idValue, callback) {
-  ElementsTestRunner.nodeWithId(idValue, nodeResolved);
-
-  async function nodeResolved(node) {
-    const result = await TestRunner.OverlayAgent.getHighlightObjectForTest(node.id, true);
-    const info = result['distanceInfo'];
-    if (!info) {
-      TestRunner.addResult(`${idValue}: No distance info`);
-    } else {
-      if (info['style']) {
-        info['style'] = '<style data>';
-      }
-      TestRunner.addResult(idValue + JSON.stringify(info, null, 2));
-    }
-    callback();
-  }
 };
 
 ElementsTestRunner.dumpInspectorHighlightStyleJSON = async function(idValue) {

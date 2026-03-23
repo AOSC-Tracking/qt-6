@@ -170,6 +170,12 @@ class BasicTest : public UniformityAnalysisTestBase,
         kQuadSwapX,
         kQuadSwapY,
         kQuadSwapDiagonal,
+        // Subgroup matrix functions:
+        kSubgroupMatrixConstruct,
+        kSubgroupMatrixLoad,
+        kSubgroupMatrixStore,
+        kSubgroupMatrixMultiply,
+        kSubgroupMatrixMultiplyAccumulate,
         // End of range marker:
         kEndOfFunctionRange,
     };
@@ -304,6 +310,20 @@ class BasicTest : public UniformityAnalysisTestBase,
                 return "_ = quadSwapY(1.0)";
             case kQuadSwapDiagonal:
                 return "_ = quadSwapDiagonal(1.0)";
+            case kSubgroupMatrixConstruct:
+                return "_ = subgroup_matrix_result<f32, 8, 8>()";
+            case kSubgroupMatrixLoad:
+                return "_ = subgroupMatrixLoad<subgroup_matrix_result<f32, 8, 8>>("
+                       "&subgroup_matrix_data, 0, false, 4)";
+            case kSubgroupMatrixStore:
+                return "subgroupMatrixStore(&subgroup_matrix_data, 0, "
+                       "subgroup_matrix_right_zero, false, 4)";
+            case kSubgroupMatrixMultiply:
+                return "_ = subgroupMatrixMultiply<f32>("
+                       "subgroup_matrix_left_zero, subgroup_matrix_right_zero)";
+            case kSubgroupMatrixMultiplyAccumulate:
+                return "_ = subgroupMatrixMultiplyAccumulate(subgroup_matrix_left_zero, "
+                       "subgroup_matrix_right_zero, subgroup_matrix_result_zero)";
             case kEndOfFunctionRange:
                 return "<invalid>";
         }
@@ -392,6 +412,11 @@ class BasicTest : public UniformityAnalysisTestBase,
             CASE(kQuadSwapX);
             CASE(kQuadSwapY);
             CASE(kQuadSwapDiagonal);
+            CASE(kSubgroupMatrixConstruct);
+            CASE(kSubgroupMatrixLoad);
+            CASE(kSubgroupMatrixStore);
+            CASE(kSubgroupMatrixMultiply);
+            CASE(kSubgroupMatrixMultiplyAccumulate);
             case kEndOfFunctionRange:
                 break;
         }
@@ -407,6 +432,7 @@ TEST_P(BasicTest, ConditionalFunctionCall) {
     auto function = static_cast<Function>(std::get<1>(GetParam()));
     std::string src = R"(
 enable subgroups;
+enable chromium_experimental_subgroup_matrix;
 
 var<private> p : i32;
 var<workgroup> w : i32;
@@ -418,6 +444,8 @@ var<workgroup> w : i32;
 @group(1) @binding(1) var td : texture_depth_2d;
 @group(1) @binding(2) var s : sampler;
 @group(1) @binding(3) var sc : sampler_comparison;
+
+@group(2) @binding(0) var<storage, read_write> subgroup_matrix_data : array<f32>;
 
 const module_const : i32 = 42;
 @id(42) override pipeline_overridable : i32;
@@ -431,6 +459,10 @@ fn func_nonuniform_retval() -> i32 { return rw; }
 fn foo() {
   let let_uniform_rhs = 7;
   let let_nonuniform_rhs = rw;
+
+  var subgroup_matrix_left_zero: subgroup_matrix_left<f32, 8, 8>;
+  var subgroup_matrix_right_zero: subgroup_matrix_right<f32, 8, 8>;
+  var subgroup_matrix_result_zero: subgroup_matrix_result<f32, 8, 8>;
 
   var func_uniform = 7;
   var func_non_uniform = 7;
@@ -736,14 +768,19 @@ test:9:7 note: parameter 's' of 'main' may be non-uniform
 class FragmentBuiltin : public UniformityAnalysisTestBase,
                         public ::testing::TestWithParam<BuiltinEntry> {};
 TEST_P(FragmentBuiltin, AsParam) {
-    std::string src = std::string((GetParam().name == "subgroup_size") ? R"(enable subgroups;
-)"
-                                                                       : R"(
-                                      )") +
-                      R"(
+    std::string src = "";
+    if (GetParam().name == "subgroup_size") {
+        src += "enable subgroups;\n";
+    } else if (GetParam().name == "primitive_id") {
+        src += "enable chromium_experimental_primitive_id;\n";
+    } else {
+        src += "\n";
+    }
+
+    src += R"(
 @fragment
-fn main(@builtin()" + GetParam().name +
-                      R"() b : )" + GetParam().type + R"() {
+fn main(@builtin()" +
+           GetParam().name + R"() b : )" + GetParam().type + R"() {
   if (u32(vec4(b).x) == 0u) {
     _ = dpdx(0.5);
   }
@@ -770,14 +807,19 @@ test:5:16 note: builtin 'b' of 'main' may be non-uniform
 }
 
 TEST_P(FragmentBuiltin, InStruct) {
-    std::string src = std::string((GetParam().name == "subgroup_size") ? R"(enable subgroups;
-)"
-                                                                       : R"(
-                                      )") +
-                      R"(
+    std::string src = "";
+    if (GetParam().name == "subgroup_size") {
+        src += "enable subgroups;\n";
+    } else if (GetParam().name == "primitive_id") {
+        src += "enable chromium_experimental_primitive_id;\n";
+    } else {
+        src += "\n";
+    }
+
+    src += R"(
 struct S {
-  @builtin()" + GetParam().name +
-                      R"() b : )" + GetParam().type + R"(
+  @builtin()" +
+           GetParam().name + R"() b : )" + GetParam().type + R"(
 }
 
 @fragment
@@ -813,6 +855,7 @@ INSTANTIATE_TEST_SUITE_P(UniformityAnalysisTest,
                                            BuiltinEntry{"front_facing", "bool", false},
                                            BuiltinEntry{"sample_index", "u32", false},
                                            BuiltinEntry{"sample_mask", "u32", false},
+                                           BuiltinEntry{"primitive_id", "u32", false},
                                            BuiltinEntry{"subgroup_size", "u32", false}),
                          [](const ::testing::TestParamInfo<FragmentBuiltin::ParamType>& p) {
                              return p.param.name;
@@ -871,6 +914,128 @@ test:8:3 note: control flow depends on possibly non-uniform value
 test:8:7 note: parameter 's' of 'main' may be non-uniform
   if (s.l == 0.0) {
       ^
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Test subgroup matrix variable declarations.
+////////////////////////////////////////////////////////////////////////////////
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixVarDecl_Pass) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+@group(0) @binding(0) var<storage, read> ro : i32;
+
+fn foo() {
+  if (ro == 0) {
+    var sm : subgroup_matrix_result<f32, 8, 8>;
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixVarDecl_Fail) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+@group(0) @binding(0) var<storage, read_write> rw : i32;
+
+fn foo() {
+  if (rw == 0) {
+    var sm : subgroup_matrix_result<f32, 8, 8>;
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(
+        error_,
+        R"(test:8:5 error: variables that contain subgroup matrix types cannot be declared in non-uniform control flow
+    var sm : subgroup_matrix_result<f32, 8, 8>;
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+test:7:3 note: control flow depends on possibly non-uniform value
+  if (rw == 0) {
+  ^^
+
+test:7:7 note: reading from read_write storage buffer 'rw' may result in a non-uniform value
+  if (rw == 0) {
+      ^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixVarDecl_InStruct_Fail) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+struct Inner {
+  u : u32,
+  sm : subgroup_matrix_result<f32, 8, 8>,
+}
+
+struct S {
+  u : u32,
+  inner : Inner,
+}
+
+@group(0) @binding(0) var<storage, read_write> rw : i32;
+
+fn foo() {
+  if (rw == 0) {
+    var sm : S;
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(
+        error_,
+        R"(test:18:5 error: variables that contain subgroup matrix types cannot be declared in non-uniform control flow
+    var sm : S;
+    ^^^^^^^^^^
+
+test:17:3 note: control flow depends on possibly non-uniform value
+  if (rw == 0) {
+  ^^
+
+test:17:7 note: reading from read_write storage buffer 'rw' may result in a non-uniform value
+  if (rw == 0) {
+      ^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixVarDecl_InArray_Fail) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+alias ArrayType = array<array<subgroup_matrix_result<f32, 8, 8>, 4>, 4>;
+
+@group(0) @binding(0) var<storage, read_write> rw : i32;
+
+fn foo() {
+  if (rw == 0) {
+    var sm : ArrayType;
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(
+        error_,
+        R"(test:10:5 error: variables that contain subgroup matrix types cannot be declared in non-uniform control flow
+    var sm : ArrayType;
+    ^^^^^^^^^^^^^^^^^^
+
+test:9:3 note: control flow depends on possibly non-uniform value
+  if (rw == 0) {
+  ^^
+
+test:9:7 note: reading from read_write storage buffer 'rw' may result in a non-uniform value
+  if (rw == 0) {
+      ^^
 )");
 }
 
@@ -1234,6 +1399,85 @@ test:12:9 note: reading from read_write storage buffer 'non_uniform' may result 
 )");
 }
 
+TEST_F(UniformityAnalysisTest,
+       Loop_VarBecomesNonUniformInLoopAfterBarrier_ContinueAtEnd_NoContinuing) {
+    // Use a variable for a conditional barrier in a loop, and then assign a non-uniform value to
+    // that variable later in that loop. The loop ends with a continue statement, without a
+    // continuing block.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  loop {
+    if (v == 0) {
+      workgroupBarrier();
+      break;
+    }
+
+    v = non_uniform;
+    continue;
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:8:7 error: 'workgroupBarrier' must only be called from uniform control flow
+      workgroupBarrier();
+      ^^^^^^^^^^^^^^^^
+
+test:7:5 note: control flow depends on possibly non-uniform value
+    if (v == 0) {
+    ^^
+
+test:12:9 note: reading from read_write storage buffer 'non_uniform' may result in a non-uniform value
+    v = non_uniform;
+        ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest,
+       Loop_VarBecomesNonUniformInLoopAfterBarrier_ContinueAtEnd_EmptyContinuing) {
+    // Use a variable for a conditional barrier in a loop, and then assign a non-uniform value to
+    // that variable later in that loop. The loop ends with a continue statement, without a
+    // continuing block.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  loop {
+    if (v == 0) {
+      workgroupBarrier();
+      break;
+    }
+
+    v = non_uniform;
+    continue;
+
+    continuing {
+    }
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:8:7 error: 'workgroupBarrier' must only be called from uniform control flow
+      workgroupBarrier();
+      ^^^^^^^^^^^^^^^^
+
+test:7:5 note: control flow depends on possibly non-uniform value
+    if (v == 0) {
+    ^^
+
+test:12:9 note: reading from read_write storage buffer 'non_uniform' may result in a non-uniform value
+    v = non_uniform;
+        ^^^^^^^^^^^
+)");
+}
+
 TEST_F(UniformityAnalysisTest, Loop_VarBecomesNonUniformInLoopAfterBarrier_BreakAtEnd) {
     // Use a variable for a conditional barrier in a loop, and then assign a non-uniform value to
     // that variable later in that loop. End the loop with a break statement to prevent the
@@ -1250,6 +1494,107 @@ fn foo() {
 
     v = non_uniform;
     break;
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest,
+       Loop_VarBecomesNonUniformInLoopContinuing_BarrierInLoop_BodyHasBehaviorNext) {
+    // Use a variable for a conditional barrier in a loop, and then assign a non-uniform value to
+    // that variable in the continuing block. The behavior of the body is `next`.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  loop {
+    if (v > 0) {
+      workgroupBarrier();
+    }
+    continuing {
+      v = non_uniform;
+      break if false;
+    }
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:8:7 error: 'workgroupBarrier' must only be called from uniform control flow
+      workgroupBarrier();
+      ^^^^^^^^^^^^^^^^
+
+test:7:5 note: control flow depends on possibly non-uniform value
+    if (v > 0) {
+    ^^
+
+test:11:11 note: reading from read_write storage buffer 'non_uniform' may result in a non-uniform value
+      v = non_uniform;
+          ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest,
+       Loop_VarBecomesNonUniformInLoopContinuing_BarrierInLoop_BodyHasBehaviorContinue) {
+    // Use a variable for a conditional barrier in a loop, and then assign a non-uniform value to
+    // that variable in the continuing block. The behavior of the body is `continue`.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  loop {
+    if (v > 0) {
+      workgroupBarrier();
+    }
+    continue;
+    continuing {
+      v = non_uniform;
+      break if false;
+    }
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:8:7 error: 'workgroupBarrier' must only be called from uniform control flow
+      workgroupBarrier();
+      ^^^^^^^^^^^^^^^^
+
+test:7:5 note: control flow depends on possibly non-uniform value
+    if (v > 0) {
+    ^^
+
+test:12:11 note: reading from read_write storage buffer 'non_uniform' may result in a non-uniform value
+      v = non_uniform;
+          ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest,
+       Loop_VarBecomesUniformInLoopContinuing_BarrierInLoop_BodyHasBehaviorContinue) {
+    // Use a variable for a conditional barrier in a loop, and then assign a uniform value to
+    // that variable in the continuing block. The behavior of the body is `continue`.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  loop {
+    if (v > 0) {
+      workgroupBarrier();
+    }
+    v = non_uniform;
+    continue;
+    continuing {
+      v = 1;
+      break if false;
+    }
   }
 }
 )";
@@ -1558,6 +1903,105 @@ test:7:9 note: reading from read_write storage buffer 'non_uniform' may result i
 )");
 }
 
+TEST_F(UniformityAnalysisTest, Loop_VarBecomesUniformAfterConditionalContinue_BarrierInContinuing) {
+    // Use a variable for a conditional barrier in the continuing statement of a loop, assign a
+    // non-uniform value to that variable before a conditional continue, and then unconditionally
+    // assign a uniform value before the end of the body.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  loop {
+    var v = 0;
+    if (true) {
+      v = non_uniform;
+      continue;
+    }
+    v = 0;
+    continuing {
+      if (v == 0) {
+        workgroupBarrier();
+      }
+      break if true;
+    }
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:14:9 error: 'workgroupBarrier' must only be called from uniform control flow
+        workgroupBarrier();
+        ^^^^^^^^^^^^^^^^
+
+test:13:7 note: control flow depends on possibly non-uniform value
+      if (v == 0) {
+      ^^
+
+test:8:11 note: reading from read_write storage buffer 'non_uniform' may result in a non-uniform value
+      v = non_uniform;
+          ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, Loop_VarBecomesNonUniformBeforeBreak_BarrierInContinuing) {
+    // Use a variable for a conditional barrier in the continuing statement of a loop that has a
+    // continue statement. Assign a non-uniform value to that variable before a break statement.
+    // The non-uniform value will never get to the continuing block, so there should be no error.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  loop {
+    if (true) {
+      continue;
+    }
+
+    v = non_uniform;
+    break;
+
+    continuing {
+      if (v == 0) {
+        workgroupBarrier();
+      }
+    }
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest, Loop_VarBecomesNonUniformBeforeReturn_BarrierInContinuing) {
+    // Use a variable for a conditional barrier in the continuing statement of a loop that has a
+    // continue statement. Assign a non-uniform value to that variable before a return statement.
+    // The non-uniform value will never get to the continuing block, so there should be no error.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  loop {
+    if (true) {
+      continue;
+    }
+
+    v = non_uniform;
+    return;
+
+    continuing {
+      if (v == 0) {
+        workgroupBarrier();
+      }
+    }
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
 TEST_F(UniformityAnalysisTest, Loop_VarBecomesNonUniformBeforeConditionalContinue) {
     // Use a variable for a conditional barrier in a loop, assign a non-uniform value to
     // that variable later in that loop, then perform a conditional continue before assigning a
@@ -1779,6 +2223,32 @@ fn foo() {
     RunTest(src, true);
 }
 
+TEST_F(UniformityAnalysisTest, Loop_ScopedVarDeclaredBeforeContinue) {
+    // Check that we can handle a var being declared in a nested scope before a continue statement.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var i = 0;
+  loop {
+    if (true) {
+      var i = non_uniform;
+      continue;
+    }
+    continuing {
+      if (i < 5) {
+        workgroupBarrier();
+      }
+      i++;
+      break if i >= 10;
+    }
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
 TEST_F(UniformityAnalysisTest, ForLoop_CallInside_UniformCondition) {
     std::string src = R"(
 @group(0) @binding(0) var<storage, read> n : i32;
@@ -1875,6 +2345,29 @@ fn foo() {
     RunTest(src, true);
 }
 
+TEST_F(UniformityAnalysisTest,
+       ForLoop_VarBecomesUniformInContinuing_BarrierInLoop_BodyHasContinueBehavior) {
+    // Use a variable for a conditional barrier in a loop, and then assign a uniform value to that
+    // variable in the continuing statement. The body of the loop has the `continue` behavior.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  for (var i = 0; i < 10; v = 5) {
+    if (v == 0) {
+      workgroupBarrier();
+    }
+
+    v = non_uniform;
+    continue;
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
 TEST_F(UniformityAnalysisTest, ForLoop_VarBecomesNonUniformInContinuing_BarrierAfterLoop) {
     // Use a variable for a conditional barrier after a loop, and assign a non-uniform value to
     // that variable in the continuing statement.
@@ -1928,6 +2421,28 @@ fn foo() {
     RunTest(src, true);
 }
 
+TEST_F(UniformityAnalysisTest,
+       ForLoop_VarBecomesUniformInContinuing_BarrierAfterLoop_BodyHasContinueBehavior) {
+    // Use a variable for a conditional barrier after a loop, and assign a uniform value to that
+    // variable in the continuing statement. The body of the loop has the `continue` behavior;
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  for (var i = 0; i < 10; v = 5) {
+    v = non_uniform;
+    continue;
+  }
+  if (v == 0) {
+    workgroupBarrier();
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
 TEST_F(UniformityAnalysisTest, ForLoop_VarBecomesNonUniformInLoopAfterBarrier) {
     // Use a variable for a conditional barrier in a loop, and then assign a non-uniform value to
     // that variable later in that loop.
@@ -1955,6 +2470,80 @@ fn foo() {
 
 test:7:5 note: control flow depends on possibly non-uniform value
     if (v == 0) {
+    ^^
+
+test:12:9 note: reading from read_write storage buffer 'non_uniform' may result in a non-uniform value
+    v = non_uniform;
+        ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, ForLoop_VarBecomesNonUniformInLoopAfterBarrier_BeforeContinue) {
+    // Use a variable for a conditional barrier in a loop, and then assign a non-uniform value to
+    // that variable later in that loop, before a continue statement.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  for (var i = 0; i < 10; i++) {
+    if (v == 0) {
+      workgroupBarrier();
+      break;
+    }
+
+    v = non_uniform;
+    continue;
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:8:7 error: 'workgroupBarrier' must only be called from uniform control flow
+      workgroupBarrier();
+      ^^^^^^^^^^^^^^^^
+
+test:7:5 note: control flow depends on possibly non-uniform value
+    if (v == 0) {
+    ^^
+
+test:12:9 note: reading from read_write storage buffer 'non_uniform' may result in a non-uniform value
+    v = non_uniform;
+        ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest,
+       ForLoop_VarBecomesNonUniformInLoopAfterBarrier_BeforeContinue_NoContinuing) {
+    // Use a variable for a conditional barrier in a loop, and then assign a non-uniform value to
+    // that variable later in that loop, before a continue statement. The for loop has no continuing
+    // statement.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  var v = 0;
+  for (;;) {
+    if (v != 0) {
+      workgroupBarrier();
+      break;
+    }
+
+    v = non_uniform;
+    continue;
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:8:7 error: 'workgroupBarrier' must only be called from uniform control flow
+      workgroupBarrier();
+      ^^^^^^^^^^^^^^^^
+
+test:7:5 note: control flow depends on possibly non-uniform value
+    if (v != 0) {
     ^^
 
 test:12:9 note: reading from read_write storage buffer 'non_uniform' may result in a non-uniform value
@@ -2189,6 +2778,52 @@ test:10:11 note: reading from read_write storage buffer 'non_uniform' may result
 )");
 }
 
+TEST_F(UniformityAnalysisTest, ForLoop_NonUniformBarrierInUnreachableContinuingStatement) {
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn bar(i : i32) {
+  if (i == 0) {
+    workgroupBarrier();
+  }
+}
+
+fn foo() {
+  for (;; bar(non_uniform)) {
+    break;
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest, ForLoop_VarBecomesUniformBeforeContinue_BarrierInContinuing) {
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn bar(i : i32) {
+  if (i == 0) {
+    workgroupBarrier();
+  }
+}
+
+fn foo() {
+  var v = non_uniform;
+  for (;; bar(v)) {
+    if (true) {
+      v = 0;
+      continue;
+    }
+    break;
+  }
+
+}
+)";
+
+    RunTest(src, true);
+}
+
 TEST_F(UniformityAnalysisTest, ForLoop_NonUniformCondition_Reconverge) {
     // Loops reconverge at exit, so test that we can call workgroupBarrier() after a loop that has a
     // non-uniform condition.
@@ -2232,6 +2867,27 @@ TEST_F(UniformityAnalysisTest, ForLoop_InitializerScope) {
 fn foo() {
   if (n == 5) {
     for (var i = 0; i < n; i = i + 1) {
+    }
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest, ForLoop_ScopedVarDeclaredBeforeContinue) {
+    // Check that we can handle a var being declared in a nested scope before a continue statement.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+fn foo() {
+  for (var i = 0; i < 10; i++) {
+    if (i < 5) {
+      workgroupBarrier();
+    }
+    if (true) {
+      var i = non_uniform;
+      continue;
     }
   }
 }
@@ -9268,6 +9924,476 @@ fn foo() {
     RunTest(src, true);
 }
 
+TEST_F(UniformityAnalysisTest, SubgroupMatrixConstructor_NestedInStruct) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+@group(0) @binding(0) var<storage, read_write> non_uniform_global : i32;
+
+struct Inner {
+  u : u32,
+  m : subgroup_matrix_result<f32, 8, 8>,
+}
+
+struct S {
+  u : u32,
+  inner : Inner,
+}
+
+fn foo() {
+  if (non_uniform_global == 0) {
+    _ = S();
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:18:9 error: 'S' must only be called from uniform control flow
+    _ = S();
+        ^^^
+
+test:17:3 note: control flow depends on possibly non-uniform value
+  if (non_uniform_global == 0) {
+  ^^
+
+test:17:7 note: reading from read_write storage buffer 'non_uniform_global' may result in a non-uniform value
+  if (non_uniform_global == 0) {
+      ^^^^^^^^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixConstructor_NestedInArray) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+@group(0) @binding(0) var<storage, read_write> non_uniform_global : i32;
+
+alias ArrayType = array<array<subgroup_matrix_result<f32, 8, 8>, 4>, 4>;
+
+fn foo() {
+  if (non_uniform_global == 0) {
+    _ = ArrayType();
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:10:9 error: 'ArrayType' must only be called from uniform control flow
+    _ = ArrayType();
+        ^^^^^^^^^^^
+
+test:9:3 note: control flow depends on possibly non-uniform value
+  if (non_uniform_global == 0) {
+  ^^
+
+test:9:7 note: reading from read_write storage buffer 'non_uniform_global' may result in a non-uniform value
+  if (non_uniform_global == 0) {
+      ^^^^^^^^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixConstructor_NonUniformArgument) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: f32;
+
+fn foo() {
+  _ = subgroup_matrix_result<f32, 8, 8>(non_uniform);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(
+        error_,
+        R"(test:7:41 error: subgroup_matrix_result<f32, 8, 8> constructor requires argument 0 to be uniform
+  _ = subgroup_matrix_result<f32, 8, 8>(non_uniform);
+                                        ^^^^^^^^^^^
+
+test:7:41 note: reading from module-scope private variable 'non_uniform' may result in a non-uniform value
+  _ = subgroup_matrix_result<f32, 8, 8>(non_uniform);
+                                        ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixLoad_NonUniformPointer) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<array<f32, 64>, 4>;
+
+fn foo() {
+  let p = &buffer[non_uniform];
+  _ = subgroupMatrixLoad<subgroup_matrix_result<f32, 8, 8>>(p, 0, false, 4);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:10:61 error: 'subgroupMatrixLoad' requires argument 0 to be uniform
+  _ = subgroupMatrixLoad<subgroup_matrix_result<f32, 8, 8>>(p, 0, false, 4);
+                                                            ^
+
+test:9:19 note: reading from module-scope private variable 'non_uniform' may result in a non-uniform value
+  let p = &buffer[non_uniform];
+                  ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixLoad_NonUniformOffset) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn foo() {
+  _ = subgroupMatrixLoad<subgroup_matrix_result<f32, 8, 8>>(&buffer, non_uniform, false, 4);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:9:70 error: 'subgroupMatrixLoad' requires argument 1 to be uniform
+  _ = subgroupMatrixLoad<subgroup_matrix_result<f32, 8, 8>>(&buffer, non_uniform, false, 4);
+                                                                     ^^^^^^^^^^^
+
+test:9:70 note: reading from module-scope private variable 'non_uniform' may result in a non-uniform value
+  _ = subgroupMatrixLoad<subgroup_matrix_result<f32, 8, 8>>(&buffer, non_uniform, false, 4);
+                                                                     ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixLoad_NonUniformStride) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn foo() {
+  _ = subgroupMatrixLoad<subgroup_matrix_result<f32, 8, 8>>(&buffer, 0, false, non_uniform);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:9:80 error: 'subgroupMatrixLoad' requires argument 3 to be uniform
+  _ = subgroupMatrixLoad<subgroup_matrix_result<f32, 8, 8>>(&buffer, 0, false, non_uniform);
+                                                                               ^^^^^^^^^^^
+
+test:9:80 note: reading from module-scope private variable 'non_uniform' may result in a non-uniform value
+  _ = subgroupMatrixLoad<subgroup_matrix_result<f32, 8, 8>>(&buffer, 0, false, non_uniform);
+                                                                               ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixStore_NonUniformPointer) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<array<f32, 64>, 4>;
+
+fn foo() {
+  let p = &buffer[non_uniform];
+  let value = subgroup_matrix_result<f32, 8, 8>();
+  subgroupMatrixStore(p, 0, value, false, 4);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:11:23 error: 'subgroupMatrixStore' requires argument 0 to be uniform
+  subgroupMatrixStore(p, 0, value, false, 4);
+                      ^
+
+test:9:19 note: reading from module-scope private variable 'non_uniform' may result in a non-uniform value
+  let p = &buffer[non_uniform];
+                  ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixStore_NonUniformOffset) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn foo() {
+  let value = subgroup_matrix_result<f32, 8, 8>();
+  subgroupMatrixStore(&buffer, non_uniform, value, false, 4);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:10:32 error: 'subgroupMatrixStore' requires argument 1 to be uniform
+  subgroupMatrixStore(&buffer, non_uniform, value, false, 4);
+                               ^^^^^^^^^^^
+
+test:10:32 note: reading from module-scope private variable 'non_uniform' may result in a non-uniform value
+  subgroupMatrixStore(&buffer, non_uniform, value, false, 4);
+                               ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixStore_NonUniformValue) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn bar() -> subgroup_matrix_result<f32, 8, 8> {
+  var value1 = subgroup_matrix_result<f32, 8, 8>(1);
+  var value2 = subgroup_matrix_result<f32, 8, 8>(2);
+  if (non_uniform == 1) {
+    return value1;
+  } else {
+    return value2;
+  }
+}
+
+fn foo() {
+  subgroupMatrixStore(&buffer, 0, bar(), false, 4);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:19:35 error: 'subgroupMatrixStore' requires argument 2 to be uniform
+  subgroupMatrixStore(&buffer, 0, bar(), false, 4);
+                                  ^^^^^
+
+test:19:35 note: return value of 'bar' may be non-uniform
+  subgroupMatrixStore(&buffer, 0, bar(), false, 4);
+                                  ^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixStore_NonUniformStride) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn foo() {
+  let value = subgroup_matrix_result<f32, 8, 8>();
+  subgroupMatrixStore(&buffer, 0, value, false, non_uniform);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:10:49 error: 'subgroupMatrixStore' requires argument 4 to be uniform
+  subgroupMatrixStore(&buffer, 0, value, false, non_uniform);
+                                                ^^^^^^^^^^^
+
+test:10:49 note: reading from module-scope private variable 'non_uniform' may result in a non-uniform value
+  subgroupMatrixStore(&buffer, 0, value, false, non_uniform);
+                                                ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixMultiply_NonUniformLHS) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn bar() -> subgroup_matrix_left<f32, 8, 8> {
+  var value1 = subgroup_matrix_left<f32, 8, 8>(1);
+  var value2 = subgroup_matrix_left<f32, 8, 8>(2);
+  if (non_uniform == 1) {
+    return value1;
+  } else {
+    return value2;
+  }
+}
+
+fn foo() {
+  let rhs = subgroup_matrix_right<f32, 8, 8>();
+  _ = subgroupMatrixMultiply<f32>(bar(), rhs);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:20:35 error: 'subgroupMatrixMultiply' requires argument 0 to be uniform
+  _ = subgroupMatrixMultiply<f32>(bar(), rhs);
+                                  ^^^^^
+
+test:20:35 note: return value of 'bar' may be non-uniform
+  _ = subgroupMatrixMultiply<f32>(bar(), rhs);
+                                  ^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixMultiply_NonUniformRHS) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn bar() -> subgroup_matrix_right<f32, 8, 8> {
+  var value1 = subgroup_matrix_right<f32, 8, 8>(1);
+  var value2 = subgroup_matrix_right<f32, 8, 8>(2);
+  if (non_uniform == 1) {
+    return value1;
+  } else {
+    return value2;
+  }
+}
+
+fn foo() {
+  let lhs = subgroup_matrix_left<f32, 8, 8>();
+  _ = subgroupMatrixMultiply<f32>(lhs, bar());
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:20:40 error: 'subgroupMatrixMultiply' requires argument 1 to be uniform
+  _ = subgroupMatrixMultiply<f32>(lhs, bar());
+                                       ^^^^^
+
+test:20:40 note: return value of 'bar' may be non-uniform
+  _ = subgroupMatrixMultiply<f32>(lhs, bar());
+                                       ^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixMultiplyAccumulate_NonUniformLHS) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn bar() -> subgroup_matrix_left<f32, 8, 8> {
+  var value1 = subgroup_matrix_left<f32, 8, 8>(1);
+  var value2 = subgroup_matrix_left<f32, 8, 8>(2);
+  if (non_uniform == 1) {
+    return value1;
+  } else {
+    return value2;
+  }
+}
+
+fn foo() {
+  let rhs = subgroup_matrix_right<f32, 8, 8>();
+  let acc = subgroup_matrix_result<f32, 8, 8>();
+  _ = subgroupMatrixMultiplyAccumulate(bar(), rhs, acc);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(
+        error_,
+        R"(test:21:40 error: 'subgroupMatrixMultiplyAccumulate' requires argument 0 to be uniform
+  _ = subgroupMatrixMultiplyAccumulate(bar(), rhs, acc);
+                                       ^^^^^
+
+test:21:40 note: return value of 'bar' may be non-uniform
+  _ = subgroupMatrixMultiplyAccumulate(bar(), rhs, acc);
+                                       ^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixMultiplyAccumulate_NonUniformRHS) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn bar() -> subgroup_matrix_right<f32, 8, 8> {
+  var value1 = subgroup_matrix_right<f32, 8, 8>(1);
+  var value2 = subgroup_matrix_right<f32, 8, 8>(2);
+  if (non_uniform == 1) {
+    return value1;
+  } else {
+    return value2;
+  }
+}
+
+fn foo() {
+  let lhs = subgroup_matrix_left<f32, 8, 8>();
+  let acc = subgroup_matrix_result<f32, 8, 8>();
+  _ = subgroupMatrixMultiplyAccumulate(lhs, bar(), acc);
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(
+        error_,
+        R"(test:21:45 error: 'subgroupMatrixMultiplyAccumulate' requires argument 1 to be uniform
+  _ = subgroupMatrixMultiplyAccumulate(lhs, bar(), acc);
+                                            ^^^^^
+
+test:21:45 note: return value of 'bar' may be non-uniform
+  _ = subgroupMatrixMultiplyAccumulate(lhs, bar(), acc);
+                                            ^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest, SubgroupMatrixMultiplyAccumulate_NonUniformAcc) {
+    std::string src = R"(
+enable chromium_experimental_subgroup_matrix;
+
+var<private> non_uniform: u32;
+
+var<workgroup> buffer : array<f32, 64>;
+
+fn bar() -> subgroup_matrix_result<f32, 8, 8> {
+  var value1 = subgroup_matrix_result<f32, 8, 8>(1);
+  var value2 = subgroup_matrix_result<f32, 8, 8>(2);
+  if (non_uniform == 1) {
+    return value1;
+  } else {
+    return value2;
+  }
+}
+
+fn foo() {
+  let lhs = subgroup_matrix_left<f32, 8, 8>();
+  let rhs = subgroup_matrix_right<f32, 8, 8>();
+  _ = subgroupMatrixMultiplyAccumulate(lhs, rhs, bar());
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(
+        error_,
+        R"(test:21:50 error: 'subgroupMatrixMultiplyAccumulate' requires argument 2 to be uniform
+  _ = subgroupMatrixMultiplyAccumulate(lhs, rhs, bar());
+                                                 ^^^^^
+
+test:21:50 note: return value of 'bar' may be non-uniform
+  _ = subgroupMatrixMultiplyAccumulate(lhs, rhs, bar());
+                                                 ^^^^^
+)");
+}
+
 TEST_F(UniformityAnalysisTest, StressGraphTraversalDepth) {
     // Create a function with a very long sequence of variable declarations and assignments to
     // test traversals of very deep graphs. This requires a non-recursive traversal algorithm.
@@ -9401,6 +10527,113 @@ fn foo() {
     }
 }
 
+TEST_P(UniformityAnalysisDiagnosticFilterTest, Directive_SubgroupMatrixUniformity_BuiltinFunction) {
+    auto& param = GetParam();
+    StringStream ss;
+    ss << "enable chromium_experimental_subgroup_matrix;\n"
+       << "diagnostic(" << param << ", chromium.subgroup_matrix_uniformity);" << R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+@group(0) @binding(1) var<storage, read_write> data : array<f32>;
+
+fn foo() {
+  if (non_uniform == 42) {
+    _ = subgroupMatrixLoad<subgroup_matrix_left<f32, 8, 8>>(&data, 0, false, 4);
+  }
+}
+)";
+
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+
+    if (param == wgsl::DiagnosticSeverity::kOff) {
+        EXPECT_TRUE(error_.empty());
+    } else {
+        StringStream err;
+        err << ToStr(param) << ": 'subgroupMatrixLoad' must only be called";
+        EXPECT_THAT(error_, ::testing::HasSubstr(err.str()));
+    }
+}
+
+TEST_P(UniformityAnalysisDiagnosticFilterTest, Directive_SubgroupMatrixUniformity_Constructor) {
+    auto& param = GetParam();
+    StringStream ss;
+    ss << "enable chromium_experimental_subgroup_matrix;\n"
+       << "diagnostic(" << param << ", chromium.subgroup_matrix_uniformity);" << R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+@group(0) @binding(1) var<storage, read_write> data : array<f32>;
+
+fn foo() {
+  if (non_uniform == 42) {
+    _ = subgroup_matrix_left<f32, 8, 8>(1);
+  }
+}
+)";
+
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+
+    if (param == wgsl::DiagnosticSeverity::kOff) {
+        EXPECT_TRUE(error_.empty());
+    } else {
+        StringStream err;
+        err << ToStr(param) << ": 'subgroup_matrix_left' must only be called";
+        EXPECT_THAT(error_, ::testing::HasSubstr(err.str()));
+    }
+}
+
+TEST_P(UniformityAnalysisDiagnosticFilterTest, Directive_SubgroupMatrixUniformity_VarDecl) {
+    auto& param = GetParam();
+    StringStream ss;
+    ss << "enable chromium_experimental_subgroup_matrix;\n"
+       << "diagnostic(" << param << ", chromium.subgroup_matrix_uniformity);" << R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+@group(0) @binding(1) var<storage, read_write> data : array<f32>;
+
+fn foo() {
+  if (non_uniform == 42) {
+    var sm : subgroup_matrix_left<f32, 8, 8>;
+  }
+}
+)";
+
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+
+    if (param == wgsl::DiagnosticSeverity::kOff) {
+        EXPECT_TRUE(error_.empty());
+    } else {
+        StringStream err;
+        err << ToStr(param) << ": variables that contain subgroup matrix types";
+        EXPECT_THAT(error_, ::testing::HasSubstr(err.str()));
+    }
+}
+
+TEST_P(UniformityAnalysisDiagnosticFilterTest,
+       Directive_SubgroupMatrixUniformity_BuiltinFunctionArgument) {
+    auto& param = GetParam();
+    StringStream ss;
+    ss << "enable chromium_experimental_subgroup_matrix;\n"
+       << "diagnostic(" << param << ", chromium.subgroup_matrix_uniformity);" << R"(
+@group(0) @binding(0) var<storage, read_write> non_uniform : u32;
+
+@group(0) @binding(1) var<storage, read_write> data : array<f32>;
+
+fn foo() {
+  _ = subgroupMatrixLoad<subgroup_matrix_left<f32, 8, 8>>(&data, non_uniform, false, 4);
+}
+)";
+
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+
+    if (param == wgsl::DiagnosticSeverity::kOff) {
+        EXPECT_TRUE(error_.empty());
+    } else {
+        StringStream err;
+        err << ToStr(param) << ": 'subgroupMatrixLoad' requires argument 1 to be uniform";
+        EXPECT_THAT(error_, ::testing::HasSubstr(err.str()));
+    }
+}
+
 TEST_P(UniformityAnalysisDiagnosticFilterTest, AttributeOnFunction_DerivativeUniformity) {
     auto& param = GetParam();
     StringStream ss;
@@ -9473,6 +10706,35 @@ TEST_P(UniformityAnalysisDiagnosticFilterTest,
     } else {
         StringStream err;
         err << ToStr(param) << ": 'subgroupShuffleUp' requires argument 1 to be uniform";
+        EXPECT_THAT(error_, ::testing::HasSubstr(err.str()));
+    }
+}
+
+TEST_P(UniformityAnalysisDiagnosticFilterTest,
+       AttributeOnFunction_SubgroupMatrixUniformity_Callsite) {
+    auto& param = GetParam();
+    StringStream ss;
+    ss << R"(
+enable chromium_experimental_subgroup_matrix;
+@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
+
+@group(0) @binding(1) var<storage, read_write> data : array<f32>;
+
+)" << "@diagnostic("
+       << param << ", chromium.subgroup_matrix_uniformity)" <<
+        R"(fn foo() {
+  if (non_uniform == 42) {
+    _ = subgroupMatrixLoad<subgroup_matrix_left<f32, 8, 8>>(&data, 0, false, 4);
+  }
+}
+)";
+
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
+        EXPECT_TRUE(error_.empty());
+    } else {
+        StringStream err;
+        err << ToStr(param) << ": 'subgroupMatrixLoad' must only be called";
         EXPECT_THAT(error_, ::testing::HasSubstr(err.str()));
     }
 }

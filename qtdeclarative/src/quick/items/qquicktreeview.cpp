@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicktreeview_p_p.h"
 
@@ -158,7 +159,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TreeView::expand(row)
+    \qmlmethod void QtQuick::TreeView::expand(row)
 
     Expands the tree node at the given \a row in the view.
 
@@ -171,7 +172,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TreeView::expandRecursively(row = -1, depth = -1)
+    \qmlmethod void QtQuick::TreeView::expandRecursively(row = -1, depth = -1)
     \since 6.4
 
     Expands the tree node at the given \a row in the view recursively down to
@@ -194,7 +195,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TreeView::expandToIndex(QModelIndex index)
+    \qmlmethod void QtQuick::TreeView::expandToIndex(QModelIndex index)
     \since 6.4
 
     Expands the tree from the given model \a index, and recursively all the way up
@@ -212,7 +213,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TreeView::collapse(row)
+    \qmlmethod void QtQuick::TreeView::collapse(row)
 
     Collapses the tree node at the given \a row in the view.
 
@@ -225,7 +226,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TreeView::collapseRecursively(row = -1)
+    \qmlmethod void QtQuick::TreeView::collapseRecursively(row = -1)
     \since 6.4
 
     Collapses the tree node at the given \a row in the view recursively down to
@@ -245,7 +246,7 @@
 */
 
 /*!
-    \qmlmethod QtQuick::TreeView::toggleExpanded(row)
+    \qmlmethod void QtQuick::TreeView::toggleExpanded(row)
 
     Toggles if the tree node at the given \a row should be expanded.
     This is a convenience for doing:
@@ -314,13 +315,9 @@ void QQuickTreeViewPrivate::setModelImpl(const QVariant &newModel)
     Q_Q(QQuickTreeView);
 
     m_assignedModel = newModel;
-    QVariant effectiveModel = m_assignedModel;
-    if (effectiveModel.userType() == qMetaTypeId<QJSValue>())
-        effectiveModel = effectiveModel.value<QJSValue>().toVariant();
-
-    if (effectiveModel.isNull())
+    if (m_assignedModel.isNull())
         m_treeModelToTableModel.setModel(nullptr);
-    else if (const auto qaim = qvariant_cast<QAbstractItemModel*>(effectiveModel))
+    else if (const auto qaim = qvariant_cast<QAbstractItemModel *>(m_assignedModel))
         m_treeModelToTableModel.setModel(qaim);
     else
         qmlWarning(q) << "TreeView only accepts a model of type QAbstractItemModel";
@@ -343,7 +340,7 @@ void QQuickTreeViewPrivate::itemReusedCallback(int serializedModelIndex, QObject
 }
 
 void QQuickTreeViewPrivate::dataChangedCallback(
-        const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles)
+        const QModelIndex &topLeft, const QModelIndex &bottomRight, const QList<int> &roles)
 {
     Q_Q(QQuickTreeView);
     Q_UNUSED(roles);
@@ -434,7 +431,7 @@ QQuickTreeView::QQuickTreeView(QQuickItem *parent)
 
     auto tapHandler = new QQuickTapHandler(this);
     tapHandler->setAcceptedModifiers(Qt::NoModifier);
-    connect(tapHandler, &QQuickTapHandler::doubleTapped, [this, tapHandler]{
+    connect(tapHandler, &QQuickTapHandler::doubleTapped, this, [this, tapHandler] {
         if (!pointerNavigationEnabled())
             return;
         if (editTriggers() & DoubleTapped)
@@ -519,9 +516,8 @@ void QQuickTreeView::expandRecursively(int row, int depth)
         if (isExpanded && depth == 1)
             return;
         expandRowRecursively(row);
-    } else {
+    } else if (const auto model = d->m_treeModelToTableModel.model()) {
         // Expand all root nodes recursively
-        const auto model = d->m_treeModelToTableModel.model();
         for (int r = 0; r < model->rowCount(); ++r) {
             const int rootRow = d->m_treeModelToTableModel.itemIndex(model->index(r, 0));
             if (rootRow != -1)
@@ -623,9 +619,8 @@ void QQuickTreeView::collapseRecursively(int row)
 
     if (row >= 0) {
         collapseRowRecursive(row);
-    } else {
+    } else if (const auto model = d->m_treeModelToTableModel.model()) {
         // Collapse all root nodes recursively
-        const auto model = d->m_treeModelToTableModel.model();
         for (int r = 0; r < model->rowCount(); ++r) {
             const int rootRow = d->m_treeModelToTableModel.itemIndex(model->index(r, 0));
             if (rootRow != -1)

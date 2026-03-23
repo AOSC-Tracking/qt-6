@@ -33,7 +33,7 @@ def RunGenerators(api: str, registry: str, targetFilter: str) -> None:
         print("Inside Vulkan-Headers there is a registry/reg.py file that is used.")
         sys.exit(1) # Return without call stack so easy to spot error
 
-    from generators.base_generator import BaseGeneratorOptions
+    from base_generator import BaseGeneratorOptions
     from generators.dispatch_table_generator import DispatchTableOutputGenerator
     from generators.enum_string_helper_generator import EnumStringHelperOutputGenerator
     from generators.format_utils_generator import FormatUtilsOutputGenerator
@@ -42,7 +42,7 @@ def RunGenerators(api: str, registry: str, targetFilter: str) -> None:
 
     # These set fields that are needed by both OutputGenerator and BaseGenerator,
     # but are uniform and don't need to be set at a per-generated file level
-    from generators.base_generator import (SetTargetApiName, SetMergedApiNames)
+    from base_generator import (SetTargetApiName, SetMergedApiNames)
     SetTargetApiName(api)
 
     # Build up a list of all generators and custom options
@@ -137,9 +137,6 @@ def RunGenerators(api: str, registry: str, targetFilter: str) -> None:
 
         # Parse the specified registry XML into an ElementTree object
         tree = ElementTree.parse(registry)
-
-        # Filter out extensions that are not on the API list
-        [exts.remove(e) for exts in tree.findall('extensions') for e in exts.findall('extension') if (sup := e.get('supported')) is not None and all(api not in sup.split(',') for api in apiList)]
 
         # Load the XML tree into the registry object
         reg.loadElementTree(tree)

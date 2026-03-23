@@ -85,7 +85,6 @@
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/test/gtest_util.h"
-#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/referrer_policy.h"
 #include "services/network/public/cpp/features.h"
@@ -108,6 +107,7 @@
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
+#include "chrome/browser/extensions/scoped_test_mv2_enabler.h"
 #include "extensions/browser/browsertest_util.h"
 #include "extensions/test/test_extension_dir.h"
 #endif
@@ -501,6 +501,7 @@ class NetworkContextConfigurationBrowserTest
         std::make_unique<network::ResourceRequest>();
     // This URL should be directed to the test server because of the proxy.
     request->url = GURL("http://does.not.resolve.test:1872/echo");
+    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
 
     content::SimpleURLLoaderTestHelper simple_loader_helper;
     std::unique_ptr<network::SimpleURLLoader> simple_loader =
@@ -526,6 +527,7 @@ class NetworkContextConfigurationBrowserTest
     std::unique_ptr<network::ResourceRequest> request =
         std::make_unique<network::ResourceRequest>();
     request->url = embedded_test_server()->GetURL(kControllablePath);
+    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
     live_during_shutdown_simple_loader_ = network::SimpleURLLoader::Create(
         std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
     live_during_shutdown_simple_loader_helper_ =
@@ -798,6 +800,9 @@ std::unique_ptr<net::test_server::HttpResponse> EchoCookieHeader(
 
 IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest,
                        ThirdPartyCookiesAllowedForExtensions) {
+  // TODO(https://crbug.com/40804030): Remove this when updated to use MV3.
+  extensions::ScopedTestMV2Enabler mv2_enabler;
+
   if (IsRestartStateWithInProcessNetworkService())
     return;
 
@@ -860,6 +865,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest, BasicRequest) {
   std::unique_ptr<network::ResourceRequest> request =
       std::make_unique<network::ResourceRequest>();
   request->url = embedded_test_server()->GetURL("/echo");
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   content::SimpleURLLoaderTestHelper simple_loader_helper;
   std::unique_ptr<network::SimpleURLLoader> simple_loader =
       network::SimpleURLLoader::Create(std::move(request),
@@ -952,6 +958,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest, CacheIsolation) {
   std::unique_ptr<network::ResourceRequest> request =
       std::make_unique<network::ResourceRequest>();
   request->url = request_url;
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   content::SimpleURLLoaderTestHelper simple_loader_helper;
   std::unique_ptr<network::SimpleURLLoader> simple_loader =
       network::SimpleURLLoader::Create(std::move(request),
@@ -974,6 +981,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest, CacheIsolation) {
         std::unique_ptr<network::ResourceRequest> request2 =
             std::make_unique<network::ResourceRequest>();
         request2->url = request_url;
+        request2->credentials_mode = network::mojom::CredentialsMode::kOmit;
         content::SimpleURLLoaderTestHelper simple_loader_helper2;
         std::unique_ptr<network::SimpleURLLoader> simple_loader2 =
             network::SimpleURLLoader::Create(std::move(request2),
@@ -1116,10 +1124,8 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest,
       network::BlockingDnsLookup(network_context(), host_port_pair,
                                  std::move(params), network_anonymization_key);
   EXPECT_EQ(net::OK, result.error);
-  ASSERT_TRUE(result.resolved_addresses.has_value());
-  ASSERT_EQ(1u, result.resolved_addresses->size());
-  EXPECT_EQ(kAddress,
-            result.resolved_addresses.value()[0].ToStringWithoutPort());
+  ASSERT_EQ(1u, result.resolved_addresses.size());
+  EXPECT_EQ(kAddress, result.resolved_addresses[0].ToStringWithoutPort());
   // Make a cache-only request for the same hostname, for each other network
   // context, and make sure no result is returned.
   ForEachOtherContext(
@@ -1147,10 +1153,8 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest,
       network::BlockingDnsLookup(network_context(), host_port_pair,
                                  std::move(params), network_anonymization_key);
   EXPECT_EQ(net::OK, result.error);
-  ASSERT_TRUE(result.resolved_addresses.has_value());
-  ASSERT_EQ(1u, result.resolved_addresses->size());
-  EXPECT_EQ(kAddress,
-            result.resolved_addresses.value()[0].ToStringWithoutPort());
+  ASSERT_EQ(1u, result.resolved_addresses.size());
+  EXPECT_EQ(kAddress, result.resolved_addresses[0].ToStringWithoutPort());
 }
 
 // Visits a URL with an HSTS header, and makes sure it is respected.
@@ -1168,6 +1172,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest, PRE_Hsts) {
       std::make_unique<network::ResourceRequest>();
   request->url = ssl_server.GetURL(
       kHstsHostname, "/set-header?Strict-Transport-Security: max-age%3D600000");
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
 
   content::SimpleURLLoaderTestHelper simple_loader_helper;
   std::unique_ptr<network::SimpleURLLoader> simple_loader =
@@ -1385,6 +1390,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest,
   std::unique_ptr<network::ResourceRequest> request =
       std::make_unique<network::ResourceRequest>();
   request->referrer = kReferrer;
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   ASSERT_TRUE(FetchHeaderEcho("referer", &referrer, std::move(request)));
 
   // SafeBrowsing never sends the referrer since it doesn't need to.
@@ -1404,6 +1410,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest,
   std::unique_ptr<network::ResourceRequest> request2 =
       std::make_unique<network::ResourceRequest>();
   request2->referrer = kReferrer;
+  request2->credentials_mode = network::mojom::CredentialsMode::kOmit;
   ASSERT_TRUE(FetchHeaderEcho("referer", &referrer2, std::move(request2)));
   EXPECT_EQ("None", referrer2);
 }
@@ -1431,6 +1438,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest,
   std::unique_ptr<network::ResourceRequest> request =
       std::make_unique<network::ResourceRequest>();
   request->referrer = kReferrer;
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   ASSERT_TRUE(FetchHeaderEcho("referer", &referrer, std::move(request)));
   EXPECT_EQ("None", referrer);
 }
@@ -1444,6 +1452,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest,
   std::unique_ptr<network::ResourceRequest> request =
       std::make_unique<network::ResourceRequest>();
   request->url = embedded_test_server()->GetURL("/echoheader?Referer");
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   request->referrer = GURL("http://referrer/");
   request->referrer_policy = net::ReferrerPolicy::NO_REFERRER;
   content::SimpleURLLoaderTestHelper simple_loader_helper;
@@ -1622,6 +1631,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest, UploadFile) {
       std::make_unique<network::ResourceRequest>();
   request->method = "POST";
   request->url = embedded_test_server()->GetURL("/echo");
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   content::SimpleURLLoaderTestHelper simple_loader_helper;
   std::unique_ptr<network::SimpleURLLoader> simple_loader =
       network::SimpleURLLoader::Create(std::move(request),
@@ -1672,6 +1682,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationFixedPortBrowserTest,
   // command line switch should make it result in the request being directed to
   // the test server anyways.
   request->url = GURL("http://127.0.0.1/echo");
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   content::SimpleURLLoaderTestHelper simple_loader_helper;
   std::unique_ptr<network::SimpleURLLoader> simple_loader =
       network::SimpleURLLoader::Create(std::move(request),
@@ -1898,6 +1909,7 @@ class NetworkContextConfigurationProxySettingsBrowserTest
       request->url =
           embedded_test_server()->GetURL(base::StringPrintf("foo%u.test", i),
                                          base::StringPrintf("/hung_%u", i));
+      request->credentials_mode = network::mojom::CredentialsMode::kOmit;
 
       content::SimpleURLLoaderTestHelper simple_loader_helper;
       std::unique_ptr<network::SimpleURLLoader> simple_loader =
@@ -2022,6 +2034,7 @@ class NetworkContextConfigurationReportingAndNelBrowserTest
     std::unique_ptr<network::ResourceRequest> request =
         std::make_unique<network::ResourceRequest>();
     request->url = url;
+    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
     request_state->loader = network::SimpleURLLoader::Create(
         std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
     request_state->loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(

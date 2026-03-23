@@ -251,8 +251,8 @@ void PersistedDataImpl::SetDateLastDataHelper(
     }
     if (active_ids.find(id) != active_ids.end()) {
       app_key->Set("dla", datenum);
+      app_key->Remove("iid");
     }
-    app_key->Remove("iid");
   }
   std::move(callback).Run();
 }
@@ -426,11 +426,11 @@ void PersistedDataImpl::SetLastUpdateCheckError(const CategorizedError& error) {
   if (!pref_service) {
     return;
   }
-  pref_service->SetInteger(kLastUpdateCheckErrorPreference, error.code_);
+  pref_service->SetInteger(kLastUpdateCheckErrorPreference, error.code);
   pref_service->SetInteger(kLastUpdateCheckErrorCategoryPreference,
-                           static_cast<int>(error.category_));
+                           static_cast<int>(error.category));
   pref_service->SetInteger(kLastUpdateCheckErrorExtraCode1Preference,
-                           error.extra_);
+                           error.extra);
 }
 
 }  // namespace

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -43,6 +44,7 @@
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/media_stream_request.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_view_host.h"
@@ -433,7 +435,7 @@ void WebContentsDelegateQt::DidFinishNavigation(content::NavigationHandle *navig
 
     if (navigation_handle->HasCommitted() && !navigation_handle->IsErrorPage()) {
         ProfileAdapter *profileAdapter = m_viewClient->profileAdapter();
-        // VisistedLinksMaster asserts !IsOffTheRecord().
+        // VisitedLinksMaster asserts !IsOffTheRecord().
         if (navigation_handle->ShouldUpdateHistory() && profileAdapter->trackVisitedLinks()) {
             for (const GURL &url : navigation_handle->GetRedirectChain())
                 profileAdapter->visitedLinksManager()->addUrl(url);
@@ -467,7 +469,7 @@ void WebContentsDelegateQt::DidFinishNavigation(content::NavigationHandle *navig
             error_code = entry->GetHttpStatusCode();
     didFailLoad(toQt(navigation_handle->GetURL()), error_code, WebEngineError::toQtErrorDescription(error_code));
 
-    // The load will succede as an error-page load later, and we reported the original error above
+    // The load will succeed as an error-page load later, and we reported the original error above
     if (navigation_handle->IsErrorPage()) {
         // Now report we are starting to load an error-page.
 
@@ -748,9 +750,11 @@ void WebContentsDelegateQt::RequestPointerLock(content::WebContents *web_content
         if (!rfh)
             rfh = web_contents->GetPrimaryMainFrame();
 
+        content::PermissionRequestDescription permission_request_descriptor(
+                        content::PermissionDescriptorUtil::CreatePermissionDescriptorForPermissionType(blink::PermissionType::POINTER_LOCK),
+                        user_gesture, rfh->GetLastCommittedOrigin().GetURL());
         permissionManager->RequestPermissions(
-            rfh,
-            content::PermissionRequestDescription(blink::PermissionType::POINTER_LOCK, user_gesture, rfh->GetLastCommittedOrigin().GetURL()),
+            rfh, permission_request_descriptor,
             base::BindOnce([](content::WebContents *web_contents, PermissionManagerQt *manager, const std::vector<blink::mojom::PermissionStatus> &status)
             {
                 Q_ASSERT(status.size() == 1);

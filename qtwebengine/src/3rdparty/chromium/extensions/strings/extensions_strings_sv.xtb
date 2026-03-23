@@ -5,7 +5,6 @@
 <translation id="1140871961407805696">Vänd mot omgivningen</translation>
 <translation id="1196338895211115272">Det gick inte att exportera den privata nyckeln.</translation>
 <translation id="132960226125594336">Det gick inte att läsa in filen <ph name="RELATIVE_PATH" /> för innehållsskriptet eftersom den skulle överskrida den maximala skriptstorleken eller tilläggets maximala totala skriptstorlek.</translation>
-<translation id="1420684932347524586">Oj! Det gick inte att generera en slumpmässig privat RSA-nyckel.</translation>
 <translation id="1445572445564823378">Detta tillägg gör <ph name="PRODUCT_NAME" /> långsammare. Om du vill utnyttja den fulla prestandan i <ph name="PRODUCT_NAME" /> bör du inaktivera tillägget.</translation>
 <translation id="1468038450257740950">WebGL stöds inte.</translation>
 <translation id="1610570795592207282">Det gick inte att läsa in CSS-filen <ph name="RELATIVE_PATH" /> för skriptet.</translation>
@@ -49,12 +48,14 @@
 <translation id="7068383018033524534">Manifestfilen är ogiltig</translation>
 <translation id="7217838517480956708">Administratören av den här enheten kräver att <ph name="EXTENSION_NAME" /> ska installeras. Det kan inte tas bort eller ändras.</translation>
 <translation id="7612608473764576263">Det angivna värdet för den privata nyckeln måste ha giltigt format (PEM-kodad RSA-nyckel i PKCS#8-format).</translation>
+<translation id="7876803335449432072">Det gick inte att läsa in filen <ph name="RELATIVE_PATH" /> för innehållsskriptet. Innehållsskriptets stilmallar kan endast läsas in från stilmallsfiler som stöds, t.ex. .css-filer.</translation>
 <translation id="7939686037314084444">Tillägget lästes inte in korrekt. Det kan eventuellt inte fånga upp nätverksbegäranden.</translation>
 <translation id="7972881773422714442">Alternativ: <ph name="EXTENSIONOPTIONS_TAG_NAME" /></translation>
 <translation id="8035920974645200807">Vänd mot användaren</translation>
 <translation id="8047248493720652249">Det gick inte att namnge nedladdningen <ph name="ATTEMPTED_FILENAME" /> eftersom ett annat tillägg (<ph name="EXTENSION_NAME" />) valde ett annat filnamn <ph name="ACTUAL_FILENAME" />.</translation>
 <translation id="8284835137979141223"><ph name="PRODUCT_NAME" /> från <ph name="VENDOR_NAME" /></translation>
 <translation id="8517576857589387417">Manifestfilen saknas eller kan inte läsas</translation>
+<translation id="8621383749470166852">Det gick inte att läsa in filen <ph name="RELATIVE_PATH" /> för innehållsskriptet. Innehållsskript kan bara läsas in från JavaScript-filer som stöds, till exempel .js-filer.</translation>
 <translation id="8636666366616799973">Paketet är ogiltigt. Information: <ph name="ERROR_MESSAGE" /></translation>
 <translation id="8761756413268424715"><ph name="APP_NAME" /> begär åtkomst till en av dina enheter:</translation>
 <translation id="8885905466771744233">Det finns redan en privat nyckel för det angivna tillägget. Återanvänd den nyckeln eller ta bort den först.</translation>

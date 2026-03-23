@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/bind.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -17,6 +18,7 @@
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/interaction/element_test_util.h"
 #include "ui/base/interaction/element_tracker.h"
+#include "ui/base/interaction/expect_call_in_scope.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/events/base_event_utils.h"
@@ -882,6 +884,9 @@ TEST_F(ElementTrackerViewsTest, WidgetShownAfterAdd) {
       kTestElementID, context));
 }
 
+// ------------------------------------------------------------------
+// Corner Cases
+
 // This is a gross corner case where a Widget might not report IsVisible()
 // during show, but we're still showing views and could conceivably add another
 // view as part of a callback.
@@ -930,6 +935,66 @@ TEST_F(ElementTrackerViewsTest, AddedDuringWidgetShow) {
   widget->Hide();
   EXPECT_TRUE(called);
 }
+
+TEST_F(ElementTrackerViewsTest, AddedBeforeShowDeletedDuringShow) {
+  auto widget = CreateWidget();
+  const auto context = ElementTrackerViews::GetContextForWidget(widget.get());
+  UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, shown);
+  UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, hidden);
+  auto shown_subscription =
+      ui::ElementTracker::GetElementTracker()->AddElementShownCallback(
+          kTestElementID, context, shown.Get());
+  auto hidden_subscription =
+      ui::ElementTracker::GetElementTracker()->AddElementHiddenCallback(
+          kTestElementID, context, hidden.Get());
+  auto* const contents = widget->SetContentsView(std::make_unique<View>());
+  contents->SetProperty(kElementIdentifierKey, kTestElementID);
+  EXPECT_CALL_IN_SCOPE(shown, Run, widget->Show());
+  EXPECT_CALL_IN_SCOPE(hidden, Run, widget.reset());
+}
+
+TEST_F(ElementTrackerViewsTest, AddedAfterShowDeletedDuringShow) {
+  auto widget = CreateWidget();
+  const auto context = ElementTrackerViews::GetContextForWidget(widget.get());
+  UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, shown);
+  UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, hidden);
+  auto shown_subscription =
+      ui::ElementTracker::GetElementTracker()->AddElementShownCallback(
+          kTestElementID, context, shown.Get());
+  auto hidden_subscription =
+      ui::ElementTracker::GetElementTracker()->AddElementHiddenCallback(
+          kTestElementID, context, hidden.Get());
+  auto* const contents = widget->SetContentsView(std::make_unique<View>());
+  EXPECT_CALL_IN_SCOPE(shown, Run, {
+    widget->Show();
+    contents->SetProperty(kElementIdentifierKey, kTestElementID);
+  });
+  EXPECT_CALL_IN_SCOPE(hidden, Run, widget.reset());
+}
+
+TEST_F(ElementTrackerViewsTest, AddedDuringHideThenDeleted) {
+  auto widget = CreateWidget();
+  const auto context = ElementTrackerViews::GetContextForWidget(widget.get());
+  UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, shown);
+  UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, hidden);
+  auto shown_subscription =
+      ui::ElementTracker::GetElementTracker()->AddElementShownCallback(
+          kTestElementID, context, shown.Get());
+  auto hidden_subscription =
+      ui::ElementTracker::GetElementTracker()->AddElementHiddenCallback(
+          kTestElementID, context, hidden.Get());
+  auto contents = std::make_unique<View>();
+  contents->SetProperty(kElementIdentifierKey, kTestElementID);
+  test::WidgetVisibleWaiter waiter(widget.get());
+  widget->Show();
+  waiter.Wait();
+  widget->Hide();
+  widget->SetContentsView(std::move(contents));
+  widget.reset();
+}
+
+// End Corner Cases
+// ------------------------------------------------------------------
 
 TEST_F(ElementTrackerViewsTest, CleansUpWidgetTrackers) {
   auto widget1 = CreateWidget();
@@ -1253,6 +1318,8 @@ class ElementTrackerTwoWidgetTest : public ElementTrackerViewsTest {
 
   void TearDown() override {
     widget2_.reset();
+    // Reset the context override callback so it doesn't affect future tests.
+    ElementTrackerViews::SetContextOverrideCallback(base::NullCallback());
     ElementTrackerViewsTest::TearDown();
   }
 
@@ -1284,7 +1351,7 @@ TEST_F(ElementTrackerTwoWidgetTest, ViewMovedToDifferentWidgetGeneratesEvents) {
   EXPECT_EQ(0, shown2.event_count());
   EXPECT_EQ(0, hidden2.event_count());
   // Move to second widget.
-  view2->AddChildView(button);
+  view2->AddChildViewRaw(button);
   EXPECT_EQ(1, shown.event_count());
   EXPECT_EQ(1, hidden.event_count());
   EXPECT_EQ(1, shown2.event_count());
@@ -1433,7 +1500,7 @@ TEST_F(ElementTrackerTwoWidgetTest, OverrideContextCallbackCollapsesContexts) {
   EXPECT_EQ(1, shown.event_count());
   EXPECT_EQ(0, hidden.event_count());
   // Move to second widget.
-  view2->AddChildView(button);
+  view2->AddChildViewRaw(button);
   EXPECT_EQ(2, shown.event_count());
   EXPECT_EQ(1, hidden.event_count());
   // Destroy the second widget.
@@ -1467,7 +1534,7 @@ TEST_F(ElementTrackerTwoWidgetTest,
   EXPECT_EQ(0, shown2.event_count());
   EXPECT_EQ(0, hidden2.event_count());
   // Move to second widget.
-  view2->AddChildView(button);
+  view2->AddChildViewRaw(button);
   EXPECT_EQ(1, shown.event_count());
   EXPECT_EQ(1, hidden.event_count());
   EXPECT_EQ(1, shown2.event_count());

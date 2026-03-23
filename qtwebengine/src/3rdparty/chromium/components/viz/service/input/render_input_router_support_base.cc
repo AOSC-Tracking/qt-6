@@ -7,6 +7,7 @@
 #include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/trace_event/trace_event.h"
+#include "base/trace_event/typed_macros.h"
 #include "components/input/render_widget_host_input_event_router.h"
 
 namespace viz {
@@ -128,6 +129,10 @@ bool RenderInputRouterSupportBase::IsPointerLocked() {
   // Related to mouse events handling which on VizCompositor which is out of
   // scope currently for InputVizard.
   NOTREACHED();
+}
+
+void RenderInputRouterSupportBase::StopFlingingOnViz() {
+  RenderWidgetHostViewInput::StopFling();
 }
 
 void RenderInputRouterSupportBase::UpdateFrameSinkIdRegistration() {

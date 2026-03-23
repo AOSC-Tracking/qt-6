@@ -20,6 +20,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
+#include "base/notimplemented.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/current_thread.h"
 #include "base/task/thread_pool.h"
@@ -53,6 +54,7 @@
 #include "content/public/browser/web_drag_dest_delegate.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
+#include "ipc/constants.mojom.h"
 #include "net/base/filename_util.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/mojom/drag/drag.mojom.h"
@@ -376,14 +378,14 @@ WebContentsViewAura::OnPerformingDropContext::OnPerformingDropContext(
     std::unique_ptr<DropData> drop_data,
     DropMetadata drop_metadata,
     std::unique_ptr<ui::OSExchangeData> data,
-    base::ScopedClosureRunner end_drag_runner,
+    base::ScopedClosureRunner drop_exit_cleanup,
     std::optional<gfx::PointF> transformed_pt,
     gfx::PointF screen_pt)
     : target_rwh(target_rwh->GetWeakPtr()),
       drop_data(std::move(drop_data)),
       drop_metadata(drop_metadata),
       data(std::move(data)),
-      end_drag_runner(std::move(end_drag_runner)),
+      drop_exit_cleanup(std::move(drop_exit_cleanup)),
       transformed_pt(std::move(transformed_pt)),
       screen_pt(screen_pt) {}
 
@@ -671,7 +673,7 @@ WebContentsViewAura::WebContentsViewAura(
       delegate_(std::move(delegate)),
       drag_dest_delegate_(nullptr),
       current_rvh_for_drag_(ChildProcessHost::kInvalidUniqueID,
-                            MSG_ROUTING_NONE),
+                            IPC::mojom::kRoutingIdNone),
       drag_in_progress_(false),
       init_rwhv_with_null_parent_for_testing_(false) {}
 
@@ -1078,9 +1080,6 @@ void WebContentsViewAura::OnCapturerCountChanged() {
 
 void WebContentsViewAura::FullscreenStateChanged(bool is_fullscreen) {}
 
-void WebContentsViewAura::UpdateWindowControlsOverlay(
-    const gfx::Rect& bounding_rect) {}
-
 BackForwardTransitionAnimationManager*
 WebContentsViewAura::GetBackForwardTransitionAnimationManager() {
   return nullptr;
@@ -1162,6 +1161,14 @@ void WebContentsViewAura::StartDragging(
   DragOperation result_op;
   {
     gfx::NativeView content_native_view = GetContentNativeView();
+    // Make sure event is within the web contents, and the web contents are
+    // visible.
+    if (!content_native_view->GetBoundsInScreen().Contains(
+            event_info.location) ||
+        !content_native_view->IsVisible()) {
+      web_contents_->SystemDragEnded(source_rwh);
+      return;
+    }
     base::CurrentThread::ScopedAllowApplicationTasksInNativeNestedLoop allow;
     result_op =
         aura::client::GetDragDropClient(root_window)
@@ -1182,7 +1189,7 @@ void WebContentsViewAura::StartDragging(
   }
 
   // |this| should still be alive at this point.
-  CHECK(weak_this, base::NotFatalUntil::M130);
+  CHECK(weak_this);
 
   // If drag is still in progress that means we haven't received drop targeting
   // callback yet. So we have to make sure to delay calling EndDrag until drop
@@ -1447,6 +1454,11 @@ void WebContentsViewAura::DragUpdatedCallback(
   if (!target) {
     return;
   }
+
+  if (transformed_pt.has_value()) {
+    web_contents_->PreHandleDragUpdate(*drop_data, transformed_pt.value());
+  }
+
   RenderWidgetHostImpl* target_rwh =
       RenderWidgetHostImpl::From(target->GetRenderWidgetHost());
   if (!drag_security_info_.IsValidDragTarget(target_rwh)) {
@@ -1526,13 +1538,19 @@ aura::client::DragUpdateInfo WebContentsViewAura::OnDragUpdated(
 }
 
 void WebContentsViewAura::OnDragExited() {
-  if (web_contents_->ShouldIgnoreInputEvents())
+  if (web_contents_->ShouldIgnoreInputEvents()) {
+    // Don't compute the results of exiting, but clean up the flag to avoid
+    // hanging the renderer process. See crbug.com/434130454.
+    drag_in_progress_ = false;
     return;
+  }
   CompleteDragExit();
 }
 
 void WebContentsViewAura::CompleteDragExit() {
   drag_in_progress_ = false;
+
+  web_contents_->PreHandleDragExit();
 
   if (current_rwh_for_drag_ && !web_contents_->IsBeingDestroyed() &&
       current_rvh_for_drag_ ==
@@ -1549,6 +1567,11 @@ void WebContentsViewAura::CompleteDragExit() {
   }
 
   current_drag_data_.reset();
+}
+
+void WebContentsViewAura::OnDropExit() {
+  drag_in_progress_ = false;
+  auto end_drag_runner = std::move(end_drag_runner_);
 }
 
 // PerformDropCallback() is called once the user releases the mouse button
@@ -1603,8 +1626,10 @@ void WebContentsViewAura::PerformDropCallback(
     std::unique_ptr<ui::OSExchangeData> data,
     base::WeakPtr<RenderWidgetHostViewBase> target,
     std::optional<gfx::PointF> transformed_pt) {
-  drag_in_progress_ = false;
-  base::ScopedClosureRunner end_drag_runner(std::move(end_drag_runner_));
+  // Exit callback to make sure |drag_in_progress_| is flipped on exit and
+  // |end_drag_runner_| is run after OnGotVirtualFilesAsTempFiles finishes.
+  base::ScopedClosureRunner drop_exit_cleanup(base::BindOnce(
+      &WebContentsViewAura::OnDropExit, weak_ptr_factory_.GetWeakPtr()));
 
   if (!target) {
     return;
@@ -1639,7 +1664,7 @@ void WebContentsViewAura::PerformDropCallback(
 
   OnPerformingDropContext drop_context(
       target_rwh, std::move(current_drag_data_), drop_metadata, std::move(data),
-      std::move(end_drag_runner), transformed_pt, screen_pt);
+      std::move(drop_exit_cleanup), transformed_pt, screen_pt);
 
 #if BUILDFLAG(IS_WIN)
   if (ShouldIncludeVirtualFiles(*drop_context.drop_data) &&

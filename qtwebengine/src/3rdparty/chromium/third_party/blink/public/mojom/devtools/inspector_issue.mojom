@@ -27,6 +27,8 @@ enum InspectorIssueCode {
   kGenericIssue,
   kDeprecationIssue,
   kFederatedAuthUserInfoRequestIssue,
+  kPartitioningBlobURLIssue,
+  kUserReidentificationIssue,
 };
 
 // Information about a cookie that is affected by an issue.
@@ -125,6 +127,7 @@ enum ContentSecurityPolicyViolationType {
     kInlineViolation,
     kEvalViolation,
     kURLViolation,
+    kSRIViolation,
     kTrustedTypesSinkViolation,
     kTrustedTypesPolicyViolation,
     kWasmEvalViolation,
@@ -255,6 +258,8 @@ enum FederatedAuthRequestResult {
   kTypeNotMatching,
   kError,
   kUiDismissedNoEmbargo,
+  kCorsError,
+  kSuppressedBySegmentationPlatform,
 };
 
 struct FederatedAuthRequestIssueDetails {
@@ -287,6 +292,16 @@ struct FederatedAuthUserInfoRequestIssueDetails {
 
 struct BounceTrackingIssueDetails {
   array<string> tracking_sites;
+};
+
+enum PartitioningBlobURLInfo {
+  kBlockedCrossPartitionFetching,
+  kEnforceNoopenerForNavigation,
+};
+
+struct PartitioningBlobURLIssueDetails {
+  url.mojom.Url url;
+  PartitioningBlobURLInfo partitioning_blob_url_info;
 };
 
 struct CookieDeprecationMetadataIssueDetails {
@@ -327,6 +342,18 @@ struct DeprecationIssueDetails {
   AffectedLocation affected_location;
 };
 
+enum UserReidentificationIssueType {
+  kBlockedFrameNavigation,
+  kBlockedSubresource,
+};
+
+// Information for an issue notifying on subresources or navigations that may be
+// blocked for suspected user reidentification.
+struct UserReidentificationIssueDetails {
+  UserReidentificationIssueType type;
+  AffectedRequest? request;
+};
+
 // A collection of optional fields that may store additional data depending
 // on the issue code.
 struct InspectorIssueDetails {
@@ -340,10 +367,12 @@ struct InspectorIssueDetails {
   LowTextContrastIssue? low_text_contrast_details;
   FederatedAuthRequestIssueDetails? federated_auth_request_details;
   BounceTrackingIssueDetails? bounce_tracking_issue_details;
+  PartitioningBlobURLIssueDetails? partitioning_blob_url_issue_details;
   CookieDeprecationMetadataIssueDetails? cookie_deprecation_metadata_issue_details;
   GenericIssueDetails? generic_issue_details;
   DeprecationIssueDetails? deprecation_issue_details;
   FederatedAuthUserInfoRequestIssueDetails? federated_auth_user_info_request_details;
+  UserReidentificationIssueDetails? user_reidentification_issue_details;
   mojo_base.mojom.UnguessableToken? issue_id;
 };
 

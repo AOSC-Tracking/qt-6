@@ -689,7 +689,6 @@ void tst_WaylandCompositor::outputs()
 
     delete output;
     QTRY_COMPARE(outputRemovedSpy.size(), 1);
-    QEXPECT_FAIL("", "FIXME: defaultOutputChanged() is not emitted when the default output is removed", Continue);
     QTRY_COMPARE(defaultOutputSpy.size(), 3);
     compositor.flushClients();
     QTRY_COMPARE(client.m_outputs.size(), 1);

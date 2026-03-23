@@ -204,7 +204,7 @@ void PossiblyFetchBlockedDocWriteScript(
   ExecutionContext* context = element_document.GetExecutionContext();
   FetchParameters params(options.CreateFetchParameters(
       resource->Url(), context->GetSecurityOrigin(), context->GetCurrentWorld(),
-      cross_origin, resource->Encoding(), FetchParameters::kIdleLoad));
+      cross_origin, resource->Encoding(), FetchParameters::kIdleLoad, context));
   params.SetRenderBlockingBehavior(RenderBlockingBehavior::kNonBlocking);
   AddHeader(&params);
 
@@ -216,7 +216,7 @@ void PossiblyFetchBlockedDocWriteScript(
   ScriptResource::Fetch(params, element_document.Fetcher(), nullptr,
                         context->GetIsolate(), ScriptResource::kNoStreaming,
                         kNoCompileHintsProducer, kNoCompileHintsConsumer,
-                        v8_compile_hints::MagicCommentMode::kNever);
+                        v8_compile_hints::MagicCommentMode::kNone);
 }
 
 }  // namespace blink

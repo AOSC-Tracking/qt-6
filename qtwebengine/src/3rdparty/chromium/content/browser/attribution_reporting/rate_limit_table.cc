@@ -23,6 +23,8 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/flat_tree.h"
 #include "base/containers/span.h"
+#include "base/containers/to_vector.h"
+#include "base/feature_list.h"
 #include "base/memory/raw_ref.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
@@ -51,6 +53,11 @@ namespace content {
 
 namespace {
 
+// Kill switch.
+BASE_FEATURE(kAttributionReportingRateLimitCheckSourceTime,
+             "AttributionReportingRateLimitCheckSourceTime",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 bool IsAttribution(RateLimitTable::Scope scope) {
   switch (scope) {
     case RateLimitTable::Scope::kSource:
@@ -66,7 +73,9 @@ bool IsAttribution(RateLimitTable::Scope scope) {
 }  // namespace
 
 RateLimitTable::RateLimitTable(const AttributionResolverDelegate* delegate)
-    : delegate_(
+    : rate_limit_check_source_time_enabled_(base::FeatureList::IsEnabled(
+          kAttributionReportingRateLimitCheckSourceTime)),
+      delegate_(
           raw_ref<const AttributionResolverDelegate>::from_ptr(delegate)) {}
 
 RateLimitTable::~RateLimitTable() {
@@ -160,7 +169,20 @@ bool RateLimitTable::CreateTable(sql::Database* db) {
           "CREATE INDEX rate_limit_attribution_destination_reporting_site_idx "
           "ON rate_limits(scope,destination_site,reporting_site)"
           "WHERE" RATE_LIMIT_ATTRIBUTION_CONDITION;
-  return db->Execute(kRateLimitAttributionDestinationReportingSiteIndexSql);
+  if (!db->Execute(kRateLimitAttributionDestinationReportingSiteIndexSql)) {
+    return false;
+  }
+
+  // Optimizes calls to
+  // `CountUniqueDailyReportingOriginsPerReportingSiteForSource()`.
+  // The time column is not indexed here to save space, since when a table is
+  // narrowed down to sites, most / all of the rows will likely be within the
+  // target time due to frequent cleaning of entries.
+  static constexpr char kRateLimitSourceReportingSiteIndexSql[] =
+      "CREATE INDEX rate_limit_source_reporting_site_idx "
+      "ON rate_limits(reporting_site)"
+      "WHERE scope=0";
+  return db->Execute(kRateLimitSourceReportingSiteIndexSql);
 }
 
 bool RateLimitTable::AddRateLimitForSource(sql::Database* db,
@@ -204,7 +226,7 @@ bool RateLimitTable::AddRateLimit(
   // operations.
   const base::TimeDelta delete_frequency =
       delegate_->GetDeleteExpiredRateLimitsFrequency();
-  DCHECK_GE(delete_frequency, base::TimeDelta());
+  CHECK_GE(delete_frequency, base::TimeDelta());
   const base::Time now = base::Time::Now();
   if (now - last_cleared_ >= delete_frequency) {
     if (!DeleteExpiredRateLimits(db)) {
@@ -285,10 +307,15 @@ RateLimitResult RateLimitTable::AttributionAllowedForAttributionLimit(
 
   const AttributionConfig::RateLimitConfig& rate_limits =
       delegate_->GetRateLimits();
-  DCHECK_GT(rate_limits.time_window, base::TimeDelta());
-  DCHECK_GT(rate_limits.max_attributions, 0);
+  CHECK_GT(rate_limits.time_window, base::TimeDelta());
+  CHECK_GT(rate_limits.max_attributions, 0);
 
-  base::Time min_timestamp = attribution_info.time - rate_limits.time_window;
+  // Note that we intentionally use source time to bound the limit for any
+  // source, which is consistent with the time stored in `AddRateLimit()`.
+  base::Time min_timestamp =
+      (rate_limit_check_source_time_enabled_ ? source.source_time()
+                                             : attribution_info.time) -
+      rate_limits.time_window;
 
   sql::Statement statement(db->GetCachedStatement(
       SQL_FROM_HERE, attribution_queries::kRateLimitAttributionAllowedSql));
@@ -514,7 +541,7 @@ RateLimitTable::GetSourcesToDeactivateForDestinationLimit(
   }
 
   const int limit = delegate_->GetMaxDestinationsPerSourceSiteReportingSite();
-  DCHECK_GT(limit, 0);
+  CHECK_GT(limit, 0);
 
   return SelectDestinations(std::move(destination_datas), limit);
 }
@@ -566,19 +593,12 @@ RateLimitTable::SourceAllowedForDestinationRateLimit(
   // Value is true if the reporting site matched, false otherwise.
   using DestinationSiteMap = base::flat_map<net::SchemefulSite, bool>;
 
-  DestinationSiteMap destination_sites = [&]() {
-    const base::flat_set<net::SchemefulSite>& destinations =
-        source.registration().destination_set.destinations();
-
-    DestinationSiteMap::container_type pairs;
-    pairs.reserve(destinations.size());
-
-    for (const net::SchemefulSite& site : destinations) {
-      pairs.emplace_back(site, true);
-    }
-
-    return DestinationSiteMap(base::sorted_unique, std::move(pairs));
-  }();
+  DestinationSiteMap destination_sites(
+      base::sorted_unique,
+      base::ToVector(source.registration().destination_set.destinations(),
+                     [](const net::SchemefulSite& site) {
+                       return std::make_pair(site, true);
+                     }));
 
   size_t num_with_same_reporting_site = destination_sites.size();
 
@@ -601,10 +621,10 @@ RateLimitTable::SourceAllowedForDestinationRateLimit(
   }
 
   const int global_limit = destination_rate_limit.max_total;
-  DCHECK_GT(global_limit, 0);
+  CHECK_GT(global_limit, 0);
 
   const int reporting_limit = destination_rate_limit.max_per_reporting_site;
-  DCHECK_GT(reporting_limit, 0);
+  CHECK_GT(reporting_limit, 0);
 
   bool global_limit_hit =
       destination_sites.size() > static_cast<size_t>(global_limit);
@@ -645,7 +665,7 @@ RateLimitResult RateLimitTable::SourceAllowedForDestinationPerDayRateLimit(
 
   const int limit =
       delegate_->GetDestinationRateLimit().max_per_reporting_site_per_day;
-  DCHECK_GT(limit, 0);
+  CHECK_GT(limit, 0);
 
   base::flat_set<net::SchemefulSite> destination_sites =
       source.registration().destination_set.destinations();
@@ -668,8 +688,12 @@ RateLimitResult RateLimitTable::AttributionAllowedForReportingOriginLimit(
     const AttributionInfo& attribution_info,
     const StoredSource& source) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Note that we intentionally use source time to bound the limit for any
+  // source, which is consistent with the time stored in `AddRateLimit()`.
   return AllowedForReportingOriginLimit(
-      db, /*is_source=*/false, source.common_info(), attribution_info.time,
+      db, /*is_source=*/false, source.common_info(),
+      rate_limit_check_source_time_enabled_ ? source.source_time()
+                                            : attribution_info.time,
       base::span_from_ref(net::SchemefulSite(attribution_info.context_origin)));
 }
 
@@ -681,7 +705,7 @@ RateLimitResult RateLimitTable::AllowedForReportingOriginLimit(
     base::span<const net::SchemefulSite> destination_sites) {
   const AttributionConfig::RateLimitConfig& rate_limits =
       delegate_->GetRateLimits();
-  DCHECK_GT(rate_limits.time_window, base::TimeDelta());
+  CHECK_GT(rate_limits.time_window, base::TimeDelta());
 
   sql::Statement statement;
 
@@ -697,7 +721,7 @@ RateLimitResult RateLimitTable::AllowedForReportingOriginLimit(
         SQL_FROM_HERE,
         attribution_queries::kRateLimitSelectAttributionReportingOriginsSql));
   }
-  DCHECK_GT(max, 0);
+  CHECK_GT(max, 0);
 
   const std::string serialized_reporting_origin =
       common_info.reporting_origin().Serialize();
@@ -761,6 +785,56 @@ int64_t RateLimitTable::CountUniqueReportingOriginsPerSiteForAttribution(
   return statement.ColumnInt64(0);
 }
 
+int64_t
+RateLimitTable::CountUniqueDailyReportingOriginsPerReportingSiteForSource(
+    sql::Database* db,
+    const net::SchemefulSite& reporting_site,
+    base::Time source_time) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  base::Time min_timestamp =
+      source_time - delegate_->GetRateLimits().origins_per_site_window;
+
+  sql::Statement statement(db->GetCachedStatement(
+      SQL_FROM_HERE,
+      attribution_queries::
+          kRateLimitCountUniqueReportingOriginsPerReportingSiteForSourceSql));
+  statement.BindString(0, reporting_site.Serialize());
+  statement.BindTime(1, min_timestamp);
+
+  if (!statement.Step()) {
+    return -1;
+  }
+
+  return statement.ColumnInt64(0);
+}
+
+int64_t RateLimitTable::
+    CountUniqueDailyReportingOriginsPerDestinationAndReportingSiteForSource(
+        sql::Database* db,
+        const net::SchemefulSite& destination_site,
+        const net::SchemefulSite& reporting_site,
+        base::Time source_time) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  base::Time min_timestamp =
+      source_time - delegate_->GetRateLimits().origins_per_site_window;
+
+  sql::Statement statement(db->GetCachedStatement(
+      SQL_FROM_HERE,
+      attribution_queries::
+          kRateLimitCountUniqueReportingOriginsPerSitesForSourceSql));
+  statement.BindString(0, destination_site.Serialize());
+  statement.BindString(1, reporting_site.Serialize());
+  statement.BindTime(2, min_timestamp);
+
+  if (!statement.Step()) {
+    return -1;
+  }
+
+  return statement.ColumnInt64(0);
+}
+
 bool RateLimitTable::DeleteAttributionRateLimit(
     sql::Database* db,
     Scope scope,
@@ -778,8 +852,8 @@ bool RateLimitTable::DeleteAttributionRateLimit(
 bool RateLimitTable::ClearAllDataInRange(sql::Database* db,
                                          base::Time delete_begin,
                                          base::Time delete_end) {
-  DCHECK(!((delete_begin.is_null() || delete_begin.is_min()) &&
-           delete_end.is_max()));
+  CHECK(!((delete_begin.is_null() || delete_begin.is_min()) &&
+          delete_end.is_max()));
 
   // TODO(linnan): Optimize using a more appropriate index.
   sql::Statement statement(db->GetCachedStatement(

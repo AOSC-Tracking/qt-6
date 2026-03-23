@@ -3,6 +3,42 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## 15.4.0 2025-06-26
+* Support GL_NV_gpu_shader5/GL_ARB_gpu_shader5
+* Remove BUILD_SHARED_LIBS option (defer to built-in variable)
+* Remap discard to OpDemoteToHelperInvocation
+* Fix typos and improve readability of help message
+* Support GLSL_QCOM_tile_shading
+* Emit correct capability for linear swept sphere
+* Support GL_EXT_float8_e5m2_e4m3
+* Move E_SPV_ARM_cooperative_matrix_layouts into GLSL.ext.ARM.h
+* Support GL_ARM_tensors
+
+## 15.3.0 2025-04-24
+* Fix CMake find_package on Windows when building shared libraries
+* Fix crash calling coopMatLoadTensorNV on an array element
+* Avoid reusing array types with stride when no stride is requested
+* Fix non-ASCII comments
+* Support GL_EXT_bfloat16
+* Fix several issues with link-time implicit array size merging
+* Support DebugSourceContinued
+* LiveTraverser no longer traverses switch cases that are statically not accessed
+* Implement optional cross-stage check for inputs with no matching outputs
+
+## 15.2.0 2025-02-24
+* Fix find_package on Windows when BUILD_SHARED_LIBS=ON
+* Emit error if using in/out with struct pointer
+* Emit SPV_EXT_opacity_micromap if GL extension is present
+* Support GL_NV_linear_swept_spheres
+* Support GLSL_EXT_nontemporal_keyword
+* Support GL_NV_cluster_acceleration_structure
+* Support GL_NV_cooperative_vector
+* Check SparseTextureOffset non-const parameters
+* Support GL_EXT_texture_offset_non_const
+* Revert cross-stage check for missing outputs
+* Support EXT_integer_dot_product
+* Add support for OpTypeRayQueryKHR and OpTypeAccelerationStructureKHR to SPVRemapper
+
 ## 15.1.0 2024-12-13
 * Add Vulkan 1.4 target and client
 * Improve conversion of uniform block to push constant

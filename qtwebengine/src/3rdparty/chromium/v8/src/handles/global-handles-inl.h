@@ -6,6 +6,8 @@
 #define V8_HANDLES_GLOBAL_HANDLES_INL_H_
 
 #include "src/handles/global-handles.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/handles/handles-inl.h"
 #include "src/objects/heap-object-inl.h"
 #include "src/objects/tagged.h"
@@ -17,7 +19,7 @@ template <typename T>
 IndirectHandle<T> GlobalHandles::Create(Tagged<T> value) {
   static_assert(is_subtype_v<T, Object>, "static type violation");
   // The compiler should only pick this method if T is not Object.
-  static_assert(!std::is_same<Object, T>::value, "compiler error");
+  static_assert(!std::is_same_v<Object, T>, "compiler error");
   return Cast<T>(Create(Tagged<Object>(value)));
 }
 

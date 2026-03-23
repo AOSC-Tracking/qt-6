@@ -853,6 +853,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1055,7 +1058,7 @@
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_v_loop_filter_luma_neon
 
@@ -1182,7 +1185,7 @@ temp_label_4
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_luma_neon
 
@@ -1374,7 +1377,7 @@ temp_label_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_v_loop_filter_luma_intra_neon
 
@@ -1538,7 +1541,7 @@ temp_label_14
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_luma_intra_neon
 
@@ -1781,7 +1784,7 @@ temp_label_18
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_v_loop_filter_chroma_neon
 
@@ -1865,7 +1868,7 @@ temp_label_24
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma_neon
 
@@ -1980,7 +1983,7 @@ temp_label_30
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma422_neon
 
@@ -2029,7 +2032,7 @@ temp_label_33
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_v_loop_filter_chroma_intra_neon
 
@@ -2098,7 +2101,7 @@ temp_label_38
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma_mbaff_intra_neon
 
@@ -2179,7 +2182,7 @@ temp_label_42
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma_intra_neon
 
@@ -2269,7 +2272,7 @@ temp_label_46
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma422_intra_neon
 
@@ -2313,7 +2316,7 @@ temp_label_48
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_biweight_h264_pixels_16_neon
 
@@ -2499,7 +2502,7 @@ temp_label_61
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_biweight_h264_pixels_8_neon
 
@@ -2645,7 +2648,7 @@ temp_label_73
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_biweight_h264_pixels_4_neon
 
@@ -2852,7 +2855,7 @@ temp_label_92
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_weight_h264_pixels_16_neon
 
@@ -2997,7 +3000,7 @@ temp_label_103
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_weight_h264_pixels_8_neon
 
@@ -3110,7 +3113,7 @@ temp_label_113
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_weight_h264_pixels_4_neon
 
@@ -3279,7 +3282,7 @@ temp_label_130
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_v_loop_filter_chroma_neon_10
 
@@ -3379,7 +3382,7 @@ temp_label_136
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma_neon_10
 
@@ -3510,7 +3513,7 @@ temp_label_142
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma422_neon_10
 
@@ -3561,7 +3564,7 @@ temp_label_145
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_v_loop_filter_chroma_intra_neon_10
 
@@ -3636,7 +3639,7 @@ temp_label_150
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma_mbaff_intra_neon_10
 
@@ -3724,7 +3727,7 @@ temp_label_154
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma_intra_neon_10
 
@@ -3820,7 +3823,7 @@ temp_label_158
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_h_loop_filter_chroma422_intra_neon_10
 

@@ -35,8 +35,6 @@
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/manager.h"
 #include "src/tint/utils/containers/vector.h"
-#include "src/tint/utils/ice/ice.h"
-#include "src/tint/utils/result/result.h"
 
 namespace tint::hlsl::writer::raise {
 namespace {
@@ -100,7 +98,9 @@ struct State {
 }  // namespace
 
 Result<SuccessType> ReplaceDefaultOnlySwitch(core::ir::Module& ir) {
-    auto result = ValidateAndDumpIfNeeded(ir, "hlsl.ReplaceDefaultOnlySwitch");
+    auto result = ValidateAndDumpIfNeeded(
+        ir, "hlsl.ReplaceDefaultOnlySwitch",
+        core::ir::Capabilities{core::ir::Capability::kAllowDuplicateBindings});
     if (result != Success) {
         return result.Failure();
     }

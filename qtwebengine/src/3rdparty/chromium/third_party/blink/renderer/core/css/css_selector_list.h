@@ -23,14 +23,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_SELECTOR_LIST_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_SELECTOR_LIST_H_
 
+#include "base/compiler_specific.h"
 #include "base/types/pass_key.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_selector.h"
@@ -81,7 +77,8 @@ class CORE_EXPORT CSSSelectorList : public GarbageCollected<CSSSelectorList> {
   explicit CSSSelectorList(base::PassKey<CSSSelectorList>) {}
 
   CSSSelectorList(CSSSelectorList&& o) {
-    memcpy(this, o.first_selector_, ComputeLength() * sizeof(CSSSelector));
+    UNSAFE_TODO(
+        memcpy(this, o.first_selector_, ComputeLength() * sizeof(CSSSelector)));
   }
   ~CSSSelectorList() = default;
 
@@ -113,7 +110,7 @@ class CORE_EXPORT CSSSelectorList : public GarbageCollected<CSSSelectorList> {
   }
   const CSSSelector& SelectorAt(wtf_size_t index) const {
     DCHECK(IsValid());
-    return first_selector_[index];
+    return UNSAFE_TODO(first_selector_[index]);
   }
 
   wtf_size_t SelectorIndex(const CSSSelector& selector) const {
@@ -154,10 +151,6 @@ class CORE_EXPORT CSSSelectorList : public GarbageCollected<CSSSelectorList> {
   // or `this` if no re-nested was required.
   CSSSelectorList* Renest(StyleRule* new_parent);
 
-  // True if at least one (complex) selector in the list
-  // is allowed inside '&' (see CSSSelector::IsAllowedInParentPseudo).
-  static bool IsAnyAllowedInParentPseudo(const CSSSelector* selector_list);
-
   CSSSelectorList(const CSSSelectorList&) = delete;
   CSSSelectorList& operator=(const CSSSelectorList&) = delete;
 
@@ -180,9 +173,9 @@ inline CSSSelector* CSSSelectorList::Next(CSSSelector& current) {
   // Skip subparts of compound selectors.
   CSSSelector* last = &current;
   while (!last->IsLastInComplexSelector()) {
-    last++;
+    UNSAFE_TODO(last++);
   }
-  return last->IsLastInSelectorList() ? nullptr : last + 1;
+  return last->IsLastInSelectorList() ? nullptr : UNSAFE_TODO(last + 1);
 }
 
 }  // namespace blink

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtCore/qglobal.h>
 
@@ -18,6 +19,7 @@
 #include <QtCore/qregularexpression.h>
 #include <QtCore/qpointer.h>
 #include <QtCore/private/qcore_mac_p.h>
+#include <QtCore/private/qdarwinsecurityscopedfileengine_p.h>
 
 #include <QtGui/qguiapplication.h>
 #include <QtGui/private/qguiapplication_p.h>
@@ -160,7 +162,8 @@ typedef QSharedPointer<QFileDialogOptions> SharedPointerFileDialogOptions;
     bool selectable = (m_options->acceptMode() == QFileDialogOptions::AcceptSave)
         || [self panel:m_panel shouldEnableURL:url];
 
-    m_panel.nameFieldStringValue = selectable ? info.fileName().toNSString() : @"";
+    if (!openpanel_cast(m_panel))
+        m_panel.nameFieldStringValue = selectable ? info.fileName().toNSString() : @"";
 
     [self updateProperties];
 
@@ -393,14 +396,15 @@ typedef QSharedPointer<QFileDialogOptions> SharedPointerFileDialogOptions;
 {
     if (auto *openPanel = openpanel_cast(m_panel)) {
         QList<QUrl> result;
-        for (NSURL *url in openPanel.URLs) {
-            QString path = QString::fromNSString(url.path).normalized(QString::NormalizationForm_C);
-            result << QUrl::fromLocalFile(path);
-        }
+        for (NSURL *url in openPanel.URLs)
+            result << qt_apple_urlFromPossiblySecurityScopedURL(url);
         return result;
     } else {
-        QString filename = QString::fromNSString(m_panel.URL.path).normalized(QString::NormalizationForm_C);
-        QFileInfo fileInfo(filename);
+        QUrl result = qt_apple_urlFromPossiblySecurityScopedURL(m_panel.URL);
+        if (qt_apple_isSandboxed())
+            return { result }; // Can't tweak suffix
+
+        QFileInfo fileInfo(result.toLocalFile());
 
         if (fileInfo.suffix().isEmpty() && ![self fileInfoMatchesCurrentNameFilter:fileInfo]) {
             // We end up in this situation if we accept a file name without extension
@@ -489,7 +493,7 @@ typedef QSharedPointer<QFileDialogOptions> SharedPointerFileDialogOptions;
         return;
 
     if (m_panel.visible) {
-        const QString selection = QString::fromNSString(m_panel.URL.path);
+        const QString selection = QString::fromNSString(m_panel.URL.path).normalized(QString::NormalizationForm_C);
         if (selection != m_currentSelection) {
             m_currentSelection = selection;
             emit m_helper->currentChanged(QUrl::fromLocalFile(selection));
@@ -729,6 +733,26 @@ bool QCocoaFileDialogHelper::show(Qt::WindowFlags windowFlags, Qt::WindowModalit
         // its own "create directory" dialog that we cannot control.
         // So we need to use the non-native version in this case...
         return false;
+    }
+
+    if (qt_apple_isSandboxed()) {
+        static bool canRead = qt_mac_processHasEntitlement(
+            u"com.apple.security.files.user-selected.read-only"_s);
+        static bool canReadWrite = qt_mac_processHasEntitlement(
+            u"com.apple.security.files.user-selected.read-write"_s);
+
+        if (options()->acceptMode() == QFileDialogOptions::AcceptSave
+            && !canReadWrite) {
+            qWarning() << "Sandboxed application is missing user-selected files"
+                << "read-write entitlement. Falling back to non-native dialog";
+            return false;
+        }
+
+        if (!canReadWrite && !canRead) {
+            qWarning() << "Sandboxed application is missing user-selected files"
+                       << "entitlement. Falling back to non-native dialog";
+            return false;
+        }
     }
 
     createNSOpenSavePanelDelegate();

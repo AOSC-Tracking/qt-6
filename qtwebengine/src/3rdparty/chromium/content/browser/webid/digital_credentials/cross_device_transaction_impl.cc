@@ -5,9 +5,9 @@
 #include "content/browser/webid/digital_credentials/cross_device_transaction_impl.h"
 
 #include <optional>
+#include <variant>
 
 #include "base/functional/bind.h"
-#include "base/functional/overloaded.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "components/device_event_log/device_event_log.h"
@@ -20,6 +20,7 @@
 #include "device/fido/cable/fido_cable_discovery.h"
 #include "device/fido/fido_constants.h"
 #include "device/fido/fido_discovery_base.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 #if BUILDFLAG(IS_MAC)
 #include "base/process/process_info.h"
@@ -224,21 +225,21 @@ void TransactionImpl::OnHaveResponse(
     FIDO_LOG(EVENT) << "Have response from digital identity request.";
     std::move(callback_).Run(std::move(response).value());
   } else {
-    absl::visit(base::Overloaded{
-                    [this](ProtocolError error) {
-                      FIDO_LOG(EVENT)
-                          << "Protocol error from digital identity request: "
-                          << static_cast<int>(error);
-                      std::move(callback_).Run(base::unexpected(error));
-                    },
-                    [this](RemoteError error) {
-                      FIDO_LOG(EVENT)
-                          << "Remote error from digital identity request: "
-                          << static_cast<int>(error);
-                      std::move(callback_).Run(base::unexpected(error));
-                    },
-                },
-                response.error());
+    std::visit(absl::Overload{
+                   [this](ProtocolError error) {
+                     FIDO_LOG(EVENT)
+                         << "Protocol error from digital identity request: "
+                         << static_cast<int>(error);
+                     std::move(callback_).Run(base::unexpected(error));
+                   },
+                   [this](RemoteError error) {
+                     FIDO_LOG(EVENT)
+                         << "Remote error from digital identity request: "
+                         << static_cast<int>(error);
+                     std::move(callback_).Run(base::unexpected(error));
+                   },
+               },
+               response.error());
   }
 }
 

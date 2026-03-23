@@ -17,6 +17,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/gtest_util.h"
 #include "base/test/icu_test_util.h"
+#include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_timeouts.h"
 #include "base/timer/timer.h"
@@ -561,6 +562,17 @@ TEST_F(ScrollViewTest, BoundedViewportSizedToFit) {
   // Make sure the width of |contents| is set properly not to overflow the
   // viewport.
   EXPECT_EQ(96, contents->width());
+}
+
+// Verifies that the scroll view calls post-layout callback on every layout.
+TEST_F(ScrollViewTest, LayoutCallbackCalledOnEveryLayout) {
+  auto mock_post_layout_cb_ =
+      base::MockCallback<base::RepeatingCallback<void(ScrollView*)>>();
+  scroll_view_->RegisterPostLayoutCallback(mock_post_layout_cb_.Get());
+  EXPECT_CALL(mock_post_layout_cb_, Run(scroll_view_.get())).Times(1);
+  InstallContents();
+  ASSERT_FALSE(scroll_view_->GetContentsBounds().IsEmpty());
+  views::test::RunScheduledLayout(scroll_view_.get());
 }
 
 // Verifies that the vertical scrollbar does not unnecessarily appear for a
@@ -2556,7 +2568,7 @@ TEST_P(WidgetScrollViewTestRTLAndLayers, ScrollOffsetWithoutLayers) {
     SCOPED_TRACE(testing::Message("Nesting = ") << i);
     View* child = new View;
     child->SetBoundsRect(kCellRect);
-    deepest_view->AddChildView(child);
+    deepest_view->AddChildViewRaw(child);
     deepest_view = child;
 
     // Add a view in one quadrant. Scrolling just this view should only scroll
@@ -2565,7 +2577,7 @@ TEST_P(WidgetScrollViewTestRTLAndLayers, ScrollOffsetWithoutLayers) {
     // scroll bars, the scroll offset needs to go "a bit more".
     View* partial_view = new View;
     partial_view->SetSize(gfx::Size(kCellWidth / 3, kCellHeight / 3));
-    deepest_view->AddChildView(partial_view);
+    deepest_view->AddChildViewRaw(partial_view);
     partial_view->ScrollViewToVisible();
     int x_offset_in_cell = kCellWidth - partial_view->width();
     if (!scroll_view->horizontal_scroll_bar()->OverlapsContent()) {

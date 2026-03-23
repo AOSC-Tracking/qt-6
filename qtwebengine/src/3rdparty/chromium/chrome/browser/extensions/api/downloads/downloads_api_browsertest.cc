@@ -29,6 +29,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversion_utils.h"
 #include "base/task/single_thread_task_runner.h"
@@ -55,7 +56,6 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/download/download_display.h"
-#include "chrome/browser/ui/extensions/extension_action_test_helper.h"
 #include "chrome/common/extensions/api/downloads.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -81,6 +81,7 @@
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/api_test_utils.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "net/base/data_url.h"
 #include "net/base/mime_util.h"
@@ -370,8 +371,7 @@ class DownloadExtensionTest : public ExtensionApiTest {
     ExtensionDownloadsEventRouter::SetDetermineFilenameTimeoutSecondsForTesting(
         2);
     content::WebContents* tab = chrome::AddSelectedTabWithURL(
-        current_browser(),
-        extension_->GetResourceURL("empty.html"),
+        current_browser(), extension_->GetResourceURL("empty.html"),
         ui::PAGE_TRANSITION_LINK);
     EventRouter::Get(current_browser()->profile())
         ->AddEventListener(downloads::OnDeterminingFilename::kEventName,
@@ -4504,16 +4504,8 @@ void OnDangerPromptCreated(DownloadDangerPrompt* prompt) {
   prompt->InvokeActionForTesting(DownloadDangerPrompt::ACCEPT);
 }
 
-// TODO(https://crbug.com/40304461): Flaky on Mac debug, failing with a timeout.
-#if (BUILDFLAG(IS_MAC) && !defined(NDEBUG))
-#define MAYBE_DownloadExtensionTest_AcceptDanger \
-  DISABLED_DownloadExtensionTest_AcceptDanger
-#else
-#define MAYBE_DownloadExtensionTest_AcceptDanger \
-  DownloadExtensionTest_AcceptDanger
-#endif
 IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
-                       MAYBE_DownloadExtensionTest_AcceptDanger) {
+                       DownloadExtensionTest_AcceptDanger) {
   safe_browsing::FileTypePoliciesTestOverlay scoped_dangerous =
       safe_browsing::ScopedMarkAllFilesDangerousForTesting();
 
@@ -4548,7 +4540,10 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
       base::BindOnce(&OnDangerPromptCreated);
   DownloadsAcceptDangerFunction::OnPromptCreatedForTesting(
       &callback);
-  ExtensionActionTestHelper::Create(current_browser())->Press(GetExtensionId());
+
+  const GURL url = extension()->GetResourceURL("accept_danger.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(current_browser(), url));
+
   observer->WaitForFinished();
 }
 

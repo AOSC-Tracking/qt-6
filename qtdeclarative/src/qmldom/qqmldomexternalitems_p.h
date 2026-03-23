@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLDOMEXTERNALITEMS_P_H
 #define QQMLDOMEXTERNALITEMS_P_H
@@ -60,14 +61,16 @@ public:
     bool iterateDirectSubpaths(const DomItem &self, DirectVisitor visitor) const override
     {
         bool cont = OwningItem::iterateDirectSubpaths(self, visitor);
-        cont = cont && self.dvValueLazyField(visitor, Fields::canonicalFilePath, [this]() {
+        cont = cont && self.invokeVisitorOnLazyField(visitor, Fields::canonicalFilePath, [this]() {
             return canonicalFilePath();
         });
-        cont = cont
-                && self.dvValueLazyField(visitor, Fields::isValid, [this]() { return isValid(); });
+        cont = cont && self.invokeVisitorOnLazyField(visitor, Fields::isValid, [this]() {
+            return isValid();
+        });
         if (!code().isNull())
-            cont = cont
-                    && self.dvValueLazyField(visitor, Fields::code, [this]() { return code(); });
+            cont = cont && self.invokeVisitorOnLazyField(visitor, Fields::code, [this]() {
+                return code();
+            });
         return cont;
     }
 
@@ -255,7 +258,7 @@ public:
     void addModuleImport(const QString &uri, const QString &version, const QString &module);
 
 private:
-    void writeOutDirectives(OutWriter &lw) const;
+    void writeOutDirectives(const DomItem &, OutWriter &lw) const;
 
     /*
     Entities with Legacy prefix are here to support formatting of the discouraged
@@ -277,7 +280,7 @@ private:
 
     struct LegacyPragmaLibrary
     {
-        void writeOut(OutWriter &lw) const;
+        void writeOut(const DomItem &, OutWriter &lw) const;
     };
 
     struct LegacyImport
@@ -287,7 +290,7 @@ private:
         QString version; // used for module import
         QString asIdentifier; // .import ... as T_Identifier
 
-        void writeOut(OutWriter &lw) const;
+        void writeOut(const DomItem &, OutWriter &lw) const;
     };
 
     class LegacyDirectivesCollector : public QQmlJS::Directives
@@ -453,7 +456,7 @@ private:
         std::shared_ptr<QQmlJSTypeResolver> m_typeResolver;
         QQmlJSTypeResolverDependencies m_typeResolverDependencies;
     };
-    friend class QQmlDomAstCreator;
+    friend class QQmlDomAstCreatorBase;
     AST::UiProgram *m_ast; // avoid? would make moving away from it easier
     std::shared_ptr<Engine> m_engine;
     QQmlJSScope::ConstPtr m_handleForPopulation;

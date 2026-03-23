@@ -18,28 +18,35 @@
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
 #include "base/i18n/rtl.h"
+#include "base/no_destructor.h"
+#include "base/notreached.h"
 #include "base/scoped_observation.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_manager.h"
 #include "components/autofill/core/browser/crowdsourcing/mock_autofill_crowdsourcing_manager.h"
 #include "components/autofill/core/browser/crowdsourcing/test_votes_uploader.h"
-#include "components/autofill/core/browser/data_manager/entities/test_entity_data_manager.h"
+#include "components/autofill/core/browser/data_manager/autofill_ai/entity_data_manager.h"
 #include "components/autofill/core/browser/data_manager/test_personal_data_manager.h"
+#include "components/autofill/core/browser/data_manager/valuables/test_valuables_data_manager.h"
+#include "components/autofill/core/browser/data_manager/valuables/valuables_data_manager.h"
 #include "components/autofill/core/browser/data_quality/addresses/test_address_normalizer.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver_factory.h"
-#include "components/autofill/core/browser/integrators/autofill_plus_address_delegate.h"
-#include "components/autofill/core/browser/integrators/mock_autofill_ai_delegate.h"
-#include "components/autofill/core/browser/integrators/mock_autofill_optimization_guide.h"
-#include "components/autofill/core/browser/integrators/mock_fast_checkout_client.h"
+#include "components/autofill/core/browser/integrators/autofill_ai/mock_autofill_ai_manager.h"
+#include "components/autofill/core/browser/integrators/fast_checkout/mock_fast_checkout_client.h"
+#include "components/autofill/core/browser/integrators/identity_credential/identity_credential_delegate.h"
+#include "components/autofill/core/browser/integrators/optimization_guide/mock_autofill_optimization_guide.h"
+#include "components/autofill/core/browser/integrators/password_manager/otp_suggestion_delegate.h"
+#include "components/autofill/core/browser/integrators/password_manager/password_manager_delegate.h"
+#include "components/autofill/core/browser/integrators/plus_addresses/autofill_plus_address_delegate.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/autofill/core/browser/logging/log_router.h"
 #include "components/autofill/core/browser/logging/text_log_receiver.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/form_interactions_ukm_logger.h"
-#include "components/autofill/core/browser/payments/local_card_migration_manager.h"
 #include "components/autofill/core/browser/payments/test_payments_autofill_client.h"
+#include "components/autofill/core/browser/permissions/autofill_ai/autofill_ai_permission_utils.h"
 #include "components/autofill/core/browser/single_field_fillers/autocomplete/mock_autocomplete_history_manager.h"
 #include "components/autofill/core/browser/single_field_fillers/payments/mock_merchant_promo_code_manager.h"
 #include "components/autofill/core/browser/single_field_fillers/single_field_fill_router.h"
@@ -50,11 +57,18 @@
 #include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
 #include "components/autofill/core/browser/ui/payments/card_unmask_prompt_options.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service_test_helper.h"
+#include "components/autofill/core/browser/webdata/valuables/valuables_table.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/device_reauth/mock_device_authenticator.h"
+#include "components/optimization_guide/core/feature_registry/feature_registration.h"
+#include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
 #include "components/optimization_guide/machine_learning_tflite_buildflags.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "components/prefs/pref_registry.h"
 #include "components/prefs/pref_service.h"
+#include "components/signin/public/identity_manager/account_capabilities_test_mutator.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/translate/core/browser/language_state.h"
 #include "components/translate/core/browser/mock_translate_driver.h"
@@ -135,12 +149,17 @@ class TestAutofillClientTemplate : public T {
     return *test_personal_data_manager_.get();
   }
 
-  EntityDataManager* GetEntityDataManager() override {
-    if (!test_entity_data_manager_ &&
-        base::FeatureList::IsEnabled(features::kAutofillAiWithDataSchema)) {
-      test_entity_data_manager_ = std::make_unique<TestEntityDataManager>();
+  ValuablesDataManager* GetValuablesDataManager() override {
+    if (!valuables_data_manager_) {
+      valuables_data_manager_ = std::make_unique<TestValuablesDataManager>();
     }
-    return test_entity_data_manager_.get();
+    return valuables_data_manager_.get();
+  }
+
+  EntityDataManager* GetEntityDataManager() override {
+    return entity_data_manager_non_owning_
+               ? entity_data_manager_non_owning_.get()
+               : entity_data_manager_.get();
   }
 
   MockAutofillOptimizationGuide* GetAutofillOptimizationGuide() const override {
@@ -151,7 +170,7 @@ class TestAutofillClientTemplate : public T {
     mock_autofill_optimization_guide_.reset();
   }
 
-  MockAutofillAiDelegate* GetAutofillAiDelegate() override {
+  MockAutofillAiManager* GetAutofillAiManager() override {
     return mock_autofill_ai_delegate_.get();
   }
 
@@ -165,12 +184,25 @@ class TestAutofillClientTemplate : public T {
     return *single_field_fill_router_;
   }
 
-  MockAutocompleteHistoryManager* GetAutocompleteHistoryManager() override {
+  AutocompleteHistoryManager* GetAutocompleteHistoryManager() override {
     return &mock_autocomplete_history_manager_;
   }
 
   AutofillPlusAddressDelegate* GetPlusAddressDelegate() override {
     return plus_address_delegate_.get();
+  }
+
+  IdentityCredentialDelegate* GetIdentityCredentialDelegate() override {
+    return identity_credential_delegate_.get();
+  }
+
+  PasswordManagerDelegate* GetPasswordManagerDelegate(
+      const autofill::FieldGlobalId& field_id) override {
+    return password_manager_delegate_.get();
+  }
+
+  OtpSuggestionDelegate* GetOtpSuggestionDelegate() override {
+    return otp_suggestion_delegate_.get();
   }
 
   test::AutofillTestingPrefService* GetPrefs() override {
@@ -370,8 +402,9 @@ class TestAutofillClientTemplate : public T {
   }
 
   const AutofillAblationStudy& GetAblationStudy() const override {
-    static const AutofillAblationStudy default_ablation_study("seed");
-    return default_ablation_study;
+    static const base::NoDestructor<AutofillAblationStudy>
+        default_ablation_study("seed");
+    return *default_ablation_study;
   }
 
   bool ShouldFormatForLargeKeyboardAccessory() const override {
@@ -449,14 +482,55 @@ class TestAutofillClientTemplate : public T {
     }
   }
 
+  // Sets up prefs and identity state to simulate an opted-in AutofillAI user.
+  // Returns `true` iff the setup was successful.
+  bool SetUpPrefsAndIdentityForAutofillAi() {
+    SetAutofillProfileEnabled(true);
+    GetPrefs()->registry()->RegisterIntegerPref(
+        optimization_guide::prefs::
+            kAutofillPredictionImprovementsEnterprisePolicyAllowed,
+        base::to_underlying(optimization_guide::model_execution::prefs::
+                                ModelExecutionEnterprisePolicyValue::kAllow),
+        PrefRegistry::LOSSY_PREF);
+
+    identity_test_environment().MakePrimaryAccountAvailable(
+        "foo@gmail.com", signin::ConsentLevel::kSignin);
+    SetCanUseModelExecutionFeatures(true);
+    SetVariationConfigCountryCode(GeoIpCountryCode("US"));
+    return SetAutofillAiOptInStatus(*this, AutofillAiOptInStatus::kOptedIn);
+  }
+
+  // Updates whether the currently signed in primary account can use model
+  // execution features. CHECKs that there is a primary account.
+  void SetCanUseModelExecutionFeatures(bool can_use_model_execution) {
+    AccountInfo account_info = GetIdentityManager()->FindExtendedAccountInfo(
+        GetIdentityManager()->GetPrimaryAccountInfo(
+            signin::ConsentLevel::kSignin));
+    CHECK(!account_info.account_id.empty());
+    AccountCapabilitiesTestMutator(&account_info.capabilities)
+        .set_can_use_model_execution_features(can_use_model_execution);
+    signin::UpdateAccountInfoForAccount(GetIdentityManager(), account_info);
+  }
+
   void set_entity_data_manager(
-      std::unique_ptr<TestEntityDataManager> test_entity_data_manager) {
-    test_entity_data_manager_ = std::move(test_entity_data_manager);
+      std::unique_ptr<EntityDataManager> entity_data_manager) {
+    entity_data_manager_non_owning_ = nullptr;
+    entity_data_manager_ = std::move(entity_data_manager);
+  }
+
+  void set_entity_data_manager(EntityDataManager* entity_data_manager) {
+    entity_data_manager_.reset();
+    entity_data_manager_non_owning_ = entity_data_manager;
   }
 
   void set_payments_autofill_client(
       std::unique_ptr<payments::TestPaymentsAutofillClient> payments_client) {
     payments_autofill_client_ = std::move(payments_client);
+  }
+
+  void set_valuables_data_manager(
+      std::unique_ptr<ValuablesDataManager> valuables_data_manager) {
+    valuables_data_manager_ = std::move(valuables_data_manager);
   }
 
   void set_single_field_fill_router(
@@ -525,6 +599,22 @@ class TestAutofillClientTemplate : public T {
     plus_address_delegate_ = std::move(plus_address_delegate);
   }
 
+  void set_identity_credential_delegate(
+      std::unique_ptr<IdentityCredentialDelegate>
+          identity_credential_delegate) {
+    identity_credential_delegate_ = std::move(identity_credential_delegate);
+  }
+
+  void set_password_manager_delegate(
+      std::unique_ptr<PasswordManagerDelegate> password_manager_delegate) {
+    password_manager_delegate_ = std::move(password_manager_delegate);
+  }
+
+  void set_otp_suggestion_delegate(
+      std::unique_ptr<OtpSuggestionDelegate> otp_suggestion_delegate) {
+    otp_suggestion_delegate_ = std::move(otp_suggestion_delegate);
+  }
+
   void set_suggestion_ui_session_id(
       std::optional<AutofillClient::SuggestionUiSessionId> session_id) {
     suggestion_ui_session_id_ = session_id;
@@ -544,13 +634,18 @@ class TestAutofillClientTemplate : public T {
   signin::IdentityTestEnvironment identity_test_env_;
   raw_ptr<syncer::SyncService> test_sync_service_ = nullptr;
   std::unique_ptr<AutofillPlusAddressDelegate> plus_address_delegate_;
+  std::unique_ptr<IdentityCredentialDelegate> identity_credential_delegate_;
+  std::unique_ptr<PasswordManagerDelegate> password_manager_delegate_;
+  std::unique_ptr<OtpSuggestionDelegate> otp_suggestion_delegate_;
   TestAddressNormalizer test_address_normalizer_;
   std::unique_ptr<::testing::NiceMock<MockAutofillOptimizationGuide>>
       mock_autofill_optimization_guide_ =
           std::make_unique<testing::NiceMock<MockAutofillOptimizationGuide>>();
-  std::unique_ptr<::testing::NiceMock<MockAutofillAiDelegate>>
+  std::unique_ptr<::testing::NiceMock<MockAutofillAiManager>>
       mock_autofill_ai_delegate_ =
-          std::make_unique<testing::NiceMock<MockAutofillAiDelegate>>();
+          std::make_unique<testing::NiceMock<MockAutofillAiManager>>(
+              this,
+              /*strike_database=*/nullptr);
   ::testing::NiceMock<MockAutocompleteHistoryManager>
       mock_autocomplete_history_manager_;
   ::testing::NiceMock<MockFastCheckoutClient> mock_fast_checkout_client_;
@@ -572,7 +667,9 @@ class TestAutofillClientTemplate : public T {
   std::unique_ptr<TestStrikeDatabase> test_strike_database_;
 
   std::unique_ptr<TestPersonalDataManager> test_personal_data_manager_;
-  std::unique_ptr<TestEntityDataManager> test_entity_data_manager_;
+  std::unique_ptr<ValuablesDataManager> valuables_data_manager_;
+  std::unique_ptr<EntityDataManager> entity_data_manager_;
+  raw_ptr<EntityDataManager> entity_data_manager_non_owning_ = nullptr;
   // The below objects must be destroyed before `TestPersonalDataManager`
   // because they keep a reference to it.
   std::unique_ptr<payments::TestPaymentsAutofillClient>
@@ -608,8 +705,6 @@ class TestAutofillClientTemplate : public T {
 
   // Test addresses used to allow developers to test their forms.
   std::vector<AutofillProfile> test_addresses_;
-
-  std::vector<std::string> migration_card_selection_;
 
   std::vector<Suggestion> suggestions_;
 

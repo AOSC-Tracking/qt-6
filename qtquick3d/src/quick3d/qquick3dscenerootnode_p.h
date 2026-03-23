@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QQUICK3DSCENEROOTNODE_P_H
 #define QQUICK3DSCENEROOTNODE_P_H
@@ -31,6 +33,9 @@ public:
 
 private:
     QQuick3DViewport *m_view3D = nullptr;
+
+protected:
+    virtual QSSGRenderGraphObject *updateSpatialNode(QSSGRenderGraphObject *node) final;
 };
 
 QT_END_NAMESPACE

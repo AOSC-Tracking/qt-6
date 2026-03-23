@@ -9,23 +9,23 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/common.h"
-#include "xnnpack/datatype.h"
-#include "xnnpack/log.h"
-#include "xnnpack/node-type.h"
-#include "xnnpack/operator-type.h"
-#include "xnnpack/operator.h"
-#include "xnnpack/subgraph-validation.h"
-#include "xnnpack/subgraph.h"
-#include "pthreadpool.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/datatype.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/node-type.h"
+#include "src/xnnpack/operator-type.h"
+#include "src/xnnpack/operator.h"
+#include "src/xnnpack/subgraph-validation.h"
+#include "src/xnnpack/subgraph.h"
+#include <pthreadpool.h>
 
 static enum xnn_status create_slice_operator(
     const struct xnn_node* node,
-    const struct xnn_value* values,
+    const struct xnn_runtime_value* values,
     size_t num_values,
     struct xnn_operator_data* opdata,
-    struct xnn_code_cache* code_cache,
   xnn_weights_cache_t weights_cache)
 {
   assert(node->num_inputs == 1);
@@ -35,17 +35,16 @@ static enum xnn_status create_slice_operator(
   const uint32_t input_id = node->inputs[0];
   assert(input_id != XNN_INVALID_VALUE_ID);
   assert(input_id < num_values);
-  const struct xnn_value *input_value = &values[input_id];
-  switch (input_value->datatype) {
-    case xnn_datatype_fp16:
+  const struct xnn_runtime_value *input_value = &values[input_id];
+  switch (xnn_datatype_size_bits(input_value->datatype)) {
+    case 8:
+      status = xnn_create_slice_nd_x8(/*flags=*/0, &opdata->operator_objects[0]);
+      break;
+    case 16:
       status = xnn_create_slice_nd_x16(/*flags=*/0, &opdata->operator_objects[0]);
       break;
-    case xnn_datatype_fp32:
+    case 32:
       status = xnn_create_slice_nd_x32(/*flags=*/0, &opdata->operator_objects[0]);
-      break;
-    case xnn_datatype_qint8:
-    case xnn_datatype_quint8:
-      status = xnn_create_slice_nd_x8(/*flags=*/0, &opdata->operator_objects[0]);
       break;
     default:
       XNN_UNREACHABLE;
@@ -53,9 +52,8 @@ static enum xnn_status create_slice_operator(
 
   if (status == xnn_status_success) {
     const int num_dims = node->params.slice.num_dims;
-    opdata->shape2.num_dims = num_dims;
-    memcpy(opdata->offsets, node->params.slice.offsets, num_dims * sizeof(int64_t));
-    memcpy(opdata->sizes, node->params.slice.sizes, num_dims * sizeof(size_t));
+    memcpy(opdata->begins, node->params.slice.begins, num_dims * sizeof(int64_t));
+    memcpy(opdata->ends, node->params.slice.ends, num_dims * sizeof(int64_t));
   }
 
   return status;
@@ -63,7 +61,7 @@ static enum xnn_status create_slice_operator(
 
 static enum xnn_status reshape_slice_operator(
     struct xnn_operator_data* opdata,
-    struct xnn_value* values,
+    struct xnn_runtime_value* values,
     size_t num_values,
     pthreadpool_t threadpool)
 {
@@ -71,37 +69,45 @@ static enum xnn_status reshape_slice_operator(
   const uint32_t output_id = opdata->outputs[0];
   assert(input_id < num_values);
   assert(output_id < num_values);
-  struct xnn_value* output_value = values + output_id;
-  struct xnn_value* input_value = values + input_id;
+  struct xnn_runtime_value* output_value = values + output_id;
+  struct xnn_runtime_value* input_value = values + input_id;
   const size_t num_dims = input_value->shape.num_dims;
-  assert(num_dims == opdata->shape2.num_dims);
   enum xnn_status status = xnn_status_invalid_state;
   const size_t old_workspace_size = opdata->workspace_size;
-  size_t offsets[XNN_MAX_TENSOR_DIMS];
+  size_t offsets[XNN_MAX_TENSOR_DIMS], sizes[XNN_MAX_TENSOR_DIMS];
+  output_value->shape.num_dims = num_dims;
   for (size_t i = 0; i < num_dims; ++i) {
-    if (opdata->offsets[i] < 0) {
-      offsets[i] = opdata->offsets[i] + input_value->shape.dim[i];
+    if (opdata->begins[i] < 0) {
+      offsets[i] = doz(input_value->shape.dim[i], -opdata->begins[i]);
     } else {
-      offsets[i] = opdata->offsets[i];
+      offsets[i] = opdata->begins[i];
     }
+    if (opdata->ends[i] <= 0) {
+      sizes[i] = doz(doz(input_value->shape.dim[i], -opdata->ends[i]), offsets[i]);
+    } else {
+      sizes[i] = doz(opdata->ends[i], offsets[i]);
+    }
+    offsets[i] = max(min(offsets[i], input_value->shape.dim[i]), 0);
+    sizes[i] = max(min(sizes[i], doz(input_value->shape.dim[i], offsets[i])), 0);
+    output_value->shape.dim[i] = sizes[i];
   }
   switch (opdata->operator_objects[0]->type) {
     case xnn_operator_type_slice_nd_x8:
       status = xnn_reshape_slice_nd_x8(
           opdata->operator_objects[0], num_dims,
-          input_value->shape.dim, offsets, opdata->sizes,
+          input_value->shape.dim, offsets, sizes,
           threadpool);
       break;
     case xnn_operator_type_slice_nd_x16:
       status = xnn_reshape_slice_nd_x16(
           opdata->operator_objects[0], num_dims,
-          input_value->shape.dim, offsets, opdata->sizes,
+          input_value->shape.dim, offsets, sizes,
           threadpool);
       break;
     case xnn_operator_type_slice_nd_x32:
       status = xnn_reshape_slice_nd_x32(
           opdata->operator_objects[0], num_dims,
-          input_value->shape.dim, offsets, opdata->sizes,
+          input_value->shape.dim, offsets, sizes,
           threadpool);
       break;
     default:
@@ -110,15 +116,7 @@ static enum xnn_status reshape_slice_operator(
   if (status != xnn_status_success) {
     return status;
   }
-  output_value->shape.num_dims = num_dims;
-  for (size_t i = 0; i < num_dims; ++i) {
-    if (opdata->sizes[i] == 0) {
-      output_value->shape.dim[i] = input_value->shape.dim[i];
-    } else {
-      output_value->shape.dim[i] = opdata->sizes[i];
-    }
-  }
-  const size_t new_size = xnn_tensor_get_size(output_value);
+  const size_t new_size = xnn_runtime_tensor_get_size(output_value);
   if (new_size > output_value->size || opdata->workspace_size > old_workspace_size) {
     output_value->size = new_size;
     return xnn_status_reallocation_required;
@@ -128,7 +126,7 @@ static enum xnn_status reshape_slice_operator(
 
 static enum xnn_status setup_slice_operator(
     const struct xnn_operator_data* opdata,
-    const struct xnn_value* values,
+    const struct xnn_runtime_value* values,
     size_t num_values,
     pthreadpool_t threadpool)
 {
@@ -140,11 +138,11 @@ static enum xnn_status setup_slice_operator(
   assert(output_id != XNN_INVALID_VALUE_ID);
   assert(output_id < num_values);
 
-  const struct xnn_value* input_value = values + input_id;
+  const struct xnn_runtime_value* input_value = values + input_id;
   const void* input_data = input_value->data;
   assert(input_data != NULL);
 
-  const struct xnn_value* output_value = values + output_id;
+  const struct xnn_runtime_value* output_value = values + output_id;
   void* output_data = output_value->data;
   assert(output_data != NULL);
 
@@ -169,12 +167,14 @@ static enum xnn_status setup_slice_operator(
   }
 }
 
-enum xnn_status xnn_define_static_slice_v2(xnn_subgraph_t subgraph,
+enum xnn_status xnn_define_static_slice_v3(xnn_subgraph_t subgraph,
                                            size_t num_dims,
-                                           const int64_t* offsets,
-                                           const size_t* sizes,
+                                           const int64_t* begins,
+                                           const int64_t* ends,
+                                           const int64_t* strides,
                                            uint32_t input_id,
-                                           uint32_t output_id, uint32_t flags) {
+                                           uint32_t output_id,
+                                           uint32_t flags) {
   enum xnn_status status = xnn_subgraph_check_xnnpack_initialized(xnn_node_type_static_slice);
   if (status != xnn_status_success) {
     return status;
@@ -191,18 +191,24 @@ enum xnn_status xnn_define_static_slice_v2(xnn_subgraph_t subgraph,
     return status;
   }
 
-  switch (input_value->datatype) {
-    case xnn_datatype_fp16:
-    case xnn_datatype_fp32:
-    case xnn_datatype_qint8:
-    case xnn_datatype_quint8:
-      break;
-    default:
-      xnn_log_error(
-        "failed to define %s operator with input ID #%" PRIu32 ": unsupported Value datatype %s (%d)",
-        xnn_node_type_to_string(xnn_node_type_static_slice), input_id,
-        xnn_datatype_to_string(input_value->datatype), input_value->datatype);
-      return xnn_status_invalid_parameter;
+  if (!xnn_datatype_is_byte_addressable(input_value->datatype)) {
+    xnn_log_error(
+      "failed to define %s operator with input ID #%" PRIu32 ": unsupported Value datatype %s (%d)",
+      xnn_node_type_to_string(xnn_node_type_static_slice), input_id,
+      xnn_datatype_to_string(input_value->datatype), input_value->datatype);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (strides != NULL) {
+    for (size_t i = 0; i < num_dims; i++) {
+      if (strides[i] != 1) {
+        xnn_log_error(
+          "failed to define %s operator with input ID #%" PRIu32 ": Illegal stride value %" PRIi64 " in dimension #%zu",
+          xnn_node_type_to_string(xnn_node_type_static_slice), input_id,
+          strides[i], i);
+        return xnn_status_invalid_parameter;
+      }
+    }
   }
 
   status = xnn_subgraph_check_output_node_id(xnn_node_type_static_slice, output_id, subgraph->num_values);
@@ -248,8 +254,8 @@ enum xnn_status xnn_define_static_slice_v2(xnn_subgraph_t subgraph,
   node->outputs[0] = output_id;
   node->flags = flags;
   node->params.slice.num_dims = num_dims;
-  memcpy(node->params.slice.offsets, offsets, num_dims * sizeof(int64_t));
-  memcpy(node->params.slice.sizes, sizes, num_dims * sizeof(size_t));
+  memcpy(node->params.slice.begins, begins, num_dims * sizeof(int64_t));
+  memcpy(node->params.slice.ends, ends, num_dims * sizeof(int64_t));
 
   node->create = create_slice_operator;
   node->reshape = reshape_slice_operator;
@@ -272,4 +278,19 @@ enum xnn_status xnn_define_static_slice(
   }
   return xnn_define_static_slice_v2(subgraph, num_dims, signed_offsets, sizes,
                                     input_id, output_id, flags);
+}
+
+enum xnn_status xnn_define_static_slice_v2(xnn_subgraph_t subgraph,
+                                           size_t num_dims,
+                                           const int64_t* offsets,
+                                           const size_t* sizes,
+                                           uint32_t input_id,
+                                           uint32_t output_id, uint32_t flags) {
+  int64_t ends[XNN_MAX_TENSOR_DIMS];
+  for (int i = 0; i < num_dims; i++) {
+    ends[i] = offsets[i] + (int64_t)sizes[i];
+  }
+  return xnn_define_static_slice_v3(
+      subgraph, num_dims, offsets, ends, /*strides*/NULL,
+      input_id, output_id, flags);
 }

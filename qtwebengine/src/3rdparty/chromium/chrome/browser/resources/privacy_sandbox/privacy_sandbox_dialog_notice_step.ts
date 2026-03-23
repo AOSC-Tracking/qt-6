@@ -13,7 +13,6 @@ import './privacy_sandbox_privacy_policy_dialog.js';
 
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {PrivacySandboxDialogBrowserProxy} from './privacy_sandbox_dialog_browser_proxy.js';
 import {PrivacySandboxDialogMixin} from './privacy_sandbox_dialog_mixin.js';
 import {getTemplate} from './privacy_sandbox_dialog_notice_step.html.js';
 
@@ -48,14 +47,6 @@ export class PrivacySandboxDialogNoticeStepElement extends
       },
 
       /**
-       * If true, the privacy policy text is hyperlinked.
-       */
-      isPrivacyPolicyLinkEnabled_: {
-        type: Boolean,
-        value: false,
-      },
-
-      /**
        * If true, the notice page is hidden.
        * On load, this page should not be hidden.
        */
@@ -66,26 +57,14 @@ export class PrivacySandboxDialogNoticeStepElement extends
     };
   }
 
-  private isPrivacyPolicyLinkEnabled_: boolean;
-  private hideNoticePage_: boolean;
-
-  private loadPrivacyPolicyOnExpand_(newValue: boolean, oldValue: boolean) {
-    // When the expand is triggered, if the iframe hasn't been loaded yet,
-    // load it the first time the learn more expand section is clicked.
-    if (newValue && !oldValue) {
-      if (!this.shadowRoot!.querySelector('#privacyPolicyDialog')) {
-        PrivacySandboxDialogBrowserProxy.getInstance()
-            .shouldShowPrivacySandboxPrivacyPolicy()
-            .then(isPrivacyPolicyLinkEnabled => {
-              this.isPrivacyPolicyLinkEnabled_ = isPrivacyPolicyLinkEnabled;
-            });
-      }
-    }
-  }
+  declare private expanded_: boolean;
+  declare private siteSuggestedAdsLearnMoreExpanded_: boolean;
+  declare private adMeasurementLearnMoreExpanded_: boolean;
+  declare private hideNoticePage_: boolean;
 
   private onNoticeSiteSuggestedAdsLearnMoreExpanded_(
       newValue: boolean, oldValue: boolean) {
-    this.loadPrivacyPolicyOnExpand_(newValue, oldValue);
+    this.loadPrivacyPolicyOnExpand(newValue, oldValue);
     this.onNoticeSiteSuggestedAdsLearnMoreExpandedChanged(newValue, oldValue);
   }
 
@@ -98,14 +77,6 @@ export class PrivacySandboxDialogNoticeStepElement extends
 
   private onPrivacyPolicyLinkClicked_() {
     this.hideNoticePage_ = true;
-  }
-
-  private getSettingsButtonsClass_() {
-    return this.equalizedButtons() ? 'tonal-button' : '';
-  }
-
-  private getAckButtonsClass_() {
-    return this.equalizedButtons() ? 'tonal-button' : 'action-button';
   }
 }
 

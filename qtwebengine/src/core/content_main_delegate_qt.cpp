@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "content_main_delegate_qt.h"
 
@@ -11,7 +12,6 @@
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/grit/generated_resources.h"
-#include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -26,7 +26,6 @@
 #include "content_client_qt.h"
 #include "renderer/content_renderer_client_qt.h"
 #include "type_conversion.h"
-#include "web_engine_context.h"
 #include "web_engine_library_info.h"
 
 #if defined(ARCH_CPU_ARM_FAMILY) && (BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX))
@@ -49,10 +48,6 @@
 #endif
 
 #include <QtCore/qcoreapplication.h>
-
-namespace content {
-ContentClient *GetContentClient();
-}
 
 namespace QtWebEngineCore {
 
@@ -191,6 +186,12 @@ content::ContentBrowserClient *ContentMainDelegateQt::CreateContentBrowserClient
 {
     m_browserClient.reset(new ContentBrowserClientQt);
     return m_browserClient.get();
+}
+
+content::ContentGpuClient *ContentMainDelegateQt::CreateContentGpuClient()
+{
+    m_gpuClient.reset(new ContentGpuClientQt);
+    return m_gpuClient.get();
 }
 
 content::ContentRendererClient *ContentMainDelegateQt::CreateContentRendererClient()

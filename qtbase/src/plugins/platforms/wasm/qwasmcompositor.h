@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWASMCOMPOSITOR_H
 #define QWASMCOMPOSITOR_H
@@ -7,6 +8,7 @@
 #include "qwasmwindowstack.h"
 
 #include <qpa/qplatformwindow.h>
+#include <private/qwasmsuspendresumecontrol_p.h>
 
 #include <QMap>
 #include <tuple>
@@ -19,18 +21,6 @@ class QWasmWindow;
 class QWasmScreen;
 
 enum class QWasmWindowTreeNodeChangeType;
-
-class QWasmAnimationFrameHandler
-{
-public:
-    QWasmAnimationFrameHandler(std::function<void(double)> handler);
-    ~QWasmAnimationFrameHandler();
-    int64_t requestAnimationFrame();
-    void cancelAnimationFrame(int64_t id);
-
-private:
-    uint32_t m_handlerIndex;
-};
 
 class QWasmCompositor final : public QObject
 {
@@ -65,8 +55,7 @@ private:
 
     bool m_isEnabled = true;
     QMap<QWasmWindow *, std::tuple<QRect, UpdateRequestDeliveryType>> m_requestUpdateWindows;
-    QWasmAnimationFrameHandler m_animationFrameHandler;
-    int64_t m_requestAnimationFrameId = -1;
+    uint32_t m_drawCallbackHandle = 0;
     bool m_inDeliverUpdateRequest = false;
     static bool m_requestUpdateHoldEnabled;
 };

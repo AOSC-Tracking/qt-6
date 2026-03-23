@@ -6,6 +6,7 @@
 
 #include <set>
 #include <string>
+#include <variant>
 
 #include "base/barrier_closure.h"
 #include "base/check.h"
@@ -14,9 +15,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/functional/overloaded.h"
 #include "base/memory/weak_ptr.h"
-#include "base/not_fatal_until.h"
 #include "components/attribution_reporting/features.h"
 #include "components/browsing_data/content/browsing_data_quota_helper.h"
 #include "components/browsing_data/content/shared_worker_info.h"
@@ -41,7 +40,7 @@
 #include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/trust_tokens.mojom.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/interest_group/interest_group.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -215,7 +214,7 @@ struct StorageRemoverHelper {
       base::OnceClosure completed);
 
  private:
-  // Visitor struct to hold information used for deletion. absl::visit doesn't
+  // Visitor struct to hold information used for deletion. std::visit doesn't
   // support multiple arguments elegantly.
   struct Visitor {
     raw_ptr<StorageRemoverHelper> helper;
@@ -267,17 +266,13 @@ void StorageRemoverHelper::Visitor::operator()<blink::StorageKey>(
                storage::SharedStorageDatabase::OperationResult result) {
               std::move(complete_callback).Run();
             },
-            helper->GetCompleteCallback()));
+            helper->GetCompleteCallback()),
+        storage::SharedStorageDatabase::DataClearSource::kUI);
   }
 
   if (types.Has(BrowsingDataModel::StorageType::kQuotaStorage)) {
-    const blink::mojom::StorageType quota_types[] = {
-        blink::mojom::StorageType::kTemporary,
-        blink::mojom::StorageType::kSyncable};
-    for (auto type : quota_types) {
-      helper->quota_helper_->DeleteStorageKeyData(
-          storage_key, type, helper->GetCompleteCallback());
-    }
+    helper->quota_helper_->DeleteStorageKeyData(storage_key,
+                                                helper->GetCompleteCallback());
   }
 
   if (types.Has(BrowsingDataModel::StorageType::kLocalStorage)) {
@@ -396,7 +391,7 @@ void StorageRemoverHelper::Visitor::operator()<
     const net::device_bound_sessions::SessionKey& data_key) {
   CHECK(types.Has(BrowsingDataModel::StorageType::kDeviceBoundSession));
   helper->storage_partition_->GetDeviceBoundSessionManager()->DeleteSession(
-      data_key);
+      net::device_bound_sessions::kClearBrowsingData, data_key);
 }
 
 void StorageRemoverHelper::RemoveDataKeyEntries(
@@ -414,7 +409,7 @@ void StorageRemoverHelper::RemoveDataKeyEntries(
   // synchronous or asynchronous.
   auto sync_completion = GetCompleteCallback();
   for (const auto& [key, details] : data_key_entries) {
-    absl::visit(Visitor{this, details.storage_types}, key);
+    std::visit(Visitor{this, details.storage_types}, key);
     if (delegate_) {
       delegate_->RemoveDataKey(key, details.storage_types,
                                GetCompleteCallback());
@@ -519,7 +514,7 @@ void OnQuotaStorageLoaded(
   for (const auto& entry : quota_info) {
     model->AddBrowsingData(entry.storage_key,
                            BrowsingDataModel::StorageType::kQuotaStorage,
-                           entry.syncable_usage + entry.temporary_usage);
+                           entry.usage);
   }
   std::move(loaded_callback).Run();
 }
@@ -600,8 +595,8 @@ void OnDeviceBoundSessionsLoaded(
 std::optional<net::SchemefulSite> GetThirdPartyPartitioningSite(
     const BrowsingDataModel::DataKey& data_key) {
   std::optional<net::SchemefulSite> top_level_site = std::nullopt;
-  absl::visit(
-      base::Overloaded{
+  std::visit(
+      absl::Overload{
           [&](const url::Origin&) {},
           [&](const content::InterestGroupManager::InterestGroupDataKey) {},
           [&](const content::AttributionDataModel::DataKey) {},
@@ -664,17 +659,16 @@ BrowsingDataModel::BrowsingDataEntryView::~BrowsingDataEntryView() = default;
 
 // static
 const std::string BrowsingDataModel::GetHost(const DataOwner& data_owner) {
-  return absl::visit(
-      base::Overloaded{
-          [&](const std::string& host) { return host; },
-          [&](const url::Origin& origin) { return origin.host(); }},
+  return std::visit(
+      absl::Overload{[&](const std::string& host) { return host; },
+                     [&](const url::Origin& origin) { return origin.host(); }},
       data_owner);
 }
 
 const url::Origin BrowsingDataModel::GetOriginForDataKey(
     const BrowsingDataModel::DataKey& data_key) {
-  return absl::visit(
-      base::Overloaded{
+  return std::visit(
+      absl::Overload{
           [](const url::Origin& origin) { return origin; },
           [](const content::InterestGroupManager::InterestGroupDataKey
                  interest_group_key) { return interest_group_key.owner; },
@@ -715,13 +709,13 @@ const url::Origin BrowsingDataModel::GetOriginForDataKey(
 
 bool BrowsingDataModel::BrowsingDataEntryView::Matches(
     const url::Origin& origin) const {
-  return absl::visit(base::Overloaded{[&](const std::string& entry_host) {
-                                        return entry_host == origin.host();
-                                      },
-                                      [&](const url::Origin& entry_origin) {
-                                        return entry_origin == origin;
-                                      }},
-                     *data_owner);
+  return std::visit(absl::Overload{[&](const std::string& entry_host) {
+                                     return entry_host == origin.host();
+                                   },
+                                   [&](const url::Origin& entry_origin) {
+                                     return entry_origin == origin;
+                                   }},
+                    *data_owner);
 }
 
 std::optional<net::SchemefulSite>
@@ -756,15 +750,10 @@ bool BrowsingDataModel::Iterator::operator==(const Iterator& other) const {
          inner_iterator_ == other.inner_iterator_;
 }
 
-bool BrowsingDataModel::Iterator::operator!=(const Iterator& other) const {
-  return !operator==(other);
-}
-
 BrowsingDataModel::BrowsingDataEntryView
 BrowsingDataModel::Iterator::operator*() const {
   DCHECK(outer_iterator_ != outer_end_iterator_);
-  CHECK(inner_iterator_ != outer_iterator_->second.end(),
-        base::NotFatalUntil::M130);
+  CHECK(inner_iterator_ != outer_iterator_->second.end());
   return BrowsingDataEntryView(outer_iterator_->first, inner_iterator_->first,
                                inner_iterator_->second);
 }
@@ -872,7 +861,7 @@ void BrowsingDataModel::AddBrowsingData(const DataKey& data_key,
                                         uint64_t cookie_count,
                                         bool blocked_third_party) {
   DataOwner data_owner =
-      absl::visit(GetDataOwner(delegate_.get(), storage_type), data_key);
+      std::visit(GetDataOwner(delegate_.get(), storage_type), data_key);
 
   // Find the existing entry if it exists, constructing any missing components.
   auto& entry = browsing_data_entries_[data_owner][data_key];
@@ -999,11 +988,11 @@ bool BrowsingDataModel::IsBlockedByThirdPartyCookieBlocking(
 void BrowsingDataModel::PopulateFromDisk(base::OnceClosure finished_callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   bool is_shared_storage_enabled =
-      base::FeatureList::IsEnabled(blink::features::kSharedStorageAPI);
+      base::FeatureList::IsEnabled(network::features::kSharedStorageAPI);
   bool is_shared_dictionary_enabled = base::FeatureList::IsEnabled(
       network::features::kCompressionDictionaryTransportBackend);
   bool is_interest_group_enabled =
-      base::FeatureList::IsEnabled(blink::features::kInterestGroupStorage);
+      base::FeatureList::IsEnabled(network::features::kInterestGroupStorage);
   bool is_attribution_reporting_enabled = base::FeatureList::IsEnabled(
       attribution_reporting::features::kConversionMeasurement);
   bool is_private_aggregation_enabled =

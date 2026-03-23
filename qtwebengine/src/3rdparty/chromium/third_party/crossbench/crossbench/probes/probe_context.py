@@ -10,13 +10,15 @@ import datetime as dt
 from typing import (TYPE_CHECKING, Generic, Iterable, Iterator, Optional,
                     TypeVar)
 
-from crossbench import plt
+from typing_extensions import override
+
 from crossbench.probes.results import (BrowserProbeResult, EmptyProbeResult,
                                        LocalProbeResult, ProbeResult)
 
 if TYPE_CHECKING:
   from selenium.webdriver.common.options import BaseOptions
 
+  from crossbench import plt
   from crossbench.browsers.browser import Browser
   from crossbench.path import AnyPath, LocalPath
   from crossbench.probes.probe import Probe
@@ -46,8 +48,8 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
     self._result_origin = result_origin
     self._is_active: bool = False
     self._is_success: bool = False
-    self._start_time: Optional[dt.datetime] = None
-    self._stop_time: Optional[dt.datetime] = None
+    self._start_time: dt.datetime | None = None
+    self._stop_time: dt.datetime | None = None
 
   def set_start_time(self, start_datetime: dt.datetime) -> None:
     assert self._start_time is None
@@ -89,14 +91,12 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
     return self.browser.host_platform
 
   @property
-  @abc.abstractmethod
   def browser(self) -> Browser:
-    pass
+    return self._result_origin.browser
 
   @property
-  @abc.abstractmethod
   def runner(self) -> Runner:
-    pass
+    return self._result_origin.runner
 
   @property
   @abc.abstractmethod
@@ -128,9 +128,8 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
     pass
 
   @property
-  @abc.abstractmethod
   def local_result_path(self) -> LocalPath:
-    pass
+    return self.host_platform.local_path(self.result_path)
 
   @property
   def name(self) -> str:
@@ -200,28 +199,19 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     return self._run
 
   @property
+  @override
   def result_origin(self) -> ResultOrigin:
     return self._run
 
   @property
+  @override
   def session(self) -> BrowserSessionRunGroup:
     return self._run.session
 
   @property
-  def browser(self) -> Browser:
-    return self._run.browser
-
-  @property
-  def runner(self) -> Runner:
-    return self._run.runner
-
-  @property
+  @override
   def result_path(self) -> AnyPath:
     return self._default_result_path
-
-  @property
-  def local_result_path(self) -> LocalPath:
-    return self.host_platform.local_path(self.result_path)
 
   def setup_selenium_options(self, options: BaseOptions) -> None:
     """
@@ -231,6 +221,7 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     del options
 
   @abc.abstractmethod
+  @override
   def start(self) -> None:
     """
     Called immediately before starting the given Run, after the browser started.
@@ -251,6 +242,7 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     """
 
   @abc.abstractmethod
+  @override
   def stop(self) -> None:
     """
     Called immediately after finishing the given Run with the browser still
@@ -261,6 +253,7 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     return None
 
   @abc.abstractmethod
+  @override
   def teardown(self) -> ProbeResult:
     """
     Called after stopping all probes and shutting down the browser.
@@ -290,17 +283,16 @@ class ProbeSessionContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     return self._session.get_default_probe_result_path(self._probe)
 
   @property
+  @override
   def session(self) -> BrowserSessionRunGroup:
     return self._session
 
   @property
+  @override
   def result_origin(self) -> ResultOrigin:
     return self._session
 
   @property
-  def browser(self) -> Browser:
-    return self._session.browser
-
-  @property
+  @override
   def result_path(self) -> AnyPath:
     return self._default_result_path

@@ -163,9 +163,10 @@ static const SSL_CIPHER *choose_cipher(SSL_HANDSHAKE *hs,
   // comment about |in_group_flags| in the |SSLCipherPreferenceList|
   // struct.
   const bool *in_group_flags;
-  // group_min contains the minimal index so far found in a group, or -1 if no
-  // such value exists yet.
-  int group_min = -1;
+  // best_index contains the index of the best matching cipher suite found so
+  // far, indexed into |allow|. If |best_index| is |SIZE_MAX|, no matching
+  // cipher suite has been found yet.
+  size_t best_index = SIZE_MAX;
 
   const SSLCipherPreferenceList *server_pref =
       hs->config->cipher_list ? hs->config->cipher_list.get()
@@ -176,12 +177,13 @@ static const SSL_CIPHER *choose_cipher(SSL_HANDSHAKE *hs,
     allow = client_pref;
   } else {
     prio = client_pref;
-    in_group_flags = NULL;
+    in_group_flags = nullptr;
     allow = server_pref->ciphers.get();
   }
 
   for (size_t i = 0; i < sk_SSL_CIPHER_num(prio); i++) {
     const SSL_CIPHER *c = sk_SSL_CIPHER_value(prio, i);
+    const bool in_group = in_group_flags != nullptr && in_group_flags[i];
 
     size_t cipher_index;
     if (  // Check if the cipher is supported for the current version.
@@ -192,27 +194,22 @@ static const SSL_CIPHER *choose_cipher(SSL_HANDSHAKE *hs,
         (c->algorithm_auth & mask_a) &&  //
         // Check the cipher is in the |allow| list.
         sk_SSL_CIPHER_find(allow, &cipher_index, c)) {
-      if (in_group_flags != NULL && in_group_flags[i]) {
-        // This element of |prio| is in a group. Update the minimum index found
-        // so far and continue looking.
-        if (group_min == -1 || (size_t)group_min > cipher_index) {
-          group_min = cipher_index;
-        }
-      } else {
-        if (group_min != -1 && (size_t)group_min < cipher_index) {
-          cipher_index = group_min;
-        }
-        return sk_SSL_CIPHER_value(allow, cipher_index);
+      // Within a group, |allow|'s preference order applies.
+      if (best_index == SIZE_MAX || best_index > cipher_index) {
+        best_index = cipher_index;
       }
     }
 
-    if (in_group_flags != NULL && !in_group_flags[i] && group_min != -1) {
-      // We are about to leave a group, but we found a match in it, so that's
-      // our answer.
-      return sk_SSL_CIPHER_value(allow, group_min);
+    // We are about to leave a (possibly singleton) group, but we found a match
+    // in it, so that's our answer.
+    if (!in_group && best_index != SIZE_MAX) {
+      return sk_SSL_CIPHER_value(allow, best_index);
     }
   }
 
+  // The final cipher suite must end a group, so, if we found a match, we must
+  // have returned early above.
+  assert(best_index == SIZE_MAX);
   OPENSSL_PUT_ERROR(SSL, SSL_R_NO_SHARED_CIPHER);
   return nullptr;
 }
@@ -245,11 +242,10 @@ static TLS12ServerParams choose_params(SSL_HANDSHAKE *hs,
     // ECDSA keys must additionally be checked against the peer's supported
     // curve list.
     int key_type = EVP_PKEY_id(cred->pubkey.get());
-    if (hs->config->check_ecdsa_curve && key_type == EVP_PKEY_EC) {
-      EC_KEY *ec_key = EVP_PKEY_get0_EC_KEY(cred->pubkey.get());
+    if (key_type == EVP_PKEY_EC) {
       uint16_t group_id;
-      if (!ssl_nid_to_group_id(
-              &group_id, EC_GROUP_get_curve_name(EC_KEY_get0_group(ec_key))) ||
+      if (!ssl_nid_to_group_id(&group_id,
+                               EVP_PKEY_get_ec_curve_nid(cred->pubkey.get())) ||
           std::find(hs->peer_supported_group_list.begin(),
                     hs->peer_supported_group_list.end(),
                     group_id) == hs->peer_supported_group_list.end()) {
@@ -273,9 +269,12 @@ static TLS12ServerParams choose_params(SSL_HANDSHAKE *hs,
 
   TLS12ServerParams params;
   params.cipher = choose_cipher(hs, client_pref, mask_k, mask_a);
-  if (params.cipher == nullptr) {
+  if (params.cipher == nullptr ||
+      (cred != nullptr &&
+       !ssl_credential_matches_requested_issuers(hs, cred))) {
     return TLS12ServerParams();
   }
+  // Only report the selected signature algorithm if it will be used.
   if (ssl_cipher_requires_server_key_exchange(params.cipher) &&
       ssl_cipher_uses_certificate_auth(params.cipher)) {
     params.signature_algorithm = sigalg;
@@ -532,8 +531,8 @@ static enum ssl_hs_wait_t do_read_client_hello(SSL_HANDSHAKE *hs) {
   }
 
   SSL_CLIENT_HELLO client_hello;
-  if (!ssl_client_hello_init(ssl, &client_hello, msg.body)) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+  if (!SSL_parse_client_hello(ssl, &client_hello, CBS_data(&msg.body),
+                              CBS_len(&msg.body))) {
     ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
     return ssl_hs_error;
   }
@@ -736,7 +735,7 @@ static enum ssl_hs_wait_t do_select_parameters(SSL_HANDSHAKE *hs) {
     return ssl_hs_error;
   }
   Array<SSL_CREDENTIAL *> creds;
-  if (!ssl_get_credential_list(hs, &creds)) {
+  if (!ssl_get_full_credential_list(hs, &creds)) {
     return ssl_hs_error;
   }
   TLS12ServerParams params;
@@ -764,7 +763,7 @@ static enum ssl_hs_wait_t do_select_parameters(SSL_HANDSHAKE *hs) {
   hs->new_cipher = params.cipher;
   hs->signature_algorithm = params.signature_algorithm;
 
-  // |ssl_client_hello_init| checks that |client_hello.session_id| is not too
+  // |SSL_parse_client_hello| checks that |client_hello.session_id| is not too
   // large.
   hs->session_id.CopyFrom(
       Span(client_hello.session_id, client_hello.session_id_len));
@@ -833,18 +832,10 @@ static enum ssl_hs_wait_t do_select_parameters(SSL_HANDSHAKE *hs) {
       hs->new_session->group_id = group_id;
     }
 
-    // Determine whether to request a client certificate.
-    hs->cert_request = !!(hs->config->verify_mode & SSL_VERIFY_PEER);
-    // Only request a certificate if Channel ID isn't negotiated.
-    if ((hs->config->verify_mode & SSL_VERIFY_PEER_IF_NO_OBC) &&
-        hs->channel_id_negotiated) {
-      hs->cert_request = false;
-    }
-    // CertificateRequest may only be sent in certificate-based ciphers.
-    if (!ssl_cipher_uses_certificate_auth(hs->new_cipher)) {
-      hs->cert_request = false;
-    }
-
+    // Determine whether to request a client certificate. CertificateRequest may
+    // only be sent in certificate-based ciphers.
+    hs->cert_request = (hs->config->verify_mode & SSL_VERIFY_PEER) &&
+                       ssl_cipher_uses_certificate_auth(hs->new_cipher);
     if (!hs->cert_request) {
       // OpenSSL returns X509_V_OK when no certificates are requested. This is
       // classed by them as a bug, but it's assumed by at least NGINX.

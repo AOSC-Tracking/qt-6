@@ -37,6 +37,11 @@ qt_feature("quick-designer" PRIVATE
     LABEL "Support for Qt Quick Designer"
     PURPOSE "Provides support for the Qt Quick Designer in Qt Creator."
 )
+qt_feature("quick-dialogs" PRIVATE
+    SECTION "Qt Quick"
+    LABEL "Support for Qt Quick Dialogs"
+    PURPOSE "Allows you to create and interact with system dialogs from QML."
+)
 qt_feature("quick-flipable" PRIVATE
     SECTION "Qt Quick"
     LABEL "Flipable item"
@@ -119,6 +124,12 @@ qt_feature("quick-draganddrop" PUBLIC
     PURPOSE "Drag and drop support for Qt Quick"
     CONDITION ( QT_FEATURE_draganddrop ) AND ( QT_FEATURE_regularexpression )
 )
+qt_feature("quick-vectorimage" PRIVATE
+    SECTION "Qt Quick"
+    LABEL "VectorImage item"
+    PURPOSE "Provides the VectorImage item."
+    CONDITION TARGET Qt::Svg AND QT_FEATURE_quick_path
+)
 
 qt_feature("quick-pixmap-cache-threaded-download" PUBLIC
     SECTION "Qt Quick"
@@ -130,6 +141,7 @@ qt_configure_add_summary_section(NAME "Qt Quick")
 qt_configure_add_summary_entry(ARGS "quick-animatedimage")
 qt_configure_add_summary_entry(ARGS "quick-canvas")
 qt_configure_add_summary_entry(ARGS "quick-designer")
+qt_configure_add_summary_entry(ARGS "quick-dialogs")
 qt_configure_add_summary_entry(ARGS "quick-flipable")
 qt_configure_add_summary_entry(ARGS "quick-gridview")
 qt_configure_add_summary_entry(ARGS "quick-listview")
@@ -141,4 +153,5 @@ qt_configure_add_summary_entry(ARGS "quick-positioners")
 qt_configure_add_summary_entry(ARGS "quick-repeater")
 qt_configure_add_summary_entry(ARGS "quick-shadereffect")
 qt_configure_add_summary_entry(ARGS "quick-sprite")
+qt_configure_add_summary_entry(ARGS "quick-vectorimage")
 qt_configure_end_summary_section() # end of "Qt Quick" section

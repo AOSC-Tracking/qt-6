@@ -388,7 +388,7 @@ public:
         ENUM_VALUE_1 = 1,
         ENUM_VALUE_2 = 2
     };
-    Q_ENUMS(Controller1Enum)
+    Q_ENUM(Controller1Enum)
 
     Controller1(QObject *parent = nullptr) : QObject(parent), m_string("Controller #1"),
         m_enumVal(ENUM_VALUE_1)
@@ -408,7 +408,7 @@ public:
         ENUM_VALUE_1 = 111,
         ENUM_VALUE_2 = 222
     };
-    Q_ENUMS(Controller2Enum)
+    Q_ENUM(Controller2Enum)
 
     Controller2(QObject *parent = nullptr) : QObject(parent), m_string("Controller #2"),
         m_enumVal(ENUM_VALUE_1)
@@ -602,7 +602,7 @@ void tst_qqmlmetatype::unregisterAttachedProperties()
 
         const QQmlType attachedType = QQmlMetaType::qmlType("QtQuick/KeyNavigation",
                                                             QTypeRevision::fromVersion(2, 2));
-        QCOMPARE(attachedType.attachedPropertiesType(QQmlEnginePrivate::get(&e)),
+        QCOMPARE(attachedType.attachedPropertiesType(QQmlTypeLoader::get(&e)),
                  attachedType.metaObject());
 
         QScopedPointer<QObject> obj(c.create());

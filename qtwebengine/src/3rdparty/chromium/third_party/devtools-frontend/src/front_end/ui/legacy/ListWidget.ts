@@ -1,6 +1,8 @@
 // Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import './Toolbar.js';
 
@@ -45,7 +47,7 @@ const UIStrings = {
    * @description Text for screen reader to announce that an item has been removed.
    */
   removedItem: 'Item has been removed',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/ListWidget.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -62,8 +64,8 @@ export class ListWidget<T> extends VBox {
   private editElement: Element|null;
   private emptyPlaceholder: Element|null;
   private isTable: boolean;
-  constructor(delegate: Delegate<T>, delegatesFocus: boolean|undefined = true, isTable: boolean = false) {
-    super(true, delegatesFocus);
+  constructor(delegate: Delegate<T>, delegatesFocus = true, isTable = false) {
+    super({useShadowDom: true, delegatesFocus});
     this.registerRequiredCSS(listWidgetStyles);
     this.delegate = delegate;
 
@@ -142,16 +144,16 @@ export class ListWidget<T> extends VBox {
     const element = this.elements[index];
 
     const previous = element.previousElementSibling;
-    const previousIsSeparator = previous && previous.classList.contains('list-separator');
+    const previousIsSeparator = previous?.classList.contains('list-separator');
 
     const next = element.nextElementSibling;
-    const nextIsSeparator = next && next.classList.contains('list-separator');
+    const nextIsSeparator = next?.classList.contains('list-separator');
 
     if (previousIsSeparator && (nextIsSeparator || !next)) {
-      (previous as Element).remove();
+      previous?.remove();
     }
     if (nextIsSeparator && !previous) {
-      (next as Element).remove();
+      next?.remove();
     }
     element.remove();
 
@@ -208,7 +210,7 @@ export class ListWidget<T> extends VBox {
       const index = this.elements.indexOf(element);
       this.element.focus();
       this.delegate.removeItemRequested(this.items[index], index);
-      ARIAUtils.alert(i18nString(UIStrings.removedItem));
+      ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.removedItem));
       if (this.elements.length >= 1) {
         // focus on the next item in the list, or the last item if we're removing the last item
         (this.elements[Math.min(index, this.elements.length - 1)] as HTMLElement).focus();
@@ -267,7 +269,7 @@ export class ListWidget<T> extends VBox {
     this.stopEditing();
     if (editItem !== null) {
       this.delegate.commitEdit(editItem, editor, isNew);
-      ARIAUtils.alert(i18nString(UIStrings.changesSaved));
+      ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.changesSaved));
       if (this.elements[focusElementIndex]) {
         (this.elements[focusElementIndex] as HTMLElement).focus();
       }
@@ -283,7 +285,7 @@ export class ListWidget<T> extends VBox {
     if (this.editElement) {
       this.editElement.classList.remove('hidden');
     }
-    if (this.editor && this.editor.element.parentElement) {
+    if (this.editor?.element.parentElement) {
       this.editor.element.remove();
     }
 
@@ -314,13 +316,13 @@ export class Editor<T> {
   private commitButton: Buttons.Button.Button;
   private readonly cancelButton: Buttons.Button.Button;
   private errorMessageContainer: HTMLElement;
-  private readonly controls: EditorControl[];
-  private readonly controlByName: Map<string, EditorControl>;
-  private readonly validators: ((arg0: T, arg1: number, arg2: EditorControl) => ValidatorResult)[];
-  private commit: (() => void)|null;
-  private cancel: (() => void)|null;
-  private item: T|null;
-  private index: number;
+  private readonly controls: EditorControl[] = [];
+  private readonly controlByName = new Map<string, EditorControl>();
+  private readonly validators: Array<(arg0: T, arg1: number, arg2: EditorControl) => ValidatorResult> = [];
+  private commit: (() => void)|null = null;
+  private cancel: (() => void)|null = null;
+  private item: T|null = null;
+  private index = -1;
 
   constructor() {
     this.element = document.createElement('div');
@@ -363,15 +365,6 @@ export class Editor<T> {
         callback();
       }
     }
-
-    this.controls = [];
-    this.controlByName = new Map();
-    this.validators = [];
-
-    this.commit = null;
-    this.cancel = null;
-    this.item = null;
-    this.index = -1;
   }
 
   contentElement(): Element {
@@ -381,7 +374,7 @@ export class Editor<T> {
   createInput(
       name: string, type: string, title: string,
       validator: (arg0: T, arg1: number, arg2: EditorControl) => ValidatorResult): HTMLInputElement {
-    const input = (createInput('', type) as HTMLInputElement);
+    const input = (createInput('', type));
     input.placeholder = title;
     input.addEventListener('input', this.validateControls.bind(this, false), false);
     input.setAttribute('jslog', `${VisualLogging.textField().track({change: true, keydown: 'Enter'}).context(name)}`);

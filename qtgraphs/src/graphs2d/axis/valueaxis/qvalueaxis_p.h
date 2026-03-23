@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //  W A R N I N G
 //  -------------
@@ -28,6 +30,7 @@ public:
     qreal min() override { return m_min; }
     qreal max() override { return m_max; }
     void setRange(qreal min,qreal max) override;
+    void calculateVisualRange();
 
 protected:
     void setMin(const QVariant &min) override;
@@ -44,6 +47,8 @@ private:
     qreal m_tickInterval;
     qreal m_zoom = 1.0;
     qreal m_pan = 0.0;
+    qreal m_visualMin = m_min;
+    qreal m_visualMax = m_max;
     Q_DECLARE_PUBLIC(QValueAxis)
 };
 

@@ -71,9 +71,6 @@ class MockGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
   }
 
   gpu::SharedImageInterface* SharedImageInterface() override { return sii_; }
-  gpu::GpuMemoryBufferManager* GpuMemoryBufferManager() override {
-    return nullptr;
-  }
 
   void SetVideoFrameOutputFormat(const OutputFormat video_frame_output_format) {
     video_frame_output_format_ = video_frame_output_format;
@@ -95,11 +92,6 @@ class MockGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
   std::unique_ptr<VideoEncodeAccelerator> CreateVideoEncodeAccelerator()
       override;
 
-  const std::vector<raw_ptr<gfx::GpuMemoryBuffer, VectorExperimental>>&
-  created_memory_buffers() {
-    return created_memory_buffers_;
-  }
-
  private:
   base::Lock lock_;
   OutputFormat video_frame_output_format_ = OutputFormat::YV12;
@@ -109,9 +101,6 @@ class MockGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
   bool fail_to_map_gpu_memory_buffer_ = false;
 
   raw_ptr<gpu::SharedImageInterface> sii_;
-
-  std::vector<raw_ptr<gfx::GpuMemoryBuffer, VectorExperimental>>
-      created_memory_buffers_;
 };
 
 }  // namespace media

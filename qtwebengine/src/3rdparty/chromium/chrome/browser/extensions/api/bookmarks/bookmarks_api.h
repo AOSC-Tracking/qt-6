@@ -15,9 +15,12 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/managed_bookmark_service_factory.h"
 #include "chrome/browser/extensions/api/bookmarks_core/bookmarks_function.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/event_router_factory.h"
 #include "extensions/browser/extension_function.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 
@@ -28,10 +31,11 @@ class FilePath;
 }
 
 namespace bookmarks {
-class BookmarkNode;
 class BookmarkModel;
+class BookmarkNode;
+class BookmarkPermanentNode;
 class ManagedBookmarkService;
-}
+}  // namespace bookmarks
 
 namespace content {
 class BrowserContext;
@@ -73,6 +77,8 @@ class BookmarkEventRouter : public bookmarks::BookmarkModelObserver {
   void BookmarkNodeFaviconChanged(const bookmarks::BookmarkNode* node) override;
   void BookmarkNodeChildrenReordered(
       const bookmarks::BookmarkNode* node) override;
+  void BookmarkPermanentNodeVisibilityChanged(
+      const bookmarks::BookmarkPermanentNode* node) override;
   void ExtensiveBookmarkChangesBeginning() override;
   void ExtensiveBookmarkChangesEnded() override;
 
@@ -108,13 +114,21 @@ class BookmarksAPI : public BrowserContextKeyedAPI,
   raw_ptr<content::BrowserContext> browser_context_;
 
   // BrowserContextKeyedAPI implementation.
-  static const char* service_name() {
-    return "BookmarksAPI";
-  }
+  static const char* service_name() { return "BookmarksAPI"; }
   static const bool kServiceIsNULLWhileTesting = true;
 
   // Created lazily upon OnListenerAdded.
   std::unique_ptr<BookmarkEventRouter> bookmark_event_router_;
+};
+
+template <>
+struct BrowserContextFactoryDependencies<BookmarksAPI> {
+  static void DeclareFactoryDependencies(
+      BrowserContextKeyedAPIFactory<BookmarksAPI>* factory) {
+    factory->DependsOn(BookmarkModelFactory::GetInstance());
+    factory->DependsOn(EventRouterFactory::GetInstance());
+    factory->DependsOn(ManagedBookmarkServiceFactory::GetInstance());
+  }
 };
 
 class BookmarksGetFunction : public BookmarksFunction {
@@ -227,7 +241,7 @@ class BookmarksCreateFunction : public BookmarksFunction {
 
  private:
   // Helper to create a bookmark node from a CreateDetails object. If a node
-  // can't be created based on the given details, sets |error| and returns
+  // can't be created based on the given details, sets `error` and returns
   // nullptr.
   const bookmarks::BookmarkNode* CreateBookmarkNode(
       bookmarks::BookmarkModel* model,

@@ -22,8 +22,8 @@
 # layers and interceptors.
 
 import os
-from generators.vulkan_object import Command
-from generators.base_generator import BaseGenerator
+from vulkan_object import Command
+from base_generator import BaseGenerator
 from generators.generator_utils import PlatformGuardHelper
 
 # This class is a container for any source code, data, or other behavior that is necessary to
@@ -81,7 +81,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
         'vkEnumerateDeviceLayerProperties',
         'vkEnumerateDeviceExtensionProperties',
         # Functions that are handled explicitly due to chassis architecture violations
-        # Note: If added, may need to add to skip_intercept_id_functions list as well
+        # Note: If added, may need to add to skip_intercept_id_functions list as well (in dispatch_vector_generator.py)
         'vkCreateGraphicsPipelines',
         'vkCreateComputePipelines',
         'vkCreateRayTracingPipelinesNV',
@@ -89,6 +89,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
         'vkCreatePipelineLayout',
         'vkCreateShaderModule',
         'vkCreateShadersEXT',
+        'vkGetShaderBinaryDataEXT',
         'vkAllocateDescriptorSets',
         'vkCreateBuffer',
         'vkQueuePresentKHR',
@@ -101,14 +102,6 @@ class LayerChassisOutputGenerator(BaseGenerator):
         'vkGetValidationCacheDataEXT',
         'vkGetPhysicalDeviceToolProperties',
         'vkGetPhysicalDeviceToolPropertiesEXT',
-    )
-
-    extended_query_exts = (
-        'VK_KHR_get_physical_device_properties2',
-        'VK_KHR_external_semaphore_capabilities',
-        'VK_KHR_external_fence_capabilities',
-        'VK_KHR_external_memory_capabilities',
-        'VK_KHR_get_memory_requirements2',
     )
 
     def __init__(self):
@@ -171,14 +164,6 @@ class LayerChassisOutputGenerator(BaseGenerator):
     def generateMethods(self, want_instance):
         out = []
 
-        out.append('// We make many internal dispatch calls to extended query functions which can depend on the API version\n')
-        for extended_query_ext in self.extended_query_exts:
-            for command in self.vk.extensions[extended_query_ext].commands:
-                if command.instance != want_instance:
-                    continue
-                parameters = (command.cPrototype.split('(')[1])[:-2] # leaves just the parameters
-                out.append(f'{command.returnType} Dispatch{command.alias[2:]}Helper({parameters}) const;\n')
-
         guard_helper = PlatformGuardHelper()
         for command in [x for x in self.vk.commands.values() if x.name not in self.ignore_functions and 'ValidationCache' not in x.name]:
             if command.instance != want_instance:
@@ -226,22 +211,8 @@ class LayerChassisOutputGenerator(BaseGenerator):
             namespace vvl::base {
             thread_local WriteLockGuard* Device::record_guard{};
 
-            ''')
-        for extended_query_ext in self.extended_query_exts:
-            for command in self.vk.extensions[extended_query_ext].commands:
-                parameters = (command.cPrototype.split('(')[1])[:-2] # leaves just the parameters
-                arguments = ','.join([x.name for x in command.params])
-                dispatch = 'dispatch_instance_' if command.instance else 'dispatch_device_'
-                dispatch_class = 'Instance' if command.instance else 'Device'
-                out.append(f'''\n{command.returnType} {dispatch_class}::Dispatch{command.alias[2:]}Helper({parameters}) const {{
-                    if (api_version >= VK_API_VERSION_1_1) {{
-                        return {dispatch}->{command.alias[2:]}({arguments});
-                    }} else {{
-                        return {dispatch}->{command.name[2:]}({arguments});
-                    }}
-                }}
-                ''')
-        out.append('} // namespace vvl::base\n')
+            } // namespace vvl::base
+        ''')
         self.write("".join(out))
 
 
@@ -251,14 +222,12 @@ class LayerChassisOutputGenerator(BaseGenerator):
             #include "chassis/chassis.h"
             #include <array>
             #include <cstring>
-            #include <mutex>
 
             #include "chassis/dispatch_object.h"
             #include "chassis/validation_object.h"
+            #include "generated/dispatch_vector.h"
+            #include "utils/vk_layer_extension_utils.h"
             #include "layer_options.h"
-            #include "state_tracker/descriptor_sets.h"
-            #include "chassis/chassis_modification_state.h"
-            #include "core_checks/core_validation.h"
 
             #include "profiling/profiling.h"
 
@@ -281,44 +250,44 @@ class LayerChassisOutputGenerator(BaseGenerator):
         out.append('namespace vulkan_layer_chassis {')
         guard_helper = PlatformGuardHelper()
         out.append('''
-static const VkLayerProperties global_layer = {
-    OBJECT_LAYER_NAME,
-    VK_LAYER_API_VERSION,
-    1,
-    "LunarG validation Layer",
-};
+            static const VkLayerProperties global_layer = {
+                OBJECT_LAYER_NAME,
+                VK_HEADER_VERSION_COMPLETE,
+                1,
+                "LunarG validation Layer",
+            };
 
-// These functions reference generated data so they cannot be part of chassis_main.cpp
-VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceLayerProperties(uint32_t* pCount, VkLayerProperties* pProperties) {
-    return util_GetLayerProperties(1, &global_layer, pCount, pProperties);
-}
+            // These functions reference generated data so they cannot be part of chassis_main.cpp
+            VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceLayerProperties(uint32_t* pCount, VkLayerProperties* pProperties) {
+                return util_GetLayerProperties(1, &global_layer, pCount, pProperties);
+            }
 
-VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t* pCount,
-                                                              VkLayerProperties* pProperties) {
-    return util_GetLayerProperties(1, &global_layer, pCount, pProperties);
-}
+            VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t* pCount,
+                                                                        VkLayerProperties* pProperties) {
+                return util_GetLayerProperties(1, &global_layer, pCount, pProperties);
+            }
 
-VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pCount,
-                                                                    VkExtensionProperties* pProperties) {
-    if (pLayerName && !strcmp(pLayerName, global_layer.layerName)) {
-        return util_GetExtensionProperties(static_cast<uint32_t>(kInstanceExtensions.size()), kInstanceExtensions.data(), pCount,
-                                           pProperties);
-    }
+            VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pCount,
+                                                                                VkExtensionProperties* pProperties) {
+                if (pLayerName && !strcmp(pLayerName, global_layer.layerName)) {
+                    return util_GetExtensionProperties(static_cast<uint32_t>(kInstanceExtensions.size()), kInstanceExtensions.data(), pCount,
+                                                    pProperties);
+                }
 
-    return VK_ERROR_LAYER_NOT_PRESENT;
-}
+                return VK_ERROR_LAYER_NOT_PRESENT;
+            }
 
-VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char* pLayerName,
-                                                                  uint32_t* pCount, VkExtensionProperties* pProperties) {
-    if (pLayerName && !strcmp(pLayerName, global_layer.layerName)) {
-        return util_GetExtensionProperties(static_cast<uint32_t>(kDeviceExtensions.size()), kDeviceExtensions.data(), pCount,
-                                           pProperties);
-    }
+            VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char* pLayerName,
+                                                                            uint32_t* pCount, VkExtensionProperties* pProperties) {
+                if (pLayerName && !strcmp(pLayerName, global_layer.layerName)) {
+                    return util_GetExtensionProperties(static_cast<uint32_t>(kDeviceExtensions.size()), kDeviceExtensions.data(), pCount,
+                                                    pProperties);
+                }
 
-    assert(physicalDevice);
-    auto layer_data = vvl::dispatch::GetData(physicalDevice);
-    return layer_data->instance_dispatch_table.EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pCount, pProperties);
-}
+                assert(physicalDevice);
+                auto layer_data = vvl::dispatch::GetData(physicalDevice);
+                return layer_data->instance_dispatch_table.EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pCount, pProperties);
+            }
             ''')
 
         for command in [x for x in self.vk.commands.values() if x.name not in self.ignore_functions and x.name not in self.manual_functions]:
@@ -351,31 +320,59 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
             out.append(f'ErrorObject error_obj(vvl::Func::{command.name}, VulkanTypedHandle({command.params[0].name}, kVulkanObjectType{command.params[0].type[2:]}));\n')
 
             # Generate pre-call validation source code
-            out.append('''{
-                VVL_ZoneScopedN("PreCallValidate");
-            ''')
+            out.append(f'{{\nVVL_ZoneScopedN("PreCallValidate_{command.name}");')
             if not command.instance:
-                out.append(f'for (const auto& vo : {dispatch}->intercept_vectors[InterceptIdPreCallValidate{command.name[2:]}]) {{\n')
-                out.append('    auto lock = vo->ReadLock();\n')
+                out.append(f'''
+                           for (const auto& vo : {dispatch}->intercept_vectors[InterceptIdPreCallValidate{command.name[2:]}]) {{
+                                if (!vo) {{
+                                    continue;
+                                }}
+                                auto lock = vo->ReadLock();
+                            ''')
             else:
-                out.append(f'for (const auto& vo : {dispatch}->object_dispatch) {{\n')
-            out.append(f'    skip |= vo->PreCallValidate{command.name[2:]}({paramsList}, error_obj);\n')
-            out.append(f'    if (skip) {return_map[command.returnType]}\n')
-            out.append('}\n')
+                out.append(f'''
+                            for (const auto& vo : {dispatch}->object_dispatch) {{
+                                if (!vo) {{
+                                    continue;
+                                }}
+                            ''')
+
+            out.append(f'skip |= vo->PreCallValidate{command.name[2:]}({paramsList}, error_obj);\n')
+            out.append(f'if (skip) {return_map[command.returnType]}\n')
+            out.append('   }\n')
             out.append('}\n')
 
             # Generate pre-call state recording source code
             out.append(f'RecordObject record_obj(vvl::Func::{command.name});\n')
-            out.append('''{
-                VVL_ZoneScopedN("PreCallRecord");
-            ''')
+            out.append(f'{{\nVVL_ZoneScopedN("PreCallRecord_{command.name}");')
+            if "QueueSubmit" in command.name:
+                out.append(f'''
+                    VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), queue, "gpu_PreCallRecord{command.name}", pre_call_record_gpu_zone);
+                ''')
+
             if not command.instance:
-                out.append(f'for (auto& vo : {dispatch}->intercept_vectors[InterceptIdPreCallRecord{command.name[2:]}]) {{\n')
-                out.append('    auto lock = vo->WriteLock();\n')
+                out.append(f'''
+                           for (auto& vo : {dispatch}->intercept_vectors[InterceptIdPreCallRecord{command.name[2:]}]) {{
+                                if (!vo) {{
+                                    continue;
+                                }}
+                                auto lock = vo->WriteLock();
+                            ''')
             else:
-                out.append(f'for (auto& vo : {dispatch}->object_dispatch) {{\n')
+                out.append(f'''
+                           for (auto& vo : {dispatch}->object_dispatch) {{
+                                if (!vo) {{
+                                    continue;
+                                }}
+                            ''')
+
             out.append(f'vo->PreCallRecord{command.name[2:]}({paramsList}, record_obj);\n')
-            out.append('    }\n')
+            out.append('   }\n')
+            if "QueueSubmit" in command.name:
+                out.append('''
+                    VVL_TracyVkNamedZoneEnd(pre_call_record_gpu_zone, queue);
+                ''')
+
             out.append('}\n')
 
             # Insert pre-dispatch debug utils function call
@@ -393,28 +390,20 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
                 out.append(f'{command.returnType} result;')
 
             # Tracy profiler
-            out.append('''{
-                VVL_ZoneScopedN("Dispatch");
-            ''')
-            gpu_begin_render_commands = ["BeginRender"]
-            if any(s in command.name for s in gpu_begin_render_commands):
-                out.append(f'VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), commandBuffer, "gpu_{command.name[10:]}");\n')
+            out.append(f'{{\nVVL_ZoneScopedN("Dispatch_{command.name}");\n')
 
-            assignResult = f'result = ' if (command.returnType != 'void') else ''
+            if "QueueSubmit" in command.name:
+                out.append(f'''
+                    VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), queue, "gpu_{command.name}", submit_gpu_zone);
+                ''')
+            assignResult = 'result = ' if (command.returnType != 'void') else ''
             method_name = command.name.replace('vk', f'{dispatch}->')
             out.append(f'        {assignResult}{method_name}({paramsList});\n')
 
             # Tracy profiler
-            gpu_end_render_commands = ["EndRender"]
-            if any(s in command.name for s in gpu_end_render_commands):
-                out.append(f'VVL_TracyVkNamedZoneEnd(commandBuffer);\n')
-
-
-            # Tracy submit GPU queries reset command buffer
             if "QueueSubmit" in command.name:
-                out.append('''#if defined(VVL_TRACY_GPU)
-                    TracyVkCollector::TrySubmitCollectCb(queue);
-                #endif
+                out.append('''
+                    VVL_TracyVkNamedZoneEnd(submit_gpu_zone, queue);
                 ''')
             out.append('}\n')
 
@@ -435,14 +424,33 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
                 out.append('record_obj.device_address = result;\n')
 
             # Generate post-call object processing source code
-            out.append('''{
-                VVL_ZoneScopedN("PostCallRecord");
-            ''')
+            out.append(f'{{\nVVL_ZoneScopedN("PostCallRecord_{command.name}");\n')
+            if "QueueSubmit" in command.name:
+                out.append(f'''
+                    VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), queue, "gpu_PostCallRecord{command.name}", post_call_record_gpu_zone);
+                ''')
+
+            # Because each intercept is a copy of vvl::base::Device, we need to update it for each,
+            # even if they don't intercept this command.
+            if not command.instance and command.errorCodes and 'VK_ERROR_DEVICE_LOST' in command.errorCodes:
+                out.append(f'''
+                    if (result == VK_ERROR_DEVICE_LOST) {{
+                       for (auto& vo : {dispatch}->object_dispatch) {{
+                            vo->is_device_lost = true;
+                        }}
+                    }}
+                ''')
 
             if not command.instance:
-                out.append(f'for (auto& vo : {dispatch}->intercept_vectors[InterceptIdPostCallRecord{command.name[2:]}]) {{\n')
+                out.append(f'for (auto& vo : {dispatch}->intercept_vectors[InterceptIdPostCallRecord{command.name[2:]}]) {{')
             else:
-                out.append(f'for (auto& vo : {dispatch}->object_dispatch) {{\n')
+                out.append(f'for (auto& vo : {dispatch}->object_dispatch) {{')
+            out.append('''
+                       if (!vo) {
+                          continue;
+                       }
+                       ''')
+
 
             # These commands perform blocking operations during PostRecord phase. We might need to
             # release base::Device's lock for the period of blocking operation to avoid deadlocks.
@@ -463,17 +471,18 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
                 else:
                     out.append('vvl::base::Device::BlockingOperationGuard lock(vo);\n')
 
-            # Because each intercept is a copy of vvl::base::Device, we need to update it for each
-            if not command.instance and command.errorCodes and 'VK_ERROR_DEVICE_LOST' in command.errorCodes:
-                out.append('''
-                    if (result == VK_ERROR_DEVICE_LOST) {
-                        vo->is_device_lost = true;
-                    }
-                ''')
-
             out.append(f'vo->PostCallRecord{command.name[2:]}({paramsList}, record_obj);\n')
             out.append('    }\n')
+            if "QueueSubmit" in command.name:
+                out.append('''
+                    VVL_TracyVkNamedZoneEnd(post_call_record_gpu_zone, queue);
+                ''')
             out.append('}\n')
+            if "QueueSubmit" in command.name:
+                out.append('''#if defined(VVL_TRACY_GPU)
+                    TracyVkCollector::TrySubmitCollectCb(queue);
+                #endif
+                ''')
 
             # Return result variable, if any.
             if command.returnType != 'void':
@@ -497,15 +506,15 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
         out.extend(guard_helper.add_guard(None))
 
         out.append('''
-// Map of intercepted ApiName to its associated function data
-#ifdef _MSC_VER
-#pragma warning( suppress: 6262 ) // VS analysis: this uses more than 16 kiB, which is fine here at global scope
-#endif
+            // Map of intercepted ApiName to its associated function data
+            #ifdef _MSC_VER
+            #pragma warning( suppress: 6262 ) // VS analysis: this uses more than 16 kiB, which is fine here at global scope
+            #endif
 
-const vvl::unordered_map<std::string, function_data> &GetNameToFuncPtrMap() {
-    static const vvl::unordered_map<std::string, function_data> name_to_func_ptr_map = {
-    {"vk_layerGetPhysicalDeviceProcAddr", {kFuncTypeInst, (void*)GetPhysicalDeviceProcAddr}},
-''')
+            const vvl::unordered_map<std::string, function_data> &GetNameToFuncPtrMap() {
+                static const vvl::unordered_map<std::string, function_data> name_to_func_ptr_map = {
+                {"vk_layerGetPhysicalDeviceProcAddr", {kFuncTypeInst, (void*)GetPhysicalDeviceProcAddr}},
+            ''')
         for command in [x for x in self.vk.commands.values() if x.name not in self.ignore_functions]:
             out.extend(guard_helper.add_guard(command.protect))
             out.append(f'    {{"{command.name}", {{{self.getApiFunctionType(command)}, (void*){command.name[2:]}}}}},\n')

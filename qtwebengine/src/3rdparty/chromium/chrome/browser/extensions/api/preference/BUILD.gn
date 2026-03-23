@@ -5,8 +5,8 @@
 import("//chrome/common/features.gni")
 import("//extensions/buildflags/buildflags.gni")
 
-assert(enable_extensions,
-       "Cannot depend on extensions because enable_extensions=false.")
+assert(enable_extensions_core,
+       "Cannot depend on extensions because enable_extensions_core=false.")
 
 source_set("preference") {
   sources = [
@@ -22,7 +22,7 @@ source_set("preference") {
     "//chrome/browser/profiles",
     "//components/autofill/core/common",
     "//components/prefs",
-    "//components/privacy_sandbox:tracking_protection_prefs",
+    "//components/privacy_sandbox:features",
     "//extensions/browser",
     "//extensions/browser/api/content_settings",
     "//extensions/common",

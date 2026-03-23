@@ -2,20 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "ui/base/webui/web_ui_util.h"
 
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/check.h"
 #include "base/i18n/rtl.h"
-#include "base/json/json_string_value_serializer.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/escape.h"
 #include "base/strings/string_number_conversions.h"
@@ -253,12 +252,11 @@ std::string GetLocalizedHtml(std::string_view html_template,
 
   // Inject data to the UI that will be used to populate loadTimeData upon
   // initialization.
-  std::string json;
-  JSONStringValueSerializer serializer(&json);
-  serializer.Serialize(strings);
+  std::optional<std::string> json = base::WriteJson(strings);
+  CHECK(json);
   output.append("<script>");
   output.append("var loadTimeDataRaw = ");
-  output.append(json);
+  output.append(*json);
   output.append(";");
   output.append("</script>");
 

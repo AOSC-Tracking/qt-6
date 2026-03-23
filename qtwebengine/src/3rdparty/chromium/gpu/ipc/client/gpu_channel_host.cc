@@ -13,10 +13,12 @@
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "build/build_config.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/ipc/client/client_shared_image_interface.h"
 #include "gpu/ipc/common/command_buffer_id.h"
+#include "gpu/ipc/common/command_buffer_trace_utils.h"
 #include "gpu/ipc/common/gpu_watchdog_timeout.h"
 #include "ipc/ipc_channel_mojo.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
@@ -80,12 +82,26 @@ uint32_t GpuChannelHost::OrderingBarrier(
   AutoLock lock(deferred_message_lock_);
 
   if (pending_ordering_barrier_ &&
-      pending_ordering_barrier_->route_id != route_id)
+      pending_ordering_barrier_->route_id != route_id) {
     EnqueuePendingOrderingBarrier();
-  if (!pending_ordering_barrier_)
-    pending_ordering_barrier_.emplace();
+  }
 
-  pending_ordering_barrier_->deferred_message_id = next_deferred_message_id_++;
+  unsigned int trace_event_flags = TRACE_EVENT_FLAG_FLOW_OUT;
+  if (!pending_ordering_barrier_) {
+    pending_ordering_barrier_.emplace();
+    pending_ordering_barrier_->deferred_message_id =
+        next_deferred_message_id_++;
+  } else {
+    trace_event_flags |= TRACE_EVENT_FLAG_FLOW_IN;
+  }
+
+  const uint64_t global_flush_id = GlobalFlushTracingId(
+      channel_id_, pending_ordering_barrier_->deferred_message_id);
+  TRACE_EVENT_WITH_FLOW0(
+      "gpu,toplevel.flow", "CommandBuffer::OrderingBarrier",
+      TRACE_ID_WITH_SCOPE("CommandBuffer::Flush", global_flush_id),
+      trace_event_flags);
+
   pending_ordering_barrier_->route_id = route_id;
   pending_ordering_barrier_->put_offset = put_offset;
   pending_ordering_barrier_->sync_token_fences.insert(
@@ -93,6 +109,7 @@ uint32_t GpuChannelHost::OrderingBarrier(
       std::make_move_iterator(sync_token_fences.begin()),
       std::make_move_iterator(sync_token_fences.end()));
   pending_ordering_barrier_->release_count = release_count;
+
   return pending_ordering_barrier_->deferred_message_id;
 }
 
@@ -122,14 +139,6 @@ void GpuChannelHost::CopyToGpuMemoryBufferAsync(
       std::move(callback));
 }
 
-void GpuChannelHost::CopyNativeGmbToSharedMemorySync(
-    gfx::GpuMemoryBufferHandle buffer_handle,
-    base::UnsafeSharedMemoryRegion memory_region,
-    bool* status) {
-  GetGpuChannel().CopyNativeGmbToSharedMemorySync(
-      std::move(buffer_handle), std::move(memory_region), status);
-}
-
 void GpuChannelHost::CopyNativeGmbToSharedMemoryAsync(
     gfx::GpuMemoryBufferHandle buffer_handle,
     base::UnsafeSharedMemoryRegion memory_region,
@@ -143,11 +152,27 @@ void GpuChannelHost::CopyNativeGmbToSharedMemoryAsync(
   GetGpuChannel().CopyNativeGmbToSharedMemoryAsync(
       std::move(buffer_handle), std::move(memory_region), std::move(callback));
 }
+#endif  // BUILDFLAG(IS_WIN)
 
-bool GpuChannelHost::IsConnected() {
-  return static_cast<bool>(gpu_channel_);
+void GpuChannelHost::DelayedEnsureFlush(uint32_t deferred_message_id) {
+  AutoLock lock(deferred_message_lock_);
+  if (delayed_flush_deferred_message_id_) {
+    delayed_flush_deferred_message_id_ = deferred_message_id;
+  } else {
+    delayed_flush_deferred_message_id_ = deferred_message_id;
+    base::ThreadPool::PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(
+            [](GpuChannelHost* host) {
+              AutoLock lock(host->deferred_message_lock_);
+              host->InternalFlush(
+                  host->delayed_flush_deferred_message_id_.value());
+              host->delayed_flush_deferred_message_id_ = std::nullopt;
+            },
+            base::RetainedRef(this)),
+        kDelayForEnsuringFlush);
+  }
 }
-#endif
 
 void GpuChannelHost::EnsureFlush(uint32_t deferred_message_id) {
   AutoLock lock(deferred_message_lock_);
@@ -215,14 +240,24 @@ void GpuChannelHost::EnqueuePendingOrderingBarrier() {
   deferred_message_lock_.AssertAcquired();
   if (!pending_ordering_barrier_)
     return;
+
+  const uint64_t global_flush_id = GlobalFlushTracingId(
+      channel_id_, pending_ordering_barrier_->deferred_message_id);
+  TRACE_EVENT_WITH_FLOW0(
+      "gpu,toplevel.flow", "CommandBuffer::OrderingBarrier",
+      TRACE_ID_WITH_SCOPE("CommandBuffer::Flush", global_flush_id),
+      TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
+
   DCHECK_LT(enqueued_deferred_message_id_,
             pending_ordering_barrier_->deferred_message_id);
   enqueued_deferred_message_id_ =
       pending_ordering_barrier_->deferred_message_id;
+
   auto params = mojom::AsyncFlushParams::New(
       pending_ordering_barrier_->put_offset,
       pending_ordering_barrier_->deferred_message_id,
       pending_ordering_barrier_->sync_token_fences);
+
   deferred_messages_.push_back(mojom::DeferredRequest::New(
       mojom::DeferredRequestParams::NewCommandBufferRequest(
           mojom::DeferredCommandBufferRequest::New(
@@ -231,6 +266,7 @@ void GpuChannelHost::EnqueuePendingOrderingBarrier() {
                   std::move(params)))),
       std::move(pending_ordering_barrier_->sync_token_fences),
       pending_ordering_barrier_->release_count));
+
   pending_ordering_barrier_.reset();
 }
 
@@ -246,8 +282,27 @@ void GpuChannelHost::InternalFlush(uint32_t deferred_message_id) {
   deferred_message_lock_.AssertAcquired();
 
   EnqueuePendingOrderingBarrier();
+
   if (!deferred_messages_.empty() &&
       deferred_message_id > flushed_deferred_message_id_) {
+    if (TRACE_EVENT_CATEGORY_ENABLED("gpu,toplevel.flow")) {
+      for (auto& message : deferred_messages_) {
+        if (message->params->is_command_buffer_request()) {
+          auto& command_buffer_request =
+              message->params->get_command_buffer_request();
+          if (command_buffer_request->params->is_async_flush()) {
+            auto& flush = command_buffer_request->params->get_async_flush();
+            const uint64_t global_flush_id =
+                GlobalFlushTracingId(channel_id_, flush->flush_id);
+            TRACE_EVENT_WITH_FLOW0(
+                "gpu,toplevel.flow", "GpuChannel::Flush",
+                TRACE_ID_WITH_SCOPE("CommandBuffer::Flush", global_flush_id),
+                TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
+          }
+        }
+      }
+    }
+
     DCHECK_EQ(enqueued_deferred_message_id_, next_deferred_message_id_ - 1);
     flushed_deferred_message_id_ = enqueued_deferred_message_id_;
 
@@ -285,16 +340,6 @@ void GpuChannelHost::CreateGpuMemoryBuffer(
                                         buffer_handle);
 }
 
-void GpuChannelHost::GetGpuMemoryBufferHandleInfo(
-    const Mailbox& mailbox,
-    gfx::GpuMemoryBufferHandle* handle,
-    viz::SharedImageFormat* format,
-    gfx::Size* size,
-    gfx::BufferUsage* buffer_usage) {
-  GetGpuChannel().GetGpuMemoryBufferHandleInfo(mailbox, handle, format, size,
-                                               buffer_usage);
-}
-
 void GpuChannelHost::CrashGpuProcessForTesting() {
   GetGpuChannel().CrashForTesting();
 }
@@ -314,7 +359,7 @@ GpuChannelHost::~GpuChannelHost() = default;
 GpuChannelHost::ConnectionTracker::ConnectionTracker() = default;
 
 GpuChannelHost::ConnectionTracker::~ConnectionTracker() {
-  CHECK(observer_list_.empty(), base::NotFatalUntil::M126);
+  CHECK(observer_list_.empty());
 }
 
 void GpuChannelHost::ConnectionTracker::OnDisconnectedFromGpuProcess() {
@@ -325,7 +370,7 @@ void GpuChannelHost::ConnectionTracker::OnDisconnectedFromGpuProcess() {
 void GpuChannelHost::ConnectionTracker::AddObserver(
     GpuChannelLostObserver* obs) {
   AutoLock lock(channel_obs_lock_);
-  CHECK(!base::Contains(observer_list_, obs), base::NotFatalUntil::M126);
+  CHECK(!base::Contains(observer_list_, obs));
   observer_list_.push_back(obs);
 }
 
@@ -374,10 +419,6 @@ GpuChannelHost::Listener::~Listener() = default;
 
 void GpuChannelHost::Listener::Close() {
   OnChannelError();
-}
-
-bool GpuChannelHost::Listener::OnMessageReceived(const IPC::Message& message) {
-  return false;
 }
 
 void GpuChannelHost::Listener::OnChannelError() {

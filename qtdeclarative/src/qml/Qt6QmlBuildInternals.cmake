@@ -25,6 +25,7 @@ macro(qt_internal_get_internal_add_qml_module_keywords
         ENABLE_TYPE_COMPILER
         __QT_INTERNAL_STATIC_MODULE
         __QT_INTERNAL_SYSTEM_MODULE
+        __QT_INTERNAL_NO_GENERATE_QMLLS_BUILD_INI
     )
     set(${single_args}
         URI
@@ -302,7 +303,7 @@ function(qt_internal_add_qml_module target)
         message(FATAL_ERROR "Do not set FOLLOW_FOREIGN_VERSIONING for module ${target}. It is already set by default for internal modules.")
     endif()
 
-    get_target_property(qt_namespace ${QT_CMAKE_EXPORT_NAMESPACE}::Core _qt_namespace)
+    get_target_property(qt_namespace ${QT_CMAKE_EXPORT_NAMESPACE}::Core QT_NAMESPACE)
     if(qt_namespace)
         list(APPEND add_qml_module_args NAMESPACE ${qt_namespace})
     endif()

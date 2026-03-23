@@ -22,7 +22,6 @@
 #include "base/sequence_checker.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
-#include "build/chromeos_buildflags.h"
 #include "media/base/callback_registry.h"
 #include "media/base/cdm_context.h"
 #include "media/base/status.h"
@@ -35,7 +34,6 @@
 #include "media/gpu/vaapi/vaapi_status.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/hdr_metadata.h"
 
 namespace media {
@@ -272,7 +270,7 @@ class VaapiVideoDecoder : public VideoDecoderMixin,
 
   EncryptionScheme encryption_scheme_ GUARDED_BY_CONTEXT(sequence_checker_);
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   // To keep the CdmContext event callback registered.
   std::unique_ptr<CallbackRegistration> cdm_event_cb_registration_
       GUARDED_BY_CONTEXT(sequence_checker_);

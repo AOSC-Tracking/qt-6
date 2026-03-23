@@ -19,6 +19,7 @@
 
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_resource_container.h"
 
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_info.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
 #include "third_party/blink/renderer/core/style/reference_clip_path_operation.h"
@@ -85,8 +86,7 @@ SVGLayoutResult LayoutSVGResourceContainer::UpdateSVGLayout(
   // Another object may reference this resource (e.g. a <rect> referencing a
   // clip-path), ensure that these clients have paint-invalidation issued if we
   // re-layout due to a viewport dependence.
-  if (RuntimeEnabledFeatures::SvgViewportOptimizationEnabled() &&
-      layout_info.viewport_changed && result.has_viewport_dependence) {
+  if (layout_info.viewport_changed && result.has_viewport_dependence) {
     RemoveAllClientsFromCache();
   }
 

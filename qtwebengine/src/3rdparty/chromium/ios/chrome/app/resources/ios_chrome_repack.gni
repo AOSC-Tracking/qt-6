@@ -59,7 +59,7 @@ template("ios_chrome_repack_locales") {
              "//components/strings:search_engine_descriptions_strings",
              "//ios/chrome/app/strings:ios_branded_strings",
              "//ios/chrome/app/strings:ios_strings",
-             "//ios/chrome/browser/ui/whats_new/strings:strings",
+             "//ios/chrome/browser/whats_new/ui/strings",
              "//third_party/libaddressinput:strings",
              "//ui/strings:app_locale_settings",
              "//ui/strings:ax_strings",
@@ -115,6 +115,11 @@ template("ios_chrome_repack_scalables") {
                "//ios/chrome/app/theme",
                "//ui/resources",
              ] + ios_scalable_pack_extra_deps
+
+      if (enable_builtin_search_provider_assets) {
+        sources += [ "${root_gen_dir}/third_party/search_engines_data/search_engines_resources_${_scale}_percent.pak" ]
+        deps += [ "//third_party/search_engines_data:resources" ]
+      }
 
       output = "$target_gen_dir/chrome_${_scale}_percent.pak"
       copy_data_to_bundle = true

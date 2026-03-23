@@ -215,7 +215,8 @@ static void openStatTable(
         sqlite3NestedParse(pParse,
             "CREATE TABLE %Q.%s(%s)", pDb->zDbSName, zTab, aTable[i].zCols
         );
-        aRoot[i] = (u32)pParse->regRoot;
+        assert( pParse->isCreate || pParse->nErr );
+        aRoot[i] = (u32)pParse->u1.cr.regRoot;
         aCreateTbl[i] = OPFLAG_P2ISREG;
       }
     }else{
@@ -406,7 +407,7 @@ static void statInit(
   int nCol;                       /* Number of columns in index being sampled */
   int nKeyCol;                    /* Number of key columns */
   int nColUp;                     /* nCol rounded up for alignment */
-  int n;                          /* Bytes of space to allocate */
+  i64 n;                          /* Bytes of space to allocate */
   sqlite3 *db = sqlite3_context_db_handle(context);   /* Database connection */
 #ifdef SQLITE_ENABLE_STAT4
   /* Maximum number of samples.  0 if STAT4 data is not collected */
@@ -442,7 +443,7 @@ static void statInit(
   p->db = db;
   p->nEst = sqlite3_value_int64(argv[2]);
   p->nRow = 0;
-  p->nLimit = sqlite3_value_int64(argv[3]);
+  p->nLimit = sqlite3_value_int(argv[3]);
   p->nCol = nCol;
   p->nKeyCol = nKeyCol;
   p->nSkipAhead = 0;
@@ -1575,16 +1576,6 @@ static void decodeIntArray(
       while( z[0]!=0 && z[0]!=' ' ) z++;
       while( z[0]==' ' ) z++;
     }
-
-    /* Set the bLowQual flag if the peak number of rows obtained
-    ** from a full equality match is so large that a full table scan
-    ** seems likely to be faster than using the index.
-    */
-    if( aLog[0] > 66              /* Index has more than 100 rows */
-     && aLog[0] <= aLog[nOut-1]   /* And only a single value seen */
-    ){
-      pIndex->bLowQual = 1;
-    }
   }
 }
 
@@ -1797,12 +1788,13 @@ static int loadStatTbl(
   while( sqlite3_step(pStmt)==SQLITE_ROW ){
     int nIdxCol = 1;              /* Number of columns in stat4 records */
 
-    char *zIndex;   /* Index name */
-    Index *pIdx;    /* Pointer to the index object */
-    int nSample;    /* Number of samples */
-    int nByte;      /* Bytes of space required */
-    int i;          /* Bytes of space required */
-    tRowcnt *pSpace;
+    char *zIndex;    /* Index name */
+    Index *pIdx;     /* Pointer to the index object */
+    int nSample;     /* Number of samples */
+    i64 nByte;       /* Bytes of space required */
+    i64 i;           /* Bytes of space required */
+    tRowcnt *pSpace; /* Available allocated memory space */
+    u8 *pPtr;        /* Available memory as a u8 for easier manipulation */
 
     zIndex = (char *)sqlite3_column_text(pStmt, 0);
     if( zIndex==0 ) continue;
@@ -1822,7 +1814,7 @@ static int loadStatTbl(
     }
     pIdx->nSampleCol = nIdxCol;
     pIdx->mxSample = nSample;
-    nByte = sizeof(IndexSample) * nSample;
+    nByte = ROUND8(sizeof(IndexSample) * nSample);
     nByte += sizeof(tRowcnt) * nIdxCol * 3 * nSample;
     nByte += nIdxCol * sizeof(tRowcnt);     /* Space for Index.aAvgEq[] */
 
@@ -1831,7 +1823,10 @@ static int loadStatTbl(
       sqlite3_finalize(pStmt);
       return SQLITE_NOMEM_BKPT;
     }
-    pSpace = (tRowcnt*)&pIdx->aSample[nSample];
+    pPtr = (u8*)pIdx->aSample;
+    pPtr += ROUND8(nSample*sizeof(pIdx->aSample[0]));
+    pSpace = (tRowcnt*)pPtr;
+    assert( EIGHT_BYTE_ALIGNMENT( pSpace ) );
     pIdx->aAvgEq = pSpace; pSpace += nIdxCol;
     pIdx->pTable->tabFlags |= TF_HasStat4;
     for(i=0; i<nSample; i++){

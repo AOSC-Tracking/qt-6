@@ -51,8 +51,6 @@ tint_target_add_dependencies(tint_cmd_common lib
   tint_lang_core_type
   tint_lang_wgsl
   tint_lang_wgsl_ast
-  tint_lang_wgsl_common
-  tint_lang_wgsl_features
   tint_lang_wgsl_inspector
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
@@ -64,7 +62,6 @@ tint_target_add_dependencies(tint_cmd_common lib
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text

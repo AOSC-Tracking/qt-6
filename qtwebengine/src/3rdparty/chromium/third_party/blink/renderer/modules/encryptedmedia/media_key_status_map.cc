@@ -2,16 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/modules/encryptedmedia/media_key_status_map.h"
 
 #include <algorithm>
 #include <limits>
 
+#include "base/compiler_specific.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_arraybuffer_arraybufferview.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_mediakeystatus_undefined.h"
@@ -29,7 +25,7 @@ class MediaKeyStatusMap::MapEntry final
   MapEntry(WebData key_id, const V8MediaKeyStatus& status)
       : key_id_(DOMArrayBuffer::Create(scoped_refptr<SharedBuffer>(key_id))),
         status_(status) {}
-  virtual ~MapEntry() = default;
+  ~MapEntry() = default;
 
   DOMArrayBuffer* KeyId() const { return key_id_.Get(); }
 
@@ -51,9 +47,9 @@ class MediaKeyStatusMap::MapEntry final
       return b->KeyId();
 
     // Compare the bytes.
-    int result =
+    int result = UNSAFE_TODO(
         memcmp(a->KeyId()->Data(), b->KeyId()->Data(),
-               std::min(a->KeyId()->ByteLength(), b->KeyId()->ByteLength()));
+               std::min(a->KeyId()->ByteLength(), b->KeyId()->ByteLength())));
     if (result != 0)
       return result < 0;
 
@@ -62,7 +58,7 @@ class MediaKeyStatusMap::MapEntry final
     return a->KeyId()->ByteLength() < b->KeyId()->ByteLength();
   }
 
-  virtual void Trace(Visitor* visitor) const { visitor->Trace(key_id_); }
+  void Trace(Visitor* visitor) const { visitor->Trace(key_id_); }
 
  private:
   const Member<DOMArrayBuffer> key_id_;

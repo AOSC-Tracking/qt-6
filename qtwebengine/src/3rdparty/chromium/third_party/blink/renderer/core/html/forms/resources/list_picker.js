@@ -3,7 +3,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var global = {argumentsReceived: false, params: null, picker: null};
+/**
+ * @type {Object}
+ */
+const global = {
+  argumentsReceived: false,
+  params: null,
+  picker: null
+};
 
 const DELAYED_LAYOUT_THRESHOLD = 1000;
 
@@ -159,7 +166,7 @@ class ListPicker extends Picker {
     if (event.target.tagName !== 'OPTION')
       return;
     window.pagePopupController.setValueAndClosePopup(
-        0, this.selectElement_.value);
+        0, this.selectElement_.value, /* is_keyboard_event= */ false);
   }
 
   handleTouchStart_(event) {
@@ -210,7 +217,7 @@ class ListPicker extends Picker {
     const target = document.elementFromPoint(touch.clientX, touch.clientY);
     if (target.tagName === 'OPTION' && !target.disabled)
       window.pagePopupController.setValueAndClosePopup(
-          0, this.selectElement_.value);
+          0, this.selectElement_.value, /* is_keyboard_event= */ false);
     this.exitTouchSelectMode_();
   }
 
@@ -244,7 +251,7 @@ class ListPicker extends Picker {
       event.preventDefault();
     } else if (key === 'Tab' || key === 'Enter') {
       window.pagePopupController.setValueAndClosePopup(
-          0, this.selectElement_.value);
+          0, this.selectElement_.value, /* is_keyboard_event= */ true);
       event.preventDefault();
     } else if (event.altKey && (key === 'ArrowDown' || key === 'ArrowUp')) {
       // We need to add a delay here because, if we do it immediately the key
@@ -358,7 +365,7 @@ class ListPicker extends Picker {
       optionUnderMouse =
           elementUnderMouse && elementUnderMouse.closest('option');
     }
-    if (optionUnderMouse)
+    if (optionUnderMouse && !optionUnderMouse.disabled)
       optionUnderMouse.selected = true;
     else
       this.selectElement_.value = oldValue;
@@ -529,7 +536,7 @@ class ListPicker extends Picker {
   }
 
   setMenuListOptionsBoundsInAXTree_(childrenUpdated = false) {
-    var optionBounds = [];
+    let optionBounds = [];
     buildOptionBoundsArray(this.selectElement_, optionBounds);
     window.pagePopupController.setMenuListOptionsBoundsInAXTree(
         optionBounds, childrenUpdated);
@@ -542,3 +549,6 @@ if (window.dialogArguments) {
   window.addEventListener('message', handleMessage);
   window.setTimeout(handleArgumentsTimeout, 1000);
 }
+
+// Necessary for some web tests.
+window.global = global;

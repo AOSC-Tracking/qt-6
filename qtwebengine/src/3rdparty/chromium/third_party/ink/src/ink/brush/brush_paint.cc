@@ -21,7 +21,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
-#include "ink/types/uri.h"
 
 namespace ink {
 namespace brush_internal {
@@ -134,12 +133,6 @@ absl::Status ValidateBrushPaintTextureKeyframe(
 
 absl::Status ValidateBrushPaintTextureLayer(
     const BrushPaint::TextureLayer& layer) {
-  if (layer.color_texture_uri.GetAssetType() != Uri::AssetType::kTexture) {
-    return absl::InvalidArgumentError(absl::StrFormat(
-        "`BrushPaint::texture_layers::color_texture_uri` must be "
-        "Uri::AssetType::kTexture. Got %d",
-        static_cast<int>(layer.color_texture_uri.GetAssetType())));
-  }
   if (!IsValidBrushPaintTextureMapping(layer.mapping)) {
     return absl::InvalidArgumentError(absl::StrFormat(
         "`BrushPaint::texture_layers::mapping` holds non-enumerator value %d",
@@ -211,6 +204,32 @@ absl::Status ValidateBrushPaintTextureLayer(
         "Got %v",
         layer.opacity));
   }
+  if (layer.animation_frames <= 0 || layer.animation_frames > (1 << 24)) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "`BrushPaint::TextureLayer::animation_frames` must be in "
+        "the interval [1, 2^24] (use 1 to disable animation). Got ",
+        layer.animation_frames));
+  }
+  if (layer.animation_rows <= 0 || layer.animation_rows > (1 << 12)) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "`BrushPaint::TextureLayer::animation_rows` must be in the interval "
+        "[1, 2^12] (use 1 to disable animation). Got ",
+        layer.animation_rows));
+  }
+  if (layer.animation_columns <= 0 || layer.animation_columns > (1 << 12)) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "`BrushPaint::TextureLayer::animation_columns` must be in the interval "
+        "[1, 2^12] (use 1 to disable animation). Got ",
+        layer.animation_columns));
+  }
+  // Equivalent to `frames > rows * columns` but in a way that avoids overflow.
+  if (layer.animation_frames > layer.animation_rows * layer.animation_columns) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "`BrushPaint::TextureLayer::animation_frames` must be "
+        "less than or equal to the product of `animation_rows` "
+        "and `animation_columns`. Got %d > %d * %d",
+        layer.animation_frames, layer.animation_rows, layer.animation_columns));
+  }
   for (const BrushPaint::TextureKeyframe& keyframe : layer.keyframes) {
     if (auto status = ValidateBrushPaintTextureKeyframe(keyframe);
         !status.ok()) {
@@ -226,17 +245,33 @@ absl::Status ValidateBrushPaintTextureLayer(
   return absl::OkStatus();
 }
 
-absl::Status ValidateBrushPaint(const BrushPaint& paint) {
-  for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
-    if (auto status = ValidateBrushPaintTextureLayer(layer); !status.ok()) {
-      return status;
-    }
-  }
-  // TODO: b/375203215 - Remove the below check once we are able to mix
-  // rendering tiling and winding textures in a single `BrushPaint`.
+absl::Status ValidateBrushPaintTopLevel(const BrushPaint& paint) {
   if (!paint.texture_layers.empty()) {
+    int first_animation_frames = paint.texture_layers[0].animation_frames;
+    int first_animation_rows = paint.texture_layers[0].animation_rows;
+    int first_animation_columns = paint.texture_layers[0].animation_columns;
     BrushPaint::TextureMapping first_mapping = paint.texture_layers[0].mapping;
     for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
+      if (layer.animation_frames != first_animation_frames) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "`BrushPaint::TextureLayer::animation_frames` must be the same for "
+            "all texture layers. Got `",
+            first_animation_frames, "` and `", layer.animation_frames, "`"));
+      }
+      if (layer.animation_rows != first_animation_rows) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "`BrushPaint::TextureLayer::animation_rows` must be the same for "
+            "all texture layers. Got `",
+            first_animation_rows, "` and `", layer.animation_rows, "`"));
+      }
+      if (layer.animation_columns != first_animation_columns) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "`BrushPaint::TextureLayer::animation_columns` must be the same "
+            "for all texture layers. Got `",
+            first_animation_columns, "` and `", layer.animation_columns, "`"));
+      }
+      // TODO: b/375203215 - Remove the below check once we are able to mix
+      // rendering tiling and winding textures in a single `BrushPaint`.
       if (layer.mapping != first_mapping) {
         return absl::InvalidArgumentError(
             absl::StrCat("`BrushPaint::TextureLayer::mapping` must be the same "
@@ -244,6 +279,19 @@ absl::Status ValidateBrushPaint(const BrushPaint& paint) {
                          first_mapping, "` and `", layer.mapping, "`"));
       }
     }
+  }
+  return absl::OkStatus();
+}
+
+absl::Status ValidateBrushPaint(const BrushPaint& paint) {
+  for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
+    if (absl::Status status = ValidateBrushPaintTextureLayer(layer);
+        !status.ok()) {
+      return status;
+    }
+  }
+  if (absl::Status status = ValidateBrushPaintTopLevel(paint); !status.ok()) {
+    return status;
   }
   return absl::OkStatus();
 }
@@ -348,7 +396,7 @@ std::string ToFormattedString(const BrushPaint::TextureKeyframe& keyframe) {
 
 std::string ToFormattedString(const BrushPaint::TextureLayer& texture_layer) {
   return absl::StrCat(
-      "TextureLayer{color_texture_uri=", texture_layer.color_texture_uri,
+      "TextureLayer{", "client_texture_id=", texture_layer.client_texture_id,
       ", mapping=", ToFormattedString(texture_layer.mapping),
       ", origin=", ToFormattedString(texture_layer.origin),
       ", size_unit=", ToFormattedString(texture_layer.size_unit),
@@ -359,7 +407,10 @@ std::string ToFormattedString(const BrushPaint::TextureLayer& texture_layer) {
       ", size_jitter=", texture_layer.size_jitter,
       ", offset_jitter=", texture_layer.offset_jitter,
       ", rotation_jitter=", texture_layer.rotation_jitter,
-      ", opacity=", texture_layer.opacity, ", keyframes={",
+      ", opacity=", texture_layer.opacity,
+      ", animation_frames=", texture_layer.animation_frames,
+      ", animation_rows=", texture_layer.animation_rows,
+      ", animation_columns=", texture_layer.animation_columns, ", keyframes={",
       absl::StrJoin(texture_layer.keyframes, ", "), "}",
       ", blend_mode=", ToFormattedString(texture_layer.blend_mode), "}");
 }
@@ -383,7 +434,7 @@ bool operator==(const BrushPaint::TextureKeyframe& lhs,
 
 bool operator==(const BrushPaint::TextureLayer& lhs,
                 const BrushPaint::TextureLayer& rhs) {
-  return lhs.color_texture_uri == rhs.color_texture_uri &&
+  return lhs.client_texture_id == rhs.client_texture_id &&
          lhs.mapping == rhs.mapping && lhs.origin == rhs.origin &&
          lhs.size_unit == rhs.size_unit && lhs.wrap_x == rhs.wrap_x &&
          lhs.wrap_y == rhs.wrap_y && lhs.size == rhs.size &&

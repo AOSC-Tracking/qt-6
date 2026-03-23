@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickgraphicsinfo_p.h"
 #include <private/qquickitem_p.h>
@@ -26,15 +27,6 @@ QT_BEGIN_NAMESPACE
 
 QQuickGraphicsInfo::QQuickGraphicsInfo(QQuickItem *item)
     : QObject(item)
-    , m_window(nullptr)
-    , m_api(Unknown)
-    , m_shaderType(UnknownShadingLanguage)
-    , m_shaderCompilationType(ShaderCompilationType(0))
-    , m_shaderSourceType(ShaderSourceType(0))
-    , m_majorVersion(2)
-    , m_minorVersion(0)
-    , m_profile(OpenGLNoProfile)
-    , m_renderableType(SurfaceFormatUnspecified)
 {
     if (Q_LIKELY(item)) {
         connect(item, &QQuickItem::windowChanged, this, &QQuickGraphicsInfo::setWindow);
@@ -42,10 +34,19 @@ QQuickGraphicsInfo::QQuickGraphicsInfo(QQuickItem *item)
     }
 }
 
+QQuickGraphicsInfo::QQuickGraphicsInfo(QQuickWindow *window)
+    : QObject(window)
+{
+    if (Q_LIKELY(window))
+        setWindow(window);
+}
+
 QQuickGraphicsInfo *QQuickGraphicsInfo::qmlAttachedProperties(QObject *object)
 {
     if (QQuickItem *item = qobject_cast<QQuickItem *>(object))
         return new QQuickGraphicsInfo(item);
+    if (QQuickWindow *window = qobject_cast<QQuickWindow *>(object))
+        return new QQuickGraphicsInfo(window);
 
     return nullptr;
 }

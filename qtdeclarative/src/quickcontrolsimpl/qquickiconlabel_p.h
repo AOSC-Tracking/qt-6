@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKICONLABEL_P_H
 #define QQUICKICONLABEL_P_H
@@ -38,6 +39,8 @@ class Q_QUICKCONTROLS2IMPL_EXPORT QQuickIconLabel : public QQuickItem
     Q_PROPERTY(qreal leftPadding READ leftPadding WRITE setLeftPadding RESET resetLeftPadding FINAL)
     Q_PROPERTY(qreal rightPadding READ rightPadding WRITE setRightPadding RESET resetRightPadding FINAL)
     Q_PROPERTY(qreal bottomPadding READ bottomPadding WRITE setBottomPadding RESET resetBottomPadding FINAL)
+    Q_PROPERTY(QColor defaultIconColor READ defaultIconColor WRITE setDefaultIconColor
+        NOTIFY defaultIconColorChanged FINAL REVISION(6, 11))
     QML_NAMED_ELEMENT(IconLabel)
     QML_ADDED_IN_VERSION(2, 3)
 
@@ -55,6 +58,9 @@ public:
 
     QQuickIcon icon() const;
     void setIcon(const QQuickIcon &icon);
+
+    QColor defaultIconColor() const;
+    void setDefaultIconColor(const QColor &color);
 
     QString text() const;
     void setText(const QString &text);
@@ -92,6 +98,9 @@ public:
     qreal bottomPadding() const;
     void setBottomPadding(qreal padding);
     void resetBottomPadding();
+
+signals:
+    void defaultIconColorChanged();
 
 protected:
     void componentComplete() override;

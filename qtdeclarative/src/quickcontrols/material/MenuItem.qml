@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -22,7 +23,6 @@ T.MenuItem {
 
     icon.width: 24
     icon.height: 24
-    icon.color: enabled ? Material.foreground : Material.hintTextColor
 
     indicator: CheckIndicator {
         x: control.text ? (control.mirrored ? control.width - width - control.rightPadding : control.leftPadding) : control.leftPadding + (control.availableWidth - width) / 2
@@ -54,9 +54,10 @@ T.MenuItem {
         alignment: Qt.AlignLeft
 
         icon: control.icon
+        defaultIconColor: control.enabled ? control.Material.foreground : control.Material.hintTextColor
         text: control.text
         font: control.font
-        color: control.enabled ? control.Material.foreground : control.Material.hintTextColor
+        color: defaultIconColor
     }
 
     background: Rectangle {

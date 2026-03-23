@@ -40,6 +40,12 @@ class PageFavicon extends CrLitElement {
       url: {type: Object},
 
       /**
+       * Whether the favicon should use fallback to host. Used for the purpose
+       * of fetching fallback favicons when there is no local exact match.
+       */
+      fallbackToHost: {type: Boolean},
+
+      /**
        * Whether this visit is known to sync already. Used for the purpose of
        * fetching higher quality favicons in that case.
        */
@@ -53,9 +59,10 @@ class PageFavicon extends CrLitElement {
   // Properties
   //============================================================================
 
-  url?: Url;
-  isKnownToSync: boolean = false;
-  size: number = 16;
+  accessor url: Url|undefined;
+  accessor fallbackToHost: boolean = true;
+  accessor isKnownToSync: boolean = false;
+  accessor size: number = 16;
 
   //============================================================================
   // Helper methods
@@ -74,7 +81,9 @@ class PageFavicon extends CrLitElement {
             'background-image',
             getFaviconForPageURL(
                 this.url.url, this.isKnownToSync, '',
-                /* --favicon-size */ this.size));
+                /* --favicon-size */ this.size,
+                /* forceLightMode */ false,
+                /* fallbackToHost */ this.fallbackToHost));
       }
     }
   }

@@ -1,6 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // Copyright (C) 2017 Jolla Ltd, author: <gunnar.sletta@jollamobile.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import Qt5Compat.GraphicalEffects.private
@@ -9,10 +10,14 @@ import Qt5Compat.GraphicalEffects.private
     \qmltype DropShadow
     \inqmlmodule Qt5Compat.GraphicalEffects
     \since QtGraphicalEffects 1.0
-    \inherits QtQuick2::Item
+    \inherits QtQuick::Item
     \ingroup qtgraphicaleffects-drop-shadow
 
     \brief Generates a soft shadow behind the source item.
+
+    \note The MultiEffect component provides a drop shadow effect with some performance
+    advantages. For new code, it should be considered as an alternative to using Qt Graphical
+    Effects.
 
     The DropShadow effect blurs the alpha channel of the input, colorizes the
     result and places it behind the source object to create a soft shadow. The

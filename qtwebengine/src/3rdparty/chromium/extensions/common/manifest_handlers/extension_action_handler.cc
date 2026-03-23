@@ -24,8 +24,9 @@ void SetWarningsForNonExistentDefaultPopup(
     const extensions::Extension* extension,
     std::vector<extensions::InstallWarning>* warnings) {
   GURL default_popup_url = action->default_popup_url;
-  if (default_popup_url.is_empty())
+  if (default_popup_url.is_empty()) {
     return;
+  }
 
   GURL extension_base_url =
       extension->GetBaseURLFromExtensionId(extension->id());
@@ -92,15 +93,18 @@ bool ExtensionActionHandler::Parse(Extension* extension,
     std::unique_ptr<ActionInfo> action_info =
         ActionInfo::Load(extension, type, *dict, &install_warnings, error);
     extension->AddInstallWarnings(std::move(install_warnings));
-    if (!action_info)
+    if (!action_info) {
       return false;  // Failed to parse extension action definition.
+    }
 
     ActionInfo::SetExtensionActionInfo(extension, std::move(action_info));
   } else {  // No key, used for synthesizing an action for extensions with none.
-    if (Manifest::IsComponentLocation(extension->location()))
+    if (Manifest::IsComponentLocation(extension->location())) {
       return true;  // Don't synthesize actions for component extensions.
-    if (extension->was_installed_by_default())
+    }
+    if (extension->was_installed_by_default()) {
       return true;  // Don't synthesize actions for default extensions.
+    }
 
     // Set an empty action. Manifest v2 extensions use page actions, whereas
     // manifest v3 use generic "actions". We use a page action (instead of a
@@ -122,28 +126,30 @@ bool ExtensionActionHandler::Parse(Extension* extension,
 }
 
 bool ExtensionActionHandler::Validate(
-    const Extension* extension,
+    const Extension& extension,
     std::string* error,
     std::vector<InstallWarning>* warnings) const {
-  const ActionInfo* action = ActionInfo::GetExtensionActionInfo(extension);
+  const ActionInfo* action = ActionInfo::GetExtensionActionInfo(&extension);
 
-  if (!action)
+  if (!action) {
     return true;
+  }
 
   const char* manifest_key =
       ActionInfo::GetManifestKeyForActionType(action->type);
   DCHECK(manifest_key);
 
-  SetWarningsForNonExistentDefaultPopup(action, manifest_key, extension,
+  SetWarningsForNonExistentDefaultPopup(action, manifest_key, &extension,
                                         warnings);
 
   // Empty default icon is valid.
-  if (action->default_icon.empty())
+  if (action->default_icon.empty()) {
     return true;
+  }
 
   // Analyze the icons for visibility using the default toolbar color, since
   // the majority of Chrome users don't modify their theme.
-  return file_util::ValidateExtensionIconSet(action->default_icon, extension,
+  return file_util::ValidateExtensionIconSet(action->default_icon, &extension,
                                              manifest_key, error);
 }
 

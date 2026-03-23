@@ -1,5 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3deffect_p.h"
 
@@ -218,7 +220,10 @@ QT_BEGIN_NAMESPACE
     \table 70%
     \row
     \li \image effect_intro_1.png
+               {Three different 3D objects}
     \li \image effect_intro_2.png
+               {Three different 3D objects with transparent Qt logo overlaid as
+               fullscreen effect}
     \endtable
 
     \note The \c shader property value in Shader is a URL, as is the custom in
@@ -322,7 +327,10 @@ QT_BEGIN_NAMESPACE
     \table 70%
     \row
     \li \image effect_intro_1.png
+               {Three different 3D objects}
     \li \image effect_intro_3.png
+               {Warped view of three different 3D objects showing vertex shader
+               effect}
     \endtable
 
     \section1 Special keywords in effect shaders
@@ -357,14 +365,45 @@ QT_BEGIN_NAMESPACE
 
     \li \c FRAME - \c float - A frame counter, incremented after each frame in the View3D.
 
-    \li \c DEPTH_TEXTURE - \c sampler2D - A depth texture with the depth buffer
-    contents with the opaque objects in the scene. Like with CustomMaterial, the
-    presence of this keyword in the shader triggers generating the depth texture
-    automatically.
+    \li \c DEPTH_TEXTURE - \c sampler2D or \c sampler2DArray - A depth texture
+    with the depth buffer contents with the opaque objects in the scene. Like
+    with CustomMaterial, the presence of this keyword in the shader triggers
+    generating the depth texture automatically.
+
+    \li \c NORMAL_ROUGHNESS_TEXTURE - \c sampler2D - A texture with the
+    world-space normals and material roughness of the opaque objects in the
+    currently visible portion of the scene. Like with CustomMaterial, the
+    presence of this keyword in the shader implies an additional render pass to
+    generate the normal texture.
 
     \li \c VIEW_INDEX - \c uint - With \l{Multiview Rendering}{multiview
     rendering} enabled, this is the current view index, available in both vertex
     and fragment shaders. Always 0 when multiview rendering is not used.
+
+    \li \c PROJECTION_MATRIX - \c mat4, the projection matrix. Note that with
+    \l{Multiview Rendering}{multiview rendering}, this is an array of matrices.
+
+    \li \c INVERSE_PROJECTION_MATRIX - \c mat4, the inverse projection matrix.
+    Note that with \l{Multiview Rendering}{multiview rendering}, this is an array
+    of matrices.
+
+    \li \c VIEW_MATRIX -> \c mat4, the view (camera) matrix.
+    Note that with \l{Multiview Rendering}{multiview rendering}, this is an array
+    of matrices.
+
+    \li float \c NDC_Y_UP - The value is \c 1 when the Y axis points up in
+    normalized device coordinate space, and \c{-1} when the Y axis points down.
+    Y pointing down is the case when rendering happens with Vulkan.
+
+    \li float \c FRAMEBUFFER_Y_UP - The value is \c 1 when the Y axis points up
+    in the coordinate system for framebuffers (textures), meaning \c{(0, 0)} is
+    the bottom-left corner. The value is \c{-1} when the Y axis points down,
+    \c{(0, 0)} being the top-left corner.
+
+    \li float \c NEAR_CLIP_VALUE - The value is \c -1 for when the clipping plane
+    range's starts at \c -1 and goes to \c 1.  This is true when using OpenGL for
+    rendering. For other rendering backends the value of this property will be
+    \c 0 meaning the clipping plane range is \c 0 to \c 1.
 
     \endlist
 
@@ -547,13 +586,13 @@ QT_BEGIN_NAMESPACE
     also means that many intermediate buffers, meaning color or depth textures,
     will need to become texture arrays in this mode. This then has implications
     for custom materials and postprocessing effects. Textures such as the input
-    texture (\c INPUT), the depth texture (\c DEPTH_TEXTURE), the screen texture
-    (\c SCREEN_TEXTURE), and some others becomes 2D texture arrays, exposed in
-    the shader as a \c sampler2DArray instead of \c sampler2D. This has
-    implications for GLSL functions such as texture(), textureLod(), or
-    textureSize(). The UV coordinate is then a vec3, not a vec2. Whereas
-    textureSize() returns a vec3, not a vec2. Effects intended to function
-    regardless of the rendering mode, can be written with an appropriate ifdef:
+    texture (\c INPUT) and the depth texture (\c DEPTH_TEXTURE) become 2D texture
+    arrays, exposed in the shader as a \c sampler2DArray instead of \c
+    sampler2D. This has implications for GLSL functions such as texture(),
+    textureLod(), or textureSize(). The UV coordinate is then a vec3, not a
+    vec2. Whereas textureSize() returns a vec3, not a vec2. Effects intended to
+    function regardless of the rendering mode, can be written with an
+    appropriate ifdef:
     \badcode
     #if QSHADER_VIEW_COUNT >= 2
         vec4 c = texture(INPUT, vec3(INPUT_UV, VIEW_INDEX));
@@ -561,6 +600,34 @@ QT_BEGIN_NAMESPACE
         vec4 c = texture(INPUT, INPUT_UV);
     #endif
     \endcode
+
+    It can also be useful to define macros that handle both cases. For example:
+    \badcode
+    #if QSHADER_VIEW_COUNT >= 2
+    #define SAMPLE_INPUT(uv) texture(INPUT, vec3(uv, VIEW_INDEX))
+    #define SAMPLE_DEPTH(uv) texture(DEPTH_TEXTURE, vec3(uv, VIEW_INDEX)).r
+    #define PROJECTION PROJECTION_MATRIX[VIEW_INDEX]
+    #define INVERSE_PROJECTION INVERSE_PROJECTION_MATRIX[VIEW_INDEX]
+    #else
+    #define SAMPLE_INPUT(uv) texture(INPUT, uv)
+    #define SAMPLE_DEPTH(uv) texture(DEPTH_TEXTURE, uv).r
+    #define PROJECTION PROJECTION_MATRIX
+    #define INVERSE_PROJECTION INVERSE_PROJECTION_MATRIX
+    #endif
+    \endcode
+
+    This does not apply to \c NORMAL_ROUGHNESS_TEXTURE that is always a 2D texture,
+    even when multiview rendering is active:
+    \badcode
+    #define SAMPLE_NORMAL(uv) normalize(texture(NORMAL_ROUGHNESS_TEXTURE, uv).rgb)
+    \endcode
+
+    \note The presence of keywords such as \c DEPTH_TEXTURE trigger additional
+    render passes, and uniforms such as \c INVERSE_PROJECTION_MATRIX are
+    calculated and set upon the presence of the keyword in the shader snippet
+    anywhere. This is more expensive, both when it comes to performance and
+    resource usage. Hence it is recommended to only add such #defines when the
+    textures and matrices will really be used in the effect.
 
     \sa Shader, Pass, Buffer, BufferInput, {Qt Quick 3D - Custom Effect Example}
 */
@@ -613,6 +680,32 @@ static inline void insertVertexMainArgs(QByteArray &snippet)
         snippet = snippet.left(argKeyPos) + QByteArrayLiteral("inout vec3 VERTEX") + snippet.mid(argKeyPos + argKeyLen);
 }
 
+static inline void resetShaderDependentEffectFlags(QSSGRenderEffect *effectNode)
+{
+    effectNode->setFlag(QSSGRenderEffect::Flags::UsesDepthTexture, false);
+    effectNode->setFlag(QSSGRenderEffect::Flags::UsesProjectionMatrix, false);
+    effectNode->setFlag(QSSGRenderEffect::Flags::UsesInverseProjectionMatrix, false);
+    effectNode->setFlag(QSSGRenderEffect::Flags::UsesViewMatrix, false);
+    effectNode->setFlag(QSSGRenderEffect::Flags::UsesNormalTexture, false);
+    effectNode->setFlag(QSSGRenderEffect::Flags::UsesMotionVectorTexture, false);
+}
+
+static inline void accumulateEffectFlagsFromShader(QSSGRenderEffect *effectNode, const QSSGCustomShaderMetaData &meta)
+{
+    if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesDepthTexture))
+        effectNode->setFlag(QSSGRenderEffect::Flags::UsesDepthTexture);
+    if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesProjectionMatrix))
+        effectNode->setFlag(QSSGRenderEffect::Flags::UsesProjectionMatrix);
+    if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesInverseProjectionMatrix))
+        effectNode->setFlag(QSSGRenderEffect::Flags::UsesInverseProjectionMatrix);
+    if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesViewMatrix))
+        effectNode->setFlag(QSSGRenderEffect::Flags::UsesViewMatrix);
+    if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesNormalTexture))
+        effectNode->setFlag(QSSGRenderEffect::Flags::UsesNormalTexture);
+    if (meta.flags.testFlag(QSSGCustomShaderMetaData::UsesMotionVectorTexture))
+        effectNode->setFlag(QSSGRenderEffect::Flags::UsesMotionVectorTexture);
+}
+
 QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *node)
 {
     using namespace QSSGShaderUtils;
@@ -630,13 +723,13 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
         newBackendNode = true;
     }
 
-    bool shadersMayChange = false;
+    bool shadersOrBuffersMayChange = false;
     if (m_dirtyAttributes & Dirty::EffectChainDirty)
-        shadersMayChange = true;
+        shadersOrBuffersMayChange = true;
 
     const bool fullUpdate = newBackendNode || effectNode->incompleteBuildTimeObject || (m_dirtyAttributes & Dirty::TextureDirty);
 
-    if (fullUpdate || shadersMayChange) {
+    if (fullUpdate || shadersOrBuffersMayChange) {
         markAllDirty();
 
         // Need to clear the old list with properties and textures first.
@@ -823,6 +916,7 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
         uniforms.append({ "vec2", "qt_cameraProperties" });
         uniforms.append({ "float", "qt_normalAdjustViewportFactor" });
         uniforms.append({ "float", "qt_nearClipValue" });
+        uniforms.append({ "vec4", "qt_rhi_properties" });
 
         // qt_inputTexture is not listed in uniforms, will be added by prepareCustomShader()
         // since the name and type varies between non-multiview and multiview mode
@@ -837,6 +931,8 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
         builtinVertexOutputs.append({ "flat uint", "qt_viewIndex" });
 
         // fragOutput is added automatically by the program generator
+
+        resetShaderDependentEffectFlags(effectNode);
 
         if (!m_passes.isEmpty()) {
             const QQmlContext *context = qmlContext(this);
@@ -896,52 +992,54 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
                             code = default_effect_fragment_shader;
                     }
 
-                    QSSGShaderCustomMaterialAdapter::ShaderCodeAndMetaData result[2];
-                    if (type == QSSGShaderCache::ShaderType::Vertex) {
-                        QByteArray buf;
-                        result[QSSGRenderCustomMaterial::RegularShaderPathKeyIndex] =
-                            QSSGShaderCustomMaterialAdapter::prepareCustomShader(buf, code, type,
-                                                                                 uniforms, builtinVertexInputs, builtinVertexOutputs,
-                                                                                 false, multiViewDependentSamplers);
-                        result[QSSGRenderCustomMaterial::RegularShaderPathKeyIndex].first += buf;
-                        buf.clear();
-                        result[QSSGRenderCustomMaterial::MultiViewShaderPathKeyIndex] =
-                            QSSGShaderCustomMaterialAdapter::prepareCustomShader(buf, code, type,
-                                                                                 uniforms, builtinVertexInputs, builtinVertexOutputs,
-                                                                                 true, multiViewDependentSamplers);
-                        result[QSSGRenderCustomMaterial::MultiViewShaderPathKeyIndex].first += buf;
-                    } else {
-                        QByteArray buf;
-                        result[QSSGRenderCustomMaterial::RegularShaderPathKeyIndex] =
-                            QSSGShaderCustomMaterialAdapter::prepareCustomShader(buf, code, type,
-                                                                                 uniforms, builtinVertexOutputs, {},
-                                                                                 false, multiViewDependentSamplers);
-                        result[QSSGRenderCustomMaterial::RegularShaderPathKeyIndex].first += buf;
-                        buf.clear();
-                        result[QSSGRenderCustomMaterial::MultiViewShaderPathKeyIndex] =
-                            QSSGShaderCustomMaterialAdapter::prepareCustomShader(buf, code, type,
-                                                                                 uniforms, builtinVertexOutputs, {},
-                                                                                 true, multiViewDependentSamplers);
-                        result[QSSGRenderCustomMaterial::MultiViewShaderPathKeyIndex].first += buf;
-                    }
+                    for (auto pathKeyIndex : { QSSGRenderCustomMaterial::RegularShaderPathKeyIndex, QSSGRenderCustomMaterial::MultiViewShaderPathKeyIndex }) {
+                        QSSGShaderCustomMaterialAdapter::ShaderCodeAndMetaData result;
+                        QSSGShaderCustomMaterialAdapter::CustomShaderPrepWorkData scratch;
 
-                    if (result[QSSGRenderCustomMaterial::RegularShaderPathKeyIndex].second.flags.testFlag(QSSGCustomShaderMetaData::UsesDepthTexture))
-                        effectNode->requiresDepthTexture = true;
+                        QSSGShaderCustomMaterialAdapter::beginPrepareCustomShader(
+                            &scratch,
+                            &result,
+                            code,
+                            type,
+                            pathKeyIndex == QSSGRenderCustomMaterial::RegularShaderPathKeyIndex ? false : true);
 
-                    for (int i : { QSSGRenderCustomMaterial::RegularShaderPathKeyIndex, QSSGRenderCustomMaterial::MultiViewShaderPathKeyIndex }) {
+                        QSSGShaderCustomMaterialAdapter::StringPairList multiViewDependentUniforms;
+                        if (result.second.flags.testFlag(QSSGCustomShaderMetaData::UsesProjectionMatrix)
+                            || result.second.flags.testFlag(QSSGCustomShaderMetaData::UsesInverseProjectionMatrix))
+                        {
+                            multiViewDependentUniforms.append({ "mat4", "qt_projectionMatrix" });
+                            multiViewDependentUniforms.append({ "mat4", "qt_inverseProjectionMatrix" });
+                        }
+
+                        multiViewDependentUniforms.append({ "mat4", "qt_viewMatrix" });
+
+                        accumulateEffectFlagsFromShader(effectNode, result.second);
+
+                        QSSGShaderCustomMaterialAdapter::finishPrepareCustomShader(
+                            &result.first, // effectively appends the QQ3D_SHADER_META block
+                            scratch,
+                            result,
+                            type,
+                            pathKeyIndex == QSSGRenderCustomMaterial::RegularShaderPathKeyIndex ? false : true,
+                            uniforms,
+                            type == QSSGShaderCache::ShaderType::Vertex ? builtinVertexInputs : builtinVertexOutputs,
+                            type == QSSGShaderCache::ShaderType::Vertex ? builtinVertexOutputs : QSSGShaderCustomMaterialAdapter::StringPairList(),
+                            multiViewDependentSamplers,
+                            multiViewDependentUniforms);
+
                         if (type == QSSGShaderCache::ShaderType::Vertex) {
                             // qt_customMain() has an argument list which gets injected here
-                            insertVertexMainArgs(result[i].first);
-                            passData.vertexShaderCode[i] = result[i].first;
-                            passData.vertexMetaData[i] = result[i].second;
+                            insertVertexMainArgs(result.first);
+                            passData.vertexShaderCode[pathKeyIndex] = result.first;
+                            passData.vertexMetaData[pathKeyIndex] = result.second;
                         } else {
-                            passData.fragmentShaderCode[i] = result[i].first;
-                            passData.fragmentMetaData[i] = result[i].second;
+                            passData.fragmentShaderCode[pathKeyIndex] = result.first;
+                            passData.fragmentMetaData[pathKeyIndex] = result.second;
                         }
                     }
                 }
 
-                effectNode->commands.push_back({ nullptr, true }); // will be changed to QSSGBindShader in finalizeShaders
+                effectNode->commands.push_back(nullptr); // will be changed to QSSGBindShader in finalizeShaders
                 passData.bindShaderCmdIndex = effectNode->commands.size() - 1;
 
                 // finalizing the shader code happens in a separate step later on by the backend node
@@ -949,7 +1047,7 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
                 effectNode->shaderPrepData.passes.append(passData);
                 effectNode->shaderPrepData.valid = true; // trigger reprocessing the shader code later on
 
-                effectNode->commands.push_back({ new QSSGApplyInstanceValue, true });
+                effectNode->commands.push_back(new QSSGApplyInstanceValue);
 
                 // Buffers
                 QQuick3DShaderUtilsBuffer *outputBuffer = pass->outputBuffer;
@@ -958,17 +1056,18 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
                     if (outBufferName.isEmpty()) {
                         // default output buffer (with settings)
                         auto outputFormat = QQuick3DShaderUtilsBuffer::mapTextureFormat(outputBuffer->format());
-                        effectNode->commands.push_back({ new QSSGBindTarget(outputFormat), true });
+                        effectNode->commands.push_back(new QSSGBindTarget(outputFormat));
                         effectNode->outputFormat = outputFormat;
                     } else {
                         // Allocate buffer command
-                        effectNode->commands.push_back({ outputBuffer->getCommand(), false });
+                        effectNode->commands.push_back(outputBuffer->cloneCommand());
+                        connect(outputBuffer, &QQuick3DShaderUtilsBuffer::changed, this, &QQuick3DEffect::onPassDirty, Qt::UniqueConnection);
                         // bind buffer
-                        effectNode->commands.push_back({ new QSSGBindBuffer(outBufferName), true });
+                        effectNode->commands.push_back(new QSSGBindBuffer(outBufferName));
                     }
                 } else {
                     // Use the default output buffer, same format as the source buffer
-                    effectNode->commands.push_back({ new QSSGBindTarget(QSSGRenderTextureFormat::Unknown), true });
+                    effectNode->commands.push_back(new QSSGBindTarget(QSSGRenderTextureFormat::Unknown));
                     effectNode->outputFormat = QSSGRenderTextureFormat::Unknown;
                 }
 
@@ -976,12 +1075,14 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
                 const auto &extraCommands = pass->m_commands;
                 for (const auto &command : extraCommands) {
                     const int bufferCount = command->bufferCount();
-                    for (int i = 0; i != bufferCount; ++i)
-                        effectNode->commands.push_back({ command->bufferAt(i)->getCommand(), false });
-                    effectNode->commands.push_back({ command->getCommand(), false });
+                    for (int i = 0; i != bufferCount; ++i) {
+                        effectNode->commands.push_back(command->bufferAt(i)->cloneCommand());
+                        connect(command->bufferAt(i), &QQuick3DShaderUtilsBuffer::changed, this, &QQuick3DEffect::onPassDirty, Qt::UniqueConnection);
+                    }
+                    effectNode->commands.push_back(command->cloneCommand());
                 }
 
-                effectNode->commands.push_back({ new QSSGRender, true });
+                effectNode->commands.push_back(new QSSGRender);
             }
         }
     }
@@ -1013,6 +1114,8 @@ void QQuick3DEffect::onTextureDirty()
 
 void QQuick3DEffect::onPassDirty()
 {
+    // changed() signals from not just Passes but Buffers are also hooked up to this.
+    // Any property change should lead to re-evaluating the whole effect in sync.
     markDirty(Dirty::EffectChainDirty);
 }
 

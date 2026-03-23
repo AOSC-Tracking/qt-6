@@ -6,17 +6,12 @@ import QtQuick3D
 
 Model {
     id: hood
+    property bool rain: false
     objectName: "Hood"
+    pickable: true
     z: 0.6023856401443481
-    source: rootWindow.downloadBase + "/asset_imports/Quick3DAssets/EV_SportsCar_low/meshes/hood_mesh.mesh"
     receivesReflections: true
     property bool isOpen: false
-    materials: [
-        carPaint_material,
-        plasticBlack_material24,
-        chrome_material
-    ]
-
     Node {
         id: __materialLibrary__
     }
@@ -24,11 +19,11 @@ Model {
     states: [
         State {
             name: "closed"
-            when: !isOpen
+            when: !hood.isOpen
         },
         State {
             name: "open"
-            when: isOpen
+            when: hood.isOpen
 
             PropertyChanges {
                 target: hood

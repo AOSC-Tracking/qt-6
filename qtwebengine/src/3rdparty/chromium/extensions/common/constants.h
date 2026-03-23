@@ -11,6 +11,7 @@
 
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
+#include "base/time/time.h"
 #include "build/chromeos_buildflags.h"
 #include "extensions/common/extensions_export.h"
 
@@ -100,8 +101,8 @@ inline constexpr base::FilePath::CharType kExtensionFileExtension[] =
 inline constexpr base::FilePath::CharType kExtensionKeyFileExtension[] =
     FILE_PATH_LITERAL(".pem");
 
-// Default frequency for auto updates, if turned on (5 hours).
-inline constexpr int kDefaultUpdateFrequencySeconds = 60 * 60 * 5;
+// Default frequency for auto updates, if turned on.
+inline constexpr base::TimeDelta kDefaultUpdateFrequency = base::Hours(5);
 
 // The name of the directory inside the profile where per-app local settings
 // are stored.
@@ -291,11 +292,17 @@ inline constexpr char kMimeHandlerPrivateTestExtensionId[] =
 // The extension id of the Files Manager application.
 inline constexpr char kFilesManagerAppId[] = "hhaomjibdihmijegdhdafkllkbggdgoj";
 
+// The extension id of the Files Manager SWA.
+inline constexpr char kFilesManagerSWAId[] = "fkiggjmkendpmbegkagpmagjepfkpmeb";
+
 // The extension id of the Calculator application.
 inline constexpr char kCalculatorAppId[] = "joodangkbfjnajiiifokapkpmhfnpleo";
 
 // The extension id of the demo Calendar application.
 inline constexpr char kCalendarDemoAppId[] = "fpgfohogebplgnamlafljlcidjedbdeb";
+
+// The extension id of the Camera application.
+inline constexpr char kCameraAppId[] = "njfbnohfdkmbmnjapinfcopialeghnmh";
 
 // The extension id of the GMail application.
 inline constexpr char kGmailAppId[] = "pjkljhegncpnkpknbcohdijeoejaedia";
@@ -348,13 +355,23 @@ inline constexpr char kClipchampAppId[] = "pfepfhbcedkbjdkanpimmmdjfgoddhkg";
 // The extension id of the GeForce NOW PWA.
 inline constexpr char kGeForceNowAppId[] = "egmafekfmcnknbdlbfbhafbllplmjlhn";
 
-// The extension id of the Zoom PWA.
-inline constexpr char kZoomAppId[] = "jldpdkiafafcejhceeincjmlkmibemgj";
+// The extension id of the Zoom PWA. We used to have
+// jldpdkiafafcejhceeincjmlkmibemgj for Zoom with its old url https://zoom.us/.
+// However, nowadays, it always redirect to https://www.zoom.com/ so its
+// extension id becomes ddamjdmghnhnicfnliimfobemngigiom.
+inline constexpr char kZoomAppId[] = "ddamjdmghnhnicfnliimfobemngigiom";
 
 // The extension id of the Sumo PWA.
-inline constexpr char kSumoAppId[] = "mfknjekfflbfdchhohffdpkokgfbfmdc";
+inline constexpr char kSumoAppId[] = "genadphlobhbpdnafiphnppelkagmghm";
 
-// The extension id of the Sumo PWA.
+// The extension id of Gemini App if installed manually.
+inline constexpr char kGeminiAppId[] = "caidcmannjgahlnbpmidmiecjcoiiigg";
+
+// The extension id of Gemini App if added by policy.
+inline constexpr char kGeminiAppByPolicyId[] =
+    "gdfaincndogidkdcdkhapmbffkckdkhn";
+
+// The extension id of the Adobe Spark PWA.
 inline constexpr char kAdobeSparkAppId[] = "magefboookdoiehjohjmbjmkepngibhm";
 
 // The extension id of the Google Docs application.
@@ -441,6 +458,9 @@ inline constexpr char kNewAttractLoopAppId[] =
 inline constexpr char kNewHighlightsAppId[] =
     "enchmnkoajljphdmahljlebfmpkkbnkj";
 
+// The extension id of 2024 Demo Mode App.
+inline constexpr char kDemoModeSWA[] = "bmpphkbpdoljalglilnffmikoggpdolg";
+
 // Returns true if this app is one of Demo Mode Chrome Apps, including
 // attract loop and highlights apps.
 EXTENSIONS_EXPORT bool IsDemoModeChromeApp(std::string_view extension_id);
@@ -460,6 +480,10 @@ EXTENSIONS_EXPORT bool IsPreinstalledAppId(std::string_view app_id);
 // Error message when enterprise policy blocks scripting of webpage.
 inline constexpr char kPolicyBlockedScripting[] =
     "This page cannot be scripted due to an ExtensionsSettings policy.";
+
+// Error message when extension tries to allow 3PCs in incognito.
+inline constexpr char kCookiesAllowedIncognitoErrorMessage[] =
+    "Third-party cookies are blocked in incognito and cannot be re-allowed.";
 
 // Error message when access to incognito preferences is denied.
 inline constexpr char kIncognitoErrorMessage[] =

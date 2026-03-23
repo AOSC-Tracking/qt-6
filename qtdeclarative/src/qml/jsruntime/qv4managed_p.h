@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 #ifndef QMLJS_MANAGED_H
 #define QMLJS_MANAGED_H
 
@@ -126,8 +127,13 @@ public:
         Type_QMLTypeWrapper,
         Type_V4ReferenceObject,
         Type_QMLValueTypeWrapper,
+        Type_MemberData,
+        Type_ArrayData,
+        Type_StringOrSymbol,
     };
     Q_MANAGED_TYPE(Invalid)
+
+    static QString typeToString(Type);
 
     Heap::InternalClass *internalClass() const { return d()->internalClass; }
     const VTable *vtable() const { return d()->internalClass->vtable; }

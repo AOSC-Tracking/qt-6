@@ -284,13 +284,6 @@ class TestSession : public QuicSession {
     return stream;
   }
 
-  TestStream* CreateOutgoingUnidirectionalStream() {
-    TestStream* stream = new TestStream(GetNextOutgoingUnidirectionalStreamId(),
-                                        this, WRITE_UNIDIRECTIONAL);
-    ActivateStream(absl::WrapUnique(stream));
-    return stream;
-  }
-
   TestStream* CreateIncomingStream(QuicStreamId id) override {
     // Enforce the limit on the number of open streams.
     if (!VersionHasIetfQuicFrames(connection()->transport_version()) &&
@@ -789,20 +782,6 @@ TEST_P(QuicSessionTestServer, IsClosedBidirectionalStreamLocallyCreated) {
   CloseStream(GetNthServerInitiatedBidirectionalId(0));
   CheckClosedStreams();
   CloseStream(GetNthServerInitiatedBidirectionalId(1));
-  CheckClosedStreams();
-}
-
-TEST_P(QuicSessionTestServer, IsClosedUnidirectionalStreamLocallyCreated) {
-  CompleteHandshake();
-  TestStream* stream2 = session_.CreateOutgoingUnidirectionalStream();
-  EXPECT_EQ(GetNthServerInitiatedUnidirectionalId(0), stream2->id());
-  TestStream* stream4 = session_.CreateOutgoingUnidirectionalStream();
-  EXPECT_EQ(GetNthServerInitiatedUnidirectionalId(1), stream4->id());
-
-  CheckClosedStreams();
-  CloseStream(GetNthServerInitiatedUnidirectionalId(0));
-  CheckClosedStreams();
-  CloseStream(GetNthServerInitiatedUnidirectionalId(1));
   CheckClosedStreams();
 }
 
@@ -1349,7 +1328,8 @@ TEST_P(QuicSessionTestServer, LimitMaxStreams) {
   EXPECT_CALL(*connection_, SendControlFrame(IsFrame(MAX_STREAMS_FRAME)))
       .WillOnce(Invoke(&ClearControlFrame));
   session_.OnFrameAcked(QuicFrame(max_stream_frames[0]),
-                        QuicTime::Delta::Zero(), QuicTime::Zero());
+                        QuicTime::Delta::Zero(), QuicTime::Zero(),
+                        /*is_retransmission=*/false);
   EXPECT_EQ(3 * kMaxStreams,
             QuicSessionPeer::ietf_streamid_manager(&session_)
                 ->advertised_max_incoming_bidirectional_streams());
@@ -1368,7 +1348,8 @@ TEST_P(QuicSessionTestServer, LimitMaxStreams) {
   // When the remaining outstanding MAX_STREAMS frame is ACK'd no new one
   // will be sent because the correct limit has already been advertised.
   session_.OnFrameAcked(QuicFrame(max_stream_frames[1]),
-                        QuicTime::Delta::Zero(), QuicTime::Zero());
+                        QuicTime::Delta::Zero(), QuicTime::Zero(),
+                        /*is_retransmission=*/false);
 }
 
 TEST_P(QuicSessionTestServer, BufferedHandshake) {
@@ -2451,6 +2432,17 @@ TEST_P(QuicSessionTestClient, FailedToCreateStreamIfTooCloseToIdleTimeout) {
   EXPECT_TRUE(session_.CanOpenNextOutgoingBidirectionalStream());
 }
 
+TEST_P(QuicSessionTestClient, MinAckDelaySet) {
+  // IETF QUIC only feature.
+  if (!VersionHasIetfQuicFrames(transport_version())) {
+    return;
+  }
+  session_.config()->SetClientConnectionOptions({kAFIA});
+  session_.Initialize();
+  EXPECT_EQ(session_.config()->GetMinAckDelayDraft10ToSendMs(),
+            kDefaultMinAckDelayTimeMs);
+}
+
 TEST_P(QuicSessionTestServer, ZombieStreams) {
   CompleteHandshake();
   TestStream* stream2 = session_.CreateOutgoingBidirectionalStream();
@@ -3287,7 +3279,7 @@ TEST_P(QuicSessionTestServer, AcceptReliableSizeIfNegotiated) {
   session_.EnableReliableStreamReset();
   MockPacketWriter* writer = static_cast<MockPacketWriter*>(
       QuicConnectionPeer::GetWriter(session_.connection()));
-  TestStream* write_only = session_.CreateOutgoingUnidirectionalStream();
+  TestStream* write_only = session_.CreateOutgoingBidirectionalStream();
   EXPECT_CALL(*writer, WritePacket(_, _, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   session_.SendStreamData(write_only);

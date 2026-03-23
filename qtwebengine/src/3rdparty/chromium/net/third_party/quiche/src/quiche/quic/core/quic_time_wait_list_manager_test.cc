@@ -6,22 +6,15 @@
 
 #include <cerrno>
 #include <memory>
-#include <ostream>
 #include <tuple>
 #include <utility>
 #include <vector>
 
-#include "quiche/quic/core/crypto/crypto_protocol.h"
-#include "quiche/quic/core/crypto/null_encrypter.h"
-#include "quiche/quic/core/crypto/quic_decrypter.h"
-#include "quiche/quic/core/crypto/quic_encrypter.h"
 #include "quiche/quic/core/quic_connection_id.h"
-#include "quiche/quic/core/quic_data_reader.h"
 #include "quiche/quic/core/quic_framer.h"
 #include "quiche/quic/core/quic_packet_writer.h"
 #include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/core/quic_utils.h"
-#include "quiche/quic/platform/api/quic_expect_bug.h"
 #include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/test_tools/mock_quic_session_visitor.h"
@@ -164,7 +157,7 @@ class QuicTimeWaitListManagerTest : public QuicTest {
 
   void ProcessPacket(QuicConnectionId connection_id) {
     time_wait_list_manager_.ProcessPacket(
-        self_address_, peer_address_, connection_id, GOOGLE_QUIC_PACKET,
+        self_address_, peer_address_, connection_id, GOOGLE_QUIC_Q043_PACKET,
         kTestPacketSize, std::make_unique<QuicPerPacketContext>());
   }
 
@@ -532,6 +525,24 @@ TEST_F(QuicTimeWaitListManagerTest, AddConnectionIdTwice) {
   time_wait_list_manager_.CleanUpOldConnectionIds();
   EXPECT_FALSE(IsConnectionIdInTimeWait(connection_id_));
   EXPECT_EQ(0u, time_wait_list_manager_.num_connections());
+}
+
+TEST_F(QuicTimeWaitListManagerTest, AddOverlappingConnectionIdSet) {
+  QuicConnectionId cid1 = TestConnectionId(1);
+  QuicConnectionId cid2 = TestConnectionId(2);
+  QuicConnectionId cid3 = TestConnectionId(3);
+
+  time_wait_list_manager_.AddConnectionIdToTimeWait(
+      QuicTimeWaitListManager::SEND_STATELESS_RESET,
+      TimeWaitConnectionInfo(false, nullptr, {cid1, cid2}));
+  time_wait_list_manager_.AddConnectionIdToTimeWait(
+      QuicTimeWaitListManager::SEND_STATELESS_RESET,
+      TimeWaitConnectionInfo(false, nullptr, {cid1, cid3}));
+
+  EXPECT_TRUE(time_wait_list_manager_.IsConnectionIdInTimeWait(cid1));
+  EXPECT_TRUE(time_wait_list_manager_.IsConnectionIdInTimeWait(cid2));
+  EXPECT_TRUE(time_wait_list_manager_.IsConnectionIdInTimeWait(cid3));
+  EXPECT_EQ(time_wait_list_manager_.num_connections(), 2u);
 }
 
 TEST_F(QuicTimeWaitListManagerTest, ConnectionIdsOrderedByTime) {

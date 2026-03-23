@@ -6,14 +6,13 @@ import terser from '@rollup/plugin-terser';
 
 /**
  * Checks if an env variable is true.
- * @param {string|undefined} envVar
+ * @param envVar
  * @returns Whether the flag is 'true' or not.
  */
 function isEnvVarTrue(envVar) {
   return envVar === 'true';
 }
 
-// eslint-disable-next-line import/no-default-export
 export default {
   treeshake: false,
   output: [{format: 'iife'}],

@@ -20,7 +20,8 @@
 #include "sync/sync_reporting.h"
 #include "state_tracker/cmd_buffer_state.h"
 
-struct ReportKeyValues;
+struct ReportProperties;
+struct RecordObject;
 class SyncValidator;
 
 namespace syncval {
@@ -33,21 +34,10 @@ class AlternateResourceUsage {
     struct RecordBase {
         using Record = std::unique_ptr<RecordBase>;
         virtual Record MakeRecord() const = 0;
-        virtual std::ostream &Format(std::ostream &out, const SyncValidator &sync_state) const = 0;
         virtual vvl::Func GetCommand() const = 0;
         virtual ~RecordBase() {}
     };
 
-    struct FormatterState {
-        FormatterState(const SyncValidator &sync_state_, const AlternateResourceUsage &usage_)
-            : sync_state(sync_state_), usage(usage_) {}
-        const SyncValidator &sync_state;
-        const AlternateResourceUsage &usage;
-    };
-
-    FormatterState Formatter(const SyncValidator &sync_state) const { return FormatterState(sync_state, *this); };
-
-    std::ostream &Format(std::ostream &out, const SyncValidator &sync_state) const { return record_->Format(out, sync_state); };
     vvl::Func GetCommand() const { return record_->GetCommand(); }
     AlternateResourceUsage() = default;
     AlternateResourceUsage(const RecordBase &record) : record_(record.MakeRecord()) {}
@@ -71,23 +61,6 @@ class AlternateResourceUsage {
     RecordBase::Record record_;
 };
 
-inline std::ostream &operator<<(std::ostream &out, const AlternateResourceUsage::FormatterState &formatter) {
-    formatter.usage.Format(out, formatter.sync_state);
-    return out;
-}
-
-template <typename State, typename T>
-struct FormatterImpl {
-    using That = T;
-    friend T;
-    const State &state;
-    const That &that;
-
-  private:
-    // Only intended to be invoke with from That method
-    FormatterImpl(const State &state_, const That &that_) : state(state_), that(that_) {}
-};
-
 // Vulkan handle and associated information.
 // Command buffer context stores array of handles that are referenced by the tagged commands.
 // VulkanTypedHandle is stored in unpacked form to avoid structure padding gaps.
@@ -107,28 +80,26 @@ struct HandleRecord {
         typed_handle.type = type;
         return typed_handle;
     }
-    using FormatterState = FormatterImpl<SyncValidator, HandleRecord>;
-    FormatterState Formatter(const SyncValidator &sync_state) const { return FormatterState(sync_state, *this); }
 };
 
-struct ResourceCmdUsageRecord {
+// ResourceUsageRecord encodes information about the command that performed the access.
+// It's important to limit the size of this structure. Separate record is stored per access command.
+struct ResourceUsageRecord {
     static constexpr auto kMaxIndex = std::numeric_limits<ResourceUsageTag>::max();
     enum class SubcommandType { kNone, kSubpassTransition, kLoadOp, kStoreOp, kResolveOp, kIndex };
 
-    ResourceCmdUsageRecord() = default;
-    ResourceCmdUsageRecord(vvl::Func command_, uint32_t seq_num_, SubcommandType sub_type_, uint32_t sub_command_,
-                           const vvl::CommandBuffer *cb_state_, uint32_t reset_count_)
-        : command(command_),
-          seq_num(seq_num_),
-          sub_command_type(sub_type_),
-          sub_command(sub_command_),
-          cb_state(cb_state_),
-          reset_count(reset_count_) {}
+    ResourceUsageRecord(vvl::Func command, uint32_t seq_num, SubcommandType sub_type, const vvl::CommandBuffer *cb_state,
+                        uint32_t reset_count)
+        : command(command), seq_num(seq_num), sub_command_type(sub_type), cb_state(cb_state), reset_count(reset_count) {}
+    ResourceUsageRecord(const AlternateResourceUsage &other) : alt_usage(other) {}
 
     vvl::Func command = vvl::Func::Empty;
-    uint32_t seq_num = 0U;
+
+    // TODO: this value should be relplaced by correct index of the Vulkan API command. Then it will be more useful.
+    // Currently this indexes only the commands that initiate memory accesses (so are of interest to syncval).
+    uint32_t seq_num = 0;
+
     SubcommandType sub_command_type = SubcommandType::kNone;
-    uint32_t sub_command = 0U;
 
     // This is somewhat repetitive, but it prevents the need for Exec/Submit time touchup, after which usage records can be
     // from different command buffers and resets.
@@ -140,40 +111,25 @@ struct ResourceCmdUsageRecord {
     uint32_t handle_count = 0;
 
     uint32_t label_command_index = vvl::kNoIndex32;
+    AlternateResourceUsage alt_usage;
 };
 
-struct DebugNameProvider;
+// ResourceUsageInfo is similar to ResourceUsageRecord but prioritizes accessibility over memory efficiency.
+// This structure can be as large as needed. Instances are usually stored on the stack.
+struct ResourceUsageInfo {
+    vvl::Func command = vvl::Func::Empty;
+    uint32_t command_seq = vvl::kNoIndex32;
 
-struct ResourceUsageRecord : public ResourceCmdUsageRecord {
-    struct FormatterState {
-        FormatterState(const SyncValidator &sync_state_, const ResourceUsageRecord &record_, const vvl::CommandBuffer *cb_state_,
-                       const DebugNameProvider *debug_name_provider_, uint32_t handle_index)
-            : sync_state(sync_state_),
-              record(record_),
-              ex_cb_state(cb_state_),
-              debug_name_provider(debug_name_provider_),
-              handle_index(handle_index) {}
-        const SyncValidator &sync_state;
-        const ResourceUsageRecord &record;
-        const vvl::CommandBuffer *ex_cb_state;
-        const DebugNameProvider *debug_name_provider;
-        uint32_t handle_index;
-    };
-    FormatterState Formatter(const SyncValidator &sync_state, const vvl::CommandBuffer *ex_cb_state,
-                             const DebugNameProvider *debug_name_provider, uint32_t handle_index) const {
-        return FormatterState(sync_state, *this, ex_cb_state, debug_name_provider, handle_index);
-    }
+    VulkanTypedHandle resource_handle;
+    std::string debug_region_name;
 
-    AlternateResourceUsage alt_usage;
+    const vvl::CommandBuffer *cb = nullptr;
+    uint32_t command_buffer_reset_count = 0;
 
-    ResourceUsageRecord() = default;
-    ResourceUsageRecord(vvl::Func command_, uint32_t seq_num_, SubcommandType sub_type_, uint32_t sub_command_,
-                        const vvl::CommandBuffer *cb_state_, uint32_t reset_count_)
-        : ResourceCmdUsageRecord(command_, seq_num_, sub_type_, sub_command_, cb_state_, reset_count_) {}
-
-    ResourceUsageRecord(const AlternateResourceUsage &other) : ResourceCmdUsageRecord(), alt_usage(other) {}
-    ResourceUsageRecord(const ResourceUsageRecord &other) : ResourceCmdUsageRecord(other), alt_usage(other.alt_usage) {}
-    ResourceUsageRecord &operator=(const ResourceUsageRecord &other) = default;
+    const vvl::Queue *queue = nullptr;
+    uint64_t submit_index = 0;
+    uint32_t batch_index = 0;
+    ResourceUsageTag batch_base_tag = 0;
 };
 
 // Provides debug region name for the specified access log command.
@@ -190,35 +146,17 @@ class CommandExecutionContext {
     CommandExecutionContext(const SyncValidator &sync_validator, VkQueueFlags queue_flags);
     virtual ~CommandExecutionContext() = default;
 
-    // Are imported command buffers Submitted (QueueBatchContext), or Executed (CommandBufferAccessContext)
-    enum ExecutionType : int {
-        kExecuted = 0,  // Recorded contexts are integrated into context during vkCmdExecuteCommands
-        kSubmitted = 1  // Recorded contexts are integrated into context during vkQueueSubmit (etc.)
-    };
-
-    virtual ExecutionType Type() const = 0;
-
-    const char *ExecutionTypeString() const {
-        const char *type_string[] = {"Executed", "Submitted"};
-        return type_string[Type()];
-    }
-    const char *ExecutionUsageString() const {
-        const char *usage_string[] = {"executed_usage", "submitted_usage"};
-        return usage_string[Type()];
-    }
-
     virtual AccessContext *GetCurrentAccessContext() = 0;
     virtual SyncEventsContext *GetCurrentEventsContext() = 0;
     virtual const AccessContext *GetCurrentAccessContext() const = 0;
     virtual const SyncEventsContext *GetCurrentEventsContext() const = 0;
     virtual QueueId GetQueueId() const = 0;
     virtual VulkanTypedHandle Handle() const = 0;
-    virtual std::string FormatUsage(ResourceUsageTagEx tag_ex, ReportKeyValues &extra_properties) const = 0;
-    virtual void AddUsageRecordExtraProperties(ResourceUsageTag tag, ReportKeyValues &extra_properties) const = 0;
+    virtual ResourceUsageInfo GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const = 0;
 
-    std::string FormatHazard(const HazardResult &hazard, ReportKeyValues &key_values) const;
     bool ValidForSyncOps() const;
     const SyncValidator &GetSyncState() const { return sync_state_; }
+    VkQueueFlags GetQueueFlags() const { return queue_flags_; }
 
   protected:
     const SyncValidator &sync_state_;
@@ -265,11 +203,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
 
     void Reset();
 
-    ReportUsageInfo GetReportUsageInfo(ResourceUsageTagEx tag_ex) const;
-    std::string FormatUsage(ResourceUsageTagEx tag_ex, ReportKeyValues &extra_properties) const override;
-    void AddUsageRecordExtraProperties(ResourceUsageTag tag, ReportKeyValues &extra_properties) const override;
-    std::string FormatUsage(const char *usage_string, const ResourceFirstAccess &access,
-                            ReportKeyValues &key_values) const;  //  Only command buffers have "first usage"
+    ResourceUsageInfo GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const override;
     AccessContext *GetCurrentAccessContext() override { return current_context_; }
     SyncEventsContext *GetCurrentEventsContext() override { return &events_context_; }
     const AccessContext *GetCurrentAccessContext() const override { return current_context_; }
@@ -279,10 +213,10 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     RenderPassAccessContext *GetCurrentRenderPassContext() { return current_renderpass_context_; }
     const RenderPassAccessContext *GetCurrentRenderPassContext() const { return current_renderpass_context_; }
     ResourceUsageTag RecordBeginRenderPass(vvl::Func command, const vvl::RenderPass &rp_state, const VkRect2D &render_area,
-                                           const std::vector<const syncval_state::ImageViewState *> &attachment_views);
+                                           const std::vector<const vvl::ImageView *> &attachment_views);
 
     bool ValidateBeginRendering(const ErrorObject &error_obj, syncval_state::BeginRenderingCmdState &cmd_state) const;
-    void RecordBeginRendering(syncval_state::BeginRenderingCmdState &cmd_state, const RecordObject &record_obj);
+    void RecordBeginRendering(syncval_state::BeginRenderingCmdState &cmd_state, const Location &loc);
     bool ValidateEndRendering(const ErrorObject &error_obj) const;
     void RecordEndRendering(const RecordObject &record_obj);
     bool ValidateDispatchDrawDescriptorSet(VkPipelineBindPoint pipelineBindPoint, const Location &loc) const;
@@ -295,9 +229,9 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     bool ValidateDrawDynamicRenderingAttachment(const Location &loc) const;
     void RecordDrawAttachment(ResourceUsageTag tag);
     void RecordDrawDynamicRenderingAttachment(ResourceUsageTag tag);
-    ClearAttachmentInfo GetClearAttachmentInfo(const VkClearAttachment &clear_attachment, const VkClearRect &rect) const;
-    bool ValidateClearAttachment(const Location &loc, const VkClearAttachment &clear_attachment, const VkClearRect &rect) const;
-    void RecordClearAttachment(ResourceUsageTag tag, const VkClearAttachment &clear_attachment, const VkClearRect &rect);
+    bool ValidateClearAttachment(const Location &loc, const VkClearAttachment &clear_attachment, uint32_t clear_rect_index,
+                                 const VkClearRect &clear_rect) const;
+    void RecordClearAttachment(ResourceUsageTag tag, const VkClearAttachment &clear_attachment, const VkClearRect &clear_rect);
 
     ResourceUsageTag RecordNextSubpass(vvl::Func command);
     ResourceUsageTag RecordEndRenderPass(vvl::Func command);
@@ -306,10 +240,6 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     void RecordExecutedCommandBuffer(const CommandBufferAccessContext &recorded_context);
     void ResolveExecutedCommandBuffer(const AccessContext &recorded_context, ResourceUsageTag offset);
 
-    // TODO: what about using queue_flags directly from base class?
-    VkQueueFlags GetQueueFlags() const { return cb_state_ ? cb_state_->GetQueueFlags() : 0; }
-
-    ExecutionType Type() const override { return kExecuted; }
     size_t GetTagCount() const { return access_log_->size(); }
     VulkanTypedHandle Handle() const override {
         if (cb_state_) {
@@ -322,12 +252,12 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
                                     ResourceUsageRecord::SubcommandType subcommand = ResourceUsageRecord::SubcommandType::kNone);
     ResourceUsageTag NextSubcommandTag(vvl::Func command, ResourceUsageRecord::SubcommandType subcommand);
 
-    ResourceUsageTagEx AddCommandHandle(ResourceUsageTag tag, const VulkanTypedHandle &typed_handle,
-                                        uint32_t index = vvl::kNoIndex32);
+    ResourceUsageTagEx AddCommandHandle(ResourceUsageTag tag, const VulkanTypedHandle &typed_handle);
+    ResourceUsageTagEx AddCommandHandleIndexed(ResourceUsageTag tag, const VulkanTypedHandle &typed_handle, uint32_t index);
 
     // Default subcommand behavior is that it references the same handles as the main command.
     // The following method allows to set subcommand handles independently of the main command.
-    void AddSubcommandHandle(ResourceUsageTag tag, const VulkanTypedHandle &typed_handle, uint32_t index = vvl::kNoIndex32);
+    void AddSubcommandHandleIndexed(ResourceUsageTag tag, const VulkanTypedHandle &typed_handle, uint32_t index);
 
     const std::vector<HandleRecord> &GetHandleRecords() const { return handles_; }
 
@@ -362,8 +292,13 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     // As this is passing around a shared pointer to record, move to avoid needless atomics.
     void RecordSyncOp(SyncOpPointer &&sync_op);
 
-    bool ValidateClearAttachment(const Location &loc, const ClearAttachmentInfo &info) const;
-    void RecordClearAttachment(ResourceUsageTag tag, const ClearAttachmentInfo &clear_info);
+    struct ClearAttachmentInfo {
+        const vvl::ImageView &attachment_view;
+        VkImageAspectFlags aspects_to_clear = 0;
+        VkImageSubresourceRange subresource_range{};
+    };
+    std::optional<ClearAttachmentInfo> GetClearAttachmentInfo(const VkClearAttachment &clear_attachment,
+                                                              const VkClearRect &rect) const;
 
     void CheckCommandTagDebugCheckpoint();
 
@@ -375,7 +310,6 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     std::shared_ptr<AccessLog> access_log_;
     std::shared_ptr<CommandBufferSet> cbs_referenced_;
     uint32_t command_number_;
-    uint32_t subcommand_number_;
     uint32_t reset_count_;
 
     // Handles referenced by the tagged commands
@@ -405,17 +339,84 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
 };
 
 namespace syncval_state {
-class CommandBuffer : public vvl::CommandBuffer {
+class CommandBufferSubState : public vvl::CommandBufferSubState {
   public:
     CommandBufferAccessContext access_context;
 
-    CommandBuffer(SyncValidator &dev, VkCommandBuffer handle, const VkCommandBufferAllocateInfo *allocate_info,
-                  const vvl::CommandPool *pool);
-    ~CommandBuffer() { Destroy(); }
+    CommandBufferSubState(SyncValidator &dev, vvl::CommandBuffer &cb);
 
     void NotifyInvalidate(const vvl::StateObject::NodeList &invalid_nodes, bool unlink) override;
 
+    void End() override;
     void Destroy() override;
     void Reset(const Location &loc) override;
+
+    void RecordCopyBuffer(vvl::Buffer &src_buffer_state, vvl::Buffer &dst_buffer_state, uint32_t region_count,
+                          const VkBufferCopy *regions, const Location &loc) override;
+    void RecordCopyBuffer2(vvl::Buffer &src_buffer_state, vvl::Buffer &dst_buffer_state, uint32_t region_count,
+                           const VkBufferCopy2 *regions, const Location &loc) override;
+    void RecordCopyImage(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
+                         VkImageLayout dst_image_layout, uint32_t region_count, const VkImageCopy *regions,
+                         const Location &loc) override;
+    void RecordCopyImage2(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
+                          VkImageLayout dst_image_layout, uint32_t region_count, const VkImageCopy2 *regions,
+                          const Location &loc) override;
+    void RecordCopyBufferToImage(vvl::Buffer &src_buffer_state, vvl::Image &dst_image_state, VkImageLayout dst_image_layout,
+                                 uint32_t region_count, const VkBufferImageCopy *regions, const Location &loc) override;
+    void RecordCopyBufferToImage2(vvl::Buffer &src_buffer_state, vvl::Image &dst_image_state, VkImageLayout dst_image_layout,
+                                  uint32_t region_count, const VkBufferImageCopy2 *regions, const Location &loc) override;
+    void RecordCopyImageToBuffer(vvl::Image &src_image_state, vvl::Buffer &dst_buffer_state, VkImageLayout src_image_layout,
+                                 uint32_t region_count, const VkBufferImageCopy *regions, const Location &loc) override;
+    void RecordCopyImageToBuffer2(vvl::Image &src_image_state, vvl::Buffer &dst_buffer_state, VkImageLayout src_image_layout,
+                                  uint32_t region_count, const VkBufferImageCopy2 *regions, const Location &loc) override;
+    void RecordBlitImage(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
+                         VkImageLayout dst_image_layout, uint32_t region_count, const VkImageBlit *regions,
+                         const Location &loc) override;
+    void RecordBlitImage2(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
+                          VkImageLayout dst_image_layout, uint32_t region_count, const VkImageBlit2 *regions,
+                          const Location &loc) override;
+    void RecordResolveImage(vvl::Image &src_image_state, vvl::Image &dst_image_state, uint32_t region_count,
+                            const VkImageResolve *regions, const Location &loc) override;
+    void RecordResolveImage2(vvl::Image &src_image_state, vvl::Image &dst_image_state, uint32_t region_count,
+                             const VkImageResolve2 *regions, const Location &loc) override;
+    void RecordClearColorImage(vvl::Image &image_state, VkImageLayout image_layout, const VkClearColorValue *color_values,
+                               uint32_t range_count, const VkImageSubresourceRange *ranges, const Location &loc) override;
+    void RecordClearDepthStencilImage(vvl::Image &image_state, VkImageLayout image_layout,
+                                      const VkClearDepthStencilValue *depth_stencil_values, uint32_t range_count,
+                                      const VkImageSubresourceRange *ranges, const Location &loc) override;
+    void RecordClearAttachments(uint32_t attachment_count, const VkClearAttachment *pAttachments, uint32_t rect_count,
+                                const VkClearRect *pRects, const Location &loc) override;
+    void RecordFillBuffer(vvl::Buffer &buffer_state, VkDeviceSize offset, VkDeviceSize size, const Location &loc) override;
+    void RecordUpdateBuffer(vvl::Buffer &buffer_state, VkDeviceSize offset, VkDeviceSize size, const Location &loc) override;
+
+    void RecordDecodeVideo(vvl::VideoSession &vs_state, const VkVideoDecodeInfoKHR &decode_info, const Location &loc) override;
+    void RecordEncodeVideo(vvl::VideoSession &vs_state, const VkVideoEncodeInfoKHR &encode_info, const Location &loc) override;
+
+    void RecordCopyQueryPoolResults(vvl::QueryPool &pool_state, vvl::Buffer &dst_buffer_state, uint32_t first_query,
+                                    uint32_t query_count, VkDeviceSize dst_offset, VkDeviceSize stride, VkQueryResultFlags flags,
+                                    const Location &loc) override;
+
+    void RecordBeginRenderPass(const VkRenderPassBeginInfo &render_pass_begin, const VkSubpassBeginInfo &subpass_begin_info,
+                               const Location &loc) override;
+    void RecordNextSubpass(const VkSubpassBeginInfo &subpass_begin_info, const VkSubpassEndInfo *subpass_end_info,
+                           const Location &loc) override;
+    void RecordEndRenderPass(const VkSubpassEndInfo *subpass_end_info, const Location &loc) override;
+
+    void RecordExecuteCommand(vvl::CommandBuffer &secondary_command_buffer, uint32_t cmd_index, const Location &loc) override;
 };
+
+static inline CommandBufferSubState &SubState(vvl::CommandBuffer &cb) {
+    return *static_cast<CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation));
+}
+static inline const CommandBufferSubState &SubState(const vvl::CommandBuffer &cb) {
+    return *static_cast<const CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation));
+}
+
+static inline CommandBufferAccessContext *AccessContext(vvl::CommandBuffer &cb) {
+    return &static_cast<CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation))->access_context;
+}
+static inline const CommandBufferAccessContext *AccessContext(const vvl::CommandBuffer &cb) {
+    return &static_cast<const CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation))->access_context;
+}
+
 }  // namespace syncval_state

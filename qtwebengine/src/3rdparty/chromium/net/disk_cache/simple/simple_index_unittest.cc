@@ -38,10 +38,13 @@ namespace {
 
 const base::Time kTestLastUsedTime = base::Time::UnixEpoch() + base::Days(20);
 const uint32_t kTestEntrySize = 789;
-const uint8_t kTestEntryMemoryData = 123;
 
-uint32_t RoundSize(uint32_t in) {
-  return (in + 0xFFu) & 0xFFFFFF00u;
+// Memory data must be 2 bit value.
+const uint8_t kTestEntryMemoryData =
+    HINT_UNUSABLE_PER_CACHING_HEADERS | HINT_HIGH_PRIORITY;
+
+uint64_t RoundSize(uint64_t in) {
+  return (in + 0xFFu) & 0x3FFFFFFF00u;
 }
 
 }  // namespace
@@ -258,19 +261,83 @@ TEST_F(EntryMetadataTest, Serialize) {
 
   base::PickleIterator it(pickle);
   EntryMetadata new_entry_metadata;
-  new_entry_metadata.Deserialize(net::DISK_CACHE, &it, true, true);
+  new_entry_metadata.Deserialize(net::DISK_CACHE, &it,
+                                 /*app_cache_has_trailer_prefetch_size=*/true);
   CheckEntryMetadataValues(new_entry_metadata);
 
   // Test reading of old format --- the modern serialization of above entry
-  // corresponds, in older format, to an entry with size =
-  //   RoundSize(kTestEntrySize) | kTestEntryMemoryData, which then gets
-  // rounded again when stored by EntryMetadata.
+  // corresponds, in older format, to an entry with
+  // size =  RoundSize(kTestEntrySize), which then gets rounded again when
+  // stored by EntryMetadata.
   base::PickleIterator it2(pickle);
   EntryMetadata new_entry_metadata2;
-  new_entry_metadata2.Deserialize(net::DISK_CACHE, &it2, false, false);
-  EXPECT_EQ(RoundSize(RoundSize(kTestEntrySize) | kTestEntryMemoryData),
-            new_entry_metadata2.GetEntrySize());
-  EXPECT_EQ(0, new_entry_metadata2.GetInMemoryData());
+  new_entry_metadata2.Deserialize(
+      net::DISK_CACHE, &it2,
+      /*app_cache_has_trailer_prefetch_size=*/false);
+  EXPECT_EQ(RoundSize(kTestEntrySize), new_entry_metadata2.GetEntrySize());
+  EXPECT_EQ(kTestEntryMemoryData, new_entry_metadata2.GetInMemoryData());
+}
+
+TEST_F(EntryMetadataTest, SerializeMaximumLargeFile) {
+  constexpr uint64_t kMaximumEntrySize = (1ULL << 38) - 256;
+
+  EntryMetadata entry_metadata;
+  entry_metadata.SetLastUsedTime(kTestLastUsedTime);
+  ASSERT_TRUE(entry_metadata.SetEntrySize(kMaximumEntrySize));
+  entry_metadata.SetInMemoryData(kTestEntryMemoryData);
+
+  base::Pickle pickle;
+  entry_metadata.Serialize(net::DISK_CACHE, &pickle);
+
+  base::PickleIterator it(pickle);
+  EntryMetadata new_entry_metadata;
+  ASSERT_TRUE(new_entry_metadata.Deserialize(
+      net::DISK_CACHE, &it,
+      /*app_cache_has_trailer_prefetch_size=*/true));
+
+  EXPECT_LT(kTestLastUsedTime - base::Seconds(2),
+            entry_metadata.GetLastUsedTime());
+  EXPECT_GT(kTestLastUsedTime + base::Seconds(2),
+            entry_metadata.GetLastUsedTime());
+  EXPECT_EQ(RoundSize(kMaximumEntrySize), entry_metadata.GetEntrySize());
+  EXPECT_EQ(kTestEntryMemoryData, entry_metadata.GetInMemoryData());
+
+  // Test reading of old format --- the modern serialization of above entry
+  // corresponds, in older format, to an entry with
+  // size =  RoundSize(kTestEntrySize), which then gets rounded again when
+  // stored by EntryMetadata.
+  base::PickleIterator it2(pickle);
+  EntryMetadata new_entry_metadata2;
+  new_entry_metadata2.Deserialize(
+      net::DISK_CACHE, &it2,
+      /*app_cache_has_trailer_prefetch_size=*/false);
+  EXPECT_EQ(RoundSize(kMaximumEntrySize), new_entry_metadata2.GetEntrySize());
+  EXPECT_EQ(kTestEntryMemoryData, new_entry_metadata2.GetInMemoryData());
+}
+
+TEST_F(EntryMetadataTest, SerializeTooLargeFile) {
+  constexpr uint64_t kAboveMaximumEntrySize = (1ULL << 38) - 255;
+
+  EntryMetadata entry_metadata;
+
+  // Cannot set too large size.
+  ASSERT_FALSE(entry_metadata.SetEntrySize(kAboveMaximumEntrySize));
+}
+
+TEST_F(EntryMetadataTest, DeserializationFailureInvalidPackedEntryInfo) {
+  constexpr uint64_t kAboveMaximumPackedEntryInfo = 1ULL << 38;
+
+  base::Pickle pickle;
+  pickle.WriteInt64(0);
+
+  // If the value set to `packed_entry_info` exceeds the limit, deserialization
+  // should fail.
+  pickle.WriteUInt64(kAboveMaximumPackedEntryInfo);
+  base::PickleIterator it(pickle);
+  EntryMetadata entry_metadata;
+  EXPECT_FALSE(
+      entry_metadata.Deserialize(net::DISK_CACHE, &it,
+                                 /*app_cache_has_trailer_prefetch_size=*/true));
 }
 
 TEST_F(SimpleIndexTest, IndexSizeCorrectOnMerge) {
@@ -679,19 +746,7 @@ TEST_F(SimpleIndexTest, EvictBySize2) {
   ASSERT_EQ(2u, last_doom_entry_hashes().size());
 }
 
-class SimpleIndexPrioritizedCachingTest : public SimpleIndexTest {
- public:
-  SimpleIndexPrioritizedCachingTest() {
-    feature_list_.InitAndEnableFeature(
-        net::features::kSimpleCachePrioritizedCaching);
-  }
-  ~SimpleIndexPrioritizedCachingTest() override = default;
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-TEST_F(SimpleIndexPrioritizedCachingTest, EvictPrioritization) {
+TEST_F(SimpleIndexTest, EvictPrioritization) {
   const auto caching_prioritization_period =
       net::features::kSimpleCachePrioritizedCachingPrioritizationPeriod.Get();
   auto now = base::Time::Now();
@@ -723,7 +778,7 @@ TEST_F(SimpleIndexPrioritizedCachingTest, EvictPrioritization) {
   ASSERT_EQ(1u, last_doom_entry_hashes().size());
 }
 
-TEST_F(SimpleIndexPrioritizedCachingTest, EvictPrioritizationOutOfPeriod) {
+TEST_F(SimpleIndexTest, EvictPrioritizationOutOfPeriod) {
   const auto caching_prioritization_period =
       net::features::kSimpleCachePrioritizedCachingPrioritizationPeriod.Get();
   auto now = base::Time::Now();
@@ -755,7 +810,20 @@ TEST_F(SimpleIndexPrioritizedCachingTest, EvictPrioritizationOutOfPeriod) {
   ASSERT_EQ(1u, last_doom_entry_hashes().size());
 }
 
-TEST_F(SimpleIndexTest, EvictPrioritizationFeatureDefaultDisabled) {
+class SimpleIndexPrioritizedCachingDisabledTest : public SimpleIndexTest {
+ public:
+  SimpleIndexPrioritizedCachingDisabledTest() {
+    feature_list_.InitAndDisableFeature(
+        net::features::kSimpleCachePrioritizedCaching);
+  }
+  ~SimpleIndexPrioritizedCachingDisabledTest() override = default;
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+TEST_F(SimpleIndexPrioritizedCachingDisabledTest,
+       EvictPrioritizationFeatureDisabled) {
   const auto caching_prioritization_period =
       net::features::kSimpleCachePrioritizedCachingPrioritizationPeriod.Get();
   auto now = base::Time::Now();

@@ -1,6 +1,8 @@
 
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtGraphsWidgets/q3dgraphswidgetitem.h>
 #include <private/q3dgraphswidgetitem_p.h>
@@ -124,6 +126,7 @@ QList<QGraphsTheme *> Q3DGraphsWidgetItem::themes() const
  *
  * \brief Specifies which transparency technique to use. The Default value is \c{Default}.
  * When rendering transparent surface graphs, use \c{Approximate} or \c{Accurate}.
+ * \c Default should be used for other graph types.
  *
  * \value Default
  *        Indicates that order-independent transparency techniques are not used.
@@ -141,9 +144,6 @@ QList<QGraphsTheme *> Q3DGraphsWidgetItem::themes() const
  * \value Accurate
  *        Indicates that accurate order-independent transparency is used.
  *        Use when perfect transparency rendering is needed.
- *        \note Accurate transparency is not yet implemented
- *              and will be enabled when the required functionality
- *              is added to QtQuick3D.
  *
  * \sa QtGraphs3D::TransparencyTechnique
  */
@@ -415,6 +415,19 @@ QSharedPointer<QQuickItemGrabResult> Q3DGraphsWidgetItem::renderToImage(QSize im
     return d->m_graphsItem->grabToImage(renderSize);
 }
 
+/*!
+    \property Q3DGraphsWidgetItem::cameraPreset
+
+    The preset camera position that the camera is currently using. The value can be set to one of the
+    CameraPreset enum values. This property can be used to set a predefined camera angle from where
+    the graph is viewed.
+
+    By default, the camera preset is set to \c CameraPreset::FrontLow.
+
+    \note If you have set the cameraXRotation, cameraYRotation or cameraZoomLevel properties, or
+    called setCustomCamera(), this property will return CameraPreset::NoPreset until either
+    setCameraPreset() is called again, or the preset is changed to another value.
+*/
 QtGraphs3D::CameraPreset Q3DGraphsWidgetItem::cameraPreset() const
 {
     Q_D(const Q3DGraphsWidgetItem);
@@ -1328,6 +1341,27 @@ qreal Q3DGraphsWidgetItem::margin() const
 }
 
 /*!
+ * \property Q3DGraphsWidgetItem::cutoffMargin
+ * \since 6.11
+ *
+ * \brief The value used for the space between the axis limits
+ * and the position at which graph elements are culled.
+ *
+ * \note Does not affect bar graphs.
+ */
+void Q3DGraphsWidgetItem::setCutoffMargin(qreal margin)
+{
+    Q_D(Q3DGraphsWidgetItem);
+    d->m_graphsItem->setCutoffMargin(margin);
+}
+
+qreal Q3DGraphsWidgetItem::cutoffMargin() const
+{
+    Q_D(const Q3DGraphsWidgetItem);
+    return d->m_graphsItem->cutoffMargin();
+}
+
+/*!
  * \internal
  */
 bool Q3DGraphsWidgetItem::event(QEvent *event)
@@ -1597,6 +1631,10 @@ void Q3DGraphsWidgetItemPrivate::createGraph()
                      &QQuickGraphsItem::marginChanged,
                      q,
                      &Q3DGraphsWidgetItem::marginChanged);
+    QObject::connect(m_graphsItem.get(),
+                     &QQuickGraphsItem::cutoffMarginChanged,
+                     q,
+                     &Q3DGraphsWidgetItem::cutoffMarginChanged);
 
     m_widget->installEventFilter(q);
 }

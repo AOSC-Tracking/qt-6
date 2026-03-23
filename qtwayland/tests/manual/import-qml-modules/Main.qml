@@ -7,6 +7,7 @@ import QtWayland.Compositor.PresentationTime
 import QtWayland.Compositor.QtShell
 import QtWayland.Compositor.WlShell
 import QtWayland.Compositor.XdgShell
+import QtWayland.Compositor.TextureSharingExtension
 
 
 Item {
@@ -15,4 +16,5 @@ Item {
     property var p3: QtShellChrome {}
     property var p4: WlShellSurface {}
     property var p5: XdgPopup {}
+    property var p6: TextureSharingExtension {}
 }

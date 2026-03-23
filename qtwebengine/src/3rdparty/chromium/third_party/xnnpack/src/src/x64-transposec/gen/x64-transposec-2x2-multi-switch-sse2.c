@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/x32-transposec/sse2.c.in
 //   Generator: tools/xngen
@@ -10,11 +11,12 @@
 #include <immintrin.h>
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
-#include "xnnpack/transpose.h"
-#include "xnnpack/unaligned.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/transpose.h"
 
 
 void xnn_x64_transposec_ukernel__2x2_multi_switch_sse2(

@@ -6,19 +6,19 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
-#include "base/not_fatal_until.h"
 #include "base/sync_socket.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/default_tick_clock.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/zip.h"
 #include "media/base/audio_bus.h"
 #include "media/base/vector_math.h"
 #include "mojo/public/cpp/system/buffer.h"
 #include "mojo/public/cpp/system/platform_handle.h"
-#include "third_party/abseil-cpp/absl/utility/utility.h"
 
 namespace audio {
 
@@ -262,7 +262,7 @@ void LoopbackStream::FlowNetwork::RemoveInput(SnooperNode* node) {
 
   base::AutoLock scoped_lock(lock_);
   const auto it = std::ranges::find(inputs_, node);
-  CHECK(it != inputs_.end(), base::NotFatalUntil::M130);
+  CHECK(it != inputs_.end());
   inputs_.erase(it);
 }
 
@@ -353,10 +353,9 @@ void LoopbackStream::FlowNetwork::GenerateMoreAudio() {
         }
         do {
           (*it)->Render(delayed_capture_time, transfer_bus_.get());
-          for (int ch = 0; ch < transfer_bus_->channels(); ++ch) {
-            media::vector_math::FMAC(transfer_bus_->channel(ch), volume_,
-                                     transfer_bus_->frames(),
-                                     mix_bus_->channel(ch));
+          for (auto [src_ch, dest_ch] : base::zip(transfer_bus_->AllChannels(),
+                                                  mix_bus_->AllChannels())) {
+            media::vector_math::FMAC(src_ch, volume_, dest_ch);
           }
           ++it;
         } while (it != inputs_.end());

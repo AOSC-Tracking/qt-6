@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWEBENGINEWEBVIEW_P_H
 #define QWEBENGINEWEBVIEW_P_H
@@ -20,40 +21,46 @@
 #include <QtGui/qwindow.h>
 
 #include <QtQml/qqmlcomponent.h>
-
-#include <private/qabstractwebview_p.h>
+#include <QtWebView/private/qwebview_p.h>
 #include <QtWebEngineQuick/QQuickWebEngineProfile>
 #include <QtWebEngineQuick/private/qquickwebenginesettings_p.h>
 
 #include <QtCore/qpointer.h>
+#include <QVariant>
 
 QT_BEGIN_NAMESPACE
 
+class QQuickItem;
 class QQuickWebEngineView;
+class QQuickView;
 class QWebEngineLoadingInfo;
 class QNetworkCookie;
 class QWebEngineWebViewPrivate;
 
-class QWebEngineWebViewSettingsPrivate : public QAbstractWebViewSettings
+class QWebEngineWebViewSettingsPrivate : public QWebViewSettingsPrivate
 {
-    Q_OBJECT
 public:
-    explicit QWebEngineWebViewSettingsPrivate(QWebEngineWebViewPrivate *p = nullptr);
-
-    bool localStorageEnabled() const override;
-    bool javaScriptEnabled() const override;
-    bool localContentCanAccessFileUrls() const override;
-    bool allowFileAccess() const override;
-
-public Q_SLOTS:
-    void setLocalContentCanAccessFileUrls(bool enabled) override;
-    void setJavaScriptEnabled(bool enabled) override;
-    void setLocalStorageEnabled(bool enabled) override;
-    void setAllowFileAccess(bool enabled) override;
+    explicit QWebEngineWebViewSettingsPrivate(QWebEngineWebViewPrivate *p);
 
     void init(QQuickWebEngineSettings *settings);
 
 private:
+    bool doTestAttribute(WebAttribute attribute) const final;
+    void doSetAttribute(WebAttribute attribute, bool value) final;
+
+private:
+    bool localStorageEnabled() const;
+    bool javaScriptEnabled() const;
+    bool localContentCanAccessFileUrls() const;
+    bool allowFileAccess() const;
+
+    void setLocalContentCanAccessFileUrls(bool enabled);
+    void setJavaScriptEnabled(bool enabled);
+    void setLocalStorageEnabled(bool enabled);
+    void setAllowFileAccess(bool enabled);
+
+private:
+    QWebEngineWebViewPrivate *parent;
     QPointer<QQuickWebEngineSettings> m_settings;
     bool m_localStorageEnabled = true;
     bool m_javaScriptEnabled = true;
@@ -61,15 +68,17 @@ private:
     bool m_allowFileAccessEnabled = true;
 };
 
-class QWebEngineWebViewPrivate : public QAbstractWebView
+class QWebEngineWebViewPrivate : public QWebViewPrivate
 {
     Q_OBJECT
 public:
-    explicit QWebEngineWebViewPrivate(QObject *p = nullptr);
+    explicit QWebEngineWebViewPrivate(QWebView *p);
     ~QWebEngineWebViewPrivate() override;
 
+    void initialize(QObject *context) override;
     QString httpUserAgent() const override;
     void setHttpUserAgent(const QString &userAgent) override;
+    QUrl url() const override;
     void setUrl(const QUrl &url) override;
     bool canGoBack() const override;
     bool canGoForward() const override;
@@ -77,10 +86,9 @@ public:
     int loadProgress() const override;
     bool isLoading() const override;
 
-    QAbstractWebViewSettings *getSettings() const override;
+    QWebViewSettingsPrivate *settings() const override;
     QWindow *nativeWindow() const override { return nullptr; }
 
-public Q_SLOTS:
     void goBack() override;
     void goForward() override;
     void reload() override;
@@ -90,6 +98,9 @@ public Q_SLOTS:
                    const QString &value) override;
     void deleteCookie(const QString &domain, const QString &name) override;
     void deleteAllCookies() override;
+    void runJavaScript(const QString &script,
+                       const std::function<void(const QVariant &)> &resultCallback) override;
+    virtual QQuickWebEngineView *view() const = 0;
 
 private Q_SLOTS:
     void q_urlChanged();
@@ -101,41 +112,35 @@ private Q_SLOTS:
     void q_cookieAdded(const QNetworkCookie &cookie);
     void q_cookieRemoved(const QNetworkCookie &cookie);
 
-protected:
-    void runJavaScriptPrivate(const QString& script,
-                              int callbackId) override;
 private:
     friend class QWebEngineWebViewSettingsPrivate;
 
     QQuickWebEngineProfile *m_profile = nullptr;
     mutable QWebEngineWebViewSettingsPrivate *m_settings = nullptr;
     QString m_httpUserAgent;
-    struct QQuickWebEngineViewPtr
-    {
-        inline QQuickWebEngineView *operator->() const
-        {
-            if (!m_webEngineView)
-                init();
-            return m_webEngineView.data();
-        }
-        void init() const;
+    QWebEngineCookieStore *m_cookieStore = nullptr;
+};
 
-        QWebEngineWebViewPrivate *m_parent;
-        mutable QScopedPointer<QQuickWebEngineView> m_webEngineView;
-    } m_webEngineView;
-    struct QWebEngineCookieStorePtr
-    {
-        inline QWebEngineCookieStore *operator->() const
-        {
-            if (!m_cookieStore)
-                init();
-            return m_cookieStore;
-        }
-        void init() const;
+class QQuickViewWebEngineWebViewPrivate : public QWebEngineWebViewPrivate
+{
+public:
+    explicit QQuickViewWebEngineWebViewPrivate(QWebView *p);
+    ~QQuickViewWebEngineWebViewPrivate() override;
+    void initialize(QObject *context) override;
+    QQuickWebEngineView *view() const override;
+    std::unique_ptr<QQuickView> m_view;
+    QQuickWebEngineView *m_webEngineView;
+};
 
-        QQuickWebEngineViewPtr *m_webEngineViewPtr = nullptr;
-        mutable QWebEngineCookieStore *m_cookieStore = nullptr;
-    } m_cookieStore;
+class QQuickItemWebEngineWebViewPrivate : public QWebEngineWebViewPrivate
+{
+public:
+    explicit QQuickItemWebEngineWebViewPrivate(QWebView *p);
+    ~QQuickItemWebEngineWebViewPrivate() override;
+    void initialize(QObject *context) override;
+    QQuickWebEngineView *view() const override;
+    QQuickItem *m_parentItem;
+    std::unique_ptr<QQuickWebEngineView> m_webEngineView;
 };
 
 QT_END_NAMESPACE

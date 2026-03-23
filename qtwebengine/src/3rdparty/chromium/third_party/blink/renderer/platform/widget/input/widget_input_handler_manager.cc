@@ -16,8 +16,10 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
+#include "base/task/common/task_annotator.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/trace_event/traced_value.h"
@@ -356,8 +358,35 @@ void WidgetInputHandlerManager::SetHost(
   }
 }
 
+void WidgetInputHandlerManager::SetVizHost(
+    mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> viz_host) {
+  if (viz_host_) {
+    DLOG(WARNING) << "Resetting an existing viz_host. This may indicate a "
+                  << "missed disconnect notification during GPU restart.";
+    viz_host_.reset();
+  }
+
+  CHECK(viz_host);
+  if (compositor_thread_default_task_runner_) {
+    viz_host_ = mojo::SharedRemote<mojom::blink::WidgetInputHandlerHost>(
+        std::move(viz_host), compositor_thread_default_task_runner_);
+    viz_host_.set_disconnect_handler(
+        base::BindOnce(&WidgetInputHandlerManager::OnVizHostDisconnected,
+                       AsWeakPtr()),
+        compositor_thread_default_task_runner_);
+  } else {
+    viz_host_ = mojo::SharedRemote<mojom::blink::WidgetInputHandlerHost>(
+        std::move(viz_host));
+    viz_host_.set_disconnect_handler(
+        base::BindOnce(&WidgetInputHandlerManager::OnVizHostDisconnected,
+                       AsWeakPtr()),
+        base::SequencedTaskRunner::GetCurrentDefault());
+  }
+}
+
 void WidgetInputHandlerManager::SetHidden(bool hidden) {
   if (hidden) {
+    hidden_received_ = base::TimeTicks::Now();
     suppressing_input_events_state_ |=
         static_cast<uint16_t>(SuppressingInputEventsBits::kHidden);
   } else {
@@ -455,8 +484,8 @@ void WidgetInputHandlerManager::InputEventsDispatched(bool raf_aligned) {
   }
 }
 
-void WidgetInputHandlerManager::SetNeedsMainFrame() {
-  widget_->RequestAnimationAfterDelay(base::TimeDelta());
+void WidgetInputHandlerManager::SetNeedsMainFrame(bool urgent) {
+  widget_->RequestAnimationAfterDelay(base::TimeDelta(), urgent);
 }
 
 bool WidgetInputHandlerManager::RequestedMainFramePending() {
@@ -491,10 +520,15 @@ void WidgetInputHandlerManager::FindScrollTargetOnMainThread(
 }
 
 void WidgetInputHandlerManager::DidStartScrollingViewport() {
-  mojom::blink::WidgetInputHandlerHost* host = GetWidgetInputHandlerHost();
-  if (!host)
-    return;
-  host->DidStartScrollingViewport();
+  if (mojom::blink::WidgetInputHandlerHost* host =
+          GetWidgetInputHandlerHost()) {
+    host->DidStartScrollingViewport();
+  }
+
+  if (mojom::blink::WidgetInputHandlerHost* viz_host =
+          GetVizWidgetInputHandlerHost()) {
+    viz_host->DidStartScrollingViewport();
+  }
 }
 
 void WidgetInputHandlerManager::SetAllowedTouchAction(
@@ -504,14 +538,29 @@ void WidgetInputHandlerManager::SetAllowedTouchAction(
 
 void WidgetInputHandlerManager::ProcessTouchAction(
     cc::TouchAction touch_action) {
-  if (mojom::blink::WidgetInputHandlerHost* host = GetWidgetInputHandlerHost())
+  if (mojom::blink::WidgetInputHandlerHost* host =
+          GetWidgetInputHandlerHost()) {
     host->SetTouchActionFromMain(touch_action);
+  }
+
+  if (mojom::blink::WidgetInputHandlerHost* viz_host =
+          GetVizWidgetInputHandlerHost()) {
+    viz_host->SetTouchActionFromMain(touch_action);
+  }
 }
 
 mojom::blink::WidgetInputHandlerHost*
 WidgetInputHandlerManager::GetWidgetInputHandlerHost() {
   if (host_)
     return host_.get();
+  return nullptr;
+}
+
+mojom::blink::WidgetInputHandlerHost*
+WidgetInputHandlerManager::GetVizWidgetInputHandlerHost() {
+  if (viz_host_) {
+    return viz_host_.get();
+  }
   return nullptr;
 }
 
@@ -701,6 +750,8 @@ void WidgetInputHandlerManager::DispatchEvent(
   if (!widget_is_embedded_ &&
       (suppressing_input_events_state_ &
        static_cast<uint16_t>(SuppressingInputEventsBits::kHasNotPainted))) {
+    // TODO(https://crbug.com/40057499): Remove the old metric and related code,
+    // including the states like `widget_is_embedded_`.
     main_thread_task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(&WidgetInputHandlerManager::StartFirstPaintMaxDelayTimer,
@@ -719,19 +770,21 @@ void WidgetInputHandlerManager::DispatchEvent(
 
   uint16_t suppress_input = suppressing_input_events_state_;
 
-  bool ignore_first_paint = !base::FeatureList::IsEnabled(
-      blink::features::kDropInputEventsBeforeFirstPaint);
-  // TODO(https://crbug.com/1490296): Investigate the possibility of a stale
-  // subframe after navigation.
-  if (widget_is_embedded_) {
-    ignore_first_paint = true;
-  }
-  if (ignore_first_paint) {
-    suppress_input &=
-        ~static_cast<uint16_t>(SuppressingInputEventsBits::kHasNotPainted);
-  }
+  suppress_input &=
+      ~static_cast<uint16_t>(SuppressingInputEventsBits::kHasNotPainted);
 
-  if (dev_tools_session_attached_ || !ignore_hidden_input_) {
+  bool remove_hidden_suppression = false;
+  if (dev_tools_session_attached_) {
+    remove_hidden_suppression = true;
+  } else {
+    remove_hidden_suppression = !ignore_hidden_input_;
+    if (suppress_input &
+        static_cast<uint16_t>(SuppressingInputEventsBits::kHidden)) {
+      base::UmaHistogramTimes("Event.ReceivedAfterHidden",
+                              base::TimeTicks::Now() - hidden_received_);
+    }
+  }
+  if (remove_hidden_suppression) {
     suppress_input &=
         ~static_cast<uint16_t>(SuppressingInputEventsBits::kHidden);
   }

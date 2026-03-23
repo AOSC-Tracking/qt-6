@@ -9,6 +9,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/time/time.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/messages/android/message_enums.h"

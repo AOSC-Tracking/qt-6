@@ -71,7 +71,10 @@ enum class EwalletFlowExitedReason {
   // The FOP selector was dismissed by a user action e.g., swiping down, tapping
   // on the webpage behind the FOP selector, or tapping on the omnibox.
   kFopSelectorClosedByUser = 12,
-  kMaxValue = kFopSelectorClosedByUser
+  // The device is a foldable device which we don't support yet.
+  kFoldableDevice = 13,
+  kMaxStrikes = 14,
+  kMaxValue = kMaxStrikes
 };
 // LINT.ThenChange(/tools/metrics/histograms/metadata/facilitated_payments/enums.xml:FacilitatedPayments.EwalletFlowExitedReason)
 
@@ -113,9 +116,30 @@ enum class PixFlowExitedReason {
   kFopSelectorClosedByUser = 12,
   // Chrome attempted, but was unable to invoke purchase action.
   kPurchaseActionCouldNotBeInvoked = 13,
-  kMaxValue = kPurchaseActionCouldNotBeInvoked
+  // Autofilling payment FOPs disabled.
+  kAutofillPaymentMethodsDisabled = 14,
+  // Pix code was copied on a merchant website that wasn't allowlisted.
+  kMerchantNotAllowlisted = 15,
+  kMaxValue = kMerchantNotAllowlisted
 };
 // LINT.ThenChange(/tools/metrics/histograms/metadata/facilitated_payments/enums.xml:FacilitatedPayments.PixFlowExitedReason)
+
+// LINT.IfChange(PixAccountLinkingFlowExitedReason)
+enum class PixAccountLinkingFlowExitedReason {
+  kScreenNotShown = 0,
+  kScreenClosedNotByUser = 1,
+  kScreenClosedByUser = 2,
+  kUserDeclined = 3,
+  kWalletNotInstalled = 4,
+  kWalletVersionNotSupported = 5,
+  kUserOptedOut = 6,
+  kNoScreenlockOrBiometricSetup = 7,
+  kServerSideIneligible = 8,
+  kTabIsNotActive = 9,
+  kUserSwitchedWebsite = 10,
+  kMaxValue = kUserSwitchedWebsite
+};
+// LINT.ThenChange(/tools/metrics/histograms/metadata/facilitated_payments/enums.xml:FacilitatedPayments.Pix.AccountLinking.FlowExitedReason)
 
 // Log when a Pix code is copied to the clippboard on an allowlisted merchant
 // website.
@@ -269,6 +293,22 @@ void LogFopSelectorShownLatency(
     FacilitatedPaymentsType payment_type,
     base::TimeDelta latency,
     std::optional<PaymentLinkValidator::Scheme> scheme = std::nullopt);
+
+// Logs that the Pix account linking prompt was shown.
+void LogPixAccountLinkingPromptShown();
+
+// Logs that the Pix account linking prompt was accepted by user.
+void LogPixAccountLinkingPromptAccepted();
+
+// Logs the result and latency for GetDetailsForCreatePaymentInstrument
+// endpoint.
+void LogGetDetailsForCreatePaymentInstrumentResultAndLatency(
+    bool is_eligible,
+    base::TimeDelta latency);
+
+// Log the reason for the Pix account linking flow was exited early.
+void LogPixAccountLinkingFlowExitedReason(
+    PixAccountLinkingFlowExitedReason reason);
 
 }  // namespace payments::facilitated
 

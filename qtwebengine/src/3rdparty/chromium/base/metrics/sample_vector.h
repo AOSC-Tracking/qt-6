@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 // SampleVector implements HistogramSamples interface. It is used by all
 // Histogram based classes to store samples.
 
@@ -102,7 +97,7 @@ class BASE_EXPORT SampleVectorBase : public HistogramSamples {
     if (data == nullptr) {
       return std::nullopt;
     }
-    return span(data, counts_size_);
+    return UNSAFE_TODO(span(data, counts_size_));
   }
 
   std::optional<span<const HistogramBase::AtomicCount>> counts() const {
@@ -111,7 +106,7 @@ class BASE_EXPORT SampleVectorBase : public HistogramSamples {
     if (data == nullptr) {
       return std::nullopt;
     }
-    return span(data, counts_size_);
+    return UNSAFE_TODO(span(data, counts_size_));
   }
 
   void set_counts(span<HistogramBase::AtomicCount> counts) const {
@@ -206,7 +201,8 @@ class BASE_EXPORT SampleVector : public SampleVectorBase {
 // A sample vector that uses persistent memory for the counts array.
 class BASE_EXPORT PersistentSampleVector : public SampleVectorBase {
  public:
-  PersistentSampleVector(uint64_t id,
+  PersistentSampleVector(std::string_view name,
+                         uint64_t id,
                          const BucketRanges* bucket_ranges,
                          Metadata* meta,
                          const DelayedPersistentAllocation& counts);
@@ -217,7 +213,38 @@ class BASE_EXPORT PersistentSampleVector : public SampleVectorBase {
   // HistogramSamples:
   bool IsDefinitelyEmpty() const override;
 
+  // Resets the histogram used to log the result of MountExistingCountsStorage.
+  // We have tests that monitor histogram creation/restoration. These tests need
+  // to be able to initialize the histogram (or more precisely, the static
+  // pointer to the histogram) to a known state.
+  static void ResetMountExistingCountsStorageResultForTesting();
+
  private:
+  // These values are logged to UMA. Entries should not be renumbered and
+  // numeric values should never be reused. Please keep in sync with
+  // "MountExistingCountsStorageResult" in
+  // src/tools/metrics/histograms/metadata/uma/enums.xml.
+  enum class MountExistingCountsStorageResult {
+    kSucceeded = 0,
+    kNothingToRead = 1,
+    kCorrupt = 2,
+    kMaxValue = kCorrupt,
+  };
+
+  // Pointer used to cache the MountExistingCountsStorageResult histogram for
+  // PersistentSampleVector. This is used to avoid creating the histogram on
+  // every MountExistingCountsStorage call. Usually, this would an
+  // implementation detail hidden in the use of the UMA_HISTOGRAM_ENUMERATION
+  // macro, but PersistentSampleVector is a special case where we need to be
+  // able to reset the histogram pointer for testing.
+  static std::atomic_uintptr_t atomic_histogram_pointer;
+
+  static void RecordMountExistingCountsStorageResult(
+      MountExistingCountsStorageResult result);
+
+  // Private implementation of MountExistingCountsStorage
+  MountExistingCountsStorageResult MountExistingCountsStorageImpl() const;
+
   // SampleVectorBase:
   bool MountExistingCountsStorage() const override;
   span<HistogramBase::Count32> CreateCountsStorageWhileLocked() override;
@@ -225,6 +252,11 @@ class BASE_EXPORT PersistentSampleVector : public SampleVectorBase {
   // Persistent storage for counts.
   DelayedPersistentAllocation persistent_counts_;
 };
+
+// Histogram name used to log the result of MountExistingCountsStorage for
+// PersistentSampleVector. Exposed here for testing.
+inline constexpr std::string_view kMountExistingCountsStorageResult =
+    "UMA.PersistentHistograms.MountExistingCountsStorageResult";
 
 }  // namespace base
 

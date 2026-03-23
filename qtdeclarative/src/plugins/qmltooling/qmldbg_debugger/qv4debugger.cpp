@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4debugger.h"
 #include "qv4debugjob.h"
@@ -132,7 +133,7 @@ bool QV4Debugger::pauseAtNextOpportunity() const {
     return m_pauseRequested || m_haveBreakPoints || m_gatherSources || m_stepping >= StepOver;
 }
 
-QVector<QV4::StackFrame> QV4Debugger::stackTrace(int frameLimit) const
+QList<QV4::StackFrame> QV4Debugger::stackTrace(int frameLimit) const
 {
     return m_engine->stackTrace(frameLimit);
 }

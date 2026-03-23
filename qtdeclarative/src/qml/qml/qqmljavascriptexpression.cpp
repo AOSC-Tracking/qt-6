@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmljavascriptexpression_p.h"
 #include "qqmljavascriptexpression_p.h"
@@ -505,7 +506,7 @@ void QQmlJavaScriptExpression::createQmlBinding(
             ep->warning(error->error());
         return;
     }
-    setupFunction(qmlContext, script.vmFunction);
+    setupFunction(qmlContext, script.function());
 }
 
 void QQmlJavaScriptExpression::setupFunction(QV4::ExecutionContext *qmlContext, QV4::Function *f)

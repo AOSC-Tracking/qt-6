@@ -68,6 +68,19 @@ Item {
             property int y: 12
         }
 
+        function aAt0() : real {
+            switch (modelIndex) {
+            case Model.Singular:
+            case Model.List:
+                return model.get(0).a
+            case Model.Array:
+                return model[0].a
+            case Model.Object:
+                return model.a
+            }
+            return -1;
+        }
+
         property int modelIndex: Model.None
         property int delegateIndex: Delegate.None
 

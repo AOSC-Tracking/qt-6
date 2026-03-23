@@ -11,6 +11,7 @@
 #include "src/objects/objects-inl.h"
 #include "src/runtime/runtime-utils.h"
 #include "src/runtime/runtime.h"
+#include "third_party/fp16/src/include/fp16.h"
 
 namespace v8 {
 namespace internal {
@@ -55,14 +56,14 @@ RUNTIME_FUNCTION(Runtime_TypedArrayCopyElements) {
   size_t length;
   CHECK(TryNumberToSize(args[2], &length));
   ElementsAccessor* accessor = target->GetElementsAccessor();
-  return accessor->CopyElements(source, target, length, 0);
+  return accessor->CopyElements(isolate, source, target, length, 0);
 }
 
 RUNTIME_FUNCTION(Runtime_TypedArrayGetBuffer) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   DirectHandle<JSTypedArray> holder = args.at<JSTypedArray>(0);
-  return *holder->GetBuffer();
+  return *holder->GetBuffer(isolate);
 }
 
 RUNTIME_FUNCTION(Runtime_GrowableSharedArrayBufferByteLength) {
@@ -70,16 +71,7 @@ RUNTIME_FUNCTION(Runtime_GrowableSharedArrayBufferByteLength) {
   DCHECK_EQ(1, args.length());
   DirectHandle<JSArrayBuffer> array_buffer = args.at<JSArrayBuffer>(0);
 
-  // When this is called from Wasm code (which can happen by recognizing the
-  // special `DataView.prototype.byteLength` import), clear the "thread in wasm"
-  // flag, which is important in case any GC needs to happen when allocating the
-  // number below.
-  // TODO(40192807): Find a better fix, either by replacing the global flag, or
-  // by implementing this via a Wasm-specific external reference callback which
-  // returns a uintptr_t directly (without allocating on the heap).
-  SaveAndClearThreadInWasmFlag clear_wasm_flag(isolate);
-
-  CHECK_EQ(0, array_buffer->byte_length());
+  CHECK_EQ(0, array_buffer->byte_length_unchecked());
   size_t byte_length = array_buffer->GetBackingStore()->byte_length();
   return *isolate->factory()->NewNumberFromSize(byte_length);
 }
@@ -105,6 +97,10 @@ bool CompareNum(T x, T y) {
   return false;
 }
 
+bool LessThanFloat16RawBits(uint16_t x, uint16_t y) {
+  return CompareNum(fp16_ieee_to_fp32_value(x), fp16_ieee_to_fp32_value(y));
+}
+
 }  // namespace
 
 RUNTIME_FUNCTION(Runtime_TypedArraySortFast) {
@@ -124,8 +120,11 @@ RUNTIME_FUNCTION(Runtime_TypedArraySortFast) {
   }
 #endif
 
-  size_t length = array->GetLength();
-  DCHECK_LT(1, length);
+  // After reading the byte length, avoid reading the bytelength or length
+  // again. If the buffer is shared, it might have been grown by a
+  // background thread. In that case we should ignore the new length and just
+  // sort the old elements and write them into the beginning of the array.
+  const size_t byte_length = array->GetByteLength();
 
   // In case of a SAB, the data is copied into temporary memory, as
   // std::sort might crash in case the underlying data is concurrently
@@ -139,49 +138,55 @@ RUNTIME_FUNCTION(Runtime_TypedArraySortFast) {
   std::vector<uint8_t> offheap_copy;
   void* data_copy_ptr = nullptr;
   if (copy_data) {
-    const size_t bytes = array->GetByteLength();
-    if (bytes <= static_cast<unsigned>(
-                     ByteArray::LengthFor(kMaxRegularHeapObjectSize))) {
-      array_copy = isolate->factory()->NewByteArray(static_cast<int>(bytes));
+    if (byte_length <= static_cast<unsigned>(
+                           ByteArray::LengthFor(kMaxRegularHeapObjectSize))) {
+      array_copy =
+          isolate->factory()->NewByteArray(static_cast<int>(byte_length));
       data_copy_ptr = array_copy->begin();
     } else {
       // Allocate copy in C++ heap.
-      offheap_copy.resize(bytes);
+      offheap_copy.resize(byte_length);
       data_copy_ptr = &offheap_copy[0];
     }
     base::Relaxed_Memcpy(static_cast<base::Atomic8*>(data_copy_ptr),
-                         static_cast<base::Atomic8*>(array->DataPtr()), bytes);
+                         static_cast<base::Atomic8*>(array->DataPtr()),
+                         byte_length);
   }
 
   DisallowGarbageCollection no_gc;
 
+  // The type is not necessarily consistent with the byte_length we read (a
+  // sandbox attacker might have changed it). The code below must handle it
+  // gracefully.
   switch (array->type()) {
-#define TYPED_ARRAY_SORT(Type, type, TYPE, ctype)                          \
-  case kExternal##Type##Array: {                                           \
-    ctype* data = copy_data ? reinterpret_cast<ctype*>(data_copy_ptr)      \
-                            : static_cast<ctype*>(array->DataPtr());       \
-    if (kExternal##Type##Array == kExternalFloat64Array ||                 \
-        kExternal##Type##Array == kExternalFloat32Array ||                 \
-        kExternal##Type##Array == kExternalFloat16Array) {                 \
-      if (COMPRESS_POINTERS_BOOL && alignof(ctype) > kTaggedSize) {        \
-        /* TODO(ishell, v8:8875): See UnalignedSlot<T> for details. */     \
-        std::sort(UnalignedSlot<ctype>(data),                              \
-                  UnalignedSlot<ctype>(data + length), CompareNum<ctype>); \
-      } else {                                                             \
-        std::sort(data, data + length, CompareNum<ctype>);                 \
-      }                                                                    \
-    } else {                                                               \
-      if (COMPRESS_POINTERS_BOOL && alignof(ctype) > kTaggedSize) {        \
-        /* TODO(ishell, v8:8875): See UnalignedSlot<T> for details. */     \
-        std::sort(UnalignedSlot<ctype>(data),                              \
-                  UnalignedSlot<ctype>(data + length));                    \
-      } else {                                                             \
-        std::sort(data, data + length);                                    \
-      }                                                                    \
-    }                                                                      \
-    break;                                                                 \
+#define TYPED_ARRAY_SORT(Type, type, TYPE, ctype)                            \
+  case kExternal##Type##Array: {                                             \
+    ctype* data = copy_data ? reinterpret_cast<ctype*>(data_copy_ptr)        \
+                            : static_cast<ctype*>(array->DataPtr());         \
+    size_t length = byte_length / sizeof(ctype);                             \
+    if (kExternal##Type##Array == kExternalFloat64Array ||                   \
+        kExternal##Type##Array == kExternalFloat32Array) {                   \
+      if (COMPRESS_POINTERS_BOOL && alignof(ctype) > kTaggedSize) {          \
+        /* TODO(ishell, v8:8875): See UnalignedSlot<T> for details. */       \
+        std::sort(UnalignedSlot<ctype>(data),                                \
+                  UnalignedSlot<ctype>(data + length), CompareNum<ctype>);   \
+      } else {                                                               \
+        std::sort(data, data + length, CompareNum<ctype>);                   \
+      }                                                                      \
+    } else if (kExternal##Type##Array == kExternalFloat16Array) {            \
+      DCHECK_IMPLIES(COMPRESS_POINTERS_BOOL, alignof(ctype) <= kTaggedSize); \
+      std::sort(data, data + length, LessThanFloat16RawBits);                \
+    } else {                                                                 \
+      if (COMPRESS_POINTERS_BOOL && alignof(ctype) > kTaggedSize) {          \
+        /* TODO(ishell, v8:8875): See UnalignedSlot<T> for details. */       \
+        std::sort(UnalignedSlot<ctype>(data),                                \
+                  UnalignedSlot<ctype>(data + length));                      \
+      } else {                                                               \
+        std::sort(data, data + length);                                      \
+      }                                                                      \
+    }                                                                        \
+    break;                                                                   \
   }
-
     TYPED_ARRAYS(TYPED_ARRAY_SORT)
 #undef TYPED_ARRAY_SORT
   }
@@ -189,9 +194,9 @@ RUNTIME_FUNCTION(Runtime_TypedArraySortFast) {
   if (copy_data) {
     DCHECK_NOT_NULL(data_copy_ptr);
     DCHECK_NE(array_copy.is_null(), offheap_copy.empty());
-    const size_t bytes = array->GetByteLength();
     base::Relaxed_Memcpy(static_cast<base::Atomic8*>(array->DataPtr()),
-                         static_cast<base::Atomic8*>(data_copy_ptr), bytes);
+                         static_cast<base::Atomic8*>(data_copy_ptr),
+                         byte_length);
   }
 
   return *array;
@@ -207,7 +212,7 @@ RUNTIME_FUNCTION(Runtime_TypedArraySet) {
   size_t offset;
   CHECK(TryNumberToSize(args[3], &offset));
   ElementsAccessor* accessor = target->GetElementsAccessor();
-  return accessor->CopyElements(source, target, length, offset);
+  return accessor->CopyElements(isolate, source, target, length, offset);
 }
 
 RUNTIME_FUNCTION(Runtime_ArrayBufferMaxByteLength) {

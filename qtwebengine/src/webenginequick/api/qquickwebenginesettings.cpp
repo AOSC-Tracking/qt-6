@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickwebengineprofile.h"
 #include "qquickwebenginesettings_p.h"
@@ -318,7 +319,7 @@ bool QQuickWebEngineSettings::allowRunningInsecureContent() const
   \qmlproperty bool WebEngineSettings::allowGeolocationOnInsecureOrigins
   \since QtWebEngine 1.5
 
-  Since Qt 5.7, only secure origins such as HTTPS have been able to request
+  Only secure origins such as HTTPS are able to request
   Geolocation features. This provides an override to allow non secure
   origins to access Geolocation again.
 
@@ -549,6 +550,21 @@ bool QQuickWebEngineSettings::touchEventsApiEnabled() const
 bool QQuickWebEngineSettings::backForwardCacheEnabled() const
 {
     return d_ptr->testAttribute(QWebEngineSettings::BackForwardCacheEnabled);
+}
+
+/*!
+    \qmlproperty bool WebEngineSettings::trimAccessibilityIdentifiers
+    \since QtWebEngine 6.11
+
+    Forces the HTML 'id' attribute to be used as the automation ID (QAccessible::Identifier)
+    without modification. When disabled, Qt will instead prepend the entire object hierarchy
+    to the identifier.
+
+    Disabled by default.
+*/
+bool QQuickWebEngineSettings::trimAccessibilityIdentifiers() const
+{
+    return d_ptr->testAttribute(QWebEngineSettings::TrimAccessibilityIdentifiers);
 }
 
 /*!
@@ -949,6 +965,14 @@ void QQuickWebEngineSettings::setBackForwardCacheEnabled(bool on)
     d_ptr->setAttribute(QWebEngineSettings::BackForwardCacheEnabled, on);
     if (wasOn != on)
         Q_EMIT backForwardCacheEnabledChanged();
+}
+
+void QQuickWebEngineSettings::setTrimAccessibilityIdentifiers(bool on)
+{
+    bool wasOn = d_ptr->testAttribute(QWebEngineSettings::TrimAccessibilityIdentifiers);
+    d_ptr->setAttribute(QWebEngineSettings::TrimAccessibilityIdentifiers, on);
+    if (wasOn != on)
+        Q_EMIT trimAccessibilityIdentifiersChanged();
 }
 
 QT_END_NAMESPACE

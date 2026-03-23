@@ -157,11 +157,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieSettings
     return (setting == CONTENT_SETTING_ALLOW);
   }
 
-  // Returns true if Storage Access Headers are enabled in the given context.
-  bool IsStorageAccessHeadersEnabled(
-      const GURL& url,
-      base::optional_ref<const url::Origin> top_frame_origin) const;
-
   bool ShouldAlwaysAllowCookiesForTesting(const GURL& url,
                                           const GURL& first_party_url) const;
 
@@ -176,7 +171,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieSettings
       content_settings::SettingInfo* info) const override;
   bool IsThirdPartyCookiesAllowedScheme(
       const std::string& scheme) const override;
-  bool ShouldBlockThirdPartyCookies() const override;
+  bool ShouldBlockThirdPartyCookies(
+      base::optional_ref<const url::Origin> top_frame_origin,
+      net::CookieSettingOverrides overrides) const override;
   bool MitigationsEnabledFor3pcd() const override;
 
   // Returns true iff any of the ways of enabling third-party cookies

@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include <private/qqmldmlistaccessordata_p.h>
 
@@ -46,14 +47,13 @@ void QQmlDMListAccessorData::setValue(const QString &role, const QVariant &value
 
 bool QQmlDMListAccessorData::resolveIndex(const QQmlAdaptorModel &model, int idx)
 {
-    if (index == -1) {
-        index = idx;
-        setModelData(model.list.at(idx));
-        emit modelIndexChanged();
-        return true;
-    } else {
+    if (hasValidModelIndex())
         return false;
-    }
+
+    setModelIndex(idx, modelRow(), modelColumn());
+    setModelData(model.list.at(idx));
+    emit modelIndexChanged();
+    return true;
 }
 
 void VDMListDelegateDataType::emitAllSignals(QQmlDMListAccessorData *accessor) const
@@ -76,9 +76,9 @@ int VDMListDelegateDataType::metaCall(
 
         QVariant *result = static_cast<QVariant *>(arguments[0]);
         const QByteArray name = property(id).name();
-        const QVariant data = accessor->index == -1
-                ? accessor->modelData()
-                : model->list.at(accessor->index);
+        const QVariant data = accessor->hasValidModelIndex()
+                ? model->list.at(accessor->modelIndex())
+                : accessor->modelData();
         *result = value(&data, name);
         return -1;
     }
@@ -88,17 +88,18 @@ int VDMListDelegateDataType::metaCall(
 
         const QVariant &argument = *static_cast<QVariant *>(arguments[0]);
         const QByteArray name = property(id).name();
-        QVariant data = accessor->index == -1
-                ? accessor->modelData()
-                : model->list.at(accessor->index);
+        QVariant data = accessor->hasValidModelIndex()
+                ? model->list.at(accessor->modelIndex())
+                : accessor->modelData();
         if (argument == value(&data, name))
             return -1;
         setValue(&data, name, argument);
-        if (accessor->index == -1) {
+        if (accessor->hasValidModelIndex()) {
+            model->list.set(accessor->modelIndex(), data);
+            accessor->metaType()->emitModelChanged();
+        } else {
             accessor->cachedData = data;
             accessor->cachedDataClean = false;
-        } else {
-            model->list.set(accessor->index, data);
         }
         QMetaObject::activate(accessor, this, id - propertyOffset, nullptr);
         emit accessor->modelDataChanged();
@@ -132,7 +133,7 @@ QMetaObject *VDMListDelegateDataType::toDynamicMetaObject(QObject *object)
 #endif
 {
     QQmlDMListAccessorData *data = static_cast<QQmlDMListAccessorData *>(object);
-    if (!data->useStructuredModelData) {
+    if (!data->usesStructuredModelData()) {
         // We cannot produce structured modelData. There should be a propertyCache so that row and
         // column are hidden. We shall also return the static metaObject in that case.
 

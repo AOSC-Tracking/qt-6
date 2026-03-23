@@ -14,23 +14,16 @@
   --dialog-padding: 20px;
 }
 
-.container {
+#signoutConfirmationDialog {
   display: flex;
   flex-direction: column;
-  padding-bottom: var(--dialog-padding);
-  padding-top: var(--dialog-padding);
-}
-
-#header {
-  padding-inline-end: var(--dialog-padding);
-  padding-inline-start: var(--dialog-padding);
+  padding: var(--dialog-padding);
 }
 
 #title {
   color: var(--cr-primary-text-color);
   font-size: 18px;
   font-weight: 500;
-  margin-bottom: 16px;
   margin-top: 0;
 }
 
@@ -40,13 +33,14 @@
   line-height: 20px;
 }
 
+extensions-section {
+  margin-bottom: 1em;
+}
+
 #action-row {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 16px;
-  padding-inline-start: var(--dialog-padding);
-  padding-inline-end: var(--dialog-padding);
 }
 
 <if expr="is_macosx or is_linux">

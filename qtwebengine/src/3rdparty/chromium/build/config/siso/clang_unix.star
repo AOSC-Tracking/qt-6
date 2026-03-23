@@ -7,34 +7,38 @@
 load("@builtin//path.star", "path")
 load("@builtin//struct.star", "module")
 load("./android.star", "android")
-load("./ar.star", "ar")
 load("./clang_code_coverage_wrapper.star", "clang_code_coverage_wrapper")
 load("./config.star", "config")
 load("./gn_logs.star", "gn_logs")
 load("./win_sdk.star", "win_sdk")
 
+def __add_generated_libcxx_headers(ctx, cmd):
+    """Adds libc++ headers as tool inputs for clang compile actions.
+
+    This is needed because libc++ headers in the build directory are not always
+    discovered by the precomputed tree and scandeps. It identifies them using
+    `-isystem` flags and `libcxx_headers.gni`.
+    """
+
+    libcxx_headers = []
+    for line in str(ctx.fs.read("buildtools/third_party/libc++/libcxx_headers.gni")).split("\n"):
+        if "third_party/libc++/src/include" in line:
+            libcxx_headers.append(line.split("src/include/")[1].removesuffix("\","))
+
+    tool_inputs = []
+    for arg in cmd.args:
+        isystem = arg.removeprefix("-isystem")
+        if arg == isystem or "third_party/libc++/src/include" not in isystem:
+            continue
+        isystem = ctx.fs.canonpath(isystem)
+        for header in libcxx_headers:
+            tool_inputs.append(path.join(isystem, header))
+    ctx.actions.fix(tool_inputs = cmd.tool_inputs + tool_inputs)
+
 def __clang_compile_coverage(ctx, cmd):
+    __add_generated_libcxx_headers(ctx, cmd)
     clang_command = clang_code_coverage_wrapper.run(ctx, list(cmd.args))
     ctx.actions.fix(args = clang_command)
-
-def __clang_alink(ctx, cmd):
-    if not config.get(ctx, "remote-link"):
-        return
-
-    # check command line to see "-T" and "-S".
-    # rm -f obj/third_party/angle/libangle_common.a && "../../third_party/llvm-build/Release+Asserts/bin/llvm-ar" -T -S -r -c -D obj/third_party/angle/libangle_common.a @"obj/third_party/angle/libangle_common.a.rsp"
-    if not ("-T" in cmd.args[-1] and "-S" in cmd.args[-1]):
-        print("not thin archive without symbol table")
-        return
-
-    # create thin archive without symbol table by handler.
-    rspfile_content = str(cmd.rspfile_content)
-    inputs = []
-    for fname in rspfile_content.split(" "):
-        inputs.append(ctx.fs.canonpath(fname))
-    data = ar.create(ctx, path.dir(cmd.outputs[0]), inputs)
-    ctx.actions.write(cmd.outputs[0], data)
-    ctx.actions.exit(exit_status = 0)
 
 def __clang_link(ctx, cmd):
     if not config.get(ctx, "remote-link"):
@@ -94,8 +98,8 @@ def __clang_link(ctx, cmd):
     ctx.actions.fix(inputs = cmd.inputs + inputs)
 
 __handlers = {
+    "add_generated_libcxx_headers": __add_generated_libcxx_headers,
     "clang_compile_coverage": __clang_compile_coverage,
-    "clang_alink": __clang_alink,
     "clang_link": __clang_link,
 }
 
@@ -107,10 +111,129 @@ def __rules(ctx):
     canonicalize_dir = not input_root_absolute_path
     canonicalize_dir_for_objc = not input_root_absolute_path_for_objc
 
-    rules = [
+    rules = []
+    if win_sdk.enabled(ctx):
+        rules.extend([
+            {
+                "name": "clang-cl/cxx",
+                "action": "(.*_)?cxx",
+                "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/clang-cl ",
+                "inputs": [
+                    "third_party/llvm-build/Release+Asserts/bin/clang-cl",
+                ],
+                "exclude_input_patterns": ["*.stamp"],
+                "remote": True,
+                "input_root_absolute_path": input_root_absolute_path,
+                "canonicalize_dir": canonicalize_dir,
+                "timeout": "2m",
+            },
+            {
+                "name": "clang-cl/cc",
+                "action": "(.*_)?cc",
+                "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/clang-cl ",
+                "inputs": [
+                    "third_party/llvm-build/Release+Asserts/bin/clang-cl",
+                ],
+                "exclude_input_patterns": ["*.stamp"],
+                "remote": True,
+                "input_root_absolute_path": input_root_absolute_path,
+                "canonicalize_dir": canonicalize_dir,
+                "timeout": "2m",
+            },
+            {
+                "name": "lld-link/alink",
+                "action": "(.*_)?alink",
+                "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/lld-link /lib",
+                "handler": "lld_thin_archive",
+                "remote": False,
+                "accumulate": True,
+            },
+            {
+                "name": "lld-link/solink",
+                "action": "(.*_)?solink",
+                "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/lld-link",
+                "handler": "lld_link",
+                "inputs": [
+                    "third_party/llvm-build/Release+Asserts/bin/lld-link",
+                    win_sdk.toolchain_dir(ctx) + ":libs",
+                ],
+                "exclude_input_patterns": [
+                    "*.cc",
+                    "*.h",
+                    "*.js",
+                    "*.pak",
+                    "*.py",
+                ],
+                "remote": config.get(ctx, "remote-link"),
+                "platform_ref": "large",
+                "input_root_absolute_path": input_root_absolute_path,
+                "canonicalize_dir": canonicalize_dir,
+                "timeout": "2m",
+            },
+            {
+                "name": "lld-link/solink_module",
+                "action": "(.*_)?solink_module",
+                "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/lld-link",
+                "handler": "lld_link",
+                "inputs": [
+                    "third_party/llvm-build/Release+Asserts/bin/lld-link",
+                    win_sdk.toolchain_dir(ctx) + ":libs",
+                ],
+                "exclude_input_patterns": [
+                    "*.cc",
+                    "*.h",
+                    "*.js",
+                    "*.pak",
+                    "*.py",
+                ],
+                "remote": config.get(ctx, "remote-link"),
+                "platform_ref": "large",
+                "input_root_absolute_path": input_root_absolute_path,
+                "canonicalize_dir": canonicalize_dir,
+                "timeout": "2m",
+            },
+            {
+                "name": "lld-link/link",
+                "action": "(.*_)?link",
+                "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/lld-link",
+                "handler": "lld_link",
+                "inputs": [
+                    "third_party/llvm-build/Release+Asserts/bin/lld-link",
+                    win_sdk.toolchain_dir(ctx) + ":libs",
+                ],
+                "exclude_input_patterns": [
+                    "*.cc",
+                    "*.h",
+                    "*.js",
+                    "*.pak",
+                    "*.py",
+                ],
+                "remote": config.get(ctx, "remote-link"),
+                "platform_ref": "large",
+                "input_root_absolute_path": input_root_absolute_path,
+                "canonicalize_dir": canonicalize_dir,
+                "timeout": "4m",
+            },
+        ])
+
+    rules.extend([
         {
             "name": "clang/cxx",
             "action": "(.*_)?cxx",
+            "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/clang++ ",
+            "inputs": [
+                "third_party/llvm-build/Release+Asserts/bin/clang++",
+            ],
+            "exclude_input_patterns": ["*.stamp"],
+            "handler": "add_generated_libcxx_headers",
+            "remote": True,
+            "input_root_absolute_path": input_root_absolute_path,
+            "canonicalize_dir": canonicalize_dir,
+            "timeout": "2m",
+        },
+        {
+            "name": "clang/cxx_module",
+            "action": "(.*_)?cxx_module",
             "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/clang++ ",
             "inputs": [
                 "third_party/llvm-build/Release+Asserts/bin/clang++",
@@ -142,6 +265,7 @@ def __rules(ctx):
                 "third_party/llvm-build/Release+Asserts/bin/clang++",
             ],
             "exclude_input_patterns": ["*.stamp"],
+            "handler": "add_generated_libcxx_headers",
             "remote": True,
             "timeout": "2m",
             "input_root_absolute_path": input_root_absolute_path_for_objc,
@@ -243,7 +367,7 @@ def __rules(ctx):
                 "*.py",
                 "*.stamp",
             ],
-            "handler": "clang_alink",
+            "handler": "lld_thin_archive",
             "remote": config.get(ctx, "remote-link"),
             "canonicalize_dir": True,
             "timeout": "2m",
@@ -292,6 +416,7 @@ def __rules(ctx):
             "exclude_input_patterns": [
                 "*.cc",
                 "*.h",
+                "*.info",
                 "*.js",
                 "*.pak",
                 "*.py",
@@ -302,36 +427,7 @@ def __rules(ctx):
             "platform_ref": "large",
             "timeout": "10m",
         },
-    ]
-    if win_sdk.enabled(ctx):
-        rules.extend([
-            {
-                "name": "clang-cl/cxx",
-                "action": "(.*_)?cxx",
-                "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/clang-cl ",
-                "inputs": [
-                    "third_party/llvm-build/Release+Asserts/bin/clang-cl",
-                ],
-                "exclude_input_patterns": ["*.stamp"],
-                "remote": True,
-                "input_root_absolute_path": input_root_absolute_path,
-                "canonicalize_dir": canonicalize_dir,
-                "timeout": "2m",
-            },
-            {
-                "name": "clang-cl/cc",
-                "action": "(.*_)?cc",
-                "command_prefix": "../../third_party/llvm-build/Release+Asserts/bin/clang-cl ",
-                "inputs": [
-                    "third_party/llvm-build/Release+Asserts/bin/clang-cl",
-                ],
-                "exclude_input_patterns": ["*.stamp"],
-                "remote": True,
-                "input_root_absolute_path": input_root_absolute_path,
-                "canonicalize_dir": canonicalize_dir,
-                "timeout": "2m",
-            },
-        ])
+    ])
     return rules
 
 clang_unix = module(

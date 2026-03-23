@@ -46,7 +46,6 @@
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
-#include "ui/gfx/geometry/quad_f.h"
 #include "v8/include/v8-inspector.h"
 #include "v8/include/v8-profiler.h"
 
@@ -58,6 +57,7 @@ class Document;
 class DocumentLoader;
 class DummyExceptionStateForTesting;
 class Element;
+class HTMLElement;
 class HTMLFrameOwnerElement;
 class HTMLSlotElement;
 class InspectedFrames;
@@ -80,19 +80,6 @@ class CORE_EXPORT InspectorDOMAgent final
 
   enum class IncludeWhitespaceEnum : int32_t { NONE = 0, ALL = 2 };
 
-  class CORE_EXPORT InspectorSourceLocation final
-      : public GarbageCollected<InspectorSourceLocation> {
-   public:
-    InspectorSourceLocation(std::unique_ptr<SourceLocation> source_location)
-        : source_location_(std::move(source_location)) {}
-
-    SourceLocation& GetSourceLocation() { return *source_location_; }
-    virtual void Trace(Visitor* visitor) const {}
-
-   private:
-    std::unique_ptr<SourceLocation> source_location_;
-  };
-
   static protocol::Response ToResponse(DummyExceptionStateForTesting&);
   static protocol::DOM::PseudoType ProtocolPseudoElementType(PseudoId);
   static PseudoId ProtocolPseudoTypeToPseudoId(protocol::DOM::PseudoType);
@@ -107,8 +94,10 @@ class CORE_EXPORT InspectorDOMAgent final
   InspectorDOMAgent(const InspectorDOMAgent&) = delete;
   InspectorDOMAgent& operator=(const InspectorDOMAgent&) = delete;
   ~InspectorDOMAgent() override;
-  void Trace(Visitor*) const override;
 
+  // InspectorBaseAgent overrides.
+  void Trace(Visitor*) const override;
+  void Dispose() override;
   void Restore() override;
 
   HeapVector<Member<Document>> Documents();
@@ -160,6 +149,7 @@ class CORE_EXPORT InspectorDOMAgent final
   protocol::Response getOuterHTML(std::optional<int> node_id,
                                   std::optional<int> backend_node_id,
                                   std::optional<String> object_id,
+                                  std::optional<bool> include_shadow_dom,
                                   String* outer_html) override;
   protocol::Response setOuterHTML(int node_id,
                                   const String& outer_html) override;
@@ -269,6 +259,7 @@ class CORE_EXPORT InspectorDOMAgent final
       std::optional<protocol::DOM::PhysicalAxes> physical_axes,
       std::optional<protocol::DOM::LogicalAxes> logical_axes,
       std::optional<bool> queries_scroll_state,
+      std::optional<bool> queries_anchored,
       std::optional<int>* container_node_id) override;
   protocol::Response getQueryingDescendantsForContainer(
       int node_id,
@@ -283,6 +274,12 @@ class CORE_EXPORT InspectorDOMAgent final
   protocol::Response getAnchorElement(int node_id,
                                       std::optional<String> anchor_specifier,
                                       int* out_node_id) override;
+
+  protocol::Response forceShowPopover(
+      int node_id,
+      bool enable,
+      std::unique_ptr<protocol::Array<int>>* out_nodeIds) override;
+  void WillHidePopover(HTMLElement* element, bool* force_open);
 
   bool Enabled() const;
   IncludeWhitespaceEnum IncludeWhitespace() const;
@@ -368,7 +365,7 @@ class CORE_EXPORT InspectorDOMAgent final
   void NotifyDidModifyDOMAttr(Element*);
 
   // Node-related methods.
-  typedef HeapHashMap<Member<Node>, int> NodeToIdMap;
+  using NodeToIdMap = GCedHeapHashMap<Member<Node>, int>;
   int Bind(Node*, NodeToIdMap*);
   void Unbind(Node*);
 
@@ -412,28 +409,31 @@ class CORE_EXPORT InspectorDOMAgent final
   Node* NodeForPath(const String& path);
 
   void DiscardFrontendBindings();
+  void ReleaseForcedPopovers();
 
   InspectorRevalidateDOMTask* RevalidateTask();
 
   bool isNodeScrollable(Node*);
 
-  v8::Isolate* isolate_;
+  v8::Isolate* isolate_;  // null after Dispose().
   Member<InspectedFrames> inspected_frames_;
-  v8_inspector::V8InspectorSession* v8_session_;
+  v8_inspector::V8InspectorSession* v8_session_;  // null after Dispose().
   HeapHashSet<Member<DOMListener>> dom_listeners_;
   Member<NodeToIdMap> document_node_to_id_map_;
   // Owns node mappings for dangling nodes.
   HeapVector<Member<NodeToIdMap>> dangling_node_to_id_maps_;
   HeapHashMap<int, Member<Node>> id_to_node_;
   HeapHashMap<int, Member<NodeToIdMap>> id_to_nodes_map_;
-  HeapHashMap<WeakMember<Node>, Member<InspectorSourceLocation>>
+  HeapHashMap<WeakMember<Node>, Member<SourceLocation>>
       node_to_creation_source_location_map_;
   HashSet<int> children_requested_;
   HashSet<int> distributed_nodes_requested_;
   HashMap<int, int> cached_child_count_;
+  HeapHashSet<WeakMember<Node>> forced_popovers_;
   int last_node_id_;
   Member<Document> document_;
-  typedef HeapHashMap<String, Member<HeapVector<Member<Node>>>> SearchResults;
+  using SearchResults =
+      HeapHashMap<String, Member<GCedHeapVector<Member<Node>>>>;
   SearchResults search_results_;
   Member<InspectorRevalidateDOMTask> revalidate_task_;
   Member<InspectorHistory> history_;

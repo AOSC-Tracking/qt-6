@@ -286,8 +286,23 @@ void InsertListCommand::DoApply(EditingState* editing_state) {
         visible_end_of_selection = CreateVisiblePosition(end_of_selection);
       }
 
-      start_of_current_paragraph =
+      VisiblePosition start_of_next_paragraph =
           StartOfNextParagraph(EndingVisibleSelection().VisibleStart());
+      // Move to the start of the next paragraph. If the start of the next
+      // paragraph goes before the start of the current paragraph, then we
+      // should move to the next position from the start of the next paragraph
+      // in order to avoid infinite loop causing a renderer freeze.
+      // TODO(crbug.com/417631316): Below change fixes the renderer freeze but
+      // it uncovers another bug where the empty span is not unlistified.
+      if (RuntimeEnabledFeatures::
+              FixNextPositionCalculationInInsertListEnabled() &&
+          !start_of_current_paragraph.IsOrphan() &&
+          start_of_next_paragraph.DeepEquivalent() <=
+              start_of_current_paragraph.DeepEquivalent()) {
+        start_of_current_paragraph = NextPositionOf(start_of_next_paragraph);
+      } else {
+        start_of_current_paragraph = start_of_next_paragraph;
+      }
     }
     SetEndingSelection(SelectionForUndoStep::From(
         SelectionInDOMTree::Builder()
@@ -468,7 +483,8 @@ bool InsertListCommand::DoApplyForSingleParagraph(
   }
 
   if (!list_child_node || switch_list_type || force_create_list) {
-    ListifyParagraph(EndingVisibleSelection().VisibleStart(), list_tag,
+    ListifyParagraph(EndingVisibleSelection(),
+                     EndingVisibleSelection().VisibleStart(), list_tag,
                      editing_state);
   }
 
@@ -559,6 +575,10 @@ void InsertListCommand::ToggleSelectedListItem(
     return;
 
   GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
+  if (RuntimeEnabledFeatures::PlaceholderVisibilityEnabled() &&
+      EnsureNodeVisibility(placeholder)) {
+    GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
+  }
 
   VisiblePosition insertion_point = VisiblePosition::BeforeNode(*placeholder);
   VisiblePosition visible_start = CreateVisiblePosition(start);
@@ -569,20 +589,17 @@ void InsertListCommand::ToggleSelectedListItem(
   // According to spec file [1] if the selection node is part of a list child
   // node, toggle the visibility (or state) of the entire list child node.
   // [1]:https://w3c.github.io/editing/docs/execCommand/#toggling-lists
-  if (RuntimeEnabledFeatures::ConsiderFullChildNodeContentForListifyEnabled()) {
-    // If the list type needs to be switched, create a new list of list_tag type
-    // and use it as placeholder so that, list_item's children will remain
-    // unchanged.
-    Node* listified_placeholder = nullptr;
-    if (switch_list_type || force_create_list) {
-      listified_placeholder =
-          ListifyParagraph(insertion_point, list_tag, editing_state);
-      SetEndingSelection(
-          SelectionForUndoStep::From(initial_selection.AsSelection()));
-      GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
-      if (listified_placeholder) {
-        insertion_point = VisiblePosition::BeforeNode(*listified_placeholder);
-      }
+
+  // If the list type needs to be switched, create a new list of list_tag type
+  // and use it as placeholder so that, list_item's children will remain
+  // unchanged.
+  Node* listified_placeholder = nullptr;
+  if (switch_list_type || force_create_list) {
+    listified_placeholder = ListifyParagraph(initial_selection, insertion_point,
+                                             list_tag, editing_state);
+    GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
+    if (listified_placeholder) {
+      insertion_point = VisiblePosition::BeforeNode(*listified_placeholder);
     }
   }
   visible_start = CreateVisiblePosition(start);
@@ -616,9 +633,11 @@ static HTMLElement* AdjacentEnclosingList(const VisiblePosition& pos,
   return list_element;
 }
 
-Node* InsertListCommand::ListifyParagraph(const VisiblePosition& original_start,
-                                          const HTMLQualifiedName& list_tag,
-                                          EditingState* editing_state) {
+Node* InsertListCommand::ListifyParagraph(
+    const VisibleSelection& initial_selection,
+    const VisiblePosition& original_start,
+    const HTMLQualifiedName& list_tag,
+    EditingState* editing_state) {
   const VisiblePosition& start =
       StartOfParagraph(original_start, kCanSkipOverEditingBoundary);
   const VisiblePosition& end =
@@ -652,8 +671,8 @@ Node* InsertListCommand::ListifyParagraph(const VisiblePosition& original_start,
     if (editing_state->IsAborted())
       return nullptr;
 
-    MoveParagraphOverPositionIntoEmptyListItem(start, list_item_element,
-                                               editing_state);
+    MoveParagraphOverPositionIntoEmptyListItem(
+        initial_selection, start, list_item_element, editing_state);
     if (editing_state->IsAborted())
       return nullptr;
 
@@ -666,11 +685,12 @@ Node* InsertListCommand::ListifyParagraph(const VisiblePosition& original_start,
 
   // Create new list element.
 
-  // Inserting the list into an empty paragraph that isn't held open
-  // by a br or a '\n', will invalidate start and end.  Insert
-  // a placeholder and then recompute start and end.
+  // Inserting the list into an empty paragraph or empty text node
+  // that isn't held open by a br or a '\n', will invalidate start
+  // and end. Insert a placeholder and then recompute start and end.
   Position start_pos = start.DeepEquivalent();
   if (start.DeepEquivalent() == end.DeepEquivalent() &&
+      start.DeepEquivalent().AnchorNode()->IsTextNode() &&
       IsEnclosingBlock(start.DeepEquivalent().AnchorNode())) {
     HTMLBRElement* placeholder =
         InsertBlockPlaceholder(start_pos, editing_state);
@@ -721,15 +741,17 @@ Node* InsertListCommand::ListifyParagraph(const VisiblePosition& original_start,
   if (insertion_pos != start_pos) {
     GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
     MoveParagraphOverPositionIntoEmptyListItem(
-        CreateVisiblePosition(start_pos), list_item_element, editing_state);
+        initial_selection, CreateVisiblePosition(start_pos), list_item_element,
+        editing_state);
   } else if (relocatable_original_start) {
     GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
     MoveParagraphOverPositionIntoEmptyListItem(
+        initial_selection,
         CreateVisiblePosition(relocatable_original_start->GetPosition()),
         list_item_element, editing_state);
   } else {
     MoveParagraphOverPositionIntoEmptyListItem(
-        original_start, list_item_element, editing_state);
+        initial_selection, original_start, list_item_element, editing_state);
   }
   if (editing_state->IsAborted())
     return nullptr;
@@ -741,6 +763,7 @@ Node* InsertListCommand::ListifyParagraph(const VisiblePosition& original_start,
 // TODO(editing-dev): Stop storing VisiblePositions through mutations.
 // See crbug.com/648949 for details.
 void InsertListCommand::MoveParagraphOverPositionIntoEmptyListItem(
+    const VisibleSelection& initial_selection,
     const VisiblePosition& pos,
     HTMLLIElement* list_item_element,
     EditingState* editing_state) {
@@ -794,11 +817,18 @@ void InsertListCommand::MoveParagraphOverPositionIntoEmptyListItem(
     if (editing_state->IsAborted())
       return;
   }
-
-  SetEndingSelection(SelectionForUndoStep::From(
-      SelectionInDOMTree::Builder()
-          .Collapse(Position::FirstPositionInNode(*list_item_element))
-          .Build()));
+  if (RuntimeEnabledFeatures::
+          SelectionUpdateToInitialSelectionInListifyEnabled() &&
+      initial_selection.Anchor().IsConnected() &&
+      initial_selection.Focus().IsConnected()) {
+    SetEndingSelection(
+        SelectionForUndoStep::From(initial_selection.AsSelection()));
+  } else {
+    SetEndingSelection(SelectionForUndoStep::From(
+        SelectionInDOMTree::Builder()
+            .Collapse(Position::FirstPositionInNode(*list_item_element))
+            .Build()));
+  }
 }
 
 void InsertListCommand::Trace(Visitor* visitor) const {

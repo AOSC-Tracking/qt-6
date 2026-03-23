@@ -1,5 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtQuick3DRuntimeRender/private/qssgrenderer_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendereffect_p.h>
@@ -20,14 +22,12 @@ QSSGRenderEffect::~QSSGRenderEffect()
     resetCommands();
 }
 
-void QSSGRenderEffect::markDirty()
+void QSSGRenderEffect::setFlag(QSSGRenderEffect::Flags flag, bool enabled)
 {
-    flags |= FlagT(Flags::Dirty);
-}
-
-void QSSGRenderEffect::clearDirty()
-{
-    flags &= ~FlagT(Flags::Dirty);
+    if (enabled)
+        flags |= FlagT(flag);
+    else
+        flags &= ~FlagT(flag);
 }
 
 // Suffix snippets added to the end of the shader strings. These are appended
@@ -151,8 +151,8 @@ void QSSGRenderEffect::finalizeShaders(const QSSGRenderLayer &layer, QSSGRenderC
         }
 
         // and update the command
-        delete commands[pass.bindShaderCmdIndex].command;
-        commands[pass.bindShaderCmdIndex] = { new QSSGBindShader(shaderPathKey), true };
+        delete commands[pass.bindShaderCmdIndex];
+        commands[pass.bindShaderCmdIndex] = new QSSGBindShader(shaderPathKey);
     }
 
     shaderPrepData.valid = false;
@@ -160,10 +160,7 @@ void QSSGRenderEffect::finalizeShaders(const QSSGRenderLayer &layer, QSSGRenderC
 
 void QSSGRenderEffect::resetCommands()
 {
-    for (const Command &cmd : commands) {
-        if (cmd.own)
-            delete cmd.command;
-    }
+    qDeleteAll(commands);
     commands.clear();
     shaderPrepData.passes.clear();
 }

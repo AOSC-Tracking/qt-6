@@ -19,6 +19,7 @@
 #include <string>
 
 #include "base/containers/heap_array.h"
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -87,32 +88,32 @@ std::string DecryptSampleAES(const std::string& key,
   std::string result;
   const EVP_CIPHER* cipher = EVP_aes_128_cbc();
   ScopedCipherCTX ctx;
-  EXPECT_EQ(EVP_CipherInit_ex(ctx.get(), cipher, NULL,
+  EXPECT_EQ(EVP_CipherInit_ex(ctx.get(), cipher, nullptr,
                               reinterpret_cast<const uint8_t*>(key.data()),
                               reinterpret_cast<const uint8_t*>(iv.data()), 0),
             1);
   EVP_CIPHER_CTX_set_padding(ctx.get(), 0);
   auto output = base::HeapArray<char>::Uninit(input_size);
   uint8_t* in_ptr = const_cast<uint8_t*>(input);
-  uint8_t* out_ptr = reinterpret_cast<uint8_t*>(output.data());
+  base::span<uint8_t> out_ptr = base::as_writable_byte_span(output);
   size_t bytes_remaining = output.size();
 
   while (bytes_remaining) {
     int unused;
     size_t amount_to_decrypt = has_pattern ? 16UL : bytes_remaining;
     EXPECT_EQ(amount_to_decrypt % 16UL, 0UL);
-    EXPECT_EQ(EVP_CipherUpdate(ctx.get(), out_ptr, &unused, in_ptr,
+    EXPECT_EQ(EVP_CipherUpdate(ctx.get(), out_ptr.data(), &unused, in_ptr,
                                amount_to_decrypt),
               1);
     bytes_remaining -= amount_to_decrypt;
     if (bytes_remaining) {
-      out_ptr += amount_to_decrypt;
+      out_ptr = out_ptr.subspan(amount_to_decrypt);
       in_ptr += amount_to_decrypt;
       size_t amount_to_skip = 144UL;  // Skip 9 blocks.
       if (amount_to_skip > bytes_remaining)
         amount_to_skip = bytes_remaining;
-      memcpy(out_ptr, in_ptr, amount_to_skip);
-      out_ptr += amount_to_skip;
+      memcpy(out_ptr.data(), in_ptr, amount_to_skip);
+      out_ptr = out_ptr.subspan(amount_to_skip);
       in_ptr += amount_to_skip;
       bytes_remaining -= amount_to_skip;
     }
@@ -142,7 +143,7 @@ std::string DecryptBuffer(const StreamParserBuffer& buffer,
   EXPECT_EQ(key.size(), 16UL);
   EXPECT_EQ(iv.size(), 16UL);
   std::string result;
-  uint8_t* in_ptr = const_cast<uint8_t*>(buffer.data());
+  uint8_t* in_ptr = const_cast<uint8_t*>(base::span(buffer).data());
   const DecryptConfig* decrypt_config = buffer.decrypt_config();
   for (const auto& subsample : decrypt_config->subsamples()) {
     std::string clear(reinterpret_cast<char*>(in_ptr), subsample.clear_bytes);
@@ -406,7 +407,7 @@ class Mp2tStreamParserTest : public testing::Test {
       // Attempt to incrementally parse each appended chunk to test out the
       // parser's internal management of input queue and pending data bytes.
       EXPECT_TRUE(AppendAllDataThenParseInPieces(
-          buffer->AsSpan().subspan(start, chunk_size),
+          (*buffer).subspan(start, chunk_size),
           (chunk_size > 7) ? (chunk_size - 7) : chunk_size));
       start += chunk_size;
     } while (start < end);
@@ -572,16 +573,14 @@ TEST_F(Mp2tStreamParserTest, HLSSampleAES) {
   // Skip the last buffer, which may be truncated.
   for (size_t i = 0; i + 1 < video_buffer_capture_.size(); i++) {
     const auto& buffer = video_buffer_capture_[i];
-    std::string unencrypted_video_buffer(
-        reinterpret_cast<const char*>(buffer->data()), buffer->size());
+    std::string unencrypted_video_buffer((*buffer).begin(), (*buffer).end());
     EXPECT_EQ(decrypted_video_buffers[i], unencrypted_video_buffer);
   }
   audio_encryption_scheme = current_audio_config_.encryption_scheme();
   EXPECT_EQ(audio_encryption_scheme, EncryptionScheme::kUnencrypted);
   for (size_t i = 0; i + 1 < audio_buffer_capture_.size(); i++) {
     const auto& buffer = audio_buffer_capture_[i];
-    std::string unencrypted_audio_buffer(
-        reinterpret_cast<const char*>(buffer->data()), buffer->size());
+    std::string unencrypted_audio_buffer((*buffer).begin(), (*buffer).end());
     EXPECT_EQ(decrypted_audio_buffers[i], unencrypted_audio_buffer);
   }
 }
@@ -596,6 +595,12 @@ TEST_F(Mp2tStreamParserTest, PrepareForHLSSampleAES) {
   EncryptionScheme audio_encryption_scheme =
       current_audio_config_.encryption_scheme();
   EXPECT_NE(audio_encryption_scheme, EncryptionScheme::kUnencrypted);
+}
+
+TEST_F(Mp2tStreamParserTest, MultipleSPSPPSBeforeSlice) {
+  InitializeParser();
+  ParseMpeg2TsFile("extra-nalu.ts", 2048);
+  parser_->Flush();
 }
 
 }  // namespace mp2t

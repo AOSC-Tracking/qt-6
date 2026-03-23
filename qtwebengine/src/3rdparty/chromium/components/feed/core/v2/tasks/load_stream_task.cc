@@ -423,9 +423,17 @@ void LoadStreamTask::ProcessNetworkResponse(
          feedwire::DiscoverLaunchResult::NO_CARDS_REQUEST_ERROR_OTHER});
   }
 
-  loaded_new_content_from_network_ = true;
   content_ids_ =
       feedstore::GetContentIds(response_data.model_update_request->stream_data);
+
+  // Bail out if no card is received.
+  if (content_ids_.IsEmpty()) {
+    return RequestFinished(
+        {LoadStreamStatus::kNoCardReceived,
+         feedwire::DiscoverLaunchResult::NO_CARDS_RESPONSE_ERROR_ZERO_CARDS});
+  }
+
+  loaded_new_content_from_network_ = true;
 
   stream_->GetStore().OverwriteStream(
       options_.stream_type,
@@ -453,6 +461,10 @@ void LoadStreamTask::ProcessNetworkResponse(
   if (response_data.content_lifetime) {
     feedstore::SetContentLifetime(updated_metadata, options_.stream_type,
                                   *response_data.content_lifetime);
+  }
+  if (response_data.feed_launch_cui_metadata) {
+    updated_metadata.set_feed_launch_cui_metadata(
+        *response_data.feed_launch_cui_metadata);
   }
   stream_->SetMetadata(std::move(updated_metadata));
   if (response_data.experiments)

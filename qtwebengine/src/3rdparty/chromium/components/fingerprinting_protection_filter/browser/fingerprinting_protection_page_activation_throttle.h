@@ -14,9 +14,13 @@
 
 class PrefService;
 
+namespace content {
+class NavigationThrottleRegistry;
+}  // namespace content
+
 namespace privacy_sandbox {
 class TrackingProtectionSettings;
-}
+}  // namespace privacy_sandbox
 
 namespace subresource_filter {
 enum class ActivationDecision;
@@ -37,7 +41,7 @@ enum class ExceptionSource : int {
   USER_BYPASS = 1,
   COOKIES = 2,
   REFRESH_HEURISTIC = 3,
-  EXCEPTION_SOURCE_MAX = 4,
+  EXCEPTION_SOURCE_MAX = REFRESH_HEURISTIC,
 };
 // LINT.ThenChange(//tools/metrics/histograms/enums.xml:FingerprintingProtectionExceptionSource)
 
@@ -52,7 +56,7 @@ class FingerprintingProtectionPageActivationThrottle
     : public content::NavigationThrottle {
  public:
   FingerprintingProtectionPageActivationThrottle(
-      content::NavigationHandle* handle,
+      content::NavigationThrottleRegistry& registry,
       HostContentSettingsMap* content_settings,
       privacy_sandbox::TrackingProtectionSettings* tracking_protection_settings,
       PrefService* prefs,
@@ -86,6 +90,9 @@ class FingerprintingProtectionPageActivationThrottle
   FRIEND_TEST_ALL_PREFIXES(
       FPFPageActivationThrottleWithTrackingProtectionSettingTest,
       GetActivationComputesLevelAndDecision);
+  FRIEND_TEST_ALL_PREFIXES(
+      FPFPageActivationThrottleWithTrackingProtectionSettingTest,
+      TrackingProtectionSettingsIgnoredOutsideOfIncognitoMode);
 
   // Helper for `GetActivation()`.
   // If feature flags and related settings immediately determine the result of

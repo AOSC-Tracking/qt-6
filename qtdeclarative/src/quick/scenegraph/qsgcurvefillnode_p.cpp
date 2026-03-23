@@ -115,7 +115,7 @@ namespace {
                 memcpy(buf->data() + offset + viewIndex * 64, m.constData(), 64);
             }
 
-            matrixScale = qSqrt(qAbs(state.determinant()));
+            matrixScale = qSqrt(qAbs(state.determinant())) * state.devicePixelRatio();
             memcpy(buf->data() + offset + newEffect->viewCount() * 64, &matrixScale, 4);
 
             changed = true;
@@ -379,17 +379,18 @@ QSGMaterialType *QSGCurveFillMaterial::type() const
     Q_ASSERT((index & ~3) == 0); // Only two first bits for gradient type
 
     if (node()->gradientType() == QGradient::NoGradient && node()->fillTextureProvider() != nullptr)
-        index = 5;
+        index = 4;
 
     return &type[index];
 }
 
 QSGMaterialShader *QSGCurveFillMaterial::createShader(QSGRendererInterface::RenderMode renderMode) const
 {
+    Q_UNUSED(renderMode);
     return new QSGCurveFillMaterialShader(node()->gradientType(),
                                           node()->gradientType() == QGradient::NoGradient
-                                              && node()->fillTextureProvider() != nullptr,
-                                          renderMode == QSGRendererInterface::RenderMode3D,
+                                            && node()->fillTextureProvider() != nullptr,
+                                          node()->useStandardDerivatives(),
                                           viewCount());
 }
 

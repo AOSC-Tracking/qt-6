@@ -20,7 +20,6 @@
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_utils.h"
 #include "ui/gl/init/gl_initializer.h"
-#include "ui/gl/startup_trace.h"
 
 #if BUILDFLAG(IS_OZONE)
 #include "ui/base/ui_base_features.h"
@@ -111,7 +110,6 @@ GLDisplay* InitializeGLOneOffPlatformHelper(bool init_extensions,
                                             gl::GpuPreference gpu_preference) {
   TRACE_EVENT1("gpu,startup", "gl::init::InitializeGLOneOffPlatformHelper",
                "init_extensions", init_extensions);
-  GPU_STARTUP_TRACE_EVENT("gl::init::InitializeGLOneOffPlatformHelper");
 
   const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
   bool disable_gl_drawing = cmd->HasSwitch(switches::kDisableGLDrawingForTests);
@@ -123,7 +121,7 @@ GLDisplay* InitializeGLOneOffPlatformHelper(bool init_extensions,
 }  // namespace
 
 GLDisplay* InitializeGLOneOff(gl::GpuPreference gpu_preference) {
-  GPU_STARTUP_TRACE_EVENT("gl::init::InitializeOneOff");
+  TRACE_EVENT("gpu,startup", "gl::init::InitializeOneOff");
 
   if (!InitializeStaticGLBindingsOneOff())
     return nullptr;
@@ -138,7 +136,6 @@ GLDisplay* InitializeGLNoExtensionsOneOff(bool init_bindings,
                                           gl::GpuPreference gpu_preference) {
   TRACE_EVENT1("gpu,startup", "gl::init::InitializeNoExtensionsOneOff",
                "init_bindings", init_bindings);
-  GPU_STARTUP_TRACE_EVENT("gl::init::InitializeNoExtensionsOneOff");
   if (init_bindings) {
     if (!InitializeStaticGLBindingsOneOff())
       return nullptr;
@@ -152,7 +149,7 @@ GLDisplay* InitializeGLNoExtensionsOneOff(bool init_bindings,
 
 bool InitializeStaticGLBindingsOneOff() {
   DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
-  GPU_STARTUP_TRACE_EVENT("gl::init::InitializeStaticGLBindingsOneOff");
+  TRACE_EVENT("gpu,startup", "gl::init::InitializeStaticGLBindingsOneOff");
 
   GLImplementationParts impl = GetRequestedGLImplementation();
   if (impl.gl == kGLImplementationDisabled) {

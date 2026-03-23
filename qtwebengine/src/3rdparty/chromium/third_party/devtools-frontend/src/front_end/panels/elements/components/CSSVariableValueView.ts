@@ -1,16 +1,13 @@
 // Copyright 2023 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import type * as SDK from '../../../core/sdk/sdk.js';
 import * as Lit from '../../../ui/lit/lit.js';
 
-import cssVariableValueViewStylesRaw from './cssVariableValueView.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const cssVariableValueViewStyles = new CSSStyleSheet();
-cssVariableValueViewStyles.replaceSync(cssVariableValueViewStylesRaw.cssContent);
+import cssVariableValueViewStyles from './cssVariableValueView.css.js';
 
 const UIStrings = {
   /**
@@ -29,7 +26,7 @@ const UIStrings = {
    *@example {--my-custom-property-name} PH1
    */
   sIsNotDefined: '{PH1} is not defined',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/elements/components/CSSVariableValueView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const i18nTemplate = Lit.i18nTemplate.bind(undefined, str_);
@@ -54,7 +51,6 @@ export class CSSVariableParserError extends HTMLElement {
 
   constructor(details: RegisteredPropertyDetails) {
     super();
-    this.#shadow.adoptedStyleSheets = [cssVariableValueViewStyles];
     this.#render(details);
   }
 
@@ -62,6 +58,7 @@ export class CSSVariableParserError extends HTMLElement {
     const type = html`<span class="monospace css-property">${details.registration.syntax()}</span>`;
     render(
         html`
+      <style>${cssVariableValueViewStyles}</style>
       <div class="variable-value-popup-wrapper">
         ${i18nTemplate(UIStrings.invalidPropertyValue, {type})}
         ${getLinkSection(details)}
@@ -75,7 +72,7 @@ export class CSSVariableParserError extends HTMLElement {
 export class CSSVariableValueView extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   readonly variableName: string;
-  readonly value: string|undefined;
+  #value: string|undefined;
   readonly details: RegisteredPropertyDetails|undefined;
 
   constructor({
@@ -88,10 +85,17 @@ export class CSSVariableValueView extends HTMLElement {
     details?: RegisteredPropertyDetails,
   }) {
     super();
-    this.#shadow.adoptedStyleSheets = [cssVariableValueViewStyles];
     this.variableName = variableName;
-    this.value = value;
     this.details = details;
+    this.value = value;
+  }
+
+  get value(): string|undefined {
+    return this.#value;
+  }
+
+  set value(value: string|undefined) {
+    this.#value = value;
     this.#render();
   }
 
@@ -111,7 +115,8 @@ export class CSSVariableValueView extends HTMLElement {
 
     const valueText = this.value ?? i18nString(UIStrings.sIsNotDefined, {PH1: this.variableName});
     render(
-        html`<div class="variable-value-popup-wrapper">
+        html`<style>${cssVariableValueViewStyles}</style>
+             <div class="variable-value-popup-wrapper">
                ${valueText}
              </div>
              ${registrationView}

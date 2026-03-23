@@ -852,6 +852,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1052,7 +1055,7 @@
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_idct_add_neon
 
@@ -1137,7 +1140,7 @@ L_ff_h264_idct_add_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_idct_dc_add_neon
 
@@ -1182,7 +1185,7 @@ L_ff_h264_idct_dc_add_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_idct_add16_neon
 
@@ -1296,7 +1299,7 @@ temp_label_1
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_idct_add16intra_neon
 
@@ -1410,7 +1413,7 @@ temp_label_4
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_idct_add8_neon
 
@@ -1533,7 +1536,7 @@ temp_label_7
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_idct8_add_neon
 
@@ -1733,7 +1736,7 @@ L_ff_h264_idct8_add_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_idct8_dc_add_neon
 
@@ -1798,7 +1801,7 @@ L_ff_h264_idct8_dc_add_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_h264_idct8_add4_neon
 
@@ -1923,7 +1926,7 @@ temp_label_10
 
 
 
-        ALIGN 4
+        ALIGN 16
 scan8
         dcb           4+ 1*8, 5+ 1*8, 4+ 2*8, 5+ 2*8
         dcb           6+ 1*8, 7+ 1*8, 6+ 2*8, 7+ 2*8

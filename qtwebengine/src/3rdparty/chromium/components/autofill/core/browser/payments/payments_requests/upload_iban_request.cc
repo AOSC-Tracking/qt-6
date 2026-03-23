@@ -5,6 +5,7 @@
 #include "components/autofill/core/browser/payments/payments_requests/upload_iban_request.h"
 
 #include "base/json/json_writer.h"
+#include "base/notimplemented.h"
 #include "base/strings/escape.h"
 #include "base/strings/stringprintf.h"
 
@@ -75,7 +76,7 @@ std::string UploadIbanRequest::GetRequestContent() {
                          base::EscapeUrlEncodedData(
                              base::UTF16ToASCII(request_details_.value), true)
                              .c_str());
-  VLOG(3) << "savediban request body: " << request_content;
+  DVLOG(3) << "savediban request body: " << request_content;
   return request_content;
 }
 

@@ -215,7 +215,7 @@
             safety for performance on accessing custom protobuf serializers.
     \endlist
 
-    \section2 Qt QML Module
+    \section2 Qt Qml Module
     \list
         \li QML Language Server now provides an outline view of the document
             structure. This allows clients (e.g., IDEs or code editors) to represent
@@ -249,6 +249,9 @@
         \li Added ContextMenu. This can be attached to any item in order to
             show a context menu upon a platform-specific event, such as a right
             click or the context menu key.
+        \li TextField and TextArea now provide a ContextMenu by default.
+            If you already have a custom context menu for these types,
+            ContextMenu will not open its own (on right click or the context menu key).
     \endlist
 
 
@@ -375,7 +378,7 @@
         \li Authors can now override the underlying return type of a function
             that's documented with an \l {fn-command} {fn}-command with \c auto.
         \li QDoc can now generate documentation from comments in C++ headers.
-            This is added as a technical preview in QDoc with Qt 6.9, and we'd
+            This is added as a technology preview in QDoc with Qt 6.9, and we'd
             love to get feedback from our users. Enable the
             \l {documentationinheaders-variable} {documentationinheaders}
             QDoc configuration variable to try it out.

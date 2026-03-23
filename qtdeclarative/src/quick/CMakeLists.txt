@@ -14,7 +14,7 @@ qt_internal_add_qml_module(Quick
     CLASS_NAME QtQuick2Plugin
     IMPORTS
         QtQml/auto
-    PLUGIN_TYPES scenegraph
+    PLUGIN_TYPES scenegraph vectorimageformats
     SOURCES
         handlers/qquickdragaxis.cpp handlers/qquickdragaxis_p.h
         handlers/qquickdraghandler.cpp handlers/qquickdraghandler_p.h
@@ -244,8 +244,6 @@ qt_internal_add_qml_module(Quick
         Qt::Core
         Qt::Gui
         Qt::Qml
-        Qt::QmlMeta
-        Qt::QmlModels
     PRIVATE_MODULE_INTERFACE
         Qt::CorePrivate
         Qt::GuiPrivate
@@ -338,6 +336,8 @@ qt_internal_add_shaders(Quick "scenegraph_curve_shaders"
         "scenegraph/shaders_ng/shapecurve.vert"
         "scenegraph/shaders_ng/shapestroke.frag"
         "scenegraph/shaders_ng/shapestroke.vert"
+        "scenegraph/shaders_ng/shapestroke_wireframe.frag"
+        "scenegraph/shaders_ng/shapestroke_wireframe.vert"
 )
 
 qt_internal_add_shaders(Quick "scenegraph_curve_shaders_derivatives"
@@ -359,6 +359,21 @@ qt_internal_add_shaders(Quick "scenegraph_curve_shaders_derivatives"
         "scenegraph/shaders_ng/shapecurve_derivatives.vert.qsb"
         "scenegraph/shaders_ng/shapestroke_derivatives.frag.qsb"
         "scenegraph/shaders_ng/shapestroke_derivatives.vert.qsb"
+)
+
+qt_internal_add_shaders(Quick "scenegraph_curve_shaders_expanding"
+    SILENT
+    BATCHABLE
+    PRECOMPILE
+    OPTIMIZED
+    MULTIVIEW
+    DEFINES "STROKE_EXPANDING"
+    PREFIX
+        "/qt-project.org"
+    FILES
+        "scenegraph/shaders_ng/shapestroke.vert"
+    OUTPUTS
+        "scenegraph/shaders_ng/shapestroke_expanding.vert.qsb"
 )
 
 qt_internal_add_shaders(Quick "scenegraph_curve_shaders_lg"
@@ -569,6 +584,8 @@ qt_internal_extend_target(Quick CONDITION QT_FEATURE_quick_designer
 qt_internal_extend_target(Quick CONDITION QT_FEATURE_accessibility
     SOURCES
         accessible/qaccessiblequickitem.cpp accessible/qaccessiblequickitem_p.h
+        accessible/qaccessiblequicktextedit.cpp accessible/qaccessiblequicktextedit_p.h
+        accessible/qaccessiblequicktextinput.cpp accessible/qaccessiblequicktextinput_p.h
         accessible/qaccessiblequickview.cpp accessible/qaccessiblequickview_p.h
         accessible/qquickaccessiblefactory.cpp accessible/qquickaccessiblefactory_p.h
     LIBRARIES
@@ -618,6 +635,8 @@ qt_internal_extend_target(Quick CONDITION ANDROID
     SOURCES
         platform/android/qandroidquickviewembedding.cpp platform/android/qandroidquickviewembedding_p.h
         platform/android/qandroidviewsignalmanager.cpp platform/android/qandroidviewsignalmanager_p.h
+    LIBRARIES
+        Qt::CorePrivate
 )
 if (ANDROID)
     add_subdirectory(platform/android/jar)

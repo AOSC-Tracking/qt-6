@@ -73,6 +73,8 @@ enum GroupId {
   GROUP_VISITED_DOC_RELATED = 10005;
   GROUP_MULTIMODAL = 10006;
   GROUP_CONTEXTUAL_SEARCH = 10007;
+  GROUP_CONTEXTUAL_SEARCH_ACTION = 10008;
+  GROUP_SEARCH_TOOLBELT = 10009;
   GROUP_POLARIS_RESERVED_MAX = 19999;
 
   // Mobile-specific auxiliary suggestions.
@@ -90,6 +92,11 @@ enum GroupId {
   // Produced by LocalHistoryZeroSuggestProvider and maybe ZeroSuggestProvider.
   GROUP_PERSONALIZED_ZERO_SUGGEST = 40000;
 
+  // Reserved for MIA zero-prefix suggestions and personalized zero-prefix
+  // suggestions with MIA.
+  GROUP_MIA_RECOMMENDATIONS = 45000;
+  GROUP_PERSONALIZED_ZERO_SUGGEST_WITH_MIA = 45001;
+
   // Cross platform suggestions with vanilla visual representation (i.e.
   // vertical, primary column, and no header), but useful for sorting.
   GROUP_STARTER_PACK = 50000;
@@ -97,6 +104,8 @@ enum GroupId {
   GROUP_OTHER_NAVS = 50002;  // E.g., bookmarks, history, etc.
   GROUP_DOCUMENT = 50003;    // E.g., Drive docs, slides, sheets, etc.
   GROUP_HISTORY_CLUSTER = 50004;
+  GROUP_MOST_VISITED = 50005;
+  GROUP_RECENTLY_CLOSED_TABS = 50006;
 
   // IPH suggestions that appear in zero-prefix.  These suggestions are
   // informational only and do not trigger a search or navigation.
@@ -170,6 +179,8 @@ enum GroupSection {
   SECTION_OTHER_NAVS = 102;
   SECTION_DOCUMENT = 103;
   SECTION_HISTORY_CLUSTER = 104;
+  SECTION_MOST_VISITED = 105;
+  SECTION_RECENTLY_CLOSED_TABS = 106;
 
   // Android-specific auxiliary suggestions. These suggestions are sourced on
   // device, and appear above any other content.

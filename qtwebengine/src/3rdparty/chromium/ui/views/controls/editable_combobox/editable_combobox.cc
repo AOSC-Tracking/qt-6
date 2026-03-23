@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/callback_list.h"
@@ -15,6 +16,7 @@
 #include "base/i18n/rtl.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_action_data.h"
@@ -108,13 +110,14 @@ class Arrow : public Button {
     // Make sure the arrow use the same color as the text in the combobox.
     PaintComboboxArrow(
         GetColorProvider()->GetColor(TypographyProvider::Get().GetColorId(
-            style::CONTEXT_TEXTFIELD,
-            GetEnabled() ? style::STYLE_PRIMARY : style::STYLE_DISABLED)),
+            style::CONTEXT_TEXTFIELD, GetEnabledInViewsSubtree()
+                                          ? style::STYLE_PRIMARY
+                                          : style::STYLE_DISABLED)),
         arrow_bounds, canvas);
   }
 
   void UpdateAccessibleDefaultActionVerb() {
-    if (GetEnabled()) {
+    if (GetEnabledInViewsSubtree()) {
       GetViewAccessibility().SetDefaultActionVerb(
           ax::mojom::DefaultActionVerb::kOpen);
     } else {
@@ -123,7 +126,7 @@ class Arrow : public Button {
   }
 
   base::CallbackListSubscription enabled_changed_subscription_ =
-      AddEnabledChangedCallback(
+      AddEnabledInViewsSubtreeChangedCallback(
           base::BindRepeating(&Arrow::UpdateAccessibleDefaultActionVerb,
                               base::Unretained(this)));
 };
@@ -413,11 +416,11 @@ void EditableCombobox::SetModel(std::unique_ptr<ui::ComboboxModel> model) {
       this, std::move(model), filter_on_edit_, show_on_empty_);
 }
 
-const std::u16string& EditableCombobox::GetText() const {
+std::u16string_view EditableCombobox::GetText() const {
   return textfield_->GetText();
 }
 
-void EditableCombobox::SetText(const std::u16string& text) {
+void EditableCombobox::SetText(std::u16string_view text) {
   textfield_->SetText(text);
   // SetText does not actually notify the TextfieldController, so we call the
   // handling code directly.
@@ -428,11 +431,11 @@ void EditableCombobox::SetInvalid(bool invalid) {
   textfield_->SetInvalid(invalid);
 }
 
-const std::u16string& EditableCombobox::GetPlaceholderText() const {
+std::u16string_view EditableCombobox::GetPlaceholderText() const {
   return textfield_->GetPlaceholderText();
 }
 
-void EditableCombobox::SetPlaceholderText(const std::u16string& text) {
+void EditableCombobox::SetPlaceholderText(std::u16string_view text) {
   textfield_->SetPlaceholderText(text);
 }
 
@@ -550,8 +553,8 @@ void EditableCombobox::OnItemSelected(size_t index) {
   HandleNewContent(selected_item_text);
 }
 
-void EditableCombobox::HandleNewContent(const std::u16string& new_content) {
-  DCHECK(GetText() == new_content);
+void EditableCombobox::HandleNewContent(std::u16string_view new_content) {
+  DCHECK_EQ(GetText(), new_content);
   // We notify |callback_| before updating |menu_model_|'s items shown. This
   // gives the user a chance to modify the ComboboxModel beforehand if they wish
   // to do so.
@@ -647,8 +650,8 @@ const ui::ComboboxModel* EditableCombobox::GetComboboxModel() const {
 }
 
 BEGIN_METADATA(EditableCombobox)
-ADD_PROPERTY_METADATA(std::u16string, Text)
-ADD_PROPERTY_METADATA(std::u16string, PlaceholderText)
+ADD_PROPERTY_METADATA(std::u16string_view, Text)
+ADD_PROPERTY_METADATA(std::u16string_view, PlaceholderText)
 END_METADATA
 
 }  // namespace views

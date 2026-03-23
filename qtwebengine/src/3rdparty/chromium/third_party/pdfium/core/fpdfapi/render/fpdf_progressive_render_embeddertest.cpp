@@ -237,7 +237,7 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderWithoutPause) {
   // Test rendering of page content using progressive render APIs
   // without pausing the rendering.
   ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
-  ScopedEmbedderTestPage page = LoadScopedPage(0);
+  ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
   FakePause pause(false);
   EXPECT_TRUE(StartRenderPage(page.get(), &pause));
@@ -250,7 +250,7 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderWithPause) {
   // Test rendering of page content using progressive render APIs
   // with pause in rendering.
   ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
-  ScopedEmbedderTestPage page = LoadScopedPage(0);
+  ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
   FakePause pause(true);
   bool render_done = StartRenderPage(page.get(), &pause);
@@ -268,7 +268,7 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderAnnotWithPause) {
   // Test rendering of the page with annotations using progressive render APIs
   // with pause in rendering.
   ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
-  ScopedEmbedderTestPage page = LoadScopedPage(0);
+  ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
   FakePause pause(true);
   bool render_done = StartRenderPageWithFlags(page.get(), &pause, FPDF_ANNOT);
@@ -286,7 +286,7 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderFormsWithPause) {
   // Test rendering of the page with forms using progressive render APIs
   // with pause in rendering.
   ASSERT_TRUE(OpenDocument("text_form.pdf"));
-  ScopedEmbedderTestPage page = LoadScopedPage(0);
+  ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
   FakePause pause(true);
   bool render_done = StartRenderPage(page.get(), &pause);
@@ -310,7 +310,7 @@ void FPDFProgressiveRenderEmbedderTest::VerifyRenderingWithColorScheme(
     const char* md5) {
   ASSERT_TRUE(document());
 
-  ScopedEmbedderTestPage page = LoadScopedPage(page_num);
+  ScopedPage page = LoadScopedPage(page_num);
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap = RenderPageWithForcedColorScheme(
@@ -396,7 +396,7 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderPathObjectUsability) {
   }();
 
   ASSERT_TRUE(OpenDocument("rectangles.pdf"));
-  ScopedEmbedderTestPage page = LoadScopedPage(0);
+  ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
 
   // Check rendering result before modifications.
@@ -434,11 +434,11 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderHighlightWithColorScheme) {
   const char* content_with_highlight_fill_checksum = []() {
     if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
 #if BUILDFLAG(IS_WIN)
-      return "8ed2cbc6a362752fabdf9b50d3358c96";
+      return "092f1ee8785ad74457022d6282784cb1";
 #elif BUILDFLAG(IS_APPLE)
-      return "fcd4dd021656f692f346780acaa24895";
+      return "c6e53a5348d8869a79d86a1f4745fcaa";
 #else
-      return "49dcfcfdc38d200bb3d57a2ca3086034";
+      return "c6b3aa2787f557726d6ac0fa7cd4fbfa";
 #endif
     }
 #if BUILDFLAG(IS_APPLE)
@@ -468,11 +468,11 @@ TEST_F(FPDFProgressiveRenderEmbedderTest,
   const char* md5_content_with_highlight = []() {
     if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
 #if BUILDFLAG(IS_WIN)
-      return "9389330c006d3e6054057992624684a8";
+      return "718af2604bd171f2af09019d7a2a16bb";
 #elif BUILDFLAG(IS_APPLE)
-      return "b7039f73f2d8a3ac3e1ef1492e425b99";
+      return "168c22e6aa255b7616579a468fb7e311";
 #else
-      return "c609e8810fba2f12db8f8a2b043d97bd";
+      return "12d37e0ae880cf2c5743a69467d19756";
 #endif
     }
 #if BUILDFLAG(IS_APPLE)
@@ -517,11 +517,11 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderStampWithColorScheme) {
   const char* content_with_stamp_checksum = []() {
     if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
 #if BUILDFLAG(IS_WIN)
-      return "7e4d84b094fc44094e647803572ae49a";
+      return "b7a0695040864e87065f74310f3f1ac5";
 #elif BUILDFLAG(IS_APPLE)
-      return "f1f1288805d1afd93397c2f24080b741";
+      return "741700c77d8bf8b4f61dbf3cc6a17019";
 #else
-      return "4e42fb3e87ff8276a549d7a755997766";
+      return "3e153a54caa24e13178facd47c147679";
 #endif
     }
 #if BUILDFLAG(IS_APPLE)

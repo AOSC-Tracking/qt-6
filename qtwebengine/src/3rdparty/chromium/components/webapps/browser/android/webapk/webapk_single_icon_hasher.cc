@@ -10,6 +10,7 @@
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_view_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/webapps/browser/android/webapps_icon_utils.h"
@@ -83,6 +84,7 @@ WebApkSingleIconHasher::WebApkSingleIconHasher(
       request_initiator, net::SiteForCookies());
   resource_request->request_initiator = request_initiator;
   resource_request->url = icon_->url();
+  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   simple_url_loader_ = network::SimpleURLLoader::Create(
       std::move(resource_request),
       TRAFFIC_ANNOTATION_WITHOUT_PROTO("webapk icon hasher"));

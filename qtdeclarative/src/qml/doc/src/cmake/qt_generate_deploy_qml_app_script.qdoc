@@ -25,6 +25,11 @@ qt_generate_deploy_qml_app_script(
     [NO_UNSUPPORTED_PLATFORM_ERROR]
     [NO_TRANSLATIONS]
     [NO_COMPILER_RUNTIME]
+    [NO_PLUGINS]                                  # since Qt 6.10
+    [EXCLUDE_PLUGIN_TYPES type_or_target...]      # since Qt 6.10
+    [INCLUDE_PLUGIN_TYPES type_or_target...]      # since Qt 6.10
+    [EXCLUDE_PLUGINS name...]                     # since Qt 6.10
+    [INCLUDE_PLUGINS name...]                     # since Qt 6.10
     [DEPLOY_TOOL_OPTIONS ...]
     [DEPLOY_USER_QML_MODULES_ON_UNSUPPORTED_PLATFORM]
     [MACOS_BUNDLE_POST_BUILD]
@@ -59,10 +64,10 @@ to the appropriate location for the platform. For macOS bundles, each QML
 module's \c{qmldir} file is installed under the appropriate subdirectory below
 \c{Resources/qml} and the module's plugin (if present) is installed under
 \c{PlugIns}. The app bundle is assumed to be installed directly to the base
-installation location (see the \l{Example} further below). For all other platforms,
-both the \c{qmldir} and the module's plugin are installed under the appropriate
-subdirectory below \c{qml}, which itself is relative to the base installation
-location.
+installation location (see the \l{#Example}{Example} further below).
+For all other platforms, both the \c{qmldir} and the module's plugin are
+installed under the appropriate subdirectory below \c{qml}, which itself is
+relative to the base installation location.
 
 \c{qt_generate_deploy_qml_app_script()} generates a script whose name will be
 stored in the variable named by the \c{OUTPUT_SCRIPT} option. That script
@@ -115,6 +120,13 @@ dependencies. These options do not apply to all platforms and are forwarded
 unmodified to
 \l{qt6_deploy_runtime_dependencies}{qt_deploy_runtime_dependencies()}.
 
+The options \c EXCLUDE_PLUGINS, \c EXCLUDE_PLUGIN_TYPES, \c INCLUDE_PLUGINS, and
+\c INCLUDE_PLUGIN_TYPES are used to select Qt plugins. See
+\l{qt6_deploy_runtime_dependencies}{qt_deploy_runtime_dependencies()} for their
+documentation.
+
+You can turn off plugin deployment altogether with the \c NO_PLUGINS option.
+
 For deploying a non-QML application, use
 \l{qt6_generate_deploy_app_script}{qt_generate_deploy_app_script()}
 instead. It is an error to call both \c{qt_generate_deploy_qml_app_script()}
@@ -126,7 +138,7 @@ same target.
 
 \section1 Example
 
-The following example shows how to deploy a QtQuick app.
+The following example shows how to deploy a Qt Quick app.
 
 \badcode
 cmake_minimum_required(VERSION 3.16...3.22)

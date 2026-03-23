@@ -1,5 +1,6 @@
 // Copyright (C) 2016 Research In Motion.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include <QtQml/qqmlfile.h>
 #include <QtCore/QCoreApplication>
@@ -15,8 +16,8 @@ using namespace Qt::Literals::StringLiterals;
 
 QT_BEGIN_NAMESPACE
 
-QQmlApplicationEnginePrivate::QQmlApplicationEnginePrivate(QQmlEngine *e)
-    : QQmlEnginePrivate(e)
+QQmlApplicationEnginePrivate::QQmlApplicationEnginePrivate()
+    : QQmlEnginePrivate()
 {
     uiLanguage = QLocale().bcp47Name();
 }
@@ -126,7 +127,7 @@ void QQmlApplicationEnginePrivate::startLoad(QAnyStringView uri, QAnyStringView 
     const QQmlType type = componentPriv->loadHelperType();
 
     if (type.sourceUrl().isValid()) {
-        const auto qmlDirData = typeLoader.getQmldir(type.sourceUrl());
+        const auto qmlDirData = QQmlTypeLoader::get(q)->getQmldir(type.sourceUrl());
         const QUrl url = qmlDirData->finalUrl();
         // A QRC URL coming from a qmldir cannot contain a relative path
         Q_ASSERT(url.scheme() != "qrc"_L1 || url.path().startsWith('/'_L1));
@@ -249,7 +250,7 @@ void QQmlApplicationEnginePrivate::updateTranslationDirectory(const QUrl &url)
         needs to include the resource prefix of the main file's QML module
         (\e{/qt/qml} by default) and the module URI. For example, to provide
         translation files for a module called "Translated":
-        \snippet qml-i18n/CMakeLists.txt 0
+        \snippet cmake/qt_add_translations.cmake 0
 */
 
 /*!
@@ -296,7 +297,7 @@ void QQmlApplicationEnginePrivate::updateTranslationDirectory(const QUrl &url)
   order to load a QML file.
 */
 QQmlApplicationEngine::QQmlApplicationEngine(QObject *parent)
-: QQmlEngine(*(new QQmlApplicationEnginePrivate(this)), parent)
+: QQmlEngine(*(new QQmlApplicationEnginePrivate), parent)
 {
     QJSEnginePrivate::addToDebugServer(this);
 }

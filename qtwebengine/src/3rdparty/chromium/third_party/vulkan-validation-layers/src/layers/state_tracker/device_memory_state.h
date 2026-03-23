@@ -2,6 +2,7 @@
  * Copyright (c) 2015-2025 Valve Corporation
  * Copyright (c) 2015-2025 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
+ * Copyright (c) 2025 Arm Limited.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,10 +19,13 @@
  */
 #pragma once
 #include "state_tracker/state_object.h"
-#include "containers/range_vector.h"
+#include "containers/range_map.h"
 #include <vulkan/utility/vk_safe_struct.hpp>
 
 namespace vvl {
+
+std::optional<VkExternalMemoryHandleTypeFlagBits> GetImportHandleType(const VkMemoryAllocateInfo &alloc_info);
+
 struct MemRange {
     VkDeviceSize offset = 0;
     VkDeviceSize size = 0;
@@ -32,8 +36,10 @@ struct DedicatedBinding {
     union CreateInfo {
         CreateInfo(const VkBufferCreateInfo &b) : buffer(b) {}
         CreateInfo(const VkImageCreateInfo &i) : image(i) {}
+        CreateInfo(const VkTensorCreateInfoARM &t) : tensor(t) {}
         VkBufferCreateInfo buffer;
         VkImageCreateInfo image;
+        VkTensorCreateInfoARM tensor;
     } create_info;
 
     DedicatedBinding(VkBuffer buffer, const VkBufferCreateInfo &buffer_create_info)
@@ -41,6 +47,9 @@ struct DedicatedBinding {
 
     DedicatedBinding(VkImage image, const VkImageCreateInfo &image_create_info)
         : handle(image, kVulkanObjectTypeImage), create_info(image_create_info) {}
+
+    DedicatedBinding(VkTensorARM tensor, const VkTensorCreateInfoARM &tensor_create_info)
+        : handle(tensor, kVulkanObjectTypeTensorARM), create_info(tensor_create_info) {}
 };
 
 // Data struct for tracking memory object
@@ -61,6 +70,7 @@ class DeviceMemory : public StateObject {
 #endif                                     // VK_USE_PLATFORM_METAL_EXT
     void *p_driver_data;                   // Pointer to application's actual memory
     const VkDeviceSize fake_base_address;  // To allow a unified view of allocations, useful to Synchronization Validation
+    std::optional<float> dynamic_priority;  // VK_EXT_pageable_device_local_memory priority
 
     DeviceMemory(VkDeviceMemory memory, const VkMemoryAllocateInfo *allocate_info, uint64_t fake_address,
                  const VkMemoryType &memory_type, const VkMemoryHeap &memory_heap,
@@ -83,6 +93,12 @@ class DeviceMemory : public StateObject {
     }
     bool IsDedicatedImage() const { return GetDedicatedImage() != VK_NULL_HANDLE; }
 
+    VkTensorARM GetDedicatedTensor() const {
+        return (dedicated && dedicated->handle.type == kVulkanObjectTypeTensorARM) ? dedicated->handle.Cast<VkTensorARM>()
+                                                                                   : VK_NULL_HANDLE;
+    }
+    bool IsDedicatedTensor() const { return GetDedicatedTensor() != VK_NULL_HANDLE; }
+
     VkDeviceMemory VkHandle() const { return handle_.Cast<VkDeviceMemory>(); }
 };
 
@@ -100,8 +116,8 @@ struct MemoryBinding {
 
 class BindableMemoryTracker {
   public:
-    using BufferRange = sparse_container::range<VkDeviceSize>;
-    using MemoryRange = sparse_container::range<VkDeviceSize>;
+    using BufferRange = vvl::range<VkDeviceSize>;
+    using MemoryRange = vvl::range<VkDeviceSize>;
     using BoundMemoryRange = std::map<VkDeviceMemory, std::vector<MemoryRange>>;
     using BoundRanges = vvl::unordered_map<VkDeviceMemory, std::vector<std::pair<MemoryRange, BufferRange>>>;
     using DeviceMemoryState = unordered_set<std::shared_ptr<vvl::DeviceMemory>>;
@@ -229,7 +245,7 @@ class BindableMultiplanarMemoryTracker : public BindableMemoryTracker {
     std::vector<Plane> planes_;
 };
 
-// Superclass for bindable object state (currently images, buffers and acceleration structures)
+// Superclass for bindable object state (currently images, buffers, acceleration structures and tensors)
 class Bindable : public StateObject {
   public:
     template <typename Handle>
@@ -304,11 +320,6 @@ class Bindable : public StateObject {
     std::pair<VkDeviceMemory, BindableMemoryTracker::MemoryRange> GetResourceMemoryOverlap(
         const BindableMemoryTracker::MemoryRange &memory_region, const Bindable *other_resource,
         const BindableMemoryTracker::MemoryRange &other_memory_region) const;
-
-    bool DoesResourceMemoryOverlap(const BindableMemoryTracker::MemoryRange &memory_region, const Bindable *other_resource,
-                                   const BindableMemoryTracker::MemoryRange &other_memory_region) const {
-        return GetResourceMemoryOverlap(memory_region, other_resource, other_memory_region).first != VK_NULL_HANDLE;
-    }
 
     BindableMemoryTracker::BoundMemoryRange GetBoundMemoryRange(const BindableMemoryTracker::MemoryRange &range) const {
         return memory_tracker_->GetBoundMemoryRange(range);

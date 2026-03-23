@@ -1,6 +1,8 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../../ui/components/icon_button/icon_button.js';
 import '../../../ui/components/tree_outline/tree_outline.js';
@@ -12,17 +14,9 @@ import type * as IconButton from '../../../ui/components/icon_button/icon_button
 import type * as TreeOutline from '../../../ui/components/tree_outline/tree_outline.js';
 import * as Lit from '../../../ui/lit/lit.js';
 
-import badgeStylesRaw from './badge.css.js';
-import originTrialTokenRowsStylesRaw from './originTrialTokenRows.css.js';
-import originTrialTreeViewStylesRaw from './originTrialTreeView.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const badgeStyles = new CSSStyleSheet();
-badgeStyles.replaceSync(badgeStylesRaw.cssContent);
-const originTrialTokenRowsStyles = new CSSStyleSheet();
-originTrialTokenRowsStyles.replaceSync(originTrialTokenRowsStylesRaw.cssContent);
-const originTrialTreeViewStyles = new CSSStyleSheet();
-originTrialTreeViewStyles.replaceSync(originTrialTreeViewStylesRaw.cssContent);
+import badgeStyles from './badge.css.js';
+import originTrialTokenRowsStyles from './originTrialTokenRows.css.js';
+import originTrialTreeViewStyles from './originTrialTreeView.css.js';
 
 const {html, Directives: {ifDefined}} = Lit;
 
@@ -77,7 +71,7 @@ const UIStrings = {
    *@description Label shown when there are no Origin Trial Tokens in the Frame view of the Application panel.
    */
   noTrialTokens: 'No trial tokens',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/application/components/OriginTrialTreeView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -94,10 +88,6 @@ export class Badge extends HTMLElement {
     this.#render(data);
   }
 
-  connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [badgeStyles];
-  }
-
   #render(data: BadgeData): void {
     const adornerContent = document.createElement('span');
     adornerContent.textContent = data.badgeContent;
@@ -109,6 +99,7 @@ export class Badge extends HTMLElement {
 
     Lit.render(
         html`
+      <style>${badgeStyles}</style>
       ${this.#adorner}
     `,
         this.#shadow, {host: this});
@@ -186,7 +177,7 @@ function renderTokenDetails(node: TreeNode<OriginTrialTreeNodeData>): Lit.Templa
 }
 
 function constructTokenDetailsNodes(token: Protocol.Page.OriginTrialTokenWithStatus):
-    TreeNode<OriginTrialTreeNodeData>[] {
+    Array<TreeNode<OriginTrialTreeNodeData>> {
   return [
     {
       treeNodeData: token,
@@ -239,7 +230,6 @@ export class OriginTrialTokenRows extends HTMLElement {
   }
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [originTrialTokenRowsStyles];
     this.#render();
   }
 
@@ -316,6 +306,7 @@ export class OriginTrialTokenRows extends HTMLElement {
 
     Lit.render(
         html`
+      <style>${originTrialTokenRowsStyles}</style>
       <div class="content">
         ${tokenDetailRows}
       </div>
@@ -337,14 +328,11 @@ export class OriginTrialTreeView extends HTMLElement {
     this.#render(data.trials);
   }
 
-  connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [originTrialTreeViewStyles];
-  }
-
   #render(trials: Protocol.Page.OriginTrial[]): void {
     if (!trials.length) {
       Lit.render(
           html`
+    <style>${originTrialTreeViewStyles}</style>
     <span class="status-badge">
       <devtools-icon
           .data=${{
@@ -363,6 +351,7 @@ export class OriginTrialTreeView extends HTMLElement {
 
     Lit.render(
         html`
+      <style>${originTrialTreeViewStyles}</style>
       <devtools-tree-outline .data=${{
           tree: trials.map(constructOriginTrialTree),
           defaultRenderer,

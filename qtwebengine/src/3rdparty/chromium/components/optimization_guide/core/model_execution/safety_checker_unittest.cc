@@ -13,7 +13,6 @@
 #include "base/files/scoped_temp_file.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/test/test.pb.h"
 #include "base/test/test_future.h"
@@ -135,8 +134,7 @@ TEST(SafetyConfigTest, SafeWithRequiredScores) {
   EXPECT_FALSE(cfg.IsRawOutputUnsafe(safety_info));
 }
 
-TEST_F(SafetyCheckerTest, RawOutputCheckPassesWithTrivialConfig) {
-  // When no thresholds are defined, all outputs will pass.
+TEST_F(SafetyCheckerTest, RawOutputCheckSkippedWithTrivialConfig) {
   SafetyClientFixture fixture([]() { return ComposeSafetyConfig(); }());
   auto checker = fixture.MakeSafetyChecker();
   checker->RunRawOutputCheck("unsafe raw output",
@@ -147,11 +145,8 @@ TEST_F(SafetyCheckerTest, RawOutputCheckPassesWithTrivialConfig) {
   EXPECT_FALSE(result.failed_to_run);
   EXPECT_FALSE(result.is_unsafe);
   EXPECT_FALSE(result.is_unsupported_language);
-  EXPECT_THAT(result.logs,
-              ElementsAre(AllOf(
-                  ResultOf("check text", &GetCheckText, "unsafe raw output"),
-                  ResultOf("scores", &GetScores, ElementsAre(0.8, 0.8)),
-                  ResultOf("is_unsafe", &GetIsUnsafe, false))));
+  // No checks should actually run with trivial config.
+  EXPECT_THAT(result.logs, IsEmpty());
 }
 
 TEST_F(SafetyCheckerTest, DefaultOutputSafetyPassesOnSafeOutput) {

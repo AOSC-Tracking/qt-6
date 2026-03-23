@@ -1472,6 +1472,7 @@ or the character \a ch
 
 /*!
     \fn QStringView::operator std::u16string_view() const
+    \target qstringview-operator-std-u16string_view
     \since 6.7
 
     Converts this QStringView object to a \c{std::u16string_view} object.
@@ -1521,7 +1522,7 @@ or the character \a ch
     namespace(s):
 
     \code
-    using namespace Qt::Literals::StringLiterals;
+    using namespace Qt::StringLiterals;
     auto sv = u"peace"_sv;
     \endcode
 

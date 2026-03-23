@@ -11,7 +11,12 @@
 namespace component_updater {
 class ReadMaskedDomainListProto;
 class PKIMetadataComponentInstallerService;
+class MaskedDomainListComponentInstallerTest;
 }  // namespace component_updater
+
+namespace glic {
+class GlicPageContextFetcher;
+}  // namespace glic
 
 namespace paint_preview {
 FORWARD_DECLARE_TEST(PaintPreviewCompositorBeginCompositeTest, InvalidProto);
@@ -37,6 +42,8 @@ class ProtoWrapperBytes {
   // or to directly set the contained class name and bytes with from_span().
   friend class component_updater::ReadMaskedDomainListProto;
   friend class component_updater::PKIMetadataComponentInstallerService;
+  friend class component_updater::MaskedDomainListComponentInstallerTest;
+  friend class glic::GlicPageContextFetcher;
 
   // Tests.
   FRIEND_TEST_ALL_PREFIXES(ProtoWrapperTest, ToFromBytes);

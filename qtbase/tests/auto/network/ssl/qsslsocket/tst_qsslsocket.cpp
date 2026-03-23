@@ -43,6 +43,8 @@
 #include "private/qsslsocket_p.h"
 #include "private/qsslconfiguration_p.h"
 
+#include <memory>
+
 using namespace std::chrono_literals;
 
 QT_WARNING_PUSH
@@ -155,6 +157,7 @@ private slots:
     void connectToHostEncrypted();
     void connectToHostEncryptedWithVerificationPeerName();
     void sessionCipher();
+    void localCertificate_data();
     void localCertificate();
     void mode();
     void peerCertificate();
@@ -1206,10 +1209,21 @@ void tst_QSslSocket::sessionCipher()
     QVERIFY(socket->waitForDisconnected());
 }
 
+void tst_QSslSocket::localCertificate_data()
+{
+    QTest::addColumn<QString>("certificatePath");
+    QTest::addColumn<QString>("keyPath");
+    QTest::newRow("fluke") << (testDataDir + "certs/fluke.cert") << (testDataDir + "certs/fluke.key");
+    QTest::newRow("no-common-name") << (testDataDir + "certs/no_common_name.crt") << (testDataDir + "certs/no_common_name.key");
+}
+
 void tst_QSslSocket::localCertificate()
 {
     if (!QSslSocket::supportsSsl())
         return;
+
+    QFETCH(QString, certificatePath);
+    QFETCH(QString, keyPath);
 
     // This test does not make 100% sense yet. We just set some local CA/cert/key and use it
     // to authenticate ourselves against the server. The server does not actually check this
@@ -1222,8 +1236,10 @@ void tst_QSslSocket::localCertificate()
     sslConfig.setCaCertificates(localCert);
     socket->setSslConfiguration(sslConfig);
 
-    socket->setLocalCertificate(testDataDir + "certs/fluke.cert");
-    socket->setPrivateKey(testDataDir + "certs/fluke.key");
+    socket->setLocalCertificate(certificatePath);
+    socket->setPrivateKey(keyPath);
+    QVERIFY(!socket->localCertificateChain().isEmpty());
+    QVERIFY(!socket->privateKey().isNull());
 
     socket->connectToHostEncrypted(QtNetworkSettings::httpServerName(), 443);
     QFETCH_GLOBAL(bool, setProxy);
@@ -1814,8 +1830,8 @@ void tst_QSslSocket::setLocalCertificateChain()
     QEventLoop loop;
     QTimer::singleShot(5000, &loop, SLOT(quit()));
 
-    const QScopedPointer<QSslSocket, QScopedPointerDeleteLater> client(new QSslSocket);
-    socket = client.data();
+    const std::unique_ptr<QSslSocket, QScopedPointerDeleteLater> client(new QSslSocket);
+    socket = client.get();
     connect(socket, SIGNAL(encrypted()), &loop, SLOT(quit()));
     connect(socket, SIGNAL(errorOccurred(QAbstractSocket::SocketError)), &loop, SLOT(quit()));
     connect(socket, SIGNAL(sslErrors(QList<QSslError>)), this, SLOT(ignoreErrorSlot()));
@@ -3281,7 +3297,7 @@ class SslServer4 : public QTcpServer
     Q_OBJECT
 public:
 
-    QScopedPointer<WebSocket> socket;
+    std::unique_ptr<WebSocket> socket;
 
 protected:
     void incomingConnection(qintptr socketDescriptor) override
@@ -3310,7 +3326,7 @@ void tst_QSslSocket::qtbug18498_peek()
         if (!--encryptedCounter)
             exitLoop();
     });
-    WebSocket *serversocket = server.socket.data();
+    WebSocket *serversocket = server.socket.get();
     connect(serversocket, &QSslSocket::encrypted, this, [&encryptedCounter](){
         if (!--encryptedCounter)
             exitLoop();
@@ -3352,13 +3368,13 @@ class SslServer5 : public QTcpServer
 {
     Q_OBJECT
 public:
-    SslServer5() : socket(0) {}
-    QSslSocket *socket;
+    SslServer5() {}
+    std::unique_ptr<QSslSocket> socket;
 
 protected:
     void incomingConnection(qintptr socketDescriptor) override
     {
-        socket =  new QSslSocket;
+        socket = std::make_unique<QSslSocket>();
         socket->setSocketDescriptor(socketDescriptor);
     }
 };
@@ -3371,12 +3387,12 @@ void tst_QSslSocket::qtbug18498_peek2()
 
     SslServer5 listener;
     QVERIFY(listener.listen(QHostAddress::Any));
-    QScopedPointer<QSslSocket> client(new QSslSocket);
+    std::unique_ptr<QSslSocket> client(new QSslSocket);
     client->connectToHost(QHostAddress::LocalHost, listener.serverPort());
     QVERIFY(client->waitForConnected(5000));
     QVERIFY(listener.waitForNewConnection(1000));
 
-    QScopedPointer<QSslSocket> server(listener.socket);
+    QSslSocket *server = listener.socket.get();
 
     QVERIFY(server->write("HELLO\r\n", 7));
     QTRY_COMPARE(client->bytesAvailable(), 7);
@@ -4317,6 +4333,7 @@ void tst_QSslSocket::ephemeralServerKey()
     QFETCH(QString, cipher);
     QFETCH(bool, emptyKey);
     SslServer server;
+    server.protocol = QSsl::TlsV1_2; // OpenSSL has TLS 1.3 and older ciphers separate.
     server.config.setCiphers(QList<QSslCipher>() << QSslCipher(cipher));
     QVERIFY(server.listen());
     QSslSocketPtr client = newSocket();
@@ -4329,6 +4346,8 @@ void tst_QSslSocket::ephemeralServerKey()
 
     QCOMPARE(spy.size(), 1);
     QVERIFY(server.config.ephemeralServerKey().isNull());
+    if (client->sessionCipher() != QSslCipher(cipher))
+        QSKIP(QLatin1String("Failed to negotiate the required ciphersuite (%1)").arg(cipher).toUtf8());
     QCOMPARE(client->sslConfiguration().ephemeralServerKey().isNull(), emptyKey);
 }
 

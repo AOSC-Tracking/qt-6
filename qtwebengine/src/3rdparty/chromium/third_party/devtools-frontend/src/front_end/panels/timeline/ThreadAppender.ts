@@ -14,7 +14,7 @@ import {
   addDecorationToEvent,
   buildGroupStyle,
   buildTrackHeader,
-  getFormattedTime,
+  getDurationString,
 } from './AppenderUtils.js';
 import {
   type CompatibilityTracksAppender,
@@ -129,7 +129,7 @@ const UIStrings = {
    * @example {https://google.com} PH1
    */
   workletServiceS: 'Auction Worklet service — {PH1}',
-};
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/ThreadAppender.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -152,11 +152,11 @@ export class ThreadAppender implements TrackAppender {
   #threadId: Trace.Types.Events.ThreadID;
   #threadDefaultName: string;
   #expanded = false;
-  #headerAppended: boolean = false;
+  #headerAppended = false;
   readonly threadType: Trace.Handlers.Threads.ThreadType = Trace.Handlers.Threads.ThreadType.MAIN_THREAD;
   readonly isOnMainFrame: boolean;
   #showAllEventsEnabled = Root.Runtime.experiments.isEnabled('timeline-show-all-events');
-  #url: string = '';
+  #url = '';
   #headerNestingLevel: number|null = null;
   constructor(
       compatibilityBuilder: CompatibilityTracksAppender, parsedTrace: Trace.Handlers.Types.ParsedTrace,
@@ -206,13 +206,13 @@ export class ThreadAppender implements TrackAppender {
   /**
    * Appends into the flame chart data the data corresponding to the
    * this thread.
-   * @param trackStartLevel the horizontal level of the flame chart events where
+   * @param trackStartLevel - the horizontal level of the flame chart events where
    * the track's events will start being appended.
-   * @param expanded wether the track should be rendered expanded.
+   * @param expanded - wether the track should be rendered expanded.
    * @returns the first available level to append more data after having
    * appended the track's events.
    */
-  appendTrackAtLevel(trackStartLevel: number, expanded: boolean = false): number {
+  appendTrackAtLevel(trackStartLevel: number, expanded = false): number {
     if (this.#entries.length === 0) {
       return trackStartLevel;
     }
@@ -256,7 +256,7 @@ export class ThreadAppender implements TrackAppender {
    * chart data. A group has a predefined style and a reference to the
    * definition of the legacy track (which should be removed in the
    * future).
-   * @param currentLevel the flame chart level at which the header is
+   * @param currentLevel - the flame chart level at which the header is
    * appended.
    */
   #appendTrackHeaderAtLevel(currentLevel: number): void {
@@ -440,7 +440,7 @@ export class ThreadAppender implements TrackAppender {
   /**
    * Adds into the flame chart data the entries of this thread, which
    * includes trace events and JS calls.
-   * @param currentLevel the flame chart level from which entries will
+   * @param currentLevel - the flame chart level from which entries will
    * be appended.
    * @returns the next level after the last occupied by the appended
    * entries (the first available level to append more data).
@@ -460,7 +460,7 @@ export class ThreadAppender implements TrackAppender {
    */
   #appendNodesAtLevel(
       nodes: Iterable<Trace.Helpers.TreeHelpers.TraceEntryNode>, startingLevel: number,
-      parentIsIgnoredListed: boolean = false): number {
+      parentIsIgnoredListed = false): number {
     const invisibleEntries =
         ModificationsManager.ModificationsManager.activeManager()?.getEntriesFilter().invisibleEntries() ?? [];
     let maxDepthInTree = startingLevel;
@@ -486,9 +486,9 @@ export class ThreadAppender implements TrackAppender {
       //    URLs).
       // This means that all of the ignore listed calls are ignored (not
       // appended), except if it is the bottom call of an ignored stack.
-      // This is becaue to represent ignore listed stack frames, we add
+      // This is because to represent ignore listed stack frames, we add
       // a flame chart entry with the length and position of the bottom
-      // frame, which is distictively marked to denote an ignored listed
+      // frame, which is distinctively marked to denote an ignored listed
       // stack.
       const skipEventDueToIgnoreListing = entryIsIgnoreListed && parentIsIgnoredListed;
       if (entryIsVisible && !skipEventDueToIgnoreListing) {
@@ -547,6 +547,9 @@ export class ThreadAppender implements TrackAppender {
       if (event.callFrame.functionName === '(idle)') {
         return Utils.EntryStyles.getCategoryStyles().idle.getComputedColorValue();
       }
+      if (event.callFrame.functionName === '(program)') {
+        return Utils.EntryStyles.getCategoryStyles().other.getComputedColorValue();
+      }
       if (event.callFrame.scriptId === '0') {
         // If we can not match this frame to a script, return the
         // generic "scripting" color.
@@ -574,13 +577,13 @@ export class ThreadAppender implements TrackAppender {
   setPopoverInfo(event: Trace.Types.Events.Event, info: PopoverInfo): void {
     if (Trace.Types.Events.isParseHTML(event)) {
       const startLine = event.args['beginData']['startLine'];
-      const endLine = event.args['endData'] && event.args['endData']['endLine'];
+      const endLine = event.args['endData']?.['endLine'];
       const eventURL = event.args['beginData']['url'] as Platform.DevToolsPath.UrlString;
       const url = Bindings.ResourceUtils.displayNameForURL(eventURL);
       const range = (endLine !== -1 || endLine === startLine) ? `${startLine}...${endLine}` : startLine;
       info.title += ` - ${url} [${range}]`;
     }
     const selfTime = this.#parsedTrace.Renderer.entryToNode.get(event)?.selfTime;
-    info.formattedTime = getFormattedTime(event.dur, selfTime);
+    info.formattedTime = getDurationString(event.dur, selfTime);
   }
 }

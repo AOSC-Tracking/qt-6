@@ -4,30 +4,38 @@
 
 #include "qlottieanimation_p.h"
 
-#include <QQuickPaintedItem>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QJsonValue>
-#include <QFile>
-#include <QPointF>
-#include <QPainter>
-#include <QImage>
-#include <QTimer>
-#include <QMetaObject>
-#include <QLoggingCategory>
-#include <QThread>
-#include <QQmlContext>
-#include <QQmlFile>
+#include <private/qbatchrenderer_p.h>
+#include <private/qlottiebase_p.h>
+#include <private/qlottieconstants_p.h>
+#include <private/qlottielayer_p.h>
+#include <private/qlottierasterrenderer_p.h>
+#include <private/qtlottie-config_p.h>
+
+#include <QtQuick/qquickpainteditem.h>
+
+#include <QtQml/qqmlcontext.h>
+#include <QtQml/qqmlengine.h>
+#include <QtQml/qqmlfile.h>
+
+#include <QtGui/qimage.h>
+#include <QtGui/qpainter.h>
+
+#if QT_CONFIG(lottie_network)
+#include <QtNetwork/qnetworkaccessmanager.h>
+#include <QtNetwork/qnetworkreply.h>
+#endif
+
+#include <QtCore/qfile.h>
+#include <QtCore/qjsonarray.h>
+#include <QtCore/qjsondocument.h>
+#include <QtCore/qjsonobject.h>
+#include <QtCore/qloggingcategory.h>
+#include <QtCore/qmetaobject.h>
+#include <QtCore/qpoint.h>
+#include <QtCore/qthread.h>
+#include <QtCore/qtimer.h>
+
 #include <math.h>
-
-#include <QtLottie/private/qlottiebase_p.h>
-#include <QtLottie/private/qlottielayer_p.h>
-#include <QtLottie/private/qlottieconstants_p.h>
-
-
-#include <QtLottie/private/qbatchrenderer_p.h>
-#include <QtLottie/private/qlottierasterrenderer_p.h>
 
 using namespace Qt::StringLiterals;
 
@@ -579,29 +587,61 @@ void QLottieAnimation::setDirection(QLottieAnimation::Direction direction)
 
 void QLottieAnimation::load()
 {
+    const QQmlContext *context = qmlContext(this);
+
+    // resolvedUrl() performs URL interception if necessary.
+    const QUrl loadUrl = context ? context->resolvedUrl(m_source) : m_source;
+
+    if (loadUrl.isEmpty()) {
+        setStatus(Null);
+        return;
+    }
+
     setStatus(Loading);
 
-    const QQmlContext *context = qmlContext(this);
-    const QUrl loadUrl = context ? context->resolvedUrl(m_source) : m_source;
-    m_file.reset(new QQmlFile(qmlEngine(this), loadUrl));
-    if (m_file->isLoading())
-        m_file->connectFinished(this, SLOT(loadFinished()));
-    else
-        loadFinished();
-}
+    if (QQmlFile::isLocalFile(loadUrl)) {
+        QFile file(QQmlFile::urlToLocalFileOrQrc(loadUrl));
+        if (!file.open(QIODevice::ReadOnly))
+            setStatus(Error);
+        else
+            loadFinished(file.readAll());
+        return;
+    }
 
-void QLottieAnimation::loadFinished()
-{
-    if (Q_UNLIKELY(m_file->isError())) {
-        m_file.reset();
+#if QT_CONFIG(lottie_network)
+    QNetworkAccessManager *networkAccessManager = context
+            ? context->engine()->networkAccessManager()
+            : nullptr;
+
+    if (!networkAccessManager) {
         setStatus(Error);
         return;
     }
 
-    Q_ASSERT(m_file->isReady());
-    const QByteArray json = m_file->dataByteArray();
-    m_file.reset();
+    QNetworkRequest request(loadUrl);
 
+    // Don't force a new connection for this request
+    request.setAttribute(QNetworkRequest::HttpPipeliningAllowedAttribute, true);
+
+    QNetworkReply *reply = networkAccessManager->get(request);
+
+    // In case we get torn down before the reply finishes
+    reply->setParent(this);
+
+    QObject::connect(reply, &QNetworkReply::finished, this, [reply, this]() {
+        if (reply->error() != QNetworkReply::NoError)
+            setStatus(Error);
+        else
+            loadFinished(reply->readAll());
+        reply->deleteLater();
+    });
+#else
+    setStatus(Error);
+#endif
+}
+
+void QLottieAnimation::loadFinished(const QByteArray &json)
+{
     if (Q_UNLIKELY(parse(json) == -1)) {
         setStatus(Error);
         return;
@@ -665,26 +705,66 @@ int QLottieAnimation::parse(const QByteArray &jsonSource)
 
     m_version = QVersionNumber::fromString(rootObj.value("v"_L1).toString());
 
-    int startFrame = rootObj.value(QLatin1String("ip")).toVariant().toInt();
-    int endFrame = rootObj.value(QLatin1String("op")).toVariant().toInt();
-    m_animFrameRate = rootObj.value(QLatin1String("fr")).toVariant().toInt();
-    m_animWidth = rootObj.value(QLatin1String("w")).toVariant().toReal();
-    m_animHeight = rootObj.value(QLatin1String("h")).toVariant().toReal();
+    int startFrame = 0;
+    if (!rootObj.contains("ip"_L1)) {
+        qCWarning(lcLottieQtLottieParser) << "Required key \"ip\" for in point is missing";
+        return -1;
+    } else {
+        startFrame = rootObj.value("ip"_L1).toVariant().toInt();
+    }
 
-    QJsonArray markerArr = rootObj.value(QLatin1String("markers")).toArray();
+    int endFrame = 0;
+    if (!rootObj.contains("op"_L1)) {
+        qCWarning(lcLottieQtLottieParser) << "Required key \"op\" for out point is missing";
+        return -1;
+    } else {
+        endFrame = rootObj.value("op"_L1).toVariant().toInt();
+    }
+
+    if (!rootObj.contains("fr"_L1)) {
+        qCWarning(lcLottieQtLottieParser) << "Required key \"fr\" for framerate is missing";
+        return -1;
+    }
+    m_animFrameRate = rootObj.value("fr"_L1).toVariant().toInt();
+    if (m_animFrameRate <= 0) {
+        qCWarning(lcLottieQtLottieParser) << "Framerate \"fr\" value shold be greater than 0";
+        return -1;
+    }
+
+    if (!rootObj.contains("w"_L1)) {
+        qCWarning(lcLottieQtLottieParser) << "Required key \"w\" for width is missing";
+        return -1;
+    }
+    m_animWidth = rootObj.value("w"_L1).toVariant().toReal();
+    if (m_animWidth < 0) {
+        qCWarning(lcLottieQtLottieParser) << "Width \"w\" value cannot be negative";
+        return -1;
+    }
+
+    if (!rootObj.contains("h"_L1)) {
+        qCWarning(lcLottieQtLottieParser) << "Required key \"h\" for height is missing";
+        return -1;
+    }
+    m_animHeight = rootObj.value("h"_L1).toVariant().toReal();
+    if (m_animHeight < 0) {
+        qCWarning(lcLottieQtLottieParser) << "Height \"h\" value cannot be negative";
+        return -1;
+    }
+
+    QJsonArray markerArr = rootObj.value("markers"_L1).toArray();
     QJsonArray::const_iterator markerIt = markerArr.constBegin();
     while (markerIt != markerArr.constEnd()) {
-        QString marker = (*markerIt).toObject().value(QLatin1String("cm")).toString();
-        int frame = (*markerIt).toObject().value(QLatin1String("tm")).toInt();
+        QString marker = (*markerIt).toObject().value("cm"_L1).toString();
+        int frame = (*markerIt).toObject().value("tm"_L1).toInt();
         m_markers.insert(marker, frame);
 
-        if ((*markerIt).toObject().value(QLatin1String("dr")).toInt())
+        if ((*markerIt).toObject().value("dr"_L1).toInt())
             qCInfo(lcLottieQtLottieParser)
                     << "property 'dr' not support in a marker";
         ++markerIt;
     }
 
-    if (rootObj.value(QLatin1String("chars")).toArray().count())
+    if (rootObj.value("chars"_L1).toArray().count())
         qCInfo(lcLottieQtLottieParser) << "chars not supported";
 
     setWidth(m_animWidth);

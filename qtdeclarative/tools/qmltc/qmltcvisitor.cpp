@@ -45,8 +45,10 @@ static bool isExplicitComponent(const QQmlJSScope::ConstPtr &type)
  */
 static bool isImplicitComponent(const QQmlJSScope::ConstPtr &type)
 {
-    if (!type->isComposite())
+    // root components and inline components are explicitly components.
+    if (!type->isComposite() || type->isFileRootComponent() || type->isInlineComponent())
         return false;
+
     const auto cppBase = QQmlJSScope::nonCompositeBaseType(type);
     const bool isComponentBased = (cppBase && cppBase->internalName() == u"QQmlComponent");
     return type->componentRootStatus() != QQmlJSScope::IsComponentRoot::No && !isComponentBased;
@@ -103,7 +105,7 @@ void QmltcVisitor::findCppIncludes()
         addCppInclude(type);
 
         if (type->isListProperty())
-            addCppInclude(type->valueType());
+            addCppInclude(type->elementType());
 
         // look in type's base type
         auto base = type->baseType();
@@ -580,7 +582,13 @@ void QmltcVisitor::postVisitResolve(
     const auto setRuntimeId = [&](const QQmlJSScope::ConstPtr &type) {
         // any type wrapped in an implicit component shouldn't be processed
         // here. even if it has id, it doesn't need to be set by qmltc
-        if (type->componentRootStatus() != QQmlJSScope::IsComponentRoot::No) {
+        if (type->isInlineComponent()) {
+            // explicit inline component
+        } else if (type->isFileRootComponent()) {
+            // explicit root component
+        } else if (type->componentRootStatus() != QQmlJSScope::IsComponentRoot::No) {
+            // Wrapped in implicit component, assigned to unknown property, or child of scope
+            // called "QQmlComponent". We consider this an "implicit component".
             return true;
         }
 

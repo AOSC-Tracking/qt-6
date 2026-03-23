@@ -2,27 +2,51 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {describeWithEnvironment, getGetHostConfigStub} from '../../testing/EnvironmentHelpers.js';
+import {
+  describeWithEnvironment,
+  restoreUserAgentForTesting,
+  setUserAgentForTesting,
+  updateHostConfig
+} from '../../testing/EnvironmentHelpers.js';
 
 import * as Host from './host.js';
+import type {AidaCodeCompleteResult} from './InspectorFrontendHostAPI.js';
 
 const TEST_MODEL_ID = 'testModelId';
 
 describeWithEnvironment('AidaClient', () => {
+  beforeEach(() => {
+    setUserAgentForTesting();
+  });
+
+  afterEach(() => {
+    restoreUserAgentForTesting();
+  });
+
   it('adds no model temperature if console insights is not enabled', () => {
-    const stub = getGetHostConfigStub({});
+    updateHostConfig({
+      aidaAvailability: {
+        disallowLogging: false,
+      },
+    });
     const request = Host.AidaClient.AidaClient.buildConsoleInsightsRequest('foo');
     assert.deepEqual(request, {
       current_message: {parts: [{text: 'foo'}], role: Host.AidaClient.Role.USER},
       client: 'CHROME_DEVTOOLS',
       client_feature: 1,
       functionality_type: 2,
+      metadata: {
+        disable_user_content_logging: false,
+        client_version: 'unit_test',
+      },
     });
-    stub.restore();
   });
 
   it('adds a model temperature', () => {
-    const stub = getGetHostConfigStub({
+    updateHostConfig({
+      aidaAvailability: {
+        disallowLogging: false,
+      },
       devToolsConsoleInsights: {
         enabled: true,
         temperature: 0.5,
@@ -37,12 +61,18 @@ describeWithEnvironment('AidaClient', () => {
       },
       client_feature: 1,
       functionality_type: 2,
+      metadata: {
+        disable_user_content_logging: false,
+        client_version: 'unit_test',
+      },
     });
-    stub.restore();
   });
 
   it('adds a model temperature of 0', () => {
-    const stub = getGetHostConfigStub({
+    updateHostConfig({
+      aidaAvailability: {
+        disallowLogging: false,
+      },
       devToolsConsoleInsights: {
         enabled: true,
         temperature: 0,
@@ -57,12 +87,18 @@ describeWithEnvironment('AidaClient', () => {
       },
       client_feature: 1,
       functionality_type: 2,
+      metadata: {
+        disable_user_content_logging: false,
+        client_version: 'unit_test',
+      },
     });
-    stub.restore();
   });
 
   it('ignores a negative model temperature', () => {
-    const stub = getGetHostConfigStub({
+    updateHostConfig({
+      aidaAvailability: {
+        disallowLogging: false,
+      },
       devToolsConsoleInsights: {
         enabled: true,
         temperature: -1,
@@ -74,12 +110,18 @@ describeWithEnvironment('AidaClient', () => {
       client: 'CHROME_DEVTOOLS',
       client_feature: 1,
       functionality_type: 2,
+      metadata: {
+        disable_user_content_logging: false,
+        client_version: 'unit_test',
+      },
     });
-    stub.restore();
   });
 
   it('adds a model id and temperature', () => {
-    const stub = getGetHostConfigStub({
+    updateHostConfig({
+      aidaAvailability: {
+        disallowLogging: false,
+      },
       devToolsConsoleInsights: {
         enabled: true,
         modelId: TEST_MODEL_ID,
@@ -96,12 +138,42 @@ describeWithEnvironment('AidaClient', () => {
       },
       client_feature: 1,
       functionality_type: 2,
+      metadata: {
+        disable_user_content_logging: false,
+        client_version: 'unit_test',
+      },
     });
-    stub.restore();
+  });
+
+  it('adds no model id if configured as empty string', () => {
+    updateHostConfig({
+      aidaAvailability: {
+        disallowLogging: false,
+      },
+      devToolsConsoleInsights: {
+        enabled: true,
+        modelId: '',
+        temperature: 0.5,
+      },
+    });
+    const request = Host.AidaClient.AidaClient.buildConsoleInsightsRequest('foo');
+    assert.deepEqual(request, {
+      current_message: {parts: [{text: 'foo'}], role: Host.AidaClient.Role.USER},
+      client: 'CHROME_DEVTOOLS',
+      options: {
+        temperature: 0.5,
+      },
+      client_feature: 1,
+      functionality_type: 2,
+      metadata: {
+        disable_user_content_logging: false,
+        client_version: 'unit_test',
+      },
+    });
   });
 
   it('adds metadata to disallow logging', () => {
-    const stub = getGetHostConfigStub({
+    updateHostConfig({
       aidaAvailability: {
         disallowLogging: true,
       },
@@ -116,6 +188,7 @@ describeWithEnvironment('AidaClient', () => {
       client: 'CHROME_DEVTOOLS',
       metadata: {
         disable_user_content_logging: true,
+        client_version: 'unit_test',
       },
       options: {
         temperature: 0.5,
@@ -123,12 +196,12 @@ describeWithEnvironment('AidaClient', () => {
       client_feature: 1,
       functionality_type: 2,
     });
-    stub.restore();
   });
 
-  async function getAllResults(provider: Host.AidaClient.AidaClient): Promise<Host.AidaClient.AidaResponse[]> {
+  async function getAllResults(provider: Host.AidaClient.AidaClient):
+      Promise<Host.AidaClient.DoConversationResponse[]> {
     const results = [];
-    for await (const result of provider.fetch(Host.AidaClient.AidaClient.buildConsoleInsightsRequest('foo'))) {
+    for await (const result of provider.doConversation(Host.AidaClient.AidaClient.buildConsoleInsightsRequest('foo'))) {
       results.push(result);
     }
     return results;
@@ -399,6 +472,31 @@ describeWithEnvironment('AidaClient', () => {
     ]);
   });
 
+  it('handles subsequent code chunks with attached language', async () => {
+    sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'doAidaConversation')
+        .callsFake(async (_, streamId, callback) => {
+          const response = [
+            {textChunk: {text: 'hello '}},
+            {codeChunk: {code: 'brave ', inferenceLanguage: 'JAVASCRIPT'}},
+            {codeChunk: {code: 'new World()'}},
+          ];
+          for (const chunk of response) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+            Host.ResourceLoader.streamWrite(streamId, JSON.stringify(chunk));
+          }
+          callback({statusCode: 200});
+        });
+
+    const provider = new Host.AidaClient.AidaClient();
+    const results = (await getAllResults(provider)).map(r => r.explanation);
+    assert.deepEqual(results, [
+      'hello ',
+      'hello \n`````js\nbrave \n`````\n',
+      'hello \n`````js\nbrave new World()\n`````\n',
+      'hello \n`````js\nbrave new World()\n`````\n',
+    ]);
+  });
+
   it('throws a readable error on 403', async () => {
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'doAidaConversation').callsArgWith(2, {
       statusCode: 403,
@@ -529,6 +627,105 @@ describeWithEnvironment('AidaClient', () => {
           },
         },
       }));
+    });
+  });
+
+  describe('completeCode', () => {
+    beforeEach(() => {
+      sinon.restore();
+    });
+
+    it('handles successful response', async () => {
+      const mockResult: AidaCodeCompleteResult = {
+        response: JSON.stringify({
+          generatedSamples: [{
+            generationString: 'console.log("hello");',
+            score: 0.9,
+            sampleId: 1,
+            metadata: {
+              attributionMetadata: {
+                attributionAction: 'CITE',
+                citations: [{startIndex: 0, endIndex: 1, uri: 'https://example.com'}],
+              },
+            },
+          }],
+          metadata: {
+            rpcGlobalId: 456,
+          },
+        }),
+      };
+      sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'aidaCodeComplete')
+          .callsArgWith(1, mockResult);
+
+      const provider = new Host.AidaClient.AidaClient();
+      const request: Host.AidaClient.CompletionRequest = {
+        client: 'CHROME_DEVTOOLS',
+        prefix: 'console.log("',
+        metadata: {
+          disable_user_content_logging: false,
+          client_version: 'unit_test',
+        },
+      };
+      const result = await provider.completeCode(request);
+
+      assert.deepEqual(result, {
+        generatedSamples: [{
+          generationString: 'console.log("hello");',
+          score: 0.9,
+          sampleId: 1,
+          attributionMetadata: {
+            attributionAction: Host.AidaClient.RecitationAction.CITE,
+            citations: [{startIndex: 0, endIndex: 1, uri: 'https://example.com'}]
+          },
+        }],
+        metadata: {
+          rpcGlobalId: 456,
+        },
+      });
+    });
+
+    it('throws on error from the host', async () => {
+      sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'aidaCodeComplete').callsArgWith(1, {
+        error: 'Cannot get OAuth credentials',
+        detail: '{\'@type\': \'type.googleapis.com/google.rpc.DebugInfo\', \'detail\': \'DETAILS\'}',
+      });
+      const provider = new Host.AidaClient.AidaClient();
+      try {
+        const request: Host.AidaClient.CompletionRequest = {
+          client: 'CHROME_DEVTOOLS',
+          prefix: 'console.log("',
+          metadata: {
+            disable_user_content_logging: false,
+            client_version: 'unit_test',
+          },
+        };
+        await provider.completeCode(request);
+      } catch (err) {
+        expect(err.message)
+            .equals(
+                'Cannot send request: Cannot get OAuth credentials {\'@type\': \'type.googleapis.com/google.rpc.DebugInfo\', \'detail\': \'DETAILS\'}');
+      }
+    });
+
+    it('throws on empty response from the host', async () => {
+      sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'aidaCodeComplete').callsArgWith(1, {
+        response: '',
+      });
+
+      const provider = new Host.AidaClient.AidaClient();
+      const request: Host.AidaClient.CompletionRequest = {
+        client: 'CHROME_DEVTOOLS',
+        prefix: 'console.log("',
+        metadata: {
+          disable_user_content_logging: false,
+          client_version: 'unit_test',
+        },
+      };
+      try {
+        await provider.completeCode(request);
+      } catch (err) {
+        expect(err.message).equals('Empty response');
+      }
     });
   });
 });

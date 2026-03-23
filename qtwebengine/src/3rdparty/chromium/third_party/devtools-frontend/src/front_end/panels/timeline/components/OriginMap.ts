@@ -1,6 +1,8 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../../ui/components/icon_button/icon_button.js';
 
@@ -38,7 +40,7 @@ const UIStrings = {
    * @description Warning message explaining that a page doesn't have enough real user data to show any information for. "Chrome UX Report" is a product name and should not be translated.
    */
   pageHasNoData: 'The Chrome UX Report does not have sufficient real user data for this page.',
-};
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/components/OriginMap.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -64,7 +66,7 @@ export class OriginMap extends UI.Widget.WidgetElement<UI.Widget.Widget> impleme
   }
 
   override createWidget(): UI.Widget.Widget {
-    const containerWidget = new UI.Widget.Widget(false, false, this);
+    const containerWidget = new UI.Widget.Widget(this);
 
     this.#list.registerRequiredCSS(originMapStyles);
     this.#list.show(containerWidget.contentElement);

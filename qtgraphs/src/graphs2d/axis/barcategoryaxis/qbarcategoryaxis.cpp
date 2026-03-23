@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtGraphs/QBarCategoryAxis>
 #include <private/qbarcategoryaxis_p.h>
@@ -87,6 +89,25 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
+    \enum QBarCategoryAxis::LabelPosition
+    \since 6.11
+    This enum describes the position of the category labels.
+    \value Center Labels are centered to category.
+    \value OnValue Labels are positioned to the high end limit of the category.
+*/
+/*!
+    \property QBarCategoryAxis::labelPosition
+    \since 6.11
+    \brief The position of the category labels. The labels in the beginning and in the end of the
+    axes may overlap other axes' labels when positioned on value.
+*/
+/*!
+    \qmlproperty enumeration BarCategoryAxis::labelPosition
+    \since 6.11
+    \qmlenumeratorsfrom QBarCategoryAxis::LabelPosition
+*/
+
+/*!
     \qmlsignal BarCategoryAxis::categoriesChanged()
     This signal is emitted when the categories of the axis change.
 */
@@ -134,10 +155,11 @@ QBarCategoryAxis::QBarCategoryAxis(QBarCategoryAxisPrivate &dd, QObject *parent)
     : QAbstractAxis(dd, parent)
 {
     QObject::connect(this, &QBarCategoryAxis::categoriesChanged, this, &QAbstractAxis::update);
+    QObject::connect(this, &QBarCategoryAxis::labelPositionChanged, this, &QAbstractAxis::update);
 }
 
 /*!
-    \qmlmethod BarCategoryAxis::append(list categories)
+    \qmlmethod void BarCategoryAxis::append(list categories)
     Appends \a categories to an axis. The maximum value on the axis will be changed
     to match the last category in \a categories. If no categories were previously defined,
     the minimum value on the axis will also be changed to match the first category in
@@ -183,7 +205,7 @@ void QBarCategoryAxis::append(const QStringList &categories)
 }
 
 /*!
-    \qmlmethod BarCategoryAxis::append(string category)
+    \qmlmethod void BarCategoryAxis::append(string category)
     Appends \a category to an axis. The maximum value on the axis will be changed
     to match the last \a category. If no categories were previously defined, the minimum
     value on the axis will also be changed to match \a category.
@@ -221,7 +243,7 @@ void QBarCategoryAxis::append(const QString &category)
 }
 
 /*!
-    \qmlmethod BarCategoryAxis::remove(string category)
+    \qmlmethod void BarCategoryAxis::remove(string category)
     Removes \a category from the axis. Removing a category that currently sets the
     maximum or minimum value on the axis will affect the axis range.
 */
@@ -250,7 +272,7 @@ void QBarCategoryAxis::remove(const QString &category)
 }
 
 /*!
-    \qmlmethod BarCategoryAxis::remove(int index)
+    \qmlmethod void BarCategoryAxis::remove(int index)
     Removes a category at \a index from the axis. Removing a category that currently sets the
     maximum or minimum value on the axis will affect the axis range.
 */
@@ -267,7 +289,7 @@ void QBarCategoryAxis::remove(qsizetype index)
 }
 
 /*!
-    \qmlmethod BarCategoryAxis::insert(int index, string category)
+    \qmlmethod void BarCategoryAxis::insert(int index, string category)
     Inserts \a category to the axis at \a index. \a category has to be a valid QString
     and it cannot be duplicated. If \a category is prepended or appended to other
     categories, the minimum and maximum values on the axis are updated accordingly.
@@ -302,7 +324,7 @@ void QBarCategoryAxis::insert(qsizetype index, const QString &category)
 }
 
 /*!
-    \qmlmethod BarCategoryAxis::replace(string oldCategory, string newCategory)
+    \qmlmethod void BarCategoryAxis::replace(string oldCategory, string newCategory)
     Replaces \a oldCategory with \a newCategory. If \a oldCategory does not exist on the axis,
     nothing is done. \a newCategory has to be a valid QString and it cannot be duplicated. If
     the minimum or maximum category is replaced, the minimum and maximum values on the axis are
@@ -333,7 +355,7 @@ void QBarCategoryAxis::replace(const QString &oldCategory, const QString &newCat
 }
 
 /*!
-    \qmlmethod BarCategoryAxis::clear()
+    \qmlmethod void BarCategoryAxis::clear()
     Removes all categories. Sets the maximum and minimum values of the axis range to QString::null.
 */
 /*!
@@ -382,6 +404,21 @@ qsizetype QBarCategoryAxis::count() const
 {
     Q_D(const QBarCategoryAxis);
     return d->m_categories.size();
+}
+
+void QBarCategoryAxis::setLabelPosition(LabelPosition position)
+{
+    Q_D(QBarCategoryAxis);
+    if (d->m_labelPosition != position) {
+        d->m_labelPosition = position;
+        emit labelPositionChanged(position);
+    }
+}
+
+QBarCategoryAxis::LabelPosition QBarCategoryAxis::labelPosition() const
+{
+    Q_D(const QBarCategoryAxis);
+    return d->m_labelPosition;
 }
 
 /*!
@@ -458,6 +495,7 @@ QBarCategoryAxisPrivate::QBarCategoryAxisPrivate()
     : m_min(0.0)
     , m_max(0.0)
     , m_count(0)
+    , m_labelPosition(QBarCategoryAxis::LabelPosition::Center)
 {
 
 }

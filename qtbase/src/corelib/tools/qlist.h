@@ -1,6 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // Copyright (C) 2019 Intel Corporation
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QLIST_H
 #define QLIST_H
@@ -301,21 +302,27 @@ public:
     explicit QList(qsizetype size)
         : d(size)
     {
-        if (size)
+        if (size) {
+            Q_CHECK_PTR(d.data());
             d->appendInitialize(size);
+        }
     }
     QList(qsizetype size, parameter_type t)
         : d(size)
     {
-        if (size)
+        if (size) {
+            Q_CHECK_PTR(d.data());
             d->copyAppend(size, t);
+        }
     }
 
     inline QList(std::initializer_list<T> args)
         : d(qsizetype(args.size()))
     {
-        if (args.size())
+        if (args.size()) {
+            Q_CHECK_PTR(d.data());
             d->copyAppend(args.begin(), args.end());
+        }
     }
 
     QList<T> &operator=(std::initializer_list<T> args)
@@ -332,6 +339,7 @@ public:
             const auto distance = std::distance(i1, i2);
             if (distance) {
                 d = DataPointer(qsizetype(distance));
+                Q_CHECK_PTR(d.data());
                 // appendIteratorRange can deal with contiguous iterators on its own,
                 // this is an optimization for C++17 code.
                 if constexpr (std::is_same_v<std::decay_t<InputIterator>, iterator> ||
@@ -352,8 +360,10 @@ public:
     QList(qsizetype size, Qt::Initialization)
         : d(size)
     {
-        if (size)
+        if (size) {
+            Q_CHECK_PTR(d.data());
             d->appendUninitialized(size);
+        }
     }
 
     // compiler-generated special member functions are fine!
@@ -446,10 +456,8 @@ public:
     static constexpr qsizetype maxSize() { return Data::maxSize(); }
     constexpr qsizetype size() const noexcept
     {
-#if __has_cpp_attribute(assume)
         constexpr size_t MaxSize = maxSize();
-        [[assume(size_t(d.size) <= MaxSize)]];
-#endif
+        Q_PRESUME(size_t(d.size) <= MaxSize);
         return d.size;
     }
     constexpr qsizetype count() const noexcept { return size(); }
@@ -578,10 +586,15 @@ public:
 
     template <typename InputIterator, if_input_iterator<InputIterator> = true>
     QList &assign(InputIterator first, InputIterator last)
-    { d.assign(first, last); return *this; }
+    { d->assign(first, last); return *this; }
 
     QList &assign(std::initializer_list<T> l)
-    { return assign(l.begin(), l.end()); }
+    {
+        if (l.size())
+            return assign(l.begin(), l.end());
+        clear();
+        return *this;
+    }
 
     template <typename ...Args>
     iterator emplace(const_iterator before, Args&&... args)
@@ -820,7 +833,10 @@ void QList<T>::reserve(qsizetype asize)
         }
     }
 
-    DataPointer detached(qMax(asize, size()));
+    qsizetype newSize = qMax(asize, size());
+    DataPointer detached(newSize);
+    if (newSize)
+        Q_CHECK_PTR(detached.data());
     detached->copyAppend(d->begin(), d->end());
     if (detached.d_ptr())
         detached->setFlag(Data::CapacityReserved);
@@ -836,6 +852,7 @@ inline void QList<T>::squeeze()
         // must allocate memory
         DataPointer detached(size());
         if (size()) {
+            Q_CHECK_PTR(detached.data());
             if (d.needsDetach())
                 detached->copyAppend(d.data(), d.data() + d.size);
             else

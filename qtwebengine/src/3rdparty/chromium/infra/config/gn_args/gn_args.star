@@ -4,7 +4,7 @@
 
 # Execute this file to set up some common GN arg configs for Chromium builders.
 
-load("//lib/gn_args.star", "gn_args")
+load("@chromium-luci//gn_args.star", "gn_args")
 
 gn_args.config(
     name = "afl",
@@ -91,6 +91,14 @@ gn_args.config(
     name = "android_fastbuild",
     args = {
         "android_static_analysis": "off",
+    },
+)
+
+# This will not be the default anymore so must explicitly be set on bots.
+gn_args.config(
+    name = "android_with_static_analysis",
+    args = {
+        "android_static_analysis": "on",
     },
 )
 
@@ -259,10 +267,22 @@ gn_args.config(
 )
 
 gn_args.config(
+    name = "disable_jni_multiplexing",
+    args = {
+        "enable_jni_multiplexing": False,
+    },
+)
+
+gn_args.config(
     name = "cast_receiver",
     args = {
         "enable_cast_receiver": True,
     },
+)
+
+gn_args.config(
+    name = "cast_receiver_perf_optimized",
+    args_file = "//build/config/fuchsia/perf_optimized_cast_receiver_args.gn",
 )
 
 gn_args.config(
@@ -390,6 +410,14 @@ gn_args.config(
         "clang",
     ],
 )
+
+gn_args.config(
+    name = "no_treat_warnings_as_errors",
+    args = {
+        "treat_warnings_as_errors": False,
+    },
+)
+
 gn_args.config(
     name = "codesearch_builder",
     args = {
@@ -412,16 +440,21 @@ gn_args.config(
 gn_args.config(
     name = "cronet_android",
     args = {
+        # PLEASE TRY TO AVOID ADDING NEW GN ARGS HERE. Special snowflake gn args
+        # are a pain to maintain; see https://crbug.com/40287068. Instead, try
+        # to change the GN build rules so that the default value for the arg
+        # is derived from the `is_cronet_build` gn arg.
+        # TODO: https://crbug.com/40287068 - clean up this list. Ideally it
+        # should be empty.
+        # LINT.IfChange(cronet_android)
         "use_partition_alloc": False,
-        "enable_reporting": True,
         "use_hashed_jni_names": True,
         "default_min_sdk_version": 23,
-        "enable_base_tracing": False,
         "clang_use_default_sample_profile": False,
-        "media_use_ffmpeg": False,
         # https://crbug.com/1136963
         "use_thin_lto": False,
         "enable_resource_allowlist_generation": False,
+        # LINT.ThenChange(//tools/mb/mb_config.pyl:cronet_android)
     },
     configs = [
         "android",
@@ -444,11 +477,19 @@ gn_args.config(
 gn_args.config(
     name = "cronet_common",
     args = {
+        # PLEASE TRY TO AVOID ADDING NEW GN ARGS HERE. Special snowflake gn args
+        # are a pain to maintain; see https://crbug.com/40287068. Instead, try
+        # to change the GN build rules so that the default value for the arg
+        # is derived from the `is_cronet_build` gn arg.
+        # TODO: https://crbug.com/40287068 - clean up this list. Ideally it
+        # should contain `is_cronet_build` and nothing else.
+        # LINT.IfChange(cronet_common)
         "disable_file_support": True,
         "enable_websockets": False,
         "include_transport_security_state_preload_list": False,
         "is_cronet_build": True,
         "use_platform_icu_alternatives": True,
+        # LINT.ThenChange(//tools/mb/mb_config.pyl:cronet_common)
     },
 )
 
@@ -562,6 +603,13 @@ gn_args.config(
     configs = [
         "enable_vulkan",
     ],
+)
+
+gn_args.config(
+    name = "enable_android_secondary_abi",
+    args = {
+        "enable_android_secondary_abi": True,
+    },
 )
 
 # Enables backup ref ptr by changing the default value of the feature flag.
@@ -744,6 +792,13 @@ gn_args.config(
 )
 
 gn_args.config(
+    name = "reclient",
+    args = {
+        "use_reclient": True,
+    },
+)
+
+gn_args.config(
     name = "include_unwind_tables",
     args = {
         "exclude_unwind_tables": False,
@@ -772,13 +827,6 @@ gn_args.config(
     configs = [
         "ios",
     ],
-)
-
-gn_args.config(
-    name = "ios_chromium_cert",
-    args = {
-        "ios_code_signing_identity_description": "iPhone Developer",
-    },
 )
 
 gn_args.config(
@@ -814,6 +862,11 @@ gn_args.config(
 )
 
 gn_args.config(
+    name = "tvos_platform",
+    args = {"target_platform": "tvos"},
+)
+
+gn_args.config(
     name = "is_skylab",
     args = {
         "is_skylab": True,
@@ -834,12 +887,9 @@ gn_args.config(
 
 # Do not use this for non-FYI builders.
 gn_args.config(
-    name = "libcxx_modules",
+    name = "clang_modules",
     args = {
-        # TODO: crbug.com/351909443 - remove once performance of plugins is
-        # improved.
-        "clang_use_chrome_plugins": False,
-        "use_libcxx_modules": True,
+        "use_clang_modules": True,
     },
 )
 
@@ -867,6 +917,7 @@ gn_args.config(
         "ozone_platform_wayland": True,
         "ozone_platform": "wayland",
         "use_bundled_weston": True,
+        "use_bundled_mutter": True,
     },
 )
 
@@ -1002,14 +1053,9 @@ gn_args.config(
 )
 
 gn_args.config(
-    name = "no_secondary_abi",
+    name = "no_safe_browsing",
     args = {
-        "skip_secondary_abi_for_cq": True,
-        # A chromium build with "skip_secondary_abi_for_cq" enabled in a
-        # checkout that has src-internal fails if enable_chrome_android_internal
-        # is not set to false.
-        # TODO(crbug.com/361540497): Can remove this when the build is fixed.
-        "enable_chrome_android_internal": False,
+        "safe_browsing_mode": 0,
     },
 )
 
@@ -1163,6 +1209,14 @@ gn_args.config(
         "try_builder",
         "no_symbols",
     ],
+)
+
+gn_args.config(
+    name = "release_with_dchecks",
+    args = {
+        "is_debug": False,
+        "dcheck_always_on": True,
+    },
 )
 
 gn_args.config(
@@ -1375,6 +1429,20 @@ gn_args.config(
 )
 
 gn_args.config(
+    name = "v8_backtrace",
+    args = {
+        "v8_enable_backtrace": True,
+    },
+)
+
+gn_args.config(
+    name = "v8_debug",
+    args = {
+        "v8_enable_debug_code": True,
+    },
+)
+
+gn_args.config(
     name = "v8_heap",
     args = {
         "v8_enable_verify_heap": True,
@@ -1400,6 +1468,13 @@ gn_args.config(
 )
 
 gn_args.config(
+    name = "v8_sandbox_testing",
+    args = {
+        "v8_enable_memory_corruption_api": True,
+    },
+)
+
+gn_args.config(
     name = "v8_simulate_arm",
     args = {
         "v8_target_cpu": "arm",
@@ -1420,9 +1495,9 @@ gn_args.config(
 )
 
 gn_args.config(
-    name = "v8_sandbox_testing",
+    name = "v8_static",
     args = {
-        "v8_enable_memory_corruption_api": True,
+        "v8_static_library": True,
     },
 )
 

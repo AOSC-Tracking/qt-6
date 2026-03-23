@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef  QT_NO_CURSOR
 #include "qwindowscursor.h"
@@ -30,7 +31,7 @@ static bool initResources()
 
 QT_BEGIN_NAMESPACE
 
-using namespace Qt::Literals::StringLiterals;
+using namespace Qt::StringLiterals;
 
 /*!
     \class QWindowsCursorCacheKey

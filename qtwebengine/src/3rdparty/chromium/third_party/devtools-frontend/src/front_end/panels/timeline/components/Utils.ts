@@ -1,6 +1,7 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Platform from '../../../core/platform/platform.js';
@@ -26,7 +27,7 @@ const UIStrings = {
    *@example {2.14} PH1
    */
   fs: '{PH1}[s]()',
-};
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/components/Utils.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -180,11 +181,11 @@ export interface NumberWithUnitString {
  *
  * As of this writing, our only locale where the unit comes before the number is `sw`, ex: `Sek {PH1}`.
  *
-    new Intl.NumberFormat('sw', {
-      style: 'unit',
-      unit: 'millisecond',
-      unitDisplay: 'narrow'
-    }).format(10); // 'ms 10'
+ * new Intl.NumberFormat('sw', {
+ * style: 'unit',
+ * unit: 'millisecond',
+ * unitDisplay: 'narrow'
+ * }).format(10); // 'ms 10'
  *
  */
 export namespace NumberWithUnit {

@@ -30,7 +30,6 @@
 #include <string>
 
 #include "gmock/gmock.h"
-#include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/ir_helper_test.h"
 
 namespace tint::core::ir {
@@ -41,11 +40,7 @@ using ::testing::ElementsAre;
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
 
-class IR_ReferencedModuleDeclsTest : public IRTestHelper {
-  protected:
-    /// @returns the module as a disassembled string
-    std::string Disassemble() const { return "\n" + ir::Disassembler(mod).Plain(); }
-};
+using IR_ReferencedModuleDeclsTest = IRTestHelper;
 
 TEST_F(IR_ReferencedModuleDeclsTest, EmptyRootBlock) {
     auto* foo = b.Function("foo", ty.void_());
@@ -60,7 +55,7 @@ TEST_F(IR_ReferencedModuleDeclsTest, EmptyRootBlock) {
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     auto& foo_vars = vars.TransitiveReferences(foo);
@@ -90,12 +85,12 @@ TEST_F(IR_ReferencedModuleDeclsTest, DirectUse) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<workgroup, u32, read_write> = var
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<workgroup, u32, read_write> = var undef
   %3:i32 = add 1i, 2i
-  %o:i32 = override, %3 @id(1)
-  %c:ptr<workgroup, u32, read_write> = var
-  %p:i32 = override @id(0)
+  %o:i32 = override %3 @id(1)
+  %c:ptr<workgroup, u32, read_write> = var undef
+  %p:i32 = override undef
   %7:i32 = mul 2i, 4i
 }
 
@@ -108,7 +103,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a, var_b, over_a, inst_1));
@@ -134,11 +129,11 @@ TEST_F(IR_ReferencedModuleDeclsTest, DirectUse_DeclarationOrder) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<workgroup, u32, read_write> = var
-  %c:ptr<workgroup, u32, read_write> = var
-  %d:i32 = override @id(0)
-  %e:i32 = override @id(1)
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<workgroup, u32, read_write> = var undef
+  %c:ptr<workgroup, u32, read_write> = var undef
+  %d:i32 = override undef
+  %e:i32 = override undef @id(1)
 }
 
 %foo = func():void {
@@ -152,7 +147,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a, var_b, var_c, over_d, over_e));
@@ -187,10 +182,10 @@ TEST_F(IR_ReferencedModuleDeclsTest, DirectUse_MultipleFunctions) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<workgroup, u32, read_write> = var
-  %c:ptr<workgroup, u32, read_write> = var
-  %d:i32 = override @id(0)
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<workgroup, u32, read_write> = var undef
+  %c:ptr<workgroup, u32, read_write> = var undef
+  %d:i32 = override undef
 }
 
 %foo = func():void {
@@ -215,7 +210,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a, var_b, over_d));
@@ -257,10 +252,10 @@ TEST_F(IR_ReferencedModuleDeclsTest, DirectUse_NestedInControlFlow) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:ptr<workgroup, u32, read_write> = var
-  %c:ptr<workgroup, u32, read_write> = var
-  %c_1:i32 = override @id(0)  # %c_1: 'c'
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:ptr<workgroup, u32, read_write> = var undef
+  %c:ptr<workgroup, u32, read_write> = var undef
+  %c_1:i32 = override undef  # %c_1: 'c'
 }
 
 %foo = func():void {
@@ -292,7 +287,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a, var_b, var_c, over_d));
@@ -327,9 +322,9 @@ TEST_F(IR_ReferencedModuleDeclsTest, IndirectUse) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
-  %b:i32 = override @id(0)
-  %c:ptr<workgroup, u32, read_write> = var
+  %a:ptr<workgroup, u32, read_write> = var undef
+  %b:i32 = override undef
+  %c:ptr<workgroup, u32, read_write> = var undef
 }
 
 %bar = func():void {
@@ -352,7 +347,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(bar), ElementsAre(over_d));
@@ -373,19 +368,19 @@ TEST_F(IR_ReferencedModuleDeclsTest, NoFunctionVars) {
 
     auto* src = R"(
 $B1: {  # root
-  %a:ptr<workgroup, u32, read_write> = var
+  %a:ptr<workgroup, u32, read_write> = var undef
 }
 
 %foo = func():void {
   $B2: {
-    %b:ptr<function, u32, read_write> = var
+    %b:ptr<function, u32, read_write> = var undef
     %4:u32 = load %a
     %5:u32 = load %b
     ret
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a));
@@ -404,7 +399,7 @@ TEST_F(IR_ReferencedModuleDeclsTest, ReferencesForNullFunction) {
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     auto& null_vars = vars.TransitiveReferences(nullptr);
@@ -416,14 +411,14 @@ TEST_F(IR_ReferencedModuleDeclsTest, WorkgroupSize) {
     over_a->As<core::ir::Override>()->SetOverrideId(OverrideId{1});
 
     auto* foo = b.ComputeFunction("foo");
-    foo->SetWorkgroupSize(over_a->Result(0), b.Constant(1_u), b.Constant(1_u));
+    foo->SetWorkgroupSize(over_a->Result(), b.Constant(1_u), b.Constant(1_u));
     b.Append(foo->Block(), [&] {  //
         b.Return(foo);
     });
 
     auto* src = R"(
 $B1: {  # root
-  %o:u32 = override @id(1)
+  %o:u32 = override undef @id(1)
 }
 
 %foo = @compute @workgroup_size(%o, 1u, 1u) func():void {
@@ -432,7 +427,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(over_a));
@@ -442,7 +437,7 @@ TEST_F(IR_ReferencedModuleDeclsTest, ArrayTypeCount) {
     auto* over_a = mod.root_block->Append(b.Override("o", ty.u32()));
     over_a->As<core::ir::Override>()->SetOverrideId(OverrideId{1});
 
-    auto* c1 = ty.Get<core::ir::type::ValueArrayCount>(over_a->Result(0));
+    auto* c1 = ty.Get<core::ir::type::ValueArrayCount>(over_a->Result());
     auto* a1 = ty.Get<core::type::Array>(ty.i32(), c1, 4u, 4u, 4u, 4u);
 
     auto* var_a = mod.root_block->Append(b.Var("a", ty.ptr(workgroup, a1, read_write)));
@@ -455,8 +450,8 @@ TEST_F(IR_ReferencedModuleDeclsTest, ArrayTypeCount) {
 
     auto* src = R"(
 $B1: {  # root
-  %o:u32 = override @id(1)
-  %a:ptr<workgroup, array<i32, %o>, read_write> = var
+  %o:u32 = override undef @id(1)
+  %a:ptr<workgroup, array<i32, %o>, read_write> = var undef
 }
 
 %foo = func():void {
@@ -466,7 +461,7 @@ $B1: {  # root
   }
 }
 )";
-    EXPECT_EQ(src, Disassemble());
+    EXPECT_EQ(src, str());
 
     ReferencedModuleDecls<Module> vars(mod);
     EXPECT_THAT(vars.TransitiveReferences(foo), ElementsAre(var_a, over_a));

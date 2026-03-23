@@ -28,20 +28,6 @@ QWasmCamera::QWasmCamera(QCamera *camera)
       m_cameraOutput(new QWasmVideoOutput),
       m_cameraIsReady(false)
 {
-    QPlatformVideoDevices *videoDevices = QPlatformMediaIntegration::instance()->videoDevices();
-
-    connect(videoDevices, &QPlatformVideoDevices::videoInputsChanged, this, [&]() {
-        const QList<QCameraDevice> cameras = videoDevices->videoInputs();
-
-        if (!cameras.isEmpty()) {
-            if (m_cameraDev.id().isEmpty())
-                setCamera(cameras.at(0)); // default camera
-            else
-                setCamera(m_cameraDev);
-            return;
-        }
-    });
-
     connect(this, &QWasmCamera::cameraIsReady, this, [this]() {
         m_cameraIsReady = true;
         if (m_cameraShouldStartActive) {
@@ -61,6 +47,8 @@ bool QWasmCamera::isActive() const
 
 void QWasmCamera::setActive(bool active)
 {
+    if (m_cameraActive == active)
+        return;
     if (!m_CaptureSession) {
         updateError(QCamera::CameraError, QStringLiteral("video surface error"));
         m_shouldBeActive = true;
@@ -86,7 +74,8 @@ void QWasmCamera::setActive(bool active)
     m_cameraActive = active;
     m_shouldBeActive = false;
 
-    updateCameraFeatures();
+    if (active)
+        updateCameraFeatures();
     emit activeChanged(active);
     if (m_CaptureSession->imageCapture()) {
          if (active) {

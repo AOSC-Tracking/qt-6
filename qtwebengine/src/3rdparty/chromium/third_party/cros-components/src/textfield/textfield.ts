@@ -8,8 +8,8 @@ import '@material/web/textfield/outlined-text-field.js';
 
 import {MdOutlinedTextField, TextFieldType} from '@material/web/textfield/outlined-text-field.js';
 import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'lit';
-import {ifDefined} from 'lit/directives/if-defined';
 import {classMap} from 'lit/directives/class-map';
+import {ifDefined} from 'lit/directives/if-defined';
 
 /**
  * Textfields have two variants that differ only by the container background,
@@ -270,6 +270,7 @@ export class Textfield extends LitElement {
     autofix: {type: String, attribute: true},
     required: {type: Boolean, attribute: true},
     noSpinner: {type: Boolean, attribute: true},
+    rows: {type: Number, attribute: true},
     useEllipsis: {type: Boolean, attribute: true},
   };
 
@@ -290,14 +291,14 @@ export class Textfield extends LitElement {
   } as const;
 
   /** @export */
-  type: SupportedTextfieldType;
+  declare type: SupportedTextfieldType;
   /**
    * When false, will use the darker container designed to sit on app-base. When
    * true, will use the lighter container colored designed for use with
    * app-base-shaded. Purely a cosmetic difference to improve contrast.
    * @export
    */
-  shaded = false;
+  declare shaded: boolean;
 
   /** @export */
   get value() {
@@ -319,20 +320,20 @@ export class Textfield extends LitElement {
    * for the internal md-textfield.
    * @export
    */
-  label: string;
+  declare label: string;
   // Properties supported by the MD textfield that are surfaced to the
   // cros-textfield API. These are manually plumbed through as cros-textfield is
   // not a subclass. This is not an exhaustive list, and support should be
   // added by clients as needed.
 
   /** @export */
-  suffix: string;
+  declare suffix: string;
 
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
 
   /** @export */
-  hint: string;
+  declare hint: string;
 
   /**
    * Max length of the textfield value. If set to -1 or less, md-textfield will
@@ -340,21 +341,21 @@ export class Textfield extends LitElement {
    * not render the charCounter.
    * @export
    */
-  maxLength: number;
+  declare maxLength: number;
 
   /**
    * Defines the most negative value in the range of permitted values. Only used
    * with `number` type.
    * @export
    */
-  min: number;
+  declare min: number;
 
   /**
    * Defines the greatest value in the range of permitted values. Only used with
    * `number` type.
    * @export
    */
-  max: number;
+  declare max: number;
 
   /**
    * When true, the validity state of the textfield is reported on every
@@ -362,7 +363,7 @@ export class Textfield extends LitElement {
    * occur on blur).
    * @export
    */
-  autoValidate: boolean;
+  declare autoValidate: boolean;
 
   /**
    * The error text shown below the textfield on `error`. This will override
@@ -370,7 +371,7 @@ export class Textfield extends LitElement {
    * `error` is set.
    * @export
    */
-  errorMessage: string;
+  declare errorMessage: string;
 
   /**
    * Gets or sets whether or not the text field is in a visually invalid state.
@@ -380,7 +381,7 @@ export class Textfield extends LitElement {
    * constraint validation.
    * @export
    */
-  error: boolean;
+  declare error: boolean;
 
   /**
    * A regular expression that the text field's value must match to pass
@@ -389,10 +390,10 @@ export class Textfield extends LitElement {
    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input#pattern
    * @export
    */
-  pattern: string;
+  declare pattern: string;
 
   /** @export */
-  placeholder: string;
+  declare placeholder: string;
 
   /**
    * When using `type=integer`, clients can also set this field to either
@@ -404,19 +405,26 @@ export class Textfield extends LitElement {
    * clear:       Set value to the empty string.
    * strip:       Remove any non-integer characters.
    */
-  autofix: TextfieldAutofixType;
+  declare autofix: TextfieldAutofixType;
 
   /**
    * Whether the input should be invalid when left blank.
    * @export
    */
-  required: boolean;
+  declare required: boolean;
 
   /**
    * When true, hide the spinner for `type="number"` text fields.
    * @export
    */
-  noSpinner: boolean;
+  declare noSpinner: boolean;
+
+
+  /**
+   * The number of rows to display for a `type="textarea"` text field.
+   * @export
+   */
+  declare rows: number;
 
   /**
    * When true, adds an ellipsis to the end of the input text if it is
@@ -424,7 +432,7 @@ export class Textfield extends LitElement {
    * currently in the textfield input.
    * @export
    */
-  useEllipsis: boolean;
+  declare useEllipsis: boolean;
 
   get mdTextfield(): MdOutlinedTextField|undefined {
     return this.renderRoot?.querySelector('md-outlined-text-field') ||
@@ -462,6 +470,7 @@ export class Textfield extends LitElement {
     this.autofix = 'preserve';
     this.required = false;
     this.noSpinner = false;
+    this.rows = 2;
     this.useEllipsis = false;
   }
 
@@ -477,8 +486,7 @@ export class Textfield extends LitElement {
     this.mdTextfield!.shadowRoot!.adoptedStyleSheets = [
       ...this.mdTextfield!.shadowRoot!.adoptedStyleSheets,
       // Added by MWC team to be removed in b/278960272.
-      MWC_SELECTION_STYLES.styleSheet!,
-      TEXT_ELLISION_STYLES.styleSheet!
+      MWC_SELECTION_STYLES.styleSheet!, TEXT_ELLISION_STYLES.styleSheet!
     ];
   }
 
@@ -512,6 +520,7 @@ export class Textfield extends LitElement {
             max=${this.max > -1 ? this.max : nothing}
             ?required=${this.required}
             ?no-spinner=${this.noSpinner}
+            rows=${this.rows}
             supporting-text=${this.hint}
             ?error=${this.error ?? nothing}
             error-text=${ifDefined(errorTextOrUndef)}

@@ -28,9 +28,16 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "components/browsing_data/core/cookie_or_cache_deletion_choice.h"
+#include "components/fingerprinting_protection_filter/interventions/common/interventions_features.h"
+#include "content/browser/browser_context_impl.h"
 #include "content/browser/browsing_data/browsing_data_filter_builder_impl.h"
-#include "content/browser/dips/dips_service_impl.h"
-#include "content/browser/dips/dips_utils.h"
+#include "content/browser/btm/btm_service_impl.h"
+#include "content/browser/btm/btm_utils.h"
+#include "content/browser/fingerprinting_protection/canvas_noise_token_data.h"
+#include "content/browser/preloading/prefetch/prefetch_features.h"
+#include "content/browser/preloading/prefetch/prefetch_service.h"
+#include "content/browser/preloading/prefetch/prefetch_status.h"
+#include "content/browser/preloading/prerender/prerender_host_registry.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -435,9 +442,6 @@ void BrowsingDataRemoverImpl::RemoveImpl(
     storage_partition_remove_mask |=
         StoragePartition::REMOVE_DATA_MASK_INDEXEDDB;
   }
-  if (remove_mask & DATA_TYPE_WEB_SQL) {
-    storage_partition_remove_mask |= StoragePartition::REMOVE_DATA_MASK_WEBSQL;
-  }
   if (remove_mask & DATA_TYPE_SERVICE_WORKERS) {
     storage_partition_remove_mask |=
         StoragePartition::REMOVE_DATA_MASK_SERVICE_WORKERS;
@@ -490,6 +494,10 @@ void BrowsingDataRemoverImpl::RemoveImpl(
     storage_partition_remove_mask |=
         StoragePartition::REMOVE_DATA_MASK_INTEREST_GROUPS_INTERNAL;
   }
+  if (remove_mask & DATA_TYPE_INTEREST_GROUPS_USER_CLEAR) {
+    storage_partition_remove_mask |=
+        StoragePartition::REMOVE_DATA_MASK_INTEREST_GROUPS_USER_CLEAR;
+  }
   if (remove_mask & DATA_TYPE_SHARED_STORAGE) {
     storage_partition_remove_mask |=
         StoragePartition::REMOVE_DATA_MASK_SHARED_STORAGE;
@@ -497,6 +505,11 @@ void BrowsingDataRemoverImpl::RemoveImpl(
   if (remove_mask & DATA_TYPE_DEVICE_BOUND_SESSIONS) {
     storage_partition_remove_mask |=
         StoragePartition::REMOVE_DATA_MASK_DEVICE_BOUND_SESSIONS;
+  }
+
+  if ((remove_mask & DATA_TYPE_COOKIES) || (remove_mask & DATA_TYPE_CACHE)) {
+    storage_partition_remove_mask |=
+        StoragePartition::REMOVE_KEEPALIVE_LOADS_ATTEMPTING_RETRY;
   }
 
   if (storage_partition_remove_mask) {
@@ -608,6 +621,47 @@ void BrowsingDataRemoverImpl::RemoveImpl(
     }
   }
 
+  // Clears the Prerender Cache as part of Clear-Site-Data prerenderCache header
+  // and Browsing Data Cache Removal.
+  if (remove_mask & (DATA_TYPE_PRERENDER_CACHE | DATA_TYPE_CACHE)) {
+    auto storage_key_filter = filter_builder->BuildStorageKeyFilter();
+    for (WebContentsImpl* web_contents : WebContentsImpl::GetAllWebContents()) {
+      if (web_contents->GetBrowserContext() == browser_context_) {
+        PrerenderHostRegistry* prerender_host_registry =
+            web_contents->GetPrerenderHostRegistry();
+        if (prerender_host_registry) {
+          prerender_host_registry->CancelHostsByOriginFilter(
+              storage_key_filter, PrerenderFinalStatus::kBrowsingDataRemoved);
+        }
+      }
+    }
+    // We need task completion closures for prefetch/prerender cache clearing to
+    // prevent premature destruction of the SiteDataClearer object. Without
+    // these closures, the kSynchronous task may complete first and trigger
+    // OnBrowsingDataRemoverDone before these operations finish,
+    // causing state to be reset while operations are still pending.
+    GetUIThreadTaskRunner({})->PostTaskAndReply(
+        FROM_HERE, base::DoNothing(),
+        CreateTaskCompletionClosure(TracingDataType::kPrerenderCache));
+  }
+
+  // Clears the Prefetch Cache as part of Clear-Site-Data prefetchCache header
+  // and Browsing Data Cache Removal.
+  if ((remove_mask & (DATA_TYPE_PREFETCH_CACHE | DATA_TYPE_CACHE)) &&
+      base::FeatureList::IsEnabled(features::kPrefetchBrowsingDataRemoval)) {
+    if (auto* prefetch_service =
+            BrowserContextImpl::From(browser_context_)->GetPrefetchService()) {
+      auto storage_key_filter = filter_builder->BuildStorageKeyFilter();
+      GetUIThreadTaskRunner({})->PostTaskAndReply(
+          FROM_HERE,
+          base::BindOnce(
+              &PrefetchService::EvictPrefetchesForBrowsingDataRemoval,
+              prefetch_service->GetWeakPtr(), storage_key_filter,
+              PrefetchStatus::kPrefetchEvictedAfterBrowsingDataRemoved),
+          CreateTaskCompletionClosure(TracingDataType::kPrefetchCache));
+    }
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   // Prototype Trust Token API (https://github.com/wicg/trust-token-api).
 
@@ -675,24 +729,37 @@ void BrowsingDataRemoverImpl::RemoveImpl(
     }
   }
 
-  // Different types of DIPS events are cleared for DATA_TYPE_HISTORY and
+  // Different types of BTM events are cleared for DATA_TYPE_HISTORY and
   // DATA_TYPE_COOKIES.
-  BtmEventRemovalType dips_mask = BtmEventRemovalType::kNone;
+  BtmEventRemovalType btm_mask = BtmEventRemovalType::kNone;
   if ((remove_mask & DATA_TYPE_COOKIES) &&
       !filter_builder->PartitionedCookiesOnly()) {
-    dips_mask |= BtmEventRemovalType::kStorage;
+    btm_mask |= BtmEventRemovalType::kStorage;
   }
-  if (GetContentClient()->browser()->ShouldDipsDeleteInteractionRecords(
+  if (GetContentClient()->browser()->ShouldBtmDeleteInteractionRecords(
           remove_mask)) {
-    dips_mask |= BtmEventRemovalType::kHistory;
+    btm_mask |= BtmEventRemovalType::kHistory;
   }
 
-  if (dips_mask != BtmEventRemovalType::kNone) {
-    if (BtmServiceImpl* dips_service = BtmServiceImpl::Get(browser_context_)) {
-      dips_service->RemoveEvents(delete_begin_, delete_end_,
-                                 filter_builder->BuildNetworkServiceFilter(),
-                                 dips_mask);
+  if (btm_mask != BtmEventRemovalType::kNone) {
+    if (BtmServiceImpl* btm_service = BtmServiceImpl::Get(browser_context_)) {
+      btm_service->RemoveEvents(delete_begin_, delete_end_,
+                                filter_builder->BuildNetworkServiceFilter(),
+                                btm_mask);
     }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Regenerate CanvasNoiseToken:
+  // Renegerate the noise token for canvas noising. Because these noise tokens
+  // are linked to the profile, it can be used to identify users. As such,
+  // regeneration of the randomized token must occur to prevent creating a
+  // stable identifier.
+  if (remove_mask & DATA_TYPE_COOKIES &&
+      base::FeatureList::IsEnabled(
+          fingerprinting_protection_interventions::features::kCanvasNoise) &&
+      filter_builder->MatchesMostOriginsAndDomains()) {
+    content::CanvasNoiseTokenData::SetNewToken(browser_context_);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -965,6 +1032,10 @@ const char* BrowsingDataRemoverImpl::GetHistogramSuffix(TracingDataType task) {
       return "PreflightCache";
     case TracingDataType::kSharedDictionary:
       return "SharedDictionary";
+    case TracingDataType::kPrefetchCache:
+      return "PrefetchCache";
+    case TracingDataType::kPrerenderCache:
+      return "PrerenderCache";
   }
 }
 

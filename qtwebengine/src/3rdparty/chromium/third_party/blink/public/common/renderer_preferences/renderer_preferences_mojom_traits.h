@@ -150,6 +150,11 @@ struct BLINK_COMMON_EXPORT
     return data.webrtc_ip_handling_urls;
   }
 
+  static const std::optional<bool> webrtc_post_quantum_key_agreement(
+      const ::blink::RendererPreferences& data) {
+    return data.webrtc_post_quantum_key_agreement;
+  }
+
   static const uint16_t& webrtc_udp_min_port(
       const ::blink::RendererPreferences& data) {
     return data.webrtc_udp_min_port;
@@ -273,6 +278,16 @@ struct BLINK_COMMON_EXPORT
   static const std::vector<uint16_t>& explicitly_allowed_network_ports(
       const ::blink::RendererPreferences& data) {
     return data.explicitly_allowed_network_ports;
+  }
+
+  static const uint64_t& canvas_noise_token(
+      const ::blink::RendererPreferences& data) {
+    return data.canvas_noise_token;
+  }
+
+  static bool view_source_line_wrap_enabled(
+      const ::blink::RendererPreferences& data) {
+    return data.view_source_line_wrap_enabled;
   }
 
   static bool Read(blink::mojom::RendererPreferencesDataView,

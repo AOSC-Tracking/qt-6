@@ -41,6 +41,8 @@ blink_modules_sources("peerconnection") {
     "peer_connection_features.h",
     "peer_connection_tracker.cc",
     "peer_connection_tracker.h",
+    "peer_connection_util.cc",
+    "peer_connection_util.h",
     "rtc_certificate.cc",
     "rtc_certificate.h",
     "rtc_certificate_generator.cc",
@@ -189,12 +191,14 @@ blink_modules_sources("peerconnection") {
   deps = [
     "//build:chromecast_buildflags",
     "//components/webrtc:thread_wrapper",
-    "//media/mojo/clients:clients",
+    "//crypto",
+    "//media/mojo/clients",
     "//services/metrics/public/cpp:ukm_builders",
     "//third_party/abseil-cpp:absl",
     "//third_party/blink/public/mojom:web_feature_mojo_bindings",
     "//third_party/blink/renderer/modules/crypto",
     "//third_party/blink/renderer/modules/mediastream",
+    "//third_party/blink/renderer/modules/permissions",
     "//third_party/blink/renderer/modules/webrtc",
   ]
 
@@ -242,4 +246,8 @@ jumbo_source_set("test_support") {
   ]
 
   configs += [ "//third_party/blink/renderer:inside_blink" ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

@@ -1,6 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // Copyright (C) 2016 BasysKom GmbH.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtQuick/private/qquickvaluetypes_p.h>
 #include <QtQuick/private/qquickapplication_p.h>
@@ -299,7 +300,7 @@ void QQuick_initializeModule()
     Q_ASSERT(qtqml);
 
     // This is used by QQuickPath, and on macOS it fails to automatically register.
-    qRegisterMetaType<QVector<QVector<QPointF>>>();
+    qRegisterMetaType<QList<QList<QPointF>>>();
 
     QQml_setColorProvider(getColorProvider());
     QQml_setGuiProvider(getGuiProvider());

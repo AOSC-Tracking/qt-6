@@ -22,23 +22,25 @@ namespace {
 // this array may either refer to features defined in the header of this file or
 // in other locations in the code base (e.g. content_features.h).
 const base::Feature* const kFeaturesExposedToJava[] = {
-    &blink::features::kCursorAnchorInfoMojoPipe,
     &blink::features::kDevicePosture,
     &blink::features::kSecurePaymentConfirmationBrowserBoundKeys,
-    &blink::features::kStylusRichGestures,
+    &blink::features::kSecurePaymentConfirmationUxRefresh,
     &blink::features::kViewportSegments,
     &input::features::kInputOnViz,
+    &features::kAndroidCaptureKeyEvents,
+    &features::kAccessibilityDeprecateJavaNodeCache,
     &features::kAccessibilityDeprecateTypeAnnounce,
     &features::kAccessibilityIncludeLongClickAction,
-    &features::kAccessibilityPageZoomEnhancements,
     &features::kAccessibilityPageZoomV2,
+    &features::kAccessibilityPopulateSupplementalDescriptionApi,
     &features::kAccessibilityUnifiedSnapshots,
     &features::kAccessibilityManageBroadcastReceiverOnBackground,
     &features::kAndroidFallbackToNextSlot,
     &features::kAndroidOpenPdfInline,
+    &features::kStrictHighRankProcessLRU,
     &features::kFedCm,
+    &features::kGroupRebindingForGroupImportance,
     &features::kHidePastePopupOnGSB,
-    &features::kProcessSharingWithStrictSiteInstances,
     &features::kReduceGpuPriorityOnBackground,
     &features::kContinueGestureOnLosingFocus,
     &features::kSmartZoom,
@@ -46,6 +48,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &features::kWebBluetoothNewPermissionsBackend,
     &features::kWebIdentityDigitalCredentials,
     &features::kBtmTtl,
+    &features::kSpareRendererProcessPriority,
 };
 
 // static

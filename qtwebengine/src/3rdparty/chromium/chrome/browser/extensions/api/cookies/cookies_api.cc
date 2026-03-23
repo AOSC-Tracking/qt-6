@@ -16,11 +16,11 @@
 #include "base/lazy_instance.h"
 #include "base/time/time.h"
 #include "chrome/browser/extensions/api/cookies/cookies_helpers.h"
-#include "chrome/browser/extensions/chrome_extension_function_details.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/cookies.h"
+#include "components/safe_browsing/buildflags.h"
 #include "components/safe_browsing/core/common/features.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -38,7 +38,7 @@
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && BUILDFLAG(SAFE_BROWSING_AVAILABLE)
 #include "chrome/browser/safe_browsing/extension_telemetry/cookies_get_all_signal.h"
 #include "chrome/browser/safe_browsing/extension_telemetry/cookies_get_signal.h"
 #include "chrome/browser/safe_browsing/extension_telemetry/extension_telemetry_service.h"
@@ -137,7 +137,8 @@ void CookiesEventRouter::CookieChangeListener::OnCookieChange(
 
 CookiesEventRouter::CookiesEventRouter(content::BrowserContext* context)
     : profile_(Profile::FromBrowserContext(context)),
-      profile_observation_(this) {
+      profile_observation_(this),
+      otr_profile_observation_(this) {
   MaybeStartListening();
   profile_observation_.Observe(profile_);
 }
@@ -155,11 +156,18 @@ void CookiesEventRouter::OnCookieChange(bool otr,
   }
   base::Value::List args;
   base::Value::Dict dict;
-  dict.Set(kRemovedKey, change.cause != net::CookieChangeCause::INSERTED);
+  dict.Set(
+      kRemovedKey,
+      change.cause != net::CookieChangeCause::INSERTED &&
+          change.cause != net::CookieChangeCause::INSERTED_NO_CHANGE_OVERWRITE);
 
   Profile* profile =
-      otr ? profile_->GetPrimaryOTRProfile(/*create_if_needed=*/true)
+      otr ? profile_->GetPrimaryOTRProfile(/*create_if_needed=*/false)
           : profile_->GetOriginalProfile();
+  // TODO(407373848): OTR profile must exist when the cookie change event
+  // arrived.
+  CHECK(profile);
+
   api::cookies::Cookie cookie = cookies_helpers::CreateCookie(
       change.cookie, cookies_helpers::GetStoreIdFromProfile(profile));
   dict.Set(kCookieKey, cookie.ToValue());
@@ -171,6 +179,7 @@ void CookiesEventRouter::OnCookieChange(bool otr,
     // only make sense for deletions.
     case net::CookieChangeCause::INSERTED:
     case net::CookieChangeCause::EXPLICIT:
+    case net::CookieChangeCause::INSERTED_NO_CHANGE_OVERWRITE:
       cause_dict_entry = kExplicitChangeCause;
       break;
 
@@ -206,8 +215,28 @@ void CookiesEventRouter::OnOffTheRecordProfileCreated(Profile* off_the_record) {
   // When an off-the-record spinoff of |profile_| is created, start listening
   // for cookie changes there. The OTR receiver should never be bound, since
   // there wasn't previously an OTR profile.
-  if (!otr_receiver_.is_bound()) {
-    BindToCookieManager(&otr_receiver_, off_the_record);
+  // TODO(crbug.com/417228685): Clank allows for multiple OTR profiles, unlike
+  // desktop Chrome. Extensions APIs may have built-in assumptions that there
+  // will only be one OTR profile. We need to determine how this will be handled
+  // in Desktop Android.
+  if (!off_the_record->IsPrimaryOTRProfile()) {
+    return;
+  }
+
+  DCHECK(!otr_receiver_.is_bound());
+  otr_profile_observation_.Observe(off_the_record);
+  BindToCookieManager(&otr_receiver_, off_the_record);
+}
+
+void CookiesEventRouter::OnProfileWillBeDestroyed(Profile* profile) {
+  Profile* original_profile = profile_->GetOriginalProfile();
+  Profile* otr_profile =
+      original_profile->HasPrimaryOTRProfile()
+          ? original_profile->GetPrimaryOTRProfile(/*create_if_needed=*/true)
+          : nullptr;
+  if (profile == otr_profile) {
+    otr_profile_observation_.Reset();
+    otr_receiver_.reset();
   }
 }
 
@@ -221,10 +250,14 @@ void CookiesEventRouter::MaybeStartListening() {
           ? original_profile->GetPrimaryOTRProfile(/*create_if_needed=*/true)
           : nullptr;
 
-  if (!receiver_.is_bound())
+  if (!receiver_.is_bound()) {
     BindToCookieManager(&receiver_, original_profile);
-  if (!otr_receiver_.is_bound() && otr_profile)
+  }
+
+  if (!otr_receiver_.is_bound() && otr_profile) {
+    otr_profile_observation_.Observe(otr_profile);
     BindToCookieManager(&otr_receiver_, otr_profile);
+  }
 }
 
 void CookiesEventRouter::BindToCookieManager(
@@ -309,7 +342,7 @@ ExtensionFunction::ResponseAction CookiesGetFunction::Run() {
   DCHECK(!url_.is_empty() && url_.is_valid());
   cookies_helpers::GetCookieListFromManager(
       cookie_manager, url_,
-      net::CookiePartitionKeyCollection::FromOptional(partition_key.value()),
+      net::CookiePartitionKeyCollection(std::move(partition_key).value()),
       base::BindOnce(&CookiesGetFunction::GetCookieListCallback, this));
 
   // Extension telemetry signal intercept
@@ -349,7 +382,7 @@ void CookiesGetFunction::GetCookieListCallback(
 
 void CookiesGetFunction::NotifyExtensionTelemetry() {
   // TODO(crbug.com/371423073): Support telemetry on Android.
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && BUILDFLAG(SAFE_BROWSING_AVAILABLE)
   auto* telemetry_service =
       safe_browsing::ExtensionTelemetryServiceFactory::GetForProfile(
           Profile::FromBrowserContext(browser_context()));
@@ -456,7 +489,7 @@ void CookiesGetAllFunction::GetCookieListCallback(
 
 void CookiesGetAllFunction::NotifyExtensionTelemetry() {
   // TODO(crbug.com/371423073): Support telemetry on Android.
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && BUILDFLAG(SAFE_BROWSING_AVAILABLE)
   auto* telemetry_service =
       safe_browsing::ExtensionTelemetryServiceFactory::GetForProfile(
           Profile::FromBrowserContext(browser_context()));
@@ -600,8 +633,7 @@ ExtensionFunction::ResponseAction CookiesSetFunction::Run() {
       base::BindOnce(&CookiesSetFunction::SetCanonicalCookieCallback, this));
   cookies_helpers::GetCookieListFromManager(
       cookie_manager, url_,
-      net::CookiePartitionKeyCollection::FromOptional(
-          net_partition_key.value()),
+      net::CookiePartitionKeyCollection(std::move(net_partition_key).value()),
       base::BindOnce(&CookiesSetFunction::GetCookieListCallback, this));
 
   // Will finish asynchronously.
@@ -690,7 +722,7 @@ ExtensionFunction::ResponseAction CookiesRemoveFunction::Run() {
       network::mojom::CookieDeletionFilter::New());
 
   filter->cookie_partition_key_collection =
-      net::CookiePartitionKeyCollection::FromOptional(partition_key.value());
+      net::CookiePartitionKeyCollection(std::move(partition_key).value());
   filter->url = url_;
   filter->cookie_name = parsed_args_->details.name;
   cookie_manager->DeleteCookies(
@@ -865,6 +897,7 @@ BrowserContextKeyedAPIFactory<CookiesAPI>* CookiesAPI::GetFactoryInstance() {
 }
 
 void CookiesAPI::OnListenerAdded(const EventListenerInfo& details) {
+  DCHECK(!cookies_event_router_);
   cookies_event_router_ =
       std::make_unique<CookiesEventRouter>(browser_context_);
   EventRouter::Get(browser_context_)->UnregisterObserver(this);

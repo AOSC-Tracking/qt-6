@@ -41,6 +41,7 @@ macro(qt_find_apple_system_frameworks)
         qt_internal_find_apple_system_framework(FWUniformTypeIdentifiers UniformTypeIdentifiers)
         qt_internal_find_apple_system_framework(FWNetwork Network)
         qt_internal_find_apple_system_framework(FWOpenGL OpenGL)
+        qt_internal_find_apple_system_framework(FWAccelerate Accelerate)
     endif()
 endmacro()
 
@@ -53,6 +54,33 @@ function(qt_internal_find_apple_system_framework out_var framework_name)
     # hardcoded, like with Xcode11.app on the CI.
     # We might revisit this later.
     set(cache_var_name "${out_var}Internal")
+
+    # vcpkg.cmake sets CMAKE_FIND_FRAMEWORK to LAST and this setting will find e.g.
+    # libnetwork.tbd instead of Network.framework.
+    # On the other side, homebrew always sets CMAKE_FIND_FRAMEWORK to FIRST.
+    # Force the default value to FIRST, to ensure we always find the framework file
+    # and not the tbd file.
+    # Allow opt outs, as well as not setting it at all if the opt out var is set to an empty
+    # string.
+    if(DEFINED QT_FIND_APPLE_SYSTEM_FRAMEWORKS_MODE)
+        set(valid_values "FIRST" "LAST" "ONLY" "NEVER")
+
+        if("${QT_FIND_APPLE_SYSTEM_FRAMEWORKS_MODE}" STREQUAL "")
+            # Empty on purpose to allow keeping the var empty, and skipping the
+            # CMAKE_FIND_FRAMEWORK assignment.
+            set(cmake_find_framework_value "")
+        elseif(NOT QT_FIND_APPLE_SYSTEM_FRAMEWORKS_MODE IN_LIST valid_values)
+            message(FATAL_ERROR "QT_FIND_APPLE_SYSTEM_FRAMEWORKS_MODE must be one of: ${valid_values}")
+        else()
+            set(cmake_find_framework_value "${QT_FIND_APPLE_SYSTEM_FRAMEWORKS_MODE}")
+        endif()
+    else()
+        set(cmake_find_framework_value "FIRST")
+    endif()
+
+    if(cmake_find_framework_value)
+        set(CMAKE_FIND_FRAMEWORK "${cmake_find_framework_value}")
+    endif()
 
     find_library(${cache_var_name} "${framework_name}")
 
@@ -96,7 +124,6 @@ function(qt_copy_framework_headers target)
     foreach(type IN ITEMS PUBLIC PRIVATE QPA RHI SSG)
         set(in_files_${type} "")
         set(fw_output_header_dir "${output_dir_${type}}")
-        list(APPEND out_dirs "${fw_output_header_dir}")
         foreach(hdr IN LISTS arg_${type})
             get_filename_component(in_file_path ${hdr} ABSOLUTE)
             get_filename_component(in_file_name ${hdr} NAME)
@@ -105,6 +132,7 @@ function(qt_copy_framework_headers target)
             list(APPEND in_files_${type} "${in_file_path}")
         endforeach()
         if(in_files_${type})
+            list(APPEND out_dirs "${fw_output_header_dir}")
             list(APPEND copy_commands
                 COMMAND ${CMAKE_COMMAND} -E copy ${in_files_${type}} "${fw_output_header_dir}")
             list(APPEND in_files ${in_files_${type}})
@@ -127,6 +155,20 @@ function(qt_copy_framework_headers target)
     set(copy_fw_sync_headers_marker_file_command
         "${CMAKE_COMMAND}" -E touch "${copy_fw_sync_headers_marker_file}"
     )
+
+    if(NOT UIKIT)
+        # Create the framework's basic layout at configure time already. This is necessary, because
+        # we don't rely on the PUBLIC_HEADER property to create the QtFoo.framework/Headers symlink.
+        # See QTBUG-142119 for details.
+        file(MAKE_DIRECTORY "${output_dir}/${fw_dir}/Versions/${fw_version}/Headers")
+        file(CREATE_LINK "${fw_version}" "${output_dir}/${fw_dir}/Versions/Current" SYMBOLIC)
+        file(CREATE_LINK "Versions/Current/Headers" "${output_dir}/${fw_header_dir}" SYMBOLIC)
+
+        # Make "ninja clean" work.
+        set_property(TARGET ${target} APPEND PROPERTY ADDITIONAL_CLEAN_FILES
+            "${output_dir}/${fw_dir}/Versions/${fw_version}/Headers"
+        )
+    endif()
 
     if(CMAKE_GENERATOR MATCHES "^Ninja")
         add_custom_command(
@@ -163,19 +205,6 @@ function(qt_copy_framework_headers target)
     endif()
 endfunction()
 
-function(qt_internal_generate_fake_framework_header target)
-    # Hack to create the "Headers" symlink in the framework:
-    # Create a fake header file and copy it into the framework by marking it as PUBLIC_HEADER.
-    # CMake now takes care of creating the symlink.
-    set(fake_header "${CMAKE_CURRENT_BINARY_DIR}/${target}_fake_header.h")
-    qt_internal_get_main_cmake_configuration(main_config)
-    file(GENERATE OUTPUT "${fake_header}" CONTENT "// ignore this file\n"
-        CONDITION "$<CONFIG:${main_config}>")
-    target_sources(${target} PRIVATE "${fake_header}")
-    _qt_internal_set_source_file_generated(SOURCES "${fake_header}")
-    set_property(TARGET ${target} APPEND PROPERTY PUBLIC_HEADER "${fake_header}")
-endfunction()
-
 function(qt_finalize_framework_headers_copy target)
     get_target_property(target_type ${target} TYPE)
     if(${target_type} STREQUAL "INTERFACE_LIBRARY")
@@ -187,8 +216,6 @@ function(qt_finalize_framework_headers_copy target)
     endif()
     get_target_property(headers ${target} QT_COPIED_FRAMEWORK_HEADERS)
     if(headers)
-        qt_internal_generate_fake_framework_header(${target})
-
         # Add a target, e.g. Core_framework_headers, that triggers the header copy.
         add_custom_target(${target}_framework_headers DEPENDS ${headers})
         add_dependencies(${target} ${target}_framework_headers)

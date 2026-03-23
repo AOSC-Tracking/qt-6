@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_EXECUTION_S390_SIMULATOR_S390_H_
+#define V8_EXECUTION_S390_SIMULATOR_S390_H_
+
 // Declares a Simulator for S390 instructions if we are not generating a native
 // S390 binary. This Simulator allows us to run and debug S390 code generation
 // on regular desktop machines.
 // V8 calls into generated code via the GeneratedCode wrapper,
 // which will start execution in the Simulator or forwards to the real entry
 // on a S390 hardware platform.
-
-#ifndef V8_EXECUTION_S390_SIMULATOR_S390_H_
-#define V8_EXECUTION_S390_SIMULATOR_S390_H_
 
 // globals.h defines USE_SIMULATOR.
 #include "src/common/globals.h"
@@ -23,6 +23,10 @@
 #include "src/codegen/s390/constants-s390.h"
 #include "src/execution/simulator-base.h"
 #include "src/utils/allocation.h"
+
+namespace heap::base {
+class StackVisitor;
+}
 
 namespace v8 {
 namespace internal {
@@ -163,9 +167,15 @@ class Simulator : public SimulatorBase {
   // Accessor to the internal simulator stack area. Adds a safety
   // margin to prevent overflows.
   uintptr_t StackLimit(uintptr_t c_limit) const;
+
+  uintptr_t StackBase() const;
+
   // Return central stack view, without additional safety margins.
   // Users, for example wasm::StackMemory, can add their own.
   base::Vector<uint8_t> GetCentralStackView() const;
+  static constexpr int JSStackLimitMargin() { return kStackProtectionSize; }
+
+  void IterateRegistersAndStack(::heap::base::StackVisitor* visitor);
 
   // Executes S390 instructions until the PC reaches end_sim_pc.
   void Execute();
@@ -202,6 +212,11 @@ class Simulator : public SimulatorBase {
   // below (bad_lr, end_sim_pc).
   bool has_bad_pc() const;
 
+  // Manage instruction tracing.
+  bool InstructionTracingEnabled();
+
+  void ToggleInstructionTracing();
+
   enum special_values {
     // Known bad pc value to ensure that the simulator does not execute
     // without being properly setup.
@@ -234,6 +249,10 @@ class Simulator : public SimulatorBase {
   void HandleVList(Instruction* inst);
   void SoftwareInterrupt(Instruction* instr);
   void DebugAtNextPC();
+
+  // Take a copy of v8 simulator tracing flag because flags are frozen after
+  // start.
+  bool instruction_tracing_ = v8_flags.trace_sim;
 
   // Stop helper functions.
   inline bool isStopInstruction(Instruction* instr);
@@ -305,6 +324,20 @@ class Simulator : public SimulatorBase {
   }
 
   bool isNaN(double value) { return (value != value); }
+
+  template <typename T1, typename T2, typename T3>
+  T1 FPProcessNaNBinop(T1 fp_lhs, T1 fp_rhs,
+                       const std::function<T1(T1, T1)>& op_for_non_nan) {
+    T2 lhs = T2::FromBits(base::bit_cast<T3>(fp_lhs));
+    T2 rhs = T2::FromBits(base::bit_cast<T3>(fp_rhs));
+    if (lhs.is_nan() && !lhs.is_quiet_nan())
+      return lhs.to_quiet_nan().get_scalar();
+    if (rhs.is_nan() && !rhs.is_quiet_nan())
+      return rhs.to_quiet_nan().get_scalar();
+    if (lhs.is_nan()) return lhs.to_quiet_nan().get_scalar();
+    if (rhs.is_nan()) return rhs.to_quiet_nan().get_scalar();
+    return op_for_non_nan(fp_lhs, fp_rhs);
+  }
 
   // Set the condition code for bitwise operations
   // CC0 is set if value == 0.
@@ -421,9 +454,9 @@ class Simulator : public SimulatorBase {
   // Special register to track PC.
   intptr_t special_reg_pc_;
 
-  // Simulator support.
+  // Simulator support for the stack.
   uint8_t* stack_;
-  static const size_t kStackProtectionSize = 256 * kSystemPointerSize;
+  static const size_t kStackProtectionSize = 20 * KB;
   // This includes a protection margin at each end of the stack area.
   static size_t AllocatedStackSize() {
     size_t stack_size = v8_flags.sim_stack_size * KB;
@@ -940,6 +973,8 @@ class Simulator : public SimulatorBase {
   EVALUATE(OGR);
   EVALUATE(XGR);
   EVALUATE(FLOGR);
+  EVALUATE(CLZG);
+  EVALUATE(CTZG);
   EVALUATE(LLGCR);
   EVALUATE(LLGHR);
   EVALUATE(MLGR);

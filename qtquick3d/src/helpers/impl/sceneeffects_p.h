@@ -1,5 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef SCENEEFFECTS_H
 #define SCENEEFFECTS_H
@@ -79,6 +81,46 @@ private:
     bool m_enabled = false;
 };
 
+class SsgiEnvEffect : public SceneEffectBase
+{
+    Q_OBJECT
+    Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY enabledChanged)
+    QML_NAMED_ELEMENT(SsgiEnvEffect)
+public:
+    explicit SsgiEnvEffect(QQuick3DObject *p = nullptr);
+
+    bool enabled() const;
+    void setEnabled(bool newEnabled);
+
+signals:
+    void enabledChanged();
+
+private:
+    void registerWithEnv(SceneEffectEnvironment *newEnvironment) override;
+    void unregisterWithEnv(SceneEffectEnvironment *oldEnvironment) override;
+    bool m_enabled = false;
+};
+
+class SsrEnvEffect : public SceneEffectBase
+{
+    Q_OBJECT
+    Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY enabledChanged)
+    QML_NAMED_ELEMENT(SsrEnvEffect)
+public:
+    explicit SsrEnvEffect(QQuick3DObject *p = nullptr);
+
+    bool enabled() const;
+    void setEnabled(bool newEnabled);
+
+signals:
+    void enabledChanged();
+
+private:
+    void registerWithEnv(SceneEffectEnvironment *newEnvironment) override;
+    void unregisterWithEnv(SceneEffectEnvironment *oldEnvironment) override;
+    bool m_enabled = false;
+};
+
 class SceneEffectEnvironment : public QQuick3DSceneEnvironment
 {
     Q_OBJECT
@@ -88,6 +130,8 @@ public:
     explicit SceneEffectEnvironment(QQuick3DObject *p = nullptr);
     void setMainSceneEffect(MainSceneEffect *tonemapper);
     void setDeptOfFieldEffect(DepthOfFieldEffect *dof);
+    void setSsgiEffect(SsgiEnvEffect *ssgi);
+    void setSsrEffect(SsrEnvEffect *ssr);
 
 protected:
     QSSGRenderGraphObject *updateSpatialNode(QSSGRenderGraphObject *node) override;
@@ -96,6 +140,8 @@ private:
     QVector<QQuick3DEffect *> m_effects;
     MainSceneEffect *m_tonemapper = nullptr;
     DepthOfFieldEffect *m_dof = nullptr;
+    SsgiEnvEffect *m_ssgi = nullptr;
+    SsrEnvEffect *m_ssr = nullptr;
 
 protected:
     const QVector<QQuick3DEffect *> &effectList() const override;

@@ -77,8 +77,7 @@ MaybeHandle<JSObject> JSObjectWalkVisitor<ContextObject>::StructureWalk(
   }
 
   if (object->map(isolate)->is_deprecated()) {
-    base::SpinningMutexGuard mutex_guard(
-        isolate->boilerplate_migration_access());
+    base::MutexGuard mutex_guard(isolate->boilerplate_migration_access());
     JSObject::MigrateInstance(isolate, object);
   }
 
@@ -394,7 +393,7 @@ Handle<JSObject> CreateObjectLiteral(
           map, number_of_properties, allocation);
 
   // Normalize the elements of the boilerplate to save space if needed.
-  if (!use_fast_elements) JSObject::NormalizeElements(boilerplate);
+  if (!use_fast_elements) JSObject::NormalizeElements(isolate, boilerplate);
 
   // Add the constant properties to the boilerplate.
   int length = object_boilerplate_description->boilerplate_properties_count();
@@ -432,13 +431,6 @@ Handle<JSObject> CreateObjectLiteral(
       JSObject::SetOwnPropertyIgnoreAttributes(boilerplate, name, value, NONE)
           .Check();
     }
-  }
-
-  if (map->is_dictionary_map() && !has_null_prototype) {
-    // TODO(cbruni): avoid making the boilerplate fast again, the clone stub
-    // supports dict-mode objects directly.
-    JSObject::MigrateSlowToFast(
-        boilerplate, boilerplate->map()->UnusedPropertyFields(), "FastLiteral");
   }
   return boilerplate;
 }
@@ -605,7 +597,7 @@ RUNTIME_FUNCTION(Runtime_CreateRegExpLiteral) {
   DCHECK_EQ(4, args.length());
   Handle<HeapObject> maybe_vector = args.at<HeapObject>(0);
   int index = args.tagged_index_value_at(1);
-  Handle<String> pattern = args.at<String>(2);
+  DirectHandle<String> pattern = args.at<String>(2);
   int flags = args.smi_value_at(3);
 
   if (IsUndefined(*maybe_vector)) {

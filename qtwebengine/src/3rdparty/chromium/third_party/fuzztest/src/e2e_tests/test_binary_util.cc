@@ -45,16 +45,6 @@ std::string GetFullPath(const std::filesystem::path& relative_path) {
 
 }  // namespace
 
-TempDir::TempDir() {
-  std::error_code error;
-  dirname_ = std::filesystem::temp_directory_path(error) / "temp_dir_XXXXXX";
-  CHECK(!error) << "Failed to get the root temp directory path: " << error;
-  dirname_ = mkdtemp(dirname_.data());
-  CHECK(std::filesystem::is_directory(dirname_));
-}
-
-TempDir::~TempDir() { std::filesystem::remove_all(dirname_); }
-
 std::string CreateFuzzTestFlag(absl::string_view flag_name,
                                absl::string_view flag_value) {
   return absl::StrCat("--", FUZZTEST_FLAG_PREFIX, flag_name,
@@ -76,7 +66,8 @@ std::string CentipedePath() {
 
 RunResults RunBinary(absl::string_view binary_path, const RunOptions& options) {
   std::vector<std::string> args;
-  args.reserve(1 + options.fuzztest_flags.size() + options.flags.size());
+  args.reserve(1 + options.fuzztest_flags.size() + options.flags.size() +
+               options.raw_args.size());
   args.push_back(std::string(binary_path));
   for (const auto& [key, value] : options.fuzztest_flags) {
     args.push_back(CreateFuzzTestFlag(key, value));
@@ -84,6 +75,7 @@ RunResults RunBinary(absl::string_view binary_path, const RunOptions& options) {
   for (const auto& [key, value] : options.flags) {
     args.push_back(absl::StrCat("--", key, "=", value));
   }
+  args.insert(args.end(), options.raw_args.begin(), options.raw_args.end());
   return RunCommand(args, options.env, options.timeout);
 }
 

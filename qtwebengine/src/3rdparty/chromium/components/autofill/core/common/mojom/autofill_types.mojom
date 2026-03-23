@@ -27,9 +27,10 @@ enum FormControlType {
   kInputText = 9,
   kInputUrl = 10,
   kSelectOne = 11,
-  kSelectMultiple = 12,
+  // deprecated: kSelectMultiple = 12,
   // deprecated: kSelectList = 13
   kTextArea = 14,
+  kInputDate = 15,
 };
 
 // The list of all HTML autocomplete field mode hints supported by Chrome.
@@ -277,34 +278,6 @@ struct SelectOption {
   mojo_base.mojom.String16 text;
 };
 
-// autofill::Section::Autocomplete
-// (components/autofill/core/common/form_field_data.h)
-struct SectionAutocomplete {
-  string section;
-  HtmlFieldMode html_field_mode;
-};
-
-// autofill::Section::FieldIdentifier
-// (components/autofill/core/common/form_field_data.h)
-struct SectionFieldIdentifier {
-  string field_name;
-  uint64 local_frame_id;
-  FieldRendererId field_renderer_id;
-};
-
-// autofill::Section::SectionValue
-// (components/autofill/core/common/form_field_data.h)
-union SectionValue {
-  bool default_section;
-  SectionAutocomplete autocomplete;
-  SectionFieldIdentifier field_identifier;
-};
-
-// autofill::Section (components/autofill/core/common/form_field_data.h)
-struct Section {
-  SectionValue value;
-};
-
 // autofill::AutocompleteParsingResult
 // (components/autofill/core/common/autocomplete_parsing_util.h)
 struct AutocompleteParsingResult {
@@ -312,6 +285,7 @@ struct AutocompleteParsingResult {
   HtmlFieldMode mode;
   HtmlFieldType field_type;
   bool webauthn;
+  bool webidentity;
 };
 
 // autofill::FormFieldData (components/autofill/core/common/form_field_data.h)
@@ -352,7 +326,6 @@ struct FormFieldData {
     kForShadowHostName, // <label> for-attribute that links to an control
                         // (inside a shadow DOM) via it's name attribute.
     kOverlayingLabel,   // Succeeding DOM node overlaying the input.
-    kDefaultSelectText, // The text of a <select> element's first <option>.
   };
 
   mojo_base.mojom.String16 label;
@@ -364,6 +337,7 @@ struct FormFieldData {
   FormControlType form_control_type;
   string autocomplete_attribute;
   AutocompleteParsingResult? parsed_autocomplete;
+  mojo_base.mojom.String16 pattern;
   mojo_base.mojom.String16 placeholder;
   mojo_base.mojom.String16 css_classes;
   mojo_base.mojom.String16 aria_label;
@@ -376,7 +350,6 @@ struct FormFieldData {
   uint64 max_length;
   bool is_user_edited;
   bool is_autofilled;
-  Section section;
   CheckStatus check_status;
   bool is_focusable;
   bool is_visible;
@@ -442,6 +415,8 @@ struct FormFieldDataPredictions {
   string? server_type;
   string html_type;
   string overall_type;
+  string attribute_types;
+  string format_string;
   string parseable_name;
   string parseable_label;
   string section;
@@ -478,7 +453,6 @@ struct PasswordFormFillData {
   url.mojom.Url url;
   FieldRendererId username_element_renderer_id;
   FieldRendererId password_element_renderer_id;
-  bool username_may_use_prefilled_placeholder;
   PasswordAndMetadata preferred_login;
   array<PasswordAndMetadata> additional_logins;
   bool wait_for_username;
@@ -506,18 +480,25 @@ struct PasswordGenerationUIData {
   bool generation_rejected;
 };
 
-// autofill::PasswordSuggestionRequest
+// autofill::TriggeringField
 // (components/autofill/core/common/password_form_fill_data.h)
-struct PasswordSuggestionRequest {
+struct TriggeringField {
   FieldRendererId element_id;
-  FormData form_data;
   AutofillSuggestionTriggerSource trigger_source;
-  uint64 username_field_index;
-  uint64 password_field_index;
   mojo_base.mojom.TextDirection text_direction;
   mojo_base.mojom.String16 typed_username;
   bool show_webauthn_credentials;
+  bool show_identity_credentials;
   gfx.mojom.RectF bounds;
+};
+
+// autofill::PasswordSuggestionRequest
+// (components/autofill/core/common/password_form_fill_data.h)
+struct PasswordSuggestionRequest {
+  TriggeringField field;
+  FormData form_data;
+  uint64 username_field_index;
+  uint64 password_field_index;
 };
 
 // autofill::ParsingResult
@@ -599,10 +580,7 @@ enum AutofillSuggestionTriggerSource {
   // skipped, to make them behave more like a <select>.
   // TODO(crbug.com/40100455): It's unclear if this is still necessary.
   kOpenTextDataListChooser = 6,
-  // Credit card suggestions offer users with Sync transport eligiblity an
-  // option to display cards from their account. This causes the suggestions to
-  // update. The updated suggested are considered to have this trigger source.
-  kShowCardsFromAccount = 7,
+  // kShowCardsFromAccount = 7 is deprecated
   // The suggestion triggering logic through Blink events (e.g.
   // `kFormControlElementClicked`) is shared with the password manager. However,
   // the trigger source is not propagated to the password manager specific
@@ -643,5 +621,8 @@ enum AutofillSuggestionTriggerSource {
   // plus address suggestion terminated and its result needs to be shown.
   // This value is not allowed to be sent from the renderer to the browser since
   // it disables some of the click-jacking protections in the browser.
-  kPlusAddressUpdatedInBrowserProcess = 19
+  kPlusAddressUpdatedInBrowserProcess = 19,
+  // Suggestion triggered when Password Manager detects a potentially failed
+  // login attempt that used a credential with a recovery password.
+  kProactivePasswordRecovery = 20
 };

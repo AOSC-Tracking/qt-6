@@ -14,6 +14,7 @@
 #include <optional>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/string_number_conversions.h"
@@ -64,9 +65,8 @@ struct EsParserAdts::AdtsFrame {
 };
 
 bool EsParserAdts::LookForAdtsFrame(AdtsFrame* adts_frame) {
-  int es_size;
-  const uint8_t* es;
-  es_queue_->Peek(&es, &es_size);
+  int es_size = es_queue_->Data().size();
+  base::span<const uint8_t> es = es_queue_->Data();
 
   int max_offset = es_size - kADTSHeaderMinSize;
   if (max_offset <= 0)
@@ -99,7 +99,8 @@ bool EsParserAdts::LookForAdtsFrame(AdtsFrame* adts_frame) {
     }
 
     es_queue_->Pop(offset);
-    es_queue_->Peek(&adts_frame->data.AsEphemeralRawAddr(), &es_size);
+    adts_frame->data = es_queue_->Data().data();
+    es_size = es_queue_->Data().size();
     adts_frame->queue_offset = es_queue_->head();
     adts_frame->size = frame_size;
     adts_frame->header_size = header_size;
@@ -197,10 +198,11 @@ bool EsParserAdts::ParseFromEsQueue() {
 
     // TODO(wolenetz/acolwell): Validate and use a common cross-parser TrackId
     // type and allow multiple audio tracks. See https://crbug.com/341581.
+    auto adts_frame_span = base::span(
+        adts_frame.data.get(), base::checked_cast<size_t>(adts_frame.size));
     scoped_refptr<StreamParserBuffer> stream_parser_buffer =
-        StreamParserBuffer::CopyFrom(adts_frame.data, adts_frame.size,
-                                     is_key_frame, DemuxerStream::AUDIO,
-                                     kMp2tAudioTrackId);
+        StreamParserBuffer::CopyFrom(adts_frame_span, is_key_frame,
+                                     DemuxerStream::AUDIO, kMp2tAudioTrackId);
     stream_parser_buffer->set_timestamp(current_pts);
     stream_parser_buffer->SetDecodeTimestamp(
         DecodeTimestamp::FromPresentationTime(current_pts));

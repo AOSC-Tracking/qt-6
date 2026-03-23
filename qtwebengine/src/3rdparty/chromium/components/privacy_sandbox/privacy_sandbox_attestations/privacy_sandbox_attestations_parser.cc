@@ -68,7 +68,7 @@ void InsertAPI(
 namespace privacy_sandbox {
 
 std::optional<PrivacySandboxAttestationsMap> ParseAttestationsFromString(
-    std::string& input) {
+    const std::string& input) {
   PrivacySandboxAttestationsProto proto;
 
   // Parse the istream into a proto for the attestations message format.
@@ -119,7 +119,7 @@ std::optional<PrivacySandboxAttestationsMap> ParseAttestationsFromString(
 
   // Convert the vector into a flat map (which prefers initialization with the
   // entire data structure, not incremental inserts) and return.
-  return PrivacySandboxAttestationsMap(site_attestations_vector);
+  return PrivacySandboxAttestationsMap(std::move(site_attestations_vector));
 }
 
 }  // namespace privacy_sandbox

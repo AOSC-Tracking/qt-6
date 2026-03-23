@@ -23,6 +23,8 @@
 
 #include <memory>
 
+QT_WARNING_DISABLE_DEPRECATED; // Tests use QWaveDecoder
+
 using AudioSinkInitializer = bool (*)(QAudioSink &);
 
 class AudioPullSource : public QIODevice
@@ -89,6 +91,9 @@ private slots:
     void invalidFormat();
     void nullFormat();
 
+    void start_withSupportedSampleFormats_data();
+    void start_withSupportedSampleFormats();
+
     void bufferSize_data();
     void bufferSize();
     void bufferSize_getValidDefault();
@@ -96,6 +101,7 @@ private slots:
     void bufferSize_updatedAfterStart();
 
     void stopWhileStopped();
+    void stopWhileSuspended();
     void suspendWhileStopped();
     void resumeWhileStopped();
 
@@ -419,6 +425,38 @@ void tst_QAudioSink::nullFormat()
     }
 }
 
+void tst_QAudioSink::start_withSupportedSampleFormats_data()
+{
+    QTest::addColumn<QAudioFormat::SampleFormat>("sampleFormat");
+    for (auto sampleFormat : audioDevice.supportedSampleFormats()) {
+        QTest::newRow(QStringLiteral("Sample format: %1").arg(sampleFormat).toUtf8().constData())
+                      << sampleFormat;
+    }
+}
+
+void tst_QAudioSink::start_withSupportedSampleFormats()
+{
+    // Arrange
+    AudioPullSource source(true);
+    source.open(QIODevice::ReadOnly);
+
+    QFETCH(QAudioFormat::SampleFormat, sampleFormat);
+    QAudioFormat format = audioDevice.preferredFormat();
+    format.setSampleFormat(sampleFormat);
+    QAudioSink sink(audioDevice, format);
+
+    QSignalSpy stateSignal(&sink, &QAudioSink::stateChanged);
+
+    // Act
+    sink.start(&source);
+
+    // Assert
+    QTRY_COMPARE(stateSignal.count(), 1);
+    QCOMPARE(sink.state(), QAudio::ActiveState);
+    QCOMPARE(sink.error(), QAudio::NoError);
+    QTRY_COMPARE_GT(sink.processedUSecs(), 0);
+}
+
 void tst_QAudioSink::bufferSize_data()
 {
     QTest::addColumn<int>("bufferSize");
@@ -504,6 +542,22 @@ void tst_QAudioSink::stopWhileStopped()
     QVERIFY2((stateSignal.size() == 0), "stop() while stopped is emitting a signal and it shouldn't");
     QVERIFY2((audioSink.error() == QAudio::NoError),
              "error() was not set to QAudio::NoError after stop()");
+}
+
+void tst_QAudioSink::stopWhileSuspended()
+{
+    using namespace std::chrono_literals;
+
+    QAudioSink audioSink(audioDevice.preferredFormat(), this);
+    audioSink.start();
+    QTest::qWait(10ms); // give WASAPI worker thread a bit of time to arrive at WaitForSingleObject
+
+    audioSink.suspend();
+    QTRY_COMPARE_EQ(audioSink.state(), QAudio::SuspendedState);
+    QTest::qWait(10ms); // give WASAPI worker thread a bit of time to arrive at WaitForSingleObject
+
+    audioSink.stop();
+    QTRY_COMPARE_EQ(audioSink.state(), QAudio::StoppedState);
 }
 
 void tst_QAudioSink::suspendWhileStopped()
@@ -750,8 +804,12 @@ void tst_QAudioSink::pullResumeFromUnderrun()
 
     QTRY_COMPARE(stateSignal.size(), 1);
     QCOMPARE(audioSink.state(), QAudio::IdleState);
+    QT_WARNING_PUSH;
+    QT_WARNING_DISABLE_DEPRECATED;
     if (underrunIsAnError())
         QCOMPARE(audioSink.error(), QAudio::UnderrunError);
+    QT_WARNING_POP;
+
     stateSignal.clear();
 
     QTest::qWait(300);
@@ -1131,9 +1189,13 @@ void tst_QAudioSink::pushUnderrun()
                      .toUtf8()
                      .constData());
     QVERIFY2((audioSink.state() == QAudio::IdleState), "didn't transition to IdleState, no data");
-    if (underrunIsAnError())
+    if (underrunIsAnError()) {
+        QT_WARNING_PUSH;
+        QT_WARNING_DISABLE_DEPRECATED;
         QVERIFY2((audioSink.error() == QAudio::UnderrunError),
                  "error state is not equal to QAudio::UnderrunError, no data");
+        QT_WARNING_POP;
+    }
     stateSignal.clear();
 
     // Play rest of the clip
@@ -1225,6 +1287,10 @@ void tst_QAudioSink::stop_stopsAudioSink_whenInvokedUponFirstStateChange_data()
 
 void tst_QAudioSink::stop_stopsAudioSink_whenInvokedUponFirstStateChange()
 {
+    if (isAndroid)
+        // Revisit after migrating to AAudio
+        QSKIP("'initializer(audioSink)' returned FALSE");
+
     QFETCH(const AudioSinkInitializer, initializer);
 
     QAudioSink audioSink(testFormats.at(0));
@@ -1236,9 +1302,7 @@ void tst_QAudioSink::stop_stopsAudioSink_whenInvokedUponFirstStateChange()
 
     connect(&audioSink, &QAudioSink::stateChanged, this, stop, Qt::SingleShotConnection);
 
-    if (!initializer(audioSink))
-        QSKIP("Cannot start the audio sink"); // Pulse audio backend fails on some Linux CI.
-                                              // TODO: replace with QVERIFY
+    QVERIFY(initializer(audioSink));
 
     QTRY_COMPARE(audioSink.state(), QtAudio::State::StoppedState);
 }
@@ -1270,11 +1334,17 @@ void tst_QAudioSink::callbackAPI()
 
     QSemaphore sync;
 
-    platformSink->start([&](QSpan<float> outputBuffer) {
+    audioSink.start([&](QSpan<float> outputBuffer) {
         QCOMPARE_GT(outputBuffer.size(), 0);
         sync.release();
     });
     QCOMPARE(audioSink.error(), QAudio::Error::NoError);
+
+    QTRY_COMPARE(audioSink.state(), QAudio::State::ActiveState);
+
+    // ensure that we won't end up "idle", that does not make sense with the callback API
+    QTest::qWait(2s);
+    QCOMPARE_NE(audioSink.state(), QAudio::State::IdleState);
 
     bool callbackExecuted = sync.try_acquire_for(1s);
     QVERIFY(callbackExecuted);
@@ -1295,14 +1365,14 @@ void tst_QAudioSink::callbackAPI_startFailsWithWrongType()
     if (!platformSink->hasCallbackAPI())
         QSKIP("Callback API not supported by this backend");
 
-    platformSink->start([&](QSpan<int32_t>) {
+    audioSink.start([&](QSpan<int32_t>) {
     });
     QCOMPARE(audioSink.error(), QAudio::Error::OpenError);
 }
 
 void tst_QAudioSink::callbackAPI_startWithMoveOnlyFunctor()
 {
-#if QT_CONFIG(thread) && defined(__cpp_lib_move_only_function)
+#if QT_CONFIG(thread)
     using namespace std::chrono_literals;
 
     QAudioFormat format = audioDevice.preferredFormat();
@@ -1315,7 +1385,7 @@ void tst_QAudioSink::callbackAPI_startWithMoveOnlyFunctor()
 
     QSemaphore sync;
 
-    platformSink->start([&, dummy = std::make_unique<int>(1)](QSpan<float> outputBuffer) {
+    audioSink.start([&, dummy = std::make_unique<int>(1)](QSpan<float> outputBuffer) {
         QCOMPARE_GT(outputBuffer.size(), 0);
         sync.release();
     });

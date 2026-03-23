@@ -23,6 +23,7 @@
 #include "components/signin/public/base/signin_prefs.h"
 #include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/account_info.h"
+#include "components/signin/public/identity_manager/tribool.h"
 #include "google_apis/gaia/core_account_id.h"
 #include "google_apis/gaia/gaia_id.h"
 
@@ -160,7 +161,6 @@ void MaybeRecordWebSigninToChromeSigninTimes(
     case signin_metrics::AccessPoint::kAccountConsistencyService:
     case signin_metrics::AccessPoint::kSearchCompanion:
     case signin_metrics::AccessPoint::kSetUpList:
-    case signin_metrics::AccessPoint::kPasswordMigrationWarningAndroid:
     case signin_metrics::AccessPoint::kSaveToPhotosIos:
     case signin_metrics::AccessPoint::kChromeSigninInterceptBubble:
     case signin_metrics::AccessPoint::kRestorePrimaryAccountOnProfileLoad:
@@ -179,8 +179,26 @@ void MaybeRecordWebSigninToChromeSigninTimes(
     case signin_metrics::AccessPoint::kAccountMenuFailedSwitch:
     case signin_metrics::AccessPoint::kCctAccountMismatchNotification:
     case signin_metrics::AccessPoint::kDriveFilePickerIos:
-    case signin_metrics::AccessPoint::kCollaborationTabGroup:
+    case signin_metrics::AccessPoint::kCollaborationShareTabGroup:
     case signin_metrics::AccessPoint::kGlicLaunchButton:
+    case signin_metrics::AccessPoint::kHistoryPage:
+    case signin_metrics::AccessPoint::kCollaborationJoinTabGroup:
+    case signin_metrics::AccessPoint::kHistorySyncOptinExpansionPillOnStartup:
+    case signin_metrics::AccessPoint::kWidget:
+    case signin_metrics::AccessPoint::kCollaborationLeaveOrDeleteTabGroup:
+    case signin_metrics::AccessPoint::
+        kHistorySyncOptinExpansionPillOnInactivity:
+    case signin_metrics::AccessPoint::kHistorySyncEducationalTip:
+    case signin_metrics::AccessPoint::kManagedProfileAutoSigninIos:
+    case signin_metrics::AccessPoint::kNonModalSigninPasswordPromo:
+    case signin_metrics::AccessPoint::kNonModalSigninBookmarkPromo:
+    case signin_metrics::AccessPoint::kUserManagerWithPrefilledEmail:
+    case signin_metrics::AccessPoint::kEnterpriseManagementDisclaimerAtStartup:
+    case signin_metrics::AccessPoint::
+        kEnterpriseManagementDisclaimerAfterBrowserFocus:
+    case signin_metrics::AccessPoint::
+        kEnterpriseManagementDisclaimerAfterSignin:
+    case signin_metrics::AccessPoint::kNtpFeaturePromo:
       return;
   }
 
@@ -231,6 +249,8 @@ SigninMetricsService::SigninMetricsService(
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   RecordExplicitSigninMigrationStatus();
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+  UpdateIsManagedForAllAccounts();
 }
 
 SigninMetricsService::~SigninMetricsService() = default;
@@ -265,8 +285,13 @@ void SigninMetricsService::OnPrimaryAccountChanged(
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
       if (active_primary_accounts_metrics_recorder_) {
+        const CoreAccountInfo& account =
+            event_details.GetCurrentState().primary_account;
+        const AccountInfo& extended_info =
+            identity_manager_->FindExtendedAccountInfo(account);
+
         active_primary_accounts_metrics_recorder_->MarkAccountAsActiveNow(
-            event_details.GetCurrentState().primary_account.gaia);
+            account.gaia, extended_info.IsManaged());
       }
 
       break;
@@ -283,8 +308,31 @@ void SigninMetricsService::OnPrimaryAccountChanged(
 
   switch (event_details.GetEventTypeFor(signin::ConsentLevel::kSync)) {
     case signin::PrimaryAccountChangeEvent::Type::kNone:
-    case signin::PrimaryAccountChangeEvent::Type::kSet:
       break;
+    case signin::PrimaryAccountChangeEvent::Type::kSet: {
+      std::optional<signin_metrics::AccessPoint> access_point =
+          event_details.GetSetPrimaryAccountAccessPoint();
+      CHECK(access_point.has_value());
+      if (access_point == signin_metrics::AccessPoint::
+                              kHistorySyncOptinExpansionPillOnStartup ||
+          access_point == signin_metrics::AccessPoint::
+                              kHistorySyncOptinExpansionPillOnInactivity) {
+        SigninPrefs signin_prefs(pref_service_.get());
+        const CoreAccountInfo& account =
+            event_details.GetCurrentState().primary_account;
+        base::UmaHistogramExactLinear(
+            "Signin.SyncOptIn.IdentityPill.SyncAtShowCount",
+            switches::IsAvatarSyncPromoFeatureEnabled()
+                ? signin_prefs.GetSyncPromoIdentityPillShownCount(account.gaia)
+                : signin_prefs.GetHistorySyncPromoIdentityPillShownCount(
+                      account.gaia),
+            // Arbitrary number that is higher than the possible show count that
+            // the promo can reach
+            // (`user_education::features::GetNewBadgeShowCount()`: 10).
+            /*exclusive_max=*/30);
+      }
+      break;
+    }
     case signin::PrimaryAccountChangeEvent::Type::kCleared:
       if (pref_service_->HasPrefPath(kSyncPausedStartTimePref)) {
         RecordPendingResolutionTime(
@@ -320,11 +368,16 @@ void SigninMetricsService::OnErrorStateOfRefreshTokenUpdatedForAccount(
   }
 
   // Signin errors only exists with Explicit browser sign in -- SigninPending.
-  if (!switches::IsExplicitBrowserSigninUIOnDesktopEnabled()) {
-    return;
-  }
-
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
   HandleSigninErrors(error, token_operation_source);
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+  return;
+}
+
+void SigninMetricsService::Shutdown() {
+  identity_manager_scoped_observation_.Reset();
+  KeyedService::Shutdown();
 }
 
 void SigninMetricsService::HandleSyncErrors(
@@ -398,8 +451,7 @@ void SigninMetricsService::HandleSigninErrors(
 void SigninMetricsService::OnExtendedAccountInfoUpdated(
     const AccountInfo& info) {
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  if (switches::IsExplicitBrowserSigninUIOnDesktopEnabled() &&
-      info.access_point == signin_metrics::AccessPoint::kWebSignin &&
+  if (info.access_point == signin_metrics::AccessPoint::kWebSignin &&
       !identity_manager_->HasPrimaryAccount(signin::ConsentLevel::kSignin)) {
     ScopedDictPrefUpdate update(&pref_service_.get(),
                                 kWebSigninAccountStartTimesPref);
@@ -407,6 +459,12 @@ void SigninMetricsService::OnExtendedAccountInfoUpdated(
                 base::TimeToValue(base::Time::Now()));
   }
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+  if (active_primary_accounts_metrics_recorder_ &&
+      info.IsManaged() != signin::Tribool::kUnknown) {
+    active_primary_accounts_metrics_recorder_->MarkAccountAsManaged(
+        info.gaia, signin::TriboolToBoolOrDie(info.IsManaged()));
+  }
 }
 
 void SigninMetricsService::OnRefreshTokenRemovedForAccount(
@@ -418,6 +476,10 @@ void SigninMetricsService::OnRefreshTokenRemovedForAccount(
     update->Remove(core_account_id.ToString());
   }
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+}
+
+void SigninMetricsService::OnRefreshTokensLoaded() {
+  UpdateIsManagedForAllAccounts();
 }
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -483,3 +545,18 @@ void SigninMetricsService::RecordSigninInterceptionMetrics(
 }
 
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+void SigninMetricsService::UpdateIsManagedForAllAccounts() {
+  if (!active_primary_accounts_metrics_recorder_) {
+    return;
+  }
+  std::vector<AccountInfo> accounts =
+      identity_manager_->GetExtendedAccountInfoForAccountsWithRefreshToken();
+  for (const AccountInfo& extended_info : accounts) {
+    if (extended_info.IsManaged() != signin::Tribool::kUnknown) {
+      active_primary_accounts_metrics_recorder_->MarkAccountAsManaged(
+          extended_info.gaia,
+          signin::TriboolToBoolOrDie(extended_info.IsManaged()));
+    }
+  }
+}

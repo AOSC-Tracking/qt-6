@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -24,6 +25,10 @@ T.TextField {
     placeholderTextColor: control.palette.placeholderText
     verticalAlignment: TextInput.AlignVCenter
 
+    ContextMenu.menu: TextEditingContextMenu {
+        editor: control
+    }
+
     PlaceholderText {
         id: placeholder
         x: control.leftPadding
@@ -40,30 +45,7 @@ T.TextField {
         renderType: control.renderType
     }
 
-    background: Rectangle {
-        implicitWidth: 120
-        implicitHeight: 24
-
-        radius: 2
-        color: control.palette.base
-        border.color: control.activeFocus ? Fusion.highlightedOutline(control.palette) : Fusion.outline(control.palette)
-
-        Rectangle {
-            x: 1; y: 1
-            width: parent.width - 2
-            height: parent.height - 2
-            color: "transparent"
-            border.color: Color.transparent(Fusion.highlightedOutline(control.palette), 40 / 255)
-            visible: control.activeFocus
-            radius: 1.7
-        }
-
-        Rectangle {
-            x: 2
-            y: 1
-            width: parent.width - 4
-            height: 1
-            color: Fusion.topShadow
-        }
+    background: TextFieldBackground {
+        control: control
     }
 }

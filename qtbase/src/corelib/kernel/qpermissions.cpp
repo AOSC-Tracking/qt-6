@@ -119,18 +119,26 @@ Q_LOGGING_CATEGORY(lcPermissions, "qt.permissions", QtWarningMsg);
     To ensure the relevant permission backend is included with your
     application, please \l {QT_ANDROID_PACKAGE_SOURCE_DIR}
     {point the build system to your custom \c AndroidManifest.xml}
-    or use \l {qt_add_android_permission()}.
+    or use \l {qt_add_android_permission}().
 
     The relevant permission names are described in the documentation
     for each permission type.
 
-    \sa {Qt Creator: Editing Manifest Files}
+    \note When using this API, the \c{<!-- %%INSERT_PERMISSIONS -->} tag must be present in
+    the AndroidManifest.xml. For further information on the use of this tag,
+    see \l {Qt Permissions and Features}
+
+    \sa {Qt Creator: Editing Manifest Files}.
 
     \section1 Available Permissions
 
     The following permissions types are available:
 
     \annotatedlist permissions
+
+    \note The available permission types cover core functionality of Qt modules
+    like Qt Multimedia and Qt Positioning, but do not encompass all platform-specific
+    permissions. Custom permission types are not currently supported.
 
     \section1 Best Practices
 

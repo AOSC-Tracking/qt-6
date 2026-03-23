@@ -59,12 +59,12 @@
 #include "./centipede/shared_memory_blob_sequence.h"
 #include "./common/defs.h"
 
-__attribute__((
-    weak)) extern centipede::feature_t __start___centipede_extra_features;
-__attribute__((
-    weak)) extern centipede::feature_t __stop___centipede_extra_features;
+__attribute__((weak)) extern fuzztest::internal::feature_t
+    __start___centipede_extra_features;
+__attribute__((weak)) extern fuzztest::internal::feature_t
+    __stop___centipede_extra_features;
 
-namespace centipede {
+namespace fuzztest::internal {
 namespace {
 
 // Returns the length of the common prefix of `s1` and `s2`, but not more
@@ -100,38 +100,13 @@ GlobalRunnerState state __attribute__((init_priority(200)));
 // This avoids calls to __tls_init() in hot functions that use `tls`.
 __thread ThreadLocalRunnerState tls;
 
-// Tries to write `description` to `state.failure_description_path`.
-static void WriteFailureDescription(const char *description) {
-  // TODO(b/264715830): Remove I/O error logging once the bug is fixed?
-  if (state.failure_description_path == nullptr) return;
-  // Make sure that the write is atomic and only happens once.
-  [[maybe_unused]] static int write_once = [=] {
-    FILE *f = fopen(state.failure_description_path, "w");
-    if (f == nullptr) {
-      perror("FAILURE: fopen()");
-      return 0;
-    }
-    const auto len = strlen(description);
-    if (fwrite(description, 1, len, f) != len) {
-      perror("FAILURE: fwrite()");
-    }
-    if (fflush(f) != 0) {
-      perror("FAILURE: fflush()");
-    }
-    if (fclose(f) != 0) {
-      perror("FAILURE: fclose()");
-    }
-    return 0;
-  }();
-}
-
 void ThreadLocalRunnerState::TraceMemCmp(uintptr_t caller_pc, const uint8_t *s1,
                                          const uint8_t *s2, size_t n,
                                          bool is_equal) {
   if (state.run_time_flags.use_cmp_features) {
     const uintptr_t pc_offset = caller_pc - state.main_object.start_address;
     const uintptr_t hash =
-        centipede::Hash64Bits(pc_offset) ^ tls.path_ring_buffer.hash();
+        fuzztest::internal::Hash64Bits(pc_offset) ^ tls.path_ring_buffer.hash();
     const size_t lcp = LengthOfCommonPrefix(s1, s2, n);
     // lcp is a 6-bit number.
     state.cmp_feature_set.set((hash << 6) | lcp);
@@ -216,33 +191,37 @@ static void CheckWatchdogLimits() {
     const char *units;
     uint64_t value;
     uint64_t limit;
+    bool ignore_report;
     const char *failure;
   };
   const uint64_t input_start_time = state.input_start_time;
   const uint64_t batch_start_time = state.batch_start_time;
   if (input_start_time == 0 || batch_start_time == 0) return;
   const Resource resources[] = {
-      {
-          .what = "Per-input timeout",
-          .units = "sec",
-          .value = curr_time - input_start_time,
-          .limit = state.run_time_flags.timeout_per_input,
-          .failure = kExecutionFailurePerInputTimeout.data(),
-      },
-      {
-          .what = "Per-batch timeout",
-          .units = "sec",
-          .value = curr_time - batch_start_time,
-          .limit = state.run_time_flags.timeout_per_batch,
-          .failure = kExecutionFailurePerBatchTimeout.data(),
-      },
-      {
-          .what = "RSS limit",
-          .units = "MB",
-          .value = GetPeakRSSMb(),
-          .limit = state.run_time_flags.rss_limit_mb,
-          .failure = kExecutionFailureRssLimitExceeded.data(),
-      },
+      {Resource{
+          /*what=*/"Per-input timeout",
+          /*units=*/"sec",
+          /*value=*/curr_time - input_start_time,
+          /*limit=*/state.run_time_flags.timeout_per_input,
+          /*ignore_report=*/state.run_time_flags.ignore_timeout_reports != 0,
+          /*failure=*/kExecutionFailurePerInputTimeout.data(),
+      }},
+      {Resource{
+          /*what=*/"Per-batch timeout",
+          /*units=*/"sec",
+          /*value=*/curr_time - batch_start_time,
+          /*limit=*/state.run_time_flags.timeout_per_batch,
+          /*ignore_report=*/state.run_time_flags.ignore_timeout_reports != 0,
+          /*failure=*/kExecutionFailurePerBatchTimeout.data(),
+      }},
+      {Resource{
+          /*what=*/"RSS limit",
+          /*units=*/"MB",
+          /*value=*/GetPeakRSSMb(),
+          /*limit=*/state.run_time_flags.rss_limit_mb,
+          /*ignore_report=*/false,
+          /*failure=*/kExecutionFailureRssLimitExceeded.data(),
+      }},
   };
   for (const auto &resource : resources) {
     if (resource.limit != 0 && resource.value > resource.limit) {
@@ -251,12 +230,32 @@ static void CheckWatchdogLimits() {
       // `RunOneInput()` after all the work is done.
       static std::atomic<bool> already_handling_failure = false;
       if (!already_handling_failure.exchange(true)) {
+        if (resource.ignore_report) {
+          fprintf(stderr,
+                  "========= %s exceeded: %" PRIu64 " > %" PRIu64
+                  " (%s); exiting without reporting as an error\n",
+                  resource.what, resource.value, resource.limit,
+                  resource.units);
+          std::_Exit(0);
+          // should not return here.
+        }
         fprintf(stderr,
                 "========= %s exceeded: %" PRIu64 " > %" PRIu64
                 " (%s); exiting\n",
                 resource.what, resource.value, resource.limit, resource.units);
-        WriteFailureDescription(resource.failure);
-        abort();
+        fprintf(
+            stderr,
+            "=============================================================="
+            "===\n"
+            "=== BUG FOUND!\n The %s is set to %" PRIu64
+            " (%s), but it exceeded %" PRIu64
+            ".\n"
+            "Find out how to adjust the resource limits at "
+            "https://github.com/google/fuzztest/tree/main/doc/flags-reference.md"
+            "\n",
+            resource.what, resource.limit, resource.units, resource.value);
+        CentipedeSetFailureDescription(resource.failure);
+        std::abort();
       }
     }
   }
@@ -291,9 +290,9 @@ __attribute__((noinline)) void CheckStackLimit(uintptr_t sp) {
             " > %zu"
             " (byte); aborting\n",
             tls.top_frame_sp - sp, stack_limit);
-    centipede::WriteFailureDescription(
-        centipede::kExecutionFailureStackLimitExceeded.data());
-    abort();
+    CentipedeSetFailureDescription(
+        fuzztest::internal::kExecutionFailureStackLimitExceeded.data());
+    std::abort();
   }
 }
 
@@ -352,6 +351,7 @@ CentipedeLLVMFuzzerMutateCallback(uint8_t *data, size_t size, size_t max_size) {
   }
 
   ByteArray array(data, data + size);
+  state.byte_array_mutator->set_max_len(max_size);
   state.byte_array_mutator->Mutate(array);
   if (array.size() > max_size) {
     array.resize(max_size);
@@ -397,7 +397,7 @@ PrepareCoverage(bool full_clear) {
     });
   }
   {
-    centipede::LockGuard lock(state.execution_result_override_mu);
+    fuzztest::internal::LockGuard lock(state.execution_result_override_mu);
     if (state.execution_result_override != nullptr) {
       state.execution_result_override->ClearAndResize(0);
     }
@@ -561,8 +561,14 @@ void RunnerCallbacks::GetSeeds(std::function<void(ByteSpan)> seed_callback) {
 
 std::string RunnerCallbacks::GetSerializedTargetConfig() { return ""; }
 
-void RunnerCallbacks::OnFailure(
-    std::function<void(std::string_view)> /*failure_description_callback*/) {}
+bool RunnerCallbacks::Mutate(
+    const std::vector<MutationInputRef> & /*inputs*/, size_t /*num_mutants*/,
+    std::function<void(ByteSpan)> /*new_mutant_callback*/) {
+  RunnerCheck(!HasCustomMutator(),
+              "Class deriving from RunnerCallbacks must implement Mutate() if "
+              "HasCustomMutator() returns true.");
+  return true;
+}
 
 class LegacyRunnerCallbacks : public RunnerCallbacks {
  public:
@@ -582,6 +588,11 @@ class LegacyRunnerCallbacks : public RunnerCallbacks {
         "test_on_input_cb returns invalid value other than -1 and 0");
     return retval == 0;
   }
+
+  bool HasCustomMutator() const override {
+    return custom_mutator_cb_ != nullptr;
+  }
+
   bool Mutate(const std::vector<MutationInputRef> &inputs, size_t num_mutants,
               std::function<void(ByteSpan)> new_mutant_callback) override;
 
@@ -616,7 +627,7 @@ static void RunOneInput(const uint8_t *data, size_t size,
   int target_return_value = callbacks.Execute({data, size}) ? 0 : -1;
   state.stats.exec_time_usec = UsecSinceLast();
   CheckWatchdogLimits();
-  if (centipede::state.input_start_time.exchange(0) != 0) {
+  if (fuzztest::internal::state.input_start_time.exchange(0) != 0) {
     PostProcessCoverage(target_return_value);
   }
   state.stats.post_time_usec = UsecSinceLast();
@@ -751,10 +762,8 @@ static int ExecuteInputsFromShmem(BlobSequence &inputs_blobseq,
                                   BlobSequence &outputs_blobseq,
                                   RunnerCallbacks &callbacks) {
   size_t num_inputs = 0;
-  if (!runner_request::IsExecutionRequest(inputs_blobseq.Read()))
-    return EXIT_FAILURE;
-  if (!runner_request::IsNumInputs(inputs_blobseq.Read(), num_inputs))
-    return EXIT_FAILURE;
+  if (!IsExecutionRequest(inputs_blobseq.Read())) return EXIT_FAILURE;
+  if (!IsNumInputs(inputs_blobseq.Read(), num_inputs)) return EXIT_FAILURE;
 
   CentipedeBeginExecutionBatch();
 
@@ -762,7 +771,7 @@ static int ExecuteInputsFromShmem(BlobSequence &inputs_blobseq,
     auto blob = inputs_blobseq.Read();
     // TODO(kcc): distinguish bad input from end of stream.
     if (!blob.IsValid()) return EXIT_SUCCESS;  // no more blobs to read.
-    if (!runner_request::IsDataInput(blob)) return EXIT_FAILURE;
+    if (!IsDataInput(blob)) return EXIT_FAILURE;
 
     // TODO(kcc): [impl] handle sizes larger than kMaxDataSize.
     size_t size = std::min(kMaxDataSize, blob.size);
@@ -784,7 +793,7 @@ static int ExecuteInputsFromShmem(BlobSequence &inputs_blobseq,
 
 // Dumps the pc table to `output_path`.
 // Requires that state.main_object is already computed.
-static void DumpPcTable(absl::Nonnull<const char *> output_path) {
+static void DumpPcTable(const char *absl_nonnull output_path) {
   PrintErrorAndExitIf(!state.main_object.IsSet(), "main_object is not set");
   FILE *output_file = fopen(output_path, "w");
   PrintErrorAndExitIf(output_file == nullptr, "can't open output file");
@@ -800,7 +809,7 @@ static void DumpPcTable(absl::Nonnull<const char *> output_path) {
 
 // Dumps the control-flow table to `output_path`.
 // Requires that state.main_object is already computed.
-static void DumpCfTable(absl::Nonnull<const char *> output_path) {
+static void DumpCfTable(const char *absl_nonnull output_path) {
   PrintErrorAndExitIf(!state.main_object.IsSet(), "main_object is not set");
   FILE *output_file = fopen(output_path, "w");
   PrintErrorAndExitIf(output_file == nullptr, "can't open output file");
@@ -816,7 +825,7 @@ static void DumpCfTable(absl::Nonnull<const char *> output_path) {
 
 // Dumps a DsoTable as a text file. Each line contains the file path and the
 // number of instrumented PCs.
-static void DumpDsoTable(absl::Nonnull<const char *> output_path) {
+static void DumpDsoTable(const char *absl_nonnull output_path) {
   FILE *output_file = fopen(output_path, "w");
   RunnerCheck(output_file != nullptr, "DumpDsoTable: can't open output file");
   DsoTable dso_table = state.sancov_objects.CreateDsoTable();
@@ -882,12 +891,9 @@ static int MutateInputsFromShmem(BlobSequence &inputs_blobseq,
   // Read max_num_mutants.
   size_t num_mutants = 0;
   size_t num_inputs = 0;
-  if (!runner_request::IsMutationRequest(inputs_blobseq.Read()))
-    return EXIT_FAILURE;
-  if (!runner_request::IsNumMutants(inputs_blobseq.Read(), num_mutants))
-    return EXIT_FAILURE;
-  if (!runner_request::IsNumInputs(inputs_blobseq.Read(), num_inputs))
-    return EXIT_FAILURE;
+  if (!IsMutationRequest(inputs_blobseq.Read())) return EXIT_FAILURE;
+  if (!IsNumMutants(inputs_blobseq.Read(), num_mutants)) return EXIT_FAILURE;
+  if (!IsNumInputs(inputs_blobseq.Read(), num_inputs)) return EXIT_FAILURE;
 
   // Mutation input with ownership.
   struct MutationInput {
@@ -906,21 +912,34 @@ static int MutateInputsFromShmem(BlobSequence &inputs_blobseq,
     // If inputs_blobseq have overflown in the engine, we still want to
     // handle the first few inputs.
     ExecutionMetadata metadata;
-    if (!runner_request::IsExecutionMetadata(inputs_blobseq.Read(), metadata)) {
+    if (!IsExecutionMetadata(inputs_blobseq.Read(), metadata)) {
       break;
     }
     auto blob = inputs_blobseq.Read();
-    if (!runner_request::IsDataInput(blob)) break;
-    inputs.push_back({.data = {blob.data, blob.data + blob.size},
-                      .metadata = std::move(metadata)});
+    if (!IsDataInput(blob)) break;
+    inputs.push_back(
+        MutationInput{/*data=*/ByteArray{blob.data, blob.data + blob.size},
+                      /*metadata=*/std::move(metadata)});
     input_refs.push_back(
-        {.data = inputs.back().data, .metadata = &inputs.back().metadata});
+        MutationInputRef{/*data=*/inputs.back().data,
+                         /*metadata=*/&inputs.back().metadata});
   }
 
-  if (!callbacks.Mutate(input_refs, num_mutants, [&](ByteSpan mutant) {
-        outputs_blobseq.Write({1 /*unused tag*/, mutant.size(), mutant.data()});
-      }))
+  if (!inputs.empty()) {
+    state.byte_array_mutator->SetMetadata(inputs[0].metadata);
+  }
+
+  if (!MutationResult::WriteHasCustomMutator(callbacks.HasCustomMutator(),
+                                             outputs_blobseq)) {
     return EXIT_FAILURE;
+  }
+  if (!callbacks.HasCustomMutator()) return EXIT_SUCCESS;
+
+  if (!callbacks.Mutate(input_refs, num_mutants, [&](ByteSpan mutant) {
+        MutationResult::WriteMutant(mutant, outputs_blobseq);
+      })) {
+    return EXIT_FAILURE;
+  }
   return EXIT_SUCCESS;
 }
 
@@ -930,16 +949,16 @@ bool LegacyRunnerCallbacks::Mutate(
   if (custom_mutator_cb_ == nullptr) return false;
   unsigned int seed = GetRandomSeed();
   const size_t num_inputs = inputs.size();
-  constexpr size_t kMaxMutantSize = kMaxDataSize;
+  const size_t max_mutant_size = state.run_time_flags.max_len;
   constexpr size_t kAverageMutationAttempts = 2;
-  ByteArray mutant(kMaxMutantSize);
+  ByteArray mutant(max_mutant_size);
   for (size_t attempt = 0, num_outputs = 0;
        attempt < num_mutants * kAverageMutationAttempts &&
        num_outputs < num_mutants;
        ++attempt) {
     const auto &input_data = inputs[rand_r(&seed) % num_inputs].data;
 
-    size_t size = std::min(input_data.size(), kMaxMutantSize);
+    size_t size = std::min(input_data.size(), max_mutant_size);
     std::copy(input_data.cbegin(), input_data.cbegin() + size, mutant.begin());
     size_t new_size = 0;
     if ((custom_crossover_cb_ != nullptr) &&
@@ -948,9 +967,9 @@ bool LegacyRunnerCallbacks::Mutate(
       const auto &other_data = inputs[rand_r(&seed) % num_inputs].data;
       new_size = custom_crossover_cb_(
           input_data.data(), input_data.size(), other_data.data(),
-          other_data.size(), mutant.data(), kMaxMutantSize, rand_r(&seed));
+          other_data.size(), mutant.data(), max_mutant_size, rand_r(&seed));
     } else {
-      new_size = custom_mutator_cb_(mutant.data(), size, kMaxMutantSize,
+      new_size = custom_mutator_cb_(mutant.data(), size, max_mutant_size,
                                     rand_r(&seed));
     }
     if (new_size == 0) continue;
@@ -1124,10 +1143,6 @@ int RunnerMain(int argc, char **argv, RunnerCallbacks &callbacks) {
     return EXIT_SUCCESS;
   }
 
-  callbacks.OnFailure([](std::string_view failure_description) {
-    WriteFailureDescription(std::string(failure_description).c_str());
-  });
-
   // Inputs / outputs from shmem.
   if (state.HasFlag(":shmem:")) {
     if (!state.arg1 || !state.arg2) return EXIT_FAILURE;
@@ -1135,7 +1150,7 @@ int RunnerMain(int argc, char **argv, RunnerCallbacks &callbacks) {
     SharedMemoryBlobSequence outputs_blobseq(state.arg2);
     // Read the first blob. It indicates what further actions to take.
     auto request_type_blob = inputs_blobseq.Read();
-    if (runner_request::IsMutationRequest(request_type_blob)) {
+    if (IsMutationRequest(request_type_blob)) {
       // Since we are mutating, no need to spend time collecting the coverage.
       // We still pay for executing the coverage callbacks, but those will
       // return immediately.
@@ -1150,7 +1165,7 @@ int RunnerMain(int argc, char **argv, RunnerCallbacks &callbacks) {
           new ByteArrayMutator(state.knobs, GetRandomSeed());
       return MutateInputsFromShmem(inputs_blobseq, outputs_blobseq, callbacks);
     }
-    if (runner_request::IsExecutionRequest(request_type_blob)) {
+    if (IsExecutionRequest(request_type_blob)) {
       // Execution request.
       inputs_blobseq.Reset();
       return ExecuteInputsFromShmem(inputs_blobseq, outputs_blobseq, callbacks);
@@ -1165,14 +1180,14 @@ int RunnerMain(int argc, char **argv, RunnerCallbacks &callbacks) {
   return EXIT_SUCCESS;
 }
 
-}  // namespace centipede
+}  // namespace fuzztest::internal
 
 extern "C" int LLVMFuzzerRunDriver(
-    absl::Nonnull<int *> argc, absl::Nonnull<char ***> argv,
+    int *absl_nonnull argc, char ***absl_nonnull argv,
     FuzzerTestOneInputCallback test_one_input_cb) {
   if (LLVMFuzzerInitialize) LLVMFuzzerInitialize(argc, argv);
   return RunnerMain(*argc, *argv,
-                    *centipede::CreateLegacyRunnerCallbacks(
+                    *fuzztest::internal::CreateLegacyRunnerCallbacks(
                         test_one_input_cb, LLVMFuzzerCustomMutator,
                         LLVMFuzzerCustomCrossOver));
 }
@@ -1183,13 +1198,13 @@ extern "C" __attribute__((used)) void __libfuzzer_is_present() {}
 extern "C" void CentipedeSetRssLimit(size_t rss_limit_mb) {
   fprintf(stderr, "CentipedeSetRssLimit: changing rss_limit_mb to %zu\n",
           rss_limit_mb);
-  centipede::state.run_time_flags.rss_limit_mb = rss_limit_mb;
+  fuzztest::internal::state.run_time_flags.rss_limit_mb = rss_limit_mb;
 }
 
 extern "C" void CentipedeSetStackLimit(size_t stack_limit_kb) {
   fprintf(stderr, "CentipedeSetStackLimit: changing stack_limit_kb to %zu\n",
           stack_limit_kb);
-  centipede::state.run_time_flags.stack_limit_kb = stack_limit_kb;
+  fuzztest::internal::state.run_time_flags.stack_limit_kb = stack_limit_kb;
 }
 
 extern "C" void CentipedeSetTimeoutPerInput(uint64_t timeout_per_input) {
@@ -1197,10 +1212,11 @@ extern "C" void CentipedeSetTimeoutPerInput(uint64_t timeout_per_input) {
           "CentipedeSetTimeoutPerInput: changing timeout_per_input to %" PRIu64
           "\n",
           timeout_per_input);
-  centipede::state.run_time_flags.timeout_per_input = timeout_per_input;
+  fuzztest::internal::state.run_time_flags.timeout_per_input =
+      timeout_per_input;
 }
 
-extern "C" __attribute__((weak)) absl::Nullable<const char *>
+extern "C" __attribute__((weak)) const char *absl_nullable
 CentipedeGetRunnerFlags() {
   if (const char *runner_flags_env = getenv("CENTIPEDE_RUNNER_FLAGS"))
     return strdup(runner_flags_env);
@@ -1217,7 +1233,7 @@ extern "C" void CentipedeBeginExecutionBatch() {
     _exit(EXIT_FAILURE);
   }
   in_execution_batch = true;
-  centipede::PrepareCoverage(/*full_clear=*/true);
+  fuzztest::internal::PrepareCoverage(/*full_clear=*/true);
 }
 
 extern "C" void CentipedeEndExecutionBatch() {
@@ -1228,44 +1244,70 @@ extern "C" void CentipedeEndExecutionBatch() {
     _exit(EXIT_FAILURE);
   }
   in_execution_batch = false;
-  centipede::state.input_start_time = 0;
-  centipede::state.batch_start_time = 0;
+  fuzztest::internal::state.input_start_time = 0;
+  fuzztest::internal::state.batch_start_time = 0;
 }
 
 extern "C" void CentipedePrepareProcessing() {
-  centipede::PrepareCoverage(/*full_clear=*/!in_execution_batch);
-  centipede::state.ResetTimers();
+  fuzztest::internal::PrepareCoverage(/*full_clear=*/!in_execution_batch);
+  fuzztest::internal::state.ResetTimers();
 }
 
 extern "C" void CentipedeFinalizeProcessing() {
-  centipede::CheckWatchdogLimits();
-  if (centipede::state.input_start_time.exchange(0) != 0) {
-    centipede::PostProcessCoverage(/*target_return_value=*/0);
+  fuzztest::internal::CheckWatchdogLimits();
+  if (fuzztest::internal::state.input_start_time.exchange(0) != 0) {
+    fuzztest::internal::PostProcessCoverage(/*target_return_value=*/0);
   }
 }
 
 extern "C" size_t CentipedeGetExecutionResult(uint8_t *data, size_t capacity) {
-  centipede::BlobSequence outputs_blobseq(data, capacity);
-  if (!centipede::StartSendingOutputsToEngine(outputs_blobseq)) return 0;
-  if (!centipede::FinishSendingOutputsToEngine(outputs_blobseq)) return 0;
+  fuzztest::internal::BlobSequence outputs_blobseq(data, capacity);
+  if (!fuzztest::internal::StartSendingOutputsToEngine(outputs_blobseq))
+    return 0;
+  if (!fuzztest::internal::FinishSendingOutputsToEngine(outputs_blobseq))
+    return 0;
   return outputs_blobseq.offset();
 }
 
 extern "C" size_t CentipedeGetCoverageData(uint8_t *data, size_t capacity) {
-  return centipede::CopyFeatures(data, capacity);
+  return fuzztest::internal::CopyFeatures(data, capacity);
 }
 
 extern "C" void CentipedeSetExecutionResult(const uint8_t *data, size_t size) {
-  using centipede::state;
-  centipede::LockGuard lock(state.execution_result_override_mu);
+  using fuzztest::internal::state;
+  fuzztest::internal::LockGuard lock(state.execution_result_override_mu);
   if (!state.execution_result_override)
-    state.execution_result_override = new centipede::BatchResult();
+    state.execution_result_override = new fuzztest::internal::BatchResult();
   state.execution_result_override->ClearAndResize(1);
   if (data == nullptr) return;
   // Removing const here should be fine as we don't write to `blobseq`.
-  centipede::BlobSequence blobseq(const_cast<uint8_t *>(data), size);
+  fuzztest::internal::BlobSequence blobseq(const_cast<uint8_t *>(data), size);
   state.execution_result_override->Read(blobseq);
-  centipede::RunnerCheck(
+  fuzztest::internal::RunnerCheck(
       state.execution_result_override->num_outputs_read() == 1,
       "Failed to set execution result from CentipedeSetExecutionResult");
+}
+
+extern "C" void CentipedeSetFailureDescription(const char *description) {
+  using fuzztest::internal::state;
+  if (state.failure_description_path == nullptr) return;
+  // Make sure that the write is atomic and only happens once.
+  [[maybe_unused]] static int write_once = [=] {
+    FILE *f = fopen(state.failure_description_path, "w");
+    if (f == nullptr) {
+      perror("FAILURE: fopen()");
+      return 0;
+    }
+    const auto len = strlen(description);
+    if (fwrite(description, 1, len, f) != len) {
+      perror("FAILURE: fwrite()");
+    }
+    if (fflush(f) != 0) {
+      perror("FAILURE: fflush()");
+    }
+    if (fclose(f) != 0) {
+      perror("FAILURE: fclose()");
+    }
+    return 0;
+  }();
 }

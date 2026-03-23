@@ -20,7 +20,6 @@
 #include "components/manta/provider_params.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
-#include "url/gurl.h"
 
 namespace manta {
 
@@ -36,6 +35,7 @@ class COMPONENT_EXPORT(MANTA) WalrusProvider : virtual public BaseProvider {
     kInputImage,
     kOutputImage,
     kGeneratedRegion,
+    kGeneratedRegionOutpainting,
   };
 
   // Returns a `WalrusProvider` instance tied to the profile of the passed

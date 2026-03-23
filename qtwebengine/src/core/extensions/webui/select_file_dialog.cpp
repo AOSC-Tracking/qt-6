@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "select_file_dialog.h"
 
@@ -47,5 +48,5 @@ void SelectFileDialog::ShowDialog(SelectedCallback selected_callback,
     base::FilePath::StringType ext;
     ui::SelectFileDialog::FileTypeInfo file_type_info;
     select_file_dialog_->SelectFile(ui::SelectFileDialog::SELECT_FOLDER, std::u16string(),
-                                    default_path, &file_type_info, 0, ext, nullptr, nullptr);
+                                    default_path, &file_type_info, 0, ext, {}, nullptr);
 }

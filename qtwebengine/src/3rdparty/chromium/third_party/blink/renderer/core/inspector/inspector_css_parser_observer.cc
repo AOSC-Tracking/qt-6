@@ -6,6 +6,7 @@
 
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/inspector/inspector_audits_issue.h"
 
@@ -160,20 +161,25 @@ CSSRuleSourceData* InspectorCSSParserObserver::PopRuleData() {
 namespace {
 
 wtf_size_t FindColonIndex(const String& property_string) {
-  wtf_size_t index = 0;
-  while (index != kNotFound && index < property_string.length()) {
-    index = std::min(property_string.Find("/*", index),
-                     property_string.Find(":", index));
-    if (index == kNotFound || property_string[index] == ':') {
+  for (wtf_size_t index = 0;
+       index != kNotFound && index < property_string.length(); index++) {
+    if (property_string[index] == '\\') {
+      // Next character is escaped, skip over it.
+      index++;
+    } else if (property_string[index] == ':') {
       return index;
-    }
-    if (index >= property_string.length() - 2) {
-      return kNotFound;
-    }
-    // We're in a comment inside the property name, skip past it.
-    index = property_string.Find("*/", index + 2);
-    if (index != kNotFound) {
-      index += 2;
+    } else if (index < property_string.length() - 1 &&
+               property_string[index] == '/' &&
+               property_string[index + 1 == '*']) {
+      if (index >= property_string.length() - 2) {
+        return kNotFound;
+      }
+      // We're in a comment inside the property name, skip past it.
+      index = property_string.Find("*/", index + 2);
+      if (index != kNotFound) {
+        // "*/" are two characters. Advance one more than the for-loop.
+        index++;
+      }
     }
   }
   return kNotFound;
@@ -260,14 +266,13 @@ void InspectorCSSParserObserver::ObserveComment(unsigned start_offset,
   }
 
   // FIXME: Use the actual rule type rather than STYLE_RULE?
-  CSSRuleSourceDataList* source_data =
-      MakeGarbageCollected<CSSRuleSourceDataList>();
+  CSSRuleSourceDataList source_data;
 
-  InspectorCSSParserObserver observer(comment_text, document_, source_data);
+  InspectorCSSParserObserver observer(comment_text, document_, &source_data);
   CSSParser::ParseDeclarationListForInspector(
       ParserContextForDocument(document_), comment_text, observer);
   Vector<CSSPropertySourceData>& comment_property_data =
-      source_data->front()->property_data;
+      source_data.front()->property_data;
   if (comment_property_data.size() != 1) {
     return;
   }
@@ -494,7 +499,7 @@ const LineEndings* InspectorCSSParserObserver::GetLineEndings() {
   if (line_endings_->size() > 0) {
     return line_endings_.get();
   }
-  line_endings_ = WTF::GetLineEndings(parsed_text_);
+  line_endings_ = blink::GetLineEndings(parsed_text_);
   return line_endings_.get();
 }
 

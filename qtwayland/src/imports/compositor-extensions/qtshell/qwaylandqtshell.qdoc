@@ -16,7 +16,7 @@
     For other use cases, consider using IviApplication or XdgShell instead.
     \section2 Usage
     To use this module, import it like this:
-    \qml
+    \code
     import QtWayland.Compositor.IviApplication
-    \endqml
+    \endcode
 */

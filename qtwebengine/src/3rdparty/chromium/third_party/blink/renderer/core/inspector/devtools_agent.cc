@@ -34,18 +34,14 @@
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
 
-namespace WTF {
+namespace blink {
 
-using StatePtr = mojo::StructPtr<blink::mojom::blink::DevToolsSessionState>;
+using StatePtr = mojo::StructPtr<mojom::blink::DevToolsSessionState>;
 template <>
 struct CrossThreadCopier<StatePtr>
     : public CrossThreadCopierByValuePassThrough<StatePtr> {
   STATIC_ONLY(CrossThreadCopier);
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 namespace {
 
@@ -118,6 +114,7 @@ class DevToolsAgent::IOAgent : public mojom::blink::DevToolsAgent {
           main_session,
       mojo::PendingReceiver<mojom::blink::DevToolsSession> io_session,
       mojom::blink::DevToolsSessionStatePtr reattach_session_state,
+      const WTF::String& script_to_evaluate_on_load,
       bool client_expects_binary_responses,
       bool client_is_trusted,
       const WTF::String& session_id,
@@ -128,8 +125,9 @@ class DevToolsAgent::IOAgent : public mojom::blink::DevToolsAgent {
         &::blink::DevToolsAgent::AttachDevToolsSessionImpl,
         MakeUnwrappingCrossThreadWeakHandle(agent_), std::move(host),
         std::move(main_session), std::move(io_session),
-        std::move(reattach_session_state), client_expects_binary_responses,
-        client_is_trusted, session_id, session_waits_for_debugger));
+        std::move(reattach_session_state), script_to_evaluate_on_load,
+        client_expects_binary_responses, client_is_trusted, session_id,
+        session_waits_for_debugger));
   }
 
   void InspectElement(const gfx::Point& point) override {
@@ -257,6 +255,7 @@ void DevToolsAgent::AttachDevToolsSessionImpl(
         session_receiver,
     mojo::PendingReceiver<mojom::blink::DevToolsSession> io_session_receiver,
     mojom::blink::DevToolsSessionStatePtr reattach_session_state,
+    const WTF::String& script_to_evaluate_on_load,
     bool client_expects_binary_responses,
     bool client_is_trusted,
     const WTF::String& session_id,
@@ -266,8 +265,8 @@ void DevToolsAgent::AttachDevToolsSessionImpl(
   DevToolsSession* session = MakeGarbageCollected<DevToolsSession>(
       this, std::move(host), std::move(session_receiver),
       std::move(io_session_receiver), std::move(reattach_session_state),
-      client_expects_binary_responses, client_is_trusted, session_id,
-      session_waits_for_debugger,
+      script_to_evaluate_on_load, client_expects_binary_responses,
+      client_is_trusted, session_id, session_waits_for_debugger,
       // crbug.com/333093232: Mojo ignores the task runner passed to Bind for
       // channel associated interfaces but uses it for disconnect. Since
       // devtools relies on a disconnect handler for detaching and is sensitive
@@ -293,6 +292,7 @@ void DevToolsAgent::AttachDevToolsSession(
         session_receiver,
     mojo::PendingReceiver<mojom::blink::DevToolsSession> io_session_receiver,
     mojom::blink::DevToolsSessionStatePtr reattach_session_state,
+    const WTF::String& script_to_evaluate_on_load,
     bool client_expects_binary_responses,
     bool client_is_trusted,
     const WTF::String& session_id,
@@ -304,14 +304,15 @@ void DevToolsAgent::AttachDevToolsSession(
     AttachDevToolsSessionImpl(
         std::move(host), std::move(session_receiver),
         std::move(io_session_receiver), std::move(reattach_session_state),
-        client_expects_binary_responses, client_is_trusted, session_id,
+        script_to_evaluate_on_load, client_expects_binary_responses,
+        client_is_trusted, session_id,
         /* session_waits_for_debugger */ false);
   } else {
     io_agent_->AttachDevToolsSession(
         std::move(host), std::move(session_receiver),
         std::move(io_session_receiver), std::move(reattach_session_state),
-        client_expects_binary_responses, client_is_trusted, session_id,
-        session_waits_for_debugger);
+        script_to_evaluate_on_load, client_expects_binary_responses,
+        client_is_trusted, session_id, session_waits_for_debugger);
   }
 }
 

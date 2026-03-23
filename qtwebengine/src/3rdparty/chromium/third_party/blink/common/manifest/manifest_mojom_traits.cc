@@ -6,6 +6,7 @@
 
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "base/strings/utf_string_conversions.h"
 #include "mojo/public/cpp/base/string16_mojom_traits.h"
@@ -102,6 +103,22 @@ bool StructTraits<blink::mojom::ManifestShortcutItemDataView,
 
   if (!data.ReadIcons(&out->icons))
     return false;
+
+  if (!data.ReadIconsLocalized(&out->icons_localized)) {
+    return false;
+  }
+
+  if (!data.ReadNameLocalized(&out->name_localized)) {
+    return false;
+  }
+
+  if (!data.ReadShortNameLocalized(&out->short_name_localized)) {
+    return false;
+  }
+
+  if (!data.ReadDescriptionLocalized(&out->description_localized)) {
+    return false;
+  }
 
   return true;
 }
@@ -238,11 +255,28 @@ bool StructTraits<blink::mojom::NewTabButtonParamsDataView,
   return data.ReadUrl(&out->url);
 }
 
+bool StructTraits<blink::mojom::ManifestLocalizedTextObjectDataView,
+                  ::blink::Manifest::ManifestLocalizedTextObject>::
+    Read(blink::mojom::ManifestLocalizedTextObjectDataView data,
+         ::blink::Manifest::ManifestLocalizedTextObject* out) {
+  if (!data.ReadValue(&out->value)) {
+    return false;
+  }
+
+  out->dir = data.dir();
+
+  if (!data.ReadLang(&out->lang)) {
+    return false;
+  }
+
+  return true;
+}
+
 blink::mojom::HomeTabUnionDataView::Tag
 UnionTraits<blink::mojom::HomeTabUnionDataView,
             ::blink::Manifest::TabStrip::HomeTab>::
     GetTag(const ::blink::Manifest::TabStrip::HomeTab& value) {
-  if (absl::holds_alternative<blink::mojom::TabStripMemberVisibility>(value)) {
+  if (std::holds_alternative<blink::mojom::TabStripMemberVisibility>(value)) {
     return blink::mojom::HomeTabUnion::Tag::kVisibility;
   } else {
     return blink::mojom::HomeTabUnion::Tag::kParams;

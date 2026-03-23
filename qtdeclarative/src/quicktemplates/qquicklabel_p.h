@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKLABEL_P_H
 #define QQUICKLABEL_P_H
@@ -26,7 +27,7 @@ class QQuickLabelPrivate;
 class Q_QUICKTEMPLATES2_EXPORT QQuickLabel : public QQuickText
 {
     Q_OBJECT
-    Q_PROPERTY(QFont font READ font WRITE setFont NOTIFY fontChanged) // override
+    Q_PROPERTY(QFont font READ font WRITE setFont NOTIFY fontChanged OVERRIDE) // override
     Q_PROPERTY(QQuickItem *background READ background WRITE setBackground NOTIFY backgroundChanged FINAL)
     // 2.5 (Qt 5.12)
     Q_PROPERTY(qreal implicitBackgroundWidth READ implicitBackgroundWidth NOTIFY implicitBackgroundWidthChanged FINAL REVISION(2, 5))

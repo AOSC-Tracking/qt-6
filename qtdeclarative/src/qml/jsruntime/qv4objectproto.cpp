@@ -1,6 +1,7 @@
 // Copyright (C) 2017 Crimson AS <info@crimson.no>
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 
 #include "qv4objectproto_p.h"
@@ -266,7 +267,7 @@ ReturnedValue ObjectPrototype::method_create(const FunctionObject *builtin, cons
 
 
     if (argc > 1 && !argv[1].isUndefined()) {
-        Value *arguments = scope.alloc(argc);
+        Value *arguments = scope.constructUndefined(argc);
         arguments[0] = newObject;
         memcpy(arguments + 1, argv + 1, (argc - 1)*sizeof(Value));
         return method_defineProperties(builtin, thisObject, arguments, argc);

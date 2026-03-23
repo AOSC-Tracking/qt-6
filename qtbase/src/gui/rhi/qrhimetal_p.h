@@ -175,6 +175,9 @@ struct QMetalTextureRenderTarget : public QRhiTextureRenderTarget
     friend class QRhiMetal;
 };
 
+struct QMetalGraphicsPipeline;
+struct QMetalComputePipeline;
+
 struct QMetalShaderResourceBindings : public QRhiShaderResourceBindings
 {
     QMetalShaderResourceBindings(QRhiImplementation *rhi);
@@ -216,6 +219,8 @@ struct QMetalShaderResourceBindings : public QRhiShaderResourceBindings
         };
     };
     QVarLengthArray<BoundResourceData, 8> boundResourceData;
+    QMetalGraphicsPipeline *lastUsedGraphicsPipeline = nullptr;
+    QMetalComputePipeline *lastUsedComputePipeline = nullptr;
 
     uint generation = 0;
     friend class QRhiMetal;
@@ -294,6 +299,7 @@ struct QMetalCommandBuffer : public QRhiCommandBuffer
     QRhiCommandBuffer::IndexFormat currentIndexFormat;
     int currentCullMode;
     int currentTriangleFillMode;
+    int currentDepthClipMode;
     int currentFrontFaceWinding;
     std::pair<float, float> currentDepthBiasValues;
 
@@ -522,6 +528,7 @@ public:
         int maxThreadGroupSize = 512;
         bool multiView = false;
         bool shadingRateMap = false;
+        bool depthClamp = true;
     } caps;
 
     QRhiMetalData *d = nullptr;

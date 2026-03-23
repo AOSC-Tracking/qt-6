@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGNODE_H
 #define QSSGNODE_H
@@ -45,6 +47,7 @@ class Q_QUICK3D_EXPORT QQuick3DNode : public QQuick3DObject
     Q_PROPERTY(QVector3D sceneScale READ sceneScale NOTIFY sceneScaleChanged)
     Q_PROPERTY(QMatrix4x4 sceneTransform READ sceneTransform NOTIFY sceneTransformChanged)
     Q_PROPERTY(int staticFlags READ staticFlags WRITE setStaticFlags NOTIFY staticFlagsChanged)
+    Q_PROPERTY(int layers READ layers WRITE setLayers NOTIFY layersChanged REVISION(6, 11))
 
     QML_NAMED_ELEMENT(Node)
 
@@ -100,6 +103,8 @@ public:
 
     void markAllDirty() override;
 
+    int layers() const;
+
 protected:
     void connectNotify(const QMetaMethod &signal) override;
     void disconnectNotify(const QMetaMethod &signal) override;
@@ -117,6 +122,7 @@ public Q_SLOTS:
     void setLocalOpacity(float opacity);
     void setVisible(bool visible);
     void setStaticFlags(int staticFlags);
+    void setLayers(int newLayers);
 
 Q_SIGNALS:
     void xChanged();
@@ -137,6 +143,8 @@ Q_SIGNALS:
     void sceneRotationChanged();
     void sceneScaleChanged();
     void staticFlagsChanged();
+
+    void layersChanged();
 
 protected:
     QQuick3DNode(QQuick3DNodePrivate &dd, QQuick3DNode *parent = nullptr);

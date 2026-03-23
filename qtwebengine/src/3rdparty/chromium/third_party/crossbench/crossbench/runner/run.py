@@ -9,15 +9,17 @@ import enum
 import logging
 from typing import TYPE_CHECKING, Iterable, Optional, Set, Type
 
-from crossbench import compat
+from typing_extensions import override
+
 from crossbench import path as pth
 from crossbench.browsers.splash_screen import SplashScreenData
-from crossbench.cli.config.secrets import Secrets
-from crossbench.env import ValidationError
+from crossbench.cli import ui
+from crossbench.cli.config.env import ValidationMode
+from crossbench.env.run_env import RunEnv
+from crossbench.env.runner_env import ValidationError
 from crossbench.exception import Annotator, TInfoStack
 from crossbench.helper.cwd import ChangeCWD
 from crossbench.helper.durations import Durations
-from crossbench.helper.spinner import Spinner
 from crossbench.helper.state import State, StateMachine
 from crossbench.probes.probe_context import ProbeContext
 from crossbench.probes.results import ProbeResultDict
@@ -26,25 +28,28 @@ from crossbench.runner.exception import StopStoryException
 from crossbench.runner.probe_context_manager import ProbeContextManager
 from crossbench.runner.result_origin import ResultOrigin
 from crossbench.runner.run_annotation import RunAnnotation
-from crossbench.runner.timing import Timing
+from crossbench.str_enum_with_help import StrEnumWithHelp
 
 if TYPE_CHECKING:
   from selenium.webdriver.common.options import ArgOptions
 
+  from crossbench.action_runner.base import ActionRunner
   from crossbench.benchmarks.base import Benchmark
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.cli.config.secrets import Secrets
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.helper.wait import WaitRange
   from crossbench.probes.probe import Probe, ProbeT
+  from crossbench.results_db.db import ResultsDB
   from crossbench.runner.groups.session import BrowserSessionRunGroup
   from crossbench.runner.runner import Runner
-  from crossbench.runner.timing import AnyTimeUnit
+  from crossbench.runner.timing import AnyTimeUnit, Timing
   from crossbench.stories.story import Story
   from crossbench.types import JsonDict
 
 
 @enum.unique
-class Temperature(compat.StrEnumWithHelp):
+class Temperature(StrEnumWithHelp):
   COLD = ("cold", "first run")
   WARM = ("warm", "second run")
   HOT = ("hot", "third run")
@@ -52,24 +57,30 @@ class Temperature(compat.StrEnumWithHelp):
 
 class Run(ResultOrigin):
 
-  def __init__(self,
-               runner: Runner,
-               browser_session: BrowserSessionRunGroup,
-               story: Story,
-               repetition: int,
-               is_warmup: bool,
-               temperature: str,
-               index: int,
-               name: Optional[str] = None,
-               timeout: dt.timedelta = dt.timedelta(),
-               throw: bool = False):
+  def __init__(
+      self,
+      runner: Runner,
+      browser_session: BrowserSessionRunGroup,
+      story: Story,
+      action_runner: ActionRunner,
+      repetition: int,
+      is_warmup: bool,
+      temperature: str,
+      index: int,
+      name: Optional[str] = None,
+      timeout: dt.timedelta = dt.timedelta(),
+      throw: bool = False,
+      env_validation_mode: ValidationMode = ValidationMode.THROW) -> None:
     super().__init__()
     self._state = StateMachine(State.INITIAL)
     self._runner = runner
     self._browser_session = browser_session
     self._browser: Browser = browser_session.browser
     browser_session.append(self)
+    self._env = RunEnv(self, self._browser.settings.env_config,
+                       env_validation_mode)
     self._story = story
+    self._action_runner = action_runner
     assert repetition >= 0
     self._repetition = repetition
     self._is_warmup = is_warmup
@@ -84,7 +95,7 @@ class Run(ResultOrigin):
     self._start_datetime = dt.datetime.utcfromtimestamp(0)
     self._timeout = timeout
     self._exceptions = Annotator(throw)
-    self._browser_tmp_dir: Optional[pth.AnyPath] = None
+    self._browser_tmp_dir: pth.AnyPath | None = None
     self._probe_context_manager = ProbeRunContextManager(
         self, self._probe_results)
     self._annotations: Set[RunAnnotation] = set()
@@ -107,15 +118,17 @@ class Run(ResultOrigin):
               measure: bool = True) -> Actions:
     return Actions(name, self, verbose=verbose, measure=measure)
 
-  def wait_range(self, min_wait: AnyTimeUnit, timeout: AnyTimeUnit,
-                 delay: AnyTimeUnit) -> WaitRange:
-    return self.runner.wait_range(min_wait, timeout, delay)
+  def wait_range(self,
+                 min_interval: AnyTimeUnit,
+                 timeout: AnyTimeUnit,
+                 delay: AnyTimeUnit = 0) -> WaitRange:
+    return self.runner.wait_range(min_interval, timeout, delay)
 
   @property
   def info_stack(self) -> TInfoStack:
     return (
         f"Run({self.name})",
-        (f"browser={self.browser.type_name} label={self.browser.label} "
+        (f"browser={self.browser.type_name()} label={self.browser.label} "
          f"binary={self.browser.path}"),
         f"story={self.story}",
         f"repetition={self.repetition_name}",
@@ -197,8 +210,17 @@ class Run(ResultOrigin):
     return self._index
 
   @property
+  @override
   def runner(self) -> Runner:
     return self._runner
+
+  @property
+  def action_runner(self) -> ActionRunner:
+    return self._action_runner
+
+  @property
+  def results_db(self) -> ResultsDB:
+    return self.runner.results_db
 
   @property
   def benchmark(self) -> Benchmark:
@@ -209,15 +231,17 @@ class Run(ResultOrigin):
     return self._browser_session
 
   @property
+  @override
   def browser(self) -> Browser:
     return self._browser
 
   @property
-  def environment(self) -> HostEnvironment:
+  def environment(self) -> RunnerEnv:
     # TODO: replace with custom BrowserEnvironment
     return self.runner.env
 
   @property
+  @override
   def out_dir(self) -> pth.LocalPath:
     """A local directory where all result files are gathered.
     Results from browsers on remote platforms are transferred to this dir
@@ -225,6 +249,7 @@ class Run(ResultOrigin):
     return self._out_dir
 
   @property
+  @override
   def browser_tmp_dir(self) -> pth.AnyPath:
     """Returns a path to a tmp dir on the browser platform."""
     if not self._browser_tmp_dir:
@@ -245,6 +270,7 @@ class Run(ResultOrigin):
     return self._name
 
   @property
+  @override
   def exceptions(self) -> Annotator:
     return self._exceptions
 
@@ -267,6 +293,10 @@ class Run(ResultOrigin):
   def secrets(self) -> Secrets:
     return self.story.secrets.merge(fallback=self.browser.secrets)
 
+  @property
+  def create_symlinks(self) -> bool:
+    return self.runner.create_symlinks
+
   def get_browser_details_json(self) -> JsonDict:
     details_json = self.browser.details_json()
     self.session.add_flag_details(details_json)
@@ -277,7 +307,7 @@ class Run(ResultOrigin):
     assert not file.exists(), f"Probe results file exists already. file={file}"
     return file
 
-  def validate_env(self, env: HostEnvironment) -> None:
+  def validate_env(self, env: RunnerEnv) -> None:
     """Called before starting a browser / browser session to perform
     a pre-run checklist."""
 
@@ -288,7 +318,7 @@ class Run(ResultOrigin):
       self._probe_context_manager.setup(self.probes, is_dry_run)
     self._log_setup()
 
-  def setup_selenium_options(self, options: ArgOptions):
+  def setup_selenium_options(self, options: ArgOptions) -> None:
     # TODO: move explicitly to session.
     self._probe_context_manager.setup_selenium_options(options)
 
@@ -306,6 +336,8 @@ class Run(ResultOrigin):
     browser_dir = self.browser_session.browser_dir
     runs_dir = browser_dir / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
+    if not self.create_symlinks:
+      return
     # Source: BROWSER / "runs" / RUN
     # Target: BROWSER / "stories" / STORY / REPETITION / CACHE_TEMP
     run_dir = runs_dir / str(self.index)
@@ -317,8 +349,7 @@ class Run(ResultOrigin):
     session_run_dir = self._out_dir / "session"
     assert not session_run_dir.exists(), (
         f"Cannot setup session dir twice: {session_run_dir}")
-    if self.host_platform.is_win:
-      logging.debug("Skipping session_dir symlink on windows.")
+    if not self.create_symlinks:
       return
     # Source: BROWSER / "stories" / STORY / REPETITION / CACHE_TEMP / "session"
     # Target: BROWSER / "sessions" / SESSION
@@ -329,13 +360,13 @@ class Run(ResultOrigin):
 
   def _log_setup(self) -> None:
     logging.debug("SETUP")
-    logging.info(
+    logging.debug(
         "PROBES: %s",
         ", ".join(probe.NAME for probe in self.probes if not probe.is_internal))
     logging.debug("PROBES ALL: %s",
                   ", ".join(probe.NAME for probe in self.probes))
     self.story.log_run_details(self)
-    logging.info("RUN DIR: %s", self._out_dir)
+    logging.info("📁 RUN DIR:                  %s", self._out_dir)
     logging.debug("CWD %s", self._out_dir)
 
   def run(self, is_dry_run: bool) -> None:
@@ -352,12 +383,13 @@ class Run(ResultOrigin):
 
   def _run(self, is_dry_run: bool) -> None:
     self._state.transition(State.READY, to=State.RUN)
-    self._run_splashscreen()
+    if not is_dry_run:
+      self._run_splashscreen()
     with self._probe_context_manager.open(is_dry_run):
       logging.info("RUNNING STORY")
       self._state.expect(State.RUN)
       try:
-        with self.measure("run"), Spinner(), self.exceptions.capture():
+        with self.measure("run"), ui.spinner(), self.exceptions.capture():
           if not is_dry_run:
             self._run_story()
       except TimeoutError as e:
@@ -367,7 +399,7 @@ class Run(ResultOrigin):
       if self.is_success:
         self._run_success_validation()
 
-  def _run_splashscreen(self):
+  def _run_splashscreen(self) -> None:
     with self.actions("SplashScreen") as actions:
       display_data = SplashScreenData(self.is_warmup, self.browser,
                                       self.details_json())
@@ -408,10 +440,16 @@ class Run(ResultOrigin):
 
   def teardown(self, is_dry_run: bool) -> None:
     self._state.transition(State.RUN, to=State.DONE)
-    self._teardown_browser(is_dry_run)
-    self._probe_context_manager.teardown(is_dry_run)
-    if not is_dry_run:
-      self._rm_browser_tmp_dir()
+    try:
+      self._teardown_browser(is_dry_run)
+      self._probe_context_manager.teardown(is_dry_run)
+      if not is_dry_run:
+        self._rm_browser_tmp_dir()
+    finally:
+      self.teardown_write_results_db()
+
+  def teardown_write_results_db(self) -> None:
+    self.results_db.teardown_run(self)
 
   def _teardown_browser(self, is_dry_run: bool) -> None:
     if is_dry_run:
@@ -439,24 +477,24 @@ class Run(ResultOrigin):
     for probe in self.probes:
       probe.log_run_result(self)
 
-  def log_failure(self):
+  def log_failure(self) -> None:
     assert not self.is_success
     self._exceptions.log(f"❗ RUN {self.index+1} GOT ERRORS", separator="-")
 
-  def log_annotations(self):
+  def log_annotations(self) -> None:
     if not self._annotations:
       return
     logging.info("- " * 40)
     RunAnnotation.log_all(self.annotations, limit=10)
 
-  def find_probe_context(self,
-                         cls: Type[ProbeT]) -> Optional[ProbeContext[ProbeT]]:
-    return self._probe_context_manager.find_probe_context(cls)
+  def find_probe_context(
+      self, probe_cls: Type[ProbeT]) -> Optional[ProbeContext[ProbeT]]:
+    return self._probe_context_manager.find_probe_context(probe_cls)
 
 
 class ProbeRunContextManager(ProbeContextManager[Run, ProbeContext]):
 
-  def __init__(self, run: Run, probe_results: ProbeResultDict):
+  def __init__(self, run: Run, probe_results: ProbeResultDict) -> None:
     super().__init__(run, probe_results)
 
   @property
@@ -466,7 +504,7 @@ class ProbeRunContextManager(ProbeContextManager[Run, ProbeContext]):
   def get_probe_context(self, probe: Probe) -> Optional[ProbeContext]:
     return probe.get_context(self.run)
 
-  def setup_selenium_options(self, options: ArgOptions):
+  def setup_selenium_options(self, options: ArgOptions) -> None:
     for probe_context in self._probe_contexts.values():
       probe_context.setup_selenium_options(options)
 

@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qabstract3dseries_p.h"
 #include "qabstractdataproxy_p.h"
@@ -92,3 +94,5 @@ void QAbstractDataProxyPrivate::setSeries(QAbstract3DSeries *series)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qabstractdataproxy.cpp"

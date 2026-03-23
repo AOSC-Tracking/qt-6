@@ -7,8 +7,10 @@
 
 #include <stdint.h>
 
+#include <array>
 #include <string>
 
+#include "base/containers/span.h"
 #include "media/base/media_export.h"
 
 namespace media {
@@ -41,7 +43,7 @@ struct MEDIA_EXPORT VideoTransformation {
   // [ sin(Θ),  cos(Θ)]
   // A vertical flip is represented by the cosine's having opposite signs
   // and a horizontal flip is represented by the sine's having the same sign.
-  VideoTransformation(const int32_t matrix[4]);
+  explicit VideoTransformation(base::span<const int32_t, 4> matrix);
 
   // Rotation is snapped to the nearest multiple of 90 degrees, rounding ties
   // toward positive infinity.
@@ -50,6 +52,11 @@ struct MEDIA_EXPORT VideoTransformation {
   // The result of rotating and then mirroring `this` according to `delta`.
   VideoTransformation add(VideoTransformation delta) const;
 
+  // Create a matrix based on the rotation and mirrored. Only 8 matrices are
+  // valid when limiting to {0,90,180,270} rotations and boolean of hflip (i.e.
+  // mirrored).
+  std::array<int32_t, 4> GetMatrix() const;
+
   // The video rotation value, in 90 degree steps.
   VideoRotation rotation;
 
@@ -57,6 +64,9 @@ struct MEDIA_EXPORT VideoTransformation {
   // This transformation takes place _after_ rotation, since they are not
   // commutative.
   bool mirrored;
+
+  // Stringifies the rotation and mirrored into a human readable string.
+  std::string ToString() const;
 };
 
 MEDIA_EXPORT bool operator==(const struct VideoTransformation& first,

@@ -11,6 +11,7 @@
 #include "src/compiler/write-barrier-kind.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/js-objects.h"
+#include "src/objects/property-details.h"
 
 namespace v8 {
 namespace internal {
@@ -36,8 +37,12 @@ class V8_EXPORT_PRIVATE AccessBuilder final
 
   // Provides access to HeapNumber::value() field.
   static FieldAccess ForHeapNumberValue();
-  static FieldAccess ForHeapInt32Value();
-  static FieldAccess ForHeapInt32UpperValue();
+
+  // Provides access to ContextCell fields.
+  static FieldAccess ForContextCellState();
+  static FieldAccess ForContextCellTaggedValue();
+  static FieldAccess ForContextCellInt32Value();
+  static FieldAccess ForContextCellFloat64Value();
 
   // Provides access to HeapNumber::value() and Oddball::to_number_raw() fields.
   // This is the same as ForHeapNumberValue, except it documents (and static
@@ -171,9 +176,6 @@ class V8_EXPORT_PRIVATE AccessBuilder final
   // Provides access to JSArrayBufferView::bitfield() field
   static FieldAccess ForJSArrayBufferViewBitField();
 
-  // Provides access to JSTypedArray::length() field.
-  static FieldAccess ForJSTypedArrayLength();
-
   // Provides access to JSTypedArray::byteLength() field.
   static FieldAccess ForJSTypedArrayByteLength() {
     return ForJSArrayBufferViewByteLength();
@@ -266,9 +268,6 @@ class V8_EXPORT_PRIVATE AccessBuilder final
   // Provides access to Name::raw_hash_field() field.
   static FieldAccess ForNameRawHashField();
 
-  // Provides access to FreeSpace::size() field
-  static FieldAccess ForFreeSpaceSize();
-
   // Provides access to String::length() field.
   static FieldAccess ForStringLength();
 
@@ -325,7 +324,8 @@ class V8_EXPORT_PRIVATE AccessBuilder final
   static FieldAccess ForFeedbackVectorSlot(int index);
 
   // Provides access to PropertyArray slots.
-  static FieldAccess ForPropertyArraySlot(int index);
+  static FieldAccess ForPropertyArraySlot(int index,
+                                          Representation representation);
 
   // Provides access to ScopeInfo flags.
   static FieldAccess ForScopeInfoFlags();

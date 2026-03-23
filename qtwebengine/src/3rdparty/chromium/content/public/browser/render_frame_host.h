@@ -27,12 +27,13 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "net/cookies/cookie_setting_override.h"
+#include "net/storage_access_api/status.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/cpp/cross_origin_embedder_policy.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-forward.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-forward.h"
 #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
-#include "third_party/blink/public/common/permissions_policy/permissions_policy_declaration.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom-forward.h"
 #include "third_party/blink/public/mojom/devtools/inspector_issue.mojom-forward.h"
@@ -54,18 +55,19 @@
 
 class GURL;
 
+namespace network {
+class PermissionsPolicy;
+}  // namespace network
 namespace base {
 class UnguessableToken;
 }  // namespace base
 
 namespace blink {
 class AssociatedInterfaceProvider;
-class PermissionsPolicy;
 class StorageKey;
 
 namespace mojom {
 enum class AuthenticatorStatus;
-enum class PermissionsPolicyFeature;
 class MediaPlayerAction;
 }  // namespace mojom
 }  // namespace blink
@@ -141,8 +143,7 @@ class Page;
 // higher-level dependencies. In short: code that uses RenderFrameHost must be
 // back-forward cache aware, and code that does not use RenderFrameHost should
 // not have to be back-forward cache aware.
-class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
-                                       public IPC::Sender {
+class CONTENT_EXPORT RenderFrameHost : public IPC::Listener {
   // Do not remove this macro!
   // The macro is maintained by the memory safety team.
   ADVANCED_MEMORY_SAFETY_CHECKS();
@@ -159,7 +160,7 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
       const GlobalRenderFrameHostToken& frame_token);
 
   // Globally allows for injecting JavaScript into the main world. This feature
-  // is present only to support Android WebView, WebLayer, Fuchsia web.Contexts,
+  // is present only to support Android WebView, Fuchsia web.Contexts,
   // and CastOS content shell. It must not be used in other configurations.
   static void AllowInjectingJavaScript();
 
@@ -376,8 +377,7 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   virtual RenderFrameHost* GetOutermostMainFrameOrEmbedder() = 0;
 
   // Fenced frames (meta-bug https://crbug.com/1111084):
-  // Returns true if this document is the root of a fenced frame tree. This
-  // supports both Shadow DOM and MPArch implementations.
+  // Returns true if this document is the root of a fenced frame tree.
   //
   // In particular, this always returns false for frames loaded inside a
   // <fencedframe> element, if the frame is not the top-level <fencedframe>
@@ -387,8 +387,7 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
 
   // Fenced frames (meta-bug https://crbug.com/1111084):
   // Returns true if `this` was loaded in a <fencedframe> element directly or if
-  // one of `this` ancestors was loaded in a <fencedframe> element. This
-  // supports both Shadow DOM and MPArch implementations.
+  // one of `this` ancestors was loaded in a <fencedframe> element.
   virtual bool IsNestedWithinFencedFrame() const = 0;
 
   // Check if the frame has untrusted network access disabled.
@@ -472,10 +471,16 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // in CreateChildFrame() or similar.
   virtual std::optional<base::UnguessableToken> GetEmbeddingToken() = 0;
 
-  // Returns the assigned name of the frame, the name of the iframe tag
-  // declaring it. For example, <iframe name="framename">[...]</iframe>. It is
-  // quite possible for a frame to have no name, in which case GetFrameName will
-  // return an empty string.
+  // Returns this frame's browsing context name, i.e. its "window.name".
+  // Initially, if the <iframe> element had a `name` attribute, that value
+  // will be used. The initial value is snapshotted from the element
+  // attribute; changing the attribute later does not change the browsing
+  // context name.
+  // In addition to HTML attributes, the name can also be set via
+  // window.open(), the target attribute of an <a> element, or by frames
+  // in a frameset. Subsequent changes to window.name in the renderer will
+  // be reflected here, though they will not be pushed back to the element
+  // attribute. If the frame never had a name, this returns an empty string.
   virtual const std::string& GetFrameName() = 0;
 
   // Returns true if the frame is display: none.
@@ -872,10 +877,10 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
       blink::mojom::SuddenTerminationDisablerType disabler_type) = 0;
 
   // Returns the permission policy for this frame.
-  virtual const blink::PermissionsPolicy* GetPermissionsPolicy() = 0;
+  virtual const network::PermissionsPolicy* GetPermissionsPolicy() = 0;
 
   // Returns the parsed permissions policy header for this frame.
-  virtual const blink::ParsedPermissionsPolicy&
+  virtual const network::ParsedPermissionsPolicy&
   GetPermissionsPolicyHeader() = 0;
 
   // Returns true if the queried PermissionsPolicyFeature is allowed by
@@ -1049,6 +1054,11 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   virtual void EnableWebRtcEventLogOutput(int lid, int output_period_ms) = 0;
   virtual void DisableWebRtcEventLogOutput(int lid) = 0;
 
+  // Start/stop data channel output from WebRTC on this RFH for the peer
+  // connection identified locally within the RFH using the ID `lid`.
+  virtual void EnableWebRtcDataChannelLogOutput(int lid) = 0;
+  virtual void DisableWebRtcDataChannelLogOutput(int lid) = 0;
+
   // Return true if onload has been executed in the renderer in the main frame.
   virtual bool IsDocumentOnLoadCompletedInMainFrame() = 0;
 
@@ -1153,6 +1163,22 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // `HasPolicyContainerHost()` can be used to check if it is non-null.
   virtual const network::CrossOriginEmbedderPolicy&
   GetCrossOriginEmbedderPolicy() const = 0;
+
+  // Returns true if this RenderFrameHost is in a partitioned popin and is not
+  // within a fenced frame (as this prevents the popin from impacting
+  // partitioning).
+  // See https://explainers-by-googlers.github.io/partitioned-popins/
+  virtual bool ShouldPartitionAsPopin() const = 0;
+
+  // Returns true if this RenderFrameHost has access to cookies.
+  virtual bool IsFullCookieAccessAllowed() = 0;
+
+  // Sets the Storage Access API status for this RenderFrameHost.
+  //
+  // Note: this is not trusted by the browser. This input alone does not grant
+  // access to unpartitioned cookies/storage.
+  virtual void SetStorageAccessApiStatus(
+      net::StorageAccessApiStatus status) = 0;
 
  private:
   // This interface should only be implemented inside content.

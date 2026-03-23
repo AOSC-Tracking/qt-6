@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlformatoptions_p.h"
 #include "qqmlformatsettings_p.h"
@@ -15,6 +16,7 @@ QQmlFormatOptions::QQmlFormatOptions()
     setNormalizeEnabled(false);
     setObjectsSpacing(false);
     setFunctionsSpacing(false);
+    setSingleLineEmptyObjects(false);
     setIndentWidth(4);
 }
 
@@ -66,6 +68,16 @@ QQmlFormatOptionLineEndings QQmlFormatOptions::parseEndings(const QString &endin
 #endif
 }
 
+std::optional<QQmlJS::Dom::LineWriterOptions::SemicolonRule> parseSemicolonRule(const QString &value) {
+    if (value == "always"_L1) {
+        return QQmlJS::Dom::LineWriterOptions::SemicolonRule::Always;
+    } else if (value == "essential"_L1) {
+        return QQmlJS::Dom::LineWriterOptions::SemicolonRule::Essential;
+    } else {
+        return std::nullopt;
+    }
+}
+
 void QQmlFormatOptions::applySettings(const QQmlFormatSettings &settings)
 {
     // If the options is already set by commandline, don't override it with the values in the .ini
@@ -104,9 +116,33 @@ void QQmlFormatOptions::applySettings(const QQmlFormatSettings &settings)
         setFunctionsSpacing(settings.value(QQmlFormatSettings::s_functionsSpacingSetting).toBool());
     }
 
+    // Needs to be set after normalize since it can set NormalizeOrder to true.
+    if (!isMarked(Settings::GroupAttributesTogether)
+        && settings.isSet(QQmlFormatSettings::s_groupAttributesTogetherSetting)) {
+        setGroupAttributesTogether(
+                settings.value(QQmlFormatSettings::s_groupAttributesTogetherSetting).toBool());
+    }
+
     if (!isMarked(Settings::SortImports)
         && settings.isSet(QQmlFormatSettings::s_sortImportsSetting)) {
         setSortImports(settings.value(QQmlFormatSettings::s_sortImportsSetting).toBool());
+    }
+
+    if (!isMarked(Settings::SingleLineEmptyObjects)
+        && settings.isSet(QQmlFormatSettings::s_singleLineEmptyObjectsSetting)) {
+        setSingleLineEmptyObjects(settings.value(QQmlFormatSettings::s_singleLineEmptyObjectsSetting).toBool());
+    }
+
+    if (!isMarked(Settings::SemicolonRule)
+        && settings.isSet(QQmlFormatSettings::s_semiColonRuleSetting)) {
+        const auto semicolonRule = parseSemicolonRule(
+                settings.value(QQmlFormatSettings::s_semiColonRuleSetting).toString());
+        if (!semicolonRule.has_value()) {
+            qWarning().noquote() << "Invalid semicolon rule in settings file, using 'always'";
+            setSemicolonRule(QQmlJS::Dom::LineWriterOptions::SemicolonRule::Always);
+        } else {
+            setSemicolonRule(semicolonRule.value());
+        }
     }
 }
 
@@ -115,10 +151,15 @@ QQmlFormatOptions QQmlFormatOptions::buildCommandLineOptions(const QStringList &
     QQmlFormatOptions options;
     QCommandLineParser parser;
     parser.setApplicationDescription(
-            "Formats QML files according to the QML Coding Conventions."_L1);
+            "Formats QML files according to the QML Coding Conventions.\n"_L1
+            "Options below the \"Formatting options\" section can also be set via .qmlformat.ini"_L1
+            " unless --ignore-settings is used"_L1);
     parser.addHelpOption();
     parser.addVersionOption();
 
+    //
+    // options that only are set via CLI
+    //
     parser.addOption(
             QCommandLineOption({ "V"_L1, "verbose"_L1 },
                                QStringLiteral("Verbose mode. Outputs more detailed information.")));
@@ -129,17 +170,52 @@ QQmlFormatOptions QQmlFormatOptions::buildCommandLineOptions(const QStringList &
                           "will overwrite any existing settings and comments!)"_L1));
     parser.addOption(writeDefaultsOption);
 
+    QCommandLineOption outputOptionsOption(
+            QStringList() << "output-options"_L1,
+            QLatin1String("Output available options and their defaults values in JSON format."_L1));
+    parser.addOption(outputOptionsOption);
+
     QCommandLineOption ignoreSettings(QStringList() << "ignore-settings"_L1,
                                       QLatin1String("Ignores all settings files and only takes "
                                                     "command line options into consideration"_L1));
     parser.addOption(ignoreSettings);
 
+    QCommandLineOption filesOption(
+            { "F"_L1, "files"_L1 }, "Format all files listed in file, in-place"_L1, "file"_L1);
+    parser.addOption(filesOption);
+
+
+    QCommandLineOption dryrunOption(
+            QStringList() << "dry-run"_L1,
+            QStringLiteral("Prints the settings file that would be used for this instance."
+                           "This is useful to see what settings would be used "
+                           "without actually performing anything."));
+    parser.addOption(dryrunOption);
+
+    QCommandLineOption settingsOption(
+            { "s"_L1, "settings"_L1 },
+            QStringLiteral("Use the specified .qmlformat.ini file as the only configuration source."
+                           "Overrides any per-directory configuration lookup."),
+            "file"_L1);
+    parser.addOption(settingsOption);
+
     parser.addOption(QCommandLineOption(
             { "i"_L1, "inplace"_L1 },
             QStringLiteral("Edit file in-place instead of outputting to stdout.")));
 
+    // Note the blatant abuse of the option's help text to add a "section marker"
+    // Therefore, this needs to come last. Also, on Windows, the unicode characters seem to cause issues
     parser.addOption(QCommandLineOption({ "f"_L1, "force"_L1 },
-                                        QStringLiteral("Continue even if an error has occurred.")));
+                                        #ifdef Q_OS_WINDOWS
+                                        "Continue even if an error has occurred.\n<><><><><><><><><>\nFormatting options\n<><><><><><><><><>"_L1
+                                        #else
+                                        u"Continue even if an error has occurred.\n♦♦♦♦♦♦♦♦♦♦♦♦♦♦♦♦♦♦\nFormatting options\n♦♦♦♦♦♦♦♦♦♦♦♦♦♦♦♦♦♦"_s
+                                        #endif
+                                        ));
+
+    //
+    // options that can be configured by qmlformat.ini
+    //
 
     parser.addOption(QCommandLineOption({ "t"_L1, "tabs"_L1 },
                                         QStringLiteral("Use tabs instead of spaces.")));
@@ -158,9 +234,6 @@ QQmlFormatOptions QQmlFormatOptions::buildCommandLineOptions(const QStringList &
                                         QStringLiteral("Reorders the attributes of the objects "
                                                        "according to the QML Coding Guidelines.")));
 
-    QCommandLineOption filesOption(
-            { "F"_L1, "files"_L1 }, "Format all files listed in file, in-place"_L1, "file"_L1);
-    parser.addOption(filesOption);
 
     parser.addOption(QCommandLineOption(
             { "l"_L1, "newline"_L1 },
@@ -176,10 +249,21 @@ QQmlFormatOptions QQmlFormatOptions::buildCommandLineOptions(const QStringList &
             QStringLiteral("Ensure spaces between functions (only works with normalize option).")));
 
     parser.addOption(
+            QCommandLineOption(QStringList() << "group-attributes-together"_L1,
+                               QStringLiteral("Reorders and groups the attributes of the objects "
+                                              "according to the QML Coding Guidelines. "
+                                              "Implies --normalize.")));
+
+    parser.addOption(
             QCommandLineOption({ "S"_L1, "sort-imports"_L1 },
                                QStringLiteral("Sort imports alphabetically "
                                               "(Warning: this might change semantics if a given "
                                               "name identifies types in multiple modules!).")));
+
+    parser.addOption(QCommandLineOption(
+            QStringList() << "single-line-empty-objects"_L1,
+            QStringLiteral("Write empty objects on a single line (only works with normalize option).")));
+
     QCommandLineOption semicolonRuleOption(
             QStringList() << "semicolon-rule"_L1,
             QStringLiteral("Specify the semicolon rule to use (always, essential).\n"
@@ -194,6 +278,11 @@ QQmlFormatOptions QQmlFormatOptions::buildCommandLineOptions(const QStringList &
 
     if (parser.isSet(writeDefaultsOption)) {
         options.setWriteDefaultSettingsEnabled(true);
+        return options;
+    }
+
+    if (parser.isSet(outputOptionsOption)) {
+        options.setOutputOptionsEnabled(true);
         return options;
     }
 
@@ -250,6 +339,7 @@ QQmlFormatOptions QQmlFormatOptions::buildCommandLineOptions(const QStringList &
         }
     }
 
+    options.setDryRun(parser.isSet(dryrunOption));
     options.setIsVerbose(parser.isSet("verbose"_L1));
     options.setIsInplace(parser.isSet("inplace"_L1));
     options.setForceEnabled(parser.isSet("force"_L1));
@@ -271,9 +361,18 @@ QQmlFormatOptions QQmlFormatOptions::buildCommandLineOptions(const QStringList &
         options.mark(Settings::FunctionsSpacing);
         options.setFunctionsSpacing(true);
     }
+    // Needs to be set after normalize since it can set NormalizeOrder to true.
+    if (parser.isSet("group-attributes-together"_L1)) {
+        options.mark(Settings::GroupAttributesTogether);
+        options.setGroupAttributesTogether(true);
+    }
     if (parser.isSet("sort-imports"_L1)) {
         options.mark(Settings::SortImports);
         options.setSortImports(true);
+    }
+    if (parser.isSet("single-line-empty-objects"_L1)) {
+        options.mark(Settings::SingleLineEmptyObjects);
+        options.setSingleLineEmptyObjects(true);
     }
     if (parser.isSet("indent-width"_L1)) {
         options.mark(Settings::IndentWidth);
@@ -285,17 +384,29 @@ QQmlFormatOptions QQmlFormatOptions::buildCommandLineOptions(const QStringList &
         options.setNewline(QQmlFormatOptions::parseEndings(parser.value("newline"_L1)));
     }
 
+    if (parser.isSet(settingsOption)) {
+        options.mark(Settings::SettingsFile);
+        const auto value = parser.value(settingsOption);
+        if (value.isEmpty()) {
+            options.addError("Error: No settings file specified for option -s."_L1);
+            return options;
+        }
+        if (!QFile::exists(value)) {
+            options.addError("Error: Could not find file \""_L1 + value + "\"."_L1);
+            return options;
+        }
+        options.setSettingsFile(value);
+    }
+
     if (parser.isSet(semicolonRuleOption)) {
         options.mark(Settings::SemicolonRule);
         const auto value = parser.value(semicolonRuleOption);
-        if (value == "always"_L1) {
-            options.setSemicolonRule(QQmlJS::Dom::LineWriterOptions::SemicolonRule::Always);
-        } else if (value == "essential"_L1) {
-            options.setSemicolonRule(QQmlJS::Dom::LineWriterOptions::SemicolonRule::Essential);
-        } else {
-            options.addError("Error: Invalid value passed to --semicolon-rule."_L1);
+        auto semicolonRule = parseSemicolonRule(value);
+        if (!semicolonRule.has_value()) {
+            options.addError("Error: Invalid value passed to --semicolon-rule. Must be 'always' or 'essential'."_L1);
             return options;
         }
+        options.setSemicolonRule(semicolonRule.value());
     }
     options.setFiles(files);
     options.setArguments(parser.positionalArguments());
@@ -322,7 +433,8 @@ QQmlFormatOptions QQmlFormatOptions::optionsForFile(const QString &fileName,
     if (hasFiles)
         perFileOptions.setIsInplace(true);
 
-    if (!ignoreSettingsEnabled() && settings->search(fileName))
+    if (!ignoreSettingsEnabled()
+        && settings->search(fileName, { m_settingsFile, m_verbose }).isValid())
         perFileOptions.applySettings(*settings);
 
     return perFileOptions;

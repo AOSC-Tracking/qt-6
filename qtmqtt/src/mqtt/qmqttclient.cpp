@@ -1,6 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
-// Qt-Security score:significant reason:default
+// Qt-Security score:critical reason:network-protocol
 
 #include "qmqttclient.h"
 #include "qmqttclient_p.h"
@@ -170,9 +170,11 @@ Q_LOGGING_CATEGORY(lcMqttClient, "qt.mqtt.client")
     \value SecureSocket
            The transport uses a class based on a QSslSocket.
     \value [since 6.10] WebSocket
-        The transport uses a class based on a QIODevice.
+           The transport uses a class based on a QIODevice,
+           which uses a QWebSocket internally.
     \value [since 6.10] SecureWebSocket
-        The transport uses a class based on a QIODevice.
+           The transport uses a class based on a QIODevice,
+           which uses a secure QWebSocket internally.
 */
 
 /*!
@@ -1081,10 +1083,7 @@ QMqttClientPrivate::QMqttClientPrivate(QMqttClient *c)
     : QObjectPrivate()
 {
     m_client = c;
-    m_clientId = QUuid::createUuid().toString();
-    m_clientId.remove(QLatin1Char('{'));
-    m_clientId.remove(QLatin1Char('}'));
-    m_clientId.remove(QLatin1Char('-'));
+    m_clientId = QUuid::createUuid().toString(QUuid::Id128);
     m_clientId.resize(23);
 #ifdef QT_BUILD_INTERNAL
     // Some test servers require a username token

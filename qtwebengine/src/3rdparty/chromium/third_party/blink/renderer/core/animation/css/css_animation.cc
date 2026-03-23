@@ -123,4 +123,9 @@ CSSAnimation::PlayStateTransitionScope::~PlayStateTransitionScope() {
     animation_.ignore_css_play_state_ = true;
 }
 
+void CSSAnimation::Trace(blink::Visitor* visitor) const {
+  Animation::Trace(visitor);
+  visitor->Trace(owning_element_);
+}
+
 }  // namespace blink

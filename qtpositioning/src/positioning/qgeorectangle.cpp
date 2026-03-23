@@ -41,8 +41,7 @@ QT_IMPL_METATYPE_EXTERN(QGeoRectangle)
     touches but does not cross the pole and that the center coordinate is still
     in the center of the geo rectangle.
 
-    This class is a \l Q_GADGET since Qt 5.5. It can be
-    \l{Cpp_value_integration_positioning}{directly used from C++ and QML}.
+    This class is also accessible in QML as \l[QML]{geoRectangle}.
 */
 
 /*!
@@ -238,6 +237,12 @@ QGeoRectangle &QGeoRectangle::operator=(const QGeoRectangle &other)
     QGeoShape::operator=(other);
     return *this;
 }
+
+/*!
+    \class QGeoRectanglePrivate
+    \inmodule QtPositioning
+    \internal
+*/
 
 bool QGeoRectanglePrivate::isValid() const
 {

@@ -8,22 +8,24 @@
 #include <memory>
 #include <string>
 
+#include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/safe_ref.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observation.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
-#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/side_panel/read_anything/read_anything_side_panel_controller.h"
 #include "chrome/browser/ui/webui/side_panel/read_anything/read_anything_screenshotter.h"
 #include "chrome/common/read_anything/read_anything.mojom.h"
-#include "chrome/common/read_anything/read_anything_constants.h"
 #include "components/translate/core/browser/translate_client.h"
+#include "components/translate/core/browser/translate_driver.h"
 #include "content/public/browser/tts_controller.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "ui/accessibility/ax_action_data.h"
+#include "ui/accessibility/ax_action_handler_registry.h"
 #include "ui/accessibility/ax_updates_and_events.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -64,6 +66,8 @@ class ReadAnythingWebContentsObserver : public content::WebContentsObserver {
       ui::AXLocationAndScrollUpdates& details) override;
   void PrimaryPageChanged(content::Page& page) override;
   void WebContentsDestroyed() override;
+  void DidStopLoading() override;
+  void DidUpdateAudioMutingState(bool muted) override;
 
   // base::SafeRef used since the lifetime of ReadAnythingWebContentsObserver is
   // completely contained by page_handler_. See
@@ -113,13 +117,17 @@ class ReadAnythingUntrustedPageHandler :
       const ui::AXTreeID& tree_id,
       ui::AXLocationAndScrollUpdates& details);
   void PrimaryPageChanged();
+  void DidStopLoading();
+  void DidUpdateAudioMutingState(bool muted);
   void WebContentsDestroyed();
   void OnActiveAXTreeIDChanged();
+  bool CheckForPdfContentAfterLoad();
 
   // read_anything::mojom::UntrustedPageHandler:
   void OnVoiceChange(const std::string& voice,
                      const std::string& lang) override;
   void OnLanguagePrefChange(const std::string& lang, bool enabled) override;
+  void OnReadAloudAudioStateChange(bool playing) override;
   void OnSpeechRateChange(double rate) override;
   void OnImageDataRequested(const ui::AXTreeID& target_tree_id,
                             ui::AXNodeID target_node_id) override;
@@ -143,6 +151,9 @@ class ReadAnythingUntrustedPageHandler :
       const translate::LanguageDetectionDetails& details) override;
   void OnTranslateDriverDestroyed(translate::TranslateDriver* driver) override;
 
+  // ReadAnythingSidePanelController::Observer:
+  void OnTabWillDetach() override;
+
   // ash::SessionObserver
 #if BUILDFLAG(IS_CHROMEOS)
   void OnLockStateChanged(bool locked) override;
@@ -160,7 +171,8 @@ class ReadAnythingUntrustedPageHandler :
  private:
 #if !BUILDFLAG(IS_CHROMEOS)
   // content::UpdateLanguageStatusDelegate:
-  void OnUpdateLanguageStatus(const std::string& lang,
+  void OnUpdateLanguageStatus(content::BrowserContext* browser_context,
+                              const std::string& lang,
                               content::LanguageInstallStatus install_status,
                               const std::string& error) override;
   // extensions::ExtensionRegistryObserver implementation.
@@ -193,15 +205,13 @@ class ReadAnythingUntrustedPageHandler :
 
   // ReadAnythingSidePanelController::Observer:
   void Activate(bool active) override;
+  void OnSidePanelControllerDestroyed() override;
 
   void SetDefaultLanguageCode(const std::string& code);
 
   // Sends the language code of the new page, or the default if a language can't
   // be determined.
   void SetLanguageCode(const std::string& code);
-
-  // ReadAnythingSidePanelController::Observer:
-  void OnSidePanelControllerDestroyed() override;
 
   void SetUpPdfObserver();
 
@@ -215,6 +225,21 @@ class ReadAnythingUntrustedPageHandler :
   void ObserveWebContentsSidePanelController(tabs::TabInterface* tab);
 
   void PerformActionInTargetTree(const ui::AXActionData& data);
+
+  bool AreInnerContentsPdfContent(
+      std::vector<content::WebContents*> inner_contents);
+
+  void OnScreenAIServiceInitialized(bool successful);
+
+  // Called to notify this instance that the dependency parser loader
+  // is available for model requests or is invalidating existing requests
+  // specified by "is_available". The "callback" will be either forwarded to a
+  // request to get the actual model file or will be run with an empty file if
+  // the dependency parser loader is rejecting requests because the pending
+  // model request queue is already full (100 requests maximum).
+  void OnDependencyParserModelFileAvailabilityChanged(
+      GetDependencyParserModelCallback callback,
+      bool is_available);
 
   raw_ptr<ReadAnythingSidePanelController> side_panel_controller_;
   const raw_ptr<Profile> profile_;
@@ -237,6 +262,8 @@ class ReadAnythingUntrustedPageHandler :
   // Whether the Read Anything feature is currently active. The feature is
   // active when it is currently shown in the Side Panel.
   bool active_ = true;
+  // Whether the tab is going to detach soon.
+  bool tab_will_detach_ = false;
 
   // The current language being used in the app.
   std::string current_language_code_ = "en-US";
@@ -248,7 +275,14 @@ class ReadAnythingUntrustedPageHandler :
 
   const bool use_screen_ai_service_;
 
-  void OnScreenAIServiceInitialized(bool successful);
+  bool extension_installed_ = false;
+
+  // Whether the currently distilled page is recognized as a pdf. This allows
+  // the page handler to trigger distillation if the page would now be
+  // recognized as a pdf after it finishes loading.
+  bool is_pdf_ = false;
+
+  base::ScopedClosureRunner audible_closure_;
 
   // Observes LanguageDetectionObserver, which notifies us when the language of
   // the contents of the current page has been determined.
@@ -256,15 +290,10 @@ class ReadAnythingUntrustedPageHandler :
                           translate::TranslateDriver::LanguageDetectionObserver>
       translate_observation_{this};
 
-  // Called to notify this instance that the dependency parser loader
-  // is available for model requests or is invalidating existing requests
-  // specified by "is_available". The "callback" will be either forwarded to a
-  // request to get the actual model file or will be run with an empty file if
-  // the dependency parser loader is rejecting requests because the pending
-  // model request queue is already full (100 requests maximum).
-  void OnDependencyParserModelFileAvailabilityChanged(
-      GetDependencyParserModelCallback callback,
-      bool is_available);
+  // Timer used for checking for pdf contents after the page has loaded.
+  // Otherwise, it may incorrectly return that the page is not a pdf if
+  // reading mode checks if a page is a pdf immediately after loading.
+  base::OneShotTimer timer_;
 
   base::WeakPtrFactory<ReadAnythingUntrustedPageHandler> weak_factory_{this};
 };

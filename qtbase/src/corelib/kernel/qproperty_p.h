@@ -31,6 +31,10 @@ QT_BEGIN_NAMESPACE
 namespace QtPrivate {
     Q_CORE_EXPORT bool isAnyBindingEvaluating();
     struct QBindingStatusAccessToken {};
+
+    namespace BindableWarnings {
+    Q_CORE_EXPORT void printSignalArgumentsWithCustomGetter();
+    }
 }
 
 
@@ -387,10 +391,12 @@ public:
     {
         if (!hasCustomVTable())
             return location;
-        QPropertyBindingSourceLocation result;
-        constexpr auto msg = "Custom location";
-        result.fileName = msg;
-        return result;
+        return []() {
+            constexpr auto msg = "Custom location";
+            QPropertyBindingSourceLocation result;
+            result.fileName = msg;
+            return result;
+        }();
     }
     QPropertyBindingError bindingError() const { return m_error; }
     QMetaType valueMetaType() const { return metaType; }
@@ -520,13 +526,11 @@ class QObjectCompatProperty : public QPropertyData<T>
     {
         auto *thisData = static_cast<ThisType *>(dataPtr);
         QBindingStorage *storage = qGetBindingStorage(thisData->owner());
-        QPropertyData<T> copy;
+        QPropertyData<T> copy(thisData->valueBypassingBindings());
         {
             QtPrivate::CurrentCompatPropertyThief thief(storage->bindingStatus);
-            binding.vtable->call(type, &copy, binding.functor);
-            if constexpr (QTypeTraits::has_operator_equal_v<T>)
-                if (copy.valueBypassingBindings() == thisData->valueBypassingBindings())
-                    return false;
+            if (!binding.vtable->call(type, &copy, binding.functor))
+                return false;
         }
         // ensure value and setValue know we're currently evaluating our binding
         QtPrivate::CompatPropertySafePoint guardThis(storage->bindingStatus, thisData);
@@ -547,14 +551,37 @@ class QObjectCompatProperty : public QPropertyData<T>
             return (prop->owner()->*Getter)();
     }
 
+    inline static T getPropertyValueBypassingBindings(const QUntypedPropertyData *d) {
+        auto prop = static_cast<const ThisType *>(d);
+        if constexpr (std::is_null_pointer_v<decltype(Getter)>)
+            return prop->valueBypassingBindings();
+        else
+            return (prop->owner()->*Getter)();
+    }
+
+    inline static void warnIfSignalWithArgumentAndCustomGetter()
+    {
+        if constexpr (!std::is_null_pointer_v<decltype(Signal)>
+                      && SignalTakesValue::value
+                      && !std::is_null_pointer_v<decltype(Getter)>) {
+            QtPrivate::BindableWarnings::printSignalArgumentsWithCustomGetter();
+        }
+    }
+
 public:
     using value_type = typename QPropertyData<T>::value_type;
     using parameter_type = typename QPropertyData<T>::parameter_type;
     using arrow_operator_result = typename QPropertyData<T>::arrow_operator_result;
 
-    QObjectCompatProperty() = default;
-    explicit QObjectCompatProperty(const T &initialValue) : QPropertyData<T>(initialValue) {}
-    explicit QObjectCompatProperty(T &&initialValue) : QPropertyData<T>(std::move(initialValue)) {}
+    QObjectCompatProperty() { warnIfSignalWithArgumentAndCustomGetter(); }
+    explicit QObjectCompatProperty(const T &initialValue) : QPropertyData<T>(initialValue)
+    {
+        warnIfSignalWithArgumentAndCustomGetter();
+    }
+    explicit QObjectCompatProperty(T &&initialValue) : QPropertyData<T>(std::move(initialValue))
+    {
+        warnIfSignalWithArgumentAndCustomGetter();
+    }
 
     parameter_type value() const
     {
@@ -680,7 +707,7 @@ public:
         }
         if constexpr (!std::is_null_pointer_v<decltype(Signal)>) {
             if constexpr (SignalTakesValue::value)
-                (owner()->*Signal)(getPropertyValue(this));
+                (owner()->*Signal)(getPropertyValueBypassingBindings(this));
             else
                 (owner()->*Signal)();
         }

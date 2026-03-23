@@ -20,7 +20,6 @@
 #include "base/strings/stringize_macros.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "google_apis/buildflags.h"
 #include "google_apis/default_api_keys.h"
 #include "google_apis/gaia/gaia_config.h"
@@ -43,15 +42,16 @@ namespace {
 // 5. Baked into the build.
 // |command_line_switch| may be NULL. Official Google Chrome builds will not
 // use the value provided by an environment variable.
-static std::string CalculateKeyValue(const char* baked_in_value,
-                                     const char* environment_variable_name,
-                                     const char* command_line_switch,
-                                     const std::string& default_if_unset,
-                                     base::Environment* environment,
-                                     base::CommandLine* command_line,
-                                     GaiaConfig* gaia_config,
-                                     bool allow_override_via_environment,
-                                     bool allow_unset_values) {
+static std::string CalculateKeyValue(
+    const char* baked_in_value,
+    base::cstring_view environment_variable_name,
+    const char* command_line_switch,
+    const std::string& default_if_unset,
+    base::Environment* environment,
+    base::CommandLine* command_line,
+    GaiaConfig* gaia_config,
+    bool allow_override_via_environment,
+    bool allow_unset_values) {
   std::string key_value = baked_in_value;
   std::string temp;
 #if BUILDFLAG(IS_APPLE)
@@ -69,8 +69,9 @@ static std::string CalculateKeyValue(const char* baked_in_value,
     // Don't allow using the environment to override API keys for official
     // Google Chrome builds. There have been reports of mangled environments
     // affecting users (crbug.com/710575).
-    if (environment->GetVar(environment_variable_name, &temp)) {
-      key_value = temp;
+    if (auto maybe_key_value = environment->GetVar(environment_variable_name);
+        maybe_key_value.has_value()) {
+      key_value = *maybe_key_value;
       VLOG(1) << "Overriding API key " << environment_variable_name
               << " with value " << key_value << " from environment variable.";
     }
@@ -153,7 +154,7 @@ ApiKeyCache::ApiKeyCache(const DefaultApiKeys& default_api_keys) {
       default_api_keys.allow_unset_values);
 #endif
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   api_key_sharing_ = CalculateKeyValue(
       default_api_keys.google_api_key_sharing,
       STRINGIZE_NO_EXPANSION(GOOGLE_API_KEY_SHARING), nullptr, std::string(),
@@ -181,6 +182,21 @@ ApiKeyCache::ApiKeyCache(const DefaultApiKeys& default_api_keys) {
       environment.get(), command_line, gaia_config,
       default_api_keys.allow_override_via_environment,
       default_api_keys.allow_unset_values);
+
+  api_key_cros_system_geo_ = CalculateKeyValue(
+      default_api_keys.google_api_key_cros_system_geo_,
+      STRINGIZE_NO_EXPANSION(GOOGLE_API_KEY_CROS_SYSTEM_GEO), nullptr,
+      std::string(), environment.get(), command_line, gaia_config,
+      default_api_keys.allow_override_via_environment,
+      default_api_keys.allow_unset_values);
+
+  api_key_cros_chrome_geo_ = CalculateKeyValue(
+      default_api_keys.google_api_key_cros_chrome_geo_,
+      STRINGIZE_NO_EXPANSION(GOOGLE_API_KEY_CROS_CHROME_GEO), nullptr,
+      std::string(), environment.get(), command_line, gaia_config,
+      default_api_keys.allow_override_via_environment,
+      default_api_keys.allow_unset_values);
+
 #endif
 
   metrics_key_ = CalculateKeyValue(

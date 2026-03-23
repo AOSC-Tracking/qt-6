@@ -52,6 +52,8 @@ TEST(ContentUriUtilsTest, Test) {
 TEST(ContentUriUtilsTest, TranslateOpenFlagsToJavaMode) {
   constexpr auto kTranslations = MakeFixedFlatMap<uint32_t, std::string>({
       {File::FLAG_OPEN | File::FLAG_READ, "r"},
+      {File::FLAG_OPEN_ALWAYS | File::FLAG_READ, "r"},
+      {File::FLAG_CREATE | File::FLAG_READ, "r"},
       {File::FLAG_OPEN_ALWAYS | File::FLAG_READ | File::FLAG_WRITE, "rw"},
       {File::FLAG_OPEN_ALWAYS | File::FLAG_APPEND, "wa"},
       {File::FLAG_CREATE_ALWAYS | File::FLAG_READ | File::FLAG_WRITE, "rwt"},
@@ -94,11 +96,17 @@ TEST(ContentUriUtilsTest, GetFileInfo) {
       *test::android::GetContentUriFromCacheDirFilePath(file);
   FilePath content_uri_dir =
       *test::android::GetContentUriFromCacheDirFilePath(dir);
+  FilePath content_uri_document =
+      *test::android::GetInMemoryContentDocumentUriFromCacheDirFilePath(file);
+  FilePath content_uri_tree =
+      *test::android::GetInMemoryContentTreeUriFromCacheDirDirectory(dir);
   FilePath content_uri_not_exists =
       *test::android::GetContentUriFromCacheDirFilePath(not_exists);
 
   EXPECT_TRUE(PathExists(content_uri_file));
   EXPECT_TRUE(PathExists(content_uri_dir));
+  EXPECT_TRUE(PathExists(content_uri_document));
+  EXPECT_TRUE(PathExists(content_uri_tree));
   EXPECT_FALSE(PathExists(content_uri_not_exists));
 
   File::Info info;
@@ -109,7 +117,18 @@ TEST(ContentUriUtilsTest, GetFileInfo) {
   EXPECT_FALSE(content_uri_info.is_directory);
   EXPECT_EQ(content_uri_info.last_modified, info.last_modified);
 
+  EXPECT_TRUE(GetFileInfo(content_uri_document, &content_uri_info));
+  EXPECT_FALSE(content_uri_info.is_directory);
+  // Java DocumentProvider only does resolution to seconds.
+  EXPECT_EQ(content_uri_info.last_modified.ToTimeT(),
+            info.last_modified.ToTimeT());
+
   EXPECT_TRUE(GetFileInfo(dir, &info));
+  EXPECT_TRUE(GetFileInfo(content_uri_tree, &content_uri_info));
+  EXPECT_TRUE(content_uri_info.is_directory);
+  EXPECT_EQ(content_uri_info.last_modified.ToTimeT(),
+            info.last_modified.ToTimeT());
+
   EXPECT_TRUE(GetFileInfo(content_uri_dir, &content_uri_info));
   EXPECT_TRUE(content_uri_info.is_directory);
   EXPECT_EQ(content_uri_info.last_modified, info.last_modified);

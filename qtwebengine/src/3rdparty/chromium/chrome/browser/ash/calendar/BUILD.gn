@@ -21,9 +21,9 @@ static_library("calendar") {
   deps = [
     "//ash",
     "//base",
-    "//chrome/browser:browser_process",
     "//chrome/browser/ash/profiles",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/signin",
     "//chrome/browser/web_applications",
     "//components/policy/content",
     "//components/policy/core/browser",

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qtoolbutton.h"
 
@@ -44,9 +45,11 @@ public:
     void popupTimerDone();
     void updateButtonDown();
     void onMenuTriggered(QAction *);
+    void onDefaultActionChanged();
 #endif
     bool updateHoverControl(const QPoint &pos);
     void onActionTriggered();
+    QStyle::State styleButtonState(QStyle::State state) const override;
     QStyle::SubControl newHoverControl(const QPoint &pos);
     QStyle::SubControl hoverControl;
     QRect hoverRect;
@@ -56,7 +59,8 @@ public:
     Qt::ArrowType arrowType;
     Qt::ToolButtonStyle toolButtonStyle;
     QToolButton::ToolButtonPopupMode popupMode;
-    enum { NoButtonPressed=0, MenuButtonPressed=1, ToolButtonPressed=2 };
+    uint popupModeSetByUser : 1; // true if popupMode was set through setPopupMode
+    enum { NoButtonPressed = 0, MenuButtonPressed = 1, ToolButtonPressed = 2 };
     uint buttonPressed : 2;
     uint menuButtonDown          : 1;
     uint autoRaise             : 1;
@@ -129,11 +133,10 @@ bool QToolButtonPrivate::hasMenu() const
     of possible pages to jump to. The timeout is style dependent,
     see QStyle::SH_ToolButton_PopupDelay.
 
-    \table 100%
-    \row \li \inlineimage assistant-toolbar.png Qt Assistant's toolbar with tool buttons
-    \row \li Qt Assistant's toolbar contains tool buttons that are associated
+    \image assistant-toolbar.png {Qt Assistant's toolbar with tool buttons}
+    \caption Qt Assistant's toolbar contains tool buttons that are associated
          with actions used in other parts of the main window.
-    \endtable
+
 
     \sa QPushButton, QToolBar, QMainWindow, QAction
 */
@@ -177,6 +180,7 @@ void QToolButtonPrivate::init()
     arrowType = Qt::NoArrow;
     menuButtonDown = false;
     popupMode = QToolButton::DelayedPopup;
+    popupModeSetByUser = false;
     buttonPressed = QToolButtonPrivate::NoButtonPressed;
 
     toolButtonStyle = Qt::ToolButtonIconOnly;
@@ -224,15 +228,7 @@ void QToolButton::initStyleOption(QStyleOptionToolButton *option) const
     option->text = d->text;
     option->icon = d->icon;
     option->arrowType = d->arrowType;
-    if (d->down)
-        option->state |= QStyle::State_Sunken;
-    if (d->checked)
-        option->state |= QStyle::State_On;
-    if (d->autoRaise)
-        option->state |= QStyle::State_AutoRaise;
-    if (!d->checked && !d->down)
-        option->state |= QStyle::State_Raised;
-
+    option->state = d->styleButtonState(option->state);
     option->subControls = QStyle::SC_ToolButton;
     option->activeSubControls = QStyle::SC_None;
 
@@ -488,6 +484,20 @@ void QToolButtonPrivate::onActionTriggered()
     Q_Q(QToolButton);
     if (QAction *action = qobject_cast<QAction *>(q->sender()))
         emit q->triggered(action);
+}
+
+QStyle::State QToolButtonPrivate::styleButtonState(QStyle::State state) const
+{
+    state = QAbstractButtonPrivate::styleButtonState(state);
+    if (checked)
+        state |= QStyle::State_On;
+    if (autoRaise)
+        state |= QStyle::State_AutoRaise;
+    if (!checked && !down)
+        state |= QStyle::State_Raised;
+    if (menuButtonDown)
+        state |= QStyle::State_Sunken;
+    return state;
 }
 
 /*!
@@ -823,6 +833,13 @@ void QToolButtonPrivate::onMenuTriggered(QAction *action)
         emit q->triggered(action);
 }
 
+void QToolButtonPrivate::onDefaultActionChanged()
+{
+    Q_Q(QToolButton);
+    if (defaultAction && defaultAction->menu() && !popupModeSetByUser)
+        q->setPopupMode(QToolButton::MenuButtonPopup);
+}
+
 /*! \enum QToolButton::ToolButtonPopupMode
 
     Describes how a menu should be popped up for tool buttons that has
@@ -856,6 +873,7 @@ void QToolButtonPrivate::onMenuTriggered(QAction *action)
 void QToolButton::setPopupMode(ToolButtonPopupMode mode)
 {
     Q_D(QToolButton);
+    d->popupModeSetByUser = true;
     d->popupMode = mode;
 }
 
@@ -914,8 +932,11 @@ void QToolButton::setDefaultAction(QAction *action)
 {
     Q_D(QToolButton);
 #if QT_CONFIG(menu)
-    bool hadMenu = false;
-    hadMenu = d->hasMenu();
+    if (d->defaultAction && d->defaultAction != action) {
+        QObjectPrivate::disconnect(d->defaultAction, &QAction::changed, d,
+                                   &QToolButtonPrivate::onDefaultActionChanged);
+    }
+    const bool hadMenu = d->hasMenu();
 #endif
     d->defaultAction = action;
     if (!action)
@@ -939,11 +960,17 @@ void QToolButton::setDefaultAction(QAction *action)
     setWhatsThis(action->whatsThis());
 #endif
 #if QT_CONFIG(menu)
-    if (action->menu() && !hadMenu) {
+    if (!hadMenu && !d->popupModeSetByUser) {
+        // ### Qt7 Fixme
         // new 'default' popup mode defined introduced by tool bar. We
         // should have changed QToolButton's default instead. Do that
         // in 4.2.
-        setPopupMode(QToolButton::MenuButtonPopup);
+        if (action->menu()) {
+            setPopupMode(QToolButton::MenuButtonPopup);
+        } else {
+            QObjectPrivate::connect(d->defaultAction, &QAction::changed, d,
+                                    &QToolButtonPrivate::onDefaultActionChanged);
+        }
     }
 #endif
     setCheckable(action->isCheckable());

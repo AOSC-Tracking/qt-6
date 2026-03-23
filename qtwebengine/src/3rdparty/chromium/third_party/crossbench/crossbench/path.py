@@ -2,35 +2,42 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import hashlib
 import pathlib
 import re
 import unicodedata
-from typing import Optional, Union
+from typing import Optional, TypeAlias
 
 # A path that can refer to files on a remote platform with potentially
 # a different Path flavour (e.g. Win vs Posix).
-AnyPath = pathlib.PurePath
-AnyPosixPath = pathlib.PurePosixPath
-AnyWindowsPath = pathlib.PureWindowsPath
+AnyPath: TypeAlias = pathlib.PurePath
+AnyPosixPath: TypeAlias = pathlib.PurePosixPath
+AnyWindowsPath: TypeAlias = pathlib.PureWindowsPath
 
-AnyPathLike = Union[str, AnyPath]
+AnyPathLike: TypeAlias = str | AnyPath
 
 # A path that only ever refers to files on the local host / runner platform.
 # Not that Path inherits from PurePath, and thus we can use a LocalPath in
 # all places a RemotePath is expected.
-LocalPath = pathlib.Path
-LocalPosixPath = pathlib.PosixPath
+LocalPath: TypeAlias = pathlib.Path
+LocalPosixPath: TypeAlias = pathlib.PosixPath
 
-LocalPathLike = Union[str, LocalPath]
+LocalPathLike: TypeAlias = str | LocalPath
 
-_UNSAFE_FILENAME_CHARS_RE = re.compile(r"[^a-zA-Z0-9+\-_.]")
+MAX_PART_LEN = 255
+
+_UNSAFE_FILENAME_CHARS_RE: re.Pattern[str] = re.compile(r"[^a-zA-Z0-9+\-_.]")
 
 
-def safe_filename(name: str) -> str:
+def safe_filename(name: str, strict_len: bool = False) -> str:
   normalized_name = unicodedata.normalize("NFKD", name)
   ascii_name = normalized_name.encode("ascii", "ignore").decode("ascii")
-  return _UNSAFE_FILENAME_CHARS_RE.sub("_", ascii_name)
+  safe_name: str = _UNSAFE_FILENAME_CHARS_RE.sub("_", ascii_name)
+  if strict_len and len(safe_name) > MAX_PART_LEN:
+    raise ValueError(f"Too long file name: {repr(safe_name)}")
+  return safe_name[:MAX_PART_LEN]
 
 
 def try_resolve_existing_path(value: str) -> Optional[LocalPath]:

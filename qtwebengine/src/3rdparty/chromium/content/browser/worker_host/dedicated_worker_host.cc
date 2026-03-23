@@ -7,10 +7,11 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
-#include "base/functional/overloaded.h"
+#include "base/memory/safety_checks.h"
 #include "build/build_config.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/broadcast_channel/broadcast_channel_provider.h"
@@ -27,6 +28,7 @@
 #include "content/browser/renderer_host/private_network_access_util.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/service_worker/service_worker_client.h"
+#include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_main_resource_handle.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/url_loader_factory_params_helper.h"
@@ -40,6 +42,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/network_service_util.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/common/content_client.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
@@ -53,6 +56,7 @@
 #include "services/network/public/mojom/blocked_by_response_reason.mojom.h"
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "storage/browser/blob/blob_url_store_impl.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/service_worker/service_worker_scope_match.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -79,8 +83,8 @@ DedicatedWorkerHost::DedicatedWorkerHost(
     const net::IsolationInfo& isolation_info,
     network::mojom::ClientSecurityStatePtr creator_client_security_state,
     base::WeakPtr<CrossOriginEmbedderPolicyReporter> creator_coep_reporter,
-    base::WeakPtr<CrossOriginEmbedderPolicyReporter> ancestor_coep_reporter,
-    mojo::PendingReceiver<blink::mojom::DedicatedWorkerHost> host)
+    mojo::PendingReceiver<blink::mojom::DedicatedWorkerHost> host,
+    net::StorageAccessApiStatus storage_access_api_status)
     : service_(service),
       token_(token),
       worker_process_host_(worker_process_host),
@@ -97,27 +101,25 @@ DedicatedWorkerHost::DedicatedWorkerHost(
       creator_client_security_state_(std::move(creator_client_security_state)),
       host_receiver_(this, std::move(host)),
       creator_coep_reporter_(std::move(creator_coep_reporter)),
-      ancestor_coep_reporter_(std::move(ancestor_coep_reporter)),
       code_cache_host_receivers_(GetProcessHost()
                                      ->GetStoragePartition()
-                                     ->GetGeneratedCodeCacheContext()) {
+                                     ->GetGeneratedCodeCacheContext()),
+      storage_access_api_status_(storage_access_api_status) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(worker_process_host_);
   DCHECK(worker_process_host_->IsInitializedAndNotDead());
   DCHECK(creator_client_security_state_);
+
+  // This function is known to be heap allocation heavy and performance
+  // critical. Extra memory safety checks can introduce regression
+  // (https://crbug.com/414710225) and these are disabled here.
+  base::ScopedSafetyChecksExclusion scoped_unsafe;
 
   // TODO(https://crbug.com/11990077): Once we add more stuff to
   // `blink::StorageKey`, DCHECK that `storage_key` is consistent with
   // `isolation_info_` here (i.e. their origin and top frame origin match).
 
   scoped_process_host_observation_.Observe(worker_process_host_.get());
-
-  if (!base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker)) {
-    // This is a workaround to make the worker's COEP have a value when
-    // PlzDedicatedWorker is disabled. When the feature is enabled, The value is
-    // initialized in DedicatedWorkerHost::DidStartScriptLoad().
-    worker_client_security_state_ = creator_client_security_state_->Clone();
-  }
 
   service_->NotifyWorkerCreated(this);
 
@@ -131,6 +133,11 @@ DedicatedWorkerHost::DedicatedWorkerHost(
 }
 
 DedicatedWorkerHost::~DedicatedWorkerHost() {
+  // This function is known to be heap allocation heavy and performance
+  // critical. Extra memory safety checks can introduce regression
+  // (https://crbug.com/414710225) and these are disabled here.
+  base::ScopedSafetyChecksExclusion scoped_unsafe;
+
   // If this instance is being destroyed because its mojo connection was
   // disconnected, then the destruction of the `service_worker_handle_` could
   // end up causing this instance to be deleted again through
@@ -165,9 +172,7 @@ DedicatedWorkerHost::~DedicatedWorkerHost() {
 
   service_->NotifyBeforeWorkerDestroyed(token_, creator_);
 
-  if (base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker)) {
-    WorkerDevToolsManager::GetInstance().WorkerDestroyed(this);
-  }
+  WorkerDevToolsManager::GetInstance().WorkerDestroyed(this);
 }
 
 void DedicatedWorkerHost::BindBrowserInterfaceBrokerReceiver(
@@ -195,12 +200,22 @@ void DedicatedWorkerHost::CreateContentSecurityNotifier(
 }
 
 void DedicatedWorkerHost::OnMojoDisconnect() {
+  // This function is known to be heap allocation heavy and performance
+  // critical. Extra memory safety checks can introduce regression
+  // (https://crbug.com/414710225) and these are disabled here.
+  base::ScopedSafetyChecksExclusion scoped_unsafe;
+
   delete this;
 }
 
 void DedicatedWorkerHost::RenderProcessExited(
     RenderProcessHost* render_process_host,
     const ChildProcessTerminationInfo& info) {
+  // This function is known to be heap allocation heavy and performance
+  // critical. Extra memory safety checks can introduce regression
+  // (https://crbug.com/414710225) and these are disabled here.
+  base::ScopedSafetyChecksExclusion scoped_unsafe;
+
   DCHECK_EQ(worker_process_host_, render_process_host);
 
   delete this;
@@ -208,6 +223,11 @@ void DedicatedWorkerHost::RenderProcessExited(
 
 void DedicatedWorkerHost::InProcessRendererExiting(
     RenderProcessHost* render_process_host) {
+  // This function is known to be heap allocation heavy and performance
+  // critical. Extra memory safety checks can introduce regression
+  // (https://crbug.com/414710225) and these are disabled here.
+  base::ScopedSafetyChecksExclusion scoped_unsafe;
+
   DCHECK_EQ(worker_process_host_, render_process_host);
 
   delete this;
@@ -233,7 +253,6 @@ void DedicatedWorkerHost::StartScriptLoad(
   TRACE_EVENT("loading", "DedicatedWorkerHost::StartScriptLoad", "script_url",
               script_url);
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker));
 
   DCHECK(!client_);
   DCHECK(client);
@@ -268,16 +287,16 @@ void DedicatedWorkerHost::StartScriptLoad(
   RenderFrameHostImpl* creator_render_frame_host = nullptr;
   DedicatedWorkerHost* creator_worker = nullptr;
 
-  absl::visit(base::Overloaded{
-                  [&](const GlobalRenderFrameHostId& render_frame_host_id) {
-                    creator_render_frame_host =
-                        RenderFrameHostImpl::FromID(render_frame_host_id);
-                  },
-                  [&](blink::DedicatedWorkerToken dedicated_worker_token) {
-                    creator_worker = service_->GetDedicatedWorkerHostFromToken(
-                        dedicated_worker_token);
-                  }},
-              creator_);
+  std::visit(absl::Overload{
+                 [&](const GlobalRenderFrameHostId& render_frame_host_id) {
+                   creator_render_frame_host =
+                       RenderFrameHostImpl::FromID(render_frame_host_id);
+                 },
+                 [&](blink::DedicatedWorkerToken dedicated_worker_token) {
+                   creator_worker = service_->GetDedicatedWorkerHostFromToken(
+                       dedicated_worker_token);
+                 }},
+             creator_);
 
   if (!creator_render_frame_host && !creator_worker) {
     ScriptLoadStartFailed(network::URLLoaderCompletionStatus(net::ERR_ABORTED));
@@ -365,11 +384,15 @@ void DedicatedWorkerHost::ReportNoBinderForInterface(const std::string& error) {
 void DedicatedWorkerHost::DidStartScriptLoad(
     std::optional<WorkerScriptFetcherResult> result) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker));
   TRACE_EVENT_NESTABLE_ASYNC_END0(
       "loading", "WorkerScriptFetcher CreateAndStart", TRACE_ID_LOCAL(this));
   TRACE_EVENT("loading", "DedicatedWorkerHost::DidStartScriptLoad",
               "final_response_url", script_request_url_);
+
+  // This function is known to be heap allocation heavy and performance
+  // critical. Extra memory safety checks can introduce regression
+  // (https://crbug.com/414710225) and these are disabled here.
+  base::ScopedSafetyChecksExclusion scoped_unsafe;
 
   if (!result) {
     ScriptLoadStartFailed(network::URLLoaderCompletionStatus(net::ERR_ABORTED));
@@ -423,10 +446,18 @@ void DedicatedWorkerHost::DidStartScriptLoad(
       worker_client_security_state_->is_web_secure_context =
           network::IsUrlPotentiallyTrustworthy(result->final_response_url) &&
           creator_client_security_state_->is_web_secure_context;
+      // Deprecation trial status allowing LNA requests on non-http
+      bool allow_non_secure_local_network_access =
+          ancestor_render_frame_host->policy_container_host() &&
+          ancestor_render_frame_host->policy_container_host()
+              ->policies()
+              .allow_non_secure_local_network_access;
+
       worker_client_security_state_->private_network_request_policy =
           DerivePrivateNetworkRequestPolicy(
               worker_client_security_state_->ip_address_space,
               worker_client_security_state_->is_web_secure_context,
+              allow_non_secure_local_network_access,
               PrivateNetworkRequestContext::kWorker);
     } else {
       // Preserve incorrect functionality if PNA is not enabled.
@@ -440,12 +471,12 @@ void DedicatedWorkerHost::DidStartScriptLoad(
         result->main_script_load_params->response_head->parsed_headers
             ->cross_origin_embedder_policy;
 
-    // Also set the worker global scope's document isolation policy to the
-    // result of obatining a document isolation policy from response.
-    worker_client_security_state_->document_isolation_policy =
-        result->main_script_load_params->response_head->parsed_headers
-            ->document_isolation_policy;
   }
+
+  // The worker global scope's document isolation policy is the same as its
+  // creator.
+  worker_client_security_state_->document_isolation_policy =
+      creator_client_security_state_->document_isolation_policy;
 
   auto* storage_partition = static_cast<StoragePartitionImpl*>(
       worker_process_host_->GetStoragePartition());
@@ -480,7 +511,7 @@ void DedicatedWorkerHost::DidStartScriptLoad(
   // > 14.8 If the result of checking a global object's embedder policy with
   // worker global scope, owner, and response is false, then set response to a
   // network error.
-  if (!CheckWebSecurityPolicies()) {
+  if (!CheckCOEP()) {
     ScriptLoadStartFailed(network::URLLoaderCompletionStatus(
         network::mojom::BlockedByResponseReason::
             kCoepFrameResourceNeedsCoepHeader));
@@ -563,7 +594,6 @@ DedicatedWorkerHost::CreateNetworkFactoryForSubresources(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(ancestor_render_frame_host);
   DCHECK(bypass_redirect_checks);
-  DCHECK(base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker));
 
   mojo::PendingRemote<network::mojom::CrossOriginEmbedderPolicyReporter>
       coep_reporter;
@@ -623,8 +653,7 @@ DedicatedWorkerHost::CreateNetworkFactoryForSubresources(
 
 // [spec]
 // https://html.spec.whatwg.org/C/#check-a-global-object's-embedder-policy
-bool DedicatedWorkerHost::CheckWebSecurityPolicies() {
-  DCHECK(base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker));
+bool DedicatedWorkerHost::CheckCOEP() {
   DCHECK(final_response_url_);
 
   if (!creator_coep_reporter_) {
@@ -636,31 +665,16 @@ bool DedicatedWorkerHost::CheckWebSecurityPolicies() {
           creator_client_security_state_->cross_origin_embedder_policy;
   const network::CrossOriginEmbedderPolicy&
       worker_cross_origin_embedder_policy = cross_origin_embedder_policy();
-  const network::DocumentIsolationPolicy& creator_document_isolation_policy =
-      creator_client_security_state_->document_isolation_policy;
-  const network::DocumentIsolationPolicy& worker_document_isolation_policy =
-      worker_client_security_state_->document_isolation_policy;
-
-  bool report_only_coep_blocks_worker =
-      network::CompatibleWithCrossOriginIsolated(
-          creator_cross_origin_embedder_policy.report_only_value) &&
-      !network::CompatibleWithCrossOriginIsolated(
-          worker_cross_origin_embedder_policy);
-  bool coep_blocks_worker = network::CompatibleWithCrossOriginIsolated(
-                                creator_cross_origin_embedder_policy.value) &&
-                            !network::CompatibleWithCrossOriginIsolated(
-                                worker_cross_origin_embedder_policy);
-  bool dip_blocks_worker = network::DIPCompatibleWithCrossOriginIsolated(
-                               creator_document_isolation_policy.value) &&
-                           !network::DIPCompatibleWithCrossOriginIsolated(
-                               worker_document_isolation_policy);
 
   // [spec]: 4. If ownerPolicy's report-only value is "require-corp" or
   // "credentialless" and policy's value is "unsafe-none", then queue a
   // cross-origin embedder policy inheritance violation with response, "worker
   // initialization", owner's policy's report only reporting endpoint,
   // "reporting", and owner.
-  if (report_only_coep_blocks_worker) {
+  if (network::CompatibleWithCrossOriginIsolated(
+          creator_cross_origin_embedder_policy.report_only_value) &&
+      !network::CompatibleWithCrossOriginIsolated(
+          worker_cross_origin_embedder_policy.value)) {
     creator_coep_reporter_->QueueWorkerInitializationReport(
         final_response_url_.value(),
         /*report_only=*/true);
@@ -668,7 +682,10 @@ bool DedicatedWorkerHost::CheckWebSecurityPolicies() {
 
   // [spec]: 5. If ownerPolicy's value is "unsafe-none" or policy's value is
   // "require-corp" or "credentialless", then return true.
-  if (!coep_blocks_worker && !dip_blocks_worker) {
+  if (!network::CompatibleWithCrossOriginIsolated(
+          creator_cross_origin_embedder_policy.value) ||
+      network::CompatibleWithCrossOriginIsolated(
+          worker_cross_origin_embedder_policy.value)) {
     return true;
   }
 
@@ -774,9 +791,6 @@ void DedicatedWorkerHost::BindCacheStorage(
 void DedicatedWorkerHost::CreateNestedDedicatedWorker(
     mojo::PendingReceiver<blink::mojom::DedicatedWorkerHostFactory> receiver) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  // For the non-PlzDedicatedWorker case, use ancestor's COEP reporter as a
-  // `creator_coep_reporter` to keep the current behavior, but it's not aligned
-  // with the spec.
   base::WeakPtr<CrossOriginEmbedderPolicyReporter> creator_coep_reporter =
       GetWorkerCoepReporter();
 
@@ -784,8 +798,7 @@ void DedicatedWorkerHost::CreateNestedDedicatedWorker(
       std::make_unique<DedicatedWorkerHostFactoryImpl>(
           worker_process_host_->GetDeprecatedID(), /*creator=*/token_,
           ancestor_render_frame_host_id_, GetStorageKey(), isolation_info_,
-          worker_client_security_state_->Clone(), creator_coep_reporter,
-          ancestor_coep_reporter_),
+          worker_client_security_state_->Clone(), creator_coep_reporter),
       std::move(receiver));
 }
 
@@ -818,6 +831,15 @@ void DedicatedWorkerHost::CreateBroadcastChannelProvider(
       std::move(receiver));
 }
 
+bool DedicatedWorkerHost::WasStorageAccessGranted() {
+  switch (storage_access_api_status_) {
+    case net::StorageAccessApiStatus::kAccessViaAPI:
+      return true;
+    case net::StorageAccessApiStatus::kNone:
+      return false;
+  }
+}
+
 void DedicatedWorkerHost::CreateBlobUrlStoreProvider(
     mojo::PendingReceiver<blink::mojom::BlobURLStore> receiver) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -827,6 +849,23 @@ void DedicatedWorkerHost::CreateBlobUrlStoreProvider(
   storage_partition_impl->GetBlobUrlRegistry()->AddReceiver(
       GetStorageKey(), renderer_origin_, GetProcessHost()->GetDeprecatedID(),
       std::move(receiver),
+      /*context_type_for_debugging=*/"Dedicated Worker",
+      base::BindRepeating(
+          [](base::WeakPtr<DedicatedWorkerHost> host) -> std::string {
+            if (!host) {
+              return "destroyed DedicatedWorkerHost";
+            }
+            return host->GetStorageKey().GetDebugString();
+          },
+          weak_factory_.GetWeakPtr()),
+      base::BindRepeating(
+          [](base::WeakPtr<DedicatedWorkerHost> host) -> bool {
+            if (!host) {
+              return false;
+            }
+            return host->WasStorageAccessGranted();
+          },
+          weak_factory_.GetWeakPtr()),
       !(GetContentClient()->browser()->IsBlobUrlPartitioningEnabled(
           GetProcessHost()->GetBrowserContext())),
       storage::BlobURLValidityCheckBehavior::
@@ -842,7 +881,6 @@ void DedicatedWorkerHost::CreateCodeCacheHost(
                                  GetStorageKey(), std::move(receiver));
 }
 
-#if !BUILDFLAG(IS_ANDROID)
 void DedicatedWorkerHost::BindSerialService(
     mojo::PendingReceiver<blink::mojom::SerialService> receiver) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -857,6 +895,7 @@ void DedicatedWorkerHost::BindSerialService(
   ancestor_render_frame_host->BindSerialService(std::move(receiver));
 }
 
+#if !BUILDFLAG(IS_ANDROID)
 void DedicatedWorkerHost::BindHidService(
     mojo::PendingReceiver<blink::mojom::HidService> receiver) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -933,8 +972,6 @@ void DedicatedWorkerHost::BindPressureService(
 
 void DedicatedWorkerHost::ObserveNetworkServiceCrash(
     StoragePartitionImpl* storage_partition_impl) {
-  DCHECK(base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker));
-
   auto params = network::mojom::URLLoaderFactoryParams::New();
   params->process_id = worker_process_host_->GetDeprecatedID();
   params->debug_tag = "DedicatedWorkerHost::ObserveNetworkServiceCrash";
@@ -953,7 +990,6 @@ void DedicatedWorkerHost::OnNetworkServiceCrash() {
   DCHECK(subresource_loader_updater_.is_bound());
   DCHECK(network_service_connection_error_handler_holder_);
   DCHECK(!network_service_connection_error_handler_holder_.is_connected());
-  DCHECK(base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker));
 
   auto* storage_partition_impl = static_cast<StoragePartitionImpl*>(
       worker_process_host_->GetStoragePartition());
@@ -987,7 +1023,7 @@ void DedicatedWorkerHost::UpdateSubresourceLoaderFactories() {
   // If this is a nested worker, there is no creator frame and
   // |creator_render_frame_host| will be null.
   const content::GlobalRenderFrameHostId* const render_frame_host_id =
-      absl::get_if<content::GlobalRenderFrameHostId>(&creator_);
+      std::get_if<content::GlobalRenderFrameHostId>(&creator_);
   RenderFrameHostImpl* creator_render_frame_host =
       render_frame_host_id ? RenderFrameHostImpl::FromID(*render_frame_host_id)
                            : nullptr;
@@ -1012,113 +1048,10 @@ void DedicatedWorkerHost::UpdateSubresourceLoaderFactories() {
       std::move(subresource_loader_factories));
 }
 
-void DedicatedWorkerHost::MaybeCountWebFeature(const GURL& script_url) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(!base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker));
-
-  RenderFrameHostImpl* ancestor_render_frame_host =
-      RenderFrameHostImpl::FromID(ancestor_render_frame_host_id_);
-  if (!ancestor_render_frame_host) {
-    return;
-  }
-
-  base::WeakPtr<ServiceWorkerClient> service_worker_client =
-      ancestor_render_frame_host->GetLastCommittedServiceWorkerClient();
-  if (!service_worker_client || !service_worker_client->controller()) {
-    return;
-  }
-
-  if (!blink::ServiceWorkerScopeMatches(
-          service_worker_client->controller()->scope(), script_url) ||
-      service_worker_client->key() != storage_key_) {
-    // Count the number of dedicated workers that 1) are controlled by a service
-    // worker that is inherited from a controlled document, and 2) will not be
-    // controlled by that service worker after PlzDedicatedWorker is enabled.
-    service_worker_client->CountFeature(
-        blink::mojom::WebFeature::kWorkerControlledByServiceWorkerOutOfScope);
-
-    DCHECK_NE(service_worker_client->controller()->fetch_handler_existence(),
-              ServiceWorkerVersion::FetchHandlerExistence::UNKNOWN);
-    if (service_worker_client->controller()->fetch_handler_existence() ==
-        ServiceWorkerVersion::FetchHandlerExistence::EXISTS) {
-      // Count the number of dedicated workers that 1) are controlled by a
-      // service worker that is inherited from a controlled document, 2) will
-      // not be controlled by that service worker after PlzDedicatedWorker is
-      // enabled, and 3) have a fetch event handler.
-      // `kControlledWorkerWillBeUncontrolled` excludes the cases if a
-      // dedicated worker is controlled by any registered service worker.
-      service_worker_client->CountFeature(
-          blink::mojom::WebFeature::
-              kWorkerControlledByServiceWorkerWithFetchEventHandlerOutOfScope);
-
-      ServiceWorkerContextWrapper* service_worker_context =
-          static_cast<StoragePartitionImpl*>(
-              worker_process_host_->GetStoragePartition())
-              ->GetServiceWorkerContext();
-      if (!service_worker_context) {
-        return;
-      }
-
-      service_worker_context->GetRegistrationsForStorageKey(
-          blink::StorageKey::CreateFirstParty(
-              ancestor_render_frame_host->GetLastCommittedOrigin()),
-          base::BindOnce(&DedicatedWorkerHost::ContinueOnMaybeCountWebFeature,
-                         weak_factory_.GetWeakPtr(), script_url,
-                         std::move(service_worker_client)));
-    }
-  }
-}
-
-void DedicatedWorkerHost::ContinueOnMaybeCountWebFeature(
-    const GURL& script_url,
-    base::WeakPtr<ServiceWorkerClient> ancestor_service_worker_client,
-    blink::ServiceWorkerStatusCode status,
-    const std::vector<scoped_refptr<ServiceWorkerRegistration>>&
-        registrations) {
-  DCHECK(!base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker));
-  if (!ancestor_service_worker_client ||
-      status != blink::ServiceWorkerStatusCode::kOk) {
-    return;
-  }
-
-  for (const auto& registration : registrations) {
-    // Do not record the UseCounter because a dedicated worker is in scope of
-    // one of service workers registered for the origin. The scope matched
-    // service worker may be different from the one that controls the ancestor
-    // frame.
-    if (blink::ServiceWorkerScopeMatches(registration->scope(), script_url) &&
-        registration->key() == storage_key_) {
-      return;
-    }
-  }
-
-  // Count the number of dedicated workers that are not controlled by any
-  // service worker registered for the origin after PlzDedicatedWorker is
-  // enabled.
-  ancestor_service_worker_client->CountFeature(
-      blink::mojom::WebFeature::kControlledWorkerWillBeUncontrolled);
-
-  // Exclude the cases that `script_url` is a blob URL from
-  // kControlledWorkerWillBeUncontrolled.
-  if (!script_url.SchemeIsBlob()) {
-    ancestor_service_worker_client->CountFeature(
-        blink::mojom::WebFeature::
-            kControlledNonBlobURLWorkerWillBeUncontrolled);
-  }
-}
-
 base::WeakPtr<CrossOriginEmbedderPolicyReporter>
 DedicatedWorkerHost::GetWorkerCoepReporter() {
-  if (base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker)) {
-    DCHECK(coep_reporter_);
-    return coep_reporter_->GetWeakPtr();
-  }
-  // For the non-PlzDedicatedWorker case, use ancestor's COEP reporter to keep
-  // the current behavior, but it's not aligned with the spec.
-  // `ancestor_coep_reporter_` is possible to be nullptr, which means the
-  // ancestor render frame has already been closed or navigated and this worker
-  // will also be terminated soon.
-  return ancestor_coep_reporter_;
+  DCHECK(coep_reporter_);
+  return coep_reporter_->GetWeakPtr();
 }
 
 void DedicatedWorkerHost::EvictFromBackForwardCache(
@@ -1155,8 +1088,10 @@ blink::mojom::PermissionStatus DedicatedWorkerHost::GetPermissionStatus(
   return GetProcessHost()
       ->GetBrowserContext()
       ->GetPermissionController()
-      ->GetPermissionStatusForWorker(permission_type, GetProcessHost(),
-                                     GetStorageKey().origin());
+      ->GetPermissionStatusForWorker(
+          content::PermissionDescriptorUtil::
+              CreatePermissionDescriptorForPermissionType(permission_type),
+          GetProcessHost(), GetStorageKey().origin());
 }
 
 void DedicatedWorkerHost::BindCacheStorageForBucket(

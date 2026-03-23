@@ -9,7 +9,7 @@ Window {
     id: appWindow
 
     visible: true
-    title: qsTr(`Responsive layouts with LayoutItemProxy: ${grid.columns} columns`)
+    title: qsTr("Responsive layouts with LayoutItemProxy: %n columns", "", grid.columns)
 
     minimumHeight: 320
     minimumWidth: 240
@@ -28,7 +28,7 @@ Window {
                 fill: parent
                 margins: 8
             }
-            columns: Math.min(Math.round(width / 130), 6)
+            columns: Math.max(1, Math.min(Math.round(width / 130), 6))
             Repeater {
                 model: 60
                 delegate: Rectangle {

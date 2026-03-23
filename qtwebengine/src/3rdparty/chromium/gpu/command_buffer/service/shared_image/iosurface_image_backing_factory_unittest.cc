@@ -323,10 +323,10 @@ class IOSurfaceImageBackingFactoryDawnTest
     wgpu::Texture dst_texture(dst_scoped_access->texture());
 
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-    wgpu::ImageCopyTexture copy_src;
+    wgpu::TexelCopyTextureInfo copy_src;
     copy_src.texture = src_texture;
 
-    wgpu::ImageCopyTexture copy_dst;
+    wgpu::TexelCopyTextureInfo copy_dst;
     copy_dst.texture = dst_texture;
 
     wgpu::Extent3D copy_size;
@@ -343,11 +343,13 @@ class IOSurfaceImageBackingFactoryDawnTest
     return std::make_pair(std::move(src_rep), std::move(src_scoped_access));
   }
 
-  static constexpr WGPUInstanceDescriptor instance_desc_ = {
-      .features =
-          {
-              .timedWaitAnyEnable = true,
-          },
+  static constexpr auto kInstanceFeatures = std::array{
+      wgpu::InstanceFeatureName::MultipleDevicesPerAdapter,
+      wgpu::InstanceFeatureName::TimedWaitAny,
+  };
+  static constexpr wgpu::InstanceDescriptor instance_desc_ = {
+      .requiredFeatureCount = kInstanceFeatures.size(),
+      .requiredFeatures = kInstanceFeatures.data(),
   };
   dawn::native::Instance instance_ = dawn::native::Instance(&instance_desc_);
   wgpu::Adapter adapter_;
@@ -1335,18 +1337,13 @@ class IOSurfaceImageBackingFactoryGMBTest
     SkAlphaType alpha_type = kPremul_SkAlphaType;
     bool override_rgba_to_bgra = get_gr_context_type() == GrContextType::kGL;
 
-    gfx::BufferFormat buffer_format = gpu::ToBufferFormat(format);
-    gfx::GpuMemoryBufferHandle handle;
-    gfx::GpuMemoryBufferId kBufferId(1);
-    handle.type = gfx::IO_SURFACE_BUFFER;
-    handle.id = kBufferId;
-    handle.io_surface = gfx::CreateIOSurface(
-        size, buffer_format, /*should_clear=*/true, override_rgba_to_bgra);
-    DCHECK(handle.io_surface);
+    gfx::GpuMemoryBufferHandle handle(gfx::CreateIOSurface(
+        size, format, /*should_clear=*/true, override_rgba_to_bgra));
+    DCHECK(handle.io_surface());
 
     auto backing = backing_factory_->CreateSharedImage(
         mailbox, format, size, color_space, surface_origin, alpha_type, usage,
-        "TestLabel", std::move(handle));
+        "TestLabel", /*is_thread_safe=*/false, std::move(handle));
 
     if (!should_succeed) {
       return nullptr;
@@ -1500,6 +1497,7 @@ TEST_P(IOSurfaceImageBackingFactoryGMBTest, Basic) {
   shared_image.reset();
 }
 
+#if BUILDFLAG(SKIA_USE_DAWN)
 // Tests that multiple representations created from Graphite's Dawn device use
 // the same wgpu::Texture for accesses created with the same usage.
 TEST_P(IOSurfaceImageBackingFactoryGMBTest,
@@ -1780,9 +1778,9 @@ TEST_P(IOSurfaceImageBackingFactoryGMBTest,
 
   wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
 
-  wgpu::ImageCopyTexture copy_src;
+  wgpu::TexelCopyTextureInfo copy_src;
   copy_src.texture = texture_1;
-  wgpu::ImageCopyTexture copy_dst;
+  wgpu::TexelCopyTextureInfo copy_dst;
   copy_dst.texture = dst_texture;
   wgpu::Extent3D copy_size;
   copy_size.width = size.width();
@@ -1802,6 +1800,7 @@ TEST_P(IOSurfaceImageBackingFactoryGMBTest,
   queue.Submit(1, &commands);
   EXPECT_FALSE(context_provider->GetResetStatus());
 }
+#endif  // #if BUILDFLAG(SKIA_USE_DAWN)
 
 const auto kScanoutFormats =
     ::testing::Values(viz::SinglePlaneFormat::kRGBA_8888,

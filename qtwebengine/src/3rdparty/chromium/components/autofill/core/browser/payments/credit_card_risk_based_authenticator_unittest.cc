@@ -6,11 +6,12 @@
 
 #include <memory>
 
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
 #include "components/autofill/core/browser/data_manager/test_personal_data_manager.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/browser/metrics/payments/card_unmask_authentication_metrics.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
@@ -452,37 +453,24 @@ TEST_F(CreditCardRiskBasedAuthenticatorTest, CardInfoRetrievalUnmaskFailure) {
 // Params of the CreditCardRiskBasedAuthenticatorCardMetadataTest:
 // -- bool card_name_available;
 // -- bool card_art_available;
-// -- bool metadata_enabled;
 class CreditCardRiskBasedAuthenticatorCardMetadataTest
     : public CreditCardRiskBasedAuthenticatorTest,
-      public testing::WithParamInterface<std::tuple<bool, bool, bool>> {
+      public testing::WithParamInterface<std::tuple<bool, bool>> {
  public:
   CreditCardRiskBasedAuthenticatorCardMetadataTest() = default;
   ~CreditCardRiskBasedAuthenticatorCardMetadataTest() override = default;
 
   bool CardNameAvailable() { return std::get<0>(GetParam()); }
   bool CardArtAvailable() { return std::get<1>(GetParam()); }
-  bool MetadataEnabled() { return std::get<2>(GetParam()); }
 };
 
 INSTANTIATE_TEST_SUITE_P(,
                          CreditCardRiskBasedAuthenticatorCardMetadataTest,
-                         testing::Combine(testing::Bool(),
-                                          testing::Bool(),
-                                          testing::Bool()));
+                         testing::Combine(testing::Bool(), testing::Bool()));
 
 TEST_P(CreditCardRiskBasedAuthenticatorCardMetadataTest, MetadataSignal) {
   base::test::ScopedFeatureList metadata_feature_list;
   CreditCard virtual_card = test::GetVirtualCard();
-  if (MetadataEnabled()) {
-    metadata_feature_list.InitWithFeatures(
-        /*enabled_features=*/{features::kAutofillEnableCardProductName},
-        /*disabled_features=*/{});
-  } else {
-    metadata_feature_list.InitWithFeaturesAndParameters(
-        /*enabled_features=*/{},
-        /*disabled_features=*/{features::kAutofillEnableCardProductName});
-  }
   if (CardNameAvailable()) {
     virtual_card.set_product_description(u"Fake card product name");
   }
@@ -502,7 +490,7 @@ TEST_P(CreditCardRiskBasedAuthenticatorCardMetadataTest, MetadataSignal) {
                   ->last_committed_primary_main_frame_origin.has_value());
   std::vector<ClientBehaviorConstants> signals =
       payments_network_interface()->unmask_request()->client_behavior_signals;
-  if (MetadataEnabled() && CardNameAvailable() && CardArtAvailable()) {
+  if (CardNameAvailable() && CardArtAvailable()) {
     EXPECT_NE(
         signals.end(),
         std::ranges::find(
@@ -517,32 +505,65 @@ TEST_P(CreditCardRiskBasedAuthenticatorCardMetadataTest, MetadataSignal) {
 // 1. Function reference to call which creates the appropriate credit card
 // benefit for the unittest.
 // 2. Whether the flag to render benefits is enabled.
-// 3. Issuer ID which is set for the credit card with benefits.
+// 3. Whether the flag to sync benefits source is enabled.
+// 4. Issuer ID which is set for the credit card with benefits.
+// 5. Benefit source which is set for the credit card with benefits.
 class CreditCardRiskBasedAuthenticatorCardBenefitsTest
     : public CreditCardRiskBasedAuthenticatorTest,
       public ::testing::WithParamInterface<
           std::tuple<base::FunctionRef<CreditCardBenefit()>,
                      bool,
+                     bool,
+                     std::string,
                      std::string>> {
  public:
   void SetUp() override {
     CreditCardRiskBasedAuthenticatorTest::SetUp();
     scoped_feature_list_.InitWithFeatureStates(
         {{features::kAutofillEnableCardBenefitsForAmericanExpress,
-          IsCreditCardBenefitsEnabled()}});
+          IsCreditCardBenefitsEnabled()},
+         {features::kAutofillEnableCardBenefitsForBmo,
+          IsCreditCardBenefitsEnabled()},
+         {features::kAutofillEnableFlatRateCardBenefitsFromCurinos,
+          IsCreditCardBenefitsEnabled()},
+         {features::kAutofillEnableCardBenefitsSourceSync,
+          IsCreditCardBenefitsSourceSyncEnabled()}});
     card_ = test::GetMaskedServerCard();
     autofill_client()->set_last_committed_primary_main_frame_url(
         test::GetOriginsForMerchantBenefit().begin()->GetURL());
-    test::SetUpCreditCardAndBenefitData(
-        card_, GetBenefit(), GetIssuerId(), personal_data(),
-        autofill_client()->GetAutofillOptimizationGuide());
+    if (IsCreditCardBenefitsSourceSyncEnabled()) {
+      test::SetUpCreditCardAndBenefitData(
+          card_, /*issuer_id=*/"", GetBenefit(), GetBenefitSource(),
+          personal_data(), autofill_client()->GetAutofillOptimizationGuide());
+    } else {
+      test::SetUpCreditCardAndBenefitData(
+          card_, GetIssuerId(), GetBenefit(), /*benefit_source=*/"",
+          personal_data(), autofill_client()->GetAutofillOptimizationGuide());
+    }
   }
 
   CreditCardBenefit GetBenefit() const { return std::get<0>(GetParam())(); }
 
   bool IsCreditCardBenefitsEnabled() const { return std::get<1>(GetParam()); }
 
-  const std::string& GetIssuerId() const { return std::get<2>(GetParam()); }
+  bool IsCreditCardBenefitsSourceSyncEnabled() const {
+    return std::get<2>(GetParam());
+  }
+
+  const std::string& GetIssuerId() const { return std::get<3>(GetParam()); }
+
+  const std::string& GetBenefitSource() const {
+    return std::get<4>(GetParam());
+  }
+
+  bool ShouldShowCardBenefits() const {
+    if (IsCreditCardBenefitsSourceSyncEnabled() &&
+        GetBenefitSource() == "curinos") {
+      return IsCreditCardBenefitsEnabled() &&
+             std::holds_alternative<CreditCardFlatRateBenefit>(GetBenefit());
+    }
+    return IsCreditCardBenefitsEnabled();
+  }
 
   const CreditCard& card() { return card_; }
 
@@ -559,7 +580,9 @@ INSTANTIATE_TEST_SUITE_P(
                           &test::GetActiveCreditCardCategoryBenefit,
                           &test::GetActiveCreditCardMerchantBenefit),
         ::testing::Bool(),
-        ::testing::Values("amex")));
+        ::testing::Bool(),
+        ::testing::Values("amex", "bmo"),
+        ::testing::Values("amex", "bmo", "curinos")));
 
 // Checks that ClientBehaviorConstants::kShowingCardBenefits is populated as a
 // signal if a card benefit was shown when unmasking a credit card suggestion
@@ -574,11 +597,10 @@ TEST_P(CreditCardRiskBasedAuthenticatorCardBenefitsTest,
 
   std::vector<ClientBehaviorConstants> signals =
       payments_network_interface()->unmask_request()->client_behavior_signals;
-
   EXPECT_EQ(std::ranges::find(signals,
                               ClientBehaviorConstants::kShowingCardBenefits) !=
                 signals.end(),
-            IsCreditCardBenefitsEnabled());
+            ShouldShowCardBenefits());
 }
 
 }  // namespace

@@ -8,12 +8,12 @@
 #include <cstring>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/files/file.h"
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/not_fatal_until.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/win/object_watcher.h"
 #include "components/device_event_log/device_event_log.h"
@@ -83,7 +83,7 @@ PendingHidTransfer::PendingHidTransfer(
     : buffer_(buffer),
       callback_(std::move(callback)),
       event_(CreateEvent(NULL, FALSE, FALSE, NULL)) {
-  memset(&overlapped_, 0, sizeof(OVERLAPPED));
+  UNSAFE_TODO(memset(&overlapped_, 0, sizeof(OVERLAPPED)));
   overlapped_.hEvent = event_.Get();
 }
 
@@ -329,7 +329,7 @@ std::unique_ptr<PendingHidTransfer> HidConnectionWin::UnlinkTransfer(
     PendingHidTransfer* transfer) {
   auto it = std::ranges::find(transfers_, transfer,
                               &std::unique_ptr<PendingHidTransfer>::get);
-  CHECK(it != transfers_.end(), base::NotFatalUntil::M130);
+  CHECK(it != transfers_.end());
   std::unique_ptr<PendingHidTransfer> saved_transfer = std::move(*it);
   transfers_.erase(it);
   return saved_transfer;

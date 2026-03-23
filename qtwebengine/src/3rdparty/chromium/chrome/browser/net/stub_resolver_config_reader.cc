@@ -28,9 +28,9 @@
 #include "chrome/browser/policy/chrome_browser_policy_connector.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
-#include "components/flags_ui/pref_service_flags_storage.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
+#include "components/webui/flags/pref_service_flags_storage.h"
 #include "content/public/browser/network_service_instance.h"
 #include "net/base/features.h"
 #include "net/dns/public/dns_over_https_config.h"
@@ -46,7 +46,9 @@
 
 #if BUILDFLAG(IS_WIN)
 #include "base/enterprise_util.h"
+#include "base/scoped_native_library.h"
 #include "base/win/win_util.h"
+#include "base/win/windows_version.h"
 #include "chrome/browser/win/parental_controls.h"
 #endif
 
@@ -81,11 +83,73 @@ enum class SecureDnsModeDetailsForHistogram {
 bool ShouldDisableDohForWindowsParentalControls() {
   return GetWinParentalControls().web_filter;
 }
+
+// Defines the base::Feature for controlling the ZTDNS check.
+BASE_FEATURE(kZeroTrustDNS, "ZeroTrustDNS", base::FEATURE_ENABLED_BY_DEFAULT);
+
+// DnsIsZtEnabled returns a BOOL value that specifies whether Zero
+// Trust DNS (ZTDNS) is enabled on the current device.
+using DnsIsZtEnabledFunc = BOOL (*)();
+
+// Applicable to Windows OS.
+// Returns true if Zero Trust DNS is enabled at the OS level.
+// Returns false if Zero Trust DNS is either not enabled or unsupported.
+bool IsZTDNSEnabled() {
+  if (StubResolverConfigReader::IsZTDNSEnabledForTesting()) {
+    return true;
+  }
+
+  if (!base::FeatureList::IsEnabled(kZeroTrustDNS)) {
+    return false;
+  }
+
+  // DnsIsZtEnabled returns a BOOL value that specifies whether Zero
+  // Trust DNS (ZTDNS) is enabled on the current device.
+  // There is no import library for this function, thus using native
+  // dnsapi.dll library.
+  const wchar_t* dll_name = L"dnsapi.dll";
+  const char* function_name = "DnsIsZtEnabled";
+  auto dns_api_dll = base::ScopedNativeLibrary(base::FilePath(dll_name));
+
+  if (!dns_api_dll.is_valid()) {
+    return false;
+  }
+
+  auto dns_is_zt_enabled_func = reinterpret_cast<DnsIsZtEnabledFunc>(
+      dns_api_dll.GetFunctionPointer(function_name));
+
+  if (!dns_is_zt_enabled_func) {
+    const base::win::OSInfo* os_info = base::win::OSInfo::GetInstance();
+    auto os_info_version = os_info->version();
+    auto os_info_version_number = os_info->version_number();
+
+    DCHECK(!(os_info_version > base::win::Version::WIN11_24H2 ||
+             (os_info_version == base::win::Version::WIN11_24H2 &&
+              os_info_version_number.build >= 27766)))
+        << function_name
+        << " not found, but it was expected on this OS version: "
+        << "Major: " << os_info_version_number.major
+        << ", Minor: " << os_info_version_number.minor
+        << ", Build: " << os_info_version_number.build
+        << " (Comparing against > WIN11_24H2 or WIN11_24H2 with build >= "
+           "27766)";
+    return false;
+  }
+  return dns_is_zt_enabled_func();
+}
 #endif  // BUILDFLAG(IS_WIN)
 
 // Check the AsyncDns field trial and return true if it should be enabled. On
 // Android this includes checking the Android version in the field trial.
 bool ShouldEnableAsyncDns() {
+#if BUILDFLAG(IS_WIN)
+  // On Windows if Zero Trust DNS is enabled on current device,
+  // we should not use built-in resolver (async dns). It should
+  // always use system (OS) resolver.
+  if (IsZTDNSEnabled()) {
+    return false;
+  }
+#endif
   bool feature_can_be_enabled = true;
 #if BUILDFLAG(IS_ANDROID)
   int min_sdk = base::GetFieldTrialParamByFeatureAsInt(net::features::kAsyncDns,
@@ -98,6 +162,11 @@ bool ShouldEnableAsyncDns() {
 }
 
 }  // namespace
+
+#if BUILDFLAG(IS_WIN)
+// static
+bool StubResolverConfigReader::is_ztdns_enabled_for_testing_ = false;
+#endif
 
 // static
 constexpr base::TimeDelta StubResolverConfigReader::kParentalControlsCheckDelay;
@@ -124,6 +193,7 @@ StubResolverConfigReader::StubResolverConfigReader(PrefService* local_state,
   pref_change_registrar_.Add(prefs::kBuiltInDnsClientEnabled, pref_callback);
   pref_change_registrar_.Add(prefs::kAdditionalDnsQueryTypesEnabled,
                              pref_callback);
+  pref_change_registrar_.Add(prefs::kHappyEyeballsV3Enabled, pref_callback);
 
   parental_controls_delay_timer_.Start(
       FROM_HERE, kParentalControlsCheckDelay,
@@ -150,6 +220,7 @@ void StubResolverConfigReader::RegisterPrefs(PrefRegistrySimple* registry) {
   // for SystemNetworkContextManager, at which point the feature list is ready.
   registry->RegisterBooleanPref(prefs::kBuiltInDnsClientEnabled, false);
   registry->RegisterBooleanPref(prefs::kAdditionalDnsQueryTypesEnabled, true);
+  registry->RegisterBooleanPref(prefs::kHappyEyeballsV3Enabled, false);
 }
 
 SecureDnsConfig StubResolverConfigReader::GetSecureDnsConfiguration(
@@ -222,6 +293,13 @@ StubResolverConfigReader::GetDnsOverHttpsConfigSource() const {
     return override_doh_source_.get();
   }
   return default_doh_source_.get();
+}
+
+bool StubResolverConfigReader::GetHappyEyeballsV3Enabled() const {
+  if (local_state_->IsManagedPreference(prefs::kHappyEyeballsV3Enabled)) {
+    return local_state_->GetBoolean(prefs::kHappyEyeballsV3Enabled);
+  }
+  return base::FeatureList::IsEnabled(net::features::kHappyEyeballsV3);
 }
 
 void StubResolverConfigReader::OnParentalControlsDelayTimer() {
@@ -345,8 +423,8 @@ SecureDnsConfig StubResolverConfigReader::GetAndUpdateConfiguration(
   }
   if (update_network_service) {
     content::GetNetworkService()->ConfigureStubHostResolver(
-        GetInsecureStubResolverEnabled(), secure_dns_mode, doh_config,
-        additional_dns_query_types_enabled);
+        GetInsecureStubResolverEnabled(), GetHappyEyeballsV3Enabled(),
+        secure_dns_mode, doh_config, additional_dns_query_types_enabled);
   }
 
   return SecureDnsConfig(secure_dns_mode, std::move(doh_config),

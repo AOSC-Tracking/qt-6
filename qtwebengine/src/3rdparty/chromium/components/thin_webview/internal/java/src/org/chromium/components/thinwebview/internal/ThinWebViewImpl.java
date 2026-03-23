@@ -9,13 +9,13 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
-import androidx.annotation.Nullable;
-
 import org.jni_zero.JNINamespace;
 import org.jni_zero.NativeMethods;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.build.annotations.DoNotInline;
+import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.components.embedder_support.delegate.WebContentsDelegateAndroid;
 import org.chromium.components.thinwebview.CompositorView;
 import org.chromium.components.thinwebview.ThinWebView;
@@ -28,14 +28,15 @@ import org.chromium.ui.base.WindowAndroid;
 
 /** An android view backed by a {@link Surface} that is able to display a live {@link WebContents}. */
 @JNINamespace("thin_webview::android")
+@NullMarked
 public class ThinWebViewImpl extends FrameLayout implements ThinWebView {
     private final CompositorView mCompositorView;
     private final WindowAndroid mWindowAndroid;
     private long mNativeThinWebViewImpl;
-    private View mContentView;
+    private @Nullable View mContentView;
     // Passed to native and stored as a weak reference, so ensure this strong
     // reference is not optimized away by R8.
-    @DoNotInline private WebContentsDelegateAndroid mWebContentsDelegate;
+    @DoNotInline private @Nullable WebContentsDelegateAndroid mWebContentsDelegate;
 
     /**
      * Creates a {@link ThinWebViewImpl} backed by a {@link Surface}.
@@ -67,8 +68,7 @@ public class ThinWebViewImpl extends FrameLayout implements ThinWebView {
         addView(mCompositorView.getView(), layoutParams);
 
         mNativeThinWebViewImpl =
-                ThinWebViewImplJni.get()
-                        .init(ThinWebViewImpl.this, mCompositorView, mWindowAndroid);
+                ThinWebViewImplJni.get().init(this, mCompositorView, mWindowAndroid);
     }
 
     @Override
@@ -85,9 +85,7 @@ public class ThinWebViewImpl extends FrameLayout implements ThinWebView {
         // Native code holds only a weak reference to this object.
         mWebContentsDelegate = delegate;
         setContentView(contentView);
-        ThinWebViewImplJni.get()
-                .setWebContents(
-                        mNativeThinWebViewImpl, ThinWebViewImpl.this, webContents, delegate);
+        ThinWebViewImplJni.get().setWebContents(mNativeThinWebViewImpl, webContents, delegate);
         webContents.updateWebContentsVisibility(Visibility.VISIBLE);
     }
 
@@ -99,7 +97,7 @@ public class ThinWebViewImpl extends FrameLayout implements ThinWebView {
             mContentView = null;
         }
         mCompositorView.destroy();
-        ThinWebViewImplJni.get().destroy(mNativeThinWebViewImpl, ThinWebViewImpl.this);
+        ThinWebViewImplJni.get().destroy(mNativeThinWebViewImpl);
         mNativeThinWebViewImpl = 0;
         mWindowAndroid.destroy();
     }
@@ -113,12 +111,11 @@ public class ThinWebViewImpl extends FrameLayout implements ThinWebView {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         if (mNativeThinWebViewImpl == 0) return;
         if (w != oldw || h != oldh) {
-            ThinWebViewImplJni.get()
-                    .sizeChanged(mNativeThinWebViewImpl, ThinWebViewImpl.this, w, h);
+            ThinWebViewImplJni.get().sizeChanged(mNativeThinWebViewImpl, w, h);
         }
     }
 
-    private void setContentView(View contentView) {
+    private void setContentView(@Nullable View contentView) {
         if (mContentView == contentView) return;
 
         if (mContentView != null) {
@@ -132,17 +129,15 @@ public class ThinWebViewImpl extends FrameLayout implements ThinWebView {
 
     @NativeMethods
     interface Natives {
-        long init(
-                ThinWebViewImpl caller, CompositorView compositorView, WindowAndroid windowAndroid);
+        long init(ThinWebViewImpl self, CompositorView compositorView, WindowAndroid windowAndroid);
 
-        void destroy(long nativeThinWebView, ThinWebViewImpl caller);
+        void destroy(long nativeThinWebView);
 
         void setWebContents(
                 long nativeThinWebView,
-                ThinWebViewImpl caller,
                 WebContents webContents,
-                WebContentsDelegateAndroid delegate);
+                @Nullable WebContentsDelegateAndroid delegate);
 
-        void sizeChanged(long nativeThinWebView, ThinWebViewImpl caller, int width, int height);
+        void sizeChanged(long nativeThinWebView, int width, int height);
     }
 }

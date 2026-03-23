@@ -2,13 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import abc
 import dataclasses
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 from xml.sax.saxutils import escape
 
-from crossbench.action_runner.display_rectangle import DisplayRectangle
-from crossbench.benchmarks.loading.point import Point
+from typing_extensions import override
+
+if TYPE_CHECKING:
+  from crossbench.action_runner.display_rectangle import DisplayRectangle
+  from crossbench.benchmarks.loading.point import Point
 
 
 @dataclasses.dataclass(frozen=True)
@@ -38,6 +43,7 @@ def annotate_screenshot_svg(screen_width: int, screen_height: int,
 class ScreenshotRectAnnotation(ScreenshotAnnotation):
   rect: DisplayRectangle
 
+  @override
   def svg_annotation(self) -> str:
     rect = self.rect
     return (f'<rect x="{rect.left}" y="{rect.top}"'
@@ -51,6 +57,7 @@ class ScreenshotRectAnnotation(ScreenshotAnnotation):
 class ScreenshotPointAnnotation(ScreenshotAnnotation):
   point: Point
 
+  @override
   def svg_annotation(self) -> str:
     x = self.point.x
     y = self.point.y

@@ -32,8 +32,10 @@ QuicServerSessionBase::QuicServerSessionBase(
     QuicConnection* connection, Visitor* visitor,
     QuicCryptoServerStreamBase::Helper* helper,
     const QuicCryptoServerConfig* crypto_config,
-    QuicCompressedCertsCache* compressed_certs_cache)
-    : QuicSpdySession(connection, visitor, config, supported_versions),
+    QuicCompressedCertsCache* compressed_certs_cache,
+    QuicPriorityType priority_type)
+    : QuicSpdySession(connection, visitor, config, supported_versions,
+                      priority_type),
       crypto_config_(crypto_config),
       compressed_certs_cache_(compressed_certs_cache),
       helper_(helper),
@@ -252,21 +254,6 @@ bool QuicServerSessionBase::ShouldCreateOutgoingBidirectionalStream() {
   return CanOpenNextOutgoingBidirectionalStream();
 }
 
-bool QuicServerSessionBase::ShouldCreateOutgoingUnidirectionalStream() {
-  if (!connection()->connected()) {
-    QUIC_BUG(quic_bug_12513_3)
-        << "ShouldCreateOutgoingUnidirectionalStream called when disconnected";
-    return false;
-  }
-  if (!crypto_stream_->encryption_established()) {
-    QUIC_BUG(quic_bug_10393_5)
-        << "Encryption not established so no outgoing stream created.";
-    return false;
-  }
-
-  return CanOpenNextOutgoingUnidirectionalStream();
-}
-
 QuicCryptoServerStreamBase* QuicServerSessionBase::GetMutableCryptoStream() {
   return crypto_stream_.get();
 }
@@ -308,7 +295,7 @@ QuicSSLConfig QuicServerSessionBase::GetSSLConfig() const {
     return ssl_config;
   }
 
-  absl::InlinedVector<uint16_t, 8> signature_algorithms =
+  QuicSignatureAlgorithmVector signature_algorithms =
       crypto_config_->proof_source()->SupportedTlsSignatureAlgorithms();
   if (!signature_algorithms.empty()) {
     ssl_config.signing_algorithm_prefs = std::move(signature_algorithms);

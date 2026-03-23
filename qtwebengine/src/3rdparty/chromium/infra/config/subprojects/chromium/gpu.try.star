@@ -2,9 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/builders.star", "cpu", "os", "siso")
-load("//lib/try.star", "try_")
-load("//lib/gn_args.star", "gn_args")
+load("@chromium-luci//builders.star", "builders", "cpu", "os")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//try.star", "try_")
+load("//lib/siso.star", "siso")
 
 try_.defaults.set(
     bucket = "try",
@@ -21,7 +22,6 @@ try_.defaults.set(
     # out: http://shortn/_8PaHsdYmlq. Keep this in sync.
     expiration_timeout = 2 * time.hour,
     service_account = "chromium-try-gpu-builder@chops-service-accounts.iam.gserviceaccount.com",
-    siso_enabled = True,
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     subproject_list_view = "luci.chromium.try",
     task_template_canary_percentage = 5,
@@ -53,15 +53,6 @@ def gpu_android_builder(*, name, **kwargs):
     )
 
 gpu_android_builder(
-    name = "gpu-fyi-try-android-m-nexus-5x-64",
-    mirrors = [
-        "ci/GPU FYI Android arm64 Builder",
-        "ci/Android FYI Release (Nexus 5X)",
-    ],
-    gn_args = "ci/GPU FYI Android arm64 Builder",
-)
-
-gpu_android_builder(
     name = "gpu-fyi-try-android-nvidia-shield-tv",
     mirrors = [
         "ci/GPU FYI Android arm Builder",
@@ -71,7 +62,7 @@ gpu_android_builder(
 )
 
 gpu_android_builder(
-    name = "gpu-fyi-try-android-p-pixel-2-32",
+    name = "gpu-fyi-try-android-q-pixel-2-32",
     mirrors = [
         "ci/GPU FYI Android arm Builder",
         "ci/Android FYI Release (Pixel 2)",
@@ -118,6 +109,16 @@ gpu_android_builder(
 )
 
 gpu_android_builder(
+    name = "gpu-fyi-try-android-a23-32",
+    description_html = "Runs GPU tests on Samsung A23 phones",
+    mirrors = [
+        "ci/GPU FYI Android arm Builder",
+        "ci/Android FYI Release (Samsung A23)",
+    ],
+    gn_args = "ci/GPU FYI Android arm Builder",
+)
+
+gpu_android_builder(
     name = "gpu-fyi-try-android-s23-64",
     description_html = "Runs GPU tests on Samsung S23 phones",
     mirrors = [
@@ -125,24 +126,6 @@ gpu_android_builder(
         "ci/Android FYI Release (Samsung S23)",
     ],
     gn_args = "ci/GPU FYI Android arm64 Builder",
-)
-
-gpu_android_builder(
-    name = "gpu-try-android-m-nexus-5x-64",
-    mirrors = [
-        "ci/Android Release (Nexus 5X)",
-    ],
-    gn_args = gn_args.config(
-        configs = [
-            "gpu_fyi_tests",
-            "android_builder",
-            "release_builder",
-            "try_builder",
-            "remoteexec",
-            "arm64",
-            "static_angle",
-        ],
-    ),
 )
 
 gpu_android_builder(
@@ -221,6 +204,15 @@ gpu_linux_builder(
     mirrors = [
         "ci/GPU FYI Linux Builder",
         "ci/Linux FYI Release (AMD RX 5500 XT)",
+    ],
+    gn_args = "ci/GPU FYI Linux Builder",
+)
+
+gpu_linux_builder(
+    name = "gpu-fyi-try-linux-amd-rx-7600-rel",
+    mirrors = [
+        "ci/GPU FYI Linux Builder",
+        "ci/Linux FYI Release (AMD RX 7600)",
     ],
     gn_args = "ci/GPU FYI Linux Builder",
 )
@@ -342,6 +334,10 @@ gpu_mac_builder(
         "ci/Mac FYI Retina ASAN (AMD)",
     ],
     gn_args = "ci/GPU FYI Mac Builder (asan)",
+    # //tools/grit:brotli_mac_asan_workaround doesn't create bundle
+    # `obj/tools/grit/brotli_mac_asan_workaround/` when cross compiling
+    # from ARM host.
+    cpu = cpu.X86_64,
 )
 
 gpu_mac_builder(
@@ -409,12 +405,25 @@ gpu_mac_builder(
 )
 
 gpu_mac_builder(
+    name = "gpu-fyi-try-mac-arm64-apple-m3-retina-rel",
+    mirrors = [
+        "ci/GPU FYI Mac arm64 Builder",
+        "ci/Mac FYI Retina Release (Apple M3)",
+    ],
+    gn_args = "ci/GPU FYI Mac arm64 Builder",
+)
+
+gpu_mac_builder(
     name = "gpu-fyi-try-mac-intel-asan",
     mirrors = [
         "ci/GPU FYI Mac Builder (asan)",
         "ci/Mac FYI ASAN (Intel)",
     ],
     gn_args = "ci/GPU FYI Mac Builder (asan)",
+    # //tools/grit:brotli_mac_asan_workaround doesn't create bundle
+    # `obj/tools/grit/brotli_mac_asan_workaround/` when cross compiling
+    # from ARM host.
+    cpu = cpu.X86_64,
 )
 
 gpu_mac_builder(
@@ -440,27 +449,6 @@ gpu_mac_builder(
     mirrors = [
         "ci/GPU FYI Mac Builder",
         "ci/Mac FYI Release (Intel)",
-    ],
-    gn_args = "ci/GPU FYI Mac Builder",
-)
-
-gpu_mac_builder(
-    name = "gpu-fyi-try-mac-nvidia-retina-exp",
-    mirrors = [
-        "ci/GPU FYI Mac Builder",
-        "ci/Mac FYI Experimental Retina Release (NVIDIA)",
-    ],
-    gn_args = "ci/GPU FYI Mac Builder",
-    # This bot has one machine backing its tests at the moment.
-    # If it gets more, the modified execution_timeout should be removed.
-    execution_timeout = 12 * time.hour,
-)
-
-gpu_mac_builder(
-    name = "gpu-fyi-try-mac-nvidia-retina-rel",
-    mirrors = [
-        "ci/GPU FYI Mac Builder",
-        "ci/Mac FYI Retina Release (NVIDIA)",
     ],
     gn_args = "ci/GPU FYI Mac Builder",
 )
@@ -492,7 +480,8 @@ def gpu_win_builder(*, name, **kwargs):
         max_concurrent_builds = 1,
         os = os.WINDOWS_ANY,
         siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
-        ssd = None,
+        ssd = builders.with_expiration(True, expiration = 5 * time.minute),
+        free_space = None,
         **kwargs
     )
 
@@ -585,6 +574,25 @@ gpu_win_builder(
         "ci/Win10 FYI x64 Release (NVIDIA)",
     ],
     gn_args = "ci/GPU FYI Win x64 Builder",
+)
+
+gpu_win_builder(
+    name = "gpu-fyi-try-win11-amd-rel-64",
+    mirrors = [
+        "ci/GPU FYI Win x64 Builder",
+        "ci/Win11 FYI x64 Release (AMD RX 7600)",
+    ],
+    gn_args = "ci/GPU FYI Win x64 Builder",
+)
+
+gpu_win_builder(
+    name = "gpu-fyi-try-win11-x64-intel-arc-140v-exp",
+    mirrors = [
+        "ci/GPU FYI Win x64 Builder",
+        "ci/Win11 FYI x64 Experimental Release (Intel Arc 140V)",
+    ],
+    gn_args = "ci/GPU FYI Win x64 Builder",
+    execution_timeout = 12 * time.hour,
 )
 
 gpu_win_builder(

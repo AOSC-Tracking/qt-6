@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRENDEREXTENSIIONS_H
 #define QSSGRENDEREXTENSIIONS_H
@@ -33,10 +35,18 @@ public:
     {
         AoTexture,
         DepthTexture,
-        DepthTextureMS,
         ScreenTexture,
-        AccumTexture,
-        RevealageTexture
+        NormalTexture,
+        MotionVectorTexture,
+    };
+    Q_DECLARE_FLAGS(RenderResults, RenderResult)
+
+    enum class AttachmentSelector : quint32
+    {
+        Attachment0 = 0,
+        Attachment1 = 1,
+        Attachment2 = 2,
+        Attachment3 = 3,
     };
 
     struct Result
@@ -45,7 +55,15 @@ public:
         QRhiRenderBuffer *buffer = nullptr;
     };
 
+    using TypeMask = QSSGRenderGraphObject::TypeT;
+    static constexpr TypeMask NodeMask = QSSGRenderGraphObject::BaseType::Node;
+
+    void scheduleRenderResults(RenderResults results) const;
+
     Result getRenderResult(RenderResult id) const;
+    Result getRenderResult(QSSGResourceId userPassId, AttachmentSelector attachment) const;
+
+    qsizetype getAttachmentCount(QSSGResourceId userPassId) const;
 
     [[nodiscard]] QSSGRhiGraphicsPipelineState getPipelineState() const;
 
@@ -53,13 +71,18 @@ public:
 
     [[nodiscard]] QSSGRenderContextInterface *contextInterface() const;
 
+    [[nodiscard]] QSSGNodeIdList getLayerNodes(quint32 layerMask, TypeMask typeMask = NodeMask) const;
+    [[nodiscard]] QSSGNodeIdList getLayerNodes(QSSGCameraId cameraId, TypeMask typeMask = NodeMask) const;
+
 private:
     friend class QSSGLayerRenderData;
-    friend class QSSGRenderHelpers;
+    friend class QSSGRenderOutputProviderExtension;
 
     void clear();
 
     [[nodiscard]] QSSGLayerRenderData *getCurrent() const;
+
+    void scheduleRenderResults(QSSGResourceId userPassId) const;
 
     QSSGFrameData() = default;
     explicit QSSGFrameData(QSSGRenderContextInterface *ctx);
@@ -92,6 +115,19 @@ public:
 
     virtual RenderMode mode() const = 0;
     virtual RenderStage stage() const = 0;
+
+protected:
+    QSSGRenderExtension(Type inType, FlagT inFlags);
+};
+
+class Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderTextureProviderExtension : public QSSGRenderExtension
+{
+public:
+    QSSGRenderTextureProviderExtension();
+    ~QSSGRenderTextureProviderExtension() override;
+
+    RenderMode mode() const final;
+    RenderStage stage() const final;
 };
 
 QT_END_NAMESPACE

@@ -149,7 +149,9 @@ PlusAddressServiceImpl::PlusAddressServiceImpl(
   if (webdata_service_) {
     webdata_service_observation_.Observe(webdata_service_.get());
     if (IsEnabled()) {
-      webdata_service_->GetPlusProfiles(this);
+      webdata_service_->GetPlusProfiles(
+          base::BindOnce(&PlusAddressServiceImpl::OnWebDataServiceRequestDone,
+                         weak_ptr_factory_.GetWeakPtr()));
     }
   }
   identity_manager_observation_.Observe(identity_manager);
@@ -190,8 +192,7 @@ bool PlusAddressServiceImpl::IsPlusAddressCreationEnabled(
 
   // We've met the prerequisites. If this isn't an OTR session and the global
   // settings toggle isn't off, plus address creation is supported.
-  return !base::FeatureList::IsEnabled(features::kPlusAddressGlobalToggle) ||
-         setting_service_->GetIsPlusAddressesEnabled();
+  return setting_service_->GetIsPlusAddressesEnabled();
 }
 
 bool PlusAddressServiceImpl::ShouldShowManualFallback(
@@ -215,8 +216,7 @@ bool PlusAddressServiceImpl::ShouldShowManualFallback(
 
   // If the user doesn't have an existing plus address for `origin` and this
   // session is not off-the-record, the global toggle must be enabled.
-  return !base::FeatureList::IsEnabled(features::kPlusAddressGlobalToggle) ||
-         setting_service_->GetIsPlusAddressesEnabled();
+  return setting_service_->GetIsPlusAddressesEnabled();
 }
 
 std::optional<PlusAddress> PlusAddressServiceImpl::GetPlusAddress(
@@ -288,22 +288,16 @@ bool PlusAddressServiceImpl::IsPlusAddressFillingEnabled(
   return IsEnabled() && IsSupportedOrigin(origin);
 }
 
-bool PlusAddressServiceImpl::IsPlusAddressFullFormFillingEnabled() const {
-  return base::FeatureList::IsEnabled(features::kPlusAddressFullFormFill);
-}
-
 bool PlusAddressServiceImpl::IsFieldEligibleForPlusAddress(
     const autofill::AutofillField& field) const {
-  autofill::FillingProduct filling_product =
-      autofill::GetFillingProductFromFieldTypeGroup(field.Type().group());
+  auto filling_products = autofill::DenseSet<autofill::FillingProduct>(
+      field.Type().GetGroups(), &autofill::GetFillingProductFromFieldTypeGroup);
 
-  if (filling_product == autofill::FillingProduct::kAddress) {
+  if (filling_products.contains(autofill::FillingProduct::kAddress)) {
     return true;
   }
 
-  return base::FeatureList::IsEnabled(
-             features::kPlusAddressSuggestionsOnUsernameFields) &&
-         (field.server_type() == autofill::FieldType::USERNAME ||
+  return (field.server_type() == autofill::FieldType::USERNAME ||
           field.server_type() == autofill::FieldType::SINGLE_USERNAME) &&
          field.heuristic_type() == autofill::FieldType::EMAIL_ADDRESS;
 }
@@ -331,7 +325,7 @@ std::vector<Suggestion> PlusAddressServiceImpl::GetSuggestionsFromPlusAddresses(
     bool is_off_the_record,
     const autofill::FormData& focused_form,
     const autofill::FormFieldData& focused_field,
-    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroup>&
+    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroupSet>&
         form_field_type_groups,
     const autofill::PasswordFormClassification& focused_form_classification,
     AutofillSuggestionTriggerSource trigger_source) {
@@ -521,6 +515,11 @@ void PlusAddressServiceImpl::OnWebDataServiceRequestDone(
   }
 }
 
+void PlusAddressServiceImpl::Shutdown() {
+  identity_manager_observation_.Reset();
+  PlusAddressService::Shutdown();
+}
+
 void PlusAddressServiceImpl::OnPrimaryAccountChanged(
     const signin::PrimaryAccountChangeEvent& event) {
   signin::PrimaryAccountChangeEvent::Type type =
@@ -543,6 +542,12 @@ void PlusAddressServiceImpl::OnErrorStateOfRefreshTokenUpdatedForAccount(
   if (error.state() != GoogleServiceAuthError::NONE) {
     HandleSignout();
   }
+}
+
+void PlusAddressServiceImpl::OnIdentityManagerShutdown(
+    signin::IdentityManager* identity_manager) {
+  // Needs to be shutdown before IdentityManager.
+  NOTREACHED(base::NotFatalUntil::M142);
 }
 
 void PlusAddressServiceImpl::HandleSignout() {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <QtQmlModels/private/qqmlsortercompositor_p.h>
+#include <QtQmlModels/private/qqmlsortfilterproxymodel_p_p.h>
 #include <QtQmlModels/private/qqmlsortfilterproxymodel_p.h>
 
 QT_BEGIN_NAMESPACE
@@ -181,8 +182,10 @@ bool QQmlSorterCompositor::lessThan(const QModelIndex& sourceLeft, const QModelI
             const QPartialOrdering result = sorter->compare(sourceModel->index(sourceLeft.row(), sortSection),
                                                             sourceModel->index(sourceRight.row(), sortSection),
                                                             proxyModel);
-            if ((result == QPartialOrdering::Less) || (result == QPartialOrdering::Greater))
-                return (result < 0);
+            if (result == QPartialOrdering::Less || result == QPartialOrdering::Greater) {
+                auto *priv = static_cast<const QQmlSortFilterProxyModelPrivate *>(QQmlSortFilterProxyModelPrivate::get(proxyModel));
+                return (priv->m_sortOrder == sorter->sortOrder()) ? result < 0 : result > 0;
+            }
         }
     }
     // Verify the index order when the ordering is either equal or unordered

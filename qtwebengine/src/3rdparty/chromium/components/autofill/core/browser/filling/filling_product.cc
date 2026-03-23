@@ -9,6 +9,11 @@
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/scoped_java_ref.h"
+#include "components/autofill/android/main_autofill_jni_headers/FillingProductBridge_jni.h"
+#endif  // BUILDFLAG(IS_ANDROID)
+
 namespace autofill {
 
 // LINT.IfChange(FillingProductToString)
@@ -34,7 +39,15 @@ std::string FillingProductToString(FillingProduct filling_product) {
       return "PlusAddresses";
     case FillingProduct::kAutofillAi:
       return "AutofillAi";
-  };
+    case FillingProduct::kLoyaltyCard:
+      return "LoyaltyCard";
+    case FillingProduct::kIdentityCredential:
+      return "IdentityCredential";
+    case FillingProduct::kDataList:
+      return "DataList";
+    case FillingProduct::kOneTimePassword:
+      return "OneTimePassword";
+  }
   NOTREACHED();
 }
 // LINT.ThenChange(//tools/metrics/histograms/metadata/autofill/histograms.xml:Autofill.FillingProduct)
@@ -49,13 +62,12 @@ FillingProduct GetFillingProductFromSuggestionType(SuggestionType type) {
     case SuggestionType::kDevtoolsTestAddressEntry:
     case SuggestionType::kManageAddress:
       return FillingProduct::kAddress;
+    case SuggestionType::kBnplEntry:
     case SuggestionType::kCreditCardEntry:
-    case SuggestionType::kVirtualCreditCardEntry:
+    case SuggestionType::kManageCreditCard:
     case SuggestionType::kSaveAndFillCreditCardEntry:
     case SuggestionType::kScanCreditCard:
-    case SuggestionType::kShowAccountCards:
-    case SuggestionType::kManageCreditCard:
-    case SuggestionType::kBnplEntry:
+    case SuggestionType::kVirtualCreditCardEntry:
       return FillingProduct::kCreditCard;
     case SuggestionType::kMerchantPromoCodeEntry:
       return FillingProduct::kMerchantPromoCode;
@@ -64,21 +76,25 @@ FillingProduct GetFillingProductFromSuggestionType(SuggestionType type) {
       return FillingProduct::kIban;
     case SuggestionType::kAutocompleteEntry:
       return FillingProduct::kAutocomplete;
-    case SuggestionType::kPasswordEntry:
-    case SuggestionType::kAllSavedPasswordsEntry:
-    case SuggestionType::kGeneratePasswordEntry:
     case SuggestionType::kAccountStoragePasswordEntry:
+    case SuggestionType::kAllSavedPasswordsEntry:
+    case SuggestionType::kFillPassword:
+    case SuggestionType::kGeneratePasswordEntry:
+    case SuggestionType::kPasswordEntry:
+    case SuggestionType::kBackupPasswordEntry:
+    case SuggestionType::kTroubleSigningInEntry:
+    case SuggestionType::kFreeformFooter:
+    case SuggestionType::kPasswordFieldByFieldFilling:
+    case SuggestionType::kViewPasswordDetails:
     case SuggestionType::kWebauthnCredential:
     case SuggestionType::kWebauthnSignInWithAnotherDevice:
-    case SuggestionType::kPasswordFieldByFieldFilling:
-    case SuggestionType::kFillPassword:
-    case SuggestionType::kViewPasswordDetails:
+    case SuggestionType::kPendingStateSignin:
       return FillingProduct::kPassword;
-    case SuggestionType::kComposeResumeNudge:
     case SuggestionType::kComposeDisable:
     case SuggestionType::kComposeGoToSettings:
     case SuggestionType::kComposeNeverShowOnThisSiteAgain:
     case SuggestionType::kComposeProactiveNudge:
+    case SuggestionType::kComposeResumeNudge:
     case SuggestionType::kComposeSavedStateNotification:
       return FillingProduct::kCompose;
     case SuggestionType::kCreateNewPlusAddress:
@@ -87,25 +103,39 @@ FillingProduct GetFillingProductFromSuggestionType(SuggestionType type) {
     case SuggestionType::kManagePlusAddress:
     case SuggestionType::kPlusAddressError:
       return FillingProduct::kPlusAddresses;
-    case SuggestionType::kAutofillAiFeedback:
-      return FillingProduct::kAutofillAi;
-    case SuggestionType::kSeePromoCodeDetails:
-    case SuggestionType::kTitle:
-    case SuggestionType::kSeparator:
-    case SuggestionType::kUndoOrClear:
     case SuggestionType::kDatalistEntry:
-    case SuggestionType::kMixedFormMessage:
+      return FillingProduct::kDataList;
     case SuggestionType::kInsecureContextPaymentDisabledMessage:
+    case SuggestionType::kMixedFormMessage:
+    case SuggestionType::kSeePromoCodeDetails:
+    case SuggestionType::kSeparator:
+    case SuggestionType::kTitle:
+    case SuggestionType::kUndoOrClear:
       return FillingProduct::kNone;
-    case SuggestionType::kRetrieveAutofillAi:
-    case SuggestionType::kAutofillAiLoadingState:
     case SuggestionType::kFillAutofillAi:
-    case SuggestionType::kAutofillAiError:
-    case SuggestionType::kEditAutofillAiData:
+    case SuggestionType::kManageAutofillAi:
       return FillingProduct::kAutofillAi;
+    case SuggestionType::kAllLoyaltyCardsEntry:
+    case SuggestionType::kLoyaltyCardEntry:
+    case SuggestionType::kManageLoyaltyCard:
+      return FillingProduct::kLoyaltyCard;
+    case SuggestionType::kIdentityCredential:
+      return FillingProduct::kIdentityCredential;
+    case SuggestionType::kOneTimePasswordEntry:
+      return FillingProduct::kOneTimePassword;
   }
   NOTREACHED();
 }
+
+#if BUILDFLAG(IS_ANDROID)
+static jint JNI_FillingProductBridge_GetFillingProductFromSuggestionType(
+    JNIEnv* env,
+    jint type) {
+  SuggestionType suggestion_type = static_cast<SuggestionType>(type);
+  return static_cast<jint>(
+      GetFillingProductFromSuggestionType(suggestion_type));
+}
+#endif  // BUILDFLAG(IS_ANDROID)
 
 FillingProduct GetFillingProductFromFieldTypeGroup(
     FieldTypeGroup field_type_group) {
@@ -130,20 +160,12 @@ FillingProduct GetFillingProductFromFieldTypeGroup(
       return FillingProduct::kIban;
     case FieldTypeGroup::kAutofillAi:
       return FillingProduct::kAutofillAi;
+    case FieldTypeGroup::kLoyaltyCard:
+      return FillingProduct::kLoyaltyCard;
+    case FieldTypeGroup::kOneTimePassword:
+      return FillingProduct::kOneTimePassword;
   }
   NOTREACHED();
-}
-
-FillingProduct GetPreferredSuggestionFillingProduct(
-    FieldType trigger_field_type,
-    AutofillSuggestionTriggerSource suggestion_trigger_source) {
-  FillingProduct filling_product = GetFillingProductFromFieldTypeGroup(
-      GroupTypeOfFieldType(trigger_field_type));
-  // Autofill suggestions fallbacks to autocomplete if no product could be
-  // inferred from the suggestion context.
-  return filling_product == FillingProduct::kNone
-             ? FillingProduct::kAutocomplete
-             : filling_product;
 }
 
 }  // namespace autofill

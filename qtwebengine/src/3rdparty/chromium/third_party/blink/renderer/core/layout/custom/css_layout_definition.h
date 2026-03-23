@@ -102,9 +102,9 @@ class CSSLayoutDefinition final : public GarbageCollected<CSSLayoutDefinition>,
 
   ScriptState* GetScriptState() const { return script_state_.Get(); }
 
-  virtual void Trace(Visitor* visitor) const;
+  void Trace(Visitor* visitor) const;
 
-  const char* NameInHeapSnapshot() const override {
+  const char* GetHumanReadableName() const override {
     return "CSSLayoutDefinition";
   }
 

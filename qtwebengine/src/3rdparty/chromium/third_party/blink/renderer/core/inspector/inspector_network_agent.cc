@@ -37,12 +37,15 @@
 #include "base/containers/span_or_size.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
+#include "net/base/features.h"
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/cert/ct_sct_to_string.h"
 #include "net/cert/x509_util.h"
+#include "net/filter/source_stream_type.h"
 #include "net/http/http_status_code.h"
 #include "net/ssl/ssl_cipher_suite_names.h"
 #include "net/ssl/ssl_connection_status_flags.h"
@@ -70,6 +73,7 @@
 #include "third_party/blink/renderer/core/inspector/network_resources_data.h"
 #include "third_party/blink/renderer/core/inspector/protocol/network.h"
 #include "third_party/blink/renderer/core/inspector/request_debug_header_scope.h"
+#include "third_party/blink/renderer/core/inspector/v8_inspector_string.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/loader/mixed_content_checker.h"
@@ -96,6 +100,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/url_loader_client.h"
 #include "third_party/blink/renderer/platform/network/http_header_map.h"
 #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
@@ -103,6 +108,7 @@
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/base64.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
@@ -189,6 +195,39 @@ static std::unique_ptr<protocol::Network::Headers> BuildObjectForHeaders(
   return protocol::Network::Headers::fromValue(headers_object.get(), &errors);
 }
 
+String NetErrorToString(int net_error) {
+  switch (net_error) {
+    case net::ERR_ABORTED:
+      return protocol::Network::ErrorReasonEnum::Aborted;
+    case net::ERR_TIMED_OUT:
+      return protocol::Network::ErrorReasonEnum::TimedOut;
+    case net::ERR_ACCESS_DENIED:
+      return protocol::Network::ErrorReasonEnum::AccessDenied;
+    case net::ERR_CONNECTION_CLOSED:
+      return protocol::Network::ErrorReasonEnum::ConnectionClosed;
+    case net::ERR_CONNECTION_RESET:
+      return protocol::Network::ErrorReasonEnum::ConnectionReset;
+    case net::ERR_CONNECTION_REFUSED:
+      return protocol::Network::ErrorReasonEnum::ConnectionRefused;
+    case net::ERR_CONNECTION_ABORTED:
+      return protocol::Network::ErrorReasonEnum::ConnectionAborted;
+    case net::ERR_CONNECTION_FAILED:
+      return protocol::Network::ErrorReasonEnum::ConnectionFailed;
+    case net::ERR_NAME_NOT_RESOLVED:
+      return protocol::Network::ErrorReasonEnum::NameNotResolved;
+    case net::ERR_INTERNET_DISCONNECTED:
+      return protocol::Network::ErrorReasonEnum::InternetDisconnected;
+    case net::ERR_ADDRESS_UNREACHABLE:
+      return protocol::Network::ErrorReasonEnum::AddressUnreachable;
+    case net::ERR_BLOCKED_BY_CLIENT:
+      return protocol::Network::ErrorReasonEnum::BlockedByClient;
+    case net::ERR_BLOCKED_BY_RESPONSE:
+      return protocol::Network::ErrorReasonEnum::BlockedByResponse;
+    default:
+      return protocol::Network::ErrorReasonEnum::Failed;
+  }
+}
+
 class InspectorFileReaderLoaderClient final
     : public GarbageCollected<InspectorFileReaderLoaderClient>,
       public FileReaderClient {
@@ -272,8 +311,7 @@ static void ResponseBodyFileReaderLoaderDone(
   }
 }
 
-class InspectorPostBodyParser
-    : public WTF::RefCounted<InspectorPostBodyParser> {
+class InspectorPostBodyParser : public RefCounted<InspectorPostBodyParser> {
  public:
   InspectorPostBodyParser(
       std::unique_ptr<GetRequestPostDataCallback> callback,
@@ -309,7 +347,7 @@ class InspectorPostBodyParser
   }
 
  private:
-  friend class WTF::RefCounted<InspectorPostBodyParser>;
+  friend class RefCounted<InspectorPostBodyParser>;
 
   ~InspectorPostBodyParser() {
     if (error_)
@@ -397,6 +435,8 @@ String BuildBlockedReason(ResourceRequestBlockedReason reason) {
       return protocol::Network::BlockedReasonEnum::Origin;
     case ResourceRequestBlockedReason::kInspector:
       return protocol::Network::BlockedReasonEnum::Inspector;
+    case ResourceRequestBlockedReason::kIntegrity:
+      return protocol::Network::BlockedReasonEnum::Integrity;
     case ResourceRequestBlockedReason::kSubresourceFilter:
       return protocol::Network::BlockedReasonEnum::SubresourceFilter;
     case ResourceRequestBlockedReason::kContentType:
@@ -560,6 +600,10 @@ String BuildCorsError(network::mojom::CorsError cors_error) {
     case network::mojom::CorsError::kPrivateNetworkAccessPermissionDenied:
       return protocol::Network::CorsErrorEnum::
           PrivateNetworkAccessPermissionDenied;
+
+    case network::mojom::CorsError::kLocalNetworkAccessPermissionDenied:
+      return protocol::Network::CorsErrorEnum::
+          LocalNetworkAccessPermissionDenied;
   }
 }
 
@@ -589,13 +633,17 @@ String BuildServiceWorkerRouterSourceType(
   switch (type) {
     case network::mojom::ServiceWorkerRouterSourceType::kNetwork:
       return protocol::Network::ServiceWorkerRouterSourceEnum::Network;
-    case network::mojom::ServiceWorkerRouterSourceType::kRace:
+    case network::mojom::ServiceWorkerRouterSourceType::
+        kRaceNetworkAndFetchEvent:
       return protocol::Network::ServiceWorkerRouterSourceEnum::
           RaceNetworkAndFetchHandler;
     case network::mojom::ServiceWorkerRouterSourceType::kFetchEvent:
       return protocol::Network::ServiceWorkerRouterSourceEnum::FetchEvent;
     case network::mojom::ServiceWorkerRouterSourceType::kCache:
       return protocol::Network::ServiceWorkerRouterSourceEnum::Cache;
+    case network::mojom::ServiceWorkerRouterSourceType::kRaceNetworkAndCache:
+      return protocol::Network::ServiceWorkerRouterSourceEnum::
+          RaceNetworkAndCache;
   }
 }
 
@@ -728,7 +776,7 @@ String IPAddressToString(const net::IPAddress& address) {
     return unbracketed;
   }
 
-  return "[" + unbracketed + "]";
+  return StrCat({"[", unbracketed, "]"});
 }
 
 namespace ContentEncodingEnum = protocol::Network::ContentEncodingEnum;
@@ -745,16 +793,16 @@ String AcceptedEncodingFromProtocol(
   return result;
 }
 
-using SourceTypeEnum = net::SourceStream::SourceType;
+using SourceTypeEnum = net::SourceStreamType;
 SourceTypeEnum SourceTypeFromString(const String& type) {
   if (type == ContentEncodingEnum::Gzip)
-    return SourceTypeEnum::TYPE_GZIP;
+    return SourceTypeEnum::kGzip;
   if (type == ContentEncodingEnum::Deflate)
-    return SourceTypeEnum::TYPE_DEFLATE;
+    return SourceTypeEnum::kDeflate;
   if (type == ContentEncodingEnum::Br)
-    return SourceTypeEnum::TYPE_BROTLI;
+    return SourceTypeEnum::kBrotli;
   if (type == ContentEncodingEnum::Zstd) {
-    return SourceTypeEnum::TYPE_ZSTD;
+    return SourceTypeEnum::kZstd;
   }
   NOTREACHED();
 }
@@ -961,7 +1009,7 @@ BuildObjectForResourceRequest(const ResourceRequest& request,
           .setReferrerPolicy(GetReferrerPolicy(request.GetReferrerPolicy()))
           .build();
   if (url.HasFragmentIdentifier()) {
-    result->setUrlFragment("#" + url.FragmentIdentifier().ToString());
+    result->setUrlFragment(StrCat({"#", url.FragmentIdentifier().ToString()}));
   }
   if (!data_string.empty())
     result->setPostData(data_string);
@@ -1070,6 +1118,12 @@ BuildObjectForResourceResponse(const ResourceResponse& response,
           .setEncodedDataLength(encoded_data_length)
           .setSecurityState(security_state)
           .build();
+
+  // TODO(crbug.com/432716000): Remove this guard once IPP is fully launched.
+  if (net::features::kIpPrivacyEnableIppInDevTools.Get()) {
+    response_object->setIsIpProtectionUsed(response.IsIpProtectionUsed() &&
+                                           !response.WasCached());
+  }
 
   response_object->setFromDiskCache(response.WasCached());
   response_object->setFromServiceWorker(response.WasFetchedViaServiceWorker());
@@ -1444,12 +1498,11 @@ void InspectorNetworkAgent::PrepareRequest(DocumentLoader* loader,
     }
   }
   if (!accepted_encodings_.IsEmpty()) {
-    scoped_refptr<
-        base::RefCountedData<base::flat_set<net::SourceStream::SourceType>>>
+    scoped_refptr<base::RefCountedData<base::flat_set<net::SourceStreamType>>>
         accepted_stream_types = request.GetDevToolsAcceptedStreamTypes();
     if (!accepted_stream_types) {
-      accepted_stream_types = base::MakeRefCounted<base::RefCountedData<
-          base::flat_set<net::SourceStream::SourceType>>>();
+      accepted_stream_types = base::MakeRefCounted<
+          base::RefCountedData<base::flat_set<net::SourceStreamType>>>();
     }
     if (!accepted_encodings_.Get("none")) {
       for (auto key : accepted_encodings_.Keys())
@@ -1830,9 +1883,10 @@ InspectorNetworkAgent::BuildInitiatorObject(
     }
   }
 
-  while (document && !document->GetScriptableDocumentParser())
+  while (document && !document->GetScriptableDocumentParser()) {
     document = document->LocalOwner() ? document->LocalOwner()->ownerDocument()
                                       : nullptr;
+  }
   if (document && document->GetScriptableDocumentParser()) {
     std::unique_ptr<protocol::Network::Initiator> initiator_object =
         protocol::Network::Initiator::create()
@@ -1948,8 +2002,8 @@ void InspectorNetworkAgent::DidReceiveWebSocketHandshakeResponse(
         AtomicString(header->name), AtomicString(header->value));
     if (!add_result.is_new_entry) {
       // Protocol expects the "\n" separated format.
-      add_result.stored_value->value =
-          add_result.stored_value->value + "\n" + header->value;
+      add_result.stored_value->value = AtomicString(
+          StrCat({add_result.stored_value->value, "\n", header->value}));
     }
   }
 
@@ -2065,14 +2119,189 @@ void InspectorNetworkAgent::WebTransportClosed(uint64_t transport_id) {
       base::TimeTicks::Now().since_origin().InSecondsF());
 }
 
+void InspectorNetworkAgent::DirectTCPSocketCreated(
+    ExecutionContext* execution_context,
+    uint64_t identifier,
+    const String& remote_addr,
+    uint16_t remote_port,
+    protocol::Network::DirectTCPSocketOptions& options) {
+  std::unique_ptr<v8_inspector::protocol::Runtime::API::StackTrace>
+      current_stack_trace =
+          CaptureSourceLocation(execution_context)->BuildInspectorObject();
+
+  std::unique_ptr<protocol::Network::Initiator> initiator_object;
+  if (current_stack_trace) {
+    initiator_object =
+        protocol::Network::Initiator::create()
+            .setType(protocol::Network::Initiator::TypeEnum::Script)
+            .build();
+    initiator_object->setStack(std::move(current_stack_trace));
+  }
+
+  GetFrontend()->directTCPSocketCreated(
+      IdentifiersFactory::SubresourceRequestId(identifier), remote_addr,
+      remote_port, options.Clone(),
+      base::TimeTicks::Now().since_origin().InSecondsF(),
+      std::move(initiator_object));
+}
+
+void InspectorNetworkAgent::DirectTCPSocketOpened(
+    uint64_t identifier,
+    const String& remote_addr,
+    uint16_t remote_port,
+    std::optional<String> local_addr,
+    std::optional<uint16_t> local_port) {
+  GetFrontend()->directTCPSocketOpened(
+      IdentifiersFactory::SubresourceRequestId(identifier), remote_addr,
+      remote_port, base::TimeTicks::Now().since_origin().InSecondsF(),
+      std::move(local_addr), std::move(local_port));
+}
+
+void InspectorNetworkAgent::DirectTCPSocketAborted(uint64_t identifier,
+                                                   int net_error) {
+  GetFrontend()->directTCPSocketAborted(
+      IdentifiersFactory::SubresourceRequestId(identifier),
+      NetErrorToString(net_error),
+      base::TimeTicks::Now().since_origin().InSecondsF());
+}
+
+void InspectorNetworkAgent::DirectTCPSocketClosed(uint64_t identifier) {
+  GetFrontend()->directTCPSocketClosed(
+      IdentifiersFactory::SubresourceRequestId(identifier),
+      base::TimeTicks::Now().since_origin().InSecondsF());
+}
+
+void InspectorNetworkAgent::DirectTCPSocketChunkSent(
+    uint64_t identifier,
+    base::span<const uint8_t> data) {
+  if (!report_direct_socket_traffic_.Get()) {
+    return;
+  }
+  GetFrontend()->directTCPSocketChunkSent(
+      IdentifiersFactory::SubresourceRequestId(identifier),
+      protocol::Binary::fromSpan(data),
+      base::TimeTicks::Now().since_origin().InSecondsF());
+}
+
+void InspectorNetworkAgent::DirectTCPSocketChunkReceived(
+    uint64_t identifier,
+    base::span<const uint8_t> data) {
+  if (!report_direct_socket_traffic_.Get()) {
+    return;
+  }
+  GetFrontend()->directTCPSocketChunkReceived(
+      IdentifiersFactory::SubresourceRequestId(identifier),
+      protocol::Binary::fromSpan(data),
+      base::TimeTicks::Now().since_origin().InSecondsF());
+}
+
+void InspectorNetworkAgent::DirectUDPSocketCreated(
+    ExecutionContext* execution_context,
+    uint64_t identifier,
+    protocol::Network::DirectUDPSocketOptions& options) {
+  std::unique_ptr<v8_inspector::protocol::Runtime::API::StackTrace>
+      current_stack_trace =
+          CaptureSourceLocation(execution_context)->BuildInspectorObject();
+
+  std::unique_ptr<protocol::Network::Initiator> initiator_object;
+  if (current_stack_trace) {
+    initiator_object =
+        protocol::Network::Initiator::create()
+            .setType(protocol::Network::Initiator::TypeEnum::Script)
+            .build();
+    initiator_object->setStack(std::move(current_stack_trace));
+  }
+
+  GetFrontend()->directUDPSocketCreated(
+      IdentifiersFactory::SubresourceRequestId(identifier), options.Clone(),
+      base::TimeTicks::Now().since_origin().InSecondsF(),
+      std::move(initiator_object));
+}
+
+void InspectorNetworkAgent::DirectUDPSocketOpened(
+    uint64_t identifier,
+    const String& local_addr,
+    uint16_t local_port,
+    std::optional<String> remote_addr,
+    std::optional<uint16_t> remote_port) {
+  GetFrontend()->directUDPSocketOpened(
+      IdentifiersFactory::SubresourceRequestId(identifier), local_addr,
+      local_port, base::TimeTicks::Now().since_origin().InSecondsF(),
+      std::move(remote_addr), std::move(remote_port));
+}
+
+void InspectorNetworkAgent::DirectUDPSocketAborted(uint64_t identifier,
+                                                   int net_error) {
+  GetFrontend()->directUDPSocketAborted(
+      IdentifiersFactory::SubresourceRequestId(identifier),
+      NetErrorToString(net_error),
+      base::TimeTicks::Now().since_origin().InSecondsF());
+}
+
+void InspectorNetworkAgent::DirectUDPSocketClosed(uint64_t identifier) {
+  GetFrontend()->directUDPSocketClosed(
+      IdentifiersFactory::SubresourceRequestId(identifier),
+      base::TimeTicks::Now().since_origin().InSecondsF());
+}
+
+void InspectorNetworkAgent::DirectUDPSocketChunkSent(
+    uint64_t identifier,
+    base::span<const uint8_t> data,
+    std::optional<String> remote_addr,
+    std::optional<uint16_t> remote_port) {
+  if (!report_direct_socket_traffic_.Get()) {
+    return;
+  }
+  auto probe_message_builder = protocol::Network::DirectUDPMessage::create();
+  if (remote_addr.has_value()) {
+    probe_message_builder.setRemoteAddr(remote_addr.value());
+  }
+  if (remote_port.has_value()) {
+    probe_message_builder.setRemotePort(remote_port.value());
+  }
+  std::unique_ptr<protocol::Network::DirectUDPMessage> probe_message =
+      probe_message_builder.setData(protocol::Binary::fromSpan(data)).build();
+  GetFrontend()->directUDPSocketChunkSent(
+      IdentifiersFactory::SubresourceRequestId(identifier),
+      std::move(probe_message),
+      base::TimeTicks::Now().since_origin().InSecondsF());
+}
+
+void InspectorNetworkAgent::DirectUDPSocketChunkReceived(
+    uint64_t identifier,
+    base::span<const uint8_t> data,
+    std::optional<String> remote_addr,
+    std::optional<uint16_t> remote_port) {
+  if (!report_direct_socket_traffic_.Get()) {
+    return;
+  }
+  auto probe_message_builder = protocol::Network::DirectUDPMessage::create();
+  if (remote_addr.has_value()) {
+    probe_message_builder.setRemoteAddr(remote_addr.value());
+  }
+  if (remote_port.has_value()) {
+    probe_message_builder.setRemotePort(remote_port.value());
+  }
+  std::unique_ptr<protocol::Network::DirectUDPMessage> probe_message =
+      probe_message_builder.setData(protocol::Binary::fromSpan(data)).build();
+
+  GetFrontend()->directUDPSocketChunkReceived(
+      IdentifiersFactory::SubresourceRequestId(identifier),
+      std::move(probe_message),
+      base::TimeTicks::Now().since_origin().InSecondsF());
+}
+
 protocol::Response InspectorNetworkAgent::enable(
     std::optional<int> total_buffer_size,
     std::optional<int> resource_buffer_size,
-    std::optional<int> max_post_data_size) {
+    std::optional<int> max_post_data_size,
+    std::optional<bool> report_direct_socket_traffic) {
   total_buffer_size_.Set(total_buffer_size.value_or(kDefaultTotalBufferSize));
   resource_buffer_size_.Set(
       resource_buffer_size.value_or(kDefaultResourceBufferSize));
   max_post_data_size_.Set(max_post_data_size.value_or(0));
+  report_direct_socket_traffic_.Set(
+      report_direct_socket_traffic.value_or(false));
   Enable();
   return protocol::Response::Success();
 }
@@ -2501,7 +2730,9 @@ InspectorNetworkAgent::InspectorNetworkAgent(
                             /*default_value=*/kDefaultResourceBufferSize),
       max_post_data_size_(&agent_state_, /*default_value=*/0),
       accepted_encodings_(&agent_state_,
-                          /*default_value=*/false) {
+                          /*default_value=*/false),
+      report_direct_socket_traffic_(&agent_state_,
+                                    /*default_value=*/false) {
   DCHECK((IsMainThread() &&
           (!worker_or_worklet_global_scope_ ||
            worker_or_worklet_global_scope_->IsWorkletGlobalScope())) ||

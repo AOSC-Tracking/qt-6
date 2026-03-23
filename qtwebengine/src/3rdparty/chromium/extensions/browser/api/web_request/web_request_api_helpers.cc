@@ -22,7 +22,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/stl_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -80,15 +79,15 @@ bool ParseCookieLifetime(const net::ParsedCookie& cookie,
   // 'Max-Age' is processed first because according to:
   // http://tools.ietf.org/html/rfc6265#section-5.3 'Max-Age' attribute
   // overrides 'Expires' attribute.
-  if (cookie.HasMaxAge() &&
-      base::StringToInt64(cookie.MaxAge(), seconds_till_expiry)) {
+  if (cookie.MaxAge().has_value() &&
+      base::StringToInt64(cookie.MaxAge().value(), seconds_till_expiry)) {
     return true;
   }
 
   Time parsed_expiry_time;
-  if (cookie.HasExpires()) {
+  if (cookie.Expires().has_value()) {
     parsed_expiry_time =
-        net::cookie_util::ParseCookieExpirationTime(cookie.Expires());
+        net::cookie_util::ParseCookieExpirationTime(cookie.Expires().value());
   }
 
   if (!parsed_expiry_time.is_null()) {
@@ -350,8 +349,7 @@ std::string GetDNRNewRequestHeaderValue(net::HttpRequestHeaders* headers,
   std::optional<std::string> existing_value = headers->GetHeader(header_name);
   if (existing_value && operation == dnr_api::HeaderOperation::kAppend) {
     const auto it = dnr::kDNRRequestHeaderAppendAllowList.find(header_name);
-    CHECK(it != dnr::kDNRRequestHeaderAppendAllowList.end(),
-          base::NotFatalUntil::M130);
+    CHECK(it != dnr::kDNRRequestHeaderAppendAllowList.end());
     return base::StrCat({*existing_value, it->second, header_value});
   }
 
@@ -946,6 +944,7 @@ static bool MergeRedirectUrlOfResponsesHelper(
     const GURL& url,
     const EventResponseDeltas& deltas,
     GURL* new_url,
+    std::optional<extensions::ExtensionId>* extension_id,
     IgnoredActions* ignored_actions,
     bool consider_only_cancel_scheme_urls) {
   // Redirecting WebSocket handshake request is prohibited.
@@ -967,6 +966,7 @@ static bool MergeRedirectUrlOfResponsesHelper(
 
     if (!redirected || *new_url == delta.new_url) {
       *new_url = delta.new_url;
+      *extension_id = delta.extension_id;
       redirected = true;
     } else {
       ignored_actions->emplace_back(delta.extension_id,
@@ -976,29 +976,34 @@ static bool MergeRedirectUrlOfResponsesHelper(
   return redirected;
 }
 
-void MergeRedirectUrlOfResponses(const GURL& url,
-                                 const EventResponseDeltas& deltas,
-                                 GURL* new_url,
-                                 IgnoredActions* ignored_actions) {
+void MergeRedirectUrlOfResponses(
+    const GURL& url,
+    const EventResponseDeltas& deltas,
+    GURL* new_url,
+    std::optional<extensions::ExtensionId>* extension_id,
+    IgnoredActions* ignored_actions) {
   // First handle only redirects to data:// URLs and about:blank. These are a
   // special case as they represent a way of cancelling a request.
-  if (MergeRedirectUrlOfResponsesHelper(url, deltas, new_url, ignored_actions,
-                                        true)) {
+  if (MergeRedirectUrlOfResponsesHelper(url, deltas, new_url, extension_id,
+                                        ignored_actions, true)) {
     // If any extension cancelled a request by redirecting to a data:// URL or
     // about:blank, we don't consider the other redirects.
     return;
   }
 
   // Handle all other redirects.
-  MergeRedirectUrlOfResponsesHelper(url, deltas, new_url, ignored_actions,
-                                    false);
+  MergeRedirectUrlOfResponsesHelper(url, deltas, new_url, extension_id,
+                                    ignored_actions, false);
 }
 
-void MergeOnBeforeRequestResponses(const GURL& url,
-                                   const EventResponseDeltas& deltas,
-                                   GURL* new_url,
-                                   IgnoredActions* ignored_actions) {
-  MergeRedirectUrlOfResponses(url, deltas, new_url, ignored_actions);
+void MergeOnBeforeRequestResponses(
+    const GURL& url,
+    const EventResponseDeltas& deltas,
+    GURL* new_url,
+    std::optional<extensions::ExtensionId>* extension_id,
+    IgnoredActions* ignored_actions) {
+  MergeRedirectUrlOfResponses(url, deltas, new_url, extension_id,
+                              ignored_actions);
 }
 
 static bool DoesRequestCookieMatchFilter(
@@ -1413,28 +1418,28 @@ static bool DoesResponseCookieMatchFilter(
     return false;
   }
   if (filter->expires) {
-    std::string actual_value =
-        cookie.HasExpires() ? cookie.Expires() : std::string();
+    std::string_view actual_value =
+        cookie.Expires().value_or(std::string_view());
     if (actual_value != *filter->expires) {
       return false;
     }
   }
   if (filter->max_age) {
-    std::string actual_value =
-        cookie.HasMaxAge() ? cookie.MaxAge() : std::string();
+    std::string_view actual_value =
+        cookie.MaxAge().value_or(std::string_view());
     if (actual_value != base::NumberToString(*filter->max_age)) {
       return false;
     }
   }
   if (filter->domain) {
-    std::string actual_value =
-        cookie.HasDomain() ? cookie.Domain() : std::string();
+    std::string_view actual_value =
+        cookie.Domain().value_or(std::string_view());
     if (actual_value != *filter->domain) {
       return false;
     }
   }
   if (filter->path) {
-    std::string actual_value = cookie.HasPath() ? cookie.Path() : std::string();
+    std::string_view actual_value = cookie.Path().value_or(std::string_view());
     if (actual_value != *filter->path) {
       return false;
     }
@@ -1595,6 +1600,7 @@ void MergeOnHeadersReceivedResponses(
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
     GURL* preserve_fragment_on_redirect_url,
+    std::optional<extensions::ExtensionId>* extenion_id,
     IgnoredActions* ignored_actions,
     bool* response_headers_modified,
     std::vector<const DNRRequestAction*>* matched_dnr_actions) {
@@ -1708,7 +1714,9 @@ void MergeOnHeadersReceivedResponses(
                                            override_response_headers);
 
   GURL new_url;
-  MergeRedirectUrlOfResponses(request.url, deltas, &new_url, ignored_actions);
+  std::optional<extensions::ExtensionId> extension_id;
+  MergeRedirectUrlOfResponses(request.url, deltas, &new_url, &extension_id,
+                              ignored_actions);
   if (new_url.is_valid()) {
     // Only create a copy if we really want to modify the response headers.
     if (override_response_headers->get() == nullptr) {

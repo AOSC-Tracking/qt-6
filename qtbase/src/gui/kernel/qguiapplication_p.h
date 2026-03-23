@@ -22,6 +22,7 @@
 #include <QtCore/QHash>
 #include <QtCore/QPointF>
 #include <QtCore/private/qcoreapplication_p.h>
+#include <QtCore/qbasicatomic.h>
 
 #include <QtCore/qnativeinterface.h>
 #include <QtCore/private/qnativeinterface_p.h>
@@ -188,7 +189,7 @@ public:
 
     void _q_updateFocusObject(QObject *object);
 
-    static QGuiApplicationPrivate *instance() { return self; }
+    static QGuiApplicationPrivate *instance() { QT_IGNORE_DEPRECATIONS(return self;) }
 
     static QIcon *app_icon;
     static QString *platform_name;
@@ -228,8 +229,8 @@ public:
         // to use single-point precision.
         friend constexpr bool operator==(const QLastCursorPosition &p1, const QPointF &p2) noexcept
         {
-            return qFuzzyCompare(float(p1.x()), float(p2.x()))
-                && qFuzzyCompare(float(p1.y()), float(p2.y()));
+            return QtPrivate::fuzzyCompare(float(p1.x()), float(p2.x()))
+                && QtPrivate::fuzzyCompare(float(p1.y()), float(p2.y()));
         }
         friend constexpr bool operator!=(const QLastCursorPosition &p1, const QPointF &p2) noexcept
         {
@@ -345,6 +346,9 @@ public:
 #ifndef QT_NO_OPENGL
     bool ownGlobalShareContext = false;
 #endif
+
+    void _q_updatePrimaryScreenDpis();
+    static QBasicAtomicInt m_primaryScreenDpis;
 
 protected:
     virtual void handleThemeChanged();

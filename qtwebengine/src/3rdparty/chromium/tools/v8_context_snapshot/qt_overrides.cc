@@ -29,7 +29,7 @@ std::unique_ptr<OSExchangeDataProvider>
 OSExchangeDataProviderFactory::CreateProvider() {
   return nullptr;
 }
-bool ResourceBundle::LocaleDataPakExists(const std::string& locale) {
+bool ResourceBundle::LocaleDataPakExists(std::string_view locale, Gender) {
   return false;
 }
 std::string ResourceBundle::LoadLocaleResources(const std::string& pref_locale,

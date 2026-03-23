@@ -2,25 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "base/json/json_parser.h"
 
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <memory>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "base/features.h"
 #include "base/json/json_reader.h"
-#include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
@@ -29,6 +25,7 @@
 #include "base/strings/utf_string_conversion_utils.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/third_party/icu/icu_utf.h"
+#include "base/types/pass_key.h"
 
 namespace base::internal {
 
@@ -80,21 +77,6 @@ bool UnprefixedHexStringToInt(std::string_view input, int* output) {
   }
   return HexStringToInt(input, output);
 }
-
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-enum class ChromiumJsonExtension {
-  kCComment,
-  kCppComment,
-  kXEscape,
-  kVerticalTabEscape,
-  kControlCharacter,
-  kNewlineInString,
-  kMaxValue = kNewlineInString,
-};
-
-const char kExtensionHistogramName[] =
-    "Security.JSONParser.ChromiumExtensionUsage";
 
 }  // namespace
 
@@ -204,7 +186,7 @@ std::optional<std::string_view> JSONParser::PeekChars(size_t count) {
   // restructured the code so that we only stored the remaining data, that
   // would avoid this, but it would prevent rewinding (the places in this file
   // which look at `input_[index_ - 1]`.)
-  return std::string_view(input_.data() + index_, count);
+  return UNSAFE_BUFFERS(std::string_view(input_.data() + index_, count));
 }
 
 std::optional<char> JSONParser::PeekChar() {
@@ -233,7 +215,8 @@ std::optional<char> JSONParser::ConsumeChar() {
 
 const char* JSONParser::pos() {
   CHECK_LE(index_, input_.length());
-  return input_.data() + index_;
+  // SAFETY: Checked above.
+  return UNSAFE_BUFFERS(input_.data() + index_);
 }
 
 JSONParser::Token JSONParser::GetNextToken() {
@@ -317,8 +300,6 @@ bool JSONParser::EatComment() {
   const bool comments_allowed = options_ & JSON_ALLOW_COMMENTS;
 
   if (comment_start == "//") {
-    UmaHistogramEnumeration(kExtensionHistogramName,
-                            ChromiumJsonExtension::kCppComment);
     if (!comments_allowed) {
       ReportError(JSON_UNEXPECTED_TOKEN, 0);
       return false;
@@ -333,8 +314,6 @@ bool JSONParser::EatComment() {
       ConsumeChar();
     }
   } else if (comment_start == "/*") {
-    UmaHistogramEnumeration(kExtensionHistogramName,
-                            ChromiumJsonExtension::kCComment);
     if (!comments_allowed) {
       ReportError(JSON_UNEXPECTED_TOKEN, 0);
       return false;
@@ -396,7 +375,7 @@ std::optional<Value> JSONParser::ConsumeDictionary() {
     return std::nullopt;
   }
 
-  std::vector<std::pair<std::string, Value>> values;
+  std::vector<std::pair<std::string, std::unique_ptr<Value>>> values;
 
   Token token = GetNextToken();
   while (token != T_OBJECT_END) {
@@ -426,7 +405,8 @@ std::optional<Value> JSONParser::ConsumeDictionary() {
       return std::nullopt;
     }
 
-    values.emplace_back(std::move(*key), std::move(*value));
+    values.emplace_back(std::move(*key),
+                        std::make_unique<Value>(std::move(*value)));
 
     token = GetNextToken();
     if (token == T_LIST_SEPARATOR) {
@@ -446,8 +426,7 @@ std::optional<Value> JSONParser::ConsumeDictionary() {
   // Reverse |dict_storage| to keep the last of elements with the same key in
   // the input.
   std::ranges::reverse(values);
-  return Value(Value::Dict(std::make_move_iterator(values.begin()),
-                           std::make_move_iterator(values.end())));
+  return Value(Value::Dict(PassKey<JSONParser>(), std::move(values)));
 }
 
 std::optional<Value> JSONParser::ConsumeList() {
@@ -542,8 +521,6 @@ std::optional<std::string> JSONParser::ConsumeStringRaw() {
             // UTF-8 \x escape sequences are not allowed in the spec, but they
             // are supported here for backwards-compatiblity with the old
             // parser.
-            UmaHistogramEnumeration(kExtensionHistogramName,
-                                    ChromiumJsonExtension::kXEscape);
             if (!(options_ & JSON_ALLOW_X_ESCAPES)) {
               ReportError(JSON_INVALID_ESCAPE, -1);
               return std::nullopt;
@@ -603,8 +580,6 @@ std::optional<std::string> JSONParser::ConsumeStringRaw() {
             string.push_back('\t');
             break;
           case 'v':  // Not listed as valid escape sequence in the RFC.
-            UmaHistogramEnumeration(kExtensionHistogramName,
-                                    ChromiumJsonExtension::kVerticalTabEscape);
             if (!(options_ & JSON_ALLOW_VERT_TAB)) {
               ReportError(JSON_INVALID_ESCAPE, -1);
               return std::nullopt;
@@ -665,20 +640,13 @@ JSONParser::ConsumeStringPart() {
     // quotation mark, reverse solidus, and the control characters (U+0000
     // through U+001F)".
     if (*c == '\n' || *c == '\r') {
-      UmaHistogramEnumeration(kExtensionHistogramName,
-                              ChromiumJsonExtension::kNewlineInString);
-      if (!(options_ &
-            (JSON_ALLOW_NEWLINES_IN_STRINGS | JSON_ALLOW_CONTROL_CHARS))) {
+      if (!(options_ & JSON_ALLOW_NEWLINES_IN_STRINGS)) {
         ReportError(JSON_UNSUPPORTED_ENCODING, -1);
         return {StringResult::kError, {}};  // No need to return consumed data.
       }
     } else if (*c <= 0x1F) {
-      UmaHistogramEnumeration(kExtensionHistogramName,
-                              ChromiumJsonExtension::kControlCharacter);
-      if (!(options_ & JSON_ALLOW_CONTROL_CHARS)) {
-        ReportError(JSON_UNSUPPORTED_ENCODING, -1);
-        return {StringResult::kError, {}};  // No need to return consumed data.
-      }
+      ReportError(JSON_UNSUPPORTED_ENCODING, -1);
+      return {StringResult::kError, {}};  // No need to return consumed data.
     }
 
     // If this character is not an escape sequence, track any line breaks and

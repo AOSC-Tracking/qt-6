@@ -17,6 +17,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "cc/paint/paint_op_reader.h"
 #include "cc/paint/paint_op_writer.h"
+#include "third_party/skia/include/core/SkCPURecorder.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkPixmap.h"
@@ -28,7 +29,6 @@
 #include "third_party/skia/include/gpu/ganesh/SkImageGanesh.h"
 #include "third_party/skia/include/gpu/graphite/Image.h"
 #include "third_party/skia/include/gpu/graphite/Recorder.h"
-#include "ui/gfx/color_conversion_sk_filter_cache.h"
 #include "ui/gfx/hdr_metadata.h"
 #include "ui/gfx/mojom/hdr_metadata.mojom.h"
 
@@ -162,6 +162,7 @@ bool WritePixmap(PaintOpWriter& writer, const SkPixmap& pixmap) {
   DCHECK_GT(pixmap.height(), 0);
   DCHECK_GT(pixmap.rowBytes(), 0u);
   writer.Write(pixmap.colorType());
+  writer.Write(pixmap.alphaType());
   writer.Write(pixmap.width());
   writer.Write(pixmap.height());
   size_t data_size = pixmap.computeByteSize();
@@ -197,6 +198,14 @@ bool ReadPixmap(PaintOpReader& reader, SkPixmap& pixmap) {
     DLOG(ERROR) << "Invalid color type";
     return false;
   }
+  SkAlphaType alpha_type = kUnknown_SkAlphaType;
+  reader.Read(&alpha_type);
+  if (alpha_type != kPremul_SkAlphaType &&
+      alpha_type != kUnpremul_SkAlphaType &&
+      alpha_type != kOpaque_SkAlphaType) {
+    DLOG(ERROR) << "Invalid alpha type";
+    return false;
+  }
   int width = 0;
   reader.Read(&width);
   int height = 0;
@@ -206,8 +215,7 @@ bool ReadPixmap(PaintOpReader& reader, SkPixmap& pixmap) {
     return false;
   }
 
-  auto image_info =
-      SkImageInfo::Make(width, height, color_type, kPremul_SkAlphaType);
+  auto image_info = SkImageInfo::Make(width, height, color_type, alpha_type);
   size_t row_bytes = 0;
   reader.ReadSize(&row_bytes);
   if (row_bytes < image_info.minRowBytes()) {
@@ -717,7 +725,9 @@ bool ServiceImageTransferCacheEntry::Deserialize(
       // `graphite_recorder` to be nullptr if `image_` is not texture backed.
       // Need to handle this case (currently just goes through gr_context path
       // with nullptr context).
-      image_ = image_->makeColorSpace(gr_context_, target_color_space);
+      image_ = image_->makeColorSpace(
+          gr_context_ ? gr_context_->asRecorder() : skcpu::Recorder::TODO(),
+          target_color_space, {});
       if (needs_mips && gr_context_ && image_ && image_->isTextureBacked()) {
         image_ = SkImages::TextureFromImage(
             gr_context, image_, skgpu::Mipmapped::kYes, skgpu::Budgeted::kNo);

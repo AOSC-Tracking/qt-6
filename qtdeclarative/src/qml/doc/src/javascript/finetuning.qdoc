@@ -39,6 +39,13 @@ Running JavaScript code can be influenced by a few environment variables, partic
             If it contains a number, this environment variable is interpreted as the size in bytes
             of the memory area that will be allocated as the stack for the garbage collector.
     \row
+        \li \c{QV4_STACK_SOFT_LIMIT}
+        \li When this environment variable is set, the JavaScript engine will throw a "RangeError:
+            Maximum call stack size exceeded" exception once the call stack usage reaches the
+            defined soft limit. If the variable is not set, the engine defaults to runtime detected
+            or Qt predefined limits depending on the OS.
+
+    \row
         \li \c{QV4_CRASH_ON_STACKOVERFLOW}
         \li Usually the JavaScript engine tries to catch C++ stack overflows caused by
             excessively recursive JavaScript code, and generates a non-fatal error condition.
@@ -80,6 +87,12 @@ Running JavaScript code can be influenced by a few environment variables, partic
             allocation. This is very expensive at run-time, but it quickly uncovers many memory
             management errors, for example the manual deletion of an object belonging to the QML
             engine from C++.
+    \row
+        \li \c{QV4_MM_CROSS_VALIDATE_INCREMENTAL_GC}
+        \li Setting this environment variable runs additional debug steps to
+            recognize cases where the incremental garbage collector is
+            misbehaving by comparing its behavior to that of the non-incremetal
+            garbage collector.
     \row
         \li \c{QV4_PROFILE_WRITE_PERF_MAP}
         \li On Linux, the \c perf utility can be used to profile programs. To analyze JIT-compiled

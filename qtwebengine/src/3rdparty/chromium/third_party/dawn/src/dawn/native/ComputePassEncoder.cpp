@@ -221,7 +221,7 @@ void ComputePassEncoder::APIDispatchWorkgroups(uint32_t workgroupCountX,
                     "Dispatch workgroup count X (%u) exceeds max compute "
                     "workgroups per dimension (%u).%s",
                     workgroupCountX, maxComputeWorkgroupsPerDimension,
-                    DAWN_INCREASE_LIMIT_MESSAGE(GetDevice()->GetAdapter(),
+                    DAWN_INCREASE_LIMIT_MESSAGE(GetDevice()->GetAdapter()->GetLimits().v1,
                                                 maxComputeWorkgroupsPerDimension, workgroupCountX));
 
                 DAWN_INVALID_IF(
@@ -229,7 +229,7 @@ void ComputePassEncoder::APIDispatchWorkgroups(uint32_t workgroupCountX,
                     "Dispatch workgroup count Y (%u) exceeds max compute "
                     "workgroups per dimension (%u).%s",
                     workgroupCountY, maxComputeWorkgroupsPerDimension,
-                    DAWN_INCREASE_LIMIT_MESSAGE(GetDevice()->GetAdapter(),
+                    DAWN_INCREASE_LIMIT_MESSAGE(GetDevice()->GetAdapter()->GetLimits().v1,
                                                 maxComputeWorkgroupsPerDimension, workgroupCountY));
 
                 DAWN_INVALID_IF(
@@ -237,7 +237,7 @@ void ComputePassEncoder::APIDispatchWorkgroups(uint32_t workgroupCountX,
                     "Dispatch workgroup count Z (%u) exceeds max compute "
                     "workgroups per dimension (%u).%s",
                     workgroupCountZ, maxComputeWorkgroupsPerDimension,
-                    DAWN_INCREASE_LIMIT_MESSAGE(GetDevice()->GetAdapter(),
+                    DAWN_INCREASE_LIMIT_MESSAGE(GetDevice()->GetAdapter()->GetLimits().v1,
                                                 maxComputeWorkgroupsPerDimension, workgroupCountZ));
 
                 if (!GetDevice()->HasFlexibleTextureViews()) {
@@ -267,7 +267,7 @@ ComputePassEncoder::TransformIndirectDispatchBuffer(Ref<BufferBase> indirectBuff
     // This function creates new resources, need to lock the Device.
     // TODO(crbug.com/dawn/1618): In future, all temp resources should be created at Command Submit
     // time, so the locking would be removed from here at that point.
-    auto deviceLock(GetDevice()->GetScopedLock());
+    auto deviceGuard = GetDevice()->GetGuard();
 
     const bool shouldDuplicateNumWorkgroups =
         device->ShouldDuplicateNumWorkgroupsForDispatchIndirect(
@@ -501,7 +501,7 @@ void ComputePassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t quer
 
 void ComputePassEncoder::AddDispatchSyncScope(SyncScopeUsageTracker scope) {
     PipelineLayoutBase* layout = mCommandBufferState.GetPipelineLayout();
-    for (BindGroupIndex i : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
+    for (BindGroupIndex i : layout->GetBindGroupLayoutsMask()) {
         scope.AddBindGroup(mCommandBufferState.GetBindGroup(i));
     }
     mUsageTracker.AddDispatch(scope.AcquireSyncScopeUsage());

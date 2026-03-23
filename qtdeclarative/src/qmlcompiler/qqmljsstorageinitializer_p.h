@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSSTORAGEINITIALIZER_P_H
 #define QQMLJSSTORAGEINITIALIZER_P_H

@@ -129,6 +129,16 @@ void ImageSibling::setSourceEGLImageInitState(gl::InitState initState) const
     mTargetOf->setInitState(initState);
 }
 
+angle::Result ImageSibling::ensureSizeResolved(const gl::Context *context) const
+{
+    return angle::Result::Continue;
+}
+
+bool ImageSibling::isAttachmentSpecified(const gl::ImageIndex &imageIndex) const
+{
+    return !getAttachmentSize(imageIndex).empty();
+}
+
 bool ImageSibling::isRenderable(const gl::Context *context,
                                 GLenum binding,
                                 const gl::ImageIndex &imageIndex) const
@@ -533,7 +543,7 @@ Error Image::initialize(const Display *display, const gl::Context *context)
         if (!gl::ColorspaceFormatOverride(mState.colorspace, &nonLinearFormat))
         {
             // the colorspace format is not supported
-            return egl::EglBadMatch();
+            return egl::Error(EGL_BAD_MATCH);
         }
         mState.format = gl::Format(nonLinearFormat);
     }

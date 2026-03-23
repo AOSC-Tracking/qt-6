@@ -18,6 +18,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/containers/fixed_flat_map.h"
+#include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/environment.h"
@@ -74,10 +75,7 @@ class ScopedSetInsertion {
 };
 
 std::string GetEnv(const std::string& var) {
-  auto env = base::Environment::Create();
-  std::string value;
-  env->GetVar(var, &value);
-  return value;
+  return base::Environment::Create()->GetVar(var).value_or(std::string());
 }
 
 NO_SANITIZE("cfi-icall")
@@ -161,12 +159,20 @@ base::FilePath CanonicalizePath(base::FilePath path) {
 scoped_refptr<base::RefCountedMemory> ReadCursorFromThemeImpl(
     const std::string& theme,
     const std::string& cursor_name,
-    base::flat_set<ThemeAndCursorName>* parent_theme_and_cursor_names) {
+    base::flat_set<ThemeAndCursorName>* parent_theme_and_cursor_names,
+    base::flat_map<ThemeAndCursorName, scoped_refptr<base::RefCountedMemory>>*
+        cache) {
   constexpr const char kCursorDir[] = "cursors";
   constexpr const char kThemeInfo[] = "index.theme";
 
   auto theme_and_cursor_name = std::make_pair(theme, cursor_name);
+  auto it = cache->find(theme_and_cursor_name);
+  if (it != cache->end()) {
+    return it->second;
+  }
+
   if (parent_theme_and_cursor_names->contains(theme_and_cursor_name)) {
+    // Circular dependency.
     return nullptr;
   }
   ScopedSetInsertion scoped_set_insertion(parent_theme_and_cursor_names,
@@ -184,7 +190,10 @@ scoped_refptr<base::RefCountedMemory> ReadCursorFromThemeImpl(
 
     std::string contents;
     if (base::ReadFileToString(cursor_dir.Append(cursor_name), &contents)) {
-      return base::MakeRefCounted<base::RefCountedString>(std::move(contents));
+      auto result =
+          base::MakeRefCounted<base::RefCountedString>(std::move(contents));
+      (*cache)[theme_and_cursor_name] = result;
+      return result;
     }
 
     if (base_themes.empty())
@@ -193,11 +202,13 @@ scoped_refptr<base::RefCountedMemory> ReadCursorFromThemeImpl(
 
   for (const auto& path : base_themes) {
     if (auto contents = ReadCursorFromThemeImpl(
-            path, cursor_name, parent_theme_and_cursor_names)) {
+            path, cursor_name, parent_theme_and_cursor_names, cache)) {
+      (*cache)[theme_and_cursor_name] = contents;
       return contents;
     }
   }
 
+  (*cache)[theme_and_cursor_name] = nullptr;
   return nullptr;
 }
 
@@ -207,7 +218,10 @@ scoped_refptr<base::RefCountedMemory> ReadCursorFromTheme(
     const std::string& theme,
     const std::string& cursor_name) {
   base::flat_set<ThemeAndCursorName> parent_theme_names;
-  return ReadCursorFromThemeImpl(theme, cursor_name, &parent_theme_names);
+  base::flat_map<ThemeAndCursorName, scoped_refptr<base::RefCountedMemory>>
+      cache;
+  return ReadCursorFromThemeImpl(theme, cursor_name, &parent_theme_names,
+                                 &cache);
 }
 
 scoped_refptr<base::RefCountedMemory> ReadCursorFile(
@@ -601,8 +615,7 @@ std::vector<XCursorLoader::Image> ParseCursorFile(
         !end.IsValid() || end.ValueOrDie() > src.size()) {
       return false;
     }
-    dest = base::numerics::U32FromLittleEndian(
-        src.subspan(offset).first<sizeof(dest)>());
+    dest = base::U32FromLittleEndian(src.subspan(offset).first<sizeof(dest)>());
     offset += sizeof(dest);
     return true;
   };
@@ -665,7 +678,7 @@ std::vector<XCursorLoader::Image> ParseCursorFile(
         !ReadU32(chunk_header.version) ||  //
         chunk_header.type != entry.type ||
         chunk_header.subtype != entry.subtype) {
-      continue;
+      return {};
     }
 
     struct ImageHeader {
@@ -680,12 +693,12 @@ std::vector<XCursorLoader::Image> ParseCursorFile(
         !ReadU32(image.xhot) ||    //
         !ReadU32(image.yhot) ||    //
         !ReadU32(image.delay)) {
-      continue;
+      return {};
     }
     // Ignore unreasonably-sized cursors to prevent allocating too much
     // memory in the bitmap below.
     if (image.width > 8192u || image.height > 8192u) {
-      continue;
+      return {};
     }
     SkBitmap bitmap;
     bitmap.allocN32Pixels(image.width, image.height);
@@ -698,7 +711,7 @@ std::vector<XCursorLoader::Image> ParseCursorFile(
         UNSAFE_TODO(base::span(static_cast<uint8_t*>(bitmap.getPixels()),
                                bitmap.computeByteSize()));
     if (!ReadBytes(pixels)) {
-      continue;
+      return {};
     }
     images.push_back(XCursorLoader::Image{bitmap,
                                           gfx::Point(image.xhot, image.yhot),

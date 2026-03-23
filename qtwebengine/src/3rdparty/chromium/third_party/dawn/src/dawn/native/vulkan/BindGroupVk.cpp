@@ -27,7 +27,6 @@
 
 #include "dawn/native/vulkan/BindGroupVk.h"
 
-#include "dawn/common/BitSetIterator.h"
 #include "dawn/common/MatchVariant.h"
 #include "dawn/common/Range.h"
 #include "dawn/common/ityp_stack_vec.h"
@@ -46,14 +45,21 @@ namespace dawn::native::vulkan {
 // static
 ResultOrError<Ref<BindGroup>> BindGroup::Create(Device* device,
                                                 const BindGroupDescriptor* descriptor) {
-    return ToBackend(descriptor->layout->GetInternalBindGroupLayout())
-        ->AllocateBindGroup(device, descriptor);
+    Ref<BindGroup> bindGroup;
+    DAWN_TRY_ASSIGN(bindGroup, ToBackend(descriptor->layout->GetInternalBindGroupLayout())
+                                   ->AllocateBindGroup(device, descriptor));
+    DAWN_TRY(bindGroup->Initialize(descriptor));
+    return bindGroup;
 }
 
 BindGroup::BindGroup(Device* device,
                      const BindGroupDescriptor* descriptor,
                      DescriptorSetAllocation descriptorSetAllocation)
-    : BindGroupBase(this, device, descriptor), mDescriptorSetAllocation(descriptorSetAllocation) {
+    : BindGroupBase(this, device, descriptor), mDescriptorSetAllocation(descriptorSetAllocation) {}
+
+BindGroup::~BindGroup() = default;
+
+MaybeError BindGroup::InitializeImpl() {
     // Now do a write of a single descriptor set with all possible chained data allocated on the
     // stack.
     const uint32_t bindingCount = static_cast<uint32_t>((GetLayout()->GetBindingCount()));
@@ -72,8 +78,10 @@ BindGroup::BindGroup(Device* device,
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.pNext = nullptr;
         write.dstSet = GetHandle();
-        write.dstBinding = static_cast<uint32_t>(bindingIndex);
-        write.dstArrayElement = 0;
+        // Arrays all have a single binding, so compute the binding index for the array, which is
+        // the same as the binding index for the 0th element.
+        write.dstBinding = uint32_t(bindingIndex - bindingInfo.indexInArray);
+        write.dstArrayElement = uint32_t(bindingInfo.indexInArray);
         write.descriptorCount = 1;
         write.descriptorType = VulkanDescriptorType(bindingInfo);
 
@@ -188,17 +196,27 @@ BindGroup::BindGroup(Device* device,
         }
     }
 
+    Device* device = ToBackend(GetDevice());
     // TODO(crbug.com/dawn/855): Batch these updates
     device->fn.UpdateDescriptorSets(device->GetVkDevice(), numWrites, writes.data(), 0, nullptr);
 
     SetLabelImpl();
-}
 
-BindGroup::~BindGroup() = default;
+    return {};
+}
 
 void BindGroup::DestroyImpl() {
     BindGroupBase::DestroyImpl();
-    ToBackend(GetLayout())->DeallocateBindGroup(this, &mDescriptorSetAllocation);
+    ToBackend(GetLayout())->DeallocateDescriptorSet(&mDescriptorSetAllocation);
+}
+
+void BindGroup::DeleteThis() {
+    // This function must first run the destructor and then deallocate memory. Take a reference to
+    // the BindGroupLayout+SlabAllocator before running the destructor so this function can access
+    // it afterwards and it's not destroyed prematurely.
+    Ref<BindGroupLayout> layout = ToBackend(GetLayout());
+    BindGroupBase::DeleteThis();
+    layout->DeallocateBindGroup(this);
 }
 
 VkDescriptorSet BindGroup::GetHandle() const {

@@ -17,21 +17,21 @@ QLottieBase *QLottieRepeater::clone() const
 
 void QLottieRepeater::construct(const QJsonObject &definition)
 {
-    qCDebug(lcLottieQtLottieParser) << "QLottieRepeater::construct():" << m_name;
+    qCDebug(lcLottieQtLottieParser) << "QLottieRepeater::parse():" << m_name;
 
     QLottieBase::parse(definition);
     if (m_hidden)
         return;
 
-    QJsonObject copies = definition.value(QLatin1String("c")).toObject();
+    QJsonObject copies = definition.value("c"_L1).toObject();
     copies = resolveExpression(copies);
     m_copies.construct(copies);
 
-    QJsonObject offset = definition.value(QLatin1String("o")).toObject();
+    QJsonObject offset = definition.value("o"_L1).toObject();
     offset = resolveExpression(offset);
     m_offset.construct(offset);
 
-    m_transform.construct(definition.value(QLatin1String("tr")).toObject());
+    m_transform.parse(definition.value("tr"_L1).toObject());
 }
 
 void QLottieRepeater::updateProperties(int frame)

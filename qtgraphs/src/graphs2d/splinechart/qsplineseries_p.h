@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //  W A R N I N G
 //  -------------
@@ -28,9 +30,11 @@ protected:
     qreal m_width;
     Qt::PenCapStyle m_capStyle;
     QList<QPointF> m_controlPoints;
+    bool m_optimized;
 
     void calculateSplinePoints();
-    QList<qreal> calculateControlPoints(const QList<qreal> &list);
+    QList<QPointF> calculateControlPoints(const QList<QPointF> &list);
+    QList<QPointF> calculateCatmullRomPoints(const QList<QPointF> &list);
 
 private:
     Q_DECLARE_PUBLIC(QSplineSeries)

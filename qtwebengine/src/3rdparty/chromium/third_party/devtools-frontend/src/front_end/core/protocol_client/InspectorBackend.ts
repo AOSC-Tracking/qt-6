@@ -40,10 +40,8 @@ export const DevToolsStubErrorCode = -32015;
 const GenericErrorCode = -32000;
 const ConnectionClosedErrorCode = -32001;
 
-interface MessageParams {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [x: string]: any;
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MessageParams = Record<string, any>;
 
 type ProtocolDomainName = ProtocolProxyApi.ProtocolDomainName;
 
@@ -100,8 +98,8 @@ interface CallbackWithDebugInfo {
 }
 
 export class InspectorBackend {
-  readonly agentPrototypes: Map<ProtocolDomainName, AgentPrototype> = new Map();
-  #initialized: boolean = false;
+  readonly agentPrototypes = new Map<ProtocolDomainName, AgentPrototype>();
+  #initialized = false;
   #eventParameterNamesForDomain = new Map<ProtocolDomainName, EventParameterNames>();
   readonly typeMap = new Map<QualifiedName, CommandParameter[]>();
   readonly enumMap = new Map<QualifiedName, Record<string, string>>();
@@ -153,13 +151,13 @@ export class InspectorBackend {
 
   registerEnum(type: QualifiedName, values: Record<string, string>): void {
     const [domain, name] = splitQualifiedName(type);
-    // @ts-ignore globalThis global namespace pollution
+    // @ts-expect-error globalThis global namespace pollution
     if (!globalThis.Protocol[domain]) {
-      // @ts-ignore globalThis global namespace pollution
+      // @ts-expect-error globalThis global namespace pollution
       globalThis.Protocol[domain] = {};
     }
 
-    // @ts-ignore globalThis global namespace pollution
+    // @ts-expect-error globalThis global namespace pollution
     globalThis.Protocol[domain][name] = values;
     this.enumMap.set(type, values);
     this.#initialized = true;
@@ -181,11 +179,9 @@ export class InspectorBackend {
 let connectionFactory: () => Connection;
 
 export class Connection {
-  onMessage!: ((arg0: Object) => void)|null;
-  constructor() {
-  }
+  declare onMessage: ((arg0: Object) => void)|null;
 
-  setOnMessage(_onMessage: (arg0: (Object|string)) => void): void {
+  setOnMessage(_onMessage: (arg0: Object|string) => void): void {
   }
 
   setOnDisconnect(_onDisconnect: (arg0: string) => void): void {
@@ -250,33 +246,26 @@ export const test = {
 const LongPollingMethods = new Set<string>(['CSS.takeComputedStyleUpdates']);
 
 export class SessionRouter {
-  readonly #connectionInternal: Connection;
-  #lastMessageId: number;
-  #pendingResponsesCount: number;
-  readonly #pendingLongPollingMessageIds: Set<number>;
-  readonly #sessions: Map<string, {
+  readonly #connection: Connection;
+  #lastMessageId = 1;
+  #pendingResponsesCount = 0;
+  readonly #pendingLongPollingMessageIds = new Set<number>();
+  readonly #sessions = new Map<string, {
     target: TargetBase,
     callbacks: Map<number, CallbackWithDebugInfo>,
-    proxyConnection: ((Connection | undefined)|null),
-  }>;
-  #pendingScripts: (() => void)[];
+    proxyConnection: Connection|undefined|null,
+  }>();
+  #pendingScripts: Array<() => void> = [];
 
   constructor(connection: Connection) {
-    this.#connectionInternal = connection;
-    this.#lastMessageId = 1;
-    this.#pendingResponsesCount = 0;
-    this.#pendingLongPollingMessageIds = new Set();
-
-    this.#sessions = new Map();
-
-    this.#pendingScripts = [];
+    this.#connection = connection;
 
     test.deprecatedRunAfterPendingDispatches = this.deprecatedRunAfterPendingDispatches.bind(this);
     test.sendRawMessage = this.sendRawMessageForTesting.bind(this);
 
-    this.#connectionInternal.setOnMessage(this.onMessage.bind(this));
+    this.#connection.setOnMessage(this.onMessage.bind(this));
 
-    this.#connectionInternal.setOnDisconnect(reason => {
+    this.#connection.setOnDisconnect(reason => {
       const session = this.#sessions.get('');
       if (session) {
         session.target.dispose(reason);
@@ -323,7 +312,7 @@ export class SessionRouter {
   }
 
   connection(): Connection {
-    return this.#connectionInternal;
+    return this.#connection;
   }
 
   sendMessage(sessionId: string, domain: string, method: QualifiedName, params: Object|null, callback: Callback): void {
@@ -361,7 +350,7 @@ export class SessionRouter {
       return;
     }
     session.callbacks.set(messageId, {callback, method});
-    this.#connectionInternal.sendRawMessage(JSON.stringify(messageObject));
+    this.#connection.sendRawMessage(JSON.stringify(messageObject));
   }
 
   private sendRawMessageForTesting(method: QualifiedName, params: Object|null, callback: Callback|null, sessionId = ''):
@@ -532,7 +521,7 @@ export class TargetBase {
     }
 
     let router: SessionRouter;
-    if (sessionId && parentTarget && parentTarget.routerInternal) {
+    if (sessionId && parentTarget?.routerInternal) {
       router = parentTarget.routerInternal;
     } else if (connection) {
       router = new SessionRouter(connection);
@@ -545,7 +534,7 @@ export class TargetBase {
     router.registerSession(this, this.sessionId);
 
     for (const [domain, agentPrototype] of inspectorBackend.agentPrototypes) {
-      const agent = Object.create((agentPrototype as AgentPrototype));
+      const agent = Object.create((agentPrototype));
       agent.target = this;
       this.#agents.set(domain, agent);
     }
@@ -928,11 +917,9 @@ export class TargetBase {
  * of the invoke_enable, etc. methods that the front-end uses.
  */
 class AgentPrototype {
-  replyArgs: {
-    [x: string]: string[],
-  };
+  replyArgs: Record<string, string[]>;
   description = '';
-  metadata: {[commandName: string]: {parameters: CommandParameter[], description: string, replyArgs: string[]}};
+  metadata: Record<string, {parameters: CommandParameter[], description: string, replyArgs: string[]}>;
   readonly domain: string;
   target!: TargetBase;
   constructor(domain: string) {
@@ -947,7 +934,7 @@ class AgentPrototype {
     function sendMessagePromise(this: AgentPrototype, ...args: unknown[]): Promise<unknown> {
       return AgentPrototype.prototype.sendMessageToBackendPromise.call(this, domainAndMethod, parameters, args);
     }
-    // @ts-ignore Method code generation
+    // @ts-expect-error Method code generation
     this[methodName] = sendMessagePromise;
     this.metadata[domainAndMethod] = {parameters, description, replyArgs};
 
@@ -955,7 +942,7 @@ class AgentPrototype {
       return this.invoke(domainAndMethod, request);
     }
 
-    // @ts-ignore Method code generation
+    // @ts-expect-error Method code generation
     this['invoke_' + methodName] = invoke;
     this.replyArgs[domainAndMethod] = replyArgs;
   }
@@ -963,7 +950,7 @@ class AgentPrototype {
   private prepareParameters(
       method: string, parameters: CommandParameter[], args: unknown[], errorCallback: (arg0: string) => void): Object
       |null {
-    const params: {[x: string]: unknown} = {};
+    const params: Record<string, unknown> = {};
     let hasParams = false;
 
     for (const param of parameters) {
@@ -1071,8 +1058,8 @@ class AgentPrototype {
  * so that there is only one map per domain that is shared among all DispatcherManagers.
  */
 class DispatcherManager<Domain extends ProtocolDomainName> {
-  #eventArgs: ReadonlyEventParameterNames;
-  #dispatchers: ProtocolProxyApi.ProtocolDispatchers[Domain][] = [];
+  readonly #eventArgs: ReadonlyEventParameterNames;
+  readonly #dispatchers: Array<ProtocolProxyApi.ProtocolDispatchers[Domain]> = [];
 
   constructor(eventArgs: ReadonlyEventParameterNames) {
     this.#eventArgs = eventArgs;
@@ -1101,14 +1088,13 @@ class DispatcherManager<Domain extends ProtocolDomainName> {
       return;
     }
 
-    const messageParams = {...messageObject.params};
     for (let index = 0; index < this.#dispatchers.length; ++index) {
       const dispatcher = this.#dispatchers[index];
 
       if (event in dispatcher) {
         const f = dispatcher[event as string as keyof ProtocolProxyApi.ProtocolDispatchers[Domain]];
-        // @ts-ignore Can't type check the dispatch.
-        f.call(dispatcher, messageParams);
+        // @ts-expect-error Can't type check the dispatch.
+        f.call(dispatcher, messageObject.params);
       }
     }
   }

@@ -57,7 +57,7 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
         print("Inside Vulkan-Headers there is a registry/reg.py file that is used.")
         sys.exit(1) # Return without call stack so easy to spot error
 
-    from generators.base_generator import BaseGeneratorOptions
+    from base_generator import BaseGeneratorOptions
     from generators.thread_safety_generator import ThreadSafetyOutputGenerator
     from generators.stateless_validation_helper_generator import StatelessValidationHelperOutputGenerator
     from generators.object_tracker_generator import  ObjectTrackerOutputGenerator
@@ -70,6 +70,7 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
     from generators.dispatch_vector_generator import DispatchVectorGenerator
     from generators.function_pointers_generator import FunctionPointersOutputGenerator
     from generators.best_practices_generator import BestPracticesOutputGenerator
+    from generators.deprecation_generator import DeprecationGenerator
     from generators.spirv_validation_generator import SpirvValidationHelperOutputGenerator
     from generators.spirv_grammar_generator import SpirvGrammarHelperOutputGenerator
     from generators.command_validation_generator import CommandValidationOutputGenerator
@@ -88,7 +89,7 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
 
     # These set fields that are needed by both OutputGenerator and BaseGenerator,
     # but are uniform and don't need to be set at a per-generated file level
-    from generators.base_generator import SetOutputDirectory, SetTargetApiName, SetMergedApiNames, EnableCaching
+    from base_generator import SetOutputDirectory, SetTargetApiName, SetMergedApiNames, EnableCaching
     SetOutputDirectory(directory)
     SetTargetApiName(api)
 
@@ -256,6 +257,14 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
             'generator' : BestPracticesOutputGenerator,
             'genCombined': True,
         },
+        'deprecation.cpp' : {
+            'generator' : DeprecationGenerator,
+            'genCombined': True,
+        },
+        'deprecation.h' : {
+            'generator' : DeprecationGenerator,
+            'genCombined': True,
+        },
         'sync_validation_types.h' : {
             'generator' : SyncValidationOutputGenerator,
             'genCombined': True,
@@ -264,6 +273,11 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
             'generator' : SyncValidationOutputGenerator,
             'genCombined': True,
             'regenerate' : True
+        },
+        'spirv_validation_helper.h' : {
+            'generator' : SpirvValidationHelperOutputGenerator,
+            'genCombined': False,
+            'options' : [grammar],
         },
         'spirv_validation_helper.cpp' : {
             'generator' : SpirvValidationHelperOutputGenerator,
@@ -368,9 +382,6 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
         # Parse the specified registry XML into an ElementTree object
         tree = ElementTree.parse(registry)
 
-        # Filter out extensions that are not on the API list
-        [exts.remove(e) for exts in tree.findall('extensions') for e in exts.findall('extension') if (sup := e.get('supported')) is not None and all(api not in sup.split(',') for api in apiList)]
-
         # Load the XML tree into the registry object
         reg.loadElementTree(tree)
 
@@ -405,40 +416,8 @@ def main(argv):
     # The shaders requires glslangvalidator, so they are updated manually with generate_spirv when needed
     verify_exclude = [
         '.clang-format',
-        'validation_cmd_copy_buffer_to_image_comp.h',
-        'validation_cmd_copy_buffer_to_image_comp.cpp',
-        'validation_cmd_dispatch_comp.h',
-        'validation_cmd_dispatch_comp.cpp',
-        'validation_cmd_count_buffer_comp.h',
-        'validation_cmd_count_buffer_comp.cpp',
-        'validation_cmd_first_instance_comp.h',
-        'validation_cmd_first_instance_comp.cpp',
-        'validation_cmd_draw_indexed_comp.h',
-        'validation_cmd_draw_indexed_comp.cpp',
-        'validation_cmd_draw_indexed_indirect_index_buffer_comp.h',
-        'validation_cmd_draw_indexed_indirect_index_buffer_comp.cpp',
-        'validation_cmd_draw_indexed_indirect_vertex_buffer_comp.h',
-        'validation_cmd_draw_indexed_indirect_vertex_buffer_comp.cpp',
-        'validation_cmd_draw_mesh_indirect_comp.h',
-        'validation_cmd_draw_mesh_indirect_comp.cpp',
-        'validation_cmd_trace_rays_rgen.h',
-        'validation_cmd_trace_rays_rgen.cpp',
-        'instrumentation_buffer_device_address_comp.h',
-        'instrumentation_buffer_device_address_comp.cpp',
-        'instrumentation_descriptor_indexing_oob_bindless_comp.h',
-        'instrumentation_descriptor_indexing_oob_bindless_comp.cpp',
-        'instrumentation_descriptor_indexing_oob_non_bindless_comp.h',
-        'instrumentation_descriptor_indexing_oob_non_bindless_comp.cpp',
-        'instrumentation_descriptor_class_general_buffer_comp.h',
-        'instrumentation_descriptor_class_general_buffer_comp.cpp',
-        'instrumentation_descriptor_class_texel_buffer_comp.h',
-        'instrumentation_descriptor_class_texel_buffer_comp.cpp',
-        'instrumentation_ray_query_comp.h',
-        'instrumentation_ray_query_comp.cpp',
-        'instrumentation_post_process_descriptor_index_comp.h',
-        'instrumentation_post_process_descriptor_index_comp.cpp',
-        'instrumentation_vertex_attribute_fetch_oob_vert.cpp',
-        'instrumentation_vertex_attribute_fetch_oob_vert.h',
+        'gpuav_offline_spirv.h',
+        'gpuav_offline_spirv.cpp',
         'feature_requirements_helper.h', # https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/8969
         'feature_requirements_helper.cpp'
     ]

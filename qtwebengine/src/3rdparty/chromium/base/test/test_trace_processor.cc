@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/files/file_util.h"
+#include "base/strings/string_util.h"
 #include "base/test/chrome_track_event.descriptor.h"
 #include "base/test/perfetto_sql_stdlib.h"
 #include "base/threading/thread_restrictions.h"
@@ -171,3 +172,17 @@ TestTraceProcessor::RunQuery(const std::string& query) {
 }
 
 }  // namespace base::test
+
+std::ostream& operator<<(
+    std::ostream& out,
+    const base::test::TestTraceProcessor::QueryResult& result) {
+  size_t row_number = 0;
+  for (const std::vector<std::string>& row : result) {
+    out << "Row " << row_number++ << ":\t";
+    for (const std::string& value : row) {
+      out << value << " ";
+    }
+    out << "\n";
+  }
+  return out;
+}

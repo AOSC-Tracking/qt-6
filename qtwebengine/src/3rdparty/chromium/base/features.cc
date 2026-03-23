@@ -4,9 +4,12 @@
 
 #include "base/features.h"
 
-#include "base/cpu_reduction_experiment.h"
+#include <atomic>
+
+#include "base/files/file_path.h"
 #include "base/task/sequence_manager/sequence_manager_impl.h"
 #include "base/threading/platform_thread.h"
+#include "build/blink_buildflags.h"
 #include "build/buildflag.h"
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
@@ -16,8 +19,12 @@
 #if BUILDFLAG(IS_APPLE)
 #include "base/files/file.h"
 #include "base/message_loop/message_pump_apple.h"
-#include "base/message_loop/message_pump_kqueue.h"
 #include "base/synchronization/condition_variable.h"
+
+#if !BUILDFLAG(IS_IOS) || !BUILDFLAG(USE_BLINK)
+#include "base/message_loop/message_pump_kqueue.h"
+#endif
+
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
@@ -30,34 +37,30 @@
 
 namespace base::features {
 
+namespace {
+
+// An atomic is used because this can be queried racily by a thread checking if
+// an optimization is enabled and a thread initializing this from the
+// FeatureList. All operations use std::memory_order_relaxed because there are
+// no dependent memory operations.
+std::atomic_bool g_is_reduce_ppms_enabled{false};
+
+}  // namespace
+
 // Alphabetical:
 
-// Activate base::FeatureParamWithCache internal cache.
-// TODO(https://crbug.com/340824113): Remove the feature flag below.
+// Controls caching within BASE_FEATURE_PARAM(). This is feature-controlled
+// so that ScopedFeatureList can disable it to turn off caching.
 BASE_FEATURE(kFeatureParamWithCache,
              "FeatureParamWithCache",
              FEATURE_ENABLED_BY_DEFAULT);
 
-// Use the Rust JSON parser. Enabled everywhere except Android, where the switch
-// from using the C++ parser in-thread to using the Rust parser in a thread-pool
-// introduces too much latency.
-#if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kUseRustJsonParser,
-             "UseRustJsonParser",
-             FEATURE_DISABLED_BY_DEFAULT);
-#else
-BASE_FEATURE(kUseRustJsonParser,
-             "UseRustJsonParser",
+// Whether a fast implementation of FilePath::IsParent is used. This feature
+// exists to ensure that the fast implementation can be disabled quickly if
+// issues are found with it.
+BASE_FEATURE(kFastFilePathIsParent,
+             "FastFilePathIsParent",
              FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_ANDROID)
-
-// If true, use the Rust JSON parser in-thread; otherwise, it runs in a thread
-// pool.
-BASE_FEATURE_PARAM(bool,
-                   kUseRustJsonParserInCurrentSequence,
-                   &kUseRustJsonParser,
-                   "UseRustJsonParserInCurrentSequence",
-                   false);
 
 // Use non default low memory device threshold.
 // Value should be given via |LowMemoryDeviceThresholdMB|.
@@ -80,6 +83,8 @@ BASE_FEATURE_PARAM(size_t,
                    &kLowEndMemoryExperiment,
                    "LowMemoryDeviceThresholdMB",
                    LOW_MEMORY_DEVICE_THRESHOLD_MB);
+
+BASE_FEATURE(kReducePPMs, "ReducePPMs", FEATURE_DISABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 // Force to enable LowEndDeviceMode partially on Android 3Gb devices.
@@ -108,6 +113,11 @@ BASE_FEATURE(kPartialLowEndModeOnMidRangeDevices,
 #endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_ANDROID)
+// Enable not perceptible binding without cpu priority boosting.
+BASE_FEATURE(kBackgroundNotPerceptibleBinding,
+             "BackgroundNotPerceptibleBinding",
+             FEATURE_DISABLED_BY_DEFAULT);
+
 // Whether to report frame metrics to the Android.FrameTimeline.* histograms.
 BASE_FEATURE(kCollectAndroidFrameTimelineMetrics,
              "CollectAndroidFrameTimelineMetrics",
@@ -122,14 +132,33 @@ BASE_FEATURE(kPostPowerMonitorBroadcastReceiverInitToBackground,
 BASE_FEATURE(kPostGetMyMemoryStateToBackground,
              "PostGetMyMemoryStateToBackground",
              FEATURE_ENABLED_BY_DEFAULT);
+
+// Update child process binding state before unbinding.
+BASE_FEATURE(kUpdateStateBeforeUnbinding,
+            "UpdateStateBeforeUnbinding",
+            FEATURE_DISABLED_BY_DEFAULT);
+
+// Use shared service connection to rebind a service binding to update the LRU
+// in the ProcessList of OomAdjuster.
+BASE_FEATURE(kUseSharedRebindServiceConnection,
+             "UseSharedRebindServiceConnection",
+             FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
+
+bool IsReducePPMsEnabled() {
+  return g_is_reduce_ppms_enabled.load(std::memory_order_relaxed);
+}
 
 void Init(EmitThreadControllerProfilerMetadata
               emit_thread_controller_profiler_metadata) {
-  InitializeCpuReductionExperiment();
+  g_is_reduce_ppms_enabled.store(FeatureList::IsEnabled(kReducePPMs),
+                                 std::memory_order_relaxed);
+
   sequence_manager::internal::SequenceManagerImpl::InitializeFeatures();
   sequence_manager::internal::ThreadController::InitializeFeatures(
       emit_thread_controller_profiler_metadata);
+
+  FilePath::InitializeFeatures();
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
   MessagePumpEpoll::InitializeFeatures();
@@ -142,7 +171,12 @@ void Init(EmitThreadControllerProfilerMetadata
 #if BUILDFLAG(IS_APPLE)
   File::InitializeFeatures();
   MessagePumpCFRunLoopBase::InitializeFeatures();
+
+// Kqueue is not used for ios blink.
+#if !BUILDFLAG(IS_IOS) || !BUILDFLAG(USE_BLINK)
   MessagePumpKqueue::InitializeFeatures();
+#endif
+
 #endif
 
 #if BUILDFLAG(IS_ANDROID)

@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/modules/webaudio/audio_handler.h"
 
+#include <inttypes.h>
+
 #include "base/trace_event/trace_event.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_input.h"
@@ -47,6 +49,8 @@ AudioHandler::AudioHandler(NodeType node_type,
       InstanceCounters::CounterValue(InstanceCounters::kAudioHandlerCounter));
 #endif
   node.context()->WarnIfContextClosed(this);
+  uma_reporter_ = std::make_unique<AudioHandlerUmaReporter>(
+      std::string(NodeTypeName().Utf8()), sample_rate);
 }
 
 AudioHandler::~AudioHandler() {
@@ -98,50 +102,50 @@ BaseAudioContext* AudioHandler::Context() const {
 
 String AudioHandler::NodeTypeName() const {
   switch (node_type_) {
-    case kNodeTypeDestination:
+    case NodeType::kNodeTypeDestination:
       return "AudioDestinationNode";
-    case kNodeTypeOscillator:
+    case NodeType::kNodeTypeOscillator:
       return "OscillatorNode";
-    case kNodeTypeAudioBufferSource:
+    case NodeType::kNodeTypeAudioBufferSource:
       return "AudioBufferSourceNode";
-    case kNodeTypeMediaElementAudioSource:
+    case NodeType::kNodeTypeMediaElementAudioSource:
       return "MediaElementAudioSourceNode";
-    case kNodeTypeMediaStreamAudioDestination:
+    case NodeType::kNodeTypeMediaStreamAudioDestination:
       return "MediaStreamAudioDestinationNode";
-    case kNodeTypeMediaStreamAudioSource:
+    case NodeType::kNodeTypeMediaStreamAudioSource:
       return "MediaStreamAudioSourceNode";
-    case kNodeTypeScriptProcessor:
+    case NodeType::kNodeTypeScriptProcessor:
       return "ScriptProcessorNode";
-    case kNodeTypeBiquadFilter:
+    case NodeType::kNodeTypeBiquadFilter:
       return "BiquadFilterNode";
-    case kNodeTypePanner:
+    case NodeType::kNodeTypePanner:
       return "PannerNode";
-    case kNodeTypeStereoPanner:
+    case NodeType::kNodeTypeStereoPanner:
       return "StereoPannerNode";
-    case kNodeTypeConvolver:
+    case NodeType::kNodeTypeConvolver:
       return "ConvolverNode";
-    case kNodeTypeDelay:
+    case NodeType::kNodeTypeDelay:
       return "DelayNode";
-    case kNodeTypeGain:
+    case NodeType::kNodeTypeGain:
       return "GainNode";
-    case kNodeTypeChannelSplitter:
+    case NodeType::kNodeTypeChannelSplitter:
       return "ChannelSplitterNode";
-    case kNodeTypeChannelMerger:
+    case NodeType::kNodeTypeChannelMerger:
       return "ChannelMergerNode";
-    case kNodeTypeAnalyser:
+    case NodeType::kNodeTypeAnalyser:
       return "AnalyserNode";
-    case kNodeTypeDynamicsCompressor:
+    case NodeType::kNodeTypeDynamicsCompressor:
       return "DynamicsCompressorNode";
-    case kNodeTypeWaveShaper:
+    case NodeType::kNodeTypeWaveShaper:
       return "WaveShaperNode";
-    case kNodeTypeIIRFilter:
+    case NodeType::kNodeTypeIIRFilter:
       return "IIRFilterNode";
-    case kNodeTypeConstantSource:
+    case NodeType::kNodeTypeConstantSource:
       return "ConstantSourceNode";
-    case kNodeTypeAudioWorklet:
+    case NodeType::kNodeTypeAudioWorklet:
       return "AudioWorkletNode";
-    case kNodeTypeUnknown:
-    case kNodeTypeEnd:
+    case NodeType::kNodeTypeUnknown:
+    case NodeType::kNodeTypeEnd:
     default:
       NOTREACHED();
   }
@@ -150,9 +154,9 @@ String AudioHandler::NodeTypeName() const {
 void AudioHandler::SetNodeType(NodeType type) {
   // Don't allow the node type to be changed to a different node type, after
   // it's already been set.  And the new type can't be unknown or end.
-  DCHECK_EQ(node_type_, kNodeTypeUnknown);
-  DCHECK_NE(type, kNodeTypeUnknown);
-  DCHECK_NE(type, kNodeTypeEnd);
+  DCHECK_EQ(node_type_, NodeType::kNodeTypeUnknown);
+  DCHECK_NE(type, NodeType::kNodeTypeUnknown);
+  DCHECK_NE(type, NodeType::kNodeTypeEnd);
 
   node_type_ = type;
 
@@ -187,7 +191,7 @@ const AudioNodeOutput& AudioHandler::Output(unsigned i) const {
   return *outputs_[i];
 }
 
-unsigned AudioHandler::ChannelCount() {
+unsigned AudioHandler::ChannelCount() const {
   return channel_count_;
 }
 
@@ -226,7 +230,7 @@ void AudioHandler::SetChannelCount(unsigned channel_count,
   }
 }
 
-V8ChannelCountMode::Enum AudioHandler::GetChannelCountMode() {
+V8ChannelCountMode::Enum AudioHandler::GetChannelCountMode() const {
   // Because we delay the actual setting of the mode to the pre or post
   // rendering phase, we want to return the value that was set, not the actual
   // current mode.
@@ -244,7 +248,7 @@ void AudioHandler::SetChannelCountMode(V8ChannelCountMode::Enum mode,
   }
 }
 
-V8ChannelInterpretation::Enum AudioHandler::ChannelInterpretation() {
+V8ChannelInterpretation::Enum AudioHandler::ChannelInterpretation() const {
   // Because we delay the actual setting of the interpretation to the pre or
   // post rendering phase, we want to return the value that was set, not the
   // actual current interpretation.
@@ -322,7 +326,11 @@ void AudioHandler::ProcessIfNecessary(uint32_t frames_to_process) {
       // the downstream nodes.  (For example, a Gain node with a gain of 0 will
       // want to silence its output.)
       UnsilenceOutputs();
+      base::TimeTicks process_start_time = base::TimeTicks::Now();
       Process(frames_to_process);
+      base::TimeDelta process_duration =
+          base::TimeTicks::Now() - process_start_time;
+      uma_reporter_->AddProcessDuration(process_duration, frames_to_process);
     }
 
     if (!silent_inputs) {
@@ -366,7 +374,7 @@ void AudioHandler::PullInputs(uint32_t frames_to_process) {
   }
 }
 
-bool AudioHandler::InputsAreSilent() {
+bool AudioHandler::InputsAreSilent() const {
   for (auto& input : inputs_) {
     if (!input->Bus()->IsSilent()) {
       return false;
@@ -555,10 +563,10 @@ void AudioHandler::UpdateChannelInterpretation() {
 unsigned AudioHandler::NumberOfOutputChannels() const {
   // This should only be called for ScriptProcessorNodes which are the only
   // nodes where you can have an output with 0 channels.  All other nodes have
-  // have at least one output channel, so there's no reason other nodes should
+  // at least one output channel, so there's no reason other nodes should
   // ever call this function.
   DCHECK(0) << "numberOfOutputChannels() not valid for node type "
-            << GetNodeType();
+            << NodeTypeName();
   return 1;
 }
 

@@ -8,6 +8,7 @@
 #include <atomic>
 #include <functional>
 #include <utility>
+#include <variant>
 
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
@@ -23,9 +24,8 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/media_util.h"
@@ -35,7 +35,6 @@
 #include "media/base/video_decoder.h"
 #include "media/base/video_types.h"
 #include "media/video/gpu_video_accelerator_factories.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/peerconnection/rtc_video_decoder_fallback_recorder.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
@@ -48,22 +47,19 @@
 #include "third_party/webrtc/api/video/video_frame.h"
 #include "third_party/webrtc/api/video_codecs/vp9_profile.h"
 #include "third_party/webrtc/modules/video_coding/codecs/h264/include/h264.h"
+#include "third_party/webrtc/modules/video_coding/include/video_error_codes.h"
 #include "third_party/webrtc/rtc_base/ref_count.h"
 #include "third_party/webrtc/rtc_base/ref_counted_object.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/size.h"
 
-namespace WTF {
+namespace blink {
 
 template <>
 struct CrossThreadCopier<media::VideoDecoderConfig>
     : public CrossThreadCopierPassThrough<media::VideoDecoderConfig> {
   STATIC_ONLY(CrossThreadCopier);
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 namespace {
 
@@ -124,7 +120,8 @@ struct EncodedImageExternalMemory
     : public media::DecoderBuffer::ExternalMemory {
  public:
   explicit EncodedImageExternalMemory(
-      rtc::scoped_refptr<webrtc::EncodedImageBufferInterface> buffer_interface)
+      webrtc::scoped_refptr<webrtc::EncodedImageBufferInterface>
+          buffer_interface)
       : buffer_interface_(std::move(buffer_interface)) {
     DCHECK(buffer_interface_);
   }
@@ -142,7 +139,7 @@ struct EncodedImageExternalMemory
   }
 
  private:
-  rtc::scoped_refptr<webrtc::EncodedImageBufferInterface> buffer_interface_;
+  webrtc::scoped_refptr<webrtc::EncodedImageBufferInterface> buffer_interface_;
 };
 
 scoped_refptr<media::DecoderBuffer> ConvertToDecoderBuffer(
@@ -233,7 +230,7 @@ class RTCVideoDecoderAdapter::Impl {
   void Decode(scoped_refptr<media::DecoderBuffer> buffer,
               base::WaitableEvent* waiter,
               std::optional<RTCVideoDecoderAdapter::DecodeResult>* result);
-  absl::variant<DecodeResult, RTCVideoDecoderFallbackReason> EnqueueBuffer(
+  std::variant<DecodeResult, RTCVideoDecoderFallbackReason> EnqueueBuffer(
       scoped_refptr<media::DecoderBuffer> buffer);
   void Flush(WTF::CrossThreadOnceClosure flush_success_cb,
              WTF::CrossThreadOnceClosure flush_fail_cb);
@@ -261,12 +258,12 @@ class RTCVideoDecoderAdapter::Impl {
   raw_ptr<webrtc::DecodedImageCallback> decode_complete_callback_ = nullptr;
   int32_t consecutive_error_count_ = 0;
   // Requests that have not been submitted to the decoder yet.
-  WTF::Deque<scoped_refptr<media::DecoderBuffer>> pending_buffers_;
+  Deque<scoped_refptr<media::DecoderBuffer>> pending_buffers_;
   // Record of timestamps that have been sent to be decoded. Removing a
   // timestamp will cause the frame to be dropped when it is output.
-  WTF::Deque<base::TimeDelta> decode_timestamps_;
+  Deque<base::TimeDelta> decode_timestamps_;
   bool require_key_frame_ = true;
-  WTF::CrossThreadRepeatingFunction<void(Status)> change_status_callback_;
+  CrossThreadRepeatingFunction<void(Status)> change_status_callback_;
 
   SEQUENCE_CHECKER(media_sequence_checker_);
 
@@ -329,7 +326,7 @@ void RTCVideoDecoderAdapter::Impl::Decode(
 
   auto enque_result = EnqueueBuffer(std::move(buffer));
   if (const auto* fallback_reason =
-          absl::get_if<RTCVideoDecoderFallbackReason>(&enque_result)) {
+          std::get_if<RTCVideoDecoderFallbackReason>(&enque_result)) {
     RecordRTCVideoDecoderFallbackReason(video_codec_, *fallback_reason);
     if (waiter) {
       *result = std::nullopt;
@@ -341,7 +338,7 @@ void RTCVideoDecoderAdapter::Impl::Decode(
   }
 
   const auto* decode_result =
-      absl::get_if<RTCVideoDecoderAdapter::DecodeResult>(&enque_result);
+      std::get_if<RTCVideoDecoderAdapter::DecodeResult>(&enque_result);
   switch (*decode_result) {
     case DecodeResult::kOk:
       DecodePendingBuffers();
@@ -360,8 +357,8 @@ void RTCVideoDecoderAdapter::Impl::Decode(
   }
 }
 
-absl::variant<RTCVideoDecoderAdapter::DecodeResult,
-              RTCVideoDecoderFallbackReason>
+std::variant<RTCVideoDecoderAdapter::DecodeResult,
+             RTCVideoDecoderFallbackReason>
 RTCVideoDecoderAdapter::Impl::EnqueueBuffer(
     scoped_refptr<media::DecoderBuffer> buffer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(media_sequence_checker_);
@@ -485,9 +482,10 @@ void RTCVideoDecoderAdapter::Impl::OnOutput(
   const base::TimeDelta timestamp = frame->timestamp();
   webrtc::VideoFrame rtc_frame =
       webrtc::VideoFrame::Builder()
-          .set_video_frame_buffer(rtc::scoped_refptr<WebRtcVideoFrameAdapter>(
-              new rtc::RefCountedObject<WebRtcVideoFrameAdapter>(
-                  std::move(frame), frame_adapter_shared_resources_)))
+          .set_video_frame_buffer(
+              webrtc::scoped_refptr<WebRtcVideoFrameAdapter>(
+                  new webrtc::RefCountedObject<WebRtcVideoFrameAdapter>(
+                      std::move(frame), frame_adapter_shared_resources_)))
           .set_rtp_timestamp(static_cast<uint32_t>(timestamp.InMicroseconds()))
           .set_timestamp_us(0)
           .set_rotation(webrtc::kVideoRotation_0)

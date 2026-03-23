@@ -35,6 +35,7 @@ class SVGEllipseElement final : public SVGGeometryElement {
   explicit SVGEllipseElement(Document&);
 
   Path AsPath() const override;
+  PathBuilder AsMutablePath() const override;
 
   SVGAnimatedLength* cx() const { return cx_.Get(); }
   SVGAnimatedLength* cy() const { return cy_.Get(); }
@@ -45,8 +46,6 @@ class SVGEllipseElement final : public SVGGeometryElement {
 
  private:
   void SvgAttributeChanged(const SvgAttributeChangedParams&) override;
-
-  bool SelfHasRelativeLengths() const override;
 
   LayoutObject* CreateLayoutObject(const ComputedStyle&) override;
 

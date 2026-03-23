@@ -146,8 +146,10 @@ class SavedTabGroupModel {
   // Removes saved tab `tab_id` in the specified group denoted by `group_id` if
   // it exists. The group is deleted if the last tab is removed from it.
   // Notifies observers if the tab was removed locally.
-  void RemoveTabFromGroupLocally(const base::Uuid& group_id,
-                                 const base::Uuid& tab_id);
+  void RemoveTabFromGroupLocally(
+      const base::Uuid& group_id,
+      const base::Uuid& tab_id,
+      std::optional<GaiaId> local_gaia_id = std::nullopt);
 
   // Similar to above but the group with `group_id` must exist. Notifies
   // observers that the tab was removed from sync. `removed_by` is the user who
@@ -199,6 +201,18 @@ class SavedTabGroupModel {
   void UpdateLastUserInteractionTimeLocally(
       const LocalTabGroupID& local_group_id);
 
+  // Update the last seen time for a tab.
+  void UpdateTabLastSeenTimeFromLocal(const base::Uuid& group_id,
+                                      const base::Uuid& tab_id);
+  void UpdateTabLastSeenTimeFromSync(const base::Uuid& group_id,
+                                     const base::Uuid& tab_id,
+                                     base::Time time);
+
+  // Update the position for a share group from sync. If the position is
+  // nullopt, the group will be moved to the end of the list.
+  void UpdatePositionForSharedGroupFromSync(const base::Uuid& group_id,
+                                            std::optional<size_t> position);
+
   // Update the last updater cache guid for a give group and optionally a tab.
   void UpdateLastUpdaterCacheGuidForGroup(
       const std::optional<std::string>& cache_guid,
@@ -236,15 +250,20 @@ class SavedTabGroupModel {
   // StartTransitioningToShared().
   void MarkTransitionedToShared(const base::Uuid& shared_group_id);
 
-  // Mark that a tab group has completed transitioning to another group.
-  // `originating_group_id` is the ID of the originating tab group.
-  void MarkTransitionCompleted(const base::Uuid& originating_group_id);
+  // Marks that a tab group is hidden and should not be shown to users.
+  void SetGroupHidden(const base::Uuid& group_id);
+
+  // Restores the hidden state of a tab group.
+  void RestoreHiddenGroupFromSync(const base::Uuid& group_id);
 
   // Called to notify of the sync bridge state changes, e.g. whether initial
   // merge or disable sync are in progress. Invoked only for shared tab group
   // bridge.
   void OnSyncBridgeUpdateTypeChanged(
       SyncBridgeUpdateType sync_bridge_update_type);
+
+  // Update the archival status and archival timestamp of the local tab group.
+  void UpdateArchivalStatus(const base::Uuid& id, bool archivalStatus);
 
  private:
   // Returns mutable group containing tab with ID `saved_tab_guid`, otherwise
@@ -285,6 +304,8 @@ class SavedTabGroupModel {
   void MergePendingNtpWithIncomingTabIfAny(SavedTabGroup& group,
                                            const base::Uuid& tab_id);
   SavedTabGroupTab* FindPendingNtpInGroup(SavedTabGroup& group);
+
+  void HandleTabGroupRemovedFromSync(int index);
 
   // Obsevers of the model.
   base::ObserverList<SavedTabGroupModelObserver>::Unchecked observers_;

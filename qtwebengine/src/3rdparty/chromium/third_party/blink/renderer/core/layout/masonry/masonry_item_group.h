@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_MASONRY_MASONRY_ITEM_GROUP_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_MASONRY_MASONRY_ITEM_GROUP_H_
 
+#include "third_party/blink/renderer/core/layout/grid/grid_item.h"
 #include "third_party/blink/renderer/core/style/grid_area.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 
@@ -23,8 +24,10 @@ class MasonryItemGroupProperties {
 
  public:
   MasonryItemGroupProperties() = default;
-  MasonryItemGroupProperties(WTF::HashTableDeletedValueType)
-      : is_deleted_(true) {}
+  MasonryItemGroupProperties(HashTableDeletedValueType) : is_deleted_(true) {}
+
+  explicit MasonryItemGroupProperties(const GridSpan& item_span)
+      : item_span_(item_span) {}
 
   bool operator==(const MasonryItemGroupProperties& other) const {
     return is_deleted_ == other.is_deleted_ && item_span_ == other.item_span_;
@@ -41,6 +44,11 @@ class MasonryItemGroupProperties {
 
   bool IsHashTableDeletedValue() const { return is_deleted_; }
 
+  const GridSpan& Span() const {
+    DCHECK(item_span_);
+    return *item_span_;
+  }
+
  private:
   // `HashTraits` requires a way to create a "deleted value". In this class it's
   // the same as the default value but has this flag set to `true`.
@@ -49,17 +57,25 @@ class MasonryItemGroupProperties {
   std::optional<GridSpan> item_span_;
 };
 
-using MasonryItemGroups =
-    HeapHashMap<MasonryItemGroupProperties, HeapVector<BlockNode, 16>>;
+struct MasonryItemGroup {
+  DISALLOW_NEW();
+
+  void Trace(Visitor* visitor) const { visitor->Trace(items); }
+
+  GridItems::GridItemDataVector items;
+  MasonryItemGroupProperties properties;
+};
+
+using MasonryItemGroupMap =
+    HeapHashMap<MasonryItemGroupProperties, GridItems::GridItemDataVector>;
+using MasonryItemGroups = HeapVector<MasonryItemGroup, 16>;
+
+template <>
+struct HashTraits<MasonryItemGroupProperties>
+    : SimpleClassHashTraits<MasonryItemGroupProperties> {};
 
 }  // namespace blink
 
-namespace WTF {
-
-template <>
-struct HashTraits<blink::MasonryItemGroupProperties>
-    : SimpleClassHashTraits<blink::MasonryItemGroupProperties> {};
-
-}  // namespace WTF
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(blink::MasonryItemGroup)
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_MASONRY_MASONRY_ITEM_GROUP_H_

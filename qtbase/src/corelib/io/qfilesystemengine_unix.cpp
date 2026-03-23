@@ -920,7 +920,7 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
         // out if a symlink is hidden or not.
         needLstat = true;
     }
-#endif // defined(Q_OS_DARWIN)
+#endif
 
     // if we're asking for any of the stat(2) flags, then we're getting them all
     if (what & QFileSystemMetaData::PosixStatFlags)
@@ -943,7 +943,7 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
     //    entry still exist are EACCES, EFAULT, ENOMEM and EOVERFLOW. If we get
     //    EACCES or ENOMEM, then we have no choice on how to proceed, so we may
     //    as well conclude it doesn't exist; EFAULT can't happen and EOVERFLOW
-    //    shouldn't happen because we build in _LARGEFIE64.
+    //    shouldn't happen because we build in _LARGEFILE64.
     union {
         QT_STATBUF statBuffer;
         struct statx statxBuffer;
@@ -953,7 +953,7 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
         mode_t mode = 0;
         statResult = qt_lstatx(nativeFilePath, &statxBuffer);
         if (statResult == -ENOSYS) {
-            // use lstst(2)
+            // use lstat(2)
             statResult = QT_LSTAT(nativeFilePath, &statBuffer);
             if (statResult == 0)
                 mode = statBuffer.st_mode;
@@ -976,7 +976,7 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
                 data.entryFlags |= QFileSystemMetaData::LinkType;
                 statResult = -1;    // force stat(2) below
             } else {
-                // it's a reagular file and it exists
+                // it's a regular file and it exists
                 if (statResult)
                     data.fillFromStatxBuf(statxBuffer);
                 else
@@ -1026,28 +1026,36 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
     // third, we try access(2)
     if (what & (QFileSystemMetaData::UserPermissions | QFileSystemMetaData::ExistsAttribute)) {
 #if defined(Q_OS_VXWORKS)
-        // on VxWorks if the filesystem is not POSIX, access() always returns false, despite the
-        // file is readable
         struct statfs statBuf;
-        if (statfs(nativeFilePath, &statBuf) != 0) {
-            what &= ~QFileSystemMetaData::LinkType; // don't clear link: could be broken symlink
-            data.clearFlags(what);
-            return false;
-        }
-        if (statBuf.f_type != NFSV2_MAGIC && statBuf.f_type != NFSV3_MAGIC &&
-            statBuf.f_type != HRFS_MAGIC) {
+        if (statfs(nativeFilePath, &statBuf) == 0) {
+            if (statBuf.f_type != NFSV2_MAGIC && statBuf.f_type != NFSV3_MAGIC &&
+                statBuf.f_type != HRFS_MAGIC) {
 #if __has_include(<dosFsLib.h>)
-            if (data.entryFlags & QFileSystemMetaData::OwnerWritePermission) {
-                data.entryFlags |= QFileSystemMetaData::UserWritePermission;
-            }
-            if (data.entryFlags & QFileSystemMetaData::OwnerExecutePermission) {
-                data.entryFlags |= QFileSystemMetaData::UserExecutePermission;
-            }
+                if (data.entryFlags & QFileSystemMetaData::OwnerWritePermission) {
+                    data.entryFlags |= QFileSystemMetaData::UserWritePermission;
+                }
+                if (data.entryFlags & QFileSystemMetaData::OwnerExecutePermission) {
+                    data.entryFlags |= QFileSystemMetaData::UserExecutePermission;
+                }
 #endif
-            data.entryFlags |= QFileSystemMetaData::UserReadPermission |
-                    QFileSystemMetaData::ExistsAttribute;
-            return true;
+                data.entryFlags |= QFileSystemMetaData::UserReadPermission |
+                        QFileSystemMetaData::ExistsAttribute;
+                return true;
+            }
         }
+#if defined(QT_DEBUG)
+        else {
+              //on VxWorks hostfs, used for debugging, failes on statfs and falsely reports
+              //WasDeleted
+              statResult = QT_STAT(nativeFilePath, &statBuffer);
+              if (statResult == 0) {
+                  data.entryFlags |= QFileSystemMetaData::UserReadPermission |
+                                     QFileSystemMetaData::ExistsAttribute;
+                  data.entryFlags &= ~QFileSystemMetaData::WasDeletedAttribute;
+                  return true;
+              }
+        }
+#endif
 #endif
         // calculate user permissions
         auto checkAccess = [&](QFileSystemMetaData::MetaDataFlag flag, int mode) {
@@ -1189,8 +1197,19 @@ auto QFileSystemEngine::cloneFile(int srcfd, int dstfd, const QFileSystemMetaDat
         copied = ftruncate(dstfd, 0);
         return TriStateResult::Failed;
     }
-    if (errno != EXDEV)
+
+    // We failed with no bytes copied, so is this a real filesystem failure
+    // that will remain with sendfile() or the copy pump? Or is it a
+    // copy_file_range() condition?
+    switch (errno) {
+    case EINVAL: // observed with some obscure filesystem combinations
+    case EXDEV: // Linux can't do xdev file copies (FreeBSD can)
+    case ENOSYS: // caused by some containers wrongly filtering the system call
+        break;
+
+    default:
         return TriStateResult::Failed;
+    }
 #endif
 
 #if defined(Q_OS_LINUX)

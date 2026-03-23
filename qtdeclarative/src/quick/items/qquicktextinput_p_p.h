@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKTEXTINPUT_P_P_H
 #define QQUICKTEXTINPUT_P_P_H
@@ -13,6 +14,9 @@
 #include <QtCore/qelapsedtimer.h>
 #include <QtCore/qpointer.h>
 #include <QtCore/qbasictimer.h>
+#if QT_CONFIG(accessibility)
+#include <QtGui/qaccessible.h>
+#endif
 #include <QtGui/qclipboard.h>
 #include <QtGui/qguiapplication.h>
 #include <QtGui/qpalette.h>
@@ -40,6 +44,9 @@ class QSGInternalTextNode;
 class QInputControl;
 
 class Q_QUICK_EXPORT QQuickTextInputPrivate : public QQuickImplicitSizeItemPrivate
+#if QT_CONFIG(accessibility)
+    , public QAccessible::ActivationObserver
+#endif
 {
 public:
     Q_DECLARE_PUBLIC(QQuickTextInput)
@@ -130,6 +137,10 @@ public:
         , selectByTouchDrag(false)
 #endif
     {
+#if QT_CONFIG(accessibility)
+        QAccessible::installActivationObserver(this);
+        setAccessible();
+#endif
     }
 
     ~QQuickTextInputPrivate()
@@ -139,6 +150,10 @@ public:
         // to zero it out
         if (m_echoMode != QQuickTextInput::Normal)
             m_text.fill(u'\0');
+
+#if QT_CONFIG(accessibility)
+        QAccessible::removeActivationObserver(this);
+#endif
     }
 
     void init();
@@ -150,11 +165,22 @@ public:
     bool determineHorizontalAlignment();
     bool setHAlign(QQuickTextInput::HAlignment, bool forceAlign = false);
     void mirrorChange() override;
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+    bool handleContextMenuEvent(QContextMenuEvent *event) override;
+#endif
     bool sendMouseEventToInputContext(QMouseEvent *event);
 #if QT_CONFIG(im)
     Qt::InputMethodHints effectiveInputMethodHints() const;
 #endif
     void handleFocusEvent(QFocusEvent *event);
+
+    virtual void readOnlyChanged(bool isReadOnly);
+    void echoModeChanged(QQuickTextInput::EchoMode echoMode);
+
+#if QT_CONFIG(accessibility)
+    void accessibilityActiveChanged(bool active) override;
+    QAccessible::Role accessibleRole() const override;
+#endif
 
     struct MaskInputData {
         enum Casemode { NoCaseMode, Upper, Lower };
@@ -206,7 +232,7 @@ public:
     QInputControl *m_inputControl;
 
     QList<int> m_transactions;
-    QVector<Command> m_history;
+    QList<Command> m_history;
 
     QColor color;
     QColor selectionColor;

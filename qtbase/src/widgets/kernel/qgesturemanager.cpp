@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "private/qgesturemanager_p.h"
 #include "private/qstandardgestures_p.h"
@@ -613,11 +614,11 @@ void QGestureManager::deliverEvents(const QSet<QGesture *> &gestures,
             Q_ASSERT(gesture->state() == Qt::GestureStarted);
             if (gesture->hasHotSpot()) {
                 // guess the target widget using the hotspot of the gesture
-                QPoint pt = gesture->hotSpot().toPoint();
+                const QPointF pt = gesture->hotSpot();
                 qCDebug(lcGestureManager) << __FUNCTION__ << gesture
                                           << "doesn't have a target yet."
                                           << "Trying hotspot at" << pt;
-                if (QWidget *topLevel = QApplication::topLevelAt(pt)) {
+                if (QWidget *topLevel = QApplication::topLevelAt(pt.toPoint())) {
                     QWidget *child = topLevel->childAt(topLevel->mapFromGlobal(pt));
                     target = child ? child : topLevel;
                 }

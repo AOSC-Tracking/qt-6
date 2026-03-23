@@ -6,6 +6,7 @@
 
 #include "base/check.h"
 #include "base/files/file_util.h"
+#include "base/logging.h"
 #include "base/notreached.h"
 #include "base/strings/pattern.h"
 #include "base/strings/strcat.h"
@@ -154,7 +155,7 @@ bool SqliteDatabaseTransaction::Commit() {
 
 PowerBookmarkDatabaseImpl::PowerBookmarkDatabaseImpl(
     const base::FilePath& database_dir)
-    : db_(sql::DatabaseOptions().set_page_size(4096).set_cache_size(128),
+    : db_(sql::DatabaseOptions().set_cache_size(128),
           /*tag=*/"PowerBookmarks"),
       database_path_(database_dir.Append(kDatabaseName)) {
   sync_db_ =
@@ -344,8 +345,8 @@ std::vector<std::unique_ptr<Power>> PowerBookmarkDatabaseImpl::GetPowersForURL(
 
     std::optional<sync_pb::PowerBookmarkSpecifics> specifics =
         DeserializeOrDelete(
-            statement.ColumnString(1),
-            base::Uuid::ParseLowercase(statement.ColumnString(0)));
+            statement.ColumnStringView(1),
+            base::Uuid::ParseLowercase(statement.ColumnStringView(0)));
     if (!specifics.has_value())
       continue;
 
@@ -381,8 +382,8 @@ PowerBookmarkDatabaseImpl::GetPowerOverviewsForType(
 
     std::optional<sync_pb::PowerBookmarkSpecifics> specifics =
         DeserializeOrDelete(
-            statement.ColumnString(1),
-            base::Uuid::ParseLowercase(statement.ColumnString(0)));
+            statement.ColumnStringView(1),
+            base::Uuid::ParseLowercase(statement.ColumnStringView(0)));
     if (!specifics.has_value())
       continue;
 
@@ -416,8 +417,8 @@ PowerBookmarkDatabaseImpl::GetPowersForSearchParams(
 
     std::optional<sync_pb::PowerBookmarkSpecifics> specifics =
         DeserializeOrDelete(
-            statement.ColumnString(1),
-            base::Uuid::ParseLowercase(statement.ColumnString(0)));
+            statement.ColumnStringView(1),
+            base::Uuid::ParseLowercase(statement.ColumnStringView(0)));
     if (!specifics.has_value())
       continue;
     if (!MatchesSearchParams(specifics.value(), search_params))
@@ -486,8 +487,8 @@ PowerBookmarkDatabaseImpl::GetPowerOverviewsForSearchParams(
 
     std::optional<sync_pb::PowerBookmarkSpecifics> specifics =
         DeserializeOrDelete(
-            statement.ColumnString(1),
-            base::Uuid::ParseLowercase(statement.ColumnString(0)));
+            statement.ColumnStringView(1),
+            base::Uuid::ParseLowercase(statement.ColumnStringView(0)));
     if (!specifics.has_value()) {
       continue;
     }
@@ -620,8 +621,8 @@ PowerBookmarkDatabaseImpl::GetPowersForGUIDs(
 
     std::optional<sync_pb::PowerBookmarkSpecifics> specifics =
         DeserializeOrDelete(
-            statement.ColumnString(1),
-            base::Uuid::ParseLowercase(statement.ColumnString(0)));
+            statement.ColumnStringView(1),
+            base::Uuid::ParseLowercase(statement.ColumnStringView(0)));
     if (!specifics.has_value())
       continue;
 
@@ -649,8 +650,8 @@ std::vector<std::unique_ptr<Power>> PowerBookmarkDatabaseImpl::GetAllPowers() {
 
     std::optional<sync_pb::PowerBookmarkSpecifics> specifics =
         DeserializeOrDelete(
-            statement.ColumnString(1),
-            base::Uuid::ParseLowercase(statement.ColumnString(0)));
+            statement.ColumnStringView(1),
+            base::Uuid::ParseLowercase(statement.ColumnStringView(0)));
     if (!specifics.has_value())
       continue;
 
@@ -682,8 +683,8 @@ std::unique_ptr<Power> PowerBookmarkDatabaseImpl::GetPowerForGUID(
 
     std::optional<sync_pb::PowerBookmarkSpecifics> specifics =
         DeserializeOrDelete(
-            statement.ColumnString(1),
-            base::Uuid::ParseLowercase(statement.ColumnString(0)));
+            statement.ColumnStringView(1),
+            base::Uuid::ParseLowercase(statement.ColumnStringView(0)));
     if (!specifics.has_value())
       continue;
 
@@ -716,7 +717,7 @@ PowerBookmarkDatabaseImpl::GetSyncMetadataDatabase() {
 }
 
 std::optional<sync_pb::PowerBookmarkSpecifics>
-PowerBookmarkDatabaseImpl::DeserializeOrDelete(const std::string& data,
+PowerBookmarkDatabaseImpl::DeserializeOrDelete(std::string_view data,
                                                const base::Uuid& id) {
   sync_pb::PowerBookmarkSpecifics specifics;
   bool parse_success = specifics.ParseFromString(data);
@@ -838,7 +839,7 @@ bool PowerBookmarkDatabaseImpl::UpdatePowerInternal(const Power& power) {
   power.ToPowerBookmarkSpecifics(&specifics);
   bool success = specifics.SerializeToString(&data);
   DCHECK(success);
-  blob_statement.BindBlob(0, data);
+  blob_statement.BindBlob(0, std::move(data));
   blob_statement.BindString(1, power.guid_string());
   if (!blob_statement.Run()) {
     return false;

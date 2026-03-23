@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicktableviewdelegate_p.h"
 #include "qquicktableviewdelegate_p_p.h"
@@ -21,6 +22,7 @@ QT_BEGIN_NAMESPACE
     \brief A delegate that can be assigned to a TableView.
 
     \image qtquickcontrols-tableviewdelegate.png
+           {Table view displaying addresses using a table view delegate}
 
     A TableViewDelegate is a delegate that can be assigned to the
     \l {TableView::delegate} {delegate property} of a \l TableView.

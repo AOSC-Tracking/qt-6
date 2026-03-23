@@ -59,6 +59,7 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_SharedTextureMemoryIOSurface:
         case WGPUFeatureName_SharedTextureMemoryEGLImage:
         case WGPUFeatureName_SharedFenceVkSemaphoreOpaqueFD:
+        case WGPUFeatureName_SharedFenceEGLSync:
         case WGPUFeatureName_SharedFenceSyncFD:
         case WGPUFeatureName_SharedFenceVkSemaphoreZirconHandle:
         case WGPUFeatureName_SharedFenceDXGISharedHandle:
@@ -69,8 +70,10 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_TimestampQuery:
         case WGPUFeatureName_ChromiumExperimentalTimestampQueryInsidePasses:
         case WGPUFeatureName_TextureCompressionBC:
+        case WGPUFeatureName_TextureCompressionBCSliced3D:
         case WGPUFeatureName_TextureCompressionETC2:
         case WGPUFeatureName_TextureCompressionASTC:
+        case WGPUFeatureName_TextureCompressionASTCSliced3D:
         case WGPUFeatureName_IndirectFirstInstance:
         case WGPUFeatureName_DepthClipControl:
         case WGPUFeatureName_DawnInternalUsages:
@@ -109,11 +112,16 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_DawnLoadResolveTexture:
         case WGPUFeatureName_DawnPartialLoadResolveTexture:
         case WGPUFeatureName_Subgroups:
-        case WGPUFeatureName_SubgroupsF16:
         case WGPUFeatureName_ClipDistances:
-        case WGPUFeatureName_ChromiumExperimentalImmediateData:
         case WGPUFeatureName_DawnTexelCopyBufferRowAlignment:
         case WGPUFeatureName_FlexibleTextureViews:
+        case WGPUFeatureName_ChromiumExperimentalSubgroupMatrix:
+        case WGPUFeatureName_CoreFeaturesAndLimits:
+        case WGPUFeatureName_DawnDeviceAllocatorControl:
+        case WGPUFeatureName_TextureFormatsTier1:
+        case WGPUFeatureName_TextureFormatsTier2:
+        case WGPUFeatureName_TextureComponentSwizzle:
+        case WGPUFeatureName_ChromiumExperimentalPrimitiveId:
             return true;
     }
 

@@ -18,7 +18,6 @@
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/devtools_client.h"
 #include "chrome/test/chromedriver/net/timeout.h"
-#include "url/gurl.h"
 
 class DevToolsEventListener;
 class Status;
@@ -98,9 +97,11 @@ class DevToolsClientImpl : public DevToolsClient {
   // Precondition: IsMainPage()
   // Precondition: IsConnected()
   // Precondition: BiDi tunnel for CDP traffic is not set.
-  Status StartBidiServer(std::string bidi_mapper_script) override;
   Status StartBidiServer(std::string bidi_mapper_script,
-                         const Timeout& timeout);
+                         bool enable_unsafe_extension_debugging) override;
+  Status StartBidiServer(std::string bidi_mapper_script,
+                         const Timeout& timeout,
+                         bool enable_unsafe_extension_debugging);
   // If the object IsNull then it cannot be connected to the remote end.
   // Such an object needs to be attached to some !IsNull() parent first.
   // Postcondition: IsNull() == (socket == nullptr && parent == nullptr)

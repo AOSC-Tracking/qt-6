@@ -139,7 +139,7 @@ Properties}{required property} on the QML end.
 
 Your root component may look something like this:
 
-\code
+\qml
 import QtQuick
 
 Item {
@@ -148,7 +148,7 @@ Item {
         interface.foo();
     }
 }
-\endcode
+\endqml
 
 Marking the property as required here protects the component against being
 created without the interface property being set.

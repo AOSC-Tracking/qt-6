@@ -1,6 +1,7 @@
 // Copyright (C) 2014 BogDan Vatra <bogdan@kde.org>
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qandroidplatformopenglwindow.h"
 
@@ -78,13 +79,13 @@ EGLSurface QAndroidPlatformOpenGLWindow::eglSurface(EGLConfig config)
 
 void QAndroidPlatformOpenGLWindow::applicationStateChanged(Qt::ApplicationState state)
 {
-    QAndroidPlatformWindow::applicationStateChanged(state);
     if (state <=  Qt::ApplicationHidden) {
         lockSurface();
         destroySurface();
         clearSurface();
         unlockSurface();
     }
+    QAndroidPlatformWindow::applicationStateChanged(state);
 }
 
 // m_surfaceMutex already locked, called only by eglSurface()
@@ -113,6 +114,8 @@ bool QAndroidPlatformOpenGLWindow::ensureEglSurfaceCreated(EGLConfig config)
     // we've created another Surface, the window should be repainted
     sendExpose();
 
+    incrementSurfacesCount();
+
     return true;
 }
 
@@ -136,6 +139,8 @@ void QAndroidPlatformOpenGLWindow::clearSurface()
         ANativeWindow_release(m_nativeWindow);
         m_nativeWindow = nullptr;
     }
+
+    decrementSurfacesCount();
 }
 
 QT_END_NAMESPACE

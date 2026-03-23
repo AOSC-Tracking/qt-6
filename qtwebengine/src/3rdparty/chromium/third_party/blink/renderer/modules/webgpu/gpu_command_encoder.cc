@@ -2,23 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/modules/webgpu/gpu_command_encoder.h"
 
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_command_buffer_descriptor.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_command_encoder_descriptor.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_compute_pass_descriptor.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_compute_pass_timestamp_writes.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_image_copy_buffer.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_image_copy_texture.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_render_pass_color_attachment.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_render_pass_depth_stencil_attachment.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_render_pass_descriptor.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_render_pass_timestamp_writes.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_texel_copy_buffer_info.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_texel_copy_texture_info.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_union_gputexture_gputextureview.h"
 #include "third_party/blink/renderer/modules/webgpu/dawn_conversions.h"
 #include "third_party/blink/renderer/modules/webgpu/gpu_buffer.h"
 #include "third_party/blink/renderer/modules/webgpu/gpu_command_buffer.h"
@@ -33,6 +29,18 @@
 
 namespace blink {
 
+wgpu::TextureView GetTextureView(
+    V8UnionGPUTextureOrGPUTextureView* textureOrView) {
+  switch (textureOrView->GetContentType()) {
+    case V8UnionGPUTextureOrGPUTextureView::ContentType::kGPUTexture: {
+      wgpu::Texture texture = AsDawnType(textureOrView->GetAsGPUTexture());
+      return texture.CreateView();
+    }
+    case V8UnionGPUTextureOrGPUTextureView::ContentType::kGPUTextureView:
+      return AsDawnType(textureOrView->GetAsGPUTextureView());
+  }
+}
+
 bool ConvertToDawn(const GPURenderPassColorAttachment* in,
                    wgpu::RenderPassColorAttachment* out,
                    ExceptionState& exception_state) {
@@ -40,7 +48,7 @@ bool ConvertToDawn(const GPURenderPassColorAttachment* in,
   DCHECK(out);
 
   *out = {
-      .view = in->view()->GetHandle(),
+      .view = GetTextureView(in->view()),
       .loadOp = AsDawnEnum(in->loadOp()),
       .storeOp = AsDawnEnum(in->storeOp()),
   };
@@ -48,7 +56,7 @@ bool ConvertToDawn(const GPURenderPassColorAttachment* in,
     out->depthSlice = in->depthSlice();
   }
   if (in->hasResolveTarget()) {
-    out->resolveTarget = in->resolveTarget()->GetHandle();
+    out->resolveTarget = GetTextureView(in->resolveTarget());
   }
   if (in->hasClearValue() &&
       !ConvertToDawn(in->clearValue(), &out->clearValue, exception_state)) {
@@ -152,7 +160,7 @@ wgpu::RenderPassDepthStencilAttachment AsDawnType(
   DCHECK(webgpu_desc);
 
   wgpu::RenderPassDepthStencilAttachment dawn_desc = {
-      .view = webgpu_desc->view()->GetHandle(),
+      .view = GetTextureView(webgpu_desc->view()),
       // NaN is the default value in Dawn
       .depthClearValue = webgpu_desc->getDepthClearValueOr(
           std::numeric_limits<float>::quiet_NaN()),
@@ -180,16 +188,16 @@ wgpu::RenderPassDepthStencilAttachment AsDawnType(
   return dawn_desc;
 }
 
-wgpu::ImageCopyBuffer ValidateAndConvertImageCopyBuffer(
-    const GPUImageCopyBuffer* webgpu_view,
+wgpu::TexelCopyBufferInfo ValidateAndConvertTexelCopyBufferInfo(
+    const GPUTexelCopyBufferInfo* webgpu_view,
     const char** error) {
   DCHECK(webgpu_view);
   DCHECK(webgpu_view->buffer());
 
-  wgpu::ImageCopyBuffer dawn_view = {.buffer =
-                                         webgpu_view->buffer()->GetHandle()};
+  wgpu::TexelCopyBufferInfo dawn_view = {
+      .buffer = webgpu_view->buffer()->GetHandle()};
 
-  *error = ValidateTextureDataLayout(webgpu_view, &dawn_view.layout);
+  *error = ValidateTexelCopyBufferLayout(webgpu_view, &dawn_view.layout);
   return dawn_view;
 }
 
@@ -326,20 +334,21 @@ GPUComputePassEncoder* GPUCommandEncoder::beginComputePass(
   return encoder;
 }
 
-void GPUCommandEncoder::copyBufferToTexture(GPUImageCopyBuffer* source,
-                                            GPUImageCopyTexture* destination,
-                                            const V8GPUExtent3D* copy_size,
-                                            ExceptionState& exception_state) {
+void GPUCommandEncoder::copyBufferToTexture(
+    GPUTexelCopyBufferInfo* source,
+    GPUTexelCopyTextureInfo* destination,
+    const V8GPUExtent3D* copy_size,
+    ExceptionState& exception_state) {
   wgpu::Extent3D dawn_copy_size;
-  wgpu::ImageCopyTexture dawn_destination;
+  wgpu::TexelCopyTextureInfo dawn_destination;
   if (!ConvertToDawn(copy_size, &dawn_copy_size, device_, exception_state) ||
       !ConvertToDawn(destination, &dawn_destination, exception_state)) {
     return;
   }
 
   const char* error = nullptr;
-  wgpu::ImageCopyBuffer dawn_source =
-      ValidateAndConvertImageCopyBuffer(source, &error);
+  wgpu::TexelCopyBufferInfo dawn_source =
+      ValidateAndConvertTexelCopyBufferInfo(source, &error);
   if (error) {
     GetHandle().InjectValidationError(error);
     return;
@@ -349,20 +358,20 @@ void GPUCommandEncoder::copyBufferToTexture(GPUImageCopyBuffer* source,
                                   &dawn_copy_size);
 }
 
-void GPUCommandEncoder::copyTextureToBuffer(GPUImageCopyTexture* source,
-                                            GPUImageCopyBuffer* destination,
+void GPUCommandEncoder::copyTextureToBuffer(GPUTexelCopyTextureInfo* source,
+                                            GPUTexelCopyBufferInfo* destination,
                                             const V8GPUExtent3D* copy_size,
                                             ExceptionState& exception_state) {
   wgpu::Extent3D dawn_copy_size;
-  wgpu::ImageCopyTexture dawn_source;
+  wgpu::TexelCopyTextureInfo dawn_source;
   if (!ConvertToDawn(copy_size, &dawn_copy_size, device_, exception_state) ||
       !ConvertToDawn(source, &dawn_source, exception_state)) {
     return;
   }
 
   const char* error = nullptr;
-  wgpu::ImageCopyBuffer dawn_destination =
-      ValidateAndConvertImageCopyBuffer(destination, &error);
+  wgpu::TexelCopyBufferInfo dawn_destination =
+      ValidateAndConvertTexelCopyBufferInfo(destination, &error);
   if (error) {
     GetHandle().InjectValidationError(error);
     return;
@@ -372,13 +381,14 @@ void GPUCommandEncoder::copyTextureToBuffer(GPUImageCopyTexture* source,
                                   &dawn_copy_size);
 }
 
-void GPUCommandEncoder::copyTextureToTexture(GPUImageCopyTexture* source,
-                                             GPUImageCopyTexture* destination,
-                                             const V8GPUExtent3D* copy_size,
-                                             ExceptionState& exception_state) {
+void GPUCommandEncoder::copyTextureToTexture(
+    GPUTexelCopyTextureInfo* source,
+    GPUTexelCopyTextureInfo* destination,
+    const V8GPUExtent3D* copy_size,
+    ExceptionState& exception_state) {
   wgpu::Extent3D dawn_copy_size;
-  wgpu::ImageCopyTexture dawn_source;
-  wgpu::ImageCopyTexture dawn_destination;
+  wgpu::TexelCopyTextureInfo dawn_source;
+  wgpu::TexelCopyTextureInfo dawn_destination;
   if (!ConvertToDawn(copy_size, &dawn_copy_size, device_, exception_state) ||
       !ConvertToDawn(source, &dawn_source, exception_state) ||
       !ConvertToDawn(destination, &dawn_destination, exception_state)) {
@@ -394,12 +404,12 @@ void GPUCommandEncoder::writeTimestamp(DawnObject<wgpu::QuerySet>* querySet,
                                        ExceptionState& exception_state) {
   V8GPUFeatureName::Enum requiredFeatureEnum =
       V8GPUFeatureName::Enum::kTimestampQuery;
-  if (!device_->features()->has(requiredFeatureEnum)) {
+  if (!device_->features()->Has(requiredFeatureEnum)) {
     exception_state.ThrowTypeError(
         String::Format("Use of the writeTimestamp() method requires the '%s' "
                        "feature to be enabled on %s.",
                        V8GPUFeatureName(requiredFeatureEnum).AsCStr(),
-                       device_->formattedLabel().c_str()));
+                       device_->GetFormattedLabel().c_str()));
     return;
   }
   GetHandle().WriteTimestamp(querySet->GetHandle(), queryIndex);

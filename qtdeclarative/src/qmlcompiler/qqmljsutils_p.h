@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSUTILS_P_H
 #define QQMLJSUTILS_P_H
@@ -400,6 +401,8 @@ struct Q_QMLCOMPILER_EXPORT QQmlJSUtils
                                               const QString &pathInBuildFolder);
     static QString qmlBuildPathFromSourcePath(const QQmlJSResourceFileMapper *mapper,
                                               const QString &pathInBuildFolder);
+
+    static QString getScopeName(const QQmlJSScope::ConstPtr &scope, QQmlJSScope::ScopeType type);
 };
 
 bool Q_QMLCOMPILER_EXPORT canStrictlyCompareWithVar(

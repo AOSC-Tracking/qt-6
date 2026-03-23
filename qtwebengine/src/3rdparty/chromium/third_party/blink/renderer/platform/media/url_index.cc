@@ -9,13 +9,13 @@
 #include <utility>
 
 #include "base/feature_list.h"
-#include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "media/base/media_switches.h"
 #include "third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -52,7 +52,7 @@ void ResourceMultiBuffer::OnEmpty() {
 UrlData::UrlData(base::PassKey<UrlIndex>,
                  const KURL& url,
                  CorsMode cors_mode,
-                 UrlIndex* url_index,
+                 base::WeakPtr<UrlIndex> url_index,
                  CacheMode cache_lookup_mode,
                  scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : UrlData(url,
@@ -63,11 +63,10 @@ UrlData::UrlData(base::PassKey<UrlIndex>,
 
 UrlData::UrlData(const KURL& url,
                  CorsMode cors_mode,
-                 UrlIndex* url_index,
+                 base::WeakPtr<UrlIndex> url_index,
                  CacheMode cache_lookup_mode,
                  scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : url_(url),
-      have_data_origin_(false),
       cors_mode_(cors_mode),
       has_access_control_(false),
       url_index_(url_index),
@@ -93,7 +92,7 @@ void UrlData::MergeFrom(const scoped_refptr<UrlData>& other) {
   // We're merging from another UrlData that refers to the *same*
   // resource, so when we merge the metadata, we can use the most
   // optimistic values.
-  if (ValidateDataOrigin(other->data_origin_)) {
+  if (ValidateDataOrigin(other->data_origin_.value_or(KURL()))) {
     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
     valid_until_ = std::max(valid_until_, other->valid_until_);
     // set_length() will not override the length if already known.
@@ -176,26 +175,30 @@ void UrlData::Use() {
 }
 
 bool UrlData::ValidateDataOrigin(const KURL& origin) {
-  if (!have_data_origin_) {
+  if (!data_origin_) {
     data_origin_ = origin;
-    have_data_origin_ = true;
     return true;
   }
+
   if (cors_mode_ == UrlData::CORS_UNSPECIFIED) {
     // If both origins are null return true, otherwise
     // SecurityOrigin::AreSameOrigin will create a unique nonce for each.
-    if (data_origin_.IsNull() && origin.IsNull()) {
+    if (data_origin_->IsNull() && origin.IsNull()) {
       return true;
     }
-    return SecurityOrigin::SecurityOrigin::AreSameOrigin(data_origin_, origin);
+    return SecurityOrigin::SecurityOrigin::AreSameOrigin(data_origin_.value(),
+                                                         origin);
   }
+
   // The actual cors checks is done in the net layer.
   return true;
 }
 
 void UrlData::OnEmpty() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  url_index_->RemoveUrlData(this);
+  if (url_index_) {
+    url_index_->RemoveUrlData(this);
+  }
 }
 
 bool UrlData::FullyCached() {
@@ -256,19 +259,11 @@ UrlIndex::UrlIndex(ResourceFetchContext* fetch_context,
       lru_(base::MakeRefCounted<MultiBuffer::GlobalLRU>(task_runner)),
       block_shift_(block_shift),
       memory_pressure_listener_(FROM_HERE,
-                                base::BindRepeating(&UrlIndex::OnMemoryPressure,
-                                                    base::Unretained(this))),
+                                WTF::BindRepeating(&UrlIndex::OnMemoryPressure,
+                                                   WTF::Unretained(this))),
       task_runner_(std::move(task_runner)) {}
 
-UrlIndex::~UrlIndex() {
-#if DCHECK_IS_ON()
-  // Verify that only |this| holds reference to UrlData instances.
-  auto dcheck_has_one_ref = [](const UrlDataMap::value_type& entry) {
-    DCHECK(entry.value->HasOneRef());
-  };
-  std::ranges::for_each(indexed_data_, dcheck_has_one_ref);
-#endif
-}
+UrlIndex::~UrlIndex() = default;
 
 void UrlIndex::RemoveUrlData(const scoped_refptr<UrlData>& url_data) {
   DCHECK(url_data->multibuffer()->map().empty());
@@ -297,8 +292,8 @@ scoped_refptr<UrlData> UrlIndex::NewUrlData(
     UrlData::CorsMode cors_mode,
     UrlData::CacheMode cache_lookup_mode) {
   return base::MakeRefCounted<UrlData>(base::PassKey<UrlIndex>(), url,
-                                       cors_mode, this, cache_lookup_mode,
-                                       task_runner_);
+                                       cors_mode, weak_factory_.GetWeakPtr(),
+                                       cache_lookup_mode, task_runner_);
 }
 
 void UrlIndex::OnMemoryPressure(

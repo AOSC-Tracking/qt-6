@@ -12,12 +12,13 @@
 #include "base/time/time.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/filling/form_filler_test_api.h"
 #include "components/autofill/core/browser/foundations/autofill_manager_test_api.h"
 #include "components/autofill/core/browser/foundations/browser_autofill_manager.h"
 #include "components/autofill/core/browser/payments/amount_extraction_manager.h"
+#include "components/autofill/core/browser/payments/bnpl_manager.h"
 #include "components/autofill/core/browser/payments/credit_card_access_manager.h"
 #include "components/autofill/core/browser/single_field_fillers/single_field_fill_router.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
@@ -45,6 +46,11 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
         .form_interactions_flow_id_for_test();
   }
 
+  FormInteractionsFlowId loyalty_card_form_interactions_flow_id() const {
+    return manager_->metrics_->loyalty_card_form_event_logger
+        .form_interactions_flow_id_for_test();
+  }
+
   autofill_metrics::CreditCardFormEventLogger* credit_card_form_event_logger() {
     return &manager_->metrics_->credit_card_form_event_logger;
   }
@@ -59,16 +65,8 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
     manager_->amount_extraction_manager_ = std::move(manager);
   }
 
-  payments::AmountExtractionManager&
-  get_amount_extraction_manager_for_testing() {
-    return *manager_->amount_extraction_manager_;
-  }
-
-  void OnCreditCardFetched(const FormData& form,
-                           const FieldGlobalId& field_id,
-                           AutofillTriggerSource trigger_source,
-                           const CreditCard& credit_card) {
-    manager_->OnCreditCardFetched(form, field_id, trigger_source, credit_card);
+  void set_bnpl_manager(std::unique_ptr<payments::BnplManager> bnpl_manager) {
+    manager_->bnpl_manager_ = std::move(bnpl_manager);
   }
 
   void OnFormProcessed(const FormData& form,
@@ -87,16 +85,6 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
         consider_form_as_secure_for_testing;
   }
 
-  void FillCreditCardFormWithoutAuthentication(
-      const FormData& form,
-      FieldGlobalId field_id,
-      const CreditCard& credit_card,
-      AutofillTriggerSource trigger_source) {
-    manager_->FillOrPreviewCreditCardFormImpl(
-        /*require_card_fetching=*/false, mojom::ActionPersistence::kFill, form,
-        field_id, credit_card, trigger_source);
-  }
-
   FormFiller& form_filler() { return *manager_->form_filler_; }
 
   void set_form_filler(std::unique_ptr<FormFiller> form_filler) {
@@ -106,16 +94,14 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
   std::vector<Suggestion> GetProfileSuggestions(
       const FormData& form,
       const FormFieldData& field,
-      AutofillSuggestionTriggerSource trigger_source =
-          AutofillSuggestionTriggerSource::kFormControlElementClicked,
       std::optional<std::string> plus_address_override = std::nullopt) {
     FormStructure* form_structure;
     AutofillField* autofill_field;
     CHECK(manager_->GetCachedFormAndField(form.global_id(), field.global_id(),
                                           &form_structure, &autofill_field));
-    return manager_->GetProfileSuggestions(
-        form, CHECK_DEREF(form_structure), field, CHECK_DEREF(autofill_field),
-        trigger_source, std::move(plus_address_override));
+    return manager_->GetProfileSuggestions(form, CHECK_DEREF(form_structure),
+                                           field, CHECK_DEREF(autofill_field),
+                                           std::move(plus_address_override));
   }
 
  private:

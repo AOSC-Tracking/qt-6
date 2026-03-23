@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //  W A R N I N G
 //  -------------
@@ -32,7 +34,7 @@ public:
     ~QAbstractAxisPrivate() override;
 
 public:
-    void setGraph(QGraphsView *graph) { m_graph = graph; }
+    void setGraph(QGraphsView *graph);
 
     //interface for manipulating range form base class
     virtual void setMin(const QVariant &min) = 0;
@@ -69,6 +71,9 @@ private:
 
     Qt::Alignment m_alignment = Qt::AlignAbsolute;
     Qt::TextElideMode m_textElide = Qt::ElideNone;
+
+    QColor m_subColor;
+    QColor m_color;
 
     Q_DECLARE_PUBLIC(QAbstractAxis)
 };

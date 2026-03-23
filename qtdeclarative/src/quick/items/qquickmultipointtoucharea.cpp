@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickmultipointtoucharea_p.h"
 #include <QtQuick/qquickwindow.h>
@@ -279,7 +280,7 @@ void QQuickTouchPoint::setUniqueId(const QPointingDeviceUniqueId &id)
 */
 
 /*!
-    \qmlmethod QtQuick::GestureEvent::grab()
+    \qmlmethod void QtQuick::GestureEvent::grab()
 
     Acquires an exclusive grab of the mouse and all the \l touchPoints, and
     calls \l {QQuickItem::setKeepTouchGrab()}{setKeepTouchGrab()} and

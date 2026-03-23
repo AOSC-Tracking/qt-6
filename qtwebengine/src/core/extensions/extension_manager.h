@@ -1,11 +1,13 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef EXTENSION_MANAGER_H_
 #define EXTENSION_MANAGER_H_
 
-#include <memory>
+#include <QtWebEngineCore/qtwebenginecoreglobal.h>
 
+#if QT_CONFIG(webengine_extensions)
 #include "api/qwebengineextensioninfo.h"
 #include "api/qwebengineextensioninfo_p.h"
 
@@ -13,6 +15,8 @@
 #include <QString>
 #include <QObject>
 #include <QtWebEngineCore/private/qtwebenginecoreglobal_p.h>
+
+#include <memory>
 
 namespace content {
 class BrowserContext;
@@ -64,8 +68,10 @@ public:
 private:
     std::unique_ptr<ExtensionLoader> m_loader;
     std::unique_ptr<ExtensionInstaller> m_installer;
-    std::unique_ptr<ExtensionActionManager> m_actionManager;
+    content::BrowserContext *m_context;
 };
 } // namespace QtWebEngineCore
+
+#endif
 
 #endif // EXTENSION_MANAGER_H_

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickborderimage_p.h"
 #include "qquickborderimage_p_p.h"
@@ -212,9 +213,12 @@ QQuickBorderImage::~QQuickBorderImage()
     BorderImage can handle any image format supported by Qt, loaded from any
     URL scheme supported by Qt.
 
-    This property can also be used to refer to .sci files, which are
-    written in a QML-specific, text-based format that specifies the
-    borders, the image file and the tile rules for a given border image.
+    This property can also refer to a \c .sci file — a QML-specific,
+    text-based format that embeds the border values, the source image,
+    and tile rules directly within the file. When using a \c .sci file,
+    the BorderImage reads the border information from the file itself,
+    so specifying border properties in QML is unnecessary.
+
 
     The following .sci file sets the borders to 10 on each side for the
     image \c picture.png:

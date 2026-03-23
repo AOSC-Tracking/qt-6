@@ -23,12 +23,58 @@
 
 QT_BEGIN_NAMESPACE
 
+QLottieShape::AppliedTrimPtr::AppliedTrimPtr() = default;
+
+QLottieShape::AppliedTrimPtr::~AppliedTrimPtr()
+{
+    if (m_appliedTrim.tag() == OwnsAppliedTrim::Yes)
+        delete m_appliedTrim.data();
+}
+
+void QLottieShape::AppliedTrimPtr::reset(QLottieTrimPath *appliedTrim, OwnsAppliedTrim owns)
+{
+    if (appliedTrim == m_appliedTrim.data() && m_appliedTrim.tag() == owns)
+        return;
+
+    if (m_appliedTrim.tag() == OwnsAppliedTrim::Yes) {
+        if (m_appliedTrim.data() == appliedTrim) {
+            // If you set the same appliedTrim again but remove the ownership, we have to delete
+            // the appliedTrim. What is left then is a nullptr.
+            appliedTrim = nullptr;
+        }
+
+        delete m_appliedTrim.data();
+    }
+
+    m_appliedTrim = appliedTrim;
+    m_appliedTrim.setTag(owns);
+}
+
+QLottieTrimPath *QLottieShape::AppliedTrimPtr::data() const
+{
+    return m_appliedTrim.data();
+}
+
+bool QLottieShape::AppliedTrimPtr::owns() const
+{
+    return m_appliedTrim.tag() == OwnsAppliedTrim::Yes;
+}
+
+QLottieShape::QLottieShape() = default;
+QLottieShape::~QLottieShape() = default;
+
 QLottieShape::QLottieShape(const QLottieShape &other)
     : QLottieBase(other)
 {
     m_direction = other.m_direction;
     m_path = other.m_path;
-    m_appliedTrim = other.m_appliedTrim;
+    if (other.m_appliedTrim.owns()) {
+        m_appliedTrim.reset(
+                static_cast<QLottieTrimPath *>(other.m_appliedTrim.data()->clone()),
+                OwnsAppliedTrim::Yes);
+    } else {
+        m_appliedTrim.reset(other.m_appliedTrim.data(), OwnsAppliedTrim::No);
+    }
 }
 
 QLottieBase *QLottieShape::clone() const
@@ -38,15 +84,20 @@ QLottieBase *QLottieShape::clone() const
 
 QLottieShape *QLottieShape::construct(QJsonObject definition, QLottieBase *parent)
 {
-    qCDebug(lcLottieQtLottieParser) << "QLottieShape::construct()";
+    qCDebug(lcLottieQtLottieParser) << "QLottieShape::parse()";
 
-    QLottieShape *shape = nullptr;
-    const QByteArray type = definition.value(QLatin1String("ty")).toString().toLatin1();
+    std::unique_ptr<QLottieShape> shape;
+    if (!definition.contains("ty"_L1)) {
+        qCWarning(lcLottieQtLottieParser) << "Shape" << definition.value("nm"_L1).toString()
+                                          << "is missing required key \"ty\"";
+        return nullptr;
+    }
+    const QByteArray type = definition.value("ty"_L1).toString().toLatin1();
 
     if (Q_UNLIKELY(type.size() != 2)) {
         qCInfo(lcLottieQtLottieParser) << "Unsupported shape type:"
                                              << type;
-        return shape;
+        return nullptr;
     }
 
 #define LOTTIE_SHAPE_TAG(c1, c2) int((quint32(c1)<<8) | quint32(c2))
@@ -57,84 +108,106 @@ QLottieShape *QLottieShape::construct(QJsonObject definition, QLottieBase *paren
     case LOTTIE_SHAPE_TAG('g', 'r'):
     {
         qCDebug(lcLottieQtLottieParser) << "Parse group";
-        shape = new QLottieGroup(definition, parent);
+        shape.reset(new QLottieGroup(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_GROUP_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('r', 'c'):
     {
-        qCDebug(lcLottieQtLottieParser) << "Parse m_rect";
-        shape = new QLottieRect(definition, parent);
+        qCDebug(lcLottieQtLottieParser) << "Parse rect";
+        shape.reset(new QLottieRect(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_RECT_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('f', 'l'):
     {
         qCDebug(lcLottieQtLottieParser) << "Parse fill";
-        shape = new QLottieFill(definition, parent);
+        shape.reset(new QLottieFill(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_FILL_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('g', 'f'):
     {
-        qCDebug(lcLottieQtLottieParser) << "Parse group fill";
-        shape = new QLottieGFill(definition, parent);
+        qCDebug(lcLottieQtLottieParser) << "Parse gradient fill";
+        shape.reset(new QLottieGFill(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_GFILL_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('s', 't'):
     {
         qCDebug(lcLottieQtLottieParser) << "Parse stroke";
-        shape = new QLottieStroke(definition, parent);
+        shape.reset(new QLottieStroke(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_STROKE_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('t', 'r'):
     {
         qCDebug(lcLottieQtLottieParser) << "Parse shape transform";
-        shape = new QLottieShapeTransform(definition, parent);
+        shape.reset(new QLottieShapeTransform(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_TRANS_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('e', 'l'):
     {
         qCDebug(lcLottieQtLottieParser) << "Parse ellipse";
-        shape = new QLottieEllipse(definition, parent);
+        shape.reset(new QLottieEllipse(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_ELLIPSE_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('s', 'r'):
     {
         qCDebug(lcLottieQtLottieParser) << "Parse polystar";
-        shape = new QLottiePolyStar(definition, parent);
+        shape.reset(new QLottiePolyStar(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_STAR_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('r', 'd'):
     {
         qCDebug(lcLottieQtLottieParser) << "Parse round";
-        shape = new QLottieRound(definition, parent);
+        shape.reset(new QLottieRound(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_ROUND_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('s', 'h'):
     {
-        qCDebug(lcLottieQtLottieParser) << "Parse shape";
-        shape = new QLottieFreeFormShape(definition, parent);
+        qCDebug(lcLottieQtLottieParser) << "Parse path";
+        shape.reset(new QLottieFreeFormShape(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_SHAPE_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('t', 'm'):
     {
         qCDebug(lcLottieQtLottieParser) << "Parse trim path";
-        shape = new QLottieTrimPath(definition, parent);
+        shape.reset(new QLottieTrimPath(parent));
+        if (shape->parse(definition) < 0)
+            return nullptr;
         shape->setType(LOTTIE_SHAPE_TRIM_IX);
         break;
     }
     case LOTTIE_SHAPE_TAG('r', 'p'):
     {
-        qCDebug(lcLottieQtLottieParser) << "Parse trim path";
-        shape = new QLottieRepeater(definition, parent);
+        qCDebug(lcLottieQtLottieParser) << "Parse repeater";
+        shape.reset(new QLottieRepeater(definition, parent));
         shape->setType(LOTTIE_SHAPE_REPEATER_IX);
         break;
     }
@@ -147,7 +220,7 @@ QLottieShape *QLottieShape::construct(QJsonObject definition, QLottieBase *paren
 
 #undef LOTTIE_SHAPE_TAG
 
-    return shape;
+    return shape.release();
 }
 
 bool QLottieShape::acceptsTrim() const
@@ -159,6 +232,11 @@ void QLottieShape::applyTrim(const QLottieTrimPath &trimmer)
 {
     if (trimmer.isParallel())
         m_path = trimmer.trim(m_path);
+}
+
+const QLottieTrimPath *QLottieShape::currentTrim() const
+{
+    return m_appliedTrim.data();
 }
 
 int QLottieShape::direction() const

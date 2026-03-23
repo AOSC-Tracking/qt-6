@@ -46,6 +46,7 @@
 #include "third_party/blink/public/web/web_heap.h"
 #include "third_party/blink/renderer/core/testing/mock_policy_container_host.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_error.h"
+#include "third_party/blink/renderer/platform/loader/fetch/url_loader/url_loader.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/url_loader_client.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/url_loader_factory.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
@@ -179,7 +180,6 @@ class FakeWebServiceWorkerFetchContext final
     return std::optional<WebSecurityOrigin>();
   }
   WebString GetAcceptLanguages() const override { return WebString(); }
-  void SetIsOfflineMode(bool is_offline_mode) override {}
 
  private:
   FakeURLLoaderFactory fake_url_loader_factory_;

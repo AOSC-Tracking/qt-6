@@ -318,6 +318,7 @@ mediapipe_cc_test(
     # A non-empty "data" param is needed to build the "_test_wasm" target.
     data = [":node_chain_subgraph.proto"],
     requires_full_emulation = False,
+    test_host = None,
     deps = [
         ":node_chain_subgraph_cc_proto",
         ":node_chain_subgraph_options_lib",
@@ -465,6 +466,7 @@ cc_library(
     hdrs = ["status_util.h"],
     visibility = ["//visibility:public"],
     deps = [
+        "//mediapipe/framework/deps:no_destructor",
         "//mediapipe/framework/port:status",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/log:absl_check",
@@ -864,6 +866,7 @@ mediapipe_cc_test(
     timeout = "long",
     srcs = ["switch_demux_calculator_test.cc"],
     requires_full_emulation = False,
+    test_host = None,
     deps = [
         ":container_util",
         ":switch_demux_calculator",
@@ -901,6 +904,7 @@ mediapipe_cc_test(
     timeout = "long",
     srcs = ["switch_mux_calculator_test.cc"],
     requires_full_emulation = False,
+    test_host = None,
     deps = [
         ":container_util",
         ":switch_mux_calculator",
@@ -988,10 +992,12 @@ cc_library(
         "//mediapipe/framework:calculator_cc_proto",
         "//mediapipe/framework:graph_runtime_info_cc_proto",
         "//mediapipe/framework:vlog_utils",
+        "//mediapipe/framework/port:file_helpers",
         "//mediapipe/framework/port:logging",
         "//mediapipe/framework/port:ret_check",
         "//mediapipe/framework/port:threadpool",
         "@com_google_absl//absl/base:log_severity",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_check",

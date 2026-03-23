@@ -184,7 +184,11 @@ void MessageDeclarationPrinter::printNested()
 
 void MessageDeclarationPrinter::printClassDeclarationBegin()
 {
-    m_printer->Print(m_typeMap, CommonTemplates::ClassMessageBeginDeclarationTemplate());
+    if (Options::instance().generateNonFinalMessages()) {
+        m_printer->Print(m_typeMap, CommonTemplates::NonFinalClassMessageBeginDeclarationTemplate());
+    } else {
+        m_printer->Print(m_typeMap, CommonTemplates::ClassMessageBeginDeclarationTemplate());
+    }
 
     Indent();
     static const std::string exportMacro = common::buildExportMacro(false);
@@ -483,6 +487,10 @@ void MessageDeclarationPrinter::printPublicExtras()
         static const std::string exportMacro = common::buildExportMacro();
         m_printer->Print({ { "export_macro", exportMacro } },
                          CommonTemplates::QDateTimeExtrasTemplate());
+    } else if (m_descriptor->full_name() == "google.protobuf.Duration") {
+        static const std::string exportMacro = common::buildExportMacro();
+        m_printer->Print({ { "export_macro", exportMacro } },
+                         CommonTemplates::DurationExtrasTemplate());
     }
 }
 

@@ -14,6 +14,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/rand_util.h"
 #include "base/task/delay_policy.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
@@ -34,21 +35,6 @@ namespace {
 // This is a fudge factor we subtract from the deadline to account
 // for message latency and kernel scheduling variability.
 const base::TimeDelta kDeadlineFudgeFactor = base::Microseconds(1000);
-
-// This adjustment is applied by multiplying with the previous, begin-main-frame
-// to activate threshold. For example, if we want to consider a page fast if it
-// it takes half the threshold, we would return 0.5. Naturally, this function
-// will return values in the range [0, 1].
-double FastMainThreadThresholdAdjustment() {
-  if (base::FeatureList::IsEnabled(features::kAdjustFastMainThreadThreshold)) {
-    double result = base::GetFieldTrialParamByFeatureAsDouble(
-        features::kAdjustFastMainThreadThreshold, "Scalar", -1.0);
-    if (result >= 0.0 && result <= 1.0) {
-      return result;
-    }
-  }
-  return 1.0;
-}
 
 }  // namespace
 
@@ -84,6 +70,14 @@ Scheduler::~Scheduler() {
   SetBeginFrameSource(nullptr);
 }
 
+void Scheduler::TearDown() {
+  DCHECK(stopped_);
+
+  // CFRC is owned by the LayerTreeHostImpl, which gets destroyed before the
+  // scheduler. Must clear it to avoid a dangling ptr.
+  compositor_frame_reporting_controller_ = nullptr;
+}
+
 void Scheduler::Stop() {
   stopped_ = true;
 }
@@ -114,7 +108,6 @@ void Scheduler::SetVisible(bool visible) {
 }
 
 void Scheduler::SetShouldWarmUp() {
-  CHECK(base::FeatureList::IsEnabled(features::kWarmUpCompositor));
   state_machine_.SetShouldWarmUp();
   ProcessScheduledActions();
 }
@@ -212,9 +205,10 @@ void Scheduler::DidReceiveCompositorFrameAck() {
 
 void Scheduler::SetTreePrioritiesAndScrollState(
     TreePriority tree_priority,
-    ScrollHandlerState scroll_handler_state) {
-  state_machine_.SetTreePrioritiesAndScrollState(tree_priority,
-                                                 scroll_handler_state);
+    ScrollHandlerState scroll_handler_state,
+    bool is_current_scroll_main_painted) {
+  state_machine_.SetTreePrioritiesAndScrollState(
+      tree_priority, scroll_handler_state, is_current_scroll_main_painted);
   ProcessScheduledActions();
 }
 
@@ -393,27 +387,11 @@ bool Scheduler::OnBeginFrameDerivedImpl(const viz::BeginFrameArgs& args) {
   if (args.interval != last_frame_interval_ && args.interval.is_positive()) {
     last_frame_interval_ = args.interval;
     client_->FrameIntervalUpdated(last_frame_interval_);
-
-    // Only query the feature (and thus enter the experiment group) if we see a
-    // short interval. This ignores 90Hz displays, on purpose, and adds some
-    // leeway.
-    //
-    // Apply some slack, so that if for some reason the interval is a bit larger
-    // than 8.33333333333333ms, then we catch it still.
-    constexpr float kSlackFactor = .9;
-    if (args.interval < base::Hertz(120) * (1 / kSlackFactor) &&
-        base::FeatureList::IsEnabled(features::kThrottleMainFrameTo60Hz)) {
-      TRACE_EVENT0("cc", "ThrottleMainFrameTo60Hz");
-      // Note that we don't change args.interval, so the next main frame will
-      // see e.g. 8ms, even though the next one will come in 16ms. This is not
-      // necessarily bad, as it is mostly used for idle period timing.
-      //
-      // Here as well, use a slack factor, to make sure that small timing
-      // variations don't result in uneven pacing.
-      state_machine_.SetThrottleMainFrames(base::Hertz(60.) * kSlackFactor);
-    } else {
-      state_machine_.SetThrottleMainFrames(base::TimeDelta());
-    }
+    // Note that even if the call below ends up throttling BeginMainFrame()
+    // calls, args.interval stays at the lower interval. This is done on
+    // purpose, as "urgent" updates can happen sooner than the throttled
+    // interval.
+    state_machine_.FrameIntervalUpdated(last_frame_interval_);
   }
 
   // Drop the BeginFrame if we don't need one.
@@ -563,10 +541,8 @@ void Scheduler::BeginImplFrameWithDeadline(const viz::BeginFrameArgs& args) {
   base::TimeDelta bmf_to_activate_estimate_critical =
       compositor_timing_history_
           ->BeginMainFrameQueueToActivateCriticalEstimate();
-  base::TimeDelta fast_main_thread_threshold =
-      bmf_to_activate_threshold * FastMainThreadThresholdAdjustment();
   state_machine_.SetCriticalBeginMainFrameToActivateIsFast(
-      bmf_to_activate_estimate_critical < fast_main_thread_threshold);
+      bmf_to_activate_estimate_critical < bmf_to_activate_threshold);
 
   // Update the BeginMainFrame args now that we know whether the main
   // thread will be on the critical path or not.
@@ -635,8 +611,13 @@ void Scheduler::BeginImplFrameSynchronous(const viz::BeginFrameArgs& args) {
   BeginImplFrame(adjusted_args, Now());
   compositor_timing_history_->WillFinishImplFrame(
       state_machine_.needs_redraw());
+  bool waiting_for_main =
+      !(deadline_mode_ ==
+            SchedulerStateMachine::BeginImplFrameDeadlineMode::IMMEDIATE ||
+        deadline_mode_ ==
+            SchedulerStateMachine::BeginImplFrameDeadlineMode::WAIT_FOR_SCROLL);
   compositor_frame_reporting_controller_->OnFinishImplFrame(
-      adjusted_args.frame_id);
+      adjusted_args.frame_id, waiting_for_main);
   // Delay the call to |FinishFrame()| if a draw is anticipated, so that it is
   // called after the draw happens (in |OnDrawForLayerTreeFrameSink()|).
   needs_finish_frame_for_synchronous_compositor_ = true;
@@ -723,8 +704,9 @@ void Scheduler::BeginImplFrame(const viz::BeginFrameArgs& args,
     base::AutoReset<bool> mark_inside(&inside_scheduled_action_, true);
 
     begin_impl_frame_tracker_.Start(args);
-    state_machine_.OnBeginImplFrame(args.frame_id, args.animate_only);
-    compositor_frame_reporting_controller_->WillBeginImplFrame(args);
+    state_machine_.OnBeginImplFrame(args);
+    compositor_frame_reporting_controller_->WillBeginImplFrame(
+        args, state_machine_.ShouldThrottleSendBeginMainFrame());
     bool has_damage =
         client_->WillBeginImplFrame(begin_impl_frame_tracker_.Current());
 
@@ -805,6 +787,10 @@ void Scheduler::ScheduleBeginImplFrameDeadline() {
                  SchedulerStateMachine::BeginImplFrameDeadlineModeToString(
                      deadline_mode_));
     deadline_ = new_deadline;
+    if (base::ShouldRecordSubsampledMetric(0.001)) {
+      UMA_HISTOGRAM_ENUMERATION("Compositing.Scheduler.DeadlineMode",
+                                deadline_mode_);
+    }
     static const unsigned char* debug_tracing_enabled =
         TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
             TRACE_DISABLED_BY_DEFAULT("cc.debug.scheduler"));
@@ -833,8 +819,13 @@ void Scheduler::OnBeginImplFrameDeadline() {
     if (!settings_.using_synchronous_renderer_compositor) {
       compositor_timing_history_->WillFinishImplFrame(
           state_machine_.needs_redraw());
+      bool waiting_for_main =
+          !(deadline_mode_ ==
+                SchedulerStateMachine::BeginImplFrameDeadlineMode::IMMEDIATE ||
+            deadline_mode_ == SchedulerStateMachine::
+                                  BeginImplFrameDeadlineMode::WAIT_FOR_SCROLL);
       compositor_frame_reporting_controller_->OnFinishImplFrame(
-          begin_main_frame_args_.frame_id);
+          begin_main_frame_args_.frame_id, waiting_for_main);
     }
 
     state_machine_.OnBeginImplFrameDeadline();
@@ -1076,6 +1067,10 @@ void Scheduler::ClearHistory() {
   // Ensure we reset decisions based on history from the previous navigation.
   compositor_timing_history_->ClearHistory();
   ProcessScheduledActions();
+}
+
+void Scheduler::SetShouldThrottleFrameRate(bool flag) {
+  state_machine_.SetShouldThrottleFrameRate(flag);
 }
 
 }  // namespace cc

@@ -1,5 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dparticleemitter_p.h"
 #include "qquick3dparticlemodelparticle_p.h"
@@ -564,19 +566,19 @@ void QQuick3DParticleEmitter::setReversed(bool reversed)
 }
 
 /*!
-    \qmlproperty EmitType ParticleEmitter3D::emitType
+    \qmlproperty EmitMode ParticleEmitter3D::emitMode
     \since 6.10
 
-    This property defines the type of the shape.
+    This property defines the emit mode of the emitter with shape.
 
     \default ParticleEmitter3D.Default
 */
 
 /*!
-    \qmlproperty enumeration ParticleEmitter3D::EmitType
+    \qmlproperty enumeration ParticleEmitter3D::EmitMode
     \since 6.10
 
-    Defines the emit type of the emitter with shape.
+    Defines the emit mode of the emitter with shape.
 
     \value ParticleEmitter3D.Default
         Default emit behavior.
@@ -801,9 +803,8 @@ void QQuick3DParticleEmitter::emitParticle(QQuick3DParticle *particle, float sta
         QVector3D pos = centerPos;
         if (m_shape) {
             pos += m_shape->getPosition(particleIdIndex);
-            QVariant fill = m_shape->property("fill");
-            if (fill.isValid() && !fill.toBool()) {
-                const auto n = m_shape->getSurfaceNormal(particleIdIndex);
+            const auto n = m_shape->getSurfaceNormal(particleIdIndex);
+            if (!n.isNull()) {
                 d->surfaceNormal = n;
                 if (m_emitMode != EmitMode::Default)
                     normalBasedVelocity = true;

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QHASHEDSTRING_P_H
 #define QHASHEDSTRING_P_H
@@ -86,7 +87,7 @@ public:
     bool endsWith(const QString &) const;
     int indexOf(const QChar &, int from=0) const;
     QHashedStringRef mid(int, int) const;
-    QVector<QHashedStringRef> split(const QChar sep) const;
+    QList<QHashedStringRef> split(const QChar sep) const;
 
     inline bool isEmpty() const;
     inline int length() const;

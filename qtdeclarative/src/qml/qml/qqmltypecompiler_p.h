@@ -1,5 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
+
 #ifndef QQMLTYPECOMPILER_P_H
 #define QQMLTYPECOMPILER_P_H
 
@@ -19,6 +21,7 @@
 #include <qhash.h>
 #include <private/qqmltypeloader_p.h>
 #include <private/qqmlirbuilder_p.h>
+#include <private/qqmlpropertyresolver_p.h>
 #include <private/qqmlpropertycachecreator_p.h>
 
 QT_BEGIN_NAMESPACE
@@ -89,7 +92,7 @@ public:
     QUrl url() const { return typeData->finalUrl(); }
     QQmlTypeLoader *typeLoader() const { return loader; }
     const QQmlImports *imports() const;
-    QVector<QmlIR::Object *> *qmlObjects() const;
+    QList<QmlIR::Object *> *qmlObjects() const;
     QQmlPropertyCacheVector *propertyCaches();
     const QQmlPropertyCacheVector *propertyCaches() const;
     QQmlJS::MemoryPool *memoryPool();
@@ -166,7 +169,7 @@ private:
                     = QQmlPropertyResolver::CheckRevision);
 
     QQmlTypeLoader *typeLoader;
-    const QVector<QmlIR::Object*> &qmlObjects;
+    const QList<QmlIR::Object*> &qmlObjects;
     const QQmlImports *imports;
     const QHash<int, QQmlCustomParser*> &customParsers;
     const QQmlPropertyCacheVector * const propertyCaches;
@@ -195,7 +198,7 @@ private:
     int evaluateEnum(const QString &scope, QStringView enumName, QStringView enumValue, bool *ok) const;
 
 
-    const QVector<QmlIR::Object*> &qmlObjects;
+    const QList<QmlIR::Object*> &qmlObjects;
     const QQmlPropertyCacheVector * const propertyCaches;
     const QQmlImports *imports;
 };
@@ -210,7 +213,7 @@ public:
 private:
     void scanObjectRecursively(int objectIndex, bool annotateScriptBindings = false);
 
-    const QVector<QmlIR::Object*> &qmlObjects;
+    const QList<QmlIR::Object*> &qmlObjects;
     const QHash<int, QQmlCustomParser*> &customParsers;
 };
 
@@ -222,7 +225,7 @@ public:
 
     void annotateBindingsToAliases();
 private:
-    const QVector<QmlIR::Object*> &qmlObjects;
+    const QList<QmlIR::Object*> &qmlObjects;
     const QQmlPropertyCacheVector * const propertyCaches;
 };
 
@@ -234,7 +237,7 @@ public:
     void scan();
 
 private:
-    const QVector<QmlIR::Object*> &qmlObjects;
+    const QList<QmlIR::Object*> &qmlObjects;
     const QQmlPropertyCacheVector * const propertyCaches;
 };
 
@@ -250,7 +253,7 @@ private:
     enum class ScopeDeferred { False, True };
     bool scanObject(int objectIndex, ScopeDeferred scopeDeferred);
 
-    QVector<QmlIR::Object*> *qmlObjects;
+    QList<QmlIR::Object*> *qmlObjects;
     const QQmlPropertyCacheVector * const propertyCaches;
     const QHash<int, QQmlCustomParser*> &customParsers;
 
@@ -267,7 +270,7 @@ public:
 private:
     void mergeDefaultProperties(int objectIndex);
 
-    const QVector<QmlIR::Object*> &qmlObjects;
+    const QList<QmlIR::Object*> &qmlObjects;
     const QQmlPropertyCacheVector * const propertyCaches;
 };
 

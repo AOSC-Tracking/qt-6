@@ -6,6 +6,7 @@
 #define BASE_SAMPLING_HEAP_PROFILER_POISSON_ALLOCATION_SAMPLER_H_
 
 #include <atomic>
+#include <optional>
 #include <vector>
 
 #include "base/allocator/dispatcher/notification_data.h"
@@ -26,12 +27,14 @@ class SamplingHeapProfilerTest;
 
 // Stats about the allocation sampler.
 struct BASE_EXPORT PoissonAllocationSamplerStats {
+  using AddressCacheBucketStats = LockFreeAddressHashSet::BucketStats;
+
   PoissonAllocationSamplerStats(
       size_t address_cache_hits,
       size_t address_cache_misses,
       size_t address_cache_max_size,
       float address_cache_max_load_factor,
-      std::vector<size_t> address_cache_bucket_lengths);
+      AddressCacheBucketStats address_cache_bucket_stats);
   ~PoissonAllocationSamplerStats();
 
   PoissonAllocationSamplerStats(const PoissonAllocationSamplerStats&);
@@ -42,7 +45,7 @@ struct BASE_EXPORT PoissonAllocationSamplerStats {
   size_t address_cache_misses;
   size_t address_cache_max_size;
   float address_cache_max_load_factor;
-  std::vector<size_t> address_cache_bucket_lengths;
+  AddressCacheBucketStats address_cache_bucket_stats;
 };
 
 // This singleton class implements Poisson sampling of the incoming allocations
@@ -154,6 +157,10 @@ class BASE_EXPORT PoissonAllocationSampler {
   // Returns the current mean sampling interval, in bytes.
   size_t SamplingInterval() const;
 
+  // Sets the max load factor before rebalancing the LockFreeAddressHashSet, or
+  // resets it to the default if `load_factor` is nulloptr.
+  void SetTargetHashSetLoadFactor(std::optional<float> load_factor);
+
   // Returns statistics about the allocation sampler, and resets the running
   // counts so that each call to this returns only stats about the period
   // between calls.
@@ -225,7 +232,7 @@ class BASE_EXPORT PoissonAllocationSampler {
                           const char* context);
   void DoRecordFree(void* address);
 
-  void BalanceAddressesHashSet();
+  void BalanceAddressesHashSet() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Lock mutex_;
 
@@ -256,12 +263,19 @@ class BASE_EXPORT PoissonAllocationSampler {
   std::atomic<size_t> address_cache_hits_;
   std::atomic<size_t> address_cache_misses_;
   size_t address_cache_max_size_ GUARDED_BY(mutex_) = 0;
+  // The max load factor that's observed in sampled_addresses_set().
   float address_cache_max_load_factor_ GUARDED_BY(mutex_) = 0;
+
+  // The load factor that will trigger rebalancing in sampled_addresses_set().
+  // By definition `address_cache_max_load_factor_` will never exceed this.
+  float address_cache_target_load_factor_ GUARDED_BY(mutex_) = 1.0;
 
   friend class NoDestructor<PoissonAllocationSampler>;
   friend class PoissonAllocationSamplerStateTest;
   friend class SamplingHeapProfilerTest;
   FRIEND_TEST_ALL_PREFIXES(PoissonAllocationSamplerTest, MuteHooksWithoutInit);
+  FRIEND_TEST_ALL_PREFIXES(PoissonAllocationSamplerLoadFactorTest,
+                           BalanceSampledAddressesSet);
   FRIEND_TEST_ALL_PREFIXES(SamplingHeapProfilerTest, HookedAllocatorMuted);
 };
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qqmlhover_p.h"
 #include <QtQmlLS/private/qqmllshelputils_p.h>
@@ -8,16 +9,9 @@ QT_BEGIN_NAMESPACE
 
 Q_STATIC_LOGGING_CATEGORY(hoverLog, "qt.languageserver.hover")
 
-QQmlHover::QQmlHover(QmlLsp::QQmlCodeModel *codeModel)
-    : QQmlBaseModule(codeModel), m_helpManager(std::make_unique<HelpManager>())
+QQmlHover::QQmlHover(QmlLsp::QQmlCodeModelManager *codeModelManager)
+    : QQmlBaseModule(codeModelManager)
 {
-    // if set thorugh the commandline
-    if (!codeModel->documentationRootPath().isEmpty())
-        m_helpManager->setDocumentationRootPath(codeModel->documentationRootPath());
-
-    connect(codeModel, &QmlLsp::QQmlCodeModel::documentationRootPathChanged, this, [this](const QString &path) {
-        m_helpManager->setDocumentationRootPath(path);
-    });
 }
 
 QQmlHover::~QQmlHover() = default;
@@ -41,7 +35,10 @@ void QQmlHover::setupCapabilities(
 
 void QQmlHover::process(RequestPointerArgument request)
 {
-    if (!m_helpManager) {
+    HelpManager *helpManager =
+            m_codeModelManager->helpManagerForUrl(request->m_parameters.textDocument.uri);
+
+    if (!helpManager) {
         qCWarning(hoverLog)
                 << "No help manager is available, documentation hints will not function!";
         return;
@@ -55,7 +52,8 @@ void QQmlHover::process(RequestPointerArgument request)
     }
     const auto textDocument = request->m_parameters.textDocument;
     const auto position = request->m_parameters.position;
-    const auto doc = m_codeModel->openDocumentByUrl(QQmlLSUtils::lspUriToQmlUrl(textDocument.uri));
+    const auto doc =
+            m_codeModelManager->openDocumentByUrl(QQmlLSUtils::lspUriToQmlUrl(textDocument.uri));
     DomItem file = doc.snapshot.doc.fileObject(GoTo::MostLikely);
     if (!file) {
         guard.setError(QQmlLSUtils::ErrorMessage{
@@ -63,7 +61,7 @@ void QQmlHover::process(RequestPointerArgument request)
         return;
     }
 
-    const auto documentation = m_helpManager->documentationForItem(file, position);
+    const auto documentation = helpManager->documentationForItem(file, position);
     if (!documentation.has_value()) {
         qCDebug(hoverLog)
                 << QStringLiteral(

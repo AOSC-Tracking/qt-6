@@ -196,7 +196,7 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
   }
   void UpdateShouldCreateBoxFragment();
 
-  PhysicalRect LocalCaretRect(int) const final;
+  PhysicalRect LocalCaretRect(int, CaretShape) const final;
 
   // When this LayoutInline doesn't generate line boxes of its own, regenerate
   // the rects of the line boxes and hit test the rects.
@@ -276,8 +276,6 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
   template <typename PhysicalRectCollector>
   void CollectLineBoxRects(const PhysicalRectCollector&) const;
 
-  void AddChildIgnoringContinuation(LayoutObject* new_child,
-                                    LayoutObject* before_child = nullptr) final;
   void AddChildAsBlockInInline(LayoutObject* new_child,
                                LayoutObject* before_child);
 
@@ -285,6 +283,8 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
   LayoutBlockFlow* CreateAnonymousContainerForBlockChildren() const;
   LayoutBox* CreateAnonymousBoxToSplit(
       const LayoutBox* box_to_split) const final;
+
+  void MarkMayHaveAnchorQuery() final;
 
   void Paint(const PaintInfo&) const override;
 
@@ -299,6 +299,8 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
   LayoutUnit OffsetTop(const Element*) const final;
   LayoutUnit OffsetWidth() const final;
   LayoutUnit OffsetHeight() const final;
+
+  PhysicalRect BoundingBoxRelativeToFirstFragment() const final;
 
   bool MapToVisualRectInAncestorSpaceInternal(
       const LayoutBoxModelObject* ancestor,
@@ -321,6 +323,13 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
 
   void AddDraggableRegions(Vector<DraggableRegionValue>&) final;
 
+  bool ShouldBeHandledAsInline(const ComputedStyle&) const override {
+    NOT_DESTROYED();
+    // This is needed (at a minimum) for LayoutSVGInline, which (including
+    // subclasses) is constructed for svg:a, svg:textPath, and svg:tspan,
+    // regardless of CSS 'display'.
+    return true;
+  }
   void UpdateFromStyle() final;
   bool AnonymousHasStylePropagationOverride() final {
     NOT_DESTROYED();
@@ -339,6 +348,7 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
 };
 
 inline wtf_size_t LayoutInline::FirstInlineFragmentItemIndex() const {
+  NOT_DESTROYED();
   if (!IsInLayoutNGInlineFormattingContext())
     return 0u;
   return first_fragment_item_index_;

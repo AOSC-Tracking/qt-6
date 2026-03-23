@@ -3,13 +3,11 @@
 # found in the LICENSE file.
 
 import("//media/media_options.gni")
-import("//extensions/buildflags/buildflags.gni")
 
 assert(is_win || is_mac || is_linux || is_chromeos)
 
 source_set("apps") {
   sources = [
-    "app_info_dialog.h",
     "chrome_app_delegate.h",
     "chrome_app_window_client.h",
     "directory_access_confirmation_dialog.h",
@@ -17,14 +15,10 @@ source_set("apps") {
 
   public_deps = [
     "//base",
+    "//extensions/browser",
     "//ui/base:types",
     "//ui/gfx/geometry",
   ]
-  if (enable_extensions) {
-    public_deps += [
-      "//extensions/browser",
-    ]
-  }
 }
 
 source_set("impl") {
@@ -40,16 +34,22 @@ source_set("impl") {
     "//chrome/app:generated_resources_grit",
     "//chrome/browser:primitives",
     "//chrome/browser:shell_integration",
+    "//chrome/browser/apps/platform_apps",
     "//chrome/browser/devtools",
     "//chrome/browser/favicon",
     "//chrome/browser/file_system_access",
+    "//chrome/browser/lifetime:termination_notification",
     "//chrome/browser/picture_in_picture",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/profiles/keep_alive",
     "//chrome/browser/ui:browser_navigator_params_headers",
     "//components/keep_alive_registry",
     "//components/version_info",
     "//components/zoom",
     "//content/public/browser",
+    "//extensions/common",
+    "//extensions/common:common_constants",
+    "//extensions/common:mojom",
     "//mojo/public/cpp/bindings",
     "//printing/buildflags",
     "//services/service_manager/public/cpp",
@@ -59,14 +59,6 @@ source_set("impl") {
   if (enable_webrtc) {
     deps += [
       "//chrome/browser/media/webrtc",
-    ]
-  }
-  if (enable_extensions) {
-    deps += [
-      "//chrome/browser/apps/platform_apps",
-      "//extensions/common",
-      "//extensions/common:common_constants",
-      "//extensions/common:mojom",
     ]
   }
 

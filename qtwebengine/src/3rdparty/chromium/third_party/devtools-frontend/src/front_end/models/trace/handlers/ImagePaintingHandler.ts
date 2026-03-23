@@ -5,6 +5,8 @@
 import * as Platform from '../../../core/platform/platform.js';
 import * as Types from '../types/types.js';
 
+import {data as metaHandlerData} from './MetaHandler.js';
+
 /**
  * This handler is responsible for the relationships between:
  * DecodeImage/ResizeImage, PaintImage and DrawLazyPixelRef events.
@@ -22,23 +24,27 @@ import * as Types from '../types/types.js';
  */
 
 // Track paintImageEvents across threads.
-const paintImageEvents: Map<Types.Events.ProcessID, Map<Types.Events.ThreadID, Types.Events.PaintImage[]>> = new Map();
-const decodeLazyPixelRefEvents:
-    Map<Types.Events.ProcessID, Map<Types.Events.ThreadID, Types.Events.DecodeLazyPixelRef[]>> = new Map();
+const paintImageEvents = new Map<Types.Events.ProcessID, Map<Types.Events.ThreadID, Types.Events.PaintImage[]>>();
+const decodeLazyPixelRefEvents =
+    new Map<Types.Events.ProcessID, Map<Types.Events.ThreadID, Types.Events.DecodeLazyPixelRef[]>>();
 
 // A DrawLazyPixelRef event will contain a numerical reference in
 // args.LazyPixelRef. As we parse each DrawLazyPixelRef, we can assign it to a
 // paint event. Later we want to look up paint events by this reference, so we
 // store them in this map.
-const paintImageByLazyPixelRef: Map<number, Types.Events.PaintImage> = new Map();
+const paintImageByLazyPixelRef = new Map<number, Types.Events.PaintImage>();
 
 // When we find events that we want to tie to a particular PaintImage event, we add them to this map.
 // These are currently only DecodeImage and ResizeImage events, but the type is
 // deliberately generic as in the future we might want to add more events that
 // have a relationship to a individual PaintImage event.
-const eventToPaintImage: Map<Types.Events.Event, Types.Events.PaintImage> = new Map();
+const eventToPaintImage = new Map<Types.Events.Event, Types.Events.PaintImage>();
 
-const urlToPaintImage: Map<string, Types.Events.PaintImage[]> = new Map();
+const urlToPaintImage = new Map<string, Types.Events.PaintImage[]>();
+
+const paintEventToCorrectedDisplaySize = new Map<Types.Events.PaintImage, {width: number, height: number}>();
+
+let didCorrectForHostDpr = false;
 
 export function reset(): void {
   paintImageEvents.clear();
@@ -46,6 +52,8 @@ export function reset(): void {
   paintImageByLazyPixelRef.clear();
   eventToPaintImage.clear();
   urlToPaintImage.clear();
+  paintEventToCorrectedDisplaySize.clear();
+  didCorrectForHostDpr = false;
 }
 
 export function handleEvent(event: Types.Events.Event): void {
@@ -110,7 +118,7 @@ export function handleEvent(event: Types.Events.Event): void {
 
     // 2. Find the last DecodeLazyPixelRef event and, if we find it, find its associated PaintImage event.
     const lastDecodeLazyPixelRef = decodeLazyPixelRefEvents.get(event.pid)?.get(event.tid)?.at(-1);
-    if (!lastDecodeLazyPixelRef || typeof lastDecodeLazyPixelRef.args?.LazyPixelRef === 'undefined') {
+    if (typeof lastDecodeLazyPixelRef?.args?.LazyPixelRef === 'undefined') {
       return;
     }
 
@@ -122,13 +130,45 @@ export function handleEvent(event: Types.Events.Event): void {
   }
 }
 
-export async function finalize(): Promise<void> {
+export async function finalize(options: Types.Configuration.ParseOptions): Promise<void> {
+  // Painting in Chrome never uses the emulated DPR, but instead used the host's DPR.
+  // We need to correct for that for our responsive image checks in the ImageDelivery
+  // insight.
+  // See: crbug.com/427552461 crbug.com/416580500#comment5
+
+  if (!options.metadata?.hostDPR) {
+    return;
+  }
+
+  // Note: this isn't necessarily emulated (for desktop+no DPR emulation, it's equal
+  // to host DPR).
+  const {devicePixelRatio: emulatedDpr} = metaHandlerData();
+  if (!emulatedDpr) {
+    return;
+  }
+
+  for (const byThread of paintImageEvents.values()) {
+    for (const paintEvents of byThread.values()) {
+      for (const paintEvent of paintEvents) {
+        const cssPixelsWidth = paintEvent.args.data.width / options.metadata.hostDPR;
+        const cssPixelsHeight = paintEvent.args.data.height / options.metadata.hostDPR;
+        const width = cssPixelsWidth * emulatedDpr;
+        const height = cssPixelsHeight * emulatedDpr;
+        paintEventToCorrectedDisplaySize.set(paintEvent, {width, height});
+      }
+    }
+  }
+
+  didCorrectForHostDpr = true;
 }
 
 export interface ImagePaintData {
   paintImageByDrawLazyPixelRef: Map<number, Types.Events.PaintImage>;
   paintImageForEvent: Map<Types.Events.Event, Types.Events.PaintImage>;
   paintImageEventForUrl: Map<string, Types.Events.PaintImage[]>;
+  paintEventToCorrectedDisplaySize: Map<Types.Events.PaintImage, {width: number, height: number}>;
+  /** Go read the comment in finalize(). */
+  didCorrectForHostDpr: boolean;
 }
 
 export function data(): ImagePaintData {
@@ -136,5 +176,7 @@ export function data(): ImagePaintData {
     paintImageByDrawLazyPixelRef: paintImageByLazyPixelRef,
     paintImageForEvent: eventToPaintImage,
     paintImageEventForUrl: urlToPaintImage,
+    paintEventToCorrectedDisplaySize,
+    didCorrectForHostDpr,
   };
 }

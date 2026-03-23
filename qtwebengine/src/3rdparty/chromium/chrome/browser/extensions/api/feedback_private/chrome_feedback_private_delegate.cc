@@ -26,6 +26,7 @@
 #include "extensions/browser/extensions_browser_client.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
+#include "ui/gfx/native_widget_types.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "base/strings/string_split.h"
@@ -243,8 +244,9 @@ std::string ChromeFeedbackPrivateDelegate::GetSignedInUserEmail(
 void ChromeFeedbackPrivateDelegate::NotifyFeedbackDelayed() const {
   // Show a message box to indicate that sending the feedback has been delayed
   // because the user is offline.
-  chrome::ShowWarningMessageBox(
-      nullptr, l10n_util::GetStringUTF16(IDS_FEEDBACK_OFFLINE_DIALOG_TITLE),
+  chrome::ShowWarningMessageBoxAsync(
+      gfx::NativeWindow(),
+      l10n_util::GetStringUTF16(IDS_FEEDBACK_OFFLINE_DIALOG_TITLE),
       l10n_util::GetStringUTF16(IDS_FEEDBACK_OFFLINE_DIALOG_TEXT));
 }
 

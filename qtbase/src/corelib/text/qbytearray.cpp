@@ -1870,6 +1870,11 @@ QByteArray::QByteArray(qsizetype size, char ch)
 
 /*!
     Constructs a byte array of size \a size with uninitialized contents.
+
+    For example:
+    \code
+    QByteArray buffer(123, Qt::Uninitialized);
+    \endcode
 */
 
 QByteArray::QByteArray(qsizetype size, Qt::Initialization)
@@ -2510,24 +2515,58 @@ QByteArray &QByteArray::replace(qsizetype pos, qsizetype len, QByteArrayView aft
         return *this;
     if (len > this->size() - pos)
         len = this->size() - pos;
-
-    if (QtPrivate::q_points_into_range(after.data(), d)) {
-        QVarLengthArray copy(after.data(), after.data() + after.size());
-        return replace(pos, len, QByteArrayView{copy});
-    }
-
-    if (len == after.size()) {
-        // same size: in-place replacement possible
-        if (len > 0) {
-            detach();
-            memcpy(d.data() + pos, after.data(), len*sizeof(char));
-        }
-        return *this;
-    } else {
-        // ### optimize me
-        remove(pos, len);
+    // Historic behavior, negative len was the equivalent of:
+    // remove(pos, len); // does nothing
+    // insert(pos, after);
+    if (len <= 0)
         return insert(pos, after);
+
+    if (after.isEmpty())
+        return remove(pos, len);
+
+    using A = QStringAlgorithms<QByteArray>;
+    const qsizetype newlen = A::newSize(*this, len, after, {pos});
+    if (data_ptr().needsDetach() || A::needsReallocate(*this, newlen)) {
+        A::replace_into_copy(*this, len, after, {pos}, newlen);
+        return *this;
     }
+
+    // No detaching or reallocation -> change in-place
+    char *const begin = data_ptr().data(); // data(), without the detach() check
+    char *const before = begin + pos;
+    const char *beforeEnd = before + len;
+    if (len >= after.size()) {
+        memmove(before , after.cbegin(), after.size()); // sizeof(char) == 1
+
+        if (len > after.size()) {
+            memmove(before + after.size(), beforeEnd, d.size - (beforeEnd - begin));
+            A::setSize(*this, newlen);
+        }
+    } else { // len < after.size()
+        char *oldEnd = begin + d.size;
+        const qsizetype adjust = newlen - d.size;
+        A::setSize(*this, newlen);
+
+        QByteArrayView tail{beforeEnd, oldEnd};
+        QByteArrayView prefix = after;
+        QByteArrayView suffix;
+        if (QtPrivate::q_points_into_range(after.cend() - 1, tail)) {
+            if (QtPrivate::q_points_into_range(after.cbegin(), tail)) {
+                // `after` fully contained inside `tail`
+                prefix = {};
+                suffix = QByteArrayView{after.cbegin(), after.cend()};
+            } else { // after.cbegin() is in [begin, beforeEnd)
+                prefix = QByteArrayView{after.cbegin(), beforeEnd};
+                suffix = QByteArrayView{beforeEnd, after.cend()};
+            }
+        }
+        memmove(before + after.size(), tail.cbegin(), tail.size());
+        if (!prefix.isEmpty())
+            memmove(before, prefix.cbegin(), prefix.size()); // `prefix` may overlap `before`
+        if (!suffix.isEmpty()) // adjust suffix after calling memcpy() above
+            memcpy(before + prefix.size(), suffix.cbegin() + adjust, suffix.size()); // no overlap
+    }
+    return *this;
 }
 
 /*! \fn QByteArray &QByteArray::replace(qsizetype pos, qsizetype len, const char *after, qsizetype alen)
@@ -4366,7 +4405,7 @@ QByteArray QByteArray::number(qulonglong n, int base)
 
     Returns a byte array containing a string representing \a n, with a given \a
     format and \a precision, with the same meanings as for \l
-    {QString::number(double, char, int)}. For example:
+    {QLocale::toString(double, char, int)}. For example:
 
     \snippet code/src_corelib_text_qbytearray.cpp 42
 
@@ -4686,47 +4725,32 @@ QByteArray QByteArray::toHex(char separator) const
     return hex;
 }
 
-static void q_fromPercentEncoding(QByteArray *ba, char percent)
+static qsizetype q_fromPercentEncoding(QByteArrayView src, char percent, QSpan<char> buffer)
 {
-    if (ba->isEmpty())
-        return;
-
-    char *data = ba->data();
-    const char *inputPtr = data;
+    char *data = buffer.begin();
+    const char *inputPtr = src.begin();
 
     qsizetype i = 0;
-    qsizetype len = ba->size();
-    qsizetype outlen = 0;
-    int a, b;
-    char c;
+    const qsizetype len = src.size();
     while (i < len) {
-        c = inputPtr[i];
+        char c = inputPtr[i];
         if (c == percent && i + 2 < len) {
-            a = inputPtr[++i];
-            b = inputPtr[++i];
-
-            if (a >= '0' && a <= '9') a -= '0';
-            else if (a >= 'a' && a <= 'f') a = a - 'a' + 10;
-            else if (a >= 'A' && a <= 'F') a = a - 'A' + 10;
-
-            if (b >= '0' && b <= '9') b -= '0';
-            else if (b >= 'a' && b <= 'f') b  = b - 'a' + 10;
-            else if (b >= 'A' && b <= 'F') b  = b - 'A' + 10;
-
-            *data++ = (char)((a << 4) | b);
+            if (int a = QtMiscUtils::fromHex(uchar(inputPtr[++i])); a != -1)
+                *data = a << 4;
+            if (int b = QtMiscUtils::fromHex(uchar(inputPtr[++i])); b != -1)
+                *data |= b;
         } else {
-            *data++ = c;
+            *data = c;
         }
-
+        ++data;
         ++i;
-        ++outlen;
     }
 
-    if (outlen != len)
-        ba->truncate(outlen);
+    return data - buffer.begin();
 }
 
 /*!
+    \fn QByteArray QByteArray::percentDecoded(char percent) const &
     \since 6.4
 
     Decodes URI/URL-style percent-encoding.
@@ -4744,15 +4768,12 @@ static void q_fromPercentEncoding(QByteArray *ba, char percent)
 
     \sa toPercentEncoding(), QUrl::fromPercentEncoding()
 */
-QByteArray QByteArray::percentDecoded(char percent) const
-{
-    if (isEmpty())
-        return *this; // Preserves isNull().
 
-    QByteArray tmp = *this;
-    q_fromPercentEncoding(&tmp, percent);
-    return tmp;
-}
+/*!
+    \fn QByteArray QByteArray::percentDecoded(char percent) &&
+    \since 6.11
+    \overload
+*/
 
 /*!
     \since 4.4
@@ -4770,7 +4791,30 @@ QByteArray QByteArray::percentDecoded(char percent) const
 */
 QByteArray QByteArray::fromPercentEncoding(const QByteArray &input, char percent)
 {
-    return input.percentDecoded(percent);
+    if (input.isEmpty())
+        return input; // Preserves isNull().
+
+    QByteArray out{input.size(), Qt::Uninitialized};
+    qsizetype len = q_fromPercentEncoding(input, percent, out);
+    out.truncate(len);
+    return out;
+}
+
+/*!
+    \overload
+    \since 6.11
+*/
+QByteArray QByteArray::fromPercentEncoding(QByteArray &&input, char percent)
+{
+    if (input.d->needsDetach())
+        return fromPercentEncoding(input, percent); // lvalue overload
+
+    if (input.isEmpty())
+        return std::move(input); // Preserves isNull().
+
+    qsizetype len = q_fromPercentEncoding(input, percent, input);
+    input.truncate(len);
+    return std::move(input);
 }
 
 /*! \fn QByteArray QByteArray::fromStdString(const std::string &str)
@@ -4804,6 +4848,7 @@ std::string QByteArray::toStdString() const
 
 /*!
     \fn QByteArray::operator std::string_view() const noexcept
+    \target qbytearray-operator-std-string_view
     \since 6.10
 
     Converts this QByteArray object to a \c{std::string_view} object.
@@ -5076,7 +5121,7 @@ emscripten::val QByteArray::toEcmaUint8Array()
 
     The following code creates a QByteArray:
     \code
-    using namespace Qt::Literals::StringLiterals;
+    using namespace Qt::StringLiterals;
 
     auto str = "hello"_ba;
     \endcode

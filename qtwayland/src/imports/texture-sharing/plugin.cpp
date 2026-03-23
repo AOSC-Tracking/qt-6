@@ -51,7 +51,6 @@ public:
     void registerTypes(const char *uri) override
     {
         Q_ASSERT(uri == QStringLiteral("QtWayland.Client.TextureSharing"));
-        qmlRegisterModule(uri, 1, 0);
     }
 
     void initializeEngine(QQmlEngine *engine, const char *uri) override

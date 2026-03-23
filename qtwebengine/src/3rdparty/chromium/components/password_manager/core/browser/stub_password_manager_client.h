@@ -80,6 +80,7 @@ class StubPasswordManagerClient : public PasswordManagerClient {
     BUILDFLAG(IS_CHROMEOS)
   void OpenPasswordDetailsBubble(
       const password_manager::PasswordForm& form) override;
+  void MaybeShowSavePasswordPrimingPromo(const GURL& current_url) override;
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
         // BUILDFLAG(IS_CHROMEOS)
 #if !BUILDFLAG(IS_IOS)
@@ -94,10 +95,12 @@ class StubPasswordManagerClient : public PasswordManagerClient {
       base::OnceClosure confirmation_callback) override;
 #endif  // !BUILDFLAG(IS_IOS)
 
+#if BUILDFLAG(SAFE_BROWSING_AVAILABLE) || BUILDFLAG(IS_IOS)
   safe_browsing::PasswordProtectionService* GetPasswordProtectionService()
       const override;
+#endif
 
-#if defined(ON_FOCUS_PING_ENABLED)
+#if defined(ON_FOCUS_PING_ENABLED) && BUILDFLAG(SAFE_BROWSING_AVAILABLE)
   void CheckSafeBrowsingReputation(const GURL& form_action,
                                    const GURL& frame_url) override;
 #endif
@@ -110,10 +113,13 @@ class StubPasswordManagerClient : public PasswordManagerClient {
   void PotentialSaveFormSubmitted() override;
 #endif
   signin::IdentityManager* GetIdentityManager() override;
+  const signin::IdentityManager* GetIdentityManager() const override;
   scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory() override;
   network::mojom::NetworkContext* GetNetworkContext() const override;
   bool IsIsolationForPasswordSitesEnabled() const override;
   bool IsNewTabPage() const override;
+  password_manager::UndoPasswordChangeController*
+  GetUndoPasswordChangeController() override;
 
  private:
   const StubCredentialsFilter credentials_filter_;
@@ -121,6 +127,7 @@ class StubPasswordManagerClient : public PasswordManagerClient {
   autofill::StubLogManager log_manager_;
   ukm::SourceId ukm_source_id_;
   std::optional<PasswordManagerMetricsRecorder> metrics_recorder_;
+  UndoPasswordChangeController undo_password_change_controller_;
 };
 
 }  // namespace password_manager

@@ -217,6 +217,7 @@ class FocusTraversalTest : public FocusManagerTest {
   std::unique_ptr<Widget> CreateBubbleDialog() {
     auto delegate = std::make_unique<BubbleDialogDelegate>(
         style_tab_, BubbleBorder::TOP_LEFT);
+    delegate->SetOwnedByWidget(WidgetDelegate::OwnedByWidgetPassKey());
     auto root_view = std::make_unique<MdTextButton>(Button::PressedCallback(),
                                                     u"bubble button");
     delegate->SetContentsView(std::move(root_view));
@@ -1014,20 +1015,20 @@ void FocusTraversalNonFocusableTest::InitContentView() {
     // |v|'s left child is the top of the next group. If |v| is 20, this is 30.
     View* v10 = new View;
     v10->SetID(i + 10);
-    v->AddChildView(v10);
+    v->AddChildViewRaw(v10);
 
     // |v|'s right child. If |v| is 20, this is 21.
     View* v1 = new View;
     v1->SetID(i + 1);
-    v->AddChildView(v1);
+    v->AddChildViewRaw(v1);
 
     // |v|'s right child has two children. If |v| is 20, these are 22 and 23.
     View* v2 = new View;
     v2->SetID(i + 2);
     View* v3 = new View;
     v3->SetID(i + 3);
-    v1->AddChildView(v2);
-    v1->AddChildView(v3);
+    v1->AddChildViewRaw(v2);
+    v1->AddChildViewRaw(v3);
 
     v = v10;
   }

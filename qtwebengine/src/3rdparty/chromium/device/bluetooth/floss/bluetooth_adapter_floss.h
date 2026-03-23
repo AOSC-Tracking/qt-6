@@ -12,7 +12,7 @@
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
-#include "build/chromeos_buildflags.h"
+#include "build/build_config.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
@@ -175,6 +175,10 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterFloss final
                            base::OnceClosure callback,
                            ErrorCallback error_callback) override;
 
+  void SetSimpleSecurePairingEnabled(bool enabled,
+                                     base::OnceClosure callback,
+                                     ErrorCallback error_callback) override;
+
   LowEnergyScanSessionHardwareOffloadingStatus
   GetLowEnergyScanSessionHardwareOffloadingStatus() override;
 
@@ -185,16 +189,13 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterFloss final
       override;
 
   std::vector<BluetoothRole> GetSupportedRoles() override;
-#endif  // BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  // Set the adapter name to one chosen from the system information. Only Ash
-  // needs to do this.
+  // Set the adapter name to one chosen from the system information.
   void SetStandardChromeOSAdapterName() override;
-  // Enable telephony feature for floss. Only Ash needs to do this.
+  // Enable telephony feature for floss.
   void ConfigureBluetoothTelephony(bool enabled);
 
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
   // ScannerClientObserver overrides
   void ScannerRegistered(device::BluetoothUUID uuid,
@@ -254,7 +255,6 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterFloss final
   void OnDeviceUuidsChanged(BluetoothDeviceFloss* device_ptr);
   void OnGetConnectionState(const FlossDeviceId& device_id,
                             DBusResult<uint32_t> ret);
-  void OnGetBondState(const FlossDeviceId& device_id, DBusResult<uint32_t> ret);
 
   // Announce to observers a change in the adapter state.
   void DiscoveringChanged(bool discovering);
@@ -290,6 +290,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterFloss final
   void AdapterDiscoveringChanged(bool state) override;
   void AdapterFoundDevice(const FlossDeviceId& device_found) override;
   void AdapterClearedDevice(const FlossDeviceId& device_found) override;
+  void AdapterKeyMissingDevice(const FlossDeviceId& device) override;
   void AdapterDevicePropertyChanged(
       FlossAdapterClient::BtPropertyType prop_type,
       const FlossDeviceId& device) override;

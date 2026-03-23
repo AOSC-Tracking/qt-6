@@ -1,5 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "assimpimporter.h"
 
@@ -1199,28 +1201,11 @@ static void setLightProperties(QSSGSceneDesc::Light &target, const aiLight &sour
 }
 
 using MorphAttributes = QQuick3DMorphTarget::MorphTargetAttributes;
-using MorphProperty = QPair<MorphAttributes, float>;
-
-static QVector<MorphProperty> getMorphTargetProperties(const aiMesh &mesh)
-{
-    QVector<MorphProperty> targets;
-    const quint32 numMorphTargets = qMin(8U, mesh.mNumAnimMeshes);
-
-    for (uint i = 0; i < numMorphTargets; ++i) {
-        const auto &animMesh = mesh.mAnimMeshes[i];
-        QQuick3DMorphTarget::MorphTargetAttributes mTarget;
-        if (animMesh->HasPositions())
-            mTarget |= QQuick3DMorphTarget::MorphTargetAttribute::Position;
-        if (animMesh->HasNormals())
-            mTarget |= QQuick3DMorphTarget::MorphTargetAttribute::Normal;
-        if (animMesh->HasTangentsAndBitangents()) {
-            mTarget |= QQuick3DMorphTarget::MorphTargetAttribute::Tangent;
-            mTarget |= QQuick3DMorphTarget::MorphTargetAttribute::Binormal;
-        }
-        targets.push_back(qMakePair(mTarget, animMesh->mWeight));
-    }
-    return targets;
-}
+struct MorphProperty {
+    QByteArray name;
+    MorphAttributes attrib;
+    float weight;
+};
 
 static void setModelProperties(QSSGSceneDesc::Model &target, const aiNode &source, const SceneInfo &sceneInfo)
 {
@@ -1414,13 +1399,28 @@ static void processNode(const SceneInfo &sceneInfo, const aiNode &source, QSSGSc
     if (source.mNumMeshes != 0) {
         // Process morphTargets first and then add them to the modelNode
         using It = decltype(source.mNumMeshes);
-        QVector<MorphProperty> morphProps;
+        QVarLengthArray<MorphProperty> morphProps;
         for (It i = 0, end = source.mNumMeshes; i != end; ++i) {
             const auto &srcScene = sceneInfo.scene;
             const aiMesh &mesh = *srcScene.mMeshes[source.mMeshes[i]];
-            if (mesh.mNumAnimMeshes && mesh.mAnimMeshes) {
-                morphProps = getMorphTargetProperties(mesh);
-                break;
+            const quint32 numMorphTargets = mesh.mNumAnimMeshes;
+            if (numMorphTargets && mesh.mAnimMeshes) {
+                morphProps.reserve(numMorphTargets);
+                for (uint j = 0; j < numMorphTargets; ++j) {
+                    const auto &animMesh = mesh.mAnimMeshes[j];
+                    MorphAttributes attrib;
+                    if (animMesh->HasPositions())
+                        attrib |= QQuick3DMorphTarget::MorphTargetAttribute::Position;
+                    if (animMesh->HasNormals())
+                        attrib |= QQuick3DMorphTarget::MorphTargetAttribute::Normal;
+                    if (animMesh->HasTangentsAndBitangents()) {
+                        attrib |= QQuick3DMorphTarget::MorphTargetAttribute::Tangent;
+                        attrib |= QQuick3DMorphTarget::MorphTargetAttribute::Binormal;
+                    }
+                    morphProps.append({ fromAiString(animMesh->mName),
+                                           attrib,
+                                           animMesh->mWeight });
+                }
             }
         }
         node = createSceneNode(NodeInfo { 0, QSSGSceneDesc::Node::Type::Model }, source, parent, sceneInfo);
@@ -1433,8 +1433,9 @@ static void processNode(const SceneInfo &sceneInfo, const aiNode &source, QSSGSc
 
                 auto morphNode = new QSSGSceneDesc::MorphTarget;
                 QSSGSceneDesc::addNode(*node, *morphNode);
-                QSSGSceneDesc::setProperty(*morphNode, "weight", &QQuick3DMorphTarget::setWeight, morphProp.second);
-                QSSGSceneDesc::setProperty(*morphNode, "attributes", &QQuick3DMorphTarget::setAttributes, morphProp.first);
+                QSSGSceneDesc::setProperty(*morphNode, "weight", &QQuick3DMorphTarget::setWeight, morphProp.weight);
+                QSSGSceneDesc::setProperty(*morphNode, "attributes", &QQuick3DMorphTarget::setAttributes, morphProp.attrib);
+                morphNode->name = morphProp.name;
                 morphTargets.push_back(morphNode);
 
                 if (!animationNodes.isEmpty()) {
@@ -1756,8 +1757,9 @@ static QString importImp(const QUrl &url, const QJsonObject &options, QSSGSceneD
                     const auto &nodeName = srcChannel->mName;
                     if (nodeName.length > 0) {
                         const auto morphKeys = srcChannel->mKeys;
-                        const auto numMorphTargets = qMin(morphKeys[0].mNumValuesAndWeights, 8U);
-                        // MorphTarget is renamed with <nodeName> + '_morph' + <targetNumber>
+                        const auto numMorphTargets = morphKeys[0].mNumValuesAndWeights;
+                        // MorphTarget's animations are stored with a name,
+                        // "<nodeName> + '_morph' + <targetNumber>"
                         for (It j = 0; j < numMorphTargets; ++j) {
                             QString morphTargetName(nodeName.C_Str());
                             morphTargetName += QStringLiteral("_morph") + QString::number(j);

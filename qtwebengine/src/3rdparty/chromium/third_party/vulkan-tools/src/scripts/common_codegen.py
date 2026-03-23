@@ -61,6 +61,7 @@ platform_dict = {
     'directfb' : 'VK_USE_PLATFORM_DIRECTFB_EXT',
     'screen' : 'VK_USE_PLATFORM_SCREEN_QNX',
     'sci' : 'VK_USE_PLATFORM_SCI',
+    'ohos' : 'VK_USE_PLATFORM_OHOS',
 }
 
 #
@@ -68,10 +69,13 @@ platform_dict = {
 def GetFeatureProtect(interface):
     """Get platform protection string"""
     platform = interface.get('platform')
-    protect = None
     if platform is not None:
-        protect = platform_dict[platform]
-    return protect
+        return platform_dict[platform]
+
+    provisional = interface.get('provisional')
+    if provisional == 'true':
+        return platform_dict['provisional']
+
 
 # helper to define paths relative to the repo root
 def repo_relative(path):

@@ -120,11 +120,11 @@ typename IDLSequence<T>::ImplType VariadicArgumentsToNativeValues(
     ExtraArgs... extra_args) {
   using VectorType = typename IDLSequence<T>::ImplType;
 
+  VectorType result;
   const int length = info.Length();
   if (start_index >= length)
-    return VectorType();
+    return result;
 
-  VectorType result;
   result.ReserveInitialCapacity(length - start_index);
   for (int i = start_index; i < length; ++i) {
     result.UncheckedAppend(NativeValueTraits<T>::ArgumentValue(

@@ -18,17 +18,14 @@
  *
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
 
+#include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "build/build_config.h"
 #include "hb-ot.h"
 #include "hb.h"
+#include "skia/ext/skia_utils_base.h"
 #include "third_party/blink/public/common/privacy_budget/identifiable_token_builder.h"
 #include "third_party/blink/public/platform/linux/web_sandbox_support.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -89,7 +86,7 @@ int ConvertSubpixelRendering(
 
 } // namespace
 
-FontPlatformData::FontPlatformData(WTF::HashTableDeletedValueType)
+FontPlatformData::FontPlatformData(HashTableDeletedValueType)
     : is_hash_table_deleted_value_(true) {}
 
 FontPlatformData::FontPlatformData() = default;
@@ -218,11 +215,6 @@ String FontPlatformData::FontFamilyName() const {
   return String::FromUTF8(base::as_byte_span(localized_string.fString));
 }
 
-bool FontPlatformData::IsAhem() const {
-  return EqualIgnoringASCIICase(FontFamilyName(), "ahem") ||
-         EqualIgnoringASCIICase(FontFamilyName(), "ahem (fontations)");
-}
-
 SkTypeface* FontPlatformData::Typeface() const {
   return typeface_.get();
 }
@@ -255,7 +247,7 @@ unsigned FontPlatformData::GetHash() const {
   // rules. Memcpy is generally optimized enough so that performance doesn't
   // matter here.
   uint32_t text_size_bytes;
-  memcpy(&text_size_bytes, &text_size_, sizeof(uint32_t));
+  UNSAFE_TODO(memcpy(&text_size_bytes, &text_size_, sizeof(uint32_t)));
   h ^= text_size_bytes;
 
   return h;
@@ -341,7 +333,8 @@ SkFont FontPlatformData::CreateSkFont(const FontDescription*) const {
 
   font.setEmbeddedBitmaps(!avoid_embedded_bitmaps_);
 
-  if (RuntimeEnabledFeatures::DisableAhemAntialiasEnabled() && IsAhem()) {
+  if (RuntimeEnabledFeatures::NoFontAntialiasingEnabled() &&
+      !WebTestSupport::IsFontAntialiasingEnabledForTest()) {
     font.setEdging(SkFont::Edging::kAlias);
   }
 
@@ -362,7 +355,7 @@ IdentifiableToken FontPlatformData::ComputeTypefaceDigest() const {
   builder.AddValue(table_count);
 
   Vector<SkFontTableTag> all_table_tags(table_count);
-  int tags_copied = typeface_->getTableTags(all_table_tags.data());
+  int tags_copied = typeface_->readTableTags(all_table_tags);
   DCHECK_EQ(tags_copied, table_count);
 
   // The tags are probably already sorted, but let's make sure.
@@ -382,8 +375,7 @@ IdentifiableToken FontPlatformData::ComputeTypefaceDigest() const {
     base::span<const uint8_t> table_data_span;
     sk_sp<SkData> table_data = typeface_->copyTableData(table_tag);
     if (table_data) {
-      table_data_span =
-          base::span<const uint8_t>(table_data->bytes(), table_data->size());
+      table_data_span = skia::as_byte_span(*table_data);
     }
     builder.AddAtomic(table_data_span);
   }

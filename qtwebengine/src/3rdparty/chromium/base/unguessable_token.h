@@ -11,6 +11,7 @@
 #include <compare>
 #include <iosfwd>
 #include <string_view>
+#include <utility>
 
 #include "base/base_export.h"
 #include "base/check.h"
@@ -115,6 +116,11 @@ class BASE_EXPORT UnguessableToken {
 
   bool operator!=(const UnguessableToken& other) const {
     return !(*this == other);
+  }
+
+  template <typename H>
+  friend H AbslHashValue(H h, const UnguessableToken& token) {
+    return H::combine(std::move(h), token.token_);
   }
 
 #if defined(UNIT_TEST)

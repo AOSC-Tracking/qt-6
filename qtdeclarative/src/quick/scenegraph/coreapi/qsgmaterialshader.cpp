@@ -210,7 +210,6 @@ void QSGMaterialShaderPrivate::prepare(QShader::Variant vertexShaderVariant)
     for (QShader::Stage stage : { QShader::VertexStage, QShader::FragmentStage }) {
         auto it = shaderFileNames.constFind(stage);
         if (it != shaderFileNames.cend()) {
-            QString fn = *it;
             const QShader s = loadShader(*it);
             if (!s.isValid())
                 continue;
@@ -227,7 +226,7 @@ void QSGMaterialShaderPrivate::prepare(QShader::Variant vertexShaderVariant)
         vsIt->qt_order_attrib_location = -1;
 
         const QShaderDescription desc = vsIt->shader.description();
-        const QVector<QShaderDescription::InOutVariable> vertexInputs = desc.inputVariables();
+        const QList<QShaderDescription::InOutVariable> vertexInputs = desc.inputVariables();
         for (const QShaderDescription::InOutVariable &v : vertexInputs) {
             if (vertexShaderVariant == QShader::BatchableVertexShader
                 && v.name == QByteArrayLiteral("_qt_order")) {
@@ -246,7 +245,7 @@ void QSGMaterialShaderPrivate::prepare(QShader::Variant vertexShaderVariant)
     for (auto it = shaders.begin(); it != shaders.end(); ++it) {
         const QShaderDescription desc = it->shader.description();
 
-        const QVector<QShaderDescription::UniformBlock> ubufs = desc.uniformBlocks();
+        const QList<QShaderDescription::UniformBlock> ubufs = desc.uniformBlocks();
         const int ubufCount = ubufs.size();
         if (ubufCount > 1) {
             qWarning("Multiple uniform blocks found in shader. "
@@ -271,7 +270,7 @@ void QSGMaterialShaderPrivate::prepare(QShader::Variant vertexShaderVariant)
             }
         }
 
-        const QVector<QShaderDescription::InOutVariable> imageSamplers = desc.combinedImageSamplers();
+        const QList<QShaderDescription::InOutVariable> imageSamplers = desc.combinedImageSamplers();
         const int imageSamplersCount = imageSamplers.size();
         for (int i = 0; i < imageSamplersCount; ++i) {
             const QShaderDescription::InOutVariable &var(imageSamplers[i]);

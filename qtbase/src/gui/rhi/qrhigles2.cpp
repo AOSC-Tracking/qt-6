@@ -5,9 +5,11 @@
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QtCore/qmap.h>
+#include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qopenglextensions_p.h>
 #include <QtGui/private/qopenglprogrambinarycache_p.h>
 #include <QtGui/private/qwindow_p.h>
+#include <kernel/qplatformintegration.h>
 #include <qpa/qplatformopenglcontext.h>
 #include <qmath.h>
 
@@ -79,8 +81,7 @@ QT_BEGIN_NAMESPACE
     will not destroy it.
 
     \note With the OpenGL backend, QRhiSwapChain can only target QWindow
-    instances that have their surface type set to QSurface::OpenGLSurface or
-    QSurface::RasterGLSurface.
+    instances that have their surface type set to QSurface::OpenGLSurface.
 
     \note \c window is optional. It is recommended to specify it whenever
     possible, in order to avoid problems on multi-adapter and multi-screen
@@ -586,6 +587,10 @@ QT_BEGIN_NAMESPACE
 #define GL_PROGRAM                        0x82E2
 #endif
 
+#ifndef GL_DEPTH_CLAMP
+#define GL_DEPTH_CLAMP                    0x864F
+#endif
+
 /*!
     Constructs a new QRhiGles2InitParams.
 
@@ -606,7 +611,8 @@ QRhiGles2InitParams::QRhiGles2InitParams()
     \a format is adjusted as appropriate in order to avoid having problems
     afterwards due to an incompatible context and surface.
 
-    \note This function must only be called on the gui/main thread.
+    \note This function must only be called on the gui/main thread or if
+    the platform integration supports offscreen surfaces.
 
     \note It is the application's responsibility to destroy the returned
     QOffscreenSurface on the gui/main thread once the associated QRhi has been
@@ -614,6 +620,10 @@ QRhiGles2InitParams::QRhiGles2InitParams()
  */
 QOffscreenSurface *QRhiGles2InitParams::newFallbackSurface(const QSurfaceFormat &format)
 {
+    Q_ASSERT(QThread::isMainThread()
+             || QGuiApplicationPrivate::platformIntegration()->hasCapability(
+                     QPlatformIntegration::OffscreenSurface));
+
     QSurfaceFormat fmt = format;
 
     // To resolve all fields in the format as much as possible, create a context.
@@ -997,6 +1007,13 @@ bool QRhiGles2::create(QRhi::Flags flags)
         f->glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 1, &caps.maxThreadGroupsY);
         f->glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &caps.maxThreadGroupsZ);
     }
+
+    if (caps.gles)
+        caps.depthClamp = false;
+    else
+        caps.depthClamp = caps.ctxMajor > 3 || (caps.ctxMajor == 3 && caps.ctxMinor >= 2); // Desktop 3.2
+    if (!caps.depthClamp)
+        caps.depthClamp = ctx->hasExtension("GL_EXT_depth_clamp") || ctx->hasExtension("GL_ARB_depth_clamp");
 
     if (caps.gles)
         caps.textureCompareMode = caps.ctxMajor >= 3; // ES 3.0
@@ -1628,6 +1645,10 @@ bool QRhiGles2::isFeatureSupported(QRhi::Feature feature) const
         return caps.perRenderTargetBlending;
     case QRhi::SampleVariables:
         return caps.sampleVariables;
+    case QRhi::InstanceIndexIncludesBaseInstance:
+        return false; // because BaseInstance is always false
+    case QRhi::DepthClamp:
+        return caps.depthClamp;
     default:
         Q_UNREACHABLE_RETURN(false);
     }
@@ -2567,7 +2588,7 @@ void QRhiGles2::enqueueSubresUpload(QGles2Texture *texD, QGles2CommandBuffer *cb
             const QPoint sp = subresDesc.sourceTopLeft();
             if (!subresDesc.sourceSize().isEmpty())
                 size = subresDesc.sourceSize();
-
+            size = clampedSubResourceUploadSize(size, dp, level, texD->m_pixelSize);
             if (caps.unpackRowLength) {
                 cbD->retainImage(img);
                 // create a non-owning wrapper for the subimage
@@ -2576,6 +2597,8 @@ void QRhiGles2::enqueueSubresUpload(QGles2Texture *texD, QGles2CommandBuffer *cb
             } else {
                 img = img.copy(sp.x(), sp.y(), size.width(), size.height());
             }
+        } else {
+            size = clampedSubResourceUploadSize(size, dp, level, texD->m_pixelSize);
         }
 
         setCmdByNotCompressedData(cbD->retainImage(img), size, img.bytesPerLine());
@@ -3936,13 +3959,15 @@ void QRhiGles2::executeCommandBuffer(QRhiCommandBuffer *cb)
             // barrier in theory. Hence setting all barrier bits whenever
             // something previously written is used for the first time in a
             // subsequent pass.
-            for (auto it = tracker.cbeginBuffers(), itEnd = tracker.cendBuffers(); it != itEnd; ++it) {
-                QGles2Buffer::Access accessBeforePass = QGles2Buffer::Access(it->stateAtPassBegin.access);
+            for (const auto &[rhiB, trackedB]: tracker.buffers()) {
+                Q_UNUSED(rhiB)
+                QGles2Buffer::Access accessBeforePass = QGles2Buffer::Access(trackedB.stateAtPassBegin.access);
                 if (bufferAccessIsWrite(accessBeforePass))
                     barriers |= barriersForBuffer();
             }
-            for (auto it = tracker.cbeginTextures(), itEnd = tracker.cendTextures(); it != itEnd; ++it) {
-                QGles2Texture::Access accessBeforePass = QGles2Texture::Access(it->stateAtPassBegin.access);
+            for (const auto &[rhiT, trackedT]: tracker.textures()) {
+                Q_UNUSED(rhiT)
+                QGles2Texture::Access accessBeforePass = QGles2Texture::Access(trackedT.stateAtPassBegin.access);
                 if (textureAccessIsWrite(accessBeforePass))
                     barriers |= barriersForTexture();
             }
@@ -3956,6 +3981,7 @@ void QRhiGles2::executeCommandBuffer(QRhiCommandBuffer *cb)
             break;
         case QGles2CommandBuffer::Command::InvalidateFramebuffer:
             if (caps.gles && caps.ctxMajor >= 3) {
+                f->glBindFramebuffer(GL_FRAMEBUFFER, cmd.args.invalidateFramebuffer.fbo);
                 f->glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER,
                                            cmd.args.invalidateFramebuffer.attCount,
                                            cmd.args.invalidateFramebuffer.att);
@@ -4090,6 +4116,15 @@ void QRhiGles2::executeBindGraphicsPipeline(QGles2CommandBuffer *cbD, QGles2Grap
     if (forceUpdate || depthWrite != state.depthWrite) {
         state.depthWrite = depthWrite;
         f->glDepthMask(depthWrite);
+    }
+
+    const bool depthClamp = psD->m_depthClamp;
+    if (caps.depthClamp && (forceUpdate || depthClamp != state.depthClamp)) {
+        state.depthClamp = depthClamp;
+        if (depthClamp)
+            f->glEnable(GL_DEPTH_CLAMP);
+        else
+            f->glDisable(GL_DEPTH_CLAMP);
     }
 
     const GLenum depthFunc = toGlCompareOp(psD->m_depthOp);
@@ -4696,7 +4731,7 @@ QGles2RenderTargetData *QRhiGles2::enqueueBindFramebuffer(QRhiRenderTarget *rt, 
 
 void QRhiGles2::enqueueBarriersForPass(QGles2CommandBuffer *cbD)
 {
-    cbD->passResTrackers.append(QRhiPassResourceTracker());
+    cbD->passResTrackers.emplace_back();
     cbD->currentPassResTrackerIndex = cbD->passResTrackers.size() - 1;
     QGles2CommandBuffer::Command &cmd(cbD->commands.get());
     cmd.cmd = QGles2CommandBuffer::Command::BarriersForPass;
@@ -4878,6 +4913,7 @@ void QRhiGles2::endPass(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *resource
         if (mayDiscardDepthStencil) {
             QGles2CommandBuffer::Command &cmd(cbD->commands.get());
             cmd.cmd = QGles2CommandBuffer::Command::InvalidateFramebuffer;
+            cmd.args.invalidateFramebuffer.fbo = rtTex->framebuffer;
             if (caps.needsDepthStencilCombinedAttach) {
                 cmd.args.invalidateFramebuffer.attCount = 1;
                 cmd.args.invalidateFramebuffer.att[0] = GL_DEPTH_STENCIL_ATTACHMENT;

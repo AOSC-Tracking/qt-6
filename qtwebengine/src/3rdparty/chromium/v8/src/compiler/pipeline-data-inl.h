@@ -50,7 +50,7 @@ inline Maybe<OuterContext> GetModuleContext(OptimizedCompilationInfo* info) {
   while (!IsNativeContext(*current)) {
     if (current->IsModuleContext()) {
       return Just(OuterContext(
-          info->CanonicalHandle(current, current->GetIsolate()), distance));
+          info->CanonicalHandle(current, Isolate::Current()), distance));
     }
     current = current->previous();
     distance++;
@@ -71,7 +71,7 @@ class TFPipelineData {
         may_have_unverifiable_graph_(v8_flags.turboshaft),
         zone_stats_(zone_stats),
         pipeline_statistics_(pipeline_statistics),
-        graph_zone_(zone_stats_, kGraphZoneName, kCompressGraphZone),
+        graph_zone_(zone_stats_, kGraphZoneName),
         instruction_zone_scope_(zone_stats_, kInstructionZoneName),
         instruction_zone_(instruction_zone_scope_.zone()),
         codegen_zone_scope_(zone_stats_, kCodegenZoneName),
@@ -84,7 +84,7 @@ class TFPipelineData {
         register_allocation_zone_(register_allocation_zone_scope_.zone()),
         assembler_options_(AssemblerOptions::Default(isolate)) {
     PhaseScope scope(pipeline_statistics, "V8.TFInitPipelineData");
-    graph_ = graph_zone_->New<Graph>(graph_zone_);
+    graph_ = graph_zone_->New<TFGraph>(graph_zone_);
     source_positions_ = graph_zone_->New<SourcePositionTable>(graph_);
     node_origins_ = info->trace_turbo_json()
                         ? graph_zone_->New<NodeOriginTable>(graph_)
@@ -125,7 +125,7 @@ class TFPipelineData {
         may_have_unverifiable_graph_(true),
         zone_stats_(zone_stats),
         pipeline_statistics_(pipeline_statistics),
-        graph_zone_(zone_stats_, kGraphZoneName, kCompressGraphZone),
+        graph_zone_(zone_stats_, kGraphZoneName),
         graph_(mcgraph->graph()),
         source_positions_(source_positions),
         node_origins_(node_origins),
@@ -149,8 +149,8 @@ class TFPipelineData {
 
   // For CodeStubAssembler and machine graph testing entry point.
   TFPipelineData(ZoneStats* zone_stats, OptimizedCompilationInfo* info,
-                 Isolate* isolate, AccountingAllocator* allocator, Graph* graph,
-                 JSGraph* jsgraph, Schedule* schedule,
+                 Isolate* isolate, AccountingAllocator* allocator,
+                 TFGraph* graph, JSGraph* jsgraph, Schedule* schedule,
                  SourcePositionTable* source_positions,
                  NodeOriginTable* node_origins, JumpOptimizationInfo* jump_opt,
                  const AssemblerOptions& assembler_options,
@@ -160,7 +160,7 @@ class TFPipelineData {
         info_(info),
         debug_name_(info_->GetDebugName()),
         zone_stats_(zone_stats),
-        graph_zone_(zone_stats_, kGraphZoneName, kCompressGraphZone),
+        graph_zone_(zone_stats_, kGraphZoneName),
         graph_(graph),
         source_positions_(source_positions),
         node_origins_(node_origins),
@@ -202,7 +202,7 @@ class TFPipelineData {
         info_(info),
         debug_name_(info_->GetDebugName()),
         zone_stats_(zone_stats),
-        graph_zone_(zone_stats_, kGraphZoneName, kCompressGraphZone),
+        graph_zone_(zone_stats_, kGraphZoneName),
         instruction_zone_scope_(zone_stats_, kInstructionZoneName),
         instruction_zone_(sequence->zone()),
         sequence_(sequence),
@@ -253,8 +253,8 @@ class TFPipelineData {
   bool MayHaveUnverifiableGraph() const { return may_have_unverifiable_graph_; }
 
   Zone* graph_zone() { return graph_zone_; }
-  Graph* graph() const { return graph_; }
-  void set_graph(Graph* graph) { graph_ = graph; }
+  TFGraph* graph() const { return graph_; }
+  void set_graph(TFGraph* graph) { graph_ = graph; }
   template <typename T>
   using GraphZonePointer = turboshaft::ZoneWithNamePointer<T, kGraphZoneName>;
   void InitializeWithGraphZone(
@@ -271,7 +271,7 @@ class TFPipelineData {
     node_origins_ = node_origins;
 
     // Allocate a new graph and schedule.
-    graph_ = graph_zone_.New<Graph>(graph_zone_);
+    graph_ = graph_zone_.New<TFGraph>(graph_zone_);
     schedule_ = graph_zone_.New<Schedule>(graph_zone_, node_count_hint);
 
     // Initialize node builders.
@@ -538,15 +538,16 @@ class TFPipelineData {
 
 #if V8_ENABLE_WEBASSEMBLY
   bool has_js_wasm_calls() const {
-    return wasm_module_for_inlining_ != nullptr;
+    return wasm_native_module_for_inlining_ != nullptr;
   }
-  const wasm::WasmModule* wasm_module_for_inlining() const {
-    return wasm_module_for_inlining_;
+  const wasm::NativeModule* wasm_native_module_for_inlining() const {
+    return wasm_native_module_for_inlining_;
   }
-  void set_wasm_module_for_inlining(const wasm::WasmModule* module) {
+  void set_wasm_native_module_for_inlining(
+      const wasm::NativeModule* native_module) {
     // We may only inline Wasm functions from at most one module, see below.
-    DCHECK_NULL(wasm_module_for_inlining_);
-    wasm_module_for_inlining_ = module;
+    DCHECK_NULL(wasm_native_module_for_inlining_);
+    wasm_native_module_for_inlining_ = native_module;
   }
   JsWasmCallsSidetable* js_wasm_calls_sidetable() {
     return js_wasm_calls_sidetable_;
@@ -563,7 +564,7 @@ class TFPipelineData {
   // TODO(353475584): Long-term we might want to lift this restriction, i.e.,
   // support inlining Wasm functions from different Wasm modules in the
   // Turboshaft implementation to avoid a surprising performance cliff.
-  const wasm::WasmModule* wasm_module_for_inlining_ = nullptr;
+  const wasm::NativeModule* wasm_native_module_for_inlining_ = nullptr;
   // Sidetable for storing/passing information about the to-be-inlined calls to
   // Wasm functions through the JS Turbofan frontend to the Turboshaft backend.
   // This should go away once we not only inline the Wasm body in Turboshaft but
@@ -588,7 +589,7 @@ class TFPipelineData {
   // All objects in the following group of fields are allocated in graph_zone_.
   // They are all set to nullptr when the graph_zone_ is destroyed.
   turboshaft::ZoneWithName<kGraphZoneName> graph_zone_;
-  Graph* graph_ = nullptr;
+  TFGraph* graph_ = nullptr;
   SourcePositionTable* source_positions_ = nullptr;
   NodeOriginTable* node_origins_ = nullptr;
   SimplifiedOperatorBuilder* simplified_ = nullptr;

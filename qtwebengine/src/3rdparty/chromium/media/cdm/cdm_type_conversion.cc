@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "base/logging.h"
+#include "base/not_fatal_until.h"
 #include "base/numerics/safe_conversions.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/size.h"
@@ -174,6 +175,8 @@ cdm::KeyStatus ToCdmKeyStatus(CdmKeyInformation::KeyStatus status) {
     case CdmKeyInformation::KeyStatus::USABLE:
       return cdm::kUsable;
     case CdmKeyInformation::KeyStatus::INTERNAL_ERROR:
+    // Not compatible with cdm::KeyStatus.
+    case CdmKeyInformation::KeyStatus::USABLE_IN_FUTURE:
       return cdm::kInternalError;
     case CdmKeyInformation::KeyStatus::EXPIRED:
       return cdm::kExpired;
@@ -188,6 +191,53 @@ cdm::KeyStatus ToCdmKeyStatus(CdmKeyInformation::KeyStatus status) {
   }
 
   NOTREACHED() << "Unexpected CdmKeyInformation::KeyStatus " << status;
+}
+
+CdmKeyInformation::KeyStatus ToMediaKeyStatus(cdm::KeyStatus_2 status) {
+  switch (status) {
+    case cdm::KeyStatus_2::kUsable:
+      return CdmKeyInformation::USABLE;
+    case cdm::KeyStatus_2::kInternalError:
+      return CdmKeyInformation::INTERNAL_ERROR;
+    case cdm::KeyStatus_2::kExpired:
+      return CdmKeyInformation::EXPIRED;
+    case cdm::KeyStatus_2::kOutputRestricted:
+      return CdmKeyInformation::OUTPUT_RESTRICTED;
+    case cdm::KeyStatus_2::kOutputDownscaled:
+      return CdmKeyInformation::OUTPUT_DOWNSCALED;
+    case cdm::KeyStatus_2::kStatusPending:
+      return CdmKeyInformation::KEY_STATUS_PENDING;
+    case cdm::KeyStatus_2::kReleased:
+      return CdmKeyInformation::RELEASED;
+    case cdm::KeyStatus_2::kUsableInFuture:
+      return CdmKeyInformation::USABLE_IN_FUTURE;
+  }
+  DVLOG(1) << "Unexpected cdm::KeyStatus_2 " << static_cast<uint32_t>(status);
+  return CdmKeyInformation::INTERNAL_ERROR;  // Default in error case
+}
+
+cdm::KeyStatus_2 ToCdmKeyStatus_2(CdmKeyInformation::KeyStatus status) {
+  switch (status) {
+    case CdmKeyInformation::USABLE:
+      return cdm::KeyStatus_2::kUsable;
+    case CdmKeyInformation::INTERNAL_ERROR:
+      return cdm::KeyStatus_2::kInternalError;
+    case CdmKeyInformation::EXPIRED:
+      return cdm::KeyStatus_2::kExpired;
+    case CdmKeyInformation::OUTPUT_RESTRICTED:
+      return cdm::KeyStatus_2::kOutputRestricted;
+    case CdmKeyInformation::OUTPUT_DOWNSCALED:
+      return cdm::KeyStatus_2::kOutputDownscaled;
+    case CdmKeyInformation::KEY_STATUS_PENDING:
+      return cdm::KeyStatus_2::kStatusPending;
+    case CdmKeyInformation::RELEASED:
+      return cdm::KeyStatus_2::kReleased;
+    case CdmKeyInformation::USABLE_IN_FUTURE:
+      return cdm::KeyStatus_2::kUsableInFuture;
+  }
+  DVLOG(1) << "Unexpected CdmKeyInformation::KeyStatus "
+           << static_cast<int>(status);
+  return cdm::KeyStatus_2::kInternalError;  // Default in error case
 }
 
 cdm::EncryptionScheme ToCdmEncryptionScheme(EncryptionScheme scheme) {
@@ -450,16 +500,10 @@ cdm::VideoFormat ToCdmVideoFormat(VideoPixelFormat format) {
       return cdm::kYv12;
     case PIXEL_FORMAT_I420:
       return cdm::kI420;
-    case PIXEL_FORMAT_YUV420P9:
-      return cdm::kYUV420P9;
     case PIXEL_FORMAT_YUV420P10:
       return cdm::kYUV420P10;
-    case PIXEL_FORMAT_YUV422P9:
-      return cdm::kYUV422P9;
     case PIXEL_FORMAT_YUV422P10:
       return cdm::kYUV422P10;
-    case PIXEL_FORMAT_YUV444P9:
-      return cdm::kYUV444P9;
     case PIXEL_FORMAT_YUV444P10:
       return cdm::kYUV444P10;
     case PIXEL_FORMAT_YUV420P12:
@@ -480,16 +524,10 @@ VideoPixelFormat ToMediaVideoFormat(cdm::VideoFormat format) {
       return PIXEL_FORMAT_YV12;
     case cdm::kI420:
       return PIXEL_FORMAT_I420;
-    case cdm::kYUV420P9:
-      return PIXEL_FORMAT_YUV420P9;
     case cdm::kYUV420P10:
       return PIXEL_FORMAT_YUV420P10;
-    case cdm::kYUV422P9:
-      return PIXEL_FORMAT_YUV422P9;
     case cdm::kYUV422P10:
       return PIXEL_FORMAT_YUV422P10;
-    case cdm::kYUV444P9:
-      return PIXEL_FORMAT_YUV444P9;
     case cdm::kYUV444P10:
       return PIXEL_FORMAT_YUV444P10;
     case cdm::kYUV420P12:
@@ -555,12 +593,13 @@ void ToCdmInputBuffer(const DecoderBuffer& encrypted_buffer,
                       std::vector<cdm::SubsampleEntry>* subsamples,
                       cdm::InputBuffer_2* input_buffer) {
   // End of stream buffers are represented as empty resources.
-  DCHECK(!input_buffer->data);
+  CHECK(!input_buffer->data, base::NotFatalUntil::M140);
   if (encrypted_buffer.end_of_stream())
     return;
 
-  input_buffer->data = encrypted_buffer.data();
-  input_buffer->data_size = encrypted_buffer.size();
+  auto encrypted_buffer_span = base::span(encrypted_buffer);
+  input_buffer->data = encrypted_buffer_span.data();
+  input_buffer->data_size = encrypted_buffer_span.size();
   input_buffer->timestamp = encrypted_buffer.timestamp().InMicroseconds();
 
   const DecryptConfig* decrypt_config = encrypted_buffer.decrypt_config();
@@ -576,7 +615,7 @@ void ToCdmInputBuffer(const DecoderBuffer& encrypted_buffer,
       reinterpret_cast<const uint8_t*>(decrypt_config->iv().data());
   input_buffer->iv_size = decrypt_config->iv().size();
 
-  DCHECK(subsamples->empty());
+  CHECK(subsamples->empty(), base::NotFatalUntil::M140);
   size_t num_subsamples = decrypt_config->subsamples().size();
   if (num_subsamples > 0) {
     subsamples->reserve(num_subsamples);

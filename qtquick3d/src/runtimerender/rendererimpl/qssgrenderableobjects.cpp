@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgrenderableobjects_p.h"
 #include "qssglayerrenderdata_p.h"
@@ -98,7 +100,8 @@ QSSGParticlesRenderable::QSSGParticlesRenderable(QSSGRenderableObjectFlags inFla
                                                  QSSGRenderableImage *inFirstImage,
                                                  QSSGRenderableImage *inColorTable,
                                                  const QSSGShaderLightListView &inLights,
-                                                 float inOpacity)
+                                                 float inOpacity,
+                                                 QSSGShaderParticleMaterialKey inShaderKey)
     : QSSGRenderableObject(Type::Particles,
                            inFlags,
                            inWorldCenterPt,
@@ -111,6 +114,7 @@ QSSGParticlesRenderable::QSSGParticlesRenderable(QSSGRenderableObjectFlags inFla
     , lights(inLights)
     , globalTransform(inGlobalTransform)
     , opacity(inOpacity)
+    , shaderDescription(inShaderKey)
 {
     // Bounds are in global space for _model blend_ particles
     globalBounds = inParticles.m_particleBuffer.bounds();

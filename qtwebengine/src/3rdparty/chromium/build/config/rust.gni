@@ -12,7 +12,8 @@ if (is_android) {
 }
 
 if (is_ios) {
-  import("//build/config/apple/mobile_config.gni")  # For `target_environment`
+  # For `target_environment` and `target_platform`.
+  import("//build/config/apple/mobile_config.gni")
 }
 
 declare_args() {
@@ -30,14 +31,12 @@ declare_args() {
   #   (which may be used outside of Chromium build)
   # * `enable_rust` should *not* be consulted in other Chromium directories
   #   (including `//base`, `//net`, etc.)
-  enable_rust = build_with_chromium && !is_qtwebengine
+  enable_rust = build_with_chromium
+}
 
-  # The CXX tool is in //third_party/rust which is not shared with downstream
-  # projects yet. So they need to copy the required dependencies and GN files
-  # into their project to enable CXX there.
-  #
-  # We do not support disabling this flag in Chromium code.
-  enable_rust_cxx = build_with_chromium && !is_qtwebengine
+declare_args() {
+  # Are we using an bleeding-edge rust?
+  enable_tetanus = enable_rust
 
   # The chromium prelude crate provides the `chromium::import!` macro which
   # is needed to depend on first-party rust libraries. Third-party libraries
@@ -49,9 +48,7 @@ declare_args() {
   # specify a globally unique `crate_name` in their rust library GN rules
   # instead. Note that using a `crate_name` is strongly discouraged inside
   # Chromium, and is also discouraged for downstream projects when possible.
-  #
-  # We do not support disabling this flag in Chromium code.
-  enable_chromium_prelude = build_with_chromium && !is_qtwebengine
+  enable_chromium_prelude = build_with_chromium && enable_rust
 
   # Chromium provides a Rust toolchain in //third_party/rust-toolchain.
   #
@@ -69,10 +66,6 @@ declare_args() {
   # Rust targets to be rebuilt, which allows you to update your toolchain and
   # not break incremental builds.
   rustc_version = ""
-
-  # If you're using a Rust toolchain as specified by rust_sysroot_absolute,
-  # you can specify whether it supports nacl here.
-  rust_toolchain_supports_nacl = false
 
   # Whether artifacts produced by the Rust compiler can participate in ThinLTO.
   #
@@ -101,6 +94,21 @@ declare_args() {
   # a platform. Mostly applicable to Windows, where new versions can handle ANSI
   # escape sequences but it's not reliable in general.
   force_rustc_color_output = false
+
+  if(is_qtwebengine) {
+    # The path to libclang, as passed from CMake
+    libclang_path = ""
+  }
+}
+
+declare_args() {
+  # The CXX tool is in //third_party/rust which is not shared with downstream
+  # projects yet. So they need to copy the required dependencies and GN files
+  # into their project to enable CXX there.
+  #
+  # Currently, cxx is needed to use Rust with an allocator since the Chromium
+  # allocator shim uses cxx
+  enable_rust_cxx = enable_rust
 }
 
 # Use the Rust toolchain built in-tree. When false, we use the prebuilt Rust
@@ -108,8 +116,8 @@ declare_args() {
 use_chromium_rust_toolchain = rust_sysroot_absolute == ""
 
 # Platform support for the Rust toolchain.
-chromium_toolchain_supports_platform = !is_nacl
-custom_toolchain_supports_platform = !is_nacl || rust_toolchain_supports_nacl
+chromium_toolchain_supports_platform = !is_wasm
+custom_toolchain_supports_platform = true
 
 # Not all target triples (GN toolchains) are supported by the Rust compiler.
 # Define if we support the current GN toolchain.
@@ -124,10 +132,20 @@ if (enable_rust) {
   if (use_chromium_rust_toolchain) {
     toolchain_has_rust = chromium_toolchain_supports_platform
     if (toolchain_has_rust) {
-      update_rust_args = [ "--print-package-version" ]
-      rustc_revision = exec_script("//tools/rust/update_rust.py",
-                                   update_rust_args,
-                                   "trim string")
+      rustc_revision =
+          read_file("//third_party/rust-toolchain/VERSION", "trim string")
+
+      # Example:
+      # rustc 1.88.0 c8f94230282a8e8c1148f3e657f0199aad909228 (c8f94230282a8e8c1148f3e657f0199aad909228-1-llvmorg-21-init-9266-g09006611 chromium)
+      # Trim it down as much as we can using GN.
+      rustc_revision = string_replace(rustc_revision, "rustc ", "")
+      rustc_revision = string_replace(rustc_revision, " chromium", "")
+      rustc_revision = string_replace(rustc_revision, "init-", "")
+      rustc_revision = string_replace(rustc_revision, "llvmorg-", "")
+      rustc_revision = string_replace(rustc_revision, " ", "")
+      rustc_revision = string_replace(rustc_revision, ".", "")
+      rustc_revision = string_replace(rustc_revision, "(", "-")
+      rustc_revision = string_replace(rustc_revision, ")", "")
     }
 
     # The same as written in `config.toml.template`.
@@ -189,8 +207,21 @@ if (is_linux || is_chromeos) {
       float_suffix = ""
     }
     if (arm_arch == "armv7-a" || arm_arch == "armv7") {
-      # No way to inform Rust about the -a suffix.
-      rust_abi_target = "armv7-unknown-linux-gnueabi" + float_suffix
+      # We have no way to inform Rust about the -a suffix, so we end up
+      # targeting armv7 in both cases.
+      #
+      # We also try to propagate the availability of NEON without feature
+      # detection; in C++ this is done by -mfpu=neon, but in Rust we need to
+      # use a different ABI target.
+      #
+      # The thumbv7 vs. armv7 distinction is for legacy reasons and both
+      # targets in fact target Thumb, see:
+      # https://github.com/rust-lang/rust/issues/44722
+      if (arm_use_neon) {
+        rust_abi_target = "thumbv7neon-unknown-linux-gnueabi" + float_suffix
+      } else {
+        rust_abi_target = "armv7-unknown-linux-gnueabi" + float_suffix
+      }
       cargo_target_abi = "eabi" + float_suffix
     } else {
       rust_abi_target = "arm-unknown-linux-gnueabi" + float_suffix
@@ -198,6 +229,15 @@ if (is_linux || is_chromeos) {
     }
   } else if (current_cpu == "riscv64") {
     rust_abi_target = "riscv64gc-unknown-linux-gnu"
+    cargo_target_abi = ""
+  } else if (current_cpu == "ppc64") {
+    rust_abi_target = "powerpc64le-unknown-linux-gnu"
+    cargo_target_abi = ""
+  } else if (current_cpu == "s390x") {
+    rust_abi_target = "s390x-unknown-linux-gnu"
+    cargo_target_abi = ""
+  } else if (current_cpu == "loong64") {
+    rust_abi_target = "loongarch64-unknown-linux-gnu"
     cargo_target_abi = ""
   } else {
     # Best guess for other future platforms.
@@ -211,8 +251,14 @@ if (is_linux || is_chromeos) {
     cargo_target_abi = ""
   } else if (android_abi_target == "arm-linux-androideabi") {
     # Android clang target specifications mostly match Rust, but this
-    # is an exception
-    rust_abi_target = "armv7-linux-androideabi"
+    # is an exception.
+    # See section above for Linux for thumbv7neon vs. armv7.
+    # Note that on Android, NEON is enabled for all builds except Cronet.
+    if (arm_use_neon) {
+      rust_abi_target = "thumbv7neon-linux-androideabi"
+    } else {
+      rust_abi_target = "armv7-linux-androideabi"
+    }
     cargo_target_abi = "eabi"
   } else if (android_abi_target == "mipsel-linux-android") {
     # There is no MIPS android target.
@@ -245,27 +291,61 @@ if (is_linux || is_chromeos) {
     assert(!enable_rust, "Architecture not supported")
   }
 } else if (is_ios) {
-  if (current_cpu == "arm64") {
-    if (target_environment == "simulator") {
-      rust_abi_target = "aarch64-apple-ios-sim"
-      cargo_target_abi = "sim"
-    } else if (target_environment == "catalyst") {
-      rust_abi_target = "aarch64-apple-ios-macabi"
-      cargo_target_abi = "macabi"
+  if (current_cpu == "arm64e") {
+    assert(target_platform == "iphoneos",
+           "unsupported target_platform=$target_platform")
+    rust_abi_target = "arm64e-apple-ios"
+    cargo_target_abi = ""
+  } else if (current_cpu == "arm64") {
+    if (target_platform == "iphoneos") {
+      if (target_environment == "simulator") {
+        rust_abi_target = "aarch64-apple-ios-sim"
+        cargo_target_abi = "sim"
+      } else if (target_environment == "device") {
+        rust_abi_target = "aarch64-apple-ios"
+        cargo_target_abi = ""
+      } else if (target_environment == "catalyst") {
+        rust_abi_target = "aarch64-apple-ios-macabi"
+        cargo_target_abi = "macabi"
+      } else {
+        assert(false, "unsupported target_environment=$target_environment")
+      }
+    } else if (target_platform == "tvos") {
+      if (target_environment == "simulator") {
+        rust_abi_target = "aarch64-apple-tvos-sim"
+        cargo_target_abi = "sim"
+      } else if (target_environment == "device") {
+        rust_abi_target = "aarch64-apple-tvos"
+        cargo_target_abi = ""
+      } else {
+        assert(false, "unsupported target_environment=$target_environment")
+      }
     } else {
-      rust_abi_target = "aarch64-apple-ios"
-      cargo_target_abi = ""
+      assert(false, "unsupported target_platform=$target_platform")
     }
   } else if (current_cpu == "arm") {
     rust_abi_target = "armv7s-apple-ios"
     cargo_target_abi = ""
   } else if (current_cpu == "x64") {
-    if (target_environment == "catalyst") {
-      rust_abi_target = "x86_64-apple-ios-macabi"
-      cargo_target_abi = "macabi"
+    if (target_platform == "iphoneos") {
+      if (target_environment == "simulator") {
+        rust_abi_target = "x86_64-apple-ios"
+        cargo_target_abi = "sim"
+      } else if (target_environment == "catalyst") {
+        rust_abi_target = "x86_64-apple-ios-macabi"
+        cargo_target_abi = "macabi"
+      } else {
+        assert(false, "unsupported target_environment=$target_environment")
+      }
+    } else if (target_platform == "tvos") {
+      if (target_environment == "simulator") {
+        rust_abi_target = "x86_64-apple-tvos"
+        cargo_target_abi = "sim"
+      } else {
+        assert(false, "unsupported target_environment=$target_environment")
+      }
     } else {
-      rust_abi_target = "x86_64-apple-ios"
-      cargo_target_abi = "sim"
+      assert(false, "unsupported target_platform=$target_platform")
     }
   } else if (current_cpu == "x86") {
     rust_abi_target = "i386-apple-ios"
@@ -297,7 +377,22 @@ if (is_linux || is_chromeos) {
   }
 }
 
-assert(!toolchain_has_rust || rust_abi_target != "")
+if (toolchain_has_rust) {
+  assert(rust_abi_target != "")
+
+  _known_rust_target_triples_filepath = "//build/rust/known-target-triples.txt"
+  _is_rust_abi_target_a_known_triple = false
+  _known_rust_target_triples_ =
+      read_file(_known_rust_target_triples_filepath, "list lines")
+  foreach(_known_triple, _known_rust_target_triples_) {
+    if (_known_triple == rust_abi_target) {
+      _is_rust_abi_target_a_known_triple = true
+    }
+  }
+  assert(_is_rust_abi_target_a_known_triple,
+         "`${rust_abi_target}` needs to be added to " +
+             "`//${_known_rust_target_triples_filepath}`")
+}
 
 # This variable is passed to the Rust libstd build.
 rust_target_arch = ""
@@ -309,6 +404,8 @@ if (current_cpu == "x86") {
   rust_target_arch = "arm"
 } else if (current_cpu == "arm64") {
   rust_target_arch = "aarch64"
+} else if (current_cpu == "arm64e") {
+  rust_target_arch = "arm64e"
 } else if (current_cpu == "mipsel") {
   rust_target_arch = "mips"
 } else if (current_cpu == "mips64el") {
@@ -319,6 +416,8 @@ if (current_cpu == "x86") {
   rust_target_arch = "powerpc64"
 } else if (current_cpu == "riscv64") {
   rust_target_arch = "riscv64"
+} else if (current_cpu == "loong64") {
+  rust_target_arch = "loongarch64"
 }
 
 assert(!toolchain_has_rust || rust_target_arch != "")

@@ -205,8 +205,6 @@ class V8_EXPORT_PRIVATE ScriptSource {
  */
 class V8_EXPORT_PRIVATE Script {
  public:
-  v8::Isolate* GetIsolate() const;
-
   ScriptOriginOptions OriginOptions() const;
   bool WasCompiled() const;
   bool IsEmbedded() const;
@@ -218,6 +216,7 @@ class V8_EXPORT_PRIVATE Script {
   MaybeLocal<String> Name() const;
   MaybeLocal<String> SourceURL() const;
   MaybeLocal<String> SourceMappingURL() const;
+  MaybeLocal<String> DebugId() const;
   MaybeLocal<String> GetSha256Hash() const;
   Maybe<int> ContextId() const;
   Local<ScriptSource> Source() const;
@@ -461,6 +460,10 @@ class V8_EXPORT_PRIVATE Coverage {
   static Coverage CollectPrecise(Isolate* isolate);
   static Coverage CollectBestEffort(Isolate* isolate);
 
+#if V8_ENABLE_WEBASSEMBLY
+  static Coverage CollectWasmData(Isolate* isolate);
+#endif  // V8_ENABLE_WEBASSEMBLY
+
   static void SelectMode(Isolate* isolate, CoverageMode mode);
 
   size_t ScriptCount() const;
@@ -607,7 +610,9 @@ class EphemeronTable : public v8::Object {
       v8::Local<v8::Value> value);
 
   V8_EXPORT_PRIVATE static Local<EphemeronTable> New(v8::Isolate* isolate);
-  V8_INLINE static EphemeronTable* Cast(Value* obj);
+  V8_INLINE static EphemeronTable* Cast(Value* obj) {
+    return static_cast<EphemeronTable*>(obj);
+  }
 };
 
 /**
@@ -699,6 +704,9 @@ MaybeLocal<Message> GetMessageFromPromise(Local<Promise> promise);
 void RecordAsyncStackTaggingCreateTaskCall(v8::Isolate* isolate);
 
 void NotifyDebuggerPausedEventSent(v8::Isolate* isolate);
+
+uint64_t GetIsolateId(v8::Isolate* isolate);
+void SetIsolateId(v8::Isolate* isolate, uint64_t id);
 
 }  // namespace debug
 }  // namespace v8

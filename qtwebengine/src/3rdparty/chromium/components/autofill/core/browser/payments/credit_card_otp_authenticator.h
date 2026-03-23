@@ -11,7 +11,7 @@
 #include "base/memory/raw_ref.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/payments/otp_unmask_delegate.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/payments/payments_request_details.h"
@@ -91,7 +91,7 @@ class CreditCardOtpAuthenticator : public OtpUnmaskDelegate {
   // |SendSelectChallengeOptionRequest()| to send the selected challenge option
   // to server.
   virtual void OnChallengeOptionSelected(
-      const CreditCard* card,
+      const CreditCard& card,
       const CardUnmaskChallengeOption& selected_challenge_option,
       base::WeakPtr<Requester> requester,
       const std::string& context_token,
@@ -141,7 +141,7 @@ class CreditCardOtpAuthenticator : public OtpUnmaskDelegate {
   void SendUnmaskCardRequest();
 
   // Card being unmasked.
-  raw_ptr<const CreditCard> card_;
+  CreditCard card_;
 
   // User-entered OTP value.
   std::u16string otp_;

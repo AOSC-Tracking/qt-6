@@ -23,7 +23,6 @@
 #include <openssl/err.h>
 #include <openssl/ex_data.h>
 #include <openssl/mem.h>
-#include <openssl/thread.h>
 
 #include "../../internal.h"
 #include "../bcm_interface.h"
@@ -74,7 +73,7 @@ EC_KEY *EC_KEY_new_method(const ENGINE *engine) {
   CRYPTO_new_ex_data(&ret->ex_data);
 
   if (ret->ecdsa_meth && ret->ecdsa_meth->init && !ret->ecdsa_meth->init(ret)) {
-    CRYPTO_free_ex_data(g_ec_ex_data_class_bss_get(), ret, &ret->ex_data);
+    CRYPTO_free_ex_data(g_ec_ex_data_class_bss_get(), &ret->ex_data);
     if (ret->ecdsa_meth) {
       METHOD_unref(ret->ecdsa_meth);
     }
@@ -114,7 +113,7 @@ void EC_KEY_free(EC_KEY *r) {
     METHOD_unref(r->ecdsa_meth);
   }
 
-  CRYPTO_free_ex_data(g_ec_ex_data_class_bss_get(), r, &r->ex_data);
+  CRYPTO_free_ex_data(g_ec_ex_data_class_bss_get(), &r->ex_data);
 
   EC_GROUP_free(r->group);
   EC_POINT_free(r->pub_key);
@@ -316,40 +315,33 @@ end:
 
 int EC_KEY_set_public_key_affine_coordinates(EC_KEY *key, const BIGNUM *x,
                                              const BIGNUM *y) {
-  EC_POINT *point = NULL;
-  int ok = 0;
-
   if (!key || !key->group || !x || !y) {
     OPENSSL_PUT_ERROR(EC, ERR_R_PASSED_NULL_PARAMETER);
     return 0;
   }
 
-  point = EC_POINT_new(key->group);
-  if (point == NULL ||
-      !EC_POINT_set_affine_coordinates_GFp(key->group, point, x, y, NULL) ||
-      !EC_KEY_set_public_key(key, point) || !EC_KEY_check_key(key)) {
-    goto err;
+  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(key->group));
+  if (point == nullptr ||
+      !EC_POINT_set_affine_coordinates_GFp(key->group, point.get(), x, y,
+                                           nullptr) ||
+      !EC_KEY_set_public_key(key, point.get()) ||  //
+      !EC_KEY_check_key(key)) {
+    return 0;
   }
 
-  ok = 1;
-
-err:
-  EC_POINT_free(point);
-  return ok;
+  return 1;
 }
 
 int EC_KEY_oct2key(EC_KEY *key, const uint8_t *in, size_t len, BN_CTX *ctx) {
-  if (key->group == NULL) {
+  if (key->group == nullptr) {
     OPENSSL_PUT_ERROR(EC, EC_R_MISSING_PARAMETERS);
     return 0;
   }
 
-  EC_POINT *point = EC_POINT_new(key->group);
-  int ok = point != NULL &&
-           EC_POINT_oct2point(key->group, point, in, len, ctx) &&
-           EC_KEY_set_public_key(key, point);
-  EC_POINT_free(point);
-  return ok;
+  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(key->group));
+  return point != nullptr &&
+         EC_POINT_oct2point(key->group, point.get(), in, len, ctx) &&
+         EC_KEY_set_public_key(key, point.get());
 }
 
 size_t EC_KEY_key2buf(const EC_KEY *key, point_conversion_form_t form,

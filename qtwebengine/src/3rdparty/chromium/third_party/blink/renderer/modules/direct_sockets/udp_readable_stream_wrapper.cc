@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_underlying_source.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_arraybuffer_arraybufferview.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_udp_message.h"
+#include "third_party/blink/renderer/core/core_probes_inl.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event_target_impl.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
@@ -43,11 +44,13 @@ UDPReadableStreamWrapper::UDPReadableStreamWrapper(
     CloseOnceCallback on_close,
     const Member<UDPSocketMojoRemote> udp_socket,
     mojo::PendingReceiver<network::mojom::blink::UDPSocketListener>
-        socket_listener)
+        socket_listener,
+    uint64_t inspector_id)
     : ReadableStreamDefaultWrapper(script_state),
       on_close_(std::move(on_close)),
       udp_socket_(udp_socket),
-      socket_listener_(this, ExecutionContext::From(script_state)) {
+      socket_listener_(this, ExecutionContext::From(script_state)),
+      inspector_id_(inspector_id) {
   socket_listener_.Bind(std::move(socket_listener),
                         ExecutionContext::From(script_state)
                             ->GetTaskRunner(TaskType::kNetworking));
@@ -91,7 +94,8 @@ void UDPReadableStreamWrapper::CloseStream() {
 
   socket_listener_.reset();
 
-  std::move(on_close_).Run(/*exception=*/v8::Local<v8::Value>());
+  std::move(on_close_).Run(/*exception=*/v8::Local<v8::Value>(),
+                           /*net_error=*/net::OK);
 }
 
 void UDPReadableStreamWrapper::ErrorStream(int32_t error_code) {
@@ -118,7 +122,7 @@ void UDPReadableStreamWrapper::ErrorStream(int32_t error_code) {
 
   Controller()->Error(exception);
 
-  std::move(on_close_).Run(exception);
+  std::move(on_close_).Run(exception, error_code);
 }
 
 // Invoked when data is received.
@@ -169,10 +173,22 @@ void UDPReadableStreamWrapper::OnReceived(
   auto* message = UDPMessage::Create();
   message->setData(MakeGarbageCollected<V8UnionArrayBufferOrArrayBufferView>(
       NotShared<DOMUint8Array>(buffer)));
+
+  std::optional<String> probe_remote_addr;
+  std::optional<uint16_t> probe_remote_port;
+
   if (src_addr) {
-    message->setRemoteAddress(String{src_addr->ToStringWithoutPort()});
+    auto remote_address = String{src_addr->ToStringWithoutPort()};
+    message->setRemoteAddress(remote_address);
     message->setRemotePort(src_addr->port());
+
+    probe_remote_addr = remote_address;
+    probe_remote_port = src_addr->port();
   }
+
+  probe::DirectUDPSocketChunkReceived(
+      *GetScriptState(), inspector_id_, data.value(),
+      std::move(probe_remote_addr), std::move(probe_remote_port));
 
   Controller()->Enqueue(message);
 }

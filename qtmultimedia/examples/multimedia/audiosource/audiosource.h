@@ -7,6 +7,8 @@
 #include <QAudioSource>
 #include <QMediaDevices>
 
+#include <QBasicTimer>
+
 #include <QComboBox>
 #include <QPushButton>
 #include <QSlider>
@@ -15,6 +17,7 @@
 #include <QPixmap>
 #include <QByteArray>
 
+#include <atomic>
 #include <memory>
 
 class AudioInfo : public QIODevice
@@ -27,19 +30,23 @@ public:
     void start();
     void stop();
 
-    qreal level() const { return m_level; }
+    [[nodiscard]] float level() const { return m_level; }
 
     qint64 readData(char *data, qint64 maxlen) override;
     qint64 writeData(const char *data, qint64 len) override;
 
-    qreal calculateLevel(const char *data, qint64 len) const;
-
 signals:
-    void levelChanged(qreal level);
+    void levelChanged(float level);
 
 private:
     const QAudioFormat m_format;
-    qreal m_level = 0.0; // 0.0 <= m_level <= 1.0
+    float m_level = 0.f; // 0.0 <= m_level <= 1.0
+};
+
+enum class AudioTestMode : uint8_t {
+    Pull,
+    Push,
+    Callback,
 };
 
 class RenderArea : public QWidget
@@ -49,13 +56,13 @@ class RenderArea : public QWidget
 public:
     explicit RenderArea(QWidget *parent = nullptr);
 
-    void setLevel(qreal value);
+    void setLevel(float value);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
-    qreal m_level = 0;
+    float m_level = 0.f;
 };
 
 class InputTest : public QWidget
@@ -65,35 +72,44 @@ class InputTest : public QWidget
 public:
     InputTest();
 
-signals:
-    void pullModeChanged();
-
 private:
     void initializeWindow();
-    void initializeAudio(const QAudioDevice &deviceInfo);
+    void startAudioSource(const QAudioDevice &, const QAudioFormat &);
+    void cleanupAudioSource();
     void initializeErrorWindow();
     void restartAudioStream();
+    void timerEvent(QTimerEvent *) override;
+
+    template <typename T>
+    void processCallback(QSpan<const T> buffer, const QAudioFormat &format);
 
 private slots:
     void init();
-    void toggleMode();
     void toggleSuspend();
     void deviceChanged(int index);
     void sliderChanged(int value);
     void updateAudioDevices();
+    void formatChanged(QComboBox *box);
 
 private:
     // Owned by layout
     RenderArea *m_canvas = nullptr;
-    QPushButton *m_modeButton = nullptr;
+    QComboBox *m_modeBox = nullptr;
     QPushButton *m_suspendResumeButton = nullptr;
     QComboBox *m_deviceBox = nullptr;
     QSlider *m_volumeSlider = nullptr;
+    QComboBox *m_formatBox = nullptr;
+    QComboBox *m_rateBox = nullptr;
+    QComboBox *m_channelsBox = nullptr;
 
     QMediaDevices *m_devices = nullptr;
+    QAudioDevice m_currentDevice;
     std::unique_ptr<AudioInfo> m_audioInfo;
     std::unique_ptr<QAudioSource> m_audioSource;
-    bool m_pullMode = true;
+    AudioTestMode m_mode = AudioTestMode::Pull;
+
+    QBasicTimer m_callbackVisualizerTimer;
+    std::atomic<float> m_level = 0.f;
 };
 
 #endif // AUDIOINPUT_H

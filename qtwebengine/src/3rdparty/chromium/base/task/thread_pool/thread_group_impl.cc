@@ -17,7 +17,7 @@
 #include "base/threading/scoped_blocking_call_internal.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time_override.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "third_party/abseil-cpp/absl/container/inlined_vector.h"
 
 namespace base::internal {
@@ -36,7 +36,7 @@ class ThreadGroupImpl::ScopedCommandsExecutor
     CheckedLock::AssertNoLockHeldOnCurrentThread();
 
     // Wake up workers.
-    for (auto worker : workers_to_wake_up_) {
+    for (auto& worker : workers_to_wake_up_) {
       worker->WakeUp();
     }
   }
@@ -231,22 +231,28 @@ void ThreadGroupImpl::Start(
     WorkerEnvironment worker_environment,
     bool synchronous_thread_start_for_testing,
     std::optional<TimeDelta> may_block_threshold) {
-  ThreadGroup::StartImpl(
-      max_tasks, max_best_effort_tasks, suggested_reclaim_time,
-      service_thread_task_runner, worker_thread_observer, worker_environment,
-      synchronous_thread_start_for_testing, may_block_threshold);
+#if DCHECK_IS_ON()
+  DCHECK(!in_start().start_called);
+  in_start().start_called = true;
+#endif
+  {
+    ScopedCommandsExecutor executor(this);
+    CheckedAutoLock auto_lock(lock_);
 
-  // Create thread group profiler if profiling is enabled after the thread group
-  // start but before worker threads are created.
+    ThreadGroup::StartImplLockRequired(
+        max_tasks, max_best_effort_tasks, suggested_reclaim_time,
+        service_thread_task_runner, worker_thread_observer, worker_environment,
+        synchronous_thread_start_for_testing, may_block_threshold);
+
+    DCHECK(workers_.empty());
+    EnsureEnoughWorkersLockRequired(&executor);
+  }
+
   if (ThreadGroupProfiler::IsProfilingEnabled()) {
+    // This call posts a task, so do it outside of the lock.
     thread_group_profiler_.emplace(service_thread_task_runner,
                                    thread_group_type_);
   }
-
-  ScopedCommandsExecutor executor(this);
-  CheckedAutoLock auto_lock(lock_);
-  DCHECK(workers_.empty());
-  EnsureEnoughWorkersLockRequired(&executor);
 }
 
 ThreadGroupImpl::~ThreadGroupImpl() {
@@ -609,7 +615,7 @@ void ThreadGroupImpl::WorkerDelegate::CleanupLockRequired(
 
   // Remove the worker from |workers_|.
   auto worker_iter = std::ranges::find(outer_->workers_, worker);
-  CHECK(worker_iter != outer_->workers_.end(), base::NotFatalUntil::M125);
+  CHECK(worker_iter != outer_->workers_.end());
   outer_->workers_.erase(worker_iter);
 }
 
@@ -926,6 +932,10 @@ void ThreadGroupImpl::EnsureEnoughWorkersLockRequired(
   if (max_tasks_ == 0) {
     return;
   }
+#if DCHECK_IS_ON()
+  // CHECK() that Start() is complete, if workers are to be created.
+  after_start();
+#endif
   if (join_for_testing_started_) [[unlikely]] {
     return;
   }
@@ -975,10 +985,7 @@ bool ThreadGroupImpl::IsOnIdleSetLockRequired(WorkerThread* worker) const {
 
 void ThreadGroupImpl::ScheduleAdjustMaxTasks() {
   // |adjust_max_tasks_posted_| can't change before the task posted below runs.
-  // Skip check on NaCl to avoid unsafe reference acquisition warning.
-#if !BUILDFLAG(IS_NACL)
   DCHECK(TS_UNCHECKED_READ(adjust_max_tasks_posted_));
-#endif
 
   after_start().service_thread_task_runner->PostDelayedTask(
       FROM_HERE, BindOnce(&ThreadGroupImpl::AdjustMaxTasks, Unretained(this)),

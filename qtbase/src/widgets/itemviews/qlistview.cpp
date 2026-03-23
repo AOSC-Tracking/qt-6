@@ -1,6 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // Copyright (C) 2013 Samuel Gaist <samuel.gaist@deltech.ch>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qlistview.h"
 
@@ -41,7 +42,7 @@ extern bool qt_sendSpontaneousEvent(QObject *receiver, QEvent *event);
     \ingroup advanced
     \inmodule QtWidgets
 
-    \image fusion-listview.png
+    \image fusion-listview.png {List of weather icons}
 
     A QListView presents items stored in a model, either as a simple
     non-hierarchical list, or as a collection of icons. This class is used
@@ -607,6 +608,12 @@ void QListViewPrivate::selectAll(QItemSelectionModel::SelectionFlags command)
 }
 
 /*!
+    \class QListViewPrivate
+    \inmodule QtWidgets
+    \internal
+*/
+
+/*!
   \reimp
 
   We have a QListView way of knowing what elements are on the viewport
@@ -1001,12 +1008,10 @@ void QListView::paintEvent(QPaintEvent *e)
 
     const QModelIndex current = currentIndex();
     const QModelIndex hover = d->hover;
-    const QAbstractItemModel *itemModel = d->model;
     const QItemSelectionModel *selections = d->selectionModel;
     const bool focus = (hasFocus() || d->viewport->hasFocus()) && current.isValid();
     const bool alternate = d->alternatingColors;
     const QStyle::State state = option.state;
-    const QAbstractItemView::State viewState = this->state();
     const bool enabled = (state & QStyle::State_Enabled) != 0;
 
     bool alternateBase = false;
@@ -1016,38 +1021,25 @@ void QListView::paintEvent(QPaintEvent *e)
         ? qMax(viewport()->size().width(), d->contentsSize().width()) - 2 * d->spacing()
         : qMax(viewport()->size().height(), d->contentsSize().height()) - 2 * d->spacing();
 
-    QList<QModelIndex>::const_iterator end = toBeRendered.constEnd();
-    for (QList<QModelIndex>::const_iterator it = toBeRendered.constBegin(); it != end; ++it) {
-        Q_ASSERT((*it).isValid());
-        option.rect = visualRect(*it);
+    for (const QModelIndex &index : toBeRendered) {
+        Q_ASSERT(index.isValid());
+        option.rect = visualRect(index);
 
         if (flow() == TopToBottom)
             option.rect.setWidth(qMin(maxSize, option.rect.width()));
         else
             option.rect.setHeight(qMin(maxSize, option.rect.height()));
 
+        const bool itemIsEnabled = enabled && index.flags().testFlag(Qt::ItemIsEnabled);
         option.state = state;
-        if (selections && selections->isSelected(*it))
-            option.state |= QStyle::State_Selected;
-        if (enabled) {
-            QPalette::ColorGroup cg;
-            if ((itemModel->flags(*it) & Qt::ItemIsEnabled) == 0) {
-                option.state &= ~QStyle::State_Enabled;
-                cg = QPalette::Disabled;
-            } else {
-                cg = QPalette::Normal;
-            }
-            option.palette.setCurrentColorGroup(cg);
-        }
-        if (focus && current == *it) {
-            option.state |= QStyle::State_HasFocus;
-            if (viewState == EditingState)
-                option.state |= QStyle::State_Editing;
-        }
-        option.state.setFlag(QStyle::State_MouseOver, *it == hover);
+        option.state.setFlag(QStyle::State_Selected, selections && selections->isSelected(index));
+        option.state.setFlag(QStyle::State_Enabled, itemIsEnabled);
+        option.state.setFlag(QStyle::State_HasFocus, focus && current == index);
+        option.state.setFlag(QStyle::State_MouseOver, index == hover);
+        option.palette.setCurrentColorGroup(itemIsEnabled ? QPalette::Normal : QPalette::Disabled);
 
         if (alternate) {
-            int row = (*it).row();
+            int row = index.row();
             if (row != previousRow + 1) {
                 // adjust alternateBase according to rows in the "gap"
                 if (!d->hiddenRows.isEmpty()) {
@@ -1072,7 +1064,7 @@ void QListView::paintEvent(QPaintEvent *e)
             previousRow = row;
         }
 
-        itemDelegateForIndex(*it)->paint(&painter, option, *it);
+        itemDelegateForIndex(index)->paint(&painter, option, index);
     }
 
 #if QT_CONFIG(draganddrop)
@@ -1964,6 +1956,15 @@ bool QListViewPrivate::dropOn(QDropEvent *event, int *dropRow, int *dropCol, QMo
         return static_cast<QListModeViewBase *>(commonListView)->dropOn(event, dropRow, dropCol, dropIndex);
     else
         return QAbstractItemViewPrivate::dropOn(event, dropRow, dropCol, dropIndex);
+}
+#endif
+
+#if QT_CONFIG(accessibility)
+int QListViewPrivate::accessibleChildIndex(const QModelIndex &index) const
+{
+    Q_Q(const QListView);
+    Q_ASSERT(index.isValid());
+    return q->visualIndex(index);
 }
 #endif
 
@@ -3405,11 +3406,12 @@ void QIconModeViewBase::updateContentsSize()
 */
 void QListView::currentChanged(const QModelIndex &current, const QModelIndex &previous)
 {
+    Q_D(const QListView);
     QAbstractItemView::currentChanged(current, previous);
 #if QT_CONFIG(accessibility)
     if (QAccessible::isActive()) {
         if (current.isValid() && hasFocus()) {
-            int entry = visualIndex(current);
+            int entry = d->accessibleChildIndex(current);
             QAccessibleEvent event(this, QAccessible::Focus);
             event.setChild(entry);
             QAccessible::updateAccessibility(&event);
@@ -3425,18 +3427,19 @@ void QListView::selectionChanged(const QItemSelection &selected,
                                  const QItemSelection &deselected)
 {
 #if QT_CONFIG(accessibility)
+    Q_D(const QListView);
     if (QAccessible::isActive()) {
         // ### does not work properly for selection ranges.
         QModelIndex sel = selected.indexes().value(0);
         if (sel.isValid()) {
-            int entry = visualIndex(sel);
+            int entry = d->accessibleChildIndex(sel);
             QAccessibleEvent event(this, QAccessible::SelectionAdd);
             event.setChild(entry);
             QAccessible::updateAccessibility(&event);
         }
         QModelIndex desel = deselected.indexes().value(0);
         if (desel.isValid()) {
-            int entry = visualIndex(desel);
+            int entry = d->accessibleChildIndex(desel);
             QAccessibleEvent event(this, QAccessible::SelectionRemove);
             event.setChild(entry);
             QAccessible::updateAccessibility(&event);

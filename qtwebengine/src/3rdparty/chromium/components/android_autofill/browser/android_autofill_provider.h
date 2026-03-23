@@ -64,10 +64,6 @@ class AndroidAutofillProvider : public AutofillProvider,
 
   static constexpr char kPrefillRequestStateUma[] =
       "Autofill.WebView.PrefillRequestState";
-  // The name of the UMA that is emitted when a form similarity check between a
-  // cached form and the interacted form fails.
-  static constexpr char kPrefillRequestBottomsheetNoViewStructureDelayUma[] =
-      "Autofill.WebView.BottomsheetNoViewStructureDelay";
 
   static void CreateForWebContents(content::WebContents* web_contents);
 
@@ -131,6 +127,8 @@ class AndroidAutofillProvider : public AutofillProvider,
                          const gfx::RectF& bounds) override;
   void OnShowBottomSheetResult(bool is_shown,
                                bool provided_autofill_structure) override;
+  bool HasPasskeyRequest() override;
+  void OnTriggerPasskeyRequest() override;
 
   // content::WebContentsObserver:
   void RenderFrameDeleted(content::RenderFrameHost* render_frame_host) override;
@@ -209,9 +207,7 @@ class AndroidAutofillProvider : public AutofillProvider,
   //    `onProvideAutofillStructure` callback from the framework does not
   //     confuse information requests for caching and for the current Autofill
   //     session.
-  // 4. The form is predicted to be a login form or a (assuming that
-  //    `kAndroidAutofillPrefillRequestsForChangePassword` is enabled) a change
-  //     password form.
+  // 4. The form is predicted to be a login form.
   void MaybeSendPrefillRequest(const AndroidAutofillManager& manager,
                                FormGlobalId form_id);
 
@@ -223,10 +219,10 @@ class AndroidAutofillProvider : public AutofillProvider,
     // Returns the `PasswordParserOverrides` obtained from matching the
     // `FieldRendererId`s of username and password fields in `pw_form` to the
     // `FieldGlobalId`s in `form_structure`. Returns `std::nullopt` if no unique
-    // matching could be found or if the matching is incomplete. A unique
-    // matching may not exist if the form is spread across multiple iframes. In
-    // practice, this should be extremely rare for password forms.
-    static std::optional<PasswordParserOverrides> FromPasswordForm(
+    // matching could be found. A unique matching may not exist if the form is
+    // spread across multiple iframes. In practice, this should be extremely
+    // rare for password forms.
+    static std::optional<PasswordParserOverrides> FromLoginForm(
         const password_manager::PasswordForm& pw_form,
         const FormStructure& form_structure);
 
@@ -235,7 +231,6 @@ class AndroidAutofillProvider : public AutofillProvider,
 
     std::optional<FieldGlobalId> username_field_id;
     std::optional<FieldGlobalId> password_field_id;
-    std::optional<FieldGlobalId> new_password_field_id;
   };
 
   // Checks whether `form` is similar to the cached form. `form_structure` must

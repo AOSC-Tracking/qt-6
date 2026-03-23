@@ -24,6 +24,7 @@
   --whats-new-section-border-color: var(--google-grey-300);
   --side-bar-width: 200px;
   --tutorials-section-border-color: var(--google-red-300);
+  --ntp-promos-section-border-color: var(--google-purple-200);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -33,6 +34,7 @@
     --new-badge-section-border-color: var(--google-yellow-700);
     --whats-new-section-border-color: var(--google-grey-700);
     --tutorials-section-border-color: var(--google-red-700);
+    --ntp-promos-section-border-color: var(--google-purple-900);
   }
 }
 
@@ -53,6 +55,15 @@ user-education-whats-new-internals-card.highlighted {
 
 h2 {
   padding-inline: var(--cr-section-padding);
+}
+
+p {
+  line-height: 1.4;
+  padding-inline: var(--cr-section-padding);
+}
+
+.blurb-warning {
+  color: var(--cr-fallback-color-error);
 }
 
 .whats-new-section {
@@ -130,6 +141,12 @@ h2 {
   scroll-margin-top: 16px;
 }
 
+#ntpPromos {
+  border-inline-start: 1px solid var(--ntp-promos-section-border-color);
+  padding-inline: var(--cr-section-padding);
+  scroll-margin-top: 16px;
+}
+
 user-education-internals-card,
 user-education-whats-new-internals-card {
   padding-block: var(--cr-section-vertical-padding);
@@ -171,4 +188,3 @@ user-education-whats-new-internals-card {
     width: auto;
   }
 }
-

@@ -8,9 +8,9 @@
 #include <string>
 
 #include "base/values.h"
-#include "components/autofill/core/browser/data_model/autofill_profile.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/form_group.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/payments/client_behavior_constants.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
@@ -91,9 +91,13 @@ class PaymentsRequest {
  protected:
   // Shared helper function that builds the Chrome user context which is then
   // set in the payment requests.
+  // Note: `full_sync_enabled` is being deprecated. Don't call this in new code.
+  // Use the below function instead.
   base::Value::Dict BuildChromeUserContext(
       const std::vector<ClientBehaviorConstants>& client_behavior_signals,
       bool full_sync_enabled);
+  base::Value::Dict BuildChromeUserContext(
+      const std::vector<ClientBehaviorConstants>& client_behavior_signals);
 
   // Shared helper functoin that returns a dictionary with the structure
   // expected by Payments RPCs, containing each of the fields in |profile|,
@@ -123,6 +127,13 @@ class PaymentsRequest {
                                   const std::string& app_locale,
                                   const std::string& path,
                                   base::Value::Dict& dictionary);
+
+  // Helper for ParseResponse(). Input format should be "1234,30000-55555,765",
+  // where ranges are separated by commas and items separated with a dash means
+  // the start and ends of the range. Items without a dash have the same start
+  // and end (ex. 1234-1234).
+  std::vector<std::pair<int, int>> ParseSupportedCardBinRangesString(
+      const std::string& supported_card_bin_ranges_string);
 };
 
 }  // namespace autofill::payments

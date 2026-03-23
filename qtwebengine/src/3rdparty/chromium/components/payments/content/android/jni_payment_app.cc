@@ -47,18 +47,14 @@ ScopedJavaLocalRef<jobject> JniPaymentApp::Create(
   // JniPaymentApp::FreeNativeObject() call.
   JniPaymentApp* app = new JniPaymentApp(std::move(payment_app));
 
-  ScopedJavaLocalRef<jobject> icon;
-  if (app->payment_app_->icon_bitmap() &&
-      !app->payment_app_->icon_bitmap()->drawsNothing()) {
-    icon = gfx::ConvertToJavaBitmap(*app->payment_app_->icon_bitmap());
-  }
-
   return Java_JniPaymentApp_Constructor(
       env, ConvertUTF8ToJavaString(env, app->payment_app_->GetId()),
       ConvertUTF16ToJavaString(env, app->payment_app_->GetLabel()),
-      ConvertUTF16ToJavaString(env, app->payment_app_->GetSublabel()), icon,
+      ConvertUTF16ToJavaString(env, app->payment_app_->GetSublabel()),
+      app->payment_app_->icon_bitmap(),
       static_cast<jint>(app->payment_app_->type()),
-      reinterpret_cast<jlong>(app));
+      reinterpret_cast<jlong>(app),
+      app->payment_app_->GetPaymentEntitiesLogos());
 }
 
 ScopedJavaLocalRef<jobjectArray> JniPaymentApp::GetInstrumentMethodNames(
@@ -244,5 +240,12 @@ JniPaymentApp::JniPaymentApp(std::unique_ptr<PaymentApp> payment_app)
     : payment_app_(std::move(payment_app)) {}
 
 JniPaymentApp::~JniPaymentApp() = default;
+
+jni_zero::ScopedJavaLocalRef<jobject> ConvertPaymentEntityLogoToJavaObject(
+    JNIEnv* env,
+    const payments::PaymentApp::PaymentEntityLogo& logo) {
+  return Java_PaymentEntityLogoImpl_Constructor(env, logo.label,
+                                                logo.icon.get());
+}
 
 }  // namespace payments

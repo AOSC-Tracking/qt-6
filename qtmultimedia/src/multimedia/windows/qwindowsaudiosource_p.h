@@ -78,6 +78,7 @@ private:
     bool processRingbuffer() noexcept QT_MM_NONBLOCKING;
     bool processCallback() noexcept QT_MM_NONBLOCKING;
     void handleAudioClientError();
+    void joinWorkerThread();
 
     ComPtr<IAudioClient3> m_audioClient;
     ComPtr<IAudioCaptureClient> m_captureClient;
@@ -111,6 +112,7 @@ class QWindowsAudioSource final
 
 public:
     QWindowsAudioSource(QAudioDevice, const QAudioFormat &, QObject *parent);
+    ~QWindowsAudioSource() override;
 };
 
 } // namespace QtWASAPI

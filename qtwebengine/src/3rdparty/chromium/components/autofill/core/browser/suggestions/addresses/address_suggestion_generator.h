@@ -13,7 +13,7 @@
 #include "base/containers/flat_map.h"
 #include "base/memory/raw_ptr.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
-#include "components/autofill/core/browser/data_model/autofill_profile.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/metrics/log_event.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
@@ -25,14 +25,6 @@ namespace autofill {
 class AddressDataManager;
 class AutofillClient;
 class FormFieldData;
-
-struct ProfilesToSuggestOptions {
-  const bool exclude_disused_addresses = true;
-  const bool require_non_empty_value_on_trigger_field = true;
-  const bool prefix_match_suggestions = true;
-  const bool remove_profiles_with_equal_value_on_trigger_field = false;
-  const bool deduplicate_suggestions = true;
-};
 
 // Generates `SuggestionType::kAddressEntryOnTyping` suggestions based on prefix
 // matching on unclassified fields. The suggestions returned will contain
@@ -62,11 +54,9 @@ Suggestion CreateManageAddressesSuggestion();
 // Exposes `GetProfilesToSuggest` in tests.
 std::vector<AutofillProfile> GetProfilesToSuggestForTest(
     const AddressDataManager& address_data,
+    const FormFieldData& trigger_field,
     FieldType trigger_field_type,
-    const std::u16string& field_contents,
-    bool field_is_autofilled,
-    const FieldTypeSet& field_types,
-    SuggestionType suggestion_type = SuggestionType::kAddressEntry);
+    const FieldTypeSet& field_types);
 
 // Exposes `CreateSuggestionsFromProfiles` in tests.
 std::vector<Suggestion> CreateSuggestionsFromProfilesForTest(
@@ -74,8 +64,7 @@ std::vector<Suggestion> CreateSuggestionsFromProfilesForTest(
     const FieldTypeSet& field_types,
     SuggestionType suggestion_type,
     FieldType trigger_field_type,
-    uint64_t trigger_field_max_length,
-    bool is_off_the_record = false,
+    const FormFieldData& trigger_field,
     const std::string& app_locale = "en-US",
     std::optional<std::string> plus_address_email_override = std::nullopt,
     const std::string& gaia_email = "");

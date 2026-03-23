@@ -43,9 +43,11 @@ tint_add_target(tint_lang_wgsl_intrinsic lib
   lang/wgsl/intrinsic/ctor_conv.h
   lang/wgsl/intrinsic/data.cc
   lang/wgsl/intrinsic/dialect.h
+  lang/wgsl/intrinsic/type_matchers.h
 )
 
 tint_target_add_dependencies(tint_lang_wgsl_intrinsic lib
+  tint_api_common
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_intrinsic
@@ -58,7 +60,6 @@ tint_target_add_dependencies(tint_lang_wgsl_intrinsic lib
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text
@@ -85,8 +86,6 @@ tint_target_add_dependencies(tint_lang_wgsl_intrinsic_test test
   tint_lang_core_type_test
   tint_lang_wgsl
   tint_lang_wgsl_ast
-  tint_lang_wgsl_common
-  tint_lang_wgsl_features
   tint_lang_wgsl_intrinsic
   tint_lang_wgsl_program
   tint_lang_wgsl_resolver
@@ -99,7 +98,6 @@ tint_target_add_dependencies(tint_lang_wgsl_intrinsic_test test
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text

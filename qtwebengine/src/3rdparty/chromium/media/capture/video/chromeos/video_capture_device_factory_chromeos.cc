@@ -22,28 +22,9 @@ namespace {
 // This class is designed as a singleton because it holds resources that needs
 // to be accessed globally. This ensures consistent state and minimizes memory
 // usage by sharing resources across components.
-class GpuResources : public gpu::GpuMemoryBufferManagerObserver {
+class GpuResources {
  public:
   GpuResources() = default;
-
-  void OnGpuMemoryBufferManagerDestroyed() override {
-    base::AutoLock lock(lock_);
-    // Invalidate the pointer to avoid dangling reference.
-    gpu_buffer_manager_ = nullptr;
-  }
-
-  gpu::GpuMemoryBufferManager* GetBufferManager() const {
-    base::AutoLock lock(lock_);
-    return gpu_buffer_manager_;
-  }
-
-  void SetBufferManager(gpu::GpuMemoryBufferManager* buffer_manager) {
-    base::AutoLock lock(lock_);
-    gpu_buffer_manager_ = buffer_manager;
-    if (buffer_manager) {
-      buffer_manager->AddObserver(this);
-    }
-  }
 
   scoped_refptr<gpu::SharedImageInterface> GetSharedImageInterface() const {
     base::AutoLock lock(lock_);
@@ -73,8 +54,6 @@ class GpuResources : public gpu::GpuMemoryBufferManagerObserver {
 
  private:
   mutable base::Lock lock_;
-  raw_ptr<gpu::GpuMemoryBufferManager> gpu_buffer_manager_ GUARDED_BY(lock_) =
-      nullptr;
   scoped_refptr<gpu::SharedImageInterface> shared_image_interface_
       GUARDED_BY(lock_);
   scoped_refptr<gpu::GpuChannelHost> gpu_channel_host_ GUARDED_BY(lock_);
@@ -136,18 +115,6 @@ void VideoCaptureDeviceFactoryChromeOS::GetDevicesInfo(
   }
 
   camera_hal_delegate_->GetDevicesInfo(std::move(callback));
-}
-
-// static
-gpu::GpuMemoryBufferManager*
-VideoCaptureDeviceFactoryChromeOS::GetBufferManager() {
-  return GetGpuResources().GetBufferManager();
-}
-
-// static
-void VideoCaptureDeviceFactoryChromeOS::SetGpuBufferManager(
-    gpu::GpuMemoryBufferManager* buffer_manager) {
-  GetGpuResources().SetBufferManager(buffer_manager);
 }
 
 // static

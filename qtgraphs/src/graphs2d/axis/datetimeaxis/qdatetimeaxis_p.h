@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //  W A R N I N G
 //  -------------
@@ -27,9 +29,14 @@ public:
 protected:
     qreal m_min = QDateTime::fromMSecsSinceEpoch(0, QTimeZone::UTC).toMSecsSinceEpoch();
     qreal m_max = QDateTime::fromMSecsSinceEpoch(0, QTimeZone::UTC).addYears(10).toMSecsSinceEpoch();
+    QTimeZone m_timeZone = QTimeZone::UTC;
     qreal m_tickInterval = 0.0;
     qsizetype m_subTickCount = 0;
     QString m_format = QStringLiteral("dd-MMMM-yy");
+    qreal m_zoom = 1.0;
+    qreal m_pan = 0.0;
+    qreal m_visualMin;
+    qreal m_visualMax;
 
 public:
     void setMin(const QVariant &min) override;
@@ -38,6 +45,7 @@ public:
     void setRange(qreal min, qreal max) override;
     qreal min() override { return m_min; }
     qreal max() override { return m_max; }
+    void calculateVisualRange();
 
 private:
     Q_DECLARE_PUBLIC(QDateTimeAxis)

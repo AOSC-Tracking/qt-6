@@ -191,7 +191,7 @@ def ensure_directory(path):
   """Creates directory at `path` if it does not exists."""
   if not os.path.isdir(path):
     os.makedirs(path)
-  return path
+  return os.path.abspath(path)
 
 
 def build_signature(env, args):
@@ -436,8 +436,8 @@ def invoke_swift_compiler(args, extras_args, build_cache_dir, output_file_map):
         f'-j{num_threads}',
     ])
 
-  # Handle -file-prefix-map flag.
-  if args.file_prefix_map:
+  # Handle -file-prefix-map flag unless --swift-keep-intermediate-files is set.
+  if args.file_prefix_map and not args.swift_keep_intermediate_files:
     swiftc_args.extend([
         '-file-prefix-map',
         args.file_prefix_map,
@@ -590,6 +590,11 @@ def main(args):
                       action='store_true',
                       help='enable whole module optimisation')
 
+  parser.add_argument('--swift-keep-intermediate-files',
+                      default=False,
+                      action='store_true',
+                      help='keep intermediate files')
+
   # Required arguments (forwarded to the Swift compiler).
   parser.add_argument('-target',
                       required=True,
@@ -628,7 +633,7 @@ def main(args):
                       help='add preprocessor define')
 
   parser.add_argument('-swift-version',
-                      default='5',
+                      default='6',
                       help='version of the Swift language')
 
   parser.add_argument(

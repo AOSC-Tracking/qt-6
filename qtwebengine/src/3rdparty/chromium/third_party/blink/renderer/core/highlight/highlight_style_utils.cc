@@ -13,8 +13,11 @@
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
+#include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/layout/layout_object.h"
+#include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -104,7 +107,7 @@ Color ForcedBackgroundColor(PseudoId pseudo,
 
 // Returns the forced background color if |property| is ‘background-color’,
 // or the forced foreground color for all other properties (e.g. ‘color’,
-// ‘text-decoration-color’, ‘-webkit-text-fill-color’).
+// ‘text-decoration-color’).
 Color ForcedColor(const ComputedStyle& originating_style,
                   const ComputedStyle* pseudo_style,
                   PseudoId pseudo,
@@ -191,7 +194,7 @@ Color DefaultBackgroundColor(
 
 // Returns the UA default highlight color for a paired cascade |property|,
 // that is, ‘color’ or ‘background-color’. Paired cascade only applies to those
-// properties, not ‘-webkit-text-fill-color’ or ‘-webkit-text-stroke-color’.
+// properties.
 std::optional<Color> DefaultHighlightColor(
     const Document& document,
     const ComputedStyle& originating_style,
@@ -210,67 +213,11 @@ std::optional<Color> DefaultHighlightColor(
                                 search_text_is_active_match);
 }
 
-// Returns highlight styles for the given node, inheriting from the originating
-// element only, like most impls did before highlights were added to css-pseudo.
-const ComputedStyle* HighlightPseudoStyleWithOriginatingInheritance(
-    Node* node,
-    PseudoId pseudo,
-    const AtomicString& pseudo_argument = g_null_atom) {
-  if (!node) {
-    return nullptr;
-  }
-
-  Element* element = nullptr;
-
-  // In Blink, highlight pseudo style only applies to direct children of the
-  // element on which the highlight pseudo is matched. In order to be able to
-  // style highlight inside elements implemented with a UA shadow tree, like
-  // input::selection, we calculate highlight style on the shadow host for
-  // elements inside the UA shadow.
-  ShadowRoot* root = node->ContainingShadowRoot();
-  if (root && root->IsUserAgent()) {
-    element = node->OwnerShadowHost();
-  }
-
-  // If we request highlight style for LayoutText, query highlight style on the
-  // parent element instead, as that is the node for which the highligh pseudo
-  // matches. This should most likely have used FlatTreeTraversal, but since we
-  // don't implement inheritance of highlight styles, it would probably break
-  // cases where you style a shadow host with a highlight pseudo and expect
-  // light tree text children to be affected by that style.
-  if (!element) {
-    element = Traversal<Element>::FirstAncestorOrSelf(*node);
-  }
-
-  if (!element || element->IsPseudoElement()) {
-    return nullptr;
-  }
-
-  if (pseudo == kPseudoIdSelection &&
-      element->GetDocument().GetStyleEngine().UsesWindowInactiveSelector() &&
-      !element->GetDocument().GetPage()->GetFocusController().IsActive()) {
-    // ::selection and ::selection:window-inactive styles may be different. Only
-    // cache the styles for ::selection if there are no :window-inactive
-    // selector, or if the page is active.
-    // With Originating Inheritance the originating element is also the parent
-    // element.
-    return element->UncachedStyleForPseudoElement(
-        StyleRequest(pseudo, element->GetComputedStyle(),
-                     element->GetComputedStyle(), pseudo_argument));
-  }
-
-  return element->CachedStyleForPseudoElement(pseudo, pseudo_argument);
-}
-
 bool UseForcedColors(const Document& document,
                      const ComputedStyle& originating_style,
                      const ComputedStyle* pseudo_style) {
   if (!document.InForcedColorsMode()) {
     return false;
-  }
-  // TODO(crbug.com/1309835) simplify when valid_for_highlight_legacy is removed
-  if (pseudo_style) {
-    return pseudo_style->ForcedColorAdjust() == EForcedColorAdjust::kAuto;
   }
   return originating_style.ForcedColorAdjust() == EForcedColorAdjust::kAuto;
 }
@@ -284,8 +231,7 @@ bool UseDefaultHighlightColors(const ComputedStyle* pseudo_style,
   switch (property.PropertyID()) {
     case CSSPropertyID::kColor:
     case CSSPropertyID::kBackgroundColor:
-      return !pseudo_style || (UsesHighlightPseudoInheritance(pseudo) &&
-                               !pseudo_style->HasAuthorHighlightColors());
+      return !(pseudo_style && pseudo_style->HasAuthorHighlightColors());
     default:
       return false;
   }
@@ -351,18 +297,12 @@ std::optional<Color> HighlightStyleUtils::MaybeResolveColor(
 }
 
 // Returns highlight styles for the given node, inheriting through the “tree” of
-// highlight pseudo styles mirroring the originating element tree. None of the
-// returned styles are influenced by originating elements or pseudo-elements.
+// highlight pseudo styles mirroring the originating element tree.
 const ComputedStyle* HighlightStyleUtils::HighlightPseudoStyle(
     Node* node,
     const ComputedStyle& style,
     PseudoId pseudo,
     const AtomicString& pseudo_argument) {
-  if (!UsesHighlightPseudoInheritance(pseudo)) {
-    return HighlightPseudoStyleWithOriginatingInheritance(node, pseudo,
-                                                          pseudo_argument);
-  }
-
   switch (pseudo) {
     case kPseudoIdSelection:
       return style.HighlightData().Selection();
@@ -416,8 +356,7 @@ Color HighlightStyleUtils::HighlightBackgroundColor(
       // and we are using default colors, invert the background color. We do not
       // do this when the author has requested colors in a ::selection pseudo.
       if (current_layer_color && *current_layer_color == result) {
-        return Color(0xff - result.Red(), 0xff - result.Green(),
-                     0xff - result.Blue());
+        return result.MakeOpaque().InvertSRGB();
       }
     }
   }
@@ -507,15 +446,6 @@ HighlightStyleUtils::HighlightPaintingStyle(
       colors_from_previous_layer.Put(HighlightColorProperty::kEmphasisColor);
     }
 
-    maybe_color = MaybeResolveColor(
-        document, originating_style, pseudo_style, pseudo,
-        GetCSSPropertyWebkitTextStrokeColor(), search_text_is_active_match);
-    if (maybe_color) {
-      highlight_style.stroke_color = maybe_color.value();
-    } else {
-      colors_from_previous_layer.Put(HighlightColorProperty::kStrokeColor);
-    }
-
     maybe_color = MaybeResolveColor(document, originating_style, pseudo_style,
                                     pseudo, GetCSSPropertyTextDecorationColor(),
                                     search_text_is_active_match);
@@ -538,14 +468,8 @@ HighlightStyleUtils::HighlightPaintingStyle(
 
   if (pseudo_style) {
     highlight_style.stroke_width = pseudo_style->TextStrokeWidth();
-    // TODO(crbug.com/1164461) For now, don't paint text shadows for ::highlight
-    // because some details of how this will be standardized aren't yet
-    // settled. Once the final standardization and implementation of highlight
-    // text-shadow behavior is complete, remove the following check.
-    if (pseudo != kPseudoIdHighlight) {
-      highlight_style.shadow =
-          uses_text_as_clip ? nullptr : pseudo_style->TextShadow();
-    }
+    highlight_style.shadow =
+        uses_text_as_clip ? nullptr : pseudo_style->TextShadow();
     std::optional<AppliedTextDecoration> selection_decoration =
         SelectionTextDecoration(document, originating_style, *pseudo_style);
     if (selection_decoration) {
@@ -591,10 +515,6 @@ void HighlightStyleUtils::ResolveColorsFromPreviousLayer(
   if (text_style.properties_using_current_color.Has(
           HighlightColorProperty::kFillColor)) {
     text_style.style.fill_color = previous_layer_style.style.current_color;
-  }
-  if (text_style.properties_using_current_color.Has(
-          HighlightColorProperty::kStrokeColor)) {
-    text_style.style.stroke_color = previous_layer_style.style.current_color;
   }
   if (text_style.properties_using_current_color.Has(
           HighlightColorProperty::kEmphasisColor)) {

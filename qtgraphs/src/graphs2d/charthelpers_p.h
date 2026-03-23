@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //  W A R N I N G
 //  -------------
@@ -20,11 +22,7 @@ QT_BEGIN_NAMESPACE
 
 static inline bool isValidValue(qreal value)
 {
-    if (qIsNaN(value) || qIsInf(value)) {
-        qWarning("Ignored NaN, Inf, or -Inf value.");
-        return false;
-    }
-    return true;
+    return !(qIsNaN(value) || qIsInf(value));
 }
 
 static inline bool isValidValue(qreal x, qreal y)

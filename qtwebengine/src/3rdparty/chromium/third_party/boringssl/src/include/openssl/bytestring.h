@@ -15,7 +15,7 @@
 #ifndef OPENSSL_HEADER_BYTESTRING_H
 #define OPENSSL_HEADER_BYTESTRING_H
 
-#include <openssl/base.h>
+#include <openssl/base.h>   // IWYU pragma: export
 
 #include <openssl/span.h>
 #include <time.h>
@@ -292,10 +292,27 @@ OPENSSL_EXPORT int CBS_get_any_ber_asn1_element(CBS *cbs, CBS *out,
 // in 64 bits.
 OPENSSL_EXPORT int CBS_get_asn1_uint64(CBS *cbs, uint64_t *out);
 
+// CBS_get_asn1_uint64_with_tag gets an ASN.1 INTEGER from |cbs| using
+// |CBS_get_asn1| and sets |*out| to its value. |tag| is used to handle to
+// handle implicitly tagged INTEGER fields. It returns one on success and zero
+// on error, where error includes the integer being negative, or too large to
+// represent in 64 bits.
+OPENSSL_EXPORT int CBS_get_asn1_uint64_with_tag(CBS *cbs, uint64_t *out,
+                                                CBS_ASN1_TAG tag);
+
+
 // CBS_get_asn1_int64 gets an ASN.1 INTEGER from |cbs| using |CBS_get_asn1|
 // and sets |*out| to its value. It returns one on success and zero on error,
 // where error includes the integer being too large to represent in 64 bits.
 OPENSSL_EXPORT int CBS_get_asn1_int64(CBS *cbs, int64_t *out);
+
+// CBS_get_asn1_int64_with_tag gets an ASN.1 INTEGER from |cbs| using
+// |CBS_get_asn1| and sets |*out| to its value. |tag| is used to handle to
+// handle implicitly tagged INTEGER fields. It returns one on success and zero
+// on error, where error includes the integer being too large to represent in 64
+// bits.
+OPENSSL_EXPORT int CBS_get_asn1_int64_with_tag(CBS *cbs, int64_t *out,
+                                               CBS_ASN1_TAG tag);
 
 // CBS_get_asn1_bool gets an ASN.1 BOOLEAN from |cbs| and sets |*out| to zero
 // or one based on its value. It returns one on success or zero on error.
@@ -580,9 +597,19 @@ OPENSSL_EXPORT int CBB_add_u64(CBB *cbb, uint64_t value);
 // It returns one on success and zero otherwise.
 OPENSSL_EXPORT int CBB_add_u64le(CBB *cbb, uint64_t value);
 
+// CBB_discard discards the last |len| bytes written to |cbb|. The process will
+// abort if |cbb| has an unflushed child, or its length is smaller than |len|.
+OPENSSL_EXPORT void CBB_discard(CBB *cbb, size_t len);
+
 // CBB_discard_child discards the current unflushed child of |cbb|. Neither the
 // child's contents nor the length prefix will be included in the output.
 OPENSSL_EXPORT void CBB_discard_child(CBB *cbb);
+
+// CBB_add_asn1_element adds an ASN.1 element with the specified tag and
+// contents. It returns one on success and zero on error. This is a convenience
+// function over |CBB_add_asn1| when the data is already available.
+OPENSSL_EXPORT int CBB_add_asn1_element(CBB *cbb, CBS_ASN1_TAG tag,
+                                        const uint8_t *data, size_t data_len);
 
 // CBB_add_asn1_uint64 writes an ASN.1 INTEGER into |cbb| using |CBB_add_asn1|
 // and writes |value| in its contents. It returns one on success and zero on

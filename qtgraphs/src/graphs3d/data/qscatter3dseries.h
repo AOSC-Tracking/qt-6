@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QTGRAPHS_QSCATTER3DSERIES_H
 #define QTGRAPHS_QSCATTER3DSERIES_H
@@ -10,6 +12,7 @@
 QT_BEGIN_NAMESPACE
 
 class QScatter3DSeriesPrivate;
+class QValue3DAxis;
 
 class Q_GRAPHS_EXPORT QScatter3DSeries : public QAbstract3DSeries
 {
@@ -22,6 +25,13 @@ class Q_GRAPHS_EXPORT QScatter3DSeries : public QAbstract3DSeries
     Q_PROPERTY(QScatterDataArray dataArray READ dataArray WRITE setDataArray NOTIFY dataArrayChanged FINAL)
     Q_PROPERTY(QList<QVector3D> scaleArray READ scaleArray WRITE setScaleArray NOTIFY
         scaleArrayChanged REVISION(6, 10))
+
+    Q_PROPERTY(QValue3DAxis *axisX READ axisX WRITE setAxisX RESET resetAxisX NOTIFY axisXChanged
+                       REVISION(6, 11))
+    Q_PROPERTY(QValue3DAxis *axisY READ axisY WRITE setAxisY RESET resetAxisY NOTIFY axisYChanged
+                       REVISION(6, 11))
+    Q_PROPERTY(QValue3DAxis *axisZ READ axisZ WRITE setAxisZ RESET resetAxisZ NOTIFY axisZChanged
+                       REVISION(6, 11))
 
     QML_ELEMENT
     QML_UNCREATABLE("Trying to create uncreatable: QScatter3DSeries, use Scatter3DSeries instead.")
@@ -51,12 +61,25 @@ public:
     const QList<QVector3D> &scaleArray() const &;
     QList<QVector3D> scaleArray() &&;
 
+    void setAxisX(QValue3DAxis *axis);
+    void setAxisY(QValue3DAxis *axis);
+    void setAxisZ(QValue3DAxis *axis);
+    QValue3DAxis *axisX() const;
+    QValue3DAxis *axisY() const;
+    QValue3DAxis *axisZ() const;
+    void resetAxisX();
+    void resetAxisY();
+    void resetAxisZ();
+
 Q_SIGNALS:
     void dataProxyChanged(QScatterDataProxy *proxy);
     void selectedItemChanged(qsizetype index);
     void itemSizeChanged(float size);
     void dataArrayChanged(const QScatterDataArray &array);
     Q_REVISION(6, 10) void scaleArrayChanged(const QList<QVector3D> &scaleArray);
+    Q_REVISION(6, 11) void axisXChanged(QValue3DAxis *axis);
+    Q_REVISION(6, 11) void axisYChanged(QValue3DAxis *axis);
+    Q_REVISION(6, 11) void axisZChanged(QValue3DAxis *axis);
 
 protected:
     explicit QScatter3DSeries(QScatter3DSeriesPrivate &d, QObject *parent = nullptr);

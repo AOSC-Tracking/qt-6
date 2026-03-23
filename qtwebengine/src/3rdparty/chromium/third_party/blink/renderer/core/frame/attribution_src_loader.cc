@@ -7,15 +7,16 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <iterator>
 #include <optional>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
-#include "base/functional/overloaded.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
@@ -44,6 +45,7 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/attribution.mojom-forward.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/navigation/impression.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
@@ -134,7 +136,7 @@ GetRegistrationInfo(const HTTPHeaderMap& map,
   }
   auto parsed_registration_info =
       attribution_reporting::RegistrationInfo::ParseInfo(
-          StringUTF8Adaptor(info_header).AsStringView());
+          StringUtf8Adaptor(info_header).AsStringView());
   if (!parsed_registration_info.has_value()) {
     LogAuditIssue(execution_context,
                   AttributionReportingIssueType::kInvalidInfoHeader,
@@ -672,9 +674,14 @@ bool AttributionSrcLoader::DoRegistration(
       local_frame_->GetRemoteNavigationAssociatedInterfaces()->GetInterface(
           &conversion_host);
 
-      conversion_host->RegisterDataHost(data_host.BindNewPipeAndPassReceiver(),
-                                        eligibility,
-                                        /*is_for_background_requests=*/true);
+      WTF::Vector<scoped_refptr<const blink::SecurityOrigin>> reporting_origins;
+      std::ranges::transform(
+          urls, std::back_inserter(reporting_origins),
+          [](const KURL& url) { return SecurityOrigin::Create(url); });
+
+      conversion_host->RegisterDataHost(
+          data_host.BindNewPipeAndPassReceiver(), eligibility,
+          /*is_for_background_requests=*/true, std::move(reporting_origins));
     }
   }
 
@@ -852,20 +859,6 @@ bool AttributionSrcLoader::MaybeRegisterAttributionHeaders(
 
   // This could occur for responses loaded from memory cache.
   if (support == network::mojom::AttributionSupport::kUnset) {
-    // `ResourceFetcher::DidLoadResourceFromMemoryCache()` early returns for
-    // detached frames. We log metrics here to verify that this is never hit in
-    // detached frames.
-    const bool is_detached = !local_frame_->IsAttached();
-    base::UmaHistogramBoolean(
-        "Conversions.NonAttributionSrcRequestUnsetSupport.Detached",
-        is_detached);
-
-    if (is_detached) {
-      // Attribution support is unknown from detached frames, therefore not
-      // registering the response.
-      return false;
-    }
-
     support = GetSupport();
   }
 
@@ -904,9 +897,11 @@ void AttributionSrcLoader::RegisterAttributionHeaders(
       &conversion_host);
 
   mojo::SharedRemote<attribution_reporting::mojom::blink::DataHost> data_host;
-  conversion_host->RegisterDataHost(data_host.BindNewPipeAndPassReceiver(),
-                                    registration_eligibility,
-                                    /*is_for_background_requests=*/false);
+  conversion_host->RegisterDataHost(
+      data_host.BindNewPipeAndPassReceiver(), registration_eligibility,
+      /*is_for_background_requests=*/false,
+      /*reporting_origins=*/
+      {blink::SecurityOrigin::CreateFromUrlOrigin(reporting_origin)});
 
   // Create a client to mimic processing of attributionsrc requests. Note we do
   // not share `DataHosts` for redirects chains.
@@ -1094,7 +1089,7 @@ void AttributionSrcLoader::ResourceClient::HandleSourceRegistration(
       base::UmaHistogramCounts1M("Conversions.HeadersSize.RegisterSource",
                                  headers.web_source.length());
       auto source_data = attribution_reporting::SourceRegistration::Parse(
-          StringUTF8Adaptor(headers.web_source).AsStringView(), source_type_);
+          StringUtf8Adaptor(headers.web_source).AsStringView(), source_type_);
       if (!source_data.has_value()) {
         LogAuditIssueAndMaybeReportHeaderError(
             headers, registration_info.report_header_errors,
@@ -1125,7 +1120,7 @@ void AttributionSrcLoader::ResourceClient::HandleSourceRegistration(
 
       auto registration_items =
           attribution_reporting::ParseOsSourceOrTriggerHeader(
-              StringUTF8Adaptor(headers.os_source).AsStringView());
+              StringUtf8Adaptor(headers.os_source).AsStringView());
       if (!registration_items.has_value()) {
         LogAuditIssueAndMaybeReportHeaderError(
             headers, registration_info.report_header_errors,
@@ -1178,7 +1173,7 @@ void AttributionSrcLoader::ResourceClient::HandleTriggerRegistration(
                                  headers.web_trigger.length());
 
       auto trigger_data = attribution_reporting::TriggerRegistration::Parse(
-          StringUTF8Adaptor(headers.web_trigger).AsStringView());
+          StringUtf8Adaptor(headers.web_trigger).AsStringView());
       if (!trigger_data.has_value()) {
         LogAuditIssueAndMaybeReportHeaderError(
             headers, registration_info.report_header_errors,
@@ -1209,7 +1204,7 @@ void AttributionSrcLoader::ResourceClient::HandleTriggerRegistration(
 
       auto registration_items =
           attribution_reporting::ParseOsSourceOrTriggerHeader(
-              StringUTF8Adaptor(headers.os_trigger).AsStringView());
+              StringUtf8Adaptor(headers.os_trigger).AsStringView());
       if (!registration_items.has_value()) {
         LogAuditIssueAndMaybeReportHeaderError(
             headers, registration_info.report_header_errors,
@@ -1239,8 +1234,8 @@ void AttributionSrcLoader::ResourceClient::
         attribution_reporting::SuitableOrigin reporting_origin) {
   AtomicString header;
 
-  AttributionReportingIssueType issue_type = absl::visit(
-      base::Overloaded{
+  AttributionReportingIssueType issue_type = std::visit(
+      absl::Overload{
           [&](attribution_reporting::mojom::SourceRegistrationError) {
             header = headers.web_source;
             return AttributionReportingIssueType::kInvalidRegisterSourceHeader;
@@ -1273,7 +1268,7 @@ void AttributionSrcLoader::ResourceClient::
     data_host_->ReportRegistrationHeaderError(
         std::move(reporting_origin),
         attribution_reporting::RegistrationHeaderError(
-            StringUTF8Adaptor(header).AsStringView(), error_details));
+            StringUtf8Adaptor(header).AsStringView(), error_details));
   }
 }
 

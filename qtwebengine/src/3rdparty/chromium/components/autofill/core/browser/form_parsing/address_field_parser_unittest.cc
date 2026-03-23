@@ -20,14 +20,8 @@ class AddressFieldParserTest : public FormFieldParserTestBase,
                                public ::testing::Test {
  public:
   AddressFieldParserTest() {
-    default_features.InitWithFeatures({features::kAutofillUseAUAddressModel,
-                                       features::kAutofillUseCAAddressModel,
-                                       features::kAutofillUseDEAddressModel,
-                                       features::kAutofillUseFRAddressModel,
-                                       features::kAutofillUsePLAddressModel,
-                                       features::kAutofillUseINAddressModel,
-                                       features::kAutofillUseITAddressModel,
-                                       features::kAutofillUseNLAddressModel},
+    default_features.InitWithFeatures({features::kAutofillUseINAddressModel,
+                                       features::kAutofillSupportSplitZipCode},
                                       {});
   }
   AddressFieldParserTest(const AddressFieldParserTest&) = delete;
@@ -249,7 +243,6 @@ TEST_F(AddressFieldParserTest, ParseOverflow) {
       {"complemento", "Complemento", "BR", "pt"},
       {"adresszusatz", "Adresszusatz", "DE", "de"},
   };
-  base::test::ScopedFeatureList enabled{features::kAutofillUseDEAddressModel};
 
   for (const TestCase& test : testcases) {
     SCOPED_TRACE(testing::Message() << "field_name=" << test.field_name
@@ -301,8 +294,37 @@ TEST_F(AddressFieldParserTest, ParseStateAndZipOneLabel) {
   ClassifyAndVerify();
 }
 
+TEST_F(AddressFieldParserTest, ParseZipAndCityOneLabel) {
+  AddTextFormFieldData("zip", "zip, city", ADDRESS_HOME_ZIP);
+  AddTextFormFieldData("city", "zip, city", ADDRESS_HOME_CITY);
+  ClassifyAndVerify();
+}
+
 TEST_F(AddressFieldParserTest, ParseCountry) {
   AddTextFormFieldData("country", "Country", ADDRESS_HOME_COUNTRY);
+  ClassifyAndVerify();
+}
+
+TEST_F(AddressFieldParserTest, ParseZipAndZipSuffix1) {
+  AddTextFormFieldData("zip", "Zip", ADDRESS_HOME_ZIP);
+  AddTextFormFieldData("zip2", "Zip", ADDRESS_HOME_ZIP_SUFFIX);
+  ClassifyAndVerify();
+}
+
+TEST_F(AddressFieldParserTest, ParseZipAndZipSuffix2) {
+  AddTextFormFieldData("zip", "Zip", ADDRESS_HOME_ZIP);
+  AddTextFormFieldData("zipPlus", "Zip", ADDRESS_HOME_ZIP_SUFFIX);
+  ClassifyAndVerify();
+}
+
+TEST_F(AddressFieldParserTest, ParseZipAndZipSuffix3) {
+  AddTextFormFieldData("zip", "Zip extended", ADDRESS_HOME_ZIP);
+  AddTextFormFieldData("zip2", "Zip extended", ADDRESS_HOME_ZIP_SUFFIX);
+  ClassifyAndVerify();
+}
+
+TEST_F(AddressFieldParserTest, ParseLonelyZipSuffix) {
+  AddTextFormFieldData("zip2", "Zip", ADDRESS_HOME_ZIP);
   ClassifyAndVerify();
 }
 
@@ -430,6 +452,36 @@ TEST_F(AddressFieldParserTest, ParseHouseNumberAndAptNum_NL) {
   AddTextFormFieldData("zip code", "Zipcode", ADDRESS_HOME_ZIP);
   ClassifyAndVerify(ParseResult::kParsed, GeoIpCountryCode("NL"),
                     LanguageCode("nl"));
+}
+
+TEST_F(AddressFieldParserTest, ParseStreetLocationIN) {
+  AddTextFormFieldData("flat", "flat",
+                       ADDRESS_HOME_STREET_LOCATION);
+  AddTextFormFieldData("area", "area",
+                       ADDRESS_HOME_DEPENDENT_LOCALITY);
+  AddTextFormFieldData("landmark", "landmark", ADDRESS_HOME_LANDMARK);
+  ClassifyAndVerify(ParseResult::kParsed, GeoIpCountryCode("IN"),
+                    LanguageCode("IN"));
+}
+
+TEST_F(AddressFieldParserTest, ParseOnlyStreetLocationIN) {
+  AddTextFormFieldData("flat", "flat",
+                       ADDRESS_HOME_STREET_LOCATION);
+  ClassifyAndVerify(ParseResult::kParsed, GeoIpCountryCode("IN"),
+                    LanguageCode("IN"));
+}
+
+TEST_F(AddressFieldParserTest, ParseOnlyDependentLocalityIN) {
+  AddTextFormFieldData("area", "area",
+                       ADDRESS_HOME_DEPENDENT_LOCALITY);
+  ClassifyAndVerify(ParseResult::kParsed, GeoIpCountryCode("IN"),
+                    LanguageCode("IN"));
+}
+
+TEST_F(AddressFieldParserTest, ParseOnlyLandmarkIN) {
+  AddTextFormFieldData("landmark", "landmark", ADDRESS_HOME_LANDMARK);
+  ClassifyAndVerify(ParseResult::kParsed, GeoIpCountryCode("IN"),
+                    LanguageCode("IN"));
 }
 
 }  // namespace autofill

@@ -24,6 +24,7 @@ class V8_EXPORT_PRIVATE TypeCache final {
  public:
   static TypeCache const* Get();
 
+  using Type = v8::internal::compiler::Type;
   TypeCache() : zone_(&allocator, ZONE_NAME) {}
 
   Type const kInt8 = CreateRange<int8_t>();
@@ -83,9 +84,9 @@ class V8_EXPORT_PRIVATE TypeCache final {
   Type const kPositiveIntegerOrMinusZeroOrNaN =
       Type::Union(kPositiveIntegerOrMinusZero, Type::NaN(), zone());
 
-  Type const kAdditiveSafeInteger =
-      CreateRange(-4503599627370495.0, 4503599627370495.0);
   Type const kSafeInteger = CreateRange(-kMaxSafeInteger, kMaxSafeInteger);
+  Type const kAdditiveSafeInteger =
+      CreateRange(kMinAdditiveSafeInteger, kMaxAdditiveSafeInteger);
   Type const kAdditiveSafeIntegerOrMinusZero =
       Type::Union(kAdditiveSafeInteger, Type::MinusZero(), zone());
   Type const kSafeIntegerOrMinusZero =
@@ -175,6 +176,18 @@ class V8_EXPORT_PRIVATE TypeCache final {
   // [-271821, 275760] or NaN.
   Type const kJSDateYearType =
       Type::Union(CreateRange(-271821, 275760), Type::NaN(), zone());
+
+  static_assert(JSDate::kYear == 0);
+  static_assert(JSDate::kMonth == 1);
+  static_assert(JSDate::kDay == 2);
+  static_assert(JSDate::kWeekday == 3);
+  static_assert(JSDate::kHour == 4);
+  static_assert(JSDate::kMinute == 5);
+  static_assert(JSDate::kSecond == 6);
+  static_assert(JSDate::kFirstUncachedField == 7);
+  Type const kJSDateFields[JSDate::kFirstUncachedField] = {
+      kJSDateYearType, kJSDateMonthType,  kJSDateDayType,   kJSDateWeekdayType,
+      kJSDateHourType, kJSDateMinuteType, kJSDateSecondType};
 
   // The valid number of arguments for JavaScript functions. We can never
   // materialize more than the max size of a fixed array, because we require a

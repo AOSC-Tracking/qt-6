@@ -194,7 +194,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void InvalidateLocalSurfaceIdAndAllocationGroup() override;
   void ClearFallbackSurfaceForCommitPending() override;
   void ResetFallbackToFirstNavigationSurface() override;
-  bool RequestRepaintForTesting() override;
+  bool RequestRepaintOnNewSurface() override;
   void DidStopFlinging() override;
   void OnOldViewDidNavigatePreCommit() override;
   void OnNewViewDidNavigatePostCommit() override;
@@ -293,14 +293,12 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       const std::vector<ui::GrammarFragment>& fragments) override;
 #endif
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
   // Returns the control and selection bounds of the EditContext or control
   // bounds of the active editable element. This is used to report the layout
   // bounds of the text input control to TSF on Windows.
   void GetActiveTextInputControlLayoutBounds(
       std::optional<gfx::Rect>* control_bounds,
       std::optional<gfx::Rect>* selection_bounds) override;
-#endif
 
 #if BUILDFLAG(IS_WIN)
   // API to notify accessibility whether there is an active composition
@@ -466,7 +464,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void UpdateBackgroundColor() override;
   bool HasFallbackSurface() const override;
   std::optional<DisplayFeature> GetDisplayFeature() override;
-  void SetDisplayFeatureForTesting(
+  void DisableDisplayFeatureOverrideForEmulation() override;
+  void OverrideDisplayFeatureForEmulation(
       const DisplayFeature* display_feature) override;
   void EnsurePlatformVisibility(PageVisibilityState page_visibility) override;
   void NotifyHostAndDelegateOnWasShown(
@@ -856,7 +855,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // are expressed in DIPs relative to the view. See display_feature.h for more
   // details.
   std::optional<DisplayFeature> display_feature_;
-  bool display_feature_overridden_for_testing_ = false;
+  bool display_feature_overridden_for_emulation_ = false;
   // Display feature bounds returned by the OS.
   gfx::Rect display_feature_bounds_;
 

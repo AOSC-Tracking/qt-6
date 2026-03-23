@@ -39,7 +39,6 @@
 #include "src/tint/lang/core/type/vector.h"
 #include "src/tint/lang/hlsl/builtin_fn.h"
 #include "src/tint/lang/hlsl/type/byte_address_buffer.h"
-#include "src/tint/utils/result/result.h"
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -58,8 +57,8 @@ TEST_F(IR_HlslMemberBuiltinCallTest, Clone) {
     auto* new_b = clone_ctx.Clone(builtin);
 
     EXPECT_NE(builtin, new_b);
-    EXPECT_NE(builtin->Result(0), new_b->Result(0));
-    EXPECT_EQ(mod.Types().u32(), new_b->Result(0)->Type());
+    EXPECT_NE(builtin->Result(), new_b->Result());
+    EXPECT_EQ(mod.Types().u32(), new_b->Result()->Type());
 
     EXPECT_EQ(BuiltinFn::kLoad, new_b->Func());
 
@@ -83,10 +82,12 @@ TEST_F(IR_HlslMemberBuiltinCallTest, DoesNotMatchNonMemberFunction) {
         b.Return(func, builtin);
     });
 
-    auto res = core::ir::Validate(mod);
+    auto res = core::ir::Validate(mod, core::ir::Capabilities{
+                                           core::ir::Capability::kAllowNonCoreTypes,
+                                       });
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.Str(),
+        res.Failure().reason,
         R"(:7:17 error: asint: no matching call to 'asint(hlsl.byte_address_buffer<read>, u32)'
 
     %3:u32 = %t.asint 2u
@@ -98,7 +99,7 @@ TEST_F(IR_HlslMemberBuiltinCallTest, DoesNotMatchNonMemberFunction) {
 
 note: # Disassembly
 $B1: {  # root
-  %t:hlsl.byte_address_buffer<read> = var @binding_point(0, 0)
+  %t:hlsl.byte_address_buffer<read> = var undef @binding_point(0, 0)
 }
 
 %foo = func():u32 {
@@ -123,10 +124,12 @@ TEST_F(IR_HlslMemberBuiltinCallTest, DoesNotMatchIncorrectType) {
         b.Return(func, builtin);
     });
 
-    auto res = core::ir::Validate(mod);
+    auto res = core::ir::Validate(mod, core::ir::Capabilities{
+                                           core::ir::Capability::kAllowNonCoreTypes,
+                                       });
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.Str(),
+        res.Failure().reason,
         R"(:7:17 error: Store: no matching call to 'Store(hlsl.byte_address_buffer<read>, u32, u32)'
 
 1 candidate function:
@@ -141,13 +144,276 @@ TEST_F(IR_HlslMemberBuiltinCallTest, DoesNotMatchIncorrectType) {
 
 note: # Disassembly
 $B1: {  # root
-  %t:hlsl.byte_address_buffer<read> = var @binding_point(0, 0)
+  %t:hlsl.byte_address_buffer<read> = var undef @binding_point(0, 0)
 }
 
 %foo = func():u32 {
   $B2: {
     %3:u32 = %t.Store 2u, 2u
     ret %3
+  }
+}
+)");
+}
+
+TEST_F(IR_HlslMemberBuiltinCallTest, Valid) {
+    auto* buf_ty = ty.Get<hlsl::type::ByteAddressBuffer>(core::Access::kRead);
+    auto* t = b.Var("t", buf_ty);
+    t->SetBindingPoint(0, 0);
+    mod.root_block->Append(t);
+
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        b.MemberCall<MemberBuiltinCall>(mod.Types().u32(), BuiltinFn::kLoad, t, 0_u);
+        b.Return(func);
+    });
+
+    auto res = core::ir::Validate(mod, core::ir::Capabilities{
+                                           core::ir::Capability::kAllowNonCoreTypes,
+                                       });
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_HlslMemberBuiltinCallTest, MissingResults) {
+    auto* buf_ty = ty.Get<hlsl::type::ByteAddressBuffer>(core::Access::kRead);
+    auto* t = b.Var("t", buf_ty);
+    t->SetBindingPoint(0, 0);
+    mod.root_block->Append(t);
+
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* builtin =
+            b.MemberCall<MemberBuiltinCall>(mod.Types().u32(), BuiltinFn::kLoad, t, 0_u);
+        builtin->ClearResults();
+        b.Return(func);
+    });
+
+    auto res = core::ir::Validate(mod, core::ir::Capabilities{
+                                           core::ir::Capability::kAllowNonCoreTypes,
+                                       });
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason,
+              R"(:7:16 error: Load: expected exactly 1 results, got 0
+    undef = %t.Load 0u
+               ^^^^
+
+:6:3 note: in block
+  $B2: {
+  ^^^
+
+note: # Disassembly
+$B1: {  # root
+  %t:hlsl.byte_address_buffer<read> = var undef @binding_point(0, 0)
+}
+
+%foo = func():void {
+  $B2: {
+    undef = %t.Load 0u
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_HlslMemberBuiltinCallTest, TooFewArgs) {
+    auto* buf_ty = ty.Get<hlsl::type::ByteAddressBuffer>(core::Access::kRead);
+    auto* t = b.Var("t", buf_ty);
+    t->SetBindingPoint(0, 0);
+    mod.root_block->Append(t);
+
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        b.MemberCall<MemberBuiltinCall>(mod.Types().u32(), BuiltinFn::kLoad, t);
+        b.Return(func);
+    });
+
+    auto res = core::ir::Validate(mod, core::ir::Capabilities{
+                                           core::ir::Capability::kAllowNonCoreTypes,
+                                       });
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason,
+              R"(:7:17 error: Load: no matching call to 'Load(hlsl.byte_address_buffer<read>)'
+
+24 candidate functions:
+ • 'Load(byte_address_buffer<read' or 'read_write>  ✓ , offset: u32  ✗ ) -> u32'
+ • 'Load(texture: texture_depth_2d  ✗ , location: vec3<i32>  ✗ ) -> vec4<f32>'
+ • 'Load(texture: texture_depth_2d_array  ✗ , location: vec4<i32>  ✗ ) -> vec4<f32>'
+ • 'Load(texture: texture_1d<T>  ✗ , location: vec2<i32>  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+ • 'Load(texture: texture_2d<T>  ✗ , location: vec3<i32>  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+ • 'Load(texture: texture_2d_array<T>  ✗ , location: vec4<i32>  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+ • 'Load(texture: texture_3d<T>  ✗ , location: vec4<i32>  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+ • 'Load(texture: rasterizer_ordered_texture_2d<F>  ✗ , location: vec2<C>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'C' is 'i32' or 'u32'
+ • 'Load(texture: rasterizer_ordered_texture_2d<F>  ✗ , location: vec2<C>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'C' is 'i32' or 'u32'
+ • 'Load(texture: rasterizer_ordered_texture_2d<F>  ✗ , location: vec2<C>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'C' is 'i32' or 'u32'
+ • 'Load(texture: texture_storage_1d<F, A>  ✗ , location: vec2<i32>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d<F, A>  ✗ , location: vec3<i32>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d_array<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_3d<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_1d<F, A>  ✗ , location: vec2<i32>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d<F, A>  ✗ , location: vec3<i32>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d_array<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_3d<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_1d<F, A>  ✗ , location: vec2<i32>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d<F, A>  ✗ , location: vec3<i32>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d_array<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_3d<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_depth_multisampled_2d  ✗ , location: vec2<i32>  ✗ , sample_index: i32  ✗ ) -> vec4<f32>'
+ • 'Load(texture: texture_multisampled_2d<T>  ✗ , location: vec2<i32>  ✗ , sample_index: i32  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+
+    %3:u32 = %t.Load
+                ^^^^
+
+:6:3 note: in block
+  $B2: {
+  ^^^
+
+note: # Disassembly
+$B1: {  # root
+  %t:hlsl.byte_address_buffer<read> = var undef @binding_point(0, 0)
+}
+
+%foo = func():void {
+  $B2: {
+    %3:u32 = %t.Load
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_HlslMemberBuiltinCallTest, TooManyArgs) {
+    auto* buf_ty = ty.Get<hlsl::type::ByteAddressBuffer>(core::Access::kRead);
+    auto* t = b.Var("t", buf_ty);
+    t->SetBindingPoint(0, 0);
+    mod.root_block->Append(t);
+
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        b.MemberCall<MemberBuiltinCall>(mod.Types().u32(), BuiltinFn::kLoad, t, 0_u, 1_u, 2_u);
+        b.Return(func);
+    });
+
+    auto res = core::ir::Validate(mod, core::ir::Capabilities{
+                                           core::ir::Capability::kAllowNonCoreTypes,
+                                       });
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(
+        res.Failure().reason,
+        R"(:7:17 error: Load: no matching call to 'Load(hlsl.byte_address_buffer<read>, u32, u32, u32)'
+
+24 candidate functions:
+ • 'Load(byte_address_buffer<read' or 'read_write>  ✓ , offset: u32  ✓ ) -> u32' where:
+      ✗  overload expects 2 arguments, call passed 4 arguments
+ • 'Load(texture: texture_depth_multisampled_2d  ✗ , location: vec2<i32>  ✗ , sample_index: i32  ✗ ) -> vec4<f32>'
+ • 'Load(texture: texture_multisampled_2d<T>  ✗ , location: vec2<i32>  ✗ , sample_index: i32  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+ • 'Load(texture: texture_depth_2d  ✗ , location: vec3<i32>  ✗ ) -> vec4<f32>'
+ • 'Load(texture: texture_depth_2d_array  ✗ , location: vec4<i32>  ✗ ) -> vec4<f32>'
+ • 'Load(texture: texture_1d<T>  ✗ , location: vec2<i32>  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+ • 'Load(texture: texture_2d<T>  ✗ , location: vec3<i32>  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+ • 'Load(texture: texture_2d_array<T>  ✗ , location: vec4<i32>  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+ • 'Load(texture: texture_3d<T>  ✗ , location: vec4<i32>  ✗ ) -> vec4<T>' where:
+      ✗  'T' is 'f32', 'i32' or 'u32'
+ • 'Load(texture: rasterizer_ordered_texture_2d<F>  ✗ , location: vec2<C>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'C' is 'i32' or 'u32'
+ • 'Load(texture: rasterizer_ordered_texture_2d<F>  ✗ , location: vec2<C>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'C' is 'i32' or 'u32'
+ • 'Load(texture: rasterizer_ordered_texture_2d<F>  ✗ , location: vec2<C>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'C' is 'i32' or 'u32'
+ • 'Load(texture: texture_storage_1d<F, A>  ✗ , location: vec2<i32>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d<F, A>  ✗ , location: vec3<i32>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d_array<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_3d<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<f32>' where:
+      ✗  'F' is 'r8unorm', 'r8snorm', 'rg8unorm', 'rg8snorm', 'bgra8unorm', 'rgba8unorm', 'rgba8snorm', 'r16unorm', 'r16snorm', 'rg16unorm', 'rg16snorm', 'rgba16unorm', 'rgba16snorm', 'r16float', 'rg16float', 'rgba16float', 'r32float', 'rg32float', 'rgba32float', 'rgb10a2unorm' or 'rg11b10ufloat'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_1d<F, A>  ✗ , location: vec2<i32>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d<F, A>  ✗ , location: vec3<i32>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d_array<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_3d<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<u32>' where:
+      ✗  'F' is 'r8uint', 'rg8uint', 'r16uint', 'rg16uint', 'rgba8uint', 'rgba16uint', 'r32uint', 'rg32uint', 'rgba32uint' or 'rgb10a2uint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_1d<F, A>  ✗ , location: vec2<i32>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d<F, A>  ✗ , location: vec3<i32>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_2d_array<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'A' is 'read' or 'read_write'
+ • 'Load(texture: texture_storage_3d<F, A>  ✗ , location: vec4<i32>  ✗ ) -> vec4<i32>' where:
+      ✗  'F' is 'r8sint', 'rg8sint', 'rgba8sint', 'r16sint', 'rg16sint', 'rgba16sint', 'r32sint', 'rg32sint' or 'rgba32sint'
+      ✗  'A' is 'read' or 'read_write'
+
+    %3:u32 = %t.Load 0u, 1u, 2u
+                ^^^^
+
+:6:3 note: in block
+  $B2: {
+  ^^^
+
+note: # Disassembly
+$B1: {  # root
+  %t:hlsl.byte_address_buffer<read> = var undef @binding_point(0, 0)
+}
+
+%foo = func():void {
+  $B2: {
+    %3:u32 = %t.Load 0u, 1u, 2u
+    ret
   }
 }
 )");

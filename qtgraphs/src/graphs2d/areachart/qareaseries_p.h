@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //  W A R N I N G
 //  -------------
@@ -15,6 +17,7 @@
 
 #include <QtGraphs/qareaseries.h>
 #include <private/qabstractseries_p.h>
+#include <QtQuickShapes/private/qquickshape_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -32,6 +35,8 @@ protected:
     bool m_selected = false;
     QXYSeries *m_upperSeries = nullptr;
     QXYSeries *m_lowerSeries = nullptr;
+    QQuickShapeGradient *m_gradient = nullptr;
+    QQuickShapeGradient *m_selectedGradient = nullptr;
 
 private:
     Q_DECLARE_PUBLIC(QAreaSeries)

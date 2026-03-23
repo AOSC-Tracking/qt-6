@@ -11,6 +11,7 @@
 // Do not include anything from src/compiler here!
 #include "src/codegen/interface-descriptors.h"
 #include "src/common/globals.h"
+#include "src/interpreter/interpreter.h"
 #include "src/objects/code.h"
 #include "src/zone/zone-containers.h"
 
@@ -46,7 +47,7 @@ namespace compiler {
 
 class CodeAssemblerState;
 class CallDescriptor;
-class Graph;
+class TFGraph;
 class InstructionSequence;
 class JSGraph;
 class JSHeapBroker;
@@ -92,6 +93,11 @@ class Pipeline : public AllStatic {
       const AssemblerOptions& assembler_options, int argc, const char* name,
       const ProfileDataFromFile* profile_data, int finalize_order);
 
+  using TurboshaftAssemblerGenerator =
+      std::function<void(compiler::turboshaft::PipelineData*, Isolate*,
+                         compiler::turboshaft::Graph&, Zone*)>;
+  using TurboshaftAssemblerInstaller = CodeAssemblerInstaller;
+
   static std::unique_ptr<TurbofanCompilationJob>
   NewBytecodeHandlerCompilationJob(Isolate* isolate, Builtin builtin,
                                    CodeAssemblerGenerator generator,
@@ -100,6 +106,13 @@ class Pipeline : public AllStatic {
                                    const char* name,
                                    const ProfileDataFromFile* profile_data,
                                    int finalize_order);
+  static std::unique_ptr<TurbofanCompilationJob>
+  NewBytecodeHandlerCompilationJobTSA(
+      Isolate* isolate, Builtin builtin, TurboshaftAssemblerGenerator generator,
+      TurboshaftAssemblerInstaller installer,
+      const AssemblerOptions& assembler_options, const char* name,
+      interpreter::BytecodeHandlerData bytecode_handler_data,
+      const ProfileDataFromFile* profile_data, int finalize_order);
 
 #if V8_ENABLE_WEBASSEMBLY
   // Run the pipeline on a machine graph and generate code.
@@ -121,7 +134,7 @@ class Pipeline : public AllStatic {
   // Returns a new compilation job for a wasm heap stub.
   static std::unique_ptr<TurbofanCompilationJob> NewWasmHeapStubCompilationJob(
       Isolate* isolate, CallDescriptor* call_descriptor,
-      std::unique_ptr<Zone> zone, Graph* graph, CodeKind kind,
+      std::unique_ptr<Zone> zone, TFGraph* graph, CodeKind kind,
       std::unique_ptr<char[]> debug_name, const AssemblerOptions& options);
 
   static std::unique_ptr<compiler::turboshaft::TurboshaftCompilationJob>
@@ -148,17 +161,12 @@ class Pipeline : public AllStatic {
   // {nullptr}, then compute a new schedule for code generation.
   V8_EXPORT_PRIVATE static MaybeHandle<Code> GenerateCodeForTesting(
       OptimizedCompilationInfo* info, Isolate* isolate,
-      CallDescriptor* call_descriptor, Graph* graph,
+      CallDescriptor* call_descriptor, TFGraph* graph,
       const AssemblerOptions& options, Schedule* schedule = nullptr);
 
   // Run the instruction selector on a turboshaft graph and generate code.
   V8_EXPORT_PRIVATE static MaybeHandle<Code> GenerateTurboshaftCodeForTesting(
       CallDescriptor* call_descriptor, turboshaft::PipelineData* data);
-
-  // Run just the register allocator phases.
-  V8_EXPORT_PRIVATE static void AllocateRegistersForTesting(
-      const RegisterConfiguration* config, InstructionSequence* sequence,
-      bool run_verifier);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(Pipeline);

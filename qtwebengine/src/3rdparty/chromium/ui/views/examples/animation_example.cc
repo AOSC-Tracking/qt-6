@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_header_macros.h"
@@ -175,7 +176,7 @@ void AnimationExample::CreateExampleView(View* container) {
       BoxLayout::Orientation::kVertical, gfx::Insets(), 10));
 
   View* squares_container = container->AddChildView(std::make_unique<View>());
-  squares_container->SetBackground(CreateThemedSolidBackground(
+  squares_container->SetBackground(CreateSolidBackground(
       ExamplesColorIds::kColorAnimationExampleBackground));
   squares_container->SetPaintToLayer();
   squares_container->layer()->SetMasksToBounds(true);

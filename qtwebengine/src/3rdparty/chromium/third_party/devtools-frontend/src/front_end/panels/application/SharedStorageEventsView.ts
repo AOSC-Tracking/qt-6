@@ -1,6 +1,7 @@
 // Copyright 2022 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -14,11 +15,19 @@ import sharedStorageEventsViewStyles from './sharedStorageEventsView.css.js';
 
 const UIStrings = {
   /**
-   *@description Placeholder text instructing the user how to display shared
-   *storage event details.
+   *@description Placeholder text if no shared storage event has been selected.
+   * Shared storage allows to store and access data that can be shared across different sites.
+   * A shared storage event is for example an access from a site to that storage.
    */
-  clickToDisplayBody: 'Click on any shared storage event to display the event parameters.',
-};
+  noEventSelected: 'No shared storage event selected',
+  /**
+   *@description Placeholder text instructing the user how to display shared
+   * storage event details.
+   * Shared storage allows to store and access data that can be shared across different sites.
+   * A shared storage event is for example an access from a site to that storage.
+   */
+  clickToDisplayBody: 'Click on any shared storage event to display the event parameters',
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/application/SharedStorageEventsView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -39,12 +48,14 @@ export class SharedStorageEventsView extends UI.SplitWidget.SplitWidget {
     this.element.setAttribute('jslog', `${VisualLogging.pane('shared-storage-events')}`);
 
     const topPanel = new UI.Widget.VBox();
-    this.#noDisplayView = new UI.Widget.VBox();
+    this.#noDisplayView =
+        new UI.EmptyWidget.EmptyWidget(i18nString(UIStrings.noEventSelected), i18nString(UIStrings.clickToDisplayBody));
 
     topPanel.setMinimumSize(0, 80);
     this.setMainWidget(topPanel);
     this.#noDisplayView.setMinimumSize(0, 40);
     this.setSidebarWidget(this.#noDisplayView);
+    this.hideSidebar();
 
     topPanel.contentElement.appendChild(this.#sharedStorageEventGrid);
     this.#sharedStorageEventGrid.addEventListener('select', this.#onFocus.bind(this));
@@ -52,10 +63,6 @@ export class SharedStorageEventsView extends UI.SplitWidget.SplitWidget {
 
     this.#getMainFrameResourceTreeModel()?.addEventListener(
         SDK.ResourceTreeModel.Events.PrimaryPageChanged, this.clearEvents, this);
-
-    this.#noDisplayView.contentElement.classList.add('placeholder');
-    const noDisplayDiv = this.#noDisplayView.contentElement.createChild('div');
-    noDisplayDiv.textContent = i18nString(UIStrings.clickToDisplayBody);
   }
 
   #getMainFrameResourceTreeModel(): SDK.ResourceTreeModel.ResourceTreeModel|null {
@@ -90,6 +97,10 @@ export class SharedStorageEventsView extends UI.SplitWidget.SplitWidget {
       return;
     }
 
+    if (this.showMode() !== UI.SplitWidget.ShowMode.BOTH) {
+      this.showBoth();
+    }
+
     this.#events.push(event);
     this.#sharedStorageEventGrid.data = this.#events;
   }
@@ -98,6 +109,7 @@ export class SharedStorageEventsView extends UI.SplitWidget.SplitWidget {
     this.#events = [];
     this.#sharedStorageEventGrid.data = this.#events;
     this.setSidebarWidget(this.#noDisplayView);
+    this.hideSidebar();
   }
 
   async #onFocus(event: Event): Promise<void> {
@@ -116,7 +128,7 @@ export class SharedStorageEventsView extends UI.SplitWidget.SplitWidget {
     this.#defaultId = id;
   }
 
-  getEventsForTesting(): Array<Protocol.Storage.SharedStorageAccessedEvent> {
+  getEventsForTesting(): Protocol.Storage.SharedStorageAccessedEvent[] {
     return this.#events;
   }
 

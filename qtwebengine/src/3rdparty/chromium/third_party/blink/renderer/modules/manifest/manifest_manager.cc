@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
@@ -199,7 +200,27 @@ void ManifestManager::OnManifestFetchComplete(const KURL& document_url,
                response.CurrentRequestUrl(), DefaultManifest()));
     return;
   }
-  ParseManifestFromPage(document_url, response.CurrentRequestUrl(), data);
+
+  // 3** range, redirects, should not be considered as failure, load still can
+  // be successful. Test to see this:
+  // PwaInstallViewBrowserTest.ListedRelatedChromeAppInstalled
+  if (response.HttpStatusCode() >= 200 && response.HttpStatusCode() < 400) {
+    ParseManifestFromPage(document_url, response.CurrentRequestUrl(), data);
+  } else {
+    const String message = WTF::String::Format(
+        "Manifest fetch from %s failed, code %d",
+        response.CurrentRequestUrl().GetString().Utf8().c_str(),
+        response.HttpStatusCode());
+
+    GetSupplementable()->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
+        mojom::blink::ConsoleMessageSource::kOther,
+        mojom::blink::ConsoleMessageLevel::kError, message,
+        CaptureSourceLocation()));
+
+    ResolveCallbacks(
+        Result(mojom::blink::ManifestRequestResult::kManifestFailedToFetch,
+               response.CurrentRequestUrl(), DefaultManifest()));
+  }
 }
 
 void ManifestManager::ParseManifestFromPage(const KURL& document_url,
@@ -233,15 +254,15 @@ void ManifestManager::ParseManifestFromPage(const KURL& document_url,
   parser.TakeErrors(&result.debug_info().errors);
 
   for (const auto& error : result.debug_info().errors) {
-    auto location = std::make_unique<SourceLocation>(ManifestURL().GetString(),
-                                                     String(), error->line,
-                                                     error->column, nullptr, 0);
+    auto* location = MakeGarbageCollected<SourceLocation>(
+        ManifestURL().GetString(), String(), error->line, error->column,
+        nullptr, 0);
 
     GetSupplementable()->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kOther,
         error->critical ? mojom::blink::ConsoleMessageLevel::kError
                         : mojom::blink::ConsoleMessageLevel::kWarning,
-        "Manifest: " + error->message, std::move(location)));
+        StrCat({"Manifest: ", error->message}), std::move(location)));
   }
 
   // Having errors while parsing the manifest doesn't mean the manifest parsing
@@ -262,46 +283,9 @@ void ManifestManager::ParseManifestFromPage(const KURL& document_url,
   CHECK(!result.manifest().scope.IsEmpty() &&
         result.manifest().scope.IsValid());
 
-  RecordMetrics(result.manifest());
+  // At this point, the manifest is validly parsed, and is not the default one.
+  UseCounter::CountWebDXFeature(GetSupplementable(), WebDXFeature::kManifest);
   ResolveCallbacks(std::move(result));
-}
-
-void ManifestManager::RecordMetrics(const mojom::blink::Manifest& manifest) {
-  if (manifest.has_custom_id) {
-    UseCounter::Count(GetSupplementable(), WebFeature::kWebAppManifestIdField);
-  }
-
-  if (manifest.capture_links != mojom::blink::CaptureLinks::kUndefined) {
-    UseCounter::Count(GetSupplementable(),
-                      WebFeature::kWebAppManifestCaptureLinks);
-  }
-
-  if (!manifest.launch_handler.is_null()) {
-    UseCounter::Count(GetSupplementable(),
-                      WebFeature::kWebAppManifestLaunchHandler);
-  }
-
-  if (!manifest.protocol_handlers.empty()) {
-    UseCounter::Count(GetSupplementable(),
-                      WebFeature::kWebAppManifestProtocolHandlers);
-  }
-
-  if (!manifest.scope_extensions.empty()) {
-    UseCounter::Count(GetSupplementable(),
-                      WebFeature::kWebAppManifestScopeExtensions);
-  }
-
-  for (const mojom::blink::DisplayMode& display_override :
-       manifest.display_override) {
-    if (display_override == mojom::blink::DisplayMode::kWindowControlsOverlay) {
-      UseCounter::Count(GetSupplementable(),
-                        WebFeature::kWebAppWindowControlsOverlay);
-    } else if (display_override == mojom::blink::DisplayMode::kBorderless) {
-      UseCounter::Count(GetSupplementable(), WebFeature::kWebAppBorderless);
-    } else if (display_override == mojom::blink::DisplayMode::kTabbed) {
-      UseCounter::Count(GetSupplementable(), WebFeature::kWebAppTabbed);
-    }
-  }
 }
 
 void ManifestManager::ResolveCallbacks(Result result) {

@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-gemm/MRx4c8-sse.c.in
 //   Generator: tools/xngen
@@ -8,6 +9,8 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef _MSC_VER
   #include <intrin.h>
@@ -15,10 +18,10 @@
   #include <x86intrin.h>
 #endif
 
-#include "xnnpack/common.h"
-#include "xnnpack/gemm.h"
-#include "xnnpack/math.h"
-#include "xnnpack/unaligned.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/gemm.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
 
 
 void xnn_qd8_f32_qb4w_gemm_minmax_ukernel_4x4c8__avx_ld128(
@@ -31,8 +34,8 @@ void xnn_qd8_f32_qb4w_gemm_minmax_ukernel_4x4c8__avx_ld128(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const struct xnn_f32_qb4w_minmax_params params[restrict XNN_MIN_ELEMENTS(1)],
-    const struct xnn_qd8_quantization_params quantization_params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_qb4w_minmax_params* restrict params,
+    const struct xnn_qd8_quantization_params* restrict quantization_params) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -78,7 +81,7 @@ void xnn_qd8_f32_qb4w_gemm_minmax_ukernel_4x4c8__avx_ld128(
   XNN_FORCE_REALIZATION(vmask);
 
   do {
-    const __m128 vksum = _mm_load_ps((const float*) w);
+    const __m128 vksum = _mm_loadu_ps((const float*) w);
     const __m128i vinput_zero_point0 = _mm_castps_si128(_mm_broadcast_ss((const float*) &quantization_params[0].zero_point));
     const __m128i vinput_zero_point1 = _mm_castps_si128(_mm_broadcast_ss((const float*) &quantization_params[1].zero_point));
     const __m128i vinput_zero_point2 = _mm_castps_si128(_mm_broadcast_ss((const float*) &quantization_params[2].zero_point));

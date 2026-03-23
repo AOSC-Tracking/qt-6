@@ -7,7 +7,9 @@
 
 #include <wrl/client.h>
 
+#include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/raw_span.h"
 #include "ui/gl/dcomp_surface_proxy.h"
 #include "ui/gl/gl_export.h"
 
@@ -37,7 +39,7 @@ class GL_EXPORT DCLayerOverlayImage {
       Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d11_video_texture,
       size_t array_slice = 0u);
   DCLayerOverlayImage(const gfx::Size& size,
-                      const uint8_t* shm_video_pixmap,
+                      base::span<const uint8_t> shm_video_pixmap,
                       size_t stride);
   DCLayerOverlayImage(const gfx::Size& size,
                       Microsoft::WRL::ComPtr<IUnknown> dcomp_visual_content,
@@ -48,6 +50,8 @@ class GL_EXPORT DCLayerOverlayImage {
   DCLayerOverlayImage& operator=(DCLayerOverlayImage&&);
   ~DCLayerOverlayImage();
 
+  DCLayerOverlayImage CloneForTesting() const { return *this; }
+
   DCLayerOverlayType type() const { return type_; }
   const gfx::Size& size() const { return size_; }
 
@@ -56,7 +60,9 @@ class GL_EXPORT DCLayerOverlayImage {
   }
   size_t texture_array_slice() const { return texture_array_slice_; }
 
-  const uint8_t* shm_video_pixmap() const { return shm_video_pixmap_; }
+  base::span<const uint8_t> shm_video_pixmap() const {
+    return shm_video_pixmap_;
+  }
   size_t pixmap_stride() const { return pixmap_stride_; }
 
   IUnknown* dcomp_visual_content() const { return dcomp_visual_content_.Get(); }
@@ -67,16 +73,23 @@ class GL_EXPORT DCLayerOverlayImage {
   }
 
   bool operator==(const DCLayerOverlayImage& other) const {
+    auto data = shm_video_pixmap_.data();
+    auto other_data = other.shm_video_pixmap_.data();
     return std::tie(type_, size_, d3d11_video_texture_, texture_array_slice_,
-                    shm_video_pixmap_, pixmap_stride_, dcomp_visual_content_,
+                    data, pixmap_stride_, dcomp_visual_content_,
                     dcomp_surface_serial_, dcomp_surface_proxy_) ==
            std::tie(other.type_, other.size_, other.d3d11_video_texture_,
-                    other.texture_array_slice_, other.shm_video_pixmap_,
+                    other.texture_array_slice_, other_data,
                     other.pixmap_stride_, other.dcomp_visual_content_,
                     other.dcomp_surface_serial_, other.dcomp_surface_proxy_);
   }
 
  private:
+  // Private copy constructors used for testing purposes for reusing overlay
+  // images.
+  DCLayerOverlayImage(const DCLayerOverlayImage& other);
+  DCLayerOverlayImage& operator=(const DCLayerOverlayImage& other);
+
   // Type of overlay image.
   DCLayerOverlayType type_;
   // Size of overlay image.
@@ -86,7 +99,7 @@ class GL_EXPORT DCLayerOverlayImage {
   // Array slice/index if |d3d11_video_texture_| is a texture array.
   size_t texture_array_slice_ = 0;
   // Software decoder NV12 or P010 frame pixmap.
-  raw_ptr<const uint8_t, DanglingUntriaged> shm_video_pixmap_ = nullptr;
+  base::raw_span<const uint8_t, DanglingUntriaged> shm_video_pixmap_;
   // Software video pixmap stride. Y and UV planes have the same stride in NV12.
   size_t pixmap_stride_ = 0;
   // Either an IDCompositionSurface or an IDXGISwapChain1

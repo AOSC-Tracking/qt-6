@@ -55,10 +55,6 @@ struct FeatureParameters {
   // Specifies the number of best matching items to take from the search.
   int search_result_item_count = 3;
 
-  // Specifies whether to accelerate keyword mode entry when @ is entered
-  // followed by the first letter of a starter pack keyword.
-  bool at_keyword_acceleration = false;
-
   // Specifies the content visibility threshold that can be shown to the user.
   // This is for safety filtering.
   double content_visibility_threshold = 0;
@@ -118,10 +114,6 @@ struct FeatureParameters {
   // the '@history' scope. No-op if `kOmniboxScoped` is false.
   bool answers_in_omnibox_scoped = true;
 
-  // The maximum number of embeddings to submit to the primary (ML) embedder
-  // in a single batch via the scheduling embedder.
-  int scheduled_embeddings_max = 1;
-
   // Whether quality logging data should be sent.
   bool send_quality_log = true;
   bool send_quality_log_v2 = true;
@@ -138,12 +130,6 @@ struct FeatureParameters {
   // table (keyed on url_id) will be queued for reprocessing by the embedder.
   bool delete_embeddings = false;
   bool rebuild_embeddings = true;
-
-  // When true (the default), passages and embeddings from the database are
-  // used as a perfect cache to avoid re-embedding any passages that already
-  // exist in a given url_id's stored data. This reduces embedding workload
-  // to the minimum necessary for new passages, with no redundant recomputes.
-  bool use_database_before_embedder = true;
 
   // Whether to enable the URL filter to skip blocked URLs to improve
   // performance.
@@ -190,10 +176,6 @@ struct FeatureParameters {
   // recall for URLs that have a title after the tab loads, for example PDF
   // documents where there is no DOM and hence no <title> tag text to extract.
   bool insert_title_passage = false;
-
-  // Whether to make use of the performance scenario instead of custom
-  // tab loading non-contention logic for the feature.
-  bool use_performance_scenario = false;
 };
 
 // Use this to apply changes for testing only while an instance lives.

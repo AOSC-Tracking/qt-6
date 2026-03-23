@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "base/sequence_checker.h"
@@ -26,7 +27,6 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/attribution_data_model.h"
 #include "content/public/browser/storage_partition.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace base {
 class FilePath;
@@ -73,6 +73,7 @@ class CONTENT_EXPORT AttributionResolverImpl : public AttributionResolver {
   bool UpdateReportForSendFailure(AttributionReport::Id report_id,
                                   base::Time new_report_time) override;
   std::optional<base::Time> AdjustOfflineReportTimes() override;
+  std::optional<base::Time> AdjustNavigationRetryReportTimes() override;
   void ClearData(base::Time delete_begin,
                  base::Time delete_end,
                  StoragePartition::StorageKeyMatcherFunction filter,
@@ -85,6 +86,7 @@ class CONTENT_EXPORT AttributionResolverImpl : public AttributionResolver {
       AggregatableDebugReport,
       std::optional<int> remaining_budget,
       std::optional<StoredSource::Id>) override;
+  void StoreOsRegistrations(const base::flat_set<url::Origin>&) override;
   void SetDelegate(std::unique_ptr<AttributionResolverDelegate>) override;
 
   CreateReportResult::EventLevel MaybeCreateEventLevelReport(
@@ -124,10 +126,10 @@ class CONTENT_EXPORT AttributionResolverImpl : public AttributionResolver {
     AttributionReport replaced_report;
   };
 
-  using ReplaceReportResult = absl::variant<ReplaceReportError,
-                                            AddNewReport,
-                                            DropNewReport,
-                                            ReplaceOldReport>;
+  using ReplaceReportResult = std::variant<ReplaceReportError,
+                                           AddNewReport,
+                                           DropNewReport,
+                                           ReplaceOldReport>;
 
   [[nodiscard]] ReplaceReportResult MaybeReplaceLowerPriorityEventLevelReport(
       const AttributionReport& report,

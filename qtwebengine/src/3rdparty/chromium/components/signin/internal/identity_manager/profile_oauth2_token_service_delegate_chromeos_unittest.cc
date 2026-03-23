@@ -31,6 +31,7 @@
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service_observer.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/base/test_signin_client.h"
+#include "components/signin/public/identity_manager/account_capabilities_test_mutator.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "google_apis/gaia/gaia_id.h"
@@ -203,13 +204,10 @@ class ProfileOAuth2TokenServiceDelegateChromeOSTest : public testing::Test {
 
     account_info_ = CreateAccountInfoTestFixture(kGaiaId, kUserEmail);
     account_tracker_service_.SeedAccountInfo(account_info_);
-    ResetProfileOAuth2TokenServiceDelegateChromeOS(
-        /*delete_signin_cookies_on_exit=*/false, /*is_syncing=*/false);
+    ResetProfileOAuth2TokenServiceDelegateChromeOS();
   }
 
-  void ResetProfileOAuth2TokenServiceDelegateChromeOS(
-      bool delete_signin_cookies_on_exit,
-      bool is_syncing) {
+  void ResetProfileOAuth2TokenServiceDelegateChromeOS() {
     delegate_.reset();
     delegate_ =
         std::make_unique<signin::ProfileOAuth2TokenServiceDelegateChromeOS>(
@@ -220,7 +218,7 @@ class ProfileOAuth2TokenServiceDelegateChromeOSTest : public testing::Test {
     delegate_->SetOnRefreshTokenRevokedNotified(base::DoNothing());
 
     LoadCredentialsAndWaitForCompletion(
-        /*primary_account_id=*/account_info_.account_id, is_syncing);
+        /*primary_account_id=*/account_info_.account_id);
   }
 
   account_manager::AccountKey gaia_account_key() const {
@@ -240,6 +238,8 @@ class ProfileOAuth2TokenServiceDelegateChromeOSTest : public testing::Test {
     account_info.picture_url = "https://example.com";
     account_info.account_id = account_tracker_service_.PickAccountIdForAccount(
         account_info.gaia, account_info.email);
+    AccountCapabilitiesTestMutator(&account_info.capabilities)
+        .set_is_subject_to_enterprise_features(true);
 
     // Cannot use |ASSERT_TRUE| due to a |void| return type in an |ASSERT_TRUE|
     // branch.
@@ -255,13 +255,12 @@ class ProfileOAuth2TokenServiceDelegateChromeOSTest : public testing::Test {
   }
 
   void LoadCredentialsAndWaitForCompletion(
-      const CoreAccountId& primary_account_id,
-      bool is_syncing) {
+      const CoreAccountId& primary_account_id) {
     signin::MockProfileOAuth2TokenServiceObserver observer(delegate_.get());
     base::RunLoop run_loop;
     EXPECT_CALL(observer, OnRefreshTokensLoaded())
         .WillOnce(base::test::RunClosure(run_loop.QuitClosure()));
-    delegate_->LoadCredentials(primary_account_id, is_syncing);
+    delegate_->LoadCredentials(primary_account_id);
     run_loop.Run();
   }
 
@@ -342,8 +341,7 @@ TEST_F(ProfileOAuth2TokenServiceDelegateChromeOSTest,
 
   // Test that LoadCredentials works as expected.
   EXPECT_FALSE(observer.refresh_tokens_loaded_);
-  delegate->LoadCredentials(CoreAccountId() /* primary_account_id */,
-                            /*is_syncing=*/false);
+  delegate->LoadCredentials(CoreAccountId() /* primary_account_id */);
   EXPECT_TRUE(observer.refresh_tokens_loaded_);
   EXPECT_EQ(
       signin::LoadCredentialsState::LOAD_CREDENTIALS_FINISHED_WITH_SUCCESS,
@@ -408,10 +406,10 @@ TEST_F(ProfileOAuth2TokenServiceDelegateChromeOSTest,
     base::RunLoop upsert_run_loop;
     EXPECT_CALL(observer, OnRefreshTokenAvailable)
         .WillOnce(base::test::RunClosure(upsert_run_loop.QuitClosure()));
-    EXPECT_CALL(observer, OnEndBatchChanges);
-    // `OnAuthErrorChanged()` is called *after* `OnRefreshTokenAvailable()`
-    // *and* `OnEndBatchChanges()` after adding a new account on ChromeOS.
+    // `OnAuthErrorChanged()` is called after `OnRefreshTokenAvailable()`
+    // after adding a new account on ChromeOS.
     EXPECT_CALL(observer, OnAuthErrorChanged);
+    EXPECT_CALL(observer, OnEndBatchChanges);
     account_manager_.UpsertAccount(gaia_account_key(), kUserEmail, kGaiaToken);
     upsert_run_loop.Run();
     testing::Mock::VerifyAndClearExpectations(&observer);
@@ -422,10 +420,10 @@ TEST_F(ProfileOAuth2TokenServiceDelegateChromeOSTest,
     base::RunLoop update_run_loop;
     EXPECT_CALL(observer, OnRefreshTokenAvailable)
         .WillOnce(base::test::RunClosure(update_run_loop.QuitClosure()));
-    EXPECT_CALL(observer, OnEndBatchChanges);
     // `OnAuthErrorChanged()` is also called when a token is updated without
     // changing its error state.
     EXPECT_CALL(observer, OnAuthErrorChanged);
+    EXPECT_CALL(observer, OnEndBatchChanges);
     account_manager_.UpdateToken(gaia_account_key(), "new-gaia-token");
     update_run_loop.Run();
     testing::Mock::VerifyAndClearExpectations(&observer);
@@ -604,8 +602,7 @@ TEST_F(ProfileOAuth2TokenServiceDelegateChromeOSTest,
           network::TestNetworkConnectionTracker::GetInstance(),
           account_manager_facade.get(),
           /*is_regular_profile=*/true);
-  delegate->LoadCredentials(account1.account_id /* primary_account_id */,
-                            /*is_syncing=*/false);
+  delegate->LoadCredentials(account1.account_id /* primary_account_id */);
   TestOAuth2TokenServiceObserver observer(delegate.get());
   // Wait until AccountManager is fully initialized.
   task_environment_.RunUntilIdle();

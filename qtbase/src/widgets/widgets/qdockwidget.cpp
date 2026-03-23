@@ -1,10 +1,14 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qdockwidget.h"
 
 #include <qaction.h>
 #include <qapplication.h>
+#if QT_CONFIG(accessibility)
+#include <qaccessible.h>
+#endif
 #include <qdrawutil.h>
 #include <qevent.h>
 #include <qfontmetrics.h>
@@ -1234,6 +1238,15 @@ void QDockWidgetPrivate::setWindowState(WindowStates states, const QRect &rect)
 
     if (floating != wasFloating) {
         emit q->topLevelChanged(floating);
+#if QT_CONFIG(accessibility)
+        if (QAccessible::isActive()) {
+            // Accessible role depends on whether QDockWidget is a top level or not,
+            // see QAccessibleDockWidget::role
+            QAccessibleEvent roleChangedEvent(q, QAccessible::RoleChanged);
+            QAccessible::updateAccessibility(&roleChangedEvent);
+        }
+#endif
+
         if (!floating && parent) {
             QMainWindowLayout *mwlayout = qt_mainwindow_layout_from_dock(q);
             if (mwlayout)
@@ -1263,6 +1276,7 @@ void QDockWidgetPrivate::setWindowState(WindowStates states, const QRect &rect)
     QMainWindow.
 
     \image mainwindow-docks.png
+           {Diagram of dock widget within toolbars and a container for widgets}
 
     Dock windows can be moved inside their current area, moved into
     new areas and floated (e.g., undocked) by the end-user.  The
@@ -1359,13 +1373,11 @@ QDockWidget::QDockWidget(const QString &title, QWidget *parent, Qt::WindowFlags 
 */
 QDockWidget::~QDockWidget()
 {
-    Q_D(QDockWidget);
-    d->inDestructor = true;
-    // Do all the unregistering while we're still a QDockWidget. Otherwise, it
-    // would be ~QObject() which does that and then QDockAreaLayout::takeAt(),
-    // acting on QEvent::ChildRemoved, will try to access our QWidget-ness when
-    // replacing us with a QPlaceHolderItem, causing UB:
-    setParent(nullptr);
+    // Remove the QDockWidget from its layout while it's still a widget.
+    // Otherwise QEvent::ChildRemoved will cause QDock*Layout::takeAt() and
+    // subsequently a UB.
+    if (parentWidget() && parentWidget()->layout())
+        parentWidget()->layout()->removeWidget(this);
 }
 
 /*!
@@ -1647,12 +1659,8 @@ bool QDockWidget::event(QEvent *event)
     case QEvent::Hide:
         if (layout != nullptr)
             layout->keepSize(this);
-        // If we are in the destructor, don't emit any signals, as those might
-        // be handled by a slot that requires this dock widget to still be alive.
-        if (!d->inDestructor) {
-            d->toggleViewAction->setChecked(false);
-            emit visibilityChanged(false);
-        }
+        d->toggleViewAction->setChecked(false);
+        emit visibilityChanged(false);
         break;
     case QEvent::Show: {
         d->toggleViewAction->setChecked(true);

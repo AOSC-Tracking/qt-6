@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "media/muxers/mp4_muxer_delegate.h"
 
@@ -16,6 +12,7 @@
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_codecs.h"
 #include "media/formats/mp4/avc.h"
+#include "media/formats/mp4/box_constants.h"
 #include "media/formats/mp4/box_definitions.h"
 #include "media/formats/mp4/fourccs.h"
 #include "media/formats/mp4/mp4_status.h"
@@ -239,8 +236,9 @@ void Mp4MuxerDelegate::BuildMovieVideoTrack(
 
     mp4::writable_boxes::AV1CodecConfiguration av1_config;
     size_t config_size = 0;
+    auto encoded_data_span = base::span(encoded_data);
     auto codec_descriptions = libgav1::ObuParser::GetAV1CodecConfigurationBox(
-        encoded_data.data(), encoded_data.size(), &config_size);
+        encoded_data_span.data(), encoded_data_span.size(), &config_size);
     CHECK(codec_descriptions);
     CHECK_GT(config_size, 0u);
 
@@ -269,6 +267,18 @@ void Mp4MuxerDelegate::BuildMovieVideoTrack(
 
   // `tkhd`.
   video_track.header.natural_size = params.visible_rect_size;
+  if (params.transformation) {
+    auto mat = params.transformation->GetMatrix();
+    video_track.header.matrix[0] = mat[0];
+    video_track.header.matrix[1] = mat[1];
+    video_track.header.matrix[3] = mat[2];
+    video_track.header.matrix[4] = mat[3];
+  } else {
+    // If VideoParameters do not have a VideoTransformation, we should provide a
+    // default matrix that has zero rotations, zero mirroring, normal zoom.
+    std::copy(std::begin(kDisplayIdentityMatrix),
+              std::end(kDisplayIdentityMatrix), video_track.header.matrix);
+  }
 
   // `hdlr`
   mp4::writable_boxes::MediaHandler media_handler(/*is_audio=*/false);
@@ -710,7 +720,7 @@ scoped_refptr<DecoderBuffer> Mp4MuxerDelegate::ConvertNALUData(
         video_codec_, add_parameter_sets_in_bitstream_);
   }
 
-  return h26x_converter_->Convert(encoded_data->AsSpan());
+  return h26x_converter_->Convert(*encoded_data);
 }
 #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS) ||
         // BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
@@ -746,4 +756,4 @@ void Mp4MuxerDelegate::LogBoxInfo() const {
   DVLOG(1) << __func__ << ", " << s.str();
 }
 
-}  // namespace media.
+}  // namespace media

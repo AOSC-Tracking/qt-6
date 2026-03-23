@@ -12,15 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <vector>
-
 #include "gtest/gtest.h"
-#include "absl/strings/match.h"
 #include "./fuzztest/init_fuzztest.h"
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
-  // We call fuzztest::ParseAbslFlagsrather than absl::ParseCommandLine
+  // We call fuzztest::ParseAbslFlags rather than absl::ParseCommandLine
   // since the latter would complain about any unknown flags that need
   // to be passed to legacy fuzzing engines (e.g. libfuzzer).
   fuzztest::ParseAbslFlags(argc, argv);

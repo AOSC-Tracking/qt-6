@@ -12,10 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef OPENSSL_HEADER_BIO_INTERNAL_H
-#define OPENSSL_HEADER_BIO_INTERNAL_H
+#ifndef OPENSSL_HEADER_CRYPTO_BIO_INTERNAL_H
+#define OPENSSL_HEADER_CRYPTO_BIO_INTERNAL_H
 
-#include <openssl/base.h>
+#include <openssl/bio.h>
+
+#include <openssl/ex_data.h>
+
+#include "../internal.h"
 
 #if !defined(OPENSSL_NO_SOCK)
 #if !defined(OPENSSL_WINDOWS)
@@ -26,9 +30,7 @@ typedef unsigned short u_short;
 #include <sys/types.h>
 #include <sys/socket.h>
 #else
-OPENSSL_MSVC_PRAGMA(warning(push, 3))
 #include <winsock2.h>
-OPENSSL_MSVC_PRAGMA(warning(pop))
 typedef int socklen_t;
 #endif
 #endif  // !OPENSSL_NO_SOCK
@@ -37,6 +39,45 @@ typedef int socklen_t;
 extern "C" {
 #endif
 
+
+struct bio_method_st {
+  int type;
+  const char *name;
+  int (*bwrite)(BIO *, const char *, int);
+  int (*bread)(BIO *, char *, int);
+  int (*bgets)(BIO *, char *, int);
+  long (*ctrl)(BIO *, int, long, void *);
+  int (*create)(BIO *);
+  int (*destroy)(BIO *);
+  long (*callback_ctrl)(BIO *, int, BIO_info_cb *);
+};
+
+struct bio_st {
+  const BIO_METHOD *method;
+  CRYPTO_EX_DATA ex_data;
+
+  // TODO(crbug.com/412269080): |init| and |shutdown| could be bitfields, or
+  // integrated into |flags|, to save memory.
+
+  // init is non-zero if this |BIO| has been initialised.
+  int init;
+  // shutdown is often used by specific |BIO_METHOD|s to determine whether
+  // they own some underlying resource. This flag can often be controlled by
+  // |BIO_set_close|. For example, whether an fd BIO closes the underlying fd
+  // when it, itself, is closed.
+  int shutdown;
+  int flags;
+  int retry_reason;
+  // num is a BIO-specific value. For example, in fd BIOs it's used to store a
+  // file descriptor.
+  int num;
+  CRYPTO_refcount_t references;
+  void *ptr;
+  // next_bio points to the next |BIO| in a chain. This |BIO| owns a reference
+  // to |next_bio|.
+  BIO *next_bio;  // used by filter BIOs
+  uint64_t num_read, num_write;
+};
 
 #if !defined(OPENSSL_NO_SOCK)
 
@@ -76,4 +117,4 @@ int bio_errno_should_retry(int return_value);
 }  // extern C
 #endif
 
-#endif  // OPENSSL_HEADER_BIO_INTERNAL_H
+#endif  // OPENSSL_HEADER_CRYPTO_BIO_INTERNAL_H

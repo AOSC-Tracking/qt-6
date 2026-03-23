@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/bindings/core/v8/serialization/v8_script_value_deserializer.h"
 
 #include <array>
@@ -78,6 +73,7 @@
 #include "third_party/blink/renderer/platform/file_metadata.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/text/layout_locale.h"
 #include "third_party/blink/renderer/platform/wtf/date_math.h"
 
 namespace blink {
@@ -399,12 +395,12 @@ bool V8ScriptValueDeserializer::ReadUnguessableToken(
 
 bool V8ScriptValueDeserializer::ReadUTF8String(String* string) {
   uint32_t utf8_length = 0;
-  const void* utf8_data = nullptr;
-  if (!ReadUint32(&utf8_length) || !ReadRawBytes(utf8_length, &utf8_data))
+  base::span<const uint8_t> utf8_data;
+  if (!ReadUint32(&utf8_length) ||
+      !ReadRawBytesToSpan(utf8_length, &utf8_data)) {
     return false;
-  // SAFETY: ReadRawBytes() guarantees `utf8_data` and `utf8_length` are safe.
-  *string = String::FromUTF8(UNSAFE_BUFFERS(
-      base::span(reinterpret_cast<const LChar*>(utf8_data), utf8_length)));
+  }
+  *string = String::FromUTF8(utf8_data);
 
   // Decoding must have failed; this encoding does not distinguish between null
   // and empty strings.
@@ -523,7 +519,7 @@ ScriptWrappable* V8ScriptValueDeserializer::ReadDOMObject(
                       &image_orientation))
                 return nullptr;
               break;
-            case ImageSerializationTag::kImageDataStorageFormatTag:
+            case ImageSerializationTag::kImageDataPixelFormatTag:
               // Does not apply to ImageBitmap.
               return nullptr;
           }
@@ -565,10 +561,8 @@ ScriptWrappable* V8ScriptValueDeserializer::ReadDOMObject(
     case kImageDataTag: {
       SerializedPredefinedColorSpace predefined_color_space =
           SerializedPredefinedColorSpace::kSRGB;
-      SerializedImageDataStorageFormat image_data_storage_format =
-          SerializedImageDataStorageFormat::kUint8Clamped;
-      uint32_t width = 0, height = 0;
-      const void* pixels = nullptr;
+      SerializedImageDataPixelFormat image_data_pixel_format =
+          SerializedImageDataPixelFormat::kRgbaUnorm8;
       if (Version() >= 18) {
         bool is_done = false;
         do {
@@ -581,13 +575,15 @@ ScriptWrappable* V8ScriptValueDeserializer::ReadDOMObject(
               break;
             case ImageSerializationTag::kPredefinedColorSpaceTag:
               if (!ReadUint32Enum<SerializedPredefinedColorSpace>(
-                      &predefined_color_space))
+                      &predefined_color_space)) {
                 return nullptr;
+              }
               break;
-            case ImageSerializationTag::kImageDataStorageFormatTag:
-              if (!ReadUint32Enum<SerializedImageDataStorageFormat>(
-                      &image_data_storage_format))
+            case ImageSerializationTag::kImageDataPixelFormatTag:
+              if (!ReadUint32Enum<SerializedImageDataPixelFormat>(
+                      &image_data_pixel_format)) {
                 return nullptr;
+              }
               break;
             case ImageSerializationTag::kCanvasPixelFormatTag:
             case ImageSerializationTag::kOriginCleanTag:
@@ -601,26 +597,33 @@ ScriptWrappable* V8ScriptValueDeserializer::ReadDOMObject(
         } while (!is_done);
       }
 
+      uint32_t width = 0, height = 0;
+      if (!ReadUint32(&width) || !ReadUint32(&height)) {
+        return nullptr;
+      }
+
       uint64_t byte_length_64 = 0;
       size_t byte_length = 0;
-      if (!ReadUint32(&width) || !ReadUint32(&height) ||
-          !ReadUint64(&byte_length_64) ||
+      base::span<const uint8_t> pixel_data;
+      if (!ReadUint64(&byte_length_64) ||
           !base::MakeCheckedNum(byte_length_64).AssignIfValid(&byte_length) ||
-          !ReadRawBytes(byte_length, &pixels)) {
+          !ReadRawBytesToSpan(byte_length, &pixel_data)) {
         return nullptr;
       }
 
       SerializedImageDataSettings settings(predefined_color_space,
-                                           image_data_storage_format);
+                                           image_data_pixel_format);
       ImageData* image_data = ImageData::ValidateAndCreate(
           width, height, std::nullopt, settings.GetImageDataSettings(),
           ImageData::ValidateAndCreateParams(), exception_state);
-      if (!image_data)
+      if (!image_data) {
         return nullptr;
-      SkPixmap image_data_pixmap = image_data->GetSkPixmap();
-      if (image_data_pixmap.computeByteSize() != byte_length)
+      }
+      base::span<uint8_t> image_data_bytes = image_data->RawByteSpan();
+      if (image_data_bytes.size() != pixel_data.size()) {
         return nullptr;
-      memcpy(image_data_pixmap.writable_addr(), pixels, byte_length);
+      }
+      image_data_bytes.copy_from(pixel_data);
       return image_data;
     }
     case kDOMPointTag: {
@@ -714,13 +717,21 @@ ScriptWrappable* V8ScriptValueDeserializer::ReadDOMObject(
     }
     case kOffscreenCanvasTransferTag: {
       uint32_t width = 0, height = 0, canvas_id = 0, client_id = 0, sink_id = 0;
+      SerializedTextDirection serialized_direction =
+          SerializedTextDirection::kLtr;
+      String locale_string;
       if (!ReadUint32(&width) || !ReadUint32(&height) ||
+          !ReadUTF8String(&locale_string) ||
+          !ReadUint32Enum<SerializedTextDirection>(&serialized_direction) ||
           !ReadUint32(&canvas_id) || !ReadUint32(&client_id) ||
           !ReadUint32(&sink_id)) {
         return nullptr;
       }
       OffscreenCanvas* canvas =
           OffscreenCanvas::Create(GetScriptState(), width, height);
+      canvas->SetLocale(LayoutLocale::Get(AtomicString(locale_string)));
+      SerializedTextDirectionSettings direction_setting(serialized_direction);
+      canvas->SetTextDirection(direction_setting.GetTextDirection());
       canvas->SetPlaceholderCanvasId(canvas_id);
       canvas->SetFrameSinkId(client_id, sink_id);
       return canvas;

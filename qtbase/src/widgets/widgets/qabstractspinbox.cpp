@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <qplatformdefs.h>
 #ifdef Q_OS_WASM
@@ -156,7 +157,9 @@ QAbstractSpinBox::~QAbstractSpinBox()
     in a spin box.
 
     \inlineimage qspinbox-updown.png
+                 {Spinbox with the up and down arrow symbols}
     \inlineimage qspinbox-plusminus.png
+                 {Spinbox with the plus and minus symbols}
 
     \value UpDownArrows Little arrows in the classic style.
     \value PlusMinus \b{+} and \b{-} symbols.

@@ -113,7 +113,7 @@ static void compileRequiredPropertiesBundle(
                    [](const QQmlJSMetaProperty &property) {
                        QString type = qIsReferenceTypeList(property)
                                ? u"const QList<%1*>&"_s.arg(
-                                       property.type()->valueType()->internalName())
+                                       property.type()->elementType()->internalName())
                                : u"passByConstRefOrValue<%1>"_s.arg(
                                        property.type()->augmentedInternalName());
                        return QmltcVariable{ type, property.propertyName() };
@@ -569,7 +569,7 @@ void QmltcCompiler::compilePropertyInitializer(
         if (qIsReferenceTypeList(property)) {
             compiledSetter.parameterList.emplaceBack(
                 QQmlJSUtils::constRefify(
-                            u"QList<%1*>"_s.arg(propertyType->valueType()->internalName())),
+                            u"QList<%1*>"_s.arg(propertyType->elementType()->internalName())),
                 name + u"_", QString()
             );
         } else {
@@ -756,7 +756,7 @@ void QmltcCompiler::compileMethod(QmltcType &current, const QQmlJSMetaMethod &m,
 void QmltcCompiler::compileExtraListMethods(QmltcType &current, const QQmlJSMetaProperty &p)
 {
     QmltcPropertyData data(p);
-    const QString valueType = p.type()->valueType()->internalName() + u'*';
+    const QString elementType = p.type()->elementType()->internalName() + u'*';
     const QString variableName = data.read + u"()"_s;
     const QStringList ownershipWarning = {
         u"\\note {This method does not change the ownership of its argument."_s,
@@ -773,7 +773,7 @@ void QmltcCompiler::compileExtraListMethods(QmltcType &current, const QQmlJSMeta
         append.comments << ownershipWarning;
         append.returnType = u"void"_s;
         append.name = u"%1Append"_s.arg(data.read);
-        append.parameterList.emplaceBack(valueType, u"toBeAppended"_s);
+        append.parameterList.emplaceBack(elementType, u"toBeAppended"_s);
 
         append.body << u"auto q_qmltc_localList = %1;"_s.arg(variableName);
         append.body
@@ -802,7 +802,7 @@ void QmltcCompiler::compileExtraListMethods(QmltcType &current, const QQmlJSMeta
     {
         QmltcMethod at{};
         at.comments.emplaceBack(u"\\brief Access an element in %1."_s.arg(data.read));
-        at.returnType = valueType;
+        at.returnType = elementType;
         at.name = u"%1At"_s.arg(data.read);
         at.parameterList.emplaceBack(u"qsizetype"_s, u"position"_s, QString());
 
@@ -836,7 +836,7 @@ void QmltcCompiler::compileExtraListMethods(QmltcType &current, const QQmlJSMeta
         replace.returnType = u"void"_s;
         replace.name = u"%1Replace"_s.arg(data.read);
         replace.parameterList.emplaceBack(u"qsizetype"_s, u"position"_s, QString());
-        replace.parameterList.emplaceBack(valueType, u"element"_s,
+        replace.parameterList.emplaceBack(elementType, u"element"_s,
                                           QString());
 
         replace.body << u"auto q_qmltc_localList = %1;"_s.arg(variableName);
@@ -877,7 +877,7 @@ void QmltcCompiler::compileProperty(QmltcType &current, const QQmlJSMetaProperty
     if (qIsReferenceTypeList(p)) {
         const QString storageName = variableName + u"_storage";
         current.variables.emplaceBack(
-                    u"QList<" + p.type()->valueType()->internalName() + u"*>", storageName,
+                    u"QList<" + p.type()->elementType()->internalName() + u"*>", storageName,
                     QString());
         current.baselineCtor.initializerList.emplaceBack(variableName + u"(" + underlyingType
                                                          + u"(this, std::addressof(" + storageName

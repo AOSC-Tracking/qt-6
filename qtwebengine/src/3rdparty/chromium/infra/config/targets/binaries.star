@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/targets.star", "targets")
+load("@chromium-luci//targets.star", "targets")
 
 targets.binaries.console_test_launcher(
     name = "absl_hardening_tests",
@@ -473,13 +473,6 @@ targets.binaries.generated_script(
     skip_usage_check = True,
 )
 
-targets.binaries.console_test_launcher(
-    name = "chrome_java_test_wpr_tests",
-    label = "//chrome/test/android:chrome_java_test_wpr_tests",
-    # All references have been moved to starlark
-    skip_usage_check = True,
-)
-
 targets.binaries.generated_script(
     name = "chrome_junit_tests",
     label = "//chrome/android:chrome_junit_tests",
@@ -556,6 +549,9 @@ targets.binaries.generated_script(
     label = "//chrome/test:chrome_sizes",
     merge = targets.merge(
         script = "//tools/perf/process_perf_results.py",
+        args = [
+            "--upload-skia-json",
+        ],
     ),
 )
 
@@ -712,6 +708,13 @@ targets.binaries.windowed_test_launcher(
     label = "//components:components_unittests",
 )
 
+targets.binaries.script(
+    name = "component_storage_test",
+    label = "//build/fuchsia/test:component_storage_test",
+    script = "//build/fuchsia/test/component_storage_test.py",
+    skip_usage_check = True,
+)
+
 targets.binaries.windowed_test_launcher(
     name = "compositor_unittests",
     label = "//ui/compositor:compositor_unittests",
@@ -770,6 +773,9 @@ targets.binaries.generated_script(
     skip_usage_check = True,
     merge = targets.merge(
         script = "//tools/perf/process_perf_results.py",
+        args = [
+            "--upload-skia-json",
+        ],
     ),
     resultdb = targets.resultdb(
         enable = True,
@@ -834,6 +840,22 @@ targets.binaries.console_test_launcher(
     skip_usage_check = True,
 )
 
+targets.binaries.generated_script(
+    name = "crossbench_smoketests",
+    label = "//chrome/test:crossbench_smoketests",
+    skip_usage_check = True,
+    args = [
+        "../../third_party/crossbench/cb.py",
+        "--benchmarks=speedometer_3.0",
+        "--isolated-script-test-output=${ISOLATED_OUTDIR}",
+        "--repeat=1",
+        "--iterations=2",
+        "--fast",
+        "--fileserver",
+        "--luci-chromium",
+    ],
+)
+
 targets.binaries.console_test_launcher(
     name = "crypto_unittests",
     label = "//crypto:crypto_unittests",
@@ -892,6 +914,12 @@ targets.binaries.console_test_launcher(
     label = "//device:device_unittests",
 )
 
+targets.binaries.console_test_launcher(
+    name = "device_realtarget_browsertests",
+    label = "//chrome/test:device_realtarget_browsertests",
+    skip_usage_check = True,
+)
+
 targets.binaries.generated_script(
     name = "disk_usage_tast_test",
     label = "//chromeos:disk_usage_tast_test",
@@ -902,6 +930,9 @@ targets.binaries.generated_script(
     ],
     merge = targets.merge(
         script = "//tools/perf/process_perf_results.py",
+        args = [
+            "--upload-skia-json",
+        ],
     ),
 )
 
@@ -998,6 +1029,12 @@ targets.binaries.console_test_launcher(
 )
 
 targets.binaries.console_test_launcher(
+    name = "video_encode_accelerator_tests",
+    label = "//media/gpu/test:video_encode_accelerator_tests",
+    skip_usage_check = True,
+)
+
+targets.binaries.console_test_launcher(
     name = "filesystem_service_unittests",
     label = "//components/services/filesystem:filesystem_service_unittests",
 )
@@ -1029,6 +1066,9 @@ targets.binaries.generated_script(
     skip_usage_check = True,
     merge = targets.merge(
         script = "//tools/perf/process_perf_results.py",
+        args = [
+            "--upload-skia-json",
+        ],
     ),
 )
 
@@ -1527,11 +1567,6 @@ targets.binaries.console_test_launcher(
     skip_usage_check = True,
 )
 
-targets.binaries.console_test_launcher(
-    name = "nacl_loader_unittests",
-    label = "//components/nacl/loader:nacl_loader_unittests",
-)
-
 targets.binaries.generated_script(
     name = "build_rust_tests",
     label = "//build/rust/tests:build_rust_tests",
@@ -1645,13 +1680,6 @@ targets.binaries.generated_script(
 )
 
 targets.binaries.generated_script(
-    name = "password_check_junit_tests",
-    label = "//chrome/browser/password_check/android:password_check_junit_tests",
-    # All references have been moved to starlark
-    skip_usage_check = True,
-)
-
-targets.binaries.generated_script(
     name = "password_manager_junit_tests",
     label = "//chrome/browser/password_manager/android:password_manager_junit_tests",
     # All references have been moved to starlark
@@ -1710,20 +1738,6 @@ targets.binaries.generated_script(
     label = "//chrome/test:performance_test_suite_android_trichrome_chrome_google_bundle",
 )
 
-# TODO(https://crbug.com/378731077): Remove when migration is done.
-targets.binaries.generated_script(
-    name = "performance_test_suite_android_clank_trichrome_chrome_google_64_32_bundle",
-    label = "//chrome/test:performance_test_suite_android_clank_trichrome_chrome_google_64_32_bundle",
-    skip_usage_check = True,  # Necessary until Pinpoint targets are migrated.
-)
-
-# TODO(https://crbug.com/378731077): Remove when migration is done.
-targets.binaries.generated_script(
-    name = "performance_test_suite_android_clank_trichrome_bundle",
-    label = "//chrome/test:performance_test_suite_android_clank_trichrome_bundle",
-    skip_usage_check = True,  # Necessary until Pinpoint targets are migrated.
-)
-
 targets.binaries.script(
     name = "performance_web_engine_test_suite",
     label = "//content/test:performance_web_engine_test_suite",
@@ -1759,16 +1773,18 @@ targets.binaries.script(
     ],
 )
 
+targets.binaries.generated_script(
+    name = "webui_resources_tools_python_unittests",
+    label = "//ui/webui/resources/tools:webui_resources_tools_python_unittests",
+    # All references are in starlark.
+    skip_usage_check = True,
+)
+
 targets.binaries.console_test_launcher(
     name = "power_sampler_unittests",
     label = "//tools/mac/power:power_sampler_unittests",
     # All references have been moved to starlark
     skip_usage_check = True,
-)
-
-targets.binaries.console_test_launcher(
-    name = "ppapi_unittests",
-    label = "//ppapi:ppapi_unittests",
 )
 
 targets.binaries.console_test_launcher(
@@ -1805,6 +1821,9 @@ targets.binaries.generated_script(
     skip_usage_check = True,
     merge = targets.merge(
         script = "//tools/perf/process_perf_results.py",
+        args = [
+            "--upload-skia-json",
+        ],
     ),
     resultdb = targets.resultdb(
         enable = True,
@@ -2305,6 +2324,9 @@ targets.binaries.script(
     ],
     merge = targets.merge(
         script = "//tools/perf/process_perf_results.py",
+        args = [
+            "--upload-skia-json",
+        ],
     ),
 )
 

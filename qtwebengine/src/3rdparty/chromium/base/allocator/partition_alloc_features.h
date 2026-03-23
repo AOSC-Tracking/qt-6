@@ -2,8 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef BASE_ALLOCATOR_PARTITION_ALLOC_FEATURES_H_
 #define BASE_ALLOCATOR_PARTITION_ALLOC_FEATURES_H_
+
+#include <string>
 
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
@@ -89,17 +96,10 @@ BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
     PartitionAllocWithAdvancedChecksEnabledProcesses,
     kPartitionAllocWithAdvancedChecksEnabledProcessesParam);
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocSchedulerLoopQuarantine);
-// Scheduler Loop Quarantine's per-thread capacity in bytes.
+// See "base/allocator/scheduler_loop_quarantine_config.h" for details.
 BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kPartitionAllocSchedulerLoopQuarantineBranchCapacity);
-// Scheduler Loop Quarantine's capacity for the UI thread in bytes.
-// TODO(https://crbug.com/387470567): Support more thread types.
-BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kPartitionAllocSchedulerLoopQuarantineBrowserUICapacity);
-
-BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocZappingByFreeFlags);
+    std::string,
+    kPartitionAllocSchedulerLoopQuarantineConfig);
 
 // Eventually zero out most PartitionAlloc memory. This is not meant as a
 // security guarantee, but to increase the compression ratio of PartitionAlloc's
@@ -153,6 +153,12 @@ BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(BackupRefPtrMode,
                                        kBackupRefPtrModeParam);
 BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(int,
                                        kBackupRefPtrExtraExtrasSizeParam);
+BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
+    bool,
+    kBackupRefPtrSuppressDoubleFreeDetectedCrash);
+BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
+    bool,
+    kBackupRefPtrSuppressCorruptionDetectedCrash);
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocMemoryTagging);
 BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(MemtagMode, kMemtagModeParam);
 BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(RetagMode, kRetagModeParam);
@@ -162,15 +168,9 @@ BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(MemoryTaggingEnabledProcesses,
 // enabled.
 BASE_EXPORT BASE_DECLARE_FEATURE(kKillPartitionAllocMemoryTagging);
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocPermissiveMte);
-BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    bool,
-    kBackupRefPtrAsanEnableDereferenceCheckParam);
-BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    bool,
-    kBackupRefPtrAsanEnableExtractionCheckParam);
-BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    bool,
-    kBackupRefPtrAsanEnableInstantiationCheckParam);
+BASE_EXPORT BASE_DECLARE_FEATURE(kAsanBrpDereferenceCheck);
+BASE_EXPORT BASE_DECLARE_FEATURE(kAsanBrpExtractionCheck);
+BASE_EXPORT BASE_DECLARE_FEATURE(kAsanBrpInstantiationCheck);
 BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(BucketDistributionMode,
                                        kPartitionAllocBucketDistributionParam);
 
@@ -216,13 +216,6 @@ BASE_EXPORT int GetThreadCacheMinCachedMemoryForPurgingBytes();
 
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocDisableBRPInBufferPartition);
 
-// This feature is additionally gated behind a buildflag because
-// pool offset freelists cannot be represented when PartitionAlloc uses
-// 32-bit pointers.
-#if PA_BUILDFLAG(USE_FREELIST_DISPATCHER)
-BASE_EXPORT BASE_DECLARE_FEATURE(kUsePoolOffsetFreelists);
-#endif
-
 // When set, partitions use a larger ring buffer and free memory less
 // aggressively when in the foreground.
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocAdjustSizeWhenInForeground);
@@ -233,13 +226,9 @@ BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocAdjustSizeWhenInForeground);
 // See also: https://crbug.com/333443437
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocUseSmallSingleSlotSpans);
 
-#if PA_CONFIG(ENABLE_SHADOW_METADATA)
-using ShadowMetadataEnabledProcesses = internal::PAFeatureEnabledProcesses;
-
-BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocShadowMetadata);
-BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(ShadowMetadataEnabledProcesses,
-                                       kShadowMetadataEnabledProcessesParam);
-#endif  // PA_CONFIG(ENABLE_SHADOW_METADATA)
+#if PA_BUILDFLAG(ENABLE_PARTITION_LOCK_PRIORITY_INHERITANCE)
+BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocUsePriorityInheritanceLocks);
+#endif  // PA_BUILDFLAG(ENABLE_PARTITION_LOCK_PRIORITY_INHERITANCE)
 
 }  // namespace base::features
 

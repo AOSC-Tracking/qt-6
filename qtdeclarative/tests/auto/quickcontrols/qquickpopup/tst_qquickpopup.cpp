@@ -119,6 +119,7 @@ private slots:
     void mirroredCombobox();
     void rotatedCombobox();
     void focusMultiplePopup();
+    void resetFocusToLastActiveFocusItem();
     void contentChildrenChange();
     void doubleClickInMouseArea();
     void fadeDimmer_data();
@@ -911,7 +912,7 @@ void tst_QQuickPopup::activeFocusOnClosingSeveralPopups()
     QQuickPopup *popup2 = window->property("popup2").value<QQuickPopup *>();
     QVERIFY(popup2);
 
-    QCOMPARE(button->hasActiveFocus(), true);
+    QVERIFY_ACTIVE_FOCUS(button);
     popup1->open();
     QTRY_VERIFY(popup1->isOpened());
     QVERIFY_ACTIVE_FOCUS(popup1);
@@ -924,7 +925,7 @@ void tst_QQuickPopup::activeFocusOnClosingSeveralPopups()
     popup2->close();
     QTRY_VERIFY(!popup1->isVisible());
     QTRY_VERIFY(!popup2->isVisible());
-    QTRY_COMPARE(button->hasActiveFocus(), true);
+    QTRY_VERIFY_ACTIVE_FOCUS(button);
 
     popup1->open();
     QTRY_VERIFY(popup1->isOpened());
@@ -938,7 +939,7 @@ void tst_QQuickPopup::activeFocusOnClosingSeveralPopups()
     popup1->close();
     QTRY_VERIFY(!popup1->isVisible());
     QTRY_VERIFY(!popup2->isVisible());
-    QTRY_COMPARE(button->hasActiveFocus(), true);
+    QTRY_VERIFY_ACTIVE_FOCUS(button);
 }
 
 void tst_QQuickPopup::activeFocusAfterExit()
@@ -2077,10 +2078,10 @@ void tst_QQuickPopup::invisibleToolTipOpen()
     QObject *loader = qvariant_cast<QObject *>(window->property("loader"));
     QVERIFY(loader);
 
-    // Send an extra move event, otherwise the test fails on subsequent runs for different styles for some reason...
-    // As an added bonus, this is also slightly more realistic. :D
-    QTest::mouseMove(window, QPoint(mouseArea->width() / 2 - 1, mouseArea->height() / 2 - 1));
-    QTest::mouseMove(window, QPoint(mouseArea->width() / 2, mouseArea->height() / 2));
+    // Simulate a real move, otherwise the test fails on subsequent runs for different styles for
+    // some reason...
+    PointLerper mousePointLerper(window);
+    mousePointLerper.move(QPoint(mouseArea->width() / 2, mouseArea->height() / 2));
     QTRY_VERIFY(toolTip->isOpened());
 
     QSignalSpy componentLoadedSpy(loader, SIGNAL(loaded()));
@@ -2548,6 +2549,71 @@ void tst_QQuickPopup::focusMultiplePopup()
     QVERIFY(rootItem->hasFocus());
 }
 
+void tst_QQuickPopup::resetFocusToLastActiveFocusItem()
+{
+    QQuickApplicationHelper helper(this, "resetFocusToLastActiveFocusItem.qml");
+    QVERIFY2(helper.ready, helper.failureMessage());
+
+    QQuickWindow *window = helper.window;
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    auto *rootItem = window->findChild<QQuickItem *>("rootItem");
+    QTRY_COMPARE(window->activeFocusItem(), rootItem);
+    QTRY_VERIFY(rootItem->hasFocus());
+    auto *button1 = window->findChild<QQuickButton *>("button1");
+    QVERIFY(button1);
+    button1->setFocus(true);
+    auto *button2 = window->findChild<QQuickButton *>("button2");
+    QVERIFY(button2);
+    QTRY_VERIFY(!button2->hasFocus());
+    auto *buttonPopup = window->findChild<QQuickPopup *>("popup1");
+    QVERIFY(buttonPopup);
+    auto *textEditPopup = window->findChild<QQuickPopup *>("popup2");
+    QVERIFY(textEditPopup);
+
+    // Set focus to the button in the window and restore focus back
+    // once its closed
+    buttonPopup->open();
+    QTRY_VERIFY(buttonPopup->isVisible());
+    QVERIFY(buttonPopup->hasFocus());
+    QVERIFY(!button1->hasFocus());
+    buttonPopup->close();
+    QTRY_VERIFY(!buttonPopup->isVisible());
+    QTRY_VERIFY(button1->hasFocus());
+
+    // Open popup1 & popup2 and close the popup in sequence
+    // to see whether the focus shifts back to the button1
+    buttonPopup->open();
+    QTRY_VERIFY(buttonPopup->isVisible());
+    QVERIFY(buttonPopup->hasFocus());
+    QVERIFY(!button1->hasFocus());
+    textEditPopup->open();
+    QTRY_VERIFY(textEditPopup->isVisible());
+    QVERIFY(textEditPopup->hasFocus());
+    buttonPopup->close();
+    QTRY_VERIFY(!buttonPopup->isVisible());
+    textEditPopup->close();
+    QTRY_VERIFY(!textEditPopup->isVisible());
+    QTRY_VERIFY(button1->hasFocus());
+
+    buttonPopup->open();
+    QTRY_VERIFY(buttonPopup->isVisible());
+    QVERIFY(buttonPopup->hasFocus());
+    QVERIFY(!button1->hasFocus());
+    button2->setFocus(true);
+    QTRY_VERIFY(button2->hasFocus());
+    QVERIFY(!button1->hasFocus());
+    textEditPopup->open();
+    QTRY_VERIFY(textEditPopup->isVisible());
+    QVERIFY(textEditPopup->hasFocus());
+    buttonPopup->close();
+    QTRY_VERIFY(!buttonPopup->isVisible());
+    textEditPopup->close();
+    QTRY_VERIFY(!textEditPopup->isVisible());
+    QTRY_VERIFY(button2->hasFocus());
+}
+
 void tst_QQuickPopup::contentChildrenChange()
 {
     QQmlEngine engine;
@@ -2613,7 +2679,7 @@ void tst_QQuickPopup::fadeDimmer()
     auto dimmer = QQuickPopupPrivate::get(popup)->dimmer;
     QVERIFY(dimmer);
     int opacityChangeCount = 0;
-    connect(dimmer, &QQuickItem::opacityChanged, this, [&opacityChangeCount]{
+    connect(dimmer, &QQuickItem::opacityChanged, dimmer, [&opacityChangeCount]{
         ++opacityChangeCount;
     });
     QTRY_VERIFY(popup->isOpened());
@@ -2733,12 +2799,8 @@ void tst_QQuickPopup::popupWindowPositioning()
     QSignalSpy ySpy(popup, SIGNAL(yChanged()));
 
     popup->open();
-    QTRY_VERIFY(popup->isOpened());
-
-    QTRY_VERIFY(popupPrivate->popupWindow);
+    TRY_VERIFY_POPUP_OPENED(popup);
     auto *popupWindow = popupPrivate->popupWindow;
-    QVERIFY(QTest::qWaitForWindowExposed(popupPrivate->popupWindow));
-    QQuickTest::qWaitForPolish(popupPrivate->popupWindow);
 
     QTRY_COMPARE(xSpy.count(), 1);
     QTRY_COMPARE(ySpy.count(), 1);
@@ -3429,7 +3491,8 @@ void tst_QQuickPopup::popupWindowDestructedBeforeQQuickPopup()
 
     bool lambdaExecuted = false;
 
-    connect(popupPrivate->popupWindow, &QObject::destroyed, [&popupDestroyedSpy, &lambdaExecuted]() {
+    connect(popupPrivate->popupWindow, &QObject::destroyed, this,
+            [&popupDestroyedSpy, &lambdaExecuted]() {
         // Check that the popup window has been destroyed before the popup has been destroyed.
         // The events come in the same frame, so we can't just use QTRY_COMPARE.
         QCOMPARE(popupDestroyedSpy.size(), 0);

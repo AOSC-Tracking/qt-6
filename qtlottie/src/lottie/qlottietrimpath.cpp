@@ -9,17 +9,10 @@
 
 #include "qlottieconstants_p.h"
 
-QLottieTrimPath::QLottieTrimPath()
+QLottieTrimPath::QLottieTrimPath(QLottieBase *parent)
 {
-    m_appliedTrim = this;
-}
-
-QLottieTrimPath::QLottieTrimPath(const QJsonObject &definition, QLottieBase *parent)
-{
-    m_appliedTrim = this;
-
+    m_appliedTrim.reset(this, OwnsAppliedTrim::No);
     setParent(parent);
-    construct(definition);
 }
 
 QLottieTrimPath::QLottieTrimPath(const QLottieTrimPath &other)
@@ -36,31 +29,37 @@ QLottieBase *QLottieTrimPath::clone() const
     return new QLottieTrimPath(*this);
 }
 
-void QLottieTrimPath::construct(const QJsonObject &definition)
+int QLottieTrimPath::parse(const QJsonObject &definition)
 {
     QLottieBase::parse(definition);
     if (m_hidden)
-        return;
+        return 0;
 
-    qCDebug(lcLottieQtLottieParser) << "QLottieTrimPath::construct():" << m_name;
+    qCDebug(lcLottieQtLottieParser) << "QLottieTrimPath::parse():" << m_name;
 
-    QJsonObject start = definition.value(QLatin1String("s")).toObject();
+    if (!checkRequiredKeys(definition, "Trim path"_L1, { "o"_L1, "s"_L1, "e"_L1 }, m_name))
+        return -1;
+
+    QJsonObject start = definition.value("s"_L1).toObject();
     start = resolveExpression(start);
     m_start.construct(start);
 
-    QJsonObject end = definition.value(QLatin1String("e")).toObject();
+    QJsonObject end = definition.value("e"_L1).toObject();
     end = resolveExpression(end);
     m_end.construct(end);
 
-    QJsonObject offset = definition.value(QLatin1String("o")).toObject();
+    // Simplify: a constant 100% trim is a noop, just skip it
+    if (!m_start.isAnimated() && !m_end.isAnimated()
+        && m_start.value() == 0 && m_end.value() == 100) {
+        return -2;
+    }
+
+    QJsonObject offset = definition.value("o"_L1).toObject();
     offset = resolveExpression(offset);
     m_offset.construct(offset);
 
-    int multiMode = 1;
-    if (definition.contains(QLatin1String("m"))) {
-        multiMode = definition.value(QLatin1String("m")).toInt();
-    }
-    m_isParallel = (multiMode == 1);
+    const int multiMode = definition.value("m"_L1).toInt();
+    m_isParallel = (multiMode != 2);
 
     if (strcmp(qgetenv("QLOTTIE_FORCE_TRIM_MODE"), "sequential") == 0) {
         qCDebug(lcLottieQtLottieRender) << "Forcing trim mode to Sequential";
@@ -69,6 +68,8 @@ void QLottieTrimPath::construct(const QJsonObject &definition)
         qCDebug(lcLottieQtLottieRender) << "Forcing trim mode to Parallel";
         m_isParallel = false;
     }
+
+    return 0;
 }
 
 void QLottieTrimPath::updateProperties(int frame)
@@ -85,8 +86,8 @@ void QLottieTrimPath::updateProperties(int frame)
 
 void QLottieTrimPath::render(QLottieRenderer &renderer) const
 {
-    if (m_appliedTrim) {
-        if (m_appliedTrim->isParallel())
+    if (QLottieTrimPath *appliedTrim = m_appliedTrim.data()) {
+        if (appliedTrim->isParallel())
             renderer.setTrimmingState(QLottieRenderer::Parallel);
         else
             renderer.setTrimmingState(QLottieRenderer::Sequential);

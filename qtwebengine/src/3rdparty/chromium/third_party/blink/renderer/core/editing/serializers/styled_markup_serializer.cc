@@ -30,6 +30,7 @@
 #include "third_party/blink/renderer/core/editing/serializers/styled_markup_serializer.h"
 
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
+#include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
@@ -52,6 +53,7 @@
 #include "third_party/blink/renderer/core/html/html_olist_element.h"
 #include "third_party/blink/renderer/core/html/html_table_element.h"
 #include "third_party/blink/renderer/core/html/html_ulist_element.h"
+#include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -115,6 +117,7 @@ class StyledMarkupTraverser {
   bool ShouldAnnotate() const;
   bool ShouldConvertBlocksToInlines() const;
   bool IsForMarkupSanitization() const;
+  bool ShouldSkipUnselectableContent() const;
   void AppendStartMarkup(Node&);
   void AppendEndMarkup(Node&);
   EditingStyle* CreateInlineStyle(Element&);
@@ -122,6 +125,9 @@ class StyledMarkupTraverser {
   bool ShouldApplyWrappingStyle(const Node&) const;
   bool ContainsOnlyBRElement(const Element&) const;
   bool ShouldSerializeUnrenderedElement(const Node&) const;
+  bool IsSelectableOrHasSelectableDescendants(
+      const Node&,
+      HeapHashMap<Member<const Node>, bool>&) const;
 
   StyledMarkupAccumulator* accumulator_;
   Node* last_closed_;
@@ -136,6 +142,11 @@ bool StyledMarkupTraverser<Strategy>::ShouldAnnotate() const {
 template <typename Strategy>
 bool StyledMarkupTraverser<Strategy>::IsForMarkupSanitization() const {
   return accumulator_ && accumulator_->IsForMarkupSanitization();
+}
+
+template <typename Strategy>
+bool StyledMarkupTraverser<Strategy>::ShouldSkipUnselectableContent() const {
+  return accumulator_ && accumulator_->ShouldSkipUnselectableContent();
 }
 
 template <typename Strategy>
@@ -223,6 +234,14 @@ String StyledMarkupSerializer<Strategy>::CreateMarkup() {
   // tag. See http://crbug.com/634482
   bool should_append_parent_tag =
       DetermineParentTagAndUpdateLastClosed(first_node, past_end);
+
+  // `UpdateViewportSize` ensures viewport_size_ is defined.
+  //  See comment on viewport_size_ in style_engine.h
+  //  without `UpdateViewportSize` call to `GetViewportsize()` while
+  //  resolving style causes crash  in other unit tests and resize scenarios
+  if (RuntimeEnabledFeatures::ResolveVarStylesOnCopyEnabled()) {
+    start_.GetDocument()->GetStyleEngine().UpdateViewportSize();
+  }
 
   StyledMarkupTraverser<Strategy> traverser(&markup_accumulator, last_closed_);
   Node* last_closed = traverser.Traverse(first_node, past_end);
@@ -331,18 +350,14 @@ bool StyledMarkupSerializer<Strategy>::DetermineParentTagAndUpdateLastClosed(
     last_closed_ = last_closed_->parentElement();
     return true;
   }
-  if (RuntimeEnabledFeatures::IncludeTableTagInExtendedSelectionEnabled()) {
-    if (last_closed_ && IsTablePartElement(last_closed_)) {
-      if (auto* first_ancestor_table_traversal =
-              Traversal<HTMLTableElement>::FirstAncestor(*last_closed_)) {
-        last_closed_ = first_ancestor_table_traversal;
-        return true;
-      }
+  if (last_closed_ && IsTablePartElement(last_closed_)) {
+    if (auto* first_ancestor_table_traversal =
+            Traversal<HTMLTableElement>::FirstAncestor(*last_closed_)) {
+      last_closed_ = first_ancestor_table_traversal;
+      return true;
     }
   }
-  if (RuntimeEnabledFeatures::
-          IncludeListElementTagInExtendedSelectionEnabled() &&
-      last_closed_ && IsListItemTag(last_closed_)) {
+  if (last_closed_ && IsListItemTag(last_closed_)) {
     if (Node* ancestor =
             FirstAncestorOfTypes<HTMLUListElement, HTMLOListElement,
                                  HTMLDListElement>(*last_closed_)) {
@@ -387,6 +402,7 @@ template <typename Strategy>
 Node* StyledMarkupTraverser<Strategy>::Traverse(Node* start_node,
                                                 Node* past_end) {
   HeapVector<Member<ContainerNode>> ancestors_to_close;
+  HeapHashMap<Member<const Node>, bool> has_selectable_descendants;
   Node* next;
   Node* last_closed = nullptr;
   for (Node* n = start_node; n && n != past_end; n = next) {
@@ -408,9 +424,18 @@ Node* StyledMarkupTraverser<Strategy>::Traverse(Node* start_node,
         // table.
         continue;
       }
+      bool should_skip_unselectable_node = false;
+      if (RuntimeEnabledFeatures::
+              SkipUnselectableContentInSerializationEnabled() &&
+          ShouldSkipUnselectableContent() && n->GetLayoutObject() &&
+          !n->GetLayoutObject()->IsSelectable()) {
+        should_skip_unselectable_node = !IsSelectableOrHasSelectableDescendants(
+            *n, has_selectable_descendants);
+      }
 
       auto* element = DynamicTo<Element>(n);
-      if (n->GetLayoutObject() || ShouldSerializeUnrenderedElement(*n)) {
+      if ((n->GetLayoutObject() || ShouldSerializeUnrenderedElement(*n)) &&
+          !should_skip_unselectable_node) {
         // Add the node to the markup if we're not skipping the descendants
         AppendStartMarkup(*n);
 
@@ -650,6 +675,30 @@ bool StyledMarkupTraverser<Strategy>::ShouldSerializeUnrenderedElement(
     if (IsA<HTMLIFrameElement>(node))
       return true;
   }
+  return false;
+}
+
+template <typename Strategy>
+bool StyledMarkupTraverser<Strategy>::IsSelectableOrHasSelectableDescendants(
+    const Node& node,
+    HeapHashMap<Member<const Node>, bool>& has_selectable_descendants) const {
+  if (!node.GetLayoutObject() || node.GetLayoutObject()->IsSelectable()) {
+    return true;
+  }
+  auto it = has_selectable_descendants.find(&node);
+  if (it != has_selectable_descendants.end()) {
+    return it->value;
+  }
+
+  for (Node* child = Strategy::FirstChild(node); child;
+       child = Strategy::NextSibling(*child)) {
+    if (IsSelectableOrHasSelectableDescendants(*child,
+                                               has_selectable_descendants)) {
+      has_selectable_descendants.insert(&node, true);
+      return true;
+    }
+  }
+  has_selectable_descendants.insert(&node, false);
   return false;
 }
 

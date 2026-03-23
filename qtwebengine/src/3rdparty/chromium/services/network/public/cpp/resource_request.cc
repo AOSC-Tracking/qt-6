@@ -4,6 +4,7 @@
 
 #include "services/network/public/cpp/resource_request.h"
 
+#include "base/debug/crash_logging.h"
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/typed_macros.h"
@@ -11,6 +12,7 @@
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/base/load_flags.h"
 #include "net/log/net_log_source.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy.h"
 #include "services/network/public/mojom/cookie_access_observer.mojom.h"
 #include "services/network/public/mojom/device_bound_sessions.mojom.h"
 #include "services/network/public/mojom/devtools_observer.mojom.h"
@@ -19,6 +21,23 @@
 #include "services/network/public/mojom/web_bundle_handle.mojom.h"
 
 namespace network {
+
+ResourceRequest::TrustedParams::EnabledClientHints::EnabledClientHints() =
+    default;
+ResourceRequest::TrustedParams::EnabledClientHints::~EnabledClientHints() =
+    default;
+ResourceRequest::TrustedParams::EnabledClientHints::EnabledClientHints(
+    const EnabledClientHints&) = default;
+ResourceRequest::TrustedParams::EnabledClientHints&
+ResourceRequest::TrustedParams::EnabledClientHints::operator=(
+    const EnabledClientHints&) = default;
+
+bool ResourceRequest::TrustedParams::EnabledClientHints::operator==(
+    const EnabledClientHints& other) const {
+  return origin == other.origin &&
+         is_outermost_main_frame == other.is_outermost_main_frame &&
+         hints == other.hints;
+}
 
 namespace {
 
@@ -177,6 +196,7 @@ ResourceRequest::TrustedParams& ResourceRequest::TrustedParams::operator=(
   allow_cookies_from_browser = other.allow_cookies_from_browser;
   include_request_cookies_with_response =
       other.include_request_cookies_with_response;
+  enabled_client_hints = other.enabled_client_hints;
   cookie_observer =
       Clone(&const_cast<mojo::PendingRemote<mojom::CookieAccessObserver>&>(
           other.cookie_observer));
@@ -215,6 +235,7 @@ bool ResourceRequest::TrustedParams::EqualsForTesting(
          allow_cookies_from_browser == other.allow_cookies_from_browser &&
          include_request_cookies_with_response ==
              other.include_request_cookies_with_response &&
+         enabled_client_hints == other.enabled_client_hints &&
          client_security_state == other.client_security_state;
 }
 
@@ -309,7 +330,7 @@ bool ResourceRequest::EqualsForTesting(const ResourceRequest& request) const {
          credentials_mode == request.credentials_mode &&
          redirect_mode == request.redirect_mode &&
          fetch_integrity == request.fetch_integrity &&
-         expected_signatures == request.expected_signatures &&
+         expected_public_keys == request.expected_public_keys &&
          destination == request.destination &&
          request_body == request.request_body &&
          keepalive == request.keepalive &&
@@ -325,10 +346,6 @@ bool ResourceRequest::EqualsForTesting(const ResourceRequest& request) const {
          upgrade_if_insecure == request.upgrade_if_insecure &&
          is_revalidating == request.is_revalidating &&
          throttling_profile_id == request.throttling_profile_id &&
-         custom_proxy_pre_cache_headers.ToString() ==
-             request.custom_proxy_pre_cache_headers.ToString() &&
-         custom_proxy_post_cache_headers.ToString() ==
-             request.custom_proxy_post_cache_headers.ToString() &&
          fetch_window_id == request.fetch_window_id &&
          devtools_request_id == request.devtools_request_id &&
          is_fetch_like_api == request.is_fetch_like_api &&
@@ -349,7 +366,11 @@ bool ResourceRequest::EqualsForTesting(const ResourceRequest& request) const {
          target_ip_address_space == request.target_ip_address_space &&
          shared_dictionary_writer_enabled ==
              request.shared_dictionary_writer_enabled &&
-         socket_tag == request.socket_tag;
+         socket_tag == request.socket_tag &&
+         allows_device_bound_session_registration ==
+             request.allows_device_bound_session_registration &&
+         permissions_policy == request.permissions_policy &&
+         fetch_retry_options == request.fetch_retry_options;
 }
 
 bool ResourceRequest::SendsCookies() const {

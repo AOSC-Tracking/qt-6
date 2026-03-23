@@ -22,6 +22,7 @@
 #include "base/json/values_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/notimplemented.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -48,6 +49,7 @@
 #include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_util.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/granted_file_entry.h"
 #include "extensions/browser/path_util.h"
 #include "extensions/common/api/file_system.h"
@@ -167,7 +169,7 @@ bool GetFileTypesFromAcceptOption(
 // response to a chrome.fileSystem.chooseEntry() call.
 constexpr char kLastChooseEntryDirectory[] = "last_choose_file_directory";
 
-const auto kGraylistedPaths = std::to_array<int>({
+constexpr auto kGraylistedPaths = std::to_array<int>({
     base::DIR_HOME,
 #if BUILDFLAG(IS_WIN)
     base::DIR_PROGRAM_FILES,

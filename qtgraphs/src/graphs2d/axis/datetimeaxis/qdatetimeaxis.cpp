@@ -1,9 +1,12 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
-#include <QtCore/QObject>
-#include <QtGraphs/QDateTimeAxis>
-#include "private/qdatetimeaxis_p.h"
+
+#include <QtGraphs/qdatetimeaxis.h>
+#include <QtGraphs/private/qdatetimeaxis_p.h>
+#include <QtCore/qobject.h>
+#include <QtCore/qdatetime.h>
 
 QT_BEGIN_NAMESPACE
 /*!
@@ -86,15 +89,25 @@ QT_BEGIN_NAMESPACE
 */
 /*!
  \property QDateTimeAxis::tickInterval
- \brief The interval between dynamically placed tick marks and labels.
- The default value is 0, which means that intervals are automatically calculated
- based on the min and max range.
+ \brief The amount of major ticks are placed on an axis. If value is 0 or lower, axis will
+ automatically calculate appropriate amount of ticks. The default value is 0.
 */
 /*!
  \qmlproperty real DateTimeAxis::tickInterval
- The interval between dynamically placed tick marks and labels.
- The default value is 0, which means that intervals are automatically calculated
- based on the min and max range.
+ \brief The amount of major ticks are placed on an axis. If value is 0 or lower, axis will
+ automatically calculate appropriate amount of ticks. The default value is 0.
+ */
+/*!
+ \property QDateTimeAxis::timeZone
+ \brief The time zone that will be used to display labels of the axis.
+ The accepted values are based on IANA time zone IDs. The default time zone is UTC.
+ \since 6.11
+*/
+/*!
+ \qmlproperty QTimeZone DateTimeAxis::timeZone
+ The time zone that will be used to display labels of the axis.
+ The accepted values are based on IANA time zone IDs. The default time zone is UTC.
+ \since 6.11
 */
 
 /*!
@@ -110,6 +123,93 @@ QT_BEGIN_NAMESPACE
  The format property allows to signify the visual representation of the DateTime object, in days,
   months, and years. The default value is dd-MMMM-yy.
  */
+
+/*!
+ \property QDateTimeAxis::zoom
+ \since 6.11
+ \brief The zoom value of the axis.
+ The zoom value enlarges or shrinks the axis and thus the graph without affecting intervals
+ of grid and labels. The default value is 1.
+*/
+
+/*!
+ \qmlproperty real DateTimeAxis::zoom
+ The zoom value of the axis.
+ The zoom value enlarges or shrinks the axis and thus the graph without affecting intervals
+ of grid and labels. The default value is 1.
+ \since 6.11
+*/
+
+/*!
+ \property QDateTimeAxis::pan
+ \since 6.11
+ \brief The pan value of the axis.
+
+ The pan value moves the center of the axis without affecting intervals
+ of grid and labels. The default value is 0.
+*/
+
+/*!
+ \qmlproperty real DateTimeAxis::pan
+ \since 6.11
+ The pan value of the axis.
+
+ The pan value moves the center of the axis without affecting intervals
+ of grid and labels. The default value is 0.
+*/
+
+/*!
+ \property QDateTimeAxis::visualMin
+ \readonly
+ \since 6.11
+ \brief The visual minimum value of the axis.
+
+ This property holds a a visual minimum axis value when axis has been
+ panned or zoomed. The default value is \l{QDateTimeAxis::min}
+*/
+/*!
+ \qmlproperty real DateTimeAxis::visualMin
+ \readonly
+ \since 6.11
+ The visual minimum value of the axis.
+
+ This property holds a a visual minimum axis value when axis has been
+ panned or zoomed. The default value is \l min
+*/
+
+/*!
+ \property QDateTimeAxis::visualMax
+ \readonly
+ \since 6.11
+ \brief The visual maximum value of the axis.
+
+ This property holds a a visual maximum axis value when axis has been
+ panned or zoomed. The default value is \l{QDateTimeAxis::max}
+*/
+/*!
+ \qmlproperty real DateTimeAxis::visualMax
+ \readonly
+ \since 6.11
+ The visual maximum value of the axis.
+
+ This property holds a a visual maximum axis value when axis has been
+ panned or zoomed. The default value is \l max
+*/
+
+/*!
+ \qmlmethod QTimeZone DateTimeAxis::timeZoneFromString(string zoneId)
+ \since 6.11
+ Returns the QTimeZone corresponding to IANA based \a zoneId.
+ \note This is the converter method for setting the \l {timeZone}.
+ \sa QDateTimeAxis::timeZone, timeZoneAsString
+*/
+/*!
+ \qmlmethod string DateTimeAxis::timeZoneAsString()
+ \since 6.11
+ Returns the \l {QDateTimeAxis::timeZone}'s IANA based zone ID as a string.
+ \sa timeZone
+*/
+
 /*!
  \qmlsignal DateTimeAxis::minChanged(DateTime min)
  This signal is emitted when the minimum value of the axis, specified by \a min, changes.
@@ -137,14 +237,23 @@ QT_BEGIN_NAMESPACE
  This signal is emitted when the tick interval value, specified by
  \a tickInterval, changes.
 */
+/*!
+ \qmlsignal DateTimeAxis::timeZoneChanged()
+ This signal is emitted when the time zone is changed. It represents a string value for the
+ IANA time zone ID that was set.
+ \since 6.11
+*/
+/*!
+ \qmlsignal DateTimeAxis::zoomChanged()
+ This signal is emmited when the zoom value changes.
+ \since 6.11
+*/
 
 QDateTimeAxis::QDateTimeAxis(QObject *parent)
     : QAbstractAxis(*(new QDateTimeAxisPrivate), parent)
 {}
 
-QDateTimeAxis::~QDateTimeAxis()
-{
-}
+QDateTimeAxis::~QDateTimeAxis() {}
 
 QAbstractAxis::AxisType QDateTimeAxis::type() const
 {
@@ -163,7 +272,7 @@ void QDateTimeAxis::setMin(const QDateTime &min)
 QDateTime QDateTimeAxis::min() const
 {
     Q_D(const QDateTimeAxis);
-    return QDateTime::fromMSecsSinceEpoch(d->m_min, QTimeZone::UTC);
+    return QDateTime::fromMSecsSinceEpoch(d->m_min, d->m_timeZone);
 }
 
 void QDateTimeAxis::setMax(const QDateTime &max)
@@ -178,7 +287,7 @@ void QDateTimeAxis::setMax(const QDateTime &max)
 QDateTime QDateTimeAxis::max() const
 {
     Q_D(const QDateTimeAxis);
-    return QDateTime::fromMSecsSinceEpoch(d->m_max, QTimeZone::UTC);
+    return QDateTime::fromMSecsSinceEpoch(d->m_max, d->m_timeZone);
 }
 
 void QDateTimeAxis::setLabelFormat(const QString &format)
@@ -210,7 +319,7 @@ void QDateTimeAxis::setTickInterval(qreal newTickInterval)
     if (newTickInterval < 0.0)
         newTickInterval = 0.0;
 
-    if (qFuzzyCompare(d->m_tickInterval, newTickInterval))
+    if (qFuzzyCompare(d->m_tickInterval + 1, newTickInterval + 1))
         return;
     d->m_tickInterval = newTickInterval;
     emit tickIntervalChanged();
@@ -235,6 +344,105 @@ void QDateTimeAxis::setSubTickCount(int newSubTickCount)
     d->m_subTickCount = newSubTickCount;
     emit subTickCountChanged();
     emit update();
+}
+
+QTimeZone QDateTimeAxis::timeZone() const
+{
+#if QT_CONFIG(timezone)
+    Q_D(const QDateTimeAxis);
+
+    return d->m_timeZone;
+#else
+    return QTimeZone(QTimeZone::Initialization::UTC);
+#endif
+}
+
+void QDateTimeAxis::setTimeZone(const QTimeZone &timeZone)
+{
+    Q_D(QDateTimeAxis);
+
+    if (!timeZone.isValid())
+        return;
+
+    d->m_timeZone = timeZone;
+    emit timeZoneChanged(timeZone);
+    emit update();
+}
+
+QTimeZone QDateTimeAxis::timeZoneFromString(const QString &zoneId) const
+{
+
+#if QT_CONFIG(timezone)
+    auto zone = QTimeZone(zoneId.toUtf8());
+#else
+    auto zone = QTimeZone(QTimeZone::Initialization::UTC);
+#endif
+
+    return zone;
+}
+
+QString QDateTimeAxis::timeZoneAsString() const
+{
+#if QT_CONFIG(timezone)
+    Q_D(const QDateTimeAxis);
+    return QString::fromLatin1(d->m_timeZone.id());
+#else
+    return QString::fromLatin1("UTC");
+#endif
+}
+
+void QDateTimeAxis::setZoom(qreal zoom)
+{
+    Q_D(QDateTimeAxis);
+
+    if (QtPrivate::fuzzyCompare(d->m_zoom, zoom)) {
+        qCDebug(lcAxis2D, "axis already zoomed to value of %f", d->m_zoom);
+        return;
+    }
+
+    d->m_zoom = zoom;
+    d->calculateVisualRange();
+    emit zoomChanged(zoom);
+    emit update();
+}
+
+qreal QDateTimeAxis::zoom() const
+{
+    Q_D(const QDateTimeAxis);
+    return d->m_zoom;
+}
+
+void QDateTimeAxis::setPan(qreal pan)
+{
+    Q_D(QDateTimeAxis);
+
+    if (QtPrivate::fuzzyCompare(d->m_pan, pan)) {
+        qCDebug(lcAxis2D, "panning already set to: %f", d->m_pan);
+        return;
+    }
+
+    d->m_pan = pan;
+    d->calculateVisualRange();
+    emit panChanged(pan);
+    emit update();
+}
+
+qreal QDateTimeAxis::pan() const
+{
+    Q_D(const QDateTimeAxis);
+    return d->m_pan;
+}
+
+QDateTime QDateTimeAxis::visualMin() const
+{
+    Q_D(const QDateTimeAxis);
+    return QDateTime::fromMSecsSinceEpoch(d->m_visualMin, d->m_timeZone);
+}
+
+QDateTime QDateTimeAxis::visualMax() const
+{
+    Q_D(const QDateTimeAxis);
+    return QDateTime::fromMSecsSinceEpoch(d->m_visualMax, d->m_timeZone);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -282,8 +490,32 @@ void QDateTimeAxisPrivate::setRange(qreal min, qreal max)
         emit q->maxChanged(QDateTime::fromMSecsSinceEpoch(max, QTimeZone::UTC));
     }
 
-    if (changed)
+    if (changed) {
+        calculateVisualRange();
         emit q->rangeChanged(min, max);
+    }
+}
+
+void QDateTimeAxisPrivate::calculateVisualRange()
+{
+    Q_Q(QDateTimeAxis);
+    qreal diff = m_max - m_min;
+    qreal center = diff / 2.0f + m_min + m_pan;
+    diff /= m_zoom;
+    qreal max = center + diff / 2.0f;
+    qreal min = center - diff / 2.0f;
+
+    if (!QtPrivate::fuzzyCompare(m_visualMin, min)) {
+        m_visualMin = min;
+        emit q->visualMinChanged(QDateTime::fromMSecsSinceEpoch(min, m_timeZone));
+    }
+
+    if (!QtPrivate::fuzzyCompare(m_visualMax, max)) {
+        m_visualMax = max;
+        emit q->visualMaxChanged(QDateTime::fromMSecsSinceEpoch(max, m_timeZone));
+    }
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qdatetimeaxis.cpp"

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 #ifndef QV4LOOKUP_H
 #define QV4LOOKUP_H
 
@@ -158,9 +159,19 @@ struct Q_QML_EXPORT Lookup {
             const QQmlPropertyData *propertyData;
         } qobjectMethodLookup;
         struct {
-            quintptr isConstant; // This is a bool, encoded as 0 or 1. Both values are ignored by gc
-            quintptr metaObject; // a (const QMetaObject* & 1) or nullptr
-            int coreIndex;
+            // NB: None of this is actually cache-able. The metaobject may change at any time.
+            //     We invalidate this data every time the lookup is invoked and thereby force a
+            //     re-initialization next time.
+
+            quintptr metaObject; // a (const QMetaObject* | 1) or nullptr
+            quintptr metaType;   // a (const QtPrivate::QMetaTypeInterface* | 1) or nullptr
+
+            // If it was negative it would be invalid. So 31 bits are enough
+            uint coreIndex: 31;
+
+            // isConstant for getter lookups, isResettable for setter ones
+            uint isConstantOrResettable: 1;
+
             int notifyIndex;
         } qobjectFallbackLookup;
         struct {
@@ -472,15 +483,15 @@ inline void setupQObjectLookup(
 // template parameter is an ugly trick to avoid pulling in the QObjectMethod header here
 template<typename QObjectMethod = Heap::QObjectMethod>
 inline void setupQObjectMethodLookup(
-        Lookup *lookup, const QQmlData *ddata, const QQmlPropertyData *propertyData,
-        const Object *self, QObjectMethod *method)
+        Lookup *lookup, const QQmlPropertyCache::ConstPtr &propertyCache,
+        const QQmlPropertyData *propertyData, const Object *self, QObjectMethod *method)
 {
     lookup->releasePropertyCache();
-    Q_ASSERT(!ddata->propertyCache.isNull());
+    Q_ASSERT(!propertyCache.isNull());
     auto engine = self->engine();
     lookup->qobjectMethodLookup.method.set(engine, method);
     lookup->qobjectMethodLookup.ic.set(engine, self->internalClass());
-    lookup->qobjectMethodLookup.propertyCache = ddata->propertyCache.data();
+    lookup->qobjectMethodLookup.propertyCache = propertyCache.data();
     lookup->qobjectMethodLookup.propertyCache->addref();
     lookup->qobjectMethodLookup.propertyData = propertyData;
 }

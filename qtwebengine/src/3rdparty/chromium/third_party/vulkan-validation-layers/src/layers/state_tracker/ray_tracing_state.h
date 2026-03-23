@@ -22,8 +22,9 @@
 #include "generated/dispatch_functions.h"
 
 namespace vvl {
+class AccelerationStructureNVSubState;
 
-class AccelerationStructureNV : public Bindable {
+class AccelerationStructureNV : public Bindable, public SubStateManager<AccelerationStructureNVSubState> {
   public:
     AccelerationStructureNV(VkDevice device, VkAccelerationStructureNV handle,
                             const VkAccelerationStructureCreateInfoNV *pCreateInfo)
@@ -41,6 +42,9 @@ class AccelerationStructureNV : public Bindable {
     AccelerationStructureNV(const AccelerationStructureNV &rh_obj) = delete;
 
     VkAccelerationStructureNV VkHandle() const { return handle_.Cast<VkAccelerationStructureNV>(); }
+
+    void Destroy() override;
+    void NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) override;
 
     void Build(const VkAccelerationStructureInfoNV *pInfo) {
         built = true;
@@ -73,14 +77,42 @@ class AccelerationStructureNV : public Bindable {
     BindableLinearMemoryTracker tracker_;
 };
 
-class AccelerationStructureKHR : public StateObject {
+class AccelerationStructureNVSubState {
+  public:
+    explicit AccelerationStructureNVSubState(AccelerationStructureNV &ac) : base(ac) {}
+    AccelerationStructureNVSubState(const AccelerationStructureNVSubState &) = delete;
+    AccelerationStructureNVSubState &operator=(const AccelerationStructureNVSubState &) = delete;
+    virtual ~AccelerationStructureNVSubState() {}
+    virtual void Destroy() {}
+    virtual void NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) {}
+
+    AccelerationStructureNV &base;
+};
+
+inline void AccelerationStructureNV::Destroy() {
+    for (auto &item : sub_states_) {
+        item.second->Destroy();
+    }
+    Bindable::Destroy();
+}
+
+inline void AccelerationStructureNV::NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) {
+    for (auto &item : sub_states_) {
+        item.second->NotifyInvalidate(invalid_nodes, unlink);
+    }
+    Bindable::NotifyInvalidate(invalid_nodes, unlink);
+}
+
+class AccelerationStructureKHRSubState;
+
+class AccelerationStructureKHR : public StateObject, public SubStateManager<AccelerationStructureKHRSubState> {
   public:
     AccelerationStructureKHR(VkAccelerationStructureKHR handle, const VkAccelerationStructureCreateInfoKHR *pCreateInfo,
-                             std::shared_ptr<Buffer> &&buf_state)
+                             std::shared_ptr<Buffer> &&buf_state, const VkDeviceAddress buffer_device_address)
         : StateObject(handle, kVulkanObjectTypeAccelerationStructureKHR),
-          safe_create_info(pCreateInfo),
-          create_info(*safe_create_info.ptr()),
-          buffer_state(buf_state) {}
+          create_info(*pCreateInfo),
+          buffer_state(buf_state),
+          buffer_device_address(buffer_device_address) {}
     AccelerationStructureKHR(const AccelerationStructureKHR &rh_obj) = delete;
 
     virtual ~AccelerationStructureKHR() {
@@ -96,13 +128,8 @@ class AccelerationStructureKHR : public StateObject {
         buffer_state->AddParent(this);
     }
 
-    void Destroy() override {
-        if (buffer_state) {
-            buffer_state->RemoveParent(this);
-            buffer_state = nullptr;
-        }
-        StateObject::Destroy();
-    }
+    void Destroy() override;
+    void NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) override;
 
     void Build(const VkAccelerationStructureBuildGeometryInfoKHR *pInfo, const bool is_host,
                const VkAccelerationStructureBuildRangeInfoKHR *build_range_info) {
@@ -120,16 +147,68 @@ class AccelerationStructureKHR : public StateObject {
         }
     }
 
-    const vku::safe_VkAccelerationStructureCreateInfoKHR safe_create_info;
-    const VkAccelerationStructureCreateInfoKHR &create_info;
+    // Returns the device address range effectively occupied by the acceleration structure,
+    // as defined by its creation info.
+    // It does NOT take into account the acceleration structure address as returned by
+    // vkGetAccelerationStructureDeviceAddress, this address may be at an offset
+    // of the buffer range backing the acceleration structure
+    vvl::range<VkDeviceAddress> GetDeviceAddressRange() const {
+        if (!buffer_state) {
+            return {};
+        }
+        if (buffer_state->deviceAddress != 0) {
+            return {buffer_state->deviceAddress + create_info.offset,
+                    buffer_state->deviceAddress + create_info.offset + create_info.size};
+        }
+        return {buffer_device_address + create_info.offset, buffer_device_address + create_info.offset + create_info.size};
+    }
+
+    // At time of writing, havin a safe_VkAccelerationStructureCreateInfoKHR is not strictly necessary,
+    // and https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9669
+    // showed that the underlying used to store host side acceleration structure
+    // data seems to have hard to reproduce issues
+    // => rely on a plain VkAccelerationStructureCreateInfoKHR
+    VkAccelerationStructureCreateInfoKHR create_info;
 
     uint64_t opaque_handle = 0;
     std::shared_ptr<vvl::Buffer> buffer_state{};
+    // Used in case buffer_state->deviceAddress is 0 (happens if app never queried address)
+    const VkDeviceAddress buffer_device_address = 0;
     std::optional<vku::safe_VkAccelerationStructureBuildGeometryInfoKHR> build_info_khr{};
     std::vector<VkAccelerationStructureBuildRangeInfoKHR> build_range_infos{};
     // You can't have is_built == false and a build_info_khr, but you can have is_built == true and no build_info_khr,
     // if the acceleration structure was filled by a call to vkCmdCopyMemoryToAccelerationStructure
     bool is_built = false;
 };
+
+class AccelerationStructureKHRSubState {
+  public:
+    explicit AccelerationStructureKHRSubState(AccelerationStructureKHR &ac) : base(ac) {}
+    AccelerationStructureKHRSubState(const AccelerationStructureKHRSubState &) = delete;
+    AccelerationStructureKHRSubState &operator=(const AccelerationStructureKHRSubState &) = delete;
+    virtual ~AccelerationStructureKHRSubState() {}
+    virtual void Destroy() {}
+    virtual void NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) {}
+
+    AccelerationStructureKHR &base;
+};
+
+inline void AccelerationStructureKHR::Destroy() {
+    for (auto &item : sub_states_) {
+        item.second->Destroy();
+    }
+    if (buffer_state) {
+        buffer_state->RemoveParent(this);
+        buffer_state = nullptr;
+    }
+    StateObject::Destroy();
+}
+
+inline void AccelerationStructureKHR::NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) {
+    for (auto &item : sub_states_) {
+        item.second->NotifyInvalidate(invalid_nodes, unlink);
+    }
+    StateObject::NotifyInvalidate(invalid_nodes, unlink);
+}
 
 }  // namespace vvl

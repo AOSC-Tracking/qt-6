@@ -1,5 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3ddebugsettings_p.h"
 
@@ -71,30 +73,37 @@ QT_BEGIN_NAMESPACE
     \l{SceneEnvironment::lightProbe} and also has a directional light.
 
     \image debugsettings_default.jpg
+           {Scene with default debug settings}
 
     Setting \c{DebugSettings.BaseColor}:
 
     \image debugsettings_basecolor.jpg
+           {Scene showing base colors without lighting}
 
     Setting \c{DebugSettings.Roughness}:
 
     \image debugsettings_roughness.jpg
+           {Scene showing roughness values}
 
     Setting \c{DebugSettings.Metalness}:
 
     \image debugsettings_metalness.jpg
+           {Scene highlighting metalness values}
 
     Setting \c{DebugSettings.Diffuse}:
 
     \image debugsettings_diffuse.jpg
+           {Scene showing diffuse lighting only}
 
     Setting \c{DebugSettings.Specular}:
 
     \image debugsettings_specular.jpg
+           {Scene showing specular lighting only}
 
     Setting \c{DebugSettings.Normals}:
 
     \image debugsettings_normals.jpg
+           {Scene showing normal vectors as colors}
 */
 
 
@@ -134,6 +143,7 @@ void QQuick3DDebugSettings::update()
     The default value is \c false.
 
     \image debugsettings_wireframe.jpg
+           {Scene showing wireframe rendering}
 */
 
 
@@ -314,6 +324,28 @@ void QQuick3DDebugSettings::setDisableShadowCameraUpdate(bool newDisableShadowCa
         return;
     m_disableShadowCameraUpdate = newDisableShadowCameraUpdate;
     emit disableShadowCameraUpdateChanged();
+    update();
+}
+/*!
+    \internal
+    \qmlproperty bool QtQuick3D::DebugSettings::drawCulledObjects
+    \since 6.11
+
+    Draws a different-colored bounding box based on whether the model is culled.
+
+    The default value is \c false.
+*/
+bool QQuick3DDebugSettings::drawCulledObjects() const
+{
+    return m_drawCulledObjects;
+}
+
+void QQuick3DDebugSettings::setDrawCulledObjects(bool newDrawCulledObjects)
+{
+    if (m_drawCulledObjects == newDrawCulledObjects)
+        return;
+    m_drawCulledObjects = newDrawCulledObjects;
+    emit drawCulledObjectsChanged();
     update();
 }
 

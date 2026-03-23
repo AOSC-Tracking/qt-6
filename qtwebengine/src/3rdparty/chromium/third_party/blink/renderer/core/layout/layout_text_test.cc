@@ -114,7 +114,8 @@ class LayoutTextTest : public RenderingTest {
     }
     const InlineNodeData& data = *block_flow.GetInlineNodeData();
     std::ostringstream stream;
-    for (const InlineItem& item : data.items) {
+    for (const Member<InlineItem>& item_ptr : data.items) {
+      const InlineItem& item = *item_ptr;
       if (item.Type() != InlineItem::kText) {
         continue;
       }
@@ -151,8 +152,8 @@ class LayoutTextTest : public RenderingTest {
   unsigned CountNumberOfGlyphs(const LayoutText& layout_text) {
     auto* const items = layout_text.GetInlineItems();
     return std::accumulate(items->begin(), items->end(), 0u,
-                           [](unsigned sum, const InlineItem& item) {
-                             return sum + item.TextShapeResult()->NumGlyphs();
+                           [](unsigned sum, const Member<InlineItem>& item) {
+                             return sum + item->TextShapeResult()->NumGlyphs();
                            });
   }
 };
@@ -172,7 +173,7 @@ TEST_F(LayoutTextTest, PrewarmFamily) {
   LayoutObject* container = GetLayoutObjectByElementId("container");
   EXPECT_TRUE(container->StyleRef()
                   .GetFont()
-                  .GetFontDescription()
+                  ->GetFontDescription()
                   .Family()
                   .IsPrewarmed());
 }
@@ -194,7 +195,7 @@ TEST_F(LayoutTextTest, PrewarmFontFace) {
   LayoutObject* container = GetLayoutObjectByElementId("container");
   EXPECT_FALSE(container->StyleRef()
                    .GetFont()
-                   .GetFontDescription()
+                   ->GetFontDescription()
                    .Family()
                    .IsPrewarmed());
 }
@@ -212,7 +213,7 @@ TEST_F(LayoutTextTest, PrewarmGenericFamily) {
   LayoutObject* container = GetLayoutObjectByElementId("container");
   EXPECT_TRUE(container->StyleRef()
                   .GetFont()
-                  .GetFontDescription()
+                  ->GetFontDescription()
                   .Family()
                   .IsPrewarmed());
 }
@@ -1125,7 +1126,7 @@ TEST_F(LayoutTextTest, PhysicalLinesBoundingBoxVerticalRL) {
 TEST_F(LayoutTextTest, WordBreakElement) {
   SetBasicBody("foo <wbr> bar");
 
-  const Element* wbr = GetDocument().QuerySelector(AtomicString("wbr"));
+  const Element* wbr = QuerySelector("wbr");
   DCHECK(wbr->GetLayoutObject()->IsText());
   const auto* layout_wbr = To<LayoutText>(wbr->GetLayoutObject());
 
@@ -1680,6 +1681,81 @@ TEST_F(LayoutTextTest, SetTextWithOffsetToEmpty) {
   UpdateAllLifecyclePhasesForTest();
 
   EXPECT_EQ(nullptr, text.GetLayoutObject());
+}
+
+TEST_F(LayoutTextTest, TransformedTextWithCapitalizationAfterInlineAbsolute) {
+  SetBodyInnerHTML(R"HTML(
+    <p style="text-transform: capitalize">
+      h<span style="position: absolute"></span><span id="target">ome</span>
+    </p>
+  )HTML");
+
+  LayoutText* layout_text = GetLayoutTextById("target");
+  String transformed = layout_text->TransformedText();
+
+  EXPECT_EQ(String("ome"), transformed);
+}
+
+TEST_F(LayoutTextTest, OriginalTextNullWhenTransformedTextIsNonNull) {
+  // Setup CSS pseudo-element which generates a LayoutText without a DOM Text
+  // node
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #target::after {
+        content: counter(fake-counter-name, disclosure-open);
+      }
+    </style>
+    <div id="target"></div>
+  )HTML");
+
+  // Get the LayoutText from the ::after pseudo-element
+  const Element& target = *GetElementById("target");
+  const Element& after = *target.GetPseudoElement(kPseudoIdAfter);
+  const auto& layout_text =
+      *To<LayoutText>(after.GetLayoutObject()->SlowFirstChild());
+
+  // Check that OriginalText() returns empty string
+  EXPECT_TRUE(layout_text.OriginalText().empty());
+
+  // Check that text_ has content (through TransformedText which accesses it)
+  EXPECT_FALSE(layout_text.TransformedText().empty());
+
+  // Verify we're dealing with a LayoutText that doesn't have a Text node
+  EXPECT_FALSE(DynamicTo<Text>(layout_text.GetNode()));
+}
+
+TEST_F(LayoutTextTest, OriginalTextEmptyWhenTransformedTextIsNonEmpty) {
+  // Setup an unordered list element.
+  SetBodyInnerHTML(R"HTML(
+    <ul>
+      <li id="target">first</li>
+    </ul>
+  )HTML");
+
+  // Get the LayoutText from the ::marker pseudo-element
+  const Element& target = *GetElementById("target");
+  const Element& after = *target.GetPseudoElement(kPseudoIdMarker);
+  const auto& layout_text =
+      *To<LayoutText>(after.GetLayoutObject()->SlowFirstChild());
+
+  // Check that layout_text has content
+  EXPECT_FALSE(layout_text.PlainText().empty());
+
+  // Setup an ordered list element.
+  SetBodyInnerHTML(R"HTML(
+    <ol>
+      <li id="target2">one</li>
+    </ol>
+  )HTML");
+
+  // Get the LayoutText from the ::marker pseudo-element
+  const Element& target2 = *GetElementById("target2");
+  const Element& after2 = *target2.GetPseudoElement(kPseudoIdMarker);
+  const auto& layout_text2 =
+      *To<LayoutText>(after2.GetLayoutObject()->SlowFirstChild());
+
+  // Check that layout_text2 has content
+  EXPECT_FALSE(layout_text2.PlainText().empty());
 }
 
 }  // namespace blink

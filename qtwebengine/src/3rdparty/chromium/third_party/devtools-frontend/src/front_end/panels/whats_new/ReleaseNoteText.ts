@@ -14,8 +14,8 @@ let registeredLinks = false;
 export interface ReleaseNote {
   version: number;
   header: string;
-  markdownLinks: {key: string, link: string}[];
-  videoLinks: {description: string, link: Platform.DevToolsPath.UrlString, type?: VideoType}[];
+  markdownLinks: Array<{key: string, link: string}>;
+  videoLinks: Array<{description: string, link: Platform.DevToolsPath.UrlString, type?: VideoType}>;
   link: string;
 }
 
@@ -40,28 +40,28 @@ export function getReleaseNote(): ReleaseNote {
 }
 
 let releaseNote: ReleaseNote = {
-  version: 75,
-  header: 'What\'s new in DevTools 134',
+  version: 81,
+  header: 'What\'s new in DevTools 140',
   markdownLinks: [
     {
-      key: 'privacy-and-security',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-134/#privacy-and-security',
+      key: 'ai-insights',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-140/#ai-insights',
     },
     {
-      key: 'calibrated-cpu-throttling',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-134/#calibrated-cpu-throttling',
+      key: 'save-data',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-140/#save-data',
     },
     {
-      key: 'perf-third-party',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-134/#perf-third-party',
+      key: 'debug-css',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-138#debug-css-values',
     },
   ],
   videoLinks: [
     {
-      description: 'See also the highlights from Chrome 130-132',
-      link: 'https://www.youtube.com/watch?v=kzDUe-f4gac' as Platform.DevToolsPath.UrlString,
+      description: 'See past highlights from Chrome 139',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-139' as Platform.DevToolsPath.UrlString,
       type: VideoType.WHATS_NEW,
     },
   ],
-  link: 'https://developer.chrome.com/blog/new-in-devtools-134/',
+  link: 'https://developer.chrome.com/blog/new-in-devtools-140/',
 };

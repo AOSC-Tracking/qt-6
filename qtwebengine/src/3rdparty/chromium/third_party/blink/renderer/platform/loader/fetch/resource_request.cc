@@ -30,10 +30,10 @@
 
 #include "base/unguessable_token.h"
 #include "net/base/request_priority.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy.h"
 #include "services/network/public/mojom/ip_address_space.mojom-blink.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "services/network/public/mojom/web_bundle_handle.mojom-blink.h"
-#include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/platform/loader/subresource_integrity.h"
@@ -41,6 +41,8 @@
 #include "third_party/blink/renderer/platform/network/http_names.h"
 #include "third_party/blink/renderer/platform/network/network_utils.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
+#include "third_party/blink/renderer/platform/wtf/text/base64.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
@@ -405,8 +407,10 @@ void ResourceRequestHead::SetPriorityIncremental(bool priority_incremental) {
 void ResourceRequestHead::AddHttpHeaderField(const AtomicString& name,
                                              const AtomicString& value) {
   HTTPHeaderMap::AddResult result = http_header_fields_.Add(name, value);
-  if (!result.is_new_entry)
-    result.stored_value->value = result.stored_value->value + ", " + value;
+  if (!result.is_new_entry) {
+    String new_value = StrCat({result.stored_value->value, ", ", value});
+    result.stored_value->value = AtomicString(new_value);
+  }
 }
 
 void ResourceRequestHead::AddHTTPHeaderFields(
@@ -457,13 +461,21 @@ const CacheControlHeader& ResourceRequestHead::GetCacheControlHeader() const {
   return cache_control_header_cache_;
 }
 
-void ResourceRequestHead::SetFetchIntegrity(const String& integrity) {
+void ResourceRequestHead::SetFetchIntegrity(
+    const String& integrity,
+    const FeatureContext* feature_context) {
   fetch_integrity_ = integrity;
 
   IntegrityMetadataSet metadata;
-  SubresourceIntegrity::ParseIntegrityAttribute(integrity, metadata);
-  for (const auto& signature : metadata.signatures) {
-    expected_signatures_.push_back(signature.first);
+  SubresourceIntegrity::ParseIntegrityAttribute(integrity, metadata,
+                                                feature_context);
+  SetExpectedPublicKeys(metadata);
+}
+
+void ResourceRequestHead::SetExpectedPublicKeys(
+    const IntegrityMetadataSet& metadata) {
+  for (const auto& public_key : metadata.public_keys) {
+    expected_public_keys_.push_back(public_key.value);
   }
 }
 
@@ -499,7 +511,7 @@ bool ResourceRequestHead::NeedsHTTPOrigin() const {
 }
 
 bool ResourceRequest::IsFeatureEnabledForSubresourceRequestAssumingOptIn(
-    const PermissionsPolicy* policy,
+    const network::PermissionsPolicy* policy,
     network::mojom::PermissionsPolicyFeature feature,
     const url::Origin& origin) {
   if (!policy) {
@@ -519,8 +531,8 @@ bool ResourceRequest::IsFeatureEnabledForSubresourceRequestAssumingOptIn(
     return false;
   }
 
-  return policy->IsFeatureEnabledForSubresourceRequestAssumingOptIn(feature,
-                                                                    origin);
+  return policy->IsFeatureEnabledForOrigin(
+      feature, origin, /*override_default_policy_to_all=*/true);
 }
 
 }  // namespace blink

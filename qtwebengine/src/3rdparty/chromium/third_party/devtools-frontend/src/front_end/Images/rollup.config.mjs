@@ -4,7 +4,6 @@
 import {importMetaAssets} from '@web/rollup-plugin-import-meta-assets';
 import {optimize} from 'svgo';
 
-// eslint-disable-next-line import/no-default-export
 export default {
   treeshake: false,
   output: [{
@@ -16,7 +15,18 @@ export default {
         importMetaAssets({
           async transform(assetBuffer, assetPath) {
             if (assetPath.endsWith('.svg')) {
-              const {data} = await optimize(assetBuffer.toString());
+              const {data} = await optimize(assetBuffer.toString(), {
+                plugins: [
+                  {
+                    name: 'preset-default',
+                    params: {
+                      overrides: {
+                        inlineStyles: false,
+                      },
+                    },
+                  },
+                ],
+              });
               return data;
             }
             return null;

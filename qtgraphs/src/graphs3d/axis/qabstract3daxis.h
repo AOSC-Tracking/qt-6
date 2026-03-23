@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QTGRAPHS_QABSTRACT3DAXIS_H
 #define QTGRAPHS_QABSTRACT3DAXIS_H
@@ -123,6 +125,9 @@ private:
     Q_DISABLE_COPY(QAbstract3DAxis)
 
     friend class QQuickGraphsItem;
+    friend class QQuickGraphsSurface;
+    friend class QQuickGraphsScatter;
+    friend class QQuickGraphsBars;
     friend class QScatterDataProxyPrivate;
     friend class QSurfaceDataProxyPrivate;
 };

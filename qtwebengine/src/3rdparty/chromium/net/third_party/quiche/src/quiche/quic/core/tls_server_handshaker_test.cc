@@ -1217,12 +1217,10 @@ TEST_P(TlsServerHandshakerTest, SuccessWithCustomTranportParam) {
   ExpectHandshakeSuccessful();
 }
 
-#if BORINGSSL_API_VERSION >= 22
-TEST_P(TlsServerHandshakerTest, EnableKyber) {
-  server_crypto_config_->set_preferred_groups(
-      {SSL_GROUP_X25519_KYBER768_DRAFT00});
+TEST_P(TlsServerHandshakerTest, EnableMLKEM) {
+  server_crypto_config_->set_preferred_groups({SSL_GROUP_X25519_MLKEM768});
   client_crypto_config_->set_preferred_groups(
-      {SSL_GROUP_X25519_KYBER768_DRAFT00, SSL_GROUP_X25519, SSL_GROUP_SECP256R1,
+      {SSL_GROUP_X25519_MLKEM768, SSL_GROUP_X25519, SSL_GROUP_SECP256R1,
        SSL_GROUP_SECP384R1});
 
   InitializeServer();
@@ -1230,31 +1228,24 @@ TEST_P(TlsServerHandshakerTest, EnableKyber) {
   CompleteCryptoHandshake();
   ExpectHandshakeSuccessful();
   EXPECT_EQ(PROTOCOL_TLS1_3, server_stream()->handshake_protocol());
-  EXPECT_EQ(SSL_GROUP_X25519_KYBER768_DRAFT00,
+  EXPECT_EQ(SSL_GROUP_X25519_MLKEM768,
             SSL_get_group_id(server_stream()->GetSsl()));
 }
-#endif  // BORINGSSL_API_VERSION
 
-#if BORINGSSL_API_VERSION >= 27
 TEST_P(TlsServerHandshakerTest, AlpsUseNewCodepoint) {
   const struct {
     bool client_use_alps_new_codepoint;
-    bool server_allow_alps_new_codepoint;
   } tests[] = {
       // The intent of this test is to demonstrate different combinations of
-      // ALPS codepoint settings works well for both client and server.
-      {true, true},
-      {false, true},
-      {false, false},
-      {true, true},
+      // ALPS codepoint settings works well.
+      {true},
+      {false},
   };
   for (size_t i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
     SCOPED_TRACE(absl::StrCat("Test #", i));
     const auto& test = tests[i];
     client_crypto_config_->set_alps_use_new_codepoint(
         test.client_use_alps_new_codepoint);
-    SetQuicReloadableFlag(quic_gfe_allow_alps_new_codepoint,
-                          test.server_allow_alps_new_codepoint);
 
     ASSERT_TRUE(SetupClientCert());
     InitializeFakeClient();
@@ -1275,7 +1266,6 @@ TEST_P(TlsServerHandshakerTest, AlpsUseNewCodepoint) {
     EXPECT_EQ(PROTOCOL_TLS1_3, server_stream()->handshake_protocol());
   }
 }
-#endif  // BORINGSSL_API_VERSION
 
 }  // namespace
 }  // namespace test

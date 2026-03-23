@@ -27,7 +27,6 @@
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
-#include "extensions/common/extension_features.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/mojom/view_type.mojom.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
@@ -49,14 +48,17 @@ void ExtensionWebContentsObserver::BindLocalFrameHost(
     content::RenderFrameHost* render_frame_host) {
   auto* web_contents =
       content::WebContents::FromRenderFrameHost(render_frame_host);
-  if (!web_contents)
+  if (!web_contents) {
     return;
+  }
   auto* observer = GetForWebContents(web_contents);
-  if (!observer)
+  if (!observer) {
     return;
+  }
   auto* efh = observer->extension_frame_host_.get();
-  if (!efh)
+  if (!efh) {
     return;
+  }
   efh->BindLocalFrameHost(std::move(receiver), render_frame_host);
 }
 
@@ -81,8 +83,9 @@ void ExtensionWebContentsObserver::ListenToWindowIdChangesFrom(
 }
 
 void ExtensionWebContentsObserver::Initialize() {
-  if (initialized_)
+  if (initialized_) {
     return;
+  }
 
   initialized_ = true;
 
@@ -143,8 +146,9 @@ void ExtensionWebContentsObserver::InitializeRenderFrame(
       GetExtensionFromFrame(render_frame_host, false);
   // This observer is attached to every WebContents, so we are also notified of
   // frames that are not in an extension process.
-  if (!frame_extension)
+  if (!frame_extension) {
     return;
+  }
 
   // |render_frame_host->GetProcess()| is an extension process. Grant permission
   // to request pages from the extension's origin.
@@ -167,8 +171,9 @@ void ExtensionWebContentsObserver::SetUpRenderFrameHost(
   InitializeRenderFrame(render_frame_host);
 
   const Extension* extension = GetExtensionFromFrame(render_frame_host, false);
-  if (!extension)
+  if (!extension) {
     return;
+  }
 
   Manifest::Type type = extension->GetType();
 
@@ -201,16 +206,6 @@ void ExtensionWebContentsObserver::SetUpRenderFrameHost(
       ->ActivateExtensionInProcess(*extension, render_frame_host->GetProcess());
 }
 
-void ExtensionWebContentsObserver::RenderFrameCreated(
-    content::RenderFrameHost* render_frame_host) {
-  if (base::FeatureList::IsEnabled(
-          extensions_features::kRemoveCoreSiteInstance)) {
-    // If the primordial SiteInstance in ProcessManager is not used, we need
-    // to wait until `ReadyToCommitNavigation()` to set up the render frame.
-    return;
-  }
-  SetUpRenderFrameHost(render_frame_host);
-}
 void ExtensionWebContentsObserver::RenderFrameDeleted(
     content::RenderFrameHost* render_frame_host) {
   DCHECK(initialized_);
@@ -222,10 +217,7 @@ void ExtensionWebContentsObserver::RenderFrameDeleted(
 
 void ExtensionWebContentsObserver::ReadyToCommitNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (base::FeatureList::IsEnabled(
-          extensions_features::kRemoveCoreSiteInstance)) {
-    SetUpRenderFrameHost(navigation_handle->GetRenderFrameHost());
-  }
+  SetUpRenderFrameHost(navigation_handle->GetRenderFrameHost());
 
   ScriptInjectionTracker::ReadyToCommitNavigation(PassKey(), navigation_handle);
 
@@ -277,8 +269,9 @@ void ExtensionWebContentsObserver::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
   DCHECK(navigation_handle);
   DCHECK(initialized_);
-  if (!navigation_handle->HasCommitted())
+  if (!navigation_handle->HasCommitted()) {
     return;
+  }
 
   ProcessManager* pm = ProcessManager::Get(browser_context_);
 
@@ -289,8 +282,9 @@ void ExtensionWebContentsObserver::DidFinishNavigation(
   const Extension* frame_extension =
       GetExtensionFromFrame(render_frame_host, true);
   if (pm->IsRenderFrameHostRegistered(render_frame_host)) {
-    if (!frame_extension)
+    if (!frame_extension) {
       pm->UnregisterRenderFrameHost(render_frame_host);
+    }
   } else if (frame_extension && render_frame_host->IsRenderFrameLive()) {
     pm->RegisterRenderFrameHost(render_frame_host, frame_extension);
   }
@@ -311,42 +305,16 @@ void ExtensionWebContentsObserver::MediaPictureInPictureChanged(
         ProcessManager::Get(browser_context_);
     const Extension* const extension =
         process_manager->GetExtensionForWebContents(web_contents());
-    if (extension == nullptr)
+    if (extension == nullptr) {
       return;
-    if (is_picture_in_picture)
+    }
+    if (is_picture_in_picture) {
       process_manager->IncrementLazyKeepaliveCount(extension, Activity::MEDIA,
                                                    Activity::kPictureInPicture);
-    else
+    } else {
       process_manager->DecrementLazyKeepaliveCount(extension, Activity::MEDIA,
                                                    Activity::kPictureInPicture);
-  }
-}
-
-void ExtensionWebContentsObserver::PepperInstanceCreated() {
-  DCHECK(initialized_);
-  if (GetViewType(web_contents()) ==
-      mojom::ViewType::kExtensionBackgroundPage) {
-    ProcessManager* const process_manager =
-        ProcessManager::Get(browser_context_);
-    const Extension* const extension =
-        process_manager->GetExtensionForWebContents(web_contents());
-    if (extension)
-      process_manager->IncrementLazyKeepaliveCount(
-          extension, Activity::PEPPER_API, std::string());
-  }
-}
-
-void ExtensionWebContentsObserver::PepperInstanceDeleted() {
-  DCHECK(initialized_);
-  if (GetViewType(web_contents()) ==
-      mojom::ViewType::kExtensionBackgroundPage) {
-    ProcessManager* const process_manager =
-        ProcessManager::Get(browser_context_);
-    const Extension* const extension =
-        process_manager->GetExtensionForWebContents(web_contents());
-    if (extension)
-      process_manager->DecrementLazyKeepaliveCount(
-          extension, Activity::PEPPER_API, std::string());
+    }
   }
 }
 
@@ -355,16 +323,18 @@ const Extension* ExtensionWebContentsObserver::GetExtensionFromFrame(
     bool verify_url) const {
   DCHECK(initialized_);
   ExtensionId extension_id = util::GetExtensionIdFromFrame(render_frame_host);
-  if (extension_id.empty())
+  if (extension_id.empty()) {
     return nullptr;
+  }
 
   content::BrowserContext* browser_context =
       render_frame_host->GetProcess()->GetBrowserContext();
   const Extension* extension = ExtensionRegistry::Get(browser_context)
                                    ->enabled_extensions()
                                    .GetByID(extension_id);
-  if (!extension)
+  if (!extension) {
     return nullptr;
+  }
 
   if (verify_url) {
     const url::Origin& origin(render_frame_host->GetLastCommittedOrigin());
@@ -376,8 +346,9 @@ const Extension* ExtensionWebContentsObserver::GetExtensionFromFrame(
     auto* extension_for_origin = ExtensionRegistry::Get(browser_context)
                                      ->enabled_extensions()
                                      .GetExtensionOrAppByURL(origin.GetURL());
-    if (origin.opaque() || extension_for_origin != extension)
+    if (origin.opaque() || extension_for_origin != extension) {
       return nullptr;
+    }
   }
 
   return extension;
@@ -388,8 +359,9 @@ mojom::LocalFrame* ExtensionWebContentsObserver::GetLocalFrame(
   // Attempting to get a remote interface before IsRenderFrameLive() will fail,
   // leaving a broken pipe that will block all further messages. Return nullptr
   // instead. Callers should try again after RenderFrameCreated().
-  if (!render_frame_host->IsRenderFrameLive())
+  if (!render_frame_host->IsRenderFrameLive()) {
     return nullptr;
+  }
 
   // Do not return a LocalFrame object for frames that do not immediately belong
   // to this WebContents. For example frames belonging to inner WebContents will
@@ -419,8 +391,9 @@ void ExtensionWebContentsObserver::OnWindowIdChanged(SessionID id) {
   web_contents()->ForEachRenderFrameHost(
       [&id, this](content::RenderFrameHost* render_frame_host) {
         auto* local_frame = GetLocalFrame(render_frame_host);
-        if (local_frame)
+        if (local_frame) {
           local_frame->UpdateBrowserWindowId(id.id());
+        }
       });
 }
 

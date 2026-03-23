@@ -29,7 +29,8 @@ PerformanceScriptTiming::PerformanceScriptTiming(
     ScriptTimingInfo* info,
     base::TimeTicks time_origin,
     bool cross_origin_isolated_capability,
-    DOMWindow* source)
+    DOMWindow* source,
+    uint32_t navigation_id)
     : PerformanceEntry((info->EndTime() - info->StartTime()).InMilliseconds(),
                        performance_entry_names::kScript,
                        Performance::MonotonicTimeToDOMHighResTimeStamp(
@@ -37,7 +38,8 @@ PerformanceScriptTiming::PerformanceScriptTiming(
                            info->StartTime(),
                            false,
                            cross_origin_isolated_capability),
-                       source) {
+                       source,
+                       navigation_id) {
   info_ = info;
   if (!info_->Window() || !source) {
     window_attribution_ = V8ScriptWindowAttribution::Enum::kOther;
@@ -85,7 +87,7 @@ AtomicString PerformanceScriptTiming::invoker() const {
     }
     case ScriptTimingInfo::InvokerType::kEventHandler:
     case ScriptTimingInfo::InvokerType::kUserCallback: {
-      WTF::StringBuilder builder;
+      StringBuilder builder;
       if (info_->GetInvokerType() ==
           ScriptTimingInfo::InvokerType::kEventHandler) {
         builder.Append(info_->ClassLikeName());
@@ -98,7 +100,7 @@ AtomicString PerformanceScriptTiming::invoker() const {
 
     case ScriptTimingInfo::InvokerType::kPromiseResolve:
     case ScriptTimingInfo::InvokerType::kPromiseReject: {
-      WTF::StringBuilder builder;
+      StringBuilder builder;
       if (info_->PropertyLikeName().empty()) {
         return AtomicString(
             info_->GetInvokerType() ==
@@ -171,6 +173,14 @@ int32_t PerformanceScriptTiming::sourceCharPosition() const {
   return info_->GetSourceLocation().char_position;
 }
 
+int32_t PerformanceScriptTiming::sourceLine() const {
+  return info_->GetSourceLocation().line_number;
+}
+
+int32_t PerformanceScriptTiming::sourceColumn() const {
+  return info_->GetSourceLocation().column_number;
+}
+
 PerformanceEntryType PerformanceScriptTiming::EntryTypeEnum() const {
   return PerformanceEntry::EntryType::kScript;
 }
@@ -187,6 +197,10 @@ void PerformanceScriptTiming::BuildJSONValue(V8ObjectBuilder& builder) const {
   builder.AddString("sourceURL", sourceURL());
   builder.AddString("sourceFunctionName", sourceFunctionName());
   builder.AddNumber("sourceCharPosition", sourceCharPosition());
+  if (RuntimeEnabledFeatures::LongAnimationFrameSourceLineColumnEnabled()) {
+    builder.AddNumber("sourceLine", sourceLine());
+    builder.AddNumber("sourceColumn", sourceColumn());
+  }
 }
 
 void PerformanceScriptTiming::Trace(Visitor* visitor) const {

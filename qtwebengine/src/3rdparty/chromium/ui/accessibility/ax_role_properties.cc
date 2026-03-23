@@ -178,6 +178,7 @@ bool IsComboBoxContainer(const ax::mojom::Role role) {
     case ax::mojom::Role::kDialog:
     case ax::mojom::Role::kGrid:
     case ax::mojom::Role::kListBox:
+    case ax::mojom::Role::kMenu:
     case ax::mojom::Role::kTree:
     case ax::mojom::Role::kTreeGrid:
       return true;
@@ -269,6 +270,26 @@ bool IsControlOnAndroid(const ax::mojom::Role role, bool isFocusable) {
       return false;
     default:
       return IsControl(role);
+  }
+}
+
+bool IsContainerOnAndroid(const ax::mojom::Role role) {
+  switch (role) {
+    // Do not include kGenericContainer otherwise <div>, <span> will also be
+    // considered as container, which is too general than we want.
+    case ax::mojom::Role::kIframe:
+    case ax::mojom::Role::kIframePresentational:
+    case ax::mojom::Role::kBanner:
+    case ax::mojom::Role::kComplementary:
+    case ax::mojom::Role::kContentInfo:
+    case ax::mojom::Role::kForm:
+    case ax::mojom::Role::kMain:
+    case ax::mojom::Role::kNavigation:
+    case ax::mojom::Role::kRegion:
+    case ax::mojom::Role::kSearch:
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -398,6 +419,7 @@ bool IsLikelyActiveDescendantRole(const ax::mojom::Role role) {
     case ax::mojom::Role::kButton:
     case ax::mojom::Role::kCell:
     case ax::mojom::Role::kCheckBox:
+    case ax::mojom::Role::kColumnHeader:
     case ax::mojom::Role::kComment:
     case ax::mojom::Role::kGridCell:
     case ax::mojom::Role::kListBoxOption:
@@ -407,6 +429,7 @@ bool IsLikelyActiveDescendantRole(const ax::mojom::Role role) {
     case ax::mojom::Role::kMenuListOption:
     case ax::mojom::Role::kRadioButton:
     case ax::mojom::Role::kRow:
+    case ax::mojom::Role::kRowHeader:
     case ax::mojom::Role::kTab:
     case ax::mojom::Role::kToggleButton:
     case ax::mojom::Role::kTreeItem:
@@ -1122,6 +1145,32 @@ bool SupportsArrowKeysForExpandCollapse(const ax::mojom::Role role) {
   // TODO(accessibility): Investigate if other roles should implement this
   // pattern.
   return role == ax::mojom::Role::kTreeItem;
+}
+
+bool SupportsNamingWithChildContent(const ax::mojom::Role role) {
+  switch (role) {
+    case ax::mojom::Role::kButton:
+    case ax::mojom::Role::kCell:
+    case ax::mojom::Role::kCheckBox:
+    case ax::mojom::Role::kColumnHeader:
+    case ax::mojom::Role::kGridCell:
+    case ax::mojom::Role::kHeading:
+    case ax::mojom::Role::kLink:
+    case ax::mojom::Role::kMenuItem:
+    case ax::mojom::Role::kMenuItemCheckBox:
+    case ax::mojom::Role::kMenuItemRadio:
+    case ax::mojom::Role::kListBoxOption:
+    case ax::mojom::Role::kRadioButton:
+    case ax::mojom::Role::kRow:
+    case ax::mojom::Role::kRowHeader:
+    case ax::mojom::Role::kSwitch:
+    case ax::mojom::Role::kTab:
+    case ax::mojom::Role::kTooltip:
+    case ax::mojom::Role::kTreeItem:
+      return true;
+    default:
+      return false;
+  }
 }
 
 }  // namespace ui

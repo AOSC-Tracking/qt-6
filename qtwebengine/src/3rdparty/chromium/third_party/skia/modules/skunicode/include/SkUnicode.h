@@ -55,6 +55,9 @@ public:
         kLTR,
         kRTL,
     };
+    SkBidiIterator() = default;
+    SkBidiIterator(const SkBidiIterator&) = default;
+    SkBidiIterator& operator=(const SkBidiIterator&) = default;
     virtual ~SkBidiIterator() = default;
     virtual Position getLength() = 0;
     virtual Level getLevelAt(Position) = 0;
@@ -64,6 +67,9 @@ class SKUNICODE_API SkBreakIterator {
 public:
     typedef int32_t Position;
     typedef int32_t Status;
+    SkBreakIterator() = default;
+    SkBreakIterator(const SkBreakIterator&) = default;
+    SkBreakIterator& operator=(const SkBreakIterator&) = default;
     virtual ~SkBreakIterator() = default;
     virtual Position first() = 0;
     virtual Position current() = 0;
@@ -271,18 +277,22 @@ class SKUNICODE_API SkUnicode : public SkRefCnt {
 
             SkBidiIterator::Position pos16 = 0;
             while (pos16 <= iter->getLength()) {
-                auto level = iter->getLevelAt(pos16);
-                if (pos16 == 0) {
+                uint16_t nextPos16 = start16 - utf16;
+                auto level = iter->getLevelAt(nextPos16);
+                if (nextPos16 == 0) {
                     currentLevel = level;
                 } else if (level != currentLevel) {
-                    callback(pos16, start16 - utf16, currentLevel);
+                    callback(pos16, nextPos16, currentLevel);
                     currentLevel = level;
+                    pos16 = nextPos16;
                 }
                 if (start16 == end16) {
-                    break;
+                    if (pos16 != nextPos16) {
+                        callback(pos16, nextPos16, currentLevel);
+                    }
+                    return;
                 }
-                SkUnichar u = SkUTF::NextUTF16(&start16, end16);
-                pos16 += SkUTF::ToUTF16(u);
+                SkUTF::NextUTF16(&start16, end16);
             }
         }
 

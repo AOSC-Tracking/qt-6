@@ -333,8 +333,9 @@ void LinuxDmabufWlBuffer::initTexture(uint32_t plane, QOpenGLTexture *texture)
 
 void LinuxDmabufWlBuffer::buffer_destroy_resource(Resource *resource)
 {
-    // Nothing to do here, since lifetime is managed through BufferManager's destroy listener callback
-    Q_UNUSED(resource);
+    // In most cases this is redundant, but for instance if a buffer has been created,
+    // but not committed and the client disconnects, it is vital
+    m_clientBufferIntegration->removeBuffer(resource->handle);
 }
 
 QT_END_NAMESPACE

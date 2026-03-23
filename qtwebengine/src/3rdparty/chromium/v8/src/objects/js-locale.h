@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_OBJECTS_JS_LOCALE_H_
+#define V8_OBJECTS_JS_LOCALE_H_
+
 #ifndef V8_INTL_SUPPORT
 #error Internationalization is expected to be enabled.
 #endif  // V8_INTL_SUPPORT
-
-#ifndef V8_OBJECTS_JS_LOCALE_H_
-#define V8_OBJECTS_JS_LOCALE_H_
 
 #include "src/execution/isolate.h"
 #include "src/handles/global-handles.h"
@@ -83,14 +83,14 @@ class JSLocale : public TorqueGeneratedJSLocale<JSLocale, JSObject> {
   static std::string ToString(DirectHandle<JSLocale> locale);
 
   // Help function to validate locale by other Intl objects.
-  static bool StartsWithUnicodeLanguageId(const std::string& value);
+  static bool StartsWithUnicodeLanguageId(std::string_view value);
 
   // Help function to check well-formed
   // "(3*8alphanum) *("-" (3*8alphanum)) sequence" sequence
-  static bool Is38AlphaNumList(const std::string& value);
+  static bool Is38AlphaNumList(std::string_view value);
 
   // Help function to check well-formed "3alpha"
-  static bool Is3Alpha(const std::string& value);
+  static bool Is3Alpha(std::string_view value);
 
   DECL_ACCESSORS(icu_locale, Tagged<Managed<icu::Locale>>)
 

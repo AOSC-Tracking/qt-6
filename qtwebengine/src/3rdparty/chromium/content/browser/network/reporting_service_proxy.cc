@@ -122,6 +122,20 @@ class ReportingServiceProxyImpl : public blink::mojom::ReportingServiceProxy {
     QueueReport(url, group, "csp-violation", std::move(body));
   }
 
+  void QueueIntegrityViolationReport(const GURL& url,
+                                     const std::string& endpoint,
+                                     const std::string& document_url,
+                                     const std::string& blocked_url,
+                                     const std::string& destination,
+                                     bool report_only) override {
+    base::Value::Dict body;
+    body.Set("documentURL", document_url);
+    body.Set("blockedURL", blocked_url);
+    body.Set("destination", destination);
+    body.Set("reportOnly", report_only);
+    QueueReport(url, endpoint, "integrity-violation", std::move(body));
+  }
+
   void QueuePermissionsPolicyViolationReport(
       const GURL& url,
       const std::string& endpoint,
@@ -152,6 +166,7 @@ class ReportingServiceProxyImpl : public blink::mojom::ReportingServiceProxy {
       const std::string& disposition,
       const std::optional<std::string>& message,
       const std::optional<std::string>& allow_attribute,
+      const std::optional<std::string>& src_attribute,
       const std::optional<std::string>& source_file,
       int line_number,
       int column_number) override {
@@ -163,6 +178,9 @@ class ReportingServiceProxyImpl : public blink::mojom::ReportingServiceProxy {
     }
     if (allow_attribute) {
       body.Set("allowAttribute", *allow_attribute);
+    }
+    if (src_attribute) {
+      body.Set("srcAttribute", *src_attribute);
     }
     if (source_file) {
       body.Set("sourceFile", *source_file);

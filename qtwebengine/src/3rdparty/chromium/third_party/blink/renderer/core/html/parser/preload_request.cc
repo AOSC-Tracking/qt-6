@@ -116,7 +116,7 @@ Resource* PreloadRequest::Start(Document* document) {
       ResourceFetcher::DetermineRequestContext(resource_type_, is_image_set_));
   resource_request.SetRequestDestination(
       ResourceFetcher::DetermineRequestDestination(resource_type_));
-
+  resource_request.SetExpectedPublicKeys(integrity_metadata_);
   resource_request.SetFetchPriorityHint(fetch_priority_hint_);
 
   // Disable issue logging to avoid duplicates, since `CanRegister()` will be
@@ -176,7 +176,7 @@ Resource* PreloadRequest::Start(Document* document) {
   } else if (resource_type_ == ResourceType::kScript ||
              resource_type_ == ResourceType::kCSSStyleSheet) {
     params.SetCharset(charset_.empty() ? document->Encoding()
-                                       : WTF::TextEncoding(charset_));
+                                       : TextEncoding(charset_));
   }
   FetchParameters::SpeculativePreloadType speculative_preload_type =
       FetchParameters::SpeculativePreloadType::kInDocument;

@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmldomcomments_p.h"
 #include "qqmldomoutwriter_p.h"
@@ -199,8 +200,9 @@ A comment has methods to write it out again (write) and expose it to the Dom
 bool Comment::iterateDirectSubpaths(const DomItem &self, DirectVisitor visitor) const
 {
     bool cont = true;
-    cont = cont && self.dvValueField(visitor, Fields::rawComment, rawComment());
-    cont = cont && self.dvValueField(visitor, Fields::newlinesBefore, newlinesBefore());
+    cont = cont && self.invokeVisitorOnValue(visitor, PathEls::Field(Fields::rawComment), rawComment());
+    cont = cont && self.invokeVisitorOnValue(visitor, PathEls::Field(Fields::newlinesBefore),
+                                         newlinesBefore());
     return cont;
 }
 
@@ -242,8 +244,8 @@ startRegion/ EndRegion). Region comments keeps a mapping containing them.
 bool CommentedElement::iterateDirectSubpaths(const DomItem &self, DirectVisitor visitor) const
 {
     bool cont = true;
-    cont = cont && self.dvWrapField(visitor, Fields::preComments, m_preComments);
-    cont = cont && self.dvWrapField(visitor, Fields::postComments, m_postComments);
+    cont = cont && self.invokeVisitorOnField(visitor, Fields::preComments, m_preComments);
+    cont = cont && self.invokeVisitorOnField(visitor, Fields::postComments, m_postComments);
     return cont;
 }
 
@@ -383,6 +385,15 @@ public:
     }
 
     using VisitAll::visit;
+    bool visit(Block *block) override
+    {
+        // blocks can have comments after their `{` and before their `}`. preVisit already handles
+        // comments before `{` and after `}`.
+        addSourceLocations(block, block->lbraceToken);
+        addSourceLocations(block, block->rbraceToken);
+        return true;
+    }
+
     bool visit(CaseClause *caseClause) override
     {
         // special case: case clauses can have comments attached to their `:` token
@@ -399,15 +410,27 @@ public:
         return true;
     }
 
+    bool visit(DoWhileStatement *doWhileStatement) override
+    {
+        // do while statements can have comments attached to their `()` token. preVisit already
+        // handles comments before `do` and after the doWhile statement.
+        addSourceLocations(doWhileStatement, doWhileStatement->lparenToken);
+        addSourceLocations(doWhileStatement, doWhileStatement->rparenToken);
+        return true;
+    }
+
     bool visit(FormalParameterList *list) override
     {
-        if (!list->commaToken.isValid())
-            return true;
-
-        // Comments are first attached to some previous element, if possible. Therefore, attach
-        // comments in FormalParameterList to comments so that they don't "jump over commas" during
-        // formatting.
         addSourceLocations(list, list->commaToken);
+        return true;
+    }
+
+    bool visit(ForStatement *forStatement) override
+    {
+        // for statements can have comments attached to their `()` token. preVisit already
+        // handles comments before `for` and after the doWhile statement.
+        addSourceLocations(forStatement, forStatement->lparenToken);
+        addSourceLocations(forStatement, forStatement->rparenToken);
         return true;
     }
 
@@ -426,8 +449,52 @@ public:
         return visit(static_cast<FunctionExpression *>(fExpr));
     }
 
+    bool visit(WhileStatement *whileStatement) override
+    {
+        // while statements can have comments attached to their `()` token. preVisit already
+        // handles comments before `while` and after the doWhile statement.
+        addSourceLocations(whileStatement, whileStatement->lparenToken);
+        addSourceLocations(whileStatement, whileStatement->rparenToken);
+        return true;
+    }
+
+    bool visit(Type *type) override
+    {
+        // list type annotations can have comments attached to their `<>` token. preVisit already
+        // handles comments before and after the type.
+        addSourceLocations(type, type->lAngleBracketToken);
+        addSourceLocations(type, type->rAngleBracketToken);
+
+        // only process UiQualifiedIds when they appear inside of types, otherwise this attaches
+        // comments to the qualified ids of bindings that are not printed out, for example.
+        QScopedValueRollback rollback(m_processUiQualifiedIds, true);
+
+        AST::Node::accept(type->typeId, this);
+        AST::Node::accept(type->typeArgument, this);
+        return false;
+    }
+
+    bool visit(UiQualifiedId *id) override
+    {
+        if (!m_processUiQualifiedIds)
+            return true;
+
+        // multiple bits a,b,c and d inside an UiQualified id "a.b.c.d" all have the same
+        // lastSourceLocation(), which breaks the comment attaching. Therefore add locations here
+        // manually instead of in preVisit().
+        addSourceLocations(id, id->dotToken);
+        addSourceLocations(id, id->identifierToken);
+
+        // need to accept manually, see UiQualifiedId::accept0 implementation
+        AST::Node::accept(id->next, this);
+        return true;
+    }
+
     QMap<qsizetype, ElementRef> starts;
     QMap<qsizetype, ElementRef> ends;
+
+private:
+    bool m_processUiQualifiedIds = false;
 };
 
 void AstRangesVisitor::addNodeRanges(AST::Node *rootNode)
@@ -492,10 +559,6 @@ const QSet<int> AstRangesVisitor::kindsToSkip()
 bool AstRangesVisitor::shouldSkipRegion(const DomItem &item, FileLocationRegion region)
 {
     switch (item.internalKind()) {
-    case DomType::QmlObject: {
-        return (region == FileLocationRegion::RightBraceRegion
-                || region == FileLocationRegion::LeftBraceRegion);
-    }
     case DomType::Import:
     case DomType::ImportScope:
         return region == FileLocationRegion::IdentifierRegion;
@@ -728,9 +791,9 @@ bool AstComments::iterateDirectSubpaths(const DomItem &self, DirectVisitor visit
     auto [pre, post] = collectPreAndPostComments();
 
     if (!pre.isEmpty())
-        self.dvWrapField(visitor, Fields::preComments, pre);
+        self.invokeVisitorOnField(visitor, Fields::preComments, pre);
     if (!post.isEmpty())
-        self.dvWrapField(visitor, Fields::postComments, post);
+        self.invokeVisitorOnField(visitor, Fields::postComments, post);
 
     return false;
 }
@@ -790,9 +853,7 @@ void CommentCollector::collectComments(
         }
 
         if (const auto *const commentNode = std::get_if<NodeRef>(&elementToBeLinked.element)) {
-            auto commentedElement = astComments->ensureCommentForNode(commentNode->node,
-                                                                      commentNode->commentAnchor);
-            commentedElement->addComment(comment);
+            astComments->addComment(commentNode->node, commentNode->commentAnchor, comment);
         } else if (const auto *const regionRef =
                            std::get_if<RegionRef>(&elementToBeLinked.element)) {
             DomItem currentItem = m_rootItem.item().path(regionRef->path);
@@ -820,13 +881,12 @@ bool RegionComments::iterateDirectSubpaths(const DomItem &self, DirectVisitor vi
 {
     bool cont = true;
     if (!m_regionComments.isEmpty()) {
-        cont = cont
-                && self.dvItemField(visitor, Fields::regionComments, [this, &self]() -> DomItem {
-                       const Path pathFromOwner =
-                               self.pathFromOwner().withField(Fields::regionComments);
-                       auto map = Map::fromFileRegionMap(pathFromOwner, m_regionComments);
-                       return self.subMapItem(map);
-                   });
+        cont = cont && visitor(PathEls::Field(Fields::regionComments), [this, &self]() -> DomItem {
+                   const Path pathFromOwner =
+                           self.pathFromOwner().withField(Fields::regionComments);
+                   auto map = Map::fromFileRegionMap(pathFromOwner, m_regionComments);
+                   return self.subMapItem(map);
+               });
     }
     return cont;
 }

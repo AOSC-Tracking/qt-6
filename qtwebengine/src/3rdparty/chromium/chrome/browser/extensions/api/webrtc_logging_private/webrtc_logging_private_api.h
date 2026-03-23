@@ -9,7 +9,10 @@
 
 #include "chrome/common/extensions/api/webrtc_logging_private.h"
 #include "extensions/browser/extension_function.h"
+#include "extensions/buildflags/buildflags.h"
 #include "media/media_buildflags.h"
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 #if BUILDFLAG(ENABLE_WEBRTC)
 #include "chrome/browser/media/webrtc/audio_debug_recordings_handler.h"

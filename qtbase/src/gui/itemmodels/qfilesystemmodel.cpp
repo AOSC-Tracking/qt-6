@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qfilesystemmodel_p.h"
 #include "qfilesystemmodel.h"
@@ -14,6 +15,7 @@
 #endif
 
 #include <algorithm>
+#include <functional>
 
 #ifdef Q_OS_WIN
 #  include <QtCore/QVarLengthArray>
@@ -1129,8 +1131,10 @@ void QFileSystemModelPrivate::sortChildren(int column, const QModelIndex &parent
             iterator.value()->isVisible = false;
         }
     }
-    QFileSystemModelSorter ms(column);
-    std::sort(values.begin(), values.end(), ms);
+    {
+        const QFileSystemModelSorter ms(column);
+        std::sort(values.begin(), values.end(), std::cref(ms));
+    }
     // First update the new visible list
     indexNode->visibleChildren.clear();
     //No more dirty item we reset our internal dirty index
@@ -1786,14 +1790,17 @@ bool QFileSystemModel::event(QEvent *event)
 
 bool QFileSystemModel::rmdir(const QModelIndex &aindex)
 {
+    Q_D(QFileSystemModel);
+
     QString path = filePath(aindex);
     const bool success = QDir().rmdir(path);
-#if QT_CONFIG(filesystemwatcher)
     if (success) {
-        QFileSystemModelPrivate * d = const_cast<QFileSystemModelPrivate*>(d_func());
+#if QT_CONFIG(filesystemwatcher)
         d->fileInfoGatherer->removePath(path);
-    }
 #endif
+        QFileSystemModelPrivate::QFileSystemNode *parentNode = d->node(aindex.parent());
+        d->removeNode(parentNode, fileName(aindex));
+    }
     return success;
 }
 

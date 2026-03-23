@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QTGRAPHS_QVALUEAXIS_H
 #define QTGRAPHS_QVALUEAXIS_H
@@ -28,6 +30,8 @@ class Q_GRAPHS_EXPORT QValueAxis : public QAbstractAxis
         qreal tickInterval READ tickInterval WRITE setTickInterval NOTIFY tickIntervalChanged FINAL)
     Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY zoomChanged REVISION(6, 9))
     Q_PROPERTY(qreal pan READ pan WRITE setPan NOTIFY panChanged REVISION(6, 9))
+    Q_PROPERTY(qreal visualMin READ visualMin NOTIFY visualMinChanged REVISION(6, 11))
+    Q_PROPERTY(qreal visualMax READ visualMax NOTIFY visualMaxChanged REVISION(6, 11))
     QML_NAMED_ELEMENT(ValueAxis)
 
 public:
@@ -67,6 +71,9 @@ public:
     void setPan(qreal pan);
     qreal pan() const;
 
+    qreal visualMin() const;
+    qreal visualMax() const;
+
 Q_SIGNALS:
     void minChanged(qreal min);
     void maxChanged(qreal max);
@@ -78,6 +85,8 @@ Q_SIGNALS:
     void tickIntervalChanged(qreal tickInterval);
     Q_REVISION(6, 9) void zoomChanged(qreal zoom);
     Q_REVISION(6, 9) void panChanged(qreal pan);
+    Q_REVISION(6, 11) void visualMinChanged(qreal newVisualMin);
+    Q_REVISION(6, 11) void visualMaxChanged(qreal newVisualMax);
 
 private:
     Q_DECLARE_PRIVATE(QValueAxis)

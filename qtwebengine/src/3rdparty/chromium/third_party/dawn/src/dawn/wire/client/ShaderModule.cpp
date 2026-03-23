@@ -90,7 +90,7 @@ class ShaderModule::CompilationInfoEvent final : public TrackedEvent {
     void CompleteImpl(FutureID futureID, EventCompletionType completionType) override {
         WGPUCompilationInfo* compilationInfo = nullptr;
         if (completionType == EventCompletionType::Shutdown) {
-            mStatus = WGPUCompilationInfoRequestStatus_InstanceDropped;
+            mStatus = WGPUCompilationInfoRequestStatus_CallbackCancelled;
         } else {
             compilationInfo = &(*mShader->mCompilationInfo);
         }
@@ -117,7 +117,8 @@ ObjectType ShaderModule::GetObjectType() const {
     return ObjectType::ShaderModule;
 }
 
-WGPUFuture ShaderModule::GetCompilationInfo(const WGPUCompilationInfoCallbackInfo& callbackInfo) {
+WGPUFuture ShaderModule::APIGetCompilationInfo(
+    const WGPUCompilationInfoCallbackInfo& callbackInfo) {
     auto [futureIDInternal, tracked] =
         GetEventManager().TrackEvent(std::make_unique<CompilationInfoEvent>(callbackInfo, this));
     if (!tracked) {

@@ -1,20 +1,9 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // Copyright (C) 2017 Eurogiciel, author: <philippe.coval@eurogiciel.fr>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
-#ifndef QWAYLANDXDGSHELL_H
-#define QWAYLANDXDGSHELL_H
-
-//
-//  W A R N I N G
-//  -------------
-//
-// This file is not part of the Qt API.  It exists purely as an
-// implementation detail.  This header file may change from version to
-// version without notice, or even be removed.
-//
-// We mean it.
-//
+#pragma once
 
 #include "qwayland-xdg-shell.h"
 
@@ -30,6 +19,10 @@
 
 QT_BEGIN_NAMESPACE
 
+namespace QtWayland {
+    class xx_toplevel_session_v1;
+}
+
 namespace QtWaylandClient {
 
 class QWaylandDisplay;
@@ -41,6 +34,7 @@ class QWaylandXdgExporterV2;
 class QWaylandXdgDialogWmV1;
 class QWaylandXdgDialogV1;
 class QWaylandXdgToplevelIconManagerV1;
+class QWaylandTopLevelSession;
 
 class Q_WAYLANDCLIENT_EXPORT QWaylandXdgSurface : public QWaylandShellSurface, public QtWayland::xdg_surface
 {
@@ -114,6 +108,9 @@ private:
         QWaylandXdgToplevelDecorationV1 *m_decoration = nullptr;
         QScopedPointer<QWaylandXdgExportedV2> m_exported;
         QScopedPointer<QWaylandXdgDialogV1> m_xdgDialog;
+#ifndef QT_NO_SESSIONMANAGER
+        QScopedPointer<QtWayland::xx_toplevel_session_v1> m_session;
+#endif
     };
 
     class Positioner : public QtWayland::xdg_positioner {
@@ -193,8 +190,6 @@ private:
     friend class QWaylandXdgSurface;
 };
 
+} // namespace QtWaylandClient
+
 QT_END_NAMESPACE
-
-}
-
-#endif // QWAYLANDXDGSHELL_H

@@ -123,6 +123,12 @@ size_t EstimateBlinkInterestGroupSize(
   if (group.trusted_bidding_signals_coordinator) {
     size += group.trusted_bidding_signals_coordinator->ToString().length();
   }
+  if (group.view_and_click_counts_providers) {
+    for (const scoped_refptr<const SecurityOrigin>& provider :
+         *group.view_and_click_counts_providers) {
+      size += provider->ToString().length();
+    }
+  }
   size += group.user_bidding_signals.length();
 
   if (group.ads) {
@@ -317,8 +323,20 @@ bool ValidateBlinkInterestGroup(const mojom::blink::InterestGroup& group,
     }
   }
 
+  if (group.view_and_click_counts_providers) {
+    for (const scoped_refptr<const SecurityOrigin>& provider :
+         *group.view_and_click_counts_providers) {
+      if (provider->Protocol() != url::kHttpsScheme) {
+        error_field_name = "viewAndClickCountsProviders";
+        error_field_value = provider->ToString();
+        error = "viewAndClickCountsProviders origin must be HTTPS.";
+        return false;
+      }
+    }
+  }
+
   if (group.ads) {
-    std::optional<WTF::wtf_size_t>
+    std::optional<wtf_size_t>
         selectable_buyer_and_seller_reporting_ids_hard_limit;
     if (base::FeatureList::IsEnabled(
             features::kFledgeLimitSelectableBuyerAndSellerReportingIds) &&
@@ -328,7 +346,7 @@ bool ValidateBlinkInterestGroup(const mojom::blink::InterestGroup& group,
           features::kFledgeSelectableBuyerAndSellerReportingIdsHardLimit.Get();
     }
 
-    for (WTF::wtf_size_t i = 0; i < group.ads.value().size(); ++i) {
+    for (wtf_size_t i = 0; i < group.ads.value().size(); ++i) {
       const KURL& render_url = KURL(group.ads.value()[i]->render_url);
       if (!IsUrlAllowedForRenderUrls(render_url)) {
         error_field_name = String::Format("ads[%u].renderURL", i);
@@ -384,8 +402,7 @@ bool ValidateBlinkInterestGroup(const mojom::blink::InterestGroup& group,
               mojom::blink::kMaxAllowedReportingOrigins);
           return false;
         }
-        for (WTF::wtf_size_t j = 0; j < allowed_reporting_origins->size();
-             ++j) {
+        for (wtf_size_t j = 0; j < allowed_reporting_origins->size(); ++j) {
           if (allowed_reporting_origins.value()[j]->Protocol() !=
               url::kHttpsScheme) {
             error_field_name =
@@ -401,7 +418,7 @@ bool ValidateBlinkInterestGroup(const mojom::blink::InterestGroup& group,
   }
 
   if (group.ad_components) {
-    for (WTF::wtf_size_t i = 0; i < group.ad_components.value().size(); ++i) {
+    for (wtf_size_t i = 0; i < group.ad_components.value().size(); ++i) {
       const KURL& render_url = KURL(group.ad_components.value()[i]->render_url);
       if (!IsUrlAllowedForRenderUrls(render_url)) {
         error_field_name = String::Format("adComponents[%u].renderURL", i);
@@ -565,9 +582,9 @@ bool PerformAdditionalJoinAndUpdateTimeValidations(
           0) {
     return true;
   }
-  WTF::wtf_size_t selectable_buyer_and_seller_reporting_ids_soft_limit =
+  wtf_size_t selectable_buyer_and_seller_reporting_ids_soft_limit =
       features::kFledgeSelectableBuyerAndSellerReportingIdsSoftLimit.Get();
-  for (WTF::wtf_size_t i = 0; i < group.ads.value().size(); ++i) {
+  for (wtf_size_t i = 0; i < group.ads.value().size(); ++i) {
     if (group.ads.value()[i]->selectable_buyer_and_seller_reporting_ids &&
         group.ads.value()[i]
                 ->selectable_buyer_and_seller_reporting_ids->size() >

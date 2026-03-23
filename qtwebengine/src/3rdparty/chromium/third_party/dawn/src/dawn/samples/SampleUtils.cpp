@@ -173,16 +173,15 @@ int SampleBase::Run(unsigned int delay) {
 
 #ifndef __EMSCRIPTEN__
     dawnProcSetProcs(&dawn::native::GetProcs());
+#endif  // __EMSCRIPTEN__
 
     // Create the instance with the toggles
     wgpu::InstanceDescriptor instanceDescriptor = {};
     instanceDescriptor.nextInChain = togglesChain;
-    instanceDescriptor.capabilities.timedWaitAnyEnable = true;
+    static constexpr auto kTimedWaitAny = wgpu::InstanceFeatureName::TimedWaitAny;
+    instanceDescriptor.requiredFeatureCount = 1;
+    instanceDescriptor.requiredFeatures = &kTimedWaitAny;
     sample->instance = wgpu::CreateInstance(&instanceDescriptor);
-#else
-    // Create the instance
-    sample->instance = wgpu::CreateInstance(nullptr);
-#endif  // __EMSCRIPTEN__
 
     // Synchronously create the adapter
     sample->instance.WaitAny(
@@ -201,7 +200,12 @@ int SampleBase::Run(unsigned int delay) {
     }
     wgpu::AdapterInfo info;
     sample->adapter.GetInfo(&info);
-    dawn::InfoLog() << "Using adapter \"" << info.device << "\"";
+    dawn::InfoLog() << "Adaptor info:";
+    dawn::InfoLog() << "  vendor: \"" << info.vendor << "\"";
+    dawn::InfoLog() << "  architecture: \"" << info.architecture << "\"";
+    dawn::InfoLog() << "  device: \"" << info.device << "\"";
+    dawn::InfoLog() << "  subgroupSizes: { min: " << info.subgroupMinSize
+                    << " max: " << info.subgroupMaxSize << " }";
 
     // Create device descriptor with callbacks and toggles
     wgpu::DeviceDescriptor deviceDesc = {};
@@ -217,8 +221,8 @@ int SampleBase::Run(unsigned int delay) {
                 case wgpu::DeviceLostReason::Destroyed:
                     reasonName = "Destroyed";
                     break;
-                case wgpu::DeviceLostReason::InstanceDropped:
-                    reasonName = "InstanceDropped";
+                case wgpu::DeviceLostReason::CallbackCancelled:
+                    reasonName = "CallbackCancelled";
                     break;
                 case wgpu::DeviceLostReason::FailedCreation:
                     reasonName = "FailedCreation";
@@ -275,7 +279,8 @@ int SampleBase::Run(unsigned int delay) {
 
     while (!glfwWindowShouldClose(sample->window)) {
         sample->FrameImpl();
-        sample->surface.Present();
+        wgpu::Status presentStatus = sample->surface.Present();
+        DAWN_ASSERT(presentStatus == wgpu::Status::Success);
         glfwPollEvents();
         if (delay) {
             dawn::utils::USleep(delay);
@@ -329,6 +334,8 @@ bool SampleBase::Setup() {
     config.format = capabilities.formats[0];
     config.width = width;
     config.height = height;
+    DAWN_ASSERT(capabilities.presentModeCount > 0);
+    config.presentMode = capabilities.presentModes[0];
     surface.Configure(&config);
     this->preferredSurfaceTextureFormat = capabilities.formats[0];
 

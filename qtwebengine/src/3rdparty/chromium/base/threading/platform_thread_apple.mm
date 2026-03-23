@@ -303,16 +303,13 @@ void SetCurrentThreadTypeImpl(ThreadType thread_type,
     case ThreadType::kUtility:
       pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
       break;
-    case ThreadType::kResourceEfficient:
-      pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
-      break;
     case ThreadType::kDefault:
       pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
       break;
-    case ThreadType::kDisplayCritical: {
+    case ThreadType::kDisplayCritical:
+    case ThreadType::kInteractive:
       pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
       break;
-    }
     case ThreadType::kRealtimeAudio:
       SetPriorityRealtimeAudio(GetCurrentThreadRealtimePeriod());
       DCHECK_EQ([NSThread.currentThread threadPriority], 1.0);
@@ -348,14 +345,10 @@ ThreadPriorityForTest PlatformThreadBase::GetCurrentThreadPriorityForTest() {
 
 size_t GetDefaultThreadStackSize(const pthread_attr_t& attributes) {
 #if BUILDFLAG(IS_IOS)
-#if BUILDFLAG(USE_BLINK)
   // For iOS 512kB (the default) isn't sufficient, but using the code
   // for macOS below will return 8MB. So just be a little more conservative
   // and return 1MB for now.
   return 1024 * 1024;
-#else
-  return 0;
-#endif
 #else
   // The macOS default for a pthread stack size is 512kB.
   // Libc-594.1.4/pthreads/pthread.c's pthread_attr_init uses

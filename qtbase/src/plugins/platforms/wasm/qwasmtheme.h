@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWASMTHEME_H
 #define QWASMTHEME_H
@@ -57,6 +58,9 @@ public:
     Qt::ContrastPreference contrastPreference() const override;
     QVariant themeHint(ThemeHint hint) const override;
     const QFont *font(Font type) const override;
+    bool usePlatformNativeDialog(DialogType type) const override;
+    QPlatformDialogHelper *createPlatformDialogHelper(DialogType type) const override;
+
     QFont *fixedFont = nullptr;
 
     void onColorSchemeChange();

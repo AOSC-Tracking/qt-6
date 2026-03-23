@@ -7,9 +7,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
@@ -23,6 +26,7 @@
 #include "content/browser/shared_storage/test_shared_storage_runtime_manager.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/frame_tree_node_id.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/test/browser_test_utils.h"  // For `ToRenderFrameHost`
 #include "content/public/test/content_browser_test.h"
@@ -36,8 +40,6 @@ namespace content {
 
 class SharedStorageBrowserTestBase : public ContentBrowserTest {
  public:
-  using AccessType = TestSharedStorageObserver::AccessType;
-
   using MockPrivateAggregationShellContentBrowserClient =
       MockPrivateAggregationContentBrowserClientBase<
           ContentBrowserTestContentBrowserClient>;
@@ -70,13 +72,24 @@ class SharedStorageBrowserTestBase : public ContentBrowserTest {
   void ExpectAccessObserved(
       const std::vector<TestSharedStorageObserver::Access>& expected_accesses);
 
+  void ExpectOperationFinishedInfosObserved(
+      const std::vector<TestSharedStorageObserver::OperationFinishedInfo>&
+          expected_infos);
+
+  std::map<int, base::UnguessableToken>& GetCachedWorkletHostDevToolsTokens();
+
+  // Precondition: At least one worklet host has been created.
+  // Returns the DevTools token associated with the first-created worklet host
+  // (which would have ordinal worklet ID 0).
+  base::UnguessableToken GetFirstWorkletHostDevToolsToken();
+
   uint16_t port() { return https_server()->port(); }
 
   double GetRemainingBudget(const url::Origin& origin);
 
   FrameTreeNode* PrimaryFrameTreeNodeRoot();
 
-  FrameTreeNodeId MainFrameId();
+  GlobalRenderFrameHostId MainFrameId();
 
   SharedStorageBudgetMetadata* GetSharedStorageBudgetMetadata(
       const GURL& urn_uuid);
@@ -84,6 +97,19 @@ class SharedStorageBrowserTestBase : public ContentBrowserTest {
   SharedStorageReportingMap GetSharedStorageReportingMap(const GURL& urn_uuid);
 
   void ExecuteScriptInWorklet(
+      const ToRenderFrameHost& execution_target,
+      std::string_view script,
+      GURL* out_module_script_url,
+      size_t expected_total_host_count = 1u,
+      bool keep_alive_after_operation = true,
+      std::optional<std::string> context_id = std::nullopt,
+      std::optional<std::string> filtering_id_max_bytes = std::nullopt,
+      std::optional<std::string> max_contributions = std::nullopt,
+      std::string* out_error = nullptr,
+      bool wait_for_operation_finish = true,
+      bool use_add_module = true);
+
+  void ExecuteScriptInWorkletUsingCreateWorklet(
       const ToRenderFrameHost& execution_target,
       const std::string& script,
       GURL* out_module_script_url,
@@ -121,9 +147,20 @@ class SharedStorageBrowserTestBase : public ContentBrowserTest {
 
   TestSharedStorageRuntimeManager& test_runtime_manager();
 
+  const std::vector<GURL>& urn_uuids_observed() const;
+
   ~SharedStorageBrowserTestBase() override;
 
  protected:
+  static void WaitForHistogram(const std::string& histogram_name);
+  static void WaitForHistograms(
+      const std::vector<std::string>& histogram_names);
+  static void WaitForHistogramWithCount(std::string_view histogram_name,
+                                        int count);
+  static void WaitForHistogramsWithCounts(
+      const std::vector<std::tuple<std::string_view, int>>&
+          histogram_names_and_counts);
+
   static constexpr double kBudgetAllowed = 5.0;
   static constexpr int kStalenessThresholdDays = 1;
 
@@ -146,6 +183,14 @@ class SharedStorageBrowserTestBase : public ContentBrowserTest {
     });
   }
 )";
+
+  static constexpr char kTimingSelectUrlExecutedInWorkletHistogram[] =
+      "Storage.SharedStorage.Document.Timing.SelectURL.ExecutedInWorklet";
+  static constexpr char kSelectUrlBudgetStatusHistogram[] =
+      "Storage.SharedStorage.Worklet.SelectURL.BudgetStatus";
+
+  static constexpr char kPageWithBlankIframePath[] =
+      "/page_with_blank_iframe.html";
 
   test::FencedFrameTestHelper fenced_frame_test_helper_;
 

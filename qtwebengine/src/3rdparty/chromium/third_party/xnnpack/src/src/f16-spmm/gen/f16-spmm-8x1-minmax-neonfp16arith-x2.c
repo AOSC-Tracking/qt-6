@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f16-spmm/neonfp16arith.c.in
 //   Generator: tools/xngen
@@ -7,12 +8,16 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <assert.h>
-
 #include <arm_neon.h>
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/prefetch.h"
-#include "xnnpack/spmm.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/prefetch.h"
+#include "src/xnnpack/spmm.h"
 
 
 void xnn_f16_spmm_minmax_ukernel_8x1__neonfp16arith_x2(
@@ -24,7 +29,7 @@ void xnn_f16_spmm_minmax_ukernel_8x1__neonfp16arith_x2(
     const uint32_t* nidx_nnzmap,
     xnn_float16* output,
     size_t output_stride,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_minmax_params* restrict params)
 {
   assert(mc != 0);
   assert(mc % sizeof(uint16_t) == 0);

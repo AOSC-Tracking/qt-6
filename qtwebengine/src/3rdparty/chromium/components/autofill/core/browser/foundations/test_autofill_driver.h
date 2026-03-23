@@ -8,6 +8,7 @@
 #include <concepts>
 #include <map>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -52,10 +53,10 @@ class TestAutofillDriverTemplate : public T {
   LocalFrameToken GetFrameToken() const override { return frame_token_; }
   TestAutofillDriverTemplate* GetParent() override { return parent_; }
   std::optional<LocalFrameToken> Resolve(FrameToken query) override {
-    if (auto* local_frame_token = absl::get_if<LocalFrameToken>(&query)) {
+    if (auto* local_frame_token = std::get_if<LocalFrameToken>(&query)) {
       return *local_frame_token;
     }
-    auto it = remote_frame_tokens_.find(absl::get<RemoteFrameToken>(query));
+    auto it = remote_frame_tokens_.find(std::get<RemoteFrameToken>(query));
     if (it != remote_frame_tokens_.end()) {
       return it->second;
     }
@@ -68,9 +69,8 @@ class TestAutofillDriverTemplate : public T {
                         mojom::ActionPersistence action_persistence,
                         const FieldGlobalId& field,
                         const std::u16string& value) override {}
-  void SendTypePredictionsToRenderer(
-      base::span<const raw_ptr<FormStructure, VectorExperimental>> forms)
-      override {}
+  void SendTypePredictionsToRenderer(const FormStructure& form) override {}
+  void ExposeDomNodeIDs() override {}
   void RendererShouldAcceptDataListSuggestion(
       const FieldGlobalId& field,
       const std::u16string& value) override {}
@@ -118,7 +118,8 @@ class TestAutofillDriverTemplate : public T {
       mojom::ActionPersistence action_persistence,
       base::span<const FormFieldData> fields,
       const url::Origin& triggered_origin,
-      const base::flat_map<FieldGlobalId, FieldType>& field_type_map) override {
+      const base::flat_map<FieldGlobalId, FieldType>& field_type_map,
+      const Section& section_for_clear_form_on_ios) override {
     if (action_type == mojom::FormActionType::kUndo) {
       return {};
     }

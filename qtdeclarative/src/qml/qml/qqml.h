@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQML_H
 #define QQML_H
@@ -10,7 +11,7 @@
 
 #include <QtCore/qbytearray.h>
 #include <QtCore/qmetaobject.h>
-#include <QtCore/qmetacontainer.h>
+#include <QtCore/qmetasequence.h>
 #include <QtCore/qversionnumber.h>
 
 #define QML_VERSION     0x020000
@@ -637,7 +638,7 @@ Q_QML_EXPORT QQmlEngine *qmlEngine(const QObject *);
 Q_QML_EXPORT QQmlAttachedPropertiesFunc qmlAttachedPropertiesFunction(QObject *,
                                                                       const QMetaObject *);
 Q_QML_EXPORT QObject *qmlAttachedPropertiesObject(QObject *, QQmlAttachedPropertiesFunc func,
-                                                  bool create = true);
+    bool createIfMissing = true);
 Q_QML_EXPORT QObject *qmlExtendedObject(QObject *);
 
 //The C++ version of protected namespaces in qmldir

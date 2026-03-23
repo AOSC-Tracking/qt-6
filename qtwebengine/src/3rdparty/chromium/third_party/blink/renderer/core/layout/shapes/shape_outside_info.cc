@@ -32,6 +32,7 @@
 #include <memory>
 
 #include "base/auto_reset.h"
+#include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/geometry/logical_rect.h"
@@ -39,8 +40,10 @@
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
-#include "third_party/blink/renderer/core/paint/rounded_border_geometry.h"
+#include "third_party/blink/renderer/core/paint/contoured_border_geometry.h"
+#include "third_party/blink/renderer/platform/geometry/contoured_rect.h"
 #include "third_party/blink/renderer/platform/geometry/length_functions.h"
+#include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 
@@ -230,9 +233,12 @@ std::unique_ptr<Shape> ShapeOutsideInfo::CreateShapeForImage(
   gfx::Rect image_rect =
       ToPixelSnappedLogicalRect(converter.ToLogical(image_physical_rect));
 
-  scoped_refptr<Image> image =
-      style_image->GetImage(*layout_box_, layout_box_->GetDocument(),
-                            layout_box_->StyleRef(), image_size);
+  const Node* node = layout_box_->GetNode();
+  if (!node) {
+    node = &layout_box_->GetDocument();
+  }
+  scoped_refptr<Image> image = style_image->GetImage(
+      *layout_box_, *node, layout_box_->StyleRef(), image_size);
 
   return Shape::CreateRasterShape(
       image.get(), shape_image_threshold,
@@ -284,9 +290,11 @@ const Shape& ShapeOutsideInfo::ComputedShape() const {
                                    shape_image_threshold, writing_mode, margin);
       break;
     case ShapeValue::kBox: {
-      const FloatRoundedRect& shape_rect = RoundedBorderGeometry::RoundedBorder(
-          style, PhysicalRect(PhysicalOffset(), ReferenceBoxPhysicalSize()));
-      shape_ = Shape::CreateLayoutBoxShape(shape_rect, writing_mode, margin);
+      shape_ = Shape::CreateLayoutBoxShape(
+          ContouredBorderGeometry::ContouredBorder(
+              style,
+              PhysicalRect(PhysicalOffset(), ReferenceBoxPhysicalSize())),
+          writing_mode, margin);
       break;
     }
   }
@@ -395,9 +403,10 @@ gfx::PointF ShapeOutsideInfo::ShapeToLayoutObjectPoint(
 
 // static
 ShapeOutsideInfo::InfoMap& ShapeOutsideInfo::GetInfoMap() {
-  DEFINE_STATIC_LOCAL(Persistent<InfoMap>, static_info_map,
-                      (MakeGarbageCollected<InfoMap>()));
-  return *static_info_map;
+  using InfoMapHolder = DisallowNewWrapper<InfoMap>;
+  DEFINE_STATIC_LOCAL(Persistent<InfoMapHolder>, holder,
+                      (MakeGarbageCollected<InfoMapHolder>()));
+  return holder->Value();
 }
 
 void ShapeOutsideInfo::Trace(Visitor* visitor) const {

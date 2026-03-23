@@ -28,6 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* eslint-disable rulesdir/no-imperative-dom-api */
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -36,9 +38,11 @@ import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Persistence from '../../models/persistence/persistence.js';
+import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
-import * as FloatingButton from '../../ui/components/floating_button/floating_button.js';
+import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import * as Spinners from '../../ui/components/spinners/spinners.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as Snippets from '../snippets/snippets.js';
@@ -80,11 +84,15 @@ const UIStrings = {
   /**
    *@description Text in Navigator View of the Sources panel
    */
-  areYouSureYouWantToExcludeThis: 'Are you sure you want to exclude this folder?',
+  excludeThisFolder: 'Exclude this folder?',
+  /**
+   *@description Text in a dialog which appears when users click on 'Exclude from Workspace' menu item
+   */
+  folderWillNotBeShown: 'This folder and its contents will not be shown in workspace.',
   /**
    *@description Text in Navigator View of the Sources panel
    */
-  areYouSureYouWantToDeleteThis: 'Are you sure you want to delete this file?',
+  deleteThisFile: 'Delete this file?',
   /**
    *@description A context menu item in the Navigator View of the Sources panel
    */
@@ -104,9 +112,9 @@ const UIStrings = {
   /**
    *@description Text in Navigator View of the Sources panel
    */
-  areYouSureYouWantToDeleteFolder: 'Are you sure you want to delete this folder and its contents?',
+  deleteFolder: 'Delete this folder and its contents?',
   /**
-   *@description Text in Navigator View of the Sources panel. A confirmation message on action to delete a folder.
+   *@description Text in Navigator View of the Sources panel. A confirmation message on action to delete a folder or file.
    */
   actionCannotBeUndone: 'This action cannot be undone.',
   /**
@@ -144,12 +152,23 @@ const UIStrings = {
    *@example {compile.html} PH1
    */
   sIgnoreListed: '{PH1} (ignore listed)',
-};
+  /**
+   * @description Text for the button in the Workspace tab of the Sources panel,
+   *              which allows the user to connect automatic workspace folders.
+   */
+  connect: 'Connect',
+  /**
+   * @description A context menu item in the Workspace tab of the Sources panel, which
+   *              shows up for disconnected automatic workspace folders.
+   */
+  connectFolderToWorkspace: 'Connect to workspace',
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/sources/NavigatorView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export const Types = {
   Authored: 'authored',
+  AutomaticFileSystem: 'automatic-fs',
   Deployed: 'deployed',
   Domain: 'domain',
   File: 'file',
@@ -171,6 +190,7 @@ const TYPE_ORDERS = new Map([
   [Types.File, 10],
   [Types.Frame, 70],
   [Types.Worker, 90],
+  [Types.AutomaticFileSystem, 99],
   [Types.FileSystem, 100],
 ]);
 
@@ -192,7 +212,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
   private groupByDomain?: boolean;
   private groupByFolder?: boolean;
   constructor(jslogContext: string, enableAuthoredGrouping?: boolean) {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(navigatorViewStyles);
 
     this.placeholder = null;
@@ -224,7 +244,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
       this.navigatorGroupByAuthoredExperiment = Root.Runtime.ExperimentName.AUTHORED_DEPLOYED_GROUPING;
     }
 
-    Bindings.IgnoreListManager.IgnoreListManager.instance().addChangeListener(this.ignoreListChanged.bind(this));
+    Workspace.IgnoreListManager.IgnoreListManager.instance().addChangeListener(this.ignoreListChanged.bind(this));
 
     this.initGrouping();
 
@@ -465,7 +485,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
 
   private addUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): void {
     if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.JUST_MY_CODE) &&
-        Bindings.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
+        Workspace.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
             uiSourceCode)) {
       return;
     }
@@ -494,9 +514,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     const isFromSourceMap = uiSourceCode.contentType().isFromSourceMap();
     let path;
     if (uiSourceCode.project().type() === Workspace.Workspace.projectTypes.FileSystem) {
-      path =
-          Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.relativePath(uiSourceCode).slice(0, -1) as
-          Platform.DevToolsPath.EncodedPathString[];
+      path = Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.relativePath(uiSourceCode).slice(0, -1);
     } else {
       path = Common.ParsedURL.ParsedURL.extractPath(uiSourceCode.url()).split('/').slice(1, -1) as
           Platform.DevToolsPath.EncodedPathString[];
@@ -541,12 +559,20 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
 
   private projectAdded(project: Workspace.Workspace.Project): void {
     const rootOrDeployed = this.rootOrDeployedNode();
-    if (!this.acceptProject(project) || project.type() !== Workspace.Workspace.projectTypes.FileSystem ||
+    const FILE_SYSTEM_TYPES = [
+      Workspace.Workspace.projectTypes.ConnectableFileSystem,
+      Workspace.Workspace.projectTypes.FileSystem,
+    ];
+    if (!this.acceptProject(project) || !FILE_SYSTEM_TYPES.includes(project.type()) ||
         Snippets.ScriptSnippetFileSystem.isSnippetsProject(project) || rootOrDeployed.child(project.id())) {
       return;
     }
-    rootOrDeployed.appendChild(
-        new NavigatorGroupTreeNode(this, project, project.id(), Types.FileSystem, project.displayName()));
+    const type =
+        (project instanceof Persistence.AutomaticFileSystemWorkspaceBinding.FileSystem ||
+         (project instanceof Persistence.FileSystemWorkspaceBinding.FileSystem && project.fileSystem().automatic)) ?
+        Types.AutomaticFileSystem :
+        Types.FileSystem;
+    rootOrDeployed.appendChild(new NavigatorGroupTreeNode(this, project, project.id(), type, project.displayName()));
     this.selectDefaultTreeNode();
   }
 
@@ -594,7 +620,8 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
 
   removeProject(project: Workspace.Workspace.Project): void {
     this.removeUISourceCodes(project.uiSourceCodes());
-    if (project.type() !== Workspace.Workspace.projectTypes.FileSystem) {
+    if (project.type() !== Workspace.Workspace.projectTypes.ConnectableFileSystem &&
+        project.type() !== Workspace.Workspace.projectTypes.FileSystem) {
       return;
     }
     const fileSystemNode = this.rootNode.child(project.id());
@@ -838,7 +865,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
 
   #isUISourceCodeOrAnyAncestorSelected(node: NavigatorUISourceCodeTreeNode): boolean {
     const selectedTreeElement = (this.scriptsTree.selectedTreeElement as NavigatorSourceTreeElement | null);
-    const selectedNode = selectedTreeElement && selectedTreeElement.node;
+    const selectedNode = selectedTreeElement?.node;
     let currentNode: NavigatorTreeNode|null = node;
     while (currentNode) {
       if (currentNode === selectedNode) {
@@ -948,8 +975,8 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
 
   private async renameShortcut(): Promise<boolean> {
     const selectedTreeElement = (this.scriptsTree.selectedTreeElement as NavigatorSourceTreeElement | null);
-    const node = selectedTreeElement && selectedTreeElement.node;
-    if (!node || !node.uiSourceCode() || !node.uiSourceCode().canRename()) {
+    const node = selectedTreeElement?.node;
+    if (!node?.uiSourceCode()?.canRename()) {
       return false;
     }
     this.rename(node, false);
@@ -974,7 +1001,8 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
   private async handleContextMenuExclude(
       project: Workspace.Workspace.Project, path: Platform.DevToolsPath.EncodedPathString): Promise<void> {
     const shouldExclude = await UI.UIUtils.ConfirmDialog.show(
-        i18nString(UIStrings.areYouSureYouWantToExcludeThis), undefined, {jslogContext: 'exclude-folder-confirmation'});
+        i18nString(UIStrings.folderWillNotBeShown), i18nString(UIStrings.excludeThisFolder), undefined,
+        {jslogContext: 'exclude-folder-confirmation'});
     if (shouldExclude) {
       UI.UIUtils.startBatchUpdate();
       project.excludeFolder(
@@ -985,7 +1013,8 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
 
   private async handleContextMenuDelete(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<void> {
     const shouldDelete = await UI.UIUtils.ConfirmDialog.show(
-        i18nString(UIStrings.areYouSureYouWantToDeleteThis), undefined, {jslogContext: 'delete-file-confirmation'});
+        i18nString(UIStrings.actionCannotBeUndone), i18nString(UIStrings.deleteThisFile), undefined,
+        {jslogContext: 'delete-file-confirmation'});
     if (shouldDelete) {
       uiSourceCode.project().deleteFile(uiSourceCode);
     }
@@ -1013,10 +1042,9 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
   }
 
   private async handleDeleteFolder(node: NavigatorTreeNode): Promise<void> {
-    const warningMsg =
-        `${i18nString(UIStrings.areYouSureYouWantToDeleteFolder)}\n${i18nString(UIStrings.actionCannotBeUndone)}`;
-    const shouldRemove =
-        await UI.UIUtils.ConfirmDialog.show(warningMsg, undefined, {jslogContext: 'delete-folder-confirmation'});
+    const shouldRemove = await UI.UIUtils.ConfirmDialog.show(
+        i18nString(UIStrings.actionCannotBeUndone), i18nString(UIStrings.deleteFolder), undefined,
+        {jslogContext: 'delete-folder-confirmation'});
     if (shouldRemove) {
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.OverrideTabDeleteFolderContextMenu);
       const topNode = this.findTopNonMergedNode(node);
@@ -1066,7 +1094,9 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     const project = node.project || null;
 
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
-    NavigatorView.appendSearchItem(contextMenu, path);
+    if (project?.type() !== Workspace.Workspace.projectTypes.ConnectableFileSystem) {
+      NavigatorView.appendSearchItem(contextMenu, path);
+    }
 
     if (!project) {
       return;
@@ -1092,7 +1122,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
         isKnownThirdParty: node.recursiveProperties.exclusivelyThirdParty || false,
         isCurrentlyIgnoreListed: node.recursiveProperties.exclusivelyIgnored || false,
       };
-      for (const {text, callback, jslogContext} of Bindings.IgnoreListManager.IgnoreListManager.instance()
+      for (const {text, callback, jslogContext} of Workspace.IgnoreListManager.IgnoreListManager.instance()
                .getIgnoreListFolderContextMenuItems(url, options)) {
         contextMenu.defaultSection().appendItem(text, callback, {jslogContext});
       }
@@ -1104,37 +1134,37 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
           {jslogContext: 'exclude-folder'});
     }
 
-    if (project.type() === Workspace.Workspace.projectTypes.FileSystem) {
-      const isFileOverrides =
-          (project as Persistence.FileSystemWorkspaceBinding.FileSystem).fileSystem().type() === 'overrides';
+    if (project.type() === Workspace.Workspace.projectTypes.ConnectableFileSystem) {
+      const automaticFileSystemManager = Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager.instance();
+      const {automaticFileSystem} = automaticFileSystemManager;
+      if (automaticFileSystem?.state === 'disconnected') {
+        contextMenu.defaultSection().appendItem(i18nString(UIStrings.connectFolderToWorkspace), async () => {
+          await automaticFileSystemManager.connectAutomaticFileSystem(
+              /* addIfMissing= */ true);
+        }, {jslogContext: 'automatic-workspace-folders.connect'});
+      }
+    }
 
-      if (!isFileOverrides) {
+    if (project.type() === Workspace.Workspace.projectTypes.FileSystem) {
+      if (Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemType(project) !==
+          Persistence.PlatformFileSystem.PlatformFileSystemType.OVERRIDES) {
         if (node instanceof NavigatorGroupTreeNode) {
           contextMenu.defaultSection().appendItem(i18nString(UIStrings.removeFolderFromWorkspace), async () => {
-            const warningMessage = `${i18nString(UIStrings.areYouSureYouWantToRemoveThis, {
-              PH1: (node as NavigatorGroupTreeNode).title,
-            })}\n${i18nString(UIStrings.workspaceStopSyncing)}`;
-            const shouldRemove = await UI.UIUtils.ConfirmDialog.show(warningMessage, undefined, {
-              okButtonLabel: i18nString(UIStrings.remove),
-              jslogContext: 'remove-folder-from-workspace-confirmation',
-            });
+            const header =
+                i18nString(UIStrings.areYouSureYouWantToRemoveThis, {PH1: (node as NavigatorGroupTreeNode).title});
+            const shouldRemove =
+                await UI.UIUtils.ConfirmDialog.show(i18nString(UIStrings.workspaceStopSyncing), header, undefined, {
+                  okButtonLabel: i18nString(UIStrings.remove),
+                  jslogContext: 'remove-folder-from-workspace-confirmation',
+                });
             if (shouldRemove) {
               project.remove();
             }
           }, {jslogContext: 'remove-folder-from-workspace'});
-
-          if (UI.ActionRegistry.ActionRegistry.instance().hasAction('ai-assistance.filesystem')) {
-            contextMenu.headerSection().appendAction(
-                'ai-assistance.filesystem',
-            );
-            UI.Context.Context.instance().setFlavor(Persistence.FileSystemWorkspaceBinding.FileSystem, project);
-          }
         }
-      } else {
-        if (!(node instanceof NavigatorGroupTreeNode)) {
-          contextMenu.defaultSection().appendItem(
-              i18nString(UIStrings.delete), this.handleDeleteFolder.bind(this, node), {jslogContext: 'delete'});
-        }
+      } else if (!(node instanceof NavigatorGroupTreeNode)) {
+        contextMenu.defaultSection().appendItem(
+            i18nString(UIStrings.delete), this.handleDeleteFolder.bind(this, node), {jslogContext: 'delete'});
       }
     }
 
@@ -1151,7 +1181,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
       }
       if (!committed) {
         uiSourceCode.remove();
-      } else if (node.treeElement && node.treeElement.listItemElement.hasFocus()) {
+      } else if (node.treeElement?.listItemElement.hasFocus()) {
         this.sourceSelected(uiSourceCode, true);
       }
     }
@@ -1162,7 +1192,8 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
       uiSourceCodeToCopy?: Workspace.UISourceCode.UISourceCode): Promise<void> {
     let content = '';
     if (uiSourceCodeToCopy) {
-      content = (await uiSourceCodeToCopy.requestContent()).content || '';
+      const contentDataOrError = await uiSourceCodeToCopy.requestContentData();
+      content = TextUtils.ContentData.ContentData.textOr(contentDataOrError, '');
     }
     const uiSourceCode = await project.createFile(path, null, content);
     if (!uiSourceCode) {
@@ -1202,7 +1233,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     }
   }
 
-  private resetForTest(): void {
+  protected resetForTest(): void {
     this.reset();
     this.workspaceInternal.uiSourceCodes().forEach(this.addUISourceCode.bind(this));
   }
@@ -1254,10 +1285,11 @@ export class NavigatorFolderTreeElement extends UI.TreeOutline.TreeElement {
   node!: NavigatorTreeNode;
   private hovered?: boolean;
   private isIgnoreListed?: boolean;
-  private isFromSourceMap: boolean;
 
-  constructor(navigatorView: NavigatorView, type: string, title: string, hoverCallback?: ((arg0: boolean) => void)) {
-    super('', true, NavigatorFolderTreeElement.#contextForType(type));
+  constructor(
+      navigatorView: NavigatorView, type: string, title: string, hoverCallback?: ((arg0: boolean) => void),
+      expandable = true) {
+    super('', expandable, NavigatorFolderTreeElement.#contextForType(type));
     this.listItemElement.classList.add('navigator-' + type + '-tree-item', 'navigator-folder-tree-item');
     UI.ARIAUtils.setLabel(this.listItemElement, `${title}, ${type}`);
     this.nodeType = type;
@@ -1265,7 +1297,6 @@ export class NavigatorFolderTreeElement extends UI.TreeOutline.TreeElement {
     this.tooltip = title;
     this.navigatorView = navigatorView;
     this.hoverCallback = hoverCallback;
-    this.isFromSourceMap = false;
 
     let iconType = 'folder';
 
@@ -1279,6 +1310,8 @@ export class NavigatorFolderTreeElement extends UI.TreeOutline.TreeElement {
       iconType = 'code';
     } else if (type === Types.Deployed) {
       iconType = 'deployed';
+    } else if (type === Types.AutomaticFileSystem) {
+      iconType = 'folder-asterisk';
     }
 
     const icon = IconButton.Icon.create(iconType);
@@ -1306,7 +1339,6 @@ export class NavigatorFolderTreeElement extends UI.TreeOutline.TreeElement {
   }
 
   setFromSourceMap(isFromSourceMap: boolean): void {
-    this.isFromSourceMap = isFromSourceMap;
     this.listItemElement.classList.toggle('is-from-source-map', isFromSourceMap);
   }
 
@@ -1421,10 +1453,7 @@ export class NavigatorSourceTreeElement extends UI.TreeOutline.TreeElement {
     const action = UI.ActionRegistry.ActionRegistry.instance().getAction('drjones.sources-floating-button');
     if (!this.aiButtonContainer) {
       this.aiButtonContainer = this.listItemElement.createChild('span', 'ai-button-container');
-      const floatingButton = new FloatingButton.FloatingButton.FloatingButton({
-        title: action.title(),
-        iconName: 'smart-assistant',
-      });
+      const floatingButton = Buttons.FloatingButton.create('smart-assistant', action.title(), 'ask-ai');
       floatingButton.addEventListener('click', ev => {
         ev.stopPropagation();
         this.navigatorView.sourceSelected(this.uiSourceCode, false);
@@ -1550,7 +1579,7 @@ export class NavigatorTreeNode {
   }
 
   treeNode(): UI.TreeOutline.TreeElement {
-    throw 'Not implemented';
+    throw new Error('Not implemented');
   }
 
   dispose(): void {
@@ -1585,7 +1614,7 @@ export class NavigatorTreeNode {
   }
 
   setTitle(_title: string): void {
-    throw 'Not implemented';
+    throw new Error('Not implemented');
   }
 
   populate(): void {
@@ -1602,19 +1631,19 @@ export class NavigatorTreeNode {
   wasPopulated(): void {
     const children = this.children();
     for (let i = 0; i < children.length; ++i) {
-      this.navigatorView.appendChild(this.treeNode(), (children[i].treeNode() as UI.TreeOutline.TreeElement));
+      this.navigatorView.appendChild(this.treeNode(), (children[i].treeNode()));
     }
   }
 
   didAddChild(node: NavigatorTreeNode): void {
     if (this.isPopulated()) {
-      this.navigatorView.appendChild(this.treeNode(), (node.treeNode() as UI.TreeOutline.TreeElement));
+      this.navigatorView.appendChild(this.treeNode(), (node.treeNode()));
     }
   }
 
   willRemoveChild(node: NavigatorTreeNode): void {
     if (this.isPopulated()) {
-      this.navigatorView.removeChild(this.treeNode(), (node.treeNode() as UI.TreeOutline.TreeElement));
+      this.navigatorView.removeChild(this.treeNode(), (node.treeNode()));
     }
   }
 
@@ -1688,7 +1717,7 @@ export class NavigatorUISourceCodeTreeNode extends NavigatorTreeNode {
   constructor(
       navigatorView: NavigatorView, uiSourceCode: Workspace.UISourceCode.UISourceCode,
       frame: SDK.ResourceTreeModel.ResourceTreeFrame|null) {
-    super(navigatorView, 'UISourceCode:' + uiSourceCode.canononicalScriptId(), Types.File);
+    super(navigatorView, 'UISourceCode:' + uiSourceCode.canonicalScriptId(), Types.File);
     this.uiSourceCodeInternal = uiSourceCode;
     this.treeElement = null;
     this.eventListeners = [];
@@ -1729,7 +1758,7 @@ export class NavigatorUISourceCodeTreeNode extends NavigatorTreeNode {
 
   override updateTitle(ignoreIsDirty?: boolean): void {
     const isIgnoreListed =
-        Bindings.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
+        Workspace.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
             this.uiSourceCodeInternal);
     if (this.uiSourceCodeInternal.contentType().isScript() || isIgnoreListed) {
       this.recursiveProperties.exclusivelyIgnored = isIgnoreListed;
@@ -1760,7 +1789,7 @@ export class NavigatorUISourceCodeTreeNode extends NavigatorTreeNode {
     this.treeElement.tooltip = tooltip;
     this.treeElement.updateAccessibleName();
 
-    this.updateId('UISourceCode:' + this.uiSourceCodeInternal.canononicalScriptId());
+    this.updateId('UISourceCode:' + this.uiSourceCodeInternal.canonicalScriptId());
   }
 
   override hasChildren(): boolean {
@@ -1910,7 +1939,6 @@ export class NavigatorFolderTreeNode extends NavigatorTreeNode {
   }
 
   override wasPopulated(): void {
-    // @ts-ignore These types are invalid, but removing this check causes wrong behavior
     if (!this.treeElement || this.treeElement.node !== this) {
       return;
     }
@@ -1952,7 +1980,7 @@ export class NavigatorFolderTreeNode extends NavigatorTreeNode {
     if (children.length === 2) {
       oldNode = children[0] !== node ? children[0] : children[1];
     }
-    if (oldNode && oldNode.isMerged) {
+    if (oldNode?.isMerged) {
       oldNode.isMerged = false;
       const mergedToNodes = [];
       mergedToNodes.push(this);
@@ -1972,7 +2000,7 @@ export class NavigatorFolderTreeNode extends NavigatorTreeNode {
         nodes.push(treeNode);
         children = treeNode.children();
         treeNode = children.length === 1 ? children[0] : null;
-      } while (treeNode && treeNode.isMerged);
+      } while (treeNode?.isMerged);
 
       if (!this.isPopulated()) {
         this.treeElement.title = titleText;
@@ -2041,8 +2069,37 @@ export class NavigatorGroupTreeNode extends NavigatorTreeNode {
     if (this.treeElement) {
       return this.treeElement;
     }
-    this.treeElement = new NavigatorFolderTreeElement(this.navigatorView, this.type, this.title, this.hoverCallback);
+    const expandable = !(this.project instanceof Persistence.AutomaticFileSystemWorkspaceBinding.FileSystem);
+    this.treeElement =
+        new NavigatorFolderTreeElement(this.navigatorView, this.type, this.title, this.hoverCallback, expandable);
     this.treeElement.setNode(this);
+    if (this.project instanceof Persistence.AutomaticFileSystemWorkspaceBinding.FileSystem) {
+      const {automaticFileSystem, automaticFileSystemManager} = this.project;
+      switch (automaticFileSystem?.state) {
+        case 'connecting': {
+          const spinner = new Spinners.Spinner.Spinner();
+          this.treeElement.listItemElement.append(spinner);
+          break;
+        }
+        case 'disconnected': {
+          const button = new Buttons.Button.Button();
+          button.data = {
+            variant: Buttons.Button.Variant.OUTLINED,
+            size: Buttons.Button.Size.MICRO,
+            title: i18nString(UIStrings.connectFolderToWorkspace),
+            jslogContext: 'automatic-workspace-folders.connect',
+          };
+          button.textContent = i18nString(UIStrings.connect);
+          button.addEventListener('click', async event => {
+            event.consume();
+            await automaticFileSystemManager.connectAutomaticFileSystem(
+                /* addIfMissing= */ true);
+          });
+          this.treeElement.listItemElement.append(button);
+          break;
+        }
+      }
+    }
     return this.treeElement;
   }
 

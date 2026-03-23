@@ -1,6 +1,7 @@
 // Copyright 2023 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -10,13 +11,12 @@ import type * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 
 import {AnimationsTrackAppender} from './AnimationsTrackAppender.js';
-import {getEventLevel, getFormattedTime, type LastTimestampByLevel} from './AppenderUtils.js';
+import {getDurationString, getEventLevel, type LastTimestampByLevel} from './AppenderUtils.js';
 import * as TimelineComponents from './components/components.js';
 import {ExtensionTrackAppender} from './ExtensionTrackAppender.js';
 import {GPUTrackAppender} from './GPUTrackAppender.js';
 import {InteractionsTrackAppender} from './InteractionsTrackAppender.js';
 import {LayoutShiftsTrackAppender} from './LayoutShiftsTrackAppender.js';
-import {ServerTimingsTrackAppender} from './ServerTimingsTrackAppender.js';
 import {ThreadAppender} from './ThreadAppender.js';
 import {
   EntryType,
@@ -47,7 +47,7 @@ function isShowPostMessageEventsEnabled(): boolean {
 
 export function entryIsVisibleInTimeline(
     entry: Trace.Types.Events.Event, parsedTrace?: Trace.Handlers.Types.ParsedTrace): boolean {
-  if (parsedTrace && parsedTrace.Meta.traceIsGeneric) {
+  if (parsedTrace?.Meta.traceIsGeneric) {
     return true;
   }
 
@@ -68,7 +68,7 @@ export function entryIsVisibleInTimeline(
     }
   }
 
-  if (Trace.Types.Extensions.isSyntheticExtensionEntry(entry) || Trace.Types.Events.isSyntheticServerTiming(entry)) {
+  if (Trace.Types.Extensions.isSyntheticExtensionEntry(entry)) {
     return true;
   }
 
@@ -76,8 +76,7 @@ export function entryIsVisibleInTimeline(
   // events are hidden by default.
   const eventStyle = TimelineUtils.EntryStyles.getEventStyle(entry.name as Trace.Types.Events.Name);
   const eventIsTiming = Trace.Types.Events.isConsoleTime(entry) || Trace.Types.Events.isPerformanceMeasure(entry) ||
-      Trace.Types.Events.isPerformanceMark(entry);
-
+      Trace.Types.Events.isPerformanceMark(entry) || Trace.Types.Events.isConsoleTimeStamp(entry);
   return (eventStyle && !eventStyle.hidden) || eventIsTiming;
 }
 
@@ -110,9 +109,9 @@ export interface TrackAppender {
 
   /**
    * Appends into the flame chart data the data corresponding to a track.
-   * @param level the horizontal level of the flame chart events where the
+   * @param level - the horizontal level of the flame chart events where the
    * track's events will start being appended.
-   * @param expanded wether the track should be rendered expanded.
+   * @param expanded - wether the track should be rendered expanded.
    * @returns the first available level to append more data after having
    * appended the track's events.
    */
@@ -179,6 +178,7 @@ export const enum VisualLoggingTrackName {
   THREAD_POOL = 'thread.pool',
   THREAD_OTHER = 'thread.other',
   EXTENSION = 'extension',
+  ANGULAR_TRACK = 'angular-track',
   NETWORK = 'network',
 }
 
@@ -192,7 +192,7 @@ export class CompatibilityTracksAppender {
   #entryData: Trace.Types.Events.Event[];
   #colorGenerator: Common.Color.Generator;
   #allTrackAppenders: TrackAppender[] = [];
-  #visibleTrackNames: Set<TrackAppenderName> = new Set([...TrackNames]);
+  #visibleTrackNames = new Set<TrackAppenderName>([...TrackNames]);
 
   #legacyEntryTypeByLevel: EntryType[];
   #timingsTrackAppender: TimingsTrackAppender;
@@ -201,26 +201,29 @@ export class CompatibilityTracksAppender {
   #gpuTrackAppender: GPUTrackAppender;
   #layoutShiftsTrackAppender: LayoutShiftsTrackAppender;
   #threadAppenders: ThreadAppender[] = [];
-  #serverTimingsTrackAppender: ServerTimingsTrackAppender;
+  #entityMapper: TimelineUtils.EntityMapper.EntityMapper|null;
 
   /**
-   * @param flameChartData the data used by the flame chart renderer on
+   * @param flameChartData - the data used by the flame chart renderer on
    * which the track data will be appended.
-   * @param parsedTrace the trace parsing engines output.
-   * @param entryData the array containing all event to be rendered in
+   * @param parsedTrace - the trace parsing engines output.
+   * @param entryData - the array containing all event to be rendered in
    * the flamechart.
-   * @param legacyEntryTypeByLevel an array containing the type of
+   * @param legacyEntryTypeByLevel - an array containing the type of
    * each entry in the entryData array. Indexed by the position the
    * corresponding entry occupies in the entryData array. This reference
    * is needed only for compatibility with the legacy flamechart
    * architecture and should be removed once all tracks use the new
    * system.
+   * @param entityMapper - 3P entity data for the trace.
    */
   constructor(
       flameChartData: PerfUI.FlameChart.FlameChartTimelineData, parsedTrace: Trace.Handlers.Types.ParsedTrace,
-      entryData: Trace.Types.Events.Event[], legacyEntryTypeByLevel: EntryType[]) {
+      entryData: Trace.Types.Events.Event[], legacyEntryTypeByLevel: EntryType[],
+      entityMapper: TimelineUtils.EntityMapper.EntityMapper|null) {
     this.#flameChartData = flameChartData;
     this.#parsedTrace = parsedTrace;
+    this.#entityMapper = entityMapper;
     this.#entryData = entryData;
     this.#colorGenerator = new Common.Color.Generator(
         /* hueSpace= */ {min: 30, max: 55, count: undefined},
@@ -243,8 +246,6 @@ export class CompatibilityTracksAppender {
     this.#layoutShiftsTrackAppender = new LayoutShiftsTrackAppender(this, this.#parsedTrace);
     this.#allTrackAppenders.push(this.#layoutShiftsTrackAppender);
 
-    this.#serverTimingsTrackAppender = new ServerTimingsTrackAppender(this, this.#parsedTrace);
-    this.#allTrackAppenders.push(this.#serverTimingsTrackAppender);
     this.#addThreadAppenders();
     this.#addExtensionAppenders();
 
@@ -380,10 +381,6 @@ export class CompatibilityTracksAppender {
     return this.#threadAppenders;
   }
 
-  serverTimingsTrackAppender(): ServerTimingsTrackAppender {
-    return this.#serverTimingsTrackAppender;
-  }
-
   eventsInTrack(trackAppender: TrackAppender): Trace.Types.Events.Event[] {
     const cachedData = this.#eventsForTrack.get(trackAppender);
     if (cachedData) {
@@ -410,7 +407,7 @@ export class CompatibilityTracksAppender {
     const events = [];
     for (let i = 0; i < entryLevels.length; i++) {
       if (trackStartLevel <= entryLevels[i] && entryLevels[i] <= trackEndLevel) {
-        events.push(this.#entryData[i] as Trace.Types.Events.Event);
+        events.push(this.#entryData[i]);
       }
     }
     events.sort((a, b) => a.ts - b.ts);  // TODO(paulirish): Remove as I'm 90% it's already sorted.
@@ -459,8 +456,8 @@ export class CompatibilityTracksAppender {
    * Returns number of tracks of given type already appended.
    * Used to name the "Raster Thread 6" tracks, etc
    */
-  getCurrentTrackCountForThreadType(threadType: Trace.Handlers.Threads.ThreadType.RASTERIZER|
-                                    Trace.Handlers.Threads.ThreadType.THREAD_POOL): number {
+  getCurrentTrackCountForThreadType(
+      threadType: Trace.Handlers.Threads.ThreadType.RASTERIZER|Trace.Handlers.Threads.ThreadType.THREAD_POOL): number {
     return this.#threadAppenders.filter(appender => appender.threadType === threadType && appender.headerAppended())
         .length;
   }
@@ -491,18 +488,6 @@ export class CompatibilityTracksAppender {
     return this.eventsForTreeView(track);
   }
 
-  /**
-   * Caches the track appender that owns a level. An appender takes
-   * ownership of a level when it appends data to it.
-   * The cache is useful to determine what appender should handle a
-   * query from the flame chart renderer when an event's feature (like
-   * style, title, etc.) is needed.
-   */
-  registerTrackForLevel(level: number, appender: TrackAppender): void {
-    // TODO(crbug.com/1442454) Figure out how to avoid the circular calls.
-    this.#trackForLevel.set(level, appender);
-  }
-
   groupForLevel(level: number): PerfUI.FlameChart.Group|null {
     const appenderForLevel = this.#trackForLevel.get(level);
     if (!appenderForLevel) {
@@ -513,9 +498,9 @@ export class CompatibilityTracksAppender {
 
   /**
    * Adds an event to the flame chart data at a defined level.
-   * @param event the event to be appended,
-   * @param level the level to append the event,
-   * @param appender the track which the event belongs to.
+   * @param event - the event to be appended,
+   * @param level - the level to append the event,
+   * @param appender - the track which the event belongs to.
    * @returns the index of the event in all events to be rendered in the flamechart.
    */
   appendEventAtLevel(event: Trace.Types.Events.Event, level: number, appender: TrackAppender): number {
@@ -533,14 +518,14 @@ export class CompatibilityTracksAppender {
 
   /**
    * Adds into the flame chart data a list of trace events.
-   * @param events the trace events that will be appended to the flame chart.
+   * @param events - the trace events that will be appended to the flame chart.
    * The events should be taken straight from the trace handlers. The handlers
    * should sort the events by start time, and the parent event is before the
    * child.
-   * @param trackStartLevel the flame chart level from which the events will
+   * @param trackStartLevel - the flame chart level from which the events will
    * be appended.
-   * @param appender the track that the trace events belong to.
-   * @param eventAppendedCallback an optional function called after the
+   * @param appender - the track that the trace events belong to.
+   * @param eventAppendedCallback - an optional function called after the
    * event has been added to the timeline data. This allows the caller
    * to know f.e. the position of the event in the entry data. Use this
    * hook to customize the data after it has been appended, f.e. to add
@@ -587,19 +572,6 @@ export class CompatibilityTracksAppender {
       result.set(appender.processId(), existing);
     }
     return result;
-  }
-
-  /**
-   * Sets the visible tracks internally
-   * @param visibleTracks set with the names of the visible track
-   * appenders. If undefined, all tracks are set to be visible.
-   */
-  setVisibleTracks(visibleTracks?: Set<TrackAppenderName>): void {
-    if (!visibleTracks) {
-      this.#visibleTrackNames = new Set([...TrackNames]);
-      return;
-    }
-    this.#visibleTrackNames = visibleTracks;
   }
 
   getDrawOverride(event: Trace.Types.Events.Event, level: number): DrawOverride|undefined {
@@ -654,7 +626,7 @@ export class CompatibilityTracksAppender {
     // Defaults here, though tracks may chose to redefine title/formattedTime
     const info: PopoverInfo = {
       title: this.titleForEvent(event, level),
-      formattedTime: getFormattedTime(event.dur),
+      formattedTime: getDurationString(event.dur),
       warningElements: TimelineComponents.DetailsView.buildWarningElementsForEvent(event, this.#parsedTrace),
       additionalElements: [],
       url: null,
@@ -671,13 +643,14 @@ export class CompatibilityTracksAppender {
         '');
     if (url) {
       const MAX_PATH_LENGTH = 45;
-      const MAX_ORIGIN_LENGTH = 30;
       const path = Platform.StringUtilities.trimMiddle(url.href.replace(url.origin, ''), MAX_PATH_LENGTH);
-      const origin =
-          Platform.StringUtilities.trimEndWithMaxLength(url.origin.replace('https://', ''), MAX_ORIGIN_LENGTH);
       const urlElems = document.createElement('div');
       urlElems.createChild('span', 'popoverinfo-url-path').textContent = path;
-      urlElems.createChild('span', 'popoverinfo-url-origin').textContent = `(${origin})`;
+      const entity = this.#entityMapper ? this.#entityMapper.entityForEvent(event) : null;
+      // Include entity with origin if it's non made-up entity, otherwise there'd be
+      // repetition with the origin.
+      const originWithEntity = TimelineUtils.Helpers.formatOriginWithEntity(url, entity);
+      urlElems.createChild('span', 'popoverinfo-url-origin').textContent = `(${originWithEntity})`;
       info.additionalElements.push(urlElems);
     }
 

@@ -1,6 +1,9 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
+
+#include "qbar3dseries.h"
 #include "qquickgraphsitem_p.h"
 
 #include "q3dscene_p.h"
@@ -15,6 +18,8 @@
 #include "qcustom3dvolume.h"
 #include "qgraphsinputhandler_p.h"
 #include "qgraphstheme.h"
+#include "qscatter3dseries.h"
+#include "qsurface3dseries.h"
 #include "qvalue3daxis.h"
 #include "qvalue3daxis_p.h"
 #include "utils_p.h"
@@ -337,6 +342,7 @@ constexpr float polarRoundness = 64.0f;
  *
  * Specifies which transparency technique to use. The Default value is \c{Default}.
  * When rendering transparent surface graphs, use \c{Approximate} or \c{Accurate}.
+ * \c Default should be used for other graph types.
  *
  * \value Default
  *        Indicates that order-independent transparency techniques are not used.
@@ -354,9 +360,6 @@ constexpr float polarRoundness = 64.0f;
  * \value Accurate
  *        Indicates that accurate order-independent transparency is used.
  *        Use when perfect transparency rendering is needed.
- *        \note Accurate transparency is not yet implemented
- *              and will be enabled when the required functionality
- *              is added to QtQuick3D.
  */
 
 /*!
@@ -432,6 +435,70 @@ constexpr float polarRoundness = 64.0f;
  * \c{false}. Defaults to \c 1.0.
  *
  * \sa polar
+ */
+
+ /*!
+ * \qmlmethod void GraphsItem3D::setDefaultInputHandler()
+ * @brief Restores the default input handling mechanism.
+ *
+ * This method reactivates the internal, pre-defined input handlers.
+ * Use this to revert to default behavior after previously calling
+ * \l{unsetDefaultInputHandler}.
+ * \sa unsetDefaultInputHandler()
+ */
+
+ /*!
+ * \qmlmethod void GraphsItem3D::unsetDefaultInputHandler()
+ * @brief Disables the default input handling mechanism.
+ *
+ * This method deactivates the pre-defined all default input handlers.
+ * Call this method when you intend to override the default behaviors.
+ * \sa unsetDefaultTapHandler(), unsetDefaultDragHandler(), unsetDefaultWheelHandler(), unsetDefaultPinchHandler()
+ */
+
+ /*!
+ * \qmlmethod void GraphsItem3D::unsetDefaultTapHandler()
+ * @brief Disables the default tap event handler.
+ *
+ * This specifically unsets the built-in response to tap or click events,
+ * allowing for custom tap handling logic.
+ * \sa unsetDefaultInputHandler()
+ */
+
+ /*!
+ * \qmlmethod void GraphsItem3D::unsetDefaultDragHandler()
+ * @brief Disables the default drag event handler.
+ *
+ * This specifically unsets the built-in response to drag gestures.
+ * Use this if you need to implement a custom handler for dragging.
+ * \sa unsetDefaultInputHandler()
+ */
+
+ /*!
+ * \qmlmethod void GraphsItem3D::unsetDefaultWheelHandler()
+ * @brief Disables the default mouse wheel event handler.
+ *
+ * This specifically unsets the built-in response to mouse wheel scrolling.
+ * Use this when implementing custom wheel behavior.
+ * \sa unsetDefaultInputHandler()
+ */
+
+ /*!
+ * \qmlmethod void GraphsItem3D::unsetDefaultPinchHandler()
+ * @brief Disables the default pinch gesture handler.
+ *
+ * This specifically unsets the built-in response to pinch gestures.
+ * Use this to implement custom pinch gesture handler.
+ * \sa unsetDefaultInputHandler()
+ */
+
+  /*!
+ * \qmlmethod void GraphsItem3D::setDragButton(Qt::MouseButtons button)
+ * @brief Sets the mouse button used to trigger drag events.
+ *
+ * This method allows changing the mouse button required to initiate
+ * a drag operation to \a button.
+ * Defaults to \c {Qt::RightButton}.
  */
 
 /*!
@@ -684,6 +751,16 @@ constexpr float polarRoundness = 64.0f;
  */
 
 /*!
+ * \qmlproperty real GraphsItem3D::cutoffMargin
+ * \since 6.11
+ *
+ * The value used for the difference between the axis limits
+ * and the position at which graph elements are culled.
+ *
+ * \note Does not affect bar graphs.
+ */
+
+/*!
  * \qmlproperty Graphs3D.GridLineType GraphsItem3D::gridLineType
  *
  * Defines whether the grid lines type is \c Graphs3D.GridLineType.Shader or
@@ -821,15 +898,17 @@ QQuickGraphsItem::QQuickGraphsItem(QQuickItem *parent)
     connect(m_scene,
             &Q3DScene::graphPositionQueryChanged,
             this,
-            &QQuickGraphsItem::handleQueryPositionChanged);
+            &QQuickGraphsItem::handleGraphQueryPositionChanged);
+    connect(m_scene,
+            &Q3DScene::selectionQueryPositionChanged,
+            this,
+            &QQuickGraphsItem::handleSelectionQueryPositionChanged);
     connect(m_scene, &Q3DScene::primarySubViewportChanged,
             this,
             &QQuickGraphsItem::handlePrimarySubViewportChanged);
     connect(m_scene, &Q3DScene::secondarySubViewportChanged,
             this,
             &QQuickGraphsItem::handleSecondarySubViewportChanged);
-
-    m_nodeMutex = QSharedPointer<QMutex>::create();
 
     QQuick3DSceneEnvironment *scene = environment();
     scene->setBackgroundMode(QQuick3DSceneEnvironment::QQuick3DEnvironmentBackgroundTypes::Color);
@@ -872,15 +951,16 @@ QQuickGraphsItem::~QQuickGraphsItem()
     m_repeaterY->deleteLater();
     m_repeaterZ->deleteLater();
 
+    for (MultiAxis axis : m_multiAxesX)
+        releaseMultiAxis(QAbstract3DAxis::AxisOrientation::X, axis.seriesIndex);
+    for (MultiAxis axis : m_multiAxesX)
+        releaseMultiAxis(QAbstract3DAxis::AxisOrientation::Y, axis.seriesIndex);
+    for (MultiAxis axis : m_multiAxesX)
+        releaseMultiAxis(QAbstract3DAxis::AxisOrientation::Z, axis.seriesIndex);
+
     delete m_gridGeometryModel;
     delete m_subgridGeometryModel;
     delete m_sliceGridGeometryModel;
-
-    // Make sure not deleting locked mutex
-    QMutexLocker locker(&m_mutex);
-    locker.unlock();
-
-    m_nodeMutex.clear();
 }
 
 void QQuickGraphsItem::handleAxisTitleChanged(const QString &title)
@@ -1073,17 +1153,27 @@ void QQuickGraphsItem::handleSeriesVisibilityChanged(bool visible)
     handleSeriesVisibilityChangedBySender(sender());
 }
 
+void QQuickGraphsItem::handleItemLabelVisibleChanged(bool visible)
+{
+    handleItemLabelVisibleChangedBySender(visible, sender());
+}
+
 void QQuickGraphsItem::handleRequestShadowQuality(QtGraphs3D::ShadowQuality quality)
 {
     setShadowQuality(quality);
 }
 
-void QQuickGraphsItem::handleQueryPositionChanged(QPoint position)
+void QQuickGraphsItem::handleGraphQueryPositionChanged(QPoint position)
 {
     QVector3D data = graphPositionAt(position);
     setGraphPositionQueryPending(false);
     setQueriedGraphPosition(data);
     emit queriedGraphPositionChanged(data);
+}
+
+void QQuickGraphsItem::handleSelectionQueryPositionChanged(QPoint position)
+{
+    doPicking(position);
 }
 
 void QQuickGraphsItem::handlePrimarySubViewportChanged(const QRect rect)
@@ -1122,12 +1212,15 @@ void QQuickGraphsItem::handleAxisReversedChangedBySender(QObject *sender)
     // Reversing change needs to dirty the data so item positions are recalculated
     if (sender == m_axisX) {
         m_isDataDirty = true;
+        m_isCustomDataDirty = true;
         m_changeTracker.axisXReversedChanged = true;
     } else if (sender == m_axisY) {
         m_isDataDirty = true;
+        m_isCustomDataDirty = true;
         m_changeTracker.axisYReversedChanged = true;
     } else if (sender == m_axisZ) {
         m_isDataDirty = true;
+        m_isCustomDataDirty = true;
         m_changeTracker.axisZReversedChanged = true;
     } else {
         qCWarning(lcGraphs3D, "%ls invoked for invalid axis",
@@ -1259,6 +1352,18 @@ void QQuickGraphsItem::handleAxisTitleOffsetChangedBySender(QObject *sender)
                 qUtf16Printable(QString::fromUtf8(__func__)));
 
     emitNeedRender();
+}
+
+void QQuickGraphsItem::handleMultiAxisChanged(QAbstract3DAxis *axis)
+{
+    m_changeTracker.multiAxisChanged = true;
+    if (axis)
+        connectMultiAxis(axis);
+}
+
+void QQuickGraphsItem::handleMultiAxisDirty()
+{
+    m_changeTracker.multiAxisChanged = true;
 }
 
 void QQuickGraphsItem::handleSeriesVisibilityChangedBySender(QObject *sender)
@@ -1618,6 +1723,10 @@ void QQuickGraphsItem::insertSeries(qsizetype index, QAbstract3DSeries *series)
                     &QAbstract3DSeries::lightingModeChanged,
                     this,
                     &QQuickGraphsItem::handleLightingModeChanged);
+            QObject::connect(series,
+                             &QAbstract3DSeries::itemLabelVisibleChanged,
+                             this,
+                             &QQuickGraphsItem::handleItemLabelVisibleChanged);
             series->d_func()->resetToTheme(*theme(), oldSize, false);
             qCDebug(lcSeries3D) << __FUNCTION__
                 << "insert" << series << "at index of:" << index;
@@ -1809,8 +1918,7 @@ void QQuickGraphsItem::setTransparencyTechnique(QtGraphs3D::TransparencyTechniqu
         environment()->setOitMethod(QQuick3DSceneEnvironment::OITWeightedBlended);
         break;
     case QtGraphs3D::TransparencyTechnique::Accurate:
-        // environment()->setOitMethod(QQuick3DSceneEnvironment::OITSpinlock);
-        //TODO: Add this method when it is implemended in QtQuick3D
+        environment()->setOitMethod(QQuick3DSceneEnvironment::OITLinkedList);
         break;
     }
     m_transparencyTechnique = technique;
@@ -2109,6 +2217,59 @@ void QQuickGraphsItem::setTheme(QGraphsTheme *theme)
         connect(theme, &QGraphsTheme::update, this, &QQuickGraphsItem::emitNeedRender);
 
         m_activeTheme = theme;
+
+        connect(theme, &QGraphsTheme::colorSchemeChanged, this, [this](){
+            m_changeTracker.themeBackgroundColorChanged = true;
+            m_changeTracker.themePlotAreaBackgroundColorChanged = true;
+            m_changeTracker.themeLabelBackgroundColorChanged = true;
+            m_changeTracker.themeLabelTextColorChanged = true;
+        });
+        connect(theme, &QGraphsTheme::axisXChanged, this, [this](){
+            m_changeTracker.themeAxisXChanged = true;
+        });
+        connect(theme, &QGraphsTheme::axisYChanged, this, [this](){
+            m_changeTracker.themeAxisYChanged = true;
+        });
+        connect(theme, &QGraphsTheme::axisZChanged, this, [this](){
+            m_changeTracker.themeAxisZChanged = true;
+        });
+        connect(theme, &QGraphsTheme::backgroundColorChanged, this, [this](){
+            m_changeTracker.themeBackgroundColorChanged = true;
+        });
+        connect(theme, &QGraphsTheme::backgroundVisibleChanged, this, [this](){
+            m_changeTracker.themeBackgroundVisibilityChanged = true;
+        });
+        connect(theme, &QGraphsTheme::plotAreaBackgroundColorChanged, this, [this](){
+            m_changeTracker.themePlotAreaBackgroundColorChanged = true;
+        });
+        connect(theme, &QGraphsTheme::plotAreaBackgroundVisibleChanged, this, [this](){
+            m_changeTracker.themePlotAreaBackgroundVisibilityChanged = true;
+        });
+        connect(theme, &QGraphsTheme::gridVisibleChanged, this, [this](){
+            m_changeTracker.themeGridVisibilityChanged = true;
+        });
+        connect(theme, &QGraphsTheme::labelsVisibleChanged, this, [this](){
+            m_changeTracker.themeLabelsVisibilityChanged = true;
+        });
+        connect(theme, &QGraphsTheme::labelBackgroundColorChanged, this, [this](){
+            m_changeTracker.themeLabelBackgroundColorChanged = true;
+        });
+        connect(theme, &QGraphsTheme::labelTextColorChanged, this, [this](){
+            m_changeTracker.themeLabelTextColorChanged = true;
+        });
+        connect(theme, &QGraphsTheme::labelFontChanged, this, [this](){
+            m_changeTracker.themeLabelFontChanged = true;
+        });
+        connect(theme, &QGraphsTheme::labelBackgroundVisibleChanged, this, [this](){
+            m_changeTracker.themeLabelBackgroundVisibilityChanged = true;
+        });
+        connect(theme, &QGraphsTheme::labelBorderVisibleChanged, this, [this](){
+            m_changeTracker.themeLabelBorderVisibilityChanged = true;
+        });
+        connect(theme, &QGraphsTheme::gridChanged, this, [this](){
+            m_changeTracker.themeGridChanged = true;
+        });
+
         m_changeTracker.themeChanged = true;
         // Default theme can be created by theme manager, so ensure we have correct theme
         QGraphsTheme *newActiveTheme = m_activeTheme;
@@ -2228,8 +2389,11 @@ qsizetype QQuickGraphsItem::addCustomItem(QCustom3DItem *item)
 
 void QQuickGraphsItem::deleteCustomItems()
 {
-    for (QCustom3DItem *item : std::as_const(m_customItems))
+    for (QCustom3DItem *item : std::as_const(m_customItems)) {
+        if (m_customItemList.contains(item))
+            m_customItemList[item]->deleteLater();
         delete item;
+    }
     m_customItems.clear();
     m_isCustomDataDirty = true;
     emitNeedRender();
@@ -2270,13 +2434,18 @@ void QQuickGraphsItem::updateCustomItem()
 
 void QQuickGraphsItem::removeCustomItems()
 {
+    deleteCustomItems();
     m_customItemList.clear();
     m_customLabelList.clear();
-    deleteCustomItems();
 }
 
 void QQuickGraphsItem::removeCustomItem(QCustom3DItem *item)
 {
+    if (!item) {
+        qCWarning(lcProperties3D, "%s invalid item", qUtf8Printable(QLatin1String(__FUNCTION__)));
+        return;
+    }
+
     if (isCustomLabelItem(item)) {
         m_customLabelList.remove(static_cast<QCustom3DLabel *>(item));
     } else if (isCustomVolumeItem(item)) {
@@ -2287,8 +2456,10 @@ void QQuickGraphsItem::removeCustomItem(QCustom3DItem *item)
             m_customVolumes.remove(volume);
         }
     } else {
-        m_customItemList[item]->deleteLater();
-        m_customItemList.remove(item);
+        if (m_customItemList.contains(item)) {
+            m_customItemList[item]->deleteLater();
+            m_customItemList.remove(item);
+        }
     }
     deleteCustomItem(item);
 }
@@ -2604,6 +2775,12 @@ void QQuickGraphsItem::synchData()
         axisDirty = true;
     }
 
+    if (m_changeTracker.themeLabelsVisibilityChanged) {
+        repeaterX()->setVisible(theme()->labelsVisible());
+        repeaterY()->setVisible(theme()->labelsVisible());
+        repeaterZ()->setVisible(theme()->labelsVisible());
+    }
+
     if (m_changeTracker.axisXLabelVisibilityChanged) {
         repeaterX()->setVisible(axisX()->labelsVisible());
         m_changeTracker.axisXLabelVisibilityChanged = false;
@@ -2743,6 +2920,10 @@ void QQuickGraphsItem::synchData()
         axisDirty = true;
         m_changeTracker.axisZTitleOffsetChanged = false;
     }
+    if (m_changeTracker.multiAxisChanged) {
+        updateMultiAxis();
+        m_changeTracker.multiAxisChanged = false;
+    }
 
     if (m_changeTracker.cameraChanged) {
         updateCamera();
@@ -2880,19 +3061,19 @@ void QQuickGraphsItem::synchData()
         m_shadowStrengthDirty = false;
     }
 
-    if (theme()->dirtyBits()->gridDirty) {
+    if (theme()->dirtyBits()->gridDirty || m_changeTracker.themeGridChanged) {
         QQmlListReference materialRef(m_background, "materials");
         Q_ASSERT(materialRef.size());
         float mainWidth = theme()->grid().mainWidth();
-        if ((m_gridLineType == QtGraphs3D::GridLineType::Shader) && mainWidth > 1.0f) {
+        if ((m_gridLineType == QtGraphs3D::GridLineType::Shader) && mainWidth > 10.0f) {
             qCWarning(lcProperties3D, "%s invalid value for shader grid. Valid range for grid width is between"
-                     " 0.0 and 1.0. Value exceeds 1.0. Set it to 1.0", qUtf8Printable(QLatin1String(__FUNCTION__)));
-            mainWidth = 1.0f;
+                     " 0.0 and 1.0. Value exceeds 10.0. Set it to 10.0", qUtf8Printable(QLatin1String(__FUNCTION__)));
+            mainWidth = 4.0f;
         }
 
         if ((m_gridLineType == QtGraphs3D::GridLineType::Shader) && mainWidth < 0.0f) {
             qCWarning(lcProperties3D, "%s invalid value for shader grid. Valid range for grid width is between"
-                     " 0.0 and 1.0. Value is smaller than 0.0. Set it to 0.0", qUtf8Printable(QLatin1String(__FUNCTION__)));
+                     " 0.0 and 10.0. Value is smaller than 0.0. Set it to 0.0", qUtf8Printable(QLatin1String(__FUNCTION__)));
             mainWidth = 0.0f;
         }
         auto *material = static_cast<QQuick3DCustomMaterial *>(materialRef.at(0));
@@ -2914,10 +3095,12 @@ void QQuickGraphsItem::synchData()
         subgridMaterial->setBaseColor(gridSubColor);
 
         theme()->dirtyBits()->gridDirty = false;
+        m_changeTracker.themeGridChanged = false;
     }
 
     // label Adjustments
-    if (theme()->dirtyBits()->labelBackgroundColorDirty) {
+    if (theme()->dirtyBits()->labelBackgroundColorDirty
+            || m_changeTracker.themeLabelBackgroundColorChanged) {
         QColor labelBackgroundColor = theme()->labelBackgroundColor();
         changeLabelBackgroundColor(m_repeaterX, labelBackgroundColor);
         changeLabelBackgroundColor(m_repeaterY, labelBackgroundColor);
@@ -2935,9 +3118,11 @@ void QQuickGraphsItem::synchData()
             m_sliceVerticalTitleLabel->setProperty("backgroundColor", labelBackgroundColor);
         }
         theme()->dirtyBits()->labelBackgroundColorDirty = false;
+        m_changeTracker.themeLabelBackgroundColorChanged = false;
     }
 
-    if (theme()->dirtyBits()->labelBackgroundVisibilityDirty) {
+    if (theme()->dirtyBits()->labelBackgroundVisibilityDirty
+            || m_changeTracker.themeLabelBackgroundVisibilityChanged) {
         bool visible = theme()->isLabelBackgroundVisible();
         changeLabelBackgroundVisible(m_repeaterX, visible);
         changeLabelBackgroundVisible(m_repeaterY, visible);
@@ -2955,9 +3140,11 @@ void QQuickGraphsItem::synchData()
             m_sliceVerticalTitleLabel->setProperty("backgroundVisible", visible);
         }
         theme()->dirtyBits()->labelBackgroundVisibilityDirty = false;
+        m_changeTracker.themeLabelBackgroundVisibilityChanged = false;
     }
 
-    if (theme()->dirtyBits()->labelBorderVisibilityDirty) {
+    if (theme()->dirtyBits()->labelBorderVisibilityDirty
+            || m_changeTracker.themeLabelBorderVisibilityChanged) {
         bool visible = theme()->isLabelBorderVisible();
         changeLabelBorderVisible(m_repeaterX, visible);
         changeLabelBorderVisible(m_repeaterY, visible);
@@ -2975,18 +3162,20 @@ void QQuickGraphsItem::synchData()
             m_sliceVerticalTitleLabel->setProperty("borderVisible", visible);
         }
         theme()->dirtyBits()->labelBorderVisibilityDirty = false;
+        m_changeTracker.themeLabelBorderVisibilityChanged = false;
     }
 
-    if (theme()->dirtyBits()->labelTextColorDirty) {
+    if (theme()->dirtyBits()->labelTextColorDirty || m_changeTracker.themeLabelTextColorChanged) {
         QColor labelTextColor = theme()->labelTextColor();
         m_itemLabel->setProperty("labelTextColor", labelTextColor);
 
         if (m_sliceView && isSliceEnabled())
             m_sliceItemLabel->setProperty("labelTextColor", labelTextColor);
         theme()->dirtyBits()->labelTextColorDirty = false;
+        m_changeTracker.themeLabelTextColorChanged = false;
     }
 
-    if (theme()->dirtyBits()->axisXDirty) {
+    if (theme()->dirtyBits()->axisXDirty || m_changeTracker.themeAxisXChanged) {
         QColor labelTextColor = theme()->axisX().labelTextColor();
         changeLabelTextColor(m_repeaterX, labelTextColor);
         m_titleLabelX->setProperty("labelTextColor", labelTextColor);
@@ -2996,9 +3185,10 @@ void QQuickGraphsItem::synchData()
             m_sliceHorizontalTitleLabel->setProperty("labelTextColor", labelTextColor);
         }
         theme()->dirtyBits()->axisXDirty = false;
+        m_changeTracker.themeAxisXChanged = false;
     }
 
-    if (theme()->dirtyBits()->axisYDirty) {
+    if (theme()->dirtyBits()->axisYDirty || m_changeTracker.themeAxisYChanged) {
         QColor labelTextColor = theme()->axisY().labelTextColor();
         changeLabelTextColor(m_repeaterY, labelTextColor);
         m_titleLabelY->setProperty("labelTextColor", labelTextColor);
@@ -3007,9 +3197,10 @@ void QQuickGraphsItem::synchData()
             m_sliceVerticalTitleLabel->setProperty("labelTextColor", labelTextColor);
         }
         theme()->dirtyBits()->axisYDirty = false;
+        m_changeTracker.themeAxisYChanged = false;
     }
 
-    if (theme()->dirtyBits()->axisZDirty) {
+    if (theme()->dirtyBits()->axisZDirty || m_changeTracker.themeAxisZChanged) {
         QColor labelTextColor = theme()->axisZ().labelTextColor();
         changeLabelTextColor(m_repeaterZ, labelTextColor);
         m_titleLabelZ->setProperty("labelTextColor", labelTextColor);
@@ -3019,9 +3210,10 @@ void QQuickGraphsItem::synchData()
             m_sliceHorizontalTitleLabel->setProperty("labelTextColor", labelTextColor);
         }
         theme()->dirtyBits()->axisZDirty = false;
+        m_changeTracker.themeAxisZChanged = false;
     }
 
-    if (theme()->dirtyBits()->labelFontDirty) {
+    if (theme()->dirtyBits()->labelFontDirty || m_changeTracker.themeLabelFontChanged) {
         auto font = theme()->labelFont();
         changeLabelFont(m_repeaterX, font);
         changeLabelFont(m_repeaterY, font);
@@ -3041,10 +3233,12 @@ void QQuickGraphsItem::synchData()
             updateSliceLabels();
         }
         theme()->dirtyBits()->labelFontDirty = false;
+        m_changeTracker.themeLabelFontChanged = false;
         m_isSeriesVisualsDirty = true;
     }
 
-    if (theme()->dirtyBits()->labelsVisibilityDirty) {
+    if (theme()->dirtyBits()->labelsVisibilityDirty
+            || m_changeTracker.themeLabelsVisibilityChanged) {
         bool visible = theme()->labelsVisible();
         changeLabelsVisible(m_repeaterX, visible);
         changeLabelsVisible(m_repeaterY, visible);
@@ -3063,23 +3257,28 @@ void QQuickGraphsItem::synchData()
             m_sliceVerticalTitleLabel->setProperty("visible", visible);
         }
         theme()->dirtyBits()->labelsVisibilityDirty = false;
+        m_changeTracker.themeLabelsVisibilityChanged = false;
     }
 
     // Grid and background adjustments
-    if (theme()->dirtyBits()->plotAreaBackgroundColorDirty) {
+    if (theme()->dirtyBits()->plotAreaBackgroundColorDirty
+            || m_changeTracker.themePlotAreaBackgroundColorChanged) {
         QQmlListReference materialRef(m_background, "materials");
         Q_ASSERT(materialRef.size());
         auto material = static_cast<QQuick3DCustomMaterial *>(materialRef.at(0));
         material->setProperty("baseColor", theme()->plotAreaBackgroundColor());
         theme()->dirtyBits()->plotAreaBackgroundColorDirty = false;
+        m_changeTracker.themePlotAreaBackgroundColorChanged = false;
     }
 
-    if (theme()->dirtyBits()->plotAreaBackgroundVisibilityDirty) {
+    if (theme()->dirtyBits()->plotAreaBackgroundVisibilityDirty
+            || m_changeTracker.themePlotAreaBackgroundVisibilityChanged) {
         QQmlListReference materialRef(m_background, "materials");
         Q_ASSERT(materialRef.size());
         auto *material = static_cast<QQuick3DCustomMaterial *>(materialRef.at(0));
         material->setProperty("baseVisible", theme()->isPlotAreaBackgroundVisible());
         theme()->dirtyBits()->plotAreaBackgroundVisibilityDirty = false;
+        m_changeTracker.themePlotAreaBackgroundVisibilityChanged = false;
     }
 
     if (m_gridLineTypeDirty) {
@@ -3090,7 +3289,7 @@ void QQuickGraphsItem::synchData()
         m_gridLineTypeDirty = false;
     }
 
-    if (theme()->dirtyBits()->gridVisibilityDirty) {
+    if (theme()->dirtyBits()->gridVisibilityDirty || m_changeTracker.themeGridVisibilityChanged) {
         bool visible = theme()->isGridVisible();
         QQmlListReference materialRef(m_background, "materials");
         Q_ASSERT(materialRef.size());
@@ -3103,6 +3302,7 @@ void QQuickGraphsItem::synchData()
             m_sliceGridGeometryModel->setVisible(visible);
 
         theme()->dirtyBits()->gridVisibilityDirty = false;
+        m_changeTracker.themeGridVisibilityChanged = false;
     }
 
     if (theme()->dirtyBits()->singleHighlightColorDirty) {
@@ -3111,10 +3311,15 @@ void QQuickGraphsItem::synchData()
     }
 
     // Other adjustments
-    if (theme()->dirtyBits()->backgroundColorDirty || theme()->dirtyBits()->backgroundVisibilityDirty) {
+    if (theme()->dirtyBits()->backgroundColorDirty
+            || theme()->dirtyBits()->backgroundVisibilityDirty
+            || m_changeTracker.themeBackgroundColorChanged
+            || m_changeTracker.themeBackgroundVisibilityChanged) {
         updateBackgroundColor();
         theme()->dirtyBits()->backgroundColorDirty = false;
         theme()->dirtyBits()->backgroundVisibilityDirty = false;
+        m_changeTracker.themeBackgroundColorChanged = false;
+        m_changeTracker.themeBackgroundVisibilityChanged = false;
     }
 
     if (isCustomDataDirty()) {
@@ -3166,8 +3371,10 @@ void QQuickGraphsItem::synchData()
     if (m_measureFps)
         QQuickItem::update();
 
-    if (m_labelsNeedupdate)
+    if (m_labelsNeedupdate) {
         updateLabels();
+        updateMultiAxis();
+    }
 
     Q_TRACE(QGraphs3DItemSynch_exit);
 
@@ -3179,6 +3386,8 @@ void QQuickGraphsItem::updateGrid()
     Q_TRACE(QGraphs3DItemUpdateGrid_entry);
 
     QQmlListReference materialsRef(m_background, "materials");
+    if (!materialsRef.count())
+        return;
     auto *bgMat = static_cast<QQuick3DCustomMaterial *>(materialsRef.at(0));
     bgMat->setProperty("scale", m_scaleWithBackground);
     qsizetype gridLineCountX = 0;
@@ -3578,7 +3787,7 @@ void QQuickGraphsItem::updateGrid()
 void QQuickGraphsItem::updateGridLineType()
 {
     const int textureSize = 4096;
-    QVector<QVector4D> grid(textureSize * 2, QVector4D(0, 0, 0, 0));
+    QList<QVector4D> grid(textureSize * 2, QVector4D(0, 0, 0, 0));
     QQmlListReference materialsRef(m_background, "materials");
     QQuick3DCustomMaterial *bgMat;
     if (!materialsRef.size()) {
@@ -3609,22 +3818,23 @@ void QQuickGraphsItem::updateGridLineType()
         mapData = texMap->textureData();
     }
 
-    QVector<qsizetype> lineCounts(6);
+    QList<qsizetype> lineCounts(6);
     gridLineCountHelper(axisX(), lineCounts[0], lineCounts[3]);
     gridLineCountHelper(axisY(), lineCounts[1], lineCounts[4]);
     gridLineCountHelper(axisZ(), lineCounts[2], lineCounts[5]);
 
     float baseWidth = 100;
-    QVector<int> lineWidths(3);
+    QList<int> lineWidths(3);
     lineWidths[0] = baseWidth / m_scaleWithBackground.x();
     lineWidths[1] = baseWidth / m_scaleWithBackground.y();
     lineWidths[2] = baseWidth / m_scaleWithBackground.z();
 
-    QVector<QVector4D> axisMask = {QVector4D(1, 0, 0, 1),
-                                   QVector4D(0, 1, 0, 1),
-                                   QVector4D(0, 0, 1, 1)};
+    QList<QVector4D> axisMask = {QVector4D(1, 0, 0, 1),
+                                 QVector4D(0, 1, 0, 1),
+                                 QVector4D(0, 0, 1, 1)};
 
     bgMat->setProperty("scale", m_scaleWithBackground);
+    bgMat->setProperty("rootScale", rootNode()->scale());
     bgMat->setProperty("polar", isPolar());
     bool xCat = axisX()->type() == QAbstract3DAxis::AxisType::Category;
     bool zCat = axisZ()->type() == QAbstract3DAxis::AxisType::Category;
@@ -3790,86 +4000,23 @@ void QQuickGraphsItem::updateLabels()
     float fractionCamX = m_xRotation * labelAngleFraction;
     float fractionCamY = m_yRotation * labelAngleFraction;
 
+    const bool xFlipped = isXFlipped();
+    const bool yFlipped = isYFlipped();
+    const bool zFlipped = isZFlipped();
+
     QVector3D labelRotation = QVector3D(0.0f, 0.0f, 0.0f);
 
     float xPos = 0.0f;
     float yPos = 0.0f;
     float zPos = 0.0f;
 
-    const bool xFlipped = isXFlipped();
-    const bool yFlipped = isYFlipped();
-    const bool zFlipped = isZFlipped();
-
     auto backgroundScale = m_scaleWithBackground + m_backgroundScaleMargin;
 
-    if (labelAutoAngle == 0.0f) {
-        labelRotation = QVector3D(-90.0f, 90.0f, 0.0f);
-        if (xFlipped)
-            labelRotation.setY(-90.0f);
-        if (yFlipped) {
-            if (xFlipped)
-                labelRotation.setY(-90.0f);
-            else
-                labelRotation.setY(90.0f);
-            labelRotation.setX(90.0f);
-        }
-    } else {
-        if (xFlipped)
-            labelRotation.setY(-90.0f);
-        else
-            labelRotation.setY(90.0f);
-        if (yFlipped) {
-            if (zFlipped) {
-                if (xFlipped) {
-                    labelRotation.setX(90.0f
-                                       - (2.0f * labelAutoAngle - fractionCamX)
-                                             * (labelAutoAngle + fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(-labelAutoAngle - fractionCamY);
-                } else {
-                    labelRotation.setX(90.0f
-                                       - (2.0f * labelAutoAngle + fractionCamX)
-                                             * (labelAutoAngle + fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(labelAutoAngle + fractionCamY);
-                }
-            } else {
-                if (xFlipped) {
-                    labelRotation.setX(
-                        90.0f + fractionCamX * -(labelAutoAngle + fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(labelAutoAngle + fractionCamY);
-                } else {
-                    labelRotation.setX(
-                        90.0f - fractionCamX * (-labelAutoAngle - fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(-labelAutoAngle - fractionCamY);
-                }
-            }
-        } else {
-            if (zFlipped) {
-                if (xFlipped) {
-                    labelRotation.setX(-90.0f
-                                       + (2.0f * labelAutoAngle - fractionCamX)
-                                             * (labelAutoAngle - fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(labelAutoAngle - fractionCamY);
-                } else {
-                    labelRotation.setX(-90.0f
-                                       + (2.0f * labelAutoAngle + fractionCamX)
-                                             * (labelAutoAngle - fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(-labelAutoAngle + fractionCamY);
-                }
-            } else {
-                if (xFlipped) {
-                    labelRotation.setX(
-                        -90.0f - fractionCamX * (-labelAutoAngle + fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(-labelAutoAngle + fractionCamY);
-                } else {
-                    labelRotation.setX(
-                        -90.0f + fractionCamX * -(labelAutoAngle - fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(labelAutoAngle - fractionCamY);
-                }
-            }
-        }
-    }
-    if (isPolar())
-        labelRotation.setY(0.0f);
+    labelRotation = calculateLabelRotation(labelAutoAngle,
+                                           fractionCamX,
+                                           fractionCamY,
+                                           Qt::Axis::XAxis);
+
     QQuaternion totalRotation = Utils::calculateRotation(labelRotation);
 
     float scale = backgroundScale.x() - m_backgroundScaleMargin.x();
@@ -3919,6 +4066,7 @@ void QQuickGraphsItem::updateLabels()
     if (zFlipped)
         zPos *= -1.0f;
 
+    yPos *= m_horizontalFlipFactor;
     auto labelTrans = QVector3D(0.0f, yPos, zPos);
     float angularLabelZPos = 0.0f;
 
@@ -4077,78 +4225,10 @@ void QQuickGraphsItem::updateLabels()
     fractionCamX = m_xRotation * labelAngleFraction;
     fractionCamY = m_yRotation * labelAngleFraction;
 
-    if (labelAutoAngle == 0.0f) {
-        labelRotation = QVector3D(90.0f, 0.0f, 0.0f);
-        if (zFlipped)
-            labelRotation.setY(180.0f);
-        if (yFlipped) {
-            if (zFlipped)
-                labelRotation.setY(180.0f);
-            else
-                labelRotation.setY(0.0f);
-            labelRotation.setX(90.0f);
-        } else {
-            labelRotation.setX(-90.0f);
-        }
-    } else {
-        if (zFlipped)
-            labelRotation.setY(180.0f);
-        else
-            labelRotation.setY(0.0f);
-        if (yFlipped) {
-            if (zFlipped) {
-                if (xFlipped) {
-                    labelRotation.setX(90.0f
-                                       - (labelAutoAngle - fractionCamX)
-                                             * (-labelAutoAngle - fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(labelAutoAngle + fractionCamY);
-                } else {
-                    labelRotation.setX(90.0f
-                                       + (labelAutoAngle + fractionCamX)
-                                             * (labelAutoAngle + fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(-labelAutoAngle - fractionCamY);
-                }
-            } else {
-                if (xFlipped) {
-                    labelRotation.setX(90.0f
-                                       + (labelAutoAngle - fractionCamX)
-                                             * -(labelAutoAngle + fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(-labelAutoAngle - fractionCamY);
-                } else {
-                    labelRotation.setX(90.0f
-                                       - (labelAutoAngle + fractionCamX)
-                                             * (labelAutoAngle + fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(labelAutoAngle + fractionCamY);
-                }
-            }
-        } else {
-            if (zFlipped) {
-                if (xFlipped) {
-                    labelRotation.setX(-90.0f
-                                       + (labelAutoAngle - fractionCamX)
-                                             * (-labelAutoAngle + fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(-labelAutoAngle + fractionCamY);
-                } else {
-                    labelRotation.setX(-90.0f
-                                       - (labelAutoAngle + fractionCamX)
-                                             * (labelAutoAngle - fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(labelAutoAngle - fractionCamY);
-                }
-            } else {
-                if (xFlipped) {
-                    labelRotation.setX(-90.0f
-                                       - (labelAutoAngle - fractionCamX)
-                                             * (-labelAutoAngle + fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(labelAutoAngle - fractionCamY);
-                } else {
-                    labelRotation.setX(-90.0f
-                                       + (labelAutoAngle + fractionCamX)
-                                             * (labelAutoAngle - fractionCamY) / labelAutoAngle);
-                    labelRotation.setZ(-labelAutoAngle + fractionCamY);
-                }
-            }
-        }
-    }
+    labelRotation = calculateLabelRotation(labelAutoAngle,
+                                           fractionCamX,
+                                           fractionCamY,
+                                           Qt::Axis::ZAxis);
 
     totalRotation = Utils::calculateRotation(labelRotation);
 
@@ -4177,6 +4257,7 @@ void QQuickGraphsItem::updateLabels()
     if (!yFlipped)
         yPos *= -1.0f;
 
+    yPos *= m_horizontalFlipFactor;
     labelTrans = QVector3D(xPos, yPos, 0.0f);
     if (axisZ()->type() == QAbstract3DAxis::AxisType::Value) {
         auto valueAxisZ = static_cast<QValue3DAxis *>(axisZ());
@@ -4293,6 +4374,167 @@ void QQuickGraphsItem::updateLabels()
     Q_TRACE(QGraphs3DItemUpdateLabels_exit);
 }
 
+QVector3D QQuickGraphsItem::calculateLabelRotation(float labelAutoAngle,
+                                                   float fractionCamX,
+                                                   float fractionCamY,
+                                                   Qt::Axis axis)
+{
+
+    QVector3D labelRotation;
+    const bool xFlipped = isXFlipped();
+    const bool yFlipped = isYFlipped();
+    const bool zFlipped = isZFlipped();
+
+    if (axis == Qt::Axis::XAxis) {
+        if (labelAutoAngle == 0.0f) {
+            labelRotation = QVector3D(-90.0f, 90.0f, 0.0f);
+            if (xFlipped)
+                labelRotation.setY(-90.0f);
+            if (yFlipped) {
+                if (xFlipped)
+                    labelRotation.setY(-90.0f);
+                else
+                    labelRotation.setY(90.0f);
+                labelRotation.setX(90.0f);
+            }
+        } else {
+            if (xFlipped)
+                labelRotation.setY(-90.0f);
+            else
+                labelRotation.setY(90.0f);
+            if (yFlipped) {
+                if (zFlipped) {
+                    if (xFlipped) {
+                        labelRotation.setX(90.0f
+                                           - (2.0f * labelAutoAngle - fractionCamX)
+                                                 * (labelAutoAngle + fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(-labelAutoAngle - fractionCamY);
+                    } else {
+                        labelRotation.setX(90.0f
+                                           - (2.0f * labelAutoAngle + fractionCamX)
+                                                 * (labelAutoAngle + fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(labelAutoAngle + fractionCamY);
+                    }
+                } else {
+                    if (xFlipped) {
+                        labelRotation.setX(90.0f
+                                           + fractionCamX * -(labelAutoAngle + fractionCamY)
+                                                 / labelAutoAngle);
+                        labelRotation.setZ(labelAutoAngle + fractionCamY);
+                    } else {
+                        labelRotation.setX(90.0f
+                                           - fractionCamX * (-labelAutoAngle - fractionCamY)
+                                                 / labelAutoAngle);
+                        labelRotation.setZ(-labelAutoAngle - fractionCamY);
+                    }
+                }
+            } else {
+                if (zFlipped) {
+                    if (xFlipped) {
+                        labelRotation.setX(-90.0f
+                                           + (2.0f * labelAutoAngle - fractionCamX)
+                                                 * (labelAutoAngle - fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(labelAutoAngle - fractionCamY);
+                    } else {
+                        labelRotation.setX(-90.0f
+                                           + (2.0f * labelAutoAngle + fractionCamX)
+                                                 * (labelAutoAngle - fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(-labelAutoAngle + fractionCamY);
+                    }
+                } else {
+                    if (xFlipped) {
+                        labelRotation.setX(-90.0f
+                                           - fractionCamX * (-labelAutoAngle + fractionCamY)
+                                                 / labelAutoAngle);
+                        labelRotation.setZ(-labelAutoAngle + fractionCamY);
+                    } else {
+                        labelRotation.setX(-90.0f
+                                           + fractionCamX * -(labelAutoAngle - fractionCamY)
+                                                 / labelAutoAngle);
+                        labelRotation.setZ(labelAutoAngle - fractionCamY);
+                    }
+                }
+            }
+        }
+        if (isPolar())
+            labelRotation.setY(0.0f);
+    } else if (axis == Qt::Axis::ZAxis) {
+        if (labelAutoAngle == 0.0f) {
+            labelRotation = QVector3D(90.0f, 0.0f, 0.0f);
+            if (zFlipped)
+                labelRotation.setY(180.0f);
+            if (yFlipped) {
+                if (zFlipped)
+                    labelRotation.setY(180.0f);
+                else
+                    labelRotation.setY(0.0f);
+                labelRotation.setX(90.0f);
+            } else {
+                labelRotation.setX(-90.0f);
+            }
+        } else {
+            if (zFlipped)
+                labelRotation.setY(180.0f);
+            else
+                labelRotation.setY(0.0f);
+            if (yFlipped) {
+                if (zFlipped) {
+                    if (xFlipped) {
+                        labelRotation.setX(90.0f
+                                - (labelAutoAngle - fractionCamX)
+                                * (-labelAutoAngle - fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(labelAutoAngle + fractionCamY);
+                    } else {
+                        labelRotation.setX(90.0f
+                                + (labelAutoAngle + fractionCamX)
+                                * (labelAutoAngle + fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(-labelAutoAngle - fractionCamY);
+                    }
+                } else {
+                    if (xFlipped) {
+                        labelRotation.setX(90.0f
+                                + (labelAutoAngle - fractionCamX)
+                                * -(labelAutoAngle + fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(-labelAutoAngle - fractionCamY);
+                    } else {
+                        labelRotation.setX(90.0f
+                                - (labelAutoAngle + fractionCamX)
+                                * (labelAutoAngle + fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(labelAutoAngle + fractionCamY);
+                    }
+                }
+            } else {
+                if (zFlipped) {
+                    if (xFlipped) {
+                        labelRotation.setX(-90.0f
+                                + (labelAutoAngle - fractionCamX)
+                                * (-labelAutoAngle + fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(-labelAutoAngle + fractionCamY);
+                    } else {
+                        labelRotation.setX(-90.0f
+                                - (labelAutoAngle + fractionCamX)
+                                * (labelAutoAngle - fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(labelAutoAngle - fractionCamY);
+                    }
+                } else {
+                    if (xFlipped) {
+                        labelRotation.setX(-90.0f
+                                - (labelAutoAngle - fractionCamX)
+                                * (-labelAutoAngle + fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(labelAutoAngle - fractionCamY);
+                    } else {
+                        labelRotation.setX(-90.0f
+                                + (labelAutoAngle + fractionCamX)
+                                * (labelAutoAngle - fractionCamY) / labelAutoAngle);
+                        labelRotation.setZ(-labelAutoAngle + fractionCamY);
+                    }
+                }
+            }
+        }
+    }
+    return labelRotation;
+}
+
 void QQuickGraphsItem::updateRadialLabelOffset()
 {
     if (!isPolar())
@@ -4317,6 +4559,945 @@ void QQuickGraphsItem::updateRadialLabelOffset()
     QVector3D pos = m_titleLabelZ->position();
     pos.setX(polarX);
     m_titleLabelZ->setPosition(pos);
+}
+
+void QQuickGraphsItem::releaseMultiAxis(QAbstract3DAxis::AxisOrientation orientation, qsizetype index)
+{
+    QList<MultiAxis> *multiAxes = nullptr;
+    switch (orientation) {
+        case QAbstract3DAxis::AxisOrientation::X:
+            multiAxes = &m_multiAxesX;
+            break;
+        case QAbstract3DAxis::AxisOrientation::Y:
+            multiAxes = &m_multiAxesY;
+            break;
+        case QAbstract3DAxis::AxisOrientation::Z:
+            multiAxes = &m_multiAxesZ;
+            break;
+        case QAbstract3DAxis::AxisOrientation::None:
+            return;
+    }
+
+    auto indexExists =  [index](MultiAxis axis) { return axis.seriesIndex == index; };
+    const auto it = std::find_if(multiAxes->begin(), multiAxes->end(), indexExists);
+    if (it != multiAxes->end()) {
+        it->repeater->setModel(0);
+        it->repeater->deleteLater();
+        it->grid->deleteLater();
+        it->titleLabel->deleteLater();
+    }
+    multiAxes->erase(std::remove_if(multiAxes->begin(), multiAxes->end(), indexExists), multiAxes->end());
+
+    return;
+}
+
+void QQuickGraphsItem::connectMultiAxis(QAbstract3DAxis *axis)
+{
+    QObject::connect(axis,
+                     &QAbstract3DAxis::titleChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::labelsChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::rangeChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::autoAdjustRangeChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::labelAutoAngleChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::labelAutoAngleChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::scaleLabelsByCountChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::labelSizeChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::titleVisibleChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::labelVisibleChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::titleFixedChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+    QObject::connect(axis,
+                     &QAbstract3DAxis::titleOffsetChanged,
+                     this,
+                     &QQuickGraphsItem::handleMultiAxisDirty);
+
+    if (axis->type() == QAbstract3DAxis::AxisType::Value) {
+        QValue3DAxis *valueAxis = static_cast<QValue3DAxis *>(axis);
+        QObject::connect(valueAxis,
+                         &QValue3DAxis::segmentCountChanged,
+                         this,
+                         &QQuickGraphsItem::handleMultiAxisDirty);
+        QObject::connect(valueAxis,
+                         &QValue3DAxis::subSegmentCountChanged,
+                         this,
+                         &QQuickGraphsItem::handleMultiAxisDirty);
+        QObject::connect(valueAxis,
+                         &QValue3DAxis::labelFormatChanged,
+                         this,
+                         &QQuickGraphsItem::handleMultiAxisDirty);
+        QObject::connect(valueAxis,
+                         &QValue3DAxis::reversedChanged,
+                         this,
+                         &QQuickGraphsItem::handleMultiAxisDirty);
+    }
+}
+
+void QQuickGraphsItem::updateMultiAxis()
+{
+    const QList<QAbstract3DAxis::AxisOrientation> orientations = {
+        QAbstract3DAxis::AxisOrientation::X,
+        QAbstract3DAxis::AxisOrientation::Y,
+        QAbstract3DAxis::AxisOrientation::Z};
+
+    for (qsizetype i = 0; i < m_seriesList.count(); i++) {
+        auto series = m_seriesList.at(i);
+
+        for (auto orientation : orientations) {
+            QAbstract3DAxis *axis = getSeriesMultiAxis(series, orientation);
+            if (axis) {
+                updateMultiAxisLabels(i, axis);
+                updateMultiAxisGrid(i, axis);
+            } else {
+                releaseMultiAxis(orientation, i);
+            }
+        }
+    }
+
+    m_isDataDirty = true;
+}
+
+void QQuickGraphsItem::updateMultiAxisLabels(qsizetype axisIndex, QAbstract3DAxis *axis) {
+
+    auto labels = axis->labels();
+    qsizetype labelCount = labels.size();
+    const bool xFlipped = isXFlipped();
+    const bool yFlipped = isYFlipped();
+    const bool zFlipped = isZFlipped();
+
+    const float pointSize = theme()->labelFont().pointSizeF();
+    const float textPadding = pointSize * .5f;
+    const auto backgroundScale = m_scaleWithBackground + m_backgroundScaleMargin;
+    QFontMetrics fm(theme()->labelFont());
+    const float labelHeight = fm.height() + textPadding;
+
+    const float baseSize = 25.0f;
+    const float relativePointSize = theme()->labelFont().pointSizeF() / baseSize;
+    const float scaleFactor = fontScaleFactor(pointSize) * pointSize;
+    const float labelDepthMargin = 0.03f; //margin to prevent z-fighting
+
+    float xPos = 0.0f;
+    float yPos = 0.0f;
+    float zPos = 0.0f;
+    QVector3D labelTrans;
+
+    MultiAxis multiAxis = getMultiAxis(axisIndex, axis);
+    if (multiAxis.seriesIndex == -1) // uninitalized axis
+        return;
+
+    QQuick3DRepeater *repeater = multiAxis.repeater;
+    repeater->setModel(axis->orientation() == QAbstract3DAxis::AxisOrientation::Y
+                           ? 2 * labelCount
+                           : labelCount);
+    repeater->setVisible(axis->labelsVisible());
+
+    if (axis->orientation() == QAbstract3DAxis::AxisOrientation::X) {
+        float labelAutoAngle = m_labelMargin >= 0? axis->labelAutoAngle() : 0;
+        float labelAngleFraction = labelAutoAngle / 90.0f;
+        float fractionCamX = m_xRotation * labelAngleFraction;
+        float fractionCamY = m_yRotation * labelAngleFraction;
+
+        QVector3D labelRotation = QVector3D(0.0f, 0.0f, 0.0f);
+
+        labelRotation = calculateLabelRotation(labelAutoAngle,
+                                               fractionCamX,
+                                               fractionCamY,
+                                               Qt::Axis::XAxis);
+
+        QQuaternion totalRotation = Utils::calculateRotation(labelRotation);
+
+        float scale = backgroundScale.x() - m_backgroundScaleMargin.x();
+        float relativeScale = scale / axis->labels().count();
+        float labelsMaxWidth = float(findLabelsMaxWidth(axis->labels())) + textPadding;
+
+        // set base size to some reasonable value
+        float fontRatio = labelsMaxWidth / labelHeight;
+
+        float adjustment;
+
+        if (axis->isScaleLabelsByCount()) {
+            m_fontScaled = QVector3D(0.01f * fontRatio * relativePointSize * relativeScale,
+                                     0.01f * relativePointSize * relativeScale,
+                                     0.01f) * axis->labelSize();
+            adjustment = m_fontScaled.y() * 110.0f;
+        } else {
+            m_fontScaled = QVector3D(scaleFactor * fontRatio, scaleFactor, 0.00001f)
+                * axis->labelSize();
+            adjustment = labelAdjustment(labelsMaxWidth * axis->labelSize());
+        }
+
+        zPos = backgroundScale.z() + adjustment + m_labelMargin;
+
+        zPos += (axisIndex + 1) * 0.3f;
+
+        yPos = backgroundScale.y() - labelDepthMargin;
+
+        float yOffset = -0.1f;
+        if (!yFlipped) {
+            yPos *= -1.0f;
+            yOffset *= -1.0f;
+        }
+
+        if (zFlipped)
+            zPos *= -1.0f;
+
+        labelTrans = QVector3D(0.0f, yPos, zPos);
+        float angularLabelZPos = 0.0f;
+
+        const float angularAdjustment{1.1f};
+
+        if (axis->type() == QAbstract3DAxis::AxisType::Value) {
+            auto valueAxisX = static_cast<QValue3DAxis *>(axis);
+            for (int i = 0; i < repeater->count(); i++) {
+                if (labelCount <= i)
+                    break;
+                auto obj = static_cast<QQuick3DModel *>(repeater->objectAt(i));
+                if (isPolar()) {
+                    if (i == repeater->count() - 1) {
+                        obj->setVisible(false);
+                        break;
+                    }
+                    float polarRadius = m_polarRadius + (axisIndex) * 2.0f;
+                    float rad = qDegreesToRadians(valueAxisX->labelPositionAt(i) * 360.0f);
+                    labelTrans.setX((-qSin(rad) * -scale + qSin(rad) * m_labelMargin * polarRadius)
+                                    * angularAdjustment);
+                    labelTrans.setY(yPos + yOffset);
+                    labelTrans.setZ((qCos(rad) * -scale - qCos(rad) * m_labelMargin * polarRadius)
+                                    * angularAdjustment);
+                } else {
+                    labelTrans.setX(valueAxisX->labelPositionAt(i) * scale * 2.0f - scale);
+                }
+                obj->setObjectName(QStringLiteral("ElementAxisXLabel"));
+                obj->setScale(m_fontScaled);
+                obj->setPosition(labelTrans);
+                obj->setRotation(totalRotation);
+                qsizetype labelIndex =
+                    valueAxisX->reversed() ? labelCount - 1 - i : i;
+                obj->setProperty("labelText", labels[labelIndex]);
+                obj->setProperty("labelWidth", labelsMaxWidth);
+                obj->setProperty("labelHeight", labelHeight);
+                if (!labels[i].compare(QString(hiddenLabelTag)))
+                    obj->setVisible(false);
+
+                obj->setProperty("labelTextColor", theme()->axisX().labelTextColor());
+                obj->setProperty("labelFont", theme()->labelFont());
+                obj->setProperty("backgroundVisible", theme()->isLabelBackgroundVisible());
+                obj->setProperty("backgroundColor", theme()->labelBackgroundColor());
+                obj->setProperty("borderVisible", theme()->isLabelBorderVisible());
+
+            }
+        } else if (axis->type() == QAbstract3DAxis::AxisType::Category) {
+            float stepSize = backgroundScale.x() * 2.0f / repeater->count();
+            float startPos = -scaleWithBackground().x();
+            for (int i = 0; i < repeater->count(); i++) {
+                if (labelCount <= i)
+                    break;
+                QVector3D pos = labelTrans;
+                float xPos = startPos + (stepSize * i) + stepSize * 0.5;
+                pos.setX(xPos);
+                auto obj = static_cast<QQuick3DNode *>(repeater->objectAt(i));
+                obj->setObjectName(QStringLiteral("ElementAxisXLabel"));
+                obj->setScale(m_fontScaled);
+                obj->setPosition(pos);
+                obj->setRotation(totalRotation);
+                obj->setProperty("labelText", labels[i]);
+                obj->setProperty("labelWidth", labelsMaxWidth);
+                obj->setProperty("labelHeight", labelHeight);
+
+                obj->setProperty("labelTextColor", theme()->axisX().labelTextColor());
+                obj->setProperty("labelFont", theme()->labelFont());
+                obj->setProperty("backgroundVisible", theme()->isLabelBackgroundVisible());
+                obj->setProperty("backgroundColor", theme()->labelBackgroundColor());
+                obj->setProperty("borderVisible", theme()->isLabelBorderVisible());
+            }
+        }
+
+        labelTrans.setX(0.0f);
+        QQuick3DNode *xLabel = multiAxis.titleLabel;
+
+        xLabel->setProperty("labelText", axis->title());
+        xLabel->setVisible(axis->isTitleVisible());
+        xLabel->setProperty("backgroundColor", theme()->labelBackgroundColor());
+        xLabel->setProperty("backgroundVisible", theme()->isLabelBackgroundVisible());
+        xLabel->setProperty("borderVisible", theme()->isLabelBorderVisible());
+        xLabel->setProperty("labelTextColor", theme()->axisX().labelTextColor());
+        xLabel->setProperty("labelFont", theme()->labelFont());
+
+        updateXTitle(labelRotation, labelTrans, totalRotation, labelsMaxWidth, m_fontScaled, axis, xLabel);
+        if (isPolar()) {
+            xLabel->setZ(angularLabelZPos - m_labelMargin * 2.0f);
+            xLabel->setRotation(totalRotation);
+        }
+    } else if (axis->orientation() == QAbstract3DAxis::AxisOrientation::Y) {
+
+        float labelAutoAngle = m_labelMargin >= 0 ? axis->labelAutoAngle() : 0;
+        float labelAngleFraction = labelAutoAngle / 90.0f;
+        float fractionCamX = m_xRotation * labelAngleFraction;
+        float fractionCamY = m_yRotation * labelAngleFraction;
+        QVector3D sideLabelRotation(0.0f, -90.0f, 0.0f);
+        QVector3D backLabelRotation(0.0f, 0.0f, 0.0f);
+
+        if (labelAutoAngle == 0.0f) {
+            if (!xFlipped)
+                sideLabelRotation.setY(90.0f);
+            if (zFlipped)
+                backLabelRotation.setY(180.f);
+        } else {
+            // Orient side labels somewhat towards the camera
+            if (xFlipped) {
+                if (zFlipped)
+                    backLabelRotation.setY(180.0f + (2.0f * labelAutoAngle) - fractionCamX);
+                else
+                    backLabelRotation.setY(-fractionCamX);
+                sideLabelRotation.setY(-90.0f + labelAutoAngle - fractionCamX);
+            } else {
+                if (zFlipped)
+                    backLabelRotation.setY(180.0f - (2.0f * labelAutoAngle) - fractionCamX);
+                else
+                    backLabelRotation.setY(-fractionCamX);
+                sideLabelRotation.setY(90.0f - labelAutoAngle - fractionCamX);
+            }
+        }
+
+        backLabelRotation.setX(-fractionCamY);
+        sideLabelRotation.setX(-fractionCamY);
+
+        float adjustment;
+
+        QQuaternion totalRotation = Utils::calculateRotation(sideLabelRotation);
+        float scale = backgroundScale.y() - m_backgroundScaleMargin.y();
+        float labelsMaxWidth = float(findLabelsMaxWidth(axis->labels())) + textPadding;
+        float fontRatio = labelsMaxWidth / labelHeight;
+        float relativeScale = scale / axis->labels().count();
+        if (axis->isScaleLabelsByCount()) {
+            m_fontScaled = QVector3D(0.01f * fontRatio * relativePointSize * relativeScale,
+                                     0.01f * relativePointSize * relativeScale,
+                                     0.01f) * axis->labelSize();
+            adjustment = m_fontScaled.y() * 190.0f;
+        } else {
+            m_fontScaled = QVector3D(scaleFactor * fontRatio, scaleFactor, 0.00001f)
+                * axis->labelSize();
+            adjustment = labelAdjustment(labelsMaxWidth * axis->labelSize());
+        }
+
+        xPos = backgroundScale.x() - labelDepthMargin;
+        if (!xFlipped)
+            xPos *= -1.0f;
+
+        labelTrans.setX(xPos);
+
+        zPos = backgroundScale.z() + adjustment + m_labelMargin;
+        zPos += (axisIndex + 1) * 0.3f;
+        if (zFlipped)
+            zPos *= -1.0f;
+        labelTrans.setZ(zPos);
+
+        for (int i = 0; i < repeater->count() / 2; i++) {
+            if (labelCount <= i)
+                break;
+            auto obj = static_cast<QQuick3DNode *>(repeater->objectAt(i));
+            auto valueAxisY = static_cast<QValue3DAxis *>(axis);
+            labelTrans.setY(valueAxisY->labelPositionAt(i) * scale * 2.0f - scale);
+
+            obj->setObjectName(QStringLiteral("ElementAxisYLabel"));
+            obj->setScale(m_fontScaled);
+            obj->setPosition(labelTrans);
+            obj->setRotation(totalRotation);
+            qsizetype labelIndex = valueAxisY->reversed() ? labelCount - 1 - i : i;
+            obj->setProperty("labelText", labels[labelIndex]);
+            obj->setProperty("labelWidth", labelsMaxWidth);
+            obj->setProperty("labelHeight", labelHeight);
+            if (!labels[i].compare(QString(hiddenLabelTag)))
+                obj->setVisible(false);
+
+            obj->setProperty("labelTextColor", theme()->axisY().labelTextColor());
+            obj->setProperty("labelFont", theme()->labelFont());
+            obj->setProperty("backgroundVisible", theme()->isLabelBackgroundVisible());
+            obj->setProperty("backgroundColor", theme()->labelBackgroundColor());
+            obj->setProperty("borderVisible", theme()->isLabelBorderVisible());
+        }
+
+        auto sideLabelTrans = labelTrans;
+        auto totalSideLabelRotation = totalRotation;
+
+    labelCount = labels.size();
+    totalRotation = Utils::calculateRotation(backLabelRotation);
+    scale = backgroundScale.y() - m_backgroundScaleMargin.y();
+    labelsMaxWidth = float(findLabelsMaxWidth(axis->labels())) + textPadding;
+    fontRatio = labelsMaxWidth / labelHeight;
+    relativeScale = scale / axis->labels().count();
+    if (axis->isScaleLabelsByCount()) {
+        m_fontScaled = QVector3D(0.01f * fontRatio * relativePointSize * relativeScale,
+                                 0.01f * relativePointSize * relativeScale,
+                                 0.01f) * axis->labelSize();
+        adjustment = m_fontScaled.y() * 190.0f;
+    } else {
+        m_fontScaled = QVector3D(scaleFactor * fontRatio, scaleFactor, 0.00001f)
+                * axis->labelSize();
+        adjustment = labelAdjustment(labelsMaxWidth * axis->labelSize());
+    }
+
+    xPos = backgroundScale.x() + adjustment + m_labelMargin;
+    xPos += (axisIndex + 1) * 0.3f;
+    if (xFlipped)
+        xPos *= -1.0f;
+    labelTrans.setX(xPos);
+
+    zPos = -backgroundScale.z() + labelDepthMargin;
+    if (zFlipped)
+        zPos *= -1.0f;
+    labelTrans.setZ(zPos);
+
+    for (int i = 0; i < repeater->count() / 2; i++) {
+        if (labelCount <= i)
+            break;
+        auto obj = static_cast<QQuick3DNode *>(
+            repeater->objectAt(i + (repeater->count() / 2)));
+        auto valueAxisY = static_cast<QValue3DAxis *>(axis);
+        labelTrans.setY(valueAxisY->labelPositionAt(i) * scale * 2.0f
+                        - scale);
+        obj->setObjectName(QStringLiteral("ElementAxisYLabel"));
+        obj->setScale(m_fontScaled);
+        obj->setPosition(labelTrans);
+        obj->setRotation(totalRotation);
+        qsizetype labelIndex = valueAxisY->reversed() ? labelCount - 1 - i : i;
+        obj->setProperty("labelText", labels[labelIndex]);
+        obj->setProperty("labelWidth", labelsMaxWidth);
+        obj->setProperty("labelHeight", labelHeight);
+        if (!labels[i].compare(QString(hiddenLabelTag)))
+            obj->setVisible(false);
+
+        obj->setProperty("labelTextColor", theme()->axisY().labelTextColor());
+        obj->setProperty("labelFont", theme()->labelFont());
+        obj->setProperty("backgroundVisible", theme()->isLabelBackgroundVisible());
+        obj->setProperty("backgroundColor", theme()->labelBackgroundColor());
+        obj->setProperty("borderVisible", theme()->isLabelBorderVisible());
+    }
+
+    QVector3D backLabelTrans = labelTrans;
+    QQuaternion totalBackLabelRotation = totalRotation;
+
+    QQuick3DNode *yLabel = multiAxis.titleLabel;
+    yLabel->setProperty("labelText", axis->title());
+    yLabel->setVisible(axis->isTitleVisible());
+    yLabel->setProperty("backgroundColor", theme()->labelBackgroundColor());
+    yLabel->setProperty("backgroundVisible", theme()->isLabelBackgroundVisible());
+    yLabel->setProperty("borderVisible", theme()->isLabelBorderVisible());
+    yLabel->setProperty("labelTextColor", theme()->axisX().labelTextColor());
+    yLabel->setProperty("labelFont", theme()->labelFont());
+
+    updateYTitle(sideLabelRotation,
+                 backLabelRotation,
+                 sideLabelTrans,
+                 backLabelTrans,
+                 totalSideLabelRotation,
+                 totalBackLabelRotation,
+                 labelsMaxWidth,
+                 m_fontScaled,
+                 axis,
+                 yLabel);
+
+    } else if (axis->orientation() == QAbstract3DAxis::AxisOrientation::Z) {
+
+        float labelAutoAngle = m_labelMargin >= 0 ? axis->labelAutoAngle() : 0;
+        float labelAngleFraction = labelAutoAngle / 90.0f;
+        float fractionCamX = m_xRotation * labelAngleFraction;
+        float fractionCamY = m_yRotation * labelAngleFraction;
+
+        QVector3D labelRotation = calculateLabelRotation(labelAutoAngle,
+                                                         fractionCamX,
+                                                         fractionCamY,
+                                                         Qt::Axis::ZAxis);
+
+        QQuaternion totalRotation = Utils::calculateRotation(labelRotation);
+
+        float scale = backgroundScale.z() - m_backgroundScaleMargin.z();
+        float labelsMaxWidth = float(findLabelsMaxWidth(axis->labels())) + textPadding;
+        float fontRatio = labelsMaxWidth / labelHeight;
+        float relativeScale = scale / axis->labels().count();
+
+        float adjustment;
+        if (axis->isScaleLabelsByCount()) {
+            m_fontScaled = QVector3D(0.01f * fontRatio * relativePointSize * relativeScale,
+                                     0.01f * relativePointSize * relativeScale,
+                                     0.01f) * axis->labelSize();
+            adjustment = m_fontScaled.y() * 110.0f;
+        } else {
+            m_fontScaled = QVector3D(scaleFactor * fontRatio, scaleFactor, 0.00001f)
+                * axis->labelSize();
+            adjustment = labelAdjustment(labelsMaxWidth * axis->labelSize());
+        }
+
+        xPos = backgroundScale.x() + adjustment + m_labelMargin;
+        xPos += (axisIndex +1) * 0.3f;
+        if (xFlipped)
+            xPos *= -1.0f;
+
+
+        yPos = backgroundScale.y() - labelDepthMargin;
+        float yOffset = -0.1f;
+        if (!yFlipped) {
+            yPos *= -1.0f;
+            yOffset *= -1.0f;
+        }
+
+        labelTrans = QVector3D(xPos, yPos, 0.0f);
+        if (axis->type() == QAbstract3DAxis::AxisType::Value) {
+            auto valueAxisZ = static_cast<QValue3DAxis *>(axis);
+            float offsetAdjustment = 0.05f;
+            float offset = radialLabelOffset() + offsetAdjustment;
+            for (int i = 0; i < repeater->count(); i++) {
+                if (labelCount <= i)
+                    break;
+
+                auto obj = static_cast<QQuick3DNode *>(repeater->objectAt(i));
+                if (isPolar()) {
+                    // RADIAL LABELS
+                    float polarX = backgroundScale.x() * offset + m_labelMargin * 2.0f;
+                    polarX += (axisIndex + 1) * 0.3f;
+                    if (xFlipped)
+                        polarX *= -1;
+                    labelTrans.setX(polarX);
+                    labelTrans.setY(yPos + yOffset);
+
+                    labelTrans.setZ(-valueAxisZ->labelPositionAt(i) * m_polarRadius);
+                } else {
+                    labelTrans.setZ(valueAxisZ->labelPositionAt(i) * scale * -2.0f + scale);
+                }
+                obj->setObjectName(QStringLiteral("ElementAxisZLabel"));
+                obj->setScale(m_fontScaled);
+                obj->setPosition(labelTrans);
+                obj->setRotation(totalRotation);
+                qsizetype labelIndex = valueAxisZ->reversed() ? labelCount - 1 - i : i;
+                obj->setProperty("labelText", labels[labelIndex]);
+                obj->setProperty("labelWidth", labelsMaxWidth);
+                obj->setProperty("labelHeight", labelHeight);
+                if (!labels[i].compare(QString(hiddenLabelTag)))
+                    obj->setVisible(false);
+
+                obj->setProperty("labelTextColor", theme()->axisZ().labelTextColor());
+                obj->setProperty("labelFont", theme()->labelFont());
+                obj->setProperty("backgroundVisible", theme()->isLabelBackgroundVisible());
+                obj->setProperty("backgroundColor", theme()->labelBackgroundColor());
+                obj->setProperty("borderVisible", theme()->isLabelBorderVisible());
+            }
+        } else if (axis->type() == QAbstract3DAxis::AxisType::Category) {
+            float stepSize = backgroundScale.z() * 2.0f / repeater->count();
+            float startPos = -scaleWithBackground().z();
+            for (int i = 0; i < repeater->count(); i++) {
+                if (labelCount <= i)
+                    break;
+                QVector3D pos = labelTrans;
+                float zPos = startPos + (stepSize * i) + stepSize * 0.5;
+                pos.setZ(zPos);
+                auto obj = static_cast<QQuick3DNode *>(repeater->objectAt(i));
+                obj->setObjectName(QStringLiteral("ElementAxisZLabel"));
+                obj->setScale(m_fontScaled);
+                obj->setPosition(pos);
+                obj->setRotation(totalRotation);
+                obj->setProperty("labelText", labels[i]);
+                obj->setProperty("labelWidth", labelsMaxWidth);
+                obj->setProperty("labelHeight", labelHeight);
+
+                obj->setProperty("labelTextColor", theme()->axisZ().labelTextColor());
+                obj->setProperty("labelFont", theme()->labelFont());
+                obj->setProperty("backgroundVisible", theme()->isLabelBackgroundVisible());
+                obj->setProperty("backgroundColor", theme()->labelBackgroundColor());
+                obj->setProperty("borderVisible", theme()->isLabelBorderVisible());
+            }
+        }
+
+        labelTrans.setZ(0.0f);
+        QQuick3DNode *zLabel = multiAxis.titleLabel;
+        zLabel->setProperty("labelText", axis->title());
+        zLabel->setVisible(axis->isTitleVisible());
+        zLabel->setProperty("backgroundColor", theme()->labelBackgroundColor());
+        zLabel->setProperty("backgroundVisible", theme()->isLabelBackgroundVisible());
+        zLabel->setProperty("borderVisible", theme()->isLabelBorderVisible());
+        zLabel->setProperty("labelTextColor", theme()->axisX().labelTextColor());
+        zLabel->setProperty("labelFont", theme()->labelFont());
+        updateZTitle(labelRotation,
+                     labelTrans,
+                     totalRotation,
+                     labelsMaxWidth,
+                     m_fontScaled,
+                     axis,
+                     zLabel);
+    }
+}
+
+QQuickGraphsItem::MultiAxis QQuickGraphsItem::getMultiAxis(qsizetype axisIndex, QAbstract3DAxis *axis)
+{
+
+    QList<MultiAxis> *multiAxes = nullptr;
+    switch (axis->orientation()) {
+        case QAbstract3DAxis::AxisOrientation::X:
+            multiAxes = &m_multiAxesX;
+            break;
+        case QAbstract3DAxis::AxisOrientation::Y:
+            multiAxes = &m_multiAxesY;
+            break;
+        case QAbstract3DAxis::AxisOrientation::Z:
+            multiAxes = &m_multiAxesZ;
+            break;
+        case QAbstract3DAxis::AxisOrientation::None:
+            return MultiAxis{};
+            break;
+    }
+
+    MultiAxis multiAxis;
+    bool found = false;
+    for (qsizetype i = 0; i < multiAxes->count(); i++) {
+        MultiAxis axis = multiAxes->at(i);
+        if (axis.seriesIndex == axisIndex) {
+            multiAxis = axis;
+            found = true;
+        }
+    }
+
+    if (!found) {
+        multiAxis = createMultiAxis(axisIndex);
+        multiAxes->append(multiAxis);
+    }
+
+    return multiAxis;
+}
+
+QQuickGraphsItem::MultiAxis QQuickGraphsItem::createMultiAxis(qsizetype axisIndex)
+{
+    MultiAxis axis;
+
+    axis.repeater = createRepeater(graphNode());
+    axis.repeater->setParent(graphNode());
+    axis.repeater->setParentItem(graphNode());
+    axis.repeater->setVisible(true);
+
+    axis.delegateModel = new QQmlComponent(qmlEngine(this), (QStringLiteral(":/axis/AxisLabel")));
+    axis.delegateModel->setParent(this);
+    axis.repeater->setDelegate(axis.delegateModel);
+
+    axis.titleLabel = createTitleLabel(graphNode());
+    axis.titleLabel->setVisible(true);
+
+    axis.grid = new QQuick3DModel(graphNode());
+    axis.grid->setCastsShadows(false);
+    axis.grid->setReceivesShadows(false);
+    auto gridGeometry = new QQuick3DGeometry(axis.grid);
+    gridGeometry->setStride(sizeof(QVector3D));
+    gridGeometry->setPrimitiveType(QQuick3DGeometry::PrimitiveType::Lines);
+    gridGeometry->addAttribute(QQuick3DGeometry::Attribute::PositionSemantic,
+                               0,
+                               QQuick3DGeometry::Attribute::F32Type);
+    axis.grid->setGeometry(gridGeometry);
+    QQmlListReference gridMaterialRef(axis.grid, "materials");
+    auto gridMaterial = new QQuick3DPrincipledMaterial(axis.grid);
+    gridMaterial->setLighting(QQuick3DPrincipledMaterial::Lighting::NoLighting);
+    gridMaterial->setCullMode(QQuick3DMaterial::CullMode::BackFaceCulling);
+    gridMaterial->setBaseColor(theme()->grid().mainColor());
+    gridMaterialRef.append(gridMaterial);
+
+    axis.seriesIndex = axisIndex;
+
+    return axis;
+}
+
+void QQuickGraphsItem::updateMultiAxisGrid(qsizetype axisIndex, QAbstract3DAxis *axis)
+{
+    MultiAxis multiAxis = getMultiAxis(axisIndex, axis);
+    if (multiAxis.seriesIndex == -1) // uninitalized axis
+        return;
+    QQuick3DModel *model = multiAxis.grid;
+    QQuick3DRepeater *repeater = multiAxis.repeater;
+
+    QValue3DAxis *valueAxis = qobject_cast<QValue3DAxis *>(axis);
+    QVector3D backgroundScale = m_scaleWithBackground + m_backgroundScaleMargin;
+    float tickLength = 0.1f;
+
+    const float pointSize = theme()->labelFont().pointSizeF();
+    const float textPadding = pointSize * .5f;
+    float labelsMaxWidth = float(findLabelsMaxWidth(axis->labels())) + textPadding;
+    const float baseSize = 25.0f;
+    const float relativePointSize = theme()->labelFont().pointSizeF() / baseSize;
+
+    float labelOffset;
+    if (axis->isScaleLabelsByCount()) {
+        QFontMetrics fm(theme()->labelFont());
+        const float labelHeight = fm.height() + textPadding;
+        float scale = backgroundScale.x() - m_backgroundScaleMargin.x();
+        float relativeScale = scale / axis->labels().count();
+        float fontRatio = labelsMaxWidth / labelHeight;
+        QVector3D fontScaled = QVector3D(0.01f * fontRatio * relativePointSize * relativeScale,
+                                     0.01f * relativePointSize * relativeScale,
+                                     0.01f) * axis->labelSize();
+        labelOffset = fontScaled.y() * 110.0f;
+    } else {
+        labelOffset = labelAdjustment(labelsMaxWidth * axis->labelSize());
+    }
+
+    QList<QVector3D> vertices;
+
+    if (axis->orientation() == QAbstract3DAxis::AxisOrientation::X) {
+        if (axis->type() == QAbstract3DAxis::AxisType::Value) {
+            if (m_isPolar) {
+                //Use one label less since the graph is cyclical
+                int labelCount = repeater->count() - 1;
+                float yPos = -backgroundScale.y() + 0.01;
+
+                QVector3D firstLabelPos = static_cast<QQuick3DModel *>(repeater->objectAt(0))->position();
+                firstLabelPos.setY(0);
+                float polarRadius = firstLabelPos.length() - 0.1f;
+
+                const int ringSegments = 64;
+                float angleStep = (float(M_PI) * 2.0f / float(ringSegments));
+                for (int i = 0; i < ringSegments; i++) {
+                    QVector3D pos0 = QVector3D(polarRadius * qCos(angleStep * i),
+                        yPos,
+                        polarRadius * qSin(angleStep * i));
+
+                    QVector3D pos1 = QVector3D(polarRadius * qCos(angleStep * (i + 1)),
+                        yPos,
+                        polarRadius * qSin(angleStep * (i + 1)));
+
+                    vertices.append(pos0);
+                    vertices.append(pos1);
+                }
+
+                for (int i = 0; i < labelCount; i++) {
+                    float tickAngle = M_PI + (M_PI * 2 / labelCount) * i;
+                    QVector3D tickStart = QVector3D(qSin(tickAngle) * polarRadius, yPos, qCos(tickAngle) * polarRadius);
+                    QVector3D tickEnd = QVector3D(
+                        qSin(tickAngle) * (polarRadius - tickLength), yPos,
+                        qCos(tickAngle) * (polarRadius - tickLength));
+                    vertices.append(tickStart);
+                    vertices.append(tickEnd);
+
+                    int subSegments = valueAxis->subSegmentCount();
+                    float angleStep = (M_PI * 2 / labelCount) / (subSegments + 1);
+
+                    for (int j = 1; j <= subSegments; j++) {
+                        QVector3D pos0 = QVector3D(
+                            polarRadius * qSin(tickAngle + angleStep * j), yPos,
+                            polarRadius * qCos(tickAngle + angleStep * j));
+                        QVector3D pos1 = QVector3D(
+                            (polarRadius - tickLength * 0.5f) * qSin(tickAngle + angleStep * j), yPos,
+                            (polarRadius - tickLength * 0.5f) * qCos(tickAngle + angleStep * j));
+
+                        vertices.append(pos0);
+                        vertices.append(pos1);
+                    }
+                }
+            } else {
+                //Use label positions as reference
+                QVector3D posStart = static_cast<QQuick3DModel *>(repeater->objectAt(0))->position();
+                QVector3D posEnd = static_cast<QQuick3DModel *>(repeater->objectAt(repeater->count() - 1))->position();
+
+                QVector3D zOffset = m_zFlipped? QVector3D(0.0f,0.0f,labelOffset) : QVector3D(0.0f,0.0f,-labelOffset);
+
+                posStart += zOffset;
+                posEnd += zOffset;
+
+                vertices.append(posStart);
+                vertices.append(posEnd);
+
+                for (int i = 0; i < repeater->count(); i++) {
+                    QVector3D pos0 = static_cast<QQuick3DModel *>(repeater->objectAt(i))->position();
+                    pos0 += zOffset;
+                    float tick = m_zFlipped? tickLength : -tickLength;
+                    QVector3D pos1 = pos0 + QVector3D(0, 0, tick);
+
+                    vertices.append(pos0);
+                    vertices.append(pos1);
+
+                    if (i < (repeater->count() - 1)) {
+                        QVector3D nextPos = static_cast<QQuick3DModel *>(repeater->objectAt(i + 1))->position();
+                        float tickRange =  nextPos.x() - pos0.x();
+                        float nextTick = tickRange / (valueAxis->subSegmentCount() + 1);
+                        for (int j = 0; j < valueAxis->subSegmentCount(); j++) {
+                            QVector3D subPos0 = pos0 + QVector3D((nextTick * (j + 1)), 0, 0);
+                            QVector3D subPos1 = subPos0 + QVector3D(0,0, tick * 0.5f);
+                            vertices.append(subPos0);
+                            vertices.append(subPos1);
+                        }
+                    }
+                }
+            }
+        } else if (axis->type() == QAbstract3DAxis::AxisType::Category) {
+            if (repeater->count() < 1)
+                return;
+            float stepSize = backgroundScale.x() * 2.0f / repeater->count();
+            float startPosX = -scaleWithBackground().x();
+
+            QVector3D startPos = static_cast<QQuick3DModel *>(repeater->objectAt(0))->position();
+
+            QVector3D zOffset = m_zFlipped? QVector3D(0.0f,0.0f,labelOffset) : QVector3D(0.0f,0.0f,-labelOffset);
+            startPos += zOffset;
+
+            startPos.setX(startPosX);
+            QVector3D endPos = startPos + QVector3D(backgroundScale.x() * 2.0f, 0.0f, 0.0f);
+            vertices.append(startPos);
+            vertices.append(endPos);
+            float tick = m_zFlipped? tickLength : -tickLength;
+
+            for (int i = 0; i < repeater->count() + 1; i++) {
+                QVector3D pos0 = startPos + QVector3D(stepSize * i, 0.0f, 0.0f);
+                QVector3D pos1 = pos0 + QVector3D(0.0f, 0.0f, tick);
+                vertices.append(pos0);
+                vertices.append(pos1);
+            }
+        }
+    } else if (axis->orientation() == QAbstract3DAxis::AxisOrientation::Y) {
+
+        QVector3D posStart1 = static_cast<QQuick3DModel *>(repeater->objectAt(0))->position();
+        QVector3D posEnd1 = static_cast<QQuick3DModel *>(repeater->objectAt(repeater->count() / 2 - 1))->position();
+
+        QVector3D posStart2 = static_cast<QQuick3DModel *>(repeater->objectAt(repeater->count() / 2))->position();
+        QVector3D posEnd2 = static_cast<QQuick3DModel *>(repeater->objectAt(repeater->count() - 1))->position();
+
+        QVector3D xOffset = m_xFlipped? QVector3D(labelOffset,0.0f,0.0f) : QVector3D(-labelOffset,0.0f,0.0f);
+        QVector3D zOffset = m_zFlipped? QVector3D(0.0f,0.0f,labelOffset) : QVector3D(0.0f,0.0f,-labelOffset);
+
+        posStart1 += zOffset;
+        posEnd1 += zOffset;
+
+        posStart2 += xOffset;
+        posEnd2 += xOffset;
+
+        vertices.append(posStart1);
+        vertices.append(posEnd1);
+
+        vertices.append(posStart2);
+        vertices.append(posEnd2);
+
+        for (int i = 0; i < repeater->count(); i++) {
+            QVector3D pos0 = static_cast<QQuick3DModel *>(repeater->objectAt(i))->position();
+
+            QVector3D pos1;
+            float tick;
+            if (i < repeater->count() / 2) {
+                pos0 += zOffset;
+                tick = m_zFlipped? tickLength : -tickLength;
+                pos1 = pos0 + QVector3D(0.0f, 0.0f, tick);
+            }
+            else {
+                tick = m_xFlipped? tickLength : -tickLength;
+                pos0 += xOffset;
+                pos1 = pos0 + QVector3D(tick, 0.0f, 0.0f);
+            }
+
+            vertices.append(pos0);
+            vertices.append(pos1);
+
+            if (i < (repeater->count() - 1) ) {
+                QVector3D nextPos = static_cast<QQuick3DModel *>(repeater->objectAt(i + 1))->position();
+                float tickRange =  nextPos.y() - pos0.y();
+                float nextTick = tickRange / (valueAxis->subSegmentCount() + 1);
+                for (int j = 0; j < valueAxis->subSegmentCount(); j++) {
+                    QVector3D subPos0 = pos0 + QVector3D(0, (nextTick * (j + 1)), 0);
+                    QVector3D subPos1;
+                    if (i < repeater->count() / 2)
+                        subPos1 = subPos0 + QVector3D(0,0, tick * 0.5f);
+                    else
+                        subPos1 = subPos0 + QVector3D(tick * 0.5f, 0, 0);
+                    vertices.append(subPos0);
+                    vertices.append(subPos1);
+                }
+            }
+        }
+    } else if (axis->orientation() == QAbstract3DAxis::AxisOrientation::Z) {
+        //Use label positions as reference
+        if (axis->type() == QAbstract3DAxis::AxisType::Value) {
+            QVector3D posStart = static_cast<QQuick3DModel *>(repeater->objectAt(0))->position();
+            QVector3D posEnd = static_cast<QQuick3DModel *>(repeater->objectAt(repeater->count() - 1))->position();
+
+            QVector3D xOffset = m_xFlipped? QVector3D(labelOffset,0.0f,0.0f) : QVector3D(-labelOffset,0.0f,0.0f);
+
+            posStart += xOffset;
+            posEnd += xOffset;
+
+            vertices.append(posStart);
+            vertices.append(posEnd);
+
+            for (int i = 0; i < repeater->count(); i++) {
+                QVector3D pos0 = static_cast<QQuick3DModel *>(repeater->objectAt(i))->position();
+                pos0 += xOffset;
+                float tick = m_xFlipped? tickLength : -tickLength;
+                QVector3D pos1 = pos0 + QVector3D(tick, 0, 0);
+
+                vertices.append(pos0);
+                vertices.append(pos1);
+
+                if (i < (repeater->count() - 1)) {
+                    QVector3D nextPos = static_cast<QQuick3DModel *>(repeater->objectAt(i + 1))->position();
+                    float tickRange =  nextPos.z() - pos0.z();
+                    float nextTick = tickRange / (valueAxis->subSegmentCount() + 1);
+                    for (int j = 0; j < valueAxis->subSegmentCount(); j++) {
+                        QVector3D subPos0 = pos0 + QVector3D(0, 0, (nextTick * (j + 1)));
+                        QVector3D subPos1 = subPos0 + QVector3D(tick * 0.5f, 0, 0);
+                        vertices.append(subPos0);
+                        vertices.append(subPos1);
+                    }
+                }
+            }
+        } else if (axis->type() == QAbstract3DAxis::AxisType::Category) {
+            if (repeater->count() < 1)
+                return;
+            float stepSize = backgroundScale.z() * 2.0f / repeater->count();
+            float startPosZ = -scaleWithBackground().z();
+
+            QVector3D startPos = static_cast<QQuick3DModel *>(repeater->objectAt(0))->position();
+            QVector3D xOffset = m_xFlipped? QVector3D(labelOffset,0.0f,0.0f) : QVector3D(-labelOffset,0.0f,0.0f);
+            startPos += xOffset;
+            startPos.setZ(startPosZ);
+            QVector3D endPos = startPos + QVector3D(0.0f, 0.0f, backgroundScale.z() * 2.0f);
+            vertices.append(startPos);
+            vertices.append(endPos);
+            float tick = m_xFlipped? tickLength : -tickLength;
+
+            for (int i = 0; i < repeater->count() + 1; i++) {
+                QVector3D pos0 = startPos + QVector3D(0.0f, 0.0f, stepSize * i);
+                QVector3D pos1 = pos0 + QVector3D(tick, 0.0f, 0.0f);
+                vertices.append(pos0);
+                vertices.append(pos1);
+            }
+        }
+    }
+
+
+    auto geometry = model->geometry();
+    QByteArray vertexBuffer(reinterpret_cast<char *>(vertices.data()),
+                            vertices.size() * sizeof(QVector3D));
+    geometry->setVertexData(vertexBuffer);
+    geometry->update();
 }
 
 void QQuickGraphsItem::positionAndScaleLine(QQuick3DNode *lineNode,
@@ -4892,14 +6073,20 @@ void QQuickGraphsItem::updateXTitle(QVector3D labelRotation,
                                     QVector3D labelTrans,
                                     const QQuaternion &totalRotation,
                                     float labelsMaxWidth,
-                                    QVector3D scale)
+                                    QVector3D scale,
+                                    QAbstract3DAxis *axis,
+                                    QQuick3DNode *label)
 {
+
+    if (axis == nullptr)
+        axis = axisX();
+
     QFont font = theme()->axisXLabelFont() == QFont() ? theme()->labelFont() : theme()->axisXLabelFont();
     float pointSize = font.pointSizeF();
     float textPadding = pointSize * .5f;
     QFontMetrics fm(font);
     float height = fm.height() + textPadding;
-    float width = fm.horizontalAdvance(axisX()->title()) + textPadding;
+    float width = fm.horizontalAdvance(axis->title()) + textPadding;
 
     float titleOffset;
 
@@ -4970,10 +6157,10 @@ void QQuickGraphsItem::updateXTitle(QVector3D labelRotation,
 
     QQuaternion offsetRotator = QQuaternion::fromAxisAndAngle(1.0f, 0.0f, 0.0f, offsetRotation);
     QVector3D titleOffsetVector = offsetRotator.rotatedVector(QVector3D(0.0f, 0.0f, titleOffset));
-    titleOffsetVector.setX(axisX()->titleOffset() * scaleWithBackground().x());
+    titleOffsetVector.setX(axis->titleOffset() * scaleWithBackground().x());
 
     QQuaternion titleRotation;
-    if (axisX()->isTitleFixed()) {
+    if (axis->isTitleFixed()) {
         titleRotation = QQuaternion::fromAxisAndAngle(0.0f, 0.0f, 1.0f, zRotation)
                         * QQuaternion::fromAxisAndAngle(0.0f, 1.0f, 0.0f, yRotation)
                         * QQuaternion::fromAxisAndAngle(1.0f, 0.0f, 0.0f, xRotation);
@@ -4984,11 +6171,16 @@ void QQuickGraphsItem::updateXTitle(QVector3D labelRotation,
 
     QVector3D titleScale = scale;
     titleScale.setX(titleScale.y() * width / height);
-    m_titleLabelX->setScale(titleScale);
-    m_titleLabelX->setPosition(labelTrans + titleOffsetVector);
-    m_titleLabelX->setRotation(titleRotation);
-    m_titleLabelX->setProperty("labelWidth", width);
-    m_titleLabelX->setProperty("labelHeight", height);
+
+
+    if (label == nullptr)
+        label = m_titleLabelX;
+
+    label->setScale(titleScale);
+    label->setPosition(labelTrans + titleOffsetVector);
+    label->setRotation(titleRotation);
+    label->setProperty("labelWidth", width);
+    label->setProperty("labelHeight", height);
 }
 
 void QQuickGraphsItem::updateYTitle(QVector3D sideLabelRotation,
@@ -4998,14 +6190,18 @@ void QQuickGraphsItem::updateYTitle(QVector3D sideLabelRotation,
                                     const QQuaternion &totalSideRotation,
                                     const QQuaternion &totalBackRotation,
                                     float labelsMaxWidth,
-                                    QVector3D scale)
+                                    QVector3D scale,
+                                    QAbstract3DAxis *axis,
+                                    QQuick3DNode *label)
 {
+    if (axis == nullptr)
+        axis = axisY();
     QFont font = theme()->axisYLabelFont() == QFont() ? theme()->labelFont() : theme()->axisYLabelFont();
     float pointSize = font.pointSizeF();
     float textPadding = pointSize * .5f;
     QFontMetrics fm(font);
     float height = fm.height() + textPadding;
-    float width = fm.horizontalAdvance(axisY()->title()) + textPadding;
+    float width = fm.horizontalAdvance(axis->title()) + textPadding;
 
     float titleOffset = m_labelMargin + (labelsMaxWidth * scale.x());
 
@@ -5026,10 +6222,10 @@ void QQuickGraphsItem::updateYTitle(QVector3D sideLabelRotation,
 
     QQuaternion offsetRotator = QQuaternion::fromAxisAndAngle(0.0f, 1.0f, 0.0f, yRotation);
     QVector3D titleOffsetVector = offsetRotator.rotatedVector(QVector3D(-titleOffset, 0.0f, 0.0f));
-    titleOffsetVector.setY(axisY()->titleOffset() * scaleWithBackground().y());
+    titleOffsetVector.setY(axis->titleOffset() * scaleWithBackground().y());
 
     QQuaternion titleRotation;
-    if (axisY()->isTitleFixed()) {
+    if (axis->isTitleFixed()) {
         titleRotation = QQuaternion::fromAxisAndAngle(0.0f, 1.0f, 0.0f, yRotation)
                         * zRightAngleRotation;
     } else {
@@ -5038,25 +6234,34 @@ void QQuickGraphsItem::updateYTitle(QVector3D sideLabelRotation,
 
     QVector3D titleScale = scale;
     titleScale.setX(titleScale.y() * width / height);
-    m_titleLabelY->setScale(titleScale);
-    m_titleLabelY->setPosition(titleTrans + titleOffsetVector);
-    m_titleLabelY->setRotation(titleRotation);
-    m_titleLabelY->setProperty("labelWidth", width);
-    m_titleLabelY->setProperty("labelHeight", height);
+
+    if (label == nullptr)
+        label = m_titleLabelY;
+
+    label->setScale(titleScale);
+    label->setPosition(titleTrans + titleOffsetVector);
+    label->setRotation(titleRotation);
+    label->setProperty("labelWidth", width);
+    label->setProperty("labelHeight", height);
 }
 
 void QQuickGraphsItem::updateZTitle(QVector3D labelRotation,
                                     QVector3D labelTrans,
                                     const QQuaternion &totalRotation,
                                     float labelsMaxWidth,
-                                    QVector3D scale)
+                                    QVector3D scale,
+                                    QAbstract3DAxis *axis,
+                                    QQuick3DNode *label)
 {
+
+    if (axis == nullptr)
+        axis = axisZ();
     QFont font = theme()->axisZLabelFont() == QFont() ? theme()->labelFont() : theme()->axisZLabelFont();
     float pointSize = font.pointSizeF();
     float textPadding = pointSize * .5f;
     QFontMetrics fm(font);
     float height = fm.height() + textPadding;
-    float width = fm.horizontalAdvance(axisZ()->title()) + textPadding;
+    float width = fm.horizontalAdvance(axis->title()) + textPadding;
 
     float titleOffset = m_labelMargin + (labelsMaxWidth * scale.x());
 
@@ -5113,10 +6318,10 @@ void QQuickGraphsItem::updateZTitle(QVector3D labelRotation,
 
     QQuaternion offsetRotator = QQuaternion::fromAxisAndAngle(0.0f, 0.0f, 1.0f, offsetRotation);
     QVector3D titleOffsetVector = offsetRotator.rotatedVector(QVector3D(titleOffset, 0.0f, 0.0f));
-    titleOffsetVector.setZ(axisZ()->titleOffset() * scaleWithBackground().z());
+    titleOffsetVector.setZ(axis->titleOffset() * scaleWithBackground().z());
 
     QQuaternion titleRotation;
-    if (axisZ()->isTitleFixed()) {
+    if (axis->isTitleFixed()) {
         titleRotation = QQuaternion::fromAxisAndAngle(0.0f, 0.0f, 1.0f, zRotation)
                         * QQuaternion::fromAxisAndAngle(0.0f, 1.0f, 0.0f, yRotation)
                         * QQuaternion::fromAxisAndAngle(1.0f, 0.0f, 0.0f, xRotation);
@@ -5125,13 +6330,16 @@ void QQuickGraphsItem::updateZTitle(QVector3D labelRotation,
                         * QQuaternion::fromAxisAndAngle(0.0f, 0.0f, 1.0f, extraRotation);
     }
 
+    if (label == nullptr)
+        label = m_titleLabelZ;
     QVector3D titleScale = scale;
     titleScale.setX(titleScale.y() * width / height);
-    m_titleLabelZ->setScale(titleScale);
-    m_titleLabelZ->setPosition(labelTrans + titleOffsetVector);
-    m_titleLabelZ->setRotation(titleRotation);
-    m_titleLabelZ->setProperty("labelWidth", width);
-    m_titleLabelZ->setProperty("labelHeight", height);
+
+    label->setScale(titleScale);
+    label->setPosition(labelTrans + titleOffsetVector);
+    label->setRotation(titleRotation);
+    label->setProperty("labelWidth", width);
+    label->setProperty("labelHeight", height);
 }
 
 void QQuickGraphsItem::updateCamera()
@@ -5160,6 +6368,7 @@ void QQuickGraphsItem::updateCamera()
     m_pCamera->setZ(zoom);
     updateCustomLabelsRotation();
     updateItemLabel(m_labelPosition);
+    updateMultiAxis();
     Q_TRACE(QGraphs3DItemUpdateCamera_exit);
 }
 
@@ -5255,8 +6464,8 @@ void QQuickGraphsItem::updateCustomData()
         QQuick3DModel *model = itemIterator.value();
 
         QVector3D pos = item->position();
-        QVector<QAbstract3DAxis *> axes{axisX(), axisY(), axisZ()};
-        QVector<float> bScales{scaleWithBackground().x(),
+        QList<QAbstract3DAxis *> axes{axisX(), axisY(), axisZ()};
+        QList<float> bScales{scaleWithBackground().x(),
                     scaleWithBackground().y(),
                     scaleWithBackground().z()};
         if (!item->isPositionAbsolute()) {
@@ -5272,7 +6481,7 @@ void QQuickGraphsItem::updateCustomData()
         model->setPosition(pos);
 
         if (!item->isScalingAbsolute()) {
-            QVector<float> iScales{item->scaling().x(), item->scaling().y(), item->scaling().z()};
+            QList<float> iScales{item->scaling().x(), item->scaling().y(), item->scaling().z()};
             for (int i = 0; i < axes.count(); i++) {
                 if (auto vAxis = static_cast<QValue3DAxis *>(axes.at(i))) {
                     float axisRange = vAxis->max() - vAxis->min();
@@ -5374,7 +6583,51 @@ void QQuickGraphsItem::updateCustomData()
                     QByteArray(reinterpret_cast<const char *>(textureImage.bits()),
                                textureImage.sizeInBytes()));
             }
-            model->setRotation(item->rotation());
+
+            if (!item->isRotationAbsolute()) {
+                auto xValueAxis = qobject_cast<QValue3DAxis *>(axisX());
+                auto yValueAxis = qobject_cast<QValue3DAxis *>(axisY());
+                auto zValueAxis = qobject_cast<QValue3DAxis *>(axisZ());
+
+                if (xValueAxis && yValueAxis && zValueAxis) {
+                    QQuaternion itemRotation(item->rotation());
+
+                    /*
+                      the z axis is initally reversed in qtgraphs,
+                      so we have to reverse the axis in charge
+                      of it initally
+                    */
+                    itemRotation.setX(-itemRotation.x());
+
+                    float sX = xValueAxis->reversed()? -1.0 : 1.0;
+                    float sY = yValueAxis->reversed()? -1.0 : 1.0;
+                    float sZ = zValueAxis->reversed()? -1.0 : 1.0;
+
+                    float handedness = sX * sY * sZ;
+
+                    if (handedness == 1.0f) {
+                        itemRotation = {
+                            itemRotation.scalar(),
+                            itemRotation.x() * sX,
+                            itemRotation.y() * sY,
+                            itemRotation.z() * sZ,
+                        };
+                    } else {
+                        itemRotation = {
+                            item->rotation().scalar(),
+                            -itemRotation.x() * sX,
+                            -itemRotation.y() * sY,
+                            -itemRotation.z() * sZ,
+                        };
+                    }
+
+                    model->setRotation(itemRotation);
+                } else {
+                    model->setRotation(item->rotation());
+                }
+            } else {
+                model->setRotation(item->rotation());
+            }
             model->setVisible(item->isVisible());
         }
         ++itemIterator;
@@ -5493,16 +6746,13 @@ void QQuickGraphsItem::handleWindowChanged(/*QQuickWindow *window*/)
         return;
 
 #if defined(Q_OS_MACOS)
-    bool previousVisibility = window->isVisible();
     // Enable touch events for Mac touchpads
-    window->setVisible(true);
     typedef void (*EnableTouch)(QWindow *, bool);
     EnableTouch enableTouch = reinterpret_cast<EnableTouch>(
                 QFunctionPointer(QGuiApplication::platformNativeInterface()
                                  ->nativeResourceFunctionForIntegration("registertouchwindow")));
     if (enableTouch)
         enableTouch(window, true);
-    window->setVisible(previousVisibility);
 #endif
 
     connect(window, &QObject::destroyed, this, &QQuickGraphsItem::windowDestroyed);
@@ -5555,7 +6805,6 @@ void QQuickGraphsItem::itemChange(ItemChange change, const ItemChangeData &value
 
 void QQuickGraphsItem::updateWindowParameters()
 {
-    const QMutexLocker locker(&m_mutex);
     // Update the device pixel ratio, window size and bounding box
     QQuickWindow *win = window();
     if (win) {
@@ -5762,7 +7011,7 @@ bool QQuickGraphsItem::isPolar() const
 
 void QQuickGraphsItem::setLabelMargin(float margin)
 {
-    if (qFuzzyCompare(m_labelMargin, margin)) {
+    if (QtPrivate::fuzzyCompare(m_labelMargin, margin)) {
         qCDebug(lcProperties3D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), margin);
         return;
@@ -5780,7 +7029,7 @@ float QQuickGraphsItem::labelMargin() const
 
 void QQuickGraphsItem::setRadialLabelOffset(float offset)
 {
-    if (qFuzzyCompare(m_radialLabelOffset, offset)) {
+    if (QtPrivate::fuzzyCompare(m_radialLabelOffset, offset)) {
         qCDebug(lcProperties3D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), offset);
         return;
@@ -5862,6 +7111,24 @@ void QQuickGraphsItem::setMargin(qreal margin)
 qreal QQuickGraphsItem::margin() const
 {
     return m_margin;
+}
+
+void QQuickGraphsItem::setCutoffMargin(qreal margin)
+{
+    if (m_cutoffMargin == margin) {
+        qCDebug(lcProperties3D, "%s value is already set to: %.1f",
+                qUtf8Printable(QLatin1String(__FUNCTION__)), margin);
+        return;
+    }
+    m_cutoffMargin = margin;
+    m_isSeriesVisualsDirty = true;
+    emit cutoffMarginChanged(margin);
+    emitNeedRender();
+}
+
+qreal QQuickGraphsItem::cutoffMargin() const
+{
+    return m_cutoffMargin;
 }
 
 QQuick3DNode *QQuickGraphsItem::rootNode() const
@@ -6098,6 +7365,7 @@ void QQuickGraphsItem::toggleSliceGraph()
     if (m_sliceView->isVisible()) {
         // Maximize main view
         m_sliceView->setVisible(false);
+        m_sliceView->update();
         setSlicingActive(false);
         updateSubViews();
         qCDebug(lcEvents3D, "%s exit sliceView", qUtf8Printable(QLatin1String(__FUNCTION__)));
@@ -6574,6 +7842,7 @@ void QQuickGraphsItem::setCameraTargetPosition(QVector3D target)
     m_requestedTarget.setZ(std::clamp(target.z(), -1.0f, 1.0f));
     m_changeTracker.cameraChanged = true;
     emit cameraTargetPositionChanged(target);
+    emitNeedRender();
 }
 
 void QQuickGraphsItem::setCameraPosition(float horizontal, float vertical, float zoom)
@@ -6626,7 +7895,6 @@ void QQuickGraphsItem::createSliceView()
 
     createSliceCamera(m_sliceView);
 
-    // auto gridDelegate = createRepeaterDelegateComponent(QStringLiteral(":/axis/GridLine"));
     m_labelDelegate.reset(new QQmlComponent(qmlEngine(this), QStringLiteral(":/axis/AxisLabel")));
 
     m_sliceGridGeometryModel = new QQuick3DModel(scene);
@@ -6770,10 +8038,12 @@ void QQuickGraphsItem::updateSliceGrid(QQuick3DModel *sliceGridGeometryModel,
 
     float horizontalScale = 0.0f;
 
-    bool isRow = (selectionMode().testFlag(QtGraphs3D::SelectionFlag::Row)
-                  || sliceType == QtGraphs3D::SliceCaptureType::RowImage);
-    bool isColumn = (selectionMode().testFlag(QtGraphs3D::SelectionFlag::Column)
-                     || sliceType == QtGraphs3D::SliceCaptureType::ColumnImage);
+    const bool isRow = ((sliceType == QtGraphs3D::SliceCaptureType::NoImage
+                         && selectionMode().testFlag(QtGraphs3D::SelectionFlag::Row))
+                        || sliceType == QtGraphs3D::SliceCaptureType::RowImage);
+    const bool isColumn = ((sliceType == QtGraphs3D::SliceCaptureType::NoImage
+                            && selectionMode().testFlag(QtGraphs3D::SelectionFlag::Column))
+                           || sliceType == QtGraphs3D::SliceCaptureType::ColumnImage);
 
     if (isRow) {
         horizontalAxis = axisX();
@@ -6900,10 +8170,12 @@ void QQuickGraphsItem::updateSliceLabels(QQuick3DRepeater *horizontalLabel,
     else
         sliceVerticalLabelRepeater = m_sliceVerticalLabelRepeater;
 
-    bool isRow = (selectionMode().testFlag(QtGraphs3D::SelectionFlag::Row)
-                  || sliceType == QtGraphs3D::SliceCaptureType::RowImage);
-    bool isColumn = (selectionMode().testFlag(QtGraphs3D::SelectionFlag::Column)
-                     || sliceType == QtGraphs3D::SliceCaptureType::ColumnImage);
+    const bool isRow = ((sliceType == QtGraphs3D::SliceCaptureType::NoImage
+                         && selectionMode().testFlag(QtGraphs3D::SelectionFlag::Row))
+                        || sliceType == QtGraphs3D::SliceCaptureType::RowImage);
+    const bool isColumn = ((sliceType == QtGraphs3D::SliceCaptureType::NoImage
+                            && selectionMode().testFlag(QtGraphs3D::SelectionFlag::Column))
+                           || sliceType == QtGraphs3D::SliceCaptureType::ColumnImage);
 
     if (isRow) {
         horizontalAxis = axisX();
@@ -7214,7 +8486,7 @@ float QQuickGraphsItem::ambientLightStrength() const
 
 void QQuickGraphsItem::setAmbientLightStrength(float newAmbientLightStrength)
 {
-    if (qFuzzyCompare(m_ambientLightStrength, newAmbientLightStrength)) {
+    if (QtPrivate::fuzzyCompare(m_ambientLightStrength, newAmbientLightStrength)) {
         qCDebug(lcProperties3D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newAmbientLightStrength);
         return;
@@ -7238,7 +8510,7 @@ float QQuickGraphsItem::lightStrength() const
 
 void QQuickGraphsItem::setLightStrength(float newLightStrength)
 {
-    if (qFuzzyCompare(m_lightStrength, newLightStrength)) {
+    if (QtPrivate::fuzzyCompare(m_lightStrength, newLightStrength)) {
         qCDebug(lcProperties3D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newLightStrength);
         return;
@@ -7262,7 +8534,7 @@ float QQuickGraphsItem::shadowStrength() const
 
 void QQuickGraphsItem::setShadowStrength(float newShadowStrength)
 {
-    if (qFuzzyCompare(m_shadowStrength, newShadowStrength)) {
+    if (QtPrivate::fuzzyCompare(m_shadowStrength, newShadowStrength)) {
         qCDebug(lcProperties3D, "%s value is already set to: %.1f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), newShadowStrength);
         return;
@@ -7315,3 +8587,5 @@ void QQuickGraphsItem::setItemSelected(bool selected)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qquickgraphsitem_p.cpp"

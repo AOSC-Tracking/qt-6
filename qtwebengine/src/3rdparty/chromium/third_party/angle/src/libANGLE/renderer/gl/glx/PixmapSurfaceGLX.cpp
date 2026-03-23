@@ -105,8 +105,8 @@ egl::Error PixmapSurfaceGLX::initialize(const egl::Display *display)
                                   &borderWidth, &depth);
         if (!status)
         {
-            return egl::EglBadSurface() << "XGetGeometry query failed on pixmap surface: "
-                                        << x11::XErrorToString(mDisplay, status);
+            return egl::Error(EGL_BAD_SURFACE, "XGetGeometry query failed on pixmap surface: " +
+                                                   x11::XErrorToString(mDisplay, status));
         }
     }
 
@@ -129,7 +129,7 @@ egl::Error PixmapSurfaceGLX::initialize(const egl::Display *display)
     mGLXPixmap = mGLX.createPixmap(mFBConfig, mXPixmap, pixmapAttribs.data());
     if (!mGLXPixmap)
     {
-        return egl::EglBadAlloc() << "Failed to create a native GLX pixmap.";
+        return egl::Error(EGL_BAD_ALLOC, "Failed to create a native GLX pixmap.");
     }
 
     XFlush(mDisplay);
@@ -143,7 +143,7 @@ egl::Error PixmapSurfaceGLX::makeCurrent(const gl::Context *context)
     return egl::NoError();
 }
 
-egl::Error PixmapSurfaceGLX::swap(const gl::Context *context)
+egl::Error PixmapSurfaceGLX::swap(const gl::Context *context, SurfaceSwapFeedback *feedback)
 {
     UNREACHABLE();
     return egl::NoError();
@@ -182,14 +182,9 @@ egl::Error PixmapSurfaceGLX::releaseTexImage(const gl::Context *context, EGLint 
 
 void PixmapSurfaceGLX::setSwapInterval(const egl::Display *display, EGLint interval) {}
 
-EGLint PixmapSurfaceGLX::getWidth() const
+gl::Extents PixmapSurfaceGLX::getSize() const
 {
-    return mWidth;
-}
-
-EGLint PixmapSurfaceGLX::getHeight() const
-{
-    return mHeight;
+    return gl::Extents(mWidth, mHeight, 1);
 }
 
 EGLint PixmapSurfaceGLX::isPostSubBufferSupported() const

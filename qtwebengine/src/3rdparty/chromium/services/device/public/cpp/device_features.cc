@@ -22,15 +22,29 @@ BASE_FEATURE(kGenericSensorExtraClasses,
 // Expose serial port logical connection state and dispatch connection events
 // for Bluetooth serial ports when the Bluetooth device connection state
 // changes.
+#if !BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kSerialPortConnected,
              "SerialPortConnected",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#else
+BASE_FEATURE(kSerialPortConnected,
+             "SerialPortConnected",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 // This feature allows to dynamically introduce an additional list of devices
 // blocked by WebUSB via a Finch parameter. This parameter should be specified
 // in the Finch configuration to manage the list of blocked devices.
 BASE_FEATURE(kWebUsbBlocklist,
              "WebUSBBlocklist",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// When enabled, accessing the navigator.hid attribute does not prevent the
+// frame from entering the back forward cache.
+BASE_FEATURE(kWebHidAttributeAllowsBackForwardCache,
+             "WebHidAttributeAllowsBackForwardCache",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_WIN)
@@ -52,12 +66,19 @@ BASE_FEATURE(kHidGetFeatureReportFix,
 const base::FeatureParam<int> kWinSystemLocationPermissionPollingParam{
     &kWinSystemLocationPermission, "polling_interval_in_ms", 500};
 #endif  // BUILDFLAG(IS_WIN)
+
 // Enables usage of the location provider manager to select between
 // the operating system's location API or our network-based provider
 // as the source of location data for Geolocation API.
+#if BUILDFLAG(IS_MAC)
+BASE_FEATURE(kLocationProviderManager,
+             "LocationProviderManager",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
 BASE_FEATURE(kLocationProviderManager,
              "LocationProviderManager",
              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_CHROMEOS)
 // Enables crash key logging for USB device open operations on ChromeOS. See
@@ -96,11 +117,19 @@ const base::FeatureParam<device::mojom::LocationProviderManagerMode>::Option
          "HybridPlatform2"},
 };
 
+#if BUILDFLAG(IS_MAC)
+const base::FeatureParam<device::mojom::LocationProviderManagerMode>
+    kLocationProviderManagerParam{
+        &kLocationProviderManager, "LocationProviderManagerMode",
+        device::mojom::LocationProviderManagerMode::kHybridPlatform,
+        &location_provider_manager_mode_options};
+#else
 const base::FeatureParam<device::mojom::LocationProviderManagerMode>
     kLocationProviderManagerParam{
         &kLocationProviderManager, "LocationProviderManagerMode",
         device::mojom::LocationProviderManagerMode::kNetworkOnly,
         &location_provider_manager_mode_options};
+#endif  // BUILDFLAG(IS_MAC)
 
 bool IsOsLevelGeolocationPermissionSupportEnabled() {
 #if BUILDFLAG(IS_WIN)
@@ -114,10 +143,22 @@ bool IsOsLevelGeolocationPermissionSupportEnabled() {
 
 // Controls whether Chrome will try to automatically detach kernel drivers when
 // a USB interface is busy.
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kAutomaticUsbDetach,
+             "AutomaticUsbDetach",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#elif BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kAutomaticUsbDetach,
              "AutomaticUsbDetach",
              base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
+#endif  // BUILDFLAG(IS_ANDROID)
+
+#if !BUILDFLAG(IS_WIN)
+// Splits DTR and RTS control signals. See crbug.com/420689824.
+// Can be disabled as a kill switch if needed.
+BASE_FEATURE(kSerialSplitDtrAndRts,
+             "SerialSplitDtrAndRts",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // !BUILDFLAG(IS_WIN)
 
 }  // namespace features

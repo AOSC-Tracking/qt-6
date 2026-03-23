@@ -24,7 +24,8 @@
 #include "ink/geometry/angle.h"
 #include "ink/geometry/rect.h"
 #include "ink/storage/input_batch.h"
-#include "ink/storage/proto/coded.pb.h"
+#include "ink/storage/proto/coded_numeric_run.pb.h"
+#include "ink/storage/proto/stroke_input_batch.pb.h"
 #include "ink/strokes/input/stroke_input.h"
 #include "ink/strokes/input/stroke_input_batch.h"
 #include "ink/types/duration.h"
@@ -67,6 +68,7 @@ void EncodeStrokeInputBatch(const StrokeInputBatch& input_batch,
                             CodedStrokeInputBatch& input_proto) {
   if (input_batch.Size() == 0) {
     input_proto.Clear();
+    input_proto.set_noise_seed(input_batch.GetNoiseSeed());
     return;
   }
   // Determine the envelope for the input positions and the maximum input time
@@ -236,6 +238,7 @@ void EncodeStrokeInputBatch(const StrokeInputBatch& input_batch,
     input_proto.set_stroke_unit_length_in_centimeters(
         stroke_unit_length->ToCentimeters());
   }
+  input_proto.set_noise_seed(input_batch.GetNoiseSeed());
 }
 
 namespace {
@@ -296,6 +299,7 @@ absl::StatusOr<StrokeInputBatch> DecodeStrokeInputBatch(
       return status;
     }
   }
+  batch.SetNoiseSeed(input_proto.noise_seed());
   return batch;
 }
 

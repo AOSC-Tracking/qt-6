@@ -14,6 +14,7 @@
 
 namespace content {
 class NavigationHandle;
+class NavigationThrottleRegistry;
 }
 
 namespace navigation_interception {
@@ -39,7 +40,7 @@ class InterceptNavigationThrottle : public content::NavigationThrottle {
       CheckCallback;
 
   InterceptNavigationThrottle(
-      content::NavigationHandle* navigation_handle,
+      content::NavigationThrottleRegistry& registry,
       CheckCallback should_ignore_callback,
       SynchronyMode async_mode,
       std::optional<base::RepeatingClosure> request_finish_async_work_callback);
@@ -97,6 +98,10 @@ class InterceptNavigationThrottle : public content::NavigationThrottle {
   bool deferring_redirect_ = false;
 
   base::TimeTicks defer_start_;
+
+  // Tracks whether we're in a synchronous intercept navigation check so we can
+  // crash if we're deleted during the check and get a stack trace.
+  bool in_sync_check_ = false;
 
   base::WeakPtrFactory<InterceptNavigationThrottle> weak_factory_{this};
 };

@@ -16,6 +16,7 @@
 #include "gpu/command_buffer/service/dxgi_shared_handle_manager.h"
 #include "gpu/command_buffer/service/shared_image/d3d_image_backing.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
+#include "gpu/command_buffer/service/shared_image/shared_image_manager.h"
 #include "gpu/ipc/service/gpu_channel_shared_image_interface.h"
 #include "gpu/ipc/service/shared_image_stub.h"
 #include "media/base/media_switches.h"
@@ -72,11 +73,11 @@ Texture2DWrapper::~Texture2DWrapper() = default;
 
 DefaultTexture2DWrapper::DefaultTexture2DWrapper(
     const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
+    const gfx::ColorSpace& output_color_space,
     DXGI_FORMAT dxgi_format,
     ComD3D11Device device)
     : size_(size),
-      color_space_(color_space),
+      output_color_space_(output_color_space),
       dxgi_format_(dxgi_format),
       video_device_(std::move(device)) {}
 
@@ -115,7 +116,7 @@ D3D11Status DefaultTexture2DWrapper::ProcessTexture(
 
   // TODO(hitawala): Possibly optimize this method as input and stored color
   // spaces should be same.
-  CHECK_EQ(input_color_space, color_space_);
+  CHECK_EQ(input_color_space, output_color_space_);
 
   return D3D11Status::Codes::kOk;
 }
@@ -147,7 +148,7 @@ D3D11Status DefaultTexture2DWrapper::Init(
                      weak_factory_.GetWeakPtr()));
   gpu_resources_ = base::SequenceBound<GpuResources>(
       std::move(gpu_task_runner), std::move(on_error_cb),
-      std::move(get_helper_cb), size_, color_space_, dxgi_format_,
+      std::move(get_helper_cb), size_, output_color_space_, dxgi_format_,
       video_device_, texture, array_slice, std::move(picture_buffer),
       std::move(gpu_resource_init_cb));
   return D3D11Status::Codes::kOk;

@@ -5,10 +5,13 @@
 
 #include <QJsonObject>
 #include <QRectF>
+#include <QString>
 
 #include "qlottietrimpath_p.h"
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::Literals::StringLiterals;
 
 QLottiePolyStar::QLottiePolyStar(const QLottiePolyStar &other)
     : QLottieShape(other)
@@ -21,10 +24,9 @@ QLottiePolyStar::QLottiePolyStar(const QLottiePolyStar &other)
     m_polygonMode = other.m_polygonMode;
 }
 
-QLottiePolyStar::QLottiePolyStar(const QJsonObject &definition, QLottieBase *parent)
+QLottiePolyStar::QLottiePolyStar(QLottieBase *parent)
 {
     setParent(parent);
-    construct(definition);
 }
 
 QLottieBase *QLottiePolyStar::clone() const
@@ -32,37 +34,44 @@ QLottieBase *QLottiePolyStar::clone() const
     return new QLottiePolyStar(*this);
 }
 
-void QLottiePolyStar::construct(const QJsonObject &definition)
+int QLottiePolyStar::parse(const QJsonObject &definition)
 {
     QLottieBase::parse(definition);
     if (m_hidden)
-        return;
+        return 0;
 
-    qCDebug(lcLottieQtLottieParser) << "QLottiePolyStar::construct():" << m_name;
+    qCDebug(lcLottieQtLottieParser) << "QLottiePolyStar::parse():" << m_name;
 
-    QJsonObject position = definition.value(QLatin1String("p")).toObject();
+    if (!checkRequiredKeys(definition, "Polystar"_L1, {"p"_L1, "or"_L1, "os"_L1, "pt"_L1, "r"_L1}, m_name))
+        return -1;
+
+    QJsonObject position = definition.value("p"_L1).toObject();
     position = resolveExpression(position);
     m_position.construct(position);
 
-    QJsonObject outerRadius = definition.value(QLatin1String("or")).toObject();
+    QJsonObject outerRadius = definition.value("or"_L1).toObject();
     outerRadius = resolveExpression(outerRadius);
     m_outerRadius.construct(outerRadius);
 
-    QJsonObject innerRadius = definition.value(QLatin1String("ir")).toObject();
-    innerRadius = resolveExpression(innerRadius);
-    m_innerRadius.construct(innerRadius);
+    if (definition.contains("ir"_L1)) {
+        QJsonObject innerRadius = definition.value("ir"_L1).toObject();
+        innerRadius = resolveExpression(innerRadius);
+        m_innerRadius.construct(innerRadius);
+    }
 
-    QJsonObject startAngle = definition.value(QLatin1String("r")).toObject();
+    QJsonObject startAngle = definition.value("r"_L1).toObject();
     startAngle = resolveExpression(startAngle);
     m_startAngle.construct(startAngle);
 
-    QJsonObject pointCount = definition.value(QLatin1String("pt")).toObject();
+    QJsonObject pointCount = definition.value("pt"_L1).toObject();
     pointCount = resolveExpression(pointCount);
     m_pointCount.construct(pointCount);
 
-    m_polygonMode = (definition.value(QLatin1String("sy")).toInt() == 2);
+    m_polygonMode = (definition.value("sy"_L1).toInt() == 2);
 
-    m_direction = definition.value(QLatin1String("d")).toInt();
+    m_direction = definition.value("d"_L1).toInt();
+
+    return 0;
 }
 
 bool QLottiePolyStar::acceptsTrim() const

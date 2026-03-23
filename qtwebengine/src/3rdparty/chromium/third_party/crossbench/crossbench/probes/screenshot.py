@@ -5,19 +5,21 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, List, Optional, Sequence, Type
+from typing import TYPE_CHECKING, Optional, Self, Sequence, Type
 
-from crossbench.action_runner.screenshot_annotation import \
-    ScreenshotAnnotation, annotate_screenshot_svg
+from typing_extensions import override
+
+from crossbench.action_runner.screenshot_annotation import (
+    ScreenshotAnnotation, annotate_screenshot_svg)
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
 from crossbench.probes.probe_error import ProbeMissingDataError
 from crossbench.probes.result_location import ResultLocation
-from crossbench.probes.results import ProbeResult
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Viewport
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.path import AnyPath
+  from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
 
@@ -30,12 +32,13 @@ class ScreenshotProbe(Probe):
   IMAGE_FORMAT = "png"
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     # TODO: support interval-based screenshots
     return parser
 
-  def _pre_check_viewport_size(self, env: HostEnvironment) -> None:
+  def _pre_check_viewport_size(self, env: RunnerEnv) -> None:
     for browser in env.browsers:
       viewport: Viewport = browser.viewport
       if viewport.is_headless:
@@ -45,6 +48,7 @@ class ScreenshotProbe(Probe):
         env.handle_warning(
             f"Viewport for '{browser}' might include toolbar: {viewport}")
 
+  @override
   def get_context_cls(self) -> Type[ScreenshotProbeContext]:
     return ScreenshotProbeContext
 
@@ -56,8 +60,9 @@ class ScreenshotProbeContext(ProbeContext[ScreenshotProbe]):
 
   def __init__(self, probe: ScreenshotProbe, run: Run) -> None:
     super().__init__(probe, run)
-    self._results: List[AnyPath] = []
+    self._results: list[AnyPath] = []
 
+  @override
   def get_default_result_path(self) -> AnyPath:
     screenshot_dir = super().get_default_result_path()
     self.browser_platform.mkdir(screenshot_dir)
@@ -66,9 +71,11 @@ class ScreenshotProbeContext(ProbeContext[ScreenshotProbe]):
   def start(self) -> None:
     self.screenshot("start")
 
+  @override
   def start_story_run(self) -> None:
     self.screenshot("start_story")
 
+  @override
   def stop_story_run(self) -> None:
     self.screenshot("stop_story")
 
@@ -81,7 +88,7 @@ class ScreenshotProbeContext(ProbeContext[ScreenshotProbe]):
     svg = annotate_screenshot_svg(screen_width, screen_height,
                                   screenshot_file_name, annotations)
     svg_path = self.result_path / f"{label}.svg"
-    self.browser_platform.set_file_contents(svg_path, svg)
+    self.browser_platform.write_text(svg_path, svg)
     self._results.append(svg_path)
 
   def screenshot(
@@ -100,6 +107,7 @@ class ScreenshotProbeContext(ProbeContext[ScreenshotProbe]):
     if annotations:
       self._annotate_screenshot(file_name, label, annotations)
 
+  @override
   def teardown(self) -> ProbeResult:
     if not self.browser_platform.is_dir(self.result_path):
       raise ProbeMissingDataError(

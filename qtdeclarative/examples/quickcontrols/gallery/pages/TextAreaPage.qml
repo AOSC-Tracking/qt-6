@@ -25,6 +25,7 @@ ScrollablePage {
 
             wrapMode: TextArea.Wrap
             text: qsTr("TextArea\n...\n...\n...")
+            Accessible.name: qsTr("Demo text area")
         }
     }
 }

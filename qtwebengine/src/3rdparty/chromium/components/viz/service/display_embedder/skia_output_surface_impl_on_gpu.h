@@ -50,6 +50,10 @@
 #include "media/gpu/chromeos/vulkan_overlay_adaptor.h"
 #endif
 
+#if BUILDFLAG(IS_ANDROID)
+#include "ui/gfx/android/surface_control_frame_rate.h"
+#endif
+
 namespace gfx {
 namespace mojom {
 class DelegatedInkPointRenderer;
@@ -69,7 +73,6 @@ class SharedImageFactory;
 }  // namespace gpu
 
 namespace skgpu::graphite {
-class Context;
 class Recording;
 }  // namespace skgpu::graphite
 
@@ -214,7 +217,9 @@ class SkiaOutputSurfaceImplOnGpu
 
   void SetVSyncDisplayID(int64_t display_id);
 
-  void SetFrameRate(float frame_rate);
+#if BUILDFLAG(IS_ANDROID)
+  void SetFrameRate(gfx::SurfaceControlFrameRate frame_rate);
+#endif
 
   bool was_context_lost() { return context_state_->context_lost(); }
 
@@ -245,7 +250,7 @@ class SkiaOutputSurfaceImplOnGpu
 
   void PreserveChildSurfaceControls();
 
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_QTWEBENGINE)
   void SetFrameSinkId(const FrameSinkId& frame_sink_id);
 #endif
 
@@ -345,8 +350,8 @@ class SkiaOutputSurfaceImplOnGpu
 
   GrDirectContext* gr_context() const { return context_state_->gr_context(); }
 
-  skgpu::graphite::Context* graphite_context() const {
-    return context_state_->graphite_context();
+  gpu::GraphiteSharedContext* graphite_shared_context() const {
+    return context_state_->graphite_shared_context();
   }
 
   skgpu::graphite::Recorder* graphite_recorder() const {
@@ -468,7 +473,7 @@ class SkiaOutputSurfaceImplOnGpu
   void DrawOverdraw(sk_sp<GrDeferredDisplayList> overdraw_ddl,
                     SkCanvas& canvas);
 
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<SkiaOutputDevice> CreateOutputDevice();
 #endif
 

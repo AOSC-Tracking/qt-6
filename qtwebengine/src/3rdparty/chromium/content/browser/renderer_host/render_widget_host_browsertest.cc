@@ -9,6 +9,7 @@
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
@@ -25,6 +26,7 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/content_navigation_policy.h"
 #include "content/common/input/synthetic_smooth_drag_gesture.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_widget_host_observer.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -37,6 +39,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils_internal.h"
+#include "ipc/constants.mojom.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -94,6 +97,7 @@ class RenderWidgetHostBrowserTest : public ContentBrowserTest {
     EXPECT_TRUE(NavigateToURL(
         shell(), GURL("data:text/html,<!doctype html>"
                       "<body style='background-color: magenta;'></body>")));
+    SimulateEndOfPaintHoldingOnPrimaryMainFrame(shell()->web_contents());
   }
 
   WebContents* web_contents() const { return shell()->web_contents(); }
@@ -188,6 +192,7 @@ class RenderWidgetHostTouchEmulatorBrowserTest : public ContentBrowserTest {
     EXPECT_TRUE(NavigateToURL(
         shell(), GURL("data:text/html,<!doctype html>"
                       "<body style='background-color: red;'></body>")));
+    SimulateEndOfPaintHoldingOnPrimaryMainFrame(shell()->web_contents());
   }
 
   base::TimeTicks GetNextSimulatedEventTime() {
@@ -238,8 +243,10 @@ class RenderWidgetHostTouchEmulatorBrowserTest : public ContentBrowserTest {
 // without a valid unique_touch_event_id when it sees a GestureFlingStart
 // terminating the underlying mouse scroll sequence. If the GestureScrollEnd is
 // given a unique_touch_event_id of 0, then a crash will occur.
+// TODO(crbug.com/404887525): Test randomly times out due to not receiving the
+// InputEventAckWaiter kGestureScrollEnd event.
 IN_PROC_BROWSER_TEST_F(RenderWidgetHostTouchEmulatorBrowserTest,
-                       TouchEmulatorPinchWithGestureFling) {
+                       DISABLED_TouchEmulatorPinchWithGestureFling) {
   auto* touch_emulator = host()->GetTouchEmulator(/*create_if_necessary=*/true);
   touch_emulator->Enable(input::TouchEmulator::Mode::kEmulatingTouchFromMouse,
                          ui::GestureProviderConfigType::GENERIC_MOBILE);
@@ -603,6 +610,7 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostSitePerProcessTest,
   GURL main_url(embedded_test_server()->GetURL(
       "a.com", "/site_isolation/page-with-select.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  SimulateEndOfPaintHoldingOnPrimaryMainFrame(shell()->web_contents());
 
   auto* contents = static_cast<WebContentsImpl*>(shell()->web_contents());
   FrameTreeNode* root = contents->GetPrimaryFrameTree().root();
@@ -700,7 +708,7 @@ class ShowPopupInterceptor
 
   // blink::mojom::PopupWidgetHostInterceptorForTesting:
   blink::mojom::PopupWidgetHost* GetForwardingInterface() override {
-    DCHECK_NE(MSG_ROUTING_NONE, routing_id_);
+    DCHECK_NE(IPC::mojom::kRoutingIdNone, routing_id_);
     return RenderWidgetHostImpl::FromID(process_id_, routing_id_);
   }
 
@@ -712,10 +720,11 @@ class ShowPopupInterceptor
     run_loop_.Quit();
   }
 
-  void DidCreatePopupWidget(RenderWidgetHostImpl* render_widget_host) {
+  void DidCreatePopupWidget(RenderWidgetHost* render_widget_host) {
     process_id_ = render_widget_host->GetProcess()->GetDeprecatedID();
     routing_id_ = render_widget_host->GetRoutingID();
-    std::ignore = render_widget_host->popup_widget_host_receiver_for_testing()
+    std::ignore = static_cast<RenderWidgetHostImpl*>(render_widget_host)
+                      ->popup_widget_host_receiver_for_testing()
                       .SwapImplForTesting(this);
   }
 
@@ -725,7 +734,7 @@ class ShowPopupInterceptor
   CreateNewPopupWidgetInterceptor create_new_popup_widget_interceptor_;
   base::RunLoop run_loop_;
   gfx::Rect overriden_bounds_;
-  int32_t routing_id_ = MSG_ROUTING_NONE;
+  int32_t routing_id_ = IPC::mojom::kRoutingIdNone;
   int32_t process_id_ = 0;
 };
 
@@ -796,6 +805,7 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostSitePerProcessTest,
   GURL main_url(embedded_test_server()->GetURL(
       "a.com", "/site_isolation/page-with-select.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  SimulateEndOfPaintHoldingOnPrimaryMainFrame(shell()->web_contents());
 
   auto* contents = static_cast<WebContentsImpl*>(web_contents());
   FrameTreeNode* root = contents->GetPrimaryFrameTree().root();
@@ -884,8 +894,9 @@ class RenderWidgetHostFoldableCSSTest : public RenderWidgetHostBrowserTest {
 // Tests that when a video element goes fullscreen and uses the default
 // fullscreen UA stylesheet (in blink/core/css/fullscreen.css) the viewport
 // segments MQs and env variables are correctly working.
-IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
-                       ViewportSegmentsWorksInUAFullscreenCSS) {
+IN_PROC_BROWSER_TEST_F(
+    RenderWidgetHostFoldableCSSTest,
+    ViewportSegmentsWorksInUAFullscreenCSSAfterEnteringFullscreen) {
   const char kTestPageURL[] =
       R"HTML(data:text/html,<!DOCTYPE html>
       <video id='video'></video>)HTML";
@@ -900,8 +911,7 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
   )JS";
   // Initial state. This will ensure that no display feature/viewport segments
   // are coming from the platform.
-  view()->SetDisplayFeatureForTesting(nullptr);
-  host()->SynchronizeVisualProperties();
+  view()->OverrideDisplayFeatureForEmulation(nullptr);
   ASSERT_TRUE(EvalJs(web_contents(), kEnterFullscreenScript).ExtractBool());
 
   // Changing the display feature/viewport segments without leaving fullscreen
@@ -912,8 +922,7 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
   DisplayFeature emulated_display_feature{
       DisplayFeature::Orientation::kVertical, offset,
       /* mask_length */ kDisplayFeatureLength};
-  view()->SetDisplayFeatureForTesting(&emulated_display_feature);
-  host()->SynchronizeVisualProperties();
+  view()->OverrideDisplayFeatureForEmulation(&emulated_display_feature);
   WaitForVisualPropertiesAck();
   EXPECT_EQ(base::NumberToString(offset) + "px",
             EvalJs(shell(), "getComputedStyle(video).width").ExtractString());
@@ -928,8 +937,7 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
       DisplayFeature::Orientation::kHorizontal;
   offset = root_view_size.height() / 2 - kDisplayFeatureLength / 2;
   emulated_display_feature.offset = offset;
-  view()->SetDisplayFeatureForTesting(&emulated_display_feature);
-  host()->SynchronizeVisualProperties();
+  view()->OverrideDisplayFeatureForEmulation(&emulated_display_feature);
   WaitForVisualPropertiesAck();
   EXPECT_EQ(base::NumberToString(offset) + "px",
             EvalJs(shell(), "getComputedStyle(video).height").ExtractString());
@@ -940,8 +948,7 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
 
   // No display feature/viewport segments are set, the video should go
   // fullscreen.
-  view()->SetDisplayFeatureForTesting(nullptr);
-  host()->SynchronizeVisualProperties();
+  view()->OverrideDisplayFeatureForEmulation(nullptr);
   WaitForVisualPropertiesAck();
   // Rounding of GetVisibleViewportSize in the presence of a non-integer
   // devicePixelRatio device can make this off by one vs the video height.
@@ -961,179 +968,39 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
   )JS";
   ASSERT_TRUE(EvalJs(web_contents(), kExitFullscreenScript).ExtractBool());
   ASSERT_FALSE(web_contents()->IsFullscreen());
+}
 
-  // Change the viewport segments/display feature before entering fullscreen.
-  view()->SetDisplayFeatureForTesting(&emulated_display_feature);
-  ASSERT_TRUE(EvalJs(web_contents(), kEnterFullscreenScript).ExtractBool());
-  host()->SynchronizeVisualProperties();
+IN_PROC_BROWSER_TEST_F(
+    RenderWidgetHostFoldableCSSTest,
+    ViewportSegmentsWorksInUAFullscreenCSSBeforeEnteringFullscreen) {
+  const char kTestPageURL[] =
+      R"HTML(data:text/html,<!DOCTYPE html>
+      <video id='video'></video>)HTML";
+  EXPECT_TRUE(NavigateToURL(shell(), GURL(kTestPageURL)));
+  // Check initial state before entering fullscreen.
+  ASSERT_FALSE(shell()->IsFullscreenForTabOrPending(web_contents()));
+  ASSERT_FALSE(web_contents()->IsFullscreen());
+  constexpr char kEnterFullscreenScript[] = R"JS(
+    document.querySelector('video').requestFullscreen().then(() => {
+        return !!document.fullscreenElement;
+    });
+  )JS";
+
+  const gfx::Size root_view_size = view()->GetVisibleViewportSize();
+  const int kDisplayFeatureLength = 10;
+  int offset = root_view_size.height() / 2 - kDisplayFeatureLength / 2;
+  DisplayFeature emulated_display_feature{
+      DisplayFeature::Orientation::kHorizontal, offset,
+      /* mask_length */ kDisplayFeatureLength};
+  view()->OverrideDisplayFeatureForEmulation(&emulated_display_feature);
   WaitForVisualPropertiesAck();
+  ASSERT_TRUE(EvalJs(web_contents(), kEnterFullscreenScript).ExtractBool());
   EXPECT_EQ(base::NumberToString(offset) + "px",
             EvalJs(shell(), "getComputedStyle(video).height").ExtractString());
   EXPECT_NEAR(
       root_view_size.width(),
       EvalJs(shell(), "parseInt(getComputedStyle(video).width)").ExtractInt(),
       1);
-}
-
-// Tests that the renderer receives the root widget's viewport segments and
-// correctly exposes those via CSS.
-// TODO(crbug.com/40137084) Convert this to a WPT once emulation is available
-// via WebDriver.
-IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
-                       FoldablesCSSWithOverrides) {
-  const char kTestPageURL[] =
-      R"HTML(data:text/html,<!DOCTYPE html>
-      <style>
-      /* The following styles set the margin top/left/bottom/right to the
-         values where the display feature between segments is, and the width and
-         height of the div to the width and height of the display feature */
-        @media (horizontal-viewport-segments: 2) {
-          div {
-            margin: env(viewport-segment-top 0 0, 10px)
-                    env(viewport-segment-left 1 0, 10px)
-                    env(viewport-segment-bottom 0 0, 10px)
-                    env(viewport-segment-right 0 0, 10px);
-            width: calc(env(viewport-segment-left 1 0, 10px) -
-                        env(viewport-segment-right 0 0, 0px));
-            height: env(viewport-segment-height 0 0, 10px);
-          }
-        }
-
-        @media (vertical-viewport-segments: 2) {
-          div {
-            margin: env(viewport-segment-bottom 0 0, 11px)
-                    env(viewport-segment-right 0 1, 11px)
-                    env(viewport-segment-top 0 1, 11px)
-                    env(viewport-segment-left 0 0, 11px);
-            width: env(viewport-segment-width 0 0, 11px);
-            height: calc(env(viewport-segment-top 0 1, 11px) -
-                         env(viewport-segment-bottom 0 0, 0px));
-          }
-        }
-        @media (horizontal-viewport-segments: 1) and
-               (vertical-viewport-segments: 1) {
-          div { opacity: 0.1; margin: 1px; width: 1px; height: 1px; }
-        }
-        @media (horizontal-viewport-segments: 2) and
-               (vertical-viewport-segments: 1) {
-          div { opacity: 0.2; }
-        }
-        @media (horizontal-viewport-segments: 1) and
-               (vertical-viewport-segments: 2) {
-          div { opacity: 0.3; }
-        }
-      </style>
-      <div id='target'></div>)HTML";
-
-  EXPECT_TRUE(NavigateToURL(shell(), GURL(kTestPageURL)));
-
-  EXPECT_EQ(
-      "1px",
-      EvalJs(shell(), "getComputedStyle(target).marginTop").ExtractString());
-  EXPECT_EQ(
-      "1px",
-      EvalJs(shell(), "getComputedStyle(target).marginRight").ExtractString());
-  EXPECT_EQ(
-      "1px",
-      EvalJs(shell(), "getComputedStyle(target).marginBottom").ExtractString());
-  EXPECT_EQ(
-      "1px",
-      EvalJs(shell(), "getComputedStyle(target).marginLeft").ExtractString());
-  EXPECT_EQ("1px",
-            EvalJs(shell(), "getComputedStyle(target).width").ExtractString());
-  EXPECT_EQ("1px",
-            EvalJs(shell(), "getComputedStyle(target).height").ExtractString());
-
-  EXPECT_EQ(
-      "0.1",
-      EvalJs(shell(), "getComputedStyle(target).opacity").ExtractString());
-
-  const gfx::Size root_view_size = view()->GetVisibleViewportSize();
-  const int kDisplayFeatureLength = 10;
-  int offset = root_view_size.width() / 2 - kDisplayFeatureLength / 2;
-  DisplayFeature emulated_display_feature{
-      DisplayFeature::Orientation::kVertical, offset,
-      /* mask_length */ kDisplayFeatureLength};
-  view()->SetDisplayFeatureForTesting(&emulated_display_feature);
-  host()->SynchronizeVisualProperties();
-
-  EXPECT_EQ(
-      "0px",
-      EvalJs(shell(), "getComputedStyle(target).marginTop").ExtractString());
-  EXPECT_EQ(
-      base::NumberToString(emulated_display_feature.offset +
-                           emulated_display_feature.mask_length) +
-          "px",
-      EvalJs(shell(), "getComputedStyle(target).marginRight").ExtractString());
-  EXPECT_EQ(
-      base::NumberToString(root_view_size.height()) + "px",
-      EvalJs(shell(), "getComputedStyle(target).marginBottom").ExtractString());
-  EXPECT_EQ(
-      base::NumberToString(emulated_display_feature.offset) + "px",
-      EvalJs(shell(), "getComputedStyle(target).marginLeft").ExtractString());
-  EXPECT_EQ(base::NumberToString(emulated_display_feature.mask_length) + "px",
-            EvalJs(shell(), "getComputedStyle(target).width").ExtractString());
-  EXPECT_EQ(base::NumberToString(root_view_size.height()) + "px",
-            EvalJs(shell(), "getComputedStyle(target).height").ExtractString());
-
-  EXPECT_EQ(
-      "0.2",
-      EvalJs(shell(), "getComputedStyle(target).opacity").ExtractString());
-
-  emulated_display_feature.orientation =
-      DisplayFeature::Orientation::kHorizontal;
-  offset = root_view_size.height() / 2 - kDisplayFeatureLength / 2;
-  emulated_display_feature.offset = offset;
-
-  view()->SetDisplayFeatureForTesting(&emulated_display_feature);
-  host()->SynchronizeVisualProperties();
-
-  EXPECT_EQ(
-      base::NumberToString(emulated_display_feature.offset) + "px",
-      EvalJs(shell(), "getComputedStyle(target).marginTop").ExtractString());
-  EXPECT_EQ(
-      base::NumberToString(root_view_size.width()) + "px",
-      EvalJs(shell(), "getComputedStyle(target).marginRight").ExtractString());
-  EXPECT_EQ(
-      base::NumberToString(emulated_display_feature.offset +
-                           emulated_display_feature.mask_length) +
-          "px",
-      EvalJs(shell(), "getComputedStyle(target).marginBottom").ExtractString());
-  EXPECT_EQ(
-      "0px",
-      EvalJs(shell(), "getComputedStyle(target).marginLeft").ExtractString());
-  EXPECT_EQ(base::NumberToString(root_view_size.width()) + "px",
-            EvalJs(shell(), "getComputedStyle(target).width").ExtractString());
-  EXPECT_EQ(base::NumberToString(emulated_display_feature.mask_length) + "px",
-            EvalJs(shell(), "getComputedStyle(target).height").ExtractString());
-
-  EXPECT_EQ(
-      "0.3",
-      EvalJs(shell(), "getComputedStyle(target).opacity").ExtractString());
-
-  view()->SetDisplayFeatureForTesting(nullptr);
-  host()->SynchronizeVisualProperties();
-
-  EXPECT_EQ(
-      "1px",
-      EvalJs(shell(), "getComputedStyle(target).marginTop").ExtractString());
-  EXPECT_EQ(
-      "1px",
-      EvalJs(shell(), "getComputedStyle(target).marginRight").ExtractString());
-  EXPECT_EQ(
-      "1px",
-      EvalJs(shell(), "getComputedStyle(target).marginBottom").ExtractString());
-  EXPECT_EQ(
-      "1px",
-      EvalJs(shell(), "getComputedStyle(target).marginLeft").ExtractString());
-  EXPECT_EQ("1px",
-            EvalJs(shell(), "getComputedStyle(target).width").ExtractString());
-  EXPECT_EQ("1px",
-            EvalJs(shell(), "getComputedStyle(target).height").ExtractString());
-
-  EXPECT_EQ(
-      "0.1",
-      EvalJs(shell(), "getComputedStyle(target).opacity").ExtractString());
 }
 
 IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
@@ -1158,10 +1025,7 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
   DisplayFeature emulated_display_feature{
       DisplayFeature::Orientation::kVertical, offset,
       /* mask_length */ kDisplayFeatureLength};
-  {
-    view()->SetDisplayFeatureForTesting(&emulated_display_feature);
-    host()->SynchronizeVisualProperties();
-  }
+  view()->OverrideDisplayFeatureForEmulation(&emulated_display_feature);
 
   EXPECT_EQ(
       base::NumberToString(emulated_display_feature.offset) + "px",
@@ -1181,9 +1045,8 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostFoldableCSSTest,
         navigation_manager.GetNavigationHandle()
             ->GetRenderFrameHost()
             ->GetRenderWidgetHost());
-    target_rwh->GetView()->SetDisplayFeatureForTesting(
+    target_rwh->GetView()->OverrideDisplayFeatureForEmulation(
         &emulated_display_feature);
-    target_rwh->SynchronizeVisualProperties();
   }
   EXPECT_TRUE(navigation_manager.WaitForNavigationFinished());
   load_stop_observer2.Wait();
@@ -1197,67 +1060,81 @@ class RenderWidgetHostDelegatedInkMetadataTest
     : public RenderWidgetHostTouchEmulatorBrowserTest {
  public:
   RenderWidgetHostDelegatedInkMetadataTest() = default;
+  void SetUpOnMainThread() override {
+    ContentBrowserTest::SetUpOnMainThread();
 
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    ContentBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitchASCII(switches::kEnableBlinkFeatures,
-                                    "DelegatedInkTrails");
+    LoadStopObserver load_stop_observer(shell()->web_contents());
+    EXPECT_TRUE(
+        NavigateToURL(shell(), GURL(R"HTML(data:text/html,<!DOCTYPE html>
+      <body> <canvas id="board" width="400" height="400"></canvas> </body>
+    )HTML")));
+    load_stop_observer.Wait();
+    SimulateEndOfPaintHoldingOnPrimaryMainFrame(shell()->web_contents());
   }
+
+ protected:
+  void WaitForDelegatedInkMetadata(
+      RenderFrameSubmissionObserver& frame_observer) {
+    // The mouse event is not necessarily routed in the first frame that is
+    // generated. Generate frames until the mouse event and canvas paint is
+    // routed to the compositor.
+    do {
+      frame_observer.WaitForMetadataChange();
+    } while (!frame_observer.LastRenderFrameMetadata()
+                  .delegated_ink_metadata.has_value() &&
+             frame_observer.render_frame_count() <= kMaxFrames);
+    frame_observer.ResetCounter();
+  }
+
+ private:
+  static constexpr int kMaxFrames = 3;
 };
 
 // Confirm that using the |updateInkTrailStartPoint| JS API results in the
 // |request_points_for_delegated_ink_| flag being set on the RWHVB.
-// TODO(crbug.com/40852704). Flaky on Linux.
-// TODO(crbug.com/40929902): Failing on ChromesOS MSan.
-#if BUILDFLAG(IS_LINUX) || (BUILDFLAG(IS_CHROMEOS) && defined(MEMORY_SANITIZER))
-#define MAYBE_FlagGetsSetFromRenderFrameMetadata \
-  DISABLED_FlagGetsSetFromRenderFrameMetadata
-#else
-#define MAYBE_FlagGetsSetFromRenderFrameMetadata \
-  FlagGetsSetFromRenderFrameMetadata
-#endif
 IN_PROC_BROWSER_TEST_F(RenderWidgetHostDelegatedInkMetadataTest,
-                       MAYBE_FlagGetsSetFromRenderFrameMetadata) {
+                       FlagGetsSetFromRenderFrameMetadata) {
   ASSERT_TRUE(ExecJs(shell()->web_contents(), R"(
-      let presenter = null;
-      navigator.ink.requestPresenter().then(e => { presenter = e; });
-      let style = { color: 'green', diameter: 21 };
+    let ctx = board.getContext('2d');
+    let presenter = null;
+    navigator.ink.requestPresenter().then(e => { presenter = e; });
+    const pointSize = 15;
+    const style = { color: 'rgb(255,0,0)', diameter: pointSize };
 
-      window.addEventListener('pointermove' , evt => {
-        presenter.updateInkTrailStartPoint(evt, style);
-      });
-      )"));
+    board.addEventListener('pointermove', event => {
+        // Paint on the canvas to force damage and new frames generation.
+        ctx.fillstyle = 'rgb(0,255,0)';
+        ctx.fillRect(event.clientX, event.clientY - board
+                .getBoundingClientRect().top, pointSize, pointSize);
+        presenter.updateInkTrailStartPoint(event, style);
+    });
+  )"));
+  RenderFrameMetadataProviderImpl* metadata_provider =
+      host()->render_frame_metadata_provider();
+  RenderFrameSubmissionObserver frame_observer(metadata_provider);
   SimulateRoutedMouseEvent(blink::WebInputEvent::Type::kMouseMove, 10, 10, 0,
                            false);
-  RunUntilInputProcessed(host());
+  WaitForDelegatedInkMetadata(frame_observer);
 
-  {
-    const cc::RenderFrameMetadata& last_metadata =
-        host()->render_frame_metadata_provider()->LastRenderFrameMetadata();
-    EXPECT_TRUE(last_metadata.delegated_ink_metadata.has_value());
-    EXPECT_TRUE(
-        last_metadata.delegated_ink_metadata.value().delegated_ink_is_hovering);
-  }
+  EXPECT_TRUE(metadata_provider->LastRenderFrameMetadata()
+                  .delegated_ink_metadata.value()
+                  .delegated_ink_is_hovering);
 
   // Confirm that the state of hover changing on the next produced delegated ink
   // metadata results in a new RenderFrameMetadata being sent, with
   // |delegated_ink_hovering| false.
   SimulateRoutedMouseEvent(blink::WebInputEvent::Type::kMouseMove, 20, 20,
                            blink::WebInputEvent::kLeftButtonDown, false);
-  RunUntilInputProcessed(host());
+  WaitForDelegatedInkMetadata(frame_observer);
 
-  {
-    const cc::RenderFrameMetadata& last_metadata =
-        host()->render_frame_metadata_provider()->LastRenderFrameMetadata();
-    EXPECT_TRUE(last_metadata.delegated_ink_metadata.has_value());
-    EXPECT_FALSE(
-        last_metadata.delegated_ink_metadata.value().delegated_ink_is_hovering);
-  }
+  EXPECT_FALSE(metadata_provider->LastRenderFrameMetadata()
+                   .delegated_ink_metadata.value()
+                   .delegated_ink_is_hovering);
 
   // Confirm that the flag is set back to false when the JS API isn't called.
   RunUntilInputProcessed(host());
   const cc::RenderFrameMetadata& last_metadata =
-      host()->render_frame_metadata_provider()->LastRenderFrameMetadata();
+      metadata_provider->LastRenderFrameMetadata();
   EXPECT_FALSE(last_metadata.delegated_ink_metadata.has_value());
 
   // Finally, confirm that a change in hovering state (pointerdown to pointerup
@@ -1266,9 +1143,7 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostDelegatedInkMetadataTest,
   SimulateRoutedMouseEvent(blink::WebInputEvent::Type::kMouseMove, 20, 20, 0,
                            false);
   RunUntilInputProcessed(host());
-  EXPECT_EQ(
-      last_metadata,
-      host()->render_frame_metadata_provider()->LastRenderFrameMetadata());
+  EXPECT_EQ(last_metadata, metadata_provider->LastRenderFrameMetadata());
 }
 
 // If the DelegatedInkTrailPresenter creates a metadata that has the same
@@ -1276,41 +1151,43 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostDelegatedInkMetadataTest,
 IN_PROC_BROWSER_TEST_F(RenderWidgetHostDelegatedInkMetadataTest,
                        DuplicateMetadata) {
   ASSERT_TRUE(ExecJs(shell()->web_contents(), R"(
-      let presenter = null;
-      navigator.ink.requestPresenter().then(e => { presenter = e; });
-      let style = { color: 'green', diameter: 21 };
-      let first_move_event = null;
+    let ctx = board.getContext('2d');
+    let presenter = null;
+    navigator.ink.requestPresenter().then(e => { presenter = e; });
+    const pointSize = 15;
+    const style = { color: 'rgb(255,0,0)', diameter: pointSize };
+    let first_move_event = null;
 
-      window.addEventListener('pointermove' , evt => {
+    board.addEventListener('pointermove', event => {
+        // Paint on the canvas to force damage and new frames generation.
+        ctx.fillstyle = 'rgb(0,255,0)';
+        ctx.fillRect(event.clientX, event.clientY - board
+                .getBoundingClientRect().top, pointSize, pointSize);
         if (first_move_event == null) {
-          first_move_event = evt;
+          first_move_event = event;
         }
         presenter.updateInkTrailStartPoint(first_move_event, style);
-      });
-      )"));
+    });
+  )"));
+
+  RenderFrameMetadataProviderImpl* metadata_provider =
+      host()->render_frame_metadata_provider();
+  RenderFrameSubmissionObserver frame_observer(metadata_provider);
   SimulateRoutedMouseEvent(blink::WebInputEvent::Type::kMouseMove, 10, 10, 0,
                            false);
-  RunUntilInputProcessed(host());
 
-  {
-    const cc::RenderFrameMetadata& last_metadata =
-        host()->render_frame_metadata_provider()->LastRenderFrameMetadata();
-    EXPECT_TRUE(last_metadata.delegated_ink_metadata.has_value());
-    EXPECT_TRUE(
-        last_metadata.delegated_ink_metadata.value().delegated_ink_is_hovering);
-  }
+  WaitForDelegatedInkMetadata(frame_observer);
+  EXPECT_TRUE(metadata_provider->LastRenderFrameMetadata()
+                  .delegated_ink_metadata.value()
+                  .delegated_ink_is_hovering);
 
   // Confirm metadata has no value when updateInkTrailStartPoint is called
   // with the same event.
   SimulateRoutedMouseEvent(blink::WebInputEvent::Type::kMouseMove, 20, 20,
                            blink::WebInputEvent::kLeftButtonDown, false);
   RunUntilInputProcessed(host());
-
-  {
-    const cc::RenderFrameMetadata& last_metadata =
-        host()->render_frame_metadata_provider()->LastRenderFrameMetadata();
-    EXPECT_FALSE(last_metadata.delegated_ink_metadata.has_value());
-  }
+  EXPECT_FALSE(metadata_provider->LastRenderFrameMetadata()
+                   .delegated_ink_metadata.has_value());
 }
 
 namespace {

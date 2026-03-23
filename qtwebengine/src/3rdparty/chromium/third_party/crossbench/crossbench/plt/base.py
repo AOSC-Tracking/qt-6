@@ -8,7 +8,7 @@ import abc
 import atexit
 import collections.abc
 import contextlib
-import datetime as dt
+import dataclasses
 import functools
 import inspect
 import logging
@@ -21,38 +21,36 @@ import socket
 import subprocess
 import sys
 import tempfile
-import time
 import urllib.error
-import urllib.parse
 import urllib.request
-from typing import (TYPE_CHECKING, Any, Callable, Dict, Generator, Iterable,
-                    Iterator, List, Mapping, Optional, Sequence, Tuple, Type,
-                    Union)
+from typing import (TYPE_CHECKING, Any, Callable, Generator, Iterable,
+                    Iterator, Mapping, Optional, Sequence, Type)
 
+import google.cloud.storage as gcloud_storage
 import psutil
 
 from crossbench import parse
 from crossbench import path as pth
 from crossbench.helper import wait
+from crossbench.parse import ObjectParser
 from crossbench.plt import proc_helper
 from crossbench.plt.arch import MachineArch
 from crossbench.plt.bin import Binary
+from crossbench.plt.port_manager import (LocalPortManager, PortManager,
+                                         PortScope)
 from crossbench.plt.remote import RemotePopen
 
 if TYPE_CHECKING:
-  from asyncio.subprocess import Process
-  from subprocess import Popen
+  import datetime as dt
 
+  import google.cloud.storage.blob as gcloud_blob
+
+  from crossbench.plt.display_info import DisplayInfo
+  from crossbench.plt.process_meminfo import ProcessMeminfo
   from crossbench.plt.signals import AnySignals, Signals
+  from crossbench.plt.types import CmdArg, ProcessLike, TupleCmdArgs
   from crossbench.types import JsonDict
-  ProcessLike = Union[Popen, Process, int]
 
-
-CmdArg = pth.AnyPathLike
-SequenceCmdArgs = Sequence[CmdArg]
-ListCmdArgs = List[CmdArg]
-TupleCmdArgs = Tuple[CmdArg, ...]
-CmdArgs = Union[ListCmdArgs, TupleCmdArgs]
 
 class Environ(collections.abc.MutableMapping, metaclass=abc.ABCMeta):
   pass
@@ -94,14 +92,25 @@ class SubprocessError(subprocess.CalledProcessError):
     return f"{self.platform}: {super_str}\nstderr:{self.stderr.decode()}"
 
 
+@dataclasses.dataclass
+class CPUFreqInfo:
+  min: float
+  max: float
+  current: float
+
+
 DEFAULT_CACHE_DIR = pth.LocalPath(__file__).parents[2] / "cache"
 
 class Platform(abc.ABC):
   # pylint: disable=locally-disabled, redefined-builtin
 
   def __init__(self) -> None:
-    self._binary_lookup_override: Dict[str, pth.AnyPath] = {}
-    self._cache_dir_root: Optional[pth.AnyPath] = None
+    self._binary_lookup_override: dict[str, pth.AnyPath] = {}
+    self._cache_dir_root: pth.AnyPath | None = None
+    self._default_port_manager: PortManager = self._create_port_manager()
+
+  def _create_port_manager(self) -> PortManager:
+    return LocalPortManager(self)
 
   def assert_is_local(self) -> None:
     if self.is_local:
@@ -136,10 +145,10 @@ class Platform(abc.ABC):
   def cpu(self) -> str:
     pass
 
-  @functools.cached_property
-  def cpu_cores(self) -> int:
+  @functools.lru_cache(maxsize=2)
+  def cpu_cores(self, logical: bool) -> int:
     self.assert_is_local()
-    if cores := psutil.cpu_count(logical=False):
+    if cores := psutil.cpu_count(logical=logical):
       return cores
     return 0
 
@@ -193,7 +202,7 @@ class Platform(abc.ABC):
     return self.machine == MachineArch.ARM_64
 
   @property
-  def key(self) -> Tuple[str, str]:
+  def key(self) -> tuple[str, str]:
     return (self.name, str(self.machine))
 
   @property
@@ -232,7 +241,7 @@ class Platform(abc.ABC):
   @property
   def is_battery_powered(self) -> bool:
     self.assert_is_local()
-    if not psutil.sensors_battery:
+    if not psutil.sensors_battery: # type: ignore
       return False
     status = psutil.sensors_battery()
     if not status:
@@ -240,13 +249,13 @@ class Platform(abc.ABC):
     return not status.power_plugged
 
   @functools.lru_cache(maxsize=1)
-  def cpu_details(self) -> Dict[str, Any]:
+  def cpu_details(self) -> dict[str, Any]:
     self.assert_is_local()
     details = {
         "physical cores":
-            self.cpu_cores,
+            self.cpu_cores(logical=False),
         "logical cores":
-            psutil.cpu_count(logical=True),
+            self.cpu_cores(logical=True),
         "usage":
             psutil.cpu_percent(  # pytype: disable=attribute-error
                 percpu=True, interval=0.1),
@@ -256,26 +265,35 @@ class Platform(abc.ABC):
             psutil.getloadavg(),
         "info":
             self.cpu,
+        "min frequency":
+            "N/A",
+        "max frequency":
+            "N/A",
+        "current frequency":
+            "N/A",
     }
-    try:
-      cpu_freq = psutil.cpu_freq()
-    except FileNotFoundError as e:
-      logging.debug("psutil.cpu_freq() failed (normal on macOS M1): %s", e)
-      return details
-    details.update({
-        "max frequency": f"{cpu_freq.max:.2f}Mhz",
-        "min frequency": f"{cpu_freq.min:.2f}Mhz",
-        "current frequency": f"{cpu_freq.current:.2f}Mhz",
-    })
+    if cpu_freq := self._cpu_freq():
+      details.update({
+          "min frequency": f"{cpu_freq.min:.2f}Mhz",
+          "max frequency": f"{cpu_freq.max:.2f}Mhz",
+          "current frequency": f"{cpu_freq.current:.2f}Mhz",
+      })
     return details
 
+  def _cpu_freq(self) -> Optional[CPUFreqInfo]:
+    self.assert_is_local()
+    cpu_freq = psutil.cpu_freq()
+    return CPUFreqInfo(cpu_freq.min, cpu_freq.max, cpu_freq.current)
+
+
   @functools.lru_cache(maxsize=1)
-  def system_details(self) -> Dict[str, Any]:
+  def system_details(self) -> dict[str, Any]:
     return {
         "machine": str(self.machine),
         "os": self.os_details(),
         "python": self.python_details(),
         "CPU": self.cpu_details(),
+        "display": self.display_details()
     }
 
   @functools.lru_cache(maxsize=1)
@@ -296,11 +314,20 @@ class Platform(abc.ABC):
         "bits": 64 if sys.maxsize > 2**32 else 32,
     }
 
+  def display_details(self) -> tuple[DisplayInfo, ...]:
+    # TODO: implement on more platforms
+    return tuple()
+
+
   def get_relative_cpu_speed(self) -> float:
     return 1
 
   def is_thermal_throttled(self) -> bool:
     return self.get_relative_cpu_speed() < 1
+
+  @abc.abstractmethod
+  def uptime(self) -> dt.timedelta:
+    pass
 
   def disk_usage(self, path: pth.AnyPathLike) -> psutil._common.sdiskusage:
     return psutil.disk_usage(str(self.local_path(path)))
@@ -369,25 +396,38 @@ class Platform(abc.ABC):
     pass
 
   @property
+  def is_headless(self) -> bool:
+    return not self.has_display
+
+  @property
   def has_display(self) -> bool:
     """Return a bool whether the platform has an active display.
     This can be false on linux without $DISPLAY, true an all other platforms."""
     return True
 
-  def sleep(self, seconds: Union[int, float, dt.timedelta]) -> None:
-    if isinstance(seconds, dt.timedelta):
-      seconds = seconds.total_seconds()
-    if seconds == 0:
-      return
-    logging.debug("WAIT %ss", seconds)
-    time.sleep(seconds)
+  def sleep(self, seconds: int | float | dt.timedelta) -> None:
+    wait.sleep(seconds)
+
+  def parse_binary_path(self,
+                        value: pth.AnyPathLike,
+                        name: str = "value") -> pth.AnyPath:
+    # Helper to avoid circular imports.
+    return parse.PathParser.binary_path(value, self, name)
+
+  def parse_local_binary_path(self,
+                              value: pth.AnyPathLike,
+                              name: str = "value") -> pth.LocalPath:
+    self.assert_is_local()
+    # Helper to avoid circular imports.
+    return parse.PathParser.local_binary_path(value, self, name)
+
 
   def which(self, binary_name: pth.AnyPathLike) -> Optional[pth.AnyPath]:
     if not binary_name:
       raise ValueError("Got empty path")
     self.assert_is_local()
-    if override := self.lookup_binary_override(binary_name):
-      return override
+    if binary_override := self.lookup_binary_override(binary_name):
+      return binary_override
     if result := shutil.which(os.fspath(binary_name)):
       return self.path(result)
     return None
@@ -397,7 +437,7 @@ class Platform(abc.ABC):
     return self._binary_lookup_override.get(os.fspath(binary_name))
 
   def set_binary_lookup_override(self, binary_name: pth.AnyPathLike,
-                                 new_path: Optional[pth.AnyPath]):
+                                 new_path: Optional[pth.AnyPath]) -> None:
     name = os.fspath(binary_name)
     if new_path is None:
       prev_result = self._binary_lookup_override.pop(name, None)
@@ -412,7 +452,7 @@ class Platform(abc.ABC):
     self._binary_lookup_override[name] = new_path
 
   @contextlib.contextmanager
-  def override_binary(self, binary: Union[pth.AnyPathLike, Binary],
+  def override_binary(self, binary: pth.AnyPathLike | Binary,
                       result: Optional[pth.AnyPath]):
     binary_name: pth.AnyPathLike = ""
     if isinstance(binary, Binary):
@@ -430,7 +470,7 @@ class Platform(abc.ABC):
     finally:
       self.set_binary_lookup_override(binary_name, prev_override)
 
-  def send_signal(self, process: ProcessLike, signal: Signals):
+  def send_signal(self, process: ProcessLike, signal: Signals) -> None:
     self.assert_is_local()
     if isinstance(process, int):
       os.kill(process, signal.value)
@@ -443,17 +483,11 @@ class Platform(abc.ABC):
   def kill(self, process: ProcessLike) -> None:
     self._handle_process_tree(process, lambda process: process.kill())
 
-  def wait_and_kill(self,
-                    process: ProcessLike,
-                    timeout=1,
-                    signal: Optional[Signals] = None) -> None:
-    proc_helper.wait_and_kill(self, process, timeout, signal)
-
-  def wait_and_terminate(self,
-                         process: ProcessLike,
-                         timeout=1,
-                         signal: Optional[Signals] = None) -> None:
-    proc_helper.wait_and_terminate(self, process, timeout, signal)
+  def terminate_gracefully(self,
+                           process: ProcessLike,
+                           timeout: int = 1,
+                           signal: Optional[Signals] = None) -> None:
+    proc_helper.terminate_gracefully(self, process, timeout, signal)
 
   def process_pid(self, process: ProcessLike) -> int:
     if isinstance(process, int):
@@ -480,12 +514,12 @@ class Platform(abc.ABC):
       pass
 
   def processes(self,
-                attrs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+                attrs: Optional[list[str]] = None) -> list[dict[str, Any]]:
     # TODO(cbruni): support remote platforms
     assert self.is_local, "Only local platform supported"
     return self._collect_process_dict(psutil.process_iter(attrs=attrs))
 
-  def process_running(self, process_name_list: List[str]) -> Optional[str]:
+  def process_running(self, process_name_list: list[str]) -> Optional[str]:
     self.assert_is_local()
     # TODO(cbruni): support remote platforms
     for proc in psutil.process_iter(attrs=["name"]):
@@ -498,7 +532,7 @@ class Platform(abc.ABC):
 
   def process_children(self,
                        parent_pid: int,
-                       recursive: bool = False) -> List[Dict[str, Any]]:
+                       recursive: bool = False) -> list[dict[str, Any]]:
     self.assert_is_local()
     # TODO(cbruni): support remote platforms
     try:
@@ -508,8 +542,8 @@ class Platform(abc.ABC):
     return self._collect_process_dict(process.children(recursive=recursive))
 
   def _collect_process_dict(
-      self, process_iterator: Iterable[psutil.Process]) -> List[Dict[str, Any]]:
-    process_info_list: List[Dict[str, Any]] = []
+      self, process_iterator: Iterable[psutil.Process]) -> list[dict[str, Any]]:
+    process_info_list: list[dict[str, Any]] = []
     for process in process_iterator:
       try:
         process_info_list.append(process.as_dict())
@@ -517,7 +551,7 @@ class Platform(abc.ABC):
         pass
     return process_info_list
 
-  def process_info(self, process: ProcessLike) -> Optional[Dict[str, Any]]:
+  def process_info(self, process: ProcessLike) -> Optional[dict[str, Any]]:
     self.assert_is_local()
     # TODO(cbruni): support remote platforms
     try:
@@ -526,7 +560,16 @@ class Platform(abc.ABC):
     except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
       return None
 
-  def foreground_process(self) -> Optional[Dict[str, Any]]:
+  def process_meminfo(self, process_name: str,
+                      timeout: dt.timedelta) -> list[ProcessMeminfo]:
+    del process_name, timeout
+    raise NotImplementedError(f"process_meminfo not implemented for {self}.")
+
+  def system_meminfo(self, timeout: dt.timedelta) -> dict[str, float]:
+    del timeout
+    raise NotImplementedError(f"system_meminfo not implemented for {self}.")
+
+  def foreground_process(self) -> Optional[dict[str, Any]]:
     return None
 
   @property
@@ -534,29 +577,9 @@ class Platform(abc.ABC):
     self.assert_is_local()
     return self.path(tempfile.gettempdir())
 
-  def port_forward(self, local_port: int, remote_port: int) -> int:
-    """ Forwards a device remote_port to a local port."""
-    if remote_port != local_port:
-      raise ValueError("Cannot forward a remote port on a local platform.")
-    parse.NumberParser.port_number(local_port, "local_port")
-    self.assert_is_local()
-    return local_port
-
-  def stop_port_forward(self, local_port: int) -> None:
-    del local_port
-    self.assert_is_local()
-
-  def reverse_port_forward(self, remote_port: int, local_port: int) -> int:
-    """ Forwards a local port to a device port."""
-    if remote_port != local_port:
-      raise ValueError("Cannot forward a remote port on a local platform.")
-    parse.NumberParser.port_number(remote_port, "remote_port")
-    self.assert_is_local()
-    return remote_port
-
-  def stop_reverse_port_forward(self, remote_port: int) -> None:
-    del remote_port
-    self.assert_is_local()
+  @property
+  def ports(self) -> PortScope:
+    return self._default_port_manager.scope
 
   def is_port_used(self, port: int) -> bool:
     self.assert_is_local()
@@ -567,7 +590,7 @@ class Platform(abc.ABC):
     return False
 
   def wait_for_port(self, port: int, timeout: dt.timedelta) -> None:
-    for _ in wait.wait_with_backoff(timeout, self):
+    for _ in wait.wait_with_backoff(timeout):
       if self.is_port_used(port):
         break
 
@@ -605,25 +628,26 @@ class Platform(abc.ABC):
 
   def cat(self, file: pth.AnyPathLike, encoding: str = "utf-8") -> str:
     """Meow! I return the file contents as a str."""
-    with self.local_path(file).open(encoding=encoding) as f:
-      return f.read()
+    return self.local_path(file).read_text(encoding=encoding)
 
   def cat_bytes(self, file: pth.AnyPathLike) -> bytes:
     """Hiss! I return the file contents as bytes."""
-    with self.local_path(file).open("rb") as f:
-      return f.read()
+    return self.local_path(file).read_bytes()
 
-  def get_file_contents(self,
-                        file: pth.AnyPathLike,
-                        encoding: str = "utf-8") -> str:
+  def read_text(self, file: pth.AnyPathLike, encoding: str = "utf-8") -> str:
     return self.cat(file, encoding)
 
-  def set_file_contents(self,
-                        file: pth.AnyPathLike,
-                        data: str,
-                        encoding: str = "utf-8") -> None:
-    with self.local_path(file).open("w", encoding=encoding) as f:
-      f.write(data)
+  def write_text(self,
+                 file: pth.AnyPathLike,
+                 data: str,
+                 encoding: str = "utf-8") -> None:
+    self.local_path(file).write_text(data, encoding)
+
+  def read_bytes(self, file: pth.AnyPathLike) -> bytes:
+    return self.cat_bytes(file)
+
+  def write_bytes(self, file: pth.AnyPathLike, data: bytes) -> None:
+    self.local_path(file).write_bytes(data)
 
   def pull(self, from_path: pth.AnyPath,
            to_path: pth.LocalPath) -> pth.LocalPath:
@@ -733,37 +757,41 @@ class Platform(abc.ABC):
             exist_ok: bool = True) -> None:
     self.local_path(path).mkdir(parents=parents, exist_ok=exist_ok)
 
+  def mkdtemp(self,
+              suffix: Optional[str] = None,
+              prefix: Optional[str] = None,
+              dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
+    self.assert_is_local()
+    return self.path(tempfile.mkdtemp(suffix=suffix, prefix=prefix, dir=dir))
+
+  def mktemp(self,
+             suffix: Optional[str] = None,
+             prefix: Optional[str] = None,
+             dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
+    self.assert_is_local()
+    fd, name = tempfile.mkstemp(suffix=suffix, prefix=prefix, dir=dir)
+    os.close(fd)
+    return self.path(name)
+
   @contextlib.contextmanager
   def NamedTemporaryFile(  # pylint: disable=invalid-name
       self,
+      suffix: Optional[str] = None,
       prefix: Optional[str] = None,
       dir: Optional[pth.AnyPathLike] = None):
-    tmp_file: pth.AnyPath = self.mktemp(prefix, dir)
+    tmp_file: pth.AnyPath = self.mktemp(suffix, prefix, dir)
     try:
       yield tmp_file
     finally:
       self.rm(tmp_file, missing_ok=True)
 
-  def mkdtemp(self,
-              prefix: Optional[str] = None,
-              dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
-    self.assert_is_local()
-    return self.path(tempfile.mkdtemp(prefix=prefix, dir=dir))
-
-  def mktemp(self,
-             prefix: Optional[str] = None,
-             dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
-    self.assert_is_local()
-    fd, name = tempfile.mkstemp(prefix=prefix, dir=dir)
-    os.close(fd)
-    return self.path(name)
-
   @contextlib.contextmanager
   def TemporaryDirectory(  # pylint: disable=invalid-name
       self,
+      suffix: Optional[str] = None,
       prefix: Optional[str] = None,
       dir: Optional[pth.AnyPathLike] = None):
-    tmp_dir = self.mkdtemp(prefix, dir)
+    tmp_dir = self.mkdtemp(suffix, prefix, dir)
     try:
       yield tmp_dir
     finally:
@@ -787,12 +815,15 @@ class Platform(abc.ABC):
     # TODO: support remotely
     return self.local_path(path).glob(pattern)
 
-  def chmod(self, path: pth.AnyPathLike, mode: int):
+  def chmod(self, path: pth.AnyPathLike, mode: int) -> None:
     self.local_path(path).chmod(mode)
 
   def file_size(self, path: pth.AnyPathLike) -> int:
     # TODO: support remotely
     return self.local_path(path).stat().st_size
+
+  def last_modified(self, path: pth.AnyPathLike) -> float:
+    return self.local_path(path).stat().st_mtime
 
   def sh_stdout(self,
                 *args: CmdArg,
@@ -823,14 +854,14 @@ class Platform(abc.ABC):
         check=check)
     return completed_process.stdout
 
-  def _validate_shell_args(self, shell: bool, args: TupleCmdArgs) -> None:
+  def validate_shell_args(self, args: TupleCmdArgs, shell: bool) -> None:
     if shell and len(args) != 1:
       raise ValueError("Expected single sh arg with shell=True, "
                        f"but got: {args}")
 
   def popen(self,
             *args: CmdArg,
-            bufsize=-1,
+            bufsize: int = -1,
             shell: bool = False,
             stdout=None,
             stderr=None,
@@ -838,7 +869,7 @@ class Platform(abc.ABC):
             env: Optional[Mapping[str, str]] = None,
             quiet: bool = False) -> subprocess.Popen:
     self.assert_is_local()
-    self._validate_shell_args(shell, args)
+    self.validate_shell_args(args, shell)
     if not quiet:
       logging.debug("SHELL: %s", shlex.join(map(str, args)))
       logging.debug("CWD: %s", os.getcwd())
@@ -862,7 +893,7 @@ class Platform(abc.ABC):
          quiet: bool = False,
          check: bool = True) -> subprocess.CompletedProcess:
     self.assert_is_local()
-    self._validate_shell_args(shell, args)
+    self.validate_shell_args(args, shell)
     if not quiet:
       logging.debug("SHELL: %s", shlex.join(map(str, args)))
       logging.debug("CWD: %s", os.getcwd())
@@ -901,17 +932,34 @@ class Platform(abc.ABC):
     # pylint: disable=unused-argument
     return True
 
-  def download_to(self, url: str, path: pth.LocalPath) -> pth.LocalPath:
+  def download_to(self, url: str, path: pth.AnyPath) -> pth.AnyPath:
     self.assert_is_local()
     logging.debug("DOWNLOAD: %s\n       TO: %s", url, path)
-    assert not path.exists(), f"Download destination {path} exists already."
+    assert not self.exists(path), f"Download destination {path} exists already."
     try:
       urllib.request.urlretrieve(url, path)
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
       raise OSError(f"Could not load {url}") from e
-    assert path.exists(), (
+    assert self.exists(path), (
         f"Downloading {url} failed. Downloaded file {path} doesn't exist.")
     return path
+
+  def download_gcs_file(self, gcs_url: str, local_path: pth.LocalPath) -> None:
+    blob: gcloud_blob.Blob = self.prepare_gcs_request(gcs_url)
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    blob.download_to_filename(str(local_path))
+
+  def prepare_gcs_request(self, gcs_url: str) -> gcloud_blob.Blob:
+    parsed = ObjectParser.url(gcs_url, schemes=("gs",))
+    bucket_name = parsed.netloc
+    object_name = parsed.path.lstrip("/")
+    if not bucket_name:
+      raise ValueError(f"Missing bucket name in URL: {gcs_url}")
+    client = gcloud_storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob: gcloud_blob.Blob = bucket.blob(object_name)
+    blob.reload()
+    return blob
 
   def concat_files(self,
                    inputs: Iterable[pth.LocalPath],
@@ -935,6 +983,12 @@ class Platform(abc.ABC):
     raise NotImplementedError(
         "'get_main_display_brightness' is only available on MacOS for now")
 
+  def set_display_refresh_rate(self,
+                               refresh_rate: int,
+                               retry: int = 3) -> tuple[bool, str]:
+    raise NotImplementedError(
+        "'set_display_refresh_rate' is only available on MacOS for now")
+
   def check_autobrightness(self) -> bool:
     raise NotImplementedError(
         "'check_autobrightness' is only available on MacOS for now")
@@ -944,7 +998,11 @@ class Platform(abc.ABC):
     raise NotImplementedError(
         "'screenshot' is only available on MacOS for now")
 
-  def display_resolution(self) -> Tuple[int, int]:
+  def display_resolution(self) -> tuple[int, int]:
     raise NotImplementedError(
         "'display_resolution' is only available on Android and ChromeOS for "
         "now")
+
+  def user_id(self) -> int:
+    self.assert_is_local()
+    return os.getuid()

@@ -11,6 +11,10 @@
 #include "build/build_config.h"
 #include "gpu/config/gpu_util.h"
 
+#if BUILDFLAG(ENABLE_VULKAN)
+#include "gpu/ipc/common/vulkan_info.mojom.h"
+#endif
+
 namespace {
 
 void EnumerateGPUDevice(const gpu::GPUInfo::GPUDevice& device,
@@ -280,6 +284,12 @@ GPUInfo::GPUDevice* GPUInfo::FindGpuByLuid(DWORD low_part, LONG high_part) {
 }
 #endif  // BUILDFLAG(IS_WIN)
 
+#if BUILDFLAG(ENABLE_VULKAN)
+std::vector<uint8_t> GPUInfo::SerializeVulkanInfo() const {
+  return gpu::mojom::VulkanInfo::Serialize(&vulkan_info.value());
+}
+#endif
+
 void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   struct GPUInfoKnownFields {
     base::TimeDelta initialization_time;
@@ -294,6 +304,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     std::string machine_model_name;
     std::string machine_model_version;
     std::string display_type;
+    SkiaBackendType skia_backend_type;
     std::string gl_version;
     std::string gl_vendor;
     std::string gl_renderer;
@@ -362,6 +373,8 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddString("vertexShaderVersion", vertex_shader_version);
   enumerator->AddString("maxMsaaSamples", max_msaa_samples);
   enumerator->AddString("displayType", display_type);
+  enumerator->AddString("skiaBackendType",
+                        SkiaBackendTypeToString(skia_backend_type));
   enumerator->AddString("glVersion", gl_version);
   enumerator->AddString("glVendor", gl_vendor);
   enumerator->AddString("glRenderer", gl_renderer);
@@ -411,7 +424,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
 #if BUILDFLAG(ENABLE_VULKAN)
   enumerator->AddBool("hardwareSupportsVulkan", hardware_supports_vulkan);
   if (vulkan_info) {
-    auto blob = vulkan_info->Serialize();
+    auto blob = SerializeVulkanInfo();
     enumerator->AddBinary("vulkanInfo", base::span<const uint8_t>(blob));
   }
 #endif

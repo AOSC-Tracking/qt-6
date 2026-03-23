@@ -437,11 +437,7 @@ void TlsChloExtractor::HandleParsedChlo(const SSL_CLIENT_HELLO* client_hello) {
     }
   }
 
-  if (GetQuicReloadableFlag(quic_parse_transport_parameters_from_chlo)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_parse_transport_parameters_from_chlo);
-
-    transport_params_ = GetTransportParameters(client_hello);
-  }
+  transport_params_ = GetTransportParameters(client_hello);
 
   // Update our state now that we've parsed a full CHLO.
   if (state_ == State::kInitial) {
@@ -460,7 +456,6 @@ std::pair<SSL_CTX*, int> TlsChloExtractor::GetSharedSslHandles() {
   // initialized lazily in a thread-safe manner. |shared_handles| is therefore
   // guaranteed to be initialized exactly once and never destructed.
   static std::pair<SSL_CTX*, int>* shared_handles = []() {
-    CRYPTO_library_init();
     SSL_CTX* ssl_ctx = SSL_CTX_new(TLS_with_buffers_method());
     SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_3_VERSION);
     SSL_CTX_set_max_proto_version(ssl_ctx, TLS1_3_VERSION);

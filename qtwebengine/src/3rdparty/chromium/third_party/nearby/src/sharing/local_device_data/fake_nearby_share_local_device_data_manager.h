@@ -18,8 +18,8 @@
 #include <stddef.h>
 
 #include <memory>
-#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"
@@ -93,14 +93,16 @@ class FakeNearbyShareLocalDeviceDataManager
   struct PublishDeviceCall {
     PublishDeviceCall(
         std::vector<nearby::sharing::proto::PublicCertificate> certificates,
-        bool is_second_call, PublishDeviceCallback callback)
+        bool force_update_contacts, PublishDeviceCallback callback)
         : certificates(std::move(certificates)),
-          callback(std::move(callback)) {}
+          callback(std::move(callback)),
+          force_update_contacts(force_update_contacts){}
     PublishDeviceCall(PublishDeviceCall&&) = default;
     ~PublishDeviceCall() = default;
 
     std::vector<nearby::sharing::proto::PublicCertificate> certificates;
     PublishDeviceCallback callback;
+    bool force_update_contacts = false;
   };
 
   explicit FakeNearbyShareLocalDeviceDataManager(
@@ -121,7 +123,7 @@ class FakeNearbyShareLocalDeviceDataManager
 
   void PublishDevice(
       std::vector<nearby::sharing::proto::PublicCertificate> certificates,
-      bool is_second_call, PublishDeviceCallback callback) override;
+      bool force_update_contacts, PublishDeviceCallback callback) override;
 
   // Make protected observer-notification methods from the base class public in
   // this fake class.
@@ -160,6 +162,10 @@ class FakeNearbyShareLocalDeviceDataManager
     publish_device_result_ = publish_device_result;
   }
 
+  void SetPublishDeviceContactsRemoved(bool contact_removed) {
+    publish_device_contact_removed_ = contact_removed;
+  }
+
  private:
   // NearbyShareLocalDeviceDataManager:
 
@@ -176,6 +182,7 @@ class FakeNearbyShareLocalDeviceDataManager
   bool upload_contact_result_ = false;
   bool upload_certificate_result_ = false;
   bool publish_device_result_ = false;
+  bool publish_device_contact_removed_ = false;
 };
 
 }  // namespace sharing

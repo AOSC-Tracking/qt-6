@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 #include "qquickwebengineprofileprototype_p.h"
 #include "qquickwebengineprofileprototype_p_p.h"
 #include "profile_adapter.h"
@@ -161,6 +163,9 @@ void QQuickWebEngineProfilePrototype::setHttpCacheType(
             Cookies marked persistent are saved to and restored from disk, whereas session cookies
             are only stored to disk for crash recovery.
             This is the default value for non off-the-record profile with storageName.
+    \value  WebEngineProfile.OnlyPersistentCookies
+            Cookies marked persistent are saved to and restored from disk, whereas session cookies
+            are never stored to the disk, even for crash recovery.
     \value  WebEngineProfile.ForcePersistentCookies
             Both session and persistent cookies are saved to and restored from disk.
 */
@@ -328,8 +333,12 @@ void QQuickWebEngineProfilePrototype::componentComplete()
                     d_ptr->m_persistentCookiesPolicy),
             d_ptr->m_httpCacheMaxSize,
             QtWebEngineCore::ProfileAdapter::PersistentPermissionsPolicy(
-                    d_ptr->m_persistentPermissionsPolicy),
-            additionalCertificates);
+                    d_ptr->m_persistentPermissionsPolicy)
+#if QT_CONFIG(ssl)
+                    ,
+            additionalCertificates
+#endif
+    );
 
     d_ptr->profile.reset(new QQuickWebEngineProfile(
             new QQuickWebEngineProfilePrivate(profileAdapter), this->parent()));
@@ -337,11 +346,11 @@ void QQuickWebEngineProfilePrototype::componentComplete()
 }
 
 /*!
-    \qmlmethod QQuickWebEngineProfile *QQuickWebEngineProfilePrototype::instance()
+    \qmlmethod WebEngineProfile WebEngineProfilePrototype::instance()
 
     Returns an instance of WebEngineProfile.
 
-    \note This function will return a null pointer, if the \l persistentStoragePath
+    \note This function returns a null object if \l persistentStoragePath
     is already in use by another profile.
 */
 QQuickWebEngineProfile *QQuickWebEngineProfilePrototype::instance()

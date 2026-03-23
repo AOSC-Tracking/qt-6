@@ -8,7 +8,7 @@
 
 \section1 Introduction
 
-\note As of Qt 6.4, lightmap baking is in an early technical preview state.
+\note As of Qt 6.4, lightmap baking is in an early technology preview state.
 Changes to features, quality, and API are likely to happen in future releases.
 
 Baked lightmaps allow pre-generating the \b{direct lighting} from lights such
@@ -177,7 +177,7 @@ explored and tested before deciding on the final approach and the related
 settings.
 
 \note Lightmaps do not support two-sided surfaces. With real time lighting a
-material with a \l{QQuick3DMaterial::cullMode}{cull mode} of \c
+material with a \l{Material::cullMode}{cull mode} of \c
 Material.NoCulling automatically inverts the normal as appropriate based on the
 facing of the fragment. This is not an option for lightmaps since lightmap
 baking does not operate in view space. Therefore, avoid baked lighting for
@@ -394,5 +394,6 @@ meshes and lightmaps. The application needs to ship this file, so that it can be
 found by the engine, in the location specified by \l{Lightmapper::}{source}.
 
 \sa {Qt Quick 3D - Baked Lightmap Example}
+\sa {Qt Quick 3D - SSGI Lightmap Example}
 
 */

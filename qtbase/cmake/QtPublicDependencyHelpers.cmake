@@ -64,7 +64,7 @@ macro(_qt_internal_find_third_party_dependencies target target_dep_list)
 
                 _qt_internal_sbom_record_system_library_usage(
                     "${__qt_${target}_provided_target}"
-                    TYPE SYSTEM_LIBRARY
+                    SBOM_ENTITY_TYPE SYSTEM_LIBRARY
                     FRIENDLY_PACKAGE_NAME "${__qt_${target}_pkg}"
                     ${__qt_${target}_sbom_args}
                 )
@@ -299,9 +299,13 @@ macro(_qt_internal_setup_qt_host_path
             else()
                 # First try to auto-compute the location instead of requiring to set
                 # QT_HOST_PATH_CMAKE_DIR explicitly.
-                set(__qt_candidate_host_path_cmake_dir "${QT_HOST_PATH}/lib/cmake")
-                if(__qt_candidate_host_path_cmake_dir
-                        AND EXISTS "${__qt_candidate_host_path_cmake_dir}")
+                __qt_internal_get_possible_cmake_dirs(__qt_candidate_host_path_cmake_dirs
+                    "${QT_HOST_PATH}"
+                )
+                if(NOT __qt_candidate_host_path_cmake_dirs STREQUAL "")
+                    list(GET __qt_candidate_host_path_cmake_dirs 0
+                        __qt_candidate_host_path_cmake_dir
+                    )
                     set(QT_HOST_PATH_CMAKE_DIR
                         "${__qt_candidate_host_path_cmake_dir}" CACHE PATH "")
                 endif()

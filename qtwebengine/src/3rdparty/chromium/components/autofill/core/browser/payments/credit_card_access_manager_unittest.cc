@@ -20,7 +20,7 @@
 #include "build/build_config.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
 #include "components/autofill/core/browser/data_manager/test_personal_data_manager.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/form_import/form_data_importer_test_api.h"
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver.h"
@@ -37,6 +37,7 @@
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/payments/payments_window_manager.h"
 #include "components/autofill/core/browser/payments/test/mock_payments_window_manager.h"
+#include "components/autofill/core/browser/payments/test/mock_virtual_card_enrollment_manager.h"
 #include "components/autofill/core/browser/payments/test/test_credit_card_otp_authenticator.h"
 #include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
@@ -1649,14 +1650,12 @@ TEST_F(CreditCardAccessManagerTest, FetchCreditCardUsesUnmaskedCardCache) {
   // version.
   FetchCreditCard(&masked_card);
 
-  histogram_tester.ExpectBucketCount("Autofill.UsedCachedServerCard", 1, 1);
   histogram_tester.ExpectUniqueSample(
       "Autofill.ServerCardUnmask.ServerCard.Result.UnspecifiedFlowType",
       autofill_metrics::ServerCardUnmaskResult::kLocalCacheHit, 1);
 
   FetchCreditCard(&masked_card);
 
-  histogram_tester.ExpectBucketCount("Autofill.UsedCachedServerCard", 2, 1);
   histogram_tester.ExpectUniqueSample(
       "Autofill.ServerCardUnmask.ServerCard.Result.UnspecifiedFlowType",
       autofill_metrics::ServerCardUnmaskResult::kLocalCacheHit, 2);
@@ -1673,7 +1672,6 @@ TEST_F(CreditCardAccessManagerTest, FetchCreditCardUsesUnmaskedCardCache) {
   masked_card.set_record_type(CreditCard::RecordType::kVirtualCard);
   FetchCreditCard(&masked_card);
 
-  histogram_tester.ExpectBucketCount("Autofill.UsedCachedVirtualCard", 1, 1);
   histogram_tester.ExpectUniqueSample(
       "Autofill.ServerCardUnmask.VirtualCard.Result.UnspecifiedFlowType",
       autofill_metrics::ServerCardUnmaskResult::kLocalCacheHit, 1);
@@ -1923,6 +1921,33 @@ TEST_F(CreditCardAccessManagerTest, CardInfoRetrievalEnrolledCardUnmasking) {
                 ->autofill_progress_dialog_type(),
             AutofillProgressDialogType::
                 kCardInfoRetrievalEnrolledUnmaskProgressDialog);
+}
+
+// Ensures the `kCardInfoRetrievalEnrolledUnmaskProgressDialog` is not set, even
+// if `kAutofillEnableCardInfoRuntimeRetrieval` is enabled, but
+// `card_info_retrieval_enrollment_state` is not enrolled.
+TEST_F(CreditCardAccessManagerTest,
+       CardInfoRetrievalEnrolledCardUnmaskingDisabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      /*enabled_features=*/{features::kAutofillEnableCardInfoRuntimeRetrieval},
+      /*disabled_features=*/{
+          features::kAutofillEnableFpanRiskBasedAuthentication});
+
+  base::HistogramTester histogram_tester;
+  CreditCard server_card = test::GetMaskedServerCard();
+  server_card.set_guid(kTestGUID);
+  server_card.set_card_info_retrieval_enrollment_state(
+      CreditCard::CardInfoRetrievalEnrollmentState::kRetrievalUnspecified);
+  personal_data().test_payments_data_manager().AddServerCreditCard(server_card);
+  const CreditCard* card =
+      personal_data().payments_data_manager().GetCreditCardByGUID(kTestGUID);
+
+  FetchCreditCard(card);
+
+  // Ensures CreditCardRiskBasedAuthenticator::Authenticate is not invoked.
+  ASSERT_FALSE(autofill_client_.GetPaymentsAutofillClient()
+                   ->risk_based_authentication_invoked());
 }
 
 // Ensures the virtual card risk-based unmasking response is handled correctly
@@ -2283,7 +2308,7 @@ TEST_F(
   CreditCardOtpAuthenticator::OtpAuthenticationResponse otp_response;
   otp_response.result =
       CreditCardOtpAuthenticator::OtpAuthenticationResponse::Result::kSuccess;
-  CreditCard card = test::GetCreditCard();
+  CreditCard card = test::GetVirtualCard();
   otp_response.card = &card;
   otp_response.cvc = u"123";
   credit_card_access_manager().OnOtpAuthenticationComplete(otp_response);
@@ -2529,6 +2554,85 @@ TEST_F(CreditCardAccessManagerTest, DestructorResetsCardIdentifier) {
       test_api(*form_data_importer)
           .payment_method_type_if_non_interactive_authentication_flow_completed()
           .has_value());
+}
+
+TEST_F(CreditCardAccessManagerTest, InvokeVirtualCardEnrollmentPreflightCall) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      features::
+          kAutofillEnableMultipleRequestInVirtualCardDownstreamEnrollment);
+  auto virtual_card_enrollment_manager =
+      std::make_unique<MockVirtualCardEnrollmentManager>(
+          &personal_data().payments_data_manager(),
+          /*payments_network_interface=*/nullptr, &autofill_client_);
+  autofill_client_.GetPaymentsAutofillClient()
+      ->set_virtual_card_enrollment_manager(
+          std::move(virtual_card_enrollment_manager));
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_virtual_card_enrollment_state(
+      CreditCard::VirtualCardEnrollmentState::kUnenrolledAndEligible);
+  personal_data().test_payments_data_manager().AddServerCreditCard(card);
+  EXPECT_CALL(*static_cast<MockVirtualCardEnrollmentManager*>(
+                  autofill_client_.GetPaymentsAutofillClient()
+                      ->GetVirtualCardEnrollmentManager()),
+              InitVirtualCardEnroll);
+
+  PrepareToFetchCreditCardAndWaitForCallbacks();
+  CreditCardAccessManagerTestBase::FetchCreditCard(&card);
+}
+
+TEST_F(CreditCardAccessManagerTest,
+       DoNotInvokeVirtualCardEnrollmentPreflightCall_FlagOff) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      features::
+          kAutofillEnableMultipleRequestInVirtualCardDownstreamEnrollment);
+  auto virtual_card_enrollment_manager =
+      std::make_unique<MockVirtualCardEnrollmentManager>(
+          &personal_data().payments_data_manager(),
+          /*payments_network_interface=*/nullptr, &autofill_client_);
+  autofill_client_.GetPaymentsAutofillClient()
+      ->set_virtual_card_enrollment_manager(
+          std::move(virtual_card_enrollment_manager));
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_virtual_card_enrollment_state(
+      CreditCard::VirtualCardEnrollmentState::kUnenrolledAndEligible);
+  personal_data().test_payments_data_manager().AddServerCreditCard(card);
+  EXPECT_CALL(*static_cast<MockVirtualCardEnrollmentManager*>(
+                  autofill_client_.GetPaymentsAutofillClient()
+                      ->GetVirtualCardEnrollmentManager()),
+              InitVirtualCardEnroll)
+      .Times(0);
+
+  PrepareToFetchCreditCardAndWaitForCallbacks();
+  CreditCardAccessManagerTestBase::FetchCreditCard(&card);
+}
+
+TEST_F(CreditCardAccessManagerTest,
+       DoNotInvokeVirtualCardEnrollmentPreflightCall_CardNotEligible) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      features::
+          kAutofillEnableMultipleRequestInVirtualCardDownstreamEnrollment);
+  auto virtual_card_enrollment_manager =
+      std::make_unique<MockVirtualCardEnrollmentManager>(
+          &personal_data().payments_data_manager(),
+          /*payments_network_interface=*/nullptr, &autofill_client_);
+  autofill_client_.GetPaymentsAutofillClient()
+      ->set_virtual_card_enrollment_manager(
+          std::move(virtual_card_enrollment_manager));
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_virtual_card_enrollment_state(
+      CreditCard::VirtualCardEnrollmentState::kUnenrolledAndNotEligible);
+  personal_data().test_payments_data_manager().AddServerCreditCard(card);
+  EXPECT_CALL(*static_cast<MockVirtualCardEnrollmentManager*>(
+                  autofill_client_.GetPaymentsAutofillClient()
+                      ->GetVirtualCardEnrollmentManager()),
+              InitVirtualCardEnroll)
+      .Times(0);
+
+  PrepareToFetchCreditCardAndWaitForCallbacks();
+  CreditCardAccessManagerTestBase::FetchCreditCard(&card);
 }
 
 }  // namespace autofill

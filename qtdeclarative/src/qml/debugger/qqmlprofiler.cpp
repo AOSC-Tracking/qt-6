@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlprofiler_p.h"
 #include "qqmldebugservice_p.h"
@@ -8,7 +9,7 @@ QT_BEGIN_NAMESPACE
 
 QQmlProfiler::QQmlProfiler() : featuresEnabled(0)
 {
-    static int metatype = qRegisterMetaType<QVector<QQmlProfilerData> >();
+    static int metatype = qRegisterMetaType<QList<QQmlProfilerData> >();
     static int metatype2 = qRegisterMetaType<QQmlProfiler::LocationHash> ();
     Q_UNUSED(metatype);
     Q_UNUSED(metatype2);
@@ -38,7 +39,7 @@ void QQmlProfiler::reportData()
         }
     }
 
-    QVector<QQmlProfilerData> data;
+    QList<QQmlProfilerData> data;
     data.swap(m_data);
     emit dataReady(data, resolved);
 }

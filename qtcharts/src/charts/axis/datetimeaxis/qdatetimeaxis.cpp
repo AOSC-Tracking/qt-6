@@ -25,7 +25,7 @@ QT_BEGIN_NAMESPACE
 
     \note QDateTimeAxis is disabled on platforms that define qreal as float.
 
-    \image api_datatime_axis.png
+    \image api_datatime_axis.png {Screenshot cutout showing the x-axis describing date times}
 
     QDateTimeAxis can be used with any QXYSeries.
     To add a data point to the series, QDateTime::toMSecsSinceEpoch() is used:
@@ -119,7 +119,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-  \qmlmethod DateTimeAxis::rangeChanged(datetime min, datetime max)
+  \qmlsignal DateTimeAxis::rangeChanged(datetime min, datetime max)
   This signal is emitted when the minimum or maximum value of the axis, specified by \a min
   and \a max, changes.
 

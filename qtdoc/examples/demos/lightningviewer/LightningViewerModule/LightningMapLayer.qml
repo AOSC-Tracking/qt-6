@@ -1,6 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtLocation
 import QtPositioning
@@ -9,9 +11,11 @@ MapItemView {
     id: lightningMapLayer
     model: LightningController.model
     delegate: MapQuickItem {
+        required property double longitude
+        required property double latitude
         width: sourceItem.width
         height: sourceItem.height
-        coordinate: QtPositioning.coordinate(model.latitude, model.longitude, 0);
+        coordinate: QtPositioning.coordinate(latitude, longitude, 0);
         sourceItem: Item {
             height: lightningMapLayer.strikeIconSize
             width: height

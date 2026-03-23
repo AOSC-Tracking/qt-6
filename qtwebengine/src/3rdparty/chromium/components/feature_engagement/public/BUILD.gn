@@ -23,7 +23,7 @@ component("feature_constants") {
   public_deps = [
     "//base",
     "//build:branding_buildflags",
-    "//components/flags_ui",
+    "//components/webui/flags",
     "//extensions/buildflags",
   ]
 }
@@ -69,8 +69,8 @@ jumbo_static_library("public") {
   deps = [
     "//build:branding_buildflags",
     "//components/feed:feature_list",
-    "//components/flags_ui",
     "//components/keyed_service/core",
+    "//components/webui/flags",
     "//extensions/buildflags",
   ]
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
@@ -153,4 +153,17 @@ if (is_android) {
   generate_jni("jni_headers") {
     sources = [ "android/java/src/org/chromium/components/feature_engagement/CppWrappedTestTracker.java" ]
   }
+}
+
+source_set("prefs") {
+  sources = [
+    "pref_names.cc",
+    "pref_names.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/pref_registry",
+    "//components/prefs",
+  ]
 }

@@ -37,6 +37,7 @@
 #include "libavutil/replaygain.h"
 #include "libavutil/spherical.h"
 #include "libavutil/stereo3d.h"
+#include "libavutil/tdrdi.h"
 #include "libavutil/timecode.h"
 
 #include "libavcodec/avcodec.h"
@@ -461,6 +462,14 @@ static void dump_cropping(void *ctx, const AVPacketSideData *sd)
     av_log(ctx, AV_LOG_INFO, "%d/%d/%d/%d", left, right, top, bottom);
 }
 
+static void dump_tdrdi(void *ctx, const AVPacketSideData *sd)
+{
+    const AV3DReferenceDisplaysInfo *tdrdi =
+        (const AV3DReferenceDisplaysInfo *)sd->data;
+
+    av_log(ctx, AV_LOG_INFO, "number of reference displays: %u", tdrdi->num_ref_displays);
+}
+
 static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_side_data,
                           int w, int h, AVRational avg_frame_rate,
                           const char *indent, int log_level)
@@ -539,6 +548,10 @@ static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_s
         case AV_PKT_DATA_FRAME_CROPPING:
             av_log(ctx, AV_LOG_INFO, "Frame cropping: ");
             dump_cropping(ctx, sd);
+            break;
+        case AV_PKT_DATA_3D_REFERENCE_DISPLAYS:
+            av_log(ctx, log_level, "3D Reference Displays Information: ");
+            dump_tdrdi(ctx, sd);
             break;
         default:
             av_log(ctx, log_level, "unknown side data type %d "
@@ -620,7 +633,11 @@ static void dump_stream_format(const AVFormatContext *ic, int i,
 
     // Fields which are missing from AVCodecParameters need to be taken from the AVCodecContext
     if (sti->avctx) {
+#if FF_API_CODEC_PROPS
+FF_DISABLE_DEPRECATION_WARNINGS
         avctx->properties   = sti->avctx->properties;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
         avctx->codec        = sti->avctx->codec;
         avctx->qmin         = sti->avctx->qmin;
         avctx->qmax         = sti->avctx->qmax;
@@ -672,6 +689,11 @@ static void dump_stream_format(const AVFormatContext *ic, int i,
             print_fps(av_q2d(st->r_frame_rate), tbn ? "tbr, " : "tbr", log_level);
         if (tbn)
             print_fps(1 / av_q2d(st->time_base), "tbn", log_level);
+    }
+
+    if (st->start_time != AV_NOPTS_VALUE && st->start_time != 0 && st->time_base.den && st->time_base.num) {
+        const double stream_start = av_q2d(st->time_base) * st->start_time;
+        av_log(NULL, AV_LOG_INFO, ", start %.6f", stream_start);
     }
 
     dump_disposition(st->disposition, log_level);
@@ -789,9 +811,13 @@ static void dump_stream_group(const AVFormatContext *ic, uint8_t *printed,
                       tile_grid->width, tile_grid->height, (AVRational) {0,1},
                       "    ", AV_LOG_INFO);
         for (int i = 0; i < tile_grid->nb_tiles; i++) {
-            const AVStream *st = stg->streams[tile_grid->offsets[i].idx];
-            dump_stream_format(ic, st->index, i, index, is_output, AV_LOG_VERBOSE);
-            printed[st->index] = 1;
+            const AVStream *st = NULL;
+            if (tile_grid->offsets[i].idx < stg->nb_streams)
+                st = stg->streams[tile_grid->offsets[i].idx];
+            if (st && !printed[st->index]) {
+                dump_stream_format(ic, st->index, i, index, is_output, AV_LOG_VERBOSE);
+                printed[st->index] = 1;
+            }
         }
         for (int i = 0; i < stg->nb_streams; i++) {
             const AVStream *st = stg->streams[i];

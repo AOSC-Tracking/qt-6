@@ -390,6 +390,7 @@ private:
     }
 
     int fd_;
+    bool uncServerAvailable = false;
     FILE *stream_;
 
     QTemporaryDir m_temporaryDir;
@@ -533,6 +534,13 @@ void tst_QFile::initTestCase()
 #else
     QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
 #endif
+
+#ifdef Q_OS_WIN
+    // "When used with directories, _access determines only whether the specified directory exists"
+    if (_waccess(qUtf16Printable("//" + QTest::uncServerName() + "/TESTSHAREWRITABLE"), 0) == 0
+            && _waccess(qUtf16Printable("//" + QTest::uncServerName() + "/testshare"), 0) == 0)
+        uncServerAvailable = true;
+#endif
 }
 
 void tst_QFile::cleanupTestCase()
@@ -578,7 +586,8 @@ void tst_QFile::exists()
 #if defined(Q_OS_WIN)
     const QString uncPath = "//" + QTest::uncServerName() + "/testshare/readme.txt";
     QFile unc(uncPath);
-    QVERIFY2(unc.exists(), msgFileDoesNotExist(uncPath).constData());
+    if (uncServerAvailable)
+        QVERIFY2(unc.exists(), msgFileDoesNotExist(uncPath).constData());
 #endif
 
     QTest::ignoreMessage(QtWarningMsg, "Broken filename passed to function");
@@ -643,7 +652,7 @@ void tst_QFile::open_data()
                                             << false << QFile::OpenError;
     }
     QTest::newRow("uncFile") << "//" + QTest::uncServerName() + "/testshare/test.pri" << int(QIODevice::ReadOnly)
-                             << true << QFile::NoError;
+                             << uncServerAvailable << QFile::NoError;
 #endif
 }
 
@@ -715,8 +724,9 @@ void tst_QFile::size_data()
 
     QTest::newRow( "exist01" ) << m_testFile << (qint64)245;
 #if defined(Q_OS_WIN)
-    // Only test UNC on Windows./
-    QTest::newRow("unc") << "//" + QString(QTest::uncServerName() + "/testshare/test.pri") << (qint64)34;
+    // Only test UNC on Windows.
+    if (uncServerAvailable)
+        QTest::newRow("unc") << "//" + QString(QTest::uncServerName() + "/testshare/test.pri") << (qint64)34;
 #endif
 }
 
@@ -1341,6 +1351,7 @@ void tst_QFile::openFileExistingOnly()
     QVERIFY(!f.open(QIODevice::ExistingOnly | QIODevice::ReadOnly));
     QVERIFY(!f.open(QIODevice::ExistingOnly | QIODevice::WriteOnly));
     QVERIFY(!f.open(QIODevice::ExistingOnly | QIODevice::ReadWrite));
+    QTest::ignoreMessage(QtWarningMsg, "QIODevice::open: File access not specified");
     QVERIFY(!f.open(QIODevice::ExistingOnly));
     QVERIFY(!QFile::exists("dontcreateme.txt"));
 
@@ -1354,6 +1365,7 @@ void tst_QFile::openFileExistingOnly()
     f.close();
     QVERIFY2(f.open(QIODevice::ExistingOnly | QIODevice::ReadWrite), msgOpenFailed(f).constData());
     f.close();
+    QTest::ignoreMessage(QtWarningMsg, "QIODevice::open: File access not specified");
     QVERIFY(!f.open(QIODevice::ExistingOnly));
     QVERIFY(QFile::exists("dontcreateme.txt"));
     QFile::remove("dontcreateme.txt");
@@ -1832,6 +1844,9 @@ void tst_QFile::largeUncFileSupport()
     // See https://bugreports.qt.io/browse/QTQAINFRA-1727 which will be resolved by the new
     // test server architecture where the server is no longer shared.
     QSKIP("Multiple instances of running this test at the same time fail due to QTQAINFRA-1727");
+
+    if (!uncServerAvailable)
+        QSKIP("UNC server not available");
 
     qint64 size = Q_INT64_C(8589934592);
     qint64 dataOffset = Q_INT64_C(8589914592);
@@ -2340,8 +2355,6 @@ public:
     MyEngine(int n) { number = n; }
 
     qint64 size() const override { return 123 + number; }
-    QStringList entryList(QDirListing::IteratorFlags, const QStringList &) const override
-    { return QStringList(); }
     QString fileName(FileName) const override { return name; }
 
 private:
@@ -2455,6 +2468,12 @@ void tst_QFile::remove_and_exists()
     QFile f("tull_i_grunn.txt");
 
     QVERIFY(!f.exists());
+    QVERIFY(!QFile::remove(f.fileName()));
+    QVERIFY(!f.remove());
+    QCOMPARE(f.error(), QFile::RemoveError);
+#ifdef Q_OS_UNIX
+    QCOMPARE(f.errorString(), qt_error_string(ENOENT));
+#endif
 
     bool opened = f.open(QIODevice::WriteOnly);
     QVERIFY(opened);
@@ -2466,6 +2485,12 @@ void tst_QFile::remove_and_exists()
 
     f.remove();
     QVERIFY(!f.exists());
+
+    QVERIFY(!f.remove());
+    QCOMPARE(f.error(), QFile::RemoveError);
+#ifdef Q_OS_UNIX
+    QCOMPARE(f.errorString(), qt_error_string(ENOENT));
+#endif
 }
 
 void tst_QFile::removeOpenFile()
@@ -2596,10 +2621,11 @@ void tst_QFile::writeLargeDataBlock_data()
 
 #if defined(Q_OS_WIN) && !defined(QT_NO_NETWORK)
     // Some semi-randomness to avoid collisions.
-    QTest::newRow("unc file")
-        << QString("//" + QTest::uncServerName() + "/TESTSHAREWRITABLE/largefile-%1-%2.txt")
-        .arg(QHostInfo::localHostName())
-        .arg(QTime::currentTime().msec()) << (int)OpenQFile;
+    if (uncServerAvailable)
+        QTest::newRow("unc file")
+                << QString("//" + QTest::uncServerName() + "/TESTSHAREWRITABLE/largefile-%1-%2.txt")
+                   .arg(QHostInfo::localHostName())
+                   .arg(QTime::currentTime().msec()) << (int)OpenQFile;
 #endif
 }
 
@@ -3141,6 +3167,9 @@ void tst_QFile::appendAndRead()
 void tst_QFile::miscWithUncPathAsCurrentDir()
 {
 #if defined(Q_OS_WIN)
+    if (!uncServerAvailable)
+        QSKIP("UNC server not available");
+
     QString current = QDir::currentPath();
     const QString path = QLatin1String("//") + QTest::uncServerName()
         + QLatin1String("/testshare");

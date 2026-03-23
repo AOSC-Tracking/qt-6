@@ -20,6 +20,12 @@ namespace spirv
 {
 namespace
 {
+ANGLE_NOINLINE void ShaderNotRepresentible()
+{
+    ERR() << "Complex shader not representible in SPIR-V";
+    ANGLE_CRASH();
+}
+
 uint32_t MakeLengthOp(size_t length, spv::Op op)
 {
     ASSERT(length <= 0xFFFFu);
@@ -30,8 +36,7 @@ uint32_t MakeLengthOp(size_t length, spv::Op op)
     // would gracefully fail compilation, so this is more of a safety net.
     if (ANGLE_UNLIKELY(length > 0xFFFFu))
     {
-        ERR() << "Complex shader not representible in SPIR-V";
-        ANGLE_CRASH();
+        ShaderNotRepresentible();
     }
 
     return static_cast<uint32_t>(length) << 16 | op;
@@ -3207,7 +3212,7 @@ void WriteGroupNonUniformBroadcast(Blob *blob,
                                    IdResult idResult2,
                                    IdScope execution,
                                    IdRef value,
-                                   IdRef id)
+                                   IdRef invocationId)
 {
     const size_t startSize = blob->size();
     blob->push_back(0);
@@ -3215,7 +3220,7 @@ void WriteGroupNonUniformBroadcast(Blob *blob,
     blob->push_back(idResult2);
     blob->push_back(execution);
     blob->push_back(value);
-    blob->push_back(id);
+    blob->push_back(invocationId);
     (*blob)[startSize] = MakeLengthOp(blob->size() - startSize, spv::OpGroupNonUniformBroadcast);
 }
 void WriteGroupNonUniformBroadcastFirst(Blob *blob,
@@ -3331,7 +3336,7 @@ void WriteGroupNonUniformShuffle(Blob *blob,
                                  IdResult idResult2,
                                  IdScope execution,
                                  IdRef value,
-                                 IdRef id)
+                                 IdRef invocationId)
 {
     const size_t startSize = blob->size();
     blob->push_back(0);
@@ -3339,7 +3344,7 @@ void WriteGroupNonUniformShuffle(Blob *blob,
     blob->push_back(idResult2);
     blob->push_back(execution);
     blob->push_back(value);
-    blob->push_back(id);
+    blob->push_back(invocationId);
     (*blob)[startSize] = MakeLengthOp(blob->size() - startSize, spv::OpGroupNonUniformShuffle);
 }
 void WriteGroupNonUniformShuffleXor(Blob *blob,

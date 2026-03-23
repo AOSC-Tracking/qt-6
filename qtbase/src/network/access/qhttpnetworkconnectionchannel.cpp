@@ -5,7 +5,6 @@
 
 #include "qhttpnetworkconnectionchannel_p.h"
 #include "qhttpnetworkconnection_p.h"
-#include "qhttp2configuration.h"
 #include "private/qnoncontiguousbytedevice_p.h"
 
 #include <qdebug.h>
@@ -21,8 +20,6 @@
 #    include <QtNetwork/qsslcipher.h>
 #endif
 
-#include "private/qnetconmonitor_p.h"
-
 #include <QtNetwork/private/qtnetworkglobal_p.h>
 
 #include <memory>
@@ -36,6 +33,12 @@ QT_BEGIN_NAMESPACE
 // connection times out)
 // We use 3 because we can get a _q_error 3 times depending on the timing:
 static const int reconnectAttemptsDefault = 3;
+static const char keepAliveIdleOption[] = "QT_QNAM_TCP_KEEPIDLE";
+static const char keepAliveIntervalOption[] = "QT_QNAM_TCP_KEEPINTVL";
+static const char keepAliveCountOption[] = "QT_QNAM_TCP_KEEPCNT";
+static const int TCP_KEEPIDLE_DEF = 60;
+static const int TCP_KEEPINTVL_DEF = 10;
+static const int TCP_KEEPCNT_DEF = 5;
 
 QHttpNetworkConnectionChannel::QHttpNetworkConnectionChannel()
     : socket(nullptr)
@@ -856,6 +859,10 @@ void QHttpNetworkConnectionChannel::_q_disconnected()
             state = QHttpNetworkConnectionChannel::ReadingState;
             _q_receiveReply();
         }
+    } else if (reply && reply->contentLength() == -1 && !reply->d_func()->isChunked()) {
+        // There was no content-length header and it's not chunked encoding,
+        // so this is a valid way to have the connection closed by the server
+        _q_receiveReply();
     } else if (state == QHttpNetworkConnectionChannel::IdleState && resendCurrent) {
         // re-sending request because the socket was in ClosingState
         QMetaObject::invokeMethod(connection, "_q_startNextRequest", Qt::QueuedConnection);
@@ -916,17 +923,24 @@ void QHttpNetworkConnectionChannel::_q_connected_abstract_socket(QAbstractSocket
     // not sure yet if it helps, but it makes sense
     absSocket->setSocketOption(QAbstractSocket::KeepAliveOption, 1);
 
-    pipeliningSupported = QHttpNetworkConnectionChannel::PipeliningSupportUnknown;
+    QTcpKeepAliveConfiguration keepAliveConfig = connection->tcpKeepAliveParameters();
 
-    if (QNetworkConnectionMonitor::isEnabled()) {
-        auto connectionPrivate = connection->d_func();
-        if (!connectionPrivate->connectionMonitor.isMonitoring()) {
-            // Now that we have a pair of addresses, we can start monitoring the
-            // connection status to handle its loss properly.
-            if (connectionPrivate->connectionMonitor.setTargets(absSocket->localAddress(), absSocket->peerAddress()))
-                connectionPrivate->connectionMonitor.startMonitoring();
-        }
-    }
+    auto getKeepAliveValue = [](int configValue,
+                                const char* envName,
+                                int defaultValue) {
+        if (configValue > 0)
+            return configValue;
+        return static_cast<int>(qEnvironmentVariableIntegerValue(envName).value_or(defaultValue));
+    };
+
+    int kaIdleOption = getKeepAliveValue(keepAliveConfig.idleTimeBeforeProbes.count(), keepAliveIdleOption, TCP_KEEPIDLE_DEF);
+    int kaIntervalOption = getKeepAliveValue(keepAliveConfig.intervalBetweenProbes.count(), keepAliveIntervalOption, TCP_KEEPINTVL_DEF);
+    int kaCountOption = getKeepAliveValue(keepAliveConfig.probeCount, keepAliveCountOption, TCP_KEEPCNT_DEF);
+    absSocket->setSocketOption(QAbstractSocket::KeepAliveIdleOption, kaIdleOption);
+    absSocket->setSocketOption(QAbstractSocket::KeepAliveIntervalOption, kaIntervalOption);
+    absSocket->setSocketOption(QAbstractSocket::KeepAliveCountOption, kaCountOption);
+
+    pipeliningSupported = QHttpNetworkConnectionChannel::PipeliningSupportUnknown;
 
     // ### FIXME: if the server closes the connection unexpectedly, we shouldn't send the same broken request again!
     //channels[i].reconnectAttempts = 2;

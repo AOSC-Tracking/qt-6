@@ -1,6 +1,7 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // Copyright (C) 2012 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author James Turner <james.turner@kdab.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <AppKit/AppKit.h>
 
@@ -372,11 +373,21 @@ NSMenuItem *QCocoaMenuItem::sync()
         m_native.keyEquivalentModifierMask = NSEventModifierFlagCommand;
     }
 
-    const QIcon::Mode mode = m_enabled ? QIcon::Normal : QIcon::Disabled;
-    const QIcon::State state = m_checked ? QIcon::On : QIcon::Off;
-    m_native.image = [NSImage imageFromQIcon:m_icon withSize:m_iconSize
-                                                    withMode:mode
-                                                   withState:state];
+    if (auto *image = [NSImage internalImageFromQIcon:m_icon]) {
+        // The icon is backed by QAppleIconEngine, in which case we
+        // want to pass on the underlying NSImage instead of flattening
+        // to a QImage, as AppKit takes care of requesting a symbol
+        // configuration that matches the size and look of the menu,
+        // which we can't replicate otherwise. Note that this ignores
+        // any possible explicitly set icon size of the menu item.
+        m_native.image = [[image copy] autorelease];
+    } else {
+        const QIcon::Mode mode = m_enabled ? QIcon::Normal : QIcon::Disabled;
+        const QIcon::State state = m_checked ? QIcon::On : QIcon::Off;
+        m_native.image = [NSImage imageFromQIcon:m_icon withSize:QSize(m_iconSize, m_iconSize)
+                                                        withMode:mode
+                                                        withState:state];
+    }
 
     m_native.state = m_checked ?  NSControlStateValueOn : NSControlStateValueOff;
     return m_native;

@@ -21,10 +21,13 @@
 #include "base/apple/bridging.h"
 #include "base/apple/foundation_util.h"
 #include "base/apple/scoped_cftyperef.h"
+#include "base/check_deref.h"
+#include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
+#include "base/notimplemented.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/timer/timer.h"
 #include "base/trace_event/trace_event.h"
@@ -32,10 +35,13 @@
 #include "components/device_event_log/device_event_log.h"
 #include "ui/display/display.h"
 #include "ui/display/display_change_notifier.h"
+#include "ui/display/mac/screen_mac_headless.h"
 #include "ui/display/util/display_util.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/icc_profile.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
+#include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/switches.h"
 
 extern "C" {
 Boolean CGDisplayUsesForceToGray(void);
@@ -179,26 +185,8 @@ DisplayMac BuildDisplayForScreen(NSScreen* screen) {
   display.set_is_monochrome(CGDisplayUsesForceToGray());
 
   // Query the display's refresh rate.
-  if (@available(macos 12.0, *)) {
-    // NSScreen.minimumRefreshInterval is available on macOS 12.0+
-    double refresh_rate = 1.0 / screen.minimumRefreshInterval;
-    display.set_display_frequency(refresh_rate);
-  } else {
-    // CVDisplayLink is available on macOS 10.4–15.0.
-    CVDisplayLinkRef display_link = nullptr;
-    if (CVDisplayLinkCreateWithCGDisplay(display_id, &display_link) ==
-        kCVReturnSuccess) {
-      DCHECK(display_link);
-      CVTime cv_time =
-          CVDisplayLinkGetNominalOutputVideoRefreshPeriod(display_link);
-      if (!(cv_time.flags & kCVTimeIsIndefinite)) {
-        double refresh_rate = (static_cast<double>(cv_time.timeScale) /
-                               static_cast<double>(cv_time.timeValue));
-        display.set_display_frequency(refresh_rate);
-      }
-      CVDisplayLinkRelease(display_link);
-    }
-  }
+  double refresh_rate = 1.0 / screen.minimumRefreshInterval;
+  display.set_display_frequency(refresh_rate);
 
   // CGDisplayRotation returns a double. Display::SetRotationAsDegree will
   // handle the unexpected situations were the angle is not a multiple of 90.
@@ -339,10 +327,11 @@ class ScreenMac : public Screen {
       const std::set<gfx::NativeWindow>& ignore) override {
     const NSPoint ns_point = gfx::ScreenPointToNSPoint(point);
 
-    // Note: [NSApp orderedWindows] doesn't include NSPanels.
+    // Note: NSApp.orderedWindows doesn't include NSPanels.
     for (NSWindow* window in NSApp.orderedWindows) {
-      if (ignore.count(window))
+      if (ignore.count(gfx::NativeWindow(window))) {
         continue;
+      }
 
       if (!window.onActiveSpace) {
         continue;
@@ -355,11 +344,11 @@ class ScreenMac : public Screen {
       }
 
       if (NSPointInRect(ns_point, window.frame)) {
-        return window;
+        return gfx::NativeWindow(window);
       }
     }
 
-    return nil;
+    return gfx::NativeWindow();
   }
 
   int GetNumDisplays() const override { return displays_mac_.size(); }
@@ -391,9 +380,10 @@ class ScreenMac : public Screen {
   Display GetDisplayNearestView(gfx::NativeView native_view) const override {
     NSView* view = native_view.GetNativeNSView();
     NSWindow* window = view.window;
-    if (!window)
+    if (!window) {
       return GetPrimaryDisplay();
-    return GetDisplayNearestWindow(window);
+    }
+    return GetDisplayNearestWindow(gfx::NativeWindow(window));
   }
 
   Display GetDisplayNearestPoint(const gfx::Point& point) const override {
@@ -604,10 +594,17 @@ class ScreenMac : public Screen {
 // static
 gfx::NativeWindow Screen::GetWindowForView(gfx::NativeView native_view) {
   NSView* view = native_view.GetNativeNSView();
-  return view.window;
+  return gfx::NativeWindow(view.window);
 }
 
 Screen* CreateNativeScreen() {
+  const base::CommandLine& command_line =
+      CHECK_DEREF(base::CommandLine::ForCurrentProcess());
+
+  if (command_line.HasSwitch(switches::kHeadless)) {
+    return new ScreenMacHeadless;
+  }
+
   return new ScreenMac;
 }
 

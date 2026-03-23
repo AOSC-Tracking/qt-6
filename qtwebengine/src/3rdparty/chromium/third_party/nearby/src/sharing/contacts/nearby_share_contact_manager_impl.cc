@@ -174,10 +174,7 @@ NearbyShareContactManagerImpl::NearbyShareContactManagerImpl(
               /*require_connectivity=*/true,
               prefs::kNearbySharingSchedulerContactDownloadAndUploadName,
               [&] { DownloadContacts(); })),
-      executor_(context->CreateSequencedTaskRunner()),
-      use_identity_api_(NearbyFlags::GetInstance().GetBoolFlag(
-          config_package_nearby::nearby_sharing_feature::
-              kCallNearbyIdentityApi)) {}
+      executor_(context->CreateSequencedTaskRunner()) {}
 
 NearbyShareContactManagerImpl::~NearbyShareContactManagerImpl() = default;
 
@@ -233,31 +230,7 @@ void NearbyShareContactManagerImpl::ContactDownloadContext::FetchNextPage() {
 }
 
 void NearbyShareContactManagerImpl::DownloadContacts() {
-  if (use_identity_api_) {
-    LOG(INFO) << __func__ << ": [Call Identity API] Skipping DownloadContacts";
-    return;
-  }
-  executor_->PostTask([this]() {
-    LOG(INFO) << "Started to download contacts";
-    if (!is_running()) {
-      LOG(WARNING) << "Ignore contacts download, manager is not running.";
-      return;
-    }
-
-    if (!account_manager_.GetCurrentAccount().has_value()) {
-      LOG(WARNING) << "Ignore contacts download, no logged in account.";
-      contact_download_and_upload_scheduler_->HandleResult(/*success=*/true);
-      return;
-    }
-
-    // Currently Contacts download is synchronous.  It completes after
-    // FetchNextPage() returns.
-    auto context = std::make_unique<ContactDownloadContext>(
-        nearby_share_client_.get(),
-        absl::bind_front(
-            &NearbyShareContactManagerImpl::OnContactsDownloadCompleted, this));
-    context->FetchNextPage();
-  });
+  LOG(INFO) << __func__ << ": [Call Identity API] Skipping DownloadContacts";
 }
 
 void NearbyShareContactManagerImpl::GetContacts(ContactsCallback callback) {
@@ -285,23 +258,15 @@ void NearbyShareContactManagerImpl::GetContacts(ContactsCallback callback) {
 }
 
 void NearbyShareContactManagerImpl::OnStart() {
-  if (use_identity_api_) {
-    LOG(INFO) << __func__
-              << ": [Call Identity API] Skipping "
-                 "contact_download_and_upload_scheduler start.";
-    return;
-  }
-  contact_download_and_upload_scheduler_->Start();
+  LOG(INFO) << __func__
+            << ": [Call Identity API] Skipping "
+                "contact_download_and_upload_scheduler start.";
 }
 
 void NearbyShareContactManagerImpl::OnStop() {
-  if (use_identity_api_) {
-    LOG(INFO) << __func__
-              << ": [Call Identity API] Skipping "
-                 "contact_download_and_upload_scheduler stop.";
-    return;
-  }
-  contact_download_and_upload_scheduler_->Stop();
+  LOG(INFO) << __func__
+            << ": [Call Identity API] Skipping "
+                "contact_download_and_upload_scheduler stop.";
 }
 
 void NearbyShareContactManagerImpl::OnContactsDownloadSuccess(

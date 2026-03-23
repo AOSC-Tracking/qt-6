@@ -7,7 +7,9 @@
 
 #include <memory>
 
+#include "absl/container/flat_hash_set.h"
 #include "include/v8-memory-span.h"
+#include "src/base/logging.h"
 #include "src/base/once.h"
 #include "src/base/page-allocator.h"
 #include "src/base/platform/mutex.h"
@@ -15,12 +17,17 @@
 #include "src/common/globals.h"
 #include "src/flags/flags.h"
 #include "src/heap/memory-chunk-constants.h"
+#include "src/sandbox/check.h"
 #include "src/sandbox/code-pointer-table.h"
 #include "src/utils/allocation.h"
 
 #ifdef V8_ENABLE_LEAPTIERING
 #include "src/sandbox/js-dispatch-table.h"
 #endif  // V8_ENABLE_LEAPTIERING
+
+#ifdef V8_ENABLE_SANDBOX
+#include "src/base/region-allocator.h"
+#endif  // V8_ENABLE_SANDBOX
 
 namespace v8 {
 
@@ -31,12 +38,91 @@ class LeakyObject;
 
 namespace internal {
 
+class MemoryPool;
+
 #ifdef V8_ENABLE_SANDBOX
 class MemoryChunkMetadata;
 class Sandbox;
-#endif
+
+class SandboxedArrayBufferAllocatorBase {
+ public:
+  virtual void* Allocate(size_t length) = 0;
+  virtual void* AllocateUninitialized(size_t length) = 0;
+  virtual void Free(void* ptr) = 0;
+};
+
+// Backend allocator shared by all ArrayBufferAllocator instances inside one
+// sandbox. This way, there is a single region of virtual address space
+// reserved inside a sandbox from which all ArrayBufferAllocators allocate
+// their memory, instead of each allocator creating their own region, which
+// may cause address space exhaustion inside the sandbox.
+// TODO(chromium:1340224): replace this with a more efficient allocator.
+class SandboxedArrayBufferAllocator final
+    : public SandboxedArrayBufferAllocatorBase {
+ public:
+  SandboxedArrayBufferAllocator() = default;
+
+  SandboxedArrayBufferAllocator(const SandboxedArrayBufferAllocator&) = delete;
+  SandboxedArrayBufferAllocator& operator=(
+      const SandboxedArrayBufferAllocator&) = delete;
+
+  ~SandboxedArrayBufferAllocator() = default;
+
+  void LazyInitialize(Sandbox* sandbox);
+
+  void* Allocate(size_t length) override;
+  void* AllocateUninitialized(size_t length) override;
+  void Free(void* data) override;
+
+  void TearDown();
+
+ private:
+  // Use a region allocator with a "page size" of 128 bytes as a reasonable
+  // compromise between the number of regions it has to manage and the amount
+  // of memory wasted due to rounding allocation sizes up to the page size.
+  static constexpr size_t kAllocationGranularity = 128;
+  // The backing memory's accessible region is grown in chunks of this size.
+  static constexpr size_t kChunkSize = 1 * MB;
+
+  bool is_initialized() const { return !!sandbox_; }
+
+  std::unique_ptr<base::RegionAllocator> region_alloc_;
+  size_t end_of_accessible_region_ = 0;
+  Sandbox* sandbox_ = nullptr;
+  base::Mutex mutex_;
+};
+
+#ifdef V8_ENABLE_PARTITION_ALLOC
+class PABackedSandboxedArrayBufferAllocator
+    : public SandboxedArrayBufferAllocatorBase {
+ public:
+  PABackedSandboxedArrayBufferAllocator() = default;
+  ~PABackedSandboxedArrayBufferAllocator();
+
+  PABackedSandboxedArrayBufferAllocator(
+      const PABackedSandboxedArrayBufferAllocator&) = delete;
+  PABackedSandboxedArrayBufferAllocator& operator=(
+      const PABackedSandboxedArrayBufferAllocator&) = delete;
+
+  void LazyInitialize(Sandbox* sandbox);
+
+  void* Allocate(size_t length) override;
+  void* AllocateUninitialized(size_t length) override;
+  void Free(void* data) override;
+
+  void TearDown();
+
+ private:
+  class Impl;
+
+  std::unique_ptr<Impl> impl_;
+};
+#endif  // V8_ENABLE_PARTITION_ALLOC
+#endif  // V8_ENABLE_SANDBOX
+
 class CodeRange;
 class Isolate;
+class OptimizingCompileTaskExecutor;
 class ReadOnlyHeap;
 class ReadOnlyArtifacts;
 class SnapshotData;
@@ -65,6 +151,36 @@ class SnapshotData;
 // group.  Ensuring this invariant is the responsibility of the API user.
 class V8_EXPORT_PRIVATE IsolateGroup final {
  public:
+#ifdef V8_ENABLE_SANDBOX
+  class MemoryChunkMetadataTableEntry {
+   public:
+    void CheckIfMetadataAccessibleFromIsolate(const Isolate* isolate) const {
+      if (isolate_ ==
+          reinterpret_cast<Isolate*>(kReadOnlyOrSharedEntryIsolateSentinel)) {
+        return;
+      }
+      SBXCHECK_EQ(isolate_, isolate);
+    }
+
+    void SetMetadata(MemoryChunkMetadata* metadata, Isolate* isolate);
+
+    const Isolate* isolate() const { return isolate_; }
+    MemoryChunkMetadata* metadata() const { return metadata_; }
+
+    MemoryChunkMetadata** metadata_slot() { return &metadata_; }
+
+   private:
+    // This indicates that the metadata entry can be read from any isolates
+    // (in essence, for the read-only or shared pages).
+    static constexpr uintptr_t kReadOnlyOrSharedEntryIsolateSentinel = -1;
+
+    MemoryChunkMetadata* metadata_ = nullptr;
+    Isolate* isolate_ = nullptr;
+  };
+  static_assert(sizeof(MemoryChunkMetadataTableEntry) ==
+                2 * kSystemPointerSize);
+#endif  // V8_ENABLE_SANDBOX
+
   // InitializeOncePerProcess should be called early on to initialize the
   // process-wide group.
   static IsolateGroup* AcquireDefault() { return GetDefault()->Acquire(); }
@@ -84,6 +200,7 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
   static IsolateGroup* New();
 
   static void InitializeOncePerProcess();
+  static void TearDownOncePerProcess();
 
   // Obtain a fresh reference on the isolate group.
   IsolateGroup* Acquire() {
@@ -143,6 +260,8 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
     shared_space_isolate_ = isolate;
   }
 
+  OptimizingCompileTaskExecutor* optimizing_compile_task_executor();
+
   ReadOnlyHeap* shared_read_only_heap() const { return shared_read_only_heap_; }
   void set_shared_read_only_heap(ReadOnlyHeap* heap) {
     shared_read_only_heap_ = heap;
@@ -155,16 +274,23 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
   }
 
   ReadOnlyArtifacts* InitializeReadOnlyArtifacts();
-  void ClearReadOnlyArtifacts();
 
 #ifdef V8_ENABLE_SANDBOX
+  // Unlike page_allocator() this one is supposed to be used for allocation
+  // of memory for array backing stores or Wasm memory. When pointer compression
+  // is enabled it allocates memory outside of the pointer compression
+  // cage. When sandbox is enabled, it allocates memory within the sandbox.
+  std::weak_ptr<PageAllocator> GetBackingStorePageAllocator();
+
   Sandbox* sandbox() { return sandbox_; }
 
   CodePointerTable* code_pointer_table() { return &code_pointer_table_; }
 
-  MemoryChunkMetadata** metadata_pointer_table() {
+  MemoryChunkMetadataTableEntry* metadata_pointer_table() {
     return metadata_pointer_table_;
   }
+
+  SandboxedArrayBufferAllocatorBase* GetSandboxedArrayBufferAllocator();
 #endif  // V8_ENABLE_SANDBOX
 
 #ifdef V8_ENABLE_LEAPTIERING
@@ -177,8 +303,40 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
   void AddIsolate(Isolate* isolate);
   void RemoveIsolate(Isolate* isolate);
 
+  MemoryPool* memory_pool() const { return memory_pool_.get(); }
+
+  template <typename Callback>
+  bool FindAnotherIsolateLocked(Isolate* isolate, Callback callback) {
+    // Holding this mutex while invoking the callback avoids the isolate tearing
+    // down in the mean time.
+    base::MutexGuard group_guard(mutex_);
+    Isolate* target_isolate = nullptr;
+    DCHECK_NOT_NULL(main_isolate_);
+
+    if (main_isolate_ != isolate) {
+      target_isolate = main_isolate_;
+    } else {
+      for (Isolate* entry : isolates_) {
+        if (entry != isolate) {
+          target_isolate = entry;
+          break;
+        }
+      }
+    }
+
+    if (target_isolate) {
+      callback(target_isolate);
+      return true;
+    }
+
+    return false;
+  }
+
+  V8_INLINE static IsolateGroup* GetDefault() { return default_isolate_group_; }
+
  private:
   friend class base::LeakyObject<IsolateGroup>;
+  friend class MemoryPool;
   friend class PoolTest;
 
   // Unless you manually create a new isolate group, all isolates in a process
@@ -186,12 +344,10 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
   // that default group.
   static IsolateGroup* default_isolate_group_;
 
-  IsolateGroup();
+  IsolateGroup() = default;
   ~IsolateGroup();
   IsolateGroup(const IsolateGroup&) = delete;
   IsolateGroup& operator=(const IsolateGroup&) = delete;
-
-  V8_INLINE static IsolateGroup* GetDefault() { return default_isolate_group_; }
 
   // Only used for testing.
   static void ReleaseDefault();
@@ -208,7 +364,6 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
 #endif
 
   std::atomic<int> reference_count_{1};
-  int isolate_count_{0};
   v8::PageAllocator* page_allocator_ = nullptr;
 
 #ifdef V8_COMPRESS_POINTERS
@@ -220,6 +375,8 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
 #ifdef V8_COMPRESS_POINTERS_IN_MULTIPLE_CAGES
   thread_local static IsolateGroup* current_;
 #endif  // V8_COMPRESS_POINTERS_IN_MULTIPLE_CAGES
+
+  std::unique_ptr<MemoryPool> memory_pool_;
 
   base::OnceType init_code_range_ = V8_ONCE_INIT;
   std::unique_ptr<CodeRange> code_range_;
@@ -234,13 +391,27 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
   std::unique_ptr<ReadOnlyArtifacts> read_only_artifacts_;
   ReadOnlyHeap* shared_read_only_heap_ = nullptr;
   Isolate* shared_space_isolate_ = nullptr;
+  std::unique_ptr<OptimizingCompileTaskExecutor>
+      optimizing_compile_task_executor_;
+
+  // Set of isolates currently in the IsolateGroup. Guarded by mutex_.
+  absl::flat_hash_set<Isolate*> isolates_;
+
+  // The first isolate to join the group. However, it will be replaced by
+  // another isolate if that isolate tears down before all other isolates have
+  // left.
+  Isolate* main_isolate_ = nullptr;
 
 #ifdef V8_ENABLE_SANDBOX
   Sandbox* sandbox_ = nullptr;
   CodePointerTable code_pointer_table_;
-  MemoryChunkMetadata*
-      metadata_pointer_table_[MemoryChunkConstants::kMetadataPointerTableSize] =
-          {nullptr};
+  MemoryChunkMetadataTableEntry metadata_pointer_table_
+      [MemoryChunkConstants::kMetadataPointerTableSize]{};
+#ifdef V8_ENABLE_PARTITION_ALLOC
+  PABackedSandboxedArrayBufferAllocator backend_allocator_;
+#else
+  SandboxedArrayBufferAllocator backend_allocator_;
+#endif
 #endif  // V8_ENABLE_SANDBOX
 
 #ifdef V8_ENABLE_LEAPTIERING

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickwebengineprofile.h"
 #include "qquickwebengineprofile_p.h"
@@ -80,7 +81,7 @@ QT_BEGIN_NAMESPACE
     \c off-the-record is set.
     \value DiskHttpCache Use a disk cache. This is the default if \c off-the-record
     is not set. Falls back to \c MemoryHttpCache if \c off-the-record is set.
-    \value NoCache Disable both in-memory and disk caching. (Added in Qt 5.7)
+    \value NoCache Disable both in-memory and disk caching.
 */
 
 /*!
@@ -94,6 +95,9 @@ QT_BEGIN_NAMESPACE
     \value  AllowPersistentCookies
             Cookies marked persistent are saved to and restored from disk, whereas session cookies
             are only stored to disk for crash recovery. This is the default setting.
+    \value [since 6.11] OnlyPersistentCookies
+            Cookies marked persistent are saved to and restored from disk, whereas session cookies
+            are never stored to disk, even for crash recovery.
     \value  ForcePersistentCookies
             Both session and persistent cookies are saved to and restored from disk.
 */
@@ -720,6 +724,9 @@ void QQuickWebEngineProfile::setHttpCacheType(QQuickWebEngineProfile::HttpCacheT
             Cookies marked persistent are saved to and restored from disk, whereas session cookies
             are only stored to disk for crash recovery.
             This is the default value for non off-the-record profile with storageName.
+    \value  WebEngineProfile.OnlyPersistentCookies
+            Cookies marked persistent are saved to and restored from disk, whereas session cookies
+            are never stored to disk, even for crash recovery.
     \value WebEngineProfile.ForcePersistentCookies
             Both session and persistent cookies are saved to and restored from disk.
 */
@@ -1129,10 +1136,15 @@ QQuickWebEngineSettings *QQuickWebEngineProfile::settings() const
 }
 
 /*!
+    \property QQuickWebEngineProfile::userScripts
+
+    \brief The collection of QWebEngineScript objects that are injected into
+    all pages that share this profile.
+*/
+/*!
     \qmlproperty WebEngineScriptCollection WebEngineProfile::userScripts
     \since 1.5
-
-    Returns the collection of WebEngineScript objects that are injected into
+    \brief The collection of WebEngineScript objects that are injected into
     all pages that share this profile.
 */
 
@@ -1157,7 +1169,8 @@ QWebEngineClientCertificateStore *QQuickWebEngineProfile::clientCertificateStore
 }
 
 /*!
-    Return the Client Hints settings associated with this browsing context.
+    \property QQuickWebEngineProfile::clientHints
+    \brief The Client Hints settings associated with this browsing context.
 
     \since 6.8
     \sa QWebEngineClientHints
@@ -1168,6 +1181,13 @@ QWebEngineClientHints *QQuickWebEngineProfile::clientHints() const
     return d->m_clientHints.data();
 }
 
+/*!
+    \property QQuickWebEngineProfile::extensionManager
+    \brief The extension manager associated with this profile.
+
+    \since 6.10
+    \sa QWebEngineExtensionManager
+*/
 QWebEngineExtensionManager *QQuickWebEngineProfile::extensionManager()
 {
 #if QT_CONFIG(webengine_extensions)

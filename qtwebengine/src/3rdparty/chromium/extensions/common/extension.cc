@@ -16,6 +16,8 @@
 #include "base/base64.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/containers/map_util.h"
+#include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_writer.h"
@@ -30,7 +32,9 @@
 #include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/extension_id.h"
+#include "extensions/common/file_util.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handler.h"
@@ -53,6 +57,10 @@ namespace values = manifest_values;
 namespace errors = manifest_errors;
 
 namespace {
+
+BASE_FEATURE(kValidateGetResourceURLPath,
+             "ValidateGetResourceURLPath",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 constexpr int kMinimumSupportedManifestVersion = 2;
 constexpr int kMaximumSupportedManifestVersion = 3;
@@ -243,8 +251,8 @@ scoped_refptr<Extension> Extension::Create(const base::FilePath& path,
                            utf8_error);
 }
 
-// TODO(sungguk): Continue removing std::string errors and replacing
-// with std::u16string. See http://crbug.com/71980.
+// TODO(crbug.com/41317803): Continue removing std::string errors and replacing
+// with std::u16string.
 scoped_refptr<Extension> Extension::Create(const base::FilePath& path,
                                            ManifestLocation location,
                                            const base::Value::Dict& value,
@@ -298,10 +306,38 @@ Manifest::Type Extension::GetType() const {
 }
 
 // static
-GURL Extension::GetResourceURL(const GURL& extension_url,
-                               std::string_view relative_path) {
+GURL Extension::ResolveExtensionURL(const GURL& extension_url,
+                                    std::string_view relative_url) {
   DCHECK(extension_url.SchemeIs(kExtensionScheme));
-  return extension_url.Resolve(relative_path);
+  GURL resolved = extension_url.Resolve(relative_url);
+  if (!url::IsSameOriginWith(resolved, extension_url)) {
+    return GURL();
+  }
+
+  return resolved;
+}
+
+// static
+GURL Extension::GetResourceURL(const GURL& extension_url,
+                               std::string_view relative_url) {
+  GURL resolved = Extension::ResolveExtensionURL(extension_url, relative_url);
+
+  // TODO(crbug.com/407932132): Remove this if-check and always validate the
+  // path in M142.
+  if (!base::FeatureList::IsEnabled(kValidateGetResourceURLPath)) {
+    return resolved;
+  }
+
+  // Make sure that the relative path is valid. The validation is aligned with
+  // GetResource, i.e. we don't allow retrieving resource URLs for paths that
+  // GetResource would reject.
+  base::FilePath relative_path =
+      file_util::ExtensionURLToRelativeFilePath(resolved);
+  if (ContainsReservedCharacters(relative_path)) {
+    return GURL();
+  }
+
+  return resolved;
 }
 
 bool Extension::ResourceMatches(const URLPatternSet& pattern_set,
@@ -468,9 +504,11 @@ Extension::ManifestData* Extension::GetManifestData(
 void Extension::SetManifestData(std::string_view key,
                                 std::unique_ptr<Extension::ManifestData> data) {
   DCHECK(!finished_parsing_manifest_ && thread_checker_.CalledOnValidThread());
-  // TODO(crbug.com/376532871): remove explicit std::string constructor once
-  // std::map::operator[] supports heterogeneous overloads (in C++23).
-  manifest_data_[std::string{key}] = std::move(data);
+  // TODO(crbug.com/376532871): This helper avoids creating a temporary string
+  // to lookup `key` in `manifest_data_`, if key is already present. The helper
+  // can be removed with C++26, where std::map supports heterogenous key args
+  // on `std::map::operator[]()` and `std::map::insert_or_assign()`.
+  base::InsertOrAssign(manifest_data_, key, std::move(data));
 }
 
 void Extension::SetGUID(const ExtensionGuid& guid) {

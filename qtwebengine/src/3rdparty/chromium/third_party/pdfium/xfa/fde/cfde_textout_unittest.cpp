@@ -38,7 +38,7 @@ class CFDETextOutTest : public testing::Test {
                                 FXDIB_Format::kBgra));
 
     device_ = std::make_unique<CFX_DefaultRenderDevice>();
-    device_->Attach(bitmap_);
+    ASSERT_TRUE(device_->Attach(bitmap_));
 
     font_ = LoadFont();
     ASSERT_TRUE(font_);
@@ -80,8 +80,9 @@ class CFDETextOutTest : public testing::Test {
 
   ByteString GetBitmapChecksum() {
     CRYPT_md5_context context = CRYPT_MD5Start();
-    for (int i = 0; i < bitmap_->GetHeight(); ++i)
+    for (int i = 0; i < bitmap_->GetHeight(); ++i) {
       CRYPT_MD5Update(&context, bitmap_->GetScanline(i));
+    }
     uint8_t digest[16];
     CRYPT_MD5Finish(&context, digest);
     return ByteString(CryptToBase16(digest).c_str());

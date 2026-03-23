@@ -8,7 +8,6 @@
 #include "include/v8config.h"
 #include "src/base/atomicops.h"
 #include "src/base/memory.h"
-#include "src/base/platform/mutex.h"
 #include "src/common/globals.h"
 #include "src/sandbox/check.h"
 #include "src/sandbox/compactible-external-entity-table.h"
@@ -324,9 +323,6 @@ class V8_EXPORT_PRIVATE ExternalPointerTable
  public:
   using EvacuateMarkMode = ExternalPointerTableEntry::EvacuateMarkMode;
 
-  // Size of an ExternalPointerTable, for layout computation in IsolateData.
-  static constexpr int kSize = 2 * kSystemPointerSize;
-
   ExternalPointerTable() = default;
   ExternalPointerTable(const ExternalPointerTable&) = delete;
   ExternalPointerTable& operator=(const ExternalPointerTable&) = delete;
@@ -438,10 +434,6 @@ class V8_EXPORT_PRIVATE ExternalPointerTable
   uint32_t SweepAndCompact(Space* space, Counters* counters);
   uint32_t Sweep(Space* space, Counters* counters);
 
-  // Updates all evacuation entries with new handle locations. The function
-  // takes the old hanlde location and returns the new one.
-  void UpdateAllEvacuationEntries(Space*, std::function<Address(Address)>);
-
   inline bool Contains(Space* space, ExternalPointerHandle handle) const;
 
   // A resource outside of the V8 heap whose lifetime is tied to something
@@ -488,8 +480,6 @@ class V8_EXPORT_PRIVATE ExternalPointerTable
       uint32_t index, ExternalPointerHandle* handle_location,
       uint32_t start_of_evacuation_area);
 };
-
-static_assert(sizeof(ExternalPointerTable) == ExternalPointerTable::kSize);
 
 }  // namespace internal
 }  // namespace v8

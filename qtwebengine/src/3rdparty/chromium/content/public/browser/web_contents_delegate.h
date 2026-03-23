@@ -22,17 +22,21 @@
 #include "content/public/browser/fullscreen_types.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/media_stream_request.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/preloading.h"
 #include "content/public/browser/preloading_trigger_type.h"
 #include "content/public/browser/preview_cancel_reason.h"
 #include "content/public/browser/select_audio_output_request.h"
 #include "content/public/browser/serial_chooser.h"
-#include "content/public/browser/web_contents.h"
+#include "content/public/browser/storage_partition_config.h"
 #include "content/public/common/window_container_type.mojom-forward.h"
+#include "third_party/blink/public/common/input/web_mouse_event.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/common/page/drag_operation.h"
 #include "third_party/blink/public/mojom/choosers/color_chooser.mojom-forward.h"
 #include "third_party/blink/public/mojom/frame/blocked_navigation_types.mojom.h"
 #include "third_party/blink/public/mojom/frame/fullscreen.mojom-forward.h"
+#include "third_party/blink/public/mojom/installedapp/related_application.mojom.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
 #include "third_party/blink/public/mojom/page/draggable_region.mojom-forward.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -85,6 +89,7 @@ class Origin;
 
 namespace blink {
 class WebGestureEvent;
+class WebMouseEvent;
 enum class ProtocolHandlerSecurityLevel;
 }
 
@@ -101,6 +106,7 @@ class RenderFrameHost;
 class RenderWidgetHost;
 class SessionStorageNamespace;
 class SiteInstance;
+class WebContents;
 struct ContextMenuParams;
 struct DropData;
 struct MediaPlayerWatchTime;
@@ -299,6 +305,17 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual bool HandleContextMenu(RenderFrameHost& render_frame_host,
                                  const ContextMenuParams& params);
 
+  // Allows delegates to handle mouse events before sending to the renderer.
+  // Returns true if the event was handled, false otherwise. A true value means
+  // no more processing should happen on the event. The default return value is
+  // false.
+  virtual bool PreHandleMouseEvent(WebContents* source,
+                                   const blink::WebMouseEvent& event);
+  virtual void PreHandleDragUpdate(const DropData& drop_data,
+                                   const gfx::PointF& client_pt) {}
+  virtual void PreHandleDragExit() {}
+  virtual void HandleDragEnded() {}
+
   // Allows delegates to handle keyboard events before sending to the renderer.
   // See enum for description of return values.
   virtual KeyboardEventProcessingResult PreHandleKeyboardEvent(
@@ -341,6 +358,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // If an delegate returns true, it can optionally also override
   // CreateCustomWebContents() below to provide their own WebContents.
   virtual bool IsWebContentsCreationOverridden(
+      RenderFrameHost* opener,
       SiteInstance* source_site_instance,
       mojom::WindowContainerType window_container_type,
       const GURL& opener_url,
@@ -469,7 +487,7 @@ class CONTENT_EXPORT WebContentsDelegate {
 
   // Notifies `BrowserView` about the resizable boolean having been set vith
   // `window.setResizable(bool)` API.
-  virtual void OnCanResizeFromWebAPIChanged() {}
+  virtual void OnWebApiWindowResizableChanged() {}
   // Returns the overall resizability of the `BrowserView` when considering
   // both the value set by the AWC API and browser's "native" resizability.
   virtual bool GetCanResize();
@@ -639,10 +657,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // delegate doesn't provide a size, the current WebContentsView's size will be
   // used.
   virtual gfx::Size GetSizeForNewRenderView(WebContents* web_contents);
-
-  // Returns true if the WebContents is never user-visible, thus the renderer
-  // never needs to produce pixels for display.
-  virtual bool IsNeverComposited(WebContents* web_contents);
 
   // Askss |guest_web_contents| to perform the same. If this returns true, the
   // default behavior is suppressed.
@@ -853,6 +867,16 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual BackForwardTransitionAnimationManager::FallbackUXConfig
   GetBackForwardTransitionFallbackUXConfig();
 #endif  // BUILDFLAG(IS_ANDROID)
+
+  // Returns the saved related_applications web app manifest field associated
+  // with the given `web_contents`. The information is saved via the
+  // installation of a web app, where the url of the `web_contents` is in-scope
+  // of an installed web app. Returns an empty vector if `web_contents` is not
+  // associated with an installed web app or `related_applications` is empty.
+  // See:
+  // https://wicg.github.io/manifest-incubations/index.html#related_applications-member
+  virtual std::vector<blink::mojom::RelatedApplicationPtr>
+  GetSavedRelatedApplications(WebContents* web_contents);
 
  protected:
   virtual ~WebContentsDelegate();

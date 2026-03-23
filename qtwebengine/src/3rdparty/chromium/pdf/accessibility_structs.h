@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "pdf/page_character_index.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
@@ -17,34 +18,9 @@
 
 namespace chrome_pdf {
 
-struct PageCharacterIndex {
-  // Index of PDF page.
-  uint32_t page_index = 0;
-  // Index of character within the PDF page.
-  uint32_t char_index = 0;
-};
-
 struct Selection {
   PageCharacterIndex start;
   PageCharacterIndex end;
-};
-
-struct AccessibilityDocInfo {
-  bool operator==(const AccessibilityDocInfo& other) const;
-  bool operator!=(const AccessibilityDocInfo& other) const;
-
-  uint32_t page_count = 0;
-  bool is_tagged = false;
-  bool text_accessible = false;
-  bool text_copyable = false;
-};
-
-struct AccessibilityPageInfo {
-  uint32_t page_index = 0;
-  gfx::Rect bounds;
-  uint32_t text_run_count = 0;
-  uint32_t char_count = 0;
-  bool is_searchified = false;
 };
 
 // See PDF Reference 1.7, page 402, table 5.3.
@@ -121,6 +97,53 @@ struct AccessibilityTextRunInfo {
   bool is_searchified = false;
 };
 
+struct AccessibilityImageInfo {
+  AccessibilityImageInfo();
+  AccessibilityImageInfo(const std::string& alt_text,
+                         uint32_t text_run_index,
+                         const gfx::RectF& bounds,
+                         int32_t page_object_index);
+  AccessibilityImageInfo(const AccessibilityImageInfo& other);
+  ~AccessibilityImageInfo();
+
+  // Alternate text for the image provided by PDF.
+  std::string alt_text;
+
+  // We anchor the image to a char index, this denotes the text run before
+  // which the image should be inserted in the accessibility tree. The text run
+  // at this index should contain the anchor char index.
+  uint32_t text_run_index = 0;
+
+  // Bounding box of the image.
+  gfx::RectF bounds;
+
+  // Index of the image object in its page.
+  int32_t page_object_index;
+};
+
+struct AccessibilityDocInfo {
+  AccessibilityDocInfo();
+  AccessibilityDocInfo(const AccessibilityDocInfo&) = delete;
+  AccessibilityDocInfo& operator=(const AccessibilityDocInfo&) = delete;
+  ~AccessibilityDocInfo();
+
+  bool operator==(const AccessibilityDocInfo& other) const;
+  bool operator!=(const AccessibilityDocInfo& other) const;
+
+  uint32_t page_count = 0;
+  bool is_tagged = false;
+  bool text_accessible = false;
+  bool text_copyable = false;
+};
+
+struct AccessibilityPageInfo {
+  uint32_t page_index = 0;
+  gfx::Rect bounds;
+  uint32_t text_run_count = 0;
+  uint32_t char_count = 0;
+  bool is_searchified = false;
+};
+
 struct AccessibilityCharInfo {
   uint32_t unicode_character = 0;
   double char_width = 0.0;
@@ -150,30 +173,6 @@ struct AccessibilityLinkInfo {
   // Bounding box of the link.
   gfx::RectF bounds;
   AccessibilityTextRunRangeInfo text_range;
-};
-
-struct AccessibilityImageInfo {
-  AccessibilityImageInfo();
-  AccessibilityImageInfo(const std::string& alt_text,
-                         uint32_t text_run_index,
-                         const gfx::RectF& bounds,
-                         int32_t page_object_index);
-  AccessibilityImageInfo(const AccessibilityImageInfo& other);
-  ~AccessibilityImageInfo();
-
-  // Alternate text for the image provided by PDF.
-  std::string alt_text;
-
-  // We anchor the image to a char index, this denotes the text run before
-  // which the image should be inserted in the accessibility tree. The text run
-  // at this index should contain the anchor char index.
-  uint32_t text_run_index = 0;
-
-  // Bounding box of the image.
-  gfx::RectF bounds;
-
-  // Index of the image object in its page.
-  int32_t page_object_index;
 };
 
 struct AccessibilityHighlightInfo {

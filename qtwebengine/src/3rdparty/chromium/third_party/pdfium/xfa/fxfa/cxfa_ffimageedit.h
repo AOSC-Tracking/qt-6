@@ -42,10 +42,10 @@ class CXFA_FFImageEdit final : public CXFA_FFField {
   explicit CXFA_FFImageEdit(CXFA_Node* pNode);
 
   void SetFWLRect() override;
-  bool UpdateFWLData() override;
+  void UpdateFWLData() override;
   bool CommitData() override;
 
-  cppgc::Member<IFWL_WidgetDelegate> m_pOldDelegate;
+  cppgc::Member<IFWL_WidgetDelegate> old_delegate_;
 };
 
 #endif  // XFA_FXFA_CXFA_FFIMAGEEDIT_H_

@@ -1,6 +1,7 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../ui/components/switch/switch.js';
 import '../../ui/components/cards/cards.js';
@@ -10,7 +11,7 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
-import type * as Root from '../../core/root/root.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as ChromeLink from '../../ui/components/chrome_link/chrome_link.js';
@@ -94,7 +95,7 @@ const UIStrings = {
    */
   enterpriseTooltip: 'This setting is managed by your organization',
   /**
-    +*@description Button with the enterpise disclaimer that takes the user to the relevant enterprise cookie chrome setting
+   * +*@description Button with the enterpise disclaimer that takes the user to the relevant enterprise cookie chrome setting
    */
   viewDetails: 'View details',
   /**
@@ -110,7 +111,7 @@ const UIStrings = {
    *@description Text used for link within the enableFlag to show users where they can enable the Third-party Cookie Heuristics Grants flag.
    */
   tpcdHeuristicsGrants: '#tpcd-heuristics-grants',
-};
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/security/CookieControlsView.ts', UIStrings);
 export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -120,9 +121,8 @@ export interface ViewInput {
   inputChanged: (newValue: boolean, setting: Common.Settings.Setting<boolean>) => void;
   openChromeCookieSettings: () => void;
 }
-export interface ViewOutput {}
 
-export type View = (input: ViewInput, output: ViewOutput, target: HTMLElement) => void;
+export type View = (input: ViewInput, output: object, target: HTMLElement) => void;
 
 export function showInfobar(): void {
   UI.InspectorView.InspectorView.instance().displayDebuggedTabReloadRequiredWarning(
@@ -134,7 +134,7 @@ export class CookieControlsView extends UI.Widget.VBox {
   #isGracePeriodActive: boolean;
   #thirdPartyControlsDict: Root.Runtime.HostConfig['thirdPartyCookieControls'];
 
-  constructor(element?: HTMLElement, view: View = (input, output, target) => {
+  constructor(element?: HTMLElement, view: View = (input, _, target) => {
     // createSetting() allows us to initialize the settings with the UI binding values the first
     // time that the browser starts, and use the existing setting value for all subsequent uses.
     const enterpriseEnabledSetting = Common.Settings.Settings.instance().createSetting(
@@ -305,11 +305,11 @@ export class CookieControlsView extends UI.Widget.VBox {
     `, target, {host: this});
     // clang-format on
   }) {
-    super(true, undefined, element);
+    super(element, {useShadowDom: true});
     this.#view = view;
     this.#isGracePeriodActive = false;
-    this.#thirdPartyControlsDict = Common.Settings.Settings.instance().getHostConfig().thirdPartyCookieControls;
-    this.registerRequiredCSS(Input.checkboxStylesRaw, cookieControlsViewStyles);
+    this.#thirdPartyControlsDict = Root.Runtime.hostConfig.thirdPartyCookieControls;
+    this.registerRequiredCSS(Input.checkboxStyles, cookieControlsViewStyles);
 
     SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.PrimaryPageChanged,
@@ -353,8 +353,6 @@ export class CookieControlsView extends UI.Widget.VBox {
     this.checkGracePeriodActive().catch(error => {
       console.error(error);
     });
-
-    UI.InspectorView.InspectorView.instance().removeDebuggedTabReloadRequiredWarning();
   }
 
   async checkGracePeriodActive(event?: Common.EventTarget.EventTargetEvent<SDK.Resource.Resource>): Promise<void> {

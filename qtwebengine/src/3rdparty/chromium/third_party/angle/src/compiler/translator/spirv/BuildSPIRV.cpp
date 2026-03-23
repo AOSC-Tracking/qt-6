@@ -999,14 +999,24 @@ SpirvTypeData SPIRVBuilder::declareType(const SpirvType &type, const TSymbol *bl
     {
         // Declaring a sampler.  First, declare the non-sampled image and then a combined
         // image-sampler.
+        //
+        // For sampler buffers, combined image-sampler shouldn't be created.  While this is allowed
+        // for SPIR-V before 1.6, it was never intended to be correct.
 
         SpirvType imageType          = type;
         imageType.isSamplerBaseImage = true;
 
         const spirv::IdRef nonSampledId = getSpirvTypeData(imageType, nullptr).id;
 
-        typeId = getNewId({});
-        spirv::WriteTypeSampledImage(&mSpirvTypeAndConstantDecls, typeId, nonSampledId);
+        if (IsSamplerBuffer(type.type))
+        {
+            typeId = nonSampledId;
+        }
+        else
+        {
+            typeId = getNewId({});
+            spirv::WriteTypeSampledImage(&mSpirvTypeAndConstantDecls, typeId, nonSampledId);
+        }
     }
     else if (IsImage(type.type) || IsSubpassInputType(type.type) || type.isSamplerBaseImage)
     {
@@ -1274,10 +1284,6 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
         case EbtSampler2DRect:
         case EbtImageRect:
             *dimOut = spv::DimRect;
-            break;
-        case EbtSampler2DRectShadow:
-            *dimOut = spv::DimRect;
-            isDepth = true;
             break;
         case EbtISampler2DRect:
         case EbtIImageRect:
@@ -2444,6 +2450,9 @@ void SPIRVBuilder::writeExtensions(spirv::Blob *blob)
             case SPIRVExtensions::FragmentShaderInterlockARB:
                 spirv::WriteExtension(blob, "SPV_EXT_fragment_shader_interlock");
                 break;
+            case SPIRVExtensions::FragmentShadingRate:
+                spirv::WriteExtension(blob, "SPV_KHR_fragment_shading_rate");
+                break;
             default:
                 UNREACHABLE();
         }
@@ -2461,6 +2470,9 @@ void SPIRVBuilder::writeSourceExtensions(spirv::Blob *blob)
                 break;
             case SPIRVExtensions::FragmentShaderInterlockARB:
                 spirv::WriteSourceExtension(blob, "GL_ARB_fragment_shader_interlock");
+                break;
+            case SPIRVExtensions::FragmentShadingRate:
+                spirv::WriteSourceExtension(blob, "GL_EXT_fragment_shading_rate");
                 break;
             default:
                 UNREACHABLE();

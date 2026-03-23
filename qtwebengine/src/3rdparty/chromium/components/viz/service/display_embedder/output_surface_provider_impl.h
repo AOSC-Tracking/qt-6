@@ -29,7 +29,7 @@ namespace viz {
 class GpuServiceImpl;
 class SoftwareOutputDevice;
 
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
 class OutputSurface;
 #endif
 
@@ -65,7 +65,7 @@ class VIZ_SERVICE_EXPORT OutputSurfaceProviderImpl
   gpu::Scheduler* GetGpuScheduler() override;
 
  private:
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<OutputSurface> CreateSoftwareOutputSurface(const RendererSettings& renderer_settings);
 #endif
 

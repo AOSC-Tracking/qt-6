@@ -2,14 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
+#include "services/network/public/cpp/hash_value_mojom_traits.h"
 
 #include <string.h>
 
-#include "services/network/public/cpp/hash_value_mojom_traits.h"
+#include "base/containers/span.h"
 
 namespace mojo {
 
@@ -25,7 +22,7 @@ bool StructTraits<
     // CHECK it instead when it does.
     return false;
   }
-  memcpy(out->data, bytes.data(), bytes.size());
+  base::span(*out).copy_from(base::as_byte_span(bytes));
   return true;
 }
 

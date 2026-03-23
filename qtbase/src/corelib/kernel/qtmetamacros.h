@@ -67,19 +67,19 @@ QT_BEGIN_NAMESPACE
 #define Q_ENUM_IMPL(ENUM) \
     friend constexpr const QMetaObject *qt_getEnumMetaObject(ENUM) noexcept { return &staticMetaObject; } \
     friend constexpr const char *qt_getEnumName(ENUM) noexcept { return #ENUM; }
-#define Q_ENUM(x) Q_ENUMS(x) Q_ENUM_IMPL(x)
-#define Q_FLAG(x) Q_FLAGS(x) Q_ENUM_IMPL(x)
+#define Q_ENUM(x) QT_ANNOTATE_CLASS(qt_enums, x) Q_ENUM_IMPL(x)
+#define Q_FLAG(x) QT_ANNOTATE_CLASS(qt_enums, x) Q_ENUM_IMPL(x)
 #define Q_ENUM_NS_IMPL(ENUM) \
     inline constexpr const QMetaObject *qt_getEnumMetaObject(ENUM) noexcept { return &staticMetaObject; } \
     inline constexpr const char *qt_getEnumName(ENUM) noexcept { return #ENUM; }
-#define Q_ENUM_NS(x) Q_ENUMS(x) Q_ENUM_NS_IMPL(x)
-#define Q_FLAG_NS(x) Q_FLAGS(x) Q_ENUM_NS_IMPL(x)
+#define Q_ENUM_NS(x) QT_ANNOTATE_CLASS(qt_enums, x) Q_ENUM_NS_IMPL(x)
+#define Q_FLAG_NS(x) QT_ANNOTATE_CLASS(qt_enums, x) Q_ENUM_NS_IMPL(x)
 #define Q_SCRIPTABLE QT_ANNOTATE_FUNCTION(qt_scriptable)
 #define Q_INVOKABLE  QT_ANNOTATE_FUNCTION(qt_invokable)
 #define Q_SIGNAL QT_ANNOTATE_FUNCTION(qt_signal)
 #define Q_SLOT QT_ANNOTATE_FUNCTION(qt_slot)
 #define Q_MOC_INCLUDE(...) QT_ANNOTATE_CLASS(qt_moc_include, __VA_ARGS__)
-#endif // QT_NO_META_MACROS
+#endif // !QT_NO_META_MACROS
 
 #ifndef QT_NO_TRANSLATION
 // full set of tr functions
@@ -176,7 +176,7 @@ private: \
 #define Q_NAMESPACE Q_NAMESPACE_EXPORT() \
     /*end*/
 
-#endif // QT_NO_META_MACROS
+#endif // !QT_NO_META_MACROS
 
 #else // Q_MOC_RUN
 #define slots slots
@@ -187,16 +187,14 @@ private: \
 #define Q_INTERFACES(x) Q_INTERFACES(x)
 #define Q_PROPERTY(text) Q_PROPERTY(text)
 #define Q_PRIVATE_PROPERTY(d, text) Q_PRIVATE_PROPERTY(d, text)
-#define Q_PRIVATE_QPROPERTY(accessor, type, name, setter, ...) Q_PRIVATE_QPROPERTY(accessor, type, name, setter, __VA_ARGS__)
-#define Q_PRIVATE_QPROPERTIES_BEGIN
-#define Q_PRIVATE_QPROPERTY_IMPL(name)
-#define Q_PRIVATE_QPROPERTIES_END
 #define Q_REVISION(...) Q_REVISION(__VA_ARGS__)
 #define Q_OVERRIDE(text) Q_OVERRIDE(text)
 #define Q_ENUMS(x) Q_ENUMS(x)
 #define Q_FLAGS(x) Q_FLAGS(x)
 #define Q_ENUM(x) Q_ENUM(x)
-#define Q_FLAGS(x) Q_FLAGS(x)
+#define Q_FLAG(x) Q_FLAG(x)
+#define Q_ENUM_NS(x) Q_ENUM_NS(x)
+#define Q_FLAG_NS(x) Q_FLAG_NS(x)
  /* qmake ignore Q_OBJECT */
 #define Q_OBJECT Q_OBJECT
  /* qmake ignore Q_OBJECT */

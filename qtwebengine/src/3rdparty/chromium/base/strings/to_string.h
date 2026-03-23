@@ -6,42 +6,32 @@
 #define BASE_STRINGS_TO_STRING_H_
 
 #include <concepts>
-#include <iomanip>
-#include <ios>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
+#include "base/base_export.h"
+#include "base/containers/span.h"
+#include "base/strings/string_view_util.h"
 #include "base/types/supports_ostream_operator.h"
+#include "base/types/supports_to_string.h"
 
 namespace base {
 
-template <typename... Ts>
-std::string ToString(const Ts&... values);
+template <typename T>
+std::string ToString(const T& values);
 
 namespace internal {
 
-template <typename T>
-concept SupportsToString = requires(const T& t) { t.ToString(); };
-
-// I/O manipulators are function pointers, but should be sent directly to the
-// `ostream` instead of being cast to `const void*` like other function
-// pointers.
-template <typename T>
-constexpr bool IsIomanip = false;
-template <typename T>
-  requires(std::derived_from<T, std::ios_base>)
-constexpr bool IsIomanip<T&(T&)> = true;
-
 // Function pointers implicitly convert to `bool`, so use this to avoid printing
-// function pointers as 1 or 0.
+// function pointers as "true"/"false".
 template <typename T>
 concept WillBeIncorrectlyStreamedAsBool =
-    std::is_function_v<std::remove_pointer_t<T>> &&
-    !IsIomanip<std::remove_pointer_t<T>>;
+    std::is_function_v<std::remove_pointer_t<T>>;
 
 // Fallback case when there is no better representation.
 template <typename T>
@@ -52,6 +42,15 @@ struct ToStringHelper {
     // char-like types.
     ss << "[" << sizeof(v) << "-byte object at 0x"
        << static_cast<const void*>(std::addressof(v)) << "]";
+  }
+};
+
+// Boolean values. (Handled explicitly so as to not rely on the behavior of
+// std::boolalpha.)
+template <>
+struct ToStringHelper<bool> {
+  static void Stringify(const bool& v, std::ostringstream& ss) {
+    ss << (v ? "true" : "false");
   }
 };
 
@@ -130,16 +129,63 @@ struct ToStringHelper<std::tuple<T...>> {
 }  // namespace internal
 
 // Converts any type to a string, preferring defined operator<<() or ToString()
-// methods if they exist. If multiple `values` are given, returns the
-// concatenation of the result of applying `ToString` to each value.
-template <typename... Ts>
-std::string ToString(const Ts&... values) {
+// methods if they exist.
+template <typename T>
+std::string ToString(const T& value) {
   std::ostringstream ss;
-  ss.setf(std::ios_base::boolalpha);  // Stringify bools as "true"/"false".
-  (...,
-   internal::ToStringHelper<std::remove_cvref_t<decltype(values)>>::Stringify(
-       values, ss));
+  internal::ToStringHelper<std::remove_cvref_t<decltype(value)>>::Stringify(
+      value, ss);
   return ss.str();
+}
+
+BASE_EXPORT std::string ToString(std::string_view sv);
+BASE_EXPORT std::string ToString(std::u16string_view sv);
+BASE_EXPORT std::string ToString(std::wstring_view sv);
+
+namespace to_string_internal {
+
+template <typename T>
+concept SpanConvertsToStringView = requires {
+  { as_string_view(span<T>()) };
+};
+
+}  // namespace to_string_internal
+
+// Stringify base::span, hopefully in a way that's useful for tests.
+template <typename ElementType, size_t Extent, typename InternalPtrType>
+  requires(to_string_internal::SpanConvertsToStringView<ElementType> ||
+           requires(const ElementType& t) {
+             { ToString(t) };
+           })
+constexpr std::string ToString(span<ElementType, Extent, InternalPtrType> r) {
+  std::string out = "[";
+  if constexpr (to_string_internal::SpanConvertsToStringView<ElementType>) {
+    const auto sv = as_string_view(r);
+    using T = std::remove_cvref_t<ElementType>;
+    if constexpr (std::same_as<wchar_t, T>) {
+      out += "L\"";
+      out += ToString(sv);
+    } else if constexpr (std::same_as<char16_t, T>) {
+      out += "u\"";
+      out += ToString(sv);
+    } else {
+      out += "\"";
+      out += sv;
+    }
+    out += '\"';
+  } else if constexpr (Extent != 0) {
+    // It would be nice to use `JoinString()` here, but making that `constexpr`
+    // is more trouble than it's worth.
+    if (!r.empty()) {
+      out += ToString(r.front());
+      for (const ElementType& e : r.template subspan<1>()) {
+        out += ", ";
+        out += ToString(e);
+      }
+    }
+  }
+  out += "]";
+  return out;
 }
 
 }  // namespace base

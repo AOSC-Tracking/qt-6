@@ -8,9 +8,10 @@
 #include <ostream>
 #include <string_view>
 
+#include "base/strings/string_number_conversions.h"
 #include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/autofill_field.h"
-#include "components/autofill/core/browser/data_model/autofill_i18n_api.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_i18n_api.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_parsing/autofill_scanner.h"
 
@@ -661,20 +662,40 @@ std::optional<double> AddressFieldParserNG::FindScoreOfBestMatchingRule(
     case NO_SERVER_DATA:
     case EMPTY_TYPE:
     case AMBIGUOUS_TYPE:
-    case FIELD_WITH_DEFAULT_VALUE:
     case MERCHANT_EMAIL_SIGNUP:
     case PRICE:
     case NUMERIC_QUANTITY:
     case SEARCH_TERM:
-    case IMPROVED_PREDICTION:
     case PASSPORT_NAME_TAG:
     case PASSPORT_NUMBER:
-    case PASSPORT_ISSUING_COUNTRY_TAG:
-    case PASSPORT_EXPIRATION_DATE_TAG:
-    case PASSPORT_ISSUE_DATE_TAG:
+    case PASSPORT_ISSUING_COUNTRY:
+    case PASSPORT_EXPIRATION_DATE:
+    case PASSPORT_ISSUE_DATE:
     case LOYALTY_MEMBERSHIP_PROGRAM:
     case LOYALTY_MEMBERSHIP_PROVIDER:
     case LOYALTY_MEMBERSHIP_ID:
+    case VEHICLE_OWNER_TAG:
+    case VEHICLE_LICENSE_PLATE:
+    case VEHICLE_VIN:
+    case VEHICLE_MAKE:
+    case VEHICLE_MODEL:
+    case VEHICLE_YEAR:
+    case VEHICLE_PLATE_STATE:
+    case DRIVERS_LICENSE_NAME_TAG:
+    case DRIVERS_LICENSE_REGION:
+    case DRIVERS_LICENSE_NUMBER:
+    case DRIVERS_LICENSE_EXPIRATION_DATE:
+    case DRIVERS_LICENSE_ISSUE_DATE:
+    case EMAIL_OR_LOYALTY_MEMBERSHIP_ID:
+    case NATIONAL_ID_CARD_NUMBER:
+    case NATIONAL_ID_CARD_EXPIRATION_DATE:
+    case NATIONAL_ID_CARD_ISSUE_DATE:
+    case NATIONAL_ID_CARD_ISSUING_COUNTRY:
+    case REDRESS_NUMBER:
+    case KNOWN_TRAVELER_NUMBER:
+    case KNOWN_TRAVELER_NUMBER_EXPIRATION_DATE:
+    case ADDRESS_HOME_ZIP_PREFIX:
+    case ADDRESS_HOME_ZIP_SUFFIX:
     case MAX_VALID_FIELD_TYPE:
       return std::nullopt;
   }

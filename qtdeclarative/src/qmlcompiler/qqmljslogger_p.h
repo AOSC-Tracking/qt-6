@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSLOGGER_P_H
 #define QQMLJSLOGGER_P_H
@@ -122,7 +123,7 @@ class Q_QMLCOMPILER_EXPORT QQmlJSLogger
     Q_DISABLE_COPY_MOVE(QQmlJSLogger)
 public:
     QList<QQmlJS::LoggerCategory> categories() const;
-    static const QList<QQmlJS::LoggerCategory> &defaultCategories();
+    static const QList<QQmlJS::LoggerCategory> &builtinCategories();
 
     void registerCategory(const QQmlJS::LoggerCategory &category);
 
@@ -257,7 +258,7 @@ public:
         });
     }
 
-    void processMessages(const QList<QQmlJS::DiagnosticMessage> &messages,
+    void processMessages(QSpan<const QQmlJS::DiagnosticMessage> messages,
                          const QQmlJS::LoggerWarningId id,
                          const QQmlJS::SourceLocation &sourceLocation = QQmlJS::SourceLocation{});
 

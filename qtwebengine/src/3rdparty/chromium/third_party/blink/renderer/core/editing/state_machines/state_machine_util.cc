@@ -17,7 +17,7 @@ namespace {
 // The list of code points which has Indic_Syllabic_Category=Virama property.
 // Must be sorted.
 // See http://www.unicode.org/Public/9.0.0/ucd/IndicSyllabicCategory-9.0.0d2.txt
-const auto kIndicSyllabicCategoryViramaList = std::to_array<uint32_t>({
+constexpr auto kIndicSyllabicCategoryViramaList = std::to_array<uint32_t>({
     // Do not include 0+0BCD TAMIL SIGN VIRAMA as Tamil works differently from
     // other Indic languages. See crbug.com/693687.
     0x094D,  0x09CD,  0x0A4D,  0x0ACD,  0x0B4D,  0x0C4D,  0x0CCD,  0x0D4D,
@@ -86,10 +86,10 @@ bool IsGraphemeBreak(UChar32 prev_code_point, UChar32 next_code_point) {
 
   // Rule GB9, x (Extend | ZWJ)
   // Rule GB9a, x SpacingMark
-  if (next_prop == U_GCB_EXTEND ||
-      next_code_point == kZeroWidthJoinerCharacter ||
-      next_prop == U_GCB_SPACING_MARK)
+  if (next_prop == U_GCB_EXTEND || next_code_point == uchar::kZeroWidthJoiner ||
+      next_prop == U_GCB_SPACING_MARK) {
     return false;
+  }
 
   // Rule GB9b, Prepend x
   if (prev_prop == U_GCB_PREPEND)
@@ -102,9 +102,10 @@ bool IsGraphemeBreak(UChar32 prev_code_point, UChar32 next_code_point) {
     return false;
 
   // GB11, ZWJ x Emoji
-  if (prev_code_point == kZeroWidthJoinerCharacter &&
-      (Character::IsEmoji(next_code_point)))
+  if (prev_code_point == uchar::kZeroWidthJoiner &&
+      (Character::IsEmoji(next_code_point))) {
     return false;
+  }
 
   // GB12 for RI(Regional Indicator) is handled elsewhere because it requires
   // counting the number of consecutive RIs.

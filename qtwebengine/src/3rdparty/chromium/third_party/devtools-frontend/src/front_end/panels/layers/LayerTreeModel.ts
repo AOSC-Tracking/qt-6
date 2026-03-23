@@ -230,7 +230,6 @@ export class AgentLayer implements SDK.LayerTreeBase.Layer {
   private scrollRectsInternal!: Protocol.LayerTree.ScrollRect[];
   private quadInternal!: number[];
   private childrenInternal!: AgentLayer[];
-  private image!: HTMLImageElement|null;
   private parentInternal!: AgentLayer|null;
   private layerPayload!: Protocol.LayerTree.Layer;
   private layerTreeModel: LayerTreeModel;
@@ -365,7 +364,7 @@ export class AgentLayer implements SDK.LayerTreeBase.Layer {
     return this.drawsContent() ? this.width() * this.height() * bytesPerPixel : 0;
   }
 
-  snapshots(): Promise<SDK.PaintProfiler.SnapshotWithRect|null>[] {
+  snapshots(): Array<Promise<SDK.PaintProfiler.SnapshotWithRect|null>> {
     const promise = this.layerTreeModel.paintProfilerModel.makeSnapshot(this.id()).then(snapshot => {
       if (!snapshot) {
         return null;
@@ -378,7 +377,6 @@ export class AgentLayer implements SDK.LayerTreeBase.Layer {
   didPaint(rect: Protocol.DOM.Rect): void {
     this.lastPaintRectInternal = rect;
     this.paintCountInternal = this.paintCount() + 1;
-    this.image = null;
   }
 
   reset(layerPayload: Protocol.LayerTree.Layer): void {
@@ -387,7 +385,6 @@ export class AgentLayer implements SDK.LayerTreeBase.Layer {
     this.parentInternal = null;
     this.paintCountInternal = 0;
     this.layerPayload = layerPayload;
-    this.image = null;
     this.scrollRectsInternal = this.layerPayload.scrollRects || [];
     this.stickyPositionConstraintInternal = this.layerPayload.stickyPositionConstraint ?
         new SDK.LayerTreeBase.StickyPositionConstraint(

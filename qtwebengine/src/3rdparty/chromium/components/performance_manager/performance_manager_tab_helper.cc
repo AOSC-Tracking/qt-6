@@ -4,6 +4,7 @@
 
 #include "components/performance_manager/performance_manager_tab_helper.h"
 
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -11,17 +12,20 @@
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
-#include "base/not_fatal_until.h"
 #include "base/observer_list.h"
+#include "base/supports_user_data.h"
 #include "components/guest_view/buildflags/buildflags.h"
 #include "components/performance_manager/graph/frame_node_impl.h"
+#include "components/performance_manager/graph/graph_impl.h"
 #include "components/performance_manager/graph/page_node_impl.h"
 #include "components/performance_manager/graph/process_node_impl.h"
 #include "components/performance_manager/performance_manager_impl.h"
 #include "components/performance_manager/performance_manager_registry_impl.h"
+#include "components/performance_manager/public/features.h"
 #include "components/performance_manager/render_process_user_data.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
@@ -73,10 +77,7 @@ bool ConnectWindowOpenRelationshipIfExists(PerformanceManagerTabHelper* helper,
   if (!opener_frame_node)
     return false;
 
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(&PageNodeImpl::SetOpenerFrameNode,
-                                base::Unretained(helper->primary_page_node()),
-                                base::Unretained(opener_frame_node)));
+  helper->primary_page_node()->SetOpenerFrameNode(opener_frame_node);
   return true;
 }
 
@@ -134,7 +135,17 @@ PerformanceManagerTabHelper::~PerformanceManagerTabHelper() {
   DCHECK(frames_.empty());
 }
 
-void PerformanceManagerTabHelper::TearDown() {
+void PerformanceManagerTabHelper::TearDownAndSelfDelete() {
+  // Remove the tab helper from the WCUD immediately. After TearDown the tab
+  // helper is in an inconsistent state. This will prevent other
+  // WCO::WebContentsDestroyed handlers from trying to access the tab helper in
+  // this inconsistent state. Doing this before BatchDeleteNodes also prevents
+  // accessors in the PerformanceManager class from finding the tab helper in an
+  // inconsistent state if called from PageNodeObserver::OnPageNodeRemoved. The
+  // tab helper will be deleted when `self` goes out of scope.
+  std::unique_ptr<base::SupportsUserData::Data> self =
+      web_contents()->TakeUserData(UserDataKey());
+
   // Ship our page and frame nodes to the PerformanceManagerImpl for
   // incineration.
   std::vector<std::unique_ptr<NodeBase>> nodes;
@@ -142,8 +153,9 @@ void PerformanceManagerTabHelper::TearDown() {
     std::unique_ptr<FrameNodeImpl> frame_node = std::move(kv.second);
 
     // Notify observers.
-    for (Observer& observer : observers_)
+    for (Observer& observer : observers_) {
       observer.OnBeforeFrameNodeRemoved(this, frame_node.get());
+    }
 
     // Ensure the node will be deleted on the graph sequence.
     nodes.push_back(std::move(frame_node));
@@ -185,8 +197,7 @@ void PerformanceManagerTabHelper::RenderFrameCreated(
   // Get the outer document for a <fencedframe>, MPArch <webview>.
   FrameNodeImpl* outer_document_for_inner_frame_root = nullptr;
   if (parent) {
-    DCHECK(base::Contains(frames_, parent));
-    parent_frame_node = frames_[parent].get();
+    parent_frame_node = GetExistingFrameNode(parent);
   } else if (render_frame_host->IsFencedFrameRoot()) {
     content::RenderFrameHost* outer_document =
         render_frame_host->GetParentOrOuterDocument();
@@ -216,19 +227,20 @@ void PerformanceManagerTabHelper::RenderFrameCreated(
 
   auto* site_instance = render_frame_host->GetSiteInstance();
 
-  // Create the frame node, and provide a callback that will run in the graph to
-  // initialize it.
+  // Create and initialize the frame node. This doesn't call `CreateFrameNode`
+  // because that automatically calls GraphImpl::AddNewNode(), which notifies
+  // observers, before the node is added to `frames_`.
   // TODO(crbug.com/40182881): Actually look up the appropriate page to wire
   // this frame up to!
-  std::unique_ptr<FrameNodeImpl> frame =
-      PerformanceManagerImpl::CreateFrameNode(
-          process_node, page_node_.get(), parent_frame_node,
-          outer_document_for_inner_frame_root,
-          render_frame_host->GetRoutingID(),
-          blink::LocalFrameToken(render_frame_host->GetFrameToken()),
-          site_instance->GetBrowsingInstanceId(),
-          site_instance->GetSiteInstanceGroupId(),
-          render_frame_host->IsActive());
+  auto frame_node = std::make_unique<FrameNodeImpl>(
+      process_node, page_node_.get(), parent_frame_node,
+      outer_document_for_inner_frame_root, render_frame_host->GetRoutingID(),
+      blink::LocalFrameToken(render_frame_host->GetFrameToken()),
+      site_instance->GetBrowsingInstanceId(),
+      site_instance->GetSiteInstanceGroupId(), render_frame_host->IsActive());
+  FrameNodeImpl* frame = frame_node.get();
+  frames_[render_frame_host] = std::move(frame_node);
+  PerformanceManagerImpl::GetGraphImpl()->AddNewNode(frame);
 
   GURL url = render_frame_host->GetLastCommittedURL();
   if (!url.is_empty()) {
@@ -237,14 +249,12 @@ void PerformanceManagerTabHelper::RenderFrameCreated(
                                  /*same_document=*/false,
                                  /*is_served_from_back_forward_cache=*/false);
   }
-
-  frames_[render_frame_host] = std::move(frame);
 }
 
 void PerformanceManagerTabHelper::RenderFrameDeleted(
     content::RenderFrameHost* render_frame_host) {
   auto it = frames_.find(render_frame_host);
-  CHECK(it != frames_.end(), base::NotFatalUntil::M130);
+  CHECK(it != frames_.end());
 
   std::unique_ptr<FrameNodeImpl> frame_node = std::move(it->second);
 
@@ -262,17 +272,12 @@ void PerformanceManagerTabHelper::RenderFrameHostChanged(
     content::RenderFrameHost* new_host) {
   // |old_host| is null when a new frame tree position is being created and a
   // new frame is its first occupant.
-  FrameNodeImpl* old_frame = nullptr;
-  if (old_host) {
-    auto it = frames_.find(old_host);
-    if (it != frames_.end()) {
-      // This can be received for a frame that hasn't yet been created. We can
-      // safely ignore this. It would be nice to track those frames too, but
-      // since they're not yet "created" we'd have no guarantee of seeing a
-      // corresponding delete and the frames can be leaked.
-      old_frame = it->second.get();
-    }
-  }
+  // Note that this notification can be received for a frame that hasn't yet
+  // been created (i.e. old_host != null but GetFrameNode() == null). We can
+  // safely ignore this. It would be nice to track those frames too, but since
+  // they're not yet "created" we'd have no guarantee of seeing a corresponding
+  // delete and the frames can be leaked.
+  FrameNodeImpl* old_frame = old_host ? GetFrameNode(old_host) : nullptr;
 
   // It's entirely possible that this is the first time we're seeing this frame.
   // We'll eventually see a corresponding RenderFrameCreated if the frame ends
@@ -282,11 +287,8 @@ void PerformanceManagerTabHelper::RenderFrameHostChanged(
   // RenderFrameDeleted, and the frame node will be leaked until process tear
   // down.
   DCHECK(new_host);
-  FrameNodeImpl* new_frame = nullptr;
-  auto it = frames_.find(new_host);
-  if (it != frames_.end()) {
-    new_frame = it->second.get();
-  } else {
+  FrameNodeImpl* new_frame = GetFrameNode(new_host);
+  if (!new_frame) {
     DCHECK(!new_host->IsRenderFrameLive())
         << "There shouldn't be a case where RenderFrameHostChanged is "
            "dispatched before RenderFrameCreated with a live RenderFrame\n";
@@ -296,48 +298,33 @@ void PerformanceManagerTabHelper::RenderFrameHostChanged(
     return;
   }
 
-  // Perform the swap in the graph.
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(
-                     [](FrameNodeImpl* old_frame, FrameNodeImpl* new_frame,
-                        GraphImpl* graph) {
-                       FrameNodeImpl::UpdateCurrentFrame(old_frame, new_frame,
-                                                         graph);
-                     },
-                     old_frame, new_frame));
+  FrameNodeImpl::UpdateCurrentFrame(old_frame, new_frame,
+                                    PerformanceManagerImpl::GetGraphImpl());
 }
 
 void PerformanceManagerTabHelper::OnVisibilityChanged(
     content::Visibility visibility) {
   const bool is_visible = visibility == content::Visibility::VISIBLE;
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&PageNodeImpl::SetIsVisible,
-                     base::Unretained(page_node_.get()), is_visible));
+  page_node_->SetIsVisible(is_visible);
 }
 
 void PerformanceManagerTabHelper::OnAudioStateChanged(bool audible) {
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(&PageNodeImpl::SetIsAudible,
-                                base::Unretained(page_node_.get()), audible));
+  page_node_->SetIsAudible(audible);
 }
 
 void PerformanceManagerTabHelper::OnFrameAudioStateChanged(
     content::RenderFrameHost* render_frame_host,
     bool is_audible) {
-  auto frame_it = frames_.find(render_frame_host);
-  // Ideally this would be a DCHECK, but it's possible to receive a notification
-  // for an unknown frame.
+  // Ideally this would call `GetExistingFrameNode`, but it's possible to
+  // receive a notification for an unknown frame.
   // TODO(crbug.com/40940232): Figure out how.
-  if (frame_it == frames_.end()) {
+  FrameNodeImpl* frame_node = GetFrameNode(render_frame_host);
+  if (!frame_node) {
     // We should only ever see this for a frame transitioning to *not* audible.
     DCHECK(!is_audible);
     return;
   }
-  auto* frame_node = frame_it->second.get();
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(&FrameNodeImpl::SetIsAudible,
-                                base::Unretained(frame_node), is_audible));
+  frame_node->SetIsAudible(is_audible);
 }
 
 void PerformanceManagerTabHelper::
@@ -345,65 +332,84 @@ void PerformanceManagerTabHelper::
         content::RenderFrameHost* render_frame_host,
         const blink::mojom::ViewportIntersectionState&
             viewport_intersection_state) {
-  auto frame_it = frames_.find(render_frame_host);
-  // This can be invoked for a crashed RenderFrameHost, as its view still
-  // occupies space on the page. Just ignore it as clearly its content is not
-  // visible.
-  if (frame_it == frames_.end()) {
+  FrameNodeImpl* frame_node = GetFrameNode(render_frame_host);
+  if (!frame_node) {
+    // This can be invoked for a crashed RenderFrameHost, as its view still
+    // occupies space on the page. Just ignore it as clearly its content is not
+    // visible.
     CHECK(!render_frame_host->IsRenderFrameLive());
     return;
   }
   CHECK(render_frame_host->IsRenderFrameLive());
 
-  // Getting address of overloaded function.
-  void (FrameNodeImpl::*set_viewport_intersection_fn)(
-      const blink::mojom::ViewportIntersectionState&) =
-      &FrameNodeImpl::SetViewportIntersection;
+  bool is_intersecting_large_area = [&]() {
+    const gfx::Rect& viewport_intersection =
+        viewport_intersection_state.viewport_intersection;
 
-  auto* frame_node = frame_it->second.get();
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(set_viewport_intersection_fn, base::Unretained(frame_node),
-                     viewport_intersection_state));
+    if (viewport_intersection.IsEmpty()) {
+      return false;
+    }
+
+    int viewport_intersect_area =
+        viewport_intersection.size().GetCheckedArea().ValueOrDefault(INT_MAX);
+    int outermost_main_frame_area =
+        viewport_intersection_state.outermost_main_frame_size.GetCheckedArea()
+            .ValueOrDefault(INT_MAX);
+    if (outermost_main_frame_area == 0) {
+      return false;
+    }
+    float ratio = 1.0f * viewport_intersect_area / outermost_main_frame_area;
+    const float ratio_threshold =
+        blink::features::kLargeFrameSizePercentThreshold.Get() / 100.f;
+    return ratio > ratio_threshold;
+  }();
+
+  frame_node->SetIsIntersectingLargeArea(is_intersecting_large_area);
 }
 
 void PerformanceManagerTabHelper::OnFrameVisibilityChanged(
     content::RenderFrameHost* render_frame_host,
     blink::mojom::FrameVisibility visibility) {
-  auto frame_it = frames_.find(render_frame_host);
-  // This can be invoked for a crashed RenderFrameHost, as its view still
-  // occupies space on the page. Just ignore it as clearly its content is not
-  // visible.
-  if (frame_it == frames_.end()) {
+  FrameNodeImpl* frame_node = GetFrameNode(render_frame_host);
+  if (!frame_node) {
+    // This can be invoked for a crashed RenderFrameHost, as its view still
+    // occupies space on the page. Just ignore it as clearly its content is not
+    // visible.
     CHECK(!render_frame_host->IsRenderFrameLive());
     return;
   }
   CHECK(render_frame_host->IsRenderFrameLive());
 
-  // Getting address of overloaded function.
-  void (FrameNodeImpl::*set_viewport_intersection_fn)(
-      blink::mojom::FrameVisibility) = &FrameNodeImpl::SetViewportIntersection;
+  ViewportIntersection viewport_intersection = [&]() {
+    switch (visibility) {
+      case blink::mojom::FrameVisibility::kNotRendered:
+        return ViewportIntersection::kNotIntersecting;
+      case blink::mojom::FrameVisibility::kRenderedOutOfViewport:
+        if (!features::kRenderedOutOfViewIsNotVisible.Get()) {
+          // Old, seemingly incorrect behavior. Treat an out of view frame as
+          // intersecting with the viewport.
+          return ViewportIntersection::kIntersecting;
+        }
+        return ViewportIntersection::kNotIntersecting;
+      case blink::mojom::FrameVisibility::kRenderedInViewport:
+        return ViewportIntersection::kIntersecting;
+    }
+    NOTREACHED();
+  }();
 
-  auto* frame_node = frame_it->second.get();
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(set_viewport_intersection_fn,
-                                base::Unretained(frame_node), visibility));
+  frame_node->SetViewportIntersection(viewport_intersection);
 }
 
 void PerformanceManagerTabHelper::OnFrameIsCapturingMediaStreamChanged(
     content::RenderFrameHost* render_frame_host,
     bool is_capturing_media_stream) {
-  // Ignore notifications that are received after the frame was deleted.
-  auto frame_it = frames_.find(render_frame_host);
-  if (frame_it == frames_.end()) {
+  FrameNodeImpl* frame_node = GetFrameNode(render_frame_host);
+  if (!frame_node) {
+    // Ignore notifications that are received after the frame was deleted.
     return;
   }
 
-  auto* frame_node = frame_it->second.get();
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&FrameNodeImpl::SetIsCapturingMediaStream,
-                     base::Unretained(frame_node), is_capturing_media_stream));
+  frame_node->SetIsCapturingMediaStream(is_capturing_media_stream);
 }
 
 void PerformanceManagerTabHelper::DidFinishNavigation(
@@ -418,23 +424,20 @@ void PerformanceManagerTabHelper::DidFinishNavigation(
   // Find the associated frame node.
   content::RenderFrameHost* render_frame_host =
       navigation_handle->GetRenderFrameHost();
-  auto frame_it = frames_.find(render_frame_host);
-  // TODO(siggi): Ideally this would be a DCHECK, but it seems it's possible
-  //     to get a DidFinishNavigation notification for a deleted frame with
-  //     the network service.
-  if (frame_it == frames_.end())
+  FrameNodeImpl* frame_node = GetFrameNode(render_frame_host);
+  if (!frame_node) {
+    // TODO(siggi): Ideally this would call `GetExistingFrameNode`, but it seems
+    //     it's possible to get a DidFinishNavigation notification for a deleted
+    //     frame with the network service.
     return;
-  auto* frame_node = frame_it->second.get();
+  }
 
   // Notify the frame of the committed URL.
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&FrameNodeImpl::OnNavigationCommitted,
-                     base::Unretained(frame_node),
-                     render_frame_host->GetLastCommittedURL(),
-                     render_frame_host->GetLastCommittedOrigin(),
-                     navigation_handle->IsSameDocument(),
-                     navigation_handle->IsServedFromBackForwardCache()));
+  frame_node->OnNavigationCommitted(
+      render_frame_host->GetLastCommittedURL(),
+      render_frame_host->GetLastCommittedOrigin(),
+      navigation_handle->IsSameDocument(),
+      navigation_handle->IsServedFromBackForwardCache());
 
   if (!navigation_handle->IsInPrimaryMainFrame())
     return;
@@ -443,16 +446,12 @@ void PerformanceManagerTabHelper::DidFinishNavigation(
   // to the performance manager.
   OnMainFrameNavigation(navigation_handle->GetNavigationId());
 
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&PageNodeImpl::OnMainFrameNavigationCommitted,
-                     base::Unretained(page_node_.get()),
-                     navigation_handle->IsSameDocument(),
-                     navigation_committed_time,
-                     navigation_handle->GetNavigationId(),
-                     render_frame_host->GetLastCommittedURL(),
-                     navigation_handle->GetWebContents()->GetContentsMimeType(),
-                     GetNotificationPermissionStatusAndObserveChanges()));
+  page_node_->OnMainFrameNavigationCommitted(
+      navigation_handle->IsSameDocument(), navigation_committed_time,
+      navigation_handle->GetNavigationId(),
+      render_frame_host->GetLastCommittedURL(),
+      navigation_handle->GetWebContents()->GetContentsMimeType(),
+      GetNotificationPermissionStatusAndObserveChanges());
 }
 
 std::optional<blink::mojom::PermissionStatus> PerformanceManagerTabHelper::
@@ -491,17 +490,16 @@ std::optional<blink::mojom::PermissionStatus> PerformanceManagerTabHelper::
 
   // Return current status.
   return permission_controller->GetPermissionStatusForCurrentDocument(
-      blink::PermissionType::NOTIFICATIONS,
+      content::PermissionDescriptorUtil::
+          CreatePermissionDescriptorForPermissionType(
+              blink::PermissionType::NOTIFICATIONS),
       web_contents()->GetPrimaryMainFrame());
 #endif  // BUILDFLAG(IS_ANDROID)
 }
 
 void PerformanceManagerTabHelper::OnNotificationPermissionStatusChange(
     blink::mojom::PermissionStatus permission_status) {
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&PageNodeImpl::OnNotificationPermissionStatusChange,
-                     base::Unretained(page_node_.get()), permission_status));
+  page_node_->OnNotificationPermissionStatusChange(permission_status);
 }
 
 void PerformanceManagerTabHelper::
@@ -518,15 +516,13 @@ void PerformanceManagerTabHelper::
 
 void PerformanceManagerTabHelper::FrameReceivedUserActivation(
     content::RenderFrameHost* render_frame_host) {
-  // Ignore notifications that are received after the frame was deleted.
-  auto frame_it = frames_.find(render_frame_host);
-  if (frame_it == frames_.end()) {
+  FrameNodeImpl* frame_node = GetFrameNode(render_frame_host);
+  if (!frame_node) {
+    // Ignore notifications that are received after the frame was deleted.
     return;
   }
-  auto* frame_node = frame_it->second.get();
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(&FrameNodeImpl::SetHadUserActivation,
-                                base::Unretained(frame_node)));
+
+  frame_node->SetHadUserActivation();
 }
 
 void PerformanceManagerTabHelper::TitleWasSet(content::NavigationEntry* entry) {
@@ -539,45 +535,27 @@ void PerformanceManagerTabHelper::TitleWasSet(content::NavigationEntry* entry) {
     first_time_title_set_ = true;
     return;
   }
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(&PageNodeImpl::OnTitleUpdated,
-                                base::Unretained(page_node_.get())));
+  page_node_->OnTitleUpdated();
 }
 
 void PerformanceManagerTabHelper::InnerWebContentsAttached(
     content::WebContents* inner_web_contents,
     content::RenderFrameHost* render_frame_host) {
-  // Note that we sometimes learn of contents creation at this point (before
-  // other helpers get a chance to attach), so we need to ensure our helper
-  // exists.
-  CreateForWebContents(inner_web_contents);
   auto* helper = FromWebContents(inner_web_contents);
-  DCHECK(helper);
+  CHECK(helper);
   auto* page = helper->page_node_.get();
-  DCHECK(page);
+  CHECK(page);
   auto* frame = GetFrameNode(render_frame_host);
 
   // For a guest view, the RFH should already have been seen.
   // Note that guest views can simultaneously have openers *and* be embedded.
-  auto embedding_type = PageNode::EmbeddingType::kGuestView;
-  DCHECK(frame);
-
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&PageNodeImpl::SetEmbedderFrameNodeAndEmbeddingType,
-                     base::Unretained(page), base::Unretained(frame),
-                     embedding_type));
+  CHECK(frame);
+  page->SetEmbedderFrameNode(frame);
 }
 
 void PerformanceManagerTabHelper::WebContentsDestroyed() {
-  // Remember the contents, as TearDown clears observer.
-  auto* contents = web_contents();
-  TearDown();
-  // Immediately remove ourselves from the WCUD. After TearDown the tab helper
-  // is in an inconsistent state. This will prevent other
-  // WCO::WebContentsDestroyed handlers from trying to access the tab helper in
-  // this inconsistent state.
-  contents->RemoveUserData(UserDataKey());
+  TearDownAndSelfDelete();
+  // `this` is now invalid.
 }
 
 void PerformanceManagerTabHelper::DidUpdateFaviconURL(
@@ -597,33 +575,22 @@ void PerformanceManagerTabHelper::DidUpdateFaviconURL(
     first_time_favicon_set_ = true;
     return;
   }
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(&PageNodeImpl::OnFaviconUpdated,
-                                base::Unretained(page_node_.get())));
+  page_node_->OnFaviconUpdated();
 }
 
 void PerformanceManagerTabHelper::MediaPictureInPictureChanged(
     bool is_picture_in_picture) {
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(&PageNodeImpl::SetHasPictureInPicture,
-                                base::Unretained(page_node_.get()),
-                                is_picture_in_picture));
+  page_node_->SetHasPictureInPicture(is_picture_in_picture);
 }
 
 void PerformanceManagerTabHelper::OnWebContentsFocused(
     content::RenderWidgetHost* render_widget_host) {
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(&PageNodeImpl::SetIsFocused,
-                                base::Unretained(page_node_.get()),
-                                /*is_focused=*/true));
+  page_node_->SetIsFocused(/*is_focused=*/true);
 }
 
 void PerformanceManagerTabHelper::OnWebContentsLostFocus(
     content::RenderWidgetHost* render_widget_host) {
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE, base::BindOnce(&PageNodeImpl::SetIsFocused,
-                                base::Unretained(page_node_.get()),
-                                /*is_focused=*/false));
+  page_node_->SetIsFocused(/*is_focused=*/false);
 }
 
 void PerformanceManagerTabHelper::AboutToBeDiscarded(
@@ -632,27 +599,19 @@ void PerformanceManagerTabHelper::AboutToBeDiscarded(
 
   base::WeakPtr<PageNode> new_page_node =
       PerformanceManager::GetPrimaryPageNodeForWebContents(new_contents);
-
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&PageNodeImpl::OnAboutToBeDiscarded,
-                     base::Unretained(page_node_.get()), new_page_node));
+  CHECK(new_page_node);
+  page_node_->OnAboutToBeDiscarded(new_page_node);
 }
 
 void PerformanceManagerTabHelper::BindDocumentCoordinationUnit(
     content::RenderFrameHost* render_frame_host,
     mojo::PendingReceiver<mojom::DocumentCoordinationUnit> receiver) {
-  auto it = frames_.find(render_frame_host);
-  CHECK(it != frames_.end(), base::NotFatalUntil::M130);
-
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&FrameNodeImpl::Bind, base::Unretained(it->second.get()),
-                     std::move(receiver)));
+  auto* frame_node = GetExistingFrameNode(render_frame_host);
+  frame_node->Bind(std::move(receiver));
 }
 
 FrameNodeImpl* PerformanceManagerTabHelper::GetFrameNode(
-    content::RenderFrameHost* render_frame_host) {
+    content::RenderFrameHost* render_frame_host) const {
   auto it = frames_.find(render_frame_host);
   return it != frames_.end() ? it->second.get() : nullptr;
 }
@@ -670,10 +629,7 @@ void PerformanceManagerTabHelper::OnMainFrameNavigation(int64_t navigation_id) {
 
   ukm_source_id_ =
       ukm::ConvertToSourceId(navigation_id, ukm::SourceIdType::NAVIGATION_ID);
-  PerformanceManagerImpl::CallOnGraphImpl(
-      FROM_HERE,
-      base::BindOnce(&PageNodeImpl::SetUkmSourceId,
-                     base::Unretained(page_node_.get()), ukm_source_id_));
+  page_node_->SetUkmSourceId(ukm_source_id_);
 
   first_time_title_set_ = false;
   first_time_favicon_set_ = false;
@@ -681,9 +637,9 @@ void PerformanceManagerTabHelper::OnMainFrameNavigation(int64_t navigation_id) {
 
 FrameNodeImpl* PerformanceManagerTabHelper::GetExistingFrameNode(
     content::RenderFrameHost* render_frame_host) const {
-  auto it = frames_.find(render_frame_host);
-  CHECK(it != frames_.end());
-  return it->second.get();
+  FrameNodeImpl* frame_node = GetFrameNode(render_frame_host);
+  CHECK(frame_node);
+  return frame_node;
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(PerformanceManagerTabHelper);

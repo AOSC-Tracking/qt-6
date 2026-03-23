@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_IMAGE_TEXTURE_H
 #define QSSG_RENDER_IMAGE_TEXTURE_H
@@ -26,7 +28,8 @@ enum class QSSGRenderImageTextureFlagValue
 {
     HasTransparency = 1 << 0,
     RGBE8 = 1 << 1,
-    Linear = 1 << 2
+    Linear = 1 << 2,
+    PreMultipliedAlpha = 1 << 3,
 };
 
 struct QSSGRenderImageTextureFlags : public QFlags<QSSGRenderImageTextureFlagValue>
@@ -39,6 +42,9 @@ struct QSSGRenderImageTextureFlags : public QFlags<QSSGRenderImageTextureFlagVal
 
     bool isLinear() const { return this->operator&(QSSGRenderImageTextureFlagValue::Linear); }
     void setLinear(bool inValue) { setFlag(QSSGRenderImageTextureFlagValue::Linear, inValue); }
+
+    bool isPreMultipliedAlpha() const { return this->operator&(QSSGRenderImageTextureFlagValue::PreMultipliedAlpha); }
+    void setPreMultipliedAlpha(bool inValue) { setFlag(QSSGRenderImageTextureFlagValue::PreMultipliedAlpha, inValue); }
 };
 
 struct QSSGRenderImageTexture

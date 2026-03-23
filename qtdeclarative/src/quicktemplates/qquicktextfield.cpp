@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicktextfield_p.h"
 #include "qquicktextfield_p_p.h"
@@ -33,10 +34,13 @@ using namespace Qt::StringLiterals;
 
     \table
     \row \li \image qtquickcontrols-textfield-normal.png
+                    {Text field in normal state}
          \li A text field in its normal state.
     \row \li \image qtquickcontrols-textfield-focused.png
+                    {Text field in focused state with highlight}
          \li A text field that has active focus.
     \row \li \image qtquickcontrols-textfield-disabled.png
+                    {Text field in disabled state}
          \li A text field that is disabled.
     \endtable
 
@@ -85,16 +89,10 @@ using namespace Qt::StringLiterals;
 
 QQuickTextFieldPrivate::QQuickTextFieldPrivate()
 {
-#if QT_CONFIG(accessibility)
-    QAccessible::installActivationObserver(this);
-#endif
 }
 
 QQuickTextFieldPrivate::~QQuickTextFieldPrivate()
 {
-#if QT_CONFIG(accessibility)
-    QAccessible::removeActivationObserver(this);
-#endif
 }
 
 void QQuickTextFieldPrivate::setTopInset(qreal value, bool reset)
@@ -259,45 +257,25 @@ void QQuickTextFieldPrivate::implicitHeightChanged()
 
 void QQuickTextFieldPrivate::readOnlyChanged(bool isReadOnly)
 {
-    Q_UNUSED(isReadOnly);
-#if QT_CONFIG(accessibility)
-    if (QQuickAccessibleAttached *accessibleAttached = QQuickControlPrivate::accessibleAttached(q_func()))
-        accessibleAttached->set_readOnly(isReadOnly);
-#endif
+    QQuickTextInputPrivate::readOnlyChanged(isReadOnly);
 #if QT_CONFIG(cursor)
     q_func()->setCursor(isReadOnly && !selectByMouse ? Qt::ArrowCursor : Qt::IBeamCursor);
-#endif
-}
-
-void QQuickTextFieldPrivate::echoModeChanged(QQuickTextField::EchoMode echoMode)
-{
-#if QT_CONFIG(accessibility)
-    if (QQuickAccessibleAttached *accessibleAttached = QQuickControlPrivate::accessibleAttached(q_func()))
-        accessibleAttached->set_passwordEdit((echoMode == QQuickTextField::Password || echoMode == QQuickTextField::PasswordEchoOnEdit) ? true : false);
-#else
-    Q_UNUSED(echoMode);
 #endif
 }
 
 #if QT_CONFIG(accessibility)
 void QQuickTextFieldPrivate::accessibilityActiveChanged(bool active)
 {
+    QQuickTextInputPrivate::accessibilityActiveChanged(active);
+
     if (!active)
         return;
-
     Q_Q(QQuickTextField);
     QQuickAccessibleAttached *accessibleAttached = qobject_cast<QQuickAccessibleAttached *>(qmlAttachedPropertiesObject<QQuickAccessibleAttached>(q, true));
     Q_ASSERT(accessibleAttached);
-    accessibleAttached->setRole(effectiveAccessibleRole());
-    accessibleAttached->set_readOnly(m_readOnly);
-    accessibleAttached->set_passwordEdit((m_echoMode == QQuickTextField::Password || m_echoMode == QQuickTextField::PasswordEchoOnEdit) ? true : false);
-    accessibleAttached->setDescription(placeholder);
+    accessibleAttached->setDescriptionImplicitly(placeholder);
 }
 
-QAccessible::Role QQuickTextFieldPrivate::accessibleRole() const
-{
-    return QAccessible::EditableText;
-}
 #endif
 
 void QQuickTextFieldPrivate::cancelBackground()
@@ -385,8 +363,6 @@ QQuickTextField::QQuickTextField(QQuickItem *parent)
 #if QT_CONFIG(cursor)
     setCursor(Qt::IBeamCursor);
 #endif
-    QObjectPrivate::connect(this, &QQuickTextInput::readOnlyChanged, d, &QQuickTextFieldPrivate::readOnlyChanged);
-    QObjectPrivate::connect(this, &QQuickTextInput::echoModeChanged, d, &QQuickTextFieldPrivate::echoModeChanged);
 #if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
     if (qEnvironmentVariable("QT_QUICK_CONTROLS_TEXT_SELECTION_BEHAVIOR") == u"old"_s)
         QQuickTextInput::setOldSelectionDefault();
@@ -404,14 +380,16 @@ QFont QQuickTextField::font() const
     Q_D(const QQuickTextField);
     QFont font = QQuickTextInput::font();
     // The resolve mask should inherit from the requestedFont
-    font.setResolveMask(d->extra.value().requestedFont.resolveMask());
+    font.setResolveMask(d->extra.isAllocated() ? d->extra->requestedFont.resolveMask() : 0);
     return font;
 }
 
 void QQuickTextField::setFont(const QFont &font)
 {
     Q_D(QQuickTextField);
-    if (d->extra.value().requestedFont.resolveMask() == font.resolveMask() && d->extra.value().requestedFont == font)
+    if (d->extra.isAllocated()
+            && d->extra.value().requestedFont.resolveMask() == font.resolveMask()
+            && d->extra.value().requestedFont == font)
         return;
 
     d->extra.value().requestedFont = font;
@@ -501,7 +479,7 @@ void QQuickTextField::setPlaceholderText(const QString &text)
     d->placeholder = text;
 #if QT_CONFIG(accessibility)
     if (QQuickAccessibleAttached *accessibleAttached = QQuickControlPrivate::accessibleAttached(this))
-        accessibleAttached->setDescription(text);
+        accessibleAttached->setDescriptionImplicitly(text);
 #endif
     emit placeholderTextChanged();
 }
@@ -795,10 +773,6 @@ void QQuickTextField::componentComplete()
 #if QT_CONFIG(quicktemplates2_hover)
     if (!d->explicitHoverEnabled)
         setAcceptHoverEvents(QQuickControlPrivate::calcHoverEnabled(d->parentItem));
-#endif
-#if QT_CONFIG(accessibility)
-    if (QAccessible::isActive())
-        d->accessibilityActiveChanged(true);
 #endif
 }
 

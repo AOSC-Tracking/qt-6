@@ -15,7 +15,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "media/audio/audio_device_description.h"
@@ -70,10 +69,6 @@ media::AudioParameters GetMixerOutputParams(
 
   // Adjust output buffer size according to the latency requirement.
   switch (latency) {
-    case media::AudioLatency::Type::kInteractive:
-      output_buffer_size = media::AudioLatency::GetInteractiveBufferSize(
-          hardware_params.frames_per_buffer());
-      break;
     case media::AudioLatency::Type::kRtc:
       output_buffer_size = media::AudioLatency::GetRtcBufferSize(
           output_sample_rate, preferred_output_buffer_size);
@@ -82,8 +77,9 @@ media::AudioParameters GetMixerOutputParams(
       output_buffer_size = media::AudioLatency::GetHighLatencyBufferSize(
           output_sample_rate, preferred_output_buffer_size);
       break;
-    case media::AudioLatency::Type::kExactMS:
     // TODO(olka): add support when WebAudio requires it.
+    case media::AudioLatency::Type::kExactMS:
+    case media::AudioLatency::Type::kInteractive:
     default:
       NOTREACHED();
   }
@@ -215,7 +211,7 @@ void AudioRendererMixerManager::ReturnMixer(AudioRendererMixer* mixer) {
     dead_it = std::ranges::find(
         dead_mixers_, mixer,
         [](const AudioRendererMixerReference& val) { return val.mixer.get(); });
-    CHECK(dead_it != dead_mixers_.end(), base::NotFatalUntil::M130);
+    CHECK(dead_it != dead_mixers_.end());
   }
 
   auto& mixer_ref = it == mixers_.end() ? *dead_it : it->second;

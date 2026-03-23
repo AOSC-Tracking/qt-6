@@ -20,7 +20,6 @@ def _add_ui_webui_resources_mappings(path_mappings, root_gen_dir):
       "js",
       "mojo",
       "cr_components/app_management",
-      "cr_components/certificate_manager",
       "cr_components/color_change_listener",
       "cr_components/commerce",
       "cr_components/cr_shortcut_input",
@@ -36,6 +35,7 @@ def _add_ui_webui_resources_mappings(path_mappings, root_gen_dir):
       "cr_components/most_visited",
       "cr_components/page_image_service",
       "cr_components/searchbox",
+      "cr_components/composebox",
       "cr_components/settings_prefs",
       "cr_components/theme_color_picker",
   ]
@@ -194,6 +194,14 @@ def main(argv):
   target_path = getTargetPath(args.gen_dir, args.root_gen_dir)
   is_ash_target = isInAshFolder(target_path)
   path_mappings = collections.defaultdict(list)
+
+  # First, add a path mapping for '/strings.m.js', which is not tied to
+  # `raw_deps` and is used extensively throughout WebUI.
+  path_mappings['/strings.m.js'].append(
+      f'{args.root_src_dir}/tools/typescript/definitions/strings.d.ts'.replace(
+          '\\', '/'))
+
+  # Then add path mappings that can be derived from `raw_deps`.
   for dep in args.raw_deps:
     dependencyType = 'Browser-only' if is_ash_target else 'Ash-only'
     assert _is_dependency_allowed(is_ash_target, dep, target_path), \

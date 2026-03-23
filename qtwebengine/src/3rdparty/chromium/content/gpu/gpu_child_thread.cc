@@ -25,7 +25,6 @@
 #include "content/common/process_visibility_tracker.h"
 #include "content/gpu/browser_exposed_gpu_interfaces.h"
 #include "content/gpu/gpu_service_factory.h"
-#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/gpu/content_gpu_client.h"
@@ -33,7 +32,6 @@
 #include "gpu/ipc/service/gpu_channel_manager.h"
 #include "gpu/ipc/service/gpu_init.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
-#include "ipc/ipc_sync_message_filter.h"
 #include "media/gpu/ipc/service/media_gpu_channel_manager.h"
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -114,15 +112,11 @@ viz::VizMainImpl::ExternalDependencies CreateVizMainDependencies() {
 
 }  // namespace
 
-GpuChildThread* GpuChildThread::instance_ = 0;
-
 GpuChildThread::GpuChildThread(base::RepeatingClosure quit_closure,
                                std::unique_ptr<gpu::GpuInit> gpu_init)
     : GpuChildThread(std::move(quit_closure),
                      GetOptions(),
-                     std::move(gpu_init)) {
-  instance_ = this;
-}
+                     std::move(gpu_init)) {}
 
 GpuChildThread::GpuChildThread(const InProcessChildThreadParams& params,
                                std::unique_ptr<gpu::GpuInit> gpu_init)
@@ -142,7 +136,6 @@ GpuChildThread::GpuChildThread(base::RepeatingClosure quit_closure,
            base::CommandLine::ForCurrentProcess()->HasSwitch(
                switches::kInProcessGPU));
   }
-  instance_ = this;
 }
 
 GpuChildThread::~GpuChildThread() = default;
@@ -188,12 +181,6 @@ void GpuChildThread::OnInitializationFailed() {
   OnChannelError();
 }
 
-void GpuChildThread::OnGpuChannelManagerCreated(gpu::GpuChannelManager* manager) {
-#if BUILDFLAG(IS_QTWEBENGINE)
-  manager->set_share_group(GetContentClient()->gpu()->GetInProcessGpuShareGroup());
-#endif
-}
-
 void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
   media::AndroidOverlayMojoFactoryCB overlay_factory_cb;
 #if BUILDFLAG(IS_ANDROID)
@@ -218,7 +205,7 @@ void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
       gpu_service->gpu_channel_manager()->gpu_driver_bug_workarounds(),
       gpu_service->gpu_feature_info(), gpu_service->gpu_info(),
       gpu_service->media_gpu_channel_manager()->AsWeakPtr(),
-      gpu_service->gpu_memory_buffer_factory(), std::move(overlay_factory_cb));
+      std::move(overlay_factory_cb));
   for (auto& receiver : pending_service_receivers_)
     BindServiceInterface(std::move(receiver));
   pending_service_receivers_.clear();
@@ -233,7 +220,7 @@ void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
   // that will ensure security review coverage.
   mojo::BinderMap binders;
   content::ExposeGpuInterfacesToBrowser(
-      gpu_service->gpu_preferences(),
+      gpu_service, gpu_service->gpu_preferences(),
       gpu_service->gpu_channel_manager()->gpu_driver_bug_workarounds(),
       &binders);
   ExposeInterfacesToBrowser(std::move(binders));

@@ -11,6 +11,7 @@
 #include "base/containers/flat_map.h"
 #include "base/i18n/case_conversion.h"
 #include "base/pickle.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -18,6 +19,7 @@
 #include "base/uuid.h"
 #include "base/values.h"
 #include "components/search_engines/regulatory_extension_type.h"
+#include "components/search_engines/search_engines_switches.h"
 #include "crypto/hash.h"
 #include "third_party/search_engines_data/resources/definitions/prepopulated_engines.h"
 
@@ -54,7 +56,7 @@ TemplateURLData::TemplateURLData()
       last_modified(base::Time::Now()),
       policy_origin(PolicyOrigin::kNoPolicy),
       enforced_by_policy(false),
-      created_from_play_api(false),
+      regulatory_origin(RegulatoryExtensionType::kDefault),
       usage_count(0),
       prepopulate_id(0),
       sync_guid(base::Uuid::GenerateRandomV4().AsLowercaseString()),
@@ -113,7 +115,7 @@ TemplateURLData::TemplateURLData(
       id(0),
       policy_origin(PolicyOrigin::kNoPolicy),
       enforced_by_policy(false),
-      created_from_play_api(false),
+      regulatory_origin(RegulatoryExtensionType::kDefault),
       usage_count(0),
       prepopulate_id(prepopulate_id),
       sync_guid(GenerateGUID(prepopulate_id, 0)),
@@ -130,7 +132,6 @@ TemplateURLData::TemplateURLData(
       alternate_urls.push_back(*alternate_url);
     }
   }
-
   regulatory_extensions = base::MakeFlatMap<
       RegulatoryExtensionType,
       raw_ptr<const TemplateURLData::RegulatoryExtension, CtnExperimental>>(
@@ -221,4 +222,12 @@ bool TemplateURLData::CreatedByDefaultSearchProviderPolicy() const {
 
 bool TemplateURLData::CreatedByNonDefaultSearchProviderPolicy() const {
   return CreatedByPolicy() && !CreatedByDefaultSearchProviderPolicy();
+}
+
+bool TemplateURLData::CreatedByEnterpriseSearchAggregatorPolicy() const {
+  return policy_origin == PolicyOrigin::kSearchAggregator;
+}
+
+bool TemplateURLData::CreatedBySiteSearchPolicy() const {
+  return policy_origin == PolicyOrigin::kSiteSearch;
 }

@@ -4,15 +4,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Type
+from typing import TYPE_CHECKING, Optional, Self, Type
+
+from typing_extensions import override
 
 from crossbench.parse import ObjectParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import MetricsMerger
-from crossbench.probes.probe import ProbeConfigParser, ProbeKeyT
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
+  from crossbench.probes.probe import ProbeConfigParser, ProbeKeyT
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups.browsers import BrowsersRunGroup
@@ -34,7 +36,8 @@ class JSProbe(JsonResultProbe):
   IS_GENERAL_PURPOSE = True
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
         "setup",
@@ -66,11 +69,13 @@ class JSProbe(JsonResultProbe):
     return self._metric_js
 
   @property
+  @override
   def key(self) -> ProbeKeyT:
     return super().key + (
         ("setup_js", self._setup_js),
         ("metric_js", self._metric_js),
     )
+
   def get_context_cls(self) -> Type[JSProbeContext]:
     return JSProbeContext
 
@@ -87,6 +92,7 @@ class JSProbe(JsonResultProbe):
 
 class JSProbeContext(JsonResultProbeContext[JSProbe]):
 
+  @override
   def to_json(self, actions: Actions) -> Json:
     data = actions.js(self.probe.metric_js)
     return ObjectParser.non_empty_dict(data, "JS metric data")

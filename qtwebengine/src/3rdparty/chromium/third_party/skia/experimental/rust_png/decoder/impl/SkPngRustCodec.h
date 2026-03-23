@@ -110,6 +110,7 @@ private:
     int onGetFrameCount() override;
     bool onGetFrameInfo(int, FrameInfo*) const override;
     int onGetRepetitionCount() override;
+    IsAnimated onIsAnimated() override;
     const SkFrameHolder* getFrameHolder() const override;
     std::unique_ptr<SkStream> getEncodedData() const override;
 
@@ -125,7 +126,7 @@ private:
     const std::unique_ptr<SkStream> fPrivStream;
     // TODO(https://crbug.com/371060427): Once fast seeking is available, we can
     // remove the field that tracks the stream length.
-    std::optional<size_t> fStreamLengthDuringLastCallToParseAdditionalFrameInfos;
+    std::optional<size_t> fMaxStreamLengthSeenWhenParsingAdditionalFrameInfos;
 
     std::optional<DecodingState> fIncrementalDecodingState;
 

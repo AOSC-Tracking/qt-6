@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #include "qqmljstypedescriptionreader_p.h"
 
@@ -193,7 +194,7 @@ void QQmlJSTypeDescriptionReader::readComponent(UiObjectDefinition *ast)
             if (name == QLatin1String("file")) {
                 scope->setFilePath(readStringBinding(script));
             } else if (name == QLatin1String("lineNumber")) {
-                // only used in 6.11
+                scope->setLineNumber(readNumericBinding(script));
             } else if (name == QLatin1String("name")) {
                 scope->setInternalName(readStringBinding(script));
             } else if (name == QLatin1String("prototype")) {
@@ -213,7 +214,7 @@ void QQmlJSTypeDescriptionReader::readComponent(UiObjectDefinition *ast)
             } else if (name == QLatin1String("attachedType")) {
                 scope->setOwnAttachedTypeName(readStringBinding(script));
             } else if (name == QLatin1String("valueType")) {
-                scope->setValueTypeName(readStringBinding(script));
+                scope->setElementTypeName(readStringBinding(script));
             } else if (name == QLatin1String("isSingleton")) {
                 scope->setIsSingleton(readBoolBinding(script));
             } else if (name == QLatin1String("isCreatable")) {
@@ -251,15 +252,16 @@ void QQmlJSTypeDescriptionReader::readComponent(UiObjectDefinition *ast)
             } else if (name == QLatin1String("immediateNames")) {
                 readImmediateNames(script, scope);
             } else if (name == QLatin1String("isJavaScriptBuiltin")) {
-                scope->setIsJavaScriptBuiltin(true);
+                scope->setIsJavaScriptBuiltin(readBoolBinding(script));
             } else {
                 addWarning(script->firstSourceLocation(),
-                           tr("Expected only name, prototype, defaultProperty, attachedType, "
+                           tr("Expected only lineNumber, name, prototype, defaultProperty, "
+                              "attachedType, "
                               "valueType, exports, interfaces, isSingleton, isCreatable, "
                               "isStructured, isComposite, hasCustomParser, enforcesScopedEnums, "
                               "aliases, exportMetaObjectRevisions, deferredNames, and "
                               "immediateNames in script bindings, not \"%1\".")
-                           .arg(name));
+                                   .arg(name));
             }
         } else {
             addWarning(member->firstSourceLocation(),
@@ -303,6 +305,9 @@ void QQmlJSTypeDescriptionReader::readSignalOrMethod(
             QString name = toString(script->qualifiedId);
             if (name == QLatin1String("name")) {
                 metaMethod.setMethodName(readStringBinding(script));
+            } else if (name == QLatin1String("lineNumber")) {
+                metaMethod.setSourceLocation(
+                        SourceLocation::fromQSizeType(0, 0, readIntBinding(script), 1));
             } else if (name == QLatin1String("type")) {
                 metaMethod.setReturnTypeName(readStringBinding(script));
             } else if (name == QLatin1String("revision")) {
@@ -343,7 +348,8 @@ void QQmlJSTypeDescriptionReader::readSignalOrMethod(
                 metaMethod.setIsConst(readBoolBinding(script));
             } else {
                 addWarning(script->firstSourceLocation(),
-                           tr("Expected only name, type, revision, isPointer, isTypeConstant, "
+                           tr("Expected only name, lineNumber, type, revision, isPointer, "
+                              "isTypeConstant, "
                               "isList, isCloned, isConstructor, isMethodConstant, and "
                               "isJavaScriptFunction in script bindings."));
             }
@@ -388,6 +394,9 @@ void QQmlJSTypeDescriptionReader::readProperty(UiObjectDefinition *ast, const QQ
         QString id = toString(script->qualifiedId);
         if (id == QLatin1String("name")) {
             property.setPropertyName(readStringBinding(script));
+        } else if (id == QLatin1String("lineNumber")) {
+            property.setSourceLocation(
+                    SourceLocation::fromQSizeType(0, 0, readIntBinding(script), 1));
         } else if (id == QLatin1String("type")) {
             property.setTypeName(readStringBinding(script));
         } else if (id == QLatin1String("isPointer")) {
@@ -400,6 +409,10 @@ void QQmlJSTypeDescriptionReader::readProperty(UiObjectDefinition *ast, const QQ
             property.setIsList(readBoolBinding(script));
         } else if (id == QLatin1String("isFinal")) {
             property.setIsFinal(readBoolBinding(script));
+        } else if (id == QLatin1String("isVirtual")) {
+            property.setIsVirtual(readBoolBinding(script));
+        } else if (id == QLatin1String("isOverride")) {
+            property.setIsOverride(readBoolBinding(script));
         } else if (id == QLatin1String("isTypeConstant")) {
             property.setIsTypeConstant(readBoolBinding(script));
         } else if (id == QLatin1String("isPropertyConstant")) {
@@ -425,9 +438,10 @@ void QQmlJSTypeDescriptionReader::readProperty(UiObjectDefinition *ast, const QQ
             property.setPrivateClass(readStringBinding(script));
         } else {
             addWarning(script->firstSourceLocation(),
-                       tr("Expected only type, name, revision, isPointer, isTypeConstant, isReadonly, isRequired, "
-                          "isFinal, isList, bindable, read, write, isPropertyConstant, reset, notify, index, and "
-                          "privateClass and script bindings."));
+                       tr("Expected only type, name, lineNumber, revision, isPointer, "
+                          "isTypeConstant, isReadonly, isRequired, "
+                          "isFinal, isList, bindable, read, write, isPropertyConstant, reset, "
+                          "notify, index, privateClass and script bindings."));
         }
     }
 
@@ -467,9 +481,12 @@ void QQmlJSTypeDescriptionReader::readEnum(UiObjectDefinition *ast, const QQmlJS
             metaEnum.setIsScoped(readBoolBinding(script));
         } else if (name == QLatin1String("type")) {
             metaEnum.setTypeName(readStringBinding(script));
+        } else if (name == QLatin1String("lineNumber")) {
+            metaEnum.setLineNumber(readIntBinding(script));
         } else {
             addWarning(script->firstSourceLocation(),
-                       tr("Expected only name, alias, isFlag, values, isScoped, or type."));
+                       tr("Expected only name, alias, isFlag, values, isScoped, type, or "
+                          "lineNumber."));
         }
     }
 

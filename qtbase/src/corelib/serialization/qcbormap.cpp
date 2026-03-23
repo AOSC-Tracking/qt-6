@@ -1,5 +1,6 @@
 // Copyright (C) 2018 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qcbormap.h"
 #include "qcborvalue_p.h"
@@ -1234,8 +1235,7 @@ QCborValue QCborMap::extract(iterator it)
 
     For more information on CBOR equality in Qt, see, QCborValue::compare().
 
-    \sa compare(), QCborValue::operator==(), QCborMap::operator==(),
-        operator!=(), operator<()
+    \sa compare(), QCborValue::operator==(), operator!=(), operator<()
  */
 
 /*!
@@ -1253,8 +1253,7 @@ QCborValue QCborMap::extract(iterator it)
 
     For more information on CBOR equality in Qt, see, QCborValue::compare().
 
-    \sa compare(), QCborValue::operator==(), QCborMap::operator==(),
-        operator==(), operator<()
+    \sa compare(), QCborValue::operator==(), operator==(), operator<()
  */
 
 /*!

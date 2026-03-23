@@ -146,9 +146,11 @@ std::unique_ptr<SkEncodedInfo::ICCProfile> CreateColorProfile(const rust_png::Re
     }
 
     // Next, check for presence of `gAMA` and `cHRM` chunks.
-    float gamma = 0.0;
-    const bool got_gamma = reader.try_get_gama(gamma);
-    if (!got_gamma) {
+    float gamma = 0;
+    // Unlike libpng, image-rs does not seem to validate the gamma value.
+    // So we check explicitly for zero, which is an invalid value encountered in the wild.
+    // TODO: upstream?
+    if (!reader.try_get_gama(gamma) || gamma <= 0) {
         // We ignore whether `chRM` is present or not.
         //
         // This preserves the behavior decided in Chromium's 83587041dc5f1428c09
@@ -213,7 +215,8 @@ std::unique_ptr<SkEncodedInfo::ICCProfile> CreateColorProfile(const rust_png::Re
     return SkEncodedInfo::ICCProfile::Make(profile);
 }
 
-SkEncodedInfo CreateEncodedInfo(const rust_png::Reader& reader) {
+// Returns `nullopt` when input errors are encountered.
+std::optional<SkEncodedInfo> CreateEncodedInfo(const rust_png::Reader& reader) {
     rust_png::ColorType rustColor = reader.output_color_type();
     SkEncodedInfo::Color skColor = ToColor(rustColor);
 
@@ -222,9 +225,24 @@ SkEncodedInfo CreateEncodedInfo(const rust_png::Reader& reader) {
         profile = nullptr;
     }
 
-    static_assert(sizeof(int) >= sizeof(int32_t), "Is it ok to use Sk64_pin_to_s32 below?");
-    return SkEncodedInfo::Make(Sk64_pin_to_s32(reader.width()),
-                               Sk64_pin_to_s32(reader.height()),
+    // Protect against large PNGs. See http://bugzil.la/251381 for more details.
+    constexpr uint32_t kMaxPNGSize = 1000000;
+    if ((reader.width() > kMaxPNGSize) || (reader.height() > kMaxPNGSize)) {
+        return std::nullopt;
+    }
+    // We checked image dimensions above, so here we can just assert that casts
+    // from `uint32_t` to `int` work ok.
+    //
+    // We don't use a saturating cast, because this could invalidate `fcTL`
+    // checks done within the `png` crate.  For example, the new / truncated
+    // image width could end up smaller than `fcTL.frameWidth`.
+    SkSafeMath safe;
+    int width = safe.castTo<int>(reader.width());
+    int height = safe.castTo<int>(reader.height());
+    SkASSERT_RELEASE(safe.ok());
+
+    return SkEncodedInfo::Make(width,
+                               height,
                                skColor,
                                ToAlpha(rustColor, reader),
                                reader.output_bits_per_component(),
@@ -239,6 +257,7 @@ SkCodec::Result ToSkCodecResult(rust_png::DecodingResult rustResult) {
             return SkCodec::kErrorInInput;
         case rust_png::DecodingResult::ParameterError:
             return SkCodec::kInvalidParameters;
+        case rust_png::DecodingResult::OtherIoError:
         case rust_png::DecodingResult::LimitsExceededError:
             return SkCodec::kInternalError;
         case rust_png::DecodingResult::IncompleteInput:
@@ -248,30 +267,106 @@ SkCodec::Result ToSkCodecResult(rust_png::DecodingResult rustResult) {
 }
 
 // This helper class adapts `SkStream` to expose the API required by Rust FFI
-// (i.e. the `ReadTrait` API).
-class ReadTraitAdapterForSkStream final : public rust_png::ReadTrait {
+// (i.e. the `ReadAndSeekTraits` API).
+class ReadAndSeekTraitsAdapterForSkStream final : public rust_png::ReadAndSeekTraits {
 public:
     // SAFETY: The caller needs to guarantee that `stream` will be alive for
-    // as long as `ReadTraitAdapterForSkStream`.
-    explicit ReadTraitAdapterForSkStream(SkStream* stream) : fStream(stream) { SkASSERT(fStream); }
+    // as long as `ReadAndSeekTraitsAdapterForSkStream`.
+    explicit ReadAndSeekTraitsAdapterForSkStream(SkStream* stream) : fStream(stream) {
+        SkASSERT_RELEASE(fStream);
+    }
 
-    ~ReadTraitAdapterForSkStream() override = default;
+    ~ReadAndSeekTraitsAdapterForSkStream() override = default;
 
     // Non-copyable and non-movable (we want a stable `this` pointer, because we
-    // will be passing a `ReadTrait*` pointer over the FFI boundary and
+    // will be passing a `ReadAndSeekTraits*` pointer over the FFI boundary and
     // retaining it inside `png::Reader`).
-    ReadTraitAdapterForSkStream(const ReadTraitAdapterForSkStream&) = delete;
-    ReadTraitAdapterForSkStream& operator=(const ReadTraitAdapterForSkStream&) = delete;
-    ReadTraitAdapterForSkStream(ReadTraitAdapterForSkStream&&) = delete;
-    ReadTraitAdapterForSkStream& operator=(ReadTraitAdapterForSkStream&&) = delete;
+    ReadAndSeekTraitsAdapterForSkStream(const ReadAndSeekTraitsAdapterForSkStream&) = delete;
+    ReadAndSeekTraitsAdapterForSkStream& operator=(const ReadAndSeekTraitsAdapterForSkStream&) =
+            delete;
+    ReadAndSeekTraitsAdapterForSkStream(ReadAndSeekTraitsAdapterForSkStream&&) = delete;
+    ReadAndSeekTraitsAdapterForSkStream& operator=(ReadAndSeekTraitsAdapterForSkStream&&) = delete;
 
-    // Implementation of the `std::io::Read::read` method.  See `RustTrait`'s
-    // doc comments and
+    // Implementation of the `std::io::Read::read` method.  See Rust trait's
+    // doc comments at
     // https://doc.rust-lang.org/nightly/std/io/trait.Read.html#tymethod.read
     // for guidance on the desired implementation and behavior of this method.
     size_t read(rust::Slice<uint8_t> buffer) override {
         SkSpan<uint8_t> span = ToSkSpan(buffer);
         return fStream->read(span.data(), span.size());
+    }
+
+    // Implementation of the `std::io::Seek::seek` method.  See Rust trait`'s
+    // doc comments at
+    // https://doc.rust-lang.org/beta/std/io/trait.Seek.html#tymethod.seek
+    // for guidance on the desired implementation and behavior of these methods.
+    bool seek_from_start(uint64_t requestedPos, uint64_t& finalPos) override {
+        SkSafeMath safe;
+        size_t pos = safe.castTo<size_t>(requestedPos);
+        if (!safe.ok()) {
+            return false;
+        }
+
+        if (!fStream->seek(pos)) {
+            return false;
+        }
+        SkASSERT_RELEASE(!fStream->hasPosition() || fStream->getPosition() == requestedPos);
+
+        // Assigning `size_t` to `uint64_t` doesn't need to go through
+        // `SkSafeMath`, because `uint64_t` is never smaller than `size_t`.
+        static_assert(sizeof(uint64_t) >= sizeof(size_t));
+        finalPos = requestedPos;
+
+        return true;
+    }
+    bool seek_from_end(int64_t requestedOffset, uint64_t& finalPos) override {
+        if (!fStream->hasLength()) {
+            return false;
+        }
+        size_t length = fStream->getLength();
+
+        SkSafeMath safe;
+        uint64_t endPos = safe.castTo<uint64_t>(length);
+        if (requestedOffset > 0) {
+            // IIUC `SkStream` doesn't support reading beyond the current
+            // length.
+            return false;
+        }
+        if (requestedOffset == std::numeric_limits<int64_t>::min()) {
+            // `-requestedOffset` below wouldn't work.
+            return false;
+        }
+        uint64_t offset = safe.castTo<uint64_t>(-requestedOffset);
+        if (!safe.ok()) {
+            return false;
+        }
+        if (offset > endPos) {
+            // `endPos - offset` below wouldn't work.
+            return false;
+        }
+
+        return this->seek_from_start(endPos - offset, finalPos);
+    }
+    bool seek_relative(int64_t requestedOffset, uint64_t& finalPos) override {
+        if (!fStream->hasPosition()) {
+            return false;
+        }
+
+        SkSafeMath safe;
+        long offset = safe.castTo<long>(requestedOffset);
+        if (!safe.ok()) {
+            return false;
+        }
+
+        if (!fStream->move(offset)) {
+            return false;
+        }
+
+        finalPos = safe.castTo<uint64_t>(fStream->getPosition());
+        if (!safe.ok()) {
+            return false;
+        }
+        return true;
     }
 
 private:
@@ -282,17 +377,19 @@ void blendRow(SkSpan<uint8_t> dstRow,
               SkSpan<const uint8_t> srcRow,
               SkColorType color,
               SkAlphaType alpha) {
-    SkASSERT(dstRow.size() >= srcRow.size());
+    SkASSERT_RELEASE(dstRow.size() >= srcRow.size());
     SkRasterPipeline_<256> p;
 
-    SkRasterPipeline_MemoryCtx dstCtx = {dstRow.data(), 0};
+    SkRasterPipelineContexts::MemoryCtx dstCtx = {dstRow.data(), 0};
     p.appendLoadDst(color, &dstCtx);
     if (kUnpremul_SkAlphaType == alpha) {
         p.append(SkRasterPipelineOp::premul_dst);
     }
 
-    SkRasterPipeline_MemoryCtx srcCtx = {const_cast<void*>(static_cast<const void*>(srcRow.data())),
-                                         0};
+    SkRasterPipelineContexts::MemoryCtx srcCtx = {
+        const_cast<void*>(static_cast<const void*>(srcRow.data())),
+        0,
+    };
     p.appendLoad(color, &srcCtx);
     if (kUnpremul_SkAlphaType == alpha) {
         p.append(SkRasterPipelineOp::premul);
@@ -307,7 +404,7 @@ void blendRow(SkSpan<uint8_t> dstRow,
 
     SkSafeMath safe;
     size_t bpp = safe.castTo<size_t>(SkColorTypeBytesPerPixel(color));
-    SkASSERT(safe.ok());
+    SkASSERT_RELEASE(safe.ok());
 
     size_t width = srcRow.size() / bpp;
     p.run(0, 0, width, 1);
@@ -339,25 +436,86 @@ SkEncodedOrigin GetEncodedOrigin(const rust_png::Reader& reader) {
     return kTopLeft_SkEncodedOrigin;
 }
 
+bool IsValidFctlIfAny(const SkEncodedInfo& imageInfo,
+                      const rust_png::Reader& reader) {
+    // Enforce that if an `fcTL` appears before an `IDAT` chunk, then it has the
+    // same dimensions as the ones in the earlier `IHDR` chunk.  This
+    // corresponds to the restrictions that the spec at
+    // https://www.w3.org/TR/png-3/#fcTL-chunk places on "fcTL chunk
+    // corresponding to the default image".
+    //
+    // Doing this check here is more robust than doing it inside
+    // `setFrameInfoFromCurrentFctlChunk`, because the code elsewhere in
+    // `SkPngRustCodec` may ignore the `fcTL` chunk (e.g. if
+    // `idatIsNotPartOfAnimation` and/or if `acTL` chunk is missing).
+    //
+    // Reporting a hard error is more robust than trying to ignore the `fcTL`
+    // chunk and falling back to decoding a static image, because such a
+    // fallback would risk discrepancies between dimensions used in different
+    // layers of the software stack (see https://crbug.com/428205250).
+    //
+    // This check is kind of a defense-in-depth - in the long-term the
+    // dimensions should be checked in the Rust `png` crate itself
+    // (see https://github.com/image-rs/image-png/pull/614 which hasn't yet been
+    // released in a new crates.io version).
+    if (reader.has_fctl_chunk()) {
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t xOffset = 0;
+        uint32_t yOffset = 0;
+        auto ignoredDisposeOp = rust_png::DisposeOp::None;
+        auto ignoredBlendOp = rust_png::BlendOp::Source;
+        uint32_t ignoredDurationMs = 0;
+        reader.get_fctl_info(width, height, xOffset, yOffset,
+                             ignoredDisposeOp, ignoredBlendOp, ignoredDurationMs);
+
+        SkSafeMath safe;
+        int frameWidth = safe.castTo<int>(width);
+        int frameHeight = safe.castTo<int>(height);
+        if (!safe.ok()) {
+            return false;
+        }
+
+        if (xOffset != 0 || frameWidth != imageInfo.width() ||
+                yOffset != 0 || frameHeight != imageInfo.height()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 }  // namespace
 
 // static
 std::unique_ptr<SkPngRustCodec> SkPngRustCodec::MakeFromStream(std::unique_ptr<SkStream> stream,
                                                                Result* result) {
-    SkASSERT(stream);
-    SkASSERT(result);
+    SkASSERT_RELEASE(stream);
+    SkASSERT_RELEASE(result);
 
-    auto readTraitAdapter = std::make_unique<ReadTraitAdapterForSkStream>(stream.get());
+    auto inputAdapter = std::make_unique<ReadAndSeekTraitsAdapterForSkStream>(stream.get());
     rust::Box<rust_png::ResultOfReader> resultOfReader =
-            rust_png::new_reader(std::move(readTraitAdapter));
+            rust_png::new_reader(std::move(inputAdapter));
     *result = ToSkCodecResult(resultOfReader->err());
     if (*result != kSuccess) {
         return nullptr;
     }
     rust::Box<rust_png::Reader> reader = resultOfReader->unwrap();
 
+    std::optional<SkEncodedInfo> maybeImageInfo = CreateEncodedInfo(*reader);
+    if (!maybeImageInfo.has_value()) {
+        *result = kErrorInInput;
+        return nullptr;
+    }
+    SkEncodedInfo& imageInfo = *maybeImageInfo;
+
+    if (!IsValidFctlIfAny(imageInfo, *reader)) {
+        *result = kErrorInInput;
+        return nullptr;
+    }
+
     return std::make_unique<SkPngRustCodec>(
-            CreateEncodedInfo(*reader), std::move(stream), std::move(reader));
+            std::move(imageInfo), std::move(stream), std::move(reader));
 }
 
 SkPngRustCodec::SkPngRustCodec(SkEncodedInfo&& encodedInfo,
@@ -372,7 +530,7 @@ SkPngRustCodec::SkPngRustCodec(SkEncodedInfo&& encodedInfo,
         , fReader(std::move(reader))
         , fPrivStream(std::move(stream))
         , fFrameHolder(encodedInfo.width(), encodedInfo.height()) {
-    SkASSERT(fPrivStream);
+    SkASSERT_RELEASE(fPrivStream);
 
     bool idatIsNotPartOfAnimation = fReader->has_actl_chunk() && !fReader->has_fctl_chunk();
     fFrameAtCurrentStreamPosition = idatIsNotPartOfAnimation ? -1 : 0;
@@ -384,14 +542,14 @@ SkPngRustCodec::SkPngRustCodec(SkEncodedInfo&& encodedInfo,
         // * `!fReader->has_fctl_chunk()` means that we don't need to worry
         //   about validating other frame metadata.
         Result result = fFrameHolder.appendNewFrame(*fReader, this->getEncodedInfo());
-        SkASSERT(result == kSuccess);
+        SkASSERT_RELEASE(result == kSuccess);
     }
 }
 
 SkPngRustCodec::~SkPngRustCodec() = default;
 
 SkCodec::Result SkPngRustCodec::readToStartOfNextFrame() {
-    SkASSERT(fFrameAtCurrentStreamPosition < this->getRawFrameCount());
+    SkASSERT_RELEASE(fFrameAtCurrentStreamPosition < this->getRawFrameCount());
     Result result = ToSkCodecResult(fReader->next_frame_info());
     if (result != kSuccess) {
         fStreamIsPositionedAtStartOfFrameData = false;
@@ -413,7 +571,7 @@ SkCodec::Result SkPngRustCodec::seekToStartOfFrame(int index) {
     // `index == fFrameHolder.size()` means that we are seeking to the next
     // frame (i.e. to the first frame for which an `fcTL` chunk wasn't parsed
     // yet).
-    SkASSERT((0 <= index) && (index <= fFrameHolder.size()));
+    SkASSERT_RELEASE((0 <= index) && (index <= fFrameHolder.size()));
 
     // TODO(https://crbug.com/371060427): Improve runtime performance by seeking
     // directly to the right offset in the stream, rather than calling `rewind`
@@ -424,14 +582,15 @@ SkCodec::Result SkPngRustCodec::seekToStartOfFrame(int index) {
             return kCouldNotRewind;
         }
 
-        auto readTraitAdapter = std::make_unique<ReadTraitAdapterForSkStream>(fPrivStream.get());
+        auto inputAdapter =
+                std::make_unique<ReadAndSeekTraitsAdapterForSkStream>(fPrivStream.get());
         rust::Box<rust_png::ResultOfReader> resultOfReader =
-                rust_png::new_reader(std::move(readTraitAdapter));
+                rust_png::new_reader(std::move(inputAdapter));
 
         // `SkPngRustCodec` constructor must have run before, and the
         // constructor got a successfully created reader - we therefore also
         // expect success here.
-        SkASSERT(kSuccess == ToSkCodecResult(resultOfReader->err()));
+        SkASSERT_RELEASE(kSuccess == ToSkCodecResult(resultOfReader->err()));
         fReader = resultOfReader->unwrap();
 
         bool idatIsNotPartOfAnimation = fReader->has_actl_chunk() && !fReader->has_fctl_chunk();
@@ -466,7 +625,7 @@ SkCodec::Result SkPngRustCodec::parseAdditionalFrameInfos() {
         if (result != kSuccess) {
             return result;
         }
-        SkASSERT(fFrameHolder.size() == (oldFrameCount + 1));
+        SkASSERT_RELEASE(fFrameHolder.size() == (oldFrameCount + 1));
     }
     return kSuccess;
 }
@@ -485,7 +644,7 @@ SkCodec::Result SkPngRustCodec::startDecoding(const SkImageInfo& dstInfo,
         return kInvalidParameters;
     }
     const SkFrame* frame = fFrameHolder.getFrame(options.fFrameIndex);
-    SkASSERT(frame);
+    SkASSERT_RELEASE(frame);
 
     // https://www.w3.org/TR/png-3/#11PLTE says that for color type 3
     // (indexed-color), the PLTE chunk is required.  OTOH, `Codec_InvalidImages`
@@ -555,7 +714,7 @@ SkCodec::Result SkPngRustCodec::startDecoding(const SkImageInfo& dstInfo,
 void SkPngRustCodec::expandDecodedInterlacedRow(SkSpan<uint8_t> dstFrame,
                                                 SkSpan<const uint8_t> srcRow,
                                                 const DecodingState& decodingState) {
-    SkASSERT(fReader->interlaced());
+    SkASSERT_RELEASE(fReader->interlaced());
     std::vector<uint8_t> decodedInterlacedFullWidthRow;
     std::vector<uint8_t> xformedInterlacedRow;
 
@@ -564,11 +723,11 @@ void SkPngRustCodec::expandDecodedInterlacedRow(SkSpan<uint8_t> dstFrame,
     // `applyXformRow` requires full-width rows as input (can't change
     // `SkSwizzler::fSrcWidth` after `initializeXforms`).
     //
-    // TODO(https://crbug.com/357876243): Having `Reader.read_row` API (see
+    // TODO(https://crbug.com/399891492): Having `Reader.read_row` API (see
     // https://github.com/image-rs/image-png/pull/493) would help avoid
     // an extra copy here.
     decodedInterlacedFullWidthRow.resize(this->getEncodedRowBytes(), 0x00);
-    SkASSERT(decodedInterlacedFullWidthRow.size() >= srcRow.size());
+    SkASSERT_RELEASE(decodedInterlacedFullWidthRow.size() >= srcRow.size());
     memcpy(decodedInterlacedFullWidthRow.data(), srcRow.data(), srcRow.size());
 
     xformedInterlacedRow.resize(decodingState.fDstRowSize, 0x00);
@@ -576,8 +735,8 @@ void SkPngRustCodec::expandDecodedInterlacedRow(SkSpan<uint8_t> dstFrame,
 
     SkSafeMath safe;
     uint8_t dstBytesPerPixel = safe.castTo<uint8_t>(this->dstInfo().bytesPerPixel());
-    SkASSERT(safe.ok());               // Checked in `startDecoding`.
-    SkASSERT(dstBytesPerPixel < 32u);  // Checked in `startDecoding`.
+    SkASSERT_RELEASE(safe.ok());               // Checked in `startDecoding`.
+    SkASSERT_RELEASE(dstBytesPerPixel < 32u);  // Checked in `startDecoding`.
     fReader->expand_last_interlaced_row(rust::Slice<uint8_t>(dstFrame),
                                         decodingState.fDstRowStride,
                                         rust::Slice<const uint8_t>(xformedInterlacedRow),
@@ -617,12 +776,11 @@ SkCodec::Result SkPngRustCodec::incrementalDecode(DecodingState& decodingState,
             }
             if (!interlaced) {
                 // All of the original `fDst` should be filled out at this point.
-                SkASSERT(decodingState.fDst.empty());
+                SkASSERT_RELEASE(decodingState.fDst.empty());
             }
 
             // `static_cast` is ok, because `startDecoding` already validated `fFrameIndex`.
             fFrameHolder.markFrameAsFullyReceived(static_cast<size_t>(this->options().fFrameIndex));
-            fIncrementalDecodingState.reset();
             return kSuccess;
         }
 
@@ -678,14 +836,26 @@ SkCodec::Result SkPngRustCodec::onStartIncrementalDecode(const SkImageInfo& dstI
         return result;
     }
 
-    SkASSERT(!fIncrementalDecodingState.has_value());
+    // It is okay if `fIncrementalDecodingState` contains state of another,
+    // partially decoded frame - in this case we want to clobber
     fIncrementalDecodingState = decodingState;
     return kSuccess;
 }
 
 SkCodec::Result SkPngRustCodec::onIncrementalDecode(int* rowsDecoded) {
-    SkASSERT(fIncrementalDecodingState.has_value());
-    return this->incrementalDecode(*fIncrementalDecodingState, rowsDecoded);
+    if (!fIncrementalDecodingState.has_value()) {
+        return kInvalidParameters;
+    }
+
+    Result result = this->incrementalDecode(*fIncrementalDecodingState, rowsDecoded);
+    if (result != kIncompleteInput) {
+        // After successfully reading the whole row (`kSuccess`), and after a
+        // fatal error (only recoverable error is `kIncompleteInput`) our client
+        // should not call `onIncrementalDecode` again.  This means that the
+        // incremental decoding state can be discarded at this point.
+        fIncrementalDecodingState.reset();
+    }
+    return result;
 }
 
 int SkPngRustCodec::onGetFrameCount() {
@@ -696,19 +866,17 @@ int SkPngRustCodec::onGetFrameCount() {
 
         if (fPrivStream->hasLength()) {
             size_t currentLength = fPrivStream->getLength();
-            if (fStreamLengthDuringLastCallToParseAdditionalFrameInfos.has_value()) {
-                size_t oldLength = *fStreamLengthDuringLastCallToParseAdditionalFrameInfos;
-                if (oldLength == currentLength) {
+            if (fMaxStreamLengthSeenWhenParsingAdditionalFrameInfos.has_value()) {
+                size_t oldLength = *fMaxStreamLengthSeenWhenParsingAdditionalFrameInfos;
+                // We use `>=` instead of `==`, because the underlying stream
+                // can be "cleared" - see https://crbug.com/431273809#comment4.
+                if (oldLength >= currentLength) {
                     // Don't retry `parseAdditionalFrameInfos` if the input
-                    // didn't change.
+                    // didn't change (or is smaller than last time).
                     break;
                 }
-                // We expect the input stream's length to be monotonically
-                // increasing (even though the code may not yet rely on that
-                // expectation).
-                SkASSERT(currentLength > oldLength);
             }
-            fStreamLengthDuringLastCallToParseAdditionalFrameInfos = currentLength;
+            fMaxStreamLengthSeenWhenParsingAdditionalFrameInfos = currentLength;
         }
 
         switch (this->parseAdditionalFrameInfos()) {
@@ -716,7 +884,7 @@ int SkPngRustCodec::onGetFrameCount() {
                 fCanParseAdditionalFrameInfos = true;
                 break;
             case kSuccess:
-                SkASSERT(fFrameHolder.size() == this->getRawFrameCount());
+                SkASSERT_RELEASE(fFrameHolder.size() == this->getRawFrameCount());
                 fCanParseAdditionalFrameInfos = false;
                 break;
             default:
@@ -758,12 +926,19 @@ int SkPngRustCodec::onGetRepetitionCount() {
     return numPlays - 1;
 }
 
+SkCodec::IsAnimated SkPngRustCodec::onIsAnimated() {
+    if (fReader->has_actl_chunk() && fReader->get_actl_num_frames() > 1) {
+        return IsAnimated::kYes;
+    }
+    return IsAnimated::kNo;
+}
+
 std::optional<SkSpan<const SkPngCodecBase::PaletteColorEntry>> SkPngRustCodec::onTryGetPlteChunk() {
     if (fReader->output_color_type() != rust_png::ColorType::Indexed) {
         return std::nullopt;
     }
 
-    SkASSERT(fReader->has_plte_chunk());  // Checked in `startDecoding`.
+    SkASSERT_RELEASE(fReader->has_plte_chunk());  // Checked in `startDecoding`.
     SkSpan<const uint8_t> bytes = ToSkSpan(fReader->get_plte_chunk());
 
     // Make sure that `bytes.size()` is a multiple of
@@ -823,7 +998,7 @@ const SkFrameHolder* SkPngRustCodec::getFrameHolder() const { return &fFrameHold
 // TODO(https://crbug.com/370522089): See if `SkCodec` can be tweaked to avoid
 // the need to hide the stream from it.
 std::unique_ptr<SkStream> SkPngRustCodec::getEncodedData() const {
-    SkASSERT(fPrivStream);
+    SkASSERT_RELEASE(fPrivStream);
     return fPrivStream->duplicate();
 }
 
@@ -845,7 +1020,7 @@ int SkPngRustCodec::FrameHolder::size() const {
 }
 
 void SkPngRustCodec::FrameHolder::markFrameAsFullyReceived(size_t index) {
-    SkASSERT(index < fFrames.size());
+    SkASSERT_RELEASE(index < fFrames.size());
     fFrames[index].markAsFullyReceived();
 }
 
@@ -867,7 +1042,7 @@ SkCodec::Result SkPngRustCodec::FrameHolder::appendNewFrame(const rust_png::Read
     }
     int id = static_cast<int>(fFrames.size());
 
-    if (reader.has_fctl_chunk()) {
+    if (reader.has_actl_chunk() && reader.has_fctl_chunk()) {
         if (!fFrames.empty()) {
             // Having `fcTL` for a new frame means that the previous frame has been
             // fully received (since all of the previous frame's `fdAT` / `IDAT`
@@ -883,8 +1058,8 @@ SkCodec::Result SkPngRustCodec::FrameHolder::appendNewFrame(const rust_png::Read
         return result;
     }
 
-    SkASSERT(!reader.has_actl_chunk());
-    SkASSERT(id == 0);
+    SkASSERT_RELEASE(!reader.has_actl_chunk() || !reader.has_fctl_chunk());
+    SkASSERT_RELEASE(id == 0);
     fFrames.emplace_back(id, info.alpha());
     SkFrame& frame = fFrames.back();
     frame.setXYWH(0, 0, info.width(), info.height());
@@ -895,8 +1070,8 @@ SkCodec::Result SkPngRustCodec::FrameHolder::appendNewFrame(const rust_png::Read
 
 SkCodec::Result SkPngRustCodec::FrameHolder::setFrameInfoFromCurrentFctlChunk(
         const rust_png::Reader& reader, PngFrame* frame) {
-    SkASSERT(reader.has_fctl_chunk());  // Caller should guarantee this
-    SkASSERT(frame);
+    SkASSERT_RELEASE(reader.has_fctl_chunk());  // Caller should guarantee this
+    SkASSERT_RELEASE(frame);
 
     uint32_t width = 0;
     uint32_t height = 0;

@@ -31,6 +31,7 @@
 #include <QtCore/QMutexLocker>
 #include <QtCore/QMutex>
 
+#include <algorithm>
 #include <array>
 
 // #define QFONTCACHE_DEBUG
@@ -110,34 +111,32 @@ bool QFontDef::exactMatch(const QFontDef &other) const
 
 extern bool qt_is_tty_app;
 
-Q_GUI_EXPORT int qt_defaultDpiX()
+Q_GUI_EXPORT QPoint qt_defaultDpis()
 {
     if (QCoreApplication::instance()->testAttribute(Qt::AA_Use96Dpi))
-        return 96;
+        return QPoint(96, 96);
 
     if (qt_is_tty_app)
-        return 75;
+        return QPoint(75, 75);
 
-    if (const QScreen *screen = QGuiApplication::primaryScreen())
-        return qRound(screen->logicalDotsPerInchX());
+    int dpis = QGuiApplicationPrivate::m_primaryScreenDpis.loadRelaxed();
+    int dpiX = (dpis >> 16) & 0xffff;
+    int dpiY = dpis & 0xffff;
+    if (dpiX > 0 && dpiY > 0)
+        return QPoint(dpiX, dpiY);
 
     //PI has not been initialised, or it is being initialised. Give a default dpi
-    return 100;
+    return QPoint(100, 100);
+}
+
+Q_GUI_EXPORT int qt_defaultDpiX()
+{
+    return qt_defaultDpis().x();
 }
 
 Q_GUI_EXPORT int qt_defaultDpiY()
 {
-    if (QCoreApplication::instance()->testAttribute(Qt::AA_Use96Dpi))
-        return 96;
-
-    if (qt_is_tty_app)
-        return 75;
-
-    if (const QScreen *screen = QGuiApplication::primaryScreen())
-        return qRound(screen->logicalDotsPerInchY());
-
-    //PI has not been initialised, or it is being initialised. Give a default dpi
-    return 100;
+    return qt_defaultDpis().y();
 }
 
 Q_GUI_EXPORT int qt_defaultDpi()
@@ -255,6 +254,19 @@ QFontEngine *QFontPrivate::engineForScript(int script) const
     if (!engineData || !QT_FONT_ENGINE_FROM_DATA(engineData, script))
         QFontDatabasePrivate::load(this, script);
     return QT_FONT_ENGINE_FROM_DATA(engineData, script);
+}
+
+QFontEngine *QFontPrivate::engineForCharacter(char32_t c, EngineQueryOptions opt) const
+{
+    const bool smallCaps = !(opt & EngineQueryOption::IgnoreSmallCapsEngine);
+    const auto script = QChar::script(c);
+    QFontEngine *engine;
+    if (smallCaps && capital == QFont::SmallCaps && QChar::isLower(c))
+        engine = smallCapsFontPrivate()->engineForScript(script);
+    else
+        engine = engineForScript(script);
+    Q_ASSERT(engine != nullptr);
+    return engine;
 }
 
 void QFontPrivate::alterCharForCapitalization(QChar &c) const {
@@ -1816,6 +1828,8 @@ bool QFont::operator==(const QFont &f) const
 */
 bool QFont::operator<(const QFont &f) const
 {
+    // NB: This operator actually implements greater-than, because it consistently
+    //     swaps LHS (should be *this, but is `f`) and RHS (should be `f`, but is *this)
     if (f.d == d) return false;
     // the < operator for fontdefs ignores point sizes.
     const QFontDef &r1 = f.d->request;
@@ -1838,35 +1852,13 @@ bool QFont::operator<(const QFont &f) const
     int f2attrs = (d->underline << 3) + (d->overline << 2) + (d->strikeOut<<1) + d->kerning;
     if (f1attrs != f2attrs) return f1attrs < f2attrs;
 
-    if (d->features.size() != f.d->features.size())
-        return f.d->features.size() < d->features.size();
-
-    {
-        auto it = d->features.constBegin();
-        auto jt = f.d->features.constBegin();
-        for (; it != d->features.constEnd(); ++it, ++jt) {
-            if (it.key() != jt.key())
-                return jt.key() < it.key();
-            if (it.value() != jt.value())
-                return jt.value() < it.value();
-        }
+    if (d->features != f.d->features) {
+        return std::lexicographical_compare(f.d->features.keyValueBegin(), f.d->features.keyValueEnd(),
+                                            d->features.keyValueBegin(), d->features.keyValueEnd());
     }
 
-    if (r1.variableAxisValues.size() != r2.variableAxisValues.size())
-        return r1.variableAxisValues.size() < r2.variableAxisValues.size();
-
-    {
-        auto it = r1.variableAxisValues.constBegin();
-        auto jt = r2.variableAxisValues.constBegin();
-        for (; it != r1.variableAxisValues.constEnd(); ++it, ++jt) {
-            if (it.key() != jt.key())
-                return jt.key() < it.key();
-            if (it.value() != jt.value())
-                return jt.value() < it.value();
-        }
-    }
-
-    return false;
+    return std::lexicographical_compare(r1.variableAxisValues.keyValueBegin(), r1.variableAxisValues.keyValueEnd(),
+                                        r2.variableAxisValues.keyValueBegin(), r2.variableAxisValues.keyValueEnd());
 }
 
 
@@ -2153,7 +2145,9 @@ QString QFont::key() const
       \li Word spacing
       \li Stretch
       \li Style strategy
-      \li Font style (omitted when unavailable)
+      \li Font style
+      \li Font features
+      \li Variable axes
     \endlist
 
     \sa fromString()
@@ -2176,11 +2170,16 @@ QString QFont::toString() const
         QString::number(letterSpacing()) + comma +
         QString::number(wordSpacing()) + comma +
         QString::number(stretch()) + comma +
-        QString::number((int)styleStrategy());
+        QString::number((int)styleStrategy()) + comma +
+        styleName();
 
-    QString fontStyle = styleName();
-    if (!fontStyle.isEmpty())
-        fontDescription += comma + fontStyle;
+    fontDescription += comma + QString::number(d->features.size());
+    for (const auto &[tag, value] : std::as_const(d->features).asKeyValueRange())
+        fontDescription += comma + QLatin1StringView{tag.toString()} + u'=' + QString::number(value);
+
+    fontDescription += comma + QString::number(d->request.variableAxisValues.size());
+    for (const auto &[tag, value] : std::as_const(d->request.variableAxisValues).asKeyValueRange())
+        fontDescription += comma + QLatin1StringView{tag.toString()} + u'=' + QString::number(value);
 
     return fontDescription;
 }
@@ -2195,6 +2194,41 @@ size_t qHash(const QFont &font, size_t seed) noexcept
     return qHash(QFontPrivate::get(font)->request, seed);
 }
 
+static std::optional<std::pair<QFont::Tag, quint32>> fontFeatureFromString(QStringView view)
+{
+    const int separator = view.indexOf(u'=');
+    if (separator == -1)
+        return std::nullopt;
+
+    const std::optional<QFont::Tag> tag = QFont::Tag::fromString(view.sliced(0, separator));
+    if (!tag)
+        return std::nullopt;
+
+    bool valueOk = false;
+    const quint32 value = view.sliced(separator + 1).toUInt(&valueOk);
+    if (!valueOk)
+        return std::nullopt;
+
+    return std::make_pair(*tag, value);
+}
+
+static std::optional<std::pair<QFont::Tag, float>> variableAxisFromString(QStringView view)
+{
+    const int separator = view.indexOf(u'=');
+    if (separator == -1)
+        return std::nullopt;
+
+    const std::optional<QFont::Tag> tag = QFont::Tag::fromString(view.sliced(0, separator));
+    if (!tag)
+        return std::nullopt;
+
+    bool valueOk = false;
+    const float value = view.sliced(separator + 1).toFloat(&valueOk);
+    if (!valueOk)
+        return std::nullopt;
+
+    return std::make_pair(*tag, value);
+}
 
 /*!
     Sets this font to match the description \a descrip. The description
@@ -2208,8 +2242,7 @@ bool QFont::fromString(const QString &descrip)
     const auto sr = QStringView(descrip).trimmed();
     const auto l = sr.split(u',');
     const int count = l.size();
-    if (!count || (count > 2 && count < 9) || count == 9 || count > 17 ||
-        l.first().isEmpty()) {
+    if (!count || (count > 2 && count < 10) || l.first().isEmpty()) {
         qWarning("QFont::fromString: Invalid description '%s'",
                  descrip.isEmpty() ? "(empty)" : descrip.toLatin1().data());
         return false;
@@ -2218,14 +2251,8 @@ bool QFont::fromString(const QString &descrip)
     setFamily(l[0].toString());
     if (count > 1 && l[1].toDouble() > 0.0)
         setPointSizeF(l[1].toDouble());
-    if (count == 9) {
-        setStyleHint((StyleHint) l[2].toInt());
-        setWeight(QFont::Weight(l[3].toInt()));
-        setItalic(l[4].toInt());
-        setUnderline(l[5].toInt());
-        setStrikeOut(l[6].toInt());
-        setFixedPitch(l[7].toInt());
-    } else if (count >= 10) {
+
+    if (count >= 10) {
         if (l[2].toInt() > 0)
             setPixelSize(l[2].toInt());
         setStyleHint((StyleHint) l[3].toInt());
@@ -2237,6 +2264,8 @@ bool QFont::fromString(const QString &descrip)
         setUnderline(l[6].toInt());
         setStrikeOut(l[7].toInt());
         setFixedPitch(l[8].toInt());
+        if (!d->request.fixedPitch) // assume 'false' fixedPitch equals default
+            d->request.ignorePitch = true;
         if (count >= 16) {
             setCapitalization((Capitalization)l[10].toInt());
             setLetterSpacing((SpacingType)l[11].toInt(), l[12].toDouble());
@@ -2244,14 +2273,42 @@ bool QFont::fromString(const QString &descrip)
             setStretch(l[14].toInt());
             setStyleStrategy((StyleStrategy)l[15].toInt());
         }
-        if (count == 11 || count == 17)
-            d->request.styleName = l[count - 1].toString();
+
+        if (count == 11)
+            d->request.styleName = l[10].toString();
+        else if (count >= 17)
+            d->request.styleName = l[16].toString();
         else
             d->request.styleName.clear();
-    }
 
-    if (count >= 9 && !d->request.fixedPitch) // assume 'false' fixedPitch equals default
-        d->request.ignorePitch = true;
+        clearFeatures();
+        clearVariableAxes();
+
+        int position = 17;
+        if (position >= count)
+            return true;
+
+        const int featureCount = l[position++].toInt();
+        if (position + featureCount > count)
+            return true;
+
+        for (int i = 0; i < featureCount; ++i) {
+            if (const auto feature = fontFeatureFromString(l[position++]))
+                setFeature(feature->first, feature->second);
+        }
+
+        if (position >= count)
+            return true;
+
+        const int variableAxisCount = l[position++].toInt();
+        if (position + variableAxisCount > count)
+            return true;
+
+        for (int i = 0; i < variableAxisCount; ++i) {
+            if (const auto axis = variableAxisFromString(l[position++]))
+                setVariableAxis(axis->first, axis->second);
+        }
+    }
 
     return true;
 }
@@ -3625,13 +3682,17 @@ void QFontCache::decreaseCache()
         EngineCache::ConstIterator it = engineCache.constBegin(),
                                   end = engineCache.constEnd();
         for (; it != end; ++it) {
+            const auto useCount = engineCacheCount.value(it.value().data);
+            const auto refCount = it.value().data->ref.loadRelaxed();
+            const auto cacheCost = it.value().data->cache_cost;
+
             FC_DEBUG("    %p: timestamp %4u hits %2u ref %2d/%2d, cost %u bytes",
                      it.value().data, it.value().timestamp, it.value().hits,
-                     it.value().data->ref.loadRelaxed(), engineCacheCount.value(it.value().data),
-                     it.value().data->cache_cost);
+                     refCount, useCount, cacheCost);
 
-            if (it.value().data->ref.loadRelaxed() > engineCacheCount.value(it.value().data))
-                in_use_cost += it.value().data->cache_cost / engineCacheCount.value(it.value().data);
+            Q_ASSERT(useCount > 0);
+            if (useCount > 0 && refCount > useCount)
+                in_use_cost += cacheCost / useCount;
         }
 
         // attempt to make up for rounding errors

@@ -28,17 +28,11 @@ QImage LightmapImageProvider::requestImage(const QString &id, QSize *size, const
         *size = QSize(100, 100);
     const QUrl url = QUrl("lightmap://?" + id, QUrl::StrictMode);
     const QUrlQuery query(url);
-    const QString keyWithTag = query.queryItemValue("key");
+    const QString key = query.queryItemValue("key");
+    const QString tagStr = query.queryItemValue("tag");
+    QSSGLightmapIODataTag tag = LightmapViewerHelpers::stringToLightmapTag(tagStr);
 
-    QString key = keyWithTag;
-    QSSGLightmapIODataTag tag = QSSGLightmapIODataTag::Unset;
-    if (int sep = keyWithTag.indexOf('$'); sep >= 0) {
-        key = keyWithTag.left(sep);
-        const QString tagString = keyWithTag.mid(sep + 1);
-        tag = LightmapViewerHelpers::stringToLightmapTag(tagString);
-    }
-
-    const QUrl filePath = query.queryItemValue("file");
+    const auto filePath = QUrl{query.queryItemValue("file")};
     const bool useAlpha = query.queryItemValue("alpha") == QStringLiteral("true");
 
     LightmapDataType dataType = LightmapDataType::Unset;
@@ -55,7 +49,7 @@ QImage LightmapImageProvider::requestImage(const QString &id, QSize *size, const
     case QSSGLightmapIODataTag::Mesh:
     case QSSGLightmapIODataTag::Unset:
     default:
-        break;
+        return {};
     }
 
     QSharedPointer<QSSGLightmapLoader> loader = QSSGLightmapLoader::open(filePath.toLocalFile());
@@ -63,7 +57,7 @@ QImage LightmapImageProvider::requestImage(const QString &id, QSize *size, const
     if (!loader)
         return m_errorImage;
 
-    QVariantMap metadata = loader->readMetadata(key);
+    QVariantMap metadata = loader->readMap(key, QSSGLightmapIODataTag::Metadata);
     if (metadata.isEmpty())
         return m_errorImage;
     bool ok = false;

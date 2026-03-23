@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKICON_P_H
 #define QQUICKICON_P_H
@@ -71,6 +72,7 @@ public:
     QColor color() const;
     void setColor(const QColor &color);
     void resetColor();
+    void resolveColor();
 
     bool cache() const;
     void setCache(bool cache);
@@ -79,6 +81,8 @@ public:
     QQuickIcon resolve(const QQuickIcon &other) const;
 
 private:
+    friend QQuickIconPrivate;
+
     QExplicitlySharedDataPointer<QQuickIconPrivate> d;
 };
 

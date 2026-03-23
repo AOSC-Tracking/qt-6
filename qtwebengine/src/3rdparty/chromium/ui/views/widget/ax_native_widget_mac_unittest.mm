@@ -63,7 +63,7 @@ class FlexibleRoleTestView : public View {
 
   // Add a child view and resize to fit the child.
   void FitBoundsToNewChild(View* view) {
-    AddChildView(view);
+    AddChildViewRaw(view);
     // Fit the parent widget to the size of the child for accurate hit tests.
     SetBoundsRect(view->bounds());
   }
@@ -154,7 +154,7 @@ class AXNativeWidgetMacTest : public test::WidgetTest {
     textfield->GetViewAccessibility().SetName(
         base::SysNSStringToUTF16(kTestTitle));
     textfield->SetSize(size);
-    widget()->GetContentsView()->AddChildView(textfield);
+    widget()->GetContentsView()->AddChildViewRaw(textfield);
     return textfield;
   }
 
@@ -173,7 +173,7 @@ class AXNativeWidgetMacTest : public test::WidgetTest {
 // on a retained accessibility object after the source view is deleted.
 TEST_F(AXNativeWidgetMacTest, Lifetime) {
   Textfield* view = AddChildTextfield(widget()->GetContentsView()->size());
-  NSObject* ax_node = view->GetNativeViewAccessible();
+  id ax_node = view->GetNativeViewAccessible().Get();
   id<NSAccessibility> ax_obj = ToNSAccessibility(ax_node);
 
   EXPECT_TRUE(AXObjectHandlesSelector(ax_obj, @selector(accessibilityValue)));
@@ -249,10 +249,10 @@ TEST_F(AXNativeWidgetMacTest, FocusableElementsAreLeafNodes) {
   widget()->GetContentsView()->AddChildView(button);
 
   id<NSAccessibility> ax_button =
-      ToNSAccessibility(button->GetNativeViewAccessible());
+      ToNSAccessibility(button->GetNativeViewAccessible().Get());
   EXPECT_NSEQ(NSAccessibilityButtonRole, ax_button.accessibilityRole);
   id<NSAccessibility> ax_label =
-      ToNSAccessibility(button->label()->GetNativeViewAccessible());
+      ToNSAccessibility(button->label()->GetNativeViewAccessible().Get());
 
   EXPECT_EQ(0u, ax_button.accessibilityChildren.count);
 
@@ -272,7 +272,7 @@ TEST_F(AXNativeWidgetMacTest, FocusableElementsAreLeafNodes) {
 TEST_F(AXNativeWidgetMacTest, ChildrenAttribute) {
   // The ContentsView initially has a single child, a NativeFrameView.
   id<NSAccessibility> ax_node =
-      widget()->GetContentsView()->GetNativeViewAccessible();
+      widget()->GetContentsView()->GetNativeViewAccessible().Get();
   EXPECT_EQ(1u, ax_node.accessibilityChildren.count);
 
   const size_t kNumChildren = 3;
@@ -343,7 +343,7 @@ TEST_F(AXNativeWidgetMacTest, TooltipText) {
   label->SetSize(GetWidgetBounds().size());
   EXPECT_NSEQ(nil, A11yElementAtMidpoint().accessibilityHelp);
   label->SetCustomTooltipText(base::SysNSStringToUTF16(kTestPlaceholderText));
-  widget()->GetContentsView()->AddChildView(label);
+  widget()->GetContentsView()->AddChildViewRaw(label);
 
   // The tooltip is exposed in accessibilityCustomContent. This is because the
   // DescriptionFrom for the ToolTip string has been been set to
@@ -752,7 +752,7 @@ TEST_F(AXNativeWidgetMacTest, Label) {
   Label* label = new Label;
   label->SetText(base::SysNSStringToUTF16(kTestStringValue));
   label->SetSize(GetWidgetBounds().size());
-  widget()->GetContentsView()->AddChildView(label);
+  widget()->GetContentsView()->AddChildViewRaw(label);
 
   // Get the Label's accessibility object.
   id<NSAccessibility> ax_node = A11yElementAtMidpoint();
@@ -795,7 +795,7 @@ TEST_F(AXNativeWidgetMacTest, LabelUsedAsTitleBar) {
   Label* label = new Label(base::SysNSStringToUTF16(kTestStringValue),
                            style::CONTEXT_DIALOG_TITLE, style::STYLE_PRIMARY);
   label->SetSize(GetWidgetBounds().size());
-  widget()->GetContentsView()->AddChildView(label);
+  widget()->GetContentsView()->AddChildViewRaw(label);
 
   // Get the Label's accessibility object.
   id<NSAccessibility> ax_node = A11yElementAtMidpoint();
@@ -824,7 +824,7 @@ class TestComboboxModel : public ui::ComboboxModel {
 TEST_F(AXNativeWidgetMacTest, Combobox) {
   Combobox* combobox = new Combobox(std::make_unique<TestComboboxModel>());
   combobox->SetSize(GetWidgetBounds().size());
-  widget()->GetContentsView()->AddChildView(combobox);
+  widget()->GetContentsView()->AddChildViewRaw(combobox);
 
   id<NSAccessibility> ax_node = A11yElementAtMidpoint();
   EXPECT_TRUE(ax_node);

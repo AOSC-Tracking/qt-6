@@ -4,6 +4,7 @@
 
 #include "extensions/shell/browser/shell_native_app_window.h"
 
+#include "base/notimplemented.h"
 #include "extensions/shell/browser/desktop_controller.h"
 #include "third_party/blink/public/mojom/page/draggable_region.mojom.h"
 #include "third_party/skia/include/core/SkRegion.h"
@@ -85,7 +86,7 @@ void ShellNativeAppWindow::SetZOrderLevel(ui::ZOrderLevel level) {
 
 gfx::NativeView ShellNativeAppWindow::GetHostView() const {
   NOTIMPLEMENTED();
-  return nullptr;
+  return gfx::NativeView();
 }
 
 gfx::Point ShellNativeAppWindow::GetDialogPosition(const gfx::Size& size) {

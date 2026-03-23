@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4profileradapter.h"
 #include "qqmlprofilerservice.h"
@@ -36,7 +37,7 @@ qint64 QV4ProfilerAdapter::appendMemoryEvents(qint64 until, QList<QByteArray> &m
                                               QQmlDebugPacket &d)
 {
     // Make it const, so that we cannot accidentally detach it.
-    const QVector<QV4::Profiling::MemoryAllocationProperties> &memoryData = m_memoryData;
+    const QList<QV4::Profiling::MemoryAllocationProperties> &memoryData = m_memoryData;
 
     while (memoryData.size() > m_memoryPos && memoryData[m_memoryPos].timestamp <= until) {
         const QV4::Profiling::MemoryAllocationProperties &props = memoryData[m_memoryPos];
@@ -76,7 +77,7 @@ qint64 QV4ProfilerAdapter::sendMessages(qint64 until, QList<QByteArray> &message
     QQmlDebugPacket d;
 
     // Make it const, so that we cannot accidentally detach it.
-    const QVector<QV4::Profiling::FunctionCallProperties> &functionCallData = m_functionCallData;
+    const QList<QV4::Profiling::FunctionCallProperties> &functionCallData = m_functionCallData;
 
     while (true) {
         while (!m_stack.isEmpty() &&
@@ -124,8 +125,8 @@ qint64 QV4ProfilerAdapter::sendMessages(qint64 until, QList<QByteArray> &message
 
 void QV4ProfilerAdapter::receiveData(
         const QV4::Profiling::FunctionLocationHash &locations,
-        const QVector<QV4::Profiling::FunctionCallProperties> &functionCallData,
-        const QVector<QV4::Profiling::MemoryAllocationProperties> &memoryData)
+        const QList<QV4::Profiling::FunctionCallProperties> &functionCallData,
+        const QList<QV4::Profiling::MemoryAllocationProperties> &memoryData)
 {
     // In rare cases it could be that another flush or stop event is processed while data from
     // the previous one is still pending. In that case we just append the data.

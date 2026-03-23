@@ -1,5 +1,7 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //
 //  W A R N I N G
@@ -26,6 +28,10 @@ Q_DECLARE_LOGGING_CATEGORY(lcInput3D)
 Q_DECLARE_LOGGING_CATEGORY(lcCritical3D)
 Q_DECLARE_LOGGING_CATEGORY(lcAxis3D)
 Q_DECLARE_LOGGING_CATEGORY(lcAProperties3D)
+Q_DECLARE_LOGGING_CATEGORY(lcGraphsScene3D)
+Q_DECLARE_LOGGING_CATEGORY(lcGraphsBars3D)
+Q_DECLARE_LOGGING_CATEGORY(lcGraphsScatter3D)
+Q_DECLARE_LOGGING_CATEGORY(lcGraphsSurface3D)
 
 QT_END_NAMESPACE
 

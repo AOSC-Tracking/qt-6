@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgrenderbuffermanager_p.h"
 
@@ -138,7 +140,7 @@ static QPair<QSSGMesh::Mesh, QString> loadFromLightmapFile(const QString &lightm
         return retVal;
 
     if (const auto io = QSSGLightmapLoader::open(lightmapPath)) {
-        const QVariantMap metadata = io->readMetadata(lightmapKey);
+        const QVariantMap metadata = io->readMap(lightmapKey, QSSGLightmapIODataTag::Metadata);
         if (metadata.isEmpty())
             return retVal;
 
@@ -222,6 +224,8 @@ QSSGRenderImageTexture QSSGBufferManager::loadRenderImage(const QSSGRenderImage 
                 theImage = qsgImageMap.insert(qsgTexture, ImageData());
             theImage.value().renderImageTexture.m_texture = qsgTexture->rhiTexture();
             theImage.value().renderImageTexture.m_flags.setHasTransparency(qsgTexture->hasAlphaChannel());
+            // If a texture from Qt Quick has an alpha channel, it is always pre-multiplied
+            theImage.value().renderImageTexture.m_flags.setPreMultipliedAlpha(qsgTexture->hasAlphaChannel());
             theImage.value().usageCounts[currentLayer]++;
             result = theImage.value().renderImageTexture;
             // inMipMode is ignored completely when sourcing the texture from a
@@ -471,6 +475,14 @@ QRhiTexture::Format QSSGBufferManager::toRhiFormat(const QSSGRenderTextureFormat
     case QSSGRenderTextureFormat::SRGB8_Alpha8_ASTC_12x12:
         return QRhiTexture::ASTC_12x12;
 
+    case QSSGRenderTextureFormat::Depth16:
+        return QRhiTexture::D16;
+    case QSSGRenderTextureFormat::Depth24:
+        return QRhiTexture::D24;
+    case QSSGRenderTextureFormat::Depth32:
+        return QRhiTexture::D32F;
+    case QSSGRenderTextureFormat::Depth24Stencil8:
+        return QRhiTexture::D24S8;
 
     case QSSGRenderTextureFormat::SRGB8A8:
         return QRhiTexture::RGBA8; // Note: user must keep track of color space manually
@@ -797,7 +809,7 @@ bool QSSGBufferManager::createEnvironmentMap(const QSSGLoadedTexture *inImage, Q
         Q_QUICK3D_PROFILE_START(QQuick3DProfiler::Quick3DRenderCall);
         cb->draw(36);
         QSSGRHICTX_STAT(context, draw(36, 1));
-        Q_QUICK3D_PROFILE_END_WITH_PAYLOAD(QQuick3DProfiler::Quick3DRenderCall, 36llu | (1llu << 32));
+        Q_QUICK3D_PROFILE_END_WITH_STRING(QQuick3DProfiler::Quick3DRenderCall, 36llu | (1llu << 32), QByteArrayLiteral("environment_map"));
 
         cb->endPass();
         QSSGRHICTX_STAT(context, endRenderPass());
@@ -958,7 +970,7 @@ bool QSSGBufferManager::createEnvironmentMap(const QSSGLoadedTexture *inImage, Q
             cb->setShaderResources(preFilterSrb, 2, dynamicOffsets.constData());
             cb->draw(36);
             QSSGRHICTX_STAT(context, draw(36, 1));
-            Q_QUICK3D_PROFILE_END_WITH_PAYLOAD(QQuick3DProfiler::Quick3DRenderCall, 36llu | (1llu << 32));
+            Q_QUICK3D_PROFILE_END_WITH_STRING(QQuick3DProfiler::Quick3DRenderCall, 36llu | (1llu << 32), QByteArrayLiteral("environment_map"));
             cb->endPass();
             QSSGRHICTX_STAT(context, endRenderPass());
             Q_QUICK3D_PROFILE_END_WITH_STRING(QQuick3DProfiler::Quick3DRenderPass, 0, QSSG_RENDERPASS_NAME("environment_map", mipLevel, face));
@@ -1510,6 +1522,21 @@ void QSSGBufferManager::releaseExtensionResult(const QSSGRenderExtension &rext)
     renderExtensionTexture.remove(&rext);
 }
 
+void QSSGBufferManager::releaseUserRenderPass(const QSSGRenderUserPass &upass)
+{
+    // Go through the user pass managers and tell them to unschedule this pass
+    std::vector<QSSGUserRenderPassManagerWeakPtr> activeManagers;
+    activeManagers.reserve(userRenderPassManagers.size());
+    for (const auto &wmptr : std::as_const(userRenderPassManagers)) {
+        if (const auto &mng = wmptr.lock()) {
+            mng->unscheduleUserPass(&upass);
+            activeManagers.push_back(wmptr);
+        }
+    }
+
+    userRenderPassManagers = std::move(activeManagers);
+}
+
 void QSSGBufferManager::releaseMesh(const QSSGRenderPath &inSourcePath)
 {
     QMutexLocker meshMutexLocker(&meshBufferMutex);
@@ -1855,7 +1882,7 @@ std::unique_ptr<QSSGMeshBVH> QSSGBufferManager::loadMeshBVH(QSSGRenderGeometry *
 
     // Build BVH
     bool hasIndexBuffer = false;
-    QSSGRenderComponentType indexBufferFormat = QSSGRenderComponentType::Int32;
+    QSSGRenderComponentType indexBufferFormat = QSSGRenderComponentType::UnsignedInt32;
     bool hasUV = false;
     int uvOffset = -1;
     int posOffset = -1;
@@ -1872,10 +1899,14 @@ std::unique_ptr<QSSGMeshBVH> QSSGBufferManager::loadMeshBVH(QSSGRenderGeometry *
             uvOffset = attribute.offset;
         } else if (attribute.semantic == QSSGMesh::RuntimeMeshData::Attribute::IndexSemantic) {
             hasIndexBuffer = true;
-            if (attribute.componentType == QSSGMesh::Mesh::ComponentType::Int16)
-                indexBufferFormat = QSSGRenderComponentType::Int16;
-            else if (attribute.componentType == QSSGMesh::Mesh::ComponentType::Int32)
-                indexBufferFormat = QSSGRenderComponentType::Int32;
+            indexBufferFormat = attribute.componentType;
+            if (indexBufferFormat != QSSGRenderComponentType::Int16
+                && indexBufferFormat != QSSGRenderComponentType::Int32
+                && indexBufferFormat != QSSGRenderComponentType::UnsignedInt16
+                && indexBufferFormat != QSSGRenderComponentType::UnsignedInt32) {
+                qWarning() << "Unsupported index buffer format for geometry";
+                return nullptr;
+            }
         }
     }
 
@@ -2060,6 +2091,113 @@ void QSSGBufferManager::processResourceLoader(const QSSGRenderResourceLoader *lo
     commitBufferResourceUpdates();
 }
 
+static inline quint32 textureFormatSize(QRhiTexture::Format format)
+{
+    switch (format) {
+    case QRhiTexture::UnknownFormat:
+        return 0;
+    case QRhiTexture::RGBA8:
+        return 4;
+    case QRhiTexture::BGRA8:
+        return 4;
+    case QRhiTexture::R8:
+        return 1;
+    case QRhiTexture::RG8:
+        return 2;
+    case QRhiTexture::R16:
+        return 2;
+    case QRhiTexture::RG16:
+        return 4;
+    case QRhiTexture::RED_OR_ALPHA8:
+        return 1;
+
+    case QRhiTexture::RGBA16F:
+        return 8;
+    case QRhiTexture::RGBA32F:
+        return 16;
+    case QRhiTexture::R16F:
+        return 2;
+    case QRhiTexture::R32F:
+        return 4;
+
+    case QRhiTexture::RGB10A2:
+        return 4;
+
+    case QRhiTexture::R8SI:
+        return 1;
+    case QRhiTexture::R32SI:
+        return 4;
+    case QRhiTexture::RG32SI:
+        return 8;
+    case QRhiTexture::RGBA32SI:
+        return 16;
+
+    case QRhiTexture::R8UI:
+        return 1;
+    case QRhiTexture::R32UI:
+        return 4;
+    case QRhiTexture::RG32UI:
+        return 8;
+    case QRhiTexture::RGBA32UI:
+        return 16;
+
+    case QRhiTexture::D16:
+        return 2;
+    case QRhiTexture::D24:
+        return 4;
+    case QRhiTexture::D24S8:
+        return 4;
+    case QRhiTexture::D32F:
+        return 4;
+    case QRhiTexture::D32FS8:
+        return 8;
+
+    case QRhiTexture::BC1:
+        return 8;
+    case QRhiTexture::BC2:
+        return 16;
+    case QRhiTexture::BC3:
+        return 16;
+    case QRhiTexture::BC4:
+        return 8;
+    case QRhiTexture::BC5:
+        return 16;
+    case QRhiTexture::BC6H:
+        return 16;
+    case QRhiTexture::BC7:
+        return 16;
+
+    case QRhiTexture::ETC2_RGB8:
+        return 8;
+    case QRhiTexture::ETC2_RGB8A1:
+        return 8;
+    case QRhiTexture::ETC2_RGBA8:
+        return 16;
+
+    case QRhiTexture::ASTC_4x4:
+    case QRhiTexture::ASTC_5x4:
+    case QRhiTexture::ASTC_5x5:
+    case QRhiTexture::ASTC_6x5:
+    case QRhiTexture::ASTC_6x6:
+    case QRhiTexture::ASTC_8x5:
+    case QRhiTexture::ASTC_8x6:
+    case QRhiTexture::ASTC_8x8:
+    case QRhiTexture::ASTC_10x5:
+    case QRhiTexture::ASTC_10x6:
+    case QRhiTexture::ASTC_10x8:
+    case QRhiTexture::ASTC_10x10:
+    case QRhiTexture::ASTC_12x10:
+    case QRhiTexture::ASTC_12x12:
+        return 16;
+    }
+    Q_UNREACHABLE_RETURN(0);
+}
+
+static inline bool isCompressedTextureFormat(QRhiTexture::Format format)
+{
+    return (format >= QRhiTexture::BC1);
+}
+
 static inline quint64 textureMemorySize(QRhiTexture *texture)
 {
     quint64 s = 0;
@@ -2071,54 +2209,15 @@ static inline quint64 textureMemorySize(QRhiTexture *texture)
         return 0;
 
     s = texture->pixelSize().width() * texture->pixelSize().height();
-    /*
-        UnknownFormat,
-        RGBA8,
-        BGRA8,
-        R8,
-        RG8,
-        R16,
-        RG16,
-        RED_OR_ALPHA8,
-        RGBA16F,
-        RGBA32F,
-        R16F,
-        R32F,
-        RGB10A2,
-        R8SI,
-        R32SI,
-        RG32SI,
-        RGBA32SI,
-        R8UI,
-        R32UI,
-        RG32UI,
-        RGBA32UI,
-        D16,
-        D24,
-        D24S8,
-        D32F,
-        D32FS8*/
-    static const quint64 pixelSizes[] = {0, 4, 4, 1, 2, 2, 4, 1, 2, 4, 2, 4, 4, 1, 4, 8, 16, 1, 4, 8, 16, 2, 4, 4, 4, 8};
-    /*
-        BC1,
-        BC2,
-        BC3,
-        BC4,
-        BC5,
-        BC6H,
-        BC7,
-        ETC2_RGB8,
-        ETC2_RGB8A1,
-        ETC2_RGBA8,*/
-    static const quint64 blockSizes[] = {8, 16, 16, 8, 16, 16, 16, 8, 8, 16};
-    Q_STATIC_ASSERT_X(QRhiTexture::BC1 == 26 && QRhiTexture::ETC2_RGBA8 == 35,
-                      "QRhiTexture format constant value missmatch.");
-    if (format < QRhiTexture::BC1)
-        s *= pixelSizes[format];
-    else if (format >= QRhiTexture::BC1 && format <= QRhiTexture::ETC2_RGBA8)
-        s /= blockSizes[format - QRhiTexture::BC1];
-    else
-        s /= 16;
+
+    const quint32 bytesPerPixel = textureFormatSize(format);
+    QSSG_ASSERT_X(bytesPerPixel > 0, "Invalid texture format size", return 0);
+
+    if (!isCompressedTextureFormat(format)) {
+        s *= bytesPerPixel;
+    } else {
+        s /= bytesPerPixel;
+    }
 
     if (texture->flags() & QRhiTexture::MipMapped)
         s += s / 4;
@@ -2176,6 +2275,11 @@ void QSSGBufferManager::setLightmapSource(const QString &source)
 void QSSGBufferManager::setCurrentlyLightmapBaking(bool value)
 {
     currentlyLightmapBaking = value;
+}
+
+void QSSGBufferManager::registerUserRenderPassManager(const QSSGUserRenderPassManagerPtr &userPassManager)
+{
+    userRenderPassManagers.push_back(userPassManager);
 }
 
 size_t qHash(const QSSGBufferManager::CustomImageCacheKey &k, size_t seed) noexcept

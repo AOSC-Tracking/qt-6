@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "media/gpu/av1_decoder.h"
 
 #include <algorithm>
@@ -15,6 +10,7 @@
 
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "media/base/agtm.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
 #include "media/gpu/av1_picture.h"
@@ -23,6 +19,7 @@
 #include "third_party/libgav1/src/src/gav1/status_code.h"
 #include "third_party/libgav1/src/src/utils/common.h"
 #include "third_party/libgav1/src/src/utils/constants.h"
+#include "third_party/skia/include/core/SkData.h"
 #include "ui/gfx/hdr_metadata.h"
 
 namespace media {
@@ -179,14 +176,13 @@ void AV1Decoder::Reset() {
   // skip it and will keep skipping until we get a sequence header.
   current_sequence_header_.reset();
   stream_id_ = 0;
-  stream_ = nullptr;
-  stream_size_ = 0;
   on_error_ = false;
 
   state_ = std::make_unique<libgav1::DecoderState>();
   ClearReferenceFrames();
   parser_.reset();
   decrypt_config_.reset();
+  decoder_buffer_.reset();
   secure_handle_ = 0;
 
   buffer_pool_ = std::make_unique<libgav1::BufferPool>(
@@ -196,15 +192,16 @@ void AV1Decoder::Reset() {
       /*callback_private_data=*/nullptr);
 }
 
-void AV1Decoder::SetStream(int32_t id, const DecoderBuffer& decoder_buffer) {
+void AV1Decoder::SetStream(int32_t id,
+                           scoped_refptr<DecoderBuffer> decoder_buffer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(decoder_buffer);
+  decoder_buffer_ = std::move(decoder_buffer);
   stream_id_ = id;
-  stream_ = decoder_buffer.data();
-  stream_size_ = decoder_buffer.size();
   ClearCurrentFrame();
 
   parser_ = base::WrapUnique(new (std::nothrow) libgav1::ObuParser(
-      decoder_buffer.data(), decoder_buffer.size(), kDefaultOperatingPoint,
+      decoder_buffer_->data(), decoder_buffer_->size(), kDefaultOperatingPoint,
       buffer_pool_.get(), state_.get()));
   if (!parser_) {
     on_error_ = true;
@@ -213,18 +210,20 @@ void AV1Decoder::SetStream(int32_t id, const DecoderBuffer& decoder_buffer) {
 
   if (current_sequence_header_)
     parser_->set_sequence_header(*current_sequence_header_);
-  if (decoder_buffer.decrypt_config())
-    decrypt_config_ = decoder_buffer.decrypt_config()->Clone();
-  else
+  if (decoder_buffer_->decrypt_config()) {
+    decrypt_config_ = decoder_buffer_->decrypt_config()->Clone();
+  } else {
     decrypt_config_.reset();
-  if (decoder_buffer.side_data() && decoder_buffer.side_data()->secure_handle) {
-    secure_handle_ = decoder_buffer.side_data()->secure_handle;
+  }
+  if (decoder_buffer_->side_data() &&
+      decoder_buffer_->side_data()->secure_handle) {
+    secure_handle_ = decoder_buffer_->side_data()->secure_handle;
   } else {
     secure_handle_ = 0;
   }
 
-  const AV1Accelerator::Status status = accelerator_->SetStream(
-      base::span(stream_.get(), stream_size_), decrypt_config_.get());
+  const AV1Accelerator::Status status =
+      accelerator_->SetStream(*decoder_buffer_, decrypt_config_.get());
   if (status != AV1Accelerator::Status::kOk) {
     on_error_ = true;
     return;
@@ -302,8 +301,9 @@ AcceleratedVideoDecoder::DecodeResult AV1Decoder::DecodeInternal() {
           chroma_sampling_ = new_chroma_sampling;
         }
 
-        if (chroma_sampling_ != VideoChromaSampling::k420) {
-          DVLOG(1) << "Only YUV 4:2:0 is supported";
+        if (chroma_sampling_ != VideoChromaSampling::k420 &&
+            chroma_sampling_ != VideoChromaSampling::k444) {
+          DVLOG(1) << "Only YUV 4:2:0 and YUV 4:4:4 are supported";
           return kDecodeError;
         }
 
@@ -481,6 +481,22 @@ AcceleratedVideoDecoder::DecodeResult AV1Decoder::DecodeInternal() {
       hdr_metadata_->smpte_st_2086 =
           ToGfxSmpteSt2086(current_frame_->hdr_mdcv());
     }
+    if (current_frame_->itut_t35_set()) {
+      // SAFETY: The best we can do is trust the size provided by libgav1.
+      auto t35_payload_span = UNSAFE_BUFFERS(base::span<const uint8_t>(
+          current_frame_->itut_t35().payload_bytes,
+          static_cast<size_t>(current_frame_->itut_t35().payload_size)));
+      const std::optional<gfx::HdrMetadataAgtm> agtm =
+          GetHdrMetadataAgtmFromItutT35(current_frame_->itut_t35().country_code,
+                                        t35_payload_span);
+      if (agtm.has_value()) {
+        if (!hdr_metadata_.has_value()) {
+          hdr_metadata_.emplace();
+        }
+        // Overwrite existing AGTM metadata if any.
+        hdr_metadata_->agtm = agtm;
+      }
+    }
 
     DCHECK(current_sequence_header_->film_grain_params_present ||
            !frame_header.film_grain_params.apply_grain);
@@ -561,10 +577,8 @@ bool AV1Decoder::CheckAndCleanUpReferenceFrames() {
   // For intra frames, we don't need this assertion because they shouldn't
   // depend on reference frames.
   if (!libgav1::IsIntraFrame(current_frame_header_->frame_type)) {
-    for (size_t i = 0; i < libgav1::kNumInterReferenceFrameTypes; ++i) {
-      const auto ref_frame_index =
-          current_frame_header_->reference_frame_index[i];
-
+    for (int8_t ref_frame_index :
+         current_frame_header_->reference_frame_index) {
       // Unless an error occurred in libgav1, |ref_frame_index| should be valid,
       // and since CheckAndCleanUpReferenceFrames() only gets called if parsing
       // succeeded, we can assert that validity.
@@ -585,16 +599,15 @@ AV1Decoder::AV1Accelerator::Status AV1Decoder::DecodeAndOutputPicture(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(pic);
   DCHECK(current_sequence_header_);
-  DCHECK(stream_);
-  DCHECK_GT(stream_size_, 0u);
+  DCHECK(!decoder_buffer_->empty());
   if (!CheckAndCleanUpReferenceFrames()) {
     DLOG(ERROR) << "The states of reference frames are different between "
                 << "|ref_frames_| and |state_|";
     return AV1Accelerator::Status::kFail;
   }
-  const AV1Accelerator::Status status = accelerator_->SubmitDecode(
-      *pic, *current_sequence_header_, ref_frames_, tile_buffers,
-      base::span(stream_.get(), stream_size_));
+  const AV1Accelerator::Status status =
+      accelerator_->SubmitDecode(*pic, *current_sequence_header_, ref_frames_,
+                                 tile_buffers, *decoder_buffer_);
   if (status != AV1Accelerator::Status::kOk) {
     if (status == AV1Accelerator::Status::kTryAgain)
       pending_pic_ = std::move(pic);

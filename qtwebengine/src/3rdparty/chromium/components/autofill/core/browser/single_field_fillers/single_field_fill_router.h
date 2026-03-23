@@ -17,7 +17,6 @@ namespace autofill {
 
 class AutocompleteHistoryManager;
 class AutofillClient;
-class AutofillField;
 class FormStructure;
 class IbanManager;
 class MerchantPromoCodeManager;
@@ -49,25 +48,6 @@ class SingleFieldFillRouter {
   virtual void OnWillSubmitForm(const FormData& form,
                                 const FormStructure* form_structure,
                                 bool is_autocomplete_enabled);
-
-  // Gets suggestions for a given field. In the case of Autocomplete, this is
-  // through a DB query, though it could be different for other fill types.
-  // `client` is used for functionality such as checking if autocomplete is
-  // enabled, or checking if the URL we navigated to is blocklisted for the
-  // specific single field form filler that we are trying to retrieve
-  // suggestions from. `field` is the given field.
-  //
-  // The boolean return value denotes whether a single-field filler claims
-  // the opportunity to fill this field. If the return value is `false`, the
-  // `callback` is not called. If the return value is `true`, it may be called
-  // synchronously or asynchronously or not at all (e.g., querying autocomplete
-  // suggestions cancels pending queries).
-  [[nodiscard]] virtual bool OnGetSingleFieldSuggestions(
-      const FormStructure* form_structure,
-      const FormFieldData& field,
-      const AutofillField* autofill_field,
-      const AutofillClient& client,
-      OnSuggestionsReturnedCallback on_suggestions_returned);
 
   // Cancels all pending queries. This is only applicable to single-field
   // fillers that fetch suggestions asynchronously.

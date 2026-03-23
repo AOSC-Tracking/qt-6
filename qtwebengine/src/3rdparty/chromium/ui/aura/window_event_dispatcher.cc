@@ -267,6 +267,20 @@ void WindowEventDispatcher::OnCursorMovedToRootLocation(
   PostSynthesizeMouseMove(window());
 }
 
+void WindowEventDispatcher::OnHostCursorExit() {
+  // Do nothing if it's during a drag.
+  if (Env::GetInstance()->IsMouseButtonDown()) {
+    return;
+  }
+  auto details =
+      DispatchMouseExitAtPoint(window(), GetLastMouseLocationInRoot());
+  if (details.dispatcher_destroyed) {
+    return;
+  }
+  mouse_pressed_handler_ = nullptr;
+  mouse_moved_handler_ = nullptr;
+}
+
 void WindowEventDispatcher::OnPostNotifiedWindowDestroying(Window* window) {
   OnWindowHidden(window, WINDOW_DESTROYED);
 }

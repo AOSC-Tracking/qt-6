@@ -11,6 +11,7 @@ qt_internal_add_module(QmlCompiler
         qcoloroutput.cpp qcoloroutput_p.h
         qdeferredpointer_p.h
         qqmljsannotation.cpp qqmljsannotation_p.h
+        qqmljsaotirbuilder.cpp qqmljsaotirbuilder_p.h
         qqmljsbasicblocks.cpp qqmljsbasicblocks_p.h
         qqmljscodegenerator.cpp qqmljscodegenerator_p.h
         qqmljscompilepass_p.h
@@ -48,6 +49,7 @@ qt_internal_add_module(QmlCompiler
         qqmlsasourcelocation.cpp qqmlsasourcelocation.h qqmlsasourcelocation_p.h
         qresourcerelocater.cpp qresourcerelocater_p.h
         qqmljscontextproperties_p.h qqmljscontextproperties.cpp
+        qqmljsusercontextproperties_p.h qqmljsusercontextproperties.cpp
     NO_UNITY_BUILD_SOURCES
         qqmljsoptimizations.cpp
     PUBLIC_LIBRARIES

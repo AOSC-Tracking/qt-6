@@ -15,7 +15,11 @@ set(INPUT_vkb_cerence_sdk "" CACHE PATH "")
 
 #### Libraries
 
-qt_find_package(Hunspell PROVIDED_TARGETS Hunspell::Hunspell MODULE_NAME virtualkeyboard QMAKE_LIB hunspell)
+qt_find_package(Hunspell PROVIDED_TARGETS Hunspell::Hunspell MODULE_NAME virtualkeyboard
+    QMAKE_LIB hunspell
+    VCPKG_PORT hunspell
+    VCPKG_ADD_TO_FEATURE hunspell
+)
 qt_find_package(CerenceHwrAlphabetic PROVIDED_TARGETS Cerence::HWR::Alphabetic MODULE_NAME virtualkeyboard QMAKE_LIB t9write-ucr)
 qt_find_package(CerenceHwrCjk PROVIDED_TARGETS Cerence::HWR::CJK MODULE_NAME virtualkeyboard QMAKE_LIB t9write-cjk)
 qt_find_package(CerenceXt9 PROVIDED_TARGETS Cerence::XT9 MODULE_NAME virtualkeyboard QMAKE_LIB xt9-acktn)
@@ -60,6 +64,10 @@ qt_feature("vkb-default-style" PUBLIC
 qt_feature("vkb-sensitive-debug" PRIVATE
     LABEL "Sensitive Debug"
     AUTODETECT OFF
+)
+qt_feature("vkb-sound-effects" PUBLIC
+    LABEL "Sound effects"
+    AUTODETECT TARGET Qt::Multimedia
 )
 qt_feature("cerence-sdk" PRIVATE
     LABEL "Cerence"
@@ -128,6 +136,7 @@ qt_feature("hunspell" PRIVATE
     LABEL "Hunspell"
     CONDITION QT_FEATURE_3rdparty_hunspell OR QT_FEATURE_system_hunspell
     DISABLE QT_FEATURE_cerence_xt9
+    VCPKG_OPTIONAL
 )
 qt_feature("openwnn" PRIVATE
     LABEL "OpenWnn"
@@ -373,6 +382,7 @@ qt_configure_add_summary_entry(ARGS "vkb-layouts")
 qt_configure_add_summary_entry(ARGS "vkb-arrow-keynavigation")
 qt_configure_add_summary_entry(ARGS "vkb-retro-style")
 qt_configure_add_summary_entry(ARGS "vkb-sensitive-debug")
+qt_configure_add_summary_entry(ARGS "vkb-sound-effects")
 qt_configure_add_summary_entry(ARGS "cerence-sdk")
 qt_configure_add_summary_entry(ARGS "vkb-cerence-static")
 qt_configure_add_summary_entry(ARGS "cerence-hwr")

@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-vaddc/avx512skx-mul32-ld128.c.in
 //   Generator: tools/xngen
@@ -8,11 +9,15 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/intrinsics-polyfill.h"
-#include "xnnpack/vbinary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/vbinary.h"
 
 
 void xnn_qu8_vaddc_minmax_ukernel__avx512skx_mul32_ld128_u32(
@@ -20,7 +25,7 @@ void xnn_qu8_vaddc_minmax_ukernel__avx512skx_mul32_ld128_u32(
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
-    const struct xnn_qu8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_qu8_add_minmax_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);

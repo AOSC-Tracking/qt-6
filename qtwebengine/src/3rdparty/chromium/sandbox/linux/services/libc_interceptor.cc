@@ -38,6 +38,7 @@
 #include "base/sanitizer_buildflags.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 
 #if BUILDFLAG(USING_SANITIZER) && !defined(COMPONENT_BUILD)
 // Sanitizers may override certain libc functions with a weak symbol that points
@@ -271,7 +272,7 @@ static void InitLibcLocaltimeFunctionsImpl() {
   g_libc_localtime64_r =
       reinterpret_cast<LocaltimeRFunction>(dlsym(RTLD_NEXT, "localtime64_r"));
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!g_libc_localtime || !g_libc_localtime_r) {
     // https://bugs.chromium.org/p/chromium/issues/detail?id=16800
     //
@@ -407,7 +408,7 @@ namespace {
 std::atomic<bool> g_getaddrinfo_discouraged{false};
 }  // namespace
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 extern "C" {
 __attribute__((visibility("default"), noinline)) int getaddrinfo(
     const char* node,
@@ -423,7 +424,7 @@ __attribute__((visibility("default"), noinline)) int getaddrinfo(
   return CALL_FUNC(getaddrinfo, node, service, hints, res);
 }
 }
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void DiscourageGetaddrinfo() {
   g_getaddrinfo_discouraged = true;

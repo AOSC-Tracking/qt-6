@@ -16,9 +16,12 @@
 #include <QtMultimedia/private/qaudiosystem_p.h>
 
 #include <private/mediabackendutils_p.h>
+#include <private/osdetection_p.h>
 #include <private/qmockiodevice_p.h>
 
 #include <memory>
+
+QT_WARNING_DISABLE_DEPRECATED; // Tests use QWaveDecoder
 
 #define RANGE_ERR 0.5
 
@@ -58,6 +61,7 @@ private slots:
     void bufferSize_updatedAfterStart();
 
     void stopWhileStopped();
+    void stopWhileSuspended();
     void suspendWhileStopped();
     void resumeWhileStopped();
 
@@ -92,6 +96,7 @@ private slots:
 
     void callbackAPI();
     void callbackAPI_startFailsWithWrongType();
+    void callbackAPI_startWithMoveOnlyFunctor();
 
 private:
     using FilePtr = std::shared_ptr<QFile>;
@@ -107,8 +112,6 @@ private:
 
     std::unique_ptr<QByteArray> m_byteArray;
     std::unique_ptr<QBuffer> m_buffer;
-
-    bool m_inCISystem = isCI();
 };
 
 void tst_QAudioSource::generate_audiofile_testrows()
@@ -132,8 +135,8 @@ QString tst_QAudioSource::formatToFileName(const QAudioFormat &format)
 
 void tst_QAudioSource::initTestCase()
 {
-    if (m_inCISystem)
-        QSKIP("SKIP initTestCase on CI. To be fixed");
+    if (isMacOS && isCI())
+        QSKIP("QAudioSource requires microphone permissions");
 
     // Only perform tests if audio input device exists
     const QList<QAudioDevice> devices = QMediaDevices::audioInputs();
@@ -360,6 +363,22 @@ void tst_QAudioSource::stopWhileStopped()
     QVERIFY2((stateSignal.size() == 0), "stop() while stopped is emitting a signal and it shouldn't");
     QVERIFY2((audioSource.error() == QAudio::NoError),
              "error() was not set to QAudio::NoError after stop()");
+}
+
+void tst_QAudioSource::stopWhileSuspended()
+{
+    using namespace std::chrono_literals;
+
+    QAudioSource audioSource(audioDevice.preferredFormat(), this);
+    audioSource.start();
+    QTest::qWait(10ms); // give WASAPI worker thread a bit of time to arrive at WaitForSingleObject
+
+    audioSource.suspend();
+    QTRY_COMPARE_EQ(audioSource.state(), QAudio::SuspendedState);
+    QTest::qWait(10ms); // give WASAPI worker thread a bit of time to arrive at WaitForSingleObject
+
+    audioSource.stop();
+    QTRY_COMPARE_EQ(audioSource.state(), QAudio::StoppedState);
 }
 
 void tst_QAudioSource::suspendWhileStopped()
@@ -702,10 +721,6 @@ void tst_QAudioSource::push()
 
 void tst_QAudioSource::pushSuspendResume()
 {
-#ifdef Q_OS_LINUX
-    if (m_inCISystem)
-        QSKIP("QTBUG-26504 Fails 20% of time with pulseaudio backend");
-#endif
     QFETCH(FilePtr, audioFile);
     QFETCH(QAudioFormat, audioFormat);
     QAudioSource audioSource(audioFormat, this);
@@ -990,6 +1005,10 @@ void tst_QAudioSource::stop_stopsAudioSource_whenInvokedUponFirstStateChange_dat
 
 void tst_QAudioSource::stop_stopsAudioSource_whenInvokedUponFirstStateChange()
 {
+    if (isAndroid)
+        // Revisit after migrating to AAudio
+        QSKIP("'initializer(audioSource)' returned FALSE");
+
     QFETCH(const AudioSourceInitializer, initializer);
 
     const QAudioDevice defaultAudioInputDevice = QMediaDevices::defaultAudioInput();
@@ -1010,9 +1029,7 @@ void tst_QAudioSource::stop_stopsAudioSource_whenInvokedUponFirstStateChange()
 
     connect(&audioSource, &QAudioSource::stateChanged, this, stop, Qt::SingleShotConnection);
 
-    if (!initializer(audioSource))
-        QSKIP("Cannot start the audio source"); // Pulse audio backend fails on some Linux CI.
-                                                // TODO: replace with QVERIFY, QTBUG-130272
+    QVERIFY(initializer(audioSource));
 
     QTRY_COMPARE(audioSource.state(), QtAudio::State::StoppedState);
 }
@@ -1066,7 +1083,7 @@ void tst_QAudioSource::callbackAPI()
 
     QSemaphore sync;
 
-    platformSource->start([&](QSpan<const float> outputBuffer) {
+    audioSource.start([&](QSpan<const float> outputBuffer) {
         QCOMPARE_GT(outputBuffer.size(), 0);
         sync.release();
     });
@@ -1089,9 +1106,35 @@ void tst_QAudioSource::callbackAPI_startFailsWithWrongType()
     if (!platformSource->hasCallbackAPI())
         QSKIP("Callback API not supported by this backend");
 
-    platformSource->start([&](QSpan<const int32_t>) {
+    audioSource.start([&](QSpan<const int32_t>) {
     });
     QCOMPARE(audioSource.error(), QAudio::Error::OpenError);
+}
+
+void tst_QAudioSource::callbackAPI_startWithMoveOnlyFunctor()
+{
+#if QT_CONFIG(thread)
+    using namespace std::chrono_literals;
+
+    QAudioFormat format = audioDevice.preferredFormat();
+    format.setSampleFormat(QAudioFormat::SampleFormat::Float);
+
+    QAudioSource audioSource(audioDevice, format);
+    QPlatformAudioSource *platformSource = QPlatformAudioSource::get(audioSource);
+    if (!platformSource->hasCallbackAPI())
+        QSKIP("Callback API not supported by this backend");
+
+    QSemaphore sync;
+
+    audioSource.start([&, dummy = std::make_unique<int>(1)](QSpan<const float> outputBuffer) {
+        QCOMPARE_GT(outputBuffer.size(), 0);
+        sync.release();
+    });
+    QCOMPARE(audioSource.error(), QAudio::Error::NoError);
+
+    bool callbackExecuted = sync.try_acquire_for(1s);
+    QVERIFY(callbackExecuted);
+#endif
 }
 
 QTEST_MAIN(tst_QAudioSource)

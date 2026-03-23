@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKPOPUP_P_H
 #define QQUICKPOPUP_P_H
@@ -70,7 +71,7 @@ class Q_QUICKTEMPLATES2_EXPORT QQuickPopup : public QObject, public QQmlParserSt
     Q_PROPERTY(QQuickItem *parent READ parentItem WRITE setParentItem RESET resetParentItem NOTIFY parentChanged FINAL)
     Q_PROPERTY(QQuickItem *background READ background WRITE setBackground NOTIFY backgroundChanged FINAL)
     Q_PROPERTY(QQuickItem *contentItem READ contentItem WRITE setContentItem NOTIFY contentItemChanged FINAL)
-    Q_PRIVATE_PROPERTY(QQuickPopup::d_func(), QQmlListProperty<QObject> contentData READ contentData)
+    Q_PRIVATE_PROPERTY(QQuickPopup::d_func(), QQmlListProperty<QObject> contentData READ contentData VIRTUAL)
     Q_PRIVATE_PROPERTY(QQuickPopup::d_func(), QQmlListProperty<QQuickItem> contentChildren READ contentChildren NOTIFY contentChildrenChanged FINAL)
     Q_PROPERTY(bool clip READ clip WRITE setClip NOTIFY clipChanged FINAL)
     Q_PROPERTY(bool focus READ hasFocus WRITE setFocus NOTIFY focusChanged FINAL)

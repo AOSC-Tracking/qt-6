@@ -8,13 +8,18 @@ import("../../../../scripts/build/ninja/devtools_module.gni")
 devtools_module("utils") {
   sources = [
     "AICallTree.ts",
+    "AIContext.ts",
     "EntityMapper.ts",
     "EntryName.ts",
+    "EntryNodes.ts",
     "EntryStyles.ts",
+    "EventsSerializer.ts",
     "Helpers.ts",
     "IgnoreList.ts",
     "ImageCache.ts",
+    "InsightAIContext.ts",
     "SourceMapsResolver.ts",
+    "Treemap.ts",
   ]
 
   deps = [
@@ -42,6 +47,7 @@ devtools_entrypoint("bundle") {
   visibility = [
     ":*",
     "..:*",
+    "../../../models/ai_assistance/*",
     "../../ai_assistance/*",
     "../../network/*",
     "../components:*",
@@ -60,10 +66,14 @@ ts_library("unittests") {
     "AICallTree.test.ts",
     "EntityMapper.test.ts",
     "EntryName.test.ts",
+    "EntryNodes.test.ts",
+    "EventsSerializer.test.ts",
     "Helpers.test.ts",
     "IgnoreList.test.ts",
     "ImageCache.test.ts",
+    "InsightAIContext.test.ts",
     "SourceMapsResolver.test.ts",
+    "Treemap.test.ts",
   ]
 
   deps = [
@@ -72,7 +82,6 @@ ts_library("unittests") {
     "../../../core/root:bundle",
     "../../../core/sdk:bundle",
     "../../../models/bindings:bundle",
-    "../../../models/timeline_model:bundle",
     "../../../models/trace:bundle",
     "../../../models/workspace:bundle",
     "../../../testing",

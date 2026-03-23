@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QMARGINS_H
 #define QMARGINS_H
@@ -333,20 +334,13 @@ private:
     qreal m_right;
     qreal m_bottom;
 
-    QT_WARNING_PUSH
-    QT_WARNING_DISABLE_FLOAT_COMPARE
     friend constexpr bool qFuzzyCompare(const QMarginsF &lhs, const QMarginsF &rhs) noexcept
     {
-        return ((!lhs.m_left || !rhs.m_left) ? qFuzzyIsNull(lhs.m_left - rhs.m_left)
-                                             : qFuzzyCompare(lhs.m_left, rhs.m_left))
-                && ((!lhs.m_top || !rhs.m_top) ? qFuzzyIsNull(lhs.m_top - rhs.m_top)
-                                               : qFuzzyCompare(lhs.m_top, rhs.m_top))
-                && ((!lhs.m_right || !rhs.m_right) ? qFuzzyIsNull(lhs.m_right - rhs.m_right)
-                                                   : qFuzzyCompare(lhs.m_right, rhs.m_right))
-                && ((!lhs.m_bottom || !rhs.m_bottom) ? qFuzzyIsNull(lhs.m_bottom - rhs.m_bottom)
-                                                     : qFuzzyCompare(lhs.m_bottom, rhs.m_bottom));
+        return QtPrivate::fuzzyCompare(lhs.m_left,   rhs.m_left)
+            && QtPrivate::fuzzyCompare(lhs.m_top,    rhs.m_top)
+            && QtPrivate::fuzzyCompare(lhs.m_right,  rhs.m_right)
+            && QtPrivate::fuzzyCompare(lhs.m_bottom, rhs.m_bottom);
     }
-    QT_WARNING_POP
     friend constexpr bool qFuzzyIsNull(const QMarginsF &m) noexcept
     {
         return qFuzzyIsNull(m.m_left) && qFuzzyIsNull(m.m_top)

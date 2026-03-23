@@ -10,8 +10,14 @@
 
 #include "modules/video_coding/frame_helpers.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
 #include <utility>
+#include <variant>
 
+#include "absl/container/inlined_vector.h"
 #include "api/scoped_refptr.h"
 #include "api/units/timestamp.h"
 #include "api/video/encoded_frame.h"
@@ -27,11 +33,9 @@ using ::testing::ElementsAre;
 
 constexpr uint32_t kRtpTimestamp = 123456710;
 
-webrtc::scoped_refptr<EncodedImageBuffer> CreateEncodedImageBufferOfSizeN(
-    size_t n,
-    uint8_t x) {
-  webrtc::scoped_refptr<EncodedImageBuffer> buffer =
-      EncodedImageBuffer::Create(n);
+scoped_refptr<EncodedImageBuffer> CreateEncodedImageBufferOfSizeN(size_t n,
+                                                                  uint8_t x) {
+  scoped_refptr<EncodedImageBuffer> buffer = EncodedImageBuffer::Create(n);
   for (size_t i = 0; i < n; ++i) {
     buffer->data()[i] = static_cast<uint8_t>(x + i);
   }
@@ -88,15 +92,15 @@ TEST(FrameInstrumentationDataTest,
   frames.push_back(std::make_unique<EncodedFrame>(spatial_layer_2));
 
   std::optional<
-      absl::variant<FrameInstrumentationSyncData, FrameInstrumentationData>>
+      std::variant<FrameInstrumentationSyncData, FrameInstrumentationData>>
       data = CombineAndDeleteFrames(std::move(frames))
                  ->CodecSpecific()
                  ->frame_instrumentation_data;
 
   ASSERT_TRUE(data.has_value());
-  ASSERT_TRUE(absl::holds_alternative<FrameInstrumentationData>(*data));
+  ASSERT_TRUE(std::holds_alternative<FrameInstrumentationData>(*data));
   FrameInstrumentationData frame_instrumentation_data =
-      absl::get<FrameInstrumentationData>(*data);
+      std::get<FrameInstrumentationData>(*data);
 
   // Expect to have the same frame_instrumentation_data as the highest spatial
   // layer.

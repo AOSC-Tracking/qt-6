@@ -41,12 +41,12 @@ class CXFA_FFListBox final : public CXFA_FFDropDown {
   explicit CXFA_FFListBox(CXFA_Node* pNode);
 
   bool CommitData() override;
-  bool UpdateFWLData() override;
+  void UpdateFWLData() override;
   bool IsDataChanged() override;
 
   uint32_t GetAlignment();
 
-  cppgc::Member<IFWL_WidgetDelegate> m_pOldDelegate;
+  cppgc::Member<IFWL_WidgetDelegate> old_delegate_;
 };
 
 #endif  // XFA_FXFA_CXFA_FFLISTBOX_H_

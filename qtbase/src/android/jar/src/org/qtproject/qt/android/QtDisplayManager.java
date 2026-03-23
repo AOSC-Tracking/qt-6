@@ -14,21 +14,12 @@ import android.util.DisplayMetrics;
 import android.util.Size;
 import android.view.Display;
 import android.view.Surface;
-import android.view.View;
-import android.view.WindowInsets;
 import android.view.WindowManager;
-import android.view.WindowManager.LayoutParams;
 import android.view.WindowMetrics;
-import android.view.WindowInsetsController;
-import android.view.Window;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-
-import android.graphics.Color;
-import android.util.TypedValue;
-import android.content.res.Resources.Theme;
 
 import android.util.Log;
 
@@ -45,9 +36,6 @@ class QtDisplayManager
     static native void handleScreenRemoved(int displayId);
     static native void handleScreenDensityChanged(double density);
     // screen methods
-
-    private boolean m_isFullScreen = false;
-    private boolean m_expandedToCutout = false;
 
     private static int m_previousRotation = -1;
 
@@ -132,108 +120,6 @@ class QtDisplayManager
         DisplayManager displayManager =
                 (DisplayManager) m_activity.getSystemService(Context.DISPLAY_SERVICE);
         displayManager.unregisterDisplayListener(m_displayListener);
-    }
-
-    @SuppressWarnings("deprecation")
-    void setSystemUiVisibilityPreAndroidR(View decorView)
-    {
-        int systemUiVisibility;
-
-        if (m_isFullScreen || m_expandedToCutout) {
-            systemUiVisibility =  View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
-            if (m_isFullScreen) {
-                systemUiVisibility |=  View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                                    | View.SYSTEM_UI_FLAG_FULLSCREEN
-                                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-            }
-        } else {
-            systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE;
-        }
-
-        decorView.setSystemUiVisibility(systemUiVisibility);
-    }
-
-    void setSystemUiVisibility(boolean isFullScreen, boolean expandedToCutout)
-    {
-        if (m_isFullScreen == isFullScreen && m_expandedToCutout == expandedToCutout)
-            return;
-
-        m_isFullScreen = isFullScreen;
-        m_expandedToCutout = expandedToCutout;
-
-        Window window = m_activity.getWindow();
-        View decorView = window.getDecorView();
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            int cutoutMode;
-            if (m_isFullScreen || m_expandedToCutout) {
-                window.setDecorFitsSystemWindows(false);
-                cutoutMode = LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-            } else {
-                window.setDecorFitsSystemWindows(true);
-                cutoutMode = LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
-            }
-            LayoutParams layoutParams = window.getAttributes();
-            layoutParams.layoutInDisplayCutoutMode = cutoutMode;
-            window.setAttributes(layoutParams);
-
-            final WindowInsetsController insetsControl = window.getInsetsController();
-            if (insetsControl != null) {
-                int sysBarsBehavior;
-                if (m_isFullScreen) {
-                    insetsControl.hide(WindowInsets.Type.systemBars());
-                    sysBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE;
-                } else {
-                    insetsControl.show(WindowInsets.Type.systemBars());
-                    sysBarsBehavior = WindowInsetsController.BEHAVIOR_DEFAULT;
-                }
-                insetsControl.setSystemBarsBehavior(sysBarsBehavior);
-            }
-        } else {
-            setSystemUiVisibilityPreAndroidR(decorView);
-        }
-
-        if (!isFullScreen) {
-            // Handle transparent status and navigation bars
-            if (m_expandedToCutout) {
-                window.setStatusBarColor(Color.TRANSPARENT);
-                window.setNavigationBarColor(Color.TRANSPARENT);
-            } else {
-                // Restore theme's system bars colors
-                Theme theme = m_activity.getTheme();
-                TypedValue typedValue = new TypedValue();
-
-                theme.resolveAttribute(android.R.attr.statusBarColor, typedValue, true);
-                int defaultStatusBarColor = typedValue.data;
-                window.setStatusBarColor(defaultStatusBarColor);
-
-                theme.resolveAttribute(android.R.attr.navigationBarColor, typedValue, true);
-                int defaultNavigationBarColor = typedValue.data;
-                window.setNavigationBarColor(defaultNavigationBarColor);
-            }
-        }
-
-        decorView.post(() -> decorView.requestApplyInsets());
-    }
-
-    boolean isFullScreen()
-    {
-        return m_isFullScreen;
-    }
-
-    boolean expandedToCutout()
-    {
-        return m_expandedToCutout;
-    }
-
-    void reinstateFullScreen()
-    {
-        if (m_isFullScreen) {
-            m_isFullScreen = false;
-            setSystemUiVisibility(true, m_expandedToCutout);
-        }
     }
 
     @SuppressWarnings("deprecation")

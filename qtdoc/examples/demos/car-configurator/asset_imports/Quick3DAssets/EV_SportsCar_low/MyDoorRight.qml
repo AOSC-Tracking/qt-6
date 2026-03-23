@@ -6,42 +6,23 @@ import QtQuick3D
 
 Model {
     id: doorRight
+    pickable: true
     objectName: "MyDoorRight"
+    property bool rain
     z: 0.8587785363197327
-    source: rootWindow.downloadBase + "/asset_imports/Quick3DAssets/EV_SportsCar_low/meshes/doorRight_mesh.mesh"
     receivesReflections: true
     property bool isOpen: false
-    materials: [
-        carPaint_material,
-        metalDark_material,
-        plasticBlack_material24,
-        chrome_material,
-        glassLights_material,
-        glassRedLights_material,
-        chromeLightsBMP_material,
-        glassLightsIllum_material,
-        metalMirror_material,
-        aluminium_material,
-        glassWindsSide_material,
-        intAlcanataraGrey_material,
-        intLeatherBlack_material,
-        carPaint_material,
-        intLeatherSeatsPattern_material,
-        intButtons_material,
-        intGrillBump_material
-    ]
-
     Node {
         id: __materialLibrary__
     }
     states: [
         State {
             name: "closed"
-            when: !isOpen
+            when: !doorRight.isOpen
         },
         State {
             name: "open"
-            when: isOpen
+            when: doorRight.isOpen
 
             PropertyChanges {
                 target: doorRight

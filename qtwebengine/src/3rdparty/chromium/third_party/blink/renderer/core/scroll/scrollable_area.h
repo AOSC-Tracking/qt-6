@@ -41,6 +41,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
 #include "third_party/blink/renderer/core/loader/history_item.h"
+#include "third_party/blink/renderer/core/scroll/scroll_types.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar.h"
 #include "third_party/blink/renderer/core/style/scroll_start_data.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_element_id.h"
@@ -78,7 +79,6 @@ class ProgrammaticScrollAnimator;
 class ScrollAnchor;
 class ScrollAnimatorBase;
 struct SerializedAnchor;
-class SmoothScrollSequencer;
 class ScrollMarkerGroupPseudoElement;
 
 using MainThreadScrollingReasons = uint32_t;
@@ -107,8 +107,6 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
   ScrollableArea& operator=(const ScrollableArea&) = delete;
 
   static int PixelsPerLineStep(LocalFrame*);
-  static float MinFractionToStepWhenPaging();
-  int MaxOverlapBetweenPages() const;
 
   // Convert a non-finite scroll value (Infinity, -Infinity, NaN) to 0 as
   // per https://drafts.csswg.org/cssom-view/#normalize-non-finite-values.
@@ -121,14 +119,13 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
   // Used to scale a length in dip units into a length in layout/paint units.
   virtual float ScaleFromDIP() const;
 
-  virtual SmoothScrollSequencer* GetSmoothScrollSequencer() const {
-    return nullptr;
-  }
-
   virtual ScrollResult UserScroll(ui::ScrollGranularity,
                                   const ScrollOffset&,
                                   ScrollCallback on_finish);
 
+  // See https://crbug.com/413002675: `on_finish` is not always executed at the
+  // end of the scroll (example: it may be executed while the scroll is in
+  // progress for animated programmatic scrolls).
   virtual bool SetScrollOffset(const ScrollOffset&,
                                mojom::blink::ScrollType,
                                mojom::blink::ScrollBehavior,
@@ -169,10 +166,6 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
   void RegisterScrollCompleteCallback(ScrollCallback callback);
   void RunScrollCompleteCallbacks(ScrollCompletionMode);
 
-  void ContentAreaWillPaint() const;
-  void MouseEnteredContentArea() const;
-  void MouseExitedContentArea() const;
-  void MouseMovedInContentArea() const;
   void MouseEnteredScrollbar(Scrollbar&);
   void MouseExitedScrollbar(Scrollbar&);
   void MouseCapturedScrollbar();
@@ -191,7 +184,7 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
   virtual void UpdateFocusDataForSnapAreas() {}
 
   // SnapAtCurrentPosition(), SnapForEndPosition(), SnapForDirection(), and
-  // SnapForEndAndDirection() return true if snapping was performed, and false
+  // SnapForDisplacement() return true if snapping was performed, and false
   // otherwise. Note that this does not necessarily mean that any scrolling was
   // performed as a result e.g., if we are already at the snap point.
   // The scroll callback parameter is used to set the hover state dirty and
@@ -209,10 +202,11 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
       bool scrolled_x,
       bool scrolled_y,
       base::ScopedClosureRunner on_finish = base::ScopedClosureRunner());
-  bool SnapForDirection(
-      const ScrollOffset& delta,
-      base::ScopedClosureRunner on_finish = base::ScopedClosureRunner());
-  bool SnapForEndAndDirection(const ScrollOffset& delta);
+  bool SnapForDirection(ScrollDirectionPhysical direction);
+  bool SnapForPageScroll(ScrollDirectionPhysical direction);
+  bool SnapForDocumentScroll(ScrollDirectionPhysical direction);
+  std::unique_ptr<cc::SnapSelectionStrategy> PageScrollSnapStrategy(
+      ScrollDirectionPhysical direction) const;
   void SnapAfterLayout();
 
   // Tries to find a target snap position. If found, returns the target
@@ -242,7 +236,7 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
   // scroller.
   virtual void DidChangeGlobalRootScroller() {}
 
-  virtual void ContentsResized();
+  virtual void ContentsResized() {}
 
   // This is for platform overlay scrollbars only, doesn't include
   // overflow:overlay scrollbars. Probably this should be renamed to
@@ -378,6 +372,7 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
   // Returns a floored version of the scroll offset as the web-exposed scroll
   // offset to ensure web compatibility in DOM APIs.
   virtual ScrollOffset GetWebExposedScrollOffset() const;
+  ScrollOffset GetScrollOffsetForScrollMarkerUpdate();
   virtual gfx::Vector2d MinimumScrollOffsetInt() const = 0;
   virtual ScrollOffset MinimumScrollOffset() const {
     return ScrollOffset(MinimumScrollOffsetInt());
@@ -557,6 +552,8 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
   void OnScrollFinished(bool enqueue_scrollend);
 
   float ScrollStep(ui::ScrollGranularity, ScrollbarOrientation) const;
+  std::unique_ptr<cc::SnapSelectionStrategy> PageSnap(
+      ScrollbarOrientation) const;
 
   // Injects a gesture scroll event based on the given parameters for mouse
   // events on a scrollbar of this scrollable area.
@@ -617,6 +614,7 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
 
   virtual void SetSnappedQueryTargetIds(
       std::optional<cc::TargetSnapAreaElementIds>) {}
+  virtual bool IsGlobalRootNonOverlayScroller() const { return false; }
 
   virtual ScrollMarkerGroupPseudoElement* GetScrollMarkerGroup() const {
     return nullptr;
@@ -683,7 +681,6 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
 
   bool ProgrammaticScrollHelper(const ScrollOffset&,
                                 mojom::blink::ScrollBehavior,
-                                bool is_sequenced_scroll,
                                 gfx::Vector2d animation_adjustment,
                                 ScrollCallback on_finish);
   void UserScrollHelper(const ScrollOffset&, mojom::blink::ScrollBehavior);
@@ -702,6 +699,8 @@ class CORE_EXPORT ScrollableArea : public GarbageCollectedMixin {
   virtual int PageStep(ScrollbarOrientation) const;
   virtual int DocumentStep(ScrollbarOrientation) const;
   virtual float PixelStep(ScrollbarOrientation) const;
+
+  gfx::Size PageSize() const;
 
   // Returns true if a snap point was found.
   bool PerformSnapping(

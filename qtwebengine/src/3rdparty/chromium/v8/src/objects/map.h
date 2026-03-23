@@ -49,9 +49,11 @@ enum InstanceType : uint16_t;
   V(Cell)                             \
   V(CodeWrapper)                      \
   V(ConsString)                       \
-  V(ContextSidePropertyCell)          \
+  V(ContextCell)                      \
+  V(CppHeapExternalObject)            \
   V(DataHandler)                      \
   V(DebugInfo)                        \
+  V(DoubleStringCache)                \
   V(EmbedderDataArray)                \
   V(EphemeronHashTable)               \
   V(ExternalString)                   \
@@ -60,6 +62,7 @@ enum InstanceType : uint16_t;
   V(FreeSpace)                        \
   V(FunctionTemplateInfo)             \
   V(Hole)                             \
+  V(InterceptorInfo)                  \
   V(JSApiObject)                      \
   V(JSArrayBuffer)                    \
   V(JSDataViewOrRabGsabDataView)      \
@@ -98,7 +101,6 @@ enum InstanceType : uint16_t;
   V(ThinString)                       \
   V(TransitionArray)                  \
   IF_WASM(V, WasmArray)               \
-  IF_WASM(V, WasmContinuationObject)  \
   IF_WASM(V, WasmFuncRef)             \
   IF_WASM(V, WasmGlobalObject)        \
   IF_WASM(V, WasmInstanceObject)      \
@@ -106,8 +108,9 @@ enum InstanceType : uint16_t;
   IF_WASM(V, WasmMemoryObject)        \
   IF_WASM(V, WasmResumeData)          \
   IF_WASM(V, WasmStruct)              \
-  IF_WASM(V, WasmSuspenderObject)     \
+  IF_WASM(V, WasmDescriptorOptions)   \
   IF_WASM(V, WasmSuspendingObject)    \
+  IF_WASM(V, WasmContinuationObject)  \
   IF_WASM(V, WasmTableObject)         \
   IF_WASM(V, WasmTagObject)           \
   IF_WASM(V, WasmTypeInfo)            \
@@ -144,8 +147,8 @@ enum class ObjectFields {
 };
 
 using MapHandles =
-    base::SmallVector<Handle<Map>, DEFAULT_MAX_POLYMORPHIC_MAP_COUNT>;
-using MapHandlesSpan = v8::MemorySpan<Handle<Map>>;
+    DirectHandleSmallVector<Map, DEFAULT_MAX_POLYMORPHIC_MAP_COUNT>;
+using MapHandlesSpan = v8::MemorySpan<DirectHandle<Map>>;
 
 #include "torque-generated/src/objects/map-tq.inc"
 
@@ -218,8 +221,9 @@ using MapHandlesSpan = v8::MemorySpan<Handle<Map>>;
 // +---------------+-------------------------------------------------+
 // | TaggedPointer | [constructor_or_back_pointer_or_native_context] |
 // +---------------+-------------------------------------------------+
-// | TaggedPointer | [instance_descriptors]                          |
-// +*****************************************************************+
+// | TaggedPointer | [instance_descriptors] (if JS object)           |
+// |               | [custom_descriptor]    (if WasmStruct)          |
+// +---------------+-------------------------------------------------+
 // | TaggedPointer | [dependent_code]                                |
 // +---------------+-------------------------------------------------+
 // | TaggedPointer | [prototype_validity_cell]                       |
@@ -264,7 +268,15 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
   DECL_GETTER(GetIndexedInterceptor, Tagged<InterceptorInfo>)
 
   // Instance type.
-  DECL_PRIMITIVE_ACCESSORS(instance_type, InstanceType)
+  // Inline definition here to avoid a circular dependency in map-inl.h
+  // with instance-types-inl.h
+  inline InstanceType instance_type() const {
+    // TODO(solanes, v8:7790, v8:11353, v8:11945): Make this and the setter
+    // non-atomic when TSAN sees the map's store synchronization.
+    return static_cast<InstanceType>(
+        RELAXED_READ_UINT16_FIELD(*this, kInstanceTypeOffset));
+  }
+  inline void set_instance_type(InstanceType value);
 
   // Returns the size of the used in-object area including object header
   // (only used for JSObject in fast mode, for the other kinds of objects it
@@ -505,19 +517,31 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
   static void SetShouldBeFastPrototypeMap(DirectHandle<Map> map, bool value,
                                           Isolate* isolate);
 
+  static inline bool TryGetValidityCellHolderMap(
+      Tagged<Map> map, Isolate* isolate,
+      Tagged<Map>* out_validity_cell_holder_map);
+
   // [prototype chain validity cell]: Associated with a prototype object,
   // stored in that object's map, indicates that prototype chains through this
   // object are currently valid. The cell will be invalidated and replaced when
   // the prototype chain changes. When there's nothing to guard (for example,
-  // when direct prototype is null or Proxy) this function returns Smi with
-  // |kPrototypeChainValid| sentinel value, which is zero.
+  // when direct prototype is null or Proxy) this function returns Smi
+  // |kNoValidityCellSentinel| value.
+  // If |out_prototype_info| is provided then the function sets it to
+  // the PrototypeInfo object that corresponds to validity cell's owner.
   static Handle<UnionOf<Smi, Cell>> GetOrCreatePrototypeChainValidityCell(
-      DirectHandle<Map> map, Isolate* isolate);
-  static constexpr int kPrototypeChainValid = 0;
-  static constexpr int kPrototypeChainInvalid = 1;
-  static constexpr Tagged<Smi> kPrototypeChainValidSmi = Smi::zero();
+      DirectHandle<Map> map, Isolate* isolate,
+      DirectHandle<PrototypeInfo>* out_prototype_info = nullptr);
 
-  static bool IsPrototypeChainInvalidated(Tagged<Map> map);
+  // Invalid state for prototype validity cell. Everything else is considered
+  // as valid state.
+  static constexpr Tagged<ClearedWeakValue> kPrototypeChainInvalid =
+      kClearedWeakValue;
+
+  // This sentinel is used in IC data handlers instead of actual validity cell
+  // when there's nothing to guard against (when direct prototype is null or
+  // Proxy).
+  static constexpr Tagged<Smi> kNoValidityCellSentinel = Smi::zero();
 
   // Return the map of the root of object's prototype chain.
   Tagged<Map> GetPrototypeChainRootMap(Isolate* isolate) const;
@@ -566,11 +590,12 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
   // fields with HeapObject representation and "Any" type back to "Class" type.
   static inline void GeneralizeIfCanHaveTransitionableFastElementsKind(
       Isolate* isolate, InstanceType instance_type,
-      Representation* representation, Handle<FieldType>* field_type);
+      Representation* representation, DirectHandle<FieldType>* field_type);
 
-  V8_EXPORT_PRIVATE static Handle<Map> PrepareForDataProperty(
-      Isolate* isolate, Handle<Map> old_map, InternalIndex descriptor_number,
-      PropertyConstness constness, DirectHandle<Object> value);
+  V8_EXPORT_PRIVATE static DirectHandle<Map> PrepareForDataProperty(
+      Isolate* isolate, DirectHandle<Map> old_map,
+      InternalIndex descriptor_number, PropertyConstness constness,
+      DirectHandle<Object> value);
 
   V8_EXPORT_PRIVATE static Handle<Map> Normalize(
       Isolate* isolate, DirectHandle<Map> map, ElementsKind new_elements_kind,
@@ -603,6 +628,9 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
   // [prototype]: implicit prototype object.
   DECL_ACCESSORS(prototype, Tagged<JSPrototype>)
   // TODO(jkummerow): make set_prototype private.
+
+  // {enable_prototype_setup_mode}: Switch the prototype to dictionary mode,
+  // which is faster for adding multiple properties to it.
   V8_EXPORT_PRIVATE static void SetPrototype(
       Isolate* isolate, DirectHandle<Map> map,
       DirectHandle<JSPrototype> prototype,
@@ -667,6 +695,11 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
       Isolate* isolate, Tagged<DescriptorArray> descriptors,
       int number_of_own_descriptors,
       WriteBarrierMode barrier_mode = UPDATE_WRITE_BARRIER);
+
+#if V8_ENABLE_WEBASSEMBLY
+  // Only for WasmStructs: custom descriptor instead of instance_descriptors.
+  DECL_ACCESSORS(custom_descriptor, Tagged<WasmStruct>)
+#endif  // V8_ENABLE_WEBASSEMBLY
 
   inline void UpdateDescriptors(Isolate* isolate,
                                 Tagged<DescriptorArray> descriptors,
@@ -752,10 +785,8 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
   // Returns a non-deprecated version of the input. This method may deprecate
   // existing maps along the way if encodings conflict. Not for use while
   // gathering type feedback. Use TryUpdate in those cases instead.
-  template <template <typename> typename HandleType>
-    requires(std::is_convertible_v<HandleType<Map>, DirectHandle<Map>>)
-  EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) static HandleType<Map> Update(
-      Isolate* isolate, HandleType<Map> map);
+  V8_EXPORT_PRIVATE static DirectHandle<Map> Update(Isolate* isolate,
+                                                    DirectHandle<Map> map);
 
   static inline Handle<Map> CopyInitialMap(Isolate* isolate,
                                            DirectHandle<Map> map);
@@ -771,13 +802,13 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
       Isolate* isolate, DirectHandle<Map> map, Descriptor* descriptor,
       TransitionFlag flag);
 
-  static MaybeObjectHandle WrapFieldType(Handle<FieldType> type);
+  static MaybeObjectDirectHandle WrapFieldType(DirectHandle<FieldType> type);
   V8_EXPORT_PRIVATE static Tagged<FieldType> UnwrapFieldType(
       Tagged<MaybeObject> wrapped_type);
 
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT static MaybeHandle<Map> CopyWithField(
       Isolate* isolate, DirectHandle<Map> map, DirectHandle<Name> name,
-      Handle<FieldType> type, PropertyAttributes attributes,
+      DirectHandle<FieldType> type, PropertyAttributes attributes,
       PropertyConstness constness, Representation representation,
       TransitionFlag flag);
 
@@ -789,7 +820,7 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
   // Returns a new map with all transitions dropped from the given map and
   // the ElementsKind set.
   static DirectHandle<Map> TransitionElementsTo(Isolate* isolate,
-                                                Handle<Map> map,
+                                                DirectHandle<Map> map,
                                                 ElementsKind to_kind);
 
   static std::optional<Tagged<Map>> TryAsElementsKind(Isolate* isolate,
@@ -1030,6 +1061,14 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
   static Handle<Map> CopyAddDescriptor(Isolate* isolate, DirectHandle<Map> map,
                                        Descriptor* descriptor,
                                        TransitionFlag flag);
+
+  template <typename InitMapCb>
+  static Handle<Map> CopyReplaceDescriptors(
+      Isolate* isolate, DirectHandle<Map> map,
+      DirectHandle<DescriptorArray> descriptors, TransitionFlag flag,
+      const InitMapCb& InitMap, MaybeDirectHandle<Name> maybe_name,
+      const char* reason, TransitionKindFlag transition_kind);
+
   static Handle<Map> CopyReplaceDescriptors(
       Isolate* isolate, DirectHandle<Map> map,
       DirectHandle<DescriptorArray> descriptors, TransitionFlag flag,
@@ -1044,6 +1083,7 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
                                     PropertyNormalizationMode mode);
 
   void DeprecateTransitionTree(Isolate* isolate);
+  void DeprecateTransitionTreeImpl(Isolate* isolate);
 
   void ReplaceDescriptors(Isolate* isolate,
                           Tagged<DescriptorArray> new_descriptors);
@@ -1073,7 +1113,6 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
 // needs very limited number of distinct normalized maps.
 class NormalizedMapCache : public WeakFixedArray {
  public:
-  NEVER_READ_ONLY_SPACE
   static DirectHandle<NormalizedMapCache> New(Isolate* isolate);
 
   V8_WARN_UNUSED_RESULT MaybeHandle<Map> Get(Isolate* isolate,
@@ -1103,22 +1142,13 @@ class NormalizedMapCache : public WeakFixedArray {
 #define DECL_TESTER(Type, ...) inline bool Is##Type##Map(Tagged<Map> map);
 INSTANCE_TYPE_CHECKERS(DECL_TESTER)
 #undef DECL_TESTER
+inline bool IsNullMap(Tagged<Map> map);
+inline bool IsUndefinedMap(Tagged<Map> map);
 inline bool IsBooleanMap(Tagged<Map> map);
 inline bool IsNullOrUndefinedMap(Tagged<Map> map);
 inline bool IsPrimitiveMap(Tagged<Map> map);
 inline bool IsSpecialReceiverMap(Tagged<Map> map);
 inline bool IsCustomElementsReceiverMap(Tagged<Map> map);
-
-InstanceType Map::instance_type() const {
-  // TODO(solanes, v8:7790, v8:11353, v8:11945): Make this and the setter
-  // non-atomic when TSAN sees the map's store synchronization.
-  return static_cast<InstanceType>(
-      RELAXED_READ_UINT16_FIELD(*this, kInstanceTypeOffset));
-}
-
-void Map::set_instance_type(InstanceType value) {
-  RELAXED_WRITE_UINT16_FIELD(*this, kInstanceTypeOffset, value);
-}
 
 }  // namespace v8::internal
 

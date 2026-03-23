@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4reflect_p.h"
 #include "qv4runtimeapi_p.h"
@@ -43,7 +44,7 @@ static CallArgs createListFromArrayLike(Scope &scope, const Object *o)
     if (scope.engine->hasException)
         return {nullptr, 0};
 
-    Value *arguments = scope.alloc(len);
+    Value *arguments = scope.constructUndefined(len);
 
     for (int i = 0; i < len; ++i) {
         arguments[i] = o->get(i);

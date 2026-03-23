@@ -6,6 +6,7 @@
 
 #include <atomic>
 
+#include "base/check_deref.h"
 #include "base/functional/bind.h"
 #include "base/message_loop/message_pump_type.h"
 #include "base/run_loop.h"
@@ -19,6 +20,8 @@
 #include "content/browser/browser_thread_impl.h"
 #include "content/common/features.h"
 #include "content/public/browser/browser_task_traits.h"
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 
 #if BUILDFLAG(IS_ANDROID)
@@ -49,6 +52,9 @@ scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunnerForAndroidMainThread(
       break;
     case ::TaskTraits::UI_USER_BLOCKING:
       traits = {base::TaskPriority::USER_BLOCKING};
+      break;
+    case ::TaskTraits::UI_STARTUP:
+      traits = {BrowserTaskType::kStartup};
       break;
     default:
       NOTREACHED();
@@ -83,7 +89,7 @@ QueueType BrowserTaskExecutor::GetQueueType(const BrowserTaskTraits& traits) {
 
     case BrowserTaskType::kNavigationNetworkResponse:
       if (base::FeatureList::IsEnabled(
-              features::kNavigationNetworkResponseQueue)) {
+              ::features::kNavigationNetworkResponseQueue)) {
         return QueueType::kNavigationNetworkResponse;
       }
       // Defer to traits.priority() below.
@@ -94,10 +100,13 @@ QueueType BrowserTaskExecutor::GetQueueType(const BrowserTaskTraits& traits) {
 
     case BrowserTaskType::kBeforeUnloadBrowserResponse:
       if (base::FeatureList::IsEnabled(
-              features::kBeforeUnloadBrowserResponseQueue)) {
+              ::features::kBeforeUnloadBrowserResponseQueue)) {
         return QueueType::kBeforeUnloadBrowserResponse;
       }
       break;
+
+    case BrowserTaskType::kStartup:
+      return QueueType::kStartup;
 
     case BrowserTaskType::kDefault:
       // Defer to traits.priority() below.
@@ -146,12 +155,33 @@ void BrowserTaskExecutor::CreateInternal(
     std::unique_ptr<BrowserUIThreadScheduler> browser_ui_thread_scheduler,
     std::unique_ptr<BrowserIOThreadDelegate> browser_io_thread_delegate) {
   DCHECK(!g_browser_task_executor);
+
   g_browser_task_executor =
       new BrowserTaskExecutor(std::move(browser_ui_thread_scheduler),
                               std::move(browser_io_thread_delegate));
+  // Queues are disabled by default and only enabled by the BrowserTaskExecutor
+  // and so no task can be posted until after this point. This allows an
+  // embedder to control when to enable the UI task queues. This state is
+  // required for WebView's async startup to work properly.
+  g_browser_task_executor->browser_io_thread_handle_->EnableTaskQueue(
+      QueueType::kDefault);
+  g_browser_task_executor->browser_ui_thread_handle_->EnableTaskQueue(
+      QueueType::kStartup);
 
-  g_browser_task_executor->browser_ui_thread_handle_
-      ->EnableAllExceptBestEffortQueues();
+  base::OnceClosure enable_native_ui_task_execution_callback =
+      base::BindOnce([] {
+        g_browser_task_executor->browser_ui_thread_handle_
+            ->EnableAllExceptBestEffortQueues();
+      });
+
+  // Most tests don't have ContentClient set before BrowserTaskExecutor is
+  // created, so call the callback directly.
+  if (GetContentClient() && GetContentClient()->browser()) {
+    GetContentClient()->browser()->OnUiTaskRunnerReady(
+        std::move(enable_native_ui_task_execution_callback));
+  } else {
+    std::move(enable_native_ui_task_execution_callback).Run();
+  }
 
 #if BUILDFLAG(IS_ANDROID)
   // In Android Java, UI thread is a base/ concept, but needs to know how that
@@ -178,6 +208,9 @@ void BrowserTaskExecutor::ResetForTesting() {
     RunAllPendingTasksOnThreadForTesting(BrowserThread::IO);
     delete g_browser_task_executor;
     g_browser_task_executor = nullptr;
+#if BUILDFLAG(IS_ANDROID)
+    base::PostTaskAndroid::ResetTaskRunnerForTesting();
+#endif
   }
 }
 
@@ -265,6 +298,13 @@ std::unique_ptr<BrowserProcessIOThread> BrowserTaskExecutor::CreateIOThread() {
   if (!io_thread->StartWithOptions(std::move(options)))
     LOG(FATAL) << "Failed to start BrowserThread:IO";
   return io_thread;
+}
+
+// static
+void BrowserTaskExecutor::
+    InstallPartitionAllocSchedulerLoopQuarantineTaskObserver() {
+  CHECK_DEREF(Get()->browser_ui_thread_scheduler_.get())
+      .InstallPartitionAllocSchedulerLoopQuarantineTaskObserver();
 }
 
 }  // namespace content

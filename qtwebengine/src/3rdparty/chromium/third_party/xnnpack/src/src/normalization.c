@@ -10,18 +10,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
 
 void xnn_normalize_slice(
     const size_t num_dims,
-    const size_t offsets[XNN_MIN_ELEMENTS(1)],
-    const size_t sizes[XNN_MIN_ELEMENTS(1)],
-    const size_t input_shape[XNN_MIN_ELEMENTS(1)],
-    size_t normalized_offsets[XNN_MIN_ELEMENTS(XNN_MAX_TENSOR_DIMS)],
-    size_t normalized_input_shape[XNN_MIN_ELEMENTS(XNN_MAX_TENSOR_DIMS)],
-    size_t normalized_output_shape[XNN_MIN_ELEMENTS(XNN_MAX_TENSOR_DIMS)],
+    const size_t* offsets,
+    const size_t* sizes,
+    const size_t* input_shape,
+    size_t* normalized_offsets,
+    size_t* normalized_input_shape,
+    size_t* normalized_output_shape,
     size_t* num_normalized_dims)
 {
   *num_normalized_dims = num_dims;
@@ -279,12 +279,6 @@ void xnn_normalize_transpose_permutation(
   }
   *normalized_element_size_out = normalized_element_size;
   *normalized_num_dims = output_dims;
-}
-
-static int cmp_value_size_t(const void* a_ptr, const void* b_ptr) {
-  const size_t a = *((const size_t*) a_ptr);
-  const size_t b = *((const size_t*) b_ptr);
-  return (b < a) - (b > a);
 }
 
 void xnn_normalize_reduction(

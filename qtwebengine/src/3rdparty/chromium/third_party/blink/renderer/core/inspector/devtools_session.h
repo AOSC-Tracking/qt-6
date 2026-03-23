@@ -49,10 +49,10 @@ class InspectorPageAgent;
 class InspectorPerformanceAgent;
 class InspectorWebAudioAgent;
 
-class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
-                                    public mojom::blink::DevToolsSession,
-                                    public protocol::FrontendChannel,
-                                    public v8_inspector::V8Inspector::Channel {
+class CORE_EXPORT DevToolsSession
+    : public v8_inspector::V8Inspector::ManagedChannel,
+      public mojom::blink::DevToolsSession,
+      public protocol::FrontendChannel {
  public:
   DevToolsSession(
       DevToolsAgent*,
@@ -62,6 +62,7 @@ class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
           main_receiver,
       mojo::PendingReceiver<mojom::blink::DevToolsSession> io_receiver,
       mojom::blink::DevToolsSessionStatePtr reattach_session_state,
+      const String& script_to_evaluate_on_load,
       bool client_expects_binary_responses,
       bool client_is_trusted,
       const String& session_id,
@@ -85,7 +86,7 @@ class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
   }
   void Detach();
   void DetachFromV8();
-  void Trace(Visitor*) const;
+  void Trace(Visitor*) const override;
 
   // protocol::FrontendChannel implementation.
   void FlushProtocolNotifications() override;
@@ -97,6 +98,10 @@ class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
   void PaintTiming(Document* document, const char* name, double timestamp);
   void DomContentLoadedEventFired(LocalFrame*);
 
+  const String& script_to_evaluate_on_load() const {
+    return script_to_evaluate_on_load_;
+  }
+
  private:
   class IOSession;
 
@@ -104,6 +109,8 @@ class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
   void DispatchProtocolCommand(int call_id,
                                const String& method,
                                base::span<const uint8_t> message) override;
+  void UnpauseAndTerminate() override;
+
   void DispatchProtocolCommandImpl(int call_id,
                                    const String& method,
                                    base::span<const uint8_t> message);
@@ -162,7 +169,7 @@ class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
   HeapMojoAssociatedRemote<mojom::blink::DevToolsSessionHost> host_remote_{
       nullptr};
   IOSession* io_session_;
-  std::unique_ptr<v8_inspector::V8InspectorSession> v8_session_;
+  std::shared_ptr<v8_inspector::V8InspectorSession> v8_session_;
   std::unique_ptr<protocol::UberDispatcher> inspector_backend_dispatcher_;
   InspectorSessionState session_state_;
   HeapVector<Member<InspectorAgent>> agents_;
@@ -174,6 +181,7 @@ class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
   const bool client_is_trusted_;
   InspectorAgentState v8_session_state_;
   InspectorAgentState::Bytes v8_session_state_cbor_;
+  String script_to_evaluate_on_load_;
   const String session_id_;
   // This is only relevant until the initial attach to v8 and is never reset
   // once the session stops waiting.

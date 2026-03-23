@@ -2,15 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_PARSER_CSS_PARSER_TOKEN_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_PARSER_CSS_PARSER_TOKEN_H_
 
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
 #include "third_party/blink/renderer/core/css/parser/at_rule_descriptors.h"
@@ -97,7 +93,8 @@ class CORE_EXPORT CSSParserToken {
         unit_(0),                // Don't care.
         value_is_inline_(false),
         value_is_8bit_(false),  // Don't care.
-        padding_(0)             // Don't care.
+        padding_(0),            // Don't care.
+        value_length_(0)        // For security.
   {}
 
   // The resulting CSSParserToken may hold a reference to the data in value.
@@ -135,6 +132,9 @@ class CORE_EXPORT CSSParserToken {
     return static_cast<CSSParserTokenType>(type_);
   }
   StringView Value() const {
+#if DCHECK_IS_ON()
+    DCHECK(has_value_);
+#endif
     return value_is_8bit_ ? StringView(Span8()) : StringView(Span16());
   }
 
@@ -221,12 +221,16 @@ class CORE_EXPORT CSSParserToken {
     value_length_ = string.length();
     value_is_8bit_ = string.Is8Bit();
     if (value_is_8bit_ && value_length_ <= sizeof(value_data_char_inline_)) {
-      memcpy(value_data_char_inline_, string.Bytes(), value_length_);
+      UNSAFE_TODO(
+          memcpy(value_data_char_inline_, string.Bytes(), value_length_));
       value_is_inline_ = true;
     } else {
       value_data_char_raw_ = string.Bytes();
       value_is_inline_ = false;
     }
+#if DCHECK_IS_ON()
+    has_value_ = true;
+#endif
   }
   bool ValueDataCharRawEqual(const CSSParserToken& other) const;
   const void* ValueDataCharRaw() const {
@@ -274,8 +278,15 @@ class CORE_EXPORT CSSParserToken {
   // tightly with the rest of this object for a smaller object size.
   unsigned value_is_8bit_ : 1;
 
+#if DCHECK_IS_ON()
+  unsigned has_value_ : 1 = false;
+
+  // These are free bits. You may take from them if you need.
+  [[maybe_unused]] unsigned padding_ : 11;
+#else
   // These are free bits. You may take from them if you need.
   [[maybe_unused]] unsigned padding_ : 12;
+#endif
 
   unsigned value_length_;
   union {

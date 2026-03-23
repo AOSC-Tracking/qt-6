@@ -41,13 +41,11 @@
 #include "quiche/quic/test_tools/simple_session_cache.h"
 #include "quiche/common/http/http_header_block.h"
 
-using quiche::HttpHeaderBlock;
 using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::AtLeast;
 using ::testing::AtMost;
 using ::testing::Invoke;
-using ::testing::StrictMock;
 using ::testing::Truly;
 
 namespace quic {
@@ -478,8 +476,6 @@ TEST_P(QuicSpdyClientSessionTest, InvalidPacketReceived) {
   session_->ProcessUdpPacket(client_address, server_address, valid_packet);
 
   // Verify that a non-decryptable packet doesn't close the connection.
-  QuicFramerPeer::SetLastSerializedServerConnectionId(
-      QuicConnectionPeer::GetFramer(connection_), connection_id);
   ParsedQuicVersionVector versions = SupportedVersions(GetParam());
   QuicConnectionId destination_connection_id = EmptyQuicConnectionId();
   QuicConnectionId source_connection_id = connection_id;
@@ -521,8 +517,6 @@ TEST_P(QuicSpdyClientSessionTest, InvalidFramedPacketReceived) {
   QuicConnectionId destination_connection_id =
       session_->connection()->connection_id();
   QuicConnectionId source_connection_id = destination_connection_id;
-  QuicFramerPeer::SetLastSerializedServerConnectionId(
-      QuicConnectionPeer::GetFramer(connection_), destination_connection_id);
   bool version_flag = true;
   QuicConnectionIdIncluded scid_included = CONNECTION_ID_PRESENT;
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructMisFramedEncryptedPacket(

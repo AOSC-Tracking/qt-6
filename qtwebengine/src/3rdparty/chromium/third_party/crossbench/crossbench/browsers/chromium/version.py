@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Final, Optional, Tuple
+from typing import Final, Optional
+
+from typing_extensions import override
 
 from crossbench.browsers.version import (BrowserVersion, BrowserVersionChannel,
                                          PartialBrowserVersionError)
@@ -15,10 +17,10 @@ class ChromiumVersion(BrowserVersion):
   _PARTS_LEN: Final[int] = 4
   _VERSION_RE = re.compile(
       r"(?P<prefix>[^\d]*)"
-      r"(?P<version>\d{2,3}(\.(\d{1,4}|X)){0,3})? ?"
+      r"(?P<version>(?:\d{2,3}(?:\.(?:\d{1,4}|X)){0,3})|latest)? ?"
       r"(?P<suffix>.*)", re.I)
   _VALID_SUFFIX_MATCH = re.compile(r"[^.\d]+", re.I)
-  _CHANNEL_LOOKUP: Dict[str, BrowserVersionChannel] = {
+  _CHANNEL_LOOKUP: dict[str, BrowserVersionChannel] = {
       "any": BrowserVersionChannel.ANY,
       "extended": BrowserVersionChannel.LTS,
       "stable": BrowserVersionChannel.STABLE,
@@ -26,15 +28,16 @@ class ChromiumVersion(BrowserVersion):
       "dev": BrowserVersionChannel.ALPHA,
       "canary": BrowserVersionChannel.PRE_ALPHA,
   }
-  _CHANNEL_NAME_LOOKUP: Dict[BrowserVersionChannel, str] = {
+  _CHANNEL_NAME_LOOKUP: dict[BrowserVersionChannel, str] = {
       channel: name for name, channel in _CHANNEL_LOOKUP.items()
   }
   _CHANNEL_RE = re.compile("|".join(_CHANNEL_LOOKUP.keys()), re.I)
 
   @classmethod
+  @override
   def _parse(
       cls,
-      full_version: str) -> Tuple[Tuple[int, ...], BrowserVersionChannel, str]:
+      full_version: str) -> tuple[tuple[int, ...], BrowserVersionChannel, str]:
     matches = cls._VERSION_RE.fullmatch(full_version.strip(),)
     if not matches:
       raise cls.parse_error("Could not extract version number.", full_version)
@@ -62,7 +65,7 @@ class ChromiumVersion(BrowserVersion):
   @classmethod
   def _channel_version(
       cls, channel_str: str,
-      full_version: str) -> Tuple[Tuple[int, ...], BrowserVersionChannel, str]:
+      full_version: str) -> tuple[tuple[int, ...], BrowserVersionChannel, str]:
     channel = cls._parse_exact_channel(channel_str, full_version)
     version_str = ""
     return tuple(), channel, version_str
@@ -70,7 +73,7 @@ class ChromiumVersion(BrowserVersion):
   @classmethod
   def _numbered_version(
       cls, version_str: str,
-      full_version: str) -> Tuple[Tuple[int, ...], BrowserVersionChannel, str]:
+      full_version: str) -> tuple[tuple[int, ...], BrowserVersionChannel, str]:
     channel: BrowserVersionChannel = cls._parse_default_channel(full_version)
 
     parts_str = version_str.split(".")
@@ -130,23 +133,25 @@ class ChromiumVersion(BrowserVersion):
     return bool(cls._VALID_SUFFIX_MATCH.fullmatch(suffix))
 
   @property
-  def key(self) -> Tuple[Tuple[int, ...], BrowserVersionChannel]:
+  @override
+  def key(self) -> tuple[tuple[int, ...], BrowserVersionChannel]:
     return (self.comparable_parts(self._PARTS_LEN), self._channel)
 
   @property
+  @override
   def has_complete_parts(self) -> bool:
     return len(self.parts) == 4
 
   @property
   def build(self) -> int:
     if len(self._parts) <= 2:
-      raise PartialBrowserVersionError()
+      raise PartialBrowserVersionError(self)
     return self._parts[2]
 
   @property
   def patch(self) -> int:
     if len(self._parts) <= 3:
-      raise PartialBrowserVersionError()
+      raise PartialBrowserVersionError(self)
     return self._parts[3]
 
   @property
@@ -157,6 +162,7 @@ class ChromiumVersion(BrowserVersion):
   def is_canary(self) -> bool:
     return self.is_pre_alpha
 
+  @override
   def _channel_name(self, channel: BrowserVersionChannel) -> str:
     if name := self._CHANNEL_NAME_LOOKUP[channel]:
       return name
@@ -167,6 +173,7 @@ class ChromeDriverVersion(ChromiumVersion):
   _EMPTY_COMMIT_HASH: Final = "0000000000000000000000000000000000000000"
 
   @classmethod
+  @override
   def _validate_prefix(cls, prefix: Optional[str]) -> bool:
     if not prefix:
       return False
@@ -174,12 +181,14 @@ class ChromeDriverVersion(ChromiumVersion):
                               "microsoft edge webdriver ")
 
   @classmethod
+  @override
   def _parse_default_channel(cls, full_version: str) -> BrowserVersionChannel:
     if cls._EMPTY_COMMIT_HASH in full_version:
       return BrowserVersionChannel.PRE_ALPHA
     return BrowserVersionChannel.STABLE
 
   @classmethod
+  @override
   def _validate_suffix(cls, suffix: Optional[str]) -> bool:
     # TODO: extract commit hash / branch info from newer versions
     return True

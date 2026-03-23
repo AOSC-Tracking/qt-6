@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickspritesequence_p.h"
 #include "qquickspritesequence_p_p.h"
@@ -66,7 +67,7 @@ QT_BEGIN_NAMESPACE
     If it is possible to return to the \c goalSprite from the starting point of the \c goalSprite,
     it will continue to do so until \c goalSprite is set to \c "" or an unreachable state.
 */
-/*! \qmlmethod QtQuick::SpriteSequence::jumpTo(string sprite)
+/*! \qmlmethod void QtQuick::SpriteSequence::jumpTo(string sprite)
 
     This function causes the SpriteSequence to jump to the specified \a sprite immediately;
     intermediate sprites are not played.

@@ -10,6 +10,7 @@
 #include <set>
 #include <vector>
 
+#include "base/containers/flat_set.h"
 #include "content/browser/attribution_reporting/attribution_report.h"
 #include "content/browser/attribution_reporting/stored_source.h"
 #include "content/public/browser/attribution_data_model.h"
@@ -18,6 +19,10 @@
 namespace base {
 class Time;
 }  // namespace base
+
+namespace url {
+class Origin;
+}  // namespace url
 
 namespace content {
 
@@ -107,6 +112,14 @@ class AttributionResolver {
   // report time in storage, if any.
   virtual std::optional<base::Time> AdjustOfflineReportTimes() = 0;
 
+  // Adjusts the report time of reports on their final retry attempt when
+  // a new navigation is successfully committed, according to
+  // `AttributionResolverDelegate::GetOfflineReportDelayConfig()`. A null return
+  // signifies no reports have been updated internally.
+  //
+  // Tied to the `AttributionReportNavigationBasedRetry` feature.
+  virtual std::optional<base::Time> AdjustNavigationRetryReportTimes() = 0;
+
   // Deletes all data in storage for reporting origins matching `filter`,
   // between `delete_begin` and `delete_end` time. More specifically, this:
   // 1. Deletes all sources within the time range. If any report is
@@ -139,6 +152,10 @@ class AttributionResolver {
       AggregatableDebugReport,
       std::optional<int> remaining_budget,
       std::optional<StoredSource::Id> source_id) = 0;
+
+  // Stores OS registrations. The origins will be included in data keys returned
+  // to the browsing data model so that they're visible to users.
+  virtual void StoreOsRegistrations(const base::flat_set<url::Origin>&) = 0;
 
   virtual void SetDelegate(std::unique_ptr<AttributionResolverDelegate>) = 0;
 };

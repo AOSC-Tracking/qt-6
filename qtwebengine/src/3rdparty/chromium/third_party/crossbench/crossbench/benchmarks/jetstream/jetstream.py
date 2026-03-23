@@ -5,25 +5,29 @@
 from __future__ import annotations
 
 import abc
+import datetime as dt
 import json
 import logging
+import statistics
 from collections import defaultdict
-from typing import (TYPE_CHECKING, Any, Dict, Final, List, Optional, Sequence,
-                    Tuple, Type, cast)
+from typing import TYPE_CHECKING, Any, Final, Optional, Sequence, Type, cast
+
+from typing_extensions import override
 
 from crossbench.benchmarks.base import PressBenchmark
 from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
 from crossbench.parse import ObjectParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
-from crossbench.probes.metric import (CSVFormatter, Metric, MetricsMerger,
-                                      geomean)
-from crossbench.probes.results import ProbeResult, ProbeResultDict
+from crossbench.probes.metric import CSVFormatter, Metric, MetricsMerger
+from crossbench.stories.press_benchmark import PressBenchmarkStory
 
 if TYPE_CHECKING:
   import argparse
 
+  from crossbench.action_runner.config import ActionRunnerConfig
   from crossbench.cli.parser import CrossBenchArgumentParser
   from crossbench.path import LocalPath
+  from crossbench.probes.results import ProbeResult, ProbeResultDict
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
@@ -40,18 +44,22 @@ class JetStreamProbe(
   """
 
   TOTAL_METRIC_KEY: Final[str] = "Total/score"
+  SORT_KEYS: bool = False
 
   @property
   def jetstream(self) -> JetStreamBenchmark:
     return cast(JetStreamBenchmark, self.benchmark)
 
   @abc.abstractmethod
+  @override
   def get_context_cls(self) -> Type[JetStreamProbeContext]:
     pass
 
+  @override
   def log_run_result(self, run: Run) -> None:
     self._log_result(run.results, single_result=True)
 
+  @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     self._log_result(group.results, single_result=False)
 
@@ -64,17 +72,19 @@ class JetStreamProbe(
     logging.critical("JetStream results:")
     if not single_result:
       logging.critical("  %s", result_dict[self].csv)
+      logging.critical("  %s", result_dict[self].get("xlsx"))
     logging.info("- " * 40)
 
     with results_json.open(encoding="utf-8") as f:
       data = json.load(f)
       if single_result:
-        logging.critical("Score %s", data["Total"]["score"])
+        logging.critical("Score %s", data[self.TOTAL_METRIC_KEY])
       else:
         self._log_result_metrics(data)
 
-  def _extract_result_metrics_table(self, metrics: Dict[str, Any],
-                                    table: Dict[str, List[str]]) -> None:
+  @override
+  def _extract_result_metrics_table(self, metrics: dict[str, Any],
+                                    table: dict[str, list[str]]) -> None:
     for metric_key, metric_value in metrics.items():
       if not self._is_valid_metric_key(metric_key):
         continue
@@ -86,6 +96,7 @@ class JetStreamProbe(
       table["Score"].append(
           Metric.format(metric_value["average"], metric_value["stddev"]))
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     merged = MetricsMerger.merge_json_list(
         story_group.results[self].json
@@ -96,7 +107,7 @@ class JetStreamProbe(
     return self.write_group_result(group, merged, JetStreamCSVFormatter)
 
   def _compute_total_score(self, merged: MetricsMerger) -> Metric:
-    line_item_scores: List[List[float]] = []
+    line_item_scores: list[list[float]] = []
     for key, metric in merged.data.items():
       if self._is_valid_metric_key(key):
         line_item_scores.append(metric.values)
@@ -106,6 +117,7 @@ class JetStreamProbe(
       total_score.append(iteration_score)
     return total_score
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     return self.merge_browsers_json_list(group).merge(
         self.merge_browsers_csv_list(group))
@@ -119,8 +131,8 @@ class JetStreamProbe(
     return parts[0] != "Total" and parts[1] == "score"
 
 
+
 class JetStreamProbeContext(JsonResultProbeContext):
-  FLATTEN: bool = False
   JS: str = """
   let results = Object.create(null);
   let benchmarks = []
@@ -143,13 +155,15 @@ class JetStreamProbeContext(JsonResultProbeContext):
   return JSON.stringify(results);
 """
 
-  def to_json(self, actions: Actions) -> Dict[str, float]:
+  @override
+  def to_json(self, actions: Actions) -> dict[str, float]:
     # Use serialized json as transport format to preserve object key order.
     json_payload = actions.js(self.JS)
     json_data = json.loads(json_payload)
     ObjectParser.non_empty_dict(json_data, f"{self.probe.name} metrics")
     return json_data
 
+  @override
   def process_json_data(self, json_data: Json) -> Json:
     assert isinstance(json_data, dict)
     assert "Total" not in json_data, (
@@ -157,24 +171,25 @@ class JetStreamProbeContext(JsonResultProbeContext):
     json_data["Total"] = self._compute_total_metrics(json_data)
     return json_data
 
-  def _compute_total_metrics(self, json_data: Dict[str,
-                                                   Any]) -> Dict[str, float]:
+  def _compute_total_metrics(self, json_data: dict[str,
+                                                   Any]) -> dict[str, float]:
     # Manually add all total scores
     accumulated_metrics = defaultdict(list)
     for _, metrics in json_data.items():
       for metric, value in metrics.items():
         accumulated_metrics[metric].append(value)
-    total: Dict[str, float] = {}
+    total: dict[str, float] = {}
     for metric, values in accumulated_metrics.items():
-      total[metric] = geomean(values)
+      total[metric] = statistics.geometric_mean(values)
     return total
 
 
 class JetStreamCSVFormatter(CSVFormatter):
   TOTAL_METRIC_KEY: Final[str] = JetStreamProbe.TOTAL_METRIC_KEY
 
-  def format_items(self, data: Dict[str, Json],
-                   sort: bool) -> Sequence[Tuple[str, Json]]:
+  @override
+  def format_items(self, data: dict[str, Json],
+                   sort: bool) -> Sequence[tuple[str, Json]]:
     items = list(data.items())
     if sort:
       items.sort()
@@ -187,21 +202,50 @@ class JetStreamCSVFormatter(CSVFormatter):
     return total_item + score_items + items
 
 
+class JetStreamStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
+  URL_LOCAL: str = "http://localhost:8000/"
+
+  @property
+  @override
+  def substory_duration(self) -> dt.timedelta:
+    return dt.timedelta(seconds=2)
+
+  def run(self, run: Run) -> None:
+    with run.actions("Running") as actions:
+      # This might be run in d8, where JetStream.start() is blocking
+      with actions.wait_until(self.fast_duration):
+        actions.js("JetStream.start()", timeout=self.slow_duration)
+    self.run_wait_until_done(run)
+
+  def run_wait_until_done(self, run: Run) -> None:
+    with run.actions("Waiting for completion") as actions:
+      actions.wait_js_condition(
+          """
+        let summaryElement = document.getElementById("result-summary");
+        return (summaryElement.classList.contains("done"));
+        """,
+          0.5,
+          self.slow_duration,
+          delay=self.substory_duration)
+
+
 class JetStreamBenchmark(PressBenchmark, metaclass=abc.ABCMeta):
 
   @classmethod
+  @override
   def short_base_name(cls) -> str:
     return "js"
 
   @classmethod
+  @override
   def base_name(cls) -> str:
     return "jetstream"
 
   @classmethod
+  @override
   def add_cli_parser(
-      cls, subparsers: argparse.ArgumentParser, aliases: Sequence[str] = ()
-  ) -> CrossBenchArgumentParser:
-    parser = super().add_cli_parser(subparsers, aliases)
+      cls, subparsers: argparse.ArgumentParser) -> CrossBenchArgumentParser:
+    parser = super().add_cli_parser(subparsers)
     parser.add_argument(
         "--detailed-metrics",
         "--details",
@@ -211,17 +255,19 @@ class JetStreamBenchmark(PressBenchmark, metaclass=abc.ABCMeta):
     return parser
 
   @classmethod
-  def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
+  @override
+  def kwargs_from_cli(cls, args: argparse.Namespace) -> dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["detailed_metrics"] = args.detailed_metrics
     return kwargs
 
   def __init__(self,
                stories: Sequence[Story],
+               action_runner_config: Optional[ActionRunnerConfig] = None,
                custom_url: Optional[str] = None,
-               detailed_metrics: bool = False):
+               detailed_metrics: bool = False) -> None:
     self._detailed_metrics = detailed_metrics
-    super().__init__(stories, custom_url)
+    super().__init__(stories, action_runner_config, custom_url)
 
   @property
   def detailed_metrics(self) -> bool:

@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //
 //  W A R N I N G
@@ -16,8 +18,11 @@
 #include <QtGraphs/qgraphstheme.h>
 #include <QtQuick/private/qquickrectangle_p.h>
 #include <private/qobject_p.h>
+#include <QtCore/qloggingcategory.h>
 
 QT_BEGIN_NAMESPACE
+
+Q_DECLARE_LOGGING_CATEGORY(lcGraphsCommonTheme)
 
 class QGraphsThemePrivate : public QObjectPrivate
 {

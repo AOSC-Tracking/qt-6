@@ -719,23 +719,15 @@ TEST_P(FindBufferParamTest, InputTest) {
 }
 
 TEST_P(FindBufferParamTest, SelectMultipleTest) {
-  SetBodyContent("<select multiple><option>find me</option></select>");
+  SetBodyContent("<select multiple size=4><option>find me</option></select>");
   {
     FindBuffer buffer(WholeDocumentRange(), GetParam());
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-    EXPECT_EQ(0u, buffer.FindMatches("find", FindOptions()).CountForTesting());
-#else
     EXPECT_EQ(1u, buffer.FindMatches("find", FindOptions()).CountForTesting());
-#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
   }
   SetBodyContent("<select size=2><option>find me</option></select>");
   {
     FindBuffer buffer(WholeDocumentRange(), GetParam());
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-    EXPECT_EQ(0u, buffer.FindMatches("find", FindOptions()).CountForTesting());
-#else
     EXPECT_EQ(1u, buffer.FindMatches("find", FindOptions()).CountForTesting());
-#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
   }
   SetBodyContent("<select size=1><option>find me</option></select>");
   {
@@ -1104,6 +1096,15 @@ TEST_F(FindBufferTest, FindRubyNested) {
     FindBuffer buffer(WholeDocumentRange(), RubySupport::kEnabledIfNecessary);
     EXPECT_EQ(1u, CaseInsensitiveMatchCount(buffer, u"のRAIL"));
   }
+
+  // crbug.com/408309951
+  SetBodyContent(
+      "<p><ruby>科学<rt>かがく</ruby>の"
+      "<ruby><ruby>超電磁砲<rt>レールガン</ruby><rt>railgun</ruby></p>");
+  {
+    FindBuffer buffer(WholeDocumentRange(), RubySupport::kEnabledIfNecessary);
+    EXPECT_EQ(1u, CaseInsensitiveMatchCount(buffer, u"rail"));
+  }
 }
 
 TEST_F(FindBufferTest, FindRubyOnAnnotation) {
@@ -1132,6 +1133,23 @@ TEST_P(FindBufferParamTest, PositionAfterBlock) {
   EXPECT_EQ(PositionInFlatTree::FirstPositionInNode(
                 *GetDocument().body()->lastChild()),
             buffer.PositionAfterBlock());
+}
+
+// crbug.com/401444931
+TEST_P(FindBufferParamTest, IgnorableElementAtAnnotationLastCrash) {
+  SetBodyContent("<p><ruby><rt><br></rt>\n</ruby></p>");
+  FindBuffer buffer(WholeDocumentRange(), GetParam());
+  FindResults results = buffer.FindMatches("aaa", kCaseInsensitive);
+  // Pass if no crash.
+}
+
+// crbug.com/409358630
+TEST_F(FindBufferTest, OrphanRubyTextCrash) {
+  SetBodyContent("abc<h1 style='display:ruby-text' id='h'>TEXT</h1>def");
+  FindBuffer buffer(EphemeralRangeInFlatTree(PositionFromParentId("h", 0),
+                                             LastPositionInDocument()),
+                    RubySupport::kEnabledForcefully);
+  EXPECT_EQ(1u, CaseInsensitiveMatchCount(buffer, u"textd"));
 }
 
 }  // namespace blink

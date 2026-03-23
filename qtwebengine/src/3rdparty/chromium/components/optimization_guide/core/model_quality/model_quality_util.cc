@@ -22,13 +22,9 @@ namespace optimization_guide {
 
 namespace {
 
-std::string TimeToYYYYMMDDString(base::Time ts) {
-  // Converts a Time object to a YYYY-MM-DD string.
-  return base::UnlocalizedTimeFormatWithPattern(ts, "yyyyMMdd",
-                                                icu::TimeZone::getGMT());
-}
-
-}  // namespace
+// LINT.IfChange(MQLSClientIdReservation)
+const int kGlicShift = 1002;
+// LINT.ThenChange(//components/optimization_guide/proto/model_quality_service.proto:MQLSClientIdReservation)
 
 // Generates a new client id and stores it in prefs.
 int64_t GenerateAndStoreClientId(PrefService* pref_service) {
@@ -46,39 +42,66 @@ int64_t GenerateAndStoreClientId(PrefService* pref_service) {
   }
 
   pref_service->SetInt64(optimization_guide::model_execution::prefs::
-                             localstate::kModelQualityLogggingClientId,
+                             localstate::kModelQualityLoggingClientId,
                          client_id);
   return client_id;
 }
 
-int64_t GetHashedModelQualityClientId(
-    proto::LogAiDataRequest::FeatureCase feature,
-    base::Time day,
-    int64_t client_id) {
-  std::string date = TimeToYYYYMMDDString(day);
-  int shift = static_cast<int>(feature);
-  return base::FastHash(base::NumberToString(client_id + shift) + date);
+std::string TimeToYYYYMMDDString(base::Time ts) {
+  // Converts a Time object to a YYYY-MM-DD string.
+  return base::UnlocalizedTimeFormatWithPattern(ts, "yyyyMMdd",
+                                                icu::TimeZone::getGMT());
+}
+
+int64_t ShiftAndHash(int64_t client_id, int64_t shift, base::Time day) {
+  auto shifted = base::NumberToString(client_id + shift);
+  return base::FastHash(shifted + TimeToYYYYMMDDString(day));
 }
 
 int64_t GetOrCreateModelQualityClientId(
-    proto::LogAiDataRequest::FeatureCase feature,
+    int shift,
     PrefService* pref_service) {
   if (!pref_service) {
     return 0;
   }
   int64_t client_id =
       pref_service->GetInt64(optimization_guide::model_execution::prefs::
-                                 localstate::kModelQualityLogggingClientId);
+                                 localstate::kModelQualityLoggingClientId);
   if (!client_id) {
     client_id = GenerateAndStoreClientId(pref_service);
     pref_service->SetInt64(optimization_guide::model_execution::prefs::
-                               localstate::kModelQualityLogggingClientId,
+                               localstate::kModelQualityLoggingClientId,
                            client_id);
   }
 
   // Hash the client id with the date so that it changes everyday for every
   // feature.
-  return GetHashedModelQualityClientId(feature, base::Time::Now(), client_id);
+  return ShiftAndHash(client_id, shift, base::Time::Now());
+}
+
+int GetFeatureShift(proto::LogAiDataRequest::FeatureCase feature) {
+  return static_cast<int>(feature);
+}
+
+}  // namespace
+
+int64_t GetHashedModelQualityClientId(
+    proto::LogAiDataRequest::FeatureCase feature,
+    base::Time day,
+    int64_t client_id) {
+  return ShiftAndHash(client_id, GetFeatureShift(feature), day);
+}
+
+int64_t GetOrCreateModelQualityClientId(
+    proto::LogAiDataRequest::FeatureCase feature,
+    PrefService* pref_service) {
+  return GetOrCreateModelQualityClientId(GetFeatureShift(feature),
+                                         pref_service);
+}
+
+std::string GetOrCreateGlicModelQualityClientId(PrefService* pref_service) {
+  return base::NumberToString(GetOrCreateModelQualityClientId(kGlicShift,
+                                                              pref_service));
 }
 
 }  // namespace optimization_guide

@@ -26,6 +26,7 @@
 
 #include "third_party/blink/renderer/core/editing/spellcheck/spell_checker.h"
 
+#include "base/trace_event/trace_event.h"
 #include "third_party/blink/public/platform/web_spell_check_panel_host_client.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/web/web_text_check_client.h"
@@ -71,7 +72,7 @@ bool CheckingRangeCovers(int checking_range_length, int location, int length) {
 }
 
 bool IsWhiteSpaceOrPunctuation(UChar c) {
-  return IsSpaceOrNewline(c) || WTF::unicode::IsPunct(c);
+  return unicode::IsSpaceOrNewline(c) || unicode::IsPunct(c);
 }
 
 }  // namespace
@@ -178,6 +179,8 @@ void SpellChecker::AdvanceToNextMisspelling(bool start_before_selection) {
 
   // topNode defines the whole range we want to operate on
   ContainerNode* top_node = HighestEditableRoot(position);
+  if (!top_node)
+    return;
   // TODO(yosin): |lastOffsetForEditing()| is wrong here if
   // |editingIgnoresContent(highestEditableRoot())| returns true, e.g. <table>
   spelling_search_end = Position::EditingPositionOf(
@@ -676,8 +679,14 @@ std::pair<String, int> SpellChecker::FindFirstMisspelling(const Position& start,
     Position new_paragraph_start =
         StartOfNextParagraph(CreateVisiblePosition(paragraph_end))
             .DeepEquivalent();
-    if (new_paragraph_start.IsNull())
+    // To prevent an infinite loop, break when `new_paragraph_start` is
+    // non-editable.
+    if (new_paragraph_start.IsNull() ||
+        (RuntimeEnabledFeatures::
+             FindFirstMisspellingEndWhenNonEditableEnabled() &&
+         !IsEditablePosition(new_paragraph_start))) {
       break;
+    }
 
     paragraph_range = ExpandToParagraphBoundary(
         EphemeralRange(new_paragraph_start, new_paragraph_start));

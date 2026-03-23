@@ -66,6 +66,8 @@ struct PerfettoDsImpl {
   perfetto::BufferExhaustedPolicy buffer_exhausted_policy =
       perfetto::BufferExhaustedPolicy::kDrop;
 
+  bool buffer_exhausted_policy_configurable = false;
+
   DataSourceType cpp_type;
   std::atomic<bool> enabled{false};
   std::mutex mu;
@@ -320,8 +322,24 @@ bool PerfettoDsSetBufferExhaustedPolicy(struct PerfettoDsImpl* ds_impl,
       ds_impl->buffer_exhausted_policy =
           perfetto::BufferExhaustedPolicy::kStall;
       return true;
+    case PERFETTO_DS_BUFFER_EXHAUSTED_POLICY_STALL_AND_DROP:
+      ds_impl->buffer_exhausted_policy =
+          perfetto::BufferExhaustedPolicy::kStallThenDrop;
+      return true;
   }
   return false;
+}
+
+bool PerfettoDsSetBufferExhaustedPolicyConfigurable(
+    struct PerfettoDsImpl* ds_impl,
+    bool configurable) {
+  if (ds_impl->IsRegistered()) {
+    return false;
+  }
+
+  ds_impl->buffer_exhausted_policy_configurable = configurable;
+
+  return true;
 }
 
 bool PerfettoDsImplRegister(struct PerfettoDsImpl* ds_impl,
@@ -354,12 +372,16 @@ bool PerfettoDsImplRegister(struct PerfettoDsImpl* ds_impl,
   }
 
   perfetto::internal::DataSourceParams params;
+  params.default_buffer_exhausted_policy = ds_impl->buffer_exhausted_policy;
+  params.buffer_exhausted_policy_configurable =
+      ds_impl->buffer_exhausted_policy_configurable;
   params.supports_multiple_instances = true;
   params.requires_callbacks_under_lock = false;
+  params.default_buffer_exhausted_policy =
+      data_source_type->buffer_exhausted_policy;
   bool success = data_source_type->cpp_type.Register(
-      dsd, factory, params, data_source_type->buffer_exhausted_policy,
-      data_source_type->on_flush_cb == nullptr, create_custom_tls_fn,
-      create_incremental_state_fn, cb_ctx);
+      dsd, factory, params, data_source_type->on_flush_cb == nullptr,
+      create_custom_tls_fn, create_incremental_state_fn, cb_ctx);
   if (!success) {
     return false;
   }
@@ -412,7 +434,7 @@ void* PerfettoDsImplGetInstanceLocked(struct PerfettoDsImpl* ds_impl,
   std::unique_lock<std::recursive_mutex> lock(internal_state->lock);
   auto* data_source =
       static_cast<ShlibDataSource*>(internal_state->data_source.get());
-  if (&data_source->type() != ds_impl) {
+  if (!data_source || &data_source->type() != ds_impl) {
     // The data source instance has been destroyed and recreated as a different
     // type while we where tracing.
     return nullptr;

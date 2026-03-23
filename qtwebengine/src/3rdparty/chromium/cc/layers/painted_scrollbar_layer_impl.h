@@ -40,7 +40,8 @@ class CC_EXPORT PaintedScrollbarLayerImpl : public ScrollbarLayerImplBase {
 
   bool WillDraw(DrawMode draw_mode,
                 viz::ClientResourceProvider* resource_provider) override;
-  void AppendQuads(viz::CompositorRenderPass* render_pass,
+  void AppendQuads(const AppendQuadsContext& context,
+                   viz::CompositorRenderPass* render_pass,
                    AppendQuadsData* append_quads_data) override;
   gfx::Rect GetEnclosingVisibleRectInTargetSpace() const override;
   gfx::Rect ComputeThumbQuadRect() const override;
@@ -75,6 +76,34 @@ class CC_EXPORT PaintedScrollbarLayerImpl : public ScrollbarLayerImplBase {
     internal_contents_scale_ = content_scale;
     internal_content_bounds_ = content_bounds;
   }
+
+  bool jump_on_track_click() const { return jump_on_track_click_; }
+  bool supports_drag_snap_back() const { return supports_drag_snap_back_; }
+  int thumb_thickness() const { return thumb_thickness_; }
+  int thumb_length() const { return thumb_length_; }
+  gfx::Rect back_button_rect() const { return back_button_rect_; }
+  gfx::Rect forward_button_rect() const { return forward_button_rect_; }
+  gfx::Rect track_rect() const { return track_rect_; }
+
+  float internal_contents_scale() const { return internal_contents_scale_; }
+  const gfx::Size& internal_content_bounds() const {
+    return internal_content_bounds_;
+  }
+  float painted_opacity() const { return painted_opacity_; }
+  std::optional<SkColor4f> thumb_color() const { return thumb_color_; }
+  bool uses_nine_patch_track_and_buttons() const {
+    return uses_nine_patch_track_and_buttons_;
+  }
+  const gfx::Size& track_and_buttons_image_bounds() const {
+    return track_and_buttons_image_bounds_;
+  }
+  const gfx::Rect& track_and_buttons_aperture() const {
+    return track_and_buttons_aperture_;
+  }
+  UIResourceId track_and_buttons_ui_resource_id() const {
+    return track_and_buttons_ui_resource_id_;
+  }
+  UIResourceId thumb_ui_resource_id() const { return thumb_ui_resource_id_; }
 
   bool JumpOnTrackClick() const override;
   bool SupportsDragSnapBack() const override;

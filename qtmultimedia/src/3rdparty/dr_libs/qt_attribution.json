@@ -7,13 +7,13 @@
     "SecurityCritical": true,
 
     "Homepage": "https://github.com/mackron/dr_libs",
-    "Version": "0.13.17",
-    "DownloadLocation": "https://github.com/mackron/dr_libs",
+    "Version": "0.14.5",
+    "DownloadLocation": "https://github.com/mackron/dr_libs/releases/wav-0.14.5",
 
-    "License": "MIT No Attribution",
-    "LicenseId": "MIT-0",
+    "License": "The Unlicense or MIT No Attribution",
+    "LicenseId": "Unlicense OR MIT-0",
     "LicenseFiles": [
         "LICENSE"
     ],
-    "PURL": "pkg:github/mackron/dr_libs@wav-0.13.17"
+    "PURL": "pkg:github/mackron/dr_libs@wav-$<VERSION>"
 }

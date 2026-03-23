@@ -9,7 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
-#include "build/chromeos_buildflags.h"
+#include "build/build_config.h"
 
 namespace logging {
 
@@ -73,7 +73,7 @@ class BASE_EXPORT ScopedLoggingSettings {
 // must be destroyed in reverse creation order.
 class BASE_EXPORT ScopedVmoduleSwitches {
  public:
-  explicit ScopedVmoduleSwitches();
+  ScopedVmoduleSwitches();
   // Specify which modules and levels to enable. This uses the same syntax as
   // the commandline flag, e.g. "file=1,dir/other_file=2".
   void InitWithSwitches(const std::string& vmodule_switch);

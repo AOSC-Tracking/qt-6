@@ -52,16 +52,43 @@ AX_BASE_EXPORT bool IsAccessibilityPdfOcrForSelectToSpeakEnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityBlockFlowIterator);
 AX_BASE_EXPORT bool IsAccessibilityBlockFlowIteratorEnabled();
 
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityPruneRedundantInlineText);
-AX_BASE_EXPORT bool IsAccessibilityPruneRedundantInlineTextEnabled();
-
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(
     kAccessibilityPruneRedundantInlineConnectivity);
 AX_BASE_EXPORT bool IsAccessibilityPruneRedundantInlineConnectivityEnabled();
 
+// Enables the addition of text formatting information to the Android
+// AccessibilityNodeInfo accessibility tree.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityTextFormatting);
+AX_BASE_EXPORT bool IsAccessibilityTextFormattingEnabled();
+
 // Expose the accessibility tree for views via an AXTree of AXNodes.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityTreeForViews);
 AX_BASE_EXPORT bool IsAccessibilityTreeForViewsEnabled();
+
+// Serialize Views' accessibility data as soon as it changes.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kViewsAccessibilitySerializeOnDataChange);
+AX_BASE_EXPORT bool IsViewsAccessibilitySerializeOnDataChangeEnabled();
+
+// Experiment to measure the performance impact of various accessibility
+// changes.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(
+    kAccessibilityPerformanceMeasurementExperiment);
+AX_BASE_EXPORT bool IsAccessibilityPerformanceMeasurementExperimentEnabled();
+
+// Use AXBitset to save boolean attributes in ui/accessibility instead of a
+// vector.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityUseAXBitset);
+AX_BASE_EXPORT bool IsAccessibilityUseAXBitsetEnabled();
+
+enum class AccessibilityPerformanceMeasurementExperimentGroup {
+  kAXModeComplete,
+  kWebContentsOnly,
+  kAXModeCompleteNoInlineTextBoxes,
+  kRendererSerializationOnly,
+};
+
+AX_BASE_EXPORT AccessibilityPerformanceMeasurementExperimentGroup
+GetAccessibilityPerformanceMeasurementExperimentGroup();
 
 // Use Alternative mechanism for acquiring image descriptions.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kImageDescriptionsAlternateRouting);
@@ -112,20 +139,44 @@ AX_BASE_EXPORT bool IsTextBasedAudioDescriptionEnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kUseAXPositionForDocumentMarkers);
 AX_BASE_EXPORT bool IsUseAXPositionForDocumentMarkersEnabled();
 
+// Randomly turn the accessibility engine on based on certain conditions. We do
+// not put this flag in chrome://flags so we can get the cleanest data possible.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAXRandomizedStressTests);
+AX_BASE_EXPORT bool IsAXRandomizedStressTestsEnabled();
+
+// Enable the experimental on-screen AXMode .
+// TODO(accessibility): Only turn on the experimental On-Screen mode for when
+// screen readers are not running. This is an experimental mode for now, so this
+// is fine for now.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityOnScreenMode);
+
+// Returns true if the on screen AXMode is enabled.
+AX_BASE_EXPORT bool IsAccessibilityOnScreenAXModeEnabled();
+
 #if BUILDFLAG(IS_WIN)
+// When enabled, modify the exposed UIA accessibility tree to match Narrator's
+// expectations. This fixes a bug keeping Narrator's cursor contained within
+// the web content.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kFixNarratorWebContentContainment);
+AX_BASE_EXPORT bool IsFixNarratorWebContentContainmentEnabled();
+
 // Use Chrome-specific accessibility COM API.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kIChromeAccessible);
 AX_BASE_EXPORT bool IsIChromeAccessibleEnabled();
 
-// Selectively enable accessibility depending on the
-// UIA APIs that are called. (Note: This will make it possible for
-// non-screenreader services to enable less of the accessibility system)
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kSelectiveUIAEnablement);
-AX_BASE_EXPORT bool IsSelectiveUIAEnablementEnabled();
+// Enables calls to UiaDisconnectProvider when destroying a AXFragmentRootWin's
+// HWND.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kUiaDisconnectRootProviders);
 
 // Use the browser's UIA provider when requested by
 // an accessibility client.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kUiaProvider);
+
+// Optimizes event firing by only emitting events when at least one listener is
+// subscribed. Killswitch to turn it off in case this work has negative
+// side-effects on assistive technologies.
+// TODO(https://crbug.com/402375302): Remove in M139.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kUiaEventOptimization);
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -169,6 +220,10 @@ AX_BASE_EXPORT bool IsAccessibilityMagnifierFollowsChromeVoxEnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityMouseKeys);
 AX_BASE_EXPORT bool IsAccessibilityMouseKeysEnabled();
 
+// Show captions on a braille display.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityCaptionsOnBrailleDisplay);
+AX_BASE_EXPORT bool IsAccessibilityCaptionsOnBrailleDisplayEnabled();
+
 // Controls whether the shake cursor to locate feature is available.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityShakeToLocate);
 AX_BASE_EXPORT bool IsAccessibilityShakeToLocateEnabled();
@@ -189,15 +244,48 @@ AX_BASE_EXPORT bool IsAccessibilityBounceKeysEnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilitySlowKeys);
 AX_BASE_EXPORT bool IsAccessibilitySlowKeysEnabled();
 
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(
+    kAccessibilityManifestV3AccessibilityCommon);
+AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForAccessibilityCommon();
+
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3BrailleIme);
 AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForBrailleIme();
+
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3ChromeVox);
+AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForChromeVox();
 
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3EnhancedNetworkTts);
 AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForEnhancedNetworkTts();
 
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3EspeakNGTts);
+AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForEspeakNGTts();
+
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3GoogleTts);
+AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForGoogleTts();
+
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3SelectToSpeak);
+AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForSelectToSpeak();
+
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3SwitchAccess);
+AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForSwitchAccess();
+
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
+#if BUILDFLAG(IS_ANDROID)
+
+// When populating the AccessibilityNodeInfo on Android, Clank will insert Line
+// Separator U+2028 characters in the text to denote soft line breaks.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityInlineLineSeparators);
+AX_BASE_EXPORT bool IsAccessibilityInlineLineSeparatorsEnabled();
+
+#endif  // BUILDFLAG(IS_ANDROID)
+
 #if !BUILDFLAG(IS_ANDROID)
+// Use the AXTree fixing code, which may be an assortment of different
+// tools/methods to fix the AXTree. This is not available on Android.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAXTreeFixing);
+AX_BASE_EXPORT bool IsAXTreeFixingEnabled();
+
 // Use the experimental Accessibility Service.
 // TODO(katydek): Provide a more descriptive name here.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityService);
@@ -257,6 +345,13 @@ AX_BASE_EXPORT bool IsScreenAIOCREnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kScreenAITestMode);
 AX_BASE_EXPORT bool IsScreenAITestModeEnabled();
 
+#if BUILDFLAG(IS_LINUX)
+// Enables advanced partition allocation checks in ScreenAI service.
+// TODO(crbug.com/418199684): Remove when the bug is fixed.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(
+    kScreenAIPartitionAllocAdvancedChecksEnabled);
+#endif  // BUILDFLAG(IS_LINUX)
+
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_MAC)
@@ -278,10 +373,19 @@ AX_BASE_EXPORT bool IsBlockRootWindowAccessibleNameChangeEventEnabled();
 #endif  // BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-// Enable the component updater to download the wasm tts engine component.
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kWasmTtsComponentUpdaterEnabled);
-AX_BASE_EXPORT bool IsWasmTtsComponentUpdaterEnabled();
+// Use the v3 version of the wasm tts engine component.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kWasmTtsComponentUpdaterV3Enabled);
+AX_BASE_EXPORT bool IsWasmTtsComponentUpdaterV3Enabled();
+// Disable the wasm tts engine component to use dev version local extension
+// files.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kWasmTtsEngineAutoInstallDisabled);
+AX_BASE_EXPORT bool IsWasmTtsEngineAutoInstallDisabled();
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+
+// Killswitch: use per-child copy of point during Views hit testing (prevents
+// coordinate corruption). Enabled by default.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityHitTestPointCopy);
+AX_BASE_EXPORT bool IsAccessibilityHitTestPointCopyEnabled();
 
 }  // namespace features
 

@@ -15,6 +15,7 @@
 #include "base/containers/span.h"
 #include "base/functional/callback_forward.h"
 #include "build/build_config.h"
+#include "components/password_manager/core/common/credential_manager_types.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/web_authentication_request_proxy.h"
 #include "device/fido/authenticator_get_assertion_response.h"
@@ -40,6 +41,24 @@ class Origin;
 
 namespace content {
 
+// LINT.IfChange
+// Reasons why a WebAuthn get() request with `mediation: "immediate"` was
+// rejected by the browser before showing any UI.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class ImmediateMediationRejectionReason {
+  // The request was in an incognito/off-the-record profile.
+  kIncognito = 0,
+  // The request was rate-limited for the origin.
+  kRateLimited = 1,
+  // No credentials were found for the request.
+  kNoCredentials = 2,
+  // The request timed out before the UI could be shown.
+  kTimeout = 3,
+  kMaxValue = kTimeout,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/webauthn/enums.xml)
+
 // AuthenticatorRequestClientDelegate is an interface that lets embedders
 // customize the lifetime of a single WebAuthn API request in the //content
 // layer. In particular, the Authenticator mojo service uses
@@ -49,6 +68,8 @@ class CONTENT_EXPORT AuthenticatorRequestClientDelegate
  public:
   using AccountPreselectedCallback =
       base::RepeatingCallback<void(device::DiscoverableCredentialMetadata)>;
+  using PasswordSelectedCallback =
+      base::RepeatingCallback<void(password_manager::CredentialInfo)>;
 
   // Failure reasons that might be of interest to the user, so the embedder may
   // decide to inform the user.
@@ -101,6 +122,8 @@ class CONTENT_EXPORT AuthenticatorRequestClientDelegate
   enum class UIPresentation {
     // The default tab-modal dialog shown for .get() and .create() request.
     kModal,
+    // Tab modal for .get() requests with mediation = "immediate".
+    kModalImmediate,
     // Passkey autofill UI for .get() requests with `mediation = "conditional"`.
     kAutofill,
     // Passkey upgrade request, i.e. .create() requests with `mediation =
@@ -150,14 +173,18 @@ class CONTENT_EXPORT AuthenticatorRequestClientDelegate
       device::AuthenticatorType authenticator_type);
 
   // Supplies callbacks that the embedder can invoke to initiate certain
-  // actions, namely: cancel the request, start the request over, preselect an
-  // account, dispatch request to connected authenticators, power on the
-  // bluetooth adapter, and request permission to use the bluetooth adapter.
+  // actions, namely: cancel the request, report no immediate mechanisms, start
+  // the request over, preselect an account, dispatch request to connected
+  // authenticators, power on the bluetooth adapter, and request permission to
+  // use the bluetooth adapter.
   virtual void RegisterActionCallbacks(
       base::OnceClosure cancel_callback,
+      base::OnceClosure immediate_not_found_callback,
       base::RepeatingClosure start_over_callback,
       AccountPreselectedCallback account_preselected_callback,
+      PasswordSelectedCallback password_selected_callback,
       device::FidoRequestHandlerBase::RequestCallback request_callback,
+      base::OnceClosure cancel_ui_timeout_callback,
       base::RepeatingClosure bluetooth_adapter_power_on_callback,
       base::RepeatingCallback<
           void(device::FidoRequestHandlerBase::BlePermissionCallback)>
@@ -226,9 +253,10 @@ class CONTENT_EXPORT AuthenticatorRequestClientDelegate
 
   bool IsVirtualEnvironmentEnabled();
 
-  // Set the credential types that are expected by the Ambient UI.
-  // Credential types are defined in `credential_types.mojom`.
-  virtual void SetAmbientCredentialTypes(int credential_type_flags);
+  // Set the credential types that are expected by the delegate. The types can
+  // be used by the Ambient UI or modal requests. Credential types are defined
+  // in `credential_type_flags.mojom`.
+  virtual void SetCredentialTypes(int credential_type_flags);
 
   // Sets a credential filter for conditional mediation requests, which will
   // only allow passkeys with matching credential IDs to be displayed to the

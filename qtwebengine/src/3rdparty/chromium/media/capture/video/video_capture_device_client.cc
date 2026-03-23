@@ -21,12 +21,12 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/sequence_checker.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "base/types/expected.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_metadata.h"
@@ -44,9 +44,9 @@
 #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 #include "third_party/libyuv/include/libyuv.h"
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 #include "media/capture/video/chromeos/video_capture_jpeg_decoder.h"
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(ENABLE_VIDEO_EFFECTS)
 #include "media/base/media_switches.h"
@@ -193,6 +193,10 @@ FourccAndFlip GetFourccAndFlipFromPixelFormat(
     case media::PIXEL_FORMAT_ARGB:
       // Windows platforms e.g. send the data vertically flipped sometimes.
       return {libyuv::FOURCC_ARGB, flip_y};
+    case media::PIXEL_FORMAT_ABGR:
+      return {libyuv::FOURCC_ABGR};
+    case media::PIXEL_FORMAT_BGRA:
+      return {libyuv::FOURCC_BGRA};
     case media::PIXEL_FORMAT_MJPEG:
       return {libyuv::FOURCC_MJPG};
     default:
@@ -292,6 +296,9 @@ class BufferPoolBufferHandleProvider
   const int buffer_id_;
 };
 
+VideoEffectsContext::VideoEffectsContext() = default;
+
+#if BUILDFLAG(ENABLE_VIDEO_EFFECTS)
 VideoEffectsContext::VideoEffectsContext(
     mojo::PendingRemote<video_effects::mojom::VideoEffectsProcessor>
         processor_remote,
@@ -299,6 +306,7 @@ VideoEffectsContext::VideoEffectsContext(
         readonly_manager_remote)
     : video_effects_processor_(std::move(processor_remote)),
       readonly_video_effects_manager_(std::move(readonly_manager_remote)) {}
+#endif
 
 VideoEffectsContext::VideoEffectsContext(VideoEffectsContext&& other) = default;
 VideoEffectsContext& VideoEffectsContext::operator=(
@@ -306,6 +314,7 @@ VideoEffectsContext& VideoEffectsContext::operator=(
 
 VideoEffectsContext::~VideoEffectsContext() = default;
 
+#if BUILDFLAG(ENABLE_VIDEO_EFFECTS)
 mojo::PendingRemote<video_effects::mojom::VideoEffectsProcessor>&&
 VideoEffectsContext::TakeVideoEffectsProcessor() {
   return std::move(video_effects_processor_);
@@ -315,8 +324,9 @@ mojo::PendingRemote<media::mojom::ReadonlyVideoEffectsManager>&&
 VideoEffectsContext::TakeReadonlyVideoEffectsManager() {
   return std::move(readonly_video_effects_manager_);
 }
+#endif
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 VideoCaptureDeviceClient::VideoCaptureDeviceClient(
     std::unique_ptr<VideoFrameReceiver> receiver,
     scoped_refptr<VideoCaptureBufferPool> buffer_pool,
@@ -356,7 +366,7 @@ VideoCaptureDeviceClient::VideoCaptureDeviceClient(
   }
 #endif  // BUILDFLAG(ENABLE_VIDEO_EFFECTS)
 }
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 VideoCaptureDeviceClient::~VideoCaptureDeviceClient() {
   DFAKE_SCOPED_RECURSIVE_LOCK(call_from_producer_);
@@ -502,7 +512,7 @@ void VideoCaptureDeviceClient::OnIncomingCapturedData(
     OnLog("Pixel format: " + VideoPixelFormatToString(format.pixel_format));
     last_captured_pixel_format_ = format.pixel_format;
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
     if (format.pixel_format == PIXEL_FORMAT_MJPEG &&
         optional_jpeg_decoder_factory_callback_) {
       external_jpeg_decoder_ =
@@ -510,7 +520,7 @@ void VideoCaptureDeviceClient::OnIncomingCapturedData(
       CHECK(external_jpeg_decoder_);
       external_jpeg_decoder_->Initialize();
     }
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
   }
 
   if (!format.IsValid()) {
@@ -614,7 +624,7 @@ void VideoCaptureDeviceClient::OnIncomingCapturedData(
   const gfx::ColorSpace color_space = OverrideColorSpaceForLibYuvConversion(
       data_color_space, format.pixel_format);
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   if (external_jpeg_decoder_) {
     const VideoCaptureJpegDecoder::STATUS status =
         external_jpeg_decoder_->GetStatus();
@@ -630,7 +640,7 @@ void VideoCaptureDeviceClient::OnIncomingCapturedData(
       return;
     }
   }
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
   // libyuv::ConvertToI420 uses Rec601 to convert RGB to YUV.
   if (libyuv::ConvertToI420(
@@ -1096,7 +1106,8 @@ void VideoCaptureDeviceClient::OnIncomingCapturedY16Data(
     return;
   }
   auto buffer_access = buffer.handle_provider->GetHandleForInProcessAccess();
-  memcpy(buffer_access->data(), data, length);
+  memcpy(buffer_access->data(), data,
+         std::min(static_cast<size_t>(length), buffer_access->mapped_size()));
   const VideoCaptureFormat output_format = VideoCaptureFormat(
       format.frame_size, format.frame_rate, PIXEL_FORMAT_Y16);
   OnIncomingCapturedBuffer(std::move(buffer), output_format, reference_time,

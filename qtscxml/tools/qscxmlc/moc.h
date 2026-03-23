@@ -58,6 +58,7 @@ struct EnumDef
     QFlags<QtMocConstants::EnumFlags> flags = {};
     QJsonObject toJson(const ClassDef &cdef) const;
     QByteArray qualifiedType(const ClassDef *cdef) const;
+    int lineNumber = 0;
 };
 Q_DECLARE_TYPEINFO(EnumDef, Q_RELOCATABLE_TYPE);
 
@@ -84,6 +85,7 @@ struct FunctionDef
     enum Access { Private, Protected, Public };
     Access access = Private;
     int revision = 0;
+    int lineNumber = 0;
 
     bool isConst = false;
     bool isVirtual = false;
@@ -134,8 +136,11 @@ struct PropertyDef
     TypeTags typeTag;
     bool constant = false;
     bool final = false;
+    bool virtual_ = false;
+    bool override = false;
     bool required = false;
     int relativeIndex = -1; // property index in current metaobject
+    int lineNumber = 0;
 
     qsizetype location = -1; // token index, used for error reporting
 
@@ -214,6 +219,7 @@ struct ClassDef : BaseDef {
     bool hasQGadget = false;
     bool hasQNamespace = false;
     bool requireCompleteMethodTypes = false;
+    bool isFinal = false;
 
     QJsonObject toJson() const;
 };
@@ -302,7 +308,7 @@ public:
     QByteArray lexemUntil(Token);
     bool until(Token);
 
-    // test for Q_INVOCABLE, Q_SCRIPTABLE, etc. and set the flags
+    // test for Q_INVOKABLE, Q_SCRIPTABLE, etc. and set the flags
     // in FunctionDef accordingly
     bool testFunctionAttribute(FunctionDef *def);
     bool testFunctionAttribute(Token tok, FunctionDef *def);

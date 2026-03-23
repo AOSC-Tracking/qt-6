@@ -38,22 +38,31 @@ _allowed_config_options = [
     'compilerOptions',
 ]
 
-# Allowed compilerOptions
-_allowed_compiler_options = [
-    'allowUmdGlobalAccess',
-    'isolatedModules',
-    'lib',
-    'noPropertyAccessFromIndexSignature',
-    'noUncheckedIndexedAccess',
-    'noUncheckedSideEffectImports',
-    'noUnusedLocals',
-    'skipLibCheck',
-    'strictPropertyInitialization',
-    'typeRoots',
-    'types',
-    'useDefineForClassFields',
-]
+# Allowed compilerOptions. A 'None' value indicates that all values are allowed,
+# otherwise only the set of specified values is allowed.
+_allowed_compiler_options = {
+    'allowUmdGlobalAccess': None,
+    'isolatedModules': None,
+    'lib': None,
+    'noPropertyAccessFromIndexSignature': None,
+    'noUncheckedIndexedAccess': None,
+    'noUncheckedSideEffectImports': None,
+    'noUnusedLocals': None,
+    'skipLibCheck': None,
+    'strictPropertyInitialization': None,
+    'target': ['ESNext', 'ES2024'],
+    'typeRoots': None,
+    'types': None,
+}
 
+_ash_configs = [
+    'ash/webui/camera_app_ui/resources/tsconfig_base.json',
+    'ash/webui/recorder_app_ui/resources/tsconfig_base.json',
+    'chrome/browser/resources/chromeos/desk_api/tsconfig_base.json',
+    'chrome/test/data/webui/chromeos/ash_common/tsconfig_base.json',
+    'tools/typescript/tsconfig_base_polymer_cros.json',
+    'third_party/cros-components/tsconfig_base.json',
+]
 
 def validateTsconfigJson(tsconfig, tsconfig_file, is_base_tsconfig):
   # Special exception for material_web_components, which uses ts_library()
@@ -88,10 +97,18 @@ def validateTsconfigJson(tsconfig, tsconfig_file, is_base_tsconfig):
       return True, None
 
     if not is_base_tsconfig:
-      for input_param in tsconfig['compilerOptions'].keys():
-        if input_param not in _allowed_compiler_options:
-          return False, f'Disallowed |{input_param}| flag detected in '+ \
-              f'{tsconfig_file}.'
+      for param, param_value in tsconfig['compilerOptions'].items():
+        if param not in _allowed_compiler_options:
+          if param != 'useDefineForClassFields' or \
+             tsconfig_file not in _ash_configs:
+            return False, f'Disallowed |{param}| flag detected in '+ \
+                f'\'{tsconfig_file}\'.'
+        else:
+          allowed_values = _allowed_compiler_options[param]
+          if (allowed_values is not None and param_value not in allowed_values):
+            return False, f'Disallowed value |{param_value}| for |{param}| ' + \
+                f'flag detected in \'{tsconfig_file}\'. Must be one of ' + \
+                f'{allowed_values}.'
 
   return True, None
 
@@ -158,8 +175,6 @@ def validateJavaScriptAllowed(source_dir, out_dir, platform):
       # remove exception.
       'chrome/test/data/webui/bluetooth_internals',
       'components/autofill/core/browser/autofill_and_password_manager_internals',
-      # TODO(crbug.com/373951324): Migrate offline dino game to TypeScript.
-      'components/neterror/resources',
       'components/net_log/resources',
       'components/safe_browsing/content/browser/web_ui/resources',
       'components/translate/translate_internals',

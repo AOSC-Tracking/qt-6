@@ -15,7 +15,7 @@
 # limitations under the License.
 
 import os
-from generators.base_generator import BaseGenerator
+from base_generator import BaseGenerator
 from generators.generator_utils import PlatformGuardHelper
 
 class TestIcdGenerator(BaseGenerator):
@@ -23,6 +23,7 @@ class TestIcdGenerator(BaseGenerator):
         BaseGenerator.__init__(self)
 
         self.manual_functions = [
+            'vkGetTensorMemoryRequirementsARM',
             'vkCreateInstance',
             'vkDestroyInstance',
             'vkAllocateCommandBuffers',
@@ -105,6 +106,7 @@ class TestIcdGenerator(BaseGenerator):
             'vkGetAccelerationStructureDeviceAddressKHR',
             'vkGetVideoSessionMemoryRequirementsKHR',
             'vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR',
+            'vkGetPhysicalDeviceCooperativeVectorPropertiesNV',
             'vkGetPhysicalDeviceVideoCapabilitiesKHR',
             'vkGetPhysicalDeviceVideoFormatPropertiesKHR',
             'vkGetDescriptorSetLayoutSupport',
@@ -119,6 +121,7 @@ class TestIcdGenerator(BaseGenerator):
             'vkRegisterDisplayEventEXT',
             'vkCreatePipelineBinariesKHR',
             'vkGetPipelineBinaryDataKHR',
+            'vkGetPartitionedAccelerationStructuresBuildSizesNV',
         ]
 
     def generate(self):

@@ -174,9 +174,9 @@ void RegExpBytecodeGenerator::AdvanceCurrentPosition(int by) {
   advance_current_end_ = pc_;
 }
 
-void RegExpBytecodeGenerator::CheckGreedyLoop(
+void RegExpBytecodeGenerator::CheckFixedLengthLoop(
     Label* on_tos_equals_current_position) {
-  Emit(BC_CHECK_GREEDY, 0);
+  Emit(BC_CHECK_FIXED_LENGTH, 0);
   EmitOrLink(on_tos_equals_current_position);
 }
 
@@ -391,12 +391,12 @@ void RegExpBytecodeGenerator::IfRegisterEqPos(int register_index,
   EmitOrLink(on_eq);
 }
 
-Handle<HeapObject> RegExpBytecodeGenerator::GetCode(Handle<String> source,
-                                                    RegExpFlags flags) {
+DirectHandle<HeapObject> RegExpBytecodeGenerator::GetCode(
+    DirectHandle<String> source, RegExpFlags flags) {
   Bind(&backtrack_);
   Backtrack();
 
-  Handle<TrustedByteArray> array;
+  DirectHandle<TrustedByteArray> array;
   if (v8_flags.regexp_peephole_optimization) {
     array = RegExpBytecodePeepholeOptimization::OptimizeBytecode(
         isolate_, zone(), source, buffer_.data(), length(), jump_edges_);

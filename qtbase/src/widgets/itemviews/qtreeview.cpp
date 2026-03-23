@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 #include "qtreeview.h"
 
 #include <qheaderview.h>
@@ -39,6 +40,7 @@ QT_BEGIN_NAMESPACE
     \inmodule QtWidgets
 
     \image fusion-treeview.png
+           {Directory widget showing the contents using a tree view}
 
     A QTreeView implements a tree representation of items from a
     model. This class is used to provide standard hierarchical lists that
@@ -1028,7 +1030,8 @@ void QTreeView::keyboardSearch(const QString &search)
                 searchFrom = searchFrom.sibling(searchFrom.row(), start.column());
             if (searchFrom.parent() == start.parent())
                 searchFrom = start;
-            QModelIndexList match = d->model->match(searchFrom, Qt::DisplayRole, searchString);
+            QModelIndexList match = d->model->match(searchFrom, Qt::DisplayRole, searchString, 1,
+                                                    keyboardSearchFlags());
             if (match.size()) {
                 int hitIndex = d->viewIndex(match.at(0));
                 if (hitIndex >= 0 && hitIndex < startIndex)
@@ -1450,6 +1453,12 @@ QRect QTreeViewPrivate::intersectedRect(const QRect rect, const QModelIndex &top
 }
 
 /*!
+    \class QTreeViewPrivate
+    \inmodule QtWidgets
+    \internal
+*/
+
+/*!
   \reimp
 
   We have a QTreeView way of knowing what elements are on the viewport
@@ -1610,21 +1619,21 @@ void QTreeViewPrivate::calcLogicalIndices(
         }
     }
 
-    itemPositions->resize(logicalIndices->size());
-    for (int currentLogicalSection = 0; currentLogicalSection < logicalIndices->size(); ++currentLogicalSection) {
-        const int headerSection = logicalIndices->at(currentLogicalSection);
+    const auto indicesCount = logicalIndices->size();
+    itemPositions->resize(indicesCount);
+    for (qsizetype currentLogicalSection = 0; currentLogicalSection < indicesCount; ++currentLogicalSection) {
         // determine the viewItemPosition depending on the position of column 0
-        int nextLogicalSection = currentLogicalSection + 1 >= logicalIndices->size()
+        int nextLogicalSection = currentLogicalSection + 1 >= indicesCount
                                  ? logicalIndexAfterRight
                                  : logicalIndices->at(currentLogicalSection + 1);
         int prevLogicalSection = currentLogicalSection - 1 < 0
                                  ? logicalIndexBeforeLeft
                                  : logicalIndices->at(currentLogicalSection - 1);
+        const int headerSection = logicalIndices->at(currentLogicalSection);
         QStyleOptionViewItem::ViewItemPosition pos;
-        if (columnCount == 1 || (nextLogicalSection == 0 && prevLogicalSection == -1)
-            || (headerSection == 0 && nextLogicalSection == -1) || spanning)
-            pos = QStyleOptionViewItem::OnlyOne;
-        else if (isTreePosition(headerSection) || (nextLogicalSection != 0 && prevLogicalSection == -1))
+        if ((nextLogicalSection == -1 && prevLogicalSection == -1) || spanning) {
+           pos = QStyleOptionViewItem::OnlyOne;
+        } else if ((nextLogicalSection != 0 && prevLogicalSection == -1) || isTreePosition(headerSection))
             pos = QStyleOptionViewItem::Beginning;
         else if (nextLogicalSection == 0 || nextLogicalSection == -1)
             pos = QStyleOptionViewItem::End;
@@ -3325,6 +3334,7 @@ QPixmap QTreeViewPrivate::renderTreeToPixmapForAnimation(const QRect &rect) cons
         return pixmap;
     pixmap.fill(Qt::transparent); //the base might not be opaque, and we don't want uninitialized pixels.
     QPainter painter(&pixmap);
+    painter.setLayoutDirection(q->layoutDirection());
     painter.fillRect(QRect(QPoint(0,0), rect.size()), q->palette().base());
     painter.translate(0, -rect.top());
     q->drawTree(&painter, QRegion(rect));
@@ -4071,13 +4081,16 @@ void QTreeViewPrivate::sortIndicatorChanged(int column, Qt::SortOrder order)
     model->sort(column, order);
 }
 
-int QTreeViewPrivate::accessibleTree2Index(const QModelIndex &index) const
+#if QT_CONFIG(accessibility)
+int QTreeViewPrivate::accessibleChildIndex(const QModelIndex &index) const
 {
     Q_Q(const QTreeView);
+    Q_ASSERT(index.isValid());
 
     // Note that this will include the header, even if its hidden.
     return (q->visualIndex(index) + (q->header() ? 1 : 0)) * index.model()->columnCount() + index.column();
 }
+#endif
 
 void QTreeViewPrivate::updateIndentationFromStyle()
 {
@@ -4103,9 +4116,12 @@ void QTreeView::currentChanged(const QModelIndex &current, const QModelIndex &pr
     if (QAccessible::isActive() && current.isValid() && hasFocus()) {
         Q_D(QTreeView);
 
-        QAccessibleEvent event(this, QAccessible::Focus);
-        event.setChild(d->accessibleTree2Index(current));
-        QAccessible::updateAccessibility(&event);
+        const int entry = d->accessibleChildIndex(current);
+        if (entry >= 0) {
+            QAccessibleEvent event(this, QAccessible::Focus);
+            event.setChild(entry);
+            QAccessible::updateAccessibility(&event);
+        }
     }
 #endif
 }
@@ -4124,19 +4140,21 @@ void QTreeView::selectionChanged(const QItemSelection &selected,
         // ### does not work properly for selection ranges.
         QModelIndex sel = selected.indexes().value(0);
         if (sel.isValid()) {
-            int entry = d->accessibleTree2Index(sel);
-            Q_ASSERT(entry >= 0);
-            QAccessibleEvent event(this, QAccessible::SelectionAdd);
-            event.setChild(entry);
-            QAccessible::updateAccessibility(&event);
+            int entry = d->accessibleChildIndex(sel);
+            if (entry >= 0) {
+                QAccessibleEvent event(this, QAccessible::SelectionAdd);
+                event.setChild(entry);
+                QAccessible::updateAccessibility(&event);
+            }
         }
         QModelIndex desel = deselected.indexes().value(0);
         if (desel.isValid()) {
-            int entry = d->accessibleTree2Index(desel);
-            Q_ASSERT(entry >= 0);
-            QAccessibleEvent event(this, QAccessible::SelectionRemove);
-            event.setChild(entry);
-            QAccessible::updateAccessibility(&event);
+            int entry = d->accessibleChildIndex(desel);
+            if (entry >= 0) {
+                QAccessibleEvent event(this, QAccessible::SelectionRemove);
+                event.setChild(entry);
+                QAccessible::updateAccessibility(&event);
+            }
         }
     }
 #endif

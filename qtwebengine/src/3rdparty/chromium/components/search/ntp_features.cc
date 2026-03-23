@@ -5,6 +5,7 @@
 #include "components/search/ntp_features.h"
 
 #include <string>
+#include <vector>
 
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
@@ -107,6 +108,11 @@ BASE_FEATURE(kNtpDriveModule,
              "NtpDriveModule",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// If enabled, the NTP Drive module does not require sync.
+BASE_FEATURE(kNtpDriveModuleNoSyncRequirement,
+             "NtpDriveModuleNoSyncRequirement",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // If enabled, segmentation data will be collected to decide whether or not to
 // show the Drive module.
 BASE_FEATURE(kNtpDriveModuleSegmentation,
@@ -170,6 +176,12 @@ BASE_FEATURE(kNtpModulesLoad,
              "NtpModulesLoad",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// If enabled, makes browser sign-in requirement per-module, instead of a
+// requirement for all modules.
+BASE_FEATURE(kNtpModuleSignInRequirement,
+             "NtpModuleSignInRequirement",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // If enabled, OneGoogleBar will be shown.
 // This is a kill switch. Keep indefinitely.
 BASE_FEATURE(kNtpOneGoogleBar,
@@ -229,16 +241,18 @@ BASE_FEATURE(kNtpShortcuts, "NtpShortcuts", base::FEATURE_ENABLED_BY_DEFAULT);
 // If enabled, the Tab Resumption module will be shown.
 BASE_FEATURE(kNtpMostRelevantTabResumptionModule,
              "NtpMostRelevantTabResumptionModule",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
-// If enabled, the Tab Resumption module with the device icon will be shown.
-BASE_FEATURE(kNtpMostRelevantTabResumptionModuleDeviceIcon,
-             "NtpMostRelevantTabResumptionModuleDeviceIcon",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+// If enabled, the Tab Resumption module will be allowed to fallback to the
+// favicon server when fetching favicons for displayed continuation suggestions.
+BASE_FEATURE(kNtpMostRelevantTabResumptionAllowFaviconServerFallback,
+             "NtpMostRelevantTabResumptionAllowFaviconServerFallback",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
-// If enabled, the Tab Resumption module will use the synced fallback icon.
-BASE_FEATURE(kNtpMostRelevantTabResumptionUseIsKnownToSync,
-             "NtpMostRelevantTabResumptionUseIsKnownToSync",
+// If enabled, the Tab Resumption module will fallback to host url to find a
+// favicon if there are none locally available.
+BASE_FEATURE(kNtpMostRelevantTabResumptionModuleFallbackToHost,
+             "NtpMostRelevantTabResumptionModuleFallbackToHost",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kNtpTabResumptionModuleCategories,
@@ -288,6 +302,14 @@ BASE_FEATURE(kNtpOneGoogleBarAsyncBarParts,
              "NtpOneGoogleBarAsyncBarParts",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// If enabled, a footer will show on the NTP.
+BASE_FEATURE(kNtpFooter, "NtpFooter", base::FEATURE_DISABLED_BY_DEFAULT);
+
+// If enabled, tab groups module will be shown.
+BASE_FEATURE(kNtpTabGroupsModule,
+             "kNtpTabGroupsModule",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 const char kNtpModuleIgnoredCriteriaThreshold[] =
     "NtpModuleIgnoredCriteriaThreshold";
 const char kNtpModuleIgnoredHaTSDelayTimeParam[] =
@@ -334,6 +356,7 @@ const char kNtpMostRelevantTabResumptionModuleDataParam[] =
     "NtpMostRelevantTabResumptionModuleDataParam";
 const char kNtpMostRelevantTabResumptionModuleMaxVisitsParam[] =
     "NtpMostRelevantTabResumptionModuleMaxVisitsParam";
+const char kNtpTabGroupsModuleDataParam[] = "NtpTabGroupsModuleDataParam";
 const char kNtpTabResumptionModuleCategoriesBlocklistParam[] =
     "NtpTabResumptionModuleCategoriesBlocklistParam";
 const char kNtpTabResumptionModuleDismissalDurationParam[] =
@@ -413,18 +436,31 @@ const base::FeatureParam<NtpSharepointModuleDataType>::Option
         {NtpSharepointModuleDataType::kTrendingInsightsFakeData,
          "fake-trending"},
         {NtpSharepointModuleDataType::kNonInsightsFakeData,
-         "fake-non-insights"}};
+         "fake-non-insights"},
+        {NtpSharepointModuleDataType::kCombinedSuggestions, "combined"}};
 
 const base::FeatureParam<NtpSharepointModuleDataType>
-    kNtpSharepointModuleDataParam{
-        &ntp_features::kNtpSharepointModule, "NtpSharepointModuleDataParam",
-        NtpSharepointModuleDataType::kTrendingInsights,
-        &kNtpSharepointModuleDataTypeOptions};
+    kNtpSharepointModuleDataParam{&ntp_features::kNtpSharepointModule,
+                                  "NtpSharepointModuleDataParam",
+                                  NtpSharepointModuleDataType::kNonInsights,
+                                  &kNtpSharepointModuleDataTypeOptions};
 
 const base::FeatureParam<int> kNtpMicrosoftFilesModuleMaxFilesParam(
     &ntp_features::kNtpSharepointModule,
     "NtpMicrosoftFilesModuleMaxFilesParam",
     6);
+
+const base::FeatureParam<int>
+    kNtpMicrosoftFilesModuleMaxTrendingFilesForCombinedParam(
+        &ntp_features::kNtpSharepointModule,
+        "NtpMicrosoftFilesModuleMaxTrendingFilesForCombinedParam",
+        2);
+
+const base::FeatureParam<int>
+    kNtpMicrosoftFilesModuleMaxNonInsightsFilesForCombinedParam(
+        &ntp_features::kNtpSharepointModule,
+        "NtpMicrosoftFilesModuleMaxNonInsightsFilesForCombinedParam",
+        4);
 
 base::TimeDelta GetModulesLoadTimeout() {
   std::string param_value = base::GetFieldTrialParamValueByFeature(
@@ -475,4 +511,5 @@ std::string GetMobilePromoTargetURL() {
       ntp_features::kNtpMobilePromoTargetUrlParam);
   return (field_trial_url.empty()) ? kMobilePromoQRCodeURL : field_trial_url;
 }
+
 }  // namespace ntp_features

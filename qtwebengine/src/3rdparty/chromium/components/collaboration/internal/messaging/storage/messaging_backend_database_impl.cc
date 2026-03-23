@@ -6,6 +6,7 @@
 
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/task/thread_pool.h"
 
 namespace collaboration::messaging {
@@ -119,6 +120,10 @@ void MessagingBackendDatabaseImpl::Delete(
     const std::vector<std::string>& message_uuids) {
   CHECK(load_success_.has_value() && load_success_.value());
   message_data_->DeleteData(message_uuids);
+}
+
+void MessagingBackendDatabaseImpl::DeleteAllData() {
+  message_data_->DeleteAllData();
 }
 
 void MessagingBackendDatabaseImpl::OnDBReady(

@@ -68,7 +68,7 @@ class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
         const sktext::gpu::AtlasSubRun* subRun =
                 sktext::gpu::TextBlobTools::FirstSubRun(fBlob.get());
         SkASSERT_RELEASE(subRun);
-        subRun->testingOnly_packedGlyphIDToGlyph(&fCache);
+        subRun->testingOnly_packedGlyphIDToGlyph(&fCache, subRun->maskFormat());
         fVertices.reset(new char[subRun->vertexStride(drawMatrix) * subRun->glyphCount() * 4]);
     }
 
@@ -79,12 +79,12 @@ class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
 
         SkIRect clip = SkIRect::MakeEmpty();
         SkPaint paint;
-        GrColor grColor = SkColorToPremulGrColor(paint.getColor());
+        SkPMColor4f pmColor = SkColorToPMColor4f(paint.getColor(), /*colorInfo=*/{});
         SkMatrix positionMatrix = SkMatrix::Translate(100, 100);
 
         for (int loop = 0; loop < loops; loop++) {
             subRun->fillVertexData(fVertices.get(), 0, subRun->glyphCount(),
-                                   grColor, positionMatrix, {0, 0}, clip);
+                                   pmColor, positionMatrix, {0, 0}, clip);
         }
     }
 

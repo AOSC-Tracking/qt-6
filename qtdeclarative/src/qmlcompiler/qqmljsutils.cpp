@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #include "qqmljsutils_p.h"
 #include "qqmljstyperesolver_p.h"
@@ -248,14 +249,21 @@ bool canCompareWithQUrl(
     return lhsType == typeResolver->urlType() && rhsType == typeResolver->urlType();
 }
 
+/*!
+   \internal
+
+    Utility method that searches qrc files in given folders. Do not use this when the order or
+   selection of the returned qrc files matters.
+*/
 QStringList QQmlJSUtils::resourceFilesFromBuildFolders(const QStringList &buildFolders)
 {
     QStringList result;
     for (const QString &path : buildFolders) {
-        QDirIterator it(path, QStringList{ u"*.qrc"_s }, QDir::Files | QDir::Hidden,
-                        QDirIterator::Subdirectories);
-        while (it.hasNext()) {
-            result.append(it.next());
+        for (auto it : QDirListing{ path, QStringList{ u"*.qrc"_s },
+                                    QDirListing::IteratorFlag::Recursive
+                                            | QDirListing::IteratorFlag::FilesOnly
+                                            | QDirListing::IteratorFlag::IncludeHidden }) {
+            result.append(it.filePath());
         }
     }
     return result;
@@ -354,5 +362,29 @@ QString QQmlJSUtils::qmlBuildPathFromSourcePath(const QQmlJSResourceFileMapper *
     return moduleBuildEntry.filePath + qrcFolderPath.sliced(moduleBuildEntry.resourcePath.size())
             + pathInSourceFolder.sliced(pathInSourceFolder.lastIndexOf(u'/'));
 }
+
+/*!
+  \internal
+  Returns the name of \a scope based on \a type.
+*/
+QString QQmlJSUtils::getScopeName(const QQmlJSScope::ConstPtr &scope, QQmlJSScope::ScopeType type)
+{
+    Q_ASSERT(scope);
+    if (type == QQmlSA::ScopeType::GroupedPropertyScope
+        || type == QQmlSA::ScopeType::AttachedPropertyScope)
+        return scope->internalName();
+
+    if (!scope->isComposite())
+        return scope->internalName();
+
+    if (scope->isInlineComponent() && scope->inlineComponentName().has_value())
+        return scope->inlineComponentName().value();
+
+    if (scope->isFileRootComponent())
+        return QFileInfo(scope->filePath()).baseName();
+
+    return scope->baseTypeName();
+}
+
 
 QT_END_NAMESPACE

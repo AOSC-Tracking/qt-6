@@ -10,13 +10,14 @@
 #include "content/browser/permissions/permission_controller_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/permission_request_description.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "services/device/public/mojom/geoposition.mojom.h"
+#include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
-#include "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom.h"
 
 #if BUILDFLAG(IS_IOS)
 #include "services/device/public/cpp/geolocation/geolocation_system_permission_manager.h"
@@ -45,8 +46,11 @@ void GeolocationServiceImplContext::RequestPermission(
       ->GetPermissionController()
       ->RequestPermissionFromCurrentDocument(
           render_frame_host,
-          PermissionRequestDescription(blink::PermissionType::GEOLOCATION,
-                                       user_gesture),
+          PermissionRequestDescription(
+              content::PermissionDescriptorUtil::
+                  CreatePermissionDescriptorForPermissionType(
+                      blink::PermissionType::GEOLOCATION),
+              user_gesture),
           base::BindOnce(&GeolocationServiceImplContext::HandlePermissionStatus,
                          weak_factory_.GetWeakPtr(), std::move(callback)));
 }
@@ -104,11 +108,12 @@ void GeolocationServiceImpl::CreateGeolocation(
 
   receiver_set_.current_context()->RequestPermission(
       render_frame_host_, user_gesture,
-      // There is an assumption here that the GeolocationServiceImplContext will
-      // outlive the GeolocationServiceImpl.
+      // The owning RenderFrameHost might be destroyed before the permission
+      // request finishes. To avoid calling a callback on a destroyed object,
+      // use a WeakPtr and skip the callback if the object is invalid.
       base::BindOnce(
           &GeolocationServiceImpl::CreateGeolocationWithPermissionStatus,
-          base::Unretained(this), std::move(receiver),
+          weak_factory_.GetWeakPtr(), std::move(receiver),
           std::move(scoped_callback)));
 }
 

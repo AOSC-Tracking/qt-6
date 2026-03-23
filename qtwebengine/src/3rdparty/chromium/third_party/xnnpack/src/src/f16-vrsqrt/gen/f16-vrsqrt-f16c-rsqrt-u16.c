@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f16-vrsqrt/f16c-rsqrt.c.in
 //   Generator: tools/xngen
@@ -13,10 +14,11 @@
 
 #include <immintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/intrinsics-polyfill.h"
-#include "xnnpack/microparams.h"
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/vunary.h"
 
 
 // Since the result will be converted back to an `f16` value with a 10-bit
@@ -27,7 +29,7 @@ void xnn_f16_vrsqrt_ukernel__f16c_rsqrt_u16(
     size_t batch,
     const xnn_float16* input,
     xnn_float16* output,
-    const struct xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f16_default_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);

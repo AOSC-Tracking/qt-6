@@ -10,6 +10,7 @@
 
 #include "base/callback_list.h"
 #include "base/feature_list.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/metrics/user_action_tester.h"
@@ -185,6 +186,9 @@ class FeaturePromoLifecycleTest : public testing::Test {
         break;
       case PromoType::kRotating:
         name.append("Rotating");
+        break;
+      case PromoType::kCustomUi:
+        name.append("CustomUi");
         break;
       case PromoType::kUnspecified:
         NOTREACHED();

@@ -1,5 +1,7 @@
 // Copyright (C) 2015 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+// Qt-Security score:significant reason:default
+
 
 #include "qaxobject.h"
 #include "qaxobject_p.h"
@@ -10,6 +12,8 @@
 #include <qstringlist.h>
 
 #include <windows.h>
+
+#include <QtCore/private/qcomptr_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -305,16 +309,14 @@ bool QAxObject::doVerb(const QString &verb)
 {
     if (!verbs().contains(verb))
         return false;
-    IOleObject *ole = nullptr;
-    queryInterface(IID_IOleObject, reinterpret_cast<void **>(&ole));
+    ComPtr<IOleObject> ole;
+    queryInterface(IID_IOleObject, &ole);
     if (!ole)
         return false;
 
     LONG index = indexOfVerb(verb);
 
     HRESULT hres = ole->DoVerb(index, nullptr, nullptr, 0, nullptr, nullptr);
-
-    ole->Release();
 
     return hres == S_OK;
 }

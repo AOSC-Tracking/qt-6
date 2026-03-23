@@ -1,131 +1,40 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
-import '../../../../ui/components/icon_button/icon_button.js';
+import './Checklist.js';
 
 import * as i18n from '../../../../core/i18n/i18n.js';
 import type {LCPDiscoveryInsightModel} from '../../../../models/trace/insights/LCPDiscovery.js';
 import * as Trace from '../../../../models/trace/trace.js';
 import * as Lit from '../../../../ui/lit/lit.js';
-import type * as Overlays from '../../overlays/overlays.js';
 
 import {BaseInsightComponent} from './BaseInsightComponent.js';
 import {imageRef} from './EventRef.js';
 
+const {UIStrings, i18nString, getImageData} = Trace.Insights.Models.LCPDiscovery;
+
 const {html} = Lit;
 
-const UIStrings = {
-  /**
-   * @description Text to tell the user how long after the earliest discovery time their LCP element loaded.
-   * @example {401ms} PH1
-   */
-  lcpLoadDelay: 'LCP image loaded {PH1} after earliest start point.',
-  /**
-   * @description Text to tell the user that a fetchpriority property value of "high" is applied to the LCP request.
-   */
-  fetchPriorityApplied: 'fetchpriority=high applied',
-  /**
-   * @description Text to tell the user that the LCP request is discoverable in the initial document.
-   */
-  requestDiscoverable: 'Request is discoverable in initial document',
-  /**
-   * @description Text to tell the user that the LCP request does not have the lazy load property applied.
-   */
-  lazyLoadNotApplied: 'lazy load not applied',
-  /**
-   *@description Text for a screen-reader label to tell the user that the icon represents a successful insight check
-   *@example {Server response time} PH1
-   */
-  successAriaLabel: 'Insight check passed: {PH1}',
-  /**
-   *@description Text for a screen-reader label to tell the user that the icon represents an unsuccessful insight check
-   *@example {Server response time} PH1
-   */
-  failedAriaLabel: 'Insight check failed: {PH1}',
-  /**
-   * @description Text status indicating that the the Largest Contentful Paint (LCP) metric timing was not found. "LCP" is an acronym and should not be translated.
-   */
-  noLcp: 'No LCP detected',
-  /**
-   * @description Text status indicating that the Largest Contentful Paint (LCP) metric was text rather than an image. "LCP" is an acronym and should not be translated.
-   */
-  noLcpResource: 'No LCP resource detected because the LCP is not an image',
-};
-
-const str_ = i18n.i18n.registerUIStrings('panels/timeline/components/insights/LCPDiscovery.ts', UIStrings);
-const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-
-interface LCPImageDiscoveryData {
-  shouldIncreasePriorityHint: boolean;
-  shouldPreloadImage: boolean;
-  shouldRemoveLazyLoading: boolean;
-  request: Trace.Types.Events.SyntheticNetworkRequest;
-  discoveryDelay: Trace.Types.Timing.Micro|null;
-  estimatedSavings: Trace.Types.Timing.Milli|null;
-}
-
-function getImageData(model: LCPDiscoveryInsightModel): LCPImageDiscoveryData|null {
-  if (model.lcpRequest === undefined) {
-    return null;
-  }
-
-  const shouldIncreasePriorityHint = model.shouldIncreasePriorityHint;
-  const shouldPreloadImage = model.shouldPreloadImage;
-  const shouldRemoveLazyLoading = model.shouldRemoveLazyLoading;
-
-  const imageLCP = shouldIncreasePriorityHint !== undefined && shouldPreloadImage !== undefined &&
-      shouldRemoveLazyLoading !== undefined;
-
-  // Shouldn't render anything if lcp insight is null or lcp is text.
-  if (!imageLCP) {
-    return null;
-  }
-
-  const data: LCPImageDiscoveryData = {
-    shouldIncreasePriorityHint,
-    shouldPreloadImage,
-    shouldRemoveLazyLoading,
-    request: model.lcpRequest,
-    discoveryDelay: null,
-    estimatedSavings: model.metricSavings?.LCP ?? null,
-  };
-
-  if (model.earliestDiscoveryTimeTs && model.lcpRequest) {
-    const discoveryDelay = model.lcpRequest.ts - model.earliestDiscoveryTimeTs;
-    data.discoveryDelay = Trace.Types.Timing.Micro(discoveryDelay);
-  }
-
-  return data;
-}
+// eslint-disable-next-line rulesdir/l10n-filename-matches
+const str_ = i18n.i18n.registerUIStrings('models/trace/insights/LCPDiscovery.ts', UIStrings);
 
 export class LCPDiscovery extends BaseInsightComponent<LCPDiscoveryInsightModel> {
   static override readonly litTagName = Lit.StaticHtml.literal`devtools-performance-lcp-discovery`;
-  override internalName: string = 'lcp-discovery';
+  override internalName = 'lcp-discovery';
 
-  #adviceIcon(didFail: boolean, label: string): Lit.TemplateResult {
-    const icon = didFail ? 'clear' : 'check-circle';
-
-    const ariaLabel = didFail ? i18nString(UIStrings.failedAriaLabel, {PH1: label}) :
-                                i18nString(UIStrings.successAriaLabel, {PH1: label});
-    return html`
-      <devtools-icon
-        aria-label=${ariaLabel}
-        name=${icon}
-        class=${didFail ? 'metric-value-bad' : 'metric-value-good'}
-      ></devtools-icon>
-    `;
+  protected override hasAskAiSupport(): boolean {
+    return true;
   }
 
-  #renderDiscoveryDelay(delay: Trace.Types.Timing.Micro): Element {
-    const timeWrapper = document.createElement('span');
-    timeWrapper.classList.add('discovery-time-ms');
-    timeWrapper.innerText = i18n.TimeUtilities.formatMicroSecondsTime(delay);
-    return i18n.i18n.getFormatLocalizedString(str_, UIStrings.lcpLoadDelay, {PH1: timeWrapper});
-  }
-
-  override createOverlays(): Overlays.Overlays.TimelineOverlay[] {
+  protected override createOverlays(): Trace.Types.Overlays.Overlay[] {
     if (!this.model) {
+      return [];
+    }
+
+    const overlays = this.model.createOverlays?.();
+    if (!overlays) {
       return [];
     }
 
@@ -134,35 +43,13 @@ export class LCPDiscovery extends BaseInsightComponent<LCPDiscoveryInsightModel>
       return [];
     }
 
-    const delay = Trace.Helpers.Timing.traceWindowFromMicroSeconds(
-        Trace.Types.Timing.Micro(imageResults.request.ts - imageResults.discoveryDelay),
-        imageResults.request.ts,
-    );
+    const timespanOverlaySection = overlays.find(overlay => overlay.type === 'TIMESPAN_BREAKDOWN')?.sections[0];
+    if (timespanOverlaySection) {
+      timespanOverlaySection.label =
+          html`<div class="discovery-delay"> ${this.#renderDiscoveryDelay(imageResults.discoveryDelay)}</div>`;
+    }
 
-    const label = html`<div class="discovery-delay"> ${this.#renderDiscoveryDelay(delay.range)}</div>`;
-
-    return [
-      {
-        type: 'ENTRY_OUTLINE',
-        entry: imageResults.request,
-        outlineReason: 'ERROR',
-      },
-      {
-        type: 'CANDY_STRIPED_TIME_RANGE',
-        bounds: delay,
-        entry: imageResults.request,
-      },
-      {
-        type: 'TIMESPAN_BREAKDOWN',
-        sections: [{
-          bounds: delay,
-          label,
-          showDuration: false,
-        }],
-        entry: imageResults.request,
-        renderLocation: 'ABOVE_EVENT',
-      },
-    ];
+    return overlays;
   }
 
   override getEstimatedSavingsTime(): Trace.Types.Timing.Milli|null {
@@ -171,6 +58,13 @@ export class LCPDiscovery extends BaseInsightComponent<LCPDiscoveryInsightModel>
     }
 
     return getImageData(this.model)?.estimatedSavings ?? null;
+  }
+
+  #renderDiscoveryDelay(delay: Trace.Types.Timing.Micro): Element {
+    const timeWrapper = document.createElement('span');
+    timeWrapper.classList.add('discovery-time-ms');
+    timeWrapper.innerText = i18n.TimeUtilities.formatMicroSecondsAsMillisFixed(delay);
+    return i18n.i18n.getFormatLocalizedString(str_, UIStrings.lcpLoadDelay, {PH1: timeWrapper});
   }
 
   override renderContent(): Lit.LitTemplate {
@@ -186,26 +80,16 @@ export class LCPDiscovery extends BaseInsightComponent<LCPDiscoveryInsightModel>
       return html`<div class="insight-section">${i18nString(UIStrings.noLcpResource)}</div>`;
     }
 
+    let delayEl;
+    if (imageData.discoveryDelay) {
+      delayEl = html`<div>${this.#renderDiscoveryDelay(imageData.discoveryDelay)}</div>`;
+    }
+
     // clang-format off
     return html`
       <div class="insight-section">
-        <div class="insight-results">
-          <ul class="insight-icon-results">
-            <li class="insight-entry">
-              ${this.#adviceIcon(imageData.shouldIncreasePriorityHint, i18nString(UIStrings.fetchPriorityApplied))}
-              <span>${i18nString(UIStrings.fetchPriorityApplied)}</span>
-            </li>
-            <li class="insight-entry">
-              ${this.#adviceIcon(imageData.shouldPreloadImage, i18nString(UIStrings.requestDiscoverable))}
-              <span>${i18nString(UIStrings.requestDiscoverable)}</span>
-            </li>
-            <li class="insight-entry">
-              ${this.#adviceIcon(imageData.shouldRemoveLazyLoading, i18nString(UIStrings.lazyLoadNotApplied))}
-              <span>${i18nString(UIStrings.lazyLoadNotApplied)}</span>
-            </li>
-          </ul>
-        </div>
-        ${imageRef(imageData.request)}
+        <devtools-performance-checklist class="insight-section" .checklist=${imageData.checklist}></devtools-performance-checklist>
+        <div class="insight-section">${imageRef(imageData.request)}${delayEl}</div>
       </div>`;
     // clang-format on
   }

@@ -433,6 +433,106 @@ class BytecodeGenerator::ControlScopeForTopLevel final
   }
 };
 
+// Scoped class to help elide hole checks within a conditionally executed basic
+// block. Each conditionally executed basic block must have a scope to emit
+// hole checks correctly.
+//
+// The duration of the scope must correspond to a basic block. Numbered
+// Variables (see Variable::HoleCheckBitmap) are remembered in the bitmap when
+// the first hole check is emitted. Subsequent hole checks are elided.
+//
+// On scope exit, the hole check state at construction time is restored.
+class V8_NODISCARD BytecodeGenerator::HoleCheckElisionScope {
+ public:
+  explicit HoleCheckElisionScope(BytecodeGenerator* bytecode_generator)
+      : HoleCheckElisionScope(&bytecode_generator->hole_check_bitmap_) {}
+
+  ~HoleCheckElisionScope() { *bitmap_ = prev_bitmap_value_; }
+
+ protected:
+  explicit HoleCheckElisionScope(Variable::HoleCheckBitmap* bitmap)
+      : bitmap_(bitmap), prev_bitmap_value_(*bitmap) {}
+
+  Variable::HoleCheckBitmap* bitmap_;
+  Variable::HoleCheckBitmap prev_bitmap_value_;
+};
+
+// Scoped class to help elide hole checks within control flow that branch and
+// merge.
+//
+// Each such control flow construct (e.g., if-else, ternary expressions) must
+// have a scope to emit hole checks correctly. Additionally, each branch must
+// have a Branch.
+//
+// The Merge or MergeIf method must be called to merge variables that have been
+// hole-checked along every branch are marked as no longer needing a hole check.
+//
+// Example:
+//
+//   HoleCheckElisionMergeScope merge_elider(this);
+//   {
+//      HoleCheckElisionMergeScope::Branch branch_elider(merge_elider);
+//      Visit(then_branch);
+//   }
+//   {
+//      HoleCheckElisionMergeScope::Branch branch_elider(merge_elider);
+//      Visit(else_branch);
+//   }
+//   merge_elider.Merge();
+//
+// Conversely, it is incorrect to use this class for control flow constructs
+// that do not merge (e.g., if without else). HoleCheckElisionScope should be
+// used for those cases.
+class V8_NODISCARD BytecodeGenerator::HoleCheckElisionMergeScope final {
+ public:
+  explicit HoleCheckElisionMergeScope(BytecodeGenerator* bytecode_generator)
+      : bitmap_(&bytecode_generator->hole_check_bitmap_) {}
+
+  ~HoleCheckElisionMergeScope() {
+    // Did you forget to call Merge or MergeIf?
+    DCHECK(merge_called_);
+  }
+
+  void MergeBranch(BytecodeGenerator* generator) {
+    merge_value_ &= generator->hole_check_bitmap_;
+  }
+
+  void Merge() {
+    DCHECK_NE(UINT64_MAX, merge_value_);
+    *bitmap_ = merge_value_;
+#ifdef DEBUG
+    merge_called_ = true;
+#endif
+  }
+
+  void MergeIf(bool cond) {
+    if (cond) Merge();
+#ifdef DEBUG
+    merge_called_ = true;
+#endif
+  }
+
+  class V8_NODISCARD Branch final : public HoleCheckElisionScope {
+   public:
+    explicit Branch(HoleCheckElisionMergeScope& merge_into)
+        : HoleCheckElisionScope(merge_into.bitmap_),
+          merge_into_bitmap_(&merge_into.merge_value_) {}
+
+    ~Branch() { *merge_into_bitmap_ &= *bitmap_; }
+
+   private:
+    Variable::HoleCheckBitmap* merge_into_bitmap_;
+  };
+
+ private:
+  Variable::HoleCheckBitmap* bitmap_;
+  Variable::HoleCheckBitmap merge_value_ = UINT64_MAX;
+
+#ifdef DEBUG
+  bool merge_called_ = false;
+#endif
+};
+
 // Scoped class for enabling break inside blocks and switch blocks.
 class BytecodeGenerator::ControlScopeForBreakable final
     : public BytecodeGenerator::ControlScope {
@@ -442,7 +542,10 @@ class BytecodeGenerator::ControlScopeForBreakable final
                            BreakableControlFlowBuilder* control_builder)
       : ControlScope(generator),
         statement_(statement),
-        control_builder_(control_builder) {}
+        control_builder_(control_builder),
+        merge_elider_(generator) {}
+
+  HoleCheckElisionMergeScope& merge_elider() { return merge_elider_; }
 
  protected:
   bool Execute(Command command, Statement* statement,
@@ -450,6 +553,7 @@ class BytecodeGenerator::ControlScopeForBreakable final
     if (statement != statement_) return false;
     switch (command) {
       case CMD_BREAK:
+        merge_elider_.MergeBranch(generator());
         PopContextToExpectedDepth();
         control_builder_->Break();
         return true;
@@ -465,6 +569,7 @@ class BytecodeGenerator::ControlScopeForBreakable final
  private:
   Statement* statement_;
   BreakableControlFlowBuilder* control_builder_;
+  HoleCheckElisionMergeScope merge_elider_;
 };
 
 // Scoped class for enabling 'break' and 'continue' in iteration
@@ -477,7 +582,10 @@ class BytecodeGenerator::ControlScopeForIteration final
                            LoopBuilder* loop_builder)
       : ControlScope(generator),
         statement_(statement),
-        loop_builder_(loop_builder) {}
+        loop_builder_(loop_builder),
+        merge_elider_(generator) {}
+
+  HoleCheckElisionMergeScope& merge_elider() { return merge_elider_; }
 
  protected:
   bool Execute(Command command, Statement* statement,
@@ -489,6 +597,7 @@ class BytecodeGenerator::ControlScopeForIteration final
         loop_builder_->Break();
         return true;
       case CMD_CONTINUE:
+        merge_elider_.MergeBranch(generator());
         PopContextToExpectedDepth();
         loop_builder_->Continue();
         return true;
@@ -503,6 +612,7 @@ class BytecodeGenerator::ControlScopeForIteration final
  private:
   Statement* statement_;
   LoopBuilder* loop_builder_;
+  HoleCheckElisionMergeScope merge_elider_;
 };
 
 // Scoped class for enabling 'throw' in try-catch constructs.
@@ -704,7 +814,17 @@ class V8_NODISCARD BytecodeGenerator::AccumulatorPreservingScope final {
 // used.
 class V8_NODISCARD BytecodeGenerator::ExpressionResultScope {
  public:
-  ExpressionResultScope(BytecodeGenerator* generator, Expression::Context kind)
+  enum Kind : uint8_t {
+    // Evaluated for its side effects.
+    kEffect,
+    // Evaluated for its value (and side effects).
+    kValue,
+    kValueAsPropertyKey,
+    // Evaluated for control flow (and side effects).
+    kTest,
+  };
+
+  ExpressionResultScope(BytecodeGenerator* generator, Kind kind)
       : outer_(generator->execution_result()),
         allocator_(generator),
         kind_(kind),
@@ -719,9 +839,10 @@ class V8_NODISCARD BytecodeGenerator::ExpressionResultScope {
   ExpressionResultScope(const ExpressionResultScope&) = delete;
   ExpressionResultScope& operator=(const ExpressionResultScope&) = delete;
 
-  bool IsEffect() const { return kind_ == Expression::kEffect; }
-  bool IsValue() const { return kind_ == Expression::kValue; }
-  bool IsTest() const { return kind_ == Expression::kTest; }
+  bool IsEffect() const { return kind_ == kEffect; }
+  bool IsValue() const { return kind_ == kValue; }
+  bool IsValueAsPropertyKey() const { return kind_ == kValueAsPropertyKey; }
+  bool IsTest() const { return kind_ == kTest; }
 
   TestResultScope* AsTest() {
     DCHECK(IsTest());
@@ -749,7 +870,7 @@ class V8_NODISCARD BytecodeGenerator::ExpressionResultScope {
  private:
   ExpressionResultScope* outer_;
   RegisterAllocationScope allocator_;
-  Expression::Context kind_;
+  Kind kind_;
   TypeHint type_hint_;
 };
 
@@ -759,7 +880,7 @@ class BytecodeGenerator::EffectResultScope final
     : public ExpressionResultScope {
  public:
   explicit EffectResultScope(BytecodeGenerator* generator)
-      : ExpressionResultScope(generator, Expression::kEffect) {}
+      : ExpressionResultScope(generator, kEffect) {}
 };
 
 // Scoped class used when the result of the current expression to be
@@ -768,7 +889,11 @@ class V8_NODISCARD BytecodeGenerator::ValueResultScope final
     : public ExpressionResultScope {
  public:
   explicit ValueResultScope(BytecodeGenerator* generator)
-      : ExpressionResultScope(generator, Expression::kValue) {}
+      : ValueResultScope(generator, kValue) {}
+  ValueResultScope(BytecodeGenerator* generator, Kind kind)
+      : ExpressionResultScope(generator, kind) {
+    DCHECK(kind == kValue || kind == kValueAsPropertyKey);
+  }
 };
 
 // Scoped class used when the result of the current expression to be
@@ -778,7 +903,7 @@ class V8_NODISCARD BytecodeGenerator::TestResultScope final
  public:
   TestResultScope(BytecodeGenerator* generator, BytecodeLabels* then_labels,
                   BytecodeLabels* else_labels, TestFallthrough fallthrough)
-      : ExpressionResultScope(generator, Expression::kTest),
+      : ExpressionResultScope(generator, kTest),
         result_consumed_by_test_(false),
         fallthrough_(fallthrough),
         then_labels_(then_labels),
@@ -1086,102 +1211,6 @@ class BytecodeGenerator::FeedbackSlotCache : public ZoneObject {
   }
 
   ZoneMap<Key, int> map_;
-};
-
-// Scoped class to help elide hole checks within a conditionally executed basic
-// block. Each conditionally executed basic block must have a scope to emit
-// hole checks correctly.
-//
-// The duration of the scope must correspond to a basic block. Numbered
-// Variables (see Variable::HoleCheckBitmap) are remembered in the bitmap when
-// the first hole check is emitted. Subsequent hole checks are elided.
-//
-// On scope exit, the hole check state at construction time is restored.
-class V8_NODISCARD BytecodeGenerator::HoleCheckElisionScope {
- public:
-  explicit HoleCheckElisionScope(BytecodeGenerator* bytecode_generator)
-      : HoleCheckElisionScope(&bytecode_generator->hole_check_bitmap_) {}
-
-  ~HoleCheckElisionScope() { *bitmap_ = prev_bitmap_value_; }
-
- protected:
-  explicit HoleCheckElisionScope(Variable::HoleCheckBitmap* bitmap)
-      : bitmap_(bitmap), prev_bitmap_value_(*bitmap) {}
-
-  Variable::HoleCheckBitmap* bitmap_;
-  Variable::HoleCheckBitmap prev_bitmap_value_;
-};
-
-// Scoped class to help elide hole checks within control flow that branch and
-// merge.
-//
-// Each such control flow construct (e.g., if-else, ternary expressions) must
-// have a scope to emit hole checks correctly. Additionally, each branch must
-// have a Branch.
-//
-// The Merge or MergeIf method must be called to merge variables that have been
-// hole-checked along every branch are marked as no longer needing a hole check.
-//
-// Example:
-//
-//   HoleCheckElisionMergeScope merge_elider(this);
-//   {
-//      HoleCheckElisionMergeScope::Branch branch_elider(merge_elider);
-//      Visit(then_branch);
-//   }
-//   {
-//      HoleCheckElisionMergeScope::Branch branch_elider(merge_elider);
-//      Visit(else_branch);
-//   }
-//   merge_elider.Merge();
-//
-// Conversely, it is incorrect to use this class for control flow constructs
-// that do not merge (e.g., if without else). HoleCheckElisionScope should be
-// used for those cases.
-class V8_NODISCARD BytecodeGenerator::HoleCheckElisionMergeScope final {
- public:
-  explicit HoleCheckElisionMergeScope(BytecodeGenerator* bytecode_generator)
-      : bitmap_(&bytecode_generator->hole_check_bitmap_) {}
-
-  ~HoleCheckElisionMergeScope() {
-    // Did you forget to call Merge or MergeIf?
-    DCHECK(merge_called_);
-  }
-
-  void Merge() {
-    DCHECK_NE(UINT64_MAX, merge_value_);
-    *bitmap_ = merge_value_;
-#ifdef DEBUG
-    merge_called_ = true;
-#endif
-  }
-
-  void MergeIf(bool cond) {
-    if (cond) Merge();
-#ifdef DEBUG
-    merge_called_ = true;
-#endif
-  }
-
-  class V8_NODISCARD Branch final : public HoleCheckElisionScope {
-   public:
-    explicit Branch(HoleCheckElisionMergeScope& merge_into)
-        : HoleCheckElisionScope(merge_into.bitmap_),
-          merge_into_bitmap_(&merge_into.merge_value_) {}
-
-    ~Branch() { *merge_into_bitmap_ &= *bitmap_; }
-
-   private:
-    Variable::HoleCheckBitmap* merge_into_bitmap_;
-  };
-
- private:
-  Variable::HoleCheckBitmap* bitmap_;
-  Variable::HoleCheckBitmap merge_value_ = UINT64_MAX;
-
-#ifdef DEBUG
-  bool merge_called_ = false;
-#endif
 };
 
 class BytecodeGenerator::IteratorRecord final {
@@ -1560,7 +1589,7 @@ void BytecodeGenerator::AllocateDeferredConstants(IsolateT* isolate,
   for (std::pair<NativeFunctionLiteral*, size_t> literal :
        native_function_literals_) {
     // This should only happen for main-thread compilations.
-    DCHECK((std::is_same<Isolate, v8::internal::Isolate>::value));
+    DCHECK((std::is_same_v<Isolate, v8::internal::Isolate>));
 
     NativeFunctionLiteral* expr = literal.first;
     v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
@@ -1579,8 +1608,15 @@ void BytecodeGenerator::AllocateDeferredConstants(IsolateT* isolate,
   }
 
   for (std::pair<Call*, Scope*> call : eval_calls_) {
-    script->infos()->set(call.first->eval_scope_info_index(),
-                         MakeWeak(*call.second->scope_info()));
+    Tagged<ScopeInfo> current;
+    int index = call.first->eval_scope_info_index();
+    if (script->infos()->get(index).GetHeapObjectIfWeak(&current) &&
+        v8_flags.reuse_scope_infos) {
+      CHECK_EQ(current, *call.second->scope_info());
+    } else {
+      script->infos()->set(call.first->eval_scope_info_index(),
+                           MakeWeak(*call.second->scope_info()));
+    }
   }
 
   // Build object literal constant properties
@@ -1700,7 +1736,15 @@ void BytecodeGenerator::GenerateBytecodeBody() {
       GenerateAsyncFunctionBody();
     }
   } else {
-    GenerateBodyStatements();
+    int start = 0;
+    if (BuildInitializationBlockForParametersIfExist()) {
+      start = 1;
+    }
+    if (IsResumableFunction(info()->literal()->kind())) {
+      BuildGeneratorObjectVariableInitialization();
+    }
+
+    GenerateBodyStatements(start);
   }
 }
 
@@ -1720,13 +1764,7 @@ void BytecodeGenerator::GenerateBodyPrologue() {
   // Build assignment to {new.target} variable if it is used.
   VisitNewTargetVariable(closure_scope()->new_target_var());
 
-  // Create a generator object if necessary and initialize the
-  // {.generator_object} variable.
   FunctionLiteral* literal = info()->literal();
-  if (IsResumableFunction(literal->kind())) {
-    BuildGeneratorObjectVariableInitialization();
-  }
-
   // Emit tracing call if requested to do so.
   if (v8_flags.trace) builder()->CallRuntime(Runtime::kTraceEnter);
 
@@ -1846,6 +1884,7 @@ void BytecodeGenerator::GenerateAsyncFunctionBody() {
   // }
 
   FunctionLiteral* literal = info()->literal();
+  BuildGeneratorObjectVariableInitialization();
 
   HandlerTable::CatchPrediction outer_catch_prediction = catch_prediction();
   // When compiling a REPL script, use UNCAUGHT_ASYNC_AWAIT to preserve the
@@ -1873,6 +1912,19 @@ void BytecodeGenerator::GenerateAsyncFunctionBody() {
         BuildReturn(kNoSourcePosition);
       },
       catch_prediction());
+}
+
+bool BytecodeGenerator::BuildInitializationBlockForParametersIfExist() {
+  ZonePtrList<Statement>* body = info()->literal()->body();
+  if (body->length() > 0 && body->at(0)->IsBlock()) {
+    Block* block = body->at(0)->AsBlock();
+    if (block->is_initialization_block_for_parameters()) {
+      RegisterAllocationScope allocation_scope(this);
+      VisitBlockDeclarationsAndStatements(block);
+      return true;
+    }
+  }
+  return false;
 }
 
 void BytecodeGenerator::GenerateAsyncGeneratorFunctionBody() {
@@ -1905,15 +1957,10 @@ void BytecodeGenerator::GenerateAsyncGeneratorFunctionBody() {
   // in the following try-finally. We visit this block outside the try-finally
   // and remove it from the AST.
   int start = 0;
-  ZonePtrList<Statement>* statements = info()->literal()->body();
-  Statement* stmt = statements->at(0);
-  if (stmt->IsBlock()) {
-    Block* block = static_cast<Block*>(statements->at(0));
-    if (block->is_initialization_block_for_parameters()) {
-      VisitBlockDeclarationsAndStatements(block);
-      start = 1;
-    }
+  if (BuildInitializationBlockForParametersIfExist()) {
+    start = 1;
   }
+  BuildGeneratorObjectVariableInitialization();
 
   BuildTryFinally(
       [&]() {
@@ -1932,7 +1979,8 @@ void BytecodeGenerator::GenerateAsyncGeneratorFunctionBody() {
             },
             catch_prediction());
       },
-      [&](Register body_continuation_token, Register body_continuation_result) {
+      [&](Register body_continuation_token, Register body_continuation_result,
+          Register message) {
         RegisterAllocationScope register_scope(this);
         Register arg = register_allocator()->NewRegister();
         builder()
@@ -2038,22 +2086,18 @@ void BytecodeGenerator::VisitBlockMaybeDispose(Block* stmt) {
 
 void BytecodeGenerator::VisitBlockDeclarationsAndStatements(Block* stmt) {
   BlockBuilder block_builder(builder(), block_coverage_builder_, stmt);
-  ControlScopeForBreakable execution_control(this, stmt, &block_builder);
+
   if (stmt->scope() != nullptr) {
     VisitDeclarations(stmt->scope()->declarations());
   }
-  if (V8_UNLIKELY(stmt->is_breakable())) {
-    // Loathsome labeled blocks can be the target of break statements, which
-    // causes unconditional blocks to act conditionally, and therefore to
-    // require their own elision scope.
-    //
-    // lbl: {
-    //   if (cond) break lbl;
-    //   x;
-    // }
-    // x;  <-- Cannot elide TDZ check
-    HoleCheckElisionScope elider(this);
-    VisitStatements(stmt->statements());
+  if (stmt->is_breakable()) {
+    ControlScopeForBreakable execution_control(this, stmt, &block_builder);
+    {
+      HoleCheckElisionMergeScope::Branch branch_elider(
+          execution_control.merge_elider());
+      VisitStatements(stmt->statements());
+    }
+    execution_control.merge_elider().Merge();
   } else {
     VisitStatements(stmt->statements());
   }
@@ -2659,10 +2703,6 @@ void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
     switch_builder.Break();
   }
 
-  // It is only correct to merge hole check states if there is a default clause,
-  // as otherwise it's unknown if the switch is exhaustive.
-  HoleCheckElisionMergeScope merge_elider(this);
-
   case_compare_ctr = 0;
   for (int i = 0; i < clauses->length(); ++i) {
     CaseClause* clause = clauses->at(i);
@@ -2686,11 +2726,11 @@ void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
       switch_builder.BindDefault(clause);
     }
     // Regardless, generate code (in case of fall throughs).
-    HoleCheckElisionMergeScope::Branch branch_elider(merge_elider);
+    HoleCheckElisionMergeScope::Branch branch_elider(scope.merge_elider());
     VisitStatements(clause->statements());
   }
 
-  merge_elider.MergeIf(info.DefaultExists());
+  scope.merge_elider().MergeIf(info.DefaultExists());
 }
 
 template <typename TryBodyFunc, typename CatchBodyFunc>
@@ -2811,7 +2851,7 @@ void BytecodeGenerator::BuildTryFinally(
   try_control_builder.BeginFinally();
 
   // Evaluate the finally-block.
-  finally_body_func(token, result);
+  finally_body_func(token, result, message);
   try_control_builder.EndFinally();
 
   // Dynamic dispatch after the finally-block.
@@ -2833,7 +2873,8 @@ void BytecodeGenerator::BuildDisposeScope(WrappedFunc wrapped_func,
       // Try block
       [&]() { wrapped_func(); },
       // Finally block
-      [&](Register body_continuation_token, Register body_continuation_result) {
+      [&](Register body_continuation_token, Register body_continuation_result,
+          Register message) {
         if (has_await_using) {
           Register result_register = register_allocator()->NewRegister();
           Register disposable_stack_register =
@@ -2846,14 +2887,15 @@ void BytecodeGenerator::BuildDisposeScope(WrappedFunc wrapped_func,
 
           {
             RegisterAllocationScope allocation_scope(this);
-            RegisterList args = register_allocator()->NewRegisterList(4);
+            RegisterList args = register_allocator()->NewRegisterList(5);
             builder()
                 ->MoveRegister(disposable_stack_register, args[0])
                 .MoveRegister(body_continuation_token, args[1])
                 .MoveRegister(body_continuation_result, args[2])
+                .MoveRegister(message, args[3])
                 .LoadLiteral(Smi::FromEnum(
                     DisposableStackResourcesType::kAtLeastOneAsync))
-                .StoreAccumulatorInRegister(args[3]);
+                .StoreAccumulatorInRegister(args[4]);
             builder()->CallRuntime(Runtime::kDisposeDisposableStack, args);
           }
 
@@ -2886,14 +2928,15 @@ void BytecodeGenerator::BuildDisposeScope(WrappedFunc wrapped_func,
 
           loop_builder.BindContinueTarget();
         } else {
-          RegisterList args = register_allocator()->NewRegisterList(4);
+          RegisterList args = register_allocator()->NewRegisterList(5);
           builder()
               ->MoveRegister(current_disposables_stack(), args[0])
               .MoveRegister(body_continuation_token, args[1])
               .MoveRegister(body_continuation_result, args[2])
+              .MoveRegister(message, args[3])
               .LoadLiteral(
                   Smi::FromEnum(DisposableStackResourcesType::kAllSync))
-              .StoreAccumulatorInRegister(args[3]);
+              .StoreAccumulatorInRegister(args[4]);
           builder()->CallRuntime(Runtime::kDisposeDisposableStack, args);
         }
       },
@@ -2904,7 +2947,12 @@ void BytecodeGenerator::VisitIterationBody(IterationStatement* stmt,
                                            LoopBuilder* loop_builder) {
   loop_builder->LoopBody();
   ControlScopeForIteration execution_control(this, stmt, loop_builder);
-  Visit(stmt->body());
+  {
+    HoleCheckElisionMergeScope::Branch branch_elider(
+        execution_control.merge_elider());
+    Visit(stmt->body());
+  }
+  execution_control.merge_elider().Merge();
   loop_builder->BindContinueTarget();
 }
 
@@ -3023,7 +3071,10 @@ void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   // Prepare the state for executing ForIn.
   builder()->SetExpressionAsStatementPosition(stmt->subject());
-  VisitForAccumulatorValue(stmt->subject());
+  {
+    CurrentScope current_scope(this, stmt->subject_scope());
+    VisitForAccumulatorValue(stmt->subject());
+  }
   builder()->JumpIfUndefinedOrNull(&subject_undefined_label);
   Register receiver = register_allocator()->NewRegister();
   builder()->ToObject(receiver);
@@ -3045,7 +3096,8 @@ void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
                              feedback_spec());
     LoopScope loop_scope(this, &loop_builder);
     HoleCheckElisionScope elider(this);
-    builder()->SetExpressionAsStatementPosition(stmt->each());
+    builder()->SetExpressionAsStatementPosition(stmt->each(),
+                                                /*is_breakable= */ false);
     loop_builder.BreakIfForInDone(index, cache_length);
     builder()->ForInNext(receiver, index, triple.Truncate(2),
                          feedback_index(slot));
@@ -3056,6 +3108,7 @@ void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
       EffectResultScope scope(this);
       // Make sure to preserve the accumulator across the PrepareAssignmentLhs
       // call.
+      builder()->SetExpressionAsStatementPosition(stmt->each());
       AssignmentLhsData lhs_data = PrepareAssignmentLhs(
           stmt->each(), AccumulatorPreservingMode::kPreserve);
       builder()->SetExpressionPosition(stmt->each());
@@ -3103,7 +3156,10 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
   EffectResultScope effect_scope(this);
 
   builder()->SetExpressionAsStatementPosition(stmt->subject());
-  VisitForAccumulatorValue(stmt->subject());
+  {
+    CurrentScope current_scope(this, stmt->subject_scope());
+    VisitForAccumulatorValue(stmt->subject());
+  }
 
   // Store the iterator in a dedicated register so that it can be closed on
   // exit, and the 'done' value in a dedicated register so that it can be
@@ -3132,26 +3188,36 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
           // Call the iterator's .next() method. Break from the loop if the
           // `done` property is truthy, otherwise load the value from the
           // iterator result and append the argument.
-          builder()->SetExpressionAsStatementPosition(stmt->each());
-          BuildIteratorNext(iterator, next_result);
-          builder()->LoadNamedProperty(
-              next_result, ast_string_constants()->done_string(),
-              feedback_index(feedback_spec()->AddLoadICSlot()));
-          loop_builder.BreakIfTrue(ToBooleanMode::kConvertToBoolean);
+          builder()->SetExpressionAsStatementPosition(stmt->each(),
+                                                      /* is_breakable */ false);
+          if (v8_flags.for_of_optimization) {
+            builder()->ForOfNext(iterator.object(), iterator.next(),
+                                 next_result);
+            // TODO(rezvan): Perform ToBoolean conversion inside ForOfNext.
+            loop_builder.BreakIfTrue(ToBooleanMode::kConvertToBoolean);
 
-          builder()
-              // value = value.value
-              ->LoadNamedProperty(
-                  next_result, ast_string_constants()->value_string(),
-                  feedback_index(feedback_spec()->AddLoadICSlot()));
-          // done = false, before the assignment to each happens, so that done
-          // is false if the assignment throws.
-          builder()
-              ->StoreAccumulatorInRegister(next_result)
-              .LoadFalse()
-              .StoreAccumulatorInRegister(done);
+          } else {
+            BuildIteratorNext(iterator, next_result);
+            builder()->LoadNamedProperty(
+                next_result, ast_string_constants()->done_string(),
+                feedback_index(feedback_spec()->AddLoadICSlot()));
+            loop_builder.BreakIfTrue(ToBooleanMode::kConvertToBoolean);
+
+            builder()
+                // value = value.value
+                ->LoadNamedProperty(
+                    next_result, ast_string_constants()->value_string(),
+                    feedback_index(feedback_spec()->AddLoadICSlot()));
+            // done = false, before the assignment to each happens, so that done
+            // is false if the assignment throws.
+            builder()
+                ->StoreAccumulatorInRegister(next_result)
+                .LoadFalse()
+                .StoreAccumulatorInRegister(done);
+          }
 
           // Assign to the 'each' target.
+          builder()->SetExpressionAsStatementPosition(stmt->each());
           AssignmentLhsData lhs_data = PrepareAssignmentLhs(stmt->each());
           builder()->LoadAccumulatorWithRegister(next_result);
           BuildAssignment(lhs_data, Token::kAssign,
@@ -3162,7 +3228,7 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
       },
       // Finally block.
       [&](Register iteration_continuation_token,
-          Register iteration_continuation_result) {
+          Register iteration_continuation_result, Register message) {
         // Finish the iteration in the finally block.
         BuildFinalizeIteration(iterator, done, iteration_continuation_token);
       },
@@ -3213,9 +3279,8 @@ void BytecodeGenerator::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
       // Try block.
       [&]() { Visit(stmt->try_block()); },
       // Finally block.
-      [&](Register body_continuation_token, Register body_continuation_result) {
-        Visit(stmt->finally_block());
-      },
+      [&](Register body_continuation_token, Register body_continuation_result,
+          Register message) { Visit(stmt->finally_block()); },
       catch_prediction(), stmt);
 }
 
@@ -3229,8 +3294,7 @@ void BytecodeGenerator::VisitFunctionLiteral(FunctionLiteral* expr) {
            expr->function_literal_id());
   DCHECK_EQ(expr->scope()->outer_scope(), current_scope());
   uint8_t flags = CreateClosureFlags::Encode(
-      expr->pretenure(), closure_scope()->is_function_scope(),
-      info()->flags().might_always_turbofan());
+      expr->pretenure(), closure_scope()->is_function_scope());
   size_t entry = builder()->AllocateDeferredConstantPoolEntry();
   builder()->CreateClosure(entry, GetCachedCreateClosureSlot(expr), flags);
   function_literals_.push_back(std::make_pair(expr, entry));
@@ -3790,7 +3854,7 @@ void BytecodeGenerator::VisitNativeFunctionLiteral(
   // kDontAdaptArgumentsSentinel as their parameter count.
   int index = feedback_spec()->AddCreateClosureParameterCount(
       kDontAdaptArgumentsSentinel);
-  uint8_t flags = CreateClosureFlags::Encode(false, false, false);
+  uint8_t flags = CreateClosureFlags::Encode(false, false);
   builder()->CreateClosure(entry, index, flags);
   native_function_literals_.push_back(std::make_pair(expr, entry));
 }
@@ -4518,11 +4582,12 @@ void BytecodeGenerator::BuildVariableLoad(Variable* variable,
           Variable* local_variable = variable->local_if_not_shadowed();
           int depth =
               execution_context()->ContextChainDepth(local_variable->scope());
-          ContextKind context_kind = (local_variable->scope()->is_script_scope()
-                                          ? ContextKind::kScriptContext
-                                          : ContextKind::kDefault);
+          ContextMode context_mode =
+              (local_variable->scope()->has_context_cells()
+                   ? ContextMode::kHasContextCells
+                   : ContextMode::kNoContextCells);
           builder()->LoadLookupContextSlot(variable->raw_name(), typeof_mode,
-                                           context_kind,
+                                           context_mode,
                                            local_variable->index(), depth);
           if (VariableNeedsHoleCheckInCurrentBlock(local_variable,
                                                    hole_check_mode)) {
@@ -4683,6 +4748,22 @@ void BytecodeGenerator::BuildHoleCheckForVariableAssignment(Variable* variable,
   }
 }
 
+void BytecodeGenerator::AddDisposableValue(VariableMode mode) {
+  if (mode == VariableMode::kUsing) {
+    RegisterList args = register_allocator()->NewRegisterList(2);
+    builder()
+        ->MoveRegister(current_disposables_stack(), args[0])
+        .StoreAccumulatorInRegister(args[1])
+        .CallRuntime(Runtime::kAddDisposableValue, args);
+  } else if (mode == VariableMode::kAwaitUsing) {
+    RegisterList args = register_allocator()->NewRegisterList(2);
+    builder()
+        ->MoveRegister(current_disposables_stack(), args[0])
+        .StoreAccumulatorInRegister(args[1])
+        .CallRuntime(Runtime::kAddAsyncDisposableValue, args);
+  }
+}
+
 void BytecodeGenerator::BuildVariableAssignment(
     Variable* variable, Token::Value op, HoleCheckMode hole_check_mode,
     LookupHoistingMode lookup_hoisting_mode) {
@@ -4722,19 +4803,7 @@ void BytecodeGenerator::BuildVariableAssignment(
             // elide subsequent checks.
             RememberHoleCheckInCurrentBlock(variable);
           }
-          if (mode == VariableMode::kUsing) {
-            RegisterList args = register_allocator()->NewRegisterList(2);
-            builder()
-                ->MoveRegister(current_disposables_stack(), args[0])
-                .StoreAccumulatorInRegister(args[1])
-                .CallRuntime(Runtime::kAddDisposableValue, args);
-          } else if (mode == VariableMode::kAwaitUsing) {
-            RegisterList args = register_allocator()->NewRegisterList(2);
-            builder()
-                ->MoveRegister(current_disposables_stack(), args[0])
-                .StoreAccumulatorInRegister(args[1])
-                .CallRuntime(Runtime::kAddAsyncDisposableValue, args);
-          }
+          AddDisposableValue(mode);
         }
         builder()->StoreAccumulatorInRegister(destination);
       } else if (variable->throw_on_const_assignment(language_mode()) &&
@@ -4775,12 +4844,16 @@ void BytecodeGenerator::BuildVariableAssignment(
         builder()->LoadAccumulatorWithRegister(value_temp);
       }
 
-      if (mode != VariableMode::kConst || op == Token::kInit) {
-        if (op == Token::kInit &&
-            variable->HasHoleCheckUseInSameClosureScope()) {
-          // After initializing a variable it won't be the hole anymore, so
-          // elide subsequent checks.
-          RememberHoleCheckInCurrentBlock(variable);
+      if ((mode != VariableMode::kConst && mode != VariableMode::kUsing &&
+           mode != VariableMode::kAwaitUsing) ||
+          op == Token::kInit) {
+        if (op == Token::kInit) {
+          if (variable->HasHoleCheckUseInSameClosureScope()) {
+            // After initializing a variable it won't be the hole anymore, so
+            // elide subsequent checks.
+            RememberHoleCheckInCurrentBlock(variable);
+          }
+          AddDisposableValue(mode);
         }
         builder()->StoreContextSlot(context_reg, variable, depth);
       } else if (variable->throw_on_const_assignment(language_mode())) {
@@ -5333,7 +5406,7 @@ void BytecodeGenerator::BuildDestructuringArrayAssignment(
       },
       // Finally block.
       [&](Register iteration_continuation_token,
-          Register iteration_continuation_result) {
+          Register iteration_continuation_result, Register message) {
         // Finish the iteration in the finally block.
         BuildFinalizeIteration(iterator, done, iteration_continuation_token);
       },
@@ -6152,7 +6225,7 @@ void BytecodeGenerator::VisitPropertyLoad(Register obj, Property* property) {
       break;
     }
     case KEYED_PROPERTY: {
-      VisitForAccumulatorValue(property->key());
+      VisitForAccumulatorValueAsPropertyKey(property->key());
       builder()->SetExpressionPosition(property);
       BuildLoadKeyedProperty(obj, feedback_spec()->AddKeyedLoadICSlot());
       break;
@@ -7502,7 +7575,43 @@ void BytecodeGenerator::VisitCompareOperation(CompareOperation* expr) {
 }
 
 void BytecodeGenerator::VisitArithmeticExpression(BinaryOperation* expr) {
-  FeedbackSlot slot = feedback_spec()->AddBinaryOpICSlot();
+  FeedbackSlot slot;
+
+  // We special-case string concatenation when the result is used as a property
+  // key. In this case, we know it will eventually be internalized and it's
+  // better to do so early.
+  //
+  // For now, we handle only the specialized situation in which one side is a
+  // string constant.
+  // TODO(jgruber): Generalize. ConsString literals, property-key but no
+  // string-literal, string-literal but no property-key.
+  const bool maybe_emit_specialized_string_add =
+      expr->op() == Token::kAdd && execution_result()->IsValueAsPropertyKey() &&
+      v8_flags.cache_property_key_string_adds;
+  bool emit_add_string_constant_internalize = false;
+  using ASVariant = AddStringConstantAndInternalizeVariant;
+  auto as_variant = ASVariant::kLhsIsStringConstant;
+  if (maybe_emit_specialized_string_add) {
+    // Is lhs a string constant?
+    emit_add_string_constant_internalize =
+        expr->left()->IsLiteral() && expr->left()->AsLiteral()->IsRawString();
+    if (!emit_add_string_constant_internalize) {
+      // Is rhs a string constant?
+      emit_add_string_constant_internalize =
+          expr->right()->IsLiteral() &&
+          expr->right()->AsLiteral()->IsRawString();
+      if (emit_add_string_constant_internalize) {
+        as_variant = ASVariant::kRhsIsStringConstant;
+      }
+    }
+  }
+
+  if (emit_add_string_constant_internalize) {
+    slot = feedback_spec()->AddStringAddAndInternalizeICSlot();
+  } else {
+    slot = feedback_spec()->AddBinaryOpICSlot();
+  }
+
   Expression* subexpr;
   Tagged<Smi> literal;
   if (expr->IsSmiLiteralOperation(&subexpr, &literal)) {
@@ -7523,8 +7632,22 @@ void BytecodeGenerator::VisitArithmeticExpression(BinaryOperation* expr) {
       execution_result()->SetResultIsString();
     }
 
-    builder()->SetExpressionPosition(expr);
-    builder()->BinaryOperation(expr->op(), lhs, feedback_index(slot));
+    if (emit_add_string_constant_internalize) {
+      // Subtle: Stack overflows can cause the AST to be visited only
+      // partially. Visitation is eventually aborted and the resulting
+      // bytecode discarded.
+      DCHECK_IMPLIES(
+          !HasStackOverflow(),
+          IsStringTypeHint(as_variant == ASVariant::kLhsIsStringConstant
+                               ? lhs_type
+                               : rhs_type));
+      builder()->SetExpressionPosition(expr);
+      builder()->Add_StringConstant_Internalize(
+          expr->op(), lhs, feedback_index(slot), as_variant);
+    } else {
+      builder()->SetExpressionPosition(expr);
+      builder()->BinaryOperation(expr->op(), lhs, feedback_index(slot));
+    }
   }
 }
 
@@ -8279,6 +8402,8 @@ void BytecodeGenerator::VisitNewTargetVariable(Variable* variable) {
   BuildVariableAssignment(variable, Token::kInit, HoleCheckMode::kElided);
 }
 
+// Create a generator object if necessary and initialize the
+// {.generator_object} variable.
 void BytecodeGenerator::BuildGeneratorObjectVariableInitialization() {
   DCHECK(IsResumableFunction(info()->literal()->kind()));
 
@@ -8367,9 +8492,21 @@ void BytecodeGenerator::BuildIncrementBlockCoverageCounterIfEnabled(
 BytecodeGenerator::TypeHint BytecodeGenerator::VisitForAccumulatorValue(
     Expression* expr) {
   ValueResultScope accumulator_scope(this);
+  return VisitForAccumulatorValueImpl(expr, &accumulator_scope);
+}
+
+BytecodeGenerator::TypeHint
+BytecodeGenerator::VisitForAccumulatorValueAsPropertyKey(Expression* expr) {
+  ValueResultScope accumulator_scope(this,
+                                     ValueResultScope::kValueAsPropertyKey);
+  return VisitForAccumulatorValueImpl(expr, &accumulator_scope);
+}
+
+BytecodeGenerator::TypeHint BytecodeGenerator::VisitForAccumulatorValueImpl(
+    Expression* expr, ValueResultScope* accumulator_scope) {
   Visit(expr);
   // Record the type hint for the result of current expression in accumulator.
-  const TypeHint type_hint = accumulator_scope.type_hint();
+  const TypeHint type_hint = accumulator_scope->type_hint();
   BytecodeRegisterOptimizer* optimizer = builder()->GetRegisterOptimizer();
   if (optimizer && type_hint != TypeHint::kUnknown) {
     optimizer->SetTypeHintForAccumulator(type_hint);

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qsqlfield.h"
 #include "qdebug.h"
@@ -79,7 +80,7 @@ QT_DEFINE_QESDP_SPECIALIZATION_DTOR(QSqlFieldPrivate)
     \snippet sqldatabase/sqldatabase.cpp 6
 
     A QSqlField object can provide some meta-data about the field, for
-    example, its name(), variant type(), length(), precision(),
+    example, its name(), variant metaType(), length(), precision(),
     defaultValue(), typeID(), and its requiredStatus(),
     isGenerated() and isReadOnly(). The field's data can be
     checked to see if it isNull(), and its value() retrieved. When

@@ -23,7 +23,7 @@ chromium-metrics-reviews@google.com.
 <histograms>
 
 <histogram name="Variations.AppliedSeed.Size" units="bytes"
-    expires_after="2025-07-13">
+    expires_after="2026-01-18">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -36,7 +36,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.AppliedSeed.Size.V2" units="bytes"
-    expires_after="2025-07-13">
+    expires_after="2026-01-18">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -49,7 +49,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.AppliedSeed.StudyCount" units="studies"
-    expires_after="2025-07-13">
+    expires_after="2026-01-18">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -61,7 +61,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.AppSeedFreshness" units="minutes"
-    expires_after="2025-07-27">
+    expires_after="2025-11-30">
   <owner>ntfschr@chromium.org</owner>
   <owner>src/android_webview/OWNERS</owner>
   <summary>
@@ -76,7 +76,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.ExtendedSafeMode.BeaconFileDeserializationError"
-    enum="JsonDeserializationError" expires_after="2025-06-08">
+    enum="JsonDeserializationError" expires_after="2026-01-18">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <component>1456342</component>
@@ -94,7 +94,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.ExtendedSafeMode.BeaconFileStateAtStartup"
-    enum="BeaconFileState" expires_after="2025-07-13">
+    enum="BeaconFileState" expires_after="2026-01-18">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <component>1456342</component>
@@ -111,7 +111,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.ExtendedSafeMode.BeaconFileWrite"
-    enum="BooleanSuccess" expires_after="2025-02-04">
+    enum="BooleanSuccess" expires_after="2025-11-16">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <component>1456342</component>
@@ -122,6 +122,8 @@ chromium-metrics-reviews@google.com.
     As of M102 for desktop and iOS and M103 for Android Chrome, any client may
     emit this metric. Prior to this, the metric was emitted by only clients in
     an enabled group that used the beacon file.
+
+    Expired 02/2025. Revived M139.
   </summary>
 </histogram>
 
@@ -178,7 +180,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.FirstRun.SeedFetchTime" units="ms"
-    expires_after="2025-06-08">
+    expires_after="2025-12-14">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -189,19 +191,22 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.FirstRunResult" enum="VariationsFirstRunResult"
-    expires_after="2025-07-13">
+    expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
     The result of attempting to import an initial variations seed during Android
-    Chrome first run. Logged from VariationsSeedStore::LoadSeed when seed prefs
-    do not exist.
+    and iOS Chrome first run. Logged from VariationsSeedStore::LoadSeed when
+    seed prefs do not exist. For non-first run launches, this value is expected
+    to be &quot;failed - no first run seed.&quot;
+
+    Supported for iOS Chrome since M135.
   </summary>
 </histogram>
 
 <histogram name="Variations.ForcedFieldTrialsAtStartupForInternalsPage"
-    enum="Boolean" expires_after="2025-06-08">
+    enum="Boolean" expires_after="2025-12-14">
   <owner>harringtond@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -225,23 +230,13 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.Headers.ExperimentCount" units="units"
-    expires_after="2025-07-13">
+    expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
     Records number of experiment ids in the X-Client-Data header at the time the
     header is constructed.
-  </summary>
-</histogram>
-
-<histogram name="Variations.Headers.HasLowEntropySourceValue"
-    enum="BooleanPresent" expires_after="2025-05-04">
-  <owner>mpearson@chromium.org</owner>
-  <owner>src/base/metrics/OWNERS</owner>
-  <summary>
-    Whether the variations headers include the low-entropy source value.
-    Recorded at the time the headers are constructed or are updated.
   </summary>
 </histogram>
 
@@ -288,7 +283,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.InvalidStudyReason"
-    enum="VariationsInvalidStudyReason" expires_after="2025-06-22">
+    enum="VariationsInvalidStudyReason" expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -299,7 +294,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram name="Variations.LimitedEntropy.SeedRejectionReason"
     enum="VariationsLimitedEntropySeedRejectionReason"
-    expires_after="2025-06-22">
+    expires_after="2025-11-16">
   <owner>yulunz@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -310,7 +305,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.Limits.VariationKeySize.{Size}" units="KiB"
-    expires_after="2025-07-06">
+    expires_after="2025-09-07">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -343,7 +338,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.LoadSeedSignature" enum="VariationSeedSignature"
-    expires_after="2025-06-22">
+    expires_after="2025-12-28">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -398,8 +393,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SafeMode.LoadSafeSeed.Result"
-    enum="VariationsSeedLoadResult" expires_after="2025-07-13">
-  <owner>isherman@chromium.org</owner>
+    enum="VariationsSeedLoadResult" expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -412,7 +406,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SafeMode.LoadSafeSeed.SignatureValidity"
-    enum="VariationSeedSignature" expires_after="2025-11-01">
+    enum="VariationSeedSignature" expires_after="2026-01-04">
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -425,8 +419,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SafeMode.StoreSafeSeed.Result"
-    enum="VariationsSeedStoreResult" expires_after="2025-07-15">
-  <owner>isherman@chromium.org</owner>
+    enum="VariationsSeedStoreResult" expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -439,7 +432,6 @@ chromium-metrics-reviews@google.com.
 
 <histogram name="Variations.SafeMode.StoreSafeSeed.SignatureValidity"
     enum="VariationSeedSignature" expires_after="2023-06-04">
-  <owner>isherman@chromium.org</owner>
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -451,8 +443,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SafeMode.Streak.Crashes" units="crashes"
-    expires_after="2025-07-13">
-  <owner>isherman@chromium.org</owner>
+    expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -465,8 +456,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SafeMode.Streak.FetchFailures" units="failures"
-    expires_after="2025-07-13">
-  <owner>isherman@chromium.org</owner>
+    expires_after="2025-09-14">
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -526,7 +516,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedDateChange" enum="VariationsSeedDateChange"
-    expires_after="2025-07-13">
+    expires_after="2026-01-18">
   <owner>jwd@chromium.org</owner>
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -540,7 +530,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedFetchResponseOrErrorCode{ConnectionType}"
-    enum="CombinedHttpResponseAndNetErrorCode" expires_after="2025-07-13">
+    enum="CombinedHttpResponseAndNetErrorCode" expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -569,7 +559,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedFileRead.{SeedFile}" enum="BooleanSuccess"
-    expires_after="2025-07-06">
+    expires_after="2026-01-11">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -586,7 +576,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedFileWriteEmptySeed.{SeedFile}"
-    enum="BooleanEmpty" expires_after="2025-07-13">
+    enum="BooleanEmpty" expires_after="2026-01-18">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -602,7 +592,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedFreshness" units="minutes"
-    expires_after="2025-07-13">
+    expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -631,8 +621,8 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedFreshnessDiff" units="minutes"
-    expires_after="2025-03-03">
-  <owner>dogancanemek@chromium.org</owner>
+    expires_after="2025-09-18">
+  <owner>ntfschr@chromium.org</owner>
   <owner>src/android_webview/OWNERS</owner>
   <summary>
     Logs the difference between the age of the seed (Seed Freshness) and the
@@ -665,7 +655,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedLoadResult" enum="VariationsSeedLoadResult"
-    expires_after="2025-07-13">
+    expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -677,8 +667,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedProcessingTime" units="ms"
-    expires_after="2025-07-13">
-  <owner>isherman@chromium.org</owner>
+    expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -690,7 +679,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedStoreResult" enum="VariationsSeedStoreResult"
-    expires_after="2025-07-15">
+    expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -701,7 +690,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.SeedUsage" enum="VariationsSeedUsage"
-    expires_after="2025-07-15">
+    expires_after="2026-01-18">
   <owner>caitlinfischer@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -712,7 +701,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.StoreSeed.DataSize" units="KiB"
-    expires_after="2025-06-29">
+    expires_after="2026-01-04">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -723,7 +712,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.StoreSeed.Time" units="ms"
-    expires_after="2025-11-01">
+    expires_after="2026-01-04">
   <owner>asvitkine@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -756,7 +745,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.UserChannel" enum="UserChannels"
-    expires_after="2025-07-13">
+    expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -776,7 +765,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.WebViewDownloadJobInterval" units="minutes"
-    expires_after="2025-07-27">
+    expires_after="2025-11-30">
   <owner>ntfschr@chromium.org</owner>
   <owner>src/android_webview/OWNERS</owner>
   <summary>
@@ -787,7 +776,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.WebViewDownloadJobQueueTime" units="minutes"
-    expires_after="2025-07-27">
+    expires_after="2025-11-30">
   <owner>ntfschr@chromium.org</owner>
   <owner>src/android_webview/OWNERS</owner>
   <summary>
@@ -797,7 +786,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Variations.{Mode}CreateTrials.SeedExpiry"
-    enum="VariationsSeedExpiry" expires_after="2025-07-13">
+    enum="VariationsSeedExpiry" expires_after="2026-01-18">
   <owner>asvitkine@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>

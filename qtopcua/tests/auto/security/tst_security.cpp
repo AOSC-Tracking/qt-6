@@ -8,6 +8,7 @@
 #include <QtOpcUa/QOpcUaErrorState>
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QOperatingSystemVersion>
 #include <QtCore/QProcess>
 #include <QtCore/QScopedPointer>
 
@@ -116,7 +117,7 @@ private:
     QProcess m_serverProcess;
     QList<QOpcUaEndpointDescription> m_endpoints;
     QOpcUaEndpointDescription m_noneEndpoint;
-    QString m_discoveryEndpoint;
+    QUrl m_discoveryEndpoint;
     QOpcUaProvider m_opcUa;
     QSharedPointer<QTemporaryDir> m_pkiData;
 };
@@ -128,6 +129,13 @@ Tst_QOpcUaSecurity::Tst_QOpcUaSecurity()
 
 void Tst_QOpcUaSecurity::initTestCase()
 {
+#if defined(Q_OS_MACOS) && defined(Q_PROCESSOR_ARM)
+        const bool runsOnCI = qgetenv("QTEST_ENVIRONMENT").split(' ').contains("ci");
+        const auto osVer = QOperatingSystemVersion::current();
+        if (runsOnCI && osVer >= QOperatingSystemVersion::MacOSTahoe)
+            QSKIP("The tests fails on macOS 26 in CI: QTBUG-139354");
+#endif
+
     const quint16 defaultPort = 43344;
     const QHostAddress defaultHost(QHostAddress::LocalHost);
 
@@ -197,7 +205,7 @@ void Tst_QOpcUaSecurity::initTestCase()
     }
     QString host = envOrDefault("OPCUA_HOST", defaultHost.toString());
     QString port = envOrDefault("OPCUA_PORT", QString::number(defaultPort));
-    m_discoveryEndpoint = u"opc.tcp://%1:%2"_s.arg(host, port);
+    m_discoveryEndpoint.setUrl("opc.tcp://%1:%2"_L1.arg(host, port));
     qDebug() << "Using endpoint:" << m_discoveryEndpoint;
 
     QScopedPointer<QOpcUaClient> client(m_opcUa.createClient(m_backends.first()));

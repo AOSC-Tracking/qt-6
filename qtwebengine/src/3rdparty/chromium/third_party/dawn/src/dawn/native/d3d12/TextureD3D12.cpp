@@ -28,10 +28,10 @@
 #include "dawn/native/d3d12/TextureD3D12.h"
 
 #include <algorithm>
+#include <bit>
 #include <iterator>
 #include <utility>
 
-#include "absl/numeric/bits.h"
 #include "dawn/common/Constants.h"
 #include "dawn/common/Math.h"
 #include "dawn/native/ChainUtils.h"
@@ -85,7 +85,14 @@ D3D12_RESOURCE_STATES D3D12TextureUsage(wgpu::TextureUsage usage, const Format& 
         resourceState |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     }
     if (usage & wgpu::TextureUsage::RenderAttachment) {
-        if (format.HasDepthOrStencil()) {
+        if (usage & kResolveAttachmentLoadingUsage) {
+            // Special case for MSAA resolve operations: the resolve target needs to be accessible
+            // as a shader resource during expanding step. Resolve target is also not a render
+            // target in D3D12 term so we can skip assigning the render target stage. Note: this is
+            // important because if we assigned both shader resource and render target state, D3D12
+            // would complain that it's an invalid combination of states.
+            resourceState |= D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        } else if (format.HasDepthOrStencil()) {
             resourceState |= D3D12_RESOURCE_STATE_DEPTH_WRITE;
         } else {
             resourceState |= D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -147,6 +154,25 @@ ResourceHeapKind GetResourceHeapKind(D3D12_RESOURCE_FLAGS flags, uint32_t resour
     return ResourceHeapKind::Default_OnlyNonRenderableOrDepthTextures;
 }
 
+D3D12_SHADER_COMPONENT_MAPPING D3D12ComponentSwizzle(wgpu::ComponentSwizzle swizzle) {
+    switch (swizzle) {
+        case wgpu::ComponentSwizzle::Zero:
+            return D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_0;
+        case wgpu::ComponentSwizzle::One:
+            return D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_1;
+        case wgpu::ComponentSwizzle::R:
+            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0;
+        case wgpu::ComponentSwizzle::G:
+            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1;
+        case wgpu::ComponentSwizzle::B:
+            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_2;
+        case wgpu::ComponentSwizzle::A:
+            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_3;
+
+        case wgpu::ComponentSwizzle::Undefined:
+            DAWN_UNREACHABLE();
+    }
+}
 }  // namespace
 
 // static
@@ -323,32 +349,6 @@ void Texture::DestroyImpl() {
     mSwapChainTexture = false;
 }
 
-ResultOrError<ExecutionSerial> Texture::EndAccess() {
-    DAWN_ASSERT(mD3D12ResourceFlags & D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
-
-    NotifySwapChainPresentToPIX();
-
-    // Synchronize if texture access wasn't synchronized already due to ExecuteCommandLists. If
-    // there were pending commands that used this texture mLastSharedTextureMemoryUsageSerial will
-    // be set, but if it's still not set, generate a signal fence after waiting on wait fences.
-    Queue* queue = ToBackend(GetDevice()->GetQueue());
-    if (mLastSharedTextureMemoryUsageSerial == kBeginningOfGPUTime) {
-        // Even though we aren't recording any commands here, asking for a command context ensures
-        // that the device fence is signaled eventually even if no commands were recorded before
-        // EndAccess. This is a little sub-optimal, but shouldn't occur often in practice.
-        CommandRecordingContext* context =
-            queue->GetPendingCommandContext(ExecutionQueueBase::SubmitMode::Passive);
-        DAWN_TRY(SynchronizeTextureBeforeUse(context));
-        DAWN_ASSERT(mLastSharedTextureMemoryUsageSerial != kBeginningOfGPUTime);
-    }
-    // Make the queue signal the fence in finite time.
-    DAWN_TRY(queue->EnsureCommandsFlushed(mLastSharedTextureMemoryUsageSerial));
-
-    ExecutionSerial ret = mLastSharedTextureMemoryUsageSerial;
-    mLastSharedTextureMemoryUsageSerial = kBeginningOfGPUTime;
-    return ret;
-}
-
 DXGI_FORMAT Texture::GetD3D12Format() const {
     return d3d::DXGITextureFormat(GetDevice(), GetFormat().format);
 }
@@ -453,7 +453,7 @@ void Texture::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext
 
     std::vector<D3D12_RESOURCE_BARRIER> barriers;
 
-    uint32_t aspectCount = absl::popcount(static_cast<uint8_t>(range.aspects));
+    int32_t aspectCount = std::popcount(static_cast<uint8_t>(range.aspects));
     barriers.reserve(range.levelCount * range.layerCount * aspectCount);
 
     TransitionUsageAndGetResourceBarrier(commandContext, &barriers, newState, range);
@@ -850,42 +850,41 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
             uint32_t bytesPerRow =
                 Align((largestMipSize.width / blockInfo.width) * blockInfo.byteSize,
                       kTextureBytesPerRowAlignment);
-            uint64_t bufferSize = bytesPerRow * (largestMipSize.height / blockInfo.height) *
+            uint64_t uploadSize = bytesPerRow * (largestMipSize.height / blockInfo.height) *
                                   largestMipSize.depthOrArrayLayers;
-            DynamicUploader* uploader = device->GetDynamicUploader();
-            UploadHandle uploadHandle;
-            DAWN_TRY_ASSIGN(
-                uploadHandle,
-                uploader->Allocate(bufferSize, device->GetQueue()->GetPendingCommandSerial(),
-                                   blockInfo.byteSize));
-            memset(uploadHandle.mappedBuffer, clearColor, bufferSize);
 
-            for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
-                 ++level) {
-                // compute d3d12 texture copy locations for texture and buffer
-                Extent3D copySize = GetMipLevelSingleSubresourcePhysicalSize(level, aspect);
+            DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
+                uploadSize, blockInfo.byteSize, [&](UploadReservation reservation) -> MaybeError {
+                    memset(reservation.mappedPointer, clearColor, uploadSize);
 
-                for (uint32_t layer = range.baseArrayLayer;
-                     layer < range.baseArrayLayer + range.layerCount; ++layer) {
-                    if (clearValue == TextureBase::ClearValue::Zero &&
-                        IsSubresourceContentInitialized(
-                            SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
-                        // Skip lazy clears if already initialized.
-                        continue;
+                    for (uint32_t level = range.baseMipLevel;
+                         level < range.baseMipLevel + range.levelCount; ++level) {
+                        // compute d3d12 texture copy locations for texture and buffer
+                        Extent3D copySize = GetMipLevelSingleSubresourcePhysicalSize(level, aspect);
+
+                        for (uint32_t layer = range.baseArrayLayer;
+                             layer < range.baseArrayLayer + range.layerCount; ++layer) {
+                            if (clearValue == TextureBase::ClearValue::Zero &&
+                                IsSubresourceContentInitialized(
+                                    SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
+                                // Skip lazy clears if already initialized.
+                                continue;
+                            }
+
+                            TextureCopy textureCopy;
+                            textureCopy.texture = this;
+                            textureCopy.origin = {0, 0, layer};
+                            textureCopy.mipLevel = level;
+                            textureCopy.aspect = aspect;
+                            RecordBufferTextureCopyWithBufferHandle(
+                                BufferTextureCopyDirection::B2T, commandList,
+                                ToBackend(reservation.buffer)->GetD3D12Resource(),
+                                reservation.offsetInBuffer, bytesPerRow,
+                                largestMipSize.height / blockInfo.height, textureCopy, copySize);
+                        }
                     }
-
-                    TextureCopy textureCopy;
-                    textureCopy.texture = this;
-                    textureCopy.origin = {0, 0, layer};
-                    textureCopy.mipLevel = level;
-                    textureCopy.aspect = aspect;
-                    RecordBufferTextureCopyWithBufferHandle(
-                        BufferTextureCopyDirection::B2T, commandList,
-                        ToBackend(uploadHandle.stagingBuffer)->GetD3D12Resource(),
-                        uploadHandle.startOffset, bytesPerRow, largestMipSize.height, textureCopy,
-                        copySize);
-                }
-            }
+                    return {};
+                }));
         }
     }
     if (clearValue == TextureBase::ClearValue::Zero) {
@@ -917,11 +916,6 @@ MaybeError Texture::EnsureSubresourceContentInitialized(CommandRecordingContext*
     return {};
 }
 
-bool Texture::StateAndDecay::operator==(const Texture::StateAndDecay& other) const {
-    return lastState == other.lastState && lastDecaySerial == other.lastDecaySerial &&
-           isValidToDecay == other.isValidToDecay;
-}
-
 // static
 Ref<TextureView> TextureView::Create(TextureBase* texture,
                                      const UnpackedPtr<TextureViewDescriptor>& descriptor) {
@@ -936,7 +930,9 @@ TextureView::TextureView(TextureBase* texture, const UnpackedPtr<TextureViewDesc
     mSrvDesc.Format =
         d3d::D3DShaderResourceViewFormat(GetDevice(), textureFormat, GetFormat(), aspects);
     if (mSrvDesc.Format != DXGI_FORMAT_UNKNOWN) {
-        mSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        mSrvDesc.Shader4ComponentMapping = D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(
+            D3D12ComponentSwizzle(GetSwizzleRed()), D3D12ComponentSwizzle(GetSwizzleGreen()),
+            D3D12ComponentSwizzle(GetSwizzleBlue()), D3D12ComponentSwizzle(GetSwizzleAlpha()));
 
         // Stencil is accessed using the .g component in the shader. Map it to the zeroth component
         // to match other APIs.

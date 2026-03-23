@@ -6,33 +6,41 @@
 #include <assert.h>
 #include <stddef.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/config.h"
-#include "xnnpack/init-once.h"
-#include "xnnpack/microfnptr.h"
-#include "xnnpack/unpool.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/config-types.h"
+#include "src/xnnpack/config.h"
+#include "src/xnnpack/hardware-config.h"
+#include "src/xnnpack/init-once.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/microfnptr.h"
+#include "src/xnnpack/unpool.h"
 
 static struct xnn_unpool_config x32_unpool_config = {0};
 
 XNN_INIT_ONCE_GUARD(x32_unpool);
 
+// Macros to log the microkernel names if and when they are registered.
+#define XNN_INIT_UNPOOL_UKERNEL(ukernel) \
+  (xnn_unpool_ukernel_fn) ukernel;       \
+  xnn_log_info("Using unpool microkernel '%s'.", #ukernel);
+
 static void init_x32_unpool_config(void) {
   #if XNN_ARCH_ARM
     const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
     assert(hardware_config != NULL);
-    if (hardware_config->use_arm_neon) {
-      x32_unpool_config.unpool = (xnn_unpool_ukernel_fn) xnn_x32_unpool_ukernel__neon;
-    } else if (!XNN_PLATFORM_MOBILE) {
-      x32_unpool_config.unpool = (xnn_unpool_ukernel_fn) xnn_x32_unpool_ukernel__scalar;
+    if ((hardware_config->arch_flags & xnn_arch_arm_neon)) {
+      x32_unpool_config.unpool = XNN_INIT_UNPOOL_UKERNEL(xnn_x32_unpool_ukernel__neon);
+    } else {
+      x32_unpool_config.unpool = XNN_INIT_UNPOOL_UKERNEL(xnn_x32_unpool_ukernel__scalar);
     }
   #elif XNN_ARCH_ARM64
-    x32_unpool_config.unpool = (xnn_unpool_ukernel_fn) xnn_x32_unpool_ukernel__neon;
+    x32_unpool_config.unpool = XNN_INIT_UNPOOL_UKERNEL(xnn_x32_unpool_ukernel__neon);
   #elif XNN_ARCH_X86 || XNN_ARCH_X86_64
-    x32_unpool_config.unpool = (xnn_unpool_ukernel_fn) xnn_x32_unpool_ukernel__sse2;
+    x32_unpool_config.unpool = XNN_INIT_UNPOOL_UKERNEL(xnn_x32_unpool_ukernel__sse2);
   #elif XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
-    x32_unpool_config.unpool = (xnn_unpool_ukernel_fn) xnn_x32_unpool_ukernel__wasmsimd;
+    x32_unpool_config.unpool = XNN_INIT_UNPOOL_UKERNEL(xnn_x32_unpool_ukernel__wasmsimd);
   #else
-    x32_unpool_config.unpool = (xnn_unpool_ukernel_fn) xnn_x32_unpool_ukernel__scalar;
+    x32_unpool_config.unpool = XNN_INIT_UNPOOL_UKERNEL(xnn_x32_unpool_ukernel__scalar);
   #endif
 
 }

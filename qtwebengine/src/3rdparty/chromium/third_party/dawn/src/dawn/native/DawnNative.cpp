@@ -272,24 +272,33 @@ const FeatureInfo* GetFeatureInfo(wgpu::FeatureName feature) {
 }
 
 void DumpMemoryStatistics(WGPUDevice device, MemoryDump* dump) {
-    auto deviceLock(FromAPI(device)->GetScopedLock());
+    auto deviceGuard = FromAPI(device)->GetGuard();
     FromAPI(device)->DumpMemoryStatistics(dump);
 }
 
-uint64_t ComputeEstimatedMemoryUsage(WGPUDevice device) {
-    auto deviceLock(FromAPI(device)->GetScopedLock());
+MemoryUsageInfo ComputeEstimatedMemoryUsageInfo(WGPUDevice device) {
+    auto deviceGuard = FromAPI(device)->GetGuard();
     return FromAPI(device)->ComputeEstimatedMemoryUsage();
 }
 
-void ReduceMemoryUsage(WGPUDevice device) {
-    auto deviceLock(FromAPI(device)->GetScopedLock());
-    FromAPI(device)->ReduceMemoryUsage();
+AllocatorMemoryInfo GetAllocatorMemoryInfo(WGPUDevice device) {
+    auto deviceGuard = FromAPI(device)->GetGuard();
+    return FromAPI(device)->GetAllocatorMemoryInfo();
+}
+
+bool ReduceMemoryUsage(WGPUDevice device) {
+    auto deviceGuard = FromAPI(device)->GetGuard();
+    return FromAPI(device)->ReduceMemoryUsage();
 }
 
 void PerformIdleTasks(const wgpu::Device& device) {
     auto* deviceBase = FromAPI(device.Get());
-    auto deviceLock(deviceBase->GetScopedLock());
+    auto deviceGuard = deviceBase->GetGuard();
     deviceBase->PerformIdleTasks();
+}
+
+bool IsDeviceLost(WGPUDevice device) {
+    return FromAPI(device)->IsLost();
 }
 
 }  // namespace dawn::native

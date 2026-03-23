@@ -16,12 +16,14 @@
 #include "components/page_load_metrics/browser/observers/prerender_page_load_metrics_observer.h"
 #include "components/page_load_metrics/browser/observers/privacy_sandbox_ads_page_load_metrics_observer.h"
 #include "components/page_load_metrics/browser/observers/same_origin_page_load_metrics_observer.h"
+#include "components/page_load_metrics/browser/observers/service_worker_page_load_metrics_observer.h"
 #include "components/page_load_metrics/browser/observers/shared_storage_page_load_metrics_observer.h"
 #include "components/page_load_metrics/browser/observers/uma_file_and_data_page_load_metrics_observer.h"
 #include "components/page_load_metrics/browser/observers/use_counter_page_load_metrics_observer.h"
 #include "components/page_load_metrics/browser/page_load_tracker.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "services/network/public/cpp/features.h"
 #include "third_party/blink/public/common/features.h"
 
 namespace page_load_metrics {
@@ -56,7 +58,7 @@ void PageLoadMetricsEmbedderBase::RegisterCommonObservers(
       std::make_unique<PrerenderPageLoadMetricsObserver>(is_incognito));
   tracker->AddObserver(std::make_unique<SameOriginPageLoadMetricsObserver>());
   tracker->AddObserver(std::make_unique<CrossOriginPageLoadMetricsObserver>());
-  if (base::FeatureList::IsEnabled(blink::features::kSharedStorageAPI)) {
+  if (base::FeatureList::IsEnabled(network::features::kSharedStorageAPI)) {
     tracker->AddObserver(
         std::make_unique<SharedStoragePageLoadMetricsObserver>());
   }
@@ -66,6 +68,8 @@ void PageLoadMetricsEmbedderBase::RegisterCommonObservers(
       std::make_unique<UmaFileAndDataPageLoadMetricsObserver>());
   tracker->AddObserver(std::make_unique<PerformanceManagerMetricsObserver>());
   tracker->AddObserver(std::make_unique<UnstartedPagePaintObserver>());
+  tracker->AddObserver(
+      std::make_unique<ServiceWorkerPageLoadMetricsObserver>());
 }
 
 std::unique_ptr<base::OneShotTimer> PageLoadMetricsEmbedderBase::CreateTimer() {

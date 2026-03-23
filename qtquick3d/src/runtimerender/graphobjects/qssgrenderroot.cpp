@@ -1,5 +1,7 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgrenderroot_p.h"
 
@@ -9,13 +11,17 @@ QT_BEGIN_NAMESPACE
 
 QSSGRenderRoot::QSSGRenderRoot()
     : QSSGRenderNode(Type::Root)
-    , m_gnd(std::make_shared<QSSGGlobalRenderNodeData>())
+    , m_gnd(std::make_shared<QSSGGlobalRenderNodeData>(this))
 {
     rootNodeRef = &self;
     localTransform = calculateTransformMatrix({}, initScale, {}, {});
 }
 
-QSSGRenderRoot::~QSSGRenderRoot() {}
+QSSGRenderRoot::~QSSGRenderRoot()
+{
+    if (m_gnd)
+        m_gnd->invalidate();
+}
 
 void QSSGRenderRoot::markDirty(DirtyFlag dirtyFlag)
 {
@@ -32,7 +38,7 @@ void QSSGRenderRoot::clearDirty(DirtyFlag dirtyFlag)
 void QSSGRenderRoot::reindex()
 {
     // Reindex the world root node
-    m_gnd->reindex(this);
+    m_gnd->reindex();
     clearDirty(QSSGRenderRoot::DirtyFlag::TreeDirty);
 }
 

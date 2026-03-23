@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical data-parser
 
 #include "qv4compileddata_p.h"
 
@@ -30,7 +31,7 @@ bool Unit::verifyHeader(QDateTime expectedSourceTimeStamp, QString *errorString)
 
     if (version != quint32(QV4_DATA_STRUCTURE_VERSION)) {
         *errorString = QString::fromUtf8("V4 data structure version mismatch. Found %1 expected %2")
-                               .arg(version, 0, 16).arg(QV4_DATA_STRUCTURE_VERSION, 0, 16);
+                               .arg(quint32(version), 0, 16).arg(QV4_DATA_STRUCTURE_VERSION, 0, 16);
         return false;
     }
 
@@ -229,10 +230,7 @@ void CompiledData::CompilationUnit::finalizeCompositeType(const QQmlType &type)
         const QV4::CompiledData::Object *obj = objectAt(/*root object*/0);
         auto *typeRef = resolvedTypes.value(obj->inheritedTypeNameIndex);
         Q_ASSERT(typeRef);
-        if (const auto compilationUnit = typeRef->compilationUnit())
-            qmlType = compilationUnit->qmlType;
-        else
-            qmlType = typeRef->type();
+        qmlType = typeRef->type();
     }
 }
 

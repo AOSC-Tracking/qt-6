@@ -5,19 +5,18 @@
 #ifndef V8_EXECUTION_VM_STATE_INL_H_
 #define V8_EXECUTION_VM_STATE_INL_H_
 
+#include "src/execution/vm-state.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/execution/isolate-inl.h"
 #include "src/execution/simulator.h"
-#include "src/execution/vm-state.h"
 #include "src/logging/log.h"
 #include "src/tracing/trace-event.h"
 
 namespace v8 {
 namespace internal {
 
-// VMState class implementation. A simple stack of VM states held by the logger
-// and partially threaded through the call stack. States are pushed by VMState
-// construction and popped by destruction.
-inline const char* StateToString(StateTag state) {
+constexpr const char* ToString(StateTag state) {
   switch (state) {
     case JS:
       return "JS";
@@ -37,9 +36,15 @@ inline const char* StateToString(StateTag state) {
       return "ATOMICS_WAIT";
     case IDLE:
       return "IDLE";
+    case IDLE_EXTERNAL:
+      return "IDLE_EXTERNAL";
     case LOGGING:
       return "LOGGING";
   }
+}
+
+inline std::ostream& operator<<(std::ostream& os, StateTag kind) {
+  return os << ToString(kind);
 }
 
 template <StateTag Tag>

@@ -52,18 +52,18 @@ export const Utils = {
     return line.substr(0, indentation);
   },
 
-  splitStringByRegexes(text: string, regexes: RegExp[]): {
+  splitStringByRegexes(text: string, regexes: RegExp[]): Array<{
     value: string,
     position: number,
     regexIndex: number,
     captureGroups: Array<string|undefined>,
-  }[] {
-    const matches: {
+  }> {
+    const matches: Array<{
       value: string,
       position: number,
       regexIndex: number,
-      captureGroups: (string|undefined)[],
-    }[] = [];
+      captureGroups: Array<string|undefined>,
+    }> = [];
     const globalRegexes: RegExp[] = [];
     for (let i = 0; i < regexes.length; i++) {
       const regex = regexes[i];
@@ -258,13 +258,13 @@ export class BalancedJSONTokenizer {
  * long leading comments correctly, when tab indentation is used for the snippets
  * of code.
  *
- * @param lines The input document lines.
- * @return The indentation detected for the lines as string or `null` if it's inconclusive.
+ * @param lines - The input document lines.
+ * @returns The indentation detected for the lines as string or `null` if it's inconclusive.
  *
  * @see https://heathermoor.medium.com/detecting-code-indentation-eff3ed0fb56b
  */
 export const detectIndentation = function(lines: Iterable<string>): string|null {
-  const frequencies: Array<number> = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const frequencies: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0];
   let tabs = 0, previous = 0;
 
   for (const line of lines) {
@@ -325,7 +325,7 @@ export const detectIndentation = function(lines: Iterable<string>): string|null 
  * A text is considered to be the result of minification if the average
  * line length for the whole text is 80 characters or more.
  *
- * @param text The input text to check.
+ * @param text - The input text to check.
  * @returns
  */
 export const isMinified = function(text: string): boolean {
@@ -367,7 +367,7 @@ export const performSearchInContent = function(
     const lineContent = text.lineAt(i);
     const matches = lineContent.matchAll(regex);
     for (const match of matches) {
-      result.push(new SearchMatch(i, lineContent, match.index as number, match[0].length));
+      result.push(new SearchMatch(i, lineContent, match.index, match[0].length));
     }
   }
   return result;
@@ -376,11 +376,11 @@ export const performSearchInContent = function(
 /**
  * Similar to {@link performSearchInContent} but doesn't search in a whole text but rather
  * finds the exact matches on a prelminiary search result (i.e. lines with known matches).
- * @param matches is deliberatedly typed as an object literal so we can pass the
+ * @param matches - is deliberatedly typed as an object literal so we can pass the
  *                CDP search result type.
  */
 export const performSearchInSearchMatches = function(
-    matches: {lineNumber: number, lineContent: string}[], query: string, caseSensitive: boolean,
+    matches: Array<{lineNumber: number, lineContent: string}>, query: string, caseSensitive: boolean,
     isRegex: boolean): SearchMatch[] {
   const regex = Platform.StringUtilities.createSearchRegex(query, caseSensitive, isRegex);
   const result = [];
@@ -388,7 +388,7 @@ export const performSearchInSearchMatches = function(
   for (const {lineNumber, lineContent} of matches) {
     const matches = lineContent.matchAll(regex);
     for (const match of matches) {
-      result.push(new SearchMatch(lineNumber, lineContent, match.index as number, match[0].length));
+      result.push(new SearchMatch(lineNumber, lineContent, match.index, match[0].length));
     }
   }
   return result;

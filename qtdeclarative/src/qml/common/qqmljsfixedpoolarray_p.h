@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLJSFIXEDPOOLARRAY_P_H
 #define QQMLJSFIXEDPOOLARRAY_P_H
@@ -42,7 +43,7 @@ public:
         data = reinterpret_cast<T*>(pool->allocate(count * sizeof(T)));
     }
 
-    void allocate(MemoryPool *pool, const QVector<T> &vector)
+    void allocate(MemoryPool *pool, const QList<T> &vector)
     {
         count = vector.size();
         data = reinterpret_cast<T*>(pool->allocate(count * sizeof(T)));

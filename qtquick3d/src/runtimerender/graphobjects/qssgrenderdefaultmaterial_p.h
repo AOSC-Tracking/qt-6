@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_DEFAULT_MATERIAL_H
 #define QSSG_RENDER_DEFAULT_MATERIAL_H
@@ -43,9 +45,17 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderDefaultMaterial : QSSGRenderGraph
     };
     enum class MaterialSpecularModel : quint8
     {
-        Default = 0,
-        KGGX
+        BlinnPhong = 0,
+        SchlickGGX
     };
+
+    enum class MaterialDiffuseModel : quint8
+    {
+        Burley = 0,
+        Lambert,
+        LambertWrap
+    };
+
     enum MaterialAlphaMode : quint8
     {
         Default = 0,
@@ -139,7 +149,8 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderDefaultMaterial : QSSGRenderGraph
 
     MaterialLighting lighting = MaterialLighting::FragmentLighting;
     QSSGRenderDefaultMaterial::MaterialBlendMode blendMode = QSSGRenderDefaultMaterial::MaterialBlendMode::SourceOver;
-    QSSGRenderDefaultMaterial::MaterialSpecularModel specularModel = QSSGRenderDefaultMaterial::MaterialSpecularModel::Default;
+    QSSGRenderDefaultMaterial::MaterialSpecularModel specularModel = QSSGRenderDefaultMaterial::MaterialSpecularModel::SchlickGGX;
+    QSSGRenderDefaultMaterial::MaterialDiffuseModel diffuseModel = QSSGRenderDefaultMaterial::MaterialDiffuseModel::Burley;
     QSSGRenderDefaultMaterial::MaterialAlphaMode alphaMode = QSSGRenderDefaultMaterial::Default;
     QSSGCullFaceMode cullMode = QSSGCullFaceMode::Back;
     QSSGDepthDrawMode depthDrawMode = QSSGDepthDrawMode::OpaqueOnly;

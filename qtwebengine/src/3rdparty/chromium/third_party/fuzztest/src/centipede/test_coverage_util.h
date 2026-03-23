@@ -29,7 +29,7 @@
 #include "./centipede/mutation_input.h"
 #include "./centipede/runner_result.h"
 #include "./common/defs.h"
-namespace centipede {
+namespace fuzztest::internal {
 // Runs all `inputs`, returns FeatureVec for every input.
 // `env` defines what target is executed and with what flags.
 std::vector<CorpusRecord> RunInputsAndCollectCorpusRecords(
@@ -51,9 +51,11 @@ class TestCallbacks : public CentipedeCallbacks {
     CHECK_EQ(EXIT_SUCCESS, result);
     return true;
   }
-  void Mutate(const std::vector<MutationInputRef> &inputs, size_t num_mutants,
-              std::vector<ByteArray> &mutants) override {}
+  std::vector<ByteArray> Mutate(const std::vector<MutationInputRef> &inputs,
+                                size_t num_mutants) override {
+    return {};
+  }
 };
-}  // namespace centipede
+}  // namespace fuzztest::internal
 
 #endif  // FUZZTEST_CENTIPEDE_TEST_COVERAGE_UTIL_H_

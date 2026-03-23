@@ -18,10 +18,23 @@ export enum ContextMenuOption {
   TRANSLATE_TEXT_IN_REGION = 3,
   COPY_AS_IMAGE = 4,
   SAVE_AS_IMAGE = 5,
+  COPY_TEXT_IN_REGION = 6,
   // Must be last.
-  COUNT = 6,
+  COUNT = 7,
 }
 // LINT.ThenChange(//tools/metrics/histograms/metadata/lens/enums.xml:LensOverlayContextMenuOption)
+
+// The possible events for the selection overlay close button.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+// LINT.IfChange(LensOverlaySelectionCloseButtonEvent)
+export enum LensOverlaySelectionCloseButtonEvent {
+  SHOWN = 0,
+  USED = 1,
+  // Must be last.
+  COUNT = 2,
+}
+// LINT.ThenChange(//tools/metrics/histograms/metadata/lens/enums.xml:LensOverlaySelectionCloseButtonEvent)
 
 export function recordContextMenuOptionShown(
     invocationSource: string, contextMenuOption: ContextMenuOption) {
@@ -76,4 +89,30 @@ export function recordAverageFps(averageFps: number) {
         buckets: 50,
       },
       Math.floor(averageFps));
+}
+
+export function recordLensOverlaySelectionCloseButtonShown(
+    invocationSource: string) {
+  chrome.metricsPrivate.recordEnumerationValue(
+      `Lens.Overlay.ByInvocationSource.${
+          invocationSource}.SelectionState.CloseButtonEvent`,
+      LensOverlaySelectionCloseButtonEvent.SHOWN,
+      LensOverlaySelectionCloseButtonEvent.COUNT);
+  chrome.metricsPrivate.recordEnumerationValue(
+      `Lens.Overlay.SelectionState.CloseButtonEvent`,
+      LensOverlaySelectionCloseButtonEvent.SHOWN,
+      LensOverlaySelectionCloseButtonEvent.COUNT);
+}
+
+export function recordLensOverlaySelectionCloseButtonUsed(
+    invocationSource: string) {
+  chrome.metricsPrivate.recordEnumerationValue(
+      `Lens.Overlay.ByInvocationSource.${
+          invocationSource}.SelectionState.CloseButtonEvent`,
+      LensOverlaySelectionCloseButtonEvent.USED,
+      LensOverlaySelectionCloseButtonEvent.COUNT);
+  chrome.metricsPrivate.recordEnumerationValue(
+      `Lens.Overlay.SelectionState.CloseButtonEvent`,
+      LensOverlaySelectionCloseButtonEvent.USED,
+      LensOverlaySelectionCloseButtonEvent.COUNT);
 }

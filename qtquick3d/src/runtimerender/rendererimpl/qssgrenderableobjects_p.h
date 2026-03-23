@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_IMPL_RENDERABLE_OBJECTS_H
 #define QSSG_RENDER_IMPL_RENDERABLE_OBJECTS_H
@@ -61,7 +63,9 @@ enum class QSSGRenderableObjectFlag : quint32
     UsedInBakedLighting = 1 << 17,
     RendersWithLightmap = 1 << 18,
     HasAttributeTexCoordLightmap = 1 << 19,
-    CastsReflections = 1 << 20
+    CastsReflections = 1 << 20,
+    RequiresNormalTexture = 1 << 21,
+    IsMotionVectorParticipant = 1 << 22
 };
 
 struct QSSGRenderableObjectFlags : public QFlags<QSSGRenderableObjectFlag>
@@ -147,6 +151,16 @@ struct QSSGRenderableObjectFlags : public QFlags<QSSGRenderableObjectFlag>
     bool requiresScreenTexture() const {
         return this->operator&(QSSGRenderableObjectFlag::RequiresScreenTexture);
     }
+
+    void setRequiresNormalTexture(bool v)
+    {
+        setFlag(QSSGRenderableObjectFlag::RequiresNormalTexture, v);
+    }
+    bool requiresNormalTexture() const {
+        return this->operator&(QSSGRenderableObjectFlag::RequiresNormalTexture);
+    }
+    void setMotionVectorParticipant(bool v) { setFlag(QSSGRenderableObjectFlag::IsMotionVectorParticipant, v); }
+    bool isMotionVectorParticipant() const { return this->operator&(QSSGRenderableObjectFlag::IsMotionVectorParticipant); }
 };
 
 struct QSSGShaderLight
@@ -216,12 +230,14 @@ struct QSSGRenderableNodeEntry
 struct QSSGRenderableObjectHandle
 {
     QSSGRenderableObjectHandle() = default;
-    QSSGRenderableObjectHandle(QSSGRenderableObject *o, float camDistSq)
+    QSSGRenderableObjectHandle(QSSGRenderableObject *o, float camDistSq, QSSGRenderNodeTag tag)
         : obj(o)
         , cameraDistanceSq(camDistSq)
+        , tag(tag)
     {}
     QSSGRenderableObject *obj = nullptr;
     float cameraDistanceSq = 0.0f;
+    QSSGRenderNodeTag tag;
 };
 Q_DECLARE_TYPEINFO(QSSGRenderableObjectHandle, Q_PRIMITIVE_TYPE);
 
@@ -334,6 +350,11 @@ public:
     QSSGShaderDefaultMaterialKey shaderDescription;
     const QSSGShaderLightListView &lights;
 
+    struct RhiPassData {
+        QRhiGraphicsPipeline *pipeline = nullptr;
+        QRhiShaderResourceBindings *srb = nullptr;
+    };
+
     struct {
         // Transient (due to the subsetRenderable being allocated using a
         // per-frame allocator on every frame), not owned refs from the
@@ -354,6 +375,15 @@ public:
             QRhiGraphicsPipeline *pipeline = nullptr;
             QRhiShaderResourceBindings *srb[6] = {};
         } reflectionPass;
+        struct {
+            QRhiGraphicsPipeline *pipeline = nullptr;
+            QRhiShaderResourceBindings *srb = nullptr;
+        } normalPass;
+        struct {
+            QRhiGraphicsPipeline *pipeline = nullptr;
+            QRhiShaderResourceBindings *srb = nullptr;
+        } motionVectorPass;
+        RhiPassData userPassData[16] {};
     } rhiRenderData;
 
     QSSGSubsetRenderable(Type type,
@@ -378,7 +408,7 @@ Q_STATIC_ASSERT(std::is_trivially_destructible<QSSGSubsetRenderable>::value);
 /**
  * A renderable that corresponds to a particles.
  */
-class Q_AUTOTEST_EXPORT QSSGParticlesRenderable : public QSSGRenderableObject
+class Q_QUICK3DRUNTIMERENDER_EXPORT QSSGParticlesRenderable : public QSSGRenderableObject
 {
     Q_DISABLE_COPY_MOVE(QSSGParticlesRenderable)
 public:
@@ -389,6 +419,7 @@ public:
     const QSSGShaderLightListView &lights;
     QMatrix4x4 globalTransform;
     float opacity;
+    QSSGShaderParticleMaterialKey shaderDescription;
 
     struct {
         // Transient (due to the subsetRenderable being allocated using a
@@ -420,7 +451,8 @@ public:
                             QSSGRenderableImage *inFirstImage,
                             QSSGRenderableImage *inColorTable,
                             const QSSGShaderLightListView &inLights,
-                            float inOpacity);
+                            float inOpacity,
+                            QSSGShaderParticleMaterialKey inShaderKey);
 };
 
 Q_STATIC_ASSERT(std::is_trivially_destructible<QSSGParticlesRenderable>::value);

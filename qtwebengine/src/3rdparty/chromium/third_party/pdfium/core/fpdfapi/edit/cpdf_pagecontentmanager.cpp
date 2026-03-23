@@ -10,6 +10,7 @@
 #include <numeric>
 #include <sstream>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_pageobject.h"
@@ -24,7 +25,6 @@
 #include "core/fxcrt/containers/adapters.h"
 #include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 
 CPDF_PageContentManager::CPDF_PageContentManager(
     CPDF_PageObjectHolder* page_obj_holder,
@@ -46,8 +46,9 @@ CPDF_PageContentManager::CPDF_PageContentManager(
   if (contents_reference) {
     RetainPtr<CPDF_Object> indirect_obj =
         contents_reference->GetMutableDirect();
-    if (!indirect_obj)
+    if (!indirect_obj) {
       return;
+    }
 
     contents_array.Reset(indirect_obj->AsMutableArray());
     if (contents_array) {
@@ -88,8 +89,9 @@ RetainPtr<CPDF_Stream> CPDF_PageContentManager::GetStreamByIndex(
 
   RetainPtr<CPDF_Reference> stream_reference =
       ToReference(contents_array->GetMutableObjectAt(stream_index));
-  if (!stream_reference)
+  if (!stream_reference) {
     return nullptr;
+  }
 
   return ToStream(stream_reference->GetMutableDirect());
 }
@@ -237,15 +239,15 @@ void CPDF_PageContentManager::ExecuteScheduledRemovals() {
 }
 
 RetainPtr<CPDF_Stream> CPDF_PageContentManager::GetContentsStream() {
-  if (absl::holds_alternative<RetainPtr<CPDF_Stream>>(contents_)) {
-    return absl::get<RetainPtr<CPDF_Stream>>(contents_);
+  if (std::holds_alternative<RetainPtr<CPDF_Stream>>(contents_)) {
+    return std::get<RetainPtr<CPDF_Stream>>(contents_);
   }
   return nullptr;
 }
 
 RetainPtr<CPDF_Array> CPDF_PageContentManager::GetContentsArray() {
-  if (absl::holds_alternative<RetainPtr<CPDF_Array>>(contents_)) {
-    return absl::get<RetainPtr<CPDF_Array>>(contents_);
+  if (std::holds_alternative<RetainPtr<CPDF_Array>>(contents_)) {
+    return std::get<RetainPtr<CPDF_Array>>(contents_);
   }
   return nullptr;
 }

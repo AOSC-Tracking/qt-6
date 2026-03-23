@@ -45,6 +45,8 @@ source_set("spotlight") {
     "//ios/chrome/app",
     "//ios/chrome/app/strings",
     "//ios/chrome/browser/bookmarks/model",
+    "//ios/chrome/browser/content_suggestions/ui_bundled:coordinator",
+    "//ios/chrome/browser/content_suggestions/ui_bundled/cells:most_visited_tiles",
     "//ios/chrome/browser/favicon/model",
     "//ios/chrome/browser/history/model",
     "//ios/chrome/browser/lens/ui_bundled:lens_availability",
@@ -57,8 +59,6 @@ source_set("spotlight") {
     "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/browser/shared/public/features:system_flags",
     "//ios/chrome/browser/sync/model",
-    "//ios/chrome/browser/ui/content_suggestions",
-    "//ios/chrome/browser/ui/content_suggestions/cells:most_visited_tiles",
     "//ios/chrome/common/app_group",
     "//ios/third_party/material_components_ios",
     "//ios/web/public",
@@ -97,15 +97,20 @@ source_set("unit_tests") {
     "//ios/chrome/browser/main/model",
     "//ios/chrome/browser/reading_list/model",
     "//ios/chrome/browser/reading_list/model:test_support",
-    "//ios/chrome/browser/shared/model/browser:browser",
+    "//ios/chrome/browser/shared/model/browser",
     "//ios/chrome/browser/shared/model/browser/test:test_support",
     "//ios/chrome/browser/shared/model/profile/test",
-    "//ios/chrome/browser/shared/model/web_state_list:web_state_list",
-    "//ios/web/public/test/fakes:fakes",
+    "//ios/chrome/browser/shared/model/web_state_list",
+    "//ios/web/public/test",
+    "//ios/web/public/test/fakes",
     "//net",
     "//testing/gtest",
     "//third_party/ocmock",
     "//ui/base:test_support",
   ]
   frameworks = [ "CoreSpotlight.framework" ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

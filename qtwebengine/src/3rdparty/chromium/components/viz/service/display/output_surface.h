@@ -10,6 +10,7 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/threading/thread_checker.h"
+#include "build/build_config.h"
 #include "components/viz/common/display/update_vsync_parameters_callback.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/resources/returned_resource.h"
@@ -29,7 +30,11 @@
 #include "ui/gfx/surface_origin.h"
 #include "ui/latency/latency_info.h"
 
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_ANDROID)
+#include "ui/gfx/android/surface_control_frame_rate.h"
+#endif
+
+#if BUILDFLAG(IS_QTWEBENGINE)
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #endif
 
@@ -64,16 +69,21 @@ class VIZ_SERVICE_EXPORT OutputSurface {
     kHardware,  // The orientation same to the hardware.
   };
 
+#if BUILDFLAG(IS_WIN)
   // Level of DComp support. Each value implies support for the features
   // provided by the values before it.
   enum class DCSupportLevel {
     // Direct composition is not supported.
     kNone,
-    // Support for presenting |IDXGISwapChain| and |IDCompositionSurface|.
+    // Support for presenting `IDXGISwapChain` and `IDCompositionSurface`.
     kDCLayers,
-    // Support for presenting |IDCompositionTexture|.
+    // Support for presenting `IDCompositionTexture`.
     kDCompTexture,
+    // Support for presenting multiple `IDCompositionTexture` to a persistent
+    // surface with incremental damage.
+    kDCompDynamicTexture,
   };
+#endif
 
   struct Capabilities {
     Capabilities();
@@ -98,8 +108,10 @@ class VIZ_SERVICE_EXPORT OutputSurface {
     bool supports_viewporter = false;
     // OutputSurface's orientation mode.
     OrientationMode orientation_mode = OrientationMode::kLogic;
+#if BUILDFLAG(IS_WIN)
     // Whether this OutputSurface supports direct composition layers.
     DCSupportLevel dc_support_level = DCSupportLevel::kNone;
+#endif
     // Whether this OutputSurface should skip DrawAndSwap(). This is true for
     // the unified display on Chrome OS. All drawing is handled by the physical
     // displays so the unified display should skip that work.
@@ -268,10 +280,12 @@ class VIZ_SERVICE_EXPORT OutputSurface {
       const gfx::SwapResponse& response,
       std::vector<ui::LatencyInfo>* latency_info);
 
+#if BUILDFLAG(IS_ANDROID)
   // Notifies the OutputSurface of rate of content updates in frames per second.
-  virtual void SetFrameRate(float frame_rate) {}
+  virtual void SetFrameRate(gfx::SurfaceControlFrameRate frame_rate) {}
+#endif
 
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_QTWEBENGINE)
   virtual void SetFrameSinkId(const FrameSinkId& frame_sink_id) {}
 #endif
 
@@ -296,6 +310,13 @@ class VIZ_SERVICE_EXPORT OutputSurface {
   std::unique_ptr<SoftwareOutputDevice> software_device_;
   SkM44 color_matrix_;
 };
+
+#if BUILDFLAG(IS_WIN)
+// Helper to check that DComp textures are supported before checking for
+// `features::IsDelegatedCompositingEnabled()`.
+bool IsDelegatedCompositingSupportedAndEnabled(
+    OutputSurface::DCSupportLevel support_level);
+#endif
 
 }  // namespace viz
 

@@ -15,14 +15,13 @@
 #include "base/functional/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/not_fatal_until.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/browser/fenced_frame/fenced_frame_reporter.h"
 #include "net/base/schemeful_site.h"
+#include "services/network/public/cpp/permissions_policy/fenced_frame_permissions_policies.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/fenced_frame/fenced_frame_utils.h"
-#include "third_party/blink/public/common/frame/fenced_frame_permissions_policies.h"
 #include "third_party/blink/public/common/interest_group/ad_auction_constants.h"
 #include "third_party/blink/public/common/interest_group/ad_display_size.h"
 #include "third_party/blink/public/common/interest_group/ad_display_size_utils.h"
@@ -206,12 +205,12 @@ std::optional<GURL> FencedFrameURLMapping::AddFencedFrameURLForTesting(
   // Shared Storage permissions set. To be safe, we set both here.
   config.effective_enabled_permissions_.insert(
       config.effective_enabled_permissions_.end(),
-      std::begin(blink::kFencedFrameFledgeDefaultRequiredFeatures),
-      std::end(blink::kFencedFrameFledgeDefaultRequiredFeatures));
+      std::begin(network::kFencedFrameFledgeDefaultRequiredFeatures),
+      std::end(network::kFencedFrameFledgeDefaultRequiredFeatures));
   config.effective_enabled_permissions_.insert(
       config.effective_enabled_permissions_.end(),
-      std::begin(blink::kFencedFrameSharedStorageDefaultRequiredFeatures),
-      std::end(blink::kFencedFrameSharedStorageDefaultRequiredFeatures));
+      std::begin(network::kFencedFrameSharedStorageDefaultRequiredFeatures),
+      std::end(network::kFencedFrameSharedStorageDefaultRequiredFeatures));
   return urn;
 }
 
@@ -290,8 +289,8 @@ FencedFrameURLMapping::AssignFencedFrameURLAndInterestGroupInfo(
 
   config.effective_enabled_permissions_ =
       std::vector<network::mojom::PermissionsPolicyFeature>(
-          std::begin(blink::kFencedFrameFledgeDefaultRequiredFeatures),
-          std::end(blink::kFencedFrameFledgeDefaultRequiredFeatures));
+          std::begin(network::kFencedFrameFledgeDefaultRequiredFeatures),
+          std::end(network::kFencedFrameFledgeDefaultRequiredFeatures));
 
   AdComponentMetrics metrics(ad_component_descriptors.size());
   std::vector<FencedFrameConfig> nested_configs;
@@ -416,8 +415,7 @@ FencedFrameURLMapping::OnSharedStorageURNMappingResultDetermined(
     const GURL& urn_uuid,
     const SharedStorageURNMappingResult& mapping_result) {
   auto pending_it = pending_urn_uuid_to_url_map_.find(urn_uuid);
-  CHECK(pending_it != pending_urn_uuid_to_url_map_.end(),
-        base::NotFatalUntil::M130);
+  CHECK(pending_it != pending_urn_uuid_to_url_map_.end());
 
   DCHECK(!IsMapped(urn_uuid));
 
@@ -434,8 +432,8 @@ FencedFrameURLMapping::OnSharedStorageURNMappingResultDetermined(
                                std::move(mapping_result.fenced_frame_reporter));
     config->mode_ = blink::FencedFrame::DeprecatedFencedFrameMode::kOpaqueAds;
     config->effective_enabled_permissions_ = {
-        std::begin(blink::kFencedFrameSharedStorageDefaultRequiredFeatures),
-        std::end(blink::kFencedFrameSharedStorageDefaultRequiredFeatures)};
+        std::begin(network::kFencedFrameSharedStorageDefaultRequiredFeatures),
+        std::end(network::kFencedFrameSharedStorageDefaultRequiredFeatures)};
     config->allows_information_inflow_ = true;
 
     urn_uuid_to_url_map_.emplace(urn_uuid, *config);
@@ -462,7 +460,7 @@ SharedStorageBudgetMetadata*
 FencedFrameURLMapping::GetSharedStorageBudgetMetadataForTesting(
     const GURL& urn_uuid) {
   auto it = urn_uuid_to_url_map_.find(urn_uuid);
-  CHECK(it != urn_uuid_to_url_map_.end(), base::NotFatalUntil::M130);
+  CHECK(it != urn_uuid_to_url_map_.end());
 
   if (!it->second.shared_storage_budget_metadata_) {
     return nullptr;

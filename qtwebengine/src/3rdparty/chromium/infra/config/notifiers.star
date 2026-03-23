@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/branches.star", "branches")
+load("@chromium-luci//notifiers.star", "notifiers")
 
 luci.notifier(
     name = "chromesec-lkgr-failures",
@@ -60,6 +60,16 @@ luci.notifier(
     on_status_change = True,
     notify_emails = [
         "chrome-memory-sheriffs+bots@google.com",
+    ],
+)
+
+luci.notifier(
+    name = "chromium-android-device-flasher",
+    # android-device-flasher runs only once a week. So have it sends
+    # notifications whenever there is an infra failure.
+    on_occurrence = ["INFRA_FAILURE"],
+    notify_emails = [
+        "chromium-infra+failures@google.com",
     ],
 )
 
@@ -142,7 +152,7 @@ def _empty_notifier(*, name):
     )
 
 def tree_closer(*, name, tree_status_host, **kwargs):
-    if branches.matches(branches.selector.MAIN):
+    if notifiers.tree_closer_branch():
         luci.tree_closer(
             name = name,
             tree_status_host = tree_status_host,
@@ -163,7 +173,7 @@ tree_closer(
 )
 
 def tree_closure_notifier(*, name, **kwargs):
-    if branches.matches(branches.selector.MAIN):
+    if notifiers.tree_closer_branch():
         luci.notifier(
             name = name,
             on_occurrence = ["FAILURE"],
@@ -352,4 +362,10 @@ luci.notifier(
     notify_emails = [
         "web-windowing-team@google.com",
     ],
+)
+
+luci.builder_health_notifier(
+    owner_email = "chrome-browser-infra-team@google.com",
+    ignore_buckets = ["try"],
+    notify_all_healthy = True,
 )

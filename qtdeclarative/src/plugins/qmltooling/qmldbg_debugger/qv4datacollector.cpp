@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4datacollector.h"
 #include "qv4debugger.h"
@@ -45,9 +46,9 @@ QV4::Heap::ExecutionContext *QV4DataCollector::findScope(QV4::Heap::ExecutionCon
     return ctx;
 }
 
-QVector<QV4::Heap::ExecutionContext::ContextType> QV4DataCollector::getScopeTypes(int frame)
+QList<QV4::Heap::ExecutionContext::ContextType> QV4DataCollector::getScopeTypes(int frame)
 {
-    QVector<QV4::Heap::ExecutionContext::ContextType> types;
+    QList<QV4::Heap::ExecutionContext::ContextType> types;
 
     QV4::Heap::ExecutionContext *it = findFrame(frame)->context()->d();
 
@@ -242,7 +243,7 @@ QJsonObject QV4DataCollector::buildFrame(const QV4::StackFrame &stackFrame, int 
     }
 
     // Only type and index are used by Qt Creator, so we keep it easy:
-    QVector<QV4::Heap::ExecutionContext::ContextType> scopeTypes = getScopeTypes(frameNr);
+    QList<QV4::Heap::ExecutionContext::ContextType> scopeTypes = getScopeTypes(frameNr);
     for (int i = 0, ei = scopeTypes.size(); i != ei; ++i) {
         int type = encodeScopeType(scopeTypes[i]);
         if (type == -1)

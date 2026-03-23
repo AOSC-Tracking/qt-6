@@ -8,6 +8,7 @@
 #include <optional>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/base64.h"
@@ -15,10 +16,12 @@
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/pickle.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
-#include "components/autofill/core/browser/data_model/payments_metadata.h"
+#include "base/strings/string_number_conversions.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
+#include "components/autofill/core/browser/data_model/payments/payments_metadata.h"
 #include "components/autofill/core/browser/webdata/autofill_sync_metadata_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/browser/webdata/payments/payments_autofill_table.h"
@@ -31,6 +34,7 @@
 #include "components/sync/model/mutable_data_batch.h"
 #include "components/sync/model/sync_metadata_store_change_list.h"
 #include "components/sync/protocol/entity_data.h"
+#include "components/webdata/common/web_database.h"
 
 namespace autofill {
 
@@ -240,7 +244,7 @@ bool AddServerMetadata(PaymentsAutofillTable* table,
                        const PaymentsMetadata& metadata) {
   switch (type) {
     case WalletMetadataSpecifics::CARD:
-      return table->AddServerCardMetadata(metadata);
+      return table->AddOrUpdateServerCardMetadata(metadata);
     case WalletMetadataSpecifics::IBAN:
       return table->AddOrUpdateServerIbanMetadata(metadata);
     // ADDRESS metadata syncing is deprecated.
@@ -270,7 +274,7 @@ bool UpdateServerMetadata(PaymentsAutofillTable* table,
                           const PaymentsMetadata& metadata) {
   switch (type) {
     case WalletMetadataSpecifics::CARD:
-      return table->UpdateServerCardMetadata(metadata);
+      return table->AddOrUpdateServerCardMetadata(metadata);
     case WalletMetadataSpecifics::IBAN:
       return table->AddOrUpdateServerIbanMetadata(metadata);
     // ADDRESS metadata syncing is deprecated.
@@ -388,7 +392,7 @@ AutofillWalletMetadataSyncBridge::GetAllDataForDebugging() {
 }
 
 std::string AutofillWalletMetadataSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   const WalletMetadataSpecifics& remote_metadata =
       entity_data.specifics.wallet_metadata();
@@ -397,15 +401,24 @@ std::string AutofillWalletMetadataSyncBridge::GetClientTag(
 }
 
 std::string AutofillWalletMetadataSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return GetStorageKeyForWalletMetadataTypeAndSpecificsId(
       entity_data.specifics.wallet_metadata().type(),
       entity_data.specifics.wallet_metadata().id());
 }
 
+bool AutofillWalletMetadataSyncBridge::IsEntityDataValid(
+    const syncer::EntityData& entity_data) const {
+  CHECK(entity_data.specifics.has_wallet_metadata());
+  return entity_data.specifics.wallet_metadata().has_id() &&
+         entity_data.specifics.wallet_metadata().has_type();
+}
+
 void AutofillWalletMetadataSyncBridge::ApplyDisableSyncChanges(
     std::unique_ptr<syncer::MetadataChangeList> delete_metadata_change_list) {
+  auto transaction = web_data_backend_->GetDatabase()->AcquireTransaction();
+
   // Sync is disabled so we want to delete the data as well (i.e. the wallet
   // metadata entities).
   for (const auto& [storage_key, metadata] : cache_) {
@@ -425,7 +438,14 @@ void AutofillWalletMetadataSyncBridge::ApplyDisableSyncChanges(
   // |delete_metadata_change_list|) get wiped from the DB. This is especially
   // important on Android where we cannot rely on committing transactions on
   // shutdown).
+
+  // Commits changes through CommitChanges(...) or through the scoped
+  // sql::Transaction `transaction` depending on the
+  // 'SqlScopedTransactionWebDatabase' Finch experiment.
   web_data_backend_->CommitChanges();
+  if (transaction) {
+    transaction->Commit();
+  }
 }
 
 void AutofillWalletMetadataSyncBridge::CreditCardChanged(
@@ -460,7 +480,8 @@ void AutofillWalletMetadataSyncBridge::LoadDataCacheAndMetadata() {
   if (!web_data_backend_ || !web_data_backend_->GetDatabase() ||
       !GetAutofillTable() || !GetSyncMetadataStore()) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to load AutofillWebDatabase."});
+        {FROM_HERE,
+         syncer::ModelError::Type::kWalletMetadataFailedToLoadDatabase});
     return;
   }
 
@@ -470,7 +491,7 @@ void AutofillWalletMetadataSyncBridge::LoadDataCacheAndMetadata() {
   if (!GetAutofillTable()->GetServerCardsMetadata(cards_metadata) ||
       !GetAutofillTable()->GetServerIbansMetadata(ibans_metadata)) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed reading autofill data from WebDatabase."});
+        {FROM_HERE, syncer::ModelError::Type::kWalletMetadataFailedToReadData});
     return;
   }
   for (const PaymentsMetadata& card_metadata : cards_metadata) {
@@ -488,7 +509,8 @@ void AutofillWalletMetadataSyncBridge::LoadDataCacheAndMetadata() {
   if (!GetSyncMetadataStore()->GetAllSyncMetadata(
           syncer::AUTOFILL_WALLET_METADATA, batch.get())) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed reading autofill metadata from WebDatabase."});
+        {FROM_HERE,
+         syncer::ModelError::Type::kWalletMetadataFailedToReadMetadata});
     return;
   }
 
@@ -504,6 +526,8 @@ void AutofillWalletMetadataSyncBridge::DeleteOldOrphanMetadata() {
   if (!IsAnyMetadataDeletable(cache_)) {
     return;
   }
+
+  auto transaction = web_data_backend_->GetDatabase()->AcquireTransaction();
 
   // Load up (metadata) ids for which data exists; we do not delete those.
   std::unordered_set<std::string> non_orphan_ids;
@@ -553,8 +577,14 @@ void AutofillWalletMetadataSyncBridge::DeleteOldOrphanMetadata() {
   // Commit the transaction to make sure the data and the metadata is written
   // down (especially on Android where we cannot rely on committing transactions
   // on shutdown).
-  web_data_backend_->CommitChanges();
 
+  // Commits changes through CommitChanges(...) or through the scoped
+  // sql::Transaction `transaction` depending on the
+  // 'SqlScopedTransactionWebDatabase' Finch experiment.
+  web_data_backend_->CommitChanges();
+  if (transaction) {
+    transaction->Commit();
+  }
   // We do not need to NotifyOnAutofillChangedBySync() because this change is
   // invisible for PersonalDataManager - it does not change metadata for any
   // existing data.
@@ -610,6 +640,8 @@ AutofillWalletMetadataSyncBridge::MergeRemoteChanges(
     std::unique_ptr<syncer::MetadataChangeList> metadata_change_list,
     syncer::EntityChangeList entity_data) {
   bool is_any_local_modified = false;
+
+  auto transaction = web_data_backend_->GetDatabase()->AcquireTransaction();
 
   PaymentsAutofillTable* table = GetAutofillTable();
 
@@ -674,7 +706,14 @@ AutofillWalletMetadataSyncBridge::MergeRemoteChanges(
   // cannot rely on committing transactions on shutdown). We need to commit
   // even if !|is_any_local_modified| because the data type state or local
   // metadata may have changed.
+
+  // Commits changes through CommitChanges(...) or through the scoped
+  // sql::Transaction `transaction` depending on the
+  // 'SqlScopedTransactionWebDatabase' Finch experiment.
   web_data_backend_->CommitChanges();
+  if (transaction) {
+    transaction->Commit();
+  }
 
   if (is_any_local_modified) {
     web_data_backend_->NotifyOnAutofillChangedBySync(
@@ -694,7 +733,7 @@ void AutofillWalletMetadataSyncBridge::LocalMetadataChanged(
   // have migrated to use instrument IDs, then the branching can be removed.
   std::string metadata_id;
   if constexpr (std::same_as<DataType, Iban>) {
-    metadata_id = base::NumberToString(absl::get<int64_t>(change.key()));
+    metadata_id = base::NumberToString(std::get<int64_t>(change.key()));
   } else {
     metadata_id = change.key();
   }
@@ -705,6 +744,10 @@ void AutofillWalletMetadataSyncBridge::LocalMetadataChanged(
       CreateMetadataChangeList();
 
   switch (change.type()) {
+    case AutofillDataModelChange<DataType, KeyType>::HIDE_IN_AUTOFILL:
+      // `HIDE_IN_AUTOFILL` is not supported for wallet metadata.
+      NOTIMPLEMENTED();
+      break;
     case AutofillDataModelChange<DataType, KeyType>::REMOVE:
       if (RemoveServerMetadata(GetAutofillTable(), type, metadata_id)) {
         cache_.erase(storage_key);

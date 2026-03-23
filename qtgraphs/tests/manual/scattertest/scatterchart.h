@@ -36,6 +36,7 @@ public:
     void setMaxX(int max);
     void setMaxY(int max);
     void setMaxZ(int max);
+    void setCutoffMargin(int margin);
     void setAspectRatio(int ratio);
     void setHorizontalAspectRatio(int ratio);
     void start();
@@ -46,6 +47,7 @@ public:
     void setFpsLabel(QLabel *fpsLabel) { m_fpsLabel = fpsLabel; }
     void testItemChanges();
     void testAxisReverse();
+    void testNanSeries();
 
 public Q_SLOTS:
     void changeShadowQuality(int quality);
@@ -105,6 +107,8 @@ private:
     void populateFlatSeries(QScatter3DSeries *series, int rows, int columns, float value);
     void populateRisingSeries(QScatter3DSeries *series, int rows, int columns, float minValue,
                               float maxValue);
+
+    void populateNanSeries(QScatter3DSeries *series, int rows, int columns, float value);
     void deleteAxis(QValue3DAxis *axis);
 
     Q3DScatterWidgetItem *m_chart;

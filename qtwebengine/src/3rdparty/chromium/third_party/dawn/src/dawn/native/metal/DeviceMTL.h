@@ -63,13 +63,13 @@ class Device final : public DeviceBase {
 
     id<MTLDevice> GetMTLDevice() const;
 
-    MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
-                                           uint64_t sourceOffset,
-                                           BufferBase* destination,
-                                           uint64_t destinationOffset,
-                                           uint64_t size) override;
+    MaybeError CopyFromStagingToBuffer(BufferBase* source,
+                                       uint64_t sourceOffset,
+                                       BufferBase* destination,
+                                       uint64_t destinationOffset,
+                                       uint64_t size) override;
     MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
-                                            const TextureDataLayout& dataLayout,
+                                            const TexelCopyBufferLayout& dataLayout,
                                             const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
 
@@ -113,8 +113,7 @@ class Device final : public DeviceBase {
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
         const std::vector<tint::wgsl::Extension>& internalExtensions,
-        ShaderModuleParseResult* parseResult,
-        OwnedCompilationMessages* compilationMessages) override;
+        ShaderModuleParseResult* parseResult) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
         SwapChainBase* previousSwapChain,
@@ -135,6 +134,10 @@ class Device final : public DeviceBase {
         const SharedTextureMemoryDescriptor* descriptor) override;
     ResultOrError<Ref<SharedFenceBase>> ImportSharedFenceImpl(
         const SharedFenceDescriptor* descriptor) override;
+
+    void StartTrace();
+    void StopTrace();
+    bool mTraceInProgress = false;
 
     void DestroyImpl() override;
 

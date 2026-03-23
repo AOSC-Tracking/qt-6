@@ -28,9 +28,9 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
+#include "absl/random/random.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/string_view.h"
-#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "connections/advertising_options.h"
 #include "connections/connection_options.h"
@@ -39,6 +39,7 @@
 #include "connections/implementation/analytics/analytics_recorder.h"
 #include "connections/implementation/analytics/discovery_metadata_params.h"
 #include "connections/implementation/flags/nearby_connections_feature_flags.h"
+#include "connections/implementation/mediums/advertisements/dct_advertisement.h"
 #include "connections/listeners.h"
 #include "connections/medium_selector.h"
 #include "connections/payload.h"
@@ -71,6 +72,7 @@ namespace connections {
 
 namespace {
 using ::location::nearby::analytics::proto::ConnectionsLog;
+using ::location::nearby::connections::MediumRole;
 using ::location::nearby::connections::OsInfo;
 
 constexpr char kEndpointIdChars[] = {
@@ -88,6 +90,8 @@ bool IsFeatureUseStableEndpointIdEnabled() {
 ClientProxy::ClientProxy(::nearby::analytics::EventLogger* event_logger)
     : client_id_(Prng().NextInt64()) {
   NEARBY_LOGS(INFO) << "ClientProxy ctor event_logger=" << event_logger;
+  is_dct_enabled_ = NearbyFlags::GetInstance().GetBoolFlag(
+      config_package_nearby::nearby_connections_feature::kEnableDct);
   analytics_recorder_ =
       std::make_unique<analytics::AnalyticsRecorder>(event_logger);
   error_code_recorder_ = std::make_unique<ErrorCodeRecorder>(
@@ -107,6 +111,9 @@ ClientProxy::ClientProxy(::nearby::analytics::EventLogger* event_logger)
   NEARBY_LOGS(INFO) << "[safe-to-disconnect]: Local enabled: "
                     << supports_safe_to_disconnect_
                     << "; Version: " << local_safe_to_disconnect_version_;
+  // Generate a 7 bits dedup value.
+  absl::BitGen bitgen;
+  dct_dedup_ = absl::Uniform(bitgen, 0, 1 << 7);
 }
 
 ClientProxy::~ClientProxy() { Reset(); }
@@ -115,24 +122,29 @@ std::int64_t ClientProxy::GetClientId() const { return client_id_; }
 
 std::string ClientProxy::GetLocalEndpointId() {
   MutexLock lock(&mutex_);
-  if (!local_endpoint_id_.empty()) {
-    NEARBY_LOGS(INFO) << __func__
-                      << ": Reusing cached endpoint id: " << local_endpoint_id_;
+  if (IsDctEnabled() && GetEndpointIdForDct().has_value()) {
+    NEARBY_LOGS(INFO) << "DCT is using genereted endpoint id.";
+    return GetEndpointIdForDct().value();
+  } else {
+    if (!local_endpoint_id_.empty()) {
+      NEARBY_LOGS(INFO) << __func__ << ": Reusing cached endpoint id: "
+                        << local_endpoint_id_;
+      return local_endpoint_id_;
+    }
+    if (external_device_provider_ == nullptr) {
+      local_endpoint_id_ = GenerateLocalEndpointId();
+      NEARBY_LOGS(INFO) << __func__ << ": Locally generating endpoint id: "
+                        << local_endpoint_id_;
+    } else {
+      local_endpoint_id_ =
+          external_device_provider_->GetLocalDevice()->GetEndpointId();
+      NEARBY_LOGS(INFO)
+          << __func__
+          << ": From external device provider, populating endpoint id: "
+          << local_endpoint_id_;
+    }
     return local_endpoint_id_;
   }
-  if (external_device_provider_ == nullptr) {
-    local_endpoint_id_ = GenerateLocalEndpointId();
-    NEARBY_LOGS(INFO) << __func__ << ": Locally generating endpoint id: "
-                      << local_endpoint_id_;
-  } else {
-    local_endpoint_id_ =
-        external_device_provider_->GetLocalDevice()->GetEndpointId();
-    NEARBY_LOGS(INFO)
-        << __func__
-        << ": From external device provider, populating endpoint id: "
-        << local_endpoint_id_;
-  }
-  return local_endpoint_id_;
 }
 
 const NearbyDevice* ClientProxy::GetLocalDevice() {
@@ -950,6 +962,11 @@ std::optional<OsInfo> ClientProxy::GetRemoteOsInfo(
   return std::nullopt;
 }
 
+void ClientProxy::SetLocalOsType(
+    const location::nearby::connections::OsInfo::OsType& os_type) {
+  local_os_info_.set_type(os_type);
+}
+
 void ClientProxy::SetRemoteOsInfo(absl::string_view endpoint_id,
                                   const OsInfo& remote_os_info) {
   ConnectionPair* item = LookupConnection(endpoint_id);
@@ -1024,7 +1041,8 @@ void ClientProxy::OnPayload(const std::string& endpoint_id, Payload payload) {
     if (item != nullptr) {
       NEARBY_LOGS(INFO) << "ClientProxy [reporting onPayloadReceived]: client="
                         << GetClientId() << "; endpoint_id=" << endpoint_id
-                        << " ; payload_id=" << payload.GetId();
+                        << " ; payload {id:" << payload.GetId()
+                        << ", type:" << payload.GetType() << "}";
       item->second.payload_cb(endpoint_id, std::move(payload));
     }
   }
@@ -1299,6 +1317,47 @@ void ClientProxy::SetWebRtcNonCellular(bool webrtc_non_cellular) {
   NEARBY_LOGS(INFO) << "ClientProxy: client=" << GetClientId()
                     << allow_webrtc_cellular_str << " to use mobile data.",
       webrtc_non_cellular_ = webrtc_non_cellular;
+}
+
+bool ClientProxy::IsDctEnabled() const { return is_dct_enabled_; }
+
+uint8_t ClientProxy::GetDctDedup() const { return dct_dedup_; }
+
+void ClientProxy::UpdateDctDeviceName(absl::string_view device_name) {
+  if (!dct_device_name_.empty() && dct_device_name_ != device_name) {
+    // Need to update dedup value if device name is changed.
+    absl::BitGen bitgen;
+    dct_dedup_ = absl::Uniform(bitgen, 0, 1 << 7);
+  }
+
+  dct_device_name_ = device_name;
+
+  // The DCT endpoint ID should be derived from device name and dedup value.
+  std::optional<std::string> dct_endpoint_id =
+      advertisements::ble::DctAdvertisement::GenerateEndpointId(
+          dct_dedup_, dct_device_name_);
+  if (dct_endpoint_id.has_value()) {
+    dct_endpoint_id_ = *dct_endpoint_id;
+  } else {
+    dct_endpoint_id_.clear();
+  }
+}
+
+std::optional<MediumRole> ClientProxy::GetMediumRole(
+    absl::string_view endpoint_id) const {
+  const ConnectionPair* item = LookupConnection(endpoint_id);
+  if (item != nullptr) {
+    return item->first.connection_options.connection_info.medium_role;
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> ClientProxy::GetEndpointIdForDct() const {
+  if (dct_endpoint_id_.empty()) {
+    return std::nullopt;
+  }
+
+  return dct_endpoint_id_;
 }
 
 std::string ClientProxy::ToString(PayloadProgressInfo::Status status) const {

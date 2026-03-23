@@ -7,12 +7,14 @@
 #import <string>
 
 #import "base/hash/hash.h"
+#include "base/notimplemented.h"
 #import "components/autofill/core/common/password_form_fill_data.h"
 #import "components/autofill/ios/common/field_data_manager_factory_ios.h"
 #import "components/password_manager/core/browser/password_generation_frame_helper.h"
 #import "components/password_manager/core/browser/password_manager.h"
 #import "components/password_manager/ios/ios_password_manager_driver_factory.h"
 #import "components/password_manager/ios/password_manager_java_script_feature.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 using password_manager::PasswordAutofillManager;
 using password_manager::PasswordManager;
@@ -51,7 +53,7 @@ int IOSPasswordManagerDriver::GetId() const {
   return id_;
 }
 
-void IOSPasswordManagerDriver::SetPasswordFillData(
+void IOSPasswordManagerDriver::PropagateFillDataOnParsingCompletion(
     const autofill::PasswordFormFillData& form_data) {
   // Disable proactive generation and clear the pending forms if it is known
   // that there are passwords available for the site. This signal won't work for
@@ -66,7 +68,8 @@ void IOSPasswordManagerDriver::SetPasswordFillData(
                      forSecurityOrigin:security_origin_];
 }
 
-void IOSPasswordManagerDriver::InformNoSavedCredentials() {
+void IOSPasswordManagerDriver::InformNoSavedCredentials(
+    bool should_show_popup_without_passwords) {
   // Allow using the proactive password generation bottom sheet from now on
   // since it is now known that there are no credentials saved for this page.
   // This signal won't work if the passwords are removed after the frame is
@@ -184,6 +187,16 @@ int IOSPasswordManagerDriver::GetFrameId() const {
 
 const GURL& IOSPasswordManagerDriver::GetLastCommittedURL() const {
   return bridge_.lastCommittedURL;
+}
+
+const url::Origin& IOSPasswordManagerDriver::GetLastCommittedOrigin() const {
+  NOTREACHED();
+}
+
+gfx::RectF IOSPasswordManagerDriver::TransformToRootCoordinates(
+    const gfx::RectF& bounds_in_frame_coordinates) {
+  NOTIMPLEMENTED();
+  return bounds_in_frame_coordinates;
 }
 
 base::WeakPtr<password_manager::PasswordManagerDriver>

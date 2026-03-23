@@ -16,12 +16,12 @@
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_transformable_container.h"
+#include "third_party/blink/renderer/core/layout/transform_utils.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/scrolling/sticky_position_scrolling_constraints.h"
 #include "third_party/blink/renderer/core/page/scrolling/top_document_root_scroller_controller.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
-#include "third_party/blink/renderer/core/paint/transform_utils.h"
 #include "third_party/blink/renderer/core/svg/svg_element.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_utils.h"
@@ -86,6 +86,12 @@ CompositingReasons CompositingReasonsForWillChange(const ComputedStyle& style) {
     reasons |= CompositingReason::kWillChangeFilter;
   if (style.HasWillChangeBackdropFilterHint())
     reasons |= CompositingReason::kWillChangeBackdropFilter;
+  if (style.HasWillChangeClipPathHint()) {
+    reasons |= CompositingReason::kWillChangeClipPath;
+  }
+  if (style.HasWillChangeMixBlendModeHint()) {
+    reasons |= CompositingReason::kWillChangeMixBlendMode;
+  }
 
   // kWillChangeOther is needed only when none of the explicit kWillChange*
   // reasons are set.
@@ -107,6 +113,7 @@ CompositingReasons CompositingReasonsFor3DTransform(
   const ComputedStyle& style = layout_object.StyleRef();
   CompositingReasons reasons =
       CompositingReasonFinder::PotentialCompositingReasonsFor3DTransform(style);
+
   if (reasons != CompositingReason::kNone && layout_object.IsBox()) {
     // In theory this should operate on fragment sizes, but using the box size
     // is probably good enough for a use counter.
@@ -371,6 +378,7 @@ CompositingReasons CompositingReasonFinder::DirectReasonsForPaintProperties(
   switch (style.StyleType()) {
     case kPseudoIdViewTransition:
     case kPseudoIdViewTransitionGroup:
+    case kPseudoIdViewTransitionGroupChildren:
     case kPseudoIdViewTransitionImagePair:
     case kPseudoIdViewTransitionNew:
     case kPseudoIdViewTransitionOld:
@@ -380,15 +388,15 @@ CompositingReasons CompositingReasonFinder::DirectReasonsForPaintProperties(
       break;
   }
 
-  if (auto* transition =
-          ViewTransitionUtils::GetTransition(object.GetDocument())) {
-    // Note that `NeedsViewTransitionEffectNode` returns true for values that
-    // are in the non-transition-pseudo tree DOM. That is, things like layout
-    // view or the view transition elements that we are transitioning.
-    if (transition->NeedsViewTransitionEffectNode(object)) {
-      reasons |= CompositingReason::kViewTransitionElement;
-    }
-  }
+  ViewTransitionUtils::ForEachTransition(
+      object.GetDocument(), [&](ViewTransition& transition) {
+        // This ensures compositing for elements that are actively participating
+        // in a transition because they are tagged with view-transition-name.
+        // It does not apply to the ::view-transition* pseudo-elements.
+        if (transition.NeedsViewTransitionEffectNode(object)) {
+          reasons |= CompositingReason::kViewTransitionElement;
+        }
+      });
 
   auto* element = DynamicTo<Element>(object.GetNode());
   if (element && element->GetRestrictionTargetId()) {

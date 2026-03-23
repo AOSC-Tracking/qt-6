@@ -45,11 +45,9 @@ QQmlValueFilter::QQmlValueFilter(QObject *parent) :
 }
 
 /*!
-    \qmlproperty string ValueFilter::value
+    \qmlproperty variant ValueFilter::value
 
-    This property holds specific value that can be used to filter the data.
-
-    The default value is empty string.
+    This property holds the specific value that can be used to filter the data.
 */
 const QVariant& QQmlValueFilter::value() const
 {

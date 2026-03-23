@@ -6,10 +6,7 @@
 #define QABSTRACTSOCKET_H
 
 #include <QtNetwork/qtnetworkglobal.h>
-#if QT_VERSION >= QT_VERSION_CHECK(7, 0, 0)
-#include <QtNetwork/qabstractsocket.h>
-#endif
-#ifdef Q_QDOC
+#if QT_VERSION >= QT_VERSION_CHECK(7, 0, 0) || defined(Q_QDOC)
 #include <QtNetwork/qhostaddress.h>
 #endif
 #include <QtCore/qiodevice.h>
@@ -29,7 +26,6 @@ class QAuthenticator;
 class Q_NETWORK_EXPORT QAbstractSocket : public QIODevice
 {
     Q_OBJECT
-    Q_MOC_INCLUDE(<QtNetwork/qauthenticator.h>)
 
 public:
     enum SocketType {
@@ -51,10 +47,7 @@ public:
 #else
     // compatibility with Qt 4 to 6
     using NetworkLayerProtocol = QHostAddress::NetworkLayerProtocol;
-    static constexpr auto IPv4Protocol = QHostAddress::IPv4Protocol;
-    static constexpr auto IPv6Protocol = QHostAddress::IPv6Protocol;
-    static constexpr auto AnyIPProtocol = QHostAddress::AnyIPProtocol;
-    static constexpr auto UnknownNetworkLayerProtocol = QHostAddress::UnknownNetworkLayerProtocol;
+    using enum NetworkLayerProtocol;
 #endif
 
     enum SocketError {
@@ -103,7 +96,10 @@ public:
         TypeOfServiceOption, //IP_TOS
         SendBufferSizeSocketOption,    //SO_SNDBUF
         ReceiveBufferSizeSocketOption,  //SO_RCVBUF
-        PathMtuSocketOption // IP_MTU
+        PathMtuSocketOption, // IP_MTU
+        KeepAliveIdleOption, // TCP_KEEPIDLE
+        KeepAliveIntervalOption, // TCP_KEEPINTVL
+        KeepAliveCountOption, // TCP_KEEPCNT
     };
     Q_ENUM(SocketOption)
     enum BindFlag {

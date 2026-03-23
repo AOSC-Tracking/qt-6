@@ -57,8 +57,6 @@ const char kOSVersion[] = "os_version";
 const char kVersionCode[] = "version_code";
 const char kTargetSdkVersionName[] = "target_sdk_version_name";
 const char kTargetSdkVersion[] = "target_sdk_version";
-const char kTargetsUName[] = "targets_u_name";
-const char kTargetsU[] = "targets_u";
 const char kGmsName[] = "gms_name";
 const char kGmsVersion[] = "gms_version";
 #endif
@@ -88,6 +86,7 @@ const char kVariationsName[] = "variations_name";
 const char kVariationsSeed[] = "variations_seed";
 const char kVariationsSeedName[] = "variations_seed_name";
 const char kVersion[] = "version";
+const char kVersionSuffix[] = "version_suffix";
 const char kVersionModifier[] = "version_modifier";
 const char kVersionProcessorVariation[] = "version_processor_variation";
 

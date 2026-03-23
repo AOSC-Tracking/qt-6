@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import Qt5Compat.GraphicalEffects.private
@@ -8,9 +9,13 @@ import Qt5Compat.GraphicalEffects.private
     \qmltype FastBlur
     \inqmlmodule Qt5Compat.GraphicalEffects
     \since QtGraphicalEffects 1.0
-    \inherits QtQuick2::Item
+    \inherits QtQuick::Item
     \ingroup qtgraphicaleffects-blur
     \brief Applies a fast blur effect to one or more source items.
+
+    \note The MultiEffect component provides a blur effect with some performance
+    advantages. For new code, it should be considered as an alternative to using Qt Graphical
+    Effects.
 
     The FastBlur effect softens the source content by blurring it with algorithm
     which uses the source content downscaling and bilinear filtering.

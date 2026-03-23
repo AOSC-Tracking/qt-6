@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -15,6 +16,7 @@
 #include "ui/accessibility/platform/browser_accessibility.h"
 
 #include <QtGui/qaccessible.h>
+#include <QWebEngineSettings>
 
 namespace QtWebEngineCore {
 class BrowserAccessibilityInterface;
@@ -36,6 +38,7 @@ public:
 #endif
 
     bool isReady() const;
+    bool CanFireEvents() const override;
 
     QtWebEngineCore::BrowserAccessibilityInterface *interface = nullptr;
 };
@@ -141,6 +144,7 @@ private:
     QObject *m_object = nullptr;
     QAccessible::Id m_id = 0;
     BrowserAccessibilityQt *q;
+    QWebEngineSettings *m_settings = nullptr;
 };
 
 BrowserAccessibilityQt::BrowserAccessibilityQt(ui::BrowserAccessibilityManager *manager,
@@ -160,6 +164,13 @@ bool BrowserAccessibilityQt::isReady() const
     // FIXME: This is just a workaround, remove this when the commented out assert in
     //        BrowserAccessibilityManager::GetFromID(int32_t id) gets fixed.
     return manager()->GetFromID(node()->id()) != nullptr;
+}
+
+bool BrowserAccessibilityQt::CanFireEvents() const
+{
+    if (!node() || !interface || !isReady())
+        return false;
+    return BrowserAccessibility::CanFireEvents();
 }
 
 #if defined(Q_OS_MACOS)
@@ -262,11 +273,14 @@ BrowserAccessibilityInterface::BrowserAccessibilityInterface(BrowserAccessibilit
             m_object->setObjectName(name);
     }
 
+    m_settings = static_cast<ui::BrowserAccessibilityManagerQt *>(q->manager())->webEngineSettings();
     m_id = QAccessible::registerAccessibleInterface(this);
 }
 
 BrowserAccessibilityInterface::~BrowserAccessibilityInterface()
 {
+    if (m_object)
+        m_object->deleteLater();
     q->interface = nullptr;
 }
 
@@ -395,6 +409,15 @@ QString BrowserAccessibilityInterface::text(QAccessible::Text t) const
         return toQt(q->GetStringAttribute(ax::mojom::StringAttribute::kValue));
     case QAccessible::Accelerator:
         return toQt(q->GetStringAttribute(ax::mojom::StringAttribute::kKeyShortcuts));
+    case QAccessible::Identifier:
+        if (m_settings && m_settings->testAttribute(QWebEngineSettings::TrimAccessibilityIdentifiers)) {
+            // AXPlatformNodeWin::GetPropertyValueImpl(), case UIA_AutomationIdPropertyId
+            return (q->GetRole() == ax::mojom::Role::kRootWebArea)
+                ? QLatin1StringView("RootWebArea")
+                : toQt(q->node()->GetString16Attribute(ax::mojom::StringAttribute::kHtmlId));
+        } else {
+            break;
+        }
     default:
         break;
     }

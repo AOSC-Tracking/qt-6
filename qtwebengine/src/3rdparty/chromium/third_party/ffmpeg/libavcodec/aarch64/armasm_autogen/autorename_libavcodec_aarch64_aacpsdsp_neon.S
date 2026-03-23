@@ -849,6 +849,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1020,7 +1023,7 @@
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_ps_add_squares_neon
 
@@ -1055,7 +1058,7 @@ temp_label_0
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_ps_mul_pair_single_neon
 
@@ -1090,7 +1093,7 @@ temp_label_1
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_ps_stereo_interpolate_neon
 
@@ -1134,7 +1137,7 @@ temp_label_2
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_ps_stereo_interpolate_ipdopd_neon
 
@@ -1190,7 +1193,7 @@ temp_label_3
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_ps_hybrid_analysis_neon
 

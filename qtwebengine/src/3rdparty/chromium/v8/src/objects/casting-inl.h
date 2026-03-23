@@ -5,11 +5,13 @@
 #ifndef V8_OBJECTS_CASTING_INL_H_
 #define V8_OBJECTS_CASTING_INL_H_
 
+#include "src/objects/casting.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/common/globals.h"
 #include "src/execution/isolate.h"
 #include "src/heap/heap-layout.h"
 #include "src/heap/heap.h"
-#include "src/objects/casting.h"
 #include "src/objects/heap-object.h"
 
 namespace v8::internal {
@@ -30,10 +32,11 @@ bool GCAwareObjectTypeCheck(Tagged<Object> object, const Heap* heap) {
       PtrComprCageBase(heap->isolate()->cage_base()), kRelaxedLoad);
   if ((heap->gc_state() == Heap::SCAVENGE) &&
       HeapLayout::InYoungGeneration(heap_object) &&
-      (v8_flags.scavenger_pinning_objects ||
-       v8_flags.scavenger_precise_pinning_objects) &&
+      ((heap->ConservativeStackScanningModeForMinorGC() !=
+        Heap::StackScanMode::kNone) ||
+       heap->ShouldUsePrecisePinningForMinorGC()) &&
       map_word.IsForwardingAddress() &&
-      HeapLayout::IsSelfForwarded(heap_object)) {
+      HeapLayout::IsSelfForwarded(heap_object, map_word)) {
     return true;
   }
   // 3) A GC is ongoing, `object` was evacuated, and the new instance is a

@@ -10,17 +10,16 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/gmock_expected_support.h"
-#include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "components/ukm/test_ukm_recorder.h"
-#include "content/browser/preloading/preload_pipeline_info.h"
+#include "content/browser/preloading/preload_pipeline_info_impl.h"
 #include "content/browser/preloading/preloading.h"
 #include "content/browser/preloading/prerender/prerender_attributes.h"
-#include "content/browser/preloading/prerender/prerender_features.h"
 #include "content/browser/preloading/prerender/prerender_final_status.h"
 #include "content/browser/preloading/prerender/prerender_host.h"
 #include "content/browser/preloading/prerender/prerender_host_registry.h"
 #include "content/browser/preloading/prerender/prerender_metrics.h"
+#include "content/public/browser/preload_pipeline_info.h"
 #include "content/public/browser/preloading.h"
 #include "content/public/browser/preloading_data.h"
 #include "content/public/test/mock_web_contents_observer.h"
@@ -46,11 +45,13 @@ TEST(IsActivationHeaderMatchTest, OrderInsensitive) {
   PrerenderCancellationReason reason = PrerenderCancellationReason(
       PrerenderFinalStatus::kActivationNavigationParameterMismatch);
   net::HttpRequestHeaders prerender_headers;
-  prerender_headers.AddHeadersFromString(
-      "name1: value1 \r\n name2: value2 \r\n name3: value3");
+  prerender_headers.SetHeader("name1", "value1");
+  prerender_headers.SetHeader("name2", "value2");
+  prerender_headers.SetHeader("name3", "value3");
   net::HttpRequestHeaders potential_activation_headers;
-  potential_activation_headers.AddHeadersFromString(
-      "name2: value2 \r\n name3:value3  \r\n name1: value1 ");
+  potential_activation_headers.SetHeader("name2", "value2");
+  potential_activation_headers.SetHeader("name3", "value3");
+  potential_activation_headers.SetHeader("name1", "value1");
   EXPECT_TRUE(PrerenderHost::IsActivationHeaderMatch(
       potential_activation_headers, prerender_headers, reason));
 }
@@ -59,11 +60,13 @@ TEST(IsActivationHeaderMatchTest, KeyCaseInsensitive) {
   PrerenderCancellationReason reason = PrerenderCancellationReason(
       PrerenderFinalStatus::kActivationNavigationParameterMismatch);
   net::HttpRequestHeaders prerender_headers;
-  prerender_headers.AddHeadersFromString(
-      "NAME1: value1 \r\n name2: value2 \r\n name3: value3");
+  prerender_headers.SetHeader("NAME1", "value1");
+  prerender_headers.SetHeader("name2", "value2");
+  prerender_headers.SetHeader("name3", "value3");
   net::HttpRequestHeaders potential_activation_headers;
-  potential_activation_headers.AddHeadersFromString(
-      "name1: value1 \r\n name2: value2  \r\n name3: value3 ");
+  potential_activation_headers.SetHeader("name1", "value1");
+  potential_activation_headers.SetHeader("name2", "value2");
+  potential_activation_headers.SetHeader("name3", "value3");
   EXPECT_TRUE(PrerenderHost::IsActivationHeaderMatch(
       potential_activation_headers, prerender_headers, reason));
 }
@@ -72,11 +75,13 @@ TEST(IsActivationHeaderMatchTest, ValueCaseInsensitive) {
   PrerenderCancellationReason reason = PrerenderCancellationReason(
       PrerenderFinalStatus::kActivationNavigationParameterMismatch);
   net::HttpRequestHeaders prerender_headers;
-  prerender_headers.AddHeadersFromString(
-      "name1: value1 \r\n name2: value2 \r\n name3: value3");
+  prerender_headers.SetHeader("name1", "value1");
+  prerender_headers.SetHeader("name2", "value2");
+  prerender_headers.SetHeader("name3", "value3");
   net::HttpRequestHeaders potential_activation_headers;
-  potential_activation_headers.AddHeadersFromString(
-      "name1: value1 \r\n name2: VALUE2  \r\n name3: value3 ");
+  potential_activation_headers.SetHeader("name1", "value1");
+  potential_activation_headers.SetHeader("name2", "VALUE2");
+  potential_activation_headers.SetHeader("name3", "value3");
   EXPECT_TRUE(PrerenderHost::IsActivationHeaderMatch(
       potential_activation_headers, prerender_headers, reason));
 }
@@ -92,11 +97,13 @@ TEST(IsActivationHeaderMatchTest, CalculateMismatchedHeaders) {
     PrerenderCancellationReason reason = PrerenderCancellationReason(
         PrerenderFinalStatus::kActivationNavigationParameterMismatch);
     net::HttpRequestHeaders prerender_headers;
-    prerender_headers.AddHeadersFromString(
-        "name1: value1 \r\n name2: value2 \r\n name3: value3");
+    prerender_headers.SetHeader("name1", "value1");
+    prerender_headers.SetHeader("name2", "value2");
+    prerender_headers.SetHeader("name3", "value3");
     net::HttpRequestHeaders potential_headers;
-    potential_headers.AddHeadersFromString(
-        "name1: value1 \r\n name2: value2 \r\n name3: value3");
+    potential_headers.SetHeader("name1", "value1");
+    potential_headers.SetHeader("name2", "value2");
+    potential_headers.SetHeader("name3", "value3");
     EXPECT_TRUE(PrerenderHost::IsActivationHeaderMatch(
         potential_headers, prerender_headers, reason));
     EXPECT_FALSE(reason.GetPrerenderMismatchedHeaders());
@@ -105,9 +112,7 @@ TEST(IsActivationHeaderMatchTest, CalculateMismatchedHeaders) {
     PrerenderCancellationReason reason = PrerenderCancellationReason(
         PrerenderFinalStatus::kActivationNavigationParameterMismatch);
     net::HttpRequestHeaders prerender_headers;
-    prerender_headers.AddHeadersFromString("");
     net::HttpRequestHeaders potential_headers;
-    potential_headers.AddHeadersFromString("");
     EXPECT_TRUE(PrerenderHost::IsActivationHeaderMatch(
         potential_headers, prerender_headers, reason));
     EXPECT_FALSE(reason.GetPrerenderMismatchedHeaders());
@@ -116,13 +121,15 @@ TEST(IsActivationHeaderMatchTest, CalculateMismatchedHeaders) {
     PrerenderCancellationReason reason = PrerenderCancellationReason(
         PrerenderFinalStatus::kActivationNavigationParameterMismatch);
     net::HttpRequestHeaders prerender_headers;
-    prerender_headers.AddHeadersFromString(
-        "name1: value1 \r\n name2: value2 \r\n name3: value3 \r\n name5: "
-        "value3");
+    prerender_headers.SetHeader("name1", "value1");
+    prerender_headers.SetHeader("name2", "value2");
+    prerender_headers.SetHeader("name3", "value3");
+    prerender_headers.SetHeader("name5", "value3");
     net::HttpRequestHeaders potential_headers;
-    potential_headers.AddHeadersFromString(
-        "name1: value1 \r\n name3: value2 \r\n name4: value4 \r\n name5: "
-        "value3");
+    potential_headers.SetHeader("name1", "value1");
+    potential_headers.SetHeader("name3", "value2");
+    potential_headers.SetHeader("name4", "value4");
+    potential_headers.SetHeader("name5", "value3");
     EXPECT_FALSE(PrerenderHost::IsActivationHeaderMatch(
         potential_headers, prerender_headers, reason));
     std::vector<PrerenderMismatchedHeaders> mismatched_headers_expected;
@@ -139,10 +146,11 @@ TEST(IsActivationHeaderMatchTest, CalculateMismatchedHeaders) {
     PrerenderCancellationReason reason = PrerenderCancellationReason(
         PrerenderFinalStatus::kActivationNavigationParameterMismatch);
     net::HttpRequestHeaders prerender_headers;
-    prerender_headers.AddHeadersFromString(
-        "name5: value1 \r\n name6: value2 \r\n name7: value3");
+    prerender_headers.SetHeader("name5", "value1");
+    prerender_headers.SetHeader("name6", "value2");
+    prerender_headers.SetHeader("name7", "value3");
     net::HttpRequestHeaders potential_headers;
-    potential_headers.AddHeadersFromString("name2: value1");
+    potential_headers.SetHeader("name2", "value1");
     EXPECT_FALSE(PrerenderHost::IsActivationHeaderMatch(
         potential_headers, prerender_headers, reason));
     std::vector<PrerenderMismatchedHeaders> mismatched_headers_expected;
@@ -160,11 +168,13 @@ TEST(IsActivationHeaderMatchTest, CalculateMismatchedHeaders) {
     PrerenderCancellationReason reason = PrerenderCancellationReason(
         PrerenderFinalStatus::kActivationNavigationParameterMismatch);
     net::HttpRequestHeaders prerender_headers;
-    prerender_headers.AddHeadersFromString("name5: value1 \r\n name6: value2");
+    prerender_headers.SetHeader("name5", "value1");
+    prerender_headers.SetHeader("name6", "value2");
     net::HttpRequestHeaders potential_headers;
-    potential_headers.AddHeadersFromString(
-        "name2: value1 \r\n name6: value2 \r\n name7: value3 \r\n name8: "
-        "value3");
+    potential_headers.SetHeader("name2", "value1");
+    potential_headers.SetHeader("name6", "value2");
+    potential_headers.SetHeader("name7", "value3");
+    potential_headers.SetHeader("name8", "value3");
     EXPECT_FALSE(PrerenderHost::IsActivationHeaderMatch(
         potential_headers, prerender_headers, reason));
     std::vector<PrerenderMismatchedHeaders> mismatched_headers_expected;
@@ -182,10 +192,10 @@ TEST(IsActivationHeaderMatchTest, CalculateMismatchedHeaders) {
     PrerenderCancellationReason reason = PrerenderCancellationReason(
         PrerenderFinalStatus::kActivationNavigationParameterMismatch);
     net::HttpRequestHeaders prerender_headers;
-    prerender_headers.AddHeadersFromString("");
     net::HttpRequestHeaders potential_headers;
-    potential_headers.AddHeadersFromString(
-        "name1: value1 \r\n name2: value2 \r\n name3: value3");
+    potential_headers.SetHeader("name1", "value1");
+    potential_headers.SetHeader("name2", "value2");
+    potential_headers.SetHeader("name3", "value3");
     EXPECT_FALSE(PrerenderHost::IsActivationHeaderMatch(
         potential_headers, prerender_headers, reason));
     std::vector<PrerenderMismatchedHeaders> mismatched_headers_expected;
@@ -202,10 +212,10 @@ TEST(IsActivationHeaderMatchTest, CalculateMismatchedHeaders) {
     PrerenderCancellationReason reason = PrerenderCancellationReason(
         PrerenderFinalStatus::kActivationNavigationParameterMismatch);
     net::HttpRequestHeaders prerender_headers;
-    prerender_headers.AddHeadersFromString(
-        "name1: value1 \r\n name2: value2 \r\n name3: value3");
+    prerender_headers.SetHeader("name1", "value1");
+    prerender_headers.SetHeader("name2", "value2");
+    prerender_headers.SetHeader("name3", "value3");
     net::HttpRequestHeaders potential_headers;
-    potential_headers.AddHeadersFromString("");
     EXPECT_FALSE(PrerenderHost::IsActivationHeaderMatch(
         potential_headers, prerender_headers, reason));
     std::vector<PrerenderMismatchedHeaders> mismatched_headers_expected;
@@ -256,11 +266,6 @@ std::unique_ptr<NavigationSimulatorImpl> CreateActivation(
 
 class PrerenderHostTest : public RenderViewHostImplTestHarness {
  public:
-  PrerenderHostTest() {
-    scoped_feature_list_.InitAndEnableFeature(
-        blink::features::kPrerender2MainFrameNavigation);
-  }
-
   ~PrerenderHostTest() override = default;
 
   void SetUp() override {
@@ -283,15 +288,17 @@ class PrerenderHostTest : public RenderViewHostImplTestHarness {
     RenderFrameHostImpl* rfh = contents()->GetPrimaryMainFrame();
     return PrerenderAttributes(
         url, PreloadingTriggerType::kSpeculationRule,
-        /*embedder_histogram_suffix=*/"",
-        blink::mojom::SpeculationTargetHint::kNoHint, Referrer(),
-        blink::mojom::SpeculationEagerness::kEager,
+        /*embedder_histogram_suffix=*/"", SpeculationRulesParams(), Referrer(),
         /*no_vary_search_hint=*/std::nullopt, rfh, contents()->GetWeakPtr(),
         ui::PAGE_TRANSITION_LINK,
         /*should_warm_up_compositor=*/false,
-        /*should_prepare_paint_tree=*/false, std::move(url_match_predicate),
+        /*should_prepare_paint_tree=*/false,
+        /*should_pause_javascript_execution=*/false,
+        std::move(url_match_predicate),
         /*prerender_navigation_handle_callback=*/{},
-        base::MakeRefCounted<PreloadPipelineInfo>());
+        PreloadPipelineInfoImpl::Create(
+            /*planned_max_preloading_type=*/PreloadingType::kPrerender),
+        /*allow_reuse=*/false);
   }
 
   void ExpectFinalStatus(PrerenderFinalStatus status) {
@@ -328,32 +335,9 @@ class PrerenderHostTest : public RenderViewHostImplTestHarness {
       web_contents_delegate_;
   base::HistogramTester histogram_tester_;
   ukm::TestAutoSetUkmRecorder ukm_recorder_;
-  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-class NoVarySearchHeaderPrerenderHostTest
-    : public PrerenderHostTest,
-      public ::testing::WithParamInterface<bool> {
- public:
-  NoVarySearchHeaderPrerenderHostTest() {
-    bool is_nvs_header_enabled = GetParam();
-    if (is_nvs_header_enabled) {
-      scoped_feature_list_.InitAndEnableFeature(
-          blink::features::kPrerender2NoVarySearch);
-    } else {
-      scoped_feature_list_.InitAndDisableFeature(
-          blink::features::kPrerender2NoVarySearch);
-    }
-  }
-
-  ~NoVarySearchHeaderPrerenderHostTest() override = default;
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-};
-
-TEST_P(NoVarySearchHeaderPrerenderHostTest, IsNoVarySearchHeaderSet) {
-  bool is_nvs_header_enabled = GetParam();
+TEST_F(PrerenderHostTest, IsNoVarySearchHeaderSet) {
   // Start prerendering a page.
   const GURL kPrerenderingUrl("https://example.com/next");
   FrameTreeNodeId prerender_frame_tree_node_id =
@@ -365,13 +349,8 @@ TEST_P(NoVarySearchHeaderPrerenderHostTest, IsNoVarySearchHeaderSet) {
       net::HttpResponseHeaders::Builder(net::HttpVersion(1, 1), "200 OK")
           .AddHeader("No-Vary-Search", "params=(\"a\")")
           .Build());
-  EXPECT_EQ(prerender_host->no_vary_search().has_value(),
-            is_nvs_header_enabled);
+  EXPECT_TRUE(prerender_host->no_vary_search().has_value());
 }
-
-INSTANTIATE_TEST_SUITE_P(PrerenderHostTest,
-                         NoVarySearchHeaderPrerenderHostTest,
-                         ::testing::Bool());
 
 TEST_F(PrerenderHostTest, Activate) {
   // Start prerendering a page.
@@ -685,7 +664,6 @@ TEST_F(PrerenderHostTest, CanceledPrerenderCannotBeReadyForActivation) {
   PreloadingAttempt* preloading_attempt = preloading_data->AddPreloadingAttempt(
       content_preloading_predictor::kSpeculationRules,
       PreloadingType::kPrerender, std::move(same_url_matcher),
-      /*planned_max_preloading_type=*/std::nullopt,
       contents()->GetPrimaryMainFrame()->GetPageUkmSourceId());
 
   const FrameTreeNodeId prerender_frame_tree_node_id =
@@ -742,7 +720,33 @@ TEST(AreHttpRequestHeadersCompatible, IgnoreRTT) {
       /*potential_activation_additional_headers=*/"",
 #endif  // BUILDFLAG(IS_ANDROID)
       prerender_headers, PreloadingTriggerType::kSpeculationRule,
-      /*embedder_histogram_suffix=*/"", reason));
+      /*embedder_histogram_suffix=*/"", /*allow_x_header_mismatch=*/false,
+      reason));
+}
+
+TEST(AreHttpRequestHeadersCompatible, XHeaders) {
+  PrerenderCancellationReason reason = PrerenderCancellationReason(
+      PrerenderFinalStatus::kActivationNavigationParameterMismatch);
+  const std::string prerender_headers = "x-hello: 1";
+  const std::string potential_activation_headers = "X-world: 2";
+
+  EXPECT_FALSE(PrerenderHost::AreHttpRequestHeadersCompatible(
+      potential_activation_headers,
+#if BUILDFLAG(IS_ANDROID)
+      /*potential_activation_additional_headers=*/"",
+#endif  // BUILDFLAG(IS_ANDROID)
+      prerender_headers, PreloadingTriggerType::kSpeculationRule,
+      /*embedder_histogram_suffix=*/"", /*allow_x_header_mismatch=*/false,
+      reason));
+
+  EXPECT_TRUE(PrerenderHost::AreHttpRequestHeadersCompatible(
+      potential_activation_headers,
+#if BUILDFLAG(IS_ANDROID)
+      /*potential_activation_additional_headers=*/"",
+#endif  // BUILDFLAG(IS_ANDROID)
+      prerender_headers, PreloadingTriggerType::kSpeculationRule,
+      /*embedder_histogram_suffix=*/"", /*allow_x_header_mismatch=*/true,
+      reason));
 }
 
 }  // namespace

@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_SHADER_CODE_GENERATOR_V2_H
 #define QSSG_RENDER_SHADER_CODE_GENERATOR_V2_H
@@ -46,7 +48,8 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGStageGeneratorBase
         VertexInput,
         Input,
         Output,
-        Uniform
+        Uniform,
+        Image
     };
 
     enum class ShaderItemMapFlag {
@@ -71,6 +74,7 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGStageGeneratorBase
     TStrTableStrMap m_flatIncoming;
     TStrTableStrMap *m_flatOutgoing = nullptr;
     QSet<QByteArray> m_includes;
+    QList<QByteArray> m_prefixes;
     TStrTableStrMap m_uniforms;
     TStrTableSizedStrMap m_uniformArrays;
     TStrTableStrMap m_constantBuffers;
@@ -80,6 +84,7 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGStageGeneratorBase
     QSSGShaderGeneratorStage m_stage;
     QSSGShaderGeneratorStageFlags m_enabledStages;
     QList<QByteArray> m_addedFunctions;
+    TStrTableStrMap m_addedTypeDeclarations;
     TStrTableStrMap m_addedDefinitions;
     QSSGShaderResourceMergeContext *m_mergeContext = nullptr;
 
@@ -128,6 +133,10 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGStageGeneratorBase
     virtual void addFunction(const QByteArray &functionName) final;
 
     virtual void addDefinition(const QByteArray &name, const QByteArray &value) final;
+
+    virtual void addTypeDeclaration(const QByteArray &typeName, const QByteArray &snippet) final;
+
+    void addPrefix(const QByteArray &data);
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QSSGStageGeneratorBase::ShaderItemMapFlags)
@@ -175,6 +184,7 @@ public:
                                                        QSSGShaderLibraryManager &shaderLibraryManager,
                                                        QSSGShaderCache &theCache,
                                                        QSSGRhiShaderPipeline::StageFlags stageFlags,
+                                                       const QSSGUserShaderAugmentation &shaderAugmentation,
                                                        int viewCount,
                                                        bool perTargetCompilation);
 };

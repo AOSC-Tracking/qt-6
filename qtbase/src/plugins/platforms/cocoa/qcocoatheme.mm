@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <AppKit/AppKit.h>
 
@@ -14,6 +15,7 @@
 #include "qcocoahelpers.h"
 
 #include <QtCore/qfileinfo.h>
+#include <QtCore/qstandardpaths.h>
 #include <QtCore/private/qcore_mac_p.h>
 #include <QtGui/private/qfont_p.h>
 #include <QtGui/private/qguiapplication_p.h>
@@ -21,6 +23,7 @@
 #include <QtGui/qpainter.h>
 #include <QtGui/qtextformat.h>
 #include <QtGui/private/qcoretextfontdatabase_p.h>
+#include <QtGui/private/qapplefileiconengine_p.h>
 #include <QtGui/private/qappleiconengine_p.h>
 #include <QtGui/private/qfontengine_coretext_p.h>
 #include <QtGui/private/qabstractfileiconengine_p.h>
@@ -34,6 +37,7 @@
 #include "qcocoamessagedialog.h"
 
 #include <CoreServices/CoreServices.h>
+#include <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -354,9 +358,16 @@ QPixmap QCocoaTheme::standardPixmap(StandardPixmap sp, const QSizeF &size) const
     case MessageBoxCritical:
         iconType = kAlertStopIcon;
         break;
-    case DesktopIcon:
-        iconType = kDesktopIcon;
-        break;
+    case DesktopIcon: {
+        auto desktop = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+        NSImage *icon = [NSWorkspace.sharedWorkspace iconForFile:desktop.toNSString()];
+        return qt_mac_toQPixmap(icon, size);
+    }
+    case DirHomeIcon: {
+        auto home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+        NSImage *icon = [NSWorkspace.sharedWorkspace iconForFile:home.toNSString()];
+        return qt_mac_toQPixmap(icon, size);
+    }
     case TrashIcon:
         iconType = kTrashIcon;
         break;
@@ -377,16 +388,21 @@ QPixmap QCocoaTheme::standardPixmap(StandardPixmap sp, const QSizeF &size) const
         iconType = kGenericNetworkIcon;
         break;
     case DirOpenIcon:
-        iconType = kOpenFolderIcon;
-        break;
+    case DirLinkOpenIcon:
+    case DirIcon:
     case DirClosedIcon:
-    case DirLinkIcon:
-        iconType = kGenericFolderIcon;
-        break;
+    case DirLinkIcon: {
+        NSImage *icon = [NSWorkspace.sharedWorkspace iconForContentType:UTTypeFolder];
+        return qt_mac_toQPixmap(icon, size);
+    }
     case FileLinkIcon:
     case FileIcon:
         iconType = kGenericDocumentIcon;
         break;
+    case ToolBarHorizontalExtensionButton:
+        return QAppleIconEngine::fromTheme("chevron.forward.2").pixmap(size.toSize());
+    case ToolBarVerticalExtensionButton:
+        return QAppleIconEngine::fromTheme("chevron.down.2").pixmap(size.toSize());
     default:
         break;
     }
@@ -406,31 +422,9 @@ QPixmap QCocoaTheme::standardPixmap(StandardPixmap sp, const QSizeF &size) const
     return QPlatformTheme::standardPixmap(sp, size);
 }
 
-class QCocoaFileIconEngine : public QAbstractFileIconEngine
-{
-public:
-    explicit QCocoaFileIconEngine(const QFileInfo &info,
-                                  QPlatformTheme::IconOptions opts) :
-        QAbstractFileIconEngine(info, opts) {}
-
-    QList<QSize> availableSizes(QIcon::Mode = QIcon::Normal, QIcon::State = QIcon::Off) override
-    { return QAppleIconEngine::availableIconSizes(); }
-
-protected:
-    QPixmap filePixmap(const QSize &size, QIcon::Mode, QIcon::State) override
-    {
-        QMacAutoReleasePool pool;
-
-        NSImage *iconImage = [[NSWorkspace sharedWorkspace] iconForFile:fileInfo().canonicalFilePath().toNSString()];
-        if (!iconImage)
-            return QPixmap();
-        return qt_mac_toQPixmap(iconImage, size);
-    }
-};
-
 QIcon QCocoaTheme::fileIcon(const QFileInfo &fileInfo, QPlatformTheme::IconOptions iconOptions) const
 {
-    return QIcon(new QCocoaFileIconEngine(fileInfo, iconOptions));
+    return QIcon(new QAppleFileIconEngine(fileInfo, iconOptions));
 }
 
 QIconEngine *QCocoaTheme::createIconEngine(const QString &iconName) const
@@ -471,7 +465,7 @@ QVariant QCocoaTheme::themeHint(ThemeHint hint) const
     case QPlatformTheme::KeyboardAutoRepeatRate:
         return 1.0 / NSEvent.keyRepeatInterval;
     case QPlatformTheme::ShowIconsInMenus:
-        return false;
+        return QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSTahoe;
     case QPlatformTheme::MenuSelectionWraps:
         return false;
     default:

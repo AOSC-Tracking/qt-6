@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQMLFORMATTING_P_H
 #define QQMLFORMATTING_P_H
@@ -17,7 +18,6 @@
 
 #include "qlanguageserver_p.h"
 #include "qqmlbasemodule_p.h"
-#include "qqmlcodemodel_p.h"
 
 #include <QtQmlFormat/private/qqmlformatoptions_p.h>
 
@@ -35,7 +35,7 @@ class QQmlDocumentFormatting : public QQmlBaseModule<DocumentFormattingRequest>
 {
     Q_OBJECT
 public:
-    QQmlDocumentFormatting(QmlLsp::QQmlCodeModel *codeModel);
+    QQmlDocumentFormatting(QmlLsp::QQmlCodeModelManager *codeModel);
     QString name() const override;
     void registerHandlers(QLanguageServer *server, QLanguageServerProtocol *protocol) override;
     void setupCapabilities(const QLspSpecification::InitializeParams &clientInfo,

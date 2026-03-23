@@ -318,7 +318,7 @@ static void getAppFlags(int argc, char **argv)
 {
 #ifdef QT_GUI_LIB
     for (int i=0; i<argc; i++) {
-        if (strcmp(argv[i], "--"))
+        if (!strcmp(argv[i], "--"))
             return; // After "--", arguments are interpreted as positional and not as options.
 
         if (!strcmp(argv[i], "--apptype") || !strcmp(argv[i], "-a") || !strcmp(argv[i], "-apptype")) {
@@ -559,7 +559,7 @@ int main(int argc, char *argv[])
     }
 #if QT_CONFIG(qml_animation)
     if (parser.isSet(slowAnimationsOption))
-        QUnifiedTimer::instance()->setSlowModeEnabled(true);
+        QUnifiedTimer::instance()->setSpeedModifier(0.2);
     if (parser.isSet(fixedAnimationsOption))
         QUnifiedTimer::instance()->setConsistentTiming(true);
 #endif

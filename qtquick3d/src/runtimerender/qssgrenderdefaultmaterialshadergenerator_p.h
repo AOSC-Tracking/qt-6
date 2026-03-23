@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_DEFAULT_MATERIAL_SHADER_GENERATOR_H
 #define QSSG_RENDER_DEFAULT_MATERIAL_SHADER_GENERATOR_H
@@ -25,38 +27,11 @@
 
 QT_BEGIN_NAMESPACE
 
-struct QSSGShaderDefaultMaterialKeyProperties;
-struct QSSGShaderDefaultMaterialKey;
 struct QSSGLayerGlobalRenderProperties;
 struct QSSGMaterialVertexPipeline;
 
 struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGMaterialShaderGenerator
 {
-    struct LightVariableNames
-    {
-        QByteArray lightColor;
-        QByteArray lightSpecularColor;
-        QByteArray lightAttenuation;
-        QByteArray lightConstantAttenuation;
-        QByteArray lightLinearAttenuation;
-        QByteArray lightQuadraticAttenuation;
-        QByteArray normalizedDirection;
-        QByteArray lightDirection;
-        QByteArray lightPos;
-        QByteArray lightConeAngle;
-        QByteArray lightInnerConeAngle;
-        QByteArray relativeDistance;
-        QByteArray relativeDirection;
-        QByteArray spotAngle;
-    };
-
-    struct ShadowVariableNames
-    {
-        QByteArray shadowCube;
-        QByteArray shadowData;
-        QByteArray shadowMapTexture;
-    };
-
     ~QSSGMaterialShaderGenerator() = default;
 
     static const char* getSamplerName(QSSGRenderableImage::Type type);
@@ -67,10 +42,9 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGMaterialShaderGenerator
                                                               const QSSGShaderDefaultMaterialKeyProperties &inProperties,
                                                               const QSSGShaderFeatures &inFeatureSet,
                                                               const QSSGRenderGraphObject &inMaterial,
-                                                              const QSSGShaderLightListView &inLights,
-                                                              QSSGRenderableImage *inFirstImage,
                                                               QSSGShaderLibraryManager &shaderLibraryManager,
-                                                              QSSGShaderCache &theCache);
+                                                              QSSGShaderCache &theCache,
+                                                              const QSSGUserShaderAugmentation &shaderAugmentation = {});
 
     static void setRhiMaterialProperties(const QSSGRenderContextInterface &,
                                          QSSGRhiShaderPipeline &shaders,

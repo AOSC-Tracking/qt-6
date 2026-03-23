@@ -21,6 +21,7 @@
 #include "src/objects/tagged.h"
 #include "src/sandbox/external-pointer.h"
 #include "src/strings/unicode-decoder.h"
+#include "third_party/simdutf/simdutf.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -30,6 +31,7 @@ namespace v8::internal {
 namespace maglev {
 class CheckedInternalizedString;
 class BuiltinStringFromCharCode;
+class MaglevGraphBuilder;
 }  // namespace maglev
 
 namespace wasm {
@@ -56,10 +58,9 @@ enum InstanceType : uint16_t;
 class StringShape {
  public:
   V8_INLINE explicit StringShape(const Tagged<String> s);
-  V8_INLINE explicit StringShape(const Tagged<String> s,
-                                 PtrComprCageBase cage_base);
   V8_INLINE explicit StringShape(Tagged<Map> s);
-  V8_INLINE explicit StringShape(InstanceType t);
+  V8_INLINE bool IsOneByte() const;
+  V8_INLINE bool IsTwoByte() const;
   V8_INLINE bool IsSequential() const;
   V8_INLINE bool IsExternal() const;
   V8_INLINE bool IsCons() const;
@@ -74,24 +75,29 @@ class StringShape {
   V8_INLINE bool IsSequentialTwoByte() const;
   V8_INLINE bool IsInternalized() const;
   V8_INLINE bool IsShared() const;
-  V8_INLINE StringRepresentationTag representation_tag() const;
-  V8_INLINE uint32_t encoding_tag() const;
-  V8_INLINE uint32_t representation_and_encoding_tag() const;
-  V8_INLINE uint32_t representation_encoding_and_shared_tag() const;
 #ifdef DEBUG
-  inline uint32_t type() const { return type_; }
   inline void invalidate() { valid_ = false; }
   inline bool valid() const { return valid_; }
 #else
   inline void invalidate() {}
 #endif
 
-  inline bool operator==(const StringShape& that) const {
-    return that.type_ == this->type_;
-  }
+  template <typename TDispatcher>
+  V8_INLINE auto DispatchToSpecificType(Tagged<String> str,
+                                        TDispatcher&& dispatcher) const;
+
+#ifdef DEBUG
+  inline bool IsValidFor(Tagged<String> string) const;
+#endif
 
  private:
-  uint32_t type_;
+#if V8_STATIC_ROOTS_BOOL
+  inline Tagged<Map> map_or_type() const;
+  Tagged<Map> map_;
+#else
+  inline InstanceType map_or_type() const { return type_; }
+  InstanceType type_;
+#endif
 #ifdef DEBUG
   inline void set_valid() { valid_ = true; }
   bool valid_;
@@ -354,9 +360,9 @@ V8_OBJECT class String : public Name {
   // by GetSubstitution.
   class Match {
    public:
-    virtual Handle<String> GetMatch() = 0;
-    virtual Handle<String> GetPrefix() = 0;
-    virtual Handle<String> GetSuffix() = 0;
+    virtual DirectHandle<String> GetMatch() = 0;
+    virtual DirectHandle<String> GetPrefix() = 0;
+    virtual DirectHandle<String> GetSuffix() = 0;
 
     // A named capture can be unmatched (either not specified in the pattern,
     // or specified but unmatched in the current string), or matched.
@@ -364,9 +370,10 @@ V8_OBJECT class String : public Name {
 
     virtual int CaptureCount() = 0;
     virtual bool HasNamedCaptures() = 0;
-    virtual MaybeHandle<String> GetCapture(int i, bool* capture_exists) = 0;
-    virtual MaybeHandle<String> GetNamedCapture(DirectHandle<String> name,
-                                                CaptureState* state) = 0;
+    virtual MaybeDirectHandle<String> GetCapture(int i,
+                                                 bool* capture_exists) = 0;
+    virtual MaybeDirectHandle<String> GetNamedCapture(DirectHandle<String> name,
+                                                      CaptureState* state) = 0;
 
     virtual ~Match() = default;
   };
@@ -378,7 +385,7 @@ V8_OBJECT class String : public Name {
   // A {start_index} can be passed to specify where to start scanning the
   // replacement string.
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<String> GetSubstitution(
-      Isolate* isolate, Match* match, Handle<String> replacement,
+      Isolate* isolate, Match* match, DirectHandle<String> replacement,
       uint32_t start_index = 0);
 
   // String equality operations.
@@ -395,6 +402,10 @@ V8_OBJECT class String : public Name {
   // and to distinguish from the LocalIsolate overload.
   template <EqualityType kEqType = EqualityType::kWholeString, typename Char>
   inline bool IsEqualTo(base::Vector<const Char> str, Isolate* isolate) const;
+
+  // Convenience method for the above using std::string_view instead
+  template <EqualityType kEqType = EqualityType::kWholeString>
+  inline bool IsEqualTo(std::string_view str, Isolate* isolate) const;
 
   // Check if this string matches the given vector of characters, either as a
   // whole string or just a prefix.
@@ -431,6 +442,9 @@ V8_OBJECT class String : public Name {
 
   V8_EXPORT_PRIVATE std::unique_ptr<char[]> ToCString(
       size_t* length_output = nullptr);
+
+  // Return a UTF8 representation of this string as a std::string
+  V8_EXPORT_PRIVATE std::string ToStdString();
 
   // Externalization.
   template <typename T>
@@ -524,8 +538,13 @@ V8_OBJECT class String : public Name {
                           uint32_t start, uint32_t length,
                           const SharedStringAccessGuardIfNeeded& access_guard);
 
-  // TODO(jgruber): This is an ongoing performance experiment. Once done, we'll
-  // rename this to something more appropriate.
+  // Note: this WriteToFlat variant is optimized for the common append-to-end
+  // string builder pattern. Unlike the more generic WriteToFlat, it supports
+  // only full string serialization (and *not* substring extraction).
+  //
+  // TODO(jgruber): Rename this and helper functions. Change the signature to
+  // remove src_index and length arguments, which are required to be 0 and
+  // src->length() due to the implementation.
   //
   // `src_index` and `length` always refer to the desired substring within
   // `src`. `dst` is guaranteed to fit `length`, and is written to
@@ -562,19 +581,23 @@ V8_OBJECT class String : public Name {
   using Utf8EncodingFlags = base::Flags<Utf8EncodingFlag>;
   static size_t WriteUtf8(Isolate* isolate, DirectHandle<String> string,
                           char* buffer, size_t capacity,
-                          Utf8EncodingFlags flags);
+                          Utf8EncodingFlags flags,
+                          size_t* processed_characters_return = nullptr);
 
   // Returns true if this string has no unpaired surrogates and false otherwise.
   static inline bool IsWellFormedUnicode(Isolate* isolate,
                                          DirectHandle<String> string);
 
   static inline bool IsAscii(const char* chars, uint32_t length) {
-    return IsAscii(reinterpret_cast<const uint8_t*>(chars), length);
+    return simdutf::validate_ascii(chars, length);
   }
 
   static inline bool IsAscii(const uint8_t* chars, uint32_t length) {
-    return NonAsciiStart(chars, length) >= length;
+    return simdutf::validate_ascii(reinterpret_cast<const char*>(chars),
+                                   length);
   }
+
+  static bool DoesNotContainEscapeCharacters(Tagged<String> string);
 
   static inline uint32_t NonOneByteStart(const base::uc16* chars,
                                          uint32_t length) {
@@ -658,21 +681,12 @@ V8_OBJECT class String : public Name {
   // Run different behavior for each concrete string class type, to a
   // dispatcher which is overloaded on that class.
   template <typename TDispatcher>
-  V8_INLINE auto DispatchToSpecificType(TDispatcher&& dispatcher) const
-      // Help out the type deduction in case TDispatcher returns different
-      // types for different strings.
-      -> std::common_type_t<
-          decltype(dispatcher(Tagged<SeqOneByteString>{})),
-          decltype(dispatcher(Tagged<SeqTwoByteString>{})),
-          decltype(dispatcher(Tagged<ExternalOneByteString>{})),
-          decltype(dispatcher(Tagged<ExternalTwoByteString>{})),
-          decltype(dispatcher(Tagged<ThinString>{})),
-          decltype(dispatcher(Tagged<ConsString>{})),
-          decltype(dispatcher(Tagged<SlicedString>{}))>;
+  V8_INLINE auto DispatchToSpecificType(TDispatcher&& dispatcher) const;
 
   // Similar to the above, but using instance type. Since there is no
   // string to cast, the dispatcher has static methods for handling
   // each concrete type.
+  // TODO(leszeks): Remove this, preferring DispatchToSpecificType instead.
   template <typename TDispatcher, typename... TArgs>
   static inline auto DispatchToSpecificTypeWithoutCast(
       InstanceType instance_type, TArgs&&... args);
@@ -689,6 +703,7 @@ V8_OBJECT class String : public Name {
   friend class Accessors;
   friend class StringBuiltinsAssembler;
   friend class maglev::MaglevAssembler;
+  friend class maglev::MaglevGraphBuilder;
   friend class compiler::AccessBuilder;
   friend class wasm::baseline::LiftoffCompiler;
   friend class TorqueGeneratedStringAsserts;
@@ -752,6 +767,7 @@ V8_OBJECT class String : public Name {
   V8_EXPORT_PRIVATE uint32_t
   ComputeAndSetRawHash(const SharedStringAccessGuardIfNeeded&);
 
+ public:
   uint32_t length_;
 } V8_OBJECT_END;
 
@@ -1019,6 +1035,9 @@ V8_OBJECT class ConsString : public String {
   Get(uint32_t index,
       const SharedStringAccessGuardIfNeeded& access_guard) const;
 
+  // Prints the entire cons tree.
+  void PrintTree();
+
   // Minimum length for a cons string.
   static const uint32_t kMinLength = 13;
 
@@ -1033,6 +1052,7 @@ V8_OBJECT class ConsString : public String {
   friend class StringBuiltinsAssembler;
   friend class SandboxTesting;
   friend class maglev::MaglevAssembler;
+  friend class maglev::MaglevGraphBuilder;
   friend class compiler::AccessBuilder;
   friend class TorqueGeneratedConsStringAsserts;
 

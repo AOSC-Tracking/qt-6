@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtCore/QMetaMethod>
 #include "qquickgraphsscatterseries_p.h"
@@ -131,3 +133,5 @@ void QQuickGraphsScatter3DSeries::setGradientHelper(QQuickGradient *newGradient,
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qquickgraphsscatterseries_p.cpp"

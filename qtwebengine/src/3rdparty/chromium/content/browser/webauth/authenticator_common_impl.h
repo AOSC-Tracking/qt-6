@@ -55,6 +55,7 @@ namespace client_capabilities {
 
 // This is the subset of client capabilities computed by the browser. See also
 // //third_party/blink/renderer/modules/credentialmanagement/public_key_credential.cc.
+inline constexpr char kConditionalCreate[] = "conditionalCreate";
 inline constexpr char kConditionalGet[] = "conditionalGet";
 inline constexpr char kHybridTransport[] = "hybridTransport";
 inline constexpr char kPasskeyPlatformAuthenticator[] =
@@ -62,6 +63,7 @@ inline constexpr char kPasskeyPlatformAuthenticator[] =
 inline constexpr char kUserVerifyingPlatformAuthenticator[] =
     "userVerifyingPlatformAuthenticator";
 inline constexpr char kRelatedOrigins[] = "relatedOrigins";
+inline constexpr char kImmediateGet[] = "immediateGet";
 
 }  // namespace client_capabilities
 
@@ -123,11 +125,11 @@ class CONTENT_EXPORT AuthenticatorCommonImpl : public AuthenticatorCommon {
       url::Origin caller_origin,
       blink::mojom::PublicKeyCredentialCreationOptionsPtr options,
       blink::mojom::Authenticator::MakeCredentialCallback callback) override;
-  void GetAssertion(
+  void GetCredential(
       url::Origin caller_origin,
       blink::mojom::PublicKeyCredentialRequestOptionsPtr options,
       blink::mojom::PaymentOptionsPtr payment,
-      blink::mojom::Authenticator::GetAssertionCallback callback) override;
+      blink::mojom::Authenticator::GetCredentialCallback callback) override;
   void IsUserVerifyingPlatformAuthenticatorAvailable(
       url::Origin caller_origin,
       blink::mojom::Authenticator::
@@ -234,11 +236,9 @@ class CONTENT_EXPORT AuthenticatorCommonImpl : public AuthenticatorCommon {
           authenticator_response,
       blink::mojom::WebAuthnDOMExceptionDetailsPtr dom_exception_details);
 
-  void GetMetricsWrappedGetAssertionCallback(
-      blink::mojom::Authenticator::GetAssertionCallback callback,
-      blink::mojom::AuthenticatorStatus status,
-      blink::mojom::GetAssertionAuthenticatorResponsePtr authenticator_response,
-      blink::mojom::WebAuthnDOMExceptionDetailsPtr dom_exception_details);
+  void GetMetricsWrappedGetCredentialCallback(
+      blink::mojom::Authenticator::GetCredentialCallback callback,
+      blink::mojom::GetCredentialResponsePtr response);
 
   // Replaces the current |request_handler_| with a
   // |MakeCredentialRequestHandler|, effectively restarting the request.
@@ -286,8 +286,21 @@ class CONTENT_EXPORT AuthenticatorCommonImpl : public AuthenticatorCommon {
   // Begins a timeout at the beginning of a request.
   void BeginRequestTimeout(std::optional<base::TimeDelta> timeout);
 
-  // Runs when timer expires and cancels all issued requests to a U2fDevice.
+  // Called when a request times out. This is for options.timeout parameter.
   void OnTimeout();
+
+  // Begins a timeout at the beginning of an immediate mediation request.
+  void BeginImmediateRequestTimeout();
+
+  // Called when an immediate mediation request times out.
+  void OnImmediateTimeout();
+
+  // Cancels the immediate mediation timer when the UI is shown.
+  void CancelImmediateTimeout();
+
+  // Cancels the current request if it's an immediate mediation and no immediate
+  // mediation UI was shown.
+  void CancelRequestForImmediateMediation();
 
   // Cancels the currently pending request (if any) with the supplied status.
   void CancelWithStatus(blink::mojom::AuthenticatorStatus status);
@@ -331,6 +344,8 @@ class CONTENT_EXPORT AuthenticatorCommonImpl : public AuthenticatorCommon {
       blink::mojom::GetAssertionAuthenticatorResponsePtr response = nullptr,
       blink::mojom::WebAuthnDOMExceptionDetailsPtr dom_exception_details =
           nullptr);
+
+  void HandlePasswordResponse(password_manager::CredentialInfo credential);
 
   AuthenticatorRequestClientDelegate::RequestSource RequestSource() const;
   BrowserContext* GetBrowserContext() const;

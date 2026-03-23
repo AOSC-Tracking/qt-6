@@ -4,12 +4,13 @@
 
 package org.chromium.components.browser_ui.settings;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.util.AttributeSet;
+import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
 
+import androidx.annotation.DrawableRes;
 import androidx.preference.PreferenceViewHolder;
 
 import org.chromium.build.annotations.NullMarked;
@@ -20,6 +21,7 @@ import org.chromium.build.annotations.Nullable;
 public class CardWithButtonPreference extends ChromeBasePreference {
     private @Nullable CharSequence mButtonText;
     private @Nullable Runnable mOnButtonClick;
+    private @DrawableRes int mIconResource;
 
     /**
      * Constructor for CardWithButtonPreference.
@@ -27,7 +29,7 @@ public class CardWithButtonPreference extends ChromeBasePreference {
      * @param context The context of the preference.
      * @param attrs The attributes of the preference.
      */
-    public CardWithButtonPreference(Context context, AttributeSet attrs) {
+    public CardWithButtonPreference(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
         setLayoutResource(R.layout.card_with_button_preference_layout);
     }
@@ -40,7 +42,6 @@ public class CardWithButtonPreference extends ChromeBasePreference {
         holder.itemView.setClickable(false);
 
         Button button = (Button) holder.findViewById(R.id.card_button);
-        assumeNonNull(button);
         button.setText(mButtonText);
         button.setOnClickListener(
                 (v) -> {
@@ -48,6 +49,14 @@ public class CardWithButtonPreference extends ChromeBasePreference {
                         mOnButtonClick.run();
                     }
                 });
+
+        ImageView icon = (ImageView) holder.findViewById(R.id.icon);
+        if (mIconResource != 0) {
+            icon.setImageResource(mIconResource);
+            icon.setVisibility(View.VISIBLE);
+        } else {
+            icon.setVisibility(View.GONE);
+        }
     }
 
     /**
@@ -67,5 +76,14 @@ public class CardWithButtonPreference extends ChromeBasePreference {
      */
     public void setOnButtonClick(Runnable onButtonClick) {
         mOnButtonClick = onButtonClick;
+    }
+
+    /**
+     * Set card icon resource.
+     *
+     * @param resource The resource ID of the icon drawable to be shown.
+     */
+    public void setIconResource(@DrawableRes int resource) {
+        mIconResource = resource;
     }
 }

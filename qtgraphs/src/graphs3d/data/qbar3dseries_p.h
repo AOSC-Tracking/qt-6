@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //
 //  W A R N I N G
@@ -16,6 +18,8 @@
 
 #include "qabstract3dseries_p.h"
 #include "qbar3dseries.h"
+#include "qvalue3daxis.h"
+#include "qcategory3daxis.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -44,18 +48,33 @@ public:
 
     void setRowLabels(const QStringList &labels);
     void setColumnLabels(const QStringList &labels);
+    void setCustomRowLabels(const QStringList &labels);
+    void setCustomColumnLabels(const QStringList &labels);
     void fixRowLabels(qsizetype startIndex,
                       qsizetype count,
                       const QStringList &newLabels,
                       bool isInsert);
 
+    void setRowAxis(QCategory3DAxis *axis);
+    void setValueAxis(QValue3DAxis *axis);
+    void setColumnAxis(QCategory3DAxis *axis);
+    void resetRowAxis();
+    void resetValueAxis();
+    void resetColumnAxis();
+
 private:
     QBarDataArray m_dataArray;
     QStringList m_rowLabels;
     QStringList m_columnLabels;
+    QStringList m_customRowLabels;
+    QStringList m_customColumnLabels;
     QPoint m_selectedBar;
     QList<QColor> m_rowColors;
     bool m_valueColoring;
+
+    QCategory3DAxis *m_rowAxis = nullptr;
+    QValue3DAxis *m_valueAxis = nullptr;
+    QCategory3DAxis *m_columnAxis = nullptr;
 
     friend class QQuickGraphsBars;
 };

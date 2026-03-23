@@ -121,9 +121,14 @@ public Q_SLOTS:
     void lower();
     void sendMouseMoveEvent(const QPointF &position, QWaylandSeat *seat = nullptr);
 
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
 private Q_SLOTS:
     void surfaceMappedChanged();
+#else
+private:
+#endif
     void handleSurfaceChanged();
+    void handleBufferLockedChanged();
     void parentChanged(QWaylandSurface *newParent, QWaylandSurface *oldParent);
     void updateSize();
     void updateBuffer(bool hasBuffer);

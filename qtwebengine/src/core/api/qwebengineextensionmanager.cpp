@@ -32,7 +32,9 @@ QT_BEGIN_NAMESPACE
 
     Each \l QWebEngineProfile has its own \l QWebEngineExtensionManager, so every page that shares
     the same profile will share the same extensions too.
-    Extensions can't be loaded into off-the-record profiles.
+    Extensions can't be loaded into off-the-record profiles. However, all profiles, including
+    off-the-record ones, contain two built-in and enabled by default extensions: Google Hangouts and
+    Chromium PDF. These can be disabled and/or unloaded if desired.
 
     \note Only ManifestV3 extensions are supported, other versions won't be loaded nor installed
 
@@ -48,11 +50,11 @@ QWebEngineExtensionManager::QWebEngineExtensionManager(QtWebEngineCore::Extensio
 QWebEngineExtensionManager::~QWebEngineExtensionManager() { }
 
 /*!
-    Loads an unpacked extension from \a path
+    Loads an unpacked extension from \a path.
 
-    The \l QWebEngineExtensionManager::loadFinished signal is emitted when an extension
+    The \l loadFinished() signal is emitted when an extension
     is loaded or the load failed. If the load succeeded \l QWebEngineExtensionInfo::isLoaded() will
-    return true otherwise \l QWebEngineExtensionInfo::error() will contain information where the
+    return \c true, otherwise \l QWebEngineExtensionInfo::error() will contain information where the
     loading process failed.
 
     Extensions are always loaded in disabled state, users have to enable them manually.
@@ -66,15 +68,15 @@ void QWebEngineExtensionManager::loadExtension(const QString &path)
 }
 
 /*!
-    Installs an extension from \a path to the profile's directory and loads it
+    Installs an extension from \a path to the profile's directory and loads it.
 
-    The \l QWebEngineExtensionManager::installFinished signal is emitted after an
+    The \l installFinished() signal is emitted after an
     extension is installed or the install failed. If the install succeeded \l
-    QWebEngineExtensionInfo::isInstalled() will return true, otherwise \l
+    QWebEngineExtensionInfo::isInstalled() will return \c true, otherwise \l
     QWebEngineExtensionInfo::error() will contain information how the install process failed.
 
-    Extensions are loaded in disabled state after the install succeded.
-    Installed extensions are automatically loaded at every starutup in disabled state.
+    Extensions are loaded in disabled state after the install succeeded.
+    Installed extensions are automatically loaded at every startup in disabled state.
     The install path can be queried with \l installPath().
 
     The installer is capable of installing zipped or unpacked extensions.
@@ -97,8 +99,7 @@ void QWebEngineExtensionManager::installExtension(const QString &path)
 
     Removes all the extension's data from memory.
 
-    The \l QWebEngineExtensionManager::unloadFinished signal is emitted after the unload
-    process finished.
+    The \l unloadFinished() signal is emitted after the unload process finished.
 
     \note It is also possible to unload internal extensions like Hangouts and PDF,
     but they will be loaded at next startup like other installed extensions.
@@ -107,27 +108,27 @@ void QWebEngineExtensionManager::installExtension(const QString &path)
 */
 void QWebEngineExtensionManager::unloadExtension(const QWebEngineExtensionInfo &extension)
 {
-    d_ptr->unloadExtension(extension.d_ptr->id());
+    if (extension.d_ptr)
+        d_ptr->unloadExtension(extension.d_ptr->id());
 }
 
 /*!
-    Uninstalls the \a extension
+    Uninstalls the \a extension.
 
-    Removes the extension's files from the install path and unloads
-    the extension.
-    The \l QWebEngineExtensionManager::uninstallFinished signal is emitted
-    after the process finished.
+    Removes the extension's files from the install path and unloads the extension.
+    The \l uninstallFinished() signal is emitted after the process finished.
 
     \sa QWebEngineExtensionManager::installPath(), QWebEngineExtensionInfo::isInstalled(),
     QWebEngineExtensionInfo::error()
 */
 void QWebEngineExtensionManager::uninstallExtension(const QWebEngineExtensionInfo &extension)
 {
-    d_ptr->uninstallExtension(extension.d_ptr->id());
+    if (extension.d_ptr)
+        d_ptr->uninstallExtension(extension.d_ptr->id());
 }
 
 /*!
-    Allows to turn on/off the \a extension at runtime
+    Allows to turn on/off the \a extension at runtime.
 
     The \a enabled argument determines whether the extension should be enabled or disabled.
     \note It is also possible to disable internal extensions like Hangouts and PDF.
@@ -137,8 +138,19 @@ void QWebEngineExtensionManager::uninstallExtension(const QWebEngineExtensionInf
 void QWebEngineExtensionManager::setExtensionEnabled(const QWebEngineExtensionInfo &extension,
                                                      bool enabled)
 {
-    d_ptr->setExtensionEnabled(extension.d_ptr->id(), enabled);
+    if (extension.d_ptr)
+        d_ptr->setExtensionEnabled(extension.d_ptr->id(), enabled);
 }
+
+/*!
+    \fn void QWebEngineExtensionManager::loadFinished(const QWebEngineExtensionInfo &extension)
+    \fn void QWebEngineExtensionManager::installFinished(const QWebEngineExtensionInfo &extension)
+    \fn void QWebEngineExtensionManager::unloadFinished(const QWebEngineExtensionInfo &extension)
+    \fn void QWebEngineExtensionManager::uninstallFinished(const QWebEngineExtensionInfo &extension)
+
+    Signals that are emitted when \a extension is loaded, unloaded, installed,
+    or uninstalled.
+*/
 
 /*!
     \property QWebEngineExtensionManager::installPath

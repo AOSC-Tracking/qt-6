@@ -21,6 +21,7 @@
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/interaction/element_tracker.h"
 #include "ui/base/interaction/interaction_test_util.h"
+#include "ui/base/test/ui_controls.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
@@ -36,6 +37,7 @@
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane.h"
 #include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/focus/focus_manager.h"
 #include "ui/views/interaction/element_tracker_views.h"
 #include "ui/views/test/widget_activation_waiter.h"
 #include "ui/views/test/widget_test.h"
@@ -327,6 +329,30 @@ bool SendKeyPress(View* view, ui::KeyboardCode code, int flags = ui::EF_NONE) {
 
 }  // namespace
 
+ViewFocusedWaiter::ViewFocusedWaiter(View& target_view)
+    : manager_(*target_view.GetFocusManager()), target_view_(target_view) {
+  manager_->AddFocusChangeListener(this);
+}
+
+ViewFocusedWaiter::~ViewFocusedWaiter() {
+  manager_->RemoveFocusChangeListener(this);
+}
+
+void ViewFocusedWaiter::Wait() {
+  if (manager_->GetFocusedView() != &*target_view_) {
+    run_loop_.Run();
+  }
+}
+
+void ViewFocusedWaiter::OnWillChangeFocus(View* focused_before,
+                                          View* focused_now) {}
+void ViewFocusedWaiter::OnDidChangeFocus(View* focused_before,
+                                         View* focused_now) {
+  if (focused_now == &*target_view_) {
+    run_loop_.Quit();
+  }
+}
+
 InteractionTestUtilSimulatorViews::InteractionTestUtilSimulatorViews() =
     default;
 InteractionTestUtilSimulatorViews::~InteractionTestUtilSimulatorViews() =
@@ -415,7 +441,8 @@ ui::test::ActionResult InteractionTestUtilSimulatorViews::DoDefaultAction(
 ui::test::ActionResult InteractionTestUtilSimulatorViews::SelectTab(
     ui::TrackedElement* tab_collection,
     size_t index,
-    InputType input_type) {
+    InputType input_type,
+    std::optional<size_t> expected_index_after_selection) {
   // Currently, only TabbedPane is supported, but other types of tab
   // collections (e.g. browsers and tabstrips) may be supported by a different
   // kind of simulator specific to browser code, so if this is not a supported
@@ -450,6 +477,9 @@ ui::test::ActionResult InteractionTestUtilSimulatorViews::SelectTab(
       SendTapGesture(tab, GetCenter(tab));
       break;
     case ui::test::InteractionTestUtil::InputType::kKeyboard: {
+      CHECK_EQ(index, expected_index_after_selection.value_or(index))
+          << "Since keyboard input requires advancing through tabs one-by-one, "
+             "a different expected index cannot be used.";
       // Keyboard navigation is done by sending arrow keys to the currently-
       // selected tab. Scan through the tabs by using the right arrow until the
       // correct tab is selected; limit the number of times this is tried to
@@ -466,7 +496,7 @@ ui::test::ActionResult InteractionTestUtilSimulatorViews::SelectTab(
             << index << " will pass through intermediate tabs.";
         for (int i = 0; i < count; ++i) {
           auto* const current_tab = pane->GetTabAt(pane->GetSelectedTabIndex());
-          SendKeyPress(current_tab, code);
+          ::views::test::SendKeyPress(current_tab, code);
         }
         if (index != pane->GetSelectedTabIndex()) {
           LOG(ERROR) << "Unable to cycle through tabs to reach index " << index;
@@ -475,6 +505,13 @@ ui::test::ActionResult InteractionTestUtilSimulatorViews::SelectTab(
       }
       break;
     }
+  }
+  const size_t expected = expected_index_after_selection.value_or(index);
+  const size_t actual = pane->GetSelectedTabIndex();
+  if (actual != expected) {
+    LOG(ERROR) << "Expected to finish with index " << expected
+               << " but selected index was " << actual;
+    return ui::test::ActionResult::kFailed;
   }
   return ui::test::ActionResult::kSucceeded;
 }
@@ -548,7 +585,8 @@ ui::test::ActionResult InteractionTestUtilSimulatorViews::SelectDropdownItem(
       case InputType::kDontCare:
       case InputType::kKeyboard:
         // Have to resort to keyboard input; DoDefaultAction() doesn't work.
-        SendKeyPress(editable_combobox->textfield_, ui::VKEY_DOWN);
+        ::views::test::SendKeyPress(editable_combobox->textfield_,
+                                    ui::VKEY_DOWN);
         break;
       default:
         LOG(WARNING) << "Mouse and touch input are not supported for "
@@ -626,11 +664,47 @@ ui::test::ActionResult InteractionTestUtilSimulatorViews::ActivateSurface(
 
   auto* const widget = element->AsA<TrackedElementViews>()->view()->GetWidget();
   if (!widget) {
-    LOG(WARNING) << "View not assocaited with a widget.";
+    LOG(WARNING) << "View not associated with a widget.";
     return ui::test::ActionResult::kFailed;
   }
 
   return ActivateWidget(widget);
+}
+
+ui::test::ActionResult InteractionTestUtilSimulatorViews::FocusElement(
+    ui::TrackedElement* element) {
+  if (!element->IsA<TrackedElementViews>()) {
+    return ui::test::ActionResult::kNotAttempted;
+  }
+
+  auto* const view = element->AsA<TrackedElementViews>()->view();
+  if (!view->GetWidget()) {
+    LOG(WARNING) << "View not associated with a widget.";
+    return ui::test::ActionResult::kFailed;
+  }
+
+  // Note: this duplicates logic in View that is not public.
+  if (!view->IsFocusable()) {
+    if (!view->GetViewAccessibility().IsAccessibilityFocusable()) {
+      LOG(WARNING) << "View cannot request focus.";
+      return ui::test::ActionResult::kFailed;
+    }
+    LOG(WARNING) << "Switching focus manager to accessibility mode.";
+    view->GetFocusManager()->SetKeyboardAccessible(true);
+  }
+
+#if BUILDFLAG(IS_MAC)
+  if (!view->GetWidget()->IsActive()) {
+    LOG(WARNING) << "View cannot receive focus in inactive window on this "
+                    "platform; activate this surface first..";
+    return ui::test::ActionResult::kFailed;
+  }
+#endif
+
+  ViewFocusedWaiter waiter(*view);
+  view->RequestFocus();
+  waiter.Wait();
+  return ui::test::ActionResult::kSucceeded;
 }
 
 ui::test::ActionResult InteractionTestUtilSimulatorViews::SendAccelerator(
@@ -644,6 +718,32 @@ ui::test::ActionResult InteractionTestUtilSimulatorViews::SendAccelerator(
       ->view()
       ->GetFocusManager()
       ->ProcessAccelerator(accelerator);
+  return ui::test::ActionResult::kSucceeded;
+}
+
+ui::test::ActionResult InteractionTestUtilSimulatorViews::SendKeyPress(
+    ui::TrackedElement* element,
+    ui::KeyboardCode key,
+    int flags) {
+  if (!element->IsA<TrackedElementViews>()) {
+    return ui::test::ActionResult::kNotAttempted;
+  }
+
+  base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
+
+  const auto native_window = element->AsA<TrackedElementViews>()
+                                 ->view()
+                                 ->GetWidget()
+                                 ->GetNativeWindow();
+  const bool result = ui_controls::SendKeyPressNotifyWhenDone(
+      native_window, key, flags & ui::EF_CONTROL_DOWN,
+      flags & ui::EF_SHIFT_DOWN, flags & ui::EF_ALT_DOWN,
+      flags & ui::EF_COMMAND_DOWN, run_loop.QuitClosure());
+  if (!result) {
+    LOG(ERROR) << "Send key press failed. Is this the active window?";
+    return ui::test::ActionResult::kFailed;
+  }
+  run_loop.Run();
   return ui::test::ActionResult::kSucceeded;
 }
 
@@ -720,7 +820,7 @@ bool InteractionTestUtilSimulatorViews::DoDefaultAction(View* view,
       SendTapGesture(view, GetCenter(view));
       return true;
     case ui::test::InteractionTestUtil::InputType::kKeyboard:
-      SendKeyPress(view, ui::VKEY_SPACE);
+      ::views::test::SendKeyPress(view, ui::VKEY_SPACE);
       return true;
   }
 }
@@ -737,7 +837,7 @@ void InteractionTestUtilSimulatorViews::PressButton(Button* button,
       break;
     case ui::test::InteractionTestUtil::InputType::kKeyboard:
     case ui::test::InteractionTestUtil::InputType::kDontCare:
-      SendKeyPress(button, ui::VKEY_SPACE);
+      ::views::test::SendKeyPress(button, ui::VKEY_SPACE);
       break;
   }
 }

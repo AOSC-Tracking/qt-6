@@ -21,11 +21,11 @@ const UIStrings = {
    */
   requestsMayBeBlocked: 'Requests may be blocked, see the Network request blocking panel',
   /**
-   * @description Title of an icon in the Network panel that indicates that accepted content encodings have been overriden.
+   * @description Title of an icon in the Network panel that indicates that accepted content encodings have been overridden.
    */
   acceptedEncodingOverrideSet:
       'The set of accepted `Content-Encoding` headers has been modified by DevTools, see the Network conditions panel',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/mobile_throttling/NetworkPanelIndicator.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 

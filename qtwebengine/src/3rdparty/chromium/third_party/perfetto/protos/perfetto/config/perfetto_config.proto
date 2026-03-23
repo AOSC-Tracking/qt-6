@@ -628,6 +628,40 @@ message AndroidSystemPropertyConfig {
 
 // End of protos/perfetto/config/android/android_system_property_config.proto
 
+// Begin of protos/perfetto/config/android/app_wakelock_config.proto
+
+// Configuration for the android.app_wakelocks data source.
+message AppWakelocksConfig {
+  // Specifies the delay (in milliseconds) after which the data source will
+  // attempt to write events. Writing less frequently reduces the trace size by
+  // making better use of the packed arrays and reducing the total number of
+  // TracePackets needed (which each have dozens of bytes of overhead). The
+  // suggested delay is 5000ms.
+  optional int32 write_delay_ms = 1;
+
+  // When set, wakelocks held for less than this amount of time are filtered
+  // from the resulting trace. Note: duration is computed by matching wakelocks
+  // with identical attributes, not by tracking the underlying objects. The
+  // threshold should be < the trace's flush_period_ms.
+  optional int32 filter_duration_below_ms = 2;
+
+  // When true, the owner_pid is dropped from the resulting output, reducing the
+  // size of the interning tables.
+  optional bool drop_owner_pid = 3;
+}
+
+// End of protos/perfetto/config/android/app_wakelock_config.proto
+
+// Begin of protos/perfetto/config/android/cpu_per_uid_config.proto
+
+// Data source that records CPU per UID data.
+message CpuPerUidConfig {
+  // Record at this frequency.
+  optional uint32 poll_ms = 1;
+}
+
+// End of protos/perfetto/config/android/cpu_per_uid_config.proto
+
 // Begin of protos/perfetto/config/android/kernel_wakelocks_config.proto
 
 // Data source that records kernel (and native) wakelock data.
@@ -787,8 +821,8 @@ message SurfaceFlingerLayersConfig {
     MODE_DUMP = 3;
 
     // Default mode (applied by SurfaceFlinger if no mode is specified).
-    // Same as MODE_GENERATED, but triggers the layers snapshots generation only when a bugreport
-    // is taken.
+    // Same as MODE_GENERATED, but triggers the layers snapshots generation only
+    // when a bugreport is taken.
     MODE_GENERATED_BUGREPORT_ONLY = 4;
   }
   optional Mode mode = 1;
@@ -898,9 +932,33 @@ message ChromeConfig {
   // If |json_agent_label_filter| is not empty, only data pertaining to
   // the specified tracing agent label (e.g. "traceEvents") will be returned.
   optional string json_agent_label_filter = 5;
+
+  //  When enabled, event names should not contain package names.
+  optional bool event_package_name_filter_enabled = 6;
 }
 
 // End of protos/perfetto/config/chrome/chrome_config.proto
+
+// Begin of protos/perfetto/config/chrome/histogram_samples.proto
+
+message ChromiumHistogramSamplesConfig {
+  // Records when a value within the specified bounds [min_value, max_value] is
+  // emitted into a Chrome histogram.
+  message HistogramSample {
+    optional string histogram_name = 1;
+    optional int64 min_value = 2;
+    optional int64 max_value = 3;
+  }
+  // List of histograms to record. If no histogram is specified, all histograms
+  // are recorded.
+  repeated HistogramSample histograms = 1;
+
+  // Default: false (i.e. histogram names are NOT filtered out by default)
+  // When true, histogram_name will be filtered out.
+  optional bool filter_histogram_names = 2;
+}
+
+// End of protos/perfetto/config/chrome/histogram_samples.proto
 
 // Begin of protos/perfetto/config/chrome/system_metrics.proto
 
@@ -948,27 +1006,21 @@ message EtwConfig {
 }
 // End of protos/perfetto/config/etw/etw_config.proto
 
+// Begin of protos/perfetto/config/ftrace/frozen_ftrace_config.proto
+
+message FrozenFtraceConfig {
+  // The instance name which stores the previous boot ftrace data. Required.
+  optional string instance_name = 1;
+}
+
+// End of protos/perfetto/config/ftrace/frozen_ftrace_config.proto
+
 // Begin of protos/perfetto/config/ftrace/ftrace_config.proto
 
-// Next id: 31
+// Next id: 34
 message FtraceConfig {
   // Ftrace events to record, example: "sched/sched_switch".
   repeated string ftrace_events = 1;
-
-  message KprobeEvent {
-    enum KprobeType {
-      KPROBE_TYPE_UNKNOWN = 0;
-      KPROBE_TYPE_KPROBE = 1;
-      KPROBE_TYPE_KRETPROBE = 2;
-      KPROBE_TYPE_BOTH = 3;
-    }
-    // Kernel function name to attach to, for example "fuse_file_write_iter"
-    optional string probe = 1;
-    optional KprobeType type = 2;
-  }
-
-  // Ftrace events to record, specific for kprobes and kretprobes
-  repeated KprobeEvent kprobe_events = 30;
 
   // Android-specific event categories:
   repeated string atrace_categories = 2;
@@ -977,11 +1029,34 @@ message FtraceConfig {
   // the "track_event" data source. For these categories, the SDK will be
   // preferred, if possible, for this config.
   repeated string atrace_categories_prefer_sdk = 28;
+  // If true, do *not* add in extra ftrace events when |atrace_categories| are
+  // set. This skips the legacy "atrace" behaviour of adding hardcoded ftrace
+  // events for convenience (and the vendor-specific events on top).
+  // Introduced in: perfetto v52.
+  optional bool atrace_userspace_only = 34;
 
   // Size of each per-cpu kernel ftrace ring buffer.
   // Not guaranteed if there are multiple concurrent tracing sessions, as the
   // buffers cannot be resized without pausing recording in the kernel.
   optional uint32 buffer_size_kb = 10;
+
+  // If true, |buffer_size_kb| is interpreted as a lower bound, allowing the
+  // implementation to choose a bigger buffer size.
+  //
+  // Most configs for perfetto v43+ should simply leave both fields unset.
+  //
+  // If you need a config compatible with a range of perfetto builds and you
+  // used to set a non-default buffer_size_kb, consider setting both fields.
+  // Example:
+  //   buffer_size_kb: 4096
+  //   buffer_size_lower_bound: true
+  // On older builds, the per-cpu buffers will be exactly 4 MB.
+  // On v43+, buffers will be at least 4 MB.
+  // In both cases, neither is guaranteed if there are other concurrent
+  // perfetto ftrace sessions, as the buffers cannot be resized without pausing
+  // the recording in the kernel.
+  // Introduced in: perfetto v43.
+  optional bool buffer_size_lower_bound = 27;
 
   // If set, specifies how often the tracing daemon reads from the kernel ring
   // buffer. Not guaranteed if there are multiple concurrent tracing sessions.
@@ -1062,16 +1137,6 @@ message FtraceConfig {
   }
   optional KsymsMemPolicy ksyms_mem_policy = 17;
 
-  // By default the kernel symbolizer is lazily initialized on a deferred task
-  // to reduce ftrace's time-to-start-recording. Unfortunately that makes
-  // ksyms integration tests hard. This flag forces the kernel symbolizer to be
-  // initialized synchronously on the data source start and hence avoiding
-  // timing races in tests.
-  // DEPRECATED in v28 / Android U. This is now the default behavior, setting it
-  // to true is a no-op.
-  optional bool initialize_ksyms_synchronously_for_testing = 14
-      [deprecated = true];
-
   // When this boolean is true AND the ftrace_events contains "kmem/rss_stat",
   // this option causes traced_probes to enable the "kmem/rss_stat_throttled"
   // event instead if present, and fall back to "kmem/rss_stat" if not present.
@@ -1085,6 +1150,12 @@ message FtraceConfig {
   //   need to deal with both cases.
   // For more context: go/rss-stat-throttled.
   optional bool throttle_rss_stat = 15;
+
+  // If true, use self-describing proto messages when writing events not known
+  // at compile time (aka generic events). Each event bundle will have a set of
+  // serialised proto descriptors for events within that bundle.
+  // Added in: perfetto v50.
+  optional bool denser_generic_event_encoding = 32;
 
   // If true, avoid enabling events that aren't statically known by
   // traced_probes. Otherwise, the default is to emit such events as
@@ -1142,11 +1213,39 @@ message FtraceConfig {
   // * Introduced in: Android U.
   repeated string function_graph_roots = 21;
 
-  // If true, does not clear ftrace buffers before the start of the program.
+  // If |enable_function_graph| is true, only trace the specified
+  // number of calls down the stack. Sets the max_graph_depth value
+  // in sys/kernel/tracing/
+  //
+  // Only respected for the first tracing session that enables
+  // function_graph tracing.
+  //
+  // Introduced in: perfetto v51.
+  // Supported on: Android 25Q3+.
+  optional uint32 function_graph_max_depth = 33;
+
+  message KprobeEvent {
+    enum KprobeType {
+      KPROBE_TYPE_UNKNOWN = 0;
+      KPROBE_TYPE_KPROBE = 1;
+      KPROBE_TYPE_KRETPROBE = 2;
+      KPROBE_TYPE_BOTH = 3;
+    }
+    // Kernel function name to attach to, for example "fuse_file_write_iter"
+    optional string probe = 1;
+    optional KprobeType type = 2;
+  }
+  // Ftrace events to record, specific for kprobes and kretprobes
+  repeated KprobeEvent kprobe_events = 30;
+
+  // If true, does not clear kernel ftrace buffers when starting the trace.
   // This makes sense only if this is the first ftrace data source instance
   // created after the daemon has been started. Can be useful for gathering boot
   // traces, if ftrace has been separately configured (e.g. via kernel
   // commandline).
+  // NB: when configuring the pre-perfetto ftrace, prefer to set
+  // "/sys/kernel/tracing/trace_clock" to "boot" if your trace will contain
+  // anything besides ftrace. Otherwise timestamps might be skewed.
   optional bool preserve_ftrace_buffer = 23;
 
   // If true, overrides the default timestamp clock and uses a raw hardware
@@ -1158,7 +1257,7 @@ message FtraceConfig {
   // for event recording. Normally, this means
   // `/sys/kernel/tracing/instances/$instance_name`.
   //
-  // The name "hyp" is reserved.
+  // Names "hyp" and "hypervisor" are reserved.
   //
   // The instance must already exist, the tracing daemon *will not* create it
   // for you as it typically doesn't have such permissions.
@@ -1168,23 +1267,14 @@ message FtraceConfig {
   //  * buffer_size_kb
   optional string instance_name = 25;
 
-  // If true, |buffer_size_kb| is interpreted as a lower bound, allowing the
-  // implementation to choose a bigger buffer size.
-  //
-  // Most configs for perfetto v43+ should simply leave both fields unset.
-  //
-  // If you need a config compatible with a range of perfetto builds and you
-  // used to set a non-default buffer_size_kb, consider setting both fields.
-  // Example:
-  //   buffer_size_kb: 4096
-  //   buffer_size_lower_bound: true
-  // On older builds, the per-cpu buffers will be exactly 4 MB.
-  // On v43+, buffers will be at least 4 MB.
-  // In both cases, neither is guaranteed if there are other concurrent
-  // perfetto ftrace sessions, as the buffers cannot be resized without pausing
-  // the recording in the kernel.
-  // Introduced in: perfetto v43.
-  optional bool buffer_size_lower_bound = 27;
+  // For perfetto developer use. If true and on a debuggable android build,
+  // serialise raw tracing pages that the implementation cannot parse.
+  optional bool debug_ftrace_abi = 31;
+
+  // No-op in perfetto v28+. Name preserved because of existing references in
+  // textproto configs.
+  optional bool initialize_ksyms_synchronously_for_testing = 14
+      [deprecated = true];
 
   // Previously drain_buffer_percent, perfetto v43-v47.
   reserved 26;
@@ -1340,6 +1430,29 @@ message AndroidPowerConfig {
 
 // End of protos/perfetto/config/power/android_power_config.proto
 
+// Begin of protos/perfetto/config/priority_boost/priority_boost_config.proto
+
+// Configuration that allows to boost the priority of the 'traced' or
+// 'traced_probs' processes, by changing the scheduler configuration.
+// Only supported on Linux and Android the boosted process must have
+// 'CAP_SYS_NICE' capability.
+message PriorityBoostConfig {
+  enum BoostPolicy {
+    POLICY_UNSPECIFIED = 0;
+    // The default policy (e.g., CFS on Linux). Priority range: [0; 20]
+    // priority is interpreted as -(nice), i.e., 1 is slightly higher prio
+    // than default 0, 20 is the highest priority.
+    // Note: this is the opposite semantic of the cmdline nice, and is done for
+    // consistency with POLICY_SCHED_FIFO, so higher number == higher prio.
+    POLICY_SCHED_OTHER = 1;
+    // The Real-time policy, Priority range: [1; 99]
+    POLICY_SCHED_FIFO = 2;
+  };
+  optional BoostPolicy policy = 1;
+  optional uint32 priority = 2;
+}
+// End of protos/perfetto/config/priority_boost/priority_boost_config.proto
+
 // Begin of protos/perfetto/config/process_stats/process_stats_config.proto
 
 message ProcessStatsConfig {
@@ -1384,6 +1497,12 @@ message ProcessStatsConfig {
   optional bool resolve_process_fds = 9;
 
   // If true, output will include memory stats from /proc/pid/smaps_rollup.
+  //
+  // Does NOT work with the Android system daemon by default, as it requires
+  // running the recording process (traced_probes or tracebox) as root. It is
+  // possible to avoid the root requirement, but the exact steps depend on the
+  // Linux distibution. The proc file requires passing a PTRACE_MODE_READ
+  // check, and might be further covered by the procfs "hidepid" mount option.
   optional bool scan_smaps_rollup = 10;
 
   // If true: process descriptions will include process age (starttime in
@@ -1668,14 +1787,24 @@ message JavaHprofConfig {
 
 // Begin of protos/perfetto/common/perf_events.proto
 
-// Next id: 12
 message PerfEvents {
-  // What event to sample on, and how often. Commented from the perspective of
-  // its use in |PerfEventConfig|.
+  // The primary event to count. If recording multiple events, this
+  // counter is the "group leader".
+  // Commented from the perspective of its use in |PerfEventConfig|.
+  // Next id: 12
   message Timebase {
-    // How often the per-cpu sampling will occur. Not guaranteed to be honored
-    // as the kernel can throttle the sampling rate if it's too high.
-    // If unset, an implementation-defined default is used.
+    // How often to snapshot the counter, along with any follower events and
+    // any additional sampled data such as callstacks.
+    //
+    // This choice also controls how the readings are taken:
+    // * With |frequency| or |period|, samples are taken by the kernel
+    //   into a ring buffer. Analogous to `perf record`.
+    // * With |poll_period_ms|, the userspace periodically snapshots
+    //   the counters using the read syscall. Analogous to `perf stat -I`.
+    // Prefer the sampling options unless you're recording PMUs whose
+    // perf drivers only support the reading mode.
+    //
+    // If unset, an implementation-defined sampling default is used.
     oneof interval {
       // Per-cpu sampling frequency in Hz, as requested from the kernel. Not the
       // same as 1/period.
@@ -1683,18 +1812,28 @@ message PerfEvents {
       // kernel will dynamically adjust it based on the observed event rate, to
       // approximate this frequency. Works best with steady-rate events like
       // timers.
+      // Not guaranteed to be honored as the kernel can throttle the sampling
+      // rate if it's too high.
       uint64 frequency = 2;
 
       // Per-cpu sampling will occur every |period| counts of |event|.
       // Prefer |frequency| by default, as it's easier to oversample with a
       // fixed period.
+      // Not guaranteed to be honored as the kernel can throttle the sampling
+      // rate if it's too high.
       uint64 period = 1;
+
+      // Per-cpu values are read by the userspace every interval. If using this
+      // mode, only follower events are supported. Options such as
+      // |PerfEventConfig.CallstackSampling| are incompatible.
+      // The period can't be guaranteed to be exact since the readings are taken
+      // by userspace.
+      uint32 poll_period_ms = 6;
     }
 
-    // Counting event to use as a timebase for the sampling.
+    // Counting event to use as the timebase.
     // If unset, implies the CPU timer (SW_CPU_CLOCK) as the event,
     // which is what you usually want.
-    // See common/perf_events.proto for the definitions.
     oneof event {
       Counter counter = 4;
       Tracepoint tracepoint = 3;
@@ -1835,7 +1974,7 @@ message FollowerEvent {
 //     }
 //   }
 //
-// Next id: 20
+// Next id: 21
 message PerfEventConfig {
   // What event to sample on, and how often.
   // Defined in common/perf_events.proto.
@@ -1848,6 +1987,15 @@ message PerfEventConfig {
   // interval specified by the |timebase|.
   // If unset, the profiler will record only the event counts.
   optional CallstackSampling callstack_sampling = 16;
+
+  // List of cpu indices for counting. If empty, the default is all cpus.
+  //
+  // Note: this is not inside |callstack_sampling.scope| as it also applies to
+  // counter-only traces. A future change will likely reorganise the options,
+  // but this field will continue to be supported.
+  //
+  // Available since: perfetto v50.
+  repeated uint32 target_cpu = 20;
 
   //
   // Kernel <-> userspace ring buffer options:
@@ -3533,7 +3681,7 @@ message SysStatsConfig {
 
 // End of protos/perfetto/config/sys_stats/sys_stats_config.proto
 
-// Begin of protos/perfetto/config/system_info/system_info.proto
+// Begin of protos/perfetto/config/system_info/system_info_config.proto
 
 // This data-source does a one-off recording of system information when
 // the trace starts.
@@ -3543,7 +3691,7 @@ message SysStatsConfig {
 // datasource has no configuration options at present.
 message SystemInfoConfig {}
 
-// End of protos/perfetto/config/system_info/system_info.proto
+// End of protos/perfetto/config/system_info/system_info_config.proto
 
 // Begin of protos/perfetto/config/test_config.proto
 
@@ -3662,14 +3810,12 @@ message TrackEventConfig {
   // still be emitted even if set to true.
   optional bool filter_debug_annotations = 7;
 
-  // Default : false (i.e. disabled)
+  // Default: false (i.e. disabled)
   // When true, the SDK samples and emits the current thread time counter value
   // for each event on the current thread's track. This value represents the
-  // total CPU time consumed by that thread since its creation. Note that if a
-  // thread is not scheduled by OS for some duration, that time won't be
-  // included in thread_time.
-  // Learn more : "CLOCK_THREAD_CPUTIME_ID" flag at
-  // https://linux.die.net/man/3/clock_gettime
+  // total CPU time consumed by that thread since its creation.
+  // Learn more: "CLOCK_THREAD_CPUTIME_ID" flag at
+  // https://man7.org/linux/man-pages/man3/clock_gettime.3.html
   optional bool enable_thread_time_sampling = 8;
 
   // Default: false (i.e. dynamic event names are NOT filtered out by default)
@@ -3683,7 +3829,7 @@ message TrackEventConfig {
 // Begin of protos/perfetto/config/data_source_config.proto
 
 // The configuration that is passed to each data source when starting tracing.
-// Next id: 134
+// Next id: 138
 message DataSourceConfig {
   enum SessionInitiator {
     SESSION_INITIATOR_UNSPECIFIED = 0;
@@ -3735,7 +3881,30 @@ message DataSourceConfig {
   // DO NOT SET in consumer as this will be overridden by the service.
   optional uint64 tracing_session_id = 4;
 
-  // Keeep the lower IDs (up to 99) for fields that are *not* specific to
+  enum BufferExhaustedPolicy {
+    // The data source will use its default buffer exhausted policy, specified
+    // by the code when the data source is registered.
+    BUFFER_EXHAUSTED_UNSPECIFIED = 0;
+    // The data source will drop packets when there's no space in the shared
+    // memory buffer.
+    BUFFER_EXHAUSTED_DROP = 1;
+    // The data source will wait when there's no space in the shared memory
+    // buffer. If there's still not space, after a few seconds, the whole
+    // producer process will be aborted.
+    BUFFER_EXHAUSTED_STALL_THEN_ABORT = 2;
+    // The data source will wait when there's no space in the shared memory
+    // buffer.  If there's still not space, after a few seconds, the data source
+    // will drop packets.
+    BUFFER_EXHAUSTED_STALL_THEN_DROP = 3;
+  };
+  // How to behave when the producer runs out of space in the shared memory
+  // buffer. This is only honored by some data sources (in the SDK, the data
+  // sources registered with a configurable buffer exhausted policy).
+  optional BufferExhaustedPolicy buffer_exhausted_policy = 9;
+
+  optional PriorityBoostConfig priority_boost = 10;
+
+  // Keep the lower IDs (up to 99) for fields that are *not* specific to
   // data-sources and needs to be processed by the traced daemon.
 
   // All data source config fields must be marked as [lazy=true]. This prevents
@@ -3784,6 +3953,8 @@ message DataSourceConfig {
   optional StatsdTracingConfig statsd_tracing_config = 117 [lazy = true];
   // Data source name: linux.system_info
   optional SystemInfoConfig system_info_config = 119;
+  // Data source name: linux.frozen_ftrace
+  optional FrozenFtraceConfig frozen_ftrace_config = 136 [lazy = true];
 
   // Chrome is special as it doesn't use the perfetto IPC layer. We want to
   // avoid proto serialization and de-serialization there because that would
@@ -3839,13 +4010,24 @@ message DataSourceConfig {
   optional WindowManagerConfig windowmanager_config = 130 [lazy = true];
 
   // Data source name: org.chromium.system_metrics
-  optional ChromiumSystemMetricsConfig chromium_system_metrics = 131 [lazy = true];
+  optional ChromiumSystemMetricsConfig chromium_system_metrics = 131
+      [lazy = true];
 
   // Data source name: android.kernel_wakelocks
   optional KernelWakelocksConfig kernel_wakelocks_config = 132 [lazy = true];
 
   // Data source name: gpu.renderstages
   optional GpuRenderStagesConfig gpu_renderstages_config = 133 [lazy = true];
+
+  // Data source name: org.chromium.histogram_samples
+  optional ChromiumHistogramSamplesConfig chromium_histogram_samples = 134
+      [lazy = true];
+
+  // Data source name: android.app_wakelocks
+  optional AppWakelocksConfig app_wakelocks_config = 135 [lazy = true];
+
+  // Data source name: android.cpu_per_uid
+  optional CpuPerUidConfig cpu_per_uid_config = 137 [lazy = true];
 
   // This is a fallback mechanism to send a free-form text config to the
   // producer. In theory this should never be needed. All the code that
@@ -3872,7 +4054,7 @@ message DataSourceConfig {
 // It contains the general config for the logging buffer(s) and the configs for
 // all the data source being enabled.
 //
-// Next id: 40.
+// Next id: 41.
 message TraceConfig {
   message BufferConfig {
     optional uint32 size_kb = 1;
@@ -3933,6 +4115,16 @@ message TraceConfig {
     // "bar"] will enable data sources on both "foo" and "bar" (if they exist).
     repeated string producer_name_filter = 2;
     repeated string producer_name_regex_filter = 3;
+
+    // Filter by machine names. The name of a machine is determined by the
+    // PERFETTO_MACHINE_NAME env variable. In Android systems, if the env
+    // variable is not set then the
+    // persist.traced_relay.machine_name system property is used. If the
+    // sysprop isn't set or not in an Android system, then the machine name by
+    // default is set to the utsname sysname (e.g. Linux), which can be obtained
+    // via the 'uname -s' command. As a convenience, one can use "host" to refer
+    // to the host machine, which is the machine running traced.
+    repeated string machine_name_filter = 4;
   }
   repeated DataSource data_sources = 2;
 
@@ -4580,6 +4772,10 @@ message TraceConfig {
     optional uint64 max_other_session_count = 2;
   }
   repeated SessionSemaphore session_semaphores = 39;
+
+  // Priority boost to be applied to the traced process, when the session is
+  // running.
+  optional PriorityBoostConfig priority_boost = 40;
 }
 
 // End of protos/perfetto/config/trace_config.proto

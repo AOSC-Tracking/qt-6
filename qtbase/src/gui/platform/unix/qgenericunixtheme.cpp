@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qgenericunixtheme_p.h"
 #include "qgnometheme_p.h"
@@ -38,10 +39,10 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QJsonParseError>
-#ifndef QT_NO_SYSTEMTRAYICON
-#include <private/qdbustrayicon_p.h>
 #include <private/qdbusmenubar_p.h>
 #endif
+#if QT_CONFIG(dbus) && QT_CONFIG(systemtrayicon)
+#include <private/qdbustrayicon_p.h>
 #endif
 
 #include <private/qguiapplication_p.h>
@@ -49,7 +50,6 @@
 #include <QtCore/QStandardPaths>
 #if QT_CONFIG(dbus)
 #include <QtDBus/QDBusConnectionInterface>
-#include <private/qdbustrayicon_p.h>
 #endif
 #if QT_CONFIG(mimetype)
 #include <QtCore/QMimeDatabase>

@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_OS_CRYPT_SYNC_OS_CRYPT_H_
 #define COMPONENTS_OS_CRYPT_SYNC_OS_CRYPT_H_
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +16,12 @@
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
 #include "crypto/subtle_passkey.h"
+
+#if BUILDFLAG(IS_APPLE)
+namespace crypto::apple {
+class Keychain;
+}
+#endif
 
 #if BUILDFLAG(IS_LINUX)
 class KeyStorageLinux;
@@ -118,12 +125,16 @@ class COMPONENT_EXPORT(OS_CRYPT) OSCryptImpl {
   void SetConfig(std::unique_ptr<os_crypt::Config> config);
 #endif  // BUILDFLAG(IS_LINUX)
 
-  // On Linux returns true iff the real secret key (not hardcoded one) is
-  // available. On MacOS returns true if Keychain is available (for mock
-  // Keychain it returns true if not using locked Keychain, false if using
-  // locked mock Keychain). On Windows returns true if non mock encryption
-  // key is available. On other platforms, returns false as OSCryptImpl will use
-  // a hardcoded key.
+  // In production code:
+  // - On Linux, returns true iff the real secret key (not hardcoded one) is
+  //   available.
+  // - On MacOS, returns true if Keychain is available (for mock Keychain it
+  //   returns true if not using locked Keychain, false if using locked mock
+  //   Keychain).
+  // - On Windows, returns true if non mock encryption key is available.
+  // - On other platforms, returns true as OSCryptImpl will use a hardcoded key.
+  //
+  // Tests may override the above behavior.
   bool IsEncryptionAvailable();
 
   // Encrypt a string16. The output (second argument) is really an array of
@@ -222,6 +233,9 @@ class COMPONENT_EXPORT(OS_CRYPT) OSCryptImpl {
 #endif  // (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CASTOS))
  private:
 #if BUILDFLAG(IS_APPLE)
+  // Return the keychain to use for accessing the encryption key.
+  std::unique_ptr<crypto::apple::Keychain> GetKeychain() const;
+
   // Derives an encryption key from data stored in the keychain if necessary.
   // Returns true if there is an encryption key available and false otherwise.
   bool DeriveKey();

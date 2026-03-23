@@ -51,8 +51,6 @@ Preload::PrerenderFinalStatus PrerenderFinalStatusToProtocol(
       return Preload::PrerenderFinalStatusEnum::LoginAuthRequested;
     case PrerenderFinalStatus::kLowEndDevice:
       return Preload::PrerenderFinalStatusEnum::LowEndDevice;
-    case PrerenderFinalStatus::kMainFrameNavigation:
-      return Preload::PrerenderFinalStatusEnum::MainFrameNavigation;
     case PrerenderFinalStatus::kMemoryLimitExceeded:
       return Preload::PrerenderFinalStatusEnum::MemoryLimitExceeded;
     case PrerenderFinalStatus::kMixedContent:
@@ -161,10 +159,10 @@ Preload::PrerenderFinalStatus PrerenderFinalStatusToProtocol(
     case PrerenderFinalStatus::kActivatedWithAuxiliaryBrowsingContexts:
       return Preload::PrerenderFinalStatusEnum::
           ActivatedWithAuxiliaryBrowsingContexts;
-    case PrerenderFinalStatus::kMaxNumOfRunningEagerPrerendersExceeded:
+    case PrerenderFinalStatus::kMaxNumOfRunningImmediatePrerendersExceeded:
       return Preload::PrerenderFinalStatusEnum::
           MaxNumOfRunningEagerPrerendersExceeded;
-    case PrerenderFinalStatus::kMaxNumOfRunningNonEagerPrerendersExceeded:
+    case PrerenderFinalStatus::kMaxNumOfRunningNonImmediatePrerendersExceeded:
       return Preload::PrerenderFinalStatusEnum::
           MaxNumOfRunningNonEagerPrerendersExceeded;
     case PrerenderFinalStatus::kMaxNumOfRunningEmbedderPrerendersExceeded:
@@ -189,10 +187,12 @@ Preload::PrerenderFinalStatus PrerenderFinalStatusToProtocol(
       return Preload::PrerenderFinalStatusEnum::SlowNetwork;
     case PrerenderFinalStatus::kOtherPrerenderedPageActivated:
       return Preload::PrerenderFinalStatusEnum::OtherPrerenderedPageActivated;
-    case PrerenderFinalStatus::kV8OptimizerDisabled:
-      return Preload::PrerenderFinalStatusEnum::V8OptimizerDisabled;
     case PrerenderFinalStatus::kPrerenderFailedDuringPrefetch:
       return Preload::PrerenderFinalStatusEnum::PrerenderFailedDuringPrefetch;
+    case PrerenderFinalStatus::kBrowsingDataRemoved:
+      return Preload::PrerenderFinalStatusEnum::BrowsingDataRemoved;
+    case PrerenderFinalStatus::kPrerenderHostReused:
+      return Preload::PrerenderFinalStatusEnum::PrerenderHostReused;
   }
 }
 
@@ -281,6 +281,18 @@ Preload::PrefetchStatus PrefetchStatusToProtocol(PrefetchStatus status) {
       return Preload::PrefetchStatusEnum::PrefetchEvictedAfterCandidateRemoved;
     case PrefetchStatus::kPrefetchEvictedForNewerPrefetch:
       return Preload::PrefetchStatusEnum::PrefetchEvictedForNewerPrefetch;
+    case PrefetchStatus::kPrefetchIneligibleRedirectFromServiceWorker:
+      return Preload::PrefetchStatusEnum::
+          PrefetchNotEligibleRedirectFromServiceWorker;
+    case PrefetchStatus::kPrefetchIneligibleRedirectToServiceWorker:
+      return Preload::PrefetchStatusEnum::
+          PrefetchNotEligibleRedirectToServiceWorker;
+    case PrefetchStatus::kPrefetchIneligibleUserHasServiceWorkerNoFetchHandler:
+      return Preload::PrefetchStatusEnum::
+          PrefetchNotEligibleUserHasServiceWorkerNoFetchHandler;
+    case PrefetchStatus::kPrefetchEvictedAfterBrowsingDataRemoved:
+      return Preload::PrefetchStatusEnum::
+          PrefetchEvictedAfterBrowsingDataRemoved;
   }
 }
 
@@ -504,6 +516,8 @@ void PreloadHandler::SendInitialPreloadEnabledState() {
       config.ShouldHoldback(
           PreloadingType::kPrerender,
           content::content_preloading_predictor::kSpeculationRules));
+  // TODO(https://crbug.com/428500219): Set holdback status for
+  // prerender-until-script.
 }
 
 void PreloadHandler::SendCurrentPreloadStatus() {
@@ -531,8 +545,13 @@ void PreloadHandler::SendCurrentPreloadStatus() {
       continue;
     }
 
+    std::optional<base::UnguessableToken> maybe_navigation_token =
+        document->GetDevToolsNavigationToken();
+    if (!maybe_navigation_token.has_value()) {
+      continue;
+    }
     const base::UnguessableToken initiator_devtools_navigation_token =
-        document->GetDevToolsNavigationToken().value();
+        maybe_navigation_token.value();
     const std::string initiating_frame_id =
         document->GetDevToolsFrameToken().ToString();
     for (const auto& [key, data] : preload_storage->prefetch_data_map()) {

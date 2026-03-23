@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef AXISRENDERER_H
 #define AXISRENDERER_H
@@ -62,6 +64,7 @@ private:
     friend class LinesRenderer;
     friend class PointRenderer;
     friend class AreaRenderer;
+    friend class CustomRenderer;
 
     struct AxisProperties {
         qreal x = 0;
@@ -103,6 +106,8 @@ private:
     void updateDateTimeYAxisLabels(AxisProperties &ax, const QRectF rect);
     void updateDateTimeXAxisLabels(AxisProperties &ax, const QRectF rect);
 
+    void createDragHandler();
+    void deleteDragHandler();
     void onTranslationChanged(QVector2D delta);
     void onGrabChanged(QPointingDevice::GrabTransition transition, QEventPoint point);
 
@@ -116,6 +121,7 @@ private:
                               QQmlComponent *component);
 
     QVector2D windowToAxisCoords(QVector2D coords);
+    bool calculateZoom(QAbstractAxis *axis, qreal delta);
     bool zoom(qreal delta);
 
     const AxisProperties &getAxisX(QAbstractSeries *series) const;
@@ -126,10 +132,10 @@ private:
     bool m_initialized = false;
     bool m_wasVertical = false;
 
-    QVector<AxisProperties> m_axes1;
-    QVector<AxisProperties> m_axes2;
-    QVector<AxisProperties> *m_horzAxes = &m_axes1;
-    QVector<AxisProperties> *m_vertAxes = &m_axes2;
+    QList<AxisProperties> m_axes1;
+    QList<AxisProperties> m_axes2;
+    QList<AxisProperties> *m_horzAxes = &m_axes1;
+    QList<AxisProperties> *m_vertAxes = &m_axes2;
 
     AxisGrid *m_axisGrid = nullptr;
     AxisGrid *m_axisGridShadow = nullptr;

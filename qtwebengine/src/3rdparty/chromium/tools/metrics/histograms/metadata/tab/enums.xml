@@ -35,6 +35,16 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//chrome/browser/ui/views/tabs/tab_strip_combo_button.cc:AccidentalClickType) -->
 
+<!-- LINT.IfChange(AttemptFastKillForDiscardResult) -->
+
+<enum name="AttemptFastKillForDiscardResult">
+  <int value="0" label="Killed"/>
+  <int value="1" label="Skipped"/>
+  <int value="2" label="Killed without unload handlers"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/resource_coordinator/tab_lifecycle_unit.cc:AttemptFastKillForDiscardResult) -->
+
 <enum name="BooleanFocusedTab">
   <int value="0" label="Not Focused"/>
   <int value="1" label="Focused"/>
@@ -43,11 +53,6 @@ chromium-metrics-reviews@google.com.
 <enum name="BooleanHasTitle">
   <int value="0" label="Empty title"/>
   <int value="1" label="Non-empty title"/>
-</enum>
-
-<enum name="BooleanOverlap">
-  <int value="0" label="No overlap"/>
-  <int value="1" label="Overlapped"/>
 </enum>
 
 <enum name="BooleanProtectedTab">
@@ -81,6 +86,16 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/performance_manager/mechanisms/page_discarder.cc:DiscardPageOnUIThreadOutcome) -->
+
+<!-- LINT.IfChange(DiscardTabOutcome) -->
+
+<enum name="DiscardTabOutcome">
+  <int value="0" label="Success"/>
+  <int value="1" label="NotInTabStripModel"/>
+  <int value="2" label="AlreadyDiscarded"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/resource_coordinator/tab_lifecycle_unit.cc:DiscardTabOutcome) -->
 
 <enum name="ExternalLauncherOption">
   <int value="0" label="Cancel"/>
@@ -137,6 +152,7 @@ chromium-metrics-reviews@google.com.
       label="Invoked from session restore after autosave of a V1 group"/>
   <int value="8" label="Group shared from UI"/>
   <int value="9" label="Group un-shared from UI"/>
+  <int value="10" label="Open from toast action"/>
 </enum>
 
 <!-- LINT.ThenChange(//components/saved_tab_groups/public/types.h:OpeningSource) -->
@@ -245,15 +261,37 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_metrics.h:SharedTabGroupRecallTypeDesktop) -->
 
+<!-- LINT.IfChange(SplitTabCreatedSource) -->
+
+<enum name="SplitTabCreatedSource">
+  <int value="0" label="Toolbar button"/>
+  <int value="1" label="Drag and drop link"/>
+  <int value="2" label="Drag and drop tab"/>
+  <int value="3" label="Bookmark context menu"/>
+  <int value="4" label="Link context menu"/>
+  <int value="5" label="Tab context menu"/>
+  <int value="6" label="Duplicate split"/>
+  <int value="7" label="Extensions API"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/ui/tabs/split_tab_metrics.h:SplitTabCreatedSource) -->
+
+<!-- LINT.IfChange(SplitViewMenuEntry) -->
+
+<enum name="SplitViewMenuEntry">
+  <summary>Entries from the split view menu.</summary>
+  <int value="0" label="Reverse position"/>
+  <int value="1" label="Close specified tab"/>
+  <int value="2" label="Close start tab"/>
+  <int value="3" label="Close end tab"/>
+  <int value="4" label="Exit split"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/ui/tabs/split_tab_menu_model.h:SplitViewMenuEntry) -->
+
 <enum name="TabActivationTypes">
   <int value="0" label="Activate a tab"/>
   <int value="1" label="Activate the context menu of a tab"/>
-</enum>
-
-<enum name="TabBackgroundLoadStatus">
-  <int value="0" label="Loaded on creation and shown"/>
-  <int value="1" label="Loaded on creation and lost"/>
-  <int value="2" label="Not loaded on creation"/>
 </enum>
 
 <enum name="TabDeclutterEntryPoint">
@@ -262,22 +300,19 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Selector"/>
 </enum>
 
-<!-- LINT.IfChange(TabGroupEvent) -->
+<!-- LINT.IfChange(TabGroupingTransitionType) -->
 
-<enum name="TabGroupEvent">
-  <int value="0" label="Tab group created"/>
-  <int value="1" label="Tab group removed"/>
-  <int value="2" label="Tab group opened"/>
-  <int value="3" label="Tab group closed"/>
-  <int value="4" label="Tab group visuals changed"/>
-  <int value="5" label="Tab group tabs reordered"/>
-  <int value="6" label="Tab added"/>
-  <int value="7" label="Tab removed"/>
-  <int value="8" label="Tab navigated"/>
-  <int value="9" label="Tab selected"/>
+<enum name="TabGroupingTransitionType">
+  <int value="-1" label="Invalid type"/>
+  <int value="0" label="Tab started ungrouped and ended ungrouped"/>
+  <int value="1" label="Tab started ungrouped and ended grouped"/>
+  <int value="2" label="Tab started grouped and ended ungrouped"/>
+  <int value="3" label="Tab started grouped and ended in the same group"/>
+  <int value="4"
+      label="Tab started grouped and ended outside of the same group"/>
 </enum>
 
-<!-- LINT.ThenChange(//components/saved_tab_groups/public/types.h:TabGroupEvent) -->
+<!-- LINT.ThenChange(//chrome/browser/ui/tabs/tab_creation_metrics_controller.h:TabGroupingTransitionType) -->
 
 <!-- LINT.IfChange(TabGroupLoadedEmptiness)-->
 
@@ -288,6 +323,18 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(//components/saved_tab_groups/internal/stats.cc:TabGroupLoadedEmptiness) -->
+
+<!-- LINT.IfChange(TabGroupShortcut)-->
+
+<enum name="TabGroupShortcut">
+  <int value="0" label="Create a new tab group"/>
+  <int value="1" label="Close a tab group"/>
+  <int value="2" label="Add a new tab to a tab group"/>
+  <int value="3" label="Focus the first tab in the next tab group"/>
+  <int value="4" label="Focus the first tab in the previous tab group"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/ui/browser_commands.h:TabGroupShortcut) -->
 
 <enum name="TabOrganizationDeclutterCTREvent">
   <int value="0" label="Declutter Shown"/>
@@ -416,6 +463,12 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="Failure IllegalArgumentException"/>
 </enum>
 
+<enum name="TabStateMigrationStatus">
+  <int value="0" label="FlatBuffer TabState file only exists"/>
+  <int value="1" label="Legacy TabState file only exists"/>
+  <int value="2" label="Both FlatBuffer and legacy TabState files exist"/>
+</enum>
+
 <enum name="TabStateRestoreMethod">
   <int value="0" label="FlatBuffer Schema"/>
   <int value="1" label="Legacy hand written Schema"/>
@@ -436,6 +489,16 @@ chromium-metrics-reviews@google.com.
   <int value="10" label="Evicted due to page loading when backgrounding"/>
   <int value="11" label="Evicted due to OS terminating the renderer."/>
 </enum>
+
+<!-- LINT.IfChange(VerticalTabsState) -->
+
+<enum name="VerticalTabsState">
+  <int value="0" label="AllHorizontal"/>
+  <int value="1" label="Mixed"/>
+  <int value="2" label="AllVertical"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/ui/tabs/tab_metrics_provider.h:VerticalTabsState) -->
 
 </enums>
 

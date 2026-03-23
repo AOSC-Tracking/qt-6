@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QV4DATACOLLECTOR_H
 #define QV4DATACOLLECTOR_H
@@ -20,12 +21,12 @@ class QV4DataCollector
 {
 public:
     typedef uint Ref;
-    typedef QVector<uint> Refs;
+    typedef QList<uint> Refs;
 
     static QV4::Heap::ExecutionContext *findScope(QV4::Heap::ExecutionContext *ctxt, int scope);
     static int encodeScopeType(QV4::Heap::ExecutionContext::ContextType scopeType);
 
-    QVector<QV4::Heap::ExecutionContext::ContextType> getScopeTypes(int frame);
+    QList<QV4::Heap::ExecutionContext::ContextType> getScopeTypes(int frame);
     QV4::Heap::ExecutionContext *findContext(int frame);
     QV4::CppStackFrame *findFrame(int frame);
 

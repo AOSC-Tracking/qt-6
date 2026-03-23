@@ -110,7 +110,6 @@ class CORE_EXPORT LayoutView : public LayoutBlockFlow {
 
   bool IsChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
-  void InvalidateSvgRootsWithRelativeLengthDescendents();
   LayoutUnit ComputeMinimumWidth();
 
   // Based on LocalFrameView::LayoutSize, but:
@@ -143,8 +142,6 @@ class CORE_EXPORT LayoutView : public LayoutBlockFlow {
     return frame_view_.Get();
   }
   const LayoutBox& RootBox() const;
-
-  void UpdateAfterLayout() override;
 
   // See comments for the equivalent method on LayoutObject.
   // |ancestor| can be nullptr, which will map the rect to the main frame's
@@ -224,7 +221,6 @@ class CORE_EXPORT LayoutView : public LayoutBlockFlow {
   void AddLayoutCounter() {
     NOT_DESTROYED();
     layout_counter_count_++;
-    SetNeedsMarkerOrCounterUpdate();
   }
   void RemoveLayoutCounter() {
     NOT_DESTROYED();
@@ -250,19 +246,15 @@ class CORE_EXPORT LayoutView : public LayoutBlockFlow {
     NOT_DESTROYED();
     return layout_list_item_count_;
   }
-  void SetNeedsMarkerOrCounterUpdate() {
-    NOT_DESTROYED();
-    needs_marker_counter_update_ = true;
-  }
 
   // Return true if re-laying out the specified node (as a cached layout result)
   // with a new initial containing block size. Subsequent calls for the same
   // node within the same lifecycle update will return false.
   bool AffectedByResizedInitialContainingBlock(const LayoutResult&);
 
-  // Update generated counters after style and layout tree update.
-  // container - The container for container queries, otherwise nullptr.
-  void UpdateCountersAfterStyleChange(LayoutObject* container = nullptr);
+  // If @counter-styles changed, invalidate LayoutCounter objects as necessary
+  // to reflect any changes.
+  void InvalidateLayoutForCounterStyleChanges();
 
   bool BackgroundIsKnownToBeOpaqueInRect(
       const PhysicalRect& local_rect) const override;
@@ -276,10 +268,9 @@ class CORE_EXPORT LayoutView : public LayoutBlockFlow {
   // https://drafts.csswg.org/css-values-4/#dynamic-viewport-size
   gfx::SizeF DynamicViewportSizeForViewportUnits() const;
 
-  // Get the default page area size, as provided by the system and print
-  // settings (i.e. unaffected by CSS). This is used for matching width / height
-  // media queries when printing.
-  gfx::SizeF DefaultPageAreaSize() const;
+  // Get the size to evaluate width and height media queries against when
+  // paginating / printing.
+  gfx::SizeF PaginationViewportSizeForMediaQueries() const;
 
   // Invalidates paint for the entire view, including composited descendants,
   // but not including child frames.
@@ -358,7 +349,7 @@ class CORE_EXPORT LayoutView : public LayoutBlockFlow {
 
   // Set if laying out with a new initial containing block size, and populated
   // as we handle nodes that may have been affected by that.
-  Member<HeapHashSet<Member<const LayoutObject>>>
+  Member<GCedHeapHashSet<Member<const LayoutObject>>>
       initial_containing_block_resize_handled_list_;
 
   bool CanHaveChildren() const override;
@@ -390,7 +381,6 @@ class CORE_EXPORT LayoutView : public LayoutBlockFlow {
   Member<LocalFrameView> frame_view_;
   unsigned layout_counter_count_ = 0;
   unsigned layout_list_item_count_ = 0;
-  bool needs_marker_counter_update_ = false;
 
   // This map keeps track of SVG <text> descendants.
   // LayoutSVGText needs to do re-layout on transform changes of any ancestor

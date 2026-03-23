@@ -28,7 +28,6 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "services/preferences/public/cpp/dictionary_value_update.h"
 #include "services/preferences/public/cpp/scoped_pref_update.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -549,7 +548,7 @@ TEST_F(ContentSettingsPrefTest, DecidedByRelatedWebsiteSetsLoad) {
     content_settings_pref->SetWebsiteSetting(
         ContentSettingsPattern::FromString("http://example.com"),
         ContentSettingsPattern::Wildcard(), base::Value(CONTENT_SETTING_ALLOW),
-        metadata, partition_key);
+        std::move(metadata), partition_key);
   }
 
   // Read pref.
@@ -590,7 +589,7 @@ TEST_F(ContentSettingsPrefTest,
     content_settings_pref->SetWebsiteSetting(
         ContentSettingsPattern::FromString("http://example.com"),
         ContentSettingsPattern::Wildcard(), base::Value(CONTENT_SETTING_ALLOW),
-        metadata, partition_key);
+        std::move(metadata), partition_key);
   }
 
   // Read pref from dict and make sure `decided_by_related_website_sets` is not

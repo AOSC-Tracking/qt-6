@@ -1,10 +1,13 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #include "content_browser_client_qt.h"
 
 #include "base/files/file_util.h"
 #include "chrome/browser/tab_contents/form_interaction_tab_helper.h"
+#include "chrome/browser/ui/webui/usb_internals/usb_internals_ui.h"
+#include "chrome/browser/ui/webui/usb_internals/usb_internals_page_handler.h"
 #include "components/autofill/content/browser/content_autofill_driver_factory.h"
 #include "components/custom_handlers/protocol_handler_registry.h"
 #include "components/embedder_support/user_agent_utils.h"
@@ -29,10 +32,10 @@
 #include "content/public/browser/url_loader_request_interceptor.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view_delegate.h"
+#include "content/public/browser/web_ui_controller_interface_binder.h"
 #include "content/public/browser/web_ui_url_loader_factory.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "content/public/common/user_agent.h"
 #include "base/version_info/version_info.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "extensions/buildflags/buildflags.h"
@@ -52,12 +55,14 @@
 #include "ui/base/ui_base_switches.h"
 #include "url/url_util_qt.h"
 
+#include "qtwebengine/common/plugin.mojom.h"
 #include "qtwebengine/common/renderer_configuration.mojom.h"
 
-#include "profile_adapter.h"
+#include "authenticator_request_client_delegate_qt.h"
 #include "browser_main_parts_qt.h"
 #include "certificate_error_controller.h"
 #include "client_cert_select_controller.h"
+#include "content_settings_manager_qt.h"
 #include "custom_handlers/protocol_handler_registry_factory.h"
 #include "devtools_manager_delegate_qt.h"
 #include "file_system_access/file_system_access_permission_request_manager_qt.h"
@@ -68,8 +73,9 @@
 #include "net/proxying_restricted_cookie_manager_qt.h"
 #include "net/proxying_url_loader_factory_qt.h"
 #include "net/system_network_context_manager.h"
-#include "profile_qt.h"
+#include "profile_adapter.h"
 #include "profile_io_data_qt.h"
+#include "profile_qt.h"
 #include "renderer_host/user_resource_controller_host.h"
 #include "select_file_dialog_factory_qt.h"
 #include "type_conversion.h"
@@ -79,8 +85,6 @@
 #include "web_contents_view_qt.h"
 #include "web_engine_library_info.h"
 #include "web_engine_settings.h"
-#include "authenticator_request_client_delegate_qt.h"
-#include "content_settings_manager_qt.h"
 #include "api/qwebenginecookiestore.h"
 #include "api/qwebenginecookiestore_p.h"
 #include "api/qwebengineurlrequestinfo_p.h"
@@ -113,7 +117,6 @@
 #endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-#include "content/public/browser/web_ui_controller_interface_binder.h"
 #include "common/extensions/extensions_client_qt.h"
 #include "components/guest_view/browser/guest_view_base.h"
 #include "extensions/browser/api/mime_handler_private/mime_handler_private.h"
@@ -133,8 +136,10 @@
 #include "extensions/extension_web_contents_observer_qt.h"
 #include "extensions/extensions_browser_client_qt.h"
 #include "net/plugin_response_interceptor_url_loader_throttle.h"
+#if QT_CONFIG(webengine_extensions)
 #include "extensions/webui/extensions_ui_page_handler_qt.h"
 #include "extensions/webui/extensions_ui_qt.h"
+#endif
 #endif
 
 #if QT_CONFIG(webengine_webchannel)
@@ -154,6 +159,7 @@
 #endif
 
 #if BUILDFLAG(ENABLE_PDF) && BUILDFLAG(ENABLE_EXTENSIONS)
+#include "extensions/plugin_info_host_qt.h"
 #include "extensions/pdf_iframe_navigation_throttle_qt.h"
 #include "printing/pdf_document_helper_client_qt.h"
 #endif
@@ -199,12 +205,31 @@ bool IsHandledProtocol(std::string_view scheme)
 
 namespace QtWebEngineCore {
 
-void MaybeAddThrottle(
-    std::unique_ptr<content::NavigationThrottle> maybe_throttle,
-    std::vector<std::unique_ptr<content::NavigationThrottle>>* throttles) {
+namespace {
+
+void MaybeAddThrottle(std::unique_ptr<content::NavigationThrottle> maybe_throttle,
+                      content::NavigationThrottleRegistry &registry)
+{
     if (maybe_throttle)
-        throttles->push_back(std::move(maybe_throttle));
+        registry.AddThrottle(std::move(maybe_throttle));
 }
+
+#if BUILDFLAG(ENABLE_PDF) && BUILDFLAG(ENABLE_EXTENSIONS)
+void BindPluginInfoHost(int render_process_id, int render_frame_id,
+                        mojo::PendingAssociatedReceiver<qtwebengine::mojom::PluginInfoHost> receiver)
+{
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    content::RenderProcessHost* host = content::RenderProcessHost::FromID(render_process_id);
+    if (!host)
+        return;
+
+    mojo::MakeSelfOwnedAssociatedReceiver(
+        std::make_unique<extensions::PluginInfoHostQt>(render_process_id, render_frame_id, host->GetBrowserContext()),
+        std::move(receiver));
+}
+#endif
+
+}  // namespace
 
 ContentBrowserClientQt::ContentBrowserClientQt()
 {
@@ -335,6 +360,7 @@ void ContentBrowserClientQt::AppendExtraCommandLineSwitches(base::CommandLine* c
     Q_UNUSED(child_process_id);
 
     url::CustomScheme::SaveSchemes(command_line);
+    WebEngineLibraryInfo::appendPathOverridesToCommandLine(command_line);
 
     std::string processType = command_line->GetSwitchValueASCII(switches::kProcessType);
     if (processType == switches::kZygoteProcess)
@@ -445,6 +471,7 @@ void ContentBrowserClientQt::RegisterBrowserInterfaceBindersForFrame(
         content::RenderFrameHost *render_frame_host,
         mojo::BinderMapWithContext<content::RenderFrameHost *> *map)
 {
+    RegisterWebUIControllerInterfaceBinder<::mojom::UsbInternalsPageHandler, UsbInternalsUI>(map);
     map->Add<content_settings::mojom::ContentSettingsManager>(
             base::BindRepeating(&BindContentSettingsManager));
     map->Add<network_hints::mojom::NetworkHintsHandler>(base::BindRepeating(&BindNetworkHintsHandler));
@@ -457,10 +484,12 @@ void ContentBrowserClientQt::RegisterBrowserInterfaceBindersForFrame(
             }));
 #endif
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if QT_CONFIG(webengine_extensions)
     RegisterWebUIControllerInterfaceBinder<qtwebengine::mojom::ExtensionsUIHandlerFactory,
                                            ExtensionsUIQt>(map);
+#endif
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
     map->Add<extensions::mime_handler::MimeHandlerService>(base::BindRepeating(&BindMimeHandlerService));
     map->Add<extensions::mime_handler::BeforeUnloadControl>(base::BindRepeating(&BindBeforeUnloadControl));
     const GURL &site = render_frame_host->GetSiteInstance()->GetSiteURL();
@@ -526,13 +555,13 @@ void ContentBrowserClientQt::RegisterAssociatedInterfaceBindersForRenderFrameHos
                         extensions::ExtensionWebContentsObserverQt::BindLocalFrameHost(std::move(receiver), render_frame_host);
                     }, &rfh));
 #endif
-    associated_registry.AddInterface<autofill::mojom::AutofillDriver>(base::BindRepeating(
-            [](content::RenderFrameHost *render_frame_host,
-               mojo::PendingAssociatedReceiver<autofill::mojom::AutofillDriver> receiver) {
-                autofill::ContentAutofillDriverFactory::BindAutofillDriver(render_frame_host,
-                                                                           std::move(receiver));
-            },
-            &rfh));
+    associated_registry.AddInterface<autofill::mojom::AutofillDriver>(
+                base::BindRepeating(
+                    [](content::RenderFrameHost *render_frame_host,
+                       mojo::PendingAssociatedReceiver<autofill::mojom::AutofillDriver> receiver) {
+                        autofill::ContentAutofillDriverFactory::BindAutofillDriver(render_frame_host,
+                                                                                   std::move(receiver));
+                    }, &rfh));
 #if BUILDFLAG(ENABLE_PDF) && BUILDFLAG(ENABLE_EXTENSIONS)
     associated_registry.AddInterface<pdf::mojom::PdfHost>(
             base::BindRepeating(
@@ -542,8 +571,12 @@ void ContentBrowserClientQt::RegisterAssociatedInterfaceBindersForRenderFrameHos
                             std::move(receiver), render_frame_host,
                             std::make_unique<PDFDocumentHelperClientQt>());
                 },
-            &rfh));
-#endif  // BUILDFLAG(ENABLE_PDF)
+                &rfh));
+    associated_registry.AddInterface<qtwebengine::mojom::PluginInfoHost>(
+            base::BindRepeating(&BindPluginInfoHost,
+                                rfh.GetProcess()->GetDeprecatedID(),
+                                rfh.GetRoutingID()));
+#endif  // BUILDFLAG(ENABLE_PDF) && BUILDFLAG(ENABLE_EXTENSIONS)
     ContentBrowserClient::RegisterAssociatedInterfaceBindersForRenderFrameHost(rfh, associated_registry);
 #if BUILDFLAG(ENABLE_EXTENSIONS)
     associated_registry.AddInterface<guest_view::mojom::GuestViewHost>(base::BindRepeating(
@@ -654,6 +687,7 @@ content::AllowServiceWorkerResult
 ContentBrowserClientQt::AllowServiceWorker(const GURL &scope,
                                            const net::SiteForCookies &site_for_cookies,
                                            const std::optional<url::Origin> & /*top_frame_origin*/,
+                                           const blink::StorageKey & /*storage_key*/,
                                            const GURL & /*script_url*/,
                                            content::BrowserContext *context)
 {
@@ -671,6 +705,7 @@ ContentBrowserClientQt::AllowServiceWorker(const GURL &scope,
 void ContentBrowserClientQt::AllowWorkerFileSystem(const GURL &url,
                                                    content::BrowserContext *context,
                                                    const std::vector<content::GlobalRenderFrameHostId> &/*render_frames*/,
+                                                   const blink::StorageKey & /*storage_key*/,
                                                    base::OnceCallback<void(bool)> callback)
 {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -683,7 +718,8 @@ void ContentBrowserClientQt::AllowWorkerFileSystem(const GURL &url,
 
 bool ContentBrowserClientQt::AllowWorkerIndexedDB(const GURL &url,
                                                   content::BrowserContext *context,
-                                                  const std::vector<content::GlobalRenderFrameHostId> &/*render_frames*/)
+                                                  const std::vector<content::GlobalRenderFrameHostId> &/*render_frames*/,
+                                                  const blink::StorageKey & /*storage_key*/)
 {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     if (!context || context->ShutdownStarted())
@@ -876,26 +912,24 @@ static void navigationThrottleCallback(content::NavigationHandle *handle,
     std::move(result_callback).Run(!navigationAccepted);
 }
 
-std::vector<std::unique_ptr<content::NavigationThrottle>> ContentBrowserClientQt::CreateThrottlesForNavigation(
-        content::NavigationHandle *navigation_handle)
+void ContentBrowserClientQt::CreateThrottlesForNavigation(
+        content::NavigationThrottleRegistry &registry)
 {
-    std::vector<std::unique_ptr<content::NavigationThrottle>> throttles;
-    throttles.push_back(std::make_unique<navigation_interception::InterceptNavigationThrottle>(
-                            navigation_handle,
+    registry.AddThrottle(
+        std::make_unique<navigation_interception::InterceptNavigationThrottle>(
+                            registry,
                             base::BindRepeating(&navigationThrottleCallback),
                             navigation_interception::SynchronyMode::kSync,
                             std::nullopt /* async callback */));
 
 #if BUILDFLAG(ENABLE_PDF) && BUILDFLAG(ENABLE_EXTENSIONS)
     MaybeAddThrottle(
-            extensions::PDFIFrameNavigationThrottleQt::MaybeCreateThrottleFor(navigation_handle),
-            &throttles);
-    throttles.push_back(
+            extensions::PDFIFrameNavigationThrottleQt::MaybeCreateThrottleFor(registry),
+            registry);
+    registry.AddThrottle(
             std::make_unique<pdf::PdfNavigationThrottle>(
-                navigation_handle, std::make_unique<PdfStreamDelegateQt>()));
+                registry, std::make_unique<PdfStreamDelegateQt>()));
 #endif // BUILDFLAG(ENABLE_PDF) && BUIDLFLAG(ENABLE_EXTENSIONS)
-
-    return throttles;
 }
 
 bool ContentBrowserClientQt::IsHandledURL(const GURL &url)
@@ -935,7 +969,7 @@ std::unique_ptr<content::LoginDelegate> ContentBrowserClientQt::CreateLoginDeleg
         bool /*is_main_frame*/, bool /*is_request_for_navigation*/, const GURL &url,
         scoped_refptr<net::HttpResponseHeaders> /*response_headers*/, bool first_auth_attempt,
         content::GuestPageHolder * /*guest_page_holder*/,
-        LoginAuthRequiredCallback auth_required_callback)
+        content::LoginDelegate::LoginAuthRequiredCallback auth_required_callback)
 {
     auto loginDelegate = std::make_unique<LoginDelegateQt>(authInfo, web_contents, url, first_auth_attempt, std::move(auth_required_callback));
     return loginDelegate;
@@ -966,15 +1000,18 @@ bool ContentBrowserClientQt::DoesSiteRequireDedicatedProcess(content::BrowserCon
     return ContentBrowserClient::DoesSiteRequireDedicatedProcess(browser_context, effective_site_url);
 }
 
-std::optional<content::ContentBrowserClient::SpareProcessRefusedByEmbedderReason>
-ContentBrowserClientQt::ShouldUseSpareRenderProcessHost(content::BrowserContext *browser_context,
-                                                        const GURL &site_url)
+bool ContentBrowserClientQt::ShouldUseSpareRenderProcessHost(content::BrowserContext *browser_context,
+                                                             const GURL &site_url,
+                                                             std::optional<SpareProcessRefusedByEmbedderReason> &refused_reason)
 {
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-    if (site_url.SchemeIs(extensions::kExtensionScheme))
-       return SpareProcessRefusedByEmbedderReason::ExtensionProcess;
+    if (site_url.SchemeIs(extensions::kExtensionScheme)) {
+       refused_reason = SpareProcessRefusedByEmbedderReason::ExtensionProcess;
+       return false;
+    }
 #endif
-    return ContentBrowserClient::ShouldUseSpareRenderProcessHost(browser_context, site_url);
+
+    return ContentBrowserClient::ShouldUseSpareRenderProcessHost(browser_context, site_url, refused_reason);
 }
 
 bool ContentBrowserClientQt::ShouldTreatURLSchemeAsFirstPartyWhenTopLevel(std::string_view scheme, bool is_embedded_origin_secure)
@@ -1001,20 +1038,28 @@ bool ContentBrowserClientQt::DoesSchemeAllowCrossOriginSharedWorker(const std::s
 void ContentBrowserClientQt::OverrideURLLoaderFactoryParams(content::BrowserContext *browser_context,
                                                             const url::Origin &origin,
                                                             bool is_for_isolated_world,
+                                                            bool is_for_service_worker,
                                                             network::mojom::URLLoaderFactoryParams *factory_params)
 {
 #if BUILDFLAG(ENABLE_EXTENSIONS)
     extensions::URLLoaderFactoryManager::OverrideURLLoaderFactoryParams(
-                browser_context, origin, is_for_isolated_world, factory_params);
+                browser_context, origin, is_for_isolated_world, is_for_service_worker, factory_params);
 #endif
 }
 
 std::string ContentBrowserClientQt::getUserAgent()
 {
     // Mention the Chromium version we're based on to get passed stupid UA-string-based feature detection (several WebRTC demos need this)
-    return content::BuildUserAgentFromProduct("QtWebEngine/" + std::string(qWebEngineVersion())
-                                              + " Chrome/" + version_info::GetMajorVersionNumber()
-                                              + ".0.0.0");
+    return embedder_support::BuildUserAgentFromProduct("QtWebEngine/" + std::string(qWebEngineVersion())
+                                                        + " Chrome/" + version_info::GetMajorVersionNumber()
+                                                        + ".0.0.0");
+}
+
+std::string ContentBrowserClientQt::GetUserAgentBasedOnPolicy(content::BrowserContext *context)
+{
+    if (!context)
+        return getUserAgent();
+    return static_cast<ProfileQt *>(context)->profileAdapter()->httpUserAgent().toStdString();
 }
 
 blink::UserAgentMetadata ContentBrowserClientQt::GetUserAgentMetadata()
@@ -1299,7 +1344,7 @@ ContentBrowserClientQt::WillCreateURLLoaderRequestInterceptors(
         if (pdf_interceptor)
             interceptors.push_back(std::move(pdf_interceptor));
     }
-#endif // BUILDFLAG(ENABLE_PDF) && BUIDLFLAG(ENABLE_EXTENSIONS)
+#endif // BUILDFLAG(ENABLE_PDF) && BUILDFLAG(ENABLE_EXTENSIONS)
 
     return interceptors;
 }

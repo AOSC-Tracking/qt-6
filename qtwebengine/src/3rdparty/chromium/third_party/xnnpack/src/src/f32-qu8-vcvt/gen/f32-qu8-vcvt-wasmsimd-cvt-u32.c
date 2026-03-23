@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-qs8-vcvt/wasmsimd-cvt.c.in
 //   Generator: tools/xngen
@@ -11,16 +12,16 @@
 
 #include <arm_neon.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/intrinsics-polyfill.h"
-#include "xnnpack/vcvt.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/vcvt.h"
 
 
 void xnn_f32_qu8_vcvt_ukernel__wasmsimd_cvt_u32(
     size_t batch,
     const float* input,
     uint8_t* output,
-    const struct xnn_f32_qu8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_qu8_cvt_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QOPENXRGRAPHICSVULKAN_H
 #define QOPENXRGRAPHICSVULKAN_H
@@ -30,8 +32,8 @@ class QOpenXRGraphicsVulkan : public QAbstractOpenXRGraphics
 public:
     QOpenXRGraphicsVulkan();
 
-    const char *extensionName() const override;
-    bool isExtensionSupported(const QVector<XrExtensionProperties> &extensions) const override;
+    QVector<const char *> getRequiredExtensions() const override;
+    bool initialize(const QVector<XrExtensionProperties> &extensions) override;
     const XrBaseInStructure *handle() const override;
     bool setupGraphics(const XrInstance &instance, XrSystemId &systemId, const QQuickGraphicsConfiguration &quickConfig) override;
     bool finializeGraphics(QRhi *rhi) override;

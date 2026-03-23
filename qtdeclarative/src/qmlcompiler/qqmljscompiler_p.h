@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSCOMPILER_P_H
 #define QQMLJSCOMPILER_P_H
@@ -61,6 +62,7 @@ public:
     enum Flag {
         NoFlags = 0x0,
         ValidateBasicBlocks = 0x1,
+        IsLintCompiler = 0x2, // When we're linting and not compiling
     };
     Q_DECLARE_FLAGS(Flags, Flag)
 
@@ -78,6 +80,8 @@ public:
             const QV4::Compiler::Context *context, const QString &name, QQmlJS::AST::Node *astNode);
 
     virtual QQmlJSAotFunction globalCode() const;
+
+    bool isLintCompiler() const { return m_flags & IsLintCompiler; }
 
     Flags m_flags;
 
@@ -116,21 +120,21 @@ using QQmlJSSaveFunction
                          const QQmlJSAotFunctionMap &, QString *)>;
 
 bool Q_QMLCOMPILER_EXPORT qCompileQmlFile(const QString &inputFileName,
-                                          QQmlJSSaveFunction saveFunction,
+                                          const QQmlJSSaveFunction &saveFunction,
                                           QQmlJSAotCompiler *aotCompiler, QQmlJSCompileError *error,
                                           bool storeSourceLocation = false,
                                           QV4::Compiler::CodegenWarningInterface *wInterface =
                                                   QV4::Compiler::defaultCodegenWarningInterface(),
                                           const QString *fileContents = nullptr);
 bool Q_QMLCOMPILER_EXPORT qCompileQmlFile(QmlIR::Document &irDocument, const QString &inputFileName,
-                                          QQmlJSSaveFunction saveFunction,
+                                          const QQmlJSSaveFunction &saveFunction,
                                           QQmlJSAotCompiler *aotCompiler, QQmlJSCompileError *error,
                                           bool storeSourceLocation = false,
                                           QV4::Compiler::CodegenWarningInterface *wInterface =
                                           QV4::Compiler::defaultCodegenWarningInterface(),
                                           const QString *fileContents = nullptr);
 bool Q_QMLCOMPILER_EXPORT qCompileJSFile(const QString &inputFileName, const QString &inputFileUrl,
-                                         QQmlJSSaveFunction saveFunction,
+                                         const QQmlJSSaveFunction &saveFunction,
                                          QQmlJSCompileError *error);
 
 bool Q_QMLCOMPILER_EXPORT qSaveQmlJSUnitAsCpp(const QString &inputFileName,

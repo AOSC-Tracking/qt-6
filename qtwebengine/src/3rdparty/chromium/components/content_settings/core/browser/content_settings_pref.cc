@@ -25,6 +25,8 @@
 #include "components/content_settings/core/browser/content_settings_rule.h"
 #include "components/content_settings/core/browser/content_settings_utils.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/content_settings/core/browser/permission_settings_info.h"
+#include "components/content_settings/core/browser/permission_settings_registry.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_constraints.h"
 #include "components/content_settings/core/common/content_settings_partition_key.h"
@@ -51,18 +53,17 @@ const char kDecidedByRelatedWebsiteSets[] = "decided_by_related_website_sets";
 const base::TimeDelta kLastUsedPermissionExpiration = base::Hours(24);
 
 bool IsValueAllowedForType(const base::Value& value, ContentSettingsType type) {
-  const content_settings::ContentSettingsInfo* info =
-      content_settings::ContentSettingsRegistry::GetInstance()->Get(type);
-  if (info) {
-    if (!value.is_int())
-      return false;
-    if (value.GetInt() == CONTENT_SETTING_DEFAULT)
-      return false;
-    return info->IsSettingValid(IntToContentSetting(value.GetInt()));
+  auto* permission_info =
+      content_settings::PermissionSettingsRegistry::GetInstance()->Get(type);
+
+  if (permission_info) {
+    auto setting = permission_info->delegate().FromValue(value);
+    if (setting) {
+      return permission_info->delegate().IsValid(setting.value());
+    }
+    return false;
   }
 
-  // TODO(raymes): We should permit different types of base::Value for
-  // website settings.
   return value.is_dict();
 }
 
@@ -156,6 +157,7 @@ ContentSettingsPref::ContentSettingsPref(
       notify_callback_(notify_callback),
       clock_(base::DefaultClock::GetInstance()) {
   DCHECK(prefs_);
+  content_settings::ContentSettingsRegistry::GetInstance();
   ReadContentSettingsFromPref();
 
   for (const auto& path : {pref_name_, partitioned_pref_name_}) {
@@ -195,9 +197,10 @@ void ContentSettingsPref::SetWebsiteSetting(
     const ContentSettingsPattern& primary_pattern,
     const ContentSettingsPattern& secondary_pattern,
     base::Value value,
-    const RuleMetaData& metadata,
+    RuleMetaData metadata,
     const PartitionKey& partition_key) {
-  DCHECK(value.is_none() || IsValueAllowedForType(value, content_type_));
+  DCHECK(value.is_none() || IsValueAllowedForType(value, content_type_))
+      << value.DebugString() << " " << content_type_;
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(prefs_);
   DCHECK(primary_pattern != ContentSettingsPattern::Wildcard() ||
@@ -212,8 +215,8 @@ void ContentSettingsPref::SetWebsiteSetting(
     base::AutoLock auto_lock(map_to_modify->GetLock());
     if (!value.is_none()) {
       if (!map_to_modify->SetValue(primary_pattern, secondary_pattern,
-                                   content_type_, value.Clone(), metadata,
-                                   partition_key)) {
+                                   content_type_, value.Clone(),
+                                   metadata.Clone(), partition_key)) {
         return;
       }
     } else {
@@ -225,8 +228,8 @@ void ContentSettingsPref::SetWebsiteSetting(
   }
   // Update the content settings preference.
   if (!off_the_record_ && !partition_key.in_memory()) {
-    UpdatePref(primary_pattern, secondary_pattern, std::move(value), metadata,
-               partition_key);
+    UpdatePref(primary_pattern, secondary_pattern, std::move(value),
+               std::move(metadata), partition_key);
   }
 
   notify_callback_.Run(primary_pattern, secondary_pattern, content_type_,
@@ -401,7 +404,11 @@ void ContentSettingsPref::ReadContentSettingsFromPrefForPartition(
 
     // Get settings dictionary for the current pattern string, and read
     // settings from the dictionary.
-    DCHECK(i.second.is_dict());
+    if(!i.second.is_dict()) {
+      LOG(ERROR) << "Invalid settings dictionary for pattern string: "
+                 << pattern_str << " with value: " << i.second.DebugString();
+      continue;
+    }
     const base::Value::Dict& settings_dictionary = i.second.GetDict();
 
     // Check to see if the setting is expired or not. This may be due to a past
@@ -436,7 +443,8 @@ void ContentSettingsPref::ReadContentSettingsFromPrefForPartition(
         }
         last_visited = GetLastVisit(settings_dictionary);
       }
-      DCHECK(IsValueAllowedForType(*value, content_type_));
+      DCHECK(IsValueAllowedForType(*value, content_type_))
+          << value->DebugString() << " " << content_type_;
       RuleMetaData metadata;
       metadata.set_last_modified(last_modified);
       metadata.set_last_used(last_used);
@@ -448,7 +456,7 @@ void ContentSettingsPref::ReadContentSettingsFromPrefForPartition(
 
       value_map_.SetValue(std::move(pattern_pair.first),
                           std::move(pattern_pair.second), content_type_,
-                          value->Clone(), metadata, partition_key);
+                          value->Clone(), std::move(metadata), partition_key);
     }
   }
 

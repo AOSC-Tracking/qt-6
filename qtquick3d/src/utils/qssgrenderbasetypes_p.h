@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRENDERBASETYPES_P_H
 #define QSSGRENDERBASETYPES_P_H
@@ -17,6 +19,8 @@
 //
 
 #include <QtQuick3DUtils/qtquick3dutilsexports.h>
+
+#include <QtCore/qvariant.h>
 
 #include <QtGui/QVector2D>
 #include <QtGui/QVector3D>
@@ -59,6 +63,17 @@ enum class QSSGRenderWinding // stored in mesh files, the values must not change
 {
     Clockwise = 1,
     CounterClockwise
+};
+
+enum class QSSGRenderSamplerType
+{
+    Unknown,
+    Sampler2D,
+    Sampler2DArray,
+    Sampler3D,
+    SamplerCube,
+    SamplerCubeArray,
+    SamplerBuffer,
 };
 
 struct Q_QUICK3DUTILS_EXPORT QSSGRenderTextureFormat
@@ -366,6 +381,7 @@ public:
     static const char *toString(QSSGRenderTextureFormat::Format value);
     static const char *toString(QSSGRenderTextureCoordOp value);
     static const char *toString(QSSGRenderTextureFilterOp value);
+    static QByteArray toString(QSSGRenderSamplerType value);
 
     static const char *displayName(QSSGRenderTextureCubeFace face);
 
@@ -378,6 +394,20 @@ public:
     { return (face == QSSGRenderTextureCubeFaces[0]) ? QSSGRenderTextureCubeFaces[5] : QSSGRenderTextureCubeFace(quint8(face) - 1); }
 
     static constexpr QSSGRenderTextureCubeFaceT indexOfCubeFace(QSSGRenderTextureCubeFace face) noexcept { return QSSGRenderTextureCubeFaceT(face) & 0xf; }
+};
+
+class QSSGBaseTypeProperty
+{
+public:
+    QSSGBaseTypeProperty() = default;
+    QSSGBaseTypeProperty(const QByteArray &name, const QByteArray &typeName, const QVariant &value, QSSGRenderShaderValue::Type shaderDataType, int pid = -1)
+        : name(name), typeName(typeName), value(value), shaderDataType(shaderDataType), pid(pid)
+    { }
+    QByteArray name;
+    QByteArray typeName;
+    mutable QVariant value;
+    QSSGRenderShaderValue::Type shaderDataType;
+    int pid;
 };
 
 QT_END_NAMESPACE

@@ -12,10 +12,11 @@
 #include "net/base/net_export.h"
 #include "net/cookies/cookie_base.h"
 #include "net/cookies/cookie_constants.h"
-#include "net/cookies/cookie_partition_key.h"
 
 namespace net {
+class URLRequest;
 class CanonicalCookie;
+class FirstPartySetMetadata;
 }
 
 namespace net::device_bound_sessions {
@@ -66,12 +67,8 @@ class NET_EXPORT CookieCraving : public CookieBase {
   // it will satisfy IsValid(). If there is leading or trailing whitespace in
   // `name`, it will get trimmed.
   //
-  // `cookie_partition_key` only needs to be present if the attributes contain
-  // the Partitioned attribute. std::nullopt indicates an unpartitioned
-  // CookieCraving will be created. If there is a partition key but the
-  // attributes do not specify Partitioned, the resulting CookieCraving will be
-  // unpartitioned. If the partition_key is nullopt, the CookieCraving will
-  // always be unpartitioned even if the attributes specify Partitioned.
+  // Partitioned cookies are not supported. Attempts to create a
+  // partitioned CookieCraving will fail.
   //
   // SameSite and HttpOnly related parameters are not checked here,
   // so creation of CookieCravings with e.g. SameSite=Strict from a cross-site
@@ -95,12 +92,10 @@ class NET_EXPORT CookieCraving : public CookieBase {
   //    secure source_scheme, if that cookie was Secure, on the basis that that
   //    URL might be trustworthy when checked later. CookieCraving does not
   //    allow this.
-  static std::optional<CookieCraving> Create(
-      const GURL& url,
-      const std::string& name,
-      const std::string& attributes,
-      base::Time creation_time,
-      std::optional<CookiePartitionKey> cookie_partition_key);
+  static std::optional<CookieCraving> Create(const GURL& url,
+                                             const std::string& name,
+                                             const std::string& attributes,
+                                             base::Time creation_time);
 
   CookieCraving(const CookieCraving& other);
   CookieCraving(CookieCraving&& other);
@@ -133,7 +128,6 @@ class NET_EXPORT CookieCraving : public CookieBase {
       bool secure,
       bool httponly,
       CookieSameSite same_site,
-      std::optional<CookiePartitionKey> partition_key,
       CookieSourceScheme source_scheme,
       int source_port);
 
@@ -147,6 +141,14 @@ class NET_EXPORT CookieCraving : public CookieBase {
   static std::optional<CookieCraving> CreateFromProto(
       const proto::CookieCraving& proto);
 
+  // Whether the craving applies to the given `request`, with other
+  // arguments providing context for the access.
+  bool ShouldIncludeForRequest(
+      URLRequest* request,
+      const FirstPartySetMetadata& first_party_set_metadata,
+      const CookieOptions& options,
+      const CookieAccessParams& params) const;
+
  private:
   CookieCraving();
 
@@ -158,9 +160,10 @@ class NET_EXPORT CookieCraving : public CookieBase {
                 bool secure,
                 bool httponly,
                 CookieSameSite same_site,
-                std::optional<CookiePartitionKey> partition_key,
                 CookieSourceScheme source_scheme,
                 int source_port);
+
+  using CookieBase::IncludeForRequestURL;
 };
 
 // Outputs a debug string, e.g. for more helpful test failure messages.

@@ -36,6 +36,7 @@
 #include <tpcshrd.h>
 #include <uiviewsettingsinterop.h>
 #include <wbemidl.h>
+#include <windows.system.profile.systemmanufacturers.h>
 #include <windows.ui.viewmanagement.h>
 #include <winstring.h>
 #include <wrl/client.h>
@@ -51,7 +52,6 @@
 #include "base/check_op.h"
 #include "base/command_line.h"
 #include "base/containers/heap_array.h"
-#include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/files/file_path.h"
@@ -71,6 +71,7 @@
 #include "base/win/access_token.h"
 #include "base/win/com_init_util.h"
 #include "base/win/core_winrt_util.h"
+#include "base/win/hstring_reference.h"
 #include "base/win/propvarutil.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_bstr.h"
@@ -359,6 +360,74 @@ bool IsWindows11TabletMode() {
   return QueryDeviceConvertibility() &&
          IsDeviceUsedAsATablet(/*reason=*/nullptr) &&
          IsValidTabletDisplayConfig();
+}
+
+// Helper for getting the process power throttling state.
+ProcessPowerState GetProcessPowerThrottlingState(HANDLE process, ULONG flag) {
+  // Get the current explicitly set state of the process power throttling.
+  PROCESS_POWER_THROTTLING_STATE power_throttling{
+      .Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION};
+
+  if (!::GetProcessInformation(process, ProcessPowerThrottling,
+                               &power_throttling, sizeof(power_throttling))) {
+    return ProcessPowerState::kUnset;
+  }
+
+  if (power_throttling.ControlMask & flag) {
+    if (power_throttling.StateMask & flag) {
+      return ProcessPowerState::kEnabled;
+    }
+    return ProcessPowerState::kDisabled;
+  }
+  return ProcessPowerState::kUnset;
+}
+
+// Helper for setting the process power throttling state.
+bool SetProcessPowerThrottlingState(HANDLE process,
+                                    ULONG flag,
+                                    ProcessPowerState state) {
+  // Process power throttling is a Windows 11 feature, but before 22H2
+  // there was no way to query the current state using GetProcessInformation.
+  // Getting the current state is needed in Process::GetPriority to determine
+  // the process priority accurately, so calls to set the state are blocked
+  // before that release.
+  if (GetVersion() < Version::WIN11_22H2) {
+    return false;
+  }
+
+  PROCESS_POWER_THROTTLING_STATE power_throttling{
+      .Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION};
+
+  // Get the current state of the process power throttling so we do not clobber
+  // other previously set flags.
+  if (!::GetProcessInformation(process, ProcessPowerThrottling,
+                               &power_throttling, sizeof(power_throttling))) {
+    return false;
+  }
+
+  switch (state) {
+    case ProcessPowerState::kUnset:
+      // Clear the specified flag.  This results in the OS determining the
+      // throttling state.
+      power_throttling.ControlMask &= ~flag;
+      power_throttling.StateMask &= ~flag;
+      break;
+
+    case ProcessPowerState::kDisabled:
+      // Explicitly disable the specified flag.
+      power_throttling.ControlMask |= flag;
+      power_throttling.StateMask &= ~flag;
+      break;
+
+    case ProcessPowerState::kEnabled:
+      // Explicitly enable the specified flag.
+      power_throttling.ControlMask |= flag;
+      power_throttling.StateMask |= flag;
+      break;
+  }
+
+  return ::SetProcessInformation(process, ProcessPowerThrottling,
+                                 &power_throttling, sizeof(power_throttling));
 }
 
 }  // namespace
@@ -655,6 +724,20 @@ bool UserAccountControlIsEnabled() {
   return (uac_enabled != 0);
 }
 
+bool UserAccountIsUnnecessarilyElevated() {
+  // Check the process token to tell us that it's:
+  // * Elevated
+  // * UAC is enabled
+  // * It's not an account that always runs elevated even with UAC enabled
+  // The last bullet happens on built-in Admin *without* the "run BA filtered"
+  // policy set.
+  DWORD size;
+  TOKEN_ELEVATION_TYPE elevation_type;
+  return GetTokenInformation(GetCurrentProcessToken(), TokenElevationType,
+                             &elevation_type, sizeof(elevation_type), &size) &&
+         elevation_type == TokenElevationTypeFull;
+}
+
 bool SetBooleanValueForPropertyStore(IPropertyStore* property_store,
                                      const PROPERTYKEY& property_key,
                                      bool property_bool_value) {
@@ -749,6 +832,20 @@ void SetAbortBehaviorForCrashReporting() {
   // is left in place, however this allows us to crash earlier. And it also
   // lets us crash in response to code which might directly call raise(SIGABRT)
   signal(SIGABRT, ForceCrashOnSigAbort);
+
+  // Also call the setters in the UCRT dll if it is loaded into the process.
+  // This will handle aborts originating from other modules that dynamically
+  // load UCRT.
+  HMODULE ucrtbase = ::GetModuleHandle(L"ucrtbase.dll");
+  if (!ucrtbase) {
+    return;
+  }
+
+  const auto ucrtbase_signal_fn = reinterpret_cast<decltype(&::signal)>(
+      ::GetProcAddress(ucrtbase, "signal"));
+  if (ucrtbase_signal_fn) {
+    ucrtbase_signal_fn(SIGABRT, ForceCrashOnSigAbort);
+  }
 }
 
 // This method is used to set the right interactions media queries,
@@ -1106,19 +1203,45 @@ expected<std::wstring, NTSTATUS> GetObjectTypeName(HANDLE handle) {
                       type_info->TypeName.Length / sizeof(wchar_t));
 }
 
-expected<ScopedHandle, NTSTATUS> TakeHandleOfType(
-    HANDLE handle,
-    std::wstring_view object_type_name) {
-  auto type_name = GetObjectTypeName(handle);
-  if (!type_name.has_value()) {
-    // `handle` is invalid. Return the error to the caller.
-    return unexpected(type_name.error());
+ProcessPowerState GetProcessEcoQoSState(HANDLE process) {
+  return GetProcessPowerThrottlingState(
+      process, PROCESS_POWER_THROTTLING_EXECUTION_SPEED);
+}
+
+ProcessPowerState GetProcessTimerThrottleState(HANDLE process) {
+  return GetProcessPowerThrottlingState(
+      process, PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION);
+}
+
+bool SetProcessEcoQoSState(HANDLE process, ProcessPowerState state) {
+  return SetProcessPowerThrottlingState(
+      process, PROCESS_POWER_THROTTLING_EXECUTION_SPEED, state);
+}
+
+bool SetProcessTimerThrottleState(HANDLE process, ProcessPowerState state) {
+  return SetProcessPowerThrottlingState(
+      process, PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION, state);
+}
+
+std::optional<std::wstring> GetSerialNumber() {
+  AssertComInitialized();
+  Microsoft::WRL::ComPtr<ABI::Windows::System::Profile::SystemManufacturers::
+                             ISmbiosInformationStatics>
+      symbios_information_statics;
+  HRESULT hr = ::RoGetActivationFactory(
+      base::win::HStringReference(
+          RuntimeClass_Windows_System_Profile_SystemManufacturers_SmbiosInformation)
+          .Get(),
+      IID_PPV_ARGS(&symbios_information_statics));
+  if (SUCCEEDED(hr)) {
+    HSTRING serial_number;
+    hr = symbios_information_statics->get_SerialNumber(&serial_number);
+    if (SUCCEEDED(hr)) {
+      base::win::ScopedHString scoped_serial_number(serial_number);
+      return std::wstring(scoped_serial_number.Get());
+    }
   }
-  // Crash if `handle` is an unexpected type. This represents a dangerous
-  // type confusion condition that should never happen.
-  base::debug::Alias(&handle);
-  CHECK_EQ(*type_name, object_type_name);
-  return ScopedHandle(handle);  // Ownership of `handle` goes to the caller.
+  return std::nullopt;
 }
 
 ScopedDomainStateForTesting::ScopedDomainStateForTesting(bool state)

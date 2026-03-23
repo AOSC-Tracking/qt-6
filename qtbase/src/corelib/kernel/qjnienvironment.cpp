@@ -559,4 +559,12 @@ bool QJniEnvironment::checkAndClearExceptions(JNIEnv *env, QJniEnvironment::Outp
     return false;
 }
 
+/*!
+    Returns the stack trace that resulted in \a exception being thrown.
+*/
+QStringList QJniEnvironment::stackTrace(jthrowable exception)
+{
+    return exceptionMessage(getJniEnv(), exception).split(u'\n');
+}
+
 QT_END_NAMESPACE

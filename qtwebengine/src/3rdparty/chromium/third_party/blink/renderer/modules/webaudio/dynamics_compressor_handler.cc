@@ -31,7 +31,7 @@ DynamicsCompressorHandler::DynamicsCompressorHandler(
     AudioParamHandler& ratio,
     AudioParamHandler& attack,
     AudioParamHandler& release)
-    : AudioHandler(kNodeTypeDynamicsCompressor, node, sample_rate),
+    : AudioHandler(NodeType::kNodeTypeDynamicsCompressor, node, sample_rate),
       threshold_(&threshold),
       knee_(&knee),
       ratio_(&ratio),
@@ -108,11 +108,16 @@ void DynamicsCompressorHandler::ProcessOnlyAudioParams(
 
   std::vector<float> values(render_quantum_frames_expected);
 
-  threshold_->CalculateSampleAccurateValues(values.data(), frames_to_process);
-  knee_->CalculateSampleAccurateValues(values.data(), frames_to_process);
-  ratio_->CalculateSampleAccurateValues(values.data(), frames_to_process);
-  attack_->CalculateSampleAccurateValues(values.data(), frames_to_process);
-  release_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  threshold_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
+  knee_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
+  ratio_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
+  attack_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
+  release_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
 }
 
 void DynamicsCompressorHandler::Initialize() {

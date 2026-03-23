@@ -35,13 +35,13 @@
 #include "third_party/blink/renderer/core/html/fenced_frame/html_fenced_frame_element.h"
 #include "third_party/blink/renderer/core/html/html_frame_element_base.h"
 #include "third_party/blink/renderer/core/html/html_plugin_element.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/core/layout/hit_test_location.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/embedded_content_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/point_f.h"
@@ -95,6 +95,7 @@ EmbeddedContentView* LayoutEmbeddedContent::GetEmbeddedContentView() const {
 
 const std::optional<PhysicalSize> LayoutEmbeddedContent::FrozenFrameSize()
     const {
+  NOT_DESTROYED();
   // The `<fencedframe>` element can freeze the child frame size when navigated.
   if (const auto* fenced_frame = DynamicTo<HTMLFencedFrameElement>(GetNode()))
     return fenced_frame->FrozenFrameSize();
@@ -104,16 +105,11 @@ const std::optional<PhysicalSize> LayoutEmbeddedContent::FrozenFrameSize()
 
 PhysicalNaturalSizingInfo LayoutEmbeddedContent::GetNaturalDimensions() const {
   NOT_DESTROYED();
-  // 300x150, no aspect ratio. (Should probably be none.)
-  PhysicalSize natural_size{LayoutUnit(kDefaultWidth),
-                            LayoutUnit(kDefaultHeight)};
-  natural_size.Scale(StyleRef().EffectiveZoom());
-  PhysicalNaturalSizingInfo sizing_info;
-  sizing_info.size = natural_size;
-  return sizing_info;
+  return PhysicalNaturalSizingInfo::None();
 }
 
 AffineTransform LayoutEmbeddedContent::EmbeddedContentTransform() const {
+  NOT_DESTROYED();
   auto frozen_size = FrozenFrameSize();
   if (!frozen_size || frozen_size->IsEmpty()) {
     const PhysicalOffset content_box_offset = PhysicalContentBoxOffset();
@@ -129,8 +125,14 @@ AffineTransform LayoutEmbeddedContent::EmbeddedContentTransform() const {
   return translate_and_scale;
 }
 
+bool LayoutEmbeddedContent::ShowsUnavailablePluginIndicator() const {
+  NOT_DESTROYED();
+  return false;
+}
+
 PhysicalOffset LayoutEmbeddedContent::EmbeddedContentFromBorderBox(
     const PhysicalOffset& offset) const {
+  NOT_DESTROYED();
   gfx::PointF point(offset);
   return PhysicalOffset::FromPointFRound(
       EmbeddedContentTransform().Inverse().MapPoint(point));
@@ -138,11 +140,13 @@ PhysicalOffset LayoutEmbeddedContent::EmbeddedContentFromBorderBox(
 
 gfx::PointF LayoutEmbeddedContent::EmbeddedContentFromBorderBox(
     const gfx::PointF& point) const {
+  NOT_DESTROYED();
   return EmbeddedContentTransform().Inverse().MapPoint(point);
 }
 
 PhysicalOffset LayoutEmbeddedContent::BorderBoxFromEmbeddedContent(
     const PhysicalOffset& offset) const {
+  NOT_DESTROYED();
   gfx::PointF point(offset);
   return PhysicalOffset::FromPointFRound(
       EmbeddedContentTransform().MapPoint(point));
@@ -150,6 +154,7 @@ PhysicalOffset LayoutEmbeddedContent::BorderBoxFromEmbeddedContent(
 
 gfx::Rect LayoutEmbeddedContent::BorderBoxFromEmbeddedContent(
     const gfx::Rect& rect) const {
+  NOT_DESTROYED();
   return EmbeddedContentTransform().MapRect(rect);
 }
 
@@ -179,6 +184,7 @@ bool LayoutEmbeddedContent::PointOverResizer(
 }
 
 void LayoutEmbeddedContent::PropagateZoomFactor(double zoom_factor) {
+  NOT_DESTROYED();
   if (GetDocument().StandardizedBrowserZoomEnabled()) {
     const auto* fenced_frame = DynamicTo<HTMLFencedFrameElement>(GetNode());
     if (!fenced_frame) {

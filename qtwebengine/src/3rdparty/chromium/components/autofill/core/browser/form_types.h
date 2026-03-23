@@ -20,7 +20,8 @@ enum class FormType {
   kCreditCardForm = 2,
   kPasswordForm = 3,
   kStandaloneCvcForm = 4,
-  kMaxValue = kStandaloneCvcForm
+  kLoyaltyCardForm = 5,
+  kMaxValue = kLoyaltyCardForm
 };
 
 // Enum for UMA metrics of the style
@@ -45,7 +46,9 @@ enum class FormTypeNameForLogging {
   // locator forms with 3 fields (postal code, city, zip) are not included. This
   // describes a subset of `kAddressForm` forms.
   kPostalAddressForm = 6,
-  kMaxValue = kPostalAddressForm
+  // Forms that contain a loyalty card field.
+  kLoyaltyCardForm = 7,
+  kMaxValue = kLoyaltyCardForm
 };
 
 // The strings returned by this function are persisted to logs. Don't change the
@@ -53,9 +56,11 @@ enum class FormTypeNameForLogging {
 std::string_view FormTypeNameForLoggingToStringView(
     FormTypeNameForLogging form_type);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 // Returns true if the form contains fields that represent the card number and
 // the card expiration date.
 bool FormHasAllCreditCardFields(const FormStructure& form_structure);
+#endif
 
 FormType FieldTypeGroupToFormType(FieldTypeGroup field_type_group);
 

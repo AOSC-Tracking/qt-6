@@ -16,11 +16,11 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkSpan.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkAlign.h"
 #include "include/private/base/SkTDArray.h"
 #include "src/base/SkHalf.h"
 #include "src/base/SkMathPriv.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/graphite/ResourceTypes.h"
@@ -222,8 +222,12 @@ public:
     UniformManager(Layout layout) { this->resetWithNewLayout(layout); }
 
     SkSpan<const char> finish() {
-        this->alignTo(fReqAlignment);
-        return SkSpan(fStorage);
+        if (fStorage.empty()) {
+            return SkSpan<const char>();
+        } else {
+            this->alignTo(fReqAlignment);
+            return SkSpan(fStorage);
+        }
     }
 
     size_t size() const { return fStorage.size(); }

@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qgraphsinputhandler_p.h"
 
@@ -10,6 +12,8 @@
 
 #include "qquickgraphsitem_p.h"
 #include "qgraphs3dlogging_p.h"
+
+QT_BEGIN_NAMESPACE
 
 QGraphsInputHandler::QGraphsInputHandler(QQuickItem *parent)
     : QQuickItem(parent)
@@ -167,7 +171,7 @@ void QGraphsInputHandler::unsetDefaultPinchHandler()
 
 void QGraphsInputHandler::setDragButton(Qt::MouseButtons button)
 {
-    m_dragHandler->setAcceptedButtons(button | Qt::MouseButton::RightButton);
+    m_dragHandler->setAcceptedButtons(button);
 }
 
 void QGraphsInputHandler::setGraphsItem(QQuickGraphsItem *item)
@@ -212,7 +216,7 @@ void QGraphsInputHandler::onTranslationChanged(QVector2D delta)
     if (!m_rotationEnabled)
         return;
 
-    if (m_dragHandler->centroid().pressedButtons().testFlag(Qt::LeftButton))
+    if (!m_dragHandler->centroid().pressedButtons().testFlags(m_dragHandler->acceptedButtons()))
         return;
 
     float rotationSpeed = 1.0f;
@@ -381,3 +385,7 @@ void QGraphsInputHandler::hoverMoveEvent(QHoverEvent *event)
 {
     Q_EMIT mouseMove(event->oldPos());
 }
+
+QT_END_NAMESPACE
+
+#include "moc_qgraphsinputhandler_p.cpp"

@@ -4,17 +4,22 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Type
+from typing import TYPE_CHECKING, Type
+
+from typing_extensions import override
 
 from crossbench.benchmarks.speedometer.speedometer import (ProbeClsTupleT,
                                                            SpeedometerBenchmark)
 from crossbench.benchmarks.speedometer.speedometer_2 import (
     Speedometer2Probe, Speedometer2ProbeContext, Speedometer2Story)
 
+if TYPE_CHECKING:
+  from crossbench.benchmarks.base import VersionParts
 
 class Speedometer20Probe(Speedometer2Probe):
   NAME: str = "speedometer_2.0"
 
+  @override
   def get_context_cls(self) -> Type[Speedometer20ProbeContext]:
     return Speedometer20ProbeContext
 
@@ -27,6 +32,7 @@ class Speedometer20Story(Speedometer2Story):
   NAME: str = "speedometer_2.0"
   URL: str = "https://chromium-workloads.web.app/speedometer/v2.0/"
   URL_OFFICIAL: str = "https://browserbench.org/Speedometer2.0/"
+  URL_CHROME_FORK: str = "https://chromium-workloads.web.app/speedometer/v2.0-custom/"
 
 
 class Speedometer20Benchmark(SpeedometerBenchmark):
@@ -38,5 +44,6 @@ class Speedometer20Benchmark(SpeedometerBenchmark):
   PROBES: ProbeClsTupleT = (Speedometer20Probe,)
 
   @classmethod
-  def version(cls) -> Tuple[int, ...]:
+  @override
+  def version(cls) -> VersionParts:
     return (2, 0)

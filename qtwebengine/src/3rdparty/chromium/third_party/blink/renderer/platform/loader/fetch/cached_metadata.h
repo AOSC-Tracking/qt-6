@@ -33,13 +33,15 @@
 
 #include <stdint.h>
 
+#include <variant>
+
 #include "base/check_op.h"
 #include "base/containers/buffer_iterator.h"
 #include "base/containers/span.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/types/pass_key.h"
 #include "mojo/public/cpp/base/big_buffer.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
+#include "third_party/blink/public/common/loader/code_cache_util.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/cached_metadata_handler.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
@@ -57,6 +59,13 @@ struct CachedMetadataHeader {
   uint64_t tag;  // This might be 0 if the caller to CachedMetadata::Create did
                  // not specify a value.
 };
+
+// Ensure that the actual size of the CachedMetadataHeader struct matches
+// the defined constant. This helps catch accidental changes to the struct
+// that would break compatibility with cached data or size calculations and
+// tests.
+static_assert(sizeof(CachedMetadataHeader) ==
+              kCodeCacheCachedMetadataHeaderSize);
 
 // Metadata retrieved from the embedding application's cache.
 //
@@ -116,7 +125,7 @@ class PLATFORM_EXPORT CachedMetadata : public RefCounted<CachedMetadata> {
 
   // Drains the serialized data as a Vector<uint8_t> or BigBuffer. This includes
   // any data before the offset specified in CreateFromSerializedData.
-  absl::variant<Vector<uint8_t>, mojo_base::BigBuffer> DrainSerializedData() &&;
+  std::variant<Vector<uint8_t>, mojo_base::BigBuffer> DrainSerializedData() &&;
 
  private:
   friend class RefCounted<CachedMetadata>;
@@ -129,7 +138,7 @@ class PLATFORM_EXPORT CachedMetadata : public RefCounted<CachedMetadata> {
 
   // Since the serialization format supports random access, storing it in
   // serialized form avoids need for a copy during serialization.
-  absl::variant<Vector<uint8_t>, mojo_base::BigBuffer> buffer_;
+  std::variant<Vector<uint8_t>, mojo_base::BigBuffer> buffer_;
 
   // The offset within the Vector or BigBuffer where the cached metadata starts.
   uint32_t offset_ = 0;

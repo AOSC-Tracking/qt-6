@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKICONLABEL_P_P_H
 #define QQUICKICONLABEL_P_P_H
@@ -72,6 +73,7 @@ public:
     QColor color;
     QString text;
     QQuickIcon icon;
+    QColor defaultIconColor = Qt::transparent;
     QQuickIconImage *image = nullptr;
     QQuickMnemonicLabel *label = nullptr;
 };

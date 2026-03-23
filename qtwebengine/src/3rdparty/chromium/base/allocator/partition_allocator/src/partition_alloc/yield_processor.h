@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef PARTITION_ALLOC_YIELD_PROCESSOR_H_
 #define PARTITION_ALLOC_YIELD_PROCESSOR_H_
 
@@ -19,6 +24,12 @@
 // MSVC is in its own assemblyless world (crbug.com/1351310#c6).
 #include <windows.h>
 #define PA_YIELD_PROCESSOR (YieldProcessor())
+
+// <winbase.h> defines macros mapping various common function names to have a
+// `W` suffix. Undefine as necessary. If you need to call one of the relevant
+// system APIs, use the full name (with trailing `W`) directly.
+#undef GetUserName
+#undef ReportEvent
 
 #else
 

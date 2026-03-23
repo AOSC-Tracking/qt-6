@@ -37,12 +37,20 @@ class CentipedeFuzzerAdaptor : public FuzzTestFuzzer {
  private:
   bool Run(int* argc, char*** argv, RunMode mode,
            const Configuration& configuration);
+  bool ReplayCrashInSingleProcess(const Configuration& configuration);
 
   Runtime& runtime_ = Runtime::instance();
   const FuzzTest& test_;
   CentipedeFixtureDriver* centipede_fixture_driver_;
   FuzzTestFuzzerImpl fuzzer_impl_;
 };
+
+// Lists crash IDs for `test_name` with `configuration` using Centipede.
+std::vector<std::string> ListCrashIdsUsingCentipede(
+    const Configuration& configuration, absl::string_view test_name);
+
+// Returns whether the current process is a Centipede runner process.
+bool IsCentipedeRunner();
 
 }  // namespace fuzztest::internal
 

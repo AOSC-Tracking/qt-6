@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dxractionmapper_p.h"
 #include "qquick3dxrabstracthapticeffect_p.h"
@@ -519,8 +521,8 @@ void QQuick3DXrHapticFeedback::setCondition(enum Condition newCondition)
 }
 
 /*!
-    \qmlmethod void XrHapticFeedback::start
-    \brief Starts the haptic feedback effect
+    \qmlmethod void XrHapticFeedback::start()
+    \brief Starts the haptic feedback effect.
  */
 void QQuick3DXrHapticFeedback::start()
 {
@@ -528,8 +530,8 @@ void QQuick3DXrHapticFeedback::start()
 }
 
 /*!
-    \qmlmethod void XrHapticFeedback::stop
-    \brief Stops the haptic feedback effect
+    \qmlmethod void XrHapticFeedback::stop()
+    \brief Stops the haptic feedback effect.
  */
 void QQuick3DXrHapticFeedback::stop()
 {

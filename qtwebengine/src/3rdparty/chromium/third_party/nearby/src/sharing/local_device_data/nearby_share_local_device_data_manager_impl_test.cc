@@ -16,7 +16,6 @@
 
 #include <stddef.h>
 
-#include <cctype>
 #include <memory>
 #include <optional>
 #include <string>
@@ -27,9 +26,9 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
 #include "absl/time/time.h"
-#include "absl/types/optional.h"
 #include "internal/platform/implementation/account_manager.h"
 #include "internal/test/fake_account_manager.h"
 #include "internal/test/fake_device_info.h"
@@ -69,6 +68,7 @@ const char kFakeTooLongDeviceName[] = "this string is 33 bytes in UTF-8!";
 const char kFakeTooLongGivenName[] = "this is a 33-byte string in utf-8";
 constexpr char kTestAccountId[] = "test_account_id";
 constexpr char kTestProfileUserName[] = "test@google.com";
+constexpr absl::string_view kTestDeviceId = "1234567890";
 
 absl::StatusOr<UpdateDeviceResponse> CreateResponse(
     const std::optional<std::string>& full_name,
@@ -175,6 +175,10 @@ class NearbyShareLocalDeviceDataManagerImplTest
         [&returned_success](bool success) { returned_success = success; });
     Sync();
     EXPECT_TRUE(client()->list_public_certificates_requests().empty());
+    EXPECT_EQ(response.ok(), returned_success);
+    if (!response.ok()) {
+      return;
+    }
     std::vector<Contact> expected_fake_contacts = GetFakeContacts();
     for (size_t i = 0; i < expected_fake_contacts.size(); ++i) {
       EXPECT_EQ(expected_fake_contacts[i].SerializeAsString(),
@@ -186,8 +190,6 @@ class NearbyShareLocalDeviceDataManagerImplTest
                     .at(i)
                     .SerializeAsString());
     }
-
-    EXPECT_EQ(response.ok(), returned_success);
   }
 
   void UploadCertificates(
@@ -241,12 +243,16 @@ class NearbyShareLocalDeviceDataManagerImplTest
     return nearby_client_factory_.identity_instances().back();
   }
 
+  void SetDeviceId(absl::string_view id) {
+    preference_manager_.SetString(prefs::kNearbySharingDeviceIdName, id);
+  }
+
   void Sync() {
     EXPECT_TRUE(context_.last_sequenced_task_runner()->SyncWithTimeout(
         absl::Milliseconds(1000)));
   }
 
- private:
+ protected:
   nearby::FakePreferenceManager preference_manager_;
   nearby::FakeAccountManager fake_account_manager_;
   nearby::FakeDeviceInfo fake_device_info_;
@@ -261,12 +267,11 @@ class NearbyShareLocalDeviceDataManagerImplTest
 
 TEST_F(NearbyShareLocalDeviceDataManagerImplTest, DeviceId) {
   CreateManager();
-
+  SetDeviceId(kTestDeviceId);
   // A 10-character alphanumeric ID is automatically generated if one doesn't
   // already exist.
   std::string id = manager()->GetId();
-  EXPECT_EQ(id.size(), 10u);
-  for (const char c : id) EXPECT_TRUE(std::isalnum(c));
+  EXPECT_EQ(id, kTestDeviceId);
 
   // The ID is persisted.
   DestroyManager();
@@ -350,22 +355,26 @@ TEST_F(NearbyShareLocalDeviceDataManagerImplTest, SetDeviceName) {
 
 TEST_F(NearbyShareLocalDeviceDataManagerImplTest, UploadContacts_Success) {
   CreateManager();
+  SetDeviceId(kTestDeviceId);
   UploadContacts(CreateResponse(kFakeFullName, kFakeIconUrl, kFakeIconToken));
 }
 
 TEST_F(NearbyShareLocalDeviceDataManagerImplTest, UploadContacts_Failure) {
   CreateManager();
+  SetDeviceId(kTestDeviceId);
   UploadContacts(/*response=*/absl::InternalError(""));
 }
 
 TEST_F(NearbyShareLocalDeviceDataManagerImplTest, UploadCertificates_Success) {
   CreateManager();
+  SetDeviceId(kTestDeviceId);
   UploadCertificates(
       CreateResponse(kFakeFullName, kFakeIconUrl, kFakeIconToken));
 }
 
 TEST_F(NearbyShareLocalDeviceDataManagerImplTest, UploadCertificates_Failure) {
   CreateManager();
+  SetDeviceId(kTestDeviceId);
   UploadCertificates(/*response=*/absl::InternalError(""));
 }
 
@@ -413,6 +422,7 @@ std::vector<nearby::sharing::proto::PublicCertificate> GetTestCertificates() {
 TEST_F(NearbyShareLocalDeviceDataManagerImplTest,
        PublishDeviceInitialCall_ContactUpdateAdded) {
   CreateManager();
+  SetDeviceId(kTestDeviceId);
   bool returned_success;
   bool returned_make_another_call;
   PublishDeviceResponse response;
@@ -493,6 +503,7 @@ TEST_F(NearbyShareLocalDeviceDataManagerImplTest,
 TEST_F(NearbyShareLocalDeviceDataManagerImplTest,
        PublishDeviceInitialCall_ContactUpdateRemoved) {
   CreateManager();
+  SetDeviceId(kTestDeviceId);
   bool returned_success;
   bool returned_make_another_call;
   PublishDeviceResponse response;
@@ -519,6 +530,7 @@ TEST_F(NearbyShareLocalDeviceDataManagerImplTest,
 TEST_F(NearbyShareLocalDeviceDataManagerImplTest,
        PublishDeviceSecondCall_ContactUnchanged) {
   CreateManager();
+  SetDeviceId(kTestDeviceId);
   bool returned_success;
   bool returned_make_another_call;
   PublishDeviceResponse response;
@@ -545,6 +557,7 @@ TEST_F(NearbyShareLocalDeviceDataManagerImplTest,
 
 TEST_F(NearbyShareLocalDeviceDataManagerImplTest, PublishDevice_Failure) {
   CreateManager();
+  SetDeviceId(kTestDeviceId);
   bool returned_success;
   bool returned_make_another_call;
   identity_client()->SetPublishDeviceResponse(absl::InternalError(""));
@@ -558,6 +571,25 @@ TEST_F(NearbyShareLocalDeviceDataManagerImplTest, PublishDevice_Failure) {
   Sync();
   EXPECT_FALSE(returned_success);
   EXPECT_FALSE(returned_make_another_call);
+}
+
+TEST_F(NearbyShareLocalDeviceDataManagerImplTest,
+       PublishDevice_FailsWithEmptyDeviceId) {
+  CreateManager();
+  bool returned_success;
+  PublishDeviceResponse response;
+
+  identity_client()->SetPublishDeviceResponse(
+      absl::StatusOr<PublishDeviceResponse>(response));
+  manager()->PublishDevice(GetTestCertificates(), /*is_second_call=*/true,
+                           [&returned_success](
+                               bool success, bool make_another_call) {
+                             returned_success = success;
+                           });
+
+  Sync();
+  EXPECT_FALSE(returned_success);
+  ASSERT_EQ(identity_client()->publish_device_requests().size(), 0);
 }
 
 }  // namespace

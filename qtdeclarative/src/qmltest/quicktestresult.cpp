@@ -1,6 +1,7 @@
 // Copyright (C) 2017 Crimson AS <info@crimson.no>
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "quicktestresult_p.h"
 #include "quicktest.h"
@@ -165,6 +166,11 @@ QByteArray QuickTestResultPrivate::intern(const QString &str)
     return *(internedStrings.insert(bstr));
 }
 
+
+/*!
+    \qmltype TestResult
+    \internal
+*/
 QuickTestResult::QuickTestResult(QObject *parent)
     : QObject(parent), d_ptr(new QuickTestResultPrivate)
 {
@@ -356,7 +362,7 @@ QStringList QuickTestResult::tagsToRun() const
 }
 
 /*!
-    \qmlmethod TestResult::reset()
+    \qmlmethod void TestResult::reset()
 
     Resets all pass/fail/skip counters and prepare for testing.
 */
@@ -367,7 +373,7 @@ void QuickTestResult::reset()
 }
 
 /*!
-    \qmlmethod TestResult::startLogging()
+    \qmlmethod void TestResult::startLogging()
 
     Starts logging to the test output stream and writes the
     test header.
@@ -385,7 +391,7 @@ void QuickTestResult::startLogging()
 }
 
 /*!
-    \qmlmethod TestResult::stopLogging()
+    \qmlmethod void TestResult::stopLogging()
 
     Writes the test footer to the test output stream and then stops logging.
 

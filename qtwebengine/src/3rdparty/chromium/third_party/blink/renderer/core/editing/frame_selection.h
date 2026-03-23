@@ -36,7 +36,9 @@
 #include "third_party/blink/renderer/core/editing/forward.h"
 #include "third_party/blink/renderer/core/editing/set_selection_options.h"
 #include "third_party/blink/renderer/core/editing/visible_units.h"
+#include "third_party/blink/renderer/core/layout/inline/caret_rect.h"
 #include "third_party/blink/renderer/core/scroll/scroll_alignment.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -65,7 +67,6 @@ enum class SelectionModifyAlteration;
 enum class SelectionModifyDirection;
 enum class SelectionState;
 struct PaintInvalidatorContext;
-struct PhysicalOffset;
 struct PhysicalRect;
 
 enum RevealExtentOption { kRevealExtent, kDoNotRevealExtent };
@@ -208,6 +209,9 @@ class CORE_EXPORT FrameSelection final
 
   // Bounds of (possibly transformed) caret in absolute coords
   gfx::Rect AbsoluteCaretBounds() const;
+
+  // Returns the type of caret shape.
+  CaretShape GetCaretShape() const;
 
   // Returns anchor and focus bounds in absolute coords.
   // If the selection range is empty, returns the caret bounds.

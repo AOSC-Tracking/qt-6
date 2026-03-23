@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-vsigmoid/wasmsimd-rr2-lut64-p2-div.c.in
 //   Generator: tools/xngen
@@ -11,17 +12,17 @@
 
 #include <wasm_simd128.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/vunary.h"
 
 
-extern XNN_INTERNAL const float xnn_table_exp2minus_k_over_64[64];
+extern XNN_INTERNAL const uint32_t xnn_table_exp2minus_k_over_64[64];
 
 void xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_lut64_p2_div_u12(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_default_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

@@ -1,0 +1,17 @@
+// Copyright (C) 2025 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GFDL-1.3-no-invariants-only
+
+/*!
+    \page qtcanvaspainter-toc.html
+    \title Qt Canvas Painter module topics
+    \brief Lists all topics in the Qt Canvas Painter module.
+
+    The following list has links to all the individual topics (HTML files)
+    in the Qt Canvas Painter module.
+
+    \list
+    \li \l {Qt Canvas Painter C++ Classes}
+    \li \l {Qt Canvas Painter Examples and Tutorials}
+    \endlist
+
+*/

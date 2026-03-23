@@ -89,6 +89,7 @@ template("_androidx_prebuilt") {
       # Target has AIDL, but we do not support it yet: http://crbug.com/644439
       ignore_aidl = true
     } else if (target_name == "androidx_window_window_java") {
+      if (!is_qtpdf){
       deps += [
         # This library has a <uses-library> to enable some extra OS APIs, so ensure the
         # .jar file is made available to R8 via this dep.
@@ -98,6 +99,7 @@ template("_androidx_prebuilt") {
         # onto sidecar.
         "//third_party/androidx:androidx_window_sidecar_sidecar_java",
       ]
+      }
     } else if (target_name == "androidx_webkit_webkit_java") {
       visibility = [
         "//android_webview/tools/system_webview_shell:*",
@@ -112,6 +114,21 @@ template("_androidx_prebuilt") {
       ]
     } else if (target_name == "androidx_compose_ui_ui_java") {
       public_deps = [ ":compose_ui_overrides_java" ]
+    } else if (filter_include([ target_name ], [ "androidx_xr_*" ]) != []) {
+      # Configs are overly broad.
+      ignore_proguard_configs = true
+      proguard_configs = [ "androidx_xr.flags" ]
+
+      # We do not use the APIs that require the native code.
+      ignore_native_libraries = true
+
+      # It adds:
+      #   <uses-native-library android:name="libopenxr.google.so" android:required="false"/>
+      #   <uses-library android:name="com.android.extensions.xr" android:required="false"/>
+      # We do not need the uses-native-library, but do need the uses-library.
+      # However, we add it via the dep onto android_xr_extensions_java.
+      ignore_manifest = true
+      deps += [ "//third_party/android_sdk:android_xr_extensions_java" ]
     }
   }
 
@@ -145,8 +162,9 @@ template("androidx_android_aar_prebuilt") {
     # "primary_text_default_material_dark".
     resource_overlay = true
 
-    if (target_name == "androidx_pdf_pdf_viewer_java") {
-      # Target has AIDL, but we do not support it yet: http://crbug.com/644439
+    if (target_name == "androidx_pdf_pdf_viewer_java" ||
+        target_name == "androidx_pdf_pdf_document_service_java") {
+      # Target has AIDL, which we do not need (and don't support).
       ignore_aidl = true
     }
 

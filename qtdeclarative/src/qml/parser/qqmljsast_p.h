@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLJSAST_P_H
 #define QQMLJSAST_P_H
@@ -374,7 +375,9 @@ public:
     { return typeId->firstSourceLocation(); }
 
     SourceLocation lastSourceLocation() const override
-    { return typeArgument ? typeArgument->lastSourceLocation() : typeId->lastSourceLocation(); }
+    {
+        return rAngleBracketToken.isValid() ? rAngleBracketToken : typeId->lastSourceLocation();
+    }
 
     QString toString() const;
     void toString(QString *out) const;
@@ -382,6 +385,8 @@ public:
 // attributes
     UiQualifiedId *typeId;
     UiQualifiedId *typeArgument;
+    SourceLocation lAngleBracketToken;
+    SourceLocation rAngleBracketToken;
 };
 
 class QML_PARSER_EXPORT TypeAnnotation: public Node
@@ -857,7 +862,7 @@ struct QML_PARSER_EXPORT BoundName
     bool isInjected() const { return typeAnnotation.tag() == Injected; }
 };
 
-struct BoundNames : public QVector<BoundName>
+struct BoundNames : public QList<BoundName>
 {
     int indexOf(const QString &name, int from = 0) const
     {
@@ -1039,6 +1044,7 @@ public:
     Elision *elision = nullptr;
     PatternElement *element = nullptr;
     PatternElementList *next;
+    SourceLocation commaToken;
 };
 
 class QML_PARSER_EXPORT PatternProperty : public PatternElement
@@ -3440,6 +3446,10 @@ public:
     bool isReadonly() const { return readonlyToken().isValid(); }
     SourceLocation finalToken() const { return m_finalToken; }
     bool isFinal() const { return finalToken().isValid(); }
+    SourceLocation virtualToken() const { return m_virtualToken; }
+    bool isVirtual() const { return virtualToken().isValid(); }
+    SourceLocation overrideToken() const { return m_overrideToken; }
+    bool isOverride() const { return overrideToken().isValid(); }
 
     SourceLocation propertyToken() const { return m_propertyToken; }
 
@@ -3466,8 +3476,10 @@ private:
     SourceLocation m_defaultToken;
     SourceLocation m_readonlyToken;
     SourceLocation m_requiredToken;
-    SourceLocation m_propertyToken;
     SourceLocation m_finalToken;
+    SourceLocation m_virtualToken;
+    SourceLocation m_overrideToken;
+    SourceLocation m_propertyToken;
 };
 
 class QML_PARSER_EXPORT UiPublicMember: public UiObjectMember
@@ -3529,6 +3541,18 @@ public:
         return hasAttributes ? m_attributes->finalToken() : SourceLocation {};
     }
     bool isFinal() const { return finalToken().isValid(); }
+
+    SourceLocation overrideToken() const
+    {
+        return hasAttributes ? m_attributes->overrideToken() : SourceLocation{};
+    }
+    bool isOverride() const { return overrideToken().isValid(); }
+
+    SourceLocation virtualToken() const
+    {
+        return hasAttributes ? m_attributes->virtualToken() : SourceLocation{};
+    }
+    bool isVirtual() const { return virtualToken().isValid(); }
 
     void setAttributes(UiPropertyAttributes *attributes)
     {

@@ -16,7 +16,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>  // NOLINT
 #include <functional>
 #include <memory>
 #include <optional>
@@ -25,8 +24,10 @@
 #include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
+#include "internal/base/file_path.h"
 #include "internal/platform/clock.h"
 #include "internal/platform/task_runner.h"
 #include "sharing/analytics/analytics_recorder.h"
@@ -116,7 +117,7 @@ OutgoingShareSession::OutgoingShareSession(
     NearbyConnectionsManager* connections_manager,
     analytics::AnalyticsRecorder& analytics_recorder, std::string endpoint_id,
     const ShareTarget& share_target,
-    std::function<void(OutgoingShareSession&, const TransferMetadata&)>
+    absl::AnyInvocable<void(OutgoingShareSession&, const TransferMetadata&)>
         transfer_update_callback)
     : ShareSession(clock, service_thread, connections_manager,
                    analytics_recorder, std::move(endpoint_id), share_target),
@@ -159,8 +160,8 @@ void OutgoingShareSession::OnConnectionDisconnected() {
   }
 }
 
-std::vector<std::filesystem::path> OutgoingShareSession::GetFilePaths() const {
-  std::vector<std::filesystem::path> file_paths;
+std::vector<FilePath> OutgoingShareSession::GetFilePaths() const {
+  std::vector<FilePath> file_paths;
   file_paths.reserve(attachment_container().GetFileAttachments().size());
   for (const FileAttachment& file_attachment :
        attachment_container().GetFileAttachments()) {
@@ -489,18 +490,23 @@ void OutgoingShareSession::DelayComplete(
       });
 }
 
-void OutgoingShareSession::UpdateSessionForDedup(
+bool OutgoingShareSession::UpdateSessionForDedup(
     const ShareTarget& share_target,
     std::optional<NearbyShareDecryptedPublicCertificate> certificate,
     absl::string_view endpoint_id) {
-  if (IsConnected()) return;
+  LOG_IF(DFATAL, share_target.id != this->share_target().id)
+      << "Share target id cannot be changed during deduplication.";
   set_share_target(share_target);
+  if (IsConnected()) {
+    return false;
+  }
   set_endpoint_id(endpoint_id);
   if (certificate.has_value()) {
     set_certificate(std::move(certificate.value()));
   } else {
     clear_certificate();
   }
+  return true;
 }
 
 void OutgoingShareSession::Connect(

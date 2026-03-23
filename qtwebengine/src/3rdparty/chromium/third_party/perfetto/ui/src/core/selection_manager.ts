@@ -18,10 +18,10 @@ import {
   Area,
   SelectionOpts,
   SelectionManager,
-  AreaSelectionAggregator,
   TrackEventSelection,
+  AreaSelectionTab,
 } from '../public/selection';
-import {TimeSpan} from '../base/time';
+import {Time, TimeSpan} from '../base/time';
 import {raf} from './raf_scheduler';
 import {exists, getOrCreate} from '../base/utils';
 import {TrackManagerImpl} from './track_manager';
@@ -29,14 +29,15 @@ import {Engine} from '../trace_processor/engine';
 import {ScrollHelper} from './scroll_helper';
 import {NoteManagerImpl} from './note_manager';
 import {SearchResult} from '../public/search';
-import {SelectionAggregationManager} from './selection_aggregation_manager';
 import {AsyncLimiter} from '../base/async_limiter';
 import m from 'mithril';
 import {SerializedSelection} from './state_serialization_schema';
 import {showModal} from '../widgets/modal';
 import {NUM, SqlValue, UNKNOWN} from '../trace_processor/query_result';
 import {SourceDataset, UnionDataset} from '../trace_processor/dataset';
-import {TrackDescriptor} from '../public/track';
+import {Track} from '../public/track';
+import {TimelineImpl} from './timeline';
+import {HighPrecisionTime} from '../base/high_precision_time';
 
 interface SelectionDetailsPanel {
   isLoading: boolean;
@@ -55,29 +56,22 @@ interface SelectionDetailsPanel {
 export class SelectionManagerImpl implements SelectionManager {
   private readonly detailsPanelLimiter = new AsyncLimiter();
   private _selection: Selection = {kind: 'empty'};
-  private _aggregationManager: SelectionAggregationManager;
   private readonly detailsPanels = new WeakMap<
     Selection,
     SelectionDetailsPanel
   >();
+  public readonly areaSelectionTabs: AreaSelectionTab[] = [];
 
   constructor(
     private readonly engine: Engine,
+    private timeline: TimelineImpl,
     private trackManager: TrackManagerImpl,
     private noteManager: NoteManagerImpl,
     private scrollHelper: ScrollHelper,
     private onSelectionChange: (s: Selection, opts: SelectionOpts) => void,
-  ) {
-    this._aggregationManager = new SelectionAggregationManager(
-      engine.getProxy('SelectionAggregationManager'),
-    );
-  }
+  ) {}
 
-  registerAreaSelectionAggregator(aggr: AreaSelectionAggregator): void {
-    this._aggregationManager.registerAggregator(aggr);
-  }
-
-  clear(): void {
+  clearSelection(): void {
     this.setSelection({kind: 'empty'});
   }
 
@@ -89,8 +83,8 @@ export class SelectionManagerImpl implements SelectionManager {
     this.selectTrackEventInternal(trackUri, eventId, opts);
   }
 
-  selectTrack(trackUri: string, opts?: SelectionOpts) {
-    this.setSelection({kind: 'track', trackUri}, opts);
+  selectTrack(uri: string, opts?: SelectionOpts) {
+    this.setSelection({kind: 'track', trackUri: uri}, opts);
   }
 
   selectNote(args: {id: string}, opts?: SelectionOpts) {
@@ -108,9 +102,9 @@ export class SelectionManagerImpl implements SelectionManager {
     assertTrue(start <= end);
 
     // In the case of area selection, the caller provides a list of trackUris.
-    // However, all the consumer want to access the resolved TrackDescriptor.
-    // Rather than delegating this to the various consumers, we resolve them
-    // now once and for all and place them in the selection object.
+    // However, all the consumers want to access the resolved Tracks. Rather
+    // than delegating this to the various consumers, we resolve them now once
+    // and for all and place them in the selection object.
     const tracks = [];
     for (const uri of area.trackUris) {
       const trackDescr = this.trackManager.getTrack(uri);
@@ -244,13 +238,14 @@ export class SelectionManagerImpl implements SelectionManager {
     // 4. Run one query per group, reading out the filter column value, and
     //    looking up the originating track in the map.
     // One flaw of this approach is that.
-    const groups = new Map<string, [SourceDataset, TrackDescriptor][]>();
+    const groups = new Map<string, [SourceDataset, Track][]>();
+    const tracksWithNoFilter: [SourceDataset, Track][] = [];
 
     this.trackManager
       .getAllTracks()
-      .filter((track) => track.track.rootTableName === sqlTableName)
+      .filter((track) => track.renderer.rootTableName === sqlTableName)
       .map((track) => {
-        const dataset = track.track.getDataset?.();
+        const dataset = track.renderer.getDataset?.();
         if (!dataset) return undefined;
         return [dataset, track] as const;
       })
@@ -261,9 +256,20 @@ export class SelectionManagerImpl implements SelectionManager {
         if (col) {
           const existingGroup = getOrCreate(groups, col, () => []);
           existingGroup.push([dataset, track]);
+        } else {
+          tracksWithNoFilter.push([dataset, track]);
         }
-        // TODO(stevegolton): Support 'no filter' case
       });
+
+    // Run one query per no-filter track. This is the only way we can reliably
+    // keep track of which track the event belonged to.
+    for (const [dataset, track] of tracksWithNoFilter) {
+      const query = `select id from (${dataset.query()}) where id = ${id}`;
+      const result = await this.engine.query(query);
+      if (result.numRows() > 0) {
+        return {eventId: id, trackUri: track.uri};
+      }
+    }
 
     for (const [colName, values] of groups) {
       // Build a map of the values -> track uri
@@ -316,13 +322,7 @@ export class SelectionManagerImpl implements SelectionManager {
     this.onSelectionChange(selection, opts ?? {});
 
     if (opts?.scrollToSelection) {
-      this.scrollToCurrentSelection();
-    }
-
-    if (this._selection.kind === 'area') {
-      this._aggregationManager.aggregateArea(this._selection);
-    } else {
-      this._aggregationManager.clear();
+      this.scrollToSelection();
     }
   }
 
@@ -346,7 +346,11 @@ export class SelectionManagerImpl implements SelectionManager {
         });
         break;
       case 'log':
-        // TODO(stevegolton): Get log selection working.
+        this.selectSqlEvent('android_logs', eventId, {
+          clearSearch: false,
+          scrollToSelection: true,
+          switchToCurrentSelectionTab: true,
+        });
         break;
       case 'slice':
         // Search results only include slices from the slice table for now.
@@ -357,12 +361,19 @@ export class SelectionManagerImpl implements SelectionManager {
           switchToCurrentSelectionTab: true,
         });
         break;
+      case 'event':
+        this.selectTrackEvent(trackUri, eventId, {
+          clearSearch: false,
+          scrollToSelection: true,
+          switchToCurrentSelectionTab: true,
+        });
+        break;
       default:
         assertUnreachable(source);
     }
   }
 
-  scrollToCurrentSelection() {
+  scrollToSelection() {
     const uri = (() => {
       switch (this.selection.kind) {
         case 'track_event':
@@ -373,10 +384,41 @@ export class SelectionManagerImpl implements SelectionManager {
           return undefined;
       }
     })();
-    const range = this.findTimeRangeOfSelection();
+    const range = this.getTimeSpanOfSelection();
     this.scrollHelper.scrollTo({
       time: range ? {...range} : undefined,
-      track: uri ? {uri: uri, expandGroup: true} : undefined,
+      track: uri ? {uri, expandGroup: true} : undefined,
+    });
+  }
+
+  zoomOnSelection() {
+    const uri = (() => {
+      switch (this.selection.kind) {
+        case 'track_event':
+        case 'track':
+          return this.selection.trackUri;
+        // TODO(stevegolton): Handle scrolling to area and note selections.
+        default:
+          return undefined;
+      }
+    })();
+    const range = this.getTimeSpanOfSelection();
+    if (!range) {
+      // If there is no range, we cannot zoom to selection.
+      // This can happen if the selection is empty or if it is a note without
+      // a time span.
+      return;
+    }
+    const newDuration = this.timeline.visibleWindow.duration / 100;
+    const halfDuration = newDuration / 2;
+    const midEvent = Time.fromRaw(range.start + range.duration / 2n);
+    const newStart = new HighPrecisionTime(midEvent).subNumber(halfDuration);
+    this.scrollHelper.scrollTo({
+      time: {
+        start: newStart.toTime(),
+        end: newStart.addNumber(newDuration).toTime(),
+      },
+      track: uri ? {uri, expandGroup: true} : undefined,
     });
   }
 
@@ -386,12 +428,25 @@ export class SelectionManagerImpl implements SelectionManager {
     opts?: SelectionOpts,
     serializedDetailsPanel?: unknown,
   ) {
-    const details = await this.trackManager
-      .getTrack(trackUri)
-      ?.track.getSelectionDetails?.(eventId);
+    const track = this.trackManager.getTrack(trackUri);
+    if (!track) {
+      throw new Error(
+        `Unable to resolve selection details: Track ${trackUri} not found`,
+      );
+    }
 
+    const trackRenderer = track.renderer;
+    if (!trackRenderer.getSelectionDetails) {
+      throw new Error(
+        `Unable to resolve selection details: Track ${trackUri} does not support selection details`,
+      );
+    }
+
+    const details = await trackRenderer.getSelectionDetails(eventId);
     if (!exists(details)) {
-      throw new Error('Unable to resolve selection details');
+      throw new Error(
+        `Unable to resolve selection details: Track ${trackUri} returned no details for event ${eventId}`,
+      );
     }
 
     const selection: TrackEventSelection = {
@@ -412,7 +467,7 @@ export class SelectionManagerImpl implements SelectionManager {
     if (!td) {
       return;
     }
-    const panel = td.track.detailsPanel?.(selection);
+    const panel = td.renderer.detailsPanel?.(selection);
     if (!panel) {
       return;
     }
@@ -439,7 +494,7 @@ export class SelectionManagerImpl implements SelectionManager {
     });
   }
 
-  findTimeRangeOfSelection(): TimeSpan | undefined {
+  getTimeSpanOfSelection(): TimeSpan | undefined {
     const sel = this.selection;
     if (sel.kind === 'area') {
       return new TimeSpan(sel.start, sel.end);
@@ -472,7 +527,7 @@ export class SelectionManagerImpl implements SelectionManager {
     return undefined;
   }
 
-  get aggregation() {
-    return this._aggregationManager;
+  registerAreaSelectionTab(tab: AreaSelectionTab): void {
+    this.areaSelectionTabs.push(tab);
   }
 }

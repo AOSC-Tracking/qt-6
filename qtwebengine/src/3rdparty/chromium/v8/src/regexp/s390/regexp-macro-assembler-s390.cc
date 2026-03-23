@@ -228,7 +228,7 @@ void RegExpMacroAssemblerS390::CheckCharacterLT(base::uc16 limit,
   BranchOrBacktrack(lt, on_less);
 }
 
-void RegExpMacroAssemblerS390::CheckGreedyLoop(Label* on_equal) {
+void RegExpMacroAssemblerS390::CheckFixedLengthLoop(Label* on_equal) {
   Label backtrack_non_equal;
   __ CmpS64(current_input_offset(), MemOperand(backtrack_stackpointer(), 0));
   __ bne(&backtrack_non_equal);
@@ -710,8 +710,8 @@ void RegExpMacroAssemblerS390::PopRegExpBasePointer(Register stack_pointer_out,
   StoreRegExpStackPointerToMemory(stack_pointer_out, scratch);
 }
 
-Handle<HeapObject> RegExpMacroAssemblerS390::GetCode(Handle<String> source,
-                                                     RegExpFlags flags) {
+DirectHandle<HeapObject> RegExpMacroAssemblerS390::GetCode(
+    DirectHandle<String> source, RegExpFlags flags) {
   Label return_r2;
 
   // Finalize code - write the entry point code now we know how many

@@ -129,12 +129,15 @@ QRtAudioEngine::QRtAudioEngine(const QAudioDevice &device, const QAudioFormat &f
 
     QPlatformAudioSink *platformSink = QPlatformAudioSink::get(m_sink);
 
-    platformSink->start([this](QSpan<float> outputBuffer) {
+    // SoundEffect can prevent the stream from appear in an OS mixer
+    platformSink->setRole(QtMultimediaPrivate::AudioEndpointRole::SoundEffect);
+
+    m_sink.start([this](QSpan<float> outputBuffer) {
         audioCallback(outputBuffer);
     });
 
     // we start suspended
-    platformSink->suspend();
+    m_sink.suspend();
 }
 
 QRtAudioEngine::~QRtAudioEngine()
@@ -261,7 +264,7 @@ void QRtAudioEngine::cleanupRetiredVoices() noexcept QT_MM_NONBLOCKING
             if (!voiceIsActive)
                 notifyApp = sendRtToAppNotification(StopNotification{ voice });
 
-            return false;
+            return !voiceIsActive;
         });
     });
 
@@ -290,7 +293,8 @@ void QRtAudioEngine::runRtCommand(PlayCommand cmd) noexcept QT_MM_NONBLOCKING
 void QRtAudioEngine::runRtCommand(StopCommand cmd) noexcept QT_MM_NONBLOCKING
 {
     auto it = m_rtVoiceRegistry.find(cmd.voiceId);
-    Q_ASSERT(it != m_rtVoiceRegistry.end());
+    if (it == m_rtVoiceRegistry.end())
+        return;
 
     SharedVoice voice = *it;
     m_rtVoiceRegistry.erase(it);
@@ -305,7 +309,8 @@ void QRtAudioEngine::runRtCommand(StopCommand cmd) noexcept QT_MM_NONBLOCKING
 void QRtAudioEngine::runRtCommand(VisitCommand cmd) noexcept QT_MM_NONBLOCKING
 {
     auto it = m_rtVoiceRegistry.find(cmd.voiceId);
-    Q_ASSERT(it != m_rtVoiceRegistry.end());
+    if (it == m_rtVoiceRegistry.end())
+        return;
 
     cmd.callback(**it);
 
@@ -320,7 +325,8 @@ void QRtAudioEngine::runRtCommand(VisitCommand cmd) noexcept QT_MM_NONBLOCKING
 void QRtAudioEngine::runRtCommand(VisitCommandTrivial cmd) noexcept QT_MM_NONBLOCKING
 {
     auto it = m_rtVoiceRegistry.find(cmd.voiceId);
-    Q_ASSERT(it != m_rtVoiceRegistry.end());
+    if (it == m_rtVoiceRegistry.end())
+        return;
 
     cmd.callback(**it);
 }

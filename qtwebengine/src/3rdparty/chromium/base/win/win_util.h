@@ -27,6 +27,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <typeinfo>
 #include <vector>
 
 #include "base/auto_reset.h"
@@ -49,38 +50,6 @@ struct NativeLibraryLoadError;
 
 namespace win {
 
-inline bool IsPseudoHandle(HANDLE h) {
-  // Note that there appears to be no official documentation covering the
-  // existence of specific pseudo handle values. In practice it's clear that
-  // e.g. -1 is the current process, -2 is the current thread, etc. The largest
-  // negative value known to be an issue with DuplicateHandle in fuzzers is
-  // -12.
-  //
-  // Note that there is virtually no risk of a real handle value falling within
-  // this range and being misclassified as a pseudo handle.
-  //
-  // Cast through uintptr_t and then unsigned int to make the truncation to
-  // 32 bits explicit. Handles are size of-pointer but are always 32-bit values.
-  // https://msdn.microsoft.com/en-us/library/aa384203(VS.85).aspx says:
-  // 64-bit versions of Windows use 32-bit handles for interoperability.
-  constexpr int kMinimumKnownPseudoHandleValue = -12;
-  const auto value = static_cast<int32_t>(reinterpret_cast<uintptr_t>(h));
-  return value < 0 && value >= kMinimumKnownPseudoHandleValue;
-}
-
-inline uint32_t HandleToUint32(HANDLE h) {
-  // Cast through uintptr_t and then unsigned int to make the truncation to
-  // 32 bits explicit. Handles are size of-pointer but are always 32-bit values.
-  // https://msdn.microsoft.com/en-us/library/aa384203(VS.85).aspx says:
-  // 64-bit versions of Windows use 32-bit handles for interoperability.
-  return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(h));
-}
-
-inline HANDLE Uint32ToHandle(uint32_t h) {
-  return reinterpret_cast<HANDLE>(
-      static_cast<uintptr_t>(static_cast<int32_t>(h)));
-}
-
 // Returns the string representing the current user sid. Does not modify
 // |user_sid| on failure.
 BASE_EXPORT bool GetUserSidString(std::wstring* user_sid);
@@ -92,6 +61,11 @@ BASE_EXPORT bool GetUserSidString(std::wstring* user_sid);
 // this function will return false. You should therefore check this flag only
 // if the OS is Vista or later.
 BASE_EXPORT bool UserAccountControlIsEnabled();
+
+// Returns true if the process is running at elevated permissions, but could
+// be at medium IL (eg. UAC is enabled and the account is not a built-in
+// administrator).
+BASE_EXPORT bool UserAccountIsUnnecessarilyElevated();
 
 // Sets the boolean value for a given key in given IPropertyStore.
 BASE_EXPORT bool SetBooleanValueForPropertyStore(
@@ -341,14 +315,58 @@ BASE_EXPORT std::optional<std::wstring> ExpandEnvironmentVariables(
 // `::GetCurrentProcess()` or `GetCurrentProcessHandle()`.
 BASE_EXPORT expected<std::wstring, NTSTATUS> GetObjectTypeName(HANDLE handle);
 
-// Returns a smart pointer wrapping `handle` if it references an object of type
-// `object_type_name`. Crashes the process if `handle` is valid but of an
-// unexpected type. This function will fail with STATUS_INVALID_HANDLE if called
-// with the pseudo handle returned by `::GetCurrentProcess()` or
-// `GetCurrentProcessHandle()`.
-BASE_EXPORT expected<ScopedHandle, NTSTATUS> TakeHandleOfType(
-    HANDLE handle,
-    std::wstring_view object_type_name);
+// Process Power Throttling APIs are only available on Windows 11. By default,
+// Windows will throttle processes based on various heuristics (power plan,
+// media playback state, MMCSS apis, app visibility, etc). This can result in
+// the process set to a lower Quality of Service (QoS) as well as having
+// requests for high resolution timers ignored. The purpose is to provide
+// improved performance and battery life, but can lead to unwanted regressions
+// in some scenarios. It is important to note that such settings get applied to
+// child processes as well. Callers can explicitly tell the OS to enable or
+// disable throttling for specific processes with the SetProcessInformation API
+// and the PROCESS_POWER_THROTTLING_STATE structure.
+// https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setprocessinformation
+// Before Win11 22H2 there was no way to query the current state using
+// GetProcessInformation. This is needed in Process::GetPriority to accurately
+// determine the current priority. Calls made to set the process power
+// throttling state before 22H2 are a no-op.
+enum class ProcessPowerState { kUnset, kDisabled, kEnabled };
+
+// Returns the current state of the process power speed throttling. Returns
+// kEnabled if the process is explicitly set to EcoQoS. Returns kDisabled if the
+// process is explicitly set to HighQoS. Returns kUnset if the setting is not
+// explicitly set and therefore the OS decides the process power speed
+// throttling state.
+BASE_EXPORT ProcessPowerState GetProcessEcoQoSState(HANDLE process);
+
+// Sets the state of the process power speed throttling. State set to kEnabled
+// explicitly sets the process to EcoQoS. State set to kDisabled explicitly sets
+// the process to HighQoS. State set to kUnset results in the OS deciding the
+// throttling state. Returns true if the state was successfully set, false
+// otherwise. Calls made to SetProcessEcoQoSState before 22H2 are a no-op and
+// return false.
+BASE_EXPORT bool SetProcessEcoQoSState(HANDLE process, ProcessPowerState state);
+
+// Returns the state of the process power timer resolution throttling. Returns
+// kEnabled if the process is explicitly set to ignore requests for high
+// resolution timers. Returns kDisabled if the process is explicitly set to not
+// ignore requests for high resolution timers. Returns kUnset if the setting is
+// not expliclity set and therefore the OS decides the throttling state.
+BASE_EXPORT ProcessPowerState GetProcessTimerThrottleState(HANDLE process);
+
+// Sets the state of the process power timer resolution throttling.
+// State set to kEnabled explicitly sets the process to ignore requests for high
+// resolution timers. State set to kDisabled explicitly sets the process to
+// allow requests for high resolution timers. State set to kUnset results in the
+// OS deciding the throttling state. Returns true if the state was successfully
+// set, false otherwise.  Calls made to SetProcessTimerThrottleState before 22H2
+// are a no-op and return false.
+BASE_EXPORT bool SetProcessTimerThrottleState(HANDLE process,
+                                              ProcessPowerState state);
+
+// Returns the serial number of the device.  Needs to be called from a COM
+// enabled thread.
+BASE_EXPORT std::optional<std::wstring> GetSerialNumber();
 
 // Allows changing the domain enrolled state for the life time of the object.
 // The original state is restored upon destruction.

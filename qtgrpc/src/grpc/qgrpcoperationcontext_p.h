@@ -30,17 +30,15 @@ class QGrpcOperationContextPrivate : public QObjectPrivate
 {
     Q_DECLARE_PUBLIC(QGrpcOperationContext)
 public:
-    QGrpcOperationContextPrivate(QLatin1StringView method_, QLatin1StringView service_,
-                                 QByteArrayView argument_, QGrpcCallOptions options_,
-                                 std::shared_ptr<QAbstractProtobufSerializer> &&serializer_)
-        : method(method_), service(service_), argument(argument_.toByteArray()),
-          options(std::move(options_)), serializer(std::move(serializer_))
+    QGrpcOperationContextPrivate(QtGrpc::RpcDescriptor &&descriptor_, QGrpcCallOptions options_,
+                                 std::shared_ptr<QAbstractProtobufSerializer> &&serializer_,
+                                 quint64 operationId_)
+        : descriptor(std::move(descriptor_)), options(std::move(options_)),
+          serializer(std::move(serializer_)), operationId(operationId_)
     {
     }
 
-    QLatin1StringView method;
-    QLatin1StringView service;
-    QByteArray argument;
+    QtGrpc::RpcDescriptor descriptor;
     QGrpcCallOptions options;
     std::shared_ptr<QAbstractProtobufSerializer> serializer;
     QMetaType responseMetaType;
@@ -49,6 +47,7 @@ public:
     QHash<QByteArray, QByteArray> deprServerInitialMetadata;
 #endif
     QMultiHash<QByteArray, QByteArray> serverTrailingMetadata;
+    const quint64 operationId;
 };
 
 QT_END_NAMESPACE

@@ -4,8 +4,10 @@
 
 #include "ui/linux/fallback_linux_ui.h"
 
+#include "base/notimplemented.h"
 #include "base/time/time.h"
 #include "ui/base/ime/linux/linux_input_method_context.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/events/keycodes/dom/dom_keyboard_layout_map.h"
 #include "ui/gfx/font_render_params.h"
 #include "ui/gfx/geometry/size.h"
@@ -116,6 +118,10 @@ LinuxUi::WindowFrameAction FallbackLinuxUi::GetWindowFrameAction(
   }
 }
 
+std::vector<std::string> FallbackLinuxUi::GetCmdLineFlagsForCopy() const {
+  return {std::string(switches::kUiToolkitFlag) + "=fallback"};
+}
+
 bool FallbackLinuxUi::PreferDarkTheme() const {
   return theme_is_dark_;
 }
@@ -143,7 +149,8 @@ FallbackLinuxUi::CreateNavButtonProvider() {
 
 ui::WindowFrameProvider* FallbackLinuxUi::GetWindowFrameProvider(
     bool solid_frame,
-    bool tiled) {
+    bool tiled,
+    bool maximized) {
   return nullptr;
 }
 
@@ -168,11 +175,10 @@ ui::NativeTheme* FallbackLinuxUi::GetNativeTheme() const {
   return ui::NativeTheme::GetInstanceForNativeUi();
 }
 
-bool FallbackLinuxUi::GetTextEditCommandsForEvent(
+ui::TextEditCommand FallbackLinuxUi::GetTextEditCommandForEvent(
     const ui::Event& event,
-    int text_flags,
-    std::vector<ui::TextEditCommandAuraLinux>* commands) {
-  return false;
+    int text_flags) {
+  return ui::TextEditCommand::INVALID_COMMAND;
 }
 
 #if BUILDFLAG(ENABLE_PRINTING)

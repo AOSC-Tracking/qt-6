@@ -74,7 +74,7 @@ All this is hard, so please remember to [ask for help](#Ask-for-help).
 Here are some of the important references and resources you need or may need
 during your shepherding shift:
 
-* [Current Shepherds](https://script.google.com/a/macros/google.com/s/AKfycbz02xD4ghSzZu_tXyNRgjC95wFURATZeD_FHq0KRMHeqA-b0b9sow4NV1lhi0P2vy1j/exec)
+* [Current Shepherds](https://goto.google.com/whos-the-shepherd)
 * [Chrome Security Bug Dashboard](https://goto.google.com/chrome-security-bugs)
 * [Security Severity Guidelines](severity-guidelines.md)
 * [Security Labels](security-labels.md)
@@ -403,6 +403,12 @@ pass it along to / include someone who can direct it more precisely.
       Add owners to cc: on the bug to ensure visibility.
     * Add `Security_Impact-None` hotlist; owner will update if this issue
       does impact Chrome.
+* **Bugs in DevTools**: reproduction and validation should still be performed to
+  find the best owner for a bug in DevTools. When cc'ing individual DevTools
+  engineers for visibility and triage, please use the DevTools
+  [ENG_REVIEW_OWNERS](https://source.chromium.org/chromium/chromium/src/+/main:third_party/devtools-frontend/src/config/owner/ENG_REVIEW_OWNERS)
+  file and/or assign to the current DevTools [triage
+  gardeners](https://rotations.corp.google.com/rotation/3493019).
 * Report suspected malicious URLs to SafeBrowsing:
   * Public URLs:
     * [Report malware](https://safebrowsing.google.com/safebrowsing/report_badware/?hl=en)
@@ -425,7 +431,7 @@ pass it along to / include someone who can direct it more precisely.
 * For vulnerabilities in services Chrome uses (e.g. Omaha, Chrome Web Store,
   SafeBrowsing), make sure the affected team is informed and has access to the
   necessary bugs.
-* Chrome for iOS - bugs suspected to be in **WebKit**:
+* **Chrome for iOS - bugs suspected to be in **WebKit**:
     * Reproduce using an iOS device or desktop Safari.
     * Set Severity, Found In, and set Component Tags fields.
     * If the issue is in Webkit
@@ -439,7 +445,7 @@ pass it along to / include someone who can direct it more precisely.
       Chrome team so they can be notified when the WebKit bug is fixed.
         * Note the WebKit bug ID in the Chromium issue report.
     * All security issues need owners, the WebKit ones can be assigned to michaeldo@.
-*  GPU driver bugs - bugs in GPU drivers that reachable from a renderer process
+* **GPU driver bugs** - bugs in GPU drivers that reachable from a renderer process
    and triggerable through Chrome, such as bugs in Mesa or Mali drivers,
    should be assigned to the appropriate Chrome engineering team, such as WebGL
    or WebGPU, to determine if a shader workaround is appropriate. The report
@@ -602,10 +608,20 @@ right side of the banner, and triage the report as you normally would.
 
 * [Current Shepherds](http://go/whos-the-shepherd)
 * [Rotation schedule](https://docs.google.com/spreadsheets/d/10sLYZbi6QfLcXrhO-j5eSc82uc7NKnBz_o1pR9y8h7U/edit#gid=0)
-* If you're a Shepherd, you should get a calendar invite.
-  Please accept it to acknowledge your upcoming shepherding duty.
-* If you need to swap shifts, ask around for a volunteer and then just update
-  the [rotation sheet](https://docs.google.com/spreadsheets/d/10sLYZbi6QfLcXrhO-j5eSc82uc7NKnBz_o1pR9y8h7U/edit#gid=0) and wait 10 minutes for the calendar invites to be updated.
+* A calendar invite will be sent for your upcoming shift. Please accept it to
+  acknowledge your upcoming shepherding duty.
+* If you **cannot make the shift**:
+  * Declining the invite does not alert anyone or trigger any re-assignment.
+  * If you are OOO or the assigned shift is during a holiday, please do your
+    best to swap shifts with someone! You are not expected to shepherd on a
+    holiday (: but we do want to maximize coverage where/when possible.
+  * Ask around (shepherding chat is a good place!) for a volunteer and then
+  update the [rotation sheet](https://docs.google.com/spreadsheets/d/10sLYZbi6QfLcXrhO-j5eSc82uc7NKnBz_o1pR9y8h7U/edit#gid=0).
+  The calendar invites should be updated in ~10 minutes.
+* To become a shepherd, please reach out to the Chrome Product Security team.
+* To stop shepherding, remove yourself from g/chrome-security-shepherds. Please
+  find suitable substitutes for shifts that have already been assigned to you.
+  Automation should take care of the rest.
 
 ### Incident response
 

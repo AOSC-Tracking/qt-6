@@ -38,6 +38,7 @@
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
 #include "third_party/blink/renderer/platform/fonts/font_metrics.h"
+#include "third_party/blink/renderer/platform/fonts/plain_text_painter.h"
 #include "third_party/blink/renderer/platform/fonts/string_truncator.h"
 #include "third_party/blink/renderer/platform/fonts/text_run_paint_info.h"
 #include "third_party/blink/renderer/platform/graphics/bitmap_image.h"
@@ -45,6 +46,7 @@
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
+#include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/text/bidi_paragraph.h"
 #include "third_party/blink/renderer/platform/text/text_run.h"
@@ -115,7 +117,7 @@ std::unique_ptr<DragImage> DragImage::Create(
   auto* bitmap_image = DynamicTo<BitmapImage>(image);
   if (should_respect_image_orientation == kRespectImageOrientation &&
       bitmap_image)
-    orientation = bitmap_image->CurrentFrameOrientation();
+    orientation = bitmap_image->Orientation();
 
   SkBitmap bm;
   paint_image = Image::ResizeAndOrientImage(
@@ -170,11 +172,13 @@ std::unique_ptr<DragImage> DragImage::Create(const KURL& url,
     draw_url_string = false;
     label = url_string;
   }
+  PlainTextPainter& text_painter = PlainTextPainter::Shared();
 
   // First step is drawing the link drag image width.
-  gfx::Size label_size(label_font->Width(TextRun(label)),
-                       label_font_data->GetFontMetrics().Ascent() +
-                           label_font_data->GetFontMetrics().Descent());
+  gfx::Size label_size(
+      text_painter.ComputeInlineSize(TextRun(label), *label_font),
+      label_font_data->GetFontMetrics().Ascent() +
+          label_font_data->GetFontMetrics().Descent());
 
   if (label_size.width() > max_drag_label_string_width_dip) {
     label_size.set_width(max_drag_label_string_width_dip);
@@ -186,7 +190,8 @@ std::unique_ptr<DragImage> DragImage::Create(const KURL& url,
                        label_size.height() + kDragLabelBorderY * 2);
 
   if (draw_url_string) {
-    url_string_size.set_width(url_font->Width(TextRun(url_string)));
+    url_string_size.set_width(text_painter.ComputeInlineSizeWithoutBidi(
+        TextRun(url_string), *url_font));
     url_string_size.set_height(url_font_data->GetFontMetrics().Ascent() +
                                url_font_data->GetFontMetrics().Descent());
     image_size.set_height(image_size.height() + url_string_size.height());
@@ -239,13 +244,8 @@ std::unique_ptr<DragImage> DragImage::Create(const KURL& url,
         image_size.height() -
             (kLabelBorderYOffset + url_font_data->GetFontMetrics().Descent()));
     TextRun text_run(url_string);
-    if (RuntimeEnabledFeatures::DragImageNoNodeIdEnabled()) {
-      url_font->DrawText(&resource_provider->Canvas(), text_run, text_pos,
-                         text_paint);
-    } else {
-      url_font->DrawText(&resource_provider->Canvas(), text_run, text_pos,
-                         device_scale_factor, text_paint);
-    }
+    text_painter.DrawWithoutBidi(
+        text_run, *url_font, resource_provider->Canvas(), text_pos, text_paint);
   }
 
   if (clip_label_string) {
@@ -258,13 +258,14 @@ std::unique_ptr<DragImage> DragImage::Create(const KURL& url,
       kDragLabelBorderX,
       kDragLabelBorderY + label_font->GetFontDescription().ComputedPixelSize());
   if (text_run.Direction() == TextDirection::kRtl) {
-    float text_width = label_font->Width(text_run);
+    float text_width = text_painter.ComputeInlineSize(text_run, *label_font);
     int available_width = image_size.width() - kDragLabelBorderX * 2;
     text_pos.set_x(available_width - ceilf(text_width));
   }
-  label_font->DrawBidiText(&resource_provider->Canvas(),
-                           TextRunPaintInfo(text_run), gfx::PointF(text_pos),
-                           Font::kDoNotPaintIfFontNotReady, text_paint);
+  text_painter.DrawWithBidiReorder(text_run, 0, text_run.length(), *label_font,
+                                   Font::kDoNotPaintIfFontNotReady,
+                                   resource_provider->Canvas(),
+                                   gfx::PointF(text_pos), text_paint);
 
   scoped_refptr<StaticBitmapImage> image =
       resource_provider->Snapshot(FlushReason::kNon2DCanvas);

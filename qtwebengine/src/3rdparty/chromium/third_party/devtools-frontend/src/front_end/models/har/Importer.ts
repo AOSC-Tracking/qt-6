@@ -8,7 +8,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as TextUtils from '../text_utils/text_utils.js';
 
-import type {HAREntry, HARLog, HARPage, HARTimings} from './HARFormat.js';
+import type {HARCookie, HAREntry, HARLog, HARPage, HARTimings} from './HARFormat.js';
 
 export class Importer {
   static requestsFromHARLog(log: HARLog): SDK.NetworkRequest.NetworkRequest[] {
@@ -31,7 +31,7 @@ export class Importer {
       const initiatorEntry = entry.customInitiator();
       if (initiatorEntry) {
         initiator = {
-          type: (initiatorEntry.type as Protocol.Network.InitiatorType),
+          type: (initiatorEntry.type),
           url: initiatorEntry.url,
           lineNumber: initiatorEntry.lineNumber,
           requestId: initiatorEntry.requestId,
@@ -60,6 +60,26 @@ export class Importer {
     pageLoad.contentLoadTime = Number(page.pageTimings.onContentLoad) * 1000;
     pageLoad.loadTime = Number(page.pageTimings.onLoad) * 1000;
     return pageLoad;
+  }
+
+  static fillCookieFromHARCookie(type: SDK.Cookie.Type, harCookie: HARCookie): SDK.Cookie.Cookie {
+    const cookie = new SDK.Cookie.Cookie(harCookie.name, harCookie.value, type);
+    if (harCookie.path) {
+      cookie.addAttribute(SDK.Cookie.Attribute.PATH, harCookie.path);
+    }
+    if (harCookie.domain) {
+      cookie.addAttribute(SDK.Cookie.Attribute.DOMAIN, harCookie.domain);
+    }
+    if (harCookie.expires) {
+      cookie.addAttribute(SDK.Cookie.Attribute.EXPIRES, harCookie.expires.getTime());
+    }
+    if (harCookie.httpOnly) {
+      cookie.addAttribute(SDK.Cookie.Attribute.HTTP_ONLY);
+    }
+    if (harCookie.secure) {
+      cookie.addAttribute(SDK.Cookie.Attribute.SECURE);
+    }
+    return cookie;
   }
 
   static fillRequestFromHAREntry(
@@ -124,6 +144,20 @@ export class Importer {
     request.setRemoteAddress(entry.serverIPAddress || '', Number(entry.connection) || 80);
     request.setResourceType(Importer.getResourceType(request, entry, pageLoad));
 
+    // Request cookies.
+    const includedRequestCookies = entry.request.cookies.map(
+        cookie => ({
+          cookie: this.fillCookieFromHARCookie(SDK.Cookie.Type.REQUEST, cookie),
+          exemptionReason: undefined,
+        }),
+    );
+    request.setIncludedRequestCookies(includedRequestCookies);
+
+    // Response cookies.
+    const responseCookies =
+        entry.response.cookies.map(this.fillCookieFromHARCookie.bind(this, SDK.Cookie.Type.RESPONSE));
+    request.responseCookies = responseCookies;
+
     const priority = entry.customAsString('priority');
     // @ts-expect-error This accesses the globalThis['Protocol'] where the enum is an actual JS object and not just a TS const enum.
     if (priority && Protocol.Network.ResourcePriority.hasOwnProperty(priority)) {
@@ -170,6 +204,20 @@ export class Importer {
     const responseCacheStorageCacheName = entry.response.customAsString('responseCacheStorageCacheName');
     if (responseCacheStorageCacheName) {
       request.setResponseCacheStorageCacheName(responseCacheStorageCacheName);
+    }
+
+    const ruleIdMatched = entry.response.customAsNumber('serviceWorkerRouterRuleIdMatched');
+    // The router rule ID is 1-indexed. We add router related optional fields
+    // only when there is a matched router rule.
+    if (ruleIdMatched !== undefined) {
+      const routerInfo: Protocol.Network.ServiceWorkerRouterInfo = {
+        ruleIdMatched,
+        matchedSourceType: entry.response.customAsString('serviceWorkerRouterMatchedSourceType') as
+            Protocol.Network.ServiceWorkerRouterSource,
+        actualSourceType: entry.response.customAsString('serviceWorkerRouterActualSourceType') as
+            Protocol.Network.ServiceWorkerRouterSource,
+      };
+      request.serviceWorkerRouterInfo = routerInfo;
     }
 
     request.finished = true;
@@ -250,6 +298,8 @@ export class Importer {
       workerReady: timings.customAsNumber('workerReady') || -1,
       workerFetchStart: timings.customAsNumber('workerFetchStart') || -1,
       workerRespondWithSettled: timings.customAsNumber('workerRespondWithSettled') || -1,
+      workerRouterEvaluationStart: timings.customAsNumber('workerRouterEvaluationStart'),
+      workerCacheLookupStart: timings.customAsNumber('workerCacheLookupStart'),
 
       sendStart: timings.send >= 0 ? lastEntry : -1,
       sendEnd: accumulateTime(timings.send),

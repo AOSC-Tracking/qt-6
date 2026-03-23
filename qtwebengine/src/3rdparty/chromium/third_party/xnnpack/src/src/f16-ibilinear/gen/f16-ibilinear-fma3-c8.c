@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f16-ibilinear/fma3.c.in
 //   Generator: tools/xngen
@@ -8,12 +9,15 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/ibilinear.h"
-#include "xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/ibilinear.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/math.h"
 
 
 void xnn_f16_ibilinear_ukernel__fma3_c8(

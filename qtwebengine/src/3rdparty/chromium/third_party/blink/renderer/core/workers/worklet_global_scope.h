@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_WORKERS_WORKLET_GLOBAL_SCOPE_H_
 
 #include <memory>
+
 #include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/blob/blob_url_store.mojom-blink-forward.h"
@@ -19,6 +20,7 @@
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/code_cache_host.h"
+#include "third_party/blink/renderer/platform/mojo/browser_interface_broker_proxy_impl.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 
 namespace blink {
@@ -75,7 +77,6 @@ class CORE_EXPORT WorkletGlobalScope
   void Dispose() override;
   WorkerThread* GetThread() const final;
   const base::UnguessableToken& GetDevToolsToken() const override;
-  bool IsInitialized() const final { return true; }
   CodeCacheHost* GetCodeCacheHost() override;
   std::optional<mojo::PendingRemote<network::mojom::blink::URLLoaderFactory>>
   FindRaceNetworkRequestURLLoaderFactory(

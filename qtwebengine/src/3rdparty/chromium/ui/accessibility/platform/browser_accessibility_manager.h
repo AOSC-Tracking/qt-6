@@ -21,6 +21,7 @@
 #include "base/memory/raw_ref.h"
 #include "build/build_config.h"
 #include "cc/base/rtree.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_action_handler_registry.h"
 #include "ui/accessibility/ax_location_and_scroll_updates.h"
@@ -140,9 +141,17 @@ class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibilityManager
   virtual void FireAriaNotificationEvent(
       BrowserAccessibility* node,
       const std::string& announcement,
-      const std::string& notification_id,
+      ax::mojom::AriaNotificationPriority priority_property,
       ax::mojom::AriaNotificationInterrupt interrupt_property,
-      ax::mojom::AriaNotificationPriority priority_property) {}
+      const std::string& type) {}
+  // Performs the platform-specific check to determine if we should use extra
+  // announcement nodes for ARIA notifications.
+  virtual bool ShouldExposeExtraAnnouncementNodes() const;
+  virtual BrowserAccessibility* GetExtraAnnouncementNodeFromNode(
+      const BrowserAccessibility* node,
+      ax::mojom::AriaNotificationPriority priority_property) const;
+  virtual bool TreeHasExtraAnnouncementNodes() const;
+  virtual size_t TreeExtraAnnouncementNodesCount() const;
 
   virtual void FireBlinkEvent(ax::mojom::Event event_type,
                               BrowserAccessibility* node,
@@ -262,7 +271,7 @@ class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibilityManager
   // Called when the renderer process has notified us of tree changes. Returns
   // false in fatal-error conditions, in which case the caller should destroy
   // the manager.
-  virtual bool OnAccessibilityEvents(const AXUpdatesAndEvents& details);
+  virtual bool OnAccessibilityEvents(AXUpdatesAndEvents& details);
 
   // Allows derived classes to do event pre-processing
   virtual void BeforeAccessibilityEvents();
@@ -408,8 +417,8 @@ class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibilityManager
   void OnNodeReparented(AXTree* tree, AXNode* node) override;
   void OnAtomicUpdateStarting(
       AXTree* tree,
-      const std::set<AXNodeID>& deleted_node_ids,
-      const std::set<AXNodeID>& reparented_node_ids) override;
+      const absl::flat_hash_set<AXNodeID>& deleted_node_ids,
+      const absl::flat_hash_set<AXNodeID>& reparented_node_ids) override;
   void OnAtomicUpdateFinished(
       AXTree* tree,
       bool root_changed,
@@ -503,6 +512,9 @@ class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibilityManager
   // platform.
   AXPlatformNodeId GetNodeUniqueId(const BrowserAccessibility* node);
 
+  // Returns the global accessibility focus. Only relevant on a root manager.
+  virtual BrowserAccessibility* GetAccessibilityFocus() const;
+
  protected:
   FRIEND_TEST_ALL_PREFIXES(content::BrowserAccessibilityManagerTest,
                            TestShouldFireEventForNode);
@@ -522,7 +534,7 @@ class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibilityManager
   void CollectChangedNodesAndParentsForAtomicUpdate(
       AXTree* tree,
       const std::vector<AXTreeObserver::Change>& changes,
-      std::set<AXPlatformNode*>* nodes_needing_update);
+      absl::flat_hash_set<AXPlatformNode*>* nodes_needing_update);
 
   bool ShouldFireEventForNode(BrowserAccessibility* node) const;
 
@@ -533,12 +545,18 @@ class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibilityManager
   // based on which layer this code is running on, Web vs. Views.
   raw_ptr<AXPlatformTreeManagerDelegate> delegate_;
 
+  // A delegate responsible for assigning window-unique identifiers for nodes.
+  // The ordering here is important, as this member must be destroyed after
+  // the `id_wrapper_map_` below.
+  const raw_ref<AXNodeIdDelegate> node_id_delegate_;
+
   // A mapping from a node id to its wrapper of type BrowserAccessibility.
   // This is different from the map in AXTree, which does not contain extra mac
   // nodes from AXTableInfo.
   // TODO(accessibility) Find a way to have a single map for both, perhaps by
   // having BrowserAccessibility into a subclass of AXNode.
-  std::map<AXNodeID, std::unique_ptr<BrowserAccessibility>> id_wrapper_map_;
+  absl::flat_hash_map<AXNodeID, std::unique_ptr<BrowserAccessibility>>
+      id_wrapper_map_;
 
   // True if the user has initiated a navigation to another page.
   bool user_is_navigating_away_;
@@ -618,12 +636,20 @@ class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibilityManager
   BrowserAccessibility* AXTreeHitTest(
       const gfx::Point& blink_screen_point) const;
 
-  // A delegate responsible for assigning window-unique identifiers for nodes.
-  const raw_ref<AXNodeIdDelegate> node_id_delegate_;
+  // Updates global accessibility focus on platforms without an explicit
+  // accessibility focus API. Involves clearing pre-existing focus and setting
+  // the new focus.
+  void UpdateAccessibilityFocus(BrowserAccessibilityManager* manager,
+                                const BrowserAccessibility& node);
 
   // Only used on the root node for AXTree hit testing as an alternative to
   // ApproximateHitTest when used without a renderer.
   std::unique_ptr<cc::RTree<AXNodeID>> cached_node_rtree_;
+
+  // Data tracking the global accessibility focus. Meant to be set on the root
+  // manager.
+  AXTreeID accessibility_focus_tree_id_;
+  AXNodeID accessibility_focus_node_id_ = AXNodeData::kInvalidAXID;
 };
 
 }  // namespace ui

@@ -40,7 +40,6 @@
 #include "ui/ozone/common/features.h"
 #include "ui/ozone/platform/wayland/common/wayland_object.h"
 #include "ui/ozone/platform/wayland/host/dump_util.h"
-#include "ui/ozone/platform/wayland/host/shell_toplevel_wrapper.h"
 #include "ui/ozone/platform/wayland/host/wayland_connection.h"
 #include "ui/ozone/platform/wayland/host/wayland_cursor_position.h"
 #include "ui/ozone/platform/wayland/host/wayland_data_device_manager.h"
@@ -54,7 +53,7 @@
 #include "ui/ozone/platform/wayland/host/wayland_surface.h"
 #include "ui/ozone/platform/wayland/host/wayland_window.h"
 #include "ui/ozone/platform/wayland/host/wayland_window_manager.h"
-#include "ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.h"
+#include "ui/ozone/platform/wayland/host/xdg_toplevel.h"
 #include "ui/platform_window/platform_window_init_properties.h"
 
 namespace ui {
@@ -122,12 +121,9 @@ class WaylandWindowDragController::XdgToplevelDrag {
       // OnDataSourceDropPerformed()) or when the toplevel gets unmapped.
       return;
     }
-    DCHECK(window->shell_toplevel() &&
-           window->shell_toplevel()->AsXDGToplevelWrapper());
-
-    auto* toplevel =
-        window->shell_toplevel()->AsXDGToplevelWrapper()->xdg_toplevel_.get();
-    DCHECK(toplevel);
+    DCHECK(window->xdg_toplevel());
+    DCHECK(window->xdg_toplevel()->wl_object());
+    auto* toplevel = window->xdg_toplevel()->wl_object();
 
     // xdg-toplevel-drag protocol expects the passed in offset to be relative to
     // the surface's geometry, i.e: no client-side decoration insets included.
@@ -161,7 +157,9 @@ WaylandWindowDragController::WaylandWindowDragController(
   DCHECK(keyboard_delegate_);
 }
 
-WaylandWindowDragController::~WaylandWindowDragController() = default;
+WaylandWindowDragController::~WaylandWindowDragController() {
+  data_device_manager_->GetDevice()->ResetDragDelegate();
+}
 
 bool WaylandWindowDragController::StartDragSession(
     WaylandToplevelWindow* origin,
@@ -272,6 +270,25 @@ void WaylandWindowDragController::StopDragging() {
 
 bool WaylandWindowDragController::IsDragInProgress() const {
   return state_ != State::kIdle;
+}
+
+bool WaylandWindowDragController::IsDraggingWindow(
+    WaylandToplevelWindow* window) const {
+  CHECK(window);
+  return IsDragInProgress() && dragged_window_ == window;
+}
+
+void WaylandWindowDragController::CancelDragSession() {
+  if (!IsActiveDragAndDropSession()) {
+    return;
+  }
+
+  VLOG(1) << "Cancelling the drag session. state=" << state_;
+
+  // Per the spec, destroying the data source triggers session cancellation. See
+  // https://wayland.app/protocols/wayland#wl_data_device:request:start_drag
+  data_source_.reset();
+  HandleDragEnd(/*completed=*/true, EventTimeForNow());
 }
 
 bool WaylandWindowDragController::IsDragSource() const {
@@ -491,6 +508,7 @@ void WaylandWindowDragController::HandleDragEnd(bool completed,
   xdg_toplevel_drag_.reset();
   origin_surface_.reset();
   origin_window_ = nullptr;
+  drag_target_window_ = nullptr;
   has_received_enter_ = false;
 
   // Transition to |kDropped| state and determine the next action to take. If
@@ -531,12 +549,11 @@ uint32_t WaylandWindowDragController::DispatchEvent(
   // drag session has effectively started, so as a best-effort heuristic we
   // consider it started once wl_data_device.enter has been received at least
   // once.
-  auto cancel_drag_cb = base::BindOnce(
-      &WaylandWindowDragController::OnDataSourceFinish, base::Unretained(this),
-      data_source_.get(), EventTimeForNow(), /*completed=*/false);
-  if (wl::MaybeHandlePlatformEventForDrag(
-          event, /*start_drag_ack_received=*/has_received_enter_,
-          std::move(cancel_drag_cb))) {
+  if (wl::EventShouldCancelDrag(event)) {
+    if (!has_received_enter_) {
+      CancelDragSession();
+      return POST_DISPATCH_PERFORM_DEFAULT;
+    }
     return POST_DISPATCH_STOP_PROPAGATION;
   }
 
@@ -658,6 +675,7 @@ void WaylandWindowDragController::HandleDropAndResetState(
   events_grabber_ = nullptr;
   state_ = State::kIdle;
   drag_source_.reset();
+  data_source_.reset();
 }
 
 void WaylandWindowDragController::RunLoop() {
@@ -733,7 +751,8 @@ void WaylandWindowDragController::DumpState(std::ostream& out) const {
       << ", events_grabber=" << GetWindowName(events_grabber_.get())
       << ", origin_window=" << GetWindowName(origin_window_.get())
       << ", drag_target_window=" << GetWindowName(drag_target_window_.get())
-      << ", nested_dispatcher=" << !!nested_dispatcher_;
+      << ", nested_dispatcher=" << !!nested_dispatcher_
+      << ", has_received_enter=" << has_received_enter_;
 }
 
 std::ostream& operator<<(std::ostream& out,

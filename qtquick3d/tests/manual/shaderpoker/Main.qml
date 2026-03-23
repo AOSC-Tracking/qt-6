@@ -35,7 +35,8 @@ ApplicationWindow {
             "ReduceMaxNumLights" : (1 << 22) + 14,
             "Lightmap" : (1 << 23) + 15,
             "DisableMultiView" : (1 << 24) + 16,
-            "ForceIblExposure" : (1 << 25) + 17
+            "ForceIblExposure" : (1 << 25) + 17,
+            "NormalPass" : (1 << 26) + 18,
         },
         "indexMask" : 0x000000FF,
 
@@ -106,40 +107,6 @@ ApplicationWindow {
                         }
                     }
 
-                    SectionLayout {
-                        id: materialSection
-                        title: "Material"
-
-                        Label {
-                            text: "Material Type"
-                            Layout.fillWidth: true
-                        }
-
-                        RowLayout {
-                            HorizontalSpacer {}
-                            ComboBox {
-                                id: materialTypeComboBox
-                                textRole: "text"
-                                valueRole: "value"
-                                implicitContentWidthPolicy: ComboBox.WidestText
-                                onActivated: shaderPoker.materialType = currentValue
-                                Component.onCompleted: materialTypeComboBox.currentIndex = materialTypeComboBox.indexOfValue(shaderPoker.materialType)
-                                Layout.fillWidth: true
-                                model: [
-                                    { value: ShaderPoker.MaterialType.Default, text: "Default"},
-                                    { value: ShaderPoker.MaterialType.Principled, text: "Principled"},
-                                    { value: ShaderPoker.MaterialType.SpecularGlossy, text: "SpecularGlossy"}
-                                ]
-
-                                Connections {
-                                    target: shaderPoker
-                                    function onMaterialTypeChanged() {
-                                        materialTypeComboBox.currentIndex = materialTypeComboBox.indexOfValue(shaderPoker.materialType)
-                                    }
-                                }
-                            }
-                        }
-                    }
                     SectionLayout {
                         id: featureSection
                         title: "Features"
@@ -324,6 +291,16 @@ ApplicationWindow {
                         }
                         HorizontalSpacer {}
 
+                        CheckBox {
+                            id: normalPassFeatureCheckbox
+                            text: "NormalPass"
+                            checked: featureHelper.isSet("NormalPass")
+                            onCheckedChanged: {
+                                featureHelper.setFeature("NormalPass", checked)
+                            }
+                        }
+                        HorizontalSpacer {}
+
                         Button {
                             text: "Clear Features"
                             onClicked: shaderPoker.featureBitfield = 0
@@ -346,6 +323,26 @@ ApplicationWindow {
                         }
 
                         CheckBox {
+                            id: hasPunctualLightsCheckbox
+                            Layout.columnSpan: 2
+                            text: "hasPunctualLights"
+                            checked: shaderPoker.shaderProperties.hasPunctualLights
+                            onCheckedChanged: {
+                                shaderPoker.shaderProperties.hasPunctualLights = checked
+                            }
+                        }
+
+                        CheckBox {
+                            id: hasShadowsCheckbox
+                            Layout.columnSpan: 2
+                            text: "hasShadows"
+                            checked: shaderPoker.shaderProperties.hasShadows
+                            onCheckedChanged: {
+                                shaderPoker.shaderProperties.hasShadows = checked
+                            }
+                        }
+
+                        CheckBox {
                             id: hasIblCheckbox
                             Layout.columnSpan: 2
                             text: "hasIBL"
@@ -354,177 +351,6 @@ ApplicationWindow {
                                 shaderPoker.shaderProperties.hasIbl = checked
                             }
                         }
-
-                        SectionLayout {
-                            id: lightsSection
-                            title: "Lights"
-                            Layout.columnSpan: 2
-                            width: parent.availableWidth
-
-                            Label {
-                                text: "lightCount"
-                            }
-
-                            SpinBox {
-                                from: 0
-                                to: 16
-                                stepSize: 1
-                                value: shaderPoker.shaderProperties.lightCount
-                                onValueModified: {
-                                    shaderPoker.shaderProperties.lightCount = value
-                                }
-                            }
-
-                            component LightPropertiesEditor : SectionLayout {
-                                id: lightEditorSection
-                                required property int lightIndex
-                                title: "Light" + lightIndex
-                                Layout.columnSpan: 2
-                                width: parent.availableWidth
-
-                                // Light properties are dumb as hell
-                                // lightFlags == !isDirectional (bool)
-                                CheckBox {
-                                    id: lightFlagCheckBox
-                                    Layout.columnSpan: 2
-                                    text: "isDirectional"
-                                    checked: !shaderPoker.shaderProperties.getLightFlag(lightEditorSection.lightIndex)
-                                    onCheckedChanged: {
-                                        shaderPoker.shaderProperties.setLightFlag(lightEditorSection.lightIndex, !checked)
-                                    }
-
-                                    Connections {
-                                        target: shaderPoker.shaderProperties
-                                        function onLightFlagChanged(changedIndex) {
-                                            if (changedIndex == lightEditorSection.lightIndex)
-                                                lightFlagCheckBox.checked = !shaderPoker.shaderProperties.getLightFlag(lightEditorSection.lightIndex)
-                                        }
-                                    }
-                                }
-                                // lightSpotFlag == isSpot (bool)
-                                CheckBox {
-                                    id: lightSpotFlagCheckBox
-                                    Layout.columnSpan: 2
-                                    text: "isSpot"
-                                    checked: shaderPoker.shaderProperties.getLightSpotFlag(lightEditorSection.lightIndex)
-                                    onCheckedChanged: {
-                                        shaderPoker.shaderProperties.setLightSpotFlag(lightEditorSection.lightIndex, checked)
-                                    }
-
-                                    Connections {
-                                        target: shaderPoker.shaderProperties
-                                        function onLightSpotFlagChanged(changedIndex) {
-                                            if (changedIndex == lightEditorSection.lightIndex)
-                                                lightSpotFlagCheckBox.checked = shaderPoker.shaderProperties.getLightSpotFlag(lightEditorSection.lightIndex)
-                                        }
-                                    }
-                                }
-                                CheckBox {
-                                    id: lightAreaFlagCheckBox
-                                    Layout.columnSpan: 2
-                                    text: "isArea"
-                                    checked: shaderPoker.shaderProperties.getLightAreaFlag(lightEditorSection.lightIndex)
-                                    onCheckedChanged: {
-                                        shaderPoker.shaderProperties.setLightAreaFlag(lightEditorSection.lightIndex, checked)
-                                    }
-
-                                    Connections {
-                                        target: shaderPoker.shaderProperties
-                                        function onLightAreaFlagChanged(changedIndex) {
-                                            if (changedIndex == lightEditorSection.lightIndex)
-                                                lightAreaFlagCheckBox.checked = shaderPoker.shaderProperties.getLightAreaFlag(lightEditorSection.lightIndex)
-                                        }
-                                    }
-                                }
-                                // lightShadowFlag == castsShadows (bool)
-                                CheckBox {
-                                    id: lightShadowFlagCheckBox
-                                    Layout.columnSpan: 2
-                                    text: "castsShadows"
-                                    checked: shaderPoker.shaderProperties.getLightShadowFlag(lightEditorSection.lightIndex)
-                                    onCheckedChanged: {
-                                        shaderPoker.shaderProperties.setLightShadowFlag(lightEditorSection.lightIndex, checked)
-                                    }
-
-                                    Connections {
-                                        target: shaderPoker.shaderProperties
-                                        function onLightShadowFlagChanged(changedIndex) {
-                                            if (changedIndex == lightEditorSection.lightIndex)
-                                                lightShadowFlagCheckBox.checked = shaderPoker.shaderProperties.getLightShadowFlag(lightEditorSection.lightIndex)
-                                        }
-                                    }
-                                }
-
-                                // lightShadowMapSize == m_shadowMapRes (quint16)
-
-                                Label {
-                                    text: "shadowMapRes"
-                                }
-
-                                SpinBox {
-                                    id: shadowMapSizeSpinBox
-                                    editable: true
-                                    from: 0
-                                    to: 65535
-                                    stepSize: 1
-                                    value: shaderPoker.shaderProperties.getLightShadowMapSize(lightEditorSection.lightIndex)
-                                    onValueModified: {
-                                        shaderPoker.shaderProperties.setLightShadowMapSize(lightEditorSection.lightIndex, value)
-                                    }
-                                    Connections {
-                                        target: shaderPoker.shaderProperties
-                                        function onLightShadowMapSizeChanged(changedIndex) {
-                                            if (changedIndex == lightEditorSection.lightIndex)
-                                                shadowMapSizeSpinBox.value = shaderPoker.shaderProperties.getLightShadowMapSize(lightEditorSection.lightIndex)
-                                        }
-                                    }
-                                }
-                                // lightSoftShadowQuality == Hard = 0, PCF4, PCF8, PCF16, PCF32, PCF64,
-                                Label {
-                                    text: "softShadowQuality"
-                                }
-
-                                ComboBox {
-                                    id: softShadowQualityComboBox
-                                    textRole: "text"
-                                    valueRole: "value"
-                                    implicitContentWidthPolicy: ComboBox.WidestText
-                                    onActivated: shaderPoker.shaderProperties.setLightSoftShadowQuality(lightEditorSection.lightIndex, currentValue)
-                                    Component.onCompleted: softShadowQualityComboBox.currentIndex = softShadowQualityComboBox.indexOfValue(shaderPoker.shaderProperties.getLightSoftShadowQuality(lightEditorSection.lightIndex))
-                                    Layout.fillWidth: true
-                                    model: [
-                                        { value: 0, text: "Hard"},
-                                        { value: 1, text: "PCF4"},
-                                        { value: 2, text: "PCF8"},
-                                        { value: 3, text: "PCF16"},
-                                        { value: 4, text: "PCF32"},
-                                        { value: 5, text: "PCF64"}
-                                    ]
-
-                                    Connections {
-                                        target: shaderPoker.shaderProperties
-                                        function lightSoftShadowQualityChanged(changedIndex) {
-                                            if (changedIndex == lightEditorSection.lightIndex)
-                                                softShadowQualityComboBox.currentIndex = softShadowQualityComboBox.indexOfValue(shaderPoker.shaderProperties.getLightSoftShadowQuality(lightEditorSection.lightIndex))
-                                        }
-                                    }
-                                }
-
-
-                            }
-
-                            Repeater {
-                                model: shaderPoker.shaderProperties.lightCount
-                                delegate: LightPropertiesEditor {
-                                    required property int index
-                                    lightIndex: index
-
-                                }
-                            }
-
-                        }
-
-
 
 
                         CheckBox {
@@ -688,14 +514,40 @@ ApplicationWindow {
                             Component.onCompleted: specularModelComboBox.currentIndex = specularModelComboBox.indexOfValue(shaderPoker.shaderProperties.specularModel)
                             Layout.fillWidth: true
                             model: [
-                                { value: 0, text: "Default"},
-                                { value: 1, text: "KGGX"}
+                                { value: 0, text: "BlinnPhong"},
+                                { value: 1, text: "SchlickGGX"}
                             ]
 
                             Connections {
                                 target: shaderPoker.shaderProperties
                                 function onSpecularModelChanged() {
                                     specularModelComboBox.currentIndex = specularModelComboBox.indexOfValue(shaderPoker.shaderProperties.specularModel)
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: "Diffuse Model"
+                        }
+
+                        ComboBox {
+                            id: diffuseModelComboBox
+                            textRole: "text"
+                            valueRole: "value"
+                            implicitContentWidthPolicy: ComboBox.WidestText
+                            onActivated: shaderPoker.shaderProperties.diffuseModel = currentValue
+                            Component.onCompleted: diffuseModelComboBox.currentIndex = diffuseModelComboBox.indexOfValue(shaderPoker.shaderProperties.diffuseModel)
+                            Layout.fillWidth: true
+                            model: [
+                                { value: 0, text: "Burley"},
+                                { value: 1, text: "Lambert"},
+                                { value: 2, text: "LambertWrap"}
+                            ]
+
+                            Connections {
+                                target: shaderPoker.shaderProperties
+                                function onDiffuseModelChanged() {
+                                    diffuseModelComboBox.currentIndex = diffuseModelComboBox.indexOfValue(shaderPoker.shaderProperties.diffuseModel)
                                 }
                             }
                         }
@@ -1534,6 +1386,16 @@ ApplicationWindow {
                             checked: shaderPoker.shaderProperties.specularGlossyEnabled
                             onCheckedChanged: {
                                 shaderPoker.shaderProperties.specularGlossyEnabled = checked
+                            }
+                        }
+
+                        CheckBox {
+                            id: metallicRoughnessEnabledCheckbox
+                            Layout.columnSpan: 2
+                            text: "metallicRoughnessEnabled"
+                            checked: shaderPoker.shaderProperties.metallicRoughnessEnabled
+                            onCheckedChanged: {
+                                shaderPoker.shaderProperties.metallicRoughnessEnabled = checked
                             }
                         }
 

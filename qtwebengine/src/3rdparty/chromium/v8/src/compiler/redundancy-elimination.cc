@@ -4,6 +4,7 @@
 
 #include "src/compiler/redundancy-elimination.h"
 
+#include "src/compiler/common-operator.h"
 #include "src/compiler/js-graph.h"
 #include "src/compiler/node-properties.h"
 #include "src/compiler/simplified-operator.h"
@@ -43,6 +44,7 @@ Reduction RedundancyElimination::Reduce(Node* node) {
     case IrOpcode::kCheckString:
     case IrOpcode::kCheckStringOrStringWrapper:
     case IrOpcode::kCheckSymbol:
+    case IrOpcode::kTypeGuard:
     // These are not really check nodes, but behave the same in that they can be
     // folded together if repeated with identical inputs.
     case IrOpcode::kStringCharCodeAt:
@@ -60,8 +62,10 @@ Reduction RedundancyElimination::Reduce(Node* node) {
       return ReduceSpeculativeNumberComparison(node);
     case IrOpcode::kSpeculativeNumberAdd:
     case IrOpcode::kSpeculativeNumberSubtract:
-    case IrOpcode::kSpeculativeSafeIntegerAdd:
-    case IrOpcode::kSpeculativeSafeIntegerSubtract:
+    case IrOpcode::kSpeculativeAdditiveSafeIntegerAdd:
+    case IrOpcode::kSpeculativeAdditiveSafeIntegerSubtract:
+    case IrOpcode::kSpeculativeSmallIntegerAdd:
+    case IrOpcode::kSpeculativeSmallIntegerSubtract:
     case IrOpcode::kSpeculativeToNumber:
       return ReduceSpeculativeNumberOperation(node);
     case IrOpcode::kEffectPhi:
@@ -232,8 +236,19 @@ Subsumption CheckSubsumes(Node const* a, Node const* b,
         case IrOpcode::kCheckBigInt:
         case IrOpcode::kCheckedBigIntToBigInt64:
           break;
+        case IrOpcode::kTypeGuard: {
+          Type at = TypeGuardTypeOf(a->op());
+          Type bt = TypeGuardTypeOf(b->op());
+          // {a}.type has to be narrower than (or equal to) {b}.type for
+          // {b}.type to be a redundant check.
+          if (!at.Is(bt)) {
+            return Subsumption::None();
+          }
+          break;
+        }
         case IrOpcode::kCheckedInt32ToTaggedSigned:
         case IrOpcode::kCheckedInt64ToInt32:
+        case IrOpcode::kCheckedInt64ToAdditiveSafeInteger:
         case IrOpcode::kCheckedInt64ToTaggedSigned:
         case IrOpcode::kCheckedTaggedSignedToInt32:
         case IrOpcode::kCheckedTaggedToTaggedPointer:
@@ -247,8 +262,10 @@ Subsumption CheckSubsumes(Node const* a, Node const* b,
         case IrOpcode::kCheckedUint64ToTaggedSigned:
           break;
         case IrOpcode::kCheckedFloat64ToInt32:
+        case IrOpcode::kCheckedFloat64ToAdditiveSafeInteger:
         case IrOpcode::kCheckedFloat64ToInt64:
         case IrOpcode::kCheckedTaggedToInt32:
+        case IrOpcode::kCheckedTaggedToAdditiveSafeInteger:
         case IrOpcode::kCheckedTaggedToInt64: {
           const CheckMinusZeroParameters& ap =
               CheckMinusZeroParametersOf(a->op());
@@ -265,10 +282,15 @@ Subsumption CheckSubsumes(Node const* a, Node const* b,
               CheckTaggedInputParametersOf(a->op());
           CheckTaggedInputParameters const& bp =
               CheckTaggedInputParametersOf(b->op());
-          // {a} subsumes {b} if the modes are either the same, or {a} checks
-          // for Number, in which case {b} will be subsumed no matter what.
-          if (ap.mode() != bp.mode() &&
-              ap.mode() != CheckTaggedInputMode::kNumber) {
+          // {a} subsumes {b} if the modes are either the same, or {a} is
+          // a stricter check.
+          using Mode = CheckTaggedInputMode;
+          static_assert(static_cast<int32_t>(Mode::kAdditiveSafeInteger) == 0);
+          static_assert(static_cast<int32_t>(Mode::kNumber) == 1);
+          static_assert(static_cast<int32_t>(Mode::kNumberOrBoolean) == 2);
+          static_assert(static_cast<int32_t>(Mode::kNumberOrOddball) == 3);
+          if (static_cast<int32_t>(ap.mode()) >
+              static_cast<int32_t>(bp.mode())) {
             return Subsumption::None();
           }
           break;
@@ -448,8 +470,10 @@ Reduction RedundancyElimination::ReduceSpeculativeNumberComparison(Node* node) {
 Reduction RedundancyElimination::ReduceSpeculativeNumberOperation(Node* node) {
   DCHECK(node->opcode() == IrOpcode::kSpeculativeNumberAdd ||
          node->opcode() == IrOpcode::kSpeculativeNumberSubtract ||
-         node->opcode() == IrOpcode::kSpeculativeSafeIntegerAdd ||
-         node->opcode() == IrOpcode::kSpeculativeSafeIntegerSubtract ||
+         node->opcode() == IrOpcode::kSpeculativeAdditiveSafeIntegerAdd ||
+         node->opcode() == IrOpcode::kSpeculativeAdditiveSafeIntegerSubtract ||
+         node->opcode() == IrOpcode::kSpeculativeSmallIntegerAdd ||
+         node->opcode() == IrOpcode::kSpeculativeSmallIntegerSubtract ||
          node->opcode() == IrOpcode::kSpeculativeToNumber);
   DCHECK_EQ(1, node->op()->EffectInputCount());
   DCHECK_EQ(1, node->op()->EffectOutputCount());

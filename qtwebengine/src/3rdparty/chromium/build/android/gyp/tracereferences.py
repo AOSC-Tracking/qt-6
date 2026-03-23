@@ -7,9 +7,8 @@
 import argparse
 import json
 import logging
-import os
 import pathlib
-import re
+import shutil
 import sys
 
 from util import build_utils
@@ -17,6 +16,48 @@ from util import server_utils
 import action_helpers  # build_utils adds //build to sys.path.
 
 _DUMP_DIR_NAME = 'r8inputs_tracerefs'
+
+_SUPPRESSION_PATTERN = '|'.join([
+    # Summary contains warning count, which our filtering makes wrong.
+    r'Warning: Tracereferences found',
+    r'dalvik\.system',
+    r'libcore\.io',
+    r'sun\.misc\.Unsafe',
+
+    # Explicictly guarded by try (NoClassDefFoundError) in Flogger's
+    # PlatformProvider.
+    r'com\.google\.common\.flogger\.backend\.google\.GooglePlatform',
+    r'com\.google\.common\.flogger\.backend\.system\.DefaultPlatform',
+
+    # TODO(agrieve): Exclude these only when use_jacoco_coverage=true.
+    r'java\.lang\.instrument\.ClassFileTransformer',
+    r'java\.lang\.instrument\.IllegalClassFormatException',
+    r'java\.lang\.instrument\.Instrumentation',
+    r'java\.lang\.management\.ManagementFactory',
+    r'javax\.management\.MBeanServer',
+    r'javax\.management\.ObjectInstance',
+    r'javax\.management\.ObjectName',
+    r'javax\.management\.StandardMBean',
+
+    # Explicitly guarded by try (NoClassDefFoundError) in Firebase's
+    # KotlinDetector: com.google.firebase.platforminfo.KotlinDetector.
+    r'kotlin\.KotlinVersion',
+
+    # Not sure why these two are missing, but they do not seem important.
+    r'ResultIgnorabilityUnspecified',
+    r'kotlin\.DeprecationLevel',
+
+    # Assume missing android.* / java.* references are OS APIs that are not in
+    # android.jar. Not in the above list so as to not match parameter types.
+    # E.g. Missing method void android.media.MediaRouter2$RouteCallback
+    # E.g. Missing class android.util.StatsEvent$Builder
+    r'Missing method \S+ android\.',
+    r'Missing class android\.',
+
+    # The follow classes are from Android XR system libraries and used on
+    # immersive environment.
+    r'Missing class com.google.ar.imp.core\.',
+])
 
 
 def _RunTraceReferences(error_title, r8jar, libs, dex_files, options):
@@ -39,49 +80,9 @@ def _RunTraceReferences(error_title, r8jar, libs, dex_files, options):
   failed_holder = [False]
 
   def stderr_filter(stderr):
-    ignored_lines = [
-        # Summary contains warning count, which our filtering makes wrong.
-        'Warning: Tracereferences found',
-
-        # TODO(agrieve): Create interface jars for these missing classes rather
-        #     than allowlisting here.
-        'dalvik.system',
-        'libcore.io',
-        'sun.misc.Unsafe',
-
-        # Found in: com/facebook/fbui/textlayoutbuilder/StaticLayoutHelper
-        'android.text.StaticLayout.<init>',
-        # TODO(crbug.com/40261573): Remove once chrome builds with Android U
-        # SDK.
-        ' android.',
-
-        # Explicictly guarded by try (NoClassDefFoundError) in Flogger's
-        # PlatformProvider.
-        'com.google.common.flogger.backend.google.GooglePlatform',
-        'com.google.common.flogger.backend.system.DefaultPlatform',
-
-        # TODO(agrieve): Exclude these only when use_jacoco_coverage=true.
-        'java.lang.instrument.ClassFileTransformer',
-        'java.lang.instrument.IllegalClassFormatException',
-        'java.lang.instrument.Instrumentation',
-        'java.lang.management.ManagementFactory',
-        'javax.management.MBeanServer',
-        'javax.management.ObjectInstance',
-        'javax.management.ObjectName',
-        'javax.management.StandardMBean',
-
-        # Explicitly guarded by try (NoClassDefFoundError) in Firebase's
-        # KotlinDetector: com.google.firebase.platforminfo.KotlinDetector.
-        'kotlin.KotlinVersion',
-
-        # Not sure why these two are missing, but they do not seem important.
-        'ResultIgnorabilityUnspecified',
-        'kotlin.DeprecationLevel',
-    ]
 
     had_unfiltered_items = '  ' in stderr
-    stderr = build_utils.FilterLines(
-        stderr, '|'.join(re.escape(x) for x in ignored_lines))
+    stderr = build_utils.FilterLines(stderr, _SUPPRESSION_PATTERN)
     if stderr:
       if 'Missing' in stderr:
         failed_holder[0] = True
@@ -138,7 +139,7 @@ def main():
                       help='Do not filter output')
   args = parser.parse_args()
 
-  with open(args.tracerefs_json) as f:
+  with open(args.tracerefs_json, encoding='utf-8') as f:
     spec = json.load(f)
   r8jar = spec['r8jar']
   libs = spec['libs']

@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
@@ -79,6 +80,8 @@ class OSDevToolsSession::IOSession : public blink::mojom::DevToolsSession {
         base::BindOnce(v8_thread_dispatch_, call_id, method,
                        std::vector<uint8_t>(message.begin(), message.end())));
   }
+
+  void UnpauseAndTerminate() override { NOTREACHED(); }
 
  private:
   IOSession(const scoped_refptr<DebugCommandQueue> debug_command_queue,
@@ -198,6 +201,10 @@ void OSDevToolsSession::DispatchProtocolCommand(
         cbor_message.characters8(), cbor_message.length()));
     fallback_dispatcher_.Dispatch(dispatchable).Run();
   }
+}
+
+void OSDevToolsSession::UnpauseAndTerminate() {
+  NOTREACHED();
 }
 
 void OSDevToolsSession::sendResponse(

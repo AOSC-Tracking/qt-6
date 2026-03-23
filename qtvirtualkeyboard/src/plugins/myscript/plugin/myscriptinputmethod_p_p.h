@@ -2,6 +2,7 @@
 // Copyright (C) 2017 Klaralvdalens Datakonsult AB (KDAB). Contact: https://www.qt.io/licensing/
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef MYSCRIPTINPUTMETHOD_P_P_H
 #define MYSCRIPTINPUTMETHOD_P_P_H
@@ -73,7 +74,7 @@ public:
 public slots:
     void handleRecognitionEnded();
     void handleRecognitionCommitted();
-    void handelGestureDetected(const int gestureType, const int gestureCount);
+    void handleGestureDetected(const int gestureType, const int gestureCount);
     void handlePreeditChanged(const QString &preedit, const bool isCommitted);
     void handleClearItem();
     void handleNewItem(const int itemIndex, const int candidateIndex, const QStringList &candidates);

@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import Qt.labs.folderlistmodel
 import QtQuick
@@ -46,6 +47,7 @@ FileDialogImpl {
 
         footer: DialogButtonBox {
             standardButtons: DialogButtonBox.Yes | DialogButtonBox.No
+            defaultStandardButton: DialogButtonBox.Yes
         }
 
         Overlay.modal: Rectangle {
@@ -54,6 +56,7 @@ FileDialogImpl {
     }
 
     FileDialogImpl.buttonBox: buttonBox
+    FileDialogImpl.filterLabel: filterLabel
     FileDialogImpl.nameFiltersComboBox: nameFiltersComboBox
     FileDialogImpl.fileDialogListView: fileDialogListView
     FileDialogImpl.breadcrumbBar: breadcrumbBar
@@ -74,6 +77,7 @@ FileDialogImpl {
         spacing: 12
 
         Label {
+            objectName: "dialogTitleBarLabel"
             text: control.title
             elide: Label.ElideRight
             // TODO: QPlatformTheme::TitleBarFont
@@ -166,6 +170,7 @@ FileDialogImpl {
         }
 
         Label {
+            id: filterLabel
             text: qsTr("Filter")
 
             Layout.row: 1

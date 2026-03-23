@@ -2,16 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/input/touch_event_manager.h"
 
 #include <algorithm>
+#include <array>
 #include <memory>
 
+#include "base/compiler_specific.h"
 #include "third_party/blink/public/common/input/web_coalesced_input_event.h"
 #include "third_party/blink/public/common/input/web_touch_event.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -399,10 +396,10 @@ TouchEventManager::DispatchTouchEventFromAccumulatdTouchPoints() {
   TargetTouchesHeapMap touches_by_target;
 
   // Array of touches per state, used to assemble the |changedTouches| list.
-  ChangedTouches
-      changed_touches[static_cast<int>(WebInputEvent::Type::kPointerTypeLast) -
-                      static_cast<int>(WebInputEvent::Type::kPointerTypeFirst) +
-                      1];
+  std::array<ChangedTouches,
+             static_cast<int>(WebInputEvent::Type::kPointerTypeLast) -
+                 static_cast<int>(WebInputEvent::Type::kPointerTypeFirst) + 1>
+      changed_touches;
 
   Vector<int> available_ids;
   for (const auto& id : touch_attribute_map_.Keys())
@@ -444,10 +441,13 @@ TouchEventManager::DispatchTouchEventFromAccumulatdTouchPoints() {
       size_t event_type_idx =
           static_cast<int>(event_type) -
           static_cast<int>(WebInputEvent::Type::kPointerTypeFirst);
-      if (!changed_touches[event_type_idx].touches_)
-        changed_touches[event_type_idx].touches_ = TouchList::Create();
-      changed_touches[event_type_idx].touches_->Append(touch);
-      changed_touches[event_type_idx].targets_.insert(touch_target);
+      UNSAFE_TODO({
+        if (!changed_touches[event_type_idx].touches_) {
+          changed_touches[event_type_idx].touches_ = TouchList::Create();
+        }
+        changed_touches[event_type_idx].touches_->Append(touch);
+        changed_touches[event_type_idx].targets_.insert(touch_target);
+      });
     }
   }
 
@@ -465,17 +465,19 @@ TouchEventManager::DispatchTouchEventFromAccumulatdTouchPoints() {
        ++action) {
     size_t action_idx =
         action - static_cast<int>(WebInputEvent::Type::kPointerTypeFirst);
-    if (!changed_touches[action_idx].touches_)
+    if (!UNSAFE_TODO(changed_touches[action_idx].touches_)) {
       continue;
+    }
 
     const AtomicString& event_name(TouchEventNameForPointerEventType(
         static_cast<WebInputEvent::Type>(action)));
 
-    for (const auto& event_target : changed_touches[action_idx].targets_) {
+    for (const auto& event_target :
+         UNSAFE_TODO(changed_touches[action_idx].targets_)) {
       EventTarget* touch_event_target = event_target;
       TouchEvent* touch_event = TouchEvent::Create(
           coalesced_event, touches, touches_by_target.at(touch_event_target),
-          changed_touches[action_idx].touches_, event_name,
+          UNSAFE_TODO(changed_touches[action_idx].touches_), event_name,
           touch_event_target->ToNode()->GetDocument().domWindow(),
           current_touch_action_);
 

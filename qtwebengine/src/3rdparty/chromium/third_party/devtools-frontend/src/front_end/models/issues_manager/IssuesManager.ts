@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 
@@ -15,6 +16,7 @@ import {CookieIssue, CookieIssueSubCategory} from './CookieIssue.js';
 import {CorsIssue} from './CorsIssue.js';
 import {CrossOriginEmbedderPolicyIssue, isCrossOriginEmbedderPolicyIssue} from './CrossOriginEmbedderPolicyIssue.js';
 import {DeprecationIssue} from './DeprecationIssue.js';
+import {ElementAccessibilityIssue} from './ElementAccessibilityIssue.js';
 import {FederatedAuthRequestIssue} from './FederatedAuthRequestIssue.js';
 import {GenericIssue} from './GenericIssue.js';
 import {HeavyAdIssue} from './HeavyAdIssue.js';
@@ -22,12 +24,15 @@ import type {Issue, IssueKind} from './Issue.js';
 import {Events} from './IssuesManagerEvents.js';
 import {LowTextContrastIssue} from './LowTextContrastIssue.js';
 import {MixedContentIssue} from './MixedContentIssue.js';
+import {PartitioningBlobURLIssue} from './PartitioningBlobURLIssue.js';
 import {PropertyRuleIssue} from './PropertyRuleIssue.js';
 import {QuirksModeIssue} from './QuirksModeIssue.js';
 import {SharedArrayBufferIssue} from './SharedArrayBufferIssue.js';
 import {SharedDictionaryIssue} from './SharedDictionaryIssue.js';
 import {SourceFrameIssuesManager} from './SourceFrameIssuesManager.js';
+import {SRIMessageSignatureIssue} from './SRIMessageSignatureIssue.js';
 import {StylesheetLoadingIssue} from './StylesheetLoadingIssue.js';
+import {UserReidentificationIssue} from './UserReidentificationIssue.js';
 
 export {Events} from './IssuesManagerEvents.js';
 
@@ -116,12 +121,28 @@ const issueCodeHandlers = new Map<
     StylesheetLoadingIssue.fromInspectorIssue,
   ],
   [
+    Protocol.Audits.InspectorIssueCode.PartitioningBlobURLIssue,
+    PartitioningBlobURLIssue.fromInspectorIssue,
+  ],
+  [
     Protocol.Audits.InspectorIssueCode.PropertyRuleIssue,
     PropertyRuleIssue.fromInspectorIssue,
   ],
   [
     Protocol.Audits.InspectorIssueCode.CookieDeprecationMetadataIssue,
     CookieDeprecationMetadataIssue.fromInspectorIssue,
+  ],
+  [
+    Protocol.Audits.InspectorIssueCode.ElementAccessibilityIssue,
+    ElementAccessibilityIssue.fromInspectorIssue,
+  ],
+  [
+    Protocol.Audits.InspectorIssueCode.SRIMessageSignatureIssue,
+    SRIMessageSignatureIssue.fromInspectorIssue,
+  ],
+  [
+    Protocol.Audits.InspectorIssueCode.UserReidentificationIssue,
+    UserReidentificationIssue.fromInspectorIssue,
   ],
 ]);
 
@@ -147,9 +168,7 @@ export interface IssuesManagerCreationOptions {
   hideIssueSetting?: Common.Settings.Setting<HideIssueMenuSetting>;
 }
 
-export interface HideIssueMenuSetting {
-  [x: string]: IssueStatus;
-}
+export type HideIssueMenuSetting = Record<string, IssueStatus>;
 
 export const enum IssueStatus {
   HIDDEN = 'Hidden',
@@ -184,10 +203,10 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
   #filteredIssues = new Map<string, Issue>();
   #issueCounts = new Map<IssueKind, number>();
   #hiddenIssueCount = new Map<IssueKind, number>();
-  #hasSeenPrimaryPageChanged = false;
-  #issuesById: Map<string, Issue> = new Map();
+  #thirdPartyCookiePhaseoutIssueCount = new Map<IssueKind, number>();
+  #issuesById = new Map<string, Issue>();
   #issuesByOutermostTarget: WeakMap<SDK.Target.Target, Set<Issue>> = new Map();
-  #thirdPartyCookiePhaseoutIssueMessageSent: boolean = false;
+  #thirdPartyCookiePhaseoutIssueMessageSent = false;
 
   constructor(
       private readonly showThirdPartyIssuesSetting?: Common.Settings.Setting<boolean>,
@@ -237,16 +256,6 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
     issuesManagerInstance = null;
   }
 
-  /**
-   * Once we have seen at least one `PrimaryPageChanged` event, we can be reasonably sure
-   * that we also collected issues that were reported during the navigation to the current
-   * page. If we haven't seen a main frame navigated, we might have missed issues that arose
-   * during navigation.
-   */
-  reloadForAccurateInformationRequired(): boolean {
-    return !this.#hasSeenPrimaryPageChanged;
-  }
-
   #onPrimaryPageChanged(
       event: Common.EventTarget.EventTargetEvent<
           {frame: SDK.ResourceTreeModel.ResourceTreeFrame, type: SDK.ResourceTreeModel.PrimaryPageChangeType}>): void {
@@ -265,14 +274,12 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
           issue.code() === Protocol.Audits.InspectorIssueCode.BounceTrackingIssue ||
           issue.code() === Protocol.Audits.InspectorIssueCode.CookieIssue) {
         const networkManager = frame.resourceTreeModel().target().model(SDK.NetworkManager.NetworkManager);
-        if (networkManager?.requestForLoaderId(frame.loaderId as Protocol.Network.LoaderId)?.hasUserGesture() ===
-            false) {
+        if (networkManager?.requestForLoaderId(frame.loaderId)?.hasUserGesture() === false) {
           keptIssues.set(key, issue);
         }
       }
     }
     this.#allIssues = keptIssues;
-    this.#hasSeenPrimaryPageChanged = true;
     this.#updateFilteredIssues();
   }
 
@@ -302,7 +309,7 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
 
   #onIssueAddedEvent(event: Common.EventTarget.EventTargetEvent<SDK.IssuesModel.IssueAddedEvent>): void {
     const {issuesModel, inspectorIssue} = event.data;
-    const isPrivacyUiEnabled = Common.Settings.Settings.instance().getHostConfig().devToolsPrivacyUI?.enabled;
+    const isPrivacyUiEnabled = Root.Runtime.hostConfig.devToolsPrivacyUI?.enabled;
 
     const issues = createIssuesFromProtocolIssue(issuesModel, inspectorIssue);
     for (const issue of issues) {
@@ -353,9 +360,14 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
       }
       const values = this.hideIssueSetting?.get();
       this.#updateIssueHiddenStatus(issue, values);
-      if (issue.isHidden()) {
+
+      if (CookieIssue.isThirdPartyCookiePhaseoutRelatedIssue(issue)) {
+        this.#thirdPartyCookiePhaseoutIssueCount.set(
+            issue.getKind(), 1 + (this.#thirdPartyCookiePhaseoutIssueCount.get(issue.getKind()) || 0));
+      } else if (issue.isHidden()) {
         this.#hiddenIssueCount.set(issue.getKind(), 1 + (this.#hiddenIssueCount.get(issue.getKind()) || 0));
       }
+
       this.dispatchEventToListeners(Events.ISSUE_ADDED, {issuesModel, issue});
     }
     // Always fire the "count" event even if the issue was filtered out.
@@ -369,9 +381,10 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
 
   numberOfIssues(kind?: IssueKind): number {
     if (kind) {
-      return (this.#issueCounts.get(kind) ?? 0) - this.numberOfHiddenIssues(kind);
+      return (this.#issueCounts.get(kind) ?? 0) - this.numberOfHiddenIssues(kind) -
+          this.numberOfThirdPartyCookiePhaseoutIssues(kind);
     }
-    return this.#filteredIssues.size - this.numberOfHiddenIssues();
+    return this.#filteredIssues.size - this.numberOfHiddenIssues() - this.numberOfThirdPartyCookiePhaseoutIssues();
   }
 
   numberOfHiddenIssues(kind?: IssueKind): number {
@@ -380,6 +393,17 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
     }
     let count = 0;
     for (const num of this.#hiddenIssueCount.values()) {
+      count += num;
+    }
+    return count;
+  }
+
+  numberOfThirdPartyCookiePhaseoutIssues(kind?: IssueKind): number {
+    if (kind) {
+      return this.#thirdPartyCookiePhaseoutIssueCount.get(kind) ?? 0;
+    }
+    let count = 0;
+    for (const num of this.#thirdPartyCookiePhaseoutIssueCount.values()) {
       count += num;
     }
     return count;
@@ -408,7 +432,7 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
     // IssueStatus is set in hidden issues menu.
     // In case a user wants to hide a specific issue, the issue code is added to "code" section
     // of our setting and its value is set to IssueStatus.Hidden. Then issue then gets hidden.
-    if (values && values[code]) {
+    if (values?.[code]) {
       if (values[code] === IssueStatus.HIDDEN) {
         issue.setHidden(true);
         return;
@@ -423,6 +447,7 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
     this.#issueCounts.clear();
     this.#issuesById.clear();
     this.#hiddenIssueCount.clear();
+    this.#thirdPartyCookiePhaseoutIssueCount.clear();
     this.#thirdPartyCookiePhaseoutIssueMessageSent = false;
     const values = this.hideIssueSetting?.get();
     for (const [key, issue] of this.#allIssues) {
@@ -466,7 +491,7 @@ export interface EventTypes {
   [Events.ISSUE_ADDED]: IssueAddedEvent;
 }
 
-// @ts-ignore
+// @ts-expect-error
 globalThis.addIssueForTest = (issue: Protocol.Audits.InspectorIssue) => {
   const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
   const issuesModel = mainTarget?.model(SDK.IssuesModel.IssuesModel);

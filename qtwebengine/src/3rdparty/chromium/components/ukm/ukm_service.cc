@@ -52,15 +52,7 @@ uint64_t GenerateAndStoreClientId(PrefService* pref_service) {
   return client_id;
 }
 
-uint64_t LoadOrGenerateAndStoreClientId(PrefService* pref_service,
-                                        uint64_t external_client_id) {
-  // If external_client_id is present, save to pref service for
-  // consistency purpose and return it as client id.
-  if (external_client_id) {
-    pref_service->SetUint64(prefs::kUkmClientId, external_client_id);
-    return external_client_id;
-  }
-
+uint64_t LoadOrGenerateAndStoreClientId(PrefService* pref_service) {
   uint64_t client_id = pref_service->GetUint64(prefs::kUkmClientId);
   // The pref is stored as a string and GetUint64() uses base::StringToUint64()
   // to convert it. base::StringToUint64() will treat a negative value as
@@ -247,12 +239,10 @@ std::string UkmService::SerializeReportProtoToString(Report* report) {
 UkmService::UkmService(PrefService* pref_service,
                        metrics::MetricsServiceClient* client,
                        std::unique_ptr<metrics::UkmDemographicMetricsProvider>
-                           demographics_provider,
-                       uint64_t external_client_id)
+                           demographics_provider)
     : recorder_client_registry_(
           std::make_unique<metrics::UkmRecorderClientInterfaceRegistry>()),
       pref_service_(pref_service),
-      external_client_id_(external_client_id),
       client_(client),
       demographics_provider_(std::move(demographics_provider)),
       reporting_service_(client, pref_service),
@@ -274,9 +264,9 @@ UkmService::UkmService(PrefService* pref_service,
       get_upload_interval_callback =
           base::BindRepeating(&metrics::MetricsServiceClient::GetUploadInterval,
                               base::Unretained(client_));
-  bool fast_startup_for_testing = client_->ShouldStartUpFastForTesting();
+  bool fast_startup = client_->ShouldStartUpFast();
   scheduler_ = std::make_unique<UkmRotationScheduler>(
-      rotate_callback, fast_startup_for_testing, get_upload_interval_callback);
+      rotate_callback, fast_startup, get_upload_interval_callback);
   InitDecodeMap();
 
   DelegatingUkmRecorder::Get()->AddDelegate(self_ptr_factory_.GetWeakPtr());
@@ -298,8 +288,7 @@ void UkmService::Initialize() {
   if (client_->ShouldResetClientIdsOnClonedInstall()) {
     ResetClientState(ResetReason::kClonedInstall);
   } else {
-    client_id_ =
-        LoadOrGenerateAndStoreClientId(pref_service_, external_client_id_);
+    client_id_ = LoadOrGenerateAndStoreClientId(pref_service_);
     session_id_ = LoadAndIncrementSessionId(pref_service_);
   }
 
@@ -342,7 +331,7 @@ void UkmService::OnAppEnterForeground() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DVLOG(DebuggingLogLevel::Medium) << "UkmService::OnAppEnterForeground";
 
-  reporting_service_.SetIsInForegound(true);
+  reporting_service_.OnAppEnterForeground();
 
   // If initialize_started_ is false, UKM has not yet been started, so bail. The
   // scheduler will instead be started via EnableReporting().
@@ -357,7 +346,7 @@ void UkmService::OnAppEnterBackground() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DVLOG(DebuggingLogLevel::Medium) << "UkmService::OnAppEnterBackground";
 
-  reporting_service_.SetIsInForegound(false);
+  reporting_service_.OnAppEnterBackground();
 
   if (!initialize_started_) {
     return;
@@ -465,12 +454,7 @@ void UkmService::ResetClientState(ResetReason reason) {
 
   UMA_HISTOGRAM_ENUMERATION("UKM.ResetReason", reason);
 
-  if (external_client_id_) {
-    client_id_ = external_client_id_;
-    pref_service_->SetUint64(prefs::kUkmClientId, client_id_);
-  } else {
-    client_id_ = GenerateAndStoreClientId(pref_service_);
-  }
+  client_id_ = GenerateAndStoreClientId(pref_service_);
 
   // Note: the session_id has already been cleared by GenerateAndStoreClientId.
   session_id_ = LoadAndIncrementSessionId(pref_service_);
@@ -606,6 +590,7 @@ void UkmService::BuildAndStoreLog(
 
   reporting_service_.ukm_log_store()->StoreLog(serialized_log, log_metadata,
                                                reason);
+  log_creation_time_ = base::TimeTicks::Now();
 }
 
 void UkmService::SetInitializationCompleteCallbackForTesting(

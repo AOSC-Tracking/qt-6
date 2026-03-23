@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "file_system_delegate_qt.h"
 
@@ -36,7 +37,7 @@ FileEntryPickerQt::FileEntryPickerQt(
         this, std::make_unique<QtWebEngineCore::SelectFilePolicyQt>(web_contents));
     m_selectFileDialog->SelectFile(
         picker_type, std::u16string(), suggested_name, file_type_info, 0,
-        base::FilePath::StringType(), nullptr, &caller);
+        base::FilePath::StringType(), {}, &caller);
 }
 
 FileEntryPickerQt::~FileEntryPickerQt() = default;

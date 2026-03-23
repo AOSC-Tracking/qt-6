@@ -30,6 +30,7 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/kleene_value.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
@@ -37,10 +38,12 @@
 
 namespace blink {
 
+class CSSValue;
 class LocalFrame;
 class MediaQuery;
 class MediaQueryExpNode;
 class MediaQueryFeatureExpNode;
+enum class MediaQueryOperator;
 class MediaQuerySet;
 class MediaQuerySetResult;
 class MediaValues;
@@ -96,9 +99,16 @@ class CORE_EXPORT MediaQueryEvaluator final
   KleeneValue Eval(const MediaQueryExpNode&) const;
   KleeneValue Eval(const MediaQueryExpNode&, MediaQueryResultFlags*) const;
 
+  static KleeneValue EvalStyleRange(const CSSValue& reference_value,
+                                    const CSSValue& query_value,
+                                    MediaQueryOperator op,
+                                    bool reverse_op);
+
   // Returns true if any of the media queries in the results lists changed its
   // evaluation.
   bool DidResultsChange(const HeapVector<MediaQuerySetResult>& results) const;
+  bool DidResultsChange(
+      const HeapHashMap<Member<const MediaQuerySet>, bool>& results) const;
 
   void Trace(Visitor*) const;
 

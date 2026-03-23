@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "web_engine_settings.h"
 
@@ -289,6 +290,7 @@ void WebEngineSettings::initDefaults()
         s_defaultAttributes.insert(QWebEngineSettings::TouchEventsApiEnabled,
                                    isTouchScreenDetected());
         s_defaultAttributes.insert(QWebEngineSettings::BackForwardCacheEnabled, false);
+        s_defaultAttributes.insert(QWebEngineSettings::TrimAccessibilityIdentifiers, false);
     }
 
     if (s_defaultFontFamilies.isEmpty()) {
@@ -372,7 +374,6 @@ void WebEngineSettings::applySettingsToWebPreferences(blink::web_pref::WebPrefer
             testAttribute(QWebEngineSettings::JavascriptCanAccessClipboard);
     prefs->tabs_to_links = testAttribute(QWebEngineSettings::LinksIncludedInFocusChain);
     prefs->local_storage_enabled = testAttribute(QWebEngineSettings::LocalStorageEnabled);
-    prefs->databases_enabled = testAttribute(QWebEngineSettings::LocalStorageEnabled);
     prefs->allow_remote_access_from_local_urls =
             testAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls);
     prefs->spatial_navigation_enabled = testAttribute(QWebEngineSettings::SpatialNavigationEnabled);

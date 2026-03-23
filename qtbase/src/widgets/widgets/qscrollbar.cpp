@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qapplication.h"
 #include "qcursor.h"
@@ -56,6 +57,8 @@ using namespace Qt::StringLiterals;
 
     \table
     \row \li \image qscrollbar-picture.png
+             {The parts of the scroll bar such as slider, scroll arrows,
+             and page control}
     \li Scroll bars typically include four separate controls: a slider,
     scroll arrows, and a page control.
 
@@ -108,6 +111,8 @@ using namespace Qt::StringLiterals;
 
     \table
     \row \li \inlineimage qscrollbar-values.png
+                          {The document length, scrolling range, and page step
+                          of a scroll bar}
     \li The relationship between a document length, the range of values used
     in a scroll bar, and the page step is simple in many common situations.
     The scroll bar's range of values is determined by subtracting a

@@ -8,21 +8,30 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
+#include <string>
 
 #include "base/command_line.h"
+#include "base/containers/map_util.h"
+#include "base/functional/bind.h"
+#include "base/functional/callback.h"
 #include "base/immediate_crash.h"
 #include "base/metrics/histogram_base.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/download/public/common/download_item.h"
+#include "components/embedder_support/user_agent_utils.h"
 #include "content/browser/devtools/browser_devtools_agent_host.h"
+#include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/devtools_manager.h"
 #include "content/browser/devtools/protocol/devtools_download_manager_delegate.h"
 #include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/interest_group/interest_group_manager_impl.h"
 #include "content/browser/permissions/permission_controller_impl.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -33,7 +42,6 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/user_agent.h"
 #include "net/base/filename_util.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "url/gurl.h"
@@ -105,7 +113,7 @@ Response BrowserHandler::GetVersion(std::string* protocol_version,
                                     std::string* user_agent,
                                     std::string* js_version) {
   *protocol_version = DevToolsAgentHost::GetProtocolVersion();
-  *revision = GetChromiumGitRevision();
+  *revision = embedder_support::GetChromiumGitRevision();
   *product = GetContentClient()->browser()->GetProduct();
   *user_agent = GetContentClient()->browser()->GetUserAgent();
   *js_version = V8_VERSION_STRING;
@@ -203,6 +211,8 @@ Response PermissionDescriptorToPermissionType(
     *permission_type = PermissionType::AUTOMATIC_FULLSCREEN;
   } else if (name == "web-app-installation") {
     *permission_type = PermissionType::WEB_APP_INSTALLATION;
+  } else if (name == "local-network-access") {
+    *permission_type = PermissionType::LOCAL_NETWORK_ACCESS;
   } else {
     return Response::InvalidParams("Invalid PermissionDescriptor name: " +
                                    name);
@@ -296,6 +306,9 @@ Response FromProtocolPermissionType(
   } else if (type ==
              protocol::Browser::PermissionTypeEnum::WebAppInstallation) {
     *out_type = PermissionType::WEB_APP_INSTALLATION;
+  } else if (type ==
+             protocol::Browser::PermissionTypeEnum::LocalNetworkAccess) {
+    *out_type = PermissionType::LOCAL_NETWORK_ACCESS;
   } else {
     return Response::InvalidParams("Unknown permission type: " + type);
   }
@@ -612,14 +625,79 @@ Response BrowserHandler::Close() {
   return Response::Success();
 }
 
+void BrowserHandler::AddPrivacySandboxCoordinatorKeyConfig(
+    const std::string& in_api,
+    const std::string& in_coordinator_origin,
+    const std::string& in_key_config,
+    std::optional<std::string> browser_context_id,
+    std::unique_ptr<AddPrivacySandboxCoordinatorKeyConfigCallback> callback) {
+  BrowserContext* browser_context = nullptr;
+  Response response = FindBrowserContext(browser_context_id, &browser_context);
+  if (!response.IsSuccess()) {
+    callback->sendFailure(response);
+    return;
+  }
+
+  url::Origin coordinator_origin =
+      url::Origin::Create(GURL(in_coordinator_origin));
+
+  if (!base::EndsWith(coordinator_origin.host(), ".test")) {
+    callback->sendFailure(
+        Response::InvalidParams("coordinatorOrigin not a .test domain"));
+    return;
+  }
+
+  std::optional<InterestGroupManager::TrustedServerAPIType> api;
+  if (in_api ==
+      protocol::Browser::PrivacySandboxAPIEnum::BiddingAndAuctionServices) {
+    api = InterestGroupManager::TrustedServerAPIType::kBiddingAndAuction;
+  } else if (in_api ==
+             protocol::Browser::PrivacySandboxAPIEnum::TrustedKeyValue) {
+    api = InterestGroupManager::TrustedServerAPIType::kTrustedKeyValue;
+  } else {
+    callback->sendFailure(Response::InvalidParams("Unrecognized API target"));
+    return;
+  }
+
+  CHECK(api.has_value());
+  static_cast<InterestGroupManagerImpl*>(
+      browser_context->GetDefaultStoragePartition()->GetInterestGroupManager())
+      ->AddTrustedServerKeysDebugOverride(
+          *api, coordinator_origin, in_key_config,
+          base::BindOnce(
+              [](std::unique_ptr<AddPrivacySandboxCoordinatorKeyConfigCallback>
+                     callback,
+                 std::optional<std::string> maybe_error) {
+                if (maybe_error.has_value()) {
+                  callback->sendFailure(
+                      Response::InvalidParams(std::move(maybe_error).value()));
+                } else {
+                  callback->sendSuccess();
+                }
+              },
+              std::move(callback)));
+}
+
 void BrowserHandler::OnDownloadUpdated(download::DownloadItem* item) {
   std::string state;
+  std::optional<std::string> maybe_file_path;
   switch (item->GetState()) {
     case download::DownloadItem::IN_PROGRESS:
       state = Browser::DownloadProgress::StateEnum::InProgress;
       break;
     case download::DownloadItem::COMPLETE:
       state = Browser::DownloadProgress::StateEnum::Completed;
+      {
+        base::FilePath target_file_path = item->GetTargetFilePath();
+        if (!target_file_path.empty()) {
+#if BUILDFLAG(IS_WIN)
+          // On Windows, the target file path is a wide string.
+          maybe_file_path = base::WideToUTF8(target_file_path.value());
+#else
+          maybe_file_path = target_file_path.value();
+#endif
+        }
+      }
       break;
     case download::DownloadItem::CANCELLED:
     case download::DownloadItem::INTERRUPTED:
@@ -629,7 +707,7 @@ void BrowserHandler::OnDownloadUpdated(download::DownloadItem* item) {
       NOTREACHED();
   }
   frontend_->DownloadProgress(item->GetGuid(), item->GetTotalBytes(),
-                              item->GetReceivedBytes(), state);
+                              item->GetReceivedBytes(), state, maybe_file_path);
   if (state != Browser::DownloadProgress::StateEnum::InProgress) {
     item->RemoveObserver(this);
     pending_downloads_.erase(item);
@@ -694,7 +772,7 @@ std::unique_ptr<Browser::Histogram> BrowserHandler::GetHistogramData(
   }
 
   auto result = Browser::Histogram::Create()
-                    .SetName(histogram.histogram_name())
+                    .SetName(std::string(histogram.histogram_name()))
                     .SetSum(data->sum())
                     .SetCount(data->TotalCount())
                     .SetBuckets(std::move(out_buckets))
@@ -706,7 +784,8 @@ std::unique_ptr<Browser::Histogram> BrowserHandler::GetHistogramData(
       // If we had subtracted previous data, re-add it to get the full snapshot.
       data->Add(*previous_data);
     }
-    histograms_snapshots_[histogram.histogram_name()] = std::move(data);
+    base::InsertOrAssign(histograms_snapshots_, histogram.histogram_name(),
+                         std::move(data));
   }
 
   return result;

@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
+#include "third_party/blink/renderer/core/view_transition/view_transition_pseudo_element_base.h"
 
 namespace blink {
 
@@ -91,10 +92,19 @@ ContainerNode* LayoutTreeBuilderTraversal::LayoutParent(const Node& node) {
 
 LayoutObject* LayoutTreeBuilderTraversal::ParentLayoutObject(const Node& node) {
   if (node.GetPseudoId() == kPseudoIdViewTransition) {
-    // The view-transition pseudo is wrapped by the anonymous
-    // LayoutViewTransitionRoot but that's created by adding the
-    // view-transition to the LayoutView.
-    return node.GetDocument().GetLayoutView();
+    Element* scope = node.parentElement();
+    if (scope->IsDocumentElement()) {
+      // For a document transition, the LayoutObject for the ::view-transition
+      // pseudo-element is wrapped by the anonymous LayoutViewTransitionRoot,
+      // which represents the snapshot containing block.
+      //
+      // The LayoutViewTransitionRoot is a child of the LayoutView, and will be
+      // injected by LayoutView::AddChild.
+      return node.GetDocument().GetLayoutView();
+    }
+    // For a scoped transition, the LayoutObject for the ::view-transition
+    // pseudo-element is a child of the LayoutObject for the scope element.
+    return scope->GetLayoutObject();
   }
   const Node* search_start_node = &node;
   // Parent of ::scroll-marker-group and ::scroll-button() should be layout
@@ -188,6 +198,16 @@ Node* LayoutTreeBuilderTraversal::NextSibling(const Node& node) {
       }
       if (Node* next = parent_element->GetPseudoElement(kPseudoIdAfter))
         return next;
+      if (Node* next =
+              parent_element->GetPseudoElement(kPseudoIdViewTransition)) {
+        // If parent is a non-root view transition scope, place this child
+        // before the ::view-transition pseudo-element.
+        // If parent is the document element, its ::view-transition is placed
+        // under the LayoutViewTransitionRoot instead.
+        if (!parent_element->IsDocumentElement()) {
+          return next;
+        }
+      }
       [[fallthrough]];
     case kPseudoIdAfter:
       if (Node* next = parent_element->GetPseudoElement(kPseudoIdPickerIcon)) {
@@ -205,15 +225,18 @@ Node* LayoutTreeBuilderTraversal::NextSibling(const Node& node) {
     case kPseudoIdViewTransition:
       return nullptr;
     case kPseudoIdViewTransitionGroup: {
-      auto* pseudo_element = DynamicTo<PseudoElement>(node);
+      auto* parent_pseudo =
+          DynamicTo<ViewTransitionPseudoElementBase>(parent_element);
+      DCHECK(parent_pseudo);
+
+      auto* pseudo_element = DynamicTo<ViewTransitionPseudoElementBase>(node);
       DCHECK(pseudo_element);
 
       // Iterate the list of IDs until we hit the entry for |node's| ID. The
-      // sibling is the next ID in the list which generates a pseudo element.
+      // sibling is the next ID in the list which generates a pseudo-element.
       bool found = false;
-      for (const auto& view_transition_name : parent_element->GetDocument()
-                                                  .GetStyleEngine()
-                                                  .ViewTransitionTags()) {
+      for (const auto& view_transition_name :
+           parent_pseudo->GetContainedViewTransitionNames()) {
         if (!found) {
           if (view_transition_name == pseudo_element->view_transition_name())
             found = true;
@@ -227,8 +250,27 @@ Node* LayoutTreeBuilderTraversal::NextSibling(const Node& node) {
       }
       return nullptr;
     }
-    case kPseudoIdViewTransitionImagePair:
-    case kPseudoIdViewTransitionOld:
+    case kPseudoIdViewTransitionImagePair: {
+      auto* pseudo_element = DynamicTo<ViewTransitionPseudoElementBase>(node);
+      DCHECK(pseudo_element);
+      if (auto* sibling = parent_element->GetPseudoElement(
+              kPseudoIdViewTransitionGroupChildren,
+              pseudo_element->view_transition_name())) {
+        return sibling;
+      }
+      return nullptr;
+    }
+    case kPseudoIdViewTransitionGroupChildren:
+    case kPseudoIdViewTransitionOld: {
+      auto* pseudo_element = DynamicTo<ViewTransitionPseudoElementBase>(node);
+      DCHECK(pseudo_element);
+      if (auto* sibling = parent_element->GetPseudoElement(
+              kPseudoIdViewTransitionNew,
+              pseudo_element->view_transition_name())) {
+        return sibling;
+      }
+      return nullptr;
+    }
     case kPseudoIdViewTransitionNew:
       return nullptr;
     default:
@@ -536,7 +578,7 @@ static inline bool AreBoxTreeOrderSiblings(const Node& current, Node* sibling) {
 // This function correctly performs one move from `node` to next
 // layout sibling. We can't just use NextSibling, as ::scroll-marker-group
 // layout object is either previous or next sibling of its originating element,
-// but still a node child of it, as a pseudo element.
+// but still a node child of it, as a pseudo-element.
 // Layout tree:
 //        (PS) (SMGB) (OE) (SMGA) (NS)
 //                  (B)  (A)

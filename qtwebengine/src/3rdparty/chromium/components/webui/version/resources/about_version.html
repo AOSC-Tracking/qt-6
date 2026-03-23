@@ -9,6 +9,7 @@ about:version template page
     <meta charset="utf-8">
     <meta name="color-scheme" content="light dark">
     <title>$i18n{title}</title>
+    <base href="chrome://version">
 <if expr="not is_android and not is_ios">
     <link rel="icon" type="image/png" sizes="32x32"
         href="chrome://theme/current-channel-logo">
@@ -54,7 +55,7 @@ about:version template page
         <tr><td class="label">$i18n{application_label}</td>
           <td class="version" id="version">
             <span id="copy-content">
-              <span>$i18n{version}</span>
+              <span>$i18n{version}$i18n{version_suffix}</span>
               (<span>$i18n{official}</span>)
               <span>$i18n{version_modifier}</span>
               <span>$i18n{version_processor_variation}</span>
@@ -97,10 +98,6 @@ about:version template page
         <tr>
           <td class="label">APK targetSdkVersion</td>
           <td class="version">$i18n{target_sdk_version}</td>
-        </tr>
-         <tr>
-          <td class="label">isAtLeastU/targetsAtLeastU</td>
-          <td class="version">$i18n{targets_u}</td>
         </tr>
         <tr>
           <td class="label">$i18n{gms_name}</td>

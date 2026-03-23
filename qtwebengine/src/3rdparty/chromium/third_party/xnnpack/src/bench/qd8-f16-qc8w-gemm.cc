@@ -1,3 +1,4 @@
+// clang-format off
 // Copyright 2023 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
@@ -7,16 +8,35 @@
 //   Specification: test/qd8-f16-qc8w-gemm-minmax.yaml
 //   Generator: tools/generate-gemm-test.py
 
+#include <cstdint>
+#include <functional>
+
 #include <benchmark/benchmark.h>
-#include "gemm-benchmark.h"
-#include "utils.h"
-#include "xnnpack/common.h"
-#include "xnnpack/gemm.h"
-#include "xnnpack/isa-checks.h"
-#include "xnnpack/microfnptr.h"
-#include "xnnpack/microparams-init.h"
-#include "xnnpack/pack.h"
-#include "xnnpack/packw.h"
+#include "bench/gemm-benchmark.h"
+#include "bench/utils.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/gemm.h"
+#include "src/xnnpack/hardware-config.h"
+#include "src/xnnpack/microfnptr.h"
+#include "src/xnnpack/microparams-init.h"
+#include "src/xnnpack/pack.h"
+#include "src/xnnpack/packw.h"
+
+namespace {
+
+struct ConstantOrFunction {
+  ConstantOrFunction(size_t x) : fn([x]() { return x; }) {}  //NOLINT
+  ConstantOrFunction(int x) : fn([x]() { return x; }) {}  //NOLINT
+  template <typename Fn>
+  ConstantOrFunction(Fn fn) : fn(std::move(fn)) {}  //NOLINT
+
+  std::function<size_t()> fn;
+
+  operator size_t() const { return fn(); }  //NOLINT
+};
+
+}  // namespace
+
 
 
 #if XNN_ENABLE_ARM_I8MM && XNN_ARCH_ARM64
@@ -26,7 +46,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8c8__neoni8mm)
@@ -37,7 +57,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/16, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x16c8__neoni8mm)
@@ -48,7 +68,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/32, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x32c8__neoni8mm)
@@ -59,7 +79,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/2, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x8c8__neoni8mm)
@@ -70,7 +90,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/2, /*nr=*/16, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x16c8__neoni8mm)
@@ -81,7 +101,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/2, /*nr=*/32, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x32c8__neoni8mm)
@@ -92,7 +112,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/3, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_3x8c8__neoni8mm)
@@ -103,7 +123,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/3, /*nr=*/16, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_3x16c8__neoni8mm)
@@ -114,7 +134,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/3, /*nr=*/32, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_3x32c8__neoni8mm)
@@ -125,7 +145,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x8c8__neoni8mm)
@@ -136,7 +156,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/16, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x16c8__neoni8mm)
@@ -147,7 +167,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/32, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x32c8__neoni8mm)
@@ -158,7 +178,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x8c8__neoni8mm)
@@ -169,7 +189,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/16, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x16c8__neoni8mm)
@@ -180,7 +200,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/32, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x32c8__neoni8mm)
@@ -191,7 +211,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/6, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_6x8c8__neoni8mm)
@@ -202,7 +222,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/6, /*nr=*/16, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_6x16c8__neoni8mm)
@@ -213,7 +233,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/6, /*nr=*/32, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_6x32c8__neoni8mm)
@@ -224,7 +244,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/7, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_7x8c8__neoni8mm)
@@ -235,7 +255,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/7, /*nr=*/16, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_7x16c8__neoni8mm)
@@ -246,7 +266,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/7, /*nr=*/32, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_7x32c8__neoni8mm)
@@ -257,7 +277,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/8, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_8x8c8__neoni8mm)
@@ -268,7 +288,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/8, /*nr=*/16, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_8x16c8__neoni8mm)
@@ -279,7 +299,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/8, /*nr=*/32, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckNEONI8MM);
+      /*arch_flags=*/xnn_arch_arm_neon_i8mm);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_8x32c8__neoni8mm)
@@ -293,7 +313,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/64, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckAVX512AMX);
+      /*arch_flags=*/xnn_arch_x86_avx512amx);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x64c4__avx512amx)
@@ -304,7 +324,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/7, /*nr=*/64, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckAVX512AMX);
+      /*arch_flags=*/xnn_arch_x86_avx512amx);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_7x64c4__avx512amx)
@@ -315,7 +335,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/16, /*nr=*/64, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckAVX512AMX);
+      /*arch_flags=*/xnn_arch_x86_avx512amx);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_16x64c4__avx512amx)
@@ -326,7 +346,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/16, /*nr=*/64, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckAVX512AMX);
+      /*arch_flags=*/xnn_arch_x86_avx512amx);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_16x64c4__avx512amx_prfm)
@@ -340,7 +360,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8c8__avx256vnni)
@@ -351,7 +371,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x8c8__avx256vnni)
@@ -362,7 +382,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/7, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_7x8c8__avx256vnni)
@@ -373,7 +393,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/8, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_8x8c8__avx256vnni)
@@ -384,7 +404,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/9, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_9x8c8__avx256vnni)
@@ -395,7 +415,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/10, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_10x8c8__avx256vnni)
@@ -406,7 +426,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/12, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_12x8c8__avx256vnni)
@@ -417,7 +437,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/14, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_14x8c8__avx256vnni)
@@ -428,7 +448,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8c8__avx256vnni_prfm)
@@ -439,7 +459,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x8c8__avx256vnni_prfm)
@@ -450,7 +470,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/7, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_7x8c8__avx256vnni_prfm)
@@ -461,7 +481,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/8, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_8x8c8__avx256vnni_prfm)
@@ -472,7 +492,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/9, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_9x8c8__avx256vnni_prfm)
@@ -483,7 +503,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/10, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_10x8c8__avx256vnni_prfm)
@@ -494,7 +514,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/12, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_12x8c8__avx256vnni_prfm)
@@ -505,7 +525,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/14, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256VNNI);
+      /*arch_flags=*/xnn_arch_x86_avx256vnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_14x8c8__avx256vnni_prfm)
@@ -519,7 +539,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256SKX);
+      /*arch_flags=*/xnn_arch_x86_avx256skx);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8c8__avx256skx)
@@ -530,7 +550,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256SKX);
+      /*arch_flags=*/xnn_arch_x86_avx256skx);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x8c8__avx256skx)
@@ -541,7 +561,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/7, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256SKX);
+      /*arch_flags=*/xnn_arch_x86_avx256skx);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_7x8c8__avx256skx)
@@ -552,7 +572,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/8, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX256SKX);
+      /*arch_flags=*/xnn_arch_x86_avx256skx);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_8x8c8__avx256skx)
@@ -566,7 +586,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8c8__avxvnni)
@@ -577,7 +597,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/2, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x8c8__avxvnni)
@@ -588,7 +608,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/3, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_3x8c8__avxvnni)
@@ -599,7 +619,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x8c8__avxvnni)
@@ -610,7 +630,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x8c8__avxvnni)
@@ -621,7 +641,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/6, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_6x8c8__avxvnni)
@@ -632,7 +652,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/7, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_7x8c8__avxvnni)
@@ -643,7 +663,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/8, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_8x8c8__avxvnni)
@@ -654,7 +674,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8c8__avxvnni_prfm)
@@ -665,7 +685,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/2, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x8c8__avxvnni_prfm)
@@ -676,7 +696,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/3, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_3x8c8__avxvnni_prfm)
@@ -687,7 +707,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x8c8__avxvnni_prfm)
@@ -698,7 +718,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x8c8__avxvnni_prfm)
@@ -709,7 +729,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/6, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_6x8c8__avxvnni_prfm)
@@ -720,7 +740,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/7, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_7x8c8__avxvnni_prfm)
@@ -731,7 +751,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/8, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVXVNNI);
+      /*arch_flags=*/xnn_arch_x86_avxvnni);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_8x8c8__avxvnni_prfm)
@@ -745,7 +765,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX2);
+      /*arch_flags=*/xnn_arch_x86_avx2);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8c8__avx2)
@@ -756,7 +776,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/2, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX2);
+      /*arch_flags=*/xnn_arch_x86_avx2);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x8c8__avx2)
@@ -767,7 +787,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/3, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX2);
+      /*arch_flags=*/xnn_arch_x86_avx2);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_3x8c8__avx2)
@@ -778,7 +798,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/8, /*kr=*/8, /*sr=*/1,
-      benchmark::utils::CheckAVX2);
+      /*arch_flags=*/xnn_arch_x86_avx2);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x8c8__avx2)
@@ -792,7 +812,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/8, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8c4__neondotfp16arith)
@@ -803,7 +823,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/16, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x16c4__neondotfp16arith)
@@ -814,7 +834,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/2, /*nr=*/8, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x8c4__neondotfp16arith)
@@ -825,7 +845,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/2, /*nr=*/16, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x16c4__neondotfp16arith)
@@ -836,7 +856,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/3, /*nr=*/8, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_3x8c4__neondotfp16arith)
@@ -847,7 +867,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/3, /*nr=*/16, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_3x16c4__neondotfp16arith)
@@ -858,7 +878,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/8, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x8c4__neondotfp16arith)
@@ -872,7 +892,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/16, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x16c4__asm_aarch64_neondotfp16arith_cortex_a55)
@@ -883,7 +903,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/16, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x16c4__asm_aarch64_neondotfp16arith_ld128)
@@ -897,7 +917,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/16, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x16c4__neondotfp16arith)
@@ -908,7 +928,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/8, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x8c4__neondotfp16arith)
@@ -919,7 +939,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/5, /*nr=*/16, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_5x16c4__neondotfp16arith)
@@ -930,7 +950,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/6, /*nr=*/8, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_6x8c4__neondotfp16arith)
@@ -941,7 +961,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/6, /*nr=*/16, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_6x16c4__neondotfp16arith)
@@ -955,7 +975,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/1, /*nr=*/8, /*kr=*/2, /*sr=*/4,
-      benchmark::utils::CheckNEONFP16ARITH);
+      /*arch_flags=*/xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8c2s4__neonfp16arith)
@@ -966,7 +986,7 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/2, /*nr=*/8, /*kr=*/2, /*sr=*/4,
-      benchmark::utils::CheckNEONFP16ARITH);
+      /*arch_flags=*/xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x8c2s4__neonfp16arith)
@@ -980,11 +1000,58 @@
       xnn_init_f16_minmax_scalar_params,
       xnn_pack_qs8_gemm_goi_w,
       /*mr=*/4, /*nr=*/8, /*kr=*/4, /*sr=*/1,
-      benchmark::utils::CheckNEONDOT);
+      /*arch_flags=*/xnn_arch_arm_neon_dot | xnn_arch_arm_neon_fp16_arith);
   }
 
   BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x8c4__asm_aarch32_neondotfp16arith_cortex_a55)
 #endif  // XNN_ENABLE_ARM_DOTPROD && XNN_ENABLE_ARM_FP16_VECTOR && XNN_ARCH_ARM && XNN_ENABLE_ASSEMBLY
+
+
+#if XNN_ENABLE_ARM_FP16_VECTOR && XNN_ARCH_ARM && XNN_ENABLE_ASSEMBLY
+  static void qd8_f16_qc8w_gemm_minmax_ukernel_1x8__asm_aarch32_neonfp16arith_ld64_2(benchmark::State& state, const char* net) {
+    GEMMBenchmark(state,
+      xnn_qd8_f16_qc8w_gemm_minmax_ukernel_1x8__asm_aarch32_neonfp16arith_ld64_2,
+      xnn_init_f16_minmax_scalar_params,
+      xnn_pack_qs8_gemm_goi_w,
+      /*mr=*/1, /*nr=*/8, /*kr=*/1, /*sr=*/1,
+      /*arch_flags=*/xnn_arch_arm_neon_fp16_arith);
+  }
+
+  BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_1x8__asm_aarch32_neonfp16arith_ld64_2)
+
+  static void qd8_f16_qc8w_gemm_minmax_ukernel_2x8__asm_aarch32_neonfp16arith_ld64_2(benchmark::State& state, const char* net) {
+    GEMMBenchmark(state,
+      xnn_qd8_f16_qc8w_gemm_minmax_ukernel_2x8__asm_aarch32_neonfp16arith_ld64_2,
+      xnn_init_f16_minmax_scalar_params,
+      xnn_pack_qs8_gemm_goi_w,
+      /*mr=*/2, /*nr=*/8, /*kr=*/1, /*sr=*/1,
+      /*arch_flags=*/xnn_arch_arm_neon_fp16_arith);
+  }
+
+  BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_2x8__asm_aarch32_neonfp16arith_ld64_2)
+
+  static void qd8_f16_qc8w_gemm_minmax_ukernel_3x8__asm_aarch32_neonfp16arith_ld64_2(benchmark::State& state, const char* net) {
+    GEMMBenchmark(state,
+      xnn_qd8_f16_qc8w_gemm_minmax_ukernel_3x8__asm_aarch32_neonfp16arith_ld64_2,
+      xnn_init_f16_minmax_scalar_params,
+      xnn_pack_qs8_gemm_goi_w,
+      /*mr=*/3, /*nr=*/8, /*kr=*/1, /*sr=*/1,
+      /*arch_flags=*/xnn_arch_arm_neon_fp16_arith);
+  }
+
+  BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_3x8__asm_aarch32_neonfp16arith_ld64_2)
+
+  static void qd8_f16_qc8w_gemm_minmax_ukernel_4x8__asm_aarch32_neonfp16arith_ld64_2(benchmark::State& state, const char* net) {
+    GEMMBenchmark(state,
+      xnn_qd8_f16_qc8w_gemm_minmax_ukernel_4x8__asm_aarch32_neonfp16arith_ld64_2,
+      xnn_init_f16_minmax_scalar_params,
+      xnn_pack_qs8_gemm_goi_w,
+      /*mr=*/4, /*nr=*/8, /*kr=*/1, /*sr=*/1,
+      /*arch_flags=*/xnn_arch_arm_neon_fp16_arith);
+  }
+
+  BENCHMARK_GEMM(qd8_f16_qc8w_gemm_minmax_ukernel_4x8__asm_aarch32_neonfp16arith_ld64_2)
+#endif  // XNN_ENABLE_ARM_FP16_VECTOR && XNN_ARCH_ARM && XNN_ENABLE_ASSEMBLY
 
 
 #ifndef XNNPACK_BENCHMARK_NO_MAIN

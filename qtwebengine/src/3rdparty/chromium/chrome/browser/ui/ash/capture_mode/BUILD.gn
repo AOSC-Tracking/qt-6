@@ -8,14 +8,6 @@ static_library("capture_mode") {
   sources = [
     "chrome_capture_mode_delegate.cc",
     "chrome_capture_mode_delegate.h",
-    "lens_overlay_image_helper.cc",
-    "lens_overlay_image_helper.h",
-    "lens_overlay_query_controller.cc",
-    "lens_overlay_query_controller.h",
-    "lens_overlay_request_id_generator.cc",
-    "lens_overlay_request_id_generator.h",
-    "lens_overlay_url_builder.cc",
-    "lens_overlay_url_builder.h",
     "search_results_view.cc",
     "search_results_view.h",
   ]
@@ -26,7 +18,6 @@ static_library("capture_mode") {
     "//ash/constants",
     "//ash/public/cpp",
     "//base",
-    "//chrome/browser:browser_process",
     "//chrome/browser:primitives",
     "//chrome/browser/apps/app_service",
     "//chrome/browser/ash/drive",
@@ -37,6 +28,8 @@ static_library("capture_mode") {
     "//chrome/browser/lens/core/mojom:mojo_bindings",
     "//chrome/browser/policy:system_features_disable_list",
     "//chrome/browser/screen_ai/public:optical_character_recognizer",
+    "//chrome/browser/search_engines",
+    "//chrome/browser/signin",
     "//chrome/browser/ui:browser_navigator_params_headers",
     "//chrome/browser/ui/ash/system_web_apps",
     "//chrome/browser/ui/ash/web_view",
@@ -44,16 +37,16 @@ static_library("capture_mode") {
     "//chrome/browser/ui/webui/ash/cloud_upload",
     "//chrome/browser/web_applications",
     "//chrome/common",
+    "//chromeos/ash/components/browser_context_helper",
     "//chromeos/ash/components/drivefs/mojom",
     "//chromeos/ash/components/login/login_state",
     "//chromeos/ash/experiences/screenshot_area",
     "//chromeos/ash/services/recording/public/mojom",
-    "//components/base32",
+    "//components/application_locale_storage",
     "//components/drive",
-    "//components/endpoint_fetcher",
-    "//components/language/core/common:common",
     "//components/lens",
     "//components/lens:enterprise_policy",
+    "//components/search",
     "//content/public/browser",
     "//services/screen_ai/public/mojom",
     "//services/video_capture/public/mojom",
@@ -88,7 +81,6 @@ source_set("browser_tests") {
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ash/crosapi",
-    "//chrome/browser/ash/crosapi:browser_util",
     "//chrome/browser/ash/file_manager:test_support",
     "//chrome/browser/ash/system_web_apps",
     "//chrome/browser/ash/video_conference",
@@ -114,4 +106,8 @@ source_set("browser_tests") {
     "//ui/events:test_support",
     "//ui/wm",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

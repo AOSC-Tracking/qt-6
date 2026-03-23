@@ -45,18 +45,6 @@ BSSL_NAMESPACE_BEGIN
 static bool ssl_check_clienthello_tlsext(SSL_HANDSHAKE *hs);
 static bool ssl_check_serverhello_tlsext(SSL_HANDSHAKE *hs);
 
-static int compare_uint16_t(const void *p1, const void *p2) {
-  uint16_t u1 = *((const uint16_t *)p1);
-  uint16_t u2 = *((const uint16_t *)p2);
-  if (u1 < u2) {
-    return -1;
-  } else if (u1 > u2) {
-    return 1;
-  } else {
-    return 0;
-  }
-}
-
 // Per http://tools.ietf.org/html/rfc5246#section-7.4.1.4, there may not be
 // more than one extension of the same type in a ClientHello or ServerHello.
 // This function does an initial scan over the extensions block to filter those
@@ -100,8 +88,7 @@ static bool tls1_check_duplicate_extensions(const CBS *cbs) {
   assert(CBS_len(&extensions) == 0);
 
   // Sort the extensions and make sure there are no duplicates.
-  qsort(extension_types.data(), extension_types.size(), sizeof(uint16_t),
-        compare_uint16_t);
+  std::sort(extension_types.begin(), extension_types.end());
   for (size_t i = 1; i < num_extensions; i++) {
     if (extension_types[i - 1] == extension_types[i]) {
       return false;
@@ -121,16 +108,6 @@ static bool is_post_quantum_group(uint16_t id) {
   }
 }
 
-bool ssl_client_hello_init(const SSL *ssl, SSL_CLIENT_HELLO *out,
-                           Span<const uint8_t> body) {
-  CBS cbs = body;
-  if (!ssl_parse_client_hello_with_trailing_data(ssl, &cbs, out) ||
-      CBS_len(&cbs) != 0) {
-    return false;
-  }
-  return true;
-}
-
 bool ssl_parse_client_hello_with_trailing_data(const SSL *ssl, CBS *cbs,
                                                SSL_CLIENT_HELLO *out) {
   OPENSSL_memset(out, 0, sizeof(*out));
@@ -142,6 +119,7 @@ bool ssl_parse_client_hello_with_trailing_data(const SSL *ssl, CBS *cbs,
       !CBS_get_bytes(cbs, &random, SSL3_RANDOM_SIZE) ||
       !CBS_get_u8_length_prefixed(cbs, &session_id) ||
       CBS_len(&session_id) > SSL_MAX_SSL_SESSION_ID_LENGTH) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_CLIENTHELLO_PARSE_FAILED);
     return false;
   }
 
@@ -153,6 +131,7 @@ bool ssl_parse_client_hello_with_trailing_data(const SSL *ssl, CBS *cbs,
   if (SSL_is_dtls(out->ssl)) {
     CBS cookie;
     if (!CBS_get_u8_length_prefixed(cbs, &cookie)) {
+      OPENSSL_PUT_ERROR(SSL, SSL_R_CLIENTHELLO_PARSE_FAILED);
       return false;
     }
     out->dtls_cookie = CBS_data(&cookie);
@@ -167,6 +146,7 @@ bool ssl_parse_client_hello_with_trailing_data(const SSL *ssl, CBS *cbs,
       CBS_len(&cipher_suites) < 2 || (CBS_len(&cipher_suites) & 1) != 0 ||
       !CBS_get_u8_length_prefixed(cbs, &compression_methods) ||
       CBS_len(&compression_methods) < 1) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_CLIENTHELLO_PARSE_FAILED);
     return false;
   }
 
@@ -185,6 +165,7 @@ bool ssl_parse_client_hello_with_trailing_data(const SSL *ssl, CBS *cbs,
     CBS extensions;
     if (!CBS_get_u16_length_prefixed(cbs, &extensions) ||
         !tls1_check_duplicate_extensions(&extensions)) {
+      OPENSSL_PUT_ERROR(SSL, SSL_R_CLIENTHELLO_PARSE_FAILED);
       return false;
     }
     out->extensions = CBS_data(&extensions);
@@ -367,6 +348,96 @@ bool tls12_check_peer_sigalg(const SSL_HANDSHAKE *hs, uint8_t *out_alert,
   return true;
 }
 
+// Flags.
+//
+// https://www.ietf.org/archive/id/draft-ietf-tls-tlsflags-14.html
+
+bool ssl_add_flags_extension(CBB *cbb, SSLFlags flags) {
+  if (flags == 0) {
+    return true;
+  }
+
+  CBB body, child;
+  if (!CBB_add_u16(cbb, TLSEXT_TYPE_tls_flags) ||
+      !CBB_add_u16_length_prefixed(cbb, &body) ||
+      !CBB_add_u8_length_prefixed(&body, &child)) {
+    return false;
+  }
+
+  while (flags != 0) {
+    if (!CBB_add_u8(&child, static_cast<uint8_t>(flags))) {
+      return false;
+    }
+    flags >>= 8;
+  }
+
+  return CBB_flush(cbb);
+}
+
+static bool ssl_parse_flags_extension(const CBS *cbs, SSLFlags *out,
+                                      uint8_t *out_alert, bool allow_unknown) {
+  CBS copy = *cbs, flags;
+  if (!CBS_get_u8_length_prefixed(&copy, &flags) ||  //
+      CBS_len(&copy) != 0 ||                         //
+      CBS_len(&flags) == 0) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+    *out_alert = SSL_AD_DECODE_ERROR;
+    return false;
+  }
+
+  // There may not be any trailing zeros.
+  if (CBS_data(&flags)[CBS_len(&flags) - 1] == 0) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+    *out_alert = SSL_AD_ILLEGAL_PARAMETER;
+    return false;
+  }
+
+  // We can only represent flags that fit in SSLFlags, so any bits beyond that
+  // are necessarily unsolicited. Unsolicited flags are allowed in CH, CR, and
+  // NST, but forbidden in SH, EE, CT, and HRR. See Section 3 of
+  // draft-ietf-tls-tlsflags-14.
+  if (!allow_unknown && CBS_len(&flags) > sizeof(SSLFlags)) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
+    *out_alert = SSL_AD_ILLEGAL_PARAMETER;
+    return false;
+  }
+
+  // We currently use the same in-memory and wire representation for flags.
+  uint8_t padded[sizeof(SSLFlags)] = {0};
+  OPENSSL_memcpy(padded, CBS_data(&flags),
+                 std::min(CBS_len(&flags), size_t{4}));
+  static_assert(sizeof(SSLFlags) == sizeof(uint32_t),
+                "We currently assume SSLFlags is 32-bit");
+  *out = CRYPTO_load_u32_le(padded);
+  return true;
+}
+
+bool ssl_parse_flags_extension_request(const CBS *cbs, SSLFlags *out,
+                                       uint8_t *out_alert) {
+  // In a request message, unsolicited flags are allowed and ignored.
+  return ssl_parse_flags_extension(cbs, out, out_alert,
+                                   /*allow_unknown=*/true);
+}
+
+bool ssl_parse_flags_extension_response(const CBS *cbs, SSLFlags *out,
+                                        uint8_t *out_alert,
+                                        SSLFlags allowed_flags) {
+  // In a response message, unsolicited flags are not allowed.
+  if (!ssl_parse_flags_extension(cbs, out, out_alert,
+                                 /*allow_unknown=*/false)) {
+    return false;
+  }
+
+  // Check for unsolicited flags that fit in |SSLFlags|.
+  if ((*out & allowed_flags) != *out) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
+    *out_alert = SSL_AD_ILLEGAL_PARAMETER;
+    return false;
+  }
+
+  return true;
+}
+
 // tls_extension represents a TLS extension that is handled internally.
 //
 // The parse callbacks receive a |CBS| that contains the contents of the
@@ -473,6 +544,8 @@ static bool ext_sni_parse_clienthello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
 }
 
 static bool ext_sni_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
+  // RFC 6066 says "When resuming a session, the server MUST NOT include a
+  // server_name extension in the server hello."
   if (hs->ssl->s3->session_reused ||  //
       !hs->should_ack_sni) {
     return true;
@@ -691,9 +764,9 @@ static bool ext_ri_parse_serverhello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
                     ssl->s3->previous_client_finished.size()) &&
       CBS_mem_equal(&server_verify, ssl->s3->previous_server_finished.data(),
                     ssl->s3->previous_server_finished.size());
-#if defined(BORINGSSL_UNSAFE_FUZZER_MODE)
-  ok = true;
-#endif
+  if (CRYPTO_fuzzer_mode_enabled()) {
+    ok = true;
+  }
   if (!ok) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_RENEGOTIATION_MISMATCH);
     *out_alert = SSL_AD_HANDSHAKE_FAILURE;
@@ -2516,12 +2589,14 @@ static bool ext_supported_groups_parse_clienthello(SSL_HANDSHAKE *hs,
 static bool ext_certificate_authorities_add_clienthello(
     const SSL_HANDSHAKE *hs, CBB *out, CBB *out_compressible,
     ssl_client_hello_type_t type) {
+  // TODO(crbug.com/398275713): What should this send in ClientHelloOuter?
   if (ssl_has_CA_names(hs->config)) {
     CBB ca_contents;
-    if (!CBB_add_u16(out, TLSEXT_TYPE_certificate_authorities) ||  //
-        !CBB_add_u16_length_prefixed(out, &ca_contents) ||         //
-        !ssl_add_CA_names(hs, &ca_contents) ||                     //
-        !CBB_flush(out)) {
+    if (!CBB_add_u16(out_compressible,
+                     TLSEXT_TYPE_certificate_authorities) ||  //
+        !CBB_add_u16_length_prefixed(out_compressible, &ca_contents) ||    //
+        !ssl_add_CA_names(hs, &ca_contents) ||                //
+        !CBB_flush(out_compressible)) {
       return false;
     }
   }
@@ -2547,6 +2622,136 @@ static bool ext_certificate_authorities_parse_clienthello(SSL_HANDSHAKE *hs,
   return true;
 }
 
+
+// Trust Anchor Identifiers
+//
+// https://datatracker.ietf.org/doc/draft-ietf-tls-trust-anchor-ids/
+
+bool ssl_is_valid_trust_anchor_list(Span<const uint8_t> in) {
+  CBS ids = in;
+  while (CBS_len(&ids) > 0) {
+    CBS id;
+    if (!CBS_get_u8_length_prefixed(&ids, &id) ||  //
+        CBS_len(&id) == 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool ext_trust_anchors_add_clienthello(const SSL_HANDSHAKE *hs, CBB *out,
+                                              CBB *out_compressible,
+                                              ssl_client_hello_type_t type) {
+  if (!hs->config->requested_trust_anchors.has_value()) {
+    return true;
+  }
+  // TODO(crbug.com/398275713): What should this send in ClientHelloOuter?
+  CBB contents, list;
+  if (!CBB_add_u16(out_compressible, TLSEXT_TYPE_trust_anchors) ||  //
+      !CBB_add_u16_length_prefixed(out_compressible, &contents) ||  //
+      !CBB_add_u16_length_prefixed(&contents, &list) ||             //
+      !CBB_add_bytes(&list, hs->config->requested_trust_anchors->data(),
+                     hs->config->requested_trust_anchors->size()) ||
+      !CBB_flush(out_compressible)) {
+    return false;
+  }
+  return true;
+}
+
+static bool ext_trust_anchors_parse_clienthello(SSL_HANDSHAKE *hs,
+                                                uint8_t *out_alert,
+                                                CBS *contents) {
+  if (contents == nullptr || ssl_protocol_version(hs->ssl) < TLS1_3_VERSION) {
+    return true;
+  }
+
+  CBS child;
+  if (!CBS_get_u16_length_prefixed(contents, &child) ||
+      !ssl_is_valid_trust_anchor_list(child)) {
+    *out_alert = SSL_AD_DECODE_ERROR;
+    OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+    return false;
+  }
+
+  hs->peer_requested_trust_anchors.emplace();
+  if (!hs->peer_requested_trust_anchors->CopyFrom(child)) {
+    *out_alert = SSL_AD_INTERNAL_ERROR;
+    return false;
+  }
+  return true;
+}
+
+static bool ext_trust_anchors_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
+  SSL *const ssl = hs->ssl;
+  if (ssl_protocol_version(ssl) < TLS1_3_VERSION) {
+    return true;
+  }
+
+  const size_t old_len = CBB_len(out);
+  CBB contents, list, child;
+  if (!CBB_add_u16(out, TLSEXT_TYPE_trust_anchors) ||
+      !CBB_add_u16_length_prefixed(out, &contents) ||
+      !CBB_add_u16_length_prefixed(&contents, &list)) {
+    return false;
+  }
+  for (const auto &cred : hs->config->cert->credentials) {
+    if (!cred->trust_anchor_id.empty()) {
+      uint16_t unused_sigalg;
+      if (!ssl_check_tls13_credential_ignoring_issuer(hs, cred.get(),
+                                                      &unused_sigalg)) {
+        ERR_clear_error();
+        continue;
+      }
+      if (!CBB_add_u8_length_prefixed(&list, &child) ||
+          !CBB_add_bytes(&child, cred->trust_anchor_id.data(),
+                         cred->trust_anchor_id.size()) ||
+          !CBB_flush(&list)) {
+        return false;
+      }
+    }
+  }
+
+  bool empty = CBB_len(&list) == 0;
+  if (!CBB_flush(out)) {
+    return false;
+  }
+
+  // Don't send the extension if it would have been empty.
+  if (empty) {
+    CBB_discard(out, CBB_len(out) - old_len);
+  }
+  return true;
+}
+
+static bool ext_trust_anchors_parse_serverhello(SSL_HANDSHAKE *hs,
+                                                uint8_t *out_alert,
+                                                CBS *contents) {
+  if (contents == nullptr) {
+    return true;
+  }
+
+  if (ssl_protocol_version(hs->ssl) < TLS1_3_VERSION) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
+    *out_alert = SSL_AD_UNSUPPORTED_EXTENSION;
+    return false;
+  }
+
+  CBS child;
+  if (!CBS_get_u16_length_prefixed(contents, &child) ||
+      // The list of available trust anchors may not be empty.
+      CBS_len(&child) == 0 ||  //
+      !ssl_is_valid_trust_anchor_list(child)) {
+    *out_alert = SSL_AD_DECODE_ERROR;
+    OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+    return false;
+  }
+
+  if (!hs->peer_available_trust_anchors.CopyFrom(child)) {
+    *out_alert = SSL_AD_INTERNAL_ERROR;
+    return false;
+  }
+  return true;
+}
 
 // QUIC Transport Parameters
 
@@ -2853,8 +3058,7 @@ static bool cert_compression_parse_clienthello(SSL_HANDSHAKE *hs,
     }
   }
 
-  qsort(given_alg_ids.data(), given_alg_ids.size(), sizeof(uint16_t),
-        compare_uint16_t);
+  std::sort(given_alg_ids.begin(), given_alg_ids.end());
   for (size_t i = 1; i < num_given_alg_ids; i++) {
     if (given_alg_ids[i - 1] == given_alg_ids[i]) {
       return false;
@@ -2885,12 +3089,8 @@ bool ssl_setup_pake_shares(SSL_HANDSHAKE *hs) {
     return true;
   }
 
-  Array<SSL_CREDENTIAL *> creds;
-  if (!ssl_get_credential_list(hs, &creds)) {
-    return false;
-  }
-
-  if (std::none_of(creds.begin(), creds.end(), [](SSL_CREDENTIAL *cred) {
+  const auto &creds = hs->config->cert->credentials;
+  if (std::none_of(creds.begin(), creds.end(), [](const auto &cred) {
         return cred->type == SSLCredentialType::kSPAKE2PlusV1Client;
       })) {
     // If there were no configured PAKE credentials, proceed without filling
@@ -2904,7 +3104,7 @@ bool ssl_setup_pake_shares(SSL_HANDSHAKE *hs) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_UNSUPPORTED_CREDENTIAL_LIST);
     return false;
   }
-  SSL_CREDENTIAL *cred = creds[0];
+  SSL_CREDENTIAL *cred = creds[0].get();
   assert(cred->type == SSLCredentialType::kSPAKE2PlusV1Client);
 
   hs->pake_prover = MakeUnique<spake2plus::Prover>();
@@ -3500,6 +3700,13 @@ static const struct tls_extension kExtensions[] = {
         ext_pake_parse_clienthello,
         dont_add_serverhello,
     },
+    {
+        TLSEXT_TYPE_trust_anchors,
+        ext_trust_anchors_add_clienthello,
+        ext_trust_anchors_parse_serverhello,
+        ext_trust_anchors_parse_clienthello,
+        ext_trust_anchors_add_serverhello,
+    },
 };
 
 #define kNumExtensions (sizeof(kExtensions) / sizeof(struct tls_extension))
@@ -4069,9 +4276,9 @@ static enum ssl_ticket_aead_result_t decrypt_ticket_with_cipher_ctx(
   HMAC_Final(hmac_ctx, mac, NULL);
   assert(mac_len == ticket_mac.size());
   bool mac_ok = CRYPTO_memcmp(mac, ticket_mac.data(), mac_len) == 0;
-#if defined(BORINGSSL_UNSAFE_FUZZER_MODE)
-  mac_ok = true;
-#endif
+  if (CRYPTO_fuzzer_mode_enabled()) {
+    mac_ok = true;
+  }
   if (!mac_ok) {
     return ssl_ticket_aead_ignore_ticket;
   }
@@ -4079,26 +4286,26 @@ static enum ssl_ticket_aead_result_t decrypt_ticket_with_cipher_ctx(
   // Decrypt the session data.
   auto ciphertext = ticket.subspan(SSL_TICKET_KEY_NAME_LEN + iv_len);
   Array<uint8_t> plaintext;
-#if defined(BORINGSSL_UNSAFE_FUZZER_MODE)
-  if (!plaintext.CopyFrom(ciphertext)) {
-    return ssl_ticket_aead_error;
+  if (CRYPTO_fuzzer_mode_enabled()) {
+    if (!plaintext.CopyFrom(ciphertext)) {
+      return ssl_ticket_aead_error;
+    }
+  } else {
+    if (ciphertext.size() >= INT_MAX) {
+      return ssl_ticket_aead_ignore_ticket;
+    }
+    if (!plaintext.InitForOverwrite(ciphertext.size())) {
+      return ssl_ticket_aead_error;
+    }
+    int len1, len2;
+    if (!EVP_DecryptUpdate(cipher_ctx, plaintext.data(), &len1,
+                           ciphertext.data(), (int)ciphertext.size()) ||
+        !EVP_DecryptFinal_ex(cipher_ctx, plaintext.data() + len1, &len2)) {
+      ERR_clear_error();
+      return ssl_ticket_aead_ignore_ticket;
+    }
+    plaintext.Shrink(static_cast<size_t>(len1) + len2);
   }
-#else
-  if (ciphertext.size() >= INT_MAX) {
-    return ssl_ticket_aead_ignore_ticket;
-  }
-  if (!plaintext.InitForOverwrite(ciphertext.size())) {
-    return ssl_ticket_aead_error;
-  }
-  int len1, len2;
-  if (!EVP_DecryptUpdate(cipher_ctx, plaintext.data(), &len1, ciphertext.data(),
-                         (int)ciphertext.size()) ||
-      !EVP_DecryptFinal_ex(cipher_ctx, plaintext.data() + len1, &len2)) {
-    ERR_clear_error();
-    return ssl_ticket_aead_ignore_ticket;
-  }
-  plaintext.Shrink(static_cast<size_t>(len1) + len2);
-#endif
 
   *out = std::move(plaintext);
   return ssl_ticket_aead_success;
@@ -4418,10 +4625,10 @@ bool tls1_verify_channel_id(SSL_HANDSHAKE *hs, const SSLMessage &msg) {
   }
 
   bool sig_ok = ECDSA_do_verify(digest, digest_len, sig.get(), key.get());
-#if defined(BORINGSSL_UNSAFE_FUZZER_MODE)
-  sig_ok = true;
-  ERR_clear_error();
-#endif
+  if (CRYPTO_fuzzer_mode_enabled()) {
+    sig_ok = true;
+    ERR_clear_error();
+  }
   if (!sig_ok) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_CHANNEL_ID_SIGNATURE_INVALID);
     ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECRYPT_ERROR);
@@ -4558,6 +4765,19 @@ bool ssl_is_sct_list_valid(const CBS *contents) {
 BSSL_NAMESPACE_END
 
 using namespace bssl;
+
+int SSL_parse_client_hello(const SSL *ssl, SSL_CLIENT_HELLO *out,
+                           const uint8_t *in, size_t len) {
+  CBS cbs = Span(in, len);
+  if (!ssl_parse_client_hello_with_trailing_data(ssl, &cbs, out)) {
+    return 0;
+  }
+  if (CBS_len(&cbs) != 0) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_CLIENTHELLO_PARSE_FAILED);
+    return 0;
+  }
+  return 1;
+}
 
 int SSL_early_callback_ctx_extension_get(const SSL_CLIENT_HELLO *client_hello,
                                          uint16_t extension_type,

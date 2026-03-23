@@ -24,11 +24,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/testing/internals.h"
 
 #include <atomic>
@@ -44,7 +39,6 @@
 #include "cc/layers/picture_layer.h"
 #include "cc/trees/layer_tree_host.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
-#include "third_party/abseil-cpp/absl/utility/utility.h"
 #include "third_party/blink/public/common/widget/device_emulation_params.h"
 #include "third_party/blink/public/mojom/devtools/inspector_issue.mojom-blink.h"
 #include "third_party/blink/public/mojom/favicon/favicon_url.mojom-blink.h"
@@ -214,6 +208,7 @@
 #include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/image/canvas_image_source.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -2789,7 +2784,7 @@ void Internals::setMediaControlsTestMode(HTMLMediaElement* media_element,
 void Internals::registerURLSchemeAsBypassingContentSecurityPolicy(
     const String& scheme) {
 #if DCHECK_IS_ON()
-  WTF::SetIsBeforeThreadCreatedForTest();  // Required for next operation:
+  SetIsBeforeThreadCreatedForTest();  // Required for next operation:
 #endif
   SchemeRegistry::RegisterURLSchemeAsBypassingContentSecurityPolicy(scheme);
 }
@@ -2805,7 +2800,7 @@ void Internals::registerURLSchemeAsBypassingContentSecurityPolicy(
       policy_areas_enum |= SchemeRegistry::kPolicyAreaStyle;
   }
 #if DCHECK_IS_ON()
-  WTF::SetIsBeforeThreadCreatedForTest();  // Required for next operation:
+  SetIsBeforeThreadCreatedForTest();  // Required for next operation:
 #endif
   SchemeRegistry::RegisterURLSchemeAsBypassingContentSecurityPolicy(
       scheme, static_cast<SchemeRegistry::PolicyAreas>(policy_areas_enum));
@@ -2814,10 +2809,10 @@ void Internals::registerURLSchemeAsBypassingContentSecurityPolicy(
 void Internals::removeURLSchemeRegisteredAsBypassingContentSecurityPolicy(
     const String& scheme) {
 #if DCHECK_IS_ON()
-  WTF::SetIsBeforeThreadCreatedForTest();  // Required for next operation:
+  SetIsBeforeThreadCreatedForTest();  // Required for next operation:
 #endif
-  SchemeRegistry::RemoveURLSchemeRegisteredAsBypassingContentSecurityPolicy(
-      scheme);
+  SchemeRegistry::
+      RemoveURLSchemeRegisteredAsBypassingContentSecurityPolicyForTest(scheme);
 }
 
 TypeConversions* Internals::typeConversions() const {
@@ -3152,7 +3147,7 @@ DOMArrayBuffer* Internals::serializeObject(
   DOMArrayBuffer* buffer = DOMArrayBuffer::CreateUninitializedOrNull(
       base::checked_cast<uint32_t>(span.size()), sizeof(uint8_t));
   if (buffer)
-    memcpy(buffer->Data(), span.data(), span.size());
+    buffer->ByteSpan().copy_from(span);
   return buffer;
 }
 
@@ -3501,8 +3496,14 @@ void Internals::forceLoseCanvasContext(CanvasRenderingContext* context) {
   context->LoseContext(CanvasRenderingContext::kSyntheticLostContext);
 }
 
-void Internals::disableCanvasAcceleration(HTMLCanvasElement* canvas) {
-  canvas->DisableAcceleration();
+void Internals::disableCanvasAccelerationForCanvas2D(
+    HTMLCanvasElement* canvas) {
+  canvas->DisableAccelerationForCanvas2D();
+}
+
+bool Internals::isCanvasImageSourceAccelerated(
+    const CanvasImageSource* image_source) const {
+  return image_source->IsAccelerated();
 }
 
 String Internals::selectedHTMLForClipboard() {
@@ -3661,11 +3662,6 @@ bool Internals::setScrollbarVisibilityInScrollableArea(Node* node,
   if (ScrollableArea* scrollable_area = ScrollableAreaForNode(node)) {
     scrollable_area->SetScrollbarsHiddenForTesting(!visible);
 
-    if (MacScrollbarAnimator* scrollbar_animator =
-            scrollable_area->GetMacScrollbarAnimator()) {
-      scrollbar_animator->SetScrollbarsVisibleForTesting(visible);
-    }
-
     return scrollable_area->GetPageScrollbarTheme().UsesOverlayScrollbars();
   }
   return false;
@@ -3723,7 +3719,7 @@ bool Internals::isLowEndDevice() const {
 }
 
 Vector<String> Internals::supportedTextEncodingLabels() const {
-  return WTF::TextEncodingAliasesForTesting();
+  return TextEncodingAliasesForTesting();
 }
 
 void Internals::simulateRasterUnderInvalidations(bool enable) {

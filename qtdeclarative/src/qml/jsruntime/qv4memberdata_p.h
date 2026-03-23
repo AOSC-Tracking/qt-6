@@ -36,6 +36,7 @@ Q_STATIC_ASSERT(std::is_trivial_v<MemberData>);
 struct MemberData : Managed
 {
     V4_MANAGED(MemberData, Managed)
+    Q_MANAGED_TYPE(MemberData)
     V4_INTERNALCLASS(MemberData)
 
     const Value &operator[] (uint idx) const { return d()->values[idx]; }

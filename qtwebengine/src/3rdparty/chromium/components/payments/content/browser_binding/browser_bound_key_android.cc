@@ -6,16 +6,26 @@
 
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
-#include "components/payments/content/android/browser_binding_jni/BrowserBoundKey_jni.h"
+#include "base/check.h"
 #include "third_party/jni_zero/jni_zero.h"
+
+// Must come after all headers that sepcialize ToJniType()/FromJniType()
+#include "components/payments/content/android/spc/browser_binding_jni/BrowserBoundKey_jni.h"
 
 namespace payments {
 
 BrowserBoundKeyAndroid::BrowserBoundKeyAndroid(
-    jni_zero::ScopedJavaLocalRef<jobject> impl)
-    : impl_(impl) {}
+    const jni_zero::JavaRef<jobject>& impl)
+    : impl_(impl) {
+  CHECK(impl_);
+}
 
 BrowserBoundKeyAndroid::~BrowserBoundKeyAndroid() = default;
+
+std::vector<uint8_t> BrowserBoundKeyAndroid::GetIdentifier() const {
+  JNIEnv* env = jni_zero::AttachCurrentThread();
+  return Java_BrowserBoundKey_getIdentifier(env, impl_);
+}
 
 std::vector<uint8_t> BrowserBoundKeyAndroid::Sign(
     const std::vector<uint8_t>& client_data) {
@@ -30,7 +40,7 @@ std::vector<uint8_t> BrowserBoundKeyAndroid::Sign(
   return signature_output;
 }
 
-std::vector<uint8_t> BrowserBoundKeyAndroid::GetPublicKeyAsCoseKey() {
+std::vector<uint8_t> BrowserBoundKeyAndroid::GetPublicKeyAsCoseKey() const {
   JNIEnv* env = jni_zero::AttachCurrentThread();
   return Java_BrowserBoundKey_getPublicKeyAsCoseKey(env, impl_);
 }

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQUICKWORKERSCRIPT_P_H
 #define QQUICKWORKERSCRIPT_P_H
@@ -82,10 +83,12 @@ protected:
 
 private:
     QQuickWorkerScriptEngine *engine();
-    QQuickWorkerScriptEngine *m_engine;
-    int m_scriptId;
+
     QUrl m_source;
-    bool m_componentComplete;
+    QQuickWorkerScriptEngine *m_engine = nullptr;
+    int m_scriptId = -1;
+    bool m_componentComplete = true;
+    bool m_ready = false;
 };
 
 QT_END_NAMESPACE

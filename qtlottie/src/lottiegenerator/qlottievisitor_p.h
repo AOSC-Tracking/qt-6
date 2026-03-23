@@ -45,7 +45,11 @@ public:
     struct PaintInfo
     {
         QBrush fill = Qt::transparent;
+        QQuickAnimatedProperty::PropertyAnimation fillColorAnimation;
+        QQuickAnimatedProperty::PropertyAnimation fillOpacityAnimation;
         QPen stroke = QPen(Qt::transparent);
+        QQuickAnimatedProperty::PropertyAnimation strokeColorAnimation;
+        QQuickAnimatedProperty::PropertyAnimation strokeOpacityAnimation;
         qreal opacity = 1.0;
         Qt::FillRule fillRule = Qt::WindingFill;
         QPainterPath unitedPath;
@@ -92,21 +96,29 @@ public:
     void render(const QLottieTrimPath &trim) override;
     void render(const QLottieFillEffect &effect) override;
     void render(const QLottieRepeater &repeater) override;
+    void renderPathElements(const QList<QLottieBase *> &pathElements) override;
 
-    void fillCommonNodeInfo(const QLottieBase *node, NodeInfo *info);
+    void generateMatteNode(const QLottieLayer *layer, StructureNodeStage stage);
+    void fillCommonNodeInfo(const QLottieBase *node, NodeInfo *info, const QString &suffix = QString{});
     void fillAnimationNodeInfo(const QLottieBase *node, NodeInfo *info);
     void fillBasicPathInfo(const QLottieShape *strokeOrFill, PathNodeInfo *pathInfo);
     void fillLayerAnimationInfo(const QLottieLayer *node, NodeInfo *info);
+    void fillPathAnimationInfo(const QLottieShape *shape, PathNodeInfo *info);
 
 private:
     static bool nodeIsGraphicElement(const QLottieBase *node);
     static bool nodeIsShape(const QLottieBase *node);
     static bool hasAnimations(const QLottieBasicTransform *transform, bool isShapeTransform = false);
-    void processShape(const QLottieShape *shape);
+    void processPath(const QLottieShape *shape, const QPainterPath &path);
     void processShape(const QLottieShape *shape, const QPainterPath &path);
     void collectTransformAnimations(const QLottieBasicTransform *transform,
                                     bool isShapeTransform = false);
-    void enumerateLayerChildren(const QLottieBase *node);
+    QQuickAnimatedProperty::PropertyAnimation makeColorAnimation(const QLottieProperty4D<QVector4D> &colorProperty);
+    QQuickAnimatedProperty::PropertyAnimation makeOpacityAnimation(const QLottieProperty<qreal> &opacityProperty);
+
+    QString idForNode(const QLottieBase *node);
+    int timePointForFrame(qreal frameNo, bool doWrap = true) const;
+    QString scrub(const QString &raw);
 
     QString m_lottieFileName;
     QQuickGenerator *m_generator;
@@ -119,8 +131,10 @@ private:
     int m_duration = 1000;
     qreal m_frameOffset = 0;
 
-    QList<const QLottieBase *> m_layers;
     QStack<const QLottieBase *> m_currentStructElements;
+
+    int m_nodeIdCounter = 0;
+    QHash<const QLottieBase *, QString> m_idForNodeId;
 };
 
 QT_END_NAMESPACE

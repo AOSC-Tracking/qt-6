@@ -30,7 +30,7 @@ function(get_ios_target_triple_and_sysroot result arch)
     get_ios_sysroot(sysroot ${arch})
     set(${result}
         -target ${arch}-apple-ios${CMAKE_OSX_DEPLOYMENT_TARGET}
-        -isysroot ${sysroot} PARENT_SCOPE
+        -isysroot "${sysroot}" PARENT_SCOPE
     )
 endfunction()
 
@@ -244,7 +244,6 @@ endmacro()
 
 macro(append_build_type_setup)
     list(APPEND gnArgArg
-        use_ml=false
         init_stack_vars=false
         is_component_build=false
         is_shared=true
@@ -252,17 +251,43 @@ macro(append_build_type_setup)
         forbid_non_component_debug_builds=false
         treat_warnings_as_errors=false
         use_allocator_shim=false
-        use_freelist_dispatcher=false
+        use_ml=false
         use_partition_alloc=true
         use_partition_alloc_as_malloc=false
         use_custom_libcxx=false
         use_custom_libcxx_for_host=false
-        enable_rust=false # We do not yet support rust
-        enable_chromium_prelude=false
-        enable_rust_png=false
-        pdf_enable_fontations=false
-        assert_cpp20=false
+        enable_constraints=false
     )
+    if (QT_FEATURE_webengine_rust_build)
+      list(APPEND gnArgArg
+          enable_rust=true
+          enable_rust_cxx=true
+          enable_tetanus=false # assuming stable rust
+          enable_chromium_prelude=false)
+
+      get_filename_component(rustBasePath ${Rustc_EXECUTABLE} DIRECTORY)
+      get_filename_component(rustBasePath ${rustBasePath} DIRECTORY)
+      list(APPEND gnArgArg rust_bindgen_root="${rustBasePath}")
+      list(APPEND gnArgArg rust_sysroot_absolute="${rustBasePath}")
+      list(APPEND gnArgArg rustc_version="${Rust_VERSION}")
+
+      # adler2 known to be absent in 1.85 and present in 1.89
+      if("${Rust_VERSION}" VERSION_LESS "1.87.0")
+          list(APPEND gnArgArg use_adler2=false)
+          # v8_enable_temporal_support is known to build with 1.85 and not with 1.75
+          if("${Rust_VERSION}" VERSION_LESS "1.84.0")
+              list(APPEND gnArgArg v8_enable_temporal_support=false)
+          endif()
+      endif()
+    else()
+      list(APPEND gnArgArg
+          enable_rust=false
+          enable_rust_cxx=false
+          enable_rust_png=false
+          enable_chromium_prelude=false
+          pdf_enable_fontations=false)
+    endif()
+
     if(${config} STREQUAL "Debug")
         list(APPEND gnArgArg
             is_debug=true
@@ -314,6 +339,13 @@ macro(append_build_type_setup)
     #TODO: refactor to not check for IOS here
     if(NOT QT_FEATURE_webengine_full_debug_info AND NOT IOS)
         list(APPEND gnArgArg blink_symbol_level=0 v8_symbol_level=0)
+        if (MSVC AND NOT CLANG)
+            # We need these to keep the PDB size below the limit on MSVC builds
+            list(APPEND gnArgArg webrtc_symbol_level=0)
+            if (QT_FEATURE_webengine_rust_build)
+                list(APPEND gnArgArg rust_symbol_level=0)
+            endif()
+        endif()
     endif()
 
     extend_gn_list(gnArgArg ARGS use_jumbo_build CONDITION QT_FEATURE_webengine_jumbo_build)
@@ -326,7 +358,7 @@ macro(append_build_type_setup)
 
     extend_gn_list(gnArgArg
         ARGS enable_precompiled_headers
-        CONDITION BUILD_WITH_PCH AND NOT LINUX
+        CONDITION QT_FEATURE_webengine_precompiled_headers
     )
     extend_gn_list(gnArgArg
         ARGS dcheck_always_on
@@ -334,32 +366,14 @@ macro(append_build_type_setup)
     )
 endmacro()
 
-function(get_clang_version_from_runtime_path result)
-if(CLANG AND CMAKE_CXX_COMPILER)
-    if(NOT DEFINED CLANG_RUNTIME_PATH)
-        set(CLANG_PRINT_RUNTIME_DIR_COMMAND -print-runtime-dir)
-        if (MSVC)
-            # clang-cl does not accept the argument unless it's piped via /clang:
-            set(CLANG_PRINT_RUNTIME_DIR_COMMAND /clang:-print-runtime-dir)
-        endif()
-        execute_process(
-           COMMAND ${CMAKE_CXX_COMPILER} ${CLANG_PRINT_RUNTIME_DIR_COMMAND}
-           OUTPUT_VARIABLE clang_output
-           ERROR_QUIET
-           OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-        cmake_path(CONVERT "${clang_output}" TO_CMAKE_PATH_LIST clang_output NORMALIZE)
-        set(CLANG_RUNTIME_PATH "${clang_output}" CACHE INTERNAL "internal")
-        mark_as_advanced(CLANG_RUNTIME_PATH)
-     endif()
-     string(REGEX MATCH "\\/([0-9.]+)\\/" clang_run_time_path_version "${CLANG_RUNTIME_PATH}")
+function(get_clang_runtime_path_version result)
+     string(REGEX MATCH "\\/([0-9.]+)\\/" clang_run_time_path_version "${QWELibClang_RUNTIME_PATH}")
      if(clang_run_time_path_version)
          string(REPLACE "/" "" clang_run_time_path_version ${clang_run_time_path_version})
      else()
          string(REGEX MATCH "[0-9]+" clang_run_time_path_version ${CMAKE_CXX_COMPILER_VERSION})
      endif()
      set(${result} ${clang_run_time_path_version} PARENT_SCOPE)
-endif()
 endfunction()
 
 macro(append_compiler_linker_sdk_setup)
@@ -373,34 +387,28 @@ macro(append_compiler_linker_sdk_setup)
     extend_gn_list(gnArgArg ARGS is_gcc CONDITION LINUX AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 
     if(CLANG)
-        if(MACOS)
-            get_darwin_sdk_version(macSdkVersion)
-            # macOS needs to use the objcxx compiler as the cxx compiler is just a link
-            get_filename_component(clangBasePath ${CMAKE_OBJCXX_COMPILER} DIRECTORY)
-            get_filename_component(clangBasePath ${clangBasePath} DIRECTORY)
-        else()
-            get_filename_component(clangBasePath ${CMAKE_CXX_COMPILER} DIRECTORY)
-            get_filename_component(clangBasePath ${clangBasePath} DIRECTORY)
-        endif()
-            get_clang_version_from_runtime_path(clang_version)
-        if (NOT DEFINED clang_version)
+        get_clang_runtime_path_version(clang_runtime_path_version)
+        if (NOT DEFINED clang_runtime_path_version)
             message(FATAL_ERROR "Clang version for runtime is missing."
-                    "Please open bug report.Found clang runtime path: ${CLANG_RUNTIME_PATH}"
+                    "Please open bug report.Found clang runtime path: ${QWELibClang_RUNTIME_PATH}"
             )
         endif()
         list(APPEND gnArgArg
-            clang_base_path="${clangBasePath}"
-            clang_version="${clang_version}"
+            clang_base_path="${QWELibClang_BASE_PATH}"
+            clang_version="${clang_runtime_path_version}"
             clang_use_chrome_plugins=false
             fatal_linker_warnings=false
         )
 
         if(MACOS)
+            get_darwin_sdk_version(macSdkVersion)
             list(APPEND gnArgArg
                 use_system_xcode=true
+                enable_stripping=false
                 mac_deployment_target="${CMAKE_OSX_DEPLOYMENT_TARGET}"
                 mac_sdk_min="${macSdkVersion}"
                 use_libcxx=true
+                use_llvm_libatomic=false
             )
             _qt_internal_get_apple_sdk_version(apple_sdk_version)
             if (apple_sdk_version LESS 13.2)
@@ -408,37 +416,48 @@ macro(append_compiler_linker_sdk_setup)
                     use_sck=false
                 )
             endif()
-        endif()
-        if(IOS)
+        elseif(IOS)
             list(APPEND gnArgArg
                 use_system_xcode=true
                 enable_ios_bitcode=true
+                enable_stripping=false
                 ios_deployment_target="${CMAKE_OSX_DEPLOYMENT_TARGET}"
                 ios_enable_code_signing=false
                 use_libcxx=true
+                use_llvm_libatomic=false
             )
-        endif()
-        if(DEFINED QT_FEATURE_stdlib_libcpp AND LINUX)
-            extend_gn_list(gnArgArg ARGS use_libcxx
-                CONDITION QT_FEATURE_stdlib_libcpp
-            )
+        else()
+            extend_gn_list(gnArgArg
+                           ARGS use_libcxx use_llvm_libatomic
+                           CONDITION QT_FEATURE_stdlib_libcpp)
         endif()
         if(ANDROID)
             list(APPEND gnArgArg
                 android_ndk_root="${CMAKE_ANDROID_NDK}"
                 android_ndk_version="${CMAKE_ANDROID_NDK_VERSION}"
+                android_ndk_api_level=${ANDROID_NATIVE_API_LEVEL}
                 clang_use_default_sample_profile=false
-                #android_ndk_major_version=22
             )
         endif()
     else()
-        if(QT_FEATURE_use_lld_linker)
-            get_filename_component(clangBasePath ${CMAKE_LINKER} DIRECTORY)
-            get_filename_component(clangBasePath ${clangBasePath} DIRECTORY)
-            list(APPEND gnArgArg
-                clang_base_path="${clangBasePath}"
-                fatal_linker_warnings=false
-            )
+        if(QT_FEATURE_use_lld_linker OR QT_FEATURE_webengine_rust_build)
+            list(APPEND gnArgArg clang_base_path="${QWELibClang_BASE_PATH}")
+            if (QT_FEATURE_webengine_rust_build)
+                get_clang_runtime_path_version(clang_runtime_path_version)
+                list(APPEND gnArgArg clang_version="${clang_runtime_path_version}")
+            endif()
+            if(QT_FEATURE_use_lld_linker)
+                list(APPEND gnArgArg fatal_linker_warnings=false)
+            endif()
+        endif()
+        list(APPEND gnArgArg use_llvm_libatomic=false)
+    endif()
+    if(CLANG OR QT_FEATURE_webengine_rust_build)
+        list(APPEND gnArgArg libclang_path="${QWELibClang_LIBRARY_DIR}")
+
+        #TODO: This is Linux specific for now.
+        if(LINUX)
+            list(APPEND gnArgArg clang_resource_dir="${QWELibClang_RESOURCE_PATH}")
         endif()
     endif()
 

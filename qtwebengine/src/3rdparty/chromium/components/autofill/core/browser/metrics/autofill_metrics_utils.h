@@ -6,7 +6,7 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_AUTOFILL_METRICS_UTILS_H_
 
 #include "components/autofill/core/browser/autofill_field.h"
-#include "components/autofill/core/browser/data_model/autofill_profile.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 
@@ -44,7 +44,10 @@ enum class AutofillProfileRecordTypeCategory {
   kLocalOrSyncable = 0,
   kAccountChrome = 1,
   kAccountNonChrome = 2,
-  kMaxValue = kAccountNonChrome
+  kAccountHome = 3,
+  kAccountWork = 4,
+  kAccountNameEmail = 5,
+  kMaxValue = kAccountNameEmail
 };
 
 // Maps the `profile` to its category, depending on the profile's
@@ -75,7 +78,8 @@ enum class SettingsVisibleFieldTypeForMetrics {
   // kHonorificPrefix = 10,  // Deprecated in M123.
   kCompany = 11,
   kAdminLevel2 = 12,
-  kMaxValue = kAdminLevel2
+  kAlternativeName = 13,
+  kMaxValue = kAlternativeName
 };
 
 // Converts a server field type that can be edited in the settings to an enum
@@ -90,6 +94,11 @@ DenseSet<FormTypeNameForLogging> GetFormTypesForLogging(
 // Returns GetFormTypesForLogging() where entries need to correspond to
 // `FormType::kAddressForm`.
 DenseSet<FormTypeNameForLogging> GetAddressFormTypesForLogging(
+    const FormStructure& form);
+
+// Returns GetFormTypesForLogging() where entries need to correspond to
+// `FormType::kLoyaltyCardForm`.
+DenseSet<FormTypeNameForLogging> GetLoyaltyFormTypesForLogging(
     const FormStructure& form);
 
 // Returns GetFormTypesForLogging() where entries need to correspond to
@@ -123,6 +132,13 @@ int GetBucketForAcceptanceMetricsGroupedByFieldType(FieldType field_type,
 // `std::numeric_limits<int>::max()` in case `min_incompatible_sets` is empty.
 int GetDuplicationRank(
     base::span<const DifferingProfileWithTypeSet> min_incompatible_sets);
+
+// Returns 64-bit hash of the string of form global id, which consists of
+// |frame_token| and |renderer_id|.
+uint64_t FormGlobalIdToHash64Bit(const FormGlobalId& form_global_id);
+// Returns 64-bit hash of the string of field global id, which consists of
+// |frame_token| and |renderer_id|.
+uint64_t FieldGlobalIdToHash64Bit(const FieldGlobalId& field_global_id);
 
 }  // namespace autofill::autofill_metrics
 

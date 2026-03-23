@@ -56,7 +56,7 @@ void NotifyTimezoneChangeOnWorkerThread(WorkerThread* worker_thread) {
 String GetTimezoneId(const icu::TimeZone& timezone) {
   icu::UnicodeString unicode_timezone_id;
   timezone.getID(unicode_timezone_id);
-  return String(WTF::unicode::ToSpan(unicode_timezone_id));
+  return String(unicode::ToSpan(unicode_timezone_id));
 }
 
 String GetCurrentTimezoneId() {
@@ -224,11 +224,11 @@ void TimeZoneController::OnTimeZoneChange(const String& timezone_id) {
 }
 
 const String& TimeZoneController::GetHostTimezoneId() {
-  if (!host_timezone_id_.has_value()) {
+  if (host_timezone_id_.IsNull()) {
     CHECK(base::FeatureList::IsEnabled(kLazyBlinkTimezoneInit));
     host_timezone_id_ = GetCurrentTimezoneId();
   }
-  return host_timezone_id_.value();
+  return host_timezone_id_;
 }
 
 // static

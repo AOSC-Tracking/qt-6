@@ -7,11 +7,14 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <variant>
 
+#include "base/debug/crash_logging.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
@@ -124,8 +127,7 @@ class VideoFrameHandleReleaserImpl final
 MojoVideoDecoderService::MojoVideoDecoderService(
     MojoMediaClient* mojo_media_client,
     MojoCdmServiceContext* mojo_cdm_service_context,
-    mojo::PendingRemote<stable::mojom::StableVideoDecoder>
-        oop_video_decoder_pending_remote)
+    mojo::PendingRemote<mojom::VideoDecoder> oop_video_decoder_pending_remote)
     : mojo_media_client_(mojo_media_client),
       mojo_cdm_service_context_(mojo_cdm_service_context),
       oop_video_decoder_pending_remote_(
@@ -209,11 +211,35 @@ void MojoVideoDecoderService::Construct(
       target_color_space, std::move(oop_video_decoder_pending_remote_));
 }
 
-void MojoVideoDecoderService::Initialize(
-    const VideoDecoderConfig& config,
-    bool low_delay,
-    const std::optional<base::UnguessableToken>& cdm_id,
-    InitializeCallback callback) {
+void MojoVideoDecoderService::Initialize(const VideoDecoderConfig& config,
+                                         bool low_delay,
+                                         mojom::CdmPtr cdm,
+                                         InitializeCallback callback) {
+  // There are two cases:
+  //
+  // a) This MojoVideoDecoderService lives in the GPU process, in which case, it
+  //    receives messages from renderer processes. Such processes are not
+  //    supposed to use Initialize() with a cdm context. They should use
+  //    Initialize() with a cdm id.
+  //
+  // b) This MojoVideoDecoderService lives in the utility process, in which
+  //    case, it receives messages from the in-process OOPVideoDecoderService.
+  //    The latter handles the Initialize() calls with a cdm context and
+  //    transforms them into Initialize() calls with a cdm id.
+  //
+  // In either case, MojoVideoDecoderService is not supposed to handle
+  // Initialize() calls with a cdm context.
+  std::optional<base::UnguessableToken> cdm_id = std::nullopt;
+  if (cdm) {
+    if (!cdm->is_cdm_id()) {
+      CHECK(mojo::IsInMessageDispatch());
+      mojo::ReportBadMessage(
+          "Unexpected call to Initialize with a cdm context");
+      return;
+    }
+    cdm_id = cdm->get_cdm_id();
+  }
+
   DVLOG(1) << __func__ << " config = " << config.AsHumanReadableString()
            << ", cdm_id = "
            << CdmContext::CdmIdToString(base::OptionalToPtr(cdm_id));
@@ -369,12 +395,14 @@ void MojoVideoDecoderService::OnDecoderInitialized(DecoderStatus status) {
   if (!status.is_ok()) {
     std::move(init_cb_).Run(
         status, false, 1,
-        decoder_ ? decoder_->GetDecoderType() : VideoDecoderType::kUnknown);
+        decoder_ ? decoder_->GetDecoderType() : VideoDecoderType::kUnknown,
+        /*needs_transcryption=*/false);
     return;
   }
   std::move(init_cb_).Run(status, decoder_->NeedsBitstreamConversion(),
                           decoder_->GetMaxDecodeRequests(),
-                          decoder_->GetDecoderType());
+                          decoder_->GetDecoderType(),
+                          /*needs_transcryption=*/false);
 }
 
 void MojoVideoDecoderService::OnReaderRead(
@@ -396,7 +424,7 @@ void MojoVideoDecoderService::OnReaderRead(
   }
 
   if (buffer->end_of_stream() && buffer->next_config() &&
-      !absl::holds_alternative<VideoDecoderConfig>(*buffer->next_config())) {
+      !std::holds_alternative<VideoDecoderConfig>(*buffer->next_config())) {
     std::move(bad_message_callback)
         .Run("Invalid DecoderBuffer::next_config() for video.");
     return;

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickshadereffectsource_p.h"
 
@@ -580,7 +581,7 @@ void QQuickShaderEffectSource::setSamples(int count)
 }
 
 /*!
-    \qmlmethod QtQuick::ShaderEffectSource::scheduleUpdate()
+    \qmlmethod void QtQuick::ShaderEffectSource::scheduleUpdate()
 
     Schedules a re-rendering of the texture for the next frame.
     Use this to update the texture when \l live is false.
@@ -735,8 +736,14 @@ QSGNode *QQuickShaderEffectSource::updatePaintNode(QSGNode *oldNode, UpdatePaint
     node->setFiltering(filtering);
     node->setHorizontalWrapMode(hWrap);
     node->setVerticalWrapMode(vWrap);
-    node->setTargetRect(QRectF(0, 0, width(), height()));
-    node->setInnerTargetRect(QRectF(0, 0, width(), height()));
+
+    qreal dummy;
+    qreal fx = std::modf(x(), &dummy);
+    qreal fy = std::modf(y(), &dummy);
+    QRectF targetRect(0, 0, qCeil(fx) + qCeil(width()), qCeil(fy) + qCeil(height()));
+    node->setTargetRect(targetRect);
+    node->setInnerTargetRect(targetRect);
+
     node->update();
 
     return node;

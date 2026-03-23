@@ -1,7 +1,11 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qxyseriesanimation_p.h"
+
+QT_BEGIN_NAMESPACE
 
 /*!
     \qmltype XYSeriesAnimation
@@ -36,3 +40,7 @@ void QXYSeriesAnimation::updateCurrent(QGraphTransition::TransitionType tt, int 
     if (animating() == QGraphAnimation::AnimationState::Stopped)
         m_activePointIndex = index;
 }
+
+QT_END_NAMESPACE
+
+#include "moc_qxyseriesanimation_p.cpp"

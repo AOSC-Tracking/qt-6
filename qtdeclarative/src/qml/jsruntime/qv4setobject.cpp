@@ -1,5 +1,6 @@
 // Copyright (C) 2018 Crimson AS <info@crimson.no>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 
 #include "qv4setobject_p.h"
@@ -46,7 +47,7 @@ ReturnedValue WeakSetCtor::construct(const FunctionObject *f, const Value *argv,
             if (!iter)
                 return a.asReturnedValue();
 
-            Value *nextValue = scope.alloc(1);
+            Value *nextValue = scope.constructUndefined(1);
             ScopedValue done(scope);
             forever {
                 done = Runtime::IteratorNext::call(scope.engine, iter, nextValue);
@@ -258,7 +259,7 @@ ReturnedValue SetPrototype::method_forEach(const FunctionObject *b, const Value 
     ESTable::ShiftObserver observer{};
     that->d()->esTable->observeShifts(observer);
 
-    Value *arguments = scope.alloc(3);
+    Value *arguments = scope.constructUndefined(3);
     while (observer.pivot < that->d()->esTable->size()) {
         that->d()->esTable->iterate(observer.pivot, &arguments[0], &arguments[1]); // fill in key (0), value (1)
         arguments[1] = arguments[0]; // but for set, we want to return the key twice; value is always undefined.

@@ -8,7 +8,6 @@
 #include "include/v8config.h"
 #include "src/base/atomicops.h"
 #include "src/base/memory.h"
-#include "src/base/platform/mutex.h"
 #include "src/common/globals.h"
 #include "src/runtime/runtime.h"
 #include "src/sandbox/external-entity-table.h"
@@ -75,6 +74,18 @@ struct JSDispatchEntry {
   static constexpr uintptr_t kEntrypointOffset = 0;
   static constexpr uintptr_t kCodeObjectOffset = kSystemPointerSize;
   static constexpr size_t kParameterCountSize = 2;
+
+// On AIX and IBM i, mmap will give you back an address with the top bits set
+// unlike other platforms where the top bits are unset.
+// Therefore kObjectPointerOffset was introduced to ensure we account for
+// the top bits being set when performing pointer operations.
+#if defined(__PASE__)
+  static constexpr uintptr_t kObjectPointerOffset = 0x0700000000000000;
+#elif defined(_AIX)
+  static constexpr uintptr_t kObjectPointerOffset = 0x0a00000000000000;
+#else
+  static constexpr uintptr_t kObjectPointerOffset = 0;
+#endif
 
 #if defined(V8_TARGET_ARCH_64_BIT)
   // Freelist entries contain the index of the next free entry in their lower 32
@@ -174,9 +185,6 @@ class V8_EXPORT_PRIVATE JSDispatchTable
       ExternalEntityTable<JSDispatchEntry, kJSDispatchTableReservationSize>;
 
  public:
-  // Size of a JSDispatchTable, for layout computation in IsolateData.
-  static constexpr int kSize = 2 * kSystemPointerSize;
-
 #ifdef V8_ENABLE_SANDBOX
   static_assert(kMaxJSDispatchEntries == kMaxCapacity);
 #endif  // V8_ENABLE_SANDBOX
@@ -219,7 +227,7 @@ class V8_EXPORT_PRIVATE JSDispatchTable
   inline void SetCodeKeepTieringRequestNoWriteBarrier(JSDispatchHandle handle,
                                                       Tagged<Code> new_code);
   // Resets the entrypoint to the code's entrypoint.
-  inline void ResetTieringRequest(JSDispatchHandle handle, Isolate* isolate);
+  inline void ResetTieringRequest(JSDispatchHandle handle);
   // Check if and/or which tiering builtin is installed.
   inline bool IsTieringRequested(JSDispatchHandle handle);
   inline bool IsTieringRequested(JSDispatchHandle handle,
@@ -227,17 +235,18 @@ class V8_EXPORT_PRIVATE JSDispatchTable
 
   // Allocates a new entry in the table and initialize it.
   //
+  // Note: If possible allocate dispatch handles through the factory.
+  //
   // This method is atomic and can be called from background threads.
-  inline JSDispatchHandle AllocateAndInitializeEntry(Space* space,
-                                                     uint16_t parameter_count);
   inline JSDispatchHandle AllocateAndInitializeEntry(Space* space,
                                                      uint16_t parameter_count,
                                                      Tagged<Code> code);
+  inline std::optional<JSDispatchHandle> TryAllocateAndInitializeEntry(
+      Space* space, uint16_t parameter_count, Tagged<Code> code);
 
   // The following methods are used to pre allocate entries and then initialize
   // them later.
-  JSDispatchHandle PreAllocateEntries(Space* space, int num,
-                                      bool ensure_static_handles);
+  void PreAllocateEntries(Space* space, int num);
   bool PreAllocatedEntryNeedsInitialization(Space* space,
                                             JSDispatchHandle handle);
   void InitializePreAllocatedEntry(Space* space, JSDispatchHandle handle,
@@ -251,7 +260,7 @@ class V8_EXPORT_PRIVATE JSDispatchTable
   }
 #endif  // V8_STATIC_DISPATCH_HANDLES_BOOL
   static bool InReadOnlySegment(JSDispatchHandle handle) {
-    return HandleToIndex(handle) <= kEndOfInternalReadOnlySegment;
+    return HandleToIndex(handle) <= kEndOfReadOnlyIndex;
   }
   static int OffsetOfEntry(JSDispatchHandle handle) {
     return JSDispatchTable::HandleToIndex(handle)
@@ -322,7 +331,6 @@ class V8_EXPORT_PRIVATE JSDispatchTable
   friend class MarkCompactCollector;
 };
 
-static_assert(sizeof(JSDispatchTable) == JSDispatchTable::kSize);
 }  // namespace internal
 }  // namespace v8
 

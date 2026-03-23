@@ -9,7 +9,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
-#include "components/permissions/permission_context_base.h"
+#include "components/permissions/content_setting_permission_context_base.h"
 #include "components/permissions/permissions_client.h"
 #include "components/permissions/test/mock_permission_prompt_factory.h"
 #include "components/permissions/test/mock_permission_request.h"
@@ -21,9 +21,11 @@
 #include "content/public/test/render_frame_host_test_support.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_renderer_host.h"
+#include "services/network/public/cpp/permissions_policy/origin_with_possible_wildcards.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
+#include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-shared.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
-#include "third_party/blink/public/common/permissions_policy/origin_with_possible_wildcards.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom.h"
 #include "url/gurl.h"
 
@@ -269,11 +271,11 @@ TEST_F(PEPCInitiatedPermissionRequestTest,
   prompt_factory()->set_response_type(
       PermissionRequestManager::AutoResponseType::ACCEPT_ALL);
 
-  blink::ParsedPermissionsPolicy frame_policy;
+  network::ParsedPermissionsPolicy frame_policy;
   frame_policy.emplace_back(
       network::mojom::PermissionsPolicyFeature::kMicrophone,
       /*allowed_origins=*/
-      std::vector{*blink::OriginWithPossibleWildcards::FromOrigin(
+      std::vector{*network::OriginWithPossibleWildcards::FromOrigin(
           url::Origin::Create(origin()))},
       /*self_if_matches=*/std::nullopt, /*matches_all_origins=*/false,
       /*matches_opaque_src=*/false);
@@ -299,10 +301,10 @@ TEST_F(PEPCInitiatedPermissionRequestTest,
 
 TEST_F(PEPCInitiatedPermissionRequestTest,
        PEPCRequestBlockedWithoutFeaturePolicy) {
-  blink::ParsedPermissionsPolicy frame_policy;
+  network::ParsedPermissionsPolicy frame_policy;
   frame_policy.push_back({network::mojom::PermissionsPolicyFeature::kMicrophone,
                           /*allowed_origins=*/
-                          {*blink::OriginWithPossibleWildcards::FromOrigin(
+                          {*network::OriginWithPossibleWildcards::FromOrigin(
                               url::Origin::Create(GURL("http://fakeurl.com")))},
                           /*self_if_matches=*/std::nullopt,
                           /*matches_all_origins=*/false,
@@ -330,12 +332,14 @@ TEST_F(PEPCInitiatedPermissionRequestTest, PEPCRequestBlockedByKillSwitch) {
   std::map<std::string, std::string> params;
   params[permissions::PermissionUtil::GetPermissionString(
       ContentSettingsType::MEDIASTREAM_CAMERA)] =
-      PermissionContextBase::kPermissionsKillSwitchBlockedValue;
+      ContentSettingPermissionContextBase::kPermissionsKillSwitchBlockedValue;
   base::AssociateFieldTrialParams(
-      permissions::PermissionContextBase::kPermissionsKillSwitchFieldStudy,
+      permissions::ContentSettingPermissionContextBase::
+          kPermissionsKillSwitchFieldStudy,
       "TestGroup", params);
   base::FieldTrialList::CreateFieldTrial(
-      permissions::PermissionContextBase::kPermissionsKillSwitchFieldStudy,
+      permissions::ContentSettingPermissionContextBase::
+          kPermissionsKillSwitchFieldStudy,
       "TestGroup");
 
   // Attempt to make a PEPC request.

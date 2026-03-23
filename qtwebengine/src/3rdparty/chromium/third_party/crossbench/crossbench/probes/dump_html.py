@@ -5,11 +5,11 @@
 from __future__ import annotations
 
 import datetime as dt
-import os
-from typing import TYPE_CHECKING, List, Optional, Type
+from typing import TYPE_CHECKING, Optional, Self, Type
 
-from crossbench.probes.probe import Probe, ProbeConfigParser
-from crossbench.probes.probe_context import ProbeContext
+from typing_extensions import override
+
+from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
@@ -26,11 +26,13 @@ class DumpHtmlProbe(Probe):
   RESULT_LOCATION = ResultLocation.LOCAL
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     # TODO: support stop dumps
     return parser
 
+  @override
   def get_context_cls(self) -> Type[DumpHtmlProbeContext]:
     return DumpHtmlProbeContext
 
@@ -42,11 +44,12 @@ class DumpHtmlProbeContext(ProbeContext[DumpHtmlProbe]):
 
   def __init__(self, probe: DumpHtmlProbe, run: Run) -> None:
     super().__init__(probe, run)
-    self._results: List[AnyPath] = []
+    self._results: list[AnyPath] = []
 
+  @override
   def get_default_result_path(self) -> AnyPath:
     dump_dir = super().get_default_result_path()
-    os.mkdir(dump_dir)
+    self.host_platform.mkdir(dump_dir)
     return dump_dir
 
   def start(self) -> None:
@@ -61,10 +64,10 @@ class DumpHtmlProbeContext(ProbeContext[DumpHtmlProbe]):
     path = self.result_path / f"{label}.html"
     html = self.browser.js("return document.children[0].outerHTML",
                            dt.timedelta(seconds=10))
-    with open(path, "w", encoding="utf-8") as dump_file:
-      dump_file.write(html)
+    self.host_platform.write_text(path, html)
     self._results.append(path)
 
+  @override
   def teardown(self) -> ProbeResult:
     if not self.browser_platform.is_dir(self.result_path):
       return self.empty_result()

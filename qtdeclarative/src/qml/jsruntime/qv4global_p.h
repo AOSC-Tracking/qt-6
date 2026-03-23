@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QV4GLOBAL_H
 #define QV4GLOBAL_H
@@ -285,7 +286,7 @@ struct Q_QML_EXPORT StackFrame {
     int line = -1;
     int column = -1;
 };
-typedef QVector<StackFrame> StackTrace;
+typedef QList<StackFrame> StackTrace;
 
 namespace JIT {
 

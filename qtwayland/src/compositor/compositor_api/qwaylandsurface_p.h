@@ -87,6 +87,7 @@ protected:
     void surface_destroy_resource(Resource *resource) override;
 
     void surface_destroy(Resource *resource) override;
+    void surface_offset(Resource *resource, int32_t x, int32_t y) override;
     void surface_attach(Resource *resource,
                         struct wl_resource *buffer, int x, int y) override;
     void surface_damage(Resource *resource,
@@ -125,6 +126,7 @@ public: //member variables
         QRectF sourceGeometry;
         QSize destinationSize;
         QRegion opaqueRegion;
+        Qt::ScreenOrientation contentOrientation = Qt::PrimaryOrientation;
     } pending;
 
     QPoint lastLocalMousePos;

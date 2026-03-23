@@ -83,10 +83,8 @@ void QWaylandOutputPrivate::output_bind_resource(Resource *resource)
     for (const QWaylandOutputMode &mode : modes)
         sendMode(resource, mode);
 
-    if (resource->version() >= 2) {
-        send_scale(resource->handle, scaleFactor);
-        send_done(resource->handle);
-    }
+    maybeSendScale(resource, scaleFactor);
+    maybeSendDone(resource);
 }
 
 void QWaylandOutputPrivate::_q_handleMaybeWindowPixelSizeChanged()
@@ -123,8 +121,7 @@ void QWaylandOutputPrivate::sendGeometryInfo()
 {
     for (const Resource *resource : resourceMap().values()) {
         sendGeometry(resource);
-        if (resource->version() >= 2)
-            send_done(resource->handle);
+        maybeSendDone(resource);
     }
 }
 
@@ -146,29 +143,31 @@ void QWaylandOutputPrivate::sendModesInfo()
     for (const Resource *resource : resourceMap().values()) {
         for (const QWaylandOutputMode &mode : modes)
             sendMode(resource, mode);
-        if (resource->version() >= 2)
-            send_done(resource->handle);
+        maybeSendDone(resource);
     }
+}
+
+void QWaylandOutputPrivate::maybeSendDone(const Resource *resource)
+{
+    if (resource->version() >= 2)
+        send_done(resource->handle);
 }
 
 void QWaylandOutputPrivate::sendDone()
 {
     const auto values = resourceMap().values();
-    for (auto *resource : values) {
-        if (resource->version() >= 2)
-            send_done(resource->handle);
-    }
+    for (auto *resource : values)
+        maybeSendDone(resource);
 }
 
 void QWaylandOutputPrivate::handleWindowPixelSizeChanged()
 {
     Q_Q(QWaylandOutput);
     Q_ASSERT(window);
-    if (sizeFollowsWindow && currentMode <= modes.size() - 1) {
+    if (sizeFollowsWindow && currentMode < modes.size()) {
         if (currentMode >= 0) {
-            QWaylandOutputMode mode = modes.at(currentMode);
+            QWaylandOutputMode &mode = modes[currentMode];
             mode.setSize(windowPixelSize);
-            modes.replace(currentMode, mode);
             emit q->geometryChanged();
             if (!availableGeometry.isValid())
                 emit q->availableGeometryChanged();
@@ -207,7 +206,7 @@ void QWaylandOutputPrivate::removeView(QWaylandView *view, QWaylandSurface *surf
     for (int i = 0; i < surfaceViews.size(); i++) {
         if (surface == surfaceViews.at(i).surface) {
             bool removed = surfaceViews[i].views.removeOne(view);
-            if (surfaceViews.at(i).views.isEmpty() && removed) {
+            if (removed && surfaceViews.at(i).views.isEmpty()) {
                 if (surfaceViews.at(i).has_entered)
                     q->surfaceLeave(surface);
                 surfaceViews.remove(i);
@@ -278,6 +277,15 @@ QWaylandOutput::QWaylandOutput(QWaylandCompositor *compositor, QWindow *window)
 QWaylandOutput::~QWaylandOutput()
 {
     Q_D(QWaylandOutput);
+
+    const auto surfaceViews = d->surfaceViews; // intentional copy
+    for (const QWaylandSurfaceViewMapper &surfacemapper : surfaceViews) {
+        for (QWaylandView *view : surfacemapper.views) {
+            if (view->output() == this)
+                view->setOutput(nullptr);
+        }
+    }
+
     if (d->compositor)
         QWaylandCompositorPrivate::get(d->compositor)->removeOutput(this);
 }
@@ -366,6 +374,15 @@ void QWaylandOutput::update()
  *
  * \note This property can be set only once, before the WaylandOutput component
  * is completed.
+ */
+
+/*!
+ * \property QWaylandOutput::compositor
+ *
+ * This property holds the compositor displaying content on this QWaylandOutput.
+ *
+ * \note This property can be set only once, before the QWaylandOutput has been
+ *       initialized.
  */
 
 /*!
@@ -512,11 +529,14 @@ void QWaylandOutput::addMode(const QWaylandOutputMode &mode, bool preferred)
         return;
     }
 
-    if (d->modes.indexOf(mode) < 0)
+    int index = d->modes.indexOf(mode);
+    if (index < 0) {
         d->modes.append(mode);
+        index = d->modes.size() - 1;
+    }
 
     if (preferred)
-        d->preferredMode = d->modes.indexOf(mode);
+        d->preferredMode = index;
 
     emit modeAdded();
 }
@@ -532,9 +552,7 @@ QWaylandOutputMode QWaylandOutput::currentMode() const
 {
     Q_D(const QWaylandOutput);
 
-    if (d->currentMode >= 0 && d->currentMode <= d->modes.size() - 1)
-        return d->modes.at(d->currentMode);
-    return QWaylandOutputMode();
+    return d->modes.value(d->currentMode);
 }
 
 /*!
@@ -805,6 +823,13 @@ int QWaylandOutput::scaleFactor() const
     return d_func()->scaleFactor;
 }
 
+void QWaylandOutputPrivate::maybeSendScale(const Resource *resource,
+                                           int scale)
+{
+    if (resource->version() >= 2)
+        send_scale(resource->handle, scale);
+}
+
 void QWaylandOutput::setScaleFactor(int scale)
 {
     Q_D(QWaylandOutput);
@@ -815,10 +840,8 @@ void QWaylandOutput::setScaleFactor(int scale)
 
     const auto resMap = d->resourceMap();
     for (QWaylandOutputPrivate::Resource *resource : resMap) {
-        if (resource->version() >= 2) {
-            d->send_scale(resource->handle, scale);
-            d->send_done(resource->handle);
-        }
+        d->maybeSendScale(resource, scale);
+        d->maybeSendDone(resource);
     }
 
     Q_EMIT scaleFactorChanged();
@@ -900,10 +923,14 @@ void QWaylandOutput::setWindow(QWindow *window)
 void QWaylandOutput::frameStarted()
 {
     Q_D(QWaylandOutput);
-    for (int i = 0; i < d->surfaceViews.size(); i++) {
-        QWaylandSurfaceViewMapper &surfacemapper = d->surfaceViews[i];
-        if (surfacemapper.maybePrimaryView())
-            surfacemapper.surface->frameStarted();
+
+    d->canSendFrameCallbacks = true;
+
+    for (const QWaylandSurfaceViewMapper &surfacemapper : std::as_const(d->surfaceViews)) {
+        if (QWaylandView *primaryView = surfacemapper.maybePrimaryView()) {
+            if (Q_LIKELY(!QWaylandViewPrivate::get(primaryView)->independentFrameCallback))
+                surfacemapper.surface->frameStarted();
+        }
     }
 }
 
@@ -913,6 +940,12 @@ void QWaylandOutput::frameStarted()
 void QWaylandOutput::sendFrameCallbacks()
 {
     Q_D(QWaylandOutput);
+
+    if (Q_UNLIKELY(!d->canSendFrameCallbacks))
+        return;
+
+    d->canSendFrameCallbacks = false;
+
     for (int i = 0; i < d->surfaceViews.size(); i++) {
         const QWaylandSurfaceViewMapper &surfacemapper = d->surfaceViews.at(i);
         if (surfacemapper.surface && surfacemapper.surface->hasContent()) {

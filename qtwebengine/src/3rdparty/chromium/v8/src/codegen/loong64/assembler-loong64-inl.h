@@ -5,9 +5,11 @@
 #ifndef V8_CODEGEN_LOONG64_ASSEMBLER_LOONG64_INL_H_
 #define V8_CODEGEN_LOONG64_ASSEMBLER_LOONG64_INL_H_
 
+#include "src/codegen/loong64/assembler-loong64.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/codegen/assembler.h"
 #include "src/codegen/flush-instruction-cache.h"
-#include "src/codegen/loong64/assembler-loong64.h"
 #include "src/debug/debug.h"
 #include "src/heap/heap-layout-inl.h"
 #include "src/heap/heap-layout.h"
@@ -113,8 +115,7 @@ Tagged<HeapObject> RelocInfo::target_object(PtrComprCageBase cage_base) {
     Tagged_t compressed =
         Assembler::target_compressed_address_at(pc_, constant_pool_);
     DCHECK(!HAS_SMI_TAG(compressed));
-    Tagged<Object> obj(
-        V8HeapCompressionScheme::DecompressTagged(cage_base, compressed));
+    Tagged<Object> obj(V8HeapCompressionScheme::DecompressTagged(compressed));
     return Cast<HeapObject>(obj);
   } else {
     return Cast<HeapObject>(

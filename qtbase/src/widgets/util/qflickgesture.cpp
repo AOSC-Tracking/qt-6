@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qgesture.h"
 #include "qapplication.h"
@@ -292,6 +293,12 @@ QFlickGestureRecognizer::QFlickGestureRecognizer(Qt::MouseButton button)
     this->button = button;
 }
 
+/*!
+    \class QFlickGestureRecognizer
+    \inmodule QtWidgets
+    \internal
+*/
+
 /*! \reimp
  */
 QGesture *QFlickGestureRecognizer::create(QObject *target)
@@ -419,7 +426,7 @@ QGestureRecognizer::Result QFlickGestureRecognizer::recognize(QGesture *state,
     switch (event->type()) {
     case QEvent::MouseButtonPress:
         if (me && me->button() == button && me->buttons() == button) {
-            point = me->globalPosition().toPoint();
+            point = me->globalPosition();
             inputType = QScroller::InputPress;
         } else if (me) {
             scroller->stop();
@@ -428,13 +435,13 @@ QGestureRecognizer::Result QFlickGestureRecognizer::recognize(QGesture *state,
         break;
     case QEvent::MouseButtonRelease:
         if (me && me->button() == button) {
-            point = me->globalPosition().toPoint();
+            point = me->globalPosition();
             inputType = QScroller::InputRelease;
         }
         break;
     case QEvent::MouseMove:
         if (me && me->buttons() == button) {
-            point = me->globalPosition().toPoint();
+            point = me->globalPosition();
             inputType = QScroller::InputMove;
         }
         break;
@@ -526,7 +533,7 @@ QGestureRecognizer::Result QFlickGestureRecognizer::recognize(QGesture *state,
 
     if (inputType) {
         if (QWidget *w = qobject_cast<QWidget *>(d->receiver))
-            point = w->mapFromGlobal(point.toPoint());
+            point = w->mapFromGlobal(point);
 #if QT_CONFIG(graphicsview)
         else if (QGraphicsObject *go = qobject_cast<QGraphicsObject *>(d->receiver))
             point = go->mapFromScene(point);

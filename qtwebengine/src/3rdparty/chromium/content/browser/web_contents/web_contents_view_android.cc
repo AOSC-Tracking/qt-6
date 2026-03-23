@@ -8,15 +8,15 @@
 #include <optional>
 #include <utility>
 
-#include "base/android/build_info.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/check.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "cc/layers/layer.h"
 #include "cc/slim/layer.h"
+#include "components/input/features.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
 #include "content/browser/android/content_ui_event_handler.h"
 #include "content/browser/android/drop_data_android.h"
@@ -64,6 +64,9 @@ namespace content {
 
 namespace {
 
+WebContentsViewAndroid::RenderWidgetHostViewCreateFunction
+    g_create_render_widget_host_view = nullptr;
+
 // Returns the minimum distance in DIPs, for drag event being considered as an
 // intentional drag.
 int DragMovementThresholdDip() {
@@ -75,9 +78,9 @@ int DragMovementThresholdDip() {
 // compositor event queue.
 bool ShouldRequestUnbufferedDispatch() {
   static bool should_request_unbuffered_dispatch =
-      base::android::BuildInfo::GetInstance()->sdk_int() >=
-          base::android::SDK_VERSION_LOLLIPOP &&
-      !GetContentClient()->UsingSynchronousCompositing();
+      !GetContentClient()->UsingSynchronousCompositing() &&
+      !base::FeatureList::IsEnabled(
+          input::features::kUseAndroidBufferedInputDispatch);
   return should_request_unbuffered_dispatch;
 }
 
@@ -89,12 +92,7 @@ bool IsDragAndDropEnabled() {
 }
 
 bool IsDragEnabledForDropData(const DropData& drop_data) {
-  if (!IsDragAndDropEnabled()) {
-    return drop_data.text.has_value();
-  }
-  return !drop_data.url.is_empty() || !drop_data.file_contents.empty() ||
-         drop_data.text.has_value() ||
-         base::FeatureList::IsEnabled(features::kDragDropEmpty);
+  return IsDragAndDropEnabled() || drop_data.text.has_value();
 }
 }
 
@@ -122,6 +120,13 @@ std::unique_ptr<WebContentsView> CreateWebContentsView(
                                                      std::move(delegate));
   *render_view_host_delegate_view = rv.get();
   return rv;
+}
+
+// static
+void WebContentsViewAndroid::InstallCreateHookForTests(
+    RenderWidgetHostViewCreateFunction create_render_widget_host_view) {
+  CHECK_EQ(nullptr, g_create_render_widget_host_view);
+  g_create_render_widget_host_view = create_render_widget_host_view;
 }
 
 WebContentsViewAndroid::WebContentsViewAndroid(
@@ -243,8 +248,7 @@ void WebContentsViewAndroid::FocusThroughTabTraversal(bool reverse) {
 }
 
 DropData* WebContentsViewAndroid::GetDropData() const {
-  NOTIMPLEMENTED();
-  return NULL;
+  return drop_data_.get();
 }
 
 gfx::Rect WebContentsViewAndroid::GetViewBounds() const {
@@ -270,8 +274,11 @@ RenderWidgetHostViewBase* WebContentsViewAndroid::CreateViewForWidget(
   // native view (i.e. ContentView) how to obtain a reference to this widget in
   // order to paint it.
   RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(render_widget_host);
-  auto* rwhv = new RenderWidgetHostViewAndroid(
-      rwhi, &view_, parent_for_web_page_widgets_.get());
+  auto* rwhv = g_create_render_widget_host_view
+                   ? g_create_render_widget_host_view(
+                         rwhi, &view_, parent_for_web_page_widgets_.get())
+                   : new RenderWidgetHostViewAndroid(
+                         rwhi, &view_, parent_for_web_page_widgets_.get());
   rwhv->SetSynchronousCompositorClient(synchronous_compositor_client_);
   return rwhv;
 }
@@ -298,8 +305,10 @@ void WebContentsViewAndroid::RenderViewHostChanged(RenderViewHost* old_host,
   if (old_host) {
     auto* rwhv = old_host->GetWidget()->GetView();
     if (rwhv && rwhv->GetNativeView()) {
-      static_cast<RenderWidgetHostViewAndroid*>(rwhv)->UpdateNativeViewTree(
-          /*parent_native_view=*/nullptr, /*parent_layer=*/nullptr);
+      auto* rwhva = static_cast<RenderWidgetHostViewAndroid*>(rwhv);
+      rwhva->UpdateNativeViewTree(/*parent_native_view=*/nullptr,
+                                  /*parent_layer=*/nullptr);
+      rwhva->UpdateTooltip(std::u16string());
     }
   }
 
@@ -330,9 +339,6 @@ void WebContentsViewAndroid::FullscreenStateChanged(bool is_fullscreen) {
   if (is_fullscreen && select_popup_)
     select_popup_->HideMenu();
 }
-
-void WebContentsViewAndroid::UpdateWindowControlsOverlay(
-    const gfx::Rect& bounding_rect) {}
 
 BackForwardTransitionAnimationManager*
 WebContentsViewAndroid::GetBackForwardTransitionAnimationManager() {
@@ -475,9 +481,9 @@ bool WebContentsViewAndroid::OnDragEvent(const ui::DragEventAndroid& event) {
     case JNI_DragEvent::ACTION_DRAG_ENTERED: {
       drag_metadata_.clear();
       for (const std::u16string& mime_type : event.mime_types()) {
-        if (mime_type == base::ASCIIToUTF16(ui::kMimeTypeText) ||
-            mime_type == base::ASCIIToUTF16(ui::kMimeTypeHTML) ||
-            mime_type == base::ASCIIToUTF16(ui::kMimeTypeMozillaURL)) {
+        if (mime_type == ui::kMimeTypePlainText16 ||
+            mime_type == ui::kMimeTypeHtml16 ||
+            mime_type == ui::kMimeTypeMozillaUrl16) {
           drag_metadata_.push_back(DropData::Metadata::CreateForMimeType(
               DropData::Kind::STRING, mime_type));
         } else {
@@ -498,31 +504,30 @@ bool WebContentsViewAndroid::OnDragEvent(const ui::DragEventAndroid& event) {
       OnDragUpdated(event.location(), event.screen_location());
       break;
     case JNI_DragEvent::ACTION_DROP: {
-      auto drop_data = std::make_unique<DropData>();
-      drop_data->did_originate_from_renderer = false;
-      drop_data->document_is_handling_drag = document_is_handling_drag_;
+      drop_data_ = std::make_unique<DropData>();
+      drop_data_->did_originate_from_renderer = false;
+      drop_data_->document_is_handling_drag = document_is_handling_drag_;
       JNIEnv* env = AttachCurrentThread();
       std::vector<std::vector<std::string>> filenames;
       base::android::Java2dStringArrayTo2dStringVector(
           env, event.GetJavaFilenames(), &filenames);
       for (const auto& info : filenames) {
         CHECK_EQ(info.size(), 2u);
-        drop_data->filenames.push_back(
+        drop_data_->filenames.push_back(
             ui::FileInfo(base::FilePath(info[0]), base::FilePath(info[1])));
       }
       if (!event.GetJavaText().is_null()) {
-        drop_data->text = ConvertJavaStringToUTF16(env, event.GetJavaText());
+        drop_data_->text = ConvertJavaStringToUTF16(env, event.GetJavaText());
       }
       if (!event.GetJavaHtml().is_null()) {
-        drop_data->html = ConvertJavaStringToUTF16(env, event.GetJavaHtml());
+        drop_data_->html = ConvertJavaStringToUTF16(env, event.GetJavaHtml());
       }
       if (!event.GetJavaUrl().is_null()) {
-        drop_data->url =
+        drop_data_->url =
             GURL(ConvertJavaStringToUTF16(env, event.GetJavaUrl()));
       }
 
-      OnPerformDrop(std::move(drop_data), event.location(),
-                    event.screen_location());
+      OnPerformDrop(event.location(), event.screen_location());
       break;
     }
     case JNI_DragEvent::ACTION_DRAG_EXITED:
@@ -676,8 +681,7 @@ void WebContentsViewAndroid::OnDragExited() {
   }
 }
 
-void WebContentsViewAndroid::OnPerformDrop(std::unique_ptr<DropData> drop_data,
-                                           const gfx::PointF& location,
+void WebContentsViewAndroid::OnPerformDrop(const gfx::PointF& location,
                                            const gfx::PointF& screen_location) {
   if (drag_drop_oopif_enabled_) {
     web_contents_->GetRenderWidgetHostAtPointAsynchronously(
@@ -685,20 +689,19 @@ void WebContentsViewAndroid::OnPerformDrop(std::unique_ptr<DropData> drop_data,
             web_contents_->GetRenderWidgetHostView()),
         location,
         base::BindOnce(&WebContentsViewAndroid::PerformDropCallback,
-                       weak_ptr_factory_.GetWeakPtr(), std::move(drop_data),
-                       location, screen_location));
+                       weak_ptr_factory_.GetWeakPtr(), location,
+                       screen_location));
     return;
   }
 
   web_contents_->Focus();
   web_contents_->GetRenderViewHost()->GetWidget()->FilterDropData(
-      drop_data.get());
+      drop_data_.get());
   web_contents_->GetRenderViewHost()->GetWidget()->DragTargetDrop(
-      *drop_data, location, screen_location, 0, base::DoNothing());
+      *drop_data_, location, screen_location, 0, base::DoNothing());
 }
 
 void WebContentsViewAndroid::PerformDropCallback(
-    std::unique_ptr<DropData> drop_data,
     const gfx::PointF& location,
     const gfx::PointF& screen_location,
     base::WeakPtr<RenderWidgetHostViewBase> target,
@@ -721,8 +724,8 @@ void WebContentsViewAndroid::PerformDropCallback(
   }
 
   web_contents_->Focus();
-  target_rwh->FilterDropData(drop_data.get());
-  target_rwh->DragTargetDrop(*drop_data, *transformed_pt, screen_location, 0,
+  target_rwh->FilterDropData(drop_data_.get());
+  target_rwh->DragTargetDrop(*drop_data_, *transformed_pt, screen_location, 0,
                              base::DoNothing());
 }
 
@@ -916,6 +919,13 @@ void WebContentsViewAndroid::NotifyVirtualKeyboardOverlayRect(
   auto* rwhv = GetRenderWidgetHostViewAndroid();
   if (rwhv)
     rwhv->NotifyVirtualKeyboardOverlayRect(keyboard_rect);
+}
+
+void WebContentsViewAndroid::ShowInterestInElement(int nodeID) {
+  auto* rwhv = GetRenderWidgetHostViewAndroid();
+  if (rwhv) {
+    rwhv->ShowInterestInElement(nodeID);
+  }
 }
 
 } // namespace content

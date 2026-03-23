@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/partition_alloc_base/threading/platform_thread.h"
 
 #include <pthread.h>
@@ -20,7 +25,6 @@
 
 #if PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)
 #include <sys/syscall.h>
-
 #include <atomic>
 #endif
 
@@ -116,6 +120,8 @@ PlatformThreadId PlatformThread::CurrentId() {
   return gettid();
 #elif PA_BUILDFLAG(IS_FUCHSIA)
   return zx_thread_self();
+#elif PA_BUILDFLAG(IS_ASMJS)
+  return pthread_self();
 #elif PA_BUILDFLAG(IS_SOLARIS) || PA_BUILDFLAG(IS_QNX)
   return pthread_self();
 #elif PA_BUILDFLAG(IS_POSIX) && PA_BUILDFLAG(IS_AIX)

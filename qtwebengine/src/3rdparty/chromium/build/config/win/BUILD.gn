@@ -87,8 +87,8 @@ config("compiler") {
   # for precompiled headers where the same source file is compiled in both
   # modes.
   cflags_c = [ "/TC" ]
-  cflags_cc = [ "/TP" ]
 
+  cflags_cc = [ "/TP" ]
   if (is_msvc && !is_clang) {
     cflags += [
       "/Zc:preprocessor",
@@ -307,7 +307,7 @@ config("runtime_library") {
 # manually override this config for their compiles.
 config("winver") {
   defines = [
-    "NTDDI_VERSION=NTDDI_WIN10_NI",
+    "NTDDI_VERSION=NTDDI_WIN11_GE",
 
     # We can't say `=_WIN32_WINNT_WIN10` here because some files do
     # `#if WINVER < 0x0600` without including windows.h before,
@@ -445,6 +445,7 @@ config("delayloads") {
     "/DELAYLOAD:hid.dll",
     "/DELAYLOAD:imagehlp.dll",
     "/DELAYLOAD:imm32.dll",
+    "/DELAYLOAD:mmdevapi.dll",
     "/DELAYLOAD:msi.dll",
     "/DELAYLOAD:netapi32.dll",
     "/DELAYLOAD:ncrypt.dll",

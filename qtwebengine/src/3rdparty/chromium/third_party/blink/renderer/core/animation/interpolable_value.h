@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_ANIMATION_INTERPOLABLE_VALUE_H_
 
 #include <array>
+#include <concepts>
 #include <memory>
 #include <utility>
 
@@ -53,6 +54,12 @@ class CORE_EXPORT InterpolableValue
   virtual bool IsGridTrackSize() const { return false; }
   virtual bool IsFontPalette() const { return false; }
   virtual bool IsDynamicRangeLimit() const { return false; }
+  virtual bool IsGapLengthRepeater() const { return false; }
+  virtual bool IsGapColorRepeater() const { return false; }
+
+  bool IsGapDataRepeater() const {
+    return IsGapLengthRepeater() || IsGapColorRepeater();
+  }
 
   // TODO(alancutter): Remove Equals().
   virtual bool Equals(const InterpolableValue&) const = 0;
@@ -85,34 +92,9 @@ class CORE_EXPORT InterpolableValue
 };
 
 template <typename T>
-struct ThreadingTrait<
-    T,
-    std::enable_if_t<std::is_base_of_v<InterpolableValue, T>>> {
+  requires(std::derived_from<T, InterpolableValue>)
+struct ThreadingTrait<T> {
   static constexpr ThreadAffinity kAffinity = kMainThreadOnly;
-};
-
-class CORE_EXPORT InlinedInterpolableDouble final {
-  DISALLOW_NEW();
-
- public:
-  InlinedInterpolableDouble() = default;
-  explicit InlinedInterpolableDouble(double d) : value_(d) {}
-
-  double Value() const { return value_; }
-  void Set(double value) { value_ = value; }
-
-  double Interpolate(double to, const double progress) const;
-
-  void Scale(double scale) { value_ *= scale; }
-  void Add(double other) { value_ += other; }
-  void ScaleAndAdd(double scale, double other) {
-    value_ = value_ * scale + other;
-  }
-
-  void Trace(Visitor*) const {}
-
- private:
-  double value_ = 0.;
 };
 
 class CORE_EXPORT InterpolableNumber final : public InterpolableValue {
@@ -125,8 +107,10 @@ class CORE_EXPORT InterpolableNumber final : public InterpolableValue {
   explicit InterpolableNumber(const CSSPrimitiveValue& value);
 
   // TODO(crbug.com/1521261): Remove this, once the bug is fixed.
-  double Value() const { return value_.Value(); }
+  double Value() const { return value_; }
   double Value(const CSSLengthResolver& length_resolver) const;
+
+  static double Interpolate(double from, double to, double progress);
 
   // InterpolableValue
   void Interpolate(const InterpolableValue& to,
@@ -144,15 +128,13 @@ class CORE_EXPORT InterpolableNumber final : public InterpolableValue {
 
   void Trace(Visitor* v) const override {
     InterpolableValue::Trace(v);
-    v->Trace(value_);
     v->Trace(expression_);
   }
 
  private:
   InterpolableNumber* RawClone() const final {
     if (IsDoubleValue()) {
-      return MakeGarbageCollected<InterpolableNumber>(value_.Value(),
-                                                      unit_type_);
+      return MakeGarbageCollected<InterpolableNumber>(value_, unit_type_);
     }
     return MakeGarbageCollected<InterpolableNumber>(*expression_);
   }
@@ -172,7 +154,7 @@ class CORE_EXPORT InterpolableNumber final : public InterpolableValue {
 
   enum class Type { kDouble, kExpression };
   Type type_;
-  InlinedInterpolableDouble value_;
+  double value_;
   CSSPrimitiveValue::UnitType unit_type_;
   Member<const CSSMathExpressionNode> expression_;
 };

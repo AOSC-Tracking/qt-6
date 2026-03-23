@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_WASM_JUMP_TABLE_ASSEMBLER_H_
+#define V8_WASM_JUMP_TABLE_ASSEMBLER_H_
+
 #if !V8_ENABLE_WEBASSEMBLY
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
-
-#ifndef V8_WASM_JUMP_TABLE_ASSEMBLER_H_
-#define V8_WASM_JUMP_TABLE_ASSEMBLER_H_
 
 #include "src/codegen/flush-instruction-cache.h"
 #include "src/codegen/macro-assembler.h"
@@ -220,11 +220,6 @@ class V8_EXPORT_PRIVATE JumpTableAssembler {
   static constexpr int kJumpTableSlotSize = 1 * kInstrSize;
   static constexpr int kFarJumpTableSlotSize = 12 * kInstrSize;
   static constexpr int kLazyCompileTableSlotSize = 12 * kInstrSize;
-#elif V8_TARGET_ARCH_MIPS
-  static constexpr int kJumpTableLineSize = 8 * kInstrSize;
-  static constexpr int kJumpTableSlotSize = 8 * kInstrSize;
-  static constexpr int kFarJumpTableSlotSize = 4 * kInstrSize;
-  static constexpr int kLazyCompileTableSlotSize = 6 * kInstrSize;
 #elif V8_TARGET_ARCH_MIPS64
   static constexpr int kJumpTableLineSize = 8 * kInstrSize;
   static constexpr int kJumpTableSlotSize = 8 * kInstrSize;
@@ -236,7 +231,7 @@ class V8_EXPORT_PRIVATE JumpTableAssembler {
   static constexpr int kFarJumpTableSlotSize = 6 * kInstrSize;
   static constexpr int kLazyCompileTableSlotSize = 3 * kInstrSize;
 #elif V8_TARGET_ARCH_RISCV32
-  static constexpr int kJumpTableSlotSize = 5 * kInstrSize;
+  static constexpr int kJumpTableSlotSize = 4 * kInstrSize;
   static constexpr int kJumpTableLineSize = kJumpTableSlotSize;
   static constexpr int kFarJumpTableSlotSize = kJumpTableSlotSize;
   static constexpr int kLazyCompileTableSlotSize = 3 * kInstrSize;

@@ -5,14 +5,22 @@
 #include "ui/android/resources/etc1_utils.h"
 
 #include "base/files/file.h"
+#include "base/memory/aligned_memory.h"
 #include "base/numerics/byte_conversions.h"
+#include "skia/ext/skia_utils_base.h"
 #include "third_party/android_opengl/etc1/etc1.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkMallocPixelRef.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
-#include "ui/gfx/geometry/size.h"
+#include "ui/android/buildflags.h"
+#include "ui/android/ui_android_features.h"
 #include "ui/display/screen.h"
+#include "ui/gfx/geometry/size.h"
+
+#if BUILDFLAG(UI_ANDROID_ENABLE_NEW_TEXTURE_COMPRESSOR)
+#include "ui/android/texture_compressor/cxx.rs.h"
+#endif
 
 namespace ui {
 
@@ -93,6 +101,16 @@ gfx::Size GetETCEncodedSize(const gfx::Size& bitmap_size, bool supports_npot) {
   }
 }
 
+#if BUILDFLAG(UI_ANDROID_ENABLE_NEW_TEXTURE_COMPRESSOR)
+// Check that `data` is sufficiently aligned for `T` and cast it to a Rust slice
+// of `T`.
+template <typename T>
+rust::Slice<T> CastToAlignedSlice(void* data, size_t bytes) {
+  CHECK(base::IsAligned(data, alignof(T)));
+  return {reinterpret_cast<T*>(data), bytes / sizeof(T)};
+}
+#endif
+
 }  // namespace
 
 // static
@@ -116,6 +134,22 @@ sk_sp<SkPixelRef> Etc1::CompressBitmap(SkBitmap raw_data,
   sk_sp<SkData> etc1_pixel_data(SkData::MakeUninitialized(encoded_bytes));
   sk_sp<SkPixelRef> etc1_pixel_ref(SkMallocPixelRef::MakeWithData(
       info, ETC1RowBytes(encoded_size.width()), std::move(etc1_pixel_data)));
+
+#if BUILDFLAG(UI_ANDROID_ENABLE_NEW_TEXTURE_COMPRESSOR)
+  constexpr int kBlockSize = 4;
+  if (base::FeatureList::IsEnabled(kUseNewEtc1Encoder)) {
+    // We assume the input slice is aligned to 4 bytes, which seems to hold in
+    // practice.
+    compress_etc1(CastToAlignedSlice<const uint32_t>(
+                      raw_data.getPixels(), raw_data.computeByteSize()),
+                  CastToAlignedSlice<unsigned char>(etc1_pixel_ref->pixels(),
+                                                    encoded_bytes),
+                  raw_data.width(), raw_data.height(),
+                  raw_data.rowBytesAsPixels(),
+                  encoded_size.width() / kBlockSize);
+    return etc1_pixel_ref;
+  }
+#endif
 
   if (etc1_encode_image(
           reinterpret_cast<unsigned char*>(raw_data.getPixels()),
@@ -288,9 +322,8 @@ bool Etc1::ReadFromFile(base::File* file,
   int data_size = etc1_get_encoded_data_size(raw_width, raw_height);
   sk_sp<SkData> etc1_pixel_data(SkData::MakeUninitialized(data_size));
 
-  // SAFETY: buffer interacts with external API.
-  int pixel_bytes_read = UNSAFE_BUFFERS(file->ReadAtCurrentPos(
-    reinterpret_cast<char*>(etc1_pixel_data->writable_data()), data_size));
+  std::optional<size_t> pixel_bytes_read =
+      file->ReadAtCurrentPos(skia::as_writable_byte_span(*etc1_pixel_data));
 
   if (pixel_bytes_read != data_size) {
     return false;

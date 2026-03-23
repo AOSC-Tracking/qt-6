@@ -257,9 +257,7 @@ class QUICHE_EXPORT QuicUnackedPacketMap {
     return supports_multiple_packet_number_spaces_;
   }
 
-  void ReserveInitialCapacity(size_t initial_capacity) {
-    unacked_packets_.reserve(initial_capacity);
-  }
+  void ReserveInitialCapacity(size_t initial_capacity);
 
   std::string DebugString() const {
     return absl::StrCat(
@@ -269,10 +267,6 @@ class QUICHE_EXPORT QuicUnackedPacketMap {
         ", largest_acked: ", largest_acked_.ToString(),
         ", bytes_in_flight: ", bytes_in_flight_,
         ", packets_in_flight: ", packets_in_flight_, "}");
-  }
-
-  bool update_transmission_info_on_frame_acked() const {
-    return update_transmission_info_on_frame_acked_;
   }
 
  private:
@@ -348,9 +342,6 @@ class QUICHE_EXPORT QuicUnackedPacketMap {
 
   // Latched value of the quic_simple_inflight_time flag.
   bool simple_inflight_time_;
-
-  const bool update_transmission_info_on_frame_acked_ =
-      GetQuicReloadableFlag(quic_update_transmission_info_on_frame_acked);
 };
 
 }  // namespace quic

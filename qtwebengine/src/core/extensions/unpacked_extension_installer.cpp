@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "unpacked_extension_installer.h"
 
@@ -28,7 +29,7 @@ std::string generateRandomString(size_t length)
 }
 
 bool generateDirNameOnFileThread(const base::FilePath &baseDir,
-                                 base::FilePath::StringPieceType prefix, base::FilePath *out)
+                                 const base::FilePath::StringType &prefix, base::FilePath *out)
 {
     base::ScopedBlockingCall scoped_blocking_call(FROM_HERE, base::BlockingType::MAY_BLOCK);
     base::FilePath outPath;

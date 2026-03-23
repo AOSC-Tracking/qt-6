@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 #include <private/qspline3dseries_p.h>
 #include "qgraphs3dlogging_p.h"
 
@@ -82,8 +84,8 @@ QT_BEGIN_NAMESPACE
  */
 
 /*!
- * \qmlproperty int QSpline3DSeries::splineResolution
- * 
+ * \qmlproperty int Spline3DSeries::splineResolution
+ *
  * The resolution of the segments spline.
  * 
  * The number of vertices per spline segment,
@@ -363,3 +365,5 @@ QSpline3DSeriesPrivate::QSpline3DSeriesPrivate()
 QSpline3DSeriesPrivate::~QSpline3DSeriesPrivate() {}
 
 QT_END_NAMESPACE
+
+#include "moc_qspline3dseries.cpp"

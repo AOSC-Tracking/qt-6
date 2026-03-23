@@ -41,6 +41,18 @@ export class SubcaseBatchState {
    * @internal MAINTENANCE_TODO: Make this not visible to test code?
    */
   async finalize() {}
+
+  /** Throws an exception marking the subcase as skipped. */
+  skip(msg: string): never {
+    throw new SkipTestCase(msg);
+  }
+
+  /** Throws an exception making the subcase as skipped if condition is true */
+  skipIf(cond: boolean, msg: string | (() => string) = '') {
+    if (cond) {
+      this.skip(typeof msg === 'function' ? msg() : msg);
+    }
+  }
 }
 
 /**
@@ -189,7 +201,11 @@ export class Fixture<S extends SubcaseBatchState = SubcaseBatchState> {
   }
 
   /** Log a debug message. */
-  debug(msg: string): void {
+  debug(msg: string | (() => string)): void {
+    if (!this.rec.debugging) return;
+    if (typeof msg === 'function') {
+      msg = msg();
+    }
     this.rec.debug(new Error(msg));
   }
 
@@ -238,7 +254,7 @@ export class Fixture<S extends SubcaseBatchState = SubcaseBatchState> {
    * Wraps an async function, passing it an `Error` object recording the original stack trace.
    * The async work will be implicitly waited upon before reporting a test status.
    */
-  protected eventualAsyncExpectation<T>(fn: (niceStack: Error) => Promise<T>): void {
+  eventualAsyncExpectation<T>(fn: (niceStack: Error) => Promise<T>): void {
     const promise = fn(new Error());
     this.eventualExpectations.push(promise);
   }
@@ -334,8 +350,22 @@ export class Fixture<S extends SubcaseBatchState = SubcaseBatchState> {
     }
   }
 
-  /** Expect that a condition is true. */
-  expect(cond: boolean, msg?: string): boolean {
+  /**
+   * Expect that a condition is true.
+   *
+   * Note: You can pass a boolean condition, or a function that returns a boolean.
+   * The advantage to passing a function is that if it's short it is self documenting.
+   *
+   * t.expect(size >= maxSize);      // prints Expect OK:
+   * t.expect(() => size >= maxSize) // prints Expect OK: () => size >= maxSize
+   */
+  expect(cond: boolean | (() => boolean), msg?: string): boolean {
+    if (typeof cond === 'function') {
+      if (msg === undefined) {
+        msg = cond.toString();
+      }
+      cond = cond();
+    }
     if (cond) {
       const m = msg ? ': ' + msg : '';
       this.rec.debug(new Error('expect OK' + m));

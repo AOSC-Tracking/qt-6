@@ -22,10 +22,9 @@ class CSSShapeInterpolationType : public CSSInterpolationType {
                  const InterpolationValue&,
                  double interpolation_fraction) const final;
 
-  static CORE_EXPORT scoped_refptr<BasicShape> CreateShape(
-      const InterpolableValue&,
-      const NonInterpolableValue*,
-      const CSSToLengthConversionData&);
+  static CORE_EXPORT BasicShape* CreateShape(const InterpolableValue&,
+                                             const NonInterpolableValue*,
+                                             const CSSToLengthConversionData&);
 
  protected:
   InterpolationValue MaybeConvertNeutral(const InterpolationValue& underlying,
@@ -35,7 +34,7 @@ class CSSShapeInterpolationType : public CSSInterpolationType {
   InterpolationValue MaybeConvertInherit(const StyleResolverState&,
                                          ConversionCheckers&) const final;
   InterpolationValue MaybeConvertValue(const CSSValue&,
-                                       const StyleResolverState*,
+                                       const StyleResolverState&,
                                        ConversionCheckers&) const final;
   InterpolationValue MaybeConvertStandardPropertyUnderlyingValue(
       const ComputedStyle&) const final;

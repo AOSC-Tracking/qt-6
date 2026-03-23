@@ -24,13 +24,10 @@
 #include <string.h>
 
 #if defined(OPENSSL_WINDOWS)
-OPENSSL_MSVC_PRAGMA(warning(push, 3))
 #include <windows.h>
-OPENSSL_MSVC_PRAGMA(warning(pop))
 #endif
 
 #include <openssl/mem.h>
-#include <openssl/thread.h>
 
 #include "../internal.h"
 #include "./internal.h"

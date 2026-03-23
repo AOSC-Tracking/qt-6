@@ -490,7 +490,7 @@ void tst_QQuickLoader::networkComponent()
                         "Item {\n"
                         " Component { id: comp; NW.Rect120x60 {} }\n"
                         " Loader { sourceComponent: comp } }";
-    component.setData(qml.toUtf8(), dataDirectory());
+    component.setData(qml.toUtf8(), dataDirectoryUrl());
     // The component may be loaded synchronously or asynchronously, so we cannot test for
     // status == Loading here. Also, it makes no sense to instruct the server to send here
     // because in the synchronous case we're already done loading.
@@ -1249,9 +1249,9 @@ void tst_QQuickLoader::transientWindow() // QTBUG-52944
     QElapsedTimer timer;
     qint64 viewVisibleTime = -1;
     qint64 loadedWindowVisibleTime = -1;
-    connect(&view, &QWindow::visibleChanged,
+    connect(&view, &QWindow::visibleChanged, this,
             [&viewVisibleTime, &timer]() { viewVisibleTime = timer.elapsed(); } );
-    connect(loadedWindow, &QQuickWindowQmlImpl::visibilityChanged,
+    connect(loadedWindow, &QQuickWindowQmlImpl::visibilityChanged, this,
             [&loadedWindowVisibleTime, &timer]() { loadedWindowVisibleTime = timer.elapsed(); } );
     timer.start();
     view.show();
@@ -1290,9 +1290,9 @@ void tst_QQuickLoader::nestedTransientWindow() // QTBUG-52944
     QElapsedTimer timer;
     qint64 viewVisibleTime = -1;
     qint64 loadedWindowVisibleTime = -1;
-    connect(&view, &QWindow::visibleChanged,
+    connect(&view, &QWindow::visibleChanged, this,
             [&viewVisibleTime, &timer]() { viewVisibleTime = timer.elapsed(); } );
-    connect(loadedWindow, &QQuickWindowQmlImpl::visibilityChanged,
+    connect(loadedWindow, &QQuickWindowQmlImpl::visibilityChanged, this,
             [&loadedWindowVisibleTime, &timer]() { loadedWindowVisibleTime = timer.elapsed(); } );
     timer.start();
     view.show();

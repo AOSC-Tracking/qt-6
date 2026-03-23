@@ -25,7 +25,6 @@
 #include "base/strings/string_split.h"
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
-#include "build/chromeos_buildflags.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/config/gpu_switches.h"
@@ -37,8 +36,6 @@
 
 #if !BUILDFLAG(IS_MAC)
 #include "ui/gl/gl_fence_egl.h"
-#else
-#include "base/mac/mac_util.h"
 #endif
 
 namespace gpu {
@@ -73,7 +70,8 @@ class ScopedPixelUnpackBufferOverride {
 
 bool IsWebGLDrawBuffersSupported(bool webglCompatibilityContext,
                                  GLenum depth_texture_internal_format,
-                                 GLenum depth_stencil_texture_internal_format) {
+                                 GLenum depth_stencil_texture_internal_format,
+                                 GLuint complete_fbo_for_workarounds) {
   // This is called after we make sure GL_EXT_draw_buffers is supported.
   GLint max_draw_buffers = 0;
   GLint max_color_attachments = 0;
@@ -90,6 +88,9 @@ bool IsWebGLDrawBuffersSupported(bool webglCompatibilityContext,
 
   GLuint fbo;
   glGenFramebuffersEXT(1, &fbo);
+  if (complete_fbo_for_workarounds) {
+    glBindFramebufferEXT(GL_FRAMEBUFFER, complete_fbo_for_workarounds);
+  }
   glBindFramebufferEXT(GL_FRAMEBUFFER, fbo);
 
   GLuint depth_stencil_texture = 0;
@@ -166,6 +167,9 @@ bool IsWebGLDrawBuffersSupported(bool webglCompatibilityContext,
     }
   }
 
+  if (complete_fbo_for_workarounds) {
+    glBindFramebufferEXT(GL_FRAMEBUFFER, complete_fbo_for_workarounds);
+  }
   glBindFramebufferEXT(GL_FRAMEBUFFER, static_cast<GLuint>(fb_binding));
   glDeleteFramebuffersEXT(1, &fbo);
 
@@ -224,9 +228,10 @@ void FeatureInfo::InitializeBasicState(const base::CommandLine* command_line) {
   const auto useGL = command_line->GetSwitchValueASCII(switches::kUseGL);
   const auto useANGLE = command_line->GetSwitchValueASCII(switches::kUseANGLE);
 
-  feature_flags_.is_swiftshader_for_webgl =
+  feature_flags_.is_software_webgl =
       (useGL == gl::kGLImplementationANGLEName) &&
-      (useANGLE == gl::kANGLEImplementationSwiftShaderForWebGLName);
+      (useANGLE == gl::kANGLEImplementationSwiftShaderForWebGLName ||
+       useANGLE == gl::kANGLEImplementationD3D11WarpForWebGLName);
 
   // The shader translator is needed to translate from WebGL-conformant GLES SL
   // to normal GLES SL, enforce WebGL conformance, translate from GLES SL 1.0 to
@@ -241,6 +246,17 @@ void FeatureInfo::Initialize(ContextType context_type,
                              bool is_passthrough_cmd_decoder,
                              const DisallowedFeatures& disallowed_features,
                              bool force_reinitialize) {
+  InitializeWithCompleteFramebufferForWorkarounds(
+      context_type, is_passthrough_cmd_decoder, disallowed_features, 0,
+      force_reinitialize);
+}
+
+void FeatureInfo::InitializeWithCompleteFramebufferForWorkarounds(
+    ContextType context_type,
+    bool is_passthrough_cmd_decoder,
+    const DisallowedFeatures& disallowed_features,
+    unsigned complete_fbo_for_workarounds,
+    bool force_reinitialize) {
   if (initialized_) {
     DCHECK_EQ(context_type, context_type_);
     DCHECK_EQ(is_passthrough_cmd_decoder, is_passthrough_cmd_decoder_);
@@ -252,7 +268,8 @@ void FeatureInfo::Initialize(ContextType context_type,
   disallowed_features_ = disallowed_features;
   context_type_ = context_type;
   is_passthrough_cmd_decoder_ = is_passthrough_cmd_decoder;
-  InitializeFeatures();
+  InitializeFeatures(complete_fbo_for_workarounds);
+
   initialized_ = true;
 }
 
@@ -275,7 +292,7 @@ void FeatureInfo::InitializeForTesting(ContextType context_type) {
              DisallowedFeatures());
 }
 
-bool IsGL_REDSupportedOnFBOs() {
+bool IsGL_REDSupportedOnFBOs(uint32_t complete_fbo_for_workarounds) {
 #if BUILDFLAG(IS_MAC)
   // The glTexImage2D call below can hang on Mac so skip this since it's only
   // really needed to workaround a Mesa issue. See https://crbug.com/1158744.
@@ -309,6 +326,9 @@ bool IsGL_REDSupportedOnFBOs() {
                GL_UNSIGNED_BYTE, nullptr);
   GLuint textureFBOID = 0;
   glGenFramebuffersEXT(1, &textureFBOID);
+  if (complete_fbo_for_workarounds) {
+    glBindFramebufferEXT(GL_FRAMEBUFFER, complete_fbo_for_workarounds);
+  }
   glBindFramebufferEXT(GL_FRAMEBUFFER, textureFBOID);
   glFramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                             textureId, 0);
@@ -317,6 +337,9 @@ bool IsGL_REDSupportedOnFBOs() {
   glDeleteFramebuffersEXT(1, &textureFBOID);
   glDeleteTextures(1, &textureId);
 
+  if (complete_fbo_for_workarounds) {
+    glBindFramebufferEXT(GL_FRAMEBUFFER, complete_fbo_for_workarounds);
+  }
   glBindFramebufferEXT(GL_FRAMEBUFFER, static_cast<GLuint>(fb_binding));
   glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(tex_binding));
 
@@ -474,7 +497,7 @@ void FeatureInfo::EnableWEBGLMultiDrawIfPossible(
   }
 }
 
-void FeatureInfo::InitializeFeatures() {
+void FeatureInfo::InitializeFeatures(uint32_t complete_fbo_for_workarounds) {
   // Figure out what extensions to turn on.
   std::string extensions_string(gl::GetGLExtensionsFromCurrentContext());
   gfx::ExtensionSet extensions(gfx::MakeExtensionSet(extensions_string));
@@ -711,7 +734,7 @@ void FeatureInfo::InitializeFeatures() {
   //
   // Therefore we made up GL_GOOGLE_depth_texture / GL_CHROMIUM_depth_texture.
   //
-  // GL_GOOGLE_depth_texture is legacy. As we exposed it into NaCl we can't
+  // TODO:GL_GOOGLE_depth_texture was exposed into NaCl, we can now
   // get rid of it.
   //
   bool enable_depth_texture = false;
@@ -1036,9 +1059,9 @@ void FeatureInfo::InitializeFeatures() {
     }
     if (ext_has_multisample) {
       feature_flags_.chromium_framebuffer_multisample = true;
-      validators_.framebuffer_target.AddValue(GL_READ_FRAMEBUFFER_EXT);
-      validators_.framebuffer_target.AddValue(GL_DRAW_FRAMEBUFFER_EXT);
-      validators_.g_l_state.AddValue(GL_READ_FRAMEBUFFER_BINDING_EXT);
+      validators_.framebuffer_target.AddValue(GL_READ_FRAMEBUFFER);
+      validators_.framebuffer_target.AddValue(GL_DRAW_FRAMEBUFFER);
+      validators_.g_l_state.AddValue(GL_READ_FRAMEBUFFER_BINDING);
       validators_.g_l_state.AddValue(GL_MAX_SAMPLES_EXT);
       validators_.render_buffer_parameter.AddValue(GL_RENDERBUFFER_SAMPLES_EXT);
       AddExtensionString("GL_CHROMIUM_framebuffer_multisample");
@@ -1177,11 +1200,11 @@ void FeatureInfo::InitializeFeatures() {
     // Rectangle textures are used as samplers via glBindTexture, framebuffer
     // textures via glFramebufferTexture2D, and copy destinations via
     // glCopyPixels.
-    validators_.texture_bind_target.AddValue(GL_TEXTURE_RECTANGLE_ARB);
-    validators_.texture_fbo_target.AddValue(GL_TEXTURE_RECTANGLE_ARB);
-    validators_.texture_target.AddValue(GL_TEXTURE_RECTANGLE_ARB);
-    validators_.get_tex_param_target.AddValue(GL_TEXTURE_RECTANGLE_ARB);
-    validators_.g_l_state.AddValue(GL_TEXTURE_BINDING_RECTANGLE_ARB);
+    validators_.texture_bind_target.AddValue(GL_TEXTURE_RECTANGLE_ANGLE);
+    validators_.texture_fbo_target.AddValue(GL_TEXTURE_RECTANGLE_ANGLE);
+    validators_.texture_target.AddValue(GL_TEXTURE_RECTANGLE_ANGLE);
+    validators_.get_tex_param_target.AddValue(GL_TEXTURE_RECTANGLE_ANGLE);
+    validators_.g_l_state.AddValue(GL_TEXTURE_BINDING_RECTANGLE_ANGLE);
   }
 
   if (feature_flags_.chromium_image_ycbcr_420v) {
@@ -1225,10 +1248,8 @@ void FeatureInfo::InitializeFeatures() {
 
 #if BUILDFLAG(IS_MAC)
   feature_flags_.gpu_memory_buffer_formats.Put(gfx::BufferFormat::RGBA_F16);
-  if (base::mac::MacOSMajorVersion() >= 11) {
-    feature_flags_.gpu_memory_buffer_formats.Put(
-        gfx::BufferFormat::YUVA_420_TRIPLANAR);
-  }
+  feature_flags_.gpu_memory_buffer_formats.Put(
+      gfx::BufferFormat::YUVA_420_TRIPLANAR);
 #endif  // BUILDFLAG(IS_MAC)
 
   // TODO(gman): Add support for these extensions.
@@ -1265,9 +1286,9 @@ void FeatureInfo::InitializeFeatures() {
        can_emulate_es2_draw_buffers_on_es3_nv) &&
       (context_type_ == CONTEXT_TYPE_OPENGLES2 ||
        (context_type_ == CONTEXT_TYPE_WEBGL1 &&
-        IsWebGLDrawBuffersSupported(is_webgl_compatibility_context,
-                                    depth_texture_format,
-                                    depth_stencil_texture_format)));
+        IsWebGLDrawBuffersSupported(
+            is_webgl_compatibility_context, depth_texture_format,
+            depth_stencil_texture_format, complete_fbo_for_workarounds)));
   if (have_es2_draw_buffers) {
     AddExtensionString("GL_EXT_draw_buffers");
     feature_flags_.ext_draw_buffers = true;
@@ -1297,11 +1318,11 @@ void FeatureInfo::InitializeFeatures() {
                   "GL_COLOR_ATTACHMENT0_EXT should equal GL_COLOR_ATTACHMENT0");
 
     validators_.g_l_state.AddValue(GL_MAX_COLOR_ATTACHMENTS_EXT);
-    validators_.g_l_state.AddValue(GL_MAX_DRAW_BUFFERS_ARB);
+    validators_.g_l_state.AddValue(GL_MAX_DRAW_BUFFERS);
     GLint max_draw_buffers = 0;
-    glGetIntegerv(GL_MAX_DRAW_BUFFERS_ARB, &max_draw_buffers);
-    for (GLenum i = GL_DRAW_BUFFER0_ARB;
-         i < static_cast<GLenum>(GL_DRAW_BUFFER0_ARB + max_draw_buffers); ++i) {
+    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &max_draw_buffers);
+    for (GLenum i = GL_DRAW_BUFFER0;
+         i < static_cast<GLenum>(GL_DRAW_BUFFER0 + max_draw_buffers); ++i) {
       validators_.g_l_state.AddValue(i);
     }
   }
@@ -1388,7 +1409,7 @@ void FeatureInfo::InitializeFeatures() {
 
   if ((gl_version_info_->is_es3 ||
        gfx::HasExtension(extensions, "GL_EXT_texture_rg")) &&
-      IsGL_REDSupportedOnFBOs()) {
+      IsGL_REDSupportedOnFBOs(complete_fbo_for_workarounds)) {
     feature_flags_.ext_texture_rg = true;
     AddExtensionString("GL_EXT_texture_rg");
 
@@ -1855,10 +1876,8 @@ void FeatureInfo::InitializeFloatAndHalfFloatFeatures(
           EnableCHROMIUMColorBufferFloatRGB();
       }
     } else {
-      static_assert(
-          GL_RGBA32F_ARB == GL_RGBA32F && GL_RGBA32F_EXT == GL_RGBA32F &&
-              GL_RGB32F_ARB == GL_RGB32F && GL_RGB32F_EXT == GL_RGB32F,
-          "sized float internal format variations must match");
+      static_assert(GL_RGBA32F_EXT == GL_RGBA32F && GL_RGB32F_EXT == GL_RGB32F,
+                    "sized float internal format variations must match");
       // We don't check extension support beyond ARB_texture_float on desktop
       // GL, and format support varies between GL configurations. For example,
       // spec prior to OpenGL 3.0 mandates framebuffer support only for one

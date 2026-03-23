@@ -41,6 +41,19 @@ QWaylandDrag::QWaylandDrag(QWaylandSeat *seat)
 {
 }
 
+/*!
+ * \qmlproperty WaylandSurface QtWayland.Compositor::WaylandDrag::icon
+ *
+ * This property holds the surface representing the icon of the drag operation,
+ * or \c null if no icon has been set.
+ */
+
+/*!
+ * \property QWaylandDrag::icon
+ *
+ * This property holds the surface representing the icon of the drag operation,
+ * or \nullptr if no icon has been set.
+ */
 QWaylandSurface *QWaylandDrag::icon() const
 {
     Q_D(const QWaylandDrag);
@@ -65,7 +78,23 @@ QWaylandSeat *QWaylandDrag::seat() const
     return d->seat;
 }
 
+/*!
+ * \qmlproperty bool QtWayland.Compositor::WaylandDrag::visible
+ *
+ * This property holds whether the drag operation has an icon.
+ *
+ * The value is \c true if an icon has been set for the drag operation;
+ * otherwise \c false.
+ */
 
+/*!
+ * \property QWaylandDrag::visible
+ *
+ * This property holds whether the drag operation has an icon.
+ *
+ * The value is \c true if an icon has been set for the drag operation;
+ * otherwise \c false.
+ */
 bool QWaylandDrag::visible() const
 {
     Q_D(const QWaylandDrag);

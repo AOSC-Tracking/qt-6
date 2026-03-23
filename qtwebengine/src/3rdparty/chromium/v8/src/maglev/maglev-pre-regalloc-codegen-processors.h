@@ -5,18 +5,48 @@
 #ifndef V8_MAGLEV_MAGLEV_PRE_REGALLOC_CODEGEN_PROCESSORS_H_
 #define V8_MAGLEV_MAGLEV_PRE_REGALLOC_CODEGEN_PROCESSORS_H_
 
+#include <type_traits>
+
+#include "src/base/logging.h"
 #include "src/codegen/register-configuration.h"
 #include "src/maglev/maglev-compilation-info.h"
 #include "src/maglev/maglev-graph-processor.h"
 #include "src/maglev/maglev-graph.h"
 #include "src/maglev/maglev-ir.h"
+#include "src/maglev/maglev-regalloc.h"
 
 namespace v8::internal::maglev {
+
+class RegallocNodeInfoAllocationProcessor {
+ public:
+  void PreProcessGraph(Graph* graph) { zone_ = graph->zone(); }
+  void PostProcessGraph(Graph* graph) {}
+  void PostProcessBasicBlock(BasicBlock* block) {}
+  BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
+    return BlockProcessResult::kContinue;
+  }
+  void PostPhiProcessing() {}
+
+  ProcessResult Process(ValueNode* node, const ProcessingState& state) {
+    node->set_regalloc_info(
+        zone_->New<RegallocValueNodeInfo>(node->GetMachineRepresentation()));
+    return ProcessResult::kContinue;
+  }
+
+  ProcessResult Process(NodeBase* node, const ProcessingState& state) {
+    node->set_regalloc_info(zone_->New<RegallocNodeInfo>());
+    return ProcessResult::kContinue;
+  }
+
+ private:
+  Zone* zone_;
+};
 
 class ValueLocationConstraintProcessor {
  public:
   void PreProcessGraph(Graph* graph) {}
   void PostProcessGraph(Graph* graph) {}
+  void PostProcessBasicBlock(BasicBlock* block) {}
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
     return BlockProcessResult::kContinue;
   }
@@ -24,7 +54,6 @@ class ValueLocationConstraintProcessor {
 
 #define DEF_PROCESS_NODE(NAME)                                      \
   ProcessResult Process(NAME* node, const ProcessingState& state) { \
-    node->InitTemporaries();                                        \
     node->SetValueLocationConstraints();                            \
     return ProcessResult::kContinue;                                \
   }
@@ -36,6 +65,7 @@ class DecompressedUseMarkingProcessor {
  public:
   void PreProcessGraph(Graph* graph) {}
   void PostProcessGraph(Graph* graph) {}
+  void PostProcessBasicBlock(BasicBlock* block) {}
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
     return BlockProcessResult::kContinue;
   }
@@ -57,6 +87,7 @@ class MaxCallDepthProcessor {
     graph->set_max_call_stack_args(max_call_stack_args_);
     graph->set_max_deopted_stack_size(max_deopted_stack_size_);
   }
+  void PostProcessBasicBlock(BasicBlock* block) {}
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
     return BlockProcessResult::kContinue;
   }
@@ -142,11 +173,15 @@ class MaxCallDepthProcessor {
 
 class LiveRangeAndNextUseProcessor {
  public:
-  explicit LiveRangeAndNextUseProcessor(MaglevCompilationInfo* compilation_info)
-      : compilation_info_(compilation_info) {}
+  explicit LiveRangeAndNextUseProcessor(MaglevCompilationInfo* compilation_info,
+                                        Graph* graph,
+                                        RegallocBlockInfo* regalloc_block_info)
+      : compilation_info_(compilation_info),
+        regalloc_block_info_(regalloc_block_info) {}
 
   void PreProcessGraph(Graph* graph) {}
   void PostProcessGraph(Graph* graph) { DCHECK(loop_used_nodes_.empty()); }
+  void PostProcessBasicBlock(BasicBlock* block) {}
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
     if (!block->has_state()) return BlockProcessResult::kContinue;
     if (block->state()->is_loop()) {
@@ -159,7 +194,7 @@ class LiveRangeAndNextUseProcessor {
 
   template <typename NodeT>
   ProcessResult Process(NodeT* node, const ProcessingState& state) {
-    node->set_id(next_node_id_++);
+    node->regalloc_info()->set_id(next_node_id_++);
     LoopUsedNodes* loop_used_nodes = GetCurrentLoopUsedNodes();
     if (loop_used_nodes && node->properties().is_call() &&
         loop_used_nodes->header->has_state()) {
@@ -207,6 +242,7 @@ class LiveRangeAndNextUseProcessor {
     DCHECK(!loop_used_nodes_.empty());
     LoopUsedNodes loop_used_nodes = std::move(loop_used_nodes_.back());
     loop_used_nodes_.pop_back();
+    DCHECK_EQ(loop_used_nodes.header, target);
 
     LoopUsedNodes* outer_loop_used_nodes = GetCurrentLoopUsedNodes();
 
@@ -222,10 +258,10 @@ class LiveRangeAndNextUseProcessor {
     if (!loop_used_nodes.used_nodes.empty()) {
       // Try to avoid unnecessary reloads or spills across the back-edge based
       // on use positions and calls inside the loop.
-      ZonePtrList<ValueNode>& reload_hints =
-          loop_used_nodes.header->reload_hints();
-      ZonePtrList<ValueNode>& spill_hints =
-          loop_used_nodes.header->spill_hints();
+      RegallocBlockInfo::RegallocLoopInfo& loop_info =
+          regalloc_block_info_->loop_info_
+              .emplace(loop_used_nodes.header->id(), compilation_info_->zone())
+              .first->second;
       for (auto p : loop_used_nodes.used_nodes) {
         // If the node is used before the first call and after the last call,
         // keep it in a register across the back-edge.
@@ -233,7 +269,7 @@ class LiveRangeAndNextUseProcessor {
             (loop_used_nodes.first_call == kInvalidNodeId ||
              (p.second.first_register_use <= loop_used_nodes.first_call &&
               p.second.last_register_use > loop_used_nodes.last_call))) {
-          reload_hints.Add(p.first, compilation_info_->zone());
+          loop_info.reload_hints_.Add(p.first, compilation_info_->zone());
         }
         // If the node is not used, or used after the first call and before the
         // last call, keep it spilled across the back-edge.
@@ -241,7 +277,7 @@ class LiveRangeAndNextUseProcessor {
             (loop_used_nodes.first_call != kInvalidNodeId &&
              p.second.first_register_use > loop_used_nodes.first_call &&
              p.second.last_register_use <= loop_used_nodes.last_call)) {
-          spill_hints.Add(p.first, compilation_info_->zone());
+          loop_info.spill_hints_.Add(p.first, compilation_info_->zone());
         }
       }
 
@@ -310,8 +346,8 @@ class LiveRangeAndNextUseProcessor {
   void MarkUse(ValueNode* node, uint32_t use_id, InputLocation* input,
                LoopUsedNodes* loop_used_nodes) {
     DCHECK(!node->Is<Identity>());
-
-    node->record_next_use(use_id, input);
+    DCHECK_NOT_NULL(node->regalloc_info());
+    node->regalloc_info()->record_next_use(use_id, input);
 
     // If we are in a loop, loop_used_nodes is non-null. In this case, check if
     // the incoming node is from outside the loop, and make sure to extend its
@@ -339,28 +375,29 @@ class LiveRangeAndNextUseProcessor {
     }
   }
 
-  void MarkCheckpointNodes(NodeBase* node, EagerDeoptInfo* deopt_info,
+  template <typename DeoptInfoT>
+  void MarkCheckpointNodes(NodeBase* node, DeoptInfoT* deopt_info,
                            LoopUsedNodes* loop_used_nodes,
                            const ProcessingState& state) {
     int use_id = node->id();
-    detail::DeepForEachInputRemovingIdentities(
-        deopt_info, [&](ValueNode* node, InputLocation* input) {
-          MarkUse(node, use_id, input, loop_used_nodes);
-        });
-  }
-  void MarkCheckpointNodes(NodeBase* node, LazyDeoptInfo* deopt_info,
-                           LoopUsedNodes* loop_used_nodes,
-                           const ProcessingState& state) {
-    int use_id = node->id();
-    detail::DeepForEachInputRemovingIdentities(
-        deopt_info, [&](ValueNode* node, InputLocation* input) {
-          MarkUse(node, use_id, input, loop_used_nodes);
-        });
+    if (!deopt_info->has_input_locations()) {
+      size_t count = 0;
+      deopt_info->ForEachInput([&](ValueNode*) { count++; });
+      deopt_info->InitializeInputLocations(compilation_info_->zone(), count);
+    }
+    InputLocation* input = deopt_info->input_locations();
+    deopt_info->ForEachInput([&](ValueNode* node) {
+      MarkUse(node, use_id, input, loop_used_nodes);
+      input++;
+    });
   }
 
+  Zone* zone() { return compilation_info_->zone(); }
+
   MaglevCompilationInfo* compilation_info_;
-  uint32_t next_node_id_ = kFirstValidNodeId;
+  RegallocBlockInfo* regalloc_block_info_;
   std::vector<LoopUsedNodes> loop_used_nodes_;
+  uint32_t next_node_id_ = kFirstValidNodeId;
 };
 
 }  // namespace v8::internal::maglev

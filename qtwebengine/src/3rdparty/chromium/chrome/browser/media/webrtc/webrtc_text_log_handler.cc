@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "chrome/browser/media/webrtc/webrtc_text_log_handler.h"
 
@@ -30,7 +26,6 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/media/audio_service_util.h"
 #endif
@@ -66,7 +61,7 @@
 #include "base/mac/mac_util.h"
 #endif
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 #include "chromeos/ash/components/system/statistics_provider.h"
 #endif
 
@@ -514,7 +509,7 @@ void WebRtcTextLogHandler::OnGetNetworkInterfaceListFinish(
   std::string computer_model = "Not available";
 #if BUILDFLAG(IS_MAC)
   computer_model = base::SysInfo::HardwareModelName();
-#elif BUILDFLAG(IS_CHROMEOS_ASH)
+#elif BUILDFLAG(IS_CHROMEOS)
   if (const std::optional<std::string_view> computer_model_statistic =
           ash::system::StatisticsProvider::GetInstance()->GetMachineStatistic(
               ash::system::kHardwareClassKey)) {

@@ -5,15 +5,21 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, List, Optional, Type
+import logging
+from typing import TYPE_CHECKING, Type
+
+from typing_extensions import override
 
 from crossbench.probes.internal.base import (InternalJsonResultProbe,
                                              InternalJsonResultProbeContext)
-from crossbench.probes.results import ProbeResult
+from crossbench.probes.results import EmptyProbeResult
 
 if TYPE_CHECKING:
+  from crossbench.probes.results import ProbeResult
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups.browsers import BrowsersRunGroup
+  from crossbench.runner.groups.cache_temperatures import \
+      CacheTemperaturesRunGroup
   from crossbench.runner.groups.repetitions import RepetitionsRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.types import Json, JsonDict
@@ -30,14 +36,26 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
   PRODUCES_DATA = False
 
   @property
+  @override
   def is_attached(self) -> bool:
     return True
 
-  def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
-    repetitions: List[JsonDict] = []
-    browser: Optional[JsonDict] = None
+  @override
+  def merge_cache_temperatures(self,
+                               group: CacheTemperaturesRunGroup) -> ProbeResult:
+    # If session setup failed, the results will not have been initialized.
+    return group.first_run.results.get(self, EmptyProbeResult())
 
+  @override
+  def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
+    repetitions: list[JsonDict] = []
+    browser: JsonDict | None = None
+
+    has_empty_results = False
     for run in group.runs:
+      if run.results[self].is_empty:
+        has_empty_results = True
+        continue
       source_file = run.results[self].json
       assert source_file.is_file()
       with source_file.open(encoding="utf-8") as f:
@@ -63,8 +81,11 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
         "success": group.is_success,
         "errors": group.exceptions.error_messages(),
     }
+    if has_empty_results:
+      logging.error("Probe %s produced empty results for some runs.", self.NAME)
     return self.write_group_result(group, merged_data, csv_formatter=None)
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     stories: JsonDict = {}
     browser = None
@@ -95,6 +116,7 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
     }
     return self.write_group_result(group, merged_data, csv_formatter=None)
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     browsers: JsonDict = {}
     for story_group in group.story_groups:
@@ -118,11 +140,13 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
     }
     return self.write_group_result(group, merged_data, csv_formatter=None)
 
+  @override
   def get_context_cls(self) -> Type[InternalJsonResultProbeContext]:
     return ResultsSummaryProbeContext
 
 
 class ResultsSummaryProbeContext(InternalJsonResultProbeContext):
 
+  @override
   def to_json(self, actions: Actions) -> Json:
     return self.run.details_json()

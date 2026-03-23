@@ -1,7 +1,10 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "q3dscene_p.h"
+#include "qgraphs3dlogging_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -234,7 +237,7 @@ void Q3DScene::setPrimarySubViewport(QRect primarySubViewport)
     Q_D(Q3DScene);
     if (d->m_primarySubViewport != primarySubViewport) {
         if (!primarySubViewport.isValid() && !primarySubViewport.isNull()) {
-            qWarning("Viewport is invalid.");
+            qCWarning(lcGraphsScene3D, "Viewport is invalid.");
             return;
         }
 
@@ -317,7 +320,7 @@ void Q3DScene::setSecondarySubViewport(QRect secondarySubViewport)
     Q_D(Q3DScene);
     if (d->m_secondarySubViewport != secondarySubViewport) {
         if (!secondarySubViewport.isValid() && !secondarySubViewport.isNull()) {
-            qWarning("Viewport is invalid.");
+            qCWarning(lcGraphsScene3D, "Viewport is invalid.");
             return;
         }
 
@@ -373,6 +376,11 @@ QPoint Q3DScene::selectionQueryPosition() const
     Q_D(const Q3DScene);
     return d->m_selectionQueryPosition;
 }
+
+/*!
+ * \property Q3DScene::invalidSelectionPoint
+ * \brief a point that represents an invalid selection position.
+ */
 
 /*!
  * \return a QPoint signifying an invalid selection position.
@@ -639,3 +647,5 @@ bool Q3DScenePrivate::isInArea(const QRect area, int x, int y) const
 }
 
 QT_END_NAMESPACE
+
+#include "moc_q3dscene.cpp"

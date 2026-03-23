@@ -462,7 +462,7 @@ void tst_QQmlDebugJS::setBreakpointInJavaScript()
         QProcess process;
         process.start(QLibraryInfo::path(QLibraryInfo::BinariesPath) + "/qmlscene",
                       { testFile(QUITINJS_QMLFILE) });
-        QTRY_COMPARE(process.state(), QProcess::NotRunning);
+        QTRY_COMPARE_WITH_TIMEOUT(process.state(), QProcess::NotRunning, 3000);
     }
 
     QCOMPARE(runAndConnect(qmlscene, QUITINJS_QMLFILE), ConnectSuccess);
@@ -996,7 +996,7 @@ void tst_QQmlDebugJS::breakOnAnchor()
 
     m_client->connect();
 
-    QTRY_COMPARE(m_process->state(), QProcess::NotRunning);
+    QTRY_COMPARE_WITH_TIMEOUT(m_process->state(), QProcess::NotRunning, 3000);
     QCOMPARE(m_process->exitStatus(), QProcess::NormalExit);
 
     QCOMPARE(breaks, 2);
@@ -1121,7 +1121,7 @@ void tst_QQmlDebugJS::checkVersionParameters()
 int tst_QQmlDebugJS::setBreakPoint(const QString &file, int sourceLine, bool enabled)
 {
     int id = -1;
-    auto connection = QObject::connect(m_client.data(), &QV4DebugClient::result, [&]() {
+    auto connection = QObject::connect(m_client.data(), &QV4DebugClient::result, this, [&]() {
         id = m_client->response().body.toObject().value("breakpoint").toInt();
     });
 
@@ -1136,7 +1136,7 @@ int tst_QQmlDebugJS::setBreakPoint(const QString &file, int sourceLine, bool ena
 void tst_QQmlDebugJS::clearBreakPoint(int id)
 {
     bool ok = false;
-    auto connection = QObject::connect(m_client.data(), &QV4DebugClient::result, [&]() {
+    auto connection = QObject::connect(m_client.data(), &QV4DebugClient::result, this, [&]() {
         ok = true;
     });
 

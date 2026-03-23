@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLPROFILEREVENT_P_H
 #define QQMLPROFILEREVENT_P_H
@@ -47,10 +48,10 @@ struct QQmlProfilerEvent {
     }
 
     template<typename Number>
-    QQmlProfilerEvent(qint64 timestamp, int typeIndex, const QVector<Number> &data)
+    QQmlProfilerEvent(qint64 timestamp, int typeIndex, const QList<Number> &data)
         : m_timestamp(timestamp), m_typeIndex(typeIndex)
     {
-        assignNumbers<QVector<Number>, Number>(data);
+        assignNumbers<QList<Number>, Number>(data);
     }
 
     QQmlProfilerEvent(const QQmlProfilerEvent &other)

@@ -51,7 +51,6 @@ public:
     ~QFSFileEngine();
 
     bool open(QIODevice::OpenMode openMode, std::optional<QFile::Permissions> permissions) override;
-    bool open(QIODevice::OpenMode flags, FILE *fh);
     bool close() override;
     bool flush() override;
     bool syncToDisk() override;
@@ -83,7 +82,7 @@ public:
     bool setFileTime(const QDateTime &newDate, QFile::FileTime time) override;
     QDateTime fileTime(QFile::FileTime time) const override;
     void setFileName(const QString &file) override;
-    void setFileEntry(QFileSystemEntry &&entry);
+    virtual void setFileEntry(QFileSystemEntry &&entry);
     int handle() const override;
 
 #ifndef QT_NO_FILESYSTEMITERATOR
@@ -103,7 +102,6 @@ public:
     bool supportsExtension(Extension extension) const override;
 
     //FS only!!
-    bool open(QIODevice::OpenMode flags, int fd);
     bool open(QIODevice::OpenMode flags, int fd, QFile::FileHandleFlags handleFlags);
     bool open(QIODevice::OpenMode flags, FILE *fh, QFile::FileHandleFlags handleFlags);
     static bool setCurrentPath(const QString &path);

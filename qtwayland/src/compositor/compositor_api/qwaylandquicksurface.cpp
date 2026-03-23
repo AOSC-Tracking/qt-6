@@ -41,6 +41,16 @@ QWaylandQuickSurface::~QWaylandQuickSurface()
  *
  * This property specifies whether the surface should use texture alpha.
  */
+
+/*!
+ * \property QWaylandQuickSurface::useTextureAlpha
+ *
+ * This property holds whether the surface should use texture alpha for
+ * blending.
+ *
+ * When \c true, the surface's alpha channel will be used for blending; when
+ * \c false, the surface will be treated as opaque.
+ */
 bool QWaylandQuickSurface::useTextureAlpha() const
 {
     Q_D(const QWaylandQuickSurface);

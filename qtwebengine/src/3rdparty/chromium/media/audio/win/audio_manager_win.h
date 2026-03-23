@@ -37,7 +37,7 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
       const std::string& device_id) override;
   std::string GetAssociatedOutputDeviceID(
       const std::string& input_device_id) override;
-  const char* GetName() override;
+  const std::string_view GetName() override;
 
   // Implementation of AudioManagerBase.
   AudioOutputStream* MakeLinearOutputStream(
@@ -63,8 +63,6 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
   std::string GetDefaultOutputDeviceID() override;
   std::string GetCommunicationsInputDeviceID() override;
   std::string GetCommunicationsOutputDeviceID() override;
-
-  bool IsEchoCancellationSupported(const std::string& audio_device_id);
 
  protected:
   void ShutdownOnAudioThread() override;

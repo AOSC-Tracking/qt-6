@@ -28,6 +28,7 @@
 /* An enum of bitflags for every optional extension we need */
 typedef uint64_t FFVulkanExtensions;
 
+/* NOTE: when adding new entries, make sure to update ff_vk_extensions_to_mask */
 #define FF_VK_EXT_EXTERNAL_DMABUF_MEMORY (1ULL <<  0) /* VK_EXT_external_memory_dma_buf */
 #define FF_VK_EXT_DRM_MODIFIER_FLAGS     (1ULL <<  1) /* VK_EXT_image_drm_format_modifier */
 #define FF_VK_EXT_EXTERNAL_FD_MEMORY     (1ULL <<  2) /* VK_KHR_external_memory_fd */
@@ -35,10 +36,8 @@ typedef uint64_t FFVulkanExtensions;
 #define FF_VK_EXT_EXTERNAL_HOST_MEMORY   (1ULL <<  4) /* VK_EXT_external_memory_host */
 #define FF_VK_EXT_DEBUG_UTILS            (1ULL <<  5) /* VK_EXT_debug_utils */
 
-#ifdef _WIN32
 #define FF_VK_EXT_EXTERNAL_WIN32_MEMORY  (1ULL <<  6) /* VK_KHR_external_memory_win32 */
 #define FF_VK_EXT_EXTERNAL_WIN32_SEM     (1ULL <<  7) /* VK_KHR_external_semaphore_win32 */
-#endif
 
 #define FF_VK_EXT_DESCRIPTOR_BUFFER      (1ULL <<  8) /* VK_EXT_descriptor_buffer */
 #define FF_VK_EXT_DEVICE_DRM             (1ULL <<  9) /* VK_EXT_physical_device_drm */
@@ -48,10 +47,14 @@ typedef uint64_t FFVulkanExtensions;
 #define FF_VK_EXT_SHADER_OBJECT          (1ULL << 13) /* VK_EXT_shader_object */
 #define FF_VK_EXT_PUSH_DESCRIPTOR        (1ULL << 14) /* VK_KHR_push_descriptor */
 #define FF_VK_EXT_RELAXED_EXTENDED_INSTR (1ULL << 15) /* VK_KHR_shader_relaxed_extended_instruction */
+#define FF_VK_EXT_EXPECT_ASSUME          (1ULL << 16) /* VK_KHR_shader_expect_assume */
+#define FF_VK_EXT_SUBGROUP_ROTATE        (1ULL << 17) /* VK_KHR_shader_subgroup_rotate */
+#define FF_VK_EXT_HOST_IMAGE_COPY        (1ULL << 18) /* VK_EXT_host_image_copy */
 
 /* Video extensions */
 #define FF_VK_EXT_VIDEO_QUEUE            (1ULL << 36) /* VK_KHR_video_queue */
 #define FF_VK_EXT_VIDEO_MAINTENANCE_1    (1ULL << 37) /* VK_KHR_video_maintenance1 */
+#define FF_VK_EXT_VIDEO_MAINTENANCE_2    (1ULL << 38) /* VK_KHR_video_maintenance2 */
 
 #define FF_VK_EXT_VIDEO_DECODE_QUEUE     (1ULL << 40) /* VK_KHR_video_decode_queue */
 #define FF_VK_EXT_VIDEO_DECODE_H264      (1ULL << 41) /* VK_KHR_video_decode_h264 */
@@ -82,6 +85,7 @@ typedef uint64_t FFVulkanExtensions;
     MACRO(1, 0, FF_VK_EXT_NO_FLAG,              CreateDevice)                            \
     MACRO(1, 0, FF_VK_EXT_NO_FLAG,              GetPhysicalDeviceFeatures2)              \
     MACRO(1, 0, FF_VK_EXT_NO_FLAG,              GetPhysicalDeviceProperties)             \
+    MACRO(1, 0, FF_VK_EXT_NO_FLAG,              GetPhysicalDeviceExternalSemaphoreProperties)          \
     MACRO(1, 0, FF_VK_EXT_VIDEO_QUEUE,          GetPhysicalDeviceVideoCapabilitiesKHR)     \
     MACRO(1, 0, FF_VK_EXT_VIDEO_QUEUE,          GetPhysicalDeviceVideoFormatPropertiesKHR) \
     MACRO(1, 0, FF_VK_EXT_NO_FLAG,              DeviceWaitIdle)                          \
@@ -146,6 +150,7 @@ typedef uint64_t FFVulkanExtensions;
     MACRO(1, 1, FF_VK_EXT_NO_FLAG,              CmdPipelineBarrier)                      \
     MACRO(1, 1, FF_VK_EXT_NO_FLAG,              CmdCopyBufferToImage)                    \
     MACRO(1, 1, FF_VK_EXT_NO_FLAG,              CmdCopyImageToBuffer)                    \
+    MACRO(1, 1, FF_VK_EXT_NO_FLAG,              CmdClearColorImage)                                    \
     MACRO(1, 1, FF_VK_EXT_NO_FLAG,              CmdCopyBuffer)                                         \
                                                                                          \
     /* Buffer */                                                                         \
@@ -203,6 +208,11 @@ typedef uint64_t FFVulkanExtensions;
     /* sync2 */                                                                            \
     MACRO(1, 1, FF_VK_EXT_NO_FLAG,              CmdPipelineBarrier2)                       \
                                                                                            \
+    /* Host image copy */                                                                              \
+    MACRO(1, 1, FF_VK_EXT_HOST_IMAGE_COPY,      TransitionImageLayoutEXT)                              \
+    MACRO(1, 1, FF_VK_EXT_HOST_IMAGE_COPY,      CopyMemoryToImageEXT)                                  \
+    MACRO(1, 1, FF_VK_EXT_HOST_IMAGE_COPY,      CopyImageToMemoryEXT)                                  \
+                                                                                                       \
     /* Video queue */                                                                      \
     MACRO(1, 1, FF_VK_EXT_VIDEO_QUEUE,          CreateVideoSessionKHR)                     \
     MACRO(1, 1, FF_VK_EXT_VIDEO_QUEUE,          CreateVideoSessionParametersKHR)           \

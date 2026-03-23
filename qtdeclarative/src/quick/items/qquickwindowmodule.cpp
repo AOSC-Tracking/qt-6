@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickwindowmodule_p.h"
 #include "qquickwindowattached_p.h"
@@ -538,7 +539,7 @@ qreal QQuickWindowQmlImpl::z() const
 
 // --------------------------------------------------------------------
 
-QObject *QQuickWindowQmlImpl::screen() const
+QQuickScreenInfo *QQuickWindowQmlImpl::screen() const
 {
     Q_D(const QQuickWindowQmlImpl);
     if (!d->screenInfo)
@@ -546,10 +547,9 @@ QObject *QQuickWindowQmlImpl::screen() const
     return d->screenInfo;
 }
 
-void QQuickWindowQmlImpl::setScreen(QObject *screen)
+void QQuickWindowQmlImpl::setScreen(QQuickScreenInfo *screen)
 {
-    QQuickScreenInfo *screenWrapper = qobject_cast<QQuickScreenInfo *>(screen);
-    QWindow::setScreen(screenWrapper ? screenWrapper->wrappedScreen() : nullptr);
+    QWindow::setScreen(screen ? screen->wrappedScreen() : nullptr);
 }
 
 QQuickWindowAttached *QQuickWindowQmlImpl::qmlAttachedProperties(QObject *object)

@@ -854,6 +854,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1025,7 +1028,7 @@
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_vector_fmul_neon
 
@@ -1063,7 +1066,7 @@ temp_label_0
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_vector_fmac_scalar_neon
 
@@ -1102,7 +1105,7 @@ temp_label_1
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_vector_fmul_scalar_neon
 
@@ -1158,7 +1161,7 @@ temp_label_6
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_vector_dmul_scalar_neon
 
@@ -1196,7 +1199,7 @@ temp_label_9
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_vector_fmul_window_neon
 
@@ -1257,7 +1260,7 @@ temp_label_11
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_vector_fmul_add_neon
 
@@ -1298,7 +1301,7 @@ temp_label_14
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_vector_fmul_reverse_neon
 
@@ -1345,7 +1348,7 @@ temp_label_17
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_butterflies_float_neon
 
@@ -1379,7 +1382,7 @@ temp_label_19
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_scalarproduct_float_neon
 

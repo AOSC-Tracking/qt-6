@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "content/browser/devtools/protocol/tracing_handler.h"
 
 #include <algorithm>
@@ -24,7 +19,9 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -623,8 +620,7 @@ void TracingHandler::OnTraceDataCollected(
   const size_t messageSuffixSize = 10;
   message.reserve(message.size() + valid_trace_fragment.size() +
                   messageSuffixSize - trace_data_buffer_state_.offset);
-  message.append(valid_trace_fragment.c_str() +
-                 trace_data_buffer_state_.offset);
+  message.append(valid_trace_fragment, trace_data_buffer_state_.offset);
   message += "] } }";
 
   frontend_->sendRawNotification(
@@ -864,7 +860,6 @@ perfetto::TraceConfig TracingHandler::CreatePerfettoConfiguration(
       browser_config,
       /*privacy_filtering_enabled=*/false,
       /*convert_to_legacy_json=*/!proto_format,
-      perfetto::protos::gen::ChromeConfig::USER_INITIATED,
       /*json_agent_label_filter*/
       (proto_format || return_as_stream)
           ? ""

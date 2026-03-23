@@ -69,10 +69,9 @@
 #include "third_party/blink/renderer/core/svg/svg_poly_element.h"
 #include "third_party/blink/renderer/core/svg/svg_radial_gradient_element.h"
 #include "third_party/blink/renderer/core/svg/svg_rect_element.h"
-#include "third_party/blink/renderer/platform/graphics/dash_array.h"
+#include "third_party/blink/renderer/platform/geometry/dash_array.h"
 #include "third_party/blink/renderer/platform/graphics/filters/filter.h"
 #include "third_party/blink/renderer/platform/graphics/filters/source_graphic.h"
-#include "third_party/blink/renderer/platform/graphics/graphics_types.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 
 namespace blink {
@@ -294,7 +293,7 @@ static void WriteStyle(StringBuilder& ts, const LayoutObject& object) {
       double stroke_width =
           ValueForLength(style.StrokeWidth(), viewport_resolver);
       DashArray dash_array = SVGLayoutSupport::ResolveSVGDashArray(
-          *style.StrokeDashArray(), style, viewport_resolver);
+          style.StrokeDashArray(), style, viewport_resolver);
 
       WriteIfNotDefault(ts, "opacity", style.StrokeOpacity(), 1.0f);
       WriteIfNotDefault(ts, "stroke width", stroke_width, 1.0);

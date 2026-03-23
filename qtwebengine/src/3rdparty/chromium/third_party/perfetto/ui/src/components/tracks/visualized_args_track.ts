@@ -21,9 +21,7 @@ import {Trace} from '../../public/trace';
 import {DatasetSliceTrack} from './dataset_slice_track';
 import {SourceDataset} from '../../trace_processor/dataset';
 import {LONG, LONG_NULL, NUM, STR} from '../../trace_processor/query_result';
-import {assertIsInstance} from '../../base/logging';
 import {ThreadSliceDetailsPanel} from '../details/thread_slice_details_tab';
-import {TraceImpl} from '../../core/trace_impl';
 import {BigintMath} from '../../base/bigint_math';
 import {clamp} from '../../base/math_utils';
 
@@ -48,10 +46,10 @@ export async function createVisualizedArgsTrack({
   const escapedArgName = argName.replace(/[^a-zA-Z]/g, '_');
   const viewName = `__arg_visualisation_helper_${escapedArgName}_${uuid}_slice`;
 
-  await createView(
-    trace.engine,
-    viewName,
-    `
+  await createView({
+    engine: trace.engine,
+    name: viewName,
+    as: `
       with slice_with_arg as (
         select
           slice.id,
@@ -74,7 +72,7 @@ export async function createVisualizedArgsTrack({
       from slice_with_arg s1
       order by id
     `,
-  );
+  });
 
   return new DatasetSliceTrack({
     trace,
@@ -95,12 +93,7 @@ export async function createVisualizedArgsTrack({
       },
     }),
     initialMaxDepth: maxDepth,
-    detailsPanel: () => {
-      // Rationale for the assertIsInstance: ThreadSliceDetailsPanel requires a
-      // TraceImpl (because of flows) but here we must take a Trace interface,
-      // because this track is exposed to plugins (which see only Trace).
-      return new ThreadSliceDetailsPanel(assertIsInstance(trace, TraceImpl));
-    },
+    detailsPanel: () => new ThreadSliceDetailsPanel(trace),
     fillRatio: (row) => {
       if (row.dur > 0n && row.thread_dur !== null) {
         return clamp(BigintMath.ratio(row.thread_dur, row.dur), 0, 1);

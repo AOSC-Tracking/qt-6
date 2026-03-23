@@ -28,6 +28,7 @@ InputPanel {
     readonly property string defaultLocale: VirtualKeyboardSettings.locale
     readonly property var availableLocales: VirtualKeyboardSettings.availableLocales
     readonly property var activeLocales: VirtualKeyboardSettings.activeLocales
+    readonly property bool arrowKeyNavigationEnabled: VirtualKeyboardSettings.arrowKeyNavigationEnabled
     readonly property int inputMode: InputContext.inputEngine.inputMode
     readonly property var inputMethod: InputContext.inputEngine.inputMethod
     readonly property bool handwritingMode: keyboard.handwritingMode
@@ -263,6 +264,11 @@ InputPanel {
     }
 
     function setVisibleFunctionKeys(functionKeyNames) {
+        if (functionKeyNames === undefined) {
+            VirtualKeyboardSettings.visibleFunctionKeys = undefined
+            return
+        }
+
         let functionKeys = QtVirtualKeyboard.KeyboardFunctionKeys.None
         for (const functionKeyName of functionKeyNames) {
             functionKeys |= mapKeyboardFunctionKey(functionKeyName)
@@ -445,11 +451,22 @@ InputPanel {
             testcase.mousePress(inputPanel, virtualKeyPressPoint.x, virtualKeyPressPoint.y)
             testcase.wait(1)
             if (alternativeKey) {
-                if (keyObj.keyType !== QtVirtualKeyboard.KeyType.FlickKey)
+                if (keyObj.keyType === QtVirtualKeyboard.KeyType.FlickKey) {
+                    const flickRadius = (keyObj.width / 2 + 1)
+                    if (key === keyObj.flickLeft)
+                        virtualKeyPressPoint.x -= flickRadius
+                    else if (key === keyObj.flickRight)
+                        virtualKeyPressPoint.x += flickRadius
+                    else if (key === keyObj.flickTop)
+                        virtualKeyPressPoint.y -= flickRadius
+                    else if (key === keyObj.flickBottom)
+                        virtualKeyPressPoint.y += flickRadius
+                } else {
                     alternativeKeysSpy.wait()
-                var keyIndex = keyObj.effectiveAlternativeKeys.indexOf(key.toLowerCase())
-                var itemX = keyIndex * keyboard.style.alternateKeysListItemWidth + keyboard.style.alternateKeysListItemWidth / 2
-                virtualKeyPressPoint.x = inputPanel.mapFromItem(alternativeKeys.listView, itemX, 0).x
+                    var keyIndex = keyObj.effectiveAlternativeKeys.indexOf(key.toLowerCase())
+                    var itemX = keyIndex * keyboard.style.alternateKeysListItemWidth + keyboard.style.alternateKeysListItemWidth / 2
+                    virtualKeyPressPoint.x = inputPanel.mapFromItem(alternativeKeys.listView, itemX, 0).x
+                }
                 testcase.mouseMove(inputPanel, virtualKeyPressPoint.x, virtualKeyPressPoint.y)
                 testcase.wait(1)
             }
@@ -609,6 +626,10 @@ InputPanel {
 
     function navigationKeyClick(key) {
         return multiLayoutKeyActionHelper(key, navigationKeyClickOnCurrentLayout)
+    }
+
+    function setArrowKeyNavigationEnabled(arrowKeyNavigationEnabled) {
+        VirtualKeyboardSettings.arrowKeyNavigationEnabled = arrowKeyNavigationEnabled
     }
 
     function activateNavigationKeyMode() {

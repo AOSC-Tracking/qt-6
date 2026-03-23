@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwaylandglcontext_p.h"
 
@@ -15,6 +16,8 @@
 #include <QtGui/private/qopenglcontext_p.h>
 #include <QtOpenGL/private/qopengltexturecache_p.h>
 #include <QtGui/private/qguiapplication_p.h>
+#include <QtGui/private/qeglpbuffer_p.h>
+
 
 #include <qpa/qplatformopenglcontext.h>
 #include <QtGui/QSurfaceFormat>
@@ -48,6 +51,26 @@
 #ifndef EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT_KHR
 #define EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT_KHR 0x00000002
 #endif
+#ifndef EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_KHR
+#define EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_KHR 0x31BD
+#endif
+#ifndef EGL_LOSE_CONTEXT_ON_RESET_KHR
+#define EGL_LOSE_CONTEXT_ON_RESET_KHR 0x31BF
+#endif
+#ifndef EGL_CONTEXT_OPENGL_ROBUST_ACCESS_BIT_KHR
+#define EGL_CONTEXT_OPENGL_ROBUST_ACCESS_BIT_KHR 0x00000004
+#endif
+
+// Constants from EGL_EXT_create_context_robustness
+#ifndef EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT
+#define EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT 0x30BF
+#endif
+#ifndef EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT
+#define EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT 0x3138
+#endif
+#ifndef EGL_LOSE_CONTEXT_ON_RESET_EXT
+#define EGL_LOSE_CONTEXT_ON_RESET_EXT 0x31BF
+#endif
 
 // Constants for OpenGL which are not available in the ES headers.
 #ifndef GL_CONTEXT_FLAGS
@@ -67,6 +90,11 @@
 #endif
 #ifndef GL_CONTEXT_COMPATIBILITY_PROFILE_BIT
 #define GL_CONTEXT_COMPATIBILITY_PROFILE_BIT 0x00000002
+#endif
+
+// Constants from EGL_NV_robustness_video_memory_purge
+#ifndef EGL_GENERATE_RESET_ON_VIDEO_MEMORY_PURGE_NV
+#define EGL_GENERATE_RESET_ON_VIDEO_MEMORY_PURGE_NV 0x334C
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -219,16 +247,6 @@ QWaylandGLContext::QWaylandGLContext(EGLDisplay eglDisplay, QWaylandDisplay *dis
         break;
     }
 
-    if (m_display->supportsWindowDecoration()) {
-        // Create an EGL context for the decorations blitter. By using a dedicated context we are free to
-        // change its state and we also use OpenGL ES 2 API independently to what the app is using to draw.
-        QList<EGLint> eglDecorationsContextAttrs = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
-        m_decorationsContext = eglCreateContext(eglDisplay, eglConfig(), eglContext(),
-                                                eglDecorationsContextAttrs.constData());
-        if (m_decorationsContext == EGL_NO_CONTEXT)
-            qWarning("QWaylandGLContext: Failed to create the decorations EGLContext. Decorations will not be drawn.");
-    }
-
     EGLint a = EGL_MIN_SWAP_INTERVAL;
     EGLint b = EGL_MAX_SWAP_INTERVAL;
     if (!eglGetConfigAttrib(eglDisplay, eglConfig(), a, &a)
@@ -304,29 +322,89 @@ QWaylandGLContext::~QWaylandGLContext()
         eglDestroyContext(eglDisplay(), m_decorationsContext);
 }
 
+void QWaylandGLContext::initialize()
+{
+    QEGLPlatformContext::initialize();
+
+    if (m_display->supportsWindowDecoration()) {
+        // Create an EGL context for the decorations blitter. By using a dedicated context we don't need to make sure to not
+        // change the context state and we also use OpenGL ES 2 API independently to what the app is using to draw.
+        QList<EGLint> eglDecorationsContextAttrs = { EGL_CONTEXT_CLIENT_VERSION, 2 };
+        EGLint flags = 0;
+
+        if (format().testOption(QSurfaceFormat::ResetNotification)) {
+            const bool haveResetOnVideoMemoryPurge = q_hasEglExtension(eglDisplay(), "EGL_NV_robustness_video_memory_purge");
+
+            if (format().renderableType() == QSurfaceFormat::OpenGL) {
+                flags |= EGL_CONTEXT_OPENGL_ROBUST_ACCESS_BIT_KHR;
+                eglDecorationsContextAttrs.append(EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_KHR);
+                eglDecorationsContextAttrs.append(EGL_LOSE_CONTEXT_ON_RESET_KHR);
+                if (haveResetOnVideoMemoryPurge) {
+                    eglDecorationsContextAttrs.append(EGL_GENERATE_RESET_ON_VIDEO_MEMORY_PURGE_NV);
+                    eglDecorationsContextAttrs.append(EGL_TRUE);
+                }
+            } else if (format().renderableType() == QSurfaceFormat::OpenGLES) {
+                if (q_hasEglExtension(eglDisplay(), "EGL_EXT_create_context_robustness")) {
+                    eglDecorationsContextAttrs.append(EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT);
+                    eglDecorationsContextAttrs.append(EGL_TRUE);
+                    eglDecorationsContextAttrs.append(EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT);
+                    eglDecorationsContextAttrs.append(EGL_LOSE_CONTEXT_ON_RESET_EXT);
+                    if (haveResetOnVideoMemoryPurge) {
+                        eglDecorationsContextAttrs.append(EGL_GENERATE_RESET_ON_VIDEO_MEMORY_PURGE_NV);
+                        eglDecorationsContextAttrs.append(EGL_TRUE);
+                    }
+                }
+            }
+        }
+
+        if (flags) {
+            eglDecorationsContextAttrs.append(EGL_CONTEXT_FLAGS_KHR);
+            eglDecorationsContextAttrs.append(flags);
+        }
+
+        eglDecorationsContextAttrs << EGL_NONE;
+
+        m_decorationsContext = eglCreateContext(eglDisplay(), eglConfig(), eglContext(),
+                                                eglDecorationsContextAttrs.constData());
+        if (m_decorationsContext == EGL_NO_CONTEXT)
+            qWarning("QWaylandGLContext: Failed to create the decorations EGLContext. Decorations will not be drawn.");
+    }
+}
+
 void QWaylandGLContext::beginFrame()
 {
-    Q_ASSERT(m_currentWindow != nullptr);
+    if (!m_currentWindow)
+        return;
+
     if (m_supportNonBlockingSwap)
         m_currentWindow->beginFrame();
 }
 
 void QWaylandGLContext::endFrame()
 {
-    Q_ASSERT(m_currentWindow != nullptr);
+    if (!m_currentWindow)
+        return;
+
+    QWaylandEglWindow *currentWindow = m_currentWindow;
+
     if (m_doneCurrentWorkAround) {
         doneCurrent();
         QOpenGLContextPrivate::setCurrentContext(nullptr);
     }
 
     if (m_supportNonBlockingSwap)
-        m_currentWindow->endFrame();
+        currentWindow->endFrame();
 }
 
 bool QWaylandGLContext::makeCurrent(QPlatformSurface *surface)
 {
     if (!isValid()) {
         return false;
+    }
+
+    if (surface->surface()->surfaceClass() == QSurface::Offscreen) {
+        m_currentWindow = nullptr;
+        return QEGLPlatformContext::makeCurrent(surface);
     }
 
     // in QWaylandGLContext() we called eglBindAPI with the correct value. However,
@@ -342,6 +420,9 @@ bool QWaylandGLContext::makeCurrent(QPlatformSurface *surface)
 
     QMutexLocker lock(m_currentWindow->eglSurfaceLock());
     EGLSurface eglSurface = m_currentWindow->eglSurface();
+
+    if (!checkGraphicsReset())
+        return false;
 
     if (!m_currentWindow->needToUpdateContentFBO() && (eglSurface != EGL_NO_SURFACE)) {
         if (!eglMakeCurrent(eglDisplay(), eglSurface, eglSurface, eglContext())) {
@@ -371,11 +452,16 @@ bool QWaylandGLContext::makeCurrent(QPlatformSurface *surface)
 
 void QWaylandGLContext::doneCurrent()
 {
+    m_currentWindow = nullptr;
     eglMakeCurrent(eglDisplay(), EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 }
 
 void QWaylandGLContext::swapBuffers(QPlatformSurface *surface)
 {
+    if (surface->surface()->surfaceClass() == QSurface::Offscreen) {
+        return QEGLPlatformContext::swapBuffers(surface);
+    }
+
     QWaylandEglWindow *window = static_cast<QWaylandEglWindow *>(surface);
 
     EGLSurface eglSurface = window->eglSurface();
@@ -414,20 +500,18 @@ void QWaylandGLContext::swapBuffers(QPlatformSurface *surface)
 
 GLuint QWaylandGLContext::defaultFramebufferObject(QPlatformSurface *surface) const
 {
-    return static_cast<QWaylandEglWindow *>(surface)->contentFBO();
-}
-
-QFunctionPointer QWaylandGLContext::getProcAddress(const char *procName)
-{
-    QFunctionPointer proc = (QFunctionPointer) eglGetProcAddress(procName);
-    if (!proc)
-        proc = (QFunctionPointer) dlsym(RTLD_DEFAULT, procName);
-    return proc;
+    if (surface->surface()->surfaceClass() == QSurface::Window)
+        return static_cast<QWaylandEglWindow *>(surface)->contentFBO();
+    else
+        return 0;
 }
 
 EGLSurface QWaylandGLContext::eglSurfaceForPlatformSurface(QPlatformSurface *surface)
 {
-    return static_cast<QWaylandEglWindow *>(surface)->eglSurface();
+    if (surface->surface()->surfaceClass() == QSurface::Window)
+        return static_cast<QWaylandEglWindow *>(surface)->eglSurface();
+    else
+        return static_cast<QEGLPbuffer *>(surface)->pbuffer();
 }
 
 }

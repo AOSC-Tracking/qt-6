@@ -115,8 +115,9 @@ class CORE_EXPORT Range final : public AbstractRange {
 
   String GetText() const;
 
-  DocumentFragment* createContextualFragment(const String& html,
-                                             ExceptionState&);
+  DocumentFragment* createContextualFragment(
+      const V8UnionStringOrTrustedHTML* html,
+      ExceptionState&);
 
   void detach();
   Range* cloneRange() const;
@@ -223,6 +224,7 @@ class CORE_EXPORT Range final : public AbstractRange {
   };
   UpdateSelectionBehavior update_selection_behavior_ =
       UpdateSelectionBehavior::kAll;
+  void ResetUpdateSelectionBehavior();
 
   friend class RangeUpdateScope;
 };

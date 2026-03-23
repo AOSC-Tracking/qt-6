@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QQUICK3DXRVIEW_P_H
 #define QQUICK3DXRVIEW_P_H
@@ -69,6 +71,23 @@ public:
     };
     Q_ENUM(ReferenceSpace)
 
+    using TouchTarget = std::variant<std::monostate, QQuick3DXrItem*, QQuick3DModel*>;
+    struct TouchState
+    {
+        int pointId = -1;
+        TouchTarget target;
+        bool grabbed = false;
+        bool pressed = false;
+        qreal touchDistance = 1e6;
+        qreal touchDepth = 0;
+        QPointF cursorPos;
+        QVector3D previous; // Finger position when timer was started
+        QElapsedTimer timer;
+        QVector3D surfacePoint;
+        QVector3D normal;
+        QVector2D uvPosition;
+    };
+
     explicit QQuick3DXrView();
     ~QQuick3DXrView();
 
@@ -89,6 +108,8 @@ public:
 
     Q_INVOKABLE QQuick3DPickResult rayPick(const QVector3D &origin, const QVector3D &direction) const;
     Q_INVOKABLE QList<QQuick3DPickResult> rayPickAll(const QVector3D &origin, const QVector3D &direction) const;
+    Q_REVISION(6, 11) Q_INVOKABLE QQuick3DPickResult rayPick(const QVector3D &origin, const QVector3D &direction, QQuick3DModel *model) const;
+    Q_REVISION(6, 11) Q_INVOKABLE QQuick3DPickResult closestPointPick(const QVector3D &origin, float radius, QQuick3DModel *model = nullptr) const;
 
     Q_INVOKABLE void setTouchpoint(QQuickItem *target, const QPointF &position, int pointId, bool active);
     Q_INVOKABLE QVector3D processTouch(const QVector3D &pos, int pointId);
@@ -139,6 +160,8 @@ private:
     // The XrView does not expose the View3D in its public interface. This is intentional.
     QQuick3DViewport *view3d() const;
 
+    bool handleVirtualTouch(TouchTarget target, const QVector3D &pos, TouchState *touchState, QVector3D *offset);
+
     QPointer<QQuick3DSceneEnvironment> m_pendingSceneEnvironment;
     QQuick3DXrManager m_xrManager;
     mutable QQuick3DXrRuntimeInfo m_xrRuntimeInfo;
@@ -148,8 +171,8 @@ private:
 
     friend class QQuick3DXrVirtualMouse;
     QList<QQuick3DXrItem *> m_xrItems;
-    struct XrTouchState;
-    XrTouchState *m_touchState = nullptr;
+    struct XrTouchStates;
+    XrTouchStates *m_touchStates = nullptr;
     QQuick3DXrOrigin *m_xrOrigin = nullptr;
 };
 

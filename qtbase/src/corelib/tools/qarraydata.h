@@ -1,6 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // Copyright (C) 2019 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QARRAYDATA_H
 #define QARRAYDATA_H
@@ -15,6 +16,8 @@ QT_BEGIN_NAMESPACE
 
 #if __has_cpp_attribute(gnu::malloc)
 #  define Q_DECL_MALLOCLIKE [[nodiscard, gnu::malloc]]
+#elif Q_CC_MSVC_ONLY
+#  define Q_DECL_MALLOCLIKE __declspec(allocator) __declspec(restrict) [[nodiscard]]
 #else
 #  define Q_DECL_MALLOCLIKE [[nodiscard]]
 #endif
@@ -56,7 +59,7 @@ struct QArrayData
     /// Returns true if sharing took place
     bool ref() noexcept
     {
-        ref_.ref();
+        ref_.refRelaxed(); // suffices for ref-counting
         return true;
     }
 

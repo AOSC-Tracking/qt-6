@@ -39,6 +39,7 @@
 #include "third_party/blink/public/common/widget/constants.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink-forward.h"
 #include "third_party/blink/public/web/web_navigation_policy.h"
+#include "third_party/blink/renderer/core/buildflags.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action.h"
@@ -89,6 +90,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                              cc::PaintHoldingReason reason) override;
   void StopDeferringCommits(LocalFrame& main_frame,
                             cc::PaintHoldingCommitTrigger) override;
+  void SetShouldThrottleFrameRate(bool flag, LocalFrame& main_frame) override;
   std::unique_ptr<cc::ScopedPauseRendering> PauseRendering(
       LocalFrame&) override;
   std::optional<int> GetMaxRenderBufferBounds(LocalFrame&) const override;
@@ -99,6 +101,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                      const gfx::Vector2d& cursor_offset,
                      const gfx::Rect& drag_obj_rect) override;
   bool AcceptsLoadDrops() const override;
+  std::optional<bool> GetWebRTCPostQuantumKeyAgreement() const override;
   Page* CreateWindowDelegate(LocalFrame*,
                              const FrameLoadRequest&,
                              const AtomicString& name,
@@ -148,12 +151,15 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                                     String& result) override;
   bool TabsToLinks() override;
   void InvalidateContainer() override;
-  void ScheduleAnimation(const LocalFrameView*, base::TimeDelta delay) override;
+  void ScheduleAnimation(const LocalFrameView*,
+                         base::TimeDelta delay,
+                         bool urgent) override;
   gfx::Rect LocalRootToScreenDIPs(const gfx::Rect&,
                                   const LocalFrameView*) const override;
   float WindowToViewportScalar(LocalFrame*, const float) const override;
   const display::ScreenInfo& GetScreenInfo(LocalFrame&) const override;
   const display::ScreenInfos& GetScreenInfos(LocalFrame&) const override;
+  const display::ScreenInfo& GetOriginalScreenInfo(LocalFrame&) const override;
   float InputEventsScaleForEmulation() const override;
   void ContentsSizeChanged(LocalFrame*, const gfx::Size&) const override;
   bool DoubleTapToZoomEnabled() const override;
@@ -242,6 +248,8 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void ClosePagePopup(PagePopup*) override;
   DOMWindow* PagePopupWindowForTesting() const override;
 
+  void SetUseExternalPopupMenusForTesting(bool) override;
+
   void SetBrowserControlsState(float top_height,
                                float bottom_height,
                                bool shrinks_layout) override;
@@ -294,13 +302,13 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
 
   void RequestDecode(LocalFrame*,
                      const cc::DrawImage&,
-                     base::OnceCallback<void(bool)>) override;
+                     base::OnceCallback<void(bool)>,
+                     bool speculative) override;
+
+  bool SpeculativeDecodeRequestInFlight(LocalFrame*) const override;
 
   void NotifyPresentationTime(LocalFrame& frame,
                               ReportTimeCallback callback) override;
-
-  void RequestBeginMainFrameNotExpected(LocalFrame& frame,
-                                        bool request) override;
 
   void DidUpdateTextAutosizerPageInfo(
       const mojom::blink::TextAutosizerPageInfo& page_info) override;
@@ -328,12 +336,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   // returns nullable.
   WebAutofillClient* AutofillClientFromFrame(LocalFrame*);
 
-  // Returns a copy of `pending_rect`, adjusted for the given minimum window
-  // size. Defaulting to `blink::kMinimumWindowSize`.
-  gfx::Rect AdjustWindowRectForMinimum(
-      const gfx::Rect& pending_rect,
-      int minimum_size = blink::kMinimumWindowSize);
-
   // Returns a copy of |pending_rect|, adjusted for available screen area
   // constraints. This is used to synchronously estimate, or preemptively apply,
   // anticipated browser- or OS-imposed constraints. Note: This applies legacy
@@ -355,6 +357,14 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   bool did_request_non_empty_tool_tip_;
   std::optional<bool> before_unload_confirm_panel_result_for_testing_;
   HeapHashSet<WeakMember<CommitObserver>> commit_observers_;
+
+  // On Mac and Android Java UI, the select popups are rendered by the
+  // browser.
+#if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
+  bool use_external_popup_menus_ = true;
+#else
+  bool use_external_popup_menus_ = false;
+#endif
 
   FRIEND_TEST_ALL_PREFIXES(FileChooserQueueTest, DerefQueuedChooser);
 };

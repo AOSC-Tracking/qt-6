@@ -116,6 +116,10 @@ class BookmarkNode : public ui::TreeNode<BookmarkNode>, public TitledUrlNode {
   // parent node is marked as invisible, a child node may return "Visible". This
   // function is primarily useful when traversing the model to generate a UI
   // representation but we may want to suppress some nodes.
+  //
+  // This method only considers the visibility of the node based on itself and
+  // its children. Callers should prefer `BookmarkModel::IsVisible()`, which
+  // considers the full tree.
   virtual bool IsVisible() const;
 
   // Gets/sets/deletes value of `key` in the meta info represented by
@@ -236,23 +240,31 @@ class BookmarkPermanentNode : public BookmarkNode {
   // Permanent nodes are well-known, it's not allowed to create arbitrary ones.
   // Note that the same UUID is used for local-or-syncable instances and
   // account permanent folders (as exposed by BookmarkModel APIs).
-  static std::unique_ptr<BookmarkPermanentNode> CreateBookmarkBar(int64_t id);
+  static std::unique_ptr<BookmarkPermanentNode> CreateBookmarkBar(
+      int64_t id,
+      bool is_account_node);
   static std::unique_ptr<BookmarkPermanentNode> CreateOtherBookmarks(
-      int64_t id);
+      int64_t id,
+      bool is_account_node);
   static std::unique_ptr<BookmarkPermanentNode> CreateMobileBookmarks(
-      int64_t id);
+      int64_t id,
+      bool is_account_node);
 
   // Returns whether the permanent node of type `type` should be visible even
   // when it is empty (i.e. no children).
   static bool IsTypeVisibleWhenEmpty(Type type);
 
+  bool IsVisible() const override;
+
+  void set_visibility(bool is_visible) { is_visible_ = is_visible; }
+
+  // Returns true if the node is part of the account storage.
+  bool is_account_node() const { return is_account_node_; }
+
   BookmarkPermanentNode(const BookmarkPermanentNode&) = delete;
   BookmarkPermanentNode& operator=(const BookmarkPermanentNode&) = delete;
 
   ~BookmarkPermanentNode() override;
-
-  // BookmarkNode overrides:
-  bool IsVisible() const override;
 
  private:
   // Constructor is private to disallow the construction of permanent nodes
@@ -260,9 +272,11 @@ class BookmarkPermanentNode : public BookmarkNode {
   BookmarkPermanentNode(int64_t id,
                         Type type,
                         const base::Uuid& uuid,
-                        const std::u16string& title);
+                        const std::u16string& title,
+                        bool is_account_node);
 
-  const bool visible_when_empty_;
+  bool is_visible_ = true;
+  const bool is_account_node_;
 };
 
 // If you are looking for gMock printing via PrintTo(), please check

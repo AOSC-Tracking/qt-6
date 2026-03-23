@@ -13,7 +13,6 @@
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/foundations/browser_autofill_manager_test_api.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics_test_base.h"
-#include "components/autofill/core/browser/metrics/placeholder_metrics.h"
 #include "components/autofill/core/browser/metrics/prediction_quality_metrics.h"
 #include "components/autofill/core/browser/metrics/ukm_metrics_test_utils.h"
 #include "components/autofill/core/browser/test_utils/autofill_form_test_utils.h"
@@ -35,6 +34,7 @@ using ::autofill::test::CreateTestFormField;
 using ::base::Bucket;
 using ::base::BucketsAre;
 using ::base::BucketsInclude;
+using ::testing::ElementsAre;
 
 using ExpectedUkmMetricsRecord = std::vector<ExpectedUkmMetricsPair>;
 using ExpectedUkmMetrics = std::vector<ExpectedUkmMetricsRecord>;
@@ -657,7 +657,7 @@ TEST_P(PredictionQualityMetricsTest, Classification) {
   // Validate the individual histogram counter values.
   for (int i = 0; i < NUM_FIELD_TYPE_QUALITY_METRICS; ++i) {
     // The metric enum value we're currently examining.
-    auto metric = static_cast<FieldTypeQualityMetric>(i);
+    auto metric = static_cast<FieldTypeQualityMetric>(i);  // nocheck
 
     // The type specific expected count is 1 if (predicted, actual) is an
     // example
@@ -872,11 +872,12 @@ TEST_F(QualityMetricsTest, BasedOnAutocomplete) {
                      Bucket(AutofillMetrics::QUERY_RESPONSE_PARSED, 1)));
 
   // Autocomplete-derived types are eventually what's inferred.
-  EXPECT_EQ(NAME_LAST, form_structure_ptr->field(0)->Type().GetStorableType());
-  EXPECT_EQ(NAME_MIDDLE,
-            form_structure_ptr->field(1)->Type().GetStorableType());
-  EXPECT_EQ(ADDRESS_HOME_ZIP,
-            form_structure_ptr->field(2)->Type().GetStorableType());
+  EXPECT_THAT(form_structure_ptr->field(0)->Type().GetTypes(),
+              ElementsAre(NAME_LAST));
+  EXPECT_THAT(form_structure_ptr->field(1)->Type().GetTypes(),
+              ElementsAre(NAME_MIDDLE));
+  EXPECT_THAT(form_structure_ptr->field(2)->Type().GetTypes(),
+              ElementsAre(ADDRESS_HOME_ZIP));
 
   for (const std::string source : {"Heuristic", "Server"}) {
     std::string aggregate_histogram =

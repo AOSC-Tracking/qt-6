@@ -16,7 +16,6 @@
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/renderer/bindings/core/v8/callback_promise_adapter.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_string_stringsequence.h"
@@ -1683,10 +1682,7 @@ ScriptPromise<ImageBitmap> ImageCapture::grabFrame(ScriptState* script_state) {
     return promise;
   }
 
-  auto resolver_callback_adapter =
-      std::make_unique<CallbackPromiseAdapter<ImageBitmap, void>>(resolver);
-  frame_grabber_->GrabFrame(stream_track_->Component(),
-                            std::move(resolver_callback_adapter),
+  frame_grabber_->GrabFrame(stream_track_->Component(), resolver,
                             ExecutionContext::From(script_state)
                                 ->GetTaskRunner(TaskType::kDOMManipulation),
                             grab_frame_timeout_);
@@ -1913,13 +1909,20 @@ void ImageCapture::SetMediaTrackConstraints(
 void ImageCapture::SetVideoTrackDeviceSettingsFromTrack(
     base::OnceClosure initialized_callback,
     media::mojom::blink::PhotoStatePtr photo_state) {
-  UpdateMediaTrackSettingsAndCapabilities(base::DoNothing(),
-                                          std::move(photo_state));
-
   auto* video_track = MediaStreamVideoTrack::From(stream_track_->Component());
   DCHECK(video_track);
 
   const auto& device_settings = video_track->image_capture_device_settings();
+
+  if (device_settings &&
+      device_settings->expose_pan_tilt_zoom_support.has_value() &&
+      !*device_settings->expose_pan_tilt_zoom_support) {
+    pan_tilt_zoom_permission_ = mojom::blink::PermissionStatus::ASK;
+    permission_observer_receiver_.reset();
+  }
+
+  UpdateMediaTrackSettingsAndCapabilities(base::DoNothing(),
+                                          std::move(photo_state));
 
   if (device_settings) {
     ExecutionContext* context = GetExecutionContext();
@@ -2163,13 +2166,15 @@ ImageCapture::ImageCapture(ExecutionContext* context,
       context, permission_service_.BindNewPipeAndPassReceiver(
                    context->GetTaskRunner(TaskType::kMiscPlatformAPI)));
 
-  mojo::PendingRemote<mojom::blink::PermissionObserver> observer;
-  permission_observer_receiver_.Bind(
-      observer.InitWithNewPipeAndPassReceiver(),
-      context->GetTaskRunner(TaskType::kMiscPlatformAPI));
-  permission_service_->AddPermissionObserver(
-      CreateVideoCapturePermissionDescriptor(/*pan_tilt_zoom=*/true),
-      pan_tilt_zoom_permission_, std::move(observer));
+  if (pan_tilt_zoom_allowed) {
+    mojo::PendingRemote<mojom::blink::PermissionObserver> observer;
+    permission_observer_receiver_.Bind(
+        observer.InitWithNewPipeAndPassReceiver(),
+        context->GetTaskRunner(TaskType::kMiscPlatformAPI));
+    permission_service_->AddPermissionObserver(
+        CreateVideoCapturePermissionDescriptor(/*pan_tilt_zoom=*/true),
+        pan_tilt_zoom_permission_, std::move(observer));
+  }
 }
 
 // TODO(crbug.com/708723): Integrate image capture constraints processing with

@@ -35,7 +35,7 @@ class MODULES_EXPORT VideoFrameRequestCallbackCollection final
         public NameClient {
    public:
     virtual void Trace(Visitor*) const {}
-    const char* NameInHeapSnapshot() const override {
+    const char* GetHumanReadableName() const override {
       return "VideoFrameCallback";
     }
     ~VideoFrameCallback() override = default;
@@ -60,7 +60,7 @@ class MODULES_EXPORT VideoFrameRequestCallbackCollection final
   class MODULES_EXPORT V8VideoFrameCallback : public VideoFrameCallback {
    public:
     void Trace(Visitor*) const override;
-    const char* NameInHeapSnapshot() const override {
+    const char* GetHumanReadableName() const override {
       return "V8VideoFrameCallback";
     }
 
@@ -88,8 +88,8 @@ class MODULES_EXPORT VideoFrameRequestCallbackCollection final
 
   bool IsEmpty() const { return !frame_callbacks_.size(); }
 
-  virtual void Trace(Visitor*) const;
-  const char* NameInHeapSnapshot() const override {
+  void Trace(Visitor*) const;
+  const char* GetHumanReadableName() const override {
     return "VideoFrameRequestCallbackCollection";
   }
 

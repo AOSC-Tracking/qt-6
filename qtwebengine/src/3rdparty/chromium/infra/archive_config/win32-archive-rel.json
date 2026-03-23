@@ -19,6 +19,8 @@
                 "First Run",
                 "icudtl.dat",
                 "interactive_ui_tests.exe",
+                "IwaKeyDistribution\\iwa-key-distribution.pb",
+                "IwaKeyDistribution\\manifest.json",
                 "libEGL.dll",
                 "libGLESv2.dll",
                 "MEIPreload\\manifest.json",
@@ -189,6 +191,14 @@
         {
             "files": [
                 "enterprise_companion.zip"
+            ],
+            "gcs_bucket": "chromium-browser-snapshots",
+            "gcs_path": "Win/{%position%}",
+            "archive_type": "ARCHIVE_TYPE_FILES"
+        },
+        {
+            "files": [
+                "enterprise_companion_test.zip"
             ],
             "gcs_bucket": "chromium-browser-snapshots",
             "gcs_path": "Win/{%position%}",

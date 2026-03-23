@@ -39,17 +39,25 @@ class OnDeviceModelMetadata final {
     return validation_config_;
   }
 
+  const on_device_model::Capabilities& capabilities() const {
+    return capabilities_;
+  }
+
+  proto::OnDeviceModelPerformanceHint performance_hint() const {
+    return model_spec_.selected_performance_hint;
+  }
+
  private:
-  OnDeviceModelMetadata(
-      const base::FilePath& model_path,
-      const std::string& version,
-      const OnDeviceBaseModelSpec& model_spec,
-      std::unique_ptr<proto::OnDeviceModelExecutionConfig> config);
+  OnDeviceModelMetadata(const base::FilePath& model_path,
+                        const std::string& version,
+                        const OnDeviceBaseModelSpec& model_spec,
+                        proto::OnDeviceModelExecutionConfig config);
 
   base::FilePath model_path_;
   std::string version_;
   OnDeviceBaseModelSpec model_spec_;
   proto::OnDeviceModelValidationConfig validation_config_;
+  on_device_model::Capabilities capabilities_;
 };
 
 // Provides a stream of updated ModelMetadatas from component states.

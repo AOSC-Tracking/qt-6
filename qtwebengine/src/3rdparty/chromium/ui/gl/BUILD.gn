@@ -35,6 +35,7 @@ buildflag_header("buildflags") {
     "USE_STATIC_ANGLE=$use_static_angle",
     "USE_OPENGL_APITRACE=$enable_opengl_apitrace",
     "ENABLE_VALIDATING_COMMAND_DECODER=$enable_validating_command_decoder",
+    "ENABLE_VULKAN=$enable_vulkan",
   ]
 }
 
@@ -48,6 +49,10 @@ jumbo_component("gl_enums") {
 
   defines = [ "GL_IMPLEMENTATION" ]
 
+  public_deps = [ "//third_party/angle:includes" ]
+}
+
+source_set("gl_headers") {
   public_deps = [ "//third_party/angle:includes" ]
 }
 
@@ -146,8 +151,6 @@ jumbo_component("gl") {
     "shader_tracking.h",
     "shared_gl_fence_egl.cc",
     "shared_gl_fence_egl.h",
-    "startup_trace.cc",
-    "startup_trace.h",
     "sync_control_vsync_provider.cc",
     "sync_control_vsync_provider.h",
     "trace_util.cc",
@@ -158,7 +161,12 @@ jumbo_component("gl") {
     "presenter.cc",
   ]
 
-  configs += [ "//build/config:precompiled_headers" ]
+  configs += [
+    "//build/config/compiler:wexit_time_destructors",
+    "//build/config/compiler:wglobal_constructors",
+    "//build/config:precompiled_headers",
+  ]
+
   defines = [ "GL_IMPLEMENTATION" ]
   if (enable_gpu_service_logging) {
     defines += [ "GPU_ENABLE_SERVICE_LOGGING" ]
@@ -167,14 +175,15 @@ jumbo_component("gl") {
   deps = [
     ":buildflags",
     "//build:android_buildflags",
+    "//build:chromeos_buildflags",
     "//mojo/public/cpp/bindings",
     "//ui/base:ozone_buildflags",
     "//ui/gfx/mojom",
   ]
   public_deps = [
     ":gl_enums",
+    ":gl_headers",
     "//base",
-    "//third_party/mesa_headers",
     "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
@@ -201,10 +210,12 @@ jumbo_component("gl") {
 
   if (use_ozone) {
     if (!is_fuchsia) {
-      data_deps += [
-        "//third_party/angle:libEGL",
-        "//third_party/angle:libGLESv2",
-      ]
+      if (!use_static_angle) {
+        data_deps += [
+          "//third_party/angle:libEGL",
+          "//third_party/angle:libGLESv2",
+        ]
+      }
       if (angle_shared_libvulkan && !is_chromeos) {
         data_deps += [ "//third_party/vulkan-loader/src:libvulkan" ]
       }
@@ -222,14 +233,16 @@ jumbo_component("gl") {
     deps += [
       "//ui/base:features",
       "//ui/base/x",
-      "//ui/events/platform/x11:x11",
+      "//ui/events/platform/x11",
       "//ui/gfx/linux:gpu_memory_buffer_support_x11",
     ]
 
-    data_deps += [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
-    ]
+    if (!use_static_angle) {
+      data_deps += [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
     if (angle_shared_libvulkan && !is_chromeos) {
       data_deps += [ "//third_party/vulkan-loader/src:libvulkan" ]
     }
@@ -262,6 +275,7 @@ jumbo_component("gl") {
       "gl_fence_win.h",
       "hdr_metadata_helper_win.cc",
       "hdr_metadata_helper_win.h",
+      "os_compositor_tree_base.h",
       "swap_chain_presenter.cc",
       "swap_chain_presenter.h",
       "vsync_provider_win.cc",
@@ -287,18 +301,20 @@ jumbo_component("gl") {
     ]
     deps += [
       "//ui/base",
-      "//ui/display:display",
+      "//ui/display",
       "//ui/gfx/mojom:dxgi_info",
     ]
 
-    data_deps += [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
-    ]
     if (enable_swiftshader) {
       data_deps += [
         "//third_party/swiftshader/src/Vulkan:icd_file",
         "//third_party/swiftshader/src/Vulkan:swiftshader_libvulkan",
+      ]
+    }
+    if (!use_static_angle) {
+      data_deps += [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
       ]
     }
     if (angle_shared_libvulkan && !is_chromeos) {
@@ -333,11 +349,12 @@ jumbo_component("gl") {
       "Quartz.framework",
     ]
 
-    data_deps += [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
-      "//third_party/mesa_headers",
-    ]
+    if (!use_static_angle) {
+      data_deps += [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
     if (enable_swiftshader) {
       data_deps += [
         "//third_party/swiftshader/src/Vulkan:icd_file",
@@ -396,13 +413,6 @@ jumbo_component("gl") {
   if ((is_linux || is_chromeos) && enable_vulkan) {
     deps += [ "//third_party/angle:angle_gpu_info_util" ]
   }
-
-  if (is_qtwebengine && !is_android && !is_ios) {
-    data_deps -= [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
-    ]
-  }
 }
 
 if (is_mac) {
@@ -411,16 +421,18 @@ if (is_mac) {
   # "shared_library" target types it will try to link things into
   # Chromium Framework when we want to keep the ANGLE and SwiftShader
   # libraries separate instead.
-  copy("angle_library_copy") {
-    sources = [
-      "$root_out_dir/libEGL.dylib",
-      "$root_out_dir/libGLESv2.dylib",
-    ]
-    outputs = [ "$root_out_dir/egl_intermediates/{{source_file_part}}" ]
-    deps = [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
-    ]
+  if (!use_static_angle) {
+    copy("angle_library_copy") {
+      sources = [
+        "$root_out_dir/libEGL.dylib",
+        "$root_out_dir/libGLESv2.dylib",
+      ]
+      outputs = [ "$root_out_dir/egl_intermediates/{{source_file_part}}" ]
+      deps = [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
   }
 
   if (enable_swiftshader) {
@@ -480,6 +492,7 @@ jumbo_static_library("test_support") {
   ]
   deps = [
     "//base/test:test_support",
+    "//gpu/config",
     "//testing/gtest",
     "//third_party/angle:includes",
     "//ui/base",
@@ -545,11 +558,13 @@ test("gl_unittests") {
       "delegated_ink_point_renderer_gpu_unittest.cc",
       "gl_fence_win_unittest.cc",
       "hdr_metadata_helper_win_unittest.cc",
+      "os_compositor_tree_base_unittest.cc",
     ]
   }
 
   deps = [
     ":gl",
+    ":gl_headers",
     ":gl_unittest_utils",
     ":run_all_unittests",
     ":test_support",
@@ -557,7 +572,7 @@ test("gl_unittests") {
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/angle:includes",
-    "//ui/base:base",
+    "//ui/base",
     "//ui/gfx",
     "//ui/gfx:test_support",
     "//ui/gfx/geometry",
@@ -566,10 +581,7 @@ test("gl_unittests") {
     "//ui/platform_window:platform_impls",
   ]
 
-  data_deps = [
-    "//testing/buildbot/filters:gl_unittests_filters",
-    "//third_party/mesa_headers",
-  ]
+  data_deps = [ "//testing/buildbot/filters:gl_unittests_filters" ]
 
   if (is_win) {
     deps += [
@@ -582,6 +594,10 @@ test("gl_unittests") {
   if (use_ozone) {
     deps += [ "//ui/ozone" ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 # We can't run this test on real Chrome OS hardware for Ozone, so new target.

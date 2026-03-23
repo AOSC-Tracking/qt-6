@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/svg/svg_element.h"
 #include "third_party/blink/renderer/core/svg/svg_resource_document_cache.h"
 #include "third_party/blink/renderer/core/svg/svg_resource_document_observer.h"
+#include "third_party/blink/renderer/core/svg/svg_svg_element.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 
@@ -73,7 +74,9 @@ class SVGResourceDocumentContent::ChromeClient final
  private:
   void ChromeDestroyed() override { content_.Clear(); }
   void InvalidateContainer() override { content_->ContentChanged(); }
-  void ScheduleAnimation(const LocalFrameView*, base::TimeDelta) override {
+  void ScheduleAnimation(const LocalFrameView*,
+                         base::TimeDelta,
+                         bool) override {
     content_->ContentChanged();
   }
 
@@ -140,7 +143,8 @@ SVGResourceDocumentContent::UpdateDocument(scoped_refptr<SharedBuffer> data,
       *chrome_client, *agent_group_scheduler_, std::move(data),
       WTF::BindOnce(&SVGResourceDocumentContent::AsyncLoadingFinished,
                     WrapWeakPersistent(this)),
-      nullptr, IsolatedSVGDocumentHost::ProcessingMode::kStatic);
+      /* inherited_settings */ nullptr, /* inherited_color_maps */ nullptr,
+      IsolatedSVGDocumentHost::ProcessingMode::kStatic);
   // If IsLoaded() returns true then the document load completed synchronously,
   // so we can check if we have a usable document and notify our listeners. If
   // not, then we need to wait for the async load completion callback.
@@ -228,7 +232,11 @@ SVGResourceTarget* SVGResourceDocumentContent::GetResourceTarget(
     return nullptr;
   }
   auto* svg_target =
-      DynamicTo<SVGElement>(document->getElementById(element_id));
+      element_id.empty() &&
+              RuntimeEnabledFeatures::
+                  AllowSvgUseToReferenceExternalDocumentRootEnabled()
+          ? DynamicTo<SVGSVGElement>(document->documentElement())
+          : DynamicTo<SVGElement>(document->getElementById(element_id));
   if (!svg_target) {
     return nullptr;
   }

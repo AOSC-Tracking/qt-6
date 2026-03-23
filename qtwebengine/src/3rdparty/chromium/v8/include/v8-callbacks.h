@@ -190,6 +190,9 @@ using GCCallback = void (*)(GCType type, GCCallbackFlags flags);
 
 using InterruptCallback = void (*)(Isolate* isolate, void* data);
 
+using PrintCurrentStackTraceFilterCallback =
+    bool (*)(Isolate* isolate, Local<String> script_name);
+
 /**
  * This callback is invoked when the heap size is close to the heap limit and
  * V8 is likely to abort with out-of-memory error.
@@ -323,10 +326,6 @@ using WasmImportedStringsEnabledCallback = bool (*)(Local<Context> context);
 
 // --- Callback for checking if the SharedArrayBuffer constructor is enabled ---
 using SharedArrayBufferConstructorEnabledCallback =
-    bool (*)(Local<Context> context);
-
-// --- Callback for checking if the compile hints magic comments are enabled ---
-using JavaScriptCompileHintsMagicEnabledCallback =
     bool (*)(Local<Context> context);
 
 // --- Callback for checking if WebAssembly JSPI is enabled ---

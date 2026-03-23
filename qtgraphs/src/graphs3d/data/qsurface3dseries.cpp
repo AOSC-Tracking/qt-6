@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qcategory3daxis.h"
 #include "qquickgraphssurface_p.h"
@@ -167,7 +169,7 @@ QT_BEGIN_NAMESPACE
  * \qmlproperty DrawFlag Surface3DSeries::drawMode
  *
  * Sets the drawing mode to one of
- * \l{QSurface3DSeries::DrawFlag}{Surface3DSeries.DrawFlag}{QSurface3DSeries.DrawFilledSurface}. 
+ * \l{QSurface3DSeries::DrawFlag}{Surface3DSeries.DrawFlag}{QSurface3DSeries.DrawFilledSurface}.
  * Either DrawWireframe or DrawSurface must be set
  */
 
@@ -182,6 +184,15 @@ QT_BEGIN_NAMESPACE
  * \qmlproperty color Surface3DSeries::wireframeColor
  *
  * The color used to draw the gridlines of the surface wireframe.
+ */
+
+/*
+ * \qmlproperty bool Surface3DSeries::rowsSanitized
+ * \since 6.11
+ *  Whether to perform row sanitization.
+ *
+ *  When \c{true}, removes rows in the series that do not contain valid data.
+ *  \note This may incur a small performance penalty.
  */
 
 /*!
@@ -230,6 +241,11 @@ QT_BEGIN_NAMESPACE
     \qmlsignal Surface3DSeries::wireframeColorChanged(color color)
 
     This signal is emitted when wireframeColor changes to \a color.
+*/
+/*!
+    \qmlsignal Surface3DSeries::rowsSanitizedChanged(bool enabled)
+
+    This signal is emitted when rowsSanitized changes to \a enabled.
 */
 /*!
     \qmlsignal Surface3DSeries::dataArrayChanged(SurfaceDataArray array)
@@ -524,6 +540,31 @@ QColor QSurface3DSeries::wireframeColor() const
 }
 
 /*!
+ *  \property QSurface3DSeries::rowsSanitized
+ *
+ *  \brief Whether to perform row sanitization.
+ *
+ *  When \a sanitized is \c{true}, removes rows in the series that do not contain valid data.
+ *  \note This may incur a small performance penalty.
+ */
+void QSurface3DSeries::setRowsSanitized(bool sanitized)
+{
+    Q_D(QSurface3DSeries);
+
+    if (d->m_rowsSanitized == sanitized) {
+        qCDebug(lcProperties3D) << __FUNCTION__ << "value is already set to " << sanitized;
+        return;
+    }
+    d->setRowsSanitized(sanitized);
+    emit rowsSanitizedChanged(sanitized);
+}
+
+bool QSurface3DSeries::rowsSanitized() const {
+    Q_D(const QSurface3DSeries);
+    return d->m_rowsSanitized;
+}
+
+/*!
  * \property QSurface3DSeries::dataArray
  *
  * \brief Data array for the series.
@@ -582,6 +623,115 @@ QSurfaceDataArray QSurface3DSeries::dataArray() &&
     return std::move(d->m_dataArray);
 }
 
+/*!
+ * \property QSurface3DSeries::axisX
+ * \since 6.11
+ *
+ * \brief Holds an additional X-axis for the series
+ *  If an axis is given, the series will be fitted
+ *  to the minimum and maximum values of the axis.
+ *
+ */
+void QSurface3DSeries::setAxisX(QValue3DAxis *axis) {
+    Q_D(QSurface3DSeries);
+    if (d->m_axisX == axis) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "value is already set to:" << axis;
+        return;
+    }
+    d->setAxisX(axis);
+    emit axisXChanged(axis);
+}
+
+QValue3DAxis *QSurface3DSeries::axisX() const {
+    Q_D(const QSurface3DSeries);
+    return d->m_axisX;
+}
+
+void QSurface3DSeries::resetAxisX()
+{
+    Q_D(QSurface3DSeries);
+    if (!d->m_axisX) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "axis X does not set";
+        return;
+    }
+    d->resetAxisX();
+    emit axisXChanged(nullptr);
+}
+
+/*!
+ * \property QSurface3DSeries::axisY
+ * \since 6.11
+ *
+ * \brief Holds an additional Y-axis for the series
+ *  If an axis is given, the series will be fitted
+ *  to the minimum and maximum values of the axis.
+ */
+void QSurface3DSeries::setAxisY(QValue3DAxis *axis) {
+    Q_D(QSurface3DSeries);
+    if (d->m_axisY == axis) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "value is already set to:" << axis;
+        return;
+    }
+    d->setAxisY(axis);
+    emit axisYChanged(axis);
+}
+
+QValue3DAxis *QSurface3DSeries::axisY() const {
+    Q_D(const QSurface3DSeries);
+    return d->m_axisY;
+}
+
+void QSurface3DSeries::resetAxisY()
+{
+    Q_D(QSurface3DSeries);
+    if (!d->m_axisY) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "axis y does not set";
+        return;
+    }
+    d->resetAxisY();
+    emit axisYChanged(nullptr);
+}
+
+/*!
+ * \property QSurface3DSeries::axisZ
+ * \since 6.11
+ *
+ * \brief Holds an additional Z-axis for the series
+ *  If an axis is given, the series will be fitted
+ *  to the minimum and maximum values of the axis.
+ */
+void QSurface3DSeries::setAxisZ(QValue3DAxis *axis) {
+    Q_D(QSurface3DSeries);
+    if (d->m_axisZ == axis) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "value is already set to:" << axis;
+        return;
+    }
+    d->setAxisZ(axis);
+    emit axisZChanged(axis);
+}
+
+QValue3DAxis *QSurface3DSeries::axisZ() const {
+    Q_D(const QSurface3DSeries);
+    return d->m_axisZ;
+}
+
+void QSurface3DSeries::resetAxisZ()
+{
+    Q_D(QSurface3DSeries);
+    if (!d->m_axisZ) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "axis z does not set";
+        return;
+    }
+    d->resetAxisZ();
+    emit axisZChanged(nullptr);
+}
+
 // QSurface3DSeriesPrivate
 
 QSurface3DSeriesPrivate::QSurface3DSeriesPrivate()
@@ -590,6 +740,10 @@ QSurface3DSeriesPrivate::QSurface3DSeriesPrivate()
     , m_shading(QSurface3DSeries::Shading::Flat)
     , m_drawMode(QSurface3DSeries::DrawSurfaceAndWireframe)
     , m_wireframeColor(Qt::black)
+    , m_rowsSanitized(false)
+    , m_axisX(nullptr)
+    , m_axisY(nullptr)
+    , m_axisZ(nullptr)
 {
     m_itemLabelFormat = QStringLiteral("@xLabel, @yLabel, @zLabel");
     m_mesh = QAbstract3DSeries::Mesh::Sphere;
@@ -744,6 +898,8 @@ void QSurface3DSeriesPrivate::setTexture(const QImage &texture)
 {
     Q_Q(QSurface3DSeries);
     m_texture = texture;
+    if (m_graph)
+        m_graph->markSeriesVisualsDirty();
     if (static_cast<QQuickGraphsSurface *>(m_graph))
         static_cast<QQuickGraphsSurface *>(m_graph)->updateSurfaceTexture(q);
 }
@@ -753,6 +909,13 @@ void QSurface3DSeriesPrivate::setWireframeColor(QColor color)
     m_wireframeColor = color;
     if (m_graph)
         m_graph->markSeriesVisualsDirty();
+}
+
+void QSurface3DSeriesPrivate::setRowsSanitized(bool enabled)
+{
+    m_rowsSanitized = enabled;
+    if (m_graph)
+        m_graph->markDataDirty();
 }
 
 void QSurface3DSeriesPrivate::setDataArray(const QSurfaceDataArray &newDataArray)
@@ -770,4 +933,36 @@ void QSurface3DSeriesPrivate::clearArray()
     m_dataArray.clear();
 }
 
+void QSurface3DSeriesPrivate::setAxisX(QValue3DAxis *axis)
+{
+    m_axisX = axis;
+}
+
+void QSurface3DSeriesPrivate::resetAxisX()
+{
+    m_axisX = nullptr;
+}
+
+void QSurface3DSeriesPrivate::setAxisY(QValue3DAxis *axis)
+{
+    m_axisY = axis;
+}
+
+void QSurface3DSeriesPrivate::resetAxisY()
+{
+    m_axisY = nullptr;
+}
+
+void QSurface3DSeriesPrivate::setAxisZ(QValue3DAxis *axis)
+{
+    m_axisZ = axis;
+}
+
+void QSurface3DSeriesPrivate::resetAxisZ()
+{
+    m_axisZ = nullptr;
+}
+
 QT_END_NAMESPACE
+
+#include "moc_qsurface3dseries.cpp"

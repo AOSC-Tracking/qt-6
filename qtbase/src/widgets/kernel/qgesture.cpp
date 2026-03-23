@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qgesture.h"
 #include "private/qgesture_p.h"
@@ -195,7 +196,7 @@ QGesture::GestureCancelPolicy QGesture::gestureCancelPolicy() const
     \ingroup gestures
     \inmodule QtWidgets
 
-    \image pangesture.png
+    \image pangesture.png {Demonstration of moving an image with pan gesture}
 
     For an overview of gesture handling in Qt and information on using gestures
     in your applications, see the \l{Gestures in Widgets and Graphics View} document.
@@ -326,7 +327,7 @@ void QPanGesture::setAcceleration(qreal value)
     For an overview of gesture handling in Qt and information on using gestures
     in your applications, see the \l{Gestures in Widgets and Graphics View} document.
 
-    \image pinchgesture.png
+    \image pinchgesture.png {Demonstration of pinch gesture with two fingers}
 
     Instead of repeatedly applying the same pinching gesture, the user may
     continue to touch the input device in one place, and apply a second touch
@@ -590,7 +591,7 @@ void QPinchGesture::setRotationAngle(qreal value)
     \ingroup gestures
     \inmodule QtWidgets
 
-    \image swipegesture.png
+    \image swipegesture.png {Demonstration of swipe gesture}
 
     For an overview of gesture handling in Qt and information on using gestures
     in your applications, see the \l{Gestures in Widgets and Graphics View} document.
@@ -1057,9 +1058,8 @@ QPointF QGestureEvent::mapToGraphicsScene(const QPointF &gesturePoint) const
     if (w) // we get the viewport as widget, not the graphics view
         w = w->parentWidget();
     QGraphicsView *view = qobject_cast<QGraphicsView*>(w);
-    if (view) {
-        return view->mapToScene(view->mapFromGlobal(gesturePoint.toPoint()));
-    }
+    if (view)
+        return view->mapToScene(view->mapFromGlobal(gesturePoint).toPoint());
     return QPointF();
 }
 #endif // QT_CONFIG(graphicsview)

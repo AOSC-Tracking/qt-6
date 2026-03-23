@@ -12,7 +12,6 @@
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
 #include "base/containers/flat_map.h"
-#include "base/memory/raw_ptr.h"
 
 namespace base {
 
@@ -60,8 +59,6 @@ class BASE_EXPORT dict_iterator {
   dict_iterator operator--(int);
 
   BASE_EXPORT friend bool operator==(const dict_iterator& lhs,
-                                     const dict_iterator& rhs);
-  BASE_EXPORT friend bool operator!=(const dict_iterator& lhs,
                                      const dict_iterator& rhs);
 
   // Currently, there is no easy way to friend Value::Dict. Once dictionary
@@ -115,8 +112,6 @@ class BASE_EXPORT const_dict_iterator {
   const_dict_iterator operator--(int);
 
   BASE_EXPORT friend bool operator==(const const_dict_iterator& lhs,
-                                     const const_dict_iterator& rhs);
-  BASE_EXPORT friend bool operator!=(const const_dict_iterator& lhs,
                                      const const_dict_iterator& rhs);
 
   // Currently, there is no easy way to friend Value::Dict. Once dictionary

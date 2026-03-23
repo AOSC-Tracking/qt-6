@@ -10,7 +10,7 @@ import * as UI from '../../ui/legacy/legacy.js';
 import {TestRunner} from '../test_runner/test_runner.js';
 
 /**
- * @fileoverview using private properties isn't a Closure violation in tests.
+ * @file using private properties isn't a Closure violation in tests.
  */
 export const HeapProfilerTestRunner = {};
 
@@ -59,7 +59,8 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
           trace_node_fields: ['id', 'function_info_index', 'count', 'size', 'children']
         },
         node_count: 6,
-        edge_count: 7
+        edge_count: 7,
+        trace_function_count: 1
       },
 
       nodes: [
@@ -82,6 +83,9 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
   HeapProfilerTestRunner.postprocessHeapSnapshotMock = function(mock) {
     mock.nodes = new Uint32Array(mock.nodes);
     mock.edges = new Uint32Array(mock.edges);
+    if (mock.trace_function_infos) {
+      mock.trace_function_infos = new Uint32Array(mock.trace_function_infos);
+    }
     mock.nodes.getValue = mock.edges.getValue = function(i) {
       return this[i];
     };
@@ -282,10 +286,9 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
       return rawSnapshot;
     },
 
-    createJSHeapSnapshot: function() {
+    createJSHeapSnapshot: async function() {
       const parsedSnapshot = HeapProfilerTestRunner.postprocessHeapSnapshotMock(this.generateSnapshot());
-      return new HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot(
-          parsedSnapshot, new HeapSnapshotWorker.HeapSnapshot.HeapSnapshotProgress());
+      return await HeapSnapshotWorker.HeapSnapshot.createJSHeapSnapshotForTesting(parsedSnapshot);
     },
 
     registerNode: function(node) {
@@ -674,7 +677,7 @@ HeapProfilerTestRunner.takeAndOpenSnapshot = async function(generator, callback)
 };
 
 /**
- * @return {!Promise<!Profiler.HeapSnapshotView.HeapProfileHeader>}
+ * @returns
  */
 HeapProfilerTestRunner.takeSnapshotPromise = function() {
   return new Promise(resolve => {
@@ -774,7 +777,7 @@ HeapProfilerTestRunner.startSamplingHeapProfiler = async function() {
         resolve =>
             UI.Context.Context.instance().addFlavorChangeListener(SDK.HeapProfilerModel.HeapProfilerModel, resolve));
   }
-  Profiler.HeapProfileView.SamplingHeapProfileType.instance.startRecordingProfile();
+  await Profiler.HeapProfileView.SamplingHeapProfileType.instance.startRecordingProfile();
 };
 
 HeapProfilerTestRunner.stopSamplingHeapProfiler = function() {

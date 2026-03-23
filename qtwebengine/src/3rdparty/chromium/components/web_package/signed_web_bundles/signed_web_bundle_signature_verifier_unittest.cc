@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <variant>
 
 #include "base/base_paths.h"
 #include "base/containers/extend.h"
@@ -17,7 +18,6 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/functional/overloaded.h"
 #include "base/notreached.h"
 #include "base/path_service.h"
 #include "base/scoped_observation.h"
@@ -42,6 +42,7 @@
 #include "components/web_package/test_support/signed_web_bundles/web_bundle_signer.h"
 #include "components/web_package/web_bundle_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 namespace web_package::test {
 
@@ -134,7 +135,7 @@ constexpr uint8_t kEcdsaP256BundleIdCbor[] = {
 };
 
 SignedWebBundleId CreateForKeyPair(const KeyPair& key_pair) {
-  return absl::visit(
+  return std::visit(
       [](const auto& key_pair) {
         return SignedWebBundleId::CreateForPublicKey(key_pair.public_key);
       },
@@ -306,17 +307,17 @@ TEST_P(SignedWebBundleSignatureVerifierTest, VerifySignatures) {
 
   std::vector<PublicKey> inferred_public_keys =
       base::ToVector(signatures, [](const auto& signature) {
-        return absl::visit(
-            base::Overloaded{[](const auto& signature_info) -> PublicKey {
-                               return signature_info.public_key();
-                             },
-                             [](const SignedWebBundleSignatureInfoUnknown&)
-                                 -> PublicKey { NOTREACHED(); }},
+        return std::visit(
+            absl::Overload{[](const auto& signature_info) -> PublicKey {
+                             return signature_info.public_key();
+                           },
+                           [](const SignedWebBundleSignatureInfoUnknown&)
+                               -> PublicKey { NOTREACHED(); }},
             signature.signature_info());
       });
   std::vector<PublicKey> expected_public_keys =
       base::ToVector(key_pairs, [](const auto& key_pair) {
-        return absl::visit(
+        return std::visit(
             [](const auto& key_pair) -> PublicKey {
               return key_pair.public_key;
             },

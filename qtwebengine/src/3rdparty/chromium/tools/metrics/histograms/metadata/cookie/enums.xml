@@ -73,6 +73,8 @@ chromium-metrics-reviews@google.com.
   <int value="0" label="No special prefix"/>
   <int value="1" label="Secure prefix"/>
   <int value="2" label="Host prefix"/>
+  <int value="3" label="Http prefix"/>
+  <int value="4" label="HostHttp prefix"/>
 </enum>
 
 <enum name="CookieRequestScheme">
@@ -118,13 +120,6 @@ chromium-metrics-reviews@google.com.
       label="Source and destination ports do not match but are the defaults
              for their scheme."/>
   <int value="4" label="Source and destination ports match."/>
-</enum>
-
-<enum name="CookieSourceScheme">
-  <int value="0" label="Secure cookie, source scheme is cryptographic"/>
-  <int value="1" label="Secure cookie, source scheme is not cryptographic"/>
-  <int value="2" label="Not Secure cookie, source scheme is cryptographic"/>
-  <int value="3" label="Not Secure cookie, source scheme is not cryptographic"/>
 </enum>
 
 <enum name="CookieSourceSchemeName">

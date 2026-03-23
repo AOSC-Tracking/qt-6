@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dperspectivecamera_p.h"
 
@@ -30,7 +32,7 @@ QT_BEGIN_NAMESPACE
     has its forward vector pointing along the negative Z axis and its up vector along
     the positive Y axis.
 
-    \image perspectivecamera.png
+    \image perspectivecamera.png {Perspective camera projection diagram}
 
     PerspectiveCamera is the standard \l Camera type. It gives a realistic projection of the
     scene, where distant objects are perceived as smaller. The frustum is defined by
@@ -60,7 +62,7 @@ QQuick3DPerspectiveCamera::QQuick3DPerspectiveCamera(QQuick3DNodePrivate &dd, QQ
     \internal
 */
 QQuick3DPerspectiveCamera::QQuick3DPerspectiveCamera(QQuick3DNode *parent)
-    : QQuick3DPerspectiveCamera(*(new QQuick3DNodePrivate(QQuick3DNodePrivate::Type::PerspectiveCamera)), parent)
+    : QQuick3DPerspectiveCamera(*(new QQuick3DNodePrivate(QQuick3DNodePrivate::Type::PerspectiveCamera, QQuick3DContentLayer::LayerAll)), parent)
 {}
 
 /*!

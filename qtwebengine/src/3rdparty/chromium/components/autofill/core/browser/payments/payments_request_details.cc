@@ -16,7 +16,8 @@ UnmaskDetails::UnmaskDetails(UnmaskDetails&&) = default;
 
 UnmaskDetails& UnmaskDetails::operator=(const UnmaskDetails& other) {
   unmask_auth_method = other.unmask_auth_method;
-  offer_fido_opt_in = other.offer_fido_opt_in;
+  server_denotes_fido_eligible_but_not_opted_in =
+      other.server_denotes_fido_eligible_but_not_opted_in;
   if (other.fido_request_options.empty()) {
     fido_request_options.clear();
   } else {
@@ -286,5 +287,41 @@ BnplFetchUrlResponseDetails& BnplFetchUrlResponseDetails::operator=(
 BnplFetchUrlResponseDetails& BnplFetchUrlResponseDetails::operator=(
     BnplFetchUrlResponseDetails&&) = default;
 BnplFetchUrlResponseDetails::~BnplFetchUrlResponseDetails() = default;
+
+GetDetailsForUpdateBnplPaymentInstrumentRequestDetails::
+    GetDetailsForUpdateBnplPaymentInstrumentRequestDetails() = default;
+GetDetailsForUpdateBnplPaymentInstrumentRequestDetails::
+    GetDetailsForUpdateBnplPaymentInstrumentRequestDetails(
+        const GetDetailsForUpdateBnplPaymentInstrumentRequestDetails&) =
+        default;
+GetDetailsForUpdateBnplPaymentInstrumentRequestDetails&
+GetDetailsForUpdateBnplPaymentInstrumentRequestDetails::operator=(
+    const GetDetailsForUpdateBnplPaymentInstrumentRequestDetails& other) =
+    default;
+GetDetailsForUpdateBnplPaymentInstrumentRequestDetails::
+    GetDetailsForUpdateBnplPaymentInstrumentRequestDetails(
+        GetDetailsForUpdateBnplPaymentInstrumentRequestDetails&&) = default;
+GetDetailsForUpdateBnplPaymentInstrumentRequestDetails&
+GetDetailsForUpdateBnplPaymentInstrumentRequestDetails::operator=(
+    GetDetailsForUpdateBnplPaymentInstrumentRequestDetails&&) = default;
+GetDetailsForUpdateBnplPaymentInstrumentRequestDetails::
+    ~GetDetailsForUpdateBnplPaymentInstrumentRequestDetails() = default;
+
+UpdateBnplPaymentInstrumentRequestDetails::
+    UpdateBnplPaymentInstrumentRequestDetails() = default;
+UpdateBnplPaymentInstrumentRequestDetails::
+    UpdateBnplPaymentInstrumentRequestDetails(
+        const UpdateBnplPaymentInstrumentRequestDetails&) = default;
+UpdateBnplPaymentInstrumentRequestDetails&
+UpdateBnplPaymentInstrumentRequestDetails::operator=(
+    const UpdateBnplPaymentInstrumentRequestDetails& other) = default;
+UpdateBnplPaymentInstrumentRequestDetails::
+    UpdateBnplPaymentInstrumentRequestDetails(
+        UpdateBnplPaymentInstrumentRequestDetails&&) = default;
+UpdateBnplPaymentInstrumentRequestDetails&
+UpdateBnplPaymentInstrumentRequestDetails::operator=(
+    UpdateBnplPaymentInstrumentRequestDetails&&) = default;
+UpdateBnplPaymentInstrumentRequestDetails::
+    ~UpdateBnplPaymentInstrumentRequestDetails() = default;
 
 }  // namespace autofill::payments

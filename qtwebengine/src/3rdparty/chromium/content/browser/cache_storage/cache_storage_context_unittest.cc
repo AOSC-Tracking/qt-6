@@ -122,7 +122,7 @@ TEST_F(CacheStorageContextTest, DefaultBucketCreatedOnAddReceiver) {
       storage::BucketInfo result,
       quota_manager_proxy_sync.GetBucket(
           blink::StorageKey::CreateFromStringForTesting(kExampleStorageKey),
-          storage::kDefaultBucketName, blink::mojom::StorageType::kTemporary));
+          storage::kDefaultBucketName));
   EXPECT_EQ(result.name, storage::kDefaultBucketName);
   EXPECT_EQ(result.storage_key,
             blink::StorageKey::CreateFromStringForTesting(kExampleStorageKey));
@@ -133,7 +133,7 @@ TEST_F(CacheStorageContextTest, DefaultBucketCreatedOnAddReceiver) {
       result,
       quota_manager_proxy_sync.GetBucket(
           blink::StorageKey::CreateFromStringForTesting(kGoogleStorageKey),
-          storage::kDefaultBucketName, blink::mojom::StorageType::kTemporary));
+          storage::kDefaultBucketName));
   EXPECT_EQ(result.name, storage::kDefaultBucketName);
   EXPECT_EQ(result.storage_key,
             blink::StorageKey::CreateFromStringForTesting(kGoogleStorageKey));
@@ -192,22 +192,26 @@ TEST_F(CacheStorageContextTest, GetDefaultBucketError) {
       blink::mojom::FetchAPIRequest::New(), std::move(options),
       /*in_related_fetch_event=*/false, /*in_range_fetch_event=*/false,
       /*trace_id=*/0,
-      base::BindLambdaForTesting([&](blink::mojom::MatchResultPtr result) {
-        EXPECT_EQ(result->get_status(),
-                  blink::mojom::CacheStorageError::kErrorStorage);
-        loop_4.Quit();
-      }));
+      base::BindLambdaForTesting(
+          [&](blink::mojom::CacheStorage::MatchResult result) {
+            EXPECT_FALSE(result.has_value());
+            EXPECT_EQ(result.error(),
+                      blink::mojom::CacheStorageError::kErrorStorage);
+            loop_4.Quit();
+          }));
   loop_4.Run();
 
   // CacheStorage::Open
   base::RunLoop loop_5;
   example_remote->Open(
       u"cache_name", /*trace_id=*/0,
-      base::BindLambdaForTesting([&](blink::mojom::OpenResultPtr result) {
-        EXPECT_EQ(result->get_status(),
-                  blink::mojom::CacheStorageError::kErrorStorage);
-        loop_5.Quit();
-      }));
+      base::BindLambdaForTesting(
+          [&](blink::mojom::CacheStorage::OpenResult result) {
+            EXPECT_FALSE(result.has_value());
+            EXPECT_EQ(result.error(),
+                      blink::mojom::CacheStorageError::kErrorStorage);
+            loop_5.Quit();
+          }));
   loop_5.Run();
 }
 

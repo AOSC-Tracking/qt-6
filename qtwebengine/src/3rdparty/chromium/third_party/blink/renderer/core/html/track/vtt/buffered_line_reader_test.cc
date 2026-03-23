@@ -188,7 +188,7 @@ String MakeTestData(base::span<const char*> lines,
   return builder.ToString();
 }
 
-const auto kBlockSizes = std::to_array<wtf_size_t>(
+constexpr auto kBlockSizes = std::to_array<wtf_size_t>(
     {64, 32, 16, 8, 4, 2, 1, 3, 5, 7, 9, 11, 13, 17, 19, 23});
 
 TEST(BufferedLineReaderTest, BufferSizes) {
@@ -279,7 +279,7 @@ TEST(BufferedLineReaderTest, NormalizedNUL) {
   reader.Append(String(base::span_from_cstring("X\0Y\n")));
   String line;
   ASSERT_TRUE(reader.GetLine(line));
-  ASSERT_EQ(line[1], kReplacementCharacter);
+  ASSERT_EQ(line[1], uchar::kReplacementCharacter);
 }
 
 }  // namespace blink

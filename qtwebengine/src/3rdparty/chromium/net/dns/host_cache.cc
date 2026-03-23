@@ -16,6 +16,7 @@
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/check_op.h"
@@ -27,13 +28,13 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/default_tick_clock.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/optional_util.h"
 #include "base/value_iterators.h"
 #include "net/base/address_family.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/base/url_util.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/host_resolver_internal_result.h"
@@ -41,7 +42,6 @@
 #include "net/dns/public/dns_protocol.h"
 #include "net/dns/public/host_resolver_source.h"
 #include "net/log/net_log.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "url/scheme_host_port.h"
 
 namespace net {
@@ -176,13 +176,13 @@ bool IsValidHostname(std::string_view hostname) {
 }
 
 const std::string& GetHostname(
-    const absl::variant<url::SchemeHostPort, std::string>& host) {
+    const std::variant<url::SchemeHostPort, std::string>& host) {
   const std::string* hostname;
-  if (absl::holds_alternative<url::SchemeHostPort>(host)) {
-    hostname = &absl::get<url::SchemeHostPort>(host).host();
+  if (std::holds_alternative<url::SchemeHostPort>(host)) {
+    hostname = &std::get<url::SchemeHostPort>(host).host();
   } else {
-    DCHECK(absl::holds_alternative<std::string>(host));
-    hostname = &absl::get<std::string>(host);
+    DCHECK(std::holds_alternative<std::string>(host));
+    hostname = &std::get<std::string>(host);
   }
 
   DCHECK(IsValidHostname(*hostname));
@@ -216,7 +216,7 @@ enum HostCache::SetOutcome : int {
   MAX_SET_OUTCOME
 };
 
-HostCache::Key::Key(absl::variant<url::SchemeHostPort, std::string> host,
+HostCache::Key::Key(std::variant<url::SchemeHostPort, std::string> host,
                     DnsQueryType dns_query_type,
                     HostResolverFlags host_resolver_flags,
                     HostResolverSource host_resolver_source,
@@ -227,8 +227,9 @@ HostCache::Key::Key(absl::variant<url::SchemeHostPort, std::string> host,
       host_resolver_source(host_resolver_source),
       network_anonymization_key(network_anonymization_key) {
   DCHECK(IsValidHostname(GetHostname(this->host)));
-  if (absl::holds_alternative<url::SchemeHostPort>(this->host))
-    DCHECK(absl::get<url::SchemeHostPort>(this->host).IsValid());
+  if (std::holds_alternative<url::SchemeHostPort>(this->host)) {
+    DCHECK(std::get<url::SchemeHostPort>(this->host).IsValid());
+  }
 }
 
 HostCache::Key::Key() = default;
@@ -386,8 +387,6 @@ HostCache::Entry::Entry(
 
     // Even if otherwise empty, having the metadata result object signifies
     // receiving a compatible HTTPS record.
-    https_record_compatibility_ = std::vector<bool>{true};
-
     if (data_results.empty() && endpoint_metadatas_.empty()) {
       error_ = ERR_NAME_NOT_RESOLVED;
     }
@@ -466,8 +465,6 @@ HostCache::Entry HostCache::Entry::MergeEntries(Entry front, Entry back) {
   MergeContainers(front.aliases_, back.aliases_);
   MergeLists(front.text_records_, back.text_records());
   MergeLists(front.hostnames_, back.hostnames());
-  MergeLists(front.https_record_compatibility_,
-             back.https_record_compatibility_);
   MergeContainers(front.canonical_names_, back.canonical_names_);
 
   // Only expected to merge entries from same source.
@@ -578,7 +575,6 @@ HostCache::Entry::Entry(const HostCache::Entry& entry,
       aliases_(entry.aliases()),
       text_records_(entry.text_records()),
       hostnames_(entry.hostnames()),
-      https_record_compatibility_(entry.https_record_compatibility_),
       source_(entry.source()),
       pinning_(entry.pinning()),
       canonical_names_(entry.canonical_names()),
@@ -594,7 +590,6 @@ HostCache::Entry::Entry(
     std::set<std::string> aliases,
     std::vector<std::string>&& text_records,
     std::vector<HostPortPair>&& hostnames,
-    std::vector<bool>&& https_record_compatibility,
     Source source,
     base::TimeTicks expires,
     int network_changes)
@@ -604,14 +599,9 @@ HostCache::Entry::Entry(
       aliases_(std::move(aliases)),
       text_records_(std::move(text_records)),
       hostnames_(std::move(hostnames)),
-      https_record_compatibility_(std::move(https_record_compatibility)),
       source_(source),
       expires_(expires),
       network_changes_(network_changes) {}
-
-void HostCache::Entry::PrepareForCacheInsertion() {
-  https_record_compatibility_.clear();
-}
 
 bool HostCache::Entry::IsStale(base::TimeTicks now, int network_changes) const {
   EntryStaleness stale;
@@ -887,7 +877,6 @@ void HostCache::Set(const Key& key,
 
   Entry entry_for_cache(entry, now, ttl, network_changes_);
   entry_for_cache.set_pinning(entry.pinning().value_or(has_active_pin));
-  entry_for_cache.PrepareForCacheInsertion();
   AddEntry(key, std::move(entry_for_cache));
 
   if (delegate_ && result_changed)
@@ -996,13 +985,13 @@ void HostCache::GetList(base::Value::List& entry_list,
 
     base::Value::Dict entry_dict = entry.GetAsValue(include_staleness);
 
-    const auto* host = absl::get_if<url::SchemeHostPort>(&key.host);
+    const auto* host = std::get_if<url::SchemeHostPort>(&key.host);
     if (host) {
       entry_dict.Set(kSchemeKey, host->scheme());
       entry_dict.Set(kHostnameKey, host->host());
       entry_dict.Set(kPortKey, host->port());
     } else {
-      entry_dict.Set(kHostnameKey, absl::get<std::string>(key.host));
+      entry_dict.Set(kHostnameKey, std::get<std::string>(key.host));
     }
 
     entry_dict.Set(kDnsQueryTypeKey,
@@ -1039,7 +1028,7 @@ bool HostCache::RestoreFromListValue(const base::Value::List& old_cache) {
 
     // Use presence of scheme to determine host type.
     const std::string* scheme_ptr = entry_dict.FindString(kSchemeKey);
-    absl::variant<url::SchemeHostPort, std::string> host;
+    std::variant<url::SchemeHostPort, std::string> host;
     if (scheme_ptr) {
       std::optional<int> port = entry_dict.FindInt(kPortKey);
       if (!port || !base::IsValueInRangeForNumericType<uint16_t>(port.value()))
@@ -1208,9 +1197,6 @@ bool HostCache::RestoreFromListValue(const base::Value::List& old_cache) {
       }
     }
 
-    // We do not intend to serialize experimental results with the host cache.
-    std::vector<bool> experimental_results;
-
     Key key(std::move(host), dns_query_type.value(), flags,
             static_cast<HostResolverSource>(host_resolver_source),
             network_anonymization_key);
@@ -1223,8 +1209,8 @@ bool HostCache::RestoreFromListValue(const base::Value::List& old_cache) {
       Entry new_entry(error, std::move(ip_endpoints),
                       std::move(endpoint_metadatas), std::move(aliases),
                       std::move(text_records), std::move(hostname_records),
-                      std::move(experimental_results), Entry::SOURCE_UNKNOWN,
-                      expiration_time, network_changes_ - 1);
+                      Entry::SOURCE_UNKNOWN, expiration_time,
+                      network_changes_ - 1);
       new_entry.set_pinning(maybe_pinned.value_or(false));
       new_entry.set_canonical_names(std::move(canonical_names));
       AddEntry(key, std::move(new_entry));

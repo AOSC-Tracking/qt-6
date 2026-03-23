@@ -34,7 +34,9 @@
 // We need to define USE_VULKAN_XCB for proper vulkan function pointers.
 // Avoiding it may lead to call wrong vulkan functions.
 // This is originally defined in chromium/gpu/vulkan/BUILD.gn.
+#if !defined(USE_VULKAN_XCB)
 #define USE_VULKAN_XCB
+#endif
 #endif // BUILDFLAG(IS_OZONE_X11)
 #include "gpu/vulkan/vulkan_function_pointers.h"
 
@@ -148,8 +150,13 @@ QSGTexture *NativeSkiaOutputDeviceOpenGL::texture(QQuickWindow *win, uint32_t te
     GrVkImageInfo vkImageInfo;
     if (!nativePixmap) {
         if (m_isNativeBufferSupported) {
-            qWarning("No native pixmap.");
+            qWarning("Failed to get native pixmap despite dma_buf support.");
             return nullptr;
+        }
+
+        if (m_contextState->gr_context_type() != gpu::GrContextType::kVulkan) {
+            // Unable to fall back to Vulkan; aborting.
+            qWarning("Failed to get native pixmap due to dma_buf acquisition failure.");
         }
 
         sk_sp<SkImage> skImage = m_frontBuffer->skImage();

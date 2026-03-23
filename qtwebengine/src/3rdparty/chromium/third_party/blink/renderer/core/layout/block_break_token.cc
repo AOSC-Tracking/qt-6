@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/core/layout/inline/inline_break_token.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/size_assertions.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -70,9 +71,10 @@ BlockBreakToken::BlockBreakToken(PassKey key, BoxFragmentBuilder* builder)
   DCHECK(builder->HasBreakTokenData());
   data_ = builder->break_token_data_;
   builder->break_token_data_ = nullptr;
-  for (wtf_size_t i = 0; i < builder->child_break_tokens_.size(); ++i) {
-    // TODO(crbug.com/351564777): Resolve a buffer safety issue.
-    UNSAFE_TODO(child_break_tokens_[i]) = builder->child_break_tokens_[i];
+  for (wtf_size_t i = 0; i < const_num_children_; ++i) {
+    // SAFETY: `const_num_children_` ensures buffer access never goes out of
+    // range.
+    UNSAFE_BUFFERS(child_break_tokens_[i]) = builder->child_break_tokens_[i];
   }
 }
 
@@ -116,11 +118,11 @@ void BlockBreakToken::MutableForOofFragmentation::Merge(
   }
 }
 
-#if DCHECK_IS_ON()
-
-String BlockBreakToken::ToString() const {
+String BlockBreakToken::ToString(bool skip_node_info) const {
   StringBuilder string_builder;
-  string_builder.Append(InputNode().ToString());
+  if (!skip_node_info) {
+    string_builder.Append(InputNode().ToString());
+  }
   if (is_break_before_) {
     if (is_forced_break_) {
       string_builder.Append(" forced");
@@ -145,7 +147,8 @@ String BlockBreakToken::ToString() const {
   string_builder.Append(ConsumedBlockSize().ToString());
   string_builder.Append("px");
 
-  if (ConsumedBlockSizeForLegacy() != ConsumedBlockSize()) {
+  if (!RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled() &&
+      ConsumedBlockSizeForLegacy() != ConsumedBlockSize()) {
     string_builder.Append(" legacy consumed:");
     string_builder.Append(ConsumedBlockSizeForLegacy().ToString());
     string_builder.Append("px");
@@ -160,15 +163,14 @@ String BlockBreakToken::ToString() const {
   return string_builder.ToString();
 }
 
-#endif  // DCHECK_IS_ON()
-
 void BlockBreakToken::TraceAfterDispatch(Visitor* visitor) const {
   visitor->Trace(data_);
   // Looking up |ChildBreakTokensInternal()| in Trace() here is safe because
   // |const_num_children_| is const.
   for (wtf_size_t i = 0; i < const_num_children_; ++i) {
-    // TODO(crbug.com/351564777): Resolve a buffer safety issue.
-    visitor->Trace(UNSAFE_TODO(child_break_tokens_[i]));
+    // SAFETY: `const_num_children_` ensures buffer access never goes out of
+    // range.
+    visitor->Trace(UNSAFE_BUFFERS(child_break_tokens_[i]));
   }
   BreakToken::TraceAfterDispatch(visitor);
 }

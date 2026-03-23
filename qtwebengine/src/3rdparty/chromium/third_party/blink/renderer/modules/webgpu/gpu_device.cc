@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/modules/webgpu/gpu_device.h"
 
 #include "gpu/command_buffer/client/webgpu_interface.h"
-#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_compute_pipeline_descriptor.h"
@@ -161,22 +160,16 @@ void GPUDevice::Initialize(wgpu::Device handle,
                            const GPUDeviceDescriptor* descriptor,
                            GPUDeviceLostInfo* lost_info) {
   SetHandle(std::move(handle));
-  features_ = MakeGarbageCollected<GPUSupportedFeatures>(
-      descriptor->requiredFeatures());
+
+  wgpu::SupportedFeatures features;
+  GetHandle().GetFeatures(&features);
+  features_ = MakeGarbageCollected<GPUSupportedFeatures>(features);
+
   queue_ = MakeGarbageCollected<GPUQueue>(this, GetHandle().GetQueue(),
                                           descriptor->defaultQueue()->label());
 
-  // Increment subgroups features counter for OT.
-  // TODO(crbug.com/349125474): Clean up after OT finished.
-  if (features_->has(V8GPUFeatureName::Enum::kSubgroups)) {
-    DCHECK(RuntimeEnabledFeatures::WebGPUSubgroupsFeaturesEnabled(
-        GetExecutionContext()));
-    UseCounter::Count(GetExecutionContext(),
-                      WebFeature::kWebGPUSubgroupsFeatures);
-  }
-
-  wgpu::SupportedLimits limits = {};
-  GetHandle().GetLimits(&limits);
+  GPUSupportedLimits::ComboLimits limits;
+  GetHandle().GetLimits(limits.GetLinked());
   limits_ = MakeGarbageCollected<GPUSupportedLimits>(limits);
 
   adapter_info_ = adapter_->CreateAdapterInfoForAdapter();
@@ -199,12 +192,19 @@ GPUDevice::~GPUDevice() {
 
   // Clear the callbacks since we can't handle callbacks after finalization.
   if (GetHandle().Get() != nullptr) {
-#ifdef WGPU_BREAKING_CHANGE_LOGGING_CALLBACK_TYPE
     GetHandle().SetLoggingCallback([](wgpu::LoggingType, wgpu::StringView) {});
-#else
-    GetHandle().SetLoggingCallback(nullptr, nullptr);
-#endif
   }
+}
+
+bool GPUDevice::IsDestroyed() const {
+  return destroyed_;
+}
+
+std::string GPUDevice::GetFormattedLabel() const {
+  std::string deviceLabel =
+      label().empty() ? "[Device]" : "[Device \"" + label().Utf8() + "\"]";
+
+  return deviceLabel;
 }
 
 void GPUDevice::InjectError(wgpu::ErrorType type, const char* message) {
@@ -214,9 +214,11 @@ void GPUDevice::InjectError(wgpu::ErrorType type, const char* message) {
 void GPUDevice::AddConsoleWarning(wgpu::StringView message) {
   AddConsoleWarning(StringFromASCIIAndUTF8(message));
 }
+
 void GPUDevice::AddConsoleWarning(const char* message) {
   AddConsoleWarning(StringFromASCIIAndUTF8(message));
 }
+
 void GPUDevice::AddConsoleWarning(const String& message) {
   ExecutionContext* execution_context = GetExecutionContext();
   if (execution_context && allowed_console_warnings_remaining_ > 0) {
@@ -248,7 +250,7 @@ void GPUDevice::AddSingletonWarning(GPUSingletonWarning type) {
         message =
             "WebGPU canvas configured with a different format than is "
             "preferred by this device (\"" +
-            FromDawnEnum(GPU::preferred_canvas_format()).AsString() +
+            FromDawnEnum(GPU::GetPreferredCanvasFormat()).AsString() +
             "\"). This requires an extra copy, which may impact performance.";
         break;
       case GPUSingletonWarning::kDepthKey:
@@ -285,7 +287,7 @@ bool GPUDevice::ValidateTextureFormatUsage(V8GPUTextureFormat format,
 
   V8GPUFeatureName::Enum requiredFeatureEnum = requiredFeatureOptional.value();
 
-  if (features_->has(requiredFeatureEnum)) {
+  if (features_->Has(requiredFeatureEnum)) {
     return true;
   }
 
@@ -294,15 +296,8 @@ bool GPUDevice::ValidateTextureFormatUsage(V8GPUTextureFormat format,
   exception_state.ThrowTypeError(String::Format(
       "Use of the '%s' texture format requires the '%s' feature "
       "to be enabled on %s.",
-      format.AsCStr(), requiredFeature.AsCStr(), formattedLabel().c_str()));
+      format.AsCStr(), requiredFeature.AsCStr(), GetFormattedLabel().c_str()));
   return false;
-}
-
-std::string GPUDevice::formattedLabel() const {
-  std::string deviceLabel =
-      label().empty() ? "[Device]" : "[Device \"" + label().Utf8() + "\"]";
-
-  return deviceLabel;
 }
 
 // Validates that any features required for the given blend factor are enabled
@@ -319,7 +314,7 @@ bool GPUDevice::ValidateBlendFactor(V8GPUBlendFactor blend_factor,
 
   V8GPUFeatureName::Enum requiredFeatureEnum = requiredFeatureOptional.value();
 
-  if (features_->has(requiredFeatureEnum)) {
+  if (features_->Has(requiredFeatureEnum)) {
     return true;
   }
 
@@ -329,7 +324,7 @@ bool GPUDevice::ValidateBlendFactor(V8GPUBlendFactor blend_factor,
       String::Format("Use of the '%s' blend factor requires the '%s' feature "
                      "to be enabled on %s.",
                      blend_factor.AsCStr(), requiredFeature.AsCStr(),
-                     formattedLabel().c_str()));
+                     GetFormattedLabel().c_str()));
   return false;
 }
 
@@ -366,7 +361,6 @@ void GPUDevice::OnUncapturedError(const wgpu::Device& device,
   }
 }
 
-#ifdef WGPU_BREAKING_CHANGE_LOGGING_CALLBACK_TYPE
 void GPUDevice::OnLogging(wgpu::LoggingType loggingType,
                           wgpu::StringView message) {
   std::string_view messageView = {message.data, message.length};
@@ -402,44 +396,6 @@ void GPUDevice::OnLogging(wgpu::LoggingType loggingType,
     execution_context->AddConsoleMessage(console_message);
   }
 }
-#else
-void GPUDevice::OnLogging(WGPULoggingType cLoggingType,
-                          WGPUStringView message) {
-  std::string_view messageView = {message.data, message.length};
-  wgpu::LoggingType loggingType = static_cast<wgpu::LoggingType>(cLoggingType);
-  // Callback function for WebGPU logging return command
-  mojom::blink::ConsoleMessageLevel level;
-  switch (loggingType) {
-    case (wgpu::LoggingType::Verbose): {
-      level = mojom::blink::ConsoleMessageLevel::kVerbose;
-      break;
-    }
-    case (wgpu::LoggingType::Info): {
-      level = mojom::blink::ConsoleMessageLevel::kInfo;
-      break;
-    }
-    case (wgpu::LoggingType::Warning): {
-      level = mojom::blink::ConsoleMessageLevel::kWarning;
-      break;
-    }
-    case (wgpu::LoggingType::Error): {
-      level = mojom::blink::ConsoleMessageLevel::kError;
-      break;
-    }
-    default: {
-      level = mojom::blink::ConsoleMessageLevel::kError;
-      break;
-    }
-  }
-  ExecutionContext* execution_context = GetExecutionContext();
-  if (execution_context) {
-    auto* console_message = MakeGarbageCollected<ConsoleMessage>(
-        mojom::blink::ConsoleMessageSource::kRendering, level,
-        StringFromASCIIAndUTF8(messageView));
-    execution_context->AddConsoleMessage(console_message);
-  }
-}
-#endif
 
 void GPUDevice::OnDeviceLost(
     std::unique_ptr<WGPURepeatingCallback<wgpu::UncapturedErrorCallback<void>>>,
@@ -485,7 +441,7 @@ void GPUDevice::OnCreateRenderPipelineAsyncCallback(
     }
 
     case wgpu::CreatePipelineAsyncStatus::InternalError:
-    case wgpu::CreatePipelineAsyncStatus::InstanceDropped: {
+    case wgpu::CreatePipelineAsyncStatus::CallbackCancelled: {
       resolver->Reject(GPUPipelineError::Create(
           script_state->GetIsolate(), StringFromASCIIAndUTF8(message),
           V8GPUPipelineErrorReason::Enum::kInternal));
@@ -517,7 +473,7 @@ void GPUDevice::OnCreateComputePipelineAsyncCallback(
     }
 
     case wgpu::CreatePipelineAsyncStatus::InternalError:
-    case wgpu::CreatePipelineAsyncStatus::InstanceDropped: {
+    case wgpu::CreatePipelineAsyncStatus::CallbackCancelled: {
       resolver->Reject(GPUPipelineError::Create(
           script_state->GetIsolate(), StringFromASCIIAndUTF8(message),
           V8GPUPipelineErrorReason::Enum::kInternal));
@@ -544,10 +500,6 @@ ScriptPromise<GPUDeviceLostInfo> GPUDevice::lost(ScriptState* script_state) {
 
 GPUQueue* GPUDevice::queue() {
   return queue_.Get();
-}
-
-bool GPUDevice::destroyed() const {
-  return destroyed_;
 }
 
 void GPUDevice::destroy(v8::Isolate* isolate) {
@@ -594,9 +546,8 @@ GPUBindGroupLayout* GPUDevice::createBindGroupLayout(
 }
 
 GPUPipelineLayout* GPUDevice::createPipelineLayout(
-    ScriptState* script_state,
     const GPUPipelineLayoutDescriptor* descriptor) {
-  return GPUPipelineLayout::Create(script_state, this, descriptor);
+  return GPUPipelineLayout::Create(this, descriptor);
 }
 
 GPUShaderModule* GPUDevice::createShaderModule(
@@ -689,14 +640,14 @@ GPUQuerySet* GPUDevice::createQuerySet(const GPUQuerySetDescriptor* descriptor,
   const V8GPUFeatureName::Enum kTimestampQueryInsidePasses =
       V8GPUFeatureName::Enum::kChromiumExperimentalTimestampQueryInsidePasses;
   if (descriptor->type() == V8GPUQueryType::Enum::kTimestamp &&
-      !features_->has(kTimestampQuery) &&
-      !features_->has(kTimestampQueryInsidePasses)) {
+      !features_->Has(kTimestampQuery) &&
+      !features_->Has(kTimestampQueryInsidePasses)) {
     exception_state.ThrowTypeError(
         String::Format("Use of timestamp queries requires the '%s' or '%s' "
                        "feature to be enabled on %s.",
                        V8GPUFeatureName(kTimestampQuery).AsCStr(),
                        V8GPUFeatureName(kTimestampQueryInsidePasses).AsCStr(),
-                       formattedLabel().c_str()));
+                       GetFormattedLabel().c_str()));
     return nullptr;
   }
   return GPUQuerySet::Create(this, descriptor);
@@ -733,15 +684,15 @@ void GPUDevice::OnPopErrorScopeCallback(
     wgpu::ErrorType type,
     wgpu::StringView message) {
   switch (status) {
-    case wgpu::PopErrorScopeStatus::InstanceDropped:
+    case wgpu::PopErrorScopeStatus::CallbackCancelled:
       resolver->RejectWithDOMException(DOMExceptionCode::kOperationError,
                                        "Instance dropped in popErrorScope");
       return;
     case wgpu::PopErrorScopeStatus::Success:
       break;
-    case wgpu::PopErrorScopeStatus::EmptyStack:
+    case wgpu::PopErrorScopeStatus::Error:
       resolver->RejectWithDOMException(DOMExceptionCode::kOperationError,
-                                       "No error scopes to pop");
+                                       StringFromASCIIAndUTF8(message));
       return;
   }
   switch (type) {

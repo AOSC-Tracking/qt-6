@@ -768,13 +768,14 @@ bool QAbstractOAuth2Private::handleRfcErrorResponseIfPresent(const QVariantMap &
         // RFC 6749, Section 5.2 Error Response
         const QString uri = data.value(QtOAuth2RfcKeywords::errorUri).toString();
         const QString description = data.value(QtOAuth2RfcKeywords::errorDescription).toString();
-        qCWarning(loggingCategory, "Authorization stage: AuthenticationError: %s(%s): %s",
-                  qPrintable(error), qPrintable(uri), qPrintable(description));
+        qCWarning(loggingCategory, "Authorization stage: AuthenticationError: %ls(%ls): %ls",
+                  qUtf16Printable(error), qUtf16Printable(uri), qUtf16Printable(description));
 
+        const QUrl url = QUrl{uri};
 #if QT_DEPRECATED_SINCE(6, 13)
-        QT_IGNORE_DEPRECATIONS(Q_EMIT q->error(error, description, uri);)
+        QT_IGNORE_DEPRECATIONS(Q_EMIT q->error(error, description, url);)
 #endif
-        Q_EMIT q->serverReportedErrorOccurred(error, description, uri);
+        Q_EMIT q->serverReportedErrorOccurred(error, description, url);
 
         // Emit also requestFailed() so that it is a signal for all errors
         emit q->requestFailed(QAbstractOAuth::Error::ServerError);
@@ -1323,6 +1324,16 @@ QDateTime QAbstractOAuth2::expirationAt() const
     return d->expiresAtUtc.toLocalTime();
 }
 
+/*!
+    \property QAbstractOAuth2::refreshToken
+
+    This property holds the refresh token used to obtain new access tokens.
+
+    Refresh tokens usually have longer lifespans than access tokens,
+    so it makes sense to save them for later use.
+
+    \sa setRefreshToken()
+*/
 /*!
     \brief Gets the current refresh token.
 

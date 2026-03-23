@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "third_party/blink/renderer/platform/media/watch_time_reporter.h"
+
 #include <memory>
 
-#include "base/functional/bind.h"
-#include "base/functional/callback_helpers.h"
+#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
@@ -13,19 +14,22 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "media/base/mock_media_log.h"
+#include "media/base/picture_in_picture_events_info.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/test_helpers.h"
 #include "media/base/watch_time_keys.h"
-#include "media/mojo/mojom/media_metrics_provider.mojom.h"
-#include "media/mojo/mojom/watch_time_recorder.mojom.h"
+#include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
+#include "media/mojo/mojom/watch_time_recorder.mojom-blink.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/common/media/display_type.h"
-#include "third_party/blink/public/common/media/watch_time_component.h"
-#include "third_party/blink/public/common/media/watch_time_reporter.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_media_player.h"
+#include "third_party/blink/renderer/platform/media/watch_time_component.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
 
@@ -53,17 +57,6 @@ constexpr gfx::Size kSizeJustRight = gfx::Size(201, 201);
     EXPECT_CALL(*this,                                                         \
                 OnWatchTimeUpdate(WatchTimeKey::kAudioVideoMuted##key, value)) \
         .RetiresOnSaturation();                                                \
-  } while (0)
-
-#define EXPECT_WATCH_TIME_IF_VIDEO(key, value)                                \
-  do {                                                                        \
-    if (!has_video_)                                                          \
-      break;                                                                  \
-    EXPECT_CALL(*this,                                                        \
-                OnWatchTimeUpdate(has_audio_ ? WatchTimeKey::kAudioVideo##key \
-                                             : WatchTimeKey::kVideo##key,     \
-                                  value))                                     \
-        .RetiresOnSaturation();                                               \
   } while (0)
 
 #define EXPECT_BACKGROUND_WATCH_TIME(key, value)                            \
@@ -103,29 +96,39 @@ constexpr gfx::Size kSizeJustRight = gfx::Size(201, 201);
       .Times(2)                                      \
       .RetiresOnSaturation();
 
-#define EXPECT_DISPLAY_WATCH_TIME_FINALIZED()       \
-  EXPECT_CALL(*this, OnDisplayWatchTimeFinalized()) \
-      .Times(3)                                     \
-      .RetiresOnSaturation();
+#define EXPECT_DISPLAY_WATCH_TIME_FINALIZED()         \
+  if (has_audio_) {                                   \
+    EXPECT_CALL(*this, OnDisplayWatchTimeFinalized()) \
+        .Times(4)                                     \
+        .RetiresOnSaturation();                       \
+  } else {                                            \
+    EXPECT_CALL(*this, OnDisplayWatchTimeFinalized()) \
+        .Times(3)                                     \
+        .RetiresOnSaturation();                       \
+  }
 
 using WatchTimeReporterTestData = std::tuple<bool, bool>;
 class WatchTimeReporterTest
     : public testing::TestWithParam<WatchTimeReporterTestData> {
  public:
-  class WatchTimeInterceptor : public media::mojom::WatchTimeRecorder {
+  class WatchTimeInterceptor : public media::mojom::blink::WatchTimeRecorder {
    public:
-    WatchTimeInterceptor(WatchTimeReporterTest* parent) : parent_(parent) {}
+    WatchTimeInterceptor(
+        media::PictureInPictureEventsInfo::AutoPipReasonCallback
+            auto_pip_reason_cb,
+        WatchTimeReporterTest* parent)
+        : auto_pip_reason_cb_(std::move(auto_pip_reason_cb)), parent_(parent) {}
     WatchTimeInterceptor(const WatchTimeInterceptor&) = delete;
     WatchTimeInterceptor& operator=(const WatchTimeInterceptor&) = delete;
     ~WatchTimeInterceptor() override = default;
 
-    // mojom::WatchTimeRecorder implementation:
+    // mojom::blink::WatchTimeRecorder implementation:
     void RecordWatchTime(WatchTimeKey key, base::TimeDelta value) override {
       parent_->OnWatchTimeUpdate(key, value);
     }
 
     void FinalizeWatchTime(
-        const std::vector<WatchTimeKey>& watch_time_keys) override {
+        const Vector<WatchTimeKey>& watch_time_keys) override {
       if (watch_time_keys.empty()) {
         parent_->OnWatchTimeFinalized();
       } else {
@@ -159,6 +162,11 @@ class WatchTimeReporterTest
               parent_->OnControlsWatchTimeFinalized();
               break;
 
+            case WatchTimeKey::kAudioDisplayFullscreen:
+            case WatchTimeKey::kAudioDisplayInline:
+            case WatchTimeKey::kAudioDisplayPictureInPicture:
+            case WatchTimeKey::kAudioVideoAutoPipMediaPlayback:
+            case WatchTimeKey::kAudioAutoPipMediaPlayback:
             case WatchTimeKey::kAudioVideoDisplayFullscreen:
             case WatchTimeKey::kAudioVideoDisplayInline:
             case WatchTimeKey::kAudioVideoDisplayPictureInPicture:
@@ -219,8 +227,9 @@ class WatchTimeReporterTest
       parent_->OnError(status);
     }
 
-    void UpdateSecondaryProperties(media::mojom::SecondaryPlaybackPropertiesPtr
-                                       secondary_properties) override {
+    void UpdateSecondaryProperties(
+        media::mojom::blink::SecondaryPlaybackPropertiesPtr
+            secondary_properties) override {
       parent_->OnUpdateSecondaryProperties(std::move(secondary_properties));
     }
 
@@ -248,38 +257,42 @@ class WatchTimeReporterTest
     }
 
    private:
+    media::PictureInPictureEventsInfo::AutoPipReasonCallback
+        auto_pip_reason_cb_;
     raw_ptr<WatchTimeReporterTest> parent_;
   };
 
-  class FakeMediaMetricsProvider : public media::mojom::MediaMetricsProvider {
+  class FakeMediaMetricsProvider
+      : public media::mojom::blink::MediaMetricsProvider {
    public:
     explicit FakeMediaMetricsProvider(WatchTimeReporterTest* parent)
         : parent_(parent) {}
     ~FakeMediaMetricsProvider() override {}
 
-    // mojom::WatchTimeRecorderProvider implementation:
+    // mojom::blink::WatchTimeRecorderProvider implementation:
     void AcquireWatchTimeRecorder(
-        media::mojom::PlaybackPropertiesPtr properties,
-        mojo::PendingReceiver<media::mojom::WatchTimeRecorder> receiver)
+        media::mojom::blink::PlaybackPropertiesPtr properties,
+        mojo::PendingReceiver<media::mojom::blink::WatchTimeRecorder> receiver)
         override {
       mojo::MakeSelfOwnedReceiver(
-          std::make_unique<WatchTimeInterceptor>(parent_), std::move(receiver));
+          std::make_unique<WatchTimeInterceptor>(
+              base::BindRepeating(&FakeMediaMetricsProvider::AutoPipReason,
+                                  base::Unretained(this)),
+              parent_),
+          std::move(receiver));
     }
     void AcquireVideoDecodeStatsRecorder(
-        mojo::PendingReceiver<media::mojom::VideoDecodeStatsRecorder> receiver)
-        override {
+        mojo::PendingReceiver<media::mojom::blink::VideoDecodeStatsRecorder>
+            receiver) override {
       FAIL();
     }
-    void AcquireLearningTaskController(
-        const std::string& taskName,
-        mojo::PendingReceiver<media::learning::mojom::LearningTaskController>
-            receiver) override {}
     void AcquirePlaybackEventsRecorder(
-        mojo::PendingReceiver<media::mojom::PlaybackEventsRecorder> receiver)
-        override {}
-    void Initialize(bool is_mse,
-                    media::mojom::MediaURLScheme url_scheme,
-                    media::mojom::MediaStreamType media_stream_type) override {}
+        mojo::PendingReceiver<media::mojom::blink::PlaybackEventsRecorder>
+            receiver) override {}
+    void Initialize(
+        bool is_mse,
+        media::mojom::blink::MediaURLScheme url_scheme,
+        media::mojom::blink::MediaStreamType media_stream_type) override {}
     void OnStarted(const media::PipelineStatus& status) override {}
     void OnError(const media::PipelineStatus& status) override {}
     void OnFallback(const media::PipelineStatus& status) override {}
@@ -291,7 +304,7 @@ class WatchTimeReporterTest
         media::container_names::MediaContainerName container_name) override {}
     void SetRendererType(media::RendererType renderer_type) override {}
     void SetDemuxerType(media::DemuxerType demuxer_type) override {}
-    void SetKeySystem(const std::string& key_system) override {}
+    void SetKeySystem(const String& key_system) override {}
     void SetHasWaitingForKey() override {}
     void SetIsHardwareSecure() override {}
     void SetHasPlayed() override {}
@@ -302,6 +315,10 @@ class WatchTimeReporterTest
     void SetAudioPipelineInfo(const media::AudioPipelineInfo& info) override {}
 
    private:
+    media::PictureInPictureEventsInfo::AutoPipReason AutoPipReason() {
+      return media::PictureInPictureEventsInfo::AutoPipReason::kUnknown;
+    }
+
     raw_ptr<WatchTimeReporterTest> parent_;
   };
 
@@ -332,14 +349,14 @@ class WatchTimeReporterTest
       EXPECT_WATCH_TIME_FINALIZED();
 
     wtr_ = std::make_unique<WatchTimeReporter>(
-        media::mojom::PlaybackProperties::New(
+        media::mojom::blink::PlaybackProperties::New(
             has_audio_, has_video_, false, false, is_mse, is_encrypted, false,
-            media::mojom::MediaStreamType::kNone, renderer_type),
+            media::mojom::blink::MediaStreamType::kNone, renderer_type),
         initial_video_size,
-        base::BindRepeating(&WatchTimeReporterTest::GetCurrentMediaTime,
-                            base::Unretained(this)),
-        base::BindRepeating(&WatchTimeReporterTest::GetPipelineStatistics,
-                            base::Unretained(this)),
+        WTF::BindRepeating(&WatchTimeReporterTest::GetCurrentMediaTime,
+                           WTF::Unretained(this)),
+        WTF::BindRepeating(&WatchTimeReporterTest::GetPipelineStatistics,
+                           WTF::Unretained(this)),
         &fake_metrics_provider_, scheduler::GetSequencedTaskRunnerForTesting(),
         task_environment_.GetMockTickClock());
     reporting_interval_ = wtr_->reporting_interval_;
@@ -398,7 +415,7 @@ class WatchTimeReporterTest
             : wtr_->OnNativeControlsDisabled();
   }
 
-  void OnDisplayTypeChanged(DisplayType display_type) {
+  void OnDisplayTypeChanged(WebMediaPlayer::DisplayType display_type) {
     wtr_->OnDisplayTypeChanged(display_type);
   }
 
@@ -469,7 +486,7 @@ class WatchTimeReporterTest
     if (TestFlags & kStartWithNativeControls)
       OnNativeControlsEnabled(true);
     if (TestFlags & kStartWithDisplayFullscreen)
-      OnDisplayTypeChanged(DisplayType::kFullscreen);
+      OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kFullscreen);
 
     // Setup all current time expectations first since they need to use the
     // InSequence macro for ease of use, but we don't want the watch time
@@ -541,9 +558,9 @@ class WatchTimeReporterTest
     else
       EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime1);
     if (TestFlags & kStartWithDisplayFullscreen)
-      EXPECT_WATCH_TIME_IF_VIDEO(DisplayFullscreen, kWatchTime1);
+      EXPECT_WATCH_TIME(DisplayFullscreen, kWatchTime1);
     else
-      EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime1);
+      EXPECT_WATCH_TIME(DisplayInline, kWatchTime1);
 
     CycleReportingTimer();
 
@@ -575,9 +592,9 @@ class WatchTimeReporterTest
       EXPECT_WATCH_TIME(NativeControlsOff, kExpectedContolsWatchTime);
 
     if (TestFlags & kStartWithDisplayFullscreen)
-      EXPECT_WATCH_TIME_IF_VIDEO(DisplayFullscreen, kExpectedDisplayWatchTime);
+      EXPECT_WATCH_TIME(DisplayFullscreen, kExpectedDisplayWatchTime);
     else
-      EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kExpectedDisplayWatchTime);
+      EXPECT_WATCH_TIME(DisplayInline, kExpectedDisplayWatchTime);
 
     // Special case when testing battery watch time.
     if (TestFlags & kTransitionPowerWatchTime) {
@@ -593,7 +610,7 @@ class WatchTimeReporterTest
       // started on battery we'll now record one for ac and vice versa.
       EXPECT_WATCH_TIME(All, kWatchTime4);
       EXPECT_WATCH_TIME(Src, kWatchTime4);
-      EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime4);
+      EXPECT_WATCH_TIME(DisplayInline, kWatchTime4);
       EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime4);
       if (TestFlags & kStartOnBattery)
         EXPECT_WATCH_TIME(Ac, kWatchTime4 - kWatchTime2);
@@ -613,7 +630,7 @@ class WatchTimeReporterTest
       EXPECT_WATCH_TIME(All, kWatchTime4);
       EXPECT_WATCH_TIME(Src, kWatchTime4);
       EXPECT_WATCH_TIME(Ac, kWatchTime4);
-      EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime4);
+      EXPECT_WATCH_TIME(DisplayInline, kWatchTime4);
       if (TestFlags & kStartWithNativeControls)
         EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime4 - kWatchTime2);
       else
@@ -634,10 +651,9 @@ class WatchTimeReporterTest
       EXPECT_WATCH_TIME(Ac, kWatchTime4);
       EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime4);
       if (TestFlags & kStartWithDisplayFullscreen) {
-        EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime4 - kWatchTime2);
+        EXPECT_WATCH_TIME(DisplayInline, kWatchTime4 - kWatchTime2);
       } else {
-        EXPECT_WATCH_TIME_IF_VIDEO(DisplayFullscreen,
-                                   kWatchTime4 - kWatchTime2);
+        EXPECT_WATCH_TIME(DisplayFullscreen, kWatchTime4 - kWatchTime2);
       }
     }
 
@@ -657,7 +673,7 @@ class WatchTimeReporterTest
   MOCK_METHOD2(OnUnderflowDurationUpdate, void(int, base::TimeDelta));
   MOCK_METHOD1(OnError, void(media::PipelineStatus));
   MOCK_METHOD1(OnUpdateSecondaryProperties,
-               void(media::mojom::SecondaryPlaybackPropertiesPtr));
+               void(media::mojom::blink::SecondaryPlaybackPropertiesPtr));
   MOCK_METHOD1(OnSetAutoplayInitiated, void(bool));
   MOCK_METHOD1(OnDurationChanged, void(base::TimeDelta));
   MOCK_METHOD2(OnUpdateVideoDecodeStats, void(uint32_t, uint32_t));
@@ -760,7 +776,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterBasic) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeEarly);
   EXPECT_WATCH_TIME(Mse, kWatchTimeEarly);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeEarly);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeEarly);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeEarly);
   CycleReportingTimer();
 
   wtr_->OnUnderflow();
@@ -772,7 +788,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterBasic) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeLate);
   EXPECT_WATCH_TIME(Mse, kWatchTimeLate);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeLate);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeLate);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeLate);
   EXPECT_CALL(*this, OnUnderflowUpdate(2));
   EXPECT_CALL(*this, OnUnderflowDurationUpdate(1, kUnderflowDuration));
   CycleReportingTimer();
@@ -815,7 +831,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterStatsOffsetCorrectly) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeEarly);
   EXPECT_WATCH_TIME(Mse, kWatchTimeEarly);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeEarly);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeEarly);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeEarly);
   CycleReportingTimer();
 
   wtr_->OnUnderflow();
@@ -827,7 +843,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterStatsOffsetCorrectly) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeLate);
   EXPECT_WATCH_TIME(Mse, kWatchTimeLate);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeLate);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeLate);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeLate);
   EXPECT_CALL(*this, OnUnderflowUpdate(2));
   EXPECT_CALL(*this, OnUnderflowDurationUpdate(1, kUnderflowDuration));
   CycleReportingTimer();
@@ -881,7 +897,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterUnderflow) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeFirst);
   EXPECT_WATCH_TIME(Mse, kWatchTimeFirst);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeFirst);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeFirst);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeFirst);
   CycleReportingTimer();
 
   wtr_->OnUnderflow();
@@ -901,7 +917,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterUnderflow) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeEarly);
   EXPECT_WATCH_TIME(Mse, kWatchTimeEarly);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeEarly);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeEarly);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeEarly);
   EXPECT_WATCH_TIME_FINALIZED();
 
   // Since we're using a mute event above, we'll have some muted watch time.
@@ -953,7 +969,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterUnderflowSpansFinalize) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeFirst);
   EXPECT_WATCH_TIME(Mse, kWatchTimeFirst);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeFirst);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeFirst);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeFirst);
   CycleReportingTimer();
 
   wtr_->OnUnderflow();
@@ -964,7 +980,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterUnderflowSpansFinalize) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeEarly);
   EXPECT_WATCH_TIME(Mse, kWatchTimeEarly);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeEarly);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeEarly);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeEarly);
   EXPECT_WATCH_TIME_FINALIZED();
 
   // Since we're using a mute event above, we'll have some muted watch time.
@@ -1018,7 +1034,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterUnderflowTooLong) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeFirst);
   EXPECT_WATCH_TIME(Mse, kWatchTimeFirst);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeFirst);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeFirst);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeFirst);
   CycleReportingTimer();
 
   wtr_->OnUnderflow();
@@ -1033,7 +1049,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterUnderflowTooLong) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeEarly);
   EXPECT_WATCH_TIME(Mse, kWatchTimeEarly);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeEarly);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeEarly);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeEarly);
   EXPECT_WATCH_TIME_FINALIZED();
 
   // Since we're using a mute event above, we'll have some muted watch time.
@@ -1082,7 +1098,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterNoUnderflowDoubleReport) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeFirst);
   EXPECT_WATCH_TIME(Mse, kWatchTimeFirst);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeFirst);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeFirst);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeFirst);
   EXPECT_CALL(*this, OnUnderflowUpdate(1));
   wtr_->OnUnderflow();
   CycleReportingTimer();
@@ -1092,7 +1108,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterNoUnderflowDoubleReport) {
   EXPECT_WATCH_TIME(Eme, kWatchTimeEarly);
   EXPECT_WATCH_TIME(Mse, kWatchTimeEarly);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeEarly);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeEarly);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTimeEarly);
 
   // This cycle should not report another underflow.
   CycleReportingTimer();
@@ -1108,7 +1124,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterNoUnderflowDoubleReport) {
 TEST_P(WatchTimeReporterTest, WatchTimeReporterSecondaryProperties) {
   Initialize(true, true, kSizeJustRight);
 
-  auto properties = media::mojom::SecondaryPlaybackProperties::New(
+  auto properties = media::mojom::blink::SecondaryPlaybackProperties::New(
       has_audio_ ? media::AudioCodec::kAAC : media::AudioCodec::kUnknown,
       has_video_ ? media::VideoCodec::kH264 : media::VideoCodec::kUnknown,
       has_audio_ ? media::AudioCodecProfile::kXHE_AAC
@@ -1154,7 +1170,7 @@ TEST_P(WatchTimeReporterTest, SecondaryProperties_SizeIncreased) {
   EXPECT_CALL(*this, OnUpdateSecondaryProperties(_))
       .Times((has_audio_ && has_video_) ? 3 : 2);
   wtr_->UpdateSecondaryProperties(
-      media::mojom::SecondaryPlaybackProperties::New(
+      media::mojom::blink::SecondaryPlaybackProperties::New(
           media::AudioCodec::kUnknown, media::VideoCodec::kUnknown,
           media::AudioCodecProfile::kUnknown,
           media::VIDEO_CODEC_PROFILE_UNKNOWN, media::AudioDecoderType::kUnknown,
@@ -1179,7 +1195,7 @@ TEST_P(WatchTimeReporterTest, SecondaryProperties_SizeDecreased) {
   EXPECT_CALL(*this, OnUpdateSecondaryProperties(_))
       .Times((has_audio_ && has_video_) ? 3 : 2);
   wtr_->UpdateSecondaryProperties(
-      media::mojom::SecondaryPlaybackProperties::New(
+      media::mojom::blink::SecondaryPlaybackProperties::New(
           media::AudioCodec::kUnknown, media::VideoCodec::kUnknown,
           media::AudioCodecProfile::kUnknown,
           media::VIDEO_CODEC_PROFILE_UNKNOWN, media::AudioDecoderType::kUnknown,
@@ -1233,7 +1249,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterShownHidden) {
   EXPECT_WATCH_TIME(Eme, kExpectedForegroundWatchTime);
   EXPECT_WATCH_TIME(Mse, kExpectedForegroundWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kExpectedForegroundWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kExpectedForegroundWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kExpectedForegroundWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
 }
 
@@ -1310,7 +1326,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterShownHiddenBackground) {
   EXPECT_WATCH_TIME(Eme, kExpectedForegroundWatchTime);
   EXPECT_WATCH_TIME(Mse, kExpectedForegroundWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kExpectedForegroundWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kExpectedForegroundWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kExpectedForegroundWatchTime);
   CycleReportingTimer();
 
   EXPECT_WATCH_TIME_FINALIZED();
@@ -1447,7 +1463,7 @@ TEST_P(DisplayTypeWatchTimeReporterTest,
   EXPECT_TRUE(IsBackgroundMonitoring());
   EXPECT_FALSE(IsMonitoring());
 
-  OnDisplayTypeChanged(DisplayType::kFullscreen);
+  OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kFullscreen);
 
   EXPECT_BACKGROUND_WATCH_TIME(Ac, kWatchTime1);
   EXPECT_BACKGROUND_WATCH_TIME(All, kWatchTime1);
@@ -1548,7 +1564,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterMultiplePartialFinalize) {
     EXPECT_WATCH_TIME(Eme, kWatchTime1);
     EXPECT_WATCH_TIME(Mse, kWatchTime1);
     EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime1);
-    EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime1);
+    EXPECT_WATCH_TIME(DisplayInline, kWatchTime1);
     EXPECT_CONTROLS_WATCH_TIME_FINALIZED();
     EXPECT_POWER_WATCH_TIME_FINALIZED();
     CycleReportingTimer();
@@ -1557,7 +1573,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterMultiplePartialFinalize) {
     EXPECT_WATCH_TIME(All, kWatchTime2);
     EXPECT_WATCH_TIME(Eme, kWatchTime2);
     EXPECT_WATCH_TIME(Mse, kWatchTime2);
-    EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime2);
+    EXPECT_WATCH_TIME(DisplayInline, kWatchTime2);
     EXPECT_WATCH_TIME(NativeControlsOn, kWatchTime2 - kWatchTime1);
     EXPECT_WATCH_TIME(Battery, kWatchTime2 - kWatchTime1);
     EXPECT_WATCH_TIME_FINALIZED();
@@ -1578,7 +1594,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterMultiplePartialFinalize) {
     wtr_->OnPlaying();
     EXPECT_TRUE(IsMonitoring());
 
-    OnDisplayTypeChanged(DisplayType::kFullscreen);
+    OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kFullscreen);
     OnPowerStateChange(true);
 
     EXPECT_WATCH_TIME(Ac, kWatchTime1);
@@ -1586,7 +1602,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterMultiplePartialFinalize) {
     EXPECT_WATCH_TIME(Eme, kWatchTime1);
     EXPECT_WATCH_TIME(Mse, kWatchTime1);
     EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime1);
-    EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime1);
+    EXPECT_WATCH_TIME(DisplayInline, kWatchTime1);
     EXPECT_DISPLAY_WATCH_TIME_FINALIZED();
     EXPECT_POWER_WATCH_TIME_FINALIZED();
     CycleReportingTimer();
@@ -1596,7 +1612,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterMultiplePartialFinalize) {
     EXPECT_WATCH_TIME(Eme, kWatchTime2);
     EXPECT_WATCH_TIME(Mse, kWatchTime2);
     EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime2);
-    EXPECT_WATCH_TIME_IF_VIDEO(DisplayFullscreen, kWatchTime2 - kWatchTime1);
+    EXPECT_WATCH_TIME(DisplayFullscreen, kWatchTime2 - kWatchTime1);
     EXPECT_WATCH_TIME(Battery, kWatchTime2 - kWatchTime1);
     EXPECT_WATCH_TIME_FINALIZED();
     CycleReportingTimer();
@@ -1619,14 +1635,14 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterMultiplePartialFinalize) {
 
     OnNativeControlsEnabled(true);
     OnPowerStateChange(true);
-    OnDisplayTypeChanged(DisplayType::kPictureInPicture);
+    OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kVideoPictureInPicture);
 
     EXPECT_WATCH_TIME(Ac, kWatchTime1);
     EXPECT_WATCH_TIME(All, kWatchTime1);
     EXPECT_WATCH_TIME(Eme, kWatchTime1);
     EXPECT_WATCH_TIME(Mse, kWatchTime1);
     EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime1);
-    EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime1);
+    EXPECT_WATCH_TIME(DisplayInline, kWatchTime1);
     EXPECT_CONTROLS_WATCH_TIME_FINALIZED();
     EXPECT_POWER_WATCH_TIME_FINALIZED();
     EXPECT_DISPLAY_WATCH_TIME_FINALIZED();
@@ -1636,8 +1652,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterMultiplePartialFinalize) {
     EXPECT_WATCH_TIME(All, kWatchTime2);
     EXPECT_WATCH_TIME(Eme, kWatchTime2);
     EXPECT_WATCH_TIME(Mse, kWatchTime2);
-    EXPECT_WATCH_TIME_IF_VIDEO(DisplayPictureInPicture,
-                               kWatchTime2 - kWatchTime1);
+    EXPECT_WATCH_TIME(DisplayPictureInPicture, kWatchTime2 - kWatchTime1);
     EXPECT_WATCH_TIME(NativeControlsOn, kWatchTime2 - kWatchTime1);
     EXPECT_WATCH_TIME(Battery, kWatchTime2 - kWatchTime1);
     EXPECT_WATCH_TIME_FINALIZED();
@@ -1664,7 +1679,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterNonZeroStart) {
   EXPECT_WATCH_TIME(Eme, kWatchTime);
   EXPECT_WATCH_TIME(Mse, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   CycleReportingTimer();
 
   EXPECT_WATCH_TIME_FINALIZED();
@@ -1685,7 +1700,7 @@ TEST_P(WatchTimeReporterTest, SeekFinalizes) {
   EXPECT_WATCH_TIME(Eme, kWatchTime);
   EXPECT_WATCH_TIME(Mse, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_->OnSeeking();
 }
@@ -1705,7 +1720,7 @@ TEST_P(WatchTimeReporterTest, SeekOnlyClearedByPlaying) {
   EXPECT_WATCH_TIME(Eme, kWatchTime);
   EXPECT_WATCH_TIME(Mse, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_->OnSeeking();
   EXPECT_FALSE(IsMonitoring());
@@ -1743,7 +1758,7 @@ TEST_P(WatchTimeReporterTest, SeekFinalizeDoesNotTramplePreviousFinalize) {
   EXPECT_WATCH_TIME(Eme, kWatchTime);
   EXPECT_WATCH_TIME(Mse, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_->OnPaused();
   wtr_->OnSeeking();
@@ -1765,7 +1780,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterFinalizeOnDestruction) {
   EXPECT_WATCH_TIME(Eme, kWatchTime);
   EXPECT_WATCH_TIME(Mse, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
 }
 
@@ -1784,7 +1799,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeCategoryMapping) {
   EXPECT_WATCH_TIME(All, kWatchTime);
   EXPECT_WATCH_TIME(Src, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_.reset();
 
@@ -1799,7 +1814,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeCategoryMapping) {
   EXPECT_WATCH_TIME(All, kWatchTime);
   EXPECT_WATCH_TIME(Mse, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_.reset();
 
@@ -1815,7 +1830,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeCategoryMapping) {
   EXPECT_WATCH_TIME(Eme, kWatchTime);
   EXPECT_WATCH_TIME(Src, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_.reset();
 
@@ -1831,7 +1846,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeCategoryMapping) {
   EXPECT_WATCH_TIME(Battery, kWatchTime);
   EXPECT_WATCH_TIME(Src, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_.reset();
 
@@ -1847,7 +1862,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeCategoryMapping) {
   EXPECT_WATCH_TIME(All, kWatchTime);
   EXPECT_WATCH_TIME(Src, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOn, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_.reset();
 
@@ -1856,7 +1871,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeCategoryMapping) {
       .WillOnce(testing::Return(base::TimeDelta()))
       .WillOnce(testing::Return(kWatchTime));
   Initialize(false, false, kSizeJustRight);
-  OnDisplayTypeChanged(DisplayType::kFullscreen);
+  OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kFullscreen);
   wtr_->OnPlaying();
   SetOnBatteryPower(true);
   EXPECT_TRUE(IsMonitoring());
@@ -1864,7 +1879,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeCategoryMapping) {
   EXPECT_WATCH_TIME(Battery, kWatchTime);
   EXPECT_WATCH_TIME(Src, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayFullscreen, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayFullscreen, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_.reset();
 
@@ -1874,14 +1889,32 @@ TEST_P(WatchTimeReporterTest, WatchTimeCategoryMapping) {
       .WillOnce(testing::Return(kWatchTime));
   Initialize(false, false, kSizeJustRight);
   OnNativeControlsEnabled(true);
-  OnDisplayTypeChanged(DisplayType::kPictureInPicture);
+  OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kVideoPictureInPicture);
   wtr_->OnPlaying();
   EXPECT_TRUE(IsMonitoring());
   EXPECT_WATCH_TIME(Ac, kWatchTime);
   EXPECT_WATCH_TIME(All, kWatchTime);
   EXPECT_WATCH_TIME(Src, kWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOn, kWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayPictureInPicture, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayPictureInPicture, kWatchTime);
+  EXPECT_WATCH_TIME_FINALIZED();
+  wtr_.reset();
+
+  // Verify ac, all, src, native controls, display picture-in-picture (with
+  // display type changed using `kDocumentPictureInPicture`).
+  EXPECT_CALL(*this, GetCurrentMediaTime())
+      .WillOnce(testing::Return(base::TimeDelta()))
+      .WillOnce(testing::Return(kWatchTime));
+  Initialize(false, false, kSizeJustRight);
+  OnNativeControlsEnabled(true);
+  OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kDocumentPictureInPicture);
+  wtr_->OnPlaying();
+  EXPECT_TRUE(IsMonitoring());
+  EXPECT_WATCH_TIME(Ac, kWatchTime);
+  EXPECT_WATCH_TIME(All, kWatchTime);
+  EXPECT_WATCH_TIME(Src, kWatchTime);
+  EXPECT_WATCH_TIME(NativeControlsOn, kWatchTime);
+  EXPECT_WATCH_TIME(DisplayPictureInPicture, kWatchTime);
   EXPECT_WATCH_TIME_FINALIZED();
   wtr_.reset();
 }
@@ -2005,8 +2038,8 @@ TEST_P(DisplayTypeWatchTimeReporterTest,
   RunHysteresisTest<kAccumulationContinuesAfterTest |
                     kFinalizeExitDoesNotRequireCurrentTime |
                     kStartWithDisplayFullscreen>([this]() {
-    OnDisplayTypeChanged(DisplayType::kInline);
-    OnDisplayTypeChanged(DisplayType::kFullscreen);
+    OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kInline);
+    OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kFullscreen);
   });
 }
 
@@ -2014,23 +2047,24 @@ TEST_P(DisplayTypeWatchTimeReporterTest,
        OnDisplayTypeChangeHysteresisNativeFinalized) {
   RunHysteresisTest<kAccumulationContinuesAfterTest |
                     kFinalizeDisplayWatchTime | kStartWithDisplayFullscreen>(
-      [this]() { OnDisplayTypeChanged(DisplayType::kInline); });
+      [this]() { OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kInline); });
 }
 
 TEST_P(DisplayTypeWatchTimeReporterTest,
        OnDisplayTypeChangeHysteresisInlineContinuation) {
   RunHysteresisTest<kAccumulationContinuesAfterTest |
                     kFinalizeExitDoesNotRequireCurrentTime>([this]() {
-    OnDisplayTypeChanged(DisplayType::kFullscreen);
-    OnDisplayTypeChanged(DisplayType::kInline);
+    OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kFullscreen);
+    OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kInline);
   });
 }
 
 TEST_P(DisplayTypeWatchTimeReporterTest,
        OnDisplayTypeChangeHysteresisNativeOffFinalized) {
   RunHysteresisTest<kAccumulationContinuesAfterTest |
-                    kFinalizeDisplayWatchTime>(
-      [this]() { OnDisplayTypeChanged(DisplayType::kFullscreen); });
+                    kFinalizeDisplayWatchTime>([this]() {
+    OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kFullscreen);
+  });
 }
 
 TEST_P(DisplayTypeWatchTimeReporterTest,
@@ -2038,14 +2072,16 @@ TEST_P(DisplayTypeWatchTimeReporterTest,
   RunHysteresisTest<kAccumulationContinuesAfterTest |
                     kFinalizeDisplayWatchTime | kStartWithDisplayFullscreen |
                     kTransitionDisplayWatchTime>(
-      [this]() { OnDisplayTypeChanged(DisplayType::kInline); });
+      [this]() { OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kInline); });
 }
 
 TEST_P(DisplayTypeWatchTimeReporterTest,
        OnDisplayTypeChangeFullscreenToInline) {
   RunHysteresisTest<kAccumulationContinuesAfterTest |
                     kFinalizeDisplayWatchTime | kTransitionDisplayWatchTime>(
-      [this]() { OnDisplayTypeChanged(DisplayType::kFullscreen); });
+      [this]() {
+        OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kFullscreen);
+      });
 }
 
 // Tests that the first finalize is the only one that matters.
@@ -2122,7 +2158,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterMediaFoundation) {
     EXPECT_WATCH_TIME(Mse, kWatchTimeEarly);
     EXPECT_WATCH_TIME(Eme, kWatchTimeEarly);
     EXPECT_WATCH_TIME(Ac, kWatchTimeEarly);
-    EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeEarly);
+    EXPECT_WATCH_TIME(DisplayInline, kWatchTimeEarly);
     EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeEarly);
 
     EXPECT_TRUE(IsMonitoring());
@@ -2150,7 +2186,7 @@ TEST_P(WatchTimeReporterTest, WatchTimeReporterMediaFoundationNoEme) {
     EXPECT_WATCH_TIME_IF_AUDIO_VIDEO_MEDIAFOUNDATION(All, kWatchTimeEarly);
     EXPECT_WATCH_TIME(Mse, kWatchTimeEarly);
     EXPECT_WATCH_TIME(Ac, kWatchTimeEarly);
-    EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kWatchTimeEarly);
+    EXPECT_WATCH_TIME(DisplayInline, kWatchTimeEarly);
     EXPECT_WATCH_TIME(NativeControlsOff, kWatchTimeEarly);
 
     EXPECT_TRUE(IsMonitoring());
@@ -2241,7 +2277,7 @@ TEST_P(MutedWatchTimeReporterTest, MuteUnmute) {
   EXPECT_WATCH_TIME(Eme, kExpectedUnmutedWatchTime);
   EXPECT_WATCH_TIME(Mse, kExpectedUnmutedWatchTime);
   EXPECT_WATCH_TIME(NativeControlsOff, kExpectedUnmutedWatchTime);
-  EXPECT_WATCH_TIME_IF_VIDEO(DisplayInline, kExpectedUnmutedWatchTime);
+  EXPECT_WATCH_TIME(DisplayInline, kExpectedUnmutedWatchTime);
   CycleReportingTimer();
 
   EXPECT_WATCH_TIME_FINALIZED();
@@ -2392,7 +2428,7 @@ TEST_P(MutedWatchTimeReporterTest, MutedDisplayType) {
   EXPECT_TRUE(IsMutedMonitoring());
   EXPECT_FALSE(IsMonitoring());
 
-  OnDisplayTypeChanged(DisplayType::kFullscreen);
+  OnDisplayTypeChanged(WebMediaPlayer::DisplayType::kFullscreen);
   EXPECT_MUTED_WATCH_TIME_IF_AUDIO_VIDEO(Ac, kWatchTime1);
   EXPECT_MUTED_WATCH_TIME_IF_AUDIO_VIDEO(All, kWatchTime1);
   EXPECT_MUTED_WATCH_TIME_IF_AUDIO_VIDEO(Eme, kWatchTime1);

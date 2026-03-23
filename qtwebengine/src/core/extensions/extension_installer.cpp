@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "extension_installer.h"
 
@@ -181,10 +182,10 @@ void ExtensionInstaller::cleanupBrokenInstall(const base::FilePath &dirToDelete,
 }
 
 void ExtensionInstaller::onInstallFailure(const base::FilePath &brokenInstallDir,
-                                          const std::string &error, bool cleanupSucceded)
+                                          const std::string &error, bool cleanupSucceeded)
 {
 
-    if (!cleanupSucceded)
+    if (!cleanupSucceeded)
         qWarning("Failed to clean up broken extension install in %ls",
                  qUtf16Printable(toQt(brokenInstallDir)));
 }

@@ -6,7 +6,7 @@ project(Calqlatr LANGUAGES CXX)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2)
 
-qt_standard_project_setup(REQUIRES 6.8)
+qt_standard_project_setup(REQUIRES 6.9)
 
 qt_add_executable(calqlatr WIN32 MACOSX_BUNDLE
     main.cpp
@@ -22,9 +22,9 @@ target_link_libraries(calqlatr PRIVATE
 
 qt_add_qml_module(calqlatr
     URI demos.calqlatr
-    VERSION 1.0
     QML_FILES
         "Main.qml"
+        "content/ApplicationState.qml"
         "content/Display.qml"
         "content/NumberPad.qml"
         "content/CalculatorButton.qml"

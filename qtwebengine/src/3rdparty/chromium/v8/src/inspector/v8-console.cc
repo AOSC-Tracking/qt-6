@@ -26,6 +26,7 @@
 #include "src/inspector/v8-stack-trace-impl.h"
 #include "src/inspector/v8-value-utils.h"
 #include "src/tracing/trace-event.h"
+#include "src/tracing/trace-id.h"
 
 namespace v8_inspector {
 
@@ -204,7 +205,7 @@ void createBoundFunctionProperty(
     v8::Local<v8::Value> data, const char* name, v8::FunctionCallback callback,
     v8::SideEffectType side_effect_type = v8::SideEffectType::kHasSideEffect) {
   v8::Local<v8::String> funcName =
-      toV8StringInternalized(context->GetIsolate(), name);
+      toV8StringInternalized(v8::Isolate::GetCurrent(), name);
   v8::Local<v8::Function> func;
   if (!v8::Function::New(context, callback, data, 0,
                          v8::ConstructorBehavior::kThrow, side_effect_type)
@@ -457,44 +458,19 @@ void V8Console::TimeEnd(const v8::debug::ConsoleCallArguments& info,
 
 void V8Console::TimeStamp(const v8::debug::ConsoleCallArguments& info,
                           const v8::debug::ConsoleContext& consoleContext) {
-#ifdef V8_USE_PERFETTO
-  TRACE_EVENT(TRACE_DISABLED_BY_DEFAULT("v8.inspector"), "V8Console::TimeStamp",
-              "data", ([&](perfetto::TracedValue context) {
-                auto dict = std::move(context).WriteDictionary();
-
-                uint64_t name_hash =
-                    std::hash<std::string>{}("V8Console::TimeStamp");
-                uint64_t timestamp_hash = std::hash<uint64_t>{}(
-                    v8::base::TimeTicks::Now().ToInternalValue());
-                uint64_t hash =
-                    v8::base::hash_combine(name_hash, timestamp_hash);
-                v8::CpuProfiler::CpuProfiler::CollectSample(
-                    m_inspector->isolate(), hash);
-                dict.Add("sampleTraceId", hash);
-                static const char* kNames[] = {"name",  "start",      "end",
-                                               "track", "trackGroup", "color"};
-                for (int i = 0; i < info.Length() &&
-                                i < static_cast<int>(std::size(kNames));
-                     ++i) {
-                  auto name = kNames[i];
-                  auto value = info[i];
-                  if (value->IsNumber()) {
-                    dict.Add(perfetto::StaticString(name),
-                             value.As<v8::Number>()->Value());
-                  } else if (value->IsString()) {
-                    dict.Add(perfetto::StaticString(name),
-                             toProtocolString(m_inspector->isolate(),
-                                              value.As<v8::String>())
-                                 .utf8());
-                  } else {
-                    dict.Add(perfetto::StaticString(name), "");
-                  }
-                }
-              }));
-#endif  // V8_USE_PERFETTO
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.inspector"),
+               "V8Console::TimeStamp");
   ConsoleHelper helper(info, consoleContext, m_inspector);
   v8::Local<v8::String> label = helper.firstArgToString();
-  m_inspector->client()->consoleTimeStamp(m_inspector->isolate(), label);
+
+  v8::Isolate* isolate = m_inspector->isolate();
+  v8::LocalVector<v8::Value> args(isolate);
+  args.reserve(info.Length());
+  for (int i = 0; i < info.Length(); i++) {
+    args.push_back(info[i]);
+  }
+
+  m_inspector->client()->consoleTimeStampWithArgs(isolate, label, args);
 }
 
 void V8Console::memoryGetterCallback(
@@ -570,19 +546,14 @@ void V8Console::runTask(const v8::FunctionCallbackInfo<v8::Value>& info) {
   m_inspector->asyncTaskStarted(taskInfo->Id());
   {
 #ifdef V8_USE_PERFETTO
-    TRACE_EVENT(
-        TRACE_DISABLED_BY_DEFAULT("v8.inspector"), "V8Console::runTask", "data",
-        ([&](perfetto::TracedValue context) {
-          auto dict = std::move(context).WriteDictionary();
-          uint64_t task_id_hash =
-              std::hash<uint64_t>{}(reinterpret_cast<uint64_t>(taskInfo->Id()));
-          uint64_t timestamp_hash = std::hash<uint64_t>{}(
-              v8::base::TimeTicks::Now().ToInternalValue());
-          uint64_t hash = v8::base::hash_combine(task_id_hash, timestamp_hash);
-
-          v8::CpuProfiler::CpuProfiler::CollectSample(isolate, hash);
-          dict.Add("sampleTraceId", hash);
-        }));
+    TRACE_EVENT(TRACE_DISABLED_BY_DEFAULT("v8.inspector"), "V8Console::runTask",
+                "data", ([&](perfetto::TracedValue context) {
+                  uint64_t trace_id = v8::tracing::TraceId();
+                  auto dict = std::move(context).WriteDictionary();
+                  v8::CpuProfiler::CpuProfiler::CollectSample(isolate,
+                                                              trace_id);
+                  dict.Add("sampleTraceId", trace_id);
+                }));
 #endif  // V8_USE_PERFETTO
 
     v8::Local<v8::Value> result;
@@ -848,7 +819,7 @@ void V8Console::inspectedObject(const v8::FunctionCallbackInfo<v8::Value>& info,
 
 void V8Console::installMemoryGetter(v8::Local<v8::Context> context,
                                     v8::Local<v8::Object> console) {
-  v8::Isolate* isolate = context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   v8::Local<v8::External> data = v8::External::New(isolate, this);
   console->SetAccessorProperty(
       toV8StringInternalized(isolate, "memory"),
@@ -865,7 +836,7 @@ void V8Console::installMemoryGetter(v8::Local<v8::Context> context,
 
 void V8Console::installAsyncStackTaggingAPI(v8::Local<v8::Context> context,
                                             v8::Local<v8::Object> console) {
-  v8::Isolate* isolate = context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   v8::Local<v8::External> data = v8::External::New(isolate, this);
 
   v8::MicrotasksScope microtasksScope(context,
@@ -877,7 +848,7 @@ void V8Console::installAsyncStackTaggingAPI(v8::Local<v8::Context> context,
 
 v8::Local<v8::Object> V8Console::createCommandLineAPI(
     v8::Local<v8::Context> context, int sessionId) {
-  v8::Isolate* isolate = context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   v8::MicrotasksScope microtasksScope(context,
                                       v8::MicrotasksScope::kDoNotRunMicrotasks);
 
@@ -1031,7 +1002,7 @@ bool IsUnsafeCommandLineAPIFn(v8::Local<v8::Value> name, v8::Isolate* isolate) {
 V8Console::CommandLineAPIScope::CommandLineAPIScope(
     v8::Local<v8::Context> context, v8::Local<v8::Object> commandLineAPI,
     v8::Local<v8::Object> global)
-    : m_isolate(context->GetIsolate()),
+    : m_isolate(v8::Isolate::GetCurrent()),
       m_context(m_isolate, context),
       m_commandLineAPI(m_isolate, commandLineAPI),
       m_global(m_isolate, global) {
@@ -1043,7 +1014,7 @@ V8Console::CommandLineAPIScope::CommandLineAPIScope(
                            v8::PrimitiveArray::New(m_isolate, names->Length()));
 
   m_thisReference = v8::Global<v8::ArrayBuffer>(
-      m_isolate, v8::ArrayBuffer::New(context->GetIsolate(),
+      m_isolate, v8::ArrayBuffer::New(v8::Isolate::GetCurrent(),
                                       sizeof(CommandLineAPIScope*)));
   *static_cast<CommandLineAPIScope**>(
       thisReference()->GetBackingStore()->Data()) = this;
@@ -1054,7 +1025,7 @@ V8Console::CommandLineAPIScope::CommandLineAPIScope(
     if (global->Has(context, name).FromMaybe(true)) continue;
 
     const v8::SideEffectType get_accessor_side_effect_type =
-        IsUnsafeCommandLineAPIFn(name, context->GetIsolate())
+        IsUnsafeCommandLineAPIFn(name, v8::Isolate::GetCurrent())
             ? v8::SideEffectType::kHasSideEffect
             : v8::SideEffectType::kHasNoSideEffect;
     if (!global

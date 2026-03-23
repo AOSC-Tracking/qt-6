@@ -14,12 +14,12 @@ import {
   kAllTextureFormats,
   kFeaturesForFormats,
   filterFormatsByFeature,
-  viewCompatible,
+  textureFormatsAreViewCompatible,
 } from '../../format_info.js';
-import { GPUTest, MaxLimitsTestMixin } from '../../gpu_test.js';
+import { AllFeaturesMaxLimitsGPUTest } from '../../gpu_test.js';
 import { kAllCanvasTypes, createCanvas } from '../../util/create_elements.js';
 
-export const g = makeTestGroup(MaxLimitsTestMixin(GPUTest));
+export const g = makeTestGroup(AllFeaturesMaxLimitsGPUTest);
 
 g.test('defaults')
   .desc(
@@ -94,6 +94,11 @@ g.test('device')
       ctx.getCurrentTexture();
     });
 
+    // Should throw on the second call to getCurrentTexture also.
+    t.shouldThrow('InvalidStateError', () => {
+      ctx.getCurrentTexture();
+    });
+
     // Calling configure with a device should succeed.
     ctx.configure({
       device: t.device,
@@ -155,12 +160,9 @@ g.test('format')
       .combine('canvasType', kAllCanvasTypes)
       .combine('format', kAllTextureFormats)
   )
-  .beforeAllSubcases(t => {
-    t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format);
-    t.skipIfColorRenderableNotSupportedForFormat(t.params.format);
-  })
   .fn(t => {
     const { canvasType, format } = t.params;
+    t.skipIfTextureFormatNotSupported(format);
     const canvas = createCanvas(t, canvasType, 2, 2);
     const ctx = canvas.getContext('webgpu');
     assert(ctx instanceof GPUCanvasContext, 'Failed to get WebGPU context from canvas');
@@ -446,10 +448,6 @@ g.test('viewFormats')
         filterFormatsByFeature(viewFormatFeature, kAllTextureFormats)
       )
   )
-  .beforeAllSubcases(t => {
-    t.skipIfColorRenderableNotSupportedForFormat(t.params.format);
-    t.selectDeviceOrSkipTestCase([t.params.viewFormatFeature]);
-  })
   .fn(t => {
     const { canvasType, format, viewFormat } = t.params;
 
@@ -459,7 +457,7 @@ g.test('viewFormats')
     const ctx = canvas.getContext('webgpu');
     assert(ctx instanceof GPUCanvasContext, 'Failed to get WebGPU context from canvas');
 
-    const compatible = viewCompatible(t.isCompatibility, format, viewFormat);
+    const compatible = textureFormatsAreViewCompatible(t.device, format, viewFormat);
 
     // Test configure() produces an error if the formats aren't compatible.
     t.expectValidationError(() => {

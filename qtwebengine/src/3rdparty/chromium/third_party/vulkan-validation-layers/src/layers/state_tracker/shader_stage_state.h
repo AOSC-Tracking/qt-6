@@ -18,6 +18,7 @@
 
 #pragma once
 #include <vulkan/vulkan.h>
+#include <memory>
 #include "containers/custom_containers.h"
 
 namespace vku {
@@ -56,6 +57,7 @@ struct ShaderStageState {
     vku::safe_VkSpecializationInfo *GetSpecializationInfo() const;
     const void *GetPNext() const;
     bool GetInt32ConstantValue(const spirv::Instruction &insn, uint32_t *value) const;
+    bool GetBooleanConstantValue(const spirv::Instruction &insn, bool *value) const;
 };
 
 namespace spirv {
@@ -77,7 +79,7 @@ inline bool operator<(const DescriptorRequirement &a, const DescriptorRequiremen
 }
 
 // < binding index (of descriptor set) : meta data >
-typedef std::unordered_multimap<uint32_t, DescriptorRequirement> BindingVariableMap;
+using BindingVariableMap = std::unordered_multimap<uint32_t, DescriptorRequirement>;
 
 // Capture which slots (set#->bindings) are actually used by the shaders of this pipeline/shaderObject.
 // This is same as "statically used" in vkspec.html#shaders-staticuse

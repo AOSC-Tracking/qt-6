@@ -1,5 +1,6 @@
 // Copyright (C) 2016 Research In Motion.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLAPPLICATIONENGINE_P_H
 #define QQMLAPPLICATIONENGINE_P_H
@@ -28,7 +29,7 @@ class Q_QML_EXPORT QQmlApplicationEnginePrivate : public QQmlEnginePrivate
 {
     Q_DECLARE_PUBLIC(QQmlApplicationEngine)
 public:
-    QQmlApplicationEnginePrivate(QQmlEngine *e);
+    QQmlApplicationEnginePrivate();
     ~QQmlApplicationEnginePrivate();
     void ensureInitialized();
     void init();

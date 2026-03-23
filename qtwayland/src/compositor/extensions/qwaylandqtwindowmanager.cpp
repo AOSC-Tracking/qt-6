@@ -59,6 +59,15 @@ QWaylandQtWindowManager::QWaylandQtWindowManager(QWaylandCompositor *compositor)
 {
 }
 
+/*!
+ * \property QWaylandQtWindowManager::showIsFullScreen
+ *
+ * This property holds whether the window manager should indicate to clients
+ * that the "show" window state is equivalent to fullscreen mode.
+ *
+ * When \c true, clients will treat the show state as fullscreen; when \c false,
+ * the show state represents a normal window state.
+ */
 bool QWaylandQtWindowManager::showIsFullScreen() const
 {
     Q_D(const QWaylandQtWindowManager);

@@ -12,6 +12,7 @@
 #include "base/android/jni_utils.h"
 #include "base/android_runtime_jni_headers/Throwable_jni.h"
 #include "base/debug/debugging_buildflags.h"
+#include "base/debug/stack_trace.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
@@ -19,11 +20,8 @@
 #include "build/robolectric_buildflags.h"
 #include "third_party/jni_zero/jni_zero.h"
 
-#if BUILDFLAG(IS_ROBOLECTRIC)
-#include "base/base_robolectric_jni/JniAndroid_jni.h"  // nogncheck
-#else
-#include "base/base_jni/JniAndroid_jni.h"
-#endif
+// Must come after all headers that specialize FromJniType() / ToJniType().
+#include "base/jni_android_jni/JniAndroid_jni.h"
 
 namespace base {
 namespace android {
@@ -51,7 +49,8 @@ jclass GetClassFromSplit(JNIEnv* env,
                          const char* class_name,
                          const char* split_name) {
   DCHECK(IsStringASCII(class_name));
-  ScopedJavaLocalRef<jstring> j_class_name(env, env->NewStringUTF(class_name));
+  auto j_class_name =
+      ScopedJavaLocalRef<jstring>::Adopt(env, env->NewStringUTF(class_name));
   return static_cast<jclass>(env->CallObjectMethod(
       GetSplitClassLoader(env, split_name), g_class_loader_load_class_method_id,
       j_class_name.obj()));
@@ -64,7 +63,7 @@ jclass GetClassFromSplit(JNIEnv* env,
 void PrepareClassLoaders(JNIEnv* env) {
   if (g_class_loader_load_class_method_id == nullptr) {
     GetClassLoader(env);
-    ScopedJavaLocalRef<jclass> class_loader_clazz = ScopedJavaLocalRef<jclass>(
+    auto class_loader_clazz = ScopedJavaLocalRef<jclass>::Adopt(
         env, env->FindClass("java/lang/ClassLoader"));
     CHECK(!ClearException(env));
     g_class_loader_load_class_method_id =
@@ -268,3 +267,5 @@ std::string GetJavaStackTraceIfPresent() {
 
 }  // namespace android
 }  // namespace base
+
+DEFINE_JNI_FOR_JniAndroid()

@@ -79,7 +79,6 @@ qt_internal_add_module(Multimedia
         qmultimedia_ranges_p.h
         qvideotransformation.cpp qvideotransformation_p.h
         qmediaframeinput.cpp qmediaframeinput_p.h
-        qmultimedia_assume_p.h
         qtmultimediaglobal.h qtmultimediaglobal_p.h
         qerrorinfo_p.h
         qcachedvalue_p.h
@@ -118,6 +117,8 @@ qt_internal_add_module(Multimedia
         playback
         recording
         video
+    PRECOMPILED_HEADER
+        qtmultimedia_pch_p.h
     DEFINES
         QT_NO_CAST_FROM_ASCII
         QT_NO_CAST_TO_ASCII
@@ -208,6 +209,7 @@ if (QT_FEATURE_pipewire)
             pipewire/qpipewire_registry_support.cpp    pipewire/qpipewire_registry_support_p.h
             pipewire/qpipewire_spa_compat_p.h
             pipewire/qpipewire_spa_pod_support.cpp     pipewire/qpipewire_spa_pod_support_p.h
+            pipewire/qpipewire_spa_pod_parser_support_p.h
             pipewire/qpipewire_support.cpp             pipewire/qpipewire_support_p.h
             pipewire/qpipewire_symbolloader.cpp        pipewire/qpipewire_symbolloader_p.h
     )
@@ -268,6 +270,7 @@ qt_internal_extend_target(Multimedia CONDITION ANDROID
         android/qandroidaudiosink.cpp android/qandroidaudiosink_p.h
         android/qandroidaudiodevice.cpp android/qandroidaudiodevice_p.h
         android/qandroidaudiodevices.cpp android/qandroidaudiodevices_p.h
+        android/qandroidaudiojnitypes_p.h
         android/qandroidaudioutil.cpp android/qandroidaudioutil_p.h
         android/qaaudiostream.cpp android/qaaudiostream_p.h
     LIBRARIES
@@ -318,6 +321,7 @@ qt_internal_extend_target(Multimedia CONDITION APPLE
 
 qt_internal_extend_target(Multimedia CONDITION MACOS OR IOS
     SOURCES
+        darwin/qdarwinintegrationfactory_p.h darwin/qdarwinintegrationfactory.mm
         darwin/qavfcameradebug_p.h
         darwin/qavfcamerautility_p.h darwin/qavfcamerautility.mm
         darwin/qavfvideodevices.mm darwin/qavfvideodevices_p.h
@@ -387,14 +391,14 @@ qt_internal_extend_target(Multimedia CONDITION WIN32
 set(source_with_init_guid
     windows/qwindows_wasapi_warmup_client.cpp
     windows/qwindowsmuldimediautils.cpp
+    windows/qwindowsaudiodevices.cpp
     windows/qwindowsvideodevices.cpp
 )
-if(MINGW)
-    # mingw's uuid.lib does not contain PKEY_Device_FriendlyName and friends
-    list(APPEND source_with_init_guid windows/qwindowsaudiodevices.cpp)
-endif()
 
-set_source_files_properties(${source_with_init_guid} PROPERTIES COMPILE_DEFINITIONS INITGUID)
+set_source_files_properties(${source_with_init_guid} PROPERTIES
+    COMPILE_DEFINITIONS     INITGUID
+    SKIP_PRECOMPILE_HEADERS TRUE
+)
 
 
 qt_internal_extend_target(Multimedia CONDITION WASM
@@ -403,6 +407,8 @@ qt_internal_extend_target(Multimedia CONDITION WASM
         wasm/qwasmaudiosource.cpp wasm/qwasmaudiosource_p.h
         wasm/qwasmaudiosink.cpp wasm/qwasmaudiosink_p.h
         wasm/qwasmaudiodevice.cpp wasm/qwasmaudiodevice_p.h
+        wasm/qwasmjs.cpp wasm/qwasmjs_p.h
+
     INCLUDE_DIRECTORIES
         wasm
     PUBLIC_LIBRARIES

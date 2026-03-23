@@ -15,6 +15,7 @@
 #include "base/functional/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
+#include "gpu/command_buffer/client/shared_image_interface.h"
 #include "media/base/bitrate.h"
 #include "media/base/encoder_status.h"
 #include "media/base/media_export.h"
@@ -405,8 +406,8 @@ class MEDIA_EXPORT VideoEncodeAccelerator {
   virtual SupportedProfiles GetSupportedProfiles() = 0;
 
   // Initializes the video encoder with specific configuration.  Called once per
-  // encoder construction.  This call is synchronous and returns true iff
-  // initialization is successful.
+  // encoder construction.  This call is synchronous and returns
+  // EncoderStatus::Codes::kOk iff initialization is successful.
   // TODO(mcasas): Update to asynchronous, https://crbug.com/744210.
   // Parameters:
   //  |config| contains the initialization parameters.
@@ -414,9 +415,9 @@ class MEDIA_EXPORT VideoEncodeAccelerator {
   //  be valid until Destroy() is called.
   //  |media_log| is used to report error messages.
   // TODO(sheu): handle resolution changes.  http://crbug.com/249944
-  virtual bool Initialize(const Config& config,
-                          Client* client,
-                          std::unique_ptr<MediaLog> media_log) = 0;
+  virtual EncoderStatus Initialize(const Config& config,
+                                   Client* client,
+                                   std::unique_ptr<MediaLog> media_log) = 0;
 
   // Encodes the given frame.
   // The storage type of |frame| must be the |storage_type| if it is specified
@@ -508,6 +509,9 @@ class MEDIA_EXPORT VideoEncodeAccelerator {
       base::RepeatingCallback<scoped_refptr<CommandBufferHelper>()>
           get_command_buffer_helper_cb,
       scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner);
+
+  virtual void SetSharedImageInterfaceForTesting(
+      scoped_refptr<gpu::SharedImageInterface> sii);
 
  protected:
   // Do not delete directly; use Destroy() or own it with a unique_ptr, which

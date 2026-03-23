@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Controls
 
 Rectangle {
     id: root
@@ -25,7 +25,7 @@ Rectangle {
             id: sectionHeader
             Layout.fillWidth: true
             implicitHeight: 24
-            color: palette.alternateBase
+            //color: palette.base
 
             RowLayout {
                 anchors.verticalCenter: parent.verticalCenter
@@ -35,7 +35,7 @@ Rectangle {
                     source: root.isExpanded ? "qrc:/images/TreeExpanded.png" : "qrc:/images/TreeUnexpanded.png"
                 }
 
-                Text {
+                Label {
                     id: titleText
                     Layout.fillWidth: true
                     text: root.title

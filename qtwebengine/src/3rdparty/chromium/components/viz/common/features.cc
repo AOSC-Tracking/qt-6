@@ -21,6 +21,7 @@
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/config/gpu_switches.h"
 #include "media/media_buildflags.h"
+#include "ui/gl/gl_switches.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/build_info.h"
@@ -38,23 +39,21 @@ namespace features {
 // involvement. For now, this applies only to top controls.
 BASE_FEATURE(kAndroidBrowserControlsInViz,
              "AndroidBrowserControlsInViz",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
-// If this flag is enabled, AndroidBrowserControlsInViz must also be enabled.
+// If this flag is enabled, AndroidBrowserControlsInViz and
+// BottomControlsRefactor with the "Dispatch yOffset" variation must also be
+// enabled.
 BASE_FEATURE(kAndroidBcivBottomControls,
              "AndroidBcivBottomControls",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kAndroidBcivWithSimpleScheduler,
-             "AndroidBcivWithSimpleScheduler",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kAndroidBcivWithSuppression,
-             "AndroidBcivWithSuppression",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kAndroidBcivZeroBrowserFrames,
-             "AndroidBcivZeroBrowserFrames",
+// If this flag is enabled, a DumpWithoutCrashing() is captured when a bad
+// state is detected when moving the composited UI. For example, this could
+// mean scrolling without a resource, or OffsetTagValues trying to position
+// the UI outside of their valid constraints.
+BASE_FEATURE(kAndroidDumpForBadCompositedUiState,
+             "AndroidDumpForBadCompositedUiState",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 #endif  // BUILDFLAG(IS_ANDROID)
@@ -73,13 +72,9 @@ BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-BASE_FEATURE(kUseFrameIntervalDecider,
-             "UseFrameIntervalDecider",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 #if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kUseFrameIntervalDeciderNewAndroidFeatures,
-             "UseFrameIntervalDeciderNewAndroidFeatures",
+BASE_FEATURE(kUseFrameIntervalDeciderAdaptiveFrameRate,
+             "UseFrameIntervalDeciderAdaptiveFrameRate",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -98,7 +93,7 @@ BASE_FEATURE(kUseMultipleOverlays,
 #endif
 const char kMaxOverlaysParam[] = "max_overlays";
 
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDelegatedCompositing,
              "DelegatedCompositing",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -108,6 +103,14 @@ BASE_FEATURE(kDelegatedCompositing,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+BASE_FEATURE(kAvoidDuplicateDelayBeginFrame,
+             "AvoidDuplicateDelayBeginFrame",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kTransferableResourcePassAlphaTypeDirectly,
+             "TransferableResourcePassAlphaTypeDirectly",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 const char kDrawQuadSplit[] = "num_of_splits";
 
 // If enabled, overrides the maximum number (exclusive) of quads one draw quad
@@ -115,6 +118,10 @@ const char kDrawQuadSplit[] = "num_of_splits";
 BASE_FEATURE(kDrawQuadSplitLimit,
              "DrawQuadSplitLimit",
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kEnableBackdropFiltersCullingOptimization,
+             "EnableBackdropFiltersCullingOptimization",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 constexpr base::FeatureParam<DelegatedCompositingMode>::Option
     kDelegatedCompositingModeOption[] = {
@@ -158,13 +165,8 @@ BASE_FEATURE(kDCompSurfacesForDelegatedInk,
 // user resizes the window.
 BASE_FEATURE(kRemoveRedirectionBitmap,
              "RemoveRedirectionBitmap",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-
-// Note: This feature is actively being finched (Oct, 2024).
-BASE_FEATURE(kRenderPassDrawnRect,
-             "RenderPassDrawnRect",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID)
 // When wide color gamut content from the web is encountered, promote our
@@ -238,12 +240,7 @@ BASE_FEATURE(kWebViewEnableADPFRendererMain,
 // otherwise this is a no-op.
 BASE_FEATURE(kWebViewEnableADPFGpuMain,
              "WebViewEnableADPFGpuMain",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-// Enable WebView providing frame rate hints to View system.
-BASE_FEATURE(kWebViewFrameRateHints,
-             "WebViewFrameRateHints",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 #if BUILDFLAG(IS_APPLE)
@@ -266,11 +263,11 @@ const base::FeatureParam<int> kCALayerNewLimitManyVideos{&kCALayerNewLimit,
 #endif
 
 #if BUILDFLAG(IS_MAC)
-// Whether the presentation should be delayed until the next CVDisplayLink
-// callback.
+// Whether the presentation should be delayed until the next DisplayLink
+// callback. Currently only for frames that handle interaction.
 BASE_FEATURE(kVSyncAlignedPresent,
              "VSyncAlignedPresent",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 #if BUILDFLAG(IS_MAC)
@@ -283,32 +280,11 @@ BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-// Enables occlusion culling for TextureDrawQuads when possible.
-BASE_FEATURE(kOcclusionCullingForTextureQuads,
-             "OcclusionCullingForTextureQuads",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // Allow SurfaceAggregator to merge render passes when they contain quads that
 // require overlay (e.g. protected video). See usage in |EmitSurfaceContent|.
 BASE_FEATURE(kAllowForceMergeRenderPassWithRequireOverlayQuads,
              "AllowForceMergeRenderPassWithRequireOverlayQuads",
              base::FEATURE_ENABLED_BY_DEFAULT);
-
-// If enabled, CompositorFrameSinkClient::OnBeginFrame is also treated as the
-// DidReceiveCompositorFrameAck. Both in providing the Ack for the previous
-// frame, and in returning resources. While enabled we attempt to not send
-// separate Ack and ReclaimResources signals. However if while sending an
-// OnBeginFrame there is a pending Ack, then if the Ack arrives before the next
-// OnBeginFrame we will send the Ack immediately, rather than batching it.
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-BASE_FEATURE(kOnBeginFrameAcks,
-             "OnBeginFrameAcks",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#else
-BASE_FEATURE(kOnBeginFrameAcks,
-             "OnBeginFrameAcks",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif
 
 // if enabled, Any CompositorFrameSink of type video that defines a preferred
 // framerate that is below the display framerate will throttle OnBeginFrame
@@ -349,12 +325,6 @@ const base::FeatureParam<base::TimeDelta> kADPFBoostTimeout{
     &kEnableADPFScrollBoost, "adpf_boost_mode_timeout",
     base::Milliseconds(200)};
 
-// If enabled, Chrome includes the Renderer Main thread(s) into the
-// ADPF(Android Dynamic Performance Framework) hint session.
-BASE_FEATURE(kEnableADPFRendererMain,
-             "EnableADPFRendererMain",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // If enabled, Chrome's ADPF(Android Dynamic Performance Framework) hint
 // session includes Renderer threads only if:
 // - The Renderer is handling an interacton
@@ -362,7 +332,7 @@ BASE_FEATURE(kEnableADPFRendererMain,
 //   an interaction.
 BASE_FEATURE(kEnableInteractiveOnlyADPFRenderer,
              "EnableInteractiveOnlyADPFRenderer",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, Chrome includes the Compositor GPU Thread into the
 // ADPF(Android Dynamic Performance Framework) hint session, instead
@@ -383,25 +353,19 @@ BASE_FEATURE(kEnableADPFSeparateRendererMainSession,
 // threads in the session changes.
 BASE_FEATURE(kEnableADPFSetThreads,
              "EnableADPFSetThreads",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, surface activation and draw do not block on dependencies.
-#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kDrawImmediatelyWhenInteractive,
              "DrawImmediatelyWhenInteractive",
              base::FEATURE_ENABLED_BY_DEFAULT);
-#else
-BASE_FEATURE(kDrawImmediatelyWhenInteractive,
-             "DrawImmediatelyWhenInteractive",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif
 
 // If enabled, we immediately send acks to clients when a viz surface
 // activates. This effectively removes back-pressure. This can result in wasted
 // work and contention, but should regularize the timing of client rendering.
 BASE_FEATURE(kAckOnSurfaceActivationWhenInteractive,
              "AckOnSurfaceActivationWhenInteractive",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 const base::FeatureParam<int>
     kNumCooldownFramesForAckOnSurfaceActivationDuringInteraction{
@@ -450,20 +414,6 @@ BASE_FEATURE(kShutdownForFailedChannelCreation,
              "ShutdownForFailedChannelCreation",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-// If enabled, snapshot the root surface when it is evicted.
-// TODO(edcourtney): Enable for Android.
-#if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kSnapshotEvictedRootSurface,
-             "SnapshotEvictedRootSurface",
-             base::FEATURE_DISABLED_BY_DEFAULT
-);
-#else
-BASE_FEATURE(kSnapshotEvictedRootSurface,
-             "SnapshotEvictedRootSurface",
-             base::FEATURE_ENABLED_BY_DEFAULT
-);
-#endif
-
 // If enabled, info for quads from the last render pass will be reported as
 // UMAs.
 BASE_FEATURE(kShouldLogFrameQuadInfo,
@@ -480,22 +430,24 @@ BASE_FEATURE(kBatchResourceRelease,
              "BatchResourceRelease",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// The scale to use for root surface snapshots on eviction. See
-// `kSnapshotEvictedRootSurface`.
-const base::FeatureParam<double> kSnapshotEvictedRootSurfaceScale{
-    &kSnapshotEvictedRootSurface, "scale", 0.4};
-
-// Do HDR color conversion per render pass update rect in renderer instead of
-// inserting a separate color conversion pass during surface aggregation.
-BASE_FEATURE(kColorConversionInRenderer,
-             "ColorConversionInRenderer",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+// When enabled, BeginFrameSource will not send a `BeginFrameArgs::MISSED` in
+// response to `AddObserver`. As these consistently miss deadlines, and increase
+// latency and jank. Instead the client will receive the next BeginFrame.
+BASE_FEATURE(kNoLateBeginFrames,
+             "NoLateBeginFrames",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Stops BeginFrame issue to use |last_vsync_interval_| instead of the current
 // set of BeginFrameArgs.
 // TODO(b/333940735): Should be removed if the issue isn't fixed.
 BASE_FEATURE(kLastVSyncArgsKillswitch,
              "LastVSyncArgsKillswitch",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Enables IPCs to directly target Viz's compositor thread for non-root
+// CompositorFrameSink messages without hopping through the IO thread first.
+BASE_FEATURE(kVizDirectCompositorThreadIpcNonRoot,
+             "VizDirectCompositorThreadIpcNonRoot",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Null Hypothesis test for viz. This will be used in an meta experiment to
@@ -528,8 +480,18 @@ int DrawQuadSplitLimit() {
                     kMaxDrawQuadSplitLimit);
 }
 
+bool IsBackdropFiltersCullingOptimizationEnabled() {
+  static bool is_enabled =
+      base::FeatureList::IsEnabled(kEnableBackdropFiltersCullingOptimization);
+  return is_enabled;
+}
+
 bool IsDelegatedCompositingEnabled() {
   return base::FeatureList::IsEnabled(kDelegatedCompositing);
+}
+
+bool IsVizDirectCompositorThreadIpcNonRootEnabled() {
+  return base::FeatureList::IsEnabled(kVizDirectCompositorThreadIpcNonRoot);
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -592,16 +554,6 @@ bool ShouldOnBeginFrameThrottleVideo() {
   return base::FeatureList::IsEnabled(features::kOnBeginFrameThrottleVideo);
 }
 
-bool IsOnBeginFrameAcksEnabled() {
-  return base::FeatureList::IsEnabled(features::kOnBeginFrameAcks);
-}
-
-bool IsOcclusionCullingForTextureQuadsEnabled() {
-  static bool enabled =
-      base::FeatureList::IsEnabled(features::kOcclusionCullingForTextureQuads);
-  return enabled;
-}
-
 bool ShouldDrawImmediatelyWhenInteractive() {
   return base::FeatureList::IsEnabled(
       features::kDrawImmediatelyWhenInteractive);
@@ -627,24 +579,8 @@ NumCooldownFramesForAckOnSurfaceActivationDuringInteraction() {
       kNumCooldownFramesForAckOnSurfaceActivationDuringInteraction.Get());
 }
 
-std::optional<double> SnapshotEvictedRootSurfaceScale() {
-  if (!base::FeatureList::IsEnabled(kSnapshotEvictedRootSurface)) {
-    return std::nullopt;
-  }
-  return kSnapshotEvictedRootSurfaceScale.Get();
-}
-
 bool ShouldLogFrameQuadInfo() {
   return base::FeatureList::IsEnabled(features::kShouldLogFrameQuadInfo);
-}
-
-bool IsUsingFrameIntervalDecider() {
-#if BUILDFLAG(IS_ANDROID)
-  if (base::FeatureList::IsEnabled(kWebViewFrameRateHints)) {
-    return true;
-  }
-#endif
-  return base::FeatureList::IsEnabled(kUseFrameIntervalDecider);
 }
 
 #if BUILDFLAG(IS_MAC)
@@ -655,48 +591,42 @@ bool IsVSyncAlignedPresentEnabled() {
 
 #if BUILDFLAG(IS_CHROMEOS)
 bool IsCrosContentAdjustedRefreshRateEnabled() {
-  if (base::FeatureList::IsEnabled(kCrosContentAdjustedRefreshRate)) {
-    if (base::FeatureList::IsEnabled(kUseFrameIntervalDecider)) {
-      return true;
-    }
-
-    LOG(WARNING) << "Feature ContentAdjustedRefreshRate is ignored. It cannot "
-                    "be used without also setting UseFrameIntervalDecider.";
-  }
-
-  return false;
+  return base::FeatureList::IsEnabled(kCrosContentAdjustedRefreshRate);
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_WIN)
-bool ShouldUseDCompSurfacesForDelegatedInk() {
-  // kDCompSurfacesForDelegatedInk is for delegated ink to work with partial
-  // delegated compositing. This function should return true if the feature
-  // is enabled or partial delegated compositing is enabled - a condition
-  // which requires the use of DCOMP surfaces for delegated ink.
-  if (IsDelegatedCompositingEnabled() &&
-      kDelegatedCompositingModeParam.Get() ==
-          DelegatedCompositingMode::kLimitToUi) {
-    return true;
-  }
-  return base::FeatureList::IsEnabled(kDCompSurfacesForDelegatedInk);
-}
-
 bool ShouldRemoveRedirectionBitmap() {
-  // Redirection bitmap should not be removed if Direct Composition is
-  // disabled. On devices with DComp disabled, ANGLE draws to the redirection
-  // bitmap via a blit swap chain. DWM_SYSTEMBACKDROP_TYPE is only available
-  // on Win11 22H2+, therefore limit the bitmap removal to those versions or
-  // higher so that an appropriate background replacement is available.
-  // Note: the DISABLE_DIRECT_COMPOSITION command line check is a workaround for
-  // https://crbug.com/40276881. Additionally, Direct Composition is only
-  // blocklisted for Windows 10 so this feature would not be enabled at the same
-  // time.
-  return base::win::GetVersion() >= base::win::Version::WIN11_22H2 &&
-         !base::CommandLine::ForCurrentProcess()->HasSwitch(
-             gpu::GpuDriverBugWorkaroundTypeToString(
-                 gpu::DISABLE_DIRECT_COMPOSITION)) &&
-         base::FeatureList::IsEnabled(kRemoveRedirectionBitmap);
+  // Limit to Win11 because there are a high number of D3D9 users on Win10;
+  // which requires the redirection bitmap. 22H2 is specified because it is the
+  // lowest version supporting DWM system backdrop.
+  if (base::win::GetVersion() < base::win::Version::WIN11_22H2) {
+    return false;
+  }
+
+  const auto* command_line = base::CommandLine::ForCurrentProcess();
+
+  // If direct composition is disabled say for testing, we will use an ANGLE
+  // EGLSurface which uses a BitBlt swap chain that needs a redirection surface.
+  if (command_line->HasSwitch(switches::kDisableDirectComposition)) {
+    return false;
+  }
+
+  // When using swiftshader for testing, we will also use an ANGLE EGLSurface.
+  if (command_line->HasSwitch(switches::kOverrideUseSoftwareGLForTests)) {
+    return false;
+  }
+
+  // Some users set ANGLE backend to D3D9 or OpenGL via chrome://flags and in
+  // that case too we would also use an ANGLE EGLSurface.
+  const std::string angle_backend =
+      command_line->GetSwitchValueASCII(switches::kUseANGLE);
+  if (angle_backend == gl::kANGLEImplementationD3D9Name ||
+      angle_backend == gl::kANGLEImplementationOpenGLName) {
+    return false;
+  }
+
+  return base::FeatureList::IsEnabled(kRemoveRedirectionBitmap);
 }
 #endif
 

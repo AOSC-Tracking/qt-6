@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef BASE_METRICS_PERSISTENT_MEMORY_ALLOCATOR_H_
 #define BASE_METRICS_PERSISTENT_MEMORY_ALLOCATOR_H_
 
@@ -21,6 +16,7 @@
 #include "base/base_export.h"
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
@@ -907,8 +903,6 @@ class BASE_EXPORT ReadOnlySharedPersistentMemoryAllocator
   base::ReadOnlySharedMemoryMapping shared_memory_;
 };
 
-// NACL doesn't support any kind of file access in build.
-#if !BUILDFLAG(IS_NACL)
 // This allocator takes a memory-mapped file object and performs allocation
 // from it. The allocator takes ownership of the file object.
 class BASE_EXPORT FilePersistentMemoryAllocator
@@ -950,7 +944,6 @@ class BASE_EXPORT FilePersistentMemoryAllocator
  private:
   std::unique_ptr<MemoryMappedFile> mapped_file_;
 };
-#endif  // !BUILDFLAG(IS_NACL)
 
 // An allocation that is defined but not executed until required at a later
 // time. This allows for potential users of an allocation to be decoupled
@@ -1002,8 +995,8 @@ class BASE_EXPORT DelayedPersistentAllocation {
     // will result.
     CHECK_EQ(offset_ % alignof(T), 0u);
     span<uint8_t> untyped = GetUntyped();
-    return span(reinterpret_cast<T*>(untyped.data()),
-                untyped.size() / sizeof(T));
+    return UNSAFE_TODO(
+        span(reinterpret_cast<T*>(untyped.data()), untyped.size() / sizeof(T)));
   }
 
   // Gets the internal reference value. If this returns a non-zero value then

@@ -58,7 +58,8 @@ enum TestElementType {
     kF32,
     kF16,
 };
-template <typename STREAM, typename = traits::EnableIfIsOStream<STREAM>>
+template <typename STREAM>
+    requires(traits::IsOStream<STREAM>)
 auto& operator<<(STREAM& out, TestElementType type) {
     switch (type) {
         case kBool:
@@ -111,7 +112,7 @@ class SpirvWriterTestHelperBase : public BASE {
     bool Generate(Options options = {}) {
         auto result = writer::Generate(mod, options);
         if (result != Success) {
-            err_ = result.Failure().reason.Str();
+            err_ = result.Failure().reason;
             return false;
         }
 

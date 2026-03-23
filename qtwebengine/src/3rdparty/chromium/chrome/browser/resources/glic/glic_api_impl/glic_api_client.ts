@@ -2,31 +2,41 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import type {AnnotatedPageData, ChromeVersion, DraggableArea, ErrorWithReason, GlicBrowserHost, GlicBrowserHostMetrics, GlicHostRegistry, GlicWebClient, ObservableValue, OpenPanelInfo, PanelState, PdfDocumentData, Screenshot, Subscriber, TabContextOptions, TabContextResult, TabData, UserProfileInfo} from '../glic_api/glic_api.js';
-import {CaptureScreenshotErrorReason, GetTabContextErrorReason} from '../glic_api/glic_api.js';
+import type {AnnotatedPageData, ChromeVersion, CreateTabOptions, DraggableArea, FocusedTabData, GetPinCandidatesOptions, GlicBrowserHost, GlicBrowserHostJournal, GlicBrowserHostMetrics, GlicHostRegistry, GlicWebClient, HostCapability, Journal, Observable, ObservableValue, OpenPanelInfo, OpenSettingsOptions, PanelOpeningData, PanelState, PdfDocumentData, PinCandidate, ResizeWindowOptions, Screenshot, ScrollToParams, TabContextOptions, TabContextResult, TabData, UserProfileInfo, ViewChangedNotification, ViewChangeRequest, ZeroStateSuggestions, ZeroStateSuggestionsOptions, ZeroStateSuggestionsV2} from '../glic_api/glic_api.js';
+import {ActorTaskState} from '../glic_api/glic_api.js';
+import {ObservableValue as ObservableValueImpl, Subject} from '../observable.js';
 
-import {PostMessageRequestReceiver, PostMessageRequestSender} from './post_message_transport.js';
-import type {AnnotatedPageDataPrivate, PdfDocumentDataPrivate, RgbaImage, TabContextResultPrivate, TabDataPrivate, WebClientRequestTypes} from './request_types.js';
-import {ImageAlphaType, ImageColorType} from './request_types.js';
+import {replaceProperties} from './conversions.js';
+import {newSenderId, PostMessageRequestReceiver, PostMessageRequestSender} from './post_message_transport.js';
+import type {ResponseExtras} from './post_message_transport.js';
+import type {AnnotatedPageDataPrivate, FocusedTabDataPrivate, PdfDocumentDataPrivate, PinCandidatePrivate, RequestRequestType, RequestResponseType, RgbaImage, TabContextResultPrivate, TabDataPrivate, TransferableException, WebClientRequestTypes} from './request_types.js';
+import {ImageAlphaType, ImageColorType, newTransferableException} from './request_types.js';
 
 
 // Web client side of the Glic API.
 // Communicates with the Chrome-WebUI-side in glic_api_host.ts
 
 export class GlicHostRegistryImpl implements GlicHostRegistry {
+  private host: GlicBrowserHostImpl|undefined;
   constructor(private windowProxy: WindowProxy) {}
 
   async registerWebClient(webClient: GlicWebClient): Promise<void> {
-    const host = new GlicBrowserHostImpl(webClient, this.windowProxy);
-    await host.webClientCreated();
+    this.host = new GlicBrowserHostImpl(webClient, this.windowProxy);
+    await this.host.webClientCreated();
     let success = false;
+    let exception: TransferableException|undefined;
     try {
-      await webClient.initialize(host);
+      await webClient.initialize(this.host);
       success = true;
     } catch (e) {
-      console.error(e);
+      console.warn(e);
+      if (e instanceof Error) {
+        exception = newTransferableException(e);
+      }
     }
-    host.webClientInitialized(success);
+    if (this.host) {
+      this.host.webClientInitialized(success, exception);
+    }
   }
 }
 
@@ -38,56 +48,58 @@ type Promisify<T> = T extends void ? void : Promise<T>;
 type WebClientMessageHandlerInterface = {
   [Property in keyof WebClientRequestTypes]:
       // `payload` is the message payload.
-      // `responseTransfer` is populated by objects that should be transferred
-      // when sending the message.
-  (payload: WebClientRequestTypes[Property]['request'],
-   responseTransfer: Transferable[]) =>
-      Promisify<WebClientRequestTypes[Property]['response']>;
+  (payload: RequestRequestType<Property>, extras: ResponseExtras) =>
+      Promisify<RequestResponseType<Property>>;
 };
 
 class WebClientMessageHandler implements WebClientMessageHandlerInterface {
+  private cachedPinnedTabs: TabData[]|undefined = undefined;
+
   constructor(
       private webClient: GlicWebClient, private host: GlicBrowserHostImpl) {}
 
-  glicWebClientNotifyPanelOpened(payload: {
-    attachedToWindowId: string|undefined,
-  }): void {
-    if (this.webClient.notifyPanelOpened) {
-      this.webClient.notifyPanelOpened(payload.attachedToWindowId);
-    }
-  }
-
-  async glicWebClientNotifyPanelWillOpen(payload: {panelState: PanelState}):
-      Promise<{openPanelInfo?: OpenPanelInfo}> {
+  async glicWebClientNotifyPanelWillOpen(payload: {
+    panelOpeningData: PanelOpeningData,
+  }): Promise<{openPanelInfo?: OpenPanelInfo}> {
     let openPanelInfo: OpenPanelInfo|undefined;
     try {
-      const result =
-          await this.webClient.notifyPanelWillOpen?.(payload.panelState);
+      const mergedArgument: PanelOpeningData&PanelState = Object.assign(
+          {}, payload.panelOpeningData, payload.panelOpeningData.panelState);
+      const result = await this.webClient.notifyPanelWillOpen?.(mergedArgument);
       if (result) {
         openPanelInfo = result;
       }
     } catch (e) {
-      console.error(e);
+      console.warn(e);
     }
     return {openPanelInfo};
-  }
-
-  glicWebClientNotifyPanelClosed(): void {
-    if (this.webClient.notifyPanelClosed) {
-      this.webClient.notifyPanelClosed();
-    }
   }
 
   async glicWebClientNotifyPanelWasClosed(): Promise<void> {
     try {
       await this.webClient.notifyPanelWasClosed?.();
     } catch (e) {
-      console.error(e);
+      console.warn(e);
     }
   }
 
   glicWebClientPanelStateChanged(payload: {panelState: PanelState}): void {
-    this.host.getPanelState().assignAndSignal(payload.panelState);
+    this.host.getPanelState?.().assignAndSignal(payload.panelState);
+  }
+
+  glicWebClientRequestViewChange(payload: {request: ViewChangeRequest}): void {
+    this.host.viewChangeRequestsSubject.next(payload.request);
+  }
+
+  glicWebClientZeroStateSuggestionsChanged(payload: {
+    suggestions: ZeroStateSuggestionsV2,
+    options: ZeroStateSuggestionsOptions,
+  }): void {
+    this.host.currentZeroStateObserver?.assignAndSignal(payload.suggestions);
+  }
+
+  glicWebClientCanAttachStateChanged(payload: {canAttach: boolean}): void {
+    this.host.canAttachPanelValue.assignAndSignal(payload.canAttach);
   }
 
   glicWebClientNotifyMicrophonePermissionStateChanged(payload: {
@@ -108,43 +120,135 @@ class WebClientMessageHandler implements WebClientMessageHandlerInterface {
     this.host.getTabContextPermissionState().assignAndSignal(payload.enabled);
   }
 
-  glicWebClientNotifyFocusedTabChanged(payload: {
-    focusedTab: TabDataPrivate|undefined,
+  glicWebClientNotifyOsLocationPermissionStateChanged(payload: {
+    enabled: boolean,
   }) {
-    const tabData = !payload.focusedTab ?
-        undefined :
-        convertTabDataFromPrivate(payload.focusedTab);
-    this.host.getFocusedTabState().assignAndSignal(tabData);
+    this.host.getOsLocationPermissionState().assignAndSignal(payload.enabled);
+  }
+
+  glicWebClientNotifyClosedCaptioningSettingChanged(payload: {
+    enabled: boolean,
+  }) {
+    this.host.closedCaptioningState.assignAndSignal(payload.enabled);
+  }
+
+  glicWebClientNotifyFocusedTabChanged(payload: {
+    focusedTabDataPrivate: FocusedTabDataPrivate,
+  }) {
+    const focusedTabData =
+        convertFocusedTabDataFromPrivate(payload.focusedTabDataPrivate);
+    this.host.getFocusedTabStateV2().assignAndSignal(focusedTabData);
   }
 
   glicWebClientNotifyPanelActiveChanged(payload: {panelActive: boolean}): void {
     this.host.panelActiveValue.assignAndSignal(payload.panelActive);
   }
+
+  async glicWebClientCheckResponsive(): Promise<void> {
+    return this.webClient.checkResponsive?.();
+  }
+
+  glicWebClientNotifyManualResizeChanged(payload: {resizing: boolean}) {
+    this.host.isManuallyResizing().assignAndSignal(payload.resizing);
+  }
+
+  glicWebClientBrowserIsOpenChanged(payload: {browserIsOpen: boolean}) {
+    this.host.isBrowserOpenValue.assignAndSignal(payload.browserIsOpen);
+  }
+
+  glicWebClientNotifyOsHotkeyStateChanged(payload: {hotkey: string}) {
+    this.host.getOsHotkeyState().assignAndSignal(payload);
+  }
+
+  glicWebClientPinCandidatesChanged(payload: {
+    candidates: PinCandidatePrivate[],
+    observationId: number,
+  }): void {
+    this.host.pinCandidates?.processUpdate(
+        payload.candidates, payload.observationId);
+  }
+
+  glicWebClientNotifyPinnedTabsChanged(payload: {tabData: TabDataPrivate[]}):
+      void {
+    this.cachedPinnedTabs =
+        payload.tabData.map((x) => convertTabDataFromPrivate(x));
+    this.host.pinnedTabs?.assignAndSignal(this.cachedPinnedTabs);
+  }
+
+  glicWebClientNotifyPinnedTabDataChanged(payload: {tabData: TabDataPrivate}):
+      void {
+    if (!this.cachedPinnedTabs) {
+      return;
+    }
+    const tabData = convertTabDataFromPrivate(payload.tabData);
+    this.cachedPinnedTabs = this.cachedPinnedTabs.map((cachedTab) => {
+      if (cachedTab.tabId === tabData.tabId) {
+        return tabData;
+      }
+      return cachedTab;
+    });
+    this.host.pinnedTabs.assignAndSignal(this.cachedPinnedTabs);
+  }
+
+  glicWebClientNotifyActorTaskStateChanged(
+      payload: {taskId: number, state: ActorTaskState}): void {
+    this.host.setActorTaskState(payload.taskId, payload.state);
+  }
 }
 
 class GlicBrowserHostImpl implements GlicBrowserHost {
+  private readonly hostId = newSenderId();
   private sender: PostMessageRequestSender;
   private receiver: PostMessageRequestReceiver;
   private handlerFunctionNames: Set<string> = new Set();
   private webClientMessageHandler: WebClientMessageHandler;
   private chromeVersion?: ChromeVersion;
   private panelState = ObservableValueImpl.withNoValue<PanelState>();
-  private focusedTabState =
-      ObservableValueImpl.withNoValue<TabData|undefined>();
+  canAttachPanelValue = ObservableValueImpl.withNoValue<boolean>();
+  private focusedTabStateV2 = ObservableValueImpl.withNoValue<FocusedTabData>();
   private permissionStateMicrophone =
       ObservableValueImpl.withNoValue<boolean>();
   private permissionStateLocation = ObservableValueImpl.withNoValue<boolean>();
   private permissionStateTabContext =
       ObservableValueImpl.withNoValue<boolean>();
+  private permissionStateOsLocation =
+      ObservableValueImpl.withNoValue<boolean>();
+  closedCaptioningState = ObservableValueImpl.withNoValue<boolean>();
+  private osHotkeyState = ObservableValueImpl.withNoValue<{hotkey: string}>();
   panelActiveValue = ObservableValueImpl.withNoValue<boolean>();
+  isBrowserOpenValue = ObservableValueImpl.withNoValue<boolean>();
+  private journalHost: GlicBrowserHostJournalImpl;
   private metrics: GlicBrowserHostMetricsImpl;
+  private manuallyResizing = ObservableValueImpl.withValue<boolean>(false);
+  pinnedTabs = ObservableValueImpl.withNoValue<TabData[]>();
+  pinCandidates: PinCandidatesObservable|undefined;
+  // Makes IDs that are unique within the scope of this class.
+  idGenerator = new IdGenerator();
+  private currentZeroStateSuggestionOptions: ZeroStateSuggestionsOptions = {
+    isFirstRun: false,
+    supportedTools: [],
+  };
+  currentZeroStateObserver =
+      ObservableValueImpl.withNoValue<ZeroStateSuggestionsV2>();
+  private hostCapabilities: Set<HostCapability> = new Set();
+  private actorTaskState =
+      new Map<number, ObservableValueImpl<ActorTaskState>>();
+  readonly viewChangeRequestsSubject = new Subject<ViewChangeRequest>();
 
-  constructor(private webClient: GlicWebClient, windowProxy: WindowProxy) {
-    this.sender = new PostMessageRequestSender(windowProxy, 'chrome://glic');
-    this.receiver =
-        new PostMessageRequestReceiver('chrome://glic', windowProxy, this);
+  constructor(public webClient: GlicWebClient, windowProxy: WindowProxy) {
+    // TODO(harringtond): Ideally, we could ensure we only process requests from
+    // the single senderId used by the web client. This would avoid accidental
+    // processing of requests from a previous client. This risk is very minimal,
+    // as it would require reloading the webview page and initializing a new
+    // web client very quickly, and in normal operation, the webview does not
+    // reload after successful load.
+    this.sender = new PostMessageRequestSender(
+        windowProxy, 'chrome://glic', this.hostId, 'glic_api_client');
+    this.receiver = new PostMessageRequestReceiver(
+        'chrome://glic', this.hostId, windowProxy, this, 'glic_api_client');
     this.webClientMessageHandler =
         new WebClientMessageHandler(this.webClient, this);
+    this.journalHost = new GlicBrowserHostJournalImpl(this.sender);
     this.metrics = new GlicBrowserHostMetricsImpl(this.sender);
 
     for (const name of Object.getOwnPropertyNames(
@@ -160,51 +264,123 @@ class GlicBrowserHostImpl implements GlicBrowserHost {
   }
 
   async webClientCreated() {
-    const state = await this.sender.requestWithResponse(
-        'glicBrowserWebClientCreated', {});
+    const response = await this.sender.requestWithResponse(
+        'glicBrowserWebClientCreated', undefined);
+    const state = response.initialState;
+    this.receiver.setLoggingEnabled(state.loggingEnabled);
+    this.sender.setLoggingEnabled(state.loggingEnabled);
     this.panelState.assignAndSignal(state.panelState);
-    this.focusedTabState.assignAndSignal(
-        state.focusedTab ? convertTabDataFromPrivate(state.focusedTab) :
-                           undefined);
+    const focusedTabData =
+        convertFocusedTabDataFromPrivate(state.focusedTabData);
+    this.focusedTabStateV2.assignAndSignal(focusedTabData);
     this.permissionStateMicrophone.assignAndSignal(
         state.microphonePermissionEnabled);
     this.permissionStateLocation.assignAndSignal(
         state.locationPermissionEnabled);
     this.permissionStateTabContext.assignAndSignal(
         state.tabContextPermissionEnabled);
+    this.permissionStateOsLocation.assignAndSignal(
+        state.osLocationPermissionEnabled);
+    this.canAttachPanelValue.assignAndSignal(state.canAttach);
     this.chromeVersion = state.chromeVersion;
     this.panelActiveValue.assignAndSignal(state.panelIsActive);
+    this.isBrowserOpenValue.assignAndSignal(state.browserIsOpen);
+    this.osHotkeyState.assignAndSignal({hotkey: state.hotkey});
+    this.closedCaptioningState.assignAndSignal(
+        state.closedCaptioningSettingEnabled);
+    for (const capability of state.hostCapabilities) {
+      this.hostCapabilities.add(capability);
+    }
+
+    if (!state.enableScrollTo) {
+      this.scrollTo = undefined;
+      this.dropScrollToHighlight = undefined;
+    }
+
+    if (!state.enableActInFocusedTab) {
+      this.createTask = undefined;
+      this.performActions = undefined;
+      this.stopActorTask = undefined;
+      this.pauseActorTask = undefined;
+      this.resumeActorTask = undefined;
+    }
+
+    if (state.alwaysDetachedMode) {
+      this.attachPanel = undefined;
+      this.detachPanel = undefined;
+      this.canAttachPanel = undefined;
+      this.getPanelState = undefined;
+    }
+
+    if (!state.enableZeroStateSuggestions) {
+      this.getZeroStateSuggestionsForFocusedTab = undefined;
+      this.getZeroStateSuggestions = undefined;
+    }
+
+    if (!state.enableClosedCaptioningFeature) {
+      this.getClosedCaptioningSetting = undefined;
+      this.setClosedCaptioningSetting = undefined;
+      this.metrics.onClosedCaptionsShown = undefined;
+    }
+
+    if (!state.enableMaybeRefreshUserStatus) {
+      this.maybeRefreshUserStatus = undefined;
+    }
+
+    if (!state.enableMultiTab) {
+      this.getContextFromTab = undefined;
+      this.getPinnedTabs = undefined;
+      this.getPinCandidates = undefined;
+      this.pinTabs = undefined;
+      this.setMaximumNumberOfPinnedTabs = undefined;
+      this.unpinTabs = undefined;
+      this.unpinAllTabs = undefined;
+    }
+
+    if (!state.enableGetContextActor) {
+      this.getContextForActorFromTab = undefined;
+    }
   }
 
-  webClientInitialized(success: boolean) {
-    this.sender.requestNoResponse('glicBrowserWebClientInitialized', {success});
+  webClientInitialized(
+      success: boolean, exception: TransferableException|undefined) {
+    this.sender.requestNoResponse(
+        'glicBrowserWebClientInitialized', {success, exception});
   }
 
-  async handleRawRequest(type: string, payload: any):
-      Promise<{payload: any, transfer: Transferable[]}|undefined> {
+  async handleRawRequest(type: string, payload: any, extras: ResponseExtras):
+      Promise<{payload: any}|undefined> {
     if (!this.handlerFunctionNames.has(type)) {
       return;
     }
     const handlerFunction = (this.webClientMessageHandler as any)[type];
-    const transfer: Transferable[] = [];
     const response = await handlerFunction.call(
-        this.webClientMessageHandler, payload, transfer);
+        this.webClientMessageHandler, payload, extras);
     if (!response) {
       return;
     }
-    return {payload: response, transfer};
+    return {payload: response};
   }
+
+  setActorTaskState(taskId: number, state: ActorTaskState): void {
+    this.getActorTaskState(taskId).assignAndSignal(state);
+
+    if (state === ActorTaskState.STOPPED) {
+      this.actorTaskState.delete(taskId);
+    }
+  }
+
+  onRequestReceived(_type: string): void {}
+  onRequestHandlerException(_type: string): void {}
+  onRequestCompleted(_type: string): void {}
 
   // GlicBrowserHost implementation.
 
-  async getChromeVersion() {
-    return this.chromeVersion!;
+  getChromeVersion() {
+    return Promise.resolve(this.chromeVersion!);
   }
 
-  async createTab(
-      url: string,
-      options: {openInBackground?: boolean, windowId?: string},
-      ): Promise<TabData> {
+  async createTab(url: string, options: CreateTabOptions): Promise<TabData> {
     const result =
         await this.sender.requestWithResponse('glicBrowserCreateTab', {
           url,
@@ -216,69 +392,135 @@ class GlicBrowserHostImpl implements GlicBrowserHost {
     return convertTabDataFromPrivate(result.tabData);
   }
 
-  openGlicSettingsPage(): void {
-    this.sender.requestNoResponse('glicBrowserOpenGlicSettingsPage', {});
+  openGlicSettingsPage(options?: OpenSettingsOptions): void {
+    this.sender.requestNoResponse('glicBrowserOpenGlicSettingsPage', {options});
   }
 
   closePanel(): Promise<void> {
-    return this.sender.requestWithResponse('glicBrowserClosePanel', {});
+    return this.sender.requestWithResponse('glicBrowserClosePanel', undefined);
   }
 
-  attachPanel(): void {
-    return this.sender.requestNoResponse('glicBrowserAttachPanel', {});
+  closePanelAndShutdown(): void {
+    this.sender.requestNoResponse(
+        'glicBrowserClosePanelAndShutdown', undefined);
   }
 
-  detachPanel(): void {
-    return this.sender.requestNoResponse('glicBrowserDetachPanel', {});
+  attachPanel?(): void {
+    this.sender.requestNoResponse('glicBrowserAttachPanel', undefined);
+  }
+
+  detachPanel?(): void {
+    this.sender.requestNoResponse('glicBrowserDetachPanel', undefined);
   }
 
   showProfilePicker(): void {
-    this.sender.requestNoResponse('glicBrowserShowProfilePicker', {});
+    this.sender.requestNoResponse('glicBrowserShowProfilePicker', undefined);
+  }
+
+  async getModelQualityClientId(): Promise<string> {
+    const result = await this.sender.requestWithResponse(
+        'glicBrowserGetModelQualityClientId', undefined);
+    return result.modelQualityClientId;
   }
 
   async getContextFromFocusedTab(options: TabContextOptions):
       Promise<TabContextResult> {
     const context = await this.sender.requestWithResponse(
         'glicBrowserGetContextFromFocusedTab', {options});
-    if (!context.tabContextResult) {
-      throw new ErrorWithReasonImpl(
-          'getContext failed',
-          context.error || GetTabContextErrorReason.UNKNOWN);
-    }
     return convertTabContextResultFromPrivate(context.tabContextResult);
   }
 
-  async resizeWindow(width: number, height: number, options?: {
-    durationMs?: number,
-  }): Promise<void> {
-    const durationMs = options?.durationMs;
-    if (durationMs !== undefined && !Number.isFinite(durationMs)) {
-      throw new Error('Invalid resize duration: ' + durationMs);
-    }
+  async setMaximumNumberOfPinnedTabs?(requestedMax: number): Promise<number> {
+    const result = await this.sender.requestWithResponse(
+        'glicBrowserSetMaximumNumberOfPinnedTabs', {requestedMax});
+    return result.effectiveMax;
+  }
 
+  async getContextFromTab?
+      (tabId: string, options: TabContextOptions): Promise<TabContextResult> {
+    const result = await this.sender.requestWithResponse(
+        'glicBrowserGetContextFromTab', {tabId, options});
+    return convertTabContextResultFromPrivate(result.tabContextResult);
+  }
+
+  async getContextForActorFromTab?
+      (tabId: string, options: TabContextOptions): Promise<TabContextResult> {
+    const result = await this.sender.requestWithResponse(
+        'glicBrowserGetContextForActorFromTab', {tabId, options});
+    return convertTabContextResultFromPrivate(result.tabContextResult);
+  }
+
+  async createTask?(): Promise<number> {
+    const result = await this.sender.requestWithResponse(
+        'glicBrowserCreateTask', undefined);
+    return result.taskId;
+  }
+
+  async performActions?(actions: ArrayBuffer): Promise<ArrayBuffer> {
+    const result = await this.sender.requestWithResponse(
+        'glicBrowserPerformActions', {actions});
+    return result.actionsResult;
+  }
+
+  stopActorTask?(taskId?: number): void {
+    this.sender.requestNoResponse(
+        'glicBrowserStopActorTask', {taskId: taskId ?? 0});
+  }
+
+  pauseActorTask?(taskId: number): void {
+    this.sender.requestNoResponse('glicBrowserPauseActorTask', {taskId});
+  }
+
+  async resumeActorTask?(taskId: number, tabContextOptions: TabContextOptions):
+      Promise<TabContextResult> {
+    const response = await this.sender.requestWithResponse(
+        'glicBrowserResumeActorTask', {taskId, tabContextOptions});
+    return convertTabContextResultFromPrivate(response.tabContextResult);
+  }
+
+  getActorTaskState(taskId: number): ObservableValueImpl<ActorTaskState> {
+    const stateObs = this.actorTaskState.get(taskId);
+    if (stateObs) {
+      return stateObs;
+    }
+    // TODO(mcnee): The client could pass an id that will never have
+    // state updates (e.g. the task already finished and we cleared the old
+    // observable in setActorTaskState). Consider removing these cases from the
+    // map when all subscribers are removed.
+    const newObs = ObservableValueImpl.withNoValue<ActorTaskState>();
+    this.actorTaskState.set(taskId, newObs);
+    return newObs;
+  }
+
+  async resizeWindow(
+      width: number, height: number,
+      options?: ResizeWindowOptions): Promise<void> {
     return this.sender.requestWithResponse(
         'glicBrowserResizeWindow', {size: {width, height}, options});
   }
 
+  enableDragResize?(enabled: boolean): Promise<void> {
+    return this.sender.requestWithResponse(
+        'glicBrowserEnableDragResize', {enabled});
+  }
+
   async captureScreenshot(): Promise<Screenshot> {
     const screenshotResult = await this.sender.requestWithResponse(
-        'glicBrowserCaptureScreenshot', {});
-    if (!screenshotResult.screenshot) {
-      throw new ErrorWithReasonImpl(
-          'captureScreenshot failed',
-          screenshotResult.errorReason ??
-              CaptureScreenshotErrorReason
-                  .SCREEN_CAPTURE_FAILED_FOR_UNKNOWN_REASON);
-    }
+        'glicBrowserCaptureScreenshot', undefined);
     return screenshotResult.screenshot;
   }
 
-  setWindowDraggableAreas(areas: DraggableArea[]) {
+  setWindowDraggableAreas(areas: DraggableArea[]): Promise<void> {
     return this.sender.requestWithResponse(
         'glicBrowserSetWindowDraggableAreas', {areas});
   }
 
-  getPanelState(): ObservableValueImpl<PanelState> {
+  setMinimumWidgetSize(width: number, height: number): Promise<void> {
+    return this.sender.requestWithResponse(
+        'glicBrowserSetMinimumWidgetSize', {size: {width, height}});
+  }
+
+  getPanelState?(): ObservableValueImpl<PanelState> {
     return this.panelState;
   }
 
@@ -286,8 +528,16 @@ class GlicBrowserHostImpl implements GlicBrowserHost {
     return this.panelActiveValue;
   }
 
-  getFocusedTabState(): ObservableValueImpl<TabData|undefined> {
-    return this.focusedTabState;
+  canAttachPanel?(): ObservableValue<boolean> {
+    return this.canAttachPanelValue;
+  }
+
+  isBrowserOpen(): ObservableValue<boolean> {
+    return this.isBrowserOpenValue;
+  }
+
+  getFocusedTabStateV2(): ObservableValueImpl<FocusedTabData> {
+    return this.focusedTabStateV2;
   }
 
   getMicrophonePermissionState(): ObservableValueImpl<boolean> {
@@ -300,6 +550,14 @@ class GlicBrowserHostImpl implements GlicBrowserHost {
 
   getTabContextPermissionState(): ObservableValueImpl<boolean> {
     return this.permissionStateTabContext;
+  }
+
+  getOsLocationPermissionState(): ObservableValueImpl<boolean> {
+    return this.permissionStateOsLocation;
+  }
+
+  getClosedCaptioningSetting?(): ObservableValueImpl<boolean> {
+    return this.closedCaptioningState;
   }
 
   setMicrophonePermissionState(enabled: boolean): Promise<void> {
@@ -317,6 +575,11 @@ class GlicBrowserHostImpl implements GlicBrowserHost {
         'glicBrowserSetTabContextPermissionState', {enabled});
   }
 
+  setClosedCaptioningSetting?(enabled: boolean): Promise<void> {
+    return this.sender.requestWithResponse(
+        'glicBrowserSetClosedCaptioningSetting', {enabled});
+  }
+
   setContextAccessIndicator(show: boolean): void {
     this.sender.requestWithResponse(
         'glicBrowserSetContextAccessIndicator', {show});
@@ -324,21 +587,19 @@ class GlicBrowserHostImpl implements GlicBrowserHost {
 
   async getUserProfileInfo?(): Promise<UserProfileInfo> {
     const {profileInfo} = await this.sender.requestWithResponse(
-        'glicBrowserGetUserProfileInfo', {});
+        'glicBrowserGetUserProfileInfo', undefined);
     if (!profileInfo) {
       throw new Error('getUserProfileInfo failed');
     }
-    const {displayName, email, avatarIcon} = profileInfo;
-    return {
-      displayName,
-      email,
-      avatarIcon: async () => avatarIcon && rgbaImageToBlob(avatarIcon),
-    };
+    const {avatarIcon} = profileInfo;
+    return replaceProperties(
+        profileInfo,
+        {avatarIcon: async () => avatarIcon && rgbaImageToBlob(avatarIcon)});
   }
 
   async refreshSignInCookies(): Promise<void> {
     const result = await this.sender.requestWithResponse(
-        'glicBrowserRefreshSignInCookies', {});
+        'glicBrowserRefreshSignInCookies', undefined);
     if (!result.success) {
       throw Error('refreshSignInCookies failed');
     }
@@ -348,8 +609,181 @@ class GlicBrowserHostImpl implements GlicBrowserHost {
     this.sender.requestNoResponse('glicBrowserSetAudioDucking', {enabled});
   }
 
+  getJournalHost(): GlicBrowserHostJournal {
+    return this.journalHost;
+  }
+
   getMetrics(): GlicBrowserHostMetrics {
     return this.metrics;
+  }
+
+  scrollTo?(params: ScrollToParams): Promise<void> {
+    return this.sender.requestWithResponse('glicBrowserScrollTo', {params});
+  }
+
+  setSyntheticExperimentState(trialName: string, groupName: string): void {
+    this.sender.requestNoResponse(
+        'glicBrowserSetSyntheticExperimentState', {trialName, groupName});
+  }
+
+  openOsPermissionSettingsMenu?(permission: string): void {
+    this.sender.requestNoResponse(
+        'glicBrowserOpenOsPermissionSettingsMenu', {permission});
+  }
+
+  async getOsMicrophonePermissionStatus(): Promise<boolean> {
+    return (await this.sender.requestWithResponse(
+                'glicBrowserGetOsMicrophonePermissionStatus', undefined))
+        .enabled;
+  }
+
+  isManuallyResizing(): ObservableValueImpl<boolean> {
+    return this.manuallyResizing;
+  }
+
+  getOsHotkeyState(): ObservableValueImpl<{hotkey: string}> {
+    return this.osHotkeyState;
+  }
+
+  getPinnedTabs?(): ObservableValueImpl<TabData[]> {
+    return this.pinnedTabs;
+  }
+
+  async pinTabs?(tabIds: string[]): Promise<boolean> {
+    return (await this.sender.requestWithResponse(
+                'glicBrowserPinTabs', {tabIds}))
+        .pinnedAll;
+  }
+
+  async unpinTabs?(tabIds: string[]): Promise<boolean> {
+    return (await this.sender.requestWithResponse(
+                'glicBrowserUnpinTabs', {tabIds}))
+        .unpinnedAll;
+  }
+
+  unpinAllTabs?(): void {
+    this.sender.requestNoResponse('glicBrowserUnpinAllTabs', undefined);
+  }
+
+  getPinCandidates?
+      (options: GetPinCandidatesOptions): ObservableValue<PinCandidate[]> {
+    this.pinCandidates?.setObsolete();
+    return this.pinCandidates = new PinCandidatesObservable(
+               this.idGenerator.next(), this.sender, options);
+  }
+
+  async getZeroStateSuggestionsForFocusedTab?
+      (isFirstRun?: boolean): Promise<ZeroStateSuggestions> {
+    const zeroStateResult = await this.sender.requestWithResponse(
+        'glicBrowserGetZeroStateSuggestionsForFocusedTab', {isFirstRun});
+    if (!zeroStateResult.suggestions) {
+      return {
+        suggestions: [],
+        tabId: '',
+        url: '',
+      };
+    }
+    return zeroStateResult.suggestions;
+  }
+
+  private async zeroStateActiveSubscriptionStateChanged(
+      options: ZeroStateSuggestionsOptions, hasActiveSubscription: boolean) {
+    if (options !== this.currentZeroStateSuggestionOptions) {
+      // Dont send out of date updates.
+      return;
+    }
+    const zeroStateResult = await this.sender.requestWithResponse(
+        'glicBrowserGetZeroStateSuggestionsAndSubscribe', {
+          hasActiveSubscription: hasActiveSubscription,
+          options: options,
+        });
+    if (zeroStateResult.suggestions) {
+      this.currentZeroStateObserver?.assignAndSignal(
+          zeroStateResult.suggestions);
+    }
+  }
+
+  getZeroStateSuggestions?(options?: ZeroStateSuggestionsOptions):
+      ObservableValueImpl<ZeroStateSuggestionsV2> {
+    options = options ?? {
+      isFirstRun: false,
+      supportedTools: [],
+    };
+    this.currentZeroStateSuggestionOptions = options;
+    this.currentZeroStateObserver =
+        ObservableValueImpl.withNoValue<ZeroStateSuggestionsV2>(
+            this.zeroStateActiveSubscriptionStateChanged.bind(this, options));
+    return this.currentZeroStateObserver;
+  }
+
+  dropScrollToHighlight?(): void {
+    this.sender.requestWithResponse(
+        'glicBrowserDropScrollToHighlight', undefined);
+  }
+
+  maybeRefreshUserStatus?(): void {
+    this.sender.requestNoResponse(
+        'glicBrowserMaybeRefreshUserStatus', undefined);
+  }
+
+  getHostCapabilities(): Set<HostCapability> {
+    return this.hostCapabilities;
+  }
+
+  getViewChangeRequests(): Observable<ViewChangeRequest> {
+    return this.viewChangeRequestsSubject;
+  }
+
+  onViewChanged(notification: ViewChangedNotification) {
+    this.sender.requestNoResponse('glicBrowserOnViewChanged', {notification});
+  }
+}
+
+class GlicBrowserHostJournalImpl implements GlicBrowserHostJournal {
+  constructor(private sender: PostMessageRequestSender) {}
+
+  beginAsyncEvent(
+      asyncEventId: number, taskId: number, event: string,
+      details: string): void {
+    this.sender.requestNoResponse(
+        'glicBrowserLogBeginAsyncEvent',
+        {asyncEventId, taskId, event, details});
+  }
+
+  clear(): void {
+    this.sender.requestNoResponse('glicBrowserJournalClear', undefined);
+  }
+
+  endAsyncEvent(asyncEventId: number, details: string): void {
+    this.sender.requestNoResponse(
+        'glicBrowserLogEndAsyncEvent', {asyncEventId, details});
+  }
+
+  instantEvent(taskId: number, event: string, details: string): void {
+    this.sender.requestNoResponse(
+        'glicBrowserLogInstantEvent', {taskId, event, details});
+  }
+
+  async snapshot(clear: boolean): Promise<Journal> {
+    const snapshotResult = await this.sender.requestWithResponse(
+        'glicBrowserJournalSnapshot', {clear});
+    return snapshotResult.journal;
+  }
+
+  start(maxBytes: number, captureScreenshots: boolean): void {
+    this.sender.requestNoResponse(
+        'glicBrowserJournalStart', {maxBytes, captureScreenshots});
+  }
+
+  stop(): void {
+    this.sender.requestNoResponse('glicBrowserJournalStop', undefined);
+  }
+
+  recordFeedback(positive: boolean, reason: string) {
+    this.sender.requestNoResponse(
+        'glicBrowserJournalRecordFeedback',
+        {positive, reason},
+    );
   }
 }
 
@@ -361,43 +795,84 @@ class GlicBrowserHostMetricsImpl implements GlicBrowserHostMetrics {
   }
 
   onResponseStarted(): void {
-    this.sender.requestNoResponse('glicBrowserOnResponseStarted', {});
+    this.sender.requestNoResponse('glicBrowserOnResponseStarted', undefined);
   }
 
   onResponseStopped(): void {
-    this.sender.requestNoResponse('glicBrowserOnResponseStopped', {});
+    this.sender.requestNoResponse('glicBrowserOnResponseStopped', undefined);
   }
 
   onSessionTerminated(): void {
-    this.sender.requestNoResponse('glicBrowserOnSessionTerminated', {});
+    this.sender.requestNoResponse('glicBrowserOnSessionTerminated', undefined);
   }
 
   onResponseRated(positive: boolean): void {
     this.sender.requestNoResponse('glicBrowserOnResponseRated', {positive});
   }
+
+  onClosedCaptionsShown?(): void {
+    this.sender.requestNoResponse(
+        'glicBrowserOnClosedCaptionsShown', undefined);
+  }
+
+  onTurnCompleted?(model: number, duration: number): void {
+    this.sender.requestNoResponse(
+        'glicBrowserOnTurnCompleted', {model, duration});
+  }
 }
 
-// Returns a promise which resolves to the `GlicHostRegistry`. This promise
-// never resolves if a message from Chromium glic is not received.
-// This should be called on or before page load.
-export function createGlicHostRegistryOnLoad(): Promise<GlicHostRegistry> {
-  const {promise, resolve} = Promise.withResolvers<GlicHostRegistry>();
-  const messageHandler = async (event: MessageEvent) => {
-    if (event.origin !== 'chrome://glic' || event.source === null) {
+class IdGenerator {
+  private nextId = 1;
+
+  next(): number {
+    return this.nextId++;
+  }
+}
+
+class PinCandidatesObservable extends ObservableValueImpl<PinCandidate[]> {
+  private isObsolete = false;
+
+  constructor(
+      private readonly observationId: number,
+      private sender: PostMessageRequestSender,
+      private options: GetPinCandidatesOptions) {
+    super(false);
+  }
+
+  override activeSubscriptionChanged(hasActiveSubscription: boolean): void {
+    super.activeSubscriptionChanged(hasActiveSubscription);
+    if (this.isObsolete) {
+      console.warn(`getPinCandidates() observable is in use while obsolete.`);
       return;
     }
-    if (event.data && event.data['type'] === 'glic-bootstrap') {
-      resolve(new GlicHostRegistryImpl(event.source as WindowProxy));
-      window.removeEventListener('message', messageHandler);
+    if (hasActiveSubscription) {
+      this.sender.requestNoResponse(
+          'glicBrowserSubscribeToPinCandidates',
+          {options: this.options, observationId: this.observationId});
+    } else {
+      this.sender.requestNoResponse(
+          'glicBrowserUnsubscribeFromPinCandidates',
+          {observationId: this.observationId});
     }
-  };
-  window.addEventListener('message', messageHandler);
-  return promise;
-}
+  }
 
-class ErrorWithReasonImpl<T> extends Error implements ErrorWithReason<T> {
-  constructor(message: string, public reason: T) {
-    super(message);
+  processUpdate(candidates: PinCandidatePrivate[], observationId: number) {
+    if (this.observationId !== observationId) {
+      return;
+    }
+
+    this.assignAndSignal(
+        candidates.map(c => ({tabData: convertTabDataFromPrivate(c.tabData)})));
+  }
+
+  // Mark this observable as obsolete. It should not be used any further.
+  // Only one PinCandidatesObservable is active at one time.
+  setObsolete() {
+    if (this.hasActiveSubscription()) {
+      console.warn(
+          `getPinCandidates() observable was made obsolete with subscribers.`);
+    }
+    this.isObsolete = true;
   }
 }
 
@@ -448,24 +923,43 @@ async function rgbaImageToBlob(image: RgbaImage): Promise<Blob> {
   });
 }
 
-// Helper function to shallow-copy an object and replace some properties.
-// Useful to convert from these private types to public types. This will fail to
-// compile if a property is missed.
-function replaceProperties<O, R>(
-    original: O, replacements: R): Omit<O, keyof R>&R {
-  return Object.assign(Object.assign({}, original) as any, replacements);
-}
-
-function convertTabDataFromPrivate(data: TabDataPrivate): TabData {
-  async function getFavicon() {
-    if (data.favicon) {
-      return rgbaImageToBlob(data.favicon);
-    }
+function convertTabDataFromPrivate(data: TabDataPrivate): TabData;
+function convertTabDataFromPrivate(data: TabDataPrivate|undefined): TabData|
+    undefined;
+function convertTabDataFromPrivate(data: TabDataPrivate|undefined): TabData|
+    undefined {
+  if (!data) {
     return undefined;
   }
+  let faviconResult: Promise<Blob>|undefined;
+  const dataFavicon = data.favicon;
+  async function getFavicon() {
+    if (dataFavicon && !faviconResult) {
+      faviconResult = rgbaImageToBlob(dataFavicon);
+      return faviconResult;
+    }
+    return faviconResult;
+  }
 
-  const favicon = data.favicon && getFavicon;
+  const favicon = dataFavicon && getFavicon;
   return replaceProperties(data, {favicon});
+}
+
+function convertFocusedTabDataFromPrivate(data: FocusedTabDataPrivate):
+    FocusedTabData {
+  const result: FocusedTabData = {};
+  if (data.hasFocus) {
+    result.hasFocus = replaceProperties(data.hasFocus, {
+      tabData: convertTabDataFromPrivate(data.hasFocus.tabData),
+    });
+  }
+  if (data.hasNoFocus) {
+    result.hasNoFocus = replaceProperties(data.hasNoFocus, {
+      tabFocusCandidateData:
+          convertTabDataFromPrivate(data.hasNoFocus.tabFocusCandidateData),
+    });
+  }
+  return result;
 }
 
 function streamFromBuffer(buffer: Uint8Array): ReadableStream<Uint8Array> {
@@ -499,59 +993,4 @@ function convertTabContextResultFromPrivate(data: TabContextResultPrivate):
   const annotatedPageData = data.annotatedPageData &&
       convertAnnotatedPageDataFromPrivate(data.annotatedPageData);
   return replaceProperties(data, {tabData, pdfDocumentData, annotatedPageData});
-}
-
-class ObservableSubscription<T> implements Subscriber {
-  constructor(
-      public onChange: (newValue: T) => void,
-      private onUnsubscribe: (self: ObservableSubscription<T>) => void) {}
-
-  unsubscribe(): void {
-    this.onUnsubscribe(this);
-  }
-}
-
-/**
- * A observable value that can change over time. If value is initialized, sends
- * it to new subscribers upon subscribe().
- */
-class ObservableValueImpl<T> implements ObservableValue<T> {
-  private subscribers: Set<ObservableSubscription<T>> = new Set();
-
-  private constructor(private isSet: boolean, private value: T|undefined) {}
-
-  /** Create an ObservableValue which has an initial value. */
-  static withValue<T>(value: T) {
-    return new ObservableValueImpl(true, value);
-  }
-
-  /**
-   * Create an Observable which has no initial value. Subscribers will not be
-   * called until after assignAndSignal() is called the first time.
-   */
-  static withNoValue<T>() {
-    return new ObservableValueImpl<T>(false, undefined);
-  }
-
-  assignAndSignal(v: T) {
-    this.isSet = true;
-    this.value = v;
-    this.subscribers.forEach((sub) => {
-      // Ignore if removed since forEach was called.
-      if (this.subscribers.has(sub)) {
-        sub.onChange(v);
-      }
-    });
-  }
-
-  // Observable impl.
-  subscribe(change: (newValue: T) => void): Subscriber {
-    const newSub = new ObservableSubscription(
-        change, (sub) => this.subscribers.delete(sub));
-    this.subscribers.add(newSub);
-    if (this.isSet) {
-      change(this.value!);
-    }
-    return newSub;
-  }
 }

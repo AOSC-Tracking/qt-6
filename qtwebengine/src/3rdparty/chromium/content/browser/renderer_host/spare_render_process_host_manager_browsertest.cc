@@ -13,6 +13,7 @@
 #include "base/time/time.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/spare_render_process_host_manager_impl.h"
+#include "content/public/browser/process_allocation_context.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -118,17 +119,41 @@ IN_PROC_BROWSER_TEST_F(SpareRenderProcessHostManagerTest,
   EXPECT_TRUE(spare_manager.GetSpares().empty());
 
   GURL test_url = embedded_test_server()->GetURL("/simple_page.html");
-  Shell* window = CreateBrowser();
-  EXPECT_TRUE(NavigateToURL(window, test_url));
+  // The CreateBrowser() call will create a new WebContents, thus allocating a
+  // new renderer process in RenderFrameHostManager::InitRoot.
+  CreateBrowser();
 
   histogram_tester.ExpectUniqueSample(
       "BrowserRenderProcessHost.NoSparePresentReason2",
       NoSpareRendererReason::kNotYetCreatedFirstLaunch, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.NoSpareRenderer.AllocationSource."
+      "NotYetCreatedFirstLaunch",
+      ProcessAllocationSource::kRFHInitRoot, 1);
+  histogram_tester.ExpectTotalCount(
+      "BrowserRenderProcessHost.NoSpareRenderer.NavigationStage."
+      "NotYetCreatedFirstLaunch",
+      0);
+  histogram_tester.ExpectTotalCount(
+      "BrowserRenderProcessHost.NoSpareRenderer.ForCOOP."
+      "NotYetCreatedFirstLaunch",
+      0);
 }
 
 // Matches a RenderProcessHost that is ready.
 MATCHER(RenderProcessHostIsReady, "") {
   return arg->IsReady();
+}
+
+// The test verifies that HasSpareRenderer() correctly returns
+// whether there is an available spare renderer.
+IN_PROC_BROWSER_TEST_F(SpareRenderProcessHostManagerTest, HasSpareRenderer) {
+  auto& spare_manager = SpareRenderProcessHostManagerImpl::Get();
+  EXPECT_FALSE(spare_manager.HasSpareRenderer());
+  spare_manager.WarmupSpare(browser_context());
+  EXPECT_TRUE(spare_manager.HasSpareRenderer());
+  spare_manager.CleanupSparesForTesting();
+  EXPECT_FALSE(spare_manager.HasSpareRenderer());
 }
 
 // This test verifies the creation of a deferred spare renderer. It checks two
@@ -296,11 +321,23 @@ IN_PROC_BROWSER_TEST_F(SpareRenderProcessHostManagerTest,
       SiteInstance::CreateForURL(browser_context, test_url);
   // No spare renderer will be assigned for navigations
   EXPECT_FALSE(spare_manager.MaybeTakeSpare(
-      browser_context,
-      static_cast<SiteInstanceImpl*>(test_site_instance.get())));
+      browser_context, static_cast<SiteInstanceImpl*>(test_site_instance.get()),
+      ProcessAllocationContext{
+          ProcessAllocationSource::kNavigationRequest,
+          NavigationProcessAllocationContext{
+              ProcessAllocationNavigationStage::kBeforeNetworkRequest,
+              false}}));
   histogram_tester.ExpectUniqueSample(
       "BrowserRenderProcessHost.NoSparePresentReason2",
       NoSpareRendererReason::kTimeout, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.NoSpareRenderer.AllocationSource.Timeout",
+      ProcessAllocationSource::kNavigationRequest, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.NoSpareRenderer.NavigationStage.Timeout",
+      ProcessAllocationNavigationStage::kBeforeNetworkRequest, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.NoSpareRenderer.ForCOOP.Timeout", false, 1);
   // The base::ElapsedTimer will record the wall time rather than the time
   // elapsed in the TestMockTimeTaskRunner. We can only verify the sample
   // count.
@@ -499,10 +536,13 @@ class NonSpareRendererContentBrowserClient
     return true;
   }
 
-  std::optional<SpareProcessRefusedByEmbedderReason>
-  ShouldUseSpareRenderProcessHost(BrowserContext* browser_context,
-                                  const GURL& site_url) override {
-    return SpareProcessRefusedByEmbedderReason::DefaultDisabled;
+  bool ShouldUseSpareRenderProcessHost(
+      BrowserContext* browser_context,
+      const GURL& site_url,
+      std::optional<SpareProcessRefusedByEmbedderReason>& refused_reason)
+      override {
+    refused_reason = std::nullopt;
+    return false;
   }
 };
 
@@ -529,12 +569,25 @@ IN_PROC_BROWSER_TEST_F(SpareRenderProcessHostManagerTest,
   // SpareRendererContentBrowserClient.
   scoped_refptr<SiteInstance> test_site_instance =
       SiteInstance::CreateForURL(browser_context(), test_url);
+  // The kServiceWorkerProcessManager context is used only to test
+  // the UMA names for no spare renderer reasons when the process
+  // limit is hit.
   EXPECT_FALSE(spare_manager.MaybeTakeSpare(
       browser_context(),
-      static_cast<SiteInstanceImpl*>(test_site_instance.get())));
+      static_cast<SiteInstanceImpl*>(test_site_instance.get()),
+      ProcessAllocationContext{
+          ProcessAllocationSource::kServiceWorkerProcessManager}));
   histogram_tester.ExpectUniqueSample(
       "BrowserRenderProcessHost.NoSparePresentReason2",
       NoSpareRendererReason::kProcessLimit, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.NoSpareRenderer.AllocationSource.ProcessLimit",
+      ProcessAllocationSource::kServiceWorkerProcessManager, 1);
+  histogram_tester.ExpectTotalCount(
+      "BrowserRenderProcessHost.NoSpareRenderer.NavigationStage.ProcessLimit",
+      0);
+  histogram_tester.ExpectTotalCount(
+      "BrowserRenderProcessHost.NoSpareRenderer.ForCOOP.ProcessLimit", 0);
 
   // A spare RPH should be created with a max of 2 renderer processes.
   RenderProcessHost::SetMaxRendererProcessCount(2);
@@ -811,18 +864,142 @@ IN_PROC_BROWSER_TEST_F(SpareRenderProcessHostManagerTest,
 
   spare_manager.WarmupSpare(browser_context);
   EXPECT_TRUE(spare_manager.MaybeTakeSpare(
-      browser_context,
-      static_cast<SiteInstanceImpl*>(test_site_instance.get())));
+      browser_context, static_cast<SiteInstanceImpl*>(test_site_instance.get()),
+      ProcessAllocationContext{
+          ProcessAllocationSource::kNavigationRequest,
+          NavigationProcessAllocationContext{
+              ProcessAllocationNavigationStage::kBeforeNetworkRequest, 0,
+              false}}));
+
   // The spare renderer shall be taken and no spare renderer will be present.
   EXPECT_TRUE(spare_manager.GetSpares().empty());
   // Future navigations cannot acquire a spare renderer.
   EXPECT_FALSE(spare_manager.MaybeTakeSpare(
-      browser_context,
-      static_cast<SiteInstanceImpl*>(test_site_instance.get())));
+      browser_context, static_cast<SiteInstanceImpl*>(test_site_instance.get()),
+      ProcessAllocationContext{
+          ProcessAllocationSource::kNavigationRequest,
+          NavigationProcessAllocationContext{
+              ProcessAllocationNavigationStage::kAfterResponse, 0, true}}));
   histogram_tester.ExpectUniqueSample(
       "BrowserRenderProcessHost.NoSparePresentReason2",
       NoSpareRendererReason::kTakenByPreviousNavigation, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.NoSpareRenderer.AllocationSource."
+      "TakenByPreviousNavigation",
+      ProcessAllocationSource::kNavigationRequest, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.NoSpareRenderer.NavigationStage."
+      "TakenByPreviousNavigation",
+      ProcessAllocationNavigationStage::kAfterResponse, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.NoSpareRenderer.ForCOOP."
+      "TakenByPreviousNavigation",
+      true, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.SpareRendererPreviouslyTaken.Source",
+      ProcessAllocationSource::kNavigationRequest, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.SpareRendererPreviouslyTaken.Stage",
+      ProcessAllocationNavigationStage::kBeforeNetworkRequest, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.SpareRendererPreviouslyTaken.ForCOOP", false,
+      1);
+  int expected_combination_value =
+      static_cast<int>(
+          ProcessAllocationNavigationStage::kBeforeNetworkRequest) *
+          100 +
+      static_cast<int>(ProcessAllocationNavigationStage::kAfterResponse);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.SpareRendererTakenInSameNavigation."
+      "StageCombination",
+      expected_combination_value, 1);
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.SpareRendererTakenInSameNavigation."
+      "ForCOOP",
+      true, 1);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+
+class AndroidSpareRendererProcessHostManagerTest
+    : public SpareRenderProcessHostManagerTest {
+ public:
+  AndroidSpareRendererProcessHostManagerTest() {
+    scoped_feature_list_.InitAndEnableFeatureWithParameters(
+        features::kAndroidWarmUpSpareRendererWithTimeout,
+        {
+            {features::kAndroidSpareRendererKillWhenBackgrounded.name, "true"},
+            {features::kAndroidSpareRendererOnlyForNavigation.name, "true"},
+        });
+  }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_F(AndroidSpareRendererProcessHostManagerTest,
+                       KillSpareRendererWhenAppBackgrounded) {
+  auto& spare_manager = SpareRenderProcessHostManagerImpl::Get();
+  // Notify a foreground state to start the test as foreground.
+  base::android::ApplicationStatusListener::NotifyApplicationStateChange(
+      base::android::ApplicationState::
+          APPLICATION_STATE_HAS_RUNNING_ACTIVITIES);
+  BrowserContext* browser_context =
+      ShellContentBrowserClient::Get()->browser_context();
+  spare_manager.WarmupSpare(browser_context);
+  EXPECT_EQ(spare_manager.GetSpares().size(), 1u);
+  RenderProcessHost* rph = spare_manager.GetSpares().back();
+
+  // Send backgrounded event
+  base::android::ApplicationStatusListener::NotifyApplicationStateChange(
+      base::android::ApplicationState::
+          APPLICATION_STATE_HAS_STOPPED_ACTIVITIES);
+  RenderProcessHostWatcher process_watcher(
+      rph, RenderProcessHostWatcher::WATCH_FOR_HOST_DESTRUCTION);
+  process_watcher.Wait();
+  EXPECT_TRUE(spare_manager.GetSpares().empty());
+}
+
+IN_PROC_BROWSER_TEST_F(AndroidSpareRendererProcessHostManagerTest,
+                       OnlyForNavigation) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  auto& spare_manager = SpareRenderProcessHostManagerImpl::Get();
+  BrowserContext* browser_context =
+      ShellContentBrowserClient::Get()->browser_context();
+  spare_manager.WarmupSpare(browser_context);
+  EXPECT_EQ(spare_manager.GetSpares().size(), 1u);
+
+  GURL test_url = embedded_test_server()->GetURL("/simple_page.html");
+  scoped_refptr<SiteInstance> test_site_instance =
+      SiteInstance::CreateForURL(browser_context, test_url);
+  base::HistogramTester histogram_tester;
+
+  // Emulate a non-navigation process allocation. The
+  // kServiceWorkerProcessManager source is only used for testing.
+  // Since the feature AndroidSpareRendererOnlyForNavigation is enabled,
+  // the allocation will not get a spare renderer.
+  EXPECT_FALSE(spare_manager.MaybeTakeSpare(
+      browser_context, static_cast<SiteInstanceImpl*>(test_site_instance.get()),
+      ProcessAllocationContext{
+          ProcessAllocationSource::kServiceWorkerProcessManager}));
+  // Also verify that the SpareProcessMaybeTakeAction UMA correctly records the
+  // reason.
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.SpareProcessMaybeTakeAction",
+      content::RenderProcessHostImpl::SpareProcessMaybeTakeAction::
+          kRefusedNonNavigation,
+      1);
+  // Navigation request can still allocate a spare renderer.
+  EXPECT_TRUE(spare_manager.MaybeTakeSpare(
+      browser_context, static_cast<SiteInstanceImpl*>(test_site_instance.get()),
+      ProcessAllocationContext{
+          ProcessAllocationSource::kNavigationRequest,
+          NavigationProcessAllocationContext{
+              ProcessAllocationNavigationStage::kBeforeNetworkRequest, 0,
+              false}}));
+}
+#endif
 
 class ExtraSpareRenderProcessHostManagerTest
     : public SpareRenderProcessHostManagerTest {
@@ -891,6 +1068,30 @@ IN_PROC_BROWSER_TEST_F(ExtraSpareRenderProcessHostManagerTest, BrowserNotIdle) {
 
   spare_manager.SetIsBrowserIdleForTesting(true);
   ASSERT_EQ(spare_manager.GetSpares().size(), 2u);
+}
+
+IN_PROC_BROWSER_TEST_F(ExtraSpareRenderProcessHostManagerTest,
+                       CleanupExtraSpares) {
+  auto& spare_manager = SpareRenderProcessHostManagerImpl::Get();
+
+  // Initially zero spares.
+  ASSERT_EQ(spare_manager.GetSpares().size(), 0u);
+
+  // Create 2 spares. First one created manually, second one started
+  // automatically.
+  spare_manager.WarmupSpare(browser_context());
+  ASSERT_EQ(spare_manager.GetSpares().size(), 1u);
+  WaitForNextSpareReady();
+  ASSERT_EQ(spare_manager.GetSpares().size(), 2u);
+  WaitForNextSpareReady();
+  ASSERT_EQ(spare_manager.GetSpares().size(), 2u);
+
+  RenderProcessHost* first_spare = spare_manager.GetSpares()[0];
+
+  spare_manager.CleanupExtraSpares(std::nullopt);
+  ASSERT_EQ(spare_manager.GetSpares().size(), 1u);
+  ASSERT_EQ(spare_manager.GetSpares()[0], first_spare);
+  EXPECT_TRUE(spare_manager.GetSpares()[0]->IsReady());
 }
 
 class LowMemoryExtraSpareRenderProcessHostManagerTest

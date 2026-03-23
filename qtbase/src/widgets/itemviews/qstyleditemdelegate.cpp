@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qstyleditemdelegate.h"
 
@@ -35,9 +36,6 @@
 #include <private/qlayoutengine_p.h>
 #include <qdebug.h>
 #include <qlocale.h>
-#if QT_CONFIG(tableview)
-#include <qtableview.h>
-#endif
 
 #include <array>
 #include <limits.h>

@@ -33,13 +33,13 @@
  */
 
 import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as ScopesCodec from '../../third_party/source-map-scopes-codec/source-map-scopes-codec.js';
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 import * as Root from '../root/root.js';
 
 import type {CallFrame, ScopeChainEntry} from './DebuggerModel.js';
-import {buildOriginalScopes, decodePastaRanges} from './SourceMapFunctionRanges.js';
-import {decodeScopes, type OriginalScope, type Position as GeneratedPosition} from './SourceMapScopes.js';
+import {buildOriginalScopes, decodePastaRanges, type NamedFunctionRange} from './SourceMapFunctionRanges.js';
 import {SourceMapScopesInfo} from './SourceMapScopesInfo.js';
 
 /**
@@ -57,10 +57,11 @@ export interface SourceMapV3Object {
 
   file?: string;
   sourceRoot?: string;
-  sourcesContent?: (string|null)[];
+  sourcesContent?: Array<string|null>;
 
   names?: string[];
   ignoreList?: number[];
+  scopes?: string;
   originalScopes?: string[];
   generatedRanges?: string;
   x_google_linecount?: number;
@@ -82,14 +83,14 @@ export interface SourceMapV3Object {
 export type SourceMapV3 = SourceMapV3Object|{
   // clang-format off
   version: number,
-  file?: string,
-  sections: ({
+  sections: Array<{
     offset: {line: number, column: number},
     map: SourceMapV3Object,
   } | {
     offset: {line: number, column: number},
     url: string,
-  })[],
+  }>,
+  file?: string,
   // clang-format on
 };
 
@@ -97,7 +98,7 @@ export type SourceMapV3 = SourceMapV3Object|{
  * Parses the {@link content} as JSON, ignoring BOM markers in the beginning, and
  * also handling the CORB bypass prefix correctly.
  *
- * @param content the string representation of a sourcemap.
+ * @param content - the string representation of a sourcemap.
  * @returns the {@link SourceMapV3} representation of the {@link content}.
  */
 export function parseSourceMap(content: string): SourceMapV3 {
@@ -148,6 +149,8 @@ interface SourceInfo {
 }
 
 export class SourceMap {
+  static retainRawSourceMaps = false;
+
   #json: SourceMapV3|null;
   readonly #compiledURLInternal: Platform.DevToolsPath.UrlString;
   readonly #sourceMappingURL: Platform.DevToolsPath.UrlString;
@@ -179,6 +182,35 @@ export class SourceMap {
       }
     }
     this.eachSection(this.parseSources.bind(this));
+  }
+
+  json(): SourceMapV3|null {
+    return this.#json;
+  }
+
+  augmentWithScopes(scriptUrl: Platform.DevToolsPath.UrlString, ranges: NamedFunctionRange[]): void {
+    this.#ensureMappingsProcessed();
+    if (this.#json && this.#json.version > 3) {
+      throw new Error('Only support augmenting source maps up to version 3.');
+    }
+    // Ensure scriptUrl is associated with sourceMap sources
+    const sourceIdx = this.#sourceIndex(scriptUrl);
+    if (sourceIdx >= 0) {
+      if (!this.#scopesInfo) {
+        // First time seeing this sourcemap, create an new empty scopesInfo object
+        this.#scopesInfo = new SourceMapScopesInfo(this, {scopes: [], ranges: []});
+      }
+      if (!this.#scopesInfo.hasOriginalScopes(sourceIdx)) {
+        const originalScopes = buildOriginalScopes(ranges);
+        this.#scopesInfo.addOriginalScopesAtIndex(sourceIdx, originalScopes);
+      }
+    } else {
+      throw new Error(`Could not find sourceURL ${scriptUrl} in sourceMap`);
+    }
+  }
+
+  #sourceIndex(sourceURL: Platform.DevToolsPath.UrlString): number {
+    return this.#sourceInfos.findIndex(info => info.sourceURL === sourceURL);
   }
 
   compiledURL(): Platform.DevToolsPath.UrlString {
@@ -229,7 +261,7 @@ export class SourceMap {
     }
     const mappings = this.mappings();
     const index = Platform.ArrayUtilities.upperBound(
-        mappings, undefined, (unused, entry) => lineNumber - entry.lineNumber || columnNumber - entry.columnNumber);
+        mappings, undefined, (_, entry) => lineNumber - entry.lineNumber || columnNumber - entry.columnNumber);
     return index ? mappings[index - 1] : null;
   }
 
@@ -240,7 +272,7 @@ export class SourceMap {
   }|null {
     const mappings = this.mappings();
     const endIndex = Platform.ArrayUtilities.upperBound(
-        mappings, undefined, (unused, entry) => lineNumber - entry.lineNumber || columnNumber - entry.columnNumber);
+        mappings, undefined, (_, entry) => lineNumber - entry.lineNumber || columnNumber - entry.columnNumber);
     if (!endIndex) {
       // If the line and column are preceding all the entries, then there is nothing to map.
       return null;
@@ -264,8 +296,7 @@ export class SourceMap {
     const startSourceColumn = mappings[startIndex].sourceColumnNumber;
     const endReverseIndex = Platform.ArrayUtilities.upperBound(
         reverseMappings, undefined,
-        (unused, i) =>
-            startSourceLine - mappings[i].sourceLineNumber || startSourceColumn - mappings[i].sourceColumnNumber);
+        (_, i) => startSourceLine - mappings[i].sourceLineNumber || startSourceColumn - mappings[i].sourceColumnNumber);
     if (!endReverseIndex) {
       return null;
     }
@@ -310,7 +341,7 @@ export class SourceMap {
     const reverseMappings = this.reversedMappings(sourceURL);
     const endIndex = Platform.ArrayUtilities.upperBound(
         reverseMappings, undefined,
-        (unused, i) => lineNumber - mappings[i].sourceLineNumber || columnNumber - mappings[i].sourceColumnNumber);
+        (_, i) => lineNumber - mappings[i].sourceLineNumber || columnNumber - mappings[i].sourceColumnNumber);
     let startIndex = endIndex;
     while (startIndex > 0 &&
            mappings[reverseMappings[startIndex - 1]].sourceLineNumber ===
@@ -386,6 +417,9 @@ export class SourceMap {
       this.mappings().sort(SourceMapEntry.compare);
 
       this.#computeReverseMappings(this.#mappingsInternal);
+    }
+
+    if (!SourceMap.retainRawSourceMaps) {
       this.#json = null;
     }
   }
@@ -458,7 +492,7 @@ export class SourceMap {
       }
       const url =
           Common.ParsedURL.ParsedURL.completeURL(this.#baseURL, href) || (href as Platform.DevToolsPath.UrlString);
-      const source = sourceMap.sourcesContent && sourceMap.sourcesContent[i];
+      const source = sourceMap.sourcesContent?.[i];
       const sourceInfo: SourceInfo = {
         sourceURL: url,
         content: source ?? null,
@@ -525,23 +559,25 @@ export class SourceMap {
 
     if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.USE_SOURCE_MAP_SCOPES)) {
       if (!this.#scopesInfo) {
-        this.#scopesInfo = new SourceMapScopesInfo(this, [], []);
+        this.#scopesInfo = new SourceMapScopesInfo(this, {scopes: [], ranges: []});
       }
-      if (map.originalScopes && map.generatedRanges) {
-        const {originalScopes, generatedRanges} = decodeScopes(map, {line: baseLineNumber, column: baseColumnNumber});
-        this.#scopesInfo.addOriginalScopes(originalScopes);
-        this.#scopesInfo.addGeneratedRanges(generatedRanges);
+      if (map.scopes) {
+        const {scopes, ranges} = ScopesCodec.decode(
+            map as ScopesCodec.SourceMapJson,
+            {mode: ScopesCodec.DecodeMode.LAX, generatedOffset: {line: baseLineNumber, column: baseColumnNumber}});
+        this.#scopesInfo.addOriginalScopes(scopes);
+        this.#scopesInfo.addGeneratedRanges(ranges);
       } else if (map.x_com_bloomberg_sourcesFunctionMappings) {
         const originalScopes = this.parseBloombergScopes(map);
         this.#scopesInfo.addOriginalScopes(originalScopes);
       } else {
         // Keep the OriginalScope[] tree array consistent with sources.
-        this.#scopesInfo.addOriginalScopes(new Array(map.sources.length));
+        this.#scopesInfo.addOriginalScopes(new Array(map.sources.length).fill(null));
       }
     }
   }
 
-  private parseBloombergScopes(map: SourceMapV3Object): (OriginalScope|undefined)[] {
+  private parseBloombergScopes(map: SourceMapV3Object): Array<ScopesCodec.OriginalScope|null> {
     const scopeList = map.x_com_bloomberg_sourcesFunctionMappings;
     if (!scopeList) {
       throw new Error('Cant decode pasta scopes without x_com_bloomberg_sourcesFunctionMappings field');
@@ -552,7 +588,7 @@ export class SourceMap {
 
     return scopeList.map(rawScopes => {
       if (!rawScopes) {
-        return undefined;
+        return null;
       }
       const ranges = decodePastaRanges(rawScopes, names);
       return buildOriginalScopes(ranges);
@@ -568,8 +604,8 @@ export class SourceMap {
    * source entity identified by the `url`. If the `url` does not have any reverse mappings
    * within this source map, an empty array is returned.
    *
-   * @param url the URL of the source entity to query.
-   * @param textRange the range of text within the entity to check, considered `[start,end[`.
+   * @param url - the URL of the source entity to query.
+   * @param textRange - the range of text within the entity to check, considered `[start,end[`.
    * @returns the list of ranges in the generated file that map to locations overlapping the
    *          {@link textRange} in the source file identified by the {@link url}, or `[]`
    *          if the {@link url} does not identify an entity in this source map.
@@ -701,8 +737,8 @@ export class SourceMap {
    * Determines whether this and the {@link other} `SourceMap` agree on content and ignore-list hint
    * with respect to the {@link sourceURL}.
    *
-   * @param sourceURL the URL to test for (might not be provided by either of the sourcemaps).
-   * @param other the other `SourceMap` to check.
+   * @param sourceURL - the URL to test for (might not be provided by either of the sourcemaps).
+   * @param other - the other `SourceMap` to check.
    * @returns `true` if both this and the {@link other} `SourceMap` either both have the ignore-list
    *          hint for {@link sourceURL} or neither, and if both of them either provide the same
    *          content for the {@link sourceURL} inline or both provide no `sourcesContent` entry
@@ -731,7 +767,7 @@ export class SourceMap {
     return this.#scopesInfo.resolveMappedScopeChain(frame);
   }
 
-  findOriginalFunctionName(position: GeneratedPosition): string|null {
+  findOriginalFunctionName(position: ScopesCodec.Position): string|null {
     this.#ensureMappingsProcessed();
     return this.#scopesInfo?.findOriginalFunctionName(position) ?? null;
   }

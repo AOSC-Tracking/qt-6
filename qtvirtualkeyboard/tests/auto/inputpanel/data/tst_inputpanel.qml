@@ -13,6 +13,24 @@ Rectangle {
     height: 640
     color: "blue"
 
+    // Visualize Qt.inputMethod.keyboardRectangle for testing purposes
+    Rectangle {
+        z: 100
+        x: Qt.inputMethod.keyboardRectangle.x
+        y: Qt.inputMethod.keyboardRectangle.y
+        width: Qt.inputMethod.keyboardRectangle.width
+        height: Qt.inputMethod.keyboardRectangle.height
+        color: "transparent"
+        border.color: "red"
+        border.width: 1
+    }
+
+    SignalSpy {
+        id: keyboardRectangleChangedSpy
+        target: Qt.inputMethod
+        signalName: "keyboardRectangleChanged"
+    }
+
     Component {
         id: textInputComp
         TextEdit {
@@ -69,14 +87,18 @@ Rectangle {
                     skip("Handwriting feature not available")
             }
 
-            inputPanel.setWclAutoHideDelay(data !== undefined && data.hasOwnProperty("wclAutoHideDelay") ? data.wclAutoHideDelay : 5000)
-            inputPanel.setWclAlwaysVisible(data !== undefined && data.hasOwnProperty("wclAlwaysVisible") && data.wclAlwaysVisible)
-            inputPanel.setWclAutoCommitWord(data !== undefined && data.hasOwnProperty("wclAutoCommitWord") && data.wclAutoCommitWord)
-            inputPanel.setFullScreenMode(data !== undefined && data.hasOwnProperty("fullScreenMode") && data.fullScreenMode)
+            // Reset settings
+            inputPanel.setArrowKeyNavigationEnabled(undefined)
+            inputPanel.setWclAutoHideDelay(undefined)
+            inputPanel.setWclAlwaysVisible(undefined)
+            inputPanel.setWclAutoCommitWord(undefined)
+            inputPanel.setFullScreenMode(undefined)
+            inputPanel.setVisibleFunctionKeys(undefined)
+            inputPanel.setCloseOnReturn(undefined)
+
+            // InputPanel settings
             inputPanel.setExternalLanguageSwitchEnabled(data !== undefined && data.hasOwnProperty("externalLanguageSwitchEnabled") && data.externalLanguageSwitchEnabled)
             inputPanel.setLayoutMirroring(data !== undefined && data.hasOwnProperty("layoutMirroring") && data.layoutMirroring)
-            inputPanel.setVisibleFunctionKeys(data !== undefined && data.hasOwnProperty("visibleFunctionKeys") ? data.visibleFunctionKeys : ["All"])
-            inputPanel.setCloseOnReturn(data !== undefined && data.hasOwnProperty("closeOnReturn") && data.closeOnReturn)
             inputPanel.noAnimations = !data || !data.hasOwnProperty("noAnimations") || data.noAnimations
 
             var window = container.Window.window
@@ -98,6 +120,7 @@ Rectangle {
             textInput.inputMethodHints = data !== undefined && data.hasOwnProperty("initInputMethodHints") ? data.initInputMethodHints : Qt.ImhNone
             textInput.selectByMouse = false
             handwritingInputPanel.available = false
+            handwritingInputPanel.active = false
             inputPanel.setHandwritingMode(false)
             textInput.forceActiveFocus()
             var activeLocales = data !== undefined && data.hasOwnProperty("activeLocales") ? data.activeLocales : []
@@ -129,6 +152,25 @@ Rectangle {
                 }
                 verify(inputPanel.setInputMode(inputMode))
             }
+
+            // Configure settings
+            if (data !== undefined) {
+                if (data.hasOwnProperty("arrowKeyNavigationEnabled"))
+                    inputPanel.setArrowKeyNavigationEnabled(data.arrowKeyNavigationEnabled)
+                if (data.hasOwnProperty("wclAutoHideDelay"))
+                    inputPanel.setWclAutoHideDelay(data.wclAutoHideDelay)
+                if (data.hasOwnProperty("wclAlwaysVisible"))
+                    inputPanel.setWclAlwaysVisible(data.wclAlwaysVisible)
+                if (data.hasOwnProperty("wclAutoCommitWord"))
+                    inputPanel.setWclAutoCommitWord(data.wclAutoCommitWord)
+                if (data.hasOwnProperty("fullScreenMode"))
+                    inputPanel.setFullScreenMode(data.fullScreenMode)
+                if (data.hasOwnProperty("visibleFunctionKeys"))
+                    inputPanel.setVisibleFunctionKeys(data.visibleFunctionKeys)
+                if (data.hasOwnProperty("closeOnReturn"))
+                    inputPanel.setCloseOnReturn(data.closeOnReturn)
+            }
+
             waitForRendering(inputPanel)
             verify(inputPanel.visible === true)
             verify(textInput.activeFocus === true)
@@ -282,6 +324,49 @@ Rectangle {
             prepareTest()
 
             compare(Qt.inputMethod.keyboardRectangle, Qt.rect(0, container.height - inputPanel.height, inputPanel.width, inputPanel.height))
+        }
+
+        function test_keyboardRect_data() {
+            return [
+                { wclAlwaysVisible: false },
+                { wclAlwaysVisible: true },
+            ]
+        }
+
+        function test_keyboardRect(data) {
+            prepareTest(data)
+
+            // Initially visible
+            compare(Qt.inputMethod.keyboardRectangle, Qt.rect(0, container.height - inputPanel.height, inputPanel.width, inputPanel.height))
+
+            // Hidden
+            keyboardRectangleChangedSpy.clear()
+            container.forceActiveFocus()
+            verify(inputPanel.visible === false)
+            compare(Qt.inputMethod.keyboardRectangle, Qt.rect(0, 0, 0, 0))
+            compare(keyboardRectangleChangedSpy.count, 1)
+
+            // Visible
+            keyboardRectangleChangedSpy.clear()
+            textInput.forceActiveFocus()
+            compare(Qt.inputMethod.keyboardRectangle, Qt.rect(0, container.height - inputPanel.height, inputPanel.width, inputPanel.height))
+            verify(keyboardRectangleChangedSpy.count < 3)
+        }
+
+        function test_keyboardRectFullScreenHwr() {
+            prepareTest({ initHwrMode: true }, true)
+
+            // Full screen hwr available -> keyboard hidden
+            keyboardRectangleChangedSpy.clear()
+            handwritingInputPanel.available = true
+            compare(Qt.inputMethod.keyboardRectangle, Qt.rect(0, 0, 0, 0))
+            compare(keyboardRectangleChangedSpy.count, 1)
+
+            // Full screen hwr active -> full screen input
+            keyboardRectangleChangedSpy.clear()
+            handwritingInputPanel.active = true
+            compare(Qt.inputMethod.keyboardRectangle, Qt.rect(0, 0, container.width, container.height))
+            compare(keyboardRectangleChangedSpy.count, 1)
         }
 
         function test_keyPress_data() {
@@ -694,17 +779,16 @@ Rectangle {
 
         function test_navigationKeyInputSequence_data() {
             return [
-                { initialKey: Qt.Key_Space, initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, inputSequence: "\u00E1\u017C", outputText: "\u00E1\u017C" },
-                { initialKey: Qt.Key_Space, initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, inputSequence: "~123qwe", outputText: "~123qwe" },
-                { initialKey: Qt.Key_Space, initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, inputSequence: [ Qt.Key_Shift, Qt.Key_Shift, Qt.Key_V, Qt.Key_K, Qt.Key_B, Qt.Key_Return ], outputText: "VKB\n" },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Space, initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, inputSequence: "\u00E1\u017C", outputText: "\u00E1\u017C" },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Space, initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, inputSequence: "~123qwe", outputText: "~123qwe" },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Space, initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, inputSequence: [ Qt.Key_Shift, Qt.Key_Shift, Qt.Key_V, Qt.Key_K, Qt.Key_B, Qt.Key_Return ], outputText: "VKB\n" },
             ]
         }
 
         function test_navigationKeyInputSequence(data) {
             prepareTest(data)
 
-            if (!inputPanel.activateNavigationKeyMode())
-                skip("Arrow key navigation not enabled")
+            inputPanel.activateNavigationKeyMode()
 
             verify(inputPanel.navigationHighlight.visible)
             verify(inputPanel.navigateToKey(data.initialKey))
@@ -719,25 +803,24 @@ Rectangle {
 
         function test_navigationCursorWrap_data() {
             return [
-                { initialKey: Qt.Key_W, navigationKey: Qt.Key_Up, navigationKeyRepeat: 4 },
-                { initialKey: Qt.Key_W, navigationKey: Qt.Key_Down, navigationKeyRepeat: 4 },
-                { initialKey: Qt.Key_T, navigationKey: Qt.Key_Up, navigationKeyRepeat: 4 },
-                { initialKey: Qt.Key_T, navigationKey: Qt.Key_Down, navigationKeyRepeat: 4 },
-                { initialKey: Qt.Key_Backspace, navigationKey: Qt.Key_Up, navigationKeyRepeat: 4 },
-                { initialKey: Qt.Key_Backspace, navigationKey: Qt.Key_Down, navigationKeyRepeat: 4 },
-                { initialKey: Qt.Key_Backspace, navigationKeySequence: [ Qt.Key_Right, Qt.Key_Left ] },
-                { initialKey: Qt.Key_Return, navigationKeySequence: [ Qt.Key_Right, Qt.Key_Left ] },
-                { initialKey: Qt.Key_Shift, navigationKeySequence: [ Qt.Key_Left, Qt.Key_Right ] },
-                { initialKey: Qt.Key_Context1, navigationKeySequence: [ Qt.Key_Left, Qt.Key_Right ] },
-                { initialKey: Qt.Key_Q, navigationKeySequence: [ Qt.Key_Left, Qt.Key_Right ] },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_W, navigationKey: Qt.Key_Up, navigationKeyRepeat: 4 },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_W, navigationKey: Qt.Key_Down, navigationKeyRepeat: 4 },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_T, navigationKey: Qt.Key_Up, navigationKeyRepeat: 4 },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_T, navigationKey: Qt.Key_Down, navigationKeyRepeat: 4 },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Backspace, navigationKey: Qt.Key_Up, navigationKeyRepeat: 4 },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Backspace, navigationKey: Qt.Key_Down, navigationKeyRepeat: 4 },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Backspace, navigationKeySequence: [ Qt.Key_Right, Qt.Key_Left ] },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Return, navigationKeySequence: [ Qt.Key_Right, Qt.Key_Left ] },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Shift, navigationKeySequence: [ Qt.Key_Left, Qt.Key_Right ] },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Context1, navigationKeySequence: [ Qt.Key_Left, Qt.Key_Right ] },
+                { arrowKeyNavigationEnabled: true, initialKey: Qt.Key_Q, navigationKeySequence: [ Qt.Key_Left, Qt.Key_Right ] },
             ]
         }
 
         function test_navigationCursorWrap(data) {
             prepareTest(data)
 
-            if (!inputPanel.activateNavigationKeyMode())
-                skip("Arrow key navigation not enabled")
+            inputPanel.activateNavigationKeyMode()
             verify(inputPanel.navigationHighlight.visible)
 
             verify(inputPanel.navigateToKey(data.initialKey))
@@ -756,11 +839,16 @@ Rectangle {
             compare(inputPanel.keyboardInputArea.initialKey, initialKeyObj)
         }
 
-        function test_navigationCursorAndWordCandidateView() {
-            prepareTest()
+        function test_navigationCursorAndWordCandidateView_data() {
+            return [
+                { arrowKeyNavigationEnabled: true }
+            ]
+        }
 
-            if (!inputPanel.activateNavigationKeyMode())
-                skip("Arrow key navigation not enabled")
+        function test_navigationCursorAndWordCandidateView(data) {
+            prepareTest(data)
+
+            inputPanel.activateNavigationKeyMode()
             verify(inputPanel.navigationHighlight.visible)
 
             verify(inputPanel.navigationKeyClick("q"))
@@ -858,16 +946,15 @@ Rectangle {
 
         function test_navigationKeyLayoutMirroring_data() {
             return [
-                { layoutMirroring: false },
-                { layoutMirroring: true },
+                { arrowKeyNavigationEnabled: true, layoutMirroring: false },
+                { arrowKeyNavigationEnabled: true, layoutMirroring: true },
             ]
         }
 
         function test_navigationKeyLayoutMirroring(data) {
             prepareTest(data)
 
-            if (!inputPanel.activateNavigationKeyMode())
-                skip("Arrow key navigation not enabled")
+            inputPanel.activateNavigationKeyMode()
             verify(inputPanel.navigationHighlight.visible)
 
             verify(inputPanel.navigateToKey("q"))
@@ -990,6 +1077,8 @@ Rectangle {
                 // Invalid pinyin sequence
                 { initInputMethodHints: Qt.ImhNone, initLocale: "zh_CN", inputSequence: "fi", expectedCandidates: [ "\u53D1", "i" ], outputText: "\u53D1i" },
                 { initInputMethodHints: Qt.ImhNone, initLocale: "zh_CN", inputSequence: "dfrt7", expectedCandidates: [], outputText: "dfrt7" },
+                // QTBUG-124178
+                { initInputMethodHints: Qt.ImhNone, initLocale: "zh_CN", inputSequence: "nss", expectedCandidates: ["\u4F60\u662F\u8C01"], outputText: "\u4F60\u662F\u8C01" },
             ]
         }
 
@@ -1256,7 +1345,50 @@ Rectangle {
                 //              3. The input sequence should be committed leaving the cursor in the middle.
                 { initLocale: "ja_JP", initInputMode: "Hiragana", inputSequence: ["n","i","h","o","n","g","o",Qt.Key_Left,Qt.Key_Left,Qt.Key_Left,Qt.Key_Mode_switch], outputText: "\u306B\u307B\u3093\u3054", expectedCursorPosition: 2 },
                 // HiraganaFlick
-                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["\u3092","\u306A","\u3099","\u308F","\u3001","\u305F"], outputText: "\u3092\u306A\u3099\u308F\u3001\u305F" },
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["こ","ん","に","ち","は",Qt.Key_Return], outputText: "こんにちは" },
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["さ","よ","う","な","ら",Qt.Key_Return], outputText: "さようなら" },
+                // Top(き,つ), Right(ね)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["き","つ","ね",Qt.Key_Return], outputText: "きつね" },
+                // Top(ふ), Right(ね)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["ふ","ね",Qt.Key_Return], outputText: "ふね" },
+                // Bottom(ほ), Left(し)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["ほ","し",Qt.Key_Return], outputText: "ほし" },
+                // Top(す), Bottom(も), Top(う)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["す","も","う",Qt.Key_Return], outputText: "すもう" },
+                // Bottom(け), Top(む), Left(り)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["け","む","り",Qt.Key_Return], outputText: "けむり" },
+                // Left(ひ), Top(る)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["ひ","る",Qt.Key_Return], outputText: "ひる" },
+                // Top(ぬ), Bottom(の)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["ぬ","の",Qt.Key_Return], outputText: "ぬの" },
+                // Bottom(そ,と)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["そ","と",Qt.Key_Return], outputText: "そと" },
+                // Right(く), Top(る), Base(ま)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["く","る","ま",Qt.Key_Return], outputText: "くるま" },
+                // Right(へ), Left(い)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["へ","い",Qt.Key_Return], outputText: "へい" },
+                // particle を + ん (also checks wa-key Left/Top)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["き","を","つ","け","て",Qt.Key_Return], outputText: "きをつけて" },
+                // NFC check (dakuten/handakuten via combining key U+3099/U+309A)
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["か","\u3099","く",Qt.Key_Return], outputText: "がく" },
+                // uses わ-Left for ん
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["は","\u309A","ん",Qt.Key_Return], outputText: "ぱん" },
+                // kana conversion
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["に","ほ","ん",Qt.Key_Space,Qt.Key_Return], outputText:"日本" },
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["に","ほ","ん","こ","\u3099",Qt.Key_Space,Qt.Key_Return], outputText:"日本語" },
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["て","ん","き",Qt.Key_Space,Qt.Key_Return], outputText:"天気" },
+                 // じ = し + ゙
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["か","ん","し","\u3099",Qt.Key_Space,Qt.Key_Space,Qt.Key_Return], outputText:"漢字" },
+                // が = か + ゙
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["か","\u3099","く","せ","い",Qt.Key_Space,Qt.Key_Return], outputText:"学生" },
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["お","お","さ","か",Qt.Key_Space,Qt.Key_Return], outputText:"大阪" },
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["せ","か","い",Qt.Key_Space,Qt.Key_Return], outputText:"世界" },
+                // で = て + ゙
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["て","\u3099","ん","わ",Qt.Key_Space,Qt.Key_Return], outputText:"電話" },
+                // だ = た + ゙
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["や","ま","た","\u3099",Qt.Key_Space,Qt.Key_Return], outputText:"山田" },
+                // use 大よ
+                { initLocale:"ja_JP", initInputMode:"HiraganaFlick", inputSequence:["と","う","き","よ","う",Qt.Key_Space,Qt.Key_Return], outputText:"東京" }
             ]
         }
 
@@ -2028,22 +2160,22 @@ Rectangle {
             prepareTest(data)
             inputPanel.wordCandidateListChangedSpy.clear()
             Qt.inputMethod.show()
-            compare(inputPanel.wordCandidateView.visibleCondition, data.wclAlwaysVisible)
+            if (!inputPanel.wordCandidateListVisibleHint)
+                skip("Prediction/spell correction not enabled")
+            compare(inputPanel.wordCandidateView.state, data.wclAlwaysVisible ? "alwaysVisible" : "")
             inputPanel.virtualKeyClick("a")
             inputPanel.virtualKeyClick("u")
             inputPanel.virtualKeyClick("t")
             inputPanel.virtualKeyClick("o")
-            if (!inputPanel.wordCandidateListVisibleHint)
-                skip("Prediction/spell correction not enabled")
             inputPanel.wordCandidateListChangedSpy.wait(1000)
-            compare(inputPanel.wordCandidateView.visibleCondition, true)
+            compare(inputPanel.wordCandidateView.state, "visible")
             inputPanel.wordCandidateListVisibleSpy.clear()
             inputPanel.selectionListSelectCurrentItem()
             if (data.wclAlwaysVisible)
                 wait(data.wclAutoHideDelay + 250)
             else
                 inputPanel.wordCandidateListVisibleSpy.wait(data.wclAutoHideDelay + 500)
-            compare(inputPanel.wordCandidateView.visibleCondition, data.wclAlwaysVisible)
+            compare(inputPanel.wordCandidateView.state, data.wclAlwaysVisible ? "alwaysVisible" : "")
         }
 
         function test_wclAutoCommitWordSetting_data() {
@@ -2221,8 +2353,8 @@ Rectangle {
                 var anchorHandlePointsTo = Qt.point(inputPanel.fullScreenModeAnchorHandle.x + inputPanel.fullScreenModeAnchorHandle.width/2, inputPanel.fullScreenModeAnchorHandle.y)
                 var anchorRect = inputPanel.shadowInput.positionToRectangle(data.selectionStart)
                 var cursorRect = inputPanel.shadowInput.positionToRectangle(data.selectionEnd)
-                anchorRect = container.mapFromItem(inputPanel.shadowInput, anchorRect.x, anchorRect.y, anchorRect.width, anchorRect.height)
-                cursorRect = container.mapFromItem(inputPanel.shadowInput, cursorRect.x, cursorRect.y, cursorRect.width, cursorRect.height)
+                anchorRect = inputPanel.shadowInputControl.mapFromItem(inputPanel.shadowInput, anchorRect.x, anchorRect.y, anchorRect.width, anchorRect.height)
+                cursorRect = inputPanel.shadowInputControl.mapFromItem(inputPanel.shadowInput, cursorRect.x, cursorRect.y, cursorRect.width, cursorRect.height)
                 // Could this be a bug in TextInput; padding not accounted in positionToRectangle()?
                 anchorRect.x += inputPanel.shadowInput.leftPadding
                 cursorRect.x += inputPanel.shadowInput.leftPadding

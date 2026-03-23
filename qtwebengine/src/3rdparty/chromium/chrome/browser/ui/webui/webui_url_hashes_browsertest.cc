@@ -8,6 +8,7 @@
 #include "base/metrics/histogram_base.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "content/public/browser/webui_config_map.h"
 #include "content/public/test/browser_test.h"
@@ -35,7 +36,7 @@ IN_PROC_BROWSER_TEST_F(WebUIUrlHashesBrowserTest, UrlsInHistogram) {
   }
   EXPECT_TRUE(missing_entries.empty())
       << "Please add this line to enum WebUIUrlHashes in "
-         "//tools/metrics/histograms/enums.xml:"
+         "//tools/metrics/histograms/metadata/ui/enums.xml:"
       << std::endl
       << base::JoinString(missing_entries, "\n");
 }

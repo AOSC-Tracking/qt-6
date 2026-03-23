@@ -5,11 +5,12 @@
 #include "gpu/ipc/common/gpu_surface_tracker.h"
 
 #include <utility>
+#include <variant>
 
 #include "base/check.h"
 #include "base/containers/contains.h"
-#include "base/functional/overloaded.h"
 #include "build/build_config.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "ui/gl/android/scoped_java_surface.h"
 
 namespace gpu {
@@ -54,8 +55,8 @@ SurfaceRecord GpuSurfaceTracker::AcquireJavaSurface(
     return SurfaceRecord(gl::ScopedJavaSurface(),
                          /*can_be_used_with_surface_control=*/false);
 
-  return absl::visit(
-      base::Overloaded{
+  return std::visit(
+      absl::Overload{
           [&](const gl::ScopedJavaSurface& surface) {
             DCHECK(surface.IsValid());
             return SurfaceRecord(surface.CopyRetainOwnership(),

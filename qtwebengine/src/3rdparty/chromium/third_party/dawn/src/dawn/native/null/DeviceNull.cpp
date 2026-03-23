@@ -28,6 +28,7 @@
 #include "dawn/native/null/DeviceNull.h"
 
 #include <limits>
+#include <unordered_map>
 #include <utility>
 
 #include "dawn/native/BackendConnection.h"
@@ -46,13 +47,18 @@ namespace dawn::native::null {
 // Implementation of pre-Device objects: the null physical device, null backend connection and
 // Connect()
 
+Ref<PhysicalDevice> PhysicalDevice::Create() {
+    auto physicalDevice = AcquireRef(new PhysicalDevice());
+    MaybeError err = physicalDevice->Initialize();
+    DAWN_CHECK(err.IsSuccess());
+    return physicalDevice;
+}
+
 PhysicalDevice::PhysicalDevice() : PhysicalDeviceBase(wgpu::BackendType::Null) {
     mVendorId = 0;
     mDeviceId = 0;
     mName = "Null backend";
     mAdapterType = wgpu::AdapterType::CPU;
-    MaybeError err = Initialize();
-    DAWN_ASSERT(err.IsSuccess());
 }
 
 PhysicalDevice::~PhysicalDevice() = default;
@@ -88,11 +94,8 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
-    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
-    // Set the subgroups limit, as DeviceNull should support subgroups feature.
-    limits->experimentalSubgroupLimits.minSubgroupSize = 4;
-    limits->experimentalSubgroupLimits.maxSubgroupSize = 128;
-    limits->experimentalImmediateDataLimits.maxImmediateDataRangeByteSize = 16;
+    GetDefaultLimitsForSupportedFeatureLevel(limits);
+    limits->v1.maxImmediateSize = kMaxSupportedImmediateDataBytes;
     return {};
 }
 
@@ -111,10 +114,6 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
 }
 
 void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
-    if (auto* subgroupProperties = info.Get<AdapterPropertiesSubgroups>()) {
-        subgroupProperties->subgroupMinSize = 4;
-        subgroupProperties->subgroupMaxSize = 128;
-    }
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         auto* heapInfo = new MemoryHeapInfo[1];
         memoryHeapProperties->heapCount = 1;
@@ -148,7 +147,7 @@ class Backend : public BackendConnection {
         // There is always a single Null physical device because it is purely CPU based
         // and doesn't depend on the system.
         if (mPhysicalDevice == nullptr) {
-            mPhysicalDevice = AcquireRef(new PhysicalDevice());
+            mPhysicalDevice = PhysicalDevice::Create();
         }
         return {mPhysicalDevice};
     }
@@ -191,12 +190,15 @@ Device::~Device() {
 }
 
 MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
-    return DeviceBase::Initialize(AcquireRef(new Queue(this, &descriptor->defaultQueue)));
+    return DeviceBase::Initialize(descriptor,
+                                  AcquireRef(new Queue(this, &descriptor->defaultQueue)));
 }
 
 ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     const BindGroupDescriptor* descriptor) {
-    return AcquireRef(new BindGroup(this, descriptor));
+    Ref<BindGroup> bindGroup = AcquireRef(new BindGroup(this, descriptor));
+    DAWN_TRY(bindGroup->Initialize(descriptor));
+    return bindGroup;
 }
 ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
     const BindGroupLayoutDescriptor* descriptor) {
@@ -233,10 +235,9 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult,
-    OwnedCompilationMessages* compilationMessages) {
+    ShaderModuleParseResult* parseResult) {
     Ref<ShaderModule> module = AcquireRef(new ShaderModule(this, descriptor, internalExtensions));
-    DAWN_TRY(module->Initialize(parseResult, compilationMessages));
+    DAWN_TRY(module->Initialize(parseResult));
     return module;
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
@@ -274,11 +275,11 @@ void Device::ForgetPendingOperations() {
     mPendingOperations.clear();
 }
 
-MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
-                                               uint64_t sourceOffset,
-                                               BufferBase* destination,
-                                               uint64_t destinationOffset,
-                                               uint64_t size) {
+MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
+                                           uint64_t sourceOffset,
+                                           BufferBase* destination,
+                                           uint64_t destinationOffset,
+                                           uint64_t size) {
     if (IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
         destination->SetInitialized(true);
     }
@@ -296,7 +297,7 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
 }
 
 MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
-                                                const TextureDataLayout& src,
+                                                const TexelCopyBufferLayout& src,
                                                 const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     return {};
@@ -352,6 +353,10 @@ BindGroup::BindGroup(DeviceBase* device, const BindGroupDescriptor* descriptor)
     : BindGroupDataHolder(descriptor->layout->GetInternalBindGroupLayout()->GetBindingDataSize()),
       BindGroupBase(device, descriptor, mBindingDataAllocation) {}
 
+MaybeError BindGroup::InitializeImpl() {
+    return {};
+}
+
 // BindGroupLayout
 
 BindGroupLayout::BindGroupLayout(DeviceBase* device, const BindGroupLayoutDescriptor* descriptor)
@@ -368,7 +373,7 @@ Buffer::Buffer(Device* device, const UnpackedPtr<BufferDescriptor>& descriptor)
 bool Buffer::IsCPUWritableAtCreation() const {
     // Only return true for mappable buffers so we can test cases that need / don't need a
     // staging buffer.
-    return (GetInternalUsage() & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite)) != 0;
+    return GetInternalUsage() & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite);
 }
 
 MaybeError Buffer::MapAtCreationImpl() {
@@ -394,7 +399,7 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
     return {};
 }
 
-void* Buffer::GetMappedPointer() {
+void* Buffer::GetMappedPointerImpl() {
     return mBackingData.get();
 }
 
@@ -455,11 +460,11 @@ bool Queue::HasPendingCommands() const {
     return false;
 }
 
-MaybeError Queue::SubmitPendingCommands() {
+MaybeError Queue::SubmitPendingCommandsImpl() {
     return {};
 }
 
-ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) {
+ResultOrError<bool> Queue::WaitForQueueSerialImpl(ExecutionSerial serial, Nanoseconds timeout) {
     return true;
 }
 
@@ -472,33 +477,45 @@ MaybeError Queue::WaitForIdleForDestruction() {
 MaybeError ComputePipeline::InitializeImpl() {
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
 
-    tint::Program transformedProgram;
-    tint::ast::transform::Manager transformManager;
-    tint::ast::transform::DataMap transformInputs;
+    // Convert the AST program to an IR module.
+    auto ir =
+        tint::wgsl::reader::ProgramToLoweredIR(computeStage.module->GetTintProgram()->program);
+    DAWN_INVALID_IF(ir != tint::Success, "An error occurred while generating Tint IR\n%s",
+                    ir.Failure().reason);
 
-    if (!computeStage.metadata->overrides.empty()) {
-        transformManager.Add<tint::ast::transform::SingleEntryPoint>();
-        transformInputs.Add<tint::ast::transform::SingleEntryPoint::Config>(
-            computeStage.entryPoint.c_str());
+    auto singleEntryPointResult =
+        tint::core::ir::transform::SingleEntryPoint(ir.Get(), computeStage.entryPoint.c_str());
+    DAWN_INVALID_IF(singleEntryPointResult != tint::Success,
+                    "Pipeline single entry point (IR) failed:\n%s",
+                    singleEntryPointResult.Failure().reason);
 
-        // This needs to run after SingleEntryPoint transform which removes unused overrides for
-        // current entry point.
-        transformManager.Add<tint::ast::transform::SubstituteOverride>();
-        transformInputs.Add<tint::ast::transform::SubstituteOverride::Config>(
-            BuildSubstituteOverridesTransformConfig(computeStage));
-    }
+    // this needs to run after SingleEntryPoint transform which removes unused
+    // overrides for the current entry point.
+    tint::core::ir::transform::SubstituteOverridesConfig cfg;
+    cfg.map = BuildSubstituteOverridesTransformConfig(computeStage);
 
-    auto tintProgram = computeStage.module->GetTintProgram();
-    DAWN_TRY_ASSIGN(transformedProgram, RunTransforms(&transformManager, &(tintProgram->program),
-                                                      transformInputs, nullptr, nullptr));
+    auto substituteOverridesResult = tint::core::ir::transform::SubstituteOverrides(ir.Get(), cfg);
+    DAWN_INVALID_IF(substituteOverridesResult != tint::Success,
+                    "Pipeline override substitution (IR) failed:\n%s",
+                    substituteOverridesResult.Failure().reason);
 
-    // Do the workgroup size validation.
-    const CombinedLimits& limits = GetDevice()->GetLimits();
+    auto limits = LimitsForCompilationRequest::Create(GetDevice()->GetLimits().v1);
+    auto adapterSupportedLimits =
+        LimitsForCompilationRequest::Create(GetDevice()->GetAdapter()->GetLimits().v1);
+    auto maxSubgroupSize = GetDevice()->GetAdapter()->GetPhysicalDevice()->GetSubgroupMaxSize();
+
+    //  Workgroup validation has to come after overrides to have been substituted.
+    auto wgInfo = tint::core::ir::GetWorkgroupInfo(ir.Get());
+
+    DAWN_INVALID_IF(wgInfo != tint::Success, "Getting workgroup info has failed (IR):\n%s",
+                    wgInfo.Failure().reason);
+
     Extent3D _;
     DAWN_TRY_ASSIGN(_, ValidateComputeStageWorkgroupSize(
-                           transformedProgram, computeStage.entryPoint.c_str(),
-                           LimitsForCompilationRequest::Create(limits.v1),
-                           static_cast<const AdapterBase*>(GetDevice()->GetAdapter())));
+                           wgInfo.Get().x, wgInfo.Get().y, wgInfo.Get().z,
+                           wgInfo.Get().storage_size, computeStage.metadata->usesSubgroupMatrix,
+                           maxSubgroupSize, limits, adapterSupportedLimits));
+
     return {};
 }
 
@@ -544,8 +561,7 @@ ResultOrError<SwapChainTextureInfo> SwapChain::GetCurrentTextureImpl() {
     mTexture = AcquireRef(new Texture(GetDevice(), Unpack(&textureDesc)));
     SwapChainTextureInfo info;
     info.texture = mTexture;
-    info.status = wgpu::SurfaceGetCurrentTextureStatus::Success;
-    info.suboptimal = false;
+    info.status = wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal;
     return info;
 }
 
@@ -558,9 +574,8 @@ void SwapChain::DetachFromSurfaceImpl() {
 
 // ShaderModule
 
-MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult,
-                                    OwnedCompilationMessages* compilationMessages) {
-    return InitializeBase(parseResult, compilationMessages);
+MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult) {
+    return InitializeBase(parseResult);
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {

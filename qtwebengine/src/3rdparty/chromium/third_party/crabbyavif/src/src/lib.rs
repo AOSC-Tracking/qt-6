@@ -13,11 +13,15 @@
 // limitations under the License.
 
 #![deny(unsafe_op_in_unsafe_fn)]
+// #![cfg_attr(feature = "disable_cfi", feature(no_sanitize))]
 
 #[macro_use]
 mod internal_utils;
 
 pub mod decoder;
+#[cfg(feature = "encoder")]
+pub mod encoder;
+pub mod gainmap;
 pub mod image;
 pub mod reformat;
 pub mod utils;
@@ -29,6 +33,8 @@ pub mod capi;
 mod codecs;
 
 mod parser;
+
+use image::*;
 
 // Workaround for https://bugs.chromium.org/p/chromium/issues/detail?id=1516634.
 #[derive(Default)]
@@ -82,7 +88,7 @@ impl PixelFormat {
     pub fn chroma_shift_x(&self) -> (u32, u32) {
         match self {
             Self::Yuv422 | Self::Yuv420 => (1, 0),
-            Self::AndroidP010 => (1, 1),
+            Self::AndroidP010 | Self::AndroidNv12 => (1, 1),
             _ => (0, 0),
         }
     }
@@ -409,3 +415,118 @@ pub(crate) use checked_decr;
 pub(crate) use checked_incr;
 pub(crate) use checked_mul;
 pub(crate) use checked_sub;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Grid {
+    pub rows: u32,
+    pub columns: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[cfg(feature = "encoder")]
+impl Grid {
+    pub(crate) fn is_last_column(&self, index: u32) -> bool {
+        (index + 1) % self.columns == 0
+    }
+
+    pub(crate) fn is_last_row(&self, index: u32) -> bool {
+        index >= (self.columns * (self.rows - 1))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum Category {
+    #[default]
+    Color,
+    Alpha,
+    Gainmap,
+}
+
+impl Category {
+    const COUNT: usize = 3;
+    const ALL: [Category; Category::COUNT] = [Self::Color, Self::Alpha, Self::Gainmap];
+
+    pub fn planes(&self) -> &[Plane] {
+        match self {
+            Category::Alpha => &A_PLANE,
+            _ => &YUV_PLANES,
+        }
+    }
+
+    #[cfg(feature = "encoder")]
+    pub(crate) fn infe_name(&self) -> String {
+        match self {
+            Self::Color => "Color",
+            Self::Alpha => "Alpha",
+            Self::Gainmap => "GMap",
+        }
+        .into()
+    }
+}
+
+/// cbindgen:rename-all=CamelCase
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[repr(C)]
+pub struct PixelAspectRatio {
+    pub h_spacing: u32,
+    pub v_spacing: u32,
+}
+
+/// cbindgen:field-names=[maxCLL, maxPALL]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ContentLightLevelInformation {
+    pub max_cll: u16,
+    pub max_pall: u16,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Nclx {
+    pub color_primaries: ColorPrimaries,
+    pub transfer_characteristics: TransferCharacteristics,
+    pub matrix_coefficients: MatrixCoefficients,
+    pub yuv_range: YuvRange,
+}
+
+pub const MAX_AV1_LAYER_COUNT: usize = 4;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RepetitionCount {
+    Unknown,
+    Infinite,
+    Finite(u32),
+}
+
+impl Default for RepetitionCount {
+    fn default() -> Self {
+        Self::Finite(0)
+    }
+}
+
+impl RepetitionCount {
+    pub fn create_from(value: i32) -> Self {
+        if value >= 0 {
+            RepetitionCount::Finite(value as u32)
+        } else {
+            RepetitionCount::Infinite
+        }
+    }
+
+    #[cfg(feature = "encoder")]
+    pub(crate) fn is_infinite(&self) -> bool {
+        match self {
+            Self::Finite(x) if *x >= i32::MAX as u32 => true,
+            Self::Infinite => true,
+            _ => false,
+        }
+    }
+
+    #[cfg(feature = "encoder")]
+    pub(crate) fn loop_count(&self) -> u64 {
+        match self {
+            Self::Finite(x) if *x < i32::MAX as u32 => *x as u64 + 1,
+            _ => i32::MAX as u64,
+        }
+    }
+}

@@ -26,7 +26,7 @@ def _param_type_cpp(java_type):
   ret = java_type.to_cpp()
   if java_type.is_primitive():
     return ret
-  return f'const jni_zero::JavaParamRef<{ret}>&'
+  return f'const jni_zero::JavaRef<{ret}>&'
 
 
 def _impl_forward_declaration(sb, native, params):
@@ -37,7 +37,27 @@ def _impl_forward_declaration(sb, native, params):
     with sb.param_list() as plist:
       plist.append('JNIEnv* env')
       if not native.static:
-        plist.append('const jni_zero::JavaParamRef<jobject>& jcaller')
+        plist.append('const jni_zero::JavaRef<jobject>& jcaller')
+      plist.extend(f'{_param_type_cpp(p.java_type)} {p.cpp_name()}'
+                   for p in params)
+
+
+def _entry_point_example(sb, native):
+  if native.first_param_cpp_type:
+    name = f'{native.first_param_cpp_type}::'
+    params = native.params[1:]
+  else:
+    name = f'JNI_{native.java_class.name}_'
+    params = native.params
+  name += native.capitalized_name
+  with sb.statement():
+    if not native.first_param_cpp_type:
+      sb('static ')
+    sb(f'{_return_type_cpp(native.return_type)} {name}')
+    with sb.param_list() as plist:
+      plist.append('JNIEnv* env')
+      if not native.static:
+        plist.append('const jni_zero::JavaRef<jobject>& jcaller')
       plist.extend(f'{_param_type_cpp(p.java_type)} {p.cpp_name()}'
                    for p in params)
 
@@ -60,7 +80,7 @@ def _prep_param(sb, is_proxy, param):
   if is_proxy and java_type.to_cpp() != java_type.to_proxy().to_cpp():
     # E.g. jobject -> jstring
     orig_name = f'static_cast<{java_type.to_cpp()}>({orig_name})'
-  return f'jni_zero::JavaParamRef<{java_type.to_cpp()}>(env, {orig_name})'
+  return f'jni_zero::JavaRef<{java_type.to_cpp()}>::CreateLeaky(env, {orig_name})'
 
 
 def entry_point_declaration(sb, jni_mode, jni_obj, native, gen_jni_class):
@@ -87,17 +107,23 @@ def entry_point_declaration(sb, jni_mode, jni_obj, native, gen_jni_class):
     plist.extend(f'{p.java_type.to_cpp()} {p.cpp_name()}' for p in params)
 
 
-def entry_point_method(sb, jni_mode, jni_obj, native, gen_jni_class):
+def entry_point_method(sb,
+                       jni_mode,
+                       jni_obj,
+                       native,
+                       gen_jni_class,
+                       include_forward_declaration=False):
   """The method called by JNI, or by multiplexing methods."""
   params = native.params
   cpp_class = native.first_param_cpp_type
   if cpp_class:
     params = params[1:]
 
-  # Only non-class methods need to be forward-declared.
-  if not cpp_class:
-    _impl_forward_declaration(sb, native, params)
-    sb('\n')
+  if include_forward_declaration:
+    # Only non-class methods need to be forward-declared.
+    if not cpp_class:
+      _impl_forward_declaration(sb, native, params)
+      sb('\n')
 
   entry_point_declaration(sb, jni_mode, jni_obj, native, gen_jni_class)
 
@@ -119,7 +145,7 @@ def entry_point_method(sb, jni_mode, jni_obj, native, gen_jni_class):
       with sb.param_list() as plist:
         plist.append('env')
         if not native.static:
-          plist.append('jni_zero::JavaParamRef<jobject>(env, jcaller)')
+          plist.append('jni_zero::JavaRef<jobject>::CreateLeaky(env, jcaller)')
         plist.extend(param_rvalues)
 
     if return_type.is_void():
@@ -135,7 +161,7 @@ def entry_point_method(sb, jni_mode, jni_obj, native, gen_jni_class):
       return
 
     with sb.statement():
-      sb('jobject converted_ret = ')
+      sb('auto converted_ret = ')
       if native.needs_implicit_array_element_class_param:
         clazz_snippet = f'static_cast<jclass>({native.proxy_params[-1].name})'
       else:
@@ -144,7 +170,8 @@ def entry_point_method(sb, jni_mode, jni_obj, native, gen_jni_class):
                                      '_ret',
                                      return_type,
                                      clazz_snippet=clazz_snippet)
-      sb('.Release()')
+      if not return_type.is_primitive():
+        sb('.Release()')
 
     with sb.statement():
       sb('return ')
@@ -152,6 +179,34 @@ def entry_point_method(sb, jni_mode, jni_obj, native, gen_jni_class):
         sb(f'static_cast<{entry_point_return_type.to_cpp()}>(converted_ret)')
       else:
         sb('converted_ret')
+
+
+def natives_macro_definition(sb, jni_mode, jni_obj, gen_jni_class, *,
+                             enable_definition_macros):
+  macro_name = f'DEFINE_JNI_FOR_{jni_obj.java_class.name}'
+  if enable_definition_macros and jni_obj.natives:
+    with sb.section(
+        'Example signatures (to be implemented by #including file).'):
+      with sb.commented_section():
+        for native in jni_obj.natives:
+          _entry_point_example(sb, native)
+          sb('\n')
+
+    with sb.section('Java to native functions'):
+      with sb.cpp_macro(macro_name):
+        # Anonymous namespace to scope the "using namespace" declaration.
+        # All symbols use extern "C", so it doesn't actually hide symbols.
+        with sb.namespace(''):
+          if jni_obj.jni_namespace:
+            sb(f'using namespace {jni_obj.jni_namespace};\n')
+          for native in jni_obj.natives:
+            entry_point_method(sb, jni_mode, jni_obj, native, gen_jni_class)
+  elif enable_definition_macros:
+    sb(f'// There are no Java->Native methods.\n')
+    sb(f'#define {macro_name}()\n')
+  else:
+    sb(f'// Macro for transition to enable_definition_macros=true.\n')
+    sb(f'#define {macro_name}()\n')
 
 
 def multiplexing_boundary_method(sb, muxed_aliases, gen_jni_class):

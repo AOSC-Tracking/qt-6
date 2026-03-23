@@ -9,7 +9,7 @@
 
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
-#include "components/autofill/core/browser/data_model/autofill_profile_comparator.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile_comparator.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/common/autofill_clock.h"
 #include "components/autofill/core/common/autofill_features.h"
@@ -69,6 +69,8 @@ void LogStoredProfileMetrics(
   count_and_log(AutofillProfileRecordTypeCategory::kLocalOrSyncable);
   count_and_log(AutofillProfileRecordTypeCategory::kAccountChrome);
   count_and_log(AutofillProfileRecordTypeCategory::kAccountNonChrome);
+  count_and_log(AutofillProfileRecordTypeCategory::kAccountHome);
+  count_and_log(AutofillProfileRecordTypeCategory::kAccountWork);
   base::UmaHistogramCounts1M("Autofill.StoredProfileCount.Total",
                              profiles.size());
 }

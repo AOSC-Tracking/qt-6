@@ -96,6 +96,16 @@ class TestCertVerifierConfigObserver : public net::CertVerifier {
     ADD_FAILURE() << "Verify should not be called by tests";
     return net::ERR_FAILED;
   }
+  void Verify2QwacBinding(
+      const std::string& binding,
+      const std::string& hostname,
+      const scoped_refptr<net::X509Certificate>& tls_cert,
+      base::OnceCallback<void(const scoped_refptr<net::X509Certificate>&)>
+          callback,
+      const net::NetLogWithSource& net_log) override {
+    ADD_FAILURE();
+    std::move(callback).Run(nullptr);
+  }
   void SetConfig(const Config& config) override {
     set_config_call_.SetValue(config);
   }
@@ -317,19 +327,6 @@ TEST_F(NetworkServiceSSLConfigServiceTest, Sha1LocalAnchorsEnabled) {
   mojom::SSLConfigPtr mojo_config = mojom::SSLConfig::New();
   mojo_config->sha1_local_anchors_enabled =
       expected_net_config.enable_sha1_local_anchors;
-
-  RunCertConversionTests(*mojo_config, expected_net_config);
-}
-
-TEST_F(NetworkServiceSSLConfigServiceTest, SymantecEnforcementDisabled) {
-  net::CertVerifier::Config expected_net_config;
-  // Use the opposite of the default value.
-  expected_net_config.disable_symantec_enforcement =
-      !expected_net_config.disable_symantec_enforcement;
-
-  mojom::SSLConfigPtr mojo_config = mojom::SSLConfig::New();
-  mojo_config->symantec_enforcement_disabled =
-      expected_net_config.disable_symantec_enforcement;
 
   RunCertConversionTests(*mojo_config, expected_net_config);
 }

@@ -63,7 +63,7 @@ template("system_image_stub_apk") {
     if (defined(_apk_or_bundle_target)) {
       deps = [ "$_apk_or_bundle_target$build_config_target_suffix" ]
       inputs = [ _build_config ]
-      args += [ "--use-permissions-from=@FileArg($_rebased_build_config:deps_info:lint_android_manifest)" ]
+      args += [ "--use-permissions-from=@FileArg($_rebased_build_config:android_manifest)" ]
     }
   }
 
@@ -90,7 +90,6 @@ template("system_image_stub_apk") {
       "//third_party/protobuf/python/google/protobuf/descriptor_pb2.py",
       "//third_party/protobuf/python/google/protobuf/descriptor_pool.py",
       "//third_party/protobuf/python/google/protobuf/internal/__init__.py",
-      "//third_party/protobuf/python/google/protobuf/internal/_parameterized.py",
       "//third_party/protobuf/python/google/protobuf/internal/api_implementation.py",
       "//third_party/protobuf/python/google/protobuf/internal/builder.py",
       "//third_party/protobuf/python/google/protobuf/internal/containers.py",
@@ -101,6 +100,7 @@ template("system_image_stub_apk") {
       "//third_party/protobuf/python/google/protobuf/internal/encoder.py",
       "//third_party/protobuf/python/google/protobuf/internal/enum_type_wrapper.py",
       "//third_party/protobuf/python/google/protobuf/internal/extension_dict.py",
+      "//third_party/protobuf/python/google/protobuf/internal/field_mask.py",
       "//third_party/protobuf/python/google/protobuf/internal/generator_test.py",
       "//third_party/protobuf/python/google/protobuf/internal/import_test.py",
       "//third_party/protobuf/python/google/protobuf/internal/import_test_package/__init__.py",
@@ -110,6 +110,7 @@ template("system_image_stub_apk") {
       "//third_party/protobuf/python/google/protobuf/internal/message_listener.py",
       "//third_party/protobuf/python/google/protobuf/internal/message_test.py",
       "//third_party/protobuf/python/google/protobuf/internal/proto_builder_test.py",
+      "//third_party/protobuf/python/google/protobuf/internal/python_edition_defaults.py",
       "//third_party/protobuf/python/google/protobuf/internal/python_message.py",
       "//third_party/protobuf/python/google/protobuf/internal/reflection_test.py",
       "//third_party/protobuf/python/google/protobuf/internal/service_reflection_test.py",
@@ -131,7 +132,7 @@ template("system_image_stub_apk") {
       "//third_party/protobuf/python/google/protobuf/pyext/__init__.py",
       "//third_party/protobuf/python/google/protobuf/pyext/cpp_message.py",
       "//third_party/protobuf/python/google/protobuf/reflection.py",
-      "//third_party/protobuf/python/google/protobuf/service.py",
+      "//third_party/protobuf/python/google/protobuf/runtime_version.py",
       "//third_party/protobuf/python/google/protobuf/service_reflection.py",
       "//third_party/protobuf/python/google/protobuf/symbol_database.py",
       "//third_party/protobuf/python/google/protobuf/text_encoding.py",
@@ -164,9 +165,9 @@ template("system_image_stub_apk") {
     } else {
       deps += [ "${_apk_or_bundle_target}$build_config_target_suffix" ]
       inputs += [ _build_config ]
-      _package_name = "@FileArg($_rebased_build_config:deps_info:package_name)"
-      _version_code = "@FileArg($_rebased_build_config:deps_info:version_code)"
-      _version_name = "@FileArg($_rebased_build_config:deps_info:version_name)"
+      _package_name = "@FileArg($_rebased_build_config:package_name)"
+      _version_code = "@FileArg($_rebased_build_config:version_code)"
+      _version_name = "@FileArg($_rebased_build_config:version_name)"
 
       # TODO(crbug.com/40253411): Make static_library_version mandatory.
       # Pass this through to ensure that the version code in the build config is

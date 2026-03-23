@@ -71,6 +71,11 @@ struct Word64T : IntegralT {
   static const MachineRepresentation kMachineRepresentation =
       MachineRepresentation::kWord64;
 };
+
+struct AdditiveSafeIntegerT : Word64T {
+  static constexpr MachineType kMachineType = MachineType::Int64();
+};
+
 struct Int64T : Word64T {
   static constexpr MachineType kMachineType = MachineType::Int64();
 };
@@ -193,6 +198,15 @@ struct MachineTypeOf<MaybeObject> {
   static constexpr MachineType value = MachineType::AnyTagged();
 };
 template <>
+struct MachineTypeOf<MaybeWeak<HeapObject>> {
+  // TODO(leszeks): Can this be TaggedPointer?
+  static constexpr MachineType value = MachineType::AnyTagged();
+};
+template <>
+struct MachineTypeOf<HeapObject> {
+  static constexpr MachineType value = MachineType::TaggedPointer();
+};
+template <>
 struct MachineTypeOf<Smi> {
   static constexpr MachineType value = MachineType::TaggedSigned();
 };
@@ -234,6 +248,13 @@ struct MachineTypeOf<Union<T, Ts...>> {
                 "no common representation");
 };
 
+// Special case for Union<HeapObject,TaggedIndex>, which torque uses for
+// TaggedZeroPattern and can be treated as an AnyTagged
+template <>
+struct MachineTypeOf<Union<HeapObject, TaggedIndex>> {
+  static constexpr MachineType value = MachineType::AnyTagged();
+};
+
 template <class Type, class Enable = void>
 struct MachineRepresentationOf {
   static const MachineRepresentation value = Type::kMachineRepresentation;
@@ -263,14 +284,14 @@ constexpr bool IsMachineRepresentationOf(MachineRepresentation r) {
 
 template <class T>
 constexpr MachineRepresentation PhiMachineRepresentationOf =
-    std::is_base_of<Word32T, T>::value ? MachineRepresentation::kWord32
-                                       : MachineRepresentationOf<T>::value;
+    std::is_base_of_v<Word32T, T> ? MachineRepresentation::kWord32
+                                  : MachineRepresentationOf<T>::value;
 
 template <class T>
 struct is_valid_type_tag {
   static const bool value = is_taggable_v<T> ||
-                            std::is_base_of<UntaggedT, T>::value ||
-                            std::is_same<ExternalReference, T>::value;
+                            std::is_base_of_v<UntaggedT, T> ||
+                            std::is_same_v<ExternalReference, T>;
   static const bool is_tagged = is_taggable_v<T>;
 };
 
@@ -322,6 +343,10 @@ struct types_have_common_values<Int32T, U> {
 };
 template <class U>
 struct types_have_common_values<Uint64T, U> {
+  static const bool value = types_have_common_values<Word64T, U>::value;
+};
+template <class U>
+struct types_have_common_values<AdditiveSafeIntegerT, U> {
   static const bool value = types_have_common_values<Word64T, U>::value;
 };
 template <class U>

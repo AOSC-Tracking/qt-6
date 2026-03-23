@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickfontmetrics_p.h"
 
@@ -233,7 +234,7 @@ qreal QQuickFontMetrics::lineWidth() const
 }
 
 /*!
-    \qmlmethod qreal QtQuick::FontMetrics::advanceWidth(string text)
+    \qmlmethod real QtQuick::FontMetrics::advanceWidth(string text)
 
     This method returns the advance in pixels of the characters in \a text.
     This is the distance from the position of the string to where the next

@@ -35,11 +35,13 @@ CdmCapability::CdmCapability(
     base::flat_set<AudioCodec> audio_codecs,
     VideoCodecMap video_codecs,
     base::flat_set<EncryptionScheme> encryption_schemes,
-    base::flat_set<CdmSessionType> session_types)
+    base::flat_set<CdmSessionType> session_types,
+    base::Version version)
     : audio_codecs(std::move(audio_codecs)),
       video_codecs(std::move(video_codecs)),
       encryption_schemes(std::move(encryption_schemes)),
-      session_types(std::move(session_types)) {}
+      session_types(std::move(session_types)),
+      version(std::move(version)) {}
 
 CdmCapability::CdmCapability(const CdmCapability& other) = default;
 
@@ -77,22 +79,20 @@ std::string CdmCapabilityQueryStatusToString(
       return "kDisconnectionError";
     case CdmCapabilityQueryStatus::kMediaFoundationGetCdmFactoryFailed:
       return "kMediaFoundationGetCdmFactoryFailed. For the actual error code, "
-             "please check out "
-             "about://histograms/"
-             "#Media.EME.{KeySystem}.CdmCapabilityQueryStatus." +
-             std::string(kMediaFoundationGetCdmFactoryHresultUmaPostfix) +
-             " where KeySystem is a key "
-             "system.";
+             "please check out about://histograms/#" +
+             std::string(kMediaFoundationGetCdmFactoryHresultUmaPostfix);
     case CdmCapabilityQueryStatus::kCreateDummyMediaFoundationCdmFailed:
       return "kCreateDummyMediaFoundationCdmFailed. For the actual error code, "
-             "please check out "
-             "about://histograms/"
-             "#Media.EME.{KeySystem}.CdmCapabilityQueryStatus." +
-             std::string(kCreateDummyMediaFoundationCdmHresultUmaPostfix) +
-             " where KeySystem is a key "
-             "system.";
+             "please check out about://histograms/#" +
+             std::string(kCreateDummyMediaFoundationCdmHresultUmaPostfix);
     case CdmCapabilityQueryStatus::kUnexpectedEmptyCapability:
       return "kUnexpectedEmptyCapability";
+    case CdmCapabilityQueryStatus::kNoMediaDrmSupport:
+      return "MediaDrm not available for the key system and robustness "
+             "specified.";
+    case CdmCapabilityQueryStatus::
+        kMediaFoundationGetExtendedDRMTypeSupportFailed:
+      return "kMediaFoundationGetExtendedDRMTypeSupportFailed";
   }
 
   NOTREACHED();

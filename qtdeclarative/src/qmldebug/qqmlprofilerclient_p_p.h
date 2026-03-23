@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLPROFILERCLIENT_P_P_H
 #define QQMLPROFILERCLIENT_P_P_H
@@ -35,6 +36,7 @@ public:
         : QQmlDebugClientPrivate(QLatin1String("CanvasFrameRate"), connection)
         , eventReceiver(eventReceiver)
         , engineControl(new QQmlEngineControlClient(connection))
+        , messageClient(new QQmlDebugMessageClient(connection))
         , maximumTime(0)
         , recording(false)
         , requestedFeatures(0)

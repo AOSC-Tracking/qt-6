@@ -4,6 +4,7 @@
 
 #include "extensions/shell/browser/shell_app_delegate.h"
 
+#include "base/notimplemented.h"
 #include "content/public/browser/color_chooser.h"
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/web_contents.h"
@@ -105,11 +106,6 @@ bool ShellAppDelegate::IsWebContentsVisible(
 void ShellAppDelegate::SetTerminatingCallback(base::OnceClosure callback) {
   // TODO(jamescook): Should app_shell continue to close the app window
   // manually or should it use a browser termination callback like Chrome?
-}
-
-bool ShellAppDelegate::TakeFocus(content::WebContents* web_contents,
-                                 bool reverse) {
-  return false;
 }
 
 content::PictureInPictureResult ShellAppDelegate::EnterPictureInPicture(

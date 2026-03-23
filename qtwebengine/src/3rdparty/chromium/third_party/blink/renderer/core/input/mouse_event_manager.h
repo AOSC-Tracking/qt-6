@@ -90,7 +90,8 @@ class CORE_EXPORT MouseEventManager final
   void SetLastKnownMousePosition(const WebMouseEvent&);
   void SetLastMousePositionAsUnknown();
 
-  bool HandleDragDropIfPossible(const GestureEventWithHitTestResults&);
+  bool HandleDragDropIfPossible(const GestureEventWithHitTestResults&,
+                                PointerId pointer_id);
 
   WebInputEventResult HandleMouseDraggedEvent(
       const MouseEventWithHitTestResults&);
@@ -171,17 +172,13 @@ class CORE_EXPORT MouseEventManager final
     const WebMouseEvent* web_mouse_event_;
   };
 
-  // If the given element is a shadow host and its root has delegatesFocus=false
-  // flag, slide focus to its inner element. Returns true if the resulting focus
-  // is different from the given element.
-  bool SlideFocusOnShadowHostIfNecessary(const Element&);
-
   bool DragThresholdExceeded(const gfx::Point&) const;
   bool HandleDrag(const MouseEventWithHitTestResults&, DragInitiator);
   bool TryStartDrag(const MouseEventWithHitTestResults&);
   void ClearDragDataTransfer();
   DataTransfer* CreateDraggingDataTransfer() const;
 
+  void HandleRemoveSubtree(Node& node, bool inclusive);
   void ResetDragSource();
   bool HoverStateDirty();
 

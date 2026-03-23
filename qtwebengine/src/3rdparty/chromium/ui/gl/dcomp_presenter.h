@@ -17,6 +17,7 @@
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "ui/gfx/frame_data.h"
 #include "ui/gfx/geometry/transform.h"
+#include "ui/gfx/overlay_layer_id.h"
 #include "ui/gl/child_window_win.h"
 #include "ui/gl/gl_export.h"
 #include "ui/gl/presenter.h"
@@ -47,6 +48,7 @@ class GL_EXPORT DCompPresenter : public Presenter,
     bool disable_vp_auto_hdr = false;
     bool disable_vp_scaling = false;
     bool disable_vp_super_resolution = false;
+    bool disable_dc_letterbox_video_optimization = false;
     bool force_dcomp_triple_buffer_video_swap_chain = false;
     bool no_downscaled_overlay_promotion = false;
   };
@@ -56,7 +58,6 @@ class GL_EXPORT DCompPresenter : public Presenter,
   DCompPresenter(const DCompPresenter&) = delete;
   DCompPresenter& operator=(const DCompPresenter&) = delete;
 
-  void Destroy();
   gfx::VSyncProvider* GetVSyncProvider();
 
   // Presenter implementation.
@@ -65,13 +66,11 @@ class GL_EXPORT DCompPresenter : public Presenter,
               const gfx::ColorSpace& color_space,
               bool has_alpha) override;
   bool SupportsViewporter() const override;
-  // This schedules an overlay plane to be displayed on the next SwapBuffers
-  // or PostSubBuffer call. Overlay planes must be scheduled before every swap
-  // to remain in the layer tree. This surface's backbuffer doesn't have to be
-  // scheduled with ScheduleDCLayer, as it's automatically placed in the layer
-  // tree at z-order 0.
-  void ScheduleDCLayer(std::unique_ptr<DCLayerOverlayParams> params) override;
-  void SetFrameRate(float frame_rate) override;
+  // This schedules overlay planes to be displayed on the next `Present` call.
+  // An overlay plane must be scheduled before every `Present` to remain in the
+  // layer tree. The primary plane should be included in `overlays`.
+  void ScheduleDCLayers(std::vector<DCLayerOverlayParams> overlays) override;
+  bool DestroyDCLayerTree() override;
 
   void Present(SwapCompletionCallback completion_callback,
                PresentationCallback presentation_callback,
@@ -92,12 +91,12 @@ class GL_EXPORT DCompPresenter : public Presenter,
   scoped_refptr<base::TaskRunner> GetWindowTaskRunnerForTesting();
 
   Microsoft::WRL::ComPtr<IDXGISwapChain1> GetLayerSwapChainForTesting(
-      size_t index) const;
+      const gfx::OverlayLayerId& layer_id) const;
 
-  void GetSwapChainVisualInfoForTesting(size_t index,
-                                        gfx::Transform* transform,
-                                        gfx::Point* offset,
-                                        gfx::Rect* clip_rect) const;
+  void GetSwapChainVisualInfoForTesting(const gfx::OverlayLayerId& layer_id,
+                                        gfx::Transform* out_transform,
+                                        gfx::Point* out_offset,
+                                        gfx::Rect* out_clip_rect) const;
 
   DCLayerTree* GetLayerTreeForTesting() { return layer_tree_.get(); }
 
@@ -133,7 +132,7 @@ class GL_EXPORT DCompPresenter : public Presenter,
   // Queue of pending presentation callbacks.
   base::circular_deque<PendingFrame> pending_frames_;
 
-  std::vector<std::unique_ptr<DCLayerOverlayParams>> pending_overlays_;
+  std::vector<DCLayerOverlayParams> pending_overlays_;
 
   base::TimeTicks last_vsync_time_;
   base::TimeDelta last_vsync_interval_;

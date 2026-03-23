@@ -37,11 +37,11 @@ import {Events as StorageKeyManagerEvents, StorageKeyManager} from './StorageKey
 import {Capability, type Target} from './Target.js';
 
 export class StorageBucketsModel extends SDKModel<EventTypes> implements ProtocolProxyApi.StorageDispatcher {
-  private enabled: boolean = false;
+  private enabled = false;
   readonly storageAgent: ProtocolProxyApi.StorageApi;
   private readonly storageKeyManager: StorageKeyManager|null;
-  private bucketsById: Map<string, Protocol.Storage.StorageBucketInfo> = new Map();
-  private trackedStorageKeys: Set<string> = new Set();
+  private bucketsById = new Map<string, Protocol.Storage.StorageBucketInfo>();
+  private trackedStorageKeys = new Set<string>();
 
   constructor(target: Target) {
     super(target);
@@ -196,7 +196,17 @@ export class StorageBucketsModel extends SDKModel<EventTypes> implements Protoco
   sharedStorageAccessed(_event: Protocol.Storage.SharedStorageAccessedEvent): void {
   }
 
+  sharedStorageWorkletOperationExecutionFinished(
+      _event: Protocol.Storage.SharedStorageWorkletOperationExecutionFinishedEvent): void {
+  }
+
   attributionReportingSourceRegistered(_event: Protocol.Storage.AttributionReportingSourceRegisteredEvent): void {
+  }
+  attributionReportingReportSent(_event: Protocol.Storage.AttributionReportingReportSentEvent): void {
+  }
+
+  attributionReportingVerboseDebugReportSent(_event: Protocol.Storage.AttributionReportingVerboseDebugReportSentEvent):
+      void {
   }
 }
 

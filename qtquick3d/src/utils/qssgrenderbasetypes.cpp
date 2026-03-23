@@ -1,9 +1,20 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgrenderbasetypes_p.h"
 
 QT_BEGIN_NAMESPACE
+
+static const char qssgSamplerNames[][18] = {
+    "sampler2D",
+    "sampler2DArray",
+    "sampler3D",
+    "samplerCube",
+    "samplerCubeArray",
+    "samplerBuffer"
+};
 
 const char *QSSGRenderTextureFormat::toString() const
 {
@@ -683,6 +694,11 @@ const char *QSSGBaseTypeHelpers::toString(QSSGRenderTextureFilterOp value)
     }
 
     Q_UNREACHABLE_RETURN(nullptr);
+}
+
+QByteArray QSSGBaseTypeHelpers::toString(QSSGRenderSamplerType value)
+{
+    return QByteArray(qssgSamplerNames[static_cast<size_t>(value)]);
 }
 
 const char *QSSGBaseTypeHelpers::displayName(QSSGRenderTextureCubeFace face)

@@ -5,10 +5,12 @@
 #ifndef V8_IC_HANDLER_CONFIGURATION_INL_H_
 #define V8_IC_HANDLER_CONFIGURATION_INL_H_
 
+#include "src/ic/handler-configuration.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/builtins/builtins.h"
 #include "src/execution/isolate.h"
 #include "src/handles/handles-inl.h"
-#include "src/ic/handler-configuration.h"
 #include "src/objects/data-handler-inl.h"
 #include "src/objects/field-index-inl.h"
 #include "src/objects/objects-inl.h"
@@ -19,8 +21,6 @@
 
 namespace v8 {
 namespace internal {
-
-OBJECT_CONSTRUCTORS_IMPL(LoadHandler, DataHandler)
 
 // Decodes kind from Smi-handler.
 LoadHandler::Kind LoadHandler::GetHandlerKind(Tagged<Smi> smi_handler) {
@@ -45,6 +45,14 @@ Handle<Smi> LoadHandler::LoadInterceptor(Isolate* isolate) {
 Handle<Smi> LoadHandler::LoadSlow(Isolate* isolate) {
   int config = KindBits::encode(Kind::kSlow);
   return handle(Smi::FromInt(config), isolate);
+}
+
+Handle<Smi> LoadHandler::LoadGeneric(Isolate* isolate) {
+  return handle(LoadGeneric(), isolate);
+}
+
+Tagged<Smi> LoadHandler::LoadGeneric() {
+  return Smi::FromInt(KindBits::encode(Kind::kGeneric));
 }
 
 Handle<Smi> LoadHandler::LoadField(Isolate* isolate, FieldIndex field_index) {
@@ -86,11 +94,8 @@ Handle<Smi> LoadHandler::LoadNativeDataProperty(Isolate* isolate,
   return handle(Smi::FromInt(config), isolate);
 }
 
-Handle<Smi> LoadHandler::LoadApiGetter(Isolate* isolate,
-                                       bool holder_is_receiver) {
-  int config =
-      KindBits::encode(holder_is_receiver ? Kind::kApiGetter
-                                          : Kind::kApiGetterHolderIsPrototype);
+Handle<Smi> LoadHandler::LoadApiGetter(Isolate* isolate) {
+  int config = KindBits::encode(Kind::kApiGetter);
   return handle(Smi::FromInt(config), isolate);
 }
 
@@ -119,6 +124,17 @@ Handle<Smi> LoadHandler::LoadElement(Isolate* isolate,
   return handle(Smi::FromInt(config), isolate);
 }
 
+Handle<Smi> LoadHandler::TransitionAndLoadElement(
+    Isolate* isolate, ElementsKind kind_after_transition,
+    KeyedAccessLoadMode load_mode) {
+  int config = KindBits::encode(Kind::kElementWithTransition) |
+               AllowOutOfBoundsBits::encode(LoadModeHandlesOOB(load_mode)) |
+               ElementsKindBits::encode(kind_after_transition) |
+               AllowHandlingHole::encode(LoadModeHandlesHoles(load_mode)) |
+               IsJsArrayBits::encode(true);
+  return handle(Smi::FromInt(config), isolate);
+}
+
 Handle<Smi> LoadHandler::LoadIndexedString(Isolate* isolate,
                                            KeyedAccessLoadMode load_mode) {
   int config = KindBits::encode(Kind::kIndexedString) |
@@ -132,8 +148,6 @@ DirectHandle<Smi> LoadHandler::LoadWasmArrayElement(Isolate* isolate,
                IsWasmArrayBits::encode(true) | WasmArrayTypeBits::encode(type);
   return direct_handle(Smi::FromInt(config), isolate);
 }
-
-OBJECT_CONSTRUCTORS_IMPL(StoreHandler, DataHandler)
 
 DirectHandle<Smi> StoreHandler::StoreGlobalProxy(Isolate* isolate) {
   int config = KindBits::encode(Kind::kGlobalProxy);
@@ -214,6 +228,14 @@ Handle<Smi> StoreHandler::StoreSlow(Isolate* isolate,
   return handle(Smi::FromInt(config), isolate);
 }
 
+Handle<Smi> StoreHandler::StoreGeneric(Isolate* isolate) {
+  return handle(StoreGeneric(), isolate);
+}
+
+Tagged<Smi> StoreHandler::StoreGeneric() {
+  return Smi::FromInt(KindBits::encode(Kind::kGeneric));
+}
+
 Handle<Smi> StoreHandler::StoreProxy(Isolate* isolate) {
   return handle(StoreProxy(), isolate);
 }
@@ -267,11 +289,8 @@ DirectHandle<Smi> StoreHandler::StoreAccessorFromPrototype(Isolate* isolate) {
   return direct_handle(Smi::FromInt(config), isolate);
 }
 
-DirectHandle<Smi> StoreHandler::StoreApiSetter(Isolate* isolate,
-                                               bool holder_is_receiver) {
-  int config =
-      KindBits::encode(holder_is_receiver ? Kind::kApiSetter
-                                          : Kind::kApiSetterHolderIsPrototype);
+DirectHandle<Smi> StoreHandler::StoreApiSetter(Isolate* isolate) {
+  int config = KindBits::encode(Kind::kApiSetter);
   return direct_handle(Smi::FromInt(config), isolate);
 }
 

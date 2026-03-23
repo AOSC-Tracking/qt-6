@@ -5,10 +5,12 @@
 #ifndef V8_HEAP_MARKING_INL_H_
 #define V8_HEAP_MARKING_INL_H_
 
+#include "src/heap/marking.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/base/build_config.h"
 #include "src/base/macros.h"
 #include "src/heap/heap-inl.h"
-#include "src/heap/marking.h"
 #include "src/heap/memory-chunk-layout.h"
 #include "src/heap/memory-chunk-metadata.h"
 #include "src/heap/spaces.h"
@@ -154,6 +156,14 @@ MarkingBitmap* MarkingBitmap::FromAddress(Address address) {
 }
 
 // static
+MarkingBitmap* MarkingBitmap::FromAddress(const Isolate* isolate,
+                                          Address address) {
+  Address metadata_address =
+      MutablePageMetadata::FromAddress(isolate, address)->MetadataAddress();
+  return Cast(metadata_address + MutablePageMetadata::MarkingBitmapOffset());
+}
+
+// static
 MarkBit MarkingBitmap::MarkBitFromAddress(Address address) {
   return MarkBitFromAddress(FromAddress(address), address);
 }
@@ -162,6 +172,23 @@ MarkBit MarkingBitmap::MarkBitFromAddress(Address address) {
 MarkBit MarkingBitmap::MarkBitFromAddress(MarkingBitmap* bitmap,
                                           Address address) {
   DCHECK_EQ(bitmap, FromAddress(address));
+  const auto index = AddressToIndex(address);
+  const auto mask = IndexInCellMask(index);
+  MarkBit::CellType* cell = bitmap->cells() + IndexToCell(index);
+  return MarkBit(cell, mask);
+}
+
+// static
+MarkBit MarkingBitmap::MarkBitFromAddress(const Isolate* isolate,
+                                          Address address) {
+  return MarkBitFromAddress(isolate, FromAddress(isolate, address), address);
+}
+
+// static
+MarkBit MarkingBitmap::MarkBitFromAddress(const Isolate* isolate,
+                                          MarkingBitmap* bitmap,
+                                          Address address) {
+  DCHECK_EQ(bitmap, FromAddress(isolate, address));
   const auto index = AddressToIndex(address);
   const auto mask = IndexInCellMask(index);
   MarkBit::CellType* cell = bitmap->cells() + IndexToCell(index);
@@ -270,6 +297,16 @@ MarkBit MarkBit::From(Address address) {
 // static
 MarkBit MarkBit::From(Tagged<HeapObject> heap_object) {
   return MarkingBitmap::MarkBitFromAddress(heap_object.ptr());
+}
+
+// static
+MarkBit MarkBit::From(const Isolate* isolate, Address address) {
+  return MarkingBitmap::MarkBitFromAddress(isolate, address);
+}
+
+// static
+MarkBit MarkBit::From(const Isolate* isolate, Tagged<HeapObject> heap_object) {
+  return MarkingBitmap::MarkBitFromAddress(isolate, heap_object.ptr());
 }
 
 // static

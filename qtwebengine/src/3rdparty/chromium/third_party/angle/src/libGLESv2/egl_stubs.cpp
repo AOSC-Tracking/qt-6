@@ -17,17 +17,11 @@
 #include "libANGLE/queryutils.h"
 #include "libANGLE/validationEGL.h"
 #include "libGLESv2/global_state.h"
-#include "libGLESv2/proc_table_egl.h"
 
 namespace egl
 {
 namespace
 {
-
-bool CompareProc(const ProcEntry &a, const char *b)
-{
-    return strcmp(a.first, b) < 0;
-}
 
 void ClipConfigs(const std::vector<const Config *> &filteredConfigs,
                  EGLConfig *outputConfigs,
@@ -484,21 +478,6 @@ EGLDisplay GetPlatformDisplay(Thread *thread,
     }
 }
 
-__eglMustCastToProperFunctionPointerType GetProcAddress(Thread *thread, const char *procname)
-{
-    const ProcEntry *entry =
-        std::lower_bound(&g_procTable[0], &g_procTable[g_numProcs], procname, CompareProc);
-
-    thread->setSuccess();
-
-    if (entry == &g_procTable[g_numProcs] || strcmp(entry->first, procname) != 0)
-    {
-        return nullptr;
-    }
-
-    return entry->second;
-}
-
 EGLBoolean GetSyncAttrib(Thread *thread,
                          Display *display,
                          SyncID syncID,
@@ -646,8 +625,10 @@ EGLBoolean QuerySurface(Thread *thread,
     const gl::Context *context;
     switch (attribute)
     {
-        // EGL_BUFFER_AGE_EXT uses Context, so lock was taken in GetContextLock_QuerySurface().
+        // EGL_BUFFER_AGE_EXT and EGL_SURFACE_COMPRESSION_EXT uses Context,
+        // so lock was taken in GetContextLock_QuerySurface().
         case EGL_BUFFER_AGE_EXT:
+        case EGL_SURFACE_COMPRESSION_EXT:
             context = thread->getContext();
             break;
         // Other attributes are not using Context, pass nullptr to be explicit about that.

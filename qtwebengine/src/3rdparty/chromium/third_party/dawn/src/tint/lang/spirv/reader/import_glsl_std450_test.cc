@@ -77,6 +77,13 @@ std::string Preamble() {
 
   %modf_result_type = OpTypeStruct %float %float
   %modf_v2_result_type = OpTypeStruct %v2float %v2float
+  %ptr_function_modf_result_type = OpTypePointer Function %modf_result_type
+
+  %frexp_result_type_unsigned = OpTypeStruct %float %uint
+  %frexp_result_type_signed = OpTypeStruct %float %int
+  %frexp_v2_result_type_unsigned = OpTypeStruct %v2float %v2uint
+  %frexp_v2_result_type_signed = OpTypeStruct %v2float %v2int
+  %ptr_function_frexp_result_type_unsigned = OpTypePointer Function %frexp_result_type_unsigned
 
   %v2uint_10_20 = OpConstantComposite %v2uint %uint_10 %uint_20
   %v2uint_20_10 = OpConstantComposite %v2uint %uint_20 %uint_10
@@ -651,7 +658,7 @@ TEST_F(SpirvReaderTest, Normalize_Vector4) {
 )");
 }
 
-TEST_F(SpirvReaderTest, DISABLED_RectifyOperandsAndResult_FindUMsb) {
+TEST_F(SpirvReaderTest, RectifyOperandsAndResult_FindUMsb) {
     // Check signedness conversion of arguments and results.
     //   SPIR-V signed arg -> cast arg to unsigned
     //      signed result -> cast result to signed
@@ -686,14 +693,23 @@ TEST_F(SpirvReaderTest, DISABLED_RectifyOperandsAndResult_FindUMsb) {
               R"(
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B1: {
-    let x_1 = bitcast<i32>(firstLeadingBit(bitcast<u32>(i1)));
-    let x_2 = bitcast<vec2i>(firstLeadingBit(bitcast<vec2u>(v2i1)));
-    let x_3 = firstLeadingBit(bitcast<u32>(i1));
-    let x_4 = firstLeadingBit(bitcast<vec2u>(v2i1));
-    let x_5 = bitcast<i32>(firstLeadingBit(u1));
-    let x_6 = bitcast<vec2i>(firstLeadingBit(v2u1));
-    let x_7 = firstLeadingBit(u1);
-    let x_8 = firstLeadingBit(v2u1);
+    %2:u32 = bitcast 30i
+    %3:u32 = firstLeadingBit %2
+    %4:i32 = bitcast %3
+    %5:vec2<u32> = bitcast vec2<i32>(30i, 40i)
+    %6:vec2<u32> = firstLeadingBit %5
+    %7:vec2<i32> = bitcast %6
+    %8:u32 = bitcast 30i
+    %9:u32 = firstLeadingBit %8
+    %10:vec2<u32> = bitcast vec2<i32>(30i, 40i)
+    %11:vec2<u32> = firstLeadingBit %10
+    %12:u32 = firstLeadingBit 10u
+    %13:i32 = bitcast %12
+    %14:vec2<u32> = firstLeadingBit vec2<u32>(10u, 20u)
+    %15:vec2<i32> = bitcast %14
+    %16:u32 = firstLeadingBit 10u
+    %17:vec2<u32> = firstLeadingBit vec2<u32>(10u, 20u)
+    ret
   }
 }
 )");
@@ -834,6 +850,39 @@ INSTANTIATE_TEST_SUITE_P(
                         "half"},
         DeterminantData{"mat4v4half_50_50_50_50", "mat4x4<f16>(vec4<f16>(50.0h))", "f16", "half"}));
 
+TEST_F(SpirvReaderTest, ModfStruct_Store) {
+    EXPECT_IR(Preamble() + R"(
+     %1 = OpVariable %ptr_function_modf_result_type Function
+     %2 = OpExtInst %modf_result_type %glsl ModfStruct %float_50
+     OpStore %1 %2
+     OpReturn
+     OpFunctionEnd
+  )",
+              R"(
+tint_symbol_2 = struct @align(4) {
+  tint_symbol:f32 @offset(0)
+  tint_symbol_1:f32 @offset(4)
+}
+
+__modf_result_f32 = struct @align(4) {
+  fract:f32 @offset(0)
+  whole:f32 @offset(4)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:ptr<function, tint_symbol_2, read_write> = var undef
+    %3:__modf_result_f32 = modf 50.0f
+    %4:f32 = access %3, 0u
+    %5:f32 = access %3, 1u
+    %6:tint_symbol_2 = construct %4, %5
+    store %2, %6
+    ret
+  }
+}
+)");
+}
+
 TEST_F(SpirvReaderTest, ModfStruct_Scalar) {
     EXPECT_IR(Preamble() + R"(
      %1 = OpExtInst %modf_result_type %glsl ModfStruct %float_50
@@ -856,6 +905,9 @@ __modf_result_f32 = struct @align(4) {
   $B1: {
     %2:__modf_result_f32 = modf 50.0f
     %3:f32 = access %2, 0u
+    %4:f32 = access %2, 1u
+    %5:tint_symbol_2 = construct %3, %4
+    %6:f32 = access %5, 0u
     ret
   }
 }
@@ -884,6 +936,177 @@ __modf_result_vec2_f32 = struct @align(8) {
   $B1: {
     %2:__modf_result_vec2_f32 = modf vec2<f32>(50.0f, 60.0f)
     %3:vec2<f32> = access %2, 0u
+    %4:vec2<f32> = access %2, 1u
+    %5:tint_symbol_2 = construct %3, %4
+    %6:vec2<f32> = access %5, 0u
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvReaderTest, FrexpStruct_Store) {
+    EXPECT_IR(Preamble() + R"(
+     %1 = OpVariable %ptr_function_frexp_result_type_unsigned Function
+     %2 = OpExtInst %frexp_result_type_unsigned %glsl FrexpStruct %float_50
+     OpStore %1 %2
+     OpReturn
+     OpFunctionEnd
+  )",
+              R"(
+tint_symbol_2 = struct @align(4) {
+  tint_symbol:f32 @offset(0)
+  tint_symbol_1:u32 @offset(4)
+}
+
+__frexp_result_f32 = struct @align(4) {
+  fract:f32 @offset(0)
+  exp:i32 @offset(4)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:ptr<function, tint_symbol_2, read_write> = var undef
+    %3:__frexp_result_f32 = frexp 50.0f
+    %4:f32 = access %3, 0u
+    %5:i32 = access %3, 1u
+    %6:u32 = bitcast %5
+    %7:tint_symbol_2 = construct %4, %6
+    store %2, %7
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvReaderTest, FrexpStruct_ScalarUnsigned) {
+    EXPECT_IR(Preamble() + R"(
+     %1 = OpExtInst %frexp_result_type_unsigned %glsl FrexpStruct %float_50
+     %2 = OpCompositeExtract %float %1 0
+     %3 = OpCompositeExtract %uint %1 1
+     OpReturn
+     OpFunctionEnd
+  )",
+              R"(
+tint_symbol_2 = struct @align(4) {
+  tint_symbol:f32 @offset(0)
+  tint_symbol_1:u32 @offset(4)
+}
+
+__frexp_result_f32 = struct @align(4) {
+  fract:f32 @offset(0)
+  exp:i32 @offset(4)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:__frexp_result_f32 = frexp 50.0f
+    %3:f32 = access %2, 0u
+    %4:i32 = access %2, 1u
+    %5:u32 = bitcast %4
+    %6:tint_symbol_2 = construct %3, %5
+    %7:f32 = access %6, 0u
+    %8:u32 = access %6, 1u
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvReaderTest, FrexpStruct_ScalarSigned) {
+    EXPECT_IR(Preamble() + R"(
+     %1 = OpExtInst %frexp_result_type_signed %glsl FrexpStruct %float_50
+     %2 = OpCompositeExtract %float %1 0
+     %3 = OpCompositeExtract %int %1 1
+     OpReturn
+     OpFunctionEnd
+  )",
+              R"(
+tint_symbol_2 = struct @align(4) {
+  tint_symbol:f32 @offset(0)
+  tint_symbol_1:i32 @offset(4)
+}
+
+__frexp_result_f32 = struct @align(4) {
+  fract:f32 @offset(0)
+  exp:i32 @offset(4)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:__frexp_result_f32 = frexp 50.0f
+    %3:f32 = access %2, 0u
+    %4:i32 = access %2, 1u
+    %5:tint_symbol_2 = construct %3, %4
+    %6:f32 = access %5, 0u
+    %7:i32 = access %5, 1u
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvReaderTest, FrexpStruct_VectorUnsigned) {
+    EXPECT_IR(Preamble() + R"(
+     %1 = OpExtInst %frexp_v2_result_type_unsigned %glsl FrexpStruct %v2float_50_60
+     %2 = OpCompositeExtract %v2float %1 0
+     %3 = OpCompositeExtract %v2uint %1 1
+     OpReturn
+     OpFunctionEnd
+  )",
+              R"(
+tint_symbol_2 = struct @align(8) {
+  tint_symbol:vec2<f32> @offset(0)
+  tint_symbol_1:vec2<u32> @offset(8)
+}
+
+__frexp_result_vec2_f32 = struct @align(8) {
+  fract:vec2<f32> @offset(0)
+  exp:vec2<i32> @offset(8)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:__frexp_result_vec2_f32 = frexp vec2<f32>(50.0f, 60.0f)
+    %3:vec2<f32> = access %2, 0u
+    %4:vec2<i32> = access %2, 1u
+    %5:vec2<u32> = bitcast %4
+    %6:tint_symbol_2 = construct %3, %5
+    %7:vec2<f32> = access %6, 0u
+    %8:vec2<u32> = access %6, 1u
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvReaderTest, FrexpStruct_VectorSigned) {
+    EXPECT_IR(Preamble() + R"(
+     %1 = OpExtInst %frexp_v2_result_type_signed %glsl FrexpStruct %v2float_50_60
+     %2 = OpCompositeExtract %v2float %1 0
+     %3 = OpCompositeExtract %v2int %1 1
+     OpReturn
+     OpFunctionEnd
+  )",
+              R"(
+tint_symbol_2 = struct @align(8) {
+  tint_symbol:vec2<f32> @offset(0)
+  tint_symbol_1:vec2<i32> @offset(8)
+}
+
+__frexp_result_vec2_f32 = struct @align(8) {
+  fract:vec2<f32> @offset(0)
+  exp:vec2<i32> @offset(8)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:__frexp_result_vec2_f32 = frexp vec2<f32>(50.0f, 60.0f)
+    %3:vec2<f32> = access %2, 0u
+    %4:vec2<i32> = access %2, 1u
+    %5:tint_symbol_2 = construct %3, %4
+    %6:vec2<f32> = access %5, 0u
+    %7:vec2<i32> = access %5, 1u
     ret
   }
 }

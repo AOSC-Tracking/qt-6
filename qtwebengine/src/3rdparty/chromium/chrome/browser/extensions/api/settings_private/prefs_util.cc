@@ -11,6 +11,7 @@
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/browser/accessibility/tree_fixing/pref_names.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/content_settings/generated_cookie_prefs.h"
@@ -26,11 +27,13 @@
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/generated_safe_browsing_pref.h"
+#include "chrome/browser/safe_browsing/generated_security_settings_bundle_pref.h"
 #include "chrome/browser/ssl/generated_https_first_mode_pref.h"
 #include "chrome/browser/ui/safety_hub/safety_hub_prefs.h"
 #include "chrome/browser/ui/tabs/tab_strip_prefs.h"
 #include "chrome/browser/ui/toolbar/toolbar_pref_names.h"
 #include "chrome/common/chrome_features.h"
+#include "chrome/common/extensions/api/settings_private.h"
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/bookmarks/common/bookmark_pref_names.h"
@@ -101,6 +104,10 @@
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
 #include "ui/events/ash/pref_names.h"
+#endif
+
+#if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/ui/toasts/toast_features.h"  // nogncheck
 #endif
 
 namespace {
@@ -191,9 +198,9 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
-  (*s_allowlist)[autofill::prefs::kAutofillPredictionImprovementsEnabled] =
-      settings_api::PrefType::kBoolean;
   (*s_allowlist)[autofill::prefs::kAutofillBnplEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[autofill::prefs::kAutofillAiOptInStatus] =
       settings_api::PrefType::kBoolean;
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS)
@@ -216,6 +223,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
 #endif
   (*s_allowlist)[::prefs::kShowHomeButton] = settings_api::PrefType::kBoolean;
   (*s_allowlist)[::prefs::kShowForwardButton] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[::prefs::kPinSplitTabButton] =
       settings_api::PrefType::kBoolean;
 
   // Appearance settings.
@@ -289,6 +298,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
   (*s_allowlist)[password_manager::prefs::kCredentialsEnableService] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[password_manager::prefs::kCredentialsEnableAutosignin] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[password_manager::prefs::kAutomaticPasskeyUpgrades] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[password_manager::prefs::kPasswordSharingEnabled] =
       settings_api::PrefType::kBoolean;
@@ -365,6 +376,10 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
   (*s_allowlist)[::prefs::kHttpsOnlyModeEnabled] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::kGeneratedHttpsFirstModePref] =
+      settings_api::PrefType::kNumber;
+  (*s_allowlist)[::prefs::kSecuritySettingsBundle] =
+      settings_api::PrefType::kNumber;
+  (*s_allowlist)[::safe_browsing::kGeneratedSecuritySettingsBundlePref] =
       settings_api::PrefType::kNumber;
 
   // Tracking protection page
@@ -554,12 +569,17 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::prefs::kLiveTranslateTargetLanguageCode] =
       settings_api::PrefType::kString;
+  (*s_allowlist)[::prefs::kAccessibilityAXTreeFixingEnabled] =
+      settings_api::PrefType::kBoolean;
   (*s_allowlist)[::prefs::kAccessibilityMainNodeAnnotationsEnabled] =
       settings_api::PrefType::kBoolean;
 #endif
 #if defined(USE_AURA)
   (*s_allowlist)[::prefs::kOverscrollHistoryNavigationEnabled] =
       settings_api::PrefType::kBoolean;
+#endif
+#if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
+  (*s_allowlist)[::prefs::kToastAlertLevel] = settings_api::PrefType::kNumber;
 #endif
 
   (*s_allowlist)[::prefs::kCaretBrowsingEnabled] =
@@ -746,7 +766,7 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[ash::prefs::kAccessibilityReducedAnimationsEnabled] =
       settings_api::PrefType::kBoolean;
-  (*s_allowlist)[ash::prefs::kAccessibilityOverlayScrollbarEnabled] =
+  (*s_allowlist)[ash::prefs::kAccessibilityAlwaysShowScrollbarsEnabled] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)
       [ash::prefs::kAccessibilityFaceGazeAcceleratorDialogHasBeenAccepted] =
@@ -930,12 +950,20 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
   (*s_allowlist)[ash::kRevenEnableDeviceHWDataUsage] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[ash::prefs::kHmrEnabled] = settings_api::PrefType::kBoolean;
+  (*s_allowlist)[ash::prefs::kHmrManagedSettings] =
+      settings_api::PrefType::kNumber;
+  (*s_allowlist)[ash::prefs::kHmwManagedSettings] =
+      settings_api::PrefType::kNumber;
   (*s_allowlist)[ash::prefs::kMagicBoostEnabled] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[ash::prefs::kLobsterEnabled] =
       settings_api::PrefType::kBoolean;
-  (*s_allowlist)[ash::prefs::kSunfishEnabled] =
+  (*s_allowlist)[ash::prefs::kLobsterEnterprisePolicySettings] =
+      settings_api::PrefType::kNumber;
+  (*s_allowlist)[ash::prefs::kScannerEnabled] =
       settings_api::PrefType::kBoolean;
+  (*s_allowlist)[ash::prefs::kScannerEnterprisePolicyAllowed] =
+      settings_api::PrefType::kNumber;
 
   // Bluetooth & Internet settings.
   (*s_allowlist)[ash::kAllowBluetooth] = settings_api::PrefType::kBoolean;
@@ -1080,7 +1108,11 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[arc::prefs::kArcVisibleExternalStorages] =
       settings_api::PrefType::kList;
+  (*s_allowlist)[ash::prefs::kPowerOptimizedChargingStrategy] =
+      settings_api::PrefType::kNumber;
   (*s_allowlist)[ash::prefs::kPowerAdaptiveChargingEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[ash::prefs::kPowerChargeLimitEnabled] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[ash::prefs::kPowerBatterySaver] =
       settings_api::PrefType::kBoolean;
@@ -1260,16 +1292,20 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       [optimization_guide::prefs::kHistorySearchEnterprisePolicyAllowed] =
           settings_api::PrefType::kNumber;
   (*s_allowlist)[optimization_guide::prefs::
-                     kPasswordChangeSubmissionEnterprisePolicyAllowed] =
+                     kProductSpecificationsEnterprisePolicyAllowed] =
       settings_api::PrefType::kNumber;
   (*s_allowlist)[optimization_guide::prefs::
-                     kProductSpecificationsEnterprisePolicyAllowed] =
+                     kAutofillPredictionImprovementsEnterprisePolicyAllowed] =
       settings_api::PrefType::kNumber;
 
   // Glic prefs
 #if BUILDFLAG(ENABLE_GLIC)
-  if (GlicEnabling::IsEnabledByFlags()) {
+  if (glic::GlicEnabling::IsEnabledByFlags()) {
+    (*s_allowlist)[glic::prefs::kGlicPinnedToTabstrip] =
+        settings_api::PrefType::kBoolean;
     (*s_allowlist)[glic::prefs::kGlicLauncherEnabled] =
+        settings_api::PrefType::kBoolean;
+    (*s_allowlist)[glic::prefs::kGlicClosedCaptioningEnabled] =
         settings_api::PrefType::kBoolean;
     (*s_allowlist)[glic::prefs::kGlicGeolocationEnabled] =
         settings_api::PrefType::kBoolean;
@@ -1277,7 +1313,9 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
         settings_api::PrefType::kBoolean;
     (*s_allowlist)[glic::prefs::kGlicTabContextEnabled] =
         settings_api::PrefType::kBoolean;
-    (*s_allowlist)[glic::prefs::kGlicSettingsPolicy] =
+    (*s_allowlist)[glic::prefs::kGlicUserStatus] =
+        settings_api::PrefType::kDictionary;
+    (*s_allowlist)[prefs::kGeminiSettings] =
         settings_api::PrefType::kNumber;
   }
 #endif

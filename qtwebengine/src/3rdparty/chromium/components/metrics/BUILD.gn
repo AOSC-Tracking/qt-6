@@ -28,6 +28,11 @@ source_set("library_support") {
     "library_support/histogram_manager.cc",
   ]
 
+  configs += [
+    "//build/config/compiler:wexit_time_destructors",
+    "//build/config/compiler:wglobal_constructors",
+  ]
+
   deps = [
     "//base",
     "//third_party/metrics_proto",
@@ -46,16 +51,14 @@ if (!is_cronet_build && is_android) {
     # External code should depend on ":foo_java" instead.
     visibility = [ ":*" ]
     sources = [ "//components/metrics/metrics_features.cc" ]
-    template =
-        "//components/metrics/android/java_templates/MetricsFeatures.java.tmpl"
+    class_name = "org.chromium.components.metrics.MetricsFeatures"
   }
 
   java_cpp_strings("java_switches_srcjar") {
     # External code should depend on ":metrics_java" instead.
     visibility = [ ":*" ]
     sources = [ "//components/metrics/metrics_switches.cc" ]
-    template =
-        "//components/metrics/android/java_templates/MetricsSwitches.java.tmpl"
+    class_name = "org.chromium.components.metrics.MetricsSwitches"
   }
 
   java_cpp_enum("java_enum_srcjar") {
@@ -89,6 +92,10 @@ source_set("client_info") {
     "client_info.cc",
     "client_info.h",
   ]
+  configs += [
+    "//build/config/compiler:wexit_time_destructors",
+    "//build/config/compiler:wglobal_constructors",
+  ]
 }
 
 # Used by the Chrome installer, which doesn't need the whole metrics library.
@@ -97,33 +104,51 @@ source_set("metrics_pref_names") {
     "metrics_pref_names.cc",
     "metrics_pref_names.h",
   ]
+  configs += [
+    "//build/config/compiler:wexit_time_destructors",
+    "//build/config/compiler:wglobal_constructors",
+  ]
 }
 
 if (!is_cronet_build || is_ios) {
-  # histogram_controller.cc contains a singleton. If this would be part of a static library
+  # These files contain singletons. If they were be part of a static library
   # linked into multiple components (such as //content and //chrome), each component would get
-  # their own copy of this singleton, causing issues. For that reason make sure it is part of
+  # their own copy of these singletons, causing issues. For that reason make sure they are part of
   # a component that can be linked to by multiple other components.
   jumbo_component("metrics_component") {
     sources = [
+      "android_metrics_helper.cc",
+      "android_metrics_helper.h",
       "histogram_child_process.h",
       "histogram_controller.cc",
       "histogram_controller.h",
       "histogram_subscriber.h",
     ]
+    configs += [
+      "//build/config/compiler:wexit_time_destructors",
+      "//build/config/compiler:wglobal_constructors",
+    ]
 
     deps = [
       "//base",
       "//components/metrics/public/mojom:histogram_fetcher_mojo_bindings",
+      "//components/prefs",
     ]
 
     defines = [ "IS_METRICS_IMPL" ]
   }
 
+  if (is_chromeos) {
+    proto_library("system_stack_sampled_metrics_status_proto") {
+      sources = [ "//third_party/cros_system_api/proto/stack_sampled_metrics_status/stack_sampled_metrics_status.proto" ]
+
+      proto_out_dir =
+          "third_party/cros_system_api/proto/stack_sampled_metrics_status"
+    }
+  }
+
   jumbo_static_library("metrics") {
     sources = [
-      "android_metrics_helper.cc",
-      "android_metrics_helper.h",
       "call_stacks/call_stack_profile_metrics_provider.cc",
       "call_stacks/call_stack_profile_metrics_provider.h",
       "child_histogram_fetcher_impl.cc",
@@ -160,6 +185,8 @@ if (!is_cronet_build || is_ios) {
       "field_trials_provider.h",
       "file_metrics_provider.cc",
       "file_metrics_provider.h",
+      "fre_source_trial.cc",
+      "fre_source_trial.h",
       "install_date_provider.cc",
       "install_date_provider.h",
       "log_decoder.cc",
@@ -230,6 +257,11 @@ if (!is_cronet_build || is_ios) {
       "version_utils.h",
     ]
 
+    configs += [
+      "//build/config/compiler:wexit_time_destructors",
+      "//build/config/compiler:wglobal_constructors",
+    ]
+
     public_deps = [
       ":metrics_component",
       "//components/metrics:client_info",
@@ -245,14 +277,14 @@ if (!is_cronet_build || is_ios) {
       "//base:base_static",
       "//base:i18n",
       "//build:branding_buildflags",
-      "//components/flags_ui:switches",
       "//components/metrics/public/mojom:call_stack_mojo_bindings",
       "//components/metrics/public/mojom:histogram_fetcher_mojo_bindings",
       "//components/network_time",
       "//components/prefs",
       "//components/variations",
       "//components/variations/field_trial_config",
-      "//components/version_info:version_info",
+      "//components/version_info",
+      "//components/webui/flags:switches",
       "//crypto",
       "//extensions/buildflags",
       "//mojo/public/cpp/base:protobuf_support",
@@ -265,7 +297,6 @@ if (!is_cronet_build || is_ios) {
       sources += [
         "android_metrics_provider.cc",
         "android_metrics_provider.h",
-        "drive_metrics_provider_android.cc",
         "gms_metrics_provider.cc",
         "gms_metrics_provider.h",
       ]
@@ -275,15 +306,11 @@ if (!is_cronet_build || is_ios) {
     }
 
     if (is_ios) {
-      sources += [
-        "clean_exit_beacon_ios.mm",
-        "drive_metrics_provider_ios.mm",
-      ]
+      sources += [ "clean_exit_beacon_ios.mm" ]
     }
 
     if (is_linux || is_chromeos) {
       sources += [
-        "drive_metrics_provider_linux.cc",
         "psi_memory_parser.h",
         "psi_memory_parser_linux.cc",
       ]
@@ -298,24 +325,8 @@ if (!is_cronet_build || is_ios) {
       deps += [ ":system_stack_sampled_metrics_status_proto" ]
     }
 
-    if (is_mac) {
-      sources += [ "drive_metrics_provider_mac.mm" ]
-      frameworks = [
-        # The below are all needed for drive_metrics_provider_mac.mm.
-        "CoreFoundation.framework",
-        "DiskArbitration.framework",
-        "Foundation.framework",
-        "IOKit.framework",
-      ]
-    }
-
-    if (is_qtwebengine) {
-      deps -= [ "//components/variations/field_trial_config" ]
-    }
-
     if (is_win) {
       sources += [
-        "drive_metrics_provider_win.cc",
         "machine_id_provider_win.cc",
         "system_session_analyzer/system_session_analyzer_win.cc",
         "system_session_analyzer/system_session_analyzer_win.h",
@@ -324,9 +335,10 @@ if (!is_cronet_build || is_ios) {
     } else {
       sources += [ "machine_id_provider_nonwin.cc" ]
     }
-
-    if (is_fuchsia) {
-      sources += [ "drive_metrics_provider_fuchsia.cc" ]
+    if (is_qtwebengine) {
+      deps -= [
+        "//components/variations/field_trial_config",
+      ]
     }
 
     if (is_win || is_linux) {
@@ -342,6 +354,8 @@ if (!is_cronet_build || is_ios) {
   jumbo_static_library("test_support") {
     testonly = true
     sources = [
+      "test/scoped_metrics_id_provider.cc",
+      "test/scoped_metrics_id_provider.h",
       "test/test_enabled_state_provider.cc",
       "test/test_enabled_state_provider.h",
       "test/test_metrics_log_uploader.cc",
@@ -367,6 +381,11 @@ if (!is_cronet_build) {
       "component_metrics_provider.h",
     ]
 
+    configs += [
+      "//build/config/compiler:wexit_time_destructors",
+      "//build/config/compiler:wglobal_constructors",
+    ]
+
     public_deps = [ "//third_party/metrics_proto" ]
 
     deps = [
@@ -379,13 +398,8 @@ if (!is_cronet_build) {
   if (use_blink) {
     static_library("content") {
       sources = [
-        # ChromeOS accessibility metrics provider is in chromeos_metrics_provider.
-        "content/accessibility_metrics_provider.cc",
-        "content/accessibility_metrics_provider.h",
         "content/content_stability_metrics_provider.cc",
         "content/content_stability_metrics_provider.h",
-        "content/dwa_web_contents_observer.cc",
-        "content/dwa_web_contents_observer.h",
         "content/extensions_helper.h",
         "content/gpu_metrics_provider.cc",
         "content/gpu_metrics_provider.h",
@@ -395,6 +409,10 @@ if (!is_cronet_build) {
         "content/rendering_perf_metrics_provider.h",
         "content/subprocess_metrics_provider.cc",
         "content/subprocess_metrics_provider.h",
+      ]
+      configs += [
+        "//build/config/compiler:wexit_time_destructors",
+        "//build/config/compiler:wglobal_constructors",
       ]
       public_deps = [ ":metrics" ]
       deps = [
@@ -420,13 +438,18 @@ if (!is_cronet_build) {
       "net/network_metrics_provider.h",
     ]
 
+    configs += [
+      "//build/config/compiler:wexit_time_destructors",
+      "//build/config/compiler:wglobal_constructors",
+    ]
+
     public_deps = [ ":metrics" ]
     allow_circular_includes_from = [ ":metrics" ]
 
     deps = [
       "//base",
+      "//components/encrypted_messages",
       "//components/encrypted_messages:encrypted_message_proto",
-      "//components/encrypted_messages:encrypted_messages",
       "//components/variations",
       "//net",
       "//services/network/public/cpp",
@@ -443,6 +466,11 @@ if (!is_cronet_build) {
       "ui/form_factor_metrics_provider.h",
       "ui/screen_info_metrics_provider.cc",
       "ui/screen_info_metrics_provider.h",
+    ]
+
+    configs += [
+      "//build/config/compiler:wexit_time_destructors",
+      "//build/config/compiler:wglobal_constructors",
     ]
 
     public_deps = [ ":metrics" ]
@@ -479,8 +507,13 @@ if (!is_cronet_build) {
     public = [ "call_stacks/call_stack_profile_encoding.h" ]
     sources = [ "call_stacks/call_stack_profile_encoding.cc" ]
 
+    configs += [
+      "//build/config/compiler:wexit_time_destructors",
+      "//build/config/compiler:wglobal_constructors",
+    ]
+
     deps = [
-      "//base:base",
+      "//base",
       "//components/sampling_profiler:profile_params",
       "//third_party/metrics_proto",
     ]
@@ -497,6 +530,10 @@ if (!is_cronet_build) {
       "call_stacks/call_stack_profile_builder.cc",
       "call_stacks/call_stack_profile_metadata.cc",
       "call_stacks/child_call_stack_profile_collector.cc",
+    ]
+    configs += [
+      "//build/config/compiler:wexit_time_destructors",
+      "//build/config/compiler:wglobal_constructors",
     ]
     public_deps = [ ":call_stack_profile_encoding" ]
     deps = [
@@ -524,6 +561,10 @@ if (!is_cronet_build) {
     sources = [
       "call_stacks/call_stack_profile_collector.cc",
       "call_stacks/call_stack_profile_collector.h",
+    ]
+    configs += [
+      "//build/config/compiler:wexit_time_destructors",
+      "//build/config/compiler:wglobal_constructors",
     ]
     deps = [
       ":metrics",
@@ -557,7 +598,6 @@ if (!is_cronet_build) {
       "daily_event_unittest.cc",
       "data_use_tracker_unittest.cc",
       "date_changed_helper_unittest.cc",
-      "drive_metrics_provider_unittest.cc",
       "entropy_state_provider_unittest.cc",
       "entropy_state_unittest.cc",
       "environment_recorder_unittest.cc",
@@ -618,7 +658,7 @@ if (!is_cronet_build) {
       "//mojo/public/cpp/bindings",
       "//net:test_support",
       "//services/network:test_support",
-      "//services/network/public/cpp:cpp",
+      "//services/network/public/cpp",
       "//services/service_manager/public/cpp",
       "//testing/gmock",
       "//testing/gtest",
@@ -677,7 +717,6 @@ if (!is_cronet_build) {
     } else {
       sources += [
         "content/content_stability_metrics_provider_unittest.cc",
-        "content/dwa_web_contents_observer_unittest.cc",
         "content/subprocess_metrics_provider_unittest.cc",
       ]
       deps += [ "//extensions/buildflags" ]
@@ -686,6 +725,10 @@ if (!is_cronet_build) {
     if (is_win || is_linux) {
       sources += [ "motherboard_metrics_provider_unittest.cc" ]
     }
+
+    # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+    # enable the diagnostic by removing this line.
+    configs += [ "//build/config/compiler:no_exit_time_destructors" ]
   }
 
   # Convenience testing target

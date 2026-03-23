@@ -6,6 +6,7 @@
 #define V8_OBJECTS_LOOKUP_INL_H_
 
 #include "src/objects/lookup.h"
+// Include the non-inl header before the rest of the headers.
 
 // Include other inline headers *after* including lookup.h, such that e.g. the
 // definition of LookupIterator is available (and this comment prevents
@@ -142,8 +143,7 @@ PropertyKey::PropertyKey(Isolate* isolate, double index) {
   } else {
     index_ = LookupIterator::kInvalidIndex;
     name_ = isolate->factory()->InternalizeString(
-        isolate->factory()->HeapNumberToString(
-            isolate->factory()->NewHeapNumber(index), index));
+        isolate->factory()->DoubleToString(index));
   }
 #else
   index_ = static_cast<size_t>(index);
@@ -238,6 +238,7 @@ DirectHandle<Name> PropertyKey::GetName(Isolate* isolate) {
 }
 
 DirectHandle<Name> LookupIterator::name() const {
+  DCHECK_IMPLIES(holder_.is_null(), !IsElement());
   DCHECK_IMPLIES(!holder_.is_null(), !IsElement(*holder_));
   return name_;
 }
@@ -281,6 +282,9 @@ DirectHandle<PropertyCell> LookupIterator::transition_cell() const {
 template <class T>
 DirectHandle<T> LookupIterator::GetHolder() const {
   DCHECK(IsFound());
+  // Holder is not initialized in this state and one should use
+  // lookup_start_object() instead.
+  DCHECK_NE(state_, STRING_LOOKUP_START_OBJECT);
   return Cast<T>(holder_);
 }
 
@@ -298,8 +302,7 @@ bool LookupIterator::ExtendingNonExtensible(DirectHandle<JSReceiver> receiver) {
   // These JSObject types are wrappers around a set of primitive values
   // and exist only for the purpose of passing the data across V8 Api.
   // They are not supposed to be ever leaked to user JS code.
-  CHECK(!IsJSMessageObjectMap(receiver_map) &&
-        !IsJSExternalObjectMap(receiver_map));
+  CHECK(!IsMaybeReadOnlyJSObjectMap(receiver_map));
 
   // Shared objects have fixed layout. No properties may be added to them, not
   // even private symbols.
@@ -343,7 +346,7 @@ void LookupIterator::UpdateProtector(Isolate* isolate,
       *name == roots.iterator_symbol() || *name == roots.species_symbol() ||
       *name == roots.match_all_symbol() || *name == roots.replace_symbol() ||
       *name == roots.split_symbol() || *name == roots.to_primitive_symbol() ||
-      *name == roots.valueOf_string() || *name == roots.length_string();
+      *name == roots.valueOf_string();
   DCHECK_EQ(maybe_protector, debug_maybe_protector);
 #endif  // DEBUG
 
@@ -378,17 +381,6 @@ LookupIterator::Configuration LookupIterator::ComputeConfiguration(
     Isolate* isolate, Configuration configuration, DirectHandle<Name> name) {
   return (!name.is_null() && name->IsPrivate()) ? OWN_SKIP_INTERCEPTOR
                                                 : configuration;
-}
-
-// static
-MaybeDirectHandle<JSReceiver> LookupIterator::GetRoot(
-    Isolate* isolate, DirectHandle<JSAny> lookup_start_object, size_t index,
-    Configuration configuration) {
-  if (IsJSReceiver(*lookup_start_object, isolate)) {
-    return Cast<JSReceiver>(lookup_start_object);
-  }
-  return GetRootForNonJSReceiver(
-      isolate, Cast<JSPrimitive>(lookup_start_object), index, configuration);
 }
 
 template <class T>

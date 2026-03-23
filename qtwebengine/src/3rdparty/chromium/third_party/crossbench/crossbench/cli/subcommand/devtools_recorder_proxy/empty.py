@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
-import argparse
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+  import argparse
 
 
 class CrossbenchDevToolsRecorderProxy:
@@ -12,8 +15,12 @@ class CrossbenchDevToolsRecorderProxy:
   supported."""
 
   @classmethod
-  def add_subcommand(cls, subparsers) -> argparse.ArgumentParser:
+  def add_cli_parser(cls, subparsers) -> argparse.ArgumentParser:
     return subparsers.add_parser(
         "devtools-recorder-proxy",
         aliases=["devtools"],
         help="Unsupported operation")
+
+  @classmethod
+  def run_subcommand(cls, args: argparse.Namespace) -> None:
+    raise NotImplementedError()

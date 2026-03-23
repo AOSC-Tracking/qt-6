@@ -87,7 +87,7 @@ bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
   if (from_url.is_empty())
     return false;
   if (base::Contains(url::GetLocalSchemes(), to_url.scheme_piece())) {
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
     if (auto *cs = url::CustomScheme::FindScheme(from_url.scheme_piece())) {
       if (cs->flags & (url::CustomScheme::Local | url::CustomScheme::LocalAccessAllowed))
         return true;
@@ -95,7 +95,7 @@ bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
 #endif
     return base::Contains(url::GetLocalSchemes(), from_url.scheme_piece());
   }
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
   if (from_url.IsCustom())
     return true;
 #endif

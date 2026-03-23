@@ -14,6 +14,7 @@
 
 #include "base/auto_reset.h"
 #include "base/check.h"
+#include "base/compiler_specific.h"
 #include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
@@ -24,12 +25,10 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/task_features.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/interned_args_helper.h"
+#include "base/trace_event/typed_macros.h"
 #include "base/tracing_buildflags.h"
-
-#if BUILDFLAG(ENABLE_BASE_TRACING)
-#include "third_party/perfetto/protos/perfetto/trace/track_event/chrome_message_pump.pbzero.h"  // nogncheck
-#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
+#include "third_party/perfetto/protos/perfetto/trace/track_event/chrome_message_pump.pbzero.h"
 
 namespace base {
 
@@ -721,7 +720,7 @@ bool MessagePumpForUI::ProcessPumpReplacementMessage() {
 
 MessagePumpForIO::IOContext::IOContext() {
   std::construct_at(GetOverlapped());
-  std::memset(GetOverlapped(), 0, sizeof(OVERLAPPED));
+  UNSAFE_TODO(std::memset(GetOverlapped(), 0, sizeof(OVERLAPPED)));
 }
 
 MessagePumpForIO::IOContext::~IOContext() {

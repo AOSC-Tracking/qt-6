@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #pragma once
 
@@ -233,7 +234,7 @@ private:
     inline bool timeGreaterThan(xcb_timestamp_t a, xcb_timestamp_t b) const
     { return static_cast<int32_t>(a - b) > 0 || b == XCB_CURRENT_TIME; }
 
-    void xi2SetupSlavePointerDevice(void *info, bool removeExisting = true, QPointingDevice *master = nullptr);
+    void xi2SetupSlavePointerDevice(void *info, QPointingDevice *master = nullptr);
     void xi2SetupDevices();
     // TODO get rid of this: store minimal necessary info in a subclass of QPointingDevicePrivate
     struct TouchDeviceData {

@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Controls.impl
@@ -28,32 +29,6 @@ T.Button {
 
     icon.width: __config.icon.width
     icon.height: __config.icon.height
-    icon.color: __buttonText
-
-    readonly property color __buttonText: {
-        if (Application.styleHints.accessibility.contrastPreference === Qt.HighContrast) {
-            return (control.enabled && ((control.flat && (control.down || control.hovered))
-                || ((control.highlighted || control.checked) && !control.down)))
-                ? control.palette.button
-                : control.enabled && (control.hovered || control.down)
-                ? control.palette.highlight
-                : control.palette.buttonText
-        }
-        if (control.down) {
-            return (control.checked || control.highlighted)
-                ? Application.styleHints.colorScheme == Qt.Light
-                    ? Color.transparent("white", 0.7) : Color.transparent("black", 0.5)
-                : (Application.styleHints.colorScheme === Qt.Light
-                    ? Color.transparent(control.palette.buttonText, 0.62)
-                    : Color.transparent(control.palette.buttonText, 0.7725))
-        } else if (control.checked || control.highlighted) {
-            return (Application.styleHints.colorScheme === Qt.Dark && !control.enabled)
-                ? Color.transparent("white", 0.5302)
-                : (Application.styleHints.colorScheme === Qt.Dark ? "black" : "white")
-        } else {
-            return control.palette.buttonText
-        }
-    }
 
     readonly property string __currentState: [
         (control.checked || control.highlighted) && "checked",
@@ -75,7 +50,31 @@ T.Button {
         icon: control.icon
         text: control.text
         font: control.font
-        color: control.icon.color
+        color: defaultIconColor
+        defaultIconColor: {
+            if (Application.styleHints.accessibility.contrastPreference === Qt.HighContrast) {
+                return (control.enabled && ((control.flat && (control.down || control.hovered))
+                    || ((control.highlighted || control.checked) && !control.down)))
+                    ? control.palette.button
+                    : control.enabled && (control.hovered || control.down)
+                    ? control.palette.highlight
+                    : control.palette.buttonText
+            }
+            if (control.down) {
+                return (control.checked || control.highlighted)
+                    ? Application.styleHints.colorScheme === Qt.Light
+                        ? Color.transparent("white", 0.7) : Color.transparent("black", 0.5)
+                    : (Application.styleHints.colorScheme === Qt.Light
+                        ? Color.transparent(control.palette.buttonText, 0.62)
+                        : Color.transparent(control.palette.buttonText, 0.7725))
+            } else if (control.checked || control.highlighted) {
+                return (Application.styleHints.colorScheme === Qt.Dark && !control.enabled)
+                    ? Color.transparent("white", 0.5302)
+                    : (Application.styleHints.colorScheme === Qt.Dark ? "black" : "white")
+            } else {
+                return control.palette.buttonText
+            }
+        }
     }
 
     background: ButtonBackground {

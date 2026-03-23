@@ -17,17 +17,20 @@ build_webui("build") {
   ]
 
   # You will add these files in the next step:
-  non_web_component_files = [
+  ts_files = [
     "extensions_ui_browser_proxy.ts",
- ]
+  ]
 
-  ts_deps = [ "//ui/webui/resources/mojo:build_ts",
-      "//third_party/polymer/v3_0:library"
-      ]
-
+  ts_deps = [
+    "//ui/webui/resources/mojo:build_ts",
+    "//third_party/polymer/v3_0:library"
+  ]
   mojo_files_deps =
       [ "//qtwebengine/browser/extensions/webui:mojo_bindings_ts__generator" ]
   mojo_files = [ "$root_gen_dir/qtwebengine/browser/extensions/webui/extensions_ui_qt.mojom-webui.ts" ]
 
   grit_output_dir = "$root_gen_dir/qtwebengine/browser/extensions/resources"
+
+  webui_context_type = "trusted"
+  enable_type_aware_eslint_checks = false
 }

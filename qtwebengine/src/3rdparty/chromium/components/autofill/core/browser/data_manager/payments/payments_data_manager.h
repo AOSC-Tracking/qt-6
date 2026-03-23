@@ -18,13 +18,13 @@
 #include "base/observer_list_types.h"
 #include "components/autofill/core/browser/autofill_shared_storage_handler.h"
 #include "components/autofill/core/browser/country_type.h"
-#include "components/autofill/core/browser/data_model/autofill_offer_data.h"
-#include "components/autofill/core/browser/data_model/autofill_wallet_usage_data.h"
-#include "components/autofill/core/browser/data_model/bnpl_issuer.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
-#include "components/autofill/core/browser/data_model/credit_card_benefit.h"
-#include "components/autofill/core/browser/data_model/credit_card_cloud_token_data.h"
-#include "components/autofill/core/browser/data_model/iban.h"
+#include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
+#include "components/autofill/core/browser/data_model/payments/autofill_wallet_usage_data.h"
+#include "components/autofill/core/browser/data_model/payments/bnpl_issuer.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card_benefit.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card_cloud_token_data.h"
+#include "components/autofill/core/browser/data_model/payments/iban.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/payments/account_info_getter.h"
 #include "components/autofill/core/browser/payments/payments_customer_data.h"
@@ -35,7 +35,6 @@
 #include "components/prefs/pref_service.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/sync/service/sync_service_observer.h"
-#include "components/webdata/common/web_data_service_consumer.h"
 #include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
@@ -53,7 +52,6 @@ namespace autofill {
 class AutofillOptimizationGuide;
 class BankAccount;
 class BnplIssuer;
-struct CreditCardArtImage;
 class Ewallet;
 class PaymentsDatabaseHelper;
 
@@ -68,7 +66,6 @@ class PaymentsDatabaseHelper;
 // unnecessarily inefficient, since any change causes the PayDM to reload all of
 // its data.
 class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
-                            public WebDataServiceConsumer,
                             public AccountInfoGetter,
                             public syncer::SyncServiceObserver,
                             public signin::IdentityManager::Observer {
@@ -108,10 +105,8 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // AutofillWebDataServiceObserverOnUISequence:
   void OnAutofillChangedBySync(syncer::DataType data_type) override;
 
-  // WebDataServiceConsumer:
-  void OnWebDataServiceRequestDone(
-      WebDataServiceBase::Handle h,
-      std::unique_ptr<WDTypedResult> result) override;
+  void OnWebDataServiceRequestDone(WebDataServiceBase::Handle h,
+                                   std::unique_ptr<WDTypedResult> result);
 
   // AccountInfoGetter:
   CoreAccountInfo GetAccountInfoForPaymentsServer() const override;
@@ -122,6 +117,8 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
 
   // signin::IdentityManager::Observer:
   void OnAccountsCookieDeletedByUserAction() override;
+  void OnIdentityManagerShutdown(
+      signin::IdentityManager* identity_manager) override;
 
   // Reloads all payments data from the database.
   void Refresh();
@@ -132,6 +129,11 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // Returns the IBAN with the specified `guid`, or nullptr if there is no IBAN
   // with the specified `guid`.
   const Iban* GetIbanByGUID(const std::string& guid) const;
+
+  // Returns the `AutofillOfferData` with the specified `offer_id`, or nullptr
+  // if there is no promo code with the specified `offer_id`.
+  const AutofillOfferData* GetMerchantPromoCodeByOfferId(
+      const int64_t offer_id) const;
 
   // Returns the IBAN if any cached IBAN in `server_ibans_` has the same
   // `instrument_id` as the given `instrument_id`, otherwise returns nullptr.
@@ -206,16 +208,20 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // Returns true if the user has at least 1 masked bank account.
   bool HasMaskedBankAccounts() const;
   // Returns the masked bank accounts that can be suggested to the user.
+  // The returned span may be invalidated asynchronously.
   base::span<const BankAccount> GetMaskedBankAccounts() const;
 
   // Returns the linked BNPL issuers that can be shown to the user. If the "Save
   // and fill payment methods" toggle is off, this will return no BNPL issuers
   // automatically.
+  // The returned span may be invalidated asynchronously.
   base::span<const BnplIssuer> GetLinkedBnplIssuers() const;
 
   // Returns true if the user has at least 1 eWallet account.
   bool HasEwalletAccounts() const;
+
   // Returns the eWallet accounts that can be suggested to the user.
+  // The returned span may be invalidated asynchronously.
   base::span<const Ewallet> GetEwalletAccounts() const;
 
   // Returns the Payments customer data. Returns nullptr if no data is present.
@@ -244,19 +250,13 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   const gfx::Image* GetCreditCardArtImageForUrl(const GURL& card_art_url) const;
 
   // Returns all virtual card usage data linked to the credit card.
+  // The returned span may be invalidated asynchronously.
   base::span<const VirtualCardUsageData> GetVirtualCardUsageData() const;
-
-  // Returns the credit cards to suggest to the user. Those have been deduped
-  // and ordered by frecency with the expired cards put at the end of the
-  // vector. `should_use_legacy_algorithm` indicates if we should rank credit
-  // cards using the legacy ranking algorithm.
-  // TODO(crbug.com/326408802): Move to payments_suggestion_generator.
-  std::vector<const CreditCard*> GetCreditCardsToSuggest(
-      bool should_use_legacy_algorithm = false) const;
 
   // Returns the unlinked buy-now-pay-later issuers. This is a list of BNPL
   // issuers that are available to be used but have NOT been linked to the
   // payments account by the user.
+  // The returned span may be invalidated asynchronously.
   base::span<const BnplIssuer> GetUnlinkedBnplIssuers() const;
 
   // Returns all BNPL issuers, both linked and unlinked.
@@ -308,6 +308,9 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // Method to clear all local CVCs from the local web database.
   virtual void ClearLocalCvcs();
 
+  // Method to clean up for crbug.com/411681430.
+  virtual void CleanupForCrbug411681430();
+
   // Deletes all server cards (both masked and unmasked).
   void ClearAllServerDataForTesting();
 
@@ -341,7 +344,8 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // optimization for situations where a separate fetch request after trying to
   // retrieve local card art images is not needed. If the card art image is not
   // present in the cache, this function will return a nullptr.
-  const gfx::Image* GetCachedCardArtImageForUrl(const GURL& card_art_url) const;
+  virtual const gfx::Image* GetCachedCardArtImageForUrl(
+      const GURL& card_art_url) const;
 
   // Checks if a specific card is eligible to see benefits based on its issuer
   // id.
@@ -364,6 +368,20 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
 
   // Sets the value of the kAutofillHasSeenIban pref to true.
   void SetAutofillHasSeenIban();
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
+  // Returns the value of the kAutofillHasSeenBnpl pref.
+  bool IsAutofillHasSeenBnplPrefEnabled() const;
+
+  // Sets the value of the kAutofillHasSeenBnpl pref to true.
+  void SetAutofillHasSeenBnpl();
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+        // BUILDFLAG(IS_CHROMEOS)
+
+  // Returns if the user has seen a BNPL suggestion before and if the BNPL
+  // feature is enabled. Does not check for user's locale.
+  bool ShouldShowBnplSettings() const;
 
   // Returns whether sync's integration with payments is on.
   virtual bool IsAutofillWalletImportEnabled() const;
@@ -412,14 +430,6 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
 
   // Check whether a card is a server card or has a duplicated server card.
   bool IsServerCard(const CreditCard* credit_card) const;
-
-  // Returns whether a row to give the option of showing cards from the user's
-  // account should be shown in the dropdown.
-  virtual bool ShouldShowCardsFromAccountOption() const;
-
-  // Triggered when a user selects the option to see cards from their account.
-  // Records the sync transport consent.
-  void OnUserAcceptedCardsFromAccountOption();
 
   // Records the sync transport consent if the user is in sync transport mode.
   virtual void OnUserAcceptedUpstreamOffer();
@@ -501,15 +511,27 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // Returns the value of the FacilitatedPaymentsPix user pref.
   bool IsFacilitatedPaymentsPixUserPrefEnabled() const;
 
+  // Sets the FacilitatedPaymentsPixAccountLinking user pref value to `enabled`.
+  void SetFacilitatedPaymentsPixAccountLinkingUserPref(bool enabled);
+
+  // Returns the value of the FacilitatedPaymentsPixAccountLinking user pref.
+  bool IsFacilitatedPaymentsPixAccountLinkingUserPrefEnabled() const;
+
   // Returns the value of the FacilitatedPaymentsEwallet user pref.
   bool IsFacilitatedPaymentsEwalletUserPrefEnabled() const;
 
- protected:
-  friend class PaymentsDataManagerTestApi;
+  // Returns the value of the FacilitatedPaymentsA2AEnabled user pref.
+  bool IsFacilitatedPaymentsA2AUserPrefEnabled() const;
+
+  // Sets the FacilitatedPaymentsA2ATriggeredOnce user pref value to `enabled`.
+  void SetFacilitatedPaymentsA2ATriggeredOnce(bool enabled);
 
   // Whether server cards or IBANs are enabled and should be suggested to the
   // user.
   virtual bool ShouldSuggestServerPaymentMethods() const;
+
+ protected:
+  friend class PaymentsDataManagerTestApi;
 
   // Loads the saved credit cards from the web database.
   virtual void LoadCreditCards();
@@ -549,19 +571,14 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // to the query handle.
   void CancelPendingServerQuery(WebDataServiceBase::Handle* handle);
 
-  // Asks `image_fetcher_` to fetch images. Each image represented by an url in
-  // the list `updated_urls` is downloaded in all the sizes specified by
-  // `image_sizes`. The total # of images downloaded is `updated_urls`.size() x
-  // `image_sizes`.size().
-  void FetchImagesForURLs(
-      base::span<const GURL> updated_urls,
-      base::span<const AutofillImageFetcherBase::ImageSize> image_sizes) const;
-
   // The first time this is called, logs a UMA metrics about the user's credit
   // card, offer and IBAN.
   void LogStoredPaymentsDataMetrics() const;
 
   void SetPrefService(PrefService* pref_service);
+
+  // Returns the value of the AutofillBnplEnabled pref.
+  virtual bool IsAutofillBnplPrefEnabled() const;
 
   void NotifyObservers();
 
@@ -602,9 +619,6 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // virtual card related to a specific merchant website.
   std::vector<VirtualCardUsageData> autofill_virtual_card_usage_data_;
 
-  // The customized card art images for the URL.
-  std::map<GURL, std::unique_ptr<gfx::Image>> credit_card_art_images_;
-
   // Cached version of the credit card benefits obtained from the database.
   // Including credit-card-linked flat rate benefits, category benefits and
   // merchant benefits that are available for users' online purchases.
@@ -631,17 +645,15 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // True if personal data has been loaded from the web database.
   bool is_payments_data_loaded_ = false;
 
+  // The image fetcher to fetch customized images for Autofill data.
+  raw_ptr<AutofillImageFetcherBase> image_fetcher_ = nullptr;
+
  private:
   // Check if credit card benefits sync flag is enabled.
   bool IsCardBenefitsSyncEnabled() const;
 
-  // Returns the value of the AutofillBnplEnabled pref.
-  virtual bool IsAutofillBnplPrefEnabled() const;
-
-  // Triggered when all the card art image fetches have been completed,
-  // regardless of whether all of them succeeded.
-  void OnCardArtImagesFetched(
-      const std::vector<std::unique_ptr<CreditCardArtImage>>& art_images);
+  // Returns whether Autofill card benefit suggestion labels should be blocked.
+  bool ShouldBlockCardBenefitSuggestionLabels() const;
 
   // Checks whether any new card art url is synced. If so, attempt to fetch the
   // image based on the url.
@@ -668,6 +680,8 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   bool AreEwalletAccountsSupported() const;
 
   // Whether buy-now-pay-later issuers are supported for the platform OS.
+  // Checks if the user's locale is supported for BNPL, and if the BNPL feature
+  // is enabled.
   bool AreBnplIssuersSupported() const;
 
   // Whether generic payment instruments are supported.
@@ -683,6 +697,15 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
 
   // Clears all credit card benefits in `credit_card_benefits_`.
   void ClearAllCreditCardBenefits();
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
+  // Monitors the `kAutofillBnplEnabled` preference for changes and controls the
+  // clearing/loading of payment instruments accordingly. Will also log the
+  // `Autofill.SettingsPage.BnplToggled` metric.
+  void OnBnplEnabledPrefChange();
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+        // BUILDFLAG(IS_CHROMEOS)
 
   // Saves |imported_credit_card| to the WebDB if it exists. Returns the guid of
   // the new or updated card, or the empty string if no card was saved.
@@ -725,11 +748,14 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
       const sync_pb::PaymentInstrumentCreationOption&
           payment_instrument_creation_option);
 
+  // Checks whether at least one eligible price range specifies `currency_code`
+  // as the currency.
+  bool HasEligibleCurrencyPriceRangeForBnplIssuer(
+      const std::vector<BnplIssuer::EligiblePriceRange>& eligible_price_ranges,
+      const std::string& currency_code) const;
+
   // Decides which database type to use for server and local cards.
   std::unique_ptr<PaymentsDatabaseHelper> database_helper_;
-
-  // The image fetcher to fetch customized images for Autofill data.
-  raw_ptr<AutofillImageFetcherBase> image_fetcher_ = nullptr;
 
   // The shared storage handler this instance uses.
   std::unique_ptr<AutofillSharedStorageHandler> shared_storage_handler_;
@@ -767,7 +793,7 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // Whether sync should be considered on in a test.
   bool is_syncing_for_test_ = false;
 
-  base::WeakPtrFactory<PaymentsDataManager> weak_factory_{this};
+  base::WeakPtrFactory<PaymentsDataManager> weak_ptr_factory_{this};
 };
 
 }  // namespace autofill

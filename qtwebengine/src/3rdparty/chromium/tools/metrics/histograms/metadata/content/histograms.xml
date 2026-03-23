@@ -23,17 +23,19 @@ chromium-metrics-reviews@google.com.
 <histograms>
 
 <variants name="ContentAllProviderTypes">
-  <variant name="default"/>
-  <variant name="extension"/>
-  <variant name="installed_webapp_provider"/>
-  <variant name="notification_android"/>
-  <variant name="one_time"/>
-  <variant name="policy"/>
-  <variant name="preference"/>
-  <variant name="supervised_user"/>
-  <variant name="tests"/>
-  <variant name="tests_other"/>
-  <variant name="webui_allowlist"/>
+  <variant name="ComponentExtensionProvider"/>
+  <variant name="CustomExtensionProvider"/>
+  <variant name="DefaultProvider"/>
+  <variant name="InstalledWebappProvider"/>
+  <variant name="JavascriptOptimizerAndroidProvider"/>
+  <variant name="NotificationAndroidProvider"/>
+  <variant name="OneTimePermissionProvider"/>
+  <variant name="OtherProviderForTests"/>
+  <variant name="PolicyProvider"/>
+  <variant name="PrefProvider"/>
+  <variant name="ProviderForTests"/>
+  <variant name="SupervisedProvider"/>
+  <variant name="WebuiAllowlistProvider"/>
 </variants>
 
 <variants name="FeedNetworkRequestType">
@@ -55,7 +57,7 @@ chromium-metrics-reviews@google.com.
 </variants>
 
 <histogram name="Content.Classification" enum="ContentClassification"
-    expires_after="2025-07-06">
+    expires_after="2026-01-11">
   <owner>sophey@chromium.org</owner>
   <owner>chrome-sherlock@google.com</owner>
   <summary>
@@ -74,6 +76,17 @@ chromium-metrics-reviews@google.com.
     What the Open Graph Protocol classification of the page is. This is logged
     when the user navigates to the current page. It is only logged if there is
     an 'og:type' property in the HTML of the page.
+  </summary>
+</histogram>
+
+<histogram name="Content.SharedWorker.Host.DestructionSource"
+    enum="SharedWorkerHostDestructionSource" expires_after="2026-02-01">
+  <owner>yyanagisawa@chromium.org</owner>
+  <owner>chrome-worker@google.org</owner>
+  <summary>
+    Records the reason why a SharedWorkerHost is destroyed. This is to
+    investigate why a shared worker is terminated unexpectedly. This is also
+    used for understanding the ratio of destruction cases.
   </summary>
 </histogram>
 
@@ -99,7 +112,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.ClientStatus.Enabled.ByProvider"
     enum="Boolean" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     The status of the push notifications client toggle for Content.
   </summary>
@@ -108,7 +121,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.ClientStatus.Sports.ByProvider"
     enum="Boolean" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     The status of the push notifications client toggle for Sports.
   </summary>
@@ -117,14 +130,14 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.DismissAction" enum="Boolean"
     expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>The user has dismissed a content notification.</summary>
 </histogram>
 
 <histogram name="ContentNotifications.EligibilityType"
     enum="ContentNotificationEligibilityType" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     The Type of elegibility for a given user for the Content Notifications
     feature. Includes details about what UI entrypoint type the user is elegible
@@ -135,7 +148,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.Notification.Action"
     enum="ContentNotificationActionType" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     Reports what actions has the user taken on a notification. This metric
     matches NAUs sent.
@@ -145,7 +158,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.NotificationActionUpload.Success"
     enum="Boolean" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     After a notification action upload, whether the request succeeded or failed.
   </summary>
@@ -154,7 +167,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.OpenURLAction.HasURL" enum="Boolean"
     expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     After a notification interaction, if the URL has successfully been parsed or
     if it has failed.
@@ -164,7 +177,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.Promo.Prompt.Action"
     enum="ContentNotificationPromptAction" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     The action taken by the user in response to the Set Up List Content
     Notification OS notification permission prompt.
@@ -176,33 +189,16 @@ chromium-metrics-reviews@google.com.
     enum="ContentNotificationPromoProvisionalEntrypoint"
     expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     Provisional notifications were turned on from the Notifications Promo.
   </summary>
 </histogram>
 
-<histogram name="ContentNotifications.Promo.SetUpList.Action"
-    enum="ContentNotificationSetUpListPromoAction" expires_after="2026-01-20">
-  <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
-  <summary>
-    The action taken by the user in response to the Set Up List Content
-    Notification promo.
-  </summary>
-</histogram>
-
-<histogram name="ContentNotifications.Promo.SetUpList.Event"
-    enum="ContentNotificationSetUpListPromoEvent" expires_after="2026-01-20">
-  <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
-  <summary>Log the Set Up List Content Notification promo events.</summary>
-</histogram>
-
 <histogram name="ContentNotifications.Promo.Snackbar.Event"
     enum="ContentNotificationSnackbarEvent" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     Log the Set Up List Content Notification confirmation snackbar events.
   </summary>
@@ -211,7 +207,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.Promo.TopOfFeed.Action"
     enum="ContentNotificationTopOfFeedPromoAction" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     The action taken by the user in response to the Top of Feed Content
     Notifications promo.
@@ -221,7 +217,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.Promo.TopOfFeed.Event"
     enum="ContentNotificationTopOfFeedPromoAction" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     An event from the the Top of Feed Content Notifications promo.
   </summary>
@@ -230,7 +226,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.Registration.BrowserStateUnavailable"
     enum="Boolean" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     This logs if a SNo registration has not succeeded due to a BrowserState
     being unavailable at the time due to a Browser not being initialized.
@@ -240,7 +236,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="ContentNotifications.Settings.Action"
     enum="ContentNotificationSettingsAction" expires_after="2026-01-20">
   <owner>scottyoder@google.com</owner>
-  <owner>bling-get-set-up@google.com</owner>
+  <owner>bling-pandamonium@google.com</owner>
   <summary>
     The action taken by the user in the content notification settings view.
   </summary>
@@ -311,8 +307,9 @@ chromium-metrics-reviews@google.com.
   <owner>wanderview@chromium.org</owner>
   <summary>
     Measures how long a call to network::CookieSettings::GetContentSetting
-    takes. Logged each time a call is made. Note that histogram samples for
-    clients without high-resolution clocks are dropped.
+    takes. Logged each time a call is made. Starting M135 sub-sampled with
+    probability 0.001. Note that histogram samples for clients without
+    high-resolution clocks are dropped.
   </summary>
 </histogram>
 
@@ -322,8 +319,9 @@ chromium-metrics-reviews@google.com.
   <owner>wanderview@chromium.org</owner>
   <summary>
     Measures how long a call to CookieSettingBase::GetCookieSettingInternal
-    takes. Logged each time a call is made. Note that histogram samples for
-    clients without high-resolution clocks are dropped.
+    takes. Logged each time a call is made. Starting M135 sub-sampled with
+    probability 0.1. Note that histogram samples for clients without
+    high-resolution clocks are dropped.
   </summary>
 </histogram>
 
@@ -392,7 +390,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSettings.Popups.StrongBlockerActions"
-    enum="StrongPopupBlockerAction" expires_after="2025-06-01">
+    enum="StrongPopupBlockerAction" expires_after="2025-12-07">
   <owner>csharrison@chromium.org</owner>
   <summary>
     Counts of various events related to the strong popup blocker (aka abusive
@@ -401,7 +399,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSettings.RegularProfile.DefaultAutoVerifySetting"
-    enum="ContentSetting" expires_after="2025-06-29">
+    enum="ContentSetting" expires_after="2026-01-11">
   <owner>ryankalla@google.com</owner>
   <owner>src/components/permissions/PERMISSIONS_OWNERS</owner>
   <summary>
@@ -411,7 +409,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSettings.RegularProfile.DefaultBackgroundSyncSetting"
-    enum="ContentSetting" expires_after="2025-07-13">
+    enum="ContentSetting" expires_after="2026-01-18">
   <owner>tungnh@chromium.org</owner>
   <owner>src/components/permissions/PERMISSIONS_OWNERS</owner>
   <summary>
@@ -421,19 +419,34 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram
+    name="ContentSettings.RegularProfile.DefaultJavascriptOptimizationBlockedByOs"
+    enum="Boolean" expires_after="2026-01-01">
+  <owner>pkotwicz@google.com</owner>
+  <owner>src/chrome/browser/site_protection/OWNERS</owner>
+  <summary>
+    Whether an operating system permission disables the javascript-optimizer.
+    Recorded at profile open.
+
+    This histogram is only recorded for regular profiles.
+  </summary>
+</histogram>
+
+<histogram
     name="ContentSettings.RegularProfile.DefaultJavaScriptOptimizationSetting"
     enum="ContentSetting" expires_after="2025-10-20">
   <owner>pkotwicz@chromium.org</owner>
   <owner>src/chrome/browser/site_protection/OWNERS</owner>
   <summary>
-    The default JavaScript optimization setting at profile open.
+    The default JavaScript optimization setting at profile open. Records the
+    setting explicitly set by the user and ignores whether the permission is
+    disabled by an operating system permission or enterprise policy.
 
     This histogram is only recorded for regular profiles.
   </summary>
 </histogram>
 
 <histogram name="ContentSettings.RegularProfile.DefaultStorageAccessSetting"
-    enum="ContentSetting" expires_after="2025-07-13">
+    enum="ContentSetting" expires_after="2025-09-14">
   <owner>dullweber@chromium.org</owner>
   <owner>src/components/permissions/PERMISSIONS_OWNERS</owner>
   <summary>
@@ -667,7 +680,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="ContentSettings.{RegularProfileFiltered}DefaultRequestDesktopSiteSetting"
-    enum="ContentSetting" expires_after="2025-06-22">
+    enum="ContentSetting" expires_after="2025-12-28">
   <owner>shuyng@google.com</owner>
   <owner>twellington@chromium.org</owner>
   <summary>
@@ -805,6 +818,8 @@ chromium-metrics-reviews@google.com.
     <variant name="javascript-jit" summary="JavaScript JIT"/>
     <variant name="javascript-optimizer" summary="JavaScript Optimizer"/>
     <variant name="keygen" summary="Keygen exceptions"/>
+    <variant name="local-network-access"
+        summary="Local network access exceptions"/>
     <variant name="media-engagement" summary="Media engagement exceptions"/>
     <variant name="media-stream-camera" summary="Camera exceptions"/>
     <variant name="media-stream-mic" summary="Microphone exceptions"/>
@@ -865,24 +880,6 @@ chromium-metrics-reviews@google.com.
     When the NTP view hierarchy is fixed upon NTP creation, this hisotgram logs
     which part was broken. Temporary log used to gather info for
     crbug.com/1262536.
-  </summary>
-</histogram>
-
-<histogram name="ContentSuggestions.Feed.CanBeShown" enum="BooleanAllowed"
-    expires_after="2024-06-02">
-  <owner>harringtond@chromium.org</owner>
-  <owner>thegreenfrog@chromium.org</owner>
-  <owner>feed@chromium.org</owner>
-  <summary>
-    Whether showing the Feed is permitted. The Feed can be shown if (A) profile
-    policies allow this, (B) the FeedAblationEnabled feature is disabled, and
-    (C) the user has not turned it off in Settings.
-
-    Note that this does not denote (A) whether the Feed is visible at the time
-    the metric is emitted or (B) whether the Feed was ever visible during the
-    browser process lifetime.
-
-    iOS only. Emitted when building a MetricsLog for the current session.
   </summary>
 </histogram>
 
@@ -948,8 +945,8 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.ContentLifetime.InvalidAge" units="ms"
-    expires_after="2025-05-21">
-  <owner>birnie@google.com</owner>
+    expires_after="2026-05-21">
+  <owner>jianli@chromium.org</owner>
   <owner>feed@chromium.org</owner>
   <summary>
     Android: The invalid age lifetime of content fetched from the server.
@@ -959,8 +956,8 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.ContentLifetime.InvalidAgeIsPresent"
-    enum="Boolean" expires_after="2025-05-21">
-  <owner>birnie@google.com</owner>
+    enum="Boolean" expires_after="2026-05-21">
+  <owner>jianli@chromium.org</owner>
   <owner>feed@chromium.org</owner>
   <summary>
     Android: If the content lifetime of a feed response has a non zero invalid
@@ -971,8 +968,8 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.ContentLifetime.StaleAge" units="ms"
-    expires_after="2025-05-21">
-  <owner>birnie@google.com</owner>
+    expires_after="2026-05-21">
+  <owner>jianli@chromium.org</owner>
   <owner>feed@chromium.org</owner>
   <summary>
     Android: The stale age lifetime of content fetched from the server. Reported
@@ -982,8 +979,8 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.ContentLifetime.StaleAgeIsPresent"
-    enum="Boolean" expires_after="2025-05-21">
-  <owner>birnie@google.com</owner>
+    enum="Boolean" expires_after="2026-05-21">
+  <owner>jianli@chromium.org</owner>
   <owner>feed@chromium.org</owner>
   <summary>
     Android: If the content lifetime of a feed response has a non zero stale age
@@ -991,16 +988,6 @@ chromium-metrics-reviews@google.com.
     feed from the server. This provides a measure of how stale feed content is
     from the client side.
   </summary>
-</histogram>
-
-<histogram name="ContentSuggestions.Feed.Controls.Actions"
-    enum="FeedControlsActions" expires_after="never">
-<!-- expires-never: tracked as an important feed metric. -->
-
-  <owner>vincb@google.com</owner>
-  <owner>feed@chromium.org</owner>
-  <owner>src/components/feed/OWNERS</owner>
-  <summary>Actions related to the feed controls.</summary>
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.DisplayStatusOnOpen"
@@ -1085,7 +1072,7 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
-<histogram base="true" name="ContentSuggestions.Feed.LoadStepLatency"
+<histogram name="ContentSuggestions.Feed.LoadStepLatency{FeedLoadLatencyStep}"
     units="ms" expires_after="2024-07-21">
   <owner>harringtond@chromium.org</owner>
   <owner>feed@chromium.org</owner>
@@ -1095,8 +1082,22 @@ chromium-metrics-reviews@google.com.
     that ends with the Feed showing up on the UI. All steps added together tally
     to the total time taken.
 
-    Feed v2 only.
+    Feed v2 only. {FeedLoadLatencyStep}
   </summary>
+  <token key="FeedLoadLatencyStep">
+    <variant name=".ActionUpload"
+        summary="Time taken read stored actions and upload them if necessary."/>
+    <variant name=".LoadFromStore"
+        summary="Time taken to load the feed content from local storage."/>
+    <variant name=".QueryRequest"
+        summary="Time taken to request fresh feed content from the network."/>
+    <variant name=".StreamView"
+        summary="Time taken to receive feedback that a Feed item was shown.
+                 Time begins after feed data is loaded from the network or
+                 local storage"/>
+    <variant name=".TaskStart"
+        summary="Time taken to begin executing the load stream task."/>
+  </token>
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.LoadStreamStatus.LoadMore"
@@ -1136,7 +1137,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.Network.Duration{NetworkEvent}"
-    units="ms" expires_after="2025-06-22">
+    units="ms" expires_after="2025-12-28">
   <owner>sczs@chromium.org</owner>
   <owner>harringtond@chromium.org</owner>
   <owner>feed@chromium.org</owner>
@@ -1238,7 +1239,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.RefreshTrigger"
-    enum="FeedRefreshTrigger" expires_after="2025-07-27">
+    enum="FeedRefreshTrigger" expires_after="2025-11-30">
   <owner>adamta@google.com</owner>
   <owner>feed@chromium.org</owner>
   <summary>
@@ -1266,18 +1267,6 @@ chromium-metrics-reviews@google.com.
   <summary>Number of each type of feedback sent about the feed.</summary>
 </histogram>
 
-<histogram name="ContentSuggestions.Feed.SignInFromFeedAction.SignInSuccessful"
-    enum="Boolean" expires_after="2024-11-03">
-  <owner>adamta@google.com</owner>
-  <owner>feed@chromium.org</owner>
-  <summary>
-    Android: If the user triggers a sign in action from somewhere in the Feed we
-    track the status of the sign in as a boolean (successful=true, unsuccessful=
-    false). This provides a measure of how many users are signing in via the
-    Feed and features like Back of Card sign in promo vs other sign in avenues.
-  </summary>
-</histogram>
-
 <histogram name="ContentSuggestions.Feed.TimeSpentInFeed" units="ms"
     expires_after="never">
 <!-- expires-never: key feature metric.  We will need the Engagement
@@ -1297,7 +1286,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.UniformityFlag" enum="Boolean"
-    expires_after="2025-06-22">
+    expires_after="2025-10-26">
   <owner>ginnyhuang@chromium.org</owner>
   <owner>feed@chromium.org</owner>
   <summary>
@@ -1453,7 +1442,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="ContentSuggestions.Feed.UserJourney.{Surface}.{Status}Duration"
-    units="ms" expires_after="2025-06-08">
+    units="ms" expires_after="2025-12-14">
   <owner>harringtond@chromium.org</owner>
   <owner>carlosk@chromium.org</owner>
   <owner>feed@chromium.org</owner>
@@ -1714,7 +1703,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.WebFeed.SortTypeWhenEngaged"
-    enum="FeedSortType" expires_after="2025-04-28">
+    enum="FeedSortType" expires_after="2026-01-04">
   <owner>adamta@google.com</owner>
   <owner>sczs@chromium.org</owner>
   <owner>feed@chromium.org</owner>
@@ -1725,7 +1714,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.Feed.WebFeed.UnfollowResult"
-    enum="WebFeedSubscriptionRequestStatus" expires_after="2025-07-27">
+    enum="WebFeedSubscriptionRequestStatus" expires_after="2025-09-28">
   <owner>harringtond@chromium.org</owner>
   <owner>feed@chromium.org</owner>
   <summary>
@@ -1792,7 +1781,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.{FeedType}.Activity"
-    enum="FeedActivityBucket" expires_after="2025-07-27">
+    enum="FeedActivityBucket" expires_after="2025-09-28">
   <owner>guiperez@google.com</owner>
   <owner>feed@chromium.org</owner>
   <summary>
@@ -1810,7 +1799,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContentSuggestions.{FeedType}.Activity.ByProvider"
-    enum="FeedActivityBucket" expires_after="2025-11-17">
+    enum="FeedActivityBucket" expires_after="2026-01-18">
   <owner>guiperez@google.com</owner>
   <owner>feed@chromium.org</owner>
   <summary>

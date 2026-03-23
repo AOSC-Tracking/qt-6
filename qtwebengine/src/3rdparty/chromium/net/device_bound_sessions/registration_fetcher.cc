@@ -9,13 +9,16 @@
 #include <vector>
 
 #include "base/functional/callback_helpers.h"
+#include "base/metrics/histogram_functions.h"
 #include "components/unexportable_keys/background_task_priority.h"
 #include "components/unexportable_keys/unexportable_key_service.h"
 #include "net/base/io_buffer.h"
+#include "net/base/net_errors.h"
 #include "net/device_bound_sessions/registration_request_param.h"
 #include "net/device_bound_sessions/session_binding_utils.h"
 #include "net/device_bound_sessions/session_challenge_param.h"
 #include "net/device_bound_sessions/session_json_utils.h"
+#include "net/log/net_log_event_type.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
@@ -66,6 +69,15 @@ constexpr int kBufferSize = 4096;
 constexpr unexportable_keys::BackgroundTaskPriority kTaskPriority =
     unexportable_keys::BackgroundTaskPriority::kBestEffort;
 
+void RecordHttpResponseOrErrorCode(const char* metric_name,
+                                   int net_error,
+                                   int http_response_code) {
+  // No need to special-case `net::ERR_HTTP_RESPONSE_CODE_FAILURE` to return
+  // the HTTP response code, because `UrlRequest` does not use that net error.
+  base::UmaHistogramSparse(
+      metric_name, net_error == net::OK ? http_response_code : net_error);
+}
+
 void OnDataSigned(
     crypto::SignatureVerifier::SignatureAlgorithm algorithm,
     unexportable_keys::UnexportableKeyService& unexportable_key_service,
@@ -98,6 +110,7 @@ void SignChallengeWithKey(
     const GURL& registration_url,
     std::string_view challenge,
     std::optional<std::string> authorization,
+    std::optional<std::string> session_identifier,
     base::OnceCallback<
         void(std::optional<RegistrationFetcher::RegistrationTokenResult>)>
         callback) {
@@ -113,7 +126,7 @@ void SignChallengeWithKey(
       CreateKeyRegistrationHeaderAndPayload(
           challenge, registration_url, expected_algorithm.value(),
           expected_public_key.value(), base::Time::Now(),
-          std::move(authorization));
+          std::move(authorization), std::move(session_identifier));
 
   if (!optional_header_and_payload.has_value()) {
     std::move(callback).Run(std::nullopt);
@@ -124,24 +137,18 @@ void SignChallengeWithKey(
       std::move(optional_header_and_payload.value());
   unexportable_key_service.SignSlowlyAsync(
       key_id, base::as_byte_span(header_and_payload), kTaskPriority,
+      /*max_retries=*/0,
       base::BindOnce(&OnDataSigned, expected_algorithm.value(),
                      std::ref(unexportable_key_service), header_and_payload,
                      key_id, std::move(callback)));
 }
 
-class RegistrationFetcherImpl : public URLRequest::Delegate {
+RegistrationFetcher::FetcherType* g_mock_fetcher = nullptr;
+
+class RegistrationFetcherImpl : public RegistrationFetcher,
+                                URLRequest::Delegate {
  public:
   // URLRequest::Delegate
-
-  void OnReceivedRedirect(URLRequest* request,
-                          const RedirectInfo& redirect_info,
-                          bool* defer_redirect) override {
-    if (!redirect_info.new_url.SchemeIsCryptographic()) {
-      request->Cancel();
-      OnResponseCompleted();
-      // *this is deleted here
-    }
-  }
 
   // TODO(kristianm): Look into if OnAuthRequired might need to be customize
   // for DBSC
@@ -154,14 +161,20 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
 
   // This is always called unless the request is deleted before it is called.
   void OnResponseStarted(URLRequest* request, int net_error) override {
+    HttpResponseHeaders* headers = request->response_headers();
+    const int response_code = headers ? headers->response_code() : 0;
+    const char* histogram_name =
+        IsForRefreshRequest()
+            ? "Net.DeviceBoundSessions.Refresh.Network.Result"
+            : "Net.DeviceBoundSessions.Registration.Network.Result";
+    RecordHttpResponseOrErrorCode(histogram_name, net_error, response_code);
+
     if (net_error != OK) {
-      OnResponseCompleted();
+      OnResponseCompleted(
+          /*error_on_no_data=*/SessionError::ErrorType::kNetError);
       // *this is deleted here
       return;
     }
-
-    HttpResponseHeaders* headers = request->response_headers();
-    const int response_code = headers ? headers->response_code() : 0;
 
     if (response_code == 401) {
       auto challenge_params =
@@ -172,8 +185,25 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
       return;
     }
 
-    if (response_code < 200 || response_code >= 300) {
-      OnResponseCompleted();
+    if (response_code < 200) {
+      OnResponseCompleted(
+          /*error_on_no_data=*/SessionError::ErrorType::kPersistentHttpError);
+      // *this is deleted here
+      return;
+    } else if (response_code == 407) {
+      // Proxy errors are treated as network errors
+      OnResponseCompleted(
+          /*error_on_no_data=*/SessionError::ErrorType::kNetError);
+      // *this is deleted here
+      return;
+    } else if (300 <= response_code && response_code < 500) {
+      OnResponseCompleted(
+          /*error_on_no_data=*/SessionError::ErrorType::kPersistentHttpError);
+      // *this is deleted here
+      return;
+    } else if (response_code >= 500) {
+      OnResponseCompleted(
+          /*error_on_no_data=*/SessionError::ErrorType::kTransientHttpError);
       // *this is deleted here
       return;
     }
@@ -183,7 +213,8 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
     if (bytes_read >= 0) {
       OnReadCompleted(request, bytes_read);
     } else if (bytes_read != ERR_IO_PENDING) {
-      OnResponseCompleted();
+      OnResponseCompleted(
+          /*error_on_no_data=*/SessionError::ErrorType::kNetError);
       // *this is deleted here
     }
   }
@@ -198,7 +229,8 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
     }
 
     if (bytes_read != ERR_IO_PENDING) {
-      OnResponseCompleted();
+      OnResponseCompleted(
+          /*error_on_no_data=*/SessionError::ErrorType::kNetError);
       // *this is deleted here
     }
   }
@@ -207,27 +239,38 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
       const GURL& fetcher_endpoint,
       std::optional<std::string> session_identifier,
       unexportable_keys::UnexportableKeyService& key_service,
-      const unexportable_keys::UnexportableKeyId& key_id,
       const URLRequestContext* context,
       const IsolationInfo& isolation_info,
       std::optional<NetLogSource> net_log_source,
-      const std::optional<url::Origin>& original_request_initiator,
-      RegistrationFetcher::RegistrationCompleteCallback callback)
+      const std::optional<url::Origin>& original_request_initiator)
       : fetcher_endpoint_(fetcher_endpoint),
         session_identifier_(std::move(session_identifier)),
         key_service_(key_service),
-        key_id_(key_id),
         context_(context),
         isolation_info_(isolation_info),
         net_log_source_(std::move(net_log_source)),
         original_request_initiator_(original_request_initiator),
-        callback_(std::move(callback)),
         buf_(base::MakeRefCounted<IOBufferWithSize>(kBufferSize)) {}
 
-  ~RegistrationFetcherImpl() override { CHECK(!callback_); }
+  ~RegistrationFetcherImpl() override {}
 
-  void Start(std::optional<std::string> challenge,
-             std::optional<std::string> authorization) {
+  void OnKeyGenerated(
+      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>
+          key_id) {
+    if (!key_id.has_value()) {
+      RunCallback(
+          base::unexpected(SessionError{SessionError::ErrorType::kKeyError}));
+      // `this` may be deleted.
+      return;
+    }
+
+    key_id_ = std::move(*key_id);
+  }
+
+  void StartFetch(std::optional<std::string> challenge,
+                  std::optional<std::string> authorization) {
+    CHECK(key_id_.has_value());
+
     current_challenge_ = std::move(challenge);
     current_authorization_ = std::move(authorization);
 
@@ -236,25 +279,74 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
       if (number_of_challenges_ < kMaxChallenges) {
         AttemptChallengeSigning();
         return;
-      } else if (session_identifier_.has_value()) {
-        SessionTerminationParams params{*session_identifier_};
-        RunCallbackAndDeleteSelf(
-            std::make_optional<RegistrationFetcher::RegistrationCompleteParams>(
-                std::move(params), key_id_, fetcher_endpoint_));
-        return;
       } else {
-        RunCallbackAndDeleteSelf(std::nullopt);
+        RunCallback(base::unexpected(
+            SessionError{SessionError::ErrorType::kTooManyChallenges}));
+        // `this` may be deleted.
         return;
       }
     }
 
-    // Start a request to get a challenge with the session identifier.
-    // `RegistrationRequestParam::Create` guarantees `session_identifier_` is
-    // set when `challenge_` is missing.
-    if (session_identifier_.has_value()) {
-      request_ = CreateBaseRequest();
-      request_->Start();
+    // Start a request to get a challenge with the session identifier. The
+    // `RegistrationRequestParam` constructors guarantee `session_identifier_`
+    // is set when `challenge_` is missing.
+    CHECK(IsForRefreshRequest());
+    request_ = CreateBaseRequest();
+    request_->Start();
+  }
+
+  base::WeakPtr<RegistrationFetcherImpl> GetWeakPtr() {
+    return weak_ptr_factory_.GetWeakPtr();
+  }
+
+  void StartCreateTokenAndFetch(
+      RegistrationRequestParam& registration_params,
+      base::span<const crypto::SignatureVerifier::SignatureAlgorithm>
+          supported_algos,
+      RegistrationCompleteCallback callback) override {
+    // Using mock fetcher for testing.
+    if (g_mock_fetcher) {
+      std::move(callback).Run(nullptr, g_mock_fetcher->Run());
+      return;
     }
+
+    CHECK(callback_.is_null());
+    callback_ = std::move(callback);
+
+    key_service_->GenerateSigningKeySlowlyAsync(
+        supported_algos, kTaskPriority,
+        base::BindOnce(&RegistrationFetcherImpl::OnKeyGenerated, GetWeakPtr())
+            .Then(base::BindOnce(&RegistrationFetcherImpl::StartFetch,
+                                 GetWeakPtr(),
+                                 registration_params.TakeChallenge(),
+                                 registration_params.TakeAuthorization())));
+  }
+
+  void StartFetchWithExistingKey(
+      RegistrationRequestParam& request_params,
+      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>
+          key_id,
+      RegistrationCompleteCallback callback) override {
+    // Using mock fetcher for testing.
+    if (g_mock_fetcher) {
+      std::move(callback).Run(nullptr, g_mock_fetcher->Run());
+      return;
+    }
+
+    if (!key_id.has_value()) {
+      std::move(callback).Run(
+          nullptr,
+          base::unexpected(SessionError{SessionError::ErrorType::kKeyError}));
+      return;
+    }
+
+    CHECK(callback_.is_null());
+    callback_ = std::move(callback);
+
+    key_id_ = *key_id;
+
+    StartFetch(request_params.TakeChallenge(),
+               request_params.TakeAuthorization());
   }
 
  private:
@@ -263,10 +355,10 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
 
   void AttemptChallengeSigning() {
     SignChallengeWithKey(
-        *key_service_, key_id_, fetcher_endpoint_, *current_challenge_,
-        current_authorization_,
+        *key_service_, *key_id_, fetcher_endpoint_, *current_challenge_,
+        current_authorization_, session_identifier_,
         base::BindOnce(&RegistrationFetcherImpl::OnRegistrationTokenCreated,
-                       base::Unretained(this)));
+                       GetWeakPtr()));
   }
 
   void OnRegistrationTokenCreated(
@@ -276,14 +368,10 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
       if (number_of_signing_failures_ < kMaxSigningFailures) {
         AttemptChallengeSigning();
         return;
-      } else if (session_identifier_.has_value()) {
-        SessionTerminationParams params{*session_identifier_};
-        RunCallbackAndDeleteSelf(
-            std::make_optional<RegistrationFetcher::RegistrationCompleteParams>(
-                std::move(params), key_id_, fetcher_endpoint_));
-        return;
       } else {
-        RunCallbackAndDeleteSelf(std::nullopt);
+        RunCallback(base::unexpected(
+            SessionError{SessionError::ErrorType::kSigningError}));
+        // `this` may be deleted.
         return;
       }
     }
@@ -295,6 +383,8 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
   }
 
   std::unique_ptr<net::URLRequest> CreateBaseRequest() {
+    CHECK(IsSecure(fetcher_endpoint_));
+
     std::unique_ptr<net::URLRequest> request = context_->CreateRequest(
         fetcher_endpoint_, IDLE, this, kRegistrationTrafficAnnotation,
         /*is_for_websockets=*/false, net_log_source_);
@@ -306,7 +396,7 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
     request->set_initiator(original_request_initiator_);
     request->set_isolation_info(isolation_info_);
 
-    if (session_identifier_.has_value()) {
+    if (IsForRefreshRequest()) {
       request->SetExtraRequestHeaderByName(
           kSessionIdHeaderName, *session_identifier_, /*overwrite*/ true);
     }
@@ -317,55 +407,55 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
   void OnChallengeNeeded(
       std::optional<std::vector<SessionChallengeParam>> challenge_params) {
     if (!challenge_params || challenge_params->empty()) {
-      RunCallbackAndDeleteSelf(std::nullopt);
+      RunCallback(base::unexpected(
+          SessionError{SessionError::ErrorType::kInvalidChallenge}));
+      // `this` may be deleted.
       return;
     }
 
     // TODO(kristianm): Log if there is more than one challenge
     // TODO(kristianm): Handle if session identifiers don't match
     const std::string& challenge = (*challenge_params)[0].challenge();
-    Start(challenge, std::nullopt);
+    StartFetch(challenge, std::nullopt);
   }
 
-  void OnResponseCompleted() {
-    if (!data_received_.empty()) {
-      std::optional<ParsedSessionParams> params =
-          ParseSessionInstructionJson(data_received_);
-      if (params) {
-        RunCallbackAndDeleteSelf(
-            std::make_optional<RegistrationFetcher::RegistrationCompleteParams>(
-                std::move(*params), key_id_, request_->url()));
-        return;
-      }
+  void OnResponseCompleted(SessionError::ErrorType error_on_no_data) {
+    if (data_received_.empty()) {
+      RunCallback(base::unexpected(SessionError{error_on_no_data}));
+      // `this` may be deleted.
+      return;
     }
 
-    RunCallbackAndDeleteSelf(std::nullopt);
+    RunCallback(ParseSessionInstructionJson(
+        request_->url(), *key_id_, session_identifier_, data_received_));
+    // `this` may be deleted.
   }
 
-  // Running callback when fetching is complete or on error.
-  // Deletes `this` afterwards.
-  void RunCallbackAndDeleteSelf(
-      std::optional<RegistrationFetcher::RegistrationCompleteParams> params) {
-    AddNetLogResult(params);
-    std::move(callback_).Run(std::move(params));
-    delete this;
+  void RunCallback(
+      base::expected<SessionParams, SessionError> params_or_error) {
+    AddNetLogResult(params_or_error);
+    std::move(callback_).Run(this, std::move(params_or_error));
   }
 
   void AddNetLogResult(
-      const std::optional<RegistrationFetcher::RegistrationCompleteParams>&
-          params) {
+      const base::expected<SessionParams, SessionError>& params_or_error) {
     if (!request_) {
       return;
     }
-    request_->net_log().AddEvent(NetLogEventType::DBSC_REFRESH_RESULT, [&]() {
+    NetLogEventType result_event_type =
+        IsForRefreshRequest() ? NetLogEventType::DBSC_REFRESH_RESULT
+                              : NetLogEventType::DBSC_REGISTRATION_RESULT;
+    request_->net_log().AddEvent(result_event_type, [&]() {
       std::string result;
-      if (!params) {
-        result = "failed_continue";
-      } else if (std::holds_alternative<SessionParams>(params->params)) {
-        result = "refreshed";
-      } else if (std::holds_alternative<SessionTerminationParams>(
-                     params->params)) {
-        result = "session_ended";
+      if (params_or_error.has_value()) {
+        result = IsForRefreshRequest() ? "refreshed" : "registered";
+      } else {
+        const SessionError& error = params_or_error.error();
+        if (error.IsFatal()) {
+          result = "session_ended";
+        } else {
+          result = "failed_continue";
+        }
       }
 
       base::Value::Dict dict;
@@ -374,15 +464,24 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
     });
   }
 
-  // State passed in to constructor
+  // Returns true if we're fetching for a refresh request. False means this is
+  // for a registration request.
+  bool IsForRefreshRequest() { return session_identifier_.has_value(); }
+
+  //// This section of fields is state passed into the constructor. ////
+  // Refers to the endpoint this class will use when triggering a registration
+  // or refresh request.
   GURL fetcher_endpoint_;
+  // Populated iff this is a refresh request (not a registration request).
   std::optional<std::string> session_identifier_;
   const raw_ref<unexportable_keys::UnexportableKeyService> key_service_;
-  unexportable_keys::UnexportableKeyId key_id_;
+  std::optional<unexportable_keys::UnexportableKeyId> key_id_;
   raw_ptr<const URLRequestContext> context_;
   IsolationInfo isolation_info_;
   std::optional<net::NetLogSource> net_log_source_;
   std::optional<url::Origin> original_request_initiator_;
+  // This is called once the registration or refresh request completes, whether
+  // or not it was successful.
   RegistrationFetcher::RegistrationCompleteCallback callback_;
 
   // Created to fetch data
@@ -394,88 +493,24 @@ class RegistrationFetcherImpl : public URLRequest::Delegate {
   std::optional<std::string> current_authorization_;
   size_t number_of_signing_failures_ = 0;
   size_t number_of_challenges_ = 0;
-};
 
-RegistrationFetcher::FetcherType* g_mock_fetcher = nullptr;
+  base::WeakPtrFactory<RegistrationFetcherImpl> weak_ptr_factory_{this};
+};
 
 }  // namespace
 
-RegistrationFetcher::RegistrationCompleteParams::RegistrationCompleteParams(
-    ParsedSessionParams params,
-    unexportable_keys::UnexportableKeyId key_id,
-    const GURL& url)
-    : params(std::move(params)), key_id(std::move(key_id)), url(url) {}
-
-RegistrationFetcher::RegistrationCompleteParams::RegistrationCompleteParams(
-    RegistrationFetcher::RegistrationCompleteParams&& other) noexcept = default;
-RegistrationFetcher::RegistrationCompleteParams&
-RegistrationFetcher::RegistrationCompleteParams::operator=(
-    RegistrationFetcher::RegistrationCompleteParams&& other) noexcept = default;
-
-RegistrationFetcher::RegistrationCompleteParams::~RegistrationCompleteParams() =
-    default;
-
 // static
-void RegistrationFetcher::StartCreateTokenAndFetch(
-    RegistrationFetcherParam registration_params,
+std::unique_ptr<RegistrationFetcher> RegistrationFetcher::CreateFetcher(
+    RegistrationRequestParam& request_params,
     unexportable_keys::UnexportableKeyService& key_service,
-    // TODO(kristianm): Check the lifetime of context and make sure this use
-    // is safe.
     const URLRequestContext* context,
     const IsolationInfo& isolation_info,
     std::optional<NetLogSource> net_log_source,
-    const std::optional<url::Origin>& original_request_initiator,
-    RegistrationCompleteCallback callback) {
-  // Using mock fetcher for testing
-  if (g_mock_fetcher) {
-    std::move(callback).Run(g_mock_fetcher->Run());
-    return;
-  }
-
-  const auto supported_algos = registration_params.supported_algos();
-  auto request_params =
-      RegistrationRequestParam::Create(std::move(registration_params));
-  // `key_service` is created along with `SessionService` and will be valid
-  // until the browser ends, hence `std::ref` is safe here.
-  key_service.GenerateSigningKeySlowlyAsync(
-      supported_algos, kTaskPriority,
-      base::BindOnce(&RegistrationFetcher::StartFetchWithExistingKey,
-                     std::move(request_params), std::ref(key_service), context,
-                     isolation_info, net_log_source, original_request_initiator,
-                     std::move(callback)));
-}
-
-// static
-void RegistrationFetcher::StartFetchWithExistingKey(
-    RegistrationRequestParam request_params,
-    unexportable_keys::UnexportableKeyService& unexportable_key_service,
-    const URLRequestContext* context,
-    const IsolationInfo& isolation_info,
-    std::optional<net::NetLogSource> net_log_source,
-    const std::optional<url::Origin>& original_request_initiator,
-    RegistrationFetcher::RegistrationCompleteCallback callback,
-    unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>
-        key_id) {
-  // Using mock fetcher for testing.
-  if (g_mock_fetcher) {
-    std::move(callback).Run(g_mock_fetcher->Run());
-    return;
-  }
-
-  if (!key_id.has_value()) {
-    std::move(callback).Run(std::nullopt);
-    return;
-  }
-
-  // RegistrationFetcherImpl manages its own lifetime.
-  RegistrationFetcherImpl* fetcher = new RegistrationFetcherImpl(
+    const std::optional<url::Origin>& original_request_initiator) {
+  return std::make_unique<RegistrationFetcherImpl>(
       request_params.TakeRegistrationEndpoint(),
-      request_params.TakeSessionIdentifier(), unexportable_key_service,
-      key_id.value(), context, isolation_info, net_log_source,
-      original_request_initiator, std::move(callback));
-
-  fetcher->Start(request_params.TakeChallenge(),
-                 request_params.TakeAuthorization());
+      request_params.TakeSessionIdentifier(), key_service, context,
+      isolation_info, net_log_source, original_request_initiator);
 }
 
 void RegistrationFetcher::SetFetcherForTesting(FetcherType* func) {
@@ -488,6 +523,7 @@ void RegistrationFetcher::CreateTokenAsyncForTesting(
     std::string challenge,
     const GURL& registration_url,
     std::optional<std::string> authorization,
+    std::optional<std::string> session_identifier,
     base::OnceCallback<
         void(std::optional<RegistrationFetcher::RegistrationTokenResult>)>
         callback) {
@@ -500,6 +536,7 @@ void RegistrationFetcher::CreateTokenAsyncForTesting(
           [](unexportable_keys::UnexportableKeyService& key_service,
              const GURL& registration_url, const std::string& challenge,
              std::optional<std::string>&& authorization,
+             std::optional<std::string>&& session_identifier,
              base::OnceCallback<void(
                  std::optional<RegistrationFetcher::RegistrationTokenResult>)>
                  callback,
@@ -510,12 +547,14 @@ void RegistrationFetcher::CreateTokenAsyncForTesting(
               return;
             }
 
-            SignChallengeWithKey(key_service, key_result.value(),
-                                 registration_url, challenge,
-                                 std::move(authorization), std::move(callback));
+            SignChallengeWithKey(
+                key_service, key_result.value(), registration_url, challenge,
+                std::move(authorization), std::move(session_identifier),
+                std::move(callback));
           },
           std::ref(unexportable_key_service), registration_url,
-          std::move(challenge), std::move(authorization), std::move(callback)));
+          std::move(challenge), std::move(authorization),
+          std::move(session_identifier), std::move(callback)));
 }
 
 }  // namespace net::device_bound_sessions

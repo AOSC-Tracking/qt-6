@@ -37,6 +37,8 @@
 #include "third_party/blink/renderer/platform/text/text_direction.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier.h"
+#include "third_party/blink/renderer/platform/wtf/text/character_names.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_uchar.h"
 
 // To avoid conflicts with the DrawText macro from the Windows SDK...
 #undef DrawText
@@ -87,33 +89,18 @@ class PLATFORM_EXPORT Font : public GarbageCollected<Font> {
   };
 
   void DrawText(cc::PaintCanvas*,
-                const TextRun&,
-                const gfx::PointF&,
-                const cc::PaintFlags&,
-                DrawType = DrawType::kGlyphsOnly) const;
-  void DrawText(cc::PaintCanvas*,
-                const TextRun&,
-                const gfx::PointF&,
-                cc::NodeId node_id,
-                const cc::PaintFlags&,
-                DrawType = DrawType::kGlyphsOnly) const;
-  void DrawText(cc::PaintCanvas*,
                 const TextFragmentPaintInfo&,
                 const gfx::PointF&,
                 cc::NodeId node_id,
                 const cc::PaintFlags&,
                 DrawType = DrawType::kGlyphsOnly) const;
-  bool DrawBidiText(cc::PaintCanvas*,
-                    const TextRunPaintInfo&,
-                    const gfx::PointF&,
-                    CustomFontNotReadyAction,
-                    const cc::PaintFlags&,
-                    DrawType = DrawType::kGlyphsOnly) const;
-  void DrawEmphasisMarks(cc::PaintCanvas*,
-                         const TextRun&,
-                         const AtomicString& mark,
-                         const gfx::PointF&,
-                         const cc::PaintFlags&) const;
+  // Deprecated: Use PlainTextPainter.
+  bool DeprecatedDrawBidiText(cc::PaintCanvas*,
+                              const TextRunPaintInfo&,
+                              const gfx::PointF&,
+                              CustomFontNotReadyAction,
+                              const cc::PaintFlags&,
+                              DrawType = DrawType::kGlyphsOnly) const;
   void DrawEmphasisMarks(cc::PaintCanvas*,
                          const TextFragmentPaintInfo&,
                          const AtomicString& mark,
@@ -141,21 +128,13 @@ class PLATFORM_EXPORT Font : public GarbageCollected<Font> {
   // coordinates using (<text run x position>, <baseline position>) as the
   // origin. If the pointer is not null, glyph_bounds is expected to be
   // default-initialized.
-  float Width(const TextRun&, gfx::RectF* glyph_bounds = nullptr) const;
-  float SubRunWidth(const TextRun&,
-                    unsigned from,
-                    unsigned to,
-                    gfx::RectF* glyph_bounds = nullptr) const;
-
-  int OffsetForPosition(const TextRun&,
-                        float position,
-                        IncludePartialGlyphsOption,
-                        BreakGlyphsOption) const;
-  gfx::RectF SelectionRectForText(const TextRun&,
-                                  const gfx::PointF&,
-                                  float height,
-                                  int from = 0,
-                                  int to = -1) const;
+  // Deprecated: Use PlainTextPainter.
+  float DeprecatedWidth(const TextRun&,
+                        gfx::RectF* glyph_bounds = nullptr) const;
+  float DeprecatedSubRunWidth(const TextRun&,
+                              unsigned from,
+                              unsigned to,
+                              gfx::RectF* glyph_bounds = nullptr) const;
 
   // Metrics that we query the FontFallbackList for.
   float SpaceWidth() const {
@@ -177,14 +156,24 @@ class PLATFORM_EXPORT Font : public GarbageCollected<Font> {
   int EmphasisMarkDescent(const AtomicString&) const;
   int EmphasisMarkHeight(const AtomicString&) const;
 
+  // The inter-script spacing by the CSS `text-autospace` property.
+  // https://drafts.csswg.org/css-text-4/#inter-script-spacing
+  float TextAutoSpaceInlineSize() const;
+
   // This may fail and return a nullptr in case the last resort font cannot be
   // loaded. This *should* not happen but in reality it does ever now and then
   // when, for whatever reason, the last resort font cannot be loaded.
   const SimpleFontData* PrimaryFont() const;
 
+  // Returns the primary font that contains the digit zero glyph.
+  const SimpleFontData* PrimaryFontWithDigitZero() const;
+
+  // Returns the primary font that contains the CJK water glyph.
+  const SimpleFontData* PrimaryFontWithCjkWater() const;
+
   // Returns a list of font features for this `FontDescription`. The returned
   // list is common for all `SimpleFontData` for `this`.
-  const FontFeatures& GetFontFeatures() const;
+  base::span<const FontFeatureRange> GetFontFeatures() const;
 
   // True if `this` has any non-initial font features. This includes not only
   // `GetFontFeatures()` but also features computed in later stages.
@@ -223,6 +212,9 @@ class PLATFORM_EXPORT Font : public GarbageCollected<Font> {
 
   GlyphData GetEmphasisMarkGlyphData(const AtomicString&) const;
 
+  std::pair<float, bool> TabWidthInternal(const SimpleFontData* font_data,
+                                          const TabSize& tab_size) const;
+
  public:
   FontSelector* GetFontSelector() const;
   FontFallbackIterator CreateFontFallbackIterator(
@@ -248,17 +240,31 @@ class PLATFORM_EXPORT Font : public GarbageCollected<Font> {
     return EnsureFontFallbackList()->HasCustomFont();
   }
 
- private:
   // TODO(xiaochengh): The function not only initializes null FontFallbackList,
   // but also syncs invalid FontFallbackList. Rename it for better readability.
   FontFallbackList* EnsureFontFallbackList() const;
 
+ private:
   FontDescription font_description_;
   mutable Member<FontFallbackList> font_fallback_list_;
 };
 
+// Uses space as lookup character.
 inline const SimpleFontData* Font::PrimaryFont() const {
-  return EnsureFontFallbackList()->PrimarySimpleFontData(font_description_);
+  return EnsureFontFallbackList()->PrimarySimpleFontDataWithSpace(
+      font_description_);
+}
+
+// Uses digit zero as lookup character.
+inline const SimpleFontData* Font::PrimaryFontWithDigitZero() const {
+  return EnsureFontFallbackList()->PrimarySimpleFontDataWithDigitZero(
+      font_description_);
+}
+
+// Uses CJK water as lookup character.
+inline const SimpleFontData* Font::PrimaryFontWithCjkWater() const {
+  return EnsureFontFallbackList()->PrimarySimpleFontDataWithCjkWater(
+      font_description_);
 }
 
 inline FontSelector* Font::GetFontSelector() const {
@@ -267,22 +273,15 @@ inline FontSelector* Font::GetFontSelector() const {
 
 inline float Font::TabWidth(const SimpleFontData* font_data,
                             const TabSize& tab_size) const {
-  if (!font_data)
-    return GetFontDescription().LetterSpacing();
-  float base_tab_width = tab_size.GetPixelSize(font_data->SpaceWidth());
-  return base_tab_width ? base_tab_width : GetFontDescription().LetterSpacing();
+  auto [base_tab_width, is_successed] = TabWidthInternal(font_data, tab_size);
+  return base_tab_width;
 }
 
-}  // namespace blink
-
-namespace WTF {
-
 template <>
-struct CrossThreadCopier<blink::Font>
-    : public CrossThreadCopierPassThrough<blink::Font> {
+struct CrossThreadCopier<Font> : public CrossThreadCopierPassThrough<Font> {
   STATIC_ONLY(CrossThreadCopier);
 };
 
-}  // namespace WTF
+}  // namespace blink
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_FONT_H_

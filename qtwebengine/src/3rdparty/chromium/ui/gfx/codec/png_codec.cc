@@ -15,8 +15,9 @@
 #include "skia/buildflags.h"
 #include "skia/rusty_png_feature.h"
 #include "third_party/skia/include/codec/SkPngDecoder.h"
+#include "third_party/skia/include/core/SkAlphaType.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkColorPriv.h"
+#include "third_party/skia/include/core/SkColorType.h"
 #include "third_party/skia/include/core/SkUnPreMultiply.h"
 #include "third_party/skia/include/encode/SkPngEncoder.h"
 #include "third_party/zlib/zlib.h"
@@ -72,8 +73,14 @@ std::optional<PreparationOutputPC> PrepareForPNGDecode(
     return std::nullopt;
   }
 
-  // Reject images that would exceed INT_MAX bytes.
+  // Protect against large PNGs. See http://bugzil.la/251381 for more details.
+  // The limit of `1000000` has been copied from `blink::PNGImageDecoder` and
+  // originates all the way back in WebKit.
   SkISize size = output.codec->dimensions();
+  const int32_t kMaxPNGSize = 1000000;
+  if ((size.width() > kMaxPNGSize) || (size.height() > kMaxPNGSize)) {
+    return std::nullopt;
+  }
   constexpr int kBytesPerPixel = 4;
   if (size.area() >= (INT_MAX / kBytesPerPixel)) {
     return std::nullopt;

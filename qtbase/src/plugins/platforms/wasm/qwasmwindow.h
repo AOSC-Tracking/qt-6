@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWASMWINDOW_H
 #define QWASMWINDOW_H
@@ -31,7 +32,6 @@ class EventCallback;
 
 struct KeyEvent;
 struct PointerEvent;
-class QWasmDeadKeySupport;
 struct WheelEvent;
 
 Q_DECLARE_LOGGING_CATEGORY(qLcQpaWasmInputContext)
@@ -41,7 +41,7 @@ class QWasmWindow final : public QPlatformWindow,
                           public QNativeInterface::Private::QWasmWindow
 {
 public:
-    QWasmWindow(QWindow *w, QWasmDeadKeySupport *deadKeySupport, QWasmCompositor *compositor,
+    QWasmWindow(QWindow *w, QWasmCompositor *compositor,
                 QWasmBackingStore *backingStore, WId nativeHandle);
     ~QWasmWindow() final;
 
@@ -90,6 +90,7 @@ public:
     void setMask(const QRegion &region) final;
     void setParent(const QPlatformWindow *window) final;
     void focus();
+    void onAccessibilityEnable();
 
     QWasmScreen *platformScreen() const;
     void setBackingStore(QWasmBackingStore *store) { m_backingStore = store; }
@@ -144,9 +145,11 @@ private:
     void handleCompositionStartEvent(emscripten::val event);
     void handleCompositionUpdateEvent(emscripten::val event);
     void handleCompositionEndEvent(emscripten::val event);
+    void handleBeforeInputEvent(emscripten::val event);
 
     void handlePointerEnterLeaveEvent(const PointerEvent &event);
     bool processPointerEnterLeave(const PointerEvent &event);
+    void releasePointerGrab(const MouseEvent &event);
     void processPointer(const PointerEvent &event);
     bool deliverPointerEvent(const PointerEvent &event);
     void handleWheelEvent(const emscripten::val &event);
@@ -157,7 +160,6 @@ private:
 
     QWasmCompositor *m_compositor = nullptr;
     QWasmBackingStore *m_backingStore = nullptr;
-    QWasmDeadKeySupport *m_deadKeySupport;
     QRect m_normalGeometry {0, 0, 0 ,0};
 
     emscripten::val m_document;
@@ -182,6 +184,7 @@ private:
     QWasmEventHandler m_compositionStartCallback;
     QWasmEventHandler m_compositionUpdateCallback;
     QWasmEventHandler m_compositionEndCallback;
+    QWasmEventHandler m_beforeInputCallback;
 
     QWasmEventHandler m_pointerDownCallback;
     QWasmEventHandler m_pointerMoveCallback;
@@ -194,6 +197,7 @@ private:
     QWasmEventHandler m_dragStartCallback;
     QWasmEventHandler m_dragEndCallback;
     QWasmEventHandler m_dropCallback;
+    QWasmEventHandler m_dragEnterCallback;
     QWasmEventHandler m_dragLeaveCallback;
 
     QWasmEventHandler m_wheelEventCallback;
@@ -211,6 +215,7 @@ private:
 
     QPoint m_lastPointerMovePoint;
 
+    std::optional<int> m_capturedPointerId = std::nullopt;
     WId m_winId = 0;
     bool m_wantCapture = false;
     bool m_hasTitle = false;

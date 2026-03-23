@@ -5,8 +5,10 @@
 #ifndef V8_OBJECTS_MANAGED_INL_H_
 #define V8_OBJECTS_MANAGED_INL_H_
 
-#include "src/handles/global-handles-inl.h"
 #include "src/objects/managed.h"
+// Include the non-inl header before the rest of the headers.
+
+#include "src/handles/global-handles-inl.h"
 
 namespace v8::internal {
 
@@ -49,7 +51,7 @@ DirectHandle<Managed<CppType>> Managed<CppType>::From(
 template <class CppType>
 DirectHandle<TrustedManaged<CppType>> TrustedManaged<CppType>::From(
     Isolate* isolate, size_t estimated_size,
-    std::shared_ptr<CppType> shared_ptr) {
+    std::shared_ptr<CppType> shared_ptr, bool shared) {
   auto destructor = new ManagedPtrDestructor(
       estimated_size, new std::shared_ptr<CppType>{std::move(shared_ptr)},
       detail::Destructor<CppType>);
@@ -57,7 +59,7 @@ DirectHandle<TrustedManaged<CppType>> TrustedManaged<CppType>::From(
       reinterpret_cast<v8::Isolate*>(isolate), estimated_size);
   DirectHandle<TrustedManaged<CppType>> handle =
       Cast<TrustedManaged<CppType>>(isolate->factory()->NewTrustedForeign(
-          reinterpret_cast<Address>(destructor)));
+          reinterpret_cast<Address>(destructor), shared));
   IndirectHandle<Object> global_handle =
       isolate->global_handles()->Create(*handle);
   destructor->global_handle_location_ = global_handle.location();

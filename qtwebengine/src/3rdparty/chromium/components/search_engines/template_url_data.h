@@ -85,6 +85,9 @@ struct TemplateURLData {
   // Generate the deterministic hash of data within this TemplateURL.
   std::vector<uint8_t> GenerateHash() const;
 
+  // Retrieve builtin image resource ID for this engine.
+  std::string GetBuiltinImageResourceId() const;
+
   // Recomputes |sync_guid| using the same logic as in the constructor. This
   // means a random GUID is generated, except for built-in search engines,
   // which generate GUIDs deterministically based on |prepopulate_id| or
@@ -103,6 +106,12 @@ struct TemplateURLData {
   // Returns whether this search engine was created by an Enterprise policy that
   // doesn't define the Default Search Provider.
   bool CreatedByNonDefaultSearchProviderPolicy() const;
+  // Returns whether this search engine was created by the
+  // EnterpriseSearchAggregatorSettings policy.
+  bool CreatedByEnterpriseSearchAggregatorPolicy() const;
+  // Returns whether this search engine was created by the SiteSearchSettings
+  // policy.
+  bool CreatedBySiteSearchPolicy() const;
 
   // Optional additional raw URLs.
   std::string suggestions_url;
@@ -181,15 +190,26 @@ struct TemplateURLData {
   // group policy.
   PolicyOrigin policy_origin;
 
-  // True if this TemplateURL is forced to be the default search engine via
-  // policy. This prevents the user from setting another search engine as
-  // default.
-  // False if this TemplateURL is recommended or not set via policy. This allows
-  // the user to set another search engine as default.
+  // True if this TemplateURL is forced to be the default search engine or a
+  // site search engine via policy. This prevents the user from setting another
+  // search engine as default (for default search engines) or modifying/deleting
+  // this engine (for site search engines).
+  // False if this TemplateURL is recommended (allowing user override) or not
+  // set via policy. This allows the user to set another search engine as
+  // default (for default search engines) or to modify/delete the this engine
+  // (for site search engines).
   bool enforced_by_policy;
 
-  // True if this TemplateURL was created from metadata received from Play API.
-  bool created_from_play_api;
+  // The Regulatory program supplying this definition.
+  // This permits deduplication and election of the best supported TemplateURL
+  // definition from all known sources (see ReconcilingTemplateURLDataHolder).
+  //
+  // TODO(b:322513019): All definition origins could possibly be aggregated
+  // under a single enum for clarity and simplicity. This would allow for more
+  // consistent handling and detection (what should be processed, and how).
+  // The amount of work needed to do this seems very significant. Investigate
+  // whether this makes sense and is feasible.
+  RegulatoryExtensionType regulatory_origin;
 
   // True if this TemplateURL should be promoted in the Omnibox along with the
   // starter pack.

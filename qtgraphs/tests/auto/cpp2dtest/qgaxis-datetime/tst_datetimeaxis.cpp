@@ -58,17 +58,25 @@ void tst_datetimeaxis::initialProperties()
     QCOMPARE(m_axis->labelFormat(), "dd-MMMM-yy");
     QCOMPARE(m_axis->subTickCount(), 0);
     QCOMPARE(m_axis->tickInterval(), 0.0);
+    QCOMPARE(m_axis->timeZoneAsString(), "UTC");
 }
 
 void tst_datetimeaxis::initializeProperties()
 {
     QVERIFY(m_axis);
 
+#ifdef QT_FEATURE_timezone
+    QString timeZoneString = "Europe/Helsinki";
+#else
+    QString tzone = "UTC";
+#endif
+
     QSignalSpy minSpy(m_axis, &QDateTimeAxis::minChanged);
     QSignalSpy maxSpy(m_axis, &QDateTimeAxis::maxChanged);
     QSignalSpy labelFormatSpy(m_axis, &QDateTimeAxis::labelFormatChanged);
     QSignalSpy tickIntervalSpy(m_axis, &QDateTimeAxis::tickIntervalChanged);
     QSignalSpy subTickCountSpy(m_axis, &QDateTimeAxis::subTickCountChanged);
+    QSignalSpy timeZoneSpy(m_axis, &QDateTimeAxis::timeZoneChanged);
 
     m_axis->setMin(QDateTime(QDate::currentDate(), QTime::fromMSecsSinceStartOfDay(0)));
     m_axis->setMax(
@@ -88,11 +96,27 @@ void tst_datetimeaxis::initializeProperties()
     QCOMPARE(m_axis->subTickCount(), 2);
     QCOMPARE(m_axis->tickInterval(), 0.5);
 
+    auto tz = QString(timeZoneString).toUtf8();
+    m_axis->setTimeZone(QTimeZone(tz));
+
+    auto max = QDateTime(QDate::currentDate(), QTime::fromMSecsSinceStartOfDay(0), QTimeZone::UTC)
+                 .addYears(20);
+    auto min = QDateTime(QDate::currentDate(), QTime::fromMSecsSinceStartOfDay(0));
+    max.toTimeZone(QTimeZone(tz));
+    min.toTimeZone(QTimeZone(tz));
+
+    QCOMPARE(m_axis->timeZoneAsString(), timeZoneString);
+    QCOMPARE(m_axis->min(), min);
+    QCOMPARE(m_axis->max(), max);
+    QCOMPARE(m_axis->min().timeZone().offsetFromUtc(m_axis->min()), QTimeZone(tz).offsetFromUtc(m_axis->min()));
+    QCOMPARE(m_axis->max().timeZone().offsetFromUtc(m_axis->max()), QTimeZone(tz).offsetFromUtc(m_axis->max()));
+
     QCOMPARE(minSpy.size(), 1);
     QCOMPARE(maxSpy.size(), 1);
     QCOMPARE(labelFormatSpy.size(), 1);
     QCOMPARE(tickIntervalSpy.size(), 1);
     QCOMPARE(subTickCountSpy.size(), 1);
+    QCOMPARE(timeZoneSpy.size(), 1);
 }
 
 void tst_datetimeaxis::invalidProperties()

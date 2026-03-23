@@ -43,24 +43,6 @@ bool BestPractices::PreCallValidateAllocateMemory(VkDevice device, const VkMemor
                                                   const ErrorObject& error_obj) const {
     bool skip = false;
 
-    const size_t object_count = Count<vvl::DeviceMemory>() + 1;
-    if (object_count > kMemoryObjectWarningLimit) {
-        skip |= LogPerformanceWarning("BestPractices-vkAllocateMemory-too-many-objects", device, error_obj.location,
-                                      "This app has %zu memory objects, recommended max is %" PRIu32 ".", object_count,
-                                      kMemoryObjectWarningLimit);
-    }
-
-    if (pAllocateInfo->allocationSize < kMinDeviceAllocationSize) {
-        skip |= LogPerformanceWarning("BestPractices-vkAllocateMemory-small-allocation", device,
-                                      error_obj.location.dot(Field::pAllocateInfo).dot(Field::allocationSize),
-                                      "is %" PRIu64
-                                      ". This is a very small allocation (current "
-                                      "threshold is %" PRIu64
-                                      " bytes). "
-                                      "You should make large allocations and sub-allocate from one large VkDeviceMemory.",
-                                      pAllocateInfo->allocationSize, kMinDeviceAllocationSize);
-    }
-
     if (VendorCheckEnabled(kBPVendorNVIDIA)) {
         if (!IsExtEnabled(extensions.vk_ext_pageable_device_local_memory) &&
             !vku::FindStructInPNextChain<VkMemoryPriorityAllocateInfoEXT>(pAllocateInfo->pNext)) {
@@ -111,8 +93,6 @@ bool BestPractices::PreCallValidateAllocateMemory(VkDevice device, const VkMemor
         }
     }
 
-    // TODO: Insert get check for GetPhysicalDeviceMemoryProperties once the state is tracked in the StateTracker
-
     return skip;
 }
 
@@ -133,26 +113,6 @@ void BestPractices::PreCallRecordFreeMemory(VkDevice device, VkDeviceMemory memo
             memory_free_events_.push_back(event);
         }
     }
-
-    BaseClass::PreCallRecordFreeMemory(device, memory, pAllocator, record_obj);
-}
-
-bool BestPractices::PreCallValidateFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks* pAllocator,
-                                              const ErrorObject& error_obj) const {
-    bool skip = false;
-    if (memory == VK_NULL_HANDLE) return skip;
-
-    auto mem_info = Get<vvl::DeviceMemory>(memory);
-    ASSERT_AND_RETURN_SKIP(mem_info);
-
-    for (const auto& item : mem_info->ObjectBindings()) {
-        const auto& obj = item.first;
-        const LogObjectList objlist(device, obj, mem_info->Handle());
-        skip |= LogWarning("BestPractices", objlist, error_obj.location, "VK Object %s still has a reference to mem obj %s.",
-                           FormatHandle(obj).c_str(), FormatHandle(mem_info->Handle()).c_str());
-    }
-
-    return skip;
 }
 
 bool BestPractices::ValidateBindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, const Location& loc) const {
@@ -167,7 +127,7 @@ bool BestPractices::ValidateBindBufferMemory(VkBuffer buffer, VkDeviceMemory mem
                                       "Trying to bind %s to a memory block which is fully consumed by the buffer. "
                                       "The required size of the allocation is %" PRIu64
                                       ", but smaller buffers like this should be sub-allocated from "
-                                      "larger memory blocks. (Current threshold is %" PRIu64 " bytes.)",
+                                      "larger memory blocks. (Current threshold is %" PRIu64 " bytes)",
                                       FormatHandle(buffer).c_str(), memory_state->allocate_info.allocationSize,
                                       kMinDedicatedAllocationSize);
     }
@@ -215,7 +175,7 @@ bool BestPractices::ValidateBindImageMemory(VkImage image, VkDeviceMemory memory
                                       "Trying to bind %s to a memory block which is fully consumed by the image. "
                                       "The required size of the allocation is %" PRIu64
                                       ", but smaller images like this should be sub-allocated from "
-                                      "larger memory blocks. (Current threshold is %" PRIu64 " bytes.)",
+                                      "larger memory blocks. (Current threshold is %" PRIu64 " bytes)",
                                       FormatHandle(image).c_str(), memory_state->allocate_info.allocationSize,
                                       kMinDedicatedAllocationSize);
     }
@@ -243,7 +203,7 @@ bool BestPractices::ValidateBindImageMemory(VkImage image, VkDeviceMemory memory
         if (supports_lazy && (allocated_properties & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) == 0) {
             skip |= LogPerformanceWarning(
                 "BestPractices-vkBindImageMemory-non-lazy-transient-image", device, loc,
-                "ttempting to bind memory type %u to VkImage which was created with TRANSIENT_ATTACHMENT_BIT,"
+                "Attempting to bind memory type %u to VkImage which was created with TRANSIENT_ATTACHMENT_BIT,"
                 "but this memory type is not LAZILY_ALLOCATED_BIT. You should use memory type %u here instead to save "
                 "%" PRIu64 " bytes of physical memory.",
                 memory_state->allocate_info.memoryTypeIndex, suggested_type, image_state->requirements[0].size);
@@ -284,17 +244,11 @@ bool BestPractices::PreCallValidateBindImageMemory2KHR(VkDevice device, uint32_t
     return PreCallValidateBindImageMemory2(device, bindInfoCount, pBindInfos, error_obj);
 }
 
-void BestPractices::PostCallRecordSetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMemory memory, float priority,
-                                                             const RecordObject& record_obj) {
-    auto mem_info = std::static_pointer_cast<bp_state::DeviceMemory>(Get<vvl::DeviceMemory>(memory));
-    mem_info->dynamic_priority.emplace(priority);
-}
-
 bool BestPractices::ValidateBindMemory(VkDevice device, VkDeviceMemory memory, const Location& loc) const {
     bool skip = false;
 
     if (VendorCheckEnabled(kBPVendorNVIDIA) && IsExtEnabled(extensions.vk_ext_pageable_device_local_memory)) {
-        auto mem_info = std::static_pointer_cast<const bp_state::DeviceMemory>(Get<vvl::DeviceMemory>(memory));
+        auto mem_info = Get<vvl::DeviceMemory>(memory);
         bool has_static_priority = vku::FindStructInPNextChain<VkMemoryPriorityAllocateInfoEXT>(mem_info->allocate_info.pNext);
         if (!mem_info->dynamic_priority && !has_static_priority) {
             skip |=
@@ -308,13 +262,6 @@ bool BestPractices::ValidateBindMemory(VkDevice device, VkDeviceMemory memory, c
     }
 
     return skip;
-}
-
-std::shared_ptr<vvl::DeviceMemory> BestPractices::CreateDeviceMemoryState(
-    VkDeviceMemory handle, const VkMemoryAllocateInfo* allocate_info, uint64_t fake_address, const VkMemoryType& memory_type,
-    const VkMemoryHeap& memory_heap, std::optional<vvl::DedicatedBinding>&& dedicated_binding, uint32_t physical_device_count) {
-    return std::static_pointer_cast<vvl::DeviceMemory>(std::make_shared<bp_state::DeviceMemory>(
-        handle, allocate_info, fake_address, memory_type, memory_heap, std::move(dedicated_binding), physical_device_count));
 }
 
 void BestPractices::ManualPostCallRecordBindBufferMemory2(VkDevice device, uint32_t bindInfoCount,

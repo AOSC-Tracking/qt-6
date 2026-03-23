@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKPINCHHANDLER_H
 #define QQUICKPINCHHANDLER_H
@@ -122,7 +123,7 @@ private:
     qreal m_startDistance = 0;
     qreal m_accumulatedStartCentroidDistance = 0;
     QPointF m_startTargetPos;
-    QVector<PointData> m_startAngles;
+    QList<PointData> m_startAngles;
     QQuickMatrix4x4 m_transform;
 };
 

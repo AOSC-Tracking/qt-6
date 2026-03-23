@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKDIALOG_P_H
 #define QQUICKDIALOG_P_H
@@ -102,6 +103,8 @@ Q_SIGNALS:
 
 protected:
     QQuickDialog(QQuickDialogPrivate &dd, QObject *parent);
+
+    virtual void itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &data) override;
 
 #if QT_CONFIG(accessibility)
     QAccessible::Role accessibleRole() const override;

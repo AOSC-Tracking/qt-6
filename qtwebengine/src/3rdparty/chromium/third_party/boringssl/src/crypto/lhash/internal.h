@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef OPENSSL_HEADER_LHASH_INTERNAL_H
-#define OPENSSL_HEADER_LHASH_INTERNAL_H
+#ifndef OPENSSL_HEADER_CRYPTO_LHASH_INTERNAL_H
+#define OPENSSL_HEADER_CRYPTO_LHASH_INTERNAL_H
 
-#include <openssl/lhash.h>
+#include <openssl/base.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -40,7 +40,13 @@ extern "C" {
 //
 // A macro will be defined for each of the |OPENSSL_lh_*| functions below. For
 // |LHASH_OF(foo)|, the macros would be |lh_foo_new|, |lh_foo_num_items| etc.
+//
+// TODO(davidben): Now that this type is completely internal, this can just be a
+// C++ template without any macros.
 
+
+#define LHASH_OF(type) struct lhash_st_##type
+#define DECLARE_LHASH_OF(type) LHASH_OF(type);
 
 // lhash_cmp_func is a comparison function that returns a value equal, or not
 // equal, to zero depending on whether |*a| is equal, or not equal to |*b|,
@@ -218,4 +224,4 @@ OPENSSL_EXPORT void OPENSSL_lh_doall_arg(_LHASH *lh,
 }  // extern C
 #endif
 
-#endif  // OPENSSL_HEADER_LHASH_INTERNAL_H
+#endif  // OPENSSL_HEADER_CRYPTO_LHASH_INTERNAL_H

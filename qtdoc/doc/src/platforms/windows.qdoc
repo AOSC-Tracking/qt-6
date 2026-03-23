@@ -49,7 +49,7 @@
     \li \l{ActiveX in Qt}
     \endlist
 
-    Qt's vibrant and active community site, \l{http://qt.io} houses
+    Qt's vibrant and active community site, \l{https://qt.io} houses
     a wiki, a forum, and additional learning guides and presentations.
 
     \section2 Visual Studio Tools
@@ -151,8 +151,8 @@
     an OpenGL implementation with a non-standard name. The default name is
     \c{opengl32sw.dll}. This allows shipping a software-only OpenGL
     implementation, for example a build of
-    \l{http://www.mesa3d.org/llvmpipe.html}{Mesa with llvmpipe}, under this
-    name. If necessary, the filename can be overridden by setting the
+    \l{https://docs.mesa3d.org/drivers/llvmpipe.html}{Mesa with llvmpipe}, under
+    this name. If necessary, the filename can be overridden by setting the
     \c{QT_OPENGL_DLL} environment variable.
 
     It is possible to provide a JSON-format configuration file specifying which
@@ -418,9 +418,9 @@
     \page windows-deployment.html
     \title Qt for Windows - Deployment
 
-    This documentation describes deployment process for \l{Qt for
+    This documentation describes the deployment process for \l{Qt for
     Windows}{Windows}. We refer to the \l{Plug & Paint Example}{Plug & Paint}
-    example application through out the document to demonstrate the deployment
+    example application throughout the document to demonstrate the deployment
     process.
 
     \note Add your Qt build directory to the list of excluded directories
@@ -436,7 +436,7 @@
     easily bundled into an installation package.
 
     The tool can be found in \c{QTDIR/bin/windeployqt}. It needs to be run
-    within the build environment in order to function correctly. When using
+    within the build environment in order to function correctly. When using the
     \QOI, the script \c{QTDIR/bin/qtenv2.bat} should be used to set it up.
 
     \c windeployqt takes an \c .exe file or a directory that contains an \c .exe
@@ -458,13 +458,13 @@
     the target machine. Otherwise, the shared libraries of the compiler runtime are used.
 
     The application may require additional 3rd-party libraries (for example,
-    database libraries), which are not taken into account by windeployqt.
+    database libraries), which are not taken into account by \c windeployqt.
 
-    Additional arguments are described in the tools' help output:
+    Additional arguments are described in the tool's help output:
 
     \badcode
     Usage: windeployqt.exe [options] [files]
-    Qt Deploy Tool 6.10.0
+    Qt Deploy Tool 6.11.0
 
     The simplest way to use windeployqt is to add the bin directory of your Qt
     installation (e.g. <QT_DIR\bin>) to the PATH variable and then run:
@@ -576,38 +576,38 @@
 
     If you later need to reconfigure and rebuild Qt from the
     same location, ensure that all traces of the previous configuration are
-    removed by entering the build directory and running \c{nmake distclean} or
-    \c{mingw32-make distclean} before running \c configure again.
+    removed.
 
     \section2 Linking the Application to the Static Version of Qt
 
     As an example, this section will build the \l{tools/plugandpaint/app}{Plug & Paint}
-    example statically.
+    example against a statically built Qt.
 
-    Once Qt finishes building, build the \l{tools/plugandpaint/app}{Plug & Paint}
-    application. First we must go into the directory that contains the
-    application:
+    Once Qt finishes building, build the \l{tools/plugandpaint/app}{Plug &
+    Paint} application. This section assumes that the static Qt build has been
+    installed to \e{C:\\path\\to\\static\\Qt}. First we must go into the directory that
+    contains the application:
 
     \snippet snippets/code/doc_src_deployment.qdoc 13
 
-    Run \c qmake to create a new makefile for the
-    application, and perform a clean build to create the statically linked
-    executable:
+    Now, we create a build directory and call \c qt-cmake to generate the build
+    system files.
 
     \snippet snippets/code/doc_src_deployment.qdoc 14
 
-    You probably want to link against the release libraries, and you can specify
-    this when invoking \c qmake. Now, provided that everything compiled and
-    linked without any errors, we should have a \c plugandpaint.exe file that is
-    ready for deployment. To check that the application has the required
-    libraries, copy the executable to a machine that does not have Qt or any Qt
-    applications installed, and run it on that machine.
+    You probably want to link against the release libraries, and we specified
+    this with the \c CMAKE_BUILD_TYPE variable. Now, provided that everything
+    compiled and linked without any errors, we should have a \c plugandpaint.exe
+    file that is ready for deployment. To check that the application has the
+    required libraries, copy the executable to a machine that does not have Qt
+    or any Qt applications installed, and run it on that machine.
 
     Remember that if your application depends on compiler specific
     libraries, these must still be redistributed along with your
     application. You can check which libraries your application is
     linking against by using the \c depends tool. For more
-    information, read the \l {Application Dependencies} section.
+    information, read the \l{#Application Dependencies}{Application Dependencies}
+    section.
 
     Since we cannot deploy plugins using the static linking
     approach, the application we have prepared is incomplete. It will
@@ -637,15 +637,10 @@
 
     \snippet snippets/code/doc_src_deployment.qdoc 15
 
-    Now run \c qmake to create a new makefile for the application, and
-    do a clean build to create the dynamically linked executable:
+    Now create a dedicated build directory and run \c qt-cmake to create the
+    build system files:
 
     \snippet snippets/code/doc_src_deployment.qdoc 16
-
-    This builds the core application, the following will build the
-    plugins:
-
-    \snippet snippets/code/doc_src_deployment.qdoc 17
 
     If everything compiled and linked without any errors, we will get
     a \c plugandpaint.exe executable and the \c pnp_basictools.dll and
@@ -661,7 +656,7 @@
 
     In contrast to user plugins, Qt plugins must be put into subdirectories
     matching the plugin type. The correct location for the platform plugin
-    is a subdirectory named \c {platforms}. \l{Qt Plugins} section has
+    is a subdirectory named \c {platforms}. \l{#Qt Plugins}{Qt Plugins} section has
     additional information about plugins and how Qt searches for them.
 
     If dynamic OpenGL is used, you may additionally want to include the library
@@ -681,7 +676,8 @@
     libraries, these must be redistributed along with your
     application. You can check which libraries your application is
     linking against by using the \c depends tool. For more
-    information, see the \l {Application Dependencies} section.
+    information, see the \l{#Application Dependencies}{Application Dependencies}
+    section.
 
     We'll cover the plugins shortly, but first we'll check that the
     application will work in a deployed environment: Either copy the
@@ -1091,17 +1087,27 @@
 
         \badcode
         cmake --build . --parallel
+        # or
+        ninja
         \endcode
 
         Period after \c {--build} means current folder.
 
         After building, you need to install the libraries and tools in the desired path
-        (unless you enabled a \l {Developer Builds}
-        {developer build}:
+        (unless you enabled a \l {Developer Builds}{developer build}):
 
         \badcode
         cmake --install .
+        # or
+        ninja install
         \endcode
+
+        \note \b {For CMake version < 4.0.} The \c {cmake --install .} command
+        installs only the release versions of the libraries and tools even if
+        you build both debug and release libraries. To install both the debug
+        and release libraries, use \c {ninja install}. You can also run both the
+        \c {cmake --install . --config Debug} and
+        \c {cmake --install . --config Release} commands.
 
     \section1 Step 4: Building Your Application
 

@@ -132,7 +132,8 @@ LiveCaptionSpeechRecognitionHost::LiveCaptionSpeechRecognitionHost(
 LiveCaptionSpeechRecognitionHost::~LiveCaptionSpeechRecognitionHost() {
   LiveCaptionController* live_caption_controller = GetLiveCaptionController();
   if (live_caption_controller)
-    live_caption_controller->OnAudioStreamEnd(context_.get());
+    live_caption_controller->OnAudioStreamEnd(&render_frame_host(),
+                                              context_.get());
   if (media::IsLiveTranslateEnabled() && characters_translated_ > 0) {
     base::UmaHistogramCounts10M(
         "Accessibility.LiveTranslate.CharactersTranslated",
@@ -162,6 +163,8 @@ void LiveCaptionSpeechRecognitionHost::OnSpeechRecognitionRecognitionEvent(
 
   std::string target_language =
       prefs_->GetString(prefs::kLiveTranslateTargetLanguageCode);
+  // TODO(crbug.com/413823334): Forward `result.timing_information` even we are
+  // live-translating a video.
   if (media::IsLiveTranslateEnabled() &&
       prefs_->GetBoolean(prefs::kLiveTranslateEnabled) &&
       l10n_util::GetLanguage(target_language) !=
@@ -186,17 +189,17 @@ void LiveCaptionSpeechRecognitionHost::OnSpeechRecognitionRecognitionEvent(
       // Dispatch the transcription immediately if the entire transcription was
       // cached.
       std::move(reply).Run(live_caption_controller->DispatchTranscription(
-          context_.get(),
+          &render_frame_host(), context_.get(),
           media::SpeechRecognitionResult(
               GetTextForDispatch(cached_translation, result.is_final),
               result.is_final)));
     }
   } else {
     std::move(reply).Run(live_caption_controller->DispatchTranscription(
-        context_.get(),
+        &render_frame_host(), context_.get(),
         media::SpeechRecognitionResult(
             GetTextForDispatch(result.transcription, result.is_final),
-            result.is_final)));
+            result.is_final, result.timing_information)));
   }
 }
 
@@ -242,8 +245,8 @@ void LiveCaptionSpeechRecognitionHost::OnLanguageIdentificationEvent(
     }
   }
 
-  live_caption_controller->OnLanguageIdentificationEvent(context_.get(),
-                                                         std::move(event));
+  live_caption_controller->OnLanguageIdentificationEvent(
+      &render_frame_host(), context_.get(), std::move(event));
 }
 
 void LiveCaptionSpeechRecognitionHost::OnSpeechRecognitionError() {
@@ -258,8 +261,10 @@ void LiveCaptionSpeechRecognitionHost::OnSpeechRecognitionError() {
 
 void LiveCaptionSpeechRecognitionHost::OnSpeechRecognitionStopped() {
   LiveCaptionController* live_caption_controller = GetLiveCaptionController();
-  if (live_caption_controller)
-    live_caption_controller->OnAudioStreamEnd(context_.get());
+  if (live_caption_controller) {
+    live_caption_controller->OnAudioStreamEnd(&render_frame_host(),
+                                              context_.get());
+  }
 }
 
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS)
@@ -278,7 +283,6 @@ void LiveCaptionSpeechRecognitionHost::OnTranslationCallback(
     const std::string& target_language,
     bool is_final,
     const captions::TranslateEvent& result) {
-  // TODO(384019306) Maybe report metrics on failure?
   if (!result.has_value()) {
     return;
   }
@@ -296,24 +300,15 @@ void LiveCaptionSpeechRecognitionHost::OnTranslationCallback(
       translation_cache_.InsertIntoCache(original_transcription, result.value(),
                                          source_language, target_language);
     }
-  } else {
-    // Append a space after final results when translating from an ideographic
-    // to non-ideographic locale. The Speech On-Device API (SODA) automatically
-    // prepends a space to recognition events after a final event, but only for
-    // non-ideographic locales.
-    // TODO(crbug.com/40261536): Consider moving this to the
-    // LiveTranslateController.
-    if (is_final) {
-      formatted_result += " ";
-    }
   }
 
   auto text = base::StrCat({cached_translation, formatted_result});
 
   LiveCaptionController* live_caption_controller = GetLiveCaptionController();
   stop_transcriptions_ = !live_caption_controller->DispatchTranscription(
-      context_.get(), media::SpeechRecognitionResult(
-                          GetTextForDispatch(text, is_final), is_final));
+      &render_frame_host(), context_.get(),
+      media::SpeechRecognitionResult(GetTextForDispatch(text, is_final),
+                                     is_final));
 }
 
 content::WebContents* LiveCaptionSpeechRecognitionHost::GetWebContents() {

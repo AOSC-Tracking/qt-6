@@ -11,11 +11,11 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/variant.h"
 #include "openssl/base.h"
 #include "openssl/pool.h"
 #include "openssl/ssl.h"
@@ -53,13 +53,17 @@ class QUICHE_EXPORT ProofSource {
   // Chain is a reference-counted wrapper for a vector of stringified
   // certificates.
   struct QUICHE_EXPORT Chain : public quiche::QuicheReferenceCounted {
-    explicit Chain(const std::vector<std::string>& certs);
+    Chain(const std::vector<std::string>& certs,
+          const std::string& trust_anchor_id = "");
     Chain(const Chain&) = delete;
     Chain& operator=(const Chain&) = delete;
 
     CryptoBuffers ToCryptoBuffers() const;
 
     const std::vector<std::string> certs;
+    // Trust anchor ID to be configured alongside the certificate. If empty, no
+    // trust anchor ID will be set.
+    const std::string trust_anchor_id;
 
    protected:
     ~Chain() override;
@@ -280,7 +284,7 @@ class QUICHE_EXPORT ProofSourceHandleCallback {
     QuicDelayedSSLConfig delayed_ssl_config;
   };
 
-  using SSLConfig = absl::variant<LocalSSLConfig, HintsSSLConfig>;
+  using SSLConfig = std::variant<LocalSSLConfig, HintsSSLConfig>;
 
   // Called when a ProofSourceHandle::SelectCertificate operation completes.
   // |ok| indicates whether the operation was successful.
@@ -356,7 +360,7 @@ class QUICHE_EXPORT ProofSourceHandle {
       const QuicSocketAddress& client_address,
       const QuicConnectionId& original_connection_id,
       absl::string_view ssl_capabilities, const std::string& hostname,
-      absl::string_view client_hello, const std::string& alpn,
+      const SSL_CLIENT_HELLO& client_hello, const std::string& alpn,
       std::optional<std::string> alps,
       const std::vector<uint8_t>& quic_transport_params,
       const std::optional<std::vector<uint8_t>>& early_data_context,

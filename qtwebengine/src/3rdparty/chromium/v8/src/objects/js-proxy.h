@@ -6,6 +6,7 @@
 #define V8_OBJECTS_JS_PROXY_H_
 
 #include "src/objects/js-objects.h"
+#include "src/objects/oddball.h"
 #include "torque-generated/builtin-definitions.h"
 
 // Has to be the last include (doesn't have include guards):
@@ -22,8 +23,10 @@ class KeyAccumulator;
 class JSProxy : public TorqueGeneratedJSProxy<JSProxy, JSReceiver> {
  public:
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<JSProxy> New(
-      Isolate* isolate, DirectHandle<Object>, DirectHandle<Object>);
+      Isolate* isolate, DirectHandle<Object>, DirectHandle<Object>,
+      bool revocable);
 
+  V8_INLINE bool is_revocable() const;
   V8_INLINE bool IsRevoked() const;
   static void Revoke(DirectHandle<JSProxy> proxy);
 
@@ -109,14 +112,17 @@ class JSProxy : public TorqueGeneratedJSProxy<JSProxy, JSReceiver> {
   static_assert(static_cast<int>(JSObject::kElementsOffset) ==
                 static_cast<int>(JSProxy::kTargetOffset));
 
-  using BodyDescriptor =
-      FixedBodyDescriptor<JSReceiver::kPropertiesOrHashOffset, kSize, kSize>;
+  class BodyDescriptor;
 
   static Maybe<bool> SetPrivateSymbol(Isolate* isolate,
                                       DirectHandle<JSProxy> proxy,
                                       DirectHandle<Symbol> private_name,
                                       PropertyDescriptor* desc,
                                       Maybe<ShouldThrow> should_throw);
+
+  using IsRevocableBit = base::BitField<bool, 0, 1>;
+
+  static constexpr int kIsRevocableBit = IsRevocableBit::encode(true);
 
   TQ_OBJECT_CONSTRUCTORS(JSProxy)
 };

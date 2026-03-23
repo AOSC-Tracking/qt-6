@@ -6,8 +6,9 @@
  * #type=style-lit
  * #import=//resources/cr_elements/cr_shared_vars.css.js
  * #import=//resources/cr_elements/cr_spinner_style_lit.css.js
+ * #import=./config_toggle.css.js
  * #scheme=relative
- * #include=cr-spinner-style-lit
+ * #include=cr-spinner-style-lit config-toggle
  * #css_wrapper_metadata_end */
 
 :host {
@@ -15,19 +16,8 @@
   padding: 8px 12px;
 }
 
-:host h1 {
-}
-
 :host h3 {
   color: var(--cr-secondary-text-color);
-}
-
-.label {
-  font-size: 1.2em;
-}
-
-.config-row {
-  padding: 4px 0;
 }
 
 .action-panel {
@@ -36,12 +26,10 @@
   gap: 16px;
 }
 
-.config-container {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  grid-column-gap: 20px;
-  grid-row-gap: 15px;
-  margin-bottom: 20px;
+.scenario-list-container {
+  flex-direction: column;
+  display: flex;
+  margin: 0 8px;
 }
 
 .loading-spinner {
@@ -57,32 +45,7 @@
 
 <if expr="is_win">
 /** Windows system tracing -------------------------------------------------- */
-
-#system-tracing {
-  align-items: center;
-  font-size: 1.2em;
-  border-radius: 4px;
-  box-sizing: border-box;
-  display: flex;
-}
-
-#system-tracing-description {
-  padding-inline-end: 12px;
-}
-
-#system-tracing-description em {
-  display: block;
-}
-
-#system-tracing-toggle {
-  flex: none;
-}
-
 #system-tracing-shield {
   padding-inline-start: 12px;
-}
-
-#system-tracing-toggle:not(:defined) {
-  width: 34px;
 }
 </if>

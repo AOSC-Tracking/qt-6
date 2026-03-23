@@ -48,15 +48,18 @@
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation_client.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation_delegate.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 
 namespace blink {
 
 class AnimationTimeline;
+class AnimationTrigger;
 class Element;
 class PaintArtifactCompositor;
 class StyleChangeReasonForTracing;
@@ -298,16 +301,6 @@ class CORE_EXPORT Animation : public EventTarget,
   void SetOutdated();
   bool Outdated() { return outdated_; }
 
-  CompositorAnimations::FailureReasons CheckCanStartAnimationOnCompositor(
-      const PaintArtifactCompositor* paint_artifact_compositor,
-      PropertyHandleSet* unsupported_properties = nullptr) const;
-  void StartAnimationOnCompositor(
-      const PaintArtifactCompositor* paint_artifact_compositor);
-  void CancelAnimationOnCompositor();
-  void RestartAnimationOnCompositor();
-  void CancelIncompatibleAnimationsOnCompositor();
-  bool HasActiveAnimationsOnCompositor();
-
   enum class CompositorPendingReason {
     kPendingUpdate,        // Update due to an API call that may affect
                            // play state or start time.
@@ -316,13 +309,28 @@ class CORE_EXPORT Animation : public EventTarget,
     kPendingCancel,        // Animation has been canceled, but could restart
                            // conditions permitting.
     kPendingRestart,       // Animation is to be restarted.
+    kPendingSafeRestart,   // Animation is to be restarted. We can be certain
+                           // that the CompositorPaintStatus won't change.  A compositing decision made in PrePaint for a native-paint-worklet is still valid.
     kPaintWorkletImageCreated,  // A compositable animation was held in limbo
                                 // awaiting paint of the paint worklet image. It
                                 // can now be started on the compositor.
     kPendingDowngrade  // Paint is forcing the animation to downgrade to
                        // run on the main thread.
   };
+
   void SetCompositorPending(CompositorPendingReason reason);
+
+  CompositorAnimations::FailureReasons CheckCanStartAnimationOnCompositor(
+      const PaintArtifactCompositor* paint_artifact_compositor,
+      PropertyHandleSet* unsupported_properties_for_tracing = nullptr) const;
+  void StartAnimationOnCompositor(
+      const PaintArtifactCompositor* paint_artifact_compositor);
+  void CancelAnimationOnCompositor();
+  void RestartAnimationOnCompositor(
+      CompositorPendingReason reason =
+          CompositorPendingReason::kPendingRestart);
+  void CancelIncompatibleAnimationsOnCompositor();
+  bool HasActiveAnimationsOnCompositor() const;
 
   void NotifyReady(AnimationTimeDelta ready_time);
   void CommitPendingPlay(AnimationTimeDelta ready_time);
@@ -366,6 +374,7 @@ class CORE_EXPORT Animation : public EventTarget,
     return compositor_state_ &&
            compositor_state_->pending_action == CompositorAction::kCancel;
   }
+  bool CompositorPendingCancelOrEffectChange() const;
 
   // Methods for handling removal and persistence of animations.
   bool IsReplaceable();
@@ -423,6 +432,43 @@ class CORE_EXPORT Animation : public EventTarget,
 
   using NativePaintWorkletReasons = uint32_t;
   NativePaintWorkletReasons GetNativePaintWorkletReasons() const;
+
+  static RangeBoundary* ToRangeBoundary(std::optional<TimelineOffset> offset,
+                                        float zoom);
+  static RangeBoundary* ToRangeBoundary(TimelineOffsetOrAuto offset_or_auto,
+                                        float zoom);
+
+  struct AnimationTriggerData {
+    // The most recent `animation-play-state` value for |animation_|. This will
+    // be std::nullopt for non-CSSAnimations. When this animation's trigger
+    // actions this animation, it will factor in this play state, leaving the
+    // animation paused if necessary.
+    std::optional<EAnimPlayState> css_play_state;
+  };
+
+  std::optional<EAnimPlayState> GetTriggerActionPlayState() const {
+    return trigger_data_.css_play_state;
+  }
+  void SetTriggerActionPlayState(std::optional<EAnimPlayState> play_state) {
+    trigger_data_.css_play_state = play_state;
+  }
+
+  void SetPausedForTrigger(bool paused_for_trigger) {
+    paused_for_trigger_ = paused_for_trigger;
+  }
+  bool PausedForTrigger() const { return paused_for_trigger_; }
+  void ResetPlayback();
+
+  // Plays an animation. When auto_rewind is enabled, the current time can be
+  // adjusted to accommodate reversal of an animation or snapping to an
+  // endpoint.
+  enum class AutoRewind { kDisabled, kEnabled };
+  void PlayInternal(AutoRewind auto_rewind, ExceptionState& exception_state);
+  void PauseInternal(ExceptionState& exception_state);
+  void ReverseInternal(ExceptionState& exception_state);
+
+  void AddTrigger(AnimationTrigger* trigger);
+  void RemoveTrigger(AnimationTrigger* trigger);
 
  protected:
   DispatchEventResult DispatchEventInternal(Event&) override;
@@ -494,12 +540,6 @@ class CORE_EXPORT Animation : public EventTarget,
                            NotificationType notification_type);
   void QueueFinishedEvent();
 
-  // Plays an animation. When auto_rewind is enabled, the current time can be
-  // adjusted to accommodate reversal of an animation or snapping to an
-  // endpoint.
-  enum class AutoRewind { kDisabled, kEnabled };
-  void PlayInternal(AutoRewind auto_rewind, ExceptionState& exception_state);
-
   void ResetPendingTasks();
   std::optional<AnimationTimeDelta> TimelineTime() const;
 
@@ -535,7 +575,12 @@ class CORE_EXPORT Animation : public EventTarget,
       const RangeBoundary* boundary,
       double default_percent,
       ExceptionState& exception_state);
-  static RangeBoundary* ToRangeBoundary(std::optional<TimelineOffset> offset);
+
+  void DisassociateTriggers();
+
+  // Returns the effective zoom for the keyframe effect's target, or 1.f if
+  // there is no keyframe effect or no target with computed style.
+  float GetKeyframeEffectTargetZoom() const;
 
   String id_;
 
@@ -632,25 +677,17 @@ class CORE_EXPORT Animation : public EventTarget,
     USING_FAST_MALLOC(CompositorState);
 
    public:
-    // TODO(https://crbug.com/1166397): Convert composited animations to use
-    // AnimationTimeDelta for start_time_ and hold_time_.
     explicit CompositorState(Animation& animation)
-        : start_time(animation.start_time_
-                         ? std::make_optional(
-                               animation.start_time_.value().InSecondsF())
-                         : std::nullopt),
-          hold_time(animation.hold_time_
-                        ? std::make_optional(
-                              animation.hold_time_.value().InSecondsF())
-                        : std::nullopt),
+        : start_time(animation.start_time_),
+          hold_time(animation.hold_time_),
           playback_rate(animation.EffectivePlaybackRate()),
           pending_action(animation.start_time_ ? CompositorAction::kNone
                                                : CompositorAction::kStart) {}
     CompositorState(const CompositorState&) = delete;
     CompositorState& operator=(const CompositorState&) = delete;
 
-    std::optional<double> start_time;
-    std::optional<double> hold_time;
+    std::optional<AnimationTimeDelta> start_time;
+    std::optional<AnimationTimeDelta> hold_time;
     double playback_rate;
     bool effect_changed = false;
     CompositorAction pending_action;
@@ -711,11 +748,19 @@ class CORE_EXPORT Animation : public EventTarget,
   // True if the only reason for not running the animation on the compositor is
   // that the animation would have no effect. Updated in |Animation::PreCommit|.
   bool animation_has_no_effect_;
+  // True is we have paused this animation in anticipation of a future trigger
+  // event.
+  bool paused_for_trigger_ = false;
+
+  HeapHashSet<WeakMember<AnimationTrigger>> triggers_;
+
+  AnimationTriggerData trigger_data_;
 
   FRIEND_TEST_ALL_PREFIXES(AnimationAnimationTestCompositing,
                            NoCompositeWithoutCompositedElementId);
   FRIEND_TEST_ALL_PREFIXES(AnimationAnimationTestNoCompositing,
                            PendingActivityWithFinishedEventListener);
+  friend class ScriptedAnimationTriggerTest;
 };
 
 }  // namespace blink

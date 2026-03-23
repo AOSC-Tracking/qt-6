@@ -110,6 +110,11 @@ const char kModelValidate[] = "optimization-guide-model-validate";
 const char kModelExecutionValidate[] =
     "optimization-guide-model-execution-validate";
 
+// Adds header to indicate to return debug logging data from the model execution
+// service via response header.
+const char kModelExecutionEnableRemoteDebugLogging[] =
+    "optimization-guide-model-execution-enable-remote-debug-logging";
+
 // Overrides the model quality service URL.
 const char kModelQualityServiceURL[] = "model-quality-service-url";
 
@@ -242,12 +247,12 @@ bool ShouldValidateModelExecution() {
   return command_line->HasSwitch(kModelExecutionValidate);
 }
 
-std::optional<std::string> GetOnDeviceModelExecutionOverride() {
+std::optional<base::FilePath> GetOnDeviceModelExecutionOverride() {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (!command_line->HasSwitch(kOnDeviceModelExecutionOverride)) {
     return std::nullopt;
   }
-  return command_line->GetSwitchValueASCII(kOnDeviceModelExecutionOverride);
+  return command_line->GetSwitchValuePath(kOnDeviceModelExecutionOverride);
 }
 
 std::optional<base::FilePath> GetOnDeviceValidationRequestOverride() {
@@ -274,6 +279,16 @@ bool ShouldGetFreeDiskSpaceWithUserVisiblePriorityTask() {
 bool ShouldSkipGoogleApiKeyConfigurationCheck() {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   return command_line->HasSwitch(kGoogleApiKeyConfigurationCheckOverride);
+}
+
+GURL GetModelExecutionServiceURL() {
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(
+          switches::kOptimizationGuideServiceModelExecutionURL)) {
+    return GURL(command_line->GetSwitchValueASCII(
+        switches::kOptimizationGuideServiceModelExecutionURL));
+  }
+  return GURL(kOptimizationGuideServiceModelExecutionDefaultURL);
 }
 
 }  // namespace switches

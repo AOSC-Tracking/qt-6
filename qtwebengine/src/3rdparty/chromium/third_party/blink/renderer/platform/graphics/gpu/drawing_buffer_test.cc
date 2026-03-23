@@ -28,16 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.h"
 
 #include <array>
 #include <memory>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_refptr.h"
 #include "components/viz/common/resources/release_callback.h"
 #include "components/viz/common/resources/transferable_resource.h"
@@ -47,7 +43,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/drawing_buffer_test_helpers.h"
-#include "third_party/blink/renderer/platform/graphics/graphics_types.h"
 #include "third_party/blink/renderer/platform/graphics/test/test_webgraphics_shared_image_interface_provider.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "ui/gl/gpu_preference.h"
@@ -399,8 +394,7 @@ TEST_F(DrawingBufferImageChromiumTest, VerifyResizingReallocatesImages) {
   gfx::Size alternate_size(kInitialWidth, kAlternateHeight);
 
   // There should be currently one back buffer and therefore one SharedImage.
-  gpu::Mailbox mailbox1;
-  mailbox1.SetName(gl_->last_imported_shared_image()->name);
+  gpu::Mailbox mailbox1 = gl_->last_imported_shared_image();
   EXPECT_EQ(1u, sii->shared_image_count());
   EXPECT_TRUE(sii->CheckSharedImageExists(mailbox1));
 
@@ -415,8 +409,7 @@ TEST_F(DrawingBufferImageChromiumTest, VerifyResizingReallocatesImages) {
   EXPECT_EQ(initial_size, resource.size);
   testing::Mock::VerifyAndClearExpectations(gl_);
   VerifyStateWasRestored();
-  gpu::Mailbox mailbox2;
-  mailbox2.SetName(gl_->last_imported_shared_image()->name);
+  gpu::Mailbox mailbox2 = gl_->last_imported_shared_image();
   EXPECT_EQ(2u, sii->shared_image_count());
   EXPECT_TRUE(sii->CheckSharedImageExists(mailbox1));
   EXPECT_TRUE(sii->CheckSharedImageExists(mailbox2));
@@ -427,8 +420,7 @@ TEST_F(DrawingBufferImageChromiumTest, VerifyResizingReallocatesImages) {
   EXPECT_CALL(*gl_, CreateAndTexStorage2DSharedImageCHROMIUMMock(_)).Times(1);
   drawing_buffer_->Resize(alternate_size);
   VerifyStateWasRestored();
-  gpu::Mailbox mailbox3;
-  mailbox3.SetName(gl_->last_imported_shared_image()->name);
+  gpu::Mailbox mailbox3 = gl_->last_imported_shared_image();
   EXPECT_EQ(2u, sii->shared_image_count());
   EXPECT_FALSE(sii->CheckSharedImageExists(mailbox1));
   EXPECT_TRUE(sii->CheckSharedImageExists(mailbox2));
@@ -451,8 +443,7 @@ TEST_F(DrawingBufferImageChromiumTest, VerifyResizingReallocatesImages) {
   EXPECT_EQ(alternate_size, sii->MostRecentSize());
   EXPECT_TRUE(resource.is_overlay_candidate);
   EXPECT_EQ(alternate_size, resource.size);
-  gpu::Mailbox mailbox4;
-  mailbox4.SetName(gl_->last_imported_shared_image()->name);
+  gpu::Mailbox mailbox4 = gl_->last_imported_shared_image();
   EXPECT_EQ(2u, sii->shared_image_count());
   EXPECT_TRUE(sii->CheckSharedImageExists(mailbox3));
   EXPECT_TRUE(sii->CheckSharedImageExists(mailbox4));
@@ -465,8 +456,7 @@ TEST_F(DrawingBufferImageChromiumTest, VerifyResizingReallocatesImages) {
   EXPECT_CALL(*gl_, CreateAndTexStorage2DSharedImageCHROMIUMMock(_)).Times(1);
   drawing_buffer_->Resize(initial_size);
   VerifyStateWasRestored();
-  gpu::Mailbox mailbox5;
-  mailbox5.SetName(gl_->last_imported_shared_image()->name);
+  gpu::Mailbox mailbox5 = gl_->last_imported_shared_image();
   EXPECT_EQ(2u, sii->shared_image_count());
   EXPECT_FALSE(sii->CheckSharedImageExists(mailbox3));
   EXPECT_TRUE(sii->CheckSharedImageExists(mailbox4));
@@ -490,8 +480,7 @@ TEST_F(DrawingBufferImageChromiumTest, VerifyResizingReallocatesImages) {
   EXPECT_TRUE(resource.is_overlay_candidate);
   EXPECT_EQ(initial_size, resource.size);
   testing::Mock::VerifyAndClearExpectations(gl_);
-  gpu::Mailbox mailbox6;
-  mailbox6.SetName(gl_->last_imported_shared_image()->name);
+  gpu::Mailbox mailbox6 = gl_->last_imported_shared_image();
   EXPECT_EQ(2u, sii->shared_image_count());
   EXPECT_TRUE(sii->CheckSharedImageExists(mailbox5));
   EXPECT_TRUE(sii->CheckSharedImageExists(mailbox6));
@@ -558,7 +547,7 @@ class DepthStencilTrackingGLES2Interface
 
   void GenRenderbuffers(GLsizei n, GLuint* renderbuffers) override {
     for (GLsizei i = 0; i < n; ++i)
-      renderbuffers[i] = next_gen_renderbuffer_id_++;
+      UNSAFE_TODO(renderbuffers[i]) = next_gen_renderbuffer_id_++;
   }
 
   GLuint StencilAttachment() const { return stencil_attachment_; }
@@ -713,6 +702,43 @@ TEST_F(DrawingBufferTest,
       gl::GpuPreference::kHighPerformance);
   EXPECT_EQ(too_big_drawing_buffer, nullptr);
   drawing_buffer_->BeginDestruction();
+}
+
+TEST_F(DrawingBufferImageChromiumTest,
+       VerifyLowLatencyRenderingIsSetWhenDesynchronizedIsTrue) {
+  gfx::Size initial_size(kInitialWidth, kInitialHeight);
+  auto gl = std::make_unique<GLES2InterfaceForTests>();
+  auto provider =
+      std::make_unique<WebGraphicsContext3DProviderForTests>(std::move(gl));
+
+  provider->GetMutableGpuFeatureInfo()
+      .status_values[gpu::GPU_FEATURE_TYPE_ANDROID_SURFACE_CONTROL] =
+      gpu::kGpuFeatureStatusEnabled;
+
+  GLES2InterfaceForTests* gl_ =
+      static_cast<GLES2InterfaceForTests*>(provider->ContextGL());
+
+  Platform::GraphicsInfo graphics_info;
+  graphics_info.using_gpu_compositing = true;
+
+  scoped_refptr<DrawingBufferForTests> drawing_buffer =
+      DrawingBufferForTests::Create(
+          std::move(provider),
+          /*shared_image_interface_provider_for_sw=*/nullptr, graphics_info,
+          gl_, initial_size, DrawingBuffer::kPreserve, kDisableMultisampling,
+          /*desynchronized=*/true);
+
+  viz::TransferableResource resource;
+  viz::ReleaseCallback release_callback;
+
+  EXPECT_FALSE(resource.is_low_latency_rendering);
+  EXPECT_TRUE(drawing_buffer->PrepareTransferableResource(&resource,
+                                                          &release_callback));
+  EXPECT_TRUE(resource.is_low_latency_rendering);
+
+  drawing_buffer->BeginDestruction();
+  drawing_buffer_->BeginDestruction();
+  testing::Mock::VerifyAndClearExpectations(gl_);
 }
 
 }  // namespace blink

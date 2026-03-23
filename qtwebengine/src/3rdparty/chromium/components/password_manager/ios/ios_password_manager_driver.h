@@ -41,9 +41,10 @@ class IOSPasswordManagerDriver final
 
   // password_manager::PasswordManagerDriver implementation.
   int GetId() const override;
-  void SetPasswordFillData(
+  void PropagateFillDataOnParsingCompletion(
       const autofill::PasswordFormFillData& form_data) override;
-  void InformNoSavedCredentials() override;
+  void InformNoSavedCredentials(
+      bool should_show_popup_without_passwords) override;
   void FormEligibleForGenerationFound(
       const autofill::PasswordFormGenerationData& form) override;
   void GeneratedPasswordAccepted(const std::u16string& password) override;
@@ -77,6 +78,9 @@ class IOSPasswordManagerDriver final
   bool IsInPrimaryMainFrame() const override;
   bool CanShowAutofillUi() const override;
   const GURL& GetLastCommittedURL() const override;
+  const url::Origin& GetLastCommittedOrigin() const override;
+  gfx::RectF TransformToRootCoordinates(
+      const gfx::RectF& bounds_in_frame_coordinates) override;
   base::WeakPtr<PasswordManagerDriver> AsWeakPtr() override;
   const std::string& web_frame_id() const { return frame_id_; }
   const url::Origin& security_origin() const { return security_origin_; }

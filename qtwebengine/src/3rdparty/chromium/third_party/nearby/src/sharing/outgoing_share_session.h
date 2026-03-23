@@ -16,7 +16,6 @@
 #define THIRD_PARTY_NEARBY_SHARING_OUTGOING_SHARE_SESSION_H_
 
 #include <cstdint>
-#include <filesystem>  // NOLINT
 #include <functional>
 #include <memory>
 #include <optional>
@@ -24,8 +23,10 @@
 #include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
+#include "internal/base/file_path.h"
 #include "internal/platform/clock.h"
 #include "internal/platform/task_runner.h"
 #include "sharing/analytics/analytics_recorder.h"
@@ -53,7 +54,7 @@ class OutgoingShareSession : public ShareSession {
       NearbyConnectionsManager* connections_manager,
       analytics::AnalyticsRecorder& analytics_recorder, std::string endpoint_id,
       const ShareTarget& share_target,
-      std::function<void(OutgoingShareSession&, const TransferMetadata&)>
+      absl::AnyInvocable<void(OutgoingShareSession&, const TransferMetadata&)>
           transfer_update_callback);
   OutgoingShareSession(OutgoingShareSession&&);
   ~OutgoingShareSession() override;
@@ -83,7 +84,7 @@ class OutgoingShareSession : public ShareSession {
       PairedKeyVerificationRunner::PairedKeyVerificationResult result,
       location::nearby::proto::sharing::OSType share_target_os_type);
 
-  std::vector<std::filesystem::path> GetFilePaths() const;
+  std::vector<FilePath> GetFilePaths() const;
 
   void CreateTextPayloads();
   void CreateWifiCredentialsPayloads();
@@ -137,8 +138,11 @@ class OutgoingShareSession : public ShareSession {
   // A 1 min timer is setup so that if we do not receive disconnect from
   // receiver, we assume the transfer has failed.
   void DelayComplete(const TransferMetadata& complete_metadata);
-  // Used only for OutgoingShareSession De-duplication.
-  void UpdateSessionForDedup(
+  // Updates the share target in the session to `share_target`.
+  // If the session is not connected, also updates the `certificate` and
+  // `endpoint_id`.
+  // Returns true if the session is not connected and updated successfully.
+  bool UpdateSessionForDedup(
       const ShareTarget& share_target,
       std::optional<NearbyShareDecryptedPublicCertificate> certificate,
       absl::string_view endpoint_id);
@@ -177,7 +181,7 @@ class OutgoingShareSession : public ShareSession {
   std::vector<Payload> file_payloads_;
   std::vector<Payload> wifi_credentials_payloads_;
   Status connection_layer_status_ = Status::kUnknown;
-  std::function<void(OutgoingShareSession&, const TransferMetadata&)>
+  absl::AnyInvocable<void(OutgoingShareSession&, const TransferMetadata&)>
       transfer_update_callback_;
   bool ready_for_accept_ = false;
   // This alarm is used to disconnect the sharing connection if both sides do

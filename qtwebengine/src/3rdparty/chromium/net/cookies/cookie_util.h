@@ -7,14 +7,13 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/functional/callback_forward.h"
 #include "base/time/time.h"
 #include "base/types/optional_ref.h"
 #include "net/base/net_export.h"
-#include "net/cookies/canonical_cookie.h"
-#include "net/cookies/cookie_access_result.h"
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_options.h"
 #include "net/cookies/cookie_setting_override.h"
@@ -28,11 +27,18 @@ class GURL;
 
 namespace net {
 
-class IsolationInfo;
-class SchemefulSite;
+class CanonicalCookie;
 class CookieAccessDelegate;
 class CookieInclusionStatus;
+class IsolationInfo;
 class ParsedCookie;
+class SchemefulSite;
+
+struct CookieAccessResult;
+struct CookieWithAccessResult;
+
+using CookieList = std::vector<CanonicalCookie>;
+using CookieAccessResultList = std::vector<CookieWithAccessResult>;
 
 namespace cookie_util {
 
@@ -48,7 +54,7 @@ enum class StorageAccessResult {
   ACCESS_BLOCKED = 0,
   ACCESS_ALLOWED = 1,
   ACCESS_ALLOWED_STORAGE_ACCESS_GRANT = 2,
-  OBSOLETE_ACCESS_ALLOWED_FORCED = 3 /*(DEPRECATED)*/,
+  // OBSOLETE_ACCESS_ALLOWED_FORCED = 3 /*(DEPRECATED)*/,
   ACCESS_ALLOWED_TOP_LEVEL_STORAGE_ACCESS_GRANT = 4,
   ACCESS_ALLOWED_3PCD_TRIAL = 5,
   ACCESS_ALLOWED_3PCD_METADATA_GRANT = 6,
@@ -83,7 +89,7 @@ enum class StorageAccessStatus {
 // LINT.IfChange(StorageAccessStatusOutcome)
 enum class StorageAccessStatusOutcome {
   // The feature is disabled.
-  kOmittedFeatureDisabled = 0,
+  // kOmittedFeatureDisabled = 0, // Deprecated (feature is always enabled).
   // The request is same-site.
   kOmittedSameSite = 1,
   // The storage access status is `none`.
@@ -126,7 +132,7 @@ enum class SecFetchStorageAccessOutcome {
 enum class ActivateStorageAccessLoadOutcome {
   // Applies when the `Activate-Storage-Access` header behavior is not enabled
   // under the existing feature flags or content settings.
-  kFailureHeaderDisabled = 0,
+  // kFailureHeaderDisabled = 0, // Deprecated (feature is always enabled).
   // Applies when a response includes the `Activate-Storage-Access: load`
   // header, but its corresponding request either has an omitted storage access
   // status, or has a storage access status of `none`.
@@ -147,7 +153,7 @@ enum class ActivateStorageAccessLoadOutcome {
 enum class ActivateStorageAccessRetryOutcome {
   // Applies when the `Activate-Storage-Access` header behavior is not enabled
   // under the existing feature flags or content settings.
-  kFailureHeaderDisabled = 0,
+  // kFailureHeaderDisabled = 0, // Deprecated (feature is always enabled).
   // Applies when a response includes a well-formed
   // `Activate-Storage-Access: retry; ..." header, but the corresponding
   // request's `Sec-Fetch-Storage-Access` header is not `inactive`.
@@ -179,7 +185,7 @@ NET_EXPORT std::string GetEffectiveDomain(const std::string& scheme,
 // begin with a '.' character.
 NET_EXPORT std::optional<std::string> GetCookieDomainWithString(
     const GURL& url,
-    const std::string& domain_string,
+    std::string_view domain_string,
     CookieInclusionStatus& status);
 
 // Returns true if a domain string represents a host-only cookie,
@@ -199,13 +205,13 @@ NET_EXPORT std::string CookieDomainAsHost(const std::string& cookie_domain);
 // If the expiration date is below or above the platform-specific range
 // supported by Time::FromUTCExplodeded(), then this will return Time(1) or
 // Time::Max(), respectively.
-NET_EXPORT base::Time ParseCookieExpirationTime(const std::string& time_string);
+NET_EXPORT base::Time ParseCookieExpirationTime(std::string_view time_string);
 
 // Returns the canonical path based on the specified url and path attribute
 // value. Note that this method does not enforce character set or size
 // checks on `path_string`.
 NET_EXPORT std::string CanonPathWithString(const GURL& url,
-                                           const std::string& path_string);
+                                           std::string_view path_string);
 
 // Get a cookie's URL from it's domain, path, and source scheme.
 // The first field can be the combined domain-and-host-only-flag (e.g. the
@@ -267,11 +273,12 @@ bool IsCookiePrefixValid(CookiePrefix prefix,
 // As above. `secure`, `domain`, and `path` are the raw attribute values (i.e.
 // as taken from a ParsedCookie), NOT in normalized form as represented in
 // CookieBase.
-bool IsCookiePrefixValid(CookiePrefix prefix,
-                         const GURL& url,
-                         bool secure,
-                         const std::string& domain,
-                         const std::string& path);
+NET_EXPORT_PRIVATE bool IsCookiePrefixValid(CookiePrefix prefix,
+                                            const GURL& url,
+                                            bool secure,
+                                            bool http_only,
+                                            std::string_view domain,
+                                            std::string_view path);
 
 // Returns true iff the cookie is a partitioned cookie with a nonce or that
 // does not violate the semantics of the Partitioned attribute:
@@ -406,9 +413,6 @@ NET_EXPORT bool IsOriginBoundCookiesPartiallyEnabled();
 
 NET_EXPORT bool IsTimeLimitedInsecureCookiesEnabled();
 
-// Returns whether the respective feature is enabled.
-NET_EXPORT bool IsSchemefulSameSiteEnabled();
-
 // Computes the First-Party Sets metadata and cache match information.
 // `isolation_info` must be fully populated.
 //
@@ -461,15 +465,14 @@ NET_EXPORT void DCheckIncludedAndExcludedCookieLists(
 // --test-third-party-cookie-phaseout.
 NET_EXPORT bool IsForceThirdPartyCookieBlockingEnabled();
 
-NET_EXPORT bool PartitionedCookiesDisabledByCommandLine();
-
 // Indicates whether the first hop in a request should have the
 // kStorageAccessGrantEligible override.
 [[nodiscard]] NET_EXPORT bool ShouldAddInitialStorageAccessApiOverride(
     const GURL& url,
     StorageAccessApiStatus api_status,
     base::optional_ref<const url::Origin> request_initiator,
-    bool emit_metrics);
+    bool emit_metrics,
+    bool credentials_mode_include);
 
 }  // namespace cookie_util
 

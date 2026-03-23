@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -18,7 +19,6 @@ T.ToolButton {
 
     icon.width: 25
     icon.height: 25
-    icon.color: control.down ? control.palette.highlight : control.palette.button
 
     contentItem: IconLabel {
         spacing: control.spacing
@@ -26,9 +26,10 @@ T.ToolButton {
         display: control.display
 
         icon: control.icon
+        defaultIconColor: control.down ? control.palette.highlight : control.palette.button
         text: control.text
         font: control.font
-        color: control.down ? control.palette.highlight : control.palette.button
+        color: defaultIconColor
     }
 
     background: Item {

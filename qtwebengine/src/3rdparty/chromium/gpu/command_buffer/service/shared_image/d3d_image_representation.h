@@ -8,9 +8,8 @@
 #include "base/memory/raw_ptr.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/shared_image/d3d_image_backing.h"
-#include "gpu/command_buffer/service/shared_image/shared_image_backing_factory.h"
-#include "gpu/command_buffer/service/shared_image/shared_image_manager.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
+#include "gpu/command_buffer/service/shared_image/skia_graphite_dawn_image_representation.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gl/buildflags.h"
 
@@ -62,7 +61,6 @@ class DawnD3DImageRepresentation : public DawnImageRepresentation {
   wgpu::Texture BeginAccess(wgpu::TextureUsage usage,
                             wgpu::TextureUsage internal_usage) override;
   void EndAccess() override;
-  bool SupportsMultipleConcurrentReadAccess() override;
 
  private:
   const wgpu::Device device_;
@@ -88,6 +86,18 @@ class DawnD3DBufferRepresentation : public DawnBufferRepresentation {
   const wgpu::Device device_;
   const wgpu::BackendType backend_type_;
   wgpu::Buffer buffer_;
+};
+
+// Representation of a D3DImageBacking as a tensor.
+class WebNND3DTensorRepresentation : public WebNNTensorRepresentation {
+ public:
+  WebNND3DTensorRepresentation(SharedImageManager* manager,
+                               SharedImageBacking* backing,
+                               MemoryTypeTracker* tracker);
+  ~WebNND3DTensorRepresentation() override;
+
+ private:
+  Microsoft::WRL::ComPtr<ID3D12Resource> GetD3D12Buffer() const override;
 };
 
 // Representation of a D3DImageBacking as an overlay.
@@ -166,6 +176,24 @@ class D3D11VideoImageCopyRepresentation : public VideoImageRepresentation {
 
   Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d11_texture_;
 };
+
+#if BUILDFLAG(USE_DAWN)
+class D3DSkiaGraphiteDawnImageRepresentation
+    : public SkiaGraphiteDawnImageRepresentation {
+ public:
+  using SkiaGraphiteDawnImageRepresentation::
+      SkiaGraphiteDawnImageRepresentation;
+  ~D3DSkiaGraphiteDawnImageRepresentation() override;
+
+  bool SupportsMultipleConcurrentReadAccess() override;
+  bool NeedGraphiteContextSubmitBeforeEndAccess() override;
+
+ private:
+  std::vector<scoped_refptr<GraphiteTextureHolder>> WrapBackendTextures(
+      wgpu::Texture texture,
+      std::vector<skgpu::graphite::BackendTexture> backend_textures) override;
+};
+#endif  // BUILDFLAG(USE_DAWN)
 
 }  // namespace gpu
 #endif  // GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_D3D_IMAGE_REPRESENTATION_H_

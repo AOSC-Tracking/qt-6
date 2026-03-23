@@ -106,8 +106,9 @@ class IC {
                            DirectHandle<Name> name);
   bool UpdateMegaDOMIC(const MaybeObjectDirectHandle& handler,
                        DirectHandle<Name> name);
+  bool UpdateOneMapManyNamesIC(DirectHandle<Name> new_name);
   bool UpdatePolymorphicIC(DirectHandle<Name> name,
-                           const MaybeObjectHandle& handler);
+                           const MaybeObjectDirectHandle& handler);
   void UpdateMegamorphicCache(DirectHandle<Map> map, DirectHandle<Name> name,
                               const MaybeObjectDirectHandle& handler);
 
@@ -143,7 +144,7 @@ class IC {
 
   void TargetMaps(MapHandles* list) {
     FindTargetMaps();
-    for (Handle<Map> map : target_maps_) {
+    for (DirectHandle<Map> map : target_maps_) {
       list->push_back(map);
     }
   }
@@ -248,8 +249,9 @@ class KeyedLoadIC : public LoadIC {
  private:
   friend class IC;
 
-  Handle<Object> LoadElementHandler(DirectHandle<Map> receiver_map,
-                                    KeyedAccessLoadMode new_load_mode);
+  Handle<Object> LoadElementHandler(
+      DirectHandle<Map> receiver_map, KeyedAccessLoadMode new_load_mode,
+      MaybeDirectHandle<Map> maybe_transition_target = {});
 
   void LoadElementPolymorphicHandlers(MapHandles* receiver_maps,
                                       MaybeObjectHandles* handlers,
@@ -317,9 +319,8 @@ class KeyedStoreIC : public StoreIC {
                FeedbackSlot slot, FeedbackSlotKind kind)
       : StoreIC(isolate, vector, slot, kind) {}
 
-  V8_WARN_UNUSED_RESULT MaybeDirectHandle<Object> Store(Handle<JSAny> object,
-                                                        Handle<Object> name,
-                                                        Handle<Object> value);
+  V8_WARN_UNUSED_RESULT MaybeDirectHandle<Object> Store(
+      Handle<JSAny> object, Handle<Object> name, DirectHandle<Object> value);
 
  protected:
   void UpdateStoreElement(Handle<Map> receiver_map,

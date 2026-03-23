@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -35,6 +36,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/url_data_source.h"
+#include "content/public/common/buildflags.h"
 #include "content/public/common/webplugininfo.h"
 #include "extensions/browser/app_sorting.h"
 #include "extensions/browser/content_verifier/content_verifier.h"
@@ -56,7 +58,6 @@
 #include "extensions/common/manifest_url_handlers.h"
 #include "net/base/mime_util.h"
 #include "pdf/buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "qtwebengine/grit/qt_webengine_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -120,10 +121,12 @@ public:
     void Shutdown() override {}
 };
 
+#if QT_CONFIG(webengine_extensions)
 QtWebEngineCore::ExtensionManager *ExtensionSystemQt::extensionManager()
 {
     return extension_manager_.get();
 }
+#endif
 
 void ExtensionSystemQt::LoadExtension(const base::Value::Dict &manifest, const base::FilePath &directory)
 {
@@ -202,12 +205,6 @@ void ExtensionSystemQt::NotifyExtensionLoaded(const Extension *extension)
     extension_registry_->AddReady(extension);
     if (extension_registry_->enabled_extensions().Contains(extension->id()))
         extension_registry_->TriggerOnReady(extension);
-}
-
-bool ExtensionSystemQt::FinishDelayedInstallationIfReady(const std::string &extension_id, bool install_immediately)
-{
-    // TODO mibrunin
-    return false;
 }
 
 void ExtensionSystemQt::Shutdown()
@@ -298,7 +295,9 @@ void ExtensionSystemQt::Init(bool extensions_enabled)
     service_worker_manager_ = std::make_unique<ServiceWorkerManager>(browser_context_);
     user_script_manager_ = std::make_unique<UserScriptManager>(browser_context_);
     quota_service_ = std::make_unique<QuotaService>();
+#if QT_CONFIG(webengine_extensions)
     extension_manager_ = std::make_unique<QtWebEngineCore::ExtensionManager>(browser_context_);
+#endif
     management_policy_ = std::make_unique<ManagementPolicy>();
 
     // Make the chrome://extension-icon/ resource available.

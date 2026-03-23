@@ -1,8 +1,9 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
+pragma ComponentBehavior: Bound
+
 import QtQuick
-import QtLocation
 import QtQuick.Layouts
 import QtQuick.Controls
 
@@ -63,8 +64,8 @@ Item {
         }
 
         Loader {
-            width: 60
-            height: 60
+            Layout.preferredHeight: 60
+            Layout.preferredWidth: 60
             Layout.alignment: Qt.AlignHCenter
             sourceComponent: mapLayersButtonComponent
         }
@@ -127,25 +128,17 @@ Item {
         State {
             when: LightningViewConfig.isLandscape
             PropertyChanges {
-                target: switchMap
-                orientation: Qt.Horizontal
-            }
-            PropertyChanges {
-                target: mapLayersButtonConfig
-                checked: mapLayersItem.opened
-                onClicked: mapLayersItem.toggle()
+                switchMap.orientation: Qt.Horizontal
+                mapLayersButtonConfig.checked: mapLayersItem.opened
+                mapLayersButtonConfig.onClicked: mapLayersItem.toggle()
             }
         },
         State {
             when: LightningViewConfig.isPortrait
             PropertyChanges {
-                target: switchMap
-                orientation: Qt.Vertical
-            }
-            PropertyChanges {
-                target: mapLayersButtonConfig
-                checked: drawer.opened
-                onClicked: drawer.toggle()
+                switchMap.orientation: Qt.Vertical
+                mapLayersButtonConfig.checked: drawer.opened
+                mapLayersButtonConfig.onClicked: drawer.toggle()
             }
         }
     ]

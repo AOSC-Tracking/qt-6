@@ -30,16 +30,20 @@
 
 #include <utility>
 
-#include "src/tint/lang/core/access.h"
-#include "src/tint/lang/core/address_space.h"
+#include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/number.h"
-#include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/core/type/atomic.h"
+#include "src/tint/lang/core/type/depth_multisampled_texture.h"
+#include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/external_texture.h"
+#include "src/tint/lang/core/type/input_attachment.h"
+#include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampler.h"
+#include "src/tint/lang/core/type/string.h"
 #include "src/tint/lang/core/type/struct.h"
 #include "src/tint/lang/core/type/subgroup_matrix.h"
+#include "src/tint/lang/core/type/texel_buffer.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/lang/core/type/unique_node.h"
 #include "src/tint/utils/containers/unique_allocator.h"
@@ -50,6 +54,7 @@ namespace tint::core::type {
 class AbstractFloat;
 class AbstractInt;
 class Array;
+class BindingArray;
 class Bool;
 class F16;
 class F32;
@@ -60,9 +65,11 @@ class Invalid;
 class Matrix;
 class Pointer;
 class Reference;
+class SampledTexture;
 class StorageTexture;
 class U8;
 class U32;
+class U64;
 class Vector;
 class Void;
 }  // namespace tint::core::type
@@ -74,7 +81,7 @@ namespace tint::core::type {
 static constexpr inline core::Access DefaultAccessFor(core::AddressSpace space) {
     switch (space) {
         case core::AddressSpace::kIn:
-        case core::AddressSpace::kPushConstant:
+        case core::AddressSpace::kImmediate:
         case core::AddressSpace::kUniform:
         case core::AddressSpace::kHandle:
             return core::Access::kRead;
@@ -150,6 +157,8 @@ class Manager final {
             return Get<core::type::U8>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::u32>) {
             return Get<core::type::U32>(std::forward<ARGS>(args)...);
+        } else if constexpr (std::is_same_v<T, tint::core::u64>) {
+            return Get<core::type::U64>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::f32>) {
             return Get<core::type::F32>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::f16>) {
@@ -211,6 +220,9 @@ class Manager final {
     /// @returns a u32 type
     const core::type::U32* u32();
 
+    /// @returns a u64 type
+    const core::type::U64* u64();
+
     /// @returns an f32 type
     const core::type::F32* f32();
 
@@ -257,12 +269,37 @@ class Manager final {
     const core::type::Vector* vec4(const core::type::Type* inner);
 
     /// @param dim the dimensionality of the texture
+    /// @param type the data type of the sampled texture
+    /// @returns a sampled texture type with the provided params
+    const core::type::SampledTexture* sampled_texture(TextureDimension dim,
+                                                      const core::type::Type* type);
+
+    /// @param dim the dimensionality of the texture
+    /// @param type the data type of the sampled texture
+    /// @returns a multisampled texture type with the provided params
+    const core::type::MultisampledTexture* multisampled_texture(TextureDimension dim,
+                                                                const core::type::Type* type);
+
+    /// @param dim the dimensionality of the texture
     /// @param format the texel format of the texture
     /// @param access the access control type of the texture
     /// @returns a storage texture type with the provided params
     const core::type::StorageTexture* storage_texture(TextureDimension dim,
                                                       core::TexelFormat format,
                                                       core::Access access);
+
+    /// @param format the texel format of the texel buffer
+    /// @param access the access control type of the texel buffer
+    /// @returns a texel buffer type with the provided params
+    const core::type::TexelBuffer* texel_buffer(core::TexelFormat format, core::Access access);
+
+    /// @param dim the dimensionality of the texture
+    /// @returns a depth texture type with the provided params
+    const core::type::DepthTexture* depth_texture(TextureDimension dim);
+
+    /// @param dim the dimensionality of the texture
+    /// @returns a depth multisampled texture type with the provided params
+    const core::type::DepthMultisampledTexture* depth_multisampled_texture(TextureDimension dim);
 
     /// Return a type with element type `el_ty` that has the same number of vector components as
     /// `match`. If `match` is scalar just return `el_ty`.
@@ -523,6 +560,11 @@ class Manager final {
         }
     }
 
+    /// @param elem_ty the array element type
+    /// @param count the array element count
+    /// @returns the array type
+    const core::type::BindingArray* binding_array(const core::type::Type* elem_ty, uint32_t count);
+
     /// @param address_space the address space
     /// @param subtype the pointer subtype
     /// @param access the access settings
@@ -585,6 +627,14 @@ class Manager final {
         return Get<core::type::Sampler>(core::type::SamplerKind::kComparisonSampler);
     }
 
+    /// @returns an input attachment type
+    const core::type::InputAttachment* input_attachment(const core::type::Type* inner) {
+        return Get<core::type::InputAttachment>(inner);
+    }
+
+    /// @returns a string type
+    const core::type::String* String() { return Get<core::type::String>(); }
+
     /// A structure member descriptor.
     struct StructMemberDesc {
         /// The name of the struct member.
@@ -607,7 +657,10 @@ class Manager final {
     /// @param members the list of structure member descriptors
     /// @note a structure must not already exist with the same name
     /// @returns the structure type
-    core::type::Struct* Struct(Symbol name, VectorRef<StructMemberDesc> members);
+    core::type::Struct* Struct(Symbol name, VectorRef<StructMemberDesc> members) {
+        return Struct(name, /* is_wgsl_internal */ false,
+                      tint::Vector<StructMemberDesc, 4>(members));
+    }
 
     /// Create a new structure declaration.
     /// @param name the name of the structure
@@ -616,6 +669,17 @@ class Manager final {
     /// @returns the structure type
     core::type::Struct* Struct(Symbol name, std::initializer_list<StructMemberDesc> members) {
         return Struct(name, tint::Vector<StructMemberDesc, 4>(members));
+    }
+
+    /// Create a new WGSL internal structure declaration.
+    /// @param name the name of the structure
+    /// @param members the list of structure member descriptors
+    /// @note an internal structure must not already exist with the same name
+    /// @returns the structure type
+    core::type::Struct* WgslInternalStruct(Symbol name,
+                                           std::initializer_list<StructMemberDesc> members) {
+        return Struct(name, /* is_wgsl_internal */ true,
+                      tint::Vector<StructMemberDesc, 4>(members));
     }
 
     /// @returns the external texture type
@@ -633,6 +697,16 @@ class Manager final {
     UniqueAllocator<UniqueNode> unique_nodes_;
     /// Non-unique nodes owned by the manager
     BlockAllocator<Node> nodes_;
+
+    /// Create a new structure declaration.
+    /// @param name the name of the structure
+    /// @param is_wgsl_internal `true` if the structure is internally defined in WGSL
+    /// @param members the list of structure member descriptors
+    /// @note a structure must not already exist with the same name
+    /// @returns the structure type
+    core::type::Struct* Struct(Symbol name,
+                               bool is_wgsl_internal,
+                               VectorRef<StructMemberDesc> members);
 };
 
 }  // namespace tint::core::type

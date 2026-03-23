@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef BARSRENDERER_H
 #define BARSRENDERER_H
@@ -36,7 +38,7 @@ public:
     BarsRenderer(QGraphsView *graph, bool clipPlotArea);
     ~BarsRenderer() override;
 
-    void handlePolish(QBarSeries *series);
+    void handlePolish(QBarSeries *series, int barSeriesIndex, int barSeriesCount);
     void updateSeries(QBarSeries *series);
     void afterUpdate(QList<QAbstractSeries *> &cleanupSeries);
     void afterPolish(QList<QAbstractSeries *> &cleanupSeries);
@@ -61,8 +63,10 @@ private:
         bool isSelected;
     };
 
-    void updateVerticalBars(QBarSeries *series, qsizetype setCount, qsizetype valuesPerSet);
-    void updateHorizontalBars(QBarSeries *series, qsizetype setCount, qsizetype valuesPerSet);
+    void updateVerticalBars(QBarSeries *series, qsizetype setCount, qsizetype valuesPerSet,
+                            int barSeriesIndex, int barSeriesCount);
+    void updateHorizontalBars(QBarSeries *series, qsizetype setCount, qsizetype valuesPerSet,
+                              int barSeriesIndex, int barSeriesCount);
     QColor getSetColor(QBarSeries *series, QBarSet *set, qsizetype barSerieIndex);
     QColor getSetSelectedColor(QBarSeries *series, QBarSet *set);
     QColor getSetBorderColor(QBarSeries *series, QBarSet *set, qsizetype barSerieIndex);

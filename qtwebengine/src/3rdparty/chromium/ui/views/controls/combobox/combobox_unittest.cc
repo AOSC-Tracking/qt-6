@@ -86,6 +86,10 @@ class TestComboboxModel : public ui::ComboboxModel {
     NOTREACHED();
   }
 
+  ComboboxModel::ItemCheckmarkConfig GetCheckmarkConfig() const override {
+    return menu_checkmark_override_;
+  }
+
   void SetSeparators(const std::set<size_t>& separators) {
     separators_ = separators;
     OnModelChanged();
@@ -94,6 +98,10 @@ class TestComboboxModel : public ui::ComboboxModel {
   void set_item_count(size_t item_count) {
     item_count_ = item_count;
     OnModelChanged();
+  }
+
+  void SetMenuCheckmarkOverride(ComboboxModel::ItemCheckmarkConfig config) {
+    menu_checkmark_override_ = config;
   }
 
  private:
@@ -105,6 +113,8 @@ class TestComboboxModel : public ui::ComboboxModel {
 
   std::set<size_t> separators_;
   size_t item_count_ = kItemCount;
+  ComboboxModel::ItemCheckmarkConfig menu_checkmark_override_ =
+      ComboboxModel::ItemCheckmarkConfig::kDefault;
 };
 
 // A combobox model which refers to a vector.
@@ -1009,6 +1019,16 @@ TEST_F(ComboboxTest, MenuModel) {
   EXPECT_EQ(ui::MenuModel::TYPE_COMMAND, menu_model->GetTypeAt(1));
 #endif
 
+  // Override OS-specific checkmark setting.
+  model_->SetMenuCheckmarkOverride(
+      ui::ComboboxModel::ItemCheckmarkConfig::kEnabled);
+  EXPECT_EQ(ui::MenuModel::TYPE_CHECK, menu_model->GetTypeAt(0));
+  EXPECT_EQ(ui::MenuModel::TYPE_CHECK, menu_model->GetTypeAt(1));
+  model_->SetMenuCheckmarkOverride(
+      ui::ComboboxModel::ItemCheckmarkConfig::kDisabled);
+  EXPECT_EQ(ui::MenuModel::TYPE_COMMAND, menu_model->GetTypeAt(0));
+  EXPECT_EQ(ui::MenuModel::TYPE_COMMAND, menu_model->GetTypeAt(1));
+
   EXPECT_EQ(u"PEANUT BUTTER", menu_model->GetLabelAt(0));
   EXPECT_EQ(u"JELLY", menu_model->GetLabelAt(1));
 
@@ -1017,7 +1037,7 @@ TEST_F(ComboboxTest, MenuModel) {
 
 // Verifies SetTooltipTextAndAccessibleName will call NotifyAccessibilityEvent.
 TEST_F(ComboboxTest, SetTooltipTextNotifiesAccessibilityEvent) {
-  test::AXEventCounter counter(AXEventManager::Get());
+  test::AXEventCounter counter(AXUpdateNotifier::Get());
   InitCombobox(nullptr);
   std::u16string test_tooltip_text = u"Test Tooltip Text";
   EXPECT_EQ(0, counter.GetCount(ax::mojom::Event::kTextChanged));
@@ -1044,6 +1064,17 @@ TEST_F(ComboboxTest, SetTooltipTextNotifiesAccessibilityEvent) {
   EXPECT_EQ(test_tooltip_text, ASCIIToUTF16(name));
   EXPECT_EQ(u"PEANUT BUTTER",
             data.GetString16Attribute(ax::mojom::StringAttribute::kValue));
+}
+
+// Changing the value of the combobox should trigger a kTextChanged event.
+TEST_F(ComboboxTest, SetValueAccessibilityEvents) {
+  InitCombobox(nullptr);
+  std::u16string value = u"hello world";
+  test::AXEventCounter counter(views::AXUpdateNotifier::Get());
+  EXPECT_EQ(0, counter.GetCount(ax::mojom::Event::kTextChanged));
+  combobox()->GetViewAccessibility().SetValue(value);
+  EXPECT_EQ(1, counter.GetCount(ax::mojom::Event::kTextChanged));
+  EXPECT_EQ(value, combobox()->GetViewAccessibility().GetValue());
 }
 
 // Regression test for crbug.com/1264288.

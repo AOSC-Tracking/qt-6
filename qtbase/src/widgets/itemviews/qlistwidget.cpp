@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qlistwidget.h"
 
@@ -253,6 +254,12 @@ bool QListModel::removeRows(int row, int count, const QModelIndex &parent)
     endRemoveRows();
     return true;
 }
+
+/*!
+    \class QListModel
+    \inmodule QtWidgets
+    \internal
+*/
 
 /*!
     \since 5.13
@@ -1177,7 +1184,7 @@ void QListWidgetPrivate::dataChanged(const QModelIndex &topLeft,
     \ingroup model-view
     \inmodule QtWidgets
 
-    \image fusion-listview.png
+    \image fusion-listview.png {List of weather icons}
 
     QListWidget is a convenience class that provides a list view similar to the
     one supplied by QListView, but with a classic item-based interface for

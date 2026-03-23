@@ -4,25 +4,32 @@
 
 #include "components/ip_protection/common/ip_protection_core_impl.h"
 
+#include <cstddef>
+#include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "base/functional/bind.h"
-#include "base/task/task_traits.h"
-#include "base/time/time.h"
+#include "base/check.h"
 #include "base/timer/elapsed_timer.h"
+#include "components/content_settings/core/common/content_settings_rules.h"
+#include "components/content_settings/core/common/content_settings_utils.h"
 #include "components/ip_protection/common/ip_protection_data_types.h"
+#include "components/ip_protection/common/ip_protection_probabilistic_reveal_token_manager.h"
 #include "components/ip_protection/common/ip_protection_proxy_config_manager.h"
 #include "components/ip_protection/common/ip_protection_proxy_config_manager_impl.h"
 #include "components/ip_protection/common/ip_protection_telemetry.h"
 #include "components/ip_protection/common/ip_protection_token_manager.h"
 #include "components/ip_protection/common/ip_protection_token_manager_impl.h"
 #include "components/ip_protection/common/masked_domain_list_manager.h"
+#include "components/ip_protection/common/probabilistic_reveal_token_registry.h"
 #include "net/base/features.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/proxy_chain.h"
 #include "net/base/proxy_server.h"
-#include "net/base/proxy_string_util.h"
+#include "services/network/public/cpp/features.h"
+#include "url/gurl.h"
 
 namespace ip_protection {
 
@@ -33,7 +40,7 @@ namespace {
 // only with SCHEME_QUIC.
 std::vector<net::ProxyChain> MakeQuicProxyList(
     const std::vector<net::ProxyChain>& proxy_list,
-    bool include_https_fallback = true) {
+    bool include_https_fallback) {
   if (proxy_list.empty()) {
     return proxy_list;
   }
@@ -45,8 +52,14 @@ std::vector<net::ProxyChain> MakeQuicProxyList(
       quic_servers.emplace_back(net::ProxyServer::Scheme::SCHEME_QUIC,
                                 proxy_server.host_port_pair());
     }
-    return net::ProxyChain::ForIpProtection(
+    auto quic_proxy_chain = net::ProxyChain::ForIpProtection(
         std::move(quic_servers), proxy_chain.ip_protection_chain_id());
+    // The proxy chains passed to this function are assumed to be valid (
+    // validated by the `IpProtectionProxyConfigFetcher()` that created them),
+    // so creating a new QUIC proxy chain from those should also result in valid
+    // proxy chains.
+    CHECK(quic_proxy_chain.IsValid());
+    return quic_proxy_chain;
   };
 
   std::vector<net::ProxyChain> quic_proxy_list;
@@ -69,19 +82,29 @@ IpProtectionCoreImpl::IpProtectionCoreImpl(
     MaskedDomainListManager* masked_domain_list_manager,
     std::unique_ptr<IpProtectionProxyConfigManager>
         ip_protection_proxy_config_manager,
-    std::map<ProxyLayer, std::unique_ptr<IpProtectionTokenManager>>
-        ip_protection_token_managers,
+    ProxyTokenManagerMap ip_protection_token_managers,
+    ProbabilisticRevealTokenRegistry* probabilistic_reveal_token_registry,
+    std::unique_ptr<IpProtectionProbabilisticRevealTokenManager>
+        ipp_prt_manager,
     bool is_ip_protection_enabled,
-    bool use_regular_mdl)
+    bool ip_protection_incognito)
     : masked_domain_list_manager_(masked_domain_list_manager),
       ipp_proxy_config_manager_(std::move(ip_protection_proxy_config_manager)),
       ipp_token_managers_(std::move(ip_protection_token_managers)),
+      probabilistic_reveal_token_registry_(probabilistic_reveal_token_registry),
+      ipp_prt_manager_(std::move(ipp_prt_manager)),
       is_ip_protection_enabled_(is_ip_protection_enabled),
       ipp_over_quic_(net::features::kIpPrivacyUseQuicProxies.Get()),
-      enable_token_caching_by_geo_(
-          net::features::kIpPrivacyCacheTokensByGeo.Get()) {
-  mdl_type_ = use_regular_mdl ? MdlType::kRegularBrowsing : MdlType::kDefault;
+      mdl_type_(network::features::kSplitMaskedDomainList.Get()
+                    ? (ip_protection_incognito ? MdlType::kIncognito
+                                               : MdlType::kRegularBrowsing)
+                    : MdlType::kIncognito) {
   net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
+  bool should_request_prts = ip_protection_incognito ||
+       !net::features::kProbabilisticRevealTokensOnlyInIncognito.Get();
+  if (ipp_prt_manager_ && should_request_prts) {
+    ipp_prt_manager_->RequestTokens();
+  }
 }
 
 IpProtectionCoreImpl::~IpProtectionCoreImpl() {
@@ -117,7 +140,10 @@ bool IpProtectionCoreImpl::AreAuthTokensAvailable() {
   for (const auto& manager : ipp_token_managers_) {
     if (!manager.second->IsAuthTokenAvailable(
             ipp_proxy_config_manager_->CurrentGeo())) {
-      Telemetry().EmptyTokenCache(manager.first);
+      // Only emit metric if the cache was ever filled.
+      if (manager.second->WasTokenCacheEverFilled()) {
+        Telemetry().EmptyTokenCache(manager.first);
+      }
       all_caches_have_tokens = false;
     }
   }
@@ -150,13 +176,25 @@ std::optional<BlindSignedAuthToken> IpProtectionCoreImpl::GetAuthToken(
     return result;
   }
 
-  auto proxy_layer =
-      chain_index == 0 ? ProxyLayer::kProxyA : ProxyLayer::kProxyB;
-  if (ipp_token_managers_.count(proxy_layer) > 0) {
-    result = ipp_token_managers_[proxy_layer]->GetAuthToken(
-        ipp_proxy_config_manager_->CurrentGeo());
+  auto it = ipp_token_managers_.find(chain_index == 0 ? ProxyLayer::kProxyA
+                                                      : ProxyLayer::kProxyB);
+  if (it != ipp_token_managers_.end()) {
+    result = it->second->GetAuthToken(ipp_proxy_config_manager_->CurrentGeo());
   }
   return result;
+}
+
+std::optional<std::string> IpProtectionCoreImpl::GetProbabilisticRevealToken(
+    const std::string& top_level,
+    const std::string& third_party) {
+  if (!ipp_prt_manager_) {
+    return std::nullopt;
+  }
+  return ipp_prt_manager_->GetToken(top_level, third_party);
+}
+
+bool IpProtectionCoreImpl::IsProbabilisticRevealTokenAvailable() {
+  return (ipp_prt_manager_ && ipp_prt_manager_->IsTokenAvailable());
 }
 
 IpProtectionTokenManager*
@@ -177,6 +215,9 @@ bool IpProtectionCoreImpl::IsProxyListAvailable() {
 }
 
 void IpProtectionCoreImpl::QuicProxiesFailed() {
+  if (ipp_over_quic_) {
+    Telemetry().QuicProxiesFailed(quic_requests_);
+  }
   ipp_over_quic_ = false;
 }
 
@@ -189,6 +230,7 @@ std::vector<net::ProxyChain> IpProtectionCoreImpl::GetProxyChainList() {
 
   bool ipp_over_quic_only = net::features::kIpPrivacyUseQuicProxiesOnly.Get();
   if (ipp_over_quic_ || ipp_over_quic_only) {
+    quic_requests_++;
     proxy_list = MakeQuicProxyList(
         proxy_list, /*include_https_fallback=*/!ipp_over_quic_only);
   }
@@ -203,11 +245,6 @@ void IpProtectionCoreImpl::RequestRefreshProxyList() {
 }
 
 void IpProtectionCoreImpl::GeoObserved(const std::string& geo_id) {
-  // If token caching by geo is disabled, short-circuit and don't do anything.
-  if (!enable_token_caching_by_geo_) {
-    return;
-  }
-
   if (ipp_proxy_config_manager_ != nullptr &&
       ipp_proxy_config_manager_->CurrentGeo() != geo_id) {
     ipp_proxy_config_manager_->RequestRefreshProxyList();
@@ -220,12 +257,25 @@ void IpProtectionCoreImpl::GeoObserved(const std::string& geo_id) {
   }
 }
 
+bool IpProtectionCoreImpl::ShouldRequestIncludeProbabilisticRevealToken(
+    const GURL& request_url) {
+  if (!base::FeatureList::IsEnabled(
+          net::features::kEnableProbabilisticRevealTokens)) {
+    return false;
+  }
+  if (net::features::kBypassProbabilisticRevealTokenRegistry.Get()) {
+    return true;
+  }
+  return probabilistic_reveal_token_registry_->IsRegistered(request_url);
+}
+
 void IpProtectionCoreImpl::OnNetworkChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
   // When the network changes, but there is still a network, reset the
   // tracking of whether QUIC proxies work, and try to fetch a new proxy list.
   if (type != net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE) {
     ipp_over_quic_ = net::features::kIpPrivacyUseQuicProxies.Get();
+    quic_requests_ = 0;
     RequestRefreshProxyList();
   }
 }
@@ -245,6 +295,26 @@ void IpProtectionCoreImpl::set_ip_protection_enabled(bool enabled) {
   // disabled via the try again after time returned by the next TryGetAuthToken
   // call, but the GetProxyConfig calls will continue and receive failures until
   // the feature is re-enabled.
+}
+
+bool IpProtectionCoreImpl::HasTrackingProtectionException(
+    const GURL& first_party_url) const {
+  for (const content_settings::HostIndexedContentSettings& index :
+       tp_content_settings_) {
+    if (const content_settings::RuleEntry* result =
+            index.Find(GURL(), first_party_url);
+        result != nullptr) {
+      return content_settings::ValueToContentSetting(result->second.value) ==
+             CONTENT_SETTING_ALLOW;
+    }
+  }
+  return false;
+}
+
+void IpProtectionCoreImpl::SetTrackingProtectionContentSetting(
+    const ContentSettingsForOneType& settings) {
+  tp_content_settings_ =
+      content_settings::HostIndexedContentSettings::Create(settings);
 }
 
 }  // namespace ip_protection

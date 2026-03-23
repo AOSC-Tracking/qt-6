@@ -37,7 +37,7 @@ const UIStrings = {
    */
   startStopRecording: 'Start/stop recording',
   /**
-   *@description Command for shwoing the profiler tab
+   *@description Command for showing the profiler tab
    */
   showMemory: 'Show Memory',
   /**
@@ -60,7 +60,7 @@ const UIStrings = {
    *@description Command for deleting a profile in the Profiler panel
    */
   deleteProfile: 'Delete profile',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/profiler/profiler-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
 

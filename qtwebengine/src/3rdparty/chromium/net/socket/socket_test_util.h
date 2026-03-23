@@ -2,17 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #ifndef NET_SOCKET_SOCKET_TEST_UTIL_H_
 #define NET_SOCKET_SOCKET_TEST_UTIL_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -30,6 +26,7 @@
 #include "base/memory/raw_span.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string_view_util.h"
 #include "build/build_config.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_once_callback.h"
@@ -171,14 +168,17 @@ struct MockConfirm {
 // MockRead and MockWrite shares the same interface and members, but we'd like
 // to have distinct types because we don't want to have them used
 // interchangably. To do this, a struct template is defined, and MockRead and
-// MockWrite are instantiated by using this template. Template parameter |type|
+// MockWrite are instantiated by using this template. Template parameter `type`
 // is not used in the struct definition (it purely exists for creating a new
 // type).
 //
-// |data| in MockRead and MockWrite has different meanings: |data| in MockRead
+// `data` in MockRead and MockWrite has different meanings: `data` in MockRead
 // is the data returned from the socket when MockTCPClientSocket::Read() is
-// attempted, while |data| in MockWrite is the expected data that should be
+// attempted, while `data` in MockWrite is the expected data that should be
 // given in MockTCPClientSocket::Write().
+//
+// A `result` of 0 means to return the length of `data_` for the read, if
+// non-empty, rather than to actually return 0 bytes read.
 enum MockReadWriteType { MOCK_READ, MOCK_WRITE };
 
 template <MockReadWriteType type>
@@ -186,12 +186,79 @@ struct MockReadWrite {
   // Flag to indicate that the message loop should be terminated.
   enum { STOPLOOP = 1 << 31 };
 
+  // Helper to automatically convert various different arguments to
+  // string_views.
+  class ToStringView {
+   public:
+    // This class requires the use of implicit constructors to canonicalize the
+    // different possible argument types.
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    ToStringView(std::string_view data) : data_(data) {}
+
+    // String overloads are needed to disambiguate which constructor to call
+    // when a string is passed.
+
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    ToStringView(std::string& data) : data_(data) {}
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    ToStringView(const std::string& data) : data_(data) {}
+
+    // Reject rvalue strings.
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    ToStringView(std::string&&) = delete;
+
+    // Accept string constants. This will also accidentally accept char arrays,
+    // but since it obeys the length, it should always be safe as long as the
+    // lifetime of the char array is long enough.
+    template <size_t N>
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    ToStringView(const char (&data)[N]) : data_(data, N - 1) {
+      // Verify this doesn't accidentally truncate a char array that didn't have
+      // a nul-terminator.
+      CHECK_EQ(data[N - 1], '\0');
+
+      // This CHECK ensures that this constructor is not accidentally used when
+      // matching an embedded nul byte was not intended. If you want to match an
+      // embedded nul byte, the preferred method is to pass a std::array<char,
+      // N>.
+      CHECK(std::ranges::none_of(data_, [](char c) { return c == '\0'; }));
+    }
+
+    // The template parameter is not strictly necessary, but it allows
+    // `MockReadWrite(base::span(array))` to work, instead of having to use
+    // `MockReadWrite(base::span<const uint8_t>(array))`.
+    template <size_t Extent>
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    ToStringView(base::span<const char, Extent> data)
+        : data_(base::as_string_view(data)) {}
+    template <size_t Extent>
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    ToStringView(base::span<const uint8_t, Extent> data)
+        : data_(base::as_string_view(data)) {}
+
+    // Non-const versions so callers don't have to write extra code to handle
+    // mutable input.
+    template <size_t Extent>
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    ToStringView(base::span<char, Extent> data)
+        : data_(base::as_string_view(data)) {}
+    template <size_t Extent>
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    ToStringView(base::span<uint8_t, Extent> data)
+        : data_(base::as_string_view(data)) {}
+
+    ~ToStringView() = default;
+
+    explicit operator std::string_view() const { return data_; }
+
+   private:
+    const std::string_view data_;
+  };
+
   // Default
   MockReadWrite()
       : mode(SYNCHRONOUS),
         result(0),
-        data(nullptr),
-        data_len(0),
         sequence_number(0),
         tos(0) {}
 
@@ -199,8 +266,6 @@ struct MockReadWrite {
   MockReadWrite(IoMode io_mode, int result)
       : mode(io_mode),
         result(result),
-        data(nullptr),
-        data_len(0),
         sequence_number(0),
         tos(0) {}
 
@@ -208,73 +273,37 @@ struct MockReadWrite {
   MockReadWrite(IoMode io_mode, int result, int seq)
       : mode(io_mode),
         result(result),
-        data(nullptr),
-        data_len(0),
         sequence_number(seq),
         tos(0) {}
 
-  // Asynchronous read/write success (inferred data length).
-  explicit MockReadWrite(const char* data)
-      : mode(ASYNC),
-        result(0),
-        data(data),
-        data_len(strlen(data)),
-        sequence_number(0),
-        tos(0) {}
+  // Asynchronous read/write success.
+  explicit MockReadWrite(ToStringView data)
+      : mode(ASYNC), result(0), data(data), sequence_number(0), tos(0) {}
 
-  // Read/write success (inferred data length).
-  MockReadWrite(IoMode io_mode, const char* data)
-      : mode(io_mode),
-        result(0),
-        data(data),
-        data_len(strlen(data)),
-        sequence_number(0),
-        tos(0) {}
-
-  // Read/write success.
-  MockReadWrite(IoMode io_mode, const char* data, int data_len)
-      : mode(io_mode),
-        result(0),
-        data(data),
-        data_len(data_len),
-        sequence_number(0),
-        tos(0) {}
-
-  // Read/write success (inferred data length) with sequence information.
-  MockReadWrite(IoMode io_mode, int seq, const char* data)
-      : mode(io_mode),
-        result(0),
-        data(data),
-        data_len(strlen(data)),
-        sequence_number(seq),
-        tos(0) {}
+  // This unsafe constructor used to exist. Explicitly delete it to prevent
+  // accidental usage of the 5-argument constructor below.
+  MockReadWrite(IoMode io_mode, const char* data, int data_len) = delete;
 
   // Read/write success with sequence information.
-  MockReadWrite(IoMode io_mode, const char* data, int data_len, int seq)
-      : mode(io_mode),
-        result(0),
-        data(data),
-        data_len(data_len),
-        sequence_number(seq),
-        tos(0) {}
+  MockReadWrite(IoMode io_mode, int seq, ToStringView data)
+      : mode(io_mode), result(0), data(data), sequence_number(seq), tos(0) {}
 
-  // Read/write success with sequence and TOS information.
+  // Read/write that defaults to success, with optional sequence and TOS
+  // information.
   MockReadWrite(IoMode io_mode,
-                const char* data,
-                int data_len,
-                int seq,
-                uint8_t tos_byte)
+                ToStringView data,
+                int result = 0,
+                int seq = 0,
+                uint8_t tos_byte = 0)
       : mode(io_mode),
-        result(0),
+        result(result),
         data(data),
-        data_len(data_len),
         sequence_number(seq),
         tos(tos_byte) {}
 
   IoMode mode;
   int result;
-  const char* data;
-  int data_len;
+  std::string_view data;
 
   // For data providers that only allows reads to occur in a particular
   // sequence.  If a read occurs before the given |sequence_number| is reached,
@@ -302,7 +331,7 @@ class SocketDataPrinter {
 
   // Prints the write in |data| using some sort of protocol-specific
   // format.
-  virtual std::string PrintWrite(const std::string& data) = 0;
+  virtual std::string PrintWrite(std::string_view data) = 0;
 };
 
 // The SocketDataProvider is an interface used by the MockClientSocket
@@ -589,6 +618,9 @@ struct SSLSocketDataProvider {
   // Result for GetECHRetryConfigs().
   std::vector<uint8_t> ech_retry_configs;
 
+  // Result for GetServerTrustAnchorIDsForRetry().
+  std::vector<std::vector<uint8_t>> server_trust_anchor_ids_for_retry;
+
   std::optional<NextProtoVector> next_protos_expected_in_ssl_config;
   std::optional<SSLConfig::ApplicationSettings> expected_application_settings;
 
@@ -601,6 +633,7 @@ struct SSLSocketDataProvider {
   std::optional<bool> expected_ignore_certificate_errors;
   std::optional<NetworkAnonymizationKey> expected_network_anonymization_key;
   std::optional<std::vector<uint8_t>> expected_ech_config_list;
+  std::optional<std::vector<uint8_t>> expected_trust_anchor_ids;
 
   bool is_connect_data_consumed = false;
   bool is_confirm_data_consumed = false;
@@ -1014,6 +1047,7 @@ class MockSSLClientSocket : public AsyncSocket, public SSLClientSocket {
 
   // SSLClientSocket implementation.
   std::vector<uint8_t> GetECHRetryConfigs() override;
+  std::vector<std::vector<uint8_t>> GetServerTrustAnchorIDsForRetry() override;
 
   // This MockSocket does not implement the manual async IO feature.
   void OnReadComplete(const MockRead& data) override;
@@ -1115,6 +1149,8 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
     return tagged_before_data_transferred_;
   }
 
+  EcnCodePoint outgoing_ecn() const { return outgoing_ecn_; }
+
  private:
   int CompleteRead();
 
@@ -1143,13 +1179,12 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
 
   NetLogWithSource net_log_;
 
-  DatagramBuffers unwritten_buffers_;
-
   SocketTag tag_;
   bool data_transferred_ = false;
   bool tagged_before_data_transferred_ = true;
 
   uint8_t last_tos_ = 0;
+  EcnCodePoint outgoing_ecn_ = net::ECN_NOT_ECT;
 
   base::WeakPtrFactory<MockUDPClientSocket> weak_factory_{this};
 };
@@ -1214,7 +1249,9 @@ class ClientSocketPoolTest {
     int rv = request->handle()->Init(
         group_id, socket_params, std::nullopt /* proxy_annotation_tag */,
         priority, SocketTag(), respect_limits, request->callback(),
-        ClientSocketPool::ProxyAuthCallback(), socket_pool, NetLogWithSource());
+        ClientSocketPool::ProxyAuthCallback(),
+        /*fail_if_alias_requires_proxy_override=*/false, socket_pool,
+        NetLogWithSource());
     if (rv != ERR_IO_PENDING)
       request_order_.push_back(request);
     return rv;
@@ -1327,6 +1364,7 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
       ClientSocketHandle* handle,
       CompletionOnceCallback callback,
       const ProxyAuthCallback& on_auth_callback,
+      bool fail_if_alias_requires_proxy_override,
       const NetLogWithSource& net_log) override;
   void SetPriority(const GroupId& group_id,
                    ClientSocketHandle* handle,
@@ -1462,11 +1500,9 @@ extern const int kSOCKS4TestPort;
 
 // Constants for a successful SOCKS v4 handshake (connecting to kSOCKS4TestHost
 // on port kSOCKS4TestPort, for the request).
-extern const char kSOCKS4OkRequestLocalHostPort80[];
-extern const int kSOCKS4OkRequestLocalHostPort80Length;
+extern const std::string_view kSOCKS4OkRequestLocalHostPort80;
 
-extern const char kSOCKS4OkReply[];
-extern const int kSOCKS4OkReplyLength;
+extern const std::string_view kSOCKS4OkReply;
 
 // Host / port used for SOCKS5 test strings.
 extern const char kSOCKS5TestHost[];
@@ -1474,17 +1510,13 @@ extern const int kSOCKS5TestPort;
 
 // Constants for a successful SOCKS v5 handshake (connecting to kSOCKS5TestHost
 // on port kSOCKS5TestPort, for the request)..
-extern const char kSOCKS5GreetRequest[];
-extern const int kSOCKS5GreetRequestLength;
+extern const std::string_view kSOCKS5GreetRequest;
 
-extern const char kSOCKS5GreetResponse[];
-extern const int kSOCKS5GreetResponseLength;
+extern const std::string_view kSOCKS5GreetResponse;
 
-extern const char kSOCKS5OkRequest[];
-extern const int kSOCKS5OkRequestLength;
+extern const std::string_view kSOCKS5OkRequest;
 
-extern const char kSOCKS5OkResponse[];
-extern const int kSOCKS5OkResponseLength;
+extern const std::string_view kSOCKS5OkResponse;
 
 // Helper function to get the total data size of the MockReads in |reads|.
 int64_t CountReadBytes(base::span<const MockRead> reads);

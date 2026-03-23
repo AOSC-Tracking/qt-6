@@ -52,9 +52,10 @@ cc_binary(
         "notap",
     ],
     deps = [
-        "@com_google_absl//absl/base:nullability",
+        "@abseil-cpp//absl/base:nullability",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
         "@com_google_fuzztest//centipede:centipede_runner_no_main",
-        "@com_google_fuzztest//centipede:mutation_input",
         "@com_google_fuzztest//common:defs",
     ],
 )
@@ -62,6 +63,31 @@ cc_binary(
 centipede_fuzz_target(
     name = "fuzz_target_with_config",
     fuzz_target = "_fuzz_target_with_config",
+)
+
+# Fuzz target that uses the C++ RunnerCallbacks API to mutate inputs.
+cc_binary(
+    name = "_fuzz_target_with_custom_mutator",
+    srcs = ["fuzz_target_with_custom_mutator.cc"],
+    # Cannot be built directly - build :fuzz_target_with_custom_mutator instead.
+    tags = [
+        "local",
+        "manual",
+        "notap",
+    ],
+    deps = [
+        "@abseil-cpp//absl/base:nullability",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+        "@com_google_fuzztest//centipede:centipede_runner_no_main",
+        "@com_google_fuzztest//centipede:mutation_input",
+        "@com_google_fuzztest//common:defs",
+    ],
+)
+
+centipede_fuzz_target(
+    name = "fuzz_target_with_custom_mutator",
+    fuzz_target = "_fuzz_target_with_custom_mutator",
 )
 
 centipede_fuzz_target(
@@ -88,9 +114,8 @@ cc_binary(
         "notap",
     ],
     deps = [
-        "@com_google_absl//absl/base:nullability",
+        "@abseil-cpp//absl/base:nullability",
         "@com_google_fuzztest//centipede:centipede_runner_no_main",
-        "@com_google_fuzztest//centipede:mutation_input",
         "@com_google_fuzztest//common:defs",
     ],
 )
@@ -111,8 +136,8 @@ cc_binary(
         "notap",
     ],
     deps = [
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/strings",
         "@com_google_fuzztest//centipede:centipede_runner_no_main",
     ],
 )
@@ -132,11 +157,10 @@ cc_binary(
         "notap",
     ],
     deps = [
-        "@com_google_absl//absl/base:nullability",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
+        "@abseil-cpp//absl/base:nullability",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/strings",
         "@com_google_fuzztest//centipede:centipede_runner_no_main",
-        "@com_google_fuzztest//centipede:mutation_input",
         "@com_google_fuzztest//common:defs",
     ],
 )
@@ -266,7 +290,11 @@ cc_binary(
 cc_binary(
     name = "standalone_fuzz_target_with_main",
     srcs = ["standalone_fuzz_target_with_main.cc"],
-    deps = ["@com_google_absl//absl/base:nullability"],
+    deps = ["@abseil-cpp//absl/base:nullability"],
+)
+
+centipede_fuzz_target(
+    name = "hanging_fuzz_target",
 )
 
 ################################################################################

@@ -336,6 +336,10 @@ class V8_EXPORT_PRIVATE CallDescriptor final
 
   EncodedCSignature ToEncodedCSignature() const;
 
+  std::optional<Runtime::FunctionId> runtime_function_id() const {
+    return runtime_function_id_;
+  }
+
  private:
   void ComputeParamCounts() const;
 
@@ -359,6 +363,10 @@ class V8_EXPORT_PRIVATE CallDescriptor final
   const char* const debug_name_;
 
   uint64_t signature_hash_;
+
+  // If this is a descriptor for a call to a runtime function,
+  // {runtime_function_id_} will contain the corresponding ID.
+  std::optional<Runtime::FunctionId> runtime_function_id_;
 
   mutable std::optional<size_t> gp_param_count_;
   mutable std::optional<size_t> fp_param_count_;
@@ -437,7 +445,8 @@ class V8_EXPORT_PRIVATE Linkage : public NON_EXPORTED_BASE(ZoneObject) {
   // structs, pointers to members, etc.
   static CallDescriptor* GetSimplifiedCDescriptor(
       Zone* zone, const MachineSignature* sig,
-      CallDescriptor::Flags flags = CallDescriptor::kNoFlags);
+      CallDescriptor::Flags flags = CallDescriptor::kNoFlags,
+      Operator::Properties properties = Operator::kNoThrow);
 
   // Get the location of an (incoming) parameter to this function.
   LinkageLocation GetParameterLocation(int index) const {

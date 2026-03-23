@@ -5,6 +5,7 @@
 #include "extensions/browser/updater/manifest_fetch_data.h"
 
 #include <iterator>
+#include <tuple>
 #include <vector>
 
 #include "base/check.h"
@@ -15,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "extensions/browser/disable_reason.h"
+#include "extensions/browser/updater/extension_downloader_types.h"
 #include "extensions/common/extension_id.h"
 
 using extensions::mojom::ManifestLocation;
@@ -28,7 +30,7 @@ namespace {
 const int kExtensionsManifestMaxURLSize = 2000;
 
 // Strings to report the manifest location in Omaha update pings. Please use
-// strings with no capitalization, spaces or underscorse.
+// strings with no capitalization, spaces or underscores.
 const char kInternalLocation[] = "internal";
 const char kExternalLocation[] = "external";
 const char kPolicyLocation[] = "policy";
@@ -40,17 +42,18 @@ void AddEnabledStateToPing(std::string* ping_value,
   *ping_value += "&e=" + std::string(ping_data->is_enabled ? "1" : "0");
   if (!ping_data->is_enabled) {
     // Add a dr=<number> param for each bit set in disable reasons.
-    for (int enum_value = 1; enum_value < disable_reason::DISABLE_REASON_LAST;
-         enum_value <<= 1) {
-      if (ping_data->disable_reasons & enum_value)
-        *ping_value += "&dr=" + base::NumberToString(enum_value);
+    for (int reason : ping_data->disable_reasons) {
+      if (reason != disable_reason::DISABLE_UNKNOWN) {
+        // Only append valid and known disable reasons.
+        *ping_value += "&dr=" + base::NumberToString(reason);
+      }
     }
   }
 }
 
 }  // namespace
 
-ManifestFetchData::ExtensionData::ExtensionData() : version(base::Version()) {}
+ManifestFetchData::ExtensionData::ExtensionData() = default;
 
 ManifestFetchData::ExtensionData::ExtensionData(const ExtensionData& other) =
     default;
@@ -178,7 +181,11 @@ bool ManifestFetchData::AddExtension(const std::string& id,
       parts.push_back(base::StringPrintf("brand=%s", brand_code_.c_str()));
 
     std::string ping_value;
-    pings_[id] = DownloadPingData(0, 0, false, 0);
+    pings_.emplace(
+        std::piecewise_construct, std::forward_as_tuple(id),
+        std::forward_as_tuple(/*rollcall=*/0, /*active=*/0,
+                              /*enabled=*/false, DisableReasonSet()));
+
     if (ping_data) {
       if (ping_data->rollcall_days == kNeverPinged ||
           ping_data->rollcall_days > 0) {

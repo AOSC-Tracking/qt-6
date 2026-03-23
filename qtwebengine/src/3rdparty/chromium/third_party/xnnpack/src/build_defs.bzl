@@ -2,6 +2,126 @@
 
 load("//:emscripten.bzl", "xnnpack_emscripten_benchmark_linkopts", "xnnpack_emscripten_deps", "xnnpack_emscripten_minimal_linkopts", "xnnpack_emscripten_test_linkopts")
 
+def xnnpack_select_if(cond = None, val_true = [], val_false = []):
+    if cond != None:
+        return select({
+            cond: val_true,
+            "//conditions:default": val_false,
+        })
+    else:
+        return val_true
+
+def xnnpack_configurable_defines():
+    return xnnpack_select_if(
+        "//:cpuinfo_enabled",
+        ["XNN_ENABLE_CPUINFO=1"],
+        ["XNN_ENABLE_CPUINFO=0"],
+    ) + xnnpack_select_if(
+        "//:sparse_enabled",
+        ["XNN_ENABLE_SPARSE=1"],
+        ["XNN_ENABLE_SPARSE=0"],
+    ) + xnnpack_select_if(
+        "//:assembly_enabled",
+        ["XNN_ENABLE_ASSEMBLY=1"],
+        ["XNN_ENABLE_ASSEMBLY=0"],
+    ) + xnnpack_select_if(
+        "//:arm_fp16_scalar_enabled",
+        ["XNN_ENABLE_ARM_FP16_SCALAR=1"],
+        ["XNN_ENABLE_ARM_FP16_SCALAR=0"],
+    ) + xnnpack_select_if(
+        "//:arm_fp16_vector_enabled",
+        ["XNN_ENABLE_ARM_FP16_VECTOR=1"],
+        ["XNN_ENABLE_ARM_FP16_VECTOR=0"],
+    ) + xnnpack_select_if(
+        "//:arm_bf16_enabled",
+        ["XNN_ENABLE_ARM_BF16=1"],
+        ["XNN_ENABLE_ARM_BF16=0"],
+    ) + xnnpack_select_if(
+        "//:arm_dotprod_enabled",
+        ["XNN_ENABLE_ARM_DOTPROD=1"],
+        ["XNN_ENABLE_ARM_DOTPROD=0"],
+    ) + xnnpack_select_if(
+        "//:arm_i8mm_enabled",
+        ["XNN_ENABLE_ARM_I8MM=1"],
+        ["XNN_ENABLE_ARM_I8MM=0"],
+    ) + xnnpack_select_if(
+        "//:riscv_fp16_vector_enabled",
+        ["XNN_ENABLE_RISCV_FP16_VECTOR=1"],
+        ["XNN_ENABLE_RISCV_FP16_VECTOR=0"],
+    ) + xnnpack_select_if(
+        "//:avx512amx_enabled",
+        ["XNN_ENABLE_AVX512AMX=1"],
+        ["XNN_ENABLE_AVX512AMX=0"],
+    ) + xnnpack_select_if(
+        "//:avx512fp16_enabled",
+        ["XNN_ENABLE_AVX512FP16=1"],
+        ["XNN_ENABLE_AVX512FP16=0"],
+    ) + xnnpack_select_if(
+        "//:avx512bf16_enabled",
+        ["XNN_ENABLE_AVX512BF16=1"],
+        ["XNN_ENABLE_AVX512BF16=0"],
+    ) + xnnpack_select_if(
+        "//:avxvnni_enabled",
+        ["XNN_ENABLE_AVXVNNI=1"],
+        ["XNN_ENABLE_AVXVNNI=0"],
+    ) + xnnpack_select_if(
+        "//:avxvnniint8_enabled",
+        ["XNN_ENABLE_AVXVNNIINT8=1"],
+        ["XNN_ENABLE_AVXVNNIINT8=0"],
+    ) + xnnpack_select_if(
+        "//:avx512f_enabled",
+        ["XNN_ENABLE_AVX512F=1"],
+        ["XNN_ENABLE_AVX512F=0"],
+    ) + xnnpack_select_if(
+        "//:avx256skx_enabled",
+        ["XNN_ENABLE_AVX256SKX=1"],
+        ["XNN_ENABLE_AVX256SKX=0"],
+    ) + xnnpack_select_if(
+        "//:avx256vnni_enabled",
+        ["XNN_ENABLE_AVX256VNNI=1"],
+        ["XNN_ENABLE_AVX256VNNI=0"],
+    ) + xnnpack_select_if(
+        "//:avx256vnnigfni_enabled",
+        ["XNN_ENABLE_AVX256VNNIGFNI=1"],
+        ["XNN_ENABLE_AVX256VNNIGFNI=0"],
+    ) + xnnpack_select_if(
+        "//:avx512skx_enabled",
+        ["XNN_ENABLE_AVX512SKX=1"],
+        ["XNN_ENABLE_AVX512SKX=0"],
+    ) + xnnpack_select_if(
+        "//:avx512vbmi_enabled",
+        ["XNN_ENABLE_AVX512VBMI=1"],
+        ["XNN_ENABLE_AVX512VBMI=0"],
+    ) + xnnpack_select_if(
+        "//:avx512vnni_enabled",
+        ["XNN_ENABLE_AVX512VNNI=1"],
+        ["XNN_ENABLE_AVX512VNNI=0"],
+    ) + xnnpack_select_if(
+        "//:avx512vnnigfni_enabled",
+        ["XNN_ENABLE_AVX512VNNIGFNI=1"],
+        ["XNN_ENABLE_AVX512VNNIGFNI=0"],
+    ) + xnnpack_select_if(
+        "//:hvx_enabled",
+        ["XNN_ENABLE_HVX=1"],
+        ["XNN_ENABLE_HVX=0"],
+    ) + xnnpack_select_if(
+        "//:kleidiai_enabled",
+        ["XNN_ENABLE_KLEIDIAI=1"],
+        ["XNN_ENABLE_KLEIDIAI=0"],
+    ) + xnnpack_select_if(
+        "//:arm_sme_enabled",
+        ["XNN_ENABLE_ARM_SME=1"],
+        ["XNN_ENABLE_SRM_SME=0"],
+    ) + xnnpack_select_if(
+        "//:arm_sme2_enabled",
+        ["XNN_ENABLE_ARM_SME2=1"],
+        ["XNN_ENABLE_ARM_SME2=0"],
+    ) + xnnpack_select_if(
+        "//:wasm_revectorize_enabled",
+        ["XNN_ENABLE_WASM_REVECTORIZE=1"],
+        ["XNN_ENABLE_WASM_REVECTORIZE=0"],
+    ) + xnnpack_slinky_defines()
+
 def xnnpack_visibility():
     """Visibility of :XNNPACK target.
 
@@ -22,9 +142,21 @@ def xnnpack_msvc_std_copts():
     """MSVC compiler flags to specify language standard for C sources."""
     return ["/Drestrict="]
 
+def xnnpack_std_copts():
+    """Compiler flags to specify language standard for C sources."""
+    return ["-std=c99"]
+
 def xnnpack_std_cxxopts():
     """Compiler flags to specify language standard for C++ sources."""
     return ["-std=gnu++14"]
+
+def xnnpack_std_c_defines():
+    """Default defines used throughout the C sources.
+
+    We need this for things like `struct timespec` that are not in c99, but
+    are part of POSIX 1003.1b-1993."""
+
+    return ["_DARWIN_C_SOURCE=1", "_POSIX_C_SOURCE=199309L"]
 
 def xnnpack_test_deps_for_library():
     """Depencies needed for a library to use gunit."""
@@ -95,7 +227,7 @@ def xnnpack_cc_library(
         wasmsimd_srcs = [],
         wasmrelaxedsimd_srcs = [],
         linkopts = [],
-        copts = [],
+        copts = xnnpack_std_copts(),
         gcc_copts = xnnpack_gcc_std_copts(),
         msvc_copts = xnnpack_msvc_std_copts(),
         mingw_copts = [],
@@ -115,7 +247,7 @@ def xnnpack_cc_library(
         defines = [],
         includes = [],
         deps = [],
-        visibility = [":__subpackages__"],
+        visibility = None,
         testonly = False,
         **kwargs):
     """C/C++/assembly library with architecture-specific configuration.
@@ -135,9 +267,7 @@ def xnnpack_cc_library(
       wasmsimd_srcs: The list of WebAssembly SIMD-specific source files.
       wasmrelaxedsimd_srcs: The list of WebAssembly Relaxed SIMD-specific
                             source files.
-      copts: The list of compiler flags to use in all builds. -I flags for
-             include/ and src/ directories of XNNPACK are always prepended
-             before these user-specified flags.
+      copts: The list of compiler flags to use in all builds.
       gcc_copts: The list of compiler flags to use with GCC-like compilers.
       msvc_copts: The list of compiler flags to use with MSVC compiler.
       mingw_copts: The list of compiler flags to use with MinGW GCC compilers.
@@ -169,6 +299,9 @@ def xnnpack_cc_library(
       testonly: If True only testonly targets (such as tests) can depend on this.
       **kwargs: Other arguments to pass to the cc_library rule.
     """
+    # Set the default defines.
+    defines = defines or xnnpack_configurable_defines()
+
     native.cc_library(
         name = name,
         srcs = srcs + select({
@@ -181,10 +314,7 @@ def xnnpack_cc_library(
             "//build_config:emscripten_wasmrelaxedsimd": wasmrelaxedsimd_srcs,
             "//conditions:default": [],
         }),
-        copts = [
-            "-Iinclude",
-            "-Isrc",
-        ] + copts + select({
+        copts = copts + select({
             "//build_config:linux_k8": gcc_x86_copts,
             "//build_config:linux_arm": aarch32_copts,
             "//build_config:linux_armeabi": aarch32_copts,
@@ -224,7 +354,7 @@ def xnnpack_cc_library(
             "//:optimized_build": optimized_copts,
             "//conditions:default": [],
         }),
-        defines = defines,
+        defines = xnnpack_std_c_defines() + defines,
         deps = deps,
         includes = ["include", "src"] + includes,
         linkstatic = True,
@@ -238,7 +368,7 @@ def xnnpack_cc_library(
             "//build_config:android": ["-lm"],
             "//conditions:default": [],
         }),
-        textual_hdrs = hdrs,
+        hdrs = hdrs,
         visibility = visibility,
         testonly = testonly,
         **kwargs,
@@ -259,9 +389,7 @@ def xnnpack_unit_test(name, srcs, copts = [], mingw_copts = [], msys_copts = [],
     Args:
       name: The name of the test target to define.
       srcs: The list of source and header files.
-      copts: The list of additional compiler flags for the target. -I flags
-             for include/ and src/ directories of XNNPACK are always prepended
-             before these user-specified flags.
+      copts: The list of additional compiler flags for the target.
       mingw_copts: The list of compiler flags to use with MinGW GCC compilers.
       msys_copts: The list of compiler flags to use with MSYS (Cygwin) GCC compilers.
       deps: The list of additional libraries to be linked. Google Test library
@@ -275,13 +403,13 @@ def xnnpack_unit_test(name, srcs, copts = [], mingw_copts = [], msys_copts = [],
       **kwargs: Other arguments to pass to the cc_test rule.
     """
 
+    # Set the default defines.
+    defines = defines or xnnpack_configurable_defines()
+
     native.cc_test(
         name = name,
         srcs = srcs,
-        copts = xnnpack_std_cxxopts() + [
-            "-Iinclude",
-            "-Isrc",
-        ] + select({
+        copts = xnnpack_std_cxxopts() + select({
             "//build_config:windows_x86_64_mingw": mingw_copts,
             "//build_config:windows_x86_64_msys": msys_copts,
             "//conditions:default": [],
@@ -316,19 +444,14 @@ def xnnpack_binary(name, srcs, copts = [], deps = [], linkopts = []):
     Args:
       name: The name of the binary target to define.
       srcs: The list of source and header files.
-      copts: The list of additional compiler flags for the target. -I flags
-             for include/ and src/ directories of XNNPACK are always prepended
-             before these user-specified flags.
+      copts: The list of additional compiler flags for the target.
       deps: The list of libraries to be linked.
       linkopts: The list of additional linker options
     """
     native.cc_binary(
         name = name,
         srcs = srcs,
-        copts = [
-            "-Iinclude",
-            "-Isrc",
-        ] + copts,
+        copts = copts,
         linkopts = select({
             "//build_config:emscripten": xnnpack_emscripten_minimal_linkopts(),
             "//conditions:default": [],
@@ -343,22 +466,20 @@ def xnnpack_benchmark(name, srcs, copts = [], deps = [], tags = [], defines = []
     Args:
       name: The name of the binary target to define.
       srcs: The list of source and header files.
-      copts: The list of additional compiler flags for the target. -I flags
-             for include/ and src/ directories of XNNPACK are always prepended
-             before these user-specified flags.
+      copts: The list of additional compiler flags for the target.
       deps: The list of additional libraries to be linked. Google Benchmark
             library is always added as a dependency and does not need to be
             explicitly specified.
       tags: The list of arbitrary text tags.
       defines: The list of arbitrary defines tags.
     """
+    # Set the default defines.
+    defines = defines or xnnpack_configurable_defines()
+
     native.cc_test(
         name = name,
         srcs = srcs,
-        copts = xnnpack_std_cxxopts() + [
-            "-Iinclude",
-            "-Isrc",
-        ] + select({
+        copts = xnnpack_std_cxxopts() + select({
             "//build_config:windows_x86_64_clang": ["/clang:-Wno-unused-function"],
             "//build_config:windows_x86_64_mingw": ["-Wno-unused-function"],
             "//build_config:windows_x86_64_msys": ["-Wno-unused-function"],

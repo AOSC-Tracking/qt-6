@@ -61,6 +61,38 @@ inline constexpr char kDeletedTabGroupIds[] =
 inline constexpr char kLocallyClosedRemoteTabGroupIds[] =
     "saved_tab_groups.closed_remote_group_ids";
 
+// Whether tab group sync feature was enabled in last session. Used to enable a
+// one time addition of unsaved local groups to sync on startup. On subsequent
+// restarts, if still unsaved tab groups are found, they will be simply deleted
+// from the local tab model.
+inline constexpr char kDidSyncTabGroupsInLastSession[] =
+    "saved_tab_groups.did_sync_tab_groups_in_last_session";
+
+// Whether shared tab groups feature was enabled in last session. This is used
+// to perform a migration in the shared tab group DB on startup when the shared
+// tab group feature switches from disabled to enabled.
+inline constexpr char kDidEnableSharedTabGroupsInLastSession[] =
+    "saved_tab_groups.did_enable_shared_tab_groups_in_last_session";
+
+// Prefs for Data Sharing (Versioning).
+// Stores whether the instant message prompting users to update chrome to
+// continue using shared tab groups should be shown.
+inline constexpr char kEligibleForVersionOutOfDateInstantMessage[] =
+    "data_sharing.eligible_for_version_out_of_date_instant_message";
+// Stores whether the persistent message prompting users to update chrome to
+// continue using shared tab groups should be shown.
+inline constexpr char kEligibleForVersionOutOfDatePersistentMessage[] =
+    "data_sharing.eligible_for_version_out_of_date_persistent_message";
+// Stores whether the message that chrome has been updated to support shared tab
+// groups should be shown.
+inline constexpr char kEligibleForVersionUpdatedMessage[] =
+    "data_sharing.eligible_for_version_updated_message";
+
+// Stores whether any message (persistent or instant) prompting the user to
+// update chrome to continue using shared tab groups has been shown.
+inline constexpr char kHasShownAnyVersionOutOfDateMessage[] =
+    "data_sharing.has_shown_any_version_out_of_date_message";
+
 // Registers the Clear Browsing Data UI prefs.
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 

@@ -86,7 +86,7 @@ constexpr auto kHistogramValue = base::MakeFixedFlatMap<ContentSettingsType,
     {ContentSettingsType::STORAGE_ACCESS, 67},
     {ContentSettingsType::CAMERA_PAN_TILT_ZOOM, 68},
     {ContentSettingsType::WINDOW_MANAGEMENT, 69},
-    {ContentSettingsType::INSECURE_PRIVATE_NETWORK, 70},
+    // Removed INSECURE_PRIVATE_NETWORK in M138.
     {ContentSettingsType::LOCAL_FONTS, 71},
     {ContentSettingsType::PERMISSION_AUTOREVOCATION_DATA, 72},
     {ContentSettingsType::FILE_SYSTEM_LAST_PICKED_DIRECTORY, 73},
@@ -105,8 +105,8 @@ constexpr auto kHistogramValue = base::MakeFixedFlatMap<ContentSettingsType,
     {ContentSettingsType::NOTIFICATION_INTERACTIONS, 86},
     {ContentSettingsType::REDUCED_ACCEPT_LANGUAGE, 87},
     {ContentSettingsType::NOTIFICATION_PERMISSION_REVIEW, 88},
-    {ContentSettingsType::PRIVATE_NETWORK_GUARD, 89},
-    {ContentSettingsType::PRIVATE_NETWORK_CHOOSER_DATA, 90},
+    // Removed PRIVATE_NETWORK_GUARD in M140
+    // Removed PRIVATE_NETWORK_CHOOSER_DATA in M140
     {ContentSettingsType::FEDERATED_IDENTITY_IDENTITY_PROVIDER_SIGNIN_STATUS,
      91},
     {ContentSettingsType::REVOKED_UNUSED_SITE_PERMISSIONS, 92},
@@ -153,6 +153,14 @@ constexpr auto kHistogramValue = base::MakeFixedFlatMap<ContentSettingsType,
     {ContentSettingsType::ARE_SUSPICIOUS_NOTIFICATIONS_ALLOWLISTED_BY_USER,
      132},
     {ContentSettingsType::CONTROLLED_FRAME, 133},
+    {ContentSettingsType::REVOKED_DISRUPTIVE_NOTIFICATION_PERMISSIONS, 134},
+    {ContentSettingsType::LOCAL_NETWORK_ACCESS, 135},
+    {ContentSettingsType::ON_DEVICE_SPEECH_RECOGNITION_LANGUAGES_DOWNLOADED,
+     136},
+    {ContentSettingsType::INITIALIZED_TRANSLATIONS, 137},
+    {ContentSettingsType::SUSPICIOUS_NOTIFICATION_IDS, 138},
+    {ContentSettingsType::GEOLOCATION_WITH_OPTIONS, 139},
+    {ContentSettingsType::DEVICE_ATTRIBUTES, 140},
 
     // As mentioned at the top, please don't forget to update ContentType in
     // enums.xml when you add entries here!
@@ -175,6 +183,8 @@ std::string GetProviderNameForHistograms(
     // when new providers are added.
     case ProviderType::kWebuiAllowlistProvider:
       return "WebuiAllowlistProvider";
+    case ProviderType::kComponentExtensionProvider:
+      return "ComponentExtensionProvider";
     case ProviderType::kPolicyProvider:
       return "PolicyProvider";
     case ProviderType::kSupervisedProvider:
@@ -183,6 +193,8 @@ std::string GetProviderNameForHistograms(
       return "CustomExtensionProvider";
     case ProviderType::kInstalledWebappProvider:
       return "InstalledWebappProvider";
+    case ProviderType::kJavascriptOptimizerAndroidProvider:
+      return "JavascriptOptimizerAndroidProvider";
     case ProviderType::kNotificationAndroidProvider:
       return "NotificationAndroidProvider";
     case ProviderType::kOneTimePermissionProvider:

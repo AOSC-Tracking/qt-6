@@ -75,7 +75,9 @@ bool ContainsNewLineAndLessThan(const AtomicString& target) {
 
 FrameLoadRequest::FrameLoadRequest(LocalDOMWindow* origin_window,
                                    const ResourceRequest& resource_request)
-    : origin_window_(origin_window), should_send_referrer_(kMaybeSendReferrer) {
+    : origin_window_(origin_window),
+      should_send_referrer_(kMaybeSendReferrer),
+      creation_time_(base::TimeTicks::Now()) {
   resource_request_.CopyHeadFrom(resource_request);
   resource_request_.SetHttpBody(resource_request.HttpBody());
   resource_request_.SetMode(network::mojom::RequestMode::kNavigate);
@@ -137,7 +139,7 @@ void FrameLoadRequest::ResolveBlobURLIfNeeded() {
   if (resource_request_.Url().ProtocolIs("blob") && origin_window_) {
     blob_url_token_ = base::MakeRefCounted<
         base::RefCountedData<mojo::Remote<mojom::blink::BlobURLToken>>>();
-    origin_window_->GetPublicURLManager().ResolveForNavigation(
+    origin_window_->GetPublicURLManager().ResolveAsBlobURLToken(
         resource_request_.Url(),
         blob_url_token_->data.BindNewPipeAndPassReceiver(),
         GetFrameType() == mojom::blink::RequestContextFrameType::kTopLevel);

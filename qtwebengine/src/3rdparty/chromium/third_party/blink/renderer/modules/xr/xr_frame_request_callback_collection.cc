@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/modules/xr/xr_frame_request_callback_collection.h"
 
-#include "base/not_fatal_until.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_frame_request_callback.h"
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/probe/async_task_context.h"
@@ -23,6 +22,8 @@ XRFrameRequestCallbackCollection::CallbackId
 XRFrameRequestCallbackCollection::RegisterCallback(
     V8XRFrameRequestCallback* callback) {
   CallbackId id = ++next_callback_id_;
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("xr", "frameRequest",
+                                    TRACE_ID_LOCAL(trace_id_base_ + id));
   auto add_result_frame_request = callback_frame_requests_.Set(id, callback);
   auto add_result_async_task = callback_async_tasks_.Set(
       id, std::make_unique<probe::AsyncTaskContext>());
@@ -38,6 +39,9 @@ XRFrameRequestCallbackCollection::RegisterCallback(
 
 void XRFrameRequestCallbackCollection::CancelCallback(CallbackId id) {
   if (IsValidCallbackId(id)) {
+    TRACE_EVENT_NESTABLE_ASYNC_END1("xr", "frameRequest",
+                                    TRACE_ID_LOCAL(trace_id_base_ + id),
+                                    "Cancelled", true);
     callback_frame_requests_.erase(id);
     callback_async_tasks_.erase(id);
     current_callback_frame_requests_.erase(id);
@@ -54,6 +58,8 @@ void XRFrameRequestCallbackCollection::CancelCallback(CallbackId id) {
 void XRFrameRequestCallbackCollection::ExecuteCallbacks(XRSession* session,
                                                         double timestamp,
                                                         XRFrame* frame) {
+  TRACE_EVENT1("xr", "ExecuteRAFCallbacks", "session trace id",
+               session->GetTraceId());
   // First, generate a list of callbacks to consider.  Callbacks registered from
   // this point on are considered only for the "next" frame, not this one.
 
@@ -78,9 +84,10 @@ void XRFrameRequestCallbackCollection::ExecuteCallbacks(XRSession* session,
     if (it_frame_request == current_callback_frame_requests_.end()) {
       continue;
     }
-    CHECK_NE(current_callback_async_tasks_.end(), it_async_task,
-             base::NotFatalUntil::M130);
+    CHECK_NE(current_callback_async_tasks_.end(), it_async_task);
 
+    TRACE_EVENT_NESTABLE_ASYNC_END0("xr", "frameRequest",
+                                    TRACE_ID_LOCAL(trace_id_base_ + id));
     probe::AsyncTask async_task(context_, it_async_task->value.get());
     it_frame_request->value->InvokeAndReportException(session, timestamp,
                                                       frame);

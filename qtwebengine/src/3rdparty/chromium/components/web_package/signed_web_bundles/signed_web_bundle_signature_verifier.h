@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_WEB_PACKAGE_SIGNED_WEB_BUNDLES_SIGNED_WEB_BUNDLE_SIGNATURE_VERIFIER_H_
 #define COMPONENTS_WEB_PACKAGE_SIGNED_WEB_BUNDLES_SIGNED_WEB_BUNDLE_SIGNATURE_VERIFIER_H_
 
+#include <array>
 #include <optional>
 #include <string>
 
@@ -13,7 +14,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/types/expected.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace web_package {
 

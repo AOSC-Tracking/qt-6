@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:dataparser
 
 #include "qqmljslexer_p.h"
 #include "qqmljsengine_p.h"
@@ -1640,7 +1641,19 @@ static const int uriTokens[] = {
     QQmlJSGrammar::T_WHILE,
     QQmlJSGrammar::T_CONST,
     QQmlJSGrammar::T_DEBUGGER,
-    QQmlJSGrammar::T_RESERVED_WORD,
+    QQmlJSGrammar::T_ENUM,
+    QQmlJSGrammar::T_PACKAGE,
+    QQmlJSGrammar::T_ABSTRACT,
+    QQmlJSGrammar::T_INTERFACE,
+    QQmlJSGrammar::T_IMPLEMENTS,
+    QQmlJSGrammar::T_PUBLIC,
+    QQmlJSGrammar::T_PROTECTED,
+    QQmlJSGrammar::T_PRIVATE,
+    QQmlJSGrammar::T_NATIVE,
+    QQmlJSGrammar::T_VOLATILE,
+    QQmlJSGrammar::T_TRANSIENT,
+    QQmlJSGrammar::T_SYNCHRONIZED,
+    QQmlJSGrammar::T_THROWS,
     QQmlJSGrammar::T_WITH,
 
     QQmlJSGrammar::EOF_SYMBOL

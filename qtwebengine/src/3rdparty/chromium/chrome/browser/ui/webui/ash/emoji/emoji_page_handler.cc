@@ -18,7 +18,6 @@
 #include "base/trace_event/trace_event.h"
 #include "base/types/expected.h"
 #include "chrome/browser/ui/webui/ash/emoji/emoji_ui.h"
-#include "chrome/browser/ui/webui/ash/emoji/seal_utils.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/ash/components/emoji/emoji_search.h"
 #include "chromeos/ash/components/emoji/gif_tenor_api_fetcher.h"
@@ -151,8 +150,6 @@ class InsertObserver : public ui::InputMethodObserver {
     focus_change_count_++;
     // At least 2 focus changes - 1 for loss of focus in emoji picker, second
     // for focusing in the new text field.
-    // And in lacros, we may expect third change to correct text input type (
-    // from initial value to actual correct value).
     // You would expect this to fail if the emoji picker window does not have
     // focus in the text field, but waiting for at least 2 focus changes is
     // still correct behavior.
@@ -321,10 +318,6 @@ void EmojiPageHandler::GetFeatureList(GetFeatureListCallback callback) {
   if (base::FeatureList::IsEnabled(features::kImeSystemEmojiPickerMojoSearch)) {
     enabled_features.push_back(
         emoji_picker::mojom::Feature::EMOJI_PICKER_MOJO_SEARCH);
-  }
-  if (SealUtils::ShouldEnable()) {
-    enabled_features.push_back(
-        emoji_picker::mojom::Feature::EMOJI_PICKER_SEAL_SUPPORT);
   }
 
   if (base::FeatureList::IsEnabled(

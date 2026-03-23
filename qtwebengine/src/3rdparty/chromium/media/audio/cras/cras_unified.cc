@@ -15,7 +15,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/typed_macros.h"
 #include "media/audio/cras/audio_manager_cras_base.h"
+#include "media/audio/cras/cras_util.h"
 #include "media/base/audio_glitch_info.h"
+#include "media/base/audio_sample_types.h"
 #include "media/base/audio_timestamp_helper.h"
 
 namespace media {
@@ -145,7 +147,7 @@ bool CrasUnifiedStream::Open() {
     return false;
   }
 
-  if (libcras_client_connect(client_)) {
+  if (libcras_client_connect_timeout(client_, kCrasConnectTimeoutMs)) {
     LOG(WARNING) << "Couldn't connect CRAS client.\n";
     ReportStreamOpenResult(
         StreamOpenResult::kCallbackOpenCannotConnectToCrasClient);

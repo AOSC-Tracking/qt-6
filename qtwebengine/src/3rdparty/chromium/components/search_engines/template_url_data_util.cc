@@ -4,8 +4,10 @@
 
 #include "components/search_engines/template_url_data_util.h"
 
+#include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -207,9 +209,11 @@ std::unique_ptr<TemplateURLData> TemplateURLDataFromDictionary(
   result->policy_origin = static_cast<TemplateURLData::PolicyOrigin>(
       dict.FindInt(DefaultSearchManager::kPolicyOrigin)
           .value_or(static_cast<int>(result->policy_origin)));
-  result->created_from_play_api =
-      dict.FindBool(DefaultSearchManager::kCreatedFromPlayAPI)
-          .value_or(result->created_from_play_api);
+  // TODO(b:322513019): recognize all programs, not just AndroidEEA
+  result->regulatory_origin =
+      dict.FindBool(DefaultSearchManager::kCreatedFromPlayAPI).value_or(false)
+          ? RegulatoryExtensionType::kAndroidEEA
+          : RegulatoryExtensionType::kDefault;
   result->featured_by_policy =
       dict.FindBool(DefaultSearchManager::kFeaturedByPolicy)
           .value_or(result->featured_by_policy);
@@ -295,8 +299,9 @@ base::Value::Dict TemplateURLDataToDictionary(const TemplateURLData& data) {
 
   url_dict.Set(DefaultSearchManager::kPolicyOrigin,
                static_cast<int>(data.policy_origin));
+  // TODO(b:322513019): recognize all programs, not just AndroidEEA
   url_dict.Set(DefaultSearchManager::kCreatedFromPlayAPI,
-               data.created_from_play_api);
+               data.regulatory_origin == RegulatoryExtensionType::kAndroidEEA);
   url_dict.Set(DefaultSearchManager::kFeaturedByPolicy,
                data.featured_by_policy);
   url_dict.Set(DefaultSearchManager::kPreconnectToSearchUrl,
@@ -494,7 +499,7 @@ std::unique_ptr<TemplateURLData> TemplateURLDataFromOverrideDictionary(
 }
 
 std::unique_ptr<TemplateURLData> TemplateURLDataFromStarterPackEngine(
-    const TemplateURLStarterPackData::StarterPackEngine& engine) {
+    const template_url_starter_pack_data::StarterPackEngine& engine) {
   auto turl = std::make_unique<TemplateURLData>();
   turl->SetShortName(l10n_util::GetStringUTF16(engine.name_message_id));
   turl->SetKeyword(u"@" + l10n_util::GetStringUTF16(engine.keyword_message_id));

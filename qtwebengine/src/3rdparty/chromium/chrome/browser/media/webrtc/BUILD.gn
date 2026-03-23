@@ -6,11 +6,11 @@ assert(is_win || is_mac || is_linux || is_chromeos || is_android)
 
 import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
+import("//chrome/common/features.gni")
 import("//content/public/common/features.gni")
 import("//third_party/webrtc/webrtc.gni")
-import("//extensions/buildflags/buildflags.gni")
 
-assert(enable_webrtc)
+#assert(enable_webrtc)
 
 source_set("webrtc") {
   sources = [
@@ -91,11 +91,11 @@ source_set("webrtc") {
     "window_icon_util.h",
   ]
 
+  if (enable_webrtc) {
   public_deps = [
     "//base",
     "//build:android_buildflags",
     "//build:buildflag_header_h",
-    "//build:chromeos_buildflags",
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/profiles:profile",
     "//chrome/common:mojo_bindings",
@@ -132,8 +132,10 @@ source_set("webrtc") {
     "//chrome/browser/media/prefs",
     "//chrome/browser/permissions/system",
     "//chrome/browser/picture_in_picture",
+    "//chrome/browser/policy:policy_util",
     "//chrome/browser/profiles:profile_util",
     "//chrome/browser/safe_browsing",
+    "//chrome/browser/status_icons",
     "//chrome/browser/ui:ui_features",
     "//chrome/common",
     "//chrome/common:channel_info",
@@ -171,6 +173,10 @@ source_set("webrtc") {
     "//ui/gfx:color_utils",
     "//ui/snapshot",
   ]
+  } else {
+    public_deps = []
+    deps = []
+  }
 
   if (!is_android) {
     sources += [
@@ -196,14 +202,11 @@ source_set("webrtc") {
     deps += [
       "//chrome/browser/ui:browser_list",
       "//chrome/browser/ui/tabs:tab_strip",
+      "//chrome/browser/ui/web_applications",
+      "//extensions/browser",
+      "//extensions/browser/kiosk",
+      "//extensions/common",
     ]
-    if (enable_extensions) {
-      deps += [
-        "//extensions/browser",
-        "//extensions/browser/kiosk",
-        "//extensions/common",
-      ]
-    }
   }
 
   if (enable_screen_capture) {
@@ -216,6 +219,16 @@ source_set("webrtc") {
       "display_media_access_handler.h",
     ]
     deps += [ "//chrome/browser/ui:url_identity" ]
+    if (enable_glic) {
+      deps += [ "//chrome/browser/glic" ]
+    }
+
+    if (is_win) {
+      sources += [
+        "desktop_capture_devices_util_win.cc",
+        "desktop_capture_devices_util_win.h",
+      ]
+    }
   }
 
   if (is_mac) {
@@ -236,10 +249,18 @@ source_set("webrtc") {
     deps += [ "//ui/ozone" ]
   }
 
-  if (is_chromeos_ash) {
+  if (is_chromeos) {
     sources += [
       "desktop_media_list_ash.cc",
       "desktop_media_list_ash.h",
+      "multi_capture/multi_capture_data_service.cc",
+      "multi_capture/multi_capture_data_service.h",
+      "multi_capture/multi_capture_data_service_factory.cc",
+      "multi_capture/multi_capture_data_service_factory.h",
+      "multi_capture/multi_capture_usage_indicator_service.cc",
+      "multi_capture/multi_capture_usage_indicator_service.h",
+      "multi_capture/multi_capture_usage_indicator_service_factory.cc",
+      "multi_capture/multi_capture_usage_indicator_service_factory.h",
       "window_icon_util_chromeos.cc",
     ]
     deps += [
@@ -253,10 +274,14 @@ source_set("webrtc") {
       "//chrome/browser/ash/profiles",
       "//chrome/browser/ash/system_web_apps/apps/camera_app",
       "//chrome/browser/ash/system_web_apps/apps/recorder_app",
+      "//chrome/browser/chromeos/policy/dlp",
       "//chrome/browser/ui/ash/keyboard",
       "//chrome/browser/ui/ash/media_client",
+      "//chrome/browser/web_applications",
+      "//chromeos/ash/components/browser_context_helper",
       "//chromeos/ash/components/system",
       "//components/user_manager",
+      "//components/webapps/isolated_web_apps",
     ]
     allow_circular_includes_from = [
       "//chrome/browser/ash/policy/handlers",
@@ -270,10 +295,6 @@ source_set("webrtc") {
       "//chrome/browser/ash/system_web_apps/apps/camera_app",
       "//chrome/browser/ash/system_web_apps/apps/recorder_app",
     ]
-  }
-
-  if (is_chromeos) {
-    deps += [ "//chrome/browser/chromeos/policy/dlp" ]
   }
 
   if (is_win) {

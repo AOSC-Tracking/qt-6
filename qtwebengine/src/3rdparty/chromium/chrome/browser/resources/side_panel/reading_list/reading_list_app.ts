@@ -36,6 +36,7 @@ const ReadingListAppElementBase = HelpBubbleMixinLit(CrLitElement);
 
 export interface ReadingListAppElement {
   $: {
+    footer: HTMLElement,
     readingListList: CrLazyListElement,
   };
 }
@@ -68,6 +69,7 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
       buttonRipples: {type: Boolean},
       loadingContent_: {type: Boolean},
       itemSize_: {type: Number},
+      minViewportHeight_: {type: Number},
       scrollTarget_: {type: Object},
       unreadHeader_: {type: String},
       readHeader_: {type: String},
@@ -76,20 +78,22 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
     };
   }
 
-  protected unreadItems_: ReadLaterEntry[] = [];
-  protected readItems_: ReadLaterEntry[] = [];
-  protected focusedIndex_: number = -1;
-  protected focusedItem_: HTMLElement|null = null;
-  private currentPageActionButtonState_: CurrentPageActionButtonState =
+  protected accessor unreadItems_: ReadLaterEntry[] = [];
+  protected accessor readItems_: ReadLaterEntry[] = [];
+  protected accessor focusedIndex_: number = -1;
+  protected accessor focusedItem_: HTMLElement|null = null;
+  private accessor currentPageActionButtonState_: CurrentPageActionButtonState =
       CurrentPageActionButtonState.kDisabled;
-  buttonRipples: boolean = loadTimeData.getBoolean('useRipples');
-  protected loadingContent_: boolean = true;
-  protected itemSize_: number = 48;
-  protected scrollTarget_: HTMLElement|null = null;
-  private unreadHeader_: string = loadTimeData.getString('unreadHeader');
-  private readHeader_: string = loadTimeData.getString('readHeader');
-  private unreadExpanded_: boolean = true;
-  private readExpanded_: boolean = false;
+  accessor buttonRipples: boolean = loadTimeData.getBoolean('useRipples');
+  protected accessor loadingContent_: boolean = true;
+  protected accessor itemSize_: number = 48;
+  protected accessor minViewportHeight_: number = 0;
+  protected accessor scrollTarget_: HTMLElement|null = null;
+  private accessor unreadHeader_: string =
+      loadTimeData.getString('unreadHeader');
+  private accessor readHeader_: string = loadTimeData.getString('readHeader');
+  private accessor unreadExpanded_: boolean = true;
+  private accessor readExpanded_: boolean = false;
   private apiProxy_: ReadingListApiProxy =
       ReadingListApiProxyImpl.getInstance();
   private listenerIds_: number[] = [];
@@ -105,6 +109,7 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
       // state.
       if (document.visibilityState === 'visible') {
         this.updateReadLaterEntries_();
+        this.updateViewportHeight_();
       }
     };
   }
@@ -126,10 +131,11 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
 
     this.scrollTarget_ = this.$.readingListList;
     this.updateReadLaterEntries_();
+    this.updateViewportHeight_();
     this.apiProxy_.updateCurrentPageActionButtonState();
 
     this.readingListEventTracker_.add(
-        this.shadowRoot!, MARKED_AS_READ_UI_EVENT,
+        this.shadowRoot, MARKED_AS_READ_UI_EVENT,
         this.onMarkedAsRead_.bind(this));
   }
 
@@ -145,7 +151,7 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
     this.unregisterHelpBubble(READING_LIST_UNREAD_ELEMENT_ID);
 
     this.readingListEventTracker_.remove(
-        this.shadowRoot!, MARKED_AS_READ_UI_EVENT);
+        this.shadowRoot, MARKED_AS_READ_UI_EVENT);
   }
 
   override willUpdate(changedProperties: PropertyValues<this>) {
@@ -170,7 +176,7 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
         ADD_CURRENT_TAB_ELEMENT_ID, '#currentPageActionButton');
 
     const firstUnreadItem =
-        this.shadowRoot!.querySelector<HTMLElement>('.unread-item');
+        this.shadowRoot.querySelector<HTMLElement>('.unread-item');
     if (firstUnreadItem) {
       this.registerHelpBubble(READING_LIST_UNREAD_ELEMENT_ID, firstUnreadItem);
     }
@@ -185,6 +191,15 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
     if (changedPrivateProperties.has('focusedIndex_')) {
       this.updateFocusedItem_();
     }
+  }
+
+  private updateViewportHeight_() {
+    this.apiProxy_.getWindowData().then(({windows}) => {
+      const activeWindow = windows.find((w) => w.active);
+      const windowHeight =
+          activeWindow ? activeWindow.height : windows[0]!.height;
+      this.minViewportHeight_ = windowHeight - this.$.footer.offsetHeight;
+    });
   }
 
   getFocusedIndexForTesting() {
@@ -229,6 +244,23 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
       read: false,
       displayTimeSinceUpdate: '',
     };
+  }
+
+  protected getExpandButtonAriaLabel_(title: string): string {
+    let labelString: string;
+    switch (title) {
+      case this.unreadHeader_:
+        labelString = this.unreadExpanded_ ? 'collapseButtonAriaLabel' :
+                                             'expandButtonAriaLabel';
+        break;
+      case this.readHeader_:
+        labelString = this.readExpanded_ ? 'collapseButtonAriaLabel' :
+                                           'expandButtonAriaLabel';
+        break;
+      default:
+        assertNotReached();
+    }
+    return loadTimeData.getStringF(labelString, title);
   }
 
   protected getExpandButtonIcon_(title: string): string {

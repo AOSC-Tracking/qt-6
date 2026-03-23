@@ -19,8 +19,10 @@ export function getHtml(this: ReadingListAppElement) {
   </sp-empty-state>
 
   <div class="sp-card" ?hidden="${!this.getAllItems_().length}">
-    <cr-lazy-list id="readingListList" .items="${this.getAllItems_()}"
+    <cr-lazy-list id="readingListList" class="sp-scroller"
+        .items="${this.getAllItems_()}"
         .itemSize="${this.itemSize_}"
+        .minViewportHeight="${this.minViewportHeight_}"
         .scrollTarget="${this.scrollTarget_}"
         ?hidden="${!this.shouldShowList_()}"
         @keydown="${this.onItemKeyDown_}"
@@ -31,6 +33,8 @@ export function getHtml(this: ReadingListAppElement) {
       <sp-heading compact hide-back-button>
         <h2 slot="heading">${item.title}</h2>
         <cr-icon-button slot="buttons"
+            aria-label="${this.getExpandButtonAriaLabel_(item.title)}"
+            title="${this.getExpandButtonAriaLabel_(item.title)}"
             data-title="${item.title}"
             iron-icon="${this.getExpandButtonIcon_(item.title)}"
             @click="${this.onExpandButtonClick_}">
@@ -46,7 +50,7 @@ export function getHtml(this: ReadingListAppElement) {
     </cr-lazy-list>
   </div>
 
-  <sp-footer ?pinned="${!this.isReadingListEmpty_()}">
+  <sp-footer id="footer" ?pinned="${!this.isReadingListEmpty_()}">
     <cr-button id="currentPageActionButton" class="floating-button"
         aria-label="${this.getCurrentPageActionButtonText_()}"
         @click="${this.onCurrentPageActionButtonClick_}"

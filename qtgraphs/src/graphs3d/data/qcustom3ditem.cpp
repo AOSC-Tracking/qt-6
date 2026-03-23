@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtCore/qfileinfo.h>
 #include "qcustom3ditem_p.h"
@@ -118,6 +120,17 @@ QT_BEGIN_NAMESPACE
  *
  * The item rotation as a \l [QtQuick] quaternion. Defaults to
  * \c {quaternion(0.0, 0.0, 0.0, 0.0)}.
+ */
+
+/*! \qmlproperty bool Custom3DItem::rotationAbsolute
+ *  \since 6.11
+ *
+ * Defines whether item rotation is to be handled in data values or in absolute
+ * values. Defaults to \c{true}. Items with absolute rotation will be rotated with
+ * the default coordinates, regardless of axis. Items with data rotation will rotate
+ * according to the axis coordinates.
+ *
+ * \sa rotation
  */
 
 /*! \qmlproperty bool Custom3DItem::visible
@@ -242,12 +255,12 @@ void QCustom3DItem::setMeshFile(const QString &meshFile)
 
     if (!validfile.exists() || !validfile.isFile()) {
         qCWarning(lcProperties3D, "%s mesh file %s does not exist",
-                qUtf8Printable(QLatin1String(__FUNCTION__)), qUtf8Printable(meshFile));
+                qUtf8Printable(QLatin1String(__func__)), qUtf8Printable(meshFile));
         return;
     }
     if (d->m_meshFile == meshFile) {
         qCDebug(lcProperties3D, "%s value is already set to: %s",
-                qUtf8Printable(QLatin1String(__FUNCTION__)), qUtf8Printable(meshFile));
+                qUtf8Printable(QLatin1String(__func__)), qUtf8Printable(meshFile));
         return;
     }
 
@@ -448,6 +461,40 @@ QQuaternion QCustom3DItem::rotation()
     return d->m_rotation;
 }
 
+/*! \property QCustom3DItem::rotationAbsolute
+ *  \since 6.11
+ *
+ * \brief Whether item rotation is to be handled in data axis coordinates or in absolute
+ * coordinates.
+ *
+ * Defines whether item rotation is to be handled in data values or in absolute
+ * values. Defaults to \c{true}. Items with absolute rotation will be rotated with
+ * the default coordinates, regardless of axis. Items with data rotation will rotate
+ * according to the axis coordinates.
+ *
+ * \sa rotation
+ */
+ void QCustom3DItem::setRotationAbsolute(bool rotationAbsolute)
+ {
+     Q_D(QCustom3DItem);
+     if (d->m_rotationAbsolute == rotationAbsolute) {
+         qCDebug(lcProperties3D) << __FUNCTION__
+             << "value is already set to:" << rotationAbsolute;
+         return;
+     }
+
+     d->m_rotationAbsolute = rotationAbsolute;
+     d->m_dirtyBits.rotationDirty = true;
+     emit rotationAbsoluteChanged(rotationAbsolute);
+     emit needUpdate();
+ }
+
+ bool QCustom3DItem::isRotationAbsolute() const
+ {
+     Q_D(const QCustom3DItem);
+     return d->m_rotationAbsolute;
+ }
+
 /*! \property QCustom3DItem::visible
  *
  * \brief The visibility of the item.
@@ -609,6 +656,7 @@ QCustom3DItemPrivate::QCustom3DItemPrivate(const QString &meshFile,
     , m_scaling(scaling)
     , m_scalingAbsolute(true)
     , m_rotation(rotation)
+    , m_rotationAbsolute(true)
     , m_visible(true)
     , m_shadowCasting(true)
     , m_isLabelItem(false)
@@ -640,3 +688,5 @@ void QCustom3DItemPrivate::resetDirtyBits()
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qcustom3ditem.cpp"

@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWIDGET_P_H
 #define QWIDGET_P_H
@@ -19,6 +20,9 @@
 
 #include <QtWidgets/private/qtwidgetsglobal_p.h>
 #include "QtWidgets/qwidget.h"
+#if QT_CONFIG(label)
+#include <QtWidgets/qlabel.h>
+#endif
 #include "private/qobject_p.h"
 #include "QtCore/qrect.h"
 #include "QtCore/qlocale.h"
@@ -655,6 +659,10 @@ public:
     QPaintEngine *extraPaintEngine;
     mutable const QMetaObject *polished;
     QGraphicsEffect *graphicsEffect;
+#if QT_CONFIG(label)
+    // labels for which this widget is the buddy widget
+    QVarLengthArray<QLabel *, 1> labels;
+#endif
     // All widgets are added into the allWidgets set. Once
     // they receive a window id they are also added to the mapper.
     // This should just ensure that all widgets are deleted by QApplication
@@ -735,6 +743,7 @@ public:
     uint childrenHiddenByWState : 1;
     uint childrenShownByExpose : 1;
     uint dontSetExplicitShowHide : 1;
+    uint inheritStyleRecursionGuard : 1;
 
     // *************************** Focus abstraction ************************************
     enum class FocusDirection {

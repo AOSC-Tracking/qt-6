@@ -79,6 +79,12 @@ const exampleLog = new HAR.HARFormat.HARLog({
         ],
         headersSize: -1,
         bodySize: 109,
+        cookies: [
+          {
+            name: 'Foo',
+            value: 'bar',
+          },
+        ],
       },
       response: {
         status: 200,
@@ -90,6 +96,12 @@ const exampleLog = new HAR.HARFormat.HARLog({
           mimeType: 'application/json',
           text: 'console.log(\'hello world\');',
         },
+        cookies: [
+          {
+            name: 'MyAwesomeCookie',
+            value: 'Secret!',
+          },
+        ],
         redirectURL: '',
         headersSize: -1,
         bodySize: -1,
@@ -98,6 +110,9 @@ const exampleLog = new HAR.HARFormat.HARLog({
         _fetchedViaServiceWorker: true,
         _responseCacheStorageCacheName: 'v1',
         _serviceWorkerResponseSource: 'cache-storage',
+        _serviceWorkerRouterRuleIdMatched: 1,
+        _serviceWorkerRouterMatchedSourceType: 'cache',
+        _serviceWorkerRouterActualSourceType: 'network',
       },
       serverIPAddress: '127.0.0.1',
       startedDateTime: '2020-12-14T17:35:53.241Z',
@@ -115,6 +130,8 @@ const exampleLog = new HAR.HARFormat.HARLog({
         _workerReady: 2,
         _workerFetchStart: 10,
         _workerRespondWithSettled: 300,
+        _workerRouterEvaluationStart: 100,
+        _workerCacheLookupStart: 200,
       },
     },
     {
@@ -154,6 +171,12 @@ const exampleLog = new HAR.HARFormat.HARLog({
         ],
         headersSize: -1,
         bodySize: 109,
+        cookies: [
+          {
+            name: 'Foo',
+            value: 'bar',
+          },
+        ],
       },
       response: {
         status: 200,
@@ -165,6 +188,12 @@ const exampleLog = new HAR.HARFormat.HARLog({
           mimeType: 'text/plain',
           text: '<html>Hello, World!</html>',
         },
+        cookies: [
+          {
+            name: 'MyAwesomeCookie',
+            value: 'Secret!',
+          },
+        ],
         redirectURL: '',
         headersSize: -1,
         bodySize: -1,
@@ -261,6 +290,9 @@ describe('HAR Importer', () => {
     assert.isTrue(parsedRequest.fetchedViaServiceWorker);
     assert.strictEqual(parsedRequest.getResponseCacheStorageCacheName(), 'v1');
     assert.strictEqual(parsedRequest.serviceWorkerResponseSource(), 'cache-storage');
+    assert.strictEqual(parsedRequest.serviceWorkerRouterInfo?.ruleIdMatched, 1);
+    assert.strictEqual(parsedRequest.serviceWorkerRouterInfo?.matchedSourceType, 'cache');
+    assert.strictEqual(parsedRequest.serviceWorkerRouterInfo?.actualSourceType, 'network');
   });
 
   it('Parses the request timings', () => {
@@ -286,6 +318,8 @@ describe('HAR Importer', () => {
       workerFetchStart: 10,
       workerRespondWithSettled: 300,
       workerStart: 30,
+      workerRouterEvaluationStart: 100,
+      workerCacheLookupStart: 200,
     });
   });
 
@@ -298,6 +332,22 @@ describe('HAR Importer', () => {
   it('Parses the Chrome-specific connection ID', () => {
     for (const request of requests) {
       assert.strictEqual(request.connectionId, '1');
+    }
+  });
+
+  it('Parses the request cookies correctly', () => {
+    for (const request of requests) {
+      assert.lengthOf(request.includedRequestCookies(), 1);
+      assert.strictEqual(request.includedRequestCookies()[0].cookie.name(), 'Foo');
+      assert.strictEqual(request.includedRequestCookies()[0].cookie.value(), 'bar');
+    }
+  });
+
+  it('Parses the response cookies correctly', () => {
+    for (const request of requests) {
+      assert.lengthOf(request.responseCookies, 1);
+      assert.strictEqual(request.responseCookies[0].name(), 'MyAwesomeCookie');
+      assert.strictEqual(request.responseCookies[0].value(), 'Secret!');
     }
   });
 });

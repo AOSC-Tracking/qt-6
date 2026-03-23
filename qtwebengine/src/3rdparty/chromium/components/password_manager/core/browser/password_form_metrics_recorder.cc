@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <variant>
 
 #include "base/check_deref.h"
 #include "base/check_op.h"
@@ -50,6 +51,7 @@ PasswordFormMetricsRecorder::BubbleDismissalReason GetBubbleDismissalReason(
     // Declined by user.
     case metrics_util::CLICKED_CANCEL:
     case metrics_util::CLICKED_NEVER:
+    case metrics_util::CLICKED_NOT_NOW:
       return BubbleDismissalReason::kDeclined;
 
     // Ignored by user.
@@ -383,13 +385,13 @@ PasswordFormMetricsRecorder::~PasswordFormMetricsRecorder() {
     ukm_entry_builder_.SetDynamicFormChanges(*form_changes_bitmask_);
   }
 
-  if (absl::holds_alternative<SingleUsernameFillingAssistance>(
+  if (std::holds_alternative<SingleUsernameFillingAssistance>(
           filling_assistance_)) {
     // Record the filling assistance for the single username case without
     // considering the `submit_result_` because submission success is only
     // calculated for forms that have password fields.
     SingleUsernameFillingAssistance filling_assistance =
-        absl::get<SingleUsernameFillingAssistance>(filling_assistance_);
+        std::get<SingleUsernameFillingAssistance>(filling_assistance_);
     UMA_HISTOGRAM_ENUMERATION(
         "PasswordManager.FillingAssistanceForSingleUsername",
         filling_assistance);
@@ -398,9 +400,9 @@ PasswordFormMetricsRecorder::~PasswordFormMetricsRecorder() {
   }
 
   if (submit_result_ == SubmitResult::kPassed &&
-      absl::holds_alternative<FillingAssistance>(filling_assistance_)) {
+      std::holds_alternative<FillingAssistance>(filling_assistance_)) {
     FillingAssistance filling_assistance =
-        absl::get<FillingAssistance>(filling_assistance_);
+        std::get<FillingAssistance>(filling_assistance_);
     UMA_HISTOGRAM_ENUMERATION("PasswordManager.FillingAssistance",
                               filling_assistance);
     ukm_entry_builder_.SetManagerFill_Assistance(
@@ -1168,12 +1170,12 @@ void PasswordFormMetricsRecorder::RecordFillEvent(ManagerAutofillEvent event) {
 
 std::string
 PasswordFormMetricsRecorder::FillingAssinstanceToHatsInProductDataString() {
-  if (!absl::holds_alternative<FillingAssistance>(filling_assistance_)) {
+  if (!std::holds_alternative<FillingAssistance>(filling_assistance_)) {
     return std::string();
   }
 
   FillingAssistance filling_assistance =
-      absl::get<FillingAssistance>(filling_assistance_);
+      std::get<FillingAssistance>(filling_assistance_);
   // These values are used for logging and should not be modified.
   switch (filling_assistance) {
     case FillingAssistance::kAutomatic:

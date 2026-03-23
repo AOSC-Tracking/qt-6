@@ -38,7 +38,11 @@
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/hats/hats_service_factory.h"
+#include "chrome/browser/ui/hats/mock_hats_service.h"
+#include "chrome/browser/ui/hats/survey_config.h"
 #include "chrome/browser/ui/signin/dice_web_signin_interceptor_delegate.h"
+#include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/web_applications/test/web_app_browsertest_util.h"
 #include "chrome/browser/ui/webui/settings/people_handler.h"
 #include "chrome/browser/web_applications/test/os_integration_test_override_impl.h"
@@ -81,6 +85,9 @@
 #include "url/gurl.h"
 
 using signin::constants::kNoHostedDomainFound;
+using testing::_;
+using testing::Eq;
+using testing::IsEmpty;
 
 namespace {
 
@@ -278,13 +285,16 @@ class DiceWebSigninInterceptorBrowserTest : public SigninBrowserTestBase {
     // Fill in the required account capabilities for the sign in intercept.
     AccountCapabilitiesTestMutator mutator(&account_info.capabilities);
     mutator.set_is_subject_to_parental_controls(false);
+    mutator.set_is_subject_to_enterprise_features(hosted_domain !=
+                                                  kNoHostedDomainFound);
+    mutator.set_is_subject_to_account_level_enterprise_policies(
+        hosted_domain != kNoHostedDomainFound);
 
     DCHECK(account_info.IsValid());
     identity_test_env()->UpdateAccountInfoForAccount(account_info);
     return account_info;
   }
 
- private:
   // InProcessBrowserTest:
   void SetUpOnMainThread() override {
     SigninBrowserTestBase::SetUpOnMainThread();
@@ -294,6 +304,7 @@ class DiceWebSigninInterceptorBrowserTest : public SigninBrowserTestBase {
             policy::ProfileSeparationPolicies(""));
   }
 
+ private:
   void OnWillCreateBrowserContextServices(
       content::BrowserContext* context) override {
     SigninBrowserTestBase::OnWillCreateBrowserContextServices(context);
@@ -320,6 +331,10 @@ class DiceWebSigninInterceptorBrowserTest : public SigninBrowserTestBase {
   std::map<content::BrowserContext*,
            raw_ptr<FakeDiceWebSigninInterceptorDelegate, CtnExperimental>>
       interceptor_delegates_;
+  // `GetLocalProfileName` validation would fail without enabling the feature
+  // in non-fieldtrial tests where `UserAcceptedAccountManagement` is true.
+  base::test::ScopedFeatureList feature_list_{
+      features::kEnterpriseProfileBadgingForAvatar};
 };
 
 // Tests the complete profile switch flow when the profile is not loaded.
@@ -596,6 +611,88 @@ class DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest
   }
 };
 
+class DiceWebSigninInterceptorWithHatsSurveyBrowserTest
+    : public DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest {
+ public:
+  DiceWebSigninInterceptorWithHatsSurveyBrowserTest() {
+    feature_list_.InitWithFeatures(
+        /*enabled_features=*/
+        {{switches::kChromeIdentitySurveyDiceWebSigninAccepted,
+          switches::kChromeIdentitySurveyDiceWebSigninDeclined}},
+        /*disabled_features=*/{});
+  }
+
+  void SetUpOnMainThread() override {
+    DiceWebSigninInterceptorBrowserTest::SetUpOnMainThread();
+    mock_hats_service_ = static_cast<MockHatsService*>(
+        HatsServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+            browser()->profile(), base::BindRepeating(&BuildMockHatsService)));
+  }
+
+  void TearDownOnMainThread() override {
+    SigninBrowserTestBase::TearDownOnMainThread();
+    mock_hats_service_ = nullptr;
+  }
+
+  MockHatsService* mock_hats_service() { return mock_hats_service_; }
+
+ private:
+  raw_ptr<MockHatsService> mock_hats_service_ = nullptr;
+  base::test::ScopedFeatureList feature_list_;
+};
+
+// Tests that a HaTS survey is launched when users accept the intercept signin
+// promo.
+IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorWithHatsSurveyBrowserTest,
+                       ShowHatsSurveyOnChromeSigninInterceptAccepted) {
+  // Setup account for interception.
+  AccountInfo account_info = MakeAccountInfoAvailableAndUpdate(
+      "alice@example.com", kNoHostedDomainFound);
+
+  // Makes sure Chrome is not signed in to trigger the intercept bubble.
+  ASSERT_FALSE(IsChromeSignedIn());
+
+  std::map<std::string, std::string> expected_string_psd = {
+      {"Channel", "unknown"},
+      {"Chrome Version", version_info::GetVersion().GetString()},
+      {"Number of Chrome Profiles", "1"},
+      {"Number of Google Accounts", "1"},
+      {"Sign-in Status", "Signed In"}};
+  EXPECT_CALL(
+      *mock_hats_service(),
+      LaunchDelayedSurvey(kHatsSurveyTriggerIdentityDiceWebSigninAccepted, _, _,
+                          Eq(expected_string_psd)));
+  ShowAndCompleteSigninBubbleWithResult(account_info,
+                                        SigninInterceptionResult::kAccepted);
+  EXPECT_TRUE(IsChromeSignedIn());
+}
+
+// Tests that a HaTS survey is launched when users decline the intercept signin
+// promo.
+IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorWithHatsSurveyBrowserTest,
+                       ShowHatsSurveyOnChromeSigninInterceptDeclined) {
+  // Setup account for interception.
+  AccountInfo account_info = MakeAccountInfoAvailableAndUpdate(
+      "alice@example.com", kNoHostedDomainFound);
+
+  // Makes sure Chrome is not signed in to trigger the bubble.
+  ASSERT_FALSE(IsChromeSignedIn());
+
+  std::map<std::string, std::string> expected_string_psd = {
+      {"Channel", "unknown"},
+      {"Chrome Version", version_info::GetVersion().GetString()},
+      {"Number of Chrome Profiles", "1"},
+      {"Number of Google Accounts", "1"},
+      {"Sign-in Status", "Web Only Signed In"}};
+  EXPECT_CALL(
+      *mock_hats_service(),
+      LaunchDelayedSurvey(kHatsSurveyTriggerIdentityDiceWebSigninDeclined, _, _,
+                          expected_string_psd));
+  ShowAndCompleteSigninBubbleWithResult(account_info,
+                                        SigninInterceptionResult::kDeclined);
+  EXPECT_FALSE(IsChromeSignedIn());
+}
+
 // Test to sign in to Chrome from the Chrome Signin Bubble Intercept.
 class DiceWebSigninInterceptorWithExplicitSigninEnabledBrowserTest
     : public DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest {
@@ -633,10 +730,6 @@ class DiceWebSigninInterceptorWithExplicitSigninEnabledBrowserTest
     handler.HandleSetChromeSigninUserChoiceForTesting(
         email, ChromeSigninUserChoice::kDoNotSignin);
   }
-
- private:
-  base::test::ScopedFeatureList feature_list_{
-      switches::kExplicitBrowserSigninUIOnDesktop};
 };
 
 IN_PROC_BROWSER_TEST_F(
@@ -646,10 +739,10 @@ IN_PROC_BROWSER_TEST_F(
   base::UserActionTester user_action_tester;
 
   // Setup account for interception.
-  const std::string account_email("alice@example.com");
+  const std::string account_email = "alice@example.com";
   AccountInfo account_info =
       MakeAccountInfoAvailableAndUpdate(account_email, kNoHostedDomainFound);
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -659,11 +752,10 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_TRUE(IsChromeSignedIn());
 
   // Check that the password account storage is enabled.
-  PrefService* pref_service = GetProfile()->GetPrefs();
   syncer::SyncService* sync_service =
       SyncServiceFactory::GetForProfile(GetProfile());
-  EXPECT_TRUE(password_manager::features_util::IsAccountStorageEnabled(
-      pref_service, sync_service));
+  EXPECT_TRUE(
+      password_manager::features_util::IsAccountStorageEnabled(sync_service));
 
   CheckHistograms(histogram_tester,
                   SigninInterceptionHeuristicOutcome::kInterceptChromeSignin);
@@ -700,7 +792,7 @@ IN_PROC_BROWSER_TEST_F(
   // Setup account for interception.
   AccountInfo account_info = MakeAccountInfoAvailableAndUpdate(
       "alice@example.com", kNoHostedDomainFound);
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -715,7 +807,6 @@ IN_PROC_BROWSER_TEST_F(
 
   EXPECT_FALSE(IsChromeSignedIn());
   EXPECT_FALSE(password_manager::features_util::IsAccountStorageEnabled(
-      GetProfile()->GetPrefs(),
       SyncServiceFactory::GetForProfile(GetProfile())));
 
   CheckHistograms(histogram_tester,
@@ -758,7 +849,7 @@ IN_PROC_BROWSER_TEST_F(
   // Setup account for interception.
   AccountInfo info = MakeAccountInfoAvailableAndUpdate("alice@example.com",
                                                        kNoHostedDomainFound);
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -882,7 +973,7 @@ IN_PROC_BROWSER_TEST_F(
   // Setup account for interception.
   AccountInfo info = MakeAccountInfoAvailableAndUpdate("alice@example.com",
                                                        kNoHostedDomainFound);
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -925,7 +1016,7 @@ IN_PROC_BROWSER_TEST_F(
   // Setup account for interception.
   AccountInfo info = MakeAccountInfoAvailableAndUpdate("alice@example.com",
                                                        kNoHostedDomainFound);
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -962,7 +1053,7 @@ IN_PROC_BROWSER_TEST_F(
   // Setup account for interception.
   AccountInfo info = MakeAccountInfoAvailableAndUpdate("alice@example.com",
                                                        kNoHostedDomainFound);
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -1022,7 +1113,7 @@ IN_PROC_BROWSER_TEST_F(
   // Setup account for interception.
   AccountInfo info = MakeAccountInfoAvailableAndUpdate("alice@example.com",
                                                        kNoHostedDomainFound);
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -1067,25 +1158,24 @@ IN_PROC_BROWSER_TEST_F(
                                         SigninInterceptionResult::kAccepted);
 
   // Check that the password account storage is enabled.
-  PrefService* pref_service = GetProfile()->GetPrefs();
   syncer::SyncService* sync_service =
       SyncServiceFactory::GetForProfile(GetProfile());
-  EXPECT_TRUE(password_manager::features_util::IsAccountStorageEnabled(
-      pref_service, sync_service));
+  EXPECT_TRUE(
+      password_manager::features_util::IsAccountStorageEnabled(sync_service));
 
   // Disable account storage.
   sync_service->GetUserSettings()->SetSelectedType(
       syncer::UserSelectableType::kPasswords, false);
 
   // Check that the password account storage is disabled.
-  EXPECT_FALSE(password_manager::features_util::IsAccountStorageEnabled(
-      pref_service, sync_service));
+  EXPECT_FALSE(
+      password_manager::features_util::IsAccountStorageEnabled(sync_service));
 
   Signout();
 
   // Check that the password account storage is false if there is no account.
-  EXPECT_FALSE(password_manager::features_util::IsAccountStorageEnabled(
-      pref_service, sync_service));
+  EXPECT_FALSE(
+      password_manager::features_util::IsAccountStorageEnabled(sync_service));
 
   // Log in again.
   // Force a Chrome Signin. The bubble will not be shown again.
@@ -1093,8 +1183,8 @@ IN_PROC_BROWSER_TEST_F(
       email, signin::ConsentLevel::kSignin);
 
   // Check that the password account storage is still disabled.
-  EXPECT_FALSE(password_manager::features_util::IsAccountStorageEnabled(
-      pref_service, sync_service));
+  EXPECT_FALSE(
+      password_manager::features_util::IsAccountStorageEnabled(sync_service));
 }
 
 // Test the recording of the user entering or resolving an inconsistent state
@@ -1178,15 +1268,6 @@ IN_PROC_BROWSER_TEST_F(
       ChromeSigninUserChoice::kSignin);
 }
 
-// Test to sign in to Chrome from the Chrome Signin Bubble Intercept with
-// `switches::kExplicitBrowserSigninUIOnDesktop` enabled.
-class DiceWebSigninInterceptorWithExplicitBrowserSigninBrowserTest
-    : public DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest {
- private:
-  base::test::ScopedFeatureList feature_list_{
-      switches::kExplicitBrowserSigninUIOnDesktop};
-};
-
 // This test mainly checks the combination of dismissal and the effect it has on
 // the user choice. Simulating multiple accounts and checks that they do not
 // affect each other:
@@ -1198,7 +1279,7 @@ class DiceWebSigninInterceptorWithExplicitBrowserSigninBrowserTest
 // - Account1 changes it's pref to always ask and should show the bubble even
 // after 5 dismisses.
 IN_PROC_BROWSER_TEST_F(
-    DiceWebSigninInterceptorWithExplicitBrowserSigninBrowserTest,
+    DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest,
     ChromeSigninInterceptDismissBehavior) {
   base::HistogramTester histogram_tester;
 
@@ -1210,7 +1291,7 @@ IN_PROC_BROWSER_TEST_F(
   ASSERT_EQ(GetChromeSigninUserChoicePref(info1),
             ChromeSigninUserChoice::kNoChoice);
 
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -1295,14 +1376,14 @@ IN_PROC_BROWSER_TEST_F(
 }
 
 IN_PROC_BROWSER_TEST_F(
-    DiceWebSigninInterceptorWithExplicitBrowserSigninBrowserTest,
+    DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest,
     OverrideUserChoicePrefAfterAccept) {
   // Setup an account for interception.
   const std::string email("alice1@example.com");
   AccountInfo info =
       MakeAccountInfoAvailableAndUpdate(email, kNoHostedDomainFound);
 
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -1331,14 +1412,14 @@ IN_PROC_BROWSER_TEST_F(
 }
 
 IN_PROC_BROWSER_TEST_F(
-    DiceWebSigninInterceptorWithExplicitBrowserSigninBrowserTest,
+    DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest,
     OverrideUserChoicePrefAfterDecline) {
   // Setup an account for interception.
   const std::string email("alice1@example.com");
   AccountInfo info =
       MakeAccountInfoAvailableAndUpdate(email, kNoHostedDomainFound);
 
-  // Makes sure Chrome is not signed in to trigger the Chrome Sigin intercept
+  // Makes sure Chrome is not signed in to trigger the Chrome Signin intercept
   // bubble.
   ASSERT_FALSE(IsChromeSignedIn());
 
@@ -1363,7 +1444,7 @@ IN_PROC_BROWSER_TEST_F(
 }
 
 IN_PROC_BROWSER_TEST_F(
-    DiceWebSigninInterceptorWithExplicitBrowserSigninBrowserTest,
+    DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest,
     ChromeSigninBubbleResultsWithAlwaysAskUserChoice) {
   // Setup an account for interception.
   const std::string email("alice1@example.com");
@@ -1402,34 +1483,27 @@ IN_PROC_BROWSER_TEST_F(
             ChromeSigninUserChoice::kAlwaysAsk);
 }
 
-// Test Suite where PRE_* tests are with
-// `switches::kExplicitBrowserSigninUIOnDesktop` disabled, and regular test with
-// `switches::kExplicitBrowserSigninUIOnDesktop` enabled, simulating users
-// transitioning in to `switches::kExplicitBrowserSigninUIOnDesktop` active.
+// Test Suite where PRE_* tests are with explicit signin disabled, and regular
+// test with explicit signin enabled, simulating users transitioning in to
+// explicit signin active.
 class DiceWebSigninInterceptorWithUnoEnabledAndPREDisabledBrowserTest
     : public DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest {
  public:
-  DiceWebSigninInterceptorWithUnoEnabledAndPREDisabledBrowserTest() {
-    feature_list_.InitWithFeatureState(
-        switches::kExplicitBrowserSigninUIOnDesktop, !content::IsPreTest());
-  }
+  DiceWebSigninInterceptorWithUnoEnabledAndPREDisabledBrowserTest() = default;
 
  protected:
   const std::string email_ = "alice@example.com";
-
- private:
-  base::test::ScopedFeatureList feature_list_;
 };
 
-// Signing in to Chrome while `switches::kExplicitBrowserSigninUIOnDesktop` is
-// disabled, to simulate a signed in user prior to
-// `switches::kExplicitBrowserSigninUIOnDesktop` activation, then enabling the
-// feature for them.
+// Signing in to Chrome while explicit signin is disabled, to simulate a signed
+// in user prior to explicit signin activation, then enabling the feature for
+// them.
 IN_PROC_BROWSER_TEST_F(
     DiceWebSigninInterceptorWithUnoEnabledAndPREDisabledBrowserTest,
     PRE_ChromeSignedInTransitionToUnoEnabled) {
-  ASSERT_FALSE(switches::IsExplicitBrowserSigninUIOnDesktopEnabled());
-
+  Profile* profile = browser()->profile();
+  profile->GetPrefs()->ClearPref(
+      prefs::kCookieClearOnExitMigrationNoticeComplete);
   signin::AccountAvailabilityOptionsBuilder builder;
   AccountInfo account_info = signin::MakeAccountAvailable(
       identity_manager(),
@@ -1444,33 +1518,29 @@ IN_PROC_BROWSER_TEST_F(
       prefs::kExplicitBrowserSignin));
   // Passwords are defaulted to disabled without an explicit signin.
   EXPECT_FALSE(password_manager::features_util::IsAccountStorageEnabled(
-      GetProfile()->GetPrefs(),
       SyncServiceFactory::GetForProfile(GetProfile())));
 
   SetSignoutAllowed(false);
 }
 
-// Enabling `switches::kExplicitBrowserSigninUIOnDesktop`, after being signed in
+// Enabling explicit signin, after being signed in
 // already.
 IN_PROC_BROWSER_TEST_F(
     DiceWebSigninInterceptorWithUnoEnabledAndPREDisabledBrowserTest,
     ChromeSignedInTransitionToUnoEnabled) {
-  ASSERT_TRUE(switches::IsExplicitBrowserSigninUIOnDesktopEnabled());
   // We are still signed in from the PRE_ test.
   ASSERT_TRUE(IsChromeSignedIn());
 
-  // Starting Chrome with a Signed in account prior to
-  // `switches::kExplicitBrowserSigninUIOnDesktop` activation should not turn
-  // this pref on.
+  // Starting Chrome with a Signed in account prior to explicit signin
+  // activation should not turn this pref on.
   EXPECT_FALSE(browser()->profile()->GetPrefs()->GetBoolean(
       prefs::kExplicitBrowserSignin));
   // Since we did not interact with passwords before, passwords should remain
   // disabled as long as we did not explicitly sign in.
-  PrefService* pref_service = GetProfile()->GetPrefs();
   syncer::SyncService* sync_service =
       SyncServiceFactory::GetForProfile(GetProfile());
-  EXPECT_FALSE(password_manager::features_util::IsAccountStorageEnabled(
-      pref_service, sync_service));
+  EXPECT_FALSE(
+      password_manager::features_util::IsAccountStorageEnabled(sync_service));
 
   // Sign out, and sign back in.
   SetSignoutAllowed(true);
@@ -1484,121 +1554,18 @@ IN_PROC_BROWSER_TEST_F(
               signin_metrics::AccessPoint::kChromeSigninInterceptBubble)
           .Build(email_));
 
-  // Explicit Signing in while `switches::kExplicitBrowserSigninUIOnDesktop` is
-  // active should be stored.
+  // Explicit Signing in should be stored.
   EXPECT_TRUE(browser()->profile()->GetPrefs()->GetBoolean(
       prefs::kExplicitBrowserSignin));
-  // Signing in with `switches::kExplicitBrowserSigninUIOnDesktop` enabled,
-  // should affect the passwords default.
-  EXPECT_TRUE(password_manager::features_util::IsAccountStorageEnabled(
-      pref_service, sync_service));
+  // Signing in with explicit signin enabled, should affect the passwords
+  // default.
+  EXPECT_TRUE(
+      password_manager::features_util::IsAccountStorageEnabled(sync_service));
 
   // Sign out should clear the explicit signin pref.
   identity_test_env()->ClearPrimaryAccount();
   EXPECT_FALSE(browser()->profile()->GetPrefs()->GetBoolean(
       prefs::kExplicitBrowserSignin));
-}
-
-// Test Suite where PRE_* tests are with
-// `switches::kExplicitBrowserSigninUIOnDesktop` enabled, and regular test with
-// `switches::kExplicitBrowserSigninUIOnDesktop` disabled. Simulating a
-// rollback.
-class DiceWebSigninInterceptorWithUnoDisabledAndPREEnabledBrowserTest
-    : public DiceWebSigninInterceptorWithChromeSigninHelpersBrowserTest {
- public:
-  DiceWebSigninInterceptorWithUnoDisabledAndPREEnabledBrowserTest() {
-    feature_list_.InitWithFeatureState(
-        switches::kExplicitBrowserSigninUIOnDesktop, content::IsPreTest());
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-IN_PROC_BROWSER_TEST_F(
-    DiceWebSigninInterceptorWithUnoDisabledAndPREEnabledBrowserTest,
-    PRE_ChromeSignedinWithUnoShouldRevertBackToDefaultWithUnoDisabled) {
-  ASSERT_TRUE(switches::IsExplicitBrowserSigninUIOnDesktopEnabled());
-
-  signin::MakeAccountAvailable(
-      identity_manager(),
-      signin::AccountAvailabilityOptionsBuilder()
-          .AsPrimary(signin::ConsentLevel::kSignin)
-          .WithAccessPoint(
-              signin_metrics::AccessPoint::kChromeSigninInterceptBubble)
-          .Build("alice@example.com"));
-
-  EXPECT_TRUE(IsChromeSignedIn());
-  EXPECT_TRUE(browser()->profile()->GetPrefs()->GetBoolean(
-      prefs::kExplicitBrowserSignin));
-  // Passwords are defaulted to enabled with an explicit sign in and
-  // `switches::kExplicitBrowserSigninUIOnDesktop` active.
-  EXPECT_TRUE(password_manager::features_util::IsAccountStorageEnabled(
-      GetProfile()->GetPrefs(),
-      SyncServiceFactory::GetForProfile(GetProfile())));
-
-  SetSignoutAllowed(false);
-}
-
-IN_PROC_BROWSER_TEST_F(
-    DiceWebSigninInterceptorWithUnoDisabledAndPREEnabledBrowserTest,
-    ChromeSignedinWithUnoShouldRevertBackToDefaultWithUnoDisabled) {
-  ASSERT_FALSE(switches::IsExplicitBrowserSigninUIOnDesktopEnabled());
-
-  // Disabling `switches::kExplicitBrowserSigninUIOnDesktop` should reset the
-  // pref.
-  EXPECT_FALSE(browser()->profile()->GetPrefs()->GetBoolean(
-      prefs::kExplicitBrowserSignin));
-  // Disabling `switches::kExplicitBrowserSigninUIOnDesktop` feature should
-  // revert back to the previous default state, since there were no
-  // interactions, defaults to disabled.
-  EXPECT_FALSE(password_manager::features_util::IsAccountStorageEnabled(
-      GetProfile()->GetPrefs(),
-      SyncServiceFactory::GetForProfile(GetProfile())));
-}
-
-// WebApps do not trigger interception. Regression test for
-// https://crbug.com/1414988
-IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
-                       WebAppNoInterception) {
-  base::HistogramTester histogram_tester;
-  // Setup profile for interception.
-  identity_test_env()->MakeAccountAvailable("alice@example.com");
-  AccountInfo account_info = MakeAccountInfoAvailableAndUpdate(
-      "bob@example.com", kNoHostedDomainFound);
-
-  SetupGaiaResponses();
-
-  // Install web app
-  Profile* profile = browser()->profile();
-  const GURL kWebAppURL("https://www.webapp.com");
-  auto web_app_info =
-      web_app::WebAppInstallInfo::CreateWithStartUrlForTesting(kWebAppURL);
-  web_app_info->scope = kWebAppURL.GetWithoutFilename();
-  web_app_info->user_display_mode =
-      web_app::mojom::UserDisplayMode::kStandalone;
-  web_app_info->title = u"A Web App";
-  webapps::AppId app_id =
-      web_app::test::InstallWebApp(profile, std::move(web_app_info));
-
-  Browser* app_browser = web_app::LaunchWebAppBrowserAndWait(profile, app_id);
-
-  ASSERT_NE(app_browser, nullptr);
-  ASSERT_EQ(app_browser->type(), Browser::Type::TYPE_APP);
-
-  // Trigger signin interception in the web app.
-  DiceWebSigninInterceptor* interceptor =
-      DiceWebSigninInterceptorFactory::GetForProfile(profile);
-  interceptor->MaybeInterceptWebSignin(
-      app_browser->tab_strip_model()->GetActiveWebContents(),
-      account_info.account_id, signin_metrics::AccessPoint::kWebSignin,
-      /*is_new_account=*/true,
-      /*is_sync_signin=*/false);
-
-  // Check that the interception was aborted.
-  histogram_tester.ExpectUniqueSample(
-      "Signin.Intercept.HeuristicOutcome",
-      SigninInterceptionHeuristicOutcome::kAbortNoSupportedBrowser, 1);
 }
 
 // Tests the complete interception flow including profile and browser creation.
@@ -2359,6 +2326,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
       signin_metrics::SourceForRefreshTokenOperation::kUnknown);
   other_identity_manager->GetPrimaryAccountMutator()->SetPrimaryAccount(
       account_info.account_id, signin::ConsentLevel::kSync);
+  enterprise_util::SetUserAcceptedAccountManagement(other_profile, true);
 
   // Add a tab.
   GURL intercepted_url = embedded_test_server()->GetURL("/defaultresponse");

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickpositioners_p.h"
 #include "qquickpositioners_p_p.h"
@@ -909,7 +910,7 @@ void QQuickPositionerAttached::setIsLastItem(bool isLastItem)
   \sa Grid::spacing
 */
 /*!
-    \qmlmethod QtQuick::Column::forceLayout()
+    \qmlmethod void QtQuick::Column::forceLayout()
     \since 5.9
 
     Column typically positions its children once per frame. This means that
@@ -1090,7 +1091,7 @@ void QQuickColumn::reportConflictingAnchors()
   \sa Grid::spacing
 */
 /*!
-    \qmlmethod QtQuick::Row::forceLayout()
+    \qmlmethod void QtQuick::Row::forceLayout()
     \since 5.9
 
     Row typically positions its children once per frame. This means that
@@ -1377,7 +1378,7 @@ void QQuickRow::reportConflictingAnchors()
   \sa rows, columns
 */
 /*!
-    \qmlmethod QtQuick::Grid::forceLayout()
+    \qmlmethod void QtQuick::Grid::forceLayout()
     \since 5.9
 
     Grid typically positions its children once per frame. This means that
@@ -1960,7 +1961,7 @@ void QQuickGrid::reportConflictingAnchors()
   \sa Grid::spacing
 */
 /*!
-    \qmlmethod QtQuick::Flow::forceLayout()
+    \qmlmethod void QtQuick::Flow::forceLayout()
     \since 5.9
 
     Flow typically positions its children once per frame. This means that

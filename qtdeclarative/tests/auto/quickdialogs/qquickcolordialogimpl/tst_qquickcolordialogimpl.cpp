@@ -36,8 +36,7 @@ class tst_QQuickColorDialogImpl : public QQmlDataTest
     Q_OBJECT
 
 public:
-    tst_QQuickColorDialogImpl();
-    static void initMain()
+    tst_QQuickColorDialogImpl();    static void initMain()
     {
         // We need to set this attribute.
         QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -62,6 +61,7 @@ private slots:
     void dialogCanMoveBetweenWindows();
     void checkModality_data();
     void checkModality();
+    void checkFrameless();
 
 private:
     bool closePopup(DialogTestHelper<QQuickColorDialog, QQuickColorDialogImpl> *dialogHelper,
@@ -289,6 +289,10 @@ void tst_QQuickColorDialogImpl::moveColorPickerHandle()
                 qPrintable(colorComparisonErrorString.arg("red")
                 .arg(QColorConstants::Cyan.red())
                 .arg(colorPicker->color().red())));
+
+    if (QSysInfo::productType() == "opensuse-leap" && QSysInfo::productVersion() == QLatin1String("16.0"))
+        QEXPECT_FAIL("", "QTBUG-142386: opensuse-leap 16.0 fails", Continue);
+
     FUZZYCOMPARE(colorPicker->color().green(), QColorConstants::Cyan.green(), 3,
                 qPrintable(colorComparisonErrorString.arg("green")
                 .arg(QColorConstants::Cyan.green())
@@ -463,7 +467,7 @@ void tst_QQuickColorDialogImpl::changeHex()
     // Modify the value in the TextField to something else.
     colorTextField->forceActiveFocus();
     colorTextField->select(1, colorTextField->text().size());
-    QVERIFY_ACTIVE_FOCUS(colorTextField);
+    QTRY_VERIFY_ACTIVE_FOCUS(colorTextField);
     QTest::keyClick(dialogHelper.popupWindow(), Qt::Key_Backspace);
     QTest::keyClick(dialogHelper.popupWindow(), '0');
     QTest::keyClick(dialogHelper.popupWindow(), '0');
@@ -714,6 +718,18 @@ void tst_QQuickColorDialogImpl::checkModality()
     QSignalSpy cmaMouseSpy(childMouseArea, &QQuickMouseArea::clicked);
     QTest::mouseClick(childWindow, Qt::LeftButton, Qt::NoModifier, QPoint(5, 5));
     QCOMPARE(cmaMouseSpy.size(), expectedChildWindowClickCount);
+}
+
+void tst_QQuickColorDialogImpl::checkFrameless()
+{
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    QSKIP("Frameless window is not supported on Android/IOS");
+#endif
+    DialogTestHelper<QQuickColorDialog, QQuickColorDialogImpl> dialogHelper(this, "colorDialogFrameless.qml");
+    OPEN_QUICK_DIALOG();
+    QVERIFY(dialogHelper.waitForPopupWindowActiveAndPolished());
+
+    QVERIFY(dialogHelper.popupWindow()->flags().testFlag(Qt::FramelessWindowHint));
 }
 
 

@@ -83,11 +83,6 @@ ScriptPromise<IDLSequence<IdentityUserInfo>> IdentityProvider::getUserInfo(
 
   DCHECK(provider);
 
-  if (!provider->hasConfigURL()) {
-    resolver->RejectWithTypeError("Missing the provider's configURL.");
-    return promise;
-  }
-
   KURL provider_url(provider->configURL());
   String client_id = provider->clientId();
 
@@ -169,7 +164,13 @@ void OnRegisterIdP(ScriptPromiseResolver<IDLBoolean>* resolver,
           "User declined the permission to register the identity provider."));
       return;
     }
-  };
+    case RegisterIdpStatus::kErrorInvalidConfig: {
+      resolver->Reject(MakeGarbageCollected<DOMException>(
+          DOMExceptionCode::kNotAllowedError,
+          "Invalid identity provider registration config."));
+      return;
+    }
+  }
 }
 
 ScriptPromise<IDLBoolean> IdentityProvider::registerIdentityProvider(

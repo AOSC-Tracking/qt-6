@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 pragma ComponentBehavior: Bound
 
@@ -7,14 +8,13 @@ import QtQuick
 import QtQuick.Controls.impl
 import QtQuick.Templates as T
 import QtQuick.NativeStyle as NativeStyle
+import QtQuick.Controls.Windows.impl
 
 NativeStyle.DefaultSearchField {
     id: control
 
     readonly property bool __nativeSearchIndicator: searchIndicator.indicator.hasOwnProperty("_qt_default")
     readonly property bool __nativeClearIndicator: clearIndicator.indicator.hasOwnProperty("_qt_default")
-
-    readonly property bool __notCustomizable: true
 
     implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
                             implicitContentWidth + leftPadding + rightPadding,
@@ -33,6 +33,10 @@ NativeStyle.DefaultSearchField {
         verticalAlignment: Text.AlignVCenter
 
         readonly property bool __ignoreNotCustomizable: true
+
+        ContextMenu.menu: TextEditingContextMenu {
+            editor: parent
+        }
     }
 
     NativeStyle.SearchField {

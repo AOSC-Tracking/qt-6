@@ -7,10 +7,10 @@
 #include <memory>
 #include <utility>
 
-#include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_util.h"
+#include "base/strings/to_string.h"
 #include "base/strings/utf_string_conversions.h"
 #include "media/base/key_systems.h"
 #include "media/base/media_permission.h"
@@ -21,6 +21,7 @@
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/renderer/platform/media/web_content_decryption_module_access_impl.h"
 #include "third_party/blink/renderer/platform/media/web_content_decryption_module_impl.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -61,8 +62,6 @@ std::string ConvertCreateCdmStatusToString(media::CreateCdmStatus status) {
     case media::CreateCdmStatus::kNotAllowedOnUniqueOrigin:
       return "EME use is not allowed on unique origins.";
 #if BUILDFLAG(IS_ANDROID)
-    case media::CreateCdmStatus::kMediaDrmBridgeCreationFailed:
-      return "MediaDrmBridge creation failed.";
     case media::CreateCdmStatus::kMediaCryptoNotAvailable:
       return "MediaCrypto not available.";
     case media::CreateCdmStatus::kAndroidMediaDrmIllegalArgument:
@@ -268,8 +267,8 @@ void WebEncryptedMediaClientImpl::RequestMediaKeySystemAccess(
 
   pending_requests_.push_back(std::move(request));
   key_systems_->UpdateIfNeeded(
-      base::BindOnce(&WebEncryptedMediaClientImpl::OnKeySystemsUpdated,
-                     weak_factory_.GetWeakPtr()));
+      WTF::BindOnce(&WebEncryptedMediaClientImpl::OnKeySystemsUpdated,
+                    weak_factory_.GetWeakPtr()));
 }
 
 void WebEncryptedMediaClientImpl::CreateCdm(
@@ -278,8 +277,8 @@ void WebEncryptedMediaClientImpl::CreateCdm(
     std::unique_ptr<WebContentDecryptionModuleResult> result) {
   WebContentDecryptionModuleImpl::Create(
       cdm_factory_, key_systems_, security_origin, cdm_config,
-      base::BindOnce(&CompleteWebContentDecryptionModuleResult,
-                     std::move(result)));
+      WTF::BindOnce(&CompleteWebContentDecryptionModuleResult,
+                    std::move(result)));
 }
 
 void WebEncryptedMediaClientImpl::OnKeySystemsUpdated() {
@@ -292,8 +291,8 @@ void WebEncryptedMediaClientImpl::SelectConfig(
     WebEncryptedMediaRequest request) {
   key_system_config_selector_.SelectConfig(
       request.KeySystem(), request.SupportedConfigurations(),
-      base::BindOnce(&WebEncryptedMediaClientImpl::OnConfigSelected,
-                     weak_factory_.GetWeakPtr(), request));
+      WTF::BindOnce(&WebEncryptedMediaClientImpl::OnConfigSelected,
+                    weak_factory_.GetWeakPtr(), request));
 }
 
 void WebEncryptedMediaClientImpl::OnConfigSelected(
@@ -337,7 +336,7 @@ void WebEncryptedMediaClientImpl::OnConfigSelected(
 
   // Use the returned key system which should be used for CDM creation.
   request.RequestSucceeded(WebContentDecryptionModuleAccessImpl::Create(
-      origin, *accumulated_configuration, *cdm_config,
+      origin, *accumulated_configuration, request.KeySystem(), *cdm_config,
       weak_factory_.GetWeakPtr()));
 }
 

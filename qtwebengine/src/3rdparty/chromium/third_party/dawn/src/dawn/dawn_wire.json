@@ -92,10 +92,10 @@
         ],
         "queue write texture": [
             {"name": "queue id", "type": "ObjectId", "id_type": "queue" },
-            {"name": "destination", "type": "image copy texture", "annotation": "const*"},
+            {"name": "destination", "type": "texel copy texture info", "annotation": "const*"},
             {"name": "data", "type": "uint8_t", "annotation": "const*", "length": "data size", "wire_is_data_only": true},
             {"name": "data size", "type": "uint64_t"},
-            {"name": "data layout", "type": "texture data layout", "annotation": "const*"},
+            {"name": "data layout", "type": "texel copy buffer layout", "annotation": "const*"},
             {"name": "writeSize", "type": "extent 3D", "annotation": "const*"}
         ],
         "shader module get compilation info": [
@@ -107,6 +107,9 @@
             { "name": "surface id", "type": "ObjectId", "id_type": "surface" },
             { "name": "configured device id", "type": "ObjectId", "id_type": "device" },
             { "name": "texture handle", "type": "ObjectHandle", "handle_type": "texture" }
+        ],
+        "surface present": [
+            { "name": "self", "type": "surface" }
         ],
         "instance request adapter": [
             { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
@@ -122,6 +125,24 @@
             { "name": "device object handle", "type": "ObjectHandle", "handle_type": "device"},
             { "name": "device lost future", "type": "future" },
             { "name": "descriptor", "type": "device descriptor", "annotation": "const*" }
+        ],
+        "render pass encoder set immediate data": [
+            { "name": "render pass encoder id", "type": "ObjectId", "id_type": "render pass encoder"},
+            {"name": "offset", "type": "uint32_t"},
+            { "name": "data", "type": "uint8_t", "annotation": "const*", "length": "size", "wire_is_data_only": true},
+            { "name": "size", "type": "size_t"}
+        ],
+        "render bundle encoder set immediate data": [
+            { "name": "render bundle encoder id", "type": "ObjectId", "id_type": "render bundle encoder"},
+            {"name": "offset", "type": "uint32_t"},
+            { "name": "data", "type": "uint8_t", "annotation": "const*", "length": "size", "wire_is_data_only": true},
+            { "name": "size", "type": "size_t"}
+        ],
+        "compute pass encoder set immediate data": [
+            { "name": "compute pass encoder id", "type": "ObjectId", "id_type": "compute pass encoder"},
+            {"name": "offset", "type": "uint32_t"},
+            { "name": "data", "type": "uint8_t", "annotation": "const*", "length": "size", "wire_is_data_only": true},
+            { "name": "size", "type": "size_t"}
         ]
     },
     "return commands": {
@@ -171,7 +192,8 @@
         "queue work done callback": [
             { "name": "event manager", "type": "ObjectHandle" },
             { "name": "future", "type": "future" },
-            { "name": "status", "type": "queue work done status" }
+            { "name": "status", "type": "queue work done status" },
+            { "name": "message", "type": "string view" }
         ],
         "shader module get compilation info callback": [
             { "name": "event manager", "type": "ObjectHandle" },
@@ -185,7 +207,7 @@
             { "name": "status", "type": "request adapter status" },
             { "name": "message", "type": "string view" },
             { "name": "info", "type": "adapter info", "annotation": "const*", "optional": "true" },
-            { "name": "limits", "type": "supported limits", "annotation": "const*", "optional": "true" },
+            { "name": "limits", "type": "limits", "annotation": "const*", "optional": "true" },
             { "name": "features count", "type": "uint32_t"},
             { "name": "features", "type": "feature name", "annotation": "const*", "length": "features count"}
         ],
@@ -194,7 +216,7 @@
             { "name": "future", "type": "future" },
             { "name": "status", "type": "request device status" },
             { "name": "message", "type": "string view" },
-            { "name": "limits", "type": "supported limits", "annotation": "const*", "optional": "true" },
+            { "name": "limits", "type": "limits", "annotation": "const*", "optional": "true" },
             { "name": "features count", "type": "uint32_t"},
             { "name": "features", "type": "feature name", "annotation": "const*", "length": "features count"}
         ]
@@ -203,7 +225,8 @@
         "client_side_structures": [
             "FutureWaitInfo",
             "SurfaceDescriptorFromWindowsCoreWindow",
-            "SurfaceDescriptorFromWindowsSwapChainPanel",
+            "SurfaceDescriptorFromWindowsUWPSwapChainPanel",
+            "SurfaceDescriptorFromWindowsWinUISwapChainPanel",
             "SurfaceSourceMetalLayer",
             "SurfaceSourceWindowsHWND",
             "SurfaceSourceXlibWindow",
@@ -223,9 +246,12 @@
             "BufferMapAsync",
             "BufferGetConstMappedRange",
             "BufferGetMappedRange",
+            "BufferReadMappedRange",
+            "BufferWriteMappedRange",
             "BufferGetMapState",
             "BufferGetSize",
             "BufferGetUsage",
+            "ComputePassEncoderSetImmediateData",
             "DeviceCreateBuffer",
             "DeviceCreateComputePipelineAsync",
             "DeviceCreateRenderPipelineAsync",
@@ -236,19 +262,19 @@
             "DeviceGetLostFuture",
             "DeviceHasFeature",
             "DevicePopErrorScope",
-            "DevicePopErrorScopeF",
-            "DevicePopErrorScope2",
             "DeviceSetLoggingCallback",
             "InstanceGetWGSLLanguageFeatures",
             "InstanceHasWGSLLanguageFeature",
             "InstanceCreateSurface",
             "InstanceRequestAdapter",
-            "ShaderModuleGetCompilationInfo",
             "QuerySetGetType",
             "QuerySetGetCount",
             "QueueOnSubmittedWorkDone",
             "QueueWriteBuffer",
             "QueueWriteTexture",
+            "RenderBundleEncoderSetImmediateData",
+            "RenderPassEncoderSetImmediateData",
+            "ShaderModuleGetCompilationInfo",
             "SurfaceGetCapabilities",
             "SurfaceGetCurrentTexture",
             "SurfaceGetPreferredFormat",
@@ -273,6 +299,7 @@
             "InstanceProcessEvents",
             "InstanceWaitAny",
             "SurfaceConfigure",
+            "SurfacePresent",
             "SurfaceUnconfigure"
         ],
         "client_special_objects": [
@@ -285,9 +312,13 @@
             "ShaderModule",
             "Surface",
             "SurfaceCapabilities",
-            "Texture"
+            "Texture",
+            "RenderPassEncoder",
+            "RenderBundleEncoder",
+            "ComputePassEncoder"
         ],
         "server_custom_pre_handler_commands": [
+            "DeviceCreateErrorBuffer",
             "BufferDestroy",
             "BufferUnmap"
         ]

@@ -18,6 +18,7 @@
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_log.h"
 #include "build/build_config.h"
 #include "components/viz/test/test_gpu_service_holder.h"
 #include "gpu/command_buffer/client/gl_helper.h"
@@ -42,8 +43,6 @@ class YUVReadbackTest : public testing::Test {
  protected:
   YUVReadbackTest() : context_(std::make_unique<gpu::GLInProcessContext>()) {
     gpu::ContextCreationAttribs attributes;
-    attributes.bind_generates_resource = false;
-
     auto result = context_->Initialize(
         TestGpuServiceHolder::GetInstance()->task_executor(), attributes,
         gpu::SharedMemoryLimits());
@@ -91,7 +90,7 @@ class YUVReadbackTest : public testing::Test {
     auto parsed_json = base::JSONReader::ReadAndReturnValueWithError(json_data);
     CHECK(parsed_json.has_value())
         << "JSON parsing failed (" << parsed_json.error().message
-        << ") JSON data:" << std::endl
+        << ") JSON data:\n"
         << json_data;
 
     CHECK(parsed_json->is_list());

@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qcalendarwidget.h"
 
@@ -2015,6 +2016,7 @@ void QCalendarWidgetPrivate::_q_editingFinished()
     \inmodule QtWidgets
 
     \image fusion-calendarwidget.png
+           {Calendar widget showing the month, year, and a selected day}
 
     The widget is initialized with the current month and year, but
     QCalendarWidget provides several public slots to change the year
@@ -2053,6 +2055,7 @@ void QCalendarWidgetPrivate::_q_editingFinished()
     \table
     \row \li
         \image qcalendarwidget-grid.png
+               {Calendar widget with a visible grid}
     \row \li
         \snippet code/src_gui_widgets_qcalendarwidget.cpp 0
     \endtable
@@ -2483,6 +2486,7 @@ void QCalendarWidget::showToday()
     \table
     \row
     \li \image qcalendarwidget-minimum.png
+               {Calendar widget with the disabled dates before the minimum date}
     \row
     \li
     \snippet code/src_gui_widgets_qcalendarwidget.cpp 1
@@ -2539,6 +2543,7 @@ void QCalendarWidget::clearMinimumDate()
     \table
     \row
     \li \image qcalendarwidget-maximum.png
+               {Calendar widget with the disabled dates after the maximum date}
     \row
     \li
     \snippet code/src_gui_widgets_qcalendarwidget.cpp 2
@@ -2713,6 +2718,7 @@ void QCalendarWidget::setVerticalHeaderFormat(QCalendarWidget::VerticalHeaderFor
     \table
     \row
         \li \inlineimage qcalendarwidget-grid.png
+                         {Calendar widget set to be visible}
     \row
         \li
         \snippet code/src_gui_widgets_qcalendarwidget.cpp 5
@@ -3135,7 +3141,7 @@ bool QCalendarWidget::eventFilter(QObject *watched, QEvent *event)
         if (!widget || widget->window() != tlw)
             return QWidget::eventFilter(watched, event);
 
-        QPoint mousePos = widget->mapTo(tlw, static_cast<QMouseEvent *>(event)->position().toPoint());
+        QPoint mousePos = widget->mapTo(tlw, static_cast<QMouseEvent *>(event)->position()).toPoint();
         QRect geom = QRect(d->yearEdit->mapTo(tlw, QPoint(0, 0)), d->yearEdit->size());
         if (!geom.contains(mousePos)) {
             event->accept();

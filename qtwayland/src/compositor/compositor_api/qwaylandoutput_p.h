@@ -45,10 +45,9 @@ struct QWaylandSurfaceViewMapper
 
     QWaylandView *maybePrimaryView() const
     {
-        for (int i = 0; i < views.size(); i++) {
-            if (surface && surface->primaryView() == views.at(i))
-                return views.at(i);
-        }
+        QWaylandView *primaryView = surface != nullptr ? surface->primaryView() : nullptr;
+        if (views.contains(primaryView))
+            return primaryView;
         return nullptr;
     }
 
@@ -76,6 +75,8 @@ public:
     void sendMode(const Resource *resource, const QWaylandOutputMode &mode);
     void sendModesInfo();
     void sendDone();
+    void maybeSendDone(const Resource *resource);
+    void maybeSendScale(const Resource *resource, int scale);
 
     void handleWindowPixelSizeChanged();
 
@@ -102,6 +103,7 @@ private:
     int scaleFactor = 1;
     bool sizeFollowsWindow = false;
     bool initialized = false;
+    bool canSendFrameCallbacks = false;
     QSize windowPixelSize;
 
     Q_DISABLE_COPY(QWaylandOutputPrivate)

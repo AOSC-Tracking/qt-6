@@ -148,6 +148,7 @@ public:
     static constexpr QOperatingSystemVersionBase Android14 { QOperatingSystemVersionBase::Android, 14, 0 };
     static constexpr QOperatingSystemVersionBase Windows11_23H2 { QOperatingSystemVersionBase::Windows, 10, 0, 22631 };
     static constexpr QOperatingSystemVersionBase Windows11_24H2 { QOperatingSystemVersionBase::Windows, 10, 0, 26100 };
+    static constexpr QOperatingSystemVersionBase Windows11_25H2 { QOperatingSystemVersionBase::Windows, 10, 0, 26200 };
 
 #if QT_VERSION < QT_VERSION_CHECK(7, 0, 0) && !defined(QT_BOOTSTRAPPED) && !defined(Q_QDOC)
 };
@@ -262,9 +263,8 @@ public:
     {
     }
 
-#if QT_CORE_REMOVED_SINCE(6, 3) || defined(Q_QDOC)
+    QT_CORE_INLINE_SINCE(6, 11)
     static QOperatingSystemVersion current();
-#endif
 
     static constexpr OSType currentType()
     {
@@ -303,6 +303,13 @@ Q_DECLARE_TYPEINFO(QOperatingSystemVersion, Q_PRIMITIVE_TYPE);
 class QDebug;
 Q_CORE_EXPORT QDebug operator<<(QDebug debug, const QOperatingSystemVersion &ov);
 #endif
+
+#if QT_CORE_INLINE_IMPL_SINCE(6, 11)
+QOperatingSystemVersion QOperatingSystemVersion::current()
+{
+    return QOperatingSystemVersionBase::current();
+}
+#endif // QT_CORE_INLINE_IMPL_SINCE(6, 11)
 
 QT_END_NAMESPACE
 

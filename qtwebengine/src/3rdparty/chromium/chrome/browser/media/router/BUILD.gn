@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -47,12 +46,15 @@ static_library("media_router_feature") {
     "media_router_feature.cc",
     "media_router_feature.h",
   ]
-  public_deps = [ "//base" ]
+  public_deps = [
+    "//base",
+    "//extensions/buildflags",
+  ]
   deps = [
     "//chrome/browser/profiles",
     "//chrome/browser/profiles:profile",
     "//chrome/common:constants",
-    "//components/media_router/common:common",
+    "//components/media_router/common",
     "//components/prefs",
     "//components/user_prefs",
     "//content/public/browser",
@@ -62,7 +64,7 @@ static_library("media_router_feature") {
   ]
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
-  if (is_chromeos_ash) {
+  if (is_chromeos) {
     deps += [ "//chromeos/ash/components/browser_context_helper" ]
   }
 }
@@ -171,10 +173,10 @@ static_library("router") {
       "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
       "//chrome/browser/profiles:profile",
       "//components/access_code_cast/common:metrics",
-      "//components/embedder_support:browser_util",
+      "//components/embedder_support:user_agent",
       "//components/mirroring/mojom:service",
-      "//components/ukm/content:content",
-      "//components/version_info:version_info",
+      "//components/ukm/content",
+      "//components/version_info",
       "//media/cast:common",
       "//media/remoting:remoting_device_capability",
       "//mojo/public/cpp/bindings",
@@ -234,7 +236,7 @@ if (!is_android && enable_extensions) {
       ":media_router_feature",
       ":router",
       "//chrome/browser:browser_process",
-      "//chrome/browser/media/router/discovery:discovery",
+      "//chrome/browser/media/router/discovery",
       "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
       "//components/media_router/common/providers/cast/channel",
       "//components/openscreen_platform",
@@ -266,11 +268,25 @@ if (!is_android && enable_extensions) {
   }
 }
 
-if (!is_android && enable_extensions) {
-  static_library("test_support") {
-    testonly = true
-    deps = [
+static_library("test_support") {
+  testonly = true
+  deps = []
+  sources = []
+
+  if (!is_android || is_desktop_android) {
+    deps += [
+      "//base",
       "//chrome/browser/media/router/discovery",
+      "//testing/gmock",
+    ]
+    sources += [
+      "test/mock_dns_sd_registry.cc",
+      "test/mock_dns_sd_registry.h",
+    ]
+  }
+
+  if (!is_android) {
+    deps += [
       "//chrome/browser/media/router/discovery/access_code:access_code_sink_service",
       "//chrome/browser/media/router/discovery/access_code:discovery_resources_proto",
       "//chrome/test:test_support",
@@ -281,10 +297,9 @@ if (!is_android && enable_extensions) {
       "//components/media_router/common/providers/cast/channel",
       "//components/media_router/common/providers/cast/channel:capability",
       "//components/media_router/common/providers/cast/channel:test_support",
-      "//testing/gmock",
     ]
     public_deps = [ ":router" ]
-    sources = [
+    sources += [
       "discovery/access_code/access_code_test_util.cc",
       "discovery/access_code/access_code_test_util.h",
       "discovery/mdns/cast_media_sink_service_test_helpers.cc",
@@ -293,17 +308,11 @@ if (!is_android && enable_extensions) {
       "providers/test/test_media_route_provider.h",
       "test/media_router_mojo_test.cc",
       "test/media_router_mojo_test.h",
-      "test/mock_dns_sd_registry.cc",
-      "test/mock_dns_sd_registry.h",
       "test/mock_mojo_media_router.cc",
       "test/mock_mojo_media_router.h",
       "test/provider_test_helpers.cc",
       "test/provider_test_helpers.h",
     ]
-  }
-} else {
-  static_library("test_support") {
-    testonly = true
   }
 }
 
@@ -401,7 +410,6 @@ source_set("unittests") {
       ":logger_list",
       ":test_support",
       "//chrome/browser/media/router/discovery",
-      "//chrome/browser/media/router/discovery:test_support",
       "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
       "//chrome/browser/media/router/discovery/access_code:access_code_sink_service",
       "//chrome/browser/media/router/discovery/access_code:discovery_resources_proto",
@@ -415,6 +423,11 @@ source_set("unittests") {
     ]
   }
 
+  # Traditional desktop platforms and desktop android with extensions support.
+  if (!is_android || enable_desktop_android_extensions) {
+    deps += [ "//chrome/browser/media/router/discovery:test_support" ]
+  }
+
   if (enable_openscreen_protocol) {
     include_dirs = [ "//third_party/openscreen/src" ]
     sources += [
@@ -422,6 +435,10 @@ source_set("unittests") {
       "providers/openscreen/network_service_quic_packet_writer_unittest.cc",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 # TODO(issuetracker.google.com/236160471): CDDL compiler doesn't build

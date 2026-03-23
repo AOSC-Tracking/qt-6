@@ -48,20 +48,25 @@ namespace {
     using namespace QCoreAudioUtils;
 
     const auto audioDevicePropertyStreamsAddress =
-        makePropertyAddress(kAudioDevicePropertyStreams, mode);
-
-    if (auto streamIDs = getAudioPropertyList<AudioStreamID>(deviceId, audioDevicePropertyStreamsAddress)) {
-        const auto audioDevicePhysicalFormatPropertyAddress =
+            makePropertyAddress(kAudioDevicePropertyStreams, mode);
+    const auto audioDevicePhysicalFormatPropertyAddress =
             makePropertyAddress(kAudioStreamPropertyPhysicalFormat, mode);
 
-        for (auto streamID : *streamIDs) {
-            if (auto streamDescription = getAudioProperty<AudioStreamBasicDescription>(
-                        streamID, audioDevicePhysicalFormatPropertyAddress)) {
-                return QCoreAudioUtils::toQAudioFormat(*streamDescription);
-            }
-        }
-    }
+    auto streamIDs =
+            getAudioPropertyList<AudioStreamID>(deviceId, audioDevicePropertyStreamsAddress);
+    if (!streamIDs || streamIDs->empty())
+        return std::nullopt;
 
+    for (auto streamID : *streamIDs) {
+        auto streamDescription = getAudioProperty<AudioStreamBasicDescription>(
+                streamID, audioDevicePhysicalFormatPropertyAddress);
+        if (!streamDescription)
+            continue;
+
+        QAudioFormat fmt = QCoreAudioUtils::toPreferredQAudioFormat(*streamDescription);
+        if (fmt.isValid())
+            return fmt;
+    }
     return std::nullopt;
 }
 
@@ -120,6 +125,53 @@ namespace {
     return ret;
 }
 
+QAudioDevicePrivate::AudioDeviceFormat probeCoreAudioDeviceFormat(AudioDeviceID id,
+                                                                  QAudioDevice::Mode mode)
+{
+    QAudioDevicePrivate::AudioDeviceFormat format;
+
+    const std::optional<QAudioFormat::ChannelConfig> channelConfigOpt =
+            qGetChannelLayoutForCoreAudioDevice(mode, id);
+    if (channelConfigOpt.has_value())
+        format.channelConfiguration = channelConfigOpt.value();
+    else
+        format.channelConfiguration = qGetDefaultChannelLayout(mode);
+
+    const std::optional<QAudioFormat> preferredFormatOpt =
+            qGetPreferredFormatForCoreAudioDevice(mode, id);
+    if (preferredFormatOpt.has_value())
+        format.preferredFormat = preferredFormatOpt.value();
+    else
+        format.preferredFormat = qDefaultPreferredFormat(mode, format.channelConfiguration);
+
+    format.minimumSampleRate = QtMultimediaPrivate::allSupportedSampleRates.front();
+    format.maximumSampleRate = QtMultimediaPrivate::allSupportedSampleRates.back();
+    format.minimumChannelCount = 1;
+    format.maximumChannelCount = qSupportedNumberOfChannels(mode, id).value_or(16);
+
+    format.supportedSampleFormats = qAllSupportedSampleFormats();
+
+    return format;
+}
+
+#else
+
+QAudioDevicePrivate::AudioDeviceFormat createDefaultCoreAudioDeviceFormat(QAudioDevice::Mode mode)
+{
+    QAudioDevicePrivate::AudioDeviceFormat format;
+
+    format.channelConfiguration = qGetDefaultChannelLayout(mode);
+    format.preferredFormat = qDefaultPreferredFormat(mode, format.channelConfiguration);
+
+    format.minimumSampleRate = 1;
+    format.maximumSampleRate = 96000;
+    format.minimumChannelCount = 1;
+    format.maximumChannelCount = 16;
+    format.supportedSampleFormats = qAllSupportedSampleFormats();
+
+    return format;
+}
+
 #endif
 
 } // namespace
@@ -133,48 +185,19 @@ static QString getDescription(AudioDeviceID id, const QByteArray &device, QAudio
     return qGetDefaultDescription(device);
 }
 
-QCoreAudioDeviceInfo::QCoreAudioDeviceInfo(AudioDeviceID id, const QByteArray &device, QAudioDevice::Mode mode):
-    QAudioDevicePrivate{
-        device,
-        mode,
-        getDescription(id, device, mode),
-    }
+QCoreAudioDeviceInfo::QCoreAudioDeviceInfo(AudioDeviceID id, const QByteArray &device,
+                                           QAudioDevice::Mode mode)
+    : QAudioDevicePrivate(device, mode, getDescription(id, device, mode), false,
+                          probeCoreAudioDeviceFormat(id, mode))
 {
-    const std::optional<QAudioFormat::ChannelConfig> channelConfigOpt =
-        qGetChannelLayoutForCoreAudioDevice(mode, id);
-    if (channelConfigOpt.has_value())
-        channelConfiguration = channelConfigOpt.value();
-    else
-        channelConfiguration = qGetDefaultChannelLayout(mode);
-
-    const std::optional<QAudioFormat> preferredFormatOpt =
-        qGetPreferredFormatForCoreAudioDevice(mode, id);
-    if (preferredFormatOpt.has_value())
-        preferredFormat = preferredFormatOpt.value();
-    else
-        preferredFormat = qDefaultPreferredFormat(mode, channelConfiguration);
-
-    minimumSampleRate = QtMultimediaPrivate::allSupportedSampleRates.front();
-    maximumSampleRate = QtMultimediaPrivate::allSupportedSampleRates.back();
-    minimumChannelCount = 1;
-    maximumChannelCount = qSupportedNumberOfChannels(mode, id).value_or(16);
-
-    supportedSampleFormats = qAllSupportedSampleFormats();
 }
 
 #else
 
 QCoreAudioDeviceInfo::QCoreAudioDeviceInfo(const QByteArray &device, QAudioDevice::Mode mode)
-    : QAudioDevicePrivate(device, mode, qGetDefaultDescription(device))
+    : QAudioDevicePrivate(device, mode, qGetDefaultDescription(device), false,
+                          createDefaultCoreAudioDeviceFormat(mode))
 {
-    channelConfiguration = qGetDefaultChannelLayout(mode);
-    preferredFormat = qDefaultPreferredFormat(mode, channelConfiguration);
-
-    minimumSampleRate = 1;
-    maximumSampleRate = 96000;
-    minimumChannelCount = 1;
-    maximumChannelCount = 16;
-    supportedSampleFormats = qAllSupportedSampleFormats();
 }
 
 #endif

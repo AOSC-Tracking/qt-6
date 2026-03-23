@@ -112,6 +112,12 @@ enum Event {
 // Web: this attribute is only used in web content.
 //
 // Native: this attribute is only used in native UI.
+//
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+//
+// LINT.IfChange(Role)
+//
 // Next version: 8
 // Next value: 213
 [Extensible, Stable, Uuid="d258eb73-e0cc-490c-b881-80ee11d3fec2"]
@@ -356,6 +362,7 @@ enum Role {
   kWebView = 183,
   kWindow = 184,
 };
+// LINT.ThenChange(//tools/metrics/histograms/metadata/accessibility/enums.xml:AccessibilityRole)
 
 // Bitfield value. Each state can either be true or false.
 //
@@ -386,7 +393,7 @@ enum State {
   kVertical = 17,
   kVisited = 18,
   [MinVersion=1] kHasActions = 19,
-  [MinVersion=2] kHasInterestTarget = 20,
+  [MinVersion=2] kHasInterestFor = 20,
 };
 
 // An action to be taken on an accessibility node.
@@ -404,8 +411,9 @@ enum Action {
   kBlur = 2,
 
   // Notifies a node that it no longer has accessibility focus.
-  // Currently used only on Android and only internally, it's not
-  // exposed to the open web. See kSetAccessibilityFocus, below.
+  // On Android, this comes from an official Android accessibility api.
+  // On other platforms, we derive this from other actions such as
+  // kScrollToMakeVisible.
   kClearAccessibilityFocus = 3,
 
   // Collapse the collapsible node.
@@ -478,8 +486,9 @@ enum Action {
   [MinVersion=3] kScrollToPositionAtRowColumn = 39,
 
   // Notifies a node that it has accessibility focus.
-  // Currently used only on Android and only internally, it's not
-  // exposed to the open web. See kClearAccessibilityFocus, above.
+  // On Android, this comes from an official Android accessibility api.
+  // On other platforms, we derive this from other actions  such as
+  // kScrollToMakeVisible.
   kSetAccessibilityFocus = 26,
 
   kSetScrollOffset = 27,
@@ -801,6 +810,10 @@ enum IntAttribute {
 
   // The maximum length of a textfield.
   [MinVersion=5] kMaxLength = 67,
+
+  // Paint order, indicates when this node is painted relative to
+  // other nodes, larger is later.
+  [MinVersion=6] kPaintOrder = 68,
 };
 
 // Next version: 2
@@ -1011,7 +1024,7 @@ enum IntListAttribute {
 enum StringListAttribute {
   [Default]kNone = 0,
   [MinVersion=1] kAriaNotificationAnnouncements = 2,
-  [MinVersion=1] kAriaNotificationIds = 3,
+  [MinVersion=1] kAriaNotificationTypes = 3,
   // Descriptions for custom actions. This must be aligned with
   // custom_action_ids.
   kCustomActionDescriptions = 1,
@@ -1343,9 +1356,9 @@ enum NameFrom {
   // contents could be distilled to a plain text string.
   kPopoverTarget,
 
-  // The name comes from an interest target, where the contents could be
+  // The name comes from an interest for, where the contents could be
   // distilled to a plain text string.
-  kInterestTarget,
+  kInterestFor,
 };
 
 // The source of the accessible description. Used by some screen readers
@@ -1403,8 +1416,8 @@ enum DescriptionFrom {
   // |popovertarget| attribute pointing to a `popover=hint`.
   kPopoverTarget,
 
-  // The description comes from an interest target.
-  kInterestTarget,
+  // The description comes from an interest for.
+  kInterestFor,
 };
 
 // The source of the accessible details.
@@ -1422,7 +1435,13 @@ enum DetailsFrom {
 
   // The details comes from a popover that will show when the user shows
   // interest in the current element, e.g. hovers.
-  kInterestTarget,
+  kInterestFor,
+
+  // The details comes from a commandFor attribute.
+  kCommandfor,
+
+  // The details comes from a scroll marker pseudo-element target.
+  kCssScrollMarkerPseudoElement,
 };
 
 // Next value: 4
@@ -1537,6 +1556,6 @@ enum AriaNotificationInterrupt {
 };
 
 enum AriaNotificationPriority {
-  kNone,
-  kImportant,
+  kNormal,
+  kHigh,
 };

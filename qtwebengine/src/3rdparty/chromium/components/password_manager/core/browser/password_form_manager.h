@@ -8,6 +8,8 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <string>
+#include <variant>
 #include <vector>
 
 #include "base/containers/lru_cache.h"
@@ -34,7 +36,7 @@
 #include "components/password_manager/core/browser/password_save_manager.h"
 #include "components/password_manager/core/browser/possible_username_data.h"
 #include "components/password_manager/core/browser/votes_uploader.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
+#include "url/gurl.h"
 
 namespace base {
 class ElapsedTimer;
@@ -48,7 +50,7 @@ class PasswordManagerClient;
 class PasswordManagerDriver;
 struct PossibleUsernameData;
 
-using FormOrDigest = absl::variant<autofill::FormData, PasswordFormDigest>;
+using FormOrDigest = std::variant<autofill::FormData, PasswordFormDigest>;
 
 // This class helps with filling the observed form and with saving/updating the
 // stored information about it.
@@ -93,14 +95,25 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // Returns whether the form managed by this password form manager contains
   // a field identified by the `field_renderer_id`. `driver` is used to check
-  // is this password form manager corresponds to the queried web frame.
+  // if this password form manager corresponds to the queried web frame.
   bool DoesManage(autofill::FieldRendererId field_renderer_id,
                   const PasswordManagerDriver* driver) const;
+
+  // Returns whether the form managed by this password form manager is similar
+  // to `form`. `driver` is used to check if this password form manager
+  // corresponds to the queried web frame.
+  bool DoesManageSimilarForm(const PasswordForm& form,
+                             const PasswordManagerDriver* driver) const;
 
   // Check that |submitted_form_| is equal to |form| from the user point of
   // view. It is used for detecting that a form is reappeared after navigation
   // for success detection.
   bool IsEqualToSubmittedForm(const autofill::FormData& form) const;
+
+  // Check that |observed_form_| is equal to |form| from the user point of
+  // view. It is used for detecting a form that has reappeared after
+  // navigation for proactive password recovery flow.
+  bool IsEqualToObservedForm(const PasswordForm& form) const;
 
   // If |submitted_form| is managed by *this (i.e. DoesManage returns true for
   // |submitted_form| and |driver|) then saves |submitted_form| to
@@ -114,6 +127,9 @@ class PasswordFormManager : public PasswordFormManagerForUI,
       const base::LRUCache<PossibleUsernameFieldIdentifier,
                            PossibleUsernameData>& possible_usernames);
 
+  // Adds a |backup_password| to the already |ProvisionallySave|'ed
+  // |parsed_submitted_form_|
+  void UpdateBackupPassword(const std::u16string& backup_password);
   // If |submitted_form| is managed by *this then saves |submitted_form| to
   // |submitted_form_| field, sets |is_submitted| = true and returns true.
   // Otherwise returns false.
@@ -199,6 +215,14 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   bool IsNewLogin() const;
   FormFetcher* GetFormFetcher();
+  // Writes to the password store the credential defined by
+  // |form.username_value|, |form.password_value|, |form.url| with the
+  // |generated_password| as a backup password. Uses |form_manager| for writing
+  // but doesn't change its state.
+  static void PresaveGeneratedPasswordAsBackup(
+      const PasswordFormManager& form_manager,
+      PasswordForm form,
+      const std::u16string& generated_password);
   void PresaveGeneratedPassword(const autofill::FormData& form_data,
                                 const std::u16string& generated_password);
   void PasswordNoLongerGenerated();
@@ -246,7 +270,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   // the result is not identical to the original.
   // TODO(crbug.com/41328828): Replace with translating one appropriate class
   // into another one.
-  std::unique_ptr<PasswordFormManager> Clone();
+  std::unique_ptr<PasswordFormManager> Clone() const;
 
   // Because of the android integration tests, it can't be guarded by if
   // defined(UNIT_TEST).
@@ -256,7 +280,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // Returns a pointer to the observed form if possible or nullptr otherwise.
   const autofill::FormData* observed_form() const {
-    return absl::get_if<autofill::FormData>(&observed_form_or_digest_);
+    return std::get_if<autofill::FormData>(&observed_form_or_digest_);
   }
 
   // Saves username value from |pending_credentials_| to votes uploader.
@@ -279,9 +303,13 @@ class PasswordFormManager : public PasswordFormManagerForUI,
     return votes_uploader_.has_value() ? &votes_uploader_.value() : nullptr;
   }
 #endif
-
+#if !BUILDFLAG(IS_IOS)
+  void AddObserver(PasswordFormManagerObserver* observer);
+  void RemoveObserver(PasswordFormManagerObserver* observer);
+#else
   void SetObserver(base::WeakPtr<PasswordFormManagerObserver> observer);
   void ResetObserver();
+#endif
 
  protected:
   // Constructor for Credentials API.
@@ -337,12 +365,12 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   // Returns a mutable pointer to the observed form if possible or nullptr
   // otherwise.
   autofill::FormData* mutable_observed_form() {
-    return absl::get_if<autofill::FormData>(&observed_form_or_digest_);
+    return std::get_if<autofill::FormData>(&observed_form_or_digest_);
   }
 
   // Returns a pointer to the observed digest if possible or nullptr otherwise.
   const PasswordFormDigest* observed_digest() const {
-    return absl::get_if<PasswordFormDigest>(&observed_form_or_digest_);
+    return std::get_if<PasswordFormDigest>(&observed_form_or_digest_);
   }
 
   // Calculates FillingAssistance and ClassificationCorrectness metrics for
@@ -410,12 +438,6 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // Returns non-empty, lower case stored usernames based on `GetBestMatches()`.
   base::flat_set<std::u16string> GetStoredUsernames() const;
-
-  // Records provisional save failure using current |client_| and
-  // |main_frame_url_|.
-  void RecordProvisionalSaveFailure(
-      PasswordManagerMetricsRecorder::ProvisionalSaveFailure failure,
-      const GURL& form_origin);
 
   std::unique_ptr<FormFetcher> CreateFormFetcher();
 
@@ -501,8 +523,11 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // For generating timing metrics on retrieving server-side predictions.
   std::unique_ptr<base::ElapsedTimer> server_side_predictions_timer_;
-
+#if !BUILDFLAG(IS_IOS)
+  base::ObserverList<PasswordFormManagerObserver> form_parsed_observers_;
+#else
   base::WeakPtr<PasswordFormManagerObserver> form_parsed_observer_;
+#endif
 };
 
 // Returns whether `form_data` differs from the form observed by `form_manager`

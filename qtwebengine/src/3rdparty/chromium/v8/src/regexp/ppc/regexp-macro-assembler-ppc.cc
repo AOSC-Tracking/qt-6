@@ -234,7 +234,7 @@ void RegExpMacroAssemblerPPC::CheckCharacterLT(base::uc16 limit,
   BranchOrBacktrack(lt, on_less);
 }
 
-void RegExpMacroAssemblerPPC::CheckGreedyLoop(Label* on_equal) {
+void RegExpMacroAssemblerPPC::CheckFixedLengthLoop(Label* on_equal) {
   Label backtrack_non_equal;
   __ LoadU64(r3, MemOperand(backtrack_stackpointer(), 0));
   __ CmpS64(current_input_offset(), r3);
@@ -731,8 +731,8 @@ void RegExpMacroAssemblerPPC::PopRegExpBasePointer(Register stack_pointer_out,
   StoreRegExpStackPointerToMemory(stack_pointer_out, scratch);
 }
 
-Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source,
-                                                    RegExpFlags flags) {
+DirectHandle<HeapObject> RegExpMacroAssemblerPPC::GetCode(
+    DirectHandle<String> source, RegExpFlags flags) {
   Label return_r3;
 
   if (masm_->has_exception()) {

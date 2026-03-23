@@ -30,7 +30,8 @@ class PerformanceScriptTiming final : public PerformanceEntry {
   PerformanceScriptTiming(ScriptTimingInfo* info,
                           base::TimeTicks time_origin,
                           bool cross_origin_isolated_capability,
-                          DOMWindow* source);
+                          DOMWindow* source,
+                          uint32_t navigation_id);
   ~PerformanceScriptTiming() override;
 
   const AtomicString& entryType() const override;
@@ -43,6 +44,8 @@ class PerformanceScriptTiming final : public PerformanceEntry {
   WTF::String sourceURL() const;
   WTF::String sourceFunctionName() const;
   int32_t sourceCharPosition() const;
+  int32_t sourceLine() const;
+  int32_t sourceColumn() const;
   V8ScriptWindowAttribution windowAttribution() const;
   V8ScriptInvokerType invokerType() const;
   AtomicString invoker() const;

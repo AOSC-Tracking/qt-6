@@ -45,7 +45,7 @@ class MockCannedChecks(object):
             # Shelling out to the SCM to determine the changed region can be
             # quite expensive on Win32. Assuming that most files will be kept
             # problem-free, we can skip the SCM operations most of the time.
-            extension = str(f.LocalPath()).rsplit('.', 1)[-1]
+            extension = str(f.UnixLocalPath()).rsplit('.', 1)[-1]
             if all(callable_rule(extension, line) for line in f.NewContents()):
                 # No violation found in full text: can skip considering diff.
                 continue
@@ -162,7 +162,7 @@ class MockInputApi(object):
                                   include_deletes=False)
 
     def FilterSourceFile(self, file, files_to_check=(), files_to_skip=()):
-        local_path = file.LocalPath()
+        local_path = file.UnixLocalPath()
         found_in_files_to_check = not files_to_check
         if files_to_check:
             if type(files_to_check) is str:
@@ -210,41 +210,45 @@ class MockOutputApi(object):
 
     class PresubmitResult(object):
 
-        def __init__(self, message, items=None, long_text=''):
+        def __init__(self, message, items=None, long_text='', locations=[]):
             self.message = message
             self.items = items
             self.long_text = long_text
+            self.locations = locations
 
         def __repr__(self):
             return self.message
 
     class PresubmitError(PresubmitResult):
 
-        def __init__(self, message, items=None, long_text=''):
-            MockOutputApi.PresubmitResult.__init__(self, message, items,
-                                                   long_text)
+        def __init__(self, *args, **kwargs):
+            MockOutputApi.PresubmitResult.__init__(self, *args, **kwargs)
             self.type = 'error'
 
     class PresubmitPromptWarning(PresubmitResult):
 
-        def __init__(self, message, items=None, long_text=''):
-            MockOutputApi.PresubmitResult.__init__(self, message, items,
-                                                   long_text)
+        def __init__(self, *args, **kwargs):
+            MockOutputApi.PresubmitResult.__init__(self, *args, **kwargs)
             self.type = 'warning'
 
     class PresubmitNotifyResult(PresubmitResult):
 
-        def __init__(self, message, items=None, long_text=''):
-            MockOutputApi.PresubmitResult.__init__(self, message, items,
-                                                   long_text)
+        def __init__(self, *args, **kwargs):
+            MockOutputApi.PresubmitResult.__init__(self, *args, **kwargs)
             self.type = 'notify'
 
     class PresubmitPromptOrNotify(PresubmitResult):
 
-        def __init__(self, message, items=None, long_text=''):
-            MockOutputApi.PresubmitResult.__init__(self, message, items,
-                                                   long_text)
+        def __init__(self, *args, **kwargs):
+            MockOutputApi.PresubmitResult.__init__(self, *args,  **kwargs)
             self.type = 'promptOrNotify'
+
+    class PresubmitResultLocation(object):
+
+        def __init__(self, file_path, start_line, end_line):
+            self.file_path = file_path
+            self.start_line = start_line
+            self.end_line = end_line
 
     def __init__(self):
         self.more_cc = []
@@ -297,6 +301,12 @@ class MockFile(object):
 
     def AbsoluteLocalPath(self):
         return os.path.join(_REPO_ROOT, self._local_path)
+
+    # This method must be functionally identical to
+    # AffectedFile.UnixLocalPath(), but must normalize Windows-style
+    # paths even on non-Windows platforms because tests contain them
+    def UnixLocalPath(self):
+        return self._local_path.replace('\\', '/')
 
     def GenerateScmDiff(self):
         return self._scm_diff

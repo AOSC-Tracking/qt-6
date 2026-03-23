@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtCore/qlist.h>
 #include <QtCore/qvarlengtharray.h>
@@ -232,7 +233,7 @@ private:
     QVarLengthArray<BinaryTreeNode, 16> m_currentLineTree;
 
     QList<TextDecoration> m_lines;
-    QVector<BinaryTreeNode> m_processedNodes;
+    QList<BinaryTreeNode> m_processedNodes;
 
     qreal m_devicePixelRatio = 1.0;
 

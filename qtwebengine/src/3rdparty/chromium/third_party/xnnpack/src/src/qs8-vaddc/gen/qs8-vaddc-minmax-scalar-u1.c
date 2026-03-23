@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-vaddc/scalar.c.in
 //   Generator: tools/xngen
@@ -8,9 +9,13 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/math.h"
-#include "xnnpack/vbinary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/vbinary.h"
 
 
 void xnn_qs8_vaddc_minmax_ukernel__scalar_u1(
@@ -18,7 +23,7 @@ void xnn_qs8_vaddc_minmax_ukernel__scalar_u1(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const struct xnn_qs8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_qs8_add_minmax_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);

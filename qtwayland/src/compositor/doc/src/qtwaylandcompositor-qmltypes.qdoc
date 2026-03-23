@@ -27,9 +27,9 @@
 
   \section2 QML import
 
-  \qml
+  \badcode
     import QtWayland.Compositor
-  \endqml
+  \endcode
 
   For more information about using these types in your application,
   see the \l{Qt Wayland Compositor} documentation.

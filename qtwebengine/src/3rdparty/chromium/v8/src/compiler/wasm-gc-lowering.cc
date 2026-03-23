@@ -67,8 +67,6 @@ Reduction WasmGCLowering::Reduce(Node* node) {
       return ReduceIsNotNull(node);
     case IrOpcode::kRttCanon:
       return ReduceRttCanon(node);
-    case IrOpcode::kTypeGuard:
-      return ReduceTypeGuard(node);
     case IrOpcode::kWasmAnyConvertExtern:
       return ReduceWasmAnyConvertExtern(node);
     case IrOpcode::kWasmExternConvertAny:
@@ -148,7 +146,10 @@ Reduction WasmGCLowering::ReduceWasmTypeCheck(Node* node) {
 
   Node* map = gasm_.LoadMap(object);
 
-  if (module_->type(config.to.ref_index()).is_final) {
+  DCHECK_IMPLIES(module_->type(config.to.ref_index()).is_final,
+                 config.exactness == kExactMatchOnly);
+
+  if (config.exactness == kExactMatchOnly) {
     gasm_.Goto(&end_label, gasm_.TaggedEqual(map, rtt));
   } else {
     // First, check if types happen to be equal. This has been shown to give
@@ -317,7 +318,10 @@ Reduction WasmGCLowering::ReduceWasmTypeCast(Node* node) {
 
   Node* map = gasm_.LoadMap(object);
 
-  if (module_->type(config.to.ref_index()).is_final) {
+  DCHECK_IMPLIES(module_->type(config.to.ref_index()).is_final,
+                 config.exactness == kExactMatchOnly);
+
+  if (config.exactness == kExactMatchOnly) {
     gasm_.TrapUnless(gasm_.TaggedEqual(map, rtt), TrapId::kTrapIllegalCast);
     UpdateSourcePosition(gasm_.effect(), node);
     gasm_.Goto(&end_label);
@@ -535,14 +539,6 @@ Reduction WasmGCLowering::ReduceRttCanon(Node* node) {
   return Replace(gasm_.LoadImmutable(
       MachineType::TaggedPointer(), maps_list,
       wasm::ObjectAccess::ElementOffsetInTaggedFixedArray(type_index)));
-}
-
-Reduction WasmGCLowering::ReduceTypeGuard(Node* node) {
-  DCHECK_EQ(node->opcode(), IrOpcode::kTypeGuard);
-  Node* alias = NodeProperties::GetValueInput(node, 0);
-  ReplaceWithValue(node, alias);
-  node->Kill();
-  return Replace(alias);
 }
 
 namespace {

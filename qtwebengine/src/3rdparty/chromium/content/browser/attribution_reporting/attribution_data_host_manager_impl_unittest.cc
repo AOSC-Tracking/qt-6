@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "content/browser/attribution_reporting/attribution_data_host_manager_impl.h"
 
 #include <stddef.h>
@@ -80,6 +75,7 @@
 #include "net/base/schemeful_site.h"
 #include "net/http/http_response_headers.h"
 #include "services/data_decoder/public/cpp/test_support/in_process_data_decoder.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/mojom/attribution.mojom-shared.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -324,12 +320,12 @@ TEST_F(AttributionDataHostManagerImplTest, TriggerDataHost_TriggerRegistered) {
   trigger_data.aggregation_coordinator_origin =
       SuitableOrigin::Deserialize("https://coordinator.test");
 
-  EXPECT_CALL(
-      mock_manager_,
-      HandleTrigger(
-          AttributionTrigger(reporting_origin, trigger_data, destination_origin,
-                             /*is_within_fenced_frame=*/false),
-          kFrameId))
+  EXPECT_CALL(mock_manager_,
+              HandleTrigger(AttributionTrigger(reporting_origin, trigger_data,
+                                               destination_origin,
+                                               /*is_within_fenced_frame=*/false,
+                                               ukm::kInvalidSourceId),
+                            kFrameId))
       .Times(2);
 
   mojo::Remote<attribution_reporting::mojom::DataHost> data_host_remote;
@@ -561,11 +557,9 @@ TEST_F(AttributionDataHostManagerImplTest,
   // Non-whole-day expiry is invalid for `SourceType::kEvent`.
   source_data.expiry = base::Days(1) + base::Microseconds(1);
   source_data.aggregatable_report_window = source_data.expiry;
-  source_data.trigger_specs = attribution_reporting::TriggerSpecs(
-      SourceType::kEvent,
+  source_data.event_report_windows =
       *attribution_reporting::EventReportWindows::FromDefaults(
-          source_data.expiry, SourceType::kEvent),
-      attribution_reporting::MaxEventLevelReports());
+          source_data.expiry, SourceType::kEvent);
 
   {
     mojo::test::BadMessageObserver bad_message_observer;
@@ -813,8 +807,8 @@ TEST_F(AttributionDataHostManagerImplTest,
 
   source_data.destination_set = *DestinationSet::Create(
       {net::SchemefulSite::Deserialize("https://trigger2.example")});
-  data_host_remote->SourceDataAvailable(
-      reporting_origin, std::move(source_data), kViaServiceWorker);
+  data_host_remote->SourceDataAvailable(reporting_origin, source_data,
+                                        kViaServiceWorker);
 
   data_host_remote.reset();
 
@@ -827,8 +821,8 @@ TEST_F(AttributionDataHostManagerImplTest,
 
   source_data.destination_set = *DestinationSet::Create(
       {net::SchemefulSite::Deserialize("https://trigger3.example")});
-  data_host_remote->SourceDataAvailable(
-      reporting_origin, std::move(source_data), kViaServiceWorker);
+  data_host_remote->SourceDataAvailable(reporting_origin, source_data,
+                                        kViaServiceWorker);
 
   data_host_remote.reset();
 

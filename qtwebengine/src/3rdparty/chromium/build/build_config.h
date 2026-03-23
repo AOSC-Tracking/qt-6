@@ -16,13 +16,13 @@
 //
 //  Operating System:
 //    IS_AIX / IS_ANDROID / IS_ASMJS / IS_CHROMEOS / IS_FREEBSD / IS_FUCHSIA /
-//    IS_IOS / IS_IOS_MACCATALYST / IS_LINUX / IS_MAC / IS_NACL / IS_NETBSD /
-//    IS_OPENBSD / IS_QNX / IS_SOLARIS / IS_WATCHOS / IS_WIN
+//    IS_IOS / IS_IOS_MACCATALYST / IS_IOS_TVOS / IS_LINUX / IS_MAC /
+//    IS_NETBSD / IS_OPENBSD / IS_QNX / IS_SOLARIS / IS_WATCHOS / IS_WIN
 //  Operating System family:
-//    IS_APPLE: IOS or MAC or IOS_MACCATALYST or WATCHOS
+//    IS_APPLE: IOS or MAC or IOS_MACCATALYST or IOS_TVOS or WATCHOS
 //    IS_BSD: FREEBSD or NETBSD or OPENBSD
 //    IS_POSIX: AIX or ANDROID or ASMJS or CHROMEOS or FREEBSD or IOS or LINUX
-//              or MAC or NACL or NETBSD or OPENBSD or QNX or SOLARIS
+//              or MAC or NETBSD or OPENBSD or QNX or SOLARIS
 
 // This file also adds defines specific to the platform, architecture etc.
 //
@@ -49,6 +49,10 @@
 //    ARCH_CPU_31_BITS / ARCH_CPU_32_BITS / ARCH_CPU_64_BITS
 //    ARCH_CPU_BIG_ENDIAN / ARCH_CPU_LITTLE_ENDIAN
 
+// Mapping to some Rust conditionals:
+//
+// * `#[cfg(unix)]` ~= `BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)`
+
 #ifndef BUILD_BUILD_CONFIG_H_
 #define BUILD_BUILD_CONFIG_H_
 
@@ -60,10 +64,7 @@
 // IWYU pragma: always_keep
 
 // A set of macros to use for platform detection.
-#if defined(__native_client__)
-// __native_client__ must be first, so that other OS_ defines are not set.
-#define OS_NACL 1
-#elif defined(ANDROID)
+#if defined(ANDROID)
 #define OS_ANDROID 1
 #elif defined(__APPLE__)
 // Only include TargetConditionals after testing ANDROID as some Android builds
@@ -77,6 +78,9 @@
 #if defined(TARGET_OS_MACCATALYST) && TARGET_OS_MACCATALYST
 #define OS_IOS_MACCATALYST
 #endif  // defined(TARGET_OS_MACCATALYST) && TARGET_OS_MACCATALYST
+#if defined(TARGET_OS_TV) && TARGET_OS_TV
+#define OS_IOS_TVOS 1
+#endif  // defined(TARGET_OS_TV) && TARGET_OS_TV
 #if defined(TARGET_OS_WATCH) && TARGET_OS_WATCH
 #define OS_WATCHOS 1
 #endif  // defined(TARGET_OS_WATCH) && TARGET_OS_WATCH
@@ -133,11 +137,11 @@
 
 // For access to standard POSIXish features, use OS_POSIX instead of a
 // more specific macro.
-#if defined(OS_AIX) || defined(OS_ANDROID) || defined(OS_ASMJS) ||  \
-    defined(OS_FREEBSD) || defined(OS_IOS) || defined(OS_LINUX) ||  \
-    defined(OS_CHROMEOS) || defined(OS_MAC) || defined(OS_NACL) ||  \
-    defined(OS_NETBSD) || defined(OS_OPENBSD) || defined(OS_QNX) || \
-    defined(OS_SOLARIS) || defined(OS_ZOS)
+#if defined(OS_AIX) || defined(OS_ANDROID) || defined(OS_ASMJS) ||   \
+    defined(OS_FREEBSD) || defined(OS_IOS) || defined(OS_LINUX) ||   \
+    defined(OS_CHROMEOS) || defined(OS_MAC) || defined(OS_NETBSD) || \
+    defined(OS_OPENBSD) || defined(OS_QNX) || defined(OS_SOLARIS) || \
+    defined(OS_ZOS)
 #define OS_POSIX 1
 #endif
 
@@ -202,6 +206,12 @@
 #define BUILDFLAG_INTERNAL_IS_IOS_MACCATALYST() (0)
 #endif
 
+#if defined(OS_IOS_TVOS)
+#define BUILDFLAG_INTERNAL_IS_IOS_TVOS() (1)
+#else
+#define BUILDFLAG_INTERNAL_IS_IOS_TVOS() (0)
+#endif
+
 #if defined(OS_LINUX)
 #define BUILDFLAG_INTERNAL_IS_LINUX() (1)
 #else
@@ -212,12 +222,6 @@
 #define BUILDFLAG_INTERNAL_IS_MAC() (1)
 #else
 #define BUILDFLAG_INTERNAL_IS_MAC() (0)
-#endif
-
-#if defined(OS_NACL)
-#define BUILDFLAG_INTERNAL_IS_NACL() (1)
-#else
-#define BUILDFLAG_INTERNAL_IS_NACL() (0)
 #endif
 
 #if defined(OS_NETBSD)
@@ -328,7 +332,7 @@
 #define ARCH_CPU_ARM64 1
 #define ARCH_CPU_64_BITS 1
 #define ARCH_CPU_LITTLE_ENDIAN 1
-#elif defined(__pnacl__) || defined(__asmjs__) || defined(__wasm__)
+#elif defined(__asmjs__) || defined(__wasm__)
 #define ARCH_CPU_32_BITS 1
 #define ARCH_CPU_LITTLE_ENDIAN 1
 #elif defined(__MIPSEL__)
@@ -405,16 +409,16 @@
 // Architecture-specific feature detection.
 
 #if !defined(CPU_ARM_NEON)
-#if defined(__arm__)
-#if !defined(__ARMEB__) && !defined(__ARM_EABI__) && !defined(__EABI__) && \
-    !defined(__VFP_FP__) && !defined(_WIN32_WCE) && !defined(ANDROID)
-#error Chromium does not support middle endian architecture
-#endif
-#if defined(__ARM_NEON__)
+#if defined(ARCH_CPU_ARM_FAMILY) && \
+    (defined(__ARM_NEON__) || defined(__ARM_NEON) || defined(_M_ARM64))
 #define CPU_ARM_NEON 1
 #endif
-#endif  // defined(__arm__)
 #endif  // !defined(CPU_ARM_NEON)
+
+// Sanity check.
+#if defined(ARCH_CPU_ARM64) && !defined(CPU_ARM_NEON)
+#error "AArch64 mandates NEON, should be detected"
+#endif
 
 #if !defined(HAVE_MIPS_MSA_INTRINSICS)
 #if defined(__mips_msa) && defined(__mips_isa_rev) && (__mips_isa_rev >= 5)

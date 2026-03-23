@@ -9,6 +9,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/observer_list.h"
+#include "base/scoped_observation_traits.h"
 #include "ui/base/accelerators/accelerator_manager.h"
 #include "ui/views/view_observer.h"
 #include "ui/views/views_export.h"
@@ -73,6 +74,7 @@ class KeyEvent;
 
 namespace views {
 
+class FocusManager;
 class FocusManagerDelegate;
 class FocusSearch;
 class View;
@@ -105,10 +107,13 @@ class VIEWS_EXPORT FocusTraversable {
 class VIEWS_EXPORT FocusChangeListener {
  public:
   // No change to focus state has occurred yet when this function is called.
-  virtual void OnWillChangeFocus(View* focused_before, View* focused_now) = 0;
+  virtual void OnWillChangeFocus(View* focused_before, View* focused_now) {}
 
   // Called after focus state has changed.
-  virtual void OnDidChangeFocus(View* focused_before, View* focused_now) = 0;
+  virtual void OnDidChangeFocus(View* focused_before, View* focused_now) {}
+
+  // TODO(crbug.com/348369180): Remove this. Debug only.
+  virtual void OnFocusManagerDestroying(FocusManager* focus_manager) {}
 
  protected:
   virtual ~FocusChangeListener() = default;
@@ -367,5 +372,22 @@ class VIEWS_EXPORT FocusManager : public ViewObserver {
 };
 
 }  // namespace views
+
+namespace base {
+
+template <>
+struct ScopedObservationTraits<views::FocusManager,
+                               views::FocusChangeListener> {
+  static void AddObserver(views::FocusManager* source,
+                          views::FocusChangeListener* listener) {
+    source->AddFocusChangeListener(listener);
+  }
+  static void RemoveObserver(views::FocusManager* source,
+                             views::FocusChangeListener* listener) {
+    source->RemoveFocusChangeListener(listener);
+  }
+};
+
+}  // namespace base
 
 #endif  // UI_VIEWS_FOCUS_FOCUS_MANAGER_H_

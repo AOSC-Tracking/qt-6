@@ -5,11 +5,16 @@
 #ifndef V8_OBJECTS_JS_OBJECTS_INL_H_
 #define V8_OBJECTS_JS_OBJECTS_INL_H_
 
+#include "src/objects/js-objects.h"
+// Include the non-inl header before the rest of the headers.
+
 #include <optional>
 
 #include "src/common/globals.h"
 #include "src/heap/heap-layout-inl.h"
 #include "src/heap/heap-write-barrier.h"
+#include "src/objects/cpp-heap-external-object.h"
+#include "src/objects/cpp-heap-object-wrapper.h"
 #include "src/objects/dictionary.h"
 #include "src/objects/elements.h"
 #include "src/objects/embedder-data-slot-inl.h"
@@ -21,7 +26,6 @@
 #include "src/objects/heap-object-inl.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/instance-type-inl.h"
-#include "src/objects/js-objects.h"
 #include "src/objects/keys.h"
 #include "src/objects/lookup-inl.h"
 #include "src/objects/primitive-heap-object.h"
@@ -55,8 +59,6 @@ TQ_OBJECT_CONSTRUCTORS_IMPL(JSMessageObject)
 TQ_OBJECT_CONSTRUCTORS_IMPL(JSPrimitiveWrapper)
 TQ_OBJECT_CONSTRUCTORS_IMPL(JSStringIterator)
 TQ_OBJECT_CONSTRUCTORS_IMPL(JSValidIteratorWrapper)
-
-NEVER_READ_ONLY_SPACE_IMPL(JSReceiver)
 
 DEF_GETTER(JSObject, elements, Tagged<FixedArrayBase>) {
   return TaggedField<FixedArrayBase, kElementsOffset>::load(cage_base, *this);
@@ -161,24 +163,25 @@ RELAXED_ACCESSORS(JSReceiver, raw_properties_or_hash, Tagged<Object>,
                   kPropertiesOrHashOffset)
 
 void JSObject::EnsureCanContainHeapObjectElements(
-    DirectHandle<JSObject> object) {
-  JSObject::ValidateElements(*object);
+    Isolate* isolate, DirectHandle<JSObject> object) {
+  JSObject::ValidateElements(isolate, *object);
   ElementsKind elements_kind = object->map()->elements_kind();
   if (!IsObjectElementsKind(elements_kind)) {
     if (IsHoleyElementsKind(elements_kind)) {
-      TransitionElementsKind(object, HOLEY_ELEMENTS);
+      TransitionElementsKind(isolate, object, HOLEY_ELEMENTS);
     } else {
-      TransitionElementsKind(object, PACKED_ELEMENTS);
+      TransitionElementsKind(isolate, object, PACKED_ELEMENTS);
     }
   }
 }
 
 template <typename TSlot>
-void JSObject::EnsureCanContainElements(DirectHandle<JSObject> object,
+void JSObject::EnsureCanContainElements(Isolate* isolate,
+                                        DirectHandle<JSObject> object,
                                         TSlot objects, uint32_t count,
                                         EnsureElementsMode mode) {
-  static_assert(std::is_same<TSlot, FullObjectSlot>::value ||
-                    std::is_same<TSlot, ObjectSlot>::value,
+  static_assert(std::is_same_v<TSlot, FullObjectSlot> ||
+                    std::is_same_v<TSlot, ObjectSlot>,
                 "Only ObjectSlot and FullObjectSlot are expected here");
   ElementsKind current_kind = object->GetElementsKind();
   ElementsKind target_kind = current_kind;
@@ -188,18 +191,32 @@ void JSObject::EnsureCanContainElements(DirectHandle<JSObject> object,
     bool is_holey = IsHoleyElementsKind(current_kind);
     if (current_kind == HOLEY_ELEMENTS) return;
     Tagged<Object> the_hole = GetReadOnlyRoots().the_hole_value();
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
-    Tagged<Undefined> undefined = GetReadOnlyRoots().undefined_value();
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
     for (uint32_t i = 0; i < count; ++i, ++objects) {
       Tagged<Object> current = *objects;
-      if (current == the_hole
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
-          || current == undefined
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
-      ) {
+      if (current == the_hole) {
         is_holey = true;
         target_kind = GetHoleyElementsKind(target_kind);
+#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+      } else if (IsUndefined(current)) {
+        if (mode == ALLOW_CONVERTED_DOUBLE_ELEMENTS) {
+          if (IsSmiElementsKind(target_kind)) {
+            target_kind = HOLEY_DOUBLE_ELEMENTS;
+          } else if (target_kind == PACKED_DOUBLE_ELEMENTS) {
+            target_kind = HOLEY_DOUBLE_ELEMENTS;
+          } else {
+            DCHECK(target_kind == PACKED_ELEMENTS ||
+                   target_kind == HOLEY_ELEMENTS ||
+                   target_kind == HOLEY_DOUBLE_ELEMENTS);
+          }
+        } else if (is_holey) {
+          if (IsSmiElementsKind(target_kind)) {
+            target_kind = HOLEY_ELEMENTS;
+            break;
+          }
+        } else {
+          target_kind = PACKED_ELEMENTS;
+        }
+#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
       } else if (!IsSmi(current)) {
         if (mode == ALLOW_CONVERTED_DOUBLE_ELEMENTS && IsNumber(current)) {
           if (IsSmiElementsKind(target_kind)) {
@@ -219,11 +236,12 @@ void JSObject::EnsureCanContainElements(DirectHandle<JSObject> object,
     }
   }
   if (target_kind != current_kind) {
-    TransitionElementsKind(object, target_kind);
+    TransitionElementsKind(isolate, object, target_kind);
   }
 }
 
-void JSObject::EnsureCanContainElements(DirectHandle<JSObject> object,
+void JSObject::EnsureCanContainElements(Isolate* isolate,
+                                        DirectHandle<JSObject> object,
                                         DirectHandle<FixedArrayBase> elements,
                                         uint32_t length,
                                         EnsureElementsMode mode) {
@@ -235,29 +253,29 @@ void JSObject::EnsureCanContainElements(DirectHandle<JSObject> object,
       mode = DONT_ALLOW_DOUBLE_ELEMENTS;
     }
     ObjectSlot objects = Cast<FixedArray>(elements)->RawFieldOfFirstElement();
-    EnsureCanContainElements(object, objects, length, mode);
+    EnsureCanContainElements(isolate, object, objects, length, mode);
     return;
   }
 
   DCHECK(mode == ALLOW_COPIED_DOUBLE_ELEMENTS);
   if (object->GetElementsKind() == HOLEY_SMI_ELEMENTS) {
-    TransitionElementsKind(object, HOLEY_DOUBLE_ELEMENTS);
+    TransitionElementsKind(isolate, object, HOLEY_DOUBLE_ELEMENTS);
   } else if (object->GetElementsKind() == PACKED_SMI_ELEMENTS) {
     auto double_array = Cast<FixedDoubleArray>(elements);
     for (uint32_t i = 0; i < length; ++i) {
       if (double_array->is_the_hole(i)) {
-        TransitionElementsKind(object, HOLEY_DOUBLE_ELEMENTS);
+        TransitionElementsKind(isolate, object, HOLEY_DOUBLE_ELEMENTS);
         return;
       }
     }
-    TransitionElementsKind(object, PACKED_DOUBLE_ELEMENTS);
+    TransitionElementsKind(isolate, object, PACKED_DOUBLE_ELEMENTS);
   }
 }
 
-void JSObject::SetMapAndElements(DirectHandle<JSObject> object,
+void JSObject::SetMapAndElements(Isolate* isolate,
+                                 DirectHandle<JSObject> object,
                                  DirectHandle<Map> new_map,
                                  DirectHandle<FixedArrayBase> value) {
-  Isolate* isolate = object->GetIsolate();
   JSObject::MigrateToMap(isolate, object, new_map);
   DCHECK((object->map()->has_fast_smi_or_object_elements() ||
           (*value == ReadOnlyRoots(isolate).empty_fixed_array()) ||
@@ -321,16 +339,22 @@ bool JSObject::MayHaveEmbedderFields() const {
 
 // static
 int JSObject::GetEmbedderFieldCount(Tagged<Map> map) {
-  int instance_size = map->instance_size();
+  // We inline some code from Map::instance_size and Map::GetInObjectProperties
+  // here, to avoid reading the map's instance size field twice.
+  // See https://crbug.com/355120682.
+  int instance_size_in_words = map->instance_size_in_words();
+  int instance_size = instance_size_in_words << kTaggedSizeLog2;
   if (instance_size == kVariableSizeSentinel) return 0;
   // Embedder fields are located after the object header, whereas in-object
   // properties are located at the end of the object. We don't have to round up
   // the header size here because division by kEmbedderDataSlotSizeInTaggedSlots
   // will swallow potential padding in case of (kTaggedSize !=
   // kSystemPointerSize) anyway.
+  int in_object_properties =
+      instance_size_in_words - map->GetInObjectPropertiesStartInWords();
   return (((instance_size - GetEmbedderFieldsStartOffset(map)) >>
            kTaggedSizeLog2) -
-          map->GetInObjectProperties()) /
+          in_object_properties) /
          kEmbedderDataSlotSizeInTaggedSlots;
 }
 
@@ -642,50 +666,6 @@ TQ_OBJECT_CONSTRUCTORS_IMPL(JSExternalObject)
 EXTERNAL_POINTER_ACCESSORS(JSExternalObject, value, void*, kValueOffset,
                            kExternalObjectValueTag)
 
-JSApiWrapper::JSApiWrapper(Tagged<JSObject> object) : object_(object) {
-  DCHECK(IsJSApiWrapperObject(object));
-}
-
-template <CppHeapPointerTag lower_bound, CppHeapPointerTag upper_bound>
-void* JSApiWrapper::GetCppHeapWrappable(
-    IsolateForPointerCompression isolate) const {
-  return reinterpret_cast<void*>(
-      object_->ReadCppHeapPointerField<lower_bound, upper_bound>(
-          kCppHeapWrappableOffset, isolate));
-}
-
-void* JSApiWrapper::GetCppHeapWrappable(
-    IsolateForPointerCompression isolate,
-    CppHeapPointerTagRange tag_range) const {
-  return reinterpret_cast<void*>(object_->ReadCppHeapPointerField(
-      kCppHeapWrappableOffset, isolate, tag_range));
-}
-
-template <CppHeapPointerTag tag>
-void JSApiWrapper::SetCppHeapWrappable(IsolateForPointerCompression isolate,
-                                       void* instance) {
-  object_->WriteLazilyInitializedCppHeapPointerField<tag>(
-      JSAPIObjectWithEmbedderSlots::kCppHeapWrappableOffset, isolate,
-      reinterpret_cast<Address>(instance));
-  WriteBarrier::ForCppHeapPointer(
-      object_,
-      object_->RawCppHeapPointerField(
-          JSAPIObjectWithEmbedderSlots::kCppHeapWrappableOffset),
-      instance);
-}
-
-void JSApiWrapper::SetCppHeapWrappable(IsolateForPointerCompression isolate,
-                                       void* instance, CppHeapPointerTag tag) {
-  object_->WriteLazilyInitializedCppHeapPointerField(
-      JSAPIObjectWithEmbedderSlots::kCppHeapWrappableOffset, isolate,
-      reinterpret_cast<Address>(instance), tag);
-  WriteBarrier::ForCppHeapPointer(
-      object_,
-      object_->RawCppHeapPointerField(
-          JSAPIObjectWithEmbedderSlots::kCppHeapWrappableOffset),
-      instance);
-}
-
 bool JSMessageObject::DidEnsureSourcePositionsAvailable() const {
   return shared_info() == Smi::zero();
 }
@@ -934,12 +914,24 @@ DEF_GETTER(JSReceiver, property_array, Tagged<PropertyArray>) {
   return Cast<PropertyArray>(prop);
 }
 
+void JSObject::EnsureWritableFastElements(Isolate* isolate,
+                                          DirectHandle<JSObject> object) {
+  DCHECK(object->HasSmiOrObjectElements() ||
+         object->HasFastStringWrapperElements() ||
+         object->HasAnyNonextensibleElements());
+  Tagged<FixedArray> raw_elems = Cast<FixedArray>(object->elements());
+  if (V8_UNLIKELY(raw_elems->map() ==
+                  ReadOnlyRoots(isolate).fixed_cow_array_map())) {
+    MakeElementsWritable(isolate, object);
+  }
+}
+
 std::optional<Tagged<NativeContext>> JSReceiver::GetCreationContext() {
   DisallowGarbageCollection no_gc;
   Tagged<Map> meta_map = map()->map();
   DCHECK(IsMapMap(meta_map));
   Tagged<Object> maybe_native_context = meta_map->native_context_or_null();
-  if (IsNull(maybe_native_context)) return {};
+  if (V8_UNLIKELY(IsNull(maybe_native_context))) return {};
   DCHECK(IsNativeContext(maybe_native_context));
   return Cast<NativeContext>(maybe_native_context);
 }
@@ -955,7 +947,19 @@ MaybeDirectHandle<NativeContext> JSReceiver::GetCreationContext(
 Maybe<bool> JSReceiver::HasProperty(Isolate* isolate,
                                     DirectHandle<JSReceiver> object,
                                     DirectHandle<Name> name) {
-  PropertyKey key(isolate, name);
+  return HasPropertyOrElement(isolate, object, PropertyKey(isolate, name));
+}
+
+Maybe<bool> JSReceiver::HasElement(Isolate* isolate,
+                                   DirectHandle<JSReceiver> object,
+                                   uint32_t index) {
+  LookupIterator it(isolate, object, index, object);
+  return HasProperty(&it);
+}
+
+Maybe<bool> JSReceiver::HasPropertyOrElement(Isolate* isolate,
+                                             DirectHandle<JSReceiver> object,
+                                             PropertyKey key) {
   LookupIterator it(isolate, object, key, object);
   return HasProperty(&it);
 }
@@ -996,13 +1000,6 @@ Maybe<PropertyAttributes> JSReceiver::GetOwnPropertyAttributes(
   return GetPropertyAttributes(&it);
 }
 
-Maybe<bool> JSReceiver::HasElement(Isolate* isolate,
-                                   DirectHandle<JSReceiver> object,
-                                   uint32_t index) {
-  LookupIterator it(isolate, object, index, object);
-  return HasProperty(&it);
-}
-
 Maybe<PropertyAttributes> JSReceiver::GetElementAttributes(
     Isolate* isolate, DirectHandle<JSReceiver> object, uint32_t index) {
   LookupIterator it(isolate, object, index, object);
@@ -1019,12 +1016,13 @@ Tagged<NativeContext> JSGlobalObject::native_context() {
   return *GetCreationContext();
 }
 
-bool JSGlobalObject::IsDetached() {
-  return global_proxy()->IsDetachedFrom(*this);
+bool JSGlobalObject::IsDetached(Isolate* isolate) {
+  return global_proxy()->IsDetachedFrom(isolate, *this);
 }
 
-bool JSGlobalProxy::IsDetachedFrom(Tagged<JSGlobalObject> global) const {
-  const PrototypeIterator iter(this->GetIsolate(), Tagged<JSReceiver>(*this));
+bool JSGlobalProxy::IsDetachedFrom(Isolate* isolate,
+                                   Tagged<JSGlobalObject> global) const {
+  const PrototypeIterator iter(isolate, Tagged<JSReceiver>(*this));
   return iter.GetCurrent() != global;
 }
 
@@ -1035,6 +1033,9 @@ inline int JSGlobalProxy::SizeWithEmbedderFields(int embedder_field_count) {
 
 ACCESSORS(JSIteratorResult, value, Tagged<Object>, kValueOffset)
 ACCESSORS(JSIteratorResult, done, Tagged<Object>, kDoneOffset)
+
+ACCESSORS(JSUint8ArraySetFromResult, read, Tagged<Object>, kReadOffset)
+ACCESSORS(JSUint8ArraySetFromResult, written, Tagged<Object>, kWrittenOffset)
 
 // If the fast-case backing storage takes up much more memory than a dictionary
 // backing storage would, the object should have slow elements.

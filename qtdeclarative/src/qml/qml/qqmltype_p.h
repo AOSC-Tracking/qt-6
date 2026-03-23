@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLTYPE_P_H
 #define QQMLTYPE_P_H
@@ -108,10 +109,7 @@ public:
     QTypeRevision metaObjectRevision() const;
     bool containsRevisionedAttributes() const;
 
-    QQmlAttachedPropertiesFunc attachedPropertiesFunction(QQmlEnginePrivate *enginePrivate) const;
     QQmlAttachedPropertiesFunc attachedPropertiesFunction(QQmlTypeLoader *typeLoader) const;
-
-    const QMetaObject *attachedPropertiesType(QQmlEnginePrivate *enginePrivate) const;
     const QMetaObject *attachedPropertiesType(QQmlTypeLoader *typeLoader) const;
 
     int parserStatusCast() const;

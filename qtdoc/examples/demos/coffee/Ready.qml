@@ -5,7 +5,7 @@ import QtQuick
 ReadyForm {
     id: readyForm
 
-    required property var appFlow
+    required property ApplicationFlow appFlow
     required property CoffeeConfig coffeeConfig
 
     property alias timer: timer

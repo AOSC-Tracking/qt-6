@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/page_allocator.h"
 
 #include <algorithm>
@@ -579,7 +584,7 @@ TEST(PartitionAllocPageAllocatorTest, DecommitAndZero) {
   FAULT_TEST_BEGIN()
 
   // Reading from buffer should now fault.
-  int* buffer0 = reinterpret_cast<int*>(buffer);
+  volatile int* buffer0 = reinterpret_cast<int*>(buffer);
   int buffer0_contents = *buffer0;
   EXPECT_EQ(buffer0_contents, *buffer0);
   EXPECT_TRUE(false);
@@ -634,7 +639,17 @@ TEST(PartitionAllocPageAllocatorTest, MappedPagesAccounting) {
   }
 }
 
-TEST(PartitionAllocPageAllocatorTest, AllocInaccessibleWillJitLater) {
+#if PA_BUILDFLAG(IS_IOS)
+// MAP_JIT is not supported without the com.apple.developer.cs.allow-jit
+// entitlement which unittests do not have. To toggle W^X of pages
+// BrowserEngineKit library is needed which is not supported
+// until the 17.4 SDK.
+#define MAYBE_AllocInaccessibleWillJitLater \
+  DISABLED_AllocInaccessibleWillJitLater
+#else
+#define MAYBE_AllocInaccessibleWillJitLater AllocInaccessibleWillJitLater
+#endif  // PA_BUILDFLAG(IS_IOS)
+TEST(PartitionAllocPageAllocatorTest, MAYBE_AllocInaccessibleWillJitLater) {
   // Verify that kInaccessibleWillJitLater allows read/write, and read/execute
   // permissions to be set.
   uintptr_t buffer =

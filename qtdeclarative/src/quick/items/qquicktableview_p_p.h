@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKTABLEVIEW_P_P_H
 #define QQUICKTABLEVIEW_P_P_H
@@ -210,7 +211,7 @@ public:
             qCDebug(lcTableViewDelegateLifecycle()) << "begin top-left:" << toString();
         }
 
-        void begin(Qt::Edge edgeToLoad, int edgeIndex, const QVector<int> visibleCellsInEdge, QQmlIncubator::IncubationMode incubationMode)
+        void begin(Qt::Edge edgeToLoad, int edgeIndex, const QList<int> visibleCellsInEdge, QQmlIncubator::IncubationMode incubationMode)
         {
             Q_ASSERT(!m_active);
             m_active = true;
@@ -260,7 +261,7 @@ public:
 
     private:
         Qt::Edge m_edge = Qt::Edge(0);
-        QVector<int> m_visibleCellsInEdge;
+        QList<int> m_visibleCellsInEdge;
         int m_edgeIndex = 0;
         int m_currentIndex = 0;
         bool m_active = false;
@@ -334,7 +335,6 @@ public:
     // we need a pointer for that case as well.
     QQmlInstanceModel* model = nullptr;
     QPointer<QQmlTableInstanceModel> tableModel = nullptr;
-    QVariant modelVariant;
 
     // When the applications assignes a new model or delegate to the view, we keep them
     // around until we're ready to take them into use (syncWithPendingChanges).
@@ -428,6 +428,7 @@ public:
     QItemSelectionModel::SelectionFlag selectionFlag = QItemSelectionModel::NoUpdate;
     std::function<void(CallBackFlag)> selectableCallbackFunction;
     bool inSelectionModelUpdate = false;
+    bool needsModelSynchronization = false;
 
     int assignedPositionViewAtRowAfterRebuild = 0;
     int assignedPositionViewAtColumnAfterRebuild = 0;

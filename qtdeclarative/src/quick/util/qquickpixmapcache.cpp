@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtQuick/private/qquickpixmapcache_p.h>
 #include <QtQuick/private/qquickimageprovider_p.h>
@@ -443,7 +444,7 @@ QNetworkAccessManager *QQuickPixmapReader::networkAccessManager()
 {
     if (!accessManager) {
         Q_ASSERT(readerThreadExecutionEnforcer());
-        accessManager = QQmlEnginePrivate::get(engine)->typeLoader.createNetworkAccessManager(
+        accessManager = QQmlTypeLoader::get(engine)->createNetworkAccessManager(
                 readerThreadExecutionEnforcer());
     }
     return accessManager;
@@ -597,6 +598,11 @@ QQuickPixmapReader::QQuickPixmapReader(QQmlEngine *eng)
 , accessManager(nullptr)
 #endif
 {
+    // Make sure the type loader exists before we start the thread.
+    // We might need it to create a network access manager and we must
+    // construct it from the engine thread.
+    engine->handle()->typeLoader();
+
     Q_DETACH_THREAD_AFFINITY_MARKER(m_readerThreadAffinityMarker);
 #if QT_CONFIG(quick_pixmap_cache_threaded_download)
     eventLoopQuitHack = new QObject;

@@ -28,15 +28,15 @@ QT_BEGIN_NAMESPACE
 class Q_LOTTIE_EXPORT QLottieGFill : public QLottieShape
 {
 public:
-    QLottieGFill() = default;
     explicit QLottieGFill(const QLottieGFill &other);
-    QLottieGFill(const QJsonObject &definition, QLottieBase *parent = nullptr);
+    QLottieGFill(QLottieBase *parent = nullptr);
     ~QLottieGFill() override;
 
     QLottieBase *clone() const override;
 
     void updateProperties(int frame) override;
     void render(QLottieRenderer &renderer) const override;
+    int parse(const QJsonObject &definition) override;
 
     QGradient *value() const;
     QGradient::Type gradientType() const;
@@ -45,6 +45,7 @@ public:
     qreal highlightLength() const;
     qreal highlightAngle() const;
     qreal opacity() const;
+    Qt::FillRule fillRule() const;
 
 private:
     void setGradient();
@@ -55,8 +56,9 @@ protected:
     QLottieSpatialProperty m_endPoint;
     QLottieProperty<qreal> m_highlightLength;
     QLottieProperty<qreal> m_highlightAngle;
-    QHash<int, QLottieProperty4D<QVector4D>> m_colors;
+    QHash<qreal, QLottieProperty4D<QVector4D>> m_colors;
     QGradient *m_gradient = nullptr;
+    Qt::FillRule m_fillRule = Qt::WindingFill;
 };
 
 QT_END_NAMESPACE

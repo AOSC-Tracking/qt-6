@@ -1,5 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "heightfieldgeometry_p.h"
 
@@ -64,6 +66,7 @@ void HeightFieldGeometry::setSource(const QUrl &newSource)
 
     updateData();
     update();
+    emit geometryChanged();
 
     emit sourceChanged();
 }
@@ -81,6 +84,7 @@ void HeightFieldGeometry::setSmoothShading(bool smooth)
 
     updateData();
     update();
+    emit geometryChanged();
 
     emit smoothShadingChanged();
 }
@@ -99,6 +103,8 @@ void HeightFieldGeometry::setExtents(const QVector3D &newExtents)
 
     updateData();
     update();
+    emit geometryChanged();
+
     emit extentsChanged();
 }
 

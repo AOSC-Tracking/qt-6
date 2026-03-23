@@ -11,6 +11,7 @@
 #include "base/check.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/uuid.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
@@ -61,9 +62,6 @@ std::vector<blink::mojom::DataTransferFilePtr> FileInfosToDataTransferFiles(
   for (const ui::FileInfo& file_info : filenames) {
     blink::mojom::DataTransferFilePtr file =
         blink::mojom::DataTransferFile::New();
-    if (file_info.path.empty()) {
-      continue;
-    }
     file->path = file_info.path;
     file->display_name = file_info.display_name;
     mojo::PendingRemote<blink::mojom::FileSystemAccessDataTransferToken>
@@ -73,6 +71,9 @@ std::vector<blink::mojom::DataTransferFilePtr> FileInfosToDataTransferFiles(
     base::FilePath display_name = !file_info.display_name.empty()
                                       ? file_info.display_name
                                       : entry_path.BaseName();
+    if (entry_path.empty() || display_name.empty()) {
+      continue;
+    }
     file_system_access_manager->CreateFileSystemAccessDataTransferToken(
         content::PathInfo(path_type, entry_path, display_name.AsUTF8Unsafe()),
         child_id, pending_token.InitWithNewPipeAndPassReceiver());
@@ -106,21 +107,18 @@ FileSystemFileInfosToDragItemFileSystemFilePtr(
 
     std::string content_type;
 
-    base::FilePath::StringType extension = file_system_url.path().Extension();
-    if (!extension.empty()) {
-      std::string mime_type;
-      // TODO(crbug.com/40291155): Historically for blobs created from
-      // file system URLs we've only considered well known content types to
-      // avoid leaking the presence of locally installed applications when
-      // creating blobs from files in the sandboxed file system. However, since
-      // this code path should only deal with real/"trusted" paths, we could
-      // consider taking platform defined mime type mappings into account here
-      // as well. Note that the approach used here must not block or else it
-      // can't be called from the UI thread (for example, calls to
-      // GetMimeTypeFromExtension can block).
-      if (net::GetWellKnownMimeTypeFromExtension(extension.substr(1),
-                                                 &mime_type))
-        content_type = std::move(mime_type);
+    std::string mime_type;
+    // TODO(crbug.com/40291155): Historically for blobs created from
+    // file system URLs we've only considered well known content types to
+    // avoid leaking the presence of locally installed applications when
+    // creating blobs from files in the sandboxed file system. However, since
+    // this code path should only deal with real/"trusted" paths, we could
+    // consider taking platform defined mime type mappings into account here
+    // as well. Note that the approach used here must not block or else it
+    // can't be called from the UI thread (for example, calls to
+    // GetMimeTypeFromExtension can block).
+    if (net::GetWellKnownMimeTypeFromFile(file_system_url.path(), &mime_type)) {
+      content_type = std::move(mime_type);
     }
     // TODO(crbug.com/41458368): Consider some kind of fallback type when
     // the above mime type detection fails.
@@ -158,20 +156,20 @@ blink::mojom::DragDataPtr DropDataToDragData(
   std::vector<blink::mojom::DragItemPtr> items;
   if (drop_data.text) {
     blink::mojom::DragItemStringPtr item = blink::mojom::DragItemString::New();
-    item->string_type = ui::kMimeTypeText;
+    item->string_type = ui::kMimeTypePlainText;
     item->string_data = *drop_data.text;
     items.push_back(blink::mojom::DragItem::NewString(std::move(item)));
   }
   if (!drop_data.url.is_empty()) {
     blink::mojom::DragItemStringPtr item = blink::mojom::DragItemString::New();
-    item->string_type = ui::kMimeTypeURIList;
+    item->string_type = ui::kMimeTypeUriList;
     item->string_data = base::UTF8ToUTF16(drop_data.url.spec());
     item->title = drop_data.url_title;
     items.push_back(blink::mojom::DragItem::NewString(std::move(item)));
   }
   if (drop_data.html) {
     blink::mojom::DragItemStringPtr item = blink::mojom::DragItemString::New();
-    item->string_type = ui::kMimeTypeHTML;
+    item->string_type = ui::kMimeTypeHtml;
     item->string_data = *drop_data.html;
     item->base_url = drop_data.html_base_url;
     items.push_back(blink::mojom::DragItem::NewString(std::move(item)));
@@ -238,7 +236,7 @@ blink::mojom::DragDataPtr DropMetaDataToDragData(
       // DropData::MetaData --> WebDragData-->DropData. In the end, DropData
       // will contain an empty URL (which means no URL is dragged) if the URL in
       // WebDragData is empty.
-      if (base::EqualsASCII(meta_data_item.mime_type, ui::kMimeTypeURIList)) {
+      if (base::EqualsASCII(meta_data_item.mime_type, ui::kMimeTypeUriList)) {
         item->string_data = u"about:dragdrop-placeholder";
       }
       items.push_back(blink::mojom::DragItem::NewString(std::move(item)));
@@ -253,6 +251,7 @@ blink::mojom::DragDataPtr DropMetaDataToDragData(
       blink::mojom::DataTransferFilePtr item =
           blink::mojom::DataTransferFile::New();
       item->path = meta_data_item.filename;
+      item->display_name = meta_data_item.display_name;
       items.push_back(blink::mojom::DragItem::NewFile(std::move(item)));
       continue;
     }
@@ -289,16 +288,16 @@ DropData DragDataToDropData(const blink::mojom::DragData& drag_data) {
       case blink::mojom::DragItemDataView::Tag::kString: {
         const blink::mojom::DragItemStringPtr& string_item = item->get_string();
         std::string str_type = string_item->string_type;
-        if (str_type == ui::kMimeTypeText) {
+        if (str_type == ui::kMimeTypePlainText) {
           result.text = string_item->string_data;
-        } else if (str_type == ui::kMimeTypeURIList) {
+        } else if (str_type == ui::kMimeTypeUriList) {
           result.url = GURL(string_item->string_data);
           if (string_item->title)
             result.url_title = *string_item->title;
-        } else if (str_type == ui::kMimeTypeDownloadURL) {
+        } else if (str_type == ui::kMimeTypeDownloadUrl) {
           result.download_metadata = string_item->string_data;
           result.referrer_policy = drag_data.referrer_policy;
-        } else if (str_type == ui::kMimeTypeHTML) {
+        } else if (str_type == ui::kMimeTypeHtml) {
           result.html = string_item->string_data;
           if (string_item->base_url)
             result.html_base_url = *string_item->base_url;

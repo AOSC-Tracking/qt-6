@@ -7,7 +7,6 @@
 #include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "components/device_event_log/device_event_log.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/fido/cable/fido_cable_discovery.h"
@@ -129,8 +128,7 @@ std::vector<std::unique_ptr<FidoDiscoveryBase>> FidoDiscoveryFactory::Create(
 std::optional<std::unique_ptr<FidoDiscoveryBase>>
 FidoDiscoveryFactory::MaybeCreateEnclaveDiscovery() {
 #if !BUILDFLAG(IS_QTWEBENGINE)
-  if (!base::FeatureList::IsEnabled(kWebAuthnEnclaveAuthenticator) ||
-      !enclave_ui_request_stream_ || !network_context_factory_) {
+  if (!enclave_ui_request_stream_ || !network_context_factory_) {
     return std::nullopt;
   }
   return std::make_unique<enclave::EnclaveAuthenticatorDiscovery>(
@@ -227,7 +225,8 @@ FidoDiscoveryFactory::MaybeCreatePlatformDiscovery() const {
         *mac_touch_id_config_));
   }
 #if CR_XCODE_VERSION >= 1500
-  if (fido::icloud_keychain::IsSupported() && nswindow_ != 0) {
+  if (fido::icloud_keychain::IsSupported() &&
+      (nswindow_ || allow_no_nswindow_for_testing_)) {
     ret.emplace_back(fido::icloud_keychain::NewDiscovery(nswindow_));
   }
 #endif

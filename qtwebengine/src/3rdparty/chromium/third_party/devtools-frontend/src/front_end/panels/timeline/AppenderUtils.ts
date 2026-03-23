@@ -18,7 +18,7 @@ const UIStrings = {
    *@example {10ms} PH2
    */
   sSelfS: '{PH1} (self {PH2})',
-};
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/AppenderUtils.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -29,7 +29,7 @@ export type LastTimestampByLevel = number[];
 /**
  * Builds the style for the group.
  * Each group has a predefined style and a reference to the definition of the legacy track (which should be removed in the future).
- * @param extra the customized fields with value.
+ * @param extra - the customized fields with value.
  * @returns the built GroupStyle
  */
 export function buildGroupStyle(extra?: Partial<PerfUI.FlameChart.GroupStyle>): PerfUI.FlameChart.GroupStyle {
@@ -47,17 +47,17 @@ export function buildGroupStyle(extra?: Partial<PerfUI.FlameChart.GroupStyle>): 
 
 /**
  * Builds the header corresponding to the track. A header is added in the shape of a group in the flame chart data.
- * @param jslogContext the text that will be set as the logging context
+ * @param jslogContext - the text that will be set as the logging context
  *                          for the Visual Elements logging framework. Pass
  *                          `null` to not set a context and consequently
  *                          cause this group not to be logged.
- * @param startLevel the flame chart level at which the track header is appended.
- * @param name the display name of the track.
- * @param style the GroupStyle for the track header.
- * @param selectable if the track is selectable.
- * @param expanded if the track is expanded.
- * @param track this is set only when `selectable` is true, and it is used for selecting a track in the details panel.
- * @param showStackContextMenu whether menu with options to merge/collapse entries in track is shown.
+ * @param startLevel - the flame chart level at which the track header is appended.
+ * @param name - the display name of the track.
+ * @param style - the GroupStyle for the track header.
+ * @param selectable - if the track is selectable.
+ * @param expanded - if the track is expanded.
+ * @param track - this is set only when `selectable` is true, and it is used for selecting a track in the details panel.
+ * @param showStackContextMenu - whether menu with options to merge/collapse entries in track is shown.
  * @returns the group that built from the give data
  */
 export function buildTrackHeader(
@@ -79,25 +79,31 @@ export function buildTrackHeader(
 
 /**
  * Returns the time info shown when an event is hovered in the timeline.
- * @param totalTime the total time of the hovered event.
- * @param selfTime the self time of the hovered event.
+ * @param totalTime - the total time of the hovered event.
+ * @param selfTime - the self time of the hovered event.
  * @returns the formatted time string for popoverInfo
  */
-export function getFormattedTime(totalTime?: Trace.Types.Timing.Micro, selfTime?: Trace.Types.Timing.Micro): string {
-  const formattedTotalTime = Trace.Helpers.Timing.microToMilli((totalTime || 0) as Trace.Types.Timing.Micro);
-  if (formattedTotalTime === Trace.Types.Timing.Milli(0)) {
+
+export function getDurationString(totalTime?: Trace.Types.Timing.Micro, selfTime?: Trace.Types.Timing.Micro): string {
+  if (!totalTime) {
     return '';
   }
+  const totalMs = Trace.Helpers.Timing.microToMilli(totalTime);
+  if (selfTime === undefined) {
+    return i18n.TimeUtilities.millisToString(totalMs, true);
+  }
 
-  const formattedSelfTime = Trace.Helpers.Timing.microToMilli((selfTime || 0) as Trace.Types.Timing.Micro);
-  const minSelfTimeSignificance = 1e-6;
-  const formattedTime = Math.abs(formattedTotalTime - formattedSelfTime) > minSelfTimeSignificance &&
-          formattedSelfTime > minSelfTimeSignificance ?
+  const selfMs = Trace.Helpers.Timing.microToMilli(selfTime);
+  // This minSelfTimeSignificance is 0.001µs, aka 1 nanosecond.
+  // TODO(paulirish): change to 0.09ms, aka 90 microseconds and revise logic below.
+  const minSelfTimeSignificance = Trace.Types.Timing.Milli(0.000001);
+  const formattedTime = Math.abs(totalMs - selfMs) > minSelfTimeSignificance && selfMs > minSelfTimeSignificance ?
       i18nString(UIStrings.sSelfS, {
-        PH1: i18n.TimeUtilities.millisToString(formattedTotalTime, true),
-        PH2: i18n.TimeUtilities.millisToString(formattedSelfTime, true),
+        PH1: i18n.TimeUtilities.millisToString(totalMs, true),
+        PH2: i18n.TimeUtilities.millisToString(selfMs, true),
       }) :
-      i18n.TimeUtilities.millisToString(formattedTotalTime, true);
+      i18n.TimeUtilities.millisToString(totalMs, true);
+
   return formattedTime;
 }
 

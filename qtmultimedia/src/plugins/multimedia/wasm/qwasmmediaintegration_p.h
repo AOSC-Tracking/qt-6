@@ -39,9 +39,14 @@ public:
     q23::expected<QPlatformMediaRecorder *, QString> createRecorder(QMediaRecorder *recorder) override;
     q23::expected<QPlatformImageCapture *, QString> createImageCapture(QImageCapture *imageCapture) override;
 
+    QList<QCameraDevice> videoInputs();
+    QPlatformSurfaceCapture *createScreenCapture(QScreenCapture *screenCapture) override;
+    QPlatformSurfaceCapture *createWindowCapture(QWindowCapture *windowCapture) override;
+
 protected:
     QPlatformMediaFormatInfo *createFormatInfo() override;
     QPlatformVideoDevices *createVideoDevices() override;
+    QPlatformCapturableWindows *createCapturableWindows() override;
 };
 
 QT_END_NAMESPACE

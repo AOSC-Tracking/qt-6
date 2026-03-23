@@ -38,8 +38,6 @@ import type {WasmDisassembly} from './WasmDisassembly.js';
 export interface ContentProvider {
   contentURL(): Platform.DevToolsPath.UrlString;
   contentType(): Common.ResourceType.ResourceType;
-  /** @deprecated Prefer {@link requestContentData} instead */
-  requestContent(): Promise<DeferredContent>;
   requestContentData(): Promise<ContentDataOrError>;
   searchInContent(query: string, caseSensitive: boolean, isRegex: boolean): Promise<SearchMatch[]>;
 }
@@ -57,7 +55,7 @@ export class SearchMatch {
 
 export const contentAsDataURL = function(
     content: string|null, mimeType: string, contentEncoded: boolean, charset?: string|null,
-    limitSize: boolean = true): string|null {
+    limitSize = true): string|null {
   const maxDataUrlSize = 1024 * 1024;
   if (content === undefined || content === null || (limitSize && content.length > maxDataUrlSize)) {
     return null;
@@ -82,7 +80,7 @@ export type DeferredContent = {
 };
 
 // Some ContentProvider like NetworkRequests might never actually be able to return
-// a fully completed "requestContent" as the request keeps on going indefinitely.
+// a fully completed "requestContentData" as the request keeps on going indefinitely.
 // Such proivders can implement the "StreamingContentProvider" addition, which allows
 // for partial/streaming content.
 export interface StreamingContentProvider extends ContentProvider {

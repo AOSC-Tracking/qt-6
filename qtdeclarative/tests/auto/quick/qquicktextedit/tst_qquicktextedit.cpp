@@ -6338,7 +6338,7 @@ void tst_qquicktextedit::embeddedImages()
         });
         QCOMPARE_NE(it, formats.end());
         const QTextImageFormat format = (*it).toImageFormat();
-        QImage image = doc->resource(QTextDocument::ImageResource, format.name()).value<QImage>();
+        QImage image = doc->resource(QTextDocument::ImageResource, QUrl{format.name()}).value<QImage>();
         qCDebug(lcTests) << "found image?" << format.name() << image;
         QCOMPARE(image.size(), expectedImageSize);
     } else {
@@ -6607,7 +6607,7 @@ void tst_qquicktextedit::keys_shortcutoverride()
     // Tests that QML TextEdit receives Keys.onShortcutOverride  (QTBUG-68711)
     QQuickView window;
     QVERIFY(QQuickTest::showView(window, testFileUrl("keys_shortcutoverride.qml")));
-    QQuickTextEdit *textEdit = window.rootObject()->findChild<QQuickTextEdit*>();
+    QQuickTextEdit *textEdit = window.rootObject()->findChild<QQuickTextEdit*>(QLatin1String("txt"));
     QVERIFY(textEdit);
     QQuickRectangle *rectangle = window.rootObject()->findChild<QQuickRectangle*>(QLatin1String("rectangle"));
     QVERIFY(rectangle);
@@ -6624,6 +6624,14 @@ void tst_qquicktextedit::keys_shortcutoverride()
     textEdit->setFocus(true);
     QTest::keyPress(&window, Qt::Key_Escape);
     QCOMPARE(window.rootObject()->property("who").value<QString>(), QLatin1String("TextEdit"));
+
+    // Check for any valid input to the text edit
+    auto *textEditOverride = window.rootObject()->findChild<QQuickTextEdit*>(QLatin1String("testOverride"));
+    QVERIFY(textEditOverride);
+    textEditOverride->setFocus(true);
+    QTest::keyPress(&window, Qt::Key_A);
+    // Retain the same text and shouldn't switch to "ShortcutA"
+    QCOMPARE(window.rootObject()->property("who"), "TextEdit");
 }
 
 void tst_qquicktextedit::transparentSelectionColor()

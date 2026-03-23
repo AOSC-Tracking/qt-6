@@ -5,10 +5,12 @@
 #ifndef V8_HANDLES_HANDLES_INL_H_
 #define V8_HANDLES_HANDLES_INL_H_
 
+#include "src/handles/handles.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/base/sanitizer/msan.h"
 #include "src/execution/isolate.h"
 #include "src/execution/local-isolate.h"
-#include "src/handles/handles.h"
 #include "src/handles/local-handles-inl.h"
 #include "src/objects/casting.h"
 #include "src/objects/objects.h"
@@ -47,7 +49,7 @@ Handle<T> Handle<T>::New(Tagged<T> object, Isolate* isolate) {
 
 template <typename T, typename U>
 inline bool Is(IndirectHandle<U> value) {
-  return value.is_null() || Is<T>(*value);
+  return Is<T>(*value);
 }
 template <typename To, typename From>
 inline Handle<To> UncheckedCast(Handle<From> value) {
@@ -112,7 +114,7 @@ V8_INLINE DirectHandle<T>::DirectHandle(Tagged<T> object)
 
 template <typename T, typename U>
 inline bool Is(DirectHandle<U> value) {
-  return value.is_null() || Is<T>(*value);
+  return Is<T>(*value);
 }
 template <typename To, typename From>
 inline DirectHandle<To> UncheckedCast(DirectHandle<From> value) {
@@ -123,7 +125,7 @@ inline DirectHandle<To> UncheckedCast(DirectHandle<From> value) {
 
 template <typename T, typename U>
 inline bool Is(DirectHandle<U> value) {
-  return value.is_null() || Is<T>(*value);
+  return Is<T>(*value);
 }
 template <typename To, typename From>
 inline DirectHandle<To> UncheckedCast(DirectHandle<From> value) {
@@ -273,6 +275,7 @@ HandleType<T> HandleScope::CloseAndEscape(HandleType<T> handle_value) {
 
 Address* HandleScope::CreateHandle(Isolate* isolate, Address value) {
   DCHECK(AllowHandleAllocation::IsAllowed());
+  DCHECK_EQ(isolate, Isolate::TryGetCurrent());
 #ifdef DEBUG
   if (!AllowHandleUsageOnAllThreads::IsAllowed()) {
     DCHECK(isolate->main_thread_local_heap()->IsRunning());
@@ -280,7 +283,16 @@ Address* HandleScope::CreateHandle(Isolate* isolate, Address value) {
         isolate->thread_id() == ThreadId::Current(),
         "main-thread handle can only be created on the main thread.");
   }
-#endif
+  // We should only allocate handles for objects that can be referenced from the
+  // isolate's heap.
+#ifdef ENABLE_SLOW_DCHECKS
+  if (!HAS_SMI_TAG(value)) {
+    DCHECK(HAS_STRONG_HEAP_OBJECT_TAG(value));
+    Tagged<HeapObject> obj = UncheckedCast<HeapObject>(Tagged<Object>{value});
+    SLOW_DCHECK(isolate->heap()->CanReferenceHeapObject(obj));
+  }
+#endif  // ENABLE_SLOW_DCHECKS
+#endif  // DEBUG
   HandleScopeData* data = isolate->handle_scope_data();
   Address* result = data->next;
   if (V8_UNLIKELY(result == data->limit)) {

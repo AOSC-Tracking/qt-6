@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -20,7 +21,6 @@ T.ToolButton {
 
     icon.width: 24
     icon.height: 24
-    icon.color: !enabled ? Material.hintTextColor : checked || highlighted ? Material.accent : Material.foreground
 
     contentItem: IconLabel {
         spacing: control.spacing
@@ -28,10 +28,11 @@ T.ToolButton {
         display: control.display
 
         icon: control.icon
+        defaultIconColor: !control.enabled ? control.Material.hintTextColor
+            : control.checked || control.highlighted ? control.Material.accent : control.Material.foreground
         text: control.text
         font: control.font
-        color: !control.enabled ? control.Material.hintTextColor :
-                control.checked || control.highlighted ? control.Material.accent : control.Material.foreground
+        color: defaultIconColor
     }
 
     background: Ripple {

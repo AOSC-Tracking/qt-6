@@ -4,9 +4,10 @@
 
 #include "components/ip_protection/common/ip_protection_data_types.h"
 
-#include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/containers/contains.h"
@@ -59,15 +60,14 @@ std::optional<GeoHint> GetGeoHintFromGeoIdForTesting(  // IN-TEST
 }
 
 std::vector<MdlType> FromMdlResourceProto(
-    masked_domain_list::Resource resource) {
+    const masked_domain_list::Resource& resource) {
   std::vector<MdlType> mdl_types;
 
   if (!resource.exclude_default_group()) {
-    mdl_types.emplace_back(MdlType::kDefault);
+    mdl_types.emplace_back(MdlType::kIncognito);
   }
 
-  if (resource.experiments_size() != 0 &&
-      base::Contains(resource.experiments(),
+  if (base::Contains(resource.experiments(),
                      masked_domain_list::Resource::Experiment::
                          Resource_Experiment_EXPERIMENT_EXTERNAL_REGULAR)) {
     mdl_types.emplace_back(MdlType::kRegularBrowsing);
@@ -75,5 +75,35 @@ std::vector<MdlType> FromMdlResourceProto(
 
   return mdl_types;
 }
+
+TryGetProbabilisticRevealTokensOutcome::
+    TryGetProbabilisticRevealTokensOutcome() = default;
+TryGetProbabilisticRevealTokensOutcome::
+    ~TryGetProbabilisticRevealTokensOutcome() = default;
+TryGetProbabilisticRevealTokensOutcome::TryGetProbabilisticRevealTokensOutcome(
+    const TryGetProbabilisticRevealTokensOutcome& other) = default;
+TryGetProbabilisticRevealTokensOutcome::TryGetProbabilisticRevealTokensOutcome(
+    TryGetProbabilisticRevealTokensOutcome&& other) = default;
+TryGetProbabilisticRevealTokensOutcome&
+TryGetProbabilisticRevealTokensOutcome::operator=(
+    const TryGetProbabilisticRevealTokensOutcome&) = default;
+TryGetProbabilisticRevealTokensOutcome&
+TryGetProbabilisticRevealTokensOutcome::operator=(
+    TryGetProbabilisticRevealTokensOutcome&&) = default;
+
+ProbabilisticRevealToken::ProbabilisticRevealToken() = default;
+ProbabilisticRevealToken::ProbabilisticRevealToken(std::int32_t version,
+                                                   std::string u,
+                                                   std::string e)
+    : version(version), u(std::move(u)), e(std::move(e)) {}
+ProbabilisticRevealToken::ProbabilisticRevealToken(
+    const ProbabilisticRevealToken&) = default;
+ProbabilisticRevealToken::ProbabilisticRevealToken(ProbabilisticRevealToken&&) =
+    default;
+ProbabilisticRevealToken& ProbabilisticRevealToken::operator=(
+    const ProbabilisticRevealToken&) = default;
+ProbabilisticRevealToken& ProbabilisticRevealToken::operator=(
+    ProbabilisticRevealToken&&) = default;
+ProbabilisticRevealToken::~ProbabilisticRevealToken() = default;
 
 }  // namespace ip_protection

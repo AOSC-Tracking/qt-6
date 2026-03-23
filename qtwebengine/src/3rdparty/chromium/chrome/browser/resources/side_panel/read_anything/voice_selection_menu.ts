@@ -7,7 +7,6 @@ import '//resources/cr_elements/cr_lazy_render/cr_lazy_render_lit.js';
 import '//resources/cr_elements/cr_icon/cr_icon.js';
 import '//resources/cr_elements/icons.html.js';
 import '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
-import '//resources/cr_elements/cr_lazy_render/cr_lazy_render.js';
 import './language_menu.js';
 
 import type {CrActionMenuElement} from '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
@@ -22,7 +21,12 @@ import {openMenu, spinnerDebounceTimeout, ToolbarEvent} from './common.js';
 import type {LanguageMenuElement} from './language_menu.js';
 import {ReadAloudSettingsChange} from './metrics_browser_proxy.js';
 import {ReadAnythingLogger} from './read_anything_logger.js';
-import {areVoicesEqual, convertLangOrLocaleForVoicePackManager, isGoogle, isNatural, NotificationType} from './voice_language_util.js';
+// clang-format off
+// <if expr="not is_chromeos">
+import {isGoogle} from './voice_language_util.js';
+// </if>
+// clang-format on
+import {areVoicesEqual, convertLangOrLocaleForVoicePackManager, isNatural, NotificationType} from './voice_language_util.js';
 import {VoiceNotificationManager} from './voice_notification_manager.js';
 import type {VoiceNotificationListener} from './voice_notification_manager.js';
 import {getCss} from './voice_selection_menu.css.js';
@@ -79,7 +83,6 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
       previewVoicePlaying: {type: Object},
       currentNotifications_: {type: Object},
       previewVoiceInitiated: {type: Object},
-      isSpeechActive: {type: Boolean},
       localeToDisplayName: {type: Object},
       showLanguageMenuDialog_: {type: Boolean},
       downloadingMessages_: {type: Boolean},
@@ -87,23 +90,22 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
     };
   }
 
-  selectedVoice?: SpeechSynthesisVoice;
-  localeToDisplayName: {[lang: string]: string} = {};
-  previewVoicePlaying?: SpeechSynthesisVoice;
-  enabledLangs: string[] = [];
-  availableVoices: SpeechSynthesisVoice[] = [];
-  isSpeechActive: boolean = false;
+  accessor selectedVoice: SpeechSynthesisVoice|undefined;
+  accessor localeToDisplayName: {[lang: string]: string} = {};
+  accessor previewVoicePlaying: SpeechSynthesisVoice|null = null;
+  accessor enabledLangs: string[] = [];
+  accessor availableVoices: SpeechSynthesisVoice[] = [];
 
   // The current notifications that should be used in the voice menu.
-  private currentNotifications_: {[language: string]: NotificationType} = {};
+  private accessor currentNotifications_:
+      {[language: string]: NotificationType} = {};
 
-  private previewVoiceInitiated?: SpeechSynthesisVoice;
+  private accessor previewVoiceInitiated: SpeechSynthesisVoice|null = null;
   protected errorMessages_: string[] = [];
-  protected downloadingMessages_: string[] = [];
-  protected voiceGroups_: VoiceDropdownGroup[] = [];
-  protected showLanguageMenuDialog_: boolean = false;
+  protected accessor downloadingMessages_: string[] = [];
+  protected accessor voiceGroups_: VoiceDropdownGroup[] = [];
+  protected accessor showLanguageMenuDialog_: boolean = false;
 
-  private voicePlayingWhenMenuOpened_: boolean = false;
   private readonly spBodyPadding_ = Number.parseInt(
       window.getComputedStyle(document.body)
           .getPropertyValue('--sp-body-padding'),
@@ -139,7 +141,10 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
     }
   }
 
-  notify(language: string, type: NotificationType) {
+  notify(type: NotificationType, language?: string) {
+    if (!language) {
+      return;
+    }
     this.currentNotifications_ = {
       ...this.currentNotifications_,
       [language]: type,
@@ -147,21 +152,23 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
   }
 
   onVoiceSelectionMenuClick(targetElement: HTMLElement) {
-    this.voicePlayingWhenMenuOpened_ = this.isSpeechActive;
     this.notificationManager_.addListener(this);
 
     const menu = this.$.voiceSelectionMenu.get();
-    openMenu(menu, targetElement, {
-      minX: this.spBodyPadding_,
-      maxX: document.body.clientWidth - this.spBodyPadding_,
-    });
+    openMenu(
+        menu, targetElement, {
+          minX: this.spBodyPadding_,
+          maxX: document.body.clientWidth - this.spBodyPadding_,
+        },
+        this.onMenuShown.bind(this));
+  }
 
-    // Scroll to the selected voice.
-    requestAnimationFrame(() => {
-      const selectedItem =
-          menu.querySelector<HTMLElement>('.item-invisible-false');
-      selectedItem?.scrollIntoViewIfNeeded();
-    });
+  private onMenuShown() {
+    this.fire(ToolbarEvent.VOICE_MENU_OPEN);
+    const selectedItem =
+        this.$.voiceSelectionMenu.get().querySelector<HTMLElement>(
+            '.item-hidden-false.check-mark');
+    selectedItem?.scrollIntoViewIfNeeded();
   }
 
   protected voiceItemTabIndex_(groupIndex: number, voiceIndex: number) {
@@ -212,7 +219,7 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
         }, {} as {[language: string]: VoiceDropdownItem[]});
 
     for (const lang of Object.keys(languageToVoices)) {
-      languageToVoices[lang].sort(voiceQualityRankComparator);
+      languageToVoices[lang]!.sort(voiceQualityRankComparator);
     }
 
     return Object.entries(languageToVoices).map(([
@@ -266,9 +273,11 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
         ToolbarEvent.PLAY_PREVIEW,
         // If preview is currently playing, we pass null to indicate the audio
         // should be paused.
-        dropdownItem.previewActuallyPlaying ?
-            null :
-            {previewVoice: dropdownItem.voice});
+        {
+          previewVoice:
+              dropdownItem.previewActuallyPlaying ? null : dropdownItem.voice,
+        },
+    );
   }
 
   protected openLanguageMenu_() {
@@ -287,13 +296,7 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
   protected onClose_() {
     this.notificationManager_.removeListener(this);
     this.currentNotifications_ = {};
-    this.dispatchEvent(new CustomEvent('voice-menu-close', {
-      bubbles: true,
-      composed: true,
-      detail: {
-        voicePlayingWhenMenuOpened: this.voicePlayingWhenMenuOpened_,
-      },
-    }));
+    this.fire(ToolbarEvent.VOICE_MENU_CLOSE);
   }
 
   private shouldAllowPropagation_(
@@ -347,7 +350,9 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
 
     // When the menu first opens, the target is the whole menu.
     // In that case, use default behavior.
-    if (!targetIsVoiceOption && !targetIsPreviewButton) return;
+    if (!targetIsVoiceOption && !targetIsPreviewButton) {
+      return;
+    }
 
     e.preventDefault();
 
@@ -356,7 +361,7 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
       const visiblePreviewButton =
           currentElement.querySelector<HTMLElement>('#preview-icon');
       assert(visiblePreviewButton, 'can\'t find preview button');
-      visiblePreviewButton!.focus();
+      visiblePreviewButton.focus();
     }
     // This action is also handled by the menu itself
     // For left arrow, this takes us to the voice being previewed,
@@ -405,7 +410,7 @@ export class VoiceSelectionMenuElement extends VoiceSelectionMenuElementBase
     const voiceIndex = Number.parseInt(
         (e.currentTarget as HTMLElement).dataset['voiceIndex']!);
 
-    return this.voiceGroups_[groupIndex].voices[voiceIndex];
+    return this.voiceGroups_[groupIndex]!.voices[voiceIndex]!;
   }
 
   private computeErrorMessages_(): string[] {

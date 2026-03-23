@@ -1,5 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 #include "qquick3dinstancing_p.h"
 #include "qquick3dscenemanager_p.h"
 #include <QtQuick3DRuntimeRender/private/qssgrenderinstancetable_p.h>
@@ -96,6 +98,21 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
+    \property QQuick3DInstancing::shadowBoundsMinimum
+    \since 6.9
+
+    Sets the minimum bounds used when calculating the shadow map bounds of the
+    models in the instance table.
+
+    Default value: \c{(1, 1, 1)}
+
+    \note This property is only enabled when the respective components of
+          shadowBoundsMinimum are smaller than those in shadowBoundsMaximum.
+          Otherwise the bounds are calculated automatically.
+
+    \sa shadowBoundsMaximum
+*/
+/*!
     \qmlproperty vector3d Instancing::shadowBoundsMinimum
 
     Sets the minimum bounds used when calculating the shadow map bounds of the models in the
@@ -109,6 +126,21 @@ QT_BEGIN_NAMESPACE
     \sa shadowBoundsMaximum
 */
 
+/*!
+    \property QQuick3DInstancing::shadowBoundsMaximum
+    \since 6.9
+
+    Sets the maximum bounds used when calculating the shadow map bounds of the
+    models in the instance table.
+
+    Default value: \c{(-1, -1, -1)}
+
+    \note This property is only enabled when the respective components of
+          shadowBoundsMinimum are smaller than those in shadowBoundsMaximum.
+          Otherwise the bounds are calculated automatically.
+
+    \sa shadowBoundsMinimum
+*/
 /*!
     \qmlproperty vector3d Instancing::shadowBoundsMaximum
 

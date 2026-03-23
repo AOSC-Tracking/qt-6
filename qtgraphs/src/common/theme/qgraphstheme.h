@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QTGRAPHS_QGRAPHSTHEME_H
 #define QTGRAPHS_QGRAPHSTHEME_H
@@ -130,9 +132,6 @@ Q_DECLARE_SHARED(QGraphsLine)
 class Q_GRAPHS_EXPORT QGraphsTheme : public QObject, public QQmlParserStatus
 {
     Q_OBJECT
-
-    // For QQuickGradient
-    Q_MOC_INCLUDE(<QtQuick/private/qquickrectangle_p.h>)
 
     Q_INTERFACES(QQmlParserStatus)
     Q_CLASSINFO("RegisterEnumClassesUnscoped", "false")

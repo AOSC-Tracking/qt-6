@@ -2,13 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/modules/imagecapture/image_capture_frame_grabber.h"
 
+#include "base/compiler_specific.h"
 #include "base/synchronization/lock.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/single_thread_task_runner.h"
@@ -22,6 +18,7 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
+#include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/video_frame_image_util.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_component.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_source.h"
@@ -35,40 +32,25 @@
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkSurface.h"
-#include "ui/gfx/gpu_memory_buffer.h"
-
-namespace WTF {
-// Template specialization of [1], needed to be able to pass callbacks
-// that have ScopedWebCallbacks paramaters across threads.
-//
-// [1] third_party/blink/renderer/platform/wtf/cross_thread_copier.h.
-template <typename T>
-struct CrossThreadCopier<blink::ScopedWebCallbacks<T>>
-    : public CrossThreadCopierPassThrough<blink::ScopedWebCallbacks<T>> {
-  STATIC_ONLY(CrossThreadCopier);
-  using Type = blink::ScopedWebCallbacks<T>;
-  static blink::ScopedWebCallbacks<T> Copy(
-      blink::ScopedWebCallbacks<T> pointer) {
-    return pointer;
-  }
-};
-
-}  // namespace WTF
 
 namespace blink {
 
-namespace {
-
-void OnError(std::unique_ptr<ImageCaptureGrabFrameCallbacks> callbacks) {
-  callbacks->OnError();
-}
-
-}  // anonymous namespace
+// Template specialization of [1], needed to be able to pass callbacks
+// that have ScopedPromiseResolver parameters across threads.
+//
+// [1] third_party/blink/renderer/platform/wtf/cross_thread_copier.h.
+template <typename T>
+struct CrossThreadCopier<ScopedPromiseResolver<T>>
+    : public CrossThreadCopierPassThrough<ScopedPromiseResolver<T>> {
+  STATIC_ONLY(CrossThreadCopier);
+  using Type = ScopedPromiseResolver<T>;
+  static Type Copy(Type value) { return value; }
+};
 
 // Ref-counted class to receive a single VideoFrame on IO thread, convert it and
 // send it to |task_runner|, where this class is created and destroyed.
 class ImageCaptureFrameGrabber::SingleShotFrameHandler
-    : public WTF::ThreadSafeRefCounted<SingleShotFrameHandler> {
+    : public ThreadSafeRefCounted<SingleShotFrameHandler> {
  public:
   using SkImageDeliverCB = WTF::CrossThreadOnceFunction<void(sk_sp<SkImage>)>;
 
@@ -92,7 +74,7 @@ class ImageCaptureFrameGrabber::SingleShotFrameHandler
       base::TimeTicks current_time);
 
  private:
-  friend class WTF::ThreadSafeRefCounted<SingleShotFrameHandler>;
+  friend class ThreadSafeRefCounted<SingleShotFrameHandler>;
 
   // Converts the media::VideoFrame into a SkImage on the |task_runner|.
   void ConvertAndDeliverFrame(SkImageDeliverCB callback,
@@ -201,16 +183,17 @@ void ImageCaptureFrameGrabber::SingleShotFrameHandler::ConvertAndDeliverFrame(
 
     // NV12 is the only supported pixel format at the moment.
     DCHECK_EQ(frame->format(), media::PIXEL_FORMAT_NV12);
-    int y_stride = static_cast<int>(scoped_mapping->Stride(0));
-    int uv_stride = static_cast<int>(scoped_mapping->Stride(1));
-    const uint8_t* y_plane =
-        (static_cast<uint8_t*>(scoped_mapping->Memory(0)) +
-         frame->visible_rect().x() + (frame->visible_rect().y() * y_stride));
+    size_t y_stride = scoped_mapping->Stride(media::VideoFrame::Plane::kY);
+    size_t uv_stride = scoped_mapping->Stride(media::VideoFrame::Plane::kUV);
+    auto y_plane = scoped_mapping->GetMemoryAsSpan(media::VideoFrame::Plane::kY)
+                       .subspan(frame->visible_rect().x() +
+                                (frame->visible_rect().y() * y_stride));
     // UV plane of NV12 has 2-byte pixel width, with half chroma subsampling
     // both horizontally and vertically.
-    const uint8_t* uv_plane = scoped_mapping->Memory(1) +
-                              ((frame->visible_rect().x() * 2) / 2) +
-                              ((frame->visible_rect().y() / 2) * uv_stride);
+    auto uv_plane =
+        scoped_mapping->GetMemoryAsSpan(media::VideoFrame::Plane::kUV)
+            .subspan(((frame->visible_rect().x() * 2) / 2) +
+                     ((frame->visible_rect().y() / 2) * uv_stride));
 
     if (need_rotate) {
       // Transform to I420 first to be later on rotated.
@@ -219,7 +202,7 @@ void ImageCaptureFrameGrabber::SingleShotFrameHandler::ConvertAndDeliverFrame(
           original_size, base::TimeDelta());
 
       libyuv::NV12ToI420(
-          y_plane, y_stride, uv_plane, uv_stride,
+          y_plane.data(), y_stride, uv_plane.data(), uv_stride,
           i420_frame->GetWritableVisibleData(media::VideoFrame::Plane::kY),
           i420_frame->stride(media::VideoFrame::Plane::kY),
           i420_frame->GetWritableVisibleData(media::VideoFrame::Plane::kU),
@@ -230,13 +213,13 @@ void ImageCaptureFrameGrabber::SingleShotFrameHandler::ConvertAndDeliverFrame(
     } else {
       switch (destination_pixel_format) {
         case libyuv::FOURCC_ABGR:
-          libyuv::NV12ToABGR(y_plane, y_stride, uv_plane, uv_stride,
-                             destination_plane, destination_stride,
+          libyuv::NV12ToABGR(y_plane.data(), y_stride, uv_plane.data(),
+                             uv_stride, destination_plane, destination_stride,
                              destination_width, destination_height);
           break;
         case libyuv::FOURCC_ARGB:
-          libyuv::NV12ToARGB(y_plane, y_stride, uv_plane, uv_stride,
-                             destination_plane, destination_stride,
+          libyuv::NV12ToARGB(y_plane.data(), y_stride, uv_plane.data(),
+                             uv_stride, destination_plane, destination_stride,
                              destination_width, destination_height);
           break;
         default:
@@ -315,24 +298,29 @@ ImageCaptureFrameGrabber::~ImageCaptureFrameGrabber() {
 
 void ImageCaptureFrameGrabber::GrabFrame(
     MediaStreamComponent* component,
-    std::unique_ptr<ImageCaptureGrabFrameCallbacks> callbacks,
+    ScriptPromiseResolver<ImageBitmap>* resolver,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     base::TimeDelta timeout) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  DCHECK(!!callbacks);
+  DCHECK(resolver);
 
   DCHECK(component && component->GetPlatformTrack());
   DCHECK_EQ(MediaStreamSource::kTypeVideo, component->GetSourceType());
 
   if (frame_grab_in_progress_) {
     // Reject grabFrame()s too close back to back.
-    callbacks->OnError();
+    resolver->Reject();
     return;
   }
 
-  auto scoped_callbacks = MakeScopedWebCallbacks(
-      std::move(callbacks),
-      base::BindPostTask(task_runner, WTF::BindOnce(&OnError)));
+  ScopedPromiseResolver<ImageBitmap> scoped_resolver(
+      resolver,
+      base::BindPostTask(
+          task_runner,
+          WTF::BindOnce(
+              [](Persistent<ScriptPromiseResolver<ImageBitmap>> resolver) {
+                resolver->Reject();
+              })));
 
   // A SingleShotFrameHandler is bound and given to the Track to guarantee that
   // only one VideoFrame is converted and delivered to OnSkImage(), otherwise
@@ -356,24 +344,27 @@ void ImageCaptureFrameGrabber::GrabFrame(
           base::MakeRefCounted<SingleShotFrameHandler>(
               CrossThreadBindOnce(&ImageCaptureFrameGrabber::OnSkImage,
                                   weak_factory_.GetWeakPtr(),
-                                  std::move(scoped_callbacks)),
+                                  std::move(scoped_resolver)),
               std::move(task_runner)))),
       MediaStreamVideoSink::IsSecure::kNo,
       MediaStreamVideoSink::UsesAlpha::kDefault);
 }
 
 void ImageCaptureFrameGrabber::OnSkImage(
-    ScopedWebCallbacks<ImageCaptureGrabFrameCallbacks> callbacks,
+    ScopedPromiseResolver<ImageBitmap> resolver,
     sk_sp<SkImage> image) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   timeout_task_handle_.Cancel();
   MediaStreamVideoSink::DisconnectFromTrack();
   frame_grab_in_progress_ = false;
-  if (image)
-    callbacks.PassCallbacks()->OnSuccess(image);
-  else
-    callbacks.PassCallbacks()->OnError();
+
+  if (image) {
+    resolver.TakeResolver()->Resolve(MakeGarbageCollected<ImageBitmap>(
+        UnacceleratedStaticBitmapImage::Create(std::move(image))));
+  } else {
+    resolver.TakeResolver()->Reject();
+  }
 }
 
 void ImageCaptureFrameGrabber::OnTimeout() {

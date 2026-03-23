@@ -14,6 +14,7 @@
 #include "chrome/browser/ash/login/screens/user_selection_screen.h"
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
 #include "chrome/browser/ash/settings/scoped_cros_settings_test_helper.h"
+#include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "chromeos/ash/components/proximity_auth/screenlock_bridge.h"
@@ -52,7 +53,7 @@ class SigninPrepareUserListTest : public testing::Test {
   void SetUp() override {
     testing::Test::SetUp();
     profile_manager_ = std::make_unique<TestingProfileManager>(
-        TestingBrowserProcess::GetGlobal(), &local_state_);
+        TestingBrowserProcess::GetGlobal());
     ASSERT_TRUE(profile_manager_->SetUp());
 
     for (size_t i = 0; i < std::size(kUsersPublic); ++i) {
@@ -90,10 +91,10 @@ class SigninPrepareUserListTest : public testing::Test {
 };
 
 TEST_F(SigninPrepareUserListTest, AlwaysKeepOwnerInList) {
-  EXPECT_LT(kMaxUsers, user_manager()->GetUsers().size());
+  EXPECT_LT(kMaxUsers, user_manager()->GetPersistedUsers().size());
   user_manager::UserList users_to_send =
       UserSelectionScreen::PrepareUserListForSending(
-          user_manager()->GetUsers(), AccountId::FromUserEmail(kOwner),
+          user_manager()->GetPersistedUsers(), AccountId::FromUserEmail(kOwner),
           true /* is_signin_to_add */);
 
   EXPECT_EQ(kMaxUsers, users_to_send.size());
@@ -102,7 +103,7 @@ TEST_F(SigninPrepareUserListTest, AlwaysKeepOwnerInList) {
   user_manager()->RemoveUserFromList(AccountId::FromUserEmail("a16@gmail.com"));
   user_manager()->RemoveUserFromList(AccountId::FromUserEmail("a17@gmail.com"));
   users_to_send = UserSelectionScreen::PrepareUserListForSending(
-      user_manager()->GetUsers(), AccountId::FromUserEmail(kOwner),
+      user_manager()->GetPersistedUsers(), AccountId::FromUserEmail(kOwner),
       true /* is_signin_to_add */);
 
   EXPECT_EQ(kMaxUsers, users_to_send.size());
@@ -115,7 +116,7 @@ TEST_F(SigninPrepareUserListTest, AlwaysKeepOwnerInList) {
 TEST_F(SigninPrepareUserListTest, PublicAccounts) {
   user_manager::UserList users_to_send =
       UserSelectionScreen::PrepareUserListForSending(
-          user_manager()->GetUsers(), AccountId::FromUserEmail(kOwner),
+          user_manager()->GetPersistedUsers(), AccountId::FromUserEmail(kOwner),
           true /* is_signin_to_add */);
 
   EXPECT_EQ(kMaxUsers, users_to_send.size());
@@ -123,7 +124,7 @@ TEST_F(SigninPrepareUserListTest, PublicAccounts) {
             users_to_send.front()->GetAccountId().GetUserEmail());
 
   users_to_send = UserSelectionScreen::PrepareUserListForSending(
-      user_manager()->GetUsers(), AccountId::FromUserEmail(kOwner),
+      user_manager()->GetPersistedUsers(), AccountId::FromUserEmail(kOwner),
       false /* is_signin_to_add */);
 
   EXPECT_EQ(kMaxUsers, users_to_send.size());

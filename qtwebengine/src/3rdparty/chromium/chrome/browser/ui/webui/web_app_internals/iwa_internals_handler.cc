@@ -4,26 +4,24 @@
 
 #include "chrome/browser/ui/webui/web_app_internals/iwa_internals_handler.h"
 
+#include <variant>
+
 #include "base/containers/map_util.h"
 #include "base/containers/to_vector.h"
-#include "base/functional/overloaded.h"
 #include "base/strings/stringprintf.h"
 #include "base/types/expected_macros.h"
 #include "base/types/optional_util.h"
 #include "base/version.h"
 #include "chrome/browser/file_select_helper.h"
-#include "chrome/browser/ui/webui/web_app_internals/web_app_internals.mojom-forward.h"
 #include "chrome/browser/ui/webui/web_app_internals/web_app_internals.mojom.h"
 #include "chrome/browser/web_applications/isolated_web_apps/commands/install_isolated_web_app_command.h"
 #include "chrome/browser/web_applications/isolated_web_apps/commands/isolated_web_app_install_command_helper.h"
-#include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_downloader.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_features.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_installation_manager.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_update_discovery_task.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_update_manager.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_url_info.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolation_data.h"
-#include "chrome/browser/web_applications/isolated_web_apps/key_distribution/iwa_key_distribution_info_provider.h"
 #include "chrome/browser/web_applications/isolated_web_apps/update_manifest/update_manifest.h"
 #include "chrome/browser/web_applications/isolated_web_apps/update_manifest/update_manifest_fetcher.h"
 #include "chrome/browser/web_applications/locks/app_lock.h"
@@ -31,9 +29,13 @@
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_registry_update.h"
+#include "chrome/browser/web_applications/web_app_sync_bridge.h"
+#include "components/webapps/isolated_web_apps/iwa_key_distribution_info_provider.h"
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 namespace web_app {
 
@@ -53,24 +55,6 @@ constexpr auto kUpdateManifestFetchAnnotation =
         "version."
       trigger:
         "User clicks on the discover button in chrome://web-app-internals."
-    }
-    policy {
-      setting: "This feature cannot be disabled in settings."
-      policy_exception_justification: "Not implemented."
-    })");
-
-constexpr auto kDownloadWebBundleAnnotation =
-    net::DefinePartialNetworkTrafficAnnotation(
-        "iwa_web_app_internals_web_bundle",
-        "iwa_bundle_downloader",
-        R"(
-    semantics {
-      sender: "Web App Internals page"
-      description:
-        "Downloads a Signed Web Bundle of an Isolated Web App which contains "
-        "code and other resources of this app."
-      trigger:
-        "User accepts the installation dialog in chrome://web-app-internals."
     }
     policy {
       setting: "This feature cannot be disabled in settings."
@@ -185,10 +169,22 @@ class IwaInternalsHandler::IwaManifestInstallUpdateHandler
   void OnUpdateDiscoveryTaskCompleted(
       const webapps::AppId& app_id,
       IsolatedWebAppUpdateDiscoveryTask::CompletionStatus status) override {
-    if (status.has_value() && *status ==
-                                  IsolatedWebAppUpdateDiscoveryTask::Success::
-                                      kUpdateFoundAndSavedInDatabase) {
-      return;
+    if (status.has_value()) {
+      switch (*status) {
+        case IsolatedWebAppUpdateDiscoveryTask::Success::
+            kUpdateFoundAndSavedInDatabase:
+        case IsolatedWebAppUpdateDiscoveryTask::Success::
+            kPinnedVersionUpdateFoundAndSavedInDatabase:
+        case IsolatedWebAppUpdateDiscoveryTask::Success::
+            kDowngradeVersionFoundAndSavedInDatabase:
+          // An update has been found and is now pending. Return and wait for
+          // OnUpdateApplyTaskCompleted to be called.
+          return;
+        case IsolatedWebAppUpdateDiscoveryTask::Success::kNoUpdateFound:
+        case IsolatedWebAppUpdateDiscoveryTask::Success::kUpdateAlreadyPending:
+          // No update will be applied, so we can proceed to call the callback.
+          break;
+      }
     }
 
     ASSIGN_OR_RETURN(auto callback, ConsumeUpdateRequest(app_id), [](auto) {});
@@ -212,24 +208,25 @@ class IwaInternalsHandler::IwaManifestInstallUpdateHandler
         const WebApp& iwa,
         GetIsolatedWebAppById(provider_->registrar_unsafe(), app_id),
         [&](const std::string& error) { std::move(callback).Run(error); });
-
-    std::move(callback).Run(
-        status.has_value()
-            ? base::StringPrintf("Update to v%s successful (refresh the page "
-                                 "to reflect the update).",
-                                 iwa.isolation_data()->version().GetString())
-            : "Update failed: " + status.error().message);
+    if (status.has_value()) {
+      std::move(callback).Run(
+          base::StringPrintf("Update to v%s successful (refresh the page "
+                             "to reflect the update).",
+                             iwa.isolation_data()->version().GetString()));
+    } else {
+      std::move(callback).Run("Update failed: " + status.error().message);
+    }
   }
 
  private:
   // Retrieves the pending request for `app_id` and erases the entry from the
   // requests map. If there's no matching entry for `app_id`, returns an
   // unexpected.
-  base::expected<Handler::UpdateDevProxyIsolatedWebAppCallback, absl::monostate>
+  base::expected<Handler::UpdateDevProxyIsolatedWebAppCallback, std::monostate>
   ConsumeUpdateRequest(const webapps::AppId& app_id) {
     auto itr = update_requests_.find(app_id);
     if (itr == update_requests_.end()) {
-      return base::unexpected(absl::monostate());
+      return base::unexpected(std::monostate());
     }
 
     auto callback = std::move(itr->second);
@@ -324,14 +321,34 @@ void IwaInternalsHandler::InstallIsolatedWebAppFromBundleUrl(
     ::mojom::InstallFromBundleUrlParamsPtr params,
     Handler::InstallIsolatedWebAppFromBundleUrlCallback callback) {
   if (!WebAppProvider::GetForWebApps(profile())) {
-    std::move(callback).Run(::mojom::InstallIsolatedWebAppResult::NewError(
-        "WebAppProvider not supported for current profile."));
+    SendError(std::move(callback),
+              "WebAppProvider not supported for current profile.");
     return;
   }
-  ScopedTempWebBundleFile::Create(
-      base::BindOnce(&IwaInternalsHandler::DownloadWebBundleToFile,
-                     weak_ptr_factory_.GetWeakPtr(), params->web_bundle_url,
-                     std::move(params->update_info), std::move(callback)));
+  if (!params->update_info) {
+    SendError(std::move(callback),
+              "Update info is required for this operation.");
+    return;
+  }
+  if (!params->update_info->update_manifest_url.is_valid()) {
+    SendError(std::move(callback), "Update manifest URL is not a valid GURL.");
+    return;
+  }
+  if (params->update_info->update_channel.empty()) {
+    SendError(std::move(callback),
+              "Update channel is required for this operation.");
+    return;
+  }
+
+  WebAppProvider::GetForWebApps(profile())
+      ->isolated_web_app_installation_manager()
+      .DownloadAndInstallIsolatedWebAppFromDevModeBundle(
+          params->web_bundle_url,
+          IsolatedWebAppInstallationManager::InstallSurface::kDevUi,
+          base::BindOnce(&IwaInternalsHandler::
+                             OnInstalledIsolatedWebAppInDevModeFromWebBundle,
+                         weak_ptr_factory_.GetWeakPtr(),
+                         std::move(params->update_info), std::move(callback)));
 }
 
 void IwaInternalsHandler::SelectFileAndInstallIsolatedWebAppFromDevBundle(
@@ -448,7 +465,7 @@ void IwaInternalsHandler::GetIsolatedWebAppDevModeAppInfo(
       continue;
     }
 
-    base::expected<IwaSourceDevMode, absl::monostate> source =
+    base::expected<IwaSourceDevMode, std::monostate> source =
         IwaSourceDevMode::FromStorageLocation(profile()->GetPath(),
                                               app.isolation_data()->location());
     if (!source.has_value()) {
@@ -461,8 +478,8 @@ void IwaInternalsHandler::GetIsolatedWebAppDevModeAppInfo(
       pinned_version = pinned_versions_[app.app_id()].GetString();
     }
     bool allow_downgrades = app_ids_allowing_downgrades_.contains(app.app_id());
-    absl::visit(
-        base::Overloaded{
+    std::visit(
+        absl::Overload{
             [&](const IwaSourceBundleDevMode& source) {
               dev_mode_apps.emplace_back(::mojom::IwaDevModeAppInfo::New(
                   app.app_id(), app.untranslated_name(),
@@ -553,7 +570,7 @@ void IwaInternalsHandler::ApplyDevModeUpdate(
 void IwaInternalsHandler::RotateKey(
     const std::string& web_bundle_id,
     const std::optional<std::vector<uint8_t>>& public_key) {
-  IwaKeyDistributionInfoProvider::GetInstance()->RotateKeyForDevMode(
+  IwaKeyDistributionInfoProvider::GetInstance().RotateKeyForDevMode(
       base::PassKey<IwaInternalsHandler>(), web_bundle_id, public_key);
 }
 
@@ -621,7 +638,8 @@ void IwaInternalsHandler::SetPinnedVersionForIsolatedWebApp(
     return;
   }
 
-  RETURN_IF_ERROR(GetIsolatedWebAppById(provider->registrar_unsafe(), app_id), [&](auto) { std::move(callback).Run(/*success=*/false); });
+  RETURN_IF_ERROR(GetIsolatedWebAppById(provider->registrar_unsafe(), app_id),
+                  [&](auto) { std::move(callback).Run(/*success=*/false); });
 
   base::Version version = base::Version(pinned_version);
   if (!version.IsValid()) {
@@ -642,8 +660,8 @@ void IwaInternalsHandler::SetAllowDowngradesForIsolatedWebApp(
     bool allow_downgrades,
     const webapps::AppId& app_id) {
   auto* provider = WebAppProvider::GetForWebApps(profile());
-  if (!provider || provider->registrar_unsafe().GetInstallState(app_id)
-      != proto::INSTALLED_WITH_OS_INTEGRATION) {
+  if (!provider || provider->registrar_unsafe().GetInstallState(app_id) !=
+                       proto::INSTALLED_WITH_OS_INTEGRATION) {
     return;
   }
 
@@ -654,59 +672,6 @@ void IwaInternalsHandler::SetAllowDowngradesForIsolatedWebApp(
     return;
   }
   app_ids_allowing_downgrades_.insert(app_id);
-}
-
-void IwaInternalsHandler::DownloadWebBundleToFile(
-    const GURL& web_bundle_url,
-    ::mojom::UpdateInfoPtr update_info,
-    Handler::InstallIsolatedWebAppFromBundleUrlCallback callback,
-    ScopedTempWebBundleFile file) {
-  if (!file) {
-    std::move(callback).Run(::mojom::InstallIsolatedWebAppResult::NewError(
-        "Couldn't create file."));
-    return;
-  }
-  auto path = file.path();
-
-  auto downloader = std::make_unique<IsolatedWebAppDownloader>(
-      profile()->GetURLLoaderFactory());
-  auto* downloader_ptr = downloader.get();
-  base::OnceClosure downloader_keep_alive =
-      base::DoNothingWithBoundArgs(std::move(downloader));
-
-  downloader_ptr->DownloadSignedWebBundle(
-      web_bundle_url, std::move(path), kDownloadWebBundleAnnotation,
-      base::BindOnce(&IwaInternalsHandler::OnWebBundleDownloaded,
-                     weak_ptr_factory_.GetWeakPtr(), std::move(update_info),
-                     std::move(callback), std::move(file))
-          .Then(std::move(downloader_keep_alive)));
-}
-
-void IwaInternalsHandler::OnWebBundleDownloaded(
-    ::mojom::UpdateInfoPtr update_info,
-    Handler::InstallIsolatedWebAppFromBundleUrlCallback callback,
-    ScopedTempWebBundleFile bundle,
-    int32_t result) {
-  if (result != net::OK) {
-    std::move(callback).Run(::mojom::InstallIsolatedWebAppResult::NewError(
-        base::StrCat({"Network error while downloading bundle file: ",
-                      base::ToString(result)})));
-    return;
-  }
-
-  const base::ScopedTempFile* file = bundle.file();
-  base::OnceClosure bundle_keep_alive =
-      base::DoNothingWithBoundArgs(std::move(bundle));
-
-  WebAppProvider::GetForWebApps(profile())
-      ->isolated_web_app_installation_manager()
-      .InstallIsolatedWebAppFromDevModeBundle(
-          file, IsolatedWebAppInstallationManager::InstallSurface::kDevUi,
-          base::BindOnce(
-              &IwaInternalsHandler::
-                  OnInstalledIsolatedWebAppInDevModeFromWebBundle,
-              weak_ptr_factory_.GetWeakPtr(), std::move(update_info),
-              std::move(callback).Then(std::move(bundle_keep_alive))));
 }
 
 void IwaInternalsHandler::OnInstalledIsolatedWebAppInDevModeFromWebBundle(
@@ -745,6 +710,12 @@ void IwaInternalsHandler::OnInstalledIsolatedWebAppInDevModeFromWebBundle(
                       "channel.");
                 }
 
+                GURL update_manifest_url = update_info->update_manifest_url;
+                if (!update_manifest_url.is_valid()) {
+                  return ::mojom::InstallIsolatedWebAppResult::NewError(
+                      "Something went wrong while setting the update "
+                      "manifest url.");
+                }
                 web_app->SetIsolationData(
                     web_app::IsolationData::Builder(*web_app->isolation_data())
                         .SetUpdateManifestUrl(update_info->update_manifest_url)

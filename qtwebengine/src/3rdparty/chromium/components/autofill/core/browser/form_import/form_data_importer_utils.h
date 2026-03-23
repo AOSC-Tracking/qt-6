@@ -15,8 +15,8 @@
 #include "base/time/time.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_manager/addresses/address_data_manager.h"
-#include "components/autofill/core/browser/data_model/autofill_profile.h"
-#include "components/autofill/core/browser/data_model/autofill_profile_comparator.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile_comparator.h"
 #include "components/autofill/core/browser/form_import/addresses/autofill_profile_import_process.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/common/autofill_clock.h"
@@ -209,7 +209,7 @@ class FormAssociator {
   // any. In particular, the two most recent address and the most recent
   // submitted credit card form signatures from the same origin are returned.
   // One of them is the `form_signature` itself.
-  std::optional<FormStructure::FormAssociations> GetFormAssociations(
+  FormStructure::FormAssociations GetFormAssociations(
       FormSignature form_signature) const;
 
   const std::optional<url::Origin>& origin() const;

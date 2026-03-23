@@ -33,7 +33,7 @@ namespace subtle {
 
 // Helpers shared with unit-tests.
 
-// Appends a dictionary {'key': 'value'} to |list|.
+// Appends a dictionary {'key': 'value'} to `list`.
 void AppendKeyValuePair(const char* key,
                         base::Value value,
                         base::Value::List& list);
@@ -61,7 +61,7 @@ class UploadDataPresenter {
   virtual std::optional<base::Value> TakeResult() = 0;
 
  protected:
-  UploadDataPresenter() {}
+  UploadDataPresenter() = default;
 };
 
 // This class passes all the bytes from bytes elements as a BinaryValue for each

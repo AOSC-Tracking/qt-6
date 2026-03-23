@@ -16,8 +16,9 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/version.h"
+#include "base/win/windows_version.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
+#include "components/cdm/common/buildflags.h"
 #include "content/public/common/cdm_info.h"
 #include "media/base/cdm_capability.h"
 #include "media/base/media_switches.h"
@@ -45,6 +46,12 @@
 #include "components/cdm/common/android_cdm_registration.h"
 #endif  // BUILDFLAG(IS_ANDROID)
 
+#if BUILDFLAG(ENABLE_PLAYREADY)
+#include "base/file_version_info_win.h"
+#include "components/cdm/common/playready_cdm_common.h"
+#include "media/base/win/mf_feature_checks.h"
+#endif  // BUILDFLAG(ENABLE_PLAYREADY)
+
 namespace {
 
 using Robustness = content::CdmInfo::Robustness;
@@ -56,13 +63,12 @@ using Robustness = content::CdmInfo::Robustness;
 // Create a CdmInfo for a Widevine CDM, using |version|, |cdm_library_path|, and
 // |capability|.
 std::unique_ptr<content::CdmInfo> CreateWidevineCdmInfo(
-    const base::Version& version,
     const base::FilePath& cdm_library_path,
     media::CdmCapability capability) {
   return std::make_unique<content::CdmInfo>(
       kWidevineKeySystem, Robustness::kSoftwareSecure, std::move(capability),
       /*supports_sub_key_systems=*/false, kWidevineCdmDisplayName,
-      kWidevineCdmType, version, cdm_library_path);
+      kWidevineCdmType, cdm_library_path);
 }
 
 // On desktop Linux and ChromeOS, given |cdm_base_path| that points to a folder
@@ -82,15 +88,13 @@ std::unique_ptr<content::CdmInfo> CreateCdmInfoFromWidevineDirectory(
 
   // Manifest should be at the top level.
   auto manifest_path = cdm_base_path.Append(FILE_PATH_LITERAL("manifest.json"));
-  base::Version version;
   media::CdmCapability capability;
-  if (!ParseCdmManifestFromPath(manifest_path, &version, &capability)) {
+  if (!ParseCdmManifestFromPath(manifest_path, &capability)) {
     DLOG(ERROR) << __func__ << " no manifest: " << manifest_path;
     return nullptr;
   }
 
-  return CreateWidevineCdmInfo(version, cdm_library_path,
-                               std::move(capability));
+  return CreateWidevineCdmInfo(cdm_library_path, std::move(capability));
 }
 #endif  // (BUILDFLAG(BUNDLE_WIDEVINE_CDM) ||
         // BUILDFLAG(ENABLE_WIDEVINE_CDM_COMPONENT)) && (BUILDFLAG(IS_LINUX) ||
@@ -161,7 +165,7 @@ void AddSoftwareSecureWidevine(std::vector<content::CdmInfo>* cdms) {
   cdms->emplace_back(
       kWidevineKeySystem, Robustness::kSoftwareSecure, std::nullopt,
       /*supports_sub_key_systems=*/false, kWidevineCdmDisplayName,
-      kWidevineCdmType, base::Version(), base::FilePath());
+      kWidevineCdmType, base::FilePath());
 
 #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   // The Widevine CDM on Linux/ChromeOS needs to be registered (and loaded)
@@ -204,18 +208,20 @@ void AddSoftwareSecureWidevine(std::vector<content::CdmInfo>* cdms) {
 
   if (bundled_widevine && !hinted_widevine) {
     // Only a bundled version is available, so use it.
-    VLOG(1) << "Registering bundled Widevine " << bundled_widevine->version;
+    VLOG(1) << "Registering bundled Widevine "
+            << bundled_widevine->capability->version;
     cdms->push_back(*bundled_widevine);
   } else if (!bundled_widevine && hinted_widevine) {
     // Only a component updated version is available, so use it.
-    VLOG(1) << "Registering hinted Widevine " << hinted_widevine->version;
+    VLOG(1) << "Registering hinted Widevine "
+            << hinted_widevine->capability->version;
     cdms->push_back(*hinted_widevine);
   } else if (!bundled_widevine && !hinted_widevine) {
     VLOG(1) << "Widevine enabled but no library found";
   } else {
     // Both a bundled CDM and a hinted CDM found, so choose between them.
-    base::Version bundled_version = bundled_widevine->version;
-    base::Version hinted_version = hinted_widevine->version;
+    base::Version bundled_version = bundled_widevine->capability->version;
+    base::Version hinted_version = hinted_widevine->capability->version;
     DVLOG(1) << __func__ << " bundled: " << bundled_version;
     DVLOG(1) << __func__ << " hinted: " << hinted_version;
 
@@ -249,7 +255,7 @@ void AddHardwareSecureWidevine(std::vector<content::CdmInfo>* cdms) {
   cdms->emplace_back(
       kWidevineKeySystem, Robustness::kHardwareSecure, std::nullopt,
       /*supports_sub_key_systems=*/false, kWidevineCdmDisplayName,
-      kWidevineCdmType, base::Version(), base::FilePath());
+      kWidevineCdmType, base::FilePath());
 
 #elif BUILDFLAG(USE_CHROMEOS_PROTECTED_MEDIA)
   media::CdmCapability capability;
@@ -312,7 +318,8 @@ void AddExternalClearKey(std::vector<content::CdmInfo>* cdms) {
   media::CdmCapability capability(
       {}, {}, {media::EncryptionScheme::kCenc, media::EncryptionScheme::kCbcs},
       {media::CdmSessionType::kTemporary,
-       media::CdmSessionType::kPersistentLicense});
+       media::CdmSessionType::kPersistentLicense},
+      base::Version("0.1.0.0"));
 
   // Register media::kExternalClearKeyDifferentCdmTypeTestKeySystem first
   // separately. Otherwise, it'll be treated as a sub-key-system of normal
@@ -322,18 +329,55 @@ void AddExternalClearKey(std::vector<content::CdmInfo>* cdms) {
       media::kExternalClearKeyDifferentCdmTypeTestKeySystem,
       Robustness::kSoftwareSecure, capability,
       /*supports_sub_key_systems=*/false, media::kClearKeyCdmDisplayName,
-      media::kClearKeyCdmDifferentCdmType, base::Version("0.1.0.0"),
-      clear_key_cdm_path));
+      media::kClearKeyCdmDifferentCdmType, clear_key_cdm_path));
 
   cdms->push_back(content::CdmInfo(
       media::kExternalClearKeyKeySystem, Robustness::kSoftwareSecure,
       capability,
       /*supports_sub_key_systems=*/true, media::kClearKeyCdmDisplayName,
-      media::kClearKeyCdmType, base::Version("0.1.0.0"), clear_key_cdm_path));
+      media::kClearKeyCdmType, clear_key_cdm_path));
 }
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
 #if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_PLAYREADY)
+void AddPlayReady(std::vector<content::CdmInfo>* cdms) {
+  DVLOG(1) << __func__;
+  // TODO(crbug.com/423799624): Need to clean up this check logic when
+  // deprecating Widevine hardware secure support on Windows.
+  if (!base::FeatureList::IsEnabled(media::kHardwareSecureDecryption) ||
+      (base::win::GetVersion() < base::win::Version::WIN11) ||
+      !media::SupportMediaFoundationEncryptedPlayback()) {
+    DVLOG(1) << __func__ << ": Not adding PlayReady CdmInfo";
+    return;
+  }
+
+  std::unique_ptr<FileVersionInfoWin> playready_version_info =
+      FileVersionInfoWin::CreateFileVersionInfoWin(base::FilePath(
+          FILE_PATH_LITERAL("Windows.Media.Protection.PlayReady.dll")));
+  if (!playready_version_info) {
+    DVLOG(1) << __func__ << ": Failed to get PlayReady version info. "
+             << "Not adding PlayReady CdmInfo";
+    return;
+  }
+
+  DVLOG(1) << __func__ << ":"
+           << " CdmType=" << kPlayReadyCdmType.ToString()
+           << " Version=" << playready_version_info->GetFileVersion();
+
+  // Add PlayReady hardware secure CdmInfo - its capability will be
+  // filled by `CdmRegistryImpl::LazyInitializeHardwareSecureCapability()`.
+  // Path is empty since the CDM is not in a separate library.
+  cdms->emplace_back(kPlayReadyKeySystemRecommendationDefault,
+                     content::CdmInfo::Robustness::kHardwareSecure,
+                     /*capability=*/std::nullopt,
+                     /*supports_sub_key_systems=*/true,
+                     kPlayReadyCdmDisplayName, kPlayReadyCdmType,
+                     playready_version_info->GetFileVersion(),
+                     /*path=*/base::FilePath());
+}
+#endif  // BUILDFLAG(ENABLE_PLAYREADY)
+
 void AddMediaFoundationClearKey(std::vector<content::CdmInfo>* cdms) {
   if (!base::FeatureList::IsEnabled(media::kExternalClearKeyForTesting)) {
     return;
@@ -349,15 +393,14 @@ void AddMediaFoundationClearKey(std::vector<content::CdmInfo>* cdms) {
   // Supported codecs are hard-coded in ExternalClearKeyKeySystemInfo.
   media::CdmCapability capability(
       {}, {}, {media::EncryptionScheme::kCenc, media::EncryptionScheme::kCbcs},
-      {media::CdmSessionType::kTemporary});
+      {media::CdmSessionType::kTemporary}, base::Version("0.1.0.0"));
 
-  cdms->push_back(
-      content::CdmInfo(media::kMediaFoundationClearKeyKeySystem,
-                       Robustness::kHardwareSecure, capability,
-                       /*supports_sub_key_systems=*/false,
-                       media::kMediaFoundationClearKeyCdmDisplayName,
-                       media::kMediaFoundationClearKeyCdmType,
-                       base::Version("0.1.0.0"), clear_key_cdm_path));
+  cdms->push_back(content::CdmInfo(
+      media::kMediaFoundationClearKeyKeySystem, Robustness::kHardwareSecure,
+      capability,
+      /*supports_sub_key_systems=*/false,
+      media::kMediaFoundationClearKeyCdmDisplayName,
+      media::kMediaFoundationClearKeyCdmType, clear_key_cdm_path));
 }
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -377,6 +420,9 @@ void RegisterCdmInfo(std::vector<content::CdmInfo>* cdms) {
 #endif
 
 #if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_PLAYREADY)
+  AddPlayReady(cdms);
+#endif
   AddMediaFoundationClearKey(cdms);
 #endif
 

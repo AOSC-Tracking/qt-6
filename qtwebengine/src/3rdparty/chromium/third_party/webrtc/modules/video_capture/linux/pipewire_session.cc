@@ -10,20 +10,37 @@
 
 #include "modules/video_capture/linux/pipewire_session.h"
 
+#include <pipewire/pipewire.h>
 #include <spa/monitor/device.h>
 #include <spa/param/format-utils.h>
 #include <spa/param/format.h>
+#include <spa/param/param.h>
 #include <spa/param/video/raw.h>
-#include <spa/pod/parser.h>
+#include <spa/pod/iter.h>
+#include <spa/pod/pod.h>
+#include <spa/utils/defs.h>
+#include <spa/utils/dict.h>
+#include <spa/utils/hook.h>
+#include <spa/utils/type.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <memory>
+#include <optional>
 
+#include "absl/strings/string_view.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
-#include "modules/video_capture/device_info_impl.h"
+#include "modules/portal/pipewire_utils.h"
+#include "modules/portal/portal_request_response.h"
+#include "modules/video_capture/linux/camera_portal.h"
+#include "modules/video_capture/video_capture_defines.h"
+#include "modules/video_capture/video_capture_options.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/sanitizer.h"
-#include "rtc_base/string_encode.h"
 #include "rtc_base/string_to_number.h"
+#include "rtc_base/synchronization/mutex.h"
 
 namespace webrtc {
 namespace videocapturemodule {
@@ -57,8 +74,8 @@ VideoType PipeWireRawFormatToVideoType(uint32_t id) {
 
 void PipeWireNode::PipeWireNodeDeleter::operator()(
     PipeWireNode* node) const noexcept {
-  pw_proxy_destroy(node->proxy_);
   spa_hook_remove(&node->node_listener_);
+  pw_proxy_destroy(node->proxy_);
 }
 
 // static
@@ -103,8 +120,8 @@ void PipeWireNode::OnNodeInfo(void* data, const pw_node_info* info) {
 
     vid_str = spa_dict_lookup(info->props, SPA_KEY_DEVICE_VENDOR_ID);
     pid_str = spa_dict_lookup(info->props, SPA_KEY_DEVICE_PRODUCT_ID);
-    vid = vid_str ? rtc::StringToNumber<int>(vid_str) : std::nullopt;
-    pid = pid_str ? rtc::StringToNumber<int>(pid_str) : std::nullopt;
+    vid = vid_str ? webrtc::StringToNumber<int>(vid_str) : std::nullopt;
+    pid = pid_str ? webrtc::StringToNumber<int>(pid_str) : std::nullopt;
 
     if (vid && pid) {
       char model_str[10];

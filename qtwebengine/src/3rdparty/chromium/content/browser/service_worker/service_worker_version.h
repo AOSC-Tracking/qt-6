@@ -22,6 +22,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/safety_checks.h"
 #include "base/observer_list.h"
 #include "base/time/clock.h"
 #include "base/time/tick_clock.h"
@@ -44,9 +45,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/service_worker_client_info.h"
-#include "ipc/ipc_message.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
-#include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -134,6 +133,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
       public blink::mojom::AssociatedInterfaceProvider,
       public base::RefCounted<ServiceWorkerVersion>,
       public EmbeddedWorkerInstance::Listener {
+  // TODO(crbug.com/40864997): Remove this macro once we identified the cause of
+  // the bug.
+  ADVANCED_MEMORY_SAFETY_CHECKS();
+
  public:
   using StatusCallback =
       base::OnceCallback<void(blink::ServiceWorkerStatusCode)>;
@@ -180,6 +183,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   class Observer {
    public:
+    virtual void OnStartWorkerMessageSent(ServiceWorkerVersion* version) {}
     virtual void OnRunningStateChanged(ServiceWorkerVersion* version) {}
     virtual void OnVersionStateChanged(ServiceWorkerVersion* version) {}
     virtual void OnDevToolsRoutingIdChanged(ServiceWorkerVersion* version) {}
@@ -673,10 +677,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
     return receiver_;
   }
 
-  void set_policy_container_host(
-      scoped_refptr<PolicyContainerHost> policy_container_host) {
-    policy_container_host_ = std::move(policy_container_host);
-  }
+  void SetPolicyContainerHost(
+      scoped_refptr<PolicyContainerHost> policy_container_host);
 
   // Initializes the global scope of the ServiceWorker on the renderer side.
   void InitializeGlobalScope();
@@ -727,6 +729,20 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // Describes whether the client has a controller and if it has a fetch event
   // handler.
   blink::mojom::ControllerServiceWorkerMode GetControllerMode() const;
+
+  void ResetResponseHeadForSyntheticResponse() {
+    synthetic_response_head_.reset();
+  }
+
+  void SetResponseHeadForSyntheticResponse(
+      network::mojom::URLResponseHeadPtr response_head) {
+    synthetic_response_head_ = std::move(response_head);
+  }
+
+  const network::mojom::URLResponseHeadPtr&
+  GetResponseHeadForSyntheticResponse() const {
+    return synthetic_response_head_;
+  }
 
   // Timeout for a request to be handled.
   static constexpr base::TimeDelta kRequestTimeout = base::Minutes(5);
@@ -849,6 +865,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // Keeps track of the status of each request, which starts at StartRequest()
   // and ends at FinishRequest().
   struct InflightRequest {
+    // TODO(crbug.com/40864997): Remove this macro once we identified the cause
+    // of the bug.
+    ADVANCED_MEMORY_SAFETY_CHECKS();
+
+   public:
     InflightRequest(StatusCallback error_callback,
                     base::Time time,
                     const base::TimeTicks& time_ticks,
@@ -883,6 +904,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void OnScriptLoaded() override;
   void OnProcessAllocated() override;
   void OnStarting() override;
+  void OnStartWorkerMessageSent() override;
   void OnStarted(blink::mojom::ServiceWorkerStartStatus status,
                  FetchHandlerType new_fetch_handler_type,
                  bool new_has_hid_event_handlers,
@@ -1213,10 +1235,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
   bool is_update_scheduled_ = false;
   bool in_dtor_ = false;
 
-  // If true, warms up service worker after service worker is stopped.
-  // (https://crbug.com/1431792).
-  bool will_warm_up_on_stopped_ = false;
-
   // Populated via network::mojom::URLResponseHead of the main script.
   std::unique_ptr<MainScriptResponse> main_script_response_;
 
@@ -1298,6 +1316,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
   std::unique_ptr<blink::AssociatedInterfaceRegistry> associated_registry_;
   std::unique_ptr<blink::AssociatedInterfaceProvider>
       associated_interface_provider_;
+
+  // (crbug.com/352578800): Keep the response header which is provided by the
+  // browser initiated network response for SyntheticResponse. In subsequent
+  // navigations, this will be used as the locally returned response header.
+  network::mojom::URLResponseHeadPtr synthetic_response_head_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_{this};
 };

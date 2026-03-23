@@ -5,6 +5,7 @@
 #include "ui/message_center/views/message_view.h"
 
 #include "base/observer_list.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "ui/accessibility/ax_enums.mojom.h"
@@ -411,8 +412,6 @@ void MessageView::OnSlideOut() {
   }
   message_center->RemoveNotification(notification_id_copy, /*by_user=*/true);
 }
-
-void MessageView::OnWillChangeFocus(views::View* before, views::View* now) {}
 
 void MessageView::OnDidChangeFocus(views::View* before, views::View* now) {
   if (Contains(before) || Contains(now) ||

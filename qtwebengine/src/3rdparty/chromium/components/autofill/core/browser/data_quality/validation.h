@@ -29,7 +29,7 @@ enum class CvcType {
 };
 
 // Returns true if `year` and `month` describe a date later than `now`.
-// `year` must have 4 digits.
+// `year` can be 2 digits or 4 digits.
 bool IsValidCreditCardExpirationDate(int year, int month, base::Time now);
 
 // Returns true if `year` describes a year later than or equal to `now`'s year.
@@ -52,7 +52,7 @@ bool IsValidState(std::u16string_view text);
 // Returns whether the number contained in `text` is possible phone number,
 // either in international format, or in the national format associated with
 // `country_code`. Callers should cache the result as the parsing is expensive.
-bool IsPossiblePhoneNumber(const std::u16string& text,
+bool IsPossiblePhoneNumber(std::u16string_view text,
                            const std::string& country_code);
 
 // Returns true if `text` looks like a valid zip code.
@@ -79,6 +79,10 @@ bool IsPlausibleCreditCardCVCNumber(std::u16string_view value);
 
 // Returns true if the value is a 4 digit year in this century.
 bool IsPlausible4DigitExpirationYear(std::u16string_view value);
+
+// Returns true if `name` is a plausible name on card. It must not contain
+// digits or invalid characters and its length must not exceed 26 characters.
+bool IsValidNameOnCard(std::u16string_view name);
 
 }  // namespace autofill
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QTREEVIEW_P_H
 #define QTREEVIEW_P_H
@@ -233,7 +234,9 @@ public:
         return (viewIndex(index) + (header ? 1 : 0)) * model->columnCount()+index.column();
     }
 
-    int accessibleTree2Index(const QModelIndex &index) const;
+#if QT_CONFIG(accessibility)
+    int accessibleChildIndex(const QModelIndex &index) const override;
+#endif
 
     void updateIndentationFromStyle();
 

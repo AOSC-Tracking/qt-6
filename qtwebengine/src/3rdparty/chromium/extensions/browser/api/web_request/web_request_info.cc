@@ -14,6 +14,7 @@
 #include "base/check_op.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/notimplemented.h"
 #include "base/types/zip.h"
 #include "base/values.h"
 #include "components/guest_view/buildflags/buildflags.h"
@@ -220,6 +221,8 @@ void WebRequestInfoInitParams::InitializeWebViewAndFrameData(
       web_view_instance_id = navigation_ui_data->web_view_instance_id();
       web_view_rules_registry_id =
           navigation_ui_data->web_view_rules_registry_id();
+      web_view_embedder_process_id =
+          navigation_ui_data->web_view_embedder_process_id();
     }
     frame_data = navigation_ui_data->frame_data();
     parent_routing_id = navigation_ui_data->parent_routing_id();

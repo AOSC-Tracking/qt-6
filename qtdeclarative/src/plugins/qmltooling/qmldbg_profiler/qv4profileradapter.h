@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QV4PROFILERADAPTER_P_H
 #define QV4PROFILERADAPTER_P_H
@@ -35,8 +36,8 @@ public:
     virtual qint64 sendMessages(qint64 until, QList<QByteArray> &messages) override;
 
     void receiveData(const QV4::Profiling::FunctionLocationHash &,
-                     const QVector<QV4::Profiling::FunctionCallProperties> &,
-                     const QVector<QV4::Profiling::MemoryAllocationProperties> &);
+                     const QList<QV4::Profiling::FunctionCallProperties> &,
+                     const QList<QV4::Profiling::MemoryAllocationProperties> &);
 
 Q_SIGNALS:
     void v4ProfilingEnabled(quint64 v4Features);
@@ -44,8 +45,8 @@ Q_SIGNALS:
 
 private:
     QV4::Profiling::FunctionLocationHash m_functionLocations;
-    QVector<QV4::Profiling::FunctionCallProperties> m_functionCallData;
-    QVector<QV4::Profiling::MemoryAllocationProperties> m_memoryData;
+    QList<QV4::Profiling::FunctionCallProperties> m_functionCallData;
+    QList<QV4::Profiling::MemoryAllocationProperties> m_memoryData;
     int m_functionCallPos;
     int m_memoryPos;
     QStack<qint64> m_stack;

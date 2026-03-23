@@ -12,6 +12,10 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_render_state_init.h"
 #include "third_party/blink/renderer/modules/xr/xr_webgl_layer.h"
 
+#ifndef M_PI
+#define M_PI           3.14159265358979323846  /* pi */
+#endif
+
 namespace blink {
 
 namespace {
@@ -41,9 +45,9 @@ void XRRenderState::Update(const XRRenderStateInit* init) {
   }
   if (init->hasLayers()) {
     base_layer_ = nullptr;
-    layers_ = init->layers()
-                  ? MakeGarbageCollected<FrozenArray<XRLayer>>(*init->layers())
-                  : MakeGarbageCollected<FrozenArray<XRLayer>>();
+    layers_ = init->layers() ? MakeGarbageCollected<FrozenArray<XRLayer>>(
+                                   HeapVector<Member<XRLayer>>(*init->layers()))
+                             : MakeGarbageCollected<FrozenArray<XRLayer>>();
   }
   if (init->hasInlineVerticalFieldOfView()) {
     double fov = init->inlineVerticalFieldOfView();

@@ -7,6 +7,7 @@
 #include "src/codegen/signature.h"
 #include "src/wasm/function-body-decoder.h"
 #include "src/wasm/leb-helper.h"
+#include "src/wasm/struct-types.h"
 #include "src/wasm/wasm-constants.h"
 #include "src/wasm/wasm-module.h"
 #include "src/zone/zone-containers.h"
@@ -124,7 +125,8 @@ void WriteInitializerExpressionWithoutEnd(ZoneBuffer* buffer,
       break;
     case WasmInitExpr::kRefNullConst:
       buffer->write_u8(kExprRefNull);
-      buffer->write_i32v(HeapType(init.immediate().heap_type).code());
+      if (init.heap_type().encoding_needs_exact()) buffer->write_u8(kExactCode);
+      buffer->write_i32v(init.heap_type().code());
       break;
     case WasmInitExpr::kRefFuncConst:
       buffer->write_u8(kExprRefFunc);
@@ -284,19 +286,24 @@ void WasmFunctionBuilder::EmitWithU32V(WasmOpcode opcode, uint32_t immediate) {
 }
 
 namespace {
+void WriteHeapType(ZoneBuffer* buffer, HeapType type) {
+  if (type.encoding_needs_exact()) buffer->write_u8(kExactCode);
+  buffer->write_i32v(type.code());
+}
 void WriteValueType(ZoneBuffer* buffer, const ValueType& type) {
   buffer->write_u8(type.value_type_code());
   if (type.encoding_needs_shared()) {
     buffer->write_u8(kSharedFlagCode);
   }
   if (type.encoding_needs_heap_type()) {
-    buffer->write_i32v(type.heap_type().code());
-  }
-  if (type.is_rtt()) {
-    buffer->write_u32v(type.ref_index());
+    WriteHeapType(buffer, type.heap_type());
   }
 }
 }  // namespace
+
+void WasmFunctionBuilder::EmitHeapType(HeapType type) {
+  WriteHeapType(&body_, type);
+}
 
 void WasmFunctionBuilder::EmitValueType(ValueType type) {
   WriteValueType(&body_, type);
@@ -368,16 +375,6 @@ void WasmFunctionBuilder::SetAsmFunctionStartPosition(
   DCHECK_EQ(0, asm_offsets_.size());
   asm_func_start_source_position_ = function_position_u32;
   last_asm_source_position_ = function_position_u32;
-}
-
-void WasmFunctionBuilder::SetCompilationHint(
-    WasmCompilationHintStrategy strategy, WasmCompilationHintTier baseline,
-    WasmCompilationHintTier top_tier) {
-  uint8_t hint_byte = static_cast<uint8_t>(strategy) |
-                      static_cast<uint8_t>(baseline) << 2 |
-                      static_cast<uint8_t>(top_tier) << 4;
-  DCHECK_NE(hint_byte, kNoCompilationHint);
-  hint_ = hint_byte;
 }
 
 void WasmFunctionBuilder::DeleteCodeAfter(size_t position) {
@@ -660,6 +657,9 @@ void WasmModuleBuilder::WriteTo(ZoneBuffer* buffer) const {
   buffer->write_u32(kWasmVersion);
 
   // == Emit types =============================================================
+  // Check that the last `StartRecursiveTypeGroup()` was followed by
+  // `EndRecursiveTypeGroup()`.
+  DCHECK_EQ(-1, current_recursive_group_start_);
   if (!types_.empty()) {
     size_t start = EmitSection(kTypeSectionCode, buffer);
     // Every recursion group occupies one type entry.
@@ -695,6 +695,17 @@ void WasmModuleBuilder::WriteTo(ZoneBuffer* buffer) const {
         buffer->write_u8(kWasmSubtypeCode);
         buffer->write_u8(0);
       }
+      if (type.is_shared) {
+        buffer->write_u8(kSharedFlagCode);
+      }
+      if (type.is_descriptor()) {
+        buffer->write_u8(kWasmDescribesCode);
+        buffer->write_u32v(type.describes);
+      }
+      if (type.has_descriptor()) {
+        buffer->write_u8(kWasmDescriptorCode);
+        buffer->write_u32v(type.descriptor);
+      }
       switch (type.kind) {
         case TypeDefinition::kFunction: {
           const FunctionSig* sig = type.function_sig;
@@ -724,6 +735,12 @@ void WasmModuleBuilder::WriteTo(ZoneBuffer* buffer) const {
           buffer->write_u8(kWasmArrayTypeCode);
           WriteValueType(buffer, array_type->element_type());
           buffer->write_u8(array_type->mutability() ? 1 : 0);
+          break;
+        }
+        case TypeDefinition::kCont: {
+          const ContType* cont_type = type.cont_type;
+          buffer->write_u8(kWasmContTypeCode);
+          buffer->write_u32v(cont_type->contfun_typeindex());
           break;
         }
       }
@@ -933,32 +950,6 @@ void WasmModuleBuilder::WriteTo(ZoneBuffer* buffer) const {
     buffer->write_u8(kDataCountSectionCode);
     buffer->write_u32v(1);  // section length
     buffer->write_u32v(static_cast<uint32_t>(data_segments_.size()));
-  }
-
-  // == Emit compilation hints section =========================================
-  bool emit_compilation_hints = false;
-  for (auto* fn : functions_) {
-    if (fn->hint_ != kNoCompilationHint) {
-      emit_compilation_hints = true;
-      break;
-    }
-  }
-  if (emit_compilation_hints) {
-    // Emit the section code.
-    buffer->write_u8(kUnknownSectionCode);
-    // Emit a placeholder for section length.
-    size_t start = buffer->reserve_u32v();
-    // Emit custom section name.
-    buffer->write_string(base::CStrVector("compilationHints"));
-    // Emit hint count.
-    buffer->write_size(functions_.size());
-    // Emit hint bytes.
-    for (auto* fn : functions_) {
-      uint8_t hint_byte =
-          fn->hint_ != kNoCompilationHint ? fn->hint_ : kDefaultCompilationHint;
-      buffer->write_u8(hint_byte);
-    }
-    FixupSection(buffer, start);
   }
 
   // == Emit code ==============================================================

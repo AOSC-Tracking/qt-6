@@ -35,7 +35,7 @@
 #include "./centipede/util.h"
 #include "./common/defs.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 
 // User must inherit from this class and override at least the
 // pure virtual functions.
@@ -69,14 +69,12 @@ class CentipedeCallbacks {
                        const std::vector<ByteArray> &inputs,
                        BatchResult &batch_result) = 0;
 
-  // Takes non-empty `inputs`, discards old contents of `mutants`,
-  // adds at least one and at most `num_mutants` mutated inputs to
-  // `mutants`.
-  virtual void Mutate(const std::vector<MutationInputRef> &inputs,
-                      size_t num_mutants, std::vector<ByteArray> &mutants) {
-    env_.use_legacy_default_mutator
-        ? byte_array_mutator_.MutateMany(inputs, num_mutants, mutants)
-        : fuzztest_mutator_.MutateMany(inputs, num_mutants, mutants);
+  // Takes non-empty `inputs` and returns at most `num_mutants` mutated inputs.
+  virtual std::vector<ByteArray> Mutate(
+      const std::vector<MutationInputRef> &inputs, size_t num_mutants) {
+    return env_.use_legacy_default_mutator
+               ? byte_array_mutator_.MutateMany(inputs, num_mutants)
+               : fuzztest_mutator_.MutateMany(inputs, num_mutants);
   }
 
   // Populates the BinaryInfo using the `symbolizer_path` and `coverage_binary`
@@ -142,17 +140,13 @@ class CentipedeCallbacks {
   // or implement the legacy Structure-Aware Fuzzing interface described here:
   // github.com/google/fuzzing/blob/master/docs/structure-aware-fuzzing.md
   //
-  // Produces at most `mutants.size()` non-empty mutants,
-  // replacing the existing elements of `mutants`,
-  // and shrinking `mutants` if needed.
-  //
-  // Returns true if the custom mutator in the binary is found and
-  // used, false otherwise. Note that mutants.size() may be 0 when
-  // returning true, if the mutator exists but refuses to mutate
-  // (hopefully occasionally).
-  bool MutateViaExternalBinary(std::string_view binary,
-                               const std::vector<MutationInputRef> &inputs,
-                               std::vector<ByteArray> &mutants);
+  // Returns a `MutationResult` instance where `exit_code` indicates whether
+  // the binary was executed successfully, `has_custom_mutator` indicates
+  // whether the binary has a custom mutator, and if it does, `mutants` contains
+  // at most `num_mutants` non-empty mutants.
+  MutationResult MutateViaExternalBinary(
+      std::string_view binary, const std::vector<MutationInputRef> &inputs,
+      size_t num_mutants);
 
   // Loads the dictionary from `dictionary_path`,
   // returns the number of dictionary entries loaded.
@@ -167,6 +161,8 @@ class CentipedeCallbacks {
   // Returns a Command object with matching `binary` from commands_,
   // creates one if needed.
   Command &GetOrCreateCommandForBinary(std::string_view binary);
+  // Runs a batch with the command `binary` and returns the exit code.
+  int RunBatchForBinary(std::string_view binary);
 
   // Prints the execution log from the last executed binary.
   void PrintExecutionLog() const;
@@ -180,13 +176,16 @@ class CentipedeCallbacks {
       std::filesystem::path(temp_dir_).append("log");
   std::string failure_description_path_ =
       std::filesystem::path(temp_dir_).append("failure_description");
+  std::string failure_signature_path_ =
+      std::filesystem::path(temp_dir_).append("failure_signature");
   const std::string shmem_name1_ = ProcessAndThreadUniqueID("/ctpd-shm1-");
   const std::string shmem_name2_ = ProcessAndThreadUniqueID("/ctpd-shm2-");
 
   SharedMemoryBlobSequence inputs_blobseq_;
   SharedMemoryBlobSequence outputs_blobseq_;
 
-  std::vector<Command> commands_;
+  // Need unique_ptr indirection because Command is not movable/copyable.
+  std::vector<std::unique_ptr<Command>> commands_;
 };
 
 // Abstract class for creating/destroying CentipedeCallbacks objects.
@@ -218,13 +217,13 @@ class ScopedCentipedeCallbacks {
                            const Environment &env)
       : factory_(factory), callbacks_(factory_.create(env)) {}
   ~ScopedCentipedeCallbacks() { factory_.destroy(callbacks_); }
-  absl::Nonnull<CentipedeCallbacks *> callbacks() { return callbacks_; }
+  CentipedeCallbacks *absl_nonnull callbacks() { return callbacks_; }
 
  private:
   CentipedeCallbacksFactory &factory_;
   CentipedeCallbacks *callbacks_;
 };
 
-}  // namespace centipede
+}  // namespace fuzztest::internal
 
 #endif  // THIRD_PARTY_CENTIPEDE_CENTIPEDE_CALLBACKS_H_

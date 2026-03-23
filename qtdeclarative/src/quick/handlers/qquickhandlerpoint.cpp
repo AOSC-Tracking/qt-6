@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickhandlerpoint_p.h"
 #include "private/qquickevents_p_p.h"
@@ -99,7 +100,7 @@ void QQuickHandlerPoint::reset(const QPointerEvent *event, const QEventPoint &po
         m_velocity = point.velocity();
 }
 
-void QQuickHandlerPoint::reset(const QVector<QQuickHandlerPoint> &points)
+void QQuickHandlerPoint::reset(const QList<QQuickHandlerPoint> &points)
 {
     if (points.isEmpty()) {
         qWarning("reset: no points");

@@ -32,7 +32,7 @@ jumbo_source_set("latency") {
   deps = [
     "//base",
     "//build:blink_buildflags",
-    "//services/tracing/public/cpp:cpp",
+    "//services/tracing/public/cpp",
     "//ui/gfx",
   ]
 
@@ -40,6 +40,10 @@ jumbo_source_set("latency") {
     ":jank_tracker_for_experiments_buildflags",
     "//services/metrics/public/cpp:metrics_cpp",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 jumbo_source_set("test_support") {

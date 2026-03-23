@@ -2,10 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/branches.star", "branches")
-load("//lib/builders.star", "builders", "cpu", "siso")
-load("//lib/ci.star", "ci")
-load("//lib/consoles.star", "consoles")
+load("@chromium-luci//branches.star", "branches")
+load("@chromium-luci//builders.star", "builders", "cpu")
+load("@chromium-luci//ci.star", "ci")
+load("@chromium-luci//consoles.star", "consoles")
+load("//lib/ci_constants.star", "ci_constants")
+load("//lib/gardener_rotations.star", "gardener_rotations")
+load("//lib/gpu.star", "gpu")
+load("//lib/siso.star", "siso")
 load("//project.star", "settings")
 
 # Bucket-wide defaults
@@ -37,6 +41,7 @@ luci.bucket(
                 # or fix yet.
                 "mdb/chrome-active-sheriffs",
                 "mdb/chrome-gpu",
+                "mdb/clank-engprod",
                 "mdb/bling-engprod",
             ],
             users = [
@@ -78,15 +83,15 @@ luci.bucket(
                 "chromium-led-users",
             ],
             users = [
-                ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
-                ci.gpu.SHADOW_SERVICE_ACCOUNT,
+                ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
+                gpu.ci.SHADOW_SERVICE_ACCOUNT,
             ],
         ),
         luci.binding(
             roles = "role/buildbucket.triggerer",
             users = [
-                ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
-                ci.gpu.SHADOW_SERVICE_ACCOUNT,
+                ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
+                gpu.ci.SHADOW_SERVICE_ACCOUNT,
             ],
         ),
         # TODO(crbug.com/40941662): Remove this binding after shadow bucket
@@ -101,8 +106,8 @@ luci.bucket(
         luci.binding(
             roles = "role/resultdb.invocationCreator",
             users = [
-                ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
-                ci.gpu.SHADOW_SERVICE_ACCOUNT,
+                ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
+                gpu.ci.SHADOW_SERVICE_ACCOUNT,
             ],
         ),
     ],
@@ -149,6 +154,17 @@ luci.gitiles_poller(
     ("mirrors", "{} CQ Mirrors Console".format(settings.project_title)),
 )]
 
+def register_gardener_rotation_consoles():
+    rotations = [getattr(gardener_rotations, a) for a in dir(gardener_rotations)]
+    for r in rotations:
+        rotation = r.get()
+        if rotation:
+            consoles.console_view(name = rotation.console_name)
+            if rotation.tree_closer_console:
+                consoles.console_view(name = rotation.tree_closer_console)
+
+register_gardener_rotation_consoles()
+
 # The main console includes some entries for builders from the chrome project
 [branches.console_view_entry(
     console_view = "main",
@@ -190,16 +206,19 @@ consoles.console_view(
     ("fuchsia-fyi-astro", "hardware", "ast"),
     ("fuchsia-fyi-nelson", "hardware", "nsn"),
     ("fuchsia-fyi-sherlock", "hardware", "sher"),
-    ("fuchsia-fyi-sherlock-qemu", "hardware|emu", "sher"),
+    ("fuchsia-fyi-sherlock-qemu", "hardware", "emu-sher"),
     ("fuchsia-smoke-astro", "hardware|smoke", "ast"),
     ("fuchsia-smoke-nelson", "hardware|smoke", "nsn"),
     ("fuchsia-smoke-sherlock", "hardware|smoke", "sher"),
     ("fuchsia-smoke-sherlock-roller", "hardware|smoke", "roll"),
     ("fuchsia-perf-nsn", "hardware|perf", "nsn"),
+    ("fuchsia-perf-nsn-pgo", "hardware|perf|pgo", "nsn"),
     ("fuchsia-perf-shk", "hardware|perf", "sher"),
+    ("fuchsia-perf-shk-pgo", "hardware|perf|pgo", "sher"),
     ("fuchsia-webgl-astro", "hardware|webgl", "ast"),
     ("fuchsia-webgl-nelson", "hardware|webgl", "nsn"),
     ("fuchsia-webgl-sherlock", "hardware|webgl", "sher"),
+    ("fuchsia-webgl-sherlock-qemu", "hardware|webgl", "emu-sher"),
     ("fuchsia-x64", "p/chrome|official", "x64"),
     ("fuchsia-x64-nest-sd", "p/chrome|official", "nest-x64"),
 )]
@@ -209,9 +228,11 @@ exec("./ci/checks.star")
 exec("./ci/chromium.star")
 exec("./ci/chromium.accessibility.star")
 exec("./ci/chromium.android.star")
-exec("./ci/chromium.android.desktop.star")
 exec("./ci/chromium.android.fyi.star")
+exec("./ci/chromium.android.desktop.star")
+exec("./ci/chromium.android.desktop.fyi.star")
 exec("./ci/chromium.angle.star")
+exec("./ci/chromium.bedrock.star")
 exec("./ci/chromium.cft.star")
 exec("./ci/chromium.chromiumos.star")
 exec("./ci/chromium.clang.star")

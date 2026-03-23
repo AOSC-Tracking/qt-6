@@ -17,14 +17,15 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Surface.h"
 #include "include/gpu/graphite/TextureInfo.h"
+#include "include/gpu/graphite/vk/VulkanGraphiteContext.h"
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
-#include "include/gpu/graphite/vk/VulkanGraphiteUtils.h"
 #include "include/gpu/vk/VulkanExtensions.h"
 #include "include/gpu/vk/VulkanMutableTextureState.h"
 #include "include/gpu/vk/VulkanTypes.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/gpu/graphite/ContextOptionsPriv.h"
-#include "src/gpu/graphite/vk/VulkanGraphiteUtilsPriv.h"
+#include "src/gpu/graphite/TextureFormat.h"
+#include "src/gpu/graphite/vk/VulkanGraphiteUtils.h"
 #include "src/gpu/vk/VulkanInterface.h"
 #include "src/gpu/vk/vulkanmemoryallocator/VulkanAMDMemoryAllocator.h"
 #include "tools/ToolUtils.h"
@@ -65,22 +66,20 @@ void GraphiteVulkanWindowContext::initializeContext() {
     PFN_vkGetInstanceProcAddr getInstanceProc = fGetInstanceProcAddr;
     skgpu::VulkanBackendContext backendContext;
     skgpu::VulkanExtensions extensions;
-    VkPhysicalDeviceFeatures2 features;
+    sk_gpu_test::TestVkFeatures features;
     if (!sk_gpu_test::CreateVkBackendContext(getInstanceProc,
                                              &backendContext,
                                              &extensions,
                                              &features,
-                                             &fDebugCallback,
+                                             &fDebugMessenger,
                                              &fPresentQueueIndex,
                                              fCanPresentFn,
                                              fDisplayParams->createProtectedNativeBackend())) {
-        sk_gpu_test::FreeVulkanFeaturesStructs(&features);
         return;
     }
 
     if (!extensions.hasExtension(VK_KHR_SURFACE_EXTENSION_NAME, 25) ||
         !extensions.hasExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME, 68)) {
-        sk_gpu_test::FreeVulkanFeaturesStructs(&features);
         return;
     }
 
@@ -94,7 +93,6 @@ void GraphiteVulkanWindowContext::initializeContext() {
             reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(backendContext.fGetProc(
                     "vkGetPhysicalDeviceProperties", backendContext.fInstance, VK_NULL_HANDLE));
     if (!localGetPhysicalDeviceProperties) {
-        sk_gpu_test::FreeVulkanFeaturesStructs(&features);
         return;
     }
     VkPhysicalDeviceProperties physDeviceProperties;
@@ -109,8 +107,8 @@ void GraphiteVulkanWindowContext::initializeContext() {
                                                 &extensions));
 
     GET_PROC(DestroyInstance);
-    if (fDebugCallback != VK_NULL_HANDLE) {
-        GET_PROC(DestroyDebugReportCallbackEXT);
+    if (fDebugMessenger != VK_NULL_HANDLE) {
+        GET_PROC(DestroyDebugUtilsMessengerEXT);
     }
     GET_PROC(DestroySurfaceKHR);
     GET_PROC(GetPhysicalDeviceSurfaceSupportKHR);
@@ -138,7 +136,6 @@ void GraphiteVulkanWindowContext::initializeContext() {
     fSurface = fCreateVkSurfaceFn(fInstance);
     if (VK_NULL_HANDLE == fSurface) {
         this->destroyContext();
-        sk_gpu_test::FreeVulkanFeaturesStructs(&features);
         return;
     }
 
@@ -147,19 +144,16 @@ void GraphiteVulkanWindowContext::initializeContext() {
             fPhysicalDevice, fPresentQueueIndex, fSurface, &supported);
     if (VK_SUCCESS != res) {
         this->destroyContext();
-        sk_gpu_test::FreeVulkanFeaturesStructs(&features);
         return;
     }
 
     if (!this->createSwapchain(-1, -1)) {
         this->destroyContext();
-        sk_gpu_test::FreeVulkanFeaturesStructs(&features);
         return;
     }
 
     // create presentQueue
     fGetDeviceQueue(fDevice, fPresentQueueIndex, 0, &fPresentQueue);
-    sk_gpu_test::FreeVulkanFeaturesStructs(&features);
 }
 
 bool GraphiteVulkanWindowContext::createSwapchain(int width, int height) {
@@ -252,7 +246,15 @@ bool GraphiteVulkanWindowContext::createSwapchain(int width, int height) {
     VkColorSpaceKHR colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
     for (uint32_t i = 0; i < surfaceFormatCount; ++i) {
         VkFormat localFormat = surfaceFormats[i].format;
-        if (skgpu::graphite::vkFormatIsSupported(localFormat)) {
+        skgpu::graphite::TextureFormat format =
+            skgpu::graphite::VkFormatToTextureFormat(localFormat);
+        // Skip unsupported and HW sRGB formats. We can technically render to the sRGB formats
+        // but it requires the SkColorSpace to have a linear gamut. Viewer needs to be able to
+        // set the dst color space for legacy color management and various other modes, so we
+        // skip those formats here for compatibility.
+        if (format != skgpu::graphite::TextureFormat::kUnsupported &&
+            format != skgpu::graphite::TextureFormat::kRGBA8_sRGB &&
+            format != skgpu::graphite::TextureFormat::kBGRA8_sRGB) {
             surfaceFormat = localFormat;
             colorSpace = surfaceFormats[i].colorSpace;
             break;
@@ -267,11 +269,10 @@ bool GraphiteVulkanWindowContext::createSwapchain(int width, int height) {
 
     SkColorType colorType;
     switch (surfaceFormat) {
-        case VK_FORMAT_R8G8B8A8_UNORM:  // fall through
-        case VK_FORMAT_R8G8B8A8_SRGB:
+        case VK_FORMAT_R8G8B8A8_UNORM:
             colorType = kRGBA_8888_SkColorType;
             break;
-        case VK_FORMAT_B8G8R8A8_UNORM:  // fall through
+        case VK_FORMAT_B8G8R8A8_UNORM:
             colorType = kBGRA_8888_SkColorType;
             break;
         default:
@@ -351,6 +352,7 @@ bool GraphiteVulkanWindowContext::createSwapchain(int width, int height) {
 
         fDestroySwapchainKHR(fDevice, swapchainCreateInfo.oldSwapchain, nullptr);
         swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
+        return false;
     }
 
     return true;
@@ -446,7 +448,9 @@ GraphiteVulkanWindowContext::~GraphiteVulkanWindowContext() { this->destroyConte
 
 void GraphiteVulkanWindowContext::destroyContext() {
     if (this->isValid()) {
-        fQueueWaitIdle(fPresentQueue);
+        if (fPresentQueue != VK_NULL_HANDLE) {
+            fQueueWaitIdle(fPresentQueue);
+        }
         fDeviceWaitIdle(fDevice);
 
         if (fWaitSemaphore != VK_NULL_HANDLE) {
@@ -479,8 +483,8 @@ void GraphiteVulkanWindowContext::destroyContext() {
     }
 
 #ifdef SK_ENABLE_VK_LAYERS
-    if (fDebugCallback != VK_NULL_HANDLE) {
-        fDestroyDebugReportCallbackEXT(fInstance, fDebugCallback, nullptr);
+    if (fDebugMessenger != VK_NULL_HANDLE) {
+        fDestroyDebugUtilsMessengerEXT(fInstance, fDebugMessenger, nullptr);
     }
 #endif
 

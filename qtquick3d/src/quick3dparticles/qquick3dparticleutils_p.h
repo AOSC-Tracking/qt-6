@@ -1,5 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QQUICK3DPARTICLEUTILS_H
 #define QQUICK3DPARTICLEUTILS_H
@@ -24,6 +26,8 @@ QT_BEGIN_NAMESPACE
 
 class QQuaternion;
 class QQuick3DNode;
+class QQuick3DModel;
+class QQmlContext;
 
 // Define this to use C++ std::sinf & std::cosf for particles.
 // Those are more accurate, but also potentially less performant
@@ -77,6 +81,7 @@ inline float qLookupCos(float x)
 QQuick3DNode *getSharedParentNode(QQuick3DNode *node, QQuick3DNode *system);
 QMatrix4x4 calculateParticleTransform(const QQuick3DNode *parent, const QQuick3DNode *systemSharedParent);
 QQuaternion calculateParticleRotation(const QQuick3DNode *parent, const QQuick3DNode *systemSharedParent);
+QList<QVector3D> positionsFromModel(QQuick3DModel *model, const QMatrix4x4 *matrix, QQmlContext *context);
 
 QT_END_NAMESPACE
 

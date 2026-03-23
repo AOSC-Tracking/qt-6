@@ -18,11 +18,10 @@ package nearby.sharing.analytics.proto;
 
 import "google/protobuf/duration.proto";
 
+// "privacy/pattributes/annotations/proto_field.proto";
 // import "storage/datapol/annotations/proto/semantic_annotations.proto";
 // import "storage/googlesql/public/proto/type_annotation.proto";
 import "proto/sharing_enums.proto";
-
-// "wireless/android/privacy/annotations/proto/collection_basis_annotations.proto";
 
 option optimize_for = LITE_RUNTIME;
 option java_package = "nearby.sharing.analytics.proto";
@@ -31,12 +30,13 @@ option objc_class_prefix = "GNCP";
 
 // Top-level log proto for all NearbySharing logging.
 // Each log contains a key (event_type), value (a verb-noun event) pair.
-// Next Tag: 81
+// Next Tag: 83
 // LINT.IfChange
 message SharingLog {
-  /* collection_basis = {
-    use_cases: UC_SERVICE_OR_API_MEASURING_USER_ENGAGEMENT
-  } */
+  /* justification = {
+      collection_basis: CB_CHECKBOX
+      purposes: [ INFRASTRUCTURE_METRICS, BUSINESS_ANALYSIS ]
+    } */
 
   reserved 71;  // Deprecated TransferUIEvent.
 
@@ -217,6 +217,10 @@ message SharingLog {
   optional StartQrCodeSession start_qr_code_session = 79;
 
   optional QrCodeOpenedInWebClient qr_code_opened_in_web_client = 80;
+
+  optional HatsJointEvent hats_joint_event = 81;
+
+  optional ReceivePreviews receive_previews = 82;
 
   // Used only for Nearby Share Windows app now.
   message AppInfo {
@@ -495,6 +499,9 @@ message SharingLog {
   // EventType: DESCRIBE_ATTACHMENTS
   message DescribeAttachments {
     optional AttachmentsInfo attachments_info = 1;
+
+    // Time taken to download the attachments before sending
+    optional google.protobuf.Duration download_duration = 2;
   }
 
   // TODO(fdi): may want to add duration_from_scanning_millis later.
@@ -565,6 +572,10 @@ message SharingLog {
     // Exact transfer count stored on device, but when logging put the transfer
     // count in buckets, initially we use buckets: 1, 2, 3, …, 10, 11+
     optional int32 lifetime_transfer_count = 13;
+    // The medium used for the connection.
+    optional int32 connection_medium = 14;
+    // The data usage of the user settings.
+    optional location.nearby.proto.sharing.DataUsage data_usage = 15;
   }
 
   // EventType: RECEIVE_ATTACHMENTS_START
@@ -596,6 +607,10 @@ message SharingLog {
     // Exact transfer count stored on device, but when logging put the transfer
     // count in buckets, initially we use buckets: 1, 2, 3, …, 10, 11+
     optional int32 lifetime_transfer_count = 8;
+    // The medium used for the connection.
+    optional int32 connection_medium = 14;
+    // The data usage of the user settings.
+    optional location.nearby.proto.sharing.DataUsage data_usage = 15;
   }
 
   // EventType: CANCEL_CONNECTION
@@ -813,6 +828,9 @@ message SharingLog {
     // this ShareTargetInfo is the one that generated the QR code scanned by
     // this receiver.
     optional bool has_matching_qr_code = 4;
+
+    // Represents whether the share target is from external provider.
+    optional bool is_external = 5;
   }
 
   // The metadata of attachments to be shared.
@@ -919,6 +937,7 @@ message SharingLog {
     optional int32 original_quality = 5;
     optional int32 connection_medium = 6;
     optional int32 connection_mode = 7;
+    optional int32 instant_connection_result = 8;
   }
 
   message RpcCallStatus {
@@ -952,6 +971,21 @@ message SharingLog {
       WINDOWS = 5;
     }
     optional ClientPlatform client_platform = 1;
+
+    // Whether the /qrcode page was opened in the browser again after the user
+    // clicked on the "Try again" button
+    optional bool is_retry = 2;
+  }
+  // EventType: HATS_JOINT_EVENT
+  message HatsJointEvent {
+    optional int64 flow_id = 1 /* type = ST_SESSION_ID */;
+    optional string hats_session_id = 2
+        /* type = ST_SESSION_ID */;
+  }
+
+  // EventType: RECEIVE_PREVIEWS
+  message ReceivePreviews {
+    optional int32 num_previews = 1;
   }
 }
 // LINT.ThenChange(//depot/google3/logs/proto/location/nearby/nearby_client_log.proto)

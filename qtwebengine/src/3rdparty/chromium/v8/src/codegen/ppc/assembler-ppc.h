@@ -208,6 +208,9 @@ class Assembler : public AssemblerBase {
     }
   }
 
+  static RegList DefaultTmpList();
+  static DoubleRegList DefaultFPTmpList();
+
   // Label operations & relative jumps (PPUM Appendix D)
   //
   // Takes a branch opcode (cc) and a label (L) and generates
@@ -358,11 +361,11 @@ class Assembler : public AssemblerBase {
 
 #define DECLARE_PPC_X_INSTRUCTIONS_F_FORM(name, instr_name, instr_value)    \
   inline void name(const Register src1, const Register src2,                \
-                   const CRegister cr = cr7, const RCBit rc = LeaveRC) {    \
+                   const CRegister cr = cr0, const RCBit rc = LeaveRC) {    \
     x_form(instr_name, cr, src1, src2, rc);                                 \
   }                                                                         \
   inline void name##w(const Register src1, const Register src2,             \
-                      const CRegister cr = cr7, const RCBit rc = LeaveRC) { \
+                      const CRegister cr = cr0, const RCBit rc = LeaveRC) { \
     x_form(instr_name, cr.code() * B2, src1.code(), src2.code(), LeaveRC);  \
   }
 
@@ -379,6 +382,8 @@ class Assembler : public AssemblerBase {
   inline void name(const Register dst, const MemOperand& src) {             \
     x_form(instr_name, src.ra(), dst, src.rb(), SetEH);                     \
   }
+#define DECLARE_PPC_X_INSTRUCTIONS_EH_U_FORM(name, instr_name, instr_value) \
+  inline void name(const CRegister cr) { x_form(instr_name, cr); }
 
   inline void x_form(Instr instr, int f1, int f2, int f3, int rc) {
     emit(instr | f1 * B21 | f2 * B16 | f3 * B11 | rc);
@@ -397,6 +402,9 @@ class Assembler : public AssemblerBase {
     emit(instr | cr.code() * B23 | L * B21 | s1.code() * B16 | s2.code() * B11 |
          rc);
   }
+  inline void x_form(Instr instr, CRegister cr) {
+    emit(instr | cr.code() * B23);
+  }
 
   PPC_X_OPCODE_A_FORM_LIST(DECLARE_PPC_X_INSTRUCTIONS_A_FORM)
   PPC_X_OPCODE_B_FORM_LIST(DECLARE_PPC_X_INSTRUCTIONS_B_FORM)
@@ -407,6 +415,7 @@ class Assembler : public AssemblerBase {
   PPC_X_OPCODE_G_FORM_LIST(DECLARE_PPC_X_INSTRUCTIONS_G_FORM)
   PPC_X_OPCODE_EH_S_FORM_LIST(DECLARE_PPC_X_INSTRUCTIONS_EH_S_FORM)
   PPC_X_OPCODE_EH_L_FORM_LIST(DECLARE_PPC_X_INSTRUCTIONS_EH_L_FORM)
+  PPC_X_OPCODE_EH_U_FORM_LIST(DECLARE_PPC_X_INSTRUCTIONS_EH_U_FORM)
 
   inline void notx(Register dst, Register src, RCBit rc = LeaveRC) {
     nor(dst, src, src, rc);
@@ -442,13 +451,13 @@ class Assembler : public AssemblerBase {
 
   template <typename T>
   inline void xx2_form(Instr instr, T t, T b) {
-    static_assert(std::is_same<T, Simd128Register>::value ||
-                      std::is_same<T, DoubleRegister>::value,
-                  "VSX only uses FP or Vector registers.");
+    static_assert(
+        std::is_same_v<T, Simd128Register> || std::is_same_v<T, DoubleRegister>,
+        "VSX only uses FP or Vector registers.");
     // Using FP (low VSR) registers.
     int BX = 0, TX = 0;
     // Using VR (high VSR) registers when Simd registers are used.
-    if (std::is_same<T, Simd128Register>::value) {
+    if (std::is_same_v<T, Simd128Register>) {
       BX = TX = 1;
     }
 
@@ -491,13 +500,13 @@ class Assembler : public AssemblerBase {
 
   template <typename T>
   inline void xx3_form(Instr instr, T t, T a, T b) {
-    static_assert(std::is_same<T, Simd128Register>::value ||
-                      std::is_same<T, DoubleRegister>::value,
-                  "VSX only uses FP or Vector registers.");
+    static_assert(
+        std::is_same_v<T, Simd128Register> || std::is_same_v<T, DoubleRegister>,
+        "VSX only uses FP or Vector registers.");
     // Using FP (low VSR) registers.
     int AX = 0, BX = 0, TX = 0;
     // Using VR (high VSR) registers when Simd registers are used.
-    if (std::is_same<T, Simd128Register>::value) {
+    if (std::is_same_v<T, Simd128Register>) {
       AX = BX = TX = 1;
     }
 
@@ -628,6 +637,10 @@ class Assembler : public AssemblerBase {
 #undef DECLARE_PPC_PREFIX_INSTRUCTIONS_TYPE_10
 
   RegList* GetScratchRegisterList() { return &scratch_register_list_; }
+  DoubleRegList* GetScratchDoubleRegisterList() {
+    return &scratch_double_register_list_;
+  }
+
   // ---------------------------------------------------------------------------
   // InstructionStream generation
 
@@ -691,7 +704,7 @@ class Assembler : public AssemblerBase {
     return cr;
   }
 
-  void bc_short(Condition cond, Label* L, CRegister cr = cr7,
+  void bc_short(Condition cond, Label* L, CRegister cr = cr0,
                 LKBit lk = LeaveLK) {
     DCHECK(cond != al);
     DCHECK(cr.code() >= 0 && cr.code() <= 7);
@@ -731,12 +744,18 @@ class Assembler : public AssemblerBase {
       case nooverflow:
         bc(b_offset, BF, encode_crbit(cr, CR_SO), lk);
         break;
+      case overflow32:
+        bc(b_offset, BT, encode_crbit(cr, CR_OV32), lk);
+        break;
+      case nooverflow32:
+        bc(b_offset, BF, encode_crbit(cr, CR_OV32), lk);
+        break;
       default:
         UNIMPLEMENTED();
     }
   }
 
-  void bclr(Condition cond, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void bclr(Condition cond, CRegister cr = cr0, LKBit lk = LeaveLK) {
     DCHECK(cond != al);
     DCHECK(cr.code() >= 0 && cr.code() <= 7);
 
@@ -773,6 +792,12 @@ class Assembler : public AssemblerBase {
       case nooverflow:
         bclr(BF, encode_crbit(cr, CR_SO), lk);
         break;
+      case overflow32:
+        bclr(BT, encode_crbit(cr, CR_OV32), lk);
+        break;
+      case nooverflow32:
+        bclr(BF, encode_crbit(cr, CR_OV32), lk);
+        break;
       default:
         UNIMPLEMENTED();
     }
@@ -780,7 +805,7 @@ class Assembler : public AssemblerBase {
 
   void isel(Register rt, Register ra, Register rb, int cb);
   void isel(Condition cond, Register rt, Register ra, Register rb,
-            CRegister cr = cr7) {
+            CRegister cr = cr0) {
     DCHECK(cond != al);
     DCHECK(cr.code() >= 0 && cr.code() <= 7);
 
@@ -817,12 +842,18 @@ class Assembler : public AssemblerBase {
       case nooverflow:
         isel(rt, rb, ra, encode_crbit(cr, CR_SO));
         break;
+      case overflow32:
+        isel(rt, ra, rb, encode_crbit(cr, CR_OV32));
+        break;
+      case nooverflow32:
+        isel(rt, rb, ra, encode_crbit(cr, CR_OV32));
+        break;
       default:
         UNIMPLEMENTED();
     }
   }
 
-  void b(Condition cond, Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void b(Condition cond, Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
     if (cond == al) {
       b(L, lk);
       return;
@@ -840,28 +871,28 @@ class Assembler : public AssemblerBase {
     bind(&skip);
   }
 
-  void bne(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void bne(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
     b(ne, L, cr, lk);
   }
-  void beq(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void beq(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
     b(eq, L, cr, lk);
   }
-  void blt(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void blt(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
     b(lt, L, cr, lk);
   }
-  void bge(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void bge(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
     b(ge, L, cr, lk);
   }
-  void ble(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void ble(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
     b(le, L, cr, lk);
   }
-  void bgt(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void bgt(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
     b(gt, L, cr, lk);
   }
-  void bunordered(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void bunordered(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
     b(unordered, L, cr, lk);
   }
-  void bordered(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+  void bordered(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
     b(ordered, L, cr, lk);
   }
   void boverflow(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
@@ -921,10 +952,10 @@ class Assembler : public AssemblerBase {
   void oris(Register dst, Register src, const Operand& imm);
   void xori(Register dst, Register src, const Operand& imm);
   void xoris(Register ra, Register rs, const Operand& imm);
-  void cmpi(Register src1, const Operand& src2, CRegister cr = cr7);
-  void cmpli(Register src1, const Operand& src2, CRegister cr = cr7);
-  void cmpwi(Register src1, const Operand& src2, CRegister cr = cr7);
-  void cmplwi(Register src1, const Operand& src2, CRegister cr = cr7);
+  void cmpi(Register src1, const Operand& src2, CRegister cr = cr0);
+  void cmpli(Register src1, const Operand& src2, CRegister cr = cr0);
+  void cmpwi(Register src1, const Operand& src2, CRegister cr = cr0);
+  void cmplwi(Register src1, const Operand& src2, CRegister cr = cr0);
   void li(Register dst, const Operand& src);
   void lis(Register dst, const Operand& imm);
   void mr(Register dst, Register src);
@@ -1035,7 +1066,7 @@ class Assembler : public AssemblerBase {
 
   // Exception-generating instructions and debugging support
   void stop(Condition cond = al, int32_t code = kDefaultStopCode,
-            CRegister cr = cr7);
+            CRegister cr = cr0);
 
   void bkpt(uint32_t imm16);  // v5 and above
 
@@ -1064,7 +1095,7 @@ class Assembler : public AssemblerBase {
   void fmul(const DoubleRegister frt, const DoubleRegister fra,
             const DoubleRegister frc, RCBit rc = LeaveRC);
   void fcmpu(const DoubleRegister fra, const DoubleRegister frb,
-             CRegister cr = cr7);
+             CRegister cr = cr0);
   void fmr(const DoubleRegister frt, const DoubleRegister frb,
            RCBit rc = LeaveRC);
   void fctiwz(const DoubleRegister frt, const DoubleRegister frb);
@@ -1405,6 +1436,7 @@ class Assembler : public AssemblerBase {
 
   // Scratch registers available for use by the Assembler.
   RegList scratch_register_list_;
+  DoubleRegList scratch_double_register_list_;
 
   // The bound position, before this we cannot do instruction elimination.
   int last_bound_pos_;
@@ -1522,7 +1554,7 @@ class Assembler : public AssemblerBase {
   Trampoline trampoline_;
   bool internal_trampoline_exception_;
 
-  void AllocateAndInstallRequestedHeapNumbers(LocalIsolate* isolate);
+  void PatchInHeapNumberRequest(Address pc, Handle<HeapNumber> object) override;
 
   int WriteCodeComments();
 
@@ -1549,19 +1581,56 @@ class V8_EXPORT_PRIVATE V8_NODISCARD UseScratchRegisterScope {
  public:
   explicit UseScratchRegisterScope(Assembler* assembler)
       : assembler_(assembler),
-        old_available_(*assembler->GetScratchRegisterList()) {}
+        old_available_(*assembler->GetScratchRegisterList()),
+        old_available_double_(*assembler->GetScratchDoubleRegisterList()) {}
 
   ~UseScratchRegisterScope() {
     *assembler_->GetScratchRegisterList() = old_available_;
+    *assembler_->GetScratchDoubleRegisterList() = old_available_double_;
   }
 
   Register Acquire() {
     return assembler_->GetScratchRegisterList()->PopFirst();
   }
 
+  DoubleRegister AcquireDouble() {
+    return assembler_->GetScratchDoubleRegisterList()->PopFirst();
+  }
+
   // Check if we have registers available to acquire.
   bool CanAcquire() const {
     return !assembler_->GetScratchRegisterList()->is_empty();
+  }
+
+  void Include(const Register& reg1, const Register& reg2 = no_reg) {
+    RegList* available = assembler_->GetScratchRegisterList();
+    DCHECK_NOT_NULL(available);
+    DCHECK(!available->has(reg1));
+    DCHECK(!available->has(reg2));
+    available->set(reg1);
+    available->set(reg2);
+  }
+  void Include(RegList list) {
+    RegList* available = assembler_->GetScratchRegisterList();
+    DCHECK_NOT_NULL(available);
+    *available = *available | list;
+  }
+  void Include(DoubleRegList list) {
+    DoubleRegList* available = assembler_->GetScratchDoubleRegisterList();
+    DCHECK_NOT_NULL(available);
+    DCHECK_EQ((*available & list).bits(), 0x0);
+    *available = *available | list;
+  }
+
+  DoubleRegList AvailableDoubleRegList() {
+    return *assembler_->GetScratchDoubleRegisterList();
+  }
+  void SetAvailableDoubleRegList(DoubleRegList available) {
+    *assembler_->GetScratchDoubleRegisterList() = available;
+  }
+  RegList Available() { return *assembler_->GetScratchRegisterList(); }
+  void SetAvailable(RegList available) {
+    *assembler_->GetScratchRegisterList() = available;
   }
 
  private:
@@ -1570,6 +1639,7 @@ class V8_EXPORT_PRIVATE V8_NODISCARD UseScratchRegisterScope {
 
   Assembler* assembler_;
   RegList old_available_;
+  DoubleRegList old_available_double_;
 };
 
 }  // namespace internal

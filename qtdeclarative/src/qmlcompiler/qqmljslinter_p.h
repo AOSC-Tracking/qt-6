@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QMLJSLINTER_P_H
 #define QMLJSLINTER_P_H
@@ -19,6 +20,10 @@
 #include <QtQmlCompiler/private/qqmljslogger_p.h>
 #include <QtQmlCompiler/private/qqmljsimporter_p.h>
 #include <QtQmlCompiler/private/qqmljscontextproperties_p.h>
+#include <QtQmlCompiler/private/qqmljsusercontextproperties_p.h>
+#include <QtQmlCompiler/private/qqmljstypepropagator_p.h>
+
+#include <QtQmlToolingSettings/private/qqmltoolingsettings_p.h>
 
 #include <QtQml/private/qqmljssourcelocation_p.h>
 
@@ -68,7 +73,6 @@ public:
         {
             return m_categories;
         }
-        bool isBuiltin() const { return m_isBuiltin; }
         bool isValid() const { return m_isValid; }
         bool isInternal() const
         {
@@ -97,7 +101,6 @@ public:
         QList<QQmlJS::LoggerCategory> m_categories;
         QQmlSA::LintPlugin *m_instance;
         std::unique_ptr<QPluginLoader> m_loader;
-        bool m_isBuiltin = false;
         bool m_isInternal =
                 false; // Internal plugins are those developed and maintained inside the Qt project
         bool m_isValid = false;
@@ -110,7 +113,7 @@ public:
                         QJsonArray *json, const QStringList &qmlImportPaths,
                         const QStringList &qmldirFiles, const QStringList &resourceFiles,
                         const QList<QQmlJS::LoggerCategory> &categories,
-                        const QQmlJS::ContextProperties &contextProperties = {});
+                        const QQmlJS::HeuristicContextProperties &contextProperties = {});
 
     LintResult lintModule(const QString &uri, const bool silent, QJsonArray *json,
                           const QStringList &qmlImportPaths, const QStringList &resourceFiles);
@@ -131,8 +134,19 @@ public:
     void clearCache() { m_importer.clearCache(); }
 
 private:
+    LintResult lintFileImpl(const QString &filename, const QString *fileContents, const bool silent,
+                            QJsonArray *json, const QStringList &qmlImportPaths,
+                            const QStringList &qmldirFiles, const QStringList &resourceFiles,
+                            const QList<QQmlJS::LoggerCategory> &categories,
+                            const QQmlJS::HeuristicContextProperties &heuristicContextProperties);
+    LintResult lintModuleImpl(const QString &uri, const bool silent, QJsonArray *json,
+                              const QStringList &qmlImportPaths, const QStringList &resourceFiles);
+    void setupLoggingCategoriesInLogger(const QList<QQmlJS::LoggerCategory> &categories);
     void parseComments(QQmlJSLogger *logger, const QList<QQmlJS::SourceLocation> &comments);
     void processMessages(QJsonArray &warnings);
+    ContextPropertyInfo
+    contextPropertiesFor(const QString &fileName, QQmlJSResourceFileMapper *mapper,
+                         const QQmlJS::HeuristicContextProperties &heuristicContextProperties);
 
     bool m_useAbsolutePath;
     bool m_enablePlugins;
@@ -140,6 +154,11 @@ private:
     QScopedPointer<QQmlJSLogger> m_logger;
     QString m_fileContents;
     std::vector<Plugin> m_plugins;
+    QQmlToolingSettings m_userContextPropertySettings =
+            QQmlToolingSettings(QStringLiteral("contextProperties"));
+    QQmlToolingSettings::Searcher m_heuristicContextPropertySearcher =
+            QQmlToolingSettings::Searcher(QStringLiteral(".qt/contextPropertyDump.ini"),
+                                          QStringLiteral("contextPropertyDump.ini"));
 };
 
 QT_END_NAMESPACE

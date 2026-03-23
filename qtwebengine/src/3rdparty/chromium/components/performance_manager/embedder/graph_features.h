@@ -9,6 +9,7 @@
 
 #include "base/feature_list.h"
 #include "components/performance_manager/public/features.h"
+#include "ui/base/device_form_factor.h"
 
 namespace performance_manager {
 
@@ -31,7 +32,7 @@ class GraphFeatures {
 
   // Returns a configuration with the default set of graph features shipped
   // with a full-featured Chromium browser.
-  static constexpr GraphFeatures WithDefault() {
+  static GraphFeatures WithDefault() {
     return GraphFeatures().EnableDefault();
   }
 
@@ -121,8 +122,6 @@ class GraphFeatures {
     return *this;
   }
 
-  // This is a nop on the Android platform, as the feature isn't available
-  // there.
   constexpr GraphFeatures& EnableSiteDataRecorder() {
     flags_.site_data_recorder = true;
     return *this;
@@ -147,7 +146,7 @@ class GraphFeatures {
 
   // Helper to enable the default set of features. This is only intended for use
   // from production code.
-  constexpr GraphFeatures& EnableDefault() {
+  GraphFeatures& EnableDefault() {
     EnableFrameVisibilityDecorator();
     EnableFrozenFrameAggregator();
     EnableImportantFrameDecorator();
@@ -159,9 +158,13 @@ class GraphFeatures {
     EnablePriorityTracking();
     EnableProcessHostedContentTypesAggregator();
     EnableResourceAttributionScheduler();
-    EnableSiteDataRecorder();
     EnableTabPageDecorator();
     EnableV8ContextTracker();
+
+    if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP) {
+      EnableSiteDataRecorder();
+    }
+
     return *this;
   }
 

@@ -9,17 +9,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/microparams.h"
-#include "xnnpack/unaligned.h"
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/unaligned.h"
+#include "src/xnnpack/vunary.h"
 
 
 void xnn_s8_vclamp_ukernel__sse2_u64(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const struct xnn_s8_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_s8_minmax_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);

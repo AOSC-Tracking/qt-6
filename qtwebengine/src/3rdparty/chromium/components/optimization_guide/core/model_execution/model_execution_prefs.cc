@@ -7,6 +7,7 @@
 #include "base/json/values_util.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "components/optimization_guide/core/feature_registry/enterprise_policy_registry.h"
 #include "components/optimization_guide/core/feature_registry/feature_registration.h"
@@ -106,7 +107,7 @@ const char kLastTimeEligibleForOnDeviceModelDownload[] =
     "optimization_guide.on_device.last_time_eligible_for_download";
 
 // An integer pref that contains the user's client id.
-const char kModelQualityLogggingClientId[] =
+const char kModelQualityLoggingClientId[] =
     "optimization_guide.model_quality_logging_client_id";
 
 // An integer pref for the on-device GenAI foundational model enterprise policy
@@ -127,7 +128,7 @@ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
       localstate::kLastTimeEligibleForOnDeviceModelDownload, base::Time::Min());
   registry->RegisterDictionaryPref(localstate::kOnDeviceModelValidationResult);
   registry->RegisterDictionaryPref(localstate::kLastUsageByFeature);
-  registry->RegisterInt64Pref(localstate::kModelQualityLogggingClientId, 0,
+  registry->RegisterInt64Pref(localstate::kModelQualityLoggingClientId, 0,
                               PrefRegistry::LOSSY_PREF);
   registry->RegisterIntegerPref(
       localstate::kGenAILocalFoundationalModelEnterprisePolicySettings, 0);

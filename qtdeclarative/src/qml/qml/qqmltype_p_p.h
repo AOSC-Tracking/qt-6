@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLTYPE_P_P_H
 #define QQMLTYPE_P_P_H
@@ -355,13 +356,7 @@ public:
                     typeLoader ? typeLoader : unit->engine->typeLoader());
         }
 
-        if (const QQmlType type = (*it)->type(); type.isValid())
-            return type;
-
-        if (const auto cu = (*it)->compilationUnit())
-            return cu->qmlType;
-
-        return QQmlType();
+        return (*it)->type();
     }
 
 private:

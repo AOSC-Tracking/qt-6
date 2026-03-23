@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef METATYPESJSONPROCESSOR_P_H
 #define METATYPESJSONPROCESSOR_P_H
@@ -84,10 +85,13 @@ struct Property
     QAnyStringView privateClass;
 
     int index = -1;
+    int lineNumber = 0;
 
     QTypeRevision revision;
 
     bool isFinal = false;
+    bool isVirtual = false;
+    bool isOverride = false;
     bool isConstant = false;
     bool isRequired = false;
 };
@@ -117,6 +121,7 @@ struct Method
     QAnyStringView returnType;
 
     int index = InvalidIndex;
+    int lineNumber = 0;
 
     QTypeRevision revision;
 
@@ -141,6 +146,7 @@ struct Enum
 
     QList<QAnyStringView> values;
 
+    int lineNumber = 0;
     bool isFlag = false;
     bool isClass = false;
 };
@@ -253,8 +259,8 @@ public:
     void postProcessTypes();
     void postProcessForeignTypes();
 
-    QVector<MetaType> types() const { return m_types; }
-    QVector<MetaType> foreignTypes() const { return m_foreignTypes; }
+    QList<MetaType> types() const { return m_types; }
+    QList<MetaType> foreignTypes() const { return m_foreignTypes; }
     QList<QAnyStringView> referencedTypes() const { return m_referencedTypes; }
     QList<UsingDeclaration> usingDeclarations() const { return m_usingDeclarations; }
     QList<QString> includes() const { return m_includes; }
@@ -280,7 +286,7 @@ private:
     static PreProcessResult preProcess(const MetaType &classDef, PopulateMode populateMode);
     void addRelatedTypes();
 
-    void sortTypes(QVector<MetaType> &types);
+    void sortTypes(QList<MetaType> &types);
     QString resolvedInclude(QAnyStringView include);
     void processTypes(const QCborMap &types);
     void processForeignTypes(const QCborMap &types);
@@ -294,8 +300,8 @@ private:
     QList<QAnyStringView> m_referencedTypes;
     QList<QAnyStringView> m_primitiveTypes;
     QList<UsingDeclaration> m_usingDeclarations;
-    QVector<MetaType> m_types;
-    QVector<MetaType> m_foreignTypes;
+    QList<MetaType> m_types;
+    QList<MetaType> m_foreignTypes;
     QDuplicateTracker<QString> m_seenMetaTypesFiles;
     bool m_privateIncludes = false;
 };

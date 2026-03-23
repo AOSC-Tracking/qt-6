@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 [
-    RuntimeEnabled=HTMLInvokeTargetAttribute,
     Exposed=Window
 ] interface CommandEvent : Event {
     constructor(DOMString type, optional CommandEventInit eventInitDict = {});

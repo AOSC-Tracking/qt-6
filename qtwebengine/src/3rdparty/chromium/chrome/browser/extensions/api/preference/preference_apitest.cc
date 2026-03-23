@@ -19,10 +19,8 @@
 #include "chrome/browser/prefetch/pref_names.h"
 #include "chrome/browser/preloading/preloading_prefs.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/content_settings/core/common/pref_names.h"
@@ -37,6 +35,7 @@
 #include "components/translate/core/browser/translate_pref_names.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/test_devtools_protocol_client.h"
+#include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/test_extension_registry_observer.h"
 #include "extensions/test/extension_test_message_listener.h"
@@ -58,7 +57,10 @@ class ExtensionPreferenceApiTest
       delete;
 
  protected:
-  ExtensionPreferenceApiTest() : ExtensionApiTest(GetParam()) {}
+  ExtensionPreferenceApiTest() : ExtensionApiTest(GetParam()) {
+    feature_list_.InitAndEnableFeature(
+        privacy_sandbox::kAlwaysBlock3pcsIncognito);
+  }
   ~ExtensionPreferenceApiTest() override = default;
 
   void SetCookieControlsMode(PrefService* prefs, CookieControlsMode mode) {
@@ -166,33 +168,44 @@ class ExtensionPreferenceApiTest
 
     // The browser might get closed later (and therefore be destroyed), so we
     // save the profile.
-    profile_ = browser()->profile();
+    profile_ = profile();
 
+#if !BUILDFLAG(IS_ANDROID)
     // Closing the last browser window also releases a module reference. Make
     // sure it's not the last one, so the message loop doesn't quit
-    // unexpectedly.
+    // unexpectedly. On Android KeepAlive is not supported nor required.
     keep_alive_ = std::make_unique<ScopedKeepAlive>(
         KeepAliveOrigin::BROWSER, KeepAliveRestartOption::DISABLED);
+#endif
   }
 
   void TearDownOnMainThread() override {
+#if !BUILDFLAG(IS_ANDROID)
     // BrowserProcess::Shutdown() needs to be called in a message loop, so we
     // post a task to release the keep alive, then run the message loop.
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&std::unique_ptr<ScopedKeepAlive>::reset,
                                   base::Unretained(&keep_alive_), nullptr));
     content::RunAllPendingInMessageLoop();
+#endif
 
     extensions::ExtensionApiTest::TearDownOnMainThread();
   }
 
   raw_ptr<Profile, DanglingUntriaged> profile_ = nullptr;
+  base::test::ScopedFeatureList feature_list_;
+#if !BUILDFLAG(IS_ANDROID)
+  // KeepAlive is not supported nor required on Android.
   std::unique_ptr<ScopedKeepAlive> keep_alive_;
+#endif
 };
 
+// Desktop Android only supports manifest V3 / service worker.
+#if !BUILDFLAG(IS_ANDROID)
 INSTANTIATE_TEST_SUITE_P(BackgroundPage,
                          ExtensionPreferenceApiTest,
                          ::testing::Values(ContextType::kPersistentBackground));
+#endif
 
 INSTANTIATE_TEST_SUITE_P(ServiceWorker,
                          ExtensionPreferenceApiTest,
@@ -275,9 +288,20 @@ IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, Standard) {
   CheckPreferencesCleared();
 }
 
+IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest,
+                       ThirdPartyCookiesAllowedIncognito) {
+  PrefService* prefs = profile_->GetPrefs();
+  SetCookieControlsMode(prefs, CookieControlsMode::kBlockThirdParty);
+
+  EXPECT_TRUE(
+      RunExtensionTest("preference/third_party_cookies_allowed_incognito", {},
+                       {.allow_in_incognito = true}))
+      << message_;
+}
+
 IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, PersistentIncognito) {
   PrefService* prefs = profile_->GetPrefs();
-  SetCookieControlsMode(prefs, CookieControlsMode::kOff);
+  prefs->SetBoolean(prefs::kEnableHyperlinkAuditing, true);
 
   EXPECT_TRUE(RunExtensionTest("preference/persistent_incognito", {},
                                {.allow_in_incognito = true}))
@@ -288,25 +312,27 @@ IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, PersistentIncognito) {
 
   PrefService* otr_prefs =
       profile_->GetPrimaryOTRProfile(/*create_if_needed=*/true)->GetPrefs();
-  auto* otr_pref = otr_prefs->FindPreference(prefs::kCookieControlsMode);
+  auto* otr_pref = otr_prefs->FindPreference(prefs::kEnableHyperlinkAuditing);
   ASSERT_TRUE(otr_pref);
   EXPECT_TRUE(otr_pref->IsExtensionControlled());
-  EXPECT_EQ(CookieControlsMode::kBlockThirdParty,
-            GetCookieControlsMode(otr_prefs));
+  EXPECT_FALSE(otr_prefs->GetBoolean(prefs::kEnableHyperlinkAuditing));
 
-  auto* pref = prefs->FindPreference(prefs::kCookieControlsMode);
+  auto* pref = prefs->FindPreference(prefs::kEnableHyperlinkAuditing);
   ASSERT_TRUE(pref);
   EXPECT_FALSE(pref->IsExtensionControlled());
-  EXPECT_EQ(CookieControlsMode::kOff, GetCookieControlsMode(prefs));
+  EXPECT_TRUE(prefs->GetBoolean(prefs::kEnableHyperlinkAuditing));
 }
 
 IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, IncognitoDisabled) {
   EXPECT_FALSE(RunExtensionTest("preference/persistent_incognito"));
 }
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+// TODO(crbug.com/371432155): Enable on desktop Android when the chrome.windows
+// API is available.
 IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, SessionOnlyIncognito) {
   PrefService* prefs = profile_->GetPrefs();
-  SetCookieControlsMode(prefs, CookieControlsMode::kOff);
+  prefs->SetBoolean(prefs::kEnableHyperlinkAuditing, true);
 
   EXPECT_TRUE(RunExtensionTest("preference/session_only_incognito", {},
                                {.allow_in_incognito = true}))
@@ -316,16 +342,17 @@ IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, SessionOnlyIncognito) {
 
   PrefService* otr_prefs =
       profile_->GetPrimaryOTRProfile(/*create_if_needed=*/true)->GetPrefs();
-  auto* otr_pref = otr_prefs->FindPreference(prefs::kCookieControlsMode);
+  auto* otr_pref = otr_prefs->FindPreference(prefs::kEnableHyperlinkAuditing);
   ASSERT_TRUE(otr_pref);
   EXPECT_TRUE(otr_pref->IsExtensionControlled());
-  EXPECT_EQ(CookieControlsMode::kOff, GetCookieControlsMode(otr_prefs));
+  EXPECT_TRUE(otr_prefs->GetBoolean(prefs::kEnableHyperlinkAuditing));
 
-  auto* pref = prefs->FindPreference(prefs::kCookieControlsMode);
+  auto* pref = prefs->FindPreference(prefs::kEnableHyperlinkAuditing);
   ASSERT_TRUE(pref);
   EXPECT_FALSE(pref->IsExtensionControlled());
-  EXPECT_EQ(CookieControlsMode::kOff, GetCookieControlsMode(prefs));
+  EXPECT_TRUE(prefs->GetBoolean(prefs::kEnableHyperlinkAuditing));
 }
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, Clear) {
   PrefService* prefs = profile_->GetPrefs();
@@ -354,7 +381,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, OnChangeSplit) {
       profile_->GetPrimaryOTRProfile(/*create_if_needed=*/true));
 
   // Open an incognito window.
-  OpenURLOffTheRecord(profile_, GURL("chrome://newtab/"));
+  PlatformOpenURLOffTheRecord(profile_, GURL("chrome://newtab/"));
 
   // changeDefault listeners.
   ExtensionTestMessageListener listener1("changeDefault regular ready",
@@ -470,7 +497,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, OnChangeSplit) {
 IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest,
                        OnChangeSplitWithNoOTRProfile) {
   PrefService* prefs = profile_->GetPrefs();
-  SetCookieControlsMode(prefs, CookieControlsMode::kBlockThirdParty);
+  prefs->SetBoolean(prefs::kEnableHyperlinkAuditing, false);
 
   extensions::ResultCatcher catcher;
   ExtensionTestMessageListener loaded_incognito_test_listener(
@@ -483,7 +510,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest,
                             {.allow_in_incognito = true}));
 
   ASSERT_TRUE(change_pref_listener.WaitUntilSatisfied());
-  SetCookieControlsMode(prefs, CookieControlsMode::kOff);
+  prefs->SetBoolean(prefs::kEnableHyperlinkAuditing, true);
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   EXPECT_FALSE(loaded_incognito_test_listener.was_satisfied());
@@ -493,10 +520,10 @@ IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest,
 IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest,
                        OnChangeSplitWithoutIncognitoAccess) {
   PrefService* prefs = profile_->GetPrefs();
-  SetCookieControlsMode(prefs, CookieControlsMode::kBlockThirdParty);
+  prefs->SetBoolean(prefs::kEnableHyperlinkAuditing, false);
 
   // Open an incognito window.
-  OpenURLOffTheRecord(profile_, GURL("chrome://newtab/"));
+  PlatformOpenURLOffTheRecord(profile_, GURL("chrome://newtab/"));
   EXPECT_TRUE(profile_->HasPrimaryOTRProfile());
 
   extensions::ResultCatcher catcher;
@@ -509,7 +536,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest,
                                 .AppendASCII("onchange_split_regular_only")));
 
   ASSERT_TRUE(change_pref_listener.WaitUntilSatisfied());
-  SetCookieControlsMode(prefs, CookieControlsMode::kOff);
+  prefs->SetBoolean(prefs::kEnableHyperlinkAuditing, true);
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   EXPECT_FALSE(loaded_incognito_test_listener.was_satisfied());

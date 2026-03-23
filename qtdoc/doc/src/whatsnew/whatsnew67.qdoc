@@ -109,9 +109,9 @@
         \li Added QHttpHeaders class to represent HTTP headers.
         \li Added std::chrono support for setting transfer timeouts with
             QNetworkRequest and QNetworkAccessManager.
-        \li Added QNetworkRequestFactory class (Technical Preview).
+        \li Added QNetworkRequestFactory class (Technology Preview).
             The class is a convenience class for creating network requests.
-        \li Added QRestAccessManager and QRestReply (Technical Preview).
+        \li Added QRestAccessManager and QRestReply (Technology Preview).
             The classes are convenience wrappers tuned for RESTful use cases.
     \endlist
 
@@ -220,7 +220,7 @@
 
     \section2 Qt Quick Timeline Module
     \list
-        \li The QtQuick.Timeline.BlendTrees sub-module adds new APIs to enable blending multiple
+        \li The \e QtQuick.Timeline.BlendTrees sub-module adds new APIs to enable blending multiple
             timeline animations.
     \endlist
 
@@ -458,7 +458,7 @@
             targets of a project (done via the new qt_collect_translation_source_targets()
             function), with the option to opt out of undesired targets on directory or
             target level.
-        \li CMake: qt_add_translations() has been moved out of technical preview.
+        \li CMake: qt_add_translations() has been moved out of technology preview.
     \endlist
 
 

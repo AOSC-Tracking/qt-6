@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <variant>
 #include <vector>
 
 #include "base/i18n/rtl.h"
@@ -81,79 +82,8 @@ struct SelectOption {
   std::u16string value;
   // The option's "label" attribute, or, if not present, its text content.
   std::u16string text;
+  bool operator==(const SelectOption &) const = default;
 };
-
-// Stores information about the section of the field.
-class Section {
- public:
-  struct Autocomplete {
-    std::string section;
-    HtmlFieldMode mode = HtmlFieldMode::kNone;
-  };
-
-  using Default = absl::monostate;
-
-  struct FieldIdentifier {
-    FieldIdentifier() = default;
-    FieldIdentifier(std::string field_name,
-                    size_t local_frame_id,
-                    FieldRendererId field_renderer_id)
-        : field_name(std::move(field_name)),
-          local_frame_id(local_frame_id),
-          field_renderer_id(field_renderer_id) {}
-
-    friend bool operator==(const FieldIdentifier& a, const FieldIdentifier& b);
-    friend bool operator!=(const FieldIdentifier& a, const FieldIdentifier& b);
-    friend bool operator<(const FieldIdentifier& a, const FieldIdentifier& b);
-
-    std::string field_name;
-    size_t local_frame_id;
-    FieldRendererId field_renderer_id;
-  };
-
-  static Section FromAutocomplete(Autocomplete autocomplete);
-  static Section FromFieldIdentifier(
-      const FormFieldData& field,
-      base::flat_map<LocalFrameToken, size_t>& frame_token_ids);
-
-  Section();
-  Section(const Section& section);
-  ~Section();
-
-  friend bool operator==(const Section& a, const Section& b);
-  friend bool operator!=(const Section& a, const Section& b);
-  friend bool operator<(const Section& a, const Section& b);
-
-  explicit operator bool() const;
-  bool is_from_autocomplete() const;
-  bool is_from_fieldidentifier() const;
-  bool is_default() const;
-
-  // Reconstructs `this` to a string. The string representation of the section
-  // is used in the renderer.
-  // TODO(crbug.com/40200532): Remove when fixed.
-  std::string ToString() const;
-
- private:
-  // Represents the section's origin:
-  //  - `Default` is the empty, initial value before running any sectioning
-  //     algorithm,
-  //  - `Autocomplete` represents a section derived from the autocomplete
-  //     attribute,
-  //  - `FieldIdentifier` represents a section generated based on the first
-  //     field in the section.
-  using SectionValue = absl::variant<Default, Autocomplete, FieldIdentifier>;
-
-  friend struct mojo::StructTraits<autofill::mojom::SectionDataView,
-                                   autofill::Section>;
-  friend struct mojo::UnionTraits<autofill::mojom::SectionValueDataView,
-                                  autofill::Section::SectionValue>;
-
-  SectionValue value_;
-};
-
-LogBuffer& operator<<(LogBuffer& buffer, const Section& section);
-std::ostream& operator<<(std::ostream& os, const Section& section);
 
 using FormControlType = mojom::FormControlType;
 
@@ -207,8 +137,8 @@ class FormFieldData {
   //
   // It does *not* uniquely identify this FormFieldData object (there is no such
   // kind of identifier because FormFieldData is a value type). In particular,
-  // they're not guaranteed to be unique FormData::fields; see FormData::fields
-  // for details.
+  // it does uniquely identify an element of FormData::fields; see
+  // FormData::fields for details.
   //
   // Must not be leaked to renderer process. See FieldGlobalId for details.
   FieldGlobalId global_id() const { return {host_frame(), renderer_id()}; }
@@ -279,7 +209,7 @@ class FormFieldData {
   // FormFieldData::form_control_type().
   //
   // To get a field's initial value or the value for submission, see
-  // AutofillField::value() and AutofillField::value_for_import().
+  // AutofillField::initial_value() and AutofillField::value_for_import().
   //
   // A note on FormFieldData objects of type FormControlType::kSelect*, i.e.,
   // <select> elements:
@@ -308,7 +238,7 @@ class FormFieldData {
   // mismatch all `options()`, e.g., when JavaScript set the value to a
   // different value or when the number or string length of the options exceeded
   // limits during extraction.
-  base::optional_ref<const SelectOption> selected_option() const;
+  base::optional_ref<const SelectOption> selected_option() const LIFETIME_BOUND;
 
   // The selected text, or the empty string if no text is selected.
   // Truncated at `50 * kMaxStringLength`.
@@ -338,6 +268,13 @@ class FormFieldData {
       std::optional<AutocompleteParsingResult> parsed_autocomplete) {
     parsed_autocomplete_ = std::move(parsed_autocomplete);
   }
+
+  // The value of the form control element's "pattern" attribute. The string
+  // comes from the renderer without any further validation. There are no
+  // guarantees about the format of the string.
+  const std::u16string& pattern() const { return pattern_; }
+  void set_pattern(std::u16string pattern) { pattern_ = std::move(pattern); }
+
   const std::u16string& placeholder() const { return placeholder_; }
   void set_placeholder(std::u16string placeholder) {
     placeholder_ = std::move(placeholder);
@@ -402,11 +339,6 @@ class FormFieldData {
     form_control_ax_id_ = form_control_ax_id;
   }
 
-  // The unique identifier of the section (e.g. billing vs. shipping address)
-  // of this field.
-  const Section& section() const { return section_; }
-  void set_section(Section section) { section_ = std::move(section); }
-
   // The default value for text fields that have no maxlength attribute
   // specified. We choose the maximum 32 bit, rather than 64 bit, number because
   // so we don't need to worry about integer overflows when doing arithmetic
@@ -421,8 +353,7 @@ class FormFieldData {
   // overflows when doing arithmetic with FormFieldData::max_length.
   //
   // Changes to the default value also must be reflected in
-  // form_autofill_util.cc's GetMaxLength() and
-  // FormFieldData::has_no_max_length().
+  // form_autofill_util.cc's GetMaxLength().
   //
   // We use uint64_t instead of size_t because this struct is sent over IPC
   // which could span 32 & 64 bit processes. We chose uint64_t instead of
@@ -552,6 +483,7 @@ class FormFieldData {
   FormControlType form_control_type_ = FormControlType::kInputText;
   std::string autocomplete_attribute_;
   std::optional<AutocompleteParsingResult> parsed_autocomplete_;
+  std::u16string pattern_;
   std::u16string placeholder_;
   std::u16string css_classes_;
   std::u16string aria_label_;
@@ -563,7 +495,6 @@ class FormFieldData {
   url::Origin origin_;
   int32_t form_control_ax_id_ = 0;
   uint64_t max_length_ = std::numeric_limits<uint32_t>::max();
-  Section section_;
   bool is_autofilled_ = false;
   bool is_user_edited_ = false;
   CheckStatus check_status_ = CheckStatus::kNotCheckable;
@@ -607,11 +538,6 @@ struct FormFieldData::FillData {
   // DOM in case this ID is null).
   FormRendererId host_form_id;
 
-  // The unique identifier of the section (e.g. billing vs. shipping address)
-  // of this field. This is only used on iOS.
-  // TODO(crbug.com/40266549): Remove when Undo Autofill launches on iOS.
-  Section section;
-
   // Whether the renderer should mark the field as autofilled or not. In most
   // filling cases this will be true. However for the case of UndoAutofill we
   // might wanna revert a field state into not autofilled, in which case this
@@ -642,11 +568,17 @@ void SerializeFormFieldData(const FormFieldData& form_field_data,
 bool DeserializeFormFieldData(base::PickleIterator* pickle_iterator,
                               FormFieldData* form_field_data);
 
-// So we can compare FormFieldDatas with EXPECT_EQ().
 std::ostream& operator<<(std::ostream& os, const FormFieldData& field);
 
 // Produces a <table> element with information about the form.
 LogBuffer& operator<<(LogBuffer& buffer, const FormFieldData& form);
+
+namespace internal {
+std::ostream& PrintWithIndentation(std::ostream& os,
+                                   const FormFieldData& field,
+                                   int indentation = 0,
+                                   std::string_view title = "FormFieldData");
+}  // namespace internal
 
 }  // namespace autofill
 

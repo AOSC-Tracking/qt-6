@@ -23,36 +23,38 @@ PrerenderAttributes::PrerenderAttributes(
     const GURL& prerendering_url,
     PreloadingTriggerType trigger_type,
     const std::string& embedder_histogram_suffix,
-    std::optional<blink::mojom::SpeculationTargetHint> target_hint,
+    std::optional<SpeculationRulesParams> speculation_rules_params,
     Referrer referrer,
-    std::optional<blink::mojom::SpeculationEagerness> eagerness,
     std::optional<net::HttpNoVarySearchData> no_vary_search_hint,
     RenderFrameHost* initiator_render_frame_host,
     base::WeakPtr<WebContents> initiator_web_contents,
     ui::PageTransition transition_type,
     bool should_warm_up_compositor,
     bool should_prepare_paint_tree,
+    bool should_pause_javascript_execution,
     base::RepeatingCallback<bool(const GURL&,
                                  const std::optional<UrlMatchType>&)>
         url_match_predicate,
     base::RepeatingCallback<void(NavigationHandle&)>
         prerender_navigation_handle_callback,
-    scoped_refptr<PreloadPipelineInfo> preload_pipeline_info)
+    scoped_refptr<PreloadPipelineInfoImpl> preload_pipeline_info,
+    bool allow_reuse)
     : prerendering_url(prerendering_url),
       trigger_type(trigger_type),
       embedder_histogram_suffix(embedder_histogram_suffix),
-      target_hint(target_hint),
+      speculation_rules_params(std::move(speculation_rules_params)),
       referrer(std::move(referrer)),
-      eagerness(eagerness),
       no_vary_search_hint(std::move(no_vary_search_hint)),
       initiator_web_contents(std::move(initiator_web_contents)),
       transition_type(transition_type),
       should_warm_up_compositor(should_warm_up_compositor),
       should_prepare_paint_tree(should_prepare_paint_tree),
+      should_pause_javascript_execution(should_pause_javascript_execution),
       url_match_predicate(std::move(url_match_predicate)),
       prerender_navigation_handle_callback(
           std::move(prerender_navigation_handle_callback)),
-      preload_pipeline_info(std::move(preload_pipeline_info)) {
+      preload_pipeline_info(std::move(preload_pipeline_info)),
+      allow_reuse(allow_reuse) {
   if (initiator_render_frame_host) {
     initiator_origin = initiator_render_frame_host->GetLastCommittedOrigin();
     initiator_process_id =
@@ -67,15 +69,37 @@ PrerenderAttributes::PrerenderAttributes(
 
   CHECK(!IsBrowserInitiated() ||
         !initiator_devtools_navigation_token.has_value());
-  CHECK(!IsBrowserInitiated() || !eagerness.has_value());
+  CHECK(!IsBrowserInitiated() || !this->speculation_rules_params.has_value());
 }
 
 PrerenderAttributes::~PrerenderAttributes() = default;
+
 PrerenderAttributes::PrerenderAttributes(const PrerenderAttributes&) = default;
 PrerenderAttributes& PrerenderAttributes::operator=(
     const PrerenderAttributes&) = default;
-PrerenderAttributes::PrerenderAttributes(PrerenderAttributes&&) = default;
-PrerenderAttributes& PrerenderAttributes::operator=(PrerenderAttributes&&) =
+PrerenderAttributes::PrerenderAttributes(PrerenderAttributes&&) noexcept =
     default;
+PrerenderAttributes& PrerenderAttributes::operator=(
+    PrerenderAttributes&&) noexcept = default;
+
+std::optional<blink::mojom::SpeculationTargetHint>
+PrerenderAttributes::GetTargetHint() const {
+  return speculation_rules_params.has_value()
+             ? std::make_optional(speculation_rules_params->target_hint)
+             : std::nullopt;
+}
+
+std::optional<blink::mojom::SpeculationEagerness>
+PrerenderAttributes::GetEagerness() const {
+  return speculation_rules_params.has_value()
+             ? std::make_optional(speculation_rules_params->eagerness)
+             : std::nullopt;
+}
+
+std::optional<SpeculationRulesTags> PrerenderAttributes::GetTags() const {
+  return speculation_rules_params.has_value()
+             ? std::make_optional(speculation_rules_params->tags)
+             : std::nullopt;
+}
 
 }  // namespace content

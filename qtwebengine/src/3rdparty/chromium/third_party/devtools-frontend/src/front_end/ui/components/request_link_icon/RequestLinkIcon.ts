@@ -1,6 +1,7 @@
 // Copyright (c) 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../../ui/components/icon_button/icon_button.js';
 
@@ -15,11 +16,7 @@ import * as RenderCoordinator from '../../../ui/components/render_coordinator/re
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 
-import requestLinkIconStylesRaw from './requestLinkIcon.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const requestLinkIconStyles = new CSSStyleSheet();
-requestLinkIconStyles.replaceSync(requestLinkIconStylesRaw.cssContent);
+import requestLinkIconStyles from './requestLinkIcon.css.js';
 
 const {html} = Lit;
 
@@ -37,7 +34,7 @@ const UIStrings = {
    * @description Label for the shortened URL displayed in a link to show a request in the network panel
    */
   shortenedURL: 'Shortened URL',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('ui/components/request_link_icon/RequestLinkIcon.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -70,7 +67,7 @@ export class RequestLinkIcon extends HTMLElement {
   #request?: SDK.NetworkRequest.NetworkRequest|null;
   #highlightHeader?: {section: NetworkForward.UIRequestLocation.UIHeaderSection, name: string};
   #requestResolver?: Logs.RequestResolver.RequestResolver;
-  #displayURL: boolean = false;
+  #displayURL = false;
   #urlToDisplay?: string;
   #networkTab?: NetworkForward.UIRequestLocation.UIRequestTabs;
   #affectedRequest?: {requestId?: Protocol.Network.RequestId, url?: string};
@@ -92,7 +89,7 @@ export class RequestLinkIcon extends HTMLElement {
     if (data.revealOverride) {
       this.#reveal = data.revealOverride;
     }
-    if (!this.#request && data.affectedRequest && typeof data.affectedRequest.requestId !== 'undefined') {
+    if (!this.#request && typeof data.affectedRequest?.requestId !== 'undefined') {
       if (!this.#requestResolver) {
         throw new Error('A `RequestResolver` must be provided if an `affectedRequest` is provided.');
       }
@@ -106,10 +103,6 @@ export class RequestLinkIcon extends HTMLElement {
           });
     }
     void this.#render();
-  }
-
-  connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [requestLinkIconStyles];
   }
 
   get data(): RequestLinkIconData {
@@ -180,7 +173,7 @@ export class RequestLinkIcon extends HTMLElement {
   }
 
   async #render(): Promise<void> {
-    return RenderCoordinator.write(() => {
+    return await RenderCoordinator.write(() => {
       // By default we render just the URL for the request link. If we also know
       // the concrete network request, or at least its request ID, we surround
       // the URL with a button, that opens the request in the Network panel.
@@ -197,7 +190,7 @@ export class RequestLinkIcon extends HTMLElement {
           </button>`;
         // clang-format on
       }
-      Lit.render(template, this.#shadow, {host: this});
+      Lit.render(html`<style>${requestLinkIconStyles}</style>${template}`, this.#shadow, {host: this});
     });
   }
 }

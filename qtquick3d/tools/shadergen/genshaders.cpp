@@ -43,6 +43,7 @@ static void initBaker(QShaderBaker *baker, QRhi *rhi)
     // TODO: For simplicity we're just going to add all off these for now.
     outputs.append({ QShader::SpirvShader, QShaderVersion(100) }); // Vulkan 1.0
     outputs.append({ QShader::HlslShader, QShaderVersion(50) }); // Shader Model 5.0
+    outputs.append({ QShader::HlslShader, QShaderVersion(60) }); // Shader Model 6.0
     outputs.append({ QShader::MslShader, QShaderVersion(12) }); // Metal 1.2
     outputs.append({ QShader::GlslShader, QShaderVersion(300, QShaderVersion::GlslEs) }); // GLES 3.0+
     outputs.append({ QShader::GlslShader, QShaderVersion(140) }); // OpenGL 3.1+
@@ -233,7 +234,7 @@ bool GenShaders::process(const MaterialParser::SceneData &sceneData,
 
         auto generateShader = [&](const QSSGShaderFeatures &features) {
             if ((renderable->type == QSSGSubsetRenderable::Type::DefaultMaterialMeshSubset)) {
-                auto shaderPipeline = QSSGRendererPrivate::generateRhiShaderPipelineImpl(*static_cast<QSSGSubsetRenderable *>(renderable), *shaderLibraryManager, *shaderCache, *shaderProgramGenerator, propertyTable, features, shaderString);
+                auto shaderPipeline = QSSGRendererPrivate::generateRhiShaderPipelineImpl(*static_cast<QSSGSubsetRenderable *>(renderable), *shaderLibraryManager, *shaderCache, *shaderProgramGenerator, propertyTable, features, {/*shaderAugmentation*/}, shaderString);
                 if (shaderPipeline != nullptr) {
                     const auto qsbcFeatureList = QQsbCollection::toFeatureSet(features);
                     const QByteArray qsbcKey = QQsbCollection::EntryDesc::generateSha(shaderString, qsbcFeatureList);
@@ -320,8 +321,7 @@ bool GenShaders::process(const MaterialParser::SceneData &sceneData,
         nodes.append(renderEffect);
 
         const auto &commands = renderEffect->commands;
-        for (const QSSGRenderEffect::Command &c : commands) {
-            QSSGCommand *command = c.command;
+        for (const QSSGCommand *command : commands) {
             if (command->m_type == CommandType::BindShader) {
                 auto bindShaderCommand = static_cast<const QSSGBindShader &>(*command);
                 for (const auto isYUpInFramebuffer : { true, false }) { // Generate effects for both up-directions.

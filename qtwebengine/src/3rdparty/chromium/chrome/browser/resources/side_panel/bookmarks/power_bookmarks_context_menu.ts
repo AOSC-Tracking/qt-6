@@ -18,6 +18,7 @@ import type {DomRepeatEvent} from 'chrome://resources/polymer/v3_0/polymer/polym
 import {afterNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {ActionSource} from './bookmarks.mojom-webui.js';
+import type {BookmarksTreeNode} from './bookmarks.mojom-webui.js';
 import type {BookmarksApiProxy} from './bookmarks_api_proxy.js';
 import {BookmarksApiProxyImpl} from './bookmarks_api_proxy.js';
 import {getTemplate} from './power_bookmarks_context_menu.html.js';
@@ -41,6 +42,7 @@ export enum MenuItemId {
   RENAME = 8,
   DELETE = 9,
   DIVIDER = 10,
+  OPEN_SPLIT_VIEW = 11,
 }
 
 export interface MenuItem {
@@ -60,7 +62,13 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
 
   static get properties() {
     return {
-      bookmarks_: Array,
+      bookmarks_: {
+        type: Array,
+        value: () => [],
+      },
+      priceTracked_: Boolean,
+      priceTrackingEligible_: Boolean,
+      isInSplitView_: Boolean,
     };
   }
 
@@ -68,18 +76,19 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
       BookmarksApiProxyImpl.getInstance();
   private priceTrackingProxy_: PriceTrackingBrowserProxy =
       PriceTrackingBrowserProxyImpl.getInstance();
-  private bookmarks_: chrome.bookmarks.BookmarkTreeNode[] = [];
-  private priceTracked_: boolean;
-  private priceTrackingEligible_: boolean;
+  declare private bookmarks_: BookmarksTreeNode[];
+  declare private priceTracked_: boolean;
+  declare private priceTrackingEligible_: boolean;
+  declare private isInSplitView_: boolean;
 
   showAt(
-      event: MouseEvent, bookmarks: chrome.bookmarks.BookmarkTreeNode[],
+      target: HTMLElement, bookmarks: BookmarksTreeNode[],
       priceTracked: boolean, priceTrackingEligible: boolean,
-      onShown: Function = () => {}) {
+      isInSplitView: boolean, onShown: Function = () => {}) {
     this.bookmarks_ = bookmarks;
     this.priceTracked_ = priceTracked;
     this.priceTrackingEligible_ = priceTrackingEligible;
-    const target = event.target as HTMLElement;
+    this.isInSplitView_ = isInSplitView;
     afterNextRender(this, () => {
       this.$.menu.showAt(target);
       onShown();
@@ -87,12 +96,13 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
   }
 
   showAtPosition(
-      event: MouseEvent, bookmarks: chrome.bookmarks.BookmarkTreeNode[],
-      priceTracked: boolean, priceTrackingEligible: boolean,
+      event: MouseEvent, bookmarks: BookmarksTreeNode[], priceTracked: boolean,
+      priceTrackingEligible: boolean, isInSplitView: boolean,
       onShown: Function = () => {}) {
     this.bookmarks_ = bookmarks;
     this.priceTracked_ = priceTracked;
     this.priceTrackingEligible_ = priceTrackingEligible;
+    this.isInSplitView_ = isInSplitView;
     const menuMargin = 20;
     const doc = document.scrollingElement!;
     const minX = doc.scrollLeft + menuMargin;
@@ -153,7 +163,16 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
       });
     }
 
-    if (this.bookmarks_.length !== 1 || !this.bookmarks_[0]!.url) {
+    if (loadTimeData.getBoolean('splitViewEnabled') && bookmarkCount === 1 &&
+        this.bookmarks_[0].url) {
+      menuItems.push({
+        id: MenuItemId.OPEN_SPLIT_VIEW,
+        label: loadTimeData.getString('menuOpenSplitView'),
+        disabled: this.isInSplitView_,
+      });
+    }
+
+    if (this.bookmarks_.length !== 1 || !this.bookmarks_[0].url) {
       menuItems.push({
         id: MenuItemId.OPEN_NEW_TAB_GROUP,
         label: bookmarkCount < 2 ?
@@ -179,37 +198,37 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
       );
       return menuItems;
     } else if (
-        this.bookmarks_[0]!.id === loadTimeData.getString('bookmarksBarId')) {
+        this.bookmarks_[0].id === loadTimeData.getString('bookmarksBarId')) {
       return menuItems;
     }
 
-    if (this.bookmarks_[0]!.url ||
-        this.bookmarks_[0]!.parentId ===
+    if (this.bookmarks_[0].url ||
+        this.bookmarks_[0].parentId ===
             loadTimeData.getString('bookmarksBarId') ||
-        this.bookmarks_[0]!.parentId ===
+        this.bookmarks_[0].parentId ===
             loadTimeData.getString('otherBookmarksId') ||
-        this.bookmarks_[0]!.parentId ===
+        this.bookmarks_[0].parentId ===
             loadTimeData.getString('mobileBookmarksId')) {
       menuItems.push({id: MenuItemId.DIVIDER});
     }
 
-    if (this.bookmarks_[0]!.url) {
+    if (this.bookmarks_[0].url) {
       menuItems.push({
         id: MenuItemId.EDIT,
         label: loadTimeData.getString('menuEdit'),
       });
     }
 
-    if (this.bookmarks_[0]!.parentId ===
+    if (this.bookmarks_[0].parentId ===
         loadTimeData.getString('bookmarksBarId')) {
       menuItems.push({
         id: MenuItemId.REMOVE_FROM_BOOKMARKS_BAR,
         label: loadTimeData.getString('menuMoveToAllBookmarks'),
       });
     } else if (
-        this.bookmarks_[0]!.parentId ===
+        this.bookmarks_[0].parentId ===
             loadTimeData.getString('otherBookmarksId') ||
-        this.bookmarks_[0]!.parentId ===
+        this.bookmarks_[0].parentId ===
             loadTimeData.getString('mobileBookmarksId')) {
       menuItems.push({
         id: MenuItemId.ADD_TO_BOOKMARKS_BAR,
@@ -231,7 +250,7 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
 
     menuItems.push({id: MenuItemId.DIVIDER});
 
-    if (!this.bookmarks_[0]!.url) {
+    if (!this.bookmarks_[0].url) {
       menuItems.push(
           {
             id: MenuItemId.RENAME,
@@ -295,13 +314,18 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
             this.bookmarks_.map(bookmark => bookmark.id),
             ActionSource.kBookmark);
         break;
+      case MenuItemId.OPEN_SPLIT_VIEW:
+        this.bookmarksApi_.contextMenuOpenBookmarkInSplitView(
+            this.bookmarks_.map(bookmark => bookmark.id),
+            ActionSource.kBookmark);
+        break;
       case MenuItemId.ADD_TO_BOOKMARKS_BAR:
         assert(this.bookmarks_.length === 1);
         if (editingDisabledByPolicy(this.bookmarks_)) {
           this.dispatchDisabledFeatureEvent_();
         } else {
           this.bookmarksApi_.contextMenuAddToBookmarksBar(
-              this.bookmarks_[0]!.id, ActionSource.kBookmark);
+              this.bookmarks_[0].id, ActionSource.kBookmark);
         }
         break;
       case MenuItemId.REMOVE_FROM_BOOKMARKS_BAR:
@@ -310,7 +334,7 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
           this.dispatchDisabledFeatureEvent_();
         } else {
           this.bookmarksApi_.contextMenuRemoveFromBookmarksBar(
-              this.bookmarks_[0]!.id, ActionSource.kBookmark);
+              this.bookmarks_[0].id, ActionSource.kBookmark);
         }
         break;
       case MenuItemId.TRACK_PRICE:
@@ -320,12 +344,12 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
         } else {
           if (this.priceTracked_) {
             this.priceTrackingProxy_.untrackPriceForBookmark(
-                BigInt(this.bookmarks_[0]!.id));
+                BigInt(this.bookmarks_[0].id));
             chrome.metricsPrivate.recordUserAction(
                 'Commerce.PriceTracking.SidePanel.Untrack.ContextMenu');
           } else {
             this.priceTrackingProxy_.trackPriceForBookmark(
-                BigInt(this.bookmarks_[0]!.id));
+                BigInt(this.bookmarks_[0].id));
             chrome.metricsPrivate.recordUserAction(
                 'Commerce.PriceTracking.SidePanel.Track.ContextMenu');
           }
@@ -349,7 +373,7 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
             bubbles: true,
             composed: true,
             detail: {
-              id: this.bookmarks_[0]!.id,
+              id: this.bookmarks_[0].id,
             },
           }));
         }

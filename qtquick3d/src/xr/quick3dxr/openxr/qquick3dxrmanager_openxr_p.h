@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QQUICK3DXRMANAGER_OPENXR_P_H
 #define QQUICK3DXRMANAGER_OPENXR_P_H
@@ -40,6 +42,8 @@ class QQuick3DViewport;
 class QQuick3DXrAnchorManager;
 class QQuick3DXrManager;
 class QQuick3DXrInputManager;
+class QQuick3DOpenXRThreadWorker;
+class QThread;
 
 class QQuick3DXrManagerPrivate
 {
@@ -51,6 +55,8 @@ public:
     static QQuick3DXrManagerPrivate *get(QQuick3DXrManager *manager);
 
     [[nodiscard]] bool supportsPassthrough() const;
+    bool supportsTransparentBlendMode() const;
+    bool supportsFBPassthrough() const;
 
     bool isValid() const { return m_graphics != nullptr; }
 
@@ -79,7 +85,10 @@ public:
     bool isMultiViewRenderingEnabled() const { return m_multiviewRendering; }
 
     [[nodiscard]] bool setPassthroughEnabled(bool enable);
-    bool isPassthroughEnabled() const { return m_enablePassthrough; }
+    bool isPassthroughEnabled() const;
+
+    void setFBPassthroughEnabled(bool enable);
+    bool setTransparentBlendMode(bool enable);
 
     void setDepthSubmissionEnabled(bool enable);
     bool isDepthSubmissionEnabled() const { return m_compositionLayerDepthSupported && m_submitLayerDepth; }
@@ -97,6 +106,11 @@ private:
     bool initialize();
     void teardown();
 
+    void initWorkerThread();
+    void destroyWorkerThread();
+    void onFrameWaitCompleted(XrResult result, const XrFrameState &frameState);
+    void doRenderFrameAferWait(const XrFrameState &frameState);
+
     void destroySwapchain();
     void setErrorString(XrResult result, const char *callName);
     void checkXrExtensions(const char* layerName, int indent = 0);
@@ -111,7 +125,6 @@ private:
 
     void checkViewConfiguration();
     [[nodiscard]] bool checkXrResult(const XrResult &result);
-    bool resolveXrFunction(const char *name, PFN_xrVoidFunction *function);
     void checkEnvironmentBlendMode(XrViewConfigurationType type);
 
     void pollEvents(bool *exitRenderLoop, bool *requestRestart);
@@ -205,9 +218,7 @@ private:
     int64_t m_depthSwapchainFormat = -1;
     int m_samples = 1;
 
-    bool m_passThroughEnabled = false;
-    bool m_passthroughSupported = false;
-    bool m_enablePassthrough = false;
+    bool m_fbPassthroughEnabled = false;
     bool m_multiviewRendering = true;
     bool m_spaceExtensionSupported = false;
     QQuick3DXrAnchorManager *m_spaceExtension = nullptr;
@@ -222,6 +233,7 @@ private:
     bool m_submitLayerDepth = false;
     bool m_handtrackingExtensionSupported = false;
     bool m_handtrackingAimExtensionSupported = false;
+    bool m_overlayExtensionSupported = false;
     bool m_isGraphicsInitialized = false;
 
     bool m_sessionRunning{false};
@@ -243,6 +255,11 @@ private:
 
     QAbstractOpenXRGraphics *m_graphics = nullptr;
 
+    bool m_waitingForFrame = false;
+    bool m_wantUpdate = false;
+    QQuick3DOpenXRThreadWorker *m_worker = nullptr;
+    QThread *m_workerThread = nullptr;
+    QVector<XrEnvironmentBlendMode> m_blendModes;
 };
 
 QT_END_NAMESPACE

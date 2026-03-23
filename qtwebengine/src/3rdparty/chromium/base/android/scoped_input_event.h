@@ -9,6 +9,7 @@
 
 #include "base/base_export.h"
 #include "base/memory/raw_ptr.h"
+#include "base/trace_event/typed_macros.h"
 
 namespace base::android {
 
@@ -30,6 +31,10 @@ class BASE_EXPORT ScopedInputEvent {
   explicit operator bool() const { return !!a_input_event_; }
 
   const AInputEvent* a_input_event() const { return a_input_event_.get(); }
+
+  void WriteIntoTrace(
+      perfetto::TracedProto<perfetto::protos::pbzero::EventForwarder> forwarder)
+      const;
 
  private:
   void DestroyIfNeeded();

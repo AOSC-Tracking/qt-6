@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 #ifndef QV4ARRAYDATA_H
 #define QV4ARRAYDATA_H
 
@@ -135,6 +136,7 @@ struct Q_QML_EXPORT ArrayData : public Managed
 {
     typedef Heap::ArrayData::Type Type;
     V4_MANAGED(ArrayData, Managed)
+    Q_MANAGED_TYPE(ArrayData);
     enum {
         IsArrayData = true
     };

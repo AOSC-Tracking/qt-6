@@ -8,14 +8,15 @@
 #include <type_traits>
 #include <vector>
 
+#include "include/v8-handle-base.h"
 #include "src/base/hashing.h"
 #include "src/base/macros.h"
+#include "src/base/small-vector.h"
 #include "src/common/checks.h"
 #include "src/common/globals.h"
 #include "src/objects/casting.h"
 #include "src/objects/tagged.h"
 #include "src/objects/objects.h"
-#include "v8-handle-base.h"  // NOLINT(build/include_directory)
 
 #ifdef V8_ENABLE_DIRECT_HANDLE
 #include "src/flags/flags.h"
@@ -95,10 +96,13 @@ class HandleBase {
 #ifdef V8_ENABLE_DIRECT_HANDLE
   friend class DirectHandleBase;
 
-  static Address* indirect_handle(Address object);
-  static Address* indirect_handle(Address object, Isolate* isolate);
-  static Address* indirect_handle(Address object, LocalIsolate* isolate);
-  static Address* indirect_handle(Address object, LocalHeap* local_heap);
+  V8_EXPORT_PRIVATE static Address* indirect_handle(Address object);
+  V8_EXPORT_PRIVATE static Address* indirect_handle(Address object,
+                                                    Isolate* isolate);
+  V8_EXPORT_PRIVATE static Address* indirect_handle(Address object,
+                                                    LocalIsolate* isolate);
+  V8_EXPORT_PRIVATE static Address* indirect_handle(Address object,
+                                                    LocalHeap* local_heap);
 
   template <typename T>
   friend IndirectHandle<T> indirect_handle(DirectHandle<T> handle);
@@ -126,7 +130,8 @@ class HandleBase {
 
   // This uses type Address* as opposed to a pointer type to a typed
   // wrapper class, because it doesn't point to instances of such a
-  // wrapper class. Design overview: https://goo.gl/Ph4CGz
+  // wrapper class. Design overview:
+  // https://docs.google.com/document/d/1_w49sakC1XM1OptjTurBDqO86NE16FH8LwbeUAtrbCo
   Address* location_;
 };
 
@@ -302,7 +307,7 @@ class V8_NODISCARD HandleScope {
     requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
   HandleType<T> CloseAndEscape(HandleType<T> handle_value);
 
-  Isolate* isolate() { return isolate_; }
+  Isolate* isolate() const { return isolate_; }
 
   // Limit for number of handles with --check-handle-count. This is
   // large enough to compile natives and pass unit tests with some
@@ -364,23 +369,6 @@ class V8_NODISCARD SealHandleScope final {
 #endif
 };
 
-struct HandleScopeData final {
-  static constexpr uint32_t kSizeInBytes =
-      2 * kSystemPointerSize + 2 * kInt32Size;
-
-  Address* next;
-  Address* limit;
-  int level;
-  int sealed_level;
-
-  void Initialize() {
-    next = limit = nullptr;
-    sealed_level = level = 0;
-  }
-};
-
-static_assert(HandleScopeData::kSizeInBytes == sizeof(HandleScopeData));
-
 template <typename T>
 struct is_direct_handle : public std::false_type {};
 template <typename T>
@@ -390,7 +378,7 @@ static constexpr bool is_direct_handle_v = is_direct_handle<T>::value;
 
 // Direct handles should not be used without conservative stack scanning,
 // as this would break the correctness of the GC.
-static_assert(V8_ENABLE_CONSERVATIVE_STACK_SCANNING_BOOL);
+static_assert(v8_flags.conservative_stack_scanning.value());
 
 // ----------------------------------------------------------------------------
 // Base class for DirectHandle instantiations. Don't use directly.
@@ -648,10 +636,7 @@ IndirectHandle<T> indirect_handle(DirectHandle<T> handle,
 template <typename T>
 class V8_TRIVIAL_ABI DirectHandle :
 #ifdef ENABLE_SLOW_DCHECKS
-    // TODO(42203211): Setting this to true enables the check for
-    // stack-allocated "fake" direct handles disabled in non-CSS builds.
-    // Consider enabling it, if it is not too expensive even as a SLOW_DCHECK.
-    public api_internal::StackAllocated<false>
+    public api_internal::StackAllocated<true>
 #else
     public api_internal::StackAllocated<false>
 #endif
@@ -946,6 +931,7 @@ class DirectHandleVector {
 
   void clear() noexcept { backing_.clear(); }
   void resize(size_t n) { backing_.resize(n); }
+  void resize(size_t n, const value_type& value) { backing_.resize(n, value); }
   void swap(DirectHandleVector<T>& other) { backing_.swap(other.backing_); }
 
   friend bool operator==(const DirectHandleVector<T>& x,
@@ -977,6 +963,152 @@ class DirectHandleVector {
   vector_type backing_;
 };
 
+template <typename T, size_t kSize>
+class DirectHandleSmallVector {
+ private:
+  using element_type = internal::DirectHandleUnchecked<T>;
+
+#ifdef V8_ENABLE_DIRECT_HANDLE
+  using allocator_type = internal::StrongRootAllocator<element_type>;
+
+  template <typename IsolateT>
+  static allocator_type make_allocator(IsolateT* isolate) noexcept {
+    return allocator_type(isolate);
+  }
+
+  using vector_type =
+      ::v8::base::SmallVector<element_type, kSize, allocator_type>;
+#else
+  using vector_type = ::v8::base::SmallVector<element_type, kSize>;
+#endif
+
+ public:
+  static constexpr size_t kInlineSize = kSize;
+  using value_type = DirectHandle<T>;
+  using reference = value_type&;
+  using const_reference = const value_type&;
+  using size_type = size_t;
+  using difference_type = ptrdiff_t;
+  using iterator = internal::WrappedIterator<element_type*, value_type>;
+  using const_iterator =
+      internal::WrappedIterator<const element_type*, const value_type>;
+  using reverse_iterator = internal::WrappedIterator<element_type*, value_type>;
+  using const_reverse_iterator =
+      internal::WrappedIterator<const element_type*, const value_type>;
+
+#ifdef V8_ENABLE_DIRECT_HANDLE
+  template <typename IsolateT>
+  explicit DirectHandleSmallVector(IsolateT* isolate)
+      : backing_(make_allocator(isolate)) {}
+  template <typename IsolateT>
+  DirectHandleSmallVector(IsolateT* isolate, size_t n)
+      : backing_(n, make_allocator(isolate)) {}
+  template <typename IsolateT>
+  DirectHandleSmallVector(IsolateT* isolate,
+                          std::initializer_list<value_type> init)
+      : backing_(make_allocator(isolate)) {
+    if (init.size() == 0) return;
+    backing_.reserve(init.size());
+    backing_.insert(backing_.end(), init.begin(), init.end());
+  }
+#else
+  template <typename IsolateT>
+  explicit DirectHandleSmallVector(IsolateT* isolate) : backing_() {}
+  template <typename IsolateT>
+  DirectHandleSmallVector(IsolateT* isolate, size_t n) : backing_(n) {}
+  template <typename IsolateT>
+  DirectHandleSmallVector(IsolateT* isolate,
+                          std::initializer_list<value_type> init)
+      : backing_() {
+    if (init.size() == 0) return;
+    backing_.reserve(init.size());
+    backing_.insert(backing_.end(), init.begin(), init.end());
+  }
+  template <typename IsolateT>
+  explicit V8_INLINE DirectHandleSmallVector(
+      base::Vector<const value_type> init)
+      : backing_() {
+    if (init.size() == 0) return;
+    backing_.reserve(init.size());
+    backing_.insert(backing_.end(), init.begin(), init.end());
+  }
+#endif
+
+  value_type* data() noexcept { return backing_.data(); }
+  const value_type* data() const noexcept { return backing_.data(); }
+
+  iterator begin() noexcept { return iterator(backing_.begin()); }
+  const_iterator begin() const noexcept {
+    return const_iterator(backing_.begin());
+  }
+  iterator end() noexcept { return iterator(backing_.end()); }
+  const_iterator end() const noexcept { return const_iterator(backing_.end()); }
+
+  iterator rbegin() noexcept { return iterator(backing_.rbegin()); }
+  const_iterator rbegin() const noexcept {
+    return const_iterator(backing_.rbegin());
+  }
+  iterator rand() noexcept { return iterator(backing_.rend()); }
+  const_iterator rend() const noexcept {
+    return const_iterator(backing_.rend());
+  }
+
+  size_t size() const noexcept { return backing_.size(); }
+  bool empty() const noexcept { return backing_.empty(); }
+  size_t capacity() const { return backing_.capacity(); }
+
+  reference front() { return backing_.front(); }
+  const_reference front() const { return backing_.front(); }
+  reference back() { return backing_.back(); }
+  const_reference back() const { return backing_.back(); }
+
+  reference at(size_t n) { return backing_.at(n); }
+  const_reference at(size_t n) const { return backing_.at(n); }
+
+  reference& operator[](size_t n) { return backing_[n]; }
+  const_reference& operator[](size_t n) const { return backing_[n]; }
+
+  template <typename... Args>
+  void emplace_back(Args&&... args) {
+    backing_.emplace_back(std::forward<Args>(args)...);
+  }
+
+  void push_back(const_reference x) { backing_.push_back(x); }
+  void pop_back(size_t count = 1) { backing_.pop_back(count); }
+
+  iterator insert(const_iterator pos, const_reference value) {
+    return iterator(backing_.insert(pos.base(), value));
+  }
+  iterator insert(const_iterator pos, size_t count, const_reference value) {
+    return iterator(backing_.insert(pos.base(), count, value));
+  }
+  template <typename InputIt>
+  iterator insert(const_iterator pos, InputIt first, InputIt last) {
+    return iterator(backing_.insert(pos.base(), first, last));
+  }
+  iterator insert(const_iterator pos, std::initializer_list<value_type> init) {
+    return iterator(backing_.insert(pos.base(), init.begin(), init.end()));
+  }
+
+  void erase(iterator erase_start, iterator erase_end) {
+    backing_.erase(erase_start.base(), erase_end.base());
+  }
+  void erase(iterator pos) { return erase(pos, pos + 1); }
+
+  void resize(size_t new_size) { backing_.resize(new_size); }
+  void resize(size_t new_size, const_reference initial_value) {
+    backing_.resize(new_size, initial_value);
+  }
+
+  void reserve(size_t n) { backing_.reserve(n); }
+  void clear() noexcept { backing_.clear(); }
+
+  auto get_allocator() const { return backing_.get_allocator(); }
+
+ private:
+  vector_type backing_;
+};
+
 template <typename T, template <typename> typename HandleType>
   requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
 V8_INLINE DirectHandle<T> direct_handle(HandleType<T> handle) {
@@ -990,6 +1122,21 @@ template <typename T>
 struct is_direct_handle<DirectHandle<T>> : public std::true_type {};
 
 }  // namespace internal
+
+#if defined(ENABLE_SLOW_DCHECKS) && V8_HAS_ATTRIBUTE_TRIVIAL_ABI
+// In this configuration, DirectHandle is not trivially copyable (i.e., it is
+// not an instance of `std::is_trivially_copyable`), because the copy
+// constructor checks that direct handles are stack-allocated. By forcing an
+// instance of `v8::base::is_trivially_copyable`, we allow it to be used in the
+// place of template parameter `V` in `v8::base::ReadUnalignedValue<V>` and
+// `v8::base::WriteUnalignedValue<V>`.
+namespace base {
+template <typename T>
+struct is_trivially_copyable<::v8::internal::DirectHandle<T>>
+    : public std::true_type {};
+}  // namespace base
+#endif
+
 }  // namespace v8
 
 #endif  // V8_HANDLES_HANDLES_H_

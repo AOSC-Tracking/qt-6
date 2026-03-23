@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -24,7 +25,6 @@ T.RadioDelegate {
 
     icon.width: 20
     icon.height: 20
-    icon.color: Color.transparent(Universal.foreground, enabled ? 1.0 : 0.2)
 
     indicator: RadioIndicator {
         x: control.text ? (control.mirrored ? control.leftPadding : control.width - width - control.rightPadding) : control.leftPadding + (control.availableWidth - width) / 2
@@ -42,9 +42,10 @@ T.RadioDelegate {
         alignment: control.display === IconLabel.IconOnly || control.display === IconLabel.TextUnderIcon ? Qt.AlignCenter : Qt.AlignLeft
 
         icon: control.icon
+        defaultIconColor: Color.transparent(control.Universal.foreground, enabled ? 1.0 : 0.2)
         text: control.text
         font: control.font
-        color: Color.transparent(control.Universal.foreground, enabled ? 1.0 : 0.2)
+        color: defaultIconColor
     }
 
     background: Rectangle {

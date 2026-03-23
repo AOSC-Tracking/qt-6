@@ -44,6 +44,14 @@ class QDataStream;
 #endif
 class QTextStream;
 
+// These macros from math.h conflict with the real functions in the std namespace:
+#ifdef copysign
+#  undef copysign
+#endif
+#ifdef signbit
+#  undef signbit
+#endif
+
 class qfloat16
 {
     struct Wrap
@@ -83,9 +91,14 @@ public:
     Q_CORE_EXPORT int fpClassify() const noexcept;
     // Can't specialize std::copysign() for qfloat16
     qfloat16 copySign(qfloat16 sign) const noexcept
-    { return qfloat16(Wrap((sign.b16 & 0x8000) | (b16 & 0x7fff))); }
-    // Support for std::numeric_limits<qfloat16>
+    { return copysign(*this, sign); }
+    friend qfloat16 copysign(qfloat16 mag, qfloat16 sign) noexcept
+    { return qfloat16(Wrap((sign.b16 & 0x8000) | (mag.b16 & 0x7fff))); }
+    // Can't specialize std::signbit() for qfloat16
+    friend bool signbit(qfloat16 x) noexcept
+    { return x.b16 & 0x8000; }
 
+    // Support for std::numeric_limits<qfloat16>
 #ifdef __STDCPP_FLOAT16_T__
 private:
     using Bounds = std::numeric_limits<NativeType>;
@@ -351,15 +364,15 @@ inline int qIntCast(qfloat16 f) noexcept
 { return int(static_cast<qfloat16::NearestFloat>(f)); }
 
 #if !defined(Q_QDOC) && !QFLOAT16_IS_NATIVE
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_CLANG("-Wc99-extensions")
-QT_WARNING_DISABLE_GCC("-Wold-style-cast")
 inline qfloat16::qfloat16(float f) noexcept
 {
 #if defined(QT_COMPILER_SUPPORTS_F16C) && defined(__F16C__)
     __m128 packsingle = _mm_set_ss(f);
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_GCC("-Wold-style-cast") // _mm_cvtps_ph() may be a macro using C-style casts
     __m128i packhalf = _mm_cvtps_ph(packsingle, 0);
-    b16 = _mm_extract_epi16(packhalf, 0);
+    QT_WARNING_POP
+    b16 = quint16(_mm_extract_epi16(packhalf, 0));
 #elif defined (__ARM_FP16_FORMAT_IEEE)
     __fp16 f16 = __fp16(f);
     memcpy(&b16, &f16, sizeof(quint16));
@@ -390,7 +403,6 @@ inline qfloat16::qfloat16(float f) noexcept
     b16 = quint16(base + (mantissa >> shift));
 #endif
 }
-QT_WARNING_POP
 
 inline qfloat16::operator float() const noexcept
 {

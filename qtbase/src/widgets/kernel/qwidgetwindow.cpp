@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "private/qwindow_p.h"
 #include "qwidgetwindow_p.h"
@@ -552,7 +553,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
             const bool underMouse = activePopupWidget->underMouse();
             if (underMouse != reallyUnderMouse) {
                 if (reallyUnderMouse) {
-                    const QPoint receiverMapped = receiver->mapFromGlobal(event->globalPosition().toPoint());
+                    const QPointF receiverMapped = receiver->mapFromGlobal(event->globalPosition());
                     // Prevent negative mouse position on enter event - this event
                     // should be properly handled in "handleEnterLeaveEvent()".
                     if (receiverMapped.x() >= 0 && receiverMapped.y() >= 0) {
@@ -590,6 +591,10 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
             }
         }
 
+        // Event delivery above might have destroyed this object. See QTBUG-138419.
+        if (self.isNull())
+            return;
+
         if (QApplication::activePopupWidget() != activePopupWidget
             && QApplicationPrivate::replayMousePress
             && QGuiApplicationPrivate::platformIntegration()->styleHint(QPlatformIntegration::ReplayMousePressOutsidePopup).toBool()) {
@@ -611,8 +616,8 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
                         : QRect(win->mapToGlobal(QPoint(0, 0)), win->size());
                         if (globalGeometry.contains(event->globalPosition().toPoint())) {
                             // Use postEvent() to ensure the local QEventLoop terminates when called from QMenu::exec()
-                            const QPoint localPos = win->mapFromGlobal(event->globalPosition().toPoint());
-                            QMouseEvent *e = new QMouseEvent(QEvent::MouseButtonPress, localPos, localPos, event->globalPosition().toPoint(),
+                            const QPointF localPos = win->mapFromGlobal(event->globalPosition());
+                            QMouseEvent *e = new QMouseEvent(QEvent::MouseButtonPress, localPos, localPos, event->globalPosition(),
                                                              event->button(), event->buttons(), event->modifiers(), event->source());
                             QCoreApplicationPrivate::setEventSpontaneous(e, true);
                             e->setTimestamp(event->timestamp());
@@ -630,7 +635,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
                 receiver = qt_button_down;
             else if (popupChild)
                 receiver = popupChild;
-            const QPoint localPos = receiver->mapFromGlobal(event->globalPosition().toPoint());
+            const QPoint localPos = receiver->mapFromGlobal(event->globalPosition()).toPoint();
             QContextMenuEvent e(QContextMenuEvent::Mouse, localPos, event->globalPosition().toPoint(), event->modifiers());
             QApplication::forwardEvent(receiver, &e, event);
         }
@@ -669,7 +674,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
 
     if (d->isPopup() && receiver->window()->windowHandle() != this) {
         receiver = widget;
-        mapped = event->position().toPoint();
+        mapped = event->position();
     }
 
     if ((event->type() != QEvent::MouseButtonPress) || !QMutableSinglePointEvent::isDoubleClick(event)) {
@@ -950,7 +955,7 @@ void QWidgetWindow::handleWheelEvent(QWheelEvent *event)
 
 #if QT_CONFIG(draganddrop)
 
-static QWidget *findDnDTarget(QWidget *parent, const QPoint &pos)
+static QWidget *findDnDTarget(QWidget *parent, const QPointF &pos)
 {
     // Find a target widget under mouse that accepts drops (QTBUG-22987).
     QWidget *widget = parent->childAt(pos);
@@ -976,14 +981,14 @@ void QWidgetWindow::handleDragEnterEvent(QDragMoveEvent *event, QWidget *widget)
 {
     Q_ASSERT(m_dragTarget == nullptr);
     if (!widget)
-        widget = findDnDTarget(m_widget, event->position().toPoint());
+        widget = findDnDTarget(m_widget, event->position());
     if (!widget) {
         event->ignore();
         return;
     }
     m_dragTarget = widget;
 
-    const QPoint mapped = widget->mapFromGlobal(m_widget->mapToGlobal(event->position().toPoint()));
+    const QPoint mapped = widget->mapFromGlobal(m_widget->mapToGlobal(event->position())).toPoint();
     QDragEnterEvent translated(mapped, event->possibleActions(), event->mimeData(),
                                event->buttons(), event->modifiers());
     QGuiApplication::forwardEvent(m_dragTarget, &translated, event);
@@ -993,7 +998,7 @@ void QWidgetWindow::handleDragEnterEvent(QDragMoveEvent *event, QWidget *widget)
 
 void QWidgetWindow::handleDragMoveEvent(QDragMoveEvent *event)
 {
-    QPointer<QWidget> widget = findDnDTarget(m_widget, event->position().toPoint());
+    QPointer<QWidget> widget = findDnDTarget(m_widget, event->position());
     if (!widget) {
         event->ignore();
         if (m_dragTarget) { // Send DragLeave to previous
@@ -1003,7 +1008,7 @@ void QWidgetWindow::handleDragMoveEvent(QDragMoveEvent *event)
             QGuiApplication::forwardEvent(dragTarget, &leaveEvent, event);
         }
     } else {
-        const QPoint mapped = widget->mapFromGlobal(m_widget->mapToGlobal(event->position().toPoint()));
+        const QPoint mapped = widget->mapFromGlobal(m_widget->mapToGlobal(event->position())).toPoint();
         QDragMoveEvent translated(mapped, event->possibleActions(), event->mimeData(),
                                   event->buttons(), event->modifiers());
 
@@ -1052,7 +1057,7 @@ void QWidgetWindow::handleDropEvent(QDropEvent *event)
         event->ignore();
         return;
     }
-    const QPoint mapped = m_dragTarget->mapFromGlobal(m_widget->mapToGlobal(event->position().toPoint()));
+    const QPointF mapped = m_dragTarget->mapFromGlobal(m_widget->mapToGlobal(event->position()));
     QDropEvent translated(mapped, event->possibleActions(), event->mimeData(), event->buttons(), event->modifiers());
     QWidget *dragTarget = m_dragTarget;
     m_dragTarget = nullptr;
@@ -1166,8 +1171,7 @@ void QWidgetWindow::handleTabletEvent(QTabletEvent *event)
     }
 
     if (widget) {
-        QPointF delta = event->globalPosition() - event->globalPosition().toPoint();
-        QPointF mapped = widget->mapFromGlobal(event->globalPosition().toPoint()) + delta;
+        const QPointF mapped = widget->mapFromGlobal(event->globalPosition());
         QTabletEvent ev(event->type(), event->pointingDevice(), mapped, event->globalPosition(),
                         event->pressure(), event->xTilt(), event->yTilt(), event->tangentialPressure(),
                         event->rotation(), event->z(), event->modifiers(), event->button(), event->buttons());

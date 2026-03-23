@@ -85,7 +85,7 @@ any particular version of the module.
 type must include the \c {pragma Singleton} statement.
 
 Example:
-\code
+\qml
     //Style.qml with custom singleton type definition
     pragma Singleton
     import QtQuick 2.0
@@ -108,7 +108,7 @@ Example:
         color: Style.textColor
         text: "Hello World"
     }
-\endcode
+\endqml
 
 \section2 Internal Object Type Declaration
 

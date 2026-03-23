@@ -10,6 +10,7 @@ import type {CrIconButtonElement} from '//resources/cr_elements/cr_icon_button/c
 import type {CrInputElement} from '//resources/cr_elements/cr_input/cr_input.js';
 import {I18nMixinLit} from '//resources/cr_elements/i18n_mixin_lit.js';
 import {assert} from '//resources/js/assert.js';
+import {isMac} from '//resources/js/platform.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 
 import {getCss} from './cr_shortcut_input.css.js';
@@ -53,6 +54,7 @@ export class CrShortcutInputElement extends CrShortcutInputElementBase {
       inputAriaLabel: {type: String},
       editButtonAriaLabel: {type: String},
       inputDisabled: {type: Boolean},
+      allowCtrlAltShortcuts: {type: Boolean},
       error_: {type: Number},
 
       readonly_: {
@@ -62,13 +64,14 @@ export class CrShortcutInputElement extends CrShortcutInputElementBase {
     };
   }
 
-  shortcut: string = '';
-  inputAriaLabel: string = '';
-  editButtonAriaLabel: string = '';
-  inputDisabled: boolean = false;
-  protected readonly_: boolean = true;
+  accessor shortcut: string = '';
+  accessor inputAriaLabel: string = '';
+  accessor editButtonAriaLabel: string = '';
+  accessor inputDisabled: boolean = false;
+  accessor allowCtrlAltShortcuts = false;
+  protected accessor readonly_: boolean = true;
   private capturing_: boolean = false;
-  private error_: ShortcutError = ShortcutError.NO_ERROR;
+  private accessor error_: ShortcutError = ShortcutError.NO_ERROR;
   private pendingShortcut_: string = '';
 
   override firstUpdated() {
@@ -187,13 +190,27 @@ export class CrShortcutInputElement extends CrShortcutInputElementBase {
     e.preventDefault();
     e.stopPropagation();
 
-    // Don't allow both Ctrl and Alt in the same keybinding.
+    // Don't allow both Ctrl and Alt in the same keybinding. Profile saved
+    // shortcuts convert command to Ctrl so command + alt is not allowed either.
+    // See https://devblogs.microsoft.com/oldnewthing/20040329-00/?p=40003 for
+    // more information.
     // TODO(devlin): This really should go in hasValidModifiers,
     // but that requires updating the existing page as well.
-    if (e.ctrlKey && e.altKey) {
+    if (!this.allowCtrlAltShortcuts && e.altKey &&
+        (e.ctrlKey || (isMac && e.metaKey))) {
       this.error_ = ShortcutError.TOO_MANY_MODIFIERS;
       return;
     }
+    // <if expr="is_macosx">
+    // If Ctrl+Alt shortcuts are allowed, instances of too many modifiers
+    // should still be blocked. This can only occur on Mac when all modifiers
+    // are used.
+    if (this.allowCtrlAltShortcuts && e.metaKey && e.altKey && e.shiftKey &&
+        e.ctrlKey) {
+      this.error_ = ShortcutError.TOO_MANY_MODIFIERS;
+      return;
+    }
+    // </if>
     if (!hasValidModifiers(e)) {
       this.pendingShortcut_ = '';
       this.error_ = ShortcutError.INCLUDE_START_MODIFIER;

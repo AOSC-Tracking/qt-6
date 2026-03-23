@@ -15,7 +15,6 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkString.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkAlignedStorage.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkDebug.h"
@@ -27,6 +26,7 @@
 #include "src/base/SkArenaAlloc.h"
 #include "src/base/SkUtils.h"
 #include "src/base/SkVx.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkRRectPriv.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/BufferWriter.h"
@@ -344,7 +344,9 @@ GrDrawOp::ClipResult FillRRectOpImpl::clipToShape(skgpu::ganesh::SurfaceDrawCont
             if (shape.isRect()) {
                 clipRRect.setRect(clipToView.mapRect(shape.rect()));
             } else {
-                if (!shape.rrect().transform(clipToView, &clipRRect)) {
+                if (auto rr = shape.rrect().transform(clipToView)) {
+                    clipRRect = *rr;
+                } else {
                     // Transforming the rrect failed. This shouldn't generally happen except in
                     // cases of fp32 overflow.
                     return ClipResult::kFail;

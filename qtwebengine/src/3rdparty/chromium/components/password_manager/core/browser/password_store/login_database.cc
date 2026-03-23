@@ -68,7 +68,7 @@ using signin::GaiaIdHash;
 namespace password_manager {
 
 // The current version number of the login database schema.
-constexpr int kCurrentVersionNumber = 41;
+constexpr int kCurrentVersionNumber = 42;
 // The oldest version of the schema such that a legacy Chrome client using that
 // version can still read/write the current database.
 constexpr int kCompatibleVersionNumber = 40;
@@ -180,6 +180,7 @@ enum LoginDatabaseTableColumns {
   COLUMN_SHARING_NOTIFICATION_DISPLAYED,
   COLUMN_KEYCHAIN_IDENTIFIER,
   COLUMN_SENDER_PROFILE_IMAGE_URL,
+  COLUMN_DATE_LAST_FILLED,
   COLUMN_NUM  // Keep this last.
 };
 
@@ -288,6 +289,7 @@ void BindAddStatement(const PasswordForm& form,
   s->BindTime(COLUMN_DATE_RECEIVED, form.date_received);
   s->BindBool(COLUMN_SHARING_NOTIFICATION_DISPLAYED,
               form.sharing_notification_displayed);
+  s->BindTime(COLUMN_DATE_LAST_FILLED, form.date_last_filled);
 }
 
 // Output parameter is the first one because of binding order.
@@ -595,7 +597,11 @@ void InitializeBuilders(SQLTableBuilders builders) {
   builders.logins->AddColumn("sender_profile_image_url", "VARCHAR");
   SealVersion(builders, /*expected_version=*/41u);
 
-  static_assert(kCurrentVersionNumber == 41, "Seal the recent version");
+  // Version 42. Introduce date_last_filled column.
+  builders.logins->AddColumn("date_last_filled", "INTEGER NOT NULL DEFAULT 0");
+  SealVersion(builders, /*expected_version=*/42u);
+
+  static_assert(kCurrentVersionNumber == 42, "Seal the recent version");
   CHECK_EQ(static_cast<size_t>(COLUMN_NUM), builders.logins->NumberOfColumns())
       << "Adjust LoginDatabaseTableColumns if you change column definitions "
          "here.";
@@ -967,7 +973,7 @@ std::string GeneratePlaceholders(size_t count) {
 // and returns it.
 PasswordForm GetFormForRemoval(sql::Statement& statement) {
   PasswordForm form;
-  form.url = GURL(statement.ColumnString(COLUMN_ORIGIN_URL));
+  form.url = GURL(statement.ColumnStringView(COLUMN_ORIGIN_URL));
   form.username_element = statement.ColumnString16(COLUMN_USERNAME_ELEMENT);
   form.username_value = statement.ColumnString16(COLUMN_USERNAME_VALUE);
   form.password_element = statement.ColumnString16(COLUMN_PASSWORD_ELEMENT);
@@ -1031,11 +1037,10 @@ bool ShouldDeleteUndecryptablePasswords(
     bool is_enabled_by_policy,
     IsAccountStore is_account_store) {
 #if BUILDFLAG(IS_LINUX)
-  std::string user_data_dir_string;
   std::unique_ptr<base::Environment> environment(base::Environment::Create());
   // On Linux user data directory ca be specified using an env variable. If it
   // exists, passwords shouldn't be deleted.
-  if (environment->GetVar("CHROME_USER_DATA_DIR", &user_data_dir_string)) {
+  if (environment->HasVar("CHROME_USER_DATA_DIR")) {
     RecordShouldDeleteUndecryptablePasswordsMetric(
         ShouldDeleteUndecryptablePasswordsResult::kUserDataDirEnvVarIsPresent);
     return false;
@@ -1517,6 +1522,7 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(
   s.BindString(next_param++, form.sender_profile_image_url.is_valid()
                                  ? form.sender_profile_image_url.spec()
                                  : "");
+  s.BindTime(next_param++, form.date_last_filled);
   // NOTE: Add new fields here unless the field is a part of the unique key.
   // If so, add new field below.
 
@@ -1536,17 +1542,8 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(
     return PasswordStoreChangeList();
   }
 
-  // If no rows changed due to this command, it means that there was no row to
-  // update, so there is no point trying to update insecure credentials data or
-  // the notes table.
-  if (db_.GetLastChangeCount() == 0) {
-    if (error) {
-      *error = UpdateCredentialError::kNoUpdatedRecords;
-    }
-    return PasswordStoreChangeList();
-  }
-
-  bool password_changed =
+  const bool login_table_changed = db_.GetLastChangeCount() > 0;
+  const bool password_changed =
       form.password_value != old_primary_key_password.decrypted_password;
 
   PasswordForm form_with_encrypted_password = form;
@@ -1563,8 +1560,17 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(
   InsecureCredentialsChanged insecure_changed = UpdateInsecureCredentials(
       FormPrimaryKey(old_primary_key_password.primary_key),
       form_with_encrypted_password.password_issues);
-  UpdatePasswordNotes(FormPrimaryKey(old_primary_key_password.primary_key),
-                      form.notes);
+  const bool notes_changed = UpdatePasswordNotes(
+      FormPrimaryKey(old_primary_key_password.primary_key), form.notes);
+
+  // If no rows changed due to the command above and insecure credentials and
+  // notes were not updated, it means that there was no row to update
+  if (!insecure_changed && !login_table_changed && !notes_changed) {
+    if (error) {
+      *error = UpdateCredentialError::kNoUpdatedRecords;
+    }
+    return PasswordStoreChangeList();
+  }
 
   PasswordStoreChangeList list;
   form_with_encrypted_password.in_store = GetStore();
@@ -1593,7 +1599,7 @@ bool LoginDatabase::RemoveLogin(const PasswordForm& form,
   // Remove a login by UNIQUE-constrained fields.
   DCHECK(!delete_statement_.empty());
   sql::Statement s(db_.GetCachedStatement(SQL_FROM_HERE, delete_statement_));
-  s.BindString(0, form.url.spec());
+  s.BindString(0, form.url.possibly_invalid_spec());
   s.BindString16(1, form.username_element);
   s.BindString16(2, form.username_value);
   s.BindString16(3, form.password_element);
@@ -1673,14 +1679,9 @@ bool LoginDatabase::RemoveLoginsCreatedBetween(
   }
 
 #if BUILDFLAG(IS_IOS)
-  base::Time start = base::Time::Now();
   for (const auto& form : forms) {
     DeleteEncryptedPasswordFromKeychain(form.keychain_identifier);
   }
-  base::UmaHistogramMediumTimes(
-      "PasswordManager.PasswordStoreBuiltInBackend.RemoveLoginsCreatedBetween."
-      "KeychainLatency",
-      base::Time::Now() - start);
 #endif
 
   sql::Statement s(
@@ -1729,17 +1730,14 @@ PasswordForm LoginDatabase::GetFormWithoutPasswordFromStatement(
     sql::Statement& s) const {
   PasswordForm form;
   form.primary_key = FormPrimaryKey(s.ColumnInt(COLUMN_ID));
-  std::string tmp = s.ColumnString(COLUMN_ORIGIN_URL);
-  form.url = GURL(tmp);
-  tmp = s.ColumnString(COLUMN_ACTION_URL);
-  form.action = GURL(tmp);
+  form.url = GURL(s.ColumnStringView(COLUMN_ORIGIN_URL));
+  form.action = GURL(s.ColumnStringView(COLUMN_ACTION_URL));
   form.username_element = s.ColumnString16(COLUMN_USERNAME_ELEMENT);
   form.username_value = s.ColumnString16(COLUMN_USERNAME_VALUE);
   form.password_element = s.ColumnString16(COLUMN_PASSWORD_ELEMENT);
   s.ColumnBlobAsString(COLUMN_KEYCHAIN_IDENTIFIER, &form.keychain_identifier);
   form.submit_element = s.ColumnString16(COLUMN_SUBMIT_ELEMENT);
-  tmp = s.ColumnString(COLUMN_SIGNON_REALM);
-  form.signon_realm = tmp;
+  form.signon_realm = s.ColumnString(COLUMN_SIGNON_REALM);
   form.date_created = s.ColumnTime(COLUMN_DATE_CREATED);
   form.blocked_by_user = (s.ColumnInt(COLUMN_BLOCKLISTED_BY_USER) > 0);
   // TODO(crbug.com/40732888): Add metrics to capture how often these values
@@ -1764,14 +1762,15 @@ PasswordForm LoginDatabase::GetFormWithoutPasswordFromStatement(
     autofill::DeserializeFormData(&form_data_iter, &form.form_data);
   }
   form.display_name = s.ColumnString16(COLUMN_DISPLAY_NAME);
-  form.icon_url = GURL(s.ColumnString(COLUMN_ICON_URL));
+  form.icon_url = GURL(s.ColumnStringView(COLUMN_ICON_URL));
   form.federation_origin =
-      url::SchemeHostPort(GURL(s.ColumnString(COLUMN_FEDERATION_URL)));
+      url::SchemeHostPort(GURL(s.ColumnStringView(COLUMN_FEDERATION_URL)));
   form.skip_zero_click = (s.ColumnInt(COLUMN_SKIP_ZERO_CLICK) > 0);
   form.generation_upload_status =
       static_cast<PasswordForm::GenerationUploadStatus>(
           s.ColumnInt(COLUMN_GENERATION_UPLOAD_STATUS));
   form.date_last_used = s.ColumnTime(COLUMN_DATE_LAST_USED);
+  form.date_last_filled = s.ColumnTime(COLUMN_DATE_LAST_FILLED);
   base::span<const uint8_t> moving_blocked_for_blob =
       s.ColumnBlob(COLUMN_MOVING_BLOCKED_FOR);
   if (!moving_blocked_for_blob.empty()) {
@@ -1783,7 +1782,7 @@ PasswordForm LoginDatabase::GetFormWithoutPasswordFromStatement(
   form.sender_email = s.ColumnString16(COLUMN_SENDER_EMAIL);
   form.sender_name = s.ColumnString16(COLUMN_SENDER_NAME);
   form.sender_profile_image_url =
-      GURL(s.ColumnString(COLUMN_SENDER_PROFILE_IMAGE_URL));
+      GURL(s.ColumnStringView(COLUMN_SENDER_PROFILE_IMAGE_URL));
   form.date_received = s.ColumnTime(COLUMN_DATE_RECEIVED);
   form.sharing_notification_displayed =
       s.ColumnBool(COLUMN_SHARING_NOTIFICATION_DISPLAYED);
@@ -2116,7 +2115,7 @@ LoginDatabase::SyncMetadataStore::GetDataTypeState(syncer::DataType data_type) {
     }
   }
 
-  std::string serialized_state = s.ColumnString(0);
+  std::string_view serialized_state = s.ColumnStringView(0);
   if (state->ParseFromString(serialized_state)) {
     return state;
   }
@@ -2524,13 +2523,24 @@ std::vector<PasswordNote> LoginDatabase::GetPasswordNotes(
   return password_notes_table_.GetPasswordNotes(primary_key);
 }
 
-void LoginDatabase::UpdatePasswordNotes(
+bool LoginDatabase::UpdatePasswordNotes(
     FormPrimaryKey primary_key,
     const std::vector<PasswordNote>& notes) {
+  base::flat_set<PasswordNote> existing_notes(
+      password_notes_table_.GetPasswordNotes(primary_key));
+  if (existing_notes.size() == notes.size()) {
+    // Password notes haven't changed. Return early.
+    if (std::ranges::all_of(notes, [&existing_notes](const PasswordNote& note) {
+          return existing_notes.count(note);
+        })) {
+      return false;
+    }
+  }
   password_notes_table_.RemovePasswordNotes(primary_key);
   for (const PasswordNote& note : notes) {
     password_notes_table_.InsertOrReplace(primary_key, note);
   }
+  return true;
 }
 
 void LoginDatabase::TriggerIsEmptyCb() {

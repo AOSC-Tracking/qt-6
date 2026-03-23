@@ -204,6 +204,14 @@ qt_internal_get_max_new_policy_cmake_version(max_new_policy_version)
 qt_internal_get_qt_build_public_helpers(__qt_cmake_public_helpers)
 list(JOIN __qt_cmake_public_helpers "\n    " QT_PUBLIC_FILES_TO_INCLUDE)
 
+set(__qt_cmake_extra_code_before_dependencies "")
+if(ANDROID)
+    list(APPEND __qt_cmake_extra_code_before_dependencies
+        "__qt_internal_workaround_android_cmp0155_issue()")
+endif()
+list(JOIN __qt_cmake_extra_code_before_dependencies
+    "\n    " QT_CONFIG_EXTRA_CODE_BEFORE_DEPENDENCIES)
+
 # Generate and install Qt6 config file. Make sure it happens after the global feature evaluation so
 # they can be accessed in the Config file if needed.
 configure_package_config_file(
@@ -212,13 +220,35 @@ configure_package_config_file(
     INSTALL_DESTINATION "${__GlobalConfig_install_dir}"
 )
 
-_qt_internal_export_apple_sdk_and_xcode_version_requirements(QT_CONFIG_EXTRAS_CODE)
+set(QT_CONFIG_EXTRAS_CODE "")
+
+_qt_internal_export_apple_sdk_and_xcode_version_requirements(apple_requirements)
+if(apple_requirements)
+    string(APPEND QT_CONFIG_EXTRAS_CODE "${apple_requirements}")
+endif()
+
+if(EMSCRIPTEN)
+    string(APPEND QT_CONFIG_EXTRAS_CODE "\n
+_qt_internal_handle_target_supports_shared_libs()
+")
+endif()
 
 configure_file(
     "${PROJECT_SOURCE_DIR}/cmake/QtConfigExtras.cmake.in"
     "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ConfigExtras.cmake"
     @ONLY
 )
+
+qt_configure_file(
+    OUTPUT "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}TargetsPrecheck.cmake"
+    CONTENT
+"
+_qt_internal_should_include_targets(
+    TARGETS ${__export_targets}
+    NAMESPACE ${INSTALL_CMAKE_NAMESPACE}::
+    OUT_VAR_SHOULD_SKIP __qt_skip_include_targets_file
+)
+")
 
 write_basic_package_version_file(
     "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ConfigVersionImpl.cmake"
@@ -251,6 +281,7 @@ qt_install(FILES
     "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ConfigExtras.cmake"
     "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ConfigVersion.cmake"
     "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ConfigVersionImpl.cmake"
+    "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}TargetsPrecheck.cmake"
     "${__GlobalConfig_build_dir}/QtInstallPaths.cmake"
     DESTINATION "${__GlobalConfig_install_dir}"
     COMPONENT Devel
@@ -428,28 +459,22 @@ elseif(WASM)
         "${QT_BUILD_DIR}/${INSTALL_LIBEXECDIR}/qt-wasmtestrunner.py" @ONLY)
     qt_install(PROGRAMS "${QT_BUILD_DIR}/${INSTALL_LIBEXECDIR}/qt-wasmtestrunner.py"
         DESTINATION "${INSTALL_LIBEXECDIR}")
-
-    if(QT_FEATURE_shared)
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/util/wasm/preload/preload_qml_imports.py"
-            "${QT_BUILD_DIR}/${INSTALL_LIBEXECDIR}/preload_qml_imports.py" COPYONLY)
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/util/wasm/preload/preload_qt_plugins.py"
-            "${QT_BUILD_DIR}/${INSTALL_LIBEXECDIR}/preload_qt_plugins.py" COPYONLY)
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/util/wasm/preload/generate_default_preloads.sh.in"
-            "${QT_BUILD_DIR}/${INSTALL_LIBEXECDIR}/generate_default_preloads.sh.in" COPYONLY)
-        qt_install(PROGRAMS "${QT_BUILD_DIR}/${INSTALL_LIBEXECDIR}/preload_qml_imports.py"
-            DESTINATION "${INSTALL_LIBEXECDIR}")
-        qt_install(PROGRAMS "${QT_BUILD_DIR}/${INSTALL_LIBEXECDIR}/preload_qt_plugins.py"
-            DESTINATION "${INSTALL_LIBEXECDIR}")
-        qt_install(PROGRAMS "${QT_BUILD_DIR}/${INSTALL_LIBEXECDIR}/generate_default_preloads.sh.in"
-            DESTINATION "${INSTALL_LIBEXECDIR}")
-    endif()
 endif()
 
 # Install CI support files to libexec.
-qt_path_join(__qt_libexec_install_dir "${QT_INSTALL_DIR}" "${INSTALL_LIBEXECDIR}")
-qt_copy_or_install(FILES coin/instructions/qmake/ensure_pro_file.cmake
-    DESTINATION "${__qt_libexec_install_dir}")
-qt_copy_or_install(PROGRAMS "util/testrunner/qt-testrunner.py"
-    DESTINATION "${__qt_libexec_install_dir}")
-qt_copy_or_install(PROGRAMS "util/testrunner/sanitizer-testrunner.py"
-    DESTINATION "${__qt_libexec_install_dir}")
+if(QT_INSTALL_CI_FILES)
+    qt_path_join(__qt_libexec_install_dir "${QT_INSTALL_DIR}" "${INSTALL_LIBEXECDIR}")
+    qt_copy_or_install(FILES coin/instructions/qmake/ensure_pro_file.cmake
+        DESTINATION "${__qt_libexec_install_dir}")
+    qt_copy_or_install(PROGRAMS "util/testrunner/qt-testrunner.py"
+        DESTINATION "${__qt_libexec_install_dir}")
+    qt_copy_or_install(PROGRAMS "util/testrunner/sanitizer-testrunner.py"
+        DESTINATION "${__qt_libexec_install_dir}")
+    qt_copy_or_install(PROGRAMS "util/json_schema/check_qt_module_json_schemas.py"
+        DESTINATION "${__qt_libexec_install_dir}")
+endif()
+
+# Install json schemas for the users as well
+qt_copy_or_install(FILES
+    "util/json_schema/modules.json"
+    DESTINATION "${INSTALL_QT_SHAREDIR}/json_schema/")

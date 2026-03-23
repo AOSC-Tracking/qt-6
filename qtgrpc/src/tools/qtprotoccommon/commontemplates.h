@@ -43,6 +43,7 @@ public:
     static const char *ClassMessageForwardDeclarationTemplate();
     static const char *EnumForwardDeclarationTemplate();
     static const char *EnumClassForwardDeclarationTemplate();
+    static const char *NonFinalClassMessageBeginDeclarationTemplate();
     static const char *ClassMessageBeginDeclarationTemplate();
     static const char *Q_PROTOBUF_OBJECTMacro();
     static const char *Q_PROTOBUF_OBJECT_EXPORTMacro();
@@ -167,6 +168,7 @@ public:
     static const char *QmlRegisterMessageTypeTemplate();
 
     static const char *QDateTimeExtrasTemplate();
+    static const char *DurationExtrasTemplate();
 
     static const char *ProtoFileSuffix();
     static const char *HeaderSuffix();

@@ -10,6 +10,8 @@
 #include "base/metrics/user_metrics.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "components/autofill/core/browser/autofill_field.h"
+#include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 
@@ -61,6 +63,10 @@ void LogSuggestionsCount(size_t num_suggestions,
     case FillingProduct::kCompose:
     case FillingProduct::kPlusAddresses:
     case FillingProduct::kAutofillAi:
+    case FillingProduct::kLoyaltyCard:
+    case FillingProduct::kIdentityCredential:
+    case FillingProduct::kDataList:
+    case FillingProduct::kOneTimePassword:
       NOTREACHED();
   }
 }
@@ -81,20 +87,21 @@ void LogSuggestionAcceptedIndex(int index,
       base::UmaHistogramSparse("Autofill.SuggestionAcceptedIndex.Profile",
                                uma_index);
       break;
-    case FillingProduct::kPassword:
-    case FillingProduct::kNone:
-      base::UmaHistogramSparse("Autofill.SuggestionAcceptedIndex.Other",
-                               uma_index);
-      break;
     case FillingProduct::kAutocomplete:
       base::UmaHistogramSparse("Autofill.SuggestionAcceptedIndex.Autocomplete",
                                uma_index);
       break;
     case FillingProduct::kIban:
+    case FillingProduct::kLoyaltyCard:
     case FillingProduct::kCompose:
     case FillingProduct::kPlusAddresses:
     case FillingProduct::kAutofillAi:
     case FillingProduct::kMerchantPromoCode:
+    case FillingProduct::kIdentityCredential:
+    case FillingProduct::kPassword:
+    case FillingProduct::kNone:
+    case FillingProduct::kDataList:
+    case FillingProduct::kOneTimePassword:
       // It is NOTREACHED because all other types should be handled separately.
       NOTREACHED();
   }
@@ -105,18 +112,33 @@ void LogSuggestionAcceptedIndex(int index,
                             off_the_record);
 }
 
-void LogAutofillShowCardsFromGoogleAccountButtonEventMetric(
-    ShowCardsFromGoogleAccountButtonEvent event) {
-  base::UmaHistogramEnumeration(
-      "Autofill.ButterForPayments.ShowCardsFromGoogleAccountButtonEvents",
-      event);
-}
-
 void LogAutofillRankingSuggestionDifference(
     SuggestionRankingContext::RelativePosition ranking_difference) {
   base::UmaHistogramEnumeration(
       "Autofill.SuggestionAccepted.SuggestionRankingDifference.CreditCard",
       ranking_difference);
+}
+
+void LogAddressAutofillOnTypingSuggestionAccepted(
+    FieldType field_type_used,
+    const AutofillField* autofill_trigger_field) {
+  // TODO(crbug.com/381994105): Consider deleting this metric in favor or
+  // Autofill.AddressSuggestionOnTypingAcceptance.PerFieldType.
+  base::UmaHistogramEnumeration(
+      "Autofill.AddressSuggestionOnTyping.AddressFieldTypeUsed",
+      field_type_used, FieldType::MAX_VALID_FIELD_TYPE);
+  FieldTypeSet field_types = autofill_trigger_field
+                                 ? autofill_trigger_field->Type().GetTypes()
+                                 : FieldTypeSet{};
+  base::UmaHistogramBoolean(
+      "Autofill.AddressSuggestionOnTypingAcceptance.FieldClassication",
+      !FieldTypeSet{NO_SERVER_DATA, UNKNOWN_TYPE, EMPTY_TYPE}.contains_all(
+          field_types));
+  if (autofill_trigger_field) {
+    base::UmaHistogramCounts100(
+        "Autofill.AddressSuggestionOnTypingAcceptance.NumberOfCharactersTyped",
+        autofill_trigger_field->value().length());
+  }
 }
 
 }  // namespace autofill::autofill_metrics

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qdarwinwebview_p.h"
-#include <private/qwebview_p.h>
-#include <private/qwebviewloadrequest_p.h>
+#include <QtWebView/qwebview.h>
+#include <QtWebView/qwebviewloadinginfo.h>
+#include <QtWebView/private/qwebviewfactory_p.h>
 #include "qtwebviewfunctions.h"
 
 #include <QtCore/private/qglobal_p.h>
@@ -31,9 +32,9 @@ typedef NSView UIView;
 #endif
 
 @interface QtWKWebViewDelegate : NSObject<WKNavigationDelegate> {
-    QDarwinWebViewPrivate *qDarwinWebViewPrivate;
+    QPointer<QDarwinWebViewPrivate> qDarwinWebViewPrivate;
 }
-- (QtWKWebViewDelegate *)initWithQAbstractWebView:(QDarwinWebViewPrivate *)webViewPrivate;
+- (QtWKWebViewDelegate *)initWithQWebViewPrivate:(QDarwinWebViewPrivate *)webViewPrivate;
 - (void)pageDone;
 - (void)handleError:(NSError *)error;
 
@@ -48,7 +49,7 @@ typedef NSView UIView;
 @end
 
 @implementation QtWKWebViewDelegate
-- (QtWKWebViewDelegate *)initWithQAbstractWebView:(QDarwinWebViewPrivate *)webViewPrivate
+- (QtWKWebViewDelegate *)initWithQWebViewPrivate:(QDarwinWebViewPrivate *)webViewPrivate
 {
     if ((self = [super init])) {
         Q_ASSERT(webViewPrivate);
@@ -59,24 +60,30 @@ typedef NSView UIView;
 
 - (void)pageDone
 {
-    Q_EMIT qDarwinWebViewPrivate->loadProgressChanged(qDarwinWebViewPrivate->loadProgress());
+    if (!qDarwinWebViewPrivate)
+        return;
+    emit qDarwinWebViewPrivate->q_ptr->loadProgressChanged(qDarwinWebViewPrivate->loadProgress());
 }
 
 - (void)handleError:(NSError *)error
 {
+    if (!qDarwinWebViewPrivate)
+        return;
     [self pageDone];
     NSString *errorString = [error localizedDescription];
     NSURL *failingURL = error.userInfo[@"NSErrorFailingURLKey"];
     const QUrl url = [failingURL isKindOfClass:[NSURL class]]
                         ? QUrl::fromNSURL(failingURL) : qDarwinWebViewPrivate->url();
-    Q_EMIT qDarwinWebViewPrivate->loadingChanged(
-                QWebViewLoadRequestPrivate(url, QWebView::LoadFailedStatus,
-                                           QString::fromNSString(errorString)));
+    emit qDarwinWebViewPrivate->q_ptr->loadingChanged(
+            QWebViewFactory::LoadingInfo::create(url, QWebViewLoadingInfo::LoadStatus::Failed,
+                                QString::fromNSString(errorString)));
 }
 
 - (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation
 {
     Q_UNUSED(webView);
+    if (!qDarwinWebViewPrivate)
+        return;
     // WKNavigationDelegate gives us per-frame notifications while the QWebView API
     // should provide per-page notifications. Therefore we keep track of the last frame
     // to be started, if that finishes or fails then we indicate that it has loaded.
@@ -85,30 +92,32 @@ typedef NSView UIView;
     else
         return;
 
-    Q_EMIT qDarwinWebViewPrivate->loadingChanged(
-                QWebViewLoadRequestPrivate(qDarwinWebViewPrivate->url(),
-                                           QWebView::LoadStartedStatus,
-                                           QString()));
-    Q_EMIT qDarwinWebViewPrivate->loadProgressChanged(qDarwinWebViewPrivate->loadProgress());
+    emit qDarwinWebViewPrivate->q_ptr->loadingChanged(
+            QWebViewFactory::LoadingInfo::create(qDarwinWebViewPrivate->url(),
+                                QWebViewLoadingInfo::LoadStatus::Started, QString()));
+    emit qDarwinWebViewPrivate->q_ptr->loadProgressChanged(qDarwinWebViewPrivate->loadProgress());
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation
 {
     Q_UNUSED(webView);
+    if (!qDarwinWebViewPrivate)
+        return;
     if (qDarwinWebViewPrivate->wkNavigation != navigation)
         return;
 
     [self pageDone];
-    Q_EMIT qDarwinWebViewPrivate->loadingChanged(
-                QWebViewLoadRequestPrivate(qDarwinWebViewPrivate->url(),
-                                           QWebView::LoadSucceededStatus,
-                                           QString()));
+    emit qDarwinWebViewPrivate->q_ptr->loadingChanged(
+            QWebViewFactory::LoadingInfo::create(qDarwinWebViewPrivate->url(),
+                                QWebViewLoadingInfo::LoadStatus::Succeeded, QString()));
 }
 
 - (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation
       withError:(NSError *)error
 {
     Q_UNUSED(webView);
+    if (!qDarwinWebViewPrivate)
+        return;
     if (qDarwinWebViewPrivate->wkNavigation != navigation)
         return;
     [self handleError:error];
@@ -118,6 +127,8 @@ typedef NSView UIView;
       withError:(NSError *)error
 {
     Q_UNUSED(webView);
+    if (!qDarwinWebViewPrivate)
+        return;
     if (qDarwinWebViewPrivate->wkNavigation != navigation)
         return;
     [self handleError:error];
@@ -179,9 +190,10 @@ decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
     Q_UNUSED(change);
     Q_UNUSED(context);
     if ([keyPath isEqualToString:@"estimatedProgress"]) {
-        Q_EMIT qDarwinWebViewPrivate->loadProgressChanged(qDarwinWebViewPrivate->loadProgress());
+        emit qDarwinWebViewPrivate->q_ptr->loadProgressChanged(
+                qDarwinWebViewPrivate->loadProgress());
     } else if ([keyPath isEqualToString:@"title"]) {
-        Q_EMIT qDarwinWebViewPrivate->titleChanged(qDarwinWebViewPrivate->title());
+        emit qDarwinWebViewPrivate->q_ptr->titleChanged(qDarwinWebViewPrivate->title());
     }
 }
 
@@ -189,11 +201,43 @@ decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
 
 QT_BEGIN_NAMESPACE
 
-QDarwinWebViewSettingsPrivate::QDarwinWebViewSettingsPrivate(WKWebViewConfiguration *conf, QObject *p)
-    : QAbstractWebViewSettings(p)
-    , m_conf(conf)
+QDarwinWebViewSettingsPrivate::QDarwinWebViewSettingsPrivate(WKWebViewConfiguration *conf)
+    :  m_conf(conf)
 {
 
+}
+
+bool QDarwinWebViewSettingsPrivate::doTestAttribute(WebAttribute attribute) const
+{
+    switch (attribute) {
+    case QWebViewSettings::WebAttribute::LocalStorageEnabled:
+        return localStorageEnabled();
+    case QWebViewSettings::WebAttribute::JavaScriptEnabled:
+        return javaScriptEnabled();
+    case QWebViewSettings::WebAttribute::AllowFileAccess:
+        return allowFileAccess();
+    case QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls:
+        return localContentCanAccessFileUrls();
+    }
+    return false;
+}
+
+void QDarwinWebViewSettingsPrivate::doSetAttribute(WebAttribute attribute, bool value)
+{
+    switch (attribute) {
+    case QWebViewSettings::WebAttribute::LocalStorageEnabled:
+        setLocalStorageEnabled(value);
+        break;
+    case QWebViewSettings::WebAttribute::JavaScriptEnabled:
+        setJavaScriptEnabled(value);
+        break;
+    case QWebViewSettings::WebAttribute::AllowFileAccess:
+        setAllowFileAccess(value);
+        break;
+    case QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls:
+        setLocalContentCanAccessFileUrls(value);
+        break;
+    }
 }
 
 bool QDarwinWebViewSettingsPrivate::localStorageEnabled() const
@@ -257,13 +301,11 @@ void QDarwinWebViewSettingsPrivate::setAllowFileAccess(bool enabled)
     m_allowFileAccess = enabled;
 }
 
-QDarwinWebViewPrivate::QDarwinWebViewPrivate(QObject *p)
-    : QAbstractWebView(p)
-    , wkWebView(nil)
+QDarwinWebViewPrivate::QDarwinWebViewPrivate(QWebView *view) : QWebViewPrivate(view), wkWebView(nil)
 {
     CGRect frame = CGRectMake(0.0, 0.0, 400, 400);
     wkWebView = [[WKWebView alloc] initWithFrame:frame];
-    wkWebView.navigationDelegate = [[QtWKWebViewDelegate alloc] initWithQAbstractWebView:this];
+    wkWebView.navigationDelegate = [[QtWKWebViewDelegate alloc] initWithQWebViewPrivate:this];
     [wkWebView addObserver:wkWebView.navigationDelegate forKeyPath:@"estimatedProgress"
                    options:NSKeyValueObservingOptions(NSKeyValueObservingOptionNew)
                    context:nil];
@@ -272,7 +314,13 @@ QDarwinWebViewPrivate::QDarwinWebViewPrivate(QObject *p)
                    context:nil];
 
     m_window = QWindow::fromWinId(reinterpret_cast<WId>(wkWebView));
-    m_settings = new QDarwinWebViewSettingsPrivate(wkWebView.configuration, this);
+    if (m_window) {
+        m_window->setParent(view);
+        connect(view, &QWindow::widthChanged, m_window, &QWindow::setWidth);
+        connect(view, &QWindow::heightChanged, m_window, &QWindow::setHeight);
+        connect(view, &QWindow::visibleChanged, m_window, &QWindow::setVisible);
+    }
+    m_settings = new QDarwinWebViewSettingsPrivate(wkWebView.configuration);
 }
 
 QDarwinWebViewPrivate::~QDarwinWebViewPrivate()
@@ -285,6 +333,8 @@ QDarwinWebViewPrivate::~QDarwinWebViewPrivate()
     [wkWebView.navigationDelegate release];
     wkWebView.navigationDelegate = nil;
     [wkWebView release];
+    if (m_window)
+        delete m_window;
 }
 
 QUrl QDarwinWebViewPrivate::url() const
@@ -299,8 +349,14 @@ void QDarwinWebViewPrivate::setUrl(const QUrl &url)
             // NOTE: Check if the file exists before attempting to load it, we follow the same
             // asynchronous pattern as expected to not break the tests (Started + Failed).
             if (!QFile::exists(url.toLocalFile())) {
-                QMetaObject::invokeMethod(this, &QDarwinWebViewPrivate::loadingChanged, Qt::QueuedConnection, QWebViewLoadRequestPrivate(url, QWebView::LoadStartedStatus, {}));
-                QMetaObject::invokeMethod(this, &QDarwinWebViewPrivate::loadingChanged, Qt::QueuedConnection, QWebViewLoadRequestPrivate(url, QWebView::LoadFailedStatus, QStringLiteral("File does not exist")));
+                QMetaObject::invokeMethod(
+                        q_ptr, &QWebView::loadingChanged, Qt::QueuedConnection,
+                        QWebViewFactory::LoadingInfo::create(url, QWebViewLoadingInfo::LoadStatus::Started,
+                                            {}));
+                QMetaObject::invokeMethod(
+                        q_ptr, &QWebView::loadingChanged, Qt::QueuedConnection,
+                        QWebViewFactory::LoadingInfo::create(url, QWebViewLoadingInfo::LoadStatus::Failed,
+                                            QStringLiteral("File does not exist")));
                 return;
             }
             // We need to pass local files via loadFileURL and the read access should cover
@@ -315,7 +371,10 @@ void QDarwinWebViewPrivate::setUrl(const QUrl &url)
             [wkWebView loadRequest:[NSURLRequest requestWithURL:url.toNSURL()]];
         }
     } else {
-        QMetaObject::invokeMethod(this, &QDarwinWebViewPrivate::loadingChanged, Qt::QueuedConnection, QWebViewLoadRequestPrivate(url, QWebView::LoadFailedStatus, QStringLiteral("Invalid URL")));
+        QMetaObject::invokeMethod(
+                q_ptr, &QWebView::loadingChanged, Qt::QueuedConnection,
+                QWebViewFactory::LoadingInfo::create(url, QWebViewLoadingInfo::LoadStatus::Failed,
+                                    QStringLiteral("Invalid URL")));
     }
 }
 
@@ -434,12 +493,17 @@ QVariant fromJSValue(id result)
     return QVariant();
 }
 
-void QDarwinWebViewPrivate::runJavaScriptPrivate(const QString &script, int callbackId)
+void QDarwinWebViewPrivate::runJavaScript(
+        const QString &script, const std::function<void(const QVariant &)> &resultCallback)
 {
-    [wkWebView evaluateJavaScript:script.toNSString() completionHandler:^(id result, NSError *) {
-        if (callbackId != -1)
-            Q_EMIT javaScriptResult(callbackId, fromJSValue(result));
-    }];
+    std::function<void(const QVariant &)> callbackCopy = resultCallback;
+    QPointer<QDarwinWebViewPrivate> observer(this);
+    [wkWebView evaluateJavaScript:script.toNSString()
+                completionHandler:^(id result, NSError *error) {
+                    QVariant r = error ? QVariant() : fromJSValue(result);
+                    if (callbackCopy && observer)
+                        callbackCopy(r);
+                }];
 }
 
 void QDarwinWebViewPrivate::setCookie(const QString &domain, const QString &name, const QString &value)
@@ -467,10 +531,13 @@ void QDarwinWebViewPrivate::setCookie(const QString &domain, const QString &name
     if (cookie == nullptr) {
         return;
     }
-
-    [cookieStore setCookie:cookie completionHandler:^{
-        Q_EMIT cookieAdded(QString::fromNSString(cookie.domain), QString::fromNSString(cookie.name));
-    }];
+    QPointer<QDarwinWebViewPrivate> observer(this);
+    [cookieStore setCookie:cookie
+            completionHandler:^{
+                if (observer)
+                    emit q_ptr->cookieAdded(QString::fromNSString(cookie.domain),
+                                            QString::fromNSString(cookie.name));
+            }];
 }
 
 void QDarwinWebViewPrivate::deleteCookie(const QString &domain, const QString &name)
@@ -484,13 +551,17 @@ void QDarwinWebViewPrivate::deleteCookie(const QString &domain, const QString &n
         return;
     }
 
+    QPointer<QDarwinWebViewPrivate> observer(this);
     [cookieStore getAllCookies:^(NSArray *cookies) {
         NSHTTPCookie *cookie;
         for (cookie in cookies) {
             if ([cookie.domain isEqualToString:cookieDomain] && [cookie.name isEqualToString:cookieName]) {
-                [cookieStore deleteCookie:cookie completionHandler:^{
-                    Q_EMIT cookieRemoved(QString::fromNSString(cookie.domain), QString::fromNSString(cookie.name));
-                }];
+                [cookieStore deleteCookie:cookie
+                        completionHandler:^{
+                            if (observer)
+                                emit q_ptr->cookieRemoved(QString::fromNSString(cookie.domain),
+                                                          QString::fromNSString(cookie.name));
+                        }];
             }
         }
     }];
@@ -500,19 +571,23 @@ void QDarwinWebViewPrivate::deleteAllCookies()
 {
     WKHTTPCookieStore *cookieStore = wkWebView.configuration.websiteDataStore.httpCookieStore;
 
+    QPointer<QDarwinWebViewPrivate> observer(this);
     [cookieStore getAllCookies:^(NSArray *cookies) {
         NSHTTPCookie *cookie;
         for (cookie in cookies) {
-            [cookieStore deleteCookie:cookie completionHandler:^{
-                Q_EMIT cookieRemoved(QString::fromNSString(cookie.domain), QString::fromNSString(cookie.name));
-            }];
+            [cookieStore deleteCookie:cookie
+                    completionHandler:^{
+                        if (observer)
+                            emit q_ptr->cookieRemoved(QString::fromNSString(cookie.domain),
+                                                      QString::fromNSString(cookie.name));
+                    }];
         }
     }];
 }
 
 QString QDarwinWebViewPrivate::httpUserAgent() const
 {
-    return QString::fromNSString(wkWebView.customUserAgent);
+    return QString::fromNSString([wkWebView valueForKey:@"userAgent"]);
 }
 
 void QDarwinWebViewPrivate::setHttpUserAgent(const QString &userAgent)
@@ -520,12 +595,10 @@ void QDarwinWebViewPrivate::setHttpUserAgent(const QString &userAgent)
     if (!userAgent.isEmpty()) {
         wkWebView.customUserAgent = userAgent.toNSString();
     }
-    Q_EMIT httpUserAgentChanged(userAgent);
+    emit q_ptr->httpUserAgentStringChanged(userAgent);
 }
 
-
-
-QAbstractWebViewSettings *QDarwinWebViewPrivate::getSettings() const
+QWebViewSettingsPrivate *QDarwinWebViewPrivate::settings() const
 {
     return m_settings;
 }

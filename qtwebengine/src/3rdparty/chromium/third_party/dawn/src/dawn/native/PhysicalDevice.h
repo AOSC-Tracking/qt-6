@@ -88,6 +88,8 @@ class PhysicalDeviceBase : public RefCounted {
     const std::string& GetDriverDescription() const;
     wgpu::AdapterType GetAdapterType() const;
     wgpu::BackendType GetBackendType() const;
+    uint32_t GetSubgroupMinSize() const;
+    uint32_t GetSubgroupMaxSize() const;
 
     MaybeError ResetInternalDeviceForTesting();
 
@@ -139,6 +141,10 @@ class PhysicalDeviceBase : public RefCounted {
     wgpu::AdapterType mAdapterType = wgpu::AdapterType::Unknown;
     gpu_info::DriverVersion mDriverVersion;
     std::string mDriverDescription;
+    // When the feature is *not* supported, these must be 4 and 128. Set those defaults now, but a
+    // backend may override this.
+    uint32_t mSubgroupMinSize = kDefaultSubgroupMinSize;
+    uint32_t mSubgroupMaxSize = kDefaultSubgroupMaxSize;
 
     // Juat a wrapper of ValidateFeatureSupportedWithToggles, return true if a feature is supported
     // by this adapter AND suitable with given toggles.
@@ -149,7 +155,7 @@ class PhysicalDeviceBase : public RefCounted {
     // Used for the tests that intend to use an adapter without all features enabled.
     void SetSupportedFeaturesForTesting(const std::vector<wgpu::FeatureName>& requiredFeatures);
 
-    void GetDefaultLimitsForSupportedFeatureLevel(Limits* limits) const;
+    void GetDefaultLimitsForSupportedFeatureLevel(CombinedLimits* limits) const;
 
   private:
     virtual ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(

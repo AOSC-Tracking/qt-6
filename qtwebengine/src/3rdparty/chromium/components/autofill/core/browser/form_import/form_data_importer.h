@@ -32,7 +32,6 @@ class AddressProfileSaveManager;
 class AutofillClient;
 class CreditCardSaveManager;
 class IbanSaveManager;
-class LocalCardMigrationManager;
 class PaymentsDataManager;
 enum class NonInteractivePaymentMethodType;
 
@@ -99,12 +98,6 @@ class FormDataImporter : public AddressDataManager::Observer,
   // them.
   void CacheFetchedVirtualCard(const std::u16string& last_four);
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-  LocalCardMigrationManager* local_card_migration_manager() {
-    return local_card_migration_manager_.get();
-  }
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-
   CreditCardSaveManager* GetCreditCardSaveManager() {
     return credit_card_save_manager_.get();
   }
@@ -127,7 +120,7 @@ class FormDataImporter : public AddressDataManager::Observer,
                           const history::DeletionInfo& deletion_info) override;
 
   // See `FormAssociator::GetFormAssociations()`.
-  std::optional<FormStructure::FormAssociations> GetFormAssociations(
+  FormStructure::FormAssociations GetFormAssociations(
       FormSignature form_signature) const {
     return form_associator_.GetFormAssociations(form_signature);
   }
@@ -140,19 +133,22 @@ class FormDataImporter : public AddressDataManager::Observer,
       std::optional<NonInteractivePaymentMethodType>
           payment_method_type_if_non_interactive_authentication_flow_completed);
 
+  void set_card_was_fetched_from_cache(bool card_was_fetched_from_cache) {
+    card_was_fetched_from_cache_ = card_was_fetched_from_cache;
+  }
+
  private:
-  // Defines a candidate for address profile import.
-  struct AddressProfileImportCandidate {
-    AddressProfileImportCandidate();
-    AddressProfileImportCandidate(const AddressProfileImportCandidate& other);
-    ~AddressProfileImportCandidate();
+  // Defines an extracted address profile, which is a candidate for address
+  // profile import.
+  struct ExtractedAddressProfile {
+    ExtractedAddressProfile();
+    ExtractedAddressProfile(const ExtractedAddressProfile& other);
+    ~ExtractedAddressProfile();
 
     // The profile that was extracted from the form.
     AutofillProfile profile{i18n_model_definition::kLegacyHierarchyCountryCode};
     // The URL the profile was extracted from.
     GURL url;
-    // Indicates if all import requirements have been fulfilled.
-    bool all_requirements_fulfilled;
     // Metadata about the import, used for metric collection in
     // ProfileImportProcess after the user's decision.
     ProfileImportMetadata import_metadata;
@@ -174,8 +170,7 @@ class FormDataImporter : public AddressDataManager::Observer,
     // List of address profiles extracted from the form, which are candidates
     // for importing. The list is empty if none of the address profile fulfill
     // import requirements.
-    std::vector<AddressProfileImportCandidate>
-        address_profile_import_candidates;
+    std::vector<ExtractedAddressProfile> extracted_address_profiles;
     // IBAN extracted from the form, which is a candidate for importing. Present
     // if an IBAN is found in the form.
     std::optional<Iban> extracted_iban;
@@ -186,15 +181,15 @@ class FormDataImporter : public AddressDataManager::Observer,
                                     bool profile_autofill_enabled,
                                     bool payment_methods_autofill_enabled);
 
-  // Attempts to construct AddressProfileImportCandidates by extracting values
+  // Attempts to construct ExtractedAddressProfile by extracting values
   // from the fields in the `form`'s sections. Extraction can fail if the
   // fields' values don't pass validation. Apart from complete address profiles,
   // partial profiles for silent updates are extracted. All are stored in
-  // `extracted_form_data`'s `address_profile_import_candidates`.
+  // `extracted_form_data`'s `extracted_address_profiles`.
   // The function returns the number of _complete_ extracted profiles.
-  size_t ExtractAddressProfiles(const FormStructure& form,
-                                std::vector<AddressProfileImportCandidate>*
-                                    address_profile_import_candidates);
+  size_t ExtractAddressProfiles(
+      const FormStructure& form,
+      std::vector<ExtractedAddressProfile>* extracted_address_profiles);
 
   // Iterates over `section_fields` and builds a map from field type to observed
   // value for that field type.
@@ -213,14 +208,13 @@ class FormDataImporter : public AddressDataManager::Observer,
       LogBuffer* import_log_buffer,
       ProfileImportMetadata& import_metadata);
 
-  // Helper method for ImportAddressProfiles which only considers the fields
+  // Helper method for ExtractAddressProfiles which only considers the fields
   // for a specified `section`. If no section is passed, the import is
   // performed on the union of all sections.
   bool ExtractAddressProfileFromSection(
       base::span<const AutofillField* const> section_fields,
       const GURL& source_url,
-      std::vector<AddressProfileImportCandidate>*
-          address_profile_import_candidates,
+      std::vector<ExtractedAddressProfile>* extracted_address_profiles,
       LogBuffer* import_log_buffer);
 
   // Returns the extracted card if one was found in the form.
@@ -272,33 +266,17 @@ class FormDataImporter : public AddressDataManager::Observer,
       bool is_credit_card_upstream_enabled,
       ukm::SourceId ukm_source_id);
 
-  // Processes the address profile import candidates.
-  // |address_profile_import_candidates| contains the addresses extracted
-  // from the form. |allow_prompt| denotes if a prompt can be shown.
-  // Returns true if the import of a complete profile is initiated.
-  bool ProcessAddressProfileImportCandidates(
-      const std::vector<AddressProfileImportCandidate>&
-          address_profile_import_candidates,
+  // Processes the extracted address profiles. `extracted_address_profiles`
+  // contains the addresses extracted from the form. |allow_prompt| denotes if a
+  // prompt can be shown. Returns true if the import of a complete profile is
+  // initiated.
+  bool ProcessExtractedAddressProfiles(
+      const std::vector<ExtractedAddressProfile>& extracted_address_profiles,
       bool allow_prompt,
       ukm::SourceId ukm_source_id);
 
   // Helper function which extracts the IBAN from the form structure.
   Iban ExtractIbanFromForm(const FormStructure& form);
-
-  // Returns true if credit card upload, local save, or cvc local save should be
-  // offered to user. `extracted_credit_card` is the credit card imported from
-  // the form if there is any. If no valid card was imported, it is set to
-  // nullopt. It might be set to a copy of a LOCAL_CARD or SERVER_CARD we have
-  // already saved if we were able to find a matching copy.
-  // |is_credit_card_upstream_enabled| denotes whether the user has credit card
-  // upload enabled. This function is used to prevent offering upload card save
-  // or local card save in situations where it would be invalid to offer them.
-  // For example, we should not offer to upload card if it is already a valid
-  // server card.
-  // TODO(crbug.com/40270301): Move to CreditCardSaveManger.
-  bool ShouldOfferCreditCardSave(
-      const std::optional<CreditCard>& extracted_credit_card,
-      bool is_credit_card_upstream_enabled);
 
   // If the `profile`'s country is not empty, complements it with
   // `AddressDataManager::GetDefaultCountryCodeForNewAddress()`, while logging
@@ -334,11 +312,6 @@ class FormDataImporter : public AddressDataManager::Observer,
   // Responsible for managing IBAN save flows. It is guaranteed to be non-null.
   std::unique_ptr<IbanSaveManager> iban_save_manager_;
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-  // Responsible for migrating locally saved credit cards to Google Pay.
-  std::unique_ptr<LocalCardMigrationManager> local_card_migration_manager_;
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-
   base::ScopedObservation<history::HistoryService, HistoryServiceObserver>
       history_service_observation_{this};
 
@@ -346,9 +319,9 @@ class FormDataImporter : public AddressDataManager::Observer,
       address_data_manager_observation_{this};
 
   // Represents the type of the credit card import candidate from the submitted
-  // form. It will be used to determine whether to offer upload save or card
-  // migration. Will be passed to `credit_card_save_manager_` for metrics. If no
-  // credit card was found in the form, the type will be `kNoCard`.
+  // form. It will be used to determine whether to offer upload save or not.
+  // Will be passed to `credit_card_save_manager_` for metrics. If no credit
+  // card was found in the form, the type will be `kNoCard`.
   CreditCardImportType credit_card_import_type_ = CreditCardImportType::kNoCard;
 
   // Used to store the last four digits of the fetched virtual cards.
@@ -375,6 +348,13 @@ class FormDataImporter : public AddressDataManager::Observer,
   // decide whether the card submitted is the same card retrieved. This field is
   // optional and is set when an Autofill Downstream has happened.
   std::optional<int64_t> fetched_card_instrument_id_;
+
+  // TODO(crbug.com/403617982): Combine all last fetched card related
+  // information into a struct.
+  // Whether the last unmasked card (note: it may or may not be the extracted
+  // card) is fetched from the local cache (instead of going through a server
+  // retrieval process).
+  std::optional<bool> card_was_fetched_from_cache_;
 
   friend class FormDataImporterTestApi;
 };

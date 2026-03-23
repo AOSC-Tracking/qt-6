@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //
 //  W A R N I N G
@@ -15,14 +17,12 @@
 #ifndef GRID_GEOMETRY_H
 #define GRID_GEOMETRY_H
 
+#include <QtQuick3DHelpers/qtquick3dhelpersexports.h>
 #include <QtQuick3D/private/qquick3dgeometry_p.h>
-
-// Workaround for QTBUG-94099, ensures qml_register_types...() is exported
-#include "qtquick3dhelpersglobal_p.h"
 
 QT_BEGIN_NAMESPACE
 
-class GridGeometry : public QQuick3DGeometry
+class Q_QUICK3DHELPERS_EXPORT GridGeometry : public QQuick3DGeometry
 {
     Q_OBJECT
     Q_PROPERTY(int horizontalLines READ horizontalLines WRITE setHorizontalLines NOTIFY horizontalLinesChanged)

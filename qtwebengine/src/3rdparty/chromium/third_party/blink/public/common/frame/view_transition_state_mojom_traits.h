@@ -82,6 +82,17 @@ struct BLINK_COMMON_EXPORT
     return r.captured_css_properties;
   }
 
+  static const base::flat_map<blink::mojom::ViewTransitionPropertyId,
+                              std::string>&
+  group_children_css_properties(const blink::ViewTransitionElement& r) {
+    return r.group_children_css_properties;
+  }
+
+  static const gfx::Vector2d& border_offset(
+      const blink::ViewTransitionElement& r) {
+    return r.border_offset;
+  }
+
   static const std::vector<std::string>& class_list(
       const blink::ViewTransitionElement& r) {
     return r.class_list;
@@ -133,6 +144,11 @@ struct BLINK_COMMON_EXPORT
   static const viz::ViewTransitionElementResourceId& subframe_snapshot_id(
       const blink::ViewTransitionState& r) {
     return r.subframe_snapshot_id;
+  }
+
+  static const base::flat_map<std::string, std::string>& id_to_auto_name_map(
+      const blink::ViewTransitionState& r) {
+    return r.id_to_auto_name_map;
   }
 
   static bool Read(blink::mojom::ViewTransitionStateDataView r,

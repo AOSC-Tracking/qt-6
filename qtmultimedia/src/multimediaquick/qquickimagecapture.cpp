@@ -59,7 +59,10 @@ QQuickImageCapture::QQuickImageCapture(QObject *parent)
     connect(this, &QImageCapture::imageCaptured, this, &QQuickImageCapture::_q_imageCaptured);
 }
 
-QQuickImageCapture::~QQuickImageCapture() = default;
+QQuickImageCapture::~QQuickImageCapture()
+{
+    QQuickImagePreviewProvider::cleanupInstance(m_instanceId);
+}
 
 /*!
     \qmlproperty bool QtMultimedia::ImageCapture::readyForCapture
@@ -93,7 +96,7 @@ QQuickImageCapture::~QQuickImageCapture() = default;
 */
 
 /*!
-    \qmlmethod QtMultimedia::ImageCapture::capture()
+    \qmlmethod int QtMultimedia::ImageCapture::capture()
 
     Start image capture.  The \l imageCaptured and \l imageSaved signals will
     be emitted when the capture is complete.
@@ -113,12 +116,13 @@ QQuickImageCapture::~QQuickImageCapture() = default;
 */
 
 /*!
-    \qmlmethod QtMultimedia::ImageCapture::captureToFile(location)
+    \qmlmethod int QtMultimedia::ImageCapture::captureToFile(location)
 
-    Does the same as capture() but additionally automatically saves the captured image to the specified
-    \a location.
+    Does the same as capture() but additionally automatically saves the
+    captured image to the specified \a location. Returns the capture
+    requestId parameter.
 
-    \sa capture
+    \sa capture()
 */
 
 QString QQuickImageCapture::preview() const
@@ -127,7 +131,7 @@ QString QQuickImageCapture::preview() const
 }
 
 /*!
-    \qmlmethod QtMultimedia::ImageCapture::saveToFile(location)
+    \qmlmethod void QtMultimedia::ImageCapture::saveToFile(location)
 
     Saves the last captured image to \a location.
 
@@ -140,9 +144,10 @@ void QQuickImageCapture::saveToFile(const QUrl &location) const
 
 void QQuickImageCapture::_q_imageCaptured(int id, const QImage &preview)
 {
-    QString previewId = QStringLiteral("preview_%1").arg(id);
-    QQuickImagePreviewProvider::registerPreview(previewId, preview);
-    m_capturedImagePath = QStringLiteral("image://camera/%2").arg(previewId);
+    QString previewId =
+            QStringLiteral("preview_%1_%2").arg(m_instanceId.toString(QUuid::Id128)).arg(id);
+    QQuickImagePreviewProvider::registerPreview(m_instanceId, previewId, preview);
+    m_capturedImagePath = QStringLiteral("image://QtMultimediaCameraPreviewImageProvider/%2").arg(previewId);
     m_lastImage = preview;
     emit previewChanged();
 }

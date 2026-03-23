@@ -37,6 +37,16 @@
 
 namespace dawn::wire::server {
 
+WireResult Server::PreHandleDeviceCreateErrorBuffer(const DeviceCreateErrorBufferCmd& cmd) {
+    // mappedAtCreation isn't implemented in CreateErrorBuffer.
+    // The client blocks this, so we can treat it as a fatal wire error (for fuzzers).
+    if (cmd.descriptor->mappedAtCreation) {
+        return WireResult::FatalError;
+    }
+
+    return WireResult::Success;
+}
+
 WireResult Server::PreHandleBufferUnmap(const BufferUnmapCmd& cmd) {
     Known<WGPUBuffer> buffer;
     WIRE_TRY(Objects<WGPUBuffer>().Get(cmd.selfId, &buffer));
@@ -105,8 +115,8 @@ WireResult Server::DoBufferMapAsync(Known<WGPUBuffer> buffer,
 
     mProcs.bufferMapAsync(
         buffer->handle, mode, offset, size,
-        {nullptr, WGPUCallbackMode_AllowSpontaneous,
-         ForwardToServer2<&Server::OnBufferMapAsyncCallback>, userdata.release(), nullptr});
+        {nullptr, WGPUCallbackMode_AllowProcessEvents,
+         ForwardToServer<&Server::OnBufferMapAsyncCallback>, userdata.release(), nullptr});
 
     return WireResult::Success;
 }
@@ -123,12 +133,13 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
     WIRE_TRY(Objects<WGPUBuffer>().Allocate(&buffer, bufferHandle));
     buffer->handle = mProcs.deviceCreateBuffer(device->handle, descriptor);
     buffer->usage = descriptor->usage;
-    buffer->mappedAtCreation = descriptor->mappedAtCreation;
+    buffer->mappedAtCreation = (descriptor->mappedAtCreation != 0u);
 
     // isReadMode and isWriteMode could be true at the same time if usage contains
     // WGPUBufferUsage_MapRead and buffer is mappedAtCreation
-    bool isReadMode = descriptor->usage & WGPUBufferUsage_MapRead;
-    bool isWriteMode = descriptor->usage & WGPUBufferUsage_MapWrite || descriptor->mappedAtCreation;
+    bool isReadMode = (descriptor->usage & WGPUBufferUsage_MapRead) != 0u;
+    bool isWriteMode = ((descriptor->usage & WGPUBufferUsage_MapWrite) != 0u) ||
+                       (descriptor->mappedAtCreation != 0u);
 
     // This is the size of data deserialized from the command stream to create the read/write
     // handle, which must be CPU-addressable.
@@ -140,6 +151,16 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
     }
 
     if (isWriteMode) {
+        if (buffer->handle == nullptr) {
+            DAWN_ASSERT(descriptor->mappedAtCreation);
+            // A null buffer indicates that mapping-at-creation failed inside createBuffer.
+            // - Unmark the buffer as allocated so we will skip freeing it.
+            buffer->state = AllocationState::Reserved;
+            // - Remember the buffer is an error so we will skip subsequent mapping operations.
+            buffer->mapWriteState = BufferMapWriteState::MapError;
+            return WireResult::Success;
+        }
+
         MemoryTransferService::WriteHandle* writeHandle = nullptr;
         // Deserialize metadata produced from the client to create a companion server handle.
         if (!mMemoryTransferService->DeserializeWriteHandle(
@@ -154,9 +175,9 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
         if (descriptor->mappedAtCreation) {
             void* mapping = mProcs.bufferGetMappedRange(buffer->handle, 0, descriptor->size);
             if (mapping == nullptr) {
-                // A zero mapping is used to indicate an allocation error of an error buffer.
-                // This is a valid case and isn't fatal. Remember the buffer is an error so as
-                // to skip subsequent mapping operations.
+                DAWN_ASSERT(descriptor->size % 4 != 0);
+                // GetMappedRange can still fail if the buffer's size isn't aligned.
+                // - Remember the buffer is an error so we will skip subsequent mapping operations.
                 buffer->mapWriteState = BufferMapWriteState::MapError;
                 return WireResult::Success;
             }
@@ -229,7 +250,7 @@ void Server::OnBufferMapAsyncCallback(MapUserdata* data,
         return;
     }
 
-    bool isRead = data->mode & WGPUMapMode_Read;
+    bool isRead = (data->mode & WGPUMapMode_Read) != 0u;
     bool isSuccess = status == WGPUMapAsyncStatus_Success;
 
     ReturnBufferMapAsyncCallbackCmd cmd = {};

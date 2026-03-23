@@ -98,7 +98,7 @@ TEST_F(ScopedThreadPriorityTest, BasicTest) {
 }
 
 TEST_F(ScopedThreadPriorityDeathTest, NoRealTime) {
-  EXPECT_DCHECK_DEATH({
+  EXPECT_CHECK_DEATH({
     ScopedBoostPriority scoped_boost_priority(ThreadType::kRealtimeAudio);
   });
 }
@@ -185,6 +185,30 @@ TEST_F(ScopedThreadPriorityTest, FunctionThatBoostsPriorityOnEveryInvoke) {
 
   // Put back the default thread priority.
   PlatformThread::SetCurrentThreadType(ThreadType::kDefault);
+}
+
+TEST_F(ScopedThreadPriorityTest, TaskMonitoringBoost) {
+  ASSERT_EQ(ThreadPriorityForTest::kNormal,
+            PlatformThread::GetCurrentThreadPriorityForTest());
+
+  {
+    // A `TaskMonitoringScopedBoostPriority` object with a callback that always
+    // returns true.
+    TaskMonitoringScopedBoostPriority scoped_boost_priority(
+        ThreadType::kInteractive, BindRepeating([]() { return true; }));
+    // Not boosted before `WillProcessTask` is called.
+    ASSERT_EQ(ThreadPriorityForTest::kNormal,
+              PlatformThread::GetCurrentThreadPriorityForTest());
+
+    // After `WillProcessTask` is called, the thread priority should be boosted.
+    scoped_boost_priority.WillProcessTask(PendingTask(), false);
+    ASSERT_EQ(ThreadPriorityForTest::kInteractive,
+              PlatformThread::GetCurrentThreadPriorityForTest());
+  }
+
+  // Back to normal outside the scope.
+  ASSERT_EQ(ThreadPriorityForTest::kNormal,
+            PlatformThread::GetCurrentThreadPriorityForTest());
 }
 
 #endif  // BUILDFLAG(IS_WIN)

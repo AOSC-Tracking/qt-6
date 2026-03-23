@@ -13,6 +13,7 @@ Item {
     clip: true
 
     property int currentStateIndex: 0
+    required property url downloadBase
 
     SvgPathItem {
         id: animatedOutline
@@ -104,7 +105,7 @@ Item {
     Image {
         id: black
 
-        source: rootWindow.downloadBase + "/content/doorIcon/assets/black_state_Idle_Name_Black.png"
+        source: root.downloadBase + "/content/doorIcon/assets/black_state_Idle_Name_Black.png"
         anchors.centerIn: parent
     }
 
@@ -162,10 +163,106 @@ Item {
         strokeWidth: 1
     }
 
+    SvgPathItem {
+        id: rainFilled
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        strokeColor: "#222222"
+        antialiasing: true
+        fillColor: "transparent"
+        anchors.leftMargin: 5
+        anchors.topMargin: 5
+        path: "M11.421,3.707,3.707,11.421a1,1,0,0,1-1.414-1.414l7.714-7.714a1,1,0,0,1,1.414,1.414Zm7.715,1.157a1,1,0,0,0-1.414,0l-7.715,7.715a1,1,0,1,0,1.414,1.414l7.715-7.715A1,1,0,0,0,19.136,4.864Zm1.157,7.715-7.714,7.714a1,1,0,1,0,1.414,1.414l7.714-7.714a1,1,0,0,0-1.414-1.414Z"
+        strokeWidth: 3
+    }
+
+    SvgPathItem {
+        id: rainOutline
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        strokeColor: "transparent"
+        antialiasing: true
+        fillColor: "#ffffff"
+        anchors.leftMargin: 5
+        anchors.topMargin: 5
+        path: "M11.421,3.707,3.707,11.421a1,1,0,0,1-1.414-1.414l7.714-7.714a1,1,0,0,1,1.414,1.414Zm7.715,1.157a1,1,0,0,0-1.414,0l-7.715,7.715a1,1,0,1,0,1.414,1.414l7.715-7.715A1,1,0,0,0,19.136,4.864Zm1.157,7.715-7.714,7.714a1,1,0,1,0,1.414,1.414l7.714-7.714a1,1,0,0,0-1.414-1.414Z"
+        strokeWidth: 3
+    }
+
+    SvgPathItem {
+        id: snowFilled
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        antialiasing: true
+        strokeColor: "#222222"
+        fillColor: "transparent"
+        strokeWidth: 1
+        anchors.leftMargin: 5
+        anchors.topMargin: 5
+        path: "M13 2C13 1.44772 12.5523 1 12 1C11.4477 1 11 1.44772 11 2V2.58579L10.7071 2.29289C10.3166 1.90237 9.68342 1.90237 9.29289 2.29289C8.90237 2.68342 8.90237 3.31658 9.29289 3.70711L11 5.41421V9.58579L8.05023 6.63602V4.22192C8.05023 3.66964 7.60252 3.22192 7.05023 3.22192C6.49795 3.22192 6.05023 3.66964 6.05023 4.22192V4.63602L5.63606 4.22185C5.24554 3.83132 4.61237 3.83132 4.22185 4.22185C3.83132 4.61237 3.83132 5.24554 4.22185 5.63606L4.63608 6.05029H4.2218C3.66952 6.05029 3.2218 6.49801 3.2218 7.05029C3.2218 7.60258 3.66952 8.05029 4.2218 8.05029H6.63608L9.58579 11H5.41421L3.70711 9.29289C3.31658 8.90237 2.68342 8.90237 2.29289 9.29289C1.90237 9.68342 1.90237 10.3166 2.29289 10.7071L2.58579 11H2C1.44772 11 1 11.4477 1 12C1 12.5523 1.44772 13 2 13H2.58579L2.29289 13.2929C1.90237 13.6834 1.90237 14.3166 2.29289 14.7071C2.68342 15.0976 3.31658 15.0976 3.70711 14.7071L5.41421 13H9.58579L6.63608 15.9497H4.2218C3.66952 15.9497 3.2218 16.3974 3.2218 16.9497C3.2218 17.502 3.66952 17.9497 4.2218 17.9497H4.63608L4.2218 18.364C3.83128 18.7545 3.83128 19.3877 4.2218 19.7782C4.61233 20.1687 5.24549 20.1687 5.63602 19.7782L6.05023 19.364V19.7781C6.05023 20.3304 6.49795 20.7781 7.05023 20.7781C7.60252 20.7781 8.05023 20.3304 8.05023 19.7781V17.364L11 14.4142V18.5858L9.29289 20.2929C8.90237 20.6834 8.90237 21.3166 9.29289 21.7071C9.68342 22.0976 10.3166 22.0976 10.7071 21.7071L11 21.4142V22C11 22.5523 11.4477 23 12 23C12.5523 23 13 22.5523 13 22V21.4142L13.2929 21.7071C13.6834 22.0976 14.3166 22.0976 14.7071 21.7071C15.0976 21.3166 15.0976 20.6834 14.7071 20.2929L13 18.5858V14.4142L15.9498 17.364V19.7781C15.9498 20.3304 16.3975 20.7781 16.9498 20.7781C17.5021 20.7781 17.9498 20.3304 17.9498 19.7781V19.364L18.364 19.7782C18.7545 20.1687 19.3877 20.1687 19.7782 19.7782C20.1687 19.3877 20.1687 18.7545 19.7782 18.364L19.3639 17.9497H19.7782C20.3305 17.9497 20.7782 17.502 20.7782 16.9497C20.7782 16.3974 20.3305 15.9497 19.7782 15.9497H17.3639L14.4142 13H18.5858L20.2929 14.7071C20.6834 15.0976 21.3166 15.0976 21.7071 14.7071C22.0976 14.3166 22.0976 13.6834 21.7071 13.2929L21.4142 13H22C22.5523 13 23 12.5523 23 12C23 11.4477 22.5523 11 22 11H21.4142L21.7071 10.7071C22.0976 10.3166 22.0976 9.68342 21.7071 9.29289C21.3166 8.90237 20.6834 8.90237 20.2929 9.29289L18.5858 11H14.4142L17.3639 8.05029H19.7782C20.3305 8.05029 20.7782 7.60258 20.7782 7.05029C20.7782 6.49801 20.3305 6.05029 19.7782 6.05029H19.3639L19.7782 5.63606C20.1687 5.24554 20.1687 4.61237 19.7782 4.22185C19.3876 3.83132 18.7545 3.83132 18.3639 4.22185L17.9498 4.63602V4.22192C17.9498 3.66964 17.5021 3.22192 16.9498 3.22192C16.3975 3.22192 15.9498 3.66964 15.9498 4.22192V6.63602L13 9.58579V5.41421L14.7071 3.70711C15.0976 3.31658 15.0976 2.68342 14.7071 2.29289C14.3166 1.90237 13.6834 1.90237 13.2929 2.29289L13 2.58579V2Z"
+    }
+
+    SvgPathItem {
+        id: snowOutline
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        strokeColor: "transparent"
+        fillColor: "#ffffff"
+        strokeWidth: 3
+        antialiasing: true
+        anchors.leftMargin: 5
+        anchors.topMargin: 5
+        path: "M13 2C13 1.44772 12.5523 1 12 1C11.4477 1 11 1.44772 11 2V2.58579L10.7071 2.29289C10.3166 1.90237 9.68342 1.90237 9.29289 2.29289C8.90237 2.68342 8.90237 3.31658 9.29289 3.70711L11 5.41421V9.58579L8.05023 6.63602V4.22192C8.05023 3.66964 7.60252 3.22192 7.05023 3.22192C6.49795 3.22192 6.05023 3.66964 6.05023 4.22192V4.63602L5.63606 4.22185C5.24554 3.83132 4.61237 3.83132 4.22185 4.22185C3.83132 4.61237 3.83132 5.24554 4.22185 5.63606L4.63608 6.05029H4.2218C3.66952 6.05029 3.2218 6.49801 3.2218 7.05029C3.2218 7.60258 3.66952 8.05029 4.2218 8.05029H6.63608L9.58579 11H5.41421L3.70711 9.29289C3.31658 8.90237 2.68342 8.90237 2.29289 9.29289C1.90237 9.68342 1.90237 10.3166 2.29289 10.7071L2.58579 11H2C1.44772 11 1 11.4477 1 12C1 12.5523 1.44772 13 2 13H2.58579L2.29289 13.2929C1.90237 13.6834 1.90237 14.3166 2.29289 14.7071C2.68342 15.0976 3.31658 15.0976 3.70711 14.7071L5.41421 13H9.58579L6.63608 15.9497H4.2218C3.66952 15.9497 3.2218 16.3974 3.2218 16.9497C3.2218 17.502 3.66952 17.9497 4.2218 17.9497H4.63608L4.2218 18.364C3.83128 18.7545 3.83128 19.3877 4.2218 19.7782C4.61233 20.1687 5.24549 20.1687 5.63602 19.7782L6.05023 19.364V19.7781C6.05023 20.3304 6.49795 20.7781 7.05023 20.7781C7.60252 20.7781 8.05023 20.3304 8.05023 19.7781V17.364L11 14.4142V18.5858L9.29289 20.2929C8.90237 20.6834 8.90237 21.3166 9.29289 21.7071C9.68342 22.0976 10.3166 22.0976 10.7071 21.7071L11 21.4142V22C11 22.5523 11.4477 23 12 23C12.5523 23 13 22.5523 13 22V21.4142L13.2929 21.7071C13.6834 22.0976 14.3166 22.0976 14.7071 21.7071C15.0976 21.3166 15.0976 20.6834 14.7071 20.2929L13 18.5858V14.4142L15.9498 17.364V19.7781C15.9498 20.3304 16.3975 20.7781 16.9498 20.7781C17.5021 20.7781 17.9498 20.3304 17.9498 19.7781V19.364L18.364 19.7782C18.7545 20.1687 19.3877 20.1687 19.7782 19.7782C20.1687 19.3877 20.1687 18.7545 19.7782 18.364L19.3639 17.9497H19.7782C20.3305 17.9497 20.7782 17.502 20.7782 16.9497C20.7782 16.3974 20.3305 15.9497 19.7782 15.9497H17.3639L14.4142 13H18.5858L20.2929 14.7071C20.6834 15.0976 21.3166 15.0976 21.7071 14.7071C22.0976 14.3166 22.0976 13.6834 21.7071 13.2929L21.4142 13H22C22.5523 13 23 12.5523 23 12C23 11.4477 22.5523 11 22 11H21.4142L21.7071 10.7071C22.0976 10.3166 22.0976 9.68342 21.7071 9.29289C21.3166 8.90237 20.6834 8.90237 20.2929 9.29289L18.5858 11H14.4142L17.3639 8.05029H19.7782C20.3305 8.05029 20.7782 7.60258 20.7782 7.05029C20.7782 6.49801 20.3305 6.05029 19.7782 6.05029H19.3639L19.7782 5.63606C20.1687 5.24554 20.1687 4.61237 19.7782 4.22185C19.3876 3.83132 18.7545 3.83132 18.3639 4.22185L17.9498 4.63602V4.22192C17.9498 3.66964 17.5021 3.22192 16.9498 3.22192C16.3975 3.22192 15.9498 3.66964 15.9498 4.22192V6.63602L13 9.58579V5.41421L14.7071 3.70711C15.0976 3.31658 15.0976 2.68342 14.7071 2.29289C14.3166 1.90237 13.6834 1.90237 13.2929 2.29289L13 2.58579V2Z"
+    }
+
+    SvgPathItem {
+        id: weatherOutline
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        strokeColor: "#ffffff"
+        antialiasing: true
+        fillColor: "transparent"
+        anchors.leftMargin: -15
+        anchors.topMargin: -15
+        path: "M36.5714 44C40.6742 44 44 40.8396 44 36.9412C44 33.8514 41.9108 31.2252 39.0016 30.2688C38.5882 26.7422 35.4406 24 31.619 24C27.5164 24 24.1904 27.1604 24.1904 31.0588C24.1904 31.921 24.3532 32.7472 24.651 33.511C24.3018 33.446 23.9408 33.4118 23.5714 33.4118C20.4944 33.4118 18 35.782 18 38.7058C18 41.6298 20.4944 44 23.5714 44H36.5714Z"
+        strokeWidth: 3
+    }
+
+    SvgPathItem {
+        id: weatherFilled
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        strokeColor: "transparent"
+        antialiasing: true
+        fillColor: "#222222"
+        anchors.leftMargin: -15
+        anchors.topMargin: -15
+        path: "M36.5714 44C40.6742 44 44 40.8396 44 36.9412C44 33.8514 41.9108 31.2252 39.0016 30.2688C38.5882 26.7422 35.4406 24 31.619 24C27.5164 24 24.1904 27.1604 24.1904 31.0588C24.1904 31.921 24.3532 32.7472 24.651 33.511C24.3018 33.446 23.9408 33.4118 23.5714 33.4118C20.4944 33.4118 18 35.782 18 38.7058C18 41.6298 20.4944 44 23.5714 44H36.5714Z"
+        strokeWidth: 3
+    }
+
     Image {
         id: yellow
 
-        source: rootWindow.downloadBase
+        source: root.downloadBase
                 + "/content/doorIcon/assets/yellow_state_Idle_Name_Yellow.png"
         anchors.centerIn: parent
     }
@@ -173,14 +270,14 @@ Item {
     Image {
         id: white
 
-        source: rootWindow.downloadBase + "/content/doorIcon/assets/white_state_Idle_Name_White.png"
+        source: root.downloadBase + "/content/doorIcon/assets/white_state_Idle_Name_White.png"
         anchors.centerIn: parent
     }
 
     Image {
         id: red
 
-        source: rootWindow.downloadBase + "/content/doorIcon/assets/red_state_Idle_Name_Red.png"
+        source: root.downloadBase + "/content/doorIcon/assets/red_state_Idle_Name_Red.png"
         anchors.centerIn: parent
     }
 
@@ -295,7 +392,7 @@ Item {
     Image {
         id: pointerOutlined
         visible: false
-        source: rootWindow.downloadBase + "/content/images/PointerOutlined.svg"
+        source: root.downloadBase + "/content/images/PointerOutlined.svg"
         fillMode: Image.PreserveAspectFit
     }
 
@@ -306,21 +403,21 @@ Item {
     Image {
         id: menu
         visible: false
-        source: rootWindow.downloadBase + "/content/images/Menu.svg"
+        source: root.downloadBase + "/content/images/Menu.svg"
         fillMode: Image.PreserveAspectFit
     }
 
     Image {
         id: close
         visible: false
-        source: rootWindow.downloadBase + "/content/images/Close.svg"
+        source: root.downloadBase + "/content/images/Close.svg"
         fillMode: Image.PreserveAspectFit
     }
 
     states: [
         State {
             name: "state_state_Idle_Name_Animated"
-            when: currentStateIndex === 1
+            when: root.currentStateIndex === 1
 
             PropertyChanges {
                 target: element
@@ -406,10 +503,40 @@ Item {
                 target: animatedFilled
                 visible: false
             }
+
+            PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: false
+            }
         },
         State {
             name: "state_state_Idle_Name_Video_2"
-            when: currentStateIndex === 2
+            when: root.currentStateIndex === 2
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -443,7 +570,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Reset_camera"
-            when: currentStateIndex === 3
+            when: root.currentStateIndex === 3
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -458,7 +585,7 @@ Item {
         },
         State {
             name: "state_state_Active_Name_Studio"
-            when: currentStateIndex === 4
+            when: root.currentStateIndex === 4
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -543,7 +670,7 @@ Item {
         },
         State {
             name: "state_state_Active_Name_Video_3"
-            when: currentStateIndex === 5
+            when: root.currentStateIndex === 5
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -582,7 +709,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Video_3"
-            when: currentStateIndex === 6
+            when: root.currentStateIndex === 6
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -615,7 +742,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Demo_mode"
-            when: currentStateIndex === 7
+            when: root.currentStateIndex === 7
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -635,7 +762,7 @@ Item {
         },
         State {
             name: "state_state_Active_Name_Demo_mode"
-            when: currentStateIndex === 8
+            when: root.currentStateIndex === 8
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -660,7 +787,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Video_1"
-            when: currentStateIndex === 9
+            when: root.currentStateIndex === 9
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -690,7 +817,7 @@ Item {
         },
         State {
             name: "state_state_Active_Name_Video_1"
-            when: currentStateIndex === 10
+            when: root.currentStateIndex === 10
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -720,7 +847,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Black"
-            when: currentStateIndex === 11
+            when: root.currentStateIndex === 11
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -755,7 +882,7 @@ Item {
         },
         State {
             name: "state_state_Active_Name_Video_2"
-            when: currentStateIndex === 12
+            when: root.currentStateIndex === 12
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -793,7 +920,7 @@ Item {
         },
         State {
             name: "state_state_Active_Name_Animated"
-            when: currentStateIndex === 13
+            when: root.currentStateIndex === 13
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -833,7 +960,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Lights"
-            when: currentStateIndex === 14
+            when: root.currentStateIndex === 14
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -878,7 +1005,7 @@ Item {
         },
         State {
             name: "state_state_Active_Name_Lights"
-            when: currentStateIndex === 15
+            when: root.currentStateIndex === 15
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -928,7 +1055,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Yellow"
-            when: currentStateIndex === 16
+            when: root.currentStateIndex === 16
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -983,7 +1110,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_White"
-            when: currentStateIndex === 17
+            when: root.currentStateIndex === 17
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -1043,7 +1170,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Red"
-            when: currentStateIndex === 18
+            when: root.currentStateIndex === 18
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -1108,7 +1235,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Garage"
-            when: currentStateIndex === 19
+            when: root.currentStateIndex === 19
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -1178,7 +1305,7 @@ Item {
         },
         State {
             name: "state_state_Active_Name_Garage"
-            when: currentStateIndex === 20
+            when: root.currentStateIndex === 20
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -1253,7 +1380,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Studio"
-            when: currentStateIndex === 21
+            when: root.currentStateIndex === 21
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -1333,7 +1460,7 @@ Item {
         },
         State {
             name: "state_state_Active_Name_Desert"
-            when: currentStateIndex === 22
+            when: root.currentStateIndex === 22
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -1423,7 +1550,7 @@ Item {
         },
         State {
             name: "state_state_Idle_Name_Desert"
-            when: currentStateIndex === 23
+            when: root.currentStateIndex === 23
             extend: "state_state_Idle_Name_Animated"
 
             PropertyChanges {
@@ -1518,8 +1645,36 @@ Item {
         },
         State {
             name: "Menu"
-            when: currentStateIndex == 24
+            when: root.currentStateIndex == 24
+            PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
 
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: false
+            }
             PropertyChanges {
                 target: element
                 visible: false
@@ -1622,12 +1777,40 @@ Item {
         },
         State {
             name: "Close"
-            when: currentStateIndex == 25
+            when: root.currentStateIndex == 25
             PropertyChanges {
                 target: element
                 visible: false
             }
+            PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
 
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: false
+            }
             PropertyChanges {
                 target: lightsFilled
                 visible: false
@@ -1727,6 +1910,36 @@ Item {
             name: "state_Active_Name_Door"
 
             PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: false
+            }
+
+            PropertyChanges {
                 target: pointerOutlined
                 visible: true
             }
@@ -1818,6 +2031,501 @@ Item {
 
             PropertyChanges {
                 target: desertOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: false
+            }
+        },
+        State {
+            name: "state_state_Idle_Name_Rain"
+            when: root.currentStateIndex === 26
+            extend: "state_state_Idle_Name_Animated"
+
+            PropertyChanges {
+                target: element
+                visible: false
+            }
+
+            PropertyChanges {
+                target: black
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: reset
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: lightsOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainOutline
+                visible: true
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: false
+            }
+        },
+        State {
+            name: "state_state_Active_Name_Rain"
+            when: root.currentStateIndex === 27
+            extend: "state_state_Idle_Name_Animated"
+
+            PropertyChanges {
+                target: element
+                visible: false
+            }
+
+            PropertyChanges {
+                target: lightsFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: black
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: reset
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: lightsOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainFilled
+                visible: true
+            }
+
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: false
+            }
+        },
+        State {
+            name: "state_state_Idle_Name_Snow"
+            when: root.currentStateIndex === 28
+            extend: "state_state_Idle_Name_Animated"
+
+            PropertyChanges {
+                target: element
+                visible: false
+            }
+
+            PropertyChanges {
+                target: black
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: reset
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: lightsOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: true
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: false
+            }
+        },
+        State {
+            name: "state_state_Active_Name_Snow"
+            when: root.currentStateIndex === 29
+            extend: "state_state_Idle_Name_Animated"
+
+            PropertyChanges {
+                target: element
+                visible: false
+            }
+
+            PropertyChanges {
+                target: lightsFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: black
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: reset
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: lightsOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: true
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: false
+            }
+        },
+        State {
+            name: "state_state_Idle_Name_Weather"
+            when: root.currentStateIndex === 30
+            extend: "state_state_Idle_Name_Animated"
+
+            PropertyChanges {
+                target: element
+                visible: false
+            }
+
+            PropertyChanges {
+                target: black
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: reset
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: lightsOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherOutline
+                visible: true
+            }
+        },
+        State {
+            name: "state_state_Active_Name_Weather"
+            when: root.currentStateIndex === 31
+            extend: "state_state_Idle_Name_Animated"
+
+            PropertyChanges {
+                target: element
+                visible: false
+            }
+
+            PropertyChanges {
+                target: lightsFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: black
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: reset
+                visible: false
+            }
+
+            PropertyChanges {
+                target: cameraOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: lightsOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: animatedFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: rainOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowFilled
+                visible: false
+            }
+
+            PropertyChanges {
+                target: snowOutline
+                visible: false
+            }
+
+            PropertyChanges {
+                target: weatherFilled
+                visible: true
+            }
+
+            PropertyChanges {
+                target: weatherOutline
                 visible: false
             }
         }

@@ -16,25 +16,37 @@
 
 #include "src/trace_processor/util/proto_to_args_parser.h"
 
-#include "perfetto/ext/base/string_view.h"
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <ios>
+#include <limits>
+#include <map>
+#include <memory>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "perfetto/base/status.h"
+#include "perfetto/protozero/field.h"
 #include "perfetto/protozero/packed_repeated_fields.h"
+#include "perfetto/protozero/proto_utils.h"
 #include "perfetto/protozero/scattered_heap_buffer.h"
 #include "perfetto/trace_processor/trace_blob.h"
 #include "perfetto/trace_processor/trace_blob_view.h"
-#include "protos/perfetto/common/descriptor.pbzero.h"
-#include "protos/perfetto/trace/track_event/source_location.pbzero.h"
 #include "src/protozero/test/example_proto/test_messages.pbzero.h"
 #include "src/trace_processor/test_messages.descriptor.h"
+#include "src/trace_processor/util/descriptors.h"
 #include "src/trace_processor/util/interned_message_view.h"
 #include "test/gtest_and_gmock.h"
 
-#include <cstdint>
-#include <limits>
-#include <sstream>
+#include "protos/perfetto/trace/interned_data/interned_data.pbzero.h"
+#include "protos/perfetto/trace/track_event/source_location.pbzero.h"
 
-namespace perfetto {
-namespace trace_processor {
-namespace util {
+namespace perfetto::trace_processor::util {
 namespace {
 
 constexpr size_t kChunkSize = 42;
@@ -662,6 +674,63 @@ TEST_F(ProtoToArgsParserTest, PackedFields) {
           "field_double field_double[3] 1.79769e+308"));
 }
 
+TEST_F(ProtoToArgsParserTest, AllowedFieldsOnlyTopLevel) {
+  using namespace protozero::test::protos::pbzero;
+  protozero::HeapBuffered<NestedA> msg{kChunkSize, kChunkSize};
+  msg->set_super_nested()->set_value_c(42);
+
+  auto binary_proto = msg.SerializeAsArray();
+
+  DescriptorPool pool;
+  auto status = pool.AddFromFileDescriptorSet(kTestMessagesDescriptor.data(),
+                                              kTestMessagesDescriptor.size());
+  ProtoToArgsParser parser(pool);
+  ASSERT_TRUE(status.ok()) << "Failed to parse kTestMessagesDescriptor: "
+                           << status.message();
+
+  std::vector<uint32_t> allowed_fields = {
+      NestedA::kSuperNestedFieldNumber,
+  };
+  status = parser.ParseMessage(
+      protozero::ConstBytes{binary_proto.data(), binary_proto.size()},
+      ".protozero.test.protos.NestedA", &allowed_fields, *this);
+
+  EXPECT_TRUE(status.ok())
+      << "InternProtoFieldsIntoArgsTable failed with error: "
+      << status.message();
+
+  EXPECT_THAT(args(), testing::ElementsAre(
+                          "super_nested.value_c super_nested.value_c 42"));
+}
+
+TEST_F(ProtoToArgsParserTest, AddsDefaultsNested) {
+  using namespace protozero::test::protos::pbzero;
+  protozero::HeapBuffered<NestedA> msg{kChunkSize, kChunkSize};
+  msg->set_super_nested();
+
+  auto binary_proto = msg.SerializeAsArray();
+
+  DescriptorPool pool;
+  auto status = pool.AddFromFileDescriptorSet(kTestMessagesDescriptor.data(),
+                                              kTestMessagesDescriptor.size());
+  ProtoToArgsParser parser(pool);
+  ASSERT_TRUE(status.ok()) << "Failed to parse kTestMessagesDescriptor: "
+                           << status.message();
+
+  status = parser.ParseMessage(
+      protozero::ConstBytes{binary_proto.data(), binary_proto.size()},
+      ".protozero.test.protos.NestedA", nullptr, *this, nullptr,
+      /* add_defaults= */ true);
+
+  EXPECT_TRUE(status.ok())
+      << "InternProtoFieldsIntoArgsTable failed with error: "
+      << status.message();
+
+  EXPECT_THAT(args(), testing::ElementsAre(
+                          "super_nested.value_c super_nested.value_c 0",
+                          "repeated_a repeated_a [NULL]"));
+}
+
 TEST_F(ProtoToArgsParserTest, AddsDefaults) {
   using namespace protozero::test::protos::pbzero;
   protozero::HeapBuffered<EveryField> msg{kChunkSize, kChunkSize};
@@ -713,6 +782,4 @@ TEST_F(ProtoToArgsParserTest, AddsDefaults) {
 }
 
 }  // namespace
-}  // namespace util
-}  // namespace trace_processor
-}  // namespace perfetto
+}  // namespace perfetto::trace_processor::util

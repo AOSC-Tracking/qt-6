@@ -21,18 +21,18 @@
 #include <openssl/bytestring.h>
 #include <openssl/crypto.h>
 #include <openssl/ec.h>
+#include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/hkdf.h>
 #include <openssl/hmac.h>
 #include <openssl/mem.h>
 #include <openssl/rand.h>
-#include <openssl/sha.h>
+#include <openssl/sha2.h>
 
 #include "../fipsmodule/bn/internal.h"
 #include "../fipsmodule/ec/internal.h"
 #include "../internal.h"
 #include "./internal.h"
-#include "openssl/err.h"
 
 BSSL_NAMESPACE_BEGIN
 namespace spake2plus {

@@ -6,6 +6,7 @@ function(qt_internal_validate_cmake_generator)
 
     if(NOT warning_shown
             AND NOT CMAKE_GENERATOR MATCHES "Ninja"
+            AND NOT (IOS AND QT_INTERNAL_IS_STANDALONE_TEST)
             AND NOT QT_SILENCE_CMAKE_GENERATOR_WARNING
             AND NOT DEFINED ENV{QT_SILENCE_CMAKE_GENERATOR_WARNING})
         set_property(GLOBAL PROPERTY _qt_validate_cmake_generator_warning_shown TRUE)
@@ -96,6 +97,7 @@ macro(qt_internal_reset_global_state)
     qt_internal_set_qt_known_plugins("")
 
     set(QT_KNOWN_MODULES_WITH_TOOLS "" CACHE INTERNAL "Known Qt modules with tools" FORCE)
+    set_property(GLOBAL PROPERTY _qt_standalone_tool_packages "")
 endmacro()
 
 macro(qt_internal_set_qt_path_separator)
@@ -263,6 +265,7 @@ function(qt_internal_get_qt_build_private_files_to_install out_var)
         QtSeparateDebugInfo.Info.plist.in
         QtSetup.cmake
         QtStandaloneTestsConfig.cmake.in
+        QtVcpkgManifestHelpers.cmake
         QtVersionlessAliasTargets.cmake.in
         QtVersionlessTargets.cmake.in
         QtWriteArgsFile.cmake
@@ -295,10 +298,14 @@ function(qt_internal_get_qt_build_public_helpers out_var)
         QtPublicPluginHelpers
         QtPublicPluginHelpers_v2
         QtPublicSbomAttributionHelpers
+        QtPublicSbomCommonGenerationHelpers
         QtPublicSbomCpeHelpers
+        QtPublicSbomCycloneDXHelpers
+        QtPublicSbomDocumentNamespaceHelpers
         QtPublicSbomDepHelpers
         QtPublicSbomFileHelpers
         QtPublicSbomGenerationHelpers
+        QtPublicSbomGenerationCycloneDXHelpers
         QtPublicSbomHelpers
         QtPublicSbomLicenseHelpers
         QtPublicSbomOpsHelpers
@@ -320,6 +327,7 @@ endfunction()
 # The files are expected to exist under the qtbase/cmake sub-directory.
 function(qt_internal_get_qt_build_public_files_to_install out_var)
     set(${out_var}
+        QtAndroidSignPackage.cmake
         QtCopyFileIfDifferent.cmake
         QtInitProject.cmake
         QtPublicCMakeEarlyPolicyHelpers.cmake
@@ -363,6 +371,7 @@ endfunction()
 
 macro(qt_internal_setup_find_host_info_package)
     _qt_internal_determine_if_host_info_package_needed(__qt_build_requires_host_info_package)
+    _qt_internal_setup_qt_host_path("${__qt_build_requires_host_info_package}" "" "")
     _qt_internal_find_host_info_package("${__qt_build_requires_host_info_package}"
         ${INSTALL_CMAKE_NAMESPACE})
 endmacro()
@@ -429,6 +438,7 @@ macro(qt_internal_setup_build_and_global_variables)
     qt_internal_set_qt_source_tree_var()
     qt_internal_set_export_compile_commands()
     qt_internal_set_configure_from_ide()
+    qt_internal_set_ci_options()
 
     # Depends on qt_internal_set_configure_from_ide
     qt_internal_set_sync_headers_at_configure_time()

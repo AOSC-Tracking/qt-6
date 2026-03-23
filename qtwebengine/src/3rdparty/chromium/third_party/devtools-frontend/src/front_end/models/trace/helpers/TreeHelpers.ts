@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import type * as Platform from '../../../core/platform/platform.js';
 import * as Types from '../types/types.js';
 
 import {eventIsInBounds} from './Timing.js';
@@ -37,11 +38,7 @@ export interface TraceEntryNode {
   children: TraceEntryNode[];
 }
 
-class TraceEntryNodeIdTag {
-  /* eslint-disable-next-line no-unused-private-class-members */
-  readonly #tag: (symbol|undefined);
-}
-export type TraceEntryNodeId = number&TraceEntryNodeIdTag;
+export type TraceEntryNodeId = Platform.Brand.Brand<number, 'traceEntryNodeIdTag'>;
 
 /**
  * Builds a hierarchy of the entries (trace events and profile calls) in
@@ -109,7 +106,7 @@ export function treify(entries: Types.Events.Event[], options?: {
     const parentEnd = parentBegin + parentDuration;
     // Check the relationship between the parent event at the top of the stack,
     // and the current event being processed. There are only 4 distinct
-    // possiblities, only 2 of them actually valid, given the assumed sorting:
+    // possibilities, only 2 of them actually valid, given the assumed sorting:
     // 1. Current event starts before the parent event, ends whenever. (invalid)
     // 2. Current event starts after the parent event, ends whenever. (valid)
     // 3. Current event starts during the parent event, ends after. (invalid)

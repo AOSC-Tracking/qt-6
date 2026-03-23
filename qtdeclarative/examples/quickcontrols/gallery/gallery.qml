@@ -76,6 +76,7 @@ ApplicationWindow {
             anchors.leftMargin: !window.portraitMode ? drawer.width : undefined
 
             ToolButton {
+                Accessible.name: qsTr("Toggle drawer")
                 action: navigateBackAction
                 visible: window.portraitMode
             }
@@ -92,6 +93,7 @@ ApplicationWindow {
 
             ToolButton {
                 action: optionsMenuAction
+                Accessible.name: qsTr("Open options menu")
 
                 Menu {
                     id: optionsMenu
@@ -153,7 +155,7 @@ ApplicationWindow {
                 ListElement { title: qsTr("ScrollIndicator"); source: "qrc:/pages/ScrollIndicatorPage.qml" }
                 ListElement { title: qsTr("SearchField"); source: "qrc:/pages/SearchFieldPage.qml" }
                 ListElement { title: qsTr("Slider"); source: "qrc:/pages/SliderPage.qml" }
-                ListElement { title: qsTr("SpinBox"); source: "qrc:/pages/SpinBoxPage.qml" }
+                ListElement { title: qsTr("Spin boxes"); source: "qrc:/pages/SpinBoxPage.qml" }
                 ListElement { title: qsTr("SplitView"); source: "qrc:/pages/SplitViewPage.qml" }
                 ListElement { title: qsTr("StackView"); source: "qrc:/pages/StackViewPage.qml" }
                 ListElement { title: qsTr("SwipeView"); source: "qrc:/pages/SwipeViewPage.qml" }

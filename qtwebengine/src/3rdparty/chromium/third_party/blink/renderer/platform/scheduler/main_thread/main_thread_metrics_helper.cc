@@ -2,17 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_metrics_helper.h"
 
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/time/time.h"
 #include "third_party/blink/renderer/platform/instrumentation/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/resource_coordinator/renderer_resource_coordinator.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
@@ -54,7 +51,8 @@ bool ShouldDiscardTask(
 
 MainThreadMetricsHelper::MainThreadMetricsHelper(
     MainThreadSchedulerImpl* main_thread_scheduler,
-    base::TimeTicks now)
+    base::TimeTicks now,
+    bool in_background)
     : main_thread_scheduler_(main_thread_scheduler),
       renderer_shutting_down_(false),
       main_thread_load_tracker_(
@@ -77,6 +75,9 @@ MainThreadMetricsHelper::MainThreadMetricsHelper(
           {QUEUEING_DELAY_HISTOGRAM_INIT("Low")},
           {QUEUEING_DELAY_HISTOGRAM_INIT("BestEffort")}},
       main_thread_task_load_state_(MainThreadTaskLoadState::kUnknown) {
+  if (!in_background) {
+    last_foregrounded_time_ = now;
+  }
   main_thread_load_tracker_.Resume(now);
 }
 
@@ -126,9 +127,15 @@ void MainThreadMetricsHelper::RecordTaskMetrics(
       metrics_subsampler_.ShouldSample(sampling_ratio_)) {
     base::TimeDelta elapsed =
         task_timing.start_time() - task.GetDesiredExecutionTime();
-    queueing_delay_histograms_[static_cast<size_t>(queue->GetQueuePriority())]
-        .CountMicroseconds(elapsed);
+    UNSAFE_TODO(queueing_delay_histograms_[static_cast<size_t>(
+                                               queue->GetQueuePriority())]
+                    .CountMicroseconds(elapsed));
   }
+}
+
+void MainThreadMetricsHelper::SetRendererBackgrounded(bool backgrounded,
+                                                      base::TimeTicks now) {
+  last_foregrounded_time_ = backgrounded ? base::TimeTicks() : now;
 }
 
 void MainThreadMetricsHelper::RecordMainThreadTaskLoad(base::TimeTicks time,
@@ -140,6 +147,14 @@ void MainThreadMetricsHelper::RecordMainThreadTaskLoad(base::TimeTicks time,
 
   base::UmaHistogramPercentage("RendererScheduler.RendererMainThreadLoad6",
                                load_percentage);
+  // This may discard data points if the renderer is no longer foregrounded, and
+  // we are reporting in the past.
+  if (!last_foregrounded_time_.is_null() &&
+      (time - last_foregrounded_time_) >= kThreadLoadTrackerReportingInterval) {
+    base::UmaHistogramPercentage(
+        "RendererScheduler.RendererMainThreadLoad6.Foreground",
+        load_percentage);
+  }
 }
 
 void MainThreadMetricsHelper::ReportLowThreadLoadForPageAlmostIdleSignal(

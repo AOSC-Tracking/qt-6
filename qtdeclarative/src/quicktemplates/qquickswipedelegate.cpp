@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickswipedelegate_p.h"
 #include "qquickswipedelegate_p_p.h"
@@ -55,11 +56,13 @@ QT_BEGIN_NAMESPACE
     occur:
 
     \image qtquickcontrols-swipedelegate.gif
+           {Swipe delegate revealing actions on swipe gesture}
 
     If \c swipe.left and \c swipe.right are anchored to the left and
     right of the \l {Control::}{background} item (respectively), they'll behave like this:
 
     \image qtquickcontrols-swipedelegate-leading-trailing.gif
+           {Swipe delegate showing leading and trailing actions}
 
     When using \c swipe.left and \c swipe.right, the control cannot be
     swiped past the left and right edges. To achieve this type of "wrapping"
@@ -69,6 +72,7 @@ QT_BEGIN_NAMESPACE
     control repeatedly in both directions:
 
     \image qtquickcontrols-swipedelegate-behind.gif
+           {Swipe delegate showing behind swipe action}
 
     \sa {Customizing SwipeDelegate}, {Delegate Controls}, {Qt Quick Controls 2 - Gallery}{Gallery Example}
 */
@@ -1151,7 +1155,7 @@ QQuickSwipeDelegate::QQuickSwipeDelegate(QQuickItem *parent)
         \li enabled
         \li This property determines whether or not the control can be swiped.
 
-            This property was added in QtQuick.Controls 2.2.
+            This property was added in \l{QtQuick.Controls} 2.2.
     \row
         \li left
         \li This property holds the left delegate.
@@ -1206,7 +1210,7 @@ QQuickSwipeDelegate::QQuickSwipeDelegate(QQuickItem *parent)
 
             \snippet qtquickcontrols-swipedelegate-transition.qml 1
 
-            This property was added in Qt Quick Controls 2.2.
+            This property was added in \l{QtQuick.Controls} 2.2.
     \endtable
 
     \sa {Control::}{contentItem}, {Control::}{background}, swipe.open(), swipe.close()

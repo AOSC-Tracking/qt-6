@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef CONEGEOMETRY_P_H
 #define CONEGEOMETRY_P_H
@@ -15,6 +17,7 @@
 // We mean it.
 //
 
+#include <QtQuick3DHelpers/qtquick3dhelpersexports.h>
 #include <QQuick3DGeometry>
 #include <QQmlEngine>
 #include <QVector3D>
@@ -26,7 +29,7 @@
 
 QT_BEGIN_NAMESPACE
 
-class ConeGeometry : public QQuick3DGeometry
+class Q_QUICK3DHELPERS_EXPORT ConeGeometry : public QQuick3DGeometry
 {
     Q_OBJECT
     Q_PROPERTY(float topRadius READ topRadius WRITE setTopRadius NOTIFY topRadiusChanged FINAL)

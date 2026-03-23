@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dsceneenvironment_p.h"
 #include "qquick3dobject_p.h"
@@ -71,9 +73,13 @@ QT_BEGIN_NAMESPACE
     another method is available via
     \l{ExtendedSceneEnvironment::fxaaEnabled}{fxaaEnabled}.
 
-    \li Screen space ambient occlusion. The relevant properties are
-    \l aoEnabled, \l aoStrength, \l aoBias, \l aoDistance, \l aoDither,
-    \l aoSampleRate, \l aoSoftness.
+    \li Screen space ambient occlusion. The relevant properties are \l
+    aoEnabled, \l aoStrength, \l aoBias, \l aoDistance, \l aoDither, \l
+    aoSampleRate, \l aoSoftness. Note that
+    \l{ExtendedSceneEnvironment::ssgiEnabled}{SSGI} also provides ambient
+    occlusion, and it will often give better quality results, albeit possibly at
+    a higher performance cost. Avoid enabling SceneEnvironment's ambient
+    occlusion and ExtendedSceneEnvironment's SSGI together.
 
     \li Clear color, skybox, image-based lighting. For more information on IBL,
     see \l{Using Image-Based Lighting}. The relevant properties are \l
@@ -333,6 +339,7 @@ QQuick3DSceneEnvironment::QQuick3DEnvironmentAAQualityValues QQuick3DSceneEnviro
     using the light probe texture as the skybox gives us the following:
 
     \image sceneenvironment_background_ibl.jpg
+           {3D object with environment background}
 
     What happens if there is no light probe?
 
@@ -345,6 +352,7 @@ QQuick3DSceneEnvironment::QQuick3DEnvironmentAAQualityValues QQuick3DSceneEnviro
     DirectionalLight only.
 
     \image sceneenvironment_background_transparent.jpg
+           {3D object with transparent background}
 
     Using a fixed clear color:
 
@@ -354,6 +362,7 @@ QQuick3DSceneEnvironment::QQuick3DEnvironmentAAQualityValues QQuick3DSceneEnviro
     \endqml
 
     \image sceneenvironment_background_color.jpg
+           {3D object with green background}
 
     \sa lightProbe, QQuickWindow::setColor(), Window::color, View3D
 */
@@ -405,8 +414,11 @@ QColor QQuick3DSceneEnvironment::clearColor() const
     \li aoStrength of 50
     \row
     \li \image sceneenvironment_ao_off.jpg
+               {Scene with ambient occlusion strength of 0}
     \li \image sceneenvironment_ao_full_strength.jpg
+               {Scene with ambient occlusion strength of 100}
     \li \image sceneenvironment_ao_half_strength.jpg
+               {Scene with ambient occlusion strength of 50}
     \endtable
 
     \note Getting visually good-looking screen space ambient occlusion is
@@ -437,7 +449,9 @@ float QQuick3DSceneEnvironment::aoStrength() const
     \li aoDistance of 1
     \row
     \li \image sceneenvironment_ao_distance_5.jpg
+               {Scene with ambient occlusion distance of 5}
     \li \image sceneenvironment_ao_distance_1.jpg
+               {Scene with ambient occlusion distance of 1}
     \endtable
 
     \note Getting visually good-looking screen space ambient occlusion is
@@ -468,7 +482,9 @@ float QQuick3DSceneEnvironment::aoDistance() const
     \li aoSoftness of 25
     \row
     \li \image sceneenvironment_ao_softness_default.jpg
+               {Scene with ambient occlusion softness of 50}
     \li \image sceneenvironment_ao_softness_half.jpg
+               {Scene with ambient occlusion softness of 25}
     \endtable
 
     \note Getting visually good-looking screen space ambient occlusion is
@@ -622,12 +638,17 @@ float QQuick3DSceneEnvironment::aoBias() const
     Results with the above environment:
 
     \image sceneenvironment_lightprobe.jpg
+           {Scene with light probe}
     \image sceneenvironment_lightprobe_2.jpg
+           {Scene with light probe from different perspective}
 
     Switching the backgroundMode to \c{SceneEnvironment.Transparent} would give us:
 
     \image sceneenvironment_lightprobe_transparent.jpg
+           {Scene with backgroundMode set to transparent}
     \image sceneenvironment_lightprobe_transparent_2.jpg
+           {Scene with backgroundMode set to transparent from different
+           perspective}
 
     Here the lighting of the 3D scene is the same as before, meaning the
     materials use the light probe in the lighting calculations the same way as
@@ -678,7 +699,9 @@ float QQuick3DSceneEnvironment::aoBias() const
     here has no lights so all 3D models appear completely black.
 
     \image sceneenvironment_lightprobe_null.jpg
+           {3D objects without light probe on green background}
     \image sceneenvironment_lightprobe_null_2.jpg
+           {Ground plane without light probe on green background}
 
     While lightProbe is commonly used in combination with Texture instances
     that source their data from an image file (typically .hdr or .ktx), it can
@@ -698,7 +721,7 @@ float QQuick3DSceneEnvironment::aoBias() const
     This gives us a procedurally generated HDR skybox texture that is now used
     both as the skybox and for image-based lighting:
 
-    \image sceneenvironment_lightprobe_proceduralsky.jpg
+    \image sceneenvironment_lightprobe_proceduralsky.jpg {Architectural scene lit by procedural sky visible in background}
 
     \sa backgroundMode, {Using Image-Based Lighting}, {Pre-generating IBL
     cubemap}, probeExposure, probeHorizon, probeOrientation, ProceduralSkyTextureData
@@ -781,8 +804,11 @@ QVector3D QQuick3DSceneEnvironment::probeOrientation() const
     new frame is blended with the previous frame.
 
     \note Temporal antialiasing doesn't have an effect when antialiasingMode is MSAA.
-    \note When combined with ProgressiveAA antialiasingMode, temporalAA is used
-    when scene animates while ProgressiveAA is used once animations stop.
+    \note When using ProgressiveAA, temporal AA is applied during scene animation.
+    Once the scene becomes static, ProgressiveAA takes over — but only when
+    temporalAAMode is SceneEnvironment.TAADefault.
+    In other words: ProgressiveAA has no effect when temporalAAMode is set to
+    SceneEnvironment.TAAMotionVector.
 
     \b Pros: Due to the jiggling camera it finds real details that were otherwise
     lost; low impact on performance.
@@ -804,7 +830,8 @@ bool QQuick3DSceneEnvironment::temporalAAEnabled() const
     \since 5.15
 
     This property modifies the amount of temporal movement (antialiasing).
-    This has an effect only when temporalAAEnabled property is true.
+    This has an effect only when temporalAAEnabled property is true and
+    temporalAAMode property is SceneEnvironment.TAADefault.
 
     \default 0.3
 
@@ -813,6 +840,33 @@ bool QQuick3DSceneEnvironment::temporalAAEnabled() const
 float QQuick3DSceneEnvironment::temporalAAStrength() const
 {
     return m_temporalAAStrength;
+}
+
+/*!
+    \qmlproperty enumeration QtQuick3D::SceneEnvironment::temporalAAMode
+    \since 6.11
+
+    Controls the temporal anti-aliasing mode. Temporal AA reduces flickering and
+    aliasing by blending information across multiple frames.
+
+    \value SceneEnvironment.TAADefault
+    Blends current and previous frames for basic temporal filtering.
+
+    \value SceneEnvironment.TAAMotionVector
+    Uses motion vectors to track pixel movement between frames, providing
+    superior quality for animated scenes.
+
+    The default is \c SceneEnvironment.TAADefault.
+
+    \note Temporal AA may cause ghosting artifacts with fast-moving objects or
+       rapid camera movements.
+
+    \note Works best with constant frame rates. Frame rate variations reduce
+    effectiveness.
+*/
+QQuick3DSceneEnvironment::QQuick3DEnvironmentTemporalAAMode QQuick3DSceneEnvironment::temporalAAMode() const
+{
+    return m_temporalAAMode;
 }
 
 /*!
@@ -830,8 +884,10 @@ float QQuick3DSceneEnvironment::temporalAAStrength() const
     \li Specular AA disabled
     \li Specular AA enabled
     \row
-    \li \image specular_aa_off.jpg
-    \li \image specular_aa_on.jpg
+    \li \image specular_aa_off.jpg {Architectural scene showing
+               specular highlights without antialiasing}
+    \li \image specular_aa_on.jpg {Architectural scene showing
+               smoothed specular highlights with antialiasing}
     \endtable
 */
 bool QQuick3DSceneEnvironment::specularAAEnabled() const
@@ -1001,13 +1057,13 @@ float QQuick3DSceneEnvironment::skyboxBlurAmount() const
     is usually not required.
 
     An example of rendering the scene with wireframe mode enabled:
-    \image debugsettings_wireframe.jpg
+    \image debugsettings_wireframe.jpg {Sponza scene in wireframe mode}
 
     Visualizing the normal vectors of the meshes:
-    \image debugsettings_normals.jpg
+    \image debugsettings_normals.jpg {Sponza scene showing surface normals}
 
     Visualizing the specular lighting contribution:
-    \image debugsettings_specular.jpg
+    \image debugsettings_specular.jpg {Sponza scene showing specular highlights}
 
     \sa DebugSettings
 */
@@ -1244,6 +1300,15 @@ void QQuick3DSceneEnvironment::updateSceneManager(QQuick3DSceneManager *manager)
         QQuick3DObjectPrivate::derefSceneManager(m_lightProbe);
         QQuick3DObjectPrivate::derefSceneManager(m_skyBoxCubeMap);
     }
+}
+
+void QQuick3DSceneEnvironment::setTemporalAAMode(const QQuick3DEnvironmentTemporalAAMode &newTemporalAAMode)
+{
+    if (m_temporalAAMode == newTemporalAAMode)
+        return;
+    m_temporalAAMode = newTemporalAAMode;
+    emit temporalAAModeChanged();
+    update();
 }
 
 void QQuick3DSceneEnvironment::setTemporalAAEnabled(bool temporalAAEnabled)
@@ -1522,7 +1587,7 @@ void QQuick3DSceneEnvironment::setAoEnabled(bool newAoEnabled)
     The default value is null, which means no fog. This is equivalent to
     setting a Fog object with \l{Fog::enabled}{enabled} set to false.
 
-    \image fog.jpg
+    \image fog.jpg {Scene with fog effect}
 
     \sa {QtQuick3D::Fog}{Fog}
  */
@@ -1568,6 +1633,7 @@ void QQuick3DSceneEnvironment::setFog(QQuick3DFog *fog)
     Possible values are:
     \value SceneEnvironment.OITNone OIT is turned off.
     \value SceneEnvironment.OITWeightedBlended Approximates order independent transparency.
+    \value SceneEnvironment.OITLinkedList Accurate order independent transparency.
 
     The default is \c None and order independent transparency is turned off.
 
@@ -1579,6 +1645,13 @@ void QQuick3DSceneEnvironment::setFog(QQuick3DFog *fog)
     each pixel. This method doesn't follow the source-over composition rule for all fragments
     and the result is different from the correct result, however this method works also on
     older hardware and is faster than the other more rigorous methods.
+
+    \b Linked List
+
+    This is an accurate order independent transparency. The transparent fragments are
+    rendered to a linked list in the render pass and sorted by their depth and blended
+    in the composition pass.
+    \since 6.11
 
     \note OIT might not work with MSAA on devices with GLES 3.1 or lower. It is recommended
     not to use MSAA if oit is wanted on such devices.

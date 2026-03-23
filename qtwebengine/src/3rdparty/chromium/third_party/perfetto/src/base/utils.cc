@@ -57,7 +57,8 @@
 #endif  // OS_LINUX | OS_ANDROID
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
-#include <Windows.h>
+#include <windows.h>
+
 #include <io.h>
 #include <malloc.h>  // For _aligned_malloc().
 #endif
@@ -232,7 +233,8 @@ void UnsetEnv(const std::string& key) {
 void Daemonize(std::function<int()> parent_cb) {
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
+    (PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) &&  \
+     !PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE_TVOS))
   Pipe pipe = Pipe::Create(Pipe::kBothBlock);
   pid_t pid;
   switch (pid = fork()) {

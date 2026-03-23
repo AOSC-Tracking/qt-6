@@ -9,6 +9,13 @@ workload. The benchmark has two workload variants:
 
 *   Android Tablet web performance workload ("tablet").
 
+Google employees: see [go/loadline-internal](http://go/loadline-internal) for
+Google-specific info.
+
+See the
+[LoadLine component](https://g-issues.chromium.org/issues?q=status:open%20componentid:1670299)
+for the list of open bugs.
+
 ## tl;dr: Running the Benchmark
 
 Run "phone" workload:
@@ -169,33 +176,33 @@ To maintain reproducibility, the benchmark uses the
 [web page replay](https://chromium.googlesource.com/catapult/+/HEAD/web_page_replay_go/README.md)
 mechanism. Archives of the web pages are stored in the
 `chrome-partner-telemetry` cloud bucket, so you'll need access to that bucket to
-run the benchmark on recorded pages (you can still run the benchmark on live
-sites if you don't have the access, but there's no guarantee that results will
-be reproducible/comparable).
+run the benchmark on recorded pages.
 
 ### Repetitions {#repetitions}
 
 By default, the benchmark runs **100** repetitions, as we have found that this
-brings the noise to an acceptable level. You can override this setting via
-`--repetitions`
+brings the noise to an acceptable level. For quicker experiments, it's possible
+to run just 10 repetitions (at the expense of higher variance / lower
+confidence) using the following command:
+
+```
+./cb.py loadline-phone-fast --browser <browser>
+```
+
+You can also run an arbitrary number of repetitions by providing the
+`--repetitions` flag.
 
 ### Thermal Throttling
 
 Given the high number of repetitions in the standard configuration, thermal
 throttling can be an issue, especially in more thermally constricted devices. A
 one size fits all solution to this problem is quite hard; even detecting this is
-very device specific. So for the first version of the benchmark, we leave it up
-to the user to determine if the results of the benchmark might be influenced by
-thermal issues. Crossbench has a way of adding a delay between repetitions that
-can be used to mitigate this problem (at the expense of longer running times):
-`--cool-down-time`.
+very device specific. The `--cool-down-threshold` flag can be used to try to
+detect thermal throttling based on the device's overall thermal status. If you
+still see thermal issues while using this flag, try adding fixed delays between
+repetitions via `--cool-down-time` instead.
 
-In the future, we want to look at ways to aid users in detecting / mitigating
-thermal throttling (e.g. notify users that thermal throttling happened during
-the test or automatically waiting between repetitions until the device is in a
-good thermal state).
-
-## Configuration
+## Debugging / Alternative running options
 
 In its standard configuration, the benchmark will run 100 iterations. In
 addition, the WPR server will run on device, rather than on the host, to reduce
@@ -204,25 +211,21 @@ the noise caused by the latency introduced by the host to device connection.
 Both these settings can be overridden if needed / desirable.
 ([Repetitions](#repetitions), [WPR on host](#host_wpr))
 
-### Run the benchmark on live sites
+### Record a new WPR archive
 
+Uncomment the `wpr: {},` line in the probe config and run the benchmark on live
+sites using
 ```
 ./cb.py loadline-phone --browser <browser> --network live
 ```
 
-*Attention:* This benchmark uses various custom metrics tailored to the
-individual pages. If the pages change, it is not guaranteed that these metrics
-will keep working.
-
-### Record a new WPR archive
-
-Uncomment the `wpr: {},` line in the probe config and run the benchmark on live
-sites (see the command above). The archive will be located in
+The archive will be located in
 `results/latest/archive.wprgo`.
 
-*Attention:* This benchmark uses various custom metrics tailored to the
-individual pages. If the pages change, it is not guaranteed that these metrics
-will keep working.
+*WARNING:* Running the benchmark on the new archive will produce different
+scores, which will not be comparable with the default benchmark configuration.
+Some metrics might break completely. Only use this option if you are ready to
+debug and modify metrics as well.
 
 ### Running WPR on the host {#host_wpr}
 
@@ -245,8 +248,7 @@ it may be useful to collect more detailed traces and compute additional metrics.
 This can be done with the following command:
 
 ```
-./cb.py loadline-phone --browser <browser>\
-  --probe-config config/benchmark/loadline/probe_config_experimental.hjson
+./cb.py loadline-phone-debug --browser <browser>
 ```
 
 Note that collecting detailed traces incurs significant overhead, so the
@@ -266,7 +268,9 @@ If you see a `Could not find wpr.go binary` error:
 
 Follow the
 [crossbench development instructions](https://chromium.googlesource.com/crossbench/#development)
-to check out code and run crossbench standalone.
+to check out code and run crossbench standalone. Make sure to `fetch` using
+depot\_tools instead of cloning the git repository, this ensures that third
+party dependencies are set up correctly.
 
 ### Problems accessing the cloud bucket
 
@@ -276,5 +280,5 @@ case, save the archive file corresponding to the version you are running
 run the benchmark as follows:
 
 ```
-./cb.py loadline-phone --network <path to archive.wprgo>
+./cb.py loadline-phone --browser <browser> --network <path to archive.wprgo>
 ```

@@ -326,6 +326,9 @@ class CC_EXPORT ScrollEventMetrics : public EventMetrics {
 
   const viz::BeginFrameArgs& begin_frame_args() const { return args_; }
 
+  void set_did_scroll(bool did_scroll) { did_scroll_ = did_scroll; }
+  bool did_scroll() const { return did_scroll_; }
+
  protected:
   ScrollEventMetrics(EventType type,
                      ScrollType scroll_type,
@@ -352,6 +355,10 @@ class CC_EXPORT ScrollEventMetrics : public EventMetrics {
   // These may not match those of CompositorFrameReporter for which the event
   // is eventually displayed.
   viz::BeginFrameArgs args_;
+
+  // The scroll delta may not be actually applied. Event if it is consumed. This
+  // denotes that a scroll did actually occur.
+  bool did_scroll_ = false;
 };
 
 class CC_EXPORT ScrollUpdateEventMetrics : public ScrollEventMetrics {
@@ -452,6 +459,13 @@ class CC_EXPORT ScrollUpdateEventMetrics : public ScrollEventMetrics {
     return is_janky_scrolled_frame_;
   }
 
+  void set_is_janky_scrolled_frame_v3(std::optional<bool> is_janky) {
+    is_janky_scrolled_frame_v3_ = is_janky;
+  }
+  std::optional<bool> is_janky_scrolled_frame_v3() const {
+    return is_janky_scrolled_frame_v3_;
+  }
+
  protected:
   ScrollUpdateEventMetrics(EventType type,
                            ScrollType scroll_type,
@@ -485,6 +499,7 @@ class CC_EXPORT ScrollUpdateEventMetrics : public ScrollEventMetrics {
   int32_t coalesced_event_count_ = 1;
 
   std::optional<bool> is_janky_scrolled_frame_ = std::nullopt;
+  std::optional<bool> is_janky_scrolled_frame_v3_ = std::nullopt;
 };
 
 class CC_EXPORT PinchEventMetrics : public EventMetrics {
@@ -549,7 +564,8 @@ struct CC_EXPORT EventMetricsSet {
   EventMetricsSet();
   ~EventMetricsSet();
   EventMetricsSet(EventMetrics::List main_thread_event_metrics,
-                  EventMetrics::List impl_thread_event_metrics);
+                  EventMetrics::List impl_thread_event_metrics,
+                  EventMetrics::List raster_thread_event_metrics);
   EventMetricsSet(EventMetricsSet&&);
   EventMetricsSet& operator=(EventMetricsSet&&);
 
@@ -558,6 +574,7 @@ struct CC_EXPORT EventMetricsSet {
 
   EventMetrics::List main_event_metrics;
   EventMetrics::List impl_event_metrics;
+  EventMetrics::List raster_event_metrics;
 };
 
 }  // namespace cc

@@ -161,7 +161,7 @@ void SetWasmCalleeTag(WritableRelocInfo* rinfo, uint32_t tag) {
     Instr jalr = reinterpret_cast<Instruction*>(rinfo->pc() + 1 * kInstrSize)
                      ->InstructionBits();
     DCHECK(is_int32(tag + 0x800));
-    Assembler::PatchBranchlongOffset(rinfo->pc(), auipc, jalr, (int32_t)tag,
+    Assembler::PatchBranchLongOffset(rinfo->pc(), auipc, jalr, (int32_t)tag,
                                      nullptr);
   } else {
     Assembler::set_target_address_at(rinfo->pc(), rinfo->constant_pool(),
@@ -198,7 +198,7 @@ uint32_t GetWasmCalleeTag(RelocInfo* rinfo) {
     Instr auipc = instr->InstructionBits();
     Instr jalr = reinterpret_cast<Instruction*>(rinfo->pc() + 1 * kInstrSize)
                      ->InstructionBits();
-    return Assembler::BrachlongOffset(auipc, jalr);
+    return Assembler::BranchLongOffset(auipc, jalr);
   } else {
     return static_cast<uint32_t>(rinfo->target_address());
   }
@@ -220,6 +220,7 @@ constexpr size_t kCodeHeaderSize = sizeof(uint8_t) +  // code kind
                                    sizeof(int) +  // offset of safepoint table
                                    sizeof(int) +  // offset of handler table
                                    sizeof(int) +  // offset of code comments
+                                   sizeof(int) +  // offset of jump table info
                                    sizeof(int) +  // unpadded binary size
                                    sizeof(int) +  // stack slots
                                    sizeof(int) +  // ool slots
@@ -448,6 +449,7 @@ void NativeModuleSerializer::WriteCode(
   writer->Write(code->safepoint_table_offset());
   writer->Write(code->handler_table_offset());
   writer->Write(code->code_comments_offset());
+  writer->Write(code->jump_table_info_offset());
   writer->Write(code->unpadded_binary_size());
   writer->Write(code->stack_slots());
   writer->Write(code->ool_spills());
@@ -658,12 +660,12 @@ class DeserializationQueue {
  public:
   void Add(std::vector<DeserializationUnit> batch) {
     DCHECK(!batch.empty());
-    base::SpinningMutexGuard guard(&mutex_);
+    base::MutexGuard guard(&mutex_);
     queue_.emplace(std::move(batch));
   }
 
   std::vector<DeserializationUnit> Pop() {
-    base::SpinningMutexGuard guard(&mutex_);
+    base::MutexGuard guard(&mutex_);
     if (queue_.empty()) return {};
     auto batch = std::move(queue_.front());
     queue_.pop();
@@ -671,7 +673,7 @@ class DeserializationQueue {
   }
 
   std::vector<DeserializationUnit> PopAll() {
-    base::SpinningMutexGuard guard(&mutex_);
+    base::MutexGuard guard(&mutex_);
     if (queue_.empty()) return {};
     auto units = std::move(queue_.front());
     queue_.pop();
@@ -684,12 +686,12 @@ class DeserializationQueue {
   }
 
   size_t NumBatches() const {
-    base::SpinningMutexGuard guard(&mutex_);
+    base::MutexGuard guard(&mutex_);
     return queue_.size();
   }
 
  private:
-  mutable base::SpinningMutex mutex_;
+  mutable base::Mutex mutex_;
   std::queue<std::vector<DeserializationUnit>> queue_;
 };
 
@@ -908,6 +910,7 @@ DeserializationUnit NativeModuleDeserializer::ReadCode(int fn_index,
   int safepoint_table_offset = reader->Read<int>();
   int handler_table_offset = reader->Read<int>();
   int code_comment_offset = reader->Read<int>();
+  int jump_table_info_offset = reader->Read<int>();
   int unpadded_binary_size = reader->Read<int>();
   int stack_slot_count = reader->Read<int>();
   int ool_spill_count = reader->Read<int>();
@@ -954,9 +957,9 @@ DeserializationUnit NativeModuleDeserializer::ReadCode(int fn_index,
   unit.code = native_module_->AddDeserializedCode(
       fn_index, instructions, stack_slot_count, ool_spill_count,
       tagged_parameter_slots, safepoint_table_offset, handler_table_offset,
-      constant_pool_offset, code_comment_offset, unpadded_binary_size,
-      protected_instructions, reloc_info, source_pos, inlining_pos, deopt_data,
-      kind, tier);
+      constant_pool_offset, code_comment_offset, jump_table_info_offset,
+      unpadded_binary_size, protected_instructions, reloc_info, source_pos,
+      inlining_pos, deopt_data, kind, tier);
   unit.jump_tables = current_jump_tables_;
   return unit;
 }
@@ -1085,7 +1088,7 @@ bool IsSupportedVersion(base::Vector<const uint8_t> header,
          0;
 }
 
-MaybeHandle<WasmModuleObject> DeserializeNativeModule(
+MaybeDirectHandle<WasmModuleObject> DeserializeNativeModule(
     Isolate* isolate, base::Vector<const uint8_t> data,
     base::Vector<const uint8_t> wire_bytes_vec,
     const CompileTimeImports& compile_imports,
@@ -1114,11 +1117,8 @@ MaybeHandle<WasmModuleObject> DeserializeNativeModule(
   auto shared_native_module = wasm_engine->MaybeGetNativeModule(
       module->origin, owned_wire_bytes.as_vector(), compile_imports, isolate);
   if (shared_native_module == nullptr) {
-    const bool dynamic_tiering = v8_flags.wasm_dynamic_tiering;
-    const bool include_liftoff = !dynamic_tiering;
     size_t code_size_estimate =
-        wasm::WasmCodeManager::EstimateNativeModuleCodeSize(
-            module.get(), include_liftoff, DynamicTiering{dynamic_tiering});
+        wasm::WasmCodeManager::EstimateNativeModuleCodeSize(module.get());
     shared_native_module = wasm_engine->NewNativeModule(
         isolate, enabled_features, detected_features, compile_imports,
         std::move(module), code_size_estimate);
@@ -1150,7 +1150,7 @@ MaybeHandle<WasmModuleObject> DeserializeNativeModule(
 
   DirectHandle<Script> script =
       wasm_engine->GetOrCreateScript(isolate, shared_native_module, source_url);
-  Handle<WasmModuleObject> module_object =
+  DirectHandle<WasmModuleObject> module_object =
       WasmModuleObject::New(isolate, shared_native_module, script);
 
   // Finish the Wasm script now and make it public to the debugger.

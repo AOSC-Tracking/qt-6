@@ -18,21 +18,19 @@ export class StylePropertyHighlighter {
   /**
    * Expand all shorthands, find the given property, scroll to it and highlight it.
    */
-  highlightProperty(cssProperty: SDK.CSSProperty.CSSProperty): void {
-    // Expand all shorthands.
-    for (const section of this.styleSidebarPane.allSections()) {
-      for (let treeElement = section.propertiesTreeOutline.firstChild(); treeElement;
-           treeElement = treeElement.nextSibling) {
-        void treeElement.onpopulate();
-      }
-    }
-
+  async highlightProperty(cssProperty: SDK.CSSProperty.CSSProperty): Promise<void> {
     const section =
-        this.styleSidebarPane.allSections().find(section => section.style().leadingProperties().includes(cssProperty));
+        this.styleSidebarPane.allSections().find(section => section.style().allProperties().includes(cssProperty));
     if (!section) {
       return;
     }
     section.showAllItems();
+    const populatePromises: Array<Promise<void>> = [];
+    for (let treeElement = section.propertiesTreeOutline.firstChild(); treeElement;
+         treeElement = treeElement.nextSibling) {
+      populatePromises.push(treeElement.onpopulate());
+    }
+    await Promise.all(populatePromises);
 
     const treeElement = this.findTreeElementFromSection(treeElement => treeElement.property === cssProperty, section);
     if (treeElement) {
@@ -90,23 +88,6 @@ export class StylePropertyHighlighter {
       }
     }
     return false;
-  }
-
-  /**
-   * Traverse the styles pane tree, execute the provided callback for every tree element found, and
-   * return the first tree element and corresponding section for which the callback returns a truthy value.
-   */
-  private findTreeElementAndSection(compareCb: (arg0: StylePropertyTreeElement) => boolean): {
-    treeElement: StylePropertyTreeElement|null,
-    section: StylePropertiesSection|null,
-  } {
-    for (const section of this.styleSidebarPane.allSections()) {
-      const treeElement = this.findTreeElementFromSection(compareCb, section);
-      if (treeElement) {
-        return {treeElement, section};
-      }
-    }
-    return {treeElement: null, section: null};
   }
 
   private findTreeElementFromSection(

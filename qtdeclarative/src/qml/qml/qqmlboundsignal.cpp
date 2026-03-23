@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlboundsignal_p.h"
 
@@ -27,6 +28,12 @@ QT_BEGIN_NAMESPACE
 Q_TRACE_POINT(qtqml, QQmlHandlingSignal_entry, const QQmlEngine *engine, const QString &function,
               const QString &fileName, int line, int column)
 Q_TRACE_POINT(qtqml, QQmlHandlingSignal_exit)
+
+/*!
+    \class QQmlBoundSignal
+    \inmodule QtQml
+    \internal
+*/
 
 QQmlBoundSignalExpression::QQmlBoundSignalExpression(const QObject *target, int index, const QQmlRefPointer<QQmlContextData> &ctxt, QObject *scope,
         const QString &expression, const QString &fileName, quint16 line, quint16 column,

@@ -109,7 +109,7 @@ class CORE_EXPORT HTMLAnchorElementBase : public HTMLElement,
 
   void SendPings(const KURL& destination_url) const;
 
-  Element* interestTargetElement() override;
+  Element* InterestForElement() const override;
 
   void Trace(Visitor*) const override;
 
@@ -155,6 +155,16 @@ class CORE_EXPORT HTMLAnchorElement : public HTMLAnchorElementBase {
 
  public:
   explicit HTMLAnchorElement(Document& document);
+
+  void AttachLayoutTree(AttachContext& context) override;
+  void DetachLayoutTree(bool performing_reattach) override;
+
+  // Gets the element which is referenced by this anchor fragment
+  // (#scroll-target), or nullptr if not found.
+  Element* ScrollTargetElement() const;
+  // Gets the closest ancestor scrollable area of this anchors scroll target
+  // element.
+  PaintLayerScrollableArea* AncestorScrollableAreaOfScrollTargetElement() const;
 };
 
 template <>

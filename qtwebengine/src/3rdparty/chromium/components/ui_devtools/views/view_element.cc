@@ -144,13 +144,18 @@ void ViewElement::SetBounds(const gfx::Rect& bounds) {
 
 std::vector<std::string> ViewElement::GetAttributes() const {
   // TODO(lgrey): Change name to class after updating tests.
-  return {"class", view_->GetClassName(), "name", view_->GetObjectName()};
+  return {"class", std::string(view_->GetClassName()), "name",
+          view_->GetObjectName()};
 }
 
 std::pair<gfx::NativeWindow, gfx::Rect>
 ViewElement::GetNodeWindowAndScreenBounds() const {
   return std::make_pair(view_->GetWidget()->GetNativeWindow(),
                         view_->GetBoundsInScreen());
+}
+
+gfx::Rect ViewElement::GetNodeBoundsInScreen() const {
+  return view_->GetBoundsInScreen();
 }
 
 // static

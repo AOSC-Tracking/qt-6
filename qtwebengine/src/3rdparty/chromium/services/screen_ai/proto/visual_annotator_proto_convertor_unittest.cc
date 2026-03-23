@@ -12,28 +12,18 @@
 
 namespace {
 
-void InitLineBox(chrome_screen_ai::LineBox* line_box,
-                 int32_t x,
-                 int32_t y,
-                 int32_t width,
-                 int32_t height,
-                 const char* text,
-                 const char* language,
-                 chrome_screen_ai::Direction direction,
-                 int32_t block_id,
-                 int32_t order_within_block,
-                 float angle) {
-  chrome_screen_ai::Rect* rect = line_box->mutable_bounding_box();
+void InitSymbolBox(chrome_screen_ai::SymbolBox* symbol_box,
+                   int32_t x,
+                   int32_t y,
+                   int32_t width,
+                   int32_t height,
+                   const char* text) {
+  chrome_screen_ai::Rect* rect = symbol_box->mutable_bounding_box();
   rect->set_x(x);
   rect->set_y(y);
   rect->set_width(width);
   rect->set_height(height);
-  rect->set_angle(angle);
-  line_box->set_utf8_string(text);
-  line_box->set_language(language);
-  line_box->set_direction(direction);
-  line_box->set_block_id(block_id);
-  line_box->set_order_within_block(order_within_block);
+  symbol_box->set_utf8_string(text);
 }
 
 void InitWordBox(chrome_screen_ai::WordBox* word_box,
@@ -63,18 +53,37 @@ void InitWordBox(chrome_screen_ai::WordBox* word_box,
   word_box->set_foreground_rgb_value(foreground_rgb_value);
 }
 
-void InitSymbolBox(chrome_screen_ai::SymbolBox* symbol_box,
-                   int32_t x,
-                   int32_t y,
-                   int32_t width,
-                   int32_t height,
-                   const char* text) {
-  chrome_screen_ai::Rect* rect = symbol_box->mutable_bounding_box();
+void InitLineBox(chrome_screen_ai::LineBox* line_box,
+                 int32_t x,
+                 int32_t y,
+                 int32_t width,
+                 int32_t height,
+                 const char* text,
+                 const char* language,
+                 chrome_screen_ai::Direction direction,
+                 int32_t block_id,
+                 int32_t paragraph_id,
+                 float angle,
+                 bool add_word = false) {
+  chrome_screen_ai::Rect* rect = line_box->mutable_bounding_box();
   rect->set_x(x);
   rect->set_y(y);
   rect->set_width(width);
   rect->set_height(height);
-  symbol_box->set_utf8_string(text);
+  rect->set_angle(angle);
+  line_box->set_utf8_string(text);
+  line_box->set_language(language);
+  line_box->set_direction(direction);
+  line_box->set_block_id(block_id);
+  line_box->set_paragraph_id(paragraph_id);
+  if (add_word) {
+    InitWordBox(line_box->add_words(), x, y, width, height, text, language,
+                direction,
+                /*has_space_after=*/false,
+                /*background_rgb_value=*/0,
+                /*foreground_rgb_value=*/0,
+                /*angle=*/0);
+  }
 }
 
 }  // namespace
@@ -83,155 +92,8 @@ namespace screen_ai {
 
 using ScreenAIVisualAnnotatorProtoConvertorTest = testing::Test;
 
-TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
-       VisualAnnotationToAXTreeUpdate_OcrResults) {
+TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest, SimpleResults) {
   chrome_screen_ai::VisualAnnotation annotation;
-  gfx::Rect snapshot_bounds(800, 900);
-
-  screen_ai::ResetNodeIDForTesting();
-
-  {
-    chrome_screen_ai::LineBox* line_0 = annotation.add_lines();
-
-    InitWordBox(line_0->add_words(),
-                /*x=*/100,
-                /*y=*/100,
-                /*width=*/250,
-                /*height=*/20,
-                /*text=*/"Hello",
-                /*language=*/"en",
-                /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
-                /*has_space_after=*/true,
-                /*background_rgb_value=*/0xffffff00,
-                /*foreground_rgb_value=*/0x00000000,  // Black on white.
-                /*angle=*/0);
-
-    InitWordBox(line_0->add_words(),
-                /*x=*/350,
-                /*y=*/100,
-                /*width=*/250,
-                /*height=*/20,
-                /*text=*/"world",
-                /*language=*/"en",
-                /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
-                /*has_space_after=*/false,
-                /*background_rgb_value=*/0xffffff00,
-                /*foreground_rgb_value=*/0xff000000,  // Blue on white.
-                /*angle=*/0);
-
-    InitLineBox(line_0,
-                /*x=*/100,
-                /*y=*/100,
-                /*width=*/500,
-                /*height=*/20,
-                /*text=*/"Hello world",
-                /*language=*/"en",
-                /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
-                /*block_id=*/1,
-                /*order_within_block=*/1,
-                /*angle=*/0);
-  }
-
-  {
-    const ui::AXTreeUpdate update =
-        VisualAnnotationToAXTreeUpdate(annotation, snapshot_bounds);
-
-    const std::string expected_update(
-        "AXTreeUpdate: root id -2\n"
-        "id=-2 region class_name=ocred_page child_ids=-3,-5,-8 (0, 0)-(800, "
-        "900) is_page_breaking_object=true\n"
-        "  id=-3 banner child_ids=-4 (0, 0)-(1, 1)\n"
-        "    id=-4 staticText name=Start of extracted text (0, 0)-(1, 1)\n"
-        "  id=-5 paragraph child_ids=-6 (100, 100)-(500, 20)\n"
-        "    id=-6 staticText name=Hello world child_ids=-7 "
-        "(100, 100)-(500, 20) text_direction=ltr language=en\n"
-        "      id=-7 inlineTextBox name=Hello world (100, 100)-(500, 20) "
-        "background_color=&FFFFFF00 color=&0 text_direction=ltr "
-        "word_starts=0,6 word_ends=5,10\n  id=-8 contentInfo child_ids=-9 "
-        "(800, 900)-(1, 1)\n"
-        "    id=-9 staticText name=End of extracted text (800, 900)-(1, 1)\n");
-    EXPECT_EQ(expected_update, update.ToString());
-  }
-}
-
-TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
-       VisualAnnotationToAXTreeUpdate_OcrResults_MultipleLanguages) {
-  chrome_screen_ai::VisualAnnotation annotation;
-  gfx::Rect snapshot_bounds(800, 900);
-
-  screen_ai::ResetNodeIDForTesting();
-
-  {
-    chrome_screen_ai::LineBox* line_0 = annotation.add_lines();
-
-    InitWordBox(line_0->add_words(),
-                /*x=*/100,
-                /*y=*/100,
-                /*width=*/250,
-                /*height=*/20,
-                /*text=*/"Bonjour",
-                /*language=*/"fr",
-                /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
-                /*has_space_after=*/true,
-                /*background_rgb_value=*/0xffffff00,
-                /*foreground_rgb_value=*/0x00000000,  // Black on white.
-                /*angle=*/0);
-
-    InitWordBox(line_0->add_words(),
-                /*x=*/350,
-                /*y=*/100,
-                /*width=*/250,
-                /*height=*/20,
-                /*text=*/"world",
-                /*language=*/"en",
-                /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
-                /*has_space_after=*/false,
-                /*background_rgb_value=*/0xffffff00,
-                /*foreground_rgb_value=*/0xff000000,  // Blue on white.
-                /*angle=*/0);
-
-    InitLineBox(line_0,
-                /*x=*/100,
-                /*y=*/100,
-                /*width=*/500,
-                /*height=*/20,
-                /*text=*/"Bonjour world",
-                /*language=*/"en",
-                /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
-                /*block_id=*/1,
-                /*order_within_block=*/1,
-                /*angle=*/0);
-  }
-
-  {
-    const ui::AXTreeUpdate update =
-        VisualAnnotationToAXTreeUpdate(annotation, snapshot_bounds);
-
-    const std::string expected_update(
-        "AXTreeUpdate: root id -2\n"
-        "id=-2 region class_name=ocred_page child_ids=-3,-5,-9 (0, 0)-(800, "
-        "900) is_page_breaking_object=true\n"
-        "  id=-3 banner child_ids=-4 (0, 0)-(1, 1)\n"
-        "    id=-4 staticText name=Start of extracted text (0, 0)-(1, 1)\n"
-        "  id=-5 paragraph child_ids=-6 (100, 100)-(500, 20)\n"
-        "    id=-6 staticText name=Bonjour world child_ids=-7,-8 "
-        "(100, 100)-(500, 20) text_direction=ltr language=en\n"
-        "      id=-7 inlineTextBox name=Bonjour  (100, 100)-(250, 20) "
-        "background_color=&FFFFFF00 color=&0 text_direction=ltr language=fr "
-        "word_starts=0 word_ends=7\n"
-        "      id=-8 inlineTextBox name=world (350, 100)-(250, 20) "
-        "background_color=&FFFFFF00 color=&FF000000 text_direction=ltr "
-        "word_starts=0 word_ends=4\n"
-        "  id=-9 contentInfo child_ids=-10 (800, 900)-(1, 1)\n"
-        "    id=-10 staticText name=End of extracted text (800, 900)-(1, 1)\n");
-    EXPECT_EQ(expected_update, update.ToString());
-  }
-}
-
-TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
-       ConvertProtoToVisualAnnotation_OcrResults) {
-  chrome_screen_ai::VisualAnnotation annotation;
-
   {
     chrome_screen_ai::LineBox* line_0 = annotation.add_lines();
 
@@ -269,18 +131,12 @@ TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
                 /*text=*/"Hello world",
                 /*language=*/"en",
                 /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
-                /*block_id=*/1,
-                /*order_within_block=*/1,
+                /*block_id=*/0,
+                /*paragraph_id=*/0,
                 /*angle=*/1.5);
-
-    chrome_screen_ai::Rect* line_baseline_box = line_0->mutable_baseline_box();
-    line_baseline_box->set_x(110);
-    line_baseline_box->set_y(110);
-    line_baseline_box->set_width(510);
-    line_baseline_box->set_height(30);
-    line_baseline_box->set_angle(11.5);
   }
 
+  // Testing conversion to Mojo.
   {
     mojom::VisualAnnotationPtr annot =
         ConvertProtoToVisualAnnotation(annotation);
@@ -291,19 +147,13 @@ TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
     EXPECT_EQ(line->bounding_box.width(), 500);
     EXPECT_EQ(line->bounding_box.height(), 20);
     EXPECT_EQ(line->bounding_box_angle, 1.5);
-    EXPECT_EQ(line->baseline_box.x(), 110);
-    EXPECT_EQ(line->baseline_box.y(), 110);
-    EXPECT_EQ(line->baseline_box.width(), 510);
-    EXPECT_EQ(line->baseline_box.height(), 30);
-    EXPECT_EQ(line->baseline_box_angle, 11.5);
     EXPECT_EQ(line->text_line, "Hello world");
-    EXPECT_EQ(line->block_id, 1);
-    EXPECT_EQ(line->order_within_block, 1);
+    EXPECT_EQ(line->block_id, 0);
+    EXPECT_EQ(line->paragraph_id, 0);
     EXPECT_EQ(line->words.size(), static_cast<unsigned long>(2));
 
     mojom::WordBoxPtr& word_0 = line->words[0];
     EXPECT_EQ(word_0->word, "Hello");
-    EXPECT_EQ(word_0->dictionary_word, false);
     EXPECT_EQ(word_0->language, "en");
     EXPECT_EQ(word_0->has_space_after, true);
     EXPECT_EQ(word_0->bounding_box.x(), 100);
@@ -315,7 +165,6 @@ TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
 
     mojom::WordBoxPtr& word_1 = line->words[1];
     EXPECT_EQ(word_1->word, "world");
-    EXPECT_EQ(word_1->dictionary_word, false);
     EXPECT_EQ(word_1->language, "en");
     EXPECT_EQ(word_1->has_space_after, false);
     EXPECT_EQ(word_1->bounding_box.x(), 350);
@@ -325,15 +174,151 @@ TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
     EXPECT_EQ(word_1->bounding_box_angle, 2);
     EXPECT_EQ(word_1->direction, mojom::Direction::DIRECTION_LEFT_TO_RIGHT);
   }
+
+// Testing conversion to AxTreeUpdate which is only used on ChromeOS.
+#if BUILDFLAG(IS_CHROMEOS)
+  {
+    gfx::Rect snapshot_bounds(800, 900);
+    screen_ai::ResetNodeIDForTesting();
+    const ui::AXTreeUpdate update =
+        VisualAnnotationToAXTreeUpdate(annotation, snapshot_bounds);
+
+    const std::string expected_update(
+        "AXTreeUpdate: root id -2\n"
+        "id=-2 region class_name=ocred_page child_ids=-3,-5,-8 (0, 0)-(800, "
+        "900) is_page_breaking_object=true\n"
+        "  id=-3 banner child_ids=-4 (0, 0)-(1, 1)\n"
+        "    id=-4 staticText name=Start of extracted text (0, 0)-(1, 1)\n"
+        "  id=-5 paragraph child_ids=-6 (99, 100)-(500, 33)\n"
+        "    id=-6 staticText name=Hello world child_ids=-7 (99, 100)-(500, "
+        "33) text_direction=ltr language=en\n"
+        "      id=-7 inlineTextBox name=Hello world (99, 100)-(500, 28) "
+        "background_color=&FFFFFF00 color=&0 text_direction=ltr "
+        "word_starts=0,6 word_ends=5,10\n"
+        "  id=-8 contentInfo child_ids=-9 (800, 900)-(1, 1)\n"
+        "    id=-9 staticText name=End of extracted text (800, 900)-(1, 1)\n");
+    EXPECT_EQ(expected_update, update.ToString());
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
+}
+
+TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest, MultipleLanguages) {
+  chrome_screen_ai::VisualAnnotation annotation;
+  {
+    chrome_screen_ai::LineBox* line_0 = annotation.add_lines();
+
+    InitWordBox(line_0->add_words(),
+                /*x=*/100,
+                /*y=*/100,
+                /*width=*/250,
+                /*height=*/20,
+                /*text=*/"Bonjour",
+                /*language=*/"fr",
+                /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
+                /*has_space_after=*/true,
+                /*background_rgb_value=*/0xffffff00,
+                /*foreground_rgb_value=*/0x00000000,  // Black on white.
+                /*angle=*/0);
+
+    InitWordBox(line_0->add_words(),
+                /*x=*/350,
+                /*y=*/100,
+                /*width=*/250,
+                /*height=*/20,
+                /*text=*/"world",
+                /*language=*/"en",
+                /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
+                /*has_space_after=*/false,
+                /*background_rgb_value=*/0xffffff00,
+                /*foreground_rgb_value=*/0xff000000,  // Blue on white.
+                /*angle=*/0);
+
+    InitLineBox(line_0,
+                /*x=*/100,
+                /*y=*/100,
+                /*width=*/500,
+                /*height=*/20,
+                /*text=*/"Bonjour world",
+                /*language=*/"en",
+                /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
+                /*block_id=*/0,
+                /*paragraph_id=*/0,
+                /*angle=*/0);
+  }
+
+  // Testing conversion to Mojo.
+  {
+    mojom::VisualAnnotationPtr annot =
+        ConvertProtoToVisualAnnotation(annotation);
+    EXPECT_EQ(annot->lines.size(), static_cast<unsigned long>(1));
+    mojom::LineBoxPtr& line = annot->lines[0];
+    EXPECT_EQ(line->bounding_box.x(), 100);
+    EXPECT_EQ(line->bounding_box.y(), 100);
+    EXPECT_EQ(line->bounding_box.width(), 500);
+    EXPECT_EQ(line->bounding_box.height(), 20);
+    EXPECT_EQ(line->bounding_box_angle, 0);
+    EXPECT_EQ(line->text_line, "Bonjour world");
+    EXPECT_EQ(line->language, "en");
+    EXPECT_EQ(line->block_id, 0);
+    EXPECT_EQ(line->paragraph_id, 0);
+    EXPECT_EQ(line->words.size(), static_cast<unsigned long>(2));
+
+    mojom::WordBoxPtr& word_0 = line->words[0];
+    EXPECT_EQ(word_0->bounding_box.x(), 100);
+    EXPECT_EQ(word_0->bounding_box.y(), 100);
+    EXPECT_EQ(word_0->bounding_box.width(), 250);
+    EXPECT_EQ(word_0->bounding_box.height(), 20);
+    EXPECT_EQ(word_0->bounding_box_angle, 0);
+    EXPECT_EQ(word_0->word, "Bonjour");
+    EXPECT_EQ(word_0->language, "fr");
+    EXPECT_EQ(word_0->has_space_after, true);
+    EXPECT_EQ(word_0->direction, mojom::Direction::DIRECTION_LEFT_TO_RIGHT);
+
+    mojom::WordBoxPtr& word_1 = line->words[1];
+    EXPECT_EQ(word_1->bounding_box.x(), 350);
+    EXPECT_EQ(word_1->bounding_box.y(), 100);
+    EXPECT_EQ(word_1->bounding_box.width(), 250);
+    EXPECT_EQ(word_1->bounding_box.height(), 20);
+    EXPECT_EQ(word_1->bounding_box_angle, 0);
+    EXPECT_EQ(word_1->word, "world");
+    EXPECT_EQ(word_1->language, "en");
+    EXPECT_EQ(word_1->has_space_after, false);
+    EXPECT_EQ(word_1->direction, mojom::Direction::DIRECTION_LEFT_TO_RIGHT);
+  }
+
+// Testing conversion to AxTreeUpdate.
+#if BUILDFLAG(IS_CHROMEOS)
+  {
+    gfx::Rect snapshot_bounds(800, 900);
+    screen_ai::ResetNodeIDForTesting();
+    const ui::AXTreeUpdate update =
+        VisualAnnotationToAXTreeUpdate(annotation, snapshot_bounds);
+
+    const std::string expected_update(
+        "AXTreeUpdate: root id -2\n"
+        "id=-2 region class_name=ocred_page child_ids=-3,-5,-9 (0, 0)-(800, "
+        "900) is_page_breaking_object=true\n"
+        "  id=-3 banner child_ids=-4 (0, 0)-(1, 1)\n"
+        "    id=-4 staticText name=Start of extracted text (0, 0)-(1, 1)\n"
+        "  id=-5 paragraph child_ids=-6 (100, 100)-(500, 20)\n"
+        "    id=-6 staticText name=Bonjour world child_ids=-7,-8 "
+        "(100, 100)-(500, 20) text_direction=ltr language=en\n"
+        "      id=-7 inlineTextBox name=Bonjour  (100, 100)-(250, 20) "
+        "background_color=&FFFFFF00 color=&0 text_direction=ltr language=fr "
+        "word_starts=0 word_ends=7\n"
+        "      id=-8 inlineTextBox name=world (350, 100)-(250, 20) "
+        "background_color=&FFFFFF00 color=&FF000000 text_direction=ltr "
+        "word_starts=0 word_ends=4\n"
+        "  id=-9 contentInfo child_ids=-10 (800, 900)-(1, 1)\n"
+        "    id=-10 staticText name=End of extracted text (800, 900)-(1, 1)\n");
+    EXPECT_EQ(expected_update, update.ToString());
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 }
 
 TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
        VisualAnnotationToAXTreeUpdate_OcrResults_RightToLeftMultiByte) {
   chrome_screen_ai::VisualAnnotation annotation;
-  gfx::Rect snapshot_bounds(800, 900);
-
-  screen_ai::ResetNodeIDForTesting();
-
   {
     chrome_screen_ai::LineBox* line_0 = annotation.add_lines();
     chrome_screen_ai::WordBox* word_0 = line_0->add_words();
@@ -412,15 +397,59 @@ TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
                 /*y=*/100,
                 /*width=*/37,
                 /*height=*/20,
-                /*text=*/"روز بخیر",
+                /*text=*/"روز خوش",
                 /*language=*/"fa",
                 /*direction=*/chrome_screen_ai::DIRECTION_RIGHT_TO_LEFT,
-                /*block_id=*/1,
-                /*order_within_block=*/1,
+                /*block_id=*/0,
+                /*paragraph_id=*/0,
                 /*angle=*/0);
   }
 
+  // Testing conversion to Mojo.
   {
+    mojom::VisualAnnotationPtr annot =
+        ConvertProtoToVisualAnnotation(annotation);
+    EXPECT_EQ(annot->lines.size(), static_cast<unsigned long>(1));
+    mojom::LineBoxPtr& line = annot->lines[0];
+    EXPECT_EQ(line->bounding_box.x(), 100);
+    EXPECT_EQ(line->bounding_box.y(), 100);
+    EXPECT_EQ(line->bounding_box.width(), 37);
+    EXPECT_EQ(line->bounding_box.height(), 20);
+    EXPECT_EQ(line->bounding_box_angle, 0);
+    EXPECT_EQ(line->text_line, "روز خوش");
+    EXPECT_EQ(line->language, "fa");
+    EXPECT_EQ(line->block_id, 0);
+    EXPECT_EQ(line->paragraph_id, 0);
+    EXPECT_EQ(line->words.size(), static_cast<unsigned long>(2));
+
+    mojom::WordBoxPtr& word_0 = line->words[0];
+    EXPECT_EQ(word_0->bounding_box.x(), 125);
+    EXPECT_EQ(word_0->bounding_box.y(), 100);
+    EXPECT_EQ(word_0->bounding_box.width(), 12);
+    EXPECT_EQ(word_0->bounding_box.height(), 20);
+    EXPECT_EQ(word_0->bounding_box_angle, 0);
+    EXPECT_EQ(word_0->word, "روز");
+    EXPECT_EQ(word_0->language, "fa");
+    EXPECT_EQ(word_0->has_space_after, true);
+    EXPECT_EQ(word_0->direction, mojom::Direction::DIRECTION_RIGHT_TO_LEFT);
+
+    mojom::WordBoxPtr& word_1 = line->words[1];
+    EXPECT_EQ(word_1->bounding_box.x(), 100);
+    EXPECT_EQ(word_1->bounding_box.y(), 100);
+    EXPECT_EQ(word_1->bounding_box.width(), 20);
+    EXPECT_EQ(word_1->bounding_box.height(), 20);
+    EXPECT_EQ(word_1->bounding_box_angle, 0);
+    EXPECT_EQ(word_1->word, "خوش");
+    EXPECT_EQ(word_1->language, "fa");
+    EXPECT_EQ(word_1->has_space_after, false);
+    EXPECT_EQ(word_1->direction, mojom::Direction::DIRECTION_RIGHT_TO_LEFT);
+  }
+
+// Testing conversion to AxTreeUpdate.
+#if BUILDFLAG(IS_CHROMEOS)
+  {
+    gfx::Rect snapshot_bounds(800, 900);
+    screen_ai::ResetNodeIDForTesting();
     const ui::AXTreeUpdate update =
         VisualAnnotationToAXTreeUpdate(annotation, snapshot_bounds);
 
@@ -431,7 +460,7 @@ TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
         "  id=-3 banner child_ids=-4 (0, 0)-(1, 1)\n"
         "    id=-4 staticText name=Start of extracted text (0, 0)-(1, 1)\n"
         "  id=-5 paragraph child_ids=-6 (100, 100)-(37, 20)\n"
-        "    id=-6 staticText name=روز بخیر child_ids=-7 (100, 100)-(37, 20) "
+        "    id=-6 staticText name=روز خوش child_ids=-7 (100, 100)-(37, 20) "
         "text_direction=rtl language=fa\n"
         "      id=-7 inlineTextBox name=روز خوش (100, 100)-(37, 20) "
         "background_color=&FFFFFF00 color=&FF000000 text_direction=rtl "
@@ -440,16 +469,14 @@ TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
         "    id=-9 staticText name=End of extracted text (800, 900)-(1, 1)\n");
     EXPECT_EQ(expected_update, update.ToString());
   }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 }
 
-TEST_F(
-    ScreenAIVisualAnnotatorProtoConvertorTest,
-    VisualAnnotationToAXTreeUpdate_OcrResults_CharacterOffsets_LeftToRight_NotRotated) {
+// Character offsets are only returned in AxTreeUpdate.
+#if BUILDFLAG(IS_CHROMEOS)
+TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
+       CharacterOffsets_LeftToRight_NotRotated) {
   chrome_screen_ai::VisualAnnotation annotation;
-  gfx::Rect snapshot_bounds(800, 900);
-
-  screen_ai::ResetNodeIDForTesting();
-
   {
     chrome_screen_ai::LineBox* line_0 = annotation.add_lines();
     chrome_screen_ai::WordBox* word_0 = line_0->add_words();
@@ -531,12 +558,14 @@ TEST_F(
                 /*text=*/"Day One",
                 /*language=*/"en",
                 /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
-                /*block_id=*/1,
-                /*order_within_block=*/1,
+                /*block_id=*/0,
+                /*paragraph_id=*/0,
                 /*angle=*/0);
   }
 
   {
+    gfx::Rect snapshot_bounds(800, 900);
+    screen_ai::ResetNodeIDForTesting();
     const ui::AXTreeUpdate update =
         VisualAnnotationToAXTreeUpdate(annotation, snapshot_bounds);
 
@@ -557,15 +586,13 @@ TEST_F(
     EXPECT_EQ(expected_update, update.ToString());
   }
 }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
-TEST_F(
-    ScreenAIVisualAnnotatorProtoConvertorTest,
-    VisualAnnotationToAXTreeUpdate_OcrResults_CharacterOffsets_LeftToRight_Rotated) {
+// Character offsets are only returned in AxTreeUpdate.
+#if BUILDFLAG(IS_CHROMEOS)
+TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest,
+       CharacterOffsets_LeftToRight_Rotated) {
   chrome_screen_ai::VisualAnnotation annotation;
-  gfx::Rect snapshot_bounds(800, 900);
-
-  screen_ai::ResetNodeIDForTesting();
-
   {
     chrome_screen_ai::LineBox* line_0 = annotation.add_lines();
     chrome_screen_ai::WordBox* word_0 = line_0->add_words();
@@ -647,12 +674,14 @@ TEST_F(
                 /*text=*/"Day One",
                 /*language=*/"en",
                 /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
-                /*block_id=*/1,
-                /*order_within_block=*/1,
+                /*block_id=*/0,
+                /*paragraph_id=*/0,
                 /*angle=*/90);
   }
 
   {
+    gfx::Rect snapshot_bounds(800, 900);
+    screen_ai::ResetNodeIDForTesting();
     const ui::AXTreeUpdate update =
         VisualAnnotationToAXTreeUpdate(annotation, snapshot_bounds);
 
@@ -672,6 +701,122 @@ TEST_F(
         "    id=-9 staticText name=End of extracted text (800, 900)-(1, 1)\n");
     EXPECT_EQ(expected_update, update.ToString());
   }
+}
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
+TEST_F(ScreenAIVisualAnnotatorProtoConvertorTest, Paragraphs) {
+  chrome_screen_ai::VisualAnnotation annotation;
+  {
+    typedef struct {
+      int block_id;
+      int paragraph_id;
+      const char* text;
+    } LineInfo;
+
+    // Expected paragraphs: (Jan, Feb, Mar), (Apr, May), (Jun)
+    LineInfo lines[] = {{0, 0, "Jan"}, {0, 0, "Feb"}, {0, 0, "Mar"},
+                        {0, 1, "Apr"}, {0, 1, "May"}, {1, 0, "Jun"}};
+
+    int y = 100;
+    for (auto& line : lines) {
+      InitLineBox(annotation.add_lines(),
+                  /*x=*/100,
+                  /*y=*/y,
+                  /*width=*/100,
+                  /*height=*/20,
+                  /*text=*/line.text,
+                  /*language=*/"en",
+                  /*direction=*/chrome_screen_ai::DIRECTION_LEFT_TO_RIGHT,
+                  /*block_id=*/line.block_id,
+                  /*paragraph_id=*/line.paragraph_id,
+                  /*angle=*/0,
+                  /*add_word=*/true);
+      y += 20;
+    }
+  }
+
+  // Testing conversion to Mojo.
+  {
+    mojom::VisualAnnotationPtr annot =
+        ConvertProtoToVisualAnnotation(annotation);
+    EXPECT_EQ(annot->lines.size(), static_cast<unsigned long>(6));
+    EXPECT_EQ(annot->lines[0]->text_line, "Jan");
+    EXPECT_EQ(annot->lines[0]->block_id, 0);
+    EXPECT_EQ(annot->lines[0]->paragraph_id, 0);
+
+    EXPECT_EQ(annot->lines[1]->text_line, "Feb");
+    EXPECT_EQ(annot->lines[1]->block_id, 0);
+    EXPECT_EQ(annot->lines[1]->paragraph_id, 0);
+
+    EXPECT_EQ(annot->lines[2]->text_line, "Mar");
+    EXPECT_EQ(annot->lines[2]->block_id, 0);
+    EXPECT_EQ(annot->lines[2]->paragraph_id, 0);
+
+    EXPECT_EQ(annot->lines[3]->text_line, "Apr");
+    EXPECT_EQ(annot->lines[3]->block_id, 0);
+    EXPECT_EQ(annot->lines[3]->paragraph_id, 1);
+
+    EXPECT_EQ(annot->lines[4]->text_line, "May");
+    EXPECT_EQ(annot->lines[4]->block_id, 0);
+    EXPECT_EQ(annot->lines[4]->paragraph_id, 1);
+
+    EXPECT_EQ(annot->lines[5]->text_line, "Jun");
+    EXPECT_EQ(annot->lines[5]->block_id, 1);
+    EXPECT_EQ(annot->lines[5]->paragraph_id, 0);
+  }
+
+// Testing conversion to AxTreeUpdate.
+#if BUILDFLAG(IS_CHROMEOS)
+  {
+    gfx::Rect snapshot_bounds(800, 900);
+    screen_ai::ResetNodeIDForTesting();
+    const ui::AXTreeUpdate update =
+        VisualAnnotationToAXTreeUpdate(annotation, snapshot_bounds);
+
+    const std::string expected_update(
+        "AXTreeUpdate: root id -2\n"
+        "id=-2 region class_name=ocred_page child_ids=-3,-5,-12,-17,-20 (0, "
+        "0)-(800, 900) is_page_breaking_object=true\n"
+        "  id=-3 banner child_ids=-4 (0, 0)-(1, 1)\n"
+        "    id=-4 staticText name=Start of extracted text (0, 0)-(1, 1)\n"
+        "  id=-5 paragraph child_ids=-6,-8,-10 (100, 100)-(100, 60)\n"
+        "    id=-6 staticText name=Jan child_ids=-7 (100, 100)-(100, 20) "
+        "text_direction=ltr language=en\n"
+        "      id=-7 inlineTextBox name=Jan (100, 100)-(100, 20) "
+        "background_color=&0 color=&0 text_direction=ltr word_starts=0 "
+        "word_ends=2\n"
+        "    id=-8 staticText name=Feb child_ids=-9 (100, 120)-(100, 20) "
+        "text_direction=ltr language=en\n"
+        "      id=-9 inlineTextBox name=Feb (100, 120)-(100, 20) "
+        "background_color=&0 color=&0 text_direction=ltr word_starts=0 "
+        "word_ends=2\n"
+        "    id=-10 staticText name=Mar child_ids=-11 (100, 140)-(100, 20) "
+        "text_direction=ltr language=en\n"
+        "      id=-11 inlineTextBox name=Mar (100, 140)-(100, 20) "
+        "background_color=&0 color=&0 text_direction=ltr word_starts=0 "
+        "word_ends=2\n"
+        "  id=-12 paragraph child_ids=-13,-15 (100, 160)-(100, 40)\n"
+        "    id=-13 staticText name=Apr child_ids=-14 (100, 160)-(100, 20) "
+        "text_direction=ltr language=en\n"
+        "      id=-14 inlineTextBox name=Apr (100, 160)-(100, 20) "
+        "background_color=&0 color=&0 text_direction=ltr word_starts=0 "
+        "word_ends=2\n"
+        "    id=-15 staticText name=May child_ids=-16 (100, 180)-(100, 20) "
+        "text_direction=ltr language=en\n"
+        "      id=-16 inlineTextBox name=May (100, 180)-(100, 20) "
+        "background_color=&0 color=&0 text_direction=ltr word_starts=0 "
+        "word_ends=2\n"
+        "  id=-17 paragraph child_ids=-18 (100, 200)-(100, 20)\n"
+        "    id=-18 staticText name=Jun child_ids=-19 (100, 200)-(100, 20) "
+        "text_direction=ltr language=en\n"
+        "      id=-19 inlineTextBox name=Jun (100, 200)-(100, 20) "
+        "background_color=&0 color=&0 text_direction=ltr word_starts=0 "
+        "word_ends=2\n"
+        "  id=-20 contentInfo child_ids=-21 (800, 900)-(1, 1)\n"
+        "    id=-21 staticText name=End of extracted text (800, 900)-(1, 1)\n");
+    EXPECT_EQ(expected_update, update.ToString());
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 }
 
 }  // namespace screen_ai

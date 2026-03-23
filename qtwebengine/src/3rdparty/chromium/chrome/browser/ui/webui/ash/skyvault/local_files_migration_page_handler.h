@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_WEBUI_ASH_SKYVAULT_LOCAL_FILES_MIGRATION_PAGE_HANDLER_H_
 
 #include "base/functional/callback.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/wall_clock_timer.h"
 #include "chrome/browser/ash/policy/skyvault/policy_utils.h"
@@ -30,7 +31,7 @@ class LocalFilesMigrationPageHandler : public mojom::PageHandler {
   LocalFilesMigrationPageHandler(
       content::WebUI* web_ui,
       Profile* profile,
-      CloudProvider cloud_provider,
+      MigrationDestination destination,
       base::Time migration_start_time,
       DialogActionCallback callback,
       mojo::PendingRemote<mojom::Page> page,
@@ -46,8 +47,8 @@ class LocalFilesMigrationPageHandler : public mojom::PageHandler {
   // mojom::PageHandler implementation:
   // Fetches initial information to display in the dialog.
   void GetInitialDialogInfo(GetInitialDialogInfoCallback callback) override;
-  // Closes the dialog and initiates the file upload immediately.
-  void UploadNow() override;
+  // Closes the dialog and initiates the file upload/deletion immediately.
+  void UploadOrDeleteNow() override;
   // Closes the dialog without initiating the upload.
   void Close() override;
 
@@ -57,7 +58,7 @@ class LocalFilesMigrationPageHandler : public mojom::PageHandler {
 
   raw_ptr<Profile> profile_;
   raw_ptr<content::WebUI> web_ui_;
-  CloudProvider cloud_provider_;
+  MigrationDestination destination_;
   base::Time migration_start_time_;
   base::WallClockTimer ui_update_timer_;
   DialogActionCallback callback_;

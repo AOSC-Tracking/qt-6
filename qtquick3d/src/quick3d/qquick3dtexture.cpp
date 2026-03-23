@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dtexture_p.h"
 #include <QtQuick3DRuntimeRender/private/qssgrenderimage_p.h>
@@ -85,15 +87,15 @@ QT_BEGIN_NAMESPACE
     \li Original image
     \li Mapped onto a sphere
     \row
-    \li \image madewithqt.png
-    \li \image spheremap.png
+    \li \image madewithqt.png {Built with Qt logo}
+    \li \image spheremap.png {Sphere with Qt logo as texture map}
     \endtable
 
     \sa {Qt Quick 3D - Procedural Texture Example}
 */
 
 QQuick3DTexture::QQuick3DTexture(QQuick3DObject *parent)
-    : QQuick3DTexture(*(new QQuick3DObjectPrivate(QQuick3DObjectPrivate::Type::Image2D)), parent)
+    : QQuick3DTexture(*(new QQuick3DObjectPrivate(QQuick3DObjectPrivate::Type::Image2D, QQuick3DObjectPrivate::Flags::RequiresSecondaryUpdate)), parent)
 {
 }
 
@@ -657,7 +659,7 @@ bool QQuick3DTexture::autoOrientation() const
 
     \since 6.7
 
-    \sa RenderExtension, QSSGRenderExtensionHelpers
+    \sa TextureProviderExtension, RenderExtension, QSSGRenderExtensionHelpers
 */
 
 QQuick3DRenderExtension *QQuick3DTexture::textureProvider() const
@@ -726,6 +728,7 @@ void QQuick3DTexture::setSourceItem(QQuickItem *sourceItem)
 
         sourcePrivate->removeItemChangeListener(this, QQuickItemPrivate::Geometry);
         disconnect(m_sourceItem, SIGNAL(destroyed(QObject*)), this, SLOT(sourceItemDestroyed(QObject*)));
+        disconnect(m_sourceItem, &QQuickItem::windowChanged, this, &QQuick3DTexture::sourceItemWindowChanged);
         if (m_sourceItemReparented) {
             m_sourceItem->setParentItem(nullptr);
             m_sourceItemReparented = false;
@@ -739,6 +742,7 @@ void QQuick3DTexture::setSourceItem(QQuickItem *sourceItem)
         QQuickItemPrivate *sourcePrivate = QQuickItemPrivate::get(m_sourceItem);
         sourcePrivate->addItemChangeListener(this, QQuickItemPrivate::Geometry);
         connect(m_sourceItem, SIGNAL(destroyed(QObject*)), this, SLOT(sourceItemDestroyed(QObject*)));
+        connect(m_sourceItem, &QQuickItem::windowChanged, this, &QQuick3DTexture::sourceItemWindowChanged);
         sourcePrivate->ensureSubsceneDeliveryAgent();
     }
 
@@ -1049,7 +1053,7 @@ static QSSGRenderPath resolveImagePath(const QUrl &url, const QQmlContext *conte
             const QStringList paths = path.split(separator);
             bool first = true;
             for (auto &s : paths) {
-                auto mapped =  QQmlFile::urlToLocalFileOrQrc(context->resolvedUrl(s));
+                auto mapped =  QQmlFile::urlToLocalFileOrQrc(context->resolvedUrl(QUrl{s}));
                 if (!first)
                     resolvedPath.append(separator);
                 resolvedPath.append(mapped);
@@ -1137,10 +1141,12 @@ QSSGRenderGraphObject *QQuick3DTexture::updateSpatialNode(QSSGRenderGraphObject 
             // NOTE: We don't clear if we haven't gotten the spatial node yet, as
             // we'll be called once _again_ when the extensions have been processed.
             extDirty = (sn == nullptr);
-            if (sn && QSSG_GUARD(sn->type == QSSGRenderGraphObject::Type::RenderExtension))
+            if (sn && QSSG_GUARD(QSSGRenderGraphObject::isExtension(sn->type)))
                 imageNode->m_extensionsSource = static_cast<QSSGRenderExtension *>(sn);
         }
 
+        if (extDirty)
+            markDirty(DirtyFlag::ExtensionDirty, true);
         m_dirtyFlags.setFlag(DirtyFlag::ExtensionDirty, extDirty);
         m_dirtyFlags.setFlag(DirtyFlag::FlipVDirty, true);
 
@@ -1420,6 +1426,15 @@ void QQuick3DTexture::itemChange(QQuick3DObject::ItemChange change, const QQuick
             else
                 QQuick3DObjectPrivate::derefSceneManager(m_textureData);
         }
+
+        // Texture Providers
+        if (m_renderExtension) {
+            const auto &sceneManager = value.sceneManager;
+            if (sceneManager)
+                QQuick3DObjectPrivate::refSceneManager(m_renderExtension, *sceneManager);
+            else
+                QQuick3DObjectPrivate::derefSceneManager(m_renderExtension);
+        }
     }
 }
 
@@ -1448,12 +1463,56 @@ void QQuick3DTexture::sourceItemDestroyed(QObject *item)
     update();
 }
 
-void QQuick3DTexture::markDirty(QQuick3DTexture::DirtyFlag type)
+class QQuick3DLayerCleanupJob : public QRunnable
+{
+public:
+    explicit QQuick3DLayerCleanupJob(QSGLayer *l)
+        : layer(l)
+    {}
+    void run() final
+    {
+        delete layer;
+    }
+
+private:
+    QSGLayer *layer = nullptr;
+};
+
+void QQuick3DTexture::sourceItemWindowChanged(QQuickWindow *window)
+{
+    if (m_layer != nullptr && window == nullptr) {
+        // During teardown the sourceItem may lose its window first after
+        // the 3D scene has been torn down, so we need to make sure we still
+        // have a valid sceneManager to remove the layer from.
+        if (const auto &manager = QQuick3DObjectPrivate::get(this)->sceneManager) {
+            manager->qsgDynamicTextures.removeAll(m_layer);
+            // Make sure we get set up again once updateSpatialNode is called next.
+            m_initializedSourceItem = nullptr;
+            m_initializedSourceItemSize = QSize();
+
+            if (manager->window()) {
+                manager->window()->scheduleRenderJob(new QQuick3DLayerCleanupJob(m_layer),
+                                                     QQuickWindow::AfterSynchronizingStage);
+                m_layer = nullptr;
+            }
+            markAllDirty();
+            update();
+        }
+    } else {
+        markAllDirty();
+        update();
+    }
+}
+
+void QQuick3DTexture::markDirty(QQuick3DTexture::DirtyFlag type, bool requestSecondaryUpdate)
 {
     if (!m_dirtyFlags.testFlag(type)) {
         m_dirtyFlags.setFlag(type, true);
         update();
     }
+
+    if (requestSecondaryUpdate)
+        QQuick3DObjectPrivate::get(this)->requestSecondaryUpdate();
 }
 
 QSSGRenderImage *QQuick3DTexture::getRenderImage()

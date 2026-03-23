@@ -34,6 +34,7 @@
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
+#include "third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_source.h"
 #include "third_party/blink/renderer/platform/mediastream/webaudio_destination_consumer.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -90,38 +91,6 @@ void GetSourceSettings(const blink::WebMediaStreamSource& web_source,
 
 }  // namespace
 
-MediaStreamSource::ConsumerWrapper::ConsumerWrapper(
-    WebAudioDestinationConsumer* consumer)
-    : consumer_(consumer) {
-  // To avoid reallocation in ConsumeAudio, reserve initial capacity for most
-  // common known layouts.
-  bus_vector_.ReserveInitialCapacity(8);
-}
-
-void MediaStreamSource::ConsumerWrapper::SetFormat(int number_of_channels,
-                                                   float sample_rate) {
-  consumer_->SetFormat(number_of_channels, sample_rate);
-}
-
-void MediaStreamSource::ConsumerWrapper::ConsumeAudio(AudioBus* bus,
-                                                      int number_of_frames) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("mediastream"),
-               "ConsumerWrapper::ConsumeAudio");
-
-  if (!bus)
-    return;
-
-  // Wrap AudioBus.
-  unsigned number_of_channels = bus->NumberOfChannels();
-  if (bus_vector_.size() != number_of_channels) {
-    bus_vector_.resize(number_of_channels);
-  }
-  for (unsigned i = 0; i < number_of_channels; ++i)
-    bus_vector_[i] = bus->Channel(i)->Data();
-
-  consumer_->ConsumeAudio(bus_vector_, number_of_frames);
-}
-
 MediaStreamSource::MediaStreamSource(
     const String& id,
     StreamType type,
@@ -129,7 +98,7 @@ MediaStreamSource::MediaStreamSource(
     bool remote,
     std::unique_ptr<WebPlatformMediaStreamSource> platform_source,
     ReadyState ready_state,
-    bool requires_consumer)
+    bool requires_webaudio_consumer_)
     : MediaStreamSource(id,
                         display::kInvalidDisplayId,
                         type,
@@ -137,7 +106,7 @@ MediaStreamSource::MediaStreamSource(
                         remote,
                         std::move(platform_source),
                         ready_state,
-                        requires_consumer) {}
+                        requires_webaudio_consumer_) {}
 
 MediaStreamSource::MediaStreamSource(
     const String& id,
@@ -147,14 +116,13 @@ MediaStreamSource::MediaStreamSource(
     bool remote,
     std::unique_ptr<WebPlatformMediaStreamSource> platform_source,
     ReadyState ready_state,
-    bool requires_consumer)
+    bool requires_webaudio_consumer)
     : id_(id),
       display_id_(display_id),
       type_(type),
       name_(name),
       remote_(remote),
       ready_state_(ready_state),
-      requires_consumer_(requires_consumer),
       platform_source_(std::move(platform_source)) {
   SendLogMessage(
       String::Format(
@@ -201,39 +169,21 @@ void MediaStreamSource::AddObserver(MediaStreamSource::Observer* observer) {
   observers_.insert(observer);
 }
 
-void MediaStreamSource::SetAudioProcessingProperties(bool echo_cancellation,
-                                                     bool auto_gain_control,
-                                                     bool noise_supression,
-                                                     bool voice_isolation) {
+void MediaStreamSource::SetAudioProcessingProperties(
+    EchoCancellationMode echo_cancellation,
+    bool auto_gain_control,
+    bool noise_supression,
+    bool voice_isolation) {
   SendLogMessage(
-      String::Format("%s({echo_cancellation=%d}, {auto_gain_control=%d}, "
+      String::Format("%s({echo_cancellation=%s}, {auto_gain_control=%d}, "
                      "{noise_supression=%d}, {voice_isolation=%d})",
-                     __func__, echo_cancellation, auto_gain_control,
-                     noise_supression, voice_isolation)
+                     __func__, EchoCancellationModeToString(echo_cancellation),
+                     auto_gain_control, noise_supression, voice_isolation)
           .Utf8());
   echo_cancellation_ = echo_cancellation;
   auto_gain_control_ = auto_gain_control;
   noise_supression_ = noise_supression;
   voice_isolation_ = voice_isolation;
-}
-
-void MediaStreamSource::SetAudioConsumer(
-    WebAudioDestinationConsumer* consumer) {
-  DCHECK(requires_consumer_);
-  base::AutoLock locker(audio_consumer_lock_);
-  // audio_consumer_ should only be set once.
-  DCHECK(!audio_consumer_);
-  audio_consumer_ = std::make_unique<ConsumerWrapper>(consumer);
-}
-
-bool MediaStreamSource::RemoveAudioConsumer() {
-  DCHECK(requires_consumer_);
-
-  base::AutoLock locker(audio_consumer_lock_);
-  if (!audio_consumer_)
-    return false;
-  audio_consumer_.reset();
-  return true;
 }
 
 void MediaStreamSource::GetSettings(
@@ -255,35 +205,6 @@ void MediaStreamSource::GetSettings(
   }
 
   GetSourceSettings(WebMediaStreamSource(this), settings);
-}
-
-void MediaStreamSource::SetAudioFormat(int number_of_channels,
-                                       float sample_rate) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("mediastream"),
-               "MediaStreamSource::SetAudioFormat");
-
-  SendLogMessage(String::Format("SetAudioFormat({id=%s}, "
-                                "{number_of_channels=%d}, {sample_rate=%.0f})",
-                                Id().Utf8().c_str(), number_of_channels,
-                                sample_rate)
-                     .Utf8());
-  DCHECK(requires_consumer_);
-  base::AutoLock locker(audio_consumer_lock_);
-  if (!audio_consumer_)
-    return;
-  audio_consumer_->SetFormat(number_of_channels, sample_rate);
-}
-
-void MediaStreamSource::ConsumeAudio(AudioBus* bus, int number_of_frames) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("mediastream"),
-               "MediaStreamSource::ConsumeAudio");
-
-  DCHECK(requires_consumer_);
-
-  base::AutoLock locker(audio_consumer_lock_);
-  if (!audio_consumer_)
-    return;
-  audio_consumer_->ConsumeAudio(bus, number_of_frames);
 }
 
 void MediaStreamSource::OnDeviceCaptureConfigurationChange(
@@ -342,10 +263,6 @@ void MediaStreamSource::Trace(Visitor* visitor) const {
 }
 
 void MediaStreamSource::Dispose() {
-  {
-    base::AutoLock locker(audio_consumer_lock_);
-    audio_consumer_.reset();
-  }
   platform_source_.reset();
 }
 

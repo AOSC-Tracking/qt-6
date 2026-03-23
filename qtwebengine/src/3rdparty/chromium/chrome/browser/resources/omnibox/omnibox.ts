@@ -81,8 +81,8 @@ class BrowserProxy {
         this.handleNewAutocompleteResponse.bind(this));
     this.callbackRouter_.handleNewAutocompleteQuery.addListener(
         this.handleNewAutocompleteQuery.bind(this));
-    this.callbackRouter_.handleAnswerImageData.addListener(
-        omniboxOutput.updateAnswerImage.bind(omniboxOutput));
+    this.callbackRouter_.handleAnswerIconImageData.addListener(
+        omniboxOutput.updateAnswerIconImage.bind(omniboxOutput));
 
     this.handler_ = OmniboxPageHandler.getRemote();
     this.handler_.setClientPage(
@@ -159,7 +159,7 @@ class BrowserProxy {
     // time a request is made. Doing so would require extra bookkeeping on the
     // host side, so for now we keep it simple.
     return isDebugController && !!this.lastRequest &&
-        this.lastRequest!.inputText.trimStart() === inputText;
+        this.lastRequest.inputText.trimStart() === inputText;
   }
 }
 

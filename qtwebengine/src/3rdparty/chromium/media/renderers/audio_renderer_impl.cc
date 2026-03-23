@@ -44,14 +44,14 @@ namespace media {
 
 AudioRendererImpl::AudioRendererImpl(
     const scoped_refptr<base::SequencedTaskRunner>& task_runner,
-    AudioRendererSink* sink,
+    scoped_refptr<AudioRendererSink> sink,
     const CreateAudioDecodersCB& create_audio_decoders_cb,
     MediaLog* media_log,
     MediaPlayerLoggingID media_player_id,
     SpeechRecognitionClient* speech_recognition_client)
     : task_runner_(task_runner),
       expecting_config_changes_(false),
-      sink_(sink),
+      sink_(std::move(sink)),
       media_log_(media_log),
       player_id_(media_player_id),
       client_(nullptr),
@@ -144,10 +144,11 @@ void AudioRendererImpl::StartRendering_Locked() {
   sink_playing_ = true;
   was_unmuted_ = was_unmuted_ || volume_ != 0;
   base::AutoUnlock auto_unlock(lock_);
-  if (volume_ || !null_sink_)
-    sink_->Play();
-  else
+  if (volume_ || !null_sink_ || render_muted_audio_) {
+    MaybeStartRealSink();
+  } else {
     null_sink_->Play();
+  }
 }
 
 void AudioRendererImpl::StopTicking() {
@@ -177,10 +178,11 @@ void AudioRendererImpl::StopRendering_Locked() {
   sink_playing_ = false;
 
   base::AutoUnlock auto_unlock(lock_);
-  if (volume_ || !null_sink_)
+  if (volume_ || !null_sink_ || render_muted_audio_) {
     sink_->Pause();
-  else
+  } else {
     null_sink_->Pause();
+  }
 
   stop_rendering_time_ = last_render_time_;
 }
@@ -199,6 +201,10 @@ void AudioRendererImpl::SetMediaTime(base::TimeDelta time) {
   first_packet_timestamp_ = kNoTimestamp;
   audio_clock_ =
       std::make_unique<AudioClock>(time, audio_parameters_.sample_rate());
+
+#if !BUILDFLAG(IS_ANDROID)
+  send_pts_for_transcription_ = true;
+#endif
 }
 
 base::TimeDelta AudioRendererImpl::CurrentMediaTime() {
@@ -289,10 +295,11 @@ void AudioRendererImpl::Flush(base::OnceClosure callback) {
   // Flush |sink_| now.  |sink_| must only be accessed on |task_runner_| and not
   // be called under |lock_|.
   DCHECK(!sink_playing_);
-  if (volume_ || !null_sink_)
+  if (volume_ || !null_sink_ || render_muted_audio_) {
     sink_->Flush();
-  else
+  } else {
     null_sink_->Flush();
+  }
 
   base::AutoLock auto_lock(lock_);
   DCHECK_EQ(state_, kPlaying);
@@ -427,11 +434,11 @@ void AudioRendererImpl::OnDeviceInfoReceived(
     MEDIA_LOG(ERROR, media_log_)
         << "Output device error, falling back to null sink. device_status="
         << output_device_info.device_status();
-    sink_ = new NullAudioSink(task_runner_);
+    sink_ = base::MakeRefCounted<NullAudioSink>(task_runner_);
     output_device_info = sink_->GetOutputDeviceInfo();
   } else if (base::FeatureList::IsEnabled(kSuspendMutedAudio)) {
     // If playback is muted, we use a fake sink for output until it unmutes.
-    null_sink_ = new NullAudioSink(task_runner_);
+    null_sink_ = base::MakeRefCounted<NullAudioSink>(task_runner_);
   }
 
   current_decoder_config_ = stream->audio_decoder_config();
@@ -814,28 +821,11 @@ void AudioRendererImpl::SetVolume(float volume) {
   // Two cases to handle:
   //   1. Changing from muted to unmuted state.
   //   2. Unmuted startup case.
-  if ((!volume_ && volume) || (volume && real_sink_needs_start_)) {
-    // Suspend null audio sink (does nothing if unused).
-    null_sink_->Pause();
-
-    // Complete startup for the real sink if needed.
-    if (real_sink_needs_start_) {
-      sink_->Start();
-      if (!sink_playing_)
-        sink_->Pause();  // Sinks play on start.
-      real_sink_needs_start_ = false;
-    }
-
-    // Start sink playback if needed.
-    if (sink_playing_)
-      sink_->Play();
-  } else if (volume_ && !volume) {
-    // Suspend the real sink (does nothing if unused).
-    sink_->Pause();
-
-    // Start fake sink playback if needed.
-    if (sink_playing_)
-      null_sink_->Play();
+  if ((!render_muted_audio_ && !volume_ && volume) ||
+      (volume && real_sink_needs_start_)) {
+    MaybeStartRealSink();
+  } else if (volume_ && !volume && !render_muted_audio_) {
+    SuspendRealSink();
   }
 
   volume_ = volume;
@@ -863,6 +853,22 @@ void AudioRendererImpl::SetPreservesPitch(bool preserves_pitch) {
 
   if (algorithm_)
     algorithm_->SetPreservesPitch(preserves_pitch);
+}
+
+void AudioRendererImpl::SetRenderMutedAudio(bool render_muted_audio) {
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  if (render_muted_audio_ == render_muted_audio) {
+    return;
+  }
+
+  render_muted_audio_ = render_muted_audio;
+  if (!volume_ && state_ != kUninitialized && state_ != kInitializing) {
+    if (render_muted_audio_) {
+      MaybeStartRealSink();
+    } else {
+      SuspendRealSink();
+    }
+  }
 }
 
 void AudioRendererImpl::SetWasPlayedWithUserActivationAndHighMediaEngagement(
@@ -1525,6 +1531,7 @@ void AudioRendererImpl::ConfigureChannelMask() {
 void AudioRendererImpl::EnableSpeechRecognition() {
 #if !BUILDFLAG(IS_ANDROID)
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  MEDIA_LOG(INFO, media_log_) << "Enabling transcription.";
   transcribe_audio_callback_ = base::BindRepeating(
       &AudioRendererImpl::TranscribeAudio, weak_factory_.GetWeakPtr());
 #endif
@@ -1534,9 +1541,50 @@ void AudioRendererImpl::TranscribeAudio(
     scoped_refptr<media::AudioBuffer> buffer) {
 #if !BUILDFLAG(IS_ANDROID)
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
-  if (speech_recognition_client_)
-    speech_recognition_client_->AddAudio(std::move(buffer));
+  if (speech_recognition_client_) {
+    // TODO(crbug.com/413823334): Resend a `new_timestamp` when large
+    // discontinuities are detected in the media's timestamps (due to muxing).
+    auto new_timestamp = send_pts_for_transcription_
+                             ? std::optional(buffer->timestamp())
+                             : std::nullopt;
+    send_pts_for_transcription_ = false;
+    speech_recognition_client_->AddAudio(std::move(buffer),
+                                         std::move(new_timestamp));
+  }
 #endif
+}
+
+void AudioRendererImpl::MaybeStartRealSink() {
+  if (!null_sink_) {
+    return;
+  }
+
+  // Suspend null audio sink (does nothing if unused).
+  null_sink_->Pause();
+
+  // Complete startup for the real sink if needed.
+  if (real_sink_needs_start_) {
+    sink_->Start();
+    if (!sink_playing_) {
+      sink_->Pause();  // Sinks play on start.
+    }
+    real_sink_needs_start_ = false;
+  }
+
+  // Start sink playback if needed.
+  if (sink_playing_) {
+    sink_->Play();
+  }
+}
+
+void AudioRendererImpl::SuspendRealSink() {
+  // Suspend the real sink (does nothing if unused).
+  sink_->Pause();
+
+  // Start fake sink playback if needed.
+  if (sink_playing_ && null_sink_) {
+    null_sink_->Play();
+  }
 }
 
 base::TimeDelta AudioRendererImpl::CalculateClockAndAlgorithmDrift() const {

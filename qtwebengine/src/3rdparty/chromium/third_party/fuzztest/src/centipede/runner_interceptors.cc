@@ -21,9 +21,10 @@
 #include <cstring>
 
 #include "absl/base/nullability.h"
+#include "absl/base/optimization.h"
 #include "./centipede/runner.h"
 
-using centipede::tls;
+using fuzztest::internal::tls;
 
 // Used for the interceptors to avoid sanitizing them, as they could be called
 // before or during the sanitizer initialization. Instead, we check if the
@@ -55,7 +56,7 @@ struct ThreadCreateArgs {
 // Calls the actual start_routine and returns its results.
 // Performs custom actions before and after start_routine().
 // `arg` is a `ThreadCreateArgs *` with the actual pthread_create() args.
-void *MyThreadStart(absl::Nonnull<void *> arg) {
+void *MyThreadStart(void *absl_nonnull arg) {
   auto *args_orig_ptr = static_cast<ThreadCreateArgs *>(arg);
   auto args = *args_orig_ptr;
   delete args_orig_ptr;  // allocated in the pthread_create wrapper.
@@ -78,9 +79,9 @@ int NormalizeCmpResult(int result) {
 
 }  // namespace
 
-namespace centipede {
+namespace fuzztest::internal {
 void RunnerInterceptor() {}  // to be referenced in runner.cc
-}  // namespace centipede
+}  // namespace fuzztest::internal
 
 // A sanitizer-compatible way to intercept functions that are potentially
 // intercepted by sanitizers, in which case the symbol __interceptor_X would be
@@ -143,7 +144,7 @@ static NO_SANITIZE int memcmp_fallback(const void *s1, const void *s2,
 extern "C" NO_SANITIZE int memcmp(const void *s1, const void *s2, size_t n) {
   const int result =
       memcmp_orig ? memcmp_orig(s1, s2, n) : memcmp_fallback(s1, s2, n);
-  if (!tls.started) [[unlikely]] {
+  if (ABSL_PREDICT_FALSE(!tls.started)) {
     return result;
   }
   tls.TraceMemCmp(reinterpret_cast<uintptr_t>(__builtin_return_address(0)),
@@ -167,7 +168,7 @@ extern "C" NO_SANITIZE int strcmp(const char *s1, const char *s2) {
       // Need to include one more byte than the shorter string length
       // when falling back to memcmp e.g. "foo" < "foobar".
       strcmp_orig ? strcmp_orig(s1, s2) : memcmp_fallback(s1, s2, len + 1);
-  if (!tls.started) [[unlikely]] {
+  if (ABSL_PREDICT_FALSE(!tls.started)) {
     return result;
   }
   // Pass `len` here to avoid storing the trailing '\0' in the dictionary.
@@ -190,7 +191,7 @@ extern "C" NO_SANITIZE int strncmp(const char *s1, const char *s2, size_t n) {
   if (n > len + 1) n = len + 1;
   const int result =
       strncmp_orig ? strncmp_orig(s1, s2, n) : memcmp_fallback(s1, s2, n);
-  if (!tls.started) [[unlikely]] {
+  if (ABSL_PREDICT_FALSE(!tls.started)) {
     return result;
   }
   // Pass `len` here to avoid storing the trailing '\0' in the dictionary.
@@ -202,11 +203,11 @@ extern "C" NO_SANITIZE int strncmp(const char *s1, const char *s2, size_t n) {
 
 // pthread_create interceptor.
 // Calls real pthread_create, but wraps the start_routine() in MyThreadStart.
-extern "C" int pthread_create(absl::Nonnull<pthread_t *> thread,
-                              absl::Nullable<const pthread_attr_t *> attr,
+extern "C" int pthread_create(pthread_t *absl_nonnull thread,
+                              const pthread_attr_t *absl_nullable attr,
                               void *(*start_routine)(void *),
-                              absl::Nullable<void *> arg) {
-  if (!tls.started) [[unlikely]] {
+                              void *absl_nullable arg) {
+  if (ABSL_PREDICT_FALSE(!tls.started)) {
     return REAL(pthread_create)(thread, attr, start_routine, arg);
   }
   // Wrap the arguments. Will be deleted in MyThreadStart.

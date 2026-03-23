@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickmessagedialogimpl_p.h"
 #include "qquickmessagedialogimpl_p_p.h"
@@ -91,6 +92,18 @@ void QQuickMessageDialogImpl::toggleShowDetailedText()
     Q_D(QQuickMessageDialogImpl);
     d->m_showDetailedText = !d->m_showDetailedText;
     emit showDetailedTextChanged();
+}
+
+void QQuickMessageDialogImpl::itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &data)
+{
+    Q_D(QQuickMessageDialogImpl);
+    QQuickDialog::itemChange(change, data);
+
+    if (change != QQuickItem::ItemVisibleHasChanged || !isComponentComplete() || !data.boolValue)
+        return;
+
+    if (QQuickMessageDialogImplAttached *attached = d->attachedOrWarn(); attached && attached->buttonBox())
+        attached->buttonBox()->forceActiveFocus(Qt::OtherFocusReason);
 }
 
 QQuickMessageDialogImplAttached *QQuickMessageDialogImpl::qmlAttachedProperties(QObject *object)

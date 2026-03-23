@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/core_probe_sink.h"
 #include "third_party/blink/renderer/core/css/css_selector.h"
+#include "third_party/blink/renderer/core/layout/layout_invalidation_reason.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_types.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/traced_value.h"
@@ -41,10 +42,6 @@ class RectF;
 namespace v8 {
 class Function;
 }  // namespace v8
-
-namespace WTF {
-class TextPosition;
-}
 
 namespace blink {
 class Animation;
@@ -95,6 +92,8 @@ class CORE_EXPORT InspectorTraceEvents
   InspectorTraceEvents() = default;
   InspectorTraceEvents(const InspectorTraceEvents&) = delete;
   InspectorTraceEvents& operator=(const InspectorTraceEvents&) = delete;
+
+  static uint64_t GetNextSampleTraceId();
 
   void WillSendRequest(ExecutionContext*,
                        DocumentLoader*,
@@ -218,6 +217,10 @@ void Data(perfetto::TracedValue context,
           const StyleChangeReasonForTracing&);
 }
 
+namespace inspector_style_resolver_resolve_style_event {
+void Data(perfetto::TracedValue context, Element*, PseudoId);
+}
+
 String DescendantInvalidationSetToIdString(const InvalidationSet&);
 
 namespace inspector_style_invalidator_invalidate_event {
@@ -230,6 +233,7 @@ extern const char kInvalidationSetMatchedClass[];
 extern const char kInvalidationSetMatchedId[];
 extern const char kInvalidationSetMatchedTagName[];
 extern const char kInvalidationSetMatchedPart[];
+extern const char kInvalidationSetInvalidatesTreeCounting[];
 
 void Data(perfetto::TracedValue context, Element&, const char* reason);
 void SelectorPart(perfetto::TracedValue context,
@@ -262,56 +266,6 @@ void InvalidationList(perfetto::TracedValue context,
                                                  invalidationSet) \
   TRACE_STYLE_INVALIDATOR_INVALIDATION_SELECTORPART(              \
       element, reason, invalidationSet, g_empty_atom)
-
-// From a web developer's perspective: what caused this layout? This is strictly
-// for tracing. Blink logic must not depend on these.
-namespace layout_invalidation_reason {
-extern const char kUnknown[];
-extern const char kSizeChanged[];
-extern const char kAncestorMoved[];
-extern const char kStyleChange[];
-extern const char kDomChanged[];
-extern const char kTextChanged[];
-extern const char kPrintingChanged[];
-extern const char kPaintPreview[];
-extern const char kAttributeChanged[];
-extern const char kColumnsChanged[];
-extern const char kChildAnonymousBlockChanged[];
-extern const char kAnonymousBlockChange[];
-extern const char kFontsChanged[];
-extern const char kFullscreen[];
-extern const char kChildChanged[];
-extern const char kListValueChange[];
-extern const char kListStyleTypeChange[];
-extern const char kCounterStyleChange[];
-extern const char kImageChanged[];
-extern const char kSliderValueChanged[];
-extern const char kAncestorMarginCollapsing[];
-extern const char kFieldsetChanged[];
-extern const char kTextAutosizing[];
-extern const char kSvgResourceInvalidated[];
-extern const char kFloatDescendantChanged[];
-extern const char kCountersChanged[];
-extern const char kGridChanged[];
-extern const char kMenuOptionsChanged[];
-extern const char kRemovedFromLayout[];
-extern const char kAddedToLayout[];
-extern const char kTableChanged[];
-extern const char kPaddingChanged[];
-extern const char kTextControlChanged[];
-// FIXME: This is too generic, we should be able to split out transform and
-// size related invalidations.
-extern const char kSvgChanged[];
-extern const char kScrollbarChanged[];
-extern const char kDisplayLock[];
-extern const char kDevtools[];
-extern const char kAnchorPositioning[];
-extern const char kScrollMarkersChanged[];
-}  // namespace layout_invalidation_reason
-
-// LayoutInvalidationReasonForTracing is strictly for tracing. Blink logic must
-// not depend on this value.
-typedef const char LayoutInvalidationReasonForTracing[];
 
 namespace inspector_layout_invalidation_tracking_event {
 CORE_EXPORT
@@ -489,7 +443,7 @@ void Data(perfetto::TracedValue context,
           v8::Isolate*,
           LocalFrame*,
           const String& url,
-          const WTF::TextPosition&);
+          const TextPosition&);
 }
 
 namespace inspector_target_rundown_event {
@@ -524,7 +478,7 @@ struct V8ConsumeCacheResult {
 
 void Data(perfetto::TracedValue context,
           const String& url,
-          const WTF::TextPosition&,
+          const TextPosition&,
           std::optional<V8ConsumeCacheResult>,
           bool eager,
           bool streamed,
@@ -534,7 +488,7 @@ void Data(perfetto::TracedValue context,
 namespace inspector_produce_script_cache_event {
 void Data(perfetto::TracedValue context,
           const String& url,
-          const WTF::TextPosition&,
+          const TextPosition&,
           int cache_size);
 }
 
@@ -563,7 +517,8 @@ void Data(perfetto::TracedValue context, const Event&, v8::Isolate*);
 namespace inspector_time_stamp_event {
 void Data(perfetto::TracedValue context,
           ExecutionContext*,
-          const String& message);
+          const String& message,
+          const v8::LocalVector<v8::Value>& args);
 }
 
 namespace inspector_tracing_session_id_for_worker_event {
@@ -597,7 +552,7 @@ void Data(perfetto::TracedValue context, const Animation&);
 namespace inspector_animation_compositor_event {
 void Data(perfetto::TracedValue context,
           blink::CompositorAnimations::FailureReasons failure_reasons,
-          const blink::PropertyHandleSet& unsupported_properties);
+          const blink::PropertyHandleSet& unsupported_properties_for_tracing);
 }
 
 namespace inspector_hit_test_event {

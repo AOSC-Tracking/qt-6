@@ -9,12 +9,15 @@
 #define skgpu_graphite_ContextOptions_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkSpan.h"
 #include "include/private/base/SkAPI.h"
 #include "include/private/base/SkMath.h"
 
 #include <optional>
 
 class SkData;
+class SkRuntimeEffect;
 namespace skgpu { class ShaderErrorHandler; }
 
 namespace skgpu::graphite {
@@ -43,7 +46,24 @@ struct SK_API ContextOptions {
      *
      * If <= 1, Graphite will disable internal code paths that use multisampling.
      */
-    int fInternalMultisampleCount = 4;
+    uint8_t fInternalMultisampleCount = 4;
+
+    /**
+     * If set, this specifies the max width/height of MSAA textures that Graphite should use for
+     * internal draws. Graphite might have to break the drawing region into multiple tiles to
+     * satisfy the size constraint.
+     * Note: this option will be ignored if the backend doesn't support it, or if a more optimal HW
+     * feature is available.
+     */
+    std::optional<SkISize> fInternalMSAATileSize = std::nullopt;
+
+    /**
+     * If set, paths that are smaller than this size (in device space) will avoid MSAA techniques,
+     * even if MSAA is otherwise enabled via `fInternalMultisampleCount`. This should be smaller
+     * than `fGlyphsAsPathsFontSize` or large glyphs will not correctly avoid higher memory
+     * overhead.
+     */
+    float fMinimumPathSizeForMSAA = 0;
 
     /**
      * Will the client make sure to only ever be executing one thread that uses the Context and all
@@ -87,10 +107,18 @@ struct SK_API ContextOptions {
     bool fSupportBilerpFromGlyphAtlas = false;
 
     /**
-     * For the moment, if Recordings are replayed in the order they are recorded, then
-     * Graphite can make certain assumptions that allow for better performance. Otherwise
-     * we have to flush some caches at the start of each Recording to ensure that they can
+     * For the moment, if Recordings from the same Recorder are replayed in the order they are
+     * recorded, then Graphite can make certain assumptions that allow for better performance.
+     * Otherwise we have to flush some caches at the start of each Recording to ensure that they can
      * be played back properly.
+     *
+     * This is the default ordering requirement for a Recorder. It can be overridden by
+     * setting the same field on the RecorderOptions passed to makeRecorder.
+     *
+     * Regardless of this value or a per-Recorder's setting, Recordings from separate Recorders can
+     * always be inserted in any order but it is the application's responsible to ensure that any
+     * implicit dependencies between the Recorders are respected (e.g. rendering to an SkSurface
+     * in one Recorder and sampling from that SkSurface's SkImage view on another Recorder).
      */
     bool fRequireOrderedRecordings = false;
 
@@ -135,6 +163,29 @@ struct SK_API ContextOptions {
      */
     PipelineCallbackContext fPipelineCallbackContext = nullptr;
     PipelineCallback fPipelineCallback = nullptr;
+
+    /**
+     * The runtime effects provided here will be registered as user-defined *known* runtime
+     * effects and will be given a stable key. Such runtime effects can then be used in
+     * serialized pipeline keys (c.f. PrecompileContext::precompile).
+     *
+     * Graphite will take a ref on the provided runtime effects and they will persist for as long
+     * as the Context exists. Rather than recreating new SkRuntimeEffects using the same SkSL,
+     * clients should use the existing SkRuntimeEffects provided here.
+     *
+     * Warning: Registering runtime effects here does obligate users to clear out their caches
+     * of serialized pipeline keys if the provided runtime effects ever change in a meaningful way.
+     * This includes adding, removing or reordering the effects provided here.
+     */
+    SkSpan<sk_sp<SkRuntimeEffect>> fUserDefinedKnownRuntimeEffects;
+
+    /**
+     * An experimental flag in development. Behavior and performance is subject to change.
+     *
+     * Enables the use of startCapture and endCapture functions. Calling these APIs will capture all
+     * draw calls and surface creation from Recorders spawned from the Context.
+     */
+     bool fEnableCapture = false;
 
     /**
      * Private options that are only meant for testing within Skia's tools.

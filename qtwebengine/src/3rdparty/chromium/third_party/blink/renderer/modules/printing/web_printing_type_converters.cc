@@ -64,6 +64,10 @@ using MojomJobState = blink::mojom::blink::WebPrintJobState;
 using V8ColorMode = blink::V8WebPrintColorMode;
 using MojomColorMode = blink::mojom::blink::WebPrintColorMode;
 
+// print-quality:
+using V8Quality = blink::V8WebPrintQuality;
+using MojomQuality = blink::mojom::blink::WebPrintQuality;
+
 // printer-state:
 using V8PrinterState = blink::V8WebPrinterState;
 using MojomPrinterState = blink::mojom::blink::WebPrinterState;
@@ -149,10 +153,10 @@ struct TypeConverter<V8OrientationRequested, MojomOrientationRequested> {
 };
 
 template <>
-struct TypeConverter<Vector<V8OrientationRequested>, Vector<MojomOrientationRequested>> {
-  static Vector<V8OrientationRequested> Convert(
-      const Vector<MojomOrientationRequested>& orientations) {
-    Vector<V8OrientationRequested> out;
+struct TypeConverter<blink::Vector<V8OrientationRequested>, blink::Vector<MojomOrientationRequested>> {
+  static blink::Vector<V8OrientationRequested> Convert(
+      const blink::Vector<MojomOrientationRequested>& orientations) {
+    blink::Vector<V8OrientationRequested> out;
     for (const auto &in : orientations)
         out.push_back(TypeConverter<V8OrientationRequested, MojomOrientationRequested>::Convert(in));
     return out;
@@ -278,6 +282,34 @@ struct TypeConverter<MojomColorMode, V8ColorMode> {
         return MojomColorMode::kColor;
       case V8ColorMode::Enum::kMonochrome:
         return MojomColorMode::kMonochrome;
+    }
+  }
+};
+
+template <>
+struct TypeConverter<V8Quality, MojomQuality> {
+  static V8Quality Convert(const MojomQuality& quality) {
+    switch (quality) {
+      case MojomQuality::kDraft:
+        return V8Quality(V8Quality::Enum::kDraft);
+      case MojomQuality::kNormal:
+        return V8Quality(V8Quality::Enum::kNormal);
+      case MojomQuality::kHigh:
+        return V8Quality(V8Quality::Enum::kHigh);
+    }
+  }
+};
+
+template <>
+struct TypeConverter<MojomQuality, V8Quality> {
+  static MojomQuality Convert(const V8Quality& quality) {
+    switch (quality.AsEnum()) {
+      case V8Quality::Enum::kDraft:
+        return MojomQuality::kDraft;
+      case V8Quality::Enum::kNormal:
+        return MojomQuality::kNormal;
+      case V8Quality::Enum::kHigh:
+        return MojomQuality::kHigh;
     }
   }
 };
@@ -444,9 +476,9 @@ void ProcessMultipleDocumentHandling(
       mojo::TypeConverter<V8MultipleDocumentHandling,
                           MojomMultipleDocumentHandling>::
           Convert(new_attributes.multiple_document_handling_default));
-  const Vector<MojomMultipleDocumentHandling>& in =
+  const blink::Vector<MojomMultipleDocumentHandling>& in =
       new_attributes.multiple_document_handling_supported;
-  Vector<V8MultipleDocumentHandling> out;
+  blink::Vector<V8MultipleDocumentHandling> out;
   out.reserve(in.size());
   for (const auto& obj : in) {
     out.push_back(
@@ -464,8 +496,8 @@ void ProcessOrientationRequested(
                           MojomOrientationRequested>::Convert(
           new_attributes.orientation_requested_default));
   current_attributes->setOrientationRequestedSupported(
-      mojo::TypeConverter<Vector<V8OrientationRequested>,
-                          Vector<MojomOrientationRequested>>::Convert(
+      mojo::TypeConverter<blink::Vector<V8OrientationRequested>,
+                          blink::Vector<MojomOrientationRequested>>::Convert(
           new_attributes.orientation_requested_supported));
 }
 
@@ -475,7 +507,7 @@ void ProcessPrinterResolution(
   current_attributes->setPrinterResolutionDefault(
       mojo::TypeConverter<blink::WebPrintingResolution*, gfx::Size>::Convert(
           new_attributes.printer_resolution_default));
-  const Vector<gfx::Size>& in = new_attributes.printer_resolution_supported;
+  const blink::Vector<gfx::Size>& in = new_attributes.printer_resolution_supported;
   HeapVector<Member<blink::WebPrintingResolution>> out;
   out.reserve(in.size());
   for (const auto& obj : in) {
@@ -492,14 +524,30 @@ void ProcessPrintColorMode(
   current_attributes->setPrintColorModeDefault(
       mojo::TypeConverter<V8ColorMode, MojomColorMode>::Convert(
           new_attributes.print_color_mode_default));
-  const Vector<MojomColorMode>& in = new_attributes.print_color_mode_supported;
-  Vector<V8ColorMode> out;
+  const blink::Vector<MojomColorMode>& in = new_attributes.print_color_mode_supported;
+  blink::Vector<V8ColorMode> out;
   out.reserve(in.size());
   for (const auto& obj : in) {
     out.push_back(
         mojo::TypeConverter<V8ColorMode, MojomColorMode>::Convert(obj));
   }
   current_attributes->setPrintColorModeSupported(out);
+}
+
+void ProcessPrintQuality(
+    const mojom::blink::WebPrinterAttributes& new_attributes,
+    WebPrinterAttributes* current_attributes) {
+  if (new_attributes.print_quality_default) {
+    current_attributes->setPrintQualityDefault(
+        mojo::TypeConverter<V8Quality, blink::mojom::WebPrintQuality>::Convert(*new_attributes.print_quality_default));
+  }
+  if (!new_attributes.print_quality_supported.empty()) {
+    blink::Vector<V8Quality> out;
+    out.reserve(new_attributes.print_quality_supported.size());
+    for (const auto& obj : new_attributes.print_quality_supported)
+      out.push_back(mojo::TypeConverter<V8Quality, blink::mojom::WebPrintQuality>::Convert(obj));
+    current_attributes->setPrintQualitySupported(std::move(out));
+  }
 }
 
 void ProcessSides(const mojom::blink::WebPrinterAttributes& new_attributes,
@@ -510,8 +558,8 @@ void ProcessSides(const mojom::blink::WebPrinterAttributes& new_attributes,
             *new_attributes.sides_default));
   }
   if (!new_attributes.sides_supported.empty()) {
-    const Vector<MojomSides>& in = new_attributes.sides_supported;
-    Vector<V8Sides> out;
+    const blink::Vector<MojomSides>& in = new_attributes.sides_supported;
+    blink::Vector<V8Sides> out;
     out.reserve(in.size());
     for (const auto& obj : in) {
       out.push_back(mojo::TypeConverter<V8Sides, MojomSides>::Convert(obj));
@@ -541,14 +589,15 @@ TypeConverter<blink::WebPrinterAttributes*,
   blink::ProcessOrientationRequested(*printer_attributes, attributes);
   blink::ProcessPrinterResolution(*printer_attributes, attributes);
   blink::ProcessPrintColorMode(*printer_attributes, attributes);
+  blink::ProcessPrintQuality(*printer_attributes, attributes);
   blink::ProcessSides(*printer_attributes, attributes);
 
   attributes->setPrinterState(
       mojo::TypeConverter<V8PrinterState::Enum, MojomPrinterState>::Convert(
           printer_attributes->printer_state));
-  const Vector<MojomPrinterStateReason>& in =
+  const blink::Vector<MojomPrinterStateReason>& in =
       printer_attributes->printer_state_reasons;
-  Vector<V8PrinterStateReason> out;
+  blink::Vector<V8PrinterStateReason> out;
   out.reserve(in.size());
   for (const auto& obj : in) {
     out.push_back(mojo::TypeConverter<V8PrinterStateReason,
@@ -593,6 +642,10 @@ TypeConverter<blink::mojom::blink::WebPrintJobTemplateAttributesPtr,
     attributes->print_color_mode =
         mojo::TypeConverter<MojomColorMode, V8ColorMode>::Convert(
             pjt_attributes->printColorMode());
+  }
+  if (pjt_attributes->hasPrintQuality()) {
+    attributes->print_quality =
+        mojo::TypeConverter<MojomQuality, decltype(pjt_attributes->printQuality())>::Convert(pjt_attributes->printQuality());
   }
   if (pjt_attributes->hasSides()) {
     attributes->sides = mojo::TypeConverter<MojomSides, V8Sides>::Convert(

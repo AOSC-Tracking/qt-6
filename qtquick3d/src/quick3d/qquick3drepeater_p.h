@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QQUICK3DREPEATER_P_H
 #define QQUICK3DREPEATER_P_H
@@ -94,11 +96,8 @@ private:
     void disconnectModel(QQmlDelegateModelPointer *model);
 
     QPointer<QQmlInstanceModel> m_model;
-    QVariant m_dataSource;
-    QPointer<QObject> m_dataSourceAsObject;
     int m_itemCount;
     bool m_ownModel : 1;
-    bool m_dataSourceIsObject : 1;
     bool m_delegateValidated : 1;
     bool m_explicitDelegate: 1;
     bool m_explicitDelegateModelAccess : 1;

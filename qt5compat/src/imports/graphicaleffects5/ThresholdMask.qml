@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import Qt5Compat.GraphicalEffects.private
@@ -8,10 +9,14 @@ import Qt5Compat.GraphicalEffects.private
     \qmltype ThresholdMask
     \inqmlmodule Qt5Compat.GraphicalEffects
     \since QtGraphicalEffects 1.0
-    \inherits QtQuick2::Item
+    \inherits QtQuick::Item
     \ingroup qtgraphicaleffects-mask
     \brief Masks the source item with another item and applies a threshold
     value.
+
+    \note The MultiEffect component provides a mask effect with some performance
+    advantages. For new code, it should be considered as an alternative to using Qt Graphical
+    Effects.
 
     The masking behavior can be controlled with the \l threshold value for the
     mask pixels.

@@ -1,18 +1,16 @@
 // Copyright 2022 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../../ui/legacy/components/data_grid/data_grid.js';
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import type * as Protocol from '../../../generated/protocol.js';
+import * as UI from '../../../ui/legacy/legacy.js';
 import * as Lit from '../../../ui/lit/lit.js';
 
-import interestGroupAccessGridStylesRaw from './interestGroupAccessGrid.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const interestGroupAccessGridStyles = new CSSStyleSheet();
-interestGroupAccessGridStyles.replaceSync(interestGroupAccessGridStylesRaw.cssContent);
+import interestGroupAccessGridStyles from './interestGroupAccessGrid.css.js';
 
 const {html} = Lit;
 
@@ -49,23 +47,33 @@ const UIStrings = {
    */
   groupName: 'Name',
   /**
-   *@description Text shown instead of a table when the table would be empty.
+   *@description Text shown when no interest groups are detected.
+   * An interest group is an ad targeting group stored on the browser that can
+   * be used to show a certain set of advertisements in the future as the
+   * outcome of a FLEDGE auction.
    */
-  noEvents: 'No interest group events recorded.',
-};
+  noEvents: 'No interest group events detected',
+  /**
+   *@description Text shown when no interest groups are detected and explains what this page is about.
+   * An interest group is an ad targeting group stored on the browser that can
+   * be used to show a certain set of advertisements in the future as the
+   * outcome of a FLEDGE auction.
+   */
+  interestGroupDescription: 'On this page you can inspect and analyze interest groups',
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/application/components/InterestGroupAccessGrid.ts', UIStrings);
 export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class InterestGroupAccessGrid extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
-  #datastores: Array<Protocol.Storage.InterestGroupAccessedEvent> = [];
+  #datastores: Protocol.Storage.InterestGroupAccessedEvent[] = [];
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [interestGroupAccessGridStyles];
     this.#render();
   }
 
-  set data(data: Array<Protocol.Storage.InterestGroupAccessedEvent>) {
+  // eslint-disable-next-line rulesdir/set-data-type-reference
+  set data(data: Protocol.Storage.InterestGroupAccessedEvent[]) {
     this.#datastores = data;
     this.#render();
   }
@@ -73,23 +81,28 @@ export class InterestGroupAccessGrid extends HTMLElement {
   #render(): void {
     // clang-format off
     Lit.render(html`
-      <div>
-        <span class="heading">Interest Groups</span>
-        <devtools-icon class="info-icon"
-                       title=${i18nString(UIStrings.allInterestGroupStorageEvents)}
-                       .data=${{iconName: 'info', color: 'var(--icon-default)', width: '16px'}}>
-        </devtools-icon>
-        ${this.#renderGridOrNoDataMessage()}
-      </div>
+      <style>${interestGroupAccessGridStyles}</style>
+      <style>${UI.inspectorCommonStyles}</style>
+      ${this.#datastores.length === 0 ?
+        html`
+          <div class="empty-state">
+            <span class="empty-state-header">${i18nString(UIStrings.noEvents)}</span>
+            <span class="empty-state-description">${i18nString(UIStrings.interestGroupDescription)}</span>
+          </div>`:
+        html`
+          <div>
+            <span class="heading">Interest Groups</span>
+            <devtools-icon class="info-icon"
+                          title=${i18nString(UIStrings.allInterestGroupStorageEvents)}
+                          .data=${{iconName: 'info', color: 'var(--icon-default)', width: '16px'}}>
+            </devtools-icon>
+            ${this.#renderGrid()}
+          </div>`}
     `, this.#shadow, {host: this});
     // clang-format on
   }
 
-  #renderGridOrNoDataMessage(): Lit.TemplateResult {
-    if (this.#datastores.length === 0) {
-      return html`<div class="no-events-message">${i18nString(UIStrings.noEvents)}</div>`;
-    }
-
+  #renderGrid(): Lit.TemplateResult {
     return html`
       <devtools-data-grid @select=${this.#onSelect} striped inline>
         <table>

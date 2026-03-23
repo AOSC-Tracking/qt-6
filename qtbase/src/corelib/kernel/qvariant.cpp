@@ -2,6 +2,7 @@
 // Copyright (C) 2021 Intel Corporation.
 // Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qvariant_p.h"
 
@@ -1240,7 +1241,7 @@ void QVariant::load(QDataStream &s)
             return;
         }
     }
-    create(typeId, nullptr);
+    *this = fromMetaType(QMetaType(typeId));
     d.is_null = is_null;
 
     if (!isValid()) {
@@ -1448,7 +1449,7 @@ QString QVariant::toString() const
 }
 
 /*!
-    Returns the variant as a QVariantMap if the variant has type() \l
+    Returns the variant as a QVariantMap if the variant has metaType() \l
     QMetaType::QVariantMap. If it doesn't, QVariant will attempt to
     convert the type to a map and then return it. This will succeed for
     any type that has registered a converter to QVariantMap or which was
@@ -1464,8 +1465,13 @@ QVariantMap QVariant::toMap() const
 }
 
 /*!
-    Returns the variant as a QHash<QString, QVariant> if the variant
-    has type() \l QMetaType::QVariantHash; otherwise returns an empty map.
+    Returns the variant as a QHash<QString, QVariant> if the variant has
+    metaType() \l QMetaType::QVariantHash.  If it doesn't, QVariant will
+    attempt to convert the type to a hash and then return it. This will succeed
+    for any type that has registered a converter to QVariantHash or which was
+    declared as a associative container using
+    \l{Q_DECLARE_ASSOCIATIVE_CONTAINER_METATYPE}. If none of those
+    conditions are true, this function will return an empty hash.
 
     \sa canConvert(), convert()
 */
@@ -1481,7 +1487,7 @@ QVariantHash QVariant::toHash() const
     \l QMetaType::QDate, \l QMetaType::QDateTime, or \l QMetaType::QString;
     otherwise returns an invalid date.
 
-    If the type() is \l QMetaType::QString, an invalid date will be returned if
+    If the metaType() is \l QMetaType::QString, an invalid date will be returned if
     the string cannot be parsed as a Qt::ISODate format date.
 
     \sa canConvert(), convert()
@@ -1498,7 +1504,7 @@ QDate QVariant::toDate() const
     \l QMetaType::QTime, \l QMetaType::QDateTime, or \l QMetaType::QString;
     otherwise returns an invalid time.
 
-    If the type() is \l QMetaType::QString, an invalid time will be returned if
+    If the metaType() is \l QMetaType::QString, an invalid time will be returned if
     the string cannot be parsed as a Qt::ISODate format time.
 
     \sa canConvert(), convert()
@@ -1515,7 +1521,7 @@ QTime QVariant::toTime() const
     \l QMetaType::QDateTime, \l QMetaType::QDate, or \l QMetaType::QString;
     otherwise returns an invalid date/time.
 
-    If the type() is \l QMetaType::QString, an invalid date/time will be
+    If the metaType() is \l QMetaType::QString, an invalid date/time will be
     returned if the string cannot be parsed as a Qt::ISODate format date/time.
 
     \sa canConvert(), convert()
@@ -1735,7 +1741,7 @@ QPersistentModelIndex QVariant::toPersistentModelIndex() const
 /*!
     \since 5.0
 
-    Returns the variant as a QUuid if the variant has type()
+    Returns the variant as a QUuid if the variant has metaType()
     \l QMetaType::QUuid, \l QMetaType::QByteArray or \l QMetaType::QString;
     otherwise returns a default-constructed QUuid.
 
@@ -1903,7 +1909,7 @@ qlonglong QVariant::toLongLong(bool *ok) const
 
 /*!
     Returns the variant as an unsigned long long int if the
-    variant has type() \l QMetaType::ULongLong, \l QMetaType::Bool,
+    variant has metaType() \l QMetaType::ULongLong, \l QMetaType::Bool,
     \l QMetaType::QByteArray, \l QMetaType::QChar, \l QMetaType::Double,
     \l QMetaType::Int, \l QMetaType::LongLong, \l QMetaType::QString, or
     \l QMetaType::UInt; otherwise returns 0.
@@ -2086,10 +2092,7 @@ bool QVariant::convert(QMetaType targetType)
     if (d.type() == targetType)
         return targetType.isValid();
 
-    QVariant oldValue = *this;
-
-    clear();
-    create(targetType, nullptr);
+    QVariant oldValue = std::exchange(*this, QVariant::fromMetaType(targetType));
     if (!oldValue.canConvert(targetType))
         return false;
 
@@ -2125,7 +2128,7 @@ bool QVariant::view(int type, void *ptr)
 
     Returns \c true if \a lhs and \a rhs are equal; otherwise returns \c false.
 
-    QVariant uses the equality operator of the type() contained to check for
+    QVariant uses the equality operator of the metaType() contained to check for
     equality.
 
     Variants of different types will always compare as not equal with a few
@@ -2151,7 +2154,7 @@ bool QVariant::view(int type, void *ptr)
 
     Returns \c false if \a lhs and \a rhs are equal; otherwise returns \c true.
 
-    QVariant uses the equality operator of the type() contained to check for
+    QVariant uses the equality operator of the metaType() contained to check for
     equality.
 
     Variants of different types will always compare as not equal with a few
@@ -2851,9 +2854,14 @@ const void *QtPrivate::QVariantTypeCoercer::coerce(const QVariant &value, const 
     return converted.constData();
 }
 
+#if QT_DEPRECATED_SINCE(6, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+
 /*!
     \class QVariantRef
     \since 6.0
+    \deprecated [6.15] Use QVariant::Reference instead.
     \inmodule QtCore
     \brief The QVariantRef acts as a non-const reference to a QVariant.
 
@@ -2908,6 +2916,7 @@ const void *QtPrivate::QVariantTypeCoercer::coerce(const QVariant &value, const 
 /*!
     \class QVariantConstPointer
     \since 6.0
+    \deprecated [6.15] Use QVariant::ConstPointer instead.
     \inmodule QtCore
     \brief Emulated const pointer to QVariant based on a pointer.
 
@@ -2945,6 +2954,7 @@ const QVariant *QVariantConstPointer::operator->() const
 /*!
     \class QVariantPointer
     \since 6.0
+    \deprecated [6.15] Use QVariant::Pointer instead.
     \inmodule QtCore
     \brief QVariantPointer is a template class that emulates a pointer to QVariant based on a pointer.
 
@@ -2971,6 +2981,192 @@ const QVariant *QVariantConstPointer::operator->() const
 
     Dereferences and returns the pointer. The pointer is expected to also
     implement operator->().
+ */
+
+QT_WARNING_POP
+#endif // QT_DEPRECATED_SINCE(6, 15)
+
+/*!
+    \class QVariant::ConstReference
+    \since 6.11
+    \inmodule QtCore
+    \brief The QVariant::ConstReference acts as a const reference to a QVariant.
+
+    As the generic iterators don't actually instantiate a QVariant on each
+    step, they cannot return a reference to one from operator*().
+    QVariant::ConstReference provides the same functionality as an actual
+    reference to a QVariant would, but is backed a referred-to value given as
+    template parameter. The template is implemented for
+    QMetaSequence::ConstIterator, QMetaSequence::Iterator,
+    QMetaAssociation::ConstIterator, and QMetaAssociation::Iterator.
+*/
+
+/*!
+    \fn template<typename Indirect> QVariant::ConstReference<Indirect>::ConstReference(const Indirect &referred)
+
+    Creates a QVariant::ConstReference from a \a referred.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::ConstReference<Indirect>::ConstReference(Indirect &&referred)
+
+    Creates a QVariant::ConstReference from a \a referred.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::ConstReference<Indirect>::ConstReference(const Reference<Indirect> &nonConst)
+
+    Creates a QVariant::ConstReference from a \a nonConst Reference.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::ConstReference<Indirect>::ConstReference(Reference<Indirect> &&nonConst)
+
+    Creates a QVariant::ConstReference from a \a nonConst Reference.
+ */
+
+
+/*!
+    \fn template<typename Indirect> QVariant::ConstReference<Indirect>::operator QVariant() const
+
+    Dereferences the reference to a QVariant.
+    This method needs to be specialized for each Indirect type. It is
+    pre-defined for QMetaSequence::ConstIterator, QMetaSequence::Iterator,
+    QMetaAssociation::ConstIterator, and QMetaAssociation::Iterator.
+ */
+
+
+/*!
+    \class QVariant::Reference
+    \since 6.11
+    \inmodule QtCore
+    \brief The QVariant::Reference acts as a non-const reference to a QVariant.
+
+    As the generic iterators don't actually instantiate a QVariant on each
+    step, they cannot return a reference to one from operator*().
+    QVariant::Reference provides the same functionality as an actual reference
+    to a QVariant would, but is backed a referred-to value given as template
+    parameter. The template is implemented for QMetaSequence::Iterator and
+    QMetaAssociation::Iterator.
+*/
+
+/*!
+    \fn template<typename Indirect> QVariant::Reference<Indirect>::Reference(const Indirect &referred)
+
+    Creates a QVariant::Reference from a \a referred.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::Reference<Indirect>::Reference(Indirect &&referred)
+
+    Creates a QVariant::Reference from a \a referred.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::Reference<Indirect> &QVariant::Reference<Indirect>::operator=(const Reference<Indirect> &value)
+
+    Assigns a new \a value to the value referred to by this QVariant::Reference.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::Reference<Indirect> &QVariant::Reference<Indirect>::operator=(Reference<Indirect> &&value)
+
+    Assigns a new \a value to the value referred to by this QVariant::Reference.
+*/
+
+/*!
+    \fn template<typename Indirect> QVariant::Reference<Indirect> &QVariant::Reference<Indirect>::operator=(const ConstReference<Indirect> &value)
+
+    Assigns a new \a value to the value referred to by this QVariant::Reference.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::Reference<Indirect> &QVariant::Reference<Indirect>::operator=(ConstReference<Indirect> &&value)
+
+    Assigns a new \a value to the value referred to by this QVariant::Reference.
+*/
+
+/*!
+    \fn template<typename Indirect> QVariant::Reference<Indirect> &QVariant::Reference<Indirect>::operator=(const QVariant &value)
+
+    Assigns a new \a value to the value referred to by this QVariant::Reference.
+    This method needs to be specialized for each Indirect type. It is
+    pre-defined for QMetaSequence::Iterator and QMetaAssociation::Iterator.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::Reference<Indirect>::operator QVariant() const
+
+    Dereferences the reference to a QVariant. By default this instantiates a
+    temporary QVariant::ConstReference and calls dereferences that. In cases
+    where instantiating a temporary ConstReference is expensive, this method
+    should be specialized.
+ */
+
+/*!
+    \class QVariant::ConstPointer
+    \since 6.11
+    \inmodule QtCore
+    \brief QVariant::ConstPointer is a template class that emulates a const pointer to QVariant.
+
+    QVariant::ConstPointer wraps pointed-to value and returns a
+    QVariant::ConstReference to it from its operator*(). This makes it suitable
+    as replacement for an actual pointer. We cannot return an actual pointer
+    from generic iterators as the iterators don't hold an actual QVariant.
+*/
+
+/*!
+    \fn template<typename Indirect> QVariant::ConstPointer<Indirect>::ConstPointer(const Indirect &pointed)
+
+    Constructs a QVariant::ConstPointer from the value \a pointed to.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::ConstPointer<Indirect>::ConstPointer(Indirect &&pointed)
+
+    Constructs a QVariant::ConstPointer from the value \a pointed to.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::ConstReference<Pointer> QVariant::ConstPointer<Indirect>::operator*() const
+
+    Dereferences the QVariant::ConstPointer to a QVariant::ConstReference.
+ */
+
+/*!
+    \class QVariant::Pointer
+    \since 6.11
+    \inmodule QtCore
+    \brief QVariant::Pointer is a template class that emulates a non-const pointer to QVariant.
+
+    QVariant::Pointer wraps pointed-to value and returns a QVariant::Reference
+    to it from its operator*(). This makes it suitable as replacement for an
+    actual pointer. We cannot return an actual pointer from generic iterators as
+    the iterators don't hold an actual QVariant.
+*/
+
+/*!
+    \fn template<typename Indirect> QVariant::Pointer<Indirect>::Pointer(const Indirect &pointed)
+
+    Constructs a QVariant::Pointer from the value \a pointed to.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::Pointer<Indirect>::Pointer(Indirect &&pointed)
+
+    Constructs a QVariant::Pointer from the value \a pointed to.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::Reference<Indirect> QVariant::Pointer<Indirect>::operator*() const
+
+    Dereferences the QVariant::Pointer to a QVariant::Reference.
+ */
+
+/*!
+    \fn template<typename Indirect> QVariant::Pointer<Indirect>::operator QVariant::ConstPointer<Indirect>() const
+
+    Converts this QVariant::Pointer into a QVariant::ConstPointer.
  */
 
 QT_END_NAMESPACE

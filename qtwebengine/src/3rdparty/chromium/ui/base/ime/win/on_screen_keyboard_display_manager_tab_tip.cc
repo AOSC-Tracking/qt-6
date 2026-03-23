@@ -12,6 +12,7 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -187,7 +188,8 @@ gfx::Rect OnScreenKeyboardDetector::GetOccludedRect() {
 
   gfx_osk_rect.Intersect(gfx_main_window_rect);
 
-  return display::win::ScreenWin::ScreenToDIPRect(main_window_, gfx_osk_rect);
+  return display::win::GetScreenWin()->ScreenToDIPRect(main_window_,
+                                                       gfx_osk_rect);
 }
 
 void OnScreenKeyboardDetector::CheckIfKeyboardVisible() {
@@ -318,7 +320,7 @@ bool OnScreenKeyboardDisplayManagerTabTip::GetOSKPath(std::wstring* osk_path) {
     return false;
   }
 
-  osk_path->resize(wcslen(osk_path->c_str()));
+  osk_path->resize(UNSAFE_TODO(wcslen(osk_path->c_str())));
 
   *osk_path = base::ToLowerASCII(*osk_path);
 

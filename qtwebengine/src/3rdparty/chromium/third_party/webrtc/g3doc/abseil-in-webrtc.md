@@ -1,5 +1,5 @@
 <!-- go/cmark -->
-<!--* freshness: {owner: 'danilchap' reviewed: '2024-09-02'} *-->
+<!--* freshness: {owner: 'danilchap' reviewed: '2025-03-13'} *-->
 
 # Using Abseil in WebRTC
 
@@ -29,19 +29,14 @@ on a monolithic Abseil build target that will generate a shared library.
 * `absl::Cleanup`
 * [Hash tables, and B-tree ordered][abseil-containers] containers
 * `absl::InlinedVector`
-* `absl::Nonnull` and `absl::Nullable`
+* `absl_nonnull` and `absl_nullable`
 * `absl::WrapUnique`
 * `absl::string_view`
 * The functions in `absl/strings/ascii.h`, `absl/strings/match.h`,
   and `absl/strings/str_replace.h`.
 * The functions in `absl/strings/escaping.h`.
-* `absl::is_trivially_copy_constructible`,
-  `absl::is_trivially_copy_assignable`, and
-  `absl::is_trivially_destructible` from `absl/meta/type_traits.h`.
-* `absl::variant` and related stuff from `absl/types/variant.h`.
 * The functions in `absl/algorithm/algorithm.h` and
   `absl/algorithm/container.h`.
-* `absl/base/const_init.h` for mutex initialization.
 * The macros in `absl/base/attributes.h`, `absl/base/config.h` and
   `absl/base/macros.h`.
 * `absl/numeric/bits.h`
@@ -61,22 +56,22 @@ on a monolithic Abseil build target that will generate a shared library.
 
 *Use `webrtc::Mutex` instead.*
 
-### `absl::optional`
+### `absl::optional` and `absl::variant`
 
-*Use `std::optional` instead.*
+*Use `std::optional` and `std::variant` directly.*
 
 ### `absl::Span`
 
-*Use `rtc::ArrayView` instead.*
+*Use `webrtc::ArrayView` instead.*
 
-`absl::Span` differs from `rtc::ArrayView` on several points, and both
+`absl::Span` differs from `webrtc::ArrayView` on several points, and both
 of them differ from the `std::span` introduced in C++20. We should just keep
-using `rtc::ArrayView` and avoid `absl::Span`. When WebRTC switches to C++20,
-we will consider replacing `rtc::ArrayView` with `std::span`.
+using `webrtc::ArrayView` and avoid `absl::Span`. When WebRTC switches to C++20,
+we will consider replacing `webrtc::ArrayView` with `std::span`.
 
 ### `absl::StrCat`, `absl::StrAppend`, `absl::StrJoin`, `absl::StrSplit`
 
-*Use `rtc::SimpleStringBuilder` to build strings.*
+*Use `webrtc::SimpleStringBuilder` to build strings.*
 
 These are optimized for speed, not binary size. Even `StrCat` calls
 with a modest number of arguments can easily add several hundred bytes

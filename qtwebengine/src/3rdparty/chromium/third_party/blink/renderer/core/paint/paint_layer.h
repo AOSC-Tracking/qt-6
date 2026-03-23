@@ -45,6 +45,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_PAINT_PAINT_LAYER_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_PAINT_PAINT_LAYER_H_
 
+#include <concepts>
 #include <memory>
 
 #include "base/auto_reset.h"
@@ -177,7 +178,7 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
 
   // DisplayItemClient methods
   String DebugName() const final;
-  DOMNodeId OwnerNodeId() const final;
+  DOMNodeId OwnerNodeId(bool is_internal_content = false) const final;
 
   LayoutBoxModelObject& GetLayoutObject() const { return *layout_object_; }
   LayoutBox* GetLayoutBox() const {
@@ -254,7 +255,7 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
   // containing layer might be an ancestor of the parent layer.
   PaintLayer* ContainingLayer() const;
 
-  // The hitTest() method looks for mouse events by walking layers that
+  // The `HitTest()` method looks for mouse events by walking layers that
   // intersect the point from front to back.
   // |hit_test_area| is the rect in the space of this PaintLayer's
   // LayoutObject to consider for hit testing.
@@ -264,11 +265,16 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
 
   using InlineEdge = LogicalStaticPosition::InlineEdge;
   using BlockEdge = LogicalStaticPosition::BlockEdge;
+  using LogicalAlignmentDirection =
+      LogicalStaticPosition::LogicalAlignmentDirection;
   InlineEdge StaticInlineEdge() const {
     return static_cast<InlineEdge>(static_inline_edge_);
   }
   BlockEdge StaticBlockEdge() const {
     return static_cast<BlockEdge>(static_block_edge_);
+  }
+  LogicalAlignmentDirection StaticAlignSelfDirection() const {
+    return static_cast<LogicalAlignmentDirection>(static_align_self_direction_);
   }
 
   void SetStaticPositionFromNG(const LogicalStaticPosition& position) {
@@ -276,6 +282,7 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
     static_block_position_ = position.offset.block_offset;
     static_inline_edge_ = position.inline_edge;
     static_block_edge_ = position.block_edge;
+    static_align_self_direction_ = position.align_self_direction;
   }
 
   LogicalStaticPosition GetStaticPosition() const {
@@ -284,6 +291,7 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
     position.offset.block_offset = static_block_position_;
     position.inline_edge = StaticInlineEdge();
     position.block_edge = StaticBlockEdge();
+    position.align_self_direction = StaticAlignSelfDirection();
     return position;
   }
 
@@ -328,7 +336,7 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
   // |backdrop_filter_on_effect_node_dirty_| will be cleared.
   void UpdateCompositorFilterOperationsForBackdropFilter(
       CompositorFilterOperations& operations,
-      gfx::RRectF& backdrop_filter_bounds);
+      SkPath& backdrop_filter_bounds);
   void SetBackdropFilterOnEffectNodeDirty() {
     backdrop_filter_on_effect_node_dirty_ = true;
   }
@@ -362,7 +370,7 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
   gfx::RectF FilterReferenceBox() const;
   std::optional<gfx::SizeF> FilterViewport() const;
   gfx::RectF BackdropFilterReferenceBox() const;
-  gfx::RRectF BackdropFilterBounds() const;
+  SkPath BackdropFilterBounds() const;
 
   void UpdateFilterReferenceBox();
   void UpdateFilters(StyleDifference,
@@ -413,6 +421,10 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
   bool HasSelfPaintingLayerDescendant() const {
     DCHECK(!needs_descendant_dependent_flags_update_);
     return has_self_painting_layer_descendant_;
+  }
+  bool HasBackdropFilterDescendant() const {
+    DCHECK(!needs_descendant_dependent_flags_update_);
+    return has_backdrop_filter_descendant_;
   }
 
   // See
@@ -744,9 +756,12 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
 
   unsigned has_self_painting_layer_descendant_ : 1;
 
+  unsigned has_backdrop_filter_descendant_ : 1;
+
   unsigned needs_reorder_overlay_overflow_controls_ : 1;
   unsigned static_inline_edge_ : 2;
   unsigned static_block_edge_ : 2;
+  unsigned static_align_self_direction_ : 1;
 
   unsigned invisible_for_position_visibility_ : 4 = 0;
   unsigned descendant_needs_check_position_visibility_ : 1 = false;
@@ -865,9 +880,8 @@ CORE_EXPORT void ShowLayerTree(const blink::LayoutObject*);
 namespace cppgc {
 // Assign PaintLayer to be allocated on custom LayoutObjectSpace.
 template <typename T>
-struct SpaceTrait<
-    T,
-    std::enable_if_t<std::is_base_of<blink::PaintLayer, T>::value>> {
+  requires(std::derived_from<T, blink::PaintLayer>)
+struct SpaceTrait<T> {
   using Space = blink::LayoutObjectSpace;
 };
 }  // namespace cppgc

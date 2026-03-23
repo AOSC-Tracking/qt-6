@@ -12,39 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstddef>
 #include <cstdlib>
-#include <cstring>
-#include <functional>
 #include <string>
-#include <vector>
 
 #include "absl/base/nullability.h"
-#include "./centipede/mutation_input.h"
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
 #include "./centipede/runner_interface.h"
 #include "./common/defs.h"
 
-using ::centipede::ByteSpan;
+ABSL_FLAG(bool, simulate_failure, false,
+          "If true, the binary will return EXIT_FAILURE to simulate a "
+          "failure.");
 
-class FakeSerializedConfigRunnerCallbacks : public centipede::RunnerCallbacks {
+using fuzztest::internal::ByteSpan;
+
+class FakeSerializedConfigRunnerCallbacks
+    : public fuzztest::internal::RunnerCallbacks {
  public:
+  // Trivial implementations for the execution and mutation logic, even though
+  // they should not be used in the tests that use this test binary.
   bool Execute(ByteSpan input) override { return true; }
-
-  bool Mutate(const std::vector<centipede::MutationInputRef> &inputs,
-              size_t num_mutants,
-              std::function<void(ByteSpan)> new_mutant_callback) override {
-    return true;
-  }
+  bool HasCustomMutator() const override { return false; }
 
   std::string GetSerializedTargetConfig() override {
     return "fake serialized config";
   }
 };
 
-int main(int argc, absl::Nonnull<char **> argv) {
-  if (argc >= 2 && std::strcmp(argv[1], "--simulate_failure") == 0) {
+int main(int argc, char** absl_nonnull argv) {
+  absl::ParseCommandLine(argc, argv);
+  if (absl::GetFlag(FLAGS_simulate_failure)) {
     return EXIT_FAILURE;
   }
   FakeSerializedConfigRunnerCallbacks runner_callbacks;
-  return centipede::RunnerMain(argc, argv, runner_callbacks);
+  return fuzztest::internal::RunnerMain(argc, argv, runner_callbacks);
 }

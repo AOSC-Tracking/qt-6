@@ -2,13 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/css/parser/css_tokenizer.h"
 
+#include "base/compiler_specific.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_idioms.h"
 #include "third_party/blink/renderer/core/css/parser/css_property_parser.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
@@ -602,10 +598,10 @@ StringView CSSTokenizer::ConsumeName() {
 #if defined(__SSE2__) || ((defined(__ARM_NEON__) || defined(__ARM_NEON)) \
     && (!defined(_MSC_VER) || defined(__clang__)))
   if (buffer.Is8Bit()) {
-    const LChar* ptr = buffer.Characters8();
+    const LChar* ptr = UNSAFE_TODO(buffer.Characters8());
     while (size + 16 <= buffer.length()) {
       int8_t b __attribute__((vector_size(16)));
-      memcpy(&b, ptr + size, sizeof(b));
+      UNSAFE_TODO(memcpy(&b, ptr + size, sizeof(b)));
 
       // Exactly the same as IsNameCodePoint(), except the IsASCII() part,
       // which we deal with below. Note that we compute the inverted condition,
@@ -644,7 +640,7 @@ StringView CSSTokenizer::ConsumeName() {
       // We found either the end, or a sign that we need escape-aware parsing.
       size += __builtin_ctzll(bits) >> 2;
 #endif
-      if (ptr[size] == '\0' || ptr[size] == '\\') {
+      if (UNSAFE_TODO(ptr[size]) == '\0' || UNSAFE_TODO(ptr[size]) == '\\') {
         // We need escape-aware parsing.
         return RegisterString(blink::ConsumeName(input_));
       } else {

@@ -947,7 +947,20 @@ void QWaylandQuickItem::updateFocus()
   The default value of this property is \c null.
  */
 
-
+/*!
+ * \property QWaylandQuickItem::subsurfaceHandler
+ *
+ * This property provides a way to override the default subsurface behavior.
+ *
+ * By default, Qt will create a new QWaylandQuickItem as a child of this item
+ * and maintain the correct position.
+ *
+ * To override the default behavior, assign a handler object to this property.
+ * The handler must implement a \c handleSubsurfaceAdded(QWaylandSurface*)
+ * method.
+ *
+ * The default value of this property is \nullptr.
+ */
 QObject *QWaylandQuickItem::subsurfaceHandler() const
 {
     Q_D(const QWaylandQuickItem);
@@ -1011,10 +1024,6 @@ void QWaylandQuickItem::setBufferLocked(bool locked)
 {
     Q_D(QWaylandQuickItem);
     d->view->setBufferLocked(locked);
-
-    // Apply the latest surface size
-    if (!locked)
-        updateSize();
 }
 
 /*!
@@ -1038,7 +1047,7 @@ void QWaylandQuickItem::setAllowDiscardFrontBuffer(bool discard)
 }
 
 /*!
- * \qmlmethod WaylandQuickItem::setPrimary()
+ * \qmlmethod void WaylandQuickItem::setPrimary()
  *
  * Makes this WaylandQuickItem the primary view for the surface.
  */
@@ -1061,7 +1070,6 @@ void QWaylandQuickItem::handleSurfaceChanged()
 {
     Q_D(QWaylandQuickItem);
     if (d->oldSurface) {
-        disconnect(d->oldSurface.data(), &QWaylandSurface::hasContentChanged, this, &QWaylandQuickItem::surfaceMappedChanged);
         disconnect(d->oldSurface.data(), &QWaylandSurface::parentChanged, this, &QWaylandQuickItem::parentChanged);
         disconnect(d->oldSurface.data(), &QWaylandSurface::destinationSizeChanged, this, &QWaylandQuickItem::updateSize);
         disconnect(d->oldSurface.data(), &QWaylandSurface::bufferScaleChanged, this, &QWaylandQuickItem::updateSize);
@@ -1078,7 +1086,6 @@ void QWaylandQuickItem::handleSurfaceChanged()
 #endif
     }
     if (QWaylandSurface *newSurface = d->view->surface()) {
-        connect(newSurface, &QWaylandSurface::hasContentChanged, this, &QWaylandQuickItem::surfaceMappedChanged);
         connect(newSurface, &QWaylandSurface::parentChanged, this, &QWaylandQuickItem::parentChanged);
         connect(newSurface, &QWaylandSurface::destinationSizeChanged, this, &QWaylandQuickItem::updateSize);
         connect(newSurface, &QWaylandSurface::bufferScaleChanged, this, &QWaylandQuickItem::updateSize);
@@ -1158,10 +1165,23 @@ void QWaylandQuickItem::takeFocus(QWaylandSeat *device)
 /*!
  * \internal
  */
+void QWaylandQuickItem::handleBufferLockedChanged()
+{
+    Q_D(QWaylandQuickItem);
+
+    // Apply the latest surface size
+    if (!d->view->isBufferLocked()) {
+        updateSize();
+        update();
+    }
+}
+
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
 void QWaylandQuickItem::surfaceMappedChanged()
 {
     update();
 }
+#endif
 
 /*!
  * \internal
@@ -1611,6 +1631,23 @@ void QWaylandQuickItem::setTouchEventsEnabled(bool enabled)
     }
 }
 
+/*!
+ * \qmlproperty bool QtWayland.Compositor::WaylandQuickItem::inputEventsEnabled
+ *
+ * This property holds whether input events are enabled for this item.
+ *
+ * When \c true, the item will process and handle input events such as keyboard
+ * and mouse events; when \c false, input events are ignored.
+ */
+
+/*!
+ * \property QWaylandQuickItem::inputEventsEnabled
+ *
+ * This property holds whether input events are enabled for this item.
+ *
+ * When \c true, the item will process and handle input events such as keyboard
+ * and mouse events; when \c false, input events are ignored.
+ */
 bool QWaylandQuickItem::inputEventsEnabled() const
 {
     Q_D(const QWaylandQuickItem);

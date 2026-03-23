@@ -10,6 +10,7 @@
 
 #include "include/v8-internal.h"
 #include "src/common/globals.h"
+#include "src/objects/cpp-heap-object-wrapper.h"
 #include "src/objects/heap-object.h"
 
 namespace v8::internal {
@@ -74,8 +75,9 @@ class V8_EXPORT_PRIVATE WriteBarrier final {
       Tagged<TrustedObject> host, ProtectedPointerSlot slot,
       Tagged<TrustedObject> value,
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  static inline void ForCppHeapPointer(Tagged<JSObject> host,
-                                       CppHeapPointerSlot slot, void* value);
+  static inline void ForCppHeapPointer(
+      Tagged<CppHeapPointerWrapperObjectT> host, CppHeapPointerSlot slot,
+      void* value);
   static inline void ForJSDispatchHandle(
       Tagged<HeapObject> host, JSDispatchHandle handle,
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
@@ -101,15 +103,23 @@ class V8_EXPORT_PRIVATE WriteBarrier final {
   static inline void MarkingForTesting(Tagged<HeapObject> host, ObjectSlot,
                                        Tagged<Object> value);
 
-#ifdef ENABLE_SLOW_DCHECKS
+#if defined(ENABLE_SLOW_DCHECKS) || defined(V8_ENABLE_DEBUG_CODE)
   template <typename T>
   static inline bool IsRequired(Tagged<HeapObject> host, T value);
+#endif
+
+#ifdef ENABLE_SLOW_DCHECKS
   template <typename T>
   static inline bool IsRequired(const HeapObjectLayout* host, T value);
   static bool VerifyDispatchHandleMarkingState(Tagged<HeapObject> host,
                                                JSDispatchHandle value,
                                                WriteBarrierMode mode);
 #endif
+
+  // In native code we skip any further write barrier processing if the hosts
+  // page does not have the kPointersFromHereAreInterestingMask. Users of this
+  // variable rely on that fact.
+  static constexpr bool kUninterestingPagesCanBeSkipped = true;
 
  private:
   static bool PageFlagsAreConsistent(Tagged<HeapObject> object);
@@ -144,14 +154,14 @@ class V8_EXPORT_PRIVATE WriteBarrier final {
                           Tagged<TrustedObject> value);
   static void MarkingSlow(Tagged<HeapObject> host, JSDispatchHandle handle);
   static void MarkingSlowFromTracedHandle(Tagged<HeapObject> value);
-  static void MarkingSlowFromCppHeapWrappable(Heap* heap, Tagged<JSObject> host,
-                                              CppHeapPointerSlot slot,
-                                              void* object);
+  static void MarkingSlowFromCppHeapWrappable(
+      Heap* heap, Tagged<CppHeapPointerWrapperObjectT> host,
+      CppHeapPointerSlot slot, void* object);
 
   static void GenerationalBarrierSlow(Tagged<HeapObject> object, Address slot,
                                       Tagged<HeapObject> value);
-  static inline void GenerationalBarrierForCppHeapPointer(Tagged<JSObject> host,
-                                                          void* value);
+  static inline void GenerationalBarrierForCppHeapPointer(
+      Tagged<CppHeapPointerWrapperObjectT> host, void* value);
 
   static void SharedSlow(Tagged<TrustedObject> host, ProtectedPointerSlot slot,
                          Tagged<TrustedObject> value);

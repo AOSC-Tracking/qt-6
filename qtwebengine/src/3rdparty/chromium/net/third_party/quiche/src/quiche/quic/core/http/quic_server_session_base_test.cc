@@ -45,8 +45,6 @@
 using testing::_;
 using testing::StrictMock;
 
-using testing::AtLeast;
-
 namespace quic {
 namespace test {
 namespace {
@@ -102,18 +100,6 @@ class TestServerSession : public QuicServerSessionBase {
   QuicSpdyStream* CreateOutgoingBidirectionalStream() override {
     QUICHE_DCHECK(false);
     return nullptr;
-  }
-
-  QuicSpdyStream* CreateOutgoingUnidirectionalStream() override {
-    if (!ShouldCreateOutgoingUnidirectionalStream()) {
-      return nullptr;
-    }
-
-    QuicSpdyStream* stream = new QuicSimpleServerStream(
-        GetNextOutgoingUnidirectionalStreamId(), this, WRITE_UNIDIRECTIONAL,
-        quic_simple_server_backend_);
-    ActivateStream(absl::WrapUnique(stream));
-    return stream;
   }
 
   std::unique_ptr<QuicCryptoServerStreamBase> CreateQuicCryptoServerStream(

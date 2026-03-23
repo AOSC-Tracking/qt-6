@@ -34,10 +34,10 @@
 #include "third_party/blink/renderer/core/css/css_border_image_slice_value.h"
 #include "third_party/blink/renderer/core/css/css_custom_ident_value.h"
 #include "third_party/blink/renderer/core/css/css_identifier_value.h"
+#include "third_party/blink/renderer/core/css/css_identifier_value_mappings.h"
 #include "third_party/blink/renderer/core/css/css_math_function_value.h"
 #include "third_party/blink/renderer/core/css/css_numeric_literal_value.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
-#include "third_party/blink/renderer/core/css/css_primitive_value_mappings.h"
 #include "third_party/blink/renderer/core/css/css_quad_value.h"
 #include "third_party/blink/renderer/core/css/css_repeat_style_value.h"
 #include "third_party/blink/renderer/core/css/css_scroll_value.h"
@@ -314,7 +314,7 @@ Timing::Delay MapAnimationTimingDelay(const CSSLengthResolver& length_resolver,
                                       const CSSValue& value) {
   if (const auto* primitive = DynamicTo<CSSPrimitiveValue>(value)) {
     return Timing::Delay(
-        AnimationTimeDelta(primitive->ComputeSeconds(length_resolver)));
+        ANIMATION_TIME_DELTA_FROM_SECONDS(primitive->ComputeSeconds(length_resolver)));
   }
 
   return Timing::Delay();
@@ -325,13 +325,6 @@ Timing::Delay MapAnimationTimingDelay(const CSSLengthResolver& length_resolver,
 Timing::Delay CSSToStyleMap::MapAnimationDelayStart(StyleResolverState& state,
                                                     const CSSValue& value) {
   return MapAnimationTimingDelay(state.CssToLengthConversionData(), value);
-}
-
-Timing::Delay CSSToStyleMap::MapAnimationDelayEnd(const CSSValue& value) {
-  // Note: using default length resolver here, as this function is only
-  // called from the serialization code.
-  return MapAnimationTimingDelay(CSSToLengthConversionData(/*element=*/nullptr),
-                                 value);
 }
 
 Timing::Delay CSSToStyleMap::MapAnimationDelayEnd(StyleResolverState& state,
@@ -429,7 +422,8 @@ StyleTimeline CSSToStyleMap::MapAnimationTimeline(StyleResolverState& state,
   }
   if (auto* custom_ident = DynamicTo<CSSCustomIdentValue>(value)) {
     return StyleTimeline(MakeGarbageCollected<ScopedCSSName>(
-        custom_ident->Value(), custom_ident->GetTreeScope()));
+        custom_ident->ComputeIdent(state.CssToLengthConversionData()),
+        custom_ident->GetTreeScope()));
   }
   if (value.IsViewValue()) {
     const auto& view_value = To<cssvalue::CSSViewValue>(value);
@@ -590,9 +584,15 @@ scoped_refptr<TimingFunction> CSSToStyleMap::MapAnimationTimingFunction(
 
   const auto& steps_timing_function =
       To<cssvalue::CSSStepsTimingFunctionValue>(value);
-  return StepsTimingFunction::Create(
-      steps_timing_function.NumberOfSteps()->ComputeInteger(length_resolver),
-      steps_timing_function.GetStepPosition());
+  int steps =
+      steps_timing_function.NumberOfSteps()->ComputeInteger(length_resolver);
+  if (steps_timing_function.GetStepPosition() ==
+          StepsTimingFunction::StepPosition::JUMP_NONE &&
+      steps < 2) {
+    steps = 2;
+  }
+  return StepsTimingFunction::Create(steps,
+                                     steps_timing_function.GetStepPosition());
 }
 
 scoped_refptr<TimingFunction> CSSToStyleMap::MapAnimationTimingFunction(
@@ -795,40 +795,91 @@ void CSSToStyleMap::MapNinePieceImageRepeat(StyleResolverState&,
   image.SetVerticalRule(vertical_rule);
 }
 
-EAnimationTriggerType CSSToStyleMap::MapAnimationTriggerType(
+EAnimationTriggerBehavior CSSToStyleMap::MapAnimationTriggerBehavior(
     StyleResolverState&,
     const CSSValue& value) {
-  return To<CSSIdentifierValue>(value).ConvertTo<EAnimationTriggerType>();
+  return To<CSSIdentifierValue>(value).ConvertTo<EAnimationTriggerBehavior>();
 }
 
-StyleTimeline CSSToStyleMap::MapAnimationTriggerTimeline(
+Persistent<const ScopedCSSName> CSSToStyleMap::MapAnimationTimelineTriggerName(
+    StyleResolverState& state,
+    const CSSValue& value) {
+  DCHECK(value.IsScopedValue());
+  if (auto* ident = DynamicTo<CSSIdentifierValue>(value)) {
+    DCHECK(ident->GetValueID() == CSSValueID::kNone);
+    return nullptr;
+  }
+  if (auto* custom_ident = DynamicTo<CSSCustomIdentValue>(value)) {
+    return MakeGarbageCollected<ScopedCSSName>(
+        custom_ident->ComputeIdent(state.CssToLengthConversionData()),
+        custom_ident->GetTreeScope());
+  }
+  return nullptr;
+}
+
+EAnimationTriggerBehavior CSSToStyleMap::MapAnimationTimelineTriggerBehavior(
+    StyleResolverState& state,
+    const CSSValue& value) {
+  return MapAnimationTriggerBehavior(state, value);
+}
+
+std::optional<TimelineOffset>
+CSSToStyleMap::MapAnimationTimelineTriggerRangeStart(StyleResolverState& state,
+                                                     const CSSValue& value) {
+  return MapAnimationRange(state, value, 0);
+}
+
+std::optional<TimelineOffset>
+CSSToStyleMap::MapAnimationTimelineTriggerRangeEnd(StyleResolverState& state,
+                                                   const CSSValue& value) {
+  return MapAnimationRange(state, value, 100);
+}
+
+TimelineOffsetOrAuto CSSToStyleMap::MapAnimationTimelineTriggerExitRangeStart(
+    StyleResolverState& state,
+    const CSSValue& value) {
+  if (auto* ident = DynamicTo<CSSIdentifierValue>(value);
+      ident && ident->GetValueID() == CSSValueID::kAuto) {
+    return TimelineOffsetOrAuto();
+  }
+  return TimelineOffsetOrAuto(MapAnimationRange(state, value, 0));
+}
+
+TimelineOffsetOrAuto CSSToStyleMap::MapAnimationTimelineTriggerExitRangeEnd(
+    StyleResolverState& state,
+    const CSSValue& value) {
+  if (auto* ident = DynamicTo<CSSIdentifierValue>(value);
+      ident && ident->GetValueID() == CSSValueID::kAuto) {
+    return TimelineOffsetOrAuto();
+  }
+  return TimelineOffsetOrAuto(MapAnimationRange(state, value, 100));
+}
+
+StyleTimeline CSSToStyleMap::MapAnimationTimelineTriggerTimeline(
     StyleResolverState& state,
     const CSSValue& value) {
   return MapAnimationTimeline(state, value);
 }
 
-std::optional<TimelineOffset> CSSToStyleMap::MapAnimationTriggerRangeStart(
-    StyleResolverState& state,
-    const CSSValue& value) {
-  return MapAnimationRange(state, value, 0);
-}
+std::optional<Vector<AtomicString>> CSSToStyleMap::MapAnimationTriggerNames(
+    StyleResolverState&,
+    const CSSValue& animation_trigger_value) {
+  if (auto* ident = DynamicTo<CSSIdentifierValue>(animation_trigger_value);
+      ident && ident->GetValueID() == CSSValueID::kNone) {
+    return std::nullopt;
+  }
 
-std::optional<TimelineOffset> CSSToStyleMap::MapAnimationTriggerRangeEnd(
-    StyleResolverState& state,
-    const CSSValue& value) {
-  return MapAnimationRange(state, value, 100);
-}
+  if (const CSSValueList* value_list =
+          DynamicTo<CSSValueList>(animation_trigger_value)) {
+    Vector<AtomicString> names_list;
+    for (const CSSValue* value : *value_list) {
+      const CSSCustomIdentValue* custom_ident = To<CSSCustomIdentValue>(value);
+      names_list.push_back(custom_ident->CustomCSSText());
+    }
+    return names_list;
+  }
 
-std::optional<TimelineOffset> CSSToStyleMap::MapAnimationTriggerExitRangeStart(
-    StyleResolverState& state,
-    const CSSValue& value) {
-  return MapAnimationRange(state, value, 0);
-}
-
-std::optional<TimelineOffset> CSSToStyleMap::MapAnimationTriggerExitRangeEnd(
-    StyleResolverState& state,
-    const CSSValue& value) {
-  return MapAnimationRange(state, value, 100);
+  return std::nullopt;
 }
 
 }  // namespace blink

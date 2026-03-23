@@ -7,6 +7,15 @@ include(${CMAKE_CURRENT_LIST_DIR}/src/qdoc/cmake/QDocConfiguration.cmake)
 #### Tests
 
 qt_find_package(WrapLibClang 8 PROVIDED_TARGETS WrapLibClang::WrapLibClang)
+qt_find_package_extend_sbom(TARGETS WrapLibClang::WrapLibClang
+    PACKAGE_VERSION "${QT_LIB_CLANG_VERSION}"
+    LICENSE_EXPRESSION "Apache-2.0 WITH LLVM-exception"
+    SUPPLIER "LLVM Foundation"
+    DOWNLOAD_LOCATION "https://github.com/llvm/llvm-project/releases"
+    COPYRIGHTS
+        "Copyright (c) 2003-2019 University of Illinois at Urbana-Champaign."
+        "Copyright (c) 2019-2025 Contributors to the LLVM Project."
+)
 
 if(TARGET WrapLibClang::WrapLibClang)
     set(TEST_libclang "ON" CACHE BOOL "Required libclang version found." FORCE)
@@ -45,6 +54,12 @@ qt_feature("qdoc" PRIVATE
     PURPOSE "QDoc is Qt's documentation generator for C++ and QML projects."
     CONDITION TARGET Qt::QmlPrivate AND QT_FEATURE_clang AND QT_FEATURE_commandlineparser AND QT_FEATURE_thread AND QT_LIB_CLANG_VERSION VERSION_GREATER_EQUAL QDOC_MINIMUM_CLANG_VERSION
 )
+qt_feature("qdoc_coverage" PRIVATE
+    LABEL "QDoc Test Coverage"
+    PURPOSE "Enables test coverage collection and reporting for QDoc using gcov/lcov."
+    # User should configure qtbase with "-developer-build -coverage gcov" for coverage instrumentation.
+    CONDITION QT_FEATURE_developer_build AND QT_BUILD_TESTS AND QDOC_COVERAGE_DEPS_FOUND
+)
 qt_feature("designer" PRIVATE
     LABEL "Qt Widgets Designer"
     PURPOSE "Qt Widgets Designer is the Qt tool for designing and building graphical user interfaces (GUIs) with Qt Widgets. You can compose and customize your windows or dialogs in a what-you-see-is-what-you-get (WYSIWYG) manner, and test them using different styles and resolutions."
@@ -58,6 +73,7 @@ qt_feature("distancefieldgenerator" PRIVATE
 qt_feature("kmap2qmap" PRIVATE
     LABEL "kmap2qmap"
     PURPOSE "kmap2qmap is a tool to generate keymaps for use on Embedded Linux. The source files have to be in standard Linux kmap format that is e.g. understood by the kernel's loadkeys command."
+    CONDITION TARGET Qt::InputSupportPrivate
 )
 qt_feature("linguist" PRIVATE
     LABEL "Qt Linguist"
@@ -103,46 +119,23 @@ qt_configure_add_summary_entry(ARGS "assistant")
 qt_configure_add_summary_entry(ARGS "clang")
 qt_configure_add_summary_entry(ARGS "designer")
 qt_configure_add_summary_entry(ARGS "distancefieldgenerator")
-#qt_configure_add_summary_entry(ARGS "kmap2qmap")
+qt_configure_add_summary_entry(ARGS "kmap2qmap")
 qt_configure_add_summary_entry(ARGS "linguist")
 qt_configure_add_summary_entry(ARGS "pixeltool")
 qt_configure_add_summary_entry(ARGS "qdbus")
 qt_configure_add_summary_entry(ARGS "qdoc")
+qt_configure_add_summary_entry(ARGS "qdoc_coverage")
 #qt_configure_add_summary_entry(ARGS "qev")
 qt_configure_add_summary_entry(ARGS "qtattributionsscanner")
 qt_configure_add_summary_entry(ARGS "qtdiag")
 qt_configure_add_summary_entry(ARGS "qtplugininfo")
 qt_configure_end_summary_section() # end of "Qt Tools" section
 
-# Generate QDoc-specific warning messages
+# Register QDoc-related configure warnings
+include(${CMAKE_CURRENT_LIST_DIR}/src/qdoc/cmake/QDocConfigureMessages.cmake)
 if(NOT QT_CONFIGURE_RUNNING)
-    include(${CMAKE_CURRENT_LIST_DIR}/src/qdoc/cmake/QDocConfigureMessages.cmake)
-    qdoc_generate_clang_warning_message(QDOC_CLANG_WARNING)
-    qdoc_generate_qmlprivate_warning_message(QDOC_QMLPRIVATE_WARNING)
-    qdoc_generate_missing_features_warning_message(QDOC_MISSING_FEATURES_WARNING)
-    qdoc_generate_clang_version_warning_message(QDOC_CLANG_VERSION_WARNING)
+    qdoc_register_configure_warnings()
 endif()
-
-qt_configure_add_report_entry(
-    TYPE WARNING
-    MESSAGE "${QDOC_CLANG_WARNING}"
-    CONDITION NOT QT_FEATURE_clang
-)
-qt_configure_add_report_entry(
-    TYPE WARNING
-    MESSAGE "${QDOC_QMLPRIVATE_WARNING}"
-    CONDITION NOT TARGET Qt::QmlPrivate
-)
-qt_configure_add_report_entry(
-    TYPE WARNING
-    MESSAGE "${QDOC_MISSING_FEATURES_WARNING}"
-    CONDITION NOT QT_FEATURE_commandlineparser OR NOT QT_FEATURE_thread
-)
-qt_configure_add_report_entry(
-    TYPE WARNING
-    MESSAGE "${QDOC_CLANG_VERSION_WARNING}"
-    CONDITION QT_LIB_CLANG_VERSION VERSION_LESS QDOC_MINIMUM_CLANG_VERSION
-)
 
 qt_configure_add_report_entry(
     TYPE WARNING

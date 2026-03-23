@@ -10,7 +10,6 @@
 #include "base/check.h"
 #include "base/functional/callback_forward.h"
 #include "mojo/public/cpp/base/big_buffer.h"
-#include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -153,7 +152,7 @@ class MODULES_EXPORT SharedStorageWorkletGlobalScope final
   void OnModuleScriptDownloaded(
       const KURL& script_source_url,
       mojom::blink::SharedStorageWorkletService::AddModuleCallback callback,
-      std::unique_ptr<std::string> response_body,
+      std::optional<std::string> response_body,
       std::string error_message,
       network::mojom::URLResponseHeadPtr response_head);
 
@@ -181,13 +180,16 @@ class MODULES_EXPORT SharedStorageWorkletGlobalScope final
 
   // Sets continuation-preserved embedder data to allow us to identify this
   // particular operation invocation later, even after asynchronous operations.
-  // Returns a closure that should be run when the operation finishes.
-  base::OnceClosure StartOperation(
+  // Returns a callback that should be run when the operation finishes.
+  base::OnceCallback<void(PrivateAggregation::TerminationStatus)>
+  StartOperation(
       mojom::blink::PrivateAggregationOperationDetailsPtr pa_operation_details);
 
   // Notifies the `private_aggregation_` that the operation with the given ID
-  // has finished.
-  void FinishOperation(int64_t operation_id);
+  // has finished and whether it finished due to an uncaught error.
+  void FinishOperation(
+      int64_t operation_id,
+      PrivateAggregation::TerminationStatus termination_status);
 
   PrivateAggregation* GetOrCreatePrivateAggregation();
 

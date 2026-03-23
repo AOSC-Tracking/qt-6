@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_GRAPH_OBJECT_H
 #define QSSG_RENDER_GRAPH_OBJECT_H
@@ -51,7 +53,7 @@ public:
         Material = 0x20000,
         Texture = 0x40000,
         Extension = 0x80000,
-        User =   0x80000000
+        User =   0x80000000,
     };
 
     enum class Type : quint32 {
@@ -64,6 +66,7 @@ public:
         Skeleton, // Node (A resource to the model node)
         ImportScene, // Node
         ReflectionProbe,
+        SceneRoot, // Node
         // Light nodes
         DirectionalLight = BaseType::Light | BaseType::Node,
         PointLight,
@@ -86,6 +89,7 @@ public:
         ModelInstance, // Resource
         ModelBlendParticle, // Resource
         ResourceLoader, // Resource [meta]
+        RenderPass, // Resource
         // Materials
         DefaultMaterial = BaseType::Material | BaseType::Resource, // Resource
         PrincipledMaterial, // Resource
@@ -96,12 +100,14 @@ public:
         Image2D = BaseType::Texture | BaseType::Resource, // Resource
         ImageCube, // Resource
         RenderExtension = BaseType::Extension, // Extension
+        TextureProvider, // Extension
         // User types E.g.: (User | Node) + 1)
     };
     using TypeT = std::underlying_type_t<Type>;
 
     enum class Flags : quint32 {
-        HasGraphicsResources = 0x1
+        HasGraphicsResources = 0x1,
+        InternallyReserved = 0xffff0000,
     };
     using FlagT = std::underlying_type_t<Flags>;
 

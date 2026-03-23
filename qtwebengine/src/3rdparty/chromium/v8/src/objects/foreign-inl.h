@@ -5,13 +5,15 @@
 #ifndef V8_OBJECTS_FOREIGN_INL_H_
 #define V8_OBJECTS_FOREIGN_INL_H_
 
+#include "src/objects/foreign.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/common/globals.h"
 #include "src/execution/isolate-utils-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
-#include "src/objects/foreign.h"
 #include "src/objects/objects-inl.h"
 #include "src/sandbox/external-pointer-inl.h"
-#include "src/sandbox/isolate.h"
+#include "src/sandbox/isolate-inl.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -30,7 +32,7 @@ Address Foreign::foreign_address(IsolateForSandbox isolate) const {
 
 template <ExternalPointerTag tag>
 Address Foreign::foreign_address() const {
-  IsolateForSandbox isolate = GetIsolateForSandbox(*this);
+  IsolateForSandbox isolate = GetCurrentIsolateForSandbox();
   return ReadExternalPointerField<tag>(kForeignAddressOffset, isolate);
 }
 
@@ -46,10 +48,14 @@ void Foreign::init_foreign_address(IsolateForSandbox isolate,
   InitExternalPointerField<tag>(kForeignAddressOffset, isolate, initial_value);
 }
 
-Address Foreign::foreign_address_unchecked() const {
-  IsolateForSandbox isolate = GetIsolateForSandbox(*this);
+Address Foreign::foreign_address_unchecked(IsolateForSandbox isolate) const {
   return ReadExternalPointerField<kAnyForeignExternalPointerTagRange>(
       kForeignAddressOffset, isolate);
+}
+
+Address Foreign::foreign_address_unchecked() const {
+  IsolateForSandbox isolate = GetCurrentIsolateForSandbox();
+  return foreign_address_unchecked(isolate);
 }
 
 ExternalPointerTag Foreign::GetTag() const {
@@ -58,7 +64,7 @@ ExternalPointerTag Foreign::GetTag() const {
       RawExternalPointerField(kForeignAddressOffset,
                               kAnyForeignExternalPointerTagRange)
           .Relaxed_LoadHandle();
-  IsolateForSandbox isolate = GetIsolateForSandbox(*this);
+  IsolateForSandbox isolate = GetCurrentIsolateForSandbox();
   return isolate.GetExternalPointerTableTagFor(*this, handle);
 #endif  // V8_ENABLE_SANDBOX
   // Without the sandbox the address is stored untagged.

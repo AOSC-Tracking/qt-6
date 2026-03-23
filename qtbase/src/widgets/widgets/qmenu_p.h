@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QMENU_P_H
 #define QMENU_P_H
@@ -361,12 +362,19 @@ public:
     } delayState;
     enum SelectionReason {
         SelectedFromKeyboard,
-        SelectedFromElsewhere
+        SelectedFromAPI,
+        SelectedFromElsewhere,
+    };
+    enum class SelectionDirection {
+        Up,
+        Down,
     };
     QWidget *topCausedWidget() const;
     QAction *actionAt(QPoint p) const;
     void setFirstActionActive();
-    void setCurrentAction(QAction *, int popup = -1, SelectionReason reason = SelectedFromElsewhere, bool activateFirst = false);
+    void setCurrentAction(QAction *, int popup = -1, SelectionReason reason = SelectedFromElsewhere,
+                          SelectionDirection direction = SelectionDirection::Down,
+                          bool activateFirst = false);
     void popupAction(QAction *, int, bool);
     void setSyncAction();
 

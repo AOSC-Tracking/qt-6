@@ -89,8 +89,7 @@ std::optional<CSSSyntaxType> ConsumeTypeName(CSSParserTokenStream& stream) {
     stream.Consume();
     return CSSSyntaxType::kResolution;
   }
-  if (RuntimeEnabledFeatures::CSSAtPropertyStringSyntaxEnabled() &&
-      stream.Peek().Value() == "string") {
+  if (stream.Peek().Value() == "string") {
     stream.Consume();
     return CSSSyntaxType::kString;
   }
@@ -229,7 +228,6 @@ const CSSValue* ConsumeSingleType(const CSSSyntaxComponent& syntax,
     case CSSSyntaxType::kCustomIdent:
       return css_parsing_utils::ConsumeCustomIdent(stream, context);
     case CSSSyntaxType::kString:
-      DCHECK(RuntimeEnabledFeatures::CSSAtPropertyStringSyntaxEnabled());
       return css_parsing_utils::ConsumeString(stream);
     default:
       NOTREACHED();
@@ -362,6 +360,15 @@ String CSSSyntaxDefinition::ToString() const {
     builder.Append(component.ToString());
   }
   return builder.ToString();
+}
+
+CSSSyntaxDefinition CSSSyntaxDefinition::CreateNumericSyntax() {
+  CSSParserTokenStream stream(
+      "<number> | <length> | <percentage> | <angle> | <time> | <resolution>");
+  std::optional<CSSSyntaxDefinition> syntax_definition =
+      CSSSyntaxDefinition::Consume(stream);
+  DCHECK(syntax_definition.has_value());
+  return *syntax_definition;
 }
 
 }  // namespace blink

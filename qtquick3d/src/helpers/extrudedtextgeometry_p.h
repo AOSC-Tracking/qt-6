@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef EXTRUDEDTEXTGEOMETRY_P_H
 #define EXTRUDEDTEXTGEOMETRY_P_H
@@ -15,6 +17,7 @@
 // We mean it.
 //
 
+#include <QtQuick3DHelpers/qtquick3dhelpersexports.h>
 #include <QQuick3DGeometry>
 #include <QQmlEngine>
 #include <QVector3D>
@@ -27,7 +30,7 @@
 
 QT_BEGIN_NAMESPACE
 
-class ExtrudedTextGeometry : public QQuick3DGeometry
+class Q_QUICK3DHELPERS_EXPORT ExtrudedTextGeometry : public QQuick3DGeometry
 {
     Q_OBJECT
     Q_PROPERTY(QString text READ text WRITE setText NOTIFY textChanged)

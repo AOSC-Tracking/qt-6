@@ -15,7 +15,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "net/base/address_family.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
@@ -366,10 +365,9 @@ int HttpAuthHandlerNegotiate::DoResolveCanonicalNameComplete(int rv) {
       // Expect at most a single DNS alias representing the canonical name
       // because the `HostResolver` request was made with
       // `include_canonical_name`.
-      DCHECK(resolve_host_request_->GetDnsAliasResults());
-      DCHECK_LE(resolve_host_request_->GetDnsAliasResults()->size(), 1u);
-      if (!resolve_host_request_->GetDnsAliasResults()->empty()) {
-        server = *resolve_host_request_->GetDnsAliasResults()->begin();
+      DCHECK_LE(resolve_host_request_->GetDnsAliasResults().size(), 1u);
+      if (!resolve_host_request_->GetDnsAliasResults().empty()) {
+        server = *resolve_host_request_->GetDnsAliasResults().begin();
         DCHECK(!server.empty());
       }
     } else {

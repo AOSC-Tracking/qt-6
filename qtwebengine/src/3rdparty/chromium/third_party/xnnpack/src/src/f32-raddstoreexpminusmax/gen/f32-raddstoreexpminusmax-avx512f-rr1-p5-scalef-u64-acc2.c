@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-raddstoreexpminusmax/avx512f-rr1-p5-scalef.c.in
 //   Generator: tools/xngen
@@ -8,11 +9,14 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/intrinsics-polyfill.h"
-#include "xnnpack/raddstoreexpminusmax.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/raddstoreexpminusmax.h"
 
 
 void xnn_f32_raddstoreexpminusmax_ukernel__avx512f_rr1_p5_scalef_u64_acc2(

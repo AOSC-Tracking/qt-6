@@ -9,6 +9,8 @@
 #include <optional>
 #include <vector>
 
+#include "base/containers/queue.h"
+#include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/safe_ref.h"
 #include "base/memory/scoped_refptr.h"
@@ -17,7 +19,9 @@
 #include "base/types/pass_key.h"
 #include "base/unguessable_token.h"
 #include "content/browser/loader/keep_alive_url_loader_service.h"
+#include "net/cookies/cookie_setting_override.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
+#include "third_party/blink/public/mojom/confidence_level.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -137,6 +141,14 @@ class DocumentAssociatedData : public base::SupportsUserData {
     devtools_navigation_token_ = devtools_navigation_token;
   }
 
+  blink::mojom::ConfidenceLevel navigation_confidence() const {
+    return confidence_level_;
+  }
+  void set_navigation_confidence(
+      blink::mojom::ConfidenceLevel confidence_level) {
+    confidence_level_ = confidence_level;
+  }
+
   // fetch keepalive handing:
   //
   // Contains the weak pointer to the FactoryContext of the in-browser
@@ -168,6 +180,32 @@ class DocumentAssociatedData : public base::SupportsUserData {
   void RemoveService(internal::DocumentServiceBase* service,
                      base::PassKey<internal::DocumentServiceBase>);
 
+  // Add `callback` to the callback queue to be run after prerendered page
+  // activation.
+  void AddPostPrerenderingActivationStep(base::OnceClosure callback);
+
+  // Run callback queue for post-prerendering activation.
+  void RunPostPrerenderingActivationSteps();
+
+  net::CookieSettingOverrides cookie_setting_overrides() const {
+    return cookie_setting_overrides_;
+  }
+  void PutCookieSettingOverride(
+      net::CookieSettingOverride cookie_setting_override);
+  void RemoveCookieSettingOverride(
+      net::CookieSettingOverride cookie_setting_override);
+
+  std::map<std::string, std::string>& crash_storage_map() {
+    return crash_storage_map_;
+  }
+
+  std::optional<uint64_t> crash_storage_requested_length() {
+    return crash_storage_requested_length_;
+  }
+  void set_crash_storage_requested_length(uint64_t length) {
+    crash_storage_requested_length_ = length;
+  }
+
  private:
   const blink::DocumentToken token_;
   std::unique_ptr<PageImpl> owned_page_;
@@ -179,8 +217,28 @@ class DocumentAssociatedData : public base::SupportsUserData {
       services_;
   scoped_refptr<NavigationOrDocumentHandle> navigation_or_document_handle_;
   std::optional<base::UnguessableToken> devtools_navigation_token_;
+  blink::mojom::ConfidenceLevel confidence_level_ =
+      blink::mojom::ConfidenceLevel::kHigh;
   base::WeakPtr<KeepAliveURLLoaderService::FactoryContext>
       keep_alive_url_loader_factory_context_;
+  // The callback queue for post-prerendering activation.
+  base::queue<base::OnceClosure> post_prerendering_activation_callbacks_;
+  // The base set of overrides used by this document. This may be
+  // augmented/modified before being returned via
+  // `RenderFrameHostImpl::GetCookieSettingOverrides`.
+  net::CookieSettingOverrides cookie_setting_overrides_;
+  // This is written to by the `SetCrashReportStorageKey()` IPC, with data
+  // supplied by the renderer, and read from during
+  // `RenderFrameHostImpl::MaybeGenerateCrashReport()`, to supplement crash
+  // reports with this data.
+  std::map<std::string, std::string> crash_storage_map_;
+  // For now, this member is *only* used to track whether initialization has
+  // already occurred via this method. It will be more useful soon when it is
+  // used by `SetCrashReportStorageKey()` to actually enforce a cap on the
+  // number of bytes written to the backing crash report storage memory (for
+  // now, this is `crash_storage_map_`, but in the future it could be a shared
+  // memory region; see https://crrev.com/c/6788146 which is exploring this).
+  std::optional<uint64_t> crash_storage_requested_length_;
 
   base::WeakPtrFactory<RenderFrameHostImpl> weak_factory_;
 };

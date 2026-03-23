@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "net/nqe/network_quality_estimator.h"
 
 #include <algorithm>
@@ -31,15 +26,14 @@
 #include "base/task/lazy_thread_pool_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/default_tick_clock.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "net/base/features.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/network_interfaces.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_status_code.h"
@@ -54,7 +48,7 @@ namespace net {
 
 namespace {
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 // SequencedTaskRunner to get the network id. A SequencedTaskRunner is used
 // rather than parallel tasks to avoid having many threads getting the network
 // id concurrently.
@@ -552,7 +546,7 @@ void NetworkQualityEstimator::OnConnectionTypeChanged(
 void NetworkQualityEstimator::GatherEstimatesForNextConnectionType() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   if (get_network_id_asynchronously_) {
     // Doing PostTaskAndReplyWithResult by handle because it requires the result
     // type have a default constructor and nqe::internal::NetworkID does not
@@ -573,7 +567,7 @@ void NetworkQualityEstimator::GatherEstimatesForNextConnectionType() {
                            weak_ptr_factory_.GetWeakPtr())));
     return;
   }
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
   ContinueGatherEstimatesForNextConnectionType(GetCurrentNetworkID());
 }
@@ -1411,11 +1405,11 @@ void NetworkQualityEstimator::OnPrefsRead(
   ReadCachedNetworkQualityEstimate();
 }
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 void NetworkQualityEstimator::EnableGetNetworkIdAsynchronously() {
   get_network_id_asynchronously_ = true;
 }
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 std::optional<base::TimeDelta> NetworkQualityEstimator::GetHttpRTT() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -1457,7 +1451,7 @@ void NetworkQualityEstimator::MaybeUpdateCachedEstimateApplied(
   }
 
   cached_estimate_applied_ = true;
-  bool deleted_observation_sources[NETWORK_QUALITY_OBSERVATION_SOURCE_MAX] = {};
+  DeletedObservationSources deleted_observation_sources = {};
   deleted_observation_sources
       [NETWORK_QUALITY_OBSERVATION_SOURCE_DEFAULT_HTTP_FROM_PLATFORM] = true;
   deleted_observation_sources

@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3ddefaultmaterial_p.h"
 #include "qquick3dobject_p.h"
@@ -894,6 +896,7 @@ QSSGRenderGraphObject *QQuick3DDefaultMaterial::updateSpatialNode(QSSGRenderGrap
             material->colorMap = m_diffuseMap->getRenderImage();
 
         material->diffuseLightWrap = m_diffuseLightWrap;
+        material->diffuseModel = QSSGRenderDefaultMaterial::MaterialDiffuseModel::Lambert;
     }
 
     if (m_dirtyAttributes & EmissiveDirty) {

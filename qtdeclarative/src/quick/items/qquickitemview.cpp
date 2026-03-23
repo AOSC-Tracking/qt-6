@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickitemview_p_p.h"
 #include <QtQml/qqmlcomponent.h>
@@ -147,7 +148,11 @@ QQuickItem *QQuickItemView::currentItem() const
 QVariant QQuickItemView::model() const
 {
     Q_D(const QQuickItemView);
-    return d->modelVariant;
+    if (d->ownModel)
+        return static_cast<QQmlDelegateModel *>(d->model.data())->model();
+    if (d->model)
+        return QVariant::fromValue(d->model.data());
+    return QVariant();
 }
 
 void QQuickItemView::setModel(const QVariant &m)
@@ -157,16 +162,19 @@ void QQuickItemView::setModel(const QVariant &m)
     if (model.userType() == qMetaTypeId<QJSValue>())
         model = model.value<QJSValue>().toVariant();
 
-    if (d->modelVariant == model)
-        return;
-
     QQmlDelegateModelPointer oldModel(d->model);
+    if (d->ownModel) {
+        if (oldModel.delegateModel()->model() == model)
+            return;
+    } else if (QVariant::fromValue(d->model) == model) {
+        return;
+    }
+
     d->disconnectModel(this, &oldModel);
 
     d->clear();
     d->model = nullptr;
     d->setPosition(d->contentStartOffset());
-    d->modelVariant = model;
 
     QObject *object = qvariant_cast<QObject *>(model);
 
@@ -205,10 +213,11 @@ void QQuickItemView::setModel(const QVariant &m)
         }
         d->model = newModel.instanceModel();
     } else if (d->ownModel) {
+        // d->ownModel can only be set if the old model is a QQmlDelegateModel.
+        Q_ASSERT(oldModel.delegateModel());
         newModel = oldModel;
         d->model = newModel.instanceModel();
-        if (QQmlDelegateModel *delegateModel = newModel.delegateModel())
-            delegateModel->setModel(model);
+        newModel.delegateModel()->setModel(model);
     } else {
         newModel = QQmlDelegateModel::createForView(this, d);
         if (d->explicitDelegate) {
@@ -989,7 +998,7 @@ void QQuickItemViewPrivate::applyPendingChanges()
         layout();
 }
 
-int QQuickItemViewPrivate::findMoveKeyIndex(QQmlChangeSet::MoveKey key, const QVector<QQmlChangeSet::Change> &changes) const
+int QQuickItemViewPrivate::findMoveKeyIndex(QQmlChangeSet::MoveKey key, const QList<QQmlChangeSet::Change> &changes) const
 {
     for (int i=0; i<changes.size(); i++) {
         for (int j=changes[i].index; j<changes[i].index + changes[i].count; j++) {
@@ -1152,6 +1161,10 @@ void QQuickItemViewPrivate::connectModel(QQuickItemView *q, QQmlDelegateModelPoi
         QObjectPrivate::connect(
                 dataModel, &QQmlDelegateModel::delegateModelAccessChanged,
                 this, &QQuickItemViewPrivate::applyDelegateModelAccessChange);
+        if (ownModel) {
+            QObject::connect(dataModel, &QQmlDelegateModel::modelChanged,
+                             q, &QQuickItemView::modelChanged);
+        }
     }
 
     emitCountChanged();
@@ -1183,6 +1196,10 @@ void QQuickItemViewPrivate::disconnectModel(QQuickItemView *q, QQmlDelegateModel
         QObjectPrivate::disconnect(
                 delegateModel, &QQmlDelegateModel::delegateModelAccessChanged,
                 this, &QQuickItemViewPrivate::applyDelegateModelAccessChange);
+        if (ownModel) {
+            QObject::disconnect(delegateModel, &QQmlDelegateModel::modelChanged,
+                                q, &QQuickItemView::modelChanged);
+        }
     }
 }
 
@@ -1637,6 +1654,7 @@ QQuickItemViewPrivate::QQuickItemViewPrivate()
     , isClearing(false)
     , explicitDelegate(false)
     , explicitDelegateModelAccess(false)
+    , inRefill(false)
 {
     bufferPause.addAnimationChangeListener(this, QAbstractAnimationJob::Completion);
     bufferPause.setLoopCount(1);
@@ -1890,6 +1908,10 @@ void QQuickItemViewPrivate::refill(qreal from, qreal to)
         return;
     }
 
+    if (inRefill)
+        return;
+    inRefill = true;
+
     do {
         bufferPause.stop();
         if (currentChanges.hasPendingChanges() || bufferedChanges.hasPendingChanges() || currentChanges.active) {
@@ -1936,6 +1958,7 @@ void QQuickItemViewPrivate::refill(qreal from, qreal to)
             emitCountChanged();
     } while (currentChanges.hasPendingChanges() || bufferedChanges.hasPendingChanges());
     storeFirstVisibleItemPosition();
+    inRefill = false;
 }
 
 void QQuickItemViewPrivate::regenerate(bool orientationChanged)
@@ -2144,8 +2167,8 @@ bool QQuickItemViewPrivate::applyModelChanges(ChangeResult *totalInsertionResult
     totalInsertionResult->visiblePos = prevFirstItemInViewPos;
     totalRemovalResult->visiblePos = prevFirstItemInViewPos;
 
-    const QVector<QQmlChangeSet::Change> &removals = currentChanges.pendingChanges.removes();
-    const QVector<QQmlChangeSet::Change> &insertions = currentChanges.pendingChanges.inserts();
+    const QList<QQmlChangeSet::Change> &removals = currentChanges.pendingChanges.removes();
+    const QList<QQmlChangeSet::Change> &insertions = currentChanges.pendingChanges.inserts();
     ChangeResult insertionResult(prevFirstItemInViewPos);
     ChangeResult removalResult(prevFirstItemInViewPos);
 
@@ -2631,8 +2654,10 @@ bool QQuickItemViewPrivate::releaseItem(FxViewItem *item, QQmlInstanceModel::Reu
         }
 
         QQuickItemPrivate::get(quickItem)->removeItemChangeListener(this, itemChangeListenerTypes);
+#if QT_CONFIG(quick_viewtransitions)
         delete item->transitionableItem;
         item->transitionableItem = nullptr;
+#endif
     }
 
     delete item;

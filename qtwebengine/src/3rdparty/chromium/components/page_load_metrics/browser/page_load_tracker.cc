@@ -12,6 +12,7 @@
 
 #include "base/check_op.h"
 #include "base/feature_list.h"
+#include "base/memory/read_only_shared_memory_region.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
@@ -45,15 +46,11 @@ namespace internal {
 
 const char kErrorEvents[] = "PageLoad.Internal.ErrorCode";
 const char kPageLoadPrerender2Event[] = "PageLoad.Internal.Prerender2.Event";
-const char kPageLoadTrackerPageType[] = "PageLoad.Internal.PageType";
+
 }  // namespace internal
 
 void RecordInternalError(InternalErrorLoadEvent event) {
   base::UmaHistogramEnumeration(internal::kErrorEvents, event, ERR_LAST_ENTRY);
-}
-
-void RecordPageType(internal::PageLoadTrackerPageType type) {
-  base::UmaHistogramEnumeration(internal::kPageLoadTrackerPageType, type);
 }
 
 // TODO(csharrison): Add a case for client side redirects, which is what JS
@@ -202,6 +199,18 @@ void DispatchObserverTimingCallbacks(PageLoadMetricsObserverInterface* observer,
   if (new_timing.connect_end && !last_timing.connect_end) {
     observer->OnConnectEnd(new_timing);
   }
+  if (new_timing.user_timing_mark_fully_loaded !=
+      last_timing.user_timing_mark_fully_loaded) {
+    observer->OnUserTimingMarkFullyLoaded(new_timing);
+  }
+  if (new_timing.user_timing_mark_fully_visible !=
+      last_timing.user_timing_mark_fully_visible) {
+    observer->OnUserTimingMarkFullyVisible(new_timing);
+  }
+  if (new_timing.user_timing_mark_interactive !=
+      last_timing.user_timing_mark_interactive) {
+    observer->OnUserTimingMarkInteractive(new_timing);
+  }
 }
 
 internal::PageLoadTrackerPageType CalculatePageType(
@@ -347,7 +356,6 @@ PageLoadTracker::PageLoadTracker(
           /*permit_forwarding=*/false);
       break;
   }
-  RecordPageType(page_type_);
 }
 
 PageLoadTracker::~PageLoadTracker() {
@@ -685,6 +693,8 @@ void PageLoadTracker::FailedProvisionalLoad(
   failed_provisional_load_info_ = std::make_unique<FailedProvisionalLoadInfo>(
       failed_load_time - navigation_handle->NavigationStart(),
       navigation_handle->GetNetErrorCode(),
+      navigation_handle->GetNetExtendedErrorCode(),
+      navigation_handle->GetErrorNavigationTrigger(),
       navigation_handle->GetNavigationDiscardReason().value());
 }
 
@@ -976,8 +986,8 @@ void PageLoadTracker::MediaStartedPlaying(
 }
 
 bool PageLoadTracker::IsPageMainFrame(content::RenderFrameHost* rfh) const {
-  DCHECK(page_main_frame_);
-  return rfh == page_main_frame_;
+  DCHECK(page_main_frame_id_);
+  return rfh->GetGlobalId() == page_main_frame_id_;
 }
 
 void PageLoadTracker::OnTimingChanged() {
@@ -1123,11 +1133,11 @@ void PageLoadTracker::UpdateFeaturesUsage(
   }
 }
 
-void PageLoadTracker::SetUpSharedMemoryForSmoothness(
-    base::ReadOnlySharedMemoryRegion shared_memory) {
-  DCHECK(shared_memory.IsValid());
+void PageLoadTracker::SetUpSharedMemoryForDroppedFrames(
+    base::ReadOnlySharedMemoryRegion dropped_frames_memory) {
+  DCHECK(dropped_frames_memory.IsValid());
   for (auto& observer : observers_) {
-    observer->SetUpSharedMemoryForSmoothness(shared_memory);
+    observer->SetUpSharedMemoryForDroppedFrames(dropped_frames_memory);
   }
 }
 
@@ -1486,7 +1496,7 @@ void PageLoadTracker::AddCustomUserTimings(
 }
 
 void PageLoadTracker::SetPageMainFrame(content::RenderFrameHost* rfh) {
-  page_main_frame_ = rfh;
+  page_main_frame_id_ = rfh->GetGlobalId();
 }
 
 base::WeakPtr<PageLoadTracker> PageLoadTracker::GetWeakPtr() {

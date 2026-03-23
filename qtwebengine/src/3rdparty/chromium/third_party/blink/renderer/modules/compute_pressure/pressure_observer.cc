@@ -147,16 +147,18 @@ void PressureObserver::Trace(blink::Visitor* visitor) const {
 void PressureObserver::OnUpdate(ExecutionContext* execution_context,
                                 V8PressureSource::Enum source,
                                 V8PressureState::Enum state,
+                                double own_contribution_estimate,
                                 DOMHighResTimeStamp timestamp) {
   if (!PassesRateTest(source, timestamp)) {
     return;
   }
 
-  if (!HasChangeInData(source, state)) {
+  if (!ShouldDispatch(source, state, own_contribution_estimate)) {
     return;
   }
 
-  auto* record = MakeGarbageCollected<PressureRecord>(source, state, timestamp);
+  auto* record = MakeGarbageCollected<PressureRecord>(
+      source, state, own_contribution_estimate, timestamp);
 
   if (base::FeatureList::IsEnabled(
           features::kComputePressureRateObfuscationMitigation)) {
@@ -208,16 +210,16 @@ void PressureObserver::QueuePressureRecord(ExecutionContext* execution_context,
                                            PressureRecord* record) {
   // This should happen infrequently since `records_` is supposed
   // to be emptied at every callback invoking or takeRecords().
-  if (records_.size() >= kMaxQueuedRecords)
+  if (records_.size() >= kMaxQueuedRecords) {
     records_.erase(records_.begin());
-
+  }
   records_.push_back(record);
   CHECK_LE(records_.size(), kMaxQueuedRecords);
 
   last_record_map_[ToSourceIndex(source)] = record;
-  if (pending_report_to_callback_.IsActive())
+  if (pending_report_to_callback_.IsActive()) {
     return;
-
+  }
   pending_report_to_callback_ = PostCancellableTask(
       *execution_context->GetTaskRunner(TaskType::kMiscPlatformAPI), FROM_HERE,
       WTF::BindOnce(&PressureObserver::ReportToCallback,
@@ -272,22 +274,35 @@ bool PressureObserver::PassesRateTest(
     const DOMHighResTimeStamp& timestamp) const {
   const auto& last_record = last_record_map_[ToSourceIndex(source)];
 
-  if (!last_record)
+  if (!last_record) {
     return true;
-
+  }
   const double time_delta_milliseconds = timestamp - last_record->time();
   return time_delta_milliseconds >= static_cast<double>(sample_interval_);
 }
 
-// https://w3c.github.io/compute-pressure/#dfn-has-change-in-data
-bool PressureObserver::HasChangeInData(V8PressureSource::Enum source,
-                                       V8PressureState::Enum state) const {
+// https://w3c.github.io/compute-pressure/#dfn-should-dispach
+bool PressureObserver::ShouldDispatch(V8PressureSource::Enum source,
+                                      V8PressureState::Enum state,
+                                      double own_contribution_estimate) const {
   const auto& last_record = last_record_map_[ToSourceIndex(source)];
 
-  if (!last_record)
+  if (sample_interval_ != 0) {
     return true;
+  }
 
-  return last_record->state() != state;
+  if (!last_record) {
+    return true;
+  }
+
+  // conversion to std::optional for the comparison against last_record.
+  std::optional<double> maybe_estimate = own_contribution_estimate;
+  if (maybe_estimate < 0.0 || maybe_estimate > 1.0) {
+    maybe_estimate = std::nullopt;
+  }
+
+  return last_record->state() != state ||
+         last_record->ownContributionEstimate() != maybe_estimate;
 }
 
 // This function only checks the status of the rate obfuscation test.

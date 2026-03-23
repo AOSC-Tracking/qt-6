@@ -38,8 +38,8 @@ LazyInitFacilitatedPaymentsApiClient(
 // `facilitated_payments_api_client_factory.h`.
 FacilitatedPaymentsApiClientCreator GetFacilitatedPaymentsApiClientCreator(
     content::GlobalRenderFrameHostId render_frame_host_id) {
-  return base::BindOnce(&LazyInitFacilitatedPaymentsApiClient,
-                        render_frame_host_id);
+  return base::BindRepeating(&LazyInitFacilitatedPaymentsApiClient,
+                             render_frame_host_id);
 }
 
 FacilitatedPaymentsApiClientAndroid::FacilitatedPaymentsApiClientAndroid(
@@ -60,6 +60,11 @@ void FacilitatedPaymentsApiClientAndroid::IsAvailable(
 
   is_available_callback_ = std::move(callback);
   Java_FacilitatedPaymentsApiClientBridge_isAvailable(
+      base::android::AttachCurrentThread(), java_bridge_);
+}
+
+bool FacilitatedPaymentsApiClientAndroid::IsAvailableSync() {
+  return Java_FacilitatedPaymentsApiClientBridge_isAvailableSync(
       base::android::AttachCurrentThread(), java_bridge_);
 }
 

@@ -7,6 +7,7 @@
 #include <QOffscreenSurface>
 #include <QPainter>
 #include <QSpan>
+#include <QRegularExpression>
 #include <qrgbafloat.h>
 #include <qrgba64.h>
 
@@ -125,6 +126,8 @@ private slots:
     void renderToTextureIndexedDraw();
     void renderToTextureArrayMultiView_data();
     void renderToTextureArrayMultiView();
+    void renderToTextureSameSrbDifferentShaders_data();
+    void renderToTextureSameSrbDifferentShaders();
     void renderToWindowSimple_data();
     void renderToWindowSimple();
     void continuousReadbackFromWindow_data();
@@ -321,6 +324,7 @@ void tst_QRhi::rhiTestDataWithParam(const char *paramName, QSpan<T, E> paramValu
 bool tst_QRhi::isAndroidOpenGLSwiftShader(QRhi::Implementation impl, const QRhi *rhi)
 {
 #ifdef Q_OS_ANDROID
+    qWarning() << rhi->driverInfo();
     if (impl == QRhi::OpenGLES2 && rhi->driverInfo().deviceName.contains("SwiftShader"))
         return true;
 #else
@@ -1418,6 +1422,19 @@ void tst_QRhi::resourceUpdateBatchRGBATextureUpload()
                             inputImage.format());
 
         QVERIFY(imageRGBAEquals(inputImage, wrapperImage));
+
+        // Now try uploading to position (0, 1) which is out of bounds by one
+        // row. This is expected to lead to printing a warning, and clamping the
+        // upload size so that the underlying 3D APIs will not crash.
+        if (impl != QRhi::Null) {
+            QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("Invalid texture upload issued.+")));
+            QRhiResourceUpdateBatch *batch = rhi->nextResourceUpdateBatch();
+            QRhiTextureSubresourceUploadDescription subresDesc(inputImage);
+            subresDesc.setDestinationTopLeft(QPoint(0, 1));
+            QRhiTextureUploadDescription uploadDesc(QRhiTextureUploadEntry(0, 0, subresDesc));
+            batch->uploadTexture(texture.data(), uploadDesc);
+            QVERIFY(submitResourceUpdates(rhi.data(), batch));
+        }
     }
 }
 
@@ -3522,7 +3539,7 @@ void tst_QRhi::renderToTextureMultipleUniformBuffersAndDynamicOffset()
     // "see" an all zero matrix and zero opacity, thus leading to different
     // rendering output. This way we can verify if using dynamic offsets, and
     // more than one at the same time, is functional.
-    QVarLengthArray<QPair<int, quint32>, 2> dynamicOffset = {
+    QVarLengthArray<std::pair<int, quint32>, 2> dynamicOffset = {
         { 0, quint32(ubufElemSize * 2) },
         { 1, quint32(ubuf2ElemSize * 3) },
     };
@@ -3885,8 +3902,14 @@ void tst_QRhi::renderToTextureArrayMultiView()
     if (!rhi->isFeatureSupported(QRhi::MultiView))
         QSKIP("Multiview not supported, skipping testing on this backend");
 
+    if (qgetenv("XDG_CURRENT_DESKTOP").toLower().contains("ubuntu") && QSysInfo::productVersion().startsWith("24"))
+        QSKIP("Multiview not supported, skipping testing on this backend");
+
     if (rhi->backend() == QRhi::Vulkan && rhi->driverInfo().deviceType == QRhiDriverInfo::CpuDevice)
         QSKIP("lavapipe does not like multiview, skip for now");
+
+    if (QSysInfo::productType() == "opensuse-leap" && QSysInfo::productVersion() == QLatin1String("16.0") && rhi->backend() == QRhi::OpenGLES2)
+        QSKIP("QTBUG-141769: opensuse-leap 16.0 fails with OpenGL, skip for now");
 
     for (int sampleCount : rhi->supportedSampleCounts()) {
         const QSize outputSize(1920, 1080);
@@ -4196,6 +4219,128 @@ void tst_QRhi::renderToWindowSimple()
     if (rhi->isYUpInFramebuffer() == rhi->isYUpInNDC())
         result.flip();
     QCOMPARE(resultPartial.pixelColor(0, 0), result.pixelColor(100, 100));
+}
+
+void tst_QRhi::renderToTextureSameSrbDifferentShaders_data()
+{
+    rhiTestData();
+}
+
+void tst_QRhi::renderToTextureSameSrbDifferentShaders()
+{
+    QFETCH(QRhi::Implementation, impl);
+    QFETCH(QRhiInitParams *, initParams);
+
+    QScopedPointer<QRhi> rhi(QRhi::create(impl, initParams, QRhi::Flags(), nullptr));
+    if (!rhi)
+        QSKIP("QRhi could not be created, skipping testing rendering");
+
+    const QSize outputSize(1920, 1080);
+    QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, outputSize, 1,
+                                                        QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
+    QVERIFY(texture->create());
+
+    QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ texture.data() }));
+    QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
+    rt->setRenderPassDescriptor(rpDesc.data());
+    QVERIFY(rt->create());
+
+    QScopedPointer<QRhiBuffer> vbuf(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(triangleVertices)));
+    QVERIFY(vbuf->create());
+
+    QScopedPointer<QRhiBuffer> ubuf1(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 4));
+    QVERIFY(ubuf1->create());
+    QScopedPointer<QRhiBuffer> ubuf2(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 4));
+    QVERIFY(ubuf2->create());
+
+    // one srb, suitable for both vertex shaders (the samesrb_1.vert does not use the buffer at binding 2, that's fine)
+    QScopedPointer<QRhiShaderResourceBindings> srb(rhi->newShaderResourceBindings());
+    srb->setBindings({
+        QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::VertexStage, ubuf1.data()),
+        QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::VertexStage, ubuf2.data()),
+    });
+    QVERIFY(srb->create());
+
+    QScopedPointer<QRhiGraphicsPipeline> pipeline1(rhi->newGraphicsPipeline());
+    QShader vs = loadShader(":/data/samesrb_1.vert.qsb");
+    QVERIFY(vs.isValid());
+    QShader fs = loadShader(":/data/samesrb.frag.qsb");
+    QVERIFY(fs.isValid());
+    pipeline1->setShaderStages({ { QRhiShaderStage::Vertex, vs }, { QRhiShaderStage::Fragment, fs } });
+    QRhiVertexInputLayout inputLayout;
+    inputLayout.setBindings({ { 2 * sizeof(float) } });
+    inputLayout.setAttributes({ { 0, 0, QRhiVertexInputAttribute::Float2, 0 } });
+    pipeline1->setVertexInputLayout(inputLayout);
+    pipeline1->setShaderResourceBindings(srb.data());
+    pipeline1->setRenderPassDescriptor(rpDesc.data());
+    QVERIFY(pipeline1->create());
+
+    QScopedPointer<QRhiGraphicsPipeline> pipeline2(rhi->newGraphicsPipeline());
+    vs = loadShader(":/data/samesrb_2.vert.qsb");
+    QVERIFY(vs.isValid());
+    pipeline2->setShaderStages({ { QRhiShaderStage::Vertex, vs }, { QRhiShaderStage::Fragment, fs } });
+    pipeline2->setVertexInputLayout(inputLayout);
+    pipeline2->setShaderResourceBindings(srb.data());
+    pipeline2->setRenderPassDescriptor(rpDesc.data());
+    QVERIFY(pipeline2->create());
+
+    QRhiCommandBuffer *cb = nullptr;
+    QVERIFY(rhi->beginOffscreenFrame(&cb) == QRhi::FrameOpSuccess);
+    QVERIFY(cb);
+
+    QRhiResourceUpdateBatch *u = rhi->nextResourceUpdateBatch();
+    u->uploadStaticBuffer(vbuf.data(), triangleVertices);
+    float color1 = 1.0;
+    float color2 = 0.5;
+    u->updateDynamicBuffer(ubuf1.data(), 0, 4, &color1);
+    u->updateDynamicBuffer(ubuf2.data(), 0, 4, &color2);
+    cb->resourceUpdate(u);
+
+    cb->beginPass(rt.data(), Qt::black, { 1.0f, 0 });
+
+    for (int i = 0; i < 4; ++i) {
+        cb->setGraphicsPipeline(pipeline1.data());
+        cb->setViewport({ 0, 0, float(outputSize.width()), float(outputSize.height()) });
+        cb->setShaderResources(srb.data());
+        QRhiCommandBuffer::VertexInput vbindings(vbuf.data(), 0);
+        cb->setVertexInput(0, 1, &vbindings);
+        // triangle, color (1, 1, 1)
+        cb->draw(3);
+
+        // another pipeline, different vertex shader, same srb
+        cb->setGraphicsPipeline(pipeline2.data());
+        cb->setShaderResources(srb.data());
+        // triangle, color (0.5, 0.5, 0.5) (overwriting the previous one)
+        cb->draw(3);
+    }
+
+    QRhiReadbackResult readResult;
+    QImage result;
+    readResult.completed = [&readResult, &result] {
+        result = QImage(reinterpret_cast<const uchar *>(readResult.data.constData()),
+                        readResult.pixelSize.width(), readResult.pixelSize.height(),
+                        QImage::Format_RGBA8888_Premultiplied);
+    };
+    QRhiResourceUpdateBatch *readbackBatch = rhi->nextResourceUpdateBatch();
+    readbackBatch->readBackTexture({ texture.data() }, &readResult);
+    cb->endPass(readbackBatch);
+
+    rhi->endOffscreenFrame();
+    QCOMPARE(result.size(), texture->pixelSize());
+
+    if (impl == QRhi::Null)
+        return;
+
+    QImage image = result;
+    if (rhi->isYUpInFramebuffer())
+        image = result.flipped();
+
+    // before the fix for QTBUG-140795 D3D11 (and 12 in fact) does not render
+    // correctly, and instead of getting a triangle with color (0.5, 0.5, 0.5),
+    // it's just not there; should be with the patch in place, with all backends
+    const int maxFuzz = 4;
+    QRgb c = image.pixel(result.width() / 2, result.height() / 2);
+    QVERIFY(qAbs(qRed(c) - 127) <= maxFuzz && qAbs(qGreen(c) - 127) <= maxFuzz && qAbs(qBlue(c) - 127) <= maxFuzz);
 }
 
 void tst_QRhi::continuousReadbackFromWindow_data()
@@ -5599,6 +5744,12 @@ void tst_QRhi::threeDimTexture()
     QFETCH(QRhiInitParams *, initParams);
 
     QScopedPointer<QRhi> rhi(QRhi::create(impl, initParams));
+
+#ifdef Q_OS_ANDROID
+    if (QNativeInterface::QAndroidApplication::sdkVersion() == 36)
+        QSKIP("Fails and crashes on Android 16 (QTBUG-140189)");
+#endif
+
     if (!rhi)
         QSKIP("QRhi could not be created, skipping testing 3D textures");
 
@@ -6286,6 +6437,11 @@ void tst_QRhi::leakedResourceDestroy()
 {
     QFETCH(QRhi::Implementation, impl);
     QFETCH(QRhiInitParams *, initParams);
+
+#ifdef Q_OS_ANDROID
+    if ((QNativeInterface::QAndroidApplication::sdkVersion() == 36) && (impl == QRhi::Vulkan))
+        QSKIP("Fails and crashes on Android 16 (QTBUG-140189)");
+#endif
 
     QScopedPointer<QRhi> rhi(QRhi::create(impl, initParams));
     if (!rhi)
@@ -7156,6 +7312,12 @@ void tst_QRhi::storageBuffer()
 
     QFETCH(QRhi::Implementation, impl);
     QFETCH(QRhiInitParams *, initParams);
+
+#ifdef Q_OS_ANDROID
+    if (QNativeInterface::QAndroidApplication::sdkVersion() == 36)
+        QSKIP("pipeline->create()) Fails on Android 16 (QTBUG-140189)");
+#endif
+
 
     // we can't test with Null as there is no compute
     if (impl == QRhi::Null)

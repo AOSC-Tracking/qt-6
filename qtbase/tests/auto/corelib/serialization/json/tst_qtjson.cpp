@@ -18,6 +18,8 @@ QT_WARNING_DISABLE_DEPRECATED
 #include "private/qjson_p.h"
 #include <limits>
 
+using namespace Qt::StringLiterals;
+
 #define INVALID_UNICODE "\xCE\xBA\xE1"
 #define UNICODE_NON_CHARACTER "\xEF\xBF\xBF"
 #define UNICODE_DJE "\320\202" // Character from the Serbian Cyrillic alphabet
@@ -3593,7 +3595,7 @@ void tst_QtJson::bom()
     QCOMPARE(error.error, QJsonParseError::NoError);
 }
 
-void tst_QtJson::nesting()
+static void nesting_test()
 {
     // check that we abort parsing too deeply nested json documents.
     // this is to make sure we don't crash because the parser exhausts the
@@ -3650,6 +3652,26 @@ void tst_QtJson::nesting()
     QVERIFY(val.isUndefined());
     QCOMPARE(error.error, QJsonParseError::DeepNesting);
 
+}
+
+void tst_QtJson::nesting()
+{
+#if defined(Q_OS_QNX) || defined(Q_OS_VXWORKS) || defined(Q_OS_WASM)
+    // This test misbehaving probably indicates a stack overflow due to the
+    // recursive parser in qjsonparser.cpp. The recursion prevention limit may
+    // be too high for this platform. Someone should investigate.
+    QSKIP("Test freezes or crashes - probably a stack overflow");
+#endif
+
+    QThread *thr = QThread::create(nesting_test);
+#if defined(__SANITIZE_ADDRESS__) || __has_feature(address_sanitizer) || \
+    defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer)
+    // force a larger stack size - 8 MB seems sufficient
+    thr->setStackSize(8192 * 1024);
+#endif
+    thr->start();
+    thr->wait();
+    delete thr;
 }
 
 void tst_QtJson::longStrings()
@@ -4282,7 +4304,7 @@ void tst_QtJson::fromToVariantConversions()
     QVariant variantFromJsonArray(QJsonArray { json });
     QVariant variantFromJsonObject(QVariantMap { { "foo", variant } });
 
-    QJsonObject object { QPair<QString, QJsonValue>("foo", json) };
+    QJsonObject object = { {"foo", json} };
 
     // QJsonValue <> QVariant
     {
@@ -4326,8 +4348,8 @@ void tst_QtJson::fromToVariantConversions()
         // test the same for QVariantMap from QJsonValue/QJsonArray/QJsonObject
         QCOMPARE(QJsonObject::fromVariantMap(QVariantMap { { "foo", variantFromJson } }), object);
 
-        QJsonObject nestedArray { QPair<QString, QJsonArray>("bar", QJsonArray { json }) };
-        QJsonObject nestedObject { QPair<QString, QJsonObject>("bar", object) };
+        QJsonObject nestedArray = { {u"bar"_s, QJsonArray{json}} };
+        QJsonObject nestedObject = { {u"bar"_s, object } };
         QCOMPARE(QJsonObject::fromVariantMap(QVariantMap { { "bar", variantFromJsonArray } }),
                  nestedArray);
         QCOMPARE(QJsonObject::fromVariantMap(QVariantMap { { "bar", variantFromJsonObject } }),

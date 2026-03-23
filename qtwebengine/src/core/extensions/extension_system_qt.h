@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -12,6 +13,8 @@
 #define EXTENSION_SYSTEM_QT_H
 
 #include <string>
+
+#include <QtWebEngineCore/qtwebenginecoreglobal.h>
 
 #include "base/one_shot_event.h"
 #include "base/memory/weak_ptr.h"
@@ -69,8 +72,6 @@ public:
     ContentVerifier *content_verifier() override;
     std::unique_ptr<ExtensionSet> GetDependentExtensions(const Extension *extension) override;
 
-    bool FinishDelayedInstallationIfReady(const std::string &extension_id, bool install_immediately) override;
-
     void Init(bool extensions_enabled);
 
     const base::OneShotEvent &ready() const override { return ready_; }
@@ -78,7 +79,9 @@ public:
 
     void PerformActionBasedOnOmahaAttributes(const std::string &, const base::Value::Dict &) override { /* fixme? */}
 
+#if QT_CONFIG(webengine_extensions)
     QtWebEngineCore::ExtensionManager *extensionManager();
+#endif
 
 private:
     void NotifyExtensionLoaded(const Extension *extension);
@@ -99,7 +102,9 @@ private:
     ExtensionRegistry *extension_registry_;
     extensions::RendererStartupHelper *renderer_helper_;
     bool initialized_;
+#if QT_CONFIG(webengine_extensions)
     std::unique_ptr<QtWebEngineCore::ExtensionManager> extension_manager_;
+#endif
 
     base::WeakPtrFactory<ExtensionSystemQt> weak_ptr_factory_;
 };

@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "extension_host_delegate_qt.h"
 
@@ -27,11 +28,6 @@ ExtensionHostDelegateQt::ExtensionHostDelegateQt()
 void ExtensionHostDelegateQt::OnExtensionHostCreated(content::WebContents *web_contents)
 {
     extensions::ExtensionWebContentsObserverQt::CreateForWebContents(web_contents);
-}
-
-void ExtensionHostDelegateQt::OnMainFrameCreatedForBackgroundPage(ExtensionHost *host)
-{
-    Q_UNUSED(host);
 }
 
 void ExtensionHostDelegateQt::CreateTab(std::unique_ptr<content::WebContents> web_contents,

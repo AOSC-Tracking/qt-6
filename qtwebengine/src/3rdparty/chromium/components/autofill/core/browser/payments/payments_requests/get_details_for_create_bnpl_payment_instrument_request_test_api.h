@@ -23,14 +23,14 @@ class GetDetailsForCreateBnplPaymentInstrumentRequestTestApi {
       const GetDetailsForCreateBnplPaymentInstrumentRequestTestApi&) = delete;
   ~GetDetailsForCreateBnplPaymentInstrumentRequestTestApi() = default;
 
-  std::u16string get_context_token() const {
+  std::string get_context_token() const {
     return get_details_for_create_bnpl_payment_instrument_request_
         ->context_token_;
   }
 
-  base::Value::Dict* get_legal_message() const {
+  LegalMessageLines& get_legal_message() const {
     return get_details_for_create_bnpl_payment_instrument_request_
-        ->legal_message_.get();
+        ->legal_message_;
   }
 
  private:

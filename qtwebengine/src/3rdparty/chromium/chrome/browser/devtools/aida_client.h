@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <string>
+#include <variant>
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -33,19 +34,20 @@ class AidaClient {
 
   void PrepareRequestOrFail(
       base::OnceCallback<
-          void(absl::variant<network::ResourceRequest, std::string>)> callback);
+          void(std::variant<network::ResourceRequest, std::string>)> callback);
   void RemoveAccessToken();
 
   // Needed because VariationsService is not available for unit tests.
   static ScopedOverride OverrideCountryForTesting(std::string country_code);
 
-  void OverrideAidaEndpointAndScopeForTesting(const std::string& aida_endpoint,
-                                              const std::string& aida_scope);
+  void OverrideAidaScopeForTesting(const std::string& aida_scope);
 
-  static constexpr std::string_view kDoConversationUrlPath =
-      "/v1/aida:doConversation";
-  static constexpr std::string_view kRegisterClientEventUrlPath =
-      "/v1:registerClientEvent";
+  static constexpr std::string_view kDoConversationUrl =
+      "https://aida.googleapis.com/v1/aida:doConversation";
+  static constexpr std::string_view kCompleteCodeUrl =
+      "https://aida.googleapis.com/v1/aida:completeCode";
+  static constexpr std::string_view kRegisterClientEventUrl =
+      "https://aida.googleapis.com/v1:registerClientEvent";
 
   struct Availability {
     bool available = false;
@@ -64,16 +66,15 @@ class AidaClient {
  private:
   void PrepareAidaRequest(
       base::OnceCallback<
-          void(absl::variant<network::ResourceRequest, std::string>)> callback);
+          void(std::variant<network::ResourceRequest, std::string>)> callback);
   void AccessTokenFetchFinished(
       base::OnceCallback<
-          void(absl::variant<network::ResourceRequest, std::string>)> callback,
+          void(std::variant<network::ResourceRequest, std::string>)> callback,
       GoogleServiceAuthError error,
       signin::AccessTokenInfo access_token_info);
 
   const raw_ref<Profile> profile_;
   std::unique_ptr<signin::AccessTokenFetcher> access_token_fetcher_;
-  std::string aida_endpoint_;
   std::string aida_scope_;
   std::string access_token_;
   base::Time access_token_expiration_;

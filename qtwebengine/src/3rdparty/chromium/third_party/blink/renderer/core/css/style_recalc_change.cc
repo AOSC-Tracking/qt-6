@@ -13,18 +13,18 @@ namespace blink {
 
 bool StyleRecalcChange::TraverseChildren(const Element& element) const {
   return RecalcChildren() || RecalcContainerQueryDependent() ||
-         element.ChildNeedsStyleRecalc();
+         element.ChildNeedsStyleRecalc() || RecalcDescendantContentVisibility();
 }
 
 bool StyleRecalcChange::TraversePseudoElements(const Element& element) const {
   return UpdatePseudoElements() || RecalcContainerQueryDependent() ||
-         element.ChildNeedsStyleRecalc();
+         element.ChildNeedsStyleRecalc() || RecalcDescendantContentVisibility();
 }
 
 bool StyleRecalcChange::TraverseChild(const Node& node) const {
   return ShouldRecalcStyleFor(node) || node.ChildNeedsStyleRecalc() ||
          node.GetForceReattachLayoutTree() || RecalcContainerQueryDependent() ||
-         node.NeedsLayoutSubtreeUpdate();
+         node.NeedsLayoutSubtreeUpdate() || RecalcDescendantContentVisibility();
 }
 
 bool StyleRecalcChange::RecalcContainerQueryDependent(const Node& node) const {
@@ -47,7 +47,9 @@ bool StyleRecalcChange::RecalcContainerQueryDependent(const Node& node) const {
          (RecalcStyleContainerQueryDependent() &&
           old_style->DependsOnStyleContainerQueries()) ||
          (RecalcScrollStateContainerQueryDependent() &&
-          old_style->DependsOnScrollStateContainerQueries());
+          old_style->DependsOnScrollStateContainerQueries()) ||
+         (RecalcAnchoredContainerQueryDependent() &&
+          old_style->DependsOnAnchoredContainerQueries());
 }
 
 bool StyleRecalcChange::ShouldRecalcStyleFor(const Node& node) const {
@@ -77,14 +79,18 @@ bool StyleRecalcChange::ShouldUpdatePseudoElement(
   if (pseudo_element.NeedsLayoutSubtreeUpdate()) {
     return true;
   }
-  if (!RecalcSizeContainerQueryDependent()) {
+  if (!RecalcContainerQueryDependent()) {
     return false;
   }
   const ComputedStyle& style = pseudo_element.ComputedStyleRef();
   return (RecalcSizeContainerQueryDependent() &&
           style.DependsOnSizeContainerQueries()) ||
          (RecalcStyleContainerQueryDependent() &&
-          style.DependsOnStyleContainerQueries());
+          style.DependsOnStyleContainerQueries()) ||
+         (RecalcScrollStateContainerQueryDependent() &&
+          style.DependsOnScrollStateContainerQueries()) ||
+         (RecalcAnchoredContainerQueryDependent() &&
+          style.DependsOnAnchoredContainerQueries());
 }
 
 String StyleRecalcChange::ToString() const {
@@ -168,7 +174,7 @@ StyleRecalcChange::Flags StyleRecalcChange::FlagsForChildren(
   // kSuppressRecalc should only take effect for the query container itself, not
   // for children. Also make sure the kMarkReattach flag survives one level past
   // the container for ::first-line re-attachments initiated from
-  // UpdateStyleAndLayoutTreeForContainer().
+  // UpdateStyleAndLayoutTreeForSizeContainer().
   if (result & kSuppressRecalc) {
     result &= ~kSuppressRecalc;
   } else {
@@ -180,9 +186,9 @@ StyleRecalcChange::Flags StyleRecalcChange::FlagsForChildren(
 
 bool StyleRecalcChange::IndependentInherit(
     const ComputedStyle& old_style) const {
-  // During UpdateStyleAndLayoutTreeForContainer(), if the old_style is marked
-  // as depending on container queries, we need to do a proper recalc for the
-  // element.
+  // During UpdateStyleAndLayoutTreeForSizeContainer(), if the old_style is
+  // marked as depending on container queries, we need to do a proper recalc for
+  // the element.
   return propagate_ == kIndependentInherit &&
          (!RecalcSizeContainerQueryDependent() ||
           !old_style.DependsOnSizeContainerQueries()) &&

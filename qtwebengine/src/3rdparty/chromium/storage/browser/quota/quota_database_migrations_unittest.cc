@@ -7,6 +7,7 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
+#include "base/strings/string_util.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "components/services/storage/public/cpp/constants.h"
 #include "sql/database.h"
@@ -70,7 +71,7 @@ class QuotaDatabaseMigrationsTest : public testing::Test {
 
     sql::Database db(sql::test::kTestTag);
     if (!base::CreateDirectory(db_path.DirName()) || !db.Open(db_path) ||
-        !db.Execute(contents)) {
+        !db.ExecuteScriptForTesting(contents)) {
       return false;
     }
 

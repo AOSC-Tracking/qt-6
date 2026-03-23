@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QFILEDIALOG_P_H
 #define QFILEDIALOG_P_H
@@ -265,12 +266,9 @@ private:
 class QFileDialogLineEdit : public QLineEdit
 {
 public:
-    QFileDialogLineEdit(QWidget *parent = nullptr) : QLineEdit(parent), d_ptr(nullptr){}
-    void setFileDialogPrivate(QFileDialogPrivate *d_pointer) {d_ptr = d_pointer; }
+    QFileDialogLineEdit(QWidget *parent = nullptr) : QLineEdit(parent) {}
     void keyPressEvent(QKeyEvent *e) override;
     bool hideOnEsc;
-private:
-    QFileDialogPrivate *d_ptr;
 };
 
 class QFileDialogComboBox : public QComboBox

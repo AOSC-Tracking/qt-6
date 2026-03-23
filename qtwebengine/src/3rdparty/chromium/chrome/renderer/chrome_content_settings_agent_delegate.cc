@@ -4,11 +4,11 @@
 
 #include "chrome/renderer/chrome_content_settings_agent_delegate.h"
 
-#include "build/chromeos_buildflags.h"
+#include "build/build_config.h"
 #include "pdf/buildflags.h"
 
 // TODO(b/197163596): Remove File Manager constants
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 #include "ash/webui/file_manager/url_constants.h"
 #endif
 #include "base/containers/contains.h"
@@ -139,12 +139,6 @@ bool ChromeContentSettingsAgentDelegate::AllowWriteToClipboard() {
   return false;
 }
 
-std::optional<bool> ChromeContentSettingsAgentDelegate::AllowMutationEvents() {
-  if (IsPlatformApp())
-    return false;
-  return std::nullopt;
-}
-
 void ChromeContentSettingsAgentDelegate::DidCommitProvisionalLoad(
     ui::PageTransition transition) {
   if (render_frame()->GetWebFrame()->Parent())
@@ -167,7 +161,7 @@ bool ChromeContentSettingsAgentDelegate::IsPlatformApp() {
 }
 
 bool ChromeContentSettingsAgentDelegate::IsAllowListedSystemWebApp() {
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   blink::WebLocalFrame* frame = render_frame_->GetWebFrame();
   blink::WebSecurityOrigin origin = frame->GetDocument().GetSecurityOrigin();
   // TODO(crbug.com/1233395): Migrate Files SWA to Clipboard API and remove this

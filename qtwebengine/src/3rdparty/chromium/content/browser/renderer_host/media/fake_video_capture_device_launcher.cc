@@ -9,6 +9,7 @@
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_forward.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/token.h"
 #include "content/public/browser/browser_context.h"
@@ -17,6 +18,7 @@
 #include "media/capture/video/video_capture_buffer_tracker_factory_impl.h"
 #include "media/capture/video/video_capture_device_client.h"
 #include "media/capture/video/video_frame_receiver_on_task_runner.h"
+#include "services/video_effects/public/cpp/buildflags.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "media/capture/video/chromeos/video_capture_jpeg_decoder.h"
@@ -27,7 +29,7 @@ namespace {
 class FakeLaunchedVideoCaptureDevice
     : public content::LaunchedVideoCaptureDevice {
  public:
-  FakeLaunchedVideoCaptureDevice(
+  explicit FakeLaunchedVideoCaptureDevice(
       std::unique_ptr<media::VideoCaptureDevice> device)
       : device_(std::move(device)) {}
 
@@ -90,21 +92,21 @@ void FakeVideoCaptureDeviceLauncher::LaunchDeviceAsync(
     base::OnceClosure connection_lost_cb,
     Callbacks* callbacks,
     base::OnceClosure done_cb,
+#if BUILDFLAG(ENABLE_VIDEO_EFFECTS)
     mojo::PendingRemote<video_effects::mojom::VideoEffectsProcessor>
         video_effects_processor,
+#endif
     mojo::PendingRemote<media::mojom::ReadonlyVideoEffectsManager>
         readonly_video_effects_manager) {
   auto device = system_->CreateDevice(device_id).ReleaseDevice();
 #if BUILDFLAG(IS_WIN)
-  scoped_refptr<media::VideoCaptureBufferPool> buffer_pool(
-      new media::VideoCaptureBufferPoolImpl(
-          params.buffer_type, 10,
-          std::make_unique<media::VideoCaptureBufferTrackerFactoryImpl>(
-              system_->GetFactory()->GetDxgiDeviceManager())));
+  auto buffer_pool = base::MakeRefCounted<media::VideoCaptureBufferPoolImpl>(
+      params.buffer_type, 10,
+      std::make_unique<media::VideoCaptureBufferTrackerFactoryImpl>(
+          system_->GetFactory()->GetDxgiDeviceManager()));
 #else
-  scoped_refptr<media::VideoCaptureBufferPool> buffer_pool(
-      new media::VideoCaptureBufferPoolImpl(
-          media::VideoCaptureBufferType::kSharedMemory));
+  auto buffer_pool = base::MakeRefCounted<media::VideoCaptureBufferPoolImpl>(
+      media::VideoCaptureBufferType::kSharedMemory);
 #endif  // BUILDFLAG(IS_WIN)
 #if BUILDFLAG(IS_CHROMEOS)
   auto device_client = std::make_unique<media::VideoCaptureDeviceClient>(

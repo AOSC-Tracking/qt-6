@@ -1,8 +1,9 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qandroidwebview_p.h"
-#include <private/qwebviewplugin_p.h>
+#include <QtWebView/private/qwebviewplugin_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -12,9 +13,11 @@ class QAndroidWebViewPlugin : public QWebViewPlugin
     Q_PLUGIN_METADATA(IID QWebViewPluginInterface_iid FILE "android.json")
 
 public:
-    QAbstractWebView *create(const QString &key) const override
+    QWebViewPrivate *create(const QString &key, QWebView *view,
+                            QWebViewFactory::Hint hint) const override
     {
-        return (key == QLatin1String("webview")) ? new QAndroidWebViewPrivate() : nullptr;
+        Q_UNUSED(hint);
+        return (key == QLatin1String("webview")) ? new QAndroidWebViewPrivate(view) : nullptr;
     }
 };
 

@@ -14,7 +14,7 @@ describe('View', () => {
     before(async () => {
       ['first', 'second', 'third', 'fourth'].forEach(title => {
         UI.ViewManager.registerViewExtension({
-          // @ts-ignore
+          // @ts-expect-error
           location: 'mock-location',
           id: title as Lowercase<string>,
           title: () => title as Platform.UIString.LocalizedString,
@@ -26,7 +26,7 @@ describe('View', () => {
         });
       });
       viewManager = UI.ViewManager.ViewManager.instance({forceNew: true});
-      tabbedLocation = viewManager.createTabbedLocation(undefined, 'mock-location', true, true);
+      tabbedLocation = viewManager.createTabbedLocation(() => {}, 'mock-location', true, true);
     });
 
     it('Creates an empty tabbed location', () => {

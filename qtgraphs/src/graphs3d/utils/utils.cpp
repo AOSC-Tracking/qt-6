@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtCore/qregularexpression.h>
 #include <QtGui/qbrush.h>
@@ -226,6 +228,21 @@ void Utils::connectSeriesGradient(QAbstract3DSeries *series,
 
     if (!memberGradient.isNull())
         setSeriesGradient(series, memberGradient, type);
+}
+
+bool Utils::imageHasTransparency(const QImage &image)
+{
+    if (image.hasAlphaChannel()) {
+        const uchar *pixels = image.bits();
+        int bytes = image.sizeInBytes();
+
+        for (const QRgb *pixel = reinterpret_cast<const QRgb *>(pixels); bytes > 0;
+             pixel++, bytes -= sizeof(QRgb)) {
+            if (qAlpha(*pixel) != UCHAR_MAX)
+                return true;
+        }
+    }
+    return false;
 }
 
 QT_END_NAMESPACE

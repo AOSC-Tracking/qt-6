@@ -36,6 +36,7 @@
 #include "ui/base/owned_window_anchor.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/color/color_id.h"
 #include "ui/color/color_provider_key.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
@@ -79,6 +80,7 @@
 
 #if BUILDFLAG(IS_WIN)
 #include "ui/base/win/shell.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "ui/views/widget/desktop_aura/desktop_native_cursor_manager_win.h"
 #endif
 
@@ -423,7 +425,8 @@ void DesktopNativeWidgetAura::NotifyAccessibilityEvent(
   if (!GetWidget() || !GetWidget()->GetRootView()) {
     return;
   }
-  GetWidget()->GetRootView()->NotifyAccessibilityEvent(event_type, true);
+  GetWidget()->GetRootView()->NotifyAccessibilityEventDeprecated(event_type,
+                                                                 true);
 }
 
 void DesktopNativeWidgetAura::HandleActivationChanged(bool active) {
@@ -535,7 +538,9 @@ void DesktopNativeWidgetAura::UpdateWindowTransparency() {
 
   auto* window_tree_host = desktop_window_tree_host_->AsWindowTreeHost();
   window_tree_host->compositor()->SetBackgroundColor(
-      transparent ? SK_ColorTRANSPARENT : SK_ColorWHITE);
+      transparent
+          ? SK_ColorTRANSPARENT
+          : GetWidget()->GetColorProvider()->GetColor(ui::kColorFrameActive));
   window_tree_host->window()->SetTransparent(transparent);
 
   content_window_->SetTransparent(transparent);
@@ -543,6 +548,18 @@ void DesktopNativeWidgetAura::UpdateWindowTransparency() {
   // fill its bounds completely, so set this flag to true to avoid an
   // unecessary clear before update.
   content_window_->SetFillsBoundsCompletely(true);
+}
+
+Widget::Widgets DesktopNativeWidgetAura::GetOwnedDesktopWidgets() {
+  Widget::Widgets widgets;
+  // Adds any Widgets owned by this NativeWidget's tree host.
+  DesktopWindowTreeHost::WindowTreeHosts owned_tree_hosts =
+      desktop_window_tree_host_->GetOwnedWindowTreeHosts();
+  for (aura::WindowTreeHost* owned_tree_host : owned_tree_hosts) {
+    widgets.merge(
+        NativeWidgetPrivate::GetAllOwnedWidgets(owned_tree_host->window()));
+  }
+  return widgets;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -767,6 +784,12 @@ void DesktopNativeWidgetAura::ViewRemoved(View* view) {
   drop_helper_->ResetTargetViewIfEquals(view);
 }
 
+void DesktopNativeWidgetAura::ClientDestroyedWidget() {
+  if (desktop_window_tree_host_) {
+    desktop_window_tree_host_->ClientDestroyedWidget();
+  }
+}
+
 void DesktopNativeWidgetAura::SetNativeWindowProperty(const char* name,
                                                       void* value) {
   if (content_window_) {
@@ -848,11 +871,10 @@ void DesktopNativeWidgetAura::InitModalType(ui::mojom::ModalType modal_type) {
   desktop_window_tree_host_->InitModalType(modal_type);
 }
 
-void DesktopNativeWidgetAura::SetColorMode(
-    ui::ColorProviderKey::ColorMode color_mode) {
-  // Intentional no-op.
-  // The window frame is drawn by views. The OS does not need to know about
-  // which color mode the window is using.
+void DesktopNativeWidgetAura::OnWidgetThemeChanged(
+    ui::ColorProviderKey::ColorMode color_mode,
+    std::optional<SkColor> background_color) {
+  desktop_window_tree_host_->OnWidgetThemeChanged(color_mode, background_color);
 }
 
 gfx::Rect DesktopNativeWidgetAura::GetWindowBoundsInScreen() const {
@@ -962,6 +984,32 @@ bool DesktopNativeWidgetAura::IsVisible() const {
          desktop_window_tree_host_ && desktop_window_tree_host_->IsVisible();
 }
 
+bool DesktopNativeWidgetAura::IsVisibleOnScreen() const {
+  if (!IsVisible() || IsMinimized()) {
+    return false;
+  }
+
+  if (!desktop_window_tree_host_) {
+    return false;
+  }
+
+  // Determine if the window is hidden in some other way, such as on a different
+  // desktop.
+  // TODO(crbug.com/410938804): implement workspace handling on other platforms.
+#if BUILDFLAG(IS_WIN)
+  // If a window is cloaked, it is not visible on screen because e.g., it is
+  // on an invisible virtual desktop.
+  // https://devblogs.microsoft.com/oldnewthing/20200302-00/?p=103507
+  aura::WindowTreeHost* host = desktop_window_tree_host_->AsWindowTreeHost();
+  if (gfx::IsWindowCloaked(host->GetAcceleratedWidget())) {
+    return false;
+  }
+#endif
+
+  // All checks pass, the window is visible on screen.
+  return true;
+}
+
 void DesktopNativeWidgetAura::Activate() {
   if (desktop_window_tree_host_ && content_window_) {
     bool was_tree_active = desktop_window_tree_host_->IsActive();
@@ -1049,6 +1097,12 @@ bool DesktopNativeWidgetAura::IsMinimized() const {
 void DesktopNativeWidgetAura::Restore() {
   if (desktop_window_tree_host_) {
     desktop_window_tree_host_->Restore();
+  }
+}
+
+void DesktopNativeWidgetAura::ShowWindowControlsMenu(const gfx::Point& point) {
+  if (desktop_window_tree_host_) {
+    desktop_window_tree_host_->ShowWindowControlsMenu(point);
   }
 }
 
@@ -1248,6 +1302,10 @@ bool DesktopNativeWidgetAura::AreScreenshotsAllowed() {
   return desktop_window_tree_host_
              ? desktop_window_tree_host_->AreScreenshotsAllowed()
              : true;
+}
+
+bool DesktopNativeWidgetAura::IsDesktopNativeWidget() const {
+  return true;
 }
 
 std::string DesktopNativeWidgetAura::GetName() const {

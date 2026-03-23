@@ -220,8 +220,8 @@ class WebSettings {
   virtual void SetSyncXHRInDocumentsEnabled(bool) = 0;
   // TODO(https://crbug.com/1163644): Remove once Chrome Apps are deprecated.
   virtual void SetTargetBlankImpliesNoOpenerEnabledWillBeRemoved(bool) = 0;
-  // TODO(https://crbug.com/1172495): Remove once Chrome Apps are deprecated.
-  virtual void SetAllowNonEmptyNavigatorPlugins(bool) = 0;
+  // TODO(https://crbug.com/404106817): Remove once Chrome Apps are deprecated.
+  virtual void SetIgnorePermissionForDeviceChangedEvent(bool) = 0;
   virtual void SetTextAreasAreResizable(bool) = 0;
   virtual void SetTextAutosizingEnabled(bool) = 0;
   virtual void SetAccessibilityFontScaleFactor(float) = 0;
@@ -284,6 +284,7 @@ class WebSettings {
   virtual void SetModalContextMenu(bool) = 0;
   virtual void SetRequireTransientActivationAndAuthorizationForSubAppsAPIs(
       bool) = 0;
+  virtual void SetRootScrollbarThemeColor(std::optional<SkColor>) = 0;
 
  protected:
   ~WebSettings() = default;

@@ -11,7 +11,6 @@
 #include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
-#include "build/chromeos_buildflags.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/dawn_context_provider.h"
@@ -21,7 +20,7 @@
 #include "gpu/command_buffer/service/shared_memory_region_wrapper.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "ui/gfx/buffer_types.h"
-#include "ui/gfx/gpu_memory_buffer.h"
+#include "ui/gfx/gpu_memory_buffer_handle.h"
 #include "ui/gfx/native_pixmap.h"
 #include "ui/gl/buildflags.h"
 #include "ui/gl/gl_bindings.h"
@@ -71,7 +70,9 @@ constexpr SharedImageUsageSet kSupportedUsage =
     SHARED_IMAGE_USAGE_HIGH_PERFORMANCE_GPU | SHARED_IMAGE_USAGE_CPU_UPLOAD |
     SHARED_IMAGE_USAGE_CPU_WRITE_ONLY |
     SHARED_IMAGE_USAGE_WEBGPU_STORAGE_TEXTURE |
-    SHARED_IMAGE_USAGE_PROTECTED_VIDEO | SHARED_IMAGE_USAGE_CPU_ONLY_READ_WRITE;
+    SHARED_IMAGE_USAGE_PROTECTED_VIDEO |
+    SHARED_IMAGE_USAGE_CPU_ONLY_READ_WRITE |
+    SHARED_IMAGE_USAGE_RASTER_COPY_SOURCE | SHARED_IMAGE_USAGE_CPU_READ;
 
 }  // namespace
 
@@ -191,8 +192,10 @@ std::unique_ptr<SharedImageBacking> OzoneImageBackingFactory::CreateSharedImage(
     SkAlphaType alpha_type,
     SharedImageUsageSet usage,
     std::string debug_label,
+    bool is_thread_safe,
     gfx::GpuMemoryBufferHandle handle) {
   DCHECK_EQ(handle.type, gfx::NATIVE_PIXMAP);
+  CHECK(!is_thread_safe);
 
   scoped_refptr<gfx::NativePixmap> pixmap;
 
@@ -205,7 +208,7 @@ std::unique_ptr<SharedImageBacking> OzoneImageBackingFactory::CreateSharedImage(
         ui::OzonePlatform::GetInstance()->GetSurfaceFactoryOzone();
     pixmap = surface_factory->CreateNativePixmapFromHandle(
         kNullSurfaceHandle, size, ToBufferFormat(format),
-        std::move(handle.native_pixmap_handle));
+        std::move(handle).native_pixmap_handle());
     if (!pixmap) {
       return nullptr;
     }

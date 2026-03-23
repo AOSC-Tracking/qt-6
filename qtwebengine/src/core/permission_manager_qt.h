@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef PERMISSION_MANAGER_QT_H
 #define PERMISSION_MANAGER_QT_H
@@ -56,17 +57,17 @@ public:
 
     // content::PermissionManager implementation:
     blink::mojom::PermissionStatus GetPermissionStatus(
-        blink::PermissionType permission,
+        const blink::mojom::PermissionDescriptorPtr &permission,
         const GURL& requesting_origin,
         const GURL& embedding_origin) override;
 
-    content::PermissionStatus GetPermissionStatusForCurrentDocument(blink::PermissionType, content::RenderFrameHost*, bool) override;
+    content::PermissionStatus GetPermissionStatusForCurrentDocument(const blink::mojom::PermissionDescriptorPtr&, content::RenderFrameHost*, bool) override;
 
-    blink::mojom::PermissionStatus GetPermissionStatusForWorker(blink::PermissionType, content::RenderProcessHost *, const GURL &) override;
+    blink::mojom::PermissionStatus GetPermissionStatusForWorker(const blink::mojom::PermissionDescriptorPtr&, content::RenderProcessHost *, const GURL &) override;
 
-    blink::mojom::PermissionStatus GetPermissionStatusForEmbeddedRequester(blink::PermissionType, content::RenderFrameHost*, const url::Origin&) override;
+    blink::mojom::PermissionStatus GetPermissionStatusForEmbeddedRequester(const blink::mojom::PermissionDescriptorPtr&, content::RenderFrameHost*, const url::Origin&) override;
 
-    content::PermissionResult GetPermissionResultForOriginWithoutContext(blink::PermissionType, const url::Origin&, const url::Origin&) override;
+    content::PermissionResult GetPermissionResultForOriginWithoutContext(const blink::mojom::PermissionDescriptorPtr&, const url::Origin&, const url::Origin&) override;
 
     void ResetPermission(
         blink::PermissionType permission,

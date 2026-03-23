@@ -90,9 +90,7 @@ function entryIsTopLevel(entry: Types.Events.Event): boolean {
 
 export class TimelineFrameModel {
   #frames: TimelineFrame[] = [];
-  #frameById: {
-    [x: number]: TimelineFrame,
-  } = {};
+  #frameById: Record<number, TimelineFrame> = {};
   #beginFrameQueue: TimelineFrameBeginFrameQueue = new TimelineFrameBeginFrameQueue();
   #lastFrame: TimelineFrame|null = null;
   #mainFrameCommitted = false;
@@ -275,11 +273,11 @@ export class TimelineFrameModel {
   }
 
   #addTraceEvents(
-      events: readonly Types.Events.Event[], threadData: {
+      events: readonly Types.Events.Event[], threadData: Array<{
         pid: Types.Events.ProcessID,
         tid: Types.Events.ThreadID,
         startTime: Types.Timing.Micro,
-      }[],
+      }>,
       mainFrameId: string): void {
     let j = 0;
     this.#activeThreadId = threadData.length && threadData[0].tid || null;
@@ -391,7 +389,7 @@ class TimelineFrame implements Types.Events.LegacyTimelineFrame {
   pid = Types.Events.ProcessID(-1);
   tid = Types.Events.ThreadID(-1);
 
-  index: number = -1;
+  index = -1;
   startTime: Types.Timing.Micro;
   startTimeOffset: Types.Timing.Micro;
   endTime: Types.Timing.Micro;
@@ -498,9 +496,7 @@ export class TimelineFrameBeginFrameQueue {
   private queueFrames: number[] = [];
 
   // Maps frameSeqId to BeginFrameInfo.
-  private mapFrames: {
-    [x: number]: BeginFrameInfo,
-  } = {};
+  private mapFrames: Record<number, BeginFrameInfo> = {};
 
   // Add a BeginFrame to the queue, if it does not already exit.
   addFrameIfNotExists(seqId: number, startTime: Types.Timing.Micro, isDropped: boolean, isPartial: boolean): void {

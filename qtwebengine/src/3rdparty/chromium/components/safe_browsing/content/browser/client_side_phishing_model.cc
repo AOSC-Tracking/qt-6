@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "components/safe_browsing/content/browser/client_side_phishing_model.h"
 
 #include <stdint.h>
@@ -27,7 +22,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
-#include "components/optimization_guide/core/optimization_guide_model_provider.h"
+#include "components/optimization_guide/core/delivery/optimization_guide_model_provider.h"
 #include "components/optimization_guide/core/optimization_guide_util.h"
 #include "components/optimization_guide/proto/client_side_phishing_model_metadata.pb.h"
 #include "components/optimization_guide/proto/models.pb.h"
@@ -254,6 +249,31 @@ void ClientSidePhishingModel::SubscribeToImageEmbedderOptimizationGuide() {
   }
 }
 
+void ClientSidePhishingModel::UnsubscribeToImageEmbedderOptimizationGuide() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (subscribed_to_image_embedder_ && opt_guide_) {
+    subscribed_to_image_embedder_ = false;
+    opt_guide_->RemoveObserverForOptimizationTargetModel(
+        optimization_guide::proto::
+            OPTIMIZATION_TARGET_CLIENT_SIDE_PHISHING_IMAGE_EMBEDDER,
+        this);
+    embedding_model_opt_guide_metadata_image_embedding_version_.reset();
+    if (image_embedding_model_) {
+      background_task_runner_->PostTask(
+          FROM_HERE,
+          base::BindOnce(&CloseModelFile, std::move(*image_embedding_model_)));
+
+      // We will only notify if there was an image embedding model available, so
+      // the renderer can remove it.
+      content::GetUIThreadTaskRunner({})->PostTask(
+          FROM_HERE,
+          base::BindOnce(&ClientSidePhishingModel::NotifyCallbacksOnUI,
+                         weak_ptr_factory_.GetWeakPtr()));
+    }
+  }
+}
+
 bool ClientSidePhishingModel::IsSubscribedToImageEmbeddingModelUpdates() {
   return subscribed_to_image_embedder_;
 }
@@ -288,8 +308,8 @@ void ClientSidePhishingModel::OnModelAndVisualTfLiteFileLoaded(
           base::ReadOnlySharedMemoryRegion::Create(model_str.length());
       if (mapped_region_.IsValid()) {
         model_type_ = CSDModelType::kFlatbuffer;
-        memcpy(mapped_region_.mapping.memory(), model_str.data(),
-               model_str.length());
+        mapped_region_.mapping.GetMemoryAsSpan<char>().copy_prefix_from(
+            model_str);
 
         const flat::ClientSideModel* flatbuffer_model =
             flat::GetClientSideModel(mapped_region_.mapping.memory());
@@ -579,8 +599,8 @@ void ClientSidePhishingModel::SetModelStringForTesting(
           base::ReadOnlySharedMemoryRegion::Create(model_str.length());
       if (mapped_region_.IsValid()) {
         model_type_ = CSDModelType::kFlatbuffer;
-        memcpy(mapped_region_.mapping.memory(), model_str.data(),
-               model_str.length());
+        mapped_region_.mapping.GetMemoryAsSpan<char>().copy_prefix_from(
+            model_str);
       } else {
         model_valid = false;
       }
@@ -674,8 +694,8 @@ void ClientSidePhishingModel::OnGetOverridenModelData(
         VLOG(2) << "Could not create shared memory region for flatbuffer";
         return;
       }
-      memcpy(mapped_region_.mapping.memory(), model_data.data(),
-             model_data.length());
+      mapped_region_.mapping.GetMemoryAsSpan<char>().copy_prefix_from(
+          model_data);
       model_type_ = model_type;
       break;
     }

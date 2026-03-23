@@ -25,6 +25,7 @@
 #include "components/autofill/core/browser/payments/payments_requests/get_card_upload_details_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/get_details_for_create_bnpl_payment_instrument_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/get_details_for_enrollment_request.h"
+#include "components/autofill/core/browser/payments/payments_requests/get_details_for_update_bnpl_payment_instrument_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/get_iban_upload_details_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/get_unmask_details_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/opt_change_request.h"
@@ -32,17 +33,14 @@
 #include "components/autofill/core/browser/payments/payments_requests/select_challenge_option_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/unmask_card_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/unmask_iban_request.h"
+#include "components/autofill/core/browser/payments/payments_requests/update_bnpl_payment_instrument_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/update_virtual_card_enrollment_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/upload_card_request.h"
 #include "components/autofill/core/browser/payments/payments_requests/upload_iban_request.h"
 #include "components/autofill/core/browser/studies/autofill_experiments.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
-
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-#include "components/autofill/core/browser/payments/local_card_migration_manager.h"
-#include "components/autofill/core/browser/payments/payments_requests/migrate_cards_request.h"
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace autofill::payments {
 namespace {
@@ -169,18 +167,6 @@ void PaymentsNetworkInterface::UploadIban(
       std::move(callback)));
 }
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-void PaymentsNetworkInterface::MigrateCards(
-    const MigrationRequestDetails& request_details,
-    const std::vector<MigratableCreditCard>& migratable_credit_cards,
-    MigrateCardsCallback callback) {
-  IssueRequest(std::make_unique<MigrateCardsRequest>(
-      request_details, migratable_credit_cards,
-      account_info_getter_->IsSyncFeatureEnabledForPaymentsServerMetrics(),
-      std::move(callback)));
-}
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-
 void PaymentsNetworkInterface::SelectChallengeOption(
     const SelectChallengeOptionRequestDetails& request_details,
     base::OnceCallback<void(PaymentsRpcResult, const std::string&)> callback) {
@@ -208,8 +194,8 @@ void PaymentsNetworkInterface::GetDetailsForCreateBnplPaymentInstrument(
     const GetDetailsForCreateBnplPaymentInstrumentRequestDetails&
         request_details,
     base::OnceCallback<void(PaymentsRpcResult,
-                            std::u16string context_token,
-                            std::unique_ptr<base::Value::Dict>)> callback) {
+                            std::string context_token,
+                            LegalMessageLines)> callback) {
   IssueRequest(
       std::make_unique<GetDetailsForCreateBnplPaymentInstrumentRequest>(
           request_details,
@@ -220,7 +206,7 @@ void PaymentsNetworkInterface::GetDetailsForCreateBnplPaymentInstrument(
 
 void PaymentsNetworkInterface::CreateBnplPaymentInstrument(
     const CreateBnplPaymentInstrumentRequestDetails& request_details,
-    base::OnceCallback<void(PaymentsRpcResult, std::u16string instrument_id)>
+    base::OnceCallback<void(PaymentsRpcResult, std::string instrument_id)>
         callback) {
   IssueRequest(std::make_unique<CreateBnplPaymentInstrumentRequest>(
       request_details,
@@ -231,7 +217,7 @@ void PaymentsNetworkInterface::CreateBnplPaymentInstrument(
 
 void PaymentsNetworkInterface::GetBnplPaymentInstrumentForFetchingVcn(
     GetBnplPaymentInstrumentForFetchingVcnRequestDetails request_details,
-    base::OnceCallback<void(PaymentsAutofillClient::PaymentsRpcResult,
+    base::OnceCallback<void(PaymentsRpcResult,
                             const BnplFetchVcnResponseDetails&)> callback) {
   IssueRequest(std::make_unique<GetBnplPaymentInstrumentForFetchingVcnRequest>(
       request_details,
@@ -242,9 +228,33 @@ void PaymentsNetworkInterface::GetBnplPaymentInstrumentForFetchingVcn(
 
 void PaymentsNetworkInterface::GetBnplPaymentInstrumentForFetchingUrl(
     GetBnplPaymentInstrumentForFetchingUrlRequestDetails request_details,
-    base::OnceCallback<void(PaymentsAutofillClient::PaymentsRpcResult,
+    base::OnceCallback<void(PaymentsRpcResult,
                             const BnplFetchUrlResponseDetails&)> callback) {
   IssueRequest(std::make_unique<GetBnplPaymentInstrumentForFetchingUrlRequest>(
+      request_details,
+      /*full_sync_enabled=*/
+      account_info_getter_->IsSyncFeatureEnabledForPaymentsServerMetrics(),
+      std::move(callback)));
+}
+
+void PaymentsNetworkInterface::GetDetailsForUpdateBnplPaymentInstrument(
+    const GetDetailsForUpdateBnplPaymentInstrumentRequestDetails&
+        request_details,
+    base::OnceCallback<void(PaymentsRpcResult,
+                            std::string context_token,
+                            LegalMessageLines)> callback) {
+  IssueRequest(
+      std::make_unique<GetDetailsForUpdateBnplPaymentInstrumentRequest>(
+          request_details,
+          /*full_sync_enabled=*/
+          account_info_getter_->IsSyncFeatureEnabledForPaymentsServerMetrics(),
+          std::move(callback)));
+}
+
+void PaymentsNetworkInterface::UpdateBnplPaymentInstrument(
+    const UpdateBnplPaymentInstrumentRequestDetails& request_details,
+    base::OnceCallback<void(PaymentsRpcResult)> callback) {
+  IssueRequest(std::make_unique<UpdateBnplPaymentInstrumentRequest>(
       request_details,
       /*full_sync_enabled=*/
       account_info_getter_->IsSyncFeatureEnabledForPaymentsServerMetrics(),

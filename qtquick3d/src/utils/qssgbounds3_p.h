@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGBOUNDS3_H
 #define QSSGBOUNDS3_H
@@ -54,6 +56,11 @@ public:
     \brief Construct from two bounding points
     */
     Q_DECL_CONSTEXPR Q_ALWAYS_INLINE QSSGBounds3(const QVector3D &minimum, const QVector3D &maximum);
+
+    /**
+    \brief Construct from QSSGBoxPoints
+    */
+    Q_DECL_CONSTEXPR Q_ALWAYS_INLINE QSSGBounds3(const QSSGBoxPoints &points);
 
     /**
     \brief returns the AABB containing v0 and v1.
@@ -204,6 +211,14 @@ Q_ALWAYS_INLINE QSSGBounds3::QSSGBounds3(Qt::Initialization)
 Q_DECL_CONSTEXPR Q_ALWAYS_INLINE QSSGBounds3::QSSGBounds3(const QVector3D &_minimum, const QVector3D &_maximum)
     : minimum(_minimum), maximum(_maximum)
 {
+}
+
+Q_DECL_CONSTEXPR Q_ALWAYS_INLINE QSSGBounds3::QSSGBounds3(const QSSGBoxPoints &points)
+    : minimum(QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max()))
+    , maximum(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max(), -std::numeric_limits<float>::max())
+{
+    for (const QVector3D &v : points)
+        include(v);
 }
 
 Q_ALWAYS_INLINE QSSGBounds3 QSSGBounds3::centerExtents(const QVector3D &center, const QVector3D &extent)

@@ -3,7 +3,6 @@
 
 import QtQuick
 import QtQuick3D
-import QtQuick.Controls.Material
 import QtQuick.Controls
 import QtQuick.Layouts
 import Backend
@@ -11,13 +10,13 @@ import QtQml
 
 Pane {
     id: root
-    Material.theme: darkModeToggle.checked ? Material.Dark : Material.Light
 
     readonly property bool mobile: Qt.platform.os === "android"
     readonly property bool horizontal: width > height
     property real sliderWidth: width * 0.15
     property real buttonRowWidth: width * 0.12
     property real buttonMinWidth: 65
+    readonly property alias darkMode: darkModeToggle.checked
 
     leftPadding: 60
     rightPadding: 60
@@ -50,9 +49,9 @@ Pane {
 
         LabeledSlider {
             id: rotation1Slider
-            Layout.preferredWidth: root.sliderWidth
+            sliderWidth: root.sliderWidth
             Layout.minimumWidth: 160
-            labelText: "Rotation 1"
+            labelText: qsTr("Rotation 1")
             from: -90
             to: 90
             value: 60
@@ -60,9 +59,9 @@ Pane {
 
         LabeledSlider {
             id: rotation2Slider
-            Layout.preferredWidth: root.sliderWidth
+            sliderWidth: root.sliderWidth
             Layout.minimumWidth: 160
-            labelText: "Rotation 2"
+            labelText: qsTr("Rotation 2")
             from: -135
             to: 135
             value: 45
@@ -70,9 +69,9 @@ Pane {
 
         LabeledSlider {
             id: rotation3Slider
-            Layout.preferredWidth: root.sliderWidth
+            sliderWidth: root.sliderWidth
             Layout.minimumWidth: 160
-            labelText: "Rotation 3"
+            labelText: qsTr("Rotation 3")
             from: -90
             to: 90
             value: 45
@@ -80,9 +79,9 @@ Pane {
 
         LabeledSlider {
             id: rotation4Slider
-            Layout.preferredWidth: root.sliderWidth
+            sliderWidth: root.sliderWidth
             Layout.minimumWidth: 160
-            labelText: "Rotation 4"
+            labelText: qsTr("Rotation 4")
             from: -180
             to: 180
         }
@@ -181,10 +180,8 @@ Pane {
     View3D {
         anchors.fill: parent
 
-        camera: camera
+        camera: perspectiveCamera
         Node {
-            id: scene
-
             PointLight {
                 x: 760
                 z: 770
@@ -206,7 +203,7 @@ Pane {
             }
 
             PerspectiveCamera {
-                id: camera
+                id: perspectiveCamera
                 x: 1050
                 y: 375
                 z: -40

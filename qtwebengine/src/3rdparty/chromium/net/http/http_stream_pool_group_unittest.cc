@@ -125,6 +125,29 @@ TEST_F(HttpStreamPoolGroupTest, ReleaseStreamSocketUnused) {
   ASSERT_EQ(pool().TotalActiveStreamCount(), 0u);
 }
 
+// Regression test for crbug.com/399995424. If a socket returned to a Group
+// immediately closes, the Group should destroy itself without accessing deleted
+// `this`.
+TEST_F(HttpStreamPoolGroupTest,
+       ReleaseStreamSocketDisconnectAfterIsConnectedCall) {
+  auto stream_socket = std::make_unique<FakeStreamSocket>();
+  stream_socket->set_was_ever_used(true);
+  stream_socket->set_is_idle(true);
+  stream_socket->set_is_connected(true);
+  FakeStreamSocket* stream_socket_ptr = stream_socket.get();
+
+  Group& group = GetOrCreateTestGroup();
+  std::unique_ptr<HttpStream> stream = group.CreateTextBasedStream(
+      std::move(stream_socket),
+      StreamSocketHandle::SocketReuseType::kReusedIdle,
+      LoadTimingInfo::ConnectTiming());
+  CHECK(stream);
+
+  stream_socket_ptr->DisconnectAfterIsConnectedCall();
+  stream.reset();
+  ASSERT_FALSE(GetTestGroup());
+}
+
 TEST_F(HttpStreamPoolGroupTest, ReleaseStreamSocketUsed) {
   auto stream_socket = std::make_unique<FakeStreamSocket>();
   stream_socket->set_was_ever_used(true);
@@ -455,43 +478,12 @@ TEST_F(HttpStreamPoolGroupTest, EnableDisableQuic) {
   set_enable_quic(true);
   InitializePool();
   ASSERT_TRUE(pool().CanUseQuic(kHost, NetworkAnonymizationKey(),
-                                /*enable_ip_based_pooling=*/true,
                                 /*enable_alternative_services=*/true));
 
   set_enable_quic(false);
   InitializePool();
   ASSERT_FALSE(pool().CanUseQuic(kHost, NetworkAnonymizationKey(),
-                                 /*enable_ip_based_pooling=*/true,
                                  /*enable_alternative_services=*/true));
-}
-
-TEST_F(HttpStreamPoolGroupTest, ComparePausedJobSet) {
-  Group& group = GetOrCreateTestGroup();
-  group.EnsureAttemptManager();
-  group.attempt_manager_->SetIsFailingForTest(true);
-
-  std::unique_ptr<TestJobDelegate> delegate1 =
-      std::make_unique<TestJobDelegate>(group.stream_key());
-  delegate1->CreateAndStartJob(pool());
-
-  FastForwardBy(base::Milliseconds(10));
-
-  // Create two jobs at the same time.
-  std::unique_ptr<TestJobDelegate> delegate2 =
-      std::make_unique<TestJobDelegate>(group.stream_key());
-  delegate2->CreateAndStartJob(pool());
-
-  std::unique_ptr<TestJobDelegate> delegate3 =
-      std::make_unique<TestJobDelegate>(group.stream_key());
-  delegate3->CreateAndStartJob(pool());
-
-  ASSERT_EQ(group.PausedJobCount(), 3u);
-
-  // Ensure that the group is deleted after all delegates are destroyed.
-  delegate1.reset();
-  delegate2.reset();
-  delegate3.reset();
-  ASSERT_FALSE(GetTestGroup());
 }
 
 }  // namespace net

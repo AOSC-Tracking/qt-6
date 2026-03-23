@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickpageindicator_p.h"
 #include "qquickcontrol_p_p.h"
@@ -23,6 +24,7 @@ QT_BEGIN_NAMESPACE
     delegate items that present pages.
 
     \image qtquickcontrols-pageindicator.png
+           {Page indicator showing current page position}
 
     \code
     Column {
@@ -286,6 +288,8 @@ void QQuickPageIndicator::setInteractive(bool interactive)
         \row \li \b index : int \li The index of the item
         \row \li \b pressed : bool \li Whether the item is pressed
     \endtable
+
+    \include delegate-ownership.qdocinc {no-ownership} {PageIndicator}
 */
 QQmlComponent *QQuickPageIndicator::delegate() const
 {

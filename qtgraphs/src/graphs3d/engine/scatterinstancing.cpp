@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "scatterinstancing_p.h"
 
@@ -97,7 +99,7 @@ void ScatterInstancing::hideDataItem(qsizetype index)
 
 void ScatterInstancing::unhidePreviousDataItem()
 {
-    if (m_previousHideIndex >= 0) {
+    if (m_previousHideIndex >= 0 && m_previousHideIndex < m_dataArray.size()) {
         m_dataArray[m_previousHideIndex].hide = false;
         markDataDirty();
     }
@@ -111,3 +113,5 @@ void ScatterInstancing::resetVisibilty()
 }
 
 QT_END_NAMESPACE
+
+#include "moc_scatterinstancing_p.cpp"

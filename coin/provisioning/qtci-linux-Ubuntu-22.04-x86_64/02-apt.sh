@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (C) 2022 The Qt Company Ltd.
+# Copyright (C) 2025 The Qt Company Ltd.
 # SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 # Install required packages with APT
@@ -20,17 +20,16 @@ function set_internal_repo {
     sudo mv /etc/apt/apt.conf.d/50appstream{,.disabled}
 
     sudo tee "/etc/apt/sources.list" > /dev/null <<-EOC
-    deb [arch=amd64] http://repo-clones.ci.qt.io/apt-mirror/mirror/ubuntu/ jammy main restricted universe multiverse
-    deb [arch=amd64] http://repo-clones.ci.qt.io/apt-mirror/mirror/ubuntu/ jammy-updates main restricted universe multiverse
-    deb [arch=amd64] http://repo-clones.ci.qt.io/apt-mirror/mirror/ubuntu/ jammy-backports main restricted universe
-    deb [arch=amd64] http://repo-clones.ci.qt.io/apt-mirror/mirror/ubuntu/ jammy-security main restricted universe multiverse
-    deb [arch=i386] http://repo-clones.ci.qt.io/apt-mirror/mirror/ubuntu/ jammy main restricted
-    deb [arch=i386] http://repo-clones.ci.qt.io/apt-mirror/mirror/ubuntu/ jammy-updates main restricted
-    deb [arch=i386] http://repo-clones.ci.qt.io/apt-mirror/mirror/ubuntu/ jammy universe
+    deb [arch=amd64 trusted=yes] http://repo-clones-apt.ci.qt.io:8080 jammy-amd64 main restricted universe multiverse
+    deb [arch=amd64 trusted=yes] http://repo-clones-apt.ci.qt.io:8080 jammy-updates-amd64 main restricted universe multiverse
+    deb [arch=amd64 trusted=yes] http://repo-clones-apt.ci.qt.io:8080 jammy-backports-amd64 main restricted universe multiverse
+    deb [arch=amd64 trusted=yes] http://repo-clones-apt.ci.qt.io:8080 jammy-security-amd64 main restricted universe multiverse
+    deb [arch=i386 trusted=yes] http://repo-clones-apt.ci.qt.io:8080 jammy-i386 main restricted universe multiverse
+    deb [arch=i386 trusted=yes] http://repo-clones-apt.ci.qt.io:8080 jammy-updates-i386 main restricted universe multiverse
 EOC
 }
 
-(ping -c 3 repo-clones.ci.qt.io && set_internal_repo) || echo "Internal package repository not found. Using public repositories."
+(ping -c 3 repo-clones-apt.ci.qt.io && set_internal_repo) || echo "Internal package repository not found. Using public repositories."
 
 # Make sure needed ca-certificates are available
 sudo apt-get install --reinstall ca-certificates
@@ -70,7 +69,9 @@ installPackages+=(libvpx-dev)
 installPackages+=(libxkbfile-dev)
 installPackages+=(libxshmfence-dev)
 installPackages+=(libxss-dev)
-# installPackages+=(nodejs) too old
+installPackages+=(rustc)
+installPackages+=(bindgen)
+installPackages+=(clang)
 installPackages+=(python3-html5lib)
 
 # Common event loop handling
@@ -141,9 +142,8 @@ installPackages+=(libcurl4-openssl-dev)
 installPackages+=(libicu-dev)
 installPackages+=(zlib1g-dev)
 installPackages+=(zlib1g)
-installPackages+=(openjdk-8-jdk)
-#Java 17 for Android, needed by RTA
-installPackages+=(openjdk-17-jdk)
+#Java 21 for Android
+installPackages+=(openjdk-21-jdk)
 installPackages+=(libgtk-3-dev)
 installPackages+=(ninja-build)
 installPackages+=(libssl-dev)
@@ -228,6 +228,8 @@ installPackages+=(bridge-utils)
 # For Debian packaging
 installPackages+=(sbuild)
 installPackages+=(ubuntu-dev-tools)
+# To create deb package out of openapi-generator-cli.jar
+installPackages+=(debhelper-compat)
 # cifs-utils, for mounting smb drive
 installPackages+=(keyutils)
 installPackages+=(cifs-utils)
@@ -235,9 +237,8 @@ installPackages+=(cifs-utils)
 installPackages+=(uml-utilities)
 # To save iptables rules
 installPackages+=(iptables-persistent)
-
+# Fix dependencies in shared ffmpeg libs
 installPackages+=(patchelf)
-
 # For Firebird in RTA
 installPackages+=(libtommath-dev)
 # For tst_license.pl with all the machines generating SBOM
@@ -262,6 +263,9 @@ source "${BASH_SOURCE%/*}/../common/unix/SetEnvVar.sh"
 # 'The script sbom2doc is installed in '/home/qt/.local/bin' which is not on PATH.'
 # hence the explicit assignment to SBOM_PYTHON_APPS_PATH.
 SetEnvVar "SBOM_PYTHON_APPS_PATH" "/home/qt/.local/bin"
+
+# Set SBOM_PYTHON_INTERP_PATH to Python3 instance which was used to install SBOM packages from requirements
+SetEnvVar "SBOM_PYTHON_INTERP_PATH" "/usr/bin/python3"
 
 gccVersion="$(gcc --version |grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' |head -n 1)"
 echo "GCC = $gccVersion" >> versions.txt

@@ -11,7 +11,7 @@
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/load_flags.h"
 #include "net/base/request_priority.h"
-#include "net/filter/source_stream.h"
+#include "net/filter/source_stream_type.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_util.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
@@ -21,9 +21,11 @@
 #include "services/network/public/mojom/chunked_data_pipe_getter.mojom-blink.h"
 #include "services/network/public/mojom/data_pipe_getter.mojom-blink.h"
 #include "services/network/public/mojom/data_pipe_getter.mojom.h"
+#include "services/network/public/mojom/fetch_retry_options.mojom-shared.h"
 #include "services/network/public/mojom/trust_tokens.mojom-blink.h"
 #include "services/network/public/mojom/trust_tokens.mojom.h"
 #include "third_party/blink/public/common/loader/network_utils.h"
+#include "third_party/blink/public/common/navigation/preloading_headers.h"
 #include "third_party/blink/public/mojom/blob/blob.mojom-blink.h"
 #include "third_party/blink/public/mojom/blob/blob.mojom.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
@@ -44,7 +46,6 @@ namespace {
 
 // TODO(yhirano): Unify these with variables in
 // content/public/common/content_constants.h.
-constexpr char kCorsExemptPurposeHeaderName[] = "Purpose";
 constexpr char kCorsExemptRequestedWithHeaderName[] = "X-Requested-With";
 
 // TODO(yhirano) Dedupe this and the same-name function in
@@ -262,10 +263,9 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   dest->upgrade_if_insecure = src.UpgradeIfInsecure();
   dest->is_revalidating = src.IsRevalidating();
   if (src.GetDevToolsAcceptedStreamTypes()) {
-    dest->devtools_accepted_stream_types =
-        std::vector<net::SourceStream::SourceType>(
-            src.GetDevToolsAcceptedStreamTypes()->data.begin(),
-            src.GetDevToolsAcceptedStreamTypes()->data.end());
+    dest->devtools_accepted_stream_types = std::vector<net::SourceStreamType>(
+        src.GetDevToolsAcceptedStreamTypes()->data.begin(),
+        src.GetDevToolsAcceptedStreamTypes()->data.end());
   }
   if (src.RequestorOrigin()->ToString() == "null") {
     // "file:" origin is treated like an opaque unique origin when
@@ -309,7 +309,7 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   // Set Purpose header to cors_exempt_headers rather than headers to be
   // exempted from CORS checks.
   if (!src.GetPurposeHeader().empty()) {
-    dest->cors_exempt_headers.SetHeader(kCorsExemptPurposeHeaderName,
+    dest->cors_exempt_headers.SetHeader(kPurposeHeaderName,
                                         src.GetPurposeHeader().Utf8());
   }
 
@@ -326,9 +326,10 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   dest->credentials_mode = src.GetCredentialsMode();
   dest->redirect_mode = src.GetRedirectMode();
   dest->fetch_integrity = src.GetFetchIntegrity().Utf8();
-  dest->expected_signatures.reserve(src.GetExpectedSignatures().size());
-  for (const String& signature : src.GetExpectedSignatures()) {
-    dest->expected_signatures.push_back(signature.Utf8());
+  dest->expected_public_keys.reserve(src.GetExpectedPublicKeys().size());
+  for (const auto& public_key : src.GetExpectedPublicKeys()) {
+    dest->expected_public_keys.emplace_back(public_key.begin(),
+                                            public_key.end());
   }
   if (src.GetWebBundleTokenParams().has_value()) {
     dest->web_bundle_token_params =
@@ -363,6 +364,9 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   dest->throttling_profile_id = src.GetDevToolsToken();
   dest->trust_token_params = ConvertTrustTokenParams(src.TrustTokenParams());
   dest->required_ip_address_space = src.GetTargetAddressSpace();
+  if (src.HasFetchRetryOptions()) {
+    dest->fetch_retry_options = src.FetchRetryOptions();
+  }
 
   if (base::UnguessableToken window_id = src.GetFetchWindowId())
     dest->fetch_window_id = std::make_optional(window_id);
@@ -426,6 +430,9 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   dest->shared_dictionary_writer_enabled = src.SharedDictionaryWriterEnabled();
 
   dest->is_ad_tagged = src.IsAdResource();
+
+  dest->allows_device_bound_session_registration =
+      src.AllowsDeviceBoundSessionRegistration();
 }
 
 }  // namespace blink

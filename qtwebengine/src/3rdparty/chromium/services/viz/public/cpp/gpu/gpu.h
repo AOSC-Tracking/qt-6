@@ -17,7 +17,6 @@
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
-#include "services/viz/public/cpp/gpu/client_gpu_memory_buffer_manager.h"
 #include "services/viz/public/mojom/gpu.mojom.h"
 
 namespace viz {
@@ -35,10 +34,6 @@ class Gpu : public gpu::GpuChannelEstablishFactory {
 
   ~Gpu() override;
 
-  gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager() const {
-    return gpu_memory_buffer_manager_.get();
-  }
-
 #if BUILDFLAG(IS_CHROMEOS)
   void CreateJpegDecodeAccelerator(
       mojo::PendingReceiver<chromeos_camera::mojom::MjpegDecodeAccelerator>
@@ -52,7 +47,6 @@ class Gpu : public gpu::GpuChannelEstablishFactory {
   void EstablishGpuChannel(
       gpu::GpuChannelEstablishedCallback callback) override;
   scoped_refptr<gpu::GpuChannelHost> EstablishGpuChannelSync() override;
-  gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() override;
 
   bool gpu_remote_disconnected() { return gpu_remote_disconnected_; }
 
@@ -78,7 +72,6 @@ class Gpu : public gpu::GpuChannelEstablishFactory {
 
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
-  std::unique_ptr<ClientGpuMemoryBufferManager> gpu_memory_buffer_manager_;
 
   std::unique_ptr<GpuPtrIO, base::OnTaskRunnerDeleter> gpu_;
   scoped_refptr<EstablishRequest> pending_request_;

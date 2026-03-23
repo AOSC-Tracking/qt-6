@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include <QtGrpc/private/qgrpccommonoptions_p.h>
+#include <QtGrpc/private/qgrpcoperation_p.h>
 #include <QtGrpc/private/qgrpcoperationcontext_p.h>
+#include <QtGrpc/qgrpcoperation.h>
 #include <QtGrpc/qgrpcoperationcontext.h>
 #include <QtGrpc/qgrpcstatus.h>
 
@@ -13,9 +15,20 @@
 #include <QtCore/qbytearrayview.h>
 #include <QtCore/qlatin1stringview.h>
 
+#include <atomic>
 #include <utility>
 
 QT_BEGIN_NAMESPACE
+
+namespace {
+
+quint64 nextOperationId()
+{
+    static std::atomic<quint64> counter{ 0 };
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+}
 
 /*!
     \class QGrpcOperationContext
@@ -143,22 +156,46 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
+    \fn void QGrpcOperationContext::serverInitialMetadataReceived(const QMultiHash<QByteArray, QByteArray> &metadata)
+    \since 6.11
+
+    \include qgrpcoperation.cpp serverInitialMetadataReceived
+
+    \sa QGrpcOperation::serverInitialMetadataReceived
+    \sa QGrpcBidiStream::writesDone
+*/
+
+/*!
     \internal
 
-    Constructs an operation context with \a method and \a service name. The
-    initial serialized message \a arg is used to start a call with the \a
-    options and the selected \a serializer used for the RPC.
+    Constructs an operation context with the given \a descriptor, \a options,
+    and \a serializer. The \a parent is the QGrpcOperation that owns this
+    context.
 
-    \note This class can only be constructed by QAbstractGrpcChannel.
+    \note This class can only be constructed by its parent QGrpcOperation.
 */
-QGrpcOperationContext::QGrpcOperationContext(QLatin1StringView method, QLatin1StringView service,
-                                             QByteArrayView arg, const QGrpcCallOptions &options,
+QGrpcOperationContext::QGrpcOperationContext(QtGrpc::RpcDescriptor descriptor,
+                                             const QGrpcCallOptions &options,
                                              std::shared_ptr<QAbstractProtobufSerializer>
                                                  serializer,
-                                             PrivateConstructor /*unused*/)
-    : QObject(*new QGrpcOperationContextPrivate(method, service, arg, options,
-                                                std::move(serializer)))
+                                             QGrpcOperation *parent, PrivateConstructor /*unused*/)
+    : QObject(*new QGrpcOperationContextPrivate(std::move(descriptor), options,
+                                                std::move(serializer), nextOperationId()),
+              parent)
 {
+    using namespace QtGrpc;
+    Q_D(const QGrpcOperationContext);
+    const auto type = d->descriptor.type;
+    if (type == RpcType::UnaryCall || type == RpcType::ServerStreaming) {
+        connect(this, &QGrpcOperationContext::writeMessageRequested, this, []() {
+            Q_ASSERT_X(false, "QGrpcOperationContext::writeMessageRequested",
+                       "This signal is disallowed for unary and server-streaming operations");
+        });
+        connect(this, &QGrpcOperationContext::writesDoneRequested, this, []() {
+            Q_ASSERT_X(false, "QGrpcOperationContext::writesDoneRequested",
+                       "This signal is disallowed for unary and server-streaming operations");
+        });
+    }
 }
 
 /*!
@@ -173,7 +210,7 @@ QGrpcOperationContext::~QGrpcOperationContext() = default;
 QLatin1StringView QGrpcOperationContext::method() const noexcept
 {
     Q_D(const QGrpcOperationContext);
-    return d->method;
+    return d->descriptor.method;
 }
 
 /*!
@@ -182,16 +219,17 @@ QLatin1StringView QGrpcOperationContext::method() const noexcept
 QLatin1StringView QGrpcOperationContext::service() const noexcept
 {
     Q_D(const QGrpcOperationContext);
-    return d->service;
+    return d->descriptor.service;
 }
 
 /*!
-    Returns the serialized argument that is utilized by this operation-context.
+    \since 6.11
+    Returns the QtGrpc::RpcDescriptor for this operation-context.
 */
-QByteArrayView QGrpcOperationContext::argument() const noexcept
+QtGrpc::RpcDescriptor QGrpcOperationContext::descriptor() const noexcept
 {
     Q_D(const QGrpcOperationContext);
-    return d->argument;
+    return d->descriptor;
 }
 
 /*!
@@ -220,7 +258,7 @@ QGrpcOperationContext::serializer() const
 /*!
     \deprecated [6.13] Use serverInitialMetadata() and serverTrailingMetadata() instead.
 
-    \include qgrpcoperation.cpp serverInitialMetadata
+    \include qgrpcoperation.cpp serverInitialMetadata-shared
     \note This method is used implicitly by QGrpcOperation.
 
     \sa serverInitialMetadata() QGrpcOperation::serverInitialMetadata()
@@ -262,7 +300,7 @@ void QGrpcOperationContext::setServerMetadata(QHash<QByteArray, QByteArray> &&me
 /*!
     \since 6.10
 
-    \include qgrpcoperation.cpp serverInitialMetadata
+    \include qgrpcoperation.cpp serverInitialMetadata-shared
     \note This method is used implicitly by QGrpcOperation.
 
     \sa QGrpcOperation::serverInitialMetadata() serverTrailingMetadata()
@@ -284,12 +322,16 @@ QGrpcOperationContext::serverInitialMetadata() const & noexcept
 void QGrpcOperationContext::setServerInitialMetadata(QMultiHash<QByteArray, QByteArray> &&metadata)
 {
     Q_D(QGrpcOperationContext);
-    if (d->serverInitialMetadata == metadata)
-        return;
+    if (auto channel = operation().d_func()->channel.lock()) {
+        auto &engine = QAbstractGrpcChannelPrivate::get(channel.get())->interceptorEngine;
+        if (engine.hasHandlerFor(QtGrpc::InterceptorCapability::InitialMetadata))
+            engine.onInitialMetadata(*this, metadata);
+    }
     d->serverInitialMetadata = std::move(metadata);
 #if QT_DEPRECATED_SINCE(6, 13)
     d->deprServerInitialMetadata = QtGrpcPrivate::toHash(d->serverInitialMetadata);
 #endif
+    emit serverInitialMetadataReceived(d->serverInitialMetadata, QPrivateSignal{});
 }
 
 /*!
@@ -318,6 +360,11 @@ QGrpcOperationContext::serverTrailingMetadata() const & noexcept
 void QGrpcOperationContext::setServerTrailingMetadata(QMultiHash<QByteArray, QByteArray> &&metadata)
 {
     Q_D(QGrpcOperationContext);
+    if (auto channel = operation().d_func()->channel.lock()) {
+        auto &engine = QAbstractGrpcChannelPrivate::get(channel.get())->interceptorEngine;
+        if (engine.hasHandlerFor(QtGrpc::InterceptorCapability::TrailingMetadata))
+            engine.onTrailingMetadata(*this, metadata);
+    }
     if (d->serverTrailingMetadata == metadata)
         return;
     d->serverTrailingMetadata = std::move(metadata);
@@ -339,6 +386,27 @@ void QGrpcOperationContext::setResponseMetaType(QMetaType metaType)
 {
     Q_D(QGrpcOperationContext);
     d->responseMetaType = metaType;
+}
+
+/*!
+    \since 6.11
+
+    Returns the unique identifier for this operation context.
+
+    Each ID is unique across all channels for the application lifetime.
+*/
+quint64 QGrpcOperationContext::operationId() const noexcept
+{
+    Q_D(const QGrpcOperationContext);
+    return d->operationId;
+}
+
+const QGrpcOperation &QGrpcOperationContext::operation() const &
+{
+    // Guaranteed by construction & parent<>child relationship
+    const auto *p = parent();
+    Q_ASSERT(p);
+    return static_cast<const QGrpcOperation &>(*p);
 }
 
 // For future extensions

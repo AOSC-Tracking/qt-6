@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_WASM_WASM_SUBTYPING_H_
+#define V8_WASM_WASM_SUBTYPING_H_
+
 #if !V8_ENABLE_WEBASSEMBLY
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
-
-#ifndef V8_WASM_WASM_SUBTYPING_H_
-#define V8_WASM_WASM_SUBTYPING_H_
 
 #include "src/wasm/value-type.h"
 
@@ -18,7 +18,7 @@ struct WasmModule;
 V8_NOINLINE V8_EXPORT_PRIVATE bool IsSubtypeOfImpl(
     ValueType subtype, ValueType supertype, const WasmModule* sub_module,
     const WasmModule* super_module);
-V8_NOINLINE V8_EXPORT_PRIVATE bool IsHeapSubtypeOfImpl(
+V8_NOINLINE V8_EXPORT_PRIVATE bool IsSubtypeOfImpl(
     HeapType sub_heap, HeapType super_heap, const WasmModule* sub_module,
     const WasmModule* super_module);
 V8_NOINLINE V8_EXPORT_PRIVATE bool IsSubtypeOfImpl(
@@ -27,12 +27,12 @@ V8_NOINLINE V8_EXPORT_PRIVATE bool IsSubtypeOfImpl(
 // Checks if type1, defined in module1, is equivalent with type2, defined in
 // module2.
 // Type equivalence (~) is described by the following rules:
-// - Two numeric types are equivalent iff they are equal.
-// - T(ht1) ~ T(ht2) iff ht1 ~ ht2 for T in {ref, ref null, rtt}.
-// Equivalence of heap types ht1 ~ ht2 is defined as follows:
-// - Two non-index heap types are equivalent iff they are equal.
-// - Two indexed heap types are equivalent iff they are iso-recursive
-//   equivalent.
+// - Two numeric or generic types are equivalent iff they are equal.
+// - Two indexed heap types are equivalent iff they are iso-recursively
+//   equivalent (aka their canonicalized indices are equal).
+V8_NOINLINE V8_EXPORT_PRIVATE bool EquivalentTypes(ValueType type1,
+                                                   ValueType type2,
+                                                   const WasmModule* module);
 V8_NOINLINE V8_EXPORT_PRIVATE bool EquivalentTypes(ValueType type1,
                                                    ValueType type2,
                                                    const WasmModule* module1,
@@ -87,33 +87,18 @@ V8_INLINE bool IsSubtypeOf(CanonicalValueType subtype,
   return IsSubtypeOfImpl(subtype, supertype);
 }
 
-V8_INLINE bool TypesUnrelated(ValueType type1, ValueType type2,
-                              const WasmModule* module1,
-                              const WasmModule* module2) {
-  return !IsSubtypeOf(type1, type2, module1, module2) &&
-         !IsSubtypeOf(type2, type1, module2, module1);
-}
-
-V8_INLINE bool IsHeapSubtypeOf(HeapType subtype, HeapType supertype,
-                               const WasmModule* sub_module,
-                               const WasmModule* super_module) {
-  if (subtype == supertype && sub_module == super_module) return true;
-  return IsHeapSubtypeOfImpl(subtype, supertype, sub_module, super_module);
-}
-
 // Checks if {subtype} is a subtype of {supertype} (both defined in {module}).
 V8_INLINE bool IsHeapSubtypeOf(HeapType subtype, HeapType supertype,
                                const WasmModule* module) {
   // If the types are trivially identical, exit early.
   if (V8_LIKELY(subtype == supertype)) return true;
-  return IsHeapSubtypeOfImpl(subtype, supertype, module, module);
+  return IsSubtypeOfImpl(subtype, supertype, module, module);
 }
 
 V8_INLINE bool HeapTypesUnrelated(HeapType heap1, HeapType heap2,
-                                  const WasmModule* module1,
-                                  const WasmModule* module2) {
-  return !IsHeapSubtypeOf(heap1, heap2, module1, module2) &&
-         !IsHeapSubtypeOf(heap2, heap1, module2, module1);
+                                  const WasmModule* module) {
+  return !IsHeapSubtypeOf(heap1, heap2, module) &&
+         !IsHeapSubtypeOf(heap2, heap1, module);
 }
 
 // Checks whether {subtype_index} is valid as a declared subtype of
@@ -129,10 +114,7 @@ V8_INLINE bool HeapTypesUnrelated(HeapType heap1, HeapType heap2,
 //   respective parameter types, covariance for respective return types.
 V8_EXPORT_PRIVATE bool ValidSubtypeDefinition(ModuleTypeIndex subtype_index,
                                               ModuleTypeIndex supertype_index,
-                                              const WasmModule* sub_module,
-                                              const WasmModule* super_module);
-
-V8_EXPORT_PRIVATE bool IsShared(ValueType type, const WasmModule* module);
+                                              const WasmModule* module);
 
 struct TypeInModule {
   ValueType type;
@@ -146,10 +128,6 @@ struct TypeInModule {
   bool operator==(const TypeInModule& other) const {
     return type == other.type && module == other.module;
   }
-
-  bool operator!=(const TypeInModule& other) const {
-    return type != other.type || module != other.module;
-  }
 };
 
 inline std::ostream& operator<<(std::ostream& oss, TypeInModule type) {
@@ -160,22 +138,10 @@ inline std::ostream& operator<<(std::ostream& oss, TypeInModule type) {
 // Returns the common ancestor of {type1} and {type2}. Returns kTop if they
 // don't have a common ancestor.
 V8_EXPORT_PRIVATE TypeInModule Union(ValueType type1, ValueType type2,
-                                     const WasmModule* module1,
-                                     const WasmModule* module2);
-
-V8_INLINE V8_EXPORT_PRIVATE TypeInModule Union(TypeInModule type1,
-                                               TypeInModule type2) {
-  return Union(type1.type, type2.type, type1.module, type2.module);
-}
+                                     const WasmModule* module);
 
 V8_EXPORT_PRIVATE TypeInModule Intersection(ValueType type1, ValueType type2,
-                                            const WasmModule* module1,
-                                            const WasmModule* module2);
-
-V8_INLINE V8_EXPORT_PRIVATE TypeInModule Intersection(TypeInModule type1,
-                                                      TypeInModule type2) {
-  return Intersection(type1.type, type2.type, type1.module, type2.module);
-}
+                                            const WasmModule* module);
 
 // Returns the matching abstract null type (none, nofunc, noextern).
 ValueType ToNullSentinel(TypeInModule type);

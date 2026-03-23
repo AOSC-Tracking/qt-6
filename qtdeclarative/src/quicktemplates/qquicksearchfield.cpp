@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicksearchfield_p.h"
 #include "qquickcontrol_p_p.h"
@@ -32,7 +33,48 @@ QT_BEGIN_NAMESPACE
     The control includes a text field, search and clear icons, and a popup that
     displays suggestions or search results.
 
+    \note The iOS style does not provide a built-in popup for SearchField in
+        order to preserve the native look and feel. If a popup is still wanted,
+        it has to be defined by the user.
+
     \image qtquickcontrols-searchfield.gif
+           {Search field with search icon and clear button}
+
+    \section1 SearchField's Indicators
+
+    SearchField provides two optional embedded indicator buttons: \l searchIndicator and
+    \l clearIndicator.
+
+    These are not indicators in the sense of \l BusyIndicator or \l ProgressBar. Instead,
+    they are interactive controls embedded into the field (similar to the up/down buttons
+    in \l SpinBox). Pressing \l searchIndicator triggers \l searchButtonPressed(), and pressing
+    \l clearIndicator triggers \l clearButtonPressed().
+
+    In addition to exposing the actions, the indicator buttons provide interaction state
+    (pressed/hovered/focused, etc.) that can be used by styles.
+
+    \section2 Customizing indicator content
+
+    The \l searchIndicator and \l clearIndicator properties are read-only. Customization is
+    supported through their internal properties.
+
+    In particular, the button's visual content is provided by its \c indicator item, which is
+    writable. This allows the default content to be replaced or removed entirely.
+
+    For example, to remove both indicator icons:
+
+    \code
+    SearchField {
+        searchIndicator.indicator: null
+        clearIndicator.indicator: null
+    }
+    \endcode
+
+    This is a supported customization scenario. Different SearchField variants may omit one
+    of the buttons (for example, providing only a search button) or replace the indicator
+    content with an alternative item (for example, a microphone icon to trigger speech input).
+
+    \sa searchIndicator, clearIndicator, searchButtonPressed(), clearButtonPressed()
 
     \section1 SearchField Model Roles
 
@@ -57,11 +99,24 @@ QT_BEGIN_NAMESPACE
         ListElement { name: "WaterMelon"; color: "pink" }
     }
 
-    QSortFilterProxyModel {
+    SortFilterProxyModel {
         id: fruitFilter
-        sourceModel: fruitModel
-        filterRegularExpression: RegExp(fruitSearch.text, "i")
-        filterRole: 0 // needs to be set explicitly
+        model: fruitModel
+        sorters: [
+            RoleSorter {
+                roleName: "name"
+            }
+        ]
+        filters: [
+            FunctionFilter {
+                component CustomData: QtObject { property string name }
+                property var regExp: new RegExp(fruitSearch.text, "i")
+                onRegExpChanged: invalidate()
+                function filter(data: CustomData): bool {
+                    return regExp.test(data.name);
+                }
+            }
+        ]
     }
 
     SearchField {
@@ -135,6 +190,22 @@ QT_BEGIN_NAMESPACE
 
     \sa searchTriggered()
  */
+
+/*!
+    \qmlsignal void QtQuick.Controls::SearchField::searchButtonPressed()
+
+    This signal is emitted when the search button is pressed.
+
+    \sa clearButtonPressed()
+*/
+
+/*!
+    \qmlsignal void QtQuick.Controls::SearchField::clearButtonPressed()
+
+    This signal is emitted when the clear button is pressed.
+
+    \sa searchButtonPressed()
+*/
 
 namespace {
     enum Activation { NoActivate, Activate };
@@ -363,9 +434,6 @@ void QQuickSearchFieldPrivate::increaseCurrentIndex()
     if (isPopupVisible()) {
         if (highlightedIndex < q->suggestionCount() - 1)
             setHighlightedIndex(highlightedIndex + 1, Highlight);
-    } else {
-        if (currentIndex < q->suggestionCount() - 1)
-            setCurrentItemAtIndex(currentIndex + 1, Activate);
     }
 }
 
@@ -374,9 +442,6 @@ void QQuickSearchFieldPrivate::decreaseCurrentIndex()
     if (isPopupVisible()) {
         if (highlightedIndex > 0)
             setHighlightedIndex(highlightedIndex - 1, Highlight);
-    } else {
-        if (currentIndex > 0)
-            setCurrentItemAtIndex(currentIndex - 1, Activate);
     }
 }
 
@@ -407,7 +472,17 @@ void QQuickSearchFieldPrivate::setCurrentItemAtIndex(int index, Activation activ
 
 void QQuickSearchFieldPrivate::updateHighlightedIndex()
 {
-    setHighlightedIndex(popup->isVisible() ? currentIndex : -1, NoHighlight);
+    Q_Q(QQuickSearchField);
+    int index = -1;
+
+    if (isPopupVisible()) {
+        if (currentIndex >= 0)
+            index = currentIndex;
+        else if (q->suggestionCount() > 0)
+            index = 0; // auto-highlight first suggestion
+    }
+
+    setHighlightedIndex(index, NoHighlight);
 }
 
 void QQuickSearchFieldPrivate::setHighlightedIndex(int index, Highlighting highlight)
@@ -488,6 +563,9 @@ void QQuickSearchFieldPrivate::updateText()
     if (text != textInput) {
         q->setText(textInput);
         emit q->textEdited();
+
+        setCurrentIndex(-1);
+        updateHighlightedIndex();
 
         if (live)
             emit q->searchTriggered();
@@ -707,9 +785,6 @@ void QQuickSearchField::setSuggestionModel(const QVariant &model)
     d->suggestionModel = suggestionModel;
     d->createDelegateModel();
     emit suggestionCountChanged();
-    if (isComponentComplete()) {
-        setCurrentIndex(suggestionCount() > 0 ? 0 : -1);
-    }
     emit suggestionModelChanged();
 }
 
@@ -746,7 +821,16 @@ int QQuickSearchField::suggestionCount() const
 
     This property holds the index of the currently selected suggestion in the popup list.
 
-    The default value is \c -1 when count is \c 0, and \c 0 otherwise.
+    Its value is \c -1 when no suggestion is selected.
+
+    currentIndex is not modified automatically when the model changes or when the user types
+    or edits text. It is updated only when the user explicitly selects a suggestion, either
+    by clicking an item in the popup, or by pressing Enter on a highlighted item.
+
+    currentIndex can be set; for example, to display the first item in the model at startup.
+    Before doing so, ensure that the model is not empty:
+
+    \snippet qtquickcontrols-searchfield-currentIndex.qml currentIndex
 
     \sa activated(), text, highlightedIndex
  */
@@ -862,10 +946,17 @@ void QQuickSearchField::setLive(const bool live)
 }
 
 /*!
-    \qmlproperty real QtQuick.Controls::SearchField::searchIndicator
-    \readonly
+    \include qquickindicatorbutton.qdocinc {properties} {SearchField} {searchIndicator}
 
-    This property holds the search indicator.
+    This property holds the search indicator. Pressing it triggers
+    \l searchButtonPressed().
+
+    It is exposed so that styles and applications can customize it through its
+    internal properties (for example, replacing or removing the \c searchIndicator
+    via \c searchIndicator.indicator, or reacting to interaction state such as
+    pressed and hovered).
+
+    \sa {SearchField's Indicators}
  */
 QQuickIndicatorButton *QQuickSearchField::searchIndicator() const
 {
@@ -874,10 +965,17 @@ QQuickIndicatorButton *QQuickSearchField::searchIndicator() const
 }
 
 /*!
-    \qmlproperty real QtQuick.Controls::SearchField::clearIndicator
-    \readonly
+    \include qquickindicatorbutton.qdocinc {properties} {SearchField} {clearIndicator}
 
-    This property holds the clear indicator.
+    This property holds the clear indicator. Pressing it triggers
+    \l clearButtonPressed().
+
+    It is exposed so that styles and applications can customize it through its
+    internal properties (for example, replacing or removing the \c clearIndicator
+    via \c clearIndicator.indicator, or reacting to interaction state such as
+    pressed and hovered).
+
+    \sa {SearchField's Indicators}
 */
 QQuickIndicatorButton *QQuickSearchField::clearIndicator() const
 {
@@ -963,6 +1061,8 @@ void QQuickSearchField::setPopup(QQuickPopup *popup)
         }
     }
     \endcode
+
+    \include delegate-ownership.qdocinc {no-ownership-since-6.11} {SearchField}
 */
 QQmlComponent *QQuickSearchField::delegate() const
 {
@@ -976,7 +1076,6 @@ void QQuickSearchField::setDelegate(QQmlComponent *delegate)
     if (d->delegate == delegate)
         return;
 
-    delete d->delegate;
     d->delegate = delegate;
     QQmlDelegateModel *delegateModel = qobject_cast<QQmlDelegateModel *>(d->delegateModel);
     if (delegateModel)
@@ -1101,15 +1200,11 @@ void QQuickSearchField::keyPressEvent(QKeyEvent *event)
         case Qt::Key_Home:
             if (d->isPopupVisible())
                 d->setHighlightedIndex(0, Highlight);
-            else
-                d->setCurrentItemAtIndex(0, Activate);
             event->accept();
             break;
         case Qt::Key_End:
             if (d->isPopupVisible())
                 d->setHighlightedIndex(suggestionCount() - 1, Highlight);
-            else
-                d->setCurrentItemAtIndex(suggestionCount() - 1, Activate);
             event->accept();
             break;
         default:
@@ -1143,11 +1238,6 @@ void QQuickSearchField::componentComplete()
 
     if (d->delegateModel && d->ownModel)
         static_cast<QQmlDelegateModel *>(d->delegateModel)->componentComplete();
-
-    if (suggestionCount() > 0) {
-        if (!d->hasCurrentIndex && d->currentIndex == -1)
-            setCurrentIndex(0);
-    }
 }
 
 void QQuickSearchField::contentItemChange(QQuickItem *newItem, QQuickItem *oldItem)

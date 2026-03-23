@@ -6,16 +6,16 @@
 
 #include <optional>
 #include <utility>
+#include <variant>
 
 #include "base/check.h"
 #include "base/check_op.h"
-#include "base/functional/overloaded.h"
 #include "base/time/time.h"
 #include "base/types/optional_util.h"
 #include "content/browser/attribution_reporting/attribution_report.h"
 #include "content/browser/attribution_reporting/attribution_trigger.h"
 #include "content/browser/attribution_reporting/stored_source.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 namespace content {
 
@@ -61,7 +61,7 @@ CreateReportResult::CreateReportResult(
   if (EventLevelResult event_level_status = this->event_level_status();
       event_level_status != EventLevelResult::kInternalError &&
       event_level_status != EventLevelResult::kNotRegistered) {
-    DCHECK_EQ(
+    CHECK_EQ(
         source_.has_value(),
         event_level_status != EventLevelResult::kNoMatchingImpressions &&
             event_level_status != EventLevelResult::kProhibitedByBrowserPolicy);
@@ -70,7 +70,7 @@ CreateReportResult::CreateReportResult(
   if (AggregatableResult aggregatable_status = this->aggregatable_status();
       aggregatable_status != AggregatableResult::kInternalError &&
       aggregatable_status != AggregatableResult::kNotRegistered) {
-    DCHECK_EQ(
+    CHECK_EQ(
         source_.has_value(),
         aggregatable_status != AggregatableResult::kNoMatchingImpressions &&
             aggregatable_status !=
@@ -89,8 +89,8 @@ CreateReportResult& CreateReportResult::operator=(CreateReportResult&&) =
     default;
 
 EventLevelResult CreateReportResult::event_level_status() const {
-  return absl::visit(
-      base::Overloaded{
+  return std::visit(
+      absl::Overload{
           [](const EventLevelSuccess& v) {
             return v.replaced_report.has_value()
                        ? EventLevelResult::kSuccessDroppedLowerPriority
@@ -146,8 +146,8 @@ EventLevelResult CreateReportResult::event_level_status() const {
 }
 
 AggregatableResult CreateReportResult::aggregatable_status() const {
-  return absl::visit(
-      base::Overloaded{
+  return std::visit(
+      absl::Overload{
           [](const AggregatableSuccess&) {
             return AggregatableResult::kSuccess;
           },
@@ -195,36 +195,35 @@ AggregatableResult CreateReportResult::aggregatable_status() const {
 
 const AttributionReport* CreateReportResult::replaced_event_level_report()
     const {
-  if (const auto* v = absl::get_if<EventLevelSuccess>(&event_level_result_)) {
+  if (const auto* v = std::get_if<EventLevelSuccess>(&event_level_result_)) {
     return base::OptionalToPtr(v->replaced_report);
   }
   return nullptr;
 }
 
 const AttributionReport* CreateReportResult::new_event_level_report() const {
-  if (const auto* v = absl::get_if<EventLevelSuccess>(&event_level_result_)) {
+  if (const auto* v = std::get_if<EventLevelSuccess>(&event_level_result_)) {
     return &v->new_report;
   }
   return nullptr;
 }
 
 AttributionReport* CreateReportResult::new_event_level_report() {
-  if (auto* v = absl::get_if<EventLevelSuccess>(&event_level_result_)) {
+  if (auto* v = std::get_if<EventLevelSuccess>(&event_level_result_)) {
     return &v->new_report;
   }
   return nullptr;
 }
 
 const AttributionReport* CreateReportResult::new_aggregatable_report() const {
-  if (const auto* v =
-          absl::get_if<AggregatableSuccess>(&aggregatable_result_)) {
+  if (const auto* v = std::get_if<AggregatableSuccess>(&aggregatable_result_)) {
     return &v->new_report;
   }
   return nullptr;
 }
 
 AttributionReport* CreateReportResult::new_aggregatable_report() {
-  if (auto* v = absl::get_if<AggregatableSuccess>(&aggregatable_result_)) {
+  if (auto* v = std::get_if<AggregatableSuccess>(&aggregatable_result_)) {
     return &v->new_report;
   }
   return nullptr;
@@ -232,8 +231,8 @@ AttributionReport* CreateReportResult::new_aggregatable_report() {
 
 const AttributionReport* CreateReportResult::dropped_event_level_report()
     const {
-  return absl::visit(
-      base::Overloaded{
+  return std::visit(
+      absl::Overload{
           [](const PriorityTooLow& v) { return &v.dropped_report; },
           [](const ExcessiveEventLevelReports& v) { return &v.dropped_report; },
           [](const auto&) -> const AttributionReport* { return nullptr; }},

@@ -7,6 +7,7 @@
 #include "base/functional/bind.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/task/task_traits.h"
 #include "base/time/time.h"
@@ -15,7 +16,6 @@
 #include "components/performance_manager/public/graph/frame_node.h"
 #include "components/performance_manager/public/graph/page_node.h"
 #include "content/public/browser/back_forward_cache.h"
-#include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 
@@ -77,24 +77,27 @@ bool PageMightHaveFramesInBFCache(const PageNode* page_node) {
 
 using MemoryPressureLevel = base::MemoryPressureListener::MemoryPressureLevel;
 
-void MaybeFlushBFCacheOnUIThread(base::WeakPtr<content::WebContents> contents,
-                                 MemoryPressureLevel memory_pressure_level) {
+void MaybeFlushBFCacheImpl(content::WebContents* contents,
+                           MemoryPressureLevel memory_pressure_level) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!contents) {
-    return;
-  }
+  CHECK(contents);
 
   int cache_size = -1;
+  content::BackForwardCache::NotRestoredReason reason;
   bool foregrounded =
       (contents->GetVisibility() == content::Visibility::VISIBLE);
   switch (memory_pressure_level) {
     case MemoryPressureLevel::MEMORY_PRESSURE_LEVEL_MODERATE:
       cache_size = foregrounded ? ForegroundCacheSizeOnModeratePressure()
                                 : BackgroundCacheSizeOnModeratePressure();
+      reason = content::BackForwardCache::NotRestoredReason::
+          kCacheLimitPrunedOnModerateMemoryPressure;
       break;
     case MemoryPressureLevel::MEMORY_PRESSURE_LEVEL_CRITICAL:
       cache_size = foregrounded ? ForegroundCacheSizeOnCriticalPressure()
                                 : BackgroundCacheSizeOnCriticalPressure();
+      reason = content::BackForwardCache::NotRestoredReason::
+          kCacheLimitPrunedOnCriticalMemoryPressure;
       break;
     default:
       NOTREACHED();
@@ -105,10 +108,25 @@ void MaybeFlushBFCacheOnUIThread(base::WeakPtr<content::WebContents> contents,
 
   // Do not flush the BFCache if there's a pending navigation as this could stop
   // it.
-  // TODO(sebmarchand): Check if this is really needed.
+  // TODO(crbug.com/431957711): Check if this is really needed.
   auto& navigation_controller = contents->GetController();
-  if (!navigation_controller.GetPendingEntry())
-    navigation_controller.GetBackForwardCache().Prune(cache_size);
+  size_t number_of_tabs = 0;
+  size_t number_of_cached_entries = 0;
+  if (!navigation_controller.GetPendingEntry()) {
+    size_t count =
+        navigation_controller.GetBackForwardCache().Prune(cache_size, reason);
+    if (count > 0) {
+      number_of_tabs++;
+      number_of_cached_entries += count;
+    }
+  }
+
+  base::UmaHistogramCounts1000(
+      "BackForwardCache.Pruning.NumberOfTabsWithBackForwardCache",
+      number_of_tabs);
+  base::UmaHistogramCounts1000(
+      "BackForwardCache.Pruning.NumberOfBackForwardCacheEntries",
+      number_of_cached_entries);
 }
 
 }  // namespace
@@ -117,10 +135,8 @@ void BFCachePolicy::MaybeFlushBFCache(
     const PageNode* page_node,
     MemoryPressureLevel memory_pressure_level) {
   DCHECK(page_node);
-  content::GetUIThreadTaskRunner({})->PostTask(
-      FROM_HERE,
-      base::BindOnce(&MaybeFlushBFCacheOnUIThread, page_node->GetWebContents(),
-                     memory_pressure_level));
+  MaybeFlushBFCacheImpl(page_node->GetWebContents().get(),
+                        memory_pressure_level);
 }
 
 void BFCachePolicy::OnPassedToGraph(Graph* graph) {

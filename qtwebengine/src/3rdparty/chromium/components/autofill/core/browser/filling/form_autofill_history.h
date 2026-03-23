@@ -32,7 +32,8 @@ class FormAutofillHistory {
         bool field_is_autofilled,
         std::optional<std::string> field_autofill_source_profile_guid,
         std::optional<FieldType> field_autofilled_type,
-        FillingProduct filling_product);
+        FillingProduct filling_product,
+        bool ignore_is_autofilled);
 
     ~FieldFillingEntry();
     FieldFillingEntry(const FieldFillingEntry&);
@@ -66,38 +67,15 @@ class FormAutofillHistory {
     // stores accurate information about the last modifier of the field,
     // especially since a single field can now be filled via different products.
     FillingProduct filling_product;
+
+    // The undo functionality is supposed to work only on autofilled fields.
+    // However when this boolean is enabled, this check is relaxed to include
+    // non-autofilled fields as well provided that the undo history contains a
+    // value for the field.
+    bool ignore_is_autofilled;
   };
 
-  struct FormFillingEntry {
-    FormFillingEntry();
-    ~FormFillingEntry();
-
-    FillingProduct filling_product = FillingProduct::kNone;
-    std::map<FieldGlobalId, FieldFillingEntry> field_filling_entries = {};
-  };
-
-  class FillOperation {
-   public:
-    // Returns the field value and autofill state stored in history for
-    // `field_id`. Assumes the underlying map contains a entry with key
-    // `field_id`.
-    const FieldFillingEntry& GetFieldFillingEntry(FieldGlobalId field_id) const;
-
-    FillingProduct get_filling_product() const {
-      return iterator_->filling_product;
-    }
-
-    friend bool operator==(const FillOperation& lhs,
-                           const FillOperation& rhs) = default;
-
-   private:
-    friend class FormAutofillHistory;
-
-    explicit FillOperation(std::list<FormFillingEntry>::const_iterator iterator)
-        : iterator_(iterator) {}
-
-    std::list<FormFillingEntry>::const_iterator iterator_;
-  };
+  using FormFillingEntry = std::map<FieldGlobalId, FieldFillingEntry>;
 
   FormAutofillHistory();
 
@@ -111,18 +89,30 @@ class FormAutofillHistory {
   // FormFieldData's are needed to get the most recent value of a field.
   // AutofillField's are needed to get the type of a field.
   // TODO(crbug.com/40232021): Only pass AutofillFields.
-  void AddFormFillEntry(
+  void AddFormFillingEntry(
       base::span<const FormFieldData* const> filled_fields,
       base::span<const AutofillField* const> filled_autofill_fields,
       FillingProduct filling_product,
       bool is_refill);
 
-  // Erases the history entry from the list represented by `fill_operation`.
-  void EraseFormFillEntry(FillOperation fill_operation);
+  // Erases the field history information corresponding to `field_id` in
+  // `fill_operation`. If the form filling entry becomes empty afterwards, the
+  // function also removes it from `history_`.
+  void EraseFieldFillingEntry(
+      std::list<FormFillingEntry>::iterator fill_operation,
+      FieldGlobalId field_id);
 
-  // Finds the latest history entry where the field represented by `field_id`
-  // was affected.
-  FillOperation GetLastFillingOperationForField(FieldGlobalId field_id) const;
+  // Returns the first entry in `history_` (corresponding to the last
+  // chronological entry) that has information about the field represented by
+  // `field_id`, if any exist. Note that this means that the returned iterator
+  // is either `history_.end()` or satisfies  `it->contains(field_id)`.
+  std::list<FormFillingEntry>::iterator GetLastFormFillingEntryForField(
+      FieldGlobalId field_id);
+  std::list<FormFillingEntry>::const_iterator GetLastFormFillingEntryForField(
+      FieldGlobalId field_id) const {
+    return const_cast<FormAutofillHistory*>(this)
+        ->GetLastFormFillingEntryForField(field_id);
+  }
 
   // Checks whether the field represented by `field_id` has some registered
   // value in any history entry.
@@ -135,6 +125,9 @@ class FormAutofillHistory {
   bool empty() const { return history_.empty(); }
 
  private:
+  // Erases the history entry from the list represented by `fill_operation`.
+  void EraseFormFillEntry(std::list<FormFillingEntry>::iterator filling_entry);
+
   // Holds, for each filling operation in reverse chronological order, a map
   // from the IDs of the fields that were affected by the corresponding filling
   // operation to the value and autofill state of the field prior to the

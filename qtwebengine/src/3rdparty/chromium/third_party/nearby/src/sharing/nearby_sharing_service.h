@@ -20,7 +20,6 @@
 #include <memory>
 #include <string>
 
-#include "absl/base/attributes.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/time/time.h"
 #include "internal/platform/clock.h"
@@ -227,10 +226,6 @@ class NearbySharingService {
       int64_t share_target_id,
       std::function<void(StatusCodes status_codes)> status_codes_callback) = 0;
 
-  // Returns true if the local user cancelled the transfer to remote
-  // |share_target|.
-  virtual bool DidLocalUserCancelTransfer(int64_t share_target_id) = 0;
-
   // Checks to make sure visibility setting is valid and updates the service's
   // visibility if so.
   virtual void SetVisibility(
@@ -247,6 +242,8 @@ class NearbySharingService {
   virtual NearbyShareCertificateManager* GetCertificateManager() = 0;
   virtual AccountManager* GetAccountManager() = 0;
   virtual Clock& GetClock() = 0;
+  virtual void SetAlternateServiceUuidForDiscovery(
+      uint16_t alternate_service_uuid) = 0;
 };
 
 }  // namespace sharing

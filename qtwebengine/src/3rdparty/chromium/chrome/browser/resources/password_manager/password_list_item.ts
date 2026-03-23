@@ -49,29 +49,25 @@ export class PasswordListItemElement extends PasswordListItemElementBase {
 
       searchTerm: String,
 
-      elementClass_: {
-        type: String,
-        computed: 'computeElementClass_(first)',
-      },
-
       /**
        * The number of accounts in a group as a formatted string.
        */
       numberOfAccounts_: String,
 
+      tooltipText_: String,
       deviceOnlyCredentialsAccessibilityLabelText_: String,
     };
   }
 
-  item: chrome.passwordsPrivate.CredentialGroup;
-  isAccountStoreUser: boolean;
-  first: boolean;
-  searchTerm: string;
-  private numberOfAccounts_: string;
-  private tooltipText_: string;
-  private deviceOnlyCredentialsAccessibilityLabelText_: string;
+  declare item: chrome.passwordsPrivate.CredentialGroup;
+  declare isAccountStoreUser: boolean;
+  declare first: boolean;
+  declare searchTerm: string;
+  declare private numberOfAccounts_: string;
+  declare private tooltipText_: string;
+  declare private deviceOnlyCredentialsAccessibilityLabelText_: string;
 
-  private computeElementClass_(): string {
+  private getElementClass_(): string {
     return this.first ? 'flex-centered' : 'flex-centered hr';
   }
 
@@ -84,7 +80,7 @@ export class PasswordListItemElement extends PasswordListItemElementBase {
     this.$.seePasswordDetails.focus();
   }
 
-  private async onRowClick_() {
+  private onRowClick_() {
     const ids = this.item.entries.map(entry => entry.id);
     PasswordManagerImpl.getInstance()
         .requestCredentialsDetails(ids)

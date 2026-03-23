@@ -30,10 +30,9 @@
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
 
 #include "base/containers/adapters.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
+#include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
-#include "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom-blink.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_fullscreen_options.h"
@@ -69,10 +68,6 @@
 namespace blink {
 
 namespace {
-
-// UMA key for tracking the duration of a fullscreen request.
-static constexpr char kFullscreenDurationMetricKeyRequestFullscreen[] =
-    "Blink.Element.Fullscreen.DurationUpTo1H.RequestFullscreen";
 
 void FullscreenElementChanged(Document& document,
                               Element* old_element,
@@ -180,9 +175,10 @@ using ElementMetaParamsMap =
     HeapHashMap<WeakMember<const Element>, Member<const MetaParams>>;
 
 ElementMetaParamsMap& FullscreenParamsMap() {
-  DEFINE_STATIC_LOCAL(Persistent<ElementMetaParamsMap>, map,
-                      (MakeGarbageCollected<ElementMetaParamsMap>()));
-  return *map;
+  using ElementMetaParamsMapHolder = DisallowNewWrapper<ElementMetaParamsMap>;
+  DEFINE_STATIC_LOCAL(Persistent<ElementMetaParamsMapHolder>, holder,
+                      (MakeGarbageCollected<ElementMetaParamsMapHolder>()));
+  return holder->Value();
 }
 
 bool HasFullscreenFlag(const Element& element) {
@@ -1077,22 +1073,10 @@ ScriptPromise<IDLUndefined> Fullscreen::ExitFullscreen(
 
   Element* element = FullscreenElementFrom(doc);
 
-  // Log fullscreen session duration UMA for certain request types.
   const MetaParams* element_params = GetParams(*element);
   FullscreenRequestType request_type = element_params
                                            ? element_params->request_type()
                                            : FullscreenRequestType::kUnprefixed;
-  if (element_params) {
-    // Track traditional HTML requests without any other flags (e.g. XR).
-    // ForCrossProcessDescendant is excluded here to ensure the counter is only
-    // incremented when this function is invoked for the top frame.
-    if (request_type == FullscreenRequestType::kUnprefixed ||
-        request_type == FullscreenRequestType::kPrefixed) {
-      UMA_HISTOGRAM_LONG_TIMES(
-          kFullscreenDurationMetricKeyRequestFullscreen,
-          base::TimeTicks::Now() - element_params->fullscreen_enter_time());
-    }
-  }
 
   // 7. If |doc|'s fullscreen element is not connected.
   if (!element->isConnected()) {

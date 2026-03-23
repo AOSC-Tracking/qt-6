@@ -30,10 +30,10 @@ bool FakeAffiliationAPI::HasPendingRequest() {
   return fake_fetcher_factory_->has_pending_fetchers();
 }
 
-std::vector<FacetURI> FakeAffiliationAPI::GetNextRequestedFacets() {
+FakeAffiliationFetcher* FakeAffiliationAPI::GetNextAffiliationFetcher() {
   if (fake_fetcher_factory_->has_pending_fetchers())
-    return fake_fetcher_factory_->PeekNextFetcher()->GetRequestedFacetURIs();
-  return std::vector<FacetURI>();
+    return fake_fetcher_factory_->PeekNextFetcher();
+  return nullptr;
 }
 
 void FakeAffiliationAPI::ServeNextRequest() {
@@ -41,15 +41,14 @@ void FakeAffiliationAPI::ServeNextRequest() {
     return;
 
   FakeAffiliationFetcher* fetcher = fake_fetcher_factory_->PopNextFetcher();
-  std::unique_ptr<AffiliationFetcherDelegate::Result> fake_response(
-      new AffiliationFetcherDelegate::Result);
+  AffiliationFetcherInterface::ParsedFetchResponse fake_response;
   for (const auto& facets : preset_equivalence_relation_) {
     bool had_intersection_with_request = std::ranges::any_of(
         fetcher->GetRequestedFacetURIs(), [&facets](const auto& uri) {
           return std::ranges::find(facets, uri, &Facet::uri) != facets.end();
         });
     if (had_intersection_with_request)
-      fake_response->affiliations.push_back(facets);
+      fake_response.affiliations.push_back(facets);
   }
   for (const auto& group : groups_) {
     bool had_intersection_with_request = std::ranges::any_of(
@@ -58,7 +57,7 @@ void FakeAffiliationAPI::ServeNextRequest() {
                  group.facets.end();
         });
     if (had_intersection_with_request)
-      fake_response->groupings.push_back(group);
+      fake_response.groupings.push_back(group);
   }
   fetcher->SimulateSuccess(std::move(fake_response));
 }
@@ -69,12 +68,6 @@ void FakeAffiliationAPI::FailNextRequest() {
 
   FakeAffiliationFetcher* fetcher = fake_fetcher_factory_->PopNextFetcher();
   fetcher->SimulateFailure();
-}
-
-void FakeAffiliationAPI::IgnoreNextRequest() {
-  if (!fake_fetcher_factory_->has_pending_fetchers())
-    return;
-  std::ignore = fake_fetcher_factory_->PopNextFetcher();
 }
 
 }  // namespace affiliations

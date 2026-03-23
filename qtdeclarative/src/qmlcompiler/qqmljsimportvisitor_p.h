@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSIMPORTEDMEMBERSVISITOR_P_H
 #define QQMLJSIMPORTEDMEMBERSVISITOR_P_H
@@ -42,11 +43,16 @@ struct QQmlJSResourceFileMapper;
 class Q_QMLCOMPILER_EXPORT QQmlJSImportVisitor : public QQmlJS::AST::Visitor
 {
 public:
-    QQmlJSImportVisitor();
     QQmlJSImportVisitor(const QQmlJSScope::Ptr &target,
                         QQmlJSImporter *importer, QQmlJSLogger *logger,
                         const QString &implicitImportDirectory,
                         const QStringList &qmldirFiles = QStringList());
+    QQmlJSImportVisitor(QQmlJSImporter *importer, QQmlJSLogger *logger,
+                        const QString &implicitImportDirectory,
+                        const QStringList &qmldirFiles = QStringList())
+        : QQmlJSImportVisitor(QQmlJSScope::create(), importer, logger,
+                              implicitImportDirectory, qmldirFiles)
+    {}
     ~QQmlJSImportVisitor();
 
     using QQmlJS::AST::Visitor::endVisit;
@@ -129,7 +135,6 @@ protected:
     bool visit(QQmlJS::AST::WithStatement *withStatement) override;
     void endVisit(QQmlJS::AST::WithStatement *ast) override;
 
-    bool visit(QQmlJS::AST::VariableDeclarationList *vdl) override;
     bool visit(QQmlJS::AST::FormalParameterList *fpl) override;
 
     bool visit(QQmlJS::AST::UiObjectBinding *uiob) override;
@@ -288,7 +293,7 @@ protected:
             const QString &property, const QQmlJS::SourceLocation &location,
             const std::optional<QQmlJSFixSuggestion> &fixSuggestion = {});
 
-    QVector<QQmlJSAnnotation> parseAnnotations(QQmlJS::AST::UiAnnotationList *list);
+    QList<QQmlJSAnnotation> parseAnnotations(QQmlJS::AST::UiAnnotationList *list);
     void setAllBindings();
     void addDefaultProperties();
     void processDefaultProperties();
@@ -298,8 +303,6 @@ protected:
     void processMethodTypes();
     void processPropertyBindingObjects();
     void flushPendingSignalParameters();
-
-    QQmlJSScope::ConstPtr scopeById(const QString &id, const QQmlJSScope::ConstPtr &current);
 
     void breakInheritanceCycles(const QQmlJSScope::Ptr &scope);
     void checkDeprecation(const QQmlJSScope::ConstPtr &scope);
@@ -314,7 +317,7 @@ protected:
     bool isImportPrefix(QString prefix) const;
 
     // Used to temporarily store annotations for functions and generators wrapped in UiSourceElements
-    QVector<QQmlJSAnnotation> m_pendingMethodAnnotations;
+    QList<QQmlJSAnnotation> m_pendingMethodAnnotations;
 
     struct PendingPropertyType
     {
@@ -367,16 +370,16 @@ protected:
         T data;
     };
 
-    QHash<QQmlJSScope::Ptr, QVector<QQmlJSScope::Ptr>> m_pendingDefaultProperties;
-    QVector<PendingPropertyType> m_pendingPropertyTypes;
-    QVector<PendingMethodTypeAnnotations> m_pendingMethodTypeAnnotations;
-    QVector<PendingPropertyObjectBinding> m_pendingPropertyObjectBindings;
-    QVector<RequiredProperty> m_requiredProperties;
-    QVector<QQmlJSScope::Ptr> m_objectBindingScopes;
-    QVector<QQmlJSScope::Ptr> m_objectDefinitionScopes;
+    QHash<QQmlJSScope::Ptr, QList<QQmlJSScope::Ptr>> m_pendingDefaultProperties;
+    QList<PendingPropertyType> m_pendingPropertyTypes;
+    QList<PendingMethodTypeAnnotations> m_pendingMethodTypeAnnotations;
+    QList<PendingPropertyObjectBinding> m_pendingPropertyObjectBindings;
+    QList<RequiredProperty> m_requiredProperties;
+    QList<QQmlJSScope::Ptr> m_objectBindingScopes;
+    QList<QQmlJSScope::Ptr> m_objectDefinitionScopes;
 
-    QHash<QQmlJSScope::Ptr, QVector<WithVisibilityScope<QString>>> m_propertyBindings;
-    QVector<Alias> m_aliasDefinitions;
+    QHash<QQmlJSScope::Ptr, QList<WithVisibilityScope<QString>>> m_propertyBindings;
+    QList<Alias> m_aliasDefinitions;
     QHash<Property, QList<Alias>> m_propertyAliases;
 
     QHash<QQmlJS::SourceLocation, QQmlJSMetaSignalHandler> m_signalHandlers;

@@ -278,6 +278,8 @@ class TouchSelectionControllerClientAuraTest : public ContentBrowserTest {
     EXPECT_TRUE(NavigateToURL(shell(), test_url));
     aura::Window* content = shell()->web_contents()->GetContentNativeView();
     content->GetHost()->SetBoundsInPixels(gfx::Rect(800, 600));
+
+    SimulateEndOfPaintHoldingOnPrimaryMainFrame(shell()->web_contents());
   }
 
   gfx::PointF GetPointInText(int cursor_index) const {
@@ -1328,11 +1330,6 @@ IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAuraTest,
       ui::TouchSelectionDragType::kDoublePressDrag, 1);
   histogram_tester.ExpectTotalCount(ui::kTouchSelectionDragTypeHistogramName,
                                     2);
-
-  // Start typing to end the touch selection session.
-  generator.PressAndReleaseKey(ui::VKEY_A);
-  histogram_tester.ExpectUniqueSample(
-      ui::kTouchSelectionSessionTouchDownCountHistogramName, 3, 1);
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 

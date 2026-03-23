@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtCore/qdebug.h>
 #include "qabstract3daxis_p.h"
@@ -379,7 +381,7 @@ void QAbstract3DAxis::setLabelAutoAngle(float degree)
         degree = 90.0f;
     }
 
-    if (qFuzzyCompare(d->m_labelAutoAngle, degree)) {
+    if (qFuzzyCompare(d->m_labelAutoAngle + 1, degree + 1)) {
         qCDebug(lcAProperties3D, "%s angle value is already: %f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), degree);
         return;
@@ -597,7 +599,7 @@ bool QAbstract3DAxis::isScaleLabelsByCount() const
 void QAbstract3DAxis::setLabelSize(qreal size)
 {
     Q_D(QAbstract3DAxis);
-    if (qFuzzyCompare(d->m_labelSize, size)) {
+    if (QtPrivate::fuzzyCompare(d->m_labelSize, size)) {
         qCDebug(lcAProperties3D, "%s Value is already set to: %f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), size);
         return;
@@ -624,7 +626,7 @@ qreal QAbstract3DAxis::labelSize() const
 void QAbstract3DAxis::setTitleOffset(float offset)
 {
     Q_D(QAbstract3DAxis);
-    if (qFuzzyCompare(d->m_titleOffset, offset)) {
+    if (QtPrivate::fuzzyCompare(d->m_titleOffset, offset)) {
         qCDebug(lcAProperties3D, "%s offset value is already set to: %f",
                 qUtf8Printable(QLatin1String(__FUNCTION__)), offset);
         return;
@@ -853,3 +855,5 @@ void QAbstract3DAxisPrivate::setMax(float max)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qabstract3daxis.cpp"

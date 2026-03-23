@@ -6,13 +6,17 @@
 #define COMPONENTS_PERSISTENT_CACHE_PERSISTENT_CACHE_H_
 
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <utility>
 
 #include "base/component_export.h"
 #include "base/containers/span.h"
 #include "base/files/file.h"
+#include "base/rand_util.h"
+#include "base/timer/elapsed_timer.h"
 #include "components/persistent_cache/backend_params.h"
+#include "components/persistent_cache/entry_metadata.h"
 
 namespace persistent_cache {
 
@@ -66,8 +70,7 @@ class COMPONENT_EXPORT(PERSISTENT_CACHE) PersistentCache {
 
   // Used to open a cache with a backend of type `impl`. Returns nullptr in
   // case of failure.
-  static std::unique_ptr<PersistentCache> Open(
-      const BackendParams& backend_params);
+  static std::unique_ptr<PersistentCache> Open(BackendParams backend_params);
 
   // Used to get a handle to entry associated with `key`. Returns `nullptr` if
   // `key` is not found. Returned entry will remain valid and its contents will
@@ -80,12 +83,20 @@ class COMPONENT_EXPORT(PERSISTENT_CACHE) PersistentCache {
   // Used to add an entry containing `content` and associated with `key`.
   //
   // Thread-safe.
-  void Insert(std::string_view key, base::span<const uint8_t> content);
+  void Insert(std::string_view key,
+              base::span<const uint8_t> content,
+              EntryMetadata metadata = EntryMetadata{});
 
   Backend* GetBackendForTesting();
 
  private:
+  std::optional<base::ElapsedTimer> MaybeGetTimerForHistogram();
+  std::string GetFullHistogramName(std::string_view name) const;
+
   std::unique_ptr<Backend> backend_;
+
+  static constexpr double kTimingLoggingProbability = 0.01;
+  base::MetricsSubSampler metrics_subsampler_;
 };
 
 }  // namespace persistent_cache

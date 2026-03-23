@@ -13,7 +13,6 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/not_fatal_until.h"
 #include "build/build_config.h"
 #include "device/bluetooth/advertisement.h"
 #include "device/bluetooth/bluetooth_local_gatt_service.h"
@@ -461,8 +460,7 @@ void Adapter::ProcessPendingInsecureServiceConnectionRequest(
   auto it = connect_to_service_requests_pending_discovery_.begin();
   while (it != connect_to_service_requests_pending_discovery_.end()) {
     auto request_it = connect_to_service_request_map_.find(*it);
-    CHECK(request_it != connect_to_service_request_map_.end(),
-          base::NotFatalUntil::M130);
+    CHECK(request_it != connect_to_service_request_map_.end());
     if (address == request_it->second->address) {
       ProcessDeviceForInsecureServiceConnection(*it, device, disconnected);
       it = connect_to_service_requests_pending_discovery_.erase(it);
@@ -478,7 +476,9 @@ void Adapter::OnGattConnect(
     std::optional<device::BluetoothDevice::ConnectErrorCode> error_code) {
   if (error_code.has_value()) {
     std::move(callback).Run(
-        mojo::ConvertTo<mojom::ConnectResult>(error_code.value()),
+        mojo::TypeConverter<
+          mojom::ConnectResult,
+          device::BluetoothDevice::ConnectErrorCode>::Convert(error_code.value()),
         /*device=*/mojo::NullRemote());
     return;
   }

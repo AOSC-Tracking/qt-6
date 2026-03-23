@@ -7,19 +7,36 @@
 
 #include "src/gpu/graphite/text/TextAtlasManager.h"
 
-#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "include/gpu/graphite/TextureInfo.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkSpan_impl.h"
+#include "include/private/base/SkTLogic.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/core/SkDistanceFieldGen.h"
+#include "src/core/SkGlyph.h"
+#include "src/core/SkMask.h"
 #include "src/core/SkMasks.h"
+#include "src/core/SkStrikeSpec.h"
 #include "src/gpu/graphite/AtlasProvider.h"
+#include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/DrawAtlas.h"
 #include "src/gpu/graphite/RecorderPriv.h"
-#include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/TextureProxy.h"  // IWYU pragma: keep
 #include "src/sksl/SkSLUtil.h"
 #include "src/text/gpu/Glyph.h"
 #include "src/text/gpu/GlyphVector.h"
 #include "src/text/gpu/StrikeCache.h"
+
+#include <cstring>
+#include <new>
+#include <tuple>
 
 using Glyph = sktext::gpu::Glyph;
 
@@ -42,9 +59,12 @@ TextAtlasManager::TextAtlasManager(Recorder* recorder)
 
 TextAtlasManager::~TextAtlasManager() = default;
 
-void TextAtlasManager::freeAll() {
+void TextAtlasManager::freeGpuResources() {
+    auto tokenTracker = fRecorder->priv().tokenTracker();
     for (int i = 0; i < kMaskFormatCount; ++i) {
-        fAtlases[i] = nullptr;
+        if (fAtlases[i]) {
+            fAtlases[i]->freeGpuResources(tokenTracker->nextFlushToken());
+        }
     }
 }
 
@@ -187,8 +207,7 @@ DrawAtlas::ErrorCode TextAtlasManager::addGlyphToAtlas(const SkGlyph& skGlyph,
     }
     SkASSERT(glyph != nullptr);
 
-    MaskFormat glyphFormat = Glyph::FormatFromSkGlyph(skGlyph.maskFormat());
-    MaskFormat expectedMaskFormat = this->resolveMaskFormat(glyphFormat);
+    MaskFormat expectedMaskFormat = this->resolveMaskFormat(glyph->fGlyphEntryKey.fFormat);
     int bytesPerPixel = MaskFormatBytesPerPixel(expectedMaskFormat);
 
     int padding;
@@ -303,11 +322,11 @@ bool TextAtlasManager::initAtlas(MaskFormat format) {
     return true;
 }
 
-void TextAtlasManager::compact(bool forceCompact) {
+void TextAtlasManager::compact() {
     auto tokenTracker = fRecorder->priv().tokenTracker();
     for (int i = 0; i < kMaskFormatCount; ++i) {
         if (fAtlases[i]) {
-            fAtlases[i]->compact(tokenTracker->nextFlushToken(), forceCompact);
+            fAtlases[i]->compact(tokenTracker->nextFlushToken());
         }
     }
 }
@@ -339,7 +358,7 @@ std::tuple<bool, int> GlyphVector::regenerateAtlasForGraphite(int begin,
 
     uint64_t currentAtlasGen = atlasManager->atlasGeneration(maskFormat);
 
-    this->packedGlyphIDToGlyph(recorder->priv().strikeCache());
+    this->packedGlyphIDToGlyph(recorder->priv().strikeCache(), maskFormat);
 
     if (fAtlasGeneration != currentAtlasGen) {
         // Calculate the texture coordinates for the vertexes during first use (fAtlasGeneration
@@ -355,9 +374,10 @@ std::tuple<bool, int> GlyphVector::regenerateAtlasForGraphite(int begin,
         for (const Variant& variant : glyphs) {
             Glyph* gpuGlyph = variant.glyph;
             SkASSERT(gpuGlyph != nullptr);
-
+            SkASSERT(gpuGlyph->fGlyphEntryKey.fFormat == maskFormat);
             if (!atlasManager->hasGlyph(maskFormat, gpuGlyph)) {
-                const SkGlyph& skGlyph = *metricsAndImages.glyph(gpuGlyph->fPackedID);
+                const SkGlyph& skGlyph =
+                    *metricsAndImages.glyph(gpuGlyph->fGlyphEntryKey.fPackedID);
                 auto code = atlasManager->addGlyphToAtlas(skGlyph, gpuGlyph, srcPadding);
                 if (code != DrawAtlas::ErrorCode::kSucceeded) {
                     success = code != DrawAtlas::ErrorCode::kError;

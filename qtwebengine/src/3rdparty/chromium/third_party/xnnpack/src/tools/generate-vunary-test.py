@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import math
 import os
 import sys
 
@@ -33,7 +34,9 @@ parser.set_defaults(defines=list())
 
 OP_TYPES = {
     "vabs": "Abs",
+    "vapproxgelu": "ApproxGELU",
     "vclamp": "Clamp",
+    "vcos": "Cosine",
     "velu": "ELU",
     "vexp": "Exp",
     "vgelu": "GELU",
@@ -41,13 +44,13 @@ OP_TYPES = {
     "vlog": "Log",
     "vlrelu": "LeakyReLU",
     "vneg": "Negate",
-    "vrelu": "ReLU",
     "vrndd": "RoundDown",
     "vrndne": "RoundToNearestEven",
-    "vrndz": "RoundTowardsZero",
     "vrndu": "RoundUp",
+    "vrndz": "RoundTowardsZero",
     "vrsqrt": "ReciprocalSquareRoot",
     "vsigmoid": "Sigmoid",
+    "vsin": "Sine",
     "vsqr": "Square",
     "vsqrt": "SquareRoot",
     "vtanh": "TanH",
@@ -60,6 +63,12 @@ SPECIAL_VALUES_F32 = {
         4,  # Number of elements.
         "{0.0f, -0.0f, 1.0f, -1.0f}",  # Inputs.
         "{0.0f, -0.0f, 1.0f, NAN}",  # Expected outputs.
+        1,  # Error margin in ULP.
+    ),
+    "ReciprocalSquareRoot": (
+        3,  # Number of elements.
+        "{INFINITY, -INFINITY, NAN}",  # Inputs.
+        "{0, NAN, NAN}",  # Expected outputs.
         1,  # Error margin in ULP.
     ),
     "TanH": (
@@ -82,16 +91,34 @@ SPECIAL_VALUES_F32 = {
         "{0.0f, 6.0f, 0.0f}",  # Expected outputs.
         1,  # Error margin in ULP.
     ),
+    "ApproxGELU": (
+        3,  # Number of elements.
+        "{-6.0f, 6.0f, 0.0f}",  # Inputs.
+        "{0.0f, 6.0f, 0.0f}",  # Expected outputs.
+        1,  # Error margin in ULP.
+    ),
     "Exp": (
         3,  # Number of elements.
         "{0.0f, -1e3f, 1e3f}",  # Inputs.
         "{1.0f, 0.0f, INFINITY}",  # Expected outputs.
         1,  # Error margin in ULP.
     ),
+    "Sine": (
+        3,  # Number of elements
+        f"{{0.0f, {-math.pi/2:.8e},  {math.pi/2:.8e}}}",  # Inputs.
+        "{0.0f, -1.0f, 1.0f}",  # Expected outputs.
+        1,  # Error margin in ULP.
+    ),
+    "Cosine": (
+        3,  # Number of elements
+        f"{{0.0f, {math.pi/2:.8e},  {-math.pi/2:.8e}}}",  # Inputs.
+        "{1.0f, 0.0f, 0.0f}",  # Expected outputs.
+        1,  # Error margin in ULP.
+    ),
 }
 
 TEST_TEMPLATE = """\
-#define XNN_UKERNEL_WITH_PARAMS(arch_flags, ukernel, batch_tile, vector_tile, datatype, params_type, init_params)
+#define XNN_UKERNEL(arch_flags, ukernel, batch_tile, vector_tile, datatype, params_type, init_params)
   TEST(ukernel, batch_eq) { TestBatchEq<TestInfo, datatype, datatype>(arch_flags, batch_tile, ukernel, init_params); }
   TEST(ukernel, batch_div) { TestBatchDiv<TestInfo, datatype, datatype>(arch_flags, batch_tile, ukernel, init_params); }
   TEST(ukernel, batch_lt) { TestBatchLT<TestInfo, datatype, datatype>(arch_flags, batch_tile, ukernel, init_params); }
@@ -166,6 +193,7 @@ $if DATATYPE == "f32" and OP_TYPE in SPECIAL_VALUES_F32:
   }
 """
 
+
 def main(args):
   options = parser.parse_args(args)
 
@@ -178,6 +206,7 @@ def main(args):
   tester_header = "vunary-microkernel-tester.h"
   op_header = "vunary.h"
   tests = """\
+// clang-format off
 // Copyright 2019 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
@@ -195,14 +224,15 @@ def main(args):
 #include <limits>
 
 #include <gtest/gtest.h>
-#include "xnnpack.h"
-#include "xnnpack/common.h"
-#include "xnnpack/isa-checks.h"
-#include "xnnpack/microparams-init.h"
-#include "xnnpack/microparams.h"
-#include "xnnpack/{op_header}"
-#include "next_prime.h"
-#include "{tester_header}"
+#include "include/xnnpack.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/isa-checks.h"
+#include "src/xnnpack/microparams-init.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/{op_header}"
+#include "test/next_prime.h"
+#include "test/unary-ops.h"
+#include "test/{tester_header}"
 
 """.format(
       microkernel=options.ukernel,
@@ -219,24 +249,28 @@ using TestInfo = {op_type};
 """.format(op_type=op_type)
 
   tests += "#define XNN_QUANTIZED(T) xnnpack::quantized<T>\n"
-  tests += xnncommon.make_multiline_macro(xngen.preprocess(
-      TEST_TEMPLATE,
-      {
-          "TESTER": tester,
-          "TEST_ARGS": test_args,
-          "DATATYPE": datatype,
-          "OP_TYPE": op_type,
-          "OP_NAME": op,
-          "SPECIAL_VALUES_F32": SPECIAL_VALUES_F32,
-      },
-  ))
+  tests += xnncommon.make_multiline_macro(
+      xngen.preprocess(
+          TEST_TEMPLATE,
+          {
+              "TESTER": tester,
+              "TEST_ARGS": test_args,
+              "DATATYPE": datatype,
+              "OP_TYPE": op_type,
+              "OP_NAME": op,
+              "SPECIAL_VALUES_F32": SPECIAL_VALUES_F32,
+          },
+      )
+  )
 
   folder = options.ukernel
   if "rnd" in folder:
     folder = folder[0:8]
 
-  tests += f'#include "{xnncommon.xnnpack_src()}{folder}/{options.ukernel}.h"\n'
-  tests += "#undef XNN_UKERNEL_WITH_PARAMS\n"
+  tests += (
+      f'#include "src/{folder}/{options.ukernel}.inc"\n'
+  )
+  tests += "#undef XNN_UKERNEL\n"
   tests += "#undef XNN_QUANTIZED\n"
 
   xnncommon.overwrite_if_changed(options.output, tests)

@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickfiledialogimpl_p.h"
 #include "qquickfiledialogimpl_p_p.h"
@@ -9,6 +10,9 @@
 #include <QtGui/qpa/qplatformtheme.h>
 #include <QtQml/qqmlinfo.h>
 #include <QtQml/qqmlfile.h>
+#if QT_CONFIG(accessibility)
+#include <QtQuick/private/qquickaccessibleattached_p.h>
+#endif
 #include <QtQuick/private/qquickitemview_p_p.h>
 #include <QtQuickTemplates2/private/qquickdialogbuttonbox_p_p.h>
 #include <QtQuickTemplates2/private/qquickpopupitem_p_p.h>
@@ -17,7 +21,6 @@
 
 #include "qquickfiledialogdelegate_p.h"
 #include "qquickfolderbreadcrumbbar_p.h"
-#include "qquicksidebar_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -261,8 +264,6 @@ void QQuickFileDialogImplPrivate::handleClick(QQuickAbstractButton *button)
                 attached && fileInfo.exists() && isSaveMode && !dontConfirmOverride) {
                 QQuickDialog *confirmationDialog = attached->overwriteConfirmationDialog();
                 confirmationDialog->open();
-                static_cast<QQuickDialogButtonBox *>(confirmationDialog->footer())->standardButton(QPlatformDialogHelper::Yes)
-                    ->forceActiveFocus(Qt::PopupFocusReason);
             } else {
                 selectFile();
             }
@@ -551,6 +552,14 @@ void QQuickFileDialogImpl::componentComplete()
     }
 
     keyNavigationAttached->setTab(attached->breadcrumbBar()->upButton());
+
+#if QT_CONFIG(accessibility)
+    auto *label = attached->filterLabel();
+    auto *comboBox = attached->nameFiltersComboBox();
+    if (label && comboBox)
+        if (QQuickAccessibleAttached *accessibleAttached = QQuickControlPrivate::accessibleAttached(label))
+            accessibleAttached->setLabelFor(comboBox);
+#endif
 }
 
 void QQuickFileDialogImpl::itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &data)
@@ -713,6 +722,24 @@ void QQuickFileDialogImplAttached::setNameFiltersComboBox(QQuickComboBox *nameFi
         d, &QQuickFileDialogImplAttachedPrivate::nameFiltersComboBoxItemActivated);
 
     emit nameFiltersComboBoxChanged();
+}
+
+QQuickLabel *QQuickFileDialogImplAttached::filterLabel() const
+{
+    Q_D(const QQuickFileDialogImplAttached);
+    return d->filterLabel;
+}
+
+void QQuickFileDialogImplAttached::setFilterLabel(QQuickLabel *label)
+{
+    Q_D(QQuickFileDialogImplAttached);
+
+    if (d->filterLabel == label)
+        return;
+
+    d->filterLabel = label;
+
+    emit filterLabelChanged();
 }
 
 QString QQuickFileDialogImplAttached::selectedNameFilter() const

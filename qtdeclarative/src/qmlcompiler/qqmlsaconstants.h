@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLSACONSTANTS_H
 #define QQMLSACONSTANTS_H
@@ -40,7 +41,9 @@ enum class ScopeType {
     QMLScope,
     GroupedPropertyScope,
     AttachedPropertyScope,
-    EnumScope
+    EnumScope,
+    BindingFunctionScope,
+    SignalHandlerFunctionScope,
 };
 
 } // namespace QQmlSA

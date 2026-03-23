@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlpropertyvalidator_p.h"
 
@@ -41,7 +42,7 @@ QQmlPropertyValidator::QQmlPropertyValidator(
     bindingPropertyDataPerObject->resize(compilationUnit->objectCount());
 }
 
-QVector<QQmlError> QQmlPropertyValidator::validate()
+QList<QQmlError> QQmlPropertyValidator::validate()
 {
     return validateObject(/*root object*/0, /*instantiatingBinding*/nullptr);
 }
@@ -64,7 +65,7 @@ struct BindingFinder
     }
 };
 
-QVector<QQmlError> QQmlPropertyValidator::validateObject(
+QList<QQmlError> QQmlPropertyValidator::validateObject(
         int objectIndex, const QV4::CompiledData::Binding *instantiatingBinding,
         bool populatingValueTypeGroupProperty,
         QQmlPropertyResolver::RevisionCheck checkRevision) const
@@ -86,7 +87,7 @@ QVector<QQmlError> QQmlPropertyValidator::validateObject(
 
     QQmlPropertyCache::ConstPtr propertyCache = propertyCaches.at(objectIndex);
     if (!propertyCache)
-        return QVector<QQmlError>();
+        return QList<QQmlError>();
 
     QQmlCustomParser *customParser = nullptr;
     if (auto typeRef = resolvedType(obj->inheritedTypeNameIndex)) {
@@ -217,7 +218,7 @@ QVector<QQmlError> QQmlPropertyValidator::validateObject(
                       && !binding->hasFlag(QV4::CompiledData::Binding::IsOnAssignment);
 
             // As this is a sub-object, its properties are qualified. We can ignore revisions.
-            const QVector<QQmlError> subObjectValidatorErrors = validateObject(
+            const QList<QQmlError> subObjectValidatorErrors = validateObject(
                     binding->value.objectIndex, binding, populatingValueTypeGroupProperty,
                     QQmlPropertyResolver::IgnoreRevision);
 
@@ -358,14 +359,14 @@ QVector<QQmlError> QQmlPropertyValidator::validateObject(
         customParser->verifyBindings(compilationUnit, customBindings);
         customParser->validator = nullptr;
         customParser->imports = (QQmlImports*)nullptr;
-        QVector<QQmlError> parserErrors = customParser->errors();
+        QList<QQmlError> parserErrors = customParser->errors();
         if (!parserErrors.isEmpty())
             return parserErrors;
     }
 
     (*bindingPropertyDataPerObject)[objectIndex] = collectedBindingPropertyData;
 
-    QVector<QQmlError> noError;
+    QList<QQmlError> noError;
     return noError;
 }
 
@@ -645,39 +646,38 @@ QQmlError QQmlPropertyValidator::validateLiteralBinding(
 */
 bool QQmlPropertyValidator::canCoerce(QMetaType to, QQmlPropertyCache::ConstPtr fromMo) const
 {
-    QQmlPropertyCache::ConstPtr toMo = QQmlMetaType::rawPropertyCacheForType(to);
+    if (QQmlMetaType::canConvert(fromMo, to))
+        return true;
 
-    if (toMo.isNull()) {
-        // if we have an inline component from the current file,
-        // it is not properly registered at this point, as registration
-        // only occurs after the whole file has been validated
-        // Therefore we need to check the ICs here
-        for (const auto& icDatum : compilationUnit->inlineComponentData) {
-            if (icDatum.qmlType.typeId() == to) {
-                toMo = compilationUnit->propertyCaches.at(icDatum.objectIndex);
-                break;
-            }
+    // if we have an inline component from the current file,
+    // it is not properly registered at this point, as registration
+    // only occurs after the whole file has been validated
+    // Therefore we need to check the ICs here
+    for (const auto &icDatum : std::as_const(compilationUnit->inlineComponentData)) {
+        if (icDatum.qmlType.typeId() != to)
+            continue;
+
+        const auto toMo = compilationUnit->propertyCaches.at(icDatum.objectIndex);
+        for (QQmlPropertyCache::ConstPtr parent = fromMo; parent; parent = parent->parent()) {
+            if (parent == toMo)
+                return true;
         }
+        return false;
     }
 
-    while (fromMo) {
-        if (fromMo == toMo)
-            return true;
-        fromMo = fromMo->parent();
-    }
     return false;
 }
 
-QVector<QQmlError> QQmlPropertyValidator::recordError(const QV4::CompiledData::Location &location, const QString &description) const
+QList<QQmlError> QQmlPropertyValidator::recordError(const QV4::CompiledData::Location &location, const QString &description) const
 {
-    QVector<QQmlError> errors;
+    QList<QQmlError> errors;
     errors.append(qQmlCompileError(location, description));
     return errors;
 }
 
-QVector<QQmlError> QQmlPropertyValidator::recordError(const QQmlError &error) const
+QList<QQmlError> QQmlPropertyValidator::recordError(const QQmlError &error) const
 {
-    QVector<QQmlError> errors;
+    QList<QQmlError> errors;
     errors.append(error);
     return errors;
 }

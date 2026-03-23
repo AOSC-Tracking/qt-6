@@ -53,13 +53,16 @@ config("fuzztest_public_config") {
     # efficiently. It's not yet available in Chromium, so disable
     # for now.
     "CENTIPEDE_DISABLE_RIEGELI",
-
-    # In fuzztest's unit-test mode, coverage collection doesn't work
-    # with multiple DSOs, which Chromium needs even in non-component
-    # builds. Note that this doesn't impact actual fuzzing mode e.g.
-    # centipede.
-    "FUZZTEST_NO_LEGACY_COVERAGE",
   ]
+  if (!enable_fuzztest_fuzz) {
+    defines += [
+      # In fuzztest's unit-test mode, coverage collection doesn't work
+      # with multiple DSOs, which Chromium needs even in non-component
+      # builds. Note that this doesn't impact actual fuzzing mode e.g.
+      # centipede.
+      "FUZZTEST_NO_LEGACY_COVERAGE",
+    ]
+  }
   if (use_centipede) {
     defines += [ "FUZZTEST_USE_CENTIPEDE" ]
   } else if (use_fuzzing_engine && fuzzing_engine_supports_custom_main) {
@@ -84,6 +87,8 @@ if (use_centipede) {
       "src/centipede/byte_array_mutator.h",
       "src/centipede/command.cc",
       "src/centipede/control_flow.cc",
+      "src/centipede/crash_summary.cc",
+      "src/centipede/crash_summary.h",
       "src/centipede/execution_metadata.cc",
       "src/centipede/execution_metadata.h",
       "src/centipede/feature.cc",
@@ -240,6 +245,8 @@ source_set("fuzztest_internal") {
   sources = [
     "src/fuzztest/domain.h",
     "src/fuzztest/domain_core.h",
+    "src/fuzztest/fuzzing_bit_gen.cc",
+    "src/fuzztest/fuzzing_bit_gen.h",
     "src/fuzztest/fuzztest.h",
     "src/fuzztest/fuzztest_macros.cc",
     "src/fuzztest/fuzztest_macros.h",
@@ -257,9 +264,9 @@ source_set("fuzztest_internal") {
     "src/fuzztest/internal/domains/aggregate_of_impl.h",
     "src/fuzztest/internal/domains/arbitrary_impl.h",
     "src/fuzztest/internal/domains/bit_flag_combination_of_impl.h",
+    "src/fuzztest/internal/domains/bit_gen_ref.h",
     "src/fuzztest/internal/domains/container_mutation_helpers.h",
     "src/fuzztest/internal/domains/container_of_impl.h",
-    "src/fuzztest/internal/domains/domain_base.cc",
     "src/fuzztest/internal/domains/domain_base.h",
     "src/fuzztest/internal/domains/element_of_impl.h",
     "src/fuzztest/internal/domains/filter_impl.h",
@@ -267,6 +274,7 @@ source_set("fuzztest_internal") {
     "src/fuzztest/internal/domains/in_grammar_impl.cc",
     "src/fuzztest/internal/domains/in_grammar_impl.h",
     "src/fuzztest/internal/domains/in_range_impl.h",
+    "src/fuzztest/internal/domains/in_regexp_impl.cc",
     "src/fuzztest/internal/domains/in_regexp_impl.h",
     "src/fuzztest/internal/domains/map_impl.h",
     "src/fuzztest/internal/domains/one_of_impl.h",
@@ -274,11 +282,17 @@ source_set("fuzztest_internal") {
     "src/fuzztest/internal/domains/protobuf_domain_impl.h",
     "src/fuzztest/internal/domains/regexp_dfa.cc",
     "src/fuzztest/internal/domains/regexp_dfa.h",
+    "src/fuzztest/internal/domains/rune.cc",
+    "src/fuzztest/internal/domains/rune.h",
     "src/fuzztest/internal/domains/serialization_helpers.h",
     "src/fuzztest/internal/domains/smart_pointer_of_impl.h",
     "src/fuzztest/internal/domains/unique_elements_container_of_impl.h",
+    "src/fuzztest/internal/domains/utf.cc",
+    "src/fuzztest/internal/domains/utf.h",
     "src/fuzztest/internal/domains/value_mutation_helpers.h",
     "src/fuzztest/internal/domains/variant_of_impl.h",
+    "src/fuzztest/internal/escaping.cc",
+    "src/fuzztest/internal/escaping.h",
     "src/fuzztest/internal/fixture_driver.cc",
     "src/fuzztest/internal/fixture_driver.h",
     "src/fuzztest/internal/googletest_adaptor.cc",
@@ -288,6 +302,8 @@ source_set("fuzztest_internal") {
     "src/fuzztest/internal/logging.cc",
     "src/fuzztest/internal/logging.h",
     "src/fuzztest/internal/meta.h",
+    "src/fuzztest/internal/register_fuzzing_mocks.cc",
+    "src/fuzztest/internal/register_fuzzing_mocks.h",
     "src/fuzztest/internal/registration.h",
     "src/fuzztest/internal/registry.cc",
     "src/fuzztest/internal/registry.h",
@@ -334,6 +350,10 @@ source_set("fuzztest_internal") {
 
   configs -= fuzztest_remove_configs
   configs += fuzztest_add_configs
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("common") {
@@ -351,6 +371,8 @@ source_set("common") {
     "src/common/remote_file_oss.cc",
     "src/common/sha1.cc",
     "src/common/sha1.h",
+    "src/common/temp_dir.cc",
+    "src/common/temp_dir.h",
   ]
 
   deps = [ "//third_party/abseil-cpp:absl_full" ]

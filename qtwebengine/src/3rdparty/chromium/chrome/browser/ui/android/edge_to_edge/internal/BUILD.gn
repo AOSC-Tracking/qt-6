@@ -12,6 +12,7 @@ android_library("java") {
     "//chrome/android:chrome_all_java",
     "//chrome/android/javatests:*",
     "//chrome/browser/ui/android/edge_to_edge/test:*",
+    "//chrome/browser/ui/android/toolbar:junit",
   ]
   sources = [
     "java/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeBottomChinCoordinator.java",
@@ -20,7 +21,6 @@ android_library("java") {
     "java/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeBottomChinViewBinder.java",
     "java/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeControllerFactory.java",
     "java/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeControllerImpl.java",
-    "java/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeFieldTrial.java",
     "java/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeOSWrapper.java",
     "java/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeOSWrapperImpl.java",
     "java/src/org/chromium/chrome/browser/ui/edge_to_edge/SimpleEdgeToEdgePadAdjuster.java",
@@ -54,8 +54,11 @@ robolectric_library("junit") {
     "junit/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeBottomChinMediatorTest.java",
     "junit/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeBottomChinSceneLayerTest.java",
     "junit/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeBottomChinViewBinderTest.java",
+    "junit/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeControllerCreatorUnitTest.java",
     "junit/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeControllerTest.java",
+    "junit/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeDebuggingInfoTest.java",
     "junit/src/org/chromium/chrome/browser/ui/edge_to_edge/EdgeToEdgeFieldTrialUnitTest.java",
+    "junit/src/org/chromium/chrome/browser/ui/edge_to_edge/SimpleEdgeToEdgeControllerUnitTest.java",
     "junit/src/org/chromium/chrome/browser/ui/edge_to_edge/SimpleEdgeToEdgePadAdjusterUnitTest.java",
   ]
 

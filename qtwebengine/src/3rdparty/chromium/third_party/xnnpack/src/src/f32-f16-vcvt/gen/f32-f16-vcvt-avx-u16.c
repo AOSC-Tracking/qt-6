@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-f16-vcvt/sse.c.in
 //   Generator: tools/xngen
@@ -8,12 +9,15 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <smmintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/unaligned.h"
-#include "xnnpack/vcvt.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/unaligned.h"
+#include "src/xnnpack/vcvt.h"
 
 
 void xnn_f32_f16_vcvt_ukernel__avx_u16(

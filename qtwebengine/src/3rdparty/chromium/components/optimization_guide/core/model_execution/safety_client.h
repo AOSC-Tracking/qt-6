@@ -5,9 +5,9 @@
 #define COMPONENTS_OPTIMIZATION_GUIDE_CORE_MODEL_EXECUTION_SAFETY_CLIENT_H_
 
 #include "base/types/optional_ref.h"
+#include "components/optimization_guide/core/delivery/model_info.h"
 #include "components/optimization_guide/core/model_execution/safety_checker.h"
 #include "components/optimization_guide/core/model_execution/safety_model_info.h"
-#include "components/optimization_guide/core/model_info.h"
 #include "components/optimization_guide/core/optimization_guide_model_executor.h"
 #include "services/on_device_model/public/cpp/service_client.h"
 #include "services/on_device_model/public/cpp/text_safety_assets.h"
@@ -42,12 +42,14 @@ class SafetyClient final : public TextSafetyClient {
   base::expected<std::unique_ptr<SafetyChecker>, OnDeviceModelEligibilityReason>
   MakeSafetyChecker(ModelBasedCapabilityKey feature, bool can_skip);
 
-  // Get the remote, creating it if it was disconnected.
-  // The remote will disconnect if it remains idle.
-  Remote& GetTextSafetyModelRemote(
-      const on_device_model::TextSafetyLoaderParams& params) override;
+  void StartSession(
+      mojo::PendingReceiver<on_device_model::mojom::TextSafetySession> session)
+      override;
 
  private:
+  // Get the remote, creating it if it was disconnected.
+  // The remote will disconnect if it remains idle.
+  Remote& GetTextSafetyModelRemote();
   on_device_model::TextSafetyLoaderParams LoaderParams() const;
 
   // How to get a service remote.

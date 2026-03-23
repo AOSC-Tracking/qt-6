@@ -25,6 +25,7 @@
 #include "base/memory/shared_memory_mapping.h"
 #include "base/memory/unsafe_shared_memory_region.h"
 #include "base/native_library.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
@@ -37,6 +38,7 @@
 #include "gpu/ipc/common/dxgi_helpers.h"
 #include "gpu/ipc/service/shared_image_stub.h"
 #include "media/base/bitstream_buffer.h"
+#include "media/base/encoder_status.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_codecs.h"
@@ -59,7 +61,7 @@
 #include "third_party/libvpx/source/libvpx/vp9/ratectrl_rtc.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "ui/gfx/color_space_win.h"
-#include "ui/gfx/gpu_memory_buffer.h"
+#include "ui/gfx/gpu_memory_buffer_handle.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -192,6 +194,10 @@ bool IsMatchingDevice(CHROME_LUID desired_luid, ID3D11Device* device) {
   return false;
 }
 
+bool IsOdd(int value) {
+  return (value & 1) != 0;
+}
+
 }  // namespace
 
 struct MediaFoundationVideoEncodeAccelerator::PendingInput {
@@ -206,6 +212,7 @@ struct MediaFoundationVideoEncodeAccelerator::PendingInput {
   gfx::ColorSpace color_space;
   ComMFSample input_sample;
   bool resolving_shared_image = false;
+  gpu::Mailbox shared_image_token;
 };
 
 class MediaFoundationVideoEncodeAccelerator::EncodeOutput {
@@ -272,7 +279,7 @@ MediaFoundationVideoEncodeAccelerator::GetSupportedProfiles() {
   return mf_shared_state->GetSupportedProfiles();
 }
 
-bool MediaFoundationVideoEncodeAccelerator::Initialize(
+EncoderStatus MediaFoundationVideoEncodeAccelerator::Initialize(
     const Config& config,
     Client* client,
     std::unique_ptr<MediaLog> media_log) {
@@ -296,7 +303,7 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
     MEDIA_LOG(ERROR, media_log_)
         << "Input format not supported= "
         << VideoPixelFormatToString(config.input_format);
-    return false;
+    return {EncoderStatus::Codes::kEncoderInitializationError};
   }
 
   if (config.output_profile >= H264PROFILE_MIN &&
@@ -305,7 +312,7 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
         eAVEncH264VProfile_unknown) {
       MEDIA_LOG(ERROR, media_log_)
           << "Output profile not supported = " << config.output_profile;
-      return false;
+      return {EncoderStatus::Codes::kEncoderInitializationError};
     }
     codec_ = VideoCodec::kH264;
   } else if (config.output_profile >= VP9PROFILE_MIN &&
@@ -313,7 +320,7 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
     if (GetVP9VProfile(config.output_profile) == eAVEncVP9VProfile_unknown) {
       MEDIA_LOG(ERROR, media_log_)
           << "Output profile not supported = " << config.output_profile;
-      return false;
+      return {EncoderStatus::Codes::kEncoderInitializationError};
     }
     codec_ = VideoCodec::kVP9;
   } else if (config.output_profile == AV1PROFILE_PROFILE_MAIN) {
@@ -331,13 +338,13 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
   if (codec_ == VideoCodec::kUnknown) {
     MEDIA_LOG(ERROR, media_log_)
         << "Output profile not supported = " << config.output_profile;
-    return false;
+    return {EncoderStatus::Codes::kEncoderInitializationError};
   }
 
   if (config.HasSpatialLayer()) {
     MEDIA_LOG(ERROR, media_log_) << "MediaFoundation does not support "
                                     "spatial layer encoding.";
-    return false;
+    return {EncoderStatus::Codes::kEncoderInitializationError};
   }
   client_ = client;
 
@@ -377,7 +384,7 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
   if (activates.empty()) {
     NotifyErrorStatus({EncoderStatus::Codes::kEncoderInitializationError,
                        "Failed finding a hardware encoder MFT"});
-    return false;
+    return {EncoderStatus::Codes::kEncoderInitializationError};
   }
 
   bool activated = ActivateAsyncEncoder(activates, config.is_constrained_h264);
@@ -386,7 +393,7 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
   if (!activated) {
     NotifyErrorStatus({EncoderStatus::Codes::kEncoderInitializationError,
                        "Failed activating an async hardware encoder MFT"});
-    return false;
+    return {EncoderStatus::Codes::kEncoderInitializationError};
   }
 
   // Set the SW implementation of the rate controller. Do nothing if SW RC is
@@ -396,14 +403,14 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
   if (!SetEncoderModes()) {
     NotifyErrorStatus({EncoderStatus::Codes::kEncoderInitializationError,
                        "Failed to set encoder modes"});
-    return false;
+    return {EncoderStatus::Codes::kEncoderInitializationError};
   }
 
   if (!InitializeInputOutputParameters(config.output_profile,
                                        config.is_constrained_h264)) {
     NotifyErrorStatus({EncoderStatus::Codes::kEncoderInitializationError,
                        "Failed to set input/output param."});
-    return false;
+    return {EncoderStatus::Codes::kEncoderInitializationError};
   }
 
   // Get the max framerate and max/min resolutions of the given codec.
@@ -447,7 +454,7 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
   if (!IsFrameSizeAllowed(config.input_visible_size)) {
     NotifyErrorStatus({EncoderStatus::Codes::kEncoderUnsupportedConfig,
                        "Unsupported frame size"});
-    return false;
+    return {EncoderStatus::Codes::kEncoderInitializationError};
   }
 
   for (auto& [framerate, resolution] : max_framerate_and_resolutions_) {
@@ -475,6 +482,14 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
   encoder_info_.requested_resolution_alignment = 2;
   encoder_info_.apply_alignment_to_all_simulcast_layers = true;
   encoder_info_.has_trusted_rate_controller = false;
+  if (codec_ == VideoCodec::kHEVC && vendor_ == DriverVendor::kIntel) {
+    // On Intel HEVC we trust the rate controller based on manual testing and
+    // because trusting it produces better results than not trusting it when
+    // track frame rate suddenly drops, this avoids encoder FPS dropping even
+    // more than the track FPS dropped, see https://crbug.com/402910373. This
+    // risks overshooting but that seems like less of a concern on Intel.
+    encoder_info_.has_trusted_rate_controller = true;
+  }
   DCHECK(encoder_info_.is_hardware_accelerated);
   DCHECK(encoder_info_.supports_native_handle);
   DCHECK(encoder_info_.reports_average_qp);
@@ -495,14 +510,14 @@ bool MediaFoundationVideoEncodeAccelerator::Initialize(
 
   if (state_ == kInitializing) {
     if (!InitializeMFT(nullptr)) {
-      return false;
+      return {EncoderStatus::Codes::kEncoderInitializationError};
     }
   }
 
   // Notify encoder info change to client after initialization succeeded.
   client_->NotifyEncoderInfoChange(encoder_info_);
 
-  return true;
+  return {EncoderStatus::Codes::kOk};
 }
 
 bool MediaFoundationVideoEncodeAccelerator::InitializeMFT(
@@ -616,28 +631,37 @@ void MediaFoundationVideoEncodeAccelerator::Encode(
     scoped_refptr<VideoFrame> frame,
     const EncodeOptions& options) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  bool force_key_frame =
+      (input_since_keyframe_count_ + pending_input_queue_.size()) %
+          gop_length_ ==
+      0;
+  EncodeOptions effective_options(options);
+  effective_options.key_frame |= force_key_frame;
+
   // Avoid corruption triggered by consecutive key frames on Intel drivers.
   // See also https://crbug.com/40069818 and https://crbug.com/378681055.
-  if (codec_ == VideoCodec::kVP9 &&
-      last_frame_was_keyframe_request_ && options.key_frame) {
+  if (codec_ == VideoCodec::kVP9 && last_frame_was_keyframe_request_ &&
+      effective_options.key_frame) {
     // Force a fake frame in between two key frames that come in a row. The
     // MFVEA will discard the output of this frame, and the client will never
     // see any side effects, but it helps working around crbug.com/1473665.
     EncodeOptions discard_options(/*key_frame=*/false);
     EncodeInternal(frame, discard_options, /*discard_output=*/true);
-  }
 
-  bool force_key_frame =
-      (input_since_keyframe_count_ + pending_input_queue_.size()) %
-          gop_length_ ==
-      0;
+    // If the |force_key_frame| is true, it indicates that the above fake frame
+    // will also be a keyframe. In this case, we need to generate an additional
+    // fake frame to avoid consecutive keyframes.
+    if (force_key_frame) {
+      EncodeInternal(frame, discard_options, /*discard_output=*/true);
+    }
+  }
 
   bool discard_high_layer_frames =
       (((codec_ == VideoCodec::kVP9 || codec_ == VideoCodec::kAV1) &&
         vendor_ == DriverVendor::kIntel) ||
        (codec_ == VideoCodec::kH264 && (vendor_ == DriverVendor::kIntel ||
                                         vendor_ == DriverVendor::kNvidia))) &&
-      IsTemporalScalabilityCoding() && (options.key_frame || force_key_frame);
+      IsTemporalScalabilityCoding() && effective_options.key_frame;
 
   if (discard_high_layer_frames) {
     // Currently, Intel and NVIDIA drivers only allow apps to request keyframe
@@ -657,8 +681,8 @@ void MediaFoundationVideoEncodeAccelerator::Encode(
     }
   }
 
-  EncodeInternal(std::move(frame), options, /*discard_output=*/false);
-  last_frame_was_keyframe_request_ = options.key_frame;
+  EncodeInternal(std::move(frame), effective_options, /*discard_output=*/false);
+  last_frame_was_keyframe_request_ = effective_options.key_frame;
 }
 
 void MediaFoundationVideoEncodeAccelerator::QueueInput(
@@ -673,13 +697,15 @@ void MediaFoundationVideoEncodeAccelerator::QueueInput(
     return;
   }
   result.timestamp = frame->timestamp();
-  result.color_space = frame->ColorSpace();
+  result.color_space =
+      GetEncoderOutputColorSpaceFromInputColorSpace(frame->ColorSpace());
   result.options = options;
   result.discard_output = discard_output;
 
   if (!frame->VideoFrame::HasMappableGpuBuffer() && frame->HasSharedImage() &&
       command_buffer_helper_) {
     result.resolving_shared_image = true;
+    result.shared_image_token = frame->shared_image()->mailbox();
     pending_input_queue_.push_back(result);
     auto d3d_device = dxgi_device_manager_->GetDevice();
     if (!d3d_device) {
@@ -916,6 +942,12 @@ bool MediaFoundationVideoEncodeAccelerator::IsFrameSizeAllowed(gfx::Size size) {
   // failed to retrieve `MF_VIDEO_MAX_MB_PER_SEC`.
   DCHECK(!min_resolution_.IsEmpty());
 
+  if (IsOdd(size.width()) || IsOdd(size.height())) {
+    MEDIA_LOG(ERROR, media_log_) << "MediaFoundation does not support "
+                                    "encoding frame of odd width/height well.";
+    return false;
+  }
+
   for (auto& [frame_rate, resolution] : max_framerate_and_resolutions_) {
     // TODO(crbug.com/365813271): Add framerate check once we can make sure
     // WebRTC check framerate before calling `RequestEncodingParametersChange`.
@@ -1062,6 +1094,15 @@ void MediaFoundationVideoEncodeAccelerator::UpdateFrameSize(
   input_since_keyframe_count_ = 0;
   client_->RequireBitstreamBuffers(kNumInputBuffers, input_visible_size_,
                                    bitstream_buffer_size_);
+
+  if (mf_video_processor_) {
+    hr = mf_video_processor_->UpdateOutputSize(input_visible_size_);
+    if (FAILED(hr)) {
+      NotifyErrorStatus(
+          {EncoderStatus::Codes::kSystemAPICallError,
+           "Couldn't update Video processor output size: " + PrintHr(hr)});
+    }
+  }
 }
 
 void MediaFoundationVideoEncodeAccelerator::Destroy() {
@@ -1156,7 +1197,7 @@ void MediaFoundationVideoEncodeAccelerator::SetCommandBufferHelperCB(
     base::RepeatingCallback<scoped_refptr<CommandBufferHelper>()>
         get_command_buffer_helper_cb,
     scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner) {
-  if (!base::FeatureList::IsEnabled(kMediaFoundationSharedImageEncode)) {
+  if (!SupportsSharedImageEncoding(workarounds_)) {
     return;
   }
 
@@ -1168,14 +1209,17 @@ void MediaFoundationVideoEncodeAccelerator::SetCommandBufferHelperCB(
   // work in ANGLE and is much better than readback.
   // With GraphiteDawn, MFVEA will use a shared D3D device and directly
   // access textures, with D3DImageBacking handling synchronization.
+  bool use_shared_device =
+      gpu_preferences_.gr_context_type == gpu::GrContextType::kGraphiteDawn;
+  if (workarounds_.disable_mfvea_shared_device) {
+    use_shared_device = false;
+  }
   SetState(kAcquiringCommandBuffer);
   gpu_task_runner_ = gpu_task_runner;
   gpu_task_runner->PostTaskAndReplyWithResult(
       FROM_HERE,
       base::BindOnce(&GetCommandBufferHelperOnGpuThread,
-                     get_command_buffer_helper_cb, luid_,
-                     gpu_preferences_.gr_context_type ==
-                         gpu::GrContextType::kGraphiteDawn),
+                     get_command_buffer_helper_cb, luid_, use_shared_device),
       base::BindOnce(&MediaFoundationVideoEncodeAccelerator::
                          OnCommandBufferHelperAvailable,
                      weak_ptr_));
@@ -1407,10 +1451,21 @@ void MediaFoundationVideoEncodeAccelerator::SetSWRateControl() {
       return;
     }
 
-    if (vendor_ == DriverVendor::kQualcomm) {
-      // Qualcomm H264 HMFT does not work with SW BRC.
-      // More info: https://crbug.com/390581539
-      return;
+    if (workarounds_.disable_h264_accelerator_sw_brc) {
+      if ((vendor_ == DriverVendor::kAMD &&
+           base::FeatureList::IsEnabled(
+               kMediaFoundationSWBRCForH264ForceAMDGPU)) ||
+          (vendor_ == DriverVendor::kQualcomm &&
+           base::FeatureList::IsEnabled(
+               kMediaFoundationSWBRCForH264ForceARMGPU))) {
+        // Force using SW BRC on AMD and ARM platforms when the corresponding
+        // feature flags are enabled.
+      } else {
+        // Disable SW BRC for H264 HMFT on AMD and ARM.
+        // More info:
+        // https://crbug.com/417752242 and https://crbug.com/390581539
+        return;
+      }
     }
 
     // Check feature flag for the camera source.
@@ -1429,8 +1484,14 @@ void MediaFoundationVideoEncodeAccelerator::SetSWRateControl() {
 
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
   if (codec_ == VideoCodec::kHEVC) {
-    // H264 SW BRC supports up to two temporal layers.
+    // H265 SW BRC supports up to two temporal layers.
     if (num_temporal_layers_ > 2) {
+      return;
+    }
+
+    if (vendor_ == DriverVendor::kQualcomm) {
+      // Qualcomm H265 HMFT does not work with SW BRC.
+      // More info: https://crbug.com/390581539
       return;
     }
 
@@ -1672,11 +1733,8 @@ HRESULT MediaFoundationVideoEncodeAccelerator::ProcessInput(
       return E_FAIL;
     }
   } else {
-    // Force key frame for the first frame in GOP.
-    bool force_key_frame = input_since_keyframe_count_ % gop_length_ == 0;
-
     // Reset the frame count when keyframe is requested.
-    if (input.options.key_frame || force_key_frame) {
+    if (input.options.key_frame) {
       input_since_keyframe_count_ = 0;
     }
 
@@ -1690,7 +1748,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::ProcessInput(
     } else if (rate_ctrl_ && !input.discard_output) {
       VideoRateControlWrapper::FrameParams frame_params{};
       frame_params.frame_type =
-          input.options.key_frame || force_key_frame
+          input.options.key_frame
               ? VideoRateControlWrapper::FrameParams::FrameType::kKeyFrame
               : VideoRateControlWrapper::FrameParams::FrameType::kInterFrame;
       // H.264 and H.265 SW BRC need timestamp information.
@@ -1733,7 +1791,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::ProcessInput(
                                          var.ullVal);
       RETURN_ON_HR_FAILURE(hr, "Couldn't set input sample attribute QP", hr);
     }
-    if (input.options.key_frame || force_key_frame) {
+    if (input.options.key_frame) {
       VARIANT var;
       var.vt = VT_UI4;
       var.ulVal = 1;
@@ -1792,7 +1850,8 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBuffer(
   if (base::FeatureList::IsEnabled(kMediaFoundationD3DVideoProcessing)) {
     is_supported_format =
         std::ranges::find(kSupportedPixelFormatsD3DVideoProcessing,
-                          frame->format()) != kSupportedPixelFormatsD3DVideoProcessing.end();
+                          frame->format()) !=
+        kSupportedPixelFormatsD3DVideoProcessing.end();
   } else {
     is_supported_format =
         std::ranges::find(kSupportedPixelFormats, frame->format()) !=
@@ -1908,7 +1967,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBuffer(
     return E_FAIL;
   }
 
-  if (!base::FeatureList::IsEnabled(kMediaFoundationSharedImageEncode)) {
+  if (!SupportsSharedImageEncoding(workarounds_)) {
     return S_OK;
   }
 
@@ -2058,10 +2117,20 @@ HRESULT MediaFoundationVideoEncodeAccelerator::CopyInputSampleBufferFromGpu(
 
   if (mf_video_processor_) {
     // This sample needs color space conversion
-    ComMFSample vp_input_sample = std::move(input_sample);
-    hr = mf_video_processor_->Convert(vp_input_sample.Get(), frame->format(),
-                                      &input_sample);
+    ComMFSample vp_output_sample;
+    hr = mf_video_processor_->Convert(input_sample.Get(), frame->format(),
+                                      &vp_output_sample);
+    // input_sample is the sample that will be fed to the encoder, but
+    // its buffers are from the original color format.  Remove those
+    // buffers and replace them with the buffer that has been
+    // converted to the target color format.
     RETURN_ON_HR_FAILURE(hr, "Failed to convert input frame", hr);
+    hr = input_sample->RemoveAllBuffers();
+    RETURN_ON_HR_FAILURE(hr, "Failed to remove buffers from sample", hr);
+    ComMFMediaBuffer vp_output_buffer;
+    hr = vp_output_sample->GetBufferByIndex(0, &vp_output_buffer);
+    RETURN_ON_HR_FAILURE(hr, "Failed to get output buffer from sample", hr);
+    hr = input_sample->AddBuffer(vp_output_buffer.Get());
   }
 
   return S_OK;
@@ -2083,15 +2152,20 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBufferGpu(
     // - MFVP will output a different texture that can be used
     //    as encoder input with no synchronization issues.
     HRESULT hr;
+    ComMFSample vp_output_sample;
     if (frame->HasSharedImage()) {
-      ComMFSample vp_input_sample = std::move(input_sample);
-      hr = mf_video_processor_->Convert(vp_input_sample.Get(), frame->format(),
-                                        &input_sample);
+      hr = mf_video_processor_->Convert(input_sample.Get(), frame->format(),
+                                        &vp_output_sample);
     } else {
-      input_sample = nullptr;
-      hr = mf_video_processor_->Convert(frame, &input_sample);
+      hr = mf_video_processor_->Convert(frame, &vp_output_sample);
     }
     RETURN_ON_HR_FAILURE(hr, "Failed to convert input frame", hr);
+    hr = input_sample->RemoveAllBuffers();
+    RETURN_ON_HR_FAILURE(hr, "Failed to remove buffers from sample", hr);
+    ComMFMediaBuffer vp_output_buffer;
+    hr = vp_output_sample->GetBufferByIndex(0, &vp_output_buffer);
+    RETURN_ON_HR_FAILURE(hr, "Failed to get output buffer from sample", hr);
+    hr = input_sample->AddBuffer(vp_output_buffer.Get());
     return S_OK;
   }
 
@@ -2132,15 +2206,20 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBufferGpu(
     hr = PerformD3DScaling(input_texture.Get(), frame->visible_rect());
     RETURN_ON_HR_FAILURE(hr, "Failed to perform D3D video processing", hr);
     sample_texture = scaled_d3d11_texture_;
+  } else if (!frame->VideoFrame::HasMappableGpuBuffer() &&
+             frame->HasSharedImage()) {
+    // Shared images that are not GpuMemoryBuffers have already
+    // been copied.
+    sample_texture = input_texture;
   } else {
     // Even though no scaling is needed we still need to copy the texture to
     // avoid concurrent usage causing glitches (https://crbug.com/1462315). This
     // is preferred over holding a keyed mutex for the duration of the encode
     // operation since that can take a significant amount of time and mutex
     // acquisitions (necessary even for read-only operations) are blocking.
-      hr = PerformD3DCopy(input_texture.Get(), frame->visible_rect());
-      RETURN_ON_HR_FAILURE(hr, "Failed to perform D3D texture copy", hr);
-      sample_texture = copied_d3d11_texture_;
+    hr = PerformD3DCopy(input_texture.Get(), frame->visible_rect());
+    RETURN_ON_HR_FAILURE(hr, "Failed to perform D3D texture copy", hr);
+    sample_texture = copied_d3d11_texture_;
   }
 
   ComMFMediaBuffer input_buffer;
@@ -2775,12 +2854,24 @@ void MediaFoundationVideoEncodeAccelerator::OnSharedImageSampleAvailable(
     return;
   }
 
-  DCHECK(!pending_input_queue_.empty());
-  auto& next_input = pending_input_queue_.front();
-  next_input.input_sample = sample;
-  next_input.resolving_shared_image = false;
+  // If the encoding client quickly supplies multiple shared texture
+  // frames, there could be multiple shared images being resolved at
+  // the same time.  This sample needs to be linked with the correct
+  // frame in the queue.  In some circumstances, the client may supply
+  // multiple VideoFrames backed by the same mailbox, so ensure a
+  // queued frame being resolved gets completed.
+  auto it = pending_input_queue_.begin();
+  for (; it != pending_input_queue_.end(); it++) {
+    if (it->shared_image_token == frame->shared_image()->mailbox() &&
+        it->resolving_shared_image) {
+      it->input_sample = sample;
+      it->resolving_shared_image = false;
+      break;
+    }
+  }
+  DCHECK(it != pending_input_queue_.end());
 
-  HRESULT hr = PopulateInputSampleBuffer(next_input, std::move(frame));
+  HRESULT hr = PopulateInputSampleBuffer(*it, std::move(frame));
   if (FAILED(hr)) {
     NotifyErrorStatus({EncoderStatus::Codes::kEncoderFailedEncode,
                        "Failed to populate input sample buffer"});

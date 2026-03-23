@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQMLLANGUAGESERVER_P_H
 #define QQMLLANGUAGESERVER_P_H
@@ -17,7 +18,7 @@
 
 #include "documentSymbolSupport/qqmldocumentsymbolsupport_p.h"
 #include "qlanguageserver_p.h"
-#include "qqmlcodemodel_p.h"
+#include "qqmlcodemodelmanager_p.h"
 #include "qqmlfindusagessupport_p.h"
 #include "qtextsynchronization_p.h"
 #include "qqmllintsuggestions_p.h"
@@ -42,7 +43,8 @@ class QQmlLanguageServer : public QLanguageServerModule
     Q_OBJECT
 public:
     QQmlLanguageServer(std::function<void(const QByteArray &)> sendData,
-                       QQmlToolingSettings *settings = nullptr);
+                       QQmlToolingSharedSettings *settings = nullptr);
+    ~QQmlLanguageServer();
 
     QString name() const final;
     void registerHandlers(QLanguageServer *server, QLanguageServerProtocol *protocol) final;
@@ -51,7 +53,7 @@ public:
 
     int returnValue() const;
 
-    QQmlCodeModel *codeModel();
+    QQmlCodeModelManager *codeModelManager();
     QLanguageServer *server();
     TextSynchronization *textSynchronization();
     QmlLintSuggestions *lint();
@@ -62,11 +64,16 @@ public Q_SLOTS:
     void errorExit();
 
 private:
-    QQmlCodeModel m_codeModel;
+    QQmlCodeModelManager m_codeModelManager;
     QLanguageServer m_server;
+
     TextSynchronization m_textSynchronization;
-    QmlLintSuggestions m_lint;
     WorkspaceHandlers m_workspace;
+
+    // note: the order in which server modules are initialized also defines the order in which
+    // they are run! Most of them connect to m_codeModelManager::updatedSnapshot in
+    // their constructors, see https://doc.qt.io/qt-6/signalsandslots.html#signals.
+    // ==== modules that are directly triggered by the user ====
     QmlCompletionSupport m_completionSupport;
     QmlGoToTypeDefinitionSupport m_navigationSupport;
     QmlGoToDefinitionSupport m_definitionSupport;
@@ -75,8 +82,15 @@ private:
     QQmlRenameSymbolSupport m_renameSupport;
     QQmlRangeFormatting m_rangeFormatting;
     QQmlHover m_hover;
+
+    // ==== Highlighting ====
     QQmlHighlightSupport m_highlightSupport;
+
+    // ==== modules that are not triggered by the user ====
     QQmlDocumentSymbolSupport m_documentSymbolSupport;
+
+    // ==== Linting should happen at the end as it potentially can take a longer time ====
+    QmlLintSuggestions m_lint;
     int m_returnValue = 1;
 };
 

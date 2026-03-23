@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-gemm/MRx8c8-avx2.c.in
 //   Generator: tools/xngen
@@ -8,14 +9,16 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/gemm.h"
-#include "xnnpack/intrinsics-polyfill.h"
-#include "xnnpack/math.h"
-#include "xnnpack/unaligned.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/gemm.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
 
 
 void xnn_qd8_f32_qb4w_gemm_minmax_ukernel_4x8c8__avx2(
@@ -28,8 +31,8 @@ void xnn_qd8_f32_qb4w_gemm_minmax_ukernel_4x8c8__avx2(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const struct xnn_f32_qb4w_minmax_params params[restrict XNN_MIN_ELEMENTS(1)],
-    const struct xnn_qd8_quantization_params quantization_params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_qb4w_minmax_params* restrict params,
+    const struct xnn_qd8_quantization_params* restrict quantization_params) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -346,8 +349,6 @@ void xnn_qd8_f32_qb4w_gemm_minmax_ukernel_4x8c8__avx2(
     vout1x01234567 = _mm256_fmadd_ps(vout1x01234567, vinput_scale1, vbias01234567);
     vout2x01234567 = _mm256_fmadd_ps(vout2x01234567, vinput_scale2, vbias01234567);
     vout3x01234567 = _mm256_fmadd_ps(vout3x01234567, vinput_scale3, vbias01234567);
-
-    
 
     vout0x01234567 = _mm256_max_ps(vout0x01234567, vmin);
     vout1x01234567 = _mm256_max_ps(vout1x01234567, vmin);

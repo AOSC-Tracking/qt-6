@@ -112,6 +112,10 @@ class CORE_EXPORT LayoutResult final : public GarbageCollected<LayoutResult> {
     return rare_data_ ? rare_data_->lines_until_clamp : 0;
   }
 
+  const LayoutObject* LineClampAfterLayoutObject() const {
+    return rare_data_ ? rare_data_->line_clamp_after_layout_object : nullptr;
+  }
+
   // Returns true if the block-end of this line box is trimmable by the
   // `text-box-trim` property. If it's true, it means that this is the line box
   // that was the candidate for block-end trimming, but this doesn't necessarily
@@ -119,6 +123,12 @@ class CORE_EXPORT LayoutResult final : public GarbageCollected<LayoutResult> {
   // non-zero trailing border / padding, for instance.
   bool IsBlockEndTrimmableLine() const {
     return rare_data_ && rare_data_->is_block_end_trimmable_line();
+  }
+
+  // Returns true if this line box is not the last line in its IFC, but only
+  // because it has a line-clamp ellipsis that pushed content to the next line.
+  bool WouldBeLastLineIfNotForEllipsis() const {
+    return rare_data_ && rare_data_->would_be_last_line_if_not_for_ellipsis();
   }
 
   // Return true if this is an orthogonal writing-mode root that depends on the
@@ -494,7 +504,8 @@ class CORE_EXPORT LayoutResult final : public GarbageCollected<LayoutResult> {
     return rare_data_->accessibility_anchor;
   }
 
-  const HeapHashSet<Member<Element>>* DisplayLocksAffectedByAnchors() const {
+  const GCedHeapHashSet<Member<Element>>* DisplayLocksAffectedByAnchors()
+      const {
     if (!rare_data_) {
       return nullptr;
     }
@@ -559,7 +570,7 @@ class CORE_EXPORT LayoutResult final : public GarbageCollected<LayoutResult> {
     void SetAccessibilityAnchor(Element* anchor);
 
     void SetDisplayLocksAffectedByAnchors(
-        HeapHashSet<Member<Element>>* display_locks);
+        GCedHeapHashSet<Member<Element>>* display_locks);
 
    private:
     friend class LayoutResult;
@@ -646,7 +657,7 @@ class CORE_EXPORT LayoutResult final : public GarbageCollected<LayoutResult> {
       kTableData,
     };
 
-    using BitField = WTF::ConcurrentlyReadBitField<uint16_t>;
+    using BitField = ConcurrentlyReadBitField<uint16_t>;
     using LineBoxBfcBlockOffsetIsSetFlag = BitField::DefineFirstValue<bool, 1>;
     using OutOfFlowPositionedOffsetIsSetFlag =
         LineBoxBfcBlockOffsetIsSetFlag::DefineNextValue<bool, 1>;
@@ -658,6 +669,8 @@ class CORE_EXPORT LayoutResult final : public GarbageCollected<LayoutResult> {
         NeedsAnchorPositionScrollAdjustmentInYFlag::DefineNextValue<uint8_t, 3>;
     using IsBlockEndTrimmableLineFlag =
         DataUnionTypeValue::DefineNextValue<bool, 1>;
+    using WouldBeLastLineIfNotForEllipsis =
+        IsBlockEndTrimmableLineFlag::DefineNextValue<bool, 1>;
 
     struct FlexData {
       FlexData() = default;
@@ -763,6 +776,13 @@ class CORE_EXPORT LayoutResult final : public GarbageCollected<LayoutResult> {
       bit_field.set<IsBlockEndTrimmableLineFlag>(true);
     }
 
+    bool would_be_last_line_if_not_for_ellipsis() const {
+      return bit_field.get<WouldBeLastLineIfNotForEllipsis>();
+    }
+    void set_would_be_last_line_if_not_for_ellipsis() {
+      bit_field.set<WouldBeLastLineIfNotForEllipsis>(true);
+    }
+
     template <typename DataType>
     DataType* EnsureData(DataType* address, DataUnionType data_type) {
       DataUnionType old_data_type = data_union_type();
@@ -844,6 +864,8 @@ class CORE_EXPORT LayoutResult final : public GarbageCollected<LayoutResult> {
           annotation_overflow(rare_data.annotation_overflow),
           block_end_annotation_space(rare_data.block_end_annotation_space),
           lines_until_clamp(rare_data.lines_until_clamp),
+          line_clamp_after_layout_object(
+              rare_data.line_clamp_after_layout_object),
           line_box_bfc_block_offset(rare_data.line_box_bfc_block_offset),
           non_overflowing_scroll_ranges(
               rare_data.non_overflowing_scroll_ranges),
@@ -968,8 +990,9 @@ class CORE_EXPORT LayoutResult final : public GarbageCollected<LayoutResult> {
     LayoutUnit annotation_overflow;
     LayoutUnit block_end_annotation_space;
     int lines_until_clamp;
+    WeakMember<const LayoutObject> line_clamp_after_layout_object;
     Member<Element> accessibility_anchor;
-    Member<HeapHashSet<Member<Element>>> display_locks_affected_by_anchors;
+    Member<GCedHeapHashSet<Member<Element>>> display_locks_affected_by_anchors;
 
    private:
     // Only valid if line_box_bfc_block_offset_is_set

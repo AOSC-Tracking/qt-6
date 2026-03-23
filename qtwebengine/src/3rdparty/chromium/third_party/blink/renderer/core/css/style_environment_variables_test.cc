@@ -49,7 +49,7 @@ class StyleEnvironmentVariablesTest : public PageTestBase {
 
   void InitializeWithHTML(LocalFrame& frame, const String& html_content) {
     // Sets the inner html and runs the document lifecycle.
-    frame.GetDocument()->body()->setInnerHTML(html_content);
+    frame.GetDocument()->body()->SetInnerHTMLWithoutTrustedTypes(html_content);
     frame.GetDocument()->View()->UpdateAllLifecyclePhasesForTest();
   }
 
@@ -116,6 +116,10 @@ class StyleEnvironmentVariablesTest : public PageTestBase {
                                        const String& value) {
     StyleEnvironmentVariables::GetRootInstance().SetVariable(
         variable, first_dimension, second_dimension, value, nullptr);
+  }
+
+  void ClearRootInstance() {
+    StyleEnvironmentVariables::GetRootInstance().ClearForTesting();
   }
 };
 
@@ -326,7 +330,9 @@ TEST_F(StyleEnvironmentVariablesTest, GlobalVariable_Change) {
 }
 
 TEST_F(StyleEnvironmentVariablesTest, GlobalVariable_DefaultsPresent) {
-  ScopedCSSSafeAreaMaxInsetForTest scoped_feature(true);
+  // Reinitialize after updating feature state.
+  ClearRootInstance();
+
   EXPECT_EQ(kSafeAreaInsetExpectedDefault,
             GetRootVariableValue(UADefinedVariable::kSafeAreaInsetTop));
   EXPECT_EQ(kSafeAreaInsetExpectedDefault,
@@ -394,6 +400,8 @@ TEST_F(StyleEnvironmentVariablesTest, RecordUseCounter_IgnoreMediaControls) {
       WebFeature::kCSSEnvironmentVariable_SafeAreaInsetRight));
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kCSSEnvironmentVariable_SafeAreaInsetBottom_FastPath));
+  EXPECT_FALSE(GetDocument().IsUseCounted(
+      WebFeature::kCSSEnvironmentVariable_SafeAreaMaxInsetBottom));
 }
 
 TEST_F(StyleEnvironmentVariablesTest, RecordUseCounter_InvalidProperty) {
@@ -413,6 +421,15 @@ TEST_F(StyleEnvironmentVariablesTest, RecordUseCounter_SafeAreaInsetBottom) {
   EXPECT_TRUE(GetDocument().IsUseCounted(WebFeature::kCSSEnvironmentVariable));
   EXPECT_TRUE(GetDocument().IsUseCounted(
       WebFeature::kCSSEnvironmentVariable_SafeAreaInsetBottom));
+}
+
+TEST_F(StyleEnvironmentVariablesTest, RecordUseCounter_SafeAreaMaxInsetBottom) {
+  InitializeTestPageWithVariableNamed(
+      GetFrame(), UADefinedVariable::kSafeAreaMaxInsetBottom);
+
+  EXPECT_TRUE(GetDocument().IsUseCounted(WebFeature::kCSSEnvironmentVariable));
+  EXPECT_TRUE(GetDocument().IsUseCounted(
+      WebFeature::kCSSEnvironmentVariable_SafeAreaMaxInsetBottom));
 }
 
 TEST_F(StyleEnvironmentVariablesTest,
@@ -793,7 +810,7 @@ TEST_F(StyleEnvironmentVariablesTest, TitlebarArea_AfterNavigation) {
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 TEST_F(StyleEnvironmentVariablesTest, TargetedInvalidation) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
   <style>
     #target1 { left: env(unknown, 1px); }
     #target2 { left: 1px; }

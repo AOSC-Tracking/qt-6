@@ -10,7 +10,9 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_custom_element_constructor.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_custom_element_constructor_hash.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_element_shadowroot.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/dom/element_rare_data_field.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_definition.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
@@ -32,7 +34,8 @@ class LocalDOMWindow;
 class ScriptState;
 class ScriptValue;
 
-class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable {
+class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable,
+                                                public ElementRareDataField {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -79,6 +82,8 @@ class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable {
 
   void AssociatedWith(Document& document);
 
+  void initialize(V8UnionElementOrShadowRoot* element_or_shadowroot) {}
+
   void Trace(Visitor*) const override;
 
  private:
@@ -103,9 +108,9 @@ class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable {
 
   Member<const LocalDOMWindow> owner_;
 
-  using UpgradeCandidateSet = HeapHashSet<WeakMember<Element>>;
+  using UpgradeCandidateSet = GCedHeapHashSet<WeakMember<Element>>;
   using UpgradeCandidateMap =
-      HeapHashMap<AtomicString, Member<UpgradeCandidateSet>>;
+      GCedHeapHashMap<AtomicString, Member<UpgradeCandidateSet>>;
 
   // Candidate elements that can be upgraded with this registry later.
   // To make implementation simpler, we maintain a superset here, and remove
@@ -119,7 +124,7 @@ class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable {
 
   // Weak ordered set of all documents where this registry is used, in the order
   // of association between this registry and any tree scope in the document.
-  using AssociatedDocumentSet = HeapLinkedHashSet<WeakMember<Document>>;
+  using AssociatedDocumentSet = GCedHeapLinkedHashSet<WeakMember<Document>>;
   Member<AssociatedDocumentSet> associated_documents_;
 
   FRIEND_TEST_ALL_PREFIXES(

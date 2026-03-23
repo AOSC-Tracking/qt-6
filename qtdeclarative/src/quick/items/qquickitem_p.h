@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKITEM_P_H
 #define QQUICKITEM_P_H
@@ -426,13 +427,14 @@ public:
         qreal scale;
         qreal rotation;
         qreal opacity;
+        qreal biggestPointerHandlerMarginCache;
 
         QQuickContents *contents;
         QQuickScreenAttached *screenAttached;
         QQuickLayoutMirroringAttached* layoutDirectionAttached;
         QQuickEnterKeyAttached *enterKeyAttached;
         QQuickItemKeyFilter *keyHandler;
-        QVector<QQuickPointerHandler *> pointerHandlers;
+        QList<QQuickPointerHandler *> pointerHandlers;
         QObject *contextMenu;
 #if QT_CONFIG(quick_shadereffect)
         mutable QQuickItemLayer *layer;
@@ -489,7 +491,7 @@ public:
 
     inline Qt::MouseButtons acceptedMouseButtons() const;
 
-    QVector<QQuickItemPrivate::ChangeListener> changeListeners;
+    QList<QQuickItemPrivate::ChangeListener> changeListeners;
 
     void addItemChangeListener(QQuickItemChangeListener *listener, ChangeTypes types);
     void updateOrAddItemChangeListener(QQuickItemChangeListener *listener, ChangeTypes types);
@@ -556,6 +558,17 @@ public:
     quint32 focusReason:4;
     quint32 focusPolicy:4;
     // Bit 53
+    // eventHandlingChildrenWithinBounds is true if all children recursively
+    // are known to be within their parents' bounds.
+    // eventHandlingChildrenWithinBoundsSet is true only when we've checked.
+    mutable quint32 eventHandlingChildrenWithinBounds:1;
+    mutable quint32 eventHandlingChildrenWithinBoundsSet:1;
+    // Bit 55
+    quint32 customOverlay:1;
+    // Bit 56
+
+    static bool customOverlayRequested;
+    void requestCustomOverlay();
 
     enum DirtyType {
         TransformOrigin         = 0x00000001,
@@ -730,6 +743,10 @@ public:
     bool calcEffectiveEnable() const;
     void setEffectiveEnableRecur(QQuickItem *scope, bool);
 
+    qreal biggestPointerHandlerMargin() const;
+    QRectF eventHandlingBounds(qreal margin = 0) const;
+    bool parentFullyContains() const;
+    bool effectivelyClipsEventHandlingChildren() const;
 
     inline QSGTransformNode *itemNode();
     inline QSGNode *childContainerNode();
@@ -776,6 +793,16 @@ public:
     QLayoutPolicy sizePolicy() const;
     void setSizePolicy(const QLayoutPolicy::Policy &horizontalPolicy, const QLayoutPolicy::Policy &verticalPolicy);
     QLayoutPolicy szPolicy;
+
+#ifdef QT_BUILD_INTERNAL
+    inline static quint32 item_counter = 0;
+    inline static quint32 itemExtra_counter = 0;
+    inline static quint32 eventHandlingChildrenWithinBounds_counter = 0;
+    inline static quint64 itemToParentTransform_counter = 0;
+    inline static quint64 itemToWindowTransform_counter = 0;
+    inline static quint64 windowToItemTransform_counter = 0;
+    inline static quint64 effectiveClippingSkips_counter = 0;
+#endif
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QQuickItemPrivate::ExtraDataTags)

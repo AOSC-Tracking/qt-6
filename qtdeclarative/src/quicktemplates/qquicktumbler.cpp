@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicktumbler_p.h"
 
@@ -25,6 +26,7 @@ Q_STATIC_LOGGING_CATEGORY(lcTumbler, "qt.quick.controls.tumbler")
     \brief Spinnable wheel of items that can be selected.
 
     \image qtquickcontrols-tumbler-wrap.gif
+           {Tumbler with wrap, looping continuously}
 
     \code
     Tumbler {
@@ -377,6 +379,8 @@ QQuickItem *QQuickTumbler::currentItem() const
     \qmlproperty Component QtQuick.Controls::Tumbler::delegate
 
     This property holds the delegate used to display each item.
+
+    \include delegate-ownership.qdocinc {no-ownership} {Tumbler}
 */
 QQmlComponent *QQuickTumbler::delegate() const
 {

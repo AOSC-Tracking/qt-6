@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f16-raddstoreexpminusmax/neonfp16arith-rr2-p2.c.in
 //   Generator: tools/xngen
@@ -7,12 +8,14 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <assert.h>
-
 #include <arm_neon.h>
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/raddstoreexpminusmax.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/raddstoreexpminusmax.h"
 
 
 void xnn_f16_raddstoreexpminusmax_ukernel__neonfp16arith_rr2_p2_u72_acc3(

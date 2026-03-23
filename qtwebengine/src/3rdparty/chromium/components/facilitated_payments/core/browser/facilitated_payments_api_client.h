@@ -46,6 +46,10 @@ class FacilitatedPaymentsApiClient {
   // made at a time, then only the last callback will be invoked.
   virtual void IsAvailable(base::OnceCallback<void(bool)> callback) = 0;
 
+  // The synchronous version to check whether the facilitated payment API is
+  // available.
+  virtual bool IsAvailableSync() = 0;
+
   // Retrieves the client token to be used to initiate a payment and invokes the
   // given `callback` with the result. Only one GetClientToken() call per API
   // client should be made a time, because, if more than one GetClientToken()
@@ -64,9 +68,13 @@ class FacilitatedPaymentsApiClient {
       base::OnceCallback<void(PurchaseActionResult)> callback) = 0;
 };
 
-// A one time use factory for the facilitated payment API client.
+// A reusable factory for the facilitated payment API client. Since the api
+// client can be required by multiple features in the same session, it is
+// intended to be called multiple times.
+// TODO(crbug.com/395702223): Move the use of
+// `FacilitatedPaymentsApiClientCreator` from content/ to core/
 using FacilitatedPaymentsApiClientCreator =
-    base::OnceCallback<std::unique_ptr<FacilitatedPaymentsApiClient>()>;
+    base::RepeatingCallback<std::unique_ptr<FacilitatedPaymentsApiClient>()>;
 
 }  // namespace payments::facilitated
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmltype_p_p.h"
 
@@ -710,22 +711,11 @@ QTypeRevision QQmlType::metaObjectRevision() const
     return d ? d->revision : QTypeRevision();
 }
 
-QQmlAttachedPropertiesFunc QQmlType::attachedPropertiesFunction(
-        QQmlEnginePrivate *enginePrivate) const
-{
-    return attachedPropertiesFunction(&enginePrivate->typeLoader);
-}
-
 QQmlAttachedPropertiesFunc QQmlType::attachedPropertiesFunction(QQmlTypeLoader *typeLoader) const
 {
     if (const QQmlTypePrivate *base = d ? d->attachedPropertiesBase(typeLoader) : nullptr)
         return base->extraData.cppTypeData->attachedPropertiesFunc;
     return nullptr;
-}
-
-const QMetaObject *QQmlType::attachedPropertiesType(QQmlEnginePrivate *enginePrivate) const
-{
-    return attachedPropertiesType(&enginePrivate->typeLoader);
 }
 
 const QMetaObject *QQmlType::attachedPropertiesType(QQmlTypeLoader *typeLoader) const

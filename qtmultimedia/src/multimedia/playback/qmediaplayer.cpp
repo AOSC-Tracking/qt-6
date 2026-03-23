@@ -132,6 +132,16 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
     if (!control)
         return;
 
+    auto setErrorFn = [&](
+        QMediaPlayer::MediaStatus status,
+        QMediaPlayer::Error err,
+        const QString &errString)
+    {
+        control->setMedia(QUrl(), nullptr);
+        control->mediaStatusChanged(status);
+        control->error(err, errString);
+    };
+
     std::unique_ptr<QFile> file;
 
     // Back ends can't play qrc files directly.
@@ -144,9 +154,10 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
         file.reset(new QFile(QLatin1Char(':') + media.path()));
         if (!file->open(QFile::ReadOnly)) {
             file.reset();
-            control->setMedia(QUrl(), nullptr);
-            control->mediaStatusChanged(QMediaPlayer::InvalidMedia);
-            control->error(QMediaPlayer::ResourceError, QMediaPlayer::tr("Attempting to play invalid Qt resource"));
+            setErrorFn(
+                QMediaPlayer::InvalidMedia,
+                QMediaPlayer::ResourceError,
+                QMediaPlayer::tr("Attempting to play invalid Qt resource"));
 
         } else if (control->streamPlaybackSupported()) {
             control->setMedia(media, file.get());
@@ -155,17 +166,23 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
 #if defined(Q_OS_ANDROID)
             QString tempFileName = QDir::tempPath() + media.path();
             QDir().mkpath(QFileInfo(tempFileName).path());
-            QTemporaryFile *tempFile = QTemporaryFile::createNativeFile(*file);
-            if (tempFile == nullptr) {
-                control->setMedia(QUrl(), nullptr);
-                control->mediaStatusChanged(QMediaPlayer::InvalidMedia);
-                control->error(QMediaPlayer::ResourceError, QMediaPlayer::tr("Failed to establish temporary file during playback"));
+            std::unique_ptr<QTemporaryFile> tempFile { QTemporaryFile::createNativeFile(*file) };
+            if (tempFile.get() == nullptr) {
+                setErrorFn(
+                    QMediaPlayer::InvalidMedia,
+                    QMediaPlayer::ResourceError,
+                    QMediaPlayer::tr("Failed to establish temporary file during playback"));
                 return;
             }
-            if (!tempFile->rename(tempFileName))
-                qWarning() << "Could not rename temporary file to:" << tempFileName;
+            if (!tempFile->rename(tempFileName)) {
+                setErrorFn(
+                    QMediaPlayer::InvalidMedia,
+                    QMediaPlayer::ResourceError,
+                    QStringLiteral("Could not rename temporary file to: %1").arg(tempFileName));
+                return;
+            }
 #else
-            QTemporaryFile *tempFile = new QTemporaryFile;
+            std::unique_ptr<QTemporaryFile> tempFile = std::make_unique<QTemporaryFile>();
 
             // Preserve original file extension, some back ends might not load the file if it doesn't
             // have an extension.
@@ -175,10 +192,10 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
 
             // Copy the qrc data into the temporary file
             if (!tempFile->open()) {
-                control->setMedia(QUrl(), nullptr);
-                control->mediaStatusChanged(QMediaPlayer::InvalidMedia);
-                control->error(QMediaPlayer::ResourceError, tempFile->errorString());
-                delete tempFile;
+                setErrorFn(
+                    QMediaPlayer::InvalidMedia,
+                    QMediaPlayer::ResourceError,
+                    tempFile->errorString());
                 qrcFile.reset();
                 return;
             }
@@ -191,7 +208,7 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
             }
             tempFile->close();
 #endif
-            file.reset(tempFile);
+            file = std::move(tempFile);
             control->setMedia(QUrl(QUrl::fromLocalFile(file->fileName())), nullptr);
 #else
             qWarning("Qt was built with -no-feature-temporaryfile: playback from resource file is not supported!");
@@ -499,7 +516,7 @@ QString QMediaPlayer::errorString() const
 }
 
 /*!
-    \qmlmethod QtMultimedia::MediaPlayer::play()
+    \qmlmethod void QtMultimedia::MediaPlayer::play()
 
     Starts or resumes playback of the media.
 
@@ -523,7 +540,7 @@ void QMediaPlayer::play()
 }
 
 /*!
-    \qmlmethod QtMultimedia::MediaPlayer::pause()
+    \qmlmethod void QtMultimedia::MediaPlayer::pause()
 
     Pauses playback of the media.
 
@@ -545,7 +562,7 @@ void QMediaPlayer::pause()
 }
 
 /*!
-    \qmlmethod QtMultimedia::MediaPlayer::stop()
+    \qmlmethod void QtMultimedia::MediaPlayer::stop()
 
     Stops playback of the media.
 
@@ -1169,7 +1186,8 @@ void QMediaPlayer::setPitchCompensation(bool enabled) const
 QMediaPlayer::PitchCompensationAvailability QMediaPlayer::pitchCompensationAvailability() const
 {
     Q_D(const QMediaPlayer);
-    return d->control->pitchCompensationAvailability();
+    return d->control ? d->control->pitchCompensationAvailability()
+                      : PitchCompensationAvailability::Unavailable;
 }
 
 /*!
@@ -1284,27 +1302,7 @@ void QMediaPlayer::resetPlaybackOptions()
 
     This property holds the status of media loading. It can be one of the following:
 
-    \table
-    \header
-        \li Property value
-        \li Description
-    \row \li NoMedia
-        \li No media has been set.
-    \row \li LoadingMedia
-        \li The media is currently being loaded.
-    \row \li LoadedMedia
-        \li The media has been loaded.
-    \row \li BufferingMedia
-        \li The media is buffering data.
-    \row \li StalledMedia
-        \li Playback has been interrupted while the media is buffering data.
-    \row \li BufferedMedia
-        \li The media has buffered data.
-    \row \li EndOfMedia
-        \li The media has played to the end.
-    \row \li InvalidMedia
-        \li The media cannot be played.
-    \endtable
+    \qmlenumeratorsfrom QMediaPlayer::MediaStatus
 */
 
 /*!
@@ -1312,19 +1310,7 @@ void QMediaPlayer::resetPlaybackOptions()
 
     This property holds the error state of the audio. It can be one of the following.
 
-    \table
-    \header \li Value \li Description
-    \row \li NoError
-        \li There is no current error.
-    \row \li ResourceError
-        \li The audio cannot be played due to a problem allocating resources.
-    \row \li FormatError
-        \li The audio format is not supported.
-    \row \li NetworkError
-        \li The audio cannot be played due to network issues.
-    \row \li AccessDeniedError
-        \li The audio cannot be played due to insufficient permissions.
-    \endtable
+    \qmlenumeratorsfrom QMediaPlayer::Error
 */
 
 /*!

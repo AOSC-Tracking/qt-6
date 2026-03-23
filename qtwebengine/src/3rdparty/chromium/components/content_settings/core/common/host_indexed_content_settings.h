@@ -80,10 +80,6 @@ class HostIndexedContentSettings {
       return a.current_iterator_ == b.current_iterator_;
     }
 
-    friend bool operator!=(const Iterator& a, const Iterator& b) {
-      return !(a == b);
-    }
-
    private:
     enum class Stage { kInvalid, kPrimaryHost, kSecondaryHost, kWildcard };
 
@@ -126,7 +122,7 @@ class HostIndexedContentSettings {
   bool SetValue(const ContentSettingsPattern& primary_pattern,
                 const ContentSettingsPattern& secondary_pattern,
                 base::Value value,
-                const RuleMetaData& metadata);
+                RuleMetaData metadata);
 
   // Deletes the index entry for the given |primary_pattern|,
   // |secondary_pattern|, |content_type| tuple.

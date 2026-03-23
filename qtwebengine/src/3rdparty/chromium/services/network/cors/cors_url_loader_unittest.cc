@@ -34,6 +34,7 @@
 #include "services/network/test/mock_devtools_observer.h"
 #include "services/network/test/test_url_loader_client.h"
 #include "services/network/url_loader.h"
+#include "services/network/url_loader_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/origin.h"
@@ -2388,41 +2389,14 @@ TEST_F(CorsURLLoaderTest, NonBrowserNavigationRedirect) {
                           "should not call FollowRedirect"));
 }
 
-TEST_F(CorsURLLoaderTest, PrivateNetworkAccessTargetAddressSpaceCheck) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      features::kPrivateNetworkAccessPermissionPrompt);
-
-  auto initiator = url::Origin::Create(GURL("https://foo.example"));
-  ResetFactoryParams factory_params;
-  factory_params.is_trusted = true;
-  factory_params.client_security_state = mojom::ClientSecurityState::New();
-  factory_params.client_security_state->is_web_secure_context = true;
-  ResetFactory(initiator, mojom::kBrowserProcessId, factory_params);
-
-  ResourceRequest request;
-  request.mode = mojom::RequestMode::kCors;
-  request.required_ip_address_space = mojom::IPAddressSpace::kPrivate;
-  request.target_ip_address_space = mojom::IPAddressSpace::kPrivate;
-  request.url = GURL("http://foo.example/");
-  request.request_initiator = initiator;
-  request.trusted_params = ResourceRequest::TrustedParams();
-  request.trusted_params->client_security_state =
-      mojom::ClientSecurityState::New();
-  request.trusted_params->client_security_state->is_web_secure_context = true;
-
-  BadMessageTestHelper bad_message_helper;
-  CreateLoaderAndStart(request);
-  RunUntilCreateLoaderAndStartCalled();
-
-  EXPECT_EQ(client().completion_status().error_code, net::OK);
-}
-
 class StorageAccessHeadersCorsURLLoaderTest : public CorsURLLoaderTest {
  public:
   StorageAccessHeadersCorsURLLoaderTest() : CorsURLLoaderTest() {
-    feature_list_.InitAndEnableFeature(
-        network::features::kStorageAccessHeaders);
+    feature_list_.InitWithFeatures(
+        {// TODO(crbug.com/382291442): Remove features when launched.
+         network::features::kPopulatePermissionsPolicyOnRequest,
+         network::features::kStorageAccessHeadersRespectPermissionsPolicy},
+        {});
 
     ResetFactoryParams factory_params;
     factory_params.is_trusted = true;
@@ -2437,10 +2411,11 @@ class StorageAccessHeadersCorsURLLoaderTest : public CorsURLLoaderTest {
         .GetStorageAccessStatus(
             request.url, request.site_for_cookies,
             request.trusted_params->isolation_info.top_frame_origin(),
-            URLLoader::CalculateCookieSettingOverrides(
+            url_loader_util::CalculateCookieSettingOverrides(
                 /*factory_overrides=*/net::CookieSettingOverrides(),
                 /*devtools_overrides=*/net::CookieSettingOverrides(), request,
-                /*emit_metrics=*/false));
+                /*emit_metrics=*/false),
+            /*cookie_partition_key=*/std::nullopt, request.permissions_policy);
   }
 
   ResourceRequest CreateNoCorsResourceRequest(
@@ -2459,6 +2434,15 @@ class StorageAccessHeadersCorsURLLoaderTest : public CorsURLLoaderTest {
     request.method = "GET";
     request.site_for_cookies = site_for_cookies;
     request.url = url;
+    request.permissions_policy = *PermissionsPolicy::CreateFromParentPolicy(
+        /*parent_policy=*/nullptr,
+        /*header_policy=*/
+        {{{mojom::PermissionsPolicyFeature::kStorageAccessAPI,
+           /*allowed_origins=*/{},
+           /*self_if_matches=*/std::nullopt,
+           /*matches_all_origins=*/true,
+           /*matches_opaque_src=*/false}}},
+        /*container_policy=*/{}, url::Origin::Create(url));
     request.request_initiator =
         initiator.has_value() ? initiator.value() : kInitiator;
     request.trusted_params = ResourceRequest::TrustedParams();
@@ -2623,6 +2607,92 @@ TEST_F(StorageAccessHeadersCorsURLLoaderTest, OmitsOriginWhenStatusIsActive) {
 
   EXPECT_FALSE(
       GetRequest().headers.HasHeader(net::HttpRequestHeaders::kOrigin));
+}
+
+class RedirectCorsURLLoaderTest : public CorsURLLoaderTest {
+ protected:
+  void VerifyUpdateRequestForRedirect(int status_code,
+                                      const std::string& method) {
+    const GURL origin("https://example.com");
+    const GURL url("https://example.com/foo.json");
+    const GURL new_url("https://other.example.com/foo.json");
+
+    ResourceRequest request;
+    request.mode = mojom::RequestMode::kCors;
+    request.credentials_mode = mojom::CredentialsMode::kOmit;
+    request.method = method;
+    request.url = url;
+    request.request_initiator = url::Origin::Create(origin);
+    request.referrer = url;
+    request.headers.SetHeader("Content-Type", "application/json");
+    request.headers.SetHeader("Content-Encoding", "gzip");
+    request.headers.SetHeader("Content-Language", "en-US");
+    request.headers.SetHeader("Content-Location", new_url.spec());
+    request.request_body = new network::ResourceRequestBody();
+
+    CreateLoaderAndStart(request);
+    RunUntilCreateLoaderAndStartCalled();
+
+    EXPECT_EQ(1, num_created_loaders());
+    EXPECT_EQ(url, GetRequest().url);
+    EXPECT_EQ(method, GetRequest().method);
+    EXPECT_EQ(url, GetRequest().referrer);
+    EXPECT_EQ("application/json",
+              GetRequest().headers.GetHeader("Content-Type"));
+    EXPECT_EQ("gzip", GetRequest().headers.GetHeader("Content-Encoding"));
+    EXPECT_EQ("en-US", GetRequest().headers.GetHeader("Content-Language"));
+    EXPECT_EQ(new_url.spec(),
+              GetRequest().headers.GetHeader("Content-Location"));
+    EXPECT_NE(nullptr, GetRequest().request_body);
+
+    NotifyLoaderClientOnReceiveRedirect(CreateRedirectInfo(
+        status_code, "GET", new_url, "https://other.example.com",
+        net::ReferrerPolicy::ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN));
+    RunUntilRedirectReceived();
+
+    EXPECT_TRUE(IsNetworkLoaderStarted());
+    EXPECT_FALSE(client().has_received_completion());
+    EXPECT_FALSE(client().has_received_response());
+    EXPECT_TRUE(client().has_received_redirect());
+
+    ClearHasReceivedRedirect();
+    FollowRedirect();
+    RunUntilCreateLoaderAndStartCalled();
+
+    EXPECT_EQ(2, num_created_loaders());
+    EXPECT_EQ(new_url, GetRequest().url);
+    EXPECT_EQ("GET", GetRequest().method);
+    EXPECT_EQ(GURL("https://other.example.com"), GetRequest().referrer);
+    EXPECT_EQ(net::ReferrerPolicy::ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN,
+              GetRequest().referrer_policy);
+    EXPECT_FALSE(GetRequest().headers.HasHeader("Content-Type"));
+    EXPECT_FALSE(GetRequest().headers.HasHeader("Content-Encoding"));
+    EXPECT_FALSE(GetRequest().headers.HasHeader("Content-Language"));
+    EXPECT_FALSE(GetRequest().headers.HasHeader("Content-Location"));
+    EXPECT_EQ(nullptr, GetRequest().request_body);
+
+    NotifyLoaderClientOnReceiveResponse(
+        {{"Access-Control-Allow-Origin", "https://example.com"}});
+    NotifyLoaderClientOnComplete(net::OK);
+    RunUntilComplete();
+
+    EXPECT_FALSE(client().has_received_redirect());
+    EXPECT_TRUE(client().has_received_response());
+    EXPECT_TRUE(client().has_received_completion());
+    EXPECT_EQ(net::OK, client().completion_status().error_code);
+  }
+};
+
+TEST_F(RedirectCorsURLLoaderTest, UpdateRequestFor301PostRedirect) {
+  VerifyUpdateRequestForRedirect(301, "POST");
+}
+
+TEST_F(RedirectCorsURLLoaderTest, UpdateRequestFor302PostRedirect) {
+  VerifyUpdateRequestForRedirect(302, "POST");
+}
+
+TEST_F(RedirectCorsURLLoaderTest, UpdateRequestFor303Redirect) {
+  VerifyUpdateRequestForRedirect(303, "FOO");
 }
 
 }  // namespace

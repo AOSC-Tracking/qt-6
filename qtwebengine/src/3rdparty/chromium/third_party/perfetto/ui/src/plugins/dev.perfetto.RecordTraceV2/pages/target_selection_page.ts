@@ -18,17 +18,18 @@ import {SegmentedButtons} from '../../../widgets/segmented_buttons';
 import {TARGET_PLATFORMS} from '../interfaces/target_platform';
 import {RecordingTargetProvider} from '../interfaces/recording_target_provider';
 import {Icon} from '../../../widgets/icon';
-import {Button} from '../../../widgets/button';
+import {Button, ButtonBar, ButtonVariant} from '../../../widgets/button';
 import {Intent} from '../../../widgets/common';
 import {getOrCreate} from '../../../base/utils';
 import {PreflightCheckRenderer} from './preflight_check_renderer';
 import {Select} from '../../../widgets/select';
 import {DisposableStack} from '../../../base/disposable_stack';
 import {CurrentTracingSession, RecordingManager} from '../recording_manager';
-import {downloadData} from '../../../base/download_utils';
+import {download} from '../../../base/download_utils';
 import {RecordSubpage} from '../config/config_interfaces';
 import {RecordPluginSchema} from '../serialization_schema';
 import {Checkbox} from '../../../widgets/checkbox';
+import {linkify} from '../../../base/mithril_utils';
 
 type RecMgrAttrs = {recMgr: RecordingManager};
 
@@ -111,7 +112,7 @@ class TransportSelector implements m.ClassComponent<RecMgrAttrs> {
           `label[for=${id}]`,
           m(Icon, {icon: provider.icon}),
           m('.title', provider.name),
-          m('.description', provider.description),
+          m('.description', linkify(provider.description)),
         ),
       ]);
     }
@@ -209,6 +210,7 @@ class TargetSelector implements m.ClassComponent<TargetSelectorAttrs> {
             label: 'Connect new device',
             icon: 'add',
             intent: Intent.Primary,
+            variant: ButtonVariant.Filled,
             onclick: async () => {
               const target = await attrs.provider.pairNewTarget!();
               target && recMgr.setTarget(target);
@@ -259,17 +261,18 @@ type SessionMgmtAttrs = {recMgr: RecordingManager; target: RecordingTarget};
 class SessionMgmtRenderer implements m.ClassComponent<SessionMgmtAttrs> {
   view({attrs}: m.CVnode<SessionMgmtAttrs>) {
     const session = attrs.recMgr.currentSession;
+    const isValid = attrs.recMgr.recordConfig.traceConfig.mode !== 'LONG_TRACE';
     const isRecording = session?.state === 'RECORDING';
     return [
       m('header', 'Tracing session'),
       m(
-        'div',
+        ButtonBar,
         m(Button, {
           label: 'Start tracing',
           icon: 'not_started',
           iconFilled: true,
           className: 'start',
-          disabled: isRecording,
+          disabled: isRecording || !isValid,
           onclick: () => attrs.recMgr.startTracing().then(() => m.redraw()),
         }),
         m(Button, {
@@ -277,7 +280,7 @@ class SessionMgmtRenderer implements m.ClassComponent<SessionMgmtAttrs> {
           icon: 'stop',
           className: 'stop',
           iconFilled: true,
-          disabled: !isRecording,
+          disabled: !isRecording || !isValid,
           onclick: () => session?.session?.stop().then(() => m.redraw()),
         }),
         m(Button, {
@@ -285,7 +288,7 @@ class SessionMgmtRenderer implements m.ClassComponent<SessionMgmtAttrs> {
           icon: 'cancel',
           className: 'cancel',
           iconFilled: true,
-          disabled: !isRecording,
+          disabled: !isRecording || !isValid,
           onclick: () => session?.session?.cancel().then(() => m.redraw()),
         }),
         m(Checkbox, {
@@ -366,7 +369,11 @@ class SessionStateRenderer implements m.ClassComponent<SessionStateAttrs> {
             m(Button, {
               label: 'Download',
               icon: 'download',
-              onclick: () => downloadData(this.session.fileName, traceData),
+              onclick: () =>
+                download({
+                  fileName: this.session.fileName,
+                  content: traceData,
+                }),
             }),
           ),
         ),

@@ -10,12 +10,12 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "base/time/time.h"
 #include "base/types/strong_alias.h"
 #include "components/sync/base/data_type.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace sync_pb {
 enum SharingSpecificFields_EnabledFeatures : int;
@@ -44,8 +44,7 @@ class DeviceInfo {
 
   // A struct that holds information regarding to Sharing features.
   struct SharingInfo {
-    SharingInfo(SharingTargetInfo vapid_target_info,
-                SharingTargetInfo sharing_target_info,
+    SharingInfo(SharingTargetInfo sharing_target_info,
                 std::string chime_representative_target_id,
                 std::set<sync_pb::SharingSpecificFields_EnabledFeatures>
                     enabled_features);
@@ -53,10 +52,6 @@ class DeviceInfo {
     SharingInfo(SharingInfo&& other);
     SharingInfo& operator=(const SharingInfo& other);
     ~SharingInfo();
-
-    // Target info using VAPID key.
-    // TODO(crbug.com/40102247): Deprecate when VAPID migration is over.
-    SharingTargetInfo vapid_target_info;
 
     // Target info using Sharing sender ID.
     SharingTargetInfo sender_id_target_info;
@@ -73,11 +68,11 @@ class DeviceInfo {
   struct PhoneAsASecurityKeyInfo {
     // NotReady indicates that more time is needed to calculate the
     // PhoneAsASecurityKeyInfo.
-    using NotReady = base::StrongAlias<class NotReadyTag, absl::monostate>;
+    using NotReady = base::StrongAlias<class NotReadyTag, std::monostate>;
     // NoSupport indicates that phone-as-a-security-key cannot be supported.
-    using NoSupport = base::StrongAlias<class NoSupportTag, absl::monostate>;
+    using NoSupport = base::StrongAlias<class NoSupportTag, std::monostate>;
     using StatusOrInfo =
-        absl::variant<NotReady, NoSupport, PhoneAsASecurityKeyInfo>;
+        std::variant<NotReady, NoSupport, PhoneAsASecurityKeyInfo>;
 
     PhoneAsASecurityKeyInfo();
     PhoneAsASecurityKeyInfo(const PhoneAsASecurityKeyInfo& other);

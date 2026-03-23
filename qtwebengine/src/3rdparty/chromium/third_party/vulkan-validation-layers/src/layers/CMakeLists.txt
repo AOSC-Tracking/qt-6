@@ -2,6 +2,7 @@
 # Copyright (c) 2014-2025 Valve Corporation
 # Copyright (c) 2014-2025 LunarG, Inc.
 # Copyright (c) 2023-2025 RasterGrid Kft.
+# Copyright (C) 2025 Arm Limited.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +23,13 @@ set(LAYER_NAME "VkLayer_khronos_validation")
 
 add_library(VkLayer_utils STATIC)
 target_sources(VkLayer_utils PRIVATE
+    containers/container_utils.h
     containers/custom_containers.h
+    containers/limits.h
+    containers/small_container.h
+    containers/small_vector.h
+    containers/span.h
+    containers/tls_guard.h
     error_message/logging.h
     error_message/logging.cpp
     error_message/error_location.cpp
@@ -49,24 +56,37 @@ target_sources(VkLayer_utils PRIVATE
     ${API_TYPE}/generated/vk_api_version.h
     ${API_TYPE}/generated/vk_extension_helper.h
     ${API_TYPE}/generated/vk_extension_helper.cpp
+    utils/action_command_utils.h
+    utils/assert_utils.h
     utils/cast_utils.h
     utils/convert_utils.cpp
     utils/convert_utils.h
+    utils/dispatch_utils.cpp
+    utils/dispatch_utils.h
+    utils/file_system_utils.cpp
+    utils/file_system_utils.h
     utils/hash_util.h
     utils/hash_util.cpp
     utils/hash_vk_types.h
+    utils/image_utils.h
+    utils/image_utils.cpp
     utils/image_layout_utils.h
     utils/image_layout_utils.cpp
+    utils/lock_utils.h
+    utils/math_utils.h
     utils/vk_layer_extension_utils.cpp
     utils/vk_layer_extension_utils.h
+    utils/keyboard.cpp
+    utils/keyboard.h
     utils/ray_tracing_utils.cpp
     utils/ray_tracing_utils.h
+    utils/sync_utils.cpp
+    utils/sync_utils.h
     utils/text_utils.cpp
     utils/text_utils.h
-    utils/vk_layer_utils.cpp
-    utils/vk_layer_utils.h
     utils/vk_struct_compare.cpp
     utils/vk_struct_compare.h
+    utils/vk_api_utils.h
     vk_layer_config.h
     vk_layer_config.cpp
 )
@@ -81,11 +101,26 @@ target_link_libraries(VkLayer_utils PUBLIC
 target_include_directories(VkLayer_utils SYSTEM PRIVATE external)
 target_include_directories(VkLayer_utils PUBLIC . ${API_TYPE})
 
-find_package(robin_hood CONFIG)
-option(USE_ROBIN_HOOD_HASHING "robin_hood provides faster versions of std::unordered_map and std::unordered_set" ${robin_hood_FOUND})
-if (USE_ROBIN_HOOD_HASHING)
-    target_link_libraries(VkLayer_utils PUBLIC robin_hood::robin_hood)
-    target_compile_definitions(VkLayer_utils PUBLIC USE_ROBIN_HOOD_HASHING)
+option(USE_CUSTOM_HASH_MAP "Use a custom hashing library that is faster than std::unordered_map and std::unordered_set (default: ON)" ON)
+
+if(DEFINED USE_ROBIN_HOOD_HASHING)
+    message(DEPRECATION "USE_ROBIN_HOOD_HASHING has been deprecated. Please use USE_CUSTOM_HASH_MAP option instead.")
+    set(USE_CUSTOM_HASH_MAP ${USE_ROBIN_HOOD_HASHING})
+endif()
+
+if (USE_CUSTOM_HASH_MAP)
+    message(STATUS "Using parallel_hashmap as custom hash maps")
+    target_compile_definitions(VkLayer_utils PUBLIC USE_CUSTOM_HASH_MAP)
+    # Prefer using a locally installed parallel-hashmap package before using the in-tree sources.
+    # This approach supports installation with package managers such as conan
+    find_package(phmap CONFIG)
+    if (TARGET phmap)
+        target_link_libraries(VkLayer_utils PRIVATE phmap)
+    else()
+        add_subdirectory(external/parallel_hashmap)
+    endif()
+else()
+    message(STATUS "Using STL maps instead of custom hash maps")
 endif()
 
 # Using mimalloc on non-Windows OSes currently results in unit test instability with some
@@ -115,6 +150,26 @@ elseif(MSVC)
     )
 endif()
 
+option(DEBUG_CAPTURE_KEYBOARD "Every QueueSubmit if F1 is pressed, a DebugCapture function will be called and a custom action can be done (default: OFF)" OFF)
+if (DEBUG_CAPTURE_KEYBOARD)
+    target_compile_definitions(VkLayer_utils PUBLIC DEBUG_CAPTURE_KEYBOARD)
+    if(WIN32)
+    else()
+        # needed for XQueryKeymap
+        find_package(X11 REQUIRED)
+        target_link_libraries(VkLayer_utils PRIVATE ${X11_LIBRARIES})
+        target_include_directories(VkLayer_utils PRIVATE ${X11_INCLUDE_DIR})
+
+        # needed for xcb_key_symbols_alloc
+        find_library(XCB_LIB xcb REQUIRED)
+        find_path(XCB_INCLUDE_DIR xcb/xcb.h REQUIRED)
+        find_library(XCB_KEYSYMS_LIB xcb-keysyms REQUIRED)
+        find_path(XCB_KEYSYMS_INCLUDE_DIR xcb/xcb_keysyms.h REQUIRED)
+        target_link_libraries(VkLayer_utils PRIVATE ${XCB_LIB} ${XCB_KEYSYMS_LIB})
+        target_include_directories(VkLayer_utils PRIVATE ${XCB_INCLUDE_DIR} ${XCB_KEYSYMS_INCLUDE_DIR})
+    endif()
+endif()
+
 add_subdirectory(gpuav/spirv)
 
 if(IOS)
@@ -124,10 +179,10 @@ else()
 endif()
 
 target_sources(vvl PRIVATE
-    best_practices/best_practices_utils.cpp
     best_practices/bp_buffer.cpp
     best_practices/bp_cmd_buffer.cpp
     best_practices/bp_cmd_buffer_nv.cpp
+    best_practices/bp_constants.h
     best_practices/bp_copy_blit_resolve.cpp
     best_practices/bp_descriptor.cpp
     best_practices/bp_device_memory.cpp
@@ -138,16 +193,20 @@ target_sources(vvl PRIVATE
     best_practices/bp_pipeline.cpp
     best_practices/bp_ray_tracing.cpp
     best_practices/bp_render_pass.cpp
+    best_practices/bp_state_tracker.cpp
     best_practices/bp_state.h
+    best_practices/bp_state.cpp
     best_practices/bp_synchronization.cpp
+    best_practices/bp_utils.cpp
+    best_practices/bp_utils.h
     best_practices/bp_video.cpp
     best_practices/bp_wsi.cpp
     best_practices/best_practices_validation.h
     chassis/chassis_modification_state.h
     chassis/chassis_manual.cpp
     chassis/dispatch_object_manual.cpp
-    containers/qfo_transfer.h
-    containers/range_vector.h
+    containers/range.h
+    containers/range_map.h
     containers/subresource_adapter.cpp
     containers/subresource_adapter.h
     core_checks/cc_android.cpp
@@ -180,8 +239,11 @@ target_sources(vvl PRIVATE
     core_checks/cc_state_tracker.cpp
     core_checks/cc_submit.h
     core_checks/cc_submit.cpp
+    core_checks/cc_sync_vuid_maps.h
+    core_checks/cc_sync_vuid_maps.cpp
     core_checks/cc_synchronization.h
     core_checks/cc_synchronization.cpp
+    core_checks/cc_tensor.cpp
     core_checks/cc_video.cpp
     core_checks/cc_vuid_maps.cpp
     core_checks/cc_vuid_maps.h
@@ -201,6 +263,8 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/valid_enum_values.h
     ${API_TYPE}/generated/valid_flag_values.cpp
     ${API_TYPE}/generated/command_validation.cpp
+    ${API_TYPE}/generated/deprecation.cpp
+    ${API_TYPE}/generated/deprecation.h
     ${API_TYPE}/generated/device_features.cpp
     ${API_TYPE}/generated/device_features.h
     ${API_TYPE}/generated/dynamic_state_helper.cpp
@@ -216,6 +280,7 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/object_tracker_instance_methods.h
     ${API_TYPE}/generated/spirv_grammar_helper.cpp
     ${API_TYPE}/generated/spirv_validation_helper.cpp
+    ${API_TYPE}/generated/spirv_validation_helper.h
     ${API_TYPE}/generated/stateless_device_methods.h
     ${API_TYPE}/generated/stateless_instance_methods.h
     ${API_TYPE}/generated/stateless_validation_helper.cpp
@@ -223,22 +288,17 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/thread_safety.cpp
     ${API_TYPE}/generated/thread_safety_device_defs.h
     ${API_TYPE}/generated/thread_safety_instance_defs.h
-    ${API_TYPE}/generated/validation_cmd_copy_buffer_to_image_comp.h
-    ${API_TYPE}/generated/validation_cmd_copy_buffer_to_image_comp.cpp
-    ${API_TYPE}/generated/validation_cmd_dispatch_comp.h
-    ${API_TYPE}/generated/validation_cmd_dispatch_comp.cpp
-    ${API_TYPE}/generated/validation_cmd_count_buffer_comp.h
-    ${API_TYPE}/generated/validation_cmd_count_buffer_comp.cpp
-    ${API_TYPE}/generated/validation_cmd_first_instance_comp.h
-    ${API_TYPE}/generated/validation_cmd_first_instance_comp.cpp
-    ${API_TYPE}/generated/validation_cmd_draw_indexed_indirect_index_buffer_comp.h
-    ${API_TYPE}/generated/validation_cmd_draw_indexed_indirect_index_buffer_comp.cpp
-    ${API_TYPE}/generated/validation_cmd_draw_mesh_indirect_comp.h
-    ${API_TYPE}/generated/validation_cmd_draw_mesh_indirect_comp.cpp
-    ${API_TYPE}/generated/validation_cmd_trace_rays_rgen.h
-    ${API_TYPE}/generated/validation_cmd_trace_rays_rgen.cpp
-    gpuav/core/gpuav_settings.h
+    ${API_TYPE}/generated/gpuav_offline_spirv.h
+    ${API_TYPE}/generated/gpuav_offline_spirv.cpp
+    gpuav/core/gpuav.h
     gpuav/core/gpuav_constants.h
+    gpuav/core/gpuav_features.cpp
+    gpuav/core/gpuav_record.cpp
+    gpuav/core/gpuav_setup.cpp
+    gpuav/core/gpuav_settings.h
+    gpuav/core/gpuav_settings.cpp
+    gpuav/core/gpuav_validation_pipeline.h
+    gpuav/core/gpuav_validation_pipeline.cpp
     gpuav/validation_cmd/gpuav_validation_cmd_common.h
     gpuav/validation_cmd/gpuav_validation_cmd_common.cpp
     gpuav/validation_cmd/gpuav_draw.h
@@ -253,11 +313,6 @@ target_sources(vvl PRIVATE
     gpuav/descriptor_validation/gpuav_descriptor_validation.cpp
     gpuav/descriptor_validation/gpuav_descriptor_set.cpp
     gpuav/descriptor_validation/gpuav_descriptor_set.h
-    gpuav/descriptor_validation/gpuav_image_layout.h
-    gpuav/descriptor_validation/gpuav_image_layout.cpp
-    gpuav/core/gpuav.h
-    gpuav/core/gpuav_record.cpp
-    gpuav/core/gpuav_setup.cpp
     gpuav/debug_printf/debug_printf.cpp
     gpuav/debug_printf/debug_printf.h
     gpuav/error_message/gpuav_vuids.cpp
@@ -266,6 +321,12 @@ target_sources(vvl PRIVATE
     gpuav/instrumentation/gpuav_shader_instrumentor.h
     gpuav/instrumentation/gpuav_instrumentation.h
     gpuav/instrumentation/gpuav_instrumentation.cpp
+    gpuav/instrumentation/buffer_device_address.h
+    gpuav/instrumentation/buffer_device_address.cpp
+    gpuav/instrumentation/descriptor_checks.h
+    gpuav/instrumentation/descriptor_checks.cpp
+    gpuav/instrumentation/post_process_descriptor_indexing.h
+    gpuav/instrumentation/post_process_descriptor_indexing.cpp
     gpuav/resources/gpuav_state_trackers.cpp
     gpuav/resources/gpuav_state_trackers.h
     gpuav/resources/gpuav_shader_resources.h
@@ -274,6 +335,7 @@ target_sources(vvl PRIVATE
     gpuav/shaders/gpuav_error_codes.h
     gpuav/shaders/gpuav_error_header.h
     gpuav/shaders/gpuav_shaders_constants.h
+    gpuav/shaders/validation_cmd/push_data.h
     object_tracker/object_lifetime_validation.h
     object_tracker/object_tracker_utils.cpp
     state_tracker/buffer_state.cpp
@@ -288,23 +350,31 @@ target_sources(vvl PRIVATE
     state_tracker/device_memory_state.h
     state_tracker/device_state.cpp
     state_tracker/device_state.h
+    state_tracker/event_map.h
     state_tracker/fence_state.cpp
     state_tracker/fence_state.h
     state_tracker/image_layout_map.cpp
     state_tracker/image_layout_map.h
     state_tracker/image_state.cpp
     state_tracker/image_state.h
+    state_tracker/last_bound_state.cpp
+    state_tracker/last_bound_state.h
     state_tracker/pipeline_layout_state.cpp
     state_tracker/pipeline_layout_state.h
     state_tracker/pipeline_state.cpp
     state_tracker/pipeline_state.h
     state_tracker/pipeline_sub_state.cpp
     state_tracker/pipeline_sub_state.h
-    state_tracker/query_state.h
+    state_tracker/push_constant_data.h
     state_tracker/semaphore_state.cpp
     state_tracker/semaphore_state.h
+    state_tracker/special_supported.h
     state_tracker/state_object.cpp
     state_tracker/state_object.h
+    state_tracker/query_state.cpp
+    state_tracker/query_state.h
+    state_tracker/tensor_state.cpp
+    state_tracker/tensor_state.h
     state_tracker/queue_state.cpp
     state_tracker/queue_state.h
     state_tracker/ray_tracing_state.h
@@ -325,6 +395,8 @@ target_sources(vvl PRIVATE
     state_tracker/vertex_index_buffer_state.h
     state_tracker/video_session_state.cpp
     state_tracker/video_session_state.h
+    state_tracker/wsi_state.cpp
+    state_tracker/wsi_state.h
     stateless/sl_buffer.cpp
     stateless/sl_cmd_buffer_dynamic.cpp
     stateless/sl_cmd_buffer.cpp
@@ -339,7 +411,10 @@ target_sources(vvl PRIVATE
     stateless/sl_ray_tracing.cpp
     stateless/sl_render_pass.cpp
     stateless/sl_shader_object.cpp
+    stateless/sl_spirv.cpp
+    stateless/sl_spirv.h
     stateless/sl_synchronization.cpp
+    stateless/sl_tensor.cpp
     stateless/sl_utils.cpp
     stateless/sl_vuid_maps.cpp
     stateless/sl_vuid_maps.h
@@ -355,6 +430,7 @@ target_sources(vvl PRIVATE
     sync/sync_common.h
     sync/sync_error_messages.cpp
     sync/sync_error_messages.h
+    sync/sync_image.cpp
     sync/sync_image.h
     sync/sync_op.cpp
     sync/sync_op.h
@@ -367,18 +443,15 @@ target_sources(vvl PRIVATE
     sync/sync_stats.h
     sync/sync_submit.cpp
     sync/sync_submit.h
-    sync/sync_utils.cpp
-    sync/sync_utils.h
     sync/sync_validation.cpp
     sync/sync_validation.h
-    sync/sync_vuid_maps.cpp
-    sync/sync_vuid_maps.h
     thread_tracker/thread_safety_validation.cpp
     thread_tracker/thread_safety_validation.h
     utils/shader_utils.cpp
     utils/shader_utils.h
     layer_options.cpp
     layer_options.h
+    layer_options_validation.h
     profiling/profiling.h
 )
 get_target_property(LAYER_SOURCES vvl SOURCES)
@@ -395,6 +468,9 @@ set_target_properties(vvl PROPERTIES OUTPUT_NAME ${LAYER_NAME})
 if(MSVC)
     target_link_options(vvl PRIVATE /DEF:${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.def)
     target_compile_options(vvl PRIVATE /bigobj)
+
+    set(NATVIS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/types.natvis" "${CMAKE_CURRENT_SOURCE_DIR}/external/parallel_hashmap/natvis/phmap.natvis")
+    target_sources(vvl PRIVATE ${NATVIS_FILES})
 elseif(MINGW)
     target_sources(vvl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.def)
     target_compile_options(vvl PRIVATE -Wa,-mbig-obj)
@@ -415,6 +491,13 @@ endif()
     # Both Apple and IOS
     target_link_options(vvl PRIVATE -exported_symbols_list ${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.exp)
 elseif(ANDROID)
+    # Need 16k pages in Android 15
+    # When we bump our NDK requirement to r28 we can remove
+    # https://developer.android.com/guide/practices/page-sizes#compile-r28
+    # https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9703
+    # https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9170
+    target_link_options(vvl PRIVATE "-Wl,-z,max-page-size=16384")
+
     target_link_options(vvl PRIVATE LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}-android.map)
 else()
     target_link_options(vvl PRIVATE LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.map)
@@ -452,8 +535,8 @@ if (VVL_ENABLE_TRACY)
     include(FetchContent)
     FetchContent_Declare(
         tracy
-        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-        GIT_TAG v0.11.1
+        GIT_REPOSITORY https://github.com/arno-lunarg/tracy.git
+        GIT_TAG v0.12.1-arno
         GIT_SHALLOW TRUE
         GIT_PROGRESS TRUE)
 

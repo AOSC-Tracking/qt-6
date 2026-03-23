@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef DEVTOOLS_FRONTEND_QT_H
 #define DEVTOOLS_FRONTEND_QT_H
@@ -59,6 +60,7 @@ private:
     void OpenInNewTab(const std::string &url) override;
     void InspectedContentsClosing() override;
     void OnLoadCompleted() override;
+    content::WebContents* GetInspectedWebContents() override;
 
     void InspectElementCompleted() override {}
     void CloseWindow() override;

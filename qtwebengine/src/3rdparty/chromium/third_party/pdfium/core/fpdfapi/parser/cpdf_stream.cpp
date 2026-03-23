@@ -10,6 +10,7 @@
 
 #include <sstream>
 #include <utility>
+#include <variant>
 
 #include "constants/stream_dict_common.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -55,7 +56,7 @@ CPDF_Stream::CPDF_Stream(RetainPtr<IFX_SeekableReadStream> file,
     : data_(std::move(file)), dict_(std::move(dict)) {
   CHECK(dict_->IsInline());
   SetLengthInDict(pdfium::checked_cast<int>(
-      absl::get<RetainPtr<IFX_SeekableReadStream>>(data_)->GetSize()));
+      std::get<RetainPtr<IFX_SeekableReadStream>>(data_)->GetSize()));
 }
 
 CPDF_Stream::CPDF_Stream(DataVector<uint8_t> data,
@@ -63,11 +64,11 @@ CPDF_Stream::CPDF_Stream(DataVector<uint8_t> data,
     : data_(std::move(data)), dict_(std::move(dict)) {
   CHECK(dict_->IsInline());
   SetLengthInDict(
-      pdfium::checked_cast<int>(absl::get<DataVector<uint8_t>>(data_).size()));
+      pdfium::checked_cast<int>(std::get<DataVector<uint8_t>>(data_).size()));
 }
 
 CPDF_Stream::~CPDF_Stream() {
-  m_ObjNum = kInvalidObjNum;
+  obj_num_ = kInvalidObjNum;
   if (dict_->GetObjNum() == kInvalidObjNum) {
     dict_.Leak();  // lowercase release, release ownership.
   }
@@ -103,10 +104,10 @@ RetainPtr<CPDF_Object> CPDF_Stream::CloneNonCyclic(
   auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pdfium::WrapRetain(this));
   pAcc->LoadAllDataRaw();
 
-  RetainPtr<const CPDF_Dictionary> pDict = GetDict();
+  RetainPtr<const CPDF_Dictionary> dict = GetDict();
   RetainPtr<CPDF_Dictionary> pNewDict;
-  if (!pdfium::Contains(*pVisited, pDict.Get())) {
-    pNewDict = ToDictionary(static_cast<const CPDF_Object*>(pDict.Get())
+  if (!pdfium::Contains(*pVisited, dict.Get())) {
+    pNewDict = ToDictionary(static_cast<const CPDF_Object*>(dict.Get())
                                 ->CloneNonCyclic(bDirect, pVisited));
   }
   return pdfium::MakeRetain<CPDF_Stream>(pAcc->DetachData(),
@@ -155,9 +156,10 @@ DataVector<uint8_t> CPDF_Stream::ReadAllRawData() const {
   DataVector<uint8_t> result(GetRawSize());
   DCHECK(!result.empty());
 
-  auto underlying_stream = absl::get<RetainPtr<IFX_SeekableReadStream>>(data_);
-  if (!underlying_stream->ReadBlockAtOffset(result, 0))
+  auto underlying_stream = std::get<RetainPtr<IFX_SeekableReadStream>>(data_);
+  if (!underlying_stream->ReadBlockAtOffset(result, 0)) {
     return DataVector<uint8_t>();
+  }
 
   return result;
 }
@@ -185,14 +187,17 @@ bool CPDF_Stream::WriteTo(IFX_ArchiveStream* archive,
   }
 
   encoder.UpdateLength(data.size());
-  if (!encoder.WriteDictTo(archive, encryptor))
+  if (!encoder.WriteDictTo(archive, encryptor)) {
     return false;
+  }
 
-  if (!archive->WriteString("stream\r\n"))
+  if (!archive->WriteString("stream\r\n")) {
     return false;
+  }
 
-  if (!archive->WriteBlock(data))
+  if (!archive->WriteBlock(data)) {
     return false;
+  }
 
   return archive->WriteString("\r\nendstream");
 }
@@ -200,14 +205,14 @@ bool CPDF_Stream::WriteTo(IFX_ArchiveStream* archive,
 size_t CPDF_Stream::GetRawSize() const {
   if (IsFileBased()) {
     return pdfium::checked_cast<size_t>(
-        absl::get<RetainPtr<IFX_SeekableReadStream>>(data_)->GetSize());
+        std::get<RetainPtr<IFX_SeekableReadStream>>(data_)->GetSize());
   }
-  return absl::get<DataVector<uint8_t>>(data_).size();
+  return std::get<DataVector<uint8_t>>(data_).size();
 }
 
 pdfium::span<const uint8_t> CPDF_Stream::GetInMemoryRawData() const {
   DCHECK(IsMemoryBased());
-  return absl::get<DataVector<uint8_t>>(data_);
+  return std::get<DataVector<uint8_t>>(data_);
 }
 
 void CPDF_Stream::SetLengthInDict(int length) {

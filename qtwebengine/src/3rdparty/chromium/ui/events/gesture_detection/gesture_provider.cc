@@ -8,6 +8,7 @@
 
 #include <cmath>
 
+#include "build/build_config.h"
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
@@ -79,8 +80,7 @@ gfx::RectF ClampBoundingBox(const gfx::RectF& bounds,
 
 float EffectiveSlopDistance(const MotionEvent& event,
                             const GestureProvider::Config& config) {
-  return (base::FeatureList::IsEnabled(features::kStylusSpecificTapSlop) &&
-          event.GetToolType() == MotionEvent::ToolType::STYLUS)
+  return event.GetToolType() == MotionEvent::ToolType::STYLUS
              ? config.gesture_detector_config.stylus_slop
              : config.gesture_detector_config.touch_slop;
 }
@@ -399,7 +399,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
     // received by Qt, due to having an inverse Y coordinate and also because they overlap with
     // each other, thus scrolling sometimes goes into one direction, and sometimes
     // into the opposite direction.
-#if defined(TOOLKIT_QT) && defined(OS_MAC)
+#if BUILDFLAG(IS_QTWEBENGINE) && defined(OS_MAC)
   return true;
 #endif
 
@@ -468,7 +468,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
                float velocity_y) override {
      // Do not use gesture detection for flings on macOS. See explanation at the beginning
      // of OnScroll.
-#if defined(TOOLKIT_QT) && defined(OS_MAC)
+#if BUILDFLAG(IS_QTWEBENGINE) && defined(OS_MAC)
     return true;
 #endif
 
@@ -956,6 +956,7 @@ bool GestureProvider::CanHandle(const MotionEvent& event) const {
 }
 
 void GestureProvider::OnTouchEventHandlingBegin(const MotionEvent& event) {
+  last_event_without_history_ = event.Clone(/*with_history=*/false);
   switch (event.GetAction()) {
     case MotionEvent::Action::DOWN:
       current_down_event_ = event.Clone();

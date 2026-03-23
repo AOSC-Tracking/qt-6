@@ -1,12 +1,6 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 //
 // This file is auto-generated from
 // ui/gl/generate_bindings.py
@@ -4782,10 +4776,9 @@ MockGLInterface::GetGLProcAddress(const char* name) {
     return reinterpret_cast<GLFunctionPointerType>(Mock_glBlitFramebufferANGLE);
   if (strcmp(name, "glBlitFramebufferNV") == 0)
     return reinterpret_cast<GLFunctionPointerType>(Mock_glBlitFramebufferNV);
-  if (strcmp(name, "glBlobCacheCallbacksANGLE") == 0) {
+  if (strcmp(name, "glBlobCacheCallbacksANGLE") == 0)
     return reinterpret_cast<GLFunctionPointerType>(
         Mock_glBlobCacheCallbacksANGLE);
-  }
   if (strcmp(name, "glBufferData") == 0)
     return reinterpret_cast<GLFunctionPointerType>(Mock_glBufferData);
   if (strcmp(name, "glBufferSubData") == 0)

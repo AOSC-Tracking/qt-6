@@ -56,6 +56,7 @@
 #include "components/crx_file/id_util.h"
 #include "components/enterprise/browser/controller/browser_dm_token_storage.h"
 #include "components/enterprise/browser/controller/chrome_browser_cloud_management_controller.h"
+#include "components/enterprise/browser/promotion/promotion_eligibility_checker.h"
 #include "components/enterprise/browser/reporting/common_pref_names.h"
 #include "components/policy/core/browser/configuration_policy_handler_list.h"
 #include "components/policy/core/browser/policy_conversions.h"
@@ -83,6 +84,7 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/public/base/signin_pref_names.h"
+#include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -108,7 +110,9 @@
 #endif
 
 #if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/enterprise/identifiers/profile_id_service_factory.h"
 #include "chrome/browser/ui/ui_features.h"
+#include "components/enterprise/browser/identifiers/profile_id_service.h"
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 // LINT.IfChange
@@ -118,11 +122,13 @@ namespace {
 // Key under which extension policies are grouped in JSON policy exports.
 constexpr char kExtensionsKey[] = "extensions";
 
-#if !BUILDFLAG(IS_ANDROID)
-constexpr char kPolicyPromotionBannerLocale[] = "en-US";
-#endif  // !BUILDFLAG(IS_ANDROID)
-
 }  // namespace
+
+namespace features {
+BASE_FEATURE(kPolicyPagePromotionEligibilityCheckedBanner,
+             "PolicyPagePromotionEligibilityCheckedBanner",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+}  // namespace features
 
 PolicyUIHandler::PolicyUIHandler() = default;
 
@@ -155,6 +161,7 @@ void PolicyUIHandler::AddCommonLocalizedStringsToSource(
       {"future", IDS_POLICY_LABEL_FUTURE},
       {"info", IDS_POLICY_LABEL_INFO},
       {"ignored", IDS_POLICY_LABEL_IGNORED},
+      {"ignoredByExtension", IDS_POLICY_IGNORED_EXTENSION},
       {"notSpecified", IDS_POLICY_NOT_SPECIFIED},
       {"ok", IDS_POLICY_OK},
       {"scopeDevice", IDS_POLICY_SCOPE_DEVICE},
@@ -267,6 +274,16 @@ void PolicyUIHandler::RegisterMessages() {
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 }
 
+void PolicyUIHandler::AddPolicyPromotionObserver(
+    PolicyPromotionObserver* observer) {
+  promotion_eligibility_observers_.AddObserver(observer);
+}
+
+void PolicyUIHandler::RemovePolicyPromotionObserver(
+    PolicyPromotionObserver* observer) {
+  promotion_eligibility_observers_.RemoveObserver(observer);
+}
+
 void PolicyUIHandler::OnPolicyValueAndStatusChanged() {
   SendPolicies();
   // Send also the status to UI because when policy value is updated, policy
@@ -345,7 +362,7 @@ void PolicyUIHandler::HandleCopyPoliciesJson(const base::Value::List& args) {
 
 void PolicyUIHandler::HandleSetLocalTestPolicies(
     const base::Value::List& args) {
-  std::string policies = args[1].GetString();
+  const std::string& policies = args[1].GetString();
   AllowJavascript();
 
   if (!PolicyUI::ShouldLoadTestPage(Profile::FromWebUI(web_ui()))) {
@@ -361,7 +378,7 @@ void PolicyUIHandler::HandleSetLocalTestPolicies(
   CHECK(local_test_provider);
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
-  std::string profile_separation_policy_response = args[2].GetString();
+  const std::string& profile_separation_policy_response = args[2].GetString();
   Profile::FromWebUI(web_ui())->GetPrefs()->ClearPref(
       prefs::kUserCloudSigninPolicyResponseFromPolicyTestPage);
   Profile::FromWebUI(web_ui())->GetPrefs()->SetDefaultPrefValue(
@@ -396,7 +413,7 @@ void PolicyUIHandler::HandleRevertLocalTestPolicies(
 
 void PolicyUIHandler::HandleRestartBrowser(const base::Value::List& args) {
   CHECK(args.size() == 2);
-  std::string policies = args[1].GetString();
+  const std::string& policies = args[1].GetString();
 
   // Set policies to preference
   PrefService* prefs = g_browser_process->local_state();
@@ -441,7 +458,7 @@ void PolicyUIHandler::HandleGetPolicyLogs(const base::Value::List& args) {
 void PolicyUIHandler::HandleUploadReport(const base::Value::List& args) {
   upload_report_count_ += 1;
   DCHECK_EQ(1u, args.size());
-  std::string callback_id = args[0].GetString();
+  const std::string& callback_id = args[0].GetString();
   auto* report_scheduler = g_browser_process->browser_policy_connector()
                                ->chrome_browser_cloud_management_controller()
                                ->report_scheduler();
@@ -506,29 +523,34 @@ void PolicyUIHandler::SendStatus() {
 void PolicyUIHandler::HandleShouldShowPromotion(const base::Value::List& args) {
   AllowJavascript();
 #if !BUILDFLAG(IS_ANDROID)
-  const bool should_show_promotion =
-      // The promotion banner should be shown if:
-      // 1. The feature is enabled
-      // 2. The user is dasher managed
-      // 3. The user is under en-US locale
-      // 4. The user has not dismissed the banner
-      base::FeatureList::IsEnabled(features::kEnablePolicyPromotionBanner) &&
-      policy::ManagementServiceFactory::GetForProfile(
-          Profile::FromWebUI(web_ui()))
-          ->IsAccountManaged() &&
-      g_browser_process->GetApplicationLocale() ==
-          kPolicyPromotionBannerLocale &&
-      !Profile::FromWebUI(web_ui())->GetPrefs()->GetBoolean(
-          policy::policy_prefs::kHasDismissedPolicyPagePromotionBanner);
-  // Log the UMA metric for the promotion banner displayed.
-  base::UmaHistogramBoolean("Enterprise.PolicyPromotionBannerDisplayed",
-                            should_show_promotion);
-  ResolveJavascriptCallback(args[0], should_show_promotion);
+  Profile* profile = Profile::FromWebUI(web_ui());
+  const std::string& callback_id = args[0].GetString();
+
+  bool dismissed_banner_pref = profile->GetPrefs()->GetBoolean(
+      policy::policy_prefs::kHasDismissedPolicyPagePromotionBanner);
+
+  bool feature_enabled =
+      base::FeatureList::IsEnabled(features::kEnablePolicyPromotionBanner);
+
+  promotion_eligibility_checker_ =
+      policy::CreatePromotionEligibilityChecker(
+          profile, dismissed_banner_pref, feature_enabled);
+  if (!promotion_eligibility_checker_) {
+    OnPromotionEligibilityFetched(
+        callback_id,
+        enterprise_management::GetUserEligiblePromotionsResponse());
+    return;
+  }
+  promotion_eligibility_checker_->MaybeCheckPromotionEligibility(
+      base::BindOnce(&PolicyUIHandler::OnPromotionEligibilityFetched,
+                     weak_factory_.GetWeakPtr(), callback_id));
+  return;
+
 #else
   // If the build is on Android, still handle the request but return false
   // so the banner does not show.
   ResolveJavascriptCallback(args[0], false);
-#endif
+#endif  // !BUILDFLAG(IS_ANDROID)
 }
 
 void PolicyUIHandler::HandleSetBannerDismissed(const base::Value::List& args) {
@@ -556,6 +578,27 @@ void PolicyUIHandler::OnReportUploaded(const std::string& callback_id) {
   SendStatus();
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS)
+
+#if !BUILDFLAG(IS_ANDROID)
+void PolicyUIHandler::OnPromotionEligibilityFetched(
+    const std::string& callback_id,
+    enterprise_management::GetUserEligiblePromotionsResponse response) {
+  AllowJavascript();
+  bool should_show_promotion = response.promotions().policy_page_promotion() ==
+                               enterprise_management::CHROME_ENTERPRISE_CORE;
+  // Log the UMA metric for the promotion banner displayed.
+  base::UmaHistogramBoolean("Enterprise.PolicyPromotionBannerDisplayed",
+                            should_show_promotion);
+
+  ResolveJavascriptCallback(base::Value(callback_id), should_show_promotion);
+
+  for (PolicyPromotionObserver& observer : promotion_eligibility_observers_) {
+    observer.OnPromotionEligibilityFetched(callback_id, response);
+  }
+
+  promotion_checked_ = true;
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 std::string PolicyUIHandler::GetPoliciesAsJson() {
   base::Value::Dict policy_values =

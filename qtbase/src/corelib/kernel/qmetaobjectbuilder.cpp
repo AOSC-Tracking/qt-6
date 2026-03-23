@@ -92,9 +92,15 @@ public:
         attributes = ((attributes & ~AccessMask) | (int)value);
     }
 
-    QList<QByteArray> parameterTypes() const
+    QList<QByteArrayView> parameterTypes() const
     {
-        return QMetaObjectPrivate::parameterTypeNamesFromSignature(signature);
+        QVarLengthArray<QByteArrayView, 10> typeNames;
+        QMetaObjectPrivate::parameterTypeNamesFromSignature(signature, typeNames);
+        QList<QByteArrayView> list;
+        list.reserve(typeNames.size());
+        for (auto n : typeNames)
+            list.emplace_back(n);
+        return list;
     }
 
     int parameterCount() const
@@ -552,6 +558,8 @@ QMetaPropertyBuilder QMetaObjectBuilder::addProperty(const QMetaProperty &protot
     property.setEnumOrFlag(prototype.isEnumType());
     property.setConstant(prototype.isConstant());
     property.setFinal(prototype.isFinal());
+    property.setVirtual(prototype.isVirtual());
+    property.setOverride(prototype.isOverride());
     property.setRevision(prototype.revision());
     if (prototype.hasNotifySignal()) {
         // Find an existing method for the notify signal, or add a new one.
@@ -1050,13 +1058,10 @@ QMetaStringTable::QMetaStringTable(const QByteArray &className)
 // entered). Returns the index of the string.
 int QMetaStringTable::enter(const QByteArray &value)
 {
-    Entries::iterator it = m_entries.find(value);
-    if (it != m_entries.end())
-        return it.value();
-    int pos = m_index;
-    m_entries.insert(value, pos);
-    ++m_index;
-    return pos;
+    auto [it, inserted] = m_entries.tryInsert(value, m_index);
+    if (inserted)
+        ++m_index;
+    return it.value();
 }
 
 int QMetaStringTable::preferredAlignment()
@@ -1275,6 +1280,17 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
         parameterMetaTypesIndex += 1 + argc;
     }
 
+    auto getTypeInfo = [&](const auto &typeName) {
+        if (isBuiltinType(typeName))
+            return QMetaType::fromName(typeName).id();
+        int index;
+        if constexpr (std::is_same_v<decltype(typeName), const QByteArrayView &>)
+            index = strings.enter(QByteArray::fromRawData(typeName.constData(), typeName.size()));
+        else
+            index = strings.enter(typeName);
+        return int(IsUnresolvedType | index);
+    };
+
     // Output the method parameters in the class.
     Q_ASSERT(!buf || dataIndex == pmeta->methodData + int(d->methods.size()) * QMetaObjectPrivate::IntsPerMethod);
     for (int x = 0; x < 2; ++x) {
@@ -1286,25 +1302,24 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
                 ++dataIndex;
             }
 
-            const QList<QByteArray> paramTypeNames = method.parameterTypes();
-            int paramCount = paramTypeNames.size();
-            for (int i = -1; i < paramCount; ++i) {
-                const QByteArray &typeName = (i < 0) ? method.returnType : paramTypeNames.at(i);
-                [[maybe_unused]] int typeInfo;
-                if (isBuiltinType(typeName))
-                    typeInfo = QMetaType::fromName(typeName).id();
-                else
-                    typeInfo = IsUnresolvedType | strings.enter(typeName);
+            [[maybe_unused]] int typeInfo = getTypeInfo(method.returnType);
+            if constexpr (mode == Construct)
+                data[dataIndex] = typeInfo;
+            ++dataIndex;
+
+            const QList<QByteArrayView> paramTypeNames = method.parameterTypes();
+            for (auto typeName : paramTypeNames) {
+                [[maybe_unused]] int typeInfo = getTypeInfo(typeName);
                 if constexpr (mode == Construct)
                     data[dataIndex] = typeInfo;
                 ++dataIndex;
             }
 
             QList<QByteArray> paramNames = method.parameterNames;
-            while (paramNames.size() < paramCount)
-                paramNames.append(QByteArray());
-            for (int i = 0; i < paramCount; ++i) {
-                [[maybe_unused]] int stringIndex = strings.enter(paramNames.at(i));
+            if (const auto paramCount = paramTypeNames.size(); paramNames.size() < paramCount)
+                paramNames.resize(paramCount);
+            for (const auto &name : std::as_const(paramNames)) {
+                [[maybe_unused]] int stringIndex = strings.enter(name);
                 if constexpr (mode == Construct)
                     data[dataIndex] = stringIndex;
                 ++dataIndex;
@@ -1326,7 +1341,7 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
 
         [[maybe_unused]] int flags = prop.flags;
 
-        if (isBuiltinType(prop.type))
+        if (!isBuiltinType(prop.type))
             flags |= EnumOrFlag;
 
         if constexpr (mode == Construct) {
@@ -1439,14 +1454,14 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
             QMetaType mt(QMetaType::fromName(method.returnType).id());
             *types = reinterpret_cast<QtPrivate::QMetaTypeInterface *&>(mt);
             types++;
-            for (const auto &parameterType: method.parameterTypes()) {
+            for (auto parameterType: method.parameterTypes()) {
                 QMetaType mt = QMetaType::fromName(parameterType);
                 *types = mt.iface();
                 types++;
             }
         }
         for (const auto &constructor : d->constructors) {
-            for (const auto &parameterType : constructor.parameterTypes()) {
+            for (auto parameterType : constructor.parameterTypes()) {
                 QMetaType mt = QMetaType::fromName(parameterType);
                 *types = mt.iface();
                 types++;
@@ -1605,13 +1620,13 @@ void QMetaMethodBuilder::setReturnType(const QByteArray &value)
 
     \sa returnType(), parameterNames()
 */
-QList<QByteArray> QMetaMethodBuilder::parameterTypes() const
+QList<QByteArrayView> QMetaMethodBuilder::parameterTypes() const
 {
     QMetaMethodBuilderPrivate *d = d_func();
     if (d)
         return d->parameterTypes();
     else
-        return QList<QByteArray>();
+        return {};
 }
 
 /*!
@@ -2055,6 +2070,32 @@ bool QMetaPropertyBuilder::isFinal() const
 }
 
 /*!
+    Returns \c true if the property is virtual; otherwise returns \c false.
+    The default value is false.
+*/
+bool QMetaPropertyBuilder::isVirtual() const
+{
+    QMetaPropertyBuilderPrivate *d = d_func();
+    if (d)
+        return d->flag(Virtual);
+    else
+        return false;
+}
+
+/*!
+    Returns \c true if the property does override; otherwise returns \c false.
+    The default value is false.
+*/
+bool QMetaPropertyBuilder::isOverride() const
+{
+    QMetaPropertyBuilderPrivate *d = d_func();
+    if (d)
+        return d->flag(Override);
+    else
+        return false;
+}
+
+/*!
  * Returns \c true if the property is an alias.
  * The default value is false
  */
@@ -2075,6 +2116,17 @@ bool QMetaPropertyBuilder::isBindable() const
 {
     if (auto d = d_func())
         return d->flag(Bindable);
+    else
+        return false;
+}
+/*!
+  Returns \c true if the property is required.
+  The default is \c false.
+ */
+bool QMetaPropertyBuilder::isRequired() const
+{
+    if (auto d = d_func())
+        return d->flag(Required);
     else
         return false;
 }
@@ -2215,6 +2267,30 @@ void QMetaPropertyBuilder::setFinal(bool value)
 }
 
 /*!
+    Sets the \c VIRTUAL flag on this property to \a value.
+
+ \sa isFinal()
+*/
+void QMetaPropertyBuilder::setVirtual(bool value)
+{
+    QMetaPropertyBuilderPrivate *d = d_func();
+    if (d)
+        d->setFlag(Virtual, value);
+}
+
+/*!
+    Sets the \c OVERRIDE flag on this property to \a value.
+
+ \sa isOverride()
+*/
+void QMetaPropertyBuilder::setOverride(bool value)
+{
+    QMetaPropertyBuilderPrivate *d = d_func();
+    if (d)
+        d->setFlag(Override, value);
+}
+
+/*!
    Sets the \c ALIAS flag on this property to \a value
  */
 void QMetaPropertyBuilder::setAlias(bool value)
@@ -2231,6 +2307,15 @@ void QMetaPropertyBuilder::setBindable(bool value)
 {
     if (auto d = d_func())
         d->setFlag(Bindable, value);
+}
+
+/*!
+   Sets the\c REQUIRED flag on this property to \a value
+ */
+void QMetaPropertyBuilder::setRequired(bool value)
+{
+    if (auto d = d_func())
+        d->setFlag(Required, value);
 }
 
 /*!

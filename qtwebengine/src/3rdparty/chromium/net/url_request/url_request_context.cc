@@ -16,7 +16,6 @@
 #include "base/strings/string_util.h"
 #include "base/types/pass_key.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "net/base/http_user_agent_settings.h"
 #include "net/base/network_delegate.h"
 #include "net/base/proxy_delegate.h"
@@ -41,6 +40,7 @@
 #include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job_factory.h"
+#include "url/gurl_debug.h"
 
 #if BUILDFLAG(ENABLE_REPORTING)
 #include "net/network_error_logging/network_error_logging_service.h"
@@ -95,6 +95,14 @@ URLRequestContext::~URLRequestContext() {
   DCHECK(host_resolver());
   host_resolver()->OnShutdown();
 
+#if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+  if (device_bound_session_service_) {
+    // The SessionService may have pending URLRequests that use this
+    // context.
+    device_bound_session_service_.reset();
+  }
+#endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+
   AssertNoURLRequests();
 }
 
@@ -120,10 +128,7 @@ const HttpNetworkSessionContext* URLRequestContext::GetNetworkSessionContext()
   return &network_session->context();
 }
 
-// TODO(crbug.com/40118868): Revisit once build flag switch of lacros-chrome is
-// complete.
-#if !BUILDFLAG(IS_WIN) && \
-    !(BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
+#if !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_LINUX)
 std::unique_ptr<URLRequest> URLRequestContext::CreateRequest(
     const GURL& url,
     RequestPriority priority,

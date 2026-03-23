@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QABSTRACTITEMVIEW_H
 #define QABSTRACTITEMVIEW_H
@@ -47,6 +48,8 @@ class Q_WIDGETS_EXPORT QAbstractItemView : public QAbstractScrollArea
     Q_PROPERTY(ScrollMode horizontalScrollMode READ horizontalScrollMode
                WRITE setHorizontalScrollMode RESET resetHorizontalScrollMode)
     Q_PROPERTY(int updateThreshold READ updateThreshold WRITE setUpdateThreshold)
+    Q_PROPERTY(Qt::MatchFlags keyboardSearchFlags READ keyboardSearchFlags
+               WRITE setKeyboardSearchFlags)
 
 public:
     enum SelectionMode {
@@ -181,6 +184,9 @@ public:
     int updateThreshold() const;
     void setUpdateThreshold(int threshold);
 
+    Qt::MatchFlags keyboardSearchFlags() const;
+    void setKeyboardSearchFlags(Qt::MatchFlags searchFlags);
+
     void openPersistentEditor(const QModelIndex &index);
     void closePersistentEditor(const QModelIndex &index);
     bool isPersistentEditorOpen(const QModelIndex &index) const;
@@ -203,7 +209,7 @@ public:
 
     virtual QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
 
-    using QAbstractScrollArea::update;
+    using QWidget::update;
 
 public Q_SLOTS:
     virtual void reset();

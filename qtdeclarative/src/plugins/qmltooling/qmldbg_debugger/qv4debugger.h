@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QV4DEBUGGER_H
 #define QV4DEBUGGER_H
@@ -86,8 +87,8 @@ public:
     };
     ExecutionState currentExecutionState() const;
 
-    QVector<QV4::StackFrame> stackTrace(int frameLimit = -1) const;
-    QVector<QV4::Heap::ExecutionContext::ContextType> getScopeTypes(int frame = 0) const;
+    QList<QV4::StackFrame> stackTrace(int frameLimit = -1) const;
+    QList<QV4::Heap::ExecutionContext::ContextType> getScopeTypes(int frame = 0) const;
 
     QV4::Function *getFunction() const;
     void runInEngine(QV4DebugJob *job);

@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-vlrelu/wasmsimd-x86.c.in
 //   Generator: tools/xngen
@@ -11,15 +12,15 @@
 
 #include <wasm_simd128.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/vcvt.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/vcvt.h"
 
 
 void xnn_qu8_vlrelu_ukernel__wasmrelaxedsimd_x86_u32(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const struct xnn_qu8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_qu8_lrelu_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);

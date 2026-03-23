@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -27,7 +28,7 @@ const UIStrings = {
    *@description A unit
    */
   kb: 'kB',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/sources/ProfilePlugin.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -92,7 +93,7 @@ function markersFromProfileData(
     map: Map<number, number>, state: CodeMirror.EditorState,
     type: SourceFrame.SourceFrame.DecoratorType): CodeMirror.RangeSet<CodeMirror.GutterMarker> {
   const markerType = type === SourceFrame.SourceFrame.DecoratorType.PERFORMANCE ? PerformanceMarker : MemoryMarker;
-  const markers: CodeMirror.Range<CodeMirror.GutterMarker>[] = [];
+  const markers: Array<CodeMirror.Range<CodeMirror.GutterMarker>> = [];
   for (const [line, value] of map) {
     if (line <= state.doc.lines) {
       const {from} = state.doc.line(line);

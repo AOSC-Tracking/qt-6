@@ -8,6 +8,7 @@
 
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "media/base/media_switches.h"
@@ -19,7 +20,7 @@ namespace media {
 // only in one spot.
 const char MediaLog::kEventKey[] = "event";
 
-MediaLog::MediaLog() : MediaLog(new ParentLogRecord(this)) {}
+MediaLog::MediaLog() : MediaLog(base::MakeRefCounted<ParentLogRecord>(this)) {}
 
 MediaLog::MediaLog(scoped_refptr<ParentLogRecord> parent_log_record)
     : parent_log_record_(std::move(parent_log_record)) {}
@@ -130,7 +131,7 @@ std::unique_ptr<MediaLogRecord> MediaLog::CreateRecord(
   auto record = std::make_unique<MediaLogRecord>();
   // Record IDs are populated by event handlers before they are sent to various
   // log viewers, such as the media-internals page, or devtools.
-  record->id = 0;
+  record->id = MediaPlayerLoggingID(0);
   record->type = type;
   record->time = base::TimeTicks::Now();
   return record;

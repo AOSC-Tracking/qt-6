@@ -126,7 +126,7 @@ bool AreStdlibMembersValid(Isolate* isolate, DirectHandle<JSReceiver> stdlib,
 void Report(Handle<Script> script, int position, base::Vector<const char> text,
             MessageTemplate message_template,
             v8::Isolate::MessageErrorLevel level) {
-  Isolate* isolate = script->GetIsolate();
+  Isolate* isolate = Isolate::Current();
   MessageLocation location(script, position, position);
   DirectHandle<String> text_object =
       isolate->factory()->InternalizeUtf8String(text);
@@ -335,7 +335,7 @@ inline bool IsValidAsmjsMemorySize(size_t size) {
 MaybeDirectHandle<Object> AsmJs::InstantiateAsmWasm(
     Isolate* isolate, DirectHandle<SharedFunctionInfo> shared,
     DirectHandle<AsmWasmData> wasm_data, DirectHandle<JSReceiver> stdlib,
-    Handle<JSReceiver> foreign, Handle<JSArrayBuffer> memory) {
+    DirectHandle<JSReceiver> foreign, DirectHandle<JSArrayBuffer> memory) {
   base::ElapsedTimer instantiate_timer;
   instantiate_timer.Start();
   DirectHandle<HeapNumber> uses_bitset(wasm_data->uses_bitset(), isolate);
@@ -343,7 +343,7 @@ MaybeDirectHandle<Object> AsmJs::InstantiateAsmWasm(
   auto* wasm_engine = wasm::GetWasmEngine();
 
   // Allocate the WasmModuleObject.
-  Handle<WasmModuleObject> module =
+  DirectHandle<WasmModuleObject> module =
       wasm_engine->FinalizeTranslatedAsmJs(isolate, wasm_data, script);
 
   // TODO(asmjs): The position currently points to the module definition
@@ -438,14 +438,10 @@ MaybeDirectHandle<Object> AsmJs::InstantiateAsmWasm(
   ReportInstantiationSuccess(script, position,
                              instantiate_timer.Elapsed().InMillisecondsF());
 
-  DirectHandle<Name> single_function_name(
-      isolate->factory()->InternalizeUtf8String(AsmJs::kSingleFunctionName));
-  MaybeDirectHandle<Object> single_function =
-      Object::GetProperty(isolate, instance, single_function_name);
-  if (!single_function.is_null() &&
-      !IsUndefined(*single_function.ToHandleChecked(), isolate)) {
-    return single_function;
-  }
+  LookupIterator it(isolate, instance,
+                    isolate->factory()->wasm_asm_single_function_symbol(),
+                    LookupIterator::OWN_SKIP_INTERCEPTOR);
+  if (it.IsFound()) return it.GetDataValue();
 
   // Here we rely on the fact that the exports object is eagerly created.
   // The following check is a weak indicator for that. If this ever changes,

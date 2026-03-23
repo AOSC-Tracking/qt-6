@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #include <QtCore/qcompilerdetection.h>
 // GCC 11 thinks diagMsg.fixSuggestion.fixes.d.ptr is somehow uninitialized in
@@ -25,7 +26,7 @@ QT_BEGIN_NAMESPACE
 using namespace Qt::StringLiterals;
 
 // don't forget to forward-declare your logging category ID in qqmljsloggingutils.h!
-#define QMLLINT_DEFAULT_CATEGORIES                                                                 \
+#define QMLLINT_BUILTIN_CATEGORIES                                                                 \
     X(qmlAccessSingleton, "access-singleton-via-object", "AccessSingletonViaObject",               \
       "Warn if a singleton is accessed via an object", QtWarningMsg, false, false)                 \
     X(qmlAliasCycle, "alias-cycle", "AliasCycle", "Warn about alias cycles", QtWarningMsg, false,  \
@@ -101,7 +102,10 @@ using namespace Qt::StringLiterals;
       "Warn about non-list properties", QtWarningMsg, false, false)                                \
     X(qmlNonRootEnums, "non-root-enum", "NonRootEnum",                                             \
       "Warn about enums defined outside the root component", QtWarningMsg, false, false)           \
-    X(qmlUnterminatedCase, "unterminated-case", "UnterminatedCase", "Warn about non-empty case "   \
+    X(qmlPropertyOverride, "property-override", "PropertyOverride",                                \
+      "Warn about wrongly overriding properties from a base class", QtWarningMsg, false, false)    \
+    X(qmlUnterminatedCase, "unterminated-case", "UnterminatedCase",                                \
+      "Warn about non-empty case "                                                                 \
       "blocks that are not terminated by control flow or by a fallthrough comment",                \
       QtWarningMsg, false, false)                                                                  \
     X(qmlPlugin, "plugin", "LintPluginWarnings", "Warn if a qmllint plugin finds an issue",        \
@@ -118,8 +122,8 @@ using namespace Qt::StringLiterals;
       false)                                                                                       \
     X(qmlRequired, "required", "RequiredProperty", "Warn about required properties", QtWarningMsg, \
       false, false)                                                                                \
-    X(qmlRestrictedType, "restricted-type", "RestrictedType", "Warn about restricted types",       \
-      QtWarningMsg, false, false)                                                                  \
+    X(qmlShadow, "shadow", "Shadow", "Warn about shadowing attributes from a base class",          \
+      QtWarningMsg, true, false)                                                                   \
     X(qmlSignalParameters, "signal-handler-parameters", "BadSignalHandlerParameters",              \
       "Warn about bad signal handler parameters", QtWarningMsg, false, false)                      \
     X(qmlStalePropertyRead, "stale-property-read", "StalePropertyRead",                            \
@@ -150,7 +154,7 @@ using namespace Qt::StringLiterals;
     X(qmlUnusedImports, "unused-imports", "UnusedImports", "Warn about unused imports", QtInfoMsg, \
       false, false)                                                                                \
     X(qmlUseProperFunction, "use-proper-function", "UseProperFunction",                            \
-      "Warn if var is used for storing functions", QtWarningMsg, false, false)                     \
+      "Warn if var is used for storing functions", QtWarningMsg, true, false)                      \
     X(qmlVarUsedBeforeDeclaration, "var-used-before-declaration", "VarUsedBeforeDeclaration",      \
       "Warn if a variable is used before declaration", QtWarningMsg, false, false)                 \
     X(qmlVoid, "void", "Void", "Warn about void expressions.", QtWarningMsg, true, false)          \
@@ -161,12 +165,12 @@ using namespace Qt::StringLiterals;
 
 #define X(category, name, setting, description, level, ignored, isDefault) \
     const QQmlSA::LoggerWarningId category{ name };
-QMLLINT_DEFAULT_CATEGORIES
+QMLLINT_BUILTIN_CATEGORIES
 #undef X
 
 
 #define X(category, name, setting, description, level, ignored, isDefault) ++i;
-constexpr size_t numCategories = [] { size_t i = 0; QMLLINT_DEFAULT_CATEGORIES return i; }();
+constexpr size_t numCategories = [] { size_t i = 0; QMLLINT_BUILTIN_CATEGORIES return i; }();
 #undef X
 
 constexpr bool isUnique(const std::array<std::string_view, numCategories>& fields) {
@@ -181,21 +185,21 @@ constexpr bool isUnique(const std::array<std::string_view, numCategories>& field
 }
 
 #define X(category, name, setting, description, level, ignored, isDefault) std::string_view(name),
-static_assert(isUnique(std::array{ QMLLINT_DEFAULT_CATEGORIES }), "Duplicate names found!");
+static_assert(isUnique(std::array{ QMLLINT_BUILTIN_CATEGORIES }), "Duplicate names found!");
 #undef X
 
 #define X(category, name, setting, description, level, ignored, isDefault) std::string_view(setting),
-static_assert(isUnique(std::array{ QMLLINT_DEFAULT_CATEGORIES }), "Duplicate settings found!");
+static_assert(isUnique(std::array{ QMLLINT_BUILTIN_CATEGORIES }), "Duplicate settings found!");
 #undef X
 
 #define X(category, name, setting, description, level, ignored, isDefault) std::string_view(description),
-static_assert(isUnique(std::array{ QMLLINT_DEFAULT_CATEGORIES }), "Duplicate description found!");
+static_assert(isUnique(std::array{ QMLLINT_BUILTIN_CATEGORIES }), "Duplicate description found!");
 #undef X
 
 
 QQmlJSLogger::QQmlJSLogger()
 {
-    static const QList<QQmlJS::LoggerCategory> cats = defaultCategories();
+    static const QList<QQmlJS::LoggerCategory> cats = builtinCategories();
 
     for (const QQmlJS::LoggerCategory &category : cats)
         registerCategory(category);
@@ -207,12 +211,12 @@ QQmlJSLogger::QQmlJSLogger()
     m_output.insertMapping(QtDebugMsg, QColorOutput::GreenForeground); // None?
 }
 
-const QList<QQmlJS::LoggerCategory> &QQmlJSLogger::defaultCategories()
+const QList<QQmlJS::LoggerCategory> &QQmlJSLogger::builtinCategories()
 {
     static const QList<QQmlJS::LoggerCategory> cats = {
 #define X(category, name, setting, description, level, ignored, isDefault) \
     QQmlJS::LoggerCategory{ name##_L1, setting##_L1, description##_L1, level, ignored, isDefault },
-        QMLLINT_DEFAULT_CATEGORIES
+        QMLLINT_BUILTIN_CATEGORIES
 #undef X
     };
 
@@ -325,7 +329,7 @@ void QQmlJSLogger::countMessage(const Message &message)
     }
 }
 
-void QQmlJSLogger::processMessages(const QList<QQmlJS::DiagnosticMessage> &messages,
+void QQmlJSLogger::processMessages(QSpan<const QQmlJS::DiagnosticMessage> messages,
                                    QQmlJS::LoggerWarningId id,
                                    const QQmlJS::SourceLocation &sourceLocation)
 {

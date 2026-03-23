@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGSCENEENVIRONMENT_H
 #define QSSGSCENEENVIRONMENT_H
@@ -28,6 +30,7 @@
 #include <QtQuick3D/private/qquick3dlightmapper_p.h>
 #include <QtQuick3D/private/qquick3ddebugsettings_p.h>
 #include <QtQuick3D/private/qquick3dfog_p.h>
+#include <QtQuick3D/private/qquick3drenderpass_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -39,6 +42,7 @@ class Q_QUICK3D_EXPORT QQuick3DSceneEnvironment : public QQuick3DObject
     Q_PROPERTY(QQuick3DEnvironmentAAModeValues antialiasingMode READ antialiasingMode WRITE setAntialiasingMode NOTIFY antialiasingModeChanged)
     Q_PROPERTY(QQuick3DEnvironmentAAQualityValues antialiasingQuality READ antialiasingQuality WRITE setAntialiasingQuality NOTIFY antialiasingQualityChanged)
 
+    Q_PROPERTY(QQuick3DEnvironmentTemporalAAMode temporalAAMode READ temporalAAMode WRITE setTemporalAAMode NOTIFY temporalAAModeChanged REVISION(6, 11))
     Q_PROPERTY(bool temporalAAEnabled READ temporalAAEnabled WRITE setTemporalAAEnabled NOTIFY temporalAAEnabledChanged)
     Q_PROPERTY(float temporalAAStrength READ temporalAAStrength WRITE setTemporalAAStrength NOTIFY temporalAAStrengthChanged)
     Q_PROPERTY(QQuick3DEnvironmentBackgroundTypes backgroundMode READ backgroundMode WRITE setBackgroundMode NOTIFY backgroundModeChanged)
@@ -117,15 +121,24 @@ public:
     enum QQuick3DEnvironmentOITMethod
     {
         OITNone = 0,
-        OITWeightedBlended
+        OITWeightedBlended,
+        OITLinkedList
     };
     Q_ENUM(QQuick3DEnvironmentOITMethod)
+
+    enum QQuick3DEnvironmentTemporalAAMode
+    {
+        TAADefault = 0,
+        TAAMotionVector
+    };
+    Q_ENUM(QQuick3DEnvironmentTemporalAAMode)
 
     explicit QQuick3DSceneEnvironment(QQuick3DObject *parent = nullptr);
     ~QQuick3DSceneEnvironment() override;
 
     QQuick3DEnvironmentAAModeValues antialiasingMode() const;
     QQuick3DEnvironmentAAQualityValues antialiasingQuality() const;
+    Q_REVISION(6, 11) QQuick3DEnvironmentTemporalAAMode temporalAAMode() const;
     bool temporalAAEnabled() const;
     float temporalAAStrength() const;
 
@@ -177,6 +190,7 @@ public:
 public Q_SLOTS:
     void setAntialiasingMode(QQuick3DSceneEnvironment::QQuick3DEnvironmentAAModeValues antialiasingMode);
     void setAntialiasingQuality(QQuick3DSceneEnvironment::QQuick3DEnvironmentAAQualityValues antialiasingQuality);
+    Q_REVISION(6, 11) void setTemporalAAMode(const QQuick3DEnvironmentTemporalAAMode &newTemporalAAMode);
     void setTemporalAAEnabled(bool temporalAAEnabled);
     void setTemporalAAStrength(float strength);
 
@@ -216,6 +230,7 @@ public Q_SLOTS:
 Q_SIGNALS:
     void antialiasingModeChanged();
     void antialiasingQualityChanged();
+    Q_REVISION(6, 11) void temporalAAModeChanged();
     void temporalAAEnabledChanged();
     void temporalAAStrengthChanged();
 
@@ -274,6 +289,7 @@ private:
 
     QQuick3DEnvironmentAAModeValues m_antialiasingMode = NoAA;
     QQuick3DEnvironmentAAQualityValues m_antialiasingQuality = High;
+    QQuick3DEnvironmentTemporalAAMode m_temporalAAMode =  TAADefault;
     bool m_temporalAAEnabled = false;
     float m_temporalAAStrength = 0.3f;
     bool m_specularAAEnabled = false;

@@ -49,7 +49,7 @@ Q_CORE_EXPORT Q_DECL_CONST_FUNCTION unsigned int qt_int_sqrt(unsigned int n);
 
 namespace {
     QTextDocument::ResourceProvider qt_defaultResourceProvider;
-};
+}
 
 QAbstractUndoItem::~QAbstractUndoItem()
     = default;
@@ -1976,7 +1976,7 @@ void QTextDocument::print(QPagedPaintDevice *printer) const
         return;
 
     bool documentPaginated = d->pageSize.isValid() && !d->pageSize.isNull()
-                             && d->pageSize.height() != INT_MAX;
+                             && d->pageSize.height() != qreal(INT_MAX);
 
     // ### set page size to paginated size?
     QMarginsF m = printer->pageLayout().margins(QPageLayout::Millimeter);
@@ -2299,7 +2299,7 @@ QVariant QTextDocument::loadResource(int type, const QUrl &name)
         QUrl resourceUrl = name;
 
         if (name.isRelative()) {
-            QUrl currentURL = d->url;
+            const QUrl currentURL{d->url};
             // For the second case QUrl can merge "#someanchor" with "foo.html"
             // correctly to "foo.html#someanchor"
             if (!(currentURL.isRelative()
@@ -2385,6 +2385,11 @@ static QString colorValue(QColor color)
     return result;
 }
 
+/*!
+    \class QTextHtmlExporter
+    \inmodule QtGui
+    \internal
+*/
 QTextHtmlExporter::QTextHtmlExporter(const QTextDocument *_doc)
     : doc(_doc), fragmentMarkers(false)
 {

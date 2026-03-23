@@ -5,6 +5,9 @@
 #ifndef V8_OBJECTS_SLOTS_INL_H_
 #define V8_OBJECTS_SLOTS_INL_H_
 
+#include "src/objects/slots.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "include/v8-internal.h"
 #include "src/base/atomic-utils.h"
 #include "src/common/globals.h"
@@ -14,10 +17,8 @@
 #include "src/objects/map.h"
 #include "src/objects/maybe-object.h"
 #include "src/objects/objects.h"
-#include "src/objects/slots.h"
 #include "src/objects/tagged.h"
 #include "src/sandbox/cppheap-pointer-inl.h"
-#include "src/sandbox/external-pointer-inl.h"
 #include "src/sandbox/indirect-pointer-inl.h"
 #include "src/sandbox/isolate-inl.h"
 #include "src/utils/memcopy.h"
@@ -193,6 +194,14 @@ void FullHeapObjectSlot::StoreHeapObject(Tagged<HeapObject> value) const {
   *location() = value.ptr();
 }
 
+void ExternalPointerSlot::init_lazily_initialized() {
+#ifdef V8_ENABLE_SANDBOX
+  Relaxed_StoreHandle(kNullExternalPointerHandle);
+#else
+  WriteMaybeUnalignedValue<Address>(address(), kNullAddress);
+#endif  // V8_ENABLE_SANDBOX
+}
+
 void ExternalPointerSlot::init(IsolateForSandbox isolate,
                                Tagged<HeapObject> host, Address value,
                                ExternalPointerTag tag) {
@@ -245,6 +254,17 @@ void ExternalPointerSlot::store(IsolateForSandbox isolate, Address value,
   table.Set(handle, value, tag);
 #else
   WriteMaybeUnalignedValue<Address>(address(), value);
+#endif  // V8_ENABLE_SANDBOX
+}
+
+ExternalPointerTag ExternalPointerSlot::load_tag(IsolateForSandbox isolate) {
+#ifdef V8_ENABLE_SANDBOX
+  const ExternalPointerTable& table =
+      isolate.GetExternalPointerTableFor(tag_range_);
+  ExternalPointerHandle handle = Relaxed_LoadHandle();
+  return table.GetTag(handle);
+#else
+  return kExternalPointerNullTag;
 #endif  // V8_ENABLE_SANDBOX
 }
 
@@ -351,6 +371,12 @@ Tagged<Object> IndirectPointerSlot::Relaxed_Load(
   return ResolveHandle(handle, isolate);
 }
 
+Tagged<Object> IndirectPointerSlot::Relaxed_Load_AllowUnpublished(
+    IsolateForSandbox isolate) const {
+  IndirectPointerHandle handle = Relaxed_LoadHandle();
+  return ResolveHandle<kAllowUnpublishedEntries>(handle, isolate);
+}
+
 Tagged<Object> IndirectPointerSlot::Acquire_Load(
     IsolateForSandbox isolate) const {
   IndirectPointerHandle handle = Acquire_LoadHandle();
@@ -402,6 +428,7 @@ bool IndirectPointerSlot::IsEmpty() const {
   return Relaxed_LoadHandle() == kNullIndirectPointerHandle;
 }
 
+template <IndirectPointerSlot::TagCheckStrictness allow_unpublished>
 Tagged<Object> IndirectPointerSlot::ResolveHandle(
     IndirectPointerHandle handle, IsolateForSandbox isolate) const {
 #ifdef V8_ENABLE_SANDBOX
@@ -416,12 +443,12 @@ Tagged<Object> IndirectPointerSlot::ResolveHandle(
     if (handle & kCodePointerHandleMarker) {
       return ResolveCodePointerHandle(handle);
     } else {
-      return ResolveTrustedPointerHandle(handle, isolate);
+      return ResolveTrustedPointerHandle<allow_unpublished>(handle, isolate);
     }
   } else if (tag_ == kCodeIndirectPointerTag) {
     return ResolveCodePointerHandle(handle);
   } else {
-    return ResolveTrustedPointerHandle(handle, isolate);
+    return ResolveTrustedPointerHandle<allow_unpublished>(handle, isolate);
   }
 #else
   UNREACHABLE();
@@ -429,10 +456,14 @@ Tagged<Object> IndirectPointerSlot::ResolveHandle(
 }
 
 #ifdef V8_ENABLE_SANDBOX
+template <IndirectPointerSlot::TagCheckStrictness allow_unpublished>
 Tagged<Object> IndirectPointerSlot::ResolveTrustedPointerHandle(
     IndirectPointerHandle handle, IsolateForSandbox isolate) const {
   DCHECK_NE(handle, kNullIndirectPointerHandle);
   const TrustedPointerTable& table = isolate.GetTrustedPointerTableFor(tag_);
+  if constexpr (allow_unpublished == kAllowUnpublishedEntries) {
+    return Tagged<Object>(table.GetMaybeUnpublished(handle, tag_));
+  }
   return Tagged<Object>(table.Get(handle, tag_));
 }
 

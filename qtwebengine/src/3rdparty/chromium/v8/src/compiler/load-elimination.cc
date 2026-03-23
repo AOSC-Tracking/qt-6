@@ -393,6 +393,10 @@ LoadElimination::AbstractMaps const* LoadElimination::AbstractMaps::Extend(
     // We are tracking too many objects, which leads to bad performance.
     // Delete one to avoid the map from becoming bigger.
     that->info_for_node_.erase(that->info_for_node_.begin());
+    if (V8_UNLIKELY(v8_flags.trace_turbo_bailouts)) {
+      std::cout
+          << "Bailing out in Load Elimination because of kMaxTrackedObjects\n";
+    }
   }
   object = ResolveRenames(object);
   that->info_for_node_[object] = maps;
@@ -1141,6 +1145,7 @@ Reduction LoadElimination::ReduceLoadElement(Node* node) {
     case MachineRepresentation::kWord16:
     case MachineRepresentation::kWord32:
     case MachineRepresentation::kWord64:
+    case MachineRepresentation::kFloat16RawBits:
     case MachineRepresentation::kFloat16:
     case MachineRepresentation::kFloat32:
     case MachineRepresentation::kCompressedPointer:
@@ -1202,6 +1207,7 @@ Reduction LoadElimination::ReduceStoreElement(Node* node) {
     case MachineRepresentation::kWord16:
     case MachineRepresentation::kWord32:
     case MachineRepresentation::kWord64:
+    case MachineRepresentation::kFloat16RawBits:
     case MachineRepresentation::kFloat16:
     case MachineRepresentation::kFloat32:
     case MachineRepresentation::kCompressedPointer:
@@ -1520,6 +1526,7 @@ LoadElimination::IndexRange LoadElimination::FieldIndexOf(
     case MachineRepresentation::kBit:
     case MachineRepresentation::kSimd128:
     case MachineRepresentation::kSimd256:
+    case MachineRepresentation::kFloat16RawBits:
       UNREACHABLE();
     case MachineRepresentation::kWord8:
     case MachineRepresentation::kWord16:
@@ -1562,7 +1569,7 @@ CommonOperatorBuilder* LoadElimination::common() const {
   return jsgraph()->common();
 }
 
-Graph* LoadElimination::graph() const { return jsgraph()->graph(); }
+TFGraph* LoadElimination::graph() const { return jsgraph()->graph(); }
 
 Isolate* LoadElimination::isolate() const { return jsgraph()->isolate(); }
 

@@ -53,7 +53,7 @@
     projects with CMake on the command line}.
 
     To learn the basics of getting started with CMake, take the
-    \l {https://www.qt.io/academy/course-catalog#-building-with-cmake:-getting-started-with-cmake-and-qt}
+    \l {https://www.qt.io/academy/course-catalog#building-with-cmake:-getting-started-with-cmake-and-qt}
     {Building with Cmake: Getting Started with CMake and Qt} course in Qt Academy.
 
     \section2 Building a C++ console application
@@ -206,8 +206,8 @@
     \section2 Structuring projects
 
     Projects that contain more than just one target will benefit from a clear
-    project file structure. We will use CMake's \l{CMake add_subdirectory
-    documentation}{subdirectory feature}.
+    project file structure. We will use CMake's
+    \l{add_subdirectory()}{subdirectory feature}.
 
     As we plan to extend the project with more targets, we move the source files
     of the application into a subdirectory and create a new \c{CMakeLists.txt}
@@ -1198,10 +1198,20 @@
 
     \annotatedlist cmake-commands-qtlinguisttools
 
+    \section2 \tt Qt6::LottieTools
+    \target cmake-commands-qtlottie
+
+    \annotatedlist cmake-commands-qtlottie
+
     \target cmake-commands-qtmultimedia
     \section2 \tt Qt6::Multimedia
 
     \annotatedlist cmake-commands-qtmultimedia
+
+    \section2 \tt Qt6::OpenApiTools
+    \target cmake-commands-qtopenapi
+
+    \annotatedlist cmake-commands-qtopenapi
 
     \section2 \tt Qt6::Protobuf
     \target cmake-commands-qtprotobuf
@@ -1212,6 +1222,11 @@
     \target cmake-commands-qtqml
 
     \annotatedlist cmake-commands-qtqml
+
+    \section2 \tt Qt6::Quick
+    \target cmake-commands-qtquick
+
+    \annotatedlist cmake-commands-qtquick
 
     \section2 \tt Qt6::Quick3D
     \target cmake-commands-qtquick3d

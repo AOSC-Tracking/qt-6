@@ -193,18 +193,6 @@ class Statement : public AstNode {
 
 class Expression : public AstNode {
  public:
-  enum Context {
-    // Not assigned a context yet, or else will not be visited during
-    // code generation.
-    kUninitialized,
-    // Evaluated for its side effects.
-    kEffect,
-    // Evaluated for its value (and side effects).
-    kValue,
-    // Evaluated for control flow (and side effects).
-    kTest
-  };
-
   // True iff the expression is a valid reference expression.
   bool IsValidReferenceExpression() const;
 
@@ -544,24 +532,35 @@ class ForEachStatement : public IterationStatement {
     return mode == ITERATE ? "for-of" : "for-in";
   }
 
-  void Initialize(Expression* each, Expression* subject, Statement* body) {
+  void Initialize(Expression* each, Expression* subject, Statement* body,
+                  Scope* subject_scope) {
     IterationStatement::Initialize(body);
     each_ = each;
     subject_ = subject;
+    subject_scope_ = subject_scope;
   }
 
   Expression* each() const { return each_; }
   Expression* subject() const { return subject_; }
+
+  // The parser wraps the `subject` expression into a hidden block scope
+  // in some cases. Otherwise the debugger gets confused when pausing in the
+  // `subject` expression.
+  Scope* subject_scope() const { return subject_scope_; }
 
  protected:
   friend class AstNodeFactory;
   friend Zone;
 
   ForEachStatement(int pos, NodeType type)
-      : IterationStatement(pos, type), each_(nullptr), subject_(nullptr) {}
+      : IterationStatement(pos, type),
+        each_(nullptr),
+        subject_(nullptr),
+        subject_scope_(nullptr) {}
 
   Expression* each_;
   Expression* subject_;
+  Scope* subject_scope_;
 };
 
 class ForInStatement final : public ForEachStatement {
@@ -1823,6 +1822,8 @@ class Call final : public CallBase {
 
   using IsTaggedTemplateField = CallBase::NextBitField<bool, 1>;
   using IsOptionalChainLinkField = IsTaggedTemplateField::Next<bool, 1>;
+
+ public:
   using EvalScopeInfoIndexField = IsOptionalChainLinkField::Next<uint32_t, 20>;
 };
 
@@ -1906,6 +1907,8 @@ class BinaryOperation final : public Expression {
   Expression* left() const { return left_; }
   Expression* right() const { return right_; }
 
+  void UpdateRight(Expression* expr) { right_ = expr; }
+
   // Returns true if one side is a Smi literal, returning the other side's
   // sub-expression in |subexpr| and the literal Smi in |literal|.
   bool IsSmiLiteralOperation(Expression** subexpr, Tagged<Smi>* literal);
@@ -1941,6 +1944,13 @@ class NaryOperation final : public Expression {
 
   void AddSubsequent(Expression* expr, int pos) {
     subsequent_.emplace_back(expr, pos);
+  }
+
+  Expression* last() const {
+    return subsequent_[subsequent_.size() - 1].expression;
+  }
+  void UpdateLast(Expression* expr) {
+    subsequent_[subsequent_.size() - 1].expression = expr;
   }
 
  private:

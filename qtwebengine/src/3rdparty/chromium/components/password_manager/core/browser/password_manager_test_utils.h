@@ -6,6 +6,7 @@
 #define COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_PASSWORD_MANAGER_TEST_UTILS_H_
 
 #include <iosfwd>
+#include <variant>
 #include <vector>
 
 #include "base/memory/ref_counted.h"
@@ -121,18 +122,28 @@ bool ContainsEqualPasswordFormsUnordered(
     const std::vector<std::unique_ptr<PasswordForm>>& actual_values,
     std::ostream* mismatch_output);
 
+// Creates a set map of `ServerPrediction`s for `form` according to the
+// specified `types`. `types` is a map of the fields index in `form.fields()` to
+// the `FieldType`.
+base::flat_map<autofill::FieldGlobalId,
+               autofill::AutofillType::ServerPrediction>
+CreateServerPredictions(
+    const autofill::FormData& form,
+    const base::flat_map<size_t, autofill::FieldType>& types,
+    bool is_override = false);
+
 MATCHER_P(UnorderedPasswordFormElementsAre, expectations, "") {
   return ContainsEqualPasswordFormsUnordered(*expectations, arg,
                                              result_listener->stream());
 }
 
 MATCHER_P(LoginsResultsOrErrorAre, expectations, "") {
-  if (absl::holds_alternative<PasswordStoreBackendError>(arg)) {
+  if (std::holds_alternative<PasswordStoreBackendError>(arg)) {
     return false;
   }
 
   return ContainsEqualPasswordFormsUnordered(
-      *expectations, std::move(absl::get<LoginsResult>(arg)),
+      *expectations, std::move(std::get<LoginsResult>(arg)),
       result_listener->stream());
 }
 

@@ -18,6 +18,8 @@ namespace blink::common::webid {
 // account list entry for Lightweight FedCM. Members are a subset of fields in
 // type `IdentityProviderAccount` in
 // third_party/blink/renderer/modules/credentialmanagement/identity_provider_account.idl
+// When a new field is added, be sure to update the base::Value conversion logic
+// in InMemoryFederatedPermissionContext::GetAccounts
 struct BLINK_COMMON_EXPORT LoginStatusAccount {
   LoginStatusAccount();
 
@@ -26,9 +28,7 @@ struct BLINK_COMMON_EXPORT LoginStatusAccount {
                      const std::string& name,
                      base::optional_ref<const std::string> given_name,
                      base::optional_ref<const GURL> picture_url);
-  LoginStatusAccount(const LoginStatusAccount& account);
   ~LoginStatusAccount();
-  LoginStatusAccount& operator=(const LoginStatusAccount&);
   bool operator==(const LoginStatusAccount& account) const;
 
   // STL strings are used here in accordance with the exceptions described in

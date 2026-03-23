@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QFUSIONSTYLE_P_P_H
 #define QFUSIONSTYLE_P_P_H
@@ -70,7 +71,10 @@ public:
         }
         if (pal.window().style() == Qt::TexturePattern)
             return QColor(0, 0, 0, 160);
-        return pal.window().color().darker(140);
+        auto windowColor = pal.window().color();
+        if (!windowColor.isValid())
+            windowColor = QPalette().window().color();
+        return windowColor.darker(140);
     }
 
     QColor highlightedOutline(const QPalette &pal) const {
@@ -90,7 +94,8 @@ public:
         QColor buttonColor = pal.button().color();
         int val = qGray(buttonColor.rgb());
         buttonColor = buttonColor.lighter(100 + qMax(1, (180 - val)/6));
-        buttonColor.setHsv(buttonColor.hue(), buttonColor.saturation() * 0.75, buttonColor.value());
+        buttonColor.setHsv(buttonColor.hue(), buttonColor.saturation() * 0.75,
+                           buttonColor.value(), buttonColor.alpha());
         return buttonColor;
     }
 

@@ -775,9 +775,7 @@ void AsmJsParser::ValidateFunction() {
 
   bool last_statement_is_return = false;
   while (!failed_ && !Peek('}')) {
-    // clang-format off
     last_statement_is_return = Peek(TOK(return));
-    // clang-format on
     RECURSE(ValidateStatement());
   }
 
@@ -1041,9 +1039,7 @@ void AsmJsParser::ValidateStatement() {
     RECURSE(EmptyStatement());
   } else if (Peek(TOK(if))) {
     RECURSE(IfStatement());
-    // clang-format off
   } else if (Peek(TOK(return))) {
-    // clang-format on
     RECURSE(ReturnStatement());
   } else if (IterationStatement()) {
     // Handled in IterationStatement.
@@ -1118,9 +1114,7 @@ void AsmJsParser::IfStatement() {
 
 // 6.5.5 ReturnStatement
 void AsmJsParser::ReturnStatement() {
-  // clang-format off
   EXPECT_TOKEN(TOK(return));
-  // clang-format on
   if (!Peek(';') && !Peek('}')) {
     // TODO(bradnelson): See if this can be factored out.
     AsmType* ret;
@@ -1491,10 +1485,11 @@ AsmType* AsmJsParser::MemberExpression() {
     inside_heap_assignment_ = true;
     return heap_access_type_->StoreType();
   } else {
-#define V(array_type, wasmload, wasmstore, type)                       \
-  if (heap_access_type_->IsA(AsmType::array_type())) {                 \
-    current_function_builder_->Emit(kExpr##type##AsmjsLoad##wasmload); \
-    return heap_access_type_->LoadType();                              \
+#define V(array_type, wasmload, wasmstore, type)       \
+  if (heap_access_type_->IsA(AsmType::array_type())) { \
+    current_function_builder_->EmitWithPrefix(         \
+        kExpr##type##AsmjsLoad##wasmload);             \
+    return heap_access_type_->LoadType();              \
   }
     STDLIB_ARRAY_TYPE_LIST(V)
 #undef V
@@ -1534,10 +1529,11 @@ AsmType* AsmJsParser::AssignmentExpression() {
         current_function_builder_->Emit(kExprF64ConvertF32);
         ret = AsmType::DoubleQ();
       }
-#define V(array_type, wasmload, wasmstore, type)                         \
-  if (heap_type->IsA(AsmType::array_type())) {                           \
-    current_function_builder_->Emit(kExpr##type##AsmjsStore##wasmstore); \
-    return ret;                                                          \
+#define V(array_type, wasmload, wasmstore, type) \
+  if (heap_type->IsA(AsmType::array_type())) {   \
+    current_function_builder_->EmitWithPrefix(   \
+        kExpr##type##AsmjsStore##wasmstore);     \
+    return ret;                                  \
   }
       STDLIB_ARRAY_TYPE_LIST(V)
 #undef V
@@ -1648,9 +1644,9 @@ AsmType* AsmJsParser::UnaryExpression() {
     if (Check('~')) {
       RECURSEn(ret = UnaryExpression());
       if (ret->IsA(AsmType::Double())) {
-        current_function_builder_->Emit(kExprI32AsmjsSConvertF64);
+        current_function_builder_->EmitWithPrefix(kExprI32AsmjsSConvertF64);
       } else if (ret->IsA(AsmType::FloatQ())) {
-        current_function_builder_->Emit(kExprI32AsmjsSConvertF32);
+        current_function_builder_->EmitWithPrefix(kExprI32AsmjsSConvertF32);
       } else {
         FAILn("expected double or float?");
       }
@@ -1759,10 +1755,10 @@ AsmType* AsmJsParser::MultiplicativeExpression() {
         current_function_builder_->Emit(kExprF32Div);
         a = AsmType::Floatish();
       } else if (a->IsA(AsmType::Signed()) && b->IsA(AsmType::Signed())) {
-        current_function_builder_->Emit(kExprI32AsmjsDivS);
+        current_function_builder_->EmitWithPrefix(kExprI32AsmjsDivS);
         a = AsmType::Intish();
       } else if (a->IsA(AsmType::Unsigned()) && b->IsA(AsmType::Unsigned())) {
-        current_function_builder_->Emit(kExprI32AsmjsDivU);
+        current_function_builder_->EmitWithPrefix(kExprI32AsmjsDivU);
         a = AsmType::Intish();
       } else {
         FAILn("expected doubles or floats");
@@ -1771,13 +1767,13 @@ AsmType* AsmJsParser::MultiplicativeExpression() {
       AsmType* b;
       RECURSEn(b = UnaryExpression());
       if (a->IsA(AsmType::DoubleQ()) && b->IsA(AsmType::DoubleQ())) {
-        current_function_builder_->Emit(kExprF64Mod);
+        current_function_builder_->EmitWithPrefix(kExprF64Mod);
         a = AsmType::Double();
       } else if (a->IsA(AsmType::Signed()) && b->IsA(AsmType::Signed())) {
-        current_function_builder_->Emit(kExprI32AsmjsRemS);
+        current_function_builder_->EmitWithPrefix(kExprI32AsmjsRemS);
         a = AsmType::Intish();
       } else if (a->IsA(AsmType::Unsigned()) && b->IsA(AsmType::Unsigned())) {
-        current_function_builder_->Emit(kExprI32AsmjsRemU);
+        current_function_builder_->EmitWithPrefix(kExprI32AsmjsRemU);
         a = AsmType::Intish();
       } else {
         FAILn("expected doubles or floats");
@@ -1861,7 +1857,6 @@ AsmType* AsmJsParser::ShiftExpression() {
     switch (scanner_.Token()) {
       case TOK(SAR): {
         EXPECT_TOKENn(TOK(SAR));
-        heap_access_shift_position_ = kNoHeapAccessShift;
         // Remember position allowing this shift-expression to be used as part
         // of a heap access operation expecting `a >> n:NumericLiteral`.
         bool imm = false;
@@ -1880,7 +1875,10 @@ AsmType* AsmJsParser::ShiftExpression() {
         if (imm && old_pos == scanner_.Position()) {
           heap_access_shift_position_ = old_code;
           heap_access_shift_value_ = shift_imm;
+        } else {
+          heap_access_shift_position_ = kNoHeapAccessShift;
         }
+
         if (!(a->IsA(AsmType::Intish()) && b->IsA(AsmType::Intish()))) {
           FAILn("Expected intish for operator >>.");
         }
@@ -1891,7 +1889,6 @@ AsmType* AsmJsParser::ShiftExpression() {
 #define HANDLE_CASE(op, opcode, name, result)                        \
   case TOK(op): {                                                    \
     EXPECT_TOKENn(TOK(op));                                          \
-    heap_access_shift_position_ = kNoHeapAccessShift;                \
     AsmType* b = nullptr;                                            \
     RECURSEn(b = AdditiveExpression());                              \
     if (!(a->IsA(AsmType::Intish()) && b->IsA(AsmType::Intish()))) { \
@@ -1899,6 +1896,8 @@ AsmType* AsmJsParser::ShiftExpression() {
     }                                                                \
     current_function_builder_->Emit(kExpr##opcode);                  \
     a = AsmType::result();                                           \
+    /* Must happen after the RECURSE call to unset its state! */     \
+    heap_access_shift_position_ = kNoHeapAccessShift;                \
     continue;                                                        \
   }
         HANDLE_CASE(SHL, I32Shl, "<<", Signed);
@@ -2299,9 +2298,13 @@ AsmType* AsmJsParser::ValidateCall() {
       FAILn("Function use doesn't match definition");
     }
     switch (function_info->kind) {
-#define V(name, Name, op, sig)           \
-  case VarKind::kMath##Name:             \
-    current_function_builder_->Emit(op); \
+#define V(name, Name, op, sig)                       \
+  case VarKind::kMath##Name:                         \
+    if ((op) <= 0xff) {                               \
+      current_function_builder_->Emit(op);           \
+    } else {                                         \
+      current_function_builder_->EmitWithPrefix(op); \
+    }                                                \
     break;
       STDLIB_MATH_FUNCTION_MONOMORPHIC_LIST(V)
 #undef V

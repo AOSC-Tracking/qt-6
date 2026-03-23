@@ -32,7 +32,7 @@
 #define EXPECT_OK(status) EXPECT_TRUE((status).ok()) << VV(status)
 #define ASSERT_OK(status) ASSERT_TRUE((status).ok()) << VV(status)
 
-namespace centipede {
+namespace fuzztest::internal {
 
 // Returns a temp dir for use inside tests. The base dir is chosen in the
 // following order of precedence:
@@ -66,6 +66,8 @@ std::string GetObjDumpPath();
 void PrependDirToPathEnvvar(std::string_view dir);
 
 // Creates or clears a tmp dir in CTOR. The dir will end with `leaf` subdir.
+//
+// TODO(b/393384208): Merge this with TempDir in temp_dir.h.
 class TempDir {
  public:
   explicit TempDir(std::string_view leaf1, std::string_view leaf2 = "")
@@ -128,6 +130,6 @@ class TempCorpusDir : public TempDir {
   std::unique_ptr<BlobFileReader> reader_ = DefaultBlobFileReaderFactory();
 };
 
-}  // namespace centipede
+}  // namespace fuzztest::internal
 
 #endif  // FUZZTEST_COMMON_TEST_UTIL_H_

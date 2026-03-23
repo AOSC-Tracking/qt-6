@@ -15,10 +15,9 @@ import BrowserUtils
 
 ApplicationWindow {
     id: win
-    required property QtObject applicationRoot
+    required property ApplicationRoot applicationRoot
     property WebEngineView currentWebView: tabBar.currentIndex < tabBar.count ? tabLayout.children[tabBar.currentIndex] : null
     property int previousVisibility: Window.Windowed
-    property int createdTabs: 0
     property bool lastTabClosing: false
 
     width: 1300
@@ -79,7 +78,7 @@ ApplicationWindow {
         onTriggered: {
             tabBar.createTab(tabBar.count !== 0
                              ? win.currentWebView.profile
-                             : (win.applicationRoot as ApplicationRoot).defaultProfilePrototype.instance());
+                             : win.applicationRoot.defaultProfilePrototype.instance());
             addressBar.forceActiveFocus();
             addressBar.selectAll();
         }
@@ -329,12 +328,12 @@ ApplicationWindow {
                         id: offTheRecordEnabled
                         text: "Off The Record"
                         checkable: true
-                        checked: win.currentWebView?.profile === (win.applicationRoot as ApplicationRoot).otrPrototype.instance()
+                        checked: win.currentWebView?.profile === win.applicationRoot.otrPrototype.instance()
                         onToggled: function() {
                             if (win.currentWebView) {
                                 win.currentWebView.profile = offTheRecordEnabled.checked
-                                        ? (win.applicationRoot as ApplicationRoot).otrPrototype.instance()
-                                        : (win.applicationRoot as ApplicationRoot).defaultProfilePrototype.instance();
+                                        ? win.applicationRoot.otrPrototype.instance()
+                                        : win.applicationRoot.defaultProfilePrototype.instance();
                             }
                         }
                     }
@@ -521,11 +520,12 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        Component.onCompleted: createTab((win.applicationRoot as ApplicationRoot).defaultProfilePrototype.instance())
+        Component.onCompleted: createTab(win.applicationRoot.defaultProfilePrototype.instance())
 
         function createTab(profile, focusOnNewTab = true, url = undefined) {
-            var webview = tabComponent.createObject(tabLayout, {index: tabBar.count , profile: profile});
+            var webview = tabComponent.createObject(tabLayout, {profile: profile});
             var newTabButton = tabButtonComponent.createObject(tabBar, {tabTitle: Qt.binding(function () { return webview.title; })});
+            webview.index = Qt.binding(function () { return newTabButton.TabBar.index; })
             tabBar.addItem(newTabButton);
             if (focusOnNewTab) {
                 tabBar.setCurrentIndex(tabBar.count - 1);
@@ -554,7 +554,7 @@ ApplicationWindow {
             id: tabComponent
             WebEngineView {
                 id: webEngineView
-                property int index;
+                property int index: 0
                 focus: true
 
                 onLinkHovered: function(hoveredUrl) {
@@ -621,10 +621,10 @@ ApplicationWindow {
                         var backgroundTab = tabBar.createTab(win.currentWebView.profile, false);
                         backgroundTab.acceptAsNewWindow(request);
                     } else if (request.destination === WebEngineNewWindowRequest.InNewDialog) {
-                        var dialog = (win.applicationRoot as ApplicationRoot).createDialog(win.currentWebView.profile);
+                        var dialog = win.applicationRoot.createDialog(win.currentWebView.profile);
                         dialog.win.currentWebView.acceptAsNewWindow(request);
                     } else {
-                        var window = (win.applicationRoot as ApplicationRoot).createWindow(win.currentWebView.profile);
+                        var window = win.applicationRoot.createWindow(win.currentWebView.profile);
                         window.win.currentWebView.acceptAsNewWindow(request);
                     }
                 }
@@ -860,6 +860,7 @@ ApplicationWindow {
     WebAuthDialog {
         id: webAuthDialog
         visible: false
+        browserWindow: win
     }
 
     MessageDialog {

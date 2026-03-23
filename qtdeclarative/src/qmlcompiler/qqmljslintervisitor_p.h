@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSLINTERVISITOR_P_H
 #define QQMLJSLINTERVISITOR_P_H
@@ -31,7 +32,7 @@ namespace QQmlJS {
 class LinterVisitor final : public QQmlJSImportVisitor
 {
 public:
-    LinterVisitor(const QQmlJSScope::Ptr &target, QQmlJSImporter *importer, QQmlJSLogger *logger,
+    LinterVisitor(QQmlJSImporter *importer, QQmlJSLogger *logger,
                   const QString &implicitImportDirectory,
                   const QStringList &qmldirFiles = QStringList(), QQmlJS::Engine *engine = nullptr);
 
@@ -54,6 +55,9 @@ protected:
     bool visit(QQmlJS::AST::UiEnumDeclaration *uied) override;
     bool visit(QQmlJS::AST::CaseBlock *) override;
     bool visit(QQmlJS::AST::ExpressionStatement *ast) override;
+    bool visit(QQmlJS::AST::FunctionDeclaration *fdecl) override;
+    bool visit(QQmlJS::AST::FunctionExpression *fexpr) override;
+    bool visit(QQmlJS::AST::UiPublicMember *publicMember) override;
 
 private:
     struct SeenImport

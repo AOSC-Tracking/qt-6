@@ -25,13 +25,20 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 
 namespace {
 
 absl::Duration GetBazelTestTimeout() {
   const char *test_timeout_env = std::getenv("TEST_TIMEOUT");
   if (test_timeout_env == nullptr) return absl::InfiniteDuration();
+  // When using `bazel run`, `TEST_TIMEOUT` is set but not used, and we should
+  // ignore the timeout. We detect this by the presence of
+  // `BUILD_WORKSPACE_DIRECTORY`
+  // (https://bazel.build/docs/user-manual#running-executables).
+  if (std::getenv("BUILD_WORKSPACE_DIRECTORY") != nullptr) {
+    return absl::InfiniteDuration();
+  }
   int timeout_s = 0;
   CHECK(absl::SimpleAtoi(test_timeout_env, &timeout_s))
       << "Failed to parse TEST_TIMEOUT: \"" << test_timeout_env << "\"";
@@ -117,4 +124,4 @@ absl::Status VerifyBazelHasEnoughTimeToRunTest(absl::Time target_start_time,
   return absl::ResourceExhaustedError(error);
 }
 
-}  // namespace centipede
+}  // namespace fuzztest::internal

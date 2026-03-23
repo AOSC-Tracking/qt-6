@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicktextnodeengine_p.h"
 
@@ -11,6 +12,7 @@
 #include <QtGui/qtextobject.h>
 #include <QtGui/qtexttable.h>
 #include <QtGui/qtextlist.h>
+#include <QtGui/qimageiohandler.h>
 
 #include <private/qquicktext_p.h>
 #include <private/qtextdocumentlayout_p.h>
@@ -434,12 +436,15 @@ void QQuickTextNodeEngine::addTextObject(const QTextBlock &block, const QPointF 
         }
 
         if (image.isNull()) {
-            image = QImage((size * m_devicePixelRatio).toSize(), QImage::Format_ARGB32_Premultiplied);
-            image.setDevicePixelRatio(m_devicePixelRatio);
-            image.fill(Qt::transparent);
-            {
-                QPainter painter(&image);
-                handler->drawObject(&painter, QRectF({}, size), textDocument, pos, format);
+            if (QImageIOHandler::allocateImage((size * m_devicePixelRatio).toSize(),
+                                               QImage::Format_ARGB32_Premultiplied,
+                                               &image)) {
+                image.setDevicePixelRatio(m_devicePixelRatio);
+                image.fill(Qt::transparent);
+                {
+                    QPainter painter(&image);
+                    handler->drawObject(&painter, QRectF({}, size), textDocument, pos, format);
+                }
             }
         }
 
@@ -728,10 +733,10 @@ void QQuickTextNodeEngine::mergeProcessedNodes(QList<BinaryTreeNode *> *regularN
 
         if (count != primaryNode->glyphRun.glyphIndexes().size()) {
             QGlyphRun &glyphRun = primaryNode->glyphRun;
-            QVector<quint32> glyphIndexes = glyphRun.glyphIndexes();
+            QList<quint32> glyphIndexes = glyphRun.glyphIndexes();
             glyphIndexes.reserve(count);
 
-            QVector<QPointF> glyphPositions = glyphRun.positions();
+            QList<QPointF> glyphPositions = glyphRun.positions();
             glyphPositions.reserve(count);
 
             QRectF glyphBoundingRect = glyphRun.boundingRect();
@@ -742,7 +747,7 @@ void QQuickTextNodeEngine::mergeProcessedNodes(QList<BinaryTreeNode *> *regularN
                 primaryNode->ranges += otherNode->ranges;
                 glyphBoundingRect = glyphBoundingRect.united(otherNode->boundingRect);
 
-                QVector<QPointF> otherPositions = otherNode->glyphRun.positions();
+                QList<QPointF> otherPositions = otherNode->glyphRun.positions();
                 for (int k = 0; k < otherPositions.size(); ++k)
                     glyphPositions += otherPositions.at(k) + (otherNode->position - primaryNode->position);
             }
@@ -897,7 +902,7 @@ void QQuickTextNodeEngine::mergeFormats(QTextLayout *textLayout, QVarLengthArray
     if (textLayout == nullptr)
         return;
 
-    QVector<QTextLayout::FormatRange> additionalFormats = textLayout->formats();
+    QList<QTextLayout::FormatRange> additionalFormats = textLayout->formats();
     for (int i=0; i<additionalFormats.size(); ++i) {
         QTextLayout::FormatRange additionalFormat = additionalFormats.at(i);
         if (additionalFormat.format.hasProperty(QTextFormat::ForegroundBrush)

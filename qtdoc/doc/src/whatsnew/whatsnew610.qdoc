@@ -55,12 +55,12 @@
       \li Use \l{QByteArray::}{nullTerminate()} to add a null terminator to a
           QByteArray or QString, e.g. after constructing them via
           \l{QByteArray::fromRawData()}. Test whether the array or string is null
-          terminated with \l{QByteArray::}{isNullTerminated()}.
-      \li QByteArray can now implicitly convert to a \l{QByteArray::operator std::string_view()}
+          terminated with \l{QByteArray::}{nullTerminated()}.
+      \li QByteArray can now implicitly convert to a \l{qbytearray-operator-std-string_view}
           {std::string_view}.
     \endlist
 
-    \section2 Qt DBus Module
+    \section2 Qt D-Bus Module
     \list
       \li QDBusConnectionInterface::serviceCredentials() returns the connection
           credentials for the process currently holding the specified bus service.
@@ -82,7 +82,6 @@
       \li Added \l{Bars3DNode}, \l{Scatter3DNode}, and \l{Surface3DNode} for
           adding 3D graphs in QtQuick3D applications inside View3Ds
       \li Graph draw ordering support for 2D graphs added: \l{QAbstractSeries::zValue}
-      \li Option to set timezone for DateTimeAxis added: \l{QDateTimeAxis::timeZone}
       \li Categorized logging support added
     \endlist
 
@@ -139,7 +138,7 @@
         \li Added a plugin for \l{VectorImage} which enables it to load Lottie files in addition
             to SVG. This feature is tech preview and requires
             \l{VectorImage::assumeTrustedSource}{assumeTrustedSource} to be set to \c true.
-        \li Added \l{lottietoqml example} and \l{qtlottieviewer example} to demonstrate usage
+        \li Added \l{lottietoqml Example} and \l{qtlottieviewer Example} to demonstrate usage
             of \l{Qt Lottie Animation}.
     \endlist
 
@@ -173,7 +172,7 @@
             messages, making them accessible using the \c {mut} prefix.
     \endlist
 
-    \section2 Qt QML Module
+    \section2 Qt Qml Module
     \list
         \li Added a new TreeModel QML type that allows the definition  of a tree structure in
             the QML file and works with TreeView.
@@ -189,6 +188,8 @@
             including checks for \QDS-specific limitations, additional JavaScript-related warnings,
             and several new warnings related to QML enums and imports.
         \li Removed support for manipulation of complex row structures from TableModel.
+        \li Changed the order of the role and value parameters in TableModel::setData to resolve
+            ambiguity.
     \endlist
 
     \section2 Qt Quick Module
@@ -218,7 +219,7 @@
 
     \section2 Qt Quick 3D Module
     \list
-        \li Added \l [QtQuick3D]{ParticleEmitter3D::emitMode}{emit-mode} to shaped emitters to allow
+        \li Added \l [QtQuick3D]{ParticleEmitter3D::emitType}{emitType} to shaped emitters to allow
             particles to be emitted based on the surface normals of the shape.
         \li Implemented \l [QtQuick3D]{ParticleEmitter3D::reversed}{reversed} emitters to enable
             particles to run from end time to begin time.
@@ -372,7 +373,7 @@
           be overridden directly in the \c \qmlproperty command, even for
           non-aliased properties.
       \li The \l {documentationinheaders-variable} {documentationinheaders}
-          option is no longer offered as a technical preview; rather, it is
+          option is no longer offered as a technology preview; rather, it is
           considered stable. It was first introduced in Qt 6.9.
       \li When generating DocBook output, QDoc now includes overload notes.
       \li Overloaded signals and slots now include a contextual snippet to show
@@ -393,6 +394,26 @@
           non-deprecated alternatives.
       \li You can prevent machine translation of strings using the new
           \l {notranslate-command}{\\notranslate-command}.
+    \endlist
+
+    \section2 Qt Linguist
+    \list
+        \li Added support for organizing ID-based translations with custom
+            labels in Qt Linguist and lupdate.
+        \li Introduced a QML form preview feature in Qt Linguist for visual
+            validation of translations in context.
+        \li Updated Qt Linguist with a refreshed UI, including new icons,
+            improved color palette, and better handling of dark mode.
+        \li lupdate and lrelease now support mixing ID-based and
+            text-based translations within the same document.
+        \li Removed the Clang-based parser from lupdate.
+        \li Unified support for meta strings (comments like //: and //~) across
+            different programming languages in lupdate.
+        \li Added new i18n examples to the documentation.
+        \li lrelease now provides the -fail-on-unfinished option to fail the
+            build if there are unfinished translations.
+        \li Deprecated using \c{//=} metastring comments to set IDs for
+            text-based translations.
     \endlist
 
     \section1 Platform Changes
@@ -429,6 +450,13 @@
 
     \section3 Windows
     \list
+        \li Windows on ARM pre-built binaries also include QtWebEngine and QtWebView.
+    \endlist
+
+    \section3 Linux
+    \list
+        \li Linux desktop pre-built binaries are now built using RHEL9, which raises
+        the minimum glibc requirement from 2.28 to 2.34.
     \endlist
 
     \section3 macOS
@@ -457,6 +485,7 @@
         \li Added support for Android 16KB page sizes.
         \li Added an example (QtJennyDemo) for accessing Android APIs via C++ wrappers
             produced by a code generator (QtJenny).
+        \li Changed Android 16 (API 36) as maximum supported platform version.
     \endlist
 
     \section4 Qt Quick for Android
@@ -483,6 +512,15 @@
 
     \section3 Boot to Qt
     \list
+      \li Support was added for Yocto 5.2 (Walnascar).
+      \li \l{Support Levels for Target Hardware} was updated with supported boards for Tier 2:
+        \list
+          \li NXP i.MX 93 11x11 LPDDR4X EVK.
+        \endlist
+      \li \l{Support Levels for Target Hardware} was updated with supported boards for Tier 3:
+        \list
+          \li Toradex Colibri iMX6 ULL.
+        \endlist
     \endlist
 
     \section3 Real-Time Operating Systems

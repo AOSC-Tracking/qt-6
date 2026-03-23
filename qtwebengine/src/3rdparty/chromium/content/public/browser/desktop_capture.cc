@@ -12,9 +12,11 @@
 #include "content/public/common/content_features.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
-#include "content/browser/media/capture/aura_window_to_mojo_device_adapter.h"
 #include "content/browser/media/capture/desktop_capturer_ash.h"
-#include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#endif
+
+#if BUILDFLAG(IS_ANDROID)
+#include "content/browser/media/capture/desktop_capturer_android.h"
 #endif
 
 #if defined(WEBRTC_USE_PIPEWIRE)
@@ -29,19 +31,31 @@
 #if BUILDFLAG(IS_MAC)
 #include "base/mac/mac_util.h"
 
-BASE_FEATURE(kUseCGDisplayStreamCreateSonoma,
-             "UseCGDisplayStreamCreateSonoma",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // CGDisplayStreamCreate() is marked as deprecated from macOS 14 (Sonoma), so
 // don't use unless the feature flag is set.
 bool CGDisplayStreamCreateIsAvailable() {
   if (base::mac::MacOSMajorVersion() >= 14) {
-    return base::FeatureList::IsEnabled(kUseCGDisplayStreamCreateSonoma);
+    return false;
   }
   return true;
 }
 #endif  // BUILDFLAG(IS_MAC)
+
+#if BUILDFLAG(IS_WIN)
+// Enabled-by-default, but exists as a kill-switch.
+// TODO(crbug.com/409473386): Remove this flag once it has been in stable for a
+// few milestones.
+BASE_FEATURE(kUseHeuristicForWindowsFullScreenPowerPoint,
+             "UseHeuristicForWindowsFullScreenPowerPoint",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Controls the rollout of a finch experiment.
+// TODO(crbug.com/409473386): Remove this feature once it has been rolled out to
+// stable for a few milestones.
+BASE_FEATURE(kUseFullScreenHeuristicForWgc,
+             "UseFullScreenHeuristicForWgc",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 namespace content::desktop_capture {
 
@@ -50,6 +64,12 @@ webrtc::DesktopCaptureOptions CreateDesktopCaptureOptions() {
   // Leave desktop effects enabled during WebRTC captures.
   options.set_disable_effects(false);
 #if BUILDFLAG(IS_WIN)
+  options.full_screen_window_detector()
+      ->SetUseHeuristicFullscreenPowerPointWindows(
+          base::FeatureList::IsEnabled(
+              kUseHeuristicForWindowsFullScreenPowerPoint),
+          base::FeatureList::IsEnabled(kUseFullScreenHeuristicForWgc));
+
   // TODO(crbug.com/webrtc/15045): Possibly remove this flag. Keeping for now
   // to force fallback to GDI.
   static BASE_FEATURE(kDirectXCapturer, "DirectXCapturer",
@@ -77,36 +97,33 @@ webrtc::DesktopCaptureOptions CreateDesktopCaptureOptions() {
 }
 
 std::unique_ptr<webrtc::DesktopCapturer> CreateScreenCapturer(
-    bool allow_wgc_screen_capturer) {
+    webrtc::DesktopCaptureOptions options,
+    bool for_snapshot) {
 #if BUILDFLAG(IS_CHROMEOS)
-  return std::make_unique<DesktopCapturerAsh>();
-#else
-  auto options = desktop_capture::CreateDesktopCaptureOptions();
-#if defined(RTC_ENABLE_WIN_WGC)
-  if (allow_wgc_screen_capturer) {
-    options.set_allow_wgc_screen_capturer(true);
+  if (for_snapshot) {
+    return std::make_unique<DesktopCapturerAsh>();
   }
-#endif  // defined(RTC_ENABLE_WIN_WGC)
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(IS_ANDROID)
+  return std::make_unique<DesktopCapturerAndroid>(options);
+#else
   return webrtc::DesktopCapturer::CreateScreenCapturer(options);
-#endif
+#endif  // BUILDFLAG(IS_ANDROID)
 }
 
-std::unique_ptr<webrtc::DesktopCapturer> CreateWindowCapturer() {
-  auto options = desktop_capture::CreateDesktopCaptureOptions();
+std::unique_ptr<webrtc::DesktopCapturer> CreateWindowCapturer(
+    webrtc::DesktopCaptureOptions options) {
 #if defined(RTC_ENABLE_WIN_WGC)
   options.set_allow_wgc_capturer_fallback(true);
-#endif
-  return webrtc::DesktopCapturer::CreateWindowCapturer(options);
-}
+#endif  // defined(RTC_ENABLE_WIN_WGC)
 
-#if BUILDFLAG(IS_CHROMEOS)
-void BindAuraWindowCapturer(
-    mojo::PendingReceiver<video_capture::mojom::Device> receiver,
-    const content::DesktopMediaID& id) {
-  mojo::MakeSelfOwnedReceiver(
-      std::make_unique<AuraWindowToMojoDeviceAdapter>(id), std::move(receiver));
+#if BUILDFLAG(IS_ANDROID)
+  return std::make_unique<DesktopCapturerAndroid>(options);
+#else
+  return webrtc::DesktopCapturer::CreateWindowCapturer(options);
+#endif  // BUILDFLAG(IS_ANDROID)
 }
-#endif
 
 bool CanUsePipeWire() {
 #if defined(WEBRTC_USE_PIPEWIRE)

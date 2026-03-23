@@ -5,6 +5,7 @@
 #ifndef QDATASTREAM_H
 #define QDATASTREAM_H
 
+#include <QtCore/qobjectdefs.h>
 #include <QtCore/qchar.h>
 #include <QtCore/qcontainerfwd.h>
 #include <QtCore/qiodevicebase.h>
@@ -47,6 +48,8 @@ QDataStream &writeAssociativeMultiContainer(QDataStream &s, const Container &c);
 }
 class Q_CORE_EXPORT QDataStream : public QIODeviceBase
 {
+    Q_GADGET
+
 public:
     enum Version QT7_ONLY(: quint8) {
         Qt_1_0 = 1,
@@ -92,11 +95,13 @@ public:
         Qt_6_8 = Qt_6_7,
         Qt_6_9 = Qt_6_7,
         Qt_6_10 = 23,
-        Qt_DefaultCompiledVersion = Qt_6_10
-#if QT_VERSION >= QT_VERSION_CHECK(6, 11, 0)
+        Qt_6_11 = 24,
+        Qt_DefaultCompiledVersion = Qt_6_11
+#if QT_VERSION >= QT_VERSION_CHECK(6, 12, 0)
 #error Add the datastream version for this Qt version and update Qt_DefaultCompiledVersion
 #endif
     };
+    Q_ENUM(Version)
 
     enum ByteOrder {
         BigEndian = QSysInfo::BigEndian,
@@ -299,7 +304,7 @@ QDataStream &readArrayBasedContainer(QDataStream &s, Container &c)
 
     c.clear();
     qint64 size = QDataStream::readQSizeType(s);
-    qsizetype n = size;
+    const auto n = qsizetype(size);
     if (size != n || size < 0) {
         s.setStatus(QDataStream::SizeLimitExceeded);
         return s;
@@ -324,7 +329,7 @@ QDataStream &readListBasedContainer(QDataStream &s, Container &c)
 
     c.clear();
     qint64 size = QDataStream::readQSizeType(s);
-    qsizetype n = size;
+    const auto n = qsizetype(size);
     if (size != n || size < 0) {
         s.setStatus(QDataStream::SizeLimitExceeded);
         return s;
@@ -348,7 +353,7 @@ QDataStream &readAssociativeContainer(QDataStream &s, Container &c)
 
     c.clear();
     qint64 size = QDataStream::readQSizeType(s);
-    qsizetype n = size;
+    const auto n = qsizetype(size);
     if (size != n || size < 0) {
         s.setStatus(QDataStream::SizeLimitExceeded);
         return s;

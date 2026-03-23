@@ -31,6 +31,7 @@
 main.star: lucicfg configuration for Dawn's standalone builers.
 """
 
+load("//constants.star", "siso")
 load("//project.star", "ACTIVE_MILESTONES")
 
 # Use LUCI Scheduler BBv2 names and add Scheduler realms configs.
@@ -77,9 +78,13 @@ luci.project(
             roles = "role/configs.validator",
             users = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
         ),
+        # Allow any Dawn build to trigger tests running under the testing service
+        # used on shared Chromium testing pools.
         luci.binding(
             roles = "role/swarming.taskServiceAccount",
-            users = "dawn-automated-expectations@chops-service-accounts.iam.gserviceaccount.com",
+            users = [
+                "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
+            ],
         ),
     ],
 )
@@ -99,14 +104,6 @@ luci.bucket(
             acl.BUILDBUCKET_TRIGGERER,
         ),
     ],
-)
-
-# Allow LED users to trigger swarming tasks directly when debugging ci
-# builders.
-luci.binding(
-    realm = "ci",
-    roles = "role/swarming.taskTriggerer",
-    groups = "flex-ci-led-users",
 )
 
 luci.bucket(
@@ -135,7 +132,7 @@ luci.bucket(
     name = "ci.shadow",
     shadows = "ci",
     constraints = luci.bucket_constraints(
-        pools = ["luci.flex.ci"],
+        pools = ["luci.flex.ci", "luci.chromium.gpu.ci"],
     ),
     bindings = [
         luci.binding(
@@ -171,7 +168,7 @@ luci.bucket(
     name = "try.shadow",
     shadows = "try",
     constraints = luci.bucket_constraints(
-        pools = ["luci.flex.try"],
+        pools = ["luci.flex.try", "luci.chromium.gpu.try"],
         service_accounts = [
             "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
         ],
@@ -224,27 +221,23 @@ os = struct(
     WINDOWS = os_enum(os_category.WINDOWS, "win"),
 )
 
-def get_dimension(os, builder_name = None):
-    """Returns the dimension to use for the input os and optional builder name"""
+def get_dimension(os):
+    """Returns the dimension to use for the input os.
+
+    Args:
+        os: An os enum to check against.
+
+    Returns:
+        A string containing the dimensions the given OS should target.
+    """
     if os.category == os_category.LINUX:
         return "Ubuntu-22.04"
     elif os.category == os_category.MAC:
-        return "Mac-11|Mac-12|Mac-13|Mac-14"
+        return "Mac-12|Mac-13|Mac-14|Mac-15"
     elif os.category == os_category.WINDOWS:
         return "Windows-10"
 
     return "Invalid Dimension"
-
-reclient = struct(
-    instance = struct(
-        DEFAULT_TRUSTED = "rbe-chromium-trusted",
-        DEFAULT_UNTRUSTED = "rbe-chromium-untrusted",
-    ),
-    jobs = struct(
-        HIGH_JOBS_FOR_CI = 250,
-        LOW_JOBS_FOR_CQ = 150,
-    ),
-)
 
 # File exclusion filters meant for use on cmake and msvc trybots since these
 # files do not affect compilation for either.
@@ -319,12 +312,11 @@ def get_os_from_arg(arg):
         return os.MAC
     return os.MAC
 
-def get_default_caches(os, clang):
+def get_default_caches(os):
     """Get standard caches for builders
 
     Args:
       os: OS enum for the builder
-      clang: is this builder running clang
 
     Returns:
       A list of caches
@@ -333,13 +325,10 @@ def get_default_caches(os, clang):
     if os.category == os_category.MAC:
         # Cache for mac_toolchain tool and XCode.app
         caches.append(swarming.cache(name = "osx_sdk", path = "osx_sdk"))
-    elif os.category == os_category.WINDOWS:
-        # Cache for win_toolchain tool
-        caches.append(swarming.cache(name = "win_toolchain", path = "win_toolchain"))
 
     return caches
 
-def get_default_dimensions(os, builder_name):
+def get_default_dimensions(os):
     """Get dimensions for a builder that don't depend on being CI vs Try
 
     Args:
@@ -352,15 +341,18 @@ def get_default_dimensions(os, builder_name):
 
     # We have 32bit test configurations but some of our toolchain is 64bit (like CIPD)
     dimensions["cpu"] = "x86-64"
-    dimensions["os"] = get_dimension(os, builder_name)
+    dimensions["os"] = get_dimension(os)
 
     return dimensions
 
-def get_common_properties(os, clang, reclient_instance, reclient_jobs):
+def get_common_properties(os, clang, rbe_project, remote_jobs):
     """Add the common properties for a builder that don't depend on being CI vs Try
 
     Args:
       os: OS enum for the builder
+      clang: A boolean denoting whether the builder is using clang or not
+      rbe_project: A string containing the RBE project to use
+      remote_jobs: An int specifying how many remote jobs to use when compiling
 
     Returns:
       A properties dict
@@ -368,14 +360,25 @@ def get_common_properties(os, clang, reclient_instance, reclient_jobs):
     properties = {}
     msvc = os.category == os_category.WINDOWS and not clang
 
+    properties = {
+        "$build/siso": {
+            "configs": ["builder"],
+            "enable_cloud_monitoring": True,
+            "enable_cloud_profiler": True,
+            "enable_cloud_trace": True,
+            "metrics_project": "chromium-reclient-metrics",
+            "project": rbe_project,
+        },
+    }
     if not msvc:
         reclient_props = {
-            "instance": reclient_instance,
-            "jobs": reclient_jobs,
+            "instance": rbe_project,
+            "jobs": remote_jobs,
             "metrics_project": "chromium-reclient-metrics",
             "scandeps_server": True,
         }
         properties["$build/reclient"] = reclient_props
+        properties["$build/siso"]["remote_jobs"] = remote_jobs
 
     return properties
 
@@ -390,15 +393,26 @@ def add_ci_builder(name, os, properties):
     clang = properties["clang"]
     fuzzer = ("gen_fuzz_corpus" in properties) and properties["gen_fuzz_corpus"]
 
-    dimensions_ci = get_default_dimensions(os, name)
+    dimensions_ci = get_default_dimensions(os)
     dimensions_ci["pool"] = "luci.flex.ci"
     properties_ci = get_common_properties(
         os,
         clang,
-        reclient.instance.DEFAULT_TRUSTED,
-        reclient.jobs.HIGH_JOBS_FOR_CI,
+        siso.project.DEFAULT_TRUSTED,
+        siso.remote_jobs.DEFAULT,
     )
+
+    # TODO(crbug.com/343503161): Remove sheriff_rotations after SoM is updated.
+    properties_ci["sheriff_rotations"] = ["dawn"]
+    properties_ci["gardener_rotations"] = ["dawn"]
     properties_ci.update(properties)
+    shadow_properties_ci = get_common_properties(
+        os,
+        clang,
+        siso.project.DEFAULT_UNTRUSTED,
+        siso.remote_jobs.DEFAULT,
+    )
+    shadow_properties_ci.update(properties)
     schedule_ci = None
     if fuzzer:
         schedule_ci = "0 0 0 * * * *"
@@ -413,10 +427,11 @@ def add_ci_builder(name, os, properties):
         executable = get_builder_executable(use_gn = "cmake" not in name),
         properties = properties_ci,
         dimensions = dimensions_ci,
-        caches = get_default_caches(os, clang),
+        caches = get_default_caches(os),
         notifies = ["gardener-notifier"],
         service_account = "dawn-ci-builder@chops-service-accounts.iam.gserviceaccount.com",
         shadow_service_account = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+        shadow_properties = shadow_properties_ci,
     )
 
 def add_try_builder(name, os, properties):
@@ -429,13 +444,13 @@ def add_try_builder(name, os, properties):
     """
     clang = properties["clang"]
 
-    dimensions_try = get_default_dimensions(os, name)
+    dimensions_try = get_default_dimensions(os)
     dimensions_try["pool"] = "luci.flex.try"
     properties_try = get_common_properties(
         os,
         clang,
-        reclient.instance.DEFAULT_UNTRUSTED,
-        reclient.jobs.LOW_JOBS_FOR_CQ,
+        siso.project.DEFAULT_UNTRUSTED,
+        siso.remote_jobs.LOW_JOBS_FOR_CQ,
     )
     properties_try.update(properties)
     luci.builder(
@@ -444,7 +459,7 @@ def add_try_builder(name, os, properties):
         executable = get_builder_executable(use_gn = "cmake" not in name),
         properties = properties_try,
         dimensions = dimensions_try,
-        caches = get_default_caches(os, clang),
+        caches = get_default_caches(os),
         service_account = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
     )
 
@@ -464,8 +479,8 @@ def dawn_standalone_builder(name, clang, debug, cpu, fuzzer):
     properties = {
         "clang": clang,
         "debug": debug,
-        "target_cpu": cpu,
         "gen_fuzz_corpus": fuzzer,
+        "target_cpu": cpu,
     }
 
     add_ci_builder(name, os, properties)
@@ -540,14 +555,15 @@ def dawn_cmake_standalone_builder(name, clang, debug, cpu, asan, ubsan, experime
       cpu: string representing the target CPU architecture
       asan: is this builder building with asan enabled
       ubsan: is this builder building with ubsan enabled
+      experimental: is this builder experimental
     """
     os = get_os_from_arg(name)
 
     properties = {
+        "asan": asan,
         "clang": clang,
         "debug": debug,
         "target_cpu": cpu,
-        "asan": asan,
         "ubsan": ubsan,
     }
 
@@ -625,34 +641,34 @@ def _add_branch_verifiers(builder_name, os, min_milestone = None, includable_onl
 # We use the DEPS version for branches because ToT builders do not make sense on
 # branches and the DEPS versions already exist.
 _os_arch_to_branch_builder = {
+    "android-arm": "dawn-android-arm-deps-rel",
+    "android-arm64": "dawn-android-arm64-deps-rel",
     "linux": "dawn-linux-x64-deps-rel",
     "mac": "dawn-mac-x64-deps-rel",
     "mac-arm64": "dawn-mac-arm64-deps-rel",
     "win": "dawn-win10-x64-deps-rel",
     "win-arm64": "dawn-win11-arm64-deps-rel",
-    "android-arm": "dawn-android-arm-deps-rel",
-    "android-arm64": "dawn-android-arm64-deps-rel",
 }
 
 _os_arch_to_dawn_cq_builder = {
+    "android-arm": "android-dawn-arm-rel",
+    "android-arm64": "android-dawn-arm64-rel",
     "linux": "linux-dawn-rel",
     "mac": "mac-dawn-rel",
     "mac-arm64": "mac-arm64-dawn-rel",
     "win": "win-dawn-rel",
     "win-arm64": "win11-arm64-dawn-rel",
-    "android-arm": "android-dawn-arm-rel",
-    "android-arm64": "android-dawn-arm64-rel",
 }
 
 # The earliest milestone that the builder is relevant for
 _os_arch_to_min_milestone = {
+    "android-arm": None,
+    "android-arm64": None,
     "linux": 112,
     "mac": 112,
     "mac-arm64": 122,
     "win": 112,
     "win-arm64": 126,
-    "android-arm": None,
-    "android-arm64": None,
 }
 
 def chromium_dawn_tryjob(os, arch = None):
@@ -745,8 +761,8 @@ luci.builder(
 luci.builder(
     name = "cts-roller",
     bucket = "ci",
-    # Run at 5 UTC - which is 10pm PST
-    schedule = "0 5 * * *",
+    # Run at 5 UTC on weekdays - which is 10pm PST
+    schedule = "0 5 * * 1-5",
     executable = luci.recipe(
         name = "dawn/roll_cts",
         cipd_package = "infra/recipe_bundles/chromium.googlesource.com/chromium/tools/build",
@@ -759,8 +775,11 @@ luci.builder(
         "pool": "luci.flex.ci",
     },
     properties = {
+        "gardener_rotations": ["dawn"],
         "repo_name": "dawn",
         "runhooks": True,
+        # TODO(crbug.com/343503161): Remove sheriff_rotations after SoM is updated.
+        "sheriff_rotations": ["dawn"],
     },
     caches = [
         swarming.cache("golang"),
@@ -916,6 +935,7 @@ luci.cq(
     status_host = "chromium-cq-status.appspot.com",
     submit_max_burst = 4,
     submit_burst_delay = 480 * time.second,
+    gerrit_listener_type = cq.GERRIT_LISTENER_TYPE_LEGACY_POLLER,
 )
 
 def _create_dawn_cq_group(name, refs, refs_exclude = None):
@@ -972,3 +992,7 @@ _create_dawn_cq_group(
     [details.ref for details in ACTIVE_MILESTONES.values()],
 )
 _create_branch_groups()
+
+# Handle any other builders defined in other files.
+exec("//gn_standalone_ci.star")
+exec("//gn_standalone_try.star")

@@ -16,27 +16,25 @@ CFX_AndroidFontInfo::CFX_AndroidFontInfo() = default;
 
 CFX_AndroidFontInfo::~CFX_AndroidFontInfo() = default;
 
-bool CFX_AndroidFontInfo::Init(CFPF_SkiaFontMgr* pFontMgr,
+bool CFX_AndroidFontInfo::Init(CFPF_SkiaFontMgr* font_mgr,
                                const char** user_paths) {
-  if (!pFontMgr) {
+  if (!font_mgr) {
     return false;
   }
 
-  m_pFontMgr = pFontMgr;
-  m_pFontMgr->LoadFonts(user_paths);
+  font_mgr_ = font_mgr;
+  font_mgr_->LoadFonts(user_paths);
   return true;
 }
 
-bool CFX_AndroidFontInfo::EnumFontList(CFX_FontMapper* pMapper) {
-  return false;
-}
+void CFX_AndroidFontInfo::EnumFontList(CFX_FontMapper* pMapper) {}
 
 void* CFX_AndroidFontInfo::MapFont(int weight,
                                    bool bItalic,
                                    FX_Charset charset,
                                    int pitch_family,
                                    const ByteString& face) {
-  if (!m_pFontMgr) {
+  if (!font_mgr_) {
     return nullptr;
   }
 
@@ -56,7 +54,7 @@ void* CFX_AndroidFontInfo::MapFont(int weight,
   if (FontFamilyIsRoman(pitch_family)) {
     dwStyle |= pdfium::kFontStyleSerif;
   }
-  return m_pFontMgr->CreateFont(face.AsStringView(), charset, dwStyle);
+  return font_mgr_->CreateFont(face.AsStringView(), charset, dwStyle);
 }
 
 void* CFX_AndroidFontInfo::GetFont(const ByteString& face) {
@@ -66,22 +64,25 @@ void* CFX_AndroidFontInfo::GetFont(const ByteString& face) {
 size_t CFX_AndroidFontInfo::GetFontData(void* hFont,
                                         uint32_t table,
                                         pdfium::span<uint8_t> buffer) {
-  if (!hFont)
+  if (!hFont) {
     return 0;
+  }
   return static_cast<CFPF_SkiaFont*>(hFont)->GetFontData(table, buffer);
 }
 
 bool CFX_AndroidFontInfo::GetFaceName(void* hFont, ByteString* name) {
-  if (!hFont)
+  if (!hFont) {
     return false;
+  }
 
   *name = static_cast<CFPF_SkiaFont*>(hFont)->GetFamilyName();
   return true;
 }
 
 bool CFX_AndroidFontInfo::GetFontCharset(void* hFont, FX_Charset* charset) {
-  if (!hFont)
+  if (!hFont) {
     return false;
+  }
 
   *charset = static_cast<CFPF_SkiaFont*>(hFont)->GetCharset();
   return false;

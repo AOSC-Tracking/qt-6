@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "content/browser/devtools/protocol/input_handler.h"
 
 #include <stddef.h>
@@ -630,6 +625,9 @@ class InputHandler::InputInjector
   InputInjector(InputHandler* owner, RenderWidgetHostImpl* widget_host)
       : owner_(owner), widget_host_(widget_host->GetWeakPtr()) {
     widget_host->AddInputEventObserver(this);
+    // Make sure the input event observer is not blocked by browser-side
+    // paint-holding.
+    widget_host_->ForceFirstFrameAfterNavigationTimeout();
   }
 
   InputInjector(const InputInjector&) = delete;
@@ -659,7 +657,13 @@ class InputHandler::InputInjector
     widget_host_->Focus();
     input_queued_ = false;
     pending_mouse_callbacks_.push_back(std::move(callback));
+    // This may destroy the injector if the events get discarded.
+    base::WeakPtr<InputHandler::InputInjector> weak_this =
+        weak_ptr_factory_.GetWeakPtr();
     widget_host_->ForwardWheelEvent(*wheel_event);
+    if (!weak_this) {
+      return;
+    }
     if (!input_queued_) {
       pending_mouse_callbacks_.back()->sendSuccess();
       pending_mouse_callbacks_.pop_back();
@@ -693,7 +697,13 @@ class InputHandler::InputInjector
     widget_host_->Focus();
     input_queued_ = false;
     pending_mouse_callbacks_.push_back(std::move(callback));
+    // This may destroy the injector if the events get discarded.
+    base::WeakPtr<InputHandler::InputInjector> weak_this =
+        weak_ptr_factory_.GetWeakPtr();
     widget_host_->ForwardMouseEvent(mouse_event);
+    if (!weak_this) {
+      return;
+    }
     if (!input_queued_) {
       pending_mouse_callbacks_.back()->sendSuccess();
       pending_mouse_callbacks_.pop_back();
@@ -746,11 +756,17 @@ class InputHandler::InputInjector
                  ui::GestureProviderConfigType::CURRENT_PLATFORM);
     base::OnceClosure closure = base::BindOnce(
         &DispatchTouchEventCallback::sendSuccess, std::move(callback));
+    // This may destroy the injector if the events get discarded.
+    base::WeakPtr<InputHandler::InputInjector> weak_this =
+        weak_ptr_factory_.GetWeakPtr();
     for (size_t i = 0; i < events.size(); i++) {
       widget_host_->GetTouchEmulator(/*create_if_necessary=*/true)
           ->InjectTouchEvent(events[i], widget_host_->GetView(),
                              i == events.size() - 1 ? std::move(closure)
                                                     : base::OnceClosure());
+      if (!weak_this) {
+        return;
+      }
     }
     MaybeSelfDestruct();
   }
@@ -1496,8 +1512,8 @@ float InputHandler::ScaleFactor() {
     }
   }
   // Pinch zoom
-  // TODO(376084060): Investigate if this should also be host_->GetPage() when
-  // `host_` is available.
+  // TODO(crbug.com/400860567): Investigate if this should also be
+  // host_->GetPage() when `host_` is available.
   scale_factor *= web_contents_->GetPrimaryPage().GetPageScaleFactor();
 
   return scale_factor;

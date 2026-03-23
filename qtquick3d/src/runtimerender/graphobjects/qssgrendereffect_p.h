@@ -1,5 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_EFFECT_H
 #define QSSG_RENDER_EFFECT_H
@@ -26,7 +28,7 @@
 QT_BEGIN_NAMESPACE
 
 struct QSSGRenderLayer;
-struct QSSGCommand;
+class QSSGCommand;
 class QSSGRenderContextInterface;
 
 struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderEffect : public QSSGRenderGraphObject
@@ -38,7 +40,13 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderEffect : public QSSGRenderGraphOb
 
     enum class Flags : quint8
     {
-        Dirty = 0x1u
+        Dirty = 0x1u,
+        UsesDepthTexture = 0x2u,
+        UsesProjectionMatrix = 0x4u,
+        UsesInverseProjectionMatrix = 0x8u,
+        UsesViewMatrix = 0x10u,
+        UsesNormalTexture = 0x20u,
+        UsesMotionVectorTexture = 0x40u
     };
     using FlagT = std::underlying_type_t<Flags>;
 
@@ -75,21 +83,19 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderEffect : public QSSGRenderGraphOb
 
     QSSGRenderEffect *m_nextEffect = nullptr;
 
-    void markDirty();
-    void clearDirty();
-    [[nodiscard]] inline bool isDirty() const { return ((flags & FlagT(Flags::Dirty)) != 0); }
+    void markDirty() { setFlag(QSSGRenderEffect::Flags::Dirty); }
+    void clearDirty() { setFlag(QSSGRenderEffect::Flags::Dirty, false); }
+    [[nodiscard]] bool isDirty() const { return testFlag(QSSGRenderEffect::Flags::Dirty); }
 
-    struct Command {
-        QSSGCommand *command;
-        quint8 own : 1;
-    };
-    QVector<Command> commands;
+    void setFlag(QSSGRenderEffect::Flags flag, bool enabled = true);
+    [[nodiscard]] bool testFlag(QSSGRenderEffect::Flags flag) const { return (flags & FlagT(flag)) != 0; }
+
+    QVector<QSSGCommand *> commands; // all owned, these are copies of the gui thread commands
 
     void resetCommands();
 
     const char *className = nullptr;
     FlagT flags = FlagT(Flags::Dirty);
-    bool requiresDepthTexture = false;
     bool incompleteBuildTimeObject = false; // Used by the shadergen tool
     QSSGRenderTextureFormat::Format outputFormat = QSSGRenderTextureFormat::Unknown;
 

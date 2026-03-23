@@ -74,6 +74,30 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="prepareGetCredential request failed."/>
 </enum>
 
+<!-- LINT.IfChange(GmsCoreGetCredentialsResultEnum) -->
+
+<enum name="GmsCoreGetCredentialsResult">
+  <int value="0" label="CacheSuccess">
+    The passkey cache service returned credentials successfully.
+  </int>
+  <int value="1" label="CacheFailureFallbackSuccess">
+    The passkey cache service failed, but the fallback to the FIDO2 API
+    succeeded.
+  </int>
+  <int value="2" label="CacheFailureFallbackFailure">
+    The passkey cache service failed, and the fallback to the FIDO2 API also
+    failed.
+  </int>
+  <int value="3" label="Fido2Success">
+    The FIDO2 API was used directly and succeeded.
+  </int>
+  <int value="4" label="Fido2Failure">
+    The FIDO2 API was used directly and failed.
+  </int>
+</enum>
+
+<!-- LINT.ThenChange(//components/webauthn/android/java/src/org/chromium/components/webauthn/GmsCoreGetCredentialsHelper.java:GmsCoreGetCredentialsResult) -->
+
 <enum name="GPMGetAssertionEvents">
   <int value="0" label="Started - GPM passkey selected"/>
   <int value="1" label="Success - Authentication complete"/>
@@ -95,10 +119,20 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="Failure dialog shown"/>
 </enum>
 
+<!-- LINT.IfChange(SignalAllAcceptedCredentialsResultEnum) -->
+
 <enum name="SignalAllAcceptedCredentialsResult">
-  <int value="0" label="No passkeys were removed"/>
+  <int value="0" label="No passkeys were changed"/>
   <int value="1" label="A passkey was removed"/>
+  <int value="2" label="A passkey was hidden"/>
+  <int value="3" label="A passkey was restored"/>
+  <int value="4"
+      label="The website exceeded the quota, so the request was dropped."/>
 </enum>
+
+<!-- LINT.ThenChange(//chrome/browser/webauthn/chrome_web_authentication_delegate.h:SignalAllAcceptedCredentialsResult) -->
+
+<!-- LINT.IfChange(SignalCurrentUserDetailsResultEnum) -->
 
 <enum name="SignalCurrentUserDetailsResult">
   <int value="0"
@@ -109,17 +143,35 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="No passkeys were updated."/>
 </enum>
 
+<!-- LINT.ThenChange(//chrome/browser/webauthn/chrome_web_authentication_delegate.h:SignalCurrentUserDetailsResult) -->
+
+<!-- LINT.IfChange(SignalUnknownCredentialResultEnum) -->
+
 <enum name="SignalUnknownCredentialResult">
   <int value="0" label="The passkey ID was not found, so nothing was removed."/>
   <int value="1" label="The passkey ID was found and removed."/>
+  <int value="2" label="The passkey ID was found and hidden."/>
+  <int value="3"
+      label="The website exceeded the quota, so the request was dropped."/>
+  <int value="4" label="The passkey ID was already hidden."/>
 </enum>
 
-<enum name="SuccessState">
-  <int value="0" label="FIDO2 and Passkey Cache calls failed."/>
-  <int value="1" label="FIDO2 call failed; Passkey Cache call succeeded."/>
-  <int value="2" label="FIDO2 call succeeded; Passkey Cache call failed."/>
-  <int value="3" label="FIDO2 and Passkey Cache calls succeeded."/>
+<!-- LINT.ThenChange(//chrome/browser/webauthn/chrome_web_authentication_delegate.h:SignalUnknownCredentialResult) -->
+
+<!-- LINT.IfChange(U2fSignOperationResultEnum) -->
+
+<enum name="U2fSignOperationResult">
+  <int value="0" label="Operation succeeded"/>
+  <int value="1" label="Operation was cancelled"/>
+  <int value="2" label="User had no credentials"/>
+  <int value="3" label="An unrecoverable error occurred"/>
+  <int value="4" label="An error occurred, then the operation succeeded"/>
+  <int value="5" label="An error occurred, then the operation was cancelled"/>
+  <int value="6" label="An error occurred, then the user had no credentials"/>
+  <int value="7" label="An error occurred, then a fatal error occurred"/>
 </enum>
+
+<!-- LINT.ThenChange(//device/fido/u2f_sign_operation.cc:U2fSignOperationResult) -->
 
 <enum name="WebAuthenticationCableV2TunnelEvent">
   <int value="0"
@@ -254,6 +306,48 @@ chromium-metrics-reviews@google.com.
   <int value="14" label="Other Failure"/>
 </enum>
 
+<!-- LINT.IfChange(WebAuthenticationImmediateMediationRejectionReason) -->
+
+<enum name="WebAuthenticationImmediateMediationRejectionReason">
+  <int value="0" label="Incognito"/>
+  <int value="1" label="RateLimited"/>
+  <int value="2" label="NoCredentials"/>
+  <int value="3" label="Timeout"/>
+</enum>
+
+<!-- LINT.ThenChange(//content/public/browser/authenticator_request_client_delegate.h:ImmediateMediationRejectionReason) -->
+
+<!-- LINT.IfChange(WebAuthenticationIOSContentAreaEvent) -->
+
+<enum name="WebAuthenticationIOSContentAreaEvent">
+  <int value="0" label="GetRequested">
+    Page requested a WebAuthn credential using the navigator.credentials.get
+    API.
+  </int>
+  <int value="1" label="CreateRequested">
+    Page requested a new WebAuthn credential using the
+    navigator.credentials.create API.
+  </int>
+  <int value="2" label="GetResolvedGpm">
+    WebAuthn credential get request was successfully resolved with Google
+    Password Manager as an authenticator.
+  </int>
+  <int value="3" label="GetResolvedNonGpm">
+    WebAuthn credential get request was successfully resolved with different
+    authenticator than Google Password Manager.
+  </int>
+  <int value="4" label="CreateResolvedGpm">
+    WebAuthn credential create request was successfully resolved with Google
+    Password Manager as an authenticator.
+  </int>
+  <int value="5" label="CreateResolvedNonGpm">
+    WebAuthn credential create request was successfully resolved with different
+    authenticator than Google Password Manager.
+  </int>
+</enum>
+
+<!-- LINT.ThenChange(//components/webauthn/ios/passkey_tab_helper.mm) -->
+
 <enum name="WebAuthenticationMacOSPasskeysPermission">
   <int value="0" label="Requested permission during a create() call"/>
   <int value="1" label="Permission approved during a create() call"/>
@@ -317,7 +411,19 @@ chromium-metrics-reviews@google.com.
   <int value="15" label="Enclave Authenticator Error"/>
   <int value="16" label="Timeout Occurred"/>
   <int value="17" label="Other Failure"/>
+  <int value="18" label="Conditional Create (Passkey Upgrade) Failure"/>
 </enum>
+
+<!-- LINT.IfChange(WebAuthenticationMechanismDeduplicatedType) -->
+
+<enum name="WebAuthenticationMechanismDeduplicatedType">
+  <int value="0" label="Enclave Passkey"/>
+  <int value="1" label="Platform Passkey"/>
+  <int value="2" label="Password"/>
+  <int value="3" label="Other"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/webauthn/mechanism_sorter.h:WebAuthnMechanismDeduplicatedType) -->
 
 <enum name="WebAuthenticationPinRenewalEvent">
   <int value="0" label="Considered renewing the PIN"/>
@@ -329,6 +435,8 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="Renewal failed"/>
 </enum>
 
+<!-- LINT.IfChange(WebAuthenticationPinRenewalFailureCause) -->
+
 <enum name="WebAuthenticationPinRenewalFailureCause">
   <int value="1" label="Renewal failed while downloading XML files"/>
   <int value="2" label="Renewal failed getting access token"/>
@@ -338,14 +446,24 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="Renewal failed parsing enclave response (2)"/>
   <int value="7" label="Renewal failed uploading to recovery key store"/>
   <int value="8" label="Renewal failed joining the PIN to the domain"/>
+  <int value="9" label="Tried to renew but the security domain reports no PIN"/>
+  <int value="10"
+      label="Renewal failed because the security domain has been reset"/>
 </enum>
+
+<!-- LINT.ThenChange(//chrome/browser/webauthn/enclave_manager.h:PinRenewalFailureCause) -->
+
+<!-- LINT.IfChange(WebAuthenticationRequestMode) -->
 
 <enum name="WebAuthenticationRequestMode">
   <int value="0" label="WebAuthn Modal Request"/>
   <int value="1" label="WebAuthn Conditional UI Request"/>
   <int value="2" label="Payment Request"/>
   <int value="3" label="WebAuthn Passkey Upgrade Request"/>
+  <int value="4" label="WebAuthn Immediate Get Request"/>
 </enum>
+
+<!-- LINT.ThenChange(//content/browser/webauth/authenticator_request_outcome_enums.h:AuthenticationRequestMode) -->
 
 <enum name="WindowsForegroundedHelloDialog">
   <int value="0" label="Succeeded"/>

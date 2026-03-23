@@ -26,12 +26,6 @@ chromium-metrics-reviews@google.com.
 
 <enums>
 
-<enum name="AVIFCleanApertureType">
-  <int value="0" label="kInvalid"/>
-  <int value="1" label="kNonzeroOrigin"/>
-  <int value="2" label="kZeroOrigin"/>
-</enum>
-
 <enum name="BackgroundResourceFetchSupportStatus">
   <int value="0" label="Supported"/>
   <int value="1" label="Unsupported sync request"/>
@@ -146,7 +140,7 @@ chromium-metrics-reviews@google.com.
   <int value="18" label="Transfer"/>
   <int value="19" label="Printing"/>
   <int value="20" label="WebGPU external image"/>
-  <int value="21" label="Shape detector"/>
+  <int value="21" label="Copy to SkBitmap"/>
   <int value="22" label="WebGL texture upload"/>
   <int value="23" label="CreatePattern"/>
   <int value="24" label="Copy to clipboard"/>
@@ -228,6 +222,7 @@ chromium-metrics-reviews@google.com.
   <int value="0" label="Optional"/>
   <int value="1" label="Silent"/>
   <int value="2" label="Required"/>
+  <int value="3" label="Conditional"/>
 </enum>
 
 <enum name="DecodedImageType">
@@ -1167,7 +1162,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="867" label="V8Event_InitEvent_Method"/>
   <int value="868" label="V8KeyboardEvent_InitKeyboardEvent_Method"/>
   <int value="869" label="V8MouseEvent_InitMouseEvent_Method"/>
-  <int value="870" label="V8MutationEvent_InitMutationEvent_Method"/>
+  <int value="870" label="OBSOLETE_V8MutationEvent_InitMutationEvent_Method"/>
   <int value="871" label="V8StorageEvent_InitStorageEvent_Method"/>
   <int value="872" label="V8TouchEvent_InitTouchEvent_Method"/>
   <int value="873" label="V8UIEvent_InitUIEvent_Method"/>
@@ -1485,7 +1480,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="1170" label="DocumentCreateEventErrorEvent"/>
   <int value="1171" label="DocumentCreateEventFocusEvent"/>
   <int value="1172" label="DocumentCreateEventHashChangeEvent"/>
-  <int value="1173" label="DocumentCreateEventMutationEvent"/>
+  <int value="1173" label="OBSOLETE_DocumentCreateEventMutationEvent"/>
   <int value="1174" label="DocumentCreateEventPageTransitionEvent"/>
   <int value="1175" label="DocumentCreateEventPointerEvent"/>
   <int value="1176" label="DocumentCreateEventPopStateEvent"/>
@@ -1500,7 +1495,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="1185" label="DocumentCreateEventMediaKeyEvent"/>
   <int value="1186" label="DocumentCreateEventTrackEvent"/>
   <int value="1187" label="OBSOLETE_DocumentCreateEventWebKitAnimationEvent"/>
-  <int value="1188" label="DocumentCreateEventMutationEvents"/>
+  <int value="1188" label="OBSOLETE_DocumentCreateEventMutationEvents"/>
   <int value="1189" label="DocumentCreateEventOrientationEvent"/>
   <int value="1190" label="DocumentCreateEventSVGEvents"/>
   <int value="1191" label="OBSOLETE_DocumentCreateEventWebKitTransitionEvent"/>
@@ -1980,7 +1975,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="1658" label="OffscreenCanvasTransferToImageBitmap2D"/>
   <int value="1659" label="OffscreenCanvasTransferToImageBitmapWebGL"/>
   <int value="1660" label="OBSOLETE_OffscreenCanvasCommit2D"/>
-  <int value="1661" label="OffscreenCanvasCommitWebGL"/>
+  <int value="1661" label="OBSOLETE_OffscreenCanvasCommitWebGL"/>
   <int value="1662" label="RTCConfigurationIceTransportPolicy"/>
   <int value="1663" label="RTCConfigurationIceTransportPolicyNone"/>
   <int value="1664" label="RTCConfigurationIceTransports"/>
@@ -2552,7 +2547,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="2200" label="BatteryStatusCrossOrigin"/>
   <int value="2201" label="BatteryStatusSameOriginABA"/>
   <int value="2202" label="WebAudioValueSetterIsSetValue (Obsolete)"/>
-  <int value="2203" label="HasIDClassTagAttribute"/>
+  <int value="2203" label="OBSOLETE_HasIDClassTagAttribute"/>
   <int value="2204" label="HasBeforeOrAfterPseudoElement"/>
   <int value="2205" label="ShapeOutsideMaybeAffectedInlineSize"/>
   <int value="2206" label="ShapeOutsideMaybeAffectedInlinePosition"/>
@@ -3840,7 +3835,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="3402" label="OBSOLETE_BluetoothRemoteGATTCharacteristic_Uuid"/>
   <int value="3403" label="OBSOLETE_BluetoothRemoteGATTDescriptor_Uuid"/>
   <int value="3404" label="OBSOLETE_BluetoothRemoteGATTService_Uuid"/>
-  <int value="3405" label="GPUAdapter_Name"/>
+  <int value="3405" label="OBSOLETE_GPUAdapter_Name"/>
   <int value="3406" label="OBSOLETE_WindowScreenInternal"/>
   <int value="3407" label="OBSOLETE_WindowScreenPrimary"/>
   <int value="3408" label="ThirdPartyCookieRead"/>
@@ -4203,30 +4198,37 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="3750" label="PaymentHandlerStandardizedPaymentMethodIdentifier"/>
   <int value="3751" label="WebCodecsAudioEncoder"/>
   <int value="3752" label="EmbeddedCrossOriginFrameWithoutFrameAncestorsOrXFO"/>
-  <int value="3753" label="AddressSpacePrivateSecureContextEmbeddedLocal"/>
-  <int value="3754" label="AddressSpacePrivateNonSecureContextEmbeddedLocal"/>
-  <int value="3755" label="AddressSpacePublicSecureContextEmbeddedLocal"/>
-  <int value="3756" label="AddressSpacePublicNonSecureContextEmbeddedLocal"/>
-  <int value="3757" label="AddressSpacePublicSecureContextEmbeddedPrivate"/>
-  <int value="3758" label="AddressSpacePublicNonSecureContextEmbeddedPrivate"/>
-  <int value="3759" label="AddressSpaceUnknownSecureContextEmbeddedLocal"/>
-  <int value="3760" label="AddressSpaceUnknownNonSecureContextEmbeddedLocal"/>
-  <int value="3761" label="AddressSpaceUnknownSecureContextEmbeddedPrivate"/>
-  <int value="3762" label="AddressSpaceUnknownNonSecureContextEmbeddedPrivate"/>
-  <int value="3763" label="AddressSpacePrivateSecureContextNavigatedToLocal"/>
+  <int value="3753" label="AddressSpaceLocalSecureContextEmbeddedLoopbackV2"/>
+  <int value="3754"
+      label="AddressSpaceLocalNonSecureContextEmbeddedLoopbackV2"/>
+  <int value="3755" label="AddressSpacePublicSecureContextEmbeddedLoopbackV2"/>
+  <int value="3756"
+      label="AddressSpacePublicNonSecureContextEmbeddedLoopbackV2"/>
+  <int value="3757" label="AddressSpacePublicSecureContextEmbeddedLocalV2"/>
+  <int value="3758" label="AddressSpacePublicNonSecureContextEmbeddedLocalV2"/>
+  <int value="3759" label="AddressSpaceUnknownSecureContextEmbeddedLoopbackV2"/>
+  <int value="3760"
+      label="AddressSpaceUnknownNonSecureContextEmbeddedLoopbackV2"/>
+  <int value="3761" label="AddressSpaceUnknownSecureContextEmbeddedLocalV2"/>
+  <int value="3762" label="AddressSpaceUnknownNonSecureContextEmbeddedLocalV2"/>
+  <int value="3763"
+      label="AddressSpaceLocalSecureContextNavigatedToLoopbackV2"/>
   <int value="3764"
-      label="AddressSpacePrivateNonSecureContextNavigatedToLocal"/>
-  <int value="3765" label="AddressSpacePublicSecureContextNavigatedToLocal"/>
-  <int value="3766" label="AddressSpacePublicNonSecureContextNavigatedToLocal"/>
-  <int value="3767" label="AddressSpacePublicSecureContextNavigatedToPrivate"/>
+      label="AddressSpaceLocalNonSecureContextNavigatedToLoopbackV2"/>
+  <int value="3765"
+      label="AddressSpacePublicSecureContextNavigatedToLoopbackV2"/>
+  <int value="3766"
+      label="AddressSpacePublicNonSecureContextNavigatedToLoopbackV2"/>
+  <int value="3767" label="AddressSpacePublicSecureContextNavigatedToLocalV2"/>
   <int value="3768"
-      label="AddressSpacePublicNonSecureContextNavigatedToPrivate"/>
-  <int value="3769" label="AddressSpaceUnknownSecureContextNavigatedToLocal"/>
+      label="AddressSpacePublicNonSecureContextNavigatedToLocalV2"/>
+  <int value="3769"
+      label="AddressSpaceUnknownSecureContextNavigatedToLoopbackV2"/>
   <int value="3770"
-      label="AddressSpaceUnknownNonSecureContextNavigatedToLocal"/>
-  <int value="3771" label="AddressSpaceUnknownSecureContextNavigatedToPrivate"/>
+      label="AddressSpaceUnknownNonSecureContextNavigatedToLoopbackV2"/>
+  <int value="3771" label="AddressSpaceUnknownSecureContextNavigatedToLocalV2"/>
   <int value="3772"
-      label="AddressSpaceUnknownNonSecureContextNavigatedToPrivate"/>
+      label="AddressSpaceUnknownNonSecureContextNavigatedToLocalV2"/>
   <int value="3773" label="OBSOLETE_RTCPeerConnectionSdpSemanticsPlanB"/>
   <int value="3774" label="FetchRespondWithNoResponseWithUsedRequestBody"/>
   <int value="3775" label="V8TCPSocket_Close_Method"/>
@@ -4399,7 +4401,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="3939" label="XRFrameFillJointRadii"/>
   <int value="3940" label="XRFrameFillPoses"/>
   <int value="3941" label="OBSOLETE_kWindowOpenNewPopupBehaviorMismatch"/>
-  <int value="3942" label="ExplicitPointerCaptureClickTargetDiff"/>
+  <int value="3942" label="OBSOLETE_kExplicitPointerCaptureClickTargetDiff"/>
   <int value="3943" label="ControlledNonBlobURLWorkerWillBeUncontrolled"/>
   <int value="3944" label="MediaMetaThemeColor"/>
   <int value="3945" label="ClientHintsUABitness"/>
@@ -4422,13 +4424,13 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="3961" label="V8URLPattern_Exec_Method"/>
   <int value="3962" label="SameSiteCookieInclusionChangedByCrossSiteRedirect"/>
   <int value="3963"
-      label="BlobStoreAccessAcrossAgentClustersInResolveAsURLLoaderFactory"/>
+      label="OBSOLETE_BlobStoreAccessAcrossAgentClustersInResolveAsURLLoaderFactory"/>
   <int value="3964"
-      label="BlobStoreAccessAcrossAgentClustersInResolveForNavigation"/>
+      label="OBSOLETE_BlobStoreAccessAcrossAgentClustersInResolveForNavigation"/>
   <int value="3965" label="TapDelayEnabled"/>
   <int value="3966" label="V8URLPattern_CompareComponent_Method"/>
   <int value="3967" label="EarlyHintsPreload"/>
-  <int value="3968" label="ClientHintsUAReduced"/>
+  <int value="3968" label="OBSOLETE_ClientHintsUAReduced"/>
   <int value="3969" label="SpeculationRulesPrerender"/>
   <int value="3970" label="OBSOLETE_ExecCommandWithTrustedTypes"/>
   <int value="3971" label="OBSOLETE_CSSSelectorPseudoHasInSnapshotProfile"/>
@@ -4618,7 +4620,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4146" label="FrameNameContainsBrace"/>
   <int value="4147" label="FrameNameContainsNewline"/>
   <int value="4148" label="AbortSignalThrowIfAborted"/>
-  <int value="4149" label="ClientHintsUAFull"/>
+  <int value="4149" label="OBSOLETE_ClientHintsUAFull"/>
   <int value="4150" label="PrivateNetworkAccessWithinWorker"/>
   <int value="4151" label="ClientHintsUAWoW64"/>
   <int value="4152" label="FetchSetCookieInRequestGuardedHeaders"/>
@@ -4639,8 +4641,8 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4166" label="FedCm"/>
   <int value="4167" label="FetchEventSourceLastEventIdCorsUnSafe"/>
   <int value="4168" label="WrongBaselineOfMultiLineButtonWithNonSpace"/>
-  <int value="4169" label="BlobStoreAccessAcrossTopLevelSite"/>
-  <int value="4170" label="BlobStoreAccessUnknownTopLevelSite"/>
+  <int value="4169" label="OBSOLETE_BlobStoreAccessAcrossTopLevelSite"/>
+  <int value="4170" label="OBSOLETE_BlobStoreAccessUnknownTopLevelSite"/>
   <int value="4171" label="CrossOriginAccessBasedOnDocumentDomain"/>
   <int value="4172" label="CookieWithTruncatingChar"/>
   <int value="4173" label="VideoTrackGenerator"/>
@@ -4661,7 +4663,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4188" label="Fledge"/>
   <int value="4189" label="ElementShowPopover"/>
   <int value="4190" label="ElementHidePopover"/>
-  <int value="4191" label="ValidPopoverAttribute"/>
+  <int value="4191" label="OBSOLETE_ValidPopoverAttribute"/>
   <int value="4192" label="DeprecationExample"/>
   <int value="4193" label="RTCLocalSdpModificationOpusStereo"/>
   <int value="4194" label="NavigatorUAData_Mobile"/>
@@ -4746,7 +4748,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4269" label="SharedStorageAPI_SelectURL_Method"/>
   <int value="4270" label="SharedStorageAPI_Run_Method"/>
   <int value="4271" label="ViewTimelineConstructor"/>
-  <int value="4272" label="H1UserAgentFontSizeInSectionApplied"/>
+  <int value="4272" label="OBSOLETE_H1UserAgentFontSizeInSectionApplied"/>
   <int value="4273" label="OBSOLETE_kV8PendingBeacon_Constructor"/>
   <int value="4274" label="OBSOLETE_kV8PendingBeacon_Url_AttributeGetter"/>
   <int value="4275" label="OBSOLETE_kV8PendingBeacon_Url_AttributeSetter"/>
@@ -4769,7 +4771,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4290" label="DeviceOrientationUsedWithoutPermissionRequest"/>
   <int value="4291" label="DeviceMotionPermissionRequested"/>
   <int value="4292" label="DeviceMotionUsedWithoutPermissionRequest"/>
-  <int value="4293" label="PrivateNetworkAccessPermissionPrompt"/>
+  <int value="4293" label="OBSOLETE_PrivateNetworkAccessPermissionPrompt"/>
   <int value="4294" label="PseudoBeforeAfterForDateTimeInputElement"/>
   <int value="4295"
       label="OBSOLETE_kV8PendingBeacon_IsPending_AttributeGetter"/>
@@ -5003,7 +5005,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4499" label="SpeculationRulesExplicitEagerness"/>
   <int value="4500" label="SpeculationRulesEagernessConservative"/>
   <int value="4501" label="SpeculationRulesEagernessModerate"/>
-  <int value="4502" label="SpeculationRulesEagernessEager"/>
+  <int value="4502" label="SpeculationRulesEagernessImmediate"/>
   <int value="4503" label="OBSOLETE_URLSetPortCheckOverflow"/>
   <int value="4504" label="V8Animation_RangeStart_AttributeGetter"/>
   <int value="4505" label="V8Animation_RangeStart_AttributeSetter"/>
@@ -5449,8 +5451,8 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4888" label="DOMNodeRemovedFromDocumentEventFired"/>
   <int value="4889" label="DOMNodeInsertedIntoDocumentEventFired"/>
   <int value="4890" label="DOMCharacterDataModifiedEventFired"/>
-  <int value="4891" label="AnyMutationEventFired"/>
-  <int value="4892" label="AnyMutationEventListenerAdded"/>
+  <int value="4891" label="OBSOLETE_AnyMutationEventFired"/>
+  <int value="4892" label="OBSOLETE_AnyMutationEventListenerAdded"/>
   <int value="4893"
       label="BadgeSetWithoutNotificationPermissionInBrowserWindow"/>
   <int value="4894" label="BadgeSetWithoutNotificationPermissionInAppWindow"/>
@@ -5492,7 +5494,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4927"
       label="OBSOLETE_V8ModelManager_DefaultGenericSessionOptions_Method"/>
   <int value="4928" label="QuirksModeCursorHandApplied"/>
-  <int value="4929" label="SkippedPreloadScanning"/>
+  <int value="4929" label="OBSOLETE_SkippedPreloadScanning"/>
   <int value="4930" label="CSSColor_SpaceRGB"/>
   <int value="4931" label="CSSColor_SpaceRGB_outOfRec2020"/>
   <int value="4932" label="CSSColor_SpaceOkLxx"/>
@@ -5504,15 +5506,16 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4938" label="FoldableAPIs"/>
   <int value="4939" label="SnapEvent"/>
   <int value="4940" label="StaticPropertyInAnimation"/>
-  <int value="4941" label="SimplifyLoadingTransparentPlaceholderImage"/>
+  <int value="4941"
+      label="OBSOLETE_SimplifyLoadingTransparentPlaceholderImage"/>
   <int value="4942" label="IdentityDigitalCredentialsSuccess"/>
   <int value="4943"
       label="OBSOLETE_V8DeviceProperties_UniqueId_AttributeGetter"/>
   <int value="4944"
       label="SharedStorageAPI_SelectURLOverallPageloadBudgetInsufficient"/>
-  <int value="4945" label="V8LanguageTranslator_Translate_Method"/>
-  <int value="4946" label="V8Translation_CanTranslate_Method"/>
-  <int value="4947" label="V8Translation_CreateTranslator_Method"/>
+  <int value="4945" label="OBSOLETE_V8LanguageTranslator_Translate_Method"/>
+  <int value="4946" label="OBSOLETE_V8Translation_CanTranslate_Method"/>
+  <int value="4947" label="OBSOLETE_V8Translation_CreateTranslator_Method"/>
   <int value="4948" label="IdentityDigitalCredentialsDeepLink"/>
   <int value="4949"
       label="V8WebView_GetExperimentalMediaIntegrityTokenProvider_Method"/>
@@ -5566,7 +5569,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4997" label="V8InvalidatedNoUndetectableObjectsProtector"/>
   <int value="4998" label="V8DocumentAllLegacyCall"/>
   <int value="4999" label="V8DocumentAllLegacyConstruct"/>
-  <int value="5000" label="InsideListMarkerPositionQuirk"/>
+  <int value="5000" label="OBSOLETE_InsideListMarkerPositionQuirk"/>
   <int value="5001" label="ZstdContentEncodingForNavigation"/>
   <int value="5002" label="ZstdContentEncodingForMainFrameNavigation"/>
   <int value="5003" label="ZstdContentEncodingForSubFrameNavigation"/>
@@ -5603,7 +5606,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5032" label="ButtonTypeAttrInvalid"/>
   <int value="5033" label="ButtonTypeAttrEmptyString"/>
   <int value="5034" label="ProtectedAudienceDirectFromSellerSignals"/>
-  <int value="5035" label="WebGPUSubgroupsFeatures"/>
+  <int value="5035" label="OBSOLETE_WebGPUSubgroupsFeatures"/>
   <int value="5036" label="AudioContextOnError"/>
   <int value="5037" label="NoVarySearchPrerender"/>
   <int value="5038" label="OBSOLETE_V8AITextSession_Clone_Method"/>
@@ -5615,40 +5618,41 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5044" label="OBSOLETE_V8AI_TextModelInfo_Method"/>
   <int value="5045" label="EventTimingSimulatedClickWithNoKeyboardInteraction"/>
   <int value="5046" label="ViewTransitionGroupNesting"/>
-  <int value="5047" label="V8LanguageDetector_Detect_Method"/>
-  <int value="5048" label="V8Translation_CanDetect_Method"/>
-  <int value="5049" label="V8Translation_CreateDetector_Method"/>
-  <int value="5050" label="V8AI_Summarizer_AttributeGetter"/>
-  <int value="5051" label="V8AISummarizer_Summarize_Method"/>
-  <int value="5052" label="V8AISummarizer_SummarizeStreaming_Method"/>
-  <int value="5053" label="V8AISummarizer_Destroy_Method"/>
-  <int value="5054" label="V8AISummarizerFactory_Capabilities_Method"/>
-  <int value="5055" label="V8AISummarizerFactory_Create_Method"/>
+  <int value="5047" label="OBSOLETE_V8LanguageDetector_Detect_Method"/>
+  <int value="5048" label="OBSOLETE_V8Translation_CanDetect_Method"/>
+  <int value="5049" label="OBSOLETE_V8Translation_CreateDetector_Method"/>
+  <int value="5050" label="OBSOLETE_V8AI_Summarizer_AttributeGetter"/>
+  <int value="5051" label="OBSOLETE_V8AISummarizer_Summarize_Method"/>
+  <int value="5052" label="OBSOLETE_V8AISummarizer_SummarizeStreaming_Method"/>
+  <int value="5053" label="OBSOLETE_V8AISummarizer_Destroy_Method"/>
+  <int value="5054" label="OBSOLETE_V8AISummarizerFactory_Capabilities_Method"/>
+  <int value="5055" label="OBSOLETE_V8AISummarizerFactory_Create_Method"/>
   <int value="5056" label="SharedStorageWriteFromBidderGenerateBid"/>
   <int value="5057" label="SharedStorageWriteFromBidderReportWin"/>
   <int value="5058" label="SharedStorageWriteFromSellerScoreAd"/>
   <int value="5059" label="SharedStorageWriteFromSellerReportResult"/>
   <int value="5060" label="OBSOLETE_CSSInsetAreaProperty"/>
   <int value="5061" label="StructuredCloneMethod"/>
-  <int value="5062" label="V8AI_Writer_AttributeGetter"/>
-  <int value="5063" label="V8AIWriterFactory_Create_Method"/>
-  <int value="5064" label="V8AIWriter_Write_Method"/>
-  <int value="5065" label="V8AIWriter_WriteStreaming_Method"/>
-  <int value="5066" label="V8AIWriter_Destroy_Method"/>
-  <int value="5067" label="V8AI_Rewriter_AttributeGetter"/>
-  <int value="5068" label="V8AIRewriterFactory_Create_Method"/>
-  <int value="5069" label="V8AIRewriter_Rewrite_Method"/>
-  <int value="5070" label="V8AIRewriter_RewriteStreaming_Method"/>
-  <int value="5071" label="V8AIRewriter_Destroy_Method"/>
+  <int value="5062" label="OBSOLETE_V8AI_Writer_AttributeGetter"/>
+  <int value="5063" label="OBSOLETE_V8AIWriterFactory_Create_Method"/>
+  <int value="5064" label="OBSOLETE_V8AIWriter_Write_Method"/>
+  <int value="5065" label="OBSOLETE_V8AIWriter_WriteStreaming_Method"/>
+  <int value="5066" label="OBSOLETE_V8AIWriter_Destroy_Method"/>
+  <int value="5067" label="OBSOLETE_V8AI_Rewriter_AttributeGetter"/>
+  <int value="5068" label="OBSOLETE_V8AIRewriterFactory_Create_Method"/>
+  <int value="5069" label="OBSOLETE_V8AIRewriter_Rewrite_Method"/>
+  <int value="5070" label="OBSOLETE_V8AIRewriter_RewriteStreaming_Method"/>
+  <int value="5071" label="OBSOLETE_V8AIRewriter_Destroy_Method"/>
   <int value="5072" label="FencedFrameCanLoadOpaqueURL"/>
   <int value="5073"
       label="V8Performance_Memory_AttributeGetter_NotLockedToSite"/>
   <int value="5074" label="PartitionedPopin_OpenAttempt"/>
   <int value="5075" label="PartitionedPopin_Opened"/>
-  <int value="5076" label="V8AISummarizer_SharedContext_AttributeGetter"/>
-  <int value="5077" label="V8AISummarizer_Type_AttributeGetter"/>
-  <int value="5078" label="V8AISummarizer_Format_AttributeGetter"/>
-  <int value="5079" label="V8AISummarizer_Length_AttributeGetter"/>
+  <int value="5076"
+      label="OBSOLETE_V8AISummarizer_SharedContext_AttributeGetter"/>
+  <int value="5077" label="OBSOLETE_V8AISummarizer_Type_AttributeGetter"/>
+  <int value="5078" label="OBSOLETE_V8AISummarizer_Format_AttributeGetter"/>
+  <int value="5079" label="OBSOLETE_V8AISummarizer_Length_AttributeGetter"/>
   <int value="5080"
       label="OBSOLETE_V8AIAssistantCapabilities_Available_AttributeGetter"/>
   <int value="5081"
@@ -5674,7 +5678,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5098" label="WebAuthentication_AttestationFormats"/>
   <int value="5099" label="CssDisplayPropertyMultipleValues"/>
   <int value="5100" label="DocumentPolicyExpectNoLinkedResources"/>
-  <int value="5101" label="SelectionIsCollapsedBehaviorChange"/>
+  <int value="5101" label="OBSOLETE_SelectionIsCollapsedBehaviorChange"/>
   <int value="5102" label="TopicsAPIAll"/>
   <int value="5103" label="PaymentRequestDeprecatedPaymentMethod"/>
   <int value="5104"
@@ -5687,8 +5691,9 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5108" label="HTMLSearchElement"/>
   <int value="5109" label="HTMLUnsafeMethods"/>
   <int value="5110"
-      label="V8GPUSupportedLimits_MaxInterStageShaderComponents_AttributeGetter"/>
-  <int value="5111" label="MaxInterStageShaderComponentsRequiredLimit"/>
+      label="OBSOLETE_V8GPUSupportedLimits_MaxInterStageShaderComponents_AttributeGetter"/>
+  <int value="5111"
+      label="OBSOLETE_MaxInterStageShaderComponentsRequiredLimit"/>
   <int value="5112" label="ShowPickerSelect"/>
   <int value="5113" label="AudioContextPlayoutStats"/>
   <int value="5114" label="ThirdPartyCookieBlocked"/>
@@ -5721,28 +5726,34 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5136" label="CssValueWritingModeVerticalLr"/>
   <int value="5137" label="CssValueWritingModeSidewaysRl"/>
   <int value="5138" label="CssValueWritingModeSidewaysLr"/>
-  <int value="5139" label="V8AILanguageModel_TopK_AttributeGetter"/>
-  <int value="5140" label="V8AILanguageModel_Temperature_AttributeGetter"/>
-  <int value="5141" label="V8AILanguageModel_Clone_Method"/>
-  <int value="5142" label="V8AILanguageModel_Destroy_Method"/>
-  <int value="5143" label="V8AILanguageModel_Prompt_Method"/>
-  <int value="5144" label="V8AILanguageModel_PromptStreaming_Method"/>
-  <int value="5145" label="V8AILanguageModel_CountPromptTokens_Method"/>
+  <int value="5139" label="OBSOLETE_V8AILanguageModel_TopK_AttributeGetter"/>
+  <int value="5140"
+      label="OBSOLETE_V8AILanguageModel_Temperature_AttributeGetter"/>
+  <int value="5141" label="OBSOLETE_V8AILanguageModel_Clone_Method"/>
+  <int value="5142" label="OBSOLETE_V8AILanguageModel_Destroy_Method"/>
+  <int value="5143" label="OBSOLETE_V8AILanguageModel_Prompt_Method"/>
+  <int value="5144" label="OBSOLETE_V8AILanguageModel_PromptStreaming_Method"/>
+  <int value="5145"
+      label="OBSOLETE_V8AILanguageModel_CountPromptTokens_Method"/>
   <int value="5146"
-      label="V8AILanguageModelCapabilities_LanguageAvailable_Method"/>
+      label="OBSOLETE_V8AILanguageModelCapabilities_LanguageAvailable_Method"/>
   <int value="5147"
-      label="V8AILanguageModelCapabilities_Available_AttributeGetter"/>
+      label="OBSOLETE_V8AILanguageModelCapabilities_Available_AttributeGetter"/>
   <int value="5148"
-      label="V8AILanguageModelCapabilities_DefaultTopK_AttributeGetter"/>
+      label="OBSOLETE_V8AILanguageModelCapabilities_DefaultTopK_AttributeGetter"/>
   <int value="5149"
-      label="V8AILanguageModelCapabilities_MaxTopK_AttributeGetter"/>
+      label="OBSOLETE_V8AILanguageModelCapabilities_MaxTopK_AttributeGetter"/>
   <int value="5150"
-      label="V8AILanguageModelCapabilities_DefaultTemperature_AttributeGetter"/>
-  <int value="5151" label="V8AILanguageModelFactory_Capabilities_Method"/>
-  <int value="5152" label="V8AILanguageModelFactory_Create_Method"/>
-  <int value="5153" label="V8AILanguageModel_MaxTokens_AttributeGetter"/>
-  <int value="5154" label="V8AILanguageModel_TokensSoFar_AttributeGetter"/>
-  <int value="5155" label="V8AILanguageModel_TokensLeft_AttributeGetter"/>
+      label="OBSOLETE_V8AILanguageModelCapabilities_DefaultTemperature_AttributeGetter"/>
+  <int value="5151"
+      label="OBSOLETE_V8AILanguageModelFactory_Capabilities_Method"/>
+  <int value="5152" label="OBSOLETE_V8AILanguageModelFactory_Create_Method"/>
+  <int value="5153"
+      label="OBSOLETE_V8AILanguageModel_MaxTokens_AttributeGetter"/>
+  <int value="5154"
+      label="OBSOLETE_V8AILanguageModel_TokensSoFar_AttributeGetter"/>
+  <int value="5155"
+      label="OBSOLETE_V8AILanguageModel_TokensLeft_AttributeGetter"/>
   <int value="5156" label="SvgContextFillOrStroke"/>
   <int value="5157" label="ARIAActionsAttribute"/>
   <int value="5158" label="OBSOLETE_ResolveToConfigValueCoercedToTrue"/>
@@ -5787,13 +5798,13 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5196" label="MoveEvent"/>
   <int value="5197" label="Canvas2DDrawText"/>
   <int value="5198" label="Canvas2DMeasureText"/>
-  <int value="5199" label="CrossPartitionBlobURLFetch"/>
+  <int value="5199" label="OBSOLETE_CrossPartitionBlobURLFetch"/>
   <int value="5200" label="CrossTopLevelSiteBlobURLNavigation"/>
   <int value="5201" label="GeolocationSucceeded"/>
   <int value="5202" label="GeolocationSucceededWithoutInjectionMitigation"/>
   <int value="5203" label="SharedWorkerScriptUnderServiceWorkerControlIsBlob"/>
-  <int value="5204" label="DisableThirdPartyStoragePartitioning3"/>
-  <int value="5205" label="ControlledFrameElement"/>
+  <int value="5204" label="OBSOLETE_DisableThirdPartyStoragePartitioning3"/>
+  <int value="5205" label="OBSOLETE_ControlledFrameElement"/>
   <int value="5206" label="Canvas2DIsPointInPath"/>
   <int value="5207" label="Canvas2DIsPointInStroke"/>
   <int value="5208" label="Canvas2DGetImageData"/>
@@ -5821,7 +5832,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5228" label="ClipboardCustomFormatWrite"/>
   <int value="5229" label="ClipboardSvgRead"/>
   <int value="5230" label="ClipboardSvgWrite"/>
-  <int value="5231" label="VarFallbackValidation"/>
+  <int value="5231" label="OBSOLETE_VarFallbackValidation"/>
   <int value="5232" label="LocaleInfoObsoletedGetters"/>
   <int value="5233" label="InjectionMitigatedContextSubFrame"/>
   <int value="5234" label="InjectionMitigatedContextMainFrame"/>
@@ -5832,45 +5843,50 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5239" label="CanvasTextDirectionSetInherit"/>
   <int value="5240" label="TopicsAPIImg"/>
   <int value="5241" label="MediaSessionEnterPictureInPicture"/>
-  <int value="5242" label="V8AILanguageDetector_Detect_Method"/>
+  <int value="5242" label="OBSOLETE_V8AILanguageDetector_Detect_Method"/>
   <int value="5243" label="CharsetAutoDetection"/>
   <int value="5244" label="CharsetAutoDetectionISO2022JP"/>
   <int value="5245" label="RequestOTRMainFrame"/>
   <int value="5246" label="MixedContentOnLocalhost"/>
   <int value="5247" label="MixedFrameEmbeddedByLocalhost"/>
   <int value="5248"
-      label="V8AILanguageModelCapabilities_MaxTemperature_AttributeGetter"/>
+      label="OBSOLETE_V8AILanguageModelCapabilities_MaxTemperature_AttributeGetter"/>
   <int value="5249" label="AboutSrcdocToBeControlledByServiceWorker"/>
   <int value="5250"
       label="DisplayNoneComputedInContentVisibilityAutoLockedSubtree"/>
-  <int value="5251" label="V8AITranslator_SourceLanguage_AttributeGetter"/>
-  <int value="5252" label="V8AITranslator_TargetLanguage_AttributeGetter"/>
-  <int value="5253" label="V8AITranslator_Destroy_Method"/>
-  <int value="5254" label="V8AITranslator_Translate_Method"/>
-  <int value="5255" label="V8AITranslator_TranslateStreaming_Method"/>
-  <int value="5256" label="V8AITranslatorFactory_Create_Method"/>
-  <int value="5257" label="V8AILanguageDetectorFactory_Create_Method"/>
-  <int value="5258" label="V8AILanguageDetector_Destroy_Method"/>
+  <int value="5251"
+      label="OBSOLETE_V8AITranslator_SourceLanguage_AttributeGetter"/>
+  <int value="5252"
+      label="OBSOLETE_V8AITranslator_TargetLanguage_AttributeGetter"/>
+  <int value="5253" label="OBSOLETE_V8AITranslator_Destroy_Method"/>
+  <int value="5254" label="OBSOLETE_V8AITranslator_Translate_Method"/>
+  <int value="5255" label="OBSOLETE_V8AITranslator_TranslateStreaming_Method"/>
+  <int value="5256" label="OBSOLETE_V8AITranslatorFactory_Create_Method"/>
+  <int value="5257" label="OBSOLETE_V8AILanguageDetectorFactory_Create_Method"/>
+  <int value="5258" label="OBSOLETE_V8AILanguageDetector_Destroy_Method"/>
   <int value="5259" label="FetchLaterInvokeStatePending"/>
   <int value="5260" label="FetchLaterInvokeStateSent"/>
   <int value="5261" label="CSPWithUnsafeHashes"/>
-  <int value="5262" label="V8AIRewriter_SharedContext_AttributeGetter"/>
-  <int value="5263" label="V8AIRewriter_Tone_AttributeGetter"/>
-  <int value="5264" label="V8AIRewriter_Format_AttributeGetter"/>
-  <int value="5265" label="V8AIRewriter_Length_AttributeGetter"/>
+  <int value="5262"
+      label="OBSOLETE_V8AIRewriter_SharedContext_AttributeGetter"/>
+  <int value="5263" label="OBSOLETE_V8AIRewriter_Tone_AttributeGetter"/>
+  <int value="5264" label="OBSOLETE_V8AIRewriter_Format_AttributeGetter"/>
+  <int value="5265" label="OBSOLETE_V8AIRewriter_Length_AttributeGetter"/>
   <int value="5266"
-      label="V8AIRewriter_ExpectedInputLanguages_AttributeGetter"/>
+      label="OBSOLETE_V8AIRewriter_ExpectedInputLanguages_AttributeGetter"/>
   <int value="5267"
-      label="V8AIRewriter_ExpectedContextLanguages_AttributeGetter"/>
-  <int value="5268" label="V8AIRewriter_OutputLanguage_AttributeGetter"/>
-  <int value="5269" label="V8AIWriter_SharedContext_AttributeGetter"/>
-  <int value="5270" label="V8AIWriter_Tone_AttributeGetter"/>
-  <int value="5271" label="V8AIWriter_Format_AttributeGetter"/>
-  <int value="5272" label="V8AIWriter_Length_AttributeGetter"/>
-  <int value="5273" label="V8AIWriter_ExpectedInputLanguages_AttributeGetter"/>
+      label="OBSOLETE_V8AIRewriter_ExpectedContextLanguages_AttributeGetter"/>
+  <int value="5268"
+      label="OBSOLETE_V8AIRewriter_OutputLanguage_AttributeGetter"/>
+  <int value="5269" label="OBSOLETE_V8AIWriter_SharedContext_AttributeGetter"/>
+  <int value="5270" label="OBSOLETE_V8AIWriter_Tone_AttributeGetter"/>
+  <int value="5271" label="OBSOLETE_V8AIWriter_Format_AttributeGetter"/>
+  <int value="5272" label="OBSOLETE_V8AIWriter_Length_AttributeGetter"/>
+  <int value="5273"
+      label="OBSOLETE_V8AIWriter_ExpectedInputLanguages_AttributeGetter"/>
   <int value="5274"
-      label="V8AIWriter_ExpectedContextLanguages_AttributeGetter"/>
-  <int value="5275" label="V8AIWriter_OutputLanguage_AttributeGetter"/>
+      label="OBSOLETE_V8AIWriter_ExpectedContextLanguages_AttributeGetter"/>
+  <int value="5275" label="OBSOLETE_V8AIWriter_OutputLanguage_AttributeGetter"/>
   <int value="5276" label="GridAutoFlowColumnDense"/>
   <int value="5277" label="GridAutoFlowRowDense"/>
   <int value="5278" label="SchedulerPostTaskAbortBeforeRunning"/>
@@ -5894,11 +5910,356 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5296" label="V8Window_Close_Method"/>
   <int value="5297" label="V8Window_Focus_Method"/>
   <int value="5298" label="V8Window_PostMessage_Method"/>
+  <int value="5299" label="HTMLImageElementNaturalSizeDiffersForSvgImage"/>
   <int value="5300" label="WindowProxyIndexedGetter"/>
   <int value="5301" label="WindowProxyNamedGetter"/>
+  <int value="5302"
+      label="OBSOLETE_V8AILanguageModelFactory_Availability_Method"/>
+  <int value="5303" label="OBSOLETE_V8AILanguageModelFactory_Params_Method"/>
+  <int value="5304" label="OBSOLETE_V8AISummarizerFactory_Availability_Method"/>
+  <int value="5305"
+      label="OBSOLETE_V8AISummarizer_ExpectedInputLanguages_AttributeGetter"/>
+  <int value="5306"
+      label="OBSOLETE_V8AISummarizer_ExpectedContextLanguages_AttributeGetter"/>
+  <int value="5307"
+      label="OBSOLETE_V8AISummarizer_OutputLanguage_AttributeGetter"/>
+  <int value="5308" label="NestedScrollMarkers"/>
+  <int value="5309" label="V8GeolocationCoordinates_Latitude_AttributeGetter"/>
+  <int value="5310" label="V8GeolocationCoordinates_Longitude_AttributeGetter"/>
+  <int value="5311" label="V8GeolocationCoordinates_Altitude_AttributeGetter"/>
+  <int value="5312" label="V8GeolocationCoordinates_Accuracy_AttributeGetter"/>
+  <int value="5313"
+      label="V8GeolocationCoordinates_AltitudeAccuracy_AttributeGetter"/>
+  <int value="5314" label="V8GeolocationCoordinates_Heading_AttributeGetter"/>
+  <int value="5315" label="V8GeolocationCoordinates_Speed_AttributeGetter"/>
+  <int value="5316" label="CSSEnvironmentVariable_SafeAreaMaxInsetBottom"/>
+  <int value="5317"
+      label="OBSOLETE_V8AILanguageModel_ExpectedInputLanguages_AttributeGetter"/>
+  <int value="5318" label="V8AnimationTrigger_Constructor"/>
   <int value="5319"
       label="PrivateNetworkAccessInsecureResourceNotKnownPrivate"/>
+  <int value="5320" label="GeolocationGetCurrentPositionHighAccuracy"/>
+  <int value="5321" label="GeolocationWatchPositionHighAccuracy"/>
+  <int value="5322" label="ColumnPseudoElement"/>
+  <int value="5323" label="ScrollButtonPseudoElement"/>
+  <int value="5324" label="ScrollMarkerPseudoElement"/>
+  <int value="5325" label="OBSOLETE_V8AITranslatorFactory_Availability_Method"/>
+  <int value="5326" label="GeolocationWouldSucceedWhenAdScriptInStack"/>
+  <int value="5327" label="AdScriptInStackOnWatchGeoLocation"/>
+  <int value="5328" label="DeviceBoundSessionRegistered"/>
+  <int value="5329"
+      label="OBSOLETE_V8AILanguageDetectorFactory_Availability_Method"/>
+  <int value="5330" label="CrossPartitionSameOriginBlobURLFetch"/>
+  <int value="5331" label="WebAppManifestUpdate"/>
+  <int value="5332" label="CSSEnvironmentVariable_PreferredTextScale"/>
+  <int value="5333" label="ButtonTypeAttrInvalidWithCommandOrCommandfor"/>
+  <int value="5334" label="CSSVarFallbackCycle"/>
+  <int value="5335" label="CSSAttrFallbackCycle"/>
+  <int value="5336" label="CSSRainbowGradientPattern"/>
+  <int value="5337" label="WebAppManifestStartUrl"/>
+  <int value="5338" label="WebAppManifestDisplay"/>
+  <int value="5339" label="WebAppManifestIcons"/>
+  <int value="5340" label="WebAppManifestScreenshots"/>
+  <int value="5341" label="WebAppManifestScope"/>
+  <int value="5342" label="WebAppManifestLockScreen"/>
+  <int value="5343" label="WebAppManifestNoteTaking"/>
+  <int value="5344" label="WebAppManifestPermissionsPolicy"/>
+  <int value="5345" label="WebAppManifestPrefer_Related_Applications"/>
+  <int value="5346" label="WebAppManifestThemeColor"/>
+  <int value="5347" label="WebAppManifestBackgroundColor"/>
+  <int value="5348" label="WebAppManifestTranslations"/>
+  <int value="5349" label="WebAppManifestTabStrip"/>
+  <int value="5350" label="WebAppManifestVersion"/>
+  <int value="5351" label="WebAppManifestRelated_Applications"/>
+  <int value="5352" label="InstalledManifestApplied"/>
+  <int value="5353" label="SRIHashAssertion"/>
+  <int value="5354" label="SRIPublicKeyAssertion"/>
+  <int value="5355" label="ViewTransitionChangeRootElement"/>
+  <int value="5356" label="CSPBlockedWorkerCreation"/>
+  <int value="5357"
+      label="V8Navigator_ClearOriginJoinedAdInterestGroups_Method"/>
+  <int value="5358" label="WebAppManifestDisplayMinimalUI"/>
+  <int value="5359" label="WebAppManifestDisplayBrowser"/>
+  <int value="5360" label="WebAppManifestDisplayFullscreen"/>
+  <int value="5361" label="WebAppManifestDisplayStandalone"/>
+  <int value="5362" label="BlockingAttributeFullFrameRateToken"/>
+  <int value="5363" label="CrossOriginOwnerInterestGroupSubframeCheckFailed"/>
+  <int value="5364" label="PreferredAudioOutputDevices"/>
+  <int value="5365" label="SharedStorageAPI_SelectURL_Method_CalledWithOneURL"/>
+  <int value="5366" label="OBSOLETE_V8AIRewriter_MeasureInputUsage_Method"/>
+  <int value="5367" label="OBSOLETE_V8AIRewriter_InputQuota_AttributeGetter"/>
+  <int value="5368" label="OBSOLETE_V8AISummarizer_MeasureInputUsage_Method"/>
+  <int value="5369" label="OBSOLETE_V8AISummarizer_InputQuota_AttributeGetter"/>
+  <int value="5370" label="OBSOLETE_V8AIWriter_MeasureInputUsage_Method"/>
+  <int value="5371" label="OBSOLETE_V8AIWriter_InputQuota_AttributeGetter"/>
+  <int value="5372" label="SpeculationRulesTargetHintBlank"/>
+  <int value="5373" label="InterestFor"/>
+  <int value="5374" label="TextAutoSizingDisabledOnFlexbox"/>
+  <int value="5375" label="AriaLabeledByAlternativeSpelling"/>
+  <int value="5376" label="CanvasTextNg"/>
+  <int value="5377" label="DOMWindowOpenPopup"/>
+  <int value="5378" label="FencedFrameDisableUntrustedNetwork"/>
+  <int value="5379" label="FencedFrameNotifyEvent"/>
+  <int value="5380" label="SharedStorageGetInFencedFrame"/>
+  <int value="5381" label="OBSOLETE_Translator_MeasureInputUsage_Method"/>
+  <int value="5382" label="OBSOLETE_Translator_InputQuota_AttributeGetter"/>
+  <int value="5383" label="AriaNotify"/>
+  <int value="5384" label="LanguageDetector_MeasureInputUsage"/>
+  <int value="5385" label="LanguageDetector_InputQuota"/>
+  <int value="5386"
+      label="OBSOLETE_V8AILanguageModel_InputUsage_AttributeGetter"/>
+  <int value="5387"
+      label="OBSOLETE_V8AILanguageModel_InputQuota_AttributeGetter"/>
+  <int value="5388"
+      label="OBSOLETE_V8AILanguageModel_MeasureInputUsage_Method"/>
+  <int value="5389" label="CredentialsGetImmediateMediationWithWebAuthnOnly"/>
+  <int value="5390"
+      label="CredentialsGetImmediateMediationWithWebAuthnAndPasswords"/>
+  <int value="5391"
+      label="NonNoneTouchActionWouldLoseEditableHandwritingRestoredByScroller"/>
+  <int value="5392" label="Translator_Create"/>
+  <int value="5393" label="Translator_Availability"/>
+  <int value="5394" label="Translator_SourceLanguage"/>
+  <int value="5395" label="Translator_TargetLanguage"/>
+  <int value="5396" label="Translator_Destroy"/>
+  <int value="5397" label="Translator_Translate"/>
+  <int value="5398" label="Translator_TranslateStreaming"/>
+  <int value="5399" label="Translator_MeasureInputUsage"/>
+  <int value="5400" label="Translator_InputQuota"/>
+  <int value="5401" label="LanguageDetector_Create"/>
+  <int value="5402" label="LanguageDetector_Availability"/>
+  <int value="5403" label="LanguageDetector_Detect"/>
+  <int value="5404" label="LanguageDetector_Destroy"/>
+  <int value="5405" label="LanguageModel_Create"/>
+  <int value="5406" label="LanguageModel_Availability"/>
+  <int value="5407" label="LanguageModel_Prompt"/>
+  <int value="5408" label="LanguageModel_PromptStreaming"/>
+  <int value="5409" label="LanguageModel_Destroy"/>
+  <int value="5410" label="LanguageModel_Clone"/>
+  <int value="5411" label="LanguageModel_MeasureInputUsage"/>
+  <int value="5412" label="LanguageModel_InputUsage"/>
+  <int value="5413" label="LanguageModel_InputQuota"/>
+  <int value="5414" label="LanguageModel_Params"/>
+  <int value="5415" label="LanguageModel_Temperature"/>
+  <int value="5416" label="LanguageModel_TopK"/>
+  <int value="5417" label="Writer_Create"/>
+  <int value="5418" label="Writer_Availability"/>
+  <int value="5419" label="Writer_Write"/>
+  <int value="5420" label="Writer_WriteStreaming"/>
+  <int value="5421" label="Writer_Destroy"/>
+  <int value="5422" label="Writer_MeasureInputUsage"/>
+  <int value="5423" label="Writer_ExpectedContextLanguages"/>
+  <int value="5424" label="Writer_ExpectedInputLanguages"/>
+  <int value="5425" label="Writer_Format"/>
+  <int value="5426" label="Writer_InputQuota"/>
+  <int value="5427" label="Writer_Length"/>
+  <int value="5428" label="Writer_OutputLanguage"/>
+  <int value="5429" label="Writer_SharedContext"/>
+  <int value="5430" label="Writer_Tone"/>
+  <int value="5431" label="Rewriter_Create"/>
+  <int value="5432" label="Rewriter_Availability"/>
+  <int value="5433" label="Rewriter_Rewrite"/>
+  <int value="5434" label="Rewriter_RewriteStreaming"/>
+  <int value="5435" label="Rewriter_Destroy"/>
+  <int value="5436" label="Rewriter_MeasureInputUsage"/>
+  <int value="5437" label="Rewriter_ExpectedContextLanguages"/>
+  <int value="5438" label="Rewriter_ExpectedInputLanguages"/>
+  <int value="5439" label="Rewriter_Format"/>
+  <int value="5440" label="Rewriter_InputQuota"/>
+  <int value="5441" label="Rewriter_Length"/>
+  <int value="5442" label="Rewriter_OutputLanguage"/>
+  <int value="5443" label="Rewriter_SharedContext"/>
+  <int value="5444" label="Rewriter_Tone"/>
+  <int value="5445" label="Summarizer_Create"/>
+  <int value="5446" label="Summarizer_Availability"/>
+  <int value="5447" label="Summarizer_Summarize"/>
+  <int value="5448" label="Summarizer_SummarizeStreaming"/>
+  <int value="5449" label="Summarizer_Destroy"/>
+  <int value="5450" label="Summarizer_MeasureInputUsage"/>
+  <int value="5451" label="Summarizer_ExpectedContextLanguages"/>
+  <int value="5452" label="Summarizer_ExpectedInputLanguages"/>
+  <int value="5453" label="Summarizer_Format"/>
+  <int value="5454" label="Summarizer_InputQuota"/>
+  <int value="5455" label="Summarizer_Length"/>
+  <int value="5456" label="Summarizer_OutputLanguage"/>
+  <int value="5457" label="Summarizer_SharedContext"/>
+  <int value="5458" label="Summarizer_Type"/>
+  <int value="5459" label="CrossOriginSameSiteCookieAccessViaStorageAccessAPI"/>
+  <int value="5460"
+      label="OBSOLETE_V8GPUAdapter_IsFallbackAdapter_AttributeGetter"/>
+  <int value="5461" label="LanguageDetector_ExpectedInputLanguages"/>
+  <int value="5462" label="ServiceWorkerPushEventListener"/>
+  <int value="5463" label="ServiceWorkerPushSubscriptionChangeEventListener"/>
+  <int value="5464" label="MediaPlaybackWhileNotVisiblePermissionPolicy"/>
+  <int value="5465" label="FirstLinePseudoElement"/>
+  <int value="5466" label="FirstLetterPseudoElement"/>
+  <int value="5467" label="CheckMarkPseudoElement"/>
+  <int value="5468" label="BeforePseudoElement"/>
+  <int value="5469" label="AfterPseudoElement"/>
+  <int value="5470" label="PickerIconPseudoElement"/>
+  <int value="5471" label="MarkerPseudoElement"/>
+  <int value="5472" label="BackdropPseudoElement"/>
+  <int value="5473" label="SelectionPseudoElement"/>
+  <int value="5474" label="SearchTextPseudoElement"/>
+  <int value="5475" label="TargetTextPseudoElement"/>
+  <int value="5476" label="CustomHighlightPseudoElement"/>
+  <int value="5477" label="SpellingErrorPseudoElement"/>
+  <int value="5478" label="GrammarErrorPseudoElement"/>
+  <int value="5479" label="SpeculationRulesTags"/>
+  <int value="5480" label="MLCreateContextGPUDevice"/>
+  <int value="5481" label="DisallowedSelectChild"/>
+  <int value="5482" label="DisallowedOptGroupChild"/>
+  <int value="5483" label="NonPhrasingContentOptionChild"/>
+  <int value="5484" label="InteractiveContentOptionChild"/>
+  <int value="5485" label="InteractiveContentLegendChild"/>
+  <int value="5486" label="PrivateAggregationApiErrorReporting"/>
+  <int value="5487" label="LanguageModel_Prompt_Input_Image"/>
+  <int value="5488" label="LanguageModel_Prompt_Input_Audio"/>
+  <int value="5489" label="Http3"/>
+  <int value="5490" label="CanvasReadbackNoise"/>
+  <int value="5491" label="CanvasReadbackNoiseMatchesHeuristics"/>
+  <int value="5492" label="SVGImage"/>
+  <int value="5493" label="DeviceBoundSessionRequestInScope"/>
+  <int value="5494" label="DeviceBoundSessionRequestDeferral"/>
+  <int value="5495" label="RoleAttributeMenu"/>
+  <int value="5496" label="RoleAttributeMenubar"/>
+  <int value="5497" label="RoleAttributeMenuitem"/>
+  <int value="5498" label="RoleAttributeMenuitemcheckbox"/>
+  <int value="5499" label="RoleAttributeMenuitemradio"/>
+  <int value="5500" label="RoleAttributeButton"/>
+  <int value="5501" label="RoleAttributeCell"/>
+  <int value="5502" label="RoleAttributeCheckbox"/>
+  <int value="5503" label="RoleAttributeColumnheader"/>
+  <int value="5504" label="RoleAttributeCombobox"/>
+  <int value="5505" label="RoleAttributeDialog"/>
+  <int value="5506" label="RoleAttributeGrid"/>
+  <int value="5507" label="RoleAttributeGridcell"/>
+  <int value="5508" label="RoleAttributeHeading"/>
+  <int value="5509" label="RoleAttributeImg"/>
+  <int value="5510" label="RoleAttributeInput"/>
+  <int value="5511" label="RoleAttributeLink"/>
+  <int value="5512" label="RoleAttributeList"/>
+  <int value="5513" label="RoleAttributeListbox"/>
+  <int value="5514" label="RoleAttributeListitem"/>
+  <int value="5515" label="RoleAttributeMain"/>
+  <int value="5516" label="RoleAttributeMarquee"/>
+  <int value="5517" label="RoleAttributeMath"/>
+  <int value="5518" label="RoleAttributeMeter"/>
+  <int value="5519" label="RoleAttributeNavigation"/>
+  <int value="5520" label="RoleAttributeOption"/>
+  <int value="5521" label="RoleAttributeProgressbar"/>
+  <int value="5522" label="RoleAttributeRadio"/>
+  <int value="5523" label="RoleAttributeRadiogroup"/>
+  <int value="5524" label="RoleAttributeRange"/>
+  <int value="5525" label="RoleAttributeRow"/>
+  <int value="5526" label="RoleAttributeRowgroup"/>
+  <int value="5527" label="RoleAttributeRowheader"/>
+  <int value="5528" label="RoleAttributeScrollbar"/>
+  <int value="5529" label="RoleAttributeSearch"/>
+  <int value="5530" label="RoleAttributeSearchbox"/>
+  <int value="5531" label="RoleAttributeSelect"/>
+  <int value="5532" label="RoleAttributeSeparator"/>
+  <int value="5533" label="RoleAttributeSlider"/>
+  <int value="5534" label="RoleAttributeSpinbutton"/>
+  <int value="5535" label="RoleAttributeSwitch"/>
+  <int value="5536" label="RoleAttributeTab"/>
+  <int value="5537" label="RoleAttributeTable"/>
+  <int value="5538" label="RoleAttributeTablist"/>
+  <int value="5539" label="RoleAttributeTabpanel"/>
+  <int value="5540" label="RoleAttributeTextbox"/>
+  <int value="5541" label="RoleAttributeToolbar"/>
+  <int value="5542" label="RoleAttributeTooltip"/>
+  <int value="5543" label="RoleAttributeTree"/>
+  <int value="5544" label="RoleAttributeTreegrid"/>
+  <int value="5545" label="RoleAttributeTreeitem"/>
+  <int value="5546" label="InputParsedParentSelect"/>
+  <int value="5547" label="InputParsedAncestorSelect"/>
+  <int value="5548" label="CSSSelectorPseudoHasSlotted"/>
+  <int value="5549" label="SelectMultipleShowPopup"/>
+  <int value="5550" label="SharedWorkerExtendedLifetimeFeatureEnabled"/>
+  <int value="5551" label="SharedWorkerExtendedLifetimeIsTrue"/>
+  <int value="5552" label="EditContextTextFormatUpdateAddListener"/>
+  <int value="5553" label="EditContextTextFormatUpdateFireEvent"/>
+  <int value="5554"
+      label="EditContextTextFormatUpdateTextFormatThicknessOrStyleNotNone"/>
+  <int value="5555" label="C2PAManifest"/>
+  <int value="5556" label="LanguageModel_Append"/>
+  <int value="5557" label="IntegrityPolicyInServiceWorkerResponse"/>
+  <int value="5558" label="EditContextTextFormatUnderlineStyle"/>
+  <int value="5559" label="EditContextTextFormatUnderlineThickness"/>
+  <int value="5560" label="Proofreader_IncludeCorrectionTypes"/>
+  <int value="5561" label="Proofreader_IncludeCorrectionExplanations"/>
+  <int value="5562" label="Proofreader_ExpectedInputLanguages"/>
+  <int value="5563" label="Proofreader_CorrectionExplanationLanguage"/>
+  <int value="5564" label="Proofreader_Destroy"/>
+  <int value="5565" label="Proofreader_Proofread"/>
+  <int value="5566" label="Proofreader_Availability"/>
+  <int value="5567" label="Proofreader_Create"/>
+  <int value="5568" label="DataUrlDedicatedWorker"/>
+  <int value="5569" label="DataUrlSharedWorker"/>
+  <int value="5570" label="V8WebGLRenderingContextWebGPU_GetExtension_Method"/>
+  <int value="5571"
+      label="V8WebGLRenderingContextWebGPU_GetSupportedExtensions_Method"/>
+  <int value="5572" label="V8WebGL2RenderingContextWebGPU_GetExtension_Method"/>
+  <int value="5573"
+      label="V8WebGL2RenderingContextWebGPU_GetSupportedExtensions_Method"/>
+  <int value="5574" label="CredentialsGetImmediateMediationPasswordSuccess"/>
+  <int value="5575" label="CredentialsGetImmediateMediationPublicKeySuccess"/>
+  <int value="5576" label="CredentialsGetImmediateMediationFailure"/>
+  <int value="5577" label="ClearSiteData"/>
+  <int value="5578" label="ScrollIntoViewContainerNearest"/>
+  <int value="5579" label="PopoverShown"/>
+  <int value="5580" label="InputParsedParentOptionOrOptgroup"/>
+  <int value="5581" label="NavigatorUAData_toJSON"/>
+  <int value="5582"
+      label="EditContextUpdateTextRangePrecedesOrOverlapsSelection"/>
+  <int value="5583" label="EditContextUpdateTextRangePrecedesCompositionRange"/>
+  <int value="5584" label="EditContextUpdateTextRangeOverlapsCompositionRange"/>
+  <int value="5585" label="EditContextUpdateSelectionDuringActiveComposition"/>
+  <int value="5586" label="ClipboardChangeEventAddListener"/>
+  <int value="5587" label="ClipboardChangeEventFired"/>
+  <int value="5588" label="ClipboardChangeEventFiredAfterFocusGain"/>
+  <int value="5589" label="ClipboardChangeEventTypesAttribute"/>
+  <int value="5590" label="SchedulerYieldNonTrivialInherit"/>
+  <int value="5591" label="SchedulerYieldNonTrivialInheritCrossFrameIgnored"/>
+  <int value="5592" label="LocalNetworkAccessPrivateAliasUse"/>
+  <int value="5593" label="V8URLPattern_Generate_Method"/>
+  <int value="5594" label="SelectMultipleSizeOne"/>
+  <int value="5595" label="WebGPUFeatureLevelCompatibility"/>
+  <int value="5596" label="OverscrollBehaviorOnNonScrollableScrollContainer"/>
+  <int value="5597" label="InteractiveContentSummaryDescendant"/>
+  <int value="5598" label="SpeculationRulesEagernessEager"/>
+  <int value="5599" label="CSSSelectorPseudoNot"/>
+  <int value="5600" label="CSSCustomMedia"/>
+  <int value="5601" label="HTMLCanvasElementLowLatency_2D"/>
+  <int value="5602" label="HTMLCanvasElementLowLatency_WebGL"/>
+  <int value="5603" label="HTMLCanvasElementLowLatency_WebGL_Preserve"/>
+  <int value="5604" label="HTMLCanvasElementLowLatency_WebGL_Discard"/>
+  <int value="5605" label="AnimatedImageUsedMoreThanOnce"/>
+  <int value="5606" label="ClipboardPlatformPermissionDenied"/>
+  <int value="5607" label="ValidPopoverAttribute"/>
+  <int value="5608" label="CanvasFallbackContent"/>
+  <int value="5609" label="CanvasFallbackElementContent"/>
+  <int value="5610" label="AutofillMaybeSyntheticSelect"/>
+  <int value="5611" label="AutofillSyntheticSelect"/>
+  <int value="5612" label="FetchRetry"/>
+  <int value="5613" label="MessageEventDataBeforeSameOrigin"/>
+  <int value="5614" label="MessageEventDataBeforeSameSiteOrigin"/>
+  <int value="5615" label="MessageEventDataBeforeCrossSiteOrigin"/>
+  <int value="5616" label="MessageEventDataBeforeOpaqueOrigin"/>
+  <int value="5617"
+      label="LocalNetworkAccessNonSecureContextAllowedDeprecationTrial"/>
+  <int value="5618" label="CSPUrlHashes"/>
+  <int value="5619" label="CSPEvalHashes"/>
+  <int value="5620" label="WebAppManifestNameLocalized"/>
+  <int value="5621" label="WebAppManifestShortNameLocalized"/>
+  <int value="5622" label="WebAppManifestDescriptionLocalized"/>
+  <int value="5623" label="WebAppManifestIconsLocalized"/>
+  <int value="5624" label="HTMLControlledFrameElement"/>
   <int value="5625" label="SlowDeserialization"/>
+  <int value="5626" label="SharedWorkerStartOnAndroid"/>
+  <int value="5627" label="LocalNetworkAccessWithinSharedWorker"/>
+  <int value="5628" label="LocalNetworkAccessWithinDedicatedWorker"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom:WebFeature) -->
@@ -6039,6 +6400,17 @@ Called by update_permissions_policy_enum.py.-->
   <int value="127" label="FencedUnpartitionedStorageRead"/>
   <int value="128" label="DeferredFetchMinimal"/>
   <int value="129" label="ClientHintUAHighEntropyValues"/>
+  <int value="130" label="Summarizer"/>
+  <int value="131" label="Writer"/>
+  <int value="132" label="Rewriter"/>
+  <int value="133" label="Translator"/>
+  <int value="134" label="LanguageDetector"/>
+  <int value="135" label="DeviceAttributes"/>
+  <int value="136" label="LocalNetworkAccess"/>
+  <int value="137" label="RecordAdAuctionEvents"/>
+  <int value="138" label="OnDeviceSpeechRecognition"/>
+  <int value="139" label="LanguageModel"/>
+  <int value="140" label="AriaNotify"/>
 </enum>
 
 <enum name="FedCmAccountChooserResult">
@@ -6060,6 +6432,8 @@ Called by update_permissions_policy_enum.py.-->
   <int value="5" label="Accounts share the same id"/>
 </enum>
 
+<!-- LINT.IfChange(FedCmCancelReason) -->
+
 <enum name="FedCmCancelReason">
   <int value="0" label="Other"/>
   <int value="1" label="Close button"/>
@@ -6067,7 +6441,12 @@ Called by update_permissions_policy_enum.py.-->
   <int value="3" label="Virtual keyboard shown"/>
   <int value="4" label="Got it button"/>
   <int value="5" label="More details button"/>
+  <int value="6" label="Android back button"/>
+  <int value="7" label="Tap scrim on Android"/>
+  <int value="8" label="Segmentation platform (obsolete)"/>
 </enum>
+
+<!-- LINT.ThenChange(//content/public/browser/webid/identity_request_dialog_controller.h:DismissReason) -->
 
 <enum name="FedCmClosePopupWindowReason">
   <int value="0" label="IDP initiated close"/>
@@ -6334,6 +6713,7 @@ Called by update_permissions_policy_enum.py.-->
   <int value="49" label="RpOriginIsOpaque"/>
   <int value="50" label="ConfigNotMatchingType"/>
   <int value="51" label="LoginPopupClosedWithoutSignin"/>
+  <int value="52" label="SuppressedBySegmentationPlatform"/>
 </enum>
 
 <enum name="FedCmRpContext">
@@ -6409,6 +6789,13 @@ Called by update_permissions_policy_enum.py.-->
   <int value="2" label="User does not sign in"/>
 </enum>
 
+<enum name="FedCmUserAction">
+  <int value="0" label="Deprecated: User signed in"/>
+  <int value="1" label="User ignored the UI"/>
+  <int value="2" label="User closed the UI"/>
+  <int value="3" label="User signed in"/>
+</enum>
+
 <enum name="FedCmUserInfoStatus">
   <int value="0" label="Success"/>
   <int value="1" label="Caller is not same origin with config URL"/>
@@ -6461,6 +6848,29 @@ Called by update_permissions_policy_enum.py.-->
       label="Supports-Loading-Mode response header 'fenced-frame' not
              opted-in"/>
 </enum>
+
+<!-- LINT.IfChange(FencedFrameDisableUntrustedNetworkOutcome) -->
+
+<enum name="FencedFrameDisableUntrustedNetworkOutcome">
+  <int value="0" label="Network disabled and promise resolved"/>
+  <int value="1" label="Document not fully active"/>
+  <int value="2" label="Not allowed to disable network"/>
+</enum>
+
+<!-- LINT.ThenChange(//third_party/blink/public/common/fenced_frame/fenced_frame_utils.h:DisableUntrustedNetworkOutcome) -->
+
+<!-- LINT.IfChange(FencedFrameNotifyEventOutcome) -->
+
+<enum name="FencedFrameNotifyEventOutcome">
+  <int value="0" label="Success"/>
+  <int value="1" label="Document not active"/>
+  <int value="2" label="Not called from a fenced frame root"/>
+  <int value="3" label="Invalid event passed in"/>
+  <int value="4" label="Unsupported event type passed in"/>
+  <int value="5" label="No transient user activation"/>
+</enum>
+
+<!-- LINT.ThenChange(//third_party/blink/public/common/fenced_frame/fenced_frame_utils.h:NotifyEventOutcome) -->
 
 <!-- LINT.IfChange(FirstCookieRequest) -->
 
@@ -6565,18 +6975,24 @@ Called by update_permissions_policy_enum.py.-->
              encountered"/>
 </enum>
 
-<enum name="IntersectionObservationUpdateType">
-  <int value="0" label="No update"/>
-  <int value="1" label="Scroll only"/>
-  <int value="2" label="CachedRectInvalid"/>
-  <int value="3" label="Full update"/>
-</enum>
-
 <enum name="KeyboardLockMethods">
   <int value="0" label="keyboardLock() requested for all keys"/>
   <int value="1" label="keyboardLock() requested for a subset of keys"/>
   <int value="2" label="keyboardUnlock()"/>
 </enum>
+
+<!-- LINT.IfChange(LoadLinksFromHeaderMode) -->
+
+<enum name="LoadLinksFromHeaderMode">
+  <int value="0" label="Document before commit"/>
+  <int value="1" label="Document after commit without viewport"/>
+  <int value="2" label="Document after commit with viewport"/>
+  <int value="3" label="Document after load completed"/>
+  <int value="4" label="Subresource from memory cache"/>
+  <int value="5" label="Subresource not from memory cache"/>
+</enum>
+
+<!-- LINT.ThenChange(//third_party/blink/renderer/core/loader/preload_helper.h:LoadLinksFromHeaderMode) -->
 
 <!-- LINT.IfChange(MappedCSSProperties) -->
 
@@ -6895,7 +7311,7 @@ Called by update_use_counter_css.py.-->
   <int value="309" label="alias-webkit-perspective-origin"/>
   <int value="310" label="webkit-perspective-origin-x"/>
   <int value="311" label="webkit-perspective-origin-y"/>
-  <int value="312" label="webkit-print-color-adjust"/>
+  <int value="312" label="alias-webkit-print-color-adjust"/>
   <int value="313" label="webkit-rtl-ordering"/>
   <int value="314" label="webkit-ruby-position"/>
   <int value="315" label="webkit-text-combine"/>
@@ -7385,37 +7801,100 @@ Called by update_use_counter_css.py.-->
   <int value="799" label="view-transition-group"/>
   <int value="800" label="position-area"/>
   <int value="801" label="text-box"/>
-  <int value="802" label="masonry-track-end"/>
-  <int value="803" label="masonry-track-start"/>
-  <int value="804" label="masonry-template-tracks"/>
+  <int value="802" label="masonry-track-end (obsolete)"/>
+  <int value="803" label="masonry-track-start (obsolete)"/>
+  <int value="804" label="masonry-template-tracks (obsolete)"/>
   <int value="805" label="text-wrap-mode"/>
   <int value="806" label="text-wrap-style"/>
-  <int value="807" label="masonry-track"/>
-  <int value="808" label="masonry-slack"/>
+  <int value="807" label="masonry-track (obsolete)"/>
+  <int value="808" label="item-tolerance"/>
   <int value="809" label="caret-animation"/>
-  <int value="810" label="view-transition-capture-mode"/>
+  <int value="810" label="view-transition-capture-mode (obsolete)"/>
   <int value="811" label="interactivity"/>
   <int value="812" label="masonry-fill"/>
   <int value="813" label="masonry-direction"/>
   <int value="814" label="masonry-flow"/>
-  <int value="815" label="masonry-auto-tracks"/>
+  <int value="815" label="masonry-auto-tracks (obsolete)"/>
   <int value="816" label="result"/>
-  <int value="817" label="animation-trigger-type"/>
-  <int value="818" label="animation-trigger-timeline"/>
-  <int value="819" label="animation-trigger-range-start"/>
-  <int value="820" label="animation-trigger-range-end"/>
-  <int value="821" label="animation-trigger-exit-range-start"/>
-  <int value="822" label="animation-trigger-exit-range-end"/>
-  <int value="823" label="interest-target-show-delay"/>
-  <int value="824" label="interest-target-hide-delay"/>
+  <int value="817" label="animation-trigger-type (obsolete)"/>
+  <int value="818" label="animation-trigger-timeline (obsolete)"/>
+  <int value="819" label="animation-trigger-range-start (obsolete)"/>
+  <int value="820" label="animation-trigger-range-end (obsolete)"/>
+  <int value="821" label="animation-trigger-exit-range-start (obsolete)"/>
+  <int value="822" label="animation-trigger-exit-range-end (obsolete)"/>
+  <int value="823" label="interest-show-delay"/>
+  <int value="824" label="interest-hide-delay"/>
   <int value="825" label="animation-trigger-range"/>
   <int value="826" label="animation-trigger-exit-range"/>
-  <int value="827" label="interest-target-delay"/>
+  <int value="827" label="interest-delay"/>
   <int value="828" label="animation-trigger"/>
   <int value="829" label="column-rule-break"/>
+  <int value="830" label="row-rule-break"/>
+  <int value="831" label="corner-bottom-left-shape"/>
+  <int value="832" label="corner-bottom-right-shape"/>
+  <int value="833" label="corner-top-left-shape"/>
+  <int value="834" label="corner-top-right-shape"/>
+  <int value="835" label="corner-start-start-shape"/>
+  <int value="836" label="corner-start-end-shape"/>
+  <int value="837" label="corner-end-start-shape"/>
+  <int value="838" label="corner-end-end-shape"/>
+  <int value="839" label="reading-order"/>
+  <int value="840" label="column-rule-outset"/>
+  <int value="841" label="row-rule-outset"/>
+  <int value="842" label="corner-shape"/>
+  <int value="843" label="scroll-target-group"/>
+  <int value="844" label="row-rule-style"/>
+  <int value="845" label="gap-rule-paint-order"/>
+  <int value="846" label="row-rule-width"/>
+  <int value="847" label="row-rule-color"/>
+  <int value="848" label="print-color-adjust"/>
+  <int value="849" label="column-height"/>
+  <int value="850" label="column-wrap"/>
+  <int value="851" label="rule-color"/>
+  <int value="852" label="rule-width"/>
+  <int value="853" label="rule-style"/>
+  <int value="854" label="caret-shape"/>
+  <int value="855" label="row-rule"/>
+  <int value="856" label="text-grow"/>
+  <int value="857" label="text-shrink"/>
+  <int value="858" label="rule"/>
+  <int value="859" label="origin-trial-test-shorthand (obsolete)"/>
+  <int value="860" label="corner-top-shape"/>
+  <int value="861" label="corner-right-shape"/>
+  <int value="862" label="corner-bottom-shape"/>
+  <int value="863" label="corner-left-shape"/>
+  <int value="864" label="corner-block-start-shape"/>
+  <int value="865" label="corner-block-end-shape"/>
+  <int value="866" label="corner-inline-start-shape"/>
+  <int value="867" label="corner-inline-end-shape"/>
+  <int value="868" label="corners"/>
+  <int value="869" label="border-shape"/>
+  <int value="870" label="animation-trigger-behavior (obsolete)"/>
+  <int value="871" label="timeline-trigger-name"/>
+  <int value="872" label="timeline-trigger-behavior"/>
+  <int value="873" label="timeline-trigger-range-start"/>
+  <int value="874" label="timeline-trigger-range-end"/>
+  <int value="875" label="timeline-trigger-exit-range-start"/>
+  <int value="876" label="timeline-trigger-exit-range-end"/>
+  <int value="877" label="timeline-trigger-timeline"/>
+  <int value="878" label="timeline-trigger"/>
+  <int value="879" label="masonry"/>
+  <int value="880" label="continue"/>
+  <int value="881" label="max-lines"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/public/mojom/use_counter/metrics/css_property_id.mojom:CSSSampleId) -->
+
+<!-- LINT.IfChange(OriginStatusOnSubresource) -->
+
+<enum name="OriginStatusOnSubresource">
+  <int value="0" label="kFromSameOriginToSameOrigin"/>
+  <int value="1" label="kFromSameOriginToCrossOrigin"/>
+  <int value="2" label="kFromCrossOriginToSameOrigin"/>
+  <int value="3" label="kFromCrossOriginToCrossOrigin"/>
+</enum>
+
+<!-- LINT.ThenChange(//third_party/blink/renderer/core/loader/preload_helper.h:OriginStatusOnSubresource) -->
 
 <!-- LINT.IfChange(PermissionElementInvalidStyleReason) -->
 
@@ -7425,6 +7904,7 @@ Called by update_use_counter_css.py.-->
   <int value="2" label="Low constrast between color and background color"/>
   <int value="3" label="Too small font size"/>
   <int value="4" label="Too large font size"/>
+  <int value="5" label="Invalid display property"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/renderer/core/html/html_permission_element.h:InvalidStyleReason) -->
@@ -7436,7 +7916,8 @@ Called by update_use_counter_css.py.-->
   <int value="1" label="Failed or has not been registered"/>
   <int value="2" label="Recently attached to layout tree"/>
   <int value="3"
-      label="Intersection visibility has recently become fully visible"/>
+      label="(Obsolete) Intersection visibility has recently become fully
+             visible. Deprecated as of 2024-09."/>
   <int value="4" label="Invalid style"/>
   <int value="5" label="Untrusted event"/>
   <int value="6" label="Intersection with viewport changed"/>
@@ -7482,6 +7963,21 @@ Called by update_use_counter_css.py.-->
   <int value="7" label="ForceDefer (Deprecated 2023)"/>
 </enum>
 
+<!-- LINT.IfChange(SharedStorageGetInFencedFrameOutcome) -->
+
+<enum name="SharedStorageGetInFencedFrameOutcome">
+  <int value="0" label="Success"/>
+  <int value="1" label="Called from an insecure context"/>
+  <int value="2" label="Fenced storage read is disabled"/>
+  <int value="3" label="Untrusted network not disabled"/>
+  <int value="4" label="Shared Storage key not found"/>
+  <int value="5" label="Error calling get()"/>
+  <int value="6" label="Unpartitioned data access feature disabled"/>
+  <int value="7" label="Unpartitioned data access permission disabled"/>
+</enum>
+
+<!-- LINT.ThenChange(//third_party/blink/public/common/fenced_frame/fenced_frame_utils.h:SharedStorageGetInFencedFrameOutcome) -->
+
 <enum name="SmsParsingStatus">
   <int value="0" label="Parsed"/>
   <int value="1" label="OTP format regex not match"/>
@@ -7511,7 +8007,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="0" label="PageVisits"/>
   <int value="1" label="CompressionStreams"/>
   <int value="2" label="ViewTransitions"/>
-  <int value="3" label="Popover"/>
+  <int value="3" label="OBSOLETE_Popover"/>
   <int value="4" label="Subgrid"/>
   <int value="5" label="CascadeLayers"/>
   <int value="6" label="AccentColor"/>
@@ -7611,11 +8107,11 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="100" label="SlotAssign"/>
   <int value="101" label="Masks"/>
   <int value="102" label="DeviceOrientationEvents"/>
-  <int value="103" label="DRAFT_Gamepad"/>
+  <int value="103" label="Gamepad"/>
   <int value="104" label="ScreenWakeLock"/>
   <int value="105" label="WebBluetooth"/>
   <int value="106" label="WebNfc"/>
-  <int value="107" label="DRAFT_Serial"/>
+  <int value="107" label="Serial"/>
   <int value="108" label="JsModulesServiceWorkers"/>
   <int value="109" label="JsModulesSharedWorkers"/>
   <int value="110" label="JsModulesWorkers"/>
@@ -7709,11 +8205,11 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="198" label="DynamicRange"/>
   <int value="199" label="DisplayMode"/>
   <int value="200" label="Canvas"/>
-  <int value="201" label="Canvas2d"/>
-  <int value="202" label="Canvas2dAlpha"/>
-  <int value="203" label="Canvas2dColorManagement"/>
-  <int value="204" label="Canvas2dDesynchronized"/>
-  <int value="205" label="Canvas2dWillreadfrequently"/>
+  <int value="201" label="Canvas2D"/>
+  <int value="202" label="Canvas2DAlpha"/>
+  <int value="203" label="Canvas2DColorManagement"/>
+  <int value="204" label="Canvas2DDesynchronized"/>
+  <int value="205" label="Canvas2DWillreadfrequently"/>
   <int value="206" label="Ch"/>
   <int value="207" label="Rch"/>
   <int value="208" label="RubyAlign"/>
@@ -7737,7 +8233,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="226" label="PromiseAny"/>
   <int value="227" label="SetMethods"/>
   <int value="228" label="ScrollSnapEvents"/>
-  <int value="229" label="MoveBeforeAPI"/>
+  <int value="229" label="MoveBefore"/>
   <int value="230" label="ScrollDrivenAnimations"/>
   <int value="231" label="WebAnimations"/>
   <int value="232" label="CrossDocumentViewTransitions"/>
@@ -7778,16 +8274,113 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="267" label="WindowControlsOverlay"/>
   <int value="268" label="FetchPriority"/>
   <int value="269" label="Highlight"/>
-  <int value="270" label="DRAFT_ErrorIsError"/>
+  <int value="270" label="IsError"/>
   <int value="271" label="ClipboardCustomFormat"/>
   <int value="272" label="ClipboardSvg"/>
   <int value="273" label="ClipboardSupports"/>
-  <int value="274" label="BarProp"/>
-  <int value="275" label="BeforeUnload"/>
+  <int value="274" label="Barprop"/>
+  <int value="275" label="Beforeunload"/>
   <int value="276" label="BfcacheBlockingReasons"/>
   <int value="277" label="LayoutInstability"/>
   <int value="278" label="Profiler"/>
   <int value="279" label="AsyncIterableStreams"/>
+  <int value="280" label="ContainerScrollStateQueries"/>
+  <int value="281" label="DRAFT_ScopedViewTransitions"/>
+  <int value="282" label="AttributionReporting"/>
+  <int value="283" label="CookieStore"/>
+  <int value="284" label="Fencedframe"/>
+  <int value="285" label="FontVariantEmoji"/>
+  <int value="286" label="Gethtml"/>
+  <int value="287" label="LocalFonts"/>
+  <int value="288" label="MeasureMemory"/>
+  <int value="289" label="MediaPlaybackQuality"/>
+  <int value="290" label="Webgpu"/>
+  <int value="291" label="Zstd"/>
+  <int value="292" label="ColumnPseudo"/>
+  <int value="293" label="Interactivity"/>
+  <int value="294" label="ScrollButtons"/>
+  <int value="295" label="ScrollMarkers"/>
+  <int value="296" label="PopoverHint"/>
+  <int value="297" label="RegexpEscape"/>
+  <int value="298" label="Float16Array"/>
+  <int value="299" label="AppFileHandlers"/>
+  <int value="300" label="AppProtocolHandlers"/>
+  <int value="301" label="Badging"/>
+  <int value="302" label="Manifest"/>
+  <int value="303" label="Beforeinstallprompt"/>
+  <int value="304" label="AppShareTargets"/>
+  <int value="305" label="AppShortcuts"/>
+  <int value="306" label="Fetchlater"/>
+  <int value="307" label="DRAFT_WasmBranchHinting"/>
+  <int value="308" label="DRAFT_ExplicitResourceManagement"/>
+  <int value="309" label="AppLaunchHandler"/>
+  <int value="310" label="Function"/>
+  <int value="311" label="If"/>
+  <int value="312" label="DRAFT_WebAppManifestUpdate"/>
+  <int value="313" label="ReadingFlow"/>
+  <int value="314" label="ComposedRanges"/>
+  <int value="315" label="CompressionDictionaryTransport"/>
+  <int value="316" label="Http3"/>
+  <int value="317" label="SpeculationRules"/>
+  <int value="318" label="TextBox"/>
+  <int value="319" label="ScrollInitialTarget"/>
+  <int value="320" label="HasSlotted"/>
+  <int value="321" label="ElementCapture"/>
+  <int value="322" label="RegionCapture"/>
+  <int value="323" label="RequestAnimationFrame"/>
+  <int value="324" label="RequestAnimationFrameWorkers"/>
+  <int value="325" label="IframeCredentialless"/>
+  <int value="326" label="Urlpattern"/>
+  <int value="327" label="WebauthnPublicKeyEasy"/>
+  <int value="328" label="IntlDisplayNames"/>
+  <int value="329" label="State"/>
+  <int value="330" label="PrintColorAdjust"/>
+  <int value="331" label="TextUnderlineOffset"/>
+  <int value="332" label="WindowManagement"/>
+  <int value="333" label="Requestclose"/>
+  <int value="334" label="Uint8ArrayBase64Hex"/>
+  <int value="335" label="LineBreak"/>
+  <int value="336" label="OverflowClip"/>
+  <int value="337" label="LightDark"/>
+  <int value="338" label="Requestidlecallback"/>
+  <int value="339" label="ClearSiteData"/>
+  <int value="340" label="LinkRelExpect"/>
+  <int value="341" label="UaClientHints"/>
+  <int value="342" label="CustomizableSelect"/>
+  <int value="343" label="Not"/>
+  <int value="344" label="Scripting"/>
+  <int value="345" label="AlignContentBlock"/>
+  <int value="346" label="SizesAuto"/>
+  <int value="347" label="WasmSimd"/>
+  <int value="348" label="Observable"/>
+  <int value="349" label="MetaApplicationTitle"/>
+  <int value="350" label="DialogClosedby"/>
+  <int value="351" label="FontFamilyMath"/>
+  <int value="352" label="Autofill"/>
+  <int value="353" label="FontMetricOverrides"/>
+  <int value="354" label="DetailsContent"/>
+  <int value="355" label="TimeRelativeSelectors"/>
+  <int value="356" label="WasmExceptionHandling"/>
+  <int value="357" label="WasmExtendedConstantExpressions"/>
+  <int value="358" label="WasmGarbageCollection"/>
+  <int value="359" label="WasmMultiMemory"/>
+  <int value="360" label="WasmReferenceTypes"/>
+  <int value="361" label="WasmSimdRelaxed"/>
+  <int value="362" label="WasmTailCallOptimization"/>
+  <int value="363" label="WasmThreads"/>
+  <int value="364" label="WasmStringBuiltins"/>
+  <int value="365" label="WasmTypedFunRefs"/>
+  <int value="366" label="WasmMemory64"/>
+  <int value="367" label="WasmExnrefExceptions"/>
+  <int value="368" label="WasmMultiValue"/>
+  <int value="369" label="WasmBulkMemory"/>
+  <int value="370" label="WasmMutableGlobals"/>
+  <int value="371" label="WasmNonTrappingFloatToInt"/>
+  <int value="372" label="WasmSignExtensionOperators"/>
+  <int value="373" label="DRAFT_IncomingCallNotifications"/>
+  <int value="374" label="Popover"/>
+  <int value="375" label="DRAFT_WebInstallAPI"/>
+  <int value="380" label="CrashReportStorageAPIInitialize"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/public/mojom/use_counter/metrics/webdx_feature.mojom:WebDXFeature) -->
@@ -7814,6 +8407,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="7" label="WebGL1, SwiftShader"/>
   <int value="8" label="WebGL1, Metal"/>
   <int value="9" label="WebGL1, Default"/>
+  <int value="10" label="WebGL1, D3D11Warp"/>
   <int value="20" label="WebGL2, None"/>
   <int value="21" label="WebGL2, D3D9 (should never happen)"/>
   <int value="22" label="WebGL2, D3D11"/>
@@ -7824,6 +8418,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="27" label="WebGL2, SwiftShader"/>
   <int value="28" label="WebGL2, Metal"/>
   <int value="29" label="WebGL2, Default"/>
+  <int value="30" label="WebGL2, D3D11Warp"/>
 </enum>
 
 <enum name="WebOTPBackendAvailability">

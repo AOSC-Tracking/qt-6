@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "angle_gl.h"
+#include "common/frame_capture_binary_data.h"
 #include "trace_interface.h"
 #include "traces_export.h"
 
@@ -57,6 +58,7 @@ extern "C" {
 /* not exported */ void ReplayFrame(uint32_t frameIndex);
 /* not exported */ void ResetReplay();
 /* not exported */ void FinishReplay();
+/* not exported */ void SetupFirstFrame();
 
 ANGLE_REPLAY_EXPORT void SetValidateSerializedStateCallback(
     ValidateSerializedStateCallback callback);
@@ -108,6 +110,30 @@ extern GLsync *gSyncMap2;
 extern EGLSync *gEGLSyncMap;
 extern EGLDisplay gEGLDisplay;
 extern angle::ReplayResourceMode gReplayResourceMode;
+
+void InitializeReplay5(const char *binaryDataFileName,
+                       size_t maxClientArraySize,
+                       size_t readBufferSize,
+                       size_t resourceIDBufferSize,
+                       GLuint contextId,
+                       uint32_t maxBuffer,
+                       uint32_t maxContext,
+                       uint32_t maxFenceNV,
+                       uint32_t maxFramebuffer,
+                       uint32_t maxImage,
+                       uint32_t maxMemoryObject,
+                       uint32_t maxProgramPipeline,
+                       uint32_t maxQuery,
+                       uint32_t maxRenderbuffer,
+                       uint32_t maxSampler,
+                       uint32_t maxSemaphore,
+                       uint32_t maxShaderProgram,
+                       uint32_t maxSurface,
+                       uint32_t maxSync,
+                       uint32_t maxTexture,
+                       uint32_t maxTransformFeedback,
+                       uint32_t maxVertexArray,
+                       uint32_t maxEGLSyncID);
 
 void InitializeReplay4(const char *binaryDataFileName,
                        size_t maxClientArraySize,
@@ -194,6 +220,9 @@ void InitializeReplay(const char *binaryDataFileName,
                       uint32_t maxTransformFeedback,
                       uint32_t maxVertexArray);
 
+const uint8_t *GetBinaryData(const size_t offset);
+void InitializeBinaryDataLoader();
+
 void UpdateClientArrayPointer(int arrayIndex, const void *data, uint64_t size);
 void UpdateClientBufferData(GLuint bufferID, const void *source, GLsizei size);
 void UpdateClientBufferDataWithOffset(GLuint bufferID,
@@ -273,6 +302,7 @@ void CreateNativeClientBufferANDROID(const EGLint *attrib_list, uintptr_t client
 void CreateContext(GLuint contextID);
 
 void ValidateSerializedState(const char *serializedState, const char *fileName, uint32_t line);
+
 #define VALIDATE_CHECKPOINT(STATE) ValidateSerializedState(STATE, __FILE__, __LINE__)
 
 #if defined(__cplusplus)

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qitemdelegate.h"
 
@@ -605,13 +606,6 @@ void QItemDelegate::drawDisplay(QPainter *painter, const QStyleOptionViewItem &o
 
     if (text.isEmpty())
         return;
-
-    if (option.state & QStyle::State_Editing) {
-        painter->save();
-        painter->setPen(option.palette.color(cg, QPalette::Text));
-        painter->drawRect(rect.adjusted(0, 0, -1, -1));
-        painter->restore();
-    }
 
     const QStyleOptionViewItem opt = option;
 

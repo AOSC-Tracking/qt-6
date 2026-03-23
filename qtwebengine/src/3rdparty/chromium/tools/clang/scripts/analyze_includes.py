@@ -35,7 +35,7 @@ import re
 import sys
 import unittest
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def parse_build(build_log, root_filter=None):
@@ -107,7 +107,8 @@ def parse_build(build_log, root_filter=None):
       continue
 
     m = COMPILE_RE.match(line)
-    if m:
+    # Clang module compile uses -x after -c, so skip that from include analysis.
+    if m and m.group(2) != '-x':
       skipping_root = False
       filename = norm(m.group(2))
       if root_filter and not root_filter.match(filename):
@@ -220,6 +221,15 @@ class TestParseBuild(unittest.TestCase):
     self.assertEqual(roots, set(['a.cc', 'c.cc']))
     self.assertEqual(includes['a.cc'], set(['a.h']))
     self.assertEqual(includes['c.cc'], set(['c.h']))
+
+  def test_module(self):
+    x = [
+        'ninja: Entering directory `out/foo\'',
+        '[123/234] clang -c -x c++ -Xclang -emit-module ../../a.modulemap -o a.pcm',
+    ]
+    (roots, includes) = parse_build(x)
+    self.assertEqual(len(roots), 0)
+    self.assertEqual(len(includes), 0)
 
 
 def post_order_nodes(root, child_nodes):
@@ -463,7 +473,7 @@ def analyze(target, revision, build_log_file, json_file, root_filter):
       {
           'target': target,
           'revision': revision,
-          'date': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'),
+          'date': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'),
           'files': names,
           'roots': [nr(x) for x in sorted(roots)],
           'includes': [[nr(x) for x in sorted(includes[n])] for n in names],

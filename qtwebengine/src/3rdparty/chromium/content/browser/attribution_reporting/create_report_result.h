@@ -10,13 +10,13 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "base/time/time.h"
 #include "content/browser/attribution_reporting/attribution_report.h"
 #include "content/browser/attribution_reporting/attribution_trigger.h"
 #include "content/browser/attribution_reporting/stored_source.h"
 #include "content/common/content_export.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace content {
 
@@ -105,40 +105,40 @@ class CONTENT_EXPORT CreateReportResult {
         : name(std::move(name)), budget(budget) {}
   };
 
-  using EventLevel = absl::variant<EventLevelSuccess,
-                                   InternalError,
-                                   NoCapacityForConversionDestination,
-                                   NoMatchingImpressions,
-                                   Deduplicated,
-                                   ExcessiveAttributions,
-                                   PriorityTooLow,
-                                   NeverAttributedSource,
-                                   ExcessiveReportingOrigins,
-                                   NoMatchingSourceFilterData,
-                                   ProhibitedByBrowserPolicy,
-                                   NoMatchingConfigurations,
-                                   ExcessiveEventLevelReports,
-                                   FalselyAttributedSource,
-                                   ReportWindowPassed,
-                                   NotRegistered,
-                                   ReportWindowNotStarted,
-                                   NoMatchingTriggerData>;
+  using EventLevel = std::variant<EventLevelSuccess,
+                                  InternalError,
+                                  NoCapacityForConversionDestination,
+                                  NoMatchingImpressions,
+                                  Deduplicated,
+                                  ExcessiveAttributions,
+                                  PriorityTooLow,
+                                  NeverAttributedSource,
+                                  ExcessiveReportingOrigins,
+                                  NoMatchingSourceFilterData,
+                                  ProhibitedByBrowserPolicy,
+                                  NoMatchingConfigurations,
+                                  ExcessiveEventLevelReports,
+                                  FalselyAttributedSource,
+                                  ReportWindowPassed,
+                                  NotRegistered,
+                                  ReportWindowNotStarted,
+                                  NoMatchingTriggerData>;
 
-  using Aggregatable = absl::variant<AggregatableSuccess,
-                                     InternalError,
-                                     NoCapacityForConversionDestination,
-                                     NoMatchingImpressions,
-                                     ExcessiveAttributions,
-                                     ExcessiveReportingOrigins,
-                                     NoHistograms,
-                                     InsufficientBudget,
-                                     InsufficientNamedBudget,
-                                     NoMatchingSourceFilterData,
-                                     NotRegistered,
-                                     ProhibitedByBrowserPolicy,
-                                     Deduplicated,
-                                     ReportWindowPassed,
-                                     ExcessiveAggregatableReports>;
+  using Aggregatable = std::variant<AggregatableSuccess,
+                                    InternalError,
+                                    NoCapacityForConversionDestination,
+                                    NoMatchingImpressions,
+                                    ExcessiveAttributions,
+                                    ExcessiveReportingOrigins,
+                                    NoHistograms,
+                                    InsufficientBudget,
+                                    InsufficientNamedBudget,
+                                    NoMatchingSourceFilterData,
+                                    NotRegistered,
+                                    ProhibitedByBrowserPolicy,
+                                    Deduplicated,
+                                    ReportWindowPassed,
+                                    ExcessiveAggregatableReports>;
 
   CreateReportResult(
       base::Time trigger_time,
@@ -192,7 +192,6 @@ class CONTENT_EXPORT CreateReportResult {
   base::Time trigger_time_;
 
   // `std::nullopt` if there's no matching source.
-  // TODO(apaseltiner): Combine this field with the result fields below.
   std::optional<StoredSource> source_;
 
   std::optional<base::Time> min_null_aggregatable_report_time_;

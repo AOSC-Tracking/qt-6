@@ -16,6 +16,7 @@
 #include "content/public/browser/cookie_access_details.h"
 #include "content/public/browser/trust_token_access_details.h"
 #include "ipc/ipc_message.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
 #include "third_party/blink/public/mojom/frame/fullscreen.mojom.h"
 #include "third_party/blink/public/mojom/frame/text_autosizer_page_info.mojom.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom-shared.h"
@@ -86,9 +87,9 @@ RenderFrameHostDelegate::GetGeolocationContext() {
   return nullptr;
 }
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_IOS_TVOS))
 void RenderFrameHostDelegate::GetNFC(
-    RenderFrameHost* render_frame_host,
+    RenderFrameHostImpl* render_frame_host,
     mojo::PendingReceiver<device::mojom::NFC> receiver) {}
 #endif
 
@@ -120,6 +121,15 @@ FrameTree* RenderFrameHostDelegate::CreateNewWindow(
     bool is_new_browsing_instance,
     bool has_user_gesture,
     SessionStorageNamespace* session_storage_namespace) {
+  return nullptr;
+}
+
+WebContents* RenderFrameHostDelegate::ShowCreatedWindow(
+    RenderFrameHostImpl* opener,
+    int main_frame_widget_route_id,
+    WindowOpenDisposition disposition,
+    const blink::mojom::WindowFeatures& window_features,
+    bool user_gesture) {
   return nullptr;
 }
 
@@ -155,6 +165,12 @@ void RenderFrameHostDelegate::IsClipboardPasteAllowedByPolicy(
   std::move(callback).Run(std::move(clipboard_paste_data));
 }
 
+std::optional<std::vector<std::u16string>>
+RenderFrameHostDelegate::GetClipboardTypesIfPolicyApplied(
+    const ui::ClipboardSequenceNumberToken& seqno) {
+  return std::nullopt;
+}
+
 bool RenderFrameHostDelegate::IsTransientActivationRequiredForHtmlFullscreen() {
   return true;
 }
@@ -179,12 +195,6 @@ RenderFrameHostDelegate::GetActiveTopLevelDocumentsInBrowsingContextGroup(
   return std::vector<RenderFrameHostImpl*>();
 }
 
-std::vector<RenderFrameHostImpl*>
-RenderFrameHostDelegate::GetActiveTopLevelDocumentsInCoopRelatedGroup(
-    RenderFrameHostImpl* render_frame_host) {
-  return std::vector<RenderFrameHostImpl*>();
-}
-
 PrerenderHostRegistry* RenderFrameHostDelegate::GetPrerenderHostRegistry() {
   return nullptr;
 }
@@ -201,10 +211,10 @@ bool RenderFrameHostDelegate::ShouldIgnoreUnresponsiveRenderer() {
   return false;
 }
 
-std::optional<blink::ParsedPermissionsPolicy>
+std::optional<network::ParsedPermissionsPolicy>
 RenderFrameHostDelegate::GetPermissionsPolicyForIsolatedWebApp(
     RenderFrameHostImpl* source) {
-  return blink::ParsedPermissionsPolicy();
+  return network::ParsedPermissionsPolicy();
 }
 
 bool RenderFrameHostDelegate::IsPopup() const {
@@ -222,6 +232,15 @@ RenderFrameHostDelegate::GetPartitionedPopinOpenerProperties() const {
 
 WebContents* RenderFrameHostDelegate::GetOpenedPartitionedPopin() const {
   return nullptr;
+}
+
+gfx::NativeWindow RenderFrameHostDelegate::GetOwnerNativeWindow() {
+  return gfx::NativeWindow();
+}
+
+media::PictureInPictureEventsInfo::AutoPipInfo
+RenderFrameHostDelegate::GetAutoPipInfo() const {
+  return media::PictureInPictureEventsInfo::AutoPipInfo();
 }
 
 }  // namespace content

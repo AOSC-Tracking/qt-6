@@ -4,6 +4,7 @@
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as EmulationModel from '../../models/emulation/emulation.js';
 
@@ -11,8 +12,8 @@ const UIStrings = {
   /**
    * @description Warning message indicating that the user will see real user data for a URL which is different from the URL they are currently looking at.
    */
-  fieldOverrideWarning: 'Field data is configured for a different URL than the current page.',
-};
+  fieldOverrideWarning: 'Field metrics are configured for a different URL than the current page.',
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('models/crux-manager/CrUXManager.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -23,7 +24,9 @@ const CRUX_API_KEY = 'AIzaSyCCSOx25vrb5z0tbedCB3_JRzzbVW6Uwgw';
 const DEFAULT_ENDPOINT = `https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${CRUX_API_KEY}`;
 
 export type StandardMetricNames = 'cumulative_layout_shift'|'first_contentful_paint'|'first_input_delay'|
-    'interaction_to_next_paint'|'largest_contentful_paint'|'experimental_time_to_first_byte'|'round_trip_time';
+    'interaction_to_next_paint'|'largest_contentful_paint'|'experimental_time_to_first_byte'|'round_trip_time'|
+    'largest_contentful_paint_image_time_to_first_byte'|'largest_contentful_paint_image_resource_load_delay'|
+    'largest_contentful_paint_image_resource_load_duration'|'largest_contentful_paint_image_element_render_delay';
 export type MetricNames = StandardMetricNames|'form_factors';
 export type FormFactor = 'DESKTOP'|'PHONE'|'TABLET';
 export type DeviceScope = FormFactor|'ALL';
@@ -38,7 +41,7 @@ export type ConnectionType = 'offline'|'slow-2G'|'2G'|'3G'|'4G';
 export interface CrUXRequest {
   effectiveConnectionType?: ConnectionType;
   formFactor?: FormFactor;
-  metrics?: Array<MetricNames>;
+  metrics?: MetricNames[];
   origin?: string;
   url?: string;
 }
@@ -64,7 +67,7 @@ interface CollectionDate {
 
 interface CrUXRecord {
   key: Omit<CrUXRequest, 'metrics'>;
-  metrics: {[K in StandardMetricNames]?: MetricResponse;}&{
+  metrics: Partial<Record<StandardMetricNames, MetricResponse>>&{
     // eslint-disable-next-line @typescript-eslint/naming-convention
     form_factors?: FormFactorsResponse,
   };
@@ -82,9 +85,7 @@ export interface CrUXResponse {
   };
 }
 
-export type PageResult = {
-  [K in`${PageScope}-${DeviceScope}`]: CrUXResponse|null;
-}&{
+export type PageResult = Record<`${PageScope}-${DeviceScope}`, CrUXResponse|null>&{
   warnings: string[],
 };
 
@@ -113,6 +114,10 @@ const metrics: MetricNames[] = [
   'interaction_to_next_paint',
   'round_trip_time',
   'form_factors',
+  'largest_contentful_paint_image_time_to_first_byte',
+  'largest_contentful_paint_image_resource_load_delay',
+  'largest_contentful_paint_image_resource_load_duration',
+  'largest_contentful_paint_image_element_render_delay',
 ];
 
 export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
@@ -139,8 +144,7 @@ export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
      * This behaviour has been approved by Chrome Privacy as part of the launch
      * review.
      */
-    const hostConfig = Common.Settings.Settings.instance().getHostConfig();
-    const useSessionStorage = !hostConfig || hostConfig.isOffTheRecord === true;
+    const useSessionStorage = Root.Runtime.hostConfig.isOffTheRecord === true;
     const storageTypeForConsent =
         useSessionStorage ? Common.Settings.SettingStorageType.SESSION : Common.Settings.SettingStorageType.GLOBAL;
 
@@ -194,7 +198,7 @@ export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
 
     try {
       const normalizedUrl = this.#normalizeUrl(pageUrl);
-      const promises: Promise<void>[] = [];
+      const promises: Array<Promise<void>> = [];
 
       for (const pageScope of pageScopeList) {
         for (const deviceScope of DEVICE_SCOPE_LIST) {
@@ -232,7 +236,7 @@ export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
   }
 
   async getFieldDataForCurrentPageForTesting(): Promise<PageResult> {
-    return this.#getFieldDataForCurrentPage();
+    return await this.#getFieldDataForCurrentPage();
   }
 
   /**
@@ -384,8 +388,12 @@ export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     return 'ALL';
   }
 
+  resolveDeviceOptionToScope(option: DeviceOption): DeviceScope {
+    return option === 'AUTO' ? this.#getAutoDeviceScope() : option;
+  }
+
   getSelectedDeviceScope(): DeviceScope {
-    return this.fieldDeviceOption === 'AUTO' ? this.#getAutoDeviceScope() : this.fieldDeviceOption;
+    return this.resolveDeviceOptionToScope(this.fieldDeviceOption);
   }
 
   getSelectedScope(): Scope {

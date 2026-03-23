@@ -28,6 +28,8 @@ class PseudoElementData final : public GarbageCollected<PseudoElementData>,
       PseudoId,
       const AtomicString& view_transition_name = g_null_atom) const;
 
+  bool HasScrollButtonOrMarkerGroupPseudos() const;
+
   using PseudoElementVector = HeapVector<Member<PseudoElement>, 2>;
   PseudoElementVector GetPseudoElements() const;
 
@@ -102,7 +104,7 @@ class PseudoElementData final : public GarbageCollected<PseudoElementData>,
 
   Member<TransitionPseudoElementData> transition_data_;
 
-  // Column pseudo elements are created once per column (fragmentainer)
+  // Column pseudo-elements are created once per column (fragmentainer)
   // with style specified with ::column. They live here as array, since there is
   // no Element for column (fragmentainer), and they should appear somewhere for
   // focus and a11y.
@@ -213,6 +215,7 @@ inline void PseudoElementData::SetPseudoElement(
       break;
     case kPseudoIdViewTransition:
     case kPseudoIdViewTransitionGroup:
+    case kPseudoIdViewTransitionGroupChildren:
     case kPseudoIdViewTransitionImagePair:
     case kPseudoIdViewTransitionNew:
     case kPseudoIdViewTransitionOld:
@@ -284,6 +287,17 @@ inline PseudoElement* PseudoElementData::GetPseudoElement(
                             : nullptr;
   }
   return nullptr;
+}
+
+inline bool PseudoElementData::HasScrollButtonOrMarkerGroupPseudos() const {
+  // We exclude `generated_scroll_marker_` because this would be a control
+  // nested under a scroll marker group.
+  return generated_scroll_marker_group_before_ ||
+         generated_scroll_marker_group_after_ ||
+         generated_scroll_button_block_start_ ||
+         generated_scroll_button_inline_start_ ||
+         generated_scroll_button_inline_end_ ||
+         generated_scroll_button_block_end_;
 }
 
 inline PseudoElementData::PseudoElementVector

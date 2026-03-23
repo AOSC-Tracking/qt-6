@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLJSCOMPILEPASS_P_H
 #define QQMLJSCOMPILEPASS_P_H
@@ -180,11 +181,17 @@ public:
 
         void addReadRegister(int registerIndex, QQmlJSRegisterContent reg)
         {
-            const VirtualRegister &source = registers[registerIndex];
             VirtualRegister &target = m_readRegisters[registerIndex];
             target.content = reg;
-            target.canMove = source.canMove;
-            target.affectedBySideEffects = source.affectedBySideEffects;
+
+            const auto source = registers.find(registerIndex);
+            if (source == registers.end()) {
+                target.canMove = false;
+                target.affectedBySideEffects = false;
+            } else {
+                target.canMove = source->second.canMove;
+                target.affectedBySideEffects = source->second.affectedBySideEffects;
+            }
         }
 
         void addReadAccumulator(QQmlJSRegisterContent reg)

@@ -22,6 +22,7 @@
 
 namespace gpu {
 class GpuDriverBugWorkarounds;
+class DecoderContext;
 
 namespace gles2 {
 
@@ -79,6 +80,7 @@ class GPU_GLES2_EXPORT Renderbuffer : public base::RefCounted<Renderbuffer> {
   // Regenerates the object backing this client_id, creating a new service_id.
   // Also reattaches any framebuffers using this renderbuffer.
   bool RegenerateAndBindBackingObjectIfNeeded(
+      const DecoderContext* decoder,
       const GpuDriverBugWorkarounds& workarounds);
 
   void AddFramebufferAttachmentPoint(Framebuffer* framebuffer,
@@ -149,7 +151,7 @@ class GPU_GLES2_EXPORT Renderbuffer : public base::RefCounted<Renderbuffer> {
 class GPU_GLES2_EXPORT RenderbufferManager
     : public base::trace_event::MemoryDumpProvider {
  public:
-  RenderbufferManager(MemoryTracker* memory_tracker,
+  RenderbufferManager(scoped_refptr<MemoryTracker> memory_tracker,
                       GLint max_renderbuffer_size,
                       GLint max_samples,
                       FeatureInfo* feature_info);
@@ -213,7 +215,6 @@ class GPU_GLES2_EXPORT RenderbufferManager
   void StopTracking(Renderbuffer* renderbuffer);
 
   std::unique_ptr<MemoryTypeTracker> memory_type_tracker_;
-  raw_ptr<MemoryTracker> memory_tracker_;
 
   GLint max_renderbuffer_size_;
   GLint max_samples_;

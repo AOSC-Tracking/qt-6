@@ -36,7 +36,7 @@
 #include "base/feature_list.h"
 #include "base/synchronization/lock.h"
 #include "base/unguessable_token.h"
-#include "build/chromeos_buildflags.h"
+#include "build/build_config.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
@@ -305,7 +305,7 @@ v8::Local<v8::Context> MainThreadDebugger::ensureDefaultContextInGroup(
   // CrOS and this check failed when tested on an experimental builder. Revert
   // https://crrev.com/c/2727867 to enable it.
   // See go/chrome-dcheck-on-cros or http://crbug.com/1113456 for more details.
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_CHROMEOS)
   DCHECK(!frame->IsProvisional());
 #endif
   if (frame->IsProvisional())
@@ -378,13 +378,12 @@ void MainThreadDebugger::consoleAPIMessage(
     return;
   // TODO(dgozman): we can save a copy of message and url here by making
   // FrameConsole work with StringView.
-  std::unique_ptr<SourceLocation> location = std::make_unique<SourceLocation>(
+  SourceLocation* location = MakeGarbageCollected<SourceLocation>(
       ToCoreString(url), String(), line_number, column_number,
       stack_trace ? stack_trace->clone() : nullptr, 0);
   frame->Console().ReportMessageToClient(
       mojom::ConsoleMessageSource::kConsoleApi,
-      V8MessageLevelToMessageLevel(level), ToCoreString(message),
-      location.get());
+      V8MessageLevelToMessageLevel(level), ToCoreString(message), location);
 }
 
 void MainThreadDebugger::consoleClear(int context_group_id) {

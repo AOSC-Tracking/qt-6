@@ -117,6 +117,18 @@ extern const char kDefaultBrowserPromoRemindMeLater[];
 // The non-modal default browser promo from omnibox paste was triggered.
 extern const char kNonModalDefaultBrowserPromoUrlPasteTrigger[];
 
+// The non-modal default browser promo from App switcher was triggered.
+extern const char kNonModalDefaultBrowserPromoAppSwitcherTrigger[];
+
+// The non-modal default browser promo from share was triggered.
+extern const char kNonModalDefaultBrowserPromoShareTrigger[];
+
+// The non-modal sign-in promo was triggered for save password.
+extern const char kNonModalSigninPromoPasswordTrigger[];
+
+// The non-modal sign-in promo was triggered for add bookmark.
+extern const char kNonModalSigninPromoBookmarkTrigger[];
+
 // The Password Manager widget promo was triggered.
 extern const char kPasswordManagerWidgetPromoTriggered[];
 
@@ -161,14 +173,11 @@ extern const char kOpenUrlFromOmnibox[];
 // The history item on overflow menu is used.
 extern const char kHistoryOnOverflowMenuUsed[];
 
+// The user has opened Settings via the Overflow Menu.
+extern const char kSettingsOnOverflowMenuUsed[];
+
 // The user has triggered the Lens button in the Omnibox keyboard.
 extern const char kLensButtonKeyboardUsed[];
-
-// The user has triggered Parcel Tracking.
-extern const char kParcelTrackingTriggered[];
-
-// The user has tracked a parcel.
-extern const char kParcelTracked[];
 
 // The user has more than one gesture to refresh a page in iOS. This includes
 // but not limited to re-typing the URL in omnibox and refreshing from context
@@ -183,6 +192,9 @@ extern const char kIOSPullToRefreshIPHDismissButtonTapped[];
 
 // The user has tapped "incognito" on the page control in the tab grid.
 extern const char kIOSIncognitoPageControlTapped[];
+
+// The sign-in fullscreen promo was triggered.
+extern const char kIOSSigninFullscreenPromoTrigger[];
 
 // The user has swiped right from regular tab grid to the incognito tab grid.
 extern const char kIOSSwipeRightForIncognitoUsed[];
@@ -281,11 +293,56 @@ extern const char kHomeCustomizationMenuUsed[];
 // The user has tapped on the lens overlay entrypoint.
 extern const char kLensOverlayEntrypointUsed[];
 
+// The user has tapped the Lens button.
+extern const char kIOSLensButtonUsed[];
+
 // The user has scheduled a tab reminder.
 extern const char kIOSTabReminderScheduled[];
 
 // The Reminder Notifications Overflow Menu Bubble IPH was triggered.
 extern const char kIOSReminderNotificationsOverflowMenuBubbleIPHTrigger[];
+
+// The user tapped the "Set a Reminder" item in the overflow menu.
+extern const char kIOSOverflowMenuSetTabReminderTapped[];
+
+// The Reminder Notifications Overflow Menu New Badge IPH was triggered.
+extern const char kIOSReminderNotificationsOverflowMenuNewBadgeIPHTrigger[];
+
+// The user has executed an action that is a trigger for the Auto-deletion IPH.
+extern const char kIOSDownloadAutoDeletionIPHCriterionMet[];
+
+// The user has scrolled on the NTP while the feed is visible.
+extern const char kIOSScrolledOnFeed[];
+
+// The user has taken action on the feed.
+extern const char kIOSActionOnFeed[];
+
+// The Welcome Back promo was triggered.
+extern const char kIOSWelcomeBackPromoTrigger[];
+
+// The Welcome Back promo was used.
+extern const char kIOSWelcomeBackPromoUsed[];
+
+// The BWG promo was triggered.
+extern const char kIOSBWGPromoTrigger[];
+
+// The BWG promo was used.
+extern const char kIOSBWGPromoUsed[];
+
+// The page action menu IPH(In-Product Help) was triggered.
+extern const char kIOSPageActionMenuIPHTrigger[];
+
+// The page action menu IPH(In-Product Help) was used.
+extern const char kIOSPageActionMenuIPHUsed[];
+
+// The entry point of the import Safari data workflow has been displayed.
+extern const char kIOSSafariImportRemindMeLater[];
+
+// Event fired when the First Run Experience (FRE) is completed on iOS.
+extern const char kIOSFirstRunComplete[];
+
+// Event fired after the quiet period following FRE completion has elapsed.
+extern const char kIOSFREBadgeHoldbackPeriodElapsed[];
 
 #endif  // BUILDFLAG(IS_IOS)
 

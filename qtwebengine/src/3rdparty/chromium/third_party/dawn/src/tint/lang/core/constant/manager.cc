@@ -31,6 +31,7 @@
 #include "src/tint/lang/core/constant/invalid.h"
 #include "src/tint/lang/core/constant/scalar.h"
 #include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/core/constant/string.h"
 #include "src/tint/lang/core/type/abstract_float.h"
 #include "src/tint/lang/core/type/abstract_int.h"
 #include "src/tint/lang/core/type/array.h"
@@ -42,6 +43,7 @@
 #include "src/tint/lang/core/type/manager.h"
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/lang/core/type/u32.h"
+#include "src/tint/lang/core/type/u64.h"
 #include "src/tint/lang/core/type/u8.h"
 #include "src/tint/lang/core/type/vector.h"
 #include "src/tint/utils/containers/predicates.h"
@@ -101,6 +103,10 @@ const Scalar<u32>* Manager::Get(u32 value) {
     return Get<Scalar<u32>>(types.u32(), value);
 }
 
+const Scalar<u64>* Manager::Get(u64 value) {
+    return Get<Scalar<u64>>(types.u64(), value);
+}
+
 const Scalar<i8>* Manager::Get(i8 value) {
     return Get<Scalar<i8>>(types.i8(), value);
 }
@@ -127,6 +133,10 @@ const Scalar<AFloat>* Manager::Get(AFloat value) {
 
 const Scalar<AInt>* Manager::Get(AInt value) {
     return Get<Scalar<AInt>>(types.AInt(), value);
+}
+
+const constant::String* Manager::Get(std::string_view value) {
+    return Get<String>(types.String(), value);
 }
 
 const Value* Manager::Zero(const core::type::Type* type) {
@@ -170,6 +180,9 @@ const Value* Manager::Zero(const core::type::Type* type) {
         [&](const core::type::AbstractFloat*) { return Get(AFloat(0)); },  //
         [&](const core::type::I32*) { return Get(i32(0)); },               //
         [&](const core::type::U32*) { return Get(u32(0)); },               //
+        [&](const core::type::I8*) { return Get(i8(0)); },                 //
+        [&](const core::type::U8*) { return Get(u8(0)); },                 //
+        [&](const core::type::U64*) { return Get(u64(0)); },               //
         [&](const core::type::F32*) { return Get(f32(0)); },               //
         [&](const core::type::F16*) { return Get(f16(0)); },               //
         [&](const core::type::Bool*) { return Get(false); },               //

@@ -5,7 +5,6 @@
 #include "components/policy/content/safe_sites_navigation_throttle.h"
 
 #include "base/functional/bind.h"
-#include "components/policy/content/policy_blocklist_metrics.h"
 #include "components/policy/content/safe_search_service.h"
 #include "components/url_matcher/url_util.h"
 #include "content/public/browser/navigation_handle.h"
@@ -14,10 +13,10 @@
 // Use of Unretained for is safe because it is called synchronously from this
 // object.
 SafeSitesNavigationThrottle::SafeSitesNavigationThrottle(
-    content::NavigationHandle* navigation_handle,
+    content::NavigationThrottleRegistry& registry,
     content::BrowserContext* context,
     std::optional<std::string_view> safe_sites_error_page_content)
-    : Client(navigation_handle),
+    : Client(registry),
       safe_search_service_(SafeSearchFactory::GetForBrowserContext(context)),
       safe_sites_error_page_content_(std::move(safe_sites_error_page_content)) {
   SetDeferredResultCallback(base::BindRepeating(
@@ -56,10 +55,6 @@ SafeSitesNavigationThrottle::WillStartRequest() {
       effective_url,
       base::BindOnce(&SafeSitesNavigationThrottle::CheckSafeSearchCallback,
                      weak_ptr_factory_.GetWeakPtr()));
-  if (PolicyBlocklistMetrics* metrics =
-      PolicyBlocklistMetrics::Get(*navigation_handle())) {
-    metrics->cache_hit = synchronous;
-  }
   if (!synchronous) {
     deferred_ = true;
     return DEFER;

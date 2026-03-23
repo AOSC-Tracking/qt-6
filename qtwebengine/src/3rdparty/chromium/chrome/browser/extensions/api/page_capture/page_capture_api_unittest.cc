@@ -31,7 +31,7 @@ class PageCaptureApiUnitTest : public ExtensionServiceTestBase {
     Browser::CreateParams params(profile(), true);
     params.type = Browser::TYPE_NORMAL;
     params.window = browser_window_.get();
-    browser_ = std::unique_ptr<Browser>(Browser::Create(params));
+    browser_ = Browser::DeprecatedCreateOwnedForTesting(params);
   }
 
   void TearDown() override {
@@ -87,7 +87,8 @@ TEST_F(PageCaptureApiUnitTest, PageNavigationDuringSaveAsMHTML) {
   ASSERT_TRUE(results);
   EXPECT_TRUE(results->empty()) << "Did not expect a result";
   CHECK(function->response_type());
-  EXPECT_EQ(ExtensionFunction::FAILED, *function->response_type());
+  EXPECT_EQ(ExtensionFunction::ResponseType::kFailed,
+            *function->response_type());
   EXPECT_EQ("Tab navigated before capture could complete.",
             function->GetError());
 

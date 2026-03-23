@@ -5,6 +5,7 @@
 #include <QQmlApplicationEngine>
 #include <QCommandLineParser>
 #include <QFile>
+#include <QFileInfo>
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QtQuickVectorImageGenerator/private/qquickitemgenerator_p.h>
@@ -13,18 +14,18 @@
 #include <QtLottie/private/qlottieroot_p.h>
 #include <QtLottieVectorImageGenerator/private/qlottievisitor_p.h>
 
-#define ENABLE_GUI
+#include <QtGui/qpa/qplatformintegrationfactory_p.h>
+#include <QtGui/private/qguiapplication_p.h>
 
 int main(int argc, char *argv[])
 {
-#ifdef ENABLE_GUI
-    QGuiApplication app(argc, argv);
-#else
-    QCoreApplication app(argc, argv);
-#endif
+
+    QStringList arguments;
+    for (int i = 0; i < argc; ++i)
+        arguments.append(QString::fromLocal8Bit(argv[i]));
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("Lottie to QML converter [tech preview]");
+    parser.setApplicationDescription("Lottie to QML converter");
     parser.addHelpOption();
     parser.addPositionalArgument("input", QCoreApplication::translate("main", "Lottie file to read."));
     parser.addPositionalArgument("output", QCoreApplication::translate("main", "QML file to write."), "[output]");
@@ -59,7 +60,7 @@ int main(int argc, char *argv[])
                                                                                    "will be copied to files with unique identifiers. By default, the files will be prefixed "
                                                                                    "with \"lottie_asset_\". Set the asset output prefix to override the prefix."),
                                                QCoreApplication::translate("main", "prefix"));
-    assetOutputPrefixOption.setDefaultValue(QLatin1String("lottie_asset_"));
+    assetOutputPrefixOption.setDefaultValue(QStringLiteral("lottie_asset_"));
     parser.addOption(assetOutputPrefixOption);
 
     QCommandLineOption keepPathsOption("keep-external-paths",
@@ -70,24 +71,30 @@ int main(int argc, char *argv[])
                                                                            "this option is set."));
     parser.addOption(keepPathsOption);
 
-#ifdef ENABLE_GUI
     QCommandLineOption guiOption({ "v", "view" },
                                  QCoreApplication::translate("main", "Display the generated QML in a window. This is the default behavior if no "
                                                                      "output file is specified."));
     parser.addOption(guiOption);
-#endif
-    parser.process(app);
+    parser.process(arguments);
     const QStringList args = parser.positionalArguments();
     if (args.size() < 1) {
         parser.showHelp(1);
     }
 
     const QString inFileName = args.at(0);
-
-    QString commentString = QLatin1String("Generated from Lottie file %1").arg(inFileName);
-    const QString importString = QLatin1String("Qt.labs.lottieqt.VectorImageHelpers");
-
     const auto outFileName = args.size() > 1 ? args.at(1) : QString{};
+
+    const bool needsGui = outFileName.isEmpty() || parser.isSet(guiOption);
+    const bool useMinimalPlugin = qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")
+                                  && !needsGui;
+    if (useMinimalPlugin)
+        qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("minimal"));
+
+    QGuiApplication app(argc, argv);
+
+    QString commentString = QStringLiteral("Generated from Lottie file %1").arg(QFileInfo(inFileName).fileName());
+    const QString importString = QStringLiteral("Qt.labs.lottieqt.VectorImageHelpers");
+
     const auto typeName = parser.value(typeNameOption);
     const auto assetOutputDirectory = parser.value(assetOutputDirectoryOption);
     const auto assetOutputPrefix = parser.value(assetOutputPrefixOption);
@@ -121,7 +128,7 @@ int main(int argc, char *argv[])
     if (f.open(QIODevice::ReadOnly)) {
         QByteArray jsonSource = f.readAll();
 
-        if (!root.parseSource(jsonSource, inFileName)) {
+        if (root.parseSource(jsonSource, QUrl::fromLocalFile(inFileName)) >= 0) {
             root.setStructureDumping(true);
             for (QLottieBase *elem : root.children()) {
                 if (elem->active(frameNo))
@@ -134,8 +141,7 @@ int main(int argc, char *argv[])
         }
     }
 
-#if defined(ENABLE_GUI)
-    if (ok && (parser.isSet(guiOption) || outFileName.isEmpty())) {
+    if (needsGui && ok) {
         app.setOrganizationName("QtProject");
         const QUrl url(QStringLiteral("qrc:/main.qml"));
         QQmlApplicationEngine engine;
@@ -155,7 +161,6 @@ int main(int argc, char *argv[])
         engine.load(url);
         return app.exec();
     }
-#endif
 
     return ok ? 0 : 1;
 }

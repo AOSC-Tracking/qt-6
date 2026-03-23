@@ -190,7 +190,7 @@ void SecretPortalKeyProvider::OnFdReadable() {
   }
   if (bytes_read > 0) {
     auto buffer_span =
-        base::span(buffer).subspan(0u, base::checked_cast<size_t>(bytes_read));
+        base::span(buffer).first(base::checked_cast<size_t>(bytes_read));
     secret_.insert(secret_.end(), buffer_span.begin(), buffer_span.end());
     return;
   }
@@ -232,7 +232,14 @@ void SecretPortalKeyProvider::Finalize(InitStatus init_status,
     return;
   }
 
-  std::move(key_callback_).Run(tag, std::move(key));
+  if (key.has_value()) {
+    std::move(key_callback_).Run(tag, std::move(*key));
+  } else {
+    // TODO(crbug.com/389016528): Indicate whether this is a temporary or
+    // permanent failure depending on the `init_status`.
+    std::move(key_callback_)
+        .Run(tag, base::unexpected(KeyError::kTemporarilyUnavailable));
+  }
 
   read_watcher_.reset();
   read_fd_.reset();
@@ -240,9 +247,9 @@ void SecretPortalKeyProvider::Finalize(InitStatus init_status,
 
   base::UmaHistogramEnumeration(kUmaInitStatusEnum, init_status);
 
-  std::string desktop;
-  base::Environment::Create()->GetVar(base::nix::kXdgCurrentDesktopEnvVar,
-                                      &desktop);
+  std::string desktop = base::Environment::Create()
+                            ->GetVar(base::nix::kXdgCurrentDesktopEnvVar)
+                            .value_or(std::string());
 
   const bool success = init_status == InitStatus::kSuccess;
 

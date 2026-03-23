@@ -1,9 +1,11 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "androidjniaccessibility.h"
 #include "androidjnimain.h"
 #include "qandroidplatformintegration.h"
+#include "qandroidplatformwindow.h"
 #include "qpa/qplatformaccessibility.h"
 #include <QtGui/private/qaccessiblebridgeutils_p.h>
 #include "qguiapplication.h"
@@ -40,7 +42,13 @@ namespace QtAndroidAccessibility
     static jmethodID m_setHeadingMethodID = 0;
     static jmethodID m_setScrollableMethodID = 0;
     static jmethodID m_setTextSelectionMethodID = 0;
+    static jmethodID m_setRangeInfoMethodID = 0;
     static jmethodID m_setVisibleToUserMethodID = 0;
+
+    static int RANGE_TYPE_INT = 0;
+    static int RANGE_TYPE_FLOAT = 0;
+    static int RANGE_TYPE_PERCENT = 0;
+    static int RANGE_TYPE_INDETERMINATE = 0;
 
     static bool m_accessibilityActivated = false;
 
@@ -63,6 +71,12 @@ namespace QtAndroidAccessibility
     template <typename Func, typename Ret>
     void runInObjectContext(QObject *context, Func &&func, Ret *retVal)
     {
+        if (QAndroidPlatformWindow::surfacesCount() == 0) {
+            __android_log_print(ANDROID_LOG_WARN, m_qtTag,
+                "Could not run accessibility call in object context, no valid surface.");
+            return;
+        }
+
         QtAndroidPrivate::AndroidDeadlockProtector protector(
             u"QtAndroidAccessibility::runInObjectContext()"_s);
         if (!protector.acquire()) {
@@ -469,7 +483,6 @@ namespace QtAndroidAccessibility
         case QAccessible::Role::Link:
         {
             if (state.checkable)
-                // There is also a android.widget.Switch for which we have no match.
                 return QStringLiteral("android.widget.ToggleButton");
             return QStringLiteral("android.widget.Button");
         }
@@ -477,6 +490,8 @@ namespace QtAndroidAccessibility
             // As of android/accessibility/utils/Role.java::getRole a CheckBox
             // is NOT android.widget.CheckBox
             return QStringLiteral("android.widget.CompoundButton");
+        case QAccessible::Role::Switch:
+            return QStringLiteral("android.widget.Switch");
         case QAccessible::Role::Clock:
             return QStringLiteral("android.widget.TextClock");
         case QAccessible::Role::ComboBox:
@@ -508,7 +523,6 @@ namespace QtAndroidAccessibility
             return QStringLiteral("android.widget.RadioButton");
         case QAccessible::Role::ProgressBar:
             return QStringLiteral("android.widget.ProgressBar");
-            // Range information need to be filled to announce percentages
         case QAccessible::Role::SpinBox:
             return QStringLiteral("android.widget.NumberPicker");
         case QAccessible::Role::WebDocument:
@@ -633,6 +647,29 @@ namespace QtAndroidAccessibility
         return env->NewString((jchar*) desc.constData(), (jsize) desc.size());
     }
 
+    static QString languageTag_helper(int objectId)
+    {
+        QAccessibleInterface *iface = interfaceFromId(objectId);
+        if (!iface || !iface->isValid())
+            return QString();
+
+        QAccessibleAttributesInterface *attributesIface = iface->attributesInterface();
+        if (!attributesIface || !attributesIface->attributeKeys().contains(QAccessible::Attribute::Locale))
+            return QString();
+
+        return attributesIface->attributeValue(QAccessible::Attribute::Locale).toLocale().bcp47Name();
+    }
+
+    static jstring languageTag(JNIEnv *env, jobject /*thiz*/, jint objectId)
+    {
+        QString tag;
+        if (m_accessibilityContext) {
+            runInObjectContext(m_accessibilityContext, [objectId]() {
+                return languageTag_helper(objectId);
+            }, &tag);
+        }
+        return env->NewString((jchar*)tag.constData(), (jsize)tag.size());
+    }
 
     struct NodeInfo
     {
@@ -645,6 +682,11 @@ namespace QtAndroidAccessibility
         bool hasTextSelection = false;
         int selectionStart = 0;
         int selectionEnd = 0;
+        bool hasValue = false;
+        QVariant minValue = 0;
+        QVariant maxValue = 0;
+        QVariant currentValue = 0;
+        QVariant valueStepSize = 0;
     };
 
     static NodeInfo populateNode_helper(int objectId)
@@ -662,6 +704,14 @@ namespace QtAndroidAccessibility
             if (textIface && (textIface->selectionCount() > 0)) {
                 info.hasTextSelection = true;
                 textIface->selection(0, &info.selectionStart, &info.selectionEnd);
+            }
+            QAccessibleValueInterface *valueInterface = iface->valueInterface();
+            if (valueInterface) {
+                info.hasValue = true;
+                info.minValue = valueInterface->minimumValue();
+                info.maxValue = valueInterface->maximumValue();
+                info.currentValue = valueInterface->currentValue();
+                info.valueStepSize = valueInterface->minimumStepSize();
             }
         }
         return info;
@@ -685,8 +735,9 @@ namespace QtAndroidAccessibility
         env->CallVoidMethod(node, m_setClassNameMethodID, jrole);
 
         const bool hasClickableAction =
-                info.actions.contains(QAccessibleActionInterface::pressAction()) ||
-                info.actions.contains(QAccessibleActionInterface::toggleAction());
+                (info.actions.contains(QAccessibleActionInterface::pressAction())
+                 || info.actions.contains(QAccessibleActionInterface::toggleAction()))
+                && !(info.role == QAccessible::StaticText || info.role == QAccessible::Heading);
         const bool hasIncreaseAction =
                 info.actions.contains(QAccessibleActionInterface::increaseAction());
         const bool hasDecreaseAction =
@@ -695,6 +746,37 @@ namespace QtAndroidAccessibility
         if (info.hasTextSelection && m_setTextSelectionMethodID) {
             env->CallVoidMethod(node, m_setTextSelectionMethodID, info.selectionStart,
                                 info.selectionEnd);
+        }
+
+        if (info.hasValue && m_setRangeInfoMethodID) {
+            int valueType = info.currentValue.typeId();
+            jint rangeType = RANGE_TYPE_INDETERMINATE;
+            switch (valueType) {
+            case QMetaType::Float:
+            case QMetaType::Double:
+                rangeType = RANGE_TYPE_FLOAT;
+                break;
+            case QMetaType::Int:
+                rangeType = RANGE_TYPE_INT;
+                break;
+            }
+
+            float min = info.minValue.toFloat();
+            float max = info.maxValue.toFloat();
+            float current = info.currentValue.toFloat();
+            if (info.role == QAccessible::ProgressBar) {
+                rangeType = RANGE_TYPE_PERCENT;
+                current = 100 * (current - min) / (max - min);
+                min = 0.0f;
+                max = 100.0f;
+            }
+
+            QJniObject rangeInfo("android/view/accessibility/AccessibilityNodeInfo$RangeInfo",
+                                 "(IFFF)V", rangeType, min, max, current);
+
+            if (rangeInfo.isValid()) {
+                env->CallVoidMethod(node, m_setRangeInfoMethodID, rangeInfo.object());
+            }
         }
 
         env->CallVoidMethod(node, m_setCheckableMethodID, (bool)info.state.checkable);
@@ -737,6 +819,7 @@ namespace QtAndroidAccessibility
         {"childIdListForAccessibleObject", "(I)[I", (jintArray)childIdListForAccessibleObject},
         {"parentId", "(I)I", (void*)parentId},
         {"descriptionForAccessibleObject", "(I)Ljava/lang/String;", (jstring)descriptionForAccessibleObject},
+        {"languageTag", "(I)Ljava/lang/String;", (jstring)languageTag},
         {"screenRect", "(I)Landroid/graphics/Rect;", (jobject)screenRect},
         {"hitTest", "(FF)I", (void*)hitTest},
         {"populateNode", "(ILandroid/view/accessibility/AccessibilityNodeInfo;)Z", (void*)populateNode},
@@ -752,6 +835,14 @@ namespace QtAndroidAccessibility
         __android_log_print(ANDROID_LOG_FATAL, QtAndroid::qtTagText(), QtAndroid::methodErrorMsgFmt(), METHOD_NAME, METHOD_SIGNATURE); \
         return false; \
     }
+
+#define CHECK_AND_INIT_STATIC_FIELD(TYPE, VAR, CLASS, FIELD_NAME)             \
+    if (env.findStaticField<TYPE>(CLASS, FIELD_NAME) == nullptr) {            \
+        __android_log_print(ANDROID_LOG_FATAL, QtAndroid::qtTagText(),        \
+                            QtAndroid::staticFieldErrorMsgFmt(), FIELD_NAME); \
+        return false;                                                         \
+    }                                                                         \
+    VAR = QJniObject::getStaticField<TYPE>(CLASS, FIELD_NAME);
 
     bool registerNatives(QJniEnvironment &env)
     {
@@ -778,6 +869,21 @@ namespace QtAndroidAccessibility
         GET_AND_CHECK_STATIC_METHOD(m_setScrollableMethodID, nodeInfoClass, "setScrollable", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setVisibleToUserMethodID, nodeInfoClass, "setVisibleToUser", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setTextSelectionMethodID, nodeInfoClass, "setTextSelection", "(II)V");
+        GET_AND_CHECK_STATIC_METHOD(
+                m_setRangeInfoMethodID, nodeInfoClass, "setRangeInfo",
+                "(Landroid/view/accessibility/AccessibilityNodeInfo$RangeInfo;)V");
+
+        jclass rangeInfoClass =
+                env->FindClass("android/view/accessibility/AccessibilityNodeInfo$RangeInfo");
+        CHECK_AND_INIT_STATIC_FIELD(int, RANGE_TYPE_INT, rangeInfoClass, "RANGE_TYPE_INT");
+        CHECK_AND_INIT_STATIC_FIELD(int, RANGE_TYPE_FLOAT, rangeInfoClass, "RANGE_TYPE_FLOAT");
+        CHECK_AND_INIT_STATIC_FIELD(int, RANGE_TYPE_PERCENT, rangeInfoClass, "RANGE_TYPE_PERCENT");
+        if (QtAndroidPrivate::androidSdkVersion() >= 36) {
+            CHECK_AND_INIT_STATIC_FIELD(int, RANGE_TYPE_INDETERMINATE, rangeInfoClass,
+                                        "RANGE_TYPE_INDETERMINATE");
+        } else {
+            RANGE_TYPE_INDETERMINATE = RANGE_TYPE_FLOAT;
+        }
 
         return true;
     }

@@ -16,7 +16,6 @@
 #include "base/functional/bind.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/unguessable_token.h"
-#include "media/base/android/android_util.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/media_drm_key_type.h"
 
@@ -53,7 +52,6 @@ void MediaDrmStorageBridge::Initialize(const CreateStorageCB& create_storage_cb,
 
 void MediaDrmStorageBridge::OnProvisioned(
     JNIEnv* env,
-    const JavaParamRef<jobject>& j_storage,
     // Callback<Boolean>
     const JavaParamRef<jobject>& j_callback) {
   DCHECK(impl_);
@@ -61,16 +59,16 @@ void MediaDrmStorageBridge::OnProvisioned(
       FROM_HERE,
       base::BindOnce(
           &MediaDrmStorage::OnProvisioned, impl_->AsWeakPtr(),
-          base::BindOnce(&MediaDrmStorageBridge::RunAndroidBoolCallback,
-                         // Bind callback to WeakPtr in case callback is called
-                         // after object is deleted.
-                         weak_factory_.GetWeakPtr(),
-                         CreateJavaObjectPtr(j_callback.obj()))));
+          base::BindOnce(
+              &MediaDrmStorageBridge::RunAndroidBoolCallback,
+              // Bind callback to WeakPtr in case callback is called
+              // after object is deleted.
+              weak_factory_.GetWeakPtr(),
+              base::android::ScopedJavaGlobalRef<jobject>(env, j_callback))));
 }
 
 void MediaDrmStorageBridge::OnLoadInfo(
     JNIEnv* env,
-    const JavaParamRef<jobject>& j_storage,
     const JavaParamRef<jbyteArray>& j_session_id,
     // Callback<PersistentInfo>
     const JavaParamRef<jobject>& j_callback) {
@@ -79,17 +77,17 @@ void MediaDrmStorageBridge::OnLoadInfo(
   JavaByteArrayToString(env, j_session_id, &session_id);
   task_runner_->PostTask(
       FROM_HERE,
-      base::BindOnce(
-          &MediaDrmStorage::LoadPersistentSession, impl_->AsWeakPtr(),
-          session_id,
-          base::BindOnce(&MediaDrmStorageBridge::OnSessionDataLoaded,
-                         weak_factory_.GetWeakPtr(),
-                         CreateJavaObjectPtr(j_callback.obj()), session_id)));
+      base::BindOnce(&MediaDrmStorage::LoadPersistentSession,
+                     impl_->AsWeakPtr(), session_id,
+                     base::BindOnce(&MediaDrmStorageBridge::OnSessionDataLoaded,
+                                    weak_factory_.GetWeakPtr(),
+                                    base::android::ScopedJavaGlobalRef<jobject>(
+                                        env, j_callback),
+                                    session_id)));
 }
 
 void MediaDrmStorageBridge::OnSaveInfo(
     JNIEnv* env,
-    const JavaParamRef<jobject>& j_storage,
     const JavaParamRef<jobject>& j_persist_info,
     // Callback<Boolean>
     const JavaParamRef<jobject>& j_callback) {
@@ -120,14 +118,14 @@ void MediaDrmStorageBridge::OnSaveInfo(
           session_id,
           MediaDrmStorage::SessionData(std::move(key_set_id), std::move(mime),
                                        key_type),
-          base::BindOnce(&MediaDrmStorageBridge::RunAndroidBoolCallback,
-                         weak_factory_.GetWeakPtr(),
-                         CreateJavaObjectPtr(j_callback.obj()))));
+          base::BindOnce(
+              &MediaDrmStorageBridge::RunAndroidBoolCallback,
+              weak_factory_.GetWeakPtr(),
+              base::android::ScopedJavaGlobalRef<jobject>(env, j_callback))));
 }
 
 void MediaDrmStorageBridge::OnClearInfo(
     JNIEnv* env,
-    const JavaParamRef<jobject>& j_storage,
     const JavaParamRef<jbyteArray>& j_session_id,
     // Callback<Boolean>
     const JavaParamRef<jobject>& j_callback) {
@@ -139,14 +137,16 @@ void MediaDrmStorageBridge::OnClearInfo(
       base::BindOnce(
           &MediaDrmStorage::RemovePersistentSession, impl_->AsWeakPtr(),
           std::move(session_id),
-          base::BindOnce(&MediaDrmStorageBridge::RunAndroidBoolCallback,
-                         weak_factory_.GetWeakPtr(),
-                         CreateJavaObjectPtr(j_callback.obj()))));
+          base::BindOnce(
+              &MediaDrmStorageBridge::RunAndroidBoolCallback,
+              weak_factory_.GetWeakPtr(),
+              base::android::ScopedJavaGlobalRef<jobject>(env, j_callback))));
 }
 
-void MediaDrmStorageBridge::RunAndroidBoolCallback(JavaObjectPtr j_callback,
-                                                   bool success) {
-  RunBooleanCallbackAndroid(*j_callback, success);
+void MediaDrmStorageBridge::RunAndroidBoolCallback(
+    base::android::ScopedJavaGlobalRef<jobject> j_callback,
+    bool success) {
+  RunBooleanCallbackAndroid(j_callback, success);
 }
 
 void MediaDrmStorageBridge::OnInitialized(
@@ -178,11 +178,11 @@ void MediaDrmStorageBridge::OnInitialized(
 }
 
 void MediaDrmStorageBridge::OnSessionDataLoaded(
-    JavaObjectPtr j_callback,
+    const base::android::ScopedJavaGlobalRef<jobject>& j_callback,
     const std::string& session_id,
     std::unique_ptr<MediaDrmStorage::SessionData> session_data) {
   if (!session_data) {
-    RunObjectCallbackAndroid(*j_callback, ScopedJavaLocalRef<jobject>());
+    RunObjectCallbackAndroid(j_callback, nullptr);
     return;
   }
 
@@ -193,7 +193,7 @@ void MediaDrmStorageBridge::OnSessionDataLoaded(
   ScopedJavaLocalRef<jstring> j_mime =
       ConvertUTF8ToJavaString(env, session_data->mime_type);
 
-  RunObjectCallbackAndroid(*j_callback,
+  RunObjectCallbackAndroid(j_callback,
                            Java_PersistentInfo_create(
                                env, j_eme_id, j_key_set_id, j_mime,
                                static_cast<uint32_t>(session_data->key_type)));

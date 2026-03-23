@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // Portions copyright 2015 The Chromium Embedded Framework Authors.
 // Portions copyright 2014 The Chromium Authors. All rights reserved.
@@ -12,6 +13,7 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
+#include "base/notimplemented.h"
 #include "base/path_service.h"
 #include "base/task/thread_pool.h"
 #include "base/memory/ref_counted_memory.h"
@@ -21,6 +23,8 @@
 #include "content/public/browser/render_frame_host.h"
 #include "extensions/browser/api/core_extensions_browser_api_provider.h"
 #include "extensions/browser/api/extensions_api_client.h"
+#include "extensions/browser/api/file_system/file_system_delegate.h"
+#include "extensions/browser/api/messaging/messaging_delegate.h"
 #include "extensions/browser/api/runtime/runtime_api_delegate.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_host_delegate.h"
@@ -241,16 +245,22 @@ public:
 };
 
 ExtensionsBrowserClientQt::ExtensionsBrowserClientQt()
-    : api_client_(new ExtensionsAPIClientQt)
-    , resource_manager_(new ComponentExtensionResourceManagerQt)
 {
-    AddAPIProvider(std::make_unique<CoreExtensionsBrowserAPIProvider>());
-    AddAPIProvider(std::make_unique<ChromeExtensionsBrowserAPIProvider>());
-    AddAPIProvider(std::make_unique<QtWebEngineExtensionsBrowserAPIProvider>());
 }
 
 ExtensionsBrowserClientQt::~ExtensionsBrowserClientQt()
 {
+}
+
+void ExtensionsBrowserClientQt::Init()
+{
+    Q_ASSERT(!api_client_);
+    api_client_ = std::make_unique<ExtensionsAPIClientQt>();
+    resource_manager_ = std::make_unique<ComponentExtensionResourceManagerQt>();
+
+    AddAPIProvider(std::make_unique<CoreExtensionsBrowserAPIProvider>());
+    AddAPIProvider(std::make_unique<ChromeExtensionsBrowserAPIProvider>());
+    AddAPIProvider(std::make_unique<QtWebEngineExtensionsBrowserAPIProvider>());
 }
 
 bool ExtensionsBrowserClientQt::IsShuttingDown()

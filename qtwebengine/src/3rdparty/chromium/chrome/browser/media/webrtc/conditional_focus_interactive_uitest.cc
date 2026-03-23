@@ -10,7 +10,6 @@
 #include "base/strings/to_string.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "chrome/browser/media/webrtc/webrtc_browsertest_base.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -334,8 +333,8 @@ IN_PROC_BROWSER_TEST_F(ConditionalFocusInteractiveUiTest, FocusBeforeCapture) {
   EXPECT_TRUE(WaitForFocusSwitchToCapturedTab());
 }
 
-// TODO(crbug.com/40913269): Flaky on a TSan bot.
-#if BUILDFLAG(IS_LINUX) && defined(THREAD_SANITIZER)
+// TODO(crbug.com/40913269): Flaky on a TSan and mac bots.
+#if (BUILDFLAG(IS_LINUX) && defined(THREAD_SANITIZER)) || BUILDFLAG(IS_MAC)
 #define MAYBE_NoFocusBeforeCapture DISABLED_NoFocusBeforeCapture
 #else
 #define MAYBE_NoFocusBeforeCapture NoFocusBeforeCapture

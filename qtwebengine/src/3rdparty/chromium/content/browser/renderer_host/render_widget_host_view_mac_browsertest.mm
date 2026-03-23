@@ -5,6 +5,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 
 #include <string>
+#include <string_view>
 
 #include "base/functional/bind.h"
 #import "base/mac/mac_util.h"
@@ -83,8 +84,8 @@ class TextCallbackWaiter {
 
   const std::u16string& text() const { return text_; }
 
-  void GetText(const std::u16string& text) {
-    text_ = text;
+  void GetText(std::u16string_view text) {
+    text_ = std::u16string(text);
     run_loop_.Quit();
   }
 
@@ -198,8 +199,16 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewMacTest, UpdateInputFlags) {
               blink::kWebTextInputFlagAutocorrectOff);
 }
 
+// TODO(crbug.com/421820726): Enable the test.
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_InputTextPreventedSyncsCursorLocation \
+  DISABLED_InputTextPreventedSyncsCursorLocation
+#else
+#define MAYBE_InputTextPreventedSyncsCursorLocation \
+  InputTextPreventedSyncsCursorLocation
+#endif
 IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewMacTest,
-                       InputTextPreventedSyncsCursorLocation) {
+                       MAYBE_InputTextPreventedSyncsCursorLocation) {
   class InputMethodObserver {};
 
   GURL url("data:text/html,<!doctype html><textarea id=ta></textarea>");
@@ -252,6 +261,10 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewMacTest,
 
   // No accessibility support enabled at this time.
   EXPECT_EQ(accessibility_state->GetAccessibilityMode(), ui::AXMode());
+
+  // Enable platform activation since that is what is begin tested here.
+  BrowserAccessibilityState::GetInstance()->SetActivationFromPlatformEnabled(
+      /*enabled=*/true);
 
   // An AT descending the AX tree calls -accessibilityRole on the nodes as it
   // goes. Simulate an AT calling -accessibilityRole on the web contents.

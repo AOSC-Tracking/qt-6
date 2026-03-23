@@ -3,18 +3,22 @@
 // found in the LICENSE file.
 
 import * as i18n from '../../../core/i18n/i18n.js';
+import type * as Handlers from '../handlers/handlers.js';
 import * as Helpers from '../helpers/helpers.js';
 import * as Types from '../types/types.js';
 
+import {isRequestCompressed} from './Common.js';
 import {
+  type Checklist,
   InsightCategory,
+  InsightKeys,
   type InsightModel,
   type InsightSetContext,
   InsightWarning,
-  type RequiredData
+  type PartialInsightModel,
 } from './types.js';
 
-const UIStrings = {
+export const UIStrings = {
   /**
    *@description Title of an insight that provides a breakdown for how long it took to download the main document.
    */
@@ -24,10 +28,50 @@ const UIStrings = {
    */
   description:
       'Your first network request is the most important.  Reduce its latency by avoiding redirects, ensuring a fast server response, and enabling text compression.',
-};
+  /**
+   * @description Text to tell the user that the document request does not have redirects.
+   */
+  passingRedirects: 'Avoids redirects',
+  /**
+   * @description Text to tell the user that the document request had redirects.
+   * @example {3} PH1
+   * @example {1000 ms} PH2
+   */
+  failedRedirects: 'Had redirects ({PH1} redirects, +{PH2})',
+  /**
+   * @description Text to tell the user that the time starting the document request to when the server started responding is acceptable.
+   * @example {600 ms} PH1
+   */
+  passingServerResponseTime: 'Server responds quickly (observed {PH1})',
+  /**
+   * @description Text to tell the user that the time starting the document request to when the server started responding is not acceptable.
+   * @example {601 ms} PH1
+   */
+  failedServerResponseTime: 'Server responded slowly (observed {PH1})',
+  /**
+   * @description Text to tell the user that text compression (like gzip) was applied.
+   */
+  passingTextCompression: 'Applies text compression',
+  /**
+   * @description Text to tell the user that text compression (like gzip) was not applied.
+   */
+  failedTextCompression: 'No compression applied',
+  /**
+   * @description Text for a label describing a network request event as having redirects.
+   */
+  redirectsLabel: 'Redirects',
+  /**
+   * @description Text for a label describing a network request event as taking too long to start delivery by the server.
+   */
+  serverResponseTimeLabel: 'Server response time',
+  /**
+   * @description Text for a label describing a network request event as taking longer to download because it wasn't compressed.
+   */
+  uncompressedDownload: 'Uncompressed download',
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('models/trace/insights/DocumentLatency.ts', UIStrings);
-const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 // Due to the way that DevTools throttling works we cannot see if server response took less than ~570ms.
 // We set our failure threshold to 600ms to avoid those false positives but we want devs to shoot for 100ms.
@@ -37,21 +81,31 @@ const TARGET_MS = 100;
 // Threshold for compression savings.
 const IGNORE_THRESHOLD_IN_BYTES = 1400;
 
-export type DocumentLatencyInsightModel = InsightModel<{
+export function isDocumentLatency(x: InsightModel): x is DocumentLatencyInsightModel {
+  return x.insightKey === 'DocumentLatency';
+}
+
+export type DocumentLatencyInsightModel = InsightModel<typeof UIStrings, {
   data?: {
     serverResponseTime: Types.Timing.Milli,
-    serverResponseTooSlow: boolean,
     redirectDuration: Types.Timing.Milli,
     uncompressedResponseBytes: number,
+    checklist: Checklist<'noRedirects'|'serverResponseIsFast'|'usesCompression'>,
     documentRequest?: Types.Events.SyntheticNetworkRequest,
   },
 }>;
 
-export function deps(): ['Meta', 'NetworkRequests'] {
-  return ['Meta', 'NetworkRequests'];
-}
+function getServerResponseTime(
+    request: Types.Events.SyntheticNetworkRequest, context: InsightSetContext): Types.Timing.Milli|null {
+  // Prefer the value as given by the Lantern provider.
+  // For PSI, Lighthouse uses this to set a better value for the server response
+  // time. For technical reasons, in Lightrider we do not have `sendEnd` timing
+  // values. See Lighthouse's `asLanternNetworkRequest` function for more.
+  const lanternRequest = context.navigation && context.lantern?.requests.find(r => r.rawRequest === request);
+  if (lanternRequest?.serverResponseTime !== undefined) {
+    return lanternRequest.serverResponseTime as Types.Timing.Milli;
+  }
 
-function getServerResponseTime(request: Types.Events.SyntheticNetworkRequest): Types.Timing.Milli|null {
   const timing = request.args.data.timing;
   if (!timing) {
     return null;
@@ -62,15 +116,7 @@ function getServerResponseTime(request: Types.Events.SyntheticNetworkRequest): T
 }
 
 function getCompressionSavings(request: Types.Events.SyntheticNetworkRequest): number {
-  // Check from headers if compression was already applied.
-  // Older devtools logs are lower case, while modern logs are Cased-Like-This.
-  const patterns = [
-    /^content-encoding$/i,
-    /^x-content-encoding-over-network$/i,
-  ];
-  const compressionTypes = ['gzip', 'br', 'deflate', 'zstd'];
-  const isCompressed = request.args.data.responseHeaders.some(
-      header => patterns.some(p => header.name.match(p)) && compressionTypes.includes(header.value));
+  const isCompressed = isRequestCompressed(request);
   if (isCompressed) {
     return 0;
   }
@@ -125,36 +171,36 @@ function getCompressionSavings(request: Types.Events.SyntheticNetworkRequest): n
   return estimatedSavings < IGNORE_THRESHOLD_IN_BYTES ? 0 : estimatedSavings;
 }
 
-function finalize(partialModel: Omit<DocumentLatencyInsightModel, 'title'|'description'|'category'|'shouldShow'>):
-    DocumentLatencyInsightModel {
+function finalize(partialModel: PartialInsightModel<DocumentLatencyInsightModel>): DocumentLatencyInsightModel {
   let hasFailure = false;
   if (partialModel.data) {
-    hasFailure = partialModel.data.redirectDuration > 0 || partialModel.data.serverResponseTooSlow ||
-        partialModel.data.uncompressedResponseBytes > 0;
+    hasFailure = !partialModel.data.checklist.usesCompression.value ||
+        !partialModel.data.checklist.serverResponseIsFast.value || !partialModel.data.checklist.noRedirects.value;
   }
 
   return {
+    insightKey: InsightKeys.DOCUMENT_LATENCY,
+    strings: UIStrings,
     title: i18nString(UIStrings.title),
     description: i18nString(UIStrings.description),
     category: InsightCategory.ALL,
-    shouldShow: hasFailure,
+    state: hasFailure ? 'fail' : 'pass',
     ...partialModel,
   };
 }
 
 export function generateInsight(
-    parsedTrace: RequiredData<typeof deps>, context: InsightSetContext): DocumentLatencyInsightModel {
+    parsedTrace: Handlers.Types.ParsedTrace, context: InsightSetContext): DocumentLatencyInsightModel {
   if (!context.navigation) {
     return finalize({});
   }
 
-  const documentRequest =
-      parsedTrace.NetworkRequests.byTime.find(req => req.args.data.requestId === context.navigationId);
+  const documentRequest = parsedTrace.NetworkRequests.byId.get(context.navigationId);
   if (!documentRequest) {
     return finalize({warnings: [InsightWarning.NO_DOCUMENT_REQUEST]});
   }
 
-  const serverResponseTime = getServerResponseTime(documentRequest);
+  const serverResponseTime = getServerResponseTime(documentRequest, context);
   if (serverResponseTime === null) {
     throw new Error('missing document request timing');
   }
@@ -174,15 +220,99 @@ export function generateInsight(
     LCP: overallSavingsMs as Types.Timing.Milli,
   };
 
+  const uncompressedResponseBytes = getCompressionSavings(documentRequest);
+
+  const noRedirects = redirectDuration === 0;
+  const serverResponseIsFast = !serverResponseTooSlow;
+  const usesCompression = uncompressedResponseBytes === 0;
+
   return finalize({
     relatedEvents: [documentRequest],
     data: {
       serverResponseTime,
-      serverResponseTooSlow,
       redirectDuration: Types.Timing.Milli(redirectDuration),
-      uncompressedResponseBytes: getCompressionSavings(documentRequest),
+      uncompressedResponseBytes,
       documentRequest,
+      checklist: {
+        noRedirects: {
+          label: noRedirects ? i18nString(UIStrings.passingRedirects) : i18nString(UIStrings.failedRedirects, {
+            PH1: documentRequest.args.data.redirects.length,
+            PH2: i18n.TimeUtilities.millisToString(redirectDuration),
+          }),
+          value: noRedirects
+        },
+        serverResponseIsFast: {
+          label: serverResponseIsFast ?
+              i18nString(
+                  UIStrings.passingServerResponseTime, {PH1: i18n.TimeUtilities.millisToString(serverResponseTime)}) :
+              i18nString(
+                  UIStrings.failedServerResponseTime, {PH1: i18n.TimeUtilities.millisToString(serverResponseTime)}),
+          value: serverResponseIsFast
+        },
+        usesCompression: {
+          label: usesCompression ? i18nString(UIStrings.passingTextCompression) :
+                                   i18nString(UIStrings.failedTextCompression),
+          value: usesCompression
+        },
+      },
     },
     metricSavings,
+    wastedBytes: uncompressedResponseBytes,
   });
+}
+
+export function createOverlays(model: DocumentLatencyInsightModel): Types.Overlays.Overlay[] {
+  if (!model.data?.documentRequest) {
+    return [];
+  }
+
+  const overlays: Types.Overlays.Overlay[] = [];
+  const event = model.data.documentRequest;
+  const redirectDurationMicro = Helpers.Timing.milliToMicro(model.data.redirectDuration);
+
+  const sections = [];
+  if (model.data.redirectDuration) {
+    const bounds = Helpers.Timing.traceWindowFromMicroSeconds(
+        event.ts,
+        (event.ts + redirectDurationMicro) as Types.Timing.Micro,
+    );
+    sections.push({bounds, label: i18nString(UIStrings.redirectsLabel), showDuration: true});
+    overlays.push({type: 'CANDY_STRIPED_TIME_RANGE', bounds, entry: event});
+  }
+  if (!model.data.checklist.serverResponseIsFast.value) {
+    const serverResponseTimeMicro = Helpers.Timing.milliToMicro(model.data.serverResponseTime);
+    // NOTE: NetworkRequestHandlers never makes a synthetic network request event if `timing` is missing.
+    const sendEnd = event.args.data.timing?.sendEnd ?? Types.Timing.Milli(0);
+    const sendEndMicro = Helpers.Timing.milliToMicro(sendEnd);
+    const bounds = Helpers.Timing.traceWindowFromMicroSeconds(
+        sendEndMicro,
+        (sendEndMicro + serverResponseTimeMicro) as Types.Timing.Micro,
+    );
+    sections.push({bounds, label: i18nString(UIStrings.serverResponseTimeLabel), showDuration: true});
+  }
+  if (model.data.uncompressedResponseBytes) {
+    const bounds = Helpers.Timing.traceWindowFromMicroSeconds(
+        event.args.data.syntheticData.downloadStart,
+        (event.args.data.syntheticData.downloadStart + event.args.data.syntheticData.download) as Types.Timing.Micro,
+    );
+    sections.push({bounds, label: i18nString(UIStrings.uncompressedDownload), showDuration: true});
+    overlays.push({type: 'CANDY_STRIPED_TIME_RANGE', bounds, entry: event});
+  }
+
+  if (sections.length) {
+    overlays.push({
+      type: 'TIMESPAN_BREAKDOWN',
+      sections,
+      entry: model.data.documentRequest,
+      // Always render below because the document request is guaranteed to be
+      // the first request in the network track.
+      renderLocation: 'BELOW_EVENT',
+    });
+  }
+  overlays.push({
+    type: 'ENTRY_SELECTED',
+    entry: model.data.documentRequest,
+  });
+
+  return overlays;
 }

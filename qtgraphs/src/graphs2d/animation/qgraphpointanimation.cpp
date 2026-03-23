@@ -1,11 +1,15 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtCore/QPointF>
 #include <QtGraphs/QLineSeries>
 #include "private/qgraphpointanimation_p.h"
 #include "private/qgraphtransition_p.h"
 #include "private/qxyseries_p.h"
+
+QT_BEGIN_NAMESPACE
 
 /*!
     \qmltype GraphPointAnimation
@@ -193,3 +197,7 @@ void QGraphPointAnimation::valueUpdated(const QVariant &value)
 
     emit series->update();
 }
+
+QT_END_NAMESPACE
+
+#include "moc_qgraphpointanimation_p.cpp"

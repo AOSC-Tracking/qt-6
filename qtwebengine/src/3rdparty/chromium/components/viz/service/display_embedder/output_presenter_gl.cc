@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/check.h"
@@ -117,11 +118,16 @@ void OutputPresenterGL::ScheduleOverlayPlane(
   // TODO(crbug.com/40239878): Add ScopedOverlayAccess::GetOverlayImage() that
   // works on all platforms.
   gl::OverlayImage overlay_image = access ? access->GetNativePixmap() : nullptr;
-  if (!overlay_plane_candidate.is_root_render_pass && !overlay_image &&
-      !overlay_plane_candidate.is_solid_color) {
+  if (!overlay_image && !overlay_plane_candidate.is_solid_color) {
     // Allow non-root overlays to be skipped if missing for transient causes.
     // E.g. missing overlay_image because video decoder is destroyed during
     // navigation.
+    // TODO(crbug.com/405022140): root_render_pass overlay_image should exist,
+    // but when there is a CopyOutputRequest, root_render_pass can be a
+    // WrappedSkImage without overlay access. Plumb such information and fail
+    // properly.
+    LOG_IF(WARNING, overlay_plane_candidate.is_root_render_pass)
+        << "root_render_pass is missing overlay_image.";
     return;
   }
 #elif BUILDFLAG(IS_ANDROID)
@@ -170,7 +176,7 @@ void OutputPresenterGL::ScheduleOverlayPlane(
       overlay_plane_candidate.clip_rect.value_or(gfx::Rect()),
       overlay_plane_candidate.rounded_corners,
       overlay_plane_candidate.sorting_context_id,
-      absl::get<gfx::Transform>(overlay_plane_candidate.transform),
+      std::get<gfx::Transform>(overlay_plane_candidate.transform),
       access ? access->GetIOSurface() : gfx::ScopedIOSurface(),
       access ? access->representation()->color_space() : gfx::ColorSpace(),
       overlay_plane_candidate.uv_rect,

@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "barinstancing_p.h"
 
@@ -91,3 +93,5 @@ void BarInstancing::setDataArray(const QList<BarItemHolder *> &newDataArray)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_barinstancing_p.cpp"

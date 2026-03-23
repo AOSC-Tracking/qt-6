@@ -14,10 +14,10 @@
 #include "ui/accessibility/platform/ax_platform_node_textrangeprovider_win.h"
 
 #define UIA_VALIDATE_TEXTPROVIDER_CALL() \
-  if (!owner()->GetDelegate())           \
+  if (owner()->IsDestroyed())            \
     return UIA_E_ELEMENTNOTAVAILABLE;
 #define UIA_VALIDATE_TEXTPROVIDER_CALL_1_ARG(arg) \
-  if (!owner()->GetDelegate())                    \
+  if (owner()->IsDestroyed())                     \
     return UIA_E_ELEMENTNOTAVAILABLE;             \
   if (!arg)                                       \
     return E_INVALIDARG;
@@ -29,14 +29,13 @@ AXPlatformNodeTextProviderWin::AXPlatformNodeTextProviderWin() {}
 AXPlatformNodeTextProviderWin::~AXPlatformNodeTextProviderWin() {}
 
 // static
-AXPlatformNodeTextProviderWin* AXPlatformNodeTextProviderWin::Create(
-    AXPlatformNodeWin* owner) {
+Microsoft::WRL::ComPtr<AXPlatformNodeTextProviderWin>
+AXPlatformNodeTextProviderWin::Create(AXPlatformNodeWin* owner) {
   CComObject<AXPlatformNodeTextProviderWin>* text_provider = nullptr;
   if (SUCCEEDED(CComObject<AXPlatformNodeTextProviderWin>::CreateInstance(
           &text_provider))) {
     DCHECK(text_provider);
     text_provider->owner_ = owner;
-    text_provider->AddRef();
     return text_provider;
   }
 

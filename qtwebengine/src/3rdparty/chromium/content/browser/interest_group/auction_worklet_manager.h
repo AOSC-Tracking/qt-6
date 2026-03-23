@@ -41,6 +41,7 @@ namespace content {
 class AuctionMetricsRecorder;
 class AuctionSharedStorageHost;
 class AuctionNetworkEventsProxy;
+class GroupByOriginKeyMapper;
 class RenderFrameHostImpl;
 class SiteInstance;
 class SubresourceUrlAuthorizations;
@@ -116,7 +117,8 @@ class CONTENT_EXPORT AuctionWorkletManager {
     // Returns the cookie deprecation label for facilitated testing.
     virtual std::optional<std::string> GetCookieDeprecationLabel() = 0;
 
-    virtual void GetBiddingAndAuctionServerKey(
+    virtual void GetTrustedKeyValueServerKey(
+        const url::Origin& scope_origin,
         const std::optional<url::Origin>& coordinator,
         base::OnceCallback<void(base::expected<BiddingAndAuctionServerKey,
                                                std::string>)> callback) = 0;
@@ -131,6 +133,11 @@ class CONTENT_EXPORT AuctionWorkletManager {
   // Enough information to uniquely ID a worklet. If these fields match for two
   // worklets (and they're loaded in the same frame, as this class is
   // frame-scoped), the worklets can use the same Mojo Worklet object.
+  //
+  // TODO(xtlsheep): Currently, trusted KVv2 signals use a non-cached version,
+  // where bidder and seller worklets construct v2 requests. Once we transition
+  // to cached version, `trusted_signals_coordinator` and `contextual_data` can
+  // be removed from the WorkletKey.
   struct CONTENT_EXPORT WorkletKey {
     WorkletKey(WorkletType type,
                const GURL& script_url,
@@ -140,7 +147,8 @@ class CONTENT_EXPORT AuctionWorkletManager {
                std::optional<bool> send_creative_scanning_metadata,
                std::optional<uint16_t> experiment_group_id,
                const std::string& trusted_bidding_signals_slot_size_param,
-               const std::optional<url::Origin>& trusted_signals_coordinator);
+               const std::optional<url::Origin>& trusted_signals_coordinator,
+               const std::optional<std::string>& contextual_data);
     WorkletKey(const WorkletKey&);
     WorkletKey(WorkletKey&&);
     ~WorkletKey();
@@ -164,6 +172,7 @@ class CONTENT_EXPORT AuctionWorkletManager {
     std::optional<uint16_t> experiment_group_id;
     std::string trusted_bidding_signals_slot_size_param;
     std::optional<url::Origin> trusted_signals_coordinator;
+    std::optional<std::string> contextual_data;
   };
 
   // Class that tracks a request for a Worklet, and helps manage the lifetime of
@@ -213,6 +222,10 @@ class CONTENT_EXPORT AuctionWorkletManager {
     // Must only be called after the worklet available callback has been called.
     const auction_worklet::mojom::TrustedSignalsPublicKey*
     GetTrustedSignalsPublicKey() const;
+
+    // Returns a helper for assigning group-by-origin grouping IDs for the given
+    // worklet.
+    GroupByOriginKeyMapper& GetGroupByOriginKeyMapper();
 
     const SubresourceUrlAuthorizations&
     GetSubresourceUrlAuthorizationsForTesting();
@@ -274,7 +287,8 @@ class CONTENT_EXPORT AuctionWorkletManager {
       bool needs_cors_for_additional_bid,
       std::optional<uint16_t> experiment_group_id,
       const std::string& trusted_bidding_signals_slot_size_param,
-      const std::optional<url::Origin>& trusted_bidding_signals_coordinator);
+      const std::optional<url::Origin>& trusted_bidding_signals_coordinator,
+      const std::optional<std::string>& contextual_data);
 
   // Requests a worklet with the specified properties. The top frame origin and
   // debugging information are obtained from the Delegate's RenderFrameHost.
@@ -327,6 +341,7 @@ class CONTENT_EXPORT AuctionWorkletManager {
       std::optional<uint16_t> experiment_group_id,
       const std::string& trusted_bidding_signals_slot_size_param,
       const std::optional<url::Origin>& trusted_bidding_signals_coordinator,
+      const std::optional<std::string>& contextual_data,
       base::OnceClosure worklet_available_callback,
       FatalErrorCallback fatal_error_callback,
       std::unique_ptr<WorkletHandle>& out_worklet_handle,

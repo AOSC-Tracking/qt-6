@@ -6,6 +6,7 @@
 #define V8_HEAP_CONSERVATIVE_STACK_VISITOR_INL_H_
 
 #include "src/heap/conservative-stack-visitor.h"
+// Include the non-inl header before the rest of the headers.
 
 #include "src/common/globals.h"
 #include "src/execution/isolate-inl.h"
@@ -71,11 +72,13 @@ Address ConservativeStackVisitorBase<ConcreteVisitor>::FindBasePtr(
   // heap. Bail out if it is not.
   // TODO(379788114): Consider introducing a bloom filter for pages.
   const MemoryChunk* chunk =
-      allocator_->LookupChunkContainingAddress(maybe_inner_ptr);
+      allocator_->LookupChunkContainingAddressInSafepoint(maybe_inner_ptr);
   if (chunk == nullptr) {
     return kNullAddress;
   }
-  const MemoryChunkMetadata* chunk_metadata = chunk->Metadata();
+  // This code can run from the shared heap isolate and the slot may point
+  // into a client heap isolate, so ignore the isolate check.
+  const MemoryChunkMetadata* chunk_metadata = chunk->MetadataNoIsolateCheck();
   DCHECK(chunk_metadata->Contains(maybe_inner_ptr));
 
   if (!ConcreteVisitor::FilterPage(chunk)) {
@@ -83,7 +86,7 @@ Address ConservativeStackVisitorBase<ConcreteVisitor>::FindBasePtr(
   }
 
   // If it is contained in a large page, we want to mark the only object on it.
-  if (chunk->IsLargePage()) {
+  if (chunk_metadata->is_large()) {
     // This could be simplified if we could guarantee that there are no free
     // space or filler objects in large pages. A few cctests violate this now.
     Tagged<HeapObject> obj(
@@ -127,20 +130,20 @@ void ConservativeStackVisitorBase<ConcreteVisitor>::VisitPointer(
   auto address = reinterpret_cast<Address>(const_cast<void*>(pointer));
 #ifdef V8_COMPRESS_POINTERS
   V8HeapCompressionScheme::ProcessIntermediatePointers(
-      cage_base_, address,
+      address,
       [this](Address ptr) { VisitConservativelyIfPointer(ptr, cage_base_); });
   if constexpr (ConcreteVisitor::kOnlyVisitMainV8Cage) {
     return;
   }
 #ifdef V8_EXTERNAL_CODE_SPACE
   ExternalCodeCompressionScheme::ProcessIntermediatePointers(
-      code_cage_base_, address, [this](Address ptr) {
+      address, [this](Address ptr) {
         VisitConservativelyIfPointer(ptr, code_cage_base_);
       });
 #endif  // V8_EXTERNAL_CODE_SPACE
 #ifdef V8_ENABLE_SANDBOX
   TrustedSpaceCompressionScheme::ProcessIntermediatePointers(
-      trusted_cage_base_, address, [this](Address ptr) {
+      address, [this](Address ptr) {
         VisitConservativelyIfPointer(ptr, trusted_cage_base_);
       });
 #endif  // V8_ENABLE_SANDBOX
@@ -183,7 +186,8 @@ void ConservativeStackVisitorBase<
   // Bail out immediately if the pointer is not in the space managed by the
   // allocator.
   if (allocator_->IsOutsideAllocatedSpace(address)) {
-    DCHECK_EQ(nullptr, allocator_->LookupChunkContainingAddress(address));
+    DCHECK_EQ(nullptr,
+              allocator_->LookupChunkContainingAddressInSafepoint(address));
     return;
   }
   // Proceed with inner-pointer resolution.

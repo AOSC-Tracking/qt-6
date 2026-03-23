@@ -23,7 +23,6 @@
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/command_buffer/service/decoder_context.h"
-#include "gpu/command_buffer/service/gpu_command_buffer_memory_tracker.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
@@ -32,6 +31,7 @@
 #include "gpu/command_buffer/service/service_utils.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
 #include "gpu/config/gpu_crash_keys.h"
+#include "gpu/ipc/common/command_buffer_trace_utils.h"
 #include "gpu/ipc/service/gpu_channel.h"
 #include "gpu/ipc/service/gpu_channel_manager.h"
 #include "gpu/ipc/service/gpu_channel_manager_delegate.h"
@@ -113,6 +113,7 @@ CommandBufferStub::CommandBufferStub(
     : channel_(channel),
       context_type_(init_params.attribs.context_type),
       active_url_(init_params.active_url),
+      context_label_(init_params.label),
       initialized_(false),
       use_virtualized_gl_context_(false),
       command_buffer_id_(command_buffer_id),
@@ -151,6 +152,10 @@ void CommandBufferStub::ExecuteDeferredRequest(
   if (!operation.is_context_current())
     return;
 
+  if (!context_label_.empty()) {
+    TRACE_EVENT_BEGIN0("gpu", TRACE_STR_COPY(context_label_.c_str()));
+  }
+
   switch (params.which()) {
     case mojom::DeferredCommandBufferRequestParams::Tag::kAsyncFlush: {
       auto& flush = *params.get_async_flush();
@@ -161,17 +166,10 @@ void CommandBufferStub::ExecuteDeferredRequest(
     case mojom::DeferredCommandBufferRequestParams::Tag::kDestroyTransferBuffer:
       OnDestroyTransferBuffer(params.get_destroy_transfer_buffer());
       break;
+  }
 
-    case mojom::DeferredCommandBufferRequestParams::Tag::
-        kSetDefaultFramebufferSharedImage: {
-      OnSetDefaultFramebufferSharedImage(
-          params.get_set_default_framebuffer_shared_image()->mailbox,
-          params.get_set_default_framebuffer_shared_image()->samples_count,
-          params.get_set_default_framebuffer_shared_image()->preserve,
-          params.get_set_default_framebuffer_shared_image()->needs_depth,
-          params.get_set_default_framebuffer_shared_image()->needs_stencil);
-      break;
-    }
+  if (!context_label_.empty()) {
+    TRACE_EVENT_END0("gpu", TRACE_STR_COPY(context_label_.c_str()));
   }
 }
 
@@ -469,13 +467,21 @@ void CommandBufferStub::OnAsyncFlush(
     int32_t put_offset,
     uint32_t flush_id,
     const std::vector<SyncToken>& sync_token_fences) {
-  TRACE_EVENT1("gpu", "CommandBufferStub::OnAsyncFlush", "put_offset",
-               put_offset);
   DCHECK(command_buffer_);
   // We received this message out-of-order. This should not happen but is here
   // to catch regressions. Ignore the message.
   DVLOG_IF(0, flush_id - last_flush_id_ >= 0x8000000U)
       << "Received a Flush message out-of-order";
+
+  const uint64_t global_flush_id =
+      GlobalFlushTracingId(channel_->client_id(), flush_id);
+  TRACE_EVENT_WITH_FLOW0(
+      "gpu,toplevel.flow", "CommandBuffer::Flush",
+      TRACE_ID_WITH_SCOPE("CommandBuffer::Flush", global_flush_id),
+      TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
+
+  TRACE_EVENT1("gpu", "CommandBufferStub::OnAsyncFlush", "put_offset",
+               put_offset);
 
   last_flush_id_ = flush_id;
   gpu::CommandBuffer::State pre_state = command_buffer_->GetState();
@@ -495,9 +501,15 @@ void CommandBufferStub::OnAsyncFlush(
     ReportState();
 
 #if BUILDFLAG(IS_ANDROID)
-  GpuChannelManager* manager = channel_->gpu_channel_manager();
-  manager->DidAccessGpu();
+  channel_->gpu_channel_manager()->DidAccessGpu();
 #endif
+
+  if (!HasUnprocessedCommands()) {
+    TRACE_EVENT_WITH_FLOW0(
+        "gpu,toplevel.flow", "CommandBuffer::FlushComplete",
+        TRACE_ID_WITH_SCOPE("CommandBuffer::Flush", global_flush_id),
+        TRACE_EVENT_FLAG_FLOW_IN);
+  }
 }
 
 void CommandBufferStub::RegisterTransferBuffer(
@@ -637,15 +649,15 @@ void CommandBufferStub::RemoveDestructionObserver(
   destruction_observers_.RemoveObserver(observer);
 }
 
-std::unique_ptr<MemoryTracker> CommandBufferStub::CreateMemoryTracker() const {
+scoped_refptr<MemoryTracker> CommandBufferStub::CreateMemoryTracker() const {
   MemoryTrackerFactory current_factory = GetMemoryTrackerFactory();
   if (current_factory)
     return current_factory.Run();
 
-  return std::make_unique<GpuCommandBufferMemoryTracker>(
+  return base::MakeRefCounted<MemoryTracker>(
       command_buffer_id_, channel_->client_tracing_id(),
-      channel_->task_runner(),
-      channel_->gpu_channel_manager()->peak_memory_monitor());
+      channel_->gpu_channel_manager()->peak_memory_monitor(),
+      GpuPeakMemoryAllocationSource::COMMAND_BUFFER);
 }
 
 // static

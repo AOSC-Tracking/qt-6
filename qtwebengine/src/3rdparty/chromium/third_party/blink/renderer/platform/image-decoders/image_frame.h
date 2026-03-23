@@ -24,25 +24,24 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_IMAGE_DECODERS_IMAGE_FRAME_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_IMAGE_DECODERS_IMAGE_FRAME_H_
 
 #include <optional>
 
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
+#include "skia/ext/pmcolor_utils.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkColorPriv.h"
+#include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkPixmap.h"
+#include "third_party/skia/include/private/chromium/SkPMColor.h"
 #include "ui/gfx/geometry/rect.h"
 
 class SkImage;
@@ -127,7 +126,7 @@ class PLATFORM_EXPORT ImageFrame final {
     const int row_bytes = (end_x - start_x) * sizeof(PixelData);
     const PixelData* const start_addr = GetAddr(start_x, start_y);
     for (int dest_y = start_y + 1; dest_y < end_y; ++dest_y) {
-      memcpy(GetAddr(start_x, dest_y), start_addr, row_bytes);
+      UNSAFE_TODO(memcpy(GetAddr(start_x, dest_y), start_addr, row_bytes));
     }
   }
 
@@ -225,7 +224,7 @@ class PLATFORM_EXPORT ImageFrame final {
     if (premultiply_alpha_) {
       SetRGBAPremultiply(dest, r, g, b, a);
     } else {
-      *dest = SkPackARGB32(a, r, g, b);
+      *dest = SkPMColorSetARGB(a, r, g, b);
     }
   }
 
@@ -243,7 +242,7 @@ class PLATFORM_EXPORT ImageFrame final {
       b = (b * alpha + kRoundFractionControl) >> 16;
     }
 
-    *dest = SkPackARGB32(a, r, g, b);
+    *dest = SkPMColorSetARGB(a, r, g, b);
   }
 
   static inline void SetRGBARaw(PixelData* dest,
@@ -251,7 +250,7 @@ class PLATFORM_EXPORT ImageFrame final {
                                 unsigned g,
                                 unsigned b,
                                 unsigned a) {
-    *dest = SkPackARGB32(a, r, g, b);
+    *dest = SkPMColorSetARGB(a, r, g, b);
   }
 
   // Blend the RGBA pixel provided by |red|, |green|, |blue| and |alpha| over
@@ -267,8 +266,9 @@ class PLATFORM_EXPORT ImageFrame final {
                                     PixelDataF16* src,
                                     size_t num_pixels);
 
-  // Blend the pixel, without premultiplication, in |src| over |dst| and
-  // overwrite |src| with the result.
+  // Blend the pixel in |src| over |dst| and overwrite |src| with the result.
+  // This requires |src| and |dst| to not have alpha premultiplied on the rgb
+  // channels.
   static void BlendSrcOverDstRaw(PixelData* src, PixelData dst);
 
   // Blend the RGBA pixel provided by |r|, |g|, |b|, |a| over the pixel in
@@ -294,7 +294,7 @@ class PLATFORM_EXPORT ImageFrame final {
 
     PixelData src;
     SetRGBAPremultiply(&src, r, g, b, a);
-    *dest = SkPMSrcOver(src, *dest);
+    *dest = skia::BlendSrcOver(src, *dest);
   }
 
   static void BlendRGBAPremultipliedF16Buffer(PixelDataF16* dst,
@@ -302,9 +302,10 @@ class PLATFORM_EXPORT ImageFrame final {
                                               size_t num_pixels);
 
   // Blend the pixel in |src| over |dst| and overwrite |src| with the result.
+  // This requires |src| and |dst| to be premultiplied already.
   static inline void BlendSrcOverDstPremultiplied(PixelData* src,
                                                   PixelData dst) {
-    *src = SkPMSrcOver(*src, dst);
+    *src = skia::BlendSrcOver(*src, dst);
   }
 
   // Notifies the SkBitmap if any pixels changed and resets the flag.
@@ -339,7 +340,7 @@ class PLATFORM_EXPORT ImageFrame final {
   bool pixels_changed_ = false;
 
   // The frame that must be decoded before this frame can be decoded.
-  // WTF::kNotFound if this frame doesn't require any previous frame.
+  // kNotFound if this frame doesn't require any previous frame.
   // This is used by ImageDecoder::ClearCacheExceptFrame(), and will never
   // be read for image formats that do not have multiple frames.
   wtf_size_t required_previous_frame_index_ = kNotFound;

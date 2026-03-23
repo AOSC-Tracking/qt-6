@@ -48,6 +48,7 @@ class RelayClient : private base::UnixSocket::EventListener,
   using OnErrorCallback = std::function<void()>;
   RelayClient(const std::string& client_sock_name,
               const std::string& machine_id_hint,
+              const std::string& machine_name,
               base::TaskRunner* task_runner,
               OnErrorCallback on_destroy_callback);
   ~RelayClient() override;
@@ -74,6 +75,7 @@ class RelayClient : private base::UnixSocket::EventListener,
 
   void NotifyError();
   void Connect();
+  void InitRelayRequest();
   void SendSyncClockRequest();
 
   // RelayIPCClient::EventListener implementation.
@@ -91,6 +93,7 @@ class RelayClient : private base::UnixSocket::EventListener,
   std::string client_sock_name_;
   // A hint to the host traced for inferring the identifier of this machine.
   std::string machine_id_hint_;
+  std::string machine_name_;
   std::unique_ptr<base::UnixSocket> client_sock_;
   std::unique_ptr<RelayIPCClient> relay_ipc_client_;
 
@@ -108,13 +111,13 @@ class RelayService : public base::UnixSocket::EventListener {
 
   // Starts the service relay that forwards messages between the
   // |server_socket_name| and |client_socket_name| ports.
-  void Start(const char* server_socket_name, const char* client_socket_name);
+  void Start(const char* server_socket_name, std::string client_socket_name);
 
   // Starts the service relay that forwards messages between the
   // |server_socket_handle| and |client_socket_name| ports. Called when the
   // service is started by Android init.
   void Start(base::ScopedSocketHandle server_socket_handle,
-             const char* client_socket_name);
+             std::string client_socket_name);
 
   static std::string GetMachineIdHint(
       bool use_pseudo_boot_id_for_testing = false);
@@ -152,6 +155,7 @@ class RelayService : public base::UnixSocket::EventListener {
 
   // A hint to the host traced for inferring the identifier of this machine.
   std::string machine_id_hint_;
+  std::string machine_name_;
 
   std::unique_ptr<base::UnixSocket> listening_socket_;
   std::string client_socket_name_;

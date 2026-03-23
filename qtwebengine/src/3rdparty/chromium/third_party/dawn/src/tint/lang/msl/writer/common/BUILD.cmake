@@ -54,7 +54,7 @@ tint_add_target(tint_lang_msl_writer_common lib
 tint_target_add_dependencies(tint_lang_msl_writer_common lib
   tint_api_common
   tint_lang_core
-  tint_lang_core_common
+  tint_lang_core_ir_transform
   tint_lang_core_type
   tint_utils
   tint_utils_containers
@@ -63,7 +63,6 @@ tint_target_add_dependencies(tint_lang_msl_writer_common lib
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_strconv
   tint_utils_symbol
@@ -92,12 +91,10 @@ tint_target_add_dependencies(tint_lang_msl_writer_common_test test
   tint_lang_core_type
   tint_utils
   tint_utils_containers
-  tint_utils_diagnostic
   tint_utils_ice
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_text
 )

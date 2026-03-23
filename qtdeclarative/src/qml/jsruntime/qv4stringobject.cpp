@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 
 #include "qv4stringobject_p.h"
@@ -813,7 +814,7 @@ ReturnedValue StringPrototype::method_replace(const FunctionObject *b, const Val
     if (!!searchCallback) {
         result.reserve(string.size() + 10*numStringMatches);
         ScopedValue entry(scope);
-        Value *arguments = scope.alloc(numCaptures + 2);
+        Value *arguments = scope.constructUndefined(numCaptures + 2);
         int lastEnd = 0;
         for (int i = 0; i < numStringMatches; ++i) {
             for (int k = 0; k < numCaptures; ++k) {

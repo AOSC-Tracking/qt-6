@@ -99,9 +99,10 @@ IntType StringToIntImpl(StringViewType str) {
   return neg ? ~num + 1 : num;
 }
 
-// Intended to work for the cases where `T` is float or double.
-template <class T>
-T StringToFloatImpl(ByteStringView strc) {
+// Intended to work for the cases where `ReturnType` is float or double, and
+// `InputType` is ByteStringView or WideStringView.
+template <class ReturnType, class InputType>
+ReturnType StringToFloatImpl(InputType strc) {
   // Skip leading whitespaces.
   size_t start = 0;
   size_t len = strc.GetLength();
@@ -109,18 +110,17 @@ T StringToFloatImpl(ByteStringView strc) {
     ++start;
   }
 
-  // Skip a leading '+' sign.
-  if (start < len && strc[start] == '+') {
-    ++start;
-  }
+  InputType sub_strc = strc.Substr(start, len - start);
 
-  ByteStringView sub_strc = strc.Substr(start, len - start);
-
-  T value;
-  auto result = fast_float::from_chars(sub_strc.begin(), sub_strc.end(), value);
+  ReturnType value;
+  auto result =
+      fast_float::from_chars(sub_strc.begin(), sub_strc.end(), value,
+                             static_cast<fast_float::chars_format>(
+                                 fast_float::chars_format::general |
+                                 fast_float::chars_format::allow_leading_plus));
 
   // Return 0 for parsing errors. Some examples of errors are an empty string
-  // and a string that cannot be converted to T.
+  // and a string that cannot be converted to `ReturnType`.
   return result.ec == std::errc() || result.ec == std::errc::result_out_of_range
              ? value
              : 0;
@@ -172,7 +172,7 @@ float StringToFloat(ByteStringView strc) {
 }
 
 float StringToFloat(WideStringView wsStr) {
-  return StringToFloat(FX_UTF8Encode(wsStr).AsStringView());
+  return StringToFloatImpl<float>(wsStr);
 }
 
 double StringToDouble(ByteStringView strc) {
@@ -180,7 +180,7 @@ double StringToDouble(ByteStringView strc) {
 }
 
 double StringToDouble(WideStringView wsStr) {
-  return StringToDouble(FX_UTF8Encode(wsStr).AsStringView());
+  return StringToFloatImpl<double>(wsStr);
 }
 
 namespace fxcrt {

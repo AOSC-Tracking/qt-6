@@ -18,9 +18,12 @@
 #include "components/history_embeddings/proto/history_embeddings.pb.h"
 #include "components/os_crypt/async/browser/test_utils.h"
 #include "components/os_crypt/async/common/encryptor.h"
+#include "components/passage_embeddings/passage_embeddings_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace history_embeddings {
+
+using passage_embeddings::Embedding;
 
 namespace {
 
@@ -97,11 +100,9 @@ class HistoryEmbeddingsSqlDatabaseTest : public testing::Test {
 
  protected:
   os_crypt_async::Encryptor GetEncryptorInstance() {
-    base::test::TestFuture<os_crypt_async::Encryptor, bool> future;
-    std::ignore = os_crypt_->GetInstance(future.GetCallback());
-    auto [encryptor, result] = future.Take();
-    EXPECT_TRUE(result);
-    return std::move(encryptor);
+    base::test::TestFuture<os_crypt_async::Encryptor> future;
+    os_crypt_->GetInstance(future.GetCallback());
+    return future.Take();
   }
 
   base::test::TaskEnvironment env_;

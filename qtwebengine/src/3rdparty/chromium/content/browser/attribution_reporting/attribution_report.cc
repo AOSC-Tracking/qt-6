@@ -9,10 +9,10 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "base/check.h"
 #include "base/check_op.h"
-#include "base/functional/overloaded.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -24,7 +24,7 @@
 #include "content/browser/attribution_reporting/aggregatable_attribution_utils.h"
 #include "content/browser/attribution_reporting/common_source_info.h"
 #include "content/browser/attribution_reporting/stored_source.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/mojom/aggregation_service/aggregatable_report.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -123,7 +123,7 @@ void AttributionReport::AggregatableData::SetContributions(
 
 void AttributionReport::AggregatableData::SetAssembledReport(
     std::optional<AggregatableReport> assembled_report) {
-  DCHECK(!assembled_report_.has_value());
+  CHECK(!assembled_report_.has_value());
   assembled_report_ = std::move(assembled_report);
 }
 
@@ -153,8 +153,8 @@ AttributionReport::AttributionReport(
       data_(std::move(data)),
       reporting_origin_(std::move(reporting_origin)),
       source_debug_key_(source_debug_key) {
-  DCHECK(external_report_id_.is_valid());
-  DCHECK_GE(failed_send_attempts_, 0);
+  CHECK(external_report_id_.is_valid());
+  CHECK_GE(failed_send_attempts_, 0);
 }
 
 AttributionReport::AttributionReport(const AttributionReport&) = default;
@@ -194,8 +194,8 @@ GURL AttributionReport::ReportURL(bool debug) const {
 base::Value::Dict AttributionReport::ReportBody() const {
   base::Value::Dict dict;
 
-  absl::visit(
-      base::Overloaded{
+  std::visit(
+      absl::Overload{
           [&](const EventLevelData& data) {
             dict.Set("attribution_destination", data.destinations.ToJson());
 
@@ -241,8 +241,8 @@ base::Value::Dict AttributionReport::ReportBody() const {
 }
 
 AttributionReport::Type AttributionReport::GetReportType() const {
-  return absl::visit(
-      base::Overloaded{
+  return std::visit(
+      absl::Overload{
           [](const EventLevelData&) {
             return AttributionReport::Type::kEventLevel;
           },
@@ -276,8 +276,8 @@ std::optional<base::Time> AttributionReport::MinReportTime(
 }
 
 const SuitableOrigin& AttributionReport::GetSourceOrigin() const {
-  return absl::visit(
-      base::Overloaded{
+  return std::visit(
+      absl::Overload{
           [](const AttributionReport::EventLevelData& data)
               -> const SuitableOrigin& { return data.source_origin; },
           [&](const AttributionReport::AggregatableData& data)

@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/check_is_test.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "components/metrics/dwa/dwa_recorder.h"
@@ -28,11 +29,8 @@ namespace metrics_services_manager {
 
 MetricsServicesManager::MetricsServicesManager(
     std::unique_ptr<MetricsServicesManagerClient> client)
-    : client_(std::move(client)),
-      may_upload_(false),
-      may_record_(false),
-      consent_given_(false) {
-  DCHECK(client_);
+    : client_(std::move(client)) {
+  CHECK(client_);
 }
 
 MetricsServicesManager::~MetricsServicesManager() = default;
@@ -81,8 +79,7 @@ metrics::dwa::DwaService* MetricsServicesManager::GetDwaService() {
 variations::VariationsService* MetricsServicesManager::GetVariationsService() {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!variations_service_) {
-    variations_service_ =
-        client_->CreateVariationsService(GetSyntheticTrialRegistry());
+    variations_service_ = client_->CreateVariationsService();
   }
   return variations_service_.get();
 }
@@ -112,6 +109,18 @@ MetricsServicesManager::CreateEntropyProvidersForTesting() {
   // Setting enable_limited_entropy_mode=true to maximize code coverage.
   return client_->GetMetricsStateManager()->CreateEntropyProviders(
       /*enable_limited_entropy_mode=*/true);
+}
+
+metrics::ClonedInstallDetector*
+MetricsServicesManager::GetClonedInstallDetectorForTesting() {
+  CHECK_IS_TEST();
+  return client_->GetMetricsStateManager()
+      ->cloned_install_detector_for_testing();  // IN-TEST
+}
+
+const metrics::ClonedInstallDetector&
+MetricsServicesManager::GetClonedInstallDetector() const {
+  return client_->GetMetricsStateManager()->GetClonedInstallDetector();
 }
 
 metrics::MetricsServiceClient*
@@ -235,17 +244,18 @@ void MetricsServicesManager::UpdateRunningServices() {
 
 void MetricsServicesManager::UpdateUkmService() {
   ukm::UkmService* ukm = GetUkmService();
-  if (!ukm)
+  if (!ukm) {
     return;
+  }
 
   bool listeners_active =
       metrics_service_client_->AreNotificationListenersEnabledOnAllProfiles();
-  bool sync_enabled =
+  bool ukm_allowed =
       metrics_service_client_->IsMetricsReportingForceEnabled() ||
       metrics_service_client_->IsUkmAllowedForAllProfiles();
   bool is_incognito = client_->IsOffTheRecordSessionActive();
 
-  if (consent_given_ && listeners_active && sync_enabled && !is_incognito) {
+  if (consent_given_ && listeners_active && ukm_allowed && !is_incognito) {
     ukm->EnableRecording();
     if (may_upload_)
       ukm->EnableReporting();
@@ -283,15 +293,15 @@ void MetricsServicesManager::UpdateDwaService() {
   if (!dwa) {
     return;
   }
-  // DWA is tied to all UKM consents, which is tied to sync.
+  // DWA is tied to the settings for allowing UKM.
   bool listeners_active =
       metrics_service_client_->AreNotificationListenersEnabledOnAllProfiles();
-  bool sync_enabled =
+  bool dwa_allowed =
       metrics_service_client_->IsMetricsReportingForceEnabled() ||
       metrics_service_client_->IsDwaAllowedForAllProfiles();
   bool is_incognito = client_->IsOffTheRecordSessionActive();
 
-  if (consent_given_ && listeners_active && sync_enabled && !is_incognito) {
+  if (consent_given_ && listeners_active && dwa_allowed && !is_incognito) {
     metrics::dwa::DwaRecorder::Get()->EnableRecording();
     if (may_upload_) {
       dwa->EnableReporting();

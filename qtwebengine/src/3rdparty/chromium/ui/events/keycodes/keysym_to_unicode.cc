@@ -7,9 +7,10 @@
 
 #include <stddef.h>
 
+#include <array>
 #include <unordered_map>
 
-#include "base/lazy_instance.h"
+#include "base/no_destructor.h"
 #include "ui/gfx/x/keysyms/keysyms.h"
 
 namespace ui {
@@ -18,7 +19,7 @@ struct KeysymToUnicode {
   uint32_t keysym;
   uint16_t unicode;
 };
-const auto g_keysym_to_unicode_table = std::to_array<KeysymToUnicode>({
+constexpr auto g_keysym_to_unicode_table = std::to_array<KeysymToUnicode>({
     // Control characters
     {XK_BackSpace, 0x0008},
     {XK_Tab, 0x0009},
@@ -861,12 +862,13 @@ class KeySymToUnicode {
   KeySymToUnicodeMap keysym_to_unicode_map_;
 };
 
-static base::LazyInstance<KeySymToUnicode>::Leaky g_keysym_to_unicode =
-    LAZY_INSTANCE_INITIALIZER;
+const KeySymToUnicode& GetKeySymToUnicode() {
+  static base::NoDestructor<KeySymToUnicode> keysym_to_unicode;
+  return *keysym_to_unicode;
+}
 
 uint16_t GetUnicodeCharacterFromXKeySym(unsigned long keysym) {
-  return g_keysym_to_unicode.Get().UnicodeFromKeySym(
-      static_cast<uint32_t>(keysym));
+  return GetKeySymToUnicode().UnicodeFromKeySym(static_cast<uint32_t>(keysym));
 }
 
 }  // namespace ui

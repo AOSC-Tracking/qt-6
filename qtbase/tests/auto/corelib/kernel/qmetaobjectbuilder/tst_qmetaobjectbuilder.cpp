@@ -22,10 +22,12 @@ private slots:
     void variantProperty();
     void notifySignal();
     void enumerator();
+    void enumProperty();
     void classInfo();
     void relatedMetaObject();
     void staticMetacall();
     void copyMetaObject();
+    void copyMetaObject_metaProperty();
     void removeNotifySignal();
 
     void usage_signal();
@@ -41,8 +43,6 @@ private slots:
     void propertyMetaType();
     void enumCloning();
 
-    void cleanupTestCase();
-
     void ownMetaTypeNoProperties();
 
     // void tooLongParameterNamesList(); // QTBUG-139845
@@ -51,8 +51,14 @@ private:
     static bool checkForSideEffects
         (const QMetaObjectBuilder& builder,
          QMetaObjectBuilder::AddMembers members);
-    QList<QMetaObject *> dynamicMetaObjectsPendingFree;
 };
+
+struct MetaObjectDeleter
+{
+    void operator()(QMetaObject *p) { free(p); }
+};
+
+using MetaObjectPtr = std::unique_ptr<QMetaObject, MetaObjectDeleter>;
 
 struct MetaObjectComparison {
     bool isSame = false;
@@ -63,6 +69,7 @@ struct MetaObjectComparison {
     static inline auto Failed(QStringView message) {return  MetaObjectComparison{false, message.toString()}; }
 };
 MetaObjectComparison sameMetaObject(const QMetaObject *meta1, const QMetaObject *meta2);
+static MetaObjectComparison sameProperty(const QMetaProperty& prop1, const QMetaProperty& prop2);
 
 // Dummy class that has something of every type of thing moc can generate.
 class SomethingOfEverything : public QObject
@@ -76,10 +83,9 @@ class SomethingOfEverything : public QObject
     Q_PROPERTY(SomethingEnum eprop READ eprop)
     Q_PROPERTY(SomethingFlagEnum fprop READ fprop)
     Q_PROPERTY(QLocale::Language language READ language)
-    Q_ENUMS(SomethingEnum)
-    Q_FLAGS(SomethingFlag)
-    Q_ENUMS(SomethingEnum64)
-    Q_FLAGS(SomethingFlag64)
+    Q_PROPERTY(QString virtualP READ prop VIRTUAL)
+    // Doesn't override anything, used only to verify MOC handling of OVERRIDE keyword
+    Q_PROPERTY(QString overrideP READ prop OVERRIDE)
 public:
     Q_INVOKABLE SomethingOfEverything() {}
     ~SomethingOfEverything() {}
@@ -89,12 +95,14 @@ public:
         GHI,
         JKL = 10
     };
+    Q_ENUM(SomethingEnum)
 
     enum SomethingEnum64 : qint64
     {
         MNO = -1,
         PQR = 0x1'2345'5678,
     };
+    Q_ENUM(SomethingEnum64)
 
     enum SomethingFlagEnum
     {
@@ -102,6 +110,7 @@ public:
         UVW = 8
     };
     Q_DECLARE_FLAGS(SomethingFlag, SomethingFlagEnum)
+    Q_FLAG(SomethingFlag)
 
     enum SomethingFlagEnum64 : quint64
     {
@@ -109,6 +118,7 @@ public:
         OPQ = Q_UINT64_C(1) << 63,
     };
     Q_DECLARE_FLAGS(SomethingFlag64, SomethingFlagEnum64)
+    Q_FLAG(SomethingFlag64)
 
     Q_INVOKABLE Q_SCRIPTABLE void method1() const {}
 
@@ -228,7 +238,7 @@ void tst_QMetaObjectBuilder::method()
     QCOMPARE(method1.signature(), QByteArray("foo(QString,int)"));
     QCOMPARE(method1.methodType(), QMetaMethod::Method);
     QCOMPARE(method1.returnType(), QByteArray("void"));
-    QCOMPARE(method1.parameterTypes(), QList<QByteArray>() << "QString" << "int");
+    QCOMPARE(method1.parameterTypes(), QList<QByteArrayView>() << "QString" << "int");
     QVERIFY(method1.parameterNames().isEmpty());
     QVERIFY(method1.tag().isEmpty());
     QCOMPARE(method1.access(), QMetaMethod::Public);
@@ -243,7 +253,7 @@ void tst_QMetaObjectBuilder::method()
     QCOMPARE(method2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(method2.methodType(), QMetaMethod::Method);
     QCOMPARE(method2.returnType(), QByteArray("int"));
-    QCOMPARE(method2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(method2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QVERIFY(method2.parameterNames().isEmpty());
     QVERIFY(method2.tag().isEmpty());
     QCOMPARE(method2.access(), QMetaMethod::Public);
@@ -270,7 +280,7 @@ void tst_QMetaObjectBuilder::method()
     QCOMPARE(method1.signature(), QByteArray("foo(QString,int)"));
     QCOMPARE(method1.methodType(), QMetaMethod::Method);
     QCOMPARE(method1.returnType(), QByteArray("int"));
-    QCOMPARE(method1.parameterTypes(), QList<QByteArray>() << "QString" << "int");
+    QCOMPARE(method1.parameterTypes(), QList<QByteArrayView>() << "QString" << "int");
     QCOMPARE(method1.parameterNames(), QList<QByteArray>() << "a" << "b");
     QCOMPARE(method1.tag(), QByteArray("tag"));
     QCOMPARE(method1.access(), QMetaMethod::Private);
@@ -281,7 +291,7 @@ void tst_QMetaObjectBuilder::method()
     QCOMPARE(method2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(method2.methodType(), QMetaMethod::Method);
     QCOMPARE(method2.returnType(), QByteArray("int"));
-    QCOMPARE(method2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(method2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QVERIFY(method2.parameterNames().isEmpty());
     QVERIFY(method2.tag().isEmpty());
     QCOMPARE(method2.access(), QMetaMethod::Public);
@@ -302,7 +312,7 @@ void tst_QMetaObjectBuilder::method()
     QCOMPARE(method1.signature(), QByteArray("foo(QString,int)"));
     QCOMPARE(method1.methodType(), QMetaMethod::Method);
     QCOMPARE(method1.returnType(), QByteArray("int"));
-    QCOMPARE(method1.parameterTypes(), QList<QByteArray>() << "QString" << "int");
+    QCOMPARE(method1.parameterTypes(), QList<QByteArrayView>() << "QString" << "int");
     QCOMPARE(method1.parameterNames(), QList<QByteArray>() << "a" << "b");
     QCOMPARE(method1.tag(), QByteArray("tag"));
     QCOMPARE(method1.access(), QMetaMethod::Private);
@@ -313,7 +323,7 @@ void tst_QMetaObjectBuilder::method()
     QCOMPARE(method2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(method2.methodType(), QMetaMethod::Method);
     QCOMPARE(method2.returnType(), QByteArray("QString"));
-    QCOMPARE(method2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(method2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QCOMPARE(method2.parameterNames(), QList<QByteArray>() << "c");
     QCOMPARE(method2.tag(), QByteArray("Q_FOO"));
     QCOMPARE(method2.access(), QMetaMethod::Protected);
@@ -329,7 +339,7 @@ void tst_QMetaObjectBuilder::method()
     QCOMPARE(method2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(method2.methodType(), QMetaMethod::Method);
     QCOMPARE(method2.returnType(), QByteArray("QString"));
-    QCOMPARE(method2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(method2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QCOMPARE(method2.parameterNames(), QList<QByteArray>() << "c");
     QCOMPARE(method2.tag(), QByteArray("Q_FOO"));
     QCOMPARE(method2.access(), QMetaMethod::Protected);
@@ -357,7 +367,7 @@ void tst_QMetaObjectBuilder::slot()
     QCOMPARE(method1.signature(), QByteArray("foo(QString,int)"));
     QCOMPARE(method1.methodType(), QMetaMethod::Slot);
     QCOMPARE(method1.returnType(), QByteArray("void"));
-    QCOMPARE(method1.parameterTypes(), QList<QByteArray>() << "QString" << "int");
+    QCOMPARE(method1.parameterTypes(), QList<QByteArrayView>() << "QString" << "int");
     QVERIFY(method1.parameterNames().isEmpty());
     QVERIFY(method1.tag().isEmpty());
     QCOMPARE(method1.access(), QMetaMethod::Public);
@@ -371,7 +381,7 @@ void tst_QMetaObjectBuilder::slot()
     QCOMPARE(method2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(method2.methodType(), QMetaMethod::Slot);
     QCOMPARE(method2.returnType(), QByteArray("void"));
-    QCOMPARE(method2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(method2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QVERIFY(method2.parameterNames().isEmpty());
     QVERIFY(method2.tag().isEmpty());
     QCOMPARE(method2.access(), QMetaMethod::Public);
@@ -397,7 +407,7 @@ void tst_QMetaObjectBuilder::signal()
     QCOMPARE(method1.signature(), QByteArray("foo(QString,int)"));
     QCOMPARE(method1.methodType(), QMetaMethod::Signal);
     QCOMPARE(method1.returnType(), QByteArray("void"));
-    QCOMPARE(method1.parameterTypes(), QList<QByteArray>() << "QString" << "int");
+    QCOMPARE(method1.parameterTypes(), QList<QByteArrayView>() << "QString" << "int");
     QVERIFY(method1.parameterNames().isEmpty());
     QVERIFY(method1.tag().isEmpty());
     QCOMPARE(method1.access(), QMetaMethod::Public);
@@ -411,7 +421,7 @@ void tst_QMetaObjectBuilder::signal()
     QCOMPARE(method2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(method2.methodType(), QMetaMethod::Signal);
     QCOMPARE(method2.returnType(), QByteArray("void"));
-    QCOMPARE(method2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(method2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QVERIFY(method2.parameterNames().isEmpty());
     QVERIFY(method2.tag().isEmpty());
     QCOMPARE(method2.access(), QMetaMethod::Public);
@@ -437,7 +447,7 @@ void tst_QMetaObjectBuilder::constructor()
     QCOMPARE(ctor1.signature(), QByteArray("foo(QString,int)"));
     QCOMPARE(ctor1.methodType(), QMetaMethod::Constructor);
     QVERIFY(ctor1.returnType().isEmpty());
-    QCOMPARE(ctor1.parameterTypes(), QList<QByteArray>() << "QString" << "int");
+    QCOMPARE(ctor1.parameterTypes(), QList<QByteArrayView>() << "QString" << "int");
     QVERIFY(ctor1.parameterNames().isEmpty());
     QVERIFY(ctor1.tag().isEmpty());
     QCOMPARE(ctor1.access(), QMetaMethod::Public);
@@ -450,7 +460,7 @@ void tst_QMetaObjectBuilder::constructor()
     QCOMPARE(ctor2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(ctor2.methodType(), QMetaMethod::Constructor);
     QVERIFY(ctor2.returnType().isEmpty());
-    QCOMPARE(ctor2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(ctor2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QVERIFY(ctor2.parameterNames().isEmpty());
     QVERIFY(ctor2.tag().isEmpty());
     QCOMPARE(ctor2.access(), QMetaMethod::Public);
@@ -476,7 +486,7 @@ void tst_QMetaObjectBuilder::constructor()
     QCOMPARE(ctor1.signature(), QByteArray("foo(QString,int)"));
     QCOMPARE(ctor1.methodType(), QMetaMethod::Constructor);
     QCOMPARE(ctor1.returnType(), QByteArray("int"));
-    QCOMPARE(ctor1.parameterTypes(), QList<QByteArray>() << "QString" << "int");
+    QCOMPARE(ctor1.parameterTypes(), QList<QByteArrayView>() << "QString" << "int");
     QCOMPARE(ctor1.parameterNames(), QList<QByteArray>() << "a" << "b");
     QCOMPARE(ctor1.tag(), QByteArray("tag"));
     QCOMPARE(ctor1.access(), QMetaMethod::Private);
@@ -485,7 +495,7 @@ void tst_QMetaObjectBuilder::constructor()
     QCOMPARE(ctor2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(ctor2.methodType(), QMetaMethod::Constructor);
     QVERIFY(ctor2.returnType().isEmpty());
-    QCOMPARE(ctor2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(ctor2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QVERIFY(ctor2.parameterNames().isEmpty());
     QVERIFY(ctor2.tag().isEmpty());
     QCOMPARE(ctor2.access(), QMetaMethod::Public);
@@ -504,7 +514,7 @@ void tst_QMetaObjectBuilder::constructor()
     QCOMPARE(ctor1.signature(), QByteArray("foo(QString,int)"));
     QCOMPARE(ctor1.methodType(), QMetaMethod::Constructor);
     QCOMPARE(ctor1.returnType(), QByteArray("int"));
-    QCOMPARE(ctor1.parameterTypes(), QList<QByteArray>() << "QString" << "int");
+    QCOMPARE(ctor1.parameterTypes(), QList<QByteArrayView>() << "QString" << "int");
     QCOMPARE(ctor1.parameterNames(), QList<QByteArray>() << "a" << "b");
     QCOMPARE(ctor1.tag(), QByteArray("tag"));
     QCOMPARE(ctor1.access(), QMetaMethod::Private);
@@ -513,7 +523,7 @@ void tst_QMetaObjectBuilder::constructor()
     QCOMPARE(ctor2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(ctor2.methodType(), QMetaMethod::Constructor);
     QCOMPARE(ctor2.returnType(), QByteArray("QString"));
-    QCOMPARE(ctor2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(ctor2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QCOMPARE(ctor2.parameterNames(), QList<QByteArray>() << "c");
     QCOMPARE(ctor2.tag(), QByteArray("Q_FOO"));
     QCOMPARE(ctor2.access(), QMetaMethod::Protected);
@@ -528,7 +538,7 @@ void tst_QMetaObjectBuilder::constructor()
     QCOMPARE(ctor2.signature(), QByteArray("bar(QString)"));
     QCOMPARE(ctor2.methodType(), QMetaMethod::Constructor);
     QCOMPARE(ctor2.returnType(), QByteArray("QString"));
-    QCOMPARE(ctor2.parameterTypes(), QList<QByteArray>() << "QString");
+    QCOMPARE(ctor2.parameterTypes(), QList<QByteArrayView>() << "QString");
     QCOMPARE(ctor2.parameterNames(), QList<QByteArray>() << "c");
     QCOMPARE(ctor2.tag(), QByteArray("Q_FOO"));
     QCOMPARE(ctor2.access(), QMetaMethod::Protected);
@@ -576,6 +586,8 @@ void tst_QMetaObjectBuilder::property()
     QVERIFY(!nullProp.isEnumOrFlag());
     QVERIFY(!nullProp.isConstant());
     QVERIFY(!nullProp.isFinal());
+    QVERIFY(!nullProp.isVirtual());
+    QVERIFY(!nullProp.isOverride());
     QCOMPARE(nullProp.index(), 0);
     QCOMPARE(nullProp.revision(), 0);
 
@@ -595,6 +607,8 @@ void tst_QMetaObjectBuilder::property()
     QVERIFY(!prop1.isEnumOrFlag());
     QVERIFY(!prop1.isConstant());
     QVERIFY(!prop1.isFinal());
+    QVERIFY(!prop1.isVirtual());
+    QVERIFY(!prop1.isOverride());
     QCOMPARE(prop1.revision(), 0);
     QCOMPARE(prop1.index(), 0);
     QCOMPARE(builder.propertyCount(), 1);
@@ -615,6 +629,8 @@ void tst_QMetaObjectBuilder::property()
     QVERIFY(!prop2.isEnumOrFlag());
     QVERIFY(!prop2.isConstant());
     QVERIFY(!prop2.isFinal());
+    QVERIFY(!prop2.isVirtual());
+    QVERIFY(!prop2.isOverride());
     QCOMPARE(prop2.revision(), 0);
     QCOMPARE(prop2.index(), 1);
     QCOMPARE(builder.propertyCount(), 2);
@@ -668,6 +684,8 @@ void tst_QMetaObjectBuilder::property()
     QVERIFY(!prop2.isEnumOrFlag());
     QVERIFY(!prop2.isConstant());
     QVERIFY(!prop2.isFinal());
+    QVERIFY(!prop2.isVirtual());
+    QVERIFY(!prop2.isOverride());
     QCOMPARE(prop2.revision(), 0);
 
     // Remove prop1 and check that prop2 becomes index 0.
@@ -685,6 +703,8 @@ void tst_QMetaObjectBuilder::property()
     QVERIFY(!prop2.isEnumOrFlag());
     QVERIFY(!prop2.isConstant());
     QVERIFY(!prop2.isFinal());
+    QVERIFY(!prop2.isVirtual());
+    QVERIFY(!prop2.isOverride());
     QCOMPARE(prop2.revision(), 0);
     QCOMPARE(prop2.index(), 0);
 
@@ -710,6 +730,28 @@ void tst_QMetaObjectBuilder::property()
             prop2.setEnumOrFlag(false); \
             prop2.setConstant(false); \
             prop2.setFinal(false); \
+            prop2.setVirtual(false); \
+            prop2.setOverride(false); \
+            prop2.setBindable(false); \
+            prop2.setRequired(false); \
+        } while (0)
+#define SET_ALL_FLAGS() \
+        do { \
+            prop2.setReadable(true); \
+            prop2.setWritable(true); \
+            prop2.setResettable(true); \
+            prop2.setDesignable(true); \
+            prop2.setScriptable(true); \
+            prop2.setStored(true); \
+            prop2.setUser(true); \
+            prop2.setStdCppSet(true); \
+            prop2.setEnumOrFlag(true); \
+            prop2.setConstant(true); \
+            prop2.setFinal(true); \
+            prop2.setVirtual(true); \
+            prop2.setOverride(true); \
+            prop2.setBindable(true); \
+            prop2.setRequired(true); \
         } while (0)
 #define COUNT_FLAGS() \
         ((prop2.isReadable() ? 1 : 0) + \
@@ -722,15 +764,21 @@ void tst_QMetaObjectBuilder::property()
          (prop2.hasStdCppSet() ? 1 : 0) + \
          (prop2.isEnumOrFlag() ? 1 : 0) + \
          (prop2.isConstant() ? 1 : 0) + \
-         (prop2.isFinal() ? 1 : 0))
+         (prop2.isFinal() ? 1 : 0) + \
+         (prop2.isVirtual() ? 1 : 0) + \
+         (prop2.isOverride() ? 1 : 0) + \
+         (prop2.isBindable() ? 1 : 0) + \
+         (prop2.isRequired() ? 1 : 0))
 #define CHECK_FLAG(setFunc,isFunc) \
         do { \
+            ++flagCounter; \
             CLEAR_FLAGS(); \
             QCOMPARE(COUNT_FLAGS(), 0); \
             prop2.setFunc(true); \
             QVERIFY(prop2.isFunc()); \
             QCOMPARE(COUNT_FLAGS(), 1); \
         } while (0)
+    int flagCounter = 0;
     CHECK_FLAG(setReadable, isReadable);
     CHECK_FLAG(setWritable, isWritable);
     CHECK_FLAG(setResettable, isResettable);
@@ -741,7 +789,13 @@ void tst_QMetaObjectBuilder::property()
     CHECK_FLAG(setStdCppSet, hasStdCppSet);
     CHECK_FLAG(setEnumOrFlag, isEnumOrFlag);
     CHECK_FLAG(setConstant, isConstant);
+    CHECK_FLAG(setBindable, isBindable);
     CHECK_FLAG(setFinal, isFinal);
+    CHECK_FLAG(setVirtual, isVirtual);
+    CHECK_FLAG(setOverride, isOverride);
+    CHECK_FLAG(setRequired, isRequired);
+    SET_ALL_FLAGS();
+    QCOMPARE(COUNT_FLAGS(), flagCounter);
 
     // Check that nothing else changed.
     QVERIFY(checkForSideEffects(builder, QMetaObjectBuilder::Properties));
@@ -755,14 +809,29 @@ void tst_QMetaObjectBuilder::property()
     QCOMPARE(prototypeProp.notifySignal().signature(), QByteArray("propChanged(QString)"));
     QCOMPARE(builder.methodCount(), 1);
     QCOMPARE(builder.method(0).signature(), QByteArray("propChanged(QString)"));
+
+    // virt specifiers
+    { //Q_PROPERTY(int virtualP READ prop VIRTUAL)
+        QMetaProperty prototype = SomethingOfEverything::staticMetaObject.property(7);
+        QMetaPropertyBuilder prototypeProp = builder.addProperty(prototype);
+        QCOMPARE(prototypeProp.isVirtual(), true);
+        QCOMPARE(prototypeProp.isOverride(), false);
+        QCOMPARE(prototypeProp.isFinal(), false);
+    }
+    { // Q_PROPERTY(int overrideP READ prop OVERRIDE)
+        QMetaProperty prototype = SomethingOfEverything::staticMetaObject.property(8);
+        QMetaPropertyBuilder prototypeProp = builder.addProperty(prototype);
+        QCOMPARE(prototypeProp.isVirtual(), false);
+        QCOMPARE(prototypeProp.isOverride(), true);
+        QCOMPARE(prototypeProp.isFinal(), false);
+    }
 }
 
 void tst_QMetaObjectBuilder::variantProperty()
 {
     QMetaObjectBuilder builder;
     builder.addProperty("variant", "const QVariant &");
-    QMetaObject *meta = builder.toMetaObject();
-    dynamicMetaObjectsPendingFree.push_back(meta);
+    MetaObjectPtr meta{builder.toMetaObject()};
 
     QMetaProperty prop = meta->property(meta->propertyOffset());
     QCOMPARE(QMetaType::Type(prop.userType()), QMetaType::QVariant);
@@ -993,6 +1062,25 @@ void tst_QMetaObjectBuilder::enumerator()
     QVERIFY(checkForSideEffects(builder, QMetaObjectBuilder::Enumerators));
 }
 
+void tst_QMetaObjectBuilder::enumProperty()
+{
+    // When adding property with an enumeration type, QMetaProperty::isEnumType()
+    // should return true.
+    QMetaObjectBuilder builder;
+    builder.setSuperClass(QObject::metaObject());
+
+    auto enumMetaType = QMetaType::fromType<Qt::Orientation>();
+    QVERIFY(enumMetaType.isValid());
+
+    builder.addProperty("orientation", "Qt::Orientation", enumMetaType);
+
+    MetaObjectPtr mo{builder.toMetaObject()};
+    QVERIFY(mo != nullptr);
+    const int index = mo->indexOfProperty("orientation");
+    QVERIFY(index != -1);
+    QVERIFY(mo->property(index).isEnumType());
+}
+
 void tst_QMetaObjectBuilder::classInfo()
 {
     QMetaObjectBuilder builder;
@@ -1067,22 +1155,66 @@ void tst_QMetaObjectBuilder::staticMetacall()
 void tst_QMetaObjectBuilder::copyMetaObject()
 {
     QMetaObjectBuilder builder(&QObject::staticMetaObject);
-    QMetaObject *meta = builder.toMetaObject();
-    dynamicMetaObjectsPendingFree.push_back(meta);
-    auto compared = sameMetaObject(meta, &QObject::staticMetaObject);
+    MetaObjectPtr meta{builder.toMetaObject()};
+    auto compared = sameMetaObject(meta.get(), &QObject::staticMetaObject);
     QVERIFY2(compared, qPrintable(compared.details));
 
     QMetaObjectBuilder builder2(&staticMetaObject);
-    meta = builder2.toMetaObject();
-    dynamicMetaObjectsPendingFree.push_back(meta);
-    compared = sameMetaObject(meta, &staticMetaObject);
+    meta.reset(builder2.toMetaObject());
+    compared = sameMetaObject(meta.get(), &staticMetaObject);
     QVERIFY2(compared, qPrintable(compared.details));
 
     QMetaObjectBuilder builder3(&SomethingOfEverything::staticMetaObject);
-    meta = builder3.toMetaObject();
-    dynamicMetaObjectsPendingFree.push_back(meta);
-    compared = sameMetaObject(meta, &SomethingOfEverything::staticMetaObject);
+    meta.reset(builder3.toMetaObject());
+    compared = sameMetaObject(meta.get(), &SomethingOfEverything::staticMetaObject);
     QVERIFY2(compared, qPrintable(compared.details));
+}
+
+class TestMetaPropertyFlags : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(MyEnumFlag fprop READ fprop)
+
+public:
+    enum MyEnum { A = 0x01, B = 0x02 };
+    Q_DECLARE_FLAGS(MyEnumFlag, MyEnum)
+    Q_FLAG(MyEnumFlag)
+    Q_ENUMS(MyEnum)
+
+    MyEnumFlag fprop() const { return A; }
+};
+
+void tst_QMetaObjectBuilder::copyMetaObject_metaProperty()
+{
+    // The TestMetaPropertyFlags class has both `Q_ENUMS(MyEnum)` and
+    // `Q_FLAG(MyEnumFlag, MyEnum)`, which means two separate sets of enumerator data
+    // are generated for `MyEnum`, from the .moc file:
+    // `QtMocHelpers::EnumData<enum MyEnum>`
+    // `QtMocHelpers::EnumData<MyEnumFlag>`
+
+    const auto *mo = &TestMetaPropertyFlags::staticMetaObject;
+    auto index1 = mo->indexOfProperty("fprop");
+    // No problem with the original meta-object, the correct enumerator
+    // (name() == "MyEnumFlag") is found in the `QMetaProperty(const QMetaObject *, int)`
+    // constructor
+    QMetaProperty p1 = mo->property(index1);
+    QVERIFY(p1.isEnumType());
+    QVERIFY(p1.isFlagType()); // and it has `EnumIsFlag`.
+
+    // Clone the meta-object
+    QMetaObjectBuilder builder(&TestMetaPropertyFlags::staticMetaObject);
+    MetaObjectPtr meta{builder.toMetaObject()};
+    int index2 = meta->indexOfProperty("fprop");
+    QMetaProperty p2 = meta->property(index2);
+    QVERIFY(p2.isEnumType());
+
+    // When constructing `p2`, it doesn't find the "MyEnumFlag" enumerator data,
+    // instead it only finds "MyEnum".
+    QEXPECT_FAIL("", "isFlagType() returns false, QTBUG-101426", Continue);
+    QVERIFY(p2.isFlagType());
+
+    QEXPECT_FAIL("", "Meta properties differ, QTBUG-101426", Continue);
+    QVERIFY(sameProperty(p1, p2));
 }
 
 // Check that removing a method updates notify signals appropriately
@@ -1372,7 +1504,6 @@ private:
     //Q_PROPERTY(int intProp READ intProp WRITE setIntProp NOTIFY intPropChanged)
 public:
     TestObject(QObject *parent = nullptr); // Q_INVOKABLE
-    ~TestObject();
 
     // Property accessors
     int intProp() const;
@@ -1394,7 +1525,7 @@ public:
 private:
     static QMetaObject *buildMetaObject();
 
-    QMetaObject *m_metaObject;
+    MetaObjectPtr m_metaObject;
     int m_intProp;
     int m_voidSlotIntArg;
 };
@@ -1408,11 +1539,6 @@ TestObject::TestObject(QObject *parent)
       m_intProp(-1), m_voidSlotIntArg(-1)
 {
     staticMetaObject = *m_metaObject;
-}
-
-TestObject::~TestObject()
-{
-    free(m_metaObject);
 }
 
 QMetaObject *TestObject::buildMetaObject()
@@ -1528,7 +1654,7 @@ void TestObject::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
 
 const QMetaObject *TestObject::metaObject() const
 {
-    return m_metaObject;
+    return m_metaObject.get();
 }
 
 void *TestObject::qt_metacast(const char *_clname)
@@ -1580,7 +1706,7 @@ int TestObject::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
 void TestObject::intPropChanged(int _t1)
 {
     void *_a[] = { 0, const_cast<void*>(reinterpret_cast<const void*>(&_t1)) };
-    QMetaObject::activate(this, m_metaObject, 0, _a);
+    QMetaObject::activate(this, m_metaObject.get(), 0, _a);
 }
 
 
@@ -1685,7 +1811,7 @@ void tst_QMetaObjectBuilder::usage_templateConnect()
                                 testObject.data(), &TestObject::voidSlotInt));
 
     // Something that isn't a signal
-    QTest::ignoreMessage(QtWarningMsg, "QObject::connect: signal not found in TestObject");
+    QTest::ignoreMessage(QtWarningMsg, "QObject::connect(TestObject, TestObject): signal not found");
     con = QObject::connect(testObject.data(), &TestObject::setIntProp,
                            testObject.data(), &TestObject::intPropChanged);
     QVERIFY(!con);
@@ -1696,14 +1822,12 @@ void tst_QMetaObjectBuilder::classNameFirstInStringData()
     QMetaObjectBuilder builder;
     builder.addMetaObject(&SomethingOfEverything::staticMetaObject);
     builder.setClassName(QByteArrayLiteral("TestClass"));
-    QMetaObject *mo = builder.toMetaObject();
+    MetaObjectPtr mo{builder.toMetaObject()};
 
     uint offset = mo->d.stringdata[0];
     uint len = mo->d.stringdata[1];
     QByteArray className(reinterpret_cast<const char *>(mo->d.stringdata) + offset, len);
     QCOMPARE(className, QByteArrayLiteral("TestClass"));
-
-    free(mo);
 }
 
 struct MyFoo {};
@@ -1717,13 +1841,12 @@ void tst_QMetaObjectBuilder::propertyMetaType()
     QMetaObjectBuilder builder;
     builder.setClassName("Test");
     builder.addProperty("myParameter", "MyFoo");
-    auto mo = builder.toMetaObject();
+    MetaObjectPtr mo{builder.toMetaObject()};
 
     QMetaProperty metaProp = mo->property(mo->indexOfProperty("myParameter"));
     QCOMPARE(metaProp.typeName(), meta.name());
     QCOMPARE(metaProp.typeId(), metaId);
     QCOMPARE(metaProp.metaType(), meta);
-    free(mo);
 }
 
 void tst_QMetaObjectBuilder::enumCloning()
@@ -1784,12 +1907,6 @@ void tst_QMetaObjectBuilder::ownMetaTypeNoProperties()
     auto cleanup = qScopeGuard([&](){ free(mo); });
     // own metatype should be invalid, as the dynamic metaobject has not been registered
     QVERIFY(!mo->metaType().isValid());// should not crash
-}
-
-void tst_QMetaObjectBuilder::cleanupTestCase()
-{
-    for (QMetaObject *obj: dynamicMetaObjectsPendingFree)
-        free(obj);
 }
 
 QTEST_MAIN(tst_QMetaObjectBuilder)

@@ -375,7 +375,7 @@ or methods to exist in the new version while remaining compatible with
 previous versions.
 
 Consider these two QML files:
-\code
+\qml
 // main.qml
 import QtQuick 1.0
 
@@ -383,16 +383,16 @@ Item {
     id: root
     MyType {}
 }
-\endcode
+\endqml
 
-\code
+\qml
 // MyType.qml
 import MyTypes 1.0
 
 CppType {
     value: root.x
 }
-\endcode
+\endqml
 
 where \c CppType maps to the C++ class \c CppType.
 
@@ -447,8 +447,9 @@ When integrating existing classes and technology into QML, APIs will
 often need tweaking to fit better into the declarative environment.
 Although the best results are usually obtained by modifying the original
 classes directly, if this is either not possible or is complicated by some
-other concerns, extension objects allow limited extension possibilities
-without direct modifications.
+other concerns, extension objects allow limited extension possibilities to types
+that you control without direct modifications. Extending Qt's own types is not
+supported.
 
 \e{Extension objects} add additional properties to an existing type. An extended
 type definition allows the programmer to supply an additional type, known as the
@@ -978,4 +979,5 @@ public:
 };
 \endcode
 
+\sa {qqmlintegration.h}{QML Type Registration Macros}, {Overview - QML and C++ Integration}
 */

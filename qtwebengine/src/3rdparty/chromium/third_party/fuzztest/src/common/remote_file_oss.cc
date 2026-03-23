@@ -53,7 +53,7 @@
 #include "riegeli/bytes/writer.h"
 #endif  // CENTIPEDE_DISABLE_RIEGELI
 
-namespace centipede {
+namespace fuzztest::internal {
 namespace {
 
 class LocalRemoteFile : public RemoteFile {
@@ -181,7 +181,11 @@ absl::StatusOr<std::vector<std::string>> RemoteListFiles(std::string_view path,
   LOG(FATAL) << "Filesystem API not supported in iOS/MacOS";
 }
 
-absl::Status RemotePathRename(std::string_view from, std::string_view to) {
+absl::Status RemoteFileRename(std::string_view from, std::string_view to) {
+  LOG(FATAL) << "Filesystem API not supported in iOS/MacOS";
+}
+
+absl::Status RemoteFileCopy(std::string_view from, std::string_view to) {
   LOG(FATAL) << "Filesystem API not supported in iOS/MacOS";
 }
 
@@ -235,12 +239,24 @@ absl::StatusOr<std::vector<std::string>> RemoteListFiles(std::string_view path,
              : list_files(std::filesystem::directory_iterator(path));
 }
 
-absl::Status RemotePathRename(std::string_view from, std::string_view to) {
+absl::Status RemoteFileRename(std::string_view from, std::string_view to) {
   std::error_code error;
   std::filesystem::rename(from, to, error);
   if (error) {
     return absl::UnknownError(
         absl::StrCat("filesystem::rename() failed, from: ", std::string(from),
+                     ", to: ", std::string(to), ", error: ", error.message()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status RemoteFileCopy(std::string_view from, std::string_view to) {
+  std::error_code error;
+  std::filesystem::copy(
+      from, to, std::filesystem::copy_options::overwrite_existing, error);
+  if (error) {
+    return absl::UnknownError(
+        absl::StrCat("filesystem::copy() failed, from: ", std::string(from),
                      ", to: ", std::string(to), ", error: ", error.message()));
   }
   return absl::OkStatus();
@@ -300,28 +316,27 @@ absl::StatusOr<RemoteFile *> RemoteFileOpen(std::string_view path,
   return LocalRemoteFile::Create(std::string(path), mode);
 }
 
-absl::Status RemoteFileClose(absl::Nonnull<RemoteFile *> f) {
+absl::Status RemoteFileClose(RemoteFile *absl_nonnull f) {
   auto *file = static_cast<LocalRemoteFile *>(f);
   RETURN_IF_NOT_OK(file->Close());
   delete file;
   return absl::OkStatus();
 }
 
-absl::Status RemoteFileSetWriteBufferSize(absl::Nonnull<RemoteFile *> f,
+absl::Status RemoteFileSetWriteBufferSize(RemoteFile *absl_nonnull f,
                                           size_t size) {
   return static_cast<LocalRemoteFile *>(f)->SetWriteBufSize(size);
 }
 
-absl::Status RemoteFileAppend(absl::Nonnull<RemoteFile *> f,
-                              const ByteArray &ba) {
+absl::Status RemoteFileAppend(RemoteFile *absl_nonnull f, const ByteArray &ba) {
   return static_cast<LocalRemoteFile *>(f)->Write(ba);
 }
 
-absl::Status RemoteFileFlush(absl::Nonnull<RemoteFile *> f) {
+absl::Status RemoteFileFlush(RemoteFile *absl_nonnull f) {
   return static_cast<LocalRemoteFile *>(f)->Flush();
 }
 
-absl::Status RemoteFileRead(absl::Nonnull<RemoteFile *> f, ByteArray &ba) {
+absl::Status RemoteFileRead(RemoteFile *absl_nonnull f, ByteArray &ba) {
   return static_cast<LocalRemoteFile *>(f)->Read(ba);
 }
 
@@ -402,4 +417,4 @@ absl::StatusOr<std::unique_ptr<riegeli::Writer>> CreateRiegeliFileWriter(
 }
 #endif  // CENTIPEDE_DISABLE_RIEGELI
 
-}  // namespace centipede
+}  // namespace fuzztest::internal

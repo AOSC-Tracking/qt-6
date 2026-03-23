@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -19,8 +20,6 @@ T.TabButton {
 
     icon.width: 20
     icon.height: 20
-    icon.color: Color.transparent(control.hovered ? control.Universal.baseMediumHighColor : control.Universal.foreground,
-                                                    control.checked || control.down || control.hovered ? 1.0 : 0.2)
 
     contentItem: IconLabel {
         spacing: control.spacing
@@ -28,9 +27,11 @@ T.TabButton {
         display: control.display
 
         icon: control.icon
+        defaultIconColor: Color.transparent(enabled && control.hovered
+            ? control.Universal.baseMediumHighColor : control.Universal.foreground,
+            control.checked || control.down || (enabled && control.hovered) ? 1.0 : 0.2)
         text: control.text
         font: control.font
-        color: Color.transparent(enabled && control.hovered ? control.Universal.baseMediumHighColor : control.Universal.foreground,
-                                 control.checked || control.down || (enabled && control.hovered) ? 1.0 : 0.2)
+        color: defaultIconColor
     }
 }

@@ -49,13 +49,15 @@ public:
     }
     void destroy()
     {
+        surface = nullptr;
         if (resource)
             wl_resource_destroy(resource);
         else
             delete this;
     }
-    void send(uint time)
+    void sendAndDestroy(uint time)
     {
+        surface = nullptr;
         wl_callback_send_done(resource, time);
         wl_resource_destroy(resource);
     }
@@ -68,7 +70,6 @@ public:
     }
     QWaylandSurface *surface = nullptr;
     wl_resource *resource = nullptr;
-    bool canSend = false;
 };
 }
 static QRegion infiniteRegion() {
@@ -101,16 +102,16 @@ QWaylandSurfacePrivate::~QWaylandSurfacePrivate()
 
     bufferRef = QWaylandBufferRef();
 
-    for (QtWayland::FrameCallback *c : std::as_const(pendingFrameCallbacks))
-        c->destroy();
     for (QtWayland::FrameCallback *c : std::as_const(frameCallbacks))
+        c->destroy();
+    for (QtWayland::FrameCallback *c : std::as_const(pendingFrameCallbacks))
         c->destroy();
 }
 
 void QWaylandSurfacePrivate::removeFrameCallback(QtWayland::FrameCallback *callback)
 {
-    pendingFrameCallbacks.removeOne(callback);
-    frameCallbacks.removeOne(callback);
+    if (!frameCallbacks.removeOne(callback))
+        pendingFrameCallbacks.removeOne(callback);
 }
 
 void QWaylandSurfacePrivate::notifyViewsAboutDestruction()
@@ -162,10 +163,25 @@ void QWaylandSurfacePrivate::surface_destroy(Resource *resource)
     wl_resource_destroy(resource->handle);
 }
 
-void QWaylandSurfacePrivate::surface_attach(Resource *, struct wl_resource *buffer, int x, int y)
+void QWaylandSurfacePrivate::surface_offset(Resource *, int32_t x, int32_t y)
 {
-    pending.buffer = QWaylandBufferRef(getBuffer(buffer));
     pending.offset = QPoint(x, y);
+}
+
+void QWaylandSurfacePrivate::surface_attach(Resource *resource, struct wl_resource *buffer, int x, int y)
+{
+    if (resource->version() >= WL_SURFACE_OFFSET_SINCE_VERSION) {
+        if (Q_UNLIKELY(x != 0 || y != 0)) {
+            wl_resource_post_error(resource->handle, WL_SURFACE_ERROR_INVALID_OFFSET,
+                                   "invalid buffer offset");
+            return;
+        }
+        // The x and y arguments are ignored and do not change the pending state.
+    } else {
+        pending.offset = QPoint(x, y);
+    }
+
+    pending.buffer = QWaylandBufferRef(getBuffer(buffer));
     pending.newlyAttached = true;
 }
 
@@ -216,10 +232,12 @@ void QWaylandSurfacePrivate::surface_commit(Resource *)
     QSize oldDestinationSize = destinationSize;
     bool oldHasContent = hasContent;
     int oldBufferScale = bufferScale;
+    Qt::ScreenOrientation oldContentOrientation = contentOrientation;
 
     // Update all internal state
     if (pending.buffer.hasBuffer() || pending.newlyAttached)
         bufferRef = pending.buffer;
+    contentOrientation = pending.contentOrientation;
     bufferScale = pending.bufferScale;
     bufferSize = bufferRef.size();
     QSize surfaceSize = bufferSize / bufferScale;
@@ -280,6 +298,9 @@ void QWaylandSurfacePrivate::surface_commit(Resource *)
 
     emit q->damaged(damage);
 
+    if (oldContentOrientation != contentOrientation)
+        emit q->contentOrientationChanged();
+
     if (oldBufferSize != bufferSize)
         emit q->bufferSizeChanged();
 
@@ -303,31 +324,55 @@ void QWaylandSurfacePrivate::surface_commit(Resource *)
 
 void QWaylandSurfacePrivate::surface_set_buffer_transform(Resource *resource, int32_t orientation)
 {
-    Q_UNUSED(resource);
     Q_Q(QWaylandSurface);
-    QScreen *screen = QGuiApplication::primaryScreen();
-    bool isPortrait = screen->primaryOrientation() == Qt::PortraitOrientation;
-    Qt::ScreenOrientation oldOrientation = contentOrientation;
+    QScreen *screen = nullptr;
+    if (auto *view = q->primaryView()) {
+        if (auto *output = view->output()) {
+            if (auto *window = output->window())
+                screen = window->screen();
+        }
+    }
+    if (screen == nullptr)
+        screen = QGuiApplication::primaryScreen();
+    Qt::ScreenOrientation newContentOrientation = screen->primaryOrientation();
+    bool isPortrait = newContentOrientation == Qt::PortraitOrientation;
     switch (orientation) {
         case WL_OUTPUT_TRANSFORM_90:
-            contentOrientation = isPortrait ? Qt::InvertedLandscapeOrientation : Qt::PortraitOrientation;
+            newContentOrientation = isPortrait ? Qt::InvertedLandscapeOrientation : Qt::PortraitOrientation;
             break;
         case WL_OUTPUT_TRANSFORM_180:
-            contentOrientation = isPortrait ? Qt::InvertedPortraitOrientation : Qt::InvertedLandscapeOrientation;
+            newContentOrientation = isPortrait ? Qt::InvertedPortraitOrientation : Qt::InvertedLandscapeOrientation;
             break;
         case WL_OUTPUT_TRANSFORM_270:
-            contentOrientation = isPortrait ? Qt::LandscapeOrientation : Qt::InvertedPortraitOrientation;
+            newContentOrientation = isPortrait ? Qt::LandscapeOrientation : Qt::InvertedPortraitOrientation;
             break;
+        case WL_OUTPUT_TRANSFORM_NORMAL:
+            newContentOrientation = Qt::PrimaryOrientation;
+            break;
+
+        // Ignore these ones, at least for now
+        case WL_OUTPUT_TRANSFORM_FLIPPED:
+        case WL_OUTPUT_TRANSFORM_FLIPPED_90:
+        case WL_OUTPUT_TRANSFORM_FLIPPED_180:
+        case WL_OUTPUT_TRANSFORM_FLIPPED_270:
+            return;
+
         default:
-            contentOrientation = Qt::PrimaryOrientation;
+            wl_resource_post_error(resource->handle, WL_SURFACE_ERROR_INVALID_TRANSFORM,
+                                   "invalid buffer transform");
+            return;
     }
-    if (contentOrientation != oldOrientation)
-        emit q->contentOrientationChanged();
+    pending.contentOrientation = newContentOrientation;
 }
 
 void QWaylandSurfacePrivate::surface_set_buffer_scale(QtWaylandServer::wl_surface::Resource *resource, int32_t scale)
 {
-    Q_UNUSED(resource);
+    if (Q_UNLIKELY(scale <= 0)) {
+        wl_resource_post_error(resource->handle, WL_SURFACE_ERROR_INVALID_SCALE,
+                               "invalid buffer scale");
+        return;
+    }
+
     pending.bufferScale = scale;
 }
 
@@ -699,9 +744,6 @@ QWaylandCompositor *QWaylandSurface::compositor() const
  */
 void QWaylandSurface::frameStarted()
 {
-    Q_D(QWaylandSurface);
-    for (QtWayland::FrameCallback *c : std::as_const(d->frameCallbacks))
-        c->canSend = true;
 }
 
 /*!
@@ -711,16 +753,9 @@ void QWaylandSurface::sendFrameCallbacks()
 {
     Q_D(QWaylandSurface);
     uint time = d->compositor->currentTimeMsecs();
-    int i = 0;
-    while (i < d->frameCallbacks.size()) {
-        if (d->frameCallbacks.at(i)->canSend) {
-            d->frameCallbacks.at(i)->surface = nullptr;
-            d->frameCallbacks.at(i)->send(time);
-            d->frameCallbacks.removeAt(i);
-        } else {
-            i++;
-        }
-    }
+    const auto frameCallbacks = std::exchange(d->frameCallbacks, {});
+    for (auto *callback : frameCallbacks)
+        callback->sendAndDestroy(time);
 }
 
 /*!

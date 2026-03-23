@@ -25,6 +25,15 @@ QT_BEGIN_NAMESPACE
 class QLockFilePrivate
 {
 public:
+    struct LockFileInfo
+    {
+        qint64 pid;
+        QString appname;
+        QString hostname;
+        QByteArray hostid;
+        QByteArray bootid;
+    };
+
     explicit QLockFilePrivate(const QString &fn);
     ~QLockFilePrivate();
 
@@ -41,6 +50,9 @@ public:
 
     QString fileName;
 
+    static bool getLockInfo_helper(const QString &fileName, LockFileInfo *info);
+    static int openNewFileDescriptor(const QString &fileName);
+
 #ifdef Q_OS_WIN
     Qt::HANDLE fileHandle;
 #else
@@ -52,7 +64,10 @@ public:
     bool isLocked = false;
 
     // used in tst_QLockFile:
-    Q_CORE_EXPORT static int getLockFileHandle(QLockFile *f);
+    static auto getLockFileHandle(QLockFile *f)
+    {
+        return f->d_func()->fileHandle;
+    }
 };
 
 QT_END_NAMESPACE

@@ -17,14 +17,6 @@ qt_internal_add_module(WaylandGlobalPrivate
     NO_GENERATE_CPP_EXPORTS
 )
 
-# Work around 115101.
-# If nothing depends on the WaylandGlobalPrivate target it doesn't run custom commands that the
-# target depends on. WaylandGlobalPrivate_ensure_sync_headers makes sure that 'all' depends on
-# WaylandGlobalPrivate_sync_headers.
-# TODO: This needs to be removed once the fix for QTBUG-115101 is merged in qtbase.
-add_custom_target(WaylandGlobalPrivate_ensure_sync_headers ALL)
-add_dependencies(WaylandGlobalPrivate_ensure_sync_headers WaylandGlobalPrivate_sync_headers)
-
 # special case begin
 # TODO: Ideally these macros would be part of the qtwaylandscanner tool, and not the compositor/client
 include(../../../../src/tools/qtwaylandscanner/Qt6WaylandClientMacros.cmake)
@@ -39,7 +31,7 @@ include(../../../../src/tools/qtwaylandscanner/Qt6WaylandClientMacros.cmake)
 #####################################################################
 
 qt_internal_add_module(WaylandClient
-    PLUGIN_TYPES wayland-graphics-integration-client wayland-inputdevice-integration wayland-decoration-client wayland-shell-integration
+    PLUGIN_TYPES wayland-inputdevice-integration
     SOURCES
         shared/qwaylandinputmethodeventbuilder.cpp shared/qwaylandinputmethodeventbuilder_p.h
         shared/qwaylandmimehelper.cpp shared/qwaylandmimehelper_p.h
@@ -86,7 +78,6 @@ qt_internal_add_module(WaylandClient
         qwaylandviewport.cpp qwaylandviewport_p.h
         qwaylandwindow.cpp qwaylandwindow_p.h
         qwaylandwindowmanagerintegration.cpp qwaylandwindowmanagerintegration_p.h
-        qwaylandeventdispatcher.cpp qwaylandeventdispatcher_p.h
         shellintegration/qwaylandclientshellapi_p.h
         shellintegration/qwaylandshellintegration_p.h shellintegration/qwaylandshellintegration.cpp
         shellintegration/qwaylandshellintegrationfactory.cpp shellintegration/qwaylandshellintegrationfactory_p.h
@@ -125,6 +116,8 @@ qt_internal_add_module(WaylandClient
         ../../../3rdparty/wayland/protocols/viewporter
         ../../../3rdparty/wayland/protocols/xdg-shell
         ../../../3rdparty/wayland/protocols/wlr-data-control
+        ../../../3rdparty/wayland/protocols/session-management
+
 )
 
 qt_internal_add_plugin(QWaylandIntegrationPlugin
@@ -163,8 +156,9 @@ qt6_generate_wayland_protocol_client_sources(WaylandClient
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/wayland/extensions/qt-windowmanager.xml
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/wayland/extensions/hardware-integration.xml
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/wayland/extensions/server-buffer-extension.xml
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/wayland/protocols/color-management/xx-color-management-v4.xml
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/wayland/protocols/color-management/color-management-v1.xml
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/wayland/protocols/pointer-warp/pointer-warp-v1.xml
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/wayland/protocols/session-management/xx-session-management-v1.xml
 )
 
 #### Keys ignored in scope 1:.:.:client.pro:<TRUE>:
@@ -228,6 +222,11 @@ qt_internal_extend_target(WaylandClient CONDITION QT_FEATURE_draganddrop
 qt_internal_extend_target(WaylandClient CONDITION QT_FEATURE_egl AND NOT QT_FEATURE_egl_x11
     DEFINES
         QT_EGL_NO_X11
+)
+
+qt_internal_extend_target(WaylandClient CONDITION QT_FEATURE_sessionmanager
+    SOURCES
+        qwaylandsessionmanager.cpp qwaylandsessionmanager_p.h
 )
 
 qt_internal_add_docs(WaylandClient

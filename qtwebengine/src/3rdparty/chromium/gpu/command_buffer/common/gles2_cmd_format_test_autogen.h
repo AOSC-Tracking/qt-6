@@ -8,6 +8,11 @@
 //    clang-format -i -style=chromium filename
 // DO NOT EDIT!
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 // This file contains unit tests for gles2 commands
 // It is included by gles2_cmd_format_test.cc
 
@@ -5161,7 +5166,7 @@ TEST_F(GLES2FormatTest, CopySharedImageToTextureINTERNALImmediate) {
   EXPECT_EQ(static_cast<GLint>(16), cmd.src_y);
   EXPECT_EQ(static_cast<GLsizei>(17), cmd.width);
   EXPECT_EQ(static_cast<GLsizei>(18), cmd.height);
-  EXPECT_EQ(static_cast<GLboolean>(19), cmd.flip_y);
+  EXPECT_EQ(static_cast<GLboolean>(19), cmd.is_dst_origin_top_left);
   CheckBytesWrittenMatchesExpectedSize(
       next_cmd, sizeof(cmd) + RoundSizeToMultipleOfEntries(sizeof(data)));
 }

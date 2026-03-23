@@ -91,6 +91,7 @@
     key and iterate from there:
 
     \snippet code/src_corelib_tools_qmultimap.cpp 11
+    \snippet code/src_corelib_tools_qmultimap.cpp 11_better
 
     If you only need to extract the values from a map (not the keys),
     you can also use range-based for:
@@ -456,7 +457,7 @@
 
     Returns the number of items associated with key \a key.
 
-    \sa contains(), QMultiMap::count()
+    \sa contains(), QMultiMap::count(const Key &key, const T &value)
 */
 
 /*! \fn template <class Key, class T> qsizetype QMultiMap<Key, T>::count(const Key &key, const T &value) const
@@ -484,7 +485,7 @@
     Returns a reference to the largest key in the multi map.
     This function assumes that the multi map is not empty.
 
-    This executes in \l{logarithmic time}.
+    This executes in \l{constant time}.
 
     \sa firstKey(), last(), keyEnd(), isEmpty()
 */
@@ -512,7 +513,7 @@
     Returns a reference to the last value in the multi map, that is the value mapped
     to the largest key. This function assumes that the map is not empty.
 
-    When unshared (or const version is called), this executes in \l{logarithmic time}.
+    When unshared (or const version is called), this executes in \l{constant time}.
 
     \sa first(), lastKey(), isEmpty()
 */
@@ -714,6 +715,7 @@
     the items with the same key:
 
     \snippet code/src_corelib_tools_qmultimap.cpp 11
+    \snippet code/src_corelib_tools_qmultimap.cpp 11_better
 
     \sa constFind(), value(), values(), lowerBound(), upperBound()
 */
@@ -732,7 +734,7 @@
     If the multi map contains no item with key \a key, the function
     returns constEnd().
 
-    \sa find(), QMultiMap::constFind()
+    \sa find(), QMultiMap::constFind(const Key &key, const T &value)
 */
 
 /*!

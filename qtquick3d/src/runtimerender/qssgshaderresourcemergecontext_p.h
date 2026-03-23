@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGSHADERRESOURCEMERGECONTEXT_P_H
 #define QSSGSHADERRESOURCEMERGECONTEXT_P_H
@@ -23,6 +25,11 @@ QT_BEGIN_NAMESPACE
 class QSSGShaderResourceMergeContext
 {
 public:
+
+    QSSGShaderResourceMergeContext()
+        : m_nextFreeResourceBinding(FIRST_CUSTOM_RESOURCE_BINDING_POINT + s_additionalBuffers)
+    {
+    }
     // Resource bindings 0..2 are reserved for uniform buffers.
     // (0 is cbMain, 1 is cbLights)
     static const int FIRST_CUSTOM_RESOURCE_BINDING_POINT = 3;
@@ -45,6 +52,12 @@ public:
         int binding;
     };
 
+    struct Image : public Sampler
+    {
+        QByteArray imgType;
+        QByteArray qualifiers;
+    };
+
     struct BlockMember {
         QByteArray type;
         QByteArray name;
@@ -60,13 +73,29 @@ public:
     // a different order.
     QMap<QByteArray, InOutVar> m_inOutVars;
     QMap<QByteArray, Sampler> m_samplers;
+    QMap<QByteArray, Image> m_images;
     QMap<QByteArray, BlockMember> m_uniformMembers;
 
     int m_nextFreeResourceBinding = FIRST_CUSTOM_RESOURCE_BINDING_POINT;
+    int m_nextFreeImageBinding = 0;
     QHash<int, int> m_nextFreeInLocation;
     QHash<int, int> m_nextFreeOutLocation;
 
     int viewCount = 1;
+
+    void rearrangeResources()
+    {
+        // Put the images before samplers since images have
+        // separate binding points in OpenGL and minimum
+        // amount is only 8 so with many textures we might run
+        // out of binding points. Minimum amount of texture
+        // binding points is 16.
+        int binding = FIRST_CUSTOM_RESOURCE_BINDING_POINT + s_additionalBuffers;
+        for (auto &image : m_images)
+            image.binding = binding++;
+        for (auto &sampler : m_samplers)
+            sampler.binding = binding++;
+    }
 
     void registerInput(QSSGShaderGeneratorStage stage, const QByteArray &type, const QByteArray &name, bool flat = false)
     {
@@ -95,10 +124,23 @@ public:
                          QSSGRenderShaderMetadata::Uniform::Condition conditionType = QSSGRenderShaderMetadata::Uniform::None,
                          const QByteArray &conditionName = QByteArray())
     {
-        if (m_samplers.contains(name))
+        if (m_samplers.contains(name) || m_images.contains(name))
             return;
         Sampler var { type, name, conditionType, conditionName, m_nextFreeResourceBinding++ };
         m_samplers.insert(name, var);
+    }
+
+    void registerImage(const QByteArray &type,
+                       const QByteArray &name,
+                       const QByteArray &imgtype,
+                       const QByteArray &qualifiers,
+                       QSSGRenderShaderMetadata::Uniform::Condition conditionType = QSSGRenderShaderMetadata::Uniform::None,
+                       const QByteArray &conditionName = QByteArray())
+    {
+        if (m_samplers.contains(name) || m_images.contains(name))
+            return;
+        Image var { {type, name, conditionType, conditionName, m_nextFreeResourceBinding++}, imgtype, qualifiers};
+        m_images.insert(name, var);
     }
 
     void registerUniformMember(const QByteArray &type,
@@ -116,6 +158,11 @@ public:
         }
         BlockMember var { type, name, conditionType, conditionName };
         m_uniformMembers.insert(name, var);
+    }
+    static int s_additionalBuffers;
+    static void setAdditionalBufferAmount(int amount)
+    {
+        s_additionalBuffers = amount;
     }
 };
 

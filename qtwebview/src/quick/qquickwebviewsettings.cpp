@@ -1,9 +1,11 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickwebviewsettings_p.h"
 
-#include <QtWebView/private/qwebview_p.h>
+#include <QtWebView/qwebview.h>
+#include <QtWebView/qwebviewsettings.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -22,18 +24,9 @@ QT_BEGIN_NAMESPACE
     The default values are left as set by the different platforms.
 */
 
-QQuickWebViewSettings::QQuickWebViewSettings(QWebViewSettings *webviewsettings, QObject *p)
-    : QObject(p)
-    , d(webviewsettings)
+QQuickWebViewSettings::QQuickWebViewSettings(QWebViewSettings *webviewsettings) : d(webviewsettings)
 {
-    connect(d, &QWebViewSettings::localStorageEnabledChanged,
-            this, &QQuickWebViewSettings::localStorageEnabledChanged);
-    connect(d, &QWebViewSettings::javaScriptEnabledChanged,
-            this, &QQuickWebViewSettings::javaScriptEnabledChanged);
-    connect(d, &QWebViewSettings::localContentCanAccessFileUrlsChanged,
-            this, &QQuickWebViewSettings::localContentCanAccessFileUrlsChanged);
-    connect(d, &QWebViewSettings::allowFileAccessChanged,
-            this, &QQuickWebViewSettings::allowFileAccessChanged);
+    Q_ASSERT(d);
 }
 
 QQuickWebViewSettings::~QQuickWebViewSettings()
@@ -48,12 +41,12 @@ QQuickWebViewSettings::~QQuickWebViewSettings()
 */
 bool QQuickWebViewSettings::localStorageEnabled() const
 {
-    return d->localStorageEnabled();
+    return d->testAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled);
 }
 
 void QQuickWebViewSettings::setLocalStorageEnabled(bool enabled)
 {
-    d->setLocalStorageEnabled(enabled);
+    return d->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled, enabled);
 }
 
 /*!
@@ -63,12 +56,12 @@ void QQuickWebViewSettings::setLocalStorageEnabled(bool enabled)
 */
 bool QQuickWebViewSettings::javaScriptEnabled() const
 {
-    return d->javaScriptEnabled();
+    return d->testAttribute(QWebViewSettings::WebAttribute::JavaScriptEnabled);
 }
 
 void QQuickWebViewSettings::setJavaScriptEnabled(bool enabled)
 {
-    d->setJavaScriptEnabled(enabled);
+    return d->setAttribute(QWebViewSettings::WebAttribute::JavaScriptEnabled, enabled);
 }
 
 /*!
@@ -78,12 +71,12 @@ void QQuickWebViewSettings::setJavaScriptEnabled(bool enabled)
 */
 bool QQuickWebViewSettings::localContentCanAccessFileUrls() const
 {
-    return d->localContentCanAccessFileUrls();
+    return d->testAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls);
 }
 
 void QQuickWebViewSettings::setLocalContentCanAccessFileUrls(bool enabled)
 {
-    d->setLocalContentCanAccessFileUrls(enabled);
+    return d->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls, enabled);
 }
 
 /*!
@@ -93,12 +86,12 @@ void QQuickWebViewSettings::setLocalContentCanAccessFileUrls(bool enabled)
 */
 bool QQuickWebViewSettings::allowFileAccess() const
 {
-    return d->allowFileAccess();
+    return d->testAttribute(QWebViewSettings::WebAttribute::AllowFileAccess);
 }
 
 void QQuickWebViewSettings::setAllowFileAccess(bool enabled)
 {
-    d->setAllowFileAccess(enabled);
+    return d->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, enabled);
 }
 
 QT_END_NAMESPACE

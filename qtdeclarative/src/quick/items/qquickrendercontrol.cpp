@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickrendercontrol.h"
 #include "qquickrendercontrol_p.h"
@@ -774,7 +775,16 @@ bool QQuickRenderControlPrivate::initRhi()
 #endif
 
     // for OpenGL
-    if (!offscreenSurface)
+    bool wantOffscreenSurface = true;
+
+    QQuickWindowPrivate *wd = QQuickWindowPrivate::get(window);
+    const QQuickGraphicsDevicePrivate *customDevD = QQuickGraphicsDevicePrivate::get(&wd->customDeviceObjects);
+    if (customDevD->type == QQuickGraphicsDevicePrivate::Type::Rhi) {
+        if (customDevD->u.rhi)
+            wantOffscreenSurface = false;
+    }
+
+    if (wantOffscreenSurface && !offscreenSurface)
         offscreenSurface = rhiSupport->maybeCreateOffscreenSurface(window);
 
     QSGRhiSupport::RhiCreateResult result = rhiSupport->createRhi(window, offscreenSurface);

@@ -8,6 +8,8 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/trace_event.h"
@@ -79,7 +81,8 @@ void MojoVideoEncodeAcceleratorService::Initialize(
       config.output_profile == VP8PROFILE_ANY) {
     MEDIA_LOG(ERROR, media_log_.get())
         << __func__ << " VP8 encoding disabled by GPU policy";
-    std::move(success_callback).Run(false);
+    std::move(success_callback)
+        .Run({EncoderStatus::Codes::kEncoderInitializationError});
     return;
   }
 
@@ -88,7 +91,8 @@ void MojoVideoEncodeAcceleratorService::Initialize(
       config.output_profile <= VP9PROFILE_PROFILE3) {
     MEDIA_LOG(ERROR, media_log_.get())
         << __func__ << " VP9 encoding disabled by GPU policy";
-    std::move(success_callback).Run(false);
+    std::move(success_callback)
+        .Run({EncoderStatus::Codes::kEncoderInitializationError});
     return;
   }
 
@@ -97,20 +101,23 @@ void MojoVideoEncodeAcceleratorService::Initialize(
       config.output_profile <= H264PROFILE_MAX) {
     MEDIA_LOG(ERROR, media_log_.get())
         << __func__ << " H.264 encoding disabled by GPU policy";
-    std::move(success_callback).Run(false);
+    std::move(success_callback)
+        .Run({EncoderStatus::Codes::kEncoderInitializationError});
     return;
   }
 
   if (encoder_) {
     MEDIA_LOG(ERROR, media_log_.get())
         << __func__ << " VEA is already initialized";
-    std::move(success_callback).Run(false);
+    std::move(success_callback)
+        .Run({EncoderStatus::Codes::kEncoderInitializationError});
     return;
   }
 
   if (!client) {
     MEDIA_LOG(ERROR, media_log_.get()) << __func__ << "null |client|";
-    std::move(success_callback).Run(false);
+    std::move(success_callback)
+        .Run({EncoderStatus::Codes::kEncoderInitializationError});
     return;
   }
   vea_client_.Bind(std::move(client));
@@ -121,22 +128,26 @@ void MojoVideoEncodeAcceleratorService::Initialize(
     MEDIA_LOG(ERROR, media_log_.get())
         << __func__ << "too large input_visible_size "
         << config.input_visible_size.ToString();
-    std::move(success_callback).Run(false);
+    std::move(success_callback)
+        .Run({EncoderStatus::Codes::kEncoderInitializationError});
     return;
   }
 
-  encoder_ = std::move(create_vea_callback_)
-                 .Run(config, this, gpu_preferences_, gpu_workarounds_,
-                      gpu_device_, media_log_->Clone(),
-                      get_command_buffer_helper_cb_, gpu_task_runner_);
-  if (!encoder_) {
+  encoder_.reset();
+  auto encoder_or_error =
+      std::move(create_vea_callback_)
+          .Run(config, this, gpu_preferences_, gpu_workarounds_, gpu_device_,
+               media_log_->Clone(), get_command_buffer_helper_cb_,
+               gpu_task_runner_);
+  if (!encoder_or_error.has_value()) {
     MEDIA_LOG(ERROR, media_log_.get())
         << __func__ << " Error creating or initializing VEA";
-    std::move(success_callback).Run(false);
+    std::move(success_callback).Run(std::move(encoder_or_error).error());
     return;
   }
+  encoder_ = std::move(encoder_or_error).value();
 
-  std::move(success_callback).Run(true);
+  std::move(success_callback).Run({EncoderStatus::Codes::kOk});
   return;
 }
 

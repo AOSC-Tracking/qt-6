@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
@@ -85,7 +84,6 @@ component("fido") {
     ]
 
     deps += [
-      "//build:chromeos_buildflags",
       "//components/apdu",
       "//components/trusted_vault",
       "//device/base",
@@ -242,8 +240,8 @@ component("fido") {
       ]
 
       deps += [
-        "//components/sync/protocol:protocol",
-        "//device/fido/enclave/proto:proto",
+        "//components/sync/protocol",
+        "//device/fido/enclave/proto",
         "//services/device/public/cpp/hid",
         "//services/device/public/cpp/usb",
         "//services/device/public/mojom",
@@ -269,15 +267,13 @@ component("fido") {
           "enclave/types.h",
         ]
         deps -= [
-          "//components/sync/protocol:protocol",
+          "//components/sync/protocol",
         ]
       }
     }
 
     if (is_mac) {
       sources += [
-        "enclave/icloud_recovery_key_mac.h",
-        "enclave/icloud_recovery_key_mac.mm",
         "mac/authenticator.h",
         "mac/authenticator.mm",
         "mac/authenticator_config.h",

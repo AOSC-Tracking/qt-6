@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/350788890): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef URL_URL_CANON_INTERNAL_H_
 #define URL_URL_CANON_INTERNAL_H_
 
@@ -15,9 +10,14 @@
 // template bloat because everything is inlined when anybody calls any of our
 // functions.
 
-#include <stddef.h>
-#include <stdlib.h>
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/350788890): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
 
+#include <stddef.h>
+
+#include <array>
 #include <string>
 
 #include "base/component_export.h"
@@ -65,7 +65,7 @@ enum SharedCharTypes {
 // Using an unsigned char type has a small but measurable performance benefit
 // over using a 32-bit number.
 // clang-format off
-inline constexpr uint8_t kSharedCharTypeTable[0x100] = {
+inline constexpr std::array<uint8_t, 0x100> kSharedCharTypeTable = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0x00 - 0x0f
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0x10 - 0x1f
     0,                           // 0x20  ' ' (escape spaces in queries)
@@ -176,30 +176,28 @@ inline constexpr uint8_t kSharedCharTypeTable[0x100] = {
 // clang-format on
 
 // More readable wrappers around the character type lookup table.
-inline bool IsCharOfType(unsigned char c, SharedCharTypes type) {
+constexpr bool IsCharOfType(unsigned char c, SharedCharTypes type) {
   return !!(kSharedCharTypeTable[c] & type);
 }
-inline bool IsQueryChar(unsigned char c) {
+constexpr bool IsQueryChar(unsigned char c) {
   return IsCharOfType(c, CHAR_QUERY);
 }
-inline bool IsIPv4Char(unsigned char c) {
+constexpr bool IsIPv4Char(unsigned char c) {
   return IsCharOfType(c, CHAR_IPV4);
 }
-inline bool IsHexChar(unsigned char c) {
+constexpr bool IsHexChar(unsigned char c) {
   return IsCharOfType(c, CHAR_HEX);
 }
-inline bool IsComponentChar(unsigned char c) {
+constexpr bool IsComponentChar(unsigned char c) {
   return IsCharOfType(c, CHAR_COMPONENT);
 }
 
 // Appends the given string to the output, escaping characters that do not
 // match the given |type| in SharedCharTypes.
-void AppendStringOfType(const char* source,
-                        size_t length,
+void AppendStringOfType(std::string_view source,
                         SharedCharTypes type,
                         CanonOutput* output);
-void AppendStringOfType(const char16_t* source,
-                        size_t length,
+void AppendStringOfType(std::u16string_view source,
                         SharedCharTypes type,
                         CanonOutput* output);
 
@@ -479,13 +477,9 @@ void AppendInvalidNarrowString(const char16_t* spec,
 // return false in the failure case, and the caller should not continue as
 // normal.
 COMPONENT_EXPORT(URL)
-bool ConvertUTF16ToUTF8(const char16_t* input,
-                        size_t input_len,
-                        CanonOutput* output);
+bool ConvertUTF16ToUTF8(std::u16string_view input, CanonOutput* output);
 COMPONENT_EXPORT(URL)
-bool ConvertUTF8ToUTF16(const char* input,
-                        size_t input_len,
-                        CanonOutputT<char16_t>* output);
+bool ConvertUTF8ToUTF16(std::string_view input, CanonOutputT<char16_t>* output);
 
 // Converts from UTF-16 to 8-bit using the character set converter. If the
 // converter is NULL, this will use UTF-8.
@@ -532,13 +526,11 @@ bool SetupUTF16OverrideComponents(const char* base,
 
 // Implemented in url_canon_path.cc, these are required by the relative URL
 // resolver as well, so we declare them here.
-bool CanonicalizePartialPathInternal(const char* spec,
-                                     const Component& path,
+bool CanonicalizePartialPathInternal(std::string_view path,
                                      size_t path_begin_in_output,
                                      CanonMode canon_mode,
                                      CanonOutput* output);
-bool CanonicalizePartialPathInternal(const char16_t* spec,
-                                     const Component& path,
+bool CanonicalizePartialPathInternal(std::u16string_view path,
                                      size_t path_begin_in_output,
                                      CanonMode canon_mode,
                                      CanonOutput* output);
@@ -554,30 +546,45 @@ int FindWindowsDriveLetter(const char* spec, int begin, int end);
 COMPONENT_EXPORT(URL)
 int FindWindowsDriveLetter(const char16_t* spec, int begin, int end);
 
+// StringToUint64WithBase is implemented separately because std::strtoull (and
+// its variants like _stroui64 on Windows) are not guaranteed to be constexpr,
+// preventing their direct use in constant expressions.  This custom
+// implementation provides a constexpr-friendly alternative for use in contexts
+// where constant evaluation is required.
+constexpr uint64_t StringToUint64WithBase(std::string_view str, uint8_t base) {
+  uint64_t result = 0;
+
+  for (const char digit : str) {
+    int value = -1;
+
+    if (digit >= '0' && digit <= '9') {
+      value = digit - '0';
+    } else if (digit >= 'A' && digit <= 'Z') {
+      value = digit - 'A' + 10;
+    } else if (digit >= 'a' && digit <= 'z') {
+      value = digit - 'a' + 10;
+    }
+
+    if (value < 0 || value >= base) {
+      break;  // Invalid character for the given base.
+    }
+
+    result = result * base + static_cast<uint64_t>(value);
+  }
+
+  return result;
+}
+
 #ifndef WIN32
 
 // Implementations of Windows' int-to-string conversions
 COMPONENT_EXPORT(URL)
 int _itoa_s(int value, char* buffer, size_t size_in_chars, int radix);
-COMPONENT_EXPORT(URL)
-int _itow_s(int value, char16_t* buffer, size_t size_in_chars, int radix);
 
 // Secure template overloads for these functions
 template <size_t N>
 inline int _itoa_s(int value, char (&buffer)[N], int radix) {
   return _itoa_s(value, buffer, N, radix);
-}
-
-template <size_t N>
-inline int _itow_s(int value, char16_t (&buffer)[N], int radix) {
-  return _itow_s(value, buffer, N, radix);
-}
-
-// _strtoui64 and strtoull behave the same
-inline unsigned long long _strtoui64(const char* nptr,
-                                     char** endptr,
-                                     int base) {
-  return strtoull(nptr, endptr, base);
 }
 
 #endif  // WIN32

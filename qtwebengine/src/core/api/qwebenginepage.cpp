@@ -52,6 +52,7 @@
 #include <QMimeData>
 #include <QtCore/QPointer>
 #include <QRect>
+#include <QThread>
 #include <QTimer>
 #include <QUrl>
 #include <QVariant>
@@ -131,6 +132,10 @@ QWebEnginePagePrivate::~QWebEnginePagePrivate()
 {
     delete history;
     delete settings;
+#if QT_CONFIG(webengine_printing_and_pdf)
+    if (printerThread)
+        printerThread->requestInterruption();
+#endif
     profile->d_ptr->removeWebContentsAdapterClient(this);
 }
 
@@ -539,10 +544,12 @@ void QWebEnginePagePrivate::didFetchDocumentInnerText(quint64 requestId, const Q
 void QWebEnginePagePrivate::didPrintPage(QSharedPointer<QByteArray> result)
 {
 #if QT_CONFIG(webengine_printing_and_pdf)
+    Q_Q(QWebEnginePage);
     Q_ASSERT(currentPrinter);
-    if (view)
-        view->didPrintPage(currentPrinter, result);
-    else
+    if (view) {
+        printerThread = view->didPrintPage(currentPrinter, result);
+        QObject::connect(printerThread, &QThread::finished, q, [this]() { printerThread = nullptr; });
+    } else
         currentPrinter = nullptr;
 #else
     // should not get here
@@ -923,7 +930,10 @@ QWebEnginePage::QWebEnginePage(QObject* parent)
     \property QWebEnginePage::contentsSize
     \since 5.7
 
-    \brief The size of the page contents.
+    The size of the full page contents, measured in logical pixels. On devices with a
+    scale factor other than 100%, this will not correspond to the on-screen size; instead,
+    it will be the size before scaling is applied. In such cases, the size may contain
+    fractional values.
 */
 
 /*!
@@ -942,11 +952,11 @@ QWebEnginePage::QWebEnginePage(QObject* parent)
     audio being played or stopped.
 
     \note The signal is also emitted when the \l audioMuted property changes.
-    Also, if the audio is paused this signal is emitted with an approximate \b{two-second
+    Also, if the audio is paused, this signal is emitted with an approximate \b{two-second
     delay} from the moment the audio is paused.
 
     If a web page contains two videos that are started in sequence, this signal
-    gets emitted only once, for the first video to generate sound. After both
+    gets emitted only once for the first video to generate sound. After both
     videos are stopped, the signal is emitted upon the last sound generated.
     This means that the signal is emitted both when any kind of sound is
     generated and when everything is completely silent within a web page,

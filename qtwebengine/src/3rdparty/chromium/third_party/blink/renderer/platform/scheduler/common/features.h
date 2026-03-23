@@ -66,23 +66,10 @@ BASE_FEATURE(kMbiOverrideTaskRunnerHandle,
              "MbiOverrideTaskRunnerHandle",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Feature to experiment with different values for: "prioritize main thread
-// compositing tasks if we haven't done a main frame in this many milliseconds."
-PLATFORM_EXPORT BASE_DECLARE_FEATURE(kPrioritizeCompositingAfterDelayTrials);
-
 // Buffer time that we want to extend the loading state after the FMP is
 // received.
 PLATFORM_EXPORT base::TimeDelta
 GetLoadingPhaseBufferTimeAfterFirstMeaningfulPaint();
-
-// Returns the threshold to consider rendering starved during threaded
-// scrolling. If `kThreadedScrollPreventRenderingStarvation` is enabled, this
-// returns value of the associated "threshold_ms" FeatureParam; otherwise this
-// returns TimeDelta::Max().
-PLATFORM_EXPORT base::TimeDelta GetThreadedScrollRenderingStarvationThreshold();
-
-// Kill switch for throttling timed-out requestIdleCallback tasks.
-PLATFORM_EXPORT BASE_DECLARE_FEATURE(kThrottleTimedOutIdleTasks);
 
 }  // namespace scheduler
 }  // namespace blink

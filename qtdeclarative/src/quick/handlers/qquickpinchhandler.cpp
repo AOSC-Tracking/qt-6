@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickpinchhandler_p.h"
 #include <QtQml/qqmlinfo.h>
@@ -532,7 +533,7 @@ void QQuickPinchHandler::handlePointerEventImpl(QPointerEvent *event)
 #endif // QT_CONFIG(gestures)
     {
         const bool containsReleasedPoints = event->isEndEvent();
-        QVector<QEventPoint> chosenPoints;
+        QList<QEventPoint> chosenPoints;
         for (const QQuickHandlerPoint &p : std::as_const(currentPoints())) {
             auto ep = event->pointById(p.id());
             Q_ASSERT(ep);
@@ -660,7 +661,7 @@ void QQuickPinchHandler::handlePointerEventImpl(QPointerEvent *event)
 
         // 2. rotate
         if (m_rotationAxis.enabled()) {
-            QVector<PointData> newAngles = angles(centroid().scenePosition());
+            QList<PointData> newAngles = angles(centroid().scenePosition());
             const qreal angleDelta = averageAngleDelta(m_startAngles, newAngles);
             setActiveRotation(m_rotationAxis.m_activeValue + angleDelta);
             m_startAngles = std::move(newAngles);

@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/layout/gap_fragment_data.h"
 #include "third_party/blink/renderer/core/layout/geometry/logical_rect.h"
 #include "third_party/blink/renderer/core/layout/table/table_fragment_data.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 
 namespace blink {
@@ -76,8 +77,9 @@ class PhysicalFragmentRareData
     kTableSectionRowOffsets,
     kPageName,
     kMargins,
+    kOffsetFromRootFragmentationContext,
 
-    kMaxValue = kMargins,
+    kMaxValue = kOffsetFromRootFragmentationContext,
   };
   static_assert(sizeof(RareBitFieldType) * CHAR_BIT >
                     static_cast<unsigned>(FieldId::kMaxValue),
@@ -93,13 +95,14 @@ class PhysicalFragmentRareData
       std::unique_ptr<const FrameSetLayoutData> frame_set_layout_data;
       LogicalRect table_grid_rect;
       scoped_refptr<const TableBorders> table_collapsed_borders;
-      std::unique_ptr<TableFragmentData::CollapsedBordersGeometry>
+      std::unique_ptr<CollapsedTableBordersGeometry>
           table_collapsed_borders_geometry;
       wtf_size_t table_cell_column_index;
       wtf_size_t table_section_start_row_index;
       Vector<LayoutUnit> table_section_row_offsets;
       AtomicString page_name;
       PhysicalBoxStrut margins;
+      PhysicalOffset offset_from_root_fragmentation_context;
     };
     const FieldId type;
 
@@ -164,10 +167,10 @@ class PhysicalFragmentRareData
   // A garbage-collected field is not stored in the Vector in order to avoid
   // troublesome conditional tracing.
   Member<const TableBorders> table_collapsed_borders_;
-  Member<const TableFragmentData::ColumnGeometries> table_column_geometries_;
+  Member<const GCedTableColumnGeometries> table_column_geometries_;
   Member<const MathMLPaintInfo> mathml_paint_info_;
-  Member<const HeapVector<Member<Node>>> reading_flow_nodes_;
-  Member<const GapFragmentData::GapGeometry> gap_geometry_;
+  Member<const GCedHeapVector<Member<Node>>> reading_flow_nodes_;
+  Member<const GapGeometry> gap_geometry_;
 };
 
 }  // namespace blink

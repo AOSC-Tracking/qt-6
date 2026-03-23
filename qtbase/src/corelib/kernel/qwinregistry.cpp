@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #define UMDF_USING_NTSTATUS // Avoid ntstatus redefinitions
 
@@ -22,6 +23,12 @@ QT_BEGIN_NAMESPACE
 
 using namespace Qt::StringLiterals;
 
+static const wchar_t *nullTerminate(const QString &s)
+{
+    // ### port to QString::nullTerminate() if this stays around for longer
+    return reinterpret_cast<const wchar_t*>(s.utf16());
+}
+
 QWinRegistryKey::QWinRegistryKey(QObject *parent)
     : QObject(parent)
 {
@@ -29,15 +36,21 @@ QWinRegistryKey::QWinRegistryKey(QObject *parent)
 
 // Open a key with the specified permissions (KEY_READ/KEY_WRITE).
 // "access" is to explicitly use the 32- or 64-bit branch.
-QWinRegistryKey::QWinRegistryKey(HKEY parentHandle, QStringView subKey,
+QWinRegistryKey::QWinRegistryKey(HKEY parentHandle, const wchar_t *subKey,
                                  REGSAM permissions, REGSAM access,
                                  QObject *parent)
     : QObject(parent)
 {
-    if (RegOpenKeyExW(parentHandle, reinterpret_cast<const wchar_t *>(subKey.utf16()),
+    if (RegOpenKeyExW(parentHandle, subKey,
                       0, permissions | access, &m_key) != ERROR_SUCCESS) {
         m_key = nullptr;
     }
+}
+
+QWinRegistryKey::QWinRegistryKey(HKEY parentHandle, const QString &subKey,
+                                 REGSAM permissions, REGSAM access, QObject *parent)
+    : QWinRegistryKey(parentHandle, nullTerminate(subKey), permissions, access, parent)
+{
 }
 
 QWinRegistryKey::~QWinRegistryKey()
@@ -86,7 +99,7 @@ QString QWinRegistryKey::name() const
     return {};
 }
 
-QVariant QWinRegistryKey::value(QStringView subKey) const
+QVariant QWinRegistryKey::value(const wchar_t *subKey) const
 {
     // NOTE: Empty value name is allowed in Windows registry, it means the default
     // or unnamed value of a key, you can read/write/delete such value normally.
@@ -94,13 +107,10 @@ QVariant QWinRegistryKey::value(QStringView subKey) const
     if (!isValid())
         return {};
 
-    // Use nullptr when we need to access the default value.
-    const auto subKeyC = subKey.isEmpty() ? nullptr : reinterpret_cast<const wchar_t *>(subKey.utf16());
-
     // Get the size and type of the value.
     DWORD dataType = REG_NONE;
     DWORD dataSize = 0;
-    LONG ret = RegQueryValueExW(m_key, subKeyC, nullptr, &dataType, nullptr, &dataSize);
+    LONG ret = RegQueryValueExW(m_key, subKey, nullptr, &dataType, nullptr, &dataSize);
     if (ret != ERROR_SUCCESS)
         return {};
 
@@ -114,7 +124,7 @@ QVariant QWinRegistryKey::value(QStringView subKey) const
     QVarLengthArray<unsigned char> data(dataSize);
     std::fill(data.data(), data.data() + dataSize, 0u);
 
-    ret = RegQueryValueExW(m_key, subKeyC, nullptr, nullptr, data.data(), &dataSize);
+    ret = RegQueryValueExW(m_key, subKey, nullptr, nullptr, data.data(), &dataSize);
     if (ret != ERROR_SUCCESS)
         return {};
 
@@ -170,13 +180,25 @@ QVariant QWinRegistryKey::value(QStringView subKey) const
     return {};
 }
 
+QVariant QWinRegistryKey::value(const QString &subKey) const
+{
+    return value(nullTerminate(subKey));
+}
+
 // Returns the value of the specified subKey as a string, obtained using
 // qvariant_cast from the underlying QVariant. If that value is not a string,
 // or the subKey has no value, a string whose isNull() is true is returned.
 // Otherwise, the resulting string (which may be empty) is returned.
-QString QWinRegistryKey::stringValue(QStringView subKey) const
+QString QWinRegistryKey::stringValue(const wchar_t *subKey) const
 {
-    return value<QString>(subKey).value_or(QString());
+    if (auto v = value<QString>(subKey))
+        return std::move(*v);
+    return QString();
+}
+
+QString QWinRegistryKey::stringValue(const QString &subKey) const
+{
+    return stringValue(nullTerminate(subKey));
 }
 
 void QWinRegistryKey::connectNotify(const QMetaMethod &signal)

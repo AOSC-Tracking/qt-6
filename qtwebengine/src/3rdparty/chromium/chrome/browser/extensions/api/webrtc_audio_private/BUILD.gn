@@ -5,7 +5,7 @@
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 
-assert(enable_extensions)
+assert(enable_extensions_core)
 
 source_set("webrtc_audio_private") {
   sources = [

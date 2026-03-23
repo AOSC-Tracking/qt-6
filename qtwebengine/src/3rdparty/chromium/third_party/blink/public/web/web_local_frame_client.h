@@ -35,6 +35,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/functional/callback_helpers.h"
 #include "base/functional/function_ref.h"
 #include "base/i18n/rtl.h"
 #include "base/notreached.h"
@@ -44,13 +45,12 @@
 #include "media/base/speech_recognition_client.h"
 #include "media/mojo/mojom/audio_processing.mojom-shared.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-shared.h"
 #include "third_party/blink/public/common/dom_storage/session_storage_namespace_id.h"
 #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
 #include "third_party/blink/public/common/loader/loading_behavior_flag.h"
 #include "third_party/blink/public/common/loader/url_loader_factory_bundle.h"
-#include "third_party/blink/public/common/performance/performance_timeline_constants.h"
-#include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
 #include "third_party/blink/public/common/subresource_load_metrics.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/common/use_counter/use_counter_feature.h"
@@ -94,6 +94,7 @@
 #include "third_party/blink/public/web/web_navigation_params.h"
 #include "third_party/blink/public/web/web_navigation_policy.h"
 #include "third_party/blink/public/web/web_navigation_type.h"
+#include "third_party/blink/public/web/web_performance_metrics_for_reporting.h"
 #include "ui/accessibility/ax_enums.mojom-shared.h"
 #include "ui/accessibility/ax_event.h"
 #include "ui/accessibility/ax_location_and_scroll_updates.h"
@@ -221,16 +222,13 @@ class BLINK_EXPORT WebLocalFrameClient {
     return nullptr;
   }
 
-  // Returns a new WebWorkerFetchContext for a dedicated worker (in the
-  // non-PlzDedicatedWorker case) or worklet.
-  virtual scoped_refptr<WebWorkerFetchContext> CreateWorkerFetchContext() {
+  // Returns a new WebWorkerFetchContext for worklet.
+  virtual scoped_refptr<WebWorkerFetchContext> CreateWorkletFetchContext() {
     return nullptr;
   }
 
-  // Returns a new WebWorkerFetchContext for PlzDedicatedWorker.
-  // (https://crbug.com/906991)
-  virtual scoped_refptr<WebWorkerFetchContext>
-  CreateWorkerFetchContextForPlzDedicatedWorker(
+  // Returns a new WebWorkerFetchContext for dedicated workers.
+  virtual scoped_refptr<WebWorkerFetchContext> CreateWorkerFetchContext(
       WebDedicatedWorkerHostFactoryClient*) {
     return nullptr;
   }
@@ -398,7 +396,7 @@ class BLINK_EXPORT WebLocalFrameClient {
   virtual void DidCommitNavigation(
       WebHistoryCommitType commit_type,
       bool should_reset_browser_interface_broker,
-      const ParsedPermissionsPolicy& permissions_policy_header,
+      const network::ParsedPermissionsPolicy& permissions_policy_header,
       const DocumentPolicyFeatureState& document_policy_header) {}
 
   // A new document has just been committed as a result of evaluating
@@ -649,7 +647,8 @@ class BLINK_EXPORT WebLocalFrameClient {
   virtual void DidObserveNewFeatureUsage(const UseCounterFeature&) {}
 
   // A new soft navigation was observed.
-  virtual void DidObserveSoftNavigation(blink::SoftNavigationMetrics metrics) {}
+  virtual void DidObserveSoftNavigation(
+      blink::SoftNavigationMetricsForReporting metrics) {}
 
   // Reports that visible elements in the frame shifted (bit.ly/lsm-explainer).
   virtual void DidObserveLayoutShift(double score, bool after_input_or_scroll) {
@@ -785,12 +784,6 @@ class BLINK_EXPORT WebLocalFrameClient {
     return v8::Local<v8::Object>();
   }
 
-  // Returns true if it has a focused plugin. |rect| is an output parameter to
-  // get a caret bounds from the focused plugin.
-  virtual bool GetCaretBoundsFromFocusedPlugin(gfx::Rect& rect) {
-    return false;
-  }
-
   // Update the current frame selection to the browser if it has changed since
   // the last call. Note that this only synchronizes the selection, if the
   // TextInputState may have changed call DidChangeSelection instead.
@@ -820,10 +813,6 @@ class BLINK_EXPORT WebLocalFrameClient {
   // WebMeaningfulLayout for details.)
   virtual void DidMeaningfulLayout(WebMeaningfulLayout) {}
 
-  // Notification that the BeginMainFrame completed, was committed into the
-  // compositor (thread) and submitted to the display compositor.
-  virtual void DidCommitAndDrawCompositorFrame() {}
-
   // Inform the widget that it was hidden.
   virtual void WasHidden() {}
 
@@ -833,9 +822,9 @@ class BLINK_EXPORT WebLocalFrameClient {
   virtual void OnFrameVisibilityChanged(mojom::FrameVisibility render_status) {}
 
   // Called after a navigation which set the shared memory region for
-  // tracking smoothness via UKM.
-  virtual void SetUpSharedMemoryForSmoothness(
-      base::ReadOnlySharedMemoryRegion shared_memory) {}
+  // tracking dropped frames UKM.
+  virtual void SetUpSharedMemoryForDroppedFrames(
+      base::ReadOnlySharedMemoryRegion dropped_frames_memory) {}
 
   // Returns the last commited URL used for UKM. This is slightly different
   // than the document's URL because it will contain a data URL if a base URL
@@ -877,6 +866,7 @@ class BLINK_EXPORT WebLocalFrameClient {
       const WebURLRequest& request,
       const WebWindowFeatures& features,
       const WebString& name,
+      const gfx::Rect& requested_screen_rect,
       WebNavigationPolicy policy,
       network::mojom::WebSandboxFlags,
       const SessionStorageNamespaceId& session_storage_namespace_id,
@@ -891,6 +881,10 @@ class BLINK_EXPORT WebLocalFrameClient {
 
   virtual void SetLinkPreviewTriggererForTesting(
       std::unique_ptr<WebLinkPreviewTriggerer> trigger);
+
+  virtual base::ScopedClosureRunner CreateScopedClientNavigationThrottler() {
+    return {};
+  }
 };
 
 }  // namespace blink

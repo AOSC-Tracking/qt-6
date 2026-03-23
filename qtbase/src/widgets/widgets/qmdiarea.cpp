@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 /*!
     \class QMdiArea
@@ -52,7 +53,9 @@
 
     \table
     \row \li \inlineimage mdi-cascade.png
+             {MDI windows in cascading order}
          \li \inlineimage mdi-tile.png
+             {MDI windows in a tiling pattern}
     \endtable
 
     \note The default scroll bar property for QMdiArea is Qt::ScrollBarAlwaysOff.

@@ -7,36 +7,23 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QLoggingCategory>
+#include <QString>
 
 #include "qlottiebasictransform_p.h"
 #include "qlottierenderer_p.h"
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::Literals::StringLiterals;
+
 QLottiePrecompLayer::QLottiePrecompLayer(const QLottiePrecompLayer &other)
     : QLottieLayer(other)
 {
 }
 
-QLottiePrecompLayer::QLottiePrecompLayer(const QJsonObject &definition, const QMap<QString, QJsonObject> &assets)
+QLottiePrecompLayer::QLottiePrecompLayer(const QMap<QString, QJsonObject> &assets)
+    : m_assets(assets)
 {
-    m_type = LOTTIE_LAYER_PRECOMP_IX;
-
-    QLottieLayer::parse(definition);
-    if (m_hidden)
-        return;
-
-    qCDebug(lcLottieQtLottieParser) << "QLottiePrecompLayer::QLottiePrecompLayer()" << m_name;
-
-    m_startTime = definition.value(QLatin1String("st")).toDouble(); // only relevant for precomps
-    QString refId = definition.value(QLatin1String("refId")).toString();
-    QJsonObject asset = assets.value(refId);
-    QJsonArray jsonLayers = asset.value(QLatin1String("layers")).toArray();
-    int numLayers = QLottieLayer::constructLayers(jsonLayers, this, assets);
-
-    m_size = QSize(definition.value(QLatin1String("w")).toInt(-1), definition.value(QLatin1String("h")).toInt(-1));
-
-    qCDebug(lcLottieQtLottieParser) << "QLottiePrecompLayer created" << numLayers << "layers";
 }
 
 QLottieBase *QLottiePrecompLayer::clone() const
@@ -55,6 +42,32 @@ void QLottiePrecompLayer::render(QLottieRenderer &renderer) const
 
     renderer.finish(*this);
     renderer.restoreState();
+}
+
+int QLottiePrecompLayer::parse(const QJsonObject &definition)
+{
+    m_type = LOTTIE_LAYER_PRECOMP_IX;
+
+    QLottieLayer::parse(definition);
+    if (m_hidden)
+        return 0;
+
+    qCDebug(lcLottieQtLottieParser) << "QLottiePrecompLayer::QLottiePrecompLayer()" << m_name;
+
+    m_startTime = definition.value("st"_L1).toDouble(); // only relevant for precomps
+
+    if (!checkRequiredKeys(definition, "Precomp Layer"_L1, { "refId"_L1 }, m_name))
+        return -1;
+    QString refId = definition.value("refId"_L1).toString();
+
+    QJsonObject asset = m_assets.value(refId);
+    QJsonArray jsonLayers = asset.value("layers"_L1).toArray();
+    int numLayers = QLottieLayer::constructLayers(jsonLayers, this, m_assets);
+
+    m_size = QSize(definition.value("w"_L1).toInt(-1), definition.value("h"_L1).toInt(-1));
+
+    qCDebug(lcLottieQtLottieParser) << "QLottiePrecompLayer created" << numLayers << "layers";
+    return 0;
 }
 
 QT_END_NAMESPACE

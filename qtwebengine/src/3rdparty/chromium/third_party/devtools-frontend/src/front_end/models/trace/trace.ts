@@ -10,8 +10,6 @@ import * as Lantern from './lantern/lantern.js';
 import * as LanternComputationData from './LanternComputationData.js';
 import * as TraceModel from './ModelImpl.js';
 import * as Processor from './Processor.js';
-import * as RootCauses from './root-causes/root-causes.js';
-import * as TracingManager from './TracingManager.js';
 import * as Types from './types/types.js';
 
 export {
@@ -22,8 +20,6 @@ export {
   Lantern,
   LanternComputationData,
   Processor,
-  RootCauses,
   TraceModel,
-  TracingManager,
   Types,
 };

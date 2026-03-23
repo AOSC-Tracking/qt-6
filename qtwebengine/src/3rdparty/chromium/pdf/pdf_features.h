@@ -9,6 +9,7 @@
 #define PDF_PDF_FEATURES_H_
 
 #include "base/feature_list.h"
+#include "base/metrics/field_trial_params.h"
 #include "pdf/buildflags.h"
 
 static_assert(BUILDFLAG(ENABLE_PDF), "ENABLE_PDF not set to true");
@@ -16,13 +17,11 @@ static_assert(BUILDFLAG(ENABLE_PDF), "ENABLE_PDF not set to true");
 namespace chrome_pdf::features {
 
 BASE_DECLARE_FEATURE(kAccessiblePDFForm);
-BASE_DECLARE_FEATURE(kPdfCr23);
+BASE_DECLARE_FEATURE(kPdfGetSaveDataInBlocks);
 BASE_DECLARE_FEATURE(kPdfIncrementalLoading);
 BASE_DECLARE_FEATURE(kPdfOopif);
-BASE_DECLARE_FEATURE(kPdfPaintManagerDrawsBackground);
 BASE_DECLARE_FEATURE(kPdfPartialLoading);
 BASE_DECLARE_FEATURE(kPdfPortfolio);
-BASE_DECLARE_FEATURE(kPdfSearchify);
 BASE_DECLARE_FEATURE(kPdfSearchifySave);
 BASE_DECLARE_FEATURE(kPdfTags);
 BASE_DECLARE_FEATURE(kPdfUseShowSaveFilePicker);
@@ -31,7 +30,13 @@ BASE_DECLARE_FEATURE(kPdfXfaSupport);
 
 #if BUILDFLAG(ENABLE_PDF_INK2)
 BASE_DECLARE_FEATURE(kPdfInk2);
-#endif
+extern const base::FeatureParam<bool> kPdfInk2TextAnnotations;
+extern const base::FeatureParam<bool> kPdfInk2TextHighlighting;
+#endif  // BUILDFLAG(ENABLE_PDF_INK2)
+
+#if BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
+BASE_DECLARE_FEATURE(kPdfSaveToDrive);
+#endif  // BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
 
 // Sets whether the OOPIF PDF policy enables the OOPIF PDF viewer. Otherwise,
 // GuestView PDF viewer will be used. The policy is enabled by default.
@@ -41,8 +46,9 @@ void SetIsOopifPdfPolicyEnabled(bool is_oopif_pdf_policy_enabled);
 // PDF viewer should be used.
 bool IsOopifPdfEnabled();
 
-// Returns whether PDF Searchify and PDF Searchify Save features are enabled.
-bool IsPdfSearchifySaveEnabled();
+// Returns whether saving to disk in blocks is enabled. This will be true when
+// both `kPdfGetSaveDataInBlocks` and `kPdfUseShowSaveFilePicker` are enabled.
+bool IsPdfGetSaveDataInBlocksEnabled();
 
 }  // namespace chrome_pdf::features
 

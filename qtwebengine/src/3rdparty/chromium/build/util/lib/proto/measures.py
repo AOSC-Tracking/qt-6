@@ -5,12 +5,17 @@
 # found in the LICENSE file.
 """ The module to create and manage measures using in the process. """
 
+import functools
 import json
 import os
+import sys
 
 from google.protobuf import any_pb2
 from google.protobuf.json_format import MessageToDict
 
+# Add to sys.path so that this module can be imported by other modules that
+# have different path setup, e.g. android test runner, and ios test runner.
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from average import Average
 from count import Count
 from data_points import DataPoints
@@ -54,6 +59,21 @@ def data_points(*name_pieces: str) -> DataPoints:
 
 def time_consumption(*name_pieces: str) -> TimeConsumption:
   return _register(TimeConsumption(_create_name(*name_pieces)))
+
+
+def timed_func(*name_pieces: str):
+  """time_consumption() as a @decorator."""
+
+  def decorator(func):
+
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs):
+      with time_consumption(*name_pieces):
+        func(*args, **kwargs)
+
+    return wrapped
+
+  return decorator
 
 
 def tag(*args: str) -> None:

@@ -2,17 +2,14 @@
 osx
 [render_windowOpacity]
 macos arm
+wayland
 [render_systemClip]
 osx
-[multipleToplevelFocusCheck]
-centos
-opensuse-leap
-ubuntu
-sles-15
 # QTBUG-87668
 [showMinimizedKeepsFocus]
 android
 macos ci
+wayland
 [normalGeometry]
 android
 [saveRestoreGeometry]
@@ -27,6 +24,7 @@ android
 android
 [multipleToplevelFocusCheck]
 android
+wayland
 [renderInvisible]
 android
 [updateWhileMinimized]
@@ -37,10 +35,29 @@ android
 android
 [activateWindow]
 android
+wayland
 [optimizedResize_topLevel]
 android
 [hoverPosition]
 macos-14 x86
+macos-26 # QTBUG-142157
 # QTBUG-124291
 [setParentChangesFocus:make dialog parentless, after]
 android
+[enterLeaveOnWindowShowHide]
+macos-26 # QTBUG-142157
+wayland
+[persistentWinId]
+wayland
+[setFocus]
+wayland
+[underMouse]
+wayland
+[reparent]
+wayland
+[mapsFromAndTo]
+wayland
+[dumpObjectTree]
+wayland
+[winIdChangeEvent]
+wayland

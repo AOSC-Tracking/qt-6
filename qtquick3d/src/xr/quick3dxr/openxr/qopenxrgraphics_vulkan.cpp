@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qopenxrgraphics_vulkan_p.h"
 
@@ -20,21 +22,14 @@ QOpenXRGraphicsVulkan::QOpenXRGraphicsVulkan()
     m_graphicsBinding.type = XR_TYPE_GRAPHICS_BINDING_VULKAN_KHR;
 }
 
-
-bool QOpenXRGraphicsVulkan::isExtensionSupported(const QVector<XrExtensionProperties> &extensions) const
+bool QOpenXRGraphicsVulkan::initialize(const QVector<XrExtensionProperties> &extensions)
 {
-    for (const auto &extension : extensions) {
-        if (!strcmp(XR_KHR_VULKAN_ENABLE_EXTENSION_NAME,
-                    extension.extensionName))
-            return true;
-    }
-    return false;
+    return hasExtension(extensions, XR_KHR_VULKAN_ENABLE_EXTENSION_NAME);
 }
 
-
-const char *QOpenXRGraphicsVulkan::extensionName() const
+QVector<const char *> QOpenXRGraphicsVulkan::getRequiredExtensions() const
 {
-    return XR_KHR_VULKAN_ENABLE_EXTENSION_NAME;
+    return { XR_KHR_VULKAN_ENABLE_EXTENSION_NAME };
 }
 
 

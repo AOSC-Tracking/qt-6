@@ -24,7 +24,6 @@
 #include "base/threading/thread.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/download/bubble/download_bubble_ui_controller.h"
 #include "chrome/browser/download/download_danger_prompt.h"
 #include "chrome/browser/download/download_history.h"
 #include "chrome/browser/download/download_item_model.h"
@@ -39,7 +38,6 @@
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -51,6 +49,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "components/download/public/common/download_item.h"
+#include "components/feature_engagement/public/feature_constants.h"
+#include "components/feature_engagement/public/tracker.h"
 #include "components/history/core/common/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/core/common/features.h"
@@ -72,6 +72,14 @@
 #include "ui/base/l10n/time_format.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/image/image.h"
+
+#if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
+#include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
+#endif
+
+#if !BUILDFLAG(IS_CHROMEOS)
+#include "chrome/browser/download/bubble/download_bubble_ui_controller.h"
+#endif
 
 using content::BrowserThread;
 
@@ -117,6 +125,9 @@ bool CanLogWarningMetrics(download::DownloadItem* file) {
 
 void PromptForScanningInBubble(content::WebContents* web_contents,
                                download::DownloadItem* download) {
+  // ChromeOS does not have the download bubble and does not support local
+  // password prompts for deep scans.
+#if !BUILDFLAG(IS_CHROMEOS)
   Browser* browser = chrome::FindBrowserWithTab(web_contents);
   if (!browser) {
     return;
@@ -126,6 +137,7 @@ void PromptForScanningInBubble(content::WebContents* web_contents,
       ->GetDownloadDisplayController()
       ->OpenSecuritySubpage(
           OfflineItemUtils::GetContentIdForDownload(download));
+#endif
 }
 
 // Records DownloadItemWarningData and maybe sends the Safe Browsing report.
@@ -155,10 +167,12 @@ void MaybeReportBypassAction(download::DownloadItem* file,
   if (action != WarningAction::PROCEED && action != WarningAction::DISCARD) {
     return;
   }
+#if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
   SendSafeBrowsingDownloadReport(
       safe_browsing::ClientSafeBrowsingReportRequest::
           DANGEROUS_DOWNLOAD_RECOVERY,
       /*did_proceed=*/action == WarningAction::PROCEED, file);
+#endif
 }
 
 // Triggers a Trust and Safety sentiment survey (if enabled). Should be called
@@ -488,7 +502,7 @@ void DownloadsDOMHandler::Undo() {
     }
 
     DownloadItemModel model(download);
-    model.SetShouldShowInShelf(true);
+    model.SetShouldShowInUi(true);
     model.SetIsBeingRevived(true);
 
     download->UpdateObservers();
@@ -543,12 +557,12 @@ void DownloadsDOMHandler::RemoveDownloads(const DownloadVector& to_remove) {
     }
 
     DownloadItemModel item_model(download);
-    if (!item_model.ShouldShowInShelf() ||
+    if (!item_model.ShouldShowInUi() ||
         download->GetState() == download::DownloadItem::IN_PROGRESS) {
       continue;
     }
 
-    item_model.SetShouldShowInShelf(false);
+    item_model.SetShouldShowInUi(false);
     ids.insert(download->GetId());
     download->UpdateObservers();
   }
@@ -588,7 +602,7 @@ void DownloadsDOMHandler::OpenDuringScanningRequiringGesture(
   if (download) {
     DownloadItemModel model(download);
     model.SetOpenWhenComplete(true);
-#if BUILDFLAG(FULL_SAFE_BROWSING)
+#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
     model.CompleteSafeBrowsingScan();
 #endif
   }
@@ -608,8 +622,10 @@ void DownloadsDOMHandler::DeepScan(const std::string& id) {
     return;
   }
 
+#if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
   LogDeepScanEvent(download,
                    safe_browsing::DeepScanEvent::kPromptAcceptedFromWebUI);
+#endif
   DownloadItemWarningData::AddWarningActionEvent(
       download, DownloadItemWarningData::WarningSurface::DOWNLOADS_PAGE,
       DownloadItemWarningData::WarningAction::ACCEPT_DEEP_SCAN);
@@ -649,11 +665,13 @@ void DownloadsDOMHandler::ReviewDangerousRequiringGesture(
   }
 
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_REVIEW_DANGEROUS);
+#if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
   download::DownloadItem* download = GetDownloadByStringId(id);
   if (download) {
     DownloadItemModel model(download);
     model.ReviewScanningVerdict(GetWebUIWebContents());
   }
+#endif
 }
 
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)

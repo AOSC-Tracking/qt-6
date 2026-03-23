@@ -368,7 +368,7 @@ void tst_RenderControl::dynamicLights()
         QVERIFY(readCompleted);
         QCOMPARE(result.size(), QSize(640, 480));
 
-        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(239, 255, 239), FUZZ));
+        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(255, 255, 255), FUZZ));
         QVERIFY(comparePixelNormPos(result, 0.5, 0.9, QColor::fromRgb(248, 255, 248), FUZZ));
         // floor in shadow, now with some green added
         QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(0, 82, 0), FUZZ));
@@ -384,8 +384,8 @@ void tst_RenderControl::dynamicLights()
         QVERIFY(readCompleted);
         QCOMPARE(result.size(), QSize(640, 480));
 
-        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(115, 255, 115), FUZZ));
-        QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(120, 142, 120), FUZZ));
+        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(255, 255, 255), FUZZ));
+        QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(173, 188, 173), FUZZ));
     }
 
     // Case: destroy the DirectionalLight
@@ -412,7 +412,7 @@ void tst_RenderControl::dynamicLights()
         QVERIFY(readCompleted);
         QCOMPARE(result.size(), QSize(640, 480));
 
-        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(239, 255, 239), FUZZ));
+        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(255, 255, 255), FUZZ));
         QVERIFY(comparePixelNormPos(result, 0.5, 0.9, QColor::fromRgb(248, 255, 248), FUZZ));
         // floor in shadow, now with some green added
         QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(0, 82, 0), FUZZ));
@@ -427,7 +427,7 @@ void tst_RenderControl::dynamicLights()
         QVERIFY(readCompleted);
         QCOMPARE(result.size(), QSize(640, 480));
 
-        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(239, 239, 239), FUZZ));
+        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(255, 255, 255), FUZZ));
         // floor in shadow
         QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(0, 0, 0), FUZZ));
     }
@@ -444,9 +444,15 @@ void tst_RenderControl::dynamicLights()
         QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(0, 0, 0), FUZZ));
     }
 
-    // Case: add 10 shadow casting DirectionalLights (note that only 8 of these
-    // cast shadows, as per QSSG_MAX_NUM_SHADOW_MAPS, the rest is expected to be
-    // silently ignored as if castsShadow was false for those)
+    // With the default forward renderer, we can have up to 4 directional lights
+    // and up to 16 positional lights (point/spot) at the same time. Each light
+    // can cast shadows as well.  If a scene has more directional lights, only the
+    // first 4 defined will be used for lighting. The same goes for point/spot lights,
+    // though there is some expectation in the future we will determine the 16 closest
+    // positional lights to the object being drawn.
+
+    // Case: add 10 shadow casting DirectionalLights (note that only 4 of these
+    // will actually do anything)
     QVarLengthArray<QObject *, 10> directionalLights;
     {
         result = QImage();
@@ -458,7 +464,7 @@ void tst_RenderControl::dynamicLights()
         QCOMPARE(result.size(), QSize(640, 480));
 
         QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(255, 255, 255), FUZZ));
-        QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(255, 255, 255), FUZZ));
+        QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(0, 0, 0), FUZZ));
     }
 
     // Case: make half of the lights 32 bit
@@ -471,7 +477,7 @@ void tst_RenderControl::dynamicLights()
         QCOMPARE(result.size(), QSize(640, 480));
 
         QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(255, 255, 255), FUZZ));
-        QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(255, 255, 255), FUZZ));
+        QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(0, 0, 0), FUZZ));
     }
 
     // Case: make some invisible and destroy some
@@ -525,7 +531,7 @@ void tst_RenderControl::dynamicLights()
         QVERIFY(readCompleted);
         QCOMPARE(result.size(), QSize(640, 480));
 
-        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(0, 255, 83), FUZZ));
+        QVERIFY(comparePixelNormPos(result, 0.5, 0.5, QColor::fromRgb(0, 255, 255), FUZZ));
         QVERIFY(comparePixelNormPos(result, 0.5, 0.8, QColor::fromRgb(10, 82, 0), FUZZ));
     }
 

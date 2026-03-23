@@ -15,7 +15,6 @@
 #include "base/message_loop/message_pump_type.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
-#include "mojo/public/cpp/bindings/binder_map.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/platform_window/platform_window.h"
@@ -24,6 +23,10 @@
 namespace display {
 class NativeDisplayDelegate;
 }
+
+namespace mojo {
+class BinderMap;
+}  // namespace mojo
 
 namespace ui {
 enum class DomCode : uint32_t;
@@ -43,6 +46,7 @@ class PlatformGlobalShortcutListenerDelegate;
 class PlatformKeyboardHook;
 class PlatformMenuUtils;
 class PlatformScreen;
+class PlatformSessionManager;
 class PlatformUserInputMonitor;
 class PlatformUtils;
 class SurfaceFactoryOzone;
@@ -135,10 +139,6 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
     // If true, the platform shows and updates the drag image.
     bool platform_shows_drag_image = true;
 
-    // Linux only, but see a TODO in BrowserDesktopWindowTreeHostLinux.
-    // Determines whether the platform supports the global application menu.
-    bool supports_global_application_menus = false;
-
     // Determines if the application modal dialogs should use the event blocker
     // to allow the only browser window receiving UI events.
     bool app_modal_dialogs_use_event_blocker = false;
@@ -154,6 +154,10 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
     // Whether the platform supports system/shell integrated color picker
     // dialog. An example is XDG Desktop Portal provided PickColor dialog.
     bool supports_color_picker_dialog = true;
+
+    // Whether the platform supports drag and drop as an entrypoint to create
+    // new Split Views.
+    bool supports_split_view_drag_and_drop = true;
   };
 
   // Groups platform properties that can only be known at run time.
@@ -171,8 +175,12 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
     // via overlays. If overlays are not supported the promotion and validation
     // logic can be skipped.
     bool supports_overlays = false;
+
     // Indicates whether the platform supports server-side window decorations.
     bool supports_server_side_window_decorations = true;
+
+    // Indicates whether the platform supports window controls menus.
+    bool supports_server_window_menus = false;
 
     // For platforms that have optional support for server-side decorations,
     // this parameter allows setting the desired state in tests.  The platform
@@ -204,6 +212,14 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
 
     // Allows overriding whether per window scaling is enabled in tests.
     static SupportsForTest override_supports_per_window_scaling_for_test;
+
+    // Whether windowing system level session management is supported. If set,
+    // GetSessionManager method must return a valid object.
+    bool supports_session_management = false;
+
+    // Linux only, but see a TODO in BrowserDesktopWindowTreeHostLinux.
+    // Determines whether the platform supports the global application menu.
+    bool supports_global_application_menus = false;
   };
 
   // Corresponds to chrome_browser_main_extra_parts.h.
@@ -227,6 +243,8 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
   // task_runner suitable for handling user input after the message loop
   // started. It's required to call this so that we can exit cleanly if the
   // server can exit before we do.
+  // Note: This is currently not strongly enforced and so it may not be called
+  // in all content embedders or tests.
   virtual void PostCreateMainMessageLoop(
       base::OnceCallback<void()> shutdown_cb,
       scoped_refptr<base::SingleThreadTaskRunner> user_input_task_runner);
@@ -295,6 +313,9 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
       base::RepeatingCallback<void(KeyEvent* event)> callback,
       std::optional<base::flat_set<DomCode>> dom_codes,
       gfx::AcceleratedWidget accelerated_widget);
+  // Returns the PlatformSessionManager instance, if platform-level session
+  // management is supported, null otherwise.
+  virtual PlatformSessionManager* GetSessionManager();
 
   // Returns true if the specified buffer format is supported.
   virtual bool IsNativePixmapConfigSupported(gfx::BufferFormat format,

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import {Trace} from '../../public/trace';
+import {maybeMachineLabel} from '../../base/multi_machine_trace';
 import {PerfettoPlugin} from '../../public/plugin';
 import {TrackNode} from '../../public/workspace';
 import {NUM, STR, STR_NULL} from '../../trace_processor/query_result';
@@ -122,7 +123,7 @@ export default class implements PerfettoPlugin {
     // but creating a dedicated track type is out of scope at the time of
     // writing.
     const kernelThreadsGroup = new TrackNode({
-      title: 'Kernel threads',
+      name: 'Kernel threads',
       uri: '/kernel',
       sortOrder: 50,
       isSummary: true,
@@ -135,7 +136,7 @@ export default class implements PerfettoPlugin {
 
       const threadGroup = new TrackNode({
         uri: `thread${utid}`,
-        title: `Thread ${utid}`,
+        name: `Thread ${utid}`,
         isSummary: true,
         headless: true,
       });
@@ -172,7 +173,8 @@ export default class implements PerfettoPlugin {
             when 'Gpu' then 2
             when 'Renderer' then 1
             else 0
-          end as chromeProcessRank
+          end as chromeProcessRank,
+          ifnull(machine_id, 0) as machine
         from _process_available_info_summary
         join process using(upid)
       ),
@@ -184,7 +186,8 @@ export default class implements PerfettoPlugin {
           sum_running_dur as sumRunningDur,
           slice_count as sliceCount,
           perf_sample_count as perfSampleCount,
-          instruments_sample_count as instrumentsSampleCount
+          instruments_sample_count as instrumentsSampleCount,
+          ifnull(machine_id, 0) as machine
         from _thread_available_info_summary
         join thread using (utid)
         where upid is null
@@ -195,7 +198,8 @@ export default class implements PerfettoPlugin {
           'process' as kind,
           upid as uid,
           pid as id,
-          processName as name
+          processName as name,
+          machine
         from processGroups
         order by
           chromeProcessRank desc,
@@ -215,7 +219,8 @@ export default class implements PerfettoPlugin {
           'thread' as kind,
           utid as uid,
           tid as id,
-          threadName as name
+          threadName as name,
+          machine
         from threadGroups
         order by
           perfSampleCount desc,
@@ -232,6 +237,7 @@ export default class implements PerfettoPlugin {
       uid: NUM,
       id: NUM,
       name: STR_NULL,
+      machine: NUM,
     });
     for (; it.valid(); it.next()) {
       const {kind, uid, id, name} = it;
@@ -242,21 +248,24 @@ export default class implements PerfettoPlugin {
           continue;
         }
 
+        const machineLabel = maybeMachineLabel(it.machine);
         function getProcessDisplayName(
           processName: string | undefined,
           pid: number,
         ) {
           if (processName) {
-            return `${stripPathFromExecutable(processName)} ${pid}`;
+            return `${stripPathFromExecutable(processName)} ${pid}${
+              machineLabel
+            }`;
           } else {
-            return `Process ${pid}`;
+            return `Process ${pid}${machineLabel}`;
           }
         }
 
         const displayName = getProcessDisplayName(name ?? undefined, id);
         const group = new TrackNode({
           uri: `/process_${uid}`,
-          title: displayName,
+          name: displayName,
           isSummary: true,
           sortOrder: 50,
         });
@@ -273,7 +282,7 @@ export default class implements PerfettoPlugin {
         const displayName = getThreadDisplayName(name ?? undefined, id);
         const group = new TrackNode({
           uri: `/thread_${uid}`,
-          title: displayName,
+          name: displayName,
           isSummary: true,
           sortOrder: 50,
         });
@@ -342,7 +351,7 @@ export default class implements PerfettoPlugin {
 
       const group = new TrackNode({
         uri: `/thread_${utid}`,
-        title: getThreadDisplayName(threadName ?? undefined, tid),
+        name: getThreadDisplayName(threadName ?? undefined, tid),
         isSummary: true,
         headless: true,
       });

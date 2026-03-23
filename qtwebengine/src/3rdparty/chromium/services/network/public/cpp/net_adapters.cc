@@ -8,6 +8,7 @@
 
 #include "base/check_op.h"
 #include "base/containers/span.h"
+#include "base/strings/string_view_util.h"
 #include "net/base/net_errors.h"
 
 namespace network {
@@ -62,7 +63,7 @@ NetToMojoIOBuffer::NetToMojoIOBuffer(
 NetToMojoIOBuffer::~NetToMojoIOBuffer() {
   // Avoid dangling ptr should this destructor remove the last reference
   // to `pending_buffer_`.
-  data_ = nullptr;
+  ClearSpan();
 }
 
 MojoToNetPendingBuffer::MojoToNetPendingBuffer(
@@ -118,7 +119,7 @@ MojoToNetIOBuffer::~MojoToNetIOBuffer() {
 
   // Prevent dangling ptr should this destructor remove the last reference
   // to `pending_buffer_`.
-  data_ = nullptr;
+  ClearSpan();
 }
 
 }  // namespace network

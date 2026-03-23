@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4regexpobject_p.h"
 #include "qv4regexp_p.h"
@@ -770,7 +771,7 @@ ReturnedValue RegExpPrototype::method_split(const FunctionObject *f, const Value
     if (!C)
         return Encode::undefined();
 
-    Value *args = scope.alloc(2);
+    Value *args = scope.constructUndefined(2);
     args[0] = rx;
     args[1] = flags;
     ScopedObject splitter(scope, C->callAsConstructor(args, 2, f));

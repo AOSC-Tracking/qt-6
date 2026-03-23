@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
 source_set("browser_tests") {
   testonly = true
 
@@ -47,7 +45,6 @@ source_set("browser_tests") {
 
   deps = [
     "//base/test:test_support",
-    "//build:chromeos_buildflags",
     "//chrome/test:test_support",
     "//chrome/test/payments:test_support",
     "//components/payments/content",
@@ -55,13 +52,19 @@ source_set("browser_tests") {
     "//components/payments/core",
     "//components/payments/core:test_support",
     "//components/ukm:test_support",
-    "//components/webdata_services:webdata_services",
+    "//components/webdata_services",
     "//device/fido:test_support",
   ]
 
   if (is_android) {
-    sources += [ "expandable_payment_handler_browsertest.cc" ]
-    deps += [ "//components/payments/content/android" ]
+    sources += [
+      "browser_bound_keys_deleter_browsertest.cc",
+      "expandable_payment_handler_browsertest.cc",
+    ]
+    deps += [
+      "//components/payments/content/android",
+      "//components/payments/content/browser_binding:test_support",
+    ]
   }
 
   if (!is_android) {
@@ -78,12 +81,12 @@ source_set("browser_tests") {
       "//chrome/test:test_support_ui",
       "//components/payments/content:utils",
       "//components/payments/content/utility",
-      "//components/permissions:permissions",
-      "//components/webdata_services:webdata_services",
+      "//components/permissions",
+      "//components/webdata_services",
     ]
   }
 
-  if (is_chromeos_ash) {
+  if (is_chromeos) {
     deps += [ "//chromeos/ash/experiences/arc" ]
   }
 }
@@ -99,7 +102,7 @@ source_set("unittests") {
     "//chrome/test:test_support",
     "//components/content_settings/core/test:test_support",
     "//components/infobars/content",
-    "//components/permissions:permissions",
+    "//components/permissions",
   ]
 
   if (is_android) {

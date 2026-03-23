@@ -23,7 +23,9 @@ ALLOWED_PREFIXES = {
     'chrome/util': ['cr'],
     'intervals': ['interval'],
     'graphs': ['graph'],
-    'slices': ['slice', 'thread_slice', 'process_slice'],
+    'slices': [
+        'slice', 'thread_slice', 'process_slice', 'thread_or_process_slice'
+    ],
     'linux': ['cpu', 'memory'],
     'stacks': ['cpu_profiling'],
 }
@@ -184,8 +186,8 @@ def check_banned_words(sql: str) -> List[str]:
       continue
 
     if 'like' in line.casefold():
-      errors.append(
-          'LIKE is banned in trace processor metrics. Prefer GLOB instead.\n')
+      errors.append('LIKE is banned in trace processor metrics and stdlib. '
+                    'Prefer GLOB instead.\n')
       continue
 
     if 'create_function' in line.casefold():

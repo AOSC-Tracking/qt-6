@@ -31,6 +31,7 @@ const std::vector<mojom::XRSessionFeature>& GetSupportedFeatures() {
                           mojom::XRSessionFeature::REF_SPACE_BOUNDED_FLOOR,
                           mojom::XRSessionFeature::REF_SPACE_UNBOUNDED,
                           mojom::XRSessionFeature::ANCHORS,
+                          mojom::XRSessionFeature::HAND_INPUT,
                           mojom::XRSessionFeature::SECONDARY_VIEWS}};
 
   return *kSupportedFeatures;
@@ -73,11 +74,6 @@ OpenXrDevice::OpenXrDevice(
 
   device_data.supported_features = GetSupportedFeatures();
 
-  // Only support hand input if the feature flag is enabled.
-  if (base::FeatureList::IsEnabled(features::kWebXrHandInput))
-    device_data.supported_features.emplace_back(
-        mojom::XRSessionFeature::HAND_INPUT);
-
   // Only support layers if the feature flag is enabled.
   if (base::FeatureList::IsEnabled(features::kWebXrLayers)) {
     device_data.supported_features.emplace_back(
@@ -117,6 +113,10 @@ OpenXrDevice::~OpenXrDevice() {
   // process connection. Ensure the callback is run regardless.
   if (request_session_callback_) {
     std::move(request_session_callback_).Run(nullptr);
+  }
+
+  if (shutdown_request_callback_) {
+    std::move(shutdown_request_callback_).Run();
   }
 }
 
@@ -241,6 +241,10 @@ void OpenXrDevice::ForceEndSession(ExitXrPresentReason reason) {
   if (instance_ != XR_NULL_HANDLE) {
     platform_helper_->DestroyInstance(instance_);
   }
+
+  if (shutdown_request_callback_) {
+    std::move(shutdown_request_callback_).Run();
+  }
 }
 
 void OpenXrDevice::OnPresentingControllerMojoConnectionError() {
@@ -249,8 +253,16 @@ void OpenXrDevice::OnPresentingControllerMojoConnectionError() {
 
 void OpenXrDevice::ShutdownSession(
     mojom::XRRuntime::ShutdownSessionCallback callback) {
-  ForceEndSession(ExitXrPresentReason::kBrowserShutdown);
-  std::move(callback).Run();
+  DVLOG(1) << __func__;
+  if (!HasExclusiveSession()) {
+    std::move(callback).Run();
+    return;
+  }
+
+  shutdown_request_callback_ = std::move(callback);
+  platform_helper_->PrepareForSessionShutdown(base::BindOnce(
+      &OpenXrDevice::ForceEndSession, weak_ptr_factory_.GetWeakPtr(),
+      ExitXrPresentReason::kBrowserShutdown));
 }
 
 void OpenXrDevice::SetFrameDataRestricted(bool restricted) {

@@ -2,12 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/gwp_asan_support.h"
 
 #if PA_BUILDFLAG(ENABLE_GWP_ASAN_SUPPORT)
 
 #include "partition_alloc/build_config.h"
-#include "partition_alloc/freeslot_bitmap_constants.h"
 #include "partition_alloc/in_slot_metadata.h"
 #include "partition_alloc/page_allocator_constants.h"
 #include "partition_alloc/partition_alloc_base/no_destructor.h"
@@ -23,8 +27,18 @@ namespace {
 PartitionOptions GwpAsanPartitionOptions() {
   PartitionOptions options;
   options.backup_ref_ptr = PartitionOptions::kEnabled;
+
+  // GWP-ASan does not reserve space for cookies.
+  options.use_cookie_if_supported = PartitionOptions::kDisabled;
   return options;
 }
+
+PartitionRoot* RootInstance() {
+  static internal::base::NoDestructor<PartitionRoot> root(
+      GwpAsanPartitionOptions());
+  return root.get();
+}
+
 }  // namespace
 
 // static
@@ -32,8 +46,7 @@ void* GwpAsanSupport::MapRegion(size_t slot_count,
                                 std::vector<uint16_t>& free_list) {
   PA_CHECK(slot_count > 0);
 
-  static internal::base::NoDestructor<PartitionRoot> root(
-      GwpAsanPartitionOptions());
+  static PartitionRoot* root = RootInstance();
 
   const size_t kSlotSize = 2 * internal::SystemPageSize();
   uint16_t bucket_index = PartitionRoot::SizeToBucketIndex(
@@ -41,8 +54,7 @@ void* GwpAsanSupport::MapRegion(size_t slot_count,
   auto* bucket = root->buckets + bucket_index;
 
   const size_t kSuperPagePayloadStartOffset =
-      internal::SuperPagePayloadStartOffset(
-          /* is_managed_by_normal_buckets = */ true);
+      internal::SuperPagePayloadStartOffset();
   PA_CHECK(kSuperPagePayloadStartOffset % kSlotSize == 0);
   const size_t kSuperPageGwpAsanSlotAreaBeginOffset =
       kSuperPagePayloadStartOffset;
@@ -59,9 +71,9 @@ void* GwpAsanSupport::MapRegion(size_t slot_count,
            std::numeric_limits<size_t>::max() / kSuperPageSize);
   uintptr_t super_page_span_start;
   {
-    internal::ScopedGuard locker{internal::PartitionRootLock(root.get())};
+    internal::ScopedGuard locker{internal::PartitionRootLock(root)};
     super_page_span_start = bucket->AllocNewSuperPageSpanForGwpAsan(
-        root.get(), super_page_count, AllocFlags::kNone);
+        root, super_page_count, AllocFlags::kReturnNull);
 
     if (!super_page_span_start) {
       return nullptr;
@@ -83,20 +95,18 @@ void* GwpAsanSupport::MapRegion(size_t slot_count,
     for (uintptr_t super_page = super_page_span_start;
          super_page < super_page_span_end; super_page += kSuperPageSize) {
       auto* page_metadata =
-          internal::PartitionSuperPageToMetadataArea(super_page);
+          internal::PartitionSuperPageToMetadataArea(super_page, root);
 
       // Index 0 is invalid because it is the super page extent metadata.
-      for (size_t partition_page_idx =
-               1 + internal::NumPartitionPagesPerFreeSlotBitmap();
+      for (size_t partition_page_idx = 1;
            partition_page_idx + bucket->get_pages_per_slot_span() <
            internal::NumPartitionPagesPerSuperPage();
            partition_page_idx += bucket->get_pages_per_slot_span()) {
         auto* slot_span_metadata =
             &page_metadata[partition_page_idx].slot_span_metadata;
-        bucket->InitializeSlotSpanForGwpAsan(slot_span_metadata, root.get());
-        auto slot_span_start =
-            internal::SlotSpanMetadata<internal::MetadataKind::kReadOnly>::
-                ToSlotSpanStart(slot_span_metadata);
+        bucket->InitializeSlotSpanForGwpAsan(slot_span_metadata);
+        auto slot_span_start = internal::SlotSpanMetadata::ToSlotSpanStart(
+            slot_span_metadata, root);
 
         for (uintptr_t slot_idx = 0; slot_idx < kSlotsPerSlotSpan; ++slot_idx) {
           auto slot_start = slot_span_start + slot_idx * kSlotSize;
@@ -129,6 +139,12 @@ bool GwpAsanSupport::CanReuse(uintptr_t slot_start) {
   return PartitionRoot::InSlotMetadataPointerFromSlotStartAndSize(slot_start,
                                                                   kSlotSize)
       ->CanBeReusedByGwpAsan();
+}
+
+// static
+void GwpAsanSupport::DestructForTesting() {
+  static PartitionRoot* root = RootInstance();
+  root->ResetForTesting(true);  // IN-TEST
 }
 
 }  // namespace partition_alloc

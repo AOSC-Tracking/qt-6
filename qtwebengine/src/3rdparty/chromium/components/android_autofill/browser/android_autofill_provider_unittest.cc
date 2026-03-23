@@ -115,33 +115,17 @@ auto SaveSessionId(SessionId* session_id) {
   };
 }
 
-FormData CreateTestBasicForm() {
+FormData CreateTestLoginForm() {
   FormData form;
   form.set_renderer_id(test::MakeFormRendererId());
+  form.set_name(u"login_form");
   form.set_url(GURL("https://foo.com/form.html"));
   form.set_action(GURL("https://foo.com/submit.html"));
   form.set_main_frame_origin(url::Origin::Create(form.url()));
-  return form;
-}
-
-FormData CreateTestLoginForm() {
-  FormData form = CreateTestBasicForm();
-  form.set_name(u"login_form");
   form.set_fields(
       {CreateTestFormField(/*label=*/"Username", /*name=*/"username",
                            /*value=*/"", FormControlType::kInputText),
        CreateTestFormField(/*label=*/"Password", /*name=*/"password",
-                           /*value=*/"", FormControlType::kInputPassword)});
-  return form;
-}
-
-FormData CreateTestChangePasswordForm() {
-  FormData form = CreateTestBasicForm();
-  form.set_name(u"change_password_form");
-  form.set_fields(
-      {CreateTestFormField(/*label=*/"Password", /*name=*/"password1",
-                           /*value=*/"", FormControlType::kInputPassword),
-       CreateTestFormField(/*label=*/"Password", /*name=*/"password2",
                            /*value=*/"", FormControlType::kInputPassword)});
   return form;
 }
@@ -186,7 +170,7 @@ class TestAndroidAutofillManager : public AndroidAutofillManager {
     gfx::Rect caret_bounds(gfx::Point(p.x(), p.y()), gfx::Size(0, 10));
     OnAskForValuesToFillImpl(
         form, field.global_id(), caret_bounds,
-        AutofillSuggestionTriggerSource::kTextFieldValueChanged);
+        AutofillSuggestionTriggerSource::kTextFieldValueChanged, std::nullopt);
   }
 
   void SimulateOnFocusOnFormField(const FormData& form,
@@ -955,28 +939,40 @@ TEST_F(AndroidAutofillProviderWithCredManTest,
 }
 
 TEST_F(AndroidAutofillProviderWithCredManTest,
-       LogConditionalPasskeysFlowPasskeysAvailableMetricWithoutPasskeys) {
+       LogConditionalPasskeysFlowPasskeysAvailableOnLongPress) {
+  ON_CALL(cred_man_delegate(), HasPasskeys())
+      .WillByDefault(
+          Return(webauthn::WebAuthnCredManDelegate::State::kNoPasskeys));
+
+  // Focus the form field which has no immediate passkey effect.
+  FocusFormField(webauthn_email_field());
+  EXPECT_FALSE(keyboard_suppressor().is_suppressing());
+
+  // Simulate the long-press suggestion was accepted.
+  EXPECT_CALL(cred_man_delegate(),
+              TriggerCredManUi(Eq(
+                  webauthn::WebAuthnCredManDelegate::RequestPasswords(false))));
+  test_api(autofill_provider()).OnTriggerPasskeyRequest();
+}
+
+TEST_F(AndroidAutofillProviderWithCredManTest,
+       LogConditionalPasskeysFlowPasskeysUnavailableWithoutPasskeys) {
   base::HistogramTester histogram_tester;
   ON_CALL(cred_man_delegate(), HasPasskeys())
       .WillByDefault(
           Return(webauthn::WebAuthnCredManDelegate::State::kNoPasskeys));
 
   // Focus the form field.
-  base::RepeatingCallback<void(bool)> completed_callback;
-  EXPECT_CALL(cred_man_delegate(), SetRequestCompletionCallback)
-      .WillOnce(SaveArg<0>(&completed_callback));
+  EXPECT_CALL(cred_man_delegate(), SetRequestCompletionCallback).Times(0);
   FocusFormField(webauthn_email_field());
 
-  // Keyboard is suppressed while CredMan is showing.
-  EXPECT_TRUE(keyboard_suppressor().is_suppressing());
+  // Don't expect Keyboard without CredMan showing.
+  EXPECT_FALSE(keyboard_suppressor().is_suppressing());
   Mock::VerifyAndClearExpectations(&cred_man_delegate());
-
-  // Hide CredMan.
-  completed_callback.Run(/*success=*/true);
 
   histogram_tester.ExpectUniqueSample(
       "Autofill.ConditionalPasskeysFlow.PasskeysState",
-      webauthn::WebAuthnCredManDelegate::State::kNoPasskeys, 1);
+      webauthn::WebAuthnCredManDelegate::State::kNoPasskeys, 0);
 }
 
 TEST_F(AndroidAutofillProviderWithCredManTest, NoCredManWithoutAnnotation) {
@@ -994,6 +990,22 @@ TEST_F(AndroidAutofillProviderWithCredManTest, SkipsCredManCallBeforeReady) {
 
   EXPECT_CALL(cred_man_delegate(), TriggerCredManUi).Times(0);
   FocusFormField(webauthn_email_field());
+}
+
+TEST_F(AndroidAutofillProviderWithCredManTest, OfferLongPressOption) {
+  FocusFormField(webauthn_email_field());
+  EXPECT_TRUE(provider_bridge_delegate().HasPasskeyRequest());
+}
+
+TEST_F(AndroidAutofillProviderWithCredManTest,
+       OfferNoLongPressOptionWithoutAnnotation) {
+  FocusFormField(non_webauthn_password_field());
+  EXPECT_FALSE(provider_bridge_delegate().HasPasskeyRequest());
+}
+
+TEST_F(AndroidAutofillProviderWithCredManTest,
+       OfferNoLongPressOptionWithoutField) {
+  EXPECT_FALSE(provider_bridge_delegate().HasPasskeyRequest());
 }
 
 TEST_F(AndroidAutofillProviderWithCredManTest, NotifyFocusOnCredManError) {
@@ -1306,61 +1318,6 @@ TEST_F(AndroidAutofillProviderPrefillRequestTest,
   EXPECT_NE(pi_form_session_id, pw_form_second_session_id);
 }
 
-// Tests that the prefill request is sent for a Change Password form.
-TEST_F(AndroidAutofillProviderPrefillRequestTest,
-       PrefillRequestSentForChangePasswordForm) {
-  if (base::android::BuildInfo::GetInstance()->sdk_int() <
-      base::android::SdkVersion::SDK_VERSION_U) {
-    GTEST_SKIP();
-  }
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      features::kAndroidAutofillPrefillRequestsForChangePassword);
-
-  FormData form = CreateFormDataForFrame(CreateTestChangePasswordForm(),
-                                         main_frame_token());
-  android_autofill_manager().OnFormsSeen({form}, /*removed_forms=*/{});
-  ASSERT_TRUE(android_autofill_manager().FindCachedFormById(form.global_id()));
-
-  EXPECT_CALL(provider_bridge(), SendPrefillRequest(EqualsFormData(form)));
-  android_autofill_manager().SimulatePropagateAutofillPredictions(
-      form.global_id());
-}
-
-// Tests that starting an autofill session for a change password form works.
-TEST_F(AndroidAutofillProviderPrefillRequestTest,
-       SessionStartForChangePasswordForm) {
-  if (base::android::BuildInfo::GetInstance()->sdk_int() <
-      base::android::SdkVersion::SDK_VERSION_U) {
-    GTEST_SKIP();
-  }
-
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      features::kAndroidAutofillPrefillRequestsForChangePassword);
-
-  FormData form = CreateFormDataForFrame(CreateTestChangePasswordForm(),
-                                         main_frame_token());
-  android_autofill_manager().OnFormsSeen({form}, /*removed_forms=*/{});
-  ASSERT_TRUE(android_autofill_manager().FindCachedFormById(form.global_id()));
-
-  // Upon receiving server predictions a prefill request should be sent.
-  SessionId cache_session_id = SessionId(0);
-  EXPECT_CALL(provider_bridge(), SendPrefillRequest(EqualsFormData(form)))
-      .WillOnce(SaveSessionId(&cache_session_id));
-  android_autofill_manager().SimulatePropagateAutofillPredictions(
-      form.global_id());
-  Mock::VerifyAndClearExpectations(&provider_bridge());
-
-  EXPECT_CALL(
-      provider_bridge(),
-      StartAutofillSession(EqualsFormDataWithSessionId(form, cache_session_id),
-                           EqualsFieldInfo(/*index=*/0),
-                           /*has_server_predictions=*/true));
-  android_autofill_manager().SimulateOnAskForValuesToFill(
-      form, form.fields().front());
-}
-
 // Tests that metrics are emitted when the bottom sheet is shown.
 TEST_F(AndroidAutofillProviderPrefillRequestTest,
        PrefillRequestStateEmittedOnShowingBottomSheet) {
@@ -1413,10 +1370,6 @@ TEST_F(AndroidAutofillProviderPrefillRequestTest,
   histogram_tester.ExpectUniqueSample(
       AndroidAutofillProvider::kPrefillRequestStateUma,
       PrefillRequestState::kRequestSentStructureNotProvided, 1);
-  histogram_tester.ExpectTotalCount(
-      AndroidAutofillProvider::
-          kPrefillRequestBottomsheetNoViewStructureDelayUma,
-      1);
 }
 
 // Tests that the correct metrics are emitted when the bottom sheet is not shown

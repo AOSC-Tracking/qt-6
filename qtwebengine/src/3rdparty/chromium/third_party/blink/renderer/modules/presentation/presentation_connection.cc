@@ -201,23 +201,20 @@ void PresentationConnection::DidClose(
 }
 
 // static
-ControllerPresentationConnection* ControllerPresentationConnection::Take(
-    ScriptPromiseResolverBase* resolver,
+ControllerPresentationConnection* ControllerPresentationConnection::Create(
+    ExecutionContext* execution_context,
     const mojom::blink::PresentationInfo& presentation_info,
     PresentationRequest* request) {
-  DCHECK(resolver);
   DCHECK(request);
 
   PresentationController* controller =
-      PresentationController::FromContext(resolver->GetExecutionContext());
-  if (!controller)
-    return nullptr;
+      PresentationController::FromContext(execution_context);
 
-  return Take(controller, presentation_info, request);
+  return controller ? Create(controller, presentation_info, request) : nullptr;
 }
 
 // static
-ControllerPresentationConnection* ControllerPresentationConnection::Take(
+ControllerPresentationConnection* ControllerPresentationConnection::Create(
     PresentationController* controller,
     const mojom::blink::PresentationInfo& presentation_info,
     PresentationRequest* request) {
@@ -285,7 +282,7 @@ void ControllerPresentationConnection::TerminateInternal() {
 }
 
 // static
-ReceiverPresentationConnection* ReceiverPresentationConnection::Take(
+ReceiverPresentationConnection* ReceiverPresentationConnection::Create(
     PresentationReceiver* receiver,
     const mojom::blink::PresentationInfo& presentation_info,
     mojo::PendingRemote<mojom::blink::PresentationConnection>
@@ -397,9 +394,8 @@ void PresentationConnection::ContextDestroyed() {
 }
 
 void PresentationConnection::ContextLifecycleStateChanged(
-    mojom::FrameLifecycleState state) {
-  if (state == mojom::FrameLifecycleState::kFrozen ||
-      state == mojom::FrameLifecycleState::kFrozenAutoResumeMedia) {
+    mojom::blink::FrameLifecycleState state) {
+  if (state == mojom::blink::FrameLifecycleState::kFrozen) {
     CloseConnection();
   }
 }

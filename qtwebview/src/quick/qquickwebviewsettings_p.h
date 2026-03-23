@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKWEBVIEWSETTINGS_H
 #define QQUICKWEBVIEWSETTINGS_H
@@ -18,7 +19,7 @@
 #include <QtWebViewQuick/private/qtwebviewquickglobal_p.h>
 #include <QObject>
 #include <QtQmlIntegration/qqmlintegration.h>
-#include <QtWebView/private/qwebview_p.h>
+#include <QtWebView/qwebview.h>
 #include <QtCore/qpointer.h>
 
 QT_BEGIN_NAMESPACE
@@ -60,8 +61,8 @@ Q_SIGNALS:
 private:
     friend class QQuickWebView;
 
-    explicit QQuickWebViewSettings(QWebViewSettings *webviewsettings, QObject *p = nullptr);
-    QPointer<QWebViewSettings> d;
+    explicit QQuickWebViewSettings(QWebViewSettings *webviewsettings);
+    QWebViewSettings *d;
     bool m_allowFileAccess;
 };
 

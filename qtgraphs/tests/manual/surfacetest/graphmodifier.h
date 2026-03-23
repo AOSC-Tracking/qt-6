@@ -78,6 +78,7 @@ public:
     void adjustXMin(int min);
     void adjustYMin(int min);
     void adjustZMin(int min);
+    void adjustCutoffMargin(int margin);
     void updateSamples();
     void gradientPressed();
     void changeFont(const QFont &font);
@@ -103,9 +104,13 @@ public:
     void massiveTestAppendAndScroll();
     void testAxisReverse();
     void testDataOrdering();
+    void testNanSeries();
+    void setRowSanitization(int enabled);
     void setAspectRatio(int ratio);
     void setHorizontalAspectRatio(int ratio);
     void setSurfaceTexture(int enabled);
+    void setSurfaceAlphaTexture(int enabled);
+    void setSurfaceAlphaTextureFile(int enabled);
 
 public Q_SLOTS:
     void changeShadowQuality(int quality);
@@ -151,6 +156,7 @@ private:
     QSurfaceDataRow createMultiRow(int row, int series, bool change);
     void populateRisingSeries(QSurface3DSeries *series, int rows, int columns, float minValue,
                               float maxValue, bool ascendingX, bool ascendingZ);
+    void populateNanSeries(QSurface3DSeries *series, int rows, int columns);
 
     Q3DSurfaceWidgetItem *m_graph;
     QSurface3DSeries *m_multiseries[4];
@@ -159,6 +165,7 @@ private:
     QSurface3DSeries *m_series3;
     QSurface3DSeries *m_series4;
     QSurface3DSeries *m_lineSeries;
+    QSurface3DSeries *m_nanSeries;
     QSlider *m_gridSliderX;
     QSlider *m_gridSliderZ;
     QSlider *m_axisRangeSliderX;

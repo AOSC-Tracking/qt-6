@@ -9,12 +9,12 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "base/check.h"
 #include "base/strings/strcat.h"
 #include "base/strings/to_string.h"
 #include "base/types/expected_internal.h"  // IWYU pragma: export
-#include "third_party/abseil-cpp/absl/utility/utility.h"
 
 // Class template `expected<T, E>` is a vocabulary type which contains an
 // expected value of type `T`, or an error `E`. The class skews towards behaving
@@ -146,9 +146,9 @@ class ok final {
       : value_(std::forward<Args>(args)...) {}
 
   template <typename U, typename... Args>
-  constexpr explicit ok(std::in_place_t,
-                        std::initializer_list<U> il,
-                        Args&&... args) noexcept
+  constexpr ok(std::in_place_t,
+               std::initializer_list<U> il,
+               Args&&... args) noexcept
       : value_(il, std::forward<Args>(args)...) {}
 
   constexpr T& value() & noexcept { return value_; }
@@ -175,7 +175,7 @@ template <typename T>
   requires(std::is_void_v<T>)
 class ok<T> final {
  public:
-  constexpr explicit ok() noexcept = default;
+  constexpr ok() noexcept = default;
 
   std::string ToString() const { return "ok()"; }
 };
@@ -189,11 +189,6 @@ constexpr bool operator==(const ok<T>& lhs, const ok<U>& rhs) noexcept {
   } else {
     return lhs.value() == rhs.value();
   }
-}
-
-template <typename T, typename U>
-constexpr bool operator!=(const ok<T>& lhs, const ok<U>& rhs) noexcept {
-  return !(lhs == rhs);
 }
 
 template <typename T>
@@ -217,9 +212,9 @@ class unexpected final {
       : error_(std::forward<Args>(args)...) {}
 
   template <typename U, typename... Args>
-  constexpr explicit unexpected(std::in_place_t,
-                                std::initializer_list<U> il,
-                                Args&&... args) noexcept
+  constexpr unexpected(std::in_place_t,
+                       std::initializer_list<U> il,
+                       Args&&... args) noexcept
       : error_(il, std::forward<Args>(args)...) {}
 
   // [expected.un.obs] Observers
@@ -270,7 +265,7 @@ unexpected(E) -> unexpected<E>;
 // [expected.expected], class template expected
 // https://eel.is/c++draft/expected#expected
 template <typename T, typename E>
-class [[nodiscard]] expected final {
+class [[nodiscard, gsl::Owner]] expected final {
   // Note: A partial specialization for void value types follows below.
   static_assert(!std::is_void_v<T>, "Error: T must not be void");
 
@@ -351,9 +346,9 @@ class [[nodiscard]] expected final {
       : impl_(kValTag, std::forward<Args>(args)...) {}
 
   template <typename U, typename... Args>
-  constexpr explicit expected(std::in_place_t,
-                              std::initializer_list<U> il,
-                              Args&&... args) noexcept
+  constexpr expected(std::in_place_t,
+                     std::initializer_list<U> il,
+                     Args&&... args) noexcept
       : impl_(kValTag, il, std::forward<Args>(args)...) {}
 
   template <typename... Args>
@@ -361,9 +356,9 @@ class [[nodiscard]] expected final {
       : impl_(kErrTag, std::forward<Args>(args)...) {}
 
   template <typename U, typename... Args>
-  constexpr explicit expected(unexpect_t,
-                              std::initializer_list<U> il,
-                              Args&&... args) noexcept
+  constexpr expected(unexpect_t,
+                     std::initializer_list<U> il,
+                     Args&&... args) noexcept
       : impl_(kErrTag, il, std::forward<Args>(args)...) {}
 
   // [expected.object.assign], assignment
@@ -560,7 +555,7 @@ class [[nodiscard]] expected final {
   //
   // `f`'s return type U needs to be a valid value_type for expected, i.e. any
   // type for which `remove_cv_t` is either void, or a complete non-array object
-  // type that is not `absl::in_place_t`, `base::unexpect_t`, or a
+  // type that is not `std::in_place_t`, `base::unexpect_t`, or a
   // specialization of `base::ok` or `base::unexpected`.
   //
   // Returns an instance of base::expected<remove_cv_t<U>, E> that is
@@ -598,7 +593,7 @@ class [[nodiscard]] expected final {
   //
   // `f`'s return type G needs to be a valid error_type for expected, i.e. any
   // type for which `remove_cv_t` is a complete non-array object type that is
-  // not `absl::in_place_t`, `base::unexpect_t`, or a specialization of
+  // not `std::in_place_t`, `base::unexpect_t`, or a specialization of
   // `base::ok` or `base::unexpected`.
   //
   // Returns an instance of base::expected<T, remove_cv_t<G>> that is
@@ -712,9 +707,9 @@ class [[nodiscard]] expected<T, E> final {
       : impl_(kErrTag, std::forward<Args>(args)...) {}
 
   template <typename U, typename... Args>
-  constexpr explicit expected(unexpect_t,
-                              std::initializer_list<U> il,
-                              Args&&... args) noexcept
+  constexpr expected(unexpect_t,
+                     std::initializer_list<U> il,
+                     Args&&... args) noexcept
       : impl_(kErrTag, il, std::forward<Args>(args)...) {}
 
   // [expected.void.assign], assignment
@@ -847,7 +842,7 @@ class [[nodiscard]] expected<T, E> final {
   //
   // `f`'s return type U needs to be a valid value_type for expected, i.e. any
   // type for which `remove_cv_t` is either void, or a complete non-array object
-  // type that is not `absl::in_place_t`, `base::unexpect_t`, or a
+  // type that is not `std::in_place_t`, `base::unexpect_t`, or a
   // specialization of `base::ok` or `base::unexpected`.
   //
   // Returns an instance of base::expected<remove_cv_t<U>, E> that is
@@ -885,7 +880,7 @@ class [[nodiscard]] expected<T, E> final {
   //
   // `f`'s return type G needs to be a valid error_type for expected, i.e. any
   // type for which `remove_cv_t` is a complete non-array object type that is
-  // not `absl::in_place_t`, `base::unexpect_t`, or a specialization of
+  // not `std::in_place_t`, `base::unexpect_t`, or a specialization of
   // `base::ok` or `base::unexpected`.
   //
   // Returns an instance of base::expected<cv void, remove_cv_t<G>> that is
@@ -925,8 +920,8 @@ class [[nodiscard]] expected<T, E> final {
   }
 
  private:
-  // Note: Since we can't store void types we use absl::monostate instead.
-  using Impl = internal::ExpectedImpl<absl::monostate, E>;
+  // Note: Since we can't store void types we use std::monostate instead.
+  using Impl = internal::ExpectedImpl<std::monostate, E>;
   static constexpr auto kErrTag = Impl::kErrTag;
 
   Impl impl_;

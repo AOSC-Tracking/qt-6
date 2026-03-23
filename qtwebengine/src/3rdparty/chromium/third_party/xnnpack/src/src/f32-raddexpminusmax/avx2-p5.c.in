@@ -8,10 +8,12 @@ $assert BATCH_TILE >= 8
 $SIMD_TILE = BATCH_TILE // 8
 $ABC = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/raddexpminusmax.h"
+#include "src/xnnpack/raddexpminusmax.h"
 
 
 void xnn_f32_raddexpminusmax_ukernel__avx2_p5_u${BATCH_TILE}${"" if ACCUMULATORS == 1 else "_acc%d" % ACCUMULATORS}(

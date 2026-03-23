@@ -29,9 +29,14 @@
 #include "base/android/jni_android.h"
 #endif
 
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
 #include "components/signin/internal/identity_manager/token_binding_helper.h"
-#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+#if BUILDFLAG(IS_IOS)
+#include "components/signin/public/identity_manager/access_token_fetcher.h"
+#include "components/signin/public/identity_manager/access_token_info.h"
+#endif
 
 namespace network {
 class SharedURLLoaderFactory;
@@ -72,6 +77,13 @@ class ProfileOAuth2TokenServiceDelegate {
       OAuth2AccessTokenConsumer* consumer,
       const std::string& token_binding_challenge) = 0;
 
+#if BUILDFLAG(IS_IOS)
+  virtual void GetRefreshTokenFromDevice(
+      const CoreAccountId& account_id,
+      const OAuth2AccessTokenManager::ScopeSet& scopes,
+      signin::AccessTokenFetcher::TokenCallback callback) = 0;
+#endif
+
   // Returns |true| if a refresh token is available for |account_id|, and
   // |false| otherwise.
   // Note: Implementations must make sure that |RefreshTokenIsAvailable| returns
@@ -95,7 +107,7 @@ class ProfileOAuth2TokenServiceDelegate {
                                const GoogleServiceAuthError& error,
                                bool fire_auth_error_changed = true);
 
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
   // Returns true iff (a) a refresh token exists for `account_id`, and (b) the
   // refresh token is bound to a device.
   virtual bool IsRefreshTokenBound(const CoreAccountId& account_id) const = 0;
@@ -117,7 +129,7 @@ class ProfileOAuth2TokenServiceDelegate {
       std::string_view challenge,
       std::string_view ephemeral_public_key,
       TokenBindingHelper::GenerateAssertionCallback callback) = 0;
-#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
   // Returns a list of accounts for which a refresh token is maintained by
   // |this| instance, i.e. the accounts available in this profile, in the order
@@ -181,12 +193,8 @@ class ProfileOAuth2TokenServiceDelegate {
       const CoreAccountId& account_id,
       const std::string& refresh_token,
       signin_metrics::SourceForRefreshTokenOperation source =
-          signin_metrics::SourceForRefreshTokenOperation::kUnknown
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-      ,
-      const std::vector<uint8_t>& wrapped_binding_key = std::vector<uint8_t>()
-#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  );
+          signin_metrics::SourceForRefreshTokenOperation::kUnknown,
+      const std::vector<uint8_t>& wrapped_binding_key = std::vector<uint8_t>());
 
   // Redirects to `RevokeCredentialsInternal()` which can be overridden by
   // subclasses. Sets the source for the refresh token operation.
@@ -207,8 +215,7 @@ class ProfileOAuth2TokenServiceDelegate {
   // for this method.
   // Redirects to `LoadCredentialsInternal()` which can be overridden by
   // subclasses. Sets the source for the refresh token operation.
-  void LoadCredentials(const CoreAccountId& primary_account_id,
-                       bool is_syncing);
+  void LoadCredentials(const CoreAccountId& primary_account_id);
 
   // Returns the state of the load credentials operation.
   signin::LoadCredentialsState load_credentials_state() const {
@@ -284,6 +291,8 @@ class ProfileOAuth2TokenServiceDelegate {
 
   // Called by subclasses to notify observers.
   void FireEndBatchChanges();
+  // Also sends an `OnAuthErrorChanged()` notification as a new refresh token is
+  // considered to have a new error state.
   void FireRefreshTokenAvailable(const CoreAccountId& account_id);
   void FireRefreshTokenRevoked(const CoreAccountId& account_id);
   // FireRefreshTokensLoaded is virtual and overridden in android implementation
@@ -323,18 +332,13 @@ class ProfileOAuth2TokenServiceDelegate {
   // Internal implementations of the methods that can be overridden by
   // subclasses.
 
-  virtual void LoadCredentialsInternal(const CoreAccountId& primary_account_id,
-                                       bool is_syncing) = 0;
+  virtual void LoadCredentialsInternal(
+      const CoreAccountId& primary_account_id) = 0;
 
   virtual void UpdateCredentialsInternal(
       const CoreAccountId& account_id,
-      const std::string& refresh_token
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-      ,
-      const std::vector<uint8_t>& wrapped_binding_key
-#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  ) {
-  }
+      const std::string& refresh_token,
+      const std::vector<uint8_t>& wrapped_binding_key) {}
 
   virtual void RevokeCredentialsInternal(const CoreAccountId& account_id) {}
 

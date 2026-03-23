@@ -60,8 +60,8 @@ ExtensionActionManagerFactory* ExtensionActionManagerFactory::GetInstance() {
 ExtensionActionManager::ExtensionActionManager(
     content::BrowserContext* browser_context)
     : browser_context_(browser_context) {
-  CHECK(!browser_context_->IsOffTheRecord())
-      << "Don't instantiate this with an off-the-record context.";
+  // CHECK(!browser_context_->IsOffTheRecord())
+  //     << "Don't instantiate this with an off-the-record context.";
   extension_registry_observation_.Observe(
       ExtensionRegistry::Get(browser_context_));
 }
@@ -125,8 +125,8 @@ ExtensionAction* ExtensionActionManager::GetExtensionAction(
 }
 
 // static
-void ExtensionActionManager::EnsureFactoryBuilt() {
-  ExtensionActionManagerFactory::GetInstance();
+BrowserContextKeyedServiceFactory* ExtensionActionManager::GetFactory() {
+  return ExtensionActionManagerFactory::GetInstance();
 }
 
 }  // namespace extensions

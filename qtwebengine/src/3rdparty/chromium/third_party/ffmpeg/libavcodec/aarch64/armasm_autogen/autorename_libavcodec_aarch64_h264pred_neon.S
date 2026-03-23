@@ -851,6 +851,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1023,7 +1026,7 @@
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_128_dc_neon
 
@@ -1049,7 +1052,7 @@ ff_pred16x16_128_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_top_dc_neon
 
@@ -1079,7 +1082,7 @@ ff_pred16x16_top_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_left_dc_neon
 
@@ -1124,7 +1127,7 @@ ff_pred16x16_left_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_dc_neon
 
@@ -1180,7 +1183,7 @@ temp_label_0
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_hor_neon
 
@@ -1212,7 +1215,7 @@ temp_label_1
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_vert_neon
 
@@ -1246,7 +1249,7 @@ temp_label_2
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_plane_neon
 
@@ -1393,7 +1396,7 @@ p8weight
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_hor_neon
 
@@ -1425,7 +1428,7 @@ temp_label_4
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_vert_neon
 
@@ -1459,7 +1462,7 @@ temp_label_5
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_plane_neon
 
@@ -1575,7 +1578,7 @@ temp_label_6
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_128_dc_neon
 
@@ -1602,7 +1605,7 @@ ff_pred8x8_128_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_top_dc_neon
 
@@ -1635,7 +1638,7 @@ ff_pred8x8_top_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_left_dc_neon
 
@@ -1674,7 +1677,7 @@ ff_pred8x8_left_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_dc_neon
 
@@ -1732,7 +1735,7 @@ temp_label_7
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_l0t_dc_neon
 
@@ -1775,7 +1778,7 @@ ff_pred8x8_l0t_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_l00_dc_neon
 
@@ -1810,7 +1813,7 @@ ff_pred8x8_l00_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_0lt_dc_neon
 
@@ -1855,7 +1858,7 @@ ff_pred8x8_0lt_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_0l0_dc_neon
 
@@ -1901,7 +1904,7 @@ ff_pred8x8_0l0_dc_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_top_dc_neon_10
 
@@ -1951,7 +1954,7 @@ ff_pred16x16_top_dc_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_dc_neon_10
 
@@ -2012,7 +2015,7 @@ temp_label_8
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_hor_neon_10
 
@@ -2047,7 +2050,7 @@ temp_label_9
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_vert_neon_10
 
@@ -2084,7 +2087,7 @@ temp_label_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred16x16_plane_neon_10
 
@@ -2174,20 +2177,19 @@ ff_pred16x16_plane_neon_10
         add             v7.4h,  v7.4h,  v0.4h
         shl             v2.4h,  v7.4h,  #4
         ssubl           v2.4s,  v2.4h,  v3.4h
-        shl             v3.4h,  v4.4h,  #4
         ext8             v0.16b, v0.16b, v0.16b, #14
-        ssubl           v6.4s,  v5.4h,  v3.4h
+        sshll v6.4s, v5.4h, #0
 
         mov             v0.h[0],  wzr
         mul             v0.8h,  v0.8h,  v4.h[0]
         dup             v16.4s, v2.s[0]
         dup             v17.4s, v2.s[0]
-        dup             v2.8h,  v4.h[0]
-        dup             v3.4s,  v6.s[0]
-        shl             v2.8h,  v2.8h,  #3
+        dup             v2.8h,  v4.h[0]        
+        dup             v3.4s,  v6.s[0]        
+        sshll           v2.4s,  v2.4h,  #3     
         saddw           v16.4s, v16.4s, v0.4h
         saddw2          v17.4s, v17.4s, v0.8h
-        saddw           v3.4s,  v3.4s,  v2.4h
+        sub             v3.4s,  v3.4s,  v2.4s
 
         mov             w3,      #16
         mvni            v4.8h,   #0xFC, lsl #8 
@@ -2195,8 +2197,8 @@ temp_label_11
 
         sqshrun         v0.4h,  v16.4s, #5
         sqshrun2        v0.8h,  v17.4s, #5
-        saddw           v16.4s, v16.4s, v2.4h
-        saddw           v17.4s, v17.4s, v2.4h
+        add             v16.4s, v16.4s, v2.4s
+        add             v17.4s, v17.4s, v2.4s
         sqshrun         v1.4h,  v16.4s, #5
         sqshrun2        v1.8h,  v17.4s, #5
         add             v16.4s, v16.4s, v3.4s
@@ -2214,7 +2216,7 @@ temp_label_11
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_hor_neon_10
 
@@ -2247,7 +2249,7 @@ temp_label_12
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_vert_neon_10
 
@@ -2282,7 +2284,7 @@ temp_label_13
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_plane_neon_10
 
@@ -2381,12 +2383,11 @@ ff_pred8x8_plane_neon_10
         ssubl           v2.4s,  v2.4h,  v3.4h
         ext8             v0.16b, v0.16b, v0.16b, #14
         mov             v0.h[0],  wzr
-        mul             v0.8h,  v0.8h,  v5.h[0]
         dup             v1.4s,  v2.s[0]
         dup             v2.4s,  v2.s[0]
         dup             v3.8h,  v5.h[1]
-        saddw           v1.4s,  v1.4s,  v0.4h
-        saddw2          v2.4s,  v2.4s,  v0.8h
+        smlal           v1.4s,  v0.4h,  v5.h[0]
+        smlal2          v2.4s,  v0.8h,  v5.h[0]
         mov             w3,  #8
         mvni            v4.8h,  #0xFC,  lsl #8 
 temp_label_14
@@ -2408,7 +2409,7 @@ temp_label_14
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_128_dc_neon_10
 
@@ -2435,7 +2436,7 @@ ff_pred8x8_128_dc_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_top_dc_neon_10
 
@@ -2469,7 +2470,7 @@ ff_pred8x8_top_dc_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_left_dc_neon_10
 
@@ -2509,7 +2510,7 @@ ff_pred8x8_left_dc_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_dc_neon_10
 
@@ -2570,7 +2571,7 @@ temp_label_15
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_l0t_dc_neon_10
 
@@ -2619,7 +2620,7 @@ ff_pred8x8_l0t_dc_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_l00_dc_neon_10
 
@@ -2657,7 +2658,7 @@ ff_pred8x8_l00_dc_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_0lt_dc_neon_10
 
@@ -2709,7 +2710,7 @@ ff_pred8x8_0lt_dc_neon_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_pred8x8_0l0_dc_neon_10
 

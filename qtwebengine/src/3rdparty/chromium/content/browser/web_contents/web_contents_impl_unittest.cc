@@ -18,9 +18,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/gtest_util.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
+#include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "components/input/native_web_keyboard_event.h"
@@ -72,7 +72,9 @@
 #include "net/base/network_handle.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/web_sandbox_flags.h"
+#include "services/network/public/mojom/attribution.mojom.h"
 #include "services/network/test/test_network_context.h"
 #include "skia/ext/skia_utils_base.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -175,6 +177,12 @@ class TestWebContentsObserver : public WebContentsObserver {
     text_copied_to_clipboard_ = copied_text;
   }
 
+  void OnKeepAliveRequestCreated(
+      const network::ResourceRequest& resource_request,
+      RenderFrameHost* initiator_rfh) override {
+    fetch_keepalive_request_ = resource_request;
+  }
+
   void ExpectOnCaptureHandleConfigUpdate(
       blink::mojom::CaptureHandleConfigPtr config) {
     CHECK(config) << "Malformed test.";
@@ -196,6 +204,10 @@ class TestWebContentsObserver : public WebContentsObserver {
     return text_copied_to_clipboard_;
   }
 
+  const network::ResourceRequest& fetch_keepalive_request() const {
+    return fetch_keepalive_request_;
+  }
+
  private:
   GURL last_url_;
   int theme_color_change_calls_ = 0;
@@ -203,6 +215,7 @@ class TestWebContentsObserver : public WebContentsObserver {
   bool observed_did_first_visually_non_empty_paint_ = false;
   blink::mojom::CaptureHandleConfigPtr expected_capture_handle_config_;
   std::u16string text_copied_to_clipboard_;
+  network::ResourceRequest fetch_keepalive_request_;
 };
 
 class MockWebContentsDelegate : public WebContentsDelegate {
@@ -723,7 +736,15 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
 
 // Test that navigating across a site boundary after a crash creates a new
 // RFH without requiring a cross-site transition (i.e., PENDING state).
-TEST_F(WebContentsImplTest, DISABLED_CrossSiteBoundariesAfterCrash) {
+// TODO(crbug.com/375057184): Determine why this test crashes on Android and
+// re-enable it.
+#if BUILDFLAG(IS_ANDROID)
+#define MAYBE_CrossSiteBoundariesAfterCrash \
+  DISABLED_CrossSiteBoundariesAfterCrash
+#else
+#define MAYBE_CrossSiteBoundariesAfterCrash CrossSiteBoundariesAfterCrash
+#endif
+TEST_F(WebContentsImplTest, MAYBE_CrossSiteBoundariesAfterCrash) {
   // Ensure that the cross-site transition will also be cross-process on
   // Android.
   IsolateAllSitesForTesting(base::CommandLine::ForCurrentProcess());
@@ -888,7 +909,7 @@ TEST_F(WebContentsImplTest, NavigateFromSitelessUrl) {
   main_test_rfh()->GetSiteInstance()->group()->IncrementActiveFrameCount();
 
   EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
-  if (AreAllSitesIsolatedForTesting()) {
+  if (AreStrictSiteInstancesEnabled()) {
     EXPECT_TRUE(
         contents()->GetSiteInstance()->GetSiteURL().DomainIs("google.com"));
   } else {
@@ -991,13 +1012,13 @@ TEST_F(WebContentsImplTest, NavigateFromRestoredRegularUrl) {
 
   EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
   EXPECT_TRUE(orig_instance->HasSite());
-  EXPECT_EQ(!AreAllSitesIsolatedForTesting(),
+  EXPECT_EQ(!AreStrictSiteInstancesEnabled(),
             orig_instance->IsDefaultSiteInstance());
 
   // Navigate to another site and verify that a new SiteInstance was created.
   const GURL url("http://www.google.com");
   NavigationSimulator::NavigateAndCommitFromBrowser(contents(), url);
-  if (AreAllSitesIsolatedForTesting()) {
+  if (AreStrictSiteInstancesEnabled()) {
     EXPECT_NE(orig_instance, contents()->GetSiteInstance());
   } else {
     // Verify this remains the default SiteInstance since |url| does
@@ -1038,7 +1059,9 @@ TEST_F(WebContentsImplTest, FindOpenerRVHWhenPending) {
       TestWebContents::Create(browser_context(), instance));
   popup->SetOpener(contents());
   contents()->GetRenderManager()->CreateOpenerProxies(
-      instance->group(), nullptr, pending_rfh->browsing_context_state());
+      instance->group(), /*skip_this_node=*/nullptr,
+      pending_rfh->browsing_context_state(),
+      /*navigation_metrics_token=*/std::nullopt);
 
   // If swapped out is forbidden, a new proxy should be created for the opener
   // in the group |instance| belongs to, and we should ensure that its routing
@@ -1370,6 +1393,9 @@ TEST_F(WebContentsImplTest, CrossSiteNotPreemptedDuringBeforeUnload) {
     GTEST_SKIP();
   }
   DisableProactiveBrowsingInstanceSwapFor(orig_rfh);
+  // This test assumes a beforeunload handler is present.
+  orig_rfh->SuddenTerminationDisablerChanged(
+      true, blink::mojom::SuddenTerminationDisablerType::kBeforeUnloadHandler);
   auto same_site_navigation = NavigationSimulator::CreateRendererInitiated(
       kSameSiteUrl, main_test_rfh());
   same_site_navigation->SetHasUserGesture(false);
@@ -1655,7 +1681,8 @@ TEST_F(WebContentsImplTest, FilterURLs) {
   other_contents->NavigateAndCommit(url_normalized);
 
   // Check that an IPC with about:whatever is correctly normalized.
-  other_contents->GetPrimaryMainFrame()->DidFailLoadWithError(url_from_ipc, 1);
+  other_contents->GetPrimaryMainFrame()->DidFailLoadWithError(url_from_ipc,
+                                                              net::ERR_FAILED);
   EXPECT_EQ(url_blocked, other_observer.last_url());
 }
 
@@ -2558,6 +2585,17 @@ TEST_F(WebContentsImplTest, MediaWakeLock) {
   EXPECT_FALSE(has_audio_wake_lock());
 }
 
+TEST_F(WebContentsImplTest, MarkAudible) {
+  AudioStreamMonitor* monitor = contents()->audio_stream_monitor();
+  EXPECT_FALSE(monitor->IsCurrentlyAudible());
+
+  base::ScopedClosureRunner audible_closure = contents()->MarkAudible();
+  EXPECT_TRUE(monitor->IsCurrentlyAudible());
+
+  audible_closure.RunAndReset();
+  EXPECT_FALSE(monitor->IsCurrentlyAudible());
+}
+
 // Test that the WebContentsObserver is notified when text is copied to the
 // clipboard for a given RenderFrameHost.
 TEST_F(WebContentsImplTest, OnTextCopiedToClipboard) {
@@ -2909,6 +2947,7 @@ TEST_F(WebContentsImplTest, RegisterProtocolHandlerInvalidURLSyntax) {
   GURL url("https://www.google.com");
   GURL handler_url1("https://www.google.com/handler/%s");
   GURL handler_url2("https://www.google.com/handler/");
+  GURL handler_url3("http://%s.com");
 
   contents()->NavigateAndCommit(url);
 
@@ -2927,6 +2966,10 @@ TEST_F(WebContentsImplTest, RegisterProtocolHandlerInvalidURLSyntax) {
   }
   {
     contents()->RegisterProtocolHandler(main_test_rfh(), "mailto", handler_url2,
+                                        /*user_gesture=*/true);
+  }
+  {
+    contents()->RegisterProtocolHandler(main_test_rfh(), "mailto", handler_url3,
                                         /*user_gesture=*/true);
   }
 
@@ -3078,7 +3121,7 @@ TEST_F(WebContentsImplTest, BadDownloadImageResponseFromRenderer) {
   // exercising the code in WebContentsImpl.
   scoped_refptr<SiteInstance> instance =
       SiteInstance::Create(GetBrowserContext());
-  instance->GetOrCreateProcess()->Init();
+  instance->GetOrCreateProcessForTesting()->Init();
   WebContents::CreateParams create_params(GetBrowserContext(),
                                           std::move(instance));
   create_params.desired_renderer_state = WebContents::CreateParams::
@@ -3469,7 +3512,7 @@ TEST_F(WebContentsImplTest, BadDownloadImageFromAXNodeId) {
   // exercising the code in WebContentsImpl.
   scoped_refptr<SiteInstance> instance =
       SiteInstance::Create(GetBrowserContext());
-  instance->GetOrCreateProcess()->Init();
+  instance->GetOrCreateProcessForTesting()->Init();
   WebContents::CreateParams create_params(GetBrowserContext(),
                                           std::move(instance));
   create_params.desired_renderer_state = WebContents::CreateParams::
@@ -3502,6 +3545,26 @@ TEST_F(WebContentsImplTest, BadDownloadImageFromAXNodeId) {
         run_loop.Quit();
       }));
   run_loop.Run();
+}
+
+// Test that the WebContentsObserver is notified when a fetch keepalive request
+// is created in a given RenderFrameHost.
+TEST_F(WebContentsImplTest, OnKeepAliveRequestCreated) {
+  TestWebContentsObserver observer(contents());
+  TestRenderFrameHost* rfh = main_test_rfh();
+  network::ResourceRequest request;
+  request.url = GURL("https://example.com");
+  request.attribution_reporting_eligibility =
+      network::mojom::AttributionReportingEligibility::kEmpty;
+  request.keepalive = true;
+  request.keepalive_token = base::UnguessableToken::Create();
+
+  rfh->OnKeepAliveRequestCreated(request);
+
+  EXPECT_EQ(request.url, observer.fetch_keepalive_request().url);
+  EXPECT_EQ(request.keepalive, observer.fetch_keepalive_request().keepalive);
+  EXPECT_EQ(request.keepalive_token,
+            observer.fetch_keepalive_request().keepalive_token);
 }
 
 class WebContentsImplTestKeyboardEvents

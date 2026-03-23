@@ -6,9 +6,11 @@
 
 #include <QtGui/qtguiglobal.h>
 #include <QtGui/qtransform.h>
+
 #include <QtCore/qglobal.h>
 #include <QtCore/qline.h>
 #include <QtCore/qlist.h>
+#include <QtCore/qpoint.h>
 #include <QtCore/qrect.h>
 
 QT_BEGIN_NAMESPACE
@@ -45,8 +47,11 @@ public:
 
         operator QPointF () const { return QPointF(x, y); }
 
-        bool operator==(const Element &e) const { return qFuzzyCompare(x, e.x)
-            && qFuzzyCompare(y, e.y) && type == e.type; }
+        bool operator==(const Element &e) const
+        {
+            return type == e.type
+                && qFuzzyCompare(QPointF(*this), QPointF(e));
+        }
         inline bool operator!=(const Element &e) const { return !operator==(e); }
     };
 

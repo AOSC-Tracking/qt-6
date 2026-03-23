@@ -25,11 +25,12 @@ BUILTIN(AsyncDisposableStackOnFulfilled) {
   HandleScope scope(isolate);
 
   DirectHandle<JSDisposableStackBase> stack(
-      Cast<JSDisposableStackBase>(isolate->context()->get(static_cast<int>(
+      Cast<
+          JSDisposableStackBase>(isolate->context()->GetNoCell(static_cast<int>(
           JSDisposableStackBase::AsyncDisposableStackContextSlots::kStack))),
       isolate);
   DirectHandle<JSPromise> promise(
-      Cast<JSPromise>(isolate->context()->get(static_cast<int>(
+      Cast<JSPromise>(isolate->context()->GetNoCell(static_cast<int>(
           JSDisposableStackBase::AsyncDisposableStackContextSlots::
               kOuterPromise))),
       isolate);
@@ -44,16 +45,17 @@ BUILTIN(AsyncDisposableStackOnRejected) {
   HandleScope scope(isolate);
 
   DirectHandle<JSDisposableStackBase> stack(
-      Cast<JSDisposableStackBase>(isolate->context()->get(static_cast<int>(
+      Cast<
+          JSDisposableStackBase>(isolate->context()->GetNoCell(static_cast<int>(
           JSDisposableStackBase::AsyncDisposableStackContextSlots::kStack))),
       isolate);
   DirectHandle<JSPromise> promise(
-      Cast<JSPromise>(isolate->context()->get(static_cast<int>(
+      Cast<JSPromise>(isolate->context()->GetNoCell(static_cast<int>(
           JSDisposableStackBase::AsyncDisposableStackContextSlots::
               kOuterPromise))),
       isolate);
 
-  Handle<Object> rejection_error = args.at(1);
+  DirectHandle<Object> rejection_error = args.at(1);
   // (TODO:rezvan): Pass the correct pending message.
   DirectHandle<Object> message(isolate->pending_message(), isolate);
   DCHECK(isolate->is_catchable_by_javascript(*rejection_error));
@@ -82,31 +84,27 @@ BUILTIN(AsyncDisposeFromSyncDispose) {
 
   //        c. Let result be Completion(Call(method, O)).
   DirectHandle<JSFunction> sync_method(
-      Cast<JSFunction>(isolate->context()->get(static_cast<int>(
+      Cast<JSFunction>(isolate->context()->GetNoCell(static_cast<int>(
           JSDisposableStackBase::AsyncDisposeFromSyncDisposeContextSlots::
               kMethod))),
       isolate);
 
-  v8::TryCatch try_catch(reinterpret_cast<v8::Isolate*>(isolate));
-  try_catch.SetVerbose(false);
-  try_catch.SetCaptureMessage(false);
-
   MaybeDirectHandle<Object> result =
       Execution::Call(isolate, sync_method, receiver, {});
 
-  DirectHandle<Object> result_handle;
-
-  if (result.ToHandle(&result_handle)) {
+  if (!result.is_null()) {
     //        e. Perform ? Call(promiseCapability.[[Resolve]], undefined, «
     //        undefined »).
-    JSPromise::Resolve(promise, result_handle).ToHandleChecked();
+    JSPromise::Resolve(promise, isolate->factory()->undefined_value())
+        .ToHandleChecked();
   } else {
     Tagged<Object> exception = isolate->exception();
     if (!isolate->is_catchable_by_javascript(exception)) {
-      return {};
+      return ReadOnlyRoots(isolate).exception();
     }
     //        d. IfAbruptRejectPromise(result, promiseCapability).
-    DCHECK(try_catch.HasCaught());
+    isolate->clear_internal_exception();
+    isolate->clear_pending_message();
     JSPromise::Reject(promise, direct_handle(exception, isolate));
   }
 
@@ -118,6 +116,7 @@ BUILTIN(AsyncDisposeFromSyncDispose) {
 BUILTIN(AsyncDisposableStackConstructor) {
   const char kMethodName[] = "AsyncDisposableStack";
   HandleScope scope(isolate);
+  isolate->CountUsage(v8::Isolate::kExplicitResourceManagement);
 
   // 1. If NewTarget is undefined, throw a TypeError exception.
   if (!IsJSReceiver(*args.new_target(), isolate)) {
@@ -375,7 +374,7 @@ BUILTIN(AsyncDisposableStackPrototypeMove) {
   // 5. Set newAsyncDisposableStack.[[AsyncDisposableState]] to pending.
 
   Tagged<JSFunction> constructor_function =
-      Cast<JSFunction>(isolate->native_context()->get(
+      Cast<JSFunction>(isolate->native_context()->GetNoCell(
           Context::JS_ASYNC_DISPOSABLE_STACK_FUNCTION_INDEX));
   DirectHandle<Map> map(constructor_function->initial_map(), isolate);
 

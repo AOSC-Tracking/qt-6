@@ -203,7 +203,7 @@ void RegExpMacroAssemblerLOONG64::CheckCharacterLT(base::uc16 limit,
   BranchOrBacktrack(on_less, lt, current_character(), Operand(limit));
 }
 
-void RegExpMacroAssemblerLOONG64::CheckGreedyLoop(Label* on_equal) {
+void RegExpMacroAssemblerLOONG64::CheckFixedLengthLoop(Label* on_equal) {
   Label backtrack_non_equal;
   __ Ld_w(a0, MemOperand(backtrack_stackpointer(), 0));
   __ Branch(&backtrack_non_equal, ne, current_input_offset(), Operand(a0));
@@ -653,8 +653,8 @@ void RegExpMacroAssemblerLOONG64::PopRegExpBasePointer(
   StoreRegExpStackPointerToMemory(stack_pointer_out, scratch);
 }
 
-Handle<HeapObject> RegExpMacroAssemblerLOONG64::GetCode(Handle<String> source,
-                                                        RegExpFlags flags) {
+DirectHandle<HeapObject> RegExpMacroAssemblerLOONG64::GetCode(
+    DirectHandle<String> source, RegExpFlags flags) {
   Label return_v0;
   if (0 /* todo masm_->has_exception()*/) {
     // If the code gets corrupted due to long regular expressions and lack of
@@ -1182,7 +1182,7 @@ void RegExpMacroAssemblerLOONG64::CallCheckStackGuardState(
 
   ExternalReference stack_guard_check =
       ExternalReference::re_check_stack_guard_state();
-  __ li(t7, Operand(stack_guard_check));
+  __ li(t5, Operand(stack_guard_check));
 
   EmbeddedData d = EmbeddedData::FromBlob();
   CHECK(Builtins::IsIsolateIndependent(Builtin::kDirectCEntry));

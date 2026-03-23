@@ -4,11 +4,10 @@
 
 package org.chromium.components.browser_ui.settings;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.text.method.LinkMovementMethod;
+import android.text.style.ClickableSpan;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.View.OnClickListener;
@@ -48,13 +47,17 @@ public class CardPreference extends TextMessagePreference {
     @Override
     public void onBindViewHolder(PreferenceViewHolder holder) {
         super.onBindViewHolder(holder);
-        mDescriptionView =
-                (TextViewWithClickableSpans) assumeNonNull(holder.findViewById(R.id.summary));
-        mIcon = (ChromeImageView) assumeNonNull(holder.findViewById(R.id.icon));
-        mCloseIcon = (ChromeImageView) assumeNonNull(holder.findViewById(R.id.close_icon));
+        mDescriptionView = (TextViewWithClickableSpans) holder.findViewById(R.id.summary);
+        mIcon = (ChromeImageView) holder.findViewById(R.id.icon);
+        mCloseIcon = (ChromeImageView) holder.findViewById(R.id.close_icon);
 
         mDescriptionView.setText(mSummary);
-        mDescriptionView.setMovementMethod(LinkMovementMethod.getInstance());
+        ClickableSpan[] spans = mDescriptionView.getClickableSpans();
+        // Set the movement method, only if there is an interactive element. This avoids the element
+        // being keyboard focusable if there isn't any focusable element.
+        if (spans != null && spans.length > 0) {
+            mDescriptionView.setMovementMethod(LinkMovementMethod.getInstance());
+        }
 
         mIcon.setImageDrawable(mIconDrawable);
         if (mShouldCenterIcon) {
@@ -67,7 +70,7 @@ public class CardPreference extends TextMessagePreference {
         mCloseIcon.setVisibility(mCloseIconVisibility);
         mCloseIcon.setOnClickListener(mOnCloseClickListener);
 
-        TextView titleView = (TextView) assumeNonNull(holder.findViewById(android.R.id.title));
+        TextView titleView = (TextView) holder.findViewById(android.R.id.title);
         titleView.setTextAppearance(R.style.TextAppearance_Headline2Thick);
     }
 

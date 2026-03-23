@@ -55,6 +55,22 @@ detect and properly represent any overinstallations of an application, which are
 done by users or third-party software on macOS (and don't otherwise interact
 with the updater).
 
+##### Install ID
+The tag may carry a unique identifier called an "install ID" or "iid". The
+install ID is transmitted back to the server as part of the install event
+associated with running the installer, and as part of the first update check
+for the app that reports activity. It is then deleted from the client. It is not
+sent as part of update event reports, nor as part of non-active update checks,
+nor as part of active update checks after the first.
+
+If a user runs an installer when the software is already installed, the install
+ID for the software will be updated to match, and the new value will be
+transmitted during the install event and the next active update check.
+
+The install ID is meant to enable the app distributor to correlate each
+installer's download with the outcome of running that particular installer, and
+whether or not the installed software is eventually actively used at least once.
+
 #### Elevation (Windows)
 The metainstaller parses its tag and re-launches itself at high integrity if
 it is being run at medium integrity with UAC on and installing an application
@@ -233,6 +249,23 @@ The final manifest looks as follows:
 </response>
 ```
 
+Note: for testing purposes only, an offline installer can be created without
+using `tag.exe` or `signtool.exe` as follows, by using the
+`--disable_tag_and_sign` parameter. However, this offline installer cannot be
+tagged, and will need to be given explicit parameters when run.
+
+```
+python3 chrome/updater/win/signing/sign.py                                     ^
+  --in_file out/ChromeBrandedDebug/UpdaterSetup.exe                            ^
+  --out_file out/ChromeBrandedDebug/UpdaterSigning/ChromeBetaOfflineSetup.exe  ^
+  --appid {8237E44A-0054-442C-B6B6-EA0509993955}                               ^
+  --installer_path out/ChromeBrandedDebug/UpdaterSigning/chrome_installer.exe  ^
+  --manifest_path out/ChromeBrandedDebug/UpdaterSigning/OfflineManifest.gup    ^
+  --lzma_7z "C:/Program Files/7-Zip/7z.exe"                                    ^
+  --disable_tag_and_sign                                                       ^
+  --manifest_dict_replacements "{'${INSTALLER_VERSION}':'110.0.5478.0', '${ARCH_REQUIREMENT}':'x86'}"
+```
+
 ### MSI Wrapper
 TODO(crbug.com/40841203) - Implement and document.
 
@@ -345,6 +378,18 @@ process is determined by command-line arguments:
         *   If --browser-version is specified, --recover can be omitted.
     *  --sessionid=...
         *   Specifies the sesionid associated with this recovery attempt.
+*   --force-install
+    * This switch does the following:
+      * Force-installs the metainstaller that is run with this switch and makes
+        it the active `updater`.
+      * Installs the application(s) that are implicitly specified in the tagged
+        metainstaller, or explicitly specified using the `--install` or
+        `--handoff` parameters.
+*   `RUNFORCEINSTALL` (for MSI installers)
+    * Allows running an MSI metainstaller with the `--force-install` option.
+    * In addition, if the MSI is tagged, this also installs the application(s)
+      that are implicitly specified in the tag.
+    * For example, `msiexec /i GoogleChrome.msi RUNFORCEINSTALL=1`.
 *   --test
     *   Exit immediately with no error.
 *   --healthcheck
@@ -504,6 +549,20 @@ If the installation fails, the updater shows an error message with a "Help"
 button. Clicking the help button opens a web page in the user's default browser.
 The page is opened with a query string:
 `?product={AppId}&errorcode={ErrorCode}`.
+
+### Periodic detection of over-installed apps
+
+The updater periodically checks if application versions persisted to the system
+match its built-in `pv` value. If different, the updater sends an installation
+ping for the application indicating the actually installed version and updates
+the internal `pv` value to match.
+
+The application's version persisted to the system is determined via:
+
+* The plist file and key indicated by the `pv_path` and `pv_key` in the app's
+  updater registration on MacOS.
+* The `pv` registry key as described by the "App Registration" section on
+  Windows.
 
 ## Updates
 There is no limit for the number of retries to update an application if the
@@ -937,6 +996,12 @@ Note the device must have a valid DM token for the downloaded CBCM policies to
 be effective.
 
 ### Enterprise Policies
+Some updater behavior can be controlled by enterprise policies. Policies are
+only respected on devices that are "domain-joined", enrolled in Chrome
+Enterprise Core, or (on macOS) managed by MDM. A device is "domain-joined" if
+it is on Windows and enrolled in an Active Directory domain or Azure Active
+Directory domain, or it is on macOS and joined to a domain via MCX.
+
 Enterprise policies can prevent the installation of applications:
 
 * A per-application setting may specify whether an application is installable.
@@ -956,6 +1021,9 @@ Enterprise policies can control the updates of applications:
   be disabled by policy.
 * If the update check period is set to zero, the updater is qualified without
   an update check.
+* Major/Minor version rollout policy values are sent to the update server to
+  indicate a preference for taking updates early or late in any gradual rollout
+  process.
 
 Refer to chrome/updater/protos/omaha\_settings.proto for more details.
 
@@ -1512,7 +1580,10 @@ event with `"eventtype": 2` indicating the outcome of installation. The updater
 does not send such a ping for its own successful installation, but if the
 updater installation fails, then the updater sends an error event with
 `"eventtype": 2`. For example:
-`"event":[{"errorcode":75075,"eventresult":1,"eventtype":2,`.
+`"event":[{"errorcode":75075,"eventresult":0,"eventtype":2,`.
+
+Or for metainstaller errors in the 73000-73500 range:
+`"event":[{"errorcode":73118,"eventresult":0,"eventtype":2,`.
 
 When the updater updates an application (including itself) it sends an
 event with `"eventtype": 3` indicating the outcome of update operation.
@@ -1526,14 +1597,32 @@ When the updater attempts to download a file, it sends an event with
 Multiple events associated with an update session are bundled together into a
 single request.
 
+#### Additional usage statistics
+
+The updater records information about the health and behavior of the application
+and transmits it to a remote logging endpoint over HTTPS. This information is
+used to monitor application health and inform engineering direction. The
+information transmitted is defined by `omaha_usage_stats_event.proto`. Upon the
+first logging transmission, the server will respond with a logging cookie which
+identifies the device in future transmissions. This cookie is persisted in the
+updater's prefs and periodically rotated by the server.
+
+In the case of the Google-branded updater, the transmission of additional usage
+statistics is only permitted if Google Chrome is the only application managed by
+the updater (with the exception of the enterprise companion app and the updater
+itself) and it permits the collection of usage statistics.
+
 ### Downloading
 There could be multiple URLs for a given application payload. The URLs are tried
 in the order they are returned in the update response.
 
 The integrity of the payload is verified.
 
-There is no download cache. Payloads are re-downloaded for applications which
-fail to install.
+Downloads are cached in the `crx_cache` subdirectory of the program's install
+location. The cache contains at most one item per app ID, in a file named
+`A_F` where A is the app ID and F is the
+[differential update fingerprint](protocol_4.md#differential-updates) of the
+download.
 
 ### Install location
 On Windows for system-scope updaters, the install location for both 32-bit and

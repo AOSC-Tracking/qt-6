@@ -276,6 +276,9 @@ void QQuickWidgetPrivate::handleWindowChange()
     renderControl = new QQuickWidgetRenderControl(q);
     initOffscreenWindow();
 
+    if (oldOffScreenWindow)
+        offscreenWindow->setColor(oldOffScreenWindow->color());
+
     QObject::connect(renderControl, SIGNAL(renderRequested()), q, SLOT(triggerUpdate()));
     QObject::connect(renderControl, SIGNAL(sceneChanged()), q, SLOT(triggerUpdate()));
 
@@ -1464,9 +1467,10 @@ QSize QQuickWidget::initialSize() const
 }
 
 /*!
-  Returns the view's root \l {QQuickItem} {item}. Can be null
+  Returns the view's root \l {QQuickItem} {item}. Can be \nullptr
   when setSource() has not been called, if it was called with
-  broken QtQuick code or while the QtQuick contents are being created.
+  broken \l[QML]{QtQuick} code or if the root item is otherwise
+  undefined.
  */
 QQuickItem *QQuickWidget::rootObject() const
 {

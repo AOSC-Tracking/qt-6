@@ -2,23 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/format_macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/command_buffer/service/decoder_context.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
@@ -48,7 +45,7 @@ struct RenderbufferSignature {
                         GLsizei samples,
                         GLsizei width,
                         GLsizei height) {
-    memset(this, 0, sizeof(RenderbufferSignature));
+    UNSAFE_TODO(memset(this, 0, sizeof(RenderbufferSignature)));
     internal_format_ = internal_format;
     samples_ = samples;
     width_ = width;
@@ -56,13 +53,12 @@ struct RenderbufferSignature {
   }
 };
 
-RenderbufferManager::RenderbufferManager(MemoryTracker* memory_tracker,
-                                         GLint max_renderbuffer_size,
-                                         GLint max_samples,
-                                         FeatureInfo* feature_info)
-    : memory_type_tracker_(
-          new MemoryTypeTracker(memory_tracker)),
-      memory_tracker_(memory_tracker),
+RenderbufferManager::RenderbufferManager(
+    scoped_refptr<MemoryTracker> memory_tracker,
+    GLint max_renderbuffer_size,
+    GLint max_samples,
+    FeatureInfo* feature_info)
+    : memory_type_tracker_(new MemoryTypeTracker(std::move(memory_tracker))),
       max_renderbuffer_size_(max_renderbuffer_size),
       max_samples_(max_samples),
       feature_info_(feature_info),
@@ -71,7 +67,7 @@ RenderbufferManager::RenderbufferManager(MemoryTracker* memory_tracker,
       have_context_(true) {
   // When created from InProcessCommandBuffer, we won't have a |memory_tracker_|
   // so don't register a dump provider.
-  if (memory_tracker_) {
+  if (memory_type_tracker_->memory_tracker()) {
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
         this, "gpu::RenderbufferManager",
         base::SingleThreadTaskRunner::GetCurrentDefault());
@@ -146,6 +142,7 @@ Renderbuffer::Renderbuffer(RenderbufferManager* manager,
 }
 
 bool Renderbuffer::RegenerateAndBindBackingObjectIfNeeded(
+    const DecoderContext* decoder,
     const GpuDriverBugWorkarounds& workarounds) {
   bool multisample_workaround =
       workarounds.multisample_renderbuffer_resize_emulation;
@@ -172,7 +169,7 @@ bool Renderbuffer::RegenerateAndBindBackingObjectIfNeeded(
 
   // Attach new renderbuffer to all framebuffers
   for (auto& point : framebuffer_attachment_points_) {
-    glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER, point.first->service_id());
+    decoder->BindFramebuffer(GL_DRAW_FRAMEBUFFER, point.first->service_id());
     glFramebufferRenderbufferEXT(GL_DRAW_FRAMEBUFFER, point.second,
                                  GL_RENDERBUFFER, service_id_);
   }
@@ -313,7 +310,9 @@ bool RenderbufferManager::OnMemoryDump(
   using base::trace_event::MemoryAllocatorDump;
   using base::trace_event::MemoryDumpLevelOfDetail;
   const uint64_t context_group_tracing_id =
-      memory_tracker_->ContextGroupTracingId();
+      memory_type_tracker_->memory_tracker()
+          ? memory_type_tracker_->memory_tracker()->ContextGroupTracingId()
+          : 0;
 
   if (args.level_of_detail == MemoryDumpLevelOfDetail::kBackground) {
     std::string dump_name =

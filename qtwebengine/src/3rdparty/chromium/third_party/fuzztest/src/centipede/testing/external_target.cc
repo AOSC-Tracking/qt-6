@@ -22,13 +22,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <functional>
-#include <vector>
 
 #include "absl/base/nullability.h"
 #include "absl/log/check.h"
 #include "absl/strings/numbers.h"
-#include "./centipede/mutation_input.h"
 #include "./centipede/runner_interface.h"
 #include "./common/defs.h"
 
@@ -52,9 +49,10 @@ void sendall(int sock, const uint8_t* data, size_t size) {
   }
 }
 
-class ExternalTargetRunnerCallbacks : public centipede::RunnerCallbacks {
+class ExternalTargetRunnerCallbacks
+    : public fuzztest::internal::RunnerCallbacks {
  public:
-  bool Execute(centipede::ByteSpan input) override {
+  bool Execute(fuzztest::internal::ByteSpan input) override {
     const char* port_env = getenv("TARGET_PORT");
     int port = 0;
     CHECK(port_env && absl::SimpleAtoi(port_env, &port))
@@ -97,18 +95,12 @@ class ExternalTargetRunnerCallbacks : public centipede::RunnerCallbacks {
     return true;
   }
 
-  bool Mutate(
-      const std::vector<centipede::MutationInputRef>& inputs,
-      size_t num_mutants,
-      std::function<void(centipede::ByteSpan)> new_mutant_callback) override {
-    // Use the default Centipede mutation.
-    return false;
-  }
+  bool HasCustomMutator() const override { return false; }
 };
 
 }  // namespace
 
-int main(int argc, absl::Nonnull<char**> argv) {
+int main(int argc, char** absl_nonnull argv) {
   ExternalTargetRunnerCallbacks runner_callbacks;
-  return centipede::RunnerMain(argc, argv, runner_callbacks);
+  return fuzztest::internal::RunnerMain(argc, argv, runner_callbacks);
 }

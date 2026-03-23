@@ -849,6 +849,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1075,27 +1078,6 @@ subadd
 
 
 
-        AREA |.rdata|, DATA, READONLY, ALIGN=5
-
-
-
-
-
-        ALIGN 16
-shuf_4pt_x2
-        dcb   24, 25, 26, 27 
-        dcb   12, 13, 14, 15 
-        dcb    8,  9, 10, 11 
-        dcb   28, 29, 30, 31 
-
-
-
-
-
-
-
-
-
 
 
         AREA |.rdata|, DATA, READONLY, ALIGN=5
@@ -1136,7 +1118,7 @@ tab_16pt
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft2_float_neon
 
@@ -1170,7 +1152,7 @@ ff_tx_fft2_float_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft4_fwd_float_neon
 
@@ -1216,7 +1198,7 @@ ff_tx_fft4_fwd_float_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft4_inv_float_neon
 
@@ -1267,7 +1249,7 @@ ff_tx_fft4_inv_float_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft8_float_neon
 
@@ -1410,7 +1392,7 @@ ff_tx_fft8_float_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft8_ns_float_neon
 
@@ -1535,7 +1517,7 @@ ff_tx_fft8_ns_float_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft16_float_neon
 
@@ -1694,39 +1676,17 @@ ff_tx_fft16_float_neon
         fsub            v4.4s, v4.4s, v5.4s                     
         fsub            v6.4s, v6.4s, v7.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v20.4s, v4.4s
         rev64           v21.4s, v6.4s
 
-        zip2            v5.2d, v16.2d, v4.2d                     
-        zip2            v7.2d, v18.2d, v6.2d                     
+        zip2            v5.2d, v16.2d, v20.2d                     
+        zip2            v7.2d, v18.2d, v21.2d                     
 
-        ld1             { v22.16b }, [x5]
+        fneg            v19.4s, v20.4s
+        fneg            v20.4s, v21.4s
 
-        mov             v5.d[1], v20.d[1]
-        mov             v7.d[1], v21.d[1]
+        mov             v5.s[3], v19.s[3]
+        mov             v7.s[3], v20.s[3]
 
         zip1            v17.2d, v16.2d, v4.2d                     
         zip1            v19.2d, v18.2d, v6.2d                     
@@ -1736,18 +1696,10 @@ ff_tx_fft16_float_neon
         fsub            v18.4s, v19.4s, v7.4s                     
         fadd            v19.4s, v19.4s, v7.4s                     
 
-        
-        tbl             v5.16b, { v20.16b, v21.16b }, v22.16b  
-        tbl             v7.16b, { v18.16b, v19.16b }, v22.16b  
-
         zip1            v4.2d, v21.2d, v20.2d                     
-
+        zip2            v5.2d, v21.2d, v20.2d                     
         zip1            v6.2d, v19.2d, v18.2d                     
-
-
-
-
-
+        zip2            v7.2d, v19.2d, v18.2d                     
 
 
 
@@ -1836,7 +1788,7 @@ ff_tx_fft16_float_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft16_ns_float_neon
 
@@ -1956,39 +1908,17 @@ ff_tx_fft16_ns_float_neon
         fsub            v4.4s, v4.4s, v5.4s                     
         fsub            v6.4s, v6.4s, v7.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v20.4s, v4.4s
         rev64           v21.4s, v6.4s
 
-        zip2            v5.2d, v16.2d, v4.2d                     
-        zip2            v7.2d, v18.2d, v6.2d                     
+        zip2            v5.2d, v16.2d, v20.2d                     
+        zip2            v7.2d, v18.2d, v21.2d                     
 
-        ld1             { v22.16b }, [x5]
+        fneg            v19.4s, v20.4s
+        fneg            v20.4s, v21.4s
 
-        mov             v5.d[1], v20.d[1]
-        mov             v7.d[1], v21.d[1]
+        mov             v5.s[3], v19.s[3]
+        mov             v7.s[3], v20.s[3]
 
         zip1            v17.2d, v16.2d, v4.2d                     
         zip1            v19.2d, v18.2d, v6.2d                     
@@ -1998,18 +1928,10 @@ ff_tx_fft16_ns_float_neon
         fsub            v18.4s, v19.4s, v7.4s                     
         fadd            v19.4s, v19.4s, v7.4s                     
 
-        
-        tbl             v5.16b, { v20.16b, v21.16b }, v22.16b  
-        tbl             v7.16b, { v18.16b, v19.16b }, v22.16b  
-
         zip1            v4.2d, v21.2d, v20.2d                     
-
+        zip2            v5.2d, v21.2d, v20.2d                     
         zip1            v6.2d, v19.2d, v18.2d                     
-
-
-
-
-
+        zip2            v7.2d, v19.2d, v18.2d                     
 
 
 
@@ -2110,7 +2032,7 @@ ff_tx_fft16_ns_float_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft32_float_neon
 
@@ -2442,39 +2364,17 @@ ff_tx_fft32_float_neon
         fsub            v4.4s, v4.4s, v5.4s                     
         fsub            v6.4s, v6.4s, v7.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v20.4s, v4.4s
         rev64           v21.4s, v6.4s
 
-        zip2            v5.2d, v16.2d, v4.2d                     
-        zip2            v7.2d, v18.2d, v6.2d                     
+        zip2            v5.2d, v16.2d, v20.2d                     
+        zip2            v7.2d, v18.2d, v21.2d                     
 
-        ld1             { v22.16b }, [x5]
+        fneg            v19.4s, v20.4s
+        fneg            v20.4s, v21.4s
 
-        mov             v5.d[1], v20.d[1]
-        mov             v7.d[1], v21.d[1]
+        mov             v5.s[3], v19.s[3]
+        mov             v7.s[3], v20.s[3]
 
         zip1            v17.2d, v16.2d, v4.2d                     
         zip1            v19.2d, v18.2d, v6.2d                     
@@ -2484,18 +2384,10 @@ ff_tx_fft32_float_neon
         fsub            v18.4s, v19.4s, v7.4s                     
         fadd            v19.4s, v19.4s, v7.4s                     
 
-        
-        tbl             v5.16b, { v20.16b, v21.16b }, v22.16b  
-        tbl             v7.16b, { v18.16b, v19.16b }, v22.16b  
-
         zip1            v4.2d, v21.2d, v20.2d                     
-
+        zip2            v5.2d, v21.2d, v20.2d                     
         zip1            v6.2d, v19.2d, v18.2d                     
-
-
-
-
-
+        zip2            v7.2d, v19.2d, v18.2d                     
 
 
 
@@ -2693,7 +2585,7 @@ ff_tx_fft32_float_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft32_ns_float_neon
 
@@ -2948,39 +2840,17 @@ ff_tx_fft32_ns_float_neon
         fsub            v4.4s, v4.4s, v5.4s                     
         fsub            v6.4s, v6.4s, v7.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v20.4s, v4.4s
         rev64           v21.4s, v6.4s
 
-        zip2            v5.2d, v16.2d, v4.2d                     
-        zip2            v7.2d, v18.2d, v6.2d                     
+        zip2            v5.2d, v16.2d, v20.2d                     
+        zip2            v7.2d, v18.2d, v21.2d                     
 
-        ld1             { v22.16b }, [x5]
+        fneg            v19.4s, v20.4s
+        fneg            v20.4s, v21.4s
 
-        mov             v5.d[1], v20.d[1]
-        mov             v7.d[1], v21.d[1]
+        mov             v5.s[3], v19.s[3]
+        mov             v7.s[3], v20.s[3]
 
         zip1            v17.2d, v16.2d, v4.2d                     
         zip1            v19.2d, v18.2d, v6.2d                     
@@ -2990,18 +2860,10 @@ ff_tx_fft32_ns_float_neon
         fsub            v18.4s, v19.4s, v7.4s                     
         fadd            v19.4s, v19.4s, v7.4s                     
 
-        
-        tbl             v5.16b, { v20.16b, v21.16b }, v22.16b  
-        tbl             v7.16b, { v18.16b, v19.16b }, v22.16b  
-
         zip1            v4.2d, v21.2d, v20.2d                     
-
+        zip2            v5.2d, v21.2d, v20.2d                     
         zip1            v6.2d, v19.2d, v18.2d                     
-
-
-
-
-
+        zip2            v7.2d, v19.2d, v18.2d                     
 
 
 
@@ -3203,7 +3065,7 @@ ff_tx_fft32_ns_float_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft_sr_float_neon
 
@@ -3543,39 +3405,17 @@ temp_label_0
         fsub            v4.4s, v4.4s, v6.4s                     
         fsub            v5.4s, v5.4s, v7.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v20.4s, v4.4s
         rev64           v21.4s, v5.4s
 
-        zip2            v6.2d, v16.2d, v4.2d                     
-        zip2            v7.2d, v18.2d, v5.2d                     
+        zip2            v6.2d, v16.2d, v20.2d                     
+        zip2            v7.2d, v18.2d, v21.2d                     
 
-        ld1             { v22.16b }, [x5]
+        fneg            v19.4s, v20.4s
+        fneg            v20.4s, v21.4s
 
-        mov             v6.d[1], v20.d[1]
-        mov             v7.d[1], v21.d[1]
+        mov             v6.s[3], v19.s[3]
+        mov             v7.s[3], v20.s[3]
 
         zip1            v17.2d, v16.2d, v4.2d                     
         zip1            v19.2d, v18.2d, v5.2d                     
@@ -3585,18 +3425,10 @@ temp_label_0
         fsub            v18.4s, v19.4s, v7.4s                     
         fadd            v19.4s, v19.4s, v7.4s                     
 
-        
-        tbl             v6.16b, { v20.16b, v21.16b }, v22.16b  
-        tbl             v7.16b, { v18.16b, v19.16b }, v22.16b  
-
         zip1            v4.2d, v21.2d, v20.2d                     
-
+        zip2            v6.2d, v21.2d, v20.2d                     
         zip1            v5.2d, v19.2d, v18.2d                     
-
-
-
-
-
+        zip2            v7.2d, v19.2d, v18.2d                     
 
 
 
@@ -3922,39 +3754,17 @@ temp_label_1
         fsub            v6.4s, v6.4s, v14.4s                     
         fsub            v7.4s, v7.4s, v15.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v20.4s, v6.4s
         rev64           v21.4s, v7.4s
 
-        zip2            v14.2d, v16.2d, v6.2d                     
-        zip2            v15.2d, v18.2d, v7.2d                     
+        zip2            v14.2d, v16.2d, v20.2d                     
+        zip2            v15.2d, v18.2d, v21.2d                     
 
-        ld1             { v22.16b }, [x5]
+        fneg            v19.4s, v20.4s
+        fneg            v20.4s, v21.4s
 
-        mov             v14.d[1], v20.d[1]
-        mov             v15.d[1], v21.d[1]
+        mov             v14.s[3], v19.s[3]
+        mov             v15.s[3], v20.s[3]
 
         zip1            v17.2d, v16.2d, v6.2d                     
         zip1            v19.2d, v18.2d, v7.2d                     
@@ -3964,18 +3774,10 @@ temp_label_1
         fsub            v18.4s, v19.4s, v15.4s                     
         fadd            v19.4s, v19.4s, v15.4s                     
 
-        
-        tbl             v14.16b, { v20.16b, v21.16b }, v22.16b  
-        tbl             v15.16b, { v18.16b, v19.16b }, v22.16b  
-
         zip1            v6.2d, v21.2d, v20.2d                     
-
+        zip2            v14.2d, v21.2d, v20.2d                     
         zip1            v7.2d, v19.2d, v18.2d                     
-
-
-
-
-
+        zip2            v15.2d, v19.2d, v18.2d                     
 
 
 
@@ -4163,39 +3965,17 @@ temp_label_1
         fsub            v20.4s, v20.4s, v22.4s                     
         fsub            v21.4s, v21.4s, v23.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v28.4s, v20.4s
         rev64           v29.4s, v21.4s
 
-        zip2            v22.2d, v24.2d, v20.2d                     
-        zip2            v23.2d, v26.2d, v21.2d                     
+        zip2            v22.2d, v24.2d, v28.2d                     
+        zip2            v23.2d, v26.2d, v29.2d                     
 
-        ld1             { v30.16b }, [x5]
+        fneg            v27.4s, v28.4s
+        fneg            v28.4s, v29.4s
 
-        mov             v22.d[1], v28.d[1]
-        mov             v23.d[1], v29.d[1]
+        mov             v22.s[3], v27.s[3]
+        mov             v23.s[3], v28.s[3]
 
         zip1            v25.2d, v24.2d, v20.2d                     
         zip1            v27.2d, v26.2d, v21.2d                     
@@ -4205,18 +3985,10 @@ temp_label_1
         fsub            v26.4s, v27.4s, v23.4s                     
         fadd            v27.4s, v27.4s, v23.4s                     
 
-        
-        tbl             v22.16b, { v28.16b, v29.16b }, v30.16b  
-        tbl             v23.16b, { v26.16b, v27.16b }, v30.16b  
-
         zip1            v20.2d, v29.2d, v28.2d                     
-
+        zip2            v22.2d, v29.2d, v28.2d                     
         zip1            v21.2d, v27.2d, v26.2d                     
-
-
-
-
-
+        zip2            v23.2d, v27.2d, v26.2d                     
 
 
 
@@ -11027,7 +10799,7 @@ temp_label_3
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_tx_fft_sr_ns_float_neon
 
@@ -11292,39 +11064,17 @@ temp_label_46
         fsub            v4.4s, v4.4s, v6.4s                     
         fsub            v5.4s, v5.4s, v7.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v20.4s, v4.4s
         rev64           v21.4s, v5.4s
 
-        zip2            v6.2d, v16.2d, v4.2d                     
-        zip2            v7.2d, v18.2d, v5.2d                     
+        zip2            v6.2d, v16.2d, v20.2d                     
+        zip2            v7.2d, v18.2d, v21.2d                     
 
-        ld1             { v22.16b }, [x5]
+        fneg            v19.4s, v20.4s
+        fneg            v20.4s, v21.4s
 
-        mov             v6.d[1], v20.d[1]
-        mov             v7.d[1], v21.d[1]
+        mov             v6.s[3], v19.s[3]
+        mov             v7.s[3], v20.s[3]
 
         zip1            v17.2d, v16.2d, v4.2d                     
         zip1            v19.2d, v18.2d, v5.2d                     
@@ -11334,18 +11084,10 @@ temp_label_46
         fsub            v18.4s, v19.4s, v7.4s                     
         fadd            v19.4s, v19.4s, v7.4s                     
 
-        
-        tbl             v6.16b, { v20.16b, v21.16b }, v22.16b  
-        tbl             v7.16b, { v18.16b, v19.16b }, v22.16b  
-
         zip1            v4.2d, v21.2d, v20.2d                     
-
+        zip2            v6.2d, v21.2d, v20.2d                     
         zip1            v5.2d, v19.2d, v18.2d                     
-
-
-
-
-
+        zip2            v7.2d, v19.2d, v18.2d                     
 
 
 
@@ -11637,39 +11379,17 @@ temp_label_47
         fsub            v6.4s, v6.4s, v14.4s                     
         fsub            v7.4s, v7.4s, v15.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v20.4s, v6.4s
         rev64           v21.4s, v7.4s
 
-        zip2            v14.2d, v16.2d, v6.2d                     
-        zip2            v15.2d, v18.2d, v7.2d                     
+        zip2            v14.2d, v16.2d, v20.2d                     
+        zip2            v15.2d, v18.2d, v21.2d                     
 
-        ld1             { v22.16b }, [x5]
+        fneg            v19.4s, v20.4s
+        fneg            v20.4s, v21.4s
 
-        mov             v14.d[1], v20.d[1]
-        mov             v15.d[1], v21.d[1]
+        mov             v14.s[3], v19.s[3]
+        mov             v15.s[3], v20.s[3]
 
         zip1            v17.2d, v16.2d, v6.2d                     
         zip1            v19.2d, v18.2d, v7.2d                     
@@ -11679,18 +11399,10 @@ temp_label_47
         fsub            v18.4s, v19.4s, v15.4s                     
         fadd            v19.4s, v19.4s, v15.4s                     
 
-        
-        tbl             v14.16b, { v20.16b, v21.16b }, v22.16b  
-        tbl             v15.16b, { v18.16b, v19.16b }, v22.16b  
-
         zip1            v6.2d, v21.2d, v20.2d                     
-
+        zip2            v14.2d, v21.2d, v20.2d                     
         zip1            v7.2d, v19.2d, v18.2d                     
-
-
-
-
-
+        zip2            v15.2d, v19.2d, v18.2d                     
 
 
 
@@ -11842,39 +11554,17 @@ temp_label_47
         fsub            v20.4s, v20.4s, v22.4s                     
         fsub            v21.4s, v21.4s, v23.4s                     
 
-
-
-
-
-
-
-
-
-
-
-        adrp            x5, shuf_4pt_x2
-        add             x5, x5, shuf_4pt_x2
-
-
-
-
-
-
-
-
-
-
-
         rev64           v28.4s, v20.4s
         rev64           v29.4s, v21.4s
 
-        zip2            v22.2d, v24.2d, v20.2d                     
-        zip2            v23.2d, v26.2d, v21.2d                     
+        zip2            v22.2d, v24.2d, v28.2d                     
+        zip2            v23.2d, v26.2d, v29.2d                     
 
-        ld1             { v30.16b }, [x5]
+        fneg            v27.4s, v28.4s
+        fneg            v28.4s, v29.4s
 
-        mov             v22.d[1], v28.d[1]
-        mov             v23.d[1], v29.d[1]
+        mov             v22.s[3], v27.s[3]
+        mov             v23.s[3], v28.s[3]
 
         zip1            v25.2d, v24.2d, v20.2d                     
         zip1            v27.2d, v26.2d, v21.2d                     
@@ -11884,18 +11574,10 @@ temp_label_47
         fsub            v26.4s, v27.4s, v23.4s                     
         fadd            v27.4s, v27.4s, v23.4s                     
 
-        
-        tbl             v22.16b, { v28.16b, v29.16b }, v30.16b  
-        tbl             v23.16b, { v26.16b, v27.16b }, v30.16b  
-
         zip1            v20.2d, v29.2d, v28.2d                     
-
+        zip2            v22.2d, v29.2d, v28.2d                     
         zip1            v21.2d, v27.2d, v26.2d                     
-
-
-
-
-
+        zip2            v23.2d, v27.2d, v26.2d                     
 
 
 
@@ -18706,17 +18388,17 @@ temp_label_49
 
 
 
-	IMPORT ff_tx_tab_128_float
-	IMPORT ff_tx_tab_32_float
-	IMPORT ff_tx_tab_4096_float
-	IMPORT ff_tx_tab_2048_float
-	IMPORT ff_tx_tab_65536_float
-	IMPORT ff_tx_tab_256_float
-	IMPORT ff_tx_tab_512_float
-	IMPORT ff_tx_tab_64_float
 	IMPORT ff_tx_tab_32768_float
+	IMPORT ff_tx_tab_64_float
+	IMPORT ff_tx_tab_128_float
+	IMPORT ff_tx_tab_256_float
 	IMPORT ff_tx_tab_1024_float
-	IMPORT ff_tx_tab_16384_float
-	IMPORT ff_tx_tab_8192_float
+	IMPORT ff_tx_tab_4096_float
 	IMPORT ff_tx_tab_131072_float
+	IMPORT ff_tx_tab_32_float
+	IMPORT ff_tx_tab_65536_float
+	IMPORT ff_tx_tab_8192_float
+	IMPORT ff_tx_tab_512_float
+	IMPORT ff_tx_tab_2048_float
+	IMPORT ff_tx_tab_16384_float
 	END

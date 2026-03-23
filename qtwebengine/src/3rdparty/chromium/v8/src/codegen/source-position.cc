@@ -63,20 +63,20 @@ std::vector<SourcePositionInfo> SourcePosition::InliningStack(
 
 std::vector<SourcePositionInfo> SourcePosition::InliningStack(
     Isolate* isolate, Tagged<Code> code) const {
-  Tagged<DeoptimizationData> deopt_data =
-      Cast<DeoptimizationData>(code->deoptimization_data());
+  Handle<DeoptimizationData> deopt_data(
+      Cast<DeoptimizationData>(code->deoptimization_data()), isolate);
   SourcePosition pos = *this;
   std::vector<SourcePositionInfo> stack;
   while (pos.isInlined()) {
     InliningPosition inl =
         deopt_data->InliningPositions()->get(pos.InliningId());
-    Handle<SharedFunctionInfo> function(
+    DirectHandle<SharedFunctionInfo> function(
         deopt_data->GetInlinedFunction(inl.inlined_function_id), isolate);
     stack.push_back(SourcePositionInfo(isolate, pos, function));
     pos = inl.position;
   }
-  Handle<SharedFunctionInfo> function(deopt_data->GetSharedFunctionInfo(),
-                                      isolate);
+  DirectHandle<SharedFunctionInfo> function(deopt_data->GetSharedFunctionInfo(),
+                                            isolate);
   stack.push_back(SourcePositionInfo(isolate, pos, function));
   return stack;
 }
@@ -90,12 +90,12 @@ SourcePositionInfo SourcePosition::FirstInfo(Isolate* isolate,
   if (pos.isInlined()) {
     InliningPosition inl =
         deopt_data->InliningPositions()->get(pos.InliningId());
-    Handle<SharedFunctionInfo> function(
+    DirectHandle<SharedFunctionInfo> function(
         deopt_data->GetInlinedFunction(inl.inlined_function_id), isolate);
     return SourcePositionInfo(isolate, pos, function);
   }
-  Handle<SharedFunctionInfo> function(deopt_data->GetSharedFunctionInfo(),
-                                      isolate);
+  DirectHandle<SharedFunctionInfo> function(deopt_data->GetSharedFunctionInfo(),
+                                            isolate);
   return SourcePositionInfo(isolate, pos, function);
 }
 
@@ -149,8 +149,8 @@ void SourcePosition::Print(std::ostream& out, Tagged<Code> code) const {
 }
 
 SourcePositionInfo::SourcePositionInfo(Isolate* isolate, SourcePosition pos,
-                                       Handle<SharedFunctionInfo> sfi)
-    : position(pos), shared(sfi), script(Handle<Script>::null()) {
+                                       DirectHandle<SharedFunctionInfo> sfi)
+    : position(pos), shared(indirect_handle(sfi, isolate)) {
   {
     DisallowGarbageCollection no_gc;
     if (sfi.is_null()) return;

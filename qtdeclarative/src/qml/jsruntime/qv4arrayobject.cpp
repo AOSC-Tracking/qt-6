@@ -1,6 +1,7 @@
 // Copyright (C) 2018 Crimson AS <info@crimson.no>
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4arrayobject_p.h"
 #include "qv4arrayiterator_p.h"
@@ -168,7 +169,7 @@ ReturnedValue ArrayPrototype::method_from(const FunctionObject *builtin, const V
         mapfn = ScopedFunctionObject(scope, argv[1]);
         if (!mapfn)
             return scope.engine->throwTypeError(QString::fromLatin1("%1 is not a function").arg(argv[1].toQStringNoThrow()));
-        mapArguments = scope.alloc(2);
+        mapArguments = scope.constructUndefined(2);
     }
 
     ScopedValue thisArg(scope);
@@ -187,7 +188,7 @@ ReturnedValue ArrayPrototype::method_from(const FunctionObject *builtin, const V
 
         qint64 k = 0;
         ScopedValue mappedValue(scope);
-        Value *nextValue = scope.alloc(1);
+        Value *nextValue = scope.constructUndefined(1);
         ScopedValue done(scope);
 
         // The loop below pulls out all the properties using the iterator, and
@@ -515,7 +516,7 @@ ReturnedValue ArrayPrototype::method_find(const FunctionObject *b, const Value *
     const FunctionObject *callback = static_cast<const FunctionObject *>(argv);
 
     ScopedValue result(scope);
-    Value *arguments = scope.alloc(3);
+    Value *arguments = scope.constructUndefined(3);
 
     ScopedValue that(scope, argc > 1 ? argv[1] : Value::undefinedValue());
 
@@ -549,7 +550,7 @@ ReturnedValue ArrayPrototype::method_findIndex(const FunctionObject *b, const Va
     const FunctionObject *callback = static_cast<const FunctionObject *>(argv);
 
     ScopedValue result(scope);
-    Value *arguments = scope.alloc(3);
+    Value *arguments = scope.constructUndefined(3);
 
     ScopedValue that(scope, argc > 1 ? argv[1] : Value::undefinedValue());
 
@@ -875,7 +876,7 @@ ReturnedValue ArrayPrototype::method_sort(const FunctionObject *b, const Value *
         // store their data in a different way.
 
         // 5. Let sortedList be ? SortIndexedProperties(obj, len, SortCompare, skip-holes)
-        Value* sorted = scope.alloc(scope.engine->safeForAllocLength(len));
+        Value* sorted = scope.constructUndefined(scope.engine->safeForAllocLength(len));
         CHECK_EXCEPTION();
 
         uint written = 0;
@@ -1224,7 +1225,7 @@ ReturnedValue ArrayPrototype::method_every(const FunctionObject *b, const Value 
 
     ScopedValue that(scope, argc > 1 ? argv[1] : Value::undefinedValue());
     ScopedValue r(scope);
-    Value *arguments = scope.alloc(3);
+    Value *arguments = scope.constructUndefined(3);
 
     bool ok = true;
     for (uint k = 0; ok && k < len; ++k) {
@@ -1300,7 +1301,7 @@ ReturnedValue ArrayPrototype::method_some(const FunctionObject *b, const Value *
 
     ScopedValue that(scope, argc > 1 ? argv[1] : Value::undefinedValue());
     ScopedValue result(scope);
-    Value *arguments = scope.alloc(3);
+    Value *arguments = scope.constructUndefined(3);
 
     for (uint k = 0; k < len; ++k) {
         bool exists;
@@ -1332,7 +1333,7 @@ ReturnedValue ArrayPrototype::method_forEach(const FunctionObject *b, const Valu
     const FunctionObject *callback = static_cast<const FunctionObject *>(argv);
 
     ScopedValue that(scope, argc > 1 ? argv[1] : Value::undefinedValue());
-    Value *arguments = scope.alloc(3);
+    Value *arguments = scope.constructUndefined(3);
 
     for (uint k = 0; k < len; ++k) {
         bool exists;
@@ -1370,7 +1371,7 @@ ReturnedValue ArrayPrototype::method_map(const FunctionObject *b, const Value *t
     ScopedValue v(scope);
     ScopedValue mapped(scope);
     ScopedValue that(scope, argc > 1 ? argv[1] : Value::undefinedValue());
-    Value *arguments = scope.alloc(3);
+    Value *arguments = scope.constructUndefined(3);
 
     for (uint k = 0; k < len; ++k) {
         bool exists;
@@ -1405,7 +1406,7 @@ ReturnedValue ArrayPrototype::method_filter(const FunctionObject *b, const Value
 
     ScopedValue selected(scope);
     ScopedValue that(scope, argc > 1 ? argv[1] : Value::undefinedValue());
-    Value *arguments = scope.alloc(3);
+    Value *arguments = scope.constructUndefined(3);
 
     uint to = 0;
     for (uint k = 0; k < len; ++k) {
@@ -1457,7 +1458,7 @@ ReturnedValue ArrayPrototype::method_reduce(const FunctionObject *b, const Value
             THROW_TYPE_ERROR();
     }
 
-    Value *arguments = scope.alloc(4);
+    Value *arguments = scope.constructUndefined(4);
 
     while (k < len) {
         bool kPresent;
@@ -1511,7 +1512,7 @@ ReturnedValue ArrayPrototype::method_reduceRight(const FunctionObject *b, const 
             THROW_TYPE_ERROR();
     }
 
-    Value *arguments = scope.alloc(4);
+    Value *arguments = scope.constructUndefined(4);
 
     while (k > 0) {
         bool kPresent;

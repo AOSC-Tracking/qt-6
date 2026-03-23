@@ -243,6 +243,13 @@ int main(int argc, char *argv[])
     axisMinSliderZ->setMaximum(100);
     axisMinSliderZ->setEnabled(true);
 
+    QSlider *cutoffMarginSlider = new QSlider(Qt::Horizontal, widget);
+    cutoffMarginSlider->setTickInterval(500);
+    cutoffMarginSlider->setMinimum(-1000);
+    cutoffMarginSlider->setValue(0);
+    cutoffMarginSlider->setMaximum(1000);
+    cutoffMarginSlider->setEnabled(true);
+
     QSlider *aspectRatioSlider = new QSlider(Qt::Horizontal, widget);
     aspectRatioSlider->setMinimum(1);
     aspectRatioSlider->setValue(20);
@@ -404,6 +411,12 @@ int main(int argc, char *argv[])
     QPushButton *testDataOrderingButton = new QPushButton(widget);
     testDataOrderingButton->setText(QStringLiteral("Test data ordering"));
 
+    QPushButton *testNanSeriesButton = new QPushButton(widget);
+    testNanSeriesButton->setText(QStringLiteral("Test NaN series"));
+
+    QCheckBox *sanitizeRowsCB = new QCheckBox(widget);
+    sanitizeRowsCB->setText(QStringLiteral("Sanitize Rows"));
+
     QFrame* line = new QFrame();
     line->setFrameShape(QFrame::HLine);
     line->setFrameShadow(QFrame::Sunken);
@@ -462,6 +475,14 @@ int main(int argc, char *argv[])
     QCheckBox *surfaceTextureCB = new QCheckBox(widget);
     surfaceTextureCB->setText(QStringLiteral("Map texture"));
     surfaceTextureCB->setChecked(false);
+
+    QCheckBox *surfaceAlphaTextureCB = new QCheckBox(widget);
+    surfaceAlphaTextureCB->setText(QStringLiteral("Alpha texture"));
+    surfaceAlphaTextureCB->setChecked(false);
+
+    QCheckBox *surfaceAlphaTextureFileCB = new QCheckBox(widget);
+    surfaceAlphaTextureFileCB->setText(QStringLiteral("Alpha texture file"));
+    surfaceAlphaTextureFileCB->setChecked(false);
 
     QSlider *cameraTargetSliderX = new QSlider(Qt::Horizontal, widget);
     cameraTargetSliderX->setTickInterval(1);
@@ -532,6 +553,7 @@ int main(int argc, char *argv[])
     vLayout->addWidget(surfaceS2CB);
     vLayout->addWidget(series2VisibleCB);
     vLayout->addWidget(fillS2CB);
+    vLayout->addWidget(surfaceAlphaTextureFileCB);
     vLayout->addWidget(line2);
     vLayout->addWidget(series3CB);
     vLayout->addWidget(smoothS3CB);
@@ -539,6 +561,7 @@ int main(int argc, char *argv[])
     vLayout->addWidget(surfaceS3CB);
     vLayout->addWidget(series3VisibleCB);
     vLayout->addWidget(fillS3CB);
+    vLayout->addWidget(surfaceAlphaTextureCB);
     vLayout->addWidget(line3);
     vLayout->addWidget(series4CB);
     vLayout->addWidget(smoothS4CB);
@@ -576,6 +599,8 @@ int main(int argc, char *argv[])
     vLayout2->addWidget(axisMinSliderX);
     vLayout2->addWidget(axisMinSliderY);
     vLayout2->addWidget(axisMinSliderZ);
+    vLayout2->addWidget(new QLabel(QStringLiteral("Adjust cutoff margin")));
+    vLayout2->addWidget(cutoffMarginSlider);
     vLayout2->addWidget(xAscendingCB);
     vLayout2->addWidget(zAscendingCB);
     vLayout2->addWidget(polarCB);
@@ -625,6 +650,8 @@ int main(int argc, char *argv[])
     vLayout3->addWidget(massiveDataTestButton);
     vLayout3->addWidget(testReverseButton);
     vLayout3->addWidget(testDataOrderingButton);
+    vLayout3->addWidget(testNanSeriesButton);
+    vLayout3->addWidget(sanitizeRowsCB);
     vLayout3->addWidget(axisTitlesVisibleCB);
     vLayout3->addWidget(xAxisLabelsVisibleCB);
     vLayout3->addWidget(yAxisLabelsVisibleCB);
@@ -798,6 +825,8 @@ int main(int argc, char *argv[])
                      modifier, &GraphModifier::adjustYMin);
     QObject::connect(axisMinSliderZ, &QSlider::valueChanged,
                      modifier, &GraphModifier::adjustZMin);
+    QObject::connect(cutoffMarginSlider, &QSlider::valueChanged,
+                     modifier, &GraphModifier::adjustCutoffMargin);
     QObject::connect(colorPB, &QPushButton::pressed,
                      modifier, &GraphModifier::gradientPressed);
     QObject::connect(fontList, &QFontComboBox::currentFontChanged,
@@ -856,6 +885,10 @@ int main(int argc, char *argv[])
                      modifier, &GraphModifier::testAxisReverse);
     QObject::connect(testDataOrderingButton, &QPushButton::clicked,
                      modifier, &GraphModifier::testDataOrdering);
+    QObject::connect(testNanSeriesButton, &QPushButton::clicked,
+                     modifier, &GraphModifier::testNanSeries);
+    QObject::connect(sanitizeRowsCB, &QCheckBox::checkStateChanged,
+                     modifier, &GraphModifier::setRowSanitization);
     QObject::connect(axisTitlesVisibleCB, &QCheckBox::checkStateChanged,
                      modifier, &GraphModifier::toggleAxisTitleVisibility);
     QObject::connect(xAxisLabelsVisibleCB,
@@ -889,7 +922,17 @@ int main(int argc, char *argv[])
                      modifier, &GraphModifier::setHorizontalAspectRatio);
     QObject::connect(surfaceTextureCB, &QCheckBox::checkStateChanged,
                      modifier, &GraphModifier::setSurfaceTexture);
-    QObject::connect(cameraTargetSliderX, &QSlider::valueChanged, modifier,
+    QObject::connect(surfaceAlphaTextureCB,
+                     &QCheckBox::checkStateChanged,
+                     modifier,
+                     &GraphModifier::setSurfaceAlphaTexture);
+    QObject::connect(surfaceAlphaTextureFileCB,
+                     &QCheckBox::checkStateChanged,
+                     modifier,
+                     &GraphModifier::setSurfaceAlphaTextureFile);
+    QObject::connect(cameraTargetSliderX,
+                     &QSlider::valueChanged,
+                     modifier,
                      &GraphModifier::setCameraTargetX);
     QObject::connect(cameraTargetSliderY, &QSlider::valueChanged, modifier,
                      &GraphModifier::setCameraTargetY);

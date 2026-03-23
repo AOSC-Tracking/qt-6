@@ -96,6 +96,10 @@ bool WebNode::LessThan(const WebNode& n) const {
   return private_.Get() < n.private_.Get();
 }
 
+bool WebNode::Contains(const WebNode* n) const {
+  return private_->contains(n->private_.Get());
+}
+
 WebNode WebNode::ParentNode() const {
   return WebNode(const_cast<ContainerNode*>(private_->parentNode()));
 }
@@ -103,6 +107,10 @@ WebNode WebNode::ParentNode() const {
 WebNode WebNode::ParentOrShadowHostNode() const {
   return WebNode(
       const_cast<ContainerNode*>(private_->ParentOrShadowHostNode()));
+}
+
+bool WebNode::IsInUserAgentShadowRoot() const {
+  return private_->IsInUserAgentShadowRoot();
 }
 
 WebString WebNode::NodeValue() const {
@@ -155,8 +163,8 @@ bool WebNode::IsFocusable() const {
     return false;
   if (!private_->GetDocument().HaveRenderBlockingResourcesLoaded())
     return false;
-  private_->GetDocument().UpdateStyleAndLayoutTreeForElement(
-      element, DocumentUpdateReason::kFocus);
+  // Element::IsFocusable will internally update style and layout, so there's no
+  // need to do so before calling it here.
   return element->IsFocusable();
 }
 
@@ -235,18 +243,6 @@ std::vector<WebElement> WebNode::QuerySelectorAll(
     return vector;
   }
   return std::vector<WebElement>();
-}
-
-WebString WebNode::FindTextInElementWith(
-    const WebString& substring,
-    base::FunctionRef<bool(const WebString&)> validity_checker) const {
-  ContainerNode* container_node =
-      blink::DynamicTo<ContainerNode>(private_.Get());
-  if (!container_node) {
-    return WebString();
-  }
-  return WebString(container_node->FindTextInElementWith(
-      substring, [&](const String& text) { return validity_checker(text); }));
 }
 
 std::vector<WebNode> WebNode::FindAllTextNodesMatchingRegex(

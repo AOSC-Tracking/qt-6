@@ -8,12 +8,12 @@
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/not_fatal_until.h"
 #include "base/supports_user_data.h"
 #include "base/types/optional_util.h"
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/bound_session_credentials/bound_session_cookie_refresh_service_factory.h"
 #include "chrome/browser/signin/chrome_signin_helper.h"
 #include "chrome/browser/signin/header_modification_delegate.h"
 #include "chrome/browser/signin/header_modification_delegate_impl.h"
@@ -95,7 +95,7 @@ class BrowserContextData : public base::SupportsUserData::Data {
 
   void RemoveProxy(ProxyingURLLoaderFactory* proxy) {
     auto it = proxies_.find(proxy);
-    CHECK(it != proxies_.end(), base::NotFatalUntil::M130);
+    CHECK(it != proxies_.end());
     proxies_.erase(it);
   }
 
@@ -516,7 +516,7 @@ void ProxyingURLLoaderFactory::MaybeProxyRequest(
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   if (profile->IsOffTheRecord()) {
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-    if (!switches::IsBoundSessionCredentialsEnabled(profile->GetPrefs())) {
+    if (!BoundSessionCookieRefreshServiceFactory::GetForProfile(profile)) {
       return;
     }
 #else
@@ -575,7 +575,7 @@ void ProxyingURLLoaderFactory::OnProxyBindingError() {
 
 void ProxyingURLLoaderFactory::RemoveRequest(InProgressRequest* request) {
   auto it = requests_.find(request);
-  CHECK(it != requests_.end(), base::NotFatalUntil::M130);
+  CHECK(it != requests_.end());
   requests_.erase(it);
 
   MaybeDestroySelf();

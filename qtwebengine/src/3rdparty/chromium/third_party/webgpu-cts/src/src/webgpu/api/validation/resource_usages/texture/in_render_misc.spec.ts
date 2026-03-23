@@ -5,16 +5,16 @@ Texture Usages Validation Tests on All Kinds of WebGPU Subresource Usage Scopes.
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { unreachable } from '../../../../../common/util/util.js';
 import { kTextureUsages } from '../../../../capability_info.js';
-import { MaxLimitsTestMixin } from '../../../../gpu_test.js';
-import { ValidationTest } from '../../validation_test.js';
+import { AllFeaturesMaxLimitsGPUTest } from '../../../../gpu_test.js';
+import * as vtu from '../../validation_test_utils.js';
 import {
   TextureBindingType,
   kTextureBindingTypes,
-  IsReadOnlyTextureBindingType,
+  isReadOnlyTextureBindingType,
 } from '../texture/in_render_common.spec.js';
 
 function skipIfStorageTexturesUsedAndNotAvailableInFragmentStage(
-  t: ValidationTest,
+  t: AllFeaturesMaxLimitsGPUTest,
   usage: (typeof kTextureBindingTypes)[number] | 'copy-src' | 'copy-dst' | 'color-attachment',
   numRequired: number
 ) {
@@ -28,7 +28,7 @@ function skipIfStorageTexturesUsedAndNotAvailableInFragmentStage(
   );
 }
 
-class F extends ValidationTest {
+class F extends AllFeaturesMaxLimitsGPUTest {
   createBindGroupLayoutForTest(
     textureUsage: TextureBindingType,
     sampleType: 'unfilterable-float' | 'depth' | 'uint',
@@ -86,7 +86,7 @@ class F extends ValidationTest {
   }
 }
 
-export const g = makeTestGroup(MaxLimitsTestMixin(F));
+export const g = makeTestGroup(F);
 
 const kTextureSize = 16;
 const kTextureLayers = 3;
@@ -168,7 +168,7 @@ g.test('subresources,set_bind_group_on_same_index_color_texture')
     renderPassEncoder.end();
 
     const noConflict =
-      (IsReadOnlyTextureBindingType(view1Binding) && IsReadOnlyTextureBindingType(view2Binding)) ||
+      (isReadOnlyTextureBindingType(view1Binding) && isReadOnlyTextureBindingType(view2Binding)) ||
       view1Binding === view2Binding;
     t.expectValidationError(() => {
       encoder.finish();
@@ -354,7 +354,7 @@ g.test('subresources,set_unused_bind_group')
         }),
         vertex: {
           module: t.device.createShaderModule({
-            code: t.getNoOpShaderCode('VERTEX'),
+            code: vtu.getNoOpShaderCode('VERTEX'),
           }),
         },
         fragment: {
@@ -483,8 +483,8 @@ g.test('subresources,set_unused_bind_group')
     //   the render pass’s usage scope.
     const success =
       !inRenderPass ||
-      (IsReadOnlyTextureBindingType(textureUsage0) &&
-        IsReadOnlyTextureBindingType(textureUsage1)) ||
+      (isReadOnlyTextureBindingType(textureUsage0) &&
+        isReadOnlyTextureBindingType(textureUsage1)) ||
       textureUsage0 === textureUsage1;
     t.expectValidationError(() => {
       encoder.finish();
@@ -520,9 +520,6 @@ g.test('subresources,texture_usages_in_copy_and_render_pass')
           usage1 === 'copy-dst'
       )
   )
-  .beforeAllSubcases(t => {
-    t.skipIfColorRenderableNotSupportedForFormat('r32float');
-  })
   .fn(t => {
     const { usage0, usage1 } = t.params;
 
@@ -543,14 +540,14 @@ g.test('subresources,texture_usages_in_copy_and_render_pass')
       }),
     });
 
-    const UseTextureOnCommandEncoder = (
+    const useTextureOnCommandEncoder = (
       texture: GPUTexture,
       usage: 'copy-src' | 'copy-dst' | 'color-attachment' | TextureBindingType,
       encoder: GPUCommandEncoder
     ) => {
       switch (usage) {
         case 'copy-src': {
-          const buffer = t.createBufferWithState('valid', {
+          const buffer = vtu.createBufferWithState(t, 'valid', {
             size: 4,
             usage: GPUBufferUsage.COPY_DST,
           });
@@ -558,7 +555,7 @@ g.test('subresources,texture_usages_in_copy_and_render_pass')
           break;
         }
         case 'copy-dst': {
-          const buffer = t.createBufferWithState('valid', {
+          const buffer = vtu.createBufferWithState(t, 'valid', {
             size: 4,
             usage: GPUBufferUsage.COPY_SRC,
           });
@@ -600,8 +597,8 @@ g.test('subresources,texture_usages_in_copy_and_render_pass')
       }
     };
     const encoder = t.device.createCommandEncoder();
-    UseTextureOnCommandEncoder(texture, usage0, encoder);
-    UseTextureOnCommandEncoder(texture, usage1, encoder);
+    useTextureOnCommandEncoder(texture, usage0, encoder);
+    useTextureOnCommandEncoder(texture, usage1, encoder);
     t.expectValidationError(() => {
       encoder.finish();
     }, false);
@@ -618,11 +615,6 @@ g.test('subresources,texture_view_usages')
       .combine('bindingType', ['color-attachment', ...kTextureBindingTypes] as const)
       .combine('viewUsage', [0, ...kTextureUsages])
   )
-  .beforeAllSubcases(t => {
-    if (t.params.bindingType === 'color-attachment') {
-      t.skipIfColorRenderableNotSupportedForFormat('r32float');
-    }
-  })
   .fn(t => {
     const { bindingType, viewUsage } = t.params;
 

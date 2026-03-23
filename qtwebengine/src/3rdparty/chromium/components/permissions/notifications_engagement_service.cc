@@ -6,6 +6,8 @@
 
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "components/permissions/permissions_client.h"
 #include "url/gurl.h"
@@ -143,11 +145,26 @@ int NotificationsEngagementService::GetDailyAverageNotificationCount(
 
 // static
 int NotificationsEngagementService::GetDailyAverageNotificationCount(
-    ContentSettingPatternSource setting) {
+    const ContentSettingPatternSource& setting) {
   if (!setting.setting_value.is_dict()) {
     return 0;
   }
   return GetDailyAverageNotificationCount(setting.setting_value.GetDict());
+}
+
+// static
+std::map<std::pair<ContentSettingsPattern, ContentSettingsPattern>, int>
+NotificationsEngagementService::GetNotificationCountMapPerPatternPair(
+    const HostContentSettingsMap* hcsm) {
+  std::map<std::pair<ContentSettingsPattern, ContentSettingsPattern>, int>
+      result;
+  for (auto& item : hcsm->GetSettingsForOneType(
+           ContentSettingsType::NOTIFICATION_INTERACTIONS)) {
+    result[std::pair{item.primary_pattern, item.secondary_pattern}] =
+        GetDailyAverageNotificationCount(item);
+  }
+
+  return result;
 }
 
 void NotificationsEngagementService::IncrementCounts(const GURL& url,

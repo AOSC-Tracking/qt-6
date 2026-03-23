@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
 if (is_android) {
   import("//build/config/android/rules.gni")
 }
@@ -54,12 +52,12 @@ source_set("impl") {
     "//chrome/browser/profiles:profile",
     "//components/keyed_service/content",
     "//components/pref_registry",
-    "//components/prefs:prefs",
+    "//components/prefs",
     "//skia",
     "//ui/base",
     "//url",
   ]
-  if (is_chromeos_ash) {
+  if (is_chromeos) {
     deps += [ "//ash/constants" ]
   }
 

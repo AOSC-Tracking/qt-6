@@ -117,6 +117,7 @@ set(qml_sources
     stringToUrl.qml
     myCheckBox.qml
     signalConnections.qml
+    myMatryoshkaItems.qml
 
     # support types:
     DefaultPropertySingleChild.qml
@@ -132,6 +133,8 @@ set(qml_sources
     InlineComponentProvider.qml
     InlineComponentReexporter.qml
     NamespacedTypes.qml
+    MyBaseItem.qml
+    MyDerivedItem.qml
 
     badFile.qml
 
@@ -166,7 +169,7 @@ if(QT_FEATURE_quick_tableview)
     endif()
 endif()
 
-if (QT_FEATURE_qml_table_model)
+if(QT_FEATURE_qml_labs AND QT_FEATURE_qml_table_model)
     list(APPEND qml_sources QmlTableModel.qml)
     list(APPEND common_libraries Qt::LabsQmlModelsPrivate)
 endif()

@@ -20,7 +20,7 @@ const isCi = Boolean(process.env.CI);
 const outDir = process.env.OUT_DIR ?? '../out/ui';
 
 // Installed by test/ci/ui_tests.sh
-const ciChromePath = '/ci/ramdisk/chrome/opt/google/chrome/google-chrome';
+const ciChromePath = '/tmp/chrome/opt/google/chrome/google-chrome';
 
 export default defineConfig({
   testDir: './src',
@@ -44,7 +44,7 @@ export default defineConfig({
     timeout: 5000,
     toHaveScreenshot: {
       // Rendering is not 100% identical on Mac. Be more tolerant.
-      maxDiffPixelRatio: isMac ? 0.05 : undefined,
+      maxDiffPixelRatio: isMac ? 0.05 : 0.02,
     },
   },
 
@@ -67,6 +67,7 @@ export default defineConfig({
             '--disable-font-subpixel-positioning',
             '--disable-gpu',
             '--disable-lcd-text',
+            '--disable-spell-checking',
             '--font-render-hinting=none',
             '--force-device-scale-factor=1',
             '--hide-scrollbars',

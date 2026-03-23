@@ -8,7 +8,7 @@ import("//ui/webui/resources/tools/generate_grd.gni")
 import("//ui/webui/webui_features.gni")
 import("./os_settings.gni")
 
-assert(is_chromeos_ash, "ChromeOS Settings is ChromeOS only")
+assert(is_chromeos, "ChromeOS Settings is ChromeOS only")
 
 nearby_share_tsc_dir =
     "$root_gen_dir/chrome/browser/resources/chromeos/nearby_share/shared/tsc"
@@ -103,6 +103,7 @@ build_webui("build") {
     "device_page/per_device_touchpad_subsection.ts",
     "device_page/pointers.ts",
     "device_page/power.ts",
+    "device_page/power_optimized_charging_dialog.ts",
     "device_page/storage.ts",
     "device_page/storage_external.ts",
     "device_page/storage_external_entry.ts",
@@ -203,7 +204,6 @@ build_webui("build") {
     "os_about_page/consumer_auto_update_toggle_dialog.ts",
     "os_about_page/detailed_build_info_subpage.ts",
     "os_about_page/edit_hostname_dialog.ts",
-    "os_about_page/eol_offer_section.ts",
     "os_about_page/os_about_page.ts",
     "os_about_page/update_warning_dialog.ts",
     "os_apps_page/android_apps_subpage.ts",
@@ -335,7 +335,6 @@ build_webui("build") {
     "os_reset_page/os_powerwash_dialog_esim_item.ts",
     "os_reset_page/os_sanitize_dialog.ts",
     "os_reset_page/reset_settings_card.ts",
-    "os_search_page/google_assistant_subpage.ts",
     "os_search_page/magic_boost_review_terms_banner.ts",
     "os_search_page/search_and_assistant_settings_card.ts",
     "os_search_page/search_engine.ts",
@@ -361,7 +360,7 @@ build_webui("build") {
     "system_preferences_page/system_preferences_page.ts",
   ]
 
-  non_web_component_files = [
+  ts_files = [
     "assert_extras.ts",
     "common/app_management/actions.ts",
     "common/app_management/api_listener.ts",
@@ -468,7 +467,6 @@ build_webui("build") {
     "os_privacy_page/privacy_hub_browser_proxy.ts",
     "os_privacy_page/privacy_hub_metrics_util.ts",
     "os_reset_page/os_reset_browser_proxy.ts",
-    "os_search_page/google_assistant_browser_proxy.ts",
     "os_search_page/magic_boost_browser_proxy.ts",
     "os_search_page/search_engines_browser_proxy.ts",
     "os_settings.ts",
@@ -485,7 +483,6 @@ build_webui("build") {
 
   icons_html_files = [
     "app_management_icons.html",
-    "icons.html",
     "os_a11y_page/facegaze_icons.html",
     "os_settings_icons.html",
   ]

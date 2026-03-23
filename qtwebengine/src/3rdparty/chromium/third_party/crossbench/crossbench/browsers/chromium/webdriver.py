@@ -8,34 +8,42 @@ import atexit
 import logging
 import re
 import subprocess
-from typing import TYPE_CHECKING, Any, Optional, Sequence, Tuple, cast
+import sys
+from typing import TYPE_CHECKING, Any, Optional, Sequence, cast
 
-import hjson
 from immutabledict import immutabledict
 from selenium.webdriver.chromium import webdriver as chromium_webdriver
 from selenium.webdriver.remote.webdriver import WebDriver as RemoteWebDriver
+from typing_extensions import override
 
 from crossbench import exception
+from crossbench import hjson as cb_hjson
 from crossbench import path as pth
-from crossbench.browsers.chromium.paths import ChromiumPathMixin
+from crossbench.browsers.chromium.base import ChromiumBaseMixin
 from crossbench.browsers.chromium_based.webdriver import ChromiumBasedWebDriver
+from crossbench.cli import ui
 from crossbench.cli.config.secrets import GoogleUsernamePassword
 from crossbench.helper import wait
+from crossbench.helper.path_finder import ChromiumBuildBinaryFinder
 from crossbench.parse import NumberParser
 from crossbench.plt.android_adb import AndroidAdbPlatform
+from crossbench.plt.base import SubprocessError
 from crossbench.plt.bin import Binaries
 from crossbench.plt.chromeos_ssh import ChromeOsSshPlatform
 from crossbench.plt.linux_ssh import LinuxSshPlatform
 
 if TYPE_CHECKING:
+  import datetime as dt
+
   from selenium import webdriver
   from selenium.webdriver.chromium.options import ChromiumOptions
   from selenium.webdriver.chromium.service import ChromiumService
 
   from crossbench.browsers.settings import Settings
+  from crossbench.browsers.version import BrowserVersion
   from crossbench.cli.config.secrets import UsernamePassword
-  from crossbench.flags.base import FlagsT
   from crossbench.plt.base import Platform
+  from crossbench.plt.process_meminfo import ProcessMeminfo
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 
@@ -49,8 +57,9 @@ FLAGS_CONTENT_SHELL: pth.AnyPosixPath = (
 FLAGS_CHROME: pth.AnyPosixPath = _FLAG_ROOT / "chrome-command-line"
 
 
-class ChromiumWebDriver(ChromiumPathMixin, ChromiumBasedWebDriver):
+class ChromiumWebDriver(ChromiumBaseMixin, ChromiumBasedWebDriver):
 
+  @override
   def _create_driver(
       self, options: ChromiumOptions,
       service: ChromiumService) -> chromium_webdriver.ChromiumDriver:
@@ -66,10 +75,11 @@ class ChromiumWebDriverAndroid(ChromiumBasedWebDriver):
   def __init__(self,
                label: str,
                path: Optional[pth.AnyPath] = None,
-               settings: Optional[Settings] = None):
+               settings: Optional[Settings] = None) -> None:
     assert settings, "Android browser needs custom settings and platform"
     self._chrome_command_line_path: pth.AnyPath = FLAGS_CHROME
-    self._previous_command_line_contents: Optional[str] = None
+    self._previous_command_line_contents: str | None = None
+    self._needs_restore_chrome_flags: bool = False
     super().__init__(label, path, settings)
     self._android_package: str = self._lookup_android_package(self.path)
     if not self._android_package:
@@ -84,36 +94,38 @@ class ChromiumWebDriverAndroid(ChromiumBasedWebDriver):
     return self._android_package
 
   @property
+  @override
   def platform(self) -> AndroidAdbPlatform:
     assert isinstance(
         self._platform,
         AndroidAdbPlatform), (f"Invalid platform: {self._platform}")
     return cast(AndroidAdbPlatform, self._platform)
 
-  def _resolve_binary(self, path: pth.AnyPath) -> pth.AnyPath:
+  def _init_resolve_binary(self, path: pth.AnyPath) -> pth.AnyPath:
     return path
 
-  # TODO: implement setting a clean profile on android
-  UNSUPPORTED_FLAGS: Tuple[str, ...] = (
-      "--user-data-dir",
+  UNSUPPORTED_FLAGS: tuple[str, ...] = (
       "--disable-sync",
       "--window-size",
       "--window-position",
   )
 
+  @override
   def _start_driver(self, session: BrowserSessionRunGroup,
                     driver_path: pth.AnyPath) -> webdriver.Remote:
     self.adb_force_stop()
     if session.browser.wipe_system_user_data:
       self.adb_force_clear()
-      self.platform.adb.grant_permissions(self.android_package)
+      self._setup_binary_permissions()
     self._backup_chrome_flags()
-    atexit.register(self._restore_chrome_flags)
     return self._start_chromedriver(session, driver_path)
 
   def _backup_chrome_flags(self) -> None:
     assert self._previous_command_line_contents is None
     self._previous_command_line_contents = self._read_device_flags()
+    assert not self._needs_restore_chrome_flags, "Invalid flag restore state."
+    self._needs_restore_chrome_flags = True
+    atexit.register(self._restore_chrome_flags)
 
   def _read_device_flags(self) -> Optional[str]:
     if not self.platform.exists(self._chrome_command_line_path):
@@ -135,8 +147,14 @@ class ChromiumWebDriverAndroid(ChromiumBasedWebDriver):
     finally:
       self._restore_chrome_flags()
 
+  @override
+  def meminfo(self, timeout: dt.timedelta) -> list[ProcessMeminfo]:
+    return self.platform.process_meminfo(self.android_package, timeout)
+
   def _restore_chrome_flags(self) -> None:
     atexit.unregister(self._restore_chrome_flags)
+    if not self._needs_restore_chrome_flags:
+      return
     current_flags = self._read_device_flags()
     if current_flags != self._previous_command_line_contents:
       logging.warning("%s: flags file changed during run", self)
@@ -149,10 +167,12 @@ class ChromiumWebDriverAndroid(ChromiumBasedWebDriver):
     else:
       logging.debug("%s: restoring previous flags file contents in %s", self,
                     self._chrome_command_line_path)
-      self.platform.set_file_contents(self._chrome_command_line_path,
-                                      self._previous_command_line_contents)
+      self.platform.write_text(self._chrome_command_line_path,
+                               self._previous_command_line_contents)
+    self._needs_restore_chrome_flags = False
     self._previous_command_line_contents = None
 
+  @override
   def _create_options(self, session: BrowserSessionRunGroup,
                       args: Sequence[str]) -> ChromiumOptions:
     options: ChromiumOptions = super()._create_options(session, args)
@@ -160,14 +180,23 @@ class ChromiumWebDriverAndroid(ChromiumBasedWebDriver):
     options.add_experimental_option("androidPackage", self.android_package)
     options.add_experimental_option("androidDeviceSerial",
                                     self.platform.adb.serial_id)
+    if not self.clear_cache_dir:
+      options.add_experimental_option("androidKeepAppDataDir", True)
     return options
 
-  def setup_binary(self) -> None:
-    super().setup_binary()
-    self.platform.adb.grant_permissions(self.android_package)
+  @override
+  def _setup_binary(self) -> None:  # pytype: disable=override-error
+    super()._setup_binary()
+    self._setup_binary_permissions()
 
+  def _setup_binary_permissions(self) -> None:
+    try:
+      self.platform.adb.grant_permissions(self.android_package)
+    except SubprocessError as e:
+      logging.warning("Error setting app permissions: %s", e)
 
-  def _setup_window(self):
+  @override
+  def _setup_window(self) -> None:  # pytype: disable=override-error
     logging.debug("%s: Skipping viewport settings %s on %s",
                   type(self).__name__, self.viewport, self)
 
@@ -187,21 +216,24 @@ class LocalChromiumWebDriverAndroid(ChromiumWebDriverAndroid):
   def __init__(self,
                label: str,
                path: Optional[pth.AnyPath] = None,
-               settings: Optional[Settings] = None):
-    if self.is_apk_helper(path):
+               settings: Optional[Settings] = None) -> None:
+    if not self.is_apk_helper(path):
       raise ValueError(
-          "Locally built chrome version needs package, got empty path")
+          "Locally built chrome version does not work with packaged apks.")
     assert settings, "Android browser needs custom settings and platform"
     assert path, "Got invalid path"
     self._package_info: immutabledict[str, Any] = self._parse_package_info(
         settings.platform, path)
     super().__init__(label, path, settings)
 
+  @override
   def _lookup_android_package(self, path: pth.AnyPath) -> str:
     return self._package_info["Package name"]
 
-  def _extract_version(self) -> str:
-    return self._package_info["versionName"]
+  # TODO: enable override again.
+  # @override
+  def _extract_version(self) -> BrowserVersion:
+    return self.version_cls().parse(self._package_info["versionName"])
 
   def _parse_package_info(self, platform: Platform,
                           path: pth.AnyPath) -> immutabledict[str, Any]:
@@ -210,13 +242,30 @@ class LocalChromiumWebDriverAndroid(ChromiumWebDriverAndroid):
     package_info = {}
     for line in output:
       key, value = line.split(": ")
-      package_info[key] = hjson.loads(value)
+      package_info[key] = cb_hjson.loads_unique_keys(value)
     return immutabledict(package_info)
 
-  def setup_binary(self) -> None:
-    super().setup_binary()
-    self.host_platform.sh_stdout(self.path, "install",
-                                 f"--device={self.platform.serial_id}")
+  @override
+  def _setup_binary(self) -> None:
+    super()._setup_binary()
+    with ui.spinner():
+      sys.stdout.write(f"   Installing {self.path.name} on {self.platform}\r")
+      self.host_platform.sh_stdout(self.path, "install",
+                                   f"--device={self.platform.serial_id}")
+
+  @override
+  def _find_driver(self) -> pth.AnyPath:
+    if self._driver_path:
+      return self._driver_path
+    assert self.app_path
+    if build_dir := self.local_build_dir():
+      logging.info("Looking for local chromedriver in %s", build_dir.parent)
+      finder = ChromiumBuildBinaryFinder(self.host_platform, "chromedriver",
+                                         (build_dir.parent,))
+      if driver_path := finder.path:
+        return driver_path
+    raise ValueError("Chrome APK helper needs an explicit chrome driver. "
+                     "Use --driver-path or a custom browser config.")
 
 
 class AutoForwardingRemoteWebDriver(RemoteWebDriver):
@@ -244,7 +293,7 @@ class AutoForwardingRemoteWebDriver(RemoteWebDriver):
 
   _platform: LinuxSshPlatform
   _forward_port: int
-  _chromedriver: Optional[subprocess.Popen]
+  _chromedriver: subprocess.Popen | None
 
   def __init__(
       self,
@@ -260,7 +309,7 @@ class AutoForwardingRemoteWebDriver(RemoteWebDriver):
           stdin=subprocess.PIPE)
       atexit.register(self._stop_remote_driver)
       driver_port = self._wait_for_driver_port()
-      self._forward_port = platform.port_forward(0, driver_port)
+      self._forward_port = platform.ports.forward(0, driver_port)
       logging.info(
           "Chromedriver listening on %d forwarded through local port %d",
           driver_port, self._forward_port)
@@ -279,17 +328,19 @@ class AutoForwardingRemoteWebDriver(RemoteWebDriver):
       self._chromedriver.terminate()
       self._chromedriver = None
     finally:
-      # Closing the ssh connection doesn't terminate chromedriver, so kill it.
-      self._killall_chromedriver()
-      if self._forward_port:
-        self._platform.stop_port_forward(self._forward_port)
-        self._forward_port = 0
+      try:
+        # Closing the ssh connection doesn't terminate chromedriver, so kill it.
+        self._killall_chromedriver()
+      finally:
+        if forward_port := self._forward_port:
+          self._platform.ports.stop_forward(forward_port)
+          self._forward_port = 0
 
   def _killall_chromedriver(self) -> None:
     self._platform.sh("killall", "chromedriver", check=False)
 
   def _wait_for_driver_port(self) -> int:
-    for _ in wait.wait_with_backoff(10, self._platform):
+    for _ in wait.wait_with_backoff(10):
       listening = self._platform.sh_stdout("ss", "-HOlntp")
       if m := self.SS_CHROMEDRIVER_LINE_RE.search(listening):
         return NumberParser.port_number(m[1], "driver port")
@@ -299,11 +350,13 @@ class AutoForwardingRemoteWebDriver(RemoteWebDriver):
 class ChromiumWebDriverSsh(ChromiumBasedWebDriver):
 
   @property
+  @override
   def platform(self) -> LinuxSshPlatform:
     assert isinstance(self._platform,
                       LinuxSshPlatform), (f"Invalid platform: {self._platform}")
     return cast(LinuxSshPlatform, self._platform)
 
+  @override
   def _start_driver(self, session: BrowserSessionRunGroup,
                     driver_path: pth.AnyPath) -> RemoteWebDriver:
     del driver_path
@@ -322,25 +375,27 @@ class ChromiumWebDriverSsh(ChromiumBasedWebDriver):
 class ChromiumWebDriverChromeOsSsh(ChromiumBasedWebDriver):
 
   @property
+  @override
   def platform(self) -> ChromeOsSshPlatform:
     assert isinstance(
         self._platform,
         ChromeOsSshPlatform), (f"Invalid platform: {self._platform}")
     return cast(ChromeOsSshPlatform, self._platform)
 
-  UNSUPPORTED_FLAGS: Tuple[str, ...] = (
+  UNSUPPORTED_FLAGS: tuple[str, ...] = (
       "--user-data-dir",
       "--window-size",
       "--window-position",
   )
 
+  @override
   def _start_driver(self, session: BrowserSessionRunGroup,
                     driver_path: pth.AnyPath) -> RemoteWebDriver:
     del driver_path
     platform = self.platform
     host = platform.host
     port = platform.port
-    args: Tuple[str, ...] = self._get_browser_flags_for_session(session)
+    args: tuple[str, ...] = self._get_browser_flags_for_session(session)
     # TODO(spadhi): correctly handle flags:
     #   1. decide which flags to pass to chrome vs chromedriver
     #   2. investigate irrelevant / unsupported flags on ChromeOS

@@ -54,7 +54,7 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
 
     ObjectType GetObjectType() const override;
 
-    void SetLimits(const WGPUSupportedLimits* limits);
+    void SetLimits(const WGPULimits* limits);
     void SetFeatures(const WGPUFeatureName* features, uint32_t featuresCount);
 
     bool IsAlive() const;
@@ -65,28 +65,28 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
     class DeviceLostEvent;
 
     // WebGPU API
-    void SetLoggingCallback(const WGPULoggingCallbackInfo& callbackInfo);
-    void InjectError(WGPUErrorType type, WGPUStringView message);
-    WGPUFuture PopErrorScope(const WGPUPopErrorScopeCallbackInfo& callbackInfo);
+    void APISetLoggingCallback(const WGPULoggingCallbackInfo& callbackInfo);
+    void APIInjectError(WGPUErrorType type, WGPUStringView message);
+    WGPUFuture APIPopErrorScope(const WGPUPopErrorScopeCallbackInfo& callbackInfo);
 
-    WGPUBuffer CreateBuffer(const WGPUBufferDescriptor* descriptor);
-    WGPUBuffer CreateErrorBuffer(const WGPUBufferDescriptor* descriptor);
-    WGPUFuture CreateComputePipelineAsync(
+    WGPUBuffer APICreateBuffer(const WGPUBufferDescriptor* descriptor);
+    WGPUBuffer APICreateErrorBuffer(const WGPUBufferDescriptor* descriptor);
+    WGPUFuture APICreateComputePipelineAsync(
         WGPUComputePipelineDescriptor const* descriptor,
         const WGPUCreateComputePipelineAsyncCallbackInfo& callbackInfo);
-    WGPUFuture CreateRenderPipelineAsync(
+    WGPUFuture APICreateRenderPipelineAsync(
         WGPURenderPipelineDescriptor const* descriptor,
         const WGPUCreateRenderPipelineAsyncCallbackInfo& callbackInfo);
 
-    WGPUStatus GetLimits(WGPUSupportedLimits* limits) const;
-    WGPUFuture GetLostFuture();
-    bool HasFeature(WGPUFeatureName feature) const;
-    void GetFeatures(WGPUSupportedFeatures* features) const;
-    WGPUStatus GetAdapterInfo(WGPUAdapterInfo* info) const;
-    WGPUAdapter GetAdapter() const;
-    WGPUQueue GetQueue();
+    WGPUStatus APIGetLimits(WGPULimits* limits) const;
+    WGPUFuture APIGetLostFuture();
+    bool APIHasFeature(WGPUFeatureName feature) const;
+    void APIGetFeatures(WGPUSupportedFeatures* features) const;
+    WGPUStatus APIGetAdapterInfo(WGPUAdapterInfo* info) const;
+    WGPUAdapter APIGetAdapter() const;
+    WGPUQueue APIGetQueue();
 
-    void Destroy();
+    void APIDestroy();
 
   private:
     void WillDropLastExternalRef() override;

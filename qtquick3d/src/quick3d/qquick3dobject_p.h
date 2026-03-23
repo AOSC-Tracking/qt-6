@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGOBJECT_P_H
 #define QSSGOBJECT_P_H
@@ -41,6 +43,25 @@ class Q_QUICK3D_EXPORT QQuick3DObjectPrivate : public QObjectPrivate
     Q_DECLARE_PUBLIC(QQuick3DObject)
 public:
     using Type = QSSGRenderGraphObject::Type;
+
+    enum class Flags : quint32
+    {
+        None = 0x0,
+        RequiresSecondaryUpdate = 0x1, // Only relevant for resources
+    };
+
+    /*!
+      Flags::RequiresSecondaryUpdate indicates that the object needs a secondary update, meaning an
+      additional call to updateSpatialNode() will be made after the first one. This is useful for objects
+      that depend on other objects being fully updated before they can update themselves properly, as
+      when the second call happens all objects have had their first updateSpatialNode() called.
+      In addition to setting this flag the object must also call requestSecondaryUpdate() when it knows
+      that it needs the secondary update!
+
+      NOTE: This flag is only relevant for resource objects, spatial nodes will be ignored.
+     */
+
+    using FlagsT = std::underlying_type_t<Flags>;
 
     struct ConnectionKey
     {
@@ -118,6 +139,8 @@ public:
     static const QQuick3DObjectPrivate *get(const QQuick3DObject *item) { return item->d_func(); }
     static QSSGRenderGraphObject *updateSpatialNode(QQuick3DObject *o, QSSGRenderGraphObject *n) { return o->updateSpatialNode(n); }
 
+    explicit QQuick3DObjectPrivate(Type t, FlagsT f);
+    explicit QQuick3DObjectPrivate(Type t, Flags f);
     explicit QQuick3DObjectPrivate(Type t);
     ~QQuick3DObjectPrivate() override;
     void init(QQuick3DObject *parent);
@@ -247,6 +270,8 @@ public:
     QQuick3DObject *nextDirtyItem;
     QQuick3DObject **prevDirtyItem;
 
+    bool hasFlag(Flags flag) { return (flags & FlagsT(flag)) != 0; }
+
     void setCulled(bool);
 
     QPointer<QQuick3DSceneManager> sceneManager;
@@ -280,9 +305,13 @@ public:
 
     virtual void updatePolish() {}
 
+    void requestSecondaryUpdate() { secondaryUpdateRequested = true; }
+
     QSSGRenderGraphObject *spatialNode = nullptr;
 
     Type type = Type::Unknown;
+    FlagsT flags = FlagsT(Flags::None);
+    bool secondaryUpdateRequested = false;
     bool componentComplete = true;
     bool preSyncNeeded = false;
     bool culled;

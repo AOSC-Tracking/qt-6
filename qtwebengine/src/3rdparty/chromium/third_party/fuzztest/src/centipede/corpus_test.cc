@@ -32,7 +32,7 @@
 #include "./common/defs.h"
 #include "./common/test_util.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 namespace {
 
 TEST(Corpus, GetCmpData) {
@@ -45,8 +45,7 @@ TEST(Corpus, GetCmpData) {
   ByteArray cmp_data{2, 0, 1, 2, 3};
   FeatureVec features1 = {10, 20, 30};
   fs.IncrementFrequencies(features1);
-  corpus.Add({1}, features1, /*metadata=*/{.cmp_data = cmp_data}, fs,
-             coverage_frontier);
+  corpus.Add({1}, features1, /*metadata=*/{cmp_data}, fs, coverage_frontier);
   EXPECT_EQ(corpus.NumActive(), 1);
   EXPECT_EQ(corpus.GetMetadata(0).cmp_data, cmp_data);
 }
@@ -403,4 +402,4 @@ TEST(CoverageFrontierDeath, InvalidIndexToFrontier) {
 }
 
 }  // namespace
-}  // namespace centipede
+}  // namespace fuzztest::internal

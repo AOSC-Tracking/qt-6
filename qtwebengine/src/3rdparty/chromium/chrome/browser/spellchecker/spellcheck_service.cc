@@ -16,11 +16,11 @@
 #include "base/functional/callback_helpers.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/supports_user_data.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "chrome/browser/profiles/profile.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profiles_state.h"
@@ -47,7 +47,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_features.h"
 #endif
 
@@ -870,7 +870,7 @@ void SpellcheckService::OnUseSpellingServiceChanged() {
 
 void SpellcheckService::OnAcceptLanguagesChanged() {
   // Accept-Languages and spell check are decoupled on CrOS.
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_CHROMEOS)
   std::vector<std::string> accept_languages = GetNormalizedAcceptLanguages();
 
   StringListPrefMember dictionaries_pref;
@@ -892,7 +892,7 @@ void SpellcheckService::OnAcceptLanguagesChanged() {
     RecordChromeLocalesStats();
   }
 #endif  // BUILDFLAG(IS_WIN)
-#endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // !BUILDFLAG(IS_CHROMEOS)
 }
 
 std::vector<std::string> SpellcheckService::GetNormalizedAcceptLanguages(

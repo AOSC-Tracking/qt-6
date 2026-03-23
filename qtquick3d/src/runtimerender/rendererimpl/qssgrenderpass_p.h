@@ -1,5 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRENDERPASS_H
 #define QSSGRENDERPASS_H
@@ -22,6 +24,7 @@
 #include <QtQuick3DRuntimeRender/private/qssgrhicontext_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendershadercache_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderableobjects_p.h>
+#include <QtQuick3DRuntimeRender/private/qssgrendermotionvectormap_p.h>
 #include "qssgrenderer_p.h"
 
 QT_BEGIN_NAMESPACE
@@ -30,7 +33,11 @@ class QSSGRenderShadowMap;
 class QSSGRenderReflectionMap;
 class QSSGLayerRenderData;
 class QSSGRenderCamera;
-struct QSSGRenderItem2D;
+class QSGRenderer;
+class QSSGRenderExtension;
+class QSSGRenderUserPass;
+
+class QRhiTexture;
 
 class QSSGRenderPass
 {
@@ -54,6 +61,24 @@ public:
     // Flags: Debug markers(?)
 
     // Dependency
+};
+
+class MotionVectorMapPass : public QSSGRenderPass
+{
+public:
+    void renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data) final;
+    void renderPass(QSSGRenderer &renderer) final;
+    Type passType() const final { return Type::Standalone; }
+    void resetForFrame() final;
+
+    QSSGRhiRenderableTexture *rhiMotionVectorTexture = nullptr;
+
+    static constexpr int MaxBuckets = 8; // (int(skin) << 2) | (int(instance) << 1) | int(morph);
+    QSSGRenderableObjectList motionVectorPassObjects[MaxBuckets];
+    QSSGRenderCamera *camera = nullptr;
+    QSSGRhiGraphicsPipelineState ps;
+    bool enabled = false;
+    QSSGRenderMotionVectorMapPtr motionVectorMapManager;
 };
 
 class ShadowMapPass : public QSSGRenderPass
@@ -134,6 +159,20 @@ public:
     QSSGRhiGraphicsPipelineState ps;
     QSSGRhiRenderableTexture *rhiDepthTexture = nullptr;
     bool m_multisampling = false;
+};
+
+class Q_QUICK3DRUNTIMERENDER_EXPORT NormalPass : public QSSGRenderPass
+{
+public:
+    void renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data) final;
+    void renderPass(QSSGRenderer &renderer) final;
+    Type passType() const final { return Type::Standalone; }
+    void resetForFrame() final;
+
+    QSSGRenderableObjectList sortedOpaqueObjects;
+    QSSGRhiGraphicsPipelineState ps;
+    QSSGRhiRenderableTexture *normalTexture = nullptr;
+    QSSGRhiRenderableTexture *depthBuffer = nullptr;
 };
 
 class SkyboxPass : public QSSGRenderPass
@@ -260,12 +299,7 @@ public:
     void resetForFrame() final;
 
 protected:
-    [[nodiscard]] QSSGRenderer::Item2DData getItem2DData(QSSGRenderItem2D *item2D);
-
-    QSSGRenderer::Item2DDataMap item2DDataMap;
-    QList<QSSGRenderItem2D *> item2Ds;
     std::vector<QSGRenderer *> prepdItem2DRenderers;
-    QSSGRhiGraphicsPipelineState ps {};
 };
 
 class InfiniteGridPass : public QSSGRenderPass
@@ -293,9 +327,7 @@ public:
     QSSGRhiGraphicsPipelineState ps;
 };
 
-class QSSGRenderExtension;
-
-class UserPass : public QSSGRenderPass
+class UserExtensionPass : public QSSGRenderPass
 {
 public:
     void renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data) final;
@@ -306,6 +338,61 @@ public:
     bool hasData() const { return extensions.size() != 0; }
 
     QList<QSSGRenderExtension *> extensions;
+};
+
+class UserRenderPass : public QSSGRenderPass
+{
+public:
+    void renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data) final;
+    void renderPass(QSSGRenderer &renderer) final;
+    Type passType() const final { return Type::Standalone; }
+    void resetForFrame() final;
+
+    bool hasData() const { return (userPasses.size() != 0); }
+
+    QList<QSSGRenderUserPass *> userPasses;
+
+protected:
+    struct UserPassData
+    {
+        QSSGRhiGraphicsPipelineState ps;
+        QSSGRenderableObjectList renderables;
+        QSSGRhiRenderableTextureV2Ptr renderableTexture;
+        QSSGShaderDefineList shaderDefines;
+        QColor clearColor = Qt::black;
+        QRhiDepthStencilClearValue depthStencilClearValue = { };
+        size_t index = 0;
+
+        std::optional<SkyboxCubeMapPass> skyboxCubeMapPass;
+        std::optional<SkyboxPass> skyboxPass;
+        std::optional<Item2DPass> item2DPass;
+        std::vector<UserPassData> subPassData;
+    };
+
+    void prepareTopLevelPass(QSSGRenderer &renderer, QSSGLayerRenderData &data, QSSGRenderUserPass *passNode)
+    {
+        visitedPasses.clear(); // clear visited passes for each top-level pass
+        preparePassImpl(renderer, data, passNode, userPassData, {/* null */});
+    }
+
+    void prepareSubPass(QSSGRenderer &renderer,
+                        QSSGLayerRenderData &data,
+                        QSSGRenderUserPass *subPassNode,
+                        std::vector<UserPassData> &subPassData,
+                        const QSSGRhiRenderableTextureV2Ptr &renderableTexture)
+    {
+        Q_ASSERT(renderableTexture != nullptr);
+        preparePassImpl(renderer, data, subPassNode, subPassData, renderableTexture);
+    }
+
+    void preparePassImpl(QSSGRenderer &renderer,
+                         QSSGLayerRenderData &data,
+                         QSSGRenderUserPass *passNode,
+                         std::vector<UserPassData> &outData,
+                         QSSGRhiRenderableTextureV2Ptr renderableTexture);
+    std::vector<UserPassData> userPassData;
+    std::set<QSSGResourceId> visitedPasses; // For circular dependency detection
+    static constexpr size_t MAX_SUBPASS_DEPTH = 16;
 };
 
 class OITRenderPass : public QSSGRenderPass
@@ -325,10 +412,25 @@ public:
     QSSGRenderableObjectList sortedTransparentObjects;
     QSSGRhiGraphicsPipelineState ps;
     QSSGShaderFeatures shaderFeatures;
-    QSSGRhiRenderableTexture *rhiAccumTexture = nullptr;
-    QSSGRhiRenderableTexture *rhiRevealageTexture = nullptr;
+    union {
+        QSSGRhiRenderableTexture *rhiAccumTexture = nullptr;
+        QSSGRhiRenderableTexture *rhiABufferImage;
+        QRhiBuffer *rhiABuffer;
+    };
+    union {
+        QSSGRhiRenderableTexture *rhiRevealageTexture = nullptr;
+        QSSGRhiRenderableTexture *rhiAuxiliaryImage;
+        QRhiBuffer *rhiAuxBuffer;
+    };
+    QSSGRhiRenderableTexture *rhiCounterImage = nullptr;
+    QRhiBuffer *rhiCounterBuffer = nullptr;
+    QRhiTexture *readbackImage = nullptr;
     QSSGRhiRenderableTexture *rhiDepthTexture = nullptr;
     QRhiTextureRenderTarget *renderTarget = nullptr;
+    quint32 reportedNodeCount = 0;
+    quint32 currentNodeCount = 0;
+    QList<QRhiReadbackResult* > results;
+    QRhiResourceUpdateBatch *rub = nullptr;
 };
 
 class OITCompositePass : public QSSGRenderPass
@@ -344,8 +446,16 @@ public:
     QSSGRhiGraphicsPipelineState ps;
     QSSGShaderFeatures shaderFeatures;
     QSSGRhiShaderPipelinePtr compositeShaderPipeline;
-    QSSGRhiRenderableTexture *rhiAccumTexture = nullptr;
-    QSSGRhiRenderableTexture *rhiRevealageTexture = nullptr;
+    union {
+        QSSGRhiRenderableTexture *rhiAccumTexture = nullptr;
+        QSSGRhiRenderableTexture *rhiABufferImage;
+        QRhiBuffer *rhiABuffer;
+    };
+    union {
+        QSSGRhiRenderableTexture *rhiRevealageTexture = nullptr;
+        QSSGRhiRenderableTexture *rhiAuxiliaryImage;
+        QRhiBuffer *rhiAuxBuffer;
+    };
 };
 
 QT_END_NAMESPACE

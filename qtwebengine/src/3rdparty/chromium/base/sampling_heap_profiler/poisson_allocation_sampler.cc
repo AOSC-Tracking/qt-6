@@ -101,12 +101,12 @@ PoissonAllocationSamplerStats::PoissonAllocationSamplerStats(
     size_t address_cache_misses,
     size_t address_cache_max_size,
     float address_cache_max_load_factor,
-    std::vector<size_t> address_cache_bucket_lengths)
+    AddressCacheBucketStats address_cache_bucket_stats)
     : address_cache_hits(address_cache_hits),
       address_cache_misses(address_cache_misses),
       address_cache_max_size(address_cache_max_size),
       address_cache_max_load_factor(address_cache_max_load_factor),
-      address_cache_bucket_lengths(std::move(address_cache_bucket_lengths)) {}
+      address_cache_bucket_stats(std::move(address_cache_bucket_stats)) {}
 
 PoissonAllocationSamplerStats::~PoissonAllocationSamplerStats() = default;
 
@@ -234,6 +234,12 @@ size_t PoissonAllocationSampler::SamplingInterval() const {
   return g_sampling_interval.load(std::memory_order_relaxed);
 }
 
+void PoissonAllocationSampler::SetTargetHashSetLoadFactor(
+    std::optional<float> load_factor) {
+  AutoLock lock(mutex_);
+  address_cache_target_load_factor_ = load_factor.value_or(1.0);
+}
+
 PoissonAllocationSamplerStats PoissonAllocationSampler::GetAndResetStats() {
   ScopedMuteThreadSamples no_reentrancy_scope;
   AutoLock lock(mutex_);
@@ -242,7 +248,7 @@ PoissonAllocationSamplerStats PoissonAllocationSampler::GetAndResetStats() {
       address_cache_misses_.exchange(0, std::memory_order_relaxed),
       std::exchange(address_cache_max_size_, 0),
       std::exchange(address_cache_max_load_factor_, 0.0),
-      sampled_addresses_set().GetBucketLengths());
+      sampled_addresses_set().GetBucketStats());
 }
 
 // static
@@ -393,7 +399,7 @@ void PoissonAllocationSampler::BalanceAddressesHashSet() {
   // All the readers continue to use the old one until the atomic switch
   // process takes place.
   LockFreeAddressHashSet& current_set = sampled_addresses_set();
-  if (current_set.load_factor() < 1) {
+  if (current_set.load_factor() < address_cache_target_load_factor_) {
     return;
   }
   auto new_set = std::make_unique<LockFreeAddressHashSet>(
@@ -478,7 +484,7 @@ void PoissonAllocationSampler::RemoveSamplesObserver(
   ScopedMuteThreadSamples no_reentrancy_scope;
   AutoLock lock(mutex_);
   auto it = std::ranges::find(observers_, observer);
-  CHECK(it != observers_.end(), base::NotFatalUntil::M125);
+  CHECK(it != observers_.end());
   observers_.erase(it);
 
   // Stop the profiler if there are no more observers. Setting/resetting

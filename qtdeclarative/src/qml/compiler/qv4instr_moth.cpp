@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4instr_moth_p.h"
 #include <private/qv4compileddata_p.h>
@@ -106,14 +107,14 @@ QString dumpArguments(int argc, int argv, int nFormals)
 
 QString dumpBytecode(
         const char *code, int len, int nLocals, int nFormals, int /*startLine*/,
-        const QVector<CompiledData::CodeOffsetToLineAndStatement> &lineAndStatementNumberMapping)
+        const QList<CompiledData::CodeOffsetToLineAndStatement> &lineAndStatementNumberMapping)
 {
     return dumpBytecode(code, len, nLocals, nFormals, 0, len - 1, lineAndStatementNumberMapping);
 }
 
 QString dumpBytecode(
         const char *code, int len, int nLocals, int nFormals, int beginOffset, int endOffset,
-        const QVector<CompiledData::CodeOffsetToLineAndStatement> &lineAndStatementNumberMapping)
+        const QList<CompiledData::CodeOffsetToLineAndStatement> &lineAndStatementNumberMapping)
 {
     Q_ASSERT(beginOffset <= endOffset && 0 <= beginOffset && endOffset <= len);
 

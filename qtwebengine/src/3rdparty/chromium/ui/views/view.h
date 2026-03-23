@@ -30,7 +30,6 @@
 #include "build/build_config.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/accessibility/ax_enums.mojom.h"
-#include "ui/accessibility/ax_node_data.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/class_property.h"
 #include "ui/base/clipboard/clipboard_format_type.h"
@@ -66,6 +65,30 @@
 
 using ui::OSExchangeData;
 
+class BrowserView;
+class InfoBarView;
+class OmniboxPopupPresenter;
+class OmniboxPopupViewViews;
+class SadTabView;
+class StatusIconButtonLinux;
+
+namespace arc {
+class CustomTab;
+}
+
+namespace ash {
+class ArcNotificationContentView;
+class WideFrameView;
+}  // namespace ash
+
+namespace exo {
+class ShellSurfaceBase;
+}
+
+namespace eye_dropper {
+class EyeDropperView;
+}
+
 namespace gfx {
 class Canvas;
 class Insets;
@@ -73,6 +96,7 @@ class Insets;
 
 namespace ui {
 struct AXActionData;
+struct AXNodeData;
 class ColorProvider;
 class Compositor;
 class InputMethod;
@@ -96,11 +120,13 @@ class FocusTraversable;
 class LayoutProvider;
 class ScrollView;
 class SizeBounds;
+class SubmenuView;
 class ViewAccessibility;
 class ViewMaskLayer;
 class ViewObserver;
 class Widget;
 class WordLookupClient;
+FORWARD_DECLARE_TEST(WebViewUnitTest, CrashedOverlayView);
 
 namespace internal {
 class PreEventDispatchHandler;
@@ -296,6 +322,28 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   ADVANCED_MEMORY_SAFETY_CHECKS();
 
  public:
+  class OwnedByClientPassKey {
+   private:
+    // DO NOT ADD TO THIS LIST!
+    // These existing cases are "grandfathered in", but there shouldn't be more.
+    // See comments atop class.
+    friend class ::BrowserView;
+    friend class ::InfoBarView;
+    friend class ::OmniboxPopupPresenter;
+    friend class ::OmniboxPopupViewViews;
+    friend class ::SadTabView;
+    friend class ::StatusIconButtonLinux;
+    friend class ::arc::CustomTab;
+    friend class ::ash::ArcNotificationContentView;
+    friend class ::ash::WideFrameView;
+    friend class ::exo::ShellSurfaceBase;
+    friend class ::eye_dropper::EyeDropperView;
+    friend class SubmenuView;
+    FRIEND_TEST_ALL_PREFIXES(WebViewUnitTest, CrashedOverlayView);
+
+    OwnedByClientPassKey() = default;
+  };
+
   using PassKey = base::NonCopyablePassKey<View>;
   using Views = std::vector<raw_ptr<View, VectorExperimental>>;
 
@@ -417,7 +465,13 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   ~View() override;
 
   // By default a View is owned by its parent unless specified otherwise here.
-  void set_owned_by_client() { owned_by_client_ = true; }
+  //
+  // DEPRECATED: Using this makes it hard to reason about ownership. If this
+  // seems necessary, it's likely because the View in question is a heavyweight
+  // object that carries state; instead make Views lightweight, hold state in
+  // models, and do business logic in controllers.
+  // TODO(crbug.com/40115694): Remove.
+  void set_owned_by_client(OwnedByClientPassKey) { owned_by_client_ = true; }
   bool owned_by_client() const { return owned_by_client_; }
 
   // Tree operations -----------------------------------------------------------
@@ -451,6 +505,12 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // for new code.
   template <typename T>
   T* AddChildView(T* view) {
+    return AddChildViewRaw(view);
+  }
+  // TODO(crbug.com/40485510): Migration AddChildView => AddChildViewRaw in
+  // progress. When finished, AddChildView will be removed.
+  template <typename T>
+  T* AddChildViewRaw(T* view) {
     CHECK_CLASS_HAS_METADATA(T)
     AddChildViewAtImpl(view, children_.size());
     return view;
@@ -468,18 +528,14 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
     AddChildViewAtImpl(view.get(), children_.size());
     return view;
   }
-  template <typename T, base::RawPtrTraits Traits = base::RawPtrTraits::kEmpty>
-  T* AddChildViewAt(raw_ptr<T, Traits> view, size_t index) {
-    CHECK_CLASS_HAS_METADATA(T)
-    AddChildViewAtImpl(view.get(), index);
-    return view;
-  }
 
   // Moves |view| to the specified |index|. An |index| at least as large as that
   // of the last child moves the view to the end.
   void ReorderChildView(View* view, size_t index);
 
   // Removes |view| from this view. The view's parent will change to null.
+  // This does not delete |view|, even if |view| is owned by the views tree. Do
+  // not use this method, use RemoveChildViewT.
   void RemoveChildView(View* view);
 
   // Removes |view| from this view and transfers ownership back to the caller in
@@ -654,6 +710,16 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // will be invoked whenever the property changes.
   [[nodiscard]] base::CallbackListSubscription AddEnabledChangedCallback(
       PropertyChangedCallback callback);
+
+  // Returns whether the views subtree is enabled.
+  // "true" means: This view AND ALL ancestor views are enabled.
+  // "false" means: This view OR ANY of ancestor views is disabled.
+  bool GetEnabledInViewsSubtree() const;
+
+  // Adds a callback associated with the above |EnabledInViewsSubtree| property.
+  // The callback will be invoked whenever the property changes.
+  [[nodiscard]] base::CallbackListSubscription
+  AddEnabledInViewsSubtreeChangedCallback(PropertyChangedCallback callback);
 
   // Returns the child views ordered in reverse z-order. That is, views later in
   // the returned vector have a higher z-order (are painted later) than those
@@ -1253,6 +1319,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   gfx::PointF GetScreenLocationF(const ui::LocatedEvent& event) const override;
 
   // Overridden from ui::EventHandler:
+  void OnEvent(ui::Event* event) override;
   void OnKeyEvent(ui::KeyEvent* event) override;
   void OnMouseEvent(ui::MouseEvent* event) override;
   void OnScrollEvent(ui::ScrollEvent* event) override;
@@ -1282,6 +1349,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // enabled if the containing widget is visible and the view is enabled() and
   // IsDrawn()
   bool CanHandleAccelerators() const override;
+
+  base::span<const ui::Accelerator> GetAccelerators() const;
 
   // Focus ---------------------------------------------------------------------
 
@@ -1511,18 +1580,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Get the object managing the accessibility interface for this View.
   ViewAccessibility& GetViewAccessibility() const;
 
-  // Modifies `node_data` to reflect the current accessible state of this view.
-  // It accomplishes this by keeping the data up-to-date in response to the use
-  // of the accessible-property setters.
-  // NOTE: View authors should use the available property setters rather than
-  // overriding this function. Views which need to expose accessibility
-  // properties which are currently not supported View properties should ensure
-  // their view's `GetAccessibleNodeData` calls `GetAccessibleNodeData` on the
-  // parent class. This ensures that if an owning view customizes an accessible
-  // property, such as the name, role, or description, that customization is
-  // included in your view's `AXNodeData`.
-  virtual void GetAccessibleNodeData(ui::AXNodeData* node_data) {}
-
   // This method allows lazy loading of some accessibility attributes. It is
   // used only for accessibility attributes that can be expensive to compute
   // and/or heavy to store, such as long string attributes. Views that override
@@ -1634,13 +1691,21 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // view. Returns true on success, but note that the success/failure is
   // not propagated to the client that requested the action, since the
   // request is sometimes asynchronous. The right way to send a response is
-  // via NotifyAccessibilityEvent(), below.
+  // via NotifyAccessibilityEventDeprecated(), below.
   virtual bool HandleAccessibleAction(const ui::AXActionData& action_data);
 
   // Returns an instance of the native accessibility interface for this view.
   virtual gfx::NativeViewAccessible GetNativeViewAccessible();
 
-  // DEPRECATED: Use `ViewAccessibility::NotifyEvent` instead.
+  // DEPRECATED:
+  // In most situations, this function should not be called directly.
+  // There are a lot of events that are already sent automatically by
+  // the setters from ViewAccessibility. Soon, events will be generated
+  // automatically by the AXEventGenerator, using
+  // the AXNodeData cached in the View's ViewAccessibility.
+  // Some specific scenarios currently do require manual event generation,
+  // for example if its an event not being fired by the ViewAccessibility
+  // setters.
   //
   // Notifies assistive technology that an accessibility event has
   // occurred on this view, such as when the view is focused or when its
@@ -1648,8 +1713,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // cases where the view is a native control that's already sending a
   // native accessibility event and the duplicate event would cause
   // problems.
-  void NotifyAccessibilityEvent(ax::mojom::Event event_type,
-                                bool send_native_event);
+  void NotifyAccessibilityEventDeprecated(ax::mojom::Event event_type,
+                                          bool send_native_event);
 
   // Views may override this function to know when an accessibility
   // event is fired. This will be called by NotifyAccessibilityEvent.
@@ -1784,6 +1849,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // When SetVisible() changes the visibility of a view, this method is
   // invoked for that view as well as all the children recursively.
+  //
+  // If `starting_from` is null, this call is the result of the widget being
+  // shown or hidden. (Note that `Widget::IsVisible()` updates asynchronously
+  // and may not agree with `is_visible`.)
   virtual void VisibilityChanged(View* starting_from, bool is_visible);
 
   // This method is invoked when the view will soon no longer have a focus
@@ -1822,6 +1891,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Override to provide rendering in any part of the View's bounds. Typically
   // this is the "contents" of the view. If you override this method you will
   // have to call the subsequent OnPaint*() methods manually.
+  // Note that the paint operation is done with regards to the origin of the
+  // current view.
   virtual void OnPaint(gfx::Canvas* canvas);
 
   // Override to paint a background before any content is drawn. Typically this
@@ -2074,6 +2145,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Calls ViewHierarchyChanged() and notifies observers.
   void ViewHierarchyChangedImpl(const ViewHierarchyChangedDetails& details);
 
+  void SetWidget(Widget* widget);
+
   // Size and disposition ------------------------------------------------------
 
   // Call VisibilityChanged() recursively for all children.
@@ -2102,6 +2175,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   void SetLayoutManagerImpl(std::unique_ptr<LayoutManager> layout);
 
   void SetToDefaultFillLayout();
+
+  void UpdateEnabledInViewsSubtreeState();
 
   // Transformations -----------------------------------------------------------
 
@@ -2320,6 +2395,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Tree operations -----------------------------------------------------------
 
+  // The widget that this view is attached to. This is null if the view is not
+  // attached to a widget.
+  raw_ptr<Widget> widget_ = nullptr;
+
   // This view's parent.
   raw_ptr<View> parent_ = nullptr;
 
@@ -2346,6 +2425,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Whether this view is enabled.
   bool enabled_ = true;
+
+  // Whether this view is enabled in views subtree.
+  bool enabled_in_views_subtree_ = true;
 
   // When this flag is on, a View receives a mouse-enter and mouse-leave event
   // even if a descendant View is the event-recipient for the real mouse
@@ -2549,6 +2631,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
 namespace internal {
 
+// Helper to catch reentrant mutations while iterating over a view's children.
 #if DCHECK_IS_ON()
 class ScopedChildrenLock {
  public:
@@ -2565,8 +2648,8 @@ class ScopedChildrenLock {
 #else
 class ScopedChildrenLock {
  public:
-  explicit ScopedChildrenLock(const View* view);
-  ~ScopedChildrenLock();
+  explicit ScopedChildrenLock(const View* view) {}
+  ~ScopedChildrenLock() = default;
 };
 #endif
 

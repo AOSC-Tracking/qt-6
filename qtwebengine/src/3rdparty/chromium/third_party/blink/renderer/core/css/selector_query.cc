@@ -24,16 +24,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/css/selector_query.h"
 
 #include <memory>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/memory/ptr_util.h"
 #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
 #include "third_party/blink/renderer/core/css/check_pseudo_has_cache_scope.h"
@@ -164,9 +160,20 @@ static void CollectElementsByClassName(
     const AtomicString& class_name,
     const CSSSelector* selector,
     typename SelectorQueryTrait::OutputType& output) {
+  const Element::TinyBloomFilter filter = Element::FilterForString(class_name);
+
   SelectorChecker checker(SelectorChecker::kQueryingRules);
   for (Element& element : ElementTraversal::DescendantsOf(root_node)) {
     QUERY_STATS_INCREMENT(fast_class);
+    if (!element.CouldHaveClassWithPrecomputedFilter(filter)) {
+#if DCHECK_IS_ON()
+      DCHECK(!element.HasClassName(class_name))
+          << element << " should have contained class " << class_name
+          << ", Bloom bits on element are "
+          << element.AttributeOrClassBloomFilter();
+#endif
+      continue;
+    }
     if (!element.HasClassName(class_name)) {
       continue;
     }
@@ -267,7 +274,8 @@ static void CollectElementsByAttributeExact(
   const bool needs_synchronize_attribute =
       NeedsSynchronizeAttribute(selector_attr, is_html_doc);
 
-  const uint32_t filter = Element::FilterForAttribute(selector_attr);
+  const Element::TinyBloomFilter filter =
+      Element::FilterForAttribute(selector_attr);
 
   for (Element& element : ElementTraversal::DescendantsOf(root_node)) {
     QUERY_STATS_INCREMENT(fast_scan);
@@ -312,7 +320,7 @@ static void CollectElementsByAttributeExact(
       DCHECK(element.CouldHaveAttributeWithPrecomputedFilter(filter))
           << element << " should have contained attribute " << selector_attr
           << ", Bloom bits on element are "
-          << element.AttributeBloomFilterForDebug();
+          << element.AttributeOrClassBloomFilter();
 #endif
 
       if (AttributeValueMatchesExact(attribute_item, selector_value,
@@ -431,8 +439,8 @@ bool SelectorQuery::SelectorListMatches(ContainerNode& root_node,
                                         Element& element) const {
   SelectorChecker checker(SelectorChecker::kQueryingRules);
   for (unsigned offset : selector_start_offsets_) {
-    if (SelectorMatches(*(selector_list_->First() + offset), element, root_node,
-                        checker)) {
+    if (SelectorMatches(UNSAFE_TODO(*(selector_list_->First() + offset)),
+                        element, root_node, checker)) {
       return true;
     }
   }
@@ -564,12 +572,9 @@ void SelectorQuery::Execute(
         DCHECK_EQ(first_selector.TagQName().NamespaceURI(), g_null_atom);
         break;
       case CSSSelector::kAttributeExact:
-        if (RuntimeEnabledFeatures::FastPathSingleSelectorExactMatchEnabled()) {
-          CollectElementsByAttributeExact<SelectorQueryTrait>(
-              root_node, first_selector, output);
-          return;
-        }
-        break;
+        CollectElementsByAttributeExact<SelectorQueryTrait>(
+            root_node, first_selector, output);
+        return;
       default:
         break;  // If we need another fast path, add here.
     }
@@ -644,7 +649,7 @@ SelectorQuery* SelectorQueryCache::Add(const AtomicString& selectors,
   if (selector_vector.empty()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
-        "'" + selectors + "' is not a valid selector.");
+        StrCat({"'", selectors, "' is not a valid selector."}));
     return nullptr;
   }
 

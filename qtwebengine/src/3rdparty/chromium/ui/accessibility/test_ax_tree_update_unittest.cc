@@ -4,6 +4,7 @@
 
 #include "ui/accessibility/test_ax_tree_update.h"
 
+#include "base/strings/stringprintf.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -75,7 +76,7 @@ std::pair<std::string, std::string> ConvertTo(
               "aria_notification_interrupt_properties=pending"};
     case ax::mojom::IntListAttribute::kAriaNotificationPriorityProperties:
       return {"kAriaNotificationPriorityProperties,1",
-              "aria_notification_priority_properties=important"};
+              "aria_notification_priority_properties=high"};
   }
 }
 

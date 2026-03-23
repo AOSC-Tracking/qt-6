@@ -6,8 +6,10 @@
 
 #include <utility>
 
+#include "base/debug/debugger.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "media/cdm/cdm_module.h"
@@ -23,6 +25,11 @@
 #endif
 
 namespace media {
+
+namespace {
+const char kUmaNameForDebuggerAttached[] =
+    "Media.EME.CdmProcessDebuggerAttached";
+}
 
 CdmServiceBroker::CdmServiceBroker(
     std::unique_ptr<CdmService::Client> client,
@@ -98,6 +105,15 @@ bool CdmServiceBroker::InitializeAndEnsureSandboxed(
 #endif  // BUILDFLAG(IS_MAC)
 
   CdmModule* instance = CdmModule::GetInstance();
+
+  // Need to call `BeingDebugged()` before sealing sandbox for Mac, otherwise
+  // behavior does not work.
+  if (base::debug::BeingDebugged()) {
+    instance->SetDebuggerAttached(true);
+    base::UmaHistogramBoolean(kUmaNameForDebuggerAttached, true);
+  } else {
+    base::UmaHistogramBoolean(kUmaNameForDebuggerAttached, false);
+  }
 
 #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
   std::vector<CdmHostFilePath> cdm_host_file_paths;

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qaccessiblemenu_p.h"
 
@@ -146,6 +147,11 @@ int QAccessibleMenuBar::indexOfChild(const QAccessibleInterface *child) const
 
 #endif // QT_CONFIG(menubar)
 
+/*!
+    \class QAccessibleMenuItem
+    \inmodule QtWidgets
+    \internal
+*/
 QAccessibleMenuItem::QAccessibleMenuItem(QWidget *owner, QAction *action)
 : m_action(action), m_owner(owner)
 {

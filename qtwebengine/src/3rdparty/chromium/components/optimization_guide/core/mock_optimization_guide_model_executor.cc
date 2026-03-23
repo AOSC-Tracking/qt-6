@@ -48,9 +48,11 @@ void MockSession::Delegate(OptimizationGuideModelExecutor::Session* impl) {
   ON_CALL(*this, GetTokenLimits).WillByDefault([impl]() -> const TokenLimits& {
     return impl->GetTokenLimits();
   });
-  ON_CALL(*this, SetInput).WillByDefault([impl](MultimodalMessage input) {
-    impl->SetInput(std::move(input));
-  });
+  ON_CALL(*this, SetInput)
+      .WillByDefault(
+          [impl](MultimodalMessage input, SetInputCallback callback) {
+            impl->SetInput(std::move(input), std::move(callback));
+          });
   ON_CALL(*this, AddContext).WillByDefault([impl](const auto& input) {
     impl->AddContext(input);
   });
@@ -61,16 +63,21 @@ void MockSession::Delegate(OptimizationGuideModelExecutor::Session* impl) {
       .WillByDefault([impl](const auto& input, auto callback) {
         impl->ExecuteModel(input, std::move(callback));
       });
+  ON_CALL(*this, ExecuteModelWithResponseConstraint)
+      .WillByDefault([impl](const auto& input, auto constraint, auto callback) {
+        impl->ExecuteModelWithResponseConstraint(input, std::move(constraint),
+                                                 std::move(callback));
+      });
   ON_CALL(*this, GetSizeInTokens)
       .WillByDefault([impl](const auto& input, auto callback) {
         impl->GetSizeInTokens(input, std::move(callback));
       });
   ON_CALL(*this, GetExecutionInputSizeInTokens)
-      .WillByDefault([impl](const auto& input, auto callback) {
+      .WillByDefault([impl](MultimodalMessageReadView input, auto callback) {
         impl->GetExecutionInputSizeInTokens(input, std::move(callback));
       });
   ON_CALL(*this, GetContextSizeInTokens)
-      .WillByDefault([impl](const auto& input, auto callback) {
+      .WillByDefault([impl](MultimodalMessageReadView input, auto callback) {
         impl->GetContextSizeInTokens(input, std::move(callback));
       });
   ON_CALL(*this, GetSamplingParams).WillByDefault([impl]() {
@@ -79,6 +86,10 @@ void MockSession::Delegate(OptimizationGuideModelExecutor::Session* impl) {
   ON_CALL(*this, GetOnDeviceFeatureMetadata)
       .WillByDefault([impl]() -> const proto::Any& {
         return impl->GetOnDeviceFeatureMetadata();
+      });
+  ON_CALL(*this, SetPriority)
+      .WillByDefault([impl](on_device_model::mojom::Priority priority) {
+        impl->SetPriority(priority);
       });
 }
 

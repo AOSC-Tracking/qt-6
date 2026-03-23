@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef TYPE_CONVERSION_H
 #define TYPE_CONVERSION_H
@@ -20,7 +21,6 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
-#include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "url/gurl.h"
@@ -261,8 +261,6 @@ inline QStringList fromVector(const std::vector<std::u16string> &vector)
 }
 
 QList<QSslCertificate> toCertificateChain(net::X509Certificate *certificate);
-
-Qt::InputMethodHints toQtInputMethodHints(ui::TextInputType inputType);
 
 } // namespace QtWebEngineCore
 

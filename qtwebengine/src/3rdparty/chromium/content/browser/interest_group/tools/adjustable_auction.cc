@@ -13,6 +13,7 @@
 #include "base/functional/bind.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/gtest_util.h"
@@ -25,7 +26,9 @@
 #include "content/browser/interest_group/ad_auction_service_impl.h"
 #include "content/browser/interest_group/interest_group_manager_impl.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
@@ -38,8 +41,14 @@
 #include "content/shell/browser/shell.h"
 #include "content/shell/common/shell_switches.h"
 #include "net/dns/mock_host_resolver.h"
+#include "services/network/public/cpp/features.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/interest_group/test_interest_group_builder.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "base/win/win_util.h"
+#endif  // BUILDFLAG(IS_WIN)
 
 namespace content {
 
@@ -248,7 +257,7 @@ class AdjustableAuction : public ContentBrowserTest {
   AdjustableAuction() {
     feature_list_.InitWithFeatures(
         /*enabled_features=*/
-        {blink::features::kInterestGroupStorage,
+        {network::features::kInterestGroupStorage,
          blink::features::kAdInterestGroupAPI, blink::features::kFledge,
          blink::features::kAllowURNsInIframes,
          blink::features::kFledgeDirectFromSellerSignalsHeaderAdSlot},
@@ -471,7 +480,7 @@ IN_PROC_BROWSER_TEST_F(AdjustableAuction, RunAdjustableAuction) {
   histogram_tester.ExpectBucketCount(
       "Ads.InterestGroup.Auction.NumInterestGroups",
       kInterestGroupsPerOwner * kOwners * kSellers, kAuctions);
-  histogram_tester.ExpectTotalCount("Ads.InterestGroup.Auction.Result",
+  histogram_tester.ExpectTotalCount("Ads.InterestGroup.Auction.Result2",
                                     kAuctions);
   histogram_tester.ExpectTotalCount(
       "Ads.InterestGroup.Auction.AuctionWithWinnerTime", kAuctions);

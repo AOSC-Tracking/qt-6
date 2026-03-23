@@ -23,6 +23,9 @@
 
 // NOLINTBEGIN
 #include "vk_dispatch_table_helper.h"
+
+#include "vk_extension_helper.h"
+
 static VKAPI_ATTR VkResult VKAPI_CALL StubBindBufferMemory2(VkDevice, uint32_t, const VkBindBufferMemoryInfo*) {
     return VK_SUCCESS;
 }
@@ -567,6 +570,9 @@ static VKAPI_ATTR void VKAPI_CALL StubGetDeviceImageSubresourceLayoutKHR(VkDevic
                                                                          VkSubresourceLayout2*) {}
 static VKAPI_ATTR void VKAPI_CALL StubGetImageSubresourceLayout2KHR(VkDevice, VkImage, const VkImageSubresource2*,
                                                                     VkSubresourceLayout2*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubWaitForPresent2KHR(VkDevice, VkSwapchainKHR, const VkPresentWait2InfoKHR*) {
+    return VK_SUCCESS;
+}
 static VKAPI_ATTR VkResult VKAPI_CALL StubCreatePipelineBinariesKHR(VkDevice, const VkPipelineBinaryCreateInfoKHR*,
                                                                     const VkAllocationCallbacks*, VkPipelineBinaryHandlesInfoKHR*) {
     return VK_SUCCESS;
@@ -581,6 +587,9 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubGetPipelineBinaryDataKHR(VkDevice, con
 }
 static VKAPI_ATTR VkResult VKAPI_CALL StubReleaseCapturedPipelineDataKHR(VkDevice, const VkReleaseCapturedPipelineDataInfoKHR*,
                                                                          const VkAllocationCallbacks*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL StubReleaseSwapchainImagesKHR(VkDevice, const VkReleaseSwapchainImagesInfoKHR*) {
     return VK_SUCCESS;
 }
 static VKAPI_ATTR VkResult VKAPI_CALL StubGetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice, uint32_t*,
@@ -976,7 +985,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubTransitionImageLayoutEXT(VkDevice, uin
 }
 static VKAPI_ATTR void VKAPI_CALL StubGetImageSubresourceLayout2EXT(VkDevice, VkImage, const VkImageSubresource2*,
                                                                     VkSubresourceLayout2*) {}
-static VKAPI_ATTR VkResult VKAPI_CALL StubReleaseSwapchainImagesEXT(VkDevice, const VkReleaseSwapchainImagesInfoEXT*) {
+static VKAPI_ATTR VkResult VKAPI_CALL StubReleaseSwapchainImagesEXT(VkDevice, const VkReleaseSwapchainImagesInfoKHR*) {
     return VK_SUCCESS;
 }
 static VKAPI_ATTR void VKAPI_CALL StubGetGeneratedCommandsMemoryRequirementsNV(VkDevice,
@@ -1006,6 +1015,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubSetPrivateDataEXT(VkDevice, VkObjectTy
     return VK_SUCCESS;
 }
 static VKAPI_ATTR void VKAPI_CALL StubGetPrivateDataEXT(VkDevice, VkObjectType, uint64_t, VkPrivateDataSlot, uint64_t*) {}
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 static VKAPI_ATTR VkResult VKAPI_CALL StubCreateCudaModuleNV(VkDevice, const VkCudaModuleCreateInfoNV*,
                                                              const VkAllocationCallbacks*, VkCudaModuleNV*) {
     return VK_SUCCESS;
@@ -1018,6 +1028,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubCreateCudaFunctionNV(VkDevice, const V
 static VKAPI_ATTR void VKAPI_CALL StubDestroyCudaModuleNV(VkDevice, VkCudaModuleNV, const VkAllocationCallbacks*) {}
 static VKAPI_ATTR void VKAPI_CALL StubDestroyCudaFunctionNV(VkDevice, VkCudaFunctionNV, const VkAllocationCallbacks*) {}
 static VKAPI_ATTR void VKAPI_CALL StubCmdCudaLaunchKernelNV(VkCommandBuffer, const VkCudaLaunchInfoNV*) {}
+#endif  // VK_ENABLE_BETA_EXTENSIONS
+static VKAPI_ATTR void VKAPI_CALL StubCmdDispatchTileQCOM(VkCommandBuffer, const VkDispatchTileInfoQCOM*) {}
+static VKAPI_ATTR void VKAPI_CALL StubCmdBeginPerTileExecutionQCOM(VkCommandBuffer, const VkPerTileBeginInfoQCOM*) {}
+static VKAPI_ATTR void VKAPI_CALL StubCmdEndPerTileExecutionQCOM(VkCommandBuffer, const VkPerTileEndInfoQCOM*) {}
 #ifdef VK_USE_PLATFORM_METAL_EXT
 static VKAPI_ATTR void VKAPI_CALL StubExportMetalObjectsEXT(VkDevice, VkExportMetalObjectsInfoEXT*) {}
 #endif  // VK_USE_PLATFORM_METAL_EXT
@@ -1231,6 +1245,36 @@ static VKAPI_ATTR void VKAPI_CALL StubCmdSetCoverageModulationTableNV(VkCommandB
 static VKAPI_ATTR void VKAPI_CALL StubCmdSetShadingRateImageEnableNV(VkCommandBuffer, VkBool32) {}
 static VKAPI_ATTR void VKAPI_CALL StubCmdSetRepresentativeFragmentTestEnableNV(VkCommandBuffer, VkBool32) {}
 static VKAPI_ATTR void VKAPI_CALL StubCmdSetCoverageReductionModeNV(VkCommandBuffer, VkCoverageReductionModeNV) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubCreateTensorARM(VkDevice, const VkTensorCreateInfoARM*, const VkAllocationCallbacks*,
+                                                          VkTensorARM*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL StubDestroyTensorARM(VkDevice, VkTensorARM, const VkAllocationCallbacks*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubCreateTensorViewARM(VkDevice, const VkTensorViewCreateInfoARM*,
+                                                              const VkAllocationCallbacks*, VkTensorViewARM*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL StubDestroyTensorViewARM(VkDevice, VkTensorViewARM, const VkAllocationCallbacks*) {}
+static VKAPI_ATTR void VKAPI_CALL StubGetTensorMemoryRequirementsARM(VkDevice, const VkTensorMemoryRequirementsInfoARM*,
+                                                                     VkMemoryRequirements2*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubBindTensorMemoryARM(VkDevice, uint32_t, const VkBindTensorMemoryInfoARM*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL StubGetDeviceTensorMemoryRequirementsARM(VkDevice, const VkDeviceTensorMemoryRequirementsARM*,
+                                                                           VkMemoryRequirements2*) {}
+static VKAPI_ATTR void VKAPI_CALL StubCmdCopyTensorARM(VkCommandBuffer, const VkCopyTensorInfoARM*) {}
+static VKAPI_ATTR void VKAPI_CALL StubGetPhysicalDeviceExternalTensorPropertiesARM(VkPhysicalDevice,
+                                                                                   const VkPhysicalDeviceExternalTensorInfoARM*,
+                                                                                   VkExternalTensorPropertiesARM*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetTensorOpaqueCaptureDescriptorDataARM(VkDevice,
+                                                                                  const VkTensorCaptureDescriptorDataInfoARM*,
+                                                                                  void*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL
+StubGetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice, const VkTensorViewCaptureDescriptorDataInfoARM*, void*) {
+    return VK_SUCCESS;
+}
 static VKAPI_ATTR void VKAPI_CALL StubGetShaderModuleIdentifierEXT(VkDevice, VkShaderModule, VkShaderModuleIdentifierEXT*) {}
 static VKAPI_ATTR void VKAPI_CALL StubGetShaderModuleCreateInfoIdentifierEXT(VkDevice, const VkShaderModuleCreateInfo*,
                                                                              VkShaderModuleIdentifierEXT*) {}
@@ -1289,6 +1333,47 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubLatencySleepNV(VkDevice, VkSwapchainKH
 static VKAPI_ATTR void VKAPI_CALL StubSetLatencyMarkerNV(VkDevice, VkSwapchainKHR, const VkSetLatencyMarkerInfoNV*) {}
 static VKAPI_ATTR void VKAPI_CALL StubGetLatencyTimingsNV(VkDevice, VkSwapchainKHR, VkGetLatencyMarkerInfoNV*) {}
 static VKAPI_ATTR void VKAPI_CALL StubQueueNotifyOutOfBandNV(VkQueue, const VkOutOfBandQueueTypeInfoNV*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubCreateDataGraphPipelinesARM(VkDevice, VkDeferredOperationKHR, VkPipelineCache, uint32_t,
+                                                                      const VkDataGraphPipelineCreateInfoARM*,
+                                                                      const VkAllocationCallbacks*, VkPipeline*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL StubCreateDataGraphPipelineSessionARM(VkDevice,
+                                                                            const VkDataGraphPipelineSessionCreateInfoARM*,
+                                                                            const VkAllocationCallbacks*,
+                                                                            VkDataGraphPipelineSessionARM*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL
+StubGetDataGraphPipelineSessionBindPointRequirementsARM(VkDevice, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM*,
+                                                        uint32_t*, VkDataGraphPipelineSessionBindPointRequirementARM*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL StubGetDataGraphPipelineSessionMemoryRequirementsARM(
+    VkDevice, const VkDataGraphPipelineSessionMemoryRequirementsInfoARM*, VkMemoryRequirements2*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL
+StubBindDataGraphPipelineSessionMemoryARM(VkDevice, uint32_t, const VkBindDataGraphPipelineSessionMemoryInfoARM*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL StubDestroyDataGraphPipelineSessionARM(VkDevice, VkDataGraphPipelineSessionARM,
+                                                                         const VkAllocationCallbacks*) {}
+static VKAPI_ATTR void VKAPI_CALL StubCmdDispatchDataGraphARM(VkCommandBuffer, VkDataGraphPipelineSessionARM,
+                                                              const VkDataGraphPipelineDispatchInfoARM*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetDataGraphPipelineAvailablePropertiesARM(VkDevice, const VkDataGraphPipelineInfoARM*,
+                                                                                     uint32_t*, VkDataGraphPipelinePropertyARM*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetDataGraphPipelinePropertiesARM(VkDevice, const VkDataGraphPipelineInfoARM*, uint32_t,
+                                                                            VkDataGraphPipelinePropertyQueryResultARM*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(VkPhysicalDevice, uint32_t, uint32_t*,
+                                                                                             VkQueueFamilyDataGraphPropertiesARM*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL StubGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+    VkPhysicalDevice, const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM*,
+    VkQueueFamilyDataGraphProcessingEnginePropertiesARM*) {}
 static VKAPI_ATTR void VKAPI_CALL StubCmdSetAttachmentFeedbackLoopEnableEXT(VkCommandBuffer, VkImageAspectFlags) {}
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
 static VKAPI_ATTR VkResult VKAPI_CALL StubGetScreenBufferPropertiesQNX(VkDevice, const struct _screen_buffer*,
@@ -1296,6 +1381,15 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubGetScreenBufferPropertiesQNX(VkDevice,
     return VK_SUCCESS;
 }
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+static VKAPI_ATTR void VKAPI_CALL StubCmdBindTileMemoryQCOM(VkCommandBuffer, const VkTileMemoryBindInfoQCOM*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubCreateExternalComputeQueueNV(VkDevice, const VkExternalComputeQueueCreateInfoNV*,
+                                                                       const VkAllocationCallbacks*, VkExternalComputeQueueNV*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL StubDestroyExternalComputeQueueNV(VkDevice, VkExternalComputeQueueNV,
+                                                                    const VkAllocationCallbacks*) {}
+static VKAPI_ATTR void VKAPI_CALL StubGetExternalComputeQueueDataNV(VkExternalComputeQueueNV, VkExternalComputeQueueDataParamsNV*,
+                                                                    void*) {}
 static VKAPI_ATTR void VKAPI_CALL StubGetClusterAccelerationStructureBuildSizesNV(VkDevice,
                                                                                   const VkClusterAccelerationStructureInputInfoNV*,
                                                                                   VkAccelerationStructureBuildSizesInfoKHR*) {}
@@ -1329,6 +1423,12 @@ static VKAPI_ATTR void VKAPI_CALL StubUpdateIndirectExecutionSetPipelineEXT(VkDe
                                                                             const VkWriteIndirectExecutionSetPipelineEXT*) {}
 static VKAPI_ATTR void VKAPI_CALL StubUpdateIndirectExecutionSetShaderEXT(VkDevice, VkIndirectExecutionSetEXT, uint32_t,
                                                                           const VkWriteIndirectExecutionSetShaderEXT*) {}
+#ifdef VK_USE_PLATFORM_OHOS
+static VKAPI_ATTR VkResult VKAPI_CALL StubCreateSurfaceOHOS(VkInstance, const VkSurfaceCreateInfoOHOS*,
+                                                            const VkAllocationCallbacks*, VkSurfaceKHR*) {
+    return VK_SUCCESS;
+}
+#endif  // VK_USE_PLATFORM_OHOS
 static VKAPI_ATTR VkResult VKAPI_CALL StubGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
     VkPhysicalDevice, uint32_t*, VkCooperativeMatrixFlexibleDimensionsPropertiesNV*) {
     return VK_SUCCESS;
@@ -1342,6 +1442,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubGetMemoryMetalHandlePropertiesEXT(VkDe
     return VK_SUCCESS;
 }
 #endif  // VK_USE_PLATFORM_METAL_EXT
+static VKAPI_ATTR void VKAPI_CALL StubCmdEndRendering2EXT(VkCommandBuffer, const VkRenderingEndInfoEXT*) {}
 static VKAPI_ATTR VkResult VKAPI_CALL StubCreateAccelerationStructureKHR(VkDevice, const VkAccelerationStructureCreateInfoKHR*,
                                                                          const VkAllocationCallbacks*,
                                                                          VkAccelerationStructureKHR*) {
@@ -1618,11 +1719,13 @@ const auto& GetApiExtensionMap() {
         {"vkGetRenderingAreaGranularityKHR", {vvl::Extension::_VK_KHR_maintenance5}},
         {"vkGetDeviceImageSubresourceLayoutKHR", {vvl::Extension::_VK_KHR_maintenance5}},
         {"vkGetImageSubresourceLayout2KHR", {vvl::Extension::_VK_KHR_maintenance5}},
+        {"vkWaitForPresent2KHR", {vvl::Extension::_VK_KHR_present_wait2}},
         {"vkCreatePipelineBinariesKHR", {vvl::Extension::_VK_KHR_pipeline_binary}},
         {"vkDestroyPipelineBinaryKHR", {vvl::Extension::_VK_KHR_pipeline_binary}},
         {"vkGetPipelineKeyKHR", {vvl::Extension::_VK_KHR_pipeline_binary}},
         {"vkGetPipelineBinaryDataKHR", {vvl::Extension::_VK_KHR_pipeline_binary}},
         {"vkReleaseCapturedPipelineDataKHR", {vvl::Extension::_VK_KHR_pipeline_binary}},
+        {"vkReleaseSwapchainImagesKHR", {vvl::Extension::_VK_KHR_swapchain_maintenance1}},
         {"vkCmdSetLineStippleKHR", {vvl::Extension::_VK_KHR_line_rasterization}},
         {"vkGetCalibratedTimestampsKHR", {vvl::Extension::_VK_KHR_calibrated_timestamps}},
         {"vkCmdBindDescriptorSets2KHR", {vvl::Extension::_VK_KHR_maintenance6}},
@@ -1771,6 +1874,9 @@ const auto& GetApiExtensionMap() {
         {"vkDestroyCudaModuleNV", {vvl::Extension::_VK_NV_cuda_kernel_launch}},
         {"vkDestroyCudaFunctionNV", {vvl::Extension::_VK_NV_cuda_kernel_launch}},
         {"vkCmdCudaLaunchKernelNV", {vvl::Extension::_VK_NV_cuda_kernel_launch}},
+        {"vkCmdDispatchTileQCOM", {vvl::Extension::_VK_QCOM_tile_shading}},
+        {"vkCmdBeginPerTileExecutionQCOM", {vvl::Extension::_VK_QCOM_tile_shading}},
+        {"vkCmdEndPerTileExecutionQCOM", {vvl::Extension::_VK_QCOM_tile_shading}},
         {"vkExportMetalObjectsEXT", {vvl::Extension::_VK_EXT_metal_objects}},
         {"vkGetDescriptorSetLayoutSizeEXT", {vvl::Extension::_VK_EXT_descriptor_buffer}},
         {"vkGetDescriptorSetLayoutBindingOffsetEXT", {vvl::Extension::_VK_EXT_descriptor_buffer}},
@@ -1886,6 +1992,16 @@ const auto& GetApiExtensionMap() {
          {vvl::Extension::_VK_EXT_extended_dynamic_state3, vvl::Extension::_VK_EXT_shader_object}},
         {"vkCmdSetCoverageReductionModeNV",
          {vvl::Extension::_VK_EXT_extended_dynamic_state3, vvl::Extension::_VK_EXT_shader_object}},
+        {"vkCreateTensorARM", {vvl::Extension::_VK_ARM_tensors}},
+        {"vkDestroyTensorARM", {vvl::Extension::_VK_ARM_tensors}},
+        {"vkCreateTensorViewARM", {vvl::Extension::_VK_ARM_tensors}},
+        {"vkDestroyTensorViewARM", {vvl::Extension::_VK_ARM_tensors}},
+        {"vkGetTensorMemoryRequirementsARM", {vvl::Extension::_VK_ARM_tensors}},
+        {"vkBindTensorMemoryARM", {vvl::Extension::_VK_ARM_tensors}},
+        {"vkGetDeviceTensorMemoryRequirementsARM", {vvl::Extension::_VK_ARM_tensors}},
+        {"vkCmdCopyTensorARM", {vvl::Extension::_VK_ARM_tensors}},
+        {"vkGetTensorOpaqueCaptureDescriptorDataARM", {vvl::Extension::_VK_ARM_tensors}},
+        {"vkGetTensorViewOpaqueCaptureDescriptorDataARM", {vvl::Extension::_VK_ARM_tensors}},
         {"vkGetShaderModuleIdentifierEXT", {vvl::Extension::_VK_EXT_shader_module_identifier}},
         {"vkGetShaderModuleCreateInfoIdentifierEXT", {vvl::Extension::_VK_EXT_shader_module_identifier}},
         {"vkCreateOpticalFlowSessionNV", {vvl::Extension::_VK_NV_optical_flow}},
@@ -1907,8 +2023,21 @@ const auto& GetApiExtensionMap() {
         {"vkSetLatencyMarkerNV", {vvl::Extension::_VK_NV_low_latency2}},
         {"vkGetLatencyTimingsNV", {vvl::Extension::_VK_NV_low_latency2}},
         {"vkQueueNotifyOutOfBandNV", {vvl::Extension::_VK_NV_low_latency2}},
+        {"vkCreateDataGraphPipelinesARM", {vvl::Extension::_VK_ARM_data_graph}},
+        {"vkCreateDataGraphPipelineSessionARM", {vvl::Extension::_VK_ARM_data_graph}},
+        {"vkGetDataGraphPipelineSessionBindPointRequirementsARM", {vvl::Extension::_VK_ARM_data_graph}},
+        {"vkGetDataGraphPipelineSessionMemoryRequirementsARM", {vvl::Extension::_VK_ARM_data_graph}},
+        {"vkBindDataGraphPipelineSessionMemoryARM", {vvl::Extension::_VK_ARM_data_graph}},
+        {"vkDestroyDataGraphPipelineSessionARM", {vvl::Extension::_VK_ARM_data_graph}},
+        {"vkCmdDispatchDataGraphARM", {vvl::Extension::_VK_ARM_data_graph}},
+        {"vkGetDataGraphPipelineAvailablePropertiesARM", {vvl::Extension::_VK_ARM_data_graph}},
+        {"vkGetDataGraphPipelinePropertiesARM", {vvl::Extension::_VK_ARM_data_graph}},
         {"vkCmdSetAttachmentFeedbackLoopEnableEXT", {vvl::Extension::_VK_EXT_attachment_feedback_loop_dynamic_state}},
         {"vkGetScreenBufferPropertiesQNX", {vvl::Extension::_VK_QNX_external_memory_screen_buffer}},
+        {"vkCmdBindTileMemoryQCOM", {vvl::Extension::_VK_QCOM_tile_memory_heap}},
+        {"vkCreateExternalComputeQueueNV", {vvl::Extension::_VK_NV_external_compute_queue}},
+        {"vkDestroyExternalComputeQueueNV", {vvl::Extension::_VK_NV_external_compute_queue}},
+        {"vkGetExternalComputeQueueDataNV", {vvl::Extension::_VK_NV_external_compute_queue}},
         {"vkGetClusterAccelerationStructureBuildSizesNV", {vvl::Extension::_VK_NV_cluster_acceleration_structure}},
         {"vkCmdBuildClusterAccelerationStructureIndirectNV", {vvl::Extension::_VK_NV_cluster_acceleration_structure}},
         {"vkGetPartitionedAccelerationStructuresBuildSizesNV", {vvl::Extension::_VK_NV_partitioned_acceleration_structure}},
@@ -1924,6 +2053,7 @@ const auto& GetApiExtensionMap() {
         {"vkUpdateIndirectExecutionSetShaderEXT", {vvl::Extension::_VK_EXT_device_generated_commands}},
         {"vkGetMemoryMetalHandleEXT", {vvl::Extension::_VK_EXT_external_memory_metal}},
         {"vkGetMemoryMetalHandlePropertiesEXT", {vvl::Extension::_VK_EXT_external_memory_metal}},
+        {"vkCmdEndRendering2EXT", {vvl::Extension::_VK_EXT_fragment_density_map_offset}},
         {"vkCreateAccelerationStructureKHR", {vvl::Extension::_VK_KHR_acceleration_structure}},
         {"vkDestroyAccelerationStructureKHR", {vvl::Extension::_VK_KHR_acceleration_structure}},
         {"vkCmdBuildAccelerationStructuresKHR", {vvl::Extension::_VK_KHR_acceleration_structure}},
@@ -2937,6 +3067,10 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
     if (table->GetImageSubresourceLayout2KHR == nullptr) {
         table->GetImageSubresourceLayout2KHR = (PFN_vkGetImageSubresourceLayout2KHR)StubGetImageSubresourceLayout2KHR;
     }
+    table->WaitForPresent2KHR = (PFN_vkWaitForPresent2KHR)gpa(device, "vkWaitForPresent2KHR");
+    if (table->WaitForPresent2KHR == nullptr) {
+        table->WaitForPresent2KHR = (PFN_vkWaitForPresent2KHR)StubWaitForPresent2KHR;
+    }
     table->CreatePipelineBinariesKHR = (PFN_vkCreatePipelineBinariesKHR)gpa(device, "vkCreatePipelineBinariesKHR");
     if (table->CreatePipelineBinariesKHR == nullptr) {
         table->CreatePipelineBinariesKHR = (PFN_vkCreatePipelineBinariesKHR)StubCreatePipelineBinariesKHR;
@@ -2956,6 +3090,10 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
     table->ReleaseCapturedPipelineDataKHR = (PFN_vkReleaseCapturedPipelineDataKHR)gpa(device, "vkReleaseCapturedPipelineDataKHR");
     if (table->ReleaseCapturedPipelineDataKHR == nullptr) {
         table->ReleaseCapturedPipelineDataKHR = (PFN_vkReleaseCapturedPipelineDataKHR)StubReleaseCapturedPipelineDataKHR;
+    }
+    table->ReleaseSwapchainImagesKHR = (PFN_vkReleaseSwapchainImagesKHR)gpa(device, "vkReleaseSwapchainImagesKHR");
+    if (table->ReleaseSwapchainImagesKHR == nullptr) {
+        table->ReleaseSwapchainImagesKHR = (PFN_vkReleaseSwapchainImagesKHR)StubReleaseSwapchainImagesKHR;
     }
     table->CmdSetLineStippleKHR = (PFN_vkCmdSetLineStippleKHR)gpa(device, "vkCmdSetLineStippleKHR");
     if (table->CmdSetLineStippleKHR == nullptr) {
@@ -3580,6 +3718,7 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
     if (table->GetPrivateDataEXT == nullptr) {
         table->GetPrivateDataEXT = (PFN_vkGetPrivateDataEXT)StubGetPrivateDataEXT;
     }
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CreateCudaModuleNV = (PFN_vkCreateCudaModuleNV)gpa(device, "vkCreateCudaModuleNV");
     if (table->CreateCudaModuleNV == nullptr) {
         table->CreateCudaModuleNV = (PFN_vkCreateCudaModuleNV)StubCreateCudaModuleNV;
@@ -3603,6 +3742,19 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
     table->CmdCudaLaunchKernelNV = (PFN_vkCmdCudaLaunchKernelNV)gpa(device, "vkCmdCudaLaunchKernelNV");
     if (table->CmdCudaLaunchKernelNV == nullptr) {
         table->CmdCudaLaunchKernelNV = (PFN_vkCmdCudaLaunchKernelNV)StubCmdCudaLaunchKernelNV;
+    }
+#endif  // VK_ENABLE_BETA_EXTENSIONS
+    table->CmdDispatchTileQCOM = (PFN_vkCmdDispatchTileQCOM)gpa(device, "vkCmdDispatchTileQCOM");
+    if (table->CmdDispatchTileQCOM == nullptr) {
+        table->CmdDispatchTileQCOM = (PFN_vkCmdDispatchTileQCOM)StubCmdDispatchTileQCOM;
+    }
+    table->CmdBeginPerTileExecutionQCOM = (PFN_vkCmdBeginPerTileExecutionQCOM)gpa(device, "vkCmdBeginPerTileExecutionQCOM");
+    if (table->CmdBeginPerTileExecutionQCOM == nullptr) {
+        table->CmdBeginPerTileExecutionQCOM = (PFN_vkCmdBeginPerTileExecutionQCOM)StubCmdBeginPerTileExecutionQCOM;
+    }
+    table->CmdEndPerTileExecutionQCOM = (PFN_vkCmdEndPerTileExecutionQCOM)gpa(device, "vkCmdEndPerTileExecutionQCOM");
+    if (table->CmdEndPerTileExecutionQCOM == nullptr) {
+        table->CmdEndPerTileExecutionQCOM = (PFN_vkCmdEndPerTileExecutionQCOM)StubCmdEndPerTileExecutionQCOM;
     }
 #ifdef VK_USE_PLATFORM_METAL_EXT
     table->ExportMetalObjectsEXT = (PFN_vkExportMetalObjectsEXT)gpa(device, "vkExportMetalObjectsEXT");
@@ -4041,6 +4193,52 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
     if (table->CmdSetCoverageReductionModeNV == nullptr) {
         table->CmdSetCoverageReductionModeNV = (PFN_vkCmdSetCoverageReductionModeNV)StubCmdSetCoverageReductionModeNV;
     }
+    table->CreateTensorARM = (PFN_vkCreateTensorARM)gpa(device, "vkCreateTensorARM");
+    if (table->CreateTensorARM == nullptr) {
+        table->CreateTensorARM = (PFN_vkCreateTensorARM)StubCreateTensorARM;
+    }
+    table->DestroyTensorARM = (PFN_vkDestroyTensorARM)gpa(device, "vkDestroyTensorARM");
+    if (table->DestroyTensorARM == nullptr) {
+        table->DestroyTensorARM = (PFN_vkDestroyTensorARM)StubDestroyTensorARM;
+    }
+    table->CreateTensorViewARM = (PFN_vkCreateTensorViewARM)gpa(device, "vkCreateTensorViewARM");
+    if (table->CreateTensorViewARM == nullptr) {
+        table->CreateTensorViewARM = (PFN_vkCreateTensorViewARM)StubCreateTensorViewARM;
+    }
+    table->DestroyTensorViewARM = (PFN_vkDestroyTensorViewARM)gpa(device, "vkDestroyTensorViewARM");
+    if (table->DestroyTensorViewARM == nullptr) {
+        table->DestroyTensorViewARM = (PFN_vkDestroyTensorViewARM)StubDestroyTensorViewARM;
+    }
+    table->GetTensorMemoryRequirementsARM = (PFN_vkGetTensorMemoryRequirementsARM)gpa(device, "vkGetTensorMemoryRequirementsARM");
+    if (table->GetTensorMemoryRequirementsARM == nullptr) {
+        table->GetTensorMemoryRequirementsARM = (PFN_vkGetTensorMemoryRequirementsARM)StubGetTensorMemoryRequirementsARM;
+    }
+    table->BindTensorMemoryARM = (PFN_vkBindTensorMemoryARM)gpa(device, "vkBindTensorMemoryARM");
+    if (table->BindTensorMemoryARM == nullptr) {
+        table->BindTensorMemoryARM = (PFN_vkBindTensorMemoryARM)StubBindTensorMemoryARM;
+    }
+    table->GetDeviceTensorMemoryRequirementsARM =
+        (PFN_vkGetDeviceTensorMemoryRequirementsARM)gpa(device, "vkGetDeviceTensorMemoryRequirementsARM");
+    if (table->GetDeviceTensorMemoryRequirementsARM == nullptr) {
+        table->GetDeviceTensorMemoryRequirementsARM =
+            (PFN_vkGetDeviceTensorMemoryRequirementsARM)StubGetDeviceTensorMemoryRequirementsARM;
+    }
+    table->CmdCopyTensorARM = (PFN_vkCmdCopyTensorARM)gpa(device, "vkCmdCopyTensorARM");
+    if (table->CmdCopyTensorARM == nullptr) {
+        table->CmdCopyTensorARM = (PFN_vkCmdCopyTensorARM)StubCmdCopyTensorARM;
+    }
+    table->GetTensorOpaqueCaptureDescriptorDataARM =
+        (PFN_vkGetTensorOpaqueCaptureDescriptorDataARM)gpa(device, "vkGetTensorOpaqueCaptureDescriptorDataARM");
+    if (table->GetTensorOpaqueCaptureDescriptorDataARM == nullptr) {
+        table->GetTensorOpaqueCaptureDescriptorDataARM =
+            (PFN_vkGetTensorOpaqueCaptureDescriptorDataARM)StubGetTensorOpaqueCaptureDescriptorDataARM;
+    }
+    table->GetTensorViewOpaqueCaptureDescriptorDataARM =
+        (PFN_vkGetTensorViewOpaqueCaptureDescriptorDataARM)gpa(device, "vkGetTensorViewOpaqueCaptureDescriptorDataARM");
+    if (table->GetTensorViewOpaqueCaptureDescriptorDataARM == nullptr) {
+        table->GetTensorViewOpaqueCaptureDescriptorDataARM =
+            (PFN_vkGetTensorViewOpaqueCaptureDescriptorDataARM)StubGetTensorViewOpaqueCaptureDescriptorDataARM;
+    }
     table->GetShaderModuleIdentifierEXT = (PFN_vkGetShaderModuleIdentifierEXT)gpa(device, "vkGetShaderModuleIdentifierEXT");
     if (table->GetShaderModuleIdentifierEXT == nullptr) {
         table->GetShaderModuleIdentifierEXT = (PFN_vkGetShaderModuleIdentifierEXT)StubGetShaderModuleIdentifierEXT;
@@ -4133,6 +4331,54 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
     if (table->QueueNotifyOutOfBandNV == nullptr) {
         table->QueueNotifyOutOfBandNV = (PFN_vkQueueNotifyOutOfBandNV)StubQueueNotifyOutOfBandNV;
     }
+    table->CreateDataGraphPipelinesARM = (PFN_vkCreateDataGraphPipelinesARM)gpa(device, "vkCreateDataGraphPipelinesARM");
+    if (table->CreateDataGraphPipelinesARM == nullptr) {
+        table->CreateDataGraphPipelinesARM = (PFN_vkCreateDataGraphPipelinesARM)StubCreateDataGraphPipelinesARM;
+    }
+    table->CreateDataGraphPipelineSessionARM =
+        (PFN_vkCreateDataGraphPipelineSessionARM)gpa(device, "vkCreateDataGraphPipelineSessionARM");
+    if (table->CreateDataGraphPipelineSessionARM == nullptr) {
+        table->CreateDataGraphPipelineSessionARM = (PFN_vkCreateDataGraphPipelineSessionARM)StubCreateDataGraphPipelineSessionARM;
+    }
+    table->GetDataGraphPipelineSessionBindPointRequirementsARM = (PFN_vkGetDataGraphPipelineSessionBindPointRequirementsARM)gpa(
+        device, "vkGetDataGraphPipelineSessionBindPointRequirementsARM");
+    if (table->GetDataGraphPipelineSessionBindPointRequirementsARM == nullptr) {
+        table->GetDataGraphPipelineSessionBindPointRequirementsARM =
+            (PFN_vkGetDataGraphPipelineSessionBindPointRequirementsARM)StubGetDataGraphPipelineSessionBindPointRequirementsARM;
+    }
+    table->GetDataGraphPipelineSessionMemoryRequirementsARM =
+        (PFN_vkGetDataGraphPipelineSessionMemoryRequirementsARM)gpa(device, "vkGetDataGraphPipelineSessionMemoryRequirementsARM");
+    if (table->GetDataGraphPipelineSessionMemoryRequirementsARM == nullptr) {
+        table->GetDataGraphPipelineSessionMemoryRequirementsARM =
+            (PFN_vkGetDataGraphPipelineSessionMemoryRequirementsARM)StubGetDataGraphPipelineSessionMemoryRequirementsARM;
+    }
+    table->BindDataGraphPipelineSessionMemoryARM =
+        (PFN_vkBindDataGraphPipelineSessionMemoryARM)gpa(device, "vkBindDataGraphPipelineSessionMemoryARM");
+    if (table->BindDataGraphPipelineSessionMemoryARM == nullptr) {
+        table->BindDataGraphPipelineSessionMemoryARM =
+            (PFN_vkBindDataGraphPipelineSessionMemoryARM)StubBindDataGraphPipelineSessionMemoryARM;
+    }
+    table->DestroyDataGraphPipelineSessionARM =
+        (PFN_vkDestroyDataGraphPipelineSessionARM)gpa(device, "vkDestroyDataGraphPipelineSessionARM");
+    if (table->DestroyDataGraphPipelineSessionARM == nullptr) {
+        table->DestroyDataGraphPipelineSessionARM =
+            (PFN_vkDestroyDataGraphPipelineSessionARM)StubDestroyDataGraphPipelineSessionARM;
+    }
+    table->CmdDispatchDataGraphARM = (PFN_vkCmdDispatchDataGraphARM)gpa(device, "vkCmdDispatchDataGraphARM");
+    if (table->CmdDispatchDataGraphARM == nullptr) {
+        table->CmdDispatchDataGraphARM = (PFN_vkCmdDispatchDataGraphARM)StubCmdDispatchDataGraphARM;
+    }
+    table->GetDataGraphPipelineAvailablePropertiesARM =
+        (PFN_vkGetDataGraphPipelineAvailablePropertiesARM)gpa(device, "vkGetDataGraphPipelineAvailablePropertiesARM");
+    if (table->GetDataGraphPipelineAvailablePropertiesARM == nullptr) {
+        table->GetDataGraphPipelineAvailablePropertiesARM =
+            (PFN_vkGetDataGraphPipelineAvailablePropertiesARM)StubGetDataGraphPipelineAvailablePropertiesARM;
+    }
+    table->GetDataGraphPipelinePropertiesARM =
+        (PFN_vkGetDataGraphPipelinePropertiesARM)gpa(device, "vkGetDataGraphPipelinePropertiesARM");
+    if (table->GetDataGraphPipelinePropertiesARM == nullptr) {
+        table->GetDataGraphPipelinePropertiesARM = (PFN_vkGetDataGraphPipelinePropertiesARM)StubGetDataGraphPipelinePropertiesARM;
+    }
     table->CmdSetAttachmentFeedbackLoopEnableEXT =
         (PFN_vkCmdSetAttachmentFeedbackLoopEnableEXT)gpa(device, "vkCmdSetAttachmentFeedbackLoopEnableEXT");
     if (table->CmdSetAttachmentFeedbackLoopEnableEXT == nullptr) {
@@ -4145,6 +4391,22 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
         table->GetScreenBufferPropertiesQNX = (PFN_vkGetScreenBufferPropertiesQNX)StubGetScreenBufferPropertiesQNX;
     }
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+    table->CmdBindTileMemoryQCOM = (PFN_vkCmdBindTileMemoryQCOM)gpa(device, "vkCmdBindTileMemoryQCOM");
+    if (table->CmdBindTileMemoryQCOM == nullptr) {
+        table->CmdBindTileMemoryQCOM = (PFN_vkCmdBindTileMemoryQCOM)StubCmdBindTileMemoryQCOM;
+    }
+    table->CreateExternalComputeQueueNV = (PFN_vkCreateExternalComputeQueueNV)gpa(device, "vkCreateExternalComputeQueueNV");
+    if (table->CreateExternalComputeQueueNV == nullptr) {
+        table->CreateExternalComputeQueueNV = (PFN_vkCreateExternalComputeQueueNV)StubCreateExternalComputeQueueNV;
+    }
+    table->DestroyExternalComputeQueueNV = (PFN_vkDestroyExternalComputeQueueNV)gpa(device, "vkDestroyExternalComputeQueueNV");
+    if (table->DestroyExternalComputeQueueNV == nullptr) {
+        table->DestroyExternalComputeQueueNV = (PFN_vkDestroyExternalComputeQueueNV)StubDestroyExternalComputeQueueNV;
+    }
+    table->GetExternalComputeQueueDataNV = (PFN_vkGetExternalComputeQueueDataNV)gpa(device, "vkGetExternalComputeQueueDataNV");
+    if (table->GetExternalComputeQueueDataNV == nullptr) {
+        table->GetExternalComputeQueueDataNV = (PFN_vkGetExternalComputeQueueDataNV)StubGetExternalComputeQueueDataNV;
+    }
     table->GetClusterAccelerationStructureBuildSizesNV =
         (PFN_vkGetClusterAccelerationStructureBuildSizesNV)gpa(device, "vkGetClusterAccelerationStructureBuildSizesNV");
     if (table->GetClusterAccelerationStructureBuildSizesNV == nullptr) {
@@ -4225,6 +4487,10 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
         table->GetMemoryMetalHandlePropertiesEXT = (PFN_vkGetMemoryMetalHandlePropertiesEXT)StubGetMemoryMetalHandlePropertiesEXT;
     }
 #endif  // VK_USE_PLATFORM_METAL_EXT
+    table->CmdEndRendering2EXT = (PFN_vkCmdEndRendering2EXT)gpa(device, "vkCmdEndRendering2EXT");
+    if (table->CmdEndRendering2EXT == nullptr) {
+        table->CmdEndRendering2EXT = (PFN_vkCmdEndRendering2EXT)StubCmdEndRendering2EXT;
+    }
     table->CreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)gpa(device, "vkCreateAccelerationStructureKHR");
     if (table->CreateAccelerationStructureKHR == nullptr) {
         table->CreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)StubCreateAccelerationStructureKHR;
@@ -4884,6 +5150,12 @@ void layer_init_instance_dispatch_table(VkInstance instance, VkLayerInstanceDisp
             (PFN_vkGetPhysicalDeviceScreenPresentationSupportQNX)StubGetPhysicalDeviceScreenPresentationSupportQNX;
     }
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+    table->GetPhysicalDeviceExternalTensorPropertiesARM =
+        (PFN_vkGetPhysicalDeviceExternalTensorPropertiesARM)gpa(instance, "vkGetPhysicalDeviceExternalTensorPropertiesARM");
+    if (table->GetPhysicalDeviceExternalTensorPropertiesARM == nullptr) {
+        table->GetPhysicalDeviceExternalTensorPropertiesARM =
+            (PFN_vkGetPhysicalDeviceExternalTensorPropertiesARM)StubGetPhysicalDeviceExternalTensorPropertiesARM;
+    }
     table->GetPhysicalDeviceOpticalFlowImageFormatsNV =
         (PFN_vkGetPhysicalDeviceOpticalFlowImageFormatsNV)gpa(instance, "vkGetPhysicalDeviceOpticalFlowImageFormatsNV");
     if (table->GetPhysicalDeviceOpticalFlowImageFormatsNV == nullptr) {
@@ -4896,6 +5168,26 @@ void layer_init_instance_dispatch_table(VkInstance instance, VkLayerInstanceDisp
         table->GetPhysicalDeviceCooperativeVectorPropertiesNV =
             (PFN_vkGetPhysicalDeviceCooperativeVectorPropertiesNV)StubGetPhysicalDeviceCooperativeVectorPropertiesNV;
     }
+    table->GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM = (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM)gpa(
+        instance, "vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM");
+    if (table->GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM == nullptr) {
+        table->GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM =
+            (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM)StubGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM;
+    }
+    table->GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM =
+        (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM)gpa(
+            instance, "vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM");
+    if (table->GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM == nullptr) {
+        table->GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM =
+            (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM)
+                StubGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM;
+    }
+#ifdef VK_USE_PLATFORM_OHOS
+    table->CreateSurfaceOHOS = (PFN_vkCreateSurfaceOHOS)gpa(instance, "vkCreateSurfaceOHOS");
+    if (table->CreateSurfaceOHOS == nullptr) {
+        table->CreateSurfaceOHOS = (PFN_vkCreateSurfaceOHOS)StubCreateSurfaceOHOS;
+    }
+#endif  // VK_USE_PLATFORM_OHOS
     table->GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV =
         (PFN_vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV)gpa(
             instance, "vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV");

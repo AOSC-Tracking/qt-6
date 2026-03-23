@@ -53,7 +53,7 @@ void BasicBlockProfilerData::AddBranch(int32_t true_block_id,
 }
 
 BasicBlockProfilerData* BasicBlockProfiler::NewData(size_t n_blocks) {
-  base::SpinningMutexGuard lock(&data_list_mutex_);
+  base::MutexGuard lock(&data_list_mutex_);
   auto data = std::make_unique<BasicBlockProfilerData>(n_blocks);
   BasicBlockProfilerData* data_ptr = data.get();
   data_list_.push_back(std::move(data));
@@ -84,9 +84,9 @@ BasicBlockProfilerData::BasicBlockProfilerData(
 
 void BasicBlockProfilerData::CopyFromJSHeap(
     Tagged<OnHeapBasicBlockProfilerData> js_heap_data) {
-  function_name_ = js_heap_data->name()->ToCString().get();
-  schedule_ = js_heap_data->schedule()->ToCString().get();
-  code_ = js_heap_data->code()->ToCString().get();
+  function_name_ = js_heap_data->name()->ToStdString();
+  schedule_ = js_heap_data->schedule()->ToStdString();
+  code_ = js_heap_data->code()->ToStdString();
   Tagged<FixedUInt32Array> counts =
       Cast<FixedUInt32Array>(js_heap_data->counts());
   for (int i = 0; i < counts->length() / kBlockCountSlotSize; ++i) {

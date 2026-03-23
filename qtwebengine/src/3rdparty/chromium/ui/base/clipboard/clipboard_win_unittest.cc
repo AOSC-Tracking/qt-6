@@ -4,12 +4,15 @@
 
 #include "ui/base/clipboard/clipboard_win.h"
 
+#include "base/test/run_until.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "testing/platform_test.h"
 #include "ui/base/clipboard/clipboard_monitor.h"
 #include "ui/base/clipboard/clipboard_observer.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/gfx/image/image_unittest_util.h"
 
 namespace ui {
@@ -30,6 +33,14 @@ class ClipboardWinTest : public PlatformTest, public ClipboardObserver {
 
   int data_changed_count() const { return data_changed_count_; }
 
+  // Helper method to wait for data_changed_count to reach expected value
+  void WaitForDataChangedCount(int expected_count) {
+    ASSERT_TRUE(base::test::RunUntil([&]() {
+      return data_changed_count() == expected_count;
+    })) << "Timeout waiting for data_changed_count to reach "
+        << expected_count << ", actual count: " << data_changed_count();
+  }
+
  private:
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::MainThreadType::UI};
@@ -43,29 +54,29 @@ TEST_F(ClipboardWinTest, DataChangedNotificationOnWrite) {
     ScopedClipboardWriter writer(ClipboardBuffer::kCopyPaste);
     writer.WriteText(u"text");
   }
-  ASSERT_EQ(data_changed_count(), 1);
+  WaitForDataChangedCount(1);
 
   {
     ScopedClipboardWriter writer(ClipboardBuffer::kCopyPaste);
     writer.WriteHTML(u"html", "https://source.com/");
     writer.WriteSvg(u"svg");
   }
-  ASSERT_EQ(data_changed_count(), 2);
+  WaitForDataChangedCount(2);
 
   {
     ScopedClipboardWriter writer(ClipboardBuffer::kCopyPaste);
     writer.WriteRTF("rtf");
   }
-  ASSERT_EQ(data_changed_count(), 3);
+  WaitForDataChangedCount(3);
 
   {
     ScopedClipboardWriter writer(ClipboardBuffer::kCopyPaste);
     writer.WriteImage(gfx::test::CreateBitmap(2, 3));
   }
-  ASSERT_EQ(data_changed_count(), 4);
+  WaitForDataChangedCount(4);
 
   Clipboard::GetForCurrentThread()->Clear(ClipboardBuffer::kCopyPaste);
-  ASSERT_EQ(data_changed_count(), 5);
+  WaitForDataChangedCount(5);
 }
 
 TEST_F(ClipboardWinTest, NoDataChangedNotificationOnRead) {
@@ -124,6 +135,21 @@ TEST_F(ClipboardWinTest, NoDataChangedNotificationOnRead) {
   clipboard->ReadData(ClipboardFormatType::PlainTextType(), nullptr,
                       &data_result);
   ASSERT_EQ(data_changed_count(), 0);
+}
+
+// Test that the ClipboardMonitor sends a notification when data is written to
+// the clipboard when platform clipboard monitoring is enabled. With the API
+// enabled, the ClipboardMonitor gets notified of clipboard changes via the OS's
+// clipboard change notification mechanism. (On Windows, this is done via the
+// WM_CLIPBOARDUPDATE message.)
+TEST_F(ClipboardWinTest, DataChangedNotificationOnWriteWithClipboardChangeAPI) {
+  {
+    ScopedClipboardWriter writer(ClipboardBuffer::kCopyPaste);
+    writer.WriteText(u"text");
+  }
+  // Since the WM_CLIPBOARDUPDATE message is sent on the same thread, we
+  // need to wait for the thread to process the message.
+  WaitForDataChangedCount(1);
 }
 
 }  // namespace ui

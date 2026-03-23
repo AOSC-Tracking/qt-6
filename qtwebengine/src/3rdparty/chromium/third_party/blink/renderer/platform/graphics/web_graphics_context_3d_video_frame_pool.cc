@@ -14,7 +14,6 @@
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
 #include "gpu/command_buffer/client/context_support.h"
-#include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
 #include "gpu/command_buffer/common/shared_image_capabilities.h"
@@ -51,9 +50,8 @@ BASE_FEATURE(kUseCopyToGpuMemoryBufferAsync,
 class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
  public:
   explicit Context(base::WeakPtr<blink::WebGraphicsContext3DProviderWrapper>
-                       context_provider,
-                   gpu::GpuMemoryBufferManager* gmb_manager)
-      : weak_context_provider_(context_provider), gmb_manager_(gmb_manager) {}
+                       context_provider)
+      : weak_context_provider_(context_provider) {}
 
   scoped_refptr<gpu::ClientSharedImage> CreateSharedImage(
       const gfx::Size& size,
@@ -73,9 +71,6 @@ class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
     if (!client_shared_image) {
       return nullptr;
     }
-#if BUILDFLAG(IS_MAC)
-    client_shared_image->SetColorSpaceOnNativeBuffer(color_space);
-#endif
     sync_token = sii->GenVerifiedSyncToken();
     return client_shared_image;
   }
@@ -100,7 +95,6 @@ class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
 
   base::WeakPtr<blink::WebGraphicsContext3DProviderWrapper>
       weak_context_provider_;
-  raw_ptr<gpu::GpuMemoryBufferManager> gmb_manager_;
 };
 
 }  // namespace
@@ -108,17 +102,9 @@ class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
 WebGraphicsContext3DVideoFramePool::WebGraphicsContext3DVideoFramePool(
     base::WeakPtr<blink::WebGraphicsContext3DProviderWrapper>
         weak_context_provider)
-    : WebGraphicsContext3DVideoFramePool(
-          std::move(weak_context_provider),
-          SharedGpuContext::GetGpuMemoryBufferManager()) {}
-
-WebGraphicsContext3DVideoFramePool::WebGraphicsContext3DVideoFramePool(
-    base::WeakPtr<blink::WebGraphicsContext3DProviderWrapper>
-        weak_context_provider,
-    gpu::GpuMemoryBufferManager* gmb_manager)
     : weak_context_provider_(weak_context_provider),
       pool_(media::RenderableGpuMemoryBufferVideoFramePool::Create(
-          std::make_unique<Context>(weak_context_provider, gmb_manager))) {}
+          std::make_unique<Context>(weak_context_provider))) {}
 
 WebGraphicsContext3DVideoFramePool::~WebGraphicsContext3DVideoFramePool() =
     default;
@@ -226,7 +212,7 @@ void CopyToGpuMemoryBuffer(
   gpu::SyncToken completion_sync_token;
   ri->GenUnverifiedSyncTokenCHROMIUM(completion_sync_token.GetData());
   media::SimpleSyncTokenClient simple_client(completion_sync_token);
-  dst_frame->UpdateAcquireSyncToken(&simple_client);
+  dst_frame->UpdateAcquireSyncToken(completion_sync_token);
   dst_frame->UpdateReleaseSyncToken(&simple_client);
 
   // Do not use a query to track copy completion on Windows when using the new
@@ -241,7 +227,8 @@ void CopyToGpuMemoryBuffer(
 }
 }  // namespace
 
-bool WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
+std::optional<gpu::SyncToken>
+WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
     const gfx::Size& src_size,
     scoped_refptr<gpu::ClientSharedImage> src_shared_image,
     const gpu::SyncToken& acquire_sync_token,
@@ -252,11 +239,11 @@ bool WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
   TRACE_EVENT_INSTANT("media", "CopyRGBATextureToVideoFrame",
                       perfetto::Flow::ProcessScoped(flow_id));
   if (!weak_context_provider_)
-    return false;
+    return std::nullopt;
   auto& context_provider = weak_context_provider_->ContextProvider();
   auto* raster_context_provider = context_provider.RasterContextProvider();
   if (!raster_context_provider)
-    return false;
+    return std::nullopt;
 
 #if BUILDFLAG(IS_WIN)
   // CopyToGpuMemoryBuffer is only supported for D3D shared images on Windows.
@@ -264,20 +251,22 @@ bool WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
            ->GetCapabilities()
            .shared_image_d3d) {
     DVLOG(1) << "CopyToGpuMemoryBuffer not supported.";
-    return false;
+    return std::nullopt;
   }
 #endif  // BUILDFLAG(IS_WIN)
 
   auto dst_frame = pool_->MaybeCreateVideoFrame(src_size, dst_color_space);
   if (!dst_frame) {
-    return false;
+    return std::nullopt;
   }
   CHECK(dst_frame->HasSharedImage());
 
-  if (!media::CopyRGBATextureToVideoFrame(raster_context_provider, src_size,
-                                          src_shared_image, acquire_sync_token,
-                                          dst_frame.get())) {
-    return false;
+  std::optional<gpu::SyncToken> completion_sync_token =
+      media::CopyRGBATextureToVideoFrame(raster_context_provider, src_size,
+                                         src_shared_image, acquire_sync_token,
+                                         dst_frame.get());
+  if (!completion_sync_token) {
+    return std::nullopt;
   }
 
   // VideoFrame::UpdateAcquireSyncToken requires that the video frame have
@@ -299,7 +288,7 @@ bool WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
             // we've synchronized with the GPU.
             gpu::SyncToken empty_sync_token;
             media::SimpleSyncTokenClient simple_client(empty_sync_token);
-            frame->UpdateAcquireSyncToken(&simple_client);
+            frame->UpdateAcquireSyncToken(empty_sync_token);
             frame->UpdateReleaseSyncToken(&simple_client);
             std::move(callback).Run(std::move(frame));
           },
@@ -326,7 +315,7 @@ bool WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
   }
   pending_gpu_completion_callbacks_.push_back(std::move(wrapped_callback));
 
-  return true;
+  return completion_sync_token;
 }
 
 namespace {
@@ -376,11 +365,11 @@ bool WebGraphicsContext3DVideoFramePool::ConvertVideoFrame(
       << "Invalid format " << format;
   DCHECK(src_video_frame->HasSharedImage());
   return CopyRGBATextureToVideoFrame(
-      src_video_frame->coded_size(),
-      src_video_frame->shared_image(), src_video_frame->acquire_sync_token(),
-      dst_color_space,
-      WTF::BindOnce(ApplyMetadataAndRunCallback, src_video_frame,
-                    std::move(callback)));
+             src_video_frame->coded_size(), src_video_frame->shared_image(),
+             src_video_frame->acquire_sync_token(), dst_color_space,
+             WTF::BindOnce(ApplyMetadataAndRunCallback, src_video_frame,
+                           std::move(callback)))
+      .has_value();
 }
 
 // static

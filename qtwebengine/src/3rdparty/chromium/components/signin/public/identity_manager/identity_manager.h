@@ -10,6 +10,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_observation.h"
 #include "base/scoped_observation_traits.h"
@@ -25,6 +26,7 @@
 #include "components/signin/public/identity_manager/access_token_fetcher.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/identity_mutator.h"
+#include "components/signin/public/identity_manager/oauth_consumer_ids.h"
 #include "components/signin/public/identity_manager/scope_set.h"
 #include "google_apis/gaia/oauth2_access_token_manager.h"
 
@@ -80,6 +82,8 @@ class IdentityManager : public KeyedService,
 
     // Called when there is a change in the primary account or in the consent
     // level for the primary account.
+    // To avoid undesired UI changes during the account switching process, UI
+    // code can use `OnEndBatchOfPrimaryAccountChanges()`.
     //
     // Note: Observers are not allowed to change the primary account directly
     // from this methood as that would lead to |event_details| not being correct
@@ -162,7 +166,15 @@ class IdentityManager : public KeyedService,
 #if BUILDFLAG(IS_IOS)
     // Called after the list of accounts in `GetAccountsOnDevice` changes.
     virtual void OnAccountsOnDeviceChanged() {}
-#endif
+    // Called once the batch of primary account changes ended.
+    // This method is also called for each single primary account event, when
+    // there is no batch.
+    // UI code should prefer this event instead of `OnPrimaryAccountChanged()`,
+    // to avoid UI glitches when the user wants to switch from one primary
+    // account to another (by showing sign-out temporary state).
+    // See `StartBatchOfPrimaryAccountChanges()`.
+    virtual void OnEndBatchOfPrimaryAccountChanges() {}
+#endif  // BUILDFLAG(IS_IOS)
 
     // Called on Shutdown(), for observers that aren't KeyedServices to remove
     // their observers.
@@ -172,6 +184,21 @@ class IdentityManager : public KeyedService,
   // Methods to register or remove observers.
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
+
+#if BUILDFLAG(IS_IOS)
+  // Whether a batch of primary account changes is in progress. See
+  // `OnEndBatchOfPrimaryAccountChanges()`.
+  bool IsBatchOfPrimaryAccountChangesInProgress();
+
+  // Starts a batch of primary account changes by setting
+  // `batch_of_primary_account_changes_in_progress_` to `true`. As long as the
+  // batch is running, `OnEndBatchOfPrimaryAccountChanges()` are not sent when
+  // `OnPrimaryAccountChanged()` occurs.
+  // The batch needs to be used when the primary account is switched from one
+  // account to another.
+  // See `OnEndBatchOfPrimaryAccountChanges()`.
+  base::ScopedClosureRunner StartBatchOfPrimaryAccountChanges();
+#endif  // BUILDFLAG(IS_IOS)
 
   // Provides access to the core information of the user's primary account.
   // The primary account may or may not be blessed with the sync consent.
@@ -221,12 +248,47 @@ class IdentityManager : public KeyedService,
       AccessTokenFetcher::TokenCallback callback,
       AccessTokenFetcher::Mode mode);
 
+  // Creates an AccessTokenFetcher for the |oauth_consumer_id| feature.
+  [[nodiscard]] std::unique_ptr<AccessTokenFetcher>
+  CreateAccessTokenFetcherForAccount(const CoreAccountId& account_id,
+                                     OAuthConsumerId oauth_consumer_id,
+                                     AccessTokenFetcher::TokenCallback callback,
+                                     AccessTokenFetcher::Mode mode,
+                                     AccessTokenFetcher::Source token_source =
+                                         AccessTokenFetcher::Source::kProfile);
+
+  // Creates an AccessTokenFetcher for the |oauth_conumser_id| feature, allowing
+  // to specify a custom |url_loader_factory| as well.
+  [[nodiscard]] std::unique_ptr<AccessTokenFetcher>
+  CreateAccessTokenFetcherForAccount(
+      const CoreAccountId& account_id,
+      OAuthConsumerId oauth_consumer_id,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      AccessTokenFetcher::TokenCallback callback,
+      AccessTokenFetcher::Mode mode);
+
+#if BUILDFLAG(IS_IOS)
+  // TODO(crbug.com/425896213): Use OAuthConsumerId instead of ScopeSet.
+  void GetRefreshTokenFromDevice(
+      const CoreAccountId& account_id,
+      const OAuth2AccessTokenManager::ScopeSet& scopes,
+      AccessTokenFetcher::TokenCallback callback);
+#endif
+
   // If an entry exists in the cache of access tokens corresponding to the
   // given information, removes that entry; in this case, the next access token
   // request for |account_id| and |scopes| will fetch a new token from the
   // network. Otherwise, is a no-op.
   void RemoveAccessTokenFromCache(const CoreAccountId& account_id,
                                   const ScopeSet& scopes,
+                                  const std::string& access_token);
+
+  // If an entry exists in the cache of access tokens corresponding to the
+  // given information, removes that entry; in this case, the next access token
+  // request for |account_id| and |oauth_consumer_id| will fetch a new token
+  // from the network. Otherwise, is a no-op.
+  void RemoveAccessTokenFromCache(const CoreAccountId& account_id,
+                                  OAuthConsumerId oauth_consumer_id,
                                   const std::string& access_token);
 
   // Provides the information of all accounts that have refresh tokens.
@@ -262,14 +324,14 @@ class IdentityManager : public KeyedService,
   bool HasAccountWithRefreshTokenInPersistentErrorState(
       const CoreAccountId& account_id) const;
 
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
   // Returns the wrapped binding key of a refresh token associated with
   // `account_id`, if any.
   // Returns a non-empty vector iff (a) a refresh token exists for `account_id`,
   // and (b) the refresh token is bound to a device.
   std::vector<uint8_t> GetWrappedBindingKeyOfRefreshTokenForAccount(
       const CoreAccountId& account_id) const;
-#endif
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
   // Returns the error state of the refresh token associated with |account_id|.
   // In particular: Returns GoogleServiceAuthError::AuthErrorNone() if either
@@ -493,13 +555,15 @@ class IdentityManager : public KeyedService,
   // Else refreshes all accounts with refresh tokens if they are stale. See
   // RefreshAccountInfoIfStale(const CoreAccountId&).
   // TODO(crbug.com/40284908): Remove |j_core_account_id| from parameters.
-  void RefreshAccountInfoIfStale(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& j_core_account_id);
+  void RefreshAccountInfoIfStale(JNIEnv* env,
+                                 const CoreAccountId& j_core_account_id);
 
   // Returns true if the browser allows the primary account to be cleared.
   jboolean IsClearPrimaryAccountAllowed(JNIEnv* env) const;
 #endif
+
+  // Returns a weak pointer of this.
+  base::WeakPtr<IdentityManager> GetWeakPtr();
 
  private:
   // These test helpers need to use some of the private methods below.
@@ -520,12 +584,8 @@ class IdentityManager : public KeyedService,
   friend void SetRefreshTokenForAccount(
       IdentityManager* identity_manager,
       const CoreAccountId& account_id,
-      const std::string& token_value
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-      ,
-      const std::vector<uint8_t>& wrapped_binding_key
-#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  );
+      const std::string& token_value,
+      const std::vector<uint8_t>& wrapped_binding_key);
   friend void SetInvalidRefreshTokenForAccount(
       IdentityManager* identity_manager,
       const CoreAccountId& account_id,
@@ -624,6 +684,7 @@ class IdentityManager : public KeyedService,
   FRIEND_TEST_ALL_PREFIXES(IdentityManagerTest, OnNetworkInitialized);
   FRIEND_TEST_ALL_PREFIXES(IdentityManagerTest, RefreshAccountInfoIfStale);
   FRIEND_TEST_ALL_PREFIXES(IdentityManagerTest, FindExtendedPrimaryAccountInfo);
+  FRIEND_TEST_ALL_PREFIXES(IdentityManagerTest, BatchOfPrimaryAccountChanges);
 
   // Both classes only call FindExtendedPrimaryAccountInfo().
   // TODO(crbug.com/40183609): Delete once the private calls have been
@@ -700,6 +761,16 @@ class IdentityManager : public KeyedService,
   void OnAccountUpdated(const AccountInfo& info);
   void OnAccountRemoved(const AccountInfo& info);
 
+#if BUILDFLAG(IS_IOS)
+  // Starts and stops the account switching. Those method can only be called by
+  // `StartBatchOfPrimaryAccountChanges()`. Only one account switching can be
+  // started at the same time.
+  void BatchOfPrimaryAccountChangesDone();
+  // Triggers `OnEndBatchOfPrimaryAccountChanges()` events. A batch of primary
+  // account changes should not be in progress when calling this method.
+  void FireOnEndBatchOfPrimaryAccountChanges();
+#endif  // BUILDFLAG(IS_IOS)
+
   // Backing signin classes.
   std::unique_ptr<AccountTrackerService> account_tracker_service_;
   std::unique_ptr<ProfileOAuth2TokenService> token_service_;
@@ -747,6 +818,12 @@ class IdentityManager : public KeyedService,
   base::flat_map<CoreAccountId, base::TimeTicks>
       account_info_fetch_start_times_;
 #endif
+#if BUILDFLAG(IS_IOS)
+  // `true` if there is an account switching back in progress.
+  // See `StartBatchOfPrimaryAccountChanges()`.
+  bool batch_of_primary_account_changes_in_progress_ = false;
+#endif  // BUILDFLAG(IS_IOS)
+  base::WeakPtrFactory<IdentityManager> weak_pointer_factory_;
 };
 
 }  // namespace signin

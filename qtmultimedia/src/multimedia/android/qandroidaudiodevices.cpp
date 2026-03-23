@@ -1,21 +1,18 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#include "qandroidaudiodevices_p.h"
+#include <QtMultimedia/private/qandroidaudiodevices_p.h>
 
-#include "qandroidaudiodevice_p.h"
-#include "qandroidaudiosink_p.h"
-#include "qandroidaudiosource_p.h"
+#include <QtMultimedia/private/qandroidaudiodevice_p.h>
+#include <QtMultimedia/private/qandroidaudiojnitypes_p.h>
+#include <QtMultimedia/private/qandroidaudiosink_p.h>
+#include <QtMultimedia/private/qandroidaudiosource_p.h>
 
-#include <private/qplatformmediaintegration_p.h>
+#include <QtMultimedia/private/qplatformmediaintegration_p.h>
 
 #include <QtCore/qjniobject.h>
 
 QT_BEGIN_NAMESPACE
-
-Q_DECLARE_JNI_CLASS(QtAudioDeviceManager,
-                    "org/qtproject/qt/android/multimedia/QtAudioDeviceManager");
-Q_DECLARE_JNI_CLASS(AudioDeviceInfo, "android/media/AudioDeviceInfo");
 
 using namespace QtJniTypes;
 
@@ -28,10 +25,12 @@ QAudioFormat preferredFormatForDevice(const QtJniTypes::AudioDeviceInfo &deviceI
     // Set preferred channel count based on what device reports, with default set to stereo (2)
     QJniArray<jint> channelCounts = deviceInfo.callMethod<QJniArray<jint>>("getChannelCounts");
     if (channelCounts.isEmpty()) {
-        preferredFormat.setChannelCount(2);
+        preferredFormat.setChannelConfig(QAudioFormat::ChannelConfigStereo);
     } else {
         const auto [minIt, maxIt] = std::minmax_element(channelCounts.begin(), channelCounts.end());
-        preferredFormat.setChannelCount(std::clamp(2, *minIt, *maxIt));
+        const int channelCount = std::clamp(2, *minIt, *maxIt);
+        preferredFormat.setChannelConfig(
+                QAudioFormat::defaultChannelConfigForChannelCount(channelCount));
     }
 
     // Get optimal sample rate from AudioManager
@@ -118,14 +117,32 @@ static void onAudioInputDevicesUpdated(JNIEnv * /*env*/, jobject /*thiz*/)
     static_cast<QAndroidAudioDevices *>(QPlatformMediaIntegration::instance()->audioDevices())
             ->onAudioInputsChanged();
 }
+Q_DECLARE_JNI_NATIVE_METHOD(onAudioInputDevicesUpdated)
 
 static void onAudioOutputDevicesUpdated(JNIEnv * /*env*/, jobject /*thiz*/)
 {
     static_cast<QAndroidAudioDevices *>(QPlatformMediaIntegration::instance()->audioDevices())
             ->onAudioOutputsChanged();
 }
+Q_DECLARE_JNI_NATIVE_METHOD(onAudioOutputDevicesUpdated)
 
-Q_DECL_EXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void * /*reserved*/)
+bool QAndroidAudioDevices::registerNativeMethods()
+{
+    static const bool registered = []{
+        const auto context = QNativeInterface::QAndroidApplication::context();
+        QtAudioDeviceManager::callStaticMethod<void>("setContext", context);
+
+        return QtJniTypes::QtAudioDeviceManager::registerNativeMethods({
+            Q_JNI_NATIVE_METHOD(onAudioInputDevicesUpdated),
+            Q_JNI_NATIVE_METHOD(onAudioOutputDevicesUpdated),
+        });
+    }();
+    return registered;
+}
+
+QT_END_NAMESPACE
+
+extern "C" Q_DECL_EXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void * /*reserved*/)
 {
     static bool initialized = false;
     if (initialized)
@@ -144,22 +161,8 @@ Q_DECL_EXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void * /*reserved*/)
     if (vm->GetEnv(&uenv.venv, JNI_VERSION_1_6) != JNI_OK)
         return JNI_ERR;
 
-    const auto context = QNativeInterface::QAndroidApplication::context();
-    QtAudioDeviceManager::callStaticMethod<void>("setContext", context);
-
-    const JNINativeMethod methods[] = {
-        { "onAudioInputDevicesUpdated", "()V", (void *)onAudioInputDevicesUpdated },
-        { "onAudioOutputDevicesUpdated", "()V", (void *)onAudioOutputDevicesUpdated }
-    };
-
-    bool registered = QJniEnvironment().registerNativeMethods(
-            "org/qtproject/qt/android/multimedia/QtAudioDeviceManager", methods,
-            std::size(methods));
-
-    if (!registered)
+    if (!QAndroidAudioDevices::registerNativeMethods())
         return JNI_ERR;
 
     return JNI_VERSION_1_6;
 }
-
-QT_END_NAMESPACE

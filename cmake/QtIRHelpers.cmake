@@ -89,6 +89,26 @@ function(qt_ir_handle_called_from_configure top_level_src_path out_var_exit_reas
 
     qt_ir_validate_options_for_configure()
 
+    # Convert -skip values to module-subset exclusions so init-repository respects them.
+    qt_ir_get_option_value(skip skip_modules)
+    if(skip_modules)
+        string(REPLACE "," ";" skip_modules "${skip_modules}")
+        list(TRANSFORM skip_modules STRIP)
+        list(TRANSFORM skip_modules PREPEND "-")
+
+        qt_ir_get_option_value(module-subset existing_subset)
+        if(NOT existing_subset)
+            set(existing_subset "default")
+        endif()
+
+        list(APPEND skip_modules "${existing_subset}")
+        list(REMOVE_DUPLICATES skip_modules)
+        list(JOIN skip_modules "," merged_subset)
+
+        qt_ir_set_option_value(module-subset "${merged_subset}")
+        message(DEBUG "Preprocessed -skip option: module-subset is now: ${merged_subset}")
+    endif()
+
     # -init_submodules implies --force
     qt_ir_set_option_value(force TRUE)
 
@@ -295,7 +315,7 @@ function(qt_ir_run_after_args_parsed top_level_src_path out_var_exit_reason)
         "${working_directory}")
 
     # Get some additional options to pass down.
-    qt_ir_get_option_value(alternates alternates)
+    qt_ir_get_option_as_existing_absolute_path(alternates alternates)
     qt_ir_get_option_as_cmake_flag_option(branch "CHECKOUT_BRANCH" checkout_branch_option)
 
     # The prefix for the cmake-style 'dictionary' that will be used by various functions.

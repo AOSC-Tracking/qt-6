@@ -32,6 +32,7 @@ QLottieRasterRenderer::QLottieRasterRenderer(QPainter *painter)
     : m_painter(painter)
 {
     m_painter->setPen(QPen(Qt::NoPen));
+    m_unitedPath.setCachingEnabled(true);
 }
 
 void QLottieRasterRenderer::saveState()
@@ -41,7 +42,7 @@ void QLottieRasterRenderer::saveState()
     saveTrimmingState();
     m_pathStack.push_back(m_unitedPath);
     m_fillEffectStack.push_back(m_fillEffect);
-    m_unitedPath = QPainterPath();
+    m_unitedPath.clear();
 }
 
 void QLottieRasterRenderer::restoreState()
@@ -50,20 +51,23 @@ void QLottieRasterRenderer::restoreState()
     m_painter->restore();
     restoreTrimmingState();
     m_unitedPath = m_pathStack.pop();
+    m_renderPath.setFillRule(m_unitedPath.fillRule());
+    m_clipPath.setFillRule(m_unitedPath.fillRule());
     m_fillEffect = m_fillEffectStack.pop();
 }
 
 void QLottieRasterRenderer::render(const QLottieLayer &layer)
 {
     qCDebug(lcLottieQtLottieRender) << "Layer:" << layer.name()
-                                       << "clip layer" << layer.isClippedLayer();
-    if (layer.isMaskLayer())
+                                    << "is matte:" << layer.isMatteLayer()
+                                    << "using matte:" << layer.isUsingMatteLayer();
+    if (layer.isMatteLayer())
         m_buildingClipRegion = true;
     else if (!m_clipPath.isEmpty()) {
         QTransform inv = m_painter->transform().inverted();
-        if (layer.clipMode() == QLottieLayer::Alpha)
+        if (layer.matteMode() == QLottieLayer::Alpha)
             m_painter->setClipPath(inv.map(m_clipPath));
-        else if (layer.clipMode() == QLottieLayer::InvertedAlpha) {
+        else if (layer.matteMode() == QLottieLayer::InvertedAlpha) {
             QPainterPath screen;
             screen.addRect(0, 0, m_painter->device()->width(),
                            m_painter->device()->height());
@@ -82,86 +86,30 @@ void QLottieRasterRenderer::render(const QLottieLayer &layer)
 void QLottieRasterRenderer::render(const QLottieSolidLayer &layer)
 {
     render(static_cast<const QLottieLayer &>(layer));
-    m_painter->fillRect(QRect(QPoint(), layer.size()), layer.color());
+    m_painter->fillRect(QRect(QPoint(), layer.layerSize()), layer.color());
 }
 
 void QLottieRasterRenderer::render(const QLottieRect &rect)
 {
-    m_painter->save();
-
-    for (int i = 0; i < m_repeatCount; i++) {
-        qCDebug(lcLottieQtLottieRender) << rect.name()
-                                           << rect.position() << rect.size();
-        applyRepeaterTransform(i);
-        if (trimmingState() == QLottieRenderer::Sequential) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(rect.path());
-            tp.addPath(m_unitedPath);
-            m_unitedPath = tp;
-        } else if (m_buildingClipRegion) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(rect.path());
-            tp.addPath(m_clipPath);
-            m_clipPath = tp;
-        } else
-            m_painter->drawPath(rect.path());
-    }
-
-    m_painter->restore();
+    qCDebug(lcLottieQtLottieRender) << "Rect:" << rect.name()
+                                    << rect.position() << rect.size();
+    m_renderPath.addPath(rect.path());
 }
 
 void QLottieRasterRenderer::render(const QLottieEllipse &ellipse)
 {
-    m_painter->save();
-
-    for (int i = 0; i < m_repeatCount; i++) {
-        qCDebug(lcLottieQtLottieRender) << "Ellipse:" << ellipse.name()
-                                           << ellipse.position()
-                                           << ellipse.size();
-
-        applyRepeaterTransform(i);
-        if (trimmingState() == QLottieRenderer::Sequential) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(ellipse.path());
-            tp.addPath(m_unitedPath);
-            m_unitedPath = tp;
-        } else if (m_buildingClipRegion) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(ellipse.path());
-            tp.addPath(m_clipPath);
-            m_clipPath = tp;
-        } else
-            m_painter->drawPath(ellipse.path());
-    }
-
-    m_painter->restore();
+    qCDebug(lcLottieQtLottieRender) << "Ellipse:" << ellipse.name()
+                                    << ellipse.position()
+                                    << ellipse.size();
+    m_renderPath.addPath(ellipse.path());
 }
 
 void QLottieRasterRenderer::render(const QLottiePolyStar &star)
 {
-    m_painter->save();
-
-    for (int i = 0; i < m_repeatCount; i++) {
-        qCDebug(lcLottieQtLottieRender) << "PolyStar:" << star.name()
-        << star.position()
-        << star.pointCount() << star.outerRadius() << star.innerRadius();
-
-        applyRepeaterTransform(i);
-        if (trimmingState() == QLottieRenderer::Sequential) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(star.path());
-            tp.addPath(m_unitedPath);
-            m_unitedPath = tp;
-        } else if (m_buildingClipRegion) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(star.path());
-            tp.addPath(m_clipPath);
-            m_clipPath = tp;
-        } else
-            m_painter->drawPath(star.path());
-    }
-
-    m_painter->restore();
+    qCDebug(lcLottieQtLottieRender) << "PolyStar:" << star.name()
+                                    << star.position() << star.pointCount()
+                                    << star.outerRadius() << star.innerRadius();
+    m_renderPath.addPath(star.path());
 }
 
 void QLottieRasterRenderer::render(const QLottieImage &image)
@@ -186,27 +134,8 @@ void QLottieRasterRenderer::render(const QLottieImage &image)
 
 void QLottieRasterRenderer::render(const QLottieRound &round)
 {
-    m_painter->save();
-
-    for (int i = 0; i < m_repeatCount; i++) {
-        qCDebug(lcLottieQtLottieRender) << "Round:" << round.name()
-                                           << round.position() << round.radius();
-
-        if (trimmingState() == QLottieRenderer::Sequential) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(round.path());
-            tp.addPath(m_unitedPath);
-            m_unitedPath = tp;
-        } else if (m_buildingClipRegion) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(round.path());
-            tp.addPath(m_clipPath);
-            m_clipPath = tp;
-        } else
-            m_painter->drawPath(round.path());
-    }
-
-    m_painter->restore();
+    Q_UNUSED(round);
+    // Rounded Corners modifier, not implemented
 }
 
 void QLottieRasterRenderer::render(const QLottieFill &fill)
@@ -221,6 +150,9 @@ void QLottieRasterRenderer::render(const QLottieFill &fill)
     QColor color = fill.color();
     color.setAlphaF(alpha);
     m_painter->setBrush(color);
+    m_renderPath.setFillRule(fill.fillRule());
+    m_unitedPath.setFillRule(fill.fillRule());
+    m_clipPath.setFillRule(fill.fillRule());
 }
 
 void QLottieRasterRenderer::render(const QLottieGFill &gradient)
@@ -237,6 +169,9 @@ void QLottieRasterRenderer::render(const QLottieGFill &gradient)
         qCWarning(lcLottieQtLottieRender) << "Gradient:"
                                              << gradient.name()
                                              << "Cannot draw gradient fill";
+    m_renderPath.setFillRule(gradient.fillRule());
+    m_unitedPath.setFillRule(gradient.fillRule());
+    m_clipPath.setFillRule(gradient.fillRule());
 }
 
 void QLottieRasterRenderer::render(const QLottieStroke &stroke)
@@ -279,28 +214,10 @@ void QLottieRasterRenderer::render(const QLottieShapeTransform &transform)
 
 void QLottieRasterRenderer::render(const QLottieFreeFormShape &shape)
 {
-    m_painter->save();
-
-    for (int i = 0; i < m_repeatCount; i ++) {
-        qCDebug(lcLottieQtLottieRender) << "Render shape:"
-                                           << shape.name() << "of"
-                                           << shape.parent()->name();
-        applyRepeaterTransform(i);
-        if (trimmingState() == QLottieRenderer::Sequential) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(shape.path());
-            tp.addPath(m_unitedPath);
-            m_unitedPath = tp;
-        } else if (m_buildingClipRegion) {
-            QTransform t = m_painter->transform();
-            QPainterPath tp = t.map(shape.path());
-            tp.addPath(m_clipPath);
-            m_clipPath = tp;
-        } else
-            m_painter->drawPath(shape.path());
-    }
-
-    m_painter->restore();
+    qCDebug(lcLottieQtLottieRender) << "Render shape:"
+                                    << shape.name() << "of"
+                                    << shape.parent()->name();
+    m_renderPath.addPath(shape.path());
 }
 
 void QLottieRasterRenderer::render(const QLottieTrimPath &trimPath)
@@ -358,6 +275,38 @@ void QLottieRasterRenderer::render(const QLottieRepeater &repeater)
 
     m_painter->translate(m_repeatOffset * m_repeaterTransform->position().x(),
                          m_repeatOffset * m_repeaterTransform->position().y());
+}
+
+void QLottieRasterRenderer::renderPathElements(const QList<QLottieBase *> &pathElements)
+{
+    qCDebug(lcLottieQtLottieRender) << "PathElements: count:" << pathElements.size();
+
+    m_painter->save();
+
+    m_renderPath.clear();
+    for (const QLottieBase *element : pathElements)
+        element->render(*this); // Accumulates element paths in m_renderPath
+
+    for (int i = 0; i < m_repeatCount; i++) {
+        if (i > 0)
+            qCDebug(lcLottieQtLottieRender) << "Render repeated, combined path, iteration" << i + 1;
+        applyRepeaterTransform(i);
+        if (trimmingState() == QLottieRenderer::Sequential) {
+            QTransform t = m_painter->transform();
+            QPainterPath tp = t.map(m_renderPath);
+            tp.addPath(m_unitedPath);
+            m_unitedPath = tp;
+        } else if (m_buildingClipRegion) {
+            QTransform t = m_painter->transform();
+            QPainterPath tp = t.map(m_renderPath);
+            tp.addPath(m_clipPath);
+            m_clipPath = tp;
+        } else {
+            m_painter->drawPath(m_renderPath);
+        }
+    }
+
+    m_painter->restore();
 }
 
 void QLottieRasterRenderer::applyRepeaterTransform(int instance)

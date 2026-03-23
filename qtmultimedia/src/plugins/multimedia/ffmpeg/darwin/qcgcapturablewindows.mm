@@ -9,9 +9,13 @@
 
 #include <QtMultimedia/private/qcapturablewindow_p.h>
 
+#include <QtFFmpegMediaPluginImpl/private/qffmpegdarwinintegrationfactory_p.h>
+
 #import <AppKit/NSWindow.h>
 
 QT_BEGIN_NAMESPACE
+
+namespace QFFmpeg {
 
 QList<QCapturableWindow> QCGCapturableWindows::windows() const
 {
@@ -66,5 +70,12 @@ q23::expected<QCapturableWindow, QString> QCGCapturableWindows::fromQWindow(QWin
         static_cast<QCapturableWindowPrivate::Id>(cgWindowId),
         window->title());
 }
+
+std::unique_ptr<QPlatformCapturableWindows> makeQCgCapturableWindows()
+{
+    return std::make_unique<QCGCapturableWindows>();
+}
+
+} // namespace QFFmpeg
 
 QT_END_NAMESPACE

@@ -27,7 +27,10 @@
 
 #include "dawn/native/vulkan/DeviceVk.h"
 
+#include <algorithm>
+
 #include "dawn/common/Log.h"
+#include "dawn/common/Math.h"
 #include "dawn/common/NonCopyable.h"
 #include "dawn/common/Platform.h"
 #include "dawn/common/Version_autogen.h"
@@ -37,6 +40,7 @@
 #include "dawn/native/Error.h"
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Instance.h"
+#include "dawn/native/IntegerTypes.h"
 #include "dawn/native/SystemHandle.h"
 #include "dawn/native/VulkanBackend.h"
 #include "dawn/native/vulkan/BackendVk.h"
@@ -46,6 +50,7 @@
 #include "dawn/native/vulkan/CommandBufferVk.h"
 #include "dawn/native/vulkan/ComputePipelineVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
+#include "dawn/native/vulkan/FramebufferCache.h"
 #include "dawn/native/vulkan/PhysicalDeviceVk.h"
 #include "dawn/native/vulkan/PipelineCacheVk.h"
 #include "dawn/native/vulkan/PipelineLayoutVk.h"
@@ -95,6 +100,15 @@ Device::Device(AdapterBase* adapter,
       mDebugPrefix(GetNextDeviceDebugPrefix()) {}
 
 MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
+    if (GetInstance()->IsBackendValidationEnabled() &&
+        !IsToggleEnabled(Toggle::UseUserDefinedLabelsInBackend)) {
+        // NOTE: If Vulkan backend validation is enabled then these labels must be set to associate
+        // validation errors with a specific device. Backend validation errors will cause a crash
+        // if labels are not set.
+        EmitLog(wgpu::LoggingType::Warning,
+                "Backend object labels are required to map Vulkan backend errors to a device.");
+    }
+
     // Copy the adapter's device info to the device so that we can change the "knobs"
     mDeviceInfo = ToBackend(GetPhysicalDevice())->GetDeviceInfo();
 
@@ -110,11 +124,10 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
         VkPhysicalDevice vkPhysicalDevice = ToBackend(GetPhysicalDevice())->GetVkPhysicalDevice();
 
         VulkanDeviceKnobs usedDeviceKnobs = {};
-        DAWN_TRY_ASSIGN(usedDeviceKnobs,
-                        CreateDevice(GetAdapter()->GetFeatureLevel(), vkPhysicalDevice));
+        DAWN_TRY_ASSIGN(usedDeviceKnobs, CreateDevice(vkPhysicalDevice));
         *static_cast<VulkanDeviceKnobs*>(&mDeviceInfo) = usedDeviceKnobs;
 
-        DAWN_TRY(functions->LoadDeviceProcs(mVkDevice, mDeviceInfo));
+        DAWN_TRY(functions->LoadDeviceProcs(GetVkInstance(), mVkDevice, mDeviceInfo));
 
         mDeleter = std::make_unique<MutexProtected<FencedDeleter>>(this);
     }
@@ -127,8 +140,13 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
         functions->CmdDrawIndexedIndirect = NoopDrawFunction<PFN_vkCmdDrawIndexedIndirect>::Fun;
     }
 
+    mFramebufferCache = std::make_unique<FramebufferCache>(this);
     mRenderPassCache = std::make_unique<RenderPassCache>(this);
-    mResourceMemoryAllocator = std::make_unique<MutexProtected<ResourceMemoryAllocator>>(this);
+
+    VkDeviceSize heapBlockSize =
+        ResourceMemoryAllocator::GetHeapBlockSize(descriptor.Get<DawnDeviceAllocatorControl>());
+    mResourceMemoryAllocator =
+        std::make_unique<MutexProtected<ResourceMemoryAllocator>>(this, heapBlockSize);
 
     mExternalMemoryService = std::make_unique<external_memory::Service>(this);
 
@@ -163,16 +181,6 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
 #endif
     }
 
-    if (IsToggleEnabled(Toggle::VulkanMonolithicPipelineCache)) {
-        CacheKey cacheKey = GetCacheKey();
-        // `pipelineCacheUUID` is supposed to change if anything in the driver changes such that
-        // the serialized VkPipelineCache is no longer valid.
-        auto& deviceProperties = GetDeviceInfo().properties;
-        StreamIn(&cacheKey, deviceProperties.pipelineCacheUUID);
-
-        mMonolithicPipelineCache = PipelineCache::CreateMonolithic(this, cacheKey);
-    }
-
     SetLabelImpl();
 
     ToBackend(GetPhysicalDevice())->GetVulkanInstance()->StartListeningForDeviceMessages(this);
@@ -180,7 +188,7 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     Ref<Queue> queue;
     DAWN_TRY_ASSIGN(queue, Queue::Create(this, &descriptor->defaultQueue, mMainQueueFamily));
 
-    return DeviceBase::Initialize(std::move(queue));
+    return DeviceBase::Initialize(descriptor, std::move(queue));
 }
 
 Device::~Device() {
@@ -225,10 +233,8 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult,
-    OwnedCompilationMessages* compilationMessages) {
-    return ShaderModule::Create(this, descriptor, internalExtensions, parseResult,
-                                compilationMessages);
+    ShaderModuleParseResult* parseResult) {
+    return ShaderModule::Create(this, descriptor, internalExtensions, parseResult);
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
                                                               SwapChainBase* previousSwapChain,
@@ -245,7 +251,17 @@ ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     return TextureView::Create(texture, descriptor);
 }
 Ref<PipelineCacheBase> Device::GetOrCreatePipelineCacheImpl(const CacheKey& key) {
-    if (mMonolithicPipelineCache) {
+    if (IsToggleEnabled(Toggle::VulkanMonolithicPipelineCache)) {
+        std::call_once(mMonolithicPipelineCacheFlag, [this]() {
+            CacheKey cacheKey = GetCacheKey();
+            // `pipelineCacheUUID` is supposed to change if anything in the driver changes such that
+            // the serialized VkPipelineCache is no longer valid.
+            auto& deviceProperties = GetDeviceInfo().properties;
+            StreamIn(&cacheKey, deviceProperties.pipelineCacheUUID);
+
+            mMonolithicPipelineCache = PipelineCache::CreateMonolithic(this, cacheKey);
+        });
+
         return mMonolithicPipelineCache;
     }
 
@@ -372,6 +388,10 @@ MutexProtected<FencedDeleter>& Device::GetFencedDeleter() const {
     return *mDeleter;
 }
 
+FramebufferCache* Device::GetFramebufferCache() const {
+    return mFramebufferCache.get();
+}
+
 RenderPassCache* Device::GetRenderPassCache() const {
     return mRenderPassCache.get();
 }
@@ -389,8 +409,7 @@ void Device::EnqueueDeferredDeallocation(DescriptorSetAllocator* allocator) {
                                                       GetQueue()->GetPendingCommandSerial());
 }
 
-ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(wgpu::FeatureLevel featureLevel,
-                                                      VkPhysicalDevice vkPhysicalDevice) {
+ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysicalDevice) {
     VulkanDeviceKnobs usedKnobs = {};
 
     // Default to asking for all available known extensions.
@@ -398,7 +417,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(wgpu::FeatureLevel feature
 
     // However only request the extensions that haven't been promoted in the device's apiVersion
     std::vector<const char*> extensionNames;
-    for (DeviceExt ext : IterateBitSet(usedKnobs.extensions)) {
+    for (DeviceExt ext : usedKnobs.extensions) {
         const DeviceExtInfo& info = GetDeviceExtInfo(ext);
 
         if (info.versionPromoted > mDeviceInfo.properties.apiVersion) {
@@ -418,16 +437,19 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(wgpu::FeatureLevel feature
     PNextChainBuilder featuresChain(&features2);
 
     // Required for core WebGPU features.
-    if (featureLevel == wgpu::FeatureLevel::Core) {
+    if (HasFeature(Feature::CoreFeaturesAndLimits)) {
         usedKnobs.features.depthBiasClamp = VK_TRUE;
         usedKnobs.features.imageCubeArray = VK_TRUE;
         usedKnobs.features.independentBlend = VK_TRUE;
+        usedKnobs.features.sampleRateShading = VK_TRUE;
     }
     // Required for core and compat WebGPU features.
     usedKnobs.features.fullDrawIndexUint32 = VK_TRUE;
-    // TODO(crbug.com/391899124): Check if following features needs to be enabled in compat mode.
     usedKnobs.features.fragmentStoresAndAtomics = VK_TRUE;
-    usedKnobs.features.sampleRateShading = VK_TRUE;
+    usedKnobs.features.shaderUniformBufferArrayDynamicIndexing = VK_TRUE;
+    usedKnobs.features.shaderStorageBufferArrayDynamicIndexing = VK_TRUE;
+    usedKnobs.features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+    usedKnobs.features.shaderStorageImageArrayDynamicIndexing = VK_TRUE;
 
     if (IsRobustnessEnabled()) {
         usedKnobs.features.robustBufferAccess = VK_TRUE;
@@ -494,6 +516,12 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(wgpu::FeatureLevel feature
         usedKnobs.features.depthClamp = VK_TRUE;
     }
 
+    if (HasFeature(Feature::ChromiumExperimentalPrimitiveId)) {
+        DAWN_ASSERT(mDeviceInfo.features.geometryShader == VK_TRUE);
+        usedKnobs.features.geometryShader = VK_TRUE;
+    }
+
+    bool shaderFloat16Int8FeaturesAdded = false;
     if (HasFeature(Feature::ShaderF16)) {
         DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::ShaderFloat16Int8) &&
                     mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
@@ -508,6 +536,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(wgpu::FeatureLevel feature
         if (mDeviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE) {
             usedKnobs._16BitStorageFeatures.storageInputOutput16 = VK_TRUE;
         }
+        shaderFloat16Int8FeaturesAdded = true;
 
         featuresChain.Add(&usedKnobs.shaderFloat16Int8Features,
                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR);
@@ -516,12 +545,9 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(wgpu::FeatureLevel feature
     }
 
     // Set device feature for subgroups with f16 types.
-    if (HasFeature(Feature::SubgroupsF16) ||
-        (HasFeature(Feature::ShaderF16) && HasFeature(Feature::Subgroups))) {
+    if (HasFeature(Feature::ShaderF16) && HasFeature(Feature::Subgroups)) {
         DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::ShaderSubgroupExtendedTypes) &&
-                    mDeviceInfo.shaderSubgroupExtendedTypes.shaderSubgroupExtendedTypes ==
-                        VK_TRUE &&
-                    HasFeature(Feature::ShaderF16) && HasFeature(Feature::Subgroups));
+                    mDeviceInfo.shaderSubgroupExtendedTypes.shaderSubgroupExtendedTypes == VK_TRUE);
 
         usedKnobs.shaderSubgroupExtendedTypes = mDeviceInfo.shaderSubgroupExtendedTypes;
         featuresChain.Add(&usedKnobs.shaderSubgroupExtendedTypes);
@@ -535,7 +561,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(wgpu::FeatureLevel feature
         usedKnobs.features.shaderClipDistance = VK_TRUE;
     }
 
-    if (HasFeature(Feature::R8UnormStorage)) {
+    if (HasFeature(Feature::R8UnormStorage) || HasFeature(Feature::TextureFormatsTier1)) {
         usedKnobs.features.shaderStorageImageExtendedFormats = VK_TRUE;
     }
 
@@ -558,6 +584,23 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(wgpu::FeatureLevel feature
         DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::DrawIndirectCount) &&
                     mDeviceInfo.features.multiDrawIndirect == VK_TRUE);
         usedKnobs.features.multiDrawIndirect = VK_TRUE;
+    }
+
+    if (HasFeature(Feature::ChromiumExperimentalSubgroupMatrix)) {
+        DAWN_ASSERT(IsToggleEnabled(Toggle::UseVulkanMemoryModel));
+        DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::CooperativeMatrix));
+        usedKnobs.cooperativeMatrixFeatures = mDeviceInfo.cooperativeMatrixFeatures;
+        featuresChain.Add(&usedKnobs.cooperativeMatrixFeatures);
+
+        // Using int8 and uint8 cooperative matrices requires `shaderInt8`.
+        if (mDeviceInfo.shaderFloat16Int8Features.shaderInt8 == VK_TRUE) {
+            usedKnobs.shaderFloat16Int8Features.shaderInt8 = VK_TRUE;
+            if (!shaderFloat16Int8FeaturesAdded) {
+                featuresChain.Add(
+                    &usedKnobs.shaderFloat16Int8Features,
+                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR);
+            }
+        }
     }
 
     // Find a universal queue family
@@ -625,11 +668,11 @@ VulkanFunctions* Device::GetMutableFunctions() {
     return const_cast<VulkanFunctions*>(&fn);
 }
 
-MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
-                                               uint64_t sourceOffset,
-                                               BufferBase* destination,
-                                               uint64_t destinationOffset,
-                                               uint64_t size) {
+MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
+                                           uint64_t sourceOffset,
+                                           BufferBase* destination,
+                                           uint64_t destinationOffset,
+                                           uint64_t size) {
     // It is a validation error to do a 0-sized copy in Vulkan, check it is skipped prior to
     // calling this function.
     DAWN_ASSERT(size != 0);
@@ -660,7 +703,7 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
 }
 
 MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
-                                                const TextureDataLayout& src,
+                                                const TexelCopyBufferLayout& src,
                                                 const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     // There is no need of a barrier to make host writes available and visible to the copy
@@ -779,9 +822,10 @@ Ref<TextureBase> Device::CreateTextureWrappingVulkanImage(
     if (ConsumedError(ValidateIsAlive())) {
         return nullptr;
     }
+    TextureDescriptor reifiedDescriptor =
+        FromAPI(descriptor->cTextureDescriptor)->WithTrivialFrontendDefaults();
     UnpackedPtr<TextureDescriptor> textureDescriptor;
-    if (ConsumedError(ValidateAndUnpack(FromAPI(descriptor->cTextureDescriptor)),
-                      &textureDescriptor)) {
+    if (ConsumedError(ValidateAndUnpack(&reifiedDescriptor), &textureDescriptor)) {
         return nullptr;
     }
     if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor,
@@ -919,10 +963,11 @@ void Device::DestroyImpl() {
     GetResourceMemoryAllocator()->Tick(kMaxExecutionSerial);
 
     // Allow recycled memory to be deleted.
-    GetResourceMemoryAllocator()->DestroyPool();
+    GetResourceMemoryAllocator()->FreeRecycledMemory();
 
-    // The VkRenderPasses in the cache can be destroyed immediately since all commands referring
-    // to them are guaranteed to be finished executing.
+    // The VkFramebuffers and VkRenderPasses in the cache can be destroyed immediately since all
+    // commands referring to them are guaranteed to be finished executing.
+    mFramebufferCache = nullptr;
     mRenderPassCache = nullptr;
 
     // Destroy the VkPipelineCache before VkDevice.
@@ -1008,8 +1053,57 @@ float Device::GetTimestampPeriodInNS() const {
     return mDeviceInfo.properties.limits.timestampPeriod;
 }
 
+AllocatorMemoryInfo Device::GetAllocatorMemoryInfo() const {
+    DAWN_ASSERT(IsLockedByCurrentThreadIfNeeded());
+    AllocatorMemoryInfo info = {};
+    info.totalAllocatedMemory = GetResourceMemoryAllocator()->GetTotalAllocatedMemory();
+    info.totalUsedMemory = GetResourceMemoryAllocator()->GetTotalUsedMemory();
+    info.totalLazyAllocatedMemory = GetResourceMemoryAllocator()->GetTotalLazyAllocatedMemory();
+    info.totalLazyUsedMemory = GetResourceMemoryAllocator()->GetTotalLazyUsedMemory();
+    return info;
+}
+
 void Device::SetLabelImpl() {
     SetDebugName(this, VK_OBJECT_TYPE_DEVICE, mVkDevice, "Dawn_Device", GetLabel());
+}
+
+bool Device::ReduceMemoryUsageImpl() {
+    GetResourceMemoryAllocator()->FreeRecycledMemory();
+
+    GetFramebufferCache()->Clear();
+
+    auto GetLastPendingDeletionSerial = [this]() {
+        // Only hold the lock for one of these objects at a time to avoid lock-order-inversion.
+        auto deleterSerial = GetFencedDeleter()->GetLastPendingDeletionSerial();
+        auto allocatorSerial = GetResourceMemoryAllocator()->GetLastPendingDeletionSerial();
+        return std::max(deleterSerial, allocatorSerial);
+    };
+    ExecutionSerial deletionSerial = GetLastPendingDeletionSerial();
+
+    if (deletionSerial == kBeginningOfGPUTime) {
+        // Nothing pending deletion.
+        return false;
+    }
+
+    Queue* queue = ToBackend(GetQueue());
+
+    if (deletionSerial > queue->GetLastSubmittedCommandSerial()) {
+        // Submit any pending commands to ensure that the pending deletion serial completes. One
+        // complication here is that there might not be any pending commands and the queue would
+        // skip commit. Getting the recording context works makes it look like there is work to
+        // submit in all cases.
+        // TODO(crbug.com/398193014): If there is no work in the queue to submit then the device
+        // should be able to immediately delete objects enqueued for deletion after tick completes.
+        queue->GetPendingRecordingContext();
+    }
+
+    if (ConsumedError(TickImpl())) {
+        return false;
+    }
+    DAWN_ASSERT(deletionSerial <= queue->GetLastSubmittedCommandSerial());
+
+    // Check again if there is anything left to delete as tick might have deleted objects.
+    return GetLastPendingDeletionSerial() != kBeginningOfGPUTime;
 }
 
 void Device::PerformIdleTasksImpl() {
@@ -1017,10 +1111,34 @@ void Device::PerformIdleTasksImpl() {
         MaybeError maybeError = mMonolithicPipelineCache->StoreOnIdle();
         if (maybeError.IsError()) {
             std::unique_ptr<ErrorData> error = maybeError.AcquireError();
-            EmitLog(WGPULoggingType_Error, error->GetFormattedMessage().c_str());
+            EmitLog(wgpu::LoggingType::Error, error->GetFormattedMessage().c_str());
             return;
         }
     }
+}
+
+bool Device::CanAddStorageUsageToBufferWithoutSideEffects(wgpu::BufferUsage storageUsage,
+                                                          wgpu::BufferUsage originalUsage,
+                                                          size_t bufferSize) const {
+    DAWN_ASSERT(IsSubset(storageUsage, wgpu::BufferUsage::Storage | kInternalStorageBuffer |
+                                           kReadOnlyStorageBuffer));
+    if (originalUsage & kMappableBufferUsages) {
+        return HasFeature(Feature::BufferMapExtendedUsages);
+    }
+    return true;
+}
+
+// Gets or creates an occlusion Query object for use with Toggle::VulkanAddWorkToEmptyResolvePass.
+QuerySetBase* Device::GetEmptyPassQuerySet() {
+    DAWN_ASSERT(IsToggleEnabled(Toggle::VulkanAddWorkToEmptyResolvePass));
+
+    if (!mEmptyPassQuerySet) {
+        QuerySetDescriptor descriptor;
+        descriptor.type = wgpu::QueryType::Occlusion;
+        descriptor.count = 1;
+        mEmptyPassQuerySet = APICreateQuerySet(&descriptor);
+    }
+    return mEmptyPassQuerySet.Get();
 }
 
 }  // namespace dawn::native::vulkan

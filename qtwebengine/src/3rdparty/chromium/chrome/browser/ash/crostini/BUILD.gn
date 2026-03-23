@@ -14,6 +14,10 @@ mojom("crostini_installer_types_mojom") {
 
 static_library("crostini") {
   sources = [
+    "baguette_download.cc",
+    "baguette_download.h",
+    "baguette_installer.cc",
+    "baguette_installer.h",
     "crostini_disk.cc",
     "crostini_disk.h",
     "crostini_export_import.cc",
@@ -205,6 +209,10 @@ static_library("test_support") {
     "//components/prefs",
     "//ui/views:test_support",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 static_library("browser_test_support") {
@@ -235,6 +243,7 @@ source_set("unit_tests") {
   testonly = true
 
   sources = [
+    "baguette_download_unittest.cc",
     "crostini_disk_unittest.cc",
     "crostini_export_import_unittest.cc",
     "crostini_features_unittest.cc",
@@ -334,7 +343,7 @@ source_set("browser_tests") {
     ":browser_test_support",
     ":crostini",
     ":test_support",
-    "//base:base",
+    "//base",
     "//base/test:test_support",
     "//chrome/browser",
     "//chrome/browser:browser_process",

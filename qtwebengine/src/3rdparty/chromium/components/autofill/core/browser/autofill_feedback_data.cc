@@ -4,6 +4,9 @@
 
 #include "components/autofill/core/browser/autofill_feedback_data.h"
 
+#include <variant>
+
+#include "base/strings/string_number_conversions.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/foundations/browser_autofill_manager.h"
 #include "components/autofill/core/browser/metrics/log_event.h"
@@ -32,6 +35,10 @@ std::string FillDataTypeToStr(FillDataType type) {
       return "SingleFieldFillerPromoCode";
     case FillDataType::kAutofillAi:
       return "AutofillAi";
+    case FillDataType::kSingleFieldFillerLoyaltyCard:
+      return "SingleFieldFillerLoyaltyCard";
+    case FillDataType::kOneTimePasswordValue:
+      return "OneTimePasswordValue";
   }
 }
 
@@ -46,7 +53,7 @@ base::Value::Dict BuildFieldDataLogs(AutofillField* field) {
   field_data.Set("autocompleteAttribute", field->autocomplete_attribute());
   field_data.Set("labelAttribute", field->label());
   field_data.Set("placeholderAttribute", field->placeholder());
-  field_data.Set("fieldType", field->Type().ToStringView());
+  field_data.Set("fieldType", field->Type().ToString());
   field_data.Set("heuristicType",
                  FieldTypeToStringView(field->heuristic_type()));
   field_data.Set("serverType", FieldTypeToStringView(field->server_type()));
@@ -63,7 +70,7 @@ base::Value::Dict BuildFieldDataLogs(AutofillField* field) {
       "rankInHostFormSignatureGroup",
       base::NumberToString(field->rank_in_host_form_signature_group()));
 
-  field_data.Set("isEmpty", field->value(ValueSemantics::kCurrent).empty());
+  field_data.Set("isEmpty", field->value().empty());
   field_data.Set("isFocusable", field->IsFocusable());
   field_data.Set("isVisible", field->is_visible());
   return field_data;
@@ -80,7 +87,7 @@ base::Value::Dict BuildLastAutofillEventLogs(AutofillManager* manager) {
     for (const auto& field : form->fields()) {
       for (const auto& field_log_event : field->field_log_events()) {
         if (const TriggerFillFieldLogEvent* trigger_event =
-                absl::get_if<TriggerFillFieldLogEvent>(&field_log_event)) {
+                std::get_if<TriggerFillFieldLogEvent>(&field_log_event)) {
           had_trigger_event = true;
           if (trigger_event->timestamp > last_autofill_event_timestamp) {
             last_autofill_event_timestamp = trigger_event->timestamp;

@@ -5,6 +5,7 @@
 #include "components/policy/core/browser/cloud/user_policy_signin_service_base.h"
 
 #include <utility>
+#include <variant>
 
 #include "base/dcheck_is_on.h"
 #include "base/functional/bind.h"
@@ -22,42 +23,49 @@
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/account_managed_status_finder.h"
 
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/build_info.h"
+#endif
+
 namespace em = enterprise_management;
 
 namespace policy {
 
 namespace {
 
+em::DeviceRegisterRequest::Type GetCloudPolicyRegistrationType() {
 #if BUILDFLAG(IS_ANDROID)
-const em::DeviceRegisterRequest::Type kCloudPolicyRegistrationType =
-    em::DeviceRegisterRequest::ANDROID_BROWSER;
+  if (base::android::BuildInfo::GetInstance()->is_desktop()) {
+    return em::DeviceRegisterRequest::BROWSER;
+  } else {
+    return em::DeviceRegisterRequest::ANDROID_BROWSER;
+  }
 #elif BUILDFLAG(IS_IOS)
-const em::DeviceRegisterRequest::Type kCloudPolicyRegistrationType =
-    em::DeviceRegisterRequest::IOS_BROWSER;
+  return em::DeviceRegisterRequest::IOS_BROWSER;
 #else
-const em::DeviceRegisterRequest::Type kCloudPolicyRegistrationType =
-    em::DeviceRegisterRequest::BROWSER;
+  return em::DeviceRegisterRequest::BROWSER;
 #endif
+}
 
 }  // namespace
 
 UserPolicySigninServiceBase::UserPolicySigninServiceBase(
     PrefService* local_state,
     DeviceManagementService* device_management_service,
-    absl::variant<UserCloudPolicyManager*, ProfileCloudPolicyManager*>
+    std::variant<UserCloudPolicyManager*, ProfileCloudPolicyManager*>
         policy_manager,
     signin::IdentityManager* identity_manager,
     scoped_refptr<network::SharedURLLoaderFactory> system_url_loader_factory)
     : user_policy_manager_(
-          absl::holds_alternative<UserCloudPolicyManager*>(policy_manager)
-              ? absl::get<UserCloudPolicyManager*>(policy_manager)
+          std::holds_alternative<UserCloudPolicyManager*>(policy_manager)
+              ? std::get<UserCloudPolicyManager*>(policy_manager)
               : nullptr),
       policy_manager_(
-          absl::holds_alternative<UserCloudPolicyManager*>(policy_manager)
+          std::holds_alternative<UserCloudPolicyManager*>(policy_manager)
               ? static_cast<CloudPolicyManager*>(
-                    absl::get<UserCloudPolicyManager*>(policy_manager))
+                    std::get<UserCloudPolicyManager*>(policy_manager))
               : static_cast<CloudPolicyManager*>(
-                    absl::get<ProfileCloudPolicyManager*>(policy_manager))),
+                    std::get<ProfileCloudPolicyManager*>(policy_manager))),
       identity_manager_(identity_manager),
       local_state_(local_state),
       device_management_service_(device_management_service),
@@ -110,11 +118,6 @@ void UserPolicySigninServiceBase::FetchPolicyForSignedInUser(
   manager->core()->service()->RefreshPolicy(std::move(callback),
                                             PolicyFetchReason::kSignin);
 }
-
-void UserPolicySigninServiceBase::OnPolicyFetched(CloudPolicyClient* client) {}
-
-void UserPolicySigninServiceBase::OnRegistrationStateChanged(
-    CloudPolicyClient* client) {}
 
 void UserPolicySigninServiceBase::OnClientError(CloudPolicyClient* client) {
   if (client->is_registered()) {
@@ -314,7 +317,7 @@ void UserPolicySigninServiceBase::RegisterForPolicyWithAccountId(
   // `RegisterForPolicyWithAccountId()`, if any.
   registration_helper_for_temporary_client_ =
       std::make_unique<CloudPolicyClientRegistrationHelper>(
-          policy_client.get(), kCloudPolicyRegistrationType);
+          policy_client.get(), GetCloudPolicyRegistrationType());
 
   // Using a raw pointer to |this| is okay, because the service owns
   // |registration_helper_for_temporary_client_|.
@@ -332,8 +335,7 @@ void UserPolicySigninServiceBase::SetDeviceDMTokenCallbackForTesting(
 }
 
 void UserPolicySigninServiceBase::RegisterCloudPolicyService() {
-  DCHECK(
-      identity_manager()->HasPrimaryAccount(GetConsentLevelForRegistration()));
+  DCHECK(identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
   DCHECK(policy_manager()->core()->client());
   DCHECK(!policy_manager()->IsClientRegistered());
 
@@ -349,10 +351,10 @@ void UserPolicySigninServiceBase::RegisterCloudPolicyService() {
   // Start the process of registering the CloudPolicyClient. Once it completes,
   // policy fetch will automatically happen.
   registration_helper_ = std::make_unique<CloudPolicyClientRegistrationHelper>(
-      policy_manager()->core()->client(), kCloudPolicyRegistrationType);
+      policy_manager()->core()->client(), GetCloudPolicyRegistrationType());
   registration_helper_->StartRegistration(
       identity_manager(),
-      identity_manager()->GetPrimaryAccountId(GetConsentLevelForRegistration()),
+      identity_manager()->GetPrimaryAccountId(signin::ConsentLevel::kSignin),
       base::BindOnce(&UserPolicySigninServiceBase::OnRegistrationComplete,
                      base::Unretained(this)));
 }
@@ -363,7 +365,6 @@ UserPolicySigninServiceBase::GetDeviceDMTokenIfAffiliatedCallback() {
 }
 
 void UserPolicySigninServiceBase::OnRegistrationComplete() {
-  ProhibitSignoutIfNeeded();
   registration_helper_.reset();
 }
 
@@ -381,7 +382,6 @@ void UserPolicySigninServiceBase::
   if (manager->IsClientRegistered()) {
     DVLOG_POLICY(1, POLICY_FETCHING)
         << "Client already registered - not fetching DMToken";
-    ProhibitSignoutIfNeeded();
     return;
   }
 
@@ -406,15 +406,11 @@ void UserPolicySigninServiceBase::
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE, registration_callback_.callback(), try_registration_delay);
   }
-
-  ProhibitSignoutIfNeeded();
 }
 
 void UserPolicySigninServiceBase::OnPolicyRefreshed(bool success) {
   policy_fetch_callbacks().Notify(success);
 }
-
-void UserPolicySigninServiceBase::ProhibitSignoutIfNeeded() {}
 
 bool UserPolicySigninServiceBase::CanApplyPolicies(
     bool check_for_refresh_token) {
@@ -422,10 +418,5 @@ bool UserPolicySigninServiceBase::CanApplyPolicies(
 }
 
 void UserPolicySigninServiceBase::UpdateLastPolicyCheckTime() {}
-
-signin::ConsentLevel
-UserPolicySigninServiceBase::GetConsentLevelForRegistration() {
-  return signin::ConsentLevel::kSignin;
-}
 
 }  // namespace policy

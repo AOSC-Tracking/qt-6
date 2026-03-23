@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-vlrelu/rvv.c.in
 //   Generator: tools/xngen
@@ -11,14 +12,14 @@
 
 #include <riscv_vector.h>
 
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/vunary.h"
 
 
 void xnn_qs8_vlrelu_ukernel__rvv_u1v(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const struct xnn_qs8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_qs8_lrelu_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);

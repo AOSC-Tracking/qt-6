@@ -2,17 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_PARSER_CSS_SELECTOR_PARSER_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_PARSER_CSS_SELECTOR_PARSER_H_
 
 #include <memory>
 #include <optional>
 
+#include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_selector.h"
 #include "third_party/blink/renderer/core/css/parser/css_nesting_type.h"
@@ -254,8 +251,8 @@ class CORE_EXPORT CSSSelectorParser {
 
   bool failed_parsing_ = false;
   bool disallow_pseudo_elements_ = false;
-  // If we're inside a pseudo class that only accepts compound selectors,
-  // for example :host, inner :is()/:where() pseudo classes are also only
+  // If we're inside a pseudo-class that only accepts compound selectors,
+  // for example :host, inner :is()/:where() pseudo-classes are also only
   // allowed to contain compound selectors.
   bool inside_compound_pseudo_ = false;
   // When parsing a compound which includes a pseudo-element, the simple
@@ -329,9 +326,11 @@ class CORE_EXPORT CSSSelectorParser {
       }
     }
 
-    base::span<CSSSelector> AddedElements() {
+    base::span<CSSSelector> AddedElements() const {
       DCHECK_GE(vector_.size(), initial_size_);
-      return {vector_.begin() + initial_size_, vector_.end()};
+      // SAFETY: Performance sensitive. Depends upon the invariant
+      // that initial_size_ is always in range.
+      return UNSAFE_BUFFERS({vector_.begin() + initial_size_, vector_.end()});
     }
 
     // Make sure the added elements are left on the vector after

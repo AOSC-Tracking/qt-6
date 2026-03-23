@@ -70,7 +70,8 @@ Trigger *sqlite3TriggerList(Parse *pParse, Table *pTab){
       assert( pParse->db->pVtabCtx==0 );
 #endif
       assert( pParse->bReturning );
-      assert( &(pParse->u1.pReturning->retTrig) == pTrig );
+      assert( !pParse->isCreate );
+      assert( &(pParse->u1.d.pReturning->retTrig) == pTrig );
       pTrig->table = pTab->zName;
       pTrig->pTabSchema = pTab->pSchema;
       pTrig->pNext = pList;
@@ -152,8 +153,10 @@ void sqlite3BeginTrigger(
   ** name on pTableName if we are reparsing out of the schema table
   */
   if( db->init.busy && iDb!=1 ){
-    sqlite3DbFree(db, pTableName->a[0].zDatabase);
-    pTableName->a[0].zDatabase = 0;
+    assert( pTableName->a[0].fg.fixedSchema==0 );
+    assert( pTableName->a[0].fg.isSubquery==0 );
+    sqlite3DbFree(db, pTableName->a[0].u4.zDatabase);
+    pTableName->a[0].u4.zDatabase = 0;
   }
 
   /* If the trigger name was unqualified, and the table is a temp table,
@@ -631,7 +634,8 @@ void sqlite3DropTrigger(Parse *pParse, SrcList *pName, int noErr){
   }
 
   assert( pName->nSrc==1 );
-  zDb = pName->a[0].zDatabase;
+  assert( pName->a[0].fg.fixedSchema==0 && pName->a[0].fg.isSubquery==0 );
+  zDb = pName->a[0].u4.zDatabase;
   zName = pName->a[0].zName;
   assert( zDb!=0 || sqlite3BtreeHoldsAllMutexes(db) );
   for(i=OMIT_TEMPDB; i<db->nDb; i++){
@@ -868,7 +872,9 @@ SrcList *sqlite3TriggerStepSrc(
     Schema *pSchema = pStep->pTrig->pSchema;
     pSrc->a[0].zName = zName;
     if( pSchema!=db->aDb[1].pSchema ){
-      pSrc->a[0].pSchema = pSchema;
+      assert( pSrc->a[0].fg.fixedSchema || pSrc->a[0].u4.zDatabase==0 );
+      pSrc->a[0].u4.pSchema = pSchema;
+      pSrc->a[0].fg.fixedSchema = 1;
     }
     if( pStep->pFrom ){
       SrcList *pDup = sqlite3SrcListDup(db, pStep->pFrom, 0);
@@ -981,7 +987,7 @@ static int sqlite3ReturningSubqueryCorrelated(Walker *pWalker, Select *pSelect){
   pSrc = pSelect->pSrc;
   assert( pSrc!=0 );
   for(i=0; i<pSrc->nSrc; i++){
-    if( pSrc->a[i].pTab==pWalker->u.pTab ){
+    if( pSrc->a[i].pSTab==pWalker->u.pTab ){
       testcase( pSelect->selFlags & SF_Correlated );
       pSelect->selFlags |= SF_Correlated;
       pWalker->eCode = 1;
@@ -1033,7 +1039,8 @@ static void codeReturningTrigger(
   ExprList *pNew;
   Returning *pReturning;
   Select sSelect;
-  SrcList sFrom;
+  SrcList *pFrom;
+  u8 fromSpace[SZ_SRCLIST_1];
 
   assert( v!=0 );
   if( !pParse->bReturning ){
@@ -1042,19 +1049,21 @@ static void codeReturningTrigger(
     return;
   }
   assert( db->pParse==pParse );
-  pReturning = pParse->u1.pReturning;
+  assert( !pParse->isCreate );
+  pReturning = pParse->u1.d.pReturning;
   if( pTrigger != &(pReturning->retTrig) ){
     /* This RETURNING trigger is for a different statement */
     return;
   }
   memset(&sSelect, 0, sizeof(sSelect));
-  memset(&sFrom, 0, sizeof(sFrom));
+  pFrom = (SrcList*)fromSpace;
+  memset(pFrom, 0, SZ_SRCLIST_1);
   sSelect.pEList = sqlite3ExprListDup(db, pReturning->pReturnEL, 0);
-  sSelect.pSrc = &sFrom;
-  sFrom.nSrc = 1;
-  sFrom.a[0].pTab = pTab;
-  sFrom.a[0].zName = pTab->zName; /* tag-20240424-1 */
-  sFrom.a[0].iCursor = -1;
+  sSelect.pSrc = pFrom;
+  pFrom->nSrc = 1;
+  pFrom->a[0].pSTab = pTab;
+  pFrom->a[0].zName = pTab->zName; /* tag-20240424-1 */
+  pFrom->a[0].iCursor = -1;
   sqlite3SelectPrep(pParse, &sSelect, 0);
   if( pParse->nErr==0 ){
     assert( db->mallocFailed==0 );
@@ -1272,6 +1281,8 @@ static TriggerPrg *codeRowTrigger(
   sSubParse.eTriggerOp = pTrigger->op;
   sSubParse.nQueryLoop = pParse->nQueryLoop;
   sSubParse.prepFlags = pParse->prepFlags;
+  sSubParse.oldmask = 0;
+  sSubParse.newmask = 0;
 
   v = sqlite3GetVdbe(&sSubParse);
   if( v ){
@@ -1404,7 +1415,7 @@ void sqlite3CodeRowTriggerDirect(
     ** invocation is disallowed if (a) the sub-program is really a trigger,
     ** not a foreign key action, and (b) the flag to enable recursive triggers
     ** is clear.  */
-    sqlite3VdbeChangeP5(v, (u8)bRecursive);
+    sqlite3VdbeChangeP5(v, (u16)bRecursive);
   }
 }
 

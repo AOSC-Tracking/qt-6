@@ -74,8 +74,8 @@ namespace {
 WTF::String EventListenerBreakpointKey(const WTF::String& event_name,
                                        const WTF::String& target_name) {
   if (target_name.empty() || target_name == "*")
-    return event_name + "$$" + "*";
-  return event_name + "$$" + target_name.LowerASCII();
+    return StrCat({event_name, "$$*"});
+  return StrCat({event_name, "$$", target_name.LowerASCII()});
 }
 }  // namespace
 
@@ -98,7 +98,7 @@ void InspectorDOMDebuggerAgent::CollectEventListeners(
   for (AtomicString& type : event_types) {
     // We need to clone the EventListenerVector because `GetEffectiveFunction`
     // can execute script which may invalidate the iterator.
-    EventListenerVector listeners;
+    EventListenerVectorSnapshot listeners;
     if (auto* registered_listeners = target->GetEventListeners(type)) {
       listeners = *registered_listeners;
     } else {
@@ -315,7 +315,7 @@ static protocol::Response DomTypeForName(const String& type_string, int& type) {
     return protocol::Response::Success();
   }
   return protocol::Response::ServerError(
-      String("Unknown DOM breakpoint type: " + type_string).Utf8());
+      StrCat({"Unknown DOM breakpoint type: ", type_string}).Utf8());
 }
 
 static String DomTypeName(int type) {
@@ -445,7 +445,7 @@ protocol::Response InspectorDOMDebuggerAgent::getEventListeners(
   v8::Context::Scope scope(context);
   V8EventListenerInfoList event_information;
   InspectorDOMDebuggerAgent::EventListenersInfoForTarget(
-      context->GetIsolate(), object, depth.value_or(1), pierce.value_or(false),
+      isolate_, object, depth.value_or(1), pierce.value_or(false),
       dom_agent_->IncludeWhitespace(), &event_information);
   *listeners_array = BuildObjectsForEventListeners(event_information, context,
                                                    object_group->string());
@@ -489,6 +489,7 @@ InspectorDOMDebuggerAgent::BuildObjectForEventListener(
     return nullptr;
 
   v8::Local<v8::Function> function = info.effective_function;
+  v8::Location location = function->GetScriptLocation();
   std::unique_ptr<protocol::DOMDebugger::EventListener> value =
       protocol::DOMDebugger::EventListener::create()
           .setType(info.event_type)
@@ -496,8 +497,8 @@ InspectorDOMDebuggerAgent::BuildObjectForEventListener(
           .setPassive(info.passive)
           .setOnce(info.once)
           .setScriptId(String::Number(function->ScriptId()))
-          .setLineNumber(function->GetScriptLineNumber())
-          .setColumnNumber(function->GetScriptColumnNumber())
+          .setLineNumber(location.GetLineNumber())
+          .setColumnNumber(location.GetColumnNumber())
           .build();
   if (object_group_id.length()) {
     value->setHandler(v8_session_->wrapObject(
@@ -642,7 +643,8 @@ InspectorDOMDebuggerAgent::PreparePauseOnNativeEventData(
   if (!match)
     return nullptr;
 
-  const String full_event_name = kListenerEventCategoryType + event_name;
+  const String full_event_name =
+      StrCat({kListenerEventCategoryType, event_name});
   auto event_data = protocol::DictionaryValue::create();
   event_data->setString("eventName", full_event_name);
   event_data->setString("targetName", target_name);

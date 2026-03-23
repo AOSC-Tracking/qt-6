@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWINDOWSWINDOW_H
 #define QWINDOWSWINDOW_H
@@ -342,7 +343,7 @@ public:
     void stopAlertWindow();
 
     enum ScreenChangeMode { FromGeometryChange, FromDpiChange, FromScreenAdded };
-    void checkForScreenChanged(ScreenChangeMode mode = FromGeometryChange);
+    void checkForScreenChanged(ScreenChangeMode mode = FromGeometryChange, const RECT *suggestedRect = nullptr);
 
     void registerTouchWindow();
     static void setHasBorderInFullScreenStatic(QWindow *window, bool border);
@@ -386,7 +387,6 @@ private:
     mutable unsigned m_flags = WithinCreate;
     HDC m_hdc = nullptr;
     Qt::WindowStates m_windowState = Qt::WindowNoState;
-    bool m_windowWasArranged = false;
     QString m_windowTitle;
     qreal m_opacity = 1;
 #ifndef QT_NO_CURSOR
@@ -469,11 +469,7 @@ QPoint QWindowsGeometryHint::mapFromGlobal(const QWindow *w, const QPoint &p)
 
 inline QWindowsWindow *QWindowsWindow::windowsWindowOf(const QWindow *w)
 {
-    if (!w || !w->handle())
-        return nullptr;
-
-    const Qt::WindowType type = w->type();
-    if (type == Qt::Desktop || w->handle()->isForeignWindow())
+    if (!w || !w->handle() || w->handle()->isForeignWindow())
         return nullptr;
 
     return static_cast<QWindowsWindow *>(w->handle());

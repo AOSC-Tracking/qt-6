@@ -43,7 +43,9 @@ class Switches {
   void SetSwitch(const std::string& name, const std::string& value);
   void SetSwitch(const std::string& name, const base::FilePath& value);
 
-  void SetMultivaluedSwitch(const std::string& name, const std::string& value);
+  void SetMultivaluedSwitch(const std::string& name,
+                            const std::string& value,
+                            const std::string_view& delimiter);
 
   // In case of same key, |switches| will override.
   void SetFromSwitches(const Switches& switches);
@@ -165,6 +167,9 @@ struct Capabilities {
   // bound to ChromeDriver's process. If true, Chrome will not quit if
   // ChromeDriver dies.
   bool detach;
+  // Whether to attempt terminating the browser process gracefully before
+  // resorting to SIGKILL.
+  bool quit_gracefully = false;
 
   std::optional<MobileDevice> mobile_device;
 

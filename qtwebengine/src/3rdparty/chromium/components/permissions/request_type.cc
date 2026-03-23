@@ -21,7 +21,6 @@
 #else
 #include "components/permissions/vector_icons/vector_icons.h"
 #include "components/vector_icons/vector_icons.h"
-#include "ui/gfx/paint_vector_icon.h"
 #include "ui/gfx/vector_icon_types.h"
 #endif  // BUILDFLAG(IS_ANDROID)
 
@@ -51,6 +50,8 @@ int GetIconIdAndroid(RequestType type) {
       return IDR_ANDROID_INFOBAR_IDENTITY_PROVIDER;
     case RequestType::kIdleDetection:
       return IDR_ANDROID_INFOBAR_IDLE_DETECTION;
+    case RequestType::kLocalNetworkAccess:
+      return IDR_ANDROID_INFOBAR_LOCAL_NETWORK_ACCESS;
     case RequestType::kMicStream:
       return IDR_ANDROID_INFOBAR_MEDIA_STREAM_MIC;
     case RequestType::kMidiSysex:
@@ -66,6 +67,8 @@ int GetIconIdAndroid(RequestType type) {
     case RequestType::kStorageAccess:
     case RequestType::kTopLevelStorageAccess:
       return IDR_ANDROID_STORAGE_ACCESS;
+    case RequestType::kWindowManagement:
+      return IDR_ANDROID_INFOBAR_WINDOW_MANAGEMENT;
   }
   NOTREACHED();
 }
@@ -99,6 +102,8 @@ const gfx::VectorIcon& GetIconIdDesktop(RequestType type) {
       return vector_icons::kKeyboardLockIcon;
     case RequestType::kLocalFonts:
       return vector_icons::kFontDownloadChromeRefreshIcon;
+    case RequestType::kLocalNetworkAccess:
+      return vector_icons::kRouterIcon;
     case RequestType::kMicStream:
       return vector_icons::kMicChromeRefreshIcon;
     case RequestType::kMidiSysex:
@@ -121,7 +126,6 @@ const gfx::VectorIcon& GetIconIdDesktop(RequestType type) {
       return vector_icons::kSmartCardReaderIcon;
 #endif
     case RequestType::kWebAppInstallation:
-      // TODO(crbug.com/333795265): provide a dedicated icon.
       return vector_icons::kInstallDesktopIcon;
 #if BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_CUPS)
     case RequestType::kWebPrinting:
@@ -160,6 +164,8 @@ const gfx::VectorIcon& GetBlockedIconIdDesktop(RequestType type) {
       return vector_icons::kHandGestureOffIcon;
     case RequestType::kIdleDetection:
       return vector_icons::kDevicesOffIcon;
+    case RequestType::kLocalNetworkAccess:
+      return vector_icons::kRouterOffIcon;
     case RequestType::kMicStream:
       return vector_icons::kMicOffChromeRefreshIcon;
     case RequestType::kMidiSysex:
@@ -174,7 +180,6 @@ const gfx::VectorIcon& GetBlockedIconIdDesktop(RequestType type) {
     case RequestType::kPointerLock:
       return vector_icons::kPointerLockOffIcon;
     case RequestType::kWebAppInstallation:
-      // TODO(crbug.com/333795265): provide a dedicated icon.
       return vector_icons::kInstallDesktopOffIcon;
     default:
       NOTREACHED();
@@ -208,6 +213,7 @@ std::optional<RequestType> ContentSettingsTypeToRequestTypeIfExists(
       return RequestType::kLocalFonts;
 #endif
     case ContentSettingsType::GEOLOCATION:
+    case ContentSettingsType::GEOLOCATION_WITH_OPTIONS:
       return RequestType::kGeolocation;
     case ContentSettingsType::HAND_TRACKING:
       return RequestType::kHandTracking;
@@ -239,10 +245,10 @@ std::optional<RequestType> ContentSettingsTypeToRequestTypeIfExists(
       return RequestType::kStorageAccess;
     case ContentSettingsType::VR:
       return RequestType::kVrSession;
-#if !BUILDFLAG(IS_ANDROID)
     case ContentSettingsType::WINDOW_MANAGEMENT:
       return RequestType::kWindowManagement;
-#endif
+    case ContentSettingsType::LOCAL_NETWORK_ACCESS:
+      return RequestType::kLocalNetworkAccess;
     case ContentSettingsType::TOP_LEVEL_STORAGE_ACCESS:
       return RequestType::kTopLevelStorageAccess;
     case ContentSettingsType::FILE_SYSTEM_WRITE_GUARD:
@@ -294,6 +300,8 @@ std::optional<ContentSettingsType> RequestTypeToContentSettingsType(
 #if !BUILDFLAG(IS_ANDROID)
     case RequestType::kLocalFonts:
       return ContentSettingsType::LOCAL_FONTS;
+    case RequestType::kLocalNetworkAccess:
+      return ContentSettingsType::LOCAL_NETWORK_ACCESS;
 #endif
     case RequestType::kGeolocation:
       return ContentSettingsType::GEOLOCATION;
@@ -335,10 +343,8 @@ std::optional<ContentSettingsType> RequestTypeToContentSettingsType(
     case RequestType::kWebPrinting:
       return ContentSettingsType::WEB_PRINTING;
 #endif
-#if !BUILDFLAG(IS_ANDROID)
     case RequestType::kWindowManagement:
       return ContentSettingsType::WINDOW_MANAGEMENT;
-#endif
     case RequestType::kTopLevelStorageAccess:
       return ContentSettingsType::TOP_LEVEL_STORAGE_ACCESS;
 #if !BUILDFLAG(IS_ANDROID)
@@ -368,12 +374,14 @@ bool IsConfirmationChipSupported(RequestType for_request_type) {
 IconId GetIconId(RequestType type) {
   IconId override_id = PermissionsClient::Get()->GetOverrideIconId(type);
 #if BUILDFLAG(IS_ANDROID)
-  if (override_id)
+  if (override_id) {
     return override_id;
+  }
   return GetIconIdAndroid(type);
 #else
-  if (!override_id.is_empty())
+  if (!override_id.is_empty()) {
     return override_id;
+  }
   return GetIconIdDesktop(type);
 #endif
 }
@@ -416,6 +424,8 @@ const char* PermissionKeyForRequestType(permissions::RequestType request_type) {
     case permissions::RequestType::kLocalFonts:
       return "local_fonts";
 #endif
+    case permissions::RequestType::kLocalNetworkAccess:
+      return "local_network_access";
     case permissions::RequestType::kMicStream:
       return "mic_stream";
     case permissions::RequestType::kMidiSysex:
@@ -457,9 +467,9 @@ const char* PermissionKeyForRequestType(permissions::RequestType request_type) {
 #if !BUILDFLAG(IS_ANDROID)
     case permissions::RequestType::kWebAppInstallation:
       return "web_app_installation";
+#endif
     case permissions::RequestType::kWindowManagement:
       return "window_management";
-#endif
     case permissions::RequestType::kIdentityProvider:
       return "identity_provider";
   }

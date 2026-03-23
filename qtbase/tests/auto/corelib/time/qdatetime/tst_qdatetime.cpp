@@ -1262,8 +1262,7 @@ void tst_QDateTime::toString_strformat()
     QCOMPARE(testDateTime.toString(u"yyyy-MM-dd hh:mm:ss tt"), u"2013-01-01 01:02:03 +0000"_s);
     QCOMPARE(testDateTime.toString(u"yyyy-MM-dd hh:mm:ss ttt"), u"2013-01-01 01:02:03 +00:00"_s);
 
-#if QT_CONFIG(icu) && !defined(Q_STL_DINKUMWARE)
-    // The Dinkum (VxWorks) exception may just be because it has an old ICU.
+#if QT_CONFIG(icu)
     // Hopefully other timezone backends shall eventually agree with this:
     const QString longForm = u"2013-01-01 01:02:03 Coordinated Universal Time"_s;
 #else
@@ -2411,7 +2410,7 @@ void tst_QDateTime::springForward_data()
         QTest::newRow("PT from day after")
             << pacific << QDate(2015, 3, 8) << QTime(2, 30) << -1 << -420;
     }
-    if (const QTimeZone eastern("America/Ottawa"); eastern.isValid()) {
+    if (const QTimeZone eastern("America/Toronto"); eastern.isValid()) {
         QTest::newRow("ET from day before")
             << eastern << QDate(2015, 3, 8) << QTime(2, 30) << 1 << -300;
         QTest::newRow("ET from day after")
@@ -2631,18 +2630,20 @@ void tst_QDateTime::operator_insert_extract_data()
     const QByteArray westernAustralia("AWST-8AWDT-9,M10.5.0,M3.5.0/03:00:00");
     const QByteArray hawaii("HAW10");
 
-    const QDataStream tmpDataStream;
-    const int thisVersion = tmpDataStream.version();
-    for (int version = QDataStream::Qt_1_0; version <= thisVersion; ++version) {
-        const QDataStream::Version dataStreamVersion = static_cast<QDataStream::Version>(version);
-        const QByteArray vN = QByteArray::number(dataStreamVersion);
-        QTest::addRow("v%d WA => HAWAII %d", version, 2012)
+    const QMetaEnum e = QMetaEnum::fromType<QDataStream::Version>();
+    for (int version = QDataStream::Qt_1_0; version <= QDataStream::Qt_DefaultCompiledVersion;
+         ++version) {
+        if (e.value(version) == -1 || qstrcmp(e.key(version), "Qt_DefaultCompiledVersion") == 0)
+            continue;
+        const auto dataStreamVersion = static_cast<QDataStream::Version>(version);
+        const char *const tag = e.key(version);
+        QTest::addRow("%s WA => HAWAII %d", tag, 2012)
             << 2012 << westernAustralia << hawaii << dataStreamVersion;
-        QTest::addRow("v%d WA => WA %d", version, 2012)
+        QTest::addRow("%s WA => WA %d", tag, 2012)
             << 2012 << westernAustralia << westernAustralia << dataStreamVersion;
-        QTest::addRow("v%d HAWAII => WA %d", version, -2012)
+        QTest::addRow("%s HAWAII => WA %d", tag, -2012)
             << -2012 << hawaii << westernAustralia << dataStreamVersion;
-        QTest::addRow("v%d HAWAII => HAWAII %d", version, 2012)
+        QTest::addRow("%s HAWAII => HAWAII %d", tag, 2012)
             << 2012 << hawaii << hawaii << dataStreamVersion;
     }
 }
@@ -3066,6 +3067,12 @@ void tst_QDateTime::fromStringDateFormat_data()
         << Qt::RFC2822Date << QDateTime();
     QTest::newRow("RFC 2822 with day date only") << u"Fri, 01 Nov 2002"_s
         << Qt::RFC2822Date << QDateTime();
+    QTest::newRow("RFC 2822 with obsolete 2 digit year")
+            << u"Mon, 07 Feb 22 11:48:12 -0500"_s << Qt::RFC2822Date << QDateTime();
+    QTest::newRow("RFC 2822 with valid year")
+            << u"Mon, 07 Feb 2022 11:48:12 -0500"_s << Qt::RFC2822Date
+            << QDateTime(QDate(2022, 2, 7), QTime(11, 48, 12),
+                         QTimeZone::fromSecondsAheadOfUtc(-5 * 60 * 60));
 
     QTest::newRow("RFC 2822 malformed time (truncated)")
         << u"01 Nov 2002 0:"_s << Qt::RFC2822Date << QDateTime();
@@ -3492,11 +3499,11 @@ void tst_QDateTime::fromStringStringFormat_localTimeZone_data()
     QTest::newRow("local-timezone-ttt-with-zone:Etc/GMT+3")
             << "GMT"_ba << u"2008-10-13 Etc/GMT+3 11.50"_s << u"yyyy-MM-dd ttt hh.mm"_s << 1900
             << QDateTime(); // Zone name not valid when offset expected
-    QTimeZone gmtWithOffset("GMT-2");
+    QTimeZone gmtWithOffset("GMT-0");
     if (gmtWithOffset.isValid()) {
         lacksRows = false;
-        QTest::newRow("local-timezone-with-offset:GMT-2")
-                << "GMT"_ba << u"2008-10-13 GMT-2 11.50"_s << u"yyyy-MM-dd t hh.mm"_s << 1900
+        QTest::newRow("local-timezone-with-offset:GMT-0")
+                << "GMT"_ba << u"2008-10-13 GMT-0 11.50"_s << u"yyyy-MM-dd t hh.mm"_s << 1900
                 << QDateTime(QDate(2008, 10, 13), QTime(11, 50), gmtWithOffset);
     }
     QTimeZone gmt("GMT");

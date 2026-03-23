@@ -15,7 +15,7 @@ import org.chromium.build.annotations.NullMarked;
 @NullMarked
 public class XrFeatureStatus {
     @CalledByNative
-    public static boolean hasImmersiveFeature() {
-        return PackageManagerUtils.hasSystemFeature(PackageManagerUtils.XR_IMMERSIVE_FEATURE_NAME);
+    public static boolean isXrDevice() {
+        return PackageManagerUtils.hasSystemFeature(PackageManagerUtils.XR_OPENXR_FEATURE_NAME);
     }
 }

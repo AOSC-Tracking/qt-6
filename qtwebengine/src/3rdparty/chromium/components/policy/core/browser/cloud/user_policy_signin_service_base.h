@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <variant>
 
 #include "base/callback_list.h"
 #include "base/cancelable_callback.h"
@@ -22,7 +23,6 @@
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "google_apis/gaia/core_account_id.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 
 class AccountId;
 class PrefService;
@@ -70,7 +70,7 @@ class POLICY_EXPORT UserPolicySigninServiceBase
   UserPolicySigninServiceBase(
       PrefService* local_state,
       DeviceManagementService* device_management_service,
-      absl::variant<UserCloudPolicyManager*, ProfileCloudPolicyManager*>
+      std::variant<UserCloudPolicyManager*, ProfileCloudPolicyManager*>
           policy_manager,
       signin::IdentityManager* identity_manager,
       scoped_refptr<network::SharedURLLoaderFactory> system_url_loader_factory);
@@ -97,8 +97,6 @@ class POLICY_EXPORT UserPolicySigninServiceBase
   void OnPolicyRefreshed(bool success) override;
 
   // CloudPolicyClient::Observer implementation:
-  void OnPolicyFetched(CloudPolicyClient* client) override;
-  void OnRegistrationStateChanged(CloudPolicyClient* client) override;
   void OnClientError(CloudPolicyClient* client) override;
 
   // KeyedService implementation:
@@ -157,15 +155,8 @@ class POLICY_EXPORT UserPolicySigninServiceBase
   // platforms for network efficiency.
   virtual void UpdateLastPolicyCheckTime();
 
-  // Gets the sign-in consent level required to perform registration.
-  virtual signin::ConsentLevel GetConsentLevelForRegistration();
-
   // Gets the delay before the next registration.
   virtual base::TimeDelta GetTryRegistrationDelay();
-
-  // Prohibits signout if needed when the account is registered for cloud policy
-  // . Might be no-op for some platforms (eg., iOS and Android).
-  virtual void ProhibitSignoutIfNeeded();
 
   // Returns true when policies can be applied for the profile. The profile has
   // to be at least tied to an account.

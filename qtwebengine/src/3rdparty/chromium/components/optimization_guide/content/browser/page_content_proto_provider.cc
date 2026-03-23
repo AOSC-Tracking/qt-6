@@ -4,13 +4,17 @@
 
 #include "components/optimization_guide/content/browser/page_content_proto_provider.h"
 
+#include "base/check.h"
 #include "base/functional/concurrent_closures.h"
 #include "base/i18n/char_iterator.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/timer/elapsed_timer.h"
 #include "components/optimization_guide/content/browser/page_content_proto_util.h"
+#include "components/optimization_guide/core/optimization_guide_features.h"
+#include "content/public/browser/media_session.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
@@ -43,6 +47,11 @@ void ApplyOptionsOverridesForWebContents(
   if (web_contents->GetVisibility() != content::Visibility::VISIBLE) {
     options.on_critical_path = true;
   }
+
+  if (base::FeatureList::IsEnabled(
+          features::kAnnotatedPageContentWithActionableElements)) {
+    options.mode = blink::mojom::AIPageContentMode::kActionableElements;
+  }
 }
 
 blink::mojom::AIPageContentOptionsPtr ApplyOptionsOverridesForSubframe(
@@ -59,6 +68,83 @@ blink::mojom::AIPageContentOptionsPtr ApplyOptionsOverridesForSubframe(
   auto new_options = blink::mojom::AIPageContentOptions::New(input);
   new_options->on_critical_path = true;
   return new_options;
+}
+
+// Validate that the media session has all the required data before proceeding
+// to create media data.
+bool ValidateMediaSession(
+    const media_session::mojom::MediaSessionInfoPtr& media_session_info,
+    const std::optional<media_session::MediaPosition>& media_position) {
+  return media_session_info && media_session_info->audio_video_states &&
+         !media_session_info->audio_video_states->empty() && media_position &&
+         !media_position->duration().is_zero();
+}
+
+// Find the media data from the web contents for the given render frame host if
+// there is an active media session in the web page, otherwise return nullopt.
+// TODO(crbug.com/409427125): Add transcripts from the glic media integration.
+// TODO(crbug.com/409427125): Add last_updated_time for current_position so that
+// we can calculate a more precise position.
+std::optional<optimization_guide::proto::MediaData> ComputeMediaData(
+    content::RenderFrameHost* render_frame_host) {
+  CHECK(render_frame_host);
+  if (!base::FeatureList::IsEnabled(
+          features::kAnnotatedPageContentWithMediaData)) {
+    return std::nullopt;
+  }
+
+  auto* web_contents =
+      content::WebContents::FromRenderFrameHost(render_frame_host);
+  if (!web_contents) {
+    return std::nullopt;
+  }
+
+  auto* media_session = content::MediaSession::GetIfExists(web_contents);
+  if (!media_session ||
+      (render_frame_host != media_session->GetRoutedFrame())) {
+    return std::nullopt;
+  }
+
+  auto media_session_info = media_session->GetMediaSessionInfoSync();
+  auto media_position = media_session->GetMediaSessionPosition();
+  if (!ValidateMediaSession(media_session_info, media_position)) {
+    return std::nullopt;
+  }
+
+  optimization_guide::proto::MediaData media_data;
+  media_data.set_is_playing(media_session_info->playback_state ==
+                            media_session::mojom::MediaPlaybackState::kPlaying);
+  media_data.set_duration_milliseconds(
+      media_position->duration().InMillisecondsRoundedUp());
+  media_data.set_current_position_milliseconds(
+      media_position->GetPosition().InMillisecondsRoundedUp());
+
+  // Find the media data type via the audio video states in the media session
+  // info. If there are multiple media in the frame which is rare, select the
+  // first media for simplicity.
+  auto& first_state = media_session_info->audio_video_states->at(0);
+  switch (first_state) {
+    case media_session::mojom::MediaAudioVideoState::kAudioOnly:
+      media_data.set_media_data_type(
+          optimization_guide::proto::MediaDataType::MEDIA_DATA_TYPE_AUDIO);
+      break;
+    case media_session::mojom::MediaAudioVideoState::kAudioVideo:
+    case media_session::mojom::MediaAudioVideoState::kVideoOnly:
+      media_data.set_media_data_type(
+          optimization_guide::proto::MediaDataType::MEDIA_DATA_TYPE_VIDEO);
+      break;
+    case media_session::mojom::MediaAudioVideoState::kDeprecatedUnknown:
+      NOTREACHED();
+  }
+
+  // Set the media metadata.
+  const media_session::MediaMetadata& media_metadata =
+      media_session->GetMediaSessionMetadata();
+  media_data.set_title(base::UTF16ToUTF8(media_metadata.title));
+  media_data.set_artist(base::UTF16ToUTF8(media_metadata.artist));
+  media_data.set_album(base::UTF16ToUTF8(media_metadata.album));
+
+  return media_data;
 }
 
 std::optional<optimization_guide::RenderFrameInfo> GetRenderFrameInfo(
@@ -79,7 +165,13 @@ std::optional<optimization_guide::RenderFrameInfo> GetRenderFrameInfo(
     return std::nullopt;
   }
 
+  auto serialized_server_token =
+      DocumentIdentifierUserData::GetDocumentIdentifier(
+          render_frame_host->GetGlobalFrameToken());
+  CHECK(serialized_server_token.has_value());
+
   optimization_guide::RenderFrameInfo render_frame_info;
+  render_frame_info.serialized_server_token = serialized_server_token.value();
   render_frame_info.global_frame_token =
       render_frame_host->GetGlobalFrameToken();
   // We use the origin instead of last committed URL here to ensure the security
@@ -89,6 +181,8 @@ std::optional<optimization_guide::RenderFrameInfo> GetRenderFrameInfo(
   // 2. about:blank inherits its origin from the initiator while the URL doesn't
   //    convey that.
   render_frame_info.source_origin = render_frame_host->GetLastCommittedOrigin();
+  render_frame_info.url = render_frame_host->GetLastCommittedURL();
+  render_frame_info.media_data = ComputeMediaData(render_frame_host);
   return render_frame_info;
 }
 
@@ -153,24 +247,54 @@ void RecordPageContentExtractionMetrics(
       elapsed.Elapsed(), base::Microseconds(1), base::Milliseconds(5), 50);
 }
 
+// Converts gfx::Size to optimization_guide::proto::ViewportGeometry.
+void ConvertViewportGeometry(
+    const gfx::Size& viewport,
+    optimization_guide::proto::BoundingRect* viewport_geometry) {
+  viewport_geometry->set_x(0);
+  viewport_geometry->set_y(0);
+  viewport_geometry->set_width(viewport.width());
+  viewport_geometry->set_height(viewport.height());
+}
+
 void OnGotAIPageContentForAllFrames(
+    blink::mojom::AIPageContentOptionsPtr main_frame_options,
     base::ElapsedTimer elapsed_timer,
     content::GlobalRenderFrameHostToken main_frame_token,
     ukm::SourceId source_id,
+    const gfx::Size& main_frame_viewport,
     std::unique_ptr<optimization_guide::AIPageContentMap> page_content_map,
     OnAIPageContentDone done_callback) {
-  optimization_guide::proto::AnnotatedPageContent proto;
+  optimization_guide::AIPageContentResult page_content;
+  optimization_guide::FrameTokenSet frame_token_set;
+
   if (!optimization_guide::ConvertAIPageContentToProto(
-          main_frame_token, *page_content_map,
-          base::BindRepeating(&GetRenderFrameInfo), &proto)) {
+          std::move(main_frame_options), main_frame_token, *page_content_map,
+          base::BindRepeating(&GetRenderFrameInfo), frame_token_set,
+          page_content)) {
     std::move(done_callback).Run(std::nullopt);
     return;
   }
+
+  ConvertViewportGeometry(main_frame_viewport,
+                          page_content.proto.mutable_viewport_geometry());
+
+  // Get all the document identifiers for the frames that were seen.
+  for (const auto& frame_token : frame_token_set) {
+    content::RenderFrameHost* render_frame_host =
+        content::RenderFrameHost::FromFrameToken(frame_token);
+    CHECK(render_frame_host);
+    auto token = DocumentIdentifierUserData::GetDocumentIdentifier(frame_token);
+    CHECK(token.has_value());
+    page_content.document_identifiers[token.value()] =
+        render_frame_host->GetWeakDocumentPtr();
+  }
+
   base::ThreadPool::PostTask(
       FROM_HERE, {base::TaskPriority::BEST_EFFORT},
       base::BindOnce(RecordPageContentExtractionMetrics,
-                     elapsed_timer.Elapsed(), source_id, proto));
-  std::move(done_callback).Run(std::move(proto));
+                     elapsed_timer.Elapsed(), source_id, page_content.proto));
+  std::move(done_callback).Run(std::move(page_content));
 }
 
 void OnGotAIPageContentForFrame(
@@ -189,13 +313,24 @@ void OnGotAIPageContentForFrame(
 
 }  // namespace
 
-blink::mojom::AIPageContentOptionsPtr DefaultAIPageContentOptions() {
-  auto request = blink::mojom::AIPageContentOptions::New();
-  request->include_geometry = true;
-  request->on_critical_path = true;
-  request->include_hidden_searchable_content = true;
+AIPageContentResult::AIPageContentResult() {
+  metadata = blink::mojom::PageMetadata::New();
+}
+AIPageContentResult::~AIPageContentResult() = default;
+AIPageContentResult::AIPageContentResult(AIPageContentResult&& other) = default;
+AIPageContentResult& AIPageContentResult::operator=(
+    AIPageContentResult&& other) = default;
 
-  return request;
+blink::mojom::AIPageContentOptionsPtr DefaultAIPageContentOptions() {
+  auto options = blink::mojom::AIPageContentOptions::New();
+  options->mode = blink::mojom::AIPageContentMode::kDefault;
+  return options;
+}
+
+blink::mojom::AIPageContentOptionsPtr ActionableAIPageContentOptions() {
+  auto options = blink::mojom::AIPageContentOptions::New();
+  options->mode = blink::mojom::AIPageContentMode::kActionableElements;
+  return options;
 }
 
 void GetAIPageContent(content::WebContents* web_contents,
@@ -255,10 +390,27 @@ void GetAIPageContent(content::WebContents* web_contents,
 
   std::move(concurrent)
       .Done(base::BindOnce(
-          &OnGotAIPageContentForAllFrames, base::ElapsedTimer(),
+          &OnGotAIPageContentForAllFrames, std::move(options),
+          base::ElapsedTimer(),
           web_contents->GetPrimaryMainFrame()->GetGlobalFrameToken(),
           web_contents->GetPrimaryMainFrame()->GetPageUkmSourceId(),
-          std::move(page_content_map), std::move(done_callback)));
+          web_contents->GetSize(), std::move(page_content_map),
+          std::move(done_callback)));
 }
+
+// Allows for a DocumentIdentifier to be reused across calls to convert
+std::optional<std::string> DocumentIdentifierUserData::GetDocumentIdentifier(
+    content::GlobalRenderFrameHostToken token) {
+  content::RenderFrameHost* render_frame_host =
+      content::RenderFrameHost::FromFrameToken(token);
+  if (!render_frame_host) {
+    return std::nullopt;
+  }
+  return DocumentIdentifierUserData::GetOrCreateForCurrentDocument(
+             render_frame_host)
+      ->serialized_token();
+}
+
+DOCUMENT_USER_DATA_KEY_IMPL(DocumentIdentifierUserData);
 
 }  // namespace optimization_guide

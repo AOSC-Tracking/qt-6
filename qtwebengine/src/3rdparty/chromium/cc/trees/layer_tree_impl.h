@@ -5,17 +5,16 @@
 #ifndef CC_TREES_LAYER_TREE_IMPL_H_
 #define CC_TREES_LAYER_TREE_IMPL_H_
 
+#include <array>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "base/containers/flat_set.h"
-#include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/time/time.h"
@@ -33,6 +32,7 @@
 #include "cc/trees/property_tree.h"
 #include "cc/trees/swap_promise.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
+#include "third_party/blink/public/common/tokens/tokens.h"
 #include "ui/gfx/overlay_transform.h"
 
 namespace base {
@@ -51,7 +51,6 @@ namespace cc {
 enum class ActivelyScrollingType;
 class DebugRectHistory;
 class ViewTransitionRequest;
-class DroppedFrameCounter;
 class GlobalStateThatImpactsTilePriority;
 class HeadsUpDisplayLayerImpl;
 class ImageDecodeCache;
@@ -133,7 +132,7 @@ class CC_EXPORT LayerTreeImpl {
   TileManager* tile_manager() const;
   ImageDecodeCache* image_decode_cache() const;
   ImageAnimationController* image_animation_controller() const;
-  DroppedFrameCounter* dropped_frame_counter() const;
+  FrameSorter* frame_sorter() const;
   MemoryHistory* memory_history() const;
   DebugRectHistory* debug_rect_history() const;
   const GlobalStateThatImpactsTilePriority& global_tile_state() const {
@@ -164,7 +163,6 @@ class CC_EXPORT LayerTreeImpl {
                                      float initial_opacity);
   void DidAnimateScrollOffset();
   bool use_gpu_rasterization() const;
-  bool create_low_res_tiling() const;
   bool RequiresHighResToDraw() const;
   bool SmoothnessTakesPriority() const;
   VideoFrameControllerClient* GetVideoFrameControllerClient() const;
@@ -272,6 +270,19 @@ class CC_EXPORT LayerTreeImpl {
     return const_reverse_iterator(layer_list_.crend());
   }
 
+  // Tests precondition for mutating a property based on element id.
+  // These enumerated values are used in metrics, and must not be renumbered.
+  // New values must be added to the end of the list increasing kMaxValue, and
+  // obsolete values must be preserved.
+  enum class PropertyMutation {
+    kTransform = 0,
+    kOpacity = 1,
+    kFilter = 2,
+    kBackdropFilter = 3,
+    kMaxValue = kBackdropFilter
+  };
+  void ValidateEffectTreeeMapping(ElementId, PropertyMutation);
+
   void SetTransformMutated(ElementId element_id,
                            const gfx::Transform& transform);
   void SetOpacityMutated(ElementId element_id, float opacity);
@@ -370,6 +381,7 @@ class CC_EXPORT LayerTreeImpl {
   void PushPageScaleFromMainThread(float page_scale_factor,
                                    float min_page_scale_factor,
                                    float max_page_scale_factor);
+  const LayerSelection& selection() const { return selection_; }
   float current_page_scale_factor() const {
     return page_scale_factor()->Current(IsActiveTree());
   }
@@ -496,6 +508,9 @@ class CC_EXPORT LayerTreeImpl {
 
   void set_needs_update_draw_properties() {
     needs_update_draw_properties_ = true;
+  }
+  void clear_needs_update_draw_properties_for_testing() {
+    needs_update_draw_properties_ = false;
   }
   bool needs_update_draw_properties() const {
     return needs_update_draw_properties_;
@@ -654,6 +669,10 @@ class CC_EXPORT LayerTreeImpl {
   // the viewport.
   void GetViewportSelection(viz::Selection<gfx::SelectionBound>* selection);
 
+  const BrowserControlsParams& browser_controls_params() const {
+    return browser_controls_params_;
+  }
+
   bool browser_controls_shrink_blink_size() const {
     return browser_controls_params_.browser_controls_shrink_blink_size;
   }
@@ -698,7 +717,9 @@ class CC_EXPORT LayerTreeImpl {
   std::unique_ptr<PendingPageScaleAnimation> TakePendingPageScaleAnimation();
 
   void AppendEventsMetricsFromMainThread(EventMetrics::List events_metrics);
+  void AppendEventMetricsFromRasterThread(EventMetrics::List event_metrics);
   EventMetrics::List TakeEventsMetrics();
+  EventMetrics::List TakeRasterEventsMetrics();
 
   // Requests that we force send RenderFrameMetadata with the next frame.
   void RequestForceSendMetadata() { force_send_metadata_request_ = true; }
@@ -780,6 +801,10 @@ class CC_EXPORT LayerTreeImpl {
     return events_metrics_from_main_thread_.size();
   }
 
+  size_t events_metrics_from_raster_thread_count_for_testing() const {
+    return event_metrics_from_raster_thread_.size();
+  }
+
   bool device_viewport_rect_changed() const {
     return device_viewport_rect_changed_;
   }
@@ -794,7 +819,7 @@ class CC_EXPORT LayerTreeImpl {
   // Returns all of the view transition requests stored so far, and empties
   // the internal list.
   std::vector<std::unique_ptr<ViewTransitionRequest>>
-  TakeViewTransitionRequests();
+  TakeViewTransitionRequests(bool should_set_needs_update_draw_properties);
 
   // Returns true if there are pending ViewTransition requests that need a draw.
   bool HasViewTransitionRequests() const;
@@ -802,6 +827,16 @@ class CC_EXPORT LayerTreeImpl {
   // Returns true if there is a pending ViewTransition save request to cache
   // output of the current frame.
   bool HasViewTransitionSaveRequest() const;
+
+  // Returns a set of all view transition tokens that are currently in the
+  // capture phase.
+  base::flat_set<blink::ViewTransitionToken> GetCaptureViewTransitionTokens()
+      const;
+
+  const std::vector<std::unique_ptr<ViewTransitionRequest>>&
+  view_transition_requests() const {
+    return view_transition_requests_;
+  }
 
   void UpdateAllScrollbarGeometriesForTesting() {
     UpdateAllScrollbarGeometries();
@@ -811,6 +846,12 @@ class CC_EXPORT LayerTreeImpl {
                                     const gfx::RectF&);
 
   void AddLayerNeedingUpdateDiscardableImageMap(PictureLayerImpl* layer);
+
+  void SetPageScaleFactorAndLimitsForDisplayTree(float page_scale_factor,
+                                                 float min_page_scale_factor,
+                                                 float max_page_scale_factor);
+
+  LayerTreeHostImpl* host_impl() { return host_impl_; }
 
   class CC_EXPORT DiscardableImageMapUpdater {
     STACK_ALLOCATED();
@@ -862,7 +903,7 @@ class CC_EXPORT LayerTreeImpl {
   viz::BeginFrameArgs created_begin_frame_args_;
   int source_frame_number_ = 0;
   BeginMainFrameTraceId trace_id_{0};
-  raw_ptr<HeadsUpDisplayLayerImpl, DanglingUntriaged> hud_layer_;
+  raw_ptr<HeadsUpDisplayLayerImpl> hud_layer_;
   PropertyTrees property_trees_;
   SkColor4f background_color_;
 
@@ -999,6 +1040,8 @@ class CC_EXPORT LayerTreeImpl {
 
   // Event metrics that are reported back from the main thread.
   EventMetrics::List events_metrics_from_main_thread_;
+  // Event metrics that are reported back from the raster thread.
+  EventMetrics::List event_metrics_from_raster_thread_;
 
   std::unique_ptr<gfx::DelegatedInkMetadata> delegated_ink_metadata_;
 

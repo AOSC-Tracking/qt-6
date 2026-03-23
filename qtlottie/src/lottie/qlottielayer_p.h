@@ -28,7 +28,7 @@ public:
     enum MatteClipMode {NoClip, Alpha, InvertedAlpha, Luminence, InvertedLuminence};
 
     QLottieLayer() = default;
-   explicit  QLottieLayer (const QLottieLayer &other);
+    explicit QLottieLayer (const QLottieLayer &other);
     ~QLottieLayer() override;
 
     QLottieBase *clone() const override;
@@ -39,23 +39,23 @@ public:
 
     bool active(int frame) const override;
 
-    void parse(const QJsonObject &definition) override;
+    int parse(const QJsonObject &definition) override;
 
     void updateProperties(int frame) override;
     void render(QLottieRenderer &renderer) const override;
 
     QLottieBase *findChild(const QString &childName) override;
 
-    bool isClippedLayer() const;
-    bool isMaskLayer() const;
-    MatteClipMode clipMode() const;
+    bool isUsingMatteLayer() const;
+    bool isMatteLayer() const;
+    MatteClipMode matteMode() const;
 
     int layerId() const;
     QLottieBasicTransform *transform() const;
     bool hasLinkedLayer() const { return m_hasLinkedLayer; }
     int linkedLayerId() const { return m_linkedLayerId; }
     void applyLayerTransform(QLottieRenderer &renderer) const;
-    QSize size() const;
+    QSize layerSize() const override;
 
     int startFrame() const
     {
@@ -93,8 +93,8 @@ protected:
 
     bool m_hasLinkedLayer = false;
     int m_linkedLayerId = 0;
-    int m_td = 0;
-    MatteClipMode m_clipMode = NoClip;
+    bool m_isMatte = false;
+    MatteClipMode m_matteMode = NoClip;
 
     bool m_isActive = true;
     QSize m_size;

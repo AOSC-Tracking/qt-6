@@ -16,7 +16,7 @@
 
 namespace viz {
 class SurfaceId;
-struct FrameTimingDetails;
+class FrameTimingDetails;
 }
 
 namespace ui {
@@ -51,10 +51,10 @@ class UI_ANDROID_EXPORT WindowAndroidCompositor {
   virtual void AddChildFrameSink(const viz::FrameSinkId& frame_sink_id) = 0;
   virtual void RemoveChildFrameSink(const viz::FrameSinkId& frame_sink_id) = 0;
   virtual bool IsDrawingFirstVisibleFrame() const = 0;
-  virtual void SetVSyncPaused(bool paused) = 0;
   virtual void OnUpdateRefreshRate(float refresh_rate) = 0;
   virtual void OnUpdateSupportedRefreshRates(
       const std::vector<float>& supported_refresh_rates) = 0;
+  virtual void OnAdaptiveRefreshRateInfoChanged() = 0;
   virtual std::unique_ptr<ui::CompositorLock> GetCompositorLock(
       base::TimeDelta timeout) = 0;
   virtual void OnUpdateOverlayTransform() = 0;

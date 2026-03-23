@@ -38,6 +38,7 @@
 #include "components/sync_sessions/session_sync_prefs.h"
 #include "components/sync_sessions/test_matchers.h"
 #include "components/sync_sessions/test_synced_window_delegates_getter.h"
+#include "google_apis/gaia/gaia_id.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -69,8 +70,8 @@ using testing::SizeIs;
 using testing::UnorderedElementsAre;
 using testing::WithArg;
 
-const char kAccountId[] = "TestAccountId";
-const char kLocalCacheGuid[] = "TestLocalCacheGuid";
+constexpr GaiaId::Literal kDefaultGaiaId("TestGaiaId");
+constexpr char kLocalCacheGuid[] = "TestLocalCacheGuid";
 
 MATCHER_P(EntityDataHasSpecifics, session_specifics_matcher, "") {
   return session_specifics_matcher.MatchAndExplain(arg->specifics.session(),
@@ -82,7 +83,7 @@ sync_pb::DataTypeState GetDataTypeStateWithInitialSyncDone() {
   state.set_initial_sync_state(
       sync_pb::DataTypeState_InitialSyncState_INITIAL_SYNC_DONE);
   state.set_cache_guid(kLocalCacheGuid);
-  state.set_authenticated_account_id(kAccountId);
+  state.set_authenticated_obfuscated_gaia_id(kDefaultGaiaId.ToString());
   state.mutable_progress_marker()->set_data_type_id(
       GetSpecificsFieldNumberFromDataType(syncer::SESSIONS));
   return state;
@@ -214,7 +215,7 @@ class SessionSyncBridgeTest : public ::testing::Test {
     syncer::DataTypeActivationRequest request;
     request.error_handler = base::DoNothing();
     request.cache_guid = kLocalCacheGuid;
-    request.authenticated_account_id = CoreAccountId::FromGaiaId(kAccountId);
+    request.authenticated_gaia_id = kDefaultGaiaId;
 
     base::test::TestFuture<std::unique_ptr<syncer::DataTypeActivationResponse>>
         sync_starting_cb;

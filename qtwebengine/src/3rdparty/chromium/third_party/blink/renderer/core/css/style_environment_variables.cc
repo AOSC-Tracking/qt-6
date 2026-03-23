@@ -28,16 +28,14 @@ void SetDefaultEnvironmentVariables(StyleEnvironmentVariables* instance) {
                         kSafeAreaInsetDefault);
   instance->SetVariable(UADefinedVariable::kSafeAreaInsetRight,
                         kSafeAreaInsetDefault);
-  if (RuntimeEnabledFeatures::CSSSafeAreaMaxInsetEnabled()) {
-    instance->SetVariable(UADefinedVariable::kSafeAreaMaxInsetTop,
-                          kSafeAreaInsetDefault);
-    instance->SetVariable(UADefinedVariable::kSafeAreaMaxInsetLeft,
-                          kSafeAreaInsetDefault);
-    instance->SetVariable(UADefinedVariable::kSafeAreaMaxInsetBottom,
-                          kSafeAreaInsetDefault);
-    instance->SetVariable(UADefinedVariable::kSafeAreaMaxInsetRight,
-                          kSafeAreaInsetDefault);
-  }
+  instance->SetVariable(UADefinedVariable::kSafeAreaMaxInsetTop,
+                        kSafeAreaInsetDefault);
+  instance->SetVariable(UADefinedVariable::kSafeAreaMaxInsetLeft,
+                        kSafeAreaInsetDefault);
+  instance->SetVariable(UADefinedVariable::kSafeAreaMaxInsetBottom,
+                        kSafeAreaInsetDefault);
+  instance->SetVariable(UADefinedVariable::kSafeAreaMaxInsetRight,
+                        kSafeAreaInsetDefault);
   instance->SetVariable(UADefinedVariable::kKeyboardInsetTop,
                         kKeyboardInsetDefault);
   instance->SetVariable(UADefinedVariable::kKeyboardInsetLeft,
@@ -50,6 +48,10 @@ void SetDefaultEnvironmentVariables(StyleEnvironmentVariables* instance) {
                         kKeyboardInsetDefault);
   instance->SetVariable(UADefinedVariable::kKeyboardInsetHeight,
                         kKeyboardInsetDefault);
+
+  if (RuntimeEnabledFeatures::CSSPreferredTextScaleEnabled()) {
+    instance->SetVariable(UADefinedVariable::kPreferredTextScale, "1");
+  }
 }
 
 }  // namespace.
@@ -106,6 +108,10 @@ const AtomicString StyleEnvironmentVariables::GetVariableName(
       return AtomicString("titlebar-area-width");
     case UADefinedVariable::kTitlebarAreaHeight:
       return AtomicString("titlebar-area-height");
+    case UADefinedVariable::kPreferredTextScale:
+      return AtomicString("preferred-text-scale");
+    case UADefinedVariable::kSafePrintableInset:
+      return AtomicString("safe-printable-inset");
     default:
       break;
   }
@@ -174,10 +180,11 @@ void StyleEnvironmentVariables::SetVariable(const AtomicString& name,
   TwoDimensionVariableValues* values_to_set = nullptr;
   auto it = two_dimension_data_.find(name);
   if (it == two_dimension_data_.end()) {
-    auto result = two_dimension_data_.Set(name, TwoDimensionVariableValues());
-    values_to_set = &result.stored_value->value;
+    auto result = two_dimension_data_.Set(
+        name, MakeGarbageCollected<TwoDimensionVariableValues>());
+    values_to_set = result.stored_value->value;
   } else {
-    values_to_set = &it->value;
+    values_to_set = it->value;
   }
 
   if (first_dimension_size.ValueOrDie() > values_to_set->size()) {
@@ -249,11 +256,11 @@ CSSVariableData* StyleEnvironmentVariables::ResolveVariable(
     if (result == two_dimension_data_.end()) {
       return nullptr;
     }
-    if (first_dimension >= result->value.size() ||
-        second_dimension >= result->value[first_dimension].size()) {
+    if (first_dimension >= result->value->size() ||
+        second_dimension >= (*result->value.Get())[first_dimension].size()) {
       return nullptr;
     }
-    return result->value[first_dimension][second_dimension].Get();
+    return (*result->value.Get())[first_dimension][second_dimension].Get();
   }
 
   return nullptr;

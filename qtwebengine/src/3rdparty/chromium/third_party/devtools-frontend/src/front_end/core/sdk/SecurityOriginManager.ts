@@ -3,24 +3,16 @@
 // found in the LICENSE file.
 
 import {SDKModel} from './SDKModel.js';
-import {Capability, type Target} from './Target.js';
+import {Capability} from './Target.js';
 
 export class SecurityOriginManager extends SDKModel<EventTypes> {
-  #mainSecurityOriginInternal: string;
-  #unreachableMainSecurityOriginInternal: string|null;
-  #securityOriginsInternal: Set<string>;
-  constructor(target: Target) {
-    super(target);
-
-    // if a URL is unreachable, the browser will jump to an error page at
-    // 'chrome-error://chromewebdata/', and |this.#mainSecurityOriginInternal| stores
-    // its origin. In this situation, the original unreachable URL's security
-    // origin will be stored in |this.#unreachableMainSecurityOriginInternal|.
-    this.#mainSecurityOriginInternal = '';
-    this.#unreachableMainSecurityOriginInternal = '';
-
-    this.#securityOriginsInternal = new Set();
-  }
+  // if a URL is unreachable, the browser will jump to an error page at
+  // 'chrome-error://chromewebdata/', and |this.#mainSecurityOriginInternal| stores
+  // its origin. In this situation, the original unreachable URL's security
+  // origin will be stored in |this.#unreachableMainSecurityOriginInternal|.
+  #mainSecurityOriginInternal = '';
+  #unreachableMainSecurityOriginInternal: string|null = '';
+  #securityOriginsInternal = new Set<string>();
 
   updateSecurityOrigins(securityOrigins: Set<string>): void {
     const oldOrigins = this.#securityOriginsInternal;

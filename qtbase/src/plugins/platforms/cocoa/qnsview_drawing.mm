@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // This file is included from qnsview.mm, and only used to organize the code
 
@@ -182,6 +183,9 @@
 {
     qCDebug(lcQpaDrawing) << "Backing properties changed for" << self;
 
+    if (!m_platformWindow)
+        return;
+
     [self propagateBackingProperties];
 
     // Ideally we would plumb this situation through QPA in a way that lets
@@ -260,6 +264,24 @@
         // which we shouldn't do. This may result in AppKit (wrongly) triggering a display on
         // the thread where we made the call, so block it here and defer to the main thread.
         qCWarning(lcQpaDrawing) << "Display non non-main thread! Deferring to main thread";
+        dispatch_async(dispatch_get_main_queue(), ^{ self.needsDisplay = YES; });
+        return;
+    }
+
+    if (m_platformWindow->m_deliveringUpdateRequest) {
+        // In rare cases delivering an update request might trigger a synchronous display,
+        // for example when calling -[NSOpenGLContext update] as part of rendering a frame,
+        // if using the software GL backend on macOS 26. Our rendering stack does not deal
+        // well with this reentrancy, and it also causes crashes the macOS GL driver.
+        qCWarning(lcQpaDrawing) << "Asked to display during update-request delivery. Deferring.";
+        dispatch_async(dispatch_get_main_queue(), ^{ self.needsDisplay = YES; });
+        return;
+    }
+
+    auto *currentScreen = static_cast<QCocoaScreen*>(m_platformWindow->screen());
+    if (!currentScreen || !currentScreen->isOnline()) {
+        qCWarning(lcQpaDrawing) << "Display requested for non-online display" << currentScreen
+                                << "Deferring to next runloop pass";
         dispatch_async(dispatch_get_main_queue(), ^{ self.needsDisplay = YES; });
         return;
     }

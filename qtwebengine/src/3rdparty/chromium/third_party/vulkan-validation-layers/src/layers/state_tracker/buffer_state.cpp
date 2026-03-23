@@ -26,13 +26,13 @@ static VkExternalMemoryHandleTypeFlags GetExternalHandleTypes(const VkBufferCrea
     return external_memory_info ? external_memory_info->handleTypes : 0;
 }
 
-static VkMemoryRequirements GetMemoryRequirements(vvl::Device &dev_data, VkBuffer buffer) {
+static VkMemoryRequirements GetMemoryRequirements(vvl::DeviceState &dev_data, VkBuffer buffer) {
     VkMemoryRequirements result{};
     DispatchGetBufferMemoryRequirements(dev_data.device, buffer, &result);
     return result;
 }
 
-static VkBufferUsageFlags2KHR GetBufferUsageFlags(const VkBufferCreateInfo &create_info) {
+static VkBufferUsageFlags2 GetBufferUsageFlags(const VkBufferCreateInfo &create_info) {
     const auto *usage_flags2 = vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfo>(create_info.pNext);
     return usage_flags2 ? usage_flags2->usage : create_info.usage;
 }
@@ -54,7 +54,14 @@ static bool GetMetalExport(const VkBufferViewCreateInfo *info) {
 
 namespace vvl {
 
-Buffer::Buffer(Device &dev_data, VkBuffer handle, const VkBufferCreateInfo *pCreateInfo)
+// TODO https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9384
+// Fix GCC 13 issues with how we emplace BindableSparseMemoryTracker
+#if defined(__GNUC__) && (__GNUC__ > 12)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
+Buffer::Buffer(DeviceState &dev_data, VkBuffer handle, const VkBufferCreateInfo *pCreateInfo)
     : Bindable(handle, kVulkanObjectTypeBuffer, (pCreateInfo->flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT) != 0,
                (pCreateInfo->flags & VK_BUFFER_CREATE_PROTECTED_BIT) == 0, GetExternalHandleTypes(pCreateInfo)),
       safe_create_info(pCreateInfo),
@@ -72,6 +79,26 @@ Buffer::Buffer(Device &dev_data, VkBuffer handle, const VkBufferCreateInfo *pCre
         SetMemoryTracker(&std::get<BindableLinearMemoryTracker>(tracker_));
     }
 }
+
+void Buffer::Destroy() {
+    if (!Destroyed()) {
+        for (auto &item : sub_states_) {
+            item.second->Destroy();
+        }
+        Bindable::Destroy();
+    }
+}
+
+void Buffer::NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) {
+    for (auto &item : sub_states_) {
+        item.second->NotifyInvalidate(invalid_nodes, unlink);
+    }
+    Bindable::NotifyInvalidate(invalid_nodes, unlink);
+}
+
+#if defined(__GNUC__) && (__GNUC__ > 12)
+#pragma GCC diagnostic pop
+#endif
 
 bool Buffer::CompareCreateInfo(const Buffer &other) const {
     bool valid_queue_family = true;
@@ -109,4 +136,21 @@ BufferView::BufferView(const std::shared_ptr<vvl::Buffer> &bf, VkBufferView hand
       buffer_format_features(format_features) {
 }
 
+void BufferView::Destroy() {
+    for (auto &item : sub_states_) {
+        item.second->Destroy();
+    }
+    if (buffer_state) {
+        buffer_state->RemoveParent(this);
+        buffer_state = nullptr;
+    }
+    StateObject::Destroy();
+}
+
+void BufferView::NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) {
+    for (auto &item : sub_states_) {
+        item.second->NotifyInvalidate(invalid_nodes, unlink);
+    }
+    StateObject::NotifyInvalidate(invalid_nodes, unlink);
+}
 }  // namespace vvl

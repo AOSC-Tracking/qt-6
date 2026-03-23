@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,36 +14,35 @@
 
 #include <jni.h>
 
+#include "ink/geometry/internal/jni/mesh_format_jni_helper.h"
 #include "ink/geometry/mesh_format.h"
 #include "ink/jni/internal/jni_defines.h"
 
 namespace {
 
 using ::ink::MeshFormat;
-
-MeshFormat* GetMeshFormat(jlong raw_ptr) {
-  return reinterpret_cast<MeshFormat*>(raw_ptr);
-}
+using ::ink::jni::CastToMeshFormat;
+using ::ink::jni::DeleteNativeMeshFormat;
 
 }  // namespace
 
 extern "C" {
 
-JNI_METHOD(geometry, MeshFormat, jboolean, nativeIsPackedEquivalent)
-(JNIEnv* env, jobject obj, jlong first_raw_ptr, jlong second_raw_ptr) {
-  const MeshFormat* first = GetMeshFormat(first_raw_ptr);
-  const MeshFormat* second = GetMeshFormat(second_raw_ptr);
-  return MeshFormat::IsPackedEquivalent(*first, *second);
+JNI_METHOD(geometry, MeshFormatNative, jboolean, isPackedEquivalent)
+(JNIEnv* env, jobject obj, jlong native_pointer, jlong other_native_pointer) {
+  return MeshFormat::IsPackedEquivalent(CastToMeshFormat(native_pointer),
+                                        CastToMeshFormat(other_native_pointer));
 }
 
-JNI_METHOD(geometry, MeshFormat, jboolean, nativeIsUnpackedEquivalent)
-(JNIEnv* env, jobject obj, jlong first_raw_ptr, jlong second_raw_ptr) {
-  const MeshFormat* first = GetMeshFormat(first_raw_ptr);
-  const MeshFormat* second = GetMeshFormat(second_raw_ptr);
-  return MeshFormat::IsUnpackedEquivalent(*first, *second);
+JNI_METHOD(geometry, MeshFormatNative, jboolean, isUnpackedEquivalent)
+(JNIEnv* env, jobject obj, jlong native_pointer, jlong other_native_pointer) {
+  return MeshFormat::IsUnpackedEquivalent(
+      CastToMeshFormat(native_pointer), CastToMeshFormat(other_native_pointer));
 }
 
-JNI_METHOD(geometry, MeshFormat, void, nativeFree)
-(JNIEnv* env, jobject obj, jlong raw_ptr) { delete GetMeshFormat(raw_ptr); }
+JNI_METHOD(geometry, MeshFormatNative, void, free)
+(JNIEnv* env, jobject obj, jlong native_pointer) {
+  DeleteNativeMeshFormat(native_pointer);
+}
 
 }  // extern "C"

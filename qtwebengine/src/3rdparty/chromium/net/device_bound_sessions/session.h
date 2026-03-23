@@ -11,8 +11,10 @@
 
 #include "components/unexportable_keys/service_error.h"
 #include "components/unexportable_keys/unexportable_key_id.h"
+#include "net/base/backoff_entry.h"
 #include "net/base/net_export.h"
 #include "net/device_bound_sessions/cookie_craving.h"
+#include "net/device_bound_sessions/session_error.h"
 #include "net/device_bound_sessions/session_inclusion_rules.h"
 #include "net/device_bound_sessions/session_key.h"
 #include "net/device_bound_sessions/session_params.h"
@@ -20,6 +22,7 @@
 
 namespace net {
 class URLRequest;
+class FirstPartySetMetadata;
 }
 
 namespace net::device_bound_sessions {
@@ -42,8 +45,9 @@ class NET_EXPORT Session {
 
   ~Session();
 
-  static std::unique_ptr<Session> CreateIfValid(const SessionParams& params,
-                                                GURL url);
+  // Creates an instance of `Session` based on the `params`.
+  static base::expected<std::unique_ptr<Session>, SessionError> CreateIfValid(
+      const SessionParams& params);
   static std::unique_ptr<Session> CreateFromProto(const proto::Session& proto);
   proto::Session ToProto() const;
 
@@ -57,8 +61,9 @@ class NET_EXPORT Session {
 
   const KeyIdOrError& unexportable_key_id() const { return key_id_or_error_; }
 
-  // this bool could also be an enum for UMA, eventually devtools, etc.
-  bool ShouldDeferRequest(URLRequest* request) const;
+  bool ShouldDeferRequest(
+      URLRequest* request,
+      const FirstPartySetMetadata& first_party_set_metadata) const;
 
   const Id& id() const { return id_; }
 
@@ -68,11 +73,13 @@ class NET_EXPORT Session {
     return cached_challenge_;
   }
 
-  const base::Time& creation_date() const { return creation_date_; }
+  base::Time creation_date() const { return creation_date_; }
 
-  const base::Time& expiry_date() const { return expiry_date_; }
+  base::Time expiry_date() const { return expiry_date_; }
 
   bool should_defer_when_expired() const { return should_defer_when_expired_; }
+
+  const std::vector<CookieCraving>& cookies() const { return cookie_cravings_; }
 
   bool IsEqualForTesting(const Session& other) const;
 
@@ -92,15 +99,38 @@ class NET_EXPORT Session {
   // Whether the URL is in-scope for the session.
   bool IncludesUrl(const GURL& url) const;
 
+  // Whether a request initiated by `initiator` is allowed to trigger a
+  // refresh for this session.
+  bool AllowedToInitiateRefresh(
+      const std::optional<url::Origin>& initiator) const;
+
+  bool ShouldBackoff() const;
+
+  // Inform the session about a refresh so it can decide whether to
+  // enter backoff mode.
+  void InformOfRefreshResult(SessionError::ErrorType error_type);
+
+  const url::Origin& origin() const { return inclusion_rules_.origin(); }
+
+  const std::vector<std::string>& allowed_refresh_initiators() {
+    return allowed_refresh_initiators_;
+  }
+
+  void set_allowed_refresh_initiators(
+      std::vector<std::string> allowed_refresh_initiators) {
+    allowed_refresh_initiators_ = std::move(allowed_refresh_initiators);
+  }
+
  private:
-  Session(Id id, url::Origin origin, GURL refresh);
+  Session(Id id, SessionInclusionRules inclusion_rules, GURL refresh);
   Session(Id id,
           GURL refresh,
           SessionInclusionRules inclusion_rules,
           std::vector<CookieCraving> cookie_cravings,
           bool should_defer_when_expired,
           base::Time creation_date,
-          base::Time expiry_date);
+          base::Time expiry_date,
+          std::vector<std::string> allowed_refresh_initiators);
 
   // The unique server-issued identifier of the session.
   const Id id_;
@@ -137,6 +167,12 @@ class NET_EXPORT Session {
       base::unexpected(unexportable_keys::ServiceError::kKeyNotReady);
   // Precached challenge, if any. Should not be persisted.
   std::optional<std::string> cached_challenge_;
+  // Backoff for unreachable refresh endpoints. This is essential for
+  // preventing Chrome from causing a DoS due to expiring session
+  // cookies.
+  net::BackoffEntry backoff_;
+  // Host patterns for initiators allowed to trigger a refresh.
+  std::vector<std::string> allowed_refresh_initiators_;
 };
 
 }  // namespace net::device_bound_sessions

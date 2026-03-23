@@ -17,6 +17,7 @@
 
 #include <QtCore/qbytearray.h>
 #include <QtCore/qstring.h>
+#include <QtCore/quuid.h>
 #include <QtCore/private/qcomptr_p.h>
 
 #include <QtMultimedia/qaudiodevice.h>
@@ -24,24 +25,44 @@
 #include <QtMultimedia/private/qaudiosystem_p.h>
 #include <QtMultimedia/private/qaudiodevice_p.h>
 
+#include <mmdeviceapi.h>
+
 struct IMMDevice;
 
 QT_BEGIN_NAMESPACE
 
-class QWindowsAudioDevice : public QAudioDevicePrivate
+namespace QtWASAPI {
+
+struct WindowsProbeData {
+    std::pair<int, int> channelCountRange;
+    std::pair<int, int> sampleRateRange;
+};
+
+struct WindowsFormatResultFutures
+{
+    std::future<QAudioDevicePrivate::AudioDeviceFormat> formatFuture;
+    std::future<WindowsProbeData> probeDataFuture;
+};
+
+} // namespace QtWASAPI
+
+class QWindowsAudioDevice final : public QAudioDevicePrivate
 {
 public:
-    QWindowsAudioDevice(QByteArray deviceId, ComPtr<IMMDevice> immdev, QString description,
-                        QAudioDevice::Mode mode);
+    QWindowsAudioDevice(QByteArray deviceId, ComPtr<IMMDevice>, QString description,
+                        QUuid containerId, EndpointFormFactor, QAudioDevice::Mode);
+    QWindowsAudioDevice(QByteArray deviceId, QString description, QUuid containerId,
+                        EndpointFormFactor, QAudioDevice::Mode,
+                        QtWASAPI::WindowsFormatResultFutures);
     ~QWindowsAudioDevice();
+
+    std::unique_ptr<QAudioDevicePrivate> clone() const;
 
     ComPtr<IMMDevice> open() const;
 
-    std::pair<int, int> m_probedChannelCountRange{ 1, 2 }; // fallback: mono/stereo
-    std::pair<int, int> m_probedSampleRateRange{
-        QtMultimediaPrivate::allSupportedSampleRates.front(),
-        QtMultimediaPrivate::allSupportedSampleRates.back(),
-    }; // fallback: full range
+    const QUuid m_device_ContainerId;
+    const EndpointFormFactor m_formFactor = EndpointFormFactor::UnknownFormFactor;
+    std::shared_future<QtWASAPI::WindowsProbeData> m_probeDataFuture;
 };
 
 QT_END_NAMESPACE

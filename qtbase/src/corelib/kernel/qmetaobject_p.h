@@ -36,7 +36,7 @@ using namespace QtMocConstants;
 Q_DECLARE_FLAGS(MetaObjectFlags, MetaObjectFlag)
 Q_DECLARE_OPERATORS_FOR_FLAGS(MetaObjectFlags)
 
-Q_CORE_EXPORT int qMetaTypeTypeInternal(QByteArrayView name);
+int qMetaTypeTypeInternal(QByteArrayView name); // in qmetatype.cpp
 
 class QArgumentType
 {
@@ -45,8 +45,8 @@ public:
     QArgumentType(QMetaType metaType)
         : _metaType(metaType)
     {}
-    QArgumentType(const QByteArray &name)
-        : _metaType(QMetaType{qMetaTypeTypeInternal(qToByteArrayViewIgnoringNull(name))}), _name(name)
+    explicit QArgumentType(QByteArrayView name)
+        : _metaType(QMetaType{qMetaTypeTypeInternal(name)}), _name(name)
     {}
     QMetaType metaType() const noexcept
     { return _metaType; }
@@ -69,7 +69,7 @@ private:
     Q_DECLARE_EQUALITY_COMPARABLE_NON_NOEXCEPT(QArgumentType)
 
     QMetaType _metaType;
-    QByteArray _name;
+    QByteArrayView _name;
 };
 Q_DECLARE_TYPEINFO(QArgumentType, Q_RELOCATABLE_TYPE);
 
@@ -130,22 +130,23 @@ struct QMetaObjectPrivate
 
     static int originalClone(const QMetaObject *obj, int local_method_index);
 
-    static QByteArrayView decodeMethodSignature(const char *signature,
+    static QByteArray normalizedSignature(QByteArrayView method);
+    static QByteArrayView decodeMethodSignature(QByteArrayView signature,
                                                 QArgumentTypeArray &types);
     static int indexOfSignalRelative(const QMetaObject **baseObject,
-                                     QByteArrayView name, int argc,
-                                     const QArgumentType *types);
+                                     QByteArrayView name,
+                                     QSpan<const QArgumentType> types);
     static int indexOfSlotRelative(const QMetaObject **m,
-                                   QByteArrayView name, int argc,
-                                   const QArgumentType *types);
+                                   QByteArrayView name,
+                                   QSpan<const QArgumentType> types);
     static int indexOfSignal(const QMetaObject *m, QByteArrayView name,
-                             int argc, const QArgumentType *types);
+                             QSpan<const QArgumentType> types);
     static int indexOfSlot(const QMetaObject *m, QByteArrayView name,
-                           int argc, const QArgumentType *types);
+                           QSpan<const QArgumentType> types);
     static int indexOfMethod(const QMetaObject *m, QByteArrayView name,
-                             int argc, const QArgumentType *types);
+                             QSpan<const QArgumentType> types);
     static int indexOfConstructor(const QMetaObject *m, QByteArrayView name,
-                                  int argc, const QArgumentType *types);
+                                  QSpan<const QArgumentType> types);
 
     enum class Which { Name, Alias };
     static int indexOfEnumerator(const QMetaObject *m, QByteArrayView name, Which which);
@@ -162,12 +163,14 @@ struct QMetaObjectPrivate
     }
     Q_CORE_EXPORT static int absoluteSignalCount(const QMetaObject *m);
     Q_CORE_EXPORT static int signalIndex(const QMetaMethod &m);
-    static bool checkConnectArgs(int signalArgc, const QArgumentType *signalTypes,
-                                 int methodArgc, const QArgumentType *methodTypes);
+    static bool checkConnectArgs(QSpan<const QArgumentType> signalTypes,
+                                 QSpan<const QArgumentType> methodTypes);
     static bool checkConnectArgs(const QMetaMethodPrivate *signal,
                                  const QMetaMethodPrivate *method);
 
-    static QList<QByteArray> parameterTypeNamesFromSignature(QByteArrayView sig);
+    static QByteArrayView
+    parameterTypeNamesFromSignature(QByteArrayView signature,
+                                    QVarLengthArray<QByteArrayView, 10> &typeNames);
 
 #ifndef QT_NO_QOBJECT
     // defined in qobject.cpp
@@ -188,14 +191,14 @@ struct QMetaObjectPrivate
                                         QBasicMutex *senderMutex, DisconnectType = DisconnectAll);
 #endif
 
-    template<int MethodType>
     static inline int indexOfMethodRelative(const QMetaObject **baseObject,
-                                            QByteArrayView name, int argc,
-                                            const QArgumentType *types);
+                                            QByteArrayView name,
+                                            QSpan<const QArgumentType> types,
+                                            QMetaMethod::MethodType what);
 
     static bool methodMatch(const QMetaObject *m, const QMetaMethod &method,
-                            QByteArrayView name, int argc,
-                            const QArgumentType *types);
+                            QByteArrayView name,
+                            QSpan<const QArgumentType> types);
     Q_CORE_EXPORT static QMetaMethod firstMethod(const QMetaObject *baseObject, QByteArrayView name);
 
 };

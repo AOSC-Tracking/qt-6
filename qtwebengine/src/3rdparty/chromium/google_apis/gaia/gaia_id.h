@@ -12,6 +12,10 @@
 #include "base/component_export.h"
 #include "build/build_config.h"
 
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/scoped_java_ref.h"
+#endif  // BUILDFLAG(IS_ANDROID)
+
 #if BUILDFLAG(IS_IOS) && defined(__OBJC__)
 @class NSString;
 #endif  // BUILDFLAG(IS_IOS) && defined(__OBJC__)
@@ -57,7 +61,12 @@ class COMPONENT_EXPORT(GOOGLE_APIS) GaiaId {
   friend auto operator<=>(const GaiaId&, const GaiaId&) = default;
 
   // Convenience test-only class that allows defining constexpr or static
-  // values and can be implicitly converted to GaiaId.
+  // values and can be implicitly converted to GaiaId. Prefer using GaiaId
+  // directly where possible, i.e. in all cases except those where the C++ style
+  // guide disallows constructing a GaiaId instance (variables with static
+  // storage duration, see
+  // https://google.github.io/styleguide/cppguide.html#Static_and_Global_Variables
+  // for more information).
 #if defined(UNIT_TEST)
   class Literal {
    public:
@@ -80,5 +89,33 @@ class COMPONENT_EXPORT(GOOGLE_APIS) GaiaId {
 
 COMPONENT_EXPORT(GOOGLE_APIS)
 std::ostream& operator<<(std::ostream& out, const GaiaId& id);
+
+#if BUILDFLAG(IS_ANDROID)
+// Constructs a Java GaiaId from the provided C++ GaiaId.
+COMPONENT_EXPORT(GOOGLE_APIS)
+base::android::ScopedJavaLocalRef<jobject> ConvertToJavaGaiaId(
+    JNIEnv* env,
+    const GaiaId& gaia_id);
+
+// Constructs a C++ GaiaId from the provided Java GaiaId.
+COMPONENT_EXPORT(GOOGLE_APIS)
+GaiaId ConvertFromJavaGaiaId(JNIEnv* env,
+                             const base::android::JavaRef<jobject>& j_gaia_id);
+
+namespace jni_zero {
+template <>
+inline GaiaId FromJniType<GaiaId>(
+    JNIEnv* env,
+    const base::android::JavaRef<jobject>& j_gaia_id) {
+  return ConvertFromJavaGaiaId(env, j_gaia_id);
+}
+
+template <>
+inline ScopedJavaLocalRef<jobject> ToJniType(JNIEnv* env,
+                                             const GaiaId& gaia_id) {
+  return ConvertToJavaGaiaId(env, gaia_id);
+}
+}  // namespace jni_zero
+#endif  // BUILDFLAG(IS_ANDROID)
 
 #endif  // GOOGLE_APIS_GAIA_GAIA_ID_H_

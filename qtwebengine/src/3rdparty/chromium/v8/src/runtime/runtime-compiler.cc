@@ -28,7 +28,7 @@ void LogExecution(Isolate* isolate, DirectHandle<JSFunction> function) {
 #ifdef V8_ENABLE_LEAPTIERING
   DCHECK(function->IsLoggingRequested(isolate));
   IsolateGroup::current()->js_dispatch_table()->ResetTieringRequest(
-      function->dispatch_handle(), isolate);
+      function->dispatch_handle());
 #else
   if (!function->feedback_vector()->log_next_execution()) return;
 #endif
@@ -93,6 +93,8 @@ RUNTIME_FUNCTION(Runtime_InstallBaselineCode) {
   {
     if (!V8_ENABLE_LEAPTIERING_BOOL || !function->has_feedback_vector()) {
       IsCompiledScope is_compiled_scope(*sfi, isolate);
+      IsBaselineCompiledScope is_baseline_compiled_scope(*sfi, isolate);
+      DCHECK(is_baseline_compiled_scope.is_compiled());
       DCHECK(!function->HasAvailableOptimizedCode(isolate));
       DCHECK(!function->has_feedback_vector());
       JSFunction::CreateAndAttachFeedbackVector(isolate, function,
@@ -100,7 +102,7 @@ RUNTIME_FUNCTION(Runtime_InstallBaselineCode) {
     }
     DisallowGarbageCollection no_gc;
     Tagged<Code> baseline_code = sfi->baseline_code(kAcquireLoad);
-    function->UpdateCodeKeepTieringRequests(baseline_code);
+    function->UpdateCodeKeepTieringRequests(isolate, baseline_code);
 #ifdef V8_ENABLE_LEAPTIERING
     return baseline_code;
   }
@@ -125,7 +127,7 @@ RUNTIME_FUNCTION(Runtime_InstallSFICode) {
     Tagged<Code> sfi_code = sfi->GetCode(isolate);
     if (V8_LIKELY(sfi_code->kind() != CodeKind::BASELINE ||
                   function->has_feedback_vector())) {
-      function->UpdateCode(sfi_code);
+      function->UpdateCode(isolate, sfi_code);
       return sfi_code;
     }
   }
@@ -137,7 +139,7 @@ RUNTIME_FUNCTION(Runtime_InstallSFICode) {
   JSFunction::CreateAndAttachFeedbackVector(isolate, function,
                                             &is_compiled_scope);
   Tagged<Code> sfi_code = function->shared()->GetCode(isolate);
-  function->UpdateCode(sfi_code);
+  function->UpdateCode(isolate, sfi_code);
   return sfi_code;
 }
 
@@ -148,30 +150,24 @@ namespace {
 void CompileOptimized(DirectHandle<JSFunction> function, ConcurrencyMode mode,
                       CodeKind target_kind, Isolate* isolate) {
   // Ensure that the tiering request is reset even if compilation fails.
-  function->ResetTieringRequests(isolate);
+  function->ResetTieringRequests();
 
   // As a pre- and post-condition of CompileOptimized, the function *must* be
   // compiled, i.e. the installed InstructionStream object must not be
   // CompileLazy.
   IsCompiledScope is_compiled_scope(function->shared(), isolate);
-
   if (V8_UNLIKELY(!is_compiled_scope.is_compiled())) {
-    StackLimitCheck check(isolate);
-    if (check.JsHasOverflowed(kStackSpaceRequiredForCompilation * KB)) {
-      return;
-    }
-    if (!Compiler::Compile(isolate, function, Compiler::KEEP_EXCEPTION,
-                           &is_compiled_scope)) {
-      return;
-    }
-    JSFunction::EnsureFeedbackVector(isolate, function, &is_compiled_scope);
+    // This happens if the code is flushed while we still have an optimization
+    // request pending (or if manually an optimization is requested on an
+    // uncompiled function).
+    // Instead of calling into Compiler::Compile and having to do exception
+    // handling here, we reset and return and thus tail-call into CompileLazy.
+    function->ResetIfCodeFlushed(isolate);
+    return;
   }
-  DCHECK(is_compiled_scope.is_compiled());
 
   if (mode == ConcurrencyMode::kConcurrent) {
     // No need to start another compile job.
-    // Also, various fuzzing flags like --always-turbofan might already compile
-    // this function in the above Compiler::Compile function.
     if (function->tiering_in_progress() ||
         function->GetActiveTier(isolate) >= target_kind) {
       static_assert(kTieringStateInProgressBlocksTierup);
@@ -254,12 +250,11 @@ RUNTIME_FUNCTION(Runtime_MarkLazyDeoptimized) {
     reoptimize = false;
   }
 
-  function->ResetTieringRequests(isolate);
+  function->ResetTieringRequests();
   if (reoptimize) {
     // Set the budget such that we have one invocation which allows us to detect
     // if any ICs need updating before re-optimization.
-    function->raw_feedback_cell()->set_interrupt_budget(
-        function->shared()->GetBytecodeArray(isolate)->BytecodeArraySize());
+    function->raw_feedback_cell()->set_interrupt_budget(1);
   } else {
     function->SetInterruptBudget(isolate, BudgetModification::kRaise,
                                  CodeKind::INTERPRETED_FUNCTION);
@@ -359,11 +354,11 @@ RUNTIME_FUNCTION(Runtime_InstantiateAsmJs) {
   if (IsJSReceiver(args[1])) {
     stdlib = args.at<JSReceiver>(1);
   }
-  Handle<JSReceiver> foreign;
+  DirectHandle<JSReceiver> foreign;
   if (IsJSReceiver(args[2])) {
     foreign = args.at<JSReceiver>(2);
   }
-  Handle<JSArrayBuffer> memory;
+  DirectHandle<JSArrayBuffer> memory;
   if (IsJSArrayBuffer(args[3])) {
     memory = args.at<JSArrayBuffer>(3);
   }
@@ -396,7 +391,7 @@ RUNTIME_FUNCTION(Runtime_InstantiateAsmJs) {
   shared->set_is_asm_wasm_broken(true);
 #endif
   DCHECK_EQ(function->code(isolate), *BUILTIN_CODE(isolate, InstantiateAsmJs));
-  function->UpdateCode(*BUILTIN_CODE(isolate, CompileLazy));
+  function->UpdateCode(isolate, *BUILTIN_CODE(isolate, CompileLazy));
   DCHECK(!isolate->has_exception());
   return Smi::zero();
 }
@@ -407,7 +402,7 @@ bool TryGetOptimizedOsrCode(Isolate* isolate, Tagged<FeedbackVector> vector,
                             const interpreter::BytecodeArrayIterator& it,
                             Tagged<Code>* code_out) {
   std::optional<Tagged<Code>> maybe_code =
-      vector->GetOptimizedOsrCode(isolate, it.GetSlotOperand(2));
+      vector->GetOptimizedOsrCode(isolate, {}, it.GetSlotOperand(2));
   if (maybe_code.has_value()) {
     *code_out = maybe_code.value();
     return true;
@@ -415,18 +410,13 @@ bool TryGetOptimizedOsrCode(Isolate* isolate, Tagged<FeedbackVector> vector,
   return false;
 }
 
-// Deoptimize all osr'd loops which is in the same outermost loop with deopt
-// exit. For example:
-//  for (;;) {
-//    for (;;) {
-//    }  // Type a: loop start < OSR backedge < deopt exit
-//    for (;;) {
-//      <- Deopt
-//      for (;;) {
-//      }  // Type b: deopt exit < loop start < OSR backedge
-//    } // Type c: loop start < deopt exit < OSR backedge
-//  }  // The outermost loop
-void DeoptAllOsrLoopsContainingDeoptExit(Isolate* isolate,
+// Deoptimize all osr'd loops which contain a particular deopt exit.
+// We only deoptimize OSR code if the exit is inside the actual loop. The OSR
+// code might still be affected (if the exit is after the loop, or in the case
+// of turbofan if the exit is before the loop, but reachable through an outer
+// loop). Regardless in both of these two cases, the OSR code is still usable to
+// quickly get out of the loop itself.
+bool DeoptAllOsrLoopsContainingDeoptExit(Isolate* isolate,
                                          Tagged<JSFunction> function,
                                          BytecodeOffset deopt_exit_offset) {
   DisallowGarbageCollection no_gc;
@@ -434,82 +424,45 @@ void DeoptAllOsrLoopsContainingDeoptExit(Isolate* isolate,
 
   if (!v8_flags.use_ic ||
       !function->feedback_vector()->maybe_has_optimized_osr_code()) {
-    return;
+    return false;
   }
   Handle<BytecodeArray> bytecode_array(
       function->shared()->GetBytecodeArray(isolate), isolate);
   DCHECK(interpreter::BytecodeArrayIterator::IsValidOffset(
       bytecode_array, deopt_exit_offset.ToInt()));
 
-  interpreter::BytecodeArrayIterator it(bytecode_array,
-                                        deopt_exit_offset.ToInt());
-
   Tagged<FeedbackVector> vector = function->feedback_vector();
   Tagged<Code> code;
-  base::SmallVector<Tagged<Code>, 8> osr_codes;
-  // Visit before the first loop-with-deopt is found
+
+  bool any_marked = false;
+  bool has_maglev_code = false;
+  bool has_turbofan_code = false;
+
+  interpreter::BytecodeArrayIterator it(bytecode_array);
   for (; !it.done(); it.Advance()) {
     // We're only interested in loop ranges.
     if (it.current_bytecode() != interpreter::Bytecode::kJumpLoop) continue;
-    // Is the deopt exit contained in the current loop?
-    if (base::IsInRange(deopt_exit_offset.ToInt(), it.GetJumpTargetOffset(),
-                        it.current_offset())) {
-      break;
-    }
-    // We've reached nesting level 0, i.e. the current JumpLoop concludes a
-    // top-level loop, return as the deopt exit is not in any loop. For example:
-    //  <- Deopt
-    //  for (;;) {
-    //  } // The outermost loop
-    const int loop_nesting_level = it.GetImmediateOperand(1);
-    if (loop_nesting_level == 0) return;
-    if (TryGetOptimizedOsrCode(isolate, vector, it, &code)) {
-      // Collect type b osr'd loops
-      osr_codes.push_back(code);
+    bool has_osr_code = TryGetOptimizedOsrCode(isolate, vector, it, &code);
+    if (has_osr_code) {
+      if (base::IsInRange(deopt_exit_offset.ToInt(), it.GetJumpTargetOffset(),
+                          it.current_offset())) {
+        code->SetMarkedForDeoptimization(isolate,
+                                         LazyDeoptimizeReason::kEagerDeopt);
+        any_marked = true;
+      } else {
+        has_turbofan_code |= code->is_turbofanned();
+        has_maglev_code |= code->is_maglevved();
+      }
     }
   }
-  if (it.done()) return;
-  for (size_t i = 0, size = osr_codes.size(); i < size; i++) {
-    // Deoptimize type b osr'd loops
-    Deoptimizer::DeoptimizeFunction(function, LazyDeoptimizeReason::kEagerDeopt,
-                                    osr_codes[i]);
+  Tagged<FeedbackVector> fbv = function->feedback_vector();
+  if (!has_maglev_code && fbv->maybe_has_maglev_osr_code()) {
+    fbv->set_maybe_has_optimized_osr_code(false, CodeKind::MAGLEV);
   }
-  // Visit after the first loop-with-deopt is found
-  int last_deopt_in_range_loop_jump_target;
-  for (; !it.done(); it.Advance()) {
-    // We're only interested in loop ranges.
-    if (it.current_bytecode() != interpreter::Bytecode::kJumpLoop) continue;
-    // We've reached a new nesting loop in the case of the deopt exit is in a
-    // loop whose outermost loop was removed. For example:
-    //  for (;;) {
-    //    <- Deopt
-    //  } // The non-outermost loop
-    //  for (;;) {
-    //  } // The outermost loop
-    if (it.GetJumpTargetOffset() > deopt_exit_offset.ToInt()) break;
-    last_deopt_in_range_loop_jump_target = it.GetJumpTargetOffset();
-    if (TryGetOptimizedOsrCode(isolate, vector, it, &code)) {
-      // Deoptimize type c osr'd loops
-      Deoptimizer::DeoptimizeFunction(function,
-                                      LazyDeoptimizeReason::kEagerDeopt, code);
-    }
-    // We've reached nesting level 0, i.e. the current JumpLoop concludes a
-    // top-level loop.
-    const int loop_nesting_level = it.GetImmediateOperand(1);
-    if (loop_nesting_level == 0) break;
+  if (!has_turbofan_code && fbv->maybe_has_turbofan_osr_code()) {
+    fbv->set_maybe_has_optimized_osr_code(false, CodeKind::TURBOFAN_JS);
   }
-  if (it.done()) return;
-  // Revisit from start of the last deopt in range loop to deopt
-  for (it.SetOffset(last_deopt_in_range_loop_jump_target);
-       it.current_offset() < deopt_exit_offset.ToInt(); it.Advance()) {
-    // We're only interested in loop ranges.
-    if (it.current_bytecode() != interpreter::Bytecode::kJumpLoop) continue;
-    if (TryGetOptimizedOsrCode(isolate, vector, it, &code)) {
-      // Deoptimize type a osr'd loops
-      Deoptimizer::DeoptimizeFunction(function,
-                                      LazyDeoptimizeReason::kEagerDeopt, code);
-    }
-  }
+  return any_marked;
 }
 
 }  // namespace
@@ -536,13 +489,9 @@ RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   // the arguments object, but only to get to its map.
   isolate->set_context(deoptimizer->function()->native_context());
 
-  // When this is called from WasmGC code, clear the "thread in wasm" flag,
-  // which is important in case any GC needs to happen.
-  // TODO(40192807): Find a better fix, likely by replacing the global flag.
-  SaveAndClearThreadInWasmFlag clear_wasm_flag(isolate);
-
   // Make sure to materialize objects before causing any allocation.
   deoptimizer->MaterializeHeapObjects();
+  deoptimizer->ProcessDeoptReason(deopt_reason);
   const BytecodeOffset deopt_exit_offset =
       deoptimizer->bytecode_offset_in_outermost_frame();
   delete deoptimizer;
@@ -562,8 +511,15 @@ RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   // Some eager deopts also don't invalidate InstructionStream (e.g. when
   // preparing for OSR from Maglev to Turbofan).
   if (IsDeoptimizationWithoutCodeInvalidation(deopt_reason)) {
+    if (deopt_reason == DeoptimizeReason::kPrepareForOnStackReplacement &&
+        function->ActiveTierIsMaglev(isolate)) {
+      isolate->tiering_manager()->MarkForTurboFanOptimization(*function);
+    }
     return ReadOnlyRoots(isolate).undefined_value();
   }
+
+  DCHECK_NE(deopt_reason, DeoptimizeReason::kOSREarlyExit);
+  DCHECK_NE(deopt_reason, DeoptimizeReason::kPrepareForOnStackReplacement);
 
   // Non-OSR'd code is deoptimized unconditionally. If the deoptimization occurs
   // inside the outermost loop containing a loop that can trigger OSR
@@ -576,16 +532,30 @@ RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   // long-running loop; so if the deoptimization occurs outside this loop it is
   // still worth jumping to the OSR'd code on the next run. The reduced cost of
   // the loop should pay for the deoptimization costs.
+
   const BytecodeOffset osr_offset = optimized_code->osr_offset();
+  bool any_marked = false;
+
+  if (osr_offset.IsNone() || Deoptimizer::DeoptExitIsInsideOsrLoop(
+                                 isolate, *function, deopt_exit_offset,
+                                 osr_offset, optimized_code->kind())) {
+    function->ResetTieringRequests();
+    if (!optimized_code->marked_for_deoptimization()) {
+      optimized_code->SetMarkedForDeoptimization(
+          isolate, LazyDeoptimizeReason::kEagerDeopt);
+      any_marked = true;
+    }
+  }
+
   if (osr_offset.IsNone()) {
-    Deoptimizer::DeoptimizeFunction(
-        *function, LazyDeoptimizeReason::kEagerDeopt, *optimized_code);
-    DeoptAllOsrLoopsContainingDeoptExit(isolate, *function, deopt_exit_offset);
-  } else if (deopt_reason != DeoptimizeReason::kOSREarlyExit &&
-             Deoptimizer::DeoptExitIsInsideOsrLoop(
-                 isolate, *function, deopt_exit_offset, osr_offset)) {
-    Deoptimizer::DeoptimizeFunction(
-        *function, LazyDeoptimizeReason::kEagerDeopt, *optimized_code);
+    if (DeoptAllOsrLoopsContainingDeoptExit(isolate, *function,
+                                            deopt_exit_offset)) {
+      any_marked = true;
+    }
+  }
+
+  if (any_marked) {
+    Deoptimizer::DeoptimizeMarkedCode(isolate);
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -648,7 +618,7 @@ Tagged<Object> CompileOptimizedOSR(Isolate* isolate,
           ? ConcurrencyMode::kConcurrent
           : ConcurrencyMode::kSynchronous;
 
-  if (V8_UNLIKELY(isolate->EfficiencyModeEnabledForTiering() &&
+  if (V8_UNLIKELY(isolate->EfficiencyModeEnabled() &&
                   min_opt_level == CodeKind::MAGLEV)) {
     mode = ConcurrencyMode::kSynchronous;
   }
@@ -667,7 +637,7 @@ Tagged<Object> CompileOptimizedOSR(Isolate* isolate,
 
 #ifndef V8_ENABLE_LEAPTIERING
     if (!function->HasAttachedOptimizedCode(isolate)) {
-      function->UpdateCode(function->shared()->GetCode(isolate));
+      function->UpdateCode(isolate, function->shared()->GetCode(isolate));
     }
 #endif  // V8_ENABLE_LEAPTIERING
 
@@ -736,7 +706,7 @@ Tagged<Object> CompileOptimizedOSRFromMaglev(Isolate* isolate,
     return Smi::zero();
   }
 
-  if (V8_UNLIKELY(isolate->EfficiencyModeEnabledForTiering() ||
+  if (V8_UNLIKELY(isolate->EfficiencyModeEnabled() ||
                   isolate->BatterySaverModeEnabled())) {
     function->feedback_vector()->reset_osr_urgency();
     function->SetInterruptBudget(isolate, BudgetModification::kRaise);
@@ -850,9 +820,9 @@ static Tagged<Object> CompileGlobalEval(
   }
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, compiled,
-      Compiler::GetFunctionFromEval(source.ToHandleChecked(), outer_info,
-                                    context, language_mode, restriction,
-                                    kNoSourcePosition, eval_position),
+      Compiler::GetFunctionFromEval(
+          isolate, source.ToHandleChecked(), outer_info, context, language_mode,
+          restriction, kNoSourcePosition, eval_position),
       ReadOnlyRoots(isolate).exception());
   return *compiled;
 }

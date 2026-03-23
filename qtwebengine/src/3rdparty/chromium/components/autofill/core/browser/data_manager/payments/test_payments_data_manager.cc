@@ -6,7 +6,8 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "base/uuid.h"
-#include "components/autofill/core/browser/data_model/bnpl_issuer.h"
+#include "components/autofill/core/browser/data_model/payments/bnpl_issuer.h"
+#include "components/autofill/core/browser/ui/test_autofill_image_fetcher.h"
 
 namespace autofill {
 
@@ -21,9 +22,15 @@ TestPaymentsDataManager::TestPaymentsDataManager(const std::string& app_locale)
                           /*variations_country_code=*/GeoIpCountryCode("US"),
                           app_locale) {
   is_payments_data_loaded_ = true;
+  owned_image_fetcher_ = std::make_unique<TestAutofillImageFetcher>();
+  image_fetcher_ = owned_image_fetcher_.get();
 }
 
-TestPaymentsDataManager::~TestPaymentsDataManager() = default;
+TestPaymentsDataManager::~TestPaymentsDataManager() {
+  // Clear `image_fetcher_` raw pointer because the `owned_image_fetcher_` goes
+  // first out of scope.
+  image_fetcher_ = nullptr;
+}
 
 void TestPaymentsDataManager::LoadCreditCards() {
   // Overridden to avoid a trip to the database.
@@ -249,6 +256,13 @@ bool TestPaymentsDataManager::IsSyncFeatureEnabledForPaymentsServerMetrics()
   return false;
 }
 
+bool TestPaymentsDataManager::IsAutofillBnplPrefEnabled() const {
+  if (autofill_bnpl_enabled_.has_value()) {
+    return autofill_bnpl_enabled_.value();
+  }
+  return PaymentsDataManager::IsAutofillBnplPrefEnabled();
+}
+
 CoreAccountInfo TestPaymentsDataManager::GetAccountInfoForPaymentsServer()
     const {
   return account_info_;
@@ -278,11 +292,11 @@ void TestPaymentsDataManager::AddServerCreditCard(
 
 void TestPaymentsDataManager::AddBnplIssuer(const BnplIssuer& bnpl_issuer) {
   // No duplicated issuer should be inserted into the BNPL issuer list.
-  CHECK(!std::ranges::any_of(
+  CHECK(std::ranges::none_of(
       linked_bnpl_issuers_, [&](const BnplIssuer& saved_bnpl_issuer) {
         return saved_bnpl_issuer.issuer_id() == bnpl_issuer.issuer_id();
       }));
-  CHECK(!std::ranges::any_of(
+  CHECK(std::ranges::none_of(
       unlinked_bnpl_issuers_, [&](const BnplIssuer& saved_bnpl_issuer) {
         return saved_bnpl_issuer.issuer_id() == bnpl_issuer.issuer_id();
       }));
@@ -293,6 +307,11 @@ void TestPaymentsDataManager::AddBnplIssuer(const BnplIssuer& bnpl_issuer) {
     unlinked_bnpl_issuers_.push_back(bnpl_issuer);
   }
   NotifyObservers();
+}
+
+void TestPaymentsDataManager::ClearBnplIssuers() {
+  linked_bnpl_issuers_.clear();
+  unlinked_bnpl_issuers_.clear();
 }
 
 void TestPaymentsDataManager::AddAutofillOfferData(
@@ -309,9 +328,9 @@ void TestPaymentsDataManager::AddServerIban(const Iban& iban) {
   NotifyObservers();
 }
 
-void TestPaymentsDataManager::AddCardArtImage(const GURL& url,
-                                              const gfx::Image& image) {
-  credit_card_art_images_[url] = std::make_unique<gfx::Image>(image);
+void TestPaymentsDataManager::CacheImage(const GURL& url,
+                                         const gfx::Image& image) {
+  owned_image_fetcher_->CacheImage(url, image);
   NotifyObservers();
 }
 

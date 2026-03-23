@@ -26,20 +26,23 @@
 
 #include "absl/base/no_destructor.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/flags/marshalling.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "./centipede/feature.h"
 #include "./centipede/knobs.h"
+#include "./centipede/util.h"
 #include "./common/defs.h"
 #include "./common/logging.h"
 #include "./common/remote_file.h"
 #include "./common/status_macros.h"
 #include "./fuzztest/internal/configuration.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 namespace {
 
 size_t ComputeTimeoutPerBatch(size_t timeout_per_input, size_t batch_size) {
@@ -238,6 +241,16 @@ void Environment::ReadKnobsFileIfSpecified() {
 
 void Environment::UpdateWithTargetConfig(
     const fuzztest::internal::Configuration &config) {
+  // Allow more crashes to be reported when running with FuzzTest. This allows
+  // more unique crashes to collected after deduplication. But we don't want to
+  // make the limit too large to stress the filesystem, so this is not a perfect
+  // solution. Currently we just increase the default to be seemingly large
+  // enough.
+  if (max_num_crash_reports == Default().max_num_crash_reports) {
+    max_num_crash_reports = 20;
+    LOG(INFO) << "Overriding the default max_num_crash_reports to "
+              << max_num_crash_reports << " for FuzzTest.";
+  }
   if (config.jobs != 0) {
     CHECK(j == Default().j || j == config.jobs)
         << "Value for --j is inconsistent with the value for jobs in the "
@@ -318,4 +331,21 @@ void Environment::UpdateTimeoutPerBatchIfEqualTo(size_t val) {
           << " sec (see --help for details)";
 }
 
-}  // namespace centipede
+void Environment::UpdateBinaryHashIfEmpty() {
+  if (binary_hash.empty()) {
+    binary_hash = HashOfFileContents(coverage_binary);
+  }
+}
+
+std::vector<std::string> Environment::CreateFlags() const {
+  std::vector<std::string> flags;
+#define CENTIPEDE_FLAG(_TYPE, NAME, _DEFAULT, _DESC)                        \
+  if (NAME != Default().NAME) {                                             \
+    flags.push_back(absl::StrCat("--" #NAME "=", absl::UnparseFlag(NAME))); \
+  }
+#include "./centipede/centipede_flags.inc"
+#undef CENTIPEDE_FLAG
+  return flags;
+}
+
+}  // namespace fuzztest::internal

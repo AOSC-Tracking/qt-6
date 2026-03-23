@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// IWYU pragma: private, include "third_party/jni_zero/jni_zero.h"
+
 #ifndef JNI_ZERO_JNI_EXPORT_H_
 #define JNI_ZERO_JNI_EXPORT_H_
 
@@ -38,6 +40,7 @@
 #define JNI_ZERO_ALWAYS_INLINE
 #endif
 
+// extern "C" used to ensure symbol is not within a namespace.
 #define JNI_ZERO_MUXED_ENTRYPOINT extern "C" JNI_ZERO_ALWAYS_INLINE
 
 #endif  // JNI_ZERO_JNI_EXPORT_H_

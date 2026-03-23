@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_storage_access_types.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/loader/cookie_jar.h"
+#include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/modules/storage_access/storage_access_handle.h"
 
 namespace blink {
@@ -282,12 +283,14 @@ ScriptPromise<T> DocumentStorageAccess::RequestStorageAccessImpl(
     return promise;
   }
 
-  if (GetSupplementable()->IsInOutermostMainFrame()) {
+  // If this is the outermost frame we no longer need to make a request and
+  // can resolve the promise unless we are in a partitioned popin. Partitioned
+  // popins can be partitioned even as a top-frame, so need to continue.
+  // See https://explainers-by-googlers.github.io/partitioned-popins/
+  if (GetSupplementable()->IsInOutermostMainFrame() &&
+      !GetSupplementable()->GetPage()->IsPartitionedPopin()) {
     FireRequestStorageAccessHistogram(
         RequestStorageResult::APPROVED_PRIMARY_FRAME);
-
-    // If this is the outermost frame we no longer need to make a request and
-    // can resolve the promise.
     resolver->Resolve();
     return promise;
   }
@@ -340,13 +343,20 @@ ScriptPromise<T> DocumentStorageAccess::RequestStorageAccessImpl(
         "requestStorageAccess not allowed"));
     return promise;
   }
-  if (RuntimeEnabledFeatures::FedCmWithStorageAccessAPIEnabled(
-          GetSupplementable()->GetExecutionContext()) &&
-      GetSupplementable()->GetExecutionContext()->IsFeatureEnabled(
+  if (GetSupplementable()->GetExecutionContext()->IsFeatureEnabled(
           network::mojom::PermissionsPolicyFeature::kIdentityCredentialsGet)) {
     UseCounter::Count(GetSupplementable()->GetExecutionContext(),
                       WebFeature::kFedCmWithStorageAccessAPI);
   }
+
+  // All reasons why the storage key might forbid unpartitioned storage access
+  // should have been covered above. If this check fails, a feature must have
+  // been added without adding a new check above.
+  CHECK(!GetSupplementable()
+             ->dom_window_->GetStorageKey()
+             .ForbidsUnpartitionedStorageAccess(),
+        base::NotFatalUntil::M138);
+
   // RequestPermission may return `GRANTED` without actually creating a
   // permission grant if cookies are already accessible.
   auto descriptor = mojom::blink::PermissionDescriptor::New();
@@ -390,7 +400,8 @@ void DocumentStorageAccess::ProcessStorageAccessPermissionState(
         RequestStorageResult::APPROVED_NEW_OR_EXISTING_GRANT);
     if (request_unpartitioned_cookie_access) {
       GetSupplementable()->dom_window_->SetStorageAccessApiStatus(
-          net::StorageAccessApiStatus::kAccessViaAPI);
+          net::StorageAccessApiStatus::kAccessViaAPI,
+          LocalDOMWindow::StorageAccessApiNotifyEmbedder::kBrowserProcess);
     }
     std::move(on_resolve).Run(resolver);
   } else {

@@ -1,5 +1,6 @@
 // Copyright (C) 2015 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QANDROIDWEBVIEW_P_H
 #define QANDROIDWEBVIEW_P_H
@@ -21,45 +22,47 @@
 #include <QtCore/qjniobject.h>
 #include <QtCore/qjnitypes.h>
 
-#include <private/qabstractwebview_p.h>
+#include <private/qwebview_p.h>
 
 QT_BEGIN_NAMESPACE
 
 Q_DECLARE_JNI_CLASS(WebViewController, "org/qtproject/qt/android/view/QtAndroidWebViewController");
 Q_DECLARE_JNI_CLASS(WebView, "android/webkit/WebView");
 
-
-class QAndroidWebViewSettingsPrivate : public QAbstractWebViewSettings
+class QAndroidWebViewSettingsPrivate : public QWebViewSettingsPrivate
 {
-    Q_OBJECT
 public:
-    explicit QAndroidWebViewSettingsPrivate(const QtJniTypes::WebViewController &viewController,
-                                            QObject *p = nullptr);
+    explicit QAndroidWebViewSettingsPrivate(const QtJniTypes::WebViewController &viewController);
 
     bool localStorageEnabled() const;
     bool javaScriptEnabled() const;
     bool localContentCanAccessFileUrls() const;
     bool allowFileAccess() const;
 
-public Q_SLOTS:
     void setLocalContentCanAccessFileUrls(bool enabled);
     void setJavaScriptEnabled(bool enabled);
     void setLocalStorageEnabled(bool enabled);
     void setAllowFileAccess(bool enabled);
 
 private:
+    bool doTestAttribute(WebAttribute attribute) const final;
+    void doSetAttribute(WebAttribute attribute, bool value) final;
+
+private:
     QtJniTypes::WebViewController m_viewController;
 };
 
-class QAndroidWebViewPrivate : public QAbstractWebView
+class QAndroidWebViewPrivate : public QWebViewPrivate
 {
     Q_OBJECT
 public:
-    explicit QAndroidWebViewPrivate(QObject *p = nullptr);
+    explicit QAndroidWebViewPrivate(QWebView *view);
     ~QAndroidWebViewPrivate() override;
 
+    void initialize(QObject *context) override { Q_UNUSED(context); };
     QString httpUserAgent() const override;
     void setHttpUserAgent(const QString &httpUserAgent) override;
+    QUrl url() const override;
     void setUrl(const QUrl &url) override;
     bool canGoBack() const override;
     bool canGoForward() const override;
@@ -69,7 +72,6 @@ public:
 
     QWindow *nativeWindow() const override { return m_window; }
 
-public Q_SLOTS:
     void goBack() override;
     void goForward() override;
     void reload() override;
@@ -79,16 +81,21 @@ public Q_SLOTS:
     void deleteCookie(const QString &domain, const QString &name) override;
     void deleteAllCookies() override;
 
+    void runJavaScript(const QString &script,
+                       const std::function<void(const QVariant &)> &resultCallback) override;
+
+    void javaScriptResult(int id, const QVariant &result);
+
 protected:
-    void runJavaScriptPrivate(const QString& script,
-                              int callbackId) override;
-    QAbstractWebViewSettings *getSettings() const override;
+    QWebViewSettingsPrivate *settings() const override;
 
 private Q_SLOTS:
     void onApplicationStateChanged(Qt::ApplicationState state);
 
 private:
-    quint64 m_callbackId;
+    int m_callbackId;
+    QMap<int, std::function<void(const QVariant &)>> m_callbacks;
+
     QWindow *m_window;
     QtJniTypes::WebViewController m_viewController;
     QtJniTypes::WebView m_webView;

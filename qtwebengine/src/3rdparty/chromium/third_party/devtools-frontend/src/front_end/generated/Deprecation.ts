@@ -55,10 +55,6 @@ export const UIStrings = {
    */
   DataUrlInSvgUse: "Support for data: URLs in SVGUseElement is deprecated and it will be removed in the future.",
   /**
-   * @description Warning displayed to developers when non-standard Mutation Events are used. These are deprecated and will be removed.
-   */
-  DOMMutationEvents: "DOM Mutation Events, including `DOMSubtreeModified`, `DOMNodeInserted`, `DOMNodeRemoved`, `DOMNodeRemovedFromDocument`, `DOMNodeInsertedIntoDocument`, and `DOMCharacterDataModified` are deprecated (https://w3c.github.io/uievents/#legacy-event-types) and will be removed. Please use `MutationObserver` instead.",
-  /**
    * @description Warning displayed to developers when the Geolocation API is used from an insecure origin (one that isn't localhost or doesn't use HTTPS) to notify them that this use is no longer supported.
    */
   GeolocationInsecureOrigin: "`getCurrentPosition()` and `watchPosition()` no longer work on insecure origins. To use this feature, you should consider switching your application to a secure origin, such as HTTPS. See https://goo.gle/chrome-insecure-origins for more details.",
@@ -87,6 +83,10 @@ export const UIStrings = {
    */
   InterestGroupDailyUpdateUrl: "The `dailyUpdateUrl` field of `InterestGroups` passed to `joinAdInterestGroup()` has been renamed to `updateUrl`, to more accurately reflect its behavior.",
   /**
+   * @description Warning displayed to developers that instead of calling the `Intl.v8BreakIterator` constructor, which is not a standard JavaScript API, use ECMA402 standard API Intl.Segmenter shipped in end of 2020 instead.
+   */
+  IntlV8BreakIterator: "`Intl.v8BreakIterator` is deprecated. Please use `Intl.Segmenter` instead.",
+  /**
    * @description This warning occurs when a stylesheet loaded from a local file directive does not end in the file type `.css`.
    */
   LocalCSSFileExtensionRejected: "CSS cannot be loaded from `file:` URLs unless they end in a `.css` file extension.",
@@ -113,7 +113,7 @@ export const UIStrings = {
   /**
    * @description Warning displayed to developers when CreateImageBitmap is used with the newly deprecated option imageOrientation: 'none'.
    */
-  ObsoleteCreateImageBitmapImageOrientationNone: "Option `imageOrientation: 'none'` in createImageBitmap is deprecated. Please use createImageBitmap with option {imageOrientation: 'from-image'} instead.",
+  ObsoleteCreateImageBitmapImageOrientationNone: "Option `imageOrientation: 'none'` in createImageBitmap is deprecated. Please use createImageBitmap with option '{imageOrientation: 'from-image'}' instead.",
   /**
    * @description This warning occurs when the WebRTC protocol attempts to negotiate a connection using an obsolete cipher and risks connection security.
    */
@@ -122,6 +122,10 @@ export const UIStrings = {
    * @description Warning displayed to developers that use overflow:visible for replaced elements. This declaration was earlier ignored but will now change the element's painting based on whether the overflow value allows the element to paint outside its bounds.
    */
   OverflowVisibleOnReplacedElement: "Specifying `overflow: visible` on img, video and canvas tags may cause them to produce visual content outside of the element bounds. See https://github.com/WICG/shared-element-transitions/blob/main/debugging_overflow_on_images.md.",
+  /**
+   * @description Warning displayed to developers when they use a Flash Embed URLS to let them know that the browser will not automatically link to their equivalent HTML5 link.
+   */
+  OverrideFlashEmbedwithHTML: "Legacy flash video embed has been rewritten to HTML iframe. Flash is long gone, this rewriting hack is deprecated and may be removed in the future.",
   /**
    * @description Warning displayed to developers when they use the PaymentInstruments API to let them know this API is deprecated.
    */
@@ -215,14 +219,6 @@ export const UIStrings = {
    */
   V8SharedArrayBufferConstructedInExtensionWithoutIsolation: "Extensions should opt into cross-origin isolation to continue using `SharedArrayBuffer`. See https://developer.chrome.com/docs/extensions/mv3/cross-origin-isolation/.",
   /**
-   * @description This warning occurs when the website attempts to use the deprecated WebGPU limit `maxInterStageShaderComponents`.
-   */
-  WebGPULimitMaxInterStageShaderComponents: "The WebGPU limit `maxInterStageShaderComponents` is deprecated, instead use the WebGPU limit `maxInterStageShaderVariables`.",
-  /**
-   * @description Warning displayed to developers when the Web SQL API is used to let them know this API is deprecated.
-   */
-  WebSQL: "Web SQL is deprecated. Please use SQLite WebAssembly or Indexed Database",
-  /**
    * @description Warning displayed to developers that they are using `XMLHttpRequest` API in a way that they expect an unsupported character encoding `UTF-16` could be used in the server reply.
    */
   XHRJSONEncodingDetection: "UTF-16 is not supported by response json in `XMLHttpRequest`",
@@ -230,11 +226,7 @@ export const UIStrings = {
    * @description Warning displayed to developers. It is shown when the `XMLHttpRequest` API is used in a way that it slows down the page load of the next page. The `main thread` refers to an operating systems thread used to run most of the processing of HTML documents, so please use a consistent wording.
    */
   XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload: "Synchronous `XMLHttpRequest` on the main thread is deprecated because of its detrimental effects to the end user's experience. For more help, check https://xhr.spec.whatwg.org/.",
-  /**
-   * @description Warning displayed to developers that instead of using `supportsSession()`, which returns a promise that resolves if the XR session can be supported and rejects if not, they should use `isSessionSupported()` which will return a promise which resolves to a boolean indicating if the XR session can be supported or not, but may reject to throw an exception.
-   */
-  XRSupportsSession: "`supportsSession()` is deprecated. Please use `isSessionSupported()` and check the resolved boolean value instead.",
-};
+} as const;
 
 export interface DeprecationDescriptor {
   milestone?: number;
@@ -268,10 +260,6 @@ export const DEPRECATIONS_METADATA: Partial<Record<string, DeprecationDescriptor
   },
   "CrossOriginAccessBasedOnDocumentDomain": {
     "milestone": 115
-  },
-  "DOMMutationEvents": {
-    "chromeStatusFeature": 5083947249172480,
-    "milestone": 127
   },
   "DataUrlInSvgUse": {
     "chromeStatusFeature": 5128825141198848,
@@ -309,6 +297,9 @@ export const DEPRECATIONS_METADATA: Partial<Record<string, DeprecationDescriptor
   "OverflowVisibleOnReplacedElement": {
     "chromeStatusFeature": 5137515594383360,
     "milestone": 108
+  },
+  "OverrideFlashEmbedwithHTML": {
+    "milestone": 140
   },
   "PaymentInstruments": {
     "chromeStatusFeature": 5099285054488576
@@ -350,17 +341,7 @@ export const DEPRECATIONS_METADATA: Partial<Record<string, DeprecationDescriptor
   "V8SharedArrayBufferConstructedInExtensionWithoutIsolation": {
     "milestone": 96
   },
-  "WebGPULimitMaxInterStageShaderComponents": {
-    "chromeStatusFeature": 4853767735083008
-  },
-  "WebSQL": {
-    "chromeStatusFeature": 5134293578285056,
-    "milestone": 115
-  },
   "XHRJSONEncodingDetection": {
     "milestone": 93
-  },
-  "XRSupportsSession": {
-    "milestone": 80
   }
 };

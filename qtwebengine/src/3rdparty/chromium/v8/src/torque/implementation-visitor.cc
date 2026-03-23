@@ -101,9 +101,9 @@ void ImplementationVisitor::BeginGeneratedFiles() {
       file << "#include \"torque-generated/" +
                   SourceFileMap::PathFromV8RootWithoutExtension(source) +
                   "-tq-csa.h\"\n";
-      // Now that required include files are collected while generting the file,
-      // we only know the full set at the end. Insert a marker here that is
-      // replaced with the list of includes at the very end.
+      // Now that required include files are collected while generating the
+      // file, we only know the full set at the end. Insert a marker here that
+      // is replaced with the list of includes at the very end.
       // TODO(nicohartmann@): This is not the most beautiful way to do this,
       // replace once the cpp file builder is available, where this can be
       // handled easily.
@@ -134,6 +134,7 @@ void ImplementationVisitor::BeginGeneratedFiles() {
              << SourceFileMap::PathFromV8RootWithoutExtension(source)
              << "-inl.h\"\n\n";
         file << "#include \"torque-generated/class-verifiers.h\"\n";
+        file << "#include \"src/objects/objects-inl.h\"\n\n";
         file << "#include \"src/objects/instance-type-inl.h\"\n\n";
       }
       if (contains_class_asserts.count(source) != 0) {
@@ -177,8 +178,13 @@ void ImplementationVisitor::BeginDebugMacrosFile() {
   std::ostream& header = debug_macros_h_;
 
   source << "#include \"torque-generated/debug-macros.h\"\n\n";
+  source << "\n";
+  source << "// The following includes are here to provide some constants "
+            "definitions.\n";
   source << "#include \"src/objects/swiss-name-dictionary.h\"\n";
   source << "#include \"src/objects/ordered-hash-table.h\"\n";
+  source << "#include \"src/objects/prototype-info.h\"\n";
+  source << "\n";
   source << "#include \"src/torque/runtime-support.h\"\n";
   source << "#include \"tools/debug_helper/debug-macro-shims.h\"\n";
   source << "#include \"include/v8-internal.h\"\n";
@@ -655,16 +661,16 @@ void ImplementationVisitor::Visit(Builtin* builtin) {
                           TypeOracle::GetContextType()};
       } else if (param_name == "receiver") {
         csa_ccfile()
-            << "  TNode<Object> " << generated_name << " = "
+            << "  TNode<JSAny> " << generated_name << " = "
             << (builtin->IsVarArgsJavaScript()
                     ? "arguments.GetReceiver()"
-                    : "UncheckedParameter<Object>(Descriptor::kReceiver)")
+                    : "UncheckedParameter<JSAny>(Descriptor::kReceiver)")
             << ";\n";
         csa_ccfile() << "  USE(" << generated_name << ");\n";
         expected_types = {TypeOracle::GetJSAnyType()};
       } else if (param_name == "newTarget") {
-        csa_ccfile() << "  TNode<Object> " << generated_name
-                     << " = UncheckedParameter<Object>("
+        csa_ccfile() << "  TNode<JSAny> " << generated_name
+                     << " = UncheckedParameter<JSAny>("
                      << "Descriptor::kJSNewTarget);\n";
         csa_ccfile() << "  USE(" << generated_name << ");\n";
         expected_types = {TypeOracle::GetJSAnyType()};
@@ -3663,6 +3669,8 @@ void ImplementationVisitor::GenerateBuiltinDefinitionsAndInterfaceDescriptors(
           // objects inside the sandbox via the code pointer table.
           interface_descriptors << "  INTERNAL_DESCRIPTOR()\n";
 
+          interface_descriptors << "  SANDBOXING_MODE(kSandboxed)\n";
+
           if (has_context_parameter) {
             interface_descriptors << "  DEFINE_RESULT_AND_PARAMETERS(";
           } else {
@@ -4068,7 +4076,8 @@ class ClassFieldOffsetGenerator : public FieldOffsetsGenerator {
       // TODO(leszeks): Hacked in support for some classes (e.g.
       // HeapObject) being mirrored by a *Layout class. Remove once
       // everything is ported to layout classes.
-      if (parent_name == "HeapObject" || parent_name == "TrustedObject") {
+      if (parent_name == "HeapObject" || parent_name == "TrustedObject" ||
+          parent_name == "ExposedTrustedObject" || parent_name == "Struct") {
         parent_name += "Layout";
       }
 
@@ -4185,10 +4194,10 @@ void CppClassGenerator::GenerateClass() {
   hdr_ << template_decl() << "\n";
   hdr_ << "class " << gen_name_ << " : public P {\n";
   hdr_ << "  static_assert(\n"
-       << "      std::is_same<" << name_ << ", D>::value,\n"
+       << "      std::is_same_v<" << name_ << ", D>,\n"
        << "      \"Use this class as direct base for " << name_ << ".\");\n";
   hdr_ << "  static_assert(\n"
-       << "      std::is_same<" << super_->name() << ", P>::value,\n"
+       << "      std::is_same_v<" << super_->name() << ", P>,\n"
        << "      \"Pass in " << super_->name()
        << " as second template parameter for " << gen_name_ << ".\");\n\n";
   hdr_ << " public: \n";
@@ -4423,7 +4432,7 @@ void CppClassGenerator::GenerateClassConstructors() {
   hdr_ << "  template <class DAlias = D>\n";
   hdr_ << "  constexpr " << gen_name_ << "() : P() {\n";
   hdr_ << "    static_assert(\n";
-  hdr_ << "        std::is_base_of<" << gen_name_ << ", DAlias>::value,\n";
+  hdr_ << "        std::is_base_of_v<" << gen_name_ << ", DAlias>,\n";
   hdr_ << "        \"class " << gen_name_
        << " should be used as direct base for " << name_ << ".\");\n";
   hdr_ << "  }\n\n";
@@ -4783,7 +4792,15 @@ void CppClassGenerator::EmitStoreFieldStatement(
           break;
       }
     }
-    const std::string value_to_write = is_smi ? "Smi::FromInt(value)" : "value";
+    std::string value_to_write;
+    if (const auto type_wrapped_in_smi = Type::MatchUnaryGeneric(
+            field_type, TypeOracle::GetSmiTaggedGeneric())) {
+      DCHECK(is_smi);
+      stream << "  // " << type_wrapped_in_smi.value()->ToString() << "\n";
+      value_to_write = "Smi::From31BitPattern(value)";
+    } else {
+      value_to_write = is_smi ? "Smi::FromInt(value)" : "value";
+    }
 
     if (!is_smi) {
       // Don't DCHECK types if the roots aren't initialized, so that we don't
@@ -5299,8 +5316,6 @@ void GenerateClassFieldVerifier(const std::string& class_name,
   // Protected pointer fields cannot be read or verified from torque yet.
   if (field_type->IsSubtypeOf(TypeOracle::GetProtectedPointerType())) return;
   if (field_type == TypeOracle::GetFloat64OrUndefinedOrHoleType()) return;
-  // Do not verify if the field may be uninitialized.
-  if (TypeOracle::GetUninitializedType()->IsSubtypeOf(field_type)) return;
 
   std::string field_start_offset;
   if (f.index) {

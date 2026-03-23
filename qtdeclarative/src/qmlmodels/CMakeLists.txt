@@ -39,8 +39,6 @@ qt_internal_extend_target(QmlModels CONDITION QT_FEATURE_qml_itemmodel
 
 qt_internal_extend_target(QmlModels CONDITION QT_FEATURE_qml_object_model
     SOURCES
-        qqmlinstantiator.cpp qqmlinstantiator_p.h
-        qqmlinstantiator_p_p.h
         qqmlobjectmodel.cpp qqmlobjectmodel_p.h
 )
 
@@ -68,6 +66,7 @@ qt_internal_extend_target(QmlModels CONDITION QT_FEATURE_qml_delegate_model
         qqmldmabstractitemmodeldata.cpp qqmldmabstractitemmodeldata_p.h
         qqmldmlistaccessordata.cpp qqmldmlistaccessordata_p.h
         qqmldmobjectdata.cpp qqmldmobjectdata_p.h
+        qqmlinstantiator.cpp qqmlinstantiator_p.h qqmlinstantiator_p_p.h
         qqmllistaccessor.cpp qqmllistaccessor_p.h
         qqmllistcompositor.cpp qqmllistcompositor_p.h
         qquickpackage.cpp qquickpackage_p.h
@@ -76,7 +75,7 @@ qt_internal_extend_target(QmlModels CONDITION QT_FEATURE_qml_delegate_model
 qt_internal_extend_target(QmlModels CONDITION QT_FEATURE_qml_sfpm_model AND QT_FEATURE_proxymodel
     SOURCES
         sfpm/qqmlsortfilterproxymodel_p.h sfpm/qqmlsortfilterproxymodel.cpp
-        sfpm/qsortfilterproxymodelhelper_p.h sfpm/qsortfilterproxymodelhelper.cpp
+        sfpm/qqmlsortfilterproxymodel_p_p.h sfpm/qsortfilterproxymodelhelper_p.h sfpm/qsortfilterproxymodelhelper.cpp
         # sfpm filter specific source files
         sfpm/filters/qqmlfilterbase_p.h sfpm/filters/qqmlfilterbase.cpp
         sfpm/filters/qqmlfiltercompositor_p.h sfpm/filters/qqmlfiltercompositor.cpp

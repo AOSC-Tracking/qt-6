@@ -16,10 +16,12 @@
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/task/thread_pool.h"
+#include "base/types/zip.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_encoding.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/form_structure_sectioning_util.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/autofill/core/browser/metrics/form_interactions_ukm_logger.h"
 #include "components/autofill/core/browser/metrics/quality_metrics.h"
@@ -111,13 +113,22 @@ bool CachedFormNeedsUpdate(const FormData& live_form,
     return true;
   }
 
-  for (size_t i = 0; i < cached_form.field_count(); ++i) {
-    if (!cached_form.field(i)->SameFieldAs(live_form.fields()[i])) {
+  for (auto [cached_field, live_field] :
+       base::zip(cached_form.fields(), live_form.fields())) {
+    if (base::FeatureList::IsEnabled(
+            features::kAutofillUseDeepEqualInsteadOfSameFieldAs)
+            ? !FormFieldData::DeepEqual(*cached_field, live_field)
+            : !cached_field->SameFieldAs(live_field)) {
       return true;
     }
   }
 
   return false;
+}
+
+bool IsCreditCardFormForSignaturePurposes(const FormStructure& form_structure) {
+  return form_structure.GetFormTypes() ==
+         DenseSet<FormType>{FormType::kCreditCardForm};
 }
 
 #if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
@@ -143,21 +154,6 @@ void GetMlPredictionsIfNeeded(
 #endif  // BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 
 }  // namespace
-
-#if !BUILDFLAG(IS_QTWEBENGINE)
-// static
-void AutofillManager::LogTypePredictionsAvailable(
-    LogManager* log_manager,
-    const std::vector<raw_ptr<FormStructure, VectorExperimental>>& forms) {
-  LogBuffer buffer(IsLoggingActive(log_manager));
-  for (FormStructure* form : forms) {
-    LOG_AF(buffer) << *form;
-  }
-
-  LOG_AF(log_manager) << LoggingScope::kParsing << LogMessage::kParsedForms
-                      << std::move(buffer);
-}
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 #if !BUILDFLAG(IS_QTWEBENGINE)
 AutofillManager::AutofillManager(AutofillDriver* driver)
@@ -200,8 +196,7 @@ void AutofillManager::Reset() {
 #if !BUILDFLAG(IS_QTWEBENGINE)
 void AutofillManager::OnLanguageDetermined(
     const translate::LanguageDetectionDetails& details) {
-  if (!base::FeatureList::IsEnabled(features::kAutofillPageLanguageDetection) ||
-      !base::FeatureList::IsEnabled(features::kAutofillFixValueSemantics)) {
+  if (!base::FeatureList::IsEnabled(features::kAutofillPageLanguageDetection)) {
     return;
   }
   if (details.adopted_language == language_detection::kUnknownLanguageCode ||
@@ -316,37 +311,25 @@ void AutofillManager::OnFormsParsed(const std::vector<FormData>& forms) {
   DCHECK(!forms.empty());
   OnBeforeProcessParsedForms();
 
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> non_queryable_forms;
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> queryable_forms;
-  DenseSet<FormType> form_types;
+  std::vector<raw_ptr<const FormStructure, VectorExperimental>> queryable_forms;
   for (const FormData& form : forms) {
-    FormStructure* form_structure = FindCachedFormById(form.global_id());
-    if (!form_structure) {
-      NOTREACHED();
-    }
-
-    form_types.insert_all(form_structure->GetFormTypes());
+    const FormStructure& form_structure =
+        CHECK_DEREF(FindCachedFormById(form.global_id()));
 
     // Configure the query encoding for this form and add it to the appropriate
     // collection of forms: queryable vs non-queryable.
-    if (form_structure->ShouldBeQueried()) {
-      queryable_forms.push_back(form_structure);
-    } else {
-      non_queryable_forms.push_back(form_structure);
+    if (form_structure.ShouldBeQueried()) {
+      queryable_forms.push_back(&form_structure);
     }
 
-    OnFormProcessed(form, *form_structure);
+    OnFormProcessed(form, form_structure);
   }
 
-  // Send the current type predictions to the renderer. For non-queryable forms
-  // this is all the information about them that will ever be available. The
-  // queryable forms will be updated once the field type query is complete.
-  driver().SendTypePredictionsToRenderer(non_queryable_forms);
-  driver().SendTypePredictionsToRenderer(queryable_forms);
-#if !BUILDFLAG(IS_QTWEBENGINE)
-  LogTypePredictionsAvailable(log_manager(), non_queryable_forms);
-  LogTypePredictionsAvailable(log_manager(), queryable_forms);
+  if (base::FeatureList::IsEnabled(features::test::kShowDomNodeIDs)) {
+    driver().ExposeDomNodeIDs();
+  }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Query the server if at least one of the forms was parsed.
   if (!queryable_forms.empty()) {
     NotifyObservers(&Observer::OnBeforeLoadedServerPredictions);
@@ -430,7 +413,8 @@ void AutofillManager::OnAskForValuesToFill(
     const FormData& form,
     const FieldGlobalId& field_id,
     const gfx::Rect& caret_bounds,
-    AutofillSuggestionTriggerSource trigger_source) {
+    AutofillSuggestionTriggerSource trigger_source,
+    std::optional<PasswordSuggestionRequest> password_request) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -439,7 +423,7 @@ void AutofillManager::OnAskForValuesToFill(
   ParseFormAsync(
       form,
       ParsingCallback(&AutofillManager::OnAskForValuesToFillImpl, field_id,
-                      caret_bounds, trigger_source)
+                      caret_bounds, trigger_source, std::move(password_request))
           .Then(NotifyObserversCallback(&Observer::OnAfterAskForValuesToFill,
                                         form.global_id(), field_id)));
 }
@@ -493,8 +477,7 @@ void AutofillManager::OnSelectFieldOptionsDidChange(const FormData& form) {
 void AutofillManager::OnJavaScriptChangedAutofilledValue(
     const FormData& form,
     const FieldGlobalId& field_id,
-    const std::u16string& old_value,
-    bool formatting_only) {
+    const std::u16string& old_value) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -503,7 +486,7 @@ void AutofillManager::OnJavaScriptChangedAutofilledValue(
   ParseFormAsync(
       form,
       ParsingCallback(&AutofillManager::OnJavaScriptChangedAutofilledValueImpl,
-                      field_id, old_value, formatting_only)
+                      field_id, old_value)
           .Then(NotifyObserversCallback(
               &Observer::OnAfterJavaScriptChangedAutofilledValue,
               form.global_id(), field_id)));
@@ -519,9 +502,7 @@ bool AutofillManager::GetCachedFormAndField(
     return false;
   }
   *form_structure = cached_form;
-  auto field_it =
-      std::ranges::find(*cached_form, field_id, &AutofillField::global_id);
-  *autofill_field = field_it == cached_form->end() ? nullptr : field_it->get();
+  *autofill_field = cached_form->GetFieldById(field_id);
   return *autofill_field != nullptr;
 }
 
@@ -622,6 +603,7 @@ void AutofillManager::ParseFormsAsync(
 
     auto form_structure = std::make_unique<FormStructure>(form_data);
     if (!form_structure->ShouldBeParsed(log_manager())) {
+      LogCurrentFieldTypes(*form_structure);
       continue;
     }
 
@@ -638,11 +620,15 @@ void AutofillManager::ParseFormsAsync(
 
       // Not updating signatures of credit card forms is legacy behaviour. We
       // believe that the signatures are kept stable for voting purposes.
-      DenseSet<FormType> form_types = cached_form_structure->GetFormTypes();
-      if (form_types.size() > form_types.count(FormType::kCreditCardForm)) {
+      // Credit card forms are those which contain only credit card fields.
+      // TODO(crbug.com/431754194): Investigate making the behavior consistent
+      // across all form types.
+      if (!IsCreditCardFormForSignaturePurposes(*cached_form_structure)) {
         form_structure->set_form_signature(CalculateFormSignature(form_data));
         form_structure->set_alternative_form_signature(
             CalculateAlternativeFormSignature(form_data));
+        form_structure->set_structural_form_signature(
+            CalculateStructuralFormSignature(form_data));
       }
     }
 
@@ -687,6 +673,7 @@ void AutofillManager::ParseFormAsync(
 
   auto form_structure = std::make_unique<FormStructure>(form_data);
   if (!form_structure->ShouldBeParsed(log_manager())) {
+    LogCurrentFieldTypes(*form_structure);
     // For Autocomplete, events need to be handled even for forms that cannot be
     // parsed.
     std::move(callback).Run(*this, form_data);
@@ -696,15 +683,13 @@ void AutofillManager::ParseFormAsync(
   if (FormStructure* cached_form_structure =
           FindCachedFormById(form_data.global_id())) {
     if (!CachedFormNeedsUpdate(form_data, *cached_form_structure)) {
-      if (base::FeatureList::IsEnabled(features::kAutofillFixValueSemantics)) {
-        // Update the cache to the latest data from the renderer in the form
-        // cache (in particular, the current field values) while preserving all
-        // other information (in particular, the field types).
-        form_structure->RetrieveFromCache(
-            *cached_form_structure, FormStructure::RetrieveFromCacheReason::
-                                        kFormCacheUpdateWithoutParsing);
-        form_structures_[form_data.global_id()] = std::move(form_structure);
-      }
+      // Update the cache to the latest data from the renderer in the form
+      // cache (in particular, the current field values) while preserving all
+      // other information (in particular, the field types).
+      form_structure->RetrieveFromCache(*cached_form_structure,
+                                        FormStructure::RetrieveFromCacheReason::
+                                            kFormCacheUpdateWithoutParsing);
+      form_structures_[form_data.global_id()] = std::move(form_structure);
       std::move(callback).Run(*this, form_data);
       return;
     }
@@ -776,10 +761,13 @@ void AutofillManager::ParseFormsAsyncCommon(
           context.log_manager->Flush(*self->log_manager());
         }
         for (auto& form_structure : context.form_structures) {
-          FormGlobalId id = form_structure->global_id();
-          self->form_structures_[id] = std::move(form_structure);
+          FormStructure* raw_form_structure = form_structure.get();
+          self->form_structures_[raw_form_structure->global_id()] =
+              std::move(form_structure);
+          self->LogCurrentFieldTypes(*raw_form_structure);
           self->NotifyObservers(
-              &Observer::OnFieldTypesDetermined, id,
+              &Observer::OnFieldTypesDetermined,
+              raw_form_structure->global_id(),
               Observer::FieldTypeSource::kHeuristicsOrAutocomplete);
         }
         std::move(callback).Run(*self);
@@ -872,24 +860,34 @@ void AutofillManager::OnLoadedServerPredictions(
       std::move(response->response), queried_forms,
       response->queried_form_signatures, log_manager());
 
-  // Will log quality metrics for each FormStructure based on the presence of
-  // autocomplete attributes, if available.
-  for (FormStructure* cur_form : queried_forms) {
-    autofill_metrics::LogQualityMetricsBasedOnAutocomplete(
-        *cur_form, client().GetFormInteractionsUkmLogger(),
-        driver().GetPageUkmSourceId());
+  OnLoadedServerPredictionsImpl(queried_forms);
+  if (base::FeatureList::IsEnabled(features::test::kShowDomNodeIDs)) {
+    driver().ExposeDomNodeIDs();
   }
 
-  // Send field type predictions to the renderer so that it can possibly
-  // annotate forms with the predicted types or add console warnings.
-  driver().SendTypePredictionsToRenderer(queried_forms);
-  LogTypePredictionsAvailable(log_manager(), queried_forms);
+  for (const raw_ptr<FormStructure, VectorExperimental> form : queried_forms) {
+    form->RationalizeAndAssignSections(log_manager(), /*legacy_order=*/true);
 
-  for (const FormStructure* form : queried_forms) {
+    autofill_metrics::LogQualityMetricsBasedOnAutocomplete(
+        *form, client().GetFormInteractionsUkmLogger(),
+        driver().GetPageUkmSourceId());
+    LogCurrentFieldTypes(*form);
+
     NotifyObservers(&Observer::OnFieldTypesDetermined, form->global_id(),
                     Observer::FieldTypeSource::kAutofillServer);
   }
 }
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
+
+void AutofillManager::LogCurrentFieldTypes(const FormStructure& form) {
+  LogBuffer buffer(IsLoggingActive(log_manager()));
+  LOG_AF(buffer) << form;
+  LOG_AF(log_manager()) << LoggingScope::kParsing << LogMessage::kParsedForms
+                        << std::move(buffer);
+  if (base::FeatureList::IsEnabled(
+          features::test::kAutofillShowTypePredictions)) {
+    driver().SendTypePredictionsToRenderer(form);
+  }
+}
 
 }  // namespace autofill

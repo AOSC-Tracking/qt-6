@@ -5,7 +5,7 @@
 #include "third_party/blink/renderer/core/frame/animation_frame_timing_monitor.h"
 
 #include "base/time/time.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "components/viz/common/frame_timing_details.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
@@ -647,6 +647,13 @@ void AnimationFrameTimingMonitor::WillHandlePromise(
       .property_like_name = property_like_name,
       .source_location = {.url = location->Url(),
                           .char_position = location->CharPosition()}};
+
+  if (RuntimeEnabledFeatures::LongAnimationFrameSourceLineColumnEnabled()) {
+    pending_script_info_->source_location.line_number =
+        location->LineNumber() + 1;
+    pending_script_info_->source_location.column_number =
+        location->ColumnNumber() + 1;
+  }
 }
 
 void AnimationFrameTimingMonitor::Will(
@@ -664,7 +671,10 @@ void AnimationFrameTimingMonitor::Will(
                           ? ScriptTimingInfo::InvokerType::kModuleScript
                           : ScriptTimingInfo::InvokerType::kClassicScript,
       .start_time = probe_data.CaptureStartTime(),
-      .source_location = {.url = url, .char_position = 0}};
+      .source_location = {.url = url,
+                          .char_position = 0,
+                          .line_number = 0,
+                          .column_number = 0}};
   if (probe_data.sanitize) {
     pending_script_info_->execution_start_time =
         pending_script_info_->start_time;
@@ -729,6 +739,11 @@ ScriptTimingInfo::ScriptSourceLocation CaptureScriptSourceLocation(
   source_location.function_name =
       ToCoreStringWithUndefinedOrNullCheck(isolate, function->GetName());
   source_location.char_position = function->GetScriptStartPosition();
+  if (RuntimeEnabledFeatures::LongAnimationFrameSourceLineColumnEnabled()) {
+    v8::Location location = function->GetScriptLocation();
+    source_location.line_number = location.GetLineNumber() + 1;
+    source_location.column_number = location.GetColumnNumber() + 1;
+  }
   return source_location;
 }
 
@@ -784,7 +799,7 @@ void AnimationFrameTimingMonitor::Did(const probe::UserEntryPoint& probe_data) {
   user_entry_point.invoker_type =
       ScriptTimingInfo::InvokerType::kUserEntryPoint;
   user_entry_point.source_location = CaptureScriptSourceLocation(
-      probe_data.callback_object->GetIsolate(), probe_data.callback_object);
+      v8::Isolate::GetCurrent(), probe_data.callback_object);
   PopScriptEntryPointInternal(probe_data.context, probe_data.CaptureEndTime(),
                               user_entry_point);
   user_entry_points_.erase(it);

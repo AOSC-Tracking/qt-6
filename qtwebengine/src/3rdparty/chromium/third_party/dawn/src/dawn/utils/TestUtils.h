@@ -40,8 +40,7 @@ namespace dawn::utils {
 struct RGBA8 {
     constexpr RGBA8() : RGBA8(0, 0, 0, 0) {}
     constexpr RGBA8(uint8_t r, uint8_t g, uint8_t b, uint8_t a) : r(r), g(g), b(b), a(a) {}
-    bool operator==(const RGBA8& other) const;
-    bool operator!=(const RGBA8& other) const;
+    bool operator==(const RGBA8& other) const = default;
     bool operator<=(const RGBA8& other) const;
     bool operator>=(const RGBA8& other) const;
 
@@ -76,7 +75,8 @@ TextureDataCopyLayout GetTextureDataCopyLayoutForTextureAtLevel(
     wgpu::Extent3D textureSizeAtLevel0,
     uint32_t mipmapLevel,
     wgpu::TextureDimension dimension = wgpu::TextureDimension::e2D,
-    uint32_t rowsPerImage = wgpu::kCopyStrideUndefined);
+    uint32_t rowsPerImage = wgpu::kCopyStrideUndefined,
+    uint32_t textureBytesPerRowAlignment = kTextureBytesPerRowAlignment);
 
 uint64_t RequiredBytesInCopy(uint64_t bytesPerRow,
                              uint64_t rowsPerImage,

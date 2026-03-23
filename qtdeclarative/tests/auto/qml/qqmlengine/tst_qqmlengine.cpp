@@ -414,7 +414,7 @@ void tst_qqmlengine::clearComponentCache()
     engine.clearComponentCache();
 
     // Nothing holds on to any CU anymore. They should all be gone.
-    QVERIFY(QQmlEnginePrivate::get(&engine)->v4engine()->compilationUnits().isEmpty());
+    QVERIFY(engine.handle()->compilationUnits().isEmpty());
 
     // Test cache refresh
     {
@@ -427,7 +427,7 @@ void tst_qqmlengine::clearComponentCache()
 
         // The CU we are holding on to is still alive.
         // Otherwise we cannot mark its objects for GC anymore.
-        QVERIFY(!QQmlEnginePrivate::get(&engine)->v4engine()->compilationUnits().isEmpty());
+        QVERIFY(!engine.handle()->compilationUnits().isEmpty());
     }
 
     // Regular Synchronous loading will leave us with an event posted
@@ -435,6 +435,54 @@ void tst_qqmlengine::clearComponentCache()
     // event delivery. Call sendPostedEvents() to get rid of it so that
     // the temporary directory can be removed.
     QCoreApplication::sendPostedEvents();
+
+    engine.clearComponentCache();
+    {
+        // Type referenced by a QQmlGadgetPtrWrapper can be removed using clearComponentCache().
+
+        QQmlComponent component(&engine, testFileUrl("clearGadgetPtrWrappers.qml"));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> obj { component.create() };
+        QVERIFY(obj.get() != nullptr);
+
+        static const QRegularExpression re("MyItem_QMLTYPE_([0-9]+)\\(0x[0-9a-f]+\\)");
+        auto match = re.match(obj->objectName());
+        QVERIFY(match.hasMatch());
+        bool ok = false;
+        const int typeNumber = match.captured(1).toInt(&ok);
+        QVERIFY(ok);
+        QVERIFY(typeNumber >= 0);
+
+        const QUrl source = obj->property("source").value<QUrl>();
+        QVERIFY(source.isValid());
+        obj->setProperty("source", QUrl());
+
+        engine.collectGarbage();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
+        engine.clearComponentCache();
+
+        obj->setProperty("source", source);
+        match = re.match(obj->objectName());
+        QVERIFY(match.hasMatch());
+        ok = false;
+        QVERIFY(match.captured(1).toInt(&ok) > typeNumber);
+        QVERIFY(ok);
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        const QJSValue module = engine.importModule(testFile("a1.mjs"));
+        QVERIFY(module.property("data_a1").isUndefined());
+
+        QTest::ignoreMessage(QtCriticalMsg, "In a1 - DATA_IN_A1");
+        QTest::ignoreMessage(QtCriticalMsg, "In B1 DATA_IN_A1");
+
+        module.property("process_a1").call();
+        QCOMPARE(module.property("data_a1").toString(), "DATA_IN_A1");
+
+        // Drops the value of the module, causing re-evaluation in next loop.
+        engine.clearComponentCache();
+    }
 }
 
 struct ComponentCacheFunctions : public QObject, public QQmlIncubationController
@@ -461,12 +509,14 @@ public:
 
     Q_INVOKABLE bool isTypeLoaded(QString file)
     {
-        return QQmlEnginePrivate::get(engine)->isTypeLoaded(tst_qqmlengine::instance()->testFileUrl(file));
+        return QQmlTypeLoader::get(engine)
+                ->isTypeLoaded(tst_qqmlengine::instance()->testFileUrl(file));
     }
 
     Q_INVOKABLE bool isScriptLoaded(QString file)
     {
-        return QQmlEnginePrivate::get(engine)->isScriptLoaded(tst_qqmlengine::instance()->testFileUrl(file));
+        return QQmlTypeLoader::get(engine)
+                ->isScriptLoaded(tst_qqmlengine::instance()->testFileUrl(file));
     }
 
     Q_INVOKABLE void beginIncubation()
@@ -591,6 +641,9 @@ QT_WARNING_POP
 
     QQmlEngine engine;
 
+    const QObject *qtObject = engine.globalObject().property("Qt").toQObject();
+    QVERIFY(qtObject != nullptr);
+
     QCOMPARE(engine.singletonInstance<ObjectCaller *>(cppInstance), &objectCaller1);
 #if QT_DEPRECATED_SINCE(6, 3)
     QCOMPARE(engine.singletonInstance<ObjectCaller *>(deprecatedCppInstance), &objectCaller2);
@@ -621,6 +674,7 @@ QT_WARNING_POP
               "    property int c: JsValue\n"
               "    property QtObject d: JsObject\n"
               "    property QtObject e: QmlSingleton\n"
+              "    property QtObject g: Qt\n"
               "}", QUrl());
     QVERIFY2(c.isReady(), qPrintable(c.errorString()));
     QScopedPointer<QObject> singletonUser(c.create());
@@ -632,6 +686,7 @@ QT_WARNING_POP
     QCOMPARE(singletonUser->property("c").toUInt(), 13u);
     QCOMPARE(qvariant_cast<QObject *>(singletonUser->property("d")), oldJsSingleton);
     QCOMPARE(qvariant_cast<QObject *>(singletonUser->property("e")), oldQmlSingleton);
+    QVERIFY(qvariant_cast<QObject *>(singletonUser->property("g")) != nullptr);
 
     engine.clearSingletons();
     QCOMPARE(CppSingleton::instantiations, oldCppSingletonId);
@@ -680,8 +735,14 @@ QT_WARNING_POP
     QCOMPARE(qvariant_cast<QObject *>(singletonUser->property("d")), nullptr);
     QCOMPARE(qvariant_cast<QObject *>(singletonUser->property("e")), nullptr);
 
+    // The Qt object is not deleted because it's explicitly C++-owned.
+    QVERIFY(qvariant_cast<QObject *>(singletonUser->property("g")) != nullptr);
+
     // Value types are unaffected as they are copied.
     QCOMPARE(singletonUser->property("c").toUInt(), 13u);
+
+    // The "Qt" object still exists as part of the global object.
+    QCOMPARE(engine.globalObject().property("Qt").toQObject(), qtObject);
 }
 
 void tst_qqmlengine::repeatedCompilation()
@@ -874,12 +935,14 @@ void tst_qqmlengine::qtqmlModule_data()
 
     QTest::newRow("import QtQml of incorrect version (3.0)")
             << testFileUrl("qtqmlModule.2.qml")
-            << QString(testFileUrl("qtqmlModule.2.qml").toString() + QLatin1String(":1 module \"QtQml\" version 3.0 is not installed\n"))
+            << QString(testFileUrl("qtqmlModule.2.qml").toString()
+                       + QLatin1String(":1:1: module \"QtQml\" version 3.0 is not installed\n"))
             << QStringList();
 
     QTest::newRow("import QtQml of incorrect version (1.0)")
             << testFileUrl("qtqmlModule.3.qml")
-            << QString(testFileUrl("qtqmlModule.3.qml").toString() + QLatin1String(":1 module \"QtQml\" version 1.0 is not installed\n"))
+            << QString(testFileUrl("qtqmlModule.3.qml").toString()
+                       + QLatin1String(":1:1: module \"QtQml\" version 1.0 is not installed\n"))
             << QStringList();
 
     QTest::newRow("import QtQml of old version (2.50)")
@@ -904,17 +967,20 @@ void tst_qqmlengine::qtqmlModule_data()
 
     QTest::newRow("no import results in no QtObject availability")
             << testFileUrl("qtqmlModule.8.qml")
-            << QString(testFileUrl("qtqmlModule.8.qml").toString() + QLatin1String(":4 QtObject is not a type\n"))
+            << QString(testFileUrl("qtqmlModule.8.qml").toString()
+                       + QLatin1String(":4:1: QtObject is not a type\n"))
             << QStringList();
 
     QTest::newRow("importing QtQml only results in no Item availability")
             << testFileUrl("qtqmlModule.9.qml")
-            << QString(testFileUrl("qtqmlModule.9.qml").toString() + QLatin1String(":4 Item is not a type\n"))
+            << QString(testFileUrl("qtqmlModule.9.qml").toString()
+                       + QLatin1String(":4:1: Item is not a type\n"))
             << QStringList();
 
     QTest::newRow("import QtQml of incorrect version (6.50)")
             << testFileUrl("qtqmlModule.10.qml")
-            << QString(testFileUrl("qtqmlModule.10.qml").toString() + QLatin1String(":1 module \"QtQml\" version 6.50 is not installed\n"))
+            << QString(testFileUrl("qtqmlModule.10.qml").toString()
+                       + QLatin1String(":1:1: module \"QtQml\" version 6.50 is not installed\n"))
             << QStringList();
 }
 
@@ -945,29 +1011,41 @@ public:
     CustomSelector(const QUrl &base):m_base(base){}
     QUrl intercept(const QUrl &url, QQmlAbstractUrlInterceptor::DataType d) override
     {
+        QString path = url.path();
+
         if ((url.scheme() != QStringLiteral("file") && url.scheme() != QStringLiteral("qrc"))
-            || url.path().contains("QtQml"))
+                || path.contains("QtQml")) {
             return url;
+        }
+
         if (!m_interceptionPoints.contains(d))
             return url;
 
-        if (url.path().endsWith("Test.2/qmldir")) {//Special case
+        if (path.endsWith("Test.2/qmldir")) {
+            // Special case
             QUrl url = m_base;
             url.setPath(m_base.path() + "interception/module/intercepted/qmldir");
             return url;
         }
-        // Special case: with 5.10 we always add the implicit import, so we need to explicitly handle this case now
-        if (url.path().endsWith("intercepted/qmldir"))
-            return url;
 
-        QString alteredPath = url.path();
-        int a = alteredPath.lastIndexOf('/');
-        if (a < 0)
-            a = 0;
-        alteredPath.insert(a, QStringLiteral("/intercepted"));
+        qsizetype lastSlash = path.lastIndexOf('/');
+        if (lastSlash < 0)
+            lastSlash = 0;
+
+        if (QStringView(path).mid(lastSlash) == u"/included.js") {
+            // Special case: We want this one to be double-intercepted
+        } else if (QStringView(path).left(lastSlash).endsWith(u"/intercepted")) {
+            // Already intercepted. Don't do it again.
+            // In real applications this routinely happens when new URLs are constructed relative to
+            // components loaded from intercepted URLs. Any sensible URL interceptor has to filter
+            // for this.
+            return url;
+        }
+
+        path.insert(lastSlash, QStringLiteral("/intercepted"));
 
         QUrl ret = url;
-        ret.setPath(alteredPath);
+        ret.setPath(path);
         return ret;
     }
     QList<QQmlAbstractUrlInterceptor::DataType> m_interceptionPoints;
@@ -1103,22 +1181,22 @@ void tst_qqmlengine::componentFromEval()
 void tst_qqmlengine::qrcUrls()
 {
     QQmlEngine engine;
-    QQmlEnginePrivate *pEngine = QQmlEnginePrivate::get(&engine);
+    QQmlTypeLoader *typeLoader = QQmlTypeLoader::get(&engine);
 
     {
-        QQmlRefPointer<QQmlTypeData> oneQml(pEngine->typeLoader.getType(QUrl("qrc:/qrcurls.qml")));
+        QQmlRefPointer<QQmlTypeData> oneQml(typeLoader->getType(QUrl("qrc:/qrcurls.qml")));
         QVERIFY(oneQml.data() != nullptr);
         QVERIFY(!oneQml->backupSourceCode().isValid());
-        QQmlRefPointer<QQmlTypeData> twoQml(pEngine->typeLoader.getType(QUrl("qrc:///qrcurls.qml")));
+        QQmlRefPointer<QQmlTypeData> twoQml(typeLoader->getType(QUrl("qrc:///qrcurls.qml")));
         QVERIFY(twoQml.data() != nullptr);
         QCOMPARE(oneQml.data(), twoQml.data());
     }
 
     {
-        QQmlRefPointer<QQmlTypeData> oneJS(pEngine->typeLoader.getType(QUrl("qrc:/qrcurls.js")));
+        QQmlRefPointer<QQmlTypeData> oneJS(typeLoader->getType(QUrl("qrc:/qrcurls.js")));
         QVERIFY(oneJS.data() != nullptr);
         QVERIFY(!oneJS->backupSourceCode().isValid());
-        QQmlRefPointer<QQmlTypeData> twoJS(pEngine->typeLoader.getType(QUrl("qrc:///qrcurls.js")));
+        QQmlRefPointer<QQmlTypeData> twoJS(typeLoader->getType(QUrl("qrc:///qrcurls.js")));
         QVERIFY(twoJS.data() != nullptr);
         QCOMPARE(oneJS.data(), twoJS.data());
     }
@@ -1362,9 +1440,7 @@ void tst_qqmlengine::uiLanguage()
     {
         QQmlEngine engine;
 
-        QObject::connect(&engine, &QJSEngine::uiLanguageChanged, [&engine]() {
-            engine.retranslate();
-        });
+        QObject::connect(&engine, &QJSEngine::uiLanguageChanged, &engine, &QQmlEngine::retranslate);
 
         QSignalSpy uiLanguageChangeSpy(&engine, SIGNAL(uiLanguageChanged()));
 

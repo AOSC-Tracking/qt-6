@@ -159,7 +159,8 @@ class HttpStreamFactory::Job
       NextProto alternative_protocol,
       quic::ParsedQuicVersion quic_version,
       bool is_websocket,
-      bool enable_ip_based_pooling,
+      bool enable_ip_based_pooling_for_h2,
+      std::optional<ConnectionManagementConfig> management_config,
       NetLog* net_log);
 
   Job(const Job&) = delete;
@@ -357,6 +358,10 @@ class HttpStreamFactory::Job
   // proxy. This differs from `using_ssl_`, which only describes the origin.
   bool using_spdy() const;
 
+  // Calculates SchemeHostPort for HttpServerProperties::{Set,Get}SupportsSpdy()
+  // calls.
+  url::SchemeHostPort SchemeHostPortForSupportsSpdy() const;
+
   bool disable_cert_verification_network_fetches() const;
 
   void RecordPreconnectHistograms(int result);
@@ -400,7 +405,7 @@ class HttpStreamFactory::Job
 
   // Enable pooling to a SpdySession with matching IP and certificate
   // even if the SpdySessionKey is different.
-  const bool enable_ip_based_pooling_;
+  const bool enable_ip_based_pooling_for_h2_;
 
   // Unowned. |this| job is owned by |delegate_|.
   const raw_ptr<Delegate> delegate_;
@@ -481,6 +486,9 @@ class HttpStreamFactory::Job
 
   std::unique_ptr<SpdySessionPool::SpdySessionRequest> spdy_session_request_;
 
+  // Keeps track of the connection management config.
+  std::optional<ConnectionManagementConfig> management_config_;
+
   base::WeakPtrFactory<Job> ptr_factory_{this};
 };
 
@@ -502,10 +510,11 @@ class HttpStreamFactory::JobFactory {
       url::SchemeHostPort destination,
       GURL origin_url,
       bool is_websocket,
-      bool enable_ip_based_pooling,
+      bool enable_ip_based_pooling_for_h2,
       NetLog* net_log,
       NextProto alternative_protocol,
-      quic::ParsedQuicVersion quic_version);
+      quic::ParsedQuicVersion quic_version,
+      std::optional<ConnectionManagementConfig> management_config);
 };
 
 }  // namespace net

@@ -75,9 +75,10 @@ QWaylandView::~QWaylandView()
 }
 
 /*!
-* \internal
-*  Didn't we decide to remove this property?
-*/
+ * \property QWaylandView::renderObject
+ * \internal
+ * Didn't we decide to remove this property?
+ */
 QObject *QWaylandView::renderObject() const
 {
     Q_D(const QWaylandView);
@@ -116,6 +117,7 @@ void QWaylandViewPrivate::setSurface(QWaylandSurface *newSurface)
     nextBuffer = QWaylandBufferRef();
     nextBufferCommitted = false;
     nextDamage = QRegion();
+    forceAdvanceSucceed = false;
 
     if (surface) {
         QWaylandSurfacePrivate::get(surface)->refView(q);
@@ -222,8 +224,8 @@ bool QWaylandView::advance()
     QMutexLocker locker(&d->bufferMutex);
     d->forceAdvanceSucceed = false;
     d->nextBufferCommitted = false;
-    d->currentBuffer = d->nextBuffer;
-    d->currentDamage = d->nextDamage;
+    d->currentBuffer = std::exchange(d->nextBuffer, {});
+    d->currentDamage = std::exchange(d->nextDamage, {});
     return true;
 }
 
@@ -290,6 +292,9 @@ void QWaylandView::setBufferLocked(bool locked)
         return;
     d->bufferLocked = locked;
     emit bufferLockedChanged();
+
+    if (d->surface == nullptr && !d->bufferLocked)
+        d->clearFrontBuffer();
 }
 /*!
  * \qmlproperty bool QtWayland.Compositor::WaylandView::allowDiscardFrontBuffer

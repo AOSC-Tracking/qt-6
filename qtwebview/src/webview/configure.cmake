@@ -31,11 +31,6 @@ qt_feature("webview-darwin-plugin" PUBLIC
     PURPOSE "Provides Darwin Webkit plugin for Qt WebView."
     CONDITION MACOS OR IOS
 )
-qt_feature("webview-winrt-plugin" PUBLIC
-    LABEL "WinRT WebView (WinRT only)"
-    PURPOSE "Provides WinRT Webview plugin for Qt WebView."
-    CONDITION WINRT
-)
 qt_feature("webview-wasm-plugin" PUBLIC
     LABEL "Wasm Webview (Web Assembly only)"
     PURPOSE "Provides Wasm WebView plugin for Qt WebView."
@@ -47,7 +42,6 @@ qt_configure_add_summary_entry(ARGS "webview-webengine-plugin")
 qt_configure_add_summary_entry(ARGS "webview-webview2-plugin")
 qt_configure_add_summary_entry(ARGS "webview-android-plugin")
 qt_configure_add_summary_entry(ARGS "webview-darwin-plugin")
-qt_configure_add_summary_entry(ARGS "webview-winrt-plugin")
 qt_configure_add_summary_entry(ARGS "webview-wasm-plugin")
 qt_configure_end_summary_section()
 

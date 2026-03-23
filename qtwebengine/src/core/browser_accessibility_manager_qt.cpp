@@ -1,10 +1,10 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qtwebenginecoreglobal.h"
 
-#include "ui/accessibility/platform/browser_accessibility_manager.h"
-
+#include <QtCore/qdebug.h>
 #include <QtGui/qtguiglobal.h>
 
 #if QT_CONFIG(accessibility)
@@ -89,11 +89,20 @@ QAccessibleInterface *BrowserAccessibilityManagerQt::rootParentAccessible()
     return parent_manager->rootParentAccessible();
 }
 
+QWebEngineSettings *BrowserAccessibilityManagerQt::webEngineSettings() const
+{
+    return m_webContentsAccessibility->webEngineSettings();
+}
+
 void BrowserAccessibilityManagerQt::FireBlinkEvent(ax::mojom::Event event_type,
                                                    BrowserAccessibility *node,
                                                    int action_request_id)
 {
     auto *iface = toQAccessibleInterface(node);
+    if (!iface) {
+        qWarning() << "Trying to fire accessibility event on deinitialized node, ax::mojom::Event:" << (int)event_type;
+        return;
+    }
 
     switch (event_type) {
     case ax::mojom::Event::kFocus: {

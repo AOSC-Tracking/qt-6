@@ -45,8 +45,6 @@ EnumTraits<content_settings::mojom::ContentSetting, ContentSetting>::ToMojom(
       return content_settings::mojom::ContentSetting::ASK;
     case CONTENT_SETTING_SESSION_ONLY:
       return content_settings::mojom::ContentSetting::SESSION_ONLY;
-    case CONTENT_SETTING_DETECT_IMPORTANT_CONTENT:
-      return content_settings::mojom::ContentSetting::DETECT_IMPORTANT_CONTENT;
     case CONTENT_SETTING_NUM_SETTINGS:
       // CONTENT_SETTING_NUM_SETTINGS is a dummy enum value.
       break;
@@ -73,9 +71,6 @@ bool EnumTraits<content_settings::mojom::ContentSetting, ContentSetting>::
       return true;
     case content_settings::mojom::ContentSetting::SESSION_ONLY:
       *out = CONTENT_SETTING_SESSION_ONLY;
-      return true;
-    case content_settings::mojom::ContentSetting::DETECT_IMPORTANT_CONTENT:
-      *out = CONTENT_SETTING_DETECT_IMPORTANT_CONTENT;
       return true;
   }
   return false;
@@ -104,7 +99,8 @@ bool StructTraits<content_settings::mojom::RuleMetaDataDataView,
          data.ReadLastVisited(&out->last_visited_) &&
          data.ReadSessionModel(&out->session_model_) &&
          data.ReadTpcdMetadataRuleSource(&out->tpcd_metadata_rule_source_) &&
-         data.ReadTpcdMetadataCohort(&out->tpcd_metadata_cohort_);
+         data.ReadTpcdMetadataCohort(&out->tpcd_metadata_cohort_) &&
+         data.ReadRuleOptions(&out->rule_options_);
 }
 
 // static

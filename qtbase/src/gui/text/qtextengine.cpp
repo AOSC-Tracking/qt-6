@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 // Qt-Security score:critical reason:data-parser
 
+#include <QtCore/private/qflatmap_p.h>
 #include <QtGui/private/qtguiglobal_p.h>
 #include "qdebug.h"
 #include "qtextformat.h"
@@ -1413,7 +1414,7 @@ void QTextEngine::shapeText(int item) const
 #endif
     bool letterSpacingIsAbsolute;
     bool shapingEnabled = false;
-    QHash<QFont::Tag, quint32> features;
+    QMap<QFont::Tag, quint32> features;
     QFixed letterSpacing, wordSpacing;
 #ifndef QT_NO_RAWFONT
     if (useRawFont) {
@@ -1609,15 +1610,19 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *st
                                          int stringBaseIndex, int stringLength, int itemLength,
                                          QFontEngine *fontEngine, QSpan<uint> itemBoundaries,
                                          bool kerningEnabled, bool hasLetterSpacing,
-                                         const QHash<QFont::Tag, quint32> &fontFeatures) const
+                                         const QMap<QFont::Tag, quint32> &fontFeatures) const
 {
     uint glyphs_shaped = 0;
 
-    hb_buffer_t *buffer = hb_buffer_create();
-    hb_buffer_set_unicode_funcs(buffer, hb_qt_get_unicode_funcs());
+    if (!buffer) {
+        buffer = hb_buffer_create();
+        hb_buffer_set_unicode_funcs(buffer, hb_qt_get_unicode_funcs());
+    }
+
     hb_buffer_pre_allocate(buffer, itemLength);
     if (Q_UNLIKELY(!hb_buffer_allocation_successful(buffer))) {
         hb_buffer_destroy(buffer);
+        buffer = nullptr;
         return 0;
     }
 
@@ -1671,26 +1676,26 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *st
 
             bool dontLigate = hasLetterSpacing && !scriptRequiresOpenType;
 
-            QHash<QFont::Tag, quint32> features;
-            features.insert(QFont::Tag("kern"), !!kerningEnabled);
+            QVarLengthFlatMap<QFont::Tag, hb_feature_t, 16> features;
+            auto insertFeature = [&features](QFont::Tag tag, quint32 value) {
+                features.insert(tag, { tag.value(),
+                                       value,
+                                       HB_FEATURE_GLOBAL_START,
+                                       HB_FEATURE_GLOBAL_END });
+            };
+            // fontFeatures have precedence
+            for (const auto &[tag, value]: fontFeatures.asKeyValueRange())
+                insertFeature(tag, value);
+            insertFeature(QFont::Tag("kern"), !!kerningEnabled);
             if (dontLigate) {
-                features.insert(QFont::Tag("liga"), false);
-                features.insert(QFont::Tag("clig"), false);
-                features.insert(QFont::Tag("dlig"), false);
-                features.insert(QFont::Tag("hlig"), false);
-            }
-            features.insert(fontFeatures);
-
-            QVarLengthArray<hb_feature_t, 16> featureArray;
-            for (auto it = features.constBegin(); it != features.constEnd(); ++it) {
-                featureArray.append({ it.key().value(),
-                                      it.value(),
-                                      HB_FEATURE_GLOBAL_START,
-                                      HB_FEATURE_GLOBAL_END });
+                insertFeature(QFont::Tag("liga"), false);
+                insertFeature(QFont::Tag("clig"), false);
+                insertFeature(QFont::Tag("dlig"), false);
+                insertFeature(QFont::Tag("hlig"), false);
             }
 
             // whitelist cross-platforms shapers only
-            static const char *shaper_list[] = {
+            constexpr const char *shaper_list[] = {
                 "graphite2",
                 "ot",
                 "fallback",
@@ -1699,13 +1704,11 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *st
 
             bool shapedOk = hb_shape_full(hb_font,
                                           buffer,
-                                          featureArray.constData(),
-                                          features.size(),
+                                          features.values().constData(),
+                                          features.values().size(),
                                           shaper_list);
-            if (Q_UNLIKELY(!shapedOk)) {
-                hb_buffer_destroy(buffer);
+            if (Q_UNLIKELY(!shapedOk))
                 return 0;
-            }
 
             if (Q_UNLIKELY(HB_DIRECTION_IS_BACKWARD(props.direction)))
                 hb_buffer_reverse(buffer);
@@ -1718,10 +1721,8 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *st
             num_glyphs = 1;
 
         // ensure we have enough space for shaped glyphs and metrics
-        if (Q_UNLIKELY(!ensureSpace(glyphs_shaped + num_glyphs))) {
-            hb_buffer_destroy(buffer);
+        if (Q_UNLIKELY(!ensureSpace(glyphs_shaped + num_glyphs)))
             return 0;
-        }
 
         // fetch the shaped glyphs and metrics
         QGlyphLayout g = availableGlyphs(&si).mid(glyphs_shaped, num_glyphs);
@@ -1745,7 +1746,7 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *st
 
                     // fix up clusters so that the cluster indices will be monotonic
                     // and thus we never return out-of-order indices
-                    while (last_cluster++ < cluster && str_pos < item_length)
+                    for (uint j = last_cluster; j < cluster && str_pos < item_length; ++j)
                         log_clusters[str_pos++] = last_glyph_pos;
                     last_glyph_pos = i + glyphs_shaped;
                     last_cluster = cluster;
@@ -1780,8 +1781,6 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *st
 
         glyphs_shaped += num_glyphs;
     }
-
-    hb_buffer_destroy(buffer);
 
     return glyphs_shaped;
 }
@@ -1826,6 +1825,12 @@ QTextEngine::~QTextEngine()
         delete layoutData;
     delete specialData;
     resetFontEngineCache();
+#if QT_CONFIG(harfbuzz)
+    if (buffer) {
+        hb_buffer_destroy(buffer);
+        buffer = nullptr;
+    }
+#endif
 }
 
 const QCharAttributes *QTextEngine::attributes() const

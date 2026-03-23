@@ -36,6 +36,7 @@
 
 #include "base/containers/span.h"
 #include "base/memory/ptr_util.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -44,9 +45,11 @@
 #include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/html/forms/html_text_area_element.h"
+#include "third_party/blink/renderer/core/layout/block_node.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/list/layout_list_item.h"
@@ -274,6 +277,11 @@ static bool BlockSuppressesAutosizing(const LayoutBlock* block) {
 
   if (BlockHeightConstrained(block))
     return true;
+
+  if (block->IsFlexItem()) {
+    block->GetDocument().CountUse(WebFeature::kTextAutoSizingDisabledOnFlexbox);
+    return true;
+  }
 
   return false;
 }
@@ -649,7 +657,8 @@ void TextAutosizer::UpdatePageInfo() {
 
   PageInfo previous_page_info(page_info_);
   page_info_.setting_enabled_ =
-      document_->GetSettings()->GetTextAutosizingEnabled();
+      document_->GetSettings()->GetTextAutosizingEnabled() &&
+      !base::FeatureList::IsEnabled(blink::features::kForceOffTextAutosizing);
 
   if (!page_info_.setting_enabled_ || document_->Printing()) {
     page_info_.page_needs_autosizing_ = false;
@@ -876,7 +885,7 @@ TextAutosizer::Fingerprint TextAutosizer::ComputeFingerprint(
   if (LayoutObject* parent = ParentElementLayoutObject(layout_object))
     data.parent_hash_ = GetFingerprint(parent);
 
-  data.qualified_name_hash_ = WTF::GetHash(element->TagQName());
+  data.qualified_name_hash_ = GetHash(element->TagQName());
 
   if (const ComputedStyle* style = layout_object->Style()) {
     data.packed_style_properties_ = static_cast<unsigned>(style->Direction());
@@ -892,8 +901,7 @@ TextAutosizer::Fingerprint TextAutosizer::ComputeFingerprint(
 
     // TODO(kojii): The width can be computed from style only when it's fixed.
     // consider for adding: writing mode, padding.
-    data.width_ =
-        width.IsFixed() ? WTF::NormalizeSign(width.GetFloatValue()) : 0.0f;
+    data.width_ = width.IsFixed() ? NormalizeSign(width.Pixels()) : 0.0f;
   }
 
   // Use nodeIndex as a rough approximation of column number
@@ -1066,8 +1074,9 @@ float TextAutosizer::WidthFromBlock(const LayoutBlock* block) const {
     float width;
     Length specified_width = block->StyleRef().LogicalWidth();
     if (specified_width.IsFixed()) {
-      if ((width = specified_width.Value()) > 0)
+      if ((width = specified_width.Pixels()) > 0) {
         return width;
+      }
     }
     if (specified_width.HasPercent()) {
       if (float container_width = ContentInlineSize(block->ContainingBlock())) {
@@ -1234,23 +1243,9 @@ void TextAutosizer::ApplyMultiplier(LayoutObject* layout_object,
   DCHECK(layout_object);
   const ComputedStyle& current_style = layout_object->StyleRef();
   if (!current_style.GetTextSizeAdjust().IsAuto()) {
-    if (RuntimeEnabledFeatures::TextSizeAdjustImprovementsEnabled()) {
-      // Non-auto values of text-size-adjust should fully disable automatic
-      // text size adjustment, including the accessibility font scale factor.
-      multiplier = 1;
-    } else {
-      // The accessibility font scale factor is applied by the autosizer so we
-      // need to apply that scale factor on top of the text-size-adjust
-      // multiplier. Only apply the accessibility factor if the autosizer has
-      // determined a multiplier should be applied so that text-size-adjust:none
-      // does not cause a multiplier to be applied when it wouldn't be
-      // otherwise.
-      bool should_apply_accessibility_font_scale_factor = multiplier > 1;
-      multiplier = current_style.GetTextSizeAdjust().Multiplier();
-      if (should_apply_accessibility_font_scale_factor) {
-        multiplier *= page_info_.accessibility_font_scale_factor_;
-      }
-    }
+    // Non-auto values of text-size-adjust should fully disable automatic text
+    // size adjustment, including the accessibility font scale factor.
+    multiplier = 1;
   } else if (multiplier < 1) {
     // Unlike text-size-adjust, the text autosizer should only inflate fonts.
     multiplier = 1;
@@ -1472,13 +1467,17 @@ TextAutosizer::DeferUpdatePageInfo::DeferUpdatePageInfo(Page* page)
   }
 }
 
-// static
-void TextAutosizer::MaybeRegisterInlineSize(const LayoutBlock& ng_block,
-                                            LayoutUnit inline_size) {
-  if (auto* text_autosizer = ng_block.GetDocument().GetTextAutosizer()) {
-    if (text_autosizer->ShouldHandleLayout())
-      text_autosizer->RegisterInlineSize(ng_block, inline_size);
+void TextAutosizer::ForceInlineSizeForColumn(
+    const BlockNode& multicol_container,
+    LayoutUnit inline_size) {
+  auto* text_autosizer = multicol_container.GetDocument().GetTextAutosizer();
+  if (!text_autosizer || !text_autosizer->ShouldHandleLayout()) {
+    return;
   }
+  auto iter = text_autosizer->inline_size_map_.find(
+      To<LayoutBlock>(multicol_container.GetLayoutBox()));
+  DCHECK(iter != text_autosizer->inline_size_map_.end());
+  iter.Get()->value = inline_size;
 }
 
 TextAutosizer::NGLayoutScope::NGLayoutScope(LayoutBox* box,

@@ -183,6 +183,7 @@ endif()")
         list(LENGTH CMAKE_OSX_ARCHITECTURES _qt_osx_architectures_count)
         if(cmake_sysroot_name AND (MACOS OR (UIKIT AND NOT _qt_osx_architectures_count GREATER 1)))
             list(APPEND init_platform "
+set(__qt_initial_apple_sdk \"${QT_APPLE_SDK}\")
 if(NOT DEFINED CMAKE_OSX_SYSROOT)
     set(CMAKE_OSX_SYSROOT \"${cmake_sysroot_name}\" CACHE STRING \"\")
 endif()")
@@ -254,7 +255,8 @@ endif()")
             qt_internal_get_first_osx_arch(osx_first_arch)
             list(APPEND init_platform
 "if((NOT CMAKE_GENERATOR STREQUAL \"Xcode\" AND NOT __qt_toolchain_building_qt_repo)
-    OR (CMAKE_GENERATOR STREQUAL \"Xcode\" AND __qt_apple_sdk AND NOT QT_NO_SET_OSX_ARCHITECTURES))")
+    OR (CMAKE_GENERATOR STREQUAL \"Xcode\" AND __qt_initial_apple_sdk
+        AND NOT QT_NO_SET_OSX_ARCHITECTURES))")
             list(APPEND init_platform
                 "    set(CMAKE_OSX_ARCHITECTURES \"${osx_first_arch}\" CACHE STRING \"\")")
             list(APPEND init_platform "endif()")
@@ -309,6 +311,13 @@ endif()")
             "            \"Please specify the toolchain file with -DQT_CHAINLOAD_TOOLCHAIN_FILE=<file>.\")")
         list(APPEND init_platform "    endif()")
         list(APPEND init_platform "endif()")
+
+        qt_internal_get_android_cmake_policy_version_minimum_assignment(
+            android_cmake_policy_version_minimum TYPE TOOLCHAIN_FILE_ASSIGNMENT)
+        if(android_cmake_policy_version_minimum)
+            list(APPEND init_platform "${android_cmake_policy_version_minimum}")
+        endif()
+
     elseif(EMSCRIPTEN)
         list(APPEND init_platform
 "include(\${CMAKE_CURRENT_LIST_DIR}/QtPublicWasmToolchainHelpers.cmake)
@@ -338,6 +347,7 @@ endif()
            "${init_post_chainload_toolchain}")
 
     qt_compute_relative_path_from_cmake_config_dir_to_prefix()
+    qt_re_escape(re_INSTALL_CMAKEDIR "${INSTALL_CMAKEDIR}")
     configure_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/qt.toolchain.cmake.in"
         "${__GlobalConfig_build_dir}/qt.toolchain.cmake" @ONLY)

@@ -19,9 +19,7 @@ cc_library(
     visibility = [
         "//internal/auth:__pkg__",
         "//internal/platform/implementation:__subpackages__",
-        "//internal/test:__subpackages__",
         "//location/nearby/cpp/sharing/clients/cpp:__subpackages__",
-        "//sharing:__subpackages__",
     ],
 )
 
@@ -29,12 +27,9 @@ cc_library(
     name = "account_info",
     hdrs = ["account_info.h"],
     visibility = [
-        "//internal/account:__pkg__",
         "//internal/auth:__pkg__",
         "//internal/platform/implementation:__subpackages__",
-        "//internal/test:__subpackages__",
         "//location/nearby/cpp/sharing/clients/cpp:__subpackages__",
-        "//sharing:__subpackages__",
     ],
 )
 
@@ -117,6 +112,7 @@ cc_library(
         "//sharing:__subpackages__",
     ],
     deps = [
+        "//internal/base:file_path",
         "//internal/crypto_cros",
         "//internal/platform:base",
         "//internal/platform/implementation/shared:crypto",  # Non-chromium impl
@@ -150,6 +146,7 @@ cc_library(
 cc_library(
     name = "comm",
     hdrs = [
+        "awdl.h",
         "ble.h",
         "ble_v2.h",
         "bluetooth_adapter.h",
@@ -157,6 +154,7 @@ cc_library(
         "credential_callbacks.h",
         "credential_storage.h",
         "http_loader.h",
+        "psk_info.h",
         "server_sync.h",
         "webrtc.h",
         "wifi.h",
@@ -177,6 +175,7 @@ cc_library(
         "//connections/implementation/proto:offline_wire_formats_cc_proto",
         "//internal/platform:base",
         "//internal/platform:cancellation_flag",
+        "//internal/platform:mac_address",
         "//internal/platform:uuid",
         "//internal/proto:credential_cc_proto",
         "//internal/proto:local_credential_cc_proto",
@@ -187,6 +186,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -213,6 +213,27 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
     ],
+)
+
+cc_library(
+    name = "platform_impl",
+    testonly = True,
+    visibility = [
+        "//:__subpackages__",
+        "//connections/implementation:__subpackages__",
+        "//location/nearby/analytics/cpp:__subpackages__",
+        "//location/nearby/apps/better_together/plugins/preferences_native:__subpackages__",
+        "//location/nearby/cpp/sharing:__subpackages__",
+    ],
+    deps = [
+    ] + select({
+        "@platforms//os:windows": [
+            "//internal/platform/implementation/windows",
+        ],
+        "//conditions:default": [
+            "//internal/platform/implementation/g3",
+        ],
+    }),
 )
 
 cc_test(

@@ -14,7 +14,6 @@ static_library("os_updates") {
 
   deps = [
     "//base",
-    "//chrome/browser:browser_process",
     "//chrome/browser/ash/policy/core",
     "//chrome/browser/ash/policy/reporting",
     "//chrome/browser/ash/policy/reporting/event_based_logs:utils",
@@ -100,4 +99,8 @@ source_set("browser_tests") {
     "//testing/gmock",
     "//testing/gtest",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

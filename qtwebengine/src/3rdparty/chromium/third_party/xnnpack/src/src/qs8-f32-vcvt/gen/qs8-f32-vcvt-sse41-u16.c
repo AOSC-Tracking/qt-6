@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-f32-vcvt/sse4.c.in
 //   Generator: tools/xngen
@@ -8,19 +9,22 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/unaligned.h"
-#include "xnnpack/vcvt.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/unaligned.h"
+#include "src/xnnpack/vcvt.h"
 
 
 void xnn_qs8_f32_vcvt_ukernel__sse41_u16(
     size_t batch,
     const int8_t* input,
     float* output,
-    const struct xnn_qs8_f32_cvt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_qs8_f32_cvt_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);

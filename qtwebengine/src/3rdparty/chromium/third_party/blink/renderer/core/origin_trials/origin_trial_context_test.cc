@@ -12,6 +12,8 @@
 #include "base/containers/span.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
+#include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/origin_trials/origin_trials.h"
@@ -19,7 +21,6 @@
 #include "third_party/blink/public/common/origin_trials/trial_token_result.h"
 #include "third_party/blink/public/common/origin_trials/trial_token_validator.h"
 #include "third_party/blink/public/mojom/origin_trials/origin_trial_feature.mojom-shared.h"
-#include "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -425,7 +426,7 @@ TEST_F(OriginTrialContextTest, PermissionsPolicy) {
       SecurityOrigin::CreateFromString(kFrobulateEnabledOrigin);
 
   PolicyParserMessageBuffer logger;
-  ParsedPermissionsPolicy result;
+  network::ParsedPermissionsPolicy result;
   result = PermissionsPolicyParser::ParsePermissionsPolicyForTest(
       "frobulate=*", security_origin, nullptr, logger, feature_map, window);
   EXPECT_TRUE(logger.GetMessages().empty());
@@ -632,23 +633,28 @@ class OriginTrialContextDevtoolsTest : public OriginTrialContextTest {
 };
 
 TEST_F(OriginTrialContextDevtoolsTest, DependentFeatureNotEnabled) {
+  // This tests that for features which are tied together by
+  // `OriginTrialContext::CanEnableTrialFromName()`, disabling the base feature
+  // will disable the origin trial. If you delete the following trial or
+  // `base::Feature`, update these to another case that appears inside
+  // `OriginTrialContext::CanEnableTrialFromName()`.
+  static constexpr char kTrialName[] = "SoftNavigationHeuristics";
+  const base::Feature& feature = blink::features::kSoftNavigationDetection;
+  auto ot_feature = mojom::blink::OriginTrialFeature::kSoftNavigationHeuristics;
+
   UpdateSecurityOrigin(kFrobulateEnabledOrigin);
 
   base::test::ScopedFeatureList feature_list_;
-  feature_list_.InitAndDisableFeature(
-      blink::features::kSpeculationRulesPrefetchFuture);
+  feature_list_.InitAndDisableFeature(feature);
 
-  AddTokenWithResponse("SpeculationRulesPrefetchFuture",
-                       OriginTrialTokenStatus::kSuccess);
+  AddTokenWithResponse(kTrialName, OriginTrialTokenStatus::kSuccess);
 
-  EXPECT_FALSE(IsFeatureEnabled(
-      mojom::blink::OriginTrialFeature::kSpeculationRulesPrefetchFuture));
+  EXPECT_FALSE(IsFeatureEnabled(ot_feature));
   HashMap<String, OriginTrialResult> origin_trial_results =
       GetOriginTrialResultsForDevtools();
   EXPECT_EQ(origin_trial_results.size(), 1u);
   ExpectTrialResultContains(
-      origin_trial_results, "SpeculationRulesPrefetchFuture",
-      OriginTrialStatus::kTrialNotAllowed,
+      origin_trial_results, kTrialName, OriginTrialStatus::kTrialNotAllowed,
       {{OriginTrialTokenStatus::kSuccess, /* token_parsable */ true}});
 }
 

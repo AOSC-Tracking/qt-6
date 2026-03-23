@@ -9,6 +9,7 @@
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/shared_image/d3d_image_backing.h"
 #include "gpu/ipc/common/dxgi_helpers.h"
+#include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 #include "third_party/angle/include/EGL/eglext_angle.h"
 #include "ui/gl/gl_angle_util_win.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -122,40 +123,14 @@ wgpu::Texture DawnD3DImageRepresentation::BeginAccess(
 }
 
 void DawnD3DImageRepresentation::EndAccess() {
-  if (!texture_)
+  if (!texture_) {
     return;
+  }
 
   // Do this before further operations since those could end up destroying the
   // Dawn device and we want the fence to be duplicated before then.
   D3DImageBacking* d3d_image_backing = static_cast<D3DImageBacking*>(backing());
-  d3d_image_backing->EndAccessDawn(device_, texture_);
-
-  texture_ = nullptr;
-}
-
-// Enabling this functionality reduces overhead in the compositor by lowering
-// the frequency of begin/end access pairs. The semantic constraints for a
-// representation being able to return true are the following:
-// * It is valid to call BeginScopedReadAccess() concurrently on two
-//   different representations of the same image
-// * The backing supports true concurrent read access rather than emulating
-//   concurrent reads by "pausing" a first read when a second read of a
-//   different representation type begins, which requires that the second
-//   representation's read finish within the scope of its GPU task in order
-//   to ensure that nothing actually accesses the first representation
-//   while it is paused. Some backings that support only exclusive access
-//   from the SI perspective do the latter (e.g.,
-//   ExternalVulkanImageBacking as its "support" of concurrent GL and
-//   Vulkan access). SupportsMultipleConcurrentReadAccess() results in the
-//   compositor's read access being long-lived (i.e., beyond the scope of
-//   a single GPU task).
-// The Graphite Skia representation returns true if the underlying Dawn
-// representation does so. This representation meets both of the above
-// constraints.
-bool DawnD3DImageRepresentation::SupportsMultipleConcurrentReadAccess() {
-  D3DImageBacking* d3d_image_backing = static_cast<D3DImageBacking*>(backing());
-  // KeyedMutex does not support concurrent read access.
-  return !d3d_image_backing->has_keyed_mutex();
+  d3d_image_backing->EndAccessDawn(device_, std::move(texture_));
 }
 
 DawnD3DBufferRepresentation::DawnD3DBufferRepresentation(
@@ -197,6 +172,19 @@ void DawnD3DBufferRepresentation::EndAccess() {
 }
 #endif  // BUILDFLAG(USE_DAWN)
 
+WebNND3DTensorRepresentation::WebNND3DTensorRepresentation(
+    SharedImageManager* manager,
+    SharedImageBacking* backing,
+    MemoryTypeTracker* tracker)
+    : WebNNTensorRepresentation(manager, backing, tracker) {}
+
+WebNND3DTensorRepresentation::~WebNND3DTensorRepresentation() = default;
+
+Microsoft::WRL::ComPtr<ID3D12Resource>
+WebNND3DTensorRepresentation::GetD3D12Buffer() const {
+  return static_cast<D3DImageBacking*>(backing())->GetD3D12Buffer();
+}
+
 OverlayD3DImageRepresentation::OverlayD3DImageRepresentation(
     SharedImageManager* manager,
     SharedImageBacking* backing,
@@ -210,22 +198,14 @@ OverlayD3DImageRepresentation::~OverlayD3DImageRepresentation() = default;
 bool OverlayD3DImageRepresentation::BeginReadAccess(
     gfx::GpuFenceHandle& acquire_fence) {
   return static_cast<D3DImageBacking*>(backing())->BeginAccessD3D11(
-      d3d11_device_, /*write_access=*/false);
+      d3d11_device_, /*write_access=*/false, /*is_overlay=*/true);
 }
 
 void OverlayD3DImageRepresentation::EndReadAccess(
     gfx::GpuFenceHandle release_fence) {
   DCHECK(release_fence.is_null());
-  static_cast<D3DImageBacking*>(backing())->EndAccessD3D11(d3d11_device_);
-
-#if DCHECK_IS_ON()
-  // Sanity check that we can get the availability fence, meaning that the
-  // texture is either immediately available or soon-to-be available. We
-  // should not cache this since the eventual wait may be one or more frames
-  // later and the fence becomes invalidated by DComp commit.
-  std::ignore = static_cast<D3DImageBacking*>(backing())
-                    ->GetDCompTextureAvailabilityFenceForCurrentFrame();
-#endif
+  static_cast<D3DImageBacking*>(backing())->EndAccessD3D11(d3d11_device_,
+                                                           /*is_overlay=*/true);
 }
 
 std::optional<gl::DCLayerOverlayImage>
@@ -387,6 +367,15 @@ D3D11VideoImageCopyRepresentation::CreateFromD3D(SharedImageManager* manager,
                                                  ID3D11Texture2D* texture,
                                                  std::string_view debug_label,
                                                  ID3D11Device* texture_device) {
+  auto* d3d_backing = static_cast<D3DImageBacking*>(backing);
+  if (!d3d_backing->BeginAccessD3D11(texture_device, /*write_access=*/false,
+                                     /*is_overlay_access=*/false)) {
+    return nullptr;
+  }
+  absl::Cleanup end_access = [&] {
+    d3d_backing->EndAccessD3D11(texture_device, /*is_overlay_access=*/false);
+  };
+
   D3D11_TEXTURE2D_DESC source_desc;
   texture->GetDesc(&source_desc);
 
@@ -470,5 +459,52 @@ Microsoft::WRL::ComPtr<ID3D11Texture2D>
 D3D11VideoImageCopyRepresentation::GetD3D11Texture() const {
   return d3d11_texture_;
 }
+
+#if BUILDFLAG(USE_DAWN)
+// D3DSkiaGraphiteDawnImageRepresentation
+
+D3DSkiaGraphiteDawnImageRepresentation::
+    ~D3DSkiaGraphiteDawnImageRepresentation() = default;
+
+// Enabling this functionality reduces overhead in the compositor by lowering
+// the frequency of begin/end access pairs. The semantic constraints for a
+// representation being able to return true are the following:
+// * It is valid to call BeginScopedReadAccess() concurrently on two
+//   different representations of the same image
+// * The backing supports true concurrent read access rather than emulating
+//   concurrent reads by "pausing" a first read when a second read of a
+//   different representation type begins, which requires that the second
+//   representation's read finish within the scope of its GPU task in order
+//   to ensure that nothing actually accesses the first representation
+//   while it is paused. Some backings that support only exclusive access
+//   from the SI perspective do the latter (e.g.,
+//   ExternalVulkanImageBacking as its "support" of concurrent GL and
+//   Vulkan access). SupportsMultipleConcurrentReadAccess() results in the
+//   compositor's read access being long-lived (i.e., beyond the scope of
+//   a single GPU task).
+// This representation meets both of the above constraints.
+bool D3DSkiaGraphiteDawnImageRepresentation::
+    SupportsMultipleConcurrentReadAccess() {
+  D3DImageBacking* d3d_image_backing = static_cast<D3DImageBacking*>(backing());
+  // KeyedMutex does not support concurrent read access atm.
+  // TODO(348598119): re-evaluate whether we can return true for keyed mutexes.
+  return !d3d_image_backing->has_keyed_mutex();
+}
+
+bool D3DSkiaGraphiteDawnImageRepresentation::
+    NeedGraphiteContextSubmitBeforeEndAccess() {
+  D3DImageBacking* d3d_image_backing = static_cast<D3DImageBacking*>(backing());
+  return !d3d_image_backing->SupportsDeferredGraphiteSubmit();
+}
+
+std::vector<scoped_refptr<SkiaImageRepresentation::GraphiteTextureHolder>>
+D3DSkiaGraphiteDawnImageRepresentation::WrapBackendTextures(
+    wgpu::Texture texture,
+    std::vector<skgpu::graphite::BackendTexture> backend_textures) {
+  D3DImageBacking* d3d_image_backing = static_cast<D3DImageBacking*>(backing());
+  return d3d_image_backing->CreateGraphiteTextureHolders(
+      GetDevice(), std::move(texture), std::move(backend_textures));
+}
+#endif  // BUILDFLAG(USE_DAWN)
 
 }  // namespace gpu

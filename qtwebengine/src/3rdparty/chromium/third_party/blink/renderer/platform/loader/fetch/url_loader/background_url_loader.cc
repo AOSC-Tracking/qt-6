@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <variant>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -18,7 +19,6 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/blink/public/common/loader/background_resource_fetch_histograms.h"
 #include "third_party/blink/public/common/loader/mime_sniffing_throttle.h"
 #include "third_party/blink/public/common/loader/referrer_utils.h"
@@ -58,7 +58,7 @@ using BodyVariant = blink::BackgroundResponseProcessor::BodyVariant;
 
 }  // namespace
 
-namespace WTF {
+namespace blink {
 
 template <>
 struct CrossThreadCopier<FollowRedirectCallback> {
@@ -102,10 +102,9 @@ struct CrossThreadCopier<std::vector<std::string>> {
 };
 
 template <>
-struct CrossThreadCopier<
-    std::vector<std::unique_ptr<blink::URLLoaderThrottle>>> {
+struct CrossThreadCopier<std::vector<std::unique_ptr<URLLoaderThrottle>>> {
   STATIC_ONLY(CrossThreadCopier);
-  using Type = std::vector<std::unique_ptr<blink::URLLoaderThrottle>>;
+  using Type = std::vector<std::unique_ptr<URLLoaderThrottle>>;
   static Type Copy(Type&& value) { return std::move(value); }
 };
 
@@ -136,10 +135,6 @@ struct CrossThreadCopier<std::optional<network::URLLoaderCompletionStatus>> {
   using Type = std::optional<network::URLLoaderCompletionStatus>;
   static Type Copy(Type&& value) { return std::move(value); }
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 namespace {
 
@@ -184,7 +179,7 @@ BackgroundResourceFetchSupportStatus CanHandleRequestInternal(
 }  // namespace
 
 class BackgroundURLLoader::Context
-    : public WTF::ThreadSafeRefCounted<BackgroundURLLoader::Context> {
+    : public ThreadSafeRefCounted<BackgroundURLLoader::Context> {
  public:
   Context(scoped_refptr<WebBackgroundResourceFetchAssets>
               background_resource_fetch_context,
@@ -373,9 +368,9 @@ class BackgroundURLLoader::Context
       CHECK(background_task_runner_->RunsTasksInCurrentSequence());
       background_response_processor_.reset();
       waiting_for_background_response_processor_ = false;
-      if (absl::holds_alternative<SegmentedBuffer>(body)) {
+      if (std::holds_alternative<SegmentedBuffer>(body)) {
         context_->DidReadDataByBackgroundResponseProcessorOnBackground(
-            absl::get<SegmentedBuffer>(body).size());
+            std::get<SegmentedBuffer>(body).size());
       }
       context_->PostTaskToMainThread(CrossThreadBindOnce(
           &Context::DidFinishBackgroundResponseProcessor, context_,

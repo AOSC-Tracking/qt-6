@@ -14,11 +14,12 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
-#include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
 #include "third_party/blink/public/common/safe_url_pattern.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom-blink.h"
+#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
+#include "third_party/blink/renderer/core/loader/document_loader.h"
+#include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
-#include "third_party/blink/renderer/platform/testing/task_environment.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_uchar.h"
@@ -32,7 +33,7 @@ bool IsManifestEmpty(const mojom::blink::ManifestPtr& manifest) {
 }
 }  // namespace
 
-class ManifestParserTest : public testing::Test {
+class ManifestParserTest : public SimTest {
  public:
   ManifestParserTest(const ManifestParserTest&) = delete;
   ManifestParserTest& operator=(const ManifestParserTest&) = delete;
@@ -45,7 +46,7 @@ class ManifestParserTest : public testing::Test {
                                                    const KURL& manifest_url,
                                                    const KURL& document_url) {
     ManifestParser parser(data, manifest_url, document_url,
-                          /*execution_context=*/nullptr);
+                          GetDocument().GetExecutionContext());
     parser.Parse();
     Vector<mojom::blink::ManifestErrorPtr> errors;
     parser.TakeErrors(&errors);
@@ -109,7 +110,6 @@ class ManifestParserTest : public testing::Test {
   }
 
  private:
-  test::TaskEnvironment task_environment_;
   mojom::blink::ManifestPtr manifest_;
   Vector<String> errors_;
 };
@@ -3359,7 +3359,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type" : "origin", "value" : "https://foo.com"
+              "type" : "origin", "origin" : "https://foo.com"
             }
           ]
         })");
@@ -3376,7 +3376,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "invalid_field", "value": "https://foo.com"
+              "type": "invalid_field", "origin": "https://foo.com"
             }
           ]
         })");
@@ -3392,7 +3392,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "value": "https://foo.com"
+              "origin": "https://foo.com"
             }
           ]
         })");
@@ -3401,13 +3401,13 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     ASSERT_EQ(1u, GetErrorCount());
     EXPECT_EQ(
         "scope_extensions entry ignored, required properties 'type' and "
-        "'value' "
+        "'origin' "
         "are missing.",
         errors()[0]);
     EXPECT_EQ(0u, scope_extensions.size());
   }
 
-  // Scope extension missing `value` key
+  // Scope extension missing `origin` key
   {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
@@ -3421,7 +3421,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     ASSERT_EQ(1u, GetErrorCount());
     EXPECT_EQ(
         "scope_extensions entry ignored, required properties 'type' and "
-        "'value' "
+        "'origin' "
         "are missing.",
         errors()[0]);
     EXPECT_EQ(0u, scope_extensions.size());
@@ -3432,7 +3432,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "site", "value": "http://foo.com"
+              "type": "site", "origin": "http://foo.com"
             }
           ]
         })");
@@ -3448,14 +3448,14 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": 7
+              "type": "origin", "origin": 7
             }
           ]
         })");
     auto& scope_extensions = manifest->scope_extensions;
 
     EXPECT_EQ(2u, GetErrorCount());
-    EXPECT_EQ("property 'value' ignored, type string expected.", errors()[0]);
+    EXPECT_EQ("property 'origin' ignored, type string expected.", errors()[0]);
     EXPECT_EQ(0u, scope_extensions.size());
   }
 
@@ -3464,7 +3464,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "http://foo.com"
+              "type": "origin", "origin": "http://foo.com"
             }
           ]
         })");
@@ -3483,7 +3483,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https:///////"
+              "type": "origin", "origin": "https:///////"
             }
           ]
         })");
@@ -3502,10 +3502,10 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://foo.com"
+              "type": "origin", "origin": "https://foo.com"
             },
             {
-              "type": "origin", "value": "https://bar.com"
+              "type": "origin", "origin": "https://bar.com"
             }
           ]
         })");
@@ -3524,7 +3524,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://foo.com"
+              "type": "origin", "origin": "https://foo.com"
             },
             []
           ]
@@ -3559,10 +3559,10 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://foo.com"
+              "type": "origin", "origin": "https://foo.com"
             },
             {
-              "type": "origin", "value": "about:"
+              "type": "origin", "origin": "about:"
             }
           ]
         })");
@@ -3583,7 +3583,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://co.uk"
+              "type": "origin", "origin": "https://co.uk"
             }
           ]
         })");
@@ -3599,10 +3599,12 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
 
   // Parse origin with wildcard.
   {
+    base::test::ScopedFeatureList inner_feature_list(
+        blink::features::kWebAppEnableScopeExtensionsBySite);
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://*.foo.com"
+              "type": "origin", "origin": "https://*.foo.com"
             }
           ]
         })");
@@ -3617,10 +3619,12 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
 
   // Parse invalid origin wildcard format.
   {
+    base::test::ScopedFeatureList inner_feature_list(
+        blink::features::kWebAppEnableScopeExtensionsBySite);
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://*foo.com"
+              "type": "origin", "origin": "https://*foo.com"
             }
           ]
         })");
@@ -3635,10 +3639,12 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
 
   // Parse origin where the host is just the wildcard prefix.
   {
+    base::test::ScopedFeatureList inner_feature_list(
+        blink::features::kWebAppEnableScopeExtensionsBySite);
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://*."
+              "type": "origin", "origin": "https://*."
             }
           ]
         })");
@@ -3654,10 +3660,12 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
 
   // Parse invalid origin where wildcard is used with a TLD.
   {
+    base::test::ScopedFeatureList inner_feature_list(
+        blink::features::kWebAppEnableScopeExtensionsBySite);
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://*.com"
+              "type": "origin", "origin": "https://*.com"
             }
           ]
         })");
@@ -3673,10 +3681,12 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
 
   // Parse invalid origin where wildcard is used with an unknown TLD.
   {
+    base::test::ScopedFeatureList inner_feature_list(
+        blink::features::kWebAppEnableScopeExtensionsBySite);
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://*.foo"
+              "type": "origin", "origin": "https://*.foo"
             }
           ]
         })");
@@ -3692,10 +3702,12 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
 
   // Parse invalid origin where wildcard is used with a multipart TLD.
   {
+    base::test::ScopedFeatureList inner_feature_list(
+        blink::features::kWebAppEnableScopeExtensionsBySite);
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://*.co.uk"
+              "type": "origin", "origin": "https://*.co.uk"
             }
           ]
         })");
@@ -3711,10 +3723,12 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
 
   // Parse valid origin with private registry.
   {
+    base::test::ScopedFeatureList inner_feature_list(
+        blink::features::kWebAppEnableScopeExtensionsBySite);
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://*.glitch.me"
+              "type": "origin", "origin": "https://*.glitch.me"
             }
           ]
         })");
@@ -3732,7 +3746,7 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
     auto& manifest = ParseManifest(R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://192.168.0.1:8888"
+              "type": "origin", "origin": "https://192.168.0.1:8888"
             }
           ]
         })");
@@ -3754,37 +3768,37 @@ TEST_F(ManifestParserTest, ScopeExtensionParseRules) {
         R"({
           "scope_extensions": [
             {
-              "type": "origin", "value": "https://192.168.0.1:8001"
+              "type": "origin", "origin": "https://192.168.0.1:8001"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8002"
+              "type": "origin", "origin": "https://192.168.0.1:8002"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8003"
+              "type": "origin", "origin": "https://192.168.0.1:8003"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8004"
+              "type": "origin", "origin": "https://192.168.0.1:8004"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8005"
+              "type": "origin", "origin": "https://192.168.0.1:8005"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8006"
+              "type": "origin", "origin": "https://192.168.0.1:8006"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8007"
+              "type": "origin", "origin": "https://192.168.0.1:8007"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8008"
+              "type": "origin", "origin": "https://192.168.0.1:8008"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8009"
+              "type": "origin", "origin": "https://192.168.0.1:8009"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8010"
+              "type": "origin", "origin": "https://192.168.0.1:8010"
             },
             {
-              "type": "origin", "value": "https://192.168.0.1:8011"
+              "type": "origin", "origin": "https://192.168.0.1:8011"
             }
           ]
         })");
@@ -5661,6 +5675,8 @@ TEST_F(ManifestParserTest, TranslationsParseRules) {
         ParseManifest(R"({ "translations": {"fr": {"name": "french name"}} })");
     EXPECT_TRUE(manifest->translations.empty());
     EXPECT_EQ(0u, GetErrorCount());
+    EXPECT_FALSE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTranslations));
   }
   {
     ScopedWebAppTranslationsForTest feature(true);
@@ -5700,6 +5716,8 @@ TEST_F(ManifestParserTest, TranslationsParseRules) {
       EXPECT_EQ(manifest->translations.find("fr")->value->description,
                 "french description");
       EXPECT_EQ(0u, GetErrorCount());
+      EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+          WebFeature::kWebAppManifestTranslations));
     }
 
     // Don't parse if the property isn't an object.
@@ -5756,6 +5774,8 @@ TEST_F(ManifestParserTest, TranslationsStringsParseRules) {
     EXPECT_EQ(
         "property 'name' of 'translations' ignored, type string expected.",
         errors()[0]);
+    EXPECT_FALSE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTranslations));
   }
 
   // Ignore non-string translations short_name.
@@ -5768,6 +5788,8 @@ TEST_F(ManifestParserTest, TranslationsStringsParseRules) {
         "property 'short_name' of 'translations' ignored, type string "
         "expected.",
         errors()[0]);
+    EXPECT_FALSE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTranslations));
   }
 
   // Ignore non-string translations description.
@@ -5780,6 +5802,8 @@ TEST_F(ManifestParserTest, TranslationsStringsParseRules) {
         "property 'description' of 'translations' ignored, type string "
         "expected.",
         errors()[0]);
+    EXPECT_FALSE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTranslations));
   }
 
   // Translation with empty strings is ignored.
@@ -5796,6 +5820,8 @@ TEST_F(ManifestParserTest, TranslationsStringsParseRules) {
               errors()[1]);
     EXPECT_EQ("property 'description' of 'translations' is an empty string.",
               errors()[2]);
+    EXPECT_FALSE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTranslations));
   }
 }
 
@@ -5811,6 +5837,8 @@ TEST_F(ManifestParserTest, TabStripParseRules) {
       EXPECT_TRUE(manifest->tab_strip.is_null());
       EXPECT_EQ(0u, GetErrorCount());
     }
+    EXPECT_FALSE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTabStrip));
   }
   {
     ScopedWebAppTabStripForTest feature1(true);
@@ -5822,6 +5850,8 @@ TEST_F(ManifestParserTest, TabStripParseRules) {
           ParseManifest(R"({ "tab_strip": {"home_tab": "auto"} })");
       EXPECT_FALSE(manifest->tab_strip.is_null());
       EXPECT_EQ(0u, GetErrorCount());
+      EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+          WebFeature::kWebAppManifestTabStrip));
     }
 
     // Manifest does not contain 'tab_strip' field.
@@ -5956,6 +5986,8 @@ TEST_F(ManifestParserTest, TabStripHomeTabScopeParseRules) {
             [{"protocol": "ftp"}, {"hostname": "bar.com"},
             {"protocol": "ftp", "hostname": "bar.com"}]}} })");
     EXPECT_FALSE(manifest->tab_strip.is_null());
+    EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTabStrip));
     EXPECT_FALSE(manifest->tab_strip->home_tab->is_visibility());
     EXPECT_EQ(
         manifest->tab_strip->home_tab->get_params()->scope_patterns.size(), 3u);
@@ -6009,6 +6041,8 @@ TEST_F(ManifestParserTest, TabStripHomeTabScopeParseRules) {
           }} })",
         KURL("http://foo.com/static/manifest.json"), DefaultDocumentUrl());
     EXPECT_FALSE(manifest->tab_strip.is_null());
+    EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTabStrip));
     EXPECT_FALSE(manifest->tab_strip->home_tab->is_visibility());
     EXPECT_EQ(
         manifest->tab_strip->home_tab->get_params()->scope_patterns.size(), 4u);
@@ -6143,6 +6177,8 @@ TEST_F(ManifestParserTest, TabStripHomeTabScopeParseRules) {
           ]}}
          })");
     EXPECT_FALSE(manifest->tab_strip.is_null());
+    EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTabStrip));
     EXPECT_FALSE(manifest->tab_strip->home_tab->is_visibility());
     EXPECT_EQ(
         manifest->tab_strip->home_tab->get_params()->scope_patterns.size(), 5u);
@@ -6235,6 +6271,8 @@ TEST_F(ManifestParserTest, TabStripHomeTabScopeParseRules) {
             {"pathname": "/foo/:bar/*"}]}}
         })");
     EXPECT_FALSE(manifest->tab_strip.is_null());
+    EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTabStrip));
     EXPECT_FALSE(manifest->tab_strip->home_tab->is_visibility());
     EXPECT_EQ(
         manifest->tab_strip->home_tab->get_params()->scope_patterns.size(), 6u);
@@ -6356,6 +6394,8 @@ TEST_F(ManifestParserTest, TabStripHomeTabScopeParseRules) {
             {"hostname": "foo.:bar.*"}, {"hostname": "*.com"}]}}
         })");
     EXPECT_FALSE(manifest->tab_strip.is_null());
+    EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTabStrip));
     EXPECT_FALSE(manifest->tab_strip->home_tab->is_visibility());
     EXPECT_EQ(
         manifest->tab_strip->home_tab->get_params()->scope_patterns.size(), 7u);
@@ -6512,6 +6552,8 @@ TEST_F(ManifestParserTest, TabStripHomeTabScopeParseRules) {
             {"search": "([A-Za-z0-9])+"}
     ]}} })a");
     EXPECT_FALSE(manifest->tab_strip.is_null());
+    EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTabStrip));
     EXPECT_FALSE(manifest->tab_strip->home_tab->is_visibility());
     EXPECT_EQ(
         manifest->tab_strip->home_tab->get_params()->scope_patterns.size(), 0u);
@@ -6525,6 +6567,8 @@ TEST_F(ManifestParserTest, TabStripHomeTabScopeParseRules) {
         "tab_strip": {
           "home_tab": {"scope_patterns": ["blah", 3]}} })");
     EXPECT_FALSE(manifest->tab_strip.is_null());
+    EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTabStrip));
     EXPECT_FALSE(manifest->tab_strip->home_tab->is_visibility());
     EXPECT_EQ(
         manifest->tab_strip->home_tab->get_params()->scope_patterns.size(), 0u);
@@ -6538,6 +6582,8 @@ TEST_F(ManifestParserTest, TabStripHomeTabScopeParseRules) {
         "tab_strip": {
           "home_tab": {"scope_patterns": []}} })");
     EXPECT_FALSE(manifest->tab_strip.is_null());
+    EXPECT_TRUE(GetDocument().Loader()->GetUseCounter().IsCounted(
+        WebFeature::kWebAppManifestTabStrip));
     EXPECT_FALSE(manifest->tab_strip->home_tab->is_visibility());
     EXPECT_EQ(
         manifest->tab_strip->home_tab->get_params()->scope_patterns.size(), 0u);
@@ -6569,6 +6615,620 @@ TEST_F(ManifestParserTest, VersionParseRules) {
   {
     auto& manifest = ParseManifest(R"({ "version": 123 })");
     EXPECT_TRUE(manifest->version.IsNull());
+    EXPECT_EQ(1u, GetErrorCount());
+  }
+}
+
+TEST_F(ManifestParserTest, NameLocalizedParseRules) {
+  // Smoke test.
+  {
+    auto& manifest = ParseManifest(R"({
+      "name_localized": {
+        "en": "English Name",
+        "es": "Nombre en Español"
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.size(), 2u);
+    EXPECT_TRUE(manifest->name_localized.Contains("en"));
+    EXPECT_TRUE(manifest->name_localized.Contains("es"));
+    EXPECT_EQ(manifest->name_localized.find("en")->value->value,
+              "English Name");
+    EXPECT_EQ(manifest->name_localized.find("es")->value->value,
+              "Nombre en Español");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Smoke test: object format.
+  {
+    auto& manifest = ParseManifest(R"({
+      "name_localized": {
+        "en": {
+          "value": "English Name",
+          "lang": "en-US",
+          "dir": "ltr"
+        },
+        "ar": {
+          "value": "اسم عربي",
+          "lang": "ar",
+          "dir": "rtl"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.size(), 2u);
+    EXPECT_EQ(manifest->name_localized.find("en")->value->value,
+              "English Name");
+    EXPECT_EQ(manifest->name_localized.find("en")->value->lang, "en-US");
+    EXPECT_EQ(manifest->name_localized.find("en")->value->dir,
+              mojom::blink::Manifest::TextDirection::kLTR);
+    EXPECT_EQ(manifest->name_localized.find("ar")->value->value, "اسم عربي");
+    EXPECT_EQ(manifest->name_localized.find("ar")->value->lang, "ar");
+    EXPECT_EQ(manifest->name_localized.find("ar")->value->dir,
+              mojom::blink::Manifest::TextDirection::kRTL);
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Trim whitespaces.
+  {
+    auto& manifest = ParseManifest(R"({
+      "name_localized": {
+        "en": "  English Name  ",
+        "es": {
+          "value": "  Nombre en Español  ",
+          "lang": "  es-ES  "
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.find("en")->value->value,
+              "English Name");
+    EXPECT_EQ(manifest->name_localized.find("es")->value->value,
+              "Nombre en Español");
+    EXPECT_EQ(manifest->name_localized.find("es")->value->lang, "es-ES");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Test stripping out of \t \r and \n.
+  {
+    auto& manifest = ParseManifest(R"({
+      "name_localized": {
+        "en": "\t\r\nEnglish Name\t\r\n",
+        "es": {
+          "value": "\t\r\nNombre en Español\t\r\n",
+          "lang": "\t\r\nes-ES\t\r\n"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.find("en")->value->value,
+              "English Name");
+    EXPECT_EQ(manifest->name_localized.find("es")->value->value,
+              "Nombre en Español");
+    EXPECT_EQ(manifest->name_localized.find("es")->value->lang, "es-ES");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Empty values are ignored.
+  {
+    auto& manifest = ParseManifest(R"({
+      "name_localized": {
+        "en": "",
+        "es": "Valid Name",
+        "fr": {
+          "value": "",
+          "lang": "fr"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.size(), 1u);
+    EXPECT_TRUE(manifest->name_localized.Contains("es"));
+    EXPECT_EQ(manifest->name_localized.find("es")->value->value, "Valid Name");
+    EXPECT_EQ(1u, GetErrorCount());
+  }
+
+  // Non-string and non-object values are ignored.
+  {
+    auto& manifest = ParseManifest(R"({
+      "name_localized": {
+        "en": "Valid Name",
+        "es": 42,
+        "fr": null,
+        "de": ["array", "value"]
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.size(), 1u);
+    EXPECT_TRUE(manifest->name_localized.Contains("en"));
+    EXPECT_EQ(manifest->name_localized.find("en")->value->value, "Valid Name");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Missing value in object format is ignored.
+  {
+    auto& manifest = ParseManifest(R"({
+      "name_localized": {
+        "en": {
+          "lang": "en-US",
+          "dir": "ltr"
+        },
+        "es": {
+          "value": "Valid Name",
+          "lang": "es"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.size(), 1u);
+    EXPECT_TRUE(manifest->name_localized.Contains("es"));
+    EXPECT_EQ(manifest->name_localized.find("es")->value->value, "Valid Name");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Don't parse if name_localized isn't an object.
+  {
+    auto& manifest = ParseManifest(R"({ "name_localized": "not an object" })");
+    EXPECT_TRUE(manifest->name_localized.empty());
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Don't parse if name_localized is an array.
+  {
+    auto& manifest =
+        ParseManifest(R"({ "name_localized": ["array", "value"] })");
+    EXPECT_TRUE(manifest->name_localized.empty());
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+}
+
+TEST_F(ManifestParserTest, ShortNameLocalizedParseRules) {
+  // Smoke test.
+  {
+    auto& manifest = ParseManifest(R"({
+      "short_name_localized": {
+        "en": "Short",
+        "es": "Corto"
+      }
+    })");
+    EXPECT_FALSE(manifest->short_name_localized.empty());
+    EXPECT_EQ(manifest->short_name_localized.size(), 2u);
+    EXPECT_TRUE(manifest->short_name_localized.Contains("en"));
+    EXPECT_TRUE(manifest->short_name_localized.Contains("es"));
+    EXPECT_EQ(manifest->short_name_localized.find("en")->value->value, "Short");
+    EXPECT_EQ(manifest->short_name_localized.find("es")->value->value, "Corto");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Smoke test: object format.
+  {
+    auto& manifest = ParseManifest(R"({
+      "short_name_localized": {
+        "en": {
+          "value": "Short",
+          "lang": "en-US",
+          "dir": "ltr"
+        },
+        "ar": {
+          "value": "قصير",
+          "lang": "ar",
+          "dir": "rtl"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->short_name_localized.empty());
+    EXPECT_EQ(manifest->short_name_localized.size(), 2u);
+    EXPECT_EQ(manifest->short_name_localized.find("en")->value->value, "Short");
+    EXPECT_EQ(manifest->short_name_localized.find("en")->value->lang, "en-US");
+    EXPECT_EQ(manifest->short_name_localized.find("en")->value->dir,
+              mojom::blink::Manifest::TextDirection::kLTR);
+    EXPECT_EQ(manifest->short_name_localized.find("ar")->value->value, "قصير");
+    EXPECT_EQ(manifest->short_name_localized.find("ar")->value->lang, "ar");
+    EXPECT_EQ(manifest->short_name_localized.find("ar")->value->dir,
+              mojom::blink::Manifest::TextDirection::kRTL);
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Trim whitespaces.
+  {
+    auto& manifest = ParseManifest(R"({
+      "short_name_localized": {
+        "en": "  Short  ",
+        "es": {
+          "value": "  Corto  ",
+          "lang": "  es-ES  "
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->short_name_localized.empty());
+    EXPECT_EQ(manifest->short_name_localized.find("en")->value->value, "Short");
+    EXPECT_EQ(manifest->short_name_localized.find("es")->value->value, "Corto");
+    EXPECT_EQ(manifest->short_name_localized.find("es")->value->lang, "es-ES");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Test stripping out of \t \r and \n.
+  {
+    auto& manifest = ParseManifest(R"({
+      "short_name_localized": {
+        "en": "\t\r\nShort\t\r\n",
+        "es": {
+          "value": "\t\r\nCorto\t\r\n",
+          "lang": "\t\r\nes-ES\t\r\n"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->short_name_localized.empty());
+    EXPECT_EQ(manifest->short_name_localized.find("en")->value->value, "Short");
+    EXPECT_EQ(manifest->short_name_localized.find("es")->value->value, "Corto");
+    EXPECT_EQ(manifest->short_name_localized.find("es")->value->lang, "es-ES");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Empty values are ignored.
+  {
+    auto& manifest = ParseManifest(R"({
+      "short_name_localized": {
+        "en": "",
+        "es": "Valid",
+        "fr": {
+          "value": "",
+          "lang": "fr"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->short_name_localized.empty());
+    EXPECT_EQ(manifest->short_name_localized.size(), 1u);
+    EXPECT_TRUE(manifest->short_name_localized.Contains("es"));
+    EXPECT_EQ(manifest->short_name_localized.find("es")->value->value, "Valid");
+    EXPECT_EQ(1u, GetErrorCount());
+  }
+
+  // Don't parse if short_name_localized isn't an object.
+  {
+    auto& manifest =
+        ParseManifest(R"({ "short_name_localized": "not an object" })");
+    EXPECT_TRUE(manifest->short_name_localized.empty());
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+}
+
+TEST_F(ManifestParserTest, DescriptionLocalizedParseRules) {
+  // Smoke test.
+  {
+    auto& manifest = ParseManifest(R"({
+      "description_localized": {
+        "en": "English description",
+        "es": "Descripción en español"
+      }
+    })");
+    EXPECT_FALSE(manifest->description_localized.empty());
+    EXPECT_EQ(manifest->description_localized.size(), 2u);
+    EXPECT_TRUE(manifest->description_localized.Contains("en"));
+    EXPECT_TRUE(manifest->description_localized.Contains("es"));
+    EXPECT_EQ(manifest->description_localized.find("en")->value->value,
+              "English description");
+    EXPECT_EQ(manifest->description_localized.find("es")->value->value,
+              "Descripción en español");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Smoke test: object format.
+  {
+    auto& manifest = ParseManifest(R"({
+      "description_localized": {
+        "en": {
+          "value": "English description",
+          "lang": "en-US",
+          "dir": "ltr"
+        },
+        "ar": {
+          "value": "وصف عربي",
+          "lang": "ar",
+          "dir": "rtl"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->description_localized.empty());
+    EXPECT_EQ(manifest->description_localized.size(), 2u);
+    EXPECT_EQ(manifest->description_localized.find("en")->value->value,
+              "English description");
+    EXPECT_EQ(manifest->description_localized.find("en")->value->lang, "en-US");
+    EXPECT_EQ(manifest->description_localized.find("en")->value->dir,
+              mojom::blink::Manifest::TextDirection::kLTR);
+    EXPECT_EQ(manifest->description_localized.find("ar")->value->value,
+              "وصف عربي");
+    EXPECT_EQ(manifest->description_localized.find("ar")->value->lang, "ar");
+    EXPECT_EQ(manifest->description_localized.find("ar")->value->dir,
+              mojom::blink::Manifest::TextDirection::kRTL);
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Trim whitespaces.
+  {
+    auto& manifest = ParseManifest(R"({
+      "description_localized": {
+        "en": "  English description  ",
+        "es": {
+          "value": "  Descripción en español  ",
+          "lang": "  es-ES  "
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->description_localized.empty());
+    EXPECT_EQ(manifest->description_localized.find("en")->value->value,
+              "English description");
+    EXPECT_EQ(manifest->description_localized.find("es")->value->value,
+              "Descripción en español");
+    EXPECT_EQ(manifest->description_localized.find("es")->value->lang, "es-ES");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Empty values are ignored.
+  {
+    auto& manifest = ParseManifest(R"({
+      "description_localized": {
+        "en": "",
+        "es": "Valid description",
+        "fr": {
+          "value": "",
+          "lang": "fr"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->description_localized.empty());
+    EXPECT_EQ(manifest->description_localized.size(), 1u);
+    EXPECT_TRUE(manifest->description_localized.Contains("es"));
+    EXPECT_EQ(manifest->description_localized.find("es")->value->value,
+              "Valid description");
+    EXPECT_EQ(1u, GetErrorCount());
+  }
+
+  // Don't parse if description_localized isn't an object.
+  {
+    auto& manifest =
+        ParseManifest(R"({ "description_localized": "not an object" })");
+    EXPECT_TRUE(manifest->description_localized.empty());
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+}
+
+TEST_F(ManifestParserTest, IconsLocalizedParseRules) {
+  // Smoke test: if one icon with valid src, it will be present in the list.
+  {
+    auto& manifest = ParseManifest(R"({
+      "icons_localized": {
+        "en": [
+          { "src": "icon-en.png", "sizes": "32x32", "type": "image/png" }
+        ],
+        "es": [
+          { "src": "icon-es.png", "sizes": "32x32", "type": "image/png" }
+        ]
+      }
+    })");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 2u);
+    EXPECT_TRUE(manifest->icons_localized.Contains("en"));
+    EXPECT_TRUE(manifest->icons_localized.Contains("es"));
+    EXPECT_EQ(manifest->icons_localized.find("en")->value.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("es")->value.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->src.GetString(),
+              "http://foo.com/icon-en.png");
+    EXPECT_EQ(manifest->icons_localized.find("es")->value[0]->src.GetString(),
+              "http://foo.com/icon-es.png");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Smoke test: multiple icons per locale.
+  {
+    auto& manifest = ParseManifest(R"({
+      "icons_localized": {
+        "en": [
+          { "src": "icon-en-32.png", "sizes": "32x32", "type": "image/png" },
+          { "src": "icon-en-64.png", "sizes": "64x64", "type": "image/png" }
+        ],
+        "es": [
+          { "src": "icon-es-32.png", "sizes": "32x32", "type": "image/png" }
+        ]
+      }
+    })");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 2u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value.size(), 2u);
+    EXPECT_EQ(manifest->icons_localized.find("es")->value.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->src.GetString(),
+              "http://foo.com/icon-en-32.png");
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[1]->src.GetString(),
+              "http://foo.com/icon-en-64.png");
+    EXPECT_EQ(manifest->icons_localized.find("es")->value[0]->src.GetString(),
+              "http://foo.com/icon-es-32.png");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Test that empty icon arrays are ignored
+  {
+    auto& manifest = ParseManifest(R"({
+      "icons_localized": {
+        "en": [],
+        "es": [
+          { "src": "icon-es.png", "sizes": "32x32", "type": "image/png" }
+        ]
+      }
+    })");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 1u);
+    EXPECT_TRUE(manifest->icons_localized.Contains("es"));
+    EXPECT_FALSE(manifest->icons_localized.Contains("en"));
+    EXPECT_EQ(manifest->icons_localized.find("es")->value.size(), 1u);
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Smoke test: if empty icon, no value.
+  {
+    auto& manifest = ParseManifest(R"({
+      "icons_localized": {
+        "en": [ {} ],
+        "es": [
+          { "src": "icon-es.png", "sizes": "32x32", "type": "image/png" }
+        ]
+      }
+    })");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 1u);
+    EXPECT_TRUE(manifest->icons_localized.Contains("es"));
+    EXPECT_FALSE(manifest->icons_localized.Contains("en"));
+    EXPECT_EQ(manifest->icons_localized.find("es")->value.size(), 1u);
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Smoke test: icon with invalid src, no value.
+  {
+    auto& manifest = ParseManifest(R"({
+      "icons_localized": {
+        "en": [
+          { "icons": [] },
+          { "src": "valid-icon.png", "sizes": "32x32", "type": "image/png" }
+        ]
+      }
+    })");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->src.GetString(),
+              "http://foo.com/valid-icon.png");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Smoke test: if icon with empty src, it will be present in the list.
+  {
+    auto& manifest = ParseManifest(R"({
+      "icons_localized": {
+        "en": [ { "src": "" } ]
+      }
+    })");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->src.GetString(),
+              "http://foo.com/manifest.json");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Test icon src validation - non-string src property should cause icon to be
+  // ignored
+  {
+    auto& manifest = ParseManifest(R"({
+      "icons_localized": {
+        "en": [
+          { "src": {} },
+          { "src": "valid-icon.png" }
+        ]
+      }
+    })");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->src.GetString(),
+              "http://foo.com/valid-icon.png");
+    EXPECT_EQ(1u, GetErrorCount());
+    EXPECT_EQ("property 'src' ignored, type string expected.", errors()[0]);
+  }
+
+  // Test comprehensive icon with all properties
+  {
+    auto& manifest = ParseManifest(R"(
+        {
+          "icons_localized": {
+            "en": [
+              {
+                "src": "foo.webp",
+                "type": "image/webp",
+                "sizes": "192x192"
+              },
+              {
+                "src": "foo.svg",
+                "type": "image/svg+xml",
+                "sizes": "144x144"
+              }
+            ]
+          }
+        }
+      )");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value.size(), 2u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->src,
+              KURL(DefaultDocumentUrl(), "foo.webp"));
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->type,
+              "image/webp");
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->sizes.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->sizes[0].width(),
+              192);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->sizes[0].height(),
+              192);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[1]->src,
+              KURL(DefaultDocumentUrl(), "foo.svg"));
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[1]->type,
+              "image/svg+xml");
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[1]->sizes.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[1]->sizes[0].width(),
+              144);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[1]->sizes[0].height(),
+              144);
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Test that invalid icons are ignored but valid ones are kept
+  {
+    auto& manifest = ParseManifest(R"({
+      "icons_localized": {
+        "en": [
+          { "sizes": "32x32", "type": "image/png" },
+          { "src": "valid-icon.png", "sizes": "32x32", "type": "image/png" }
+        ]
+      }
+    })");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value.size(), 1u);
+    EXPECT_EQ(manifest->icons_localized.find("en")->value[0]->src.GetString(),
+              "http://foo.com/valid-icon.png");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Don't parse if icons_localized isn't an object
+  {
+    auto& manifest = ParseManifest(R"({ "icons_localized": "not an object" })");
+    EXPECT_TRUE(manifest->icons_localized.empty());
+    EXPECT_EQ(1u, GetErrorCount());
+    EXPECT_EQ("property 'icons_localized' ignored, type object expected.",
+              errors()[0]);
+  }
+
+  // Don't parse if icons_localized is an array
+  {
+    auto& manifest =
+        ParseManifest(R"({ "icons_localized": ["array", "value"] })");
+    EXPECT_TRUE(manifest->icons_localized.empty());
+    EXPECT_EQ(1u, GetErrorCount());
+    EXPECT_EQ("property 'icons_localized' ignored, type object expected.",
+              errors()[0]);
+  }
+
+  // Test that non-array values for locales are ignored
+  {
+    auto& manifest = ParseManifest(R"({
+      "icons_localized": {
+        "en": "not an array",
+        "es": [
+          { "src": "valid-icon.png", "sizes": "32x32", "type": "image/png" }
+        ]
+      }
+    })");
+    EXPECT_FALSE(manifest->icons_localized.empty());
+    EXPECT_EQ(manifest->icons_localized.size(), 1u);
+    EXPECT_TRUE(manifest->icons_localized.Contains("es"));
+    EXPECT_FALSE(manifest->icons_localized.Contains("en"));
     EXPECT_EQ(1u, GetErrorCount());
   }
 }

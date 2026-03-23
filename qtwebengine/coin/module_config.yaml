@@ -23,17 +23,28 @@ machine_type:
             not_equals_value: Android
     - cores: 16
       enable_if:
-        condition: and
+        condition: or
         conditions:
-          - condition: property
-            property: host.os
-            equals_value: Windows
-          - condition: property
-            property: host.compiler
-            contains_value: MSVC
-          - condition: property
-            property: host.arch
-            equals_value: X86_64
+          - condition: and
+            conditions:
+              - condition: property
+                property: host.os
+                equals_value: Windows
+              - condition: property
+                property: host.compiler
+                contains_value: MSVC
+              - condition: property
+                property: host.arch
+                equals_value: X86_64
+          - condition: and
+            conditions:
+              - condition: property
+                property: host.os
+                equals_value: Linux
+              - condition: property
+                property: host.arch
+                equals_value: AARCH64
+
     - cores: 8
 
   Test:
@@ -60,6 +71,20 @@ instructions:
         condition: property
         property: features
         contains_value: Packaging
+    - type: AppendToEnvironmentVariable
+      variableName: COMMON_NON_QTBASE_CMAKE_ARGS
+      variableValue: " -DFEATURE_webengine_precompiled_headers=OFF"
+      enable_if:
+        condition: property
+        property: features
+        contains_value: Sccache
+    - type: AppendToEnvironmentVariable
+      variableName: COMMON_NON_QTBASE_TARGET_CMAKE_ARGS
+      variableValue: " -DFEATURE_webengine_precompiled_headers=OFF"
+      enable_if:
+        condition: property
+        property: features
+        contains_value: Sccache
     - type: EnvironmentVariable
       variableName: VERIFY_SOURCE_SBOM
       variableValue: "ON"
@@ -69,6 +94,9 @@ instructions:
     - type: EnvironmentVariable
       variableName: CMAKE_BUILD_OUTPUT_TIMEOUT
       variableValue: "3600"
+    - type: EnvironmentVariable
+      variableName: NINJAFLAGS
+      variableValue: "-j{{.NumCPU}}"
     - type: EnvironmentVariable
       variableName: QTWEBENGINE_GN_THREADS
       variableValue: "1"

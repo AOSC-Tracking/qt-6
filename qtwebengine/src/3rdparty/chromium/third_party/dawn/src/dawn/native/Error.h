@@ -34,7 +34,6 @@
 
 #include "dawn/common/Result.h"
 #include "dawn/native/ErrorData.h"
-#include "dawn/native/Toggles.h"
 #include "dawn/native/webgpu_absl_format.h"
 
 namespace dawn::native {
@@ -118,7 +117,7 @@ struct IsResultOrError<ResultOrError<T>> {
     DAWN_MAKE_ERROR(InternalErrorType::Validation, absl::StrFormat(__VA_ARGS__))
 
 #define DAWN_INVALID_IF(EXPR, ...)                                                           \
-    if (DAWN_UNLIKELY(EXPR)) {                                                               \
+    if (EXPR) [[unlikely]] {                                                                 \
         return DAWN_MAKE_ERROR(InternalErrorType::Validation, absl::StrFormat(__VA_ARGS__)); \
     }                                                                                        \
     for (;;)                                                                                 \
@@ -136,7 +135,7 @@ struct IsResultOrError<ResultOrError<T>> {
     DAWN_MAKE_ERROR(InternalErrorType::Internal, absl::StrFormat(__VA_ARGS__))
 
 #define DAWN_INTERNAL_ERROR_IF(EXPR, ...)                                                  \
-    if (DAWN_UNLIKELY(EXPR)) {                                                             \
+    if (EXPR) [[unlikely]] {                                                               \
         return DAWN_MAKE_ERROR(InternalErrorType::Internal, absl::StrFormat(__VA_ARGS__)); \
     }                                                                                      \
     for (;;)                                                                               \
@@ -159,16 +158,11 @@ std::string MakeIncreaseLimitMessage(std::string_view limitName, T adapterLimitV
         limitName, adapterLimitValue);
 }
 
-#define DAWN_INCREASE_LIMIT_MESSAGE(adapter, limitName, limitValue)                      \
-    [&]() -> std::string {                                                               \
-        ::dawn::native::SupportedLimits adapterLimits;                                   \
-        wgpu::Status status = adapter->APIGetLimits(&adapterLimits);                     \
-        DAWN_ASSERT(status == wgpu::Status::Success);                                    \
-        if (limitValue > adapterLimits.limits.limitName) {                               \
-            return "";                                                                   \
-        }                                                                                \
-        return ::dawn::native::MakeIncreaseLimitMessage(#limitName,                      \
-                                                        adapterLimits.limits.limitName); \
+#define DAWN_INCREASE_LIMIT_MESSAGE(adapterLimits, limitName, limitValue)                         \
+    [&]() -> std::string {                                                                        \
+        return (limitValue > adapterLimits.limitName) ? ""                                        \
+                                                      : ::dawn::native::MakeIncreaseLimitMessage( \
+                                                            #limitName, adapterLimits.limitName); \
     }()
 
 #define DAWN_CONCAT1(x, y) x##y
@@ -199,7 +193,7 @@ std::string MakeIncreaseLimitMessage(std::string_view limitName, T adapterLimitV
 #define DAWN_TRY_WITH_CLEANUP(EXPR, BODY)                                       \
     {                                                                           \
         auto DAWN_LOCAL_VAR(Result) = EXPR;                                     \
-        if (DAWN_UNLIKELY(DAWN_LOCAL_VAR(Result).IsError())) {                  \
+        if (DAWN_LOCAL_VAR(Result).IsError()) [[unlikely]] {                    \
             auto DAWN_LOCAL_VAR(Error) = DAWN_LOCAL_VAR(Result).AcquireError(); \
             {BODY} /* comment to force the formatter to insert a newline */     \
             DAWN_APPEND_ERROR_BACKTRACE(DAWN_LOCAL_VAR(Error));                 \
@@ -258,7 +252,7 @@ std::string MakeIncreaseLimitMessage(std::string_view limitName, T adapterLimitV
 #define DAWN_TRY_ASSIGN_WITH_CLEANUP_IMPL_4_(VAR, EXPR, BODY, RET)              \
     {                                                                           \
         auto DAWN_LOCAL_VAR(Result) = EXPR;                                     \
-        if (DAWN_UNLIKELY(DAWN_LOCAL_VAR(Result).IsError())) {                  \
+        if (DAWN_LOCAL_VAR(Result).IsError()) [[unlikely]] {                    \
             auto DAWN_LOCAL_VAR(Error) = DAWN_LOCAL_VAR(Result).AcquireError(); \
             {BODY} /* comment to force the formatter to insert a newline */     \
             DAWN_APPEND_ERROR_BACKTRACE(DAWN_LOCAL_VAR(Error));                 \

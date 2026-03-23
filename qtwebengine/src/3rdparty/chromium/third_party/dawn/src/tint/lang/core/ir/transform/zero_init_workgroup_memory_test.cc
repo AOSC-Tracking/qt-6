@@ -83,7 +83,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, WorkgroupVarUnused) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, i32, read_write> = var
+  %wgvar:ptr<workgroup, i32, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -113,7 +113,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, NonWorkgroupVar) {
 
     auto* src = R"(
 $B1: {  # root
-  %pvar:ptr<private, bool, read_write> = var
+  %pvar:ptr<private, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -127,7 +127,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %pvar:ptr<private, bool, read_write> = var
+  %pvar:ptr<private, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -154,7 +154,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ScalarBool) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -168,7 +168,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -203,7 +203,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ScalarI32) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, i32, read_write> = var
+  %wgvar:ptr<workgroup, i32, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -217,7 +217,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, i32, read_write> = var
+  %wgvar:ptr<workgroup, i32, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -252,7 +252,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ScalarU32) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, u32, read_write> = var
+  %wgvar:ptr<workgroup, u32, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -266,7 +266,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, u32, read_write> = var
+  %wgvar:ptr<workgroup, u32, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -301,7 +301,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ScalarF32) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, f32, read_write> = var
+  %wgvar:ptr<workgroup, f32, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -315,7 +315,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, f32, read_write> = var
+  %wgvar:ptr<workgroup, f32, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -350,7 +350,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ScalarF16) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, f16, read_write> = var
+  %wgvar:ptr<workgroup, f16, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -364,7 +364,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, f16, read_write> = var
+  %wgvar:ptr<workgroup, f16, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -399,7 +399,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, AtomicI32) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, atomic<i32>, read_write> = var
+  %wgvar:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -413,7 +413,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, atomic<i32>, read_write> = var
+  %wgvar:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -448,7 +448,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, AtomicU32) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, atomic<u32>, read_write> = var
+  %wgvar:ptr<workgroup, atomic<u32>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -462,7 +462,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, atomic<u32>, read_write> = var
+  %wgvar:ptr<workgroup, atomic<u32>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -497,7 +497,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ArrayOfI32) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<i32, 4>, read_write> = var
+  %wgvar:ptr<workgroup, array<i32, 4>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(11u, 2u, 3u) func():void {
@@ -511,7 +511,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<i32, 4>, read_write> = var
+  %wgvar:ptr<workgroup, array<i32, 4>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(11u, 2u, 3u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -547,7 +547,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ArrayOfArrayOfU32) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<u32, 5>, 7>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<u32, 5>, 7>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(11u, 2u, 3u) func():void {
@@ -561,7 +561,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<u32, 5>, 7>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<u32, 5>, 7>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(11u, 2u, 3u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -599,7 +599,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ArrayOfArrayOfArray) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<array<i32, 7>, 5>, 3>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<array<i32, 7>, 5>, 3>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -613,7 +613,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<array<i32, 7>, 5>, 3>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<array<i32, 7>, 5>, 3>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -665,7 +665,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, NestedArrayInnerSizeOne) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<array<i32, 1>, 5>, 3>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<array<i32, 1>, 5>, 3>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -679,7 +679,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<array<i32, 1>, 5>, 3>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<array<i32, 1>, 5>, 3>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -729,7 +729,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, NestedArrayMiddleSizeOne) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<array<i32, 3>, 1>, 5>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<array<i32, 3>, 1>, 5>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -743,7 +743,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<array<i32, 3>, 1>, 5>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<array<i32, 3>, 1>, 5>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -793,7 +793,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, NestedArrayOuterSizeOne) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<array<i32, 3>, 5>, 1>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<array<i32, 3>, 5>, 1>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -807,7 +807,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<array<i32, 3>, 5>, 1>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<array<i32, 3>, 5>, 1>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -857,7 +857,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, NestedArrayTotalSizeOne) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<i32, 1>, 1>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<i32, 1>, 1>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -871,7 +871,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<array<i32, 1>, 1>, read_write> = var
+  %wgvar:ptr<workgroup, array<array<i32, 1>, 1>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -918,7 +918,7 @@ MyStruct = struct @align(4) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, MyStruct, read_write> = var
+  %wgvar:ptr<workgroup, MyStruct, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -938,7 +938,7 @@ MyStruct = struct @align(4) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, MyStruct, read_write> = var
+  %wgvar:ptr<workgroup, MyStruct, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -993,7 +993,7 @@ Outer = struct @align(4) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, Outer, read_write> = var
+  %wgvar:ptr<workgroup, Outer, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -1018,7 +1018,7 @@ Outer = struct @align(4) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, Outer, read_write> = var
+  %wgvar:ptr<workgroup, Outer, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -1073,7 +1073,7 @@ Outer = struct @align(4) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, Outer, read_write> = var
+  %wgvar:ptr<workgroup, Outer, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -1098,7 +1098,7 @@ Outer = struct @align(4) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, Outer, read_write> = var
+  %wgvar:ptr<workgroup, Outer, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -1161,7 +1161,7 @@ Outer = struct @align(4) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<Outer, 7>, read_write> = var
+  %wgvar:ptr<workgroup, array<Outer, 7>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(7u, 3u, 2u) func():void {
@@ -1186,7 +1186,7 @@ Outer = struct @align(4) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, array<Outer, 7>, read_write> = var
+  %wgvar:ptr<workgroup, array<Outer, 7>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(7u, 3u, 2u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -1254,9 +1254,9 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, MultipleVariables_DifferentIterationCount
 
     auto* src = R"(
 $B1: {  # root
-  %var_a:ptr<workgroup, bool, read_write> = var
-  %var_b:ptr<workgroup, array<i32, 4>, read_write> = var
-  %var_c:ptr<workgroup, array<array<u32, 5>, 7>, read_write> = var
+  %var_a:ptr<workgroup, bool, read_write> = var undef
+  %var_b:ptr<workgroup, array<i32, 4>, read_write> = var undef
+  %var_c:ptr<workgroup, array<array<u32, 5>, 7>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(11u, 2u, 3u) func():void {
@@ -1272,9 +1272,9 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %var_a:ptr<workgroup, bool, read_write> = var
-  %var_b:ptr<workgroup, array<i32, 4>, read_write> = var
-  %var_c:ptr<workgroup, array<array<u32, 5>, 7>, read_write> = var
+  %var_a:ptr<workgroup, bool, read_write> = var undef
+  %var_b:ptr<workgroup, array<i32, 4>, read_write> = var undef
+  %var_c:ptr<workgroup, array<array<u32, 5>, 7>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(11u, 2u, 3u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -1335,10 +1335,10 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, MultipleVariables_SharedIterationCounts) 
 
     auto* src = R"(
 $B1: {  # root
-  %var_a:ptr<workgroup, bool, read_write> = var
-  %var_b:ptr<workgroup, i32, read_write> = var
-  %var_c:ptr<workgroup, array<i32, 42>, read_write> = var
-  %var_d:ptr<workgroup, array<array<u32, 6>, 7>, read_write> = var
+  %var_a:ptr<workgroup, bool, read_write> = var undef
+  %var_b:ptr<workgroup, i32, read_write> = var undef
+  %var_c:ptr<workgroup, array<i32, 42>, read_write> = var undef
+  %var_d:ptr<workgroup, array<array<u32, 6>, 7>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(11u, 2u, 3u) func():void {
@@ -1355,10 +1355,10 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %var_a:ptr<workgroup, bool, read_write> = var
-  %var_b:ptr<workgroup, i32, read_write> = var
-  %var_c:ptr<workgroup, array<i32, 42>, read_write> = var
-  %var_d:ptr<workgroup, array<array<u32, 6>, 7>, read_write> = var
+  %var_a:ptr<workgroup, bool, read_write> = var undef
+  %var_b:ptr<workgroup, i32, read_write> = var undef
+  %var_c:ptr<workgroup, array<i32, 42>, read_write> = var undef
+  %var_d:ptr<workgroup, array<array<u32, 6>, 7>, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(11u, 2u, 3u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -1414,7 +1414,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ExistingLocalInvocationIndex) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%global_id:vec3<u32> [@global_invocation_id], %index:u32 [@local_invocation_index]):void {
@@ -1428,7 +1428,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%global_id:vec3<u32> [@global_invocation_id], %index:u32 [@local_invocation_index]):void {
@@ -1461,24 +1461,14 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, ExistingLocalInvocationIndexInStruct) {
                                         mod.symbols.New("global_id"),
                                         ty.vec3<u32>(),
                                         core::IOAttributes{
-                                            /* location */ std::nullopt,
-                                            /* index */ std::nullopt,
-                                            /* color */ std::nullopt,
-                                            /* builtin */ core::BuiltinValue::kGlobalInvocationId,
-                                            /* interpolation */ std::nullopt,
-                                            /* invariant */ false,
+                                            .builtin = core::BuiltinValue::kGlobalInvocationId,
                                         },
                                     },
                                     {
                                         mod.symbols.New("index"),
                                         ty.u32(),
                                         core::IOAttributes{
-                                            /* location */ std::nullopt,
-                                            /* index */ std::nullopt,
-                                            /* color */ std::nullopt,
-                                            /* builtin */ core::BuiltinValue::kLocalInvocationIndex,
-                                            /* interpolation */ std::nullopt,
-                                            /* invariant */ false,
+                                            .builtin = core::BuiltinValue::kLocalInvocationIndex,
                                         },
                                     },
                                 });
@@ -1496,7 +1486,7 @@ MyStruct = struct @align(16) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%params:MyStruct):void {
@@ -1515,7 +1505,7 @@ MyStruct = struct @align(16) {
 }
 
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%params:MyStruct):void {
@@ -1567,7 +1557,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, UseInsideNestedBlock) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -1599,7 +1589,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
@@ -1691,7 +1681,7 @@ TEST_F(IR_ZeroInitWorkgroupMemoryTest, UseInsideIndirectFunctionCall) {
 
     auto* src = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %foo = func():void {
@@ -1748,7 +1738,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
+  %wgvar:ptr<workgroup, bool, read_write> = var undef
 }
 
 %foo = func():void {
@@ -1805,122 +1795,6 @@ $B1: {  # root
         exit_if  # if_3
       }
     }
-    ret
-  }
-}
-)";
-
-    Run(ZeroInitWorkgroupMemory);
-
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(IR_ZeroInitWorkgroupMemoryTest, MultipleEntryPoints_SameVarViaHelper) {
-    auto* var = MakeVar("wgvar", ty.bool_());
-
-    auto* foo = b.Function("foo", ty.void_());
-    b.Append(foo->Block(), [&] {  //
-        auto* loop = b.Loop();
-        b.Append(loop->Body(), [&] {  //
-            b.Continue(loop);
-            b.Append(loop->Continuing(), [&] {  //
-                auto* load = b.Load(var);
-                b.BreakIf(loop, load);
-            });
-        });
-        b.Return(foo);
-    });
-
-    auto* ep1 = MakeEntryPoint("ep1", 1, 1, 1);
-    b.Append(ep1->Block(), [&] {  //
-        b.Call(ty.void_(), foo);
-        b.Return(ep1);
-    });
-
-    auto* ep2 = MakeEntryPoint("ep2", 1, 1, 1);
-    b.Append(ep2->Block(), [&] {  //
-        b.Call(ty.void_(), foo);
-        b.Return(ep2);
-    });
-
-    auto* src = R"(
-$B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
-}
-
-%foo = func():void {
-  $B2: {
-    loop [b: $B3, c: $B4] {  # loop_1
-      $B3: {  # body
-        continue  # -> $B4
-      }
-      $B4: {  # continuing
-        %3:bool = load %wgvar
-        break_if %3  # -> [t: exit_loop loop_1, f: $B3]
-      }
-    }
-    ret
-  }
-}
-%ep1 = @compute @workgroup_size(1u, 1u, 1u) func():void {
-  $B5: {
-    %5:void = call %foo
-    ret
-  }
-}
-%ep2 = @compute @workgroup_size(1u, 1u, 1u) func():void {
-  $B6: {
-    %7:void = call %foo
-    ret
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = R"(
-$B1: {  # root
-  %wgvar:ptr<workgroup, bool, read_write> = var
-}
-
-%foo = func():void {
-  $B2: {
-    loop [b: $B3, c: $B4] {  # loop_1
-      $B3: {  # body
-        continue  # -> $B4
-      }
-      $B4: {  # continuing
-        %3:bool = load %wgvar
-        break_if %3  # -> [t: exit_loop loop_1, f: $B3]
-      }
-    }
-    ret
-  }
-}
-%ep1 = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index:u32 [@local_invocation_index]):void {
-  $B5: {
-    %6:bool = lt %tint_local_index, 1u
-    if %6 [t: $B6] {  # if_1
-      $B6: {  # true
-        store %wgvar, false
-        exit_if  # if_1
-      }
-    }
-    %7:void = workgroupBarrier
-    %8:void = call %foo
-    ret
-  }
-}
-%ep2 = @compute @workgroup_size(1u, 1u, 1u) func(%tint_local_index_1:u32 [@local_invocation_index]):void {  # %tint_local_index_1: 'tint_local_index'
-  $B7: {
-    %11:bool = lt %tint_local_index_1, 1u
-    if %11 [t: $B8] {  # if_2
-      $B8: {  # true
-        store %wgvar, false
-        exit_if  # if_2
-      }
-    }
-    %12:void = workgroupBarrier
-    %13:void = call %foo
     ret
   }
 }

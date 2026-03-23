@@ -15,6 +15,7 @@
 #include <limits>
 #include <memory>
 #include <set>
+#include <string>
 #include <utility>
 
 #include "base/containers/contains.h"
@@ -31,6 +32,7 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
@@ -51,7 +53,6 @@
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_utils.h"
-#include "crypto/symmetric_key.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "mojo/public/cpp/system/data_pipe.h"
@@ -79,7 +80,7 @@ namespace content {
 namespace cache_storage_cache_unittest {
 
 const char kTestData[] = "Hello World";
-const char kCacheName[] = "test_cache";
+const char16_t kCacheName[] = u"test_cache";
 const FetchAPIRequestHeadersMap kHeaders({{"a", "a"}, {"b", "b"}});
 
 void SizeCallback(base::RunLoop* run_loop,
@@ -118,7 +119,11 @@ class DelayableBackend : public disk_cache::Backend {
         delay_open_entry_(false) {}
 
   // disk_cache::Backend overrides
-  int32_t GetEntryCount() const override { return backend_->GetEntryCount(); }
+  int32_t GetEntryCount(
+      net::Int32CompletionOnceCallback callback) const override {
+    return backend_->GetEntryCount(std::move(callback));
+  }
+
   EntryResult OpenEntry(const std::string& key,
                         net::RequestPriority request_priority,
                         EntryResultCallback callback) override {
@@ -217,21 +222,18 @@ class FailableCacheEntry : public disk_cache::Entry {
   void Close() override { entry_->Close(); }
   std::string GetKey() const override { return entry_->GetKey(); }
   base::Time GetLastUsed() const override { return entry_->GetLastUsed(); }
-  base::Time GetLastModified() const override {
-    return entry_->GetLastModified();
-  }
-  int32_t GetDataSize(int index) const override {
+  int64_t GetDataSize(int index) const override {
     return entry_->GetDataSize(index);
   }
   int ReadData(int index,
-               int offset,
+               int64_t offset,
                IOBuffer* buf,
                int buf_len,
                CompletionOnceCallback callback) override {
     return entry_->ReadData(index, offset, buf, buf_len, std::move(callback));
   }
   int WriteData(int index,
-                int offset,
+                int64_t offset,
                 IOBuffer* buf,
                 int buf_len,
                 CompletionOnceCallback callback,
@@ -280,7 +282,10 @@ class FailableBackend : public disk_cache::Backend {
         stage_(stage) {}
 
   // disk_cache::Backend overrides
-  int32_t GetEntryCount() const override { return backend_->GetEntryCount(); }
+  int32_t GetEntryCount(
+      net::Int32CompletionOnceCallback callback) const override {
+    return backend_->GetEntryCount(std::move(callback));
+  }
 
   EntryResult OpenOrCreateEntry(const std::string& key,
                                 net::RequestPriority request_priority,
@@ -421,7 +426,7 @@ blink::mojom::FetchAPIResponsePtr SetCacheName(
     blink::mojom::FetchAPIResponsePtr response) {
   response->response_source =
       network::mojom::FetchResponseSource::kCacheStorage;
-  response->cache_storage_cache_name = kCacheName;
+  response->cache_storage_cache_name = base::UTF16ToUTF8(kCacheName);
   return response;
 }
 
@@ -434,7 +439,7 @@ class TestCacheStorageCache : public CacheStorageCache {
  public:
   TestCacheStorageCache(
       const storage::BucketLocator& bucket_locator,
-      const std::string& cache_name,
+      const std::u16string& cache_name,
       const base::FilePath& path,
       CacheStorage* cache_storage,
       const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
@@ -1008,7 +1013,7 @@ class CacheStorageCacheTest : public testing::Test {
   void SetQuota(uint64_t quota) {
     mock_quota_manager_->SetQuota(
         blink::StorageKey::CreateFirstParty(url::Origin::Create(kTestUrl)),
-        blink::mojom::StorageType::kTemporary, quota);
+        quota);
   }
 
   void SetMaxQuerySizeBytes(size_t max_bytes) {

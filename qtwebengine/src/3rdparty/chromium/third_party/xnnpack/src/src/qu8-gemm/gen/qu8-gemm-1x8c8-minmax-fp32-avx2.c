@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-gemm/MRx8c8-avx2.c.in
 //   Generator: tools/xngen
@@ -8,14 +9,17 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/gemm.h"
-#include "xnnpack/intrinsics-polyfill.h"
-#include "xnnpack/math.h"
-#include "xnnpack/unaligned.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/gemm.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/unaligned.h"
 
 
 void xnn_qu8_gemm_minmax_fp32_ukernel_1x8c8__avx2(
@@ -28,7 +32,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_1x8c8__avx2(
     uint8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qu8_conv_minmax_params* restrict params) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 1);

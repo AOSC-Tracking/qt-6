@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 
 #include "qssgrendercamera_p.h"
@@ -154,6 +156,7 @@ static QQuaternion rotationQuaternionForLookAt(const QVector3D &sourcePosition,
         rotationAxis = upDirection;
 
     float dot = QVector3D::dotProduct(sourceDirection, targetDirection);
+    dot = qBound(-1.0f, dot, 1.0f);
     float rotationAngle = float(qRadiansToDegrees(qAcos(qreal(dot))));
 
     return QQuaternion::fromAxisAndAngle(rotationAxis, rotationAngle);

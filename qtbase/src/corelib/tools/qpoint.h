@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QPOINT_H
 #define QPOINT_H
@@ -259,14 +260,11 @@ public:
     }
 
 private:
-    QT_WARNING_PUSH
-    QT_WARNING_DISABLE_FLOAT_COMPARE
     friend constexpr bool qFuzzyCompare(const QPointF &p1, const QPointF &p2) noexcept
     {
-        return ((!p1.xp || !p2.xp) ? qFuzzyIsNull(p1.xp - p2.xp) : qFuzzyCompare(p1.xp, p2.xp))
-            && ((!p1.yp || !p2.yp) ? qFuzzyIsNull(p1.yp - p2.yp) : qFuzzyCompare(p1.yp, p2.yp));
+        return QtPrivate::fuzzyCompare(p1.xp, p2.xp)
+            && QtPrivate::fuzzyCompare(p1.yp, p2.yp);
     }
-    QT_WARNING_POP
     friend constexpr bool qFuzzyIsNull(const QPointF &point) noexcept
     {
         return qFuzzyIsNull(point.xp) && qFuzzyIsNull(point.yp);

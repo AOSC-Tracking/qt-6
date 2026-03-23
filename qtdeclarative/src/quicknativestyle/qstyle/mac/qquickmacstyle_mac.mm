@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 /*
   Note: The qdoc comments for QMacStyle are contained in
@@ -168,7 +169,7 @@ const int QMacStylePrivate::PushButtonLeftOffset = 6;
 const int QMacStylePrivate::PushButtonRightOffset = 12;
 const int QMacStylePrivate::PushButtonContentPadding = 6;
 
-QVector<QPointer<QObject> > QMacStylePrivate::scrollBars;
+QList<QPointer<QObject> > QMacStylePrivate::scrollBars;
 
 static const QColor titlebarSeparatorLineActive(111, 111, 111);
 static const QColor titlebarSeparatorLineInactive(131, 131, 131);
@@ -1143,8 +1144,12 @@ QRectF QMacStylePrivate::CocoaControl::adjustedControlFrame(const QRectF &rect) 
 QMarginsF QMacStylePrivate::CocoaControl::titleMargins() const
 {
     if (type == QMacStylePrivate::Button_PushButton) {
-        if (size == QStyleHelper::SizeLarge)
-            return QMarginsF(12, 5, 12, 9);
+        if (size == QStyleHelper::SizeLarge) {
+            if (qt_apple_runningWithLiquidGlass())
+                return QMarginsF(10, 5, 10, 5);
+            else
+                return QMarginsF(12, 5, 12, 7);
+        }
         if (size == QStyleHelper::SizeSmall)
             return QMarginsF(12, 4, 12, 9);
         if (size == QStyleHelper::SizeMini)
@@ -1985,7 +1990,10 @@ int QMacStyle::pixelMetric(PixelMetric metric, const QStyleOption *opt) const
         break;
     case PM_SearchFieldFocusFrameRadius:
     case PM_ComboBoxFocusFrameRadius:
-        ret = LargeSmallMini(opt, 5, 4, 1);
+        if (qt_apple_runningWithLiquidGlass())
+            ret = LargeSmallMini(opt, 8, 4, 1);
+        else
+            ret = LargeSmallMini(opt, 5, 4, 1);
         break;
     case PM_RadioButtonFocusFrameRadius:
         ret = 7;
@@ -2001,7 +2009,7 @@ int QMacStyle::pixelMetric(PixelMetric metric, const QStyleOption *opt) const
     case PM_SpinBoxFocusFrameRadius:
     case PM_TextAreaFocusFrameRadius:
     case PM_TextFieldFocusFrameRadius:
-        ret = 0;
+        ret = qt_apple_runningWithLiquidGlass() ? 6 : 0;
         break;
     default:
         ret = QCommonStyle::pixelMetric(metric, opt);
@@ -2545,7 +2553,7 @@ void QMacStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPai
             }
             QPainterPathStroker theStroker;
             theStroker.setCapStyle(Qt::FlatCap);
-            theStroker.setDashPattern(QVector<qreal>() << 1 << 2);
+            theStroker.setDashPattern(QList<qreal>() << 1 << 2);
             path = theStroker.createStroke(path);
             const auto dark = isDarkMode() ? opt->palette.dark().color().darker()
                                                                : QColor(0, 0, 0, 119);
@@ -2768,7 +2776,15 @@ void QMacStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPai
                         }
                     }
 
-                    [tf.cell drawWithFrame:rect inView:tf];
+                    CGRect fixedRect = rect;
+                    if (qt_apple_runningWithLiquidGlass()) {
+                        // The text edit cell is drawn with a little offset to the left and
+                        // the size increase compared to the 'rect' we want it to be drawn in. As a
+                        // result, the cell's 'outline' is clipped away. Adjusting the rectangle
+                        // for this, so that it's inside the clip rect, as it was before Tahoe.
+                        fixedRect = CGRectInset(rect, 1., 1.);
+                    }
+                    [tf.cell drawWithFrame:fixedRect inView:tf];
                 });
             } else {
                 QCommonStyle::drawPrimitive(pe, opt, p);
@@ -4147,12 +4163,19 @@ QRect QMacStyle::subElementRect(SubElement sr, const QStyleOption *opt) const
         }
         break;
     case SE_SearchFieldLayoutItem:
-      if (qstyleoption_cast<const QStyleOptionSearchField *>(opt)) {
-        rect = LargeSmallMini(opt,
-                              opt->rect.adjusted(4, 6, -4, -7),
-                              opt->rect.adjusted(4, 7, -4, -7),
-                              opt->rect.adjusted(3, 6, -3, -6));
-      }
+        if (qstyleoption_cast<const QStyleOptionSearchField *>(opt)) {
+            if (qt_apple_runningWithLiquidGlass()) {
+                rect = LargeSmallMini(opt,
+                                      opt->rect.adjusted(2, 4, -2, -4),
+                                      opt->rect.adjusted(2, 3, -2, -2),
+                                      opt->rect.adjusted(2, 3, -2, -2));
+            } else {
+                rect = LargeSmallMini(opt,
+                                      opt->rect.adjusted(2, 6, -2, -6),
+                                      opt->rect.adjusted(2, 3, -2, -2),
+                                      opt->rect.adjusted(2, 3, -2, -2));
+            }
+        }
       break;
     case SE_ComboBoxLayoutItem:
         if (const auto *combo = qstyleoption_cast<const QStyleOptionComboBox *>(opt)) {
@@ -4164,16 +4187,31 @@ QRect QMacStyle::subElementRect(SubElement sr, const QStyleOption *opt) const
             //            // all the hassle.
             //        } else
             //#endif
-            if (combo->editable)
-                rect = LargeSmallMini(opt,
-                                        opt->rect.adjusted(5, 6, -6, -7),
-                                        opt->rect.adjusted(4, 4, -5, -7),
-                                        opt->rect.adjusted(5, 4, -4, -6));
-            else
-                rect = LargeSmallMini(opt,
-                                        opt->rect.adjusted(6, 4, -7, -7),
-                                        opt->rect.adjusted(6, 7, -6, -5),
-                                        opt->rect.adjusted(9, 5, -5, -7));
+            if (combo->editable) {
+                if (qt_apple_runningWithLiquidGlass()) {
+                    rect = LargeSmallMini(opt,
+                                          opt->rect.adjusted(4, 4, -4, -4),
+                                          opt->rect.adjusted(4, 4, -5, -7),
+                                          opt->rect.adjusted(5, 4, -4, -6));
+                } else {
+                    rect = LargeSmallMini(opt,
+                                          opt->rect.adjusted(5, 6, -6, -7),
+                                          opt->rect.adjusted(4, 4, -5, -7),
+                                          opt->rect.adjusted(5, 4, -4, -6));
+                }
+            } else {
+                if (qt_apple_runningWithLiquidGlass()) {
+                    rect = LargeSmallMini(opt,
+                                          opt->rect.adjusted(4, 4, -4, -4),
+                                          opt->rect.adjusted(6, 7, -6, -5),
+                                          opt->rect.adjusted(9, 5, -5, -7));
+                } else {
+                    rect = LargeSmallMini(opt,
+                                          opt->rect.adjusted(6, 4, -7, -7),
+                                          opt->rect.adjusted(6, 7, -6, -5),
+                                          opt->rect.adjusted(9, 5, -5, -7));
+                }
+            }
         }
         break;
     case SE_LabelLayoutItem:
@@ -4198,10 +4236,17 @@ QRect QMacStyle::subElementRect(SubElement sr, const QStyleOption *opt) const
             if ((buttonOpt->features & QStyleOptionButton::Flat))
                 break;
         }
-        rect = LargeSmallMini(opt,
-                                opt->rect.adjusted(7, 5, -7, -7),
-                                opt->rect.adjusted(6, 6, -6, -6),
-                                opt->rect.adjusted(6, 5, -6, -6));
+        if (qt_apple_runningWithLiquidGlass()) {
+            rect = LargeSmallMini(opt,
+                                  opt->rect.adjusted(2, 5, -2, -7),
+                                  opt->rect.adjusted(6, 6, -6, -6),
+                                  opt->rect.adjusted(6, 5, -6, -6));
+        } else {
+            rect = LargeSmallMini(opt,
+                                  opt->rect.adjusted(7, 5, -7, -7),
+                                  opt->rect.adjusted(6, 6, -6, -6),
+                                  opt->rect.adjusted(6, 5, -6, -6));
+        }
         break;
     case SE_SpinBoxLayoutItem:
         rect = LargeSmallMini(opt,
@@ -4695,6 +4740,9 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
                 const auto cw = QMacStylePrivate::CocoaControl(QMacStylePrivate::Stepper, aquaSize);
                 NSStepperCell *cell = static_cast<NSStepperCell *>(d->cocoaCell(cw));
                 cell.enabled = (sb->state & State_Enabled);
+                const auto controlSize = cell.controlSize;
+                 if (qt_apple_runningWithLiquidGlass())
+                     cell.controlSize = NSControlSizeMini;
 
                 const CGRect newRect = [cell drawingRectForBounds:updown.toCGRect()];
 
@@ -4714,6 +4762,8 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
                     [cell stopTracking:pressPoint at:pressPoint inView:d->backingStoreNSView mouseIsUp:NO];
 
                 d->restoreNSGraphicsContext(cg);
+                if (qt_apple_runningWithLiquidGlass())
+                    cell.controlSize = controlSize;
             }
         }
         break;
@@ -4776,6 +4826,35 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
 
             searchField.enabled = isEnabled;
 
+            // QTBUG-141776
+            // macOS 26 (Tahoe) changed NSSearchFieldCell: the magnifying glass icon is taller.
+            // Drawing it at the button’s full rect causes the top to be clipped by the bezel,
+            // though the clear icon remains fine. To avoid this, on 26.0+ we render the search
+            // icon at a fixed, smaller size to prevent upscaling and eliminate clipping.
+            #if QT_MACOS_PLATFORM_SDK_EQUAL_OR_ABOVE(260000)
+                if (__builtin_available(macOS 26, *)) {
+                    NSButtonCell *btn = cell.searchButtonCell;
+                    NSImageSymbolConfiguration *imgCfg =
+                        [NSImageSymbolConfiguration configurationWithPointSize:11
+                                                                        weight:NSFontWeightMedium
+                                                                         scale:NSImageSymbolScaleMedium];
+                    btn.image = [btn.image imageWithSymbolConfiguration:imgCfg];
+                    [btn.image setTemplate:YES];
+                    btn.imageScaling = NSImageScaleNone;
+                }
+            #endif
+
+            QRectF frameRect = cw.adjustedControlFrame(sf->rect);
+
+            #if QT_MACOS_PLATFORM_SDK_EQUAL_OR_ABOVE(260000)
+            if (__builtin_available(macOS 26, *)) {
+                const auto oneDevicePx = 1.0 / p->device()->devicePixelRatioF();
+                frameRect = frameRect.adjusted(+oneDevicePx, -oneDevicePx, -oneDevicePx, +oneDevicePx);
+            }
+            #endif
+
+            searchField.frame = frameRect.toCGRect();
+
             if (sf->subControls == QStyle::SC_SearchFieldSearch) {
                 // Draw only the search icon
                 CGRect rect = [cell searchButtonRectForBounds:searchField.bounds];
@@ -4786,8 +4865,6 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
                 [cell drawWithFrame:rect inView:searchField];
             } else {
                 // Draw the frame
-                QRectF frameRect = cw.adjustedControlFrame(sf->rect);
-                searchField.frame = frameRect.toCGRect();
                 [cell setStringValue:sf->text.toNSString()];
                 d->drawNSViewInRect(searchField, frameRect, p, ^(CGContextRef, const CGRect &r) {
                     [cell drawWithFrame:r inView:searchField];
@@ -5220,7 +5297,10 @@ QRect QMacStyle::subControlRect(ComplexControl cc, const QStyleOptionComplex *op
             QRectF editRect;
             switch (cs) {
             case QStyleHelper::SizeLarge:
-                editRect = combo->rect.adjusted(15, 7, -25, -9);
+                if (qt_apple_runningWithLiquidGlass())
+                    editRect = combo->rect.adjusted(15, 7, -25, -7);
+                else
+                    editRect = combo->rect.adjusted(15, 7, -25, -9);
                 break;
             case QStyleHelper::SizeSmall:
                 if (combo->editable)
@@ -5440,7 +5520,7 @@ QRect QMacStyle::subControlRect(ComplexControl cc, const QStyleOptionComplex *op
           QRectF editRect;
           switch (cs) {
           case QStyleHelper::SizeLarge:
-              editRect = sf->rect.adjusted(16, 7, -22, -6);
+              editRect = sf->rect.adjusted(16, 0, -22, 0);
               break;
           case QStyleHelper::SizeSmall:
               editRect = sf->rect.adjusted(16, 5, -22, -7);
@@ -5452,6 +5532,8 @@ QRect QMacStyle::subControlRect(ComplexControl cc, const QStyleOptionComplex *op
 
           auto *searchField = static_cast<NSSearchField *>(d->cocoaControl(cw));
           auto *cell = static_cast<NSSearchFieldCell *>(searchField.cell);
+          const CGRect bounds = searchField.bounds;
+
           switch (sc) {
           case SC_SearchFieldEditField:{
               ret = editRect.toAlignedRect();
@@ -5459,11 +5541,19 @@ QRect QMacStyle::subControlRect(ComplexControl cc, const QStyleOptionComplex *op
               break;
           }
           case SC_SearchFieldClear: {
-              ret = QRectF::fromCGRect([cell cancelButtonRectForBounds:searchField.bounds]).toAlignedRect();
+              const CGRect r = [cell cancelButtonRectForBounds:bounds];
+              ret = QRectF::fromCGRect(r).toRect();
+              ret.translate(0, -1);
+              ret = visualRect(sf->direction, sf->rect, ret);
+              ret.adjust(-3, -3, 3, 3);
               break;
           }
           case SC_SearchFieldSearch: {
-              ret = QRectF::fromCGRect([cell searchButtonRectForBounds:searchField.bounds]).toAlignedRect();
+              const CGRect r = [cell searchButtonRectForBounds:bounds];
+              ret = QRectF::fromCGRect(r).toRect();
+              ret.translate(0, -1);
+              ret = visualRect(sf->direction, sf->rect, ret);
+              ret.adjust(-3, -3, 3, 3);
               break;
           }
           case SC_SearchFieldPopup: {

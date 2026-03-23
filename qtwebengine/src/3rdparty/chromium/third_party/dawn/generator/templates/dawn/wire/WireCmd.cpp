@@ -54,35 +54,35 @@
 {%- endmacro -%}
 
 //* Outputs the type that will be used on the wire for the member
-{%- macro member_transfer_type(member) -%}
-    {%- if member.type.category == "object" -%}
+{%- macro member_transfer_type(type) -%}
+    {%- if type.category == "object" -%}
         ObjectId
-    {%- elif member.type.category == "structure" -%}
-        {{as_cType(member.type.name)}}Transfer
-    {%- elif as_cType(member.type.name) == "size_t" -%}
+    {%- elif type.category == "structure" -%}
+        {{as_cType(type.name)}}Transfer
+    {%- elif as_cType(type.name) == "size_t" -%}
         {{as_cType(types["uint64_t"].name)}}
     {%- else -%}
-        {%- do assert(member.type.is_wire_transparent, 'wire transparent') -%}
-        {{as_cType(member.type.name)}}
+        {%- do assert(type.is_wire_transparent, 'wire transparent') -%}
+        {{as_cType(type.name)}}
     {%- endif -%}
 {%- endmacro -%}
 
 //* Outputs the size of one element of the type that will be used on the wire for the member
-{%- macro member_transfer_sizeof(member) -%}
-    sizeof({{member_transfer_type(member)}})
+{%- macro member_transfer_sizeof(type) -%}
+    sizeof({{member_transfer_type(type)}})
 {%- endmacro -%}
 
 //* Outputs the serialization code to put `in` in `out`
-{%- macro serialize_member(member, in, out) -%}
-    {%- if member.type.category == "object" -%}
-        {%- set Optional = "Optional" if member.optional else "" -%}
+{%- macro serialize_member(type, optional, in, out) -%}
+    {%- if type.category == "object" -%}
+        {%- set Optional = "Optional" if optional else "" -%}
         WIRE_TRY(provider.Get{{Optional}}Id({{in}}, &{{out}}));
-    {%- elif member.type.category == "structure" -%}
+    {%- elif type.category == "structure" -%}
         //* Do not memcpy or we may serialize padding bytes which can leak information across a
         //* trusted boundary.
-        {%- set Provider = ", provider" if member.type.may_have_dawn_object else "" -%}
-        WIRE_TRY({{as_cType(member.type.name)}}Serialize({{in}}, &{{out}}, buffer{{Provider}}));
-    {%- elif not is_wire_serializable(member.type) -%}
+        {%- set Provider = ", provider" if type.may_have_dawn_object else "" -%}
+        WIRE_TRY({{as_cType(type.name)}}Serialize({{in}}, &{{out}}, buffer{{Provider}}));
+    {%- elif not is_wire_serializable(type) -%}
         if ({{in}} != nullptr) return WireResult::FatalError;
     {%- else -%}
         {{out}} = {{in}};
@@ -90,26 +90,26 @@
 {%- endmacro -%}
 
 //* Outputs the deserialization code to put `in` in `out`
-{%- macro deserialize_member(member, in, out) -%}
-    {%- if member.type.category == "object" -%}
-        {%- set Optional = "Optional" if member.optional else "" -%}
+{%- macro deserialize_member(type, optional, in, out) -%}
+    {%- if type.category == "object" -%}
+        {%- set Optional = "Optional" if optional else "" -%}
         WIRE_TRY(resolver.Get{{Optional}}FromId({{in}}, &{{out}}));
-    {%- elif member.type.category == "structure" %}
-        {% if member.type.is_wire_transparent %}
+    {%- elif type.category == "structure" %}
+        {% if type.is_wire_transparent %}
             static_assert(sizeof({{out}}) == sizeof({{in}}), "Deserialize memcpy size must match.");
-                memcpy(&{{out}}, const_cast<const {{member_transfer_type(member)}}*>(&{{in}}), {{member_transfer_sizeof(member)}});
+                memcpy(&{{out}}, const_cast<const {{member_transfer_type(type)}}*>(&{{in}}), {{member_transfer_sizeof(type)}});
         {%- else %}
-            WIRE_TRY({{as_cType(member.type.name)}}Deserialize(&{{out}}, &{{in}}, deserializeBuffer, allocator
-                {%- if member.type.may_have_dawn_object -%}
+            WIRE_TRY({{as_cType(type.name)}}Deserialize(&{{out}}, &{{in}}, deserializeBuffer, allocator
+                {%- if type.may_have_dawn_object -%}
                     , resolver
                 {%- endif -%}
             ));
         {%- endif -%}
-    {%- elif member.type.category == 'callback info' %}
-        {{out}} = WGPU_{{member.type.name.SNAKE_CASE()}}_INIT;
-    {%- elif not is_wire_serializable(member.type) %}
+    {%- elif type.category == 'callback info' %}
+        {{out}} = WGPU_{{type.name.SNAKE_CASE()}}_INIT;
+    {%- elif not is_wire_serializable(type) %}
         {{out}} = nullptr;
-    {%- elif member.type.name.get() == "size_t" -%}
+    {%- elif type.name.get() == "size_t" -%}
         //* Deserializing into size_t requires check that the uint64_t used on the wire won't narrow.
         if ({{in}} > std::numeric_limits<size_t>::max()) return WireResult::FatalError;
             {{out}} = checked_cast<size_t>({{in}});
@@ -149,7 +149,7 @@
             {% endif %}
             //* Value types are directly in the command, objects being replaced with their IDs.
             {% if member.annotation == "value" %}
-                {{member_transfer_type(member)}} {{as_varName(member.name)}};
+                {{member_transfer_type(member.type)}} {{as_varName(member.name)}};
                 {% continue %}
             {% endif %}
             //* Optional members additionally come with a boolean to indicate whether they were set.
@@ -174,8 +174,24 @@
 
         //* Gather how much space will be needed for the extension chain.
         {% if record.extensible %}
-            if (record.nextInChain != nullptr) {
-                result += GetChainedStructExtraRequiredSize(record.nextInChain);
+            const WGPUChainedStruct* next = record.nextInChain;
+            while (next != nullptr) {
+                switch (next->sType) {
+                    {% for extension in record.extensions if extension.name.CamelCase() not in client_side_structures %}
+                        {% set CType = as_cType(extension.name) %}
+                        case {{as_cEnum(types["s type"].name, extension.name)}}: {
+                            const auto& typedStruct = *reinterpret_cast<{{CType}} const *>(next);
+                            result += WireAlignSizeof<{{CType}}Transfer>();
+                            result += {{CType}}GetExtraRequiredSize(typedStruct);
+                            break;
+                        }
+                    {% endfor %}
+                    default: {
+                        result += WireAlignSizeof<WGPUDawnInjectedInvalidSTypeTransfer>();
+                        break;
+                    }
+                }
+                next = next->next;
             }
         {% endif %}
         //* Gather space needed for pointer members.
@@ -193,7 +209,7 @@
                 {
                     {% do assert(member.annotation != "const*const*", "const*const* not valid here") %}
                     auto memberLength = {{member_length(member, "record.")}};
-                    auto size = WireAlignSizeofN<{{member_transfer_type(member)}}>(memberLength);
+                    auto size = WireAlignSizeofN<{{member_transfer_type(member.type)}}>(memberLength);
                     DAWN_ASSERT(size);
                     result += *size;
                     //* Structures might contain more pointers so we need to add their extra size as well.
@@ -230,11 +246,36 @@
         {% endif %}
 
         {% if record.extensible %}
-            if (record.nextInChain != nullptr) {
+            const WGPUChainedStruct* next = record.nextInChain;
+            transfer->hasNextInChain = false;
+            while (next != nullptr) {
                 transfer->hasNextInChain = true;
-                WIRE_TRY(SerializeChainedStruct(record.nextInChain, buffer, provider));
-            } else {
-                transfer->hasNextInChain = false;
+                switch (next->sType) {
+                    {% for extension in record.extensions if extension.name.CamelCase() not in client_side_structures %}
+                        {% set CType = as_cType(extension.name) %}
+                        case {{as_cEnum(types["s type"].name, extension.name)}}: {
+                            {{CType}}Transfer* chainTransfer;
+                            WIRE_TRY(buffer->Next(&chainTransfer));
+                            chainTransfer->chain.sType = next->sType;
+                            chainTransfer->chain.hasNext = next->next != nullptr;
+
+                            WIRE_TRY({{CType}}Serialize(*reinterpret_cast<{{CType}} const*>(next), chainTransfer, buffer, provider));
+                            break;
+                        }
+                    {% endfor %}
+                    default: {
+                        // Invalid enum. Serialize just the invalid sType for validation purposes.
+                        dawn::WarningLog() << "Unknown sType " << next->sType << " discarded.";
+
+                        WGPUDawnInjectedInvalidSTypeTransfer* chainTransfer;
+                        WIRE_TRY(buffer->Next(&chainTransfer));
+                        chainTransfer->chain.sType = WGPUSType_DawnInjectedInvalidSType;
+                        chainTransfer->chain.hasNext = next->next != nullptr;
+                        chainTransfer->invalidSType = next->sType;
+                        break;
+                    }
+                }
+                next = next->next;
             }
         {% endif %}
         {% if record.chained %}
@@ -254,7 +295,7 @@
             {% endif %}
             //* Value types are directly in the transfer record, objects being replaced with their IDs.
             {% if member.annotation == "value" %}
-                {{serialize_member(member, "record." + memberName, "transfer->" + memberName)}}
+                {{serialize_member(member.type, member.optional, "record." + memberName, "transfer->" + memberName)}}
                 {% continue %}
             {% endif %}
             //* Allocate space and write the non-value arguments in it.
@@ -268,7 +309,7 @@
             {% endif %}
                 auto memberLength = {{member_length(member, "record.")}};
 
-                {{member_transfer_type(member)}}* memberBuffer;
+                {{member_transfer_type(member.type)}}* memberBuffer;
                 WIRE_TRY(buffer->NextN(memberLength, &memberBuffer));
 
                 {% if member.type.is_wire_transparent %}
@@ -278,14 +319,14 @@
                     if (memberLength != 0) {
                         memcpy(
                             memberBuffer, record.{{memberName}},
-                            {{member_transfer_sizeof(member)}} * memberLength);
+                            {{member_transfer_sizeof(member.type)}} * memberLength);
                     }
                 {% else %}
                     //* This loop cannot overflow because it iterates up to |memberLength|. Even if
                     //* memberLength were the maximum integer value, |i| would become equal to it
                     //* just before exiting the loop, but not increment past or wrap around.
                     for (decltype(memberLength) i = 0; i < memberLength; ++i) {
-                        {{serialize_member(member, "record." + memberName + "[i]", "memberBuffer[i]" )}}
+                        {{serialize_member(member.type, member.array_element_optional, "record." + memberName + "[i]", "memberBuffer[i]" )}}
                     }
                 {% endif %}
             }
@@ -305,8 +346,7 @@
         [[maybe_unused]] DeserializeAllocator* allocator
         {%- if record.may_have_dawn_object -%}
             , const ObjectIdResolver& resolver
-        {%- endif -%}
-    ) {
+        {%- endif -%}) {
         {% if is_cmd %}
             DAWN_ASSERT(transfer->commandId == {{Return}}WireCmd::{{name}});
         {% endif %}
@@ -315,10 +355,43 @@
         {% endif %}
 
         {% if record.extensible %}
-            record->nextInChain = nullptr;
-            if (transfer->hasNextInChain) {
-                WIRE_TRY(DeserializeChainedStruct(&record->nextInChain, deserializeBuffer, allocator, resolver));
+            WGPUChainedStruct** outChainNext = &record->nextInChain;
+            bool hasNext = transfer->hasNextInChain;
+            while (hasNext) {
+                const volatile WGPUChainedStructTransfer* header;
+                WIRE_TRY(deserializeBuffer->Peek(&header));
+                WGPUSType sType = header->sType;
+                hasNext = header->hasNext;
+
+                switch (sType) {
+                    //* All extensible types need to be able to handle deserializing the invalid
+                    //* sType struct.
+                    {% set extensions = record.extensions + [types['dawn injected invalid s type']] %}
+                    {% for extension in extensions if extension.name.CamelCase() not in client_side_structures %}
+                        {% set CType = as_cType(extension.name) %}
+                        case {{as_cEnum(types["s type"].name, extension.name)}}: {
+                            const volatile {{CType}}Transfer* chainTransfer;
+                            WIRE_TRY(deserializeBuffer->Read(&chainTransfer));
+
+                            {{CType}}* typedOutStruct;
+                            WIRE_TRY(GetSpace(allocator, 1u, &typedOutStruct));
+                            typedOutStruct->chain.sType = sType;
+                            typedOutStruct->chain.next = nullptr;
+                            WIRE_TRY({{CType}}Deserialize(typedOutStruct, chainTransfer,
+                                                          deserializeBuffer, allocator, resolver));
+                            *outChainNext = &typedOutStruct->chain;
+                            outChainNext = &typedOutStruct->chain.next;
+                            break;
+                        }
+                    {% endfor %}
+                    default: {
+                        //* For invalid sTypes, it's a fatal error since this implies a compromised
+                        //* or corrupt client.
+                        return WireResult::FatalError;
+                    }
+                }
             }
+            *outChainNext = nullptr;
         {% endif %}
         {% if record.chained %}
             //* Should be set by the root descriptor's call to DeserializeChainedStruct.
@@ -335,7 +408,7 @@
             {% set memberName = as_varName(member.name) %}
             //* Value types are directly in the transfer record, objects being replaced with their IDs.
             {% if member.annotation == "value" %}
-                {{deserialize_member(member, "transfer->" + memberName, "record->" + memberName)}}
+                {{deserialize_member(member.type, member.optional, "transfer->" + memberName, "record->" + memberName)}}
                 {% continue %}
             {% endif %}
             //* Get extra buffer data, and copy pointed to values in extra allocated space. Note that
@@ -355,7 +428,7 @@
                 {
             {% endif %}
                 auto memberLength = {{member_length(member, "record->")}};
-                const volatile {{member_transfer_type(member)}}* memberBuffer;
+                const volatile {{member_transfer_type(member.type)}}* memberBuffer;
                 WIRE_TRY(deserializeBuffer->ReadN(memberLength, &memberBuffer));
 
                 //* For data-only members (e.g. "data" in WriteBuffer and WriteTexture), they are
@@ -365,7 +438,7 @@
                 //* dawn_native must be a copy of what's in the wire.
                 {% if member.json_data["wire_is_data_only"] %}
                     record->{{memberName}} =
-                        const_cast<const {{member_transfer_type(member)}}*>(memberBuffer);
+                        const_cast<const {{member_transfer_type(member.type)}}*>(memberBuffer);
 
                 {% else %}
                     {{as_cType(member.type.name)}}* copiedMembers;
@@ -384,8 +457,8 @@
                             //* unexpected downstream effects.
                             memcpy(
                                 copiedMembers,
-                                const_cast<const {{member_transfer_type(member)}}*>(memberBuffer),
-                              {{member_transfer_sizeof(member)}} * memberLength);
+                                const_cast<const {{member_transfer_type(member.type)}}*>(memberBuffer),
+                              {{member_transfer_sizeof(member.type)}} * memberLength);
                         }
                     {% else %}
                         //* This loop cannot overflow because it iterates up to |memberLength|. Even
@@ -393,7 +466,7 @@
                         //* to it just before exiting the loop, but not increment past or wrap
                         //* around.
                         for (decltype(memberLength) i = 0; i < memberLength; ++i) {
-                            {{deserialize_member(member, "memberBuffer[i]", "copiedMembers[i]")}}
+                            {{deserialize_member(member.type, member.array_element_optional, "memberBuffer[i]", "copiedMembers[i]")}}
                         }
                     {% endif %}
                 {% endif %}
@@ -505,14 +578,8 @@ struct WGPUChainedStructTransfer {
     bool hasNext;
 };
 
-size_t GetChainedStructExtraRequiredSize(WGPUChainedStruct* chainedStruct);
-[[nodiscard]] WireResult SerializeChainedStruct(WGPUChainedStruct* chainedStruct,
-                                                SerializeBuffer* buffer,
-                                                const ObjectIdProvider& provider);
-WireResult DeserializeChainedStruct(WGPUChainedStruct** outChainNext,
-                                    DeserializeBuffer* deserializeBuffer,
-                                    DeserializeAllocator* allocator,
-                                    const ObjectIdResolver& resolver);
+//* Structs that need special handling for [de]serialization code generation.
+{% set SpecialSerializeStructs = ["string view", "dawn injected invalid s type"] %}
 
 // Manually define serialization and deserialization for WGPUStringView because
 // it has a special encoding where:
@@ -599,10 +666,15 @@ WireResult WGPUStringViewDeserialize(
     return WireResult::Success;
 }
 
+//* Force generation of de[serialization] methods for WGPUDawnInjectedInvalidSType early.
+{% set type = types["dawn injected invalid s type"] %}
+{%- set name = as_cType(type.name) -%}
+{{write_record_serialization_helpers(type, name, type.members, is_cmd=False)}}
+
 //* Output structure [de]serialization first because it is used by commands.
 {% for type in by_category["structure"] %}
     {%- set name = as_cType(type.name) -%}
-    {% if type.name.CamelCase() not in client_side_structures and name != "WGPUStringView" -%}
+    {% if type.name.CamelCase() not in client_side_structures and type.name.get() not in SpecialSerializeStructs -%}
         {{write_record_serialization_helpers(type, name, type.members, is_cmd=False)}}
     {% endif %}
 {% endfor %}
@@ -617,138 +689,6 @@ WireResult WGPUStringViewDeserialize(
     {% endif %}
     {% do sTypes.append(sType) %}
 {% endfor %}
-
-size_t GetChainedStructExtraRequiredSize(WGPUChainedStruct* chainedStruct) {
-    DAWN_ASSERT(chainedStruct != nullptr);
-    size_t result = 0;
-    while (chainedStruct != nullptr) {
-        uint32_t sType_as_uint;
-        std::memcpy(&sType_as_uint, &(chainedStruct->sType), sizeof(uint32_t));
-        switch (sType_as_uint) {
-            {% for sType in sTypes %}
-                case {{as_cEnum(types["s type"].name, sType.name)}}: {
-                    const auto& typedStruct = *reinterpret_cast<{{as_cType(sType.name)}} const *>(chainedStruct);
-                    result += WireAlignSizeof<{{as_cType(sType.name)}}Transfer>();
-                    result += {{as_cType(sType.name)}}GetExtraRequiredSize(typedStruct);
-                    chainedStruct = typedStruct.chain.next;
-                    break;
-                }
-            {% endfor %}
-            default:
-                // Invalid enum. Reserve space just for the transfer header (sType and hasNext).
-                result += WireAlignSizeof<WGPUChainedStructTransfer>();
-                chainedStruct = chainedStruct->next;
-                break;
-        }
-    }
-    return result;
-}
-
-[[nodiscard]] WireResult SerializeChainedStruct(WGPUChainedStruct* chainedStruct,
-                                                SerializeBuffer* buffer,
-                                                const ObjectIdProvider& provider) {
-    DAWN_ASSERT(chainedStruct != nullptr);
-    DAWN_ASSERT(buffer != nullptr);
-    do {
-        uint32_t sType_as_uint;
-        std::memcpy(&sType_as_uint, &(chainedStruct->sType), sizeof(uint32_t));
-        switch (sType_as_uint) {
-            {% for sType in sTypes %}
-                {% set CType = as_cType(sType.name) %}
-                case {{as_cEnum(types["s type"].name, sType.name)}}: {
-                    {{CType}}Transfer* transfer;
-                    WIRE_TRY(buffer->Next(&transfer));
-                    transfer->chain.sType = chainedStruct->sType;
-                    transfer->chain.hasNext = chainedStruct->next != nullptr;
-
-                    WIRE_TRY({{CType}}Serialize(*reinterpret_cast<{{CType}} const*>(chainedStruct), transfer, buffer
-                        {%- if types[sType.name.get()].may_have_dawn_object -%}
-                        , provider
-                        {%- endif -%}
-                    ));
-
-                    chainedStruct = chainedStruct->next;
-                } break;
-            {% endfor %}
-            default: {
-                // Invalid enum. Serialize just the transfer header with Invalid as the sType.
-                // TODO(crbug.com/dawn/369): Unknown sTypes are silently discarded.
-                if (sType_as_uint != 0u) {
-                    dawn::WarningLog() << "Unknown sType " << sType_as_uint << " discarded.";
-                }
-
-                WGPUChainedStructTransfer* transfer;
-                WIRE_TRY(buffer->Next(&transfer));
-                transfer->sType = WGPUSType(0);
-                transfer->hasNext = chainedStruct->next != nullptr;
-
-                // Still move on in case there are valid structs after this.
-                chainedStruct = chainedStruct->next;
-                break;
-            }
-        }
-    } while (chainedStruct != nullptr);
-    return WireResult::Success;
-}
-
-WireResult DeserializeChainedStruct(WGPUChainedStruct** outChainNext,
-                                    DeserializeBuffer* deserializeBuffer,
-                                    DeserializeAllocator* allocator,
-                                    const ObjectIdResolver& resolver) {
-    bool hasNext;
-    do {
-        const volatile WGPUChainedStructTransfer* header;
-        WIRE_TRY(deserializeBuffer->Peek(&header));
-        WGPUSType sType = header->sType;
-        switch (sType) {
-            {% for sType in sTypes %}
-                {% set CType = as_cType(sType.name) %}
-                case {{as_cEnum(types["s type"].name, sType.name)}}: {
-                    const volatile {{CType}}Transfer* transfer;
-                    WIRE_TRY(deserializeBuffer->Read(&transfer));
-
-                    {{CType}}* outStruct;
-                    WIRE_TRY(GetSpace(allocator, 1u, &outStruct));
-                    outStruct->chain.sType = sType;
-                    outStruct->chain.next = nullptr;
-
-                    *outChainNext = &outStruct->chain;
-                    outChainNext = &outStruct->chain.next;
-
-                    WIRE_TRY({{CType}}Deserialize(outStruct, transfer, deserializeBuffer, allocator
-                        {%- if types[sType.name.get()].may_have_dawn_object -%}
-                            , resolver
-                        {%- endif -%}
-                    ));
-
-                    hasNext = transfer->chain.hasNext;
-                } break;
-            {% endfor %}
-            default: {
-                // Invalid enum. Deserialize just the transfer header with Invalid as the sType.
-                // TODO(crbug.com/dawn/369): Unknown sTypes are silently discarded.
-                if (sType != WGPUSType(0)) {
-                    dawn::WarningLog() << "Unknown sType " << sType << " discarded.";
-                }
-
-                const volatile WGPUChainedStructTransfer* transfer;
-                WIRE_TRY(deserializeBuffer->Read(&transfer));
-
-                WGPUChainedStruct* outStruct;
-                WIRE_TRY(GetSpace(allocator, 1u, &outStruct));
-                outStruct->sType = WGPUSType(0);
-                outStruct->next = nullptr;
-
-                // Still move on in case there are valid structs after this.
-                *outChainNext = outStruct;
-                outChainNext = &outStruct->next;
-                hasNext = transfer->hasNext;
-                break;
-            }
-        }
-    } while (hasNext);
-    return WireResult::Success;
-}
 
 //* Output [de]serialization helpers for commands
 {% for command in cmd_records["command"] %}

@@ -1,6 +1,7 @@
 // Copyright 2017 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -29,7 +30,7 @@ const UIStrings = {
    *@description Text for everything
    */
   all: 'All',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/EventsTimelineTreeView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class EventsTimelineTreeView extends TimelineTreeView {
@@ -65,36 +66,15 @@ export class EventsTimelineTreeView extends TimelineTreeView {
 
   private onFilterChanged(): void {
     const lastSelectedNode = this.lastSelectedNode();
-    const selectedEvent = lastSelectedNode && lastSelectedNode.event;
+    const selectedEvent = lastSelectedNode?.event;
     this.refreshTree();
     if (selectedEvent) {
       this.selectEvent(selectedEvent, false);
     }
   }
 
-  private findNodeWithEvent(event: Trace.Types.Events.Event): Trace.Extras.TraceTree.Node|null {
-    if (event.name === Trace.Types.Events.Name.RUN_TASK) {
-      // No node is ever created for the top level RunTask event, so
-      // bail out preemptively
-      return null;
-    }
-    const iterators = [this.currentTree.children().values()];
-    while (iterators.length) {
-      const {done, value: child} = iterators[iterators.length - 1].next();
-      if (done) {
-        iterators.pop();
-        continue;
-      }
-      if (child.event === event) {
-        return child;
-      }
-      iterators.push(child.children().values());
-    }
-    return null;
-  }
-
   private selectEvent(event: Trace.Types.Events.Event, expand?: boolean): void {
-    const node = this.findNodeWithEvent(event);
+    const node = this.eventToTreeNode.get(event);
     if (!node) {
       return;
     }
@@ -141,14 +121,14 @@ export class EventsTimelineTreeView extends TimelineTreeView {
   }
 
   override onHover(node: Trace.Extras.TraceTree.Node|null): void {
-    this.delegate.highlightEvent(node && node.event);
+    this.delegate.highlightEvent(node?.event ?? null);
   }
 }
 
 export class Filters extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   private readonly categoryFilter: Category;
   private readonly durationFilter: IsLong;
-  private readonly filtersInternal: (IsLong|Category)[];
+  private readonly filtersInternal: Array<IsLong|Category>;
   constructor() {
     super();
     this.categoryFilter = new Category();
@@ -181,7 +161,6 @@ export class Filters extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
           category.title, undefined,
           categoriesFilterChanged.bind(this, categoryName as Utils.EntryStyles.EventCategory), categoryName);
       checkbox.setChecked(true);
-      checkbox.inputElement.style.backgroundColor = category.color;
       categoryFiltersUI.set(category.name, checkbox);
       toolbar.appendToolbarItem(checkbox);
     }
@@ -196,7 +175,7 @@ export class Filters extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
     function categoriesFilterChanged(this: Filters, name: Utils.EntryStyles.EventCategory): void {
       const categories = Utils.EntryStyles.getCategoryStyles();
       const checkBox = categoryFiltersUI.get(name);
-      categories[name].hidden = !checkBox || !checkBox.checked();
+      categories[name].hidden = !checkBox?.checked();
       this.notifyFiltersChanged();
     }
   }

@@ -1,11 +1,13 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Templates as T
 import QtQuick.NativeStyle as NativeStyle
+import QtQuick.Controls.macOS.impl
 
 NativeStyle.DefaultSearchField {
     id: control
@@ -24,15 +26,18 @@ NativeStyle.DefaultSearchField {
 
         readonly property Item __focusFrameControl: control
         readonly property bool __ignoreNotCustomizable: true
+
+        ContextMenu.menu: TextEditingContextMenu {
+            editor: parent
+        }
     }
 
     NativeStyle.SearchField {
         id: search
-        visible: control.__nativeSearchIndicator
         control: control
         subControl: NativeStyle.SearchField.Search
-        x: searchIndicator.indicator.x
-        y: searchIndicator.indicator.y
+        x: searchIndicator.indicator ? searchIndicator.indicator.x : 0
+        y: searchIndicator.indicator ? searchIndicator.indicator.y : 0
         useNinePatchImage: false
     }
 
@@ -46,11 +51,11 @@ NativeStyle.DefaultSearchField {
 
     NativeStyle.SearchField {
         id: clear
-        visible: control.__nativeClearIndicator
+        visible: control.text.length > 0
         control: control
         subControl: NativeStyle.SearchField.Clear
-        x: clearIndicator.indicator.x
-        y: clearIndicator.indicator.y
+        x: clearIndicator.indicator ? clearIndicator.indicator.x : 0
+        y: clearIndicator.indicator ? clearIndicator.indicator.y : 0
         useNinePatchImage: false
     }
 

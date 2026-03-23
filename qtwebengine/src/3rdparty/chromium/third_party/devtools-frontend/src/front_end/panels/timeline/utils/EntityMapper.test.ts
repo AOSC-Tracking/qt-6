@@ -4,6 +4,7 @@
 
 import * as Trace from '../../../models/trace/trace.js';
 import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
+import {getAllNetworkRequestsByHost} from '../../../testing/TraceHelpers.js';
 import {TraceLoader} from '../../../testing/TraceLoader.js';
 
 import * as Utils from './utils.js';
@@ -12,8 +13,8 @@ describeWithEnvironment('EntityMapper', function() {
   it('correctly merges handler data', async function() {
     const {parsedTrace} = await TraceLoader.traceEngine(this, 'lantern/paul/trace.json.gz');
 
-    const fromRenderer = new Map(parsedTrace.Renderer.entityMappings.eventsByEntity);
-    const fromNetwork = new Map(parsedTrace.NetworkRequests.entityMappings.eventsByEntity);
+    const fromRenderer = parsedTrace.Renderer.entityMappings.eventsByEntity;
+    const fromNetwork = parsedTrace.NetworkRequests.entityMappings.eventsByEntity;
 
     const mapper = new Utils.EntityMapper.EntityMapper(parsedTrace);
     const mappings = mapper.mappings();
@@ -39,12 +40,9 @@ describeWithEnvironment('EntityMapper', function() {
       });
     });
 
-    // Additioanlly make sure they sum up.
-    mappings.eventsByEntity.entries().forEach(([entity, events]) => {
-      const eventsInNetwork = fromNetwork.get(entity) ?? [];
-      const eventsInRenderer = fromRenderer.get(entity) ?? [];
-      assert.deepEqual(events.length, eventsInNetwork.length + eventsInRenderer.length);
-    });
+    // These would be the same object identity, if not for shallowClone
+    assert.deepEqual(fromRenderer, fromNetwork);
+    assert.deepEqual(fromRenderer, mappings.eventsByEntity);
   });
 
   describe('entityForEvent', () => {
@@ -53,11 +51,11 @@ describeWithEnvironment('EntityMapper', function() {
       const mapper = new Utils.EntityMapper.EntityMapper(parsedTrace);
 
       // Check entities for network requests.
-      const reqs = parsedTrace.NetworkRequests.byOrigin.get('www.paulirish.com')?.all ?? [];
+      const reqs = getAllNetworkRequestsByHost(parsedTrace.NetworkRequests.byTime, 'www.paulirish.com');
       let gotEntity = mapper.entityForEvent(reqs[0]);
       assert.deepEqual(gotEntity?.name, 'paulirish.com');
 
-      const gstatic = parsedTrace.NetworkRequests.byOrigin.get('fonts.gstatic.com')?.all ?? [];
+      const gstatic = getAllNetworkRequestsByHost(parsedTrace.NetworkRequests.byTime, 'fonts.gstatic.com');
       gotEntity = mapper.entityForEvent(gstatic[0]);
       assert.deepEqual(gotEntity?.name, 'Google Fonts');
     });
@@ -79,7 +77,7 @@ describeWithEnvironment('EntityMapper', function() {
       const {parsedTrace} = await TraceLoader.traceEngine(this, 'lantern/paul/trace.json.gz');
       const mapper = new Utils.EntityMapper.EntityMapper(parsedTrace);
 
-      const reqs = parsedTrace.NetworkRequests.byOrigin.get('www.paulirish.com')?.all ?? [];
+      const reqs = getAllNetworkRequestsByHost(parsedTrace.NetworkRequests.byTime, 'www.paulirish.com');
       const entity = mapper.entityForEvent(reqs[0]);
       assert.exists(entity);
       assert.deepEqual(entity.name, 'paulirish.com');
@@ -116,8 +114,9 @@ describeWithEnvironment('EntityMapper', function() {
       assert.deepEqual(got.name, 'paulirish.com');
       const firstPartyEvents = mapper.eventsForEntity(got);
       const gotThirdPartyEvents = mapper.thirdPartyEvents();
+      // If any failure is found in here, the event is categorized as both 1p AND 3p.
       gotThirdPartyEvents.forEach(e => {
-        assert.isTrue(!firstPartyEvents.includes(e));
+        assert.isNotOk(firstPartyEvents.includes(e));
       });
     });
   });

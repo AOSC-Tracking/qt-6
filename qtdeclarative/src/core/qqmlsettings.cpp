@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qqmlsettings_p.h"
 
@@ -446,7 +447,7 @@ QVariant QQmlSettings::value(const QString &key, const QVariant &defaultValue) c
 }
 
 /*!
-   \qmlmethod Settings::setValue(string key, var value)
+   \qmlmethod void Settings::setValue(string key, var value)
 
    Sets the value of setting \a key to \a value. If the key already exists,
    the previous value is overwritten.
@@ -461,7 +462,7 @@ void QQmlSettings::setValue(const QString &key, const QVariant &value)
 }
 
 /*!
-   \qmlmethod Settings::sync()
+   \qmlmethod void Settings::sync()
 
     Writes any unsaved changes to permanent storage, and reloads any
     settings that have been changed in the meantime by another

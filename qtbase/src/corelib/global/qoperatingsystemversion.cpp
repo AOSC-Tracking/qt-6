@@ -112,7 +112,8 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn QOperatingSystemVersion::current()
+    \fn QOperatingSystemVersion QOperatingSystemVersion::current()
+
     Returns a QOperatingSystemVersion indicating the current OS and its version number.
 
     \sa currentType()
@@ -483,6 +484,12 @@ const QOperatingSystemVersionBase QOperatingSystemVersion::Windows11_22H2;
     \variable QOperatingSystemVersion::Windows11_24H2
     \brief a version corresponding to Windows 11 Version 24H2 (version 10.0.26100).
     \since 6.8.1
+ */
+
+/*!
+    \variable QOperatingSystemVersion::Windows11_25H2
+    \brief a version corresponding to Windows 11 Version 25H2 (version 10.0.26200).
+    \since 6.11
  */
 
 /*!

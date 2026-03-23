@@ -15,7 +15,6 @@
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkPoint_impl.h"
@@ -23,6 +22,7 @@
 #include "include/private/base/SkTDArray.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
@@ -830,6 +830,15 @@ PathRenderer::CanDrawPath DefaultPathRenderer::onCanDrawPath(const CanDrawPathAr
     if (args.fCaps->avoidLineDraws() && isHairline) {
         return CanDrawPath::kNo;
     }
+
+    SkPath path;
+    args.fShape->asPath(&path);
+    int verbCount = path.countVerbs();
+    // Don't use this path renderer if we exceed the max verb count.
+    if (verbCount > kMaxGPUPathRendererVerbs) {
+        return CanDrawPath::kNo;
+    }
+
     // This is the fallback renderer for when a path is too complicated for the others to draw.
     return CanDrawPath::kAsBackup;
 }

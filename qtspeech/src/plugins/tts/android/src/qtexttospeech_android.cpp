@@ -1,5 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 #include "qtexttospeech_android.h"
 
 #include <QtCore/qcoreapplication.h>
@@ -120,7 +122,7 @@ static void notifyEndSynthesis(JNIEnv *env, jobject thiz, jlong id)
 Q_DECLARE_JNI_NATIVE_METHOD(notifyEndSynthesis)
 
 
-Q_DECL_EXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void */*reserved*/)
+extern "C" Q_DECL_EXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void */*reserved*/)
 {
     static bool initialized = false;
     if (initialized)

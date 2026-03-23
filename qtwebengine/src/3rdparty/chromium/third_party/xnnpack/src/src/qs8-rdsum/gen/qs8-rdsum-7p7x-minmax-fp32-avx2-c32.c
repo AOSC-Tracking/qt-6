@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-rdsum/avx2.c.in
 //   Generator: tools/xngen
@@ -8,13 +9,15 @@
 // LICENSE file in the root directory of this source tree.
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/unaligned.h"
-#include "xnnpack/common.h"
-#include "xnnpack/reduce.h"
-#include "xnnpack/math.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/reduce.h"
 
 
 void xnn_qs8_rdsum_ukernel_7p7x__avx2_c32(
@@ -24,7 +27,7 @@ void xnn_qs8_rdsum_ukernel_7p7x__avx2_c32(
     size_t input_stride,
     const int8_t* zero,
     int32_t* output,
-    const struct xnn_qs8_rsum_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_qs8_rsum_params* restrict params) XNN_OOB_READS
 {
   assert(rows != 0);
   assert(channels != 0);

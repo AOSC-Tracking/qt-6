@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/memory/singleton.h"
+#include "base/notimplemented.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "third_party/iaccessible2/ia2_api_all.h"
@@ -33,7 +34,8 @@
 namespace views {
 
 // static
-std::unique_ptr<ViewAccessibility> ViewAccessibility::Create(View* view) {
+std::unique_ptr<ViewAccessibility>
+ViewAXPlatformNodeDelegate::CreatePlatformSpecific(View* view) {
   auto result = std::make_unique<ViewAXPlatformNodeDelegateWin>(view);
   result->Init();
   return result;
@@ -100,7 +102,7 @@ gfx::Rect ViewAXPlatformNodeDelegateWin::GetBoundsRect(
     ui::AXOffscreenResult* offscreen_result) const {
   switch (coordinate_system) {
     case ui::AXCoordinateSystem::kScreenPhysicalPixels:
-      return display::win::ScreenWin::DIPToScreenRect(
+      return display::win::GetScreenWin()->DIPToScreenRect(
           HWNDForView(view()), view()->GetBoundsInScreen());
     case ui::AXCoordinateSystem::kScreenDIPs:
       // We could optionally add clipping here if ever needed.
@@ -120,7 +122,7 @@ gfx::Rect ViewAXPlatformNodeDelegateWin::GetInnerTextRangeBoundsRect(
     ui::AXOffscreenResult* offscreen_result) const {
   switch (coordinate_system) {
     case ui::AXCoordinateSystem::kScreenPhysicalPixels:
-      return display::win::ScreenWin::DIPToScreenRect(
+      return display::win::GetScreenWin()->DIPToScreenRect(
           HWNDForView(view()),
           ViewAXPlatformNodeDelegate::GetInnerTextRangeBoundsRect(
               start_offset, end_offset, ui::AXCoordinateSystem::kScreenDIPs,
@@ -146,18 +148,8 @@ gfx::Point ViewAXPlatformNodeDelegateWin::ScreenToDIPPoint(
   // This is because Chromium transforms the screen physical coordinates it
   // receives from Windows into an internal representation of screen physical
   // coordinates adjusted for multiple displays of different resolutions.
-  return ToRoundedPoint(
-      display::win::ScreenWin::ScreenToDIPPoint(gfx::PointF(screen_point)));
-}
-
-void ViewAXPlatformNodeDelegateWin::EnsureAtomicViewAXTreeManager() {
-  DCHECK(needs_ax_tree_manager());
-  if (atomic_view_ax_tree_manager_) {
-    return;
-  }
-
-  atomic_view_ax_tree_manager_ =
-      views::AtomicViewAXTreeManager::Create(this, data());
+  return ToRoundedPoint(display::win::GetScreenWin()->ScreenToDIPPoint(
+      gfx::PointF(screen_point)));
 }
 
 }  // namespace views

@@ -18,6 +18,7 @@
 #include "content/browser/renderer_host/browsing_context_group_swap.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/public/browser/prefetch_service_delegate.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/referrer.h"
@@ -25,6 +26,8 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/prefetch_test_util.h"
+#include "content/public/test/preloading_test_util.h"
 #include "content/shell/browser/shell.h"
 #include "net/http/http_status_code.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -92,7 +95,7 @@ class ContaminationDelayBrowserTest : public ContentBrowserTest {
     auto candidate = blink::mojom::SpeculationCandidate::New();
     candidate->url = url;
     candidate->action = blink::mojom::SpeculationAction::kPrefetch;
-    candidate->eagerness = blink::mojom::SpeculationEagerness::kEager;
+    candidate->eagerness = blink::mojom::SpeculationEagerness::kImmediate;
     candidate->referrer = Referrer::SanitizeForRequest(
         url, blink::mojom::Referrer(
                  shell()->web_contents()->GetURL(),
@@ -217,6 +220,61 @@ IN_PROC_BROWSER_TEST_F(ContaminationDelayBrowserTest, IgnoresIfExempt) {
   EXPECT_THAT(swap_observer.Get().type(),
               ::testing::AnyOf(BrowsingContextGroupSwapType::kNoSwap,
                                BrowsingContextGroupSwapType::kProactiveSwap));
+}
+
+#ifndef NDEBUG
+// TODO(http://crbug.com/404944178): This test is flaky on debug builds.
+// https://ci.chromium.org/ui/test/chromium/ninja%3A%2F%2Fcontent%2Ftest%3Acontent_browsertests%2FContaminationDelayBrowserTest.IgnoresIfExempt_BrowserInitiated
+#define MAYBE_IgnoresIfExempt_BrowserInitiated \
+  DISABLED_IgnoresIfExempt_BrowserInitiated
+#else
+#define MAYBE_IgnoresIfExempt_BrowserInitiated \
+  IgnoresIfExempt_BrowserInitiated
+#endif
+IN_PROC_BROWSER_TEST_F(ContaminationDelayBrowserTest,
+                       MAYBE_IgnoresIfExempt_BrowserInitiated) {
+  url::Origin referring_origin = url::Origin::Create(
+      embedded_test_server()->GetURL("referrer.localhost", "/title1.html"));
+  GURL prefetch_url =
+      embedded_test_server()->GetURL("prefetch.localhost", "/delayed");
+
+  auto* prefetch_service = PrefetchService::GetFromFrameTreeNodeId(
+      shell()->web_contents()->GetPrimaryMainFrame()->GetFrameTreeNodeId());
+  // TODO(crbug.com/40946257): Currently `OnPrefetchLikely` will never be called
+  // for browser-initiated triggers, so we set `num_on_prefetch_likely_calls` to
+  // 0 here, and instead use `TestPrefetchWatcher` to confirm whether prefetch
+  // is actually triggered.
+  auto owned_delegate = std::make_unique<MockPrefetchServiceDelegate>(
+      /*num_on_prefetch_likely_calls=*/0);
+  EXPECT_CALL(*owned_delegate, IsContaminationExemptPerOrigin(referring_origin))
+      .WillRepeatedly(testing::Return(true));
+  prefetch_service->SetPrefetchServiceDelegateForTesting(
+      std::move(owned_delegate));
+
+  auto test_prefetch_watcher = std::make_unique<test::TestPrefetchWatcher>();
+  auto handle = shell()->web_contents()->StartPrefetch(
+      prefetch_url, /*use_prefetch_proxy=*/false,
+      test::kPreloadingEmbedderHistgramSuffixForTesting,
+      blink::mojom::Referrer(), referring_origin,
+      /*no_vary_search_hint=*/std::nullopt,
+      /*priority=*/std::nullopt,
+      PreloadPipelineInfo::Create(
+          /*planned_max_preloading_type=*/PreloadingType::kPrefetch),
+      /*attempt=*/nullptr, /*holdback_status_override=*/std::nullopt,
+      /*ttl=*/std::nullopt);
+  test_prefetch_watcher->WaitUntilPrefetchResponseCompleted(std::nullopt,
+                                                            prefetch_url);
+
+  BrowsingContextGroupSwapObserver swap_observer(shell()->web_contents());
+  base::ElapsedTimer timer;
+  ASSERT_TRUE(NavigateToURL(shell(), prefetch_url));
+  EXPECT_TRUE(test_prefetch_watcher->PrefetchUsedInLastNavigation());
+  EXPECT_LT(timer.Elapsed(), response_delay());
+  EXPECT_THAT(swap_observer.Get().type(),
+              ::testing::AnyOf(BrowsingContextGroupSwapType::kNoSwap,
+                               BrowsingContextGroupSwapType::kProactiveSwap));
+  test_prefetch_watcher.reset();
+  handle.reset();
 }
 
 IN_PROC_BROWSER_TEST_F(ContaminationDelayBrowserTest, DelayAfterRedirect) {

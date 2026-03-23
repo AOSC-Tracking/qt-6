@@ -28,9 +28,8 @@
 
 bool runStripEnabled = true;
 bool alwaysOwerwriteEnabled = false;
-bool runCodesign = false;
+bool runCodesign = true;
 QStringList librarySearchPath;
-QString codesignIdentiy;
 QString extraEntitlements;
 bool hardenedRuntime = false;
 bool secureTimestamp = false;
@@ -926,6 +925,11 @@ void deployRPaths(const QString &bundlePath, const QList<QString> &rpaths, const
 
 void changeInstallName(const QString &oldName, const QString &newName, const QString &binaryPath)
 {
+    if (newName == oldName) {
+        LogDebug() << "Skipping install_name_tool for" << binaryPath
+                   << "as name is already" << newName;
+        return;
+    }
     LogDebug() << "Using install_name_tool:";
     LogDebug() << " in" << binaryPath;
     LogDebug() << " change reference" << oldName;
@@ -1009,6 +1013,31 @@ DeploymentInfo deployQtFrameworks(QList<FrameworkInfo> frameworks,
             rpathsUsed.append(framework.rpathUsed);
         }
 
+        // To properly find all dependencies of the current framework / library further down in
+        // getQtFrameworks, we need to get its rpaths, resolve them in the context of its original
+        // location before it is copied, and add them as candidate rpaths.
+        //
+        // This is necessary to handle cases like
+        // (1) QtNetwork.framework -> (2) libbrotlidec.dylib -> (3) libbrotlicommon.1.dylib
+        // to correctly resolve the path to (3) when it is referenced as
+        // '@rpath/libbrotlicommon.1.dylib' and (2) has an LC_RPATH of '@loader_path/../lib', and
+        // no other absolute rpaths. So the '@loader_path/../lib' will be resolved relative
+        // to (2)'s original location and its LC_RPATH.
+        //
+        // Otherwise we'd only have the Qt prefix and the current bundle app dir as rpath
+        // candidates, and once (2) is copied into the app bundle, there's no way
+        // '@rpath/libbrotlicommon.1.dylib' could resolve to the real path on disk from the two
+        // candidates above.
+        if (!framework.sourceFilePath.isEmpty()) {
+            const QList<QString> sourceRPaths = getBinaryRPaths(framework.sourceFilePath, true);
+            for (const QString &sourceRPath : sourceRPaths) {
+                const QDir sourceRPathDir(sourceRPath);
+                if (sourceRPathDir.exists() && !rpathsUsed.contains(sourceRPath)) {
+                    rpathsUsed.append(sourceRPath);
+                }
+            }
+        }
+
         // Copy the framework/dylib to the app bundle.
         const QString deployedBinaryPath = framework.isDylib ? copyDylib(framework, bundlePath)
                                                              : copyFramework(framework, bundlePath);
@@ -1033,7 +1062,7 @@ DeploymentInfo deployQtFrameworks(QList<FrameworkInfo> frameworks,
         for (const FrameworkInfo &dependency : dependencies) {
             if (dependency.rpathUsed.isEmpty()) {
                 changeInstallName(bundlePath, dependency, QStringList() << deployedBinaryPath, useLoaderPath);
-            } else {
+            } else if (!rpathsUsed.contains(dependency.rpathUsed)) {
                 rpathsUsed.append(dependency.rpathUsed);
             }
 
@@ -1448,6 +1477,17 @@ QSet<QString> codesignBundle(const QString &identity,
     QString appBundleAbsolutePath = QFileInfo(appBundlePath).absoluteFilePath();
     QString rootBinariesPath = appBundleAbsolutePath + "/Contents/MacOS/";
     QStringList foundRootBinaries = QDir(rootBinariesPath).entryList(QStringList() << "*", QDir::Files);
+
+    // The app binary must be signed last.
+    QString appBinary = findAppBinary(appBundleAbsolutePath);
+    QString appBinaryName = QFileInfo(appBinary).fileName();
+    if (int appBinaryIdx = foundRootBinaries.indexOf(appBinaryName); appBinaryIdx > 0) {
+      foundRootBinaries.swapItemsAt(0, appBinaryIdx);
+      LogDebug() << "swapped appBinary to start of list";
+    }
+    LogDebug() << "App binary is" << appBinaryName;
+    LogDebug() << "Binaries in" << rootBinariesPath << "are" << foundRootBinaries;
+
     for (const QString &binary : foundRootBinaries) {
         QString binaryPath = rootBinariesPath + binary;
         pendingBinaries.push(binaryPath);

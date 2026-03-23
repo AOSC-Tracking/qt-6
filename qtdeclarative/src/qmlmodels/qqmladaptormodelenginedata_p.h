@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 
 #ifndef QQMLADAPTORMODELENGINEDATA_P_H
@@ -40,7 +41,7 @@ public:
         if (!o)
             RETURN_RESULT(scope.engine->throwTypeError(QStringLiteral("Not a valid DelegateModel object")));
 
-        RETURN_RESULT(QV4::Encode(o->d()->item->modelIndex()));
+        RETURN_RESULT(QV4::Encode(o->d()->item()->modelIndex()));
     }
 
     template <typename T, typename M> static void setModelDataType(QMetaObjectBuilder *builder, M *metaType)
@@ -60,6 +61,7 @@ public:
         QMetaPropertyBuilder property = builder->addProperty(
                 propertyName, propertyType, propertyId);
         property.setWritable(isWritable);
+        property.setFinal(true);
     }
 
     V4_DEFINE_EXTENSION(QQmlAdaptorModelEngineData, get)

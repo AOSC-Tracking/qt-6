@@ -175,6 +175,8 @@ NSData* ViewAsTIFF(NSView* view) {
   return [bitmap TIFFRepresentation];
 }
 
+}  // namespace
+
 class TestBubbleView : public BubbleDialogDelegateView {
  public:
   explicit TestBubbleView(Widget* parent) {
@@ -184,8 +186,6 @@ class TestBubbleView : public BubbleDialogDelegateView {
   TestBubbleView(const TestBubbleView&) = delete;
   TestBubbleView& operator=(const TestBubbleView&) = delete;
 };
-
-}  // namespace
 
 // Test that parent windows keep their traffic lights enabled when showing
 // dialogs.
@@ -366,7 +366,7 @@ TEST_F(NativeWidgetMacInteractiveUITest, GlobalNSTextInputContextUpdates) {
   Widget* widget = CreateTopLevelNativeWidget();
   Textfield* textfield = new Textfield;
   textfield->SetBounds(0, 0, 100, 100);
-  widget->GetContentsView()->AddChildView(textfield);
+  widget->GetContentsView()->AddChildViewRaw(textfield);
   textfield->RequestFocus();
   {
     widget->Show();
@@ -389,6 +389,36 @@ TEST_F(NativeWidgetMacInteractiveUITest, GlobalNSTextInputContextUpdates) {
 
   widget->Close();
   base::RunLoop().RunUntilIdle();
+}
+
+// Ensure that view accelerators unregistered when closing a widget with type
+// CLIENT_OWNS_WIDGET.
+TEST_F(NativeWidgetMacInteractiveUITest, UnregisterAccelerators) {
+  auto parent_widget = base::WrapUnique<Widget>(
+      CreateTopLevelNativeWidget(Widget::InitParams::CLIENT_OWNS_WIDGET));
+  parent_widget->SetBounds(gfx::Rect(100, 100, 100, 100));
+  ShowKeyWindow(parent_widget.get());
+
+  auto child_widget = std::make_unique<Widget>();
+  Widget::InitParams params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+  params.parent = parent_widget->GetNativeView();
+  params.child = true;
+  child_widget->Init(std::move(params));
+  child_widget->Show();
+  ASSERT_EQ(child_widget->GetFocusManager(), parent_widget->GetFocusManager());
+
+  auto* focus_manager = parent_widget->GetFocusManager();
+  ui::Accelerator accelerator(ui::VKEY_F10,
+                              ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN);
+  ASSERT_FALSE(focus_manager->IsAcceleratorRegistered(accelerator));
+  View* view =
+      child_widget->GetContentsView()->AddChildView(std::make_unique<View>());
+  view->AddAccelerator(accelerator);
+  ASSERT_TRUE(focus_manager->IsAcceleratorRegistered(accelerator));
+
+  child_widget.reset();
+  EXPECT_FALSE(focus_manager->IsAcceleratorRegistered(accelerator));
 }
 
 INSTANTIATE_TEST_SUITE_P(NativeWidgetMacInteractiveUITestInstance,

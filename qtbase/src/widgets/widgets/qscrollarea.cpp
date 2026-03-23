@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qscrollarea.h"
 #include "private/qscrollarea_p.h"
@@ -39,8 +40,12 @@ QT_BEGIN_NAMESPACE
     \table
     \row
     \li \inlineimage qscrollarea-noscrollbars.png
+                     {Image without the scroll bar}
     \li \inlineimage qscrollarea-onescrollbar.png
+                     {Image with a horizontal scroll bar}
     \li \inlineimage qscrollarea-twoscrollbars.png
+                     {Image with a horizontal and a vertical scroll bar}
+
     \endtable
 
     The scroll bars appearance depends on the currently set \l

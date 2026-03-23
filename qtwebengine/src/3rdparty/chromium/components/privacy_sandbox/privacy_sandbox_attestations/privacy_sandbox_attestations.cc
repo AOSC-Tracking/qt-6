@@ -25,6 +25,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_view_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
@@ -32,6 +33,7 @@
 #include "base/timer/elapsed_timer.h"
 #include "base/trace_event/memory_usage_estimator.h"
 #include "base/types/expected.h"
+#include "build/buildflag.h"
 #include "components/privacy_sandbox/privacy_sandbox_attestations/privacy_sandbox_attestations_histograms.h"
 #include "components/privacy_sandbox/privacy_sandbox_attestations/privacy_sandbox_attestations_parser.h"
 #include "components/privacy_sandbox/privacy_sandbox_features.h"
@@ -39,6 +41,13 @@
 #include "content/public/browser/browser_thread.h"
 #include "net/base/schemeful_site.h"
 #include "url/gurl.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/apk_assets.h"
+#include "base/containers/span.h"
+#include "base/files/memory_mapped_file.h"
+#include "components/privacy_sandbox/privacy_sandbox_attestations/preload/android_apk_assets.h"
+#endif  // BUILDFLAG(IS_ANDROID)
 
 namespace privacy_sandbox {
 
@@ -74,7 +83,7 @@ bool IsOverriddenByFlags(const net::SchemefulSite& site) {
       continue;
     }
 
-    if (net::SchemefulSite(override_url) == site) {
+    if (site.IsSameSiteWith(override_url)) {
       return true;
     }
   }
@@ -86,25 +95,9 @@ void RecordParsingStatusHistogram(ParsingStatus status) {
   base::UmaHistogramEnumeration(kAttestationsFileParsingStatusUMA, status);
 }
 
-// Trigger the opening and parsing of the attestations file. Returns the
-// parsed `attestations_map_` or the failure status. This function should only
-// be invoked with `kEnforcePrivacySandboxAttestations` enabled.
-// `installed_file_path` is the path to the attestations list file.
+// Parse the attestations map from the proto string.
 base::expected<PrivacySandboxAttestationsMap, ParsingStatus>
-LoadAttestationsInternal(base::FilePath installed_file_path) {
-  // This function should only be called when the feature is enabled.
-  CHECK(base::FeatureList::IsEnabled(
-      privacy_sandbox::kEnforcePrivacySandboxAttestations));
-
-  std::string proto_str;
-  // When reading the file, the `base::FilePath` directory should be used to
-  // make sure it works across platforms. If using the converted directory
-  // returned by `base::FilePath::AsUTF8Unsafe()`, it fails on Windows when the
-  // directory contains combining characters.
-  if (!base::ReadFileToString(installed_file_path, &proto_str)) {
-    return base::unexpected(ParsingStatus::kFileNotExist);
-  }
-
+ParseAttestationsMap(const std::string& proto_str) {
   base::ElapsedTimer parsing_timer;
   std::optional<PrivacySandboxAttestationsMap> attestations_map =
       ParseAttestationsFromString(proto_str);
@@ -126,6 +119,81 @@ LoadAttestationsInternal(base::FilePath installed_file_path) {
 
   return base::ok(std::move(attestations_map.value()));
 }
+
+// Trigger the opening and parsing of the attestations file. Returns the
+// parsed `attestations_map_` or the failure status. This function should only
+// be invoked with `kEnforcePrivacySandboxAttestations` enabled.
+// `installed_file_path` is the path to the attestations list file.
+base::expected<PrivacySandboxAttestationsMap, ParsingStatus>
+LoadAttestationsInternal(base::FilePath installed_file_path) {
+  // This function should only be called when the feature is enabled.
+  CHECK(base::FeatureList::IsEnabled(
+      privacy_sandbox::kEnforcePrivacySandboxAttestations));
+
+  std::string proto_str;
+  // When reading the file, the `base::FilePath` directory should be used to
+  // make sure it works across platforms. If using the converted directory
+  // returned by `base::FilePath::AsUTF8Unsafe()`, it fails on Windows when the
+  // directory contains combining characters.
+  if (!base::ReadFileToString(installed_file_path, &proto_str)) {
+    return base::unexpected(ParsingStatus::kFileNotExist);
+  }
+
+  return ParseAttestationsMap(proto_str);
+}
+
+#if BUILDFLAG(IS_ANDROID)
+
+void RecordLoadAPKAssetStatusHistogram(LoadAPKAssetStatus status) {
+  base::UmaHistogramEnumeration(kAttestationsLoadAPKAssetStatusUMA, status);
+}
+
+// Read the attestations list from APK assets and parse the content to the
+// attestations map.
+base::expected<PrivacySandboxAttestationsMap, ParsingStatus>
+LoadAttestationsFromAPKAsset() {
+  base::MemoryMappedFile::Region region =
+      base::MemoryMappedFile::Region::kWholeFile;
+
+  // Open the attestation list from APK assets.
+  int open_list_status = base::android::OpenApkAsset(
+      std::string(kAttestationsListAssetPath), &region);
+
+  // The attestations APK assets are unconditionally packaged. It is safe to
+  // assume that assets exist since they live in the same .apk file as the
+  // program itself. In case of unexpected failure, the error is recorded to the
+  // histogram.
+  if (open_list_status == -1) {
+    // TODO(crbug.com/408992354): Replace this histogram recording to a CHECK if
+    // there is few failures observed.
+    RecordLoadAPKAssetStatusHistogram(LoadAPKAssetStatus::kCannotOpenList);
+    return base::unexpected(ParsingStatus::kFileNotExist);
+  }
+
+  // Create a memory mapped file of privacy-sandbox-attestations.dat.
+  base::File list_file(open_list_status);
+  base::MemoryMappedFile list_memory_mapped_file;
+  bool mapped =
+      list_memory_mapped_file.Initialize(std::move(list_file), region);
+  if (!mapped) {
+    // TODO(crbug.com/408992354): Replace this histogram recording to a CHECK if
+    // there is few failures observed.
+    RecordLoadAPKAssetStatusHistogram(LoadAPKAssetStatus::kCannotMemoryMapList);
+    return base::unexpected(ParsingStatus::kFileNotExist);
+  }
+
+  const std::string proto_str(
+      base::as_string_view(base::as_chars(list_memory_mapped_file.bytes())));
+  base::expected<PrivacySandboxAttestationsMap, ParsingStatus>
+      attestations_map = ParseAttestationsMap(proto_str);
+  RecordLoadAPKAssetStatusHistogram(attestations_map.has_value()
+                                        ? LoadAPKAssetStatus::kSuccess
+                                        : LoadAPKAssetStatus::kCannotParseList);
+
+  return attestations_map;
+}
+
+#endif  // BUILDFLAG(IS_ANDROID)
 
 }  // namespace
 
@@ -417,8 +485,29 @@ void PrivacySandboxAttestations::OnAttestationsParsed(
 }
 
 void PrivacySandboxAttestations::OnAttestationsFileCheckComplete() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   attestations_file_checked_ = true;
   RunComponentRegistrationCallbackForTesting();  // IN-TEST
+
+// On Android, if the parsing has not yet started at the end of component
+// registration, this implies there is no attestations list available. The
+// pre-installed attestations component in APK assets will be read to populate
+// the in-memory attestations map.
+// TODO(crbug.com/406020732): Consider also loading the attestations component
+// from APK assets if the parsing has finished with error.
+#if BUILDFLAG(IS_ANDROID)
+  if (attestations_parse_progress_ == Progress::kNotStarted &&
+      base::FeatureList::IsEnabled(
+          privacy_sandbox::kPrivacySandboxAttestationsLoadFromAPKAsset)) {
+    attestations_parse_progress_ = Progress::kStarted;
+    task_runner_->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&LoadAttestationsFromAPKAsset),
+        base::BindOnce(&PrivacySandboxAttestations::OnAttestationsParsed,
+                       base::Unretained(this),
+                       base::Version(kAttestationsListAssetVersion),
+                       /*is_pre_installed=*/true));
+  }
+#endif  // BUILDFLAG(IS_ANDROID)
 }
 
 }  // namespace privacy_sandbox

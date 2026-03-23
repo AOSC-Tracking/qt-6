@@ -1,17 +1,20 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
+
+#include "graphs3d/utils/qgraphs3dlogging_p.h"
 #include "q3dscene.h"
 #include "qgraphsinputhandler_p.h"
 #include "qquickgraphsscatter_p.h"
 #include "qquickgraphstexturedata_p.h"
+#include "qscatter3dseries.h"
 #include "qscatter3dseries_p.h"
 #include "qscatterdataproxy_p.h"
 #include "qvalue3daxis_p.h"
 #include "qgraphs3dlogging_p.h"
 
 #include <QColor>
-#include <QtCore/QMutexLocker>
 #include <QtQuick3D/private/qquick3dcustommaterial_p.h>
 #include <QtQuick3D/private/qquick3ddirectionallight_p.h>
 #include <QtQuick3D/private/qquick3dmodel_p.h>
@@ -22,7 +25,45 @@
 
 #include <QtGui/qquaternion.h>
 
+#include <qtgraphs_tracepoints_p.h>
+
 QT_BEGIN_NAMESPACE
+
+Q_TRACE_PREFIX(qtgraphs,
+                   "QT_BEGIN_NAMESPACE" \
+                   "class QQuickGraphsScatter;" \
+                   "QT_END_NAMESPACE"
+               )
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterPointDataUpdate_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterPointDataUpdate_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterPointSelectionUpdate_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterPointSelectionUpdate_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterDoPicking_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterDoPicking_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterDoRayPicking_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterDoRayPicking_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterLegacyModelsCountUpdate_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterLegacyModelsCountUpdate_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterLegacyGeneratePointsForScatterModel_entry, int itemCount);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterLegacyGeneratePointsForScatterModel_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterLegacyModelsPositionUpdate_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterLegacyModelsPositionUpdate_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterDefaultModelsPositionUpdate_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterDefaultModelsPositionUpdate_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterDefaultGeneratePointsForScatterModel_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterDefaultGeneratePointsForScatterModel_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterSplineUpdate_entry);
+Q_TRACE_POINT(qtgraphs, QGraphs3DScatterSplineUpdate_exit);
 
 static const int insertRemoveRecordReserveSize = 31;
 
@@ -148,9 +189,6 @@ QQuickGraphsScatter::QQuickGraphsScatter(QQuickItem *parent)
 
 QQuickGraphsScatter::~QQuickGraphsScatter()
 {
-    QMutexLocker locker(m_nodeMutex.data());
-    const QMutexLocker locker2(mutex());
-
     for (auto &graphModel : m_scatterGraphs) {
         delete graphModel;
     }
@@ -196,6 +234,7 @@ void QQuickGraphsScatter::generatePointsForScatterModel(ScatterModel *graphModel
     QList<QQuick3DModel *> itemList;
     if (optimizationHint() == QtGraphs3D::OptimizationHint::Legacy) {
         qsizetype itemCount = graphModel->series->dataProxy()->itemCount();
+        Q_TRACE_SCOPE(QGraphs3DScatterLegacyGeneratePointsForScatterModel, static_cast<int>(itemCount));
         if (graphModel->series->dataProxy()->itemCount() > 0)
             itemList.resize(itemCount);
 
@@ -208,6 +247,8 @@ void QQuickGraphsScatter::generatePointsForScatterModel(ScatterModel *graphModel
         graphModel->dataItems = itemList;
         markDataDirty();
     } else if (optimizationHint() == QtGraphs3D::OptimizationHint::Default) {
+        Q_TRACE_SCOPE(QGraphs3DScatterDefaultGeneratePointsForScatterModel);
+
         graphModel->instancingRootItem = createDataItem(graphModel->series);
         graphModel->instancingRootItem->setParent(graphModel->series);
         graphModel->instancingRootItem->setInstancing(graphModel->instancing);
@@ -240,9 +281,17 @@ void QQuickGraphsScatter::updateScatterGraphItemPositions(ScatterModel *graphMod
     QScatterDataProxy *dataProxy = graphModel->series->dataProxy();
     QList<QQuick3DModel *> itemList = graphModel->dataItems;
 
-    auto valueAxisX = static_cast<QValue3DAxis *>(axisX());
-    auto valueAxisY = static_cast<QValue3DAxis *>(axisY());
-    auto valueAxisZ = static_cast<QValue3DAxis *>(axisZ());
+    QValue3DAxis *valueAxisX = graphModel->series->axisX();
+    QValue3DAxis *valueAxisY = graphModel->series->axisY();
+    QValue3DAxis *valueAxisZ = graphModel->series->axisZ();
+
+    if (!valueAxisX)
+        valueAxisX = static_cast<QValue3DAxis *>(axisX());
+    if (!valueAxisY)
+        valueAxisY = static_cast<QValue3DAxis *>(axisY());
+    if (!valueAxisZ)
+        valueAxisZ = static_cast<QValue3DAxis *>(axisZ());
+
     bool xReversed = valueAxisX->reversed();
     bool yReversed = valueAxisY->reversed();
     bool zReversed = valueAxisZ->reversed();
@@ -255,13 +304,13 @@ void QQuickGraphsScatter::updateScatterGraphItemPositions(ScatterModel *graphMod
             qCWarning(lcProperties3D, "%ls Item count differs from itemList count",
                      qUtf16Printable(QString::fromUtf8(__func__)));
         }
-
+        Q_TRACE_SCOPE(QGraphs3DScatterLegacyModelsPositionUpdate);
         for (int i = 0; i < dataProxy->itemCount(); ++i) {
             const QScatterDataItem item = dataProxy->itemAt(i);
             QQuick3DModel *dataPoint = itemList.at(i);
 
             QVector3D dotPos = item.position();
-            if (isDotPositionInAxisRange(dotPos)) {
+            if (isDotPositionInAxisRange(dotPos, graphModel->series)) {
                 dataPoint->setVisible(true);
                 QQuaternion dotRot = item.rotation();
                 float dotPosX = xReversed ? 1.0f - valueAxisX->positionAt(dotPos.x())
@@ -293,11 +342,12 @@ void QQuickGraphsScatter::updateScatterGraphItemPositions(ScatterModel *graphMod
         qsizetype count = dataProxy->itemCount();
         QList<DataItemHolder> positions;
 
+        Q_TRACE_SCOPE(QGraphs3DScatterDefaultModelsPositionUpdate);
         for (int i = 0; i < count; i++) {
             const QScatterDataItem &item = dataProxy->itemAt(i);
             QVector3D dotPos = item.position();
 
-            if (isDotPositionInAxisRange(dotPos)) {
+            if (isDotPositionInAxisRange(dotPos, graphModel->series)) {
                 float dotPosX = xReversed ? 1.0f - valueAxisX->positionAt(dotPos.x())
                                           : valueAxisX->positionAt(dotPos.x());
                 float dotPosY = yReversed ? 1.0f - valueAxisY->positionAt(dotPos.y())
@@ -341,7 +391,7 @@ void QQuickGraphsScatter::updateScatterGraphItemPositions(ScatterModel *graphMod
         graphModel->instancing->setDataArray(positions);
 
         if (selectedItemInSeries(graphModel->series)) {
-            if (isDotPositionInAxisRange(dataProxy->itemAt(m_selectedItem).position())) {
+            if (isDotPositionInAxisRange(dataProxy->itemAt(m_selectedItem).position(), graphModel->series)) {
                 QQuaternion totalRotation;
 
                 if (graphModel->series->mesh() != QAbstract3DSeries::Mesh::Point) {
@@ -413,7 +463,7 @@ void QQuickGraphsScatter::updateScatterGraphItemVisuals(ScatterModel *graphModel
             window()->releaseResources();
 
         if (itemCount != graphModel->dataItems.size())
-            qWarning("%ls Item count differs from itemList count",
+            qCWarning(lcGraphsScatter3D, "%ls Item count differs from itemList count",
                      qUtf16Printable(QString::fromUtf8(__func__)));
 
         bool transparentTexture = false;
@@ -557,6 +607,7 @@ void QQuickGraphsScatter::updateScatterGraphItemVisuals(ScatterModel *graphModel
             graphModel->selectionIndicator->setRotation(dih.rotation);
             graphModel->selectionIndicator->setScale(dih.scale);
             graphModel->selectionIndicator->setVisible(true);
+            itemLabel()->setVisible(graphModel->series->isItemLabelVisible());
             graphModel->instancing->hideDataItem(m_selectedItem);
             updateItemLabel(graphModel->selectionIndicator->position());
             graphModel->instancing->markDataDirty();
@@ -924,11 +975,31 @@ bool QQuickGraphsScatter::selectedItemInSeries(const QScatter3DSeries *series)
     return (m_selectedItem != -1 && m_selectedItemSeries == series);
 }
 
-bool QQuickGraphsScatter::isDotPositionInAxisRange(QVector3D dotPos)
+bool QQuickGraphsScatter::isDotPositionInAxisRange(QVector3D dotPos, QScatter3DSeries *series)
 {
-    return ((dotPos.x() >= axisX()->min() && dotPos.x() <= axisX()->max())
-            && (dotPos.y() >= axisY()->min() && dotPos.y() <= axisY()->max())
-            && (dotPos.z() >= axisZ()->min() && dotPos.z() <= axisZ()->max()));
+    float cutoffMargin = QQuickGraphsItem::cutoffMargin();
+    QValue3DAxis *xAxis = series->axisX();
+    QValue3DAxis *yAxis = series->axisY();
+    QValue3DAxis *zAxis = series->axisZ();
+
+    if (!xAxis)
+        xAxis = static_cast<QValue3DAxis *>(axisX());
+    if (!yAxis)
+        yAxis = static_cast<QValue3DAxis *>(axisY());
+    if (!zAxis)
+        zAxis = static_cast<QValue3DAxis *>(axisZ());
+
+    float axisMinX = xAxis->min() - cutoffMargin;
+    float axisMinY = yAxis->min() - cutoffMargin;
+    float axisMinZ = zAxis->min() - cutoffMargin;
+
+    float axisMaxX = xAxis->max() + cutoffMargin;
+    float axisMaxY = yAxis->max() + cutoffMargin;
+    float axisMaxZ = zAxis->max() + cutoffMargin;
+
+    return ((dotPos.x() >= axisMinX && dotPos.x() <= axisMaxX)
+            && (dotPos.y() >= axisMinY && dotPos.y() <= axisMaxY)
+            && (dotPos.z() >= axisMinZ && dotPos.z() <= axisMaxZ));
 }
 
 QScatter3DSeries *QQuickGraphsScatter::selectedSeries() const
@@ -982,7 +1053,7 @@ void QQuickGraphsScatter::setSelectedItem(qsizetype index, QScatter3DSeries *ser
     }
 
     if (index != invalidSelectionIndex())
-        itemLabel()->setVisible(true);
+        itemLabel()->setVisible(series->isItemLabelVisible());
 }
 
 void QQuickGraphsScatter::setSelectionMode(QtGraphs3D::SelectionFlags mode)
@@ -1081,6 +1152,14 @@ void QQuickGraphsScatter::addSeries(QScatter3DSeries *series)
 
     if (series->selectedItem() != invalidSelectionIndex())
         setSelectedItem(series->selectedItem(), series);
+
+    if (scatterSeries->axisX())
+        handleMultiAxisChanged(scatterSeries->axisX());
+    if (scatterSeries->axisY())
+        handleMultiAxisChanged(scatterSeries->axisY());
+    if (scatterSeries->axisZ())
+        handleMultiAxisChanged(scatterSeries->axisZ());
+
 }
 
 void QQuickGraphsScatter::removeSeries(QScatter3DSeries *series)
@@ -1115,6 +1194,19 @@ void QQuickGraphsScatter::removeSeries(QScatter3DSeries *series)
         }
     }
 
+    QObject::disconnect(series,
+                     &QScatter3DSeries::axisXChanged,
+                     this,
+                     &QQuickGraphsScatter::handleMultiAxisChanged);
+    QObject::disconnect(series,
+                     &QScatter3DSeries::axisYChanged,
+                     this,
+                     &QQuickGraphsScatter::handleMultiAxisChanged);
+    QObject::disconnect(series,
+                     &QScatter3DSeries::axisZChanged,
+                     this,
+                     &QQuickGraphsScatter::handleMultiAxisChanged);
+
     disconnectSeries(series);
 }
 
@@ -1131,6 +1223,40 @@ void QQuickGraphsScatter::handleAxisYChanged(QAbstract3DAxis *axis)
 void QQuickGraphsScatter::handleAxisZChanged(QAbstract3DAxis *axis)
 {
     emit axisZChanged(static_cast<QValue3DAxis *>(axis));
+}
+
+void QQuickGraphsScatter::handleMultiAxisChanged(QAbstract3DAxis *axis)
+{
+    QQuickGraphsItem::handleMultiAxisChanged(axis);
+}
+
+QAbstract3DAxis *QQuickGraphsScatter::getSeriesMultiAxis(QAbstract3DSeries *series,
+                   QAbstract3DAxis::AxisOrientation orientation)
+{
+    QScatter3DSeries *scatterSeries = qobject_cast<QScatter3DSeries *>(series);
+
+    if (!scatterSeries)
+        return nullptr;
+
+    QAbstract3DAxis *axis = nullptr;
+    switch (orientation)  {
+    case QAbstract3DAxis::AxisOrientation::X:
+        axis = scatterSeries->axisX();
+    break;
+    case QAbstract3DAxis::AxisOrientation::Y:
+        axis = scatterSeries->axisY();
+    break;
+    case QAbstract3DAxis::AxisOrientation::Z:
+        axis = scatterSeries->axisZ();
+    break;
+    case QAbstract3DAxis::AxisOrientation::None:
+    break;
+    }
+
+    if (axis)
+        axis->d_func()->setOrientation(orientation);
+
+    return axis;
 }
 
 void QQuickGraphsScatter::handleSeriesMeshChanged()
@@ -1397,8 +1523,8 @@ bool QQuickGraphsScatter::doPicking(QPointF position)
 {
     if (!QQuickGraphsItem::doPicking(position))
         return false;
-
     if (selectionMode() == QtGraphs3D::SelectionFlag::Item) {
+        Q_TRACE_SCOPE(QGraphs3DScatterDoPicking);
         QList<QQuick3DPickResult> results;
         if (m_customView)
             results = m_customView->pickAll(position.x(), position.y());
@@ -1450,6 +1576,7 @@ bool QQuickGraphsScatter::doRayPicking(QVector3D origin, QVector3D direction)
         return false;
 
     if (selectionMode() == QtGraphs3D::SelectionFlag::Item) {
+        Q_TRACE_SCOPE(QGraphs3DScatterDoRayPicking);
         QList<QQuick3DPickResult> results;
         if (m_customView)
             results = m_customView->rayPickAll(origin, direction);
@@ -1551,6 +1678,18 @@ void QQuickGraphsScatter::connectSeries(QScatter3DSeries *series)
                      &QScatter3DSeries::itemSizeChanged,
                      this,
                      &QQuickGraphsScatter::markDataDirty);
+    QObject::connect(series,
+                     &QScatter3DSeries::axisXChanged,
+                     this,
+                     &QQuickGraphsScatter::handleMultiAxisChanged);
+    QObject::connect(series,
+                     &QScatter3DSeries::axisYChanged,
+                     this,
+                     &QQuickGraphsScatter::handleMultiAxisChanged);
+    QObject::connect(series,
+                     &QScatter3DSeries::axisZChanged,
+                     this,
+                     &QQuickGraphsScatter::handleMultiAxisChanged);
 }
 
 void QQuickGraphsScatter::calculateSceneScalingFactors()
@@ -1643,6 +1782,7 @@ void QQuickGraphsScatter::calculatePolarXZ(const float posX,
 void QQuickGraphsScatter::updateSpline(ScatterModel *model)
 {
     if (auto series = qobject_cast<QSpline3DSeries *>(model->series)) {
+        Q_TRACE_SCOPE(QGraphs3DScatterSplineUpdate);
         if (!series->isSplineVisible()) {
             if (model->splineModel)
                 model->splineModel->setVisible(false);
@@ -1670,19 +1810,29 @@ void QQuickGraphsScatter::updateSpline(ScatterModel *model)
             const QScatterDataArray &array = series->dataArray();
             qsizetype pointCount = array.size();
             if (isDataDirty() && array.size() != 0) {
-                QVector<QVector4D> splinePoints;
-                QVector<SplineVertex> vertices;
+                QList<QVector4D> splinePoints;
+                QList<SplineVertex> vertices;
                 splinePoints.reserve(pointCount + 2);
                 splineData->setSize(QSize(pointCount + 2, 1));
 
-                auto normalizedPos = [this](QVector3D pos) {
-                    float posX = static_cast<QValue3DAxis *>(axisX())->positionAt(pos.x())
+                QValue3DAxis *valueAxisX = series->axisX();
+                QValue3DAxis *valueAxisY = series->axisY();
+                QValue3DAxis *valueAxisZ = series->axisZ();
+                if (!valueAxisX)
+                    valueAxisX = static_cast<QValue3DAxis *>(axisX());
+                if (!valueAxisY)
+                    valueAxisY = static_cast<QValue3DAxis *>(axisY());
+                if (!valueAxisZ)
+                    valueAxisZ = static_cast<QValue3DAxis *>(axisZ());
+
+                auto normalizedPos = [this, valueAxisX, valueAxisY, valueAxisZ](QVector3D pos) {
+                    float posX = valueAxisX->positionAt(pos.x())
                                      * scale().x()
                                  + translate().x();
-                    float posY = static_cast<QValue3DAxis *>(axisY())->positionAt(pos.y())
+                    float posY = valueAxisY->positionAt(pos.y())
                                      * scale().y()
                                  + translate().y();
-                    float posZ = static_cast<QValue3DAxis *>(axisZ())->positionAt(pos.z())
+                    float posZ = valueAxisZ->positionAt(pos.z())
                                      * scale().z()
                                  + translate().z();
                     return QVector3D(posX, posY, posZ);
@@ -1876,6 +2026,13 @@ void QQuickGraphsScatter::clearAllSelectionInstanced()
     }
 }
 
+void QQuickGraphsScatter::handleItemLabelVisibleChangedBySender(bool visible, QObject *sender)
+{
+    auto series = qobject_cast<QScatter3DSeries *>(sender);
+    if (series && series == m_selectedItemSeries)
+        itemLabel()->setVisible(visible);
+}
+
 void QQuickGraphsScatter::optimizationChanged(QtGraphs3D::OptimizationHint toOptimization)
 {
     if (toOptimization == QtGraphs3D::OptimizationHint::Default) {
@@ -1901,6 +2058,7 @@ void QQuickGraphsScatter::updateGraph()
         if (isDataDirty()) {
             if (optimizationHint() == QtGraphs3D::OptimizationHint::Legacy && seriesVisible) {
                 if (graphModel->dataItems.count() != graphModel->series->dataProxy()->itemCount()) {
+                    Q_TRACE(QGraphs3DScatterLegacyModelsCountUpdate_entry);
                     qsizetype sizeDiff = sizeDifference(graphModel->dataItems.count(),
                                                         graphModel->series->dataProxy()->itemCount());
 
@@ -1908,6 +2066,7 @@ void QQuickGraphsScatter::updateGraph()
                         addPointsToScatterModel(graphModel, sizeDiff);
                     else
                         removeDataItems(graphModel->dataItems, qAbs(sizeDiff));
+                    Q_TRACE(QGraphs3DScatterLegacyModelsCountUpdate_exit);
                 }
             } else if (optimizationHint() == QtGraphs3D::OptimizationHint::Default
                        && seriesVisible) {
@@ -1978,6 +2137,7 @@ void QQuickGraphsScatter::synchData()
     qCDebug(lcGraphs3D, "%s start syncing", qUtf8Printable(QLatin1String(__FUNCTION__)));
     QList<QScatter3DSeries *> seriesList = scatterSeriesList();
 
+    Q_TRACE(QGraphs3DScatterPointDataUpdate_entry);
     float maxItemSize = 0.0f;
     for (const auto &series : std::as_const(seriesList)) {
         if (series->isVisible()) {
@@ -1990,9 +2150,12 @@ void QQuickGraphsScatter::synchData()
     m_maxItemSize = maxItemSize;
 
     updatePointScaleSize();
+    Q_TRACE(QGraphs3DScatterPointDataUpdate_exit);
     QQuickGraphsItem::synchData();
 
     m_pointScale = calculatePointScaleSize();
+
+    Q_TRACE(QGraphs3DScatterPointSelectionUpdate_entry);
 
     if (hasSelectedItemChanged()) {
         if (m_selectedItem != invalidSelectionIndex()) {
@@ -2003,6 +2166,7 @@ void QQuickGraphsScatter::synchData()
         }
         setSelectedItemChanged(false);
     }
+    Q_TRACE(QGraphs3DScatterPointSelectionUpdate_exit);
     qCDebug(lcGraphs3D, "%s end syncing", qUtf8Printable(QLatin1String(__FUNCTION__)));
 }
 
@@ -2053,4 +2217,7 @@ QQuickGraphsScatter::ScatterModel *QQuickGraphsScatter::findGraphModel(QScatter3
     }
     return nullptr;
 }
+
 QT_END_NAMESPACE
+
+#include "moc_qquickgraphsscatter_p.cpp"

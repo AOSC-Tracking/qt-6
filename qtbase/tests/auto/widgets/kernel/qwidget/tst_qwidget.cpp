@@ -11,7 +11,9 @@
 #include <qlabel.h>
 #include <qlayout.h>
 #include <qlineedit.h>
-#include <qlistview.h>
+#if QT_CONFIG(listwidget)
+#include <qlistwidget.h>
+#endif
 #include <qmessagebox.h>
 #include <qmimedata.h>
 #include <qpainter.h>
@@ -22,6 +24,7 @@
 #include <qstylefactory.h>
 #include <private/qwidget_p.h>
 #include <private/qwidgetrepaintmanager_p.h>
+#include <private/qwindowsstyle_p.h>
 #include <private/qapplication_p.h>
 #include <private/qhighdpiscaling_p.h>
 #include <qcalendarwidget.h>
@@ -184,6 +187,7 @@ private slots:
     void mapFromAndTo();
     void focusChainOnHide();
     void focusChainOnReparent();
+    void focusChainOnReparentNoChange();
     void focusAbstraction();
     void defaultTabOrder();
     void reverseTabOrder();
@@ -731,9 +735,7 @@ void tst_QWidget::initTestCase()
 
 void tst_QWidget::cleanup()
 {
-    QTRY_COMPARE(QApplication::topLevelWidgets(), QWidgetList());
-    if (!QTest::qWaitFor([]{ return QApplication::allWidgets().isEmpty(); }, 50ms))
-        qWarning() << "Test function has leaked" << QApplication::allWidgets();
+    QTRY_COMPARE(QApplication::allWidgets(), QWidgetList());
 }
 
 template <typename T>
@@ -1982,6 +1984,82 @@ void tst_QWidget::focusChainOnReparent()
     }
 }
 
+//#define DEBUG_FOCUS_CHAIN
+static void dumpFocusChain(QWidget *start, bool bForward, const char *desc = nullptr)
+{
+#ifdef DEBUG_FOCUS_CHAIN
+    qDebug() << "Dump focus chain, start:" << start << "isForward:" << bForward << desc;
+    QWidget *cur = start;
+    do {
+        qDebug() << "-" << cur << cur->objectName();
+        auto widgetPrivate = static_cast<QWidgetPrivate *>(qt_widget_private(cur));
+        cur = bForward ? widgetPrivate->focus_next : widgetPrivate->focus_prev;
+    } while (cur != start);
+#else
+    Q_UNUSED(start);
+    Q_UNUSED(bForward);
+    Q_UNUSED(desc);
+#endif
+}
+
+void tst_QWidget::focusChainOnReparentNoChange()
+{
+    QWidget window;
+
+    auto new_QWidget = [](QWidget *parent, const char *name) {
+        QWidget *w = new QWidget(parent);
+        w->setObjectName(name);
+        return w;
+    };
+    QWidget *child1 = new_QWidget(&window, "child1");
+    QWidget *child2 = new_QWidget(&window, "child2");
+    QWidget *child3 = new_QWidget(&window, "child3");
+    QWidget *child21 = new_QWidget(child2, "child21");
+    QWidget *child22 = new_QWidget(child2, "child22");
+    QWidget *child4 = new_QWidget(&window, "child4");
+
+    dumpFocusChain(&window, true);
+
+    QWidget *expectedOriginalChain[8] = {&window, child1,  child2,  child3,  child21, child22, child4, &window};
+    QWidget *w = &window;
+    for (auto expectedOriginal : expectedOriginalChain) {
+        QCOMPARE(w, expectedOriginal);
+        w = w->nextInFocusChain();
+    }
+    for (int i = 7; i >= 0; --i) {
+        w = w->previousInFocusChain();
+        QCOMPARE(w, expectedOriginalChain[i]);
+    }
+
+    child2->setParent(child4);
+    child22->setParent(&window);
+    dumpFocusChain(&window, true);
+
+    /*
+     *  child2 and child22 was reparented *within* the &window hierarchy
+     *  Hierarchy is now:
+     *
+     *  - window
+     *      - child1
+     *      - child3
+     *      - child4
+     *          - child2
+     *              - child21
+     *      - child22
+     *
+     *  but focus chain remains the same (it depends on the order of widget construction)
+     */
+    QWidget *expectedNewChain[8] = {&window, child1,  child2,  child3,  child21, child22, child4, &window};
+    w = &window;
+    for (auto expectedNew : expectedNewChain) {
+        QCOMPARE(w, expectedNew);
+        w = w->nextInFocusChain();
+    }
+    for (int i = 7; i >= 0; --i) {
+        w = w->previousInFocusChain();
+        QCOMPARE(w, expectedNewChain[i]);
+    }
+}
 
 void tst_QWidget::focusChainOnHide()
 {
@@ -2533,24 +2611,6 @@ void tst_QWidget::tabOrderWithProxyDisabled()
              qPrintable(focusWidgetName()));
     QVERIFY2(lineEdit1.hasFocus(),
              qPrintable(focusWidgetName()));
-}
-
-//#define DEBUG_FOCUS_CHAIN
-static void dumpFocusChain(QWidget *start, bool bForward, const char *desc = nullptr)
-{
-#ifdef DEBUG_FOCUS_CHAIN
-    qDebug() << "Dump focus chain, start:" << start << "isForward:" << bForward << desc;
-    QWidget *cur = start;
-    do {
-        qDebug() << "-" << cur;
-        auto widgetPrivate = static_cast<QWidgetPrivate *>(qt_widget_private(cur));
-        cur = bForward ? widgetPrivate->focus_next : widgetPrivate->focus_prev;
-    } while (cur != start);
-#else
-    Q_UNUSED(start);
-    Q_UNUSED(bForward);
-    Q_UNUSED(desc);
-#endif
 }
 
 void tst_QWidget::tabOrderWithCompoundWidgets()
@@ -3445,7 +3505,12 @@ void tst_QWidget::resizeEvent()
         QCOMPARE (wTopLevel.m_resizeEventCount, 1);
         QTestPrivate::androidCompatibleShow(&wTopLevel);
         QVERIFY(QTest::qWaitForWindowExposed(&wTopLevel));
-        QCOMPARE (wTopLevel.m_resizeEventCount, 2);
+        // The top level widget can receive new margins after show
+        // if the size is big enough to end up overlapping safe areas.
+        int safeMarginsResizeCount = 0;
+        if (!wTopLevel.windowHandle()->safeAreaMargins().isNull())
+            safeMarginsResizeCount = 1;
+        QCOMPARE (wTopLevel.m_resizeEventCount, 2 + safeMarginsResizeCount);
     }
 }
 
@@ -6801,7 +6866,32 @@ void tst_QWidget::deleteStyle()
     QCoreApplication::processEvents();
 }
 
-class TestStyle : public QCommonStyle
+
+#if QT_CONFIG(listwidget)
+class DontCrashOnSetStyleWidget : public QWidget
+{
+    Q_OBJECT
+public:
+    DontCrashOnSetStyleWidget()
+    {
+        lw = new QListWidget;
+        lwi = new QListWidgetItem;
+        lw->addItem(lwi);
+        lw->setItemWidget(lwi, new QLabel(u"test"_s));
+        auto l = new QVBoxLayout(this);
+        l->addWidget(lw);
+    }
+    bool testStyleSheetTarget() const
+    {
+        return lw->itemWidget(lwi)->testAttribute(Qt::WA_StyleSheetTarget);
+    }
+private:
+    QListWidget *lw = nullptr;
+    QListWidgetItem *lwi = nullptr;
+};
+#endif
+
+class TestStyle : public QWindowsStyle
 {
     void polish(QWidget *w) override
     {
@@ -6822,13 +6912,17 @@ void tst_QWidget::dontCrashOnSetStyle()
     });
     {
         qApp->setStyle(new TestStyle);
-        qApp->setStyleSheet("blub");
+        qApp->setStyleSheet(u"DontCrashOnSetStyleWidget QLabel {color:red;}"_s);
         QComboBox w;
         w.show();
         QVERIFY(QTest::qWaitForWindowExposed(&w));
         // this created an infinite loop / stack overflow inside setStyle_helper()
         // directly call polish instead waiting for the polish event
         qApp->style()->polish(&w);
+#if QT_CONFIG(listwidget)
+        DontCrashOnSetStyleWidget widget;
+        QVERIFY(widget.testStyleSheetTarget());
+#endif
     }
 }
 
@@ -6837,9 +6931,13 @@ class TopLevelFocusCheck: public QWidget
     Q_OBJECT
 public:
     QLineEdit* edit;
-    explicit TopLevelFocusCheck(QWidget *parent = nullptr)
+    explicit TopLevelFocusCheck(const QString &name, QWidget *parent = nullptr)
         : QWidget(parent), edit(new QLineEdit(this))
     {
+        const QString title = QLatin1String(QTest::currentTestFunction()) + "_"_L1 + name;
+        setWindowTitle(title);
+        setObjectName(title);
+        edit->setObjectName(QString("%1_edit"_L1).arg(title));
         edit->hide();
         edit->installEventFilter(this);
     }
@@ -6849,7 +6947,7 @@ public slots:
     {
         edit->show();
         edit->setFocus(Qt::OtherFocusReason);
-        QCoreApplication::processEvents();
+        QVERIFY(QTest::qWaitForWindowFocused(edit));
     }
     bool eventFilter(QObject *obj, QEvent *event) override
     {
@@ -6869,49 +6967,42 @@ void tst_QWidget::multipleToplevelFocusCheck()
 
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
         QSKIP("Window activation is not supported");
-    TopLevelFocusCheck w1;
-    TopLevelFocusCheck w2;
+    TopLevelFocusCheck w1("Widget-1"_L1);
+    TopLevelFocusCheck w2("Widget-2"_L1);
 
-    const QString title = QLatin1String(QTest::currentTestFunction());
-    w1.setWindowTitle(title + QLatin1String("_W1"));
     w1.move(m_availableTopLeft + QPoint(20, 20));
     w1.resize(200, 200);
     w1.show();
     QVERIFY(QTest::qWaitForWindowExposed(&w1));
-    w2.setWindowTitle(title + QLatin1String("_W2"));
     w2.move(w1.frameGeometry().topRight() + QPoint(20, 0));
     w2.resize(200,200);
     w2.show();
     QVERIFY(QTest::qWaitForWindowExposed(&w2));
 
     w1.activateWindow();
-    QApplicationPrivate::setActiveWindow(&w1);
     QVERIFY(QTest::qWaitForWindowActive(&w1));
-    QTRY_COMPARE(QApplication::activeWindow(), static_cast<QWidget *>(&w1));
+    QTRY_COMPARE(QApplication::activeWindow(), &w1);
     QTest::mouseDClick(&w1, Qt::LeftButton);
-    QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(w1.edit));
+    QTRY_COMPARE(QApplication::focusWidget(), w1.edit);
 
     w2.activateWindow();
-    QApplicationPrivate::setActiveWindow(&w2);
     QVERIFY(QTest::qWaitForWindowActive(&w2));
-    QTRY_COMPARE(QApplication::activeWindow(), static_cast<QWidget *>(&w2));
+    QTRY_COMPARE(QApplication::activeWindow(), &w2);
     QTest::mouseClick(&w2, Qt::LeftButton);
     QTRY_COMPARE(QApplication::focusWidget(), nullptr);
 
     QTest::mouseDClick(&w2, Qt::LeftButton);
-    QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(w2.edit));
+    QTRY_COMPARE(QApplication::focusWidget(), w2.edit);
 
     w1.activateWindow();
-    QApplicationPrivate::setActiveWindow(&w1);
     QVERIFY(QTest::qWaitForWindowActive(&w1));
-    QTRY_COMPARE(QApplication::activeWindow(), static_cast<QWidget *>(&w1));
+    QTRY_COMPARE(QApplication::activeWindow(), &w1);
     QTest::mouseDClick(&w1, Qt::LeftButton);
-    QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(w1.edit));
+    QTRY_COMPARE(QApplication::focusWidget(), w1.edit);
 
     w2.activateWindow();
-    QApplicationPrivate::setActiveWindow(&w2);
     QVERIFY(QTest::qWaitForWindowActive(&w2));
-    QTRY_COMPARE(QApplication::activeWindow(), static_cast<QWidget *>(&w2));
+    QTRY_COMPARE(QApplication::activeWindow(), &w2);
     QTest::mouseClick(&w2, Qt::LeftButton);
     QTRY_COMPARE(QApplication::focusWidget(), nullptr);
 }
@@ -7643,7 +7734,7 @@ class EventRecorder : public QObject
     Q_OBJECT
 
 public:
-    typedef QPair<QWidget *, QEvent::Type> WidgetEventTypePair;
+    using WidgetEventTypePair = std::pair<QWidget *, QEvent::Type>;
     typedef QList<WidgetEventTypePair> EventList;
 
     using QObject::QObject;
@@ -7670,7 +7761,7 @@ public:
             case QEvent::InputMethodQuery:
                 break;
             default:
-                events.append(qMakePair(widget, event->type()));
+                events.append(std::pair(widget, event->type()));
                 break;
             }
         }
@@ -7728,9 +7819,9 @@ void tst_QWidget::childEvents()
 
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::PolishRequest)
-            << qMakePair(&widget, QEvent::Polish)
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 1));
+            << std::pair(&widget, QEvent::PolishRequest)
+            << std::pair(&widget, QEvent::Polish)
+            << std::pair(&widget, QEvent::Type(QEvent::User + 1));
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
     }
@@ -7747,17 +7838,17 @@ void tst_QWidget::childEvents()
         widget.showNormal();
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::Polish)
-            << qMakePair(&widget, QEvent::PlatformSurface)
-            << qMakePair(&widget, QEvent::WinIdChange)
-            << qMakePair(&widget, QEvent::WindowIconChange)
-            << qMakePair(&widget, QEvent::Move)
-            << qMakePair(&widget, QEvent::Resize)
-            << qMakePair(&widget, QEvent::Show)
+            << std::pair(&widget, QEvent::Polish)
+            << std::pair(&widget, QEvent::PlatformSurface)
+            << std::pair(&widget, QEvent::WinIdChange)
+            << std::pair(&widget, QEvent::WindowIconChange)
+            << std::pair(&widget, QEvent::Move)
+            << std::pair(&widget, QEvent::Resize)
+            << std::pair(&widget, QEvent::Show)
 #ifndef Q_OS_ANDROID
-            << qMakePair(&widget, QEvent::CursorChange)
+            << std::pair(&widget, QEvent::CursorChange)
 #endif
-            << qMakePair(&widget, QEvent::ShowToParent);
+            << std::pair(&widget, QEvent::ShowToParent);
 
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
@@ -7766,10 +7857,10 @@ void tst_QWidget::childEvents()
         QCoreApplication::sendPostedEvents();
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::PolishRequest)
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 1))
-            << qMakePair(&widget, QEvent::UpdateLater)
-            << qMakePair(&widget, QEvent::UpdateRequest);
+            << std::pair(&widget, QEvent::PolishRequest)
+            << std::pair(&widget, QEvent::Type(QEvent::User + 1))
+            << std::pair(&widget, QEvent::UpdateLater)
+            << std::pair(&widget, QEvent::UpdateRequest);
 
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
@@ -7792,8 +7883,8 @@ void tst_QWidget::childEvents()
 
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::ChildAdded)
-            << qMakePair(&widget, QEvent::ChildAdded);
+            << std::pair(&widget, QEvent::ChildAdded)
+            << std::pair(&widget, QEvent::ChildAdded);
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
         spy.clear();
@@ -7801,12 +7892,12 @@ void tst_QWidget::childEvents()
         QCoreApplication::sendPostedEvents();
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::PolishRequest)
-            << qMakePair(&widget, QEvent::Polish)
-            << qMakePair(&widget, QEvent::ChildPolished)
-            << qMakePair(&widget, QEvent::ChildPolished)
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 1))
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 2));
+            << std::pair(&widget, QEvent::PolishRequest)
+            << std::pair(&widget, QEvent::Polish)
+            << std::pair(&widget, QEvent::ChildPolished)
+            << std::pair(&widget, QEvent::ChildPolished)
+            << std::pair(&widget, QEvent::Type(QEvent::User + 1))
+            << std::pair(&widget, QEvent::Type(QEvent::User + 2));
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
     }
@@ -7828,27 +7919,27 @@ void tst_QWidget::childEvents()
 
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::ChildAdded)
-            << qMakePair(&widget, QEvent::ChildAdded);
+            << std::pair(&widget, QEvent::ChildAdded)
+            << std::pair(&widget, QEvent::ChildAdded);
         QCOMPARE(spy.eventList(), expected);
         spy.clear();
 
         widget.showNormal();
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::Polish)
-            << qMakePair(&widget, QEvent::ChildPolished)
-            << qMakePair(&widget, QEvent::ChildPolished)
-            << qMakePair(&widget, QEvent::PlatformSurface)
-            << qMakePair(&widget, QEvent::WinIdChange)
-            << qMakePair(&widget, QEvent::WindowIconChange)
-            << qMakePair(&widget, QEvent::Move)
-            << qMakePair(&widget, QEvent::Resize)
-            << qMakePair(&widget, QEvent::Show)
+            << std::pair(&widget, QEvent::Polish)
+            << std::pair(&widget, QEvent::ChildPolished)
+            << std::pair(&widget, QEvent::ChildPolished)
+            << std::pair(&widget, QEvent::PlatformSurface)
+            << std::pair(&widget, QEvent::WinIdChange)
+            << std::pair(&widget, QEvent::WindowIconChange)
+            << std::pair(&widget, QEvent::Move)
+            << std::pair(&widget, QEvent::Resize)
+            << std::pair(&widget, QEvent::Show)
 #ifndef Q_OS_ANDROID
-            << qMakePair(&widget, QEvent::CursorChange)
+            << std::pair(&widget, QEvent::CursorChange)
 #endif
-            << qMakePair(&widget, QEvent::ShowToParent);
+            << std::pair(&widget, QEvent::ShowToParent);
 
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
@@ -7857,11 +7948,11 @@ void tst_QWidget::childEvents()
         QCoreApplication::sendPostedEvents();
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::PolishRequest)
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 1))
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 2))
-            << qMakePair(&widget, QEvent::UpdateLater)
-            << qMakePair(&widget, QEvent::UpdateRequest);
+            << std::pair(&widget, QEvent::PolishRequest)
+            << std::pair(&widget, QEvent::Type(QEvent::User + 1))
+            << std::pair(&widget, QEvent::Type(QEvent::User + 2))
+            << std::pair(&widget, QEvent::UpdateLater)
+            << std::pair(&widget, QEvent::UpdateRequest);
 
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
@@ -7885,20 +7976,20 @@ void tst_QWidget::childEvents()
 
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::ChildAdded)
-            << qMakePair(&widget, QEvent::ChildAdded)
-            << qMakePair(&widget, QEvent::ChildRemoved);
+            << std::pair(&widget, QEvent::ChildAdded)
+            << std::pair(&widget, QEvent::ChildAdded)
+            << std::pair(&widget, QEvent::ChildRemoved);
         QCOMPARE(spy.eventList(), expected);
         spy.clear();
 
         QCoreApplication::sendPostedEvents();
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::PolishRequest)
-            << qMakePair(&widget, QEvent::Polish)
-            << qMakePair(&widget, QEvent::ChildPolished)
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 1))
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 2));
+            << std::pair(&widget, QEvent::PolishRequest)
+            << std::pair(&widget, QEvent::Polish)
+            << std::pair(&widget, QEvent::ChildPolished)
+            << std::pair(&widget, QEvent::Type(QEvent::User + 1))
+            << std::pair(&widget, QEvent::Type(QEvent::User + 2));
 
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
@@ -7922,27 +8013,27 @@ void tst_QWidget::childEvents()
 
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::ChildAdded)
-            << qMakePair(&widget, QEvent::ChildAdded)
-            << qMakePair(&widget, QEvent::ChildRemoved);
+            << std::pair(&widget, QEvent::ChildAdded)
+            << std::pair(&widget, QEvent::ChildAdded)
+            << std::pair(&widget, QEvent::ChildRemoved);
         QCOMPARE(spy.eventList(), expected);
         spy.clear();
 
         widget.showNormal();
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::Polish)
-            << qMakePair(&widget, QEvent::ChildPolished)
-            << qMakePair(&widget, QEvent::PlatformSurface)
-            << qMakePair(&widget, QEvent::WinIdChange)
-            << qMakePair(&widget, QEvent::WindowIconChange)
-            << qMakePair(&widget, QEvent::Move)
-            << qMakePair(&widget, QEvent::Resize)
-            << qMakePair(&widget, QEvent::Show)
+            << std::pair(&widget, QEvent::Polish)
+            << std::pair(&widget, QEvent::ChildPolished)
+            << std::pair(&widget, QEvent::PlatformSurface)
+            << std::pair(&widget, QEvent::WinIdChange)
+            << std::pair(&widget, QEvent::WindowIconChange)
+            << std::pair(&widget, QEvent::Move)
+            << std::pair(&widget, QEvent::Resize)
+            << std::pair(&widget, QEvent::Show)
 #ifndef Q_OS_ANDROID
-            << qMakePair(&widget, QEvent::CursorChange)
+            << std::pair(&widget, QEvent::CursorChange)
 #endif
-            << qMakePair(&widget, QEvent::ShowToParent);
+            << std::pair(&widget, QEvent::ShowToParent);
 
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
@@ -7951,11 +8042,11 @@ void tst_QWidget::childEvents()
         QCoreApplication::sendPostedEvents();
         expected =
             EventRecorder::EventList()
-            << qMakePair(&widget, QEvent::PolishRequest)
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 1))
-            << qMakePair(&widget, QEvent::Type(QEvent::User + 2))
-            << qMakePair(&widget, QEvent::UpdateLater)
-            << qMakePair(&widget, QEvent::UpdateRequest);
+            << std::pair(&widget, QEvent::PolishRequest)
+            << std::pair(&widget, QEvent::Type(QEvent::User + 1))
+            << std::pair(&widget, QEvent::Type(QEvent::User + 2))
+            << std::pair(&widget, QEvent::UpdateLater)
+            << std::pair(&widget, QEvent::UpdateRequest);
 
         QVERIFY2(spy.eventList() == expected,
                  EventRecorder::msgEventListMismatch(expected, spy.eventList()).constData());
@@ -11245,7 +11336,7 @@ void tst_QWidget::destroyBackingStore()
 #endif // QT_BUILD_INTERNAL
 
 // Helper function
-QWidgetRepaintManager* repaintManager(QWidget &widget)
+QWidgetRepaintManager* repaintManager([[maybe_unused]] QWidget &widget)
 {
     QWidgetRepaintManager *repaintManager = nullptr;
 #ifdef QT_BUILD_INTERNAL

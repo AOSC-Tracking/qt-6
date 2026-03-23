@@ -27,31 +27,6 @@
 // This file contains methods for class vvl::base::Instance and it is designed to ONLY be
 // included into validation_object.h.
 
-// We make many internal dispatch calls to extended query functions which can depend on the API version
-void DispatchGetPhysicalDeviceFeatures2Helper(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures2* pFeatures) const;
-void DispatchGetPhysicalDeviceProperties2Helper(VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties2* pProperties) const;
-void DispatchGetPhysicalDeviceFormatProperties2Helper(VkPhysicalDevice physicalDevice, VkFormat format,
-                                                      VkFormatProperties2* pFormatProperties) const;
-VkResult DispatchGetPhysicalDeviceImageFormatProperties2Helper(VkPhysicalDevice physicalDevice,
-                                                               const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo,
-                                                               VkImageFormatProperties2* pImageFormatProperties) const;
-void DispatchGetPhysicalDeviceQueueFamilyProperties2Helper(VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount,
-                                                           VkQueueFamilyProperties2* pQueueFamilyProperties) const;
-void DispatchGetPhysicalDeviceMemoryProperties2Helper(VkPhysicalDevice physicalDevice,
-                                                      VkPhysicalDeviceMemoryProperties2* pMemoryProperties) const;
-void DispatchGetPhysicalDeviceSparseImageFormatProperties2Helper(VkPhysicalDevice physicalDevice,
-                                                                 const VkPhysicalDeviceSparseImageFormatInfo2* pFormatInfo,
-                                                                 uint32_t* pPropertyCount,
-                                                                 VkSparseImageFormatProperties2* pProperties) const;
-void DispatchGetPhysicalDeviceExternalSemaphorePropertiesHelper(VkPhysicalDevice physicalDevice,
-                                                                const VkPhysicalDeviceExternalSemaphoreInfo* pExternalSemaphoreInfo,
-                                                                VkExternalSemaphoreProperties* pExternalSemaphoreProperties) const;
-void DispatchGetPhysicalDeviceExternalFencePropertiesHelper(VkPhysicalDevice physicalDevice,
-                                                            const VkPhysicalDeviceExternalFenceInfo* pExternalFenceInfo,
-                                                            VkExternalFenceProperties* pExternalFenceProperties) const;
-void DispatchGetPhysicalDeviceExternalBufferPropertiesHelper(VkPhysicalDevice physicalDevice,
-                                                             const VkPhysicalDeviceExternalBufferInfo* pExternalBufferInfo,
-                                                             VkExternalBufferProperties* pExternalBufferProperties) const;
 virtual bool PreCallValidateCreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                                            VkInstance* pInstance, const ErrorObject& error_obj) const {
     return false;
@@ -1277,6 +1252,17 @@ virtual void PostCallRecordGetPhysicalDeviceScreenPresentationSupportQNX(VkPhysi
                                                                          struct _screen_window* window,
                                                                          const RecordObject& record_obj) {}
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+virtual bool PreCallValidateGetPhysicalDeviceExternalTensorPropertiesARM(
+    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
+    VkExternalTensorPropertiesARM* pExternalTensorProperties, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetPhysicalDeviceExternalTensorPropertiesARM(
+    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
+    VkExternalTensorPropertiesARM* pExternalTensorProperties, const RecordObject& record_obj) {}
+virtual void PostCallRecordGetPhysicalDeviceExternalTensorPropertiesARM(
+    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
+    VkExternalTensorPropertiesARM* pExternalTensorProperties, const RecordObject& record_obj) {}
 virtual bool PreCallValidateGetPhysicalDeviceOpticalFlowImageFormatsNV(
     VkPhysicalDevice physicalDevice, const VkOpticalFlowImageFormatInfoNV* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount,
     VkOpticalFlowImageFormatPropertiesNV* pImageFormatProperties, const ErrorObject& error_obj) const {
@@ -1300,6 +1286,47 @@ virtual void PreCallRecordGetPhysicalDeviceCooperativeVectorPropertiesNV(VkPhysi
 virtual void PostCallRecordGetPhysicalDeviceCooperativeVectorPropertiesNV(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount,
                                                                           VkCooperativeVectorPropertiesNV* pProperties,
                                                                           const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pQueueFamilyDataGraphPropertyCount,
+    VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pQueueFamilyDataGraphPropertyCount,
+    VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, const RecordObject& record_obj) {}
+virtual void PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pQueueFamilyDataGraphPropertyCount,
+    VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
+    VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties,
+    const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
+    VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties,
+    const RecordObject& record_obj) {}
+virtual void PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
+    VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties,
+    const RecordObject& record_obj) {}
+#ifdef VK_USE_PLATFORM_OHOS
+virtual bool PreCallValidateCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo,
+                                              const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                              const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo,
+                                            const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                            const RecordObject& record_obj) {}
+virtual void PostCallRecordCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo,
+                                             const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                             const RecordObject& record_obj) {}
+#endif  // VK_USE_PLATFORM_OHOS
 virtual bool PreCallValidateGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
     VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixFlexibleDimensionsPropertiesNV* pProperties,
     const ErrorObject& error_obj) const {

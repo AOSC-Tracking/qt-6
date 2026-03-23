@@ -5,6 +5,8 @@
 #ifndef MEDIA_RENDERERS_VIDEO_FRAME_RGBA_TO_YUVA_CONVERTER_H_
 #define MEDIA_RENDERERS_VIDEO_FRAME_RGBA_TO_YUVA_CONVERTER_H_
 
+#include <optional>
+
 #include "base/memory/scoped_refptr.h"
 #include "media/base/media_export.h"
 #include "third_party/skia/include/gpu/ganesh/GrTypes.h"
@@ -30,7 +32,7 @@ class VideoFrame;
 // color space conversion and RGB to YUV conversion. Waits for all sync
 // tokens in `acquire_sync_token` and `dst_video_frame` before doing the
 // copy. Updates `dst_video_frame`'s sync token to wait on copy completion.
-MEDIA_EXPORT bool CopyRGBATextureToVideoFrame(
+MEDIA_EXPORT std::optional<gpu::SyncToken> CopyRGBATextureToVideoFrame(
     viz::RasterContextProvider* raster_context_provider,
     const gfx::Size& src_size,
     scoped_refptr<gpu::ClientSharedImage> src_shared_image,

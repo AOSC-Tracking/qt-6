@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dmodel_p.h"
 #include "qquick3dobject_p.h"
@@ -912,6 +914,8 @@ QSSGRenderGraphObject *QQuick3DModel::updateSpatialNode(QSSGRenderGraphObject *n
         const QString path = translateMeshSource(m_source, this);
         modelNode->meshPath = QSSGRenderPath(path, modelNode->lightmapKey);
         modelNode->levelOfDetailBias = m_levelOfDetailBias;
+        modelNode->motionVectorEnabled = m_motionVectorEnabled;
+        modelNode->motionVectorScale = m_motionVectorScale;
     }
 
     if (m_dirtyAttributes & ReflectionDirty) {
@@ -1050,7 +1054,6 @@ void QQuick3DModel::onMorphTargetDestroyed(QObject *object)
     }
     if (found) {
         markDirty(QQuick3DModel::MorphTargetsDirty);
-        m_numMorphAttribs = 0;
     }
 }
 
@@ -1059,14 +1062,7 @@ void QQuick3DModel::qmlAppendMorphTarget(QQmlListProperty<QQuick3DMorphTarget> *
     if (morphTarget == nullptr)
         return;
     QQuick3DModel *self = static_cast<QQuick3DModel *>(list->object);
-    if (self->m_numMorphAttribs >= 8) {
-        qWarning("The number of morph attributes exceeds 8. This morph target will be ignored.");
-        return;
-    }
     self->m_morphTargets.push_back(morphTarget);
-    self->m_numMorphAttribs += morphTarget->numAttribs();
-    if (self->m_numMorphAttribs > 8)
-        qWarning("The number of morph attributes exceeds 8. This morph target will be supported partially.");
 
     self->markDirty(QQuick3DModel::MorphTargetsDirty);
 
@@ -1113,7 +1109,6 @@ void QQuick3DModel::qmlClearMorphTargets(QQmlListProperty<QQuick3DMorphTarget> *
         disconnect(morph, &QQuick3DMorphTarget::destroyed, self, &QQuick3DModel::onMorphTargetDestroyed);
     }
     self->m_morphTargets.clear();
-    self->m_numMorphAttribs = 0;
     self->markDirty(QQuick3DModel::MorphTargetsDirty);
 }
 
@@ -1179,10 +1174,10 @@ void QQuick3DModel::setLevelOfDetailBias(float newLevelOfDetailBias)
     \default 0.0
 
     A value greater than zero means this value will override the
-    SceneEnvironment::texelsPerUnit value for this specific model during
+    \l {Lightmapper::texelsPerUnit} value for this specific model during
     lightmap baking.
 
-    \sa SceneEnvironment::texelsPerUnit
+    \sa Lightmapper::texelsPerUnit
 */
 
 float QQuick3DModel::texelsPerUnit() const
@@ -1197,6 +1192,69 @@ void QQuick3DModel::setTexelsPerUnit(float newTexelsPerUnit)
     m_texelsPerUnit = newTexelsPerUnit;
     emit texelsPerUnitChanged();
     markDirty(PropertyDirty);
+}
+
+/*!
+    \qmlproperty bool Model::motionVectorEnabled
+    \since 6.11
+    \default true
+
+    Specifies whether the model participates in the motion vector pass.
+
+    When this property is set to \c true, the model contributes its
+    motion information to the motion vector buffer. This is used by
+    temporal anti-aliasing (TAA) and other effects that rely on
+    per-pixel motion data.
+
+    When set to \c false, the model is excluded from motion vector
+    generation.
+
+    \sa Model::motionVectorScale
+*/
+
+bool QQuick3DModel::motionVectorEnabled() const
+{
+    return m_motionVectorEnabled;
+}
+
+void QQuick3DModel::setMotionVectorEnabled(bool newMotionVectorEnabled)
+{
+    if (m_motionVectorEnabled == newMotionVectorEnabled)
+        return;
+    m_motionVectorEnabled = newMotionVectorEnabled;
+    emit motionVectorEnabledChanged();
+    markDirty(QQuick3DModel::PropertyDirty);
+}
+
+/*!
+    \qmlproperty real Model::motionVectorScale
+    \since 6.11
+    \default 1.0
+
+    Specifies a scaling factor applied to the model's generated motion
+    vectors.
+
+    A value of \c 1.0 preserves the model's actual motion, while values
+    greater than \c 1.0 exaggerate the motion vectors and values lower
+    than \c 1.0 reduce them. This can be useful for stylized effects or
+    fine-tuning visual behavior in effects that rely on the motion
+    vector buffer.
+
+    \sa Model::motionVectorEnabled
+*/
+
+float QQuick3DModel::motionVectorScale() const
+{
+    return m_motionVectorScale;
+}
+
+void QQuick3DModel::setMotionVectorScale(float newMotionVectorScale)
+{
+    if (qFuzzyCompare(m_motionVectorScale, newMotionVectorScale))
+        return;
+    m_motionVectorScale = newMotionVectorScale;
+    emit motionVectorScaleChanged();
+    markDirty(QQuick3DModel::PropertyDirty);
 }
 
 QT_END_NAMESPACE

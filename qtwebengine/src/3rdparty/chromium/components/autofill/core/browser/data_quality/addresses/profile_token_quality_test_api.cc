@@ -8,6 +8,7 @@
 
 #include "base/check.h"
 #include "base/types/cxx23_to_underlying.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_quality/addresses/profile_token_quality.h"
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -36,7 +37,7 @@ void ProfileTokenQualityTestApi::AddObservation(
 
 std::vector<ProfileTokenQualityTestApi::FormSignatureHash>
 ProfileTokenQualityTestApi::GetHashesForStoredType(FieldType type) const {
-  CHECK(GetDatabaseStoredTypesOfAutofillProfile().contains(type));
+  CHECK(AutofillProfile::kDatabaseStoredTypes.contains(type));
   auto it = quality_->observations_.find(type);
   if (it == quality_->observations_.end()) {
     return {};

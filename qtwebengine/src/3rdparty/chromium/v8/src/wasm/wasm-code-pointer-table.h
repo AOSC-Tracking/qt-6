@@ -106,6 +106,8 @@ class V8_EXPORT_PRIVATE WasmCodePointerTable
   // `WriteScope` while calling it.
   inline void UpdateEntrypoint(WasmCodePointer index, Address value,
                                uint64_t signature_hash);
+  inline void UpdateEntrypointUnlocked(WasmCodePointer index, Address value,
+                                       uint64_t signature_hash);
   inline void SetEntrypointAndSignature(WasmCodePointer index, Address value,
                                         uint64_t signature_hash);
   inline void SetEntrypointWithWriteScope(WasmCodePointer index, Address value,
@@ -175,9 +177,9 @@ class V8_EXPORT_PRIVATE WasmCodePointerTable
   std::atomic<FreelistHead> freelist_head_ = FreelistHead();
   // The mutex is used to avoid two threads from concurrently allocating
   // segments and using more memory than needed.
-  base::SpinningMutex segment_allocation_mutex_;
+  base::Mutex segment_allocation_mutex_;
 
-  base::SpinningMutex native_function_map_mutex_;
+  base::Mutex native_function_map_mutex_;
   std::map<Address, WasmCodePointer> native_function_map_;
 
   friend class WasmCodePointerTableTest;

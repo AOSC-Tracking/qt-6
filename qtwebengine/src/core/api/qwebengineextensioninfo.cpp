@@ -124,7 +124,7 @@ QString QWebEngineExtensionInfo::name() const
     represent the same underlying extension.
 
     The id is generated from the filesystem path where the extension was loaded from
-    and the extensions manfiest file. Loading the same extension from the same path
+    and the extensions manifest file. Loading the same extension from the same path
     always have the same id.
 
     Empty if the load failed.
@@ -135,7 +135,7 @@ QString QWebEngineExtensionInfo::id() const
 }
 
 /*!
-    \property QWebEngineExtensionInfo::name
+    \property QWebEngineExtensionInfo::description
     \brief The description of the extension.
 
     Acquired from the extension's manifest file's description property.
@@ -212,12 +212,11 @@ bool QWebEngineExtensionInfo::isLoaded() const
     return d_ptr && d_ptr->isLoaded();
 }
 
-/*
+/*!
     \property QWebEngineExtensionInfo::isInstalled
-    \brief This property holds whether the extension is installed in the profile's install
-   directory.
+    \brief whether the extension is installed in the profile's install directory.
 
-    \sa QWebEngineExtensionManager::installDirectory(),
+    \sa QWebEngineExtensionManager::installPath,
     QWebEngineExtensionManager::installExtension(), QWebEngineExtensionManager::uninstallExtension()
 */
 bool QWebEngineExtensionInfo::isInstalled() const

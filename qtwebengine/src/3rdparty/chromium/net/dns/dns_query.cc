@@ -15,6 +15,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/numerics/byte_conversions.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/string_view_util.h"
 #include "base/sys_byteorder.h"
 #include "net/base/io_buffer.h"
 #include "net/dns/dns_names_util.h"
@@ -183,8 +184,7 @@ bool DnsQuery::Parse(size_t valid_bytes) {
   if (io_buffer_ == nullptr || io_buffer_->span().empty()) {
     return false;
   }
-  auto reader =
-      base::SpanReader<const uint8_t>(io_buffer_->span().first(valid_bytes));
+  auto reader = base::SpanReader<const uint8_t>(io_buffer_->first(valid_bytes));
   dns_protocol::Header header;
   if (!ReadHeader(&reader, &header)) {
     return false;

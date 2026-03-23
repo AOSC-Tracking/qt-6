@@ -347,13 +347,6 @@ OverlayProcessorUsingStrategy::OverlayProcessorUsingStrategy()
 
 OverlayProcessorUsingStrategy::~OverlayProcessorUsingStrategy() = default;
 
-gfx::Rect OverlayProcessorUsingStrategy::GetPreviousFrameOverlaysBoundingRect()
-    const {
-  gfx::Rect result = overlay_damage_rect_;
-  result.Union(previous_frame_overlay_rect_);
-  return result;
-}
-
 gfx::Rect OverlayProcessorUsingStrategy::GetAndResetOverlayDamage() {
   gfx::Rect result = overlay_damage_rect_;
   overlay_damage_rect_ = gfx::Rect();
@@ -718,9 +711,9 @@ void OverlayProcessorUsingStrategy::SortProposedOverlayCandidates(
       it->relative_power_gain = power_gained;
       ++it;
     } else {
-      // We 'Reset' rather than delete the |track_data| because this candidate
-      // will still be present next frame.
-      track_data.Reset();
+      // We erase this candidate from |proposed_candidates| in this frame rather
+      // than delete the |track_data| because this candidate will still be
+      // present next frame.
       it = proposed_candidates->erase(it);
     }
   }
@@ -756,6 +749,14 @@ void OverlayProcessorUsingStrategy::SortProposedOverlayCandidates(
             b.candidate.has_rounded_display_masks) {
           return a.candidate.has_rounded_display_masks &&
                  !b.candidate.has_rounded_display_masks;
+        }
+
+        // if candidates use low latency rendering, we will ignore their
+        // relative power gain and place them before normal candidates.
+        if (a.candidate.low_latency_rendering ||
+            b.candidate.low_latency_rendering) {
+          return a.candidate.low_latency_rendering &&
+                 !b.candidate.low_latency_rendering;
         }
 
         // Opaque Power Metric:

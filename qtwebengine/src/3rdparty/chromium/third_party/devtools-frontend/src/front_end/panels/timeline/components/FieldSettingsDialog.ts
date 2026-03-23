@@ -1,6 +1,7 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import './OriginMap.js';
 
@@ -14,40 +15,36 @@ import * as UI from '../../../ui/legacy/legacy.js';
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 
-import fieldSettingsDialogStylesRaw from './fieldSettingsDialog.css.js';
+import fieldSettingsDialogStyles from './fieldSettingsDialog.css.js';
 import type {OriginMap} from './OriginMap.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const fieldSettingsDialogStyles = new CSSStyleSheet();
-fieldSettingsDialogStyles.replaceSync(fieldSettingsDialogStylesRaw.cssContent);
 
 const UIStrings = {
   /**
-   * @description Text label for a button that opens a dialog to set up field data.
+   * @description Text label for a button that opens a dialog to set up field metrics.
    */
   setUp: 'Set up',
   /**
-   * @description Text label for a button that opens a dialog to configure field data.
+   * @description Text label for a button that opens a dialog to configure field metrics.
    */
   configure: 'Configure',
   /**
-   * @description Text label for a button that enables the collection of field data.
+   * @description Text label for a button that enables the collection of field metrics.
    */
   ok: 'Ok',
   /**
-   * @description Text label for a button that opts out of the collection of field data.
+   * @description Text label for a button that opts out of the collection of field metrics.
    */
   optOut: 'Opt out',
   /**
-   * @description Text label for a button that cancels the setup of field data collection.
+   * @description Text label for a button that cancels the setup of field metrics collection.
    */
   cancel: 'Cancel',
   /**
-   * @description Text label for a checkbox that controls if a manual URL override is enabled for field data.
+   * @description Text label for a checkbox that controls if a manual URL override is enabled for field metrics.
    */
-  onlyFetchFieldData: 'Always show field data for the below URL',
+  onlyFetchFieldData: 'Always show field metrics for the below URL',
   /**
-   * @description Text label for a text box that that contains the manual override URL for fetching field data.
+   * @description Text label for a text box that that contains the manual override URL for fetching field metrics.
    */
   url: 'URL',
   /**
@@ -55,24 +52,24 @@ const UIStrings = {
    */
   doesNotHaveSufficientData: 'The Chrome UX Report does not have sufficient real-world speed data for this page.',
   /**
-   * @description Title for a dialog that contains information and settings related to fetching field data.
+   * @description Title for a dialog that contains information and settings related to fetching field metrics.
    */
-  configureFieldData: 'Configure field data fetching',
+  configureFieldData: 'Configure field metrics fetching',
   /**
-   * @description Paragraph explaining where field data comes from and and how it can be used. PH1 will be a link with text "Chrome UX Report" that is untranslated because it is a product name.
+   * @description Paragraph explaining where field metrics comes from and and how it can be used. PH1 will be a link with text "Chrome UX Report" that is untranslated because it is a product name.
    * @example {Chrome UX Report} PH1
    */
   fetchAggregated:
-      'Fetch aggregated field data from the {PH1} to help you contextualize local measurements with what real users experience on the site.',
+      'Fetch aggregated field metrics from the {PH1} to help you contextualize local measurements with what real users experience on the site.',
   /**
-   * @description Heading for a section that explains what user data needs to be collected to fetch field data.
+   * @description Heading for a section that explains what user data needs to be collected to fetch field metrics.
    */
   privacyDisclosure: 'Privacy disclosure',
   /**
-   * @description Paragraph explaining what data needs to be sent to Google to fetch field data, and when that data will be sent.
+   * @description Paragraph explaining what data needs to be sent to Google to fetch field metrics, and when that data will be sent.
    */
   whenPerformanceIsShown:
-      'When DevTools is open, the URLs you visit will be sent to Google to query field data. These requests are not tied to your Google account.',
+      'When DevTools is open, the URLs you visit will be sent to Google to query field metrics. These requests are not tied to your Google account.',
   /**
    * @description Header for a section containing advanced settings
    */
@@ -80,7 +77,8 @@ const UIStrings = {
   /**
    * @description Paragraph explaining that the user can associate a development origin with a production origin for the purposes of fetching real user data.
    */
-  mapDevelopmentOrigins: 'Set a development origin to automatically get relevant field data for its production origin.',
+  mapDevelopmentOrigins:
+      'Set a development origin to automatically get relevant field metrics for its production origin.',
   /**
    * @description Text label for a button that adds a new editable row to a data table
    */
@@ -90,7 +88,7 @@ const UIStrings = {
    * @example {http//malformed.com} PH1
    */
   invalidOrigin: '"{PH1}" is not a valid origin or URL.',
-};
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/components/FieldSettingsDialog.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -112,8 +110,8 @@ export class FieldSettingsDialog extends HTMLElement {
 
   #configSetting = CrUXManager.CrUXManager.instance().getConfigSetting();
 
-  #urlOverride: string = '';
-  #urlOverrideEnabled: boolean = false;
+  #urlOverride = '';
+  #urlOverrideEnabled = false;
   #urlOverrideWarning = '';
   #originMap?: OriginMap;
 
@@ -203,8 +201,6 @@ export class FieldSettingsDialog extends HTMLElement {
   }
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [fieldSettingsDialogStyles, Input.textInputStyles, Input.checkboxStyles];
-
     this.#configSetting.addChangeListener(this.#onSettingsChanged, this);
 
     void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
@@ -257,6 +253,7 @@ export class FieldSettingsDialog extends HTMLElement {
           variant: Buttons.Button.Variant.PRIMARY,
           title: i18nString(UIStrings.ok),
         } as Buttons.Button.ButtonData}
+        class="enable"
         jslog=${VisualLogging.action('timeline.field-data.enable').track({click: true})}
         data-field-data-enable
       >${i18nString(UIStrings.ok)}</devtools-button>
@@ -338,12 +335,16 @@ export class FieldSettingsDialog extends HTMLElement {
 
     // clang-format off
     const output = html`
+      <style>${fieldSettingsDialogStyles}</style>
+      <style>${Input.textInputStyles}</style>
+      <style>${Input.checkboxStyles}</style>
       <div class="open-button-section">${this.#renderOpenButton()}</div>
       <devtools-dialog
         @clickoutsidedialog=${this.#closeDialog}
         .position=${Dialogs.Dialog.DialogVerticalPosition.AUTO}
         .horizontalAlignment=${Dialogs.Dialog.DialogHorizontalAlignment.CENTER}
         .jslogContext=${'timeline.field-data.settings'}
+        .expectedMutationsSelector=${'.timeline-settings-pane option'}
         .dialogTitle=${i18nString(UIStrings.configureFieldData)}
         on-render=${ComponentHelpers.Directives.nodeRenderedCallback(node => {
           this.#dialog = node as Dialogs.Dialog.Dialog;

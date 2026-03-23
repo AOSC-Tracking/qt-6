@@ -11,11 +11,12 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "components/guest_view/common/guest_view_constants.h"
 #include "content/public/browser/media_stream_request.h"
+#include "content/public/browser/permission_result.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/guest_view/web_view/web_view_permission_types.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
 
 namespace url {
@@ -108,6 +109,18 @@ class WebViewPermissionHelper {
   void RequestFullscreenPermission(const url::Origin& requesting_origin,
                                    PermissionResponseCallback callback);
 
+  void RequestClipboardReadWritePermission(
+      const GURL& requesting_frame_url,
+      bool user_gesture,
+      base::OnceCallback<void(bool)> callback);
+
+  void RequestClipboardSanitizedWritePermission(
+      const GURL& requesting_frame_url,
+      base::OnceCallback<void(bool)> callback);
+
+  std::optional<content::PermissionResult> OverridePermissionResult(
+      ContentSettingsType type);
+
   enum PermissionResponseAction { DENY, ALLOW, DEFAULT };
 
   enum SetPermissionResult {
@@ -116,9 +129,9 @@ class WebViewPermissionHelper {
     SET_PERMISSION_DENIED
   };
 
-  // Responds to the permission request |request_id| with |action| and
-  // |user_input|. Returns whether there was a pending request for the provided
-  // |request_id|.
+  // Responds to the permission request `request_id` with `action` and
+  // `user_input`. Returns whether there was a pending request for the provided
+  // `request_id`.
   SetPermissionResult SetPermission(int request_id,
                                     PermissionResponseAction action,
                                     const std::string& user_input);

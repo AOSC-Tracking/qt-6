@@ -7,10 +7,12 @@
 #include <string>
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "components/page_load_metrics/renderer/features.h"
 #include "components/page_load_metrics/renderer/page_timing_metrics_sender.h"
 #include "components/page_load_metrics/renderer/page_timing_sender.h"
 #include "content/public/renderer/render_frame.h"
@@ -74,11 +76,11 @@ class MojoPageTimingSender : public PageTimingSender {
         subresource_load_metrics, soft_navigation_metrics->Clone());
   }
 
-  void SetUpSmoothnessReporting(
-      base::ReadOnlySharedMemoryRegion shared_memory) override {
+  void SetUpDroppedFramesReporting(
+      base::ReadOnlySharedMemoryRegion shared_memory_dropped_frames) override {
     DCHECK(page_load_metrics_);
-    page_load_metrics_->SetUpSharedMemoryForSmoothness(
-        std::move(shared_memory));
+    page_load_metrics_->SetUpSharedMemoryForDroppedFrames(
+        std::move(shared_memory_dropped_frames));
   }
 
   void SendCustomUserTiming(mojom::CustomUserTimingMarkPtr timing) override {
@@ -105,7 +107,17 @@ MetricsRenderFrameObserver::MetricsRenderFrameObserver(
     content::RenderFrame* render_frame)
     : content::RenderFrameObserver(render_frame),
       blink::WebLocalFrameObserver(render_frame ? render_frame->GetWebFrame()
-                                                : nullptr) {}
+                                                : nullptr) {
+  if (base::FeatureList::IsEnabled(
+          features::kDidObserveNewFeatureUsageImprovement) &&
+      render_frame) {
+    // If the optimization is enabled, `DidObserveNewFeatureUsage()` will be
+    // called as a callback instead of the observer interface.
+    render_frame->SetNewFeatureUsageCallback(base::BindRepeating(
+        &MetricsRenderFrameObserver::DidObserveNewFeatureUsage,
+        weak_factory_.GetWeakPtr()));
+  }
+}
 
 MetricsRenderFrameObserver::~MetricsRenderFrameObserver() {
   if (page_timing_metrics_sender_) {
@@ -171,7 +183,7 @@ void MetricsRenderFrameObserver::DidObserveNewFeatureUsage(
 }
 
 void MetricsRenderFrameObserver::DidObserveSoftNavigation(
-    blink::SoftNavigationMetrics soft_nav_metrics) {
+    blink::SoftNavigationMetricsForReporting soft_nav_metrics) {
   if (page_timing_metrics_sender_) {
     const blink::WebPerformanceMetricsForReporting& metrics =
         render_frame()->GetWebFrame()->PerformanceMetricsForReporting();
@@ -419,13 +431,13 @@ void MetricsRenderFrameObserver::OnFrameDetached() {
   WillDetach(blink::DetachReason::kNavigation);
 }
 
-bool MetricsRenderFrameObserver::SetUpSmoothnessReporting(
-    base::ReadOnlySharedMemoryRegion& shared_memory) {
+bool MetricsRenderFrameObserver::SetUpDroppedFramesReporting(
+    base::ReadOnlySharedMemoryRegion& shared_memory_dropped_frames) {
   if (page_timing_metrics_sender_) {
-    page_timing_metrics_sender_->SetUpSmoothnessReporting(
-        std::move(shared_memory));
+    page_timing_metrics_sender_->SetUpDroppedFramesReporting(
+        std::move(shared_memory_dropped_frames));
   } else {
-    ukm_smoothness_data_ = std::move(shared_memory);
+    ukm_dropped_frames_data_ = std::move(shared_memory_dropped_frames);
   }
   return true;
 }
@@ -479,9 +491,9 @@ void MetricsRenderFrameObserver::SendMetrics() {
 }
 
 void MetricsRenderFrameObserver::OnMetricsSenderCreated() {
-  if (ukm_smoothness_data_.IsValid()) {
-    page_timing_metrics_sender_->SetUpSmoothnessReporting(
-        std::move(ukm_smoothness_data_));
+  if (ukm_dropped_frames_data_.IsValid()) {
+    page_timing_metrics_sender_->SetUpDroppedFramesReporting(
+        std::move(ukm_dropped_frames_data_));
   }
 
   // Send the latest the frame intersection update, as otherwise we may miss

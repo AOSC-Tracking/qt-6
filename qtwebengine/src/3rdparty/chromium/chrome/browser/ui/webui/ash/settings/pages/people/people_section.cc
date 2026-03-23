@@ -10,6 +10,9 @@
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
 #include "ash/edusumer/graduation_utils.h"
+#include "base/check.h"
+#include "base/check_deref.h"
+#include "base/check_op.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -43,11 +46,11 @@
 #include "chrome/grit/branded_strings.h"
 #include "chrome/grit/browser_resources.h"
 #include "chrome/grit/generated_resources.h"
+#include "chromeos/ash/components/account_manager/account_manager_facade_factory.h"
 #include "chromeos/ash/components/account_manager/account_manager_factory.h"
 #include "chromeos/ash/components/browser_context_helper/browser_context_helper.h"
 #include "chromeos/ash/components/dbus/userdataauth/userdataauth_client.h"
 #include "components/account_manager_core/account_manager_facade.h"
-#include "components/account_manager_core/chromeos/account_manager_facade_factory.h"
 #include "components/account_manager_core/pref_names.h"
 #include "components/omnibox/common/omnibox_features.h"
 #include "components/prefs/pref_service.h"
@@ -455,14 +458,13 @@ void AddGraduationStrings(content::WebUIDataSource* html_source,
 
 bool IsSameAccount(const ::account_manager::AccountKey& account_key,
                    const AccountId& account_id) {
-  switch (account_key.account_type()) {
-    case account_manager::AccountType::kGaia:
-      return account_id.GetAccountType() == AccountType::GOOGLE &&
-             account_id.GetGaiaId() == GaiaId(account_key.id());
-    case account_manager::AccountType::kActiveDirectory:
-      return account_id.GetAccountType() == AccountType::ACTIVE_DIRECTORY &&
-             account_id.GetObjGuid() == account_key.id();
-  }
+  // Currently, we only support `kGaia` account type. Should a new type be added
+  // in the future, consider removing the `CHECK_EQ()` below and handling the
+  // new type accordingly.
+  CHECK_EQ(account_key.account_type(), account_manager::AccountType::kGaia);
+
+  return (account_id.GetAccountType() == AccountType::GOOGLE) &&
+         (account_id.GetGaiaId() == GaiaId(account_key.id()));
 }
 
 }  // namespace
@@ -477,7 +479,8 @@ PeopleSection::PeopleSection(Profile* profile,
       auth_performer_(UserDataAuthClient::Get()),
       fp_engine_(&auth_performer_) {
   // No search tags are registered if in guest mode.
-  auto* user = BrowserContextHelper::Get()->GetUserByBrowserContext(profile);
+  const auto& user = CHECK_DEREF(
+      BrowserContextHelper::Get()->GetUserByBrowserContext(profile));
   if (IsGuestModeActive(user)) {
     return;
   }
@@ -494,7 +497,7 @@ PeopleSection::PeopleSection(Profile* profile,
     account_manager_ = factory->GetAccountManager(profile->GetPath().value());
     DCHECK(account_manager_);
     account_manager_facade_ =
-        ::GetAccountManagerFacade(profile->GetPath().value());
+        GetAccountManagerFacade(profile->GetPath().value());
     DCHECK(account_manager_facade_);
     account_manager_facade_observation_.Observe(account_manager_facade_.get());
     account_apps_availability_ =

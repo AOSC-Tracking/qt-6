@@ -71,6 +71,9 @@ class BASE_EXPORT PickleIterator {
   // mutated). Do not keep the pointer around!
   [[nodiscard]] bool ReadBytes(const char** data, size_t length);
 
+  // Similar, but using span for convenience.
+  [[nodiscard]] std::optional<span<const uint8_t>> ReadBytes(size_t length);
+
   // A version of ReadInt() that checks for the result not being negative. Use
   // it for reading the object sizes.
   [[nodiscard]] bool ReadLength(size_t* result) {
@@ -88,7 +91,16 @@ class BASE_EXPORT PickleIterator {
     return !!GetReadPointerAndAdvance(num_bytes);
   }
 
+  // Returns true if all the data in the Pickle has been consumed.
   bool ReachedEnd() const { return read_index_ == end_index_; }
+
+  // Returns the number of unused bytes remaining in the Pickle. Most code
+  // should not use this. Just call a Read* method and check the return value.
+  // Where this is useful is if you need to allocate space for a container
+  // before reading the data that will fill the container. In that case, this
+  // method can be used to check if the size is plausible before attempting the
+  // allocation.
+  size_t RemainingBytes() const { return end_index_ - read_index_; }
 
  private:
   // Read Type from Pickle.
@@ -307,7 +319,7 @@ class BASE_EXPORT Pickle {
   // The protected constructor. Note that this creates a Pickle that does not
   // own its own data.
   enum UnownedData { kUnownedData };
-  explicit Pickle(UnownedData, span<const uint8_t> data);
+  Pickle(UnownedData, span<const uint8_t> data);
 
   // Returns size of the header, which can have default value, set by user or
   // calculated by passed raw data.

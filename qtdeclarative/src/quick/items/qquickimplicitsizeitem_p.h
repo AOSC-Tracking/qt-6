@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKIMPLICITSIZEITEM_H
 #define QQUICKIMPLICITSIZEITEM_H
@@ -24,8 +25,8 @@ class QQuickImplicitSizeItemPrivate;
 class Q_QUICK_EXPORT QQuickImplicitSizeItem : public QQuickItem
 {
     Q_OBJECT
-    Q_PROPERTY(qreal implicitWidth READ implicitWidth NOTIFY implicitWidthChanged)
-    Q_PROPERTY(qreal implicitHeight READ implicitHeight NOTIFY implicitHeightChanged)
+    Q_PROPERTY(qreal implicitWidth READ implicitWidth NOTIFY implicitWidthChanged OVERRIDE)
+    Q_PROPERTY(qreal implicitHeight READ implicitHeight NOTIFY implicitHeightChanged OVERRIDE)
     QML_ANONYMOUS
     QML_ADDED_IN_VERSION(6, 2)
 

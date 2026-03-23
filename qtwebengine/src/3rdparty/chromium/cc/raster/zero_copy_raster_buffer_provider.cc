@@ -9,14 +9,15 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/traced_value.h"
-#include "cc/raster/raster_buffer.h"
+#include "cc/base/features.h"
 #include "cc/resources/resource_pool.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "components/viz/client/client_resource_provider.h"
-#include "components/viz/common/gpu/raster_context_provider.h"
 #include "components/viz/common/resources/platform_color.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
@@ -31,105 +32,145 @@ namespace {
 
 constexpr static auto kBufferUsage = gfx::BufferUsage::GPU_READ_CPU_READ_WRITE;
 
-// RasterBuffer for the zero copy upload, which is given to the raster worker
-// threads for raster/upload.
-class ZeroCopyRasterBufferImpl : public RasterBuffer {
- public:
-  ZeroCopyRasterBufferImpl(
-      base::WaitableEvent* shutdown_event,
-      const ResourcePool::InUsePoolResource& in_use_resource,
-      ResourcePool::GpuBacking* backing,
-      scoped_refptr<gpu::SharedImageInterface> sii)
-      : backing_(backing),
-        sii_(sii),
-        shutdown_event_(shutdown_event),
-        resource_size_(in_use_resource.size()),
-        format_(in_use_resource.format()),
-        resource_color_space_(in_use_resource.color_space()) {}
-  ZeroCopyRasterBufferImpl(const ZeroCopyRasterBufferImpl&) = delete;
+}
 
-  ~ZeroCopyRasterBufferImpl() override {
-    // If MappableSharedImage allocation failed (https://crbug.com/554541), then
-    // we don't have anything to give to the display compositor, so we report a
-    // zero mailbox that will result in checkerboarding.
-    if (!backing_->shared_image) {
-      return;
+ZeroCopyRasterBufferImpl::ZeroCopyRasterBufferImpl(
+    const ResourcePool::InUsePoolResource& in_use_resource,
+    scoped_refptr<gpu::SharedImageInterface> sii,
+    bool resource_has_previous_content,
+    bool is_software)
+    : sii_(sii),
+      resource_has_previous_content_(resource_has_previous_content),
+      is_software_(is_software) {
+  if (!in_use_resource.backing()) {
+    if (is_software) {
+      in_use_resource.InstallSoftwareBacking(
+          sii, "ZeroCopyRasterBufferProviderSoftware");
+      in_use_resource.backing()->mailbox_sync_token =
+          sii->GenVerifiedSyncToken();
+    } else {
+      auto backing = std::make_unique<ResourcePool::Backing>(
+          in_use_resource.size(), in_use_resource.format(),
+          in_use_resource.color_space());
+      // This RasterBufferProvider will modify the resource outside of the
+      // GL command stream. So resources should not become available for reuse
+      // until they are not in use by the gpu anymore, which a fence is used
+      // to determine.
+      backing->wait_on_fence_required = true;
+      in_use_resource.set_backing(std::move(backing));
     }
+  }
+  backing_ = in_use_resource.backing();
+  if (!backing_->shared_image()) {
+    // The backing's SharedImage will be created on a worker thread during the
+    // execution of this raster; to avoid data races during taking of memory
+    // dumps on the compositor thread, mark the backing's SharedImage as
+    // unavailable for access on the compositor thread for the duration of the
+    // raster.
+    backing_->can_access_shared_image_on_compositor_thread = false;
+  }
+}
 
-    // This is destroyed on the compositor thread when raster is complete, but
-    // before the backing is prepared for export to the display compositor. So
-    // we can set up the texture and SyncToken here.
-    // TODO(danakj): This could be done with the worker context in Playback. Do
-    // we need to do things in IsResourceReadyToDraw() and OrderingBarrier then?
-    sii_->UpdateSharedImage(backing_->returned_sync_token,
-                            backing_->shared_image->mailbox());
+ZeroCopyRasterBufferImpl::~ZeroCopyRasterBufferImpl() {
+  // This raster task is complete, so if the backing's SharedImage was created
+  // on a worker thread during the raster work that has now happened.
+  backing_->can_access_shared_image_on_compositor_thread = true;
 
-    backing_->mailbox_sync_token = sii_->GenUnverifiedSyncToken();
+  // Drop the SharedImage if it was not possible to map it.
+  if (failed_to_map_shared_image_) {
+    backing_->shared_image()->UpdateDestructionSyncToken(gpu::SyncToken());
+    backing_->clear_shared_image();
   }
 
-  ZeroCopyRasterBufferImpl& operator=(const ZeroCopyRasterBufferImpl&) = delete;
-
-  // Overridden from RasterBuffer:
-  void Playback(const RasterSource* raster_source,
-                const gfx::Rect& raster_full_rect,
-                const gfx::Rect& raster_dirty_rect,
-                uint64_t new_content_id,
-                const gfx::AxisTransform2d& transform,
-                const RasterSource::PlaybackSettings& playback_settings,
-                const GURL& url) override {
-    TRACE_EVENT0("cc", "ZeroCopyRasterBuffer::Playback");
-
-    // Create a MappableSI if necessary.
-    if (!backing_->shared_image) {
-      gpu::SharedImageUsageSet usage = gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
-                                       gpu::SHARED_IMAGE_USAGE_SCANOUT;
-      backing_->shared_image = sii_->CreateSharedImage(
-          {format_, resource_size_, resource_color_space_, usage,
-           "ZeroCopyRasterTile"},
-          gpu::kNullSurfaceHandle, kBufferUsage);
-      if (!backing_->shared_image) {
-        LOG(ERROR) << "Creation of MappableSharedImage failed.";
-        return;
-      }
-    }
-
-    std::unique_ptr<gpu::ClientSharedImage::ScopedMapping> mapping =
-        backing_->shared_image->Map();
-    if (!mapping) {
-      LOG(ERROR) << "MapSharedImage Failed.";
-      sii_->DestroySharedImage(gpu::SyncToken(),
-                               std::move(backing_->shared_image));
-      return;
-    }
-
-    // TODO(danakj): Implement partial raster with raster_dirty_rect.
-    RasterBufferProvider::PlaybackToMemory(
-        mapping->GetMemoryForPlane(0).data(), format_, resource_size_,
-        mapping->Stride(0), raster_source, raster_full_rect, raster_full_rect,
-        transform, resource_color_space_, playback_settings);
+  if (is_software_) {
+    // The below work is specific to GPU compositing.
+    return;
   }
 
-  bool SupportsBackgroundThreadPriority() const override { return true; }
+  // If it was not possible to allocate the SharedImage
+  // (https://crbug.com/554541) or it was not possible to map it, then we
+  // don't have anything to give to the display compositor, so we report a
+  // zero mailbox that will result in checkerboarding.
+  if (!backing_->shared_image()) {
+    return;
+  }
 
- private:
-  // These fields are safe to access on both the compositor and worker thread.
-  const raw_ptr<ResourcePool::GpuBacking> backing_;
-  const scoped_refptr<gpu::SharedImageInterface> sii_;
+  // This is destroyed on the compositor thread when raster is complete, but
+  // before the backing is prepared for export to the display compositor. So
+  // we can set up the texture and SyncToken here.
+  // TODO(danakj): This could be done with the worker context in Playback. Do
+  // we need to do things in IsResourceReadyToDraw() and OrderingBarrier then?
+  sii_->UpdateSharedImage(backing_->returned_sync_token,
+                          backing_->shared_image()->mailbox());
 
-  // These fields are for use on the worker thread.
-  raw_ptr<base::WaitableEvent> shutdown_event_;
-  gfx::Size resource_size_;
-  viz::SharedImageFormat format_;
-  gfx::ColorSpace resource_color_space_;
-};
+  backing_->mailbox_sync_token = sii_->GenUnverifiedSyncToken();
+}
 
-}  // namespace
+void ZeroCopyRasterBufferImpl::Playback(
+    const RasterSource* raster_source,
+    const gfx::Rect& raster_full_rect,
+    const gfx::Rect& raster_dirty_rect,
+    uint64_t new_content_id,
+    const gfx::AxisTransform2d& transform,
+    const RasterSource::PlaybackSettings& playback_settings,
+    const GURL& url) {
+  TRACE_EVENT0("cc", "ZeroCopyRasterBuffer::Playback");
+
+  gfx::Rect playback_rect = raster_full_rect;
+  if (resource_has_previous_content_) {
+    playback_rect.Intersect(raster_dirty_rect);
+  }
+  DCHECK(!playback_rect.IsEmpty())
+      << "Why are we rastering a tile that's not dirty?";
+
+  // Create a MappableSI if necessary.
+  if (is_software_) {
+    // WHen used with the software compositor, the SharedImage is created in the
+    // constructor.
+    CHECK(backing_->shared_image());
+  } else if (!backing_->shared_image()) {
+    gpu::SharedImageUsageSet usage =
+        gpu::SHARED_IMAGE_USAGE_DISPLAY_READ | gpu::SHARED_IMAGE_USAGE_SCANOUT;
+    if (!backing_->CreateSharedImage(sii_.get(), usage, "ZeroCopyRasterTile",
+                                     kBufferUsage)) {
+      LOG(ERROR) << "Creation of MappableSharedImage failed.";
+      return;
+    }
+  }
+
+  std::unique_ptr<gpu::ClientSharedImage::ScopedMapping> mapping =
+      backing_->shared_image()->Map();
+  if (!mapping) {
+    LOG(ERROR) << "MapSharedImage Failed.";
+
+    // NOTE: It is not safe to clear the SharedImage here as it might be being
+    // read on the compositor thread as part of memory dump generation.
+    // Instead, save the fact that mapping failed so that the SharedImage can
+    // be cleared in the destructor of this object.
+    failed_to_map_shared_image_ = true;
+    return;
+  }
+
+  // TODO(danakj): Implement partial raster with raster_dirty_rect for GPU
+  // compositing.
+  RasterBufferProvider::PlaybackToMemory(
+      mapping->GetMemoryForPlane(0).data(), backing_->format(),
+      backing_->size(), mapping->Stride(0), raster_source, raster_full_rect,
+      playback_rect, transform, backing_->color_space(), playback_settings);
+}
+
+bool ZeroCopyRasterBufferImpl::SupportsBackgroundThreadPriority() const {
+  return true;
+}
 
 ZeroCopyRasterBufferProvider::ZeroCopyRasterBufferProvider(
-    viz::RasterContextProvider* compositor_context_provider,
-    const RasterCapabilities& raster_caps)
-    : compositor_context_provider_(compositor_context_provider),
-      tile_format_(raster_caps.tile_format) {}
+    const scoped_refptr<gpu::SharedImageInterface>& shared_image_interface,
+    bool is_software)
+    : is_software_(is_software),
+      shared_image_interface_(shared_image_interface) {
+  CHECK(shared_image_interface_)
+      << "SharedImageInterface is null in ZeroCopyRasterBufferProvider ctor!";
+}
 
 ZeroCopyRasterBufferProvider::~ZeroCopyRasterBufferProvider() = default;
 
@@ -141,37 +182,19 @@ ZeroCopyRasterBufferProvider::AcquireBufferForRaster(
     bool depends_on_at_raster_decodes,
     bool depends_on_hardware_accelerated_jpeg_candidates,
     bool depends_on_hardware_accelerated_webp_candidates) {
-  if (!resource.gpu_backing()) {
-    auto backing = std::make_unique<ResourcePool::GpuBacking>();
-    backing->overlay_candidate = true;
-    // This RasterBufferProvider will modify the resource outside of the
-    // GL command stream. So resources should not become available for reuse
-    // until they are not in use by the gpu anymore, which a fence is used
-    // to determine.
-    backing->wait_on_fence_required = true;
-    resource.set_gpu_backing(std::move(backing));
-  }
-  ResourcePool::GpuBacking* backing = resource.gpu_backing();
+  bool resource_has_previous_content =
+      resource_content_id && resource_content_id == previous_content_id;
 
   return std::make_unique<ZeroCopyRasterBufferImpl>(
-      shutdown_event_, resource, backing,
-      base::WrapRefCounted(
-          compositor_context_provider_->SharedImageInterface()));
+      resource, shared_image_interface_, resource_has_previous_content,
+      is_software_);
 }
 
 void ZeroCopyRasterBufferProvider::Flush() {}
 
-viz::SharedImageFormat ZeroCopyRasterBufferProvider::GetFormat() const {
-  return tile_format_;
-}
-
-bool ZeroCopyRasterBufferProvider::IsResourcePremultiplied() const {
-  return true;
-}
-
 bool ZeroCopyRasterBufferProvider::CanPartialRasterIntoProvidedResource()
     const {
-  return false;
+  return true;
 }
 
 bool ZeroCopyRasterBufferProvider::IsResourceReadyToDraw(
@@ -186,11 +209,6 @@ uint64_t ZeroCopyRasterBufferProvider::SetReadyToDrawCallback(
     uint64_t pending_callback_id) {
   // Zero-copy resources are immediately ready to draw.
   return 0;
-}
-
-void ZeroCopyRasterBufferProvider::SetShutdownEvent(
-    base::WaitableEvent* shutdown_event) {
-  shutdown_event_ = shutdown_event;
 }
 
 void ZeroCopyRasterBufferProvider::Shutdown() {}

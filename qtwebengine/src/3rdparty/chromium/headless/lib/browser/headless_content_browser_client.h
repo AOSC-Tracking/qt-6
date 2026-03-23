@@ -15,9 +15,11 @@
 #include "headless/public/headless_browser.h"
 #include "services/network/network_service.h"
 #include "third_party/blink/public/mojom/badging/badging.mojom.h"
+#include "third_party/blink/public/mojom/persistent_renderer_prefs.mojom.h"
 
 namespace headless {
 
+class HeadlessBluetoothDelegate;
 class HeadlessBrowserImpl;
 
 class HeadlessContentBrowserClient : public content::ContentBrowserClient {
@@ -132,8 +134,8 @@ class HeadlessContentBrowserClient : public content::ContentBrowserClient {
 #endif
 
 #if defined(HEADLESS_USE_POLICY)
-  std::vector<std::unique_ptr<content::NavigationThrottle>>
-  CreateThrottlesForNavigation(content::NavigationHandle* handle) override;
+  void CreateThrottlesForNavigation(
+      content::NavigationThrottleRegistry& registry) override;
 #endif
 
   void OnNetworkServiceCreated(
@@ -148,12 +150,23 @@ class HeadlessContentBrowserClient : public content::ContentBrowserClient {
 
   bool ShouldSandboxNetworkService() override;
 
+  content::BluetoothDelegate* GetBluetoothDelegate() override;
+
+  bool IsRendererProcessPriorityEnabled() override;
+
  private:
   class StubBadgeService;
+
+  class StubPersistentRendererPrefsService;
 
   void BindBadgeService(
       content::RenderFrameHost* render_frame_host,
       mojo::PendingReceiver<blink::mojom::BadgeService> receiver);
+
+  void BindPersistentRendererPrefsService(
+      content::RenderFrameHost* render_frame_host,
+      mojo::PendingReceiver<blink::mojom::PersistentRendererPrefsService>
+          receiver);
 
   void HandleExplicitlyAllowedPorts(
       ::network::mojom::NetworkService* network_service);
@@ -162,6 +175,11 @@ class HeadlessContentBrowserClient : public content::ContentBrowserClient {
   raw_ptr<HeadlessBrowserImpl> browser_;  // Not owned.
 
   std::unique_ptr<StubBadgeService> stub_badge_service_;
+
+  std::unique_ptr<StubPersistentRendererPrefsService>
+      stub_persistent_renderer_prefs_service_;
+
+  std::unique_ptr<HeadlessBluetoothDelegate> bluetooth_delegate_;
 };
 
 }  // namespace headless

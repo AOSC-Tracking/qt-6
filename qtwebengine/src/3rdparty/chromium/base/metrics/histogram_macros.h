@@ -5,6 +5,8 @@
 #ifndef BASE_METRICS_HISTOGRAM_MACROS_H_
 #define BASE_METRICS_HISTOGRAM_MACROS_H_
 
+#include <array>
+
 #include "base/check_op.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_macros_internal.h"
@@ -316,6 +318,14 @@ enum class ScopedHistogramTiming {
   INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_EXPANDER( \
       name, ScopedHistogramTiming::kMicrosecondTimes, __COUNTER__)
 
+// Similar scoped histogram timer, but only records the time if the condition
+// is satisfied. The `should_sample` field takes a boolean and is intended to be
+// used with base::MetricsSubSampler or base::ShouldRecordSubsampledMetric().
+#define SCOPED_UMA_HISTOGRAM_TIMER_MICROS_SUBSAMPLED(name, should_sample) \
+  INTERNAL_SCOPED_UMA_HISTOGRAM_TIMER_SUBSAMPLED_EXPANDER(                \
+      name, should_sample, ScopedHistogramTiming::kMicrosecondTimes,      \
+      __COUNTER__)
+
 //------------------------------------------------------------------------------
 // Memory histograms.
 
@@ -327,17 +337,18 @@ enum class ScopedHistogramTiming {
 // Sample usage:
 //   UMA_HISTOGRAM_MEMORY_KB("My.Memory.Histogram", memory_in_kb);
 
-// Used to measure common KB-granularity memory stats. Range is up to 500000KB -
-// approximately 500M.
+// Used to measure common KB-granularity memory stats. Sample is in KB. Range is
+// from 1000KB (see crbug.com/40526504) to 500M. For measuring sizes less than
+// 1000K, use `UmaHistogramCounts`.
 #define UMA_HISTOGRAM_MEMORY_KB(name, sample) \
   UMA_HISTOGRAM_CUSTOM_COUNTS(name, sample, 1000, 500000, 50)
 
-// Used to measure common MB-granularity memory stats. Range is up to 4000MiB -
-// approximately 4GiB.
+// Used to measure common MB-granularity memory stats. Sample is in MB. Range is
+// 1MB to ~4G.
 #define UMA_HISTOGRAM_MEMORY_MEDIUM_MB(name, sample) \
   UMA_HISTOGRAM_CUSTOM_COUNTS(name, sample, 1, 4000, 100)
 
-// Used to measure common MB-granularity memory stats. Range is up to ~64G.
+// Used to measure common MB-granularity memory stats. Range is 1MB to ~64G.
 #define UMA_HISTOGRAM_MEMORY_LARGE_MB(name, sample) \
   UMA_HISTOGRAM_CUSTOM_COUNTS(name, sample, 1, 64000, 100)
 

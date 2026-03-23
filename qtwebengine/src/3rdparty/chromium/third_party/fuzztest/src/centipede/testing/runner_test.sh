@@ -21,8 +21,8 @@ set -eu
 
 source "$(dirname "$0")/../test_util.sh"
 
-target="$(centipede::get_centipede_test_srcdir)/testing/test_fuzz_target"
-non_pie_target="$(centipede::get_centipede_test_srcdir)/testing/test_fuzz_target_non_pie"
+target="$(fuzztest::internal::get_centipede_test_srcdir)/testing/test_fuzz_target"
+non_pie_target="$(fuzztest::internal::get_centipede_test_srcdir)/testing/test_fuzz_target_non_pie"
 
 # Create input files.
 oom="${TEST_TMPDIR}/oom"
@@ -107,10 +107,16 @@ CENTIPEDE_RUNNER_FLAGS=":rss_limit_mb=8192:" $target "${oom}"  # must pass
 
 echo ======== Check timeout
 CENTIPEDE_RUNNER_FLAGS=":timeout_per_input=567:" "${target}" \
-  2>&1 | grep "timeout_per_input:.567"
+  2>&1 | grep "timeout_per_input: 567"
 
 CENTIPEDE_RUNNER_FLAGS=":timeout_per_input=2:" "${target}" "${slo}" \
   2>&1 | grep "Per-input timeout exceeded"
+
+{
+    CENTIPEDE_RUNNER_FLAGS=":ignore_timeout_reports:timeout_per_input=2:" "${target}" "${slo}";
+    echo "$?" > "${TEST_TMPDIR}/ignore_timeout_reports_exit_code";
+} 2>&1 | grep "Per-input timeout exceeded" | grep "exiting without reporting as an error"
+((`cat "${TEST_TMPDIR}/ignore_timeout_reports_exit_code"` == 0))
 
 echo ======== Check stack limit check with stack_limit
 CENTIPEDE_RUNNER_FLAGS=":use_pc_features:stack_limit_kb=200:" "${target}" "${stk}"  # must pass

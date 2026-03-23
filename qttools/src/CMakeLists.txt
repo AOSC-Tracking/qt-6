@@ -15,7 +15,9 @@ qt_exclude_tool_directories_from_default_target(
 
 # Evaluate features to decide what to build.
 # The config files will be written in the src/global module.
+set(QT_GENERATE_SBOM OFF)
 qt_feature_evaluate_features("${CMAKE_CURRENT_SOURCE_DIR}/../configure.cmake")
+unset(QT_GENERATE_SBOM)
 
 option(QT_INSTALL_XDG_DESKTOP_ENTRIES "Enable XDG desktop entries installation" OFF)
 
@@ -40,6 +42,9 @@ if(QT_FEATURE_assistant)
 endif()
 if(QT_FEATURE_distancefieldgenerator)
     add_subdirectory(distancefieldgenerator)
+endif()
+if(QT_FEATURE_kmap2qmap)
+    add_subdirectory(kmap2qmap)
 endif()
 if(QT_FEATURE_qtattributionsscanner)
     add_subdirectory(qtattributionsscanner)

@@ -14,8 +14,7 @@
 namespace blink {
 
 CSSAtRuleID CssAtRuleID(StringView name) {
-  if (RuntimeEnabledFeatures::ViewTransitionOnNavigationEnabled() &&
-      EqualIgnoringASCIICase(name, "view-transition")) {
+  if (EqualIgnoringASCIICase(name, "view-transition")) {
     return CSSAtRuleID::kCSSAtRuleViewTransition;
   }
   if (EqualIgnoringASCIICase(name, "charset")) {
@@ -91,57 +90,56 @@ CSSAtRuleID CssAtRuleID(StringView name) {
     return CSSAtRuleID::kCSSAtRuleWebkitKeyframes;
   }
 
-  if (RuntimeEnabledFeatures::PageMarginBoxesEnabled()) {
-    // https://www.w3.org/TR/css-page-3/#syntax-page-selector
-    if (EqualIgnoringASCIICase(name, "top-left-corner")) {
-      return CSSAtRuleID::kCSSAtRuleTopLeftCorner;
-    }
-    if (EqualIgnoringASCIICase(name, "top-left")) {
-      return CSSAtRuleID::kCSSAtRuleTopLeft;
-    }
-    if (EqualIgnoringASCIICase(name, "top-center")) {
-      return CSSAtRuleID::kCSSAtRuleTopCenter;
-    }
-    if (EqualIgnoringASCIICase(name, "top-right")) {
-      return CSSAtRuleID::kCSSAtRuleTopRight;
-    }
-    if (EqualIgnoringASCIICase(name, "top-right-corner")) {
-      return CSSAtRuleID::kCSSAtRuleTopRightCorner;
-    }
-    if (EqualIgnoringASCIICase(name, "bottom-left-corner")) {
-      return CSSAtRuleID::kCSSAtRuleBottomLeftCorner;
-    }
-    if (EqualIgnoringASCIICase(name, "bottom-left")) {
-      return CSSAtRuleID::kCSSAtRuleBottomLeft;
-    }
-    if (EqualIgnoringASCIICase(name, "bottom-center")) {
-      return CSSAtRuleID::kCSSAtRuleBottomCenter;
-    }
-    if (EqualIgnoringASCIICase(name, "bottom-right")) {
-      return CSSAtRuleID::kCSSAtRuleBottomRight;
-    }
-    if (EqualIgnoringASCIICase(name, "bottom-right-corner")) {
-      return CSSAtRuleID::kCSSAtRuleBottomRightCorner;
-    }
-    if (EqualIgnoringASCIICase(name, "left-top")) {
-      return CSSAtRuleID::kCSSAtRuleLeftTop;
-    }
-    if (EqualIgnoringASCIICase(name, "left-middle")) {
-      return CSSAtRuleID::kCSSAtRuleLeftMiddle;
-    }
-    if (EqualIgnoringASCIICase(name, "left-bottom")) {
-      return CSSAtRuleID::kCSSAtRuleLeftBottom;
-    }
-    if (EqualIgnoringASCIICase(name, "right-top")) {
-      return CSSAtRuleID::kCSSAtRuleRightTop;
-    }
-    if (EqualIgnoringASCIICase(name, "right-middle")) {
-      return CSSAtRuleID::kCSSAtRuleRightMiddle;
-    }
-    if (EqualIgnoringASCIICase(name, "right-bottom")) {
-      return CSSAtRuleID::kCSSAtRuleRightBottom;
-    }
+  // https://www.w3.org/TR/css-page-3/#syntax-page-selector
+  if (EqualIgnoringASCIICase(name, "top-left-corner")) {
+    return CSSAtRuleID::kCSSAtRuleTopLeftCorner;
   }
+  if (EqualIgnoringASCIICase(name, "top-left")) {
+    return CSSAtRuleID::kCSSAtRuleTopLeft;
+  }
+  if (EqualIgnoringASCIICase(name, "top-center")) {
+    return CSSAtRuleID::kCSSAtRuleTopCenter;
+  }
+  if (EqualIgnoringASCIICase(name, "top-right")) {
+    return CSSAtRuleID::kCSSAtRuleTopRight;
+  }
+  if (EqualIgnoringASCIICase(name, "top-right-corner")) {
+    return CSSAtRuleID::kCSSAtRuleTopRightCorner;
+  }
+  if (EqualIgnoringASCIICase(name, "bottom-left-corner")) {
+    return CSSAtRuleID::kCSSAtRuleBottomLeftCorner;
+  }
+  if (EqualIgnoringASCIICase(name, "bottom-left")) {
+    return CSSAtRuleID::kCSSAtRuleBottomLeft;
+  }
+  if (EqualIgnoringASCIICase(name, "bottom-center")) {
+    return CSSAtRuleID::kCSSAtRuleBottomCenter;
+  }
+  if (EqualIgnoringASCIICase(name, "bottom-right")) {
+    return CSSAtRuleID::kCSSAtRuleBottomRight;
+  }
+  if (EqualIgnoringASCIICase(name, "bottom-right-corner")) {
+    return CSSAtRuleID::kCSSAtRuleBottomRightCorner;
+  }
+  if (EqualIgnoringASCIICase(name, "left-top")) {
+    return CSSAtRuleID::kCSSAtRuleLeftTop;
+  }
+  if (EqualIgnoringASCIICase(name, "left-middle")) {
+    return CSSAtRuleID::kCSSAtRuleLeftMiddle;
+  }
+  if (EqualIgnoringASCIICase(name, "left-bottom")) {
+    return CSSAtRuleID::kCSSAtRuleLeftBottom;
+  }
+  if (EqualIgnoringASCIICase(name, "right-top")) {
+    return CSSAtRuleID::kCSSAtRuleRightTop;
+  }
+  if (EqualIgnoringASCIICase(name, "right-middle")) {
+    return CSSAtRuleID::kCSSAtRuleRightMiddle;
+  }
+  if (EqualIgnoringASCIICase(name, "right-bottom")) {
+    return CSSAtRuleID::kCSSAtRuleRightBottom;
+  }
+
   if (RuntimeEnabledFeatures::CSSFunctionsEnabled() &&
       EqualIgnoringASCIICase(name, "function")) {
     return CSSAtRuleID::kCSSAtRuleFunction;
@@ -152,6 +150,12 @@ CSSAtRuleID CssAtRuleID(StringView name) {
     }
     if (EqualIgnoringASCIICase(name, "apply")) {
       return CSSAtRuleID::kCSSAtRuleApplyMixin;
+    }
+  }
+
+  if (RuntimeEnabledFeatures::CSSCustomMediaEnabled()) {
+    if (EqualIgnoringASCIICase(name, "custom-media")) {
+      return CSSAtRuleID::kCSSAtRuleCustomMedia;
     }
   }
 
@@ -248,6 +252,8 @@ StringView CssAtRuleIDToString(CSSAtRuleID id) {
       return "@mixin";
     case CSSAtRuleID::kCSSAtRuleApplyMixin:
       return "@apply";
+    case CSSAtRuleID::kCSSAtRuleCustomMedia:
+      return "@custom-media";
     case CSSAtRuleID::kCSSAtRuleInvalid:
     case CSSAtRuleID::kCount:
       NOTREACHED();
@@ -330,6 +336,8 @@ std::optional<WebFeature> AtRuleFeature(CSSAtRuleID rule_id) {
     case CSSAtRuleID::kCSSAtRuleMixin:
     case CSSAtRuleID::kCSSAtRuleApplyMixin:
       return WebFeature::kCSSMixins;
+    case CSSAtRuleID::kCSSAtRuleCustomMedia:
+      return WebFeature::kCSSCustomMedia;
     case CSSAtRuleID::kCSSAtRuleInvalid:
     case CSSAtRuleID::kCount:
       NOTREACHED();

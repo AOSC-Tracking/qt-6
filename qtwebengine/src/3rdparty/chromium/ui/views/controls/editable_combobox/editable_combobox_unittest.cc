@@ -7,11 +7,13 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -123,7 +125,7 @@ class EditableComboboxTest : public ViewsTestBase {
   void ClickTextfield();
   void FocusTextfield();
   bool IsTextfieldFocused() const;
-  std::u16string GetSelectedText() const;
+  std::u16string_view GetSelectedText() const;
   void SetContextMenuController(ContextMenuController* controller);
   void DragMouseTo(const gfx::Point& location);
   MenuRunner* GetMenuRunner();
@@ -294,7 +296,7 @@ bool EditableComboboxTest::IsTextfieldFocused() const {
   return combobox_->textfield_->HasFocus();
 }
 
-std::u16string EditableComboboxTest::GetSelectedText() const {
+std::u16string_view EditableComboboxTest::GetSelectedText() const {
   return combobox_->textfield_->GetSelectedText();
 }
 

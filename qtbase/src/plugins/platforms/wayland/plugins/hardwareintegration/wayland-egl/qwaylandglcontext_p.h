@@ -1,19 +1,8 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
-//
-//  W A R N I N G
-//  -------------
-//
-// This file is not part of the Qt API.  It exists purely as an
-// implementation detail.  This header file may change from version to
-// version without notice, or even be removed.
-//
-// We mean it.
-//
-
-#ifndef QWAYLANDGLCONTEXT_H
-#define QWAYLANDGLCONTEXT_H
+#pragma once
 
 #include "qwaylandeglinclude_p.h" //must be first
 
@@ -37,6 +26,8 @@ public:
     QWaylandGLContext();
     QWaylandGLContext(EGLDisplay eglDisplay, QWaylandDisplay *display, const QSurfaceFormat &format, QPlatformOpenGLContext *share);
     ~QWaylandGLContext();
+
+    void initialize() override;
     void swapBuffers(QPlatformSurface *surface) override;
 
     bool makeCurrent(QPlatformSurface *surface) override;
@@ -46,8 +37,6 @@ public:
     void endFrame() override;
 
     GLuint defaultFramebufferObject(QPlatformSurface *surface) const override;
-
-    QFunctionPointer getProcAddress(const char *procName) override;
 
 protected:
     EGLSurface eglSurfaceForPlatformSurface(QPlatformSurface *surface) override;
@@ -71,5 +60,3 @@ private:
 }
 
 QT_END_NAMESPACE
-
-#endif // QWAYLANDGLCONTEXT_H

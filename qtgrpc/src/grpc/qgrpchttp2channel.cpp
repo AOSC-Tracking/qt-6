@@ -7,6 +7,7 @@
 #include <QtGrpc/qgrpccalloptions.h>
 #include <QtGrpc/qgrpcchanneloptions.h>
 #include <QtGrpc/qgrpchttp2channel.h>
+#include <QtGrpc/qgrpcinterceptorchain.h>
 #include <QtGrpc/qgrpcoperationcontext.h>
 #include <QtGrpc/qgrpcserializationformat.h>
 #include <QtGrpc/qgrpcstatus.h>
@@ -16,6 +17,7 @@
 
 #include <QtNetwork/private/hpack_p.h>
 #include <QtNetwork/private/http2protocol_p.h>
+#include <QtNetwork/private/qdecompresshelper_p.h>
 #include <QtNetwork/private/qhttp2connection_p.h>
 #if QT_CONFIG(localserver)
 #  include <QtNetwork/qlocalsocket.h>
@@ -178,6 +180,7 @@ const QByteArray GrpcStatusMessageHeader("grpc-message");
 const QByteArray DefaultContentType("application/grpc");
 const QByteArray GrpcStatusDetailsHeader("grpc-status-details-bin");
 const QByteArray GrpcAcceptEncodingHeader("grpc-accept-encoding");
+const QByteArray GrpcAcceptEncodingValue("identity,deflate,gzip");
 const QByteArray GrpcEncodingHeader("grpc-encoding");
 constexpr qsizetype GrpcMessageSizeHeaderSize = 5;
 
@@ -252,21 +255,48 @@ bool hasSslConfiguration(const QGrpcChannelOptions &opts)
 
 } // namespace
 
-struct ExpectedData
+class GrpcDataParser
 {
-    qsizetype expectedSize = 0;
-    QByteArray container;
-
-    bool updateExpectedSize()
+public:
+    struct Frame
     {
-        if (expectedSize == 0) {
-            if (container.size() < GrpcMessageSizeHeaderSize)
-                return false;
-            expectedSize = qFromBigEndian<quint32>(container.data() + 1)
-                + GrpcMessageSizeHeaderSize;
+        Frame(QByteArray &&payload, bool isCompressed)
+            : payload(std::move(payload)), isCompressed(isCompressed)
+        {
         }
-        return true;
+        QByteArray payload;
+        bool isCompressed = false;
+    };
+    // Parses the next complete gRPC frame from the buffer. Removes the frame
+    // on success, or returns std::nullopt if incomplete.
+    std::optional<Frame> parseNextFrame()
+    {
+        static constexpr qsizetype FlagOffset = 0;
+        static constexpr qsizetype LengthOffset = 1;
+
+        std::optional<Frame> out;
+        if (container.size() < GrpcMessageSizeHeaderSize)
+            return out;
+
+        // Parse length (big endian, 4 bytes after flag)
+        const auto messageLength = qFromBigEndian<
+            quint32>(reinterpret_cast<const uchar *>(container.constData() + LengthOffset));
+        const qsizetype frameSize = GrpcMessageSizeHeaderSize + messageLength;
+
+        if (container.size() < frameSize)
+            return out; // Incomplete frame in buffer. Wait for more data
+
+        out.emplace(container.mid(GrpcMessageSizeHeaderSize, messageLength),
+                    container.at(FlagOffset) != 0);
+        container.remove(0, frameSize);
+        return out;
     }
+
+    void feed(const QByteArray &data) { container.append(data); }
+    qsizetype bytesAvailable() const { return container.size(); }
+
+private:
+    QByteArray container;
 };
 
 // The Http2Handler manages an individual RPC over the HTTP/2 channel.
@@ -290,7 +320,7 @@ public:
     Q_ENUM(State);
 
     explicit Http2Handler(QGrpcHttp2ChannelPrivate *parent, QGrpcOperationContext *context,
-                          bool endStream);
+                          QByteArray &&messageData, bool endStream);
     ~Http2Handler() override;
 
     void sendInitialRequest();
@@ -334,7 +364,9 @@ private:
     HPack::HttpHeader m_initialHeaders;
     QQueue<QByteArray> m_queue;
     QPointer<QHttp2Stream> m_stream;
-    ExpectedData m_expectedData;
+    GrpcDataParser m_grpcDataParser;
+    QByteArray m_negotiatedEncoding;
+    std::unique_ptr<QDecompressHelper> m_decompressor;
     State m_state = State::Idle;
     const bool m_endStreamAtFirstData;
     bool m_writesDoneSent = false;
@@ -353,7 +385,8 @@ public:
     explicit QGrpcHttp2ChannelPrivate(const QUrl &uri, QGrpcHttp2Channel *q);
     ~QGrpcHttp2ChannelPrivate() override = default;
 
-    void processOperation(QGrpcOperationContext *operationContext, bool endStream = false);
+    void processOperation(QGrpcOperationContext *operationContext, QByteArray &&data,
+                          bool endStream = false);
 
     QGrpcHttp2Channel *q_ptr = nullptr;
     const SocketType socketType;
@@ -421,7 +454,7 @@ private:
 ///
 
 Http2Handler::Http2Handler(QGrpcHttp2ChannelPrivate *parent, QGrpcOperationContext *context,
-                           bool endStream)
+                           QByteArray &&messageData, bool endStream)
     : QObject(parent), m_context(context), m_initialHeaders(constructInitialHeaders()),
       m_endStreamAtFirstData(endStream), m_filterServerMetadata(constructFilterServerMetadata())
 {
@@ -438,7 +471,7 @@ Http2Handler::Http2Handler(QGrpcHttp2ChannelPrivate *parent, QGrpcOperationConte
 
     m_deadlineTimer.setSingleShot(true);
 
-    writeMessage(context->argument());
+    writeMessage(std::move(messageData));
 }
 
 Http2Handler::~Http2Handler()
@@ -508,29 +541,54 @@ void Http2Handler::attachStream(QHttp2Stream *stream_)
                 if (m_state == State::Cancelled)
                     return;
 
-                m_expectedData.container.append(data);
+                m_grpcDataParser.feed(data);
+                while (auto frame = m_grpcDataParser.parseNextFrame()) {
+                    QByteArray finalPayload;
 
-                if (!m_expectedData.updateExpectedSize())
-                    return;
+                    if (frame->isCompressed) {
+                        if (!m_decompressor || m_negotiatedEncoding.isEmpty()) {
+                            finish({ QtGrpc::StatusCode::Internal,
+                                     "Protocol error: received compressed message "
+                                     "but no encoding was negotiated." });
+                            return;
+                        }
+                        m_decompressor->feed(std::move(frame->payload));
+                        // Read all decompressed data for this single message.
+                        while (m_decompressor->hasData()) {
+                            char buffer[4096];
+                            qsizetype bytesRead = m_decompressor->read(buffer, sizeof(buffer));
+                            if (bytesRead < 0) {
+                                finish({ QtGrpc::StatusCode::Internal,
+                                         "Decompression failed: %1"_L1
+                                             .arg(m_decompressor->errorString()) });
+                                return;
+                            }
+                            finalPayload.append(buffer, bytesRead);
+                        }
+                        m_decompressor->clear();
+                        m_decompressor->setEncoding(m_negotiatedEncoding);
+                    } else {
+                        finalPayload = std::move(frame->payload);
+                    }
 
-                while (m_expectedData.container.size() >= m_expectedData.expectedSize) {
                     qCDebug(lcStream,
-                            "[%p] About to process message (receivedSize=%" PRIdQSIZETYPE ", "
-                            "expectedSize=%" PRIdQSIZETYPE ", containerSize=%" PRIdQSIZETYPE ")",
-                            this, data.size(), m_expectedData.expectedSize,
-                            m_expectedData.container.size());
-                    const auto len = m_expectedData.expectedSize - GrpcMessageSizeHeaderSize;
-                    const auto msg = m_expectedData.container.mid(GrpcMessageSizeHeaderSize, len);
-                    emit m_context->messageReceived(msg);
+                            "[%p] Processed gRPC message (compressed=%s, "
+                            "payloadSize=%" PRIdQSIZETYPE ", bufferRemaining=%" PRIdQSIZETYPE ")",
+                            this, frame->isCompressed ? "true" : "false", finalPayload.size(),
+                            m_grpcDataParser.bytesAvailable());
 
-                    m_expectedData.container.remove(0, m_expectedData.expectedSize);
-                    m_expectedData.expectedSize = 0;
-                    if (!m_expectedData.updateExpectedSize())
-                        return;
+                    emit m_context->messageReceived(finalPayload);
                 }
 
-                if (endStream)
+                if (endStream) {
+                    if (const auto bytes = m_grpcDataParser.bytesAvailable()) {
+                        finish({ QtGrpc::StatusCode::DataLoss,
+                                 "Unexcpected end of stream with %1 bytes remaining"_L1
+                                     .arg(QString::number(bytes)) });
+                        return;
+                    }
                     finish({});
+                }
             });
 
     connect(m_stream.get(), &QHttp2Stream::uploadFinished, this, &Http2Handler::processQueue);
@@ -549,7 +607,6 @@ HPack::HttpHeader Http2Handler::constructInitialHeaders() const
     const static QByteArray TEHeader("te");
     const static QByteArray TEValue("trailers");
     const static QByteArray GrpcServiceNameHeader("service-name");
-    const static QByteArray GrpcAcceptEncodingValue("identity,deflate,gzip");
     const static QByteArray UserAgentHeader("user-agent");
     const static QByteArray UserAgentValue("grpc-c++-qtgrpc/"_ba + QT_VERSION_STR + " ("_ba
                                     + QSysInfo::productType().toUtf8() + '/'
@@ -646,6 +703,10 @@ void Http2Handler::sendInitialRequest()
 {
     Q_ASSERT(!m_initialHeaders.empty());
     Q_ASSERT(m_stream);
+    if (m_state >= State::Cancelled) {
+        qCDebug(lcStream, "[%p] Stream finished before sending the initial request", this);
+        return;
+    }
     Q_ASSERT(m_state == State::Idle);
 
     if (!m_stream->sendHEADERS(m_initialHeaders, false)) {
@@ -713,15 +774,20 @@ void Http2Handler::asyncFinish(const QGrpcStatus &status)
 
 void Http2Handler::cancelWithStatus(const QGrpcStatus &status)
 {
-    if (m_state >= State::Cancelled)
+    if (m_state >= State::Cancelled) {
+        qCWarning(lcStream, "[%p] Cannot cancel stream in state=%s", this,
+                  QDebug::toBytes(m_state).data());
         return;
+    }
     qCDebug(lcStream, "[%p] Cancelling (state=%s)", this, QDebug::toBytes(m_state).data());
     m_state = State::Cancelled;
 
-    // Immediate cancellation by sending the RST_STREAM frame.
-    if (m_stream && !m_stream->sendRST_STREAM(Http2::Http2Error::CANCEL)) {
-        qCWarning(lcStream, "[%p] Failed cancellation (stream=%p, stream::state=%s)", this,
-                  m_stream.get(), QDebug::toBytes(m_stream->state()).constData());
+    if (m_stream && m_stream->state() != QHttp2Stream::State::Idle) {
+        // Immediate cancellation by sending the RST_STREAM frame.
+        if (!m_stream->sendRST_STREAM(Http2::Http2Error::CANCEL)) {
+            qCWarning(lcStream, "[%p] Failed cancellation (stream=%p, stream::state=%s)", this,
+                      m_stream.get(), QDebug::toBytes(m_stream->state()).constData());
+        }
     }
 
     finish(status);
@@ -808,10 +874,28 @@ void Http2Handler::handleHeaders(const HPack::HttpHeader &headers, HeaderPhase p
         } else if (validation.requireGrpcStatus && k == GrpcStatusDetailsHeader) {
             // Allowed optional headers
             // TODO: Implement status-details - QTBUG-138362
-        } else if (phase == HeaderPhase::Initial
-                   && (k == GrpcEncodingHeader || k == GrpcAcceptEncodingHeader)) {
+        } else if (phase == HeaderPhase::Initial && k == GrpcEncodingHeader) {
             // Allowed optional headers
-            // TODO: Implement compression handling - QTBUG-129286
+            if (v == "identity"_ba)
+                continue;
+            if (!GrpcAcceptEncodingValue.contains(v)
+                || !QDecompressHelper::isSupportedEncoding(v)) {
+                finish({ StatusCode::Internal,
+                         "Server responded with an unsupported compression algorithm: %1"_L1
+                             .arg(v) });
+                return;
+            }
+            // Create and configure the decompressor for this stream.
+            m_decompressor = std::make_unique<QDecompressHelper>();
+            if (!m_decompressor->setEncoding(v)) {
+                finish({ StatusCode::Internal,
+                         "Failed to initialize decompressor for algorithm: %1"_L1.arg(v) });
+                return;
+            }
+            m_negotiatedEncoding = v;
+        } else if (phase == HeaderPhase::Initial && k == GrpcAcceptEncodingHeader) {
+            // Allowed optional headers
+            // TODO: Implement client-side (request) compression handling - QTBUG-140235
         } else if (k.startsWith(':')) {
             qCWarning(lcStream,
                       "[%p] Received unhandled HTTP/2 pseudo-header: { key: '%s', value: '%s' } "
@@ -953,7 +1037,7 @@ QGrpcHttp2ChannelPrivate::QGrpcHttp2ChannelPrivate(const QUrl &uri, QGrpcHttp2Ch
 }
 
 void QGrpcHttp2ChannelPrivate::processOperation(QGrpcOperationContext *operationContext,
-                                                bool endStream)
+                                                QByteArray &&messageData, bool endStream)
 {
     Q_ASSERT_X(operationContext != nullptr, "QGrpcHttp2ChannelPrivate::processOperation",
                "operation context is nullptr.");
@@ -969,7 +1053,7 @@ void QGrpcHttp2ChannelPrivate::processOperation(QGrpcOperationContext *operation
         return;
     }
 
-    auto *handler = new Http2Handler(this, operationContext, endStream);
+    auto *handler = new Http2Handler(this, operationContext, std::move(messageData), endStream);
     if (m_connection && !createHttp2Stream(handler))
         return;
 
@@ -1060,7 +1144,7 @@ QUrl QGrpcHttp2ChannelPrivate::sanitizeHostUri(const QUrl &rawUri,
         if (rawUri.scheme() != expected) {
             qCWarning(lcChannel,
                       "[%p] Unsupported transport protocol scheme '%s'. Fall back to '%s'.", this,
-                      qPrintable(hostUri.scheme()), qPrintable(expected));
+                      qPrintable(rawUri.scheme()), qPrintable(expected));
             sanitizedUri.setScheme(expected);
         }
     };
@@ -1167,8 +1251,10 @@ bool QGrpcHttp2ChannelPrivate::createHttp2Stream(Http2Handler *handler)
 {
     Q_ASSERT(handler != nullptr);
     Q_ASSERT(m_connection);
-
-    const auto streamAttempt = m_connection->createStream();
+    constexpr QHttp2Stream::Configuration StreamConfiguration = {
+        false, // useDownloadBuffer
+    };
+    const auto streamAttempt = m_connection->createStream(StreamConfiguration);
     if (!streamAttempt.ok()) {
         handler->asyncFinish({ StatusCode::Unavailable,
                                tr("Unable to create an HTTP/2 stream (%1)")
@@ -1202,6 +1288,19 @@ QGrpcHttp2Channel::QGrpcHttp2Channel(const QUrl &hostUri, const QGrpcChannelOpti
 {
 }
 
+QGrpcHttp2Channel::QGrpcHttp2Channel(const QUrl &hostUri, QGrpcInterceptorChain interceptorChain)
+    : QAbstractGrpcChannel(std::move(interceptorChain)),
+      d_ptr(std::make_unique<QGrpcHttp2ChannelPrivate>(hostUri, this))
+{
+}
+
+QGrpcHttp2Channel::QGrpcHttp2Channel(const QUrl &hostUri, const QGrpcChannelOptions &options,
+                                     QGrpcInterceptorChain interceptorChain)
+    : QAbstractGrpcChannel(options, std::move(interceptorChain)),
+      d_ptr(std::make_unique<QGrpcHttp2ChannelPrivate>(hostUri, this))
+{
+}
+
 /*!
     Destroys the QGrpcHttp2Channel object.
 */
@@ -1219,36 +1318,39 @@ QUrl QGrpcHttp2Channel::hostUri() const
     \internal
     Initiates a unary \gRPC call.
 */
-void QGrpcHttp2Channel::call(std::shared_ptr<QGrpcOperationContext> operationContext)
+void QGrpcHttp2Channel::call(QGrpcOperationContext *operationContext, QByteArray &&messageData)
 {
-    d_ptr->processOperation(operationContext.get(), true);
+    d_ptr->processOperation(operationContext, std::move(messageData), true);
 }
 
 /*!
     \internal
     Initiates a server-side \gRPC stream.
 */
-void QGrpcHttp2Channel::serverStream(std::shared_ptr<QGrpcOperationContext> operationContext)
+void QGrpcHttp2Channel::serverStream(QGrpcOperationContext *operationContext,
+                                     QByteArray &&messageData)
 {
-    d_ptr->processOperation(operationContext.get(), true);
+    d_ptr->processOperation(operationContext, std::move(messageData), true);
 }
 
 /*!
     \internal
     Initiates a client-side \gRPC stream.
 */
-void QGrpcHttp2Channel::clientStream(std::shared_ptr<QGrpcOperationContext> operationContext)
+void QGrpcHttp2Channel::clientStream(QGrpcOperationContext *operationContext,
+                                     QByteArray &&messageData)
 {
-    d_ptr->processOperation(operationContext.get());
+    d_ptr->processOperation(operationContext, std::move(messageData), false);
 }
 
 /*!
     \internal
     Initiates a bidirectional \gRPC stream.
 */
-void QGrpcHttp2Channel::bidiStream(std::shared_ptr<QGrpcOperationContext> operationContext)
+void QGrpcHttp2Channel::bidiStream(QGrpcOperationContext *operationContext,
+                                   QByteArray &&messageData)
 {
-    d_ptr->processOperation(operationContext.get());
+    d_ptr->processOperation(operationContext, std::move(messageData), false);
 }
 
 /*!

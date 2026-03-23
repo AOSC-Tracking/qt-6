@@ -11,6 +11,7 @@ source_set("model") {
   ]
   deps = [
     "//base",
+    "//components/application_locale_storage",
     "//components/breadcrumbs/core",
     "//components/breadcrumbs/core:status",
     "//components/component_updater",
@@ -35,6 +36,7 @@ source_set("model") {
     "//ios/chrome/browser/crash_report/model/breadcrumbs",
     "//ios/chrome/browser/crash_report/model/breadcrumbs:application_breadcrumbs_logger",
     "//ios/chrome/browser/default_browser/model:utils",
+    "//ios/chrome/browser/download/model/auto_deletion",
     "//ios/chrome/browser/gcm/model",
     "//ios/chrome/browser/history/model",
     "//ios/chrome/browser/metrics/model",

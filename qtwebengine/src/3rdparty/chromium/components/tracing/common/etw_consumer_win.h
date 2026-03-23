@@ -68,6 +68,10 @@ class TRACING_EXPORT EtwConsumer
                             size_t pointer_size,
                             base::span<const uint8_t> packet_data);
 
+  // Returns the size, in bytes, of a pointer-sized value in an event based on
+  // the `Flags` member of an event's `EVENT_HEADER`.
+  static size_t GetPointerSize(uint16_t event_header_flags);
+
   // Per-provider event handlers. `ProcessEventRecord` dispatches to these based
   // on the ProviderId in the record's EventHeader.
   void HandleProcessEvent(const EVENT_HEADER& header,
@@ -117,6 +121,14 @@ class TRACING_EXPORT EtwConsumer
   bool DecodeCSwitchEvent(const EVENT_HEADER& header,
                           const ETW_BUFFER_CONTEXT& buffer_context,
                           base::span<const uint8_t> packet_data)
+      VALID_CONTEXT_REQUIRED(sequence_checker_);
+
+  // Decodes a ReadyThread Event and emits a Perfetto trace event; see
+  // https://learn.microsoft.com/en-us/windows/win32/etw/readythread.
+  // Returns true on success, or false if `packet_data` is invalid.
+  bool DecodeReadyThreadEvent(const EVENT_HEADER& header,
+                              const ETW_BUFFER_CONTEXT& buffer_context,
+                              base::span<const uint8_t> packet_data)
       VALID_CONTEXT_REQUIRED(sequence_checker_);
 
   // Returns a new perfetto trace event to be emitted for an ETW event with a

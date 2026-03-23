@@ -27,6 +27,7 @@ source_set("formats") {
     "common/opus_constants.h",
     "mp4/bitstream_converter.cc",
     "mp4/bitstream_converter.h",
+    "mp4/box_constants.h",
     "mp4/box_definitions.cc",
     "mp4/box_definitions.h",
     "mp4/box_reader.cc",
@@ -205,8 +206,6 @@ source_set("formats") {
 
   # TODO(crbug.com/40057824): These should be gated behind `enable_hls_demuxer`, once that's enabled by default.
   sources += [
-    "hls/audio_rendition.cc",
-    "hls/audio_rendition.h",
     "hls/items.cc",
     "hls/items.h",
     "hls/media_playlist.cc",
@@ -215,12 +214,16 @@ source_set("formats") {
     "hls/media_segment.h",
     "hls/multivariant_playlist.cc",
     "hls/multivariant_playlist.h",
-    "hls/parse_status.cc",
     "hls/parse_status.h",
     "hls/playlist.cc",
     "hls/playlist.h",
     "hls/playlist_common.cc",
     "hls/playlist_common.h",
+    "hls/quirks.h",
+    "hls/rendition.cc",
+    "hls/rendition.h",
+    "hls/rendition_group.cc",
+    "hls/rendition_group.h",
     "hls/rendition_manager.cc",
     "hls/rendition_manager.h",
     "hls/segment_stream.cc",
@@ -241,7 +244,7 @@ source_set("formats") {
     "hls/variant_stream.h",
   ]
   deps += [
-    "//crypto:crypto",
+    "//crypto",
     "//third_party/re2",
   ]
   public_deps = [
@@ -382,6 +385,7 @@ source_set("unit_tests") {
     "hls/multivariant_playlist_unittest.cc",
     "hls/playlist_test_builder.h",
     "hls/playlist_unittest.cc",
+    "hls/rendition_group_unittest.cc",
     "hls/rendition_manager_unittest.cc",
     "hls/segment_stream_unittest.cc",
     "hls/tags_unittest.cc",
@@ -389,6 +393,10 @@ source_set("unit_tests") {
     "hls/types_unittest.cc",
     "hls/variable_dictionary_unittest.cc",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 # TODO(crbug.com/40057824): This should be gated behind `enable_hls_demuxer`, once that's enabled by default.

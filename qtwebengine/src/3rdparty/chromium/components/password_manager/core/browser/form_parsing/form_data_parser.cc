@@ -21,8 +21,8 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/not_fatal_until.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/common/autofill_regex_constants.h"
@@ -748,8 +748,7 @@ const FormFieldData* FindUsernameFieldBaseHeuristics(
     FormDataParser::Mode mode,
     Interactability best_interactability,
     bool is_fallback) {
-  CHECK(first_relevant_password != processed_fields.end(),
-        base::NotFatalUntil::M130);
+  CHECK(first_relevant_password != processed_fields.end());
 
   // For saving filter out empty fields and fields with values which are not
   // username.
@@ -873,8 +872,7 @@ void ParseUsingBaseHeuristics(
       }
     }
   }
-  CHECK(first_relevant_password != processed_fields.end(),
-        base::NotFatalUntil::M130);
+  CHECK(first_relevant_password != processed_fields.end());
 
   if (found_fields->username) {
     return;
@@ -942,6 +940,11 @@ bool ParseUsingModelPredictions(
       case autofill::ONE_TIME_CODE:
         break;
       case autofill::UNKNOWN_TYPE:
+        if (field.accepts_webauthn_credentials) {
+          // Allow fallback parsing mechanisms to kick in to ensure webauthn
+          // fields are not ignored.
+          predictions_complete = false;
+        }
         unrelated_fields_contain_masked_fields =
             unrelated_fields_contain_masked_fields.value_or(false) ||
             field.is_password;
@@ -1113,25 +1116,6 @@ std::vector<ProcessedField> ProcessFields(
   return result;
 }
 
-// Return true if |significant_fields| has an username field and
-// |form_predictions| has |may_use_prefilled_placeholder| == true for the
-// username field.
-bool GetMayUsePrefilledPlaceholder(
-    const std::optional<FormPredictions>& form_predictions,
-    const SignificantFields& significant_fields) {
-  if (!form_predictions || !significant_fields.username) {
-    return false;
-  }
-
-  FieldRendererId username_id = significant_fields.username->renderer_id();
-  for (const PasswordFieldPrediction& prediction : form_predictions->fields) {
-    if (prediction.renderer_id == username_id) {
-      return prediction.may_use_prefilled_placeholder;
-    }
-  }
-  return false;
-}
-
 // Puts together a PasswordForm, the result of the parsing, based on the
 // |form_data| description of the form metadata (e.g., action), the already
 // parsed information about what are the |significant_fields|, the list
@@ -1163,9 +1147,6 @@ std::unique_ptr<PasswordForm> AssemblePasswordForm(
   result->scheme = PasswordForm::Scheme::kHtml;
   result->blocked_by_user = false;
   result->type = PasswordForm::Type::kFormSubmission;
-  result->server_side_classification_successful = form_predictions.has_value();
-  result->username_may_use_prefilled_placeholder =
-      GetMayUsePrefilledPlaceholder(form_predictions, significant_fields);
   result->only_for_fallback = significant_fields.is_fallback;
   result->submission_event = form_data.submission_event();
   result->accepts_webauthn_credentials =
@@ -1209,6 +1190,89 @@ bool ShouldContinueParsing(bool parsing_complete_with_model_predictions,
          // Single username forms consist of username only. If the username is
          // already found, no further action is required.
          !significant_fields.is_single_username;
+}
+
+std::map<ProcessedField*, autofill::FieldType> ExtractServerOverrides(
+    const FormPredictions& predictions,
+    std::vector<ProcessedField>& processed_fields) {
+  std::map<ProcessedField*, autofill::FieldType> overrides;
+  for (const auto& prediction : predictions.fields) {
+    if (prediction.is_override) {
+      if (ProcessedField* processed_field =
+              FindField(processed_fields, prediction)) {
+        overrides[processed_field] = prediction.type;
+      }
+    }
+  }
+  return overrides;
+}
+
+void ApplyServerOverrides(
+    const std::map<ProcessedField*, autofill::FieldType>& overrides,
+    SignificantFields* result) {
+  for (const auto& override : overrides) {
+    auto* field = override.first;
+    CredentialFieldType new_field_type = DeriveFromFieldType(override.second);
+    // Remove the field from the existing parsing results.
+    if (result->username == field->field) {
+      if ((new_field_type == CredentialFieldType::kUsername) ||
+          (new_field_type == CredentialFieldType::kSingleUsername)) {
+        continue;
+      }
+      result->username = nullptr;
+    } else if (result->password == field->field) {
+      if (new_field_type == CredentialFieldType::kCurrentPassword) {
+        continue;
+      }
+      result->password = nullptr;
+    } else if (result->new_password == field->field) {
+      if (new_field_type == CredentialFieldType::kNewPassword) {
+        continue;
+      }
+      result->new_password = nullptr;
+    } else if (result->confirmation_password == field->field) {
+      if (new_field_type == CredentialFieldType::kConfirmationPassword) {
+        continue;
+      }
+      result->confirmation_password = nullptr;
+    }
+    // Clean up parsing artifacts.
+    field->is_predicted_as_password = false;
+    std::erase_if(
+        result->manual_generation_enabled_fields,
+        [&](FieldRendererId id) { return id == field->field->renderer_id(); });
+
+    // Apply new types if needed.
+    switch (new_field_type) {
+      case CredentialFieldType::kUsername:
+      case CredentialFieldType::kSingleUsername:
+        result->username = field->field;
+        break;
+      case CredentialFieldType::kCurrentPassword:
+        if (!field->is_password) {
+          break;
+        }
+        result->password = field->field;
+        break;
+      case CredentialFieldType::kNewPassword:
+        result->new_password = field->field;
+        field->is_predicted_as_password = true;
+        result->manual_generation_enabled_fields.push_back(
+            field->field->renderer_id());
+        break;
+      case CredentialFieldType::kConfirmationPassword:
+        result->confirmation_password = field->field;
+        field->is_predicted_as_password = true;
+        break;
+      case CredentialFieldType::kNonCredential:
+        field->server_hints_non_credential_field = true;
+        break;
+      default:
+        break;
+    }
+  }
+
+  result->is_single_username = (result->username && !result->HasPasswords());
 }
 
 }  // namespace
@@ -1273,16 +1337,22 @@ FormParsingResult FormDataParser::ParseAndReturnParsingResult(
     }
   }
 
-  // (2)  If that failed, try to parse with server predictions.
-  // TODO(crbug.com/371933424): Allow applying manual overrides to server
-  // predictions.
-  if (ShouldContinueParsing(parsing_complete_with_model_predictions,
-                            significant_fields) &&
-      server_predictions_.has_value()) {
-    ParseUsingServerPredictions(processed_fields, *server_predictions_, mode,
-                                &significant_fields);
-    if (ShouldUpdateUsernameDetectionMethod(method, significant_fields)) {
-      method = UsernameDetectionMethod::kServerSidePrediction;
+  if (server_predictions_.has_value()) {
+    // (2)  If parsing with model predictions failed, try to parse with server
+    // predictions.
+    if (ShouldContinueParsing(parsing_complete_with_model_predictions,
+                              significant_fields)) {
+      ParseUsingServerPredictions(processed_fields, *server_predictions_, mode,
+                                  &significant_fields);
+      if (ShouldUpdateUsernameDetectionMethod(method, significant_fields)) {
+        method = UsernameDetectionMethod::kServerSidePrediction;
+      }
+    } else {
+      std::map<ProcessedField*, autofill::FieldType> overrides =
+          ExtractServerOverrides(server_predictions_.value(), processed_fields);
+      if (!overrides.empty()) {
+        ApplyServerOverrides(overrides, &significant_fields);
+      }
     }
   }
 

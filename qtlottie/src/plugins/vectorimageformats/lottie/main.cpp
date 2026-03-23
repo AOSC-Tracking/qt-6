@@ -44,7 +44,7 @@ bool QLottieVectorImagePlugin::generate(const QString &fileName, QQuickItemGener
 
         static int frameNo = qEnvironmentVariableIntValue("QLT_FRAMENO");
 
-        if (!root.parseSource(jsonSource, fileName)) {
+        if (root.parseSource(jsonSource, QUrl::fromLocalFile(fileName)) >= 0) {
             if (frameNo < 0)
                 frameNo = root.startFrame() + (root.endFrame() - root.startFrame()) / 2;
 
@@ -54,7 +54,7 @@ bool QLottieVectorImagePlugin::generate(const QString &fileName, QQuickItemGener
                     elem->updateProperties(0);
             }
 
-            generator->addExtraImport(QLatin1String("Qt.labs.lottieqt.VectorImageHelpers"));
+            generator->addExtraImport(QStringLiteral("Qt.labs.lottieqt.VectorImageHelpers"));
             QLottieVisitor visitor(fileName, generator);
             visitor.render(root);
 

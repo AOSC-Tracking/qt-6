@@ -253,5 +253,321 @@ tint_symbol_4 = struct @align(4) {
 )");
 }
 
+TEST_F(SpirvParserTest, OpUnreachable_TopLevel) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+       %void = OpTypeVoid
+    %ep_type = OpTypeFunction %void
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+               OpUnreachable
+               OpFunctionEnd
+  )",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    unreachable
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OpUnreachable_InsideIf) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+    %ep_type = OpTypeFunction %void
+       %true = OpConstantTrue %bool
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+               OpSelectionMerge %99 None
+               OpBranchConditional %true %20 %99
+         %20 = OpLabel
+               OpUnreachable
+         %99 = OpLabel
+               OpReturn
+               OpFunctionEnd
+  )",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    if true [t: $B2, f: $B3] {  # if_1
+      $B2: {  # true
+        unreachable
+      }
+      $B3: {  # false
+        exit_if  # if_1
+      }
+    }
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OpUnreachable_InsideLoop) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+    %ep_type = OpTypeFunction %void
+       %true = OpConstantTrue %bool
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+               OpBranch %20
+         %20 = OpLabel
+               OpLoopMerge %99 %80 None
+               OpBranchConditional %true %30 %30
+         %30 = OpLabel
+               OpUnreachable
+         %80 = OpLabel
+               OpBranch %20
+         %99 = OpLabel
+               OpReturn
+               OpFunctionEnd
+  )",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
+        %2:bool = or true, true
+        if %2 [t: $B4, f: $B5] {  # if_1
+          $B4: {  # true
+            unreachable
+          }
+          $B5: {  # false
+            unreachable
+          }
+        }
+        unreachable
+      }
+      $B3: {  # continuing
+        next_iteration  # -> $B2
+      }
+    }
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OpUnreachable_InNonVoidFunction) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+    %ep_type = OpTypeFunction %void
+     %boolfn = OpTypeFunction %bool
+        %200 = OpFunction %bool None %boolfn
+        %210 = OpLabel
+               OpUnreachable
+               OpFunctionEnd
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+         %11 = OpFunctionCall %bool %200
+               OpReturn
+               OpFunctionEnd
+  )",
+              R"(
+%1 = func():bool {
+  $B1: {
+    unreachable
+  }
+}
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:bool = call %1
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OpTerminateInvocation) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpExtension "SPV_KHR_terminate_invocation"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main"
+               OpExecutionMode %main OriginUpperLeft
+       %void = OpTypeVoid
+    %ep_type = OpTypeFunction %void
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+               OpTerminateInvocation
+               OpFunctionEnd)",
+              R"(
+%main = @fragment func():void {
+  $B1: {
+    discard
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OpKill_TopLevel) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main"
+               OpExecutionMode %main OriginUpperLeft
+       %void = OpTypeVoid
+    %ep_type = OpTypeFunction %void
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+               OpKill
+               OpFunctionEnd)",
+              R"(
+%main = @fragment func():void {
+  $B1: {
+    discard
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OpKill_InsideIf) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main"
+               OpExecutionMode %main OriginUpperLeft
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+    %ep_type = OpTypeFunction %void
+       %true = OpConstantTrue %bool
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+               OpSelectionMerge %99 None
+               OpBranchConditional %true %20 %99
+         %20 = OpLabel
+               OpKill
+         %99 = OpLabel
+               OpKill
+               OpFunctionEnd
+  )",
+              R"(
+%main = @fragment func():void {
+  $B1: {
+    if true [t: $B2, f: $B3] {  # if_1
+      $B2: {  # true
+        discard
+        ret
+      }
+      $B3: {  # false
+        exit_if  # if_1
+      }
+    }
+    discard
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OpKill_InsideLoop) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main"
+               OpExecutionMode %main OriginUpperLeft
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+    %ep_type = OpTypeFunction %void
+       %true = OpConstantTrue %bool
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+               OpBranch %20
+         %20 = OpLabel
+               OpLoopMerge %99 %80 None
+               OpBranchConditional %true %30 %30
+         %30 = OpLabel
+               OpKill
+         %80 = OpLabel
+               OpBranch %20
+         %99 = OpLabel
+               OpKill
+               OpFunctionEnd
+  )",
+              R"(
+%main = @fragment func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
+        %2:bool = or true, true
+        if %2 [t: $B4, f: $B5] {  # if_1
+          $B4: {  # true
+            discard
+            ret
+          }
+          $B5: {  # false
+            unreachable
+          }
+        }
+        unreachable
+      }
+      $B3: {  # continuing
+        next_iteration  # -> $B2
+      }
+    }
+    discard
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OpKill_InNonVoidFunction) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main"
+               OpExecutionMode %main OriginUpperLeft
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+    %ep_type = OpTypeFunction %void
+     %boolfn = OpTypeFunction %bool
+        %200 = OpFunction %bool None %boolfn
+        %210 = OpLabel
+               OpKill
+               OpFunctionEnd
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+         %11 = OpFunctionCall %bool %200
+               OpReturn
+               OpFunctionEnd
+  )",
+              R"(
+%1 = func():bool {
+  $B1: {
+    discard
+    ret false
+  }
+}
+%main = @fragment func():void {
+  $B2: {
+    %3:bool = call %1
+    ret
+  }
+}
+)");
+}
+
 }  // namespace
 }  // namespace tint::spirv::reader

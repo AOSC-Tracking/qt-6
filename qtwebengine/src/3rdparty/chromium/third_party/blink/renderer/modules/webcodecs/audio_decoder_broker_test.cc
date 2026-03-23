@@ -135,12 +135,13 @@ class FakeInterfaceFactory : public media::mojom::InterfaceFactory {
   // Stub out other mojom::InterfaceFactory interfaces.
   void CreateVideoDecoder(
       mojo::PendingReceiver<media::mojom::VideoDecoder> receiver,
-      mojo::PendingRemote<media::stable::mojom::StableVideoDecoder>
-          dst_video_decoder) override {}
+      mojo::PendingRemote<media::mojom::VideoDecoder> dst_video_decoder)
+      override {}
 #if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
-  void CreateStableVideoDecoder(
-      mojo::PendingReceiver<media::stable::mojom::StableVideoDecoder>
-          video_decoder) override {}
+  void CreateVideoDecoderWithTracker(
+      mojo::PendingReceiver<media::mojom::VideoDecoder> receiver,
+      mojo::PendingRemote<media::mojom::VideoDecoderTracker> tracker) override {
+  }
 #endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
   void CreateDefaultRenderer(
       const std::string& audio_device_id,
@@ -151,12 +152,6 @@ class FakeInterfaceFactory : public media::mojom::InterfaceFactory {
       mojo::PendingReceiver<media::mojom::Renderer> receiver) override {}
 #endif
 #if BUILDFLAG(IS_ANDROID)
-  void CreateMediaPlayerRenderer(
-      mojo::PendingRemote<media::mojom::MediaPlayerRendererClientExtension>
-          client_extension_remote,
-      mojo::PendingReceiver<media::mojom::Renderer> receiver,
-      mojo::PendingReceiver<media::mojom::MediaPlayerRendererExtension>
-          renderer_extension_receiver) override {}
   void CreateFlingingRenderer(
       const std::string& presentation_id,
       mojo::PendingRemote<media::mojom::FlingingRendererClientExtension>

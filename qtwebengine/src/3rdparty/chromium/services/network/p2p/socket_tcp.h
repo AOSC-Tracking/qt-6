@@ -45,10 +45,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) P2PSocketTcpBase : public P2PSocket {
 
   ~P2PSocketTcpBase() override;
 
-  // The TCP socket is deleted on errors; in this case, false is returned.
-  [[nodiscard]] bool InitAccepted(const net::IPEndPoint& remote_address,
-                                  std::unique_ptr<net::StreamSocket> socket);
-
   // P2PSocket overrides.
   void Init(
       const net::IPEndPoint& local_address,
@@ -80,7 +76,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) P2PSocketTcpBase : public P2PSocket {
   [[nodiscard]] virtual bool DoSend(
       const net::IPEndPoint& to,
       base::span<const uint8_t> data,
-      const rtc::PacketOptions& options) = 0;
+      const webrtc::AsyncSocketPacketOptions& options) = 0;
 
   [[nodiscard]] bool WriteOrQueue(SendBuffer& send_buffer);
   [[nodiscard]] bool OnPacket(base::span<const uint8_t> data);
@@ -148,7 +144,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) P2PSocketTcp : public P2PSocketTcpBase {
   [[nodiscard]] bool DoSend(
       const net::IPEndPoint& to,
       base::span<const uint8_t> data,
-      const rtc::PacketOptions& options) override;
+      const webrtc::AsyncSocketPacketOptions& options) override;
 };
 
 // P2PSocketStunTcp class provides the framing of STUN messages when used
@@ -177,7 +173,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) P2PSocketStunTcp
   [[nodiscard]] bool DoSend(
       const net::IPEndPoint& to,
       base::span<const uint8_t> data,
-      const rtc::PacketOptions& options) override;
+      const webrtc::AsyncSocketPacketOptions& options) override;
 
  private:
   int GetExpectedPacketSize(base::span<const uint8_t> data, int* pad_bytes);

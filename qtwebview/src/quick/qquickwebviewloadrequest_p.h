@@ -1,5 +1,6 @@
 // Copyright (C) 2015 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKWEBVIEWREQUEST_H
 #define QQUICKWEBVIEWREQUEST_H
@@ -21,7 +22,7 @@
 
 QT_BEGIN_NAMESPACE
 
-class QWebViewLoadRequestPrivate;
+class QWebViewLoadingInfo;
 
 class Q_WEBVIEWQUICK_EXPORT QQuickWebViewLoadRequest : public QObject
 {
@@ -43,9 +44,8 @@ public:
 
 private:
     friend class QQuickWebView;
-    explicit QQuickWebViewLoadRequest(const QWebViewLoadRequestPrivate &d);
-    Q_DECLARE_PRIVATE(QWebViewLoadRequest)
-    QScopedPointer<QWebViewLoadRequestPrivate> d_ptr;
+    explicit QQuickWebViewLoadRequest(const QWebViewLoadingInfo &d);
+    QScopedPointer<QWebViewLoadingInfo> d_ptr;
 };
 
 QT_END_NAMESPACE

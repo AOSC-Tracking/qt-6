@@ -8,19 +8,20 @@ import abc
 import json
 import logging
 import os
-import subprocess
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 import psutil
+from typing_extensions import override
 
 from crossbench import plt
 from crossbench.browsers.browser import Browser
-from crossbench.env import ValidationError
+from crossbench.env.runner_env import ValidationError
 
 if TYPE_CHECKING:
   import datetime as dt
+  import subprocess
 
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.path import AnyPath
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
@@ -29,10 +30,10 @@ class AppleScript:
 
   @classmethod
   def with_args(cls, app_path: AnyPath, apple_script: str,
-                **kwargs) -> Tuple[str, List[str]]:
+                **kwargs) -> tuple[str, list[str]]:
     variables = []
     replacements = {}
-    args: List[str] = []
+    args: list[str] = []
     for variable, value in kwargs.items():
       args.append(value)
       unique_variable = f"cb_input_{variable}"
@@ -72,7 +73,7 @@ class AppleScript:
 def try_get_parent_app_name(platform: plt.Platform) -> str:
   if platform.is_remote:
     return ""
-  launched_apps: Dict[str, str] = {}
+  launched_apps: dict[str, str] = {}
   try:
     for line in platform.sh_stdout("launchctl", "list").splitlines():
       parts = line.split()
@@ -116,12 +117,14 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
                                                  **kwargs)
     return self.platform.exec_apple_script(wrapper_script, *args)
 
-  def validate_env(self, env: HostEnvironment) -> None:
+  @override
+  def validate_env(self, env: RunnerEnv) -> None:
     super().validate_env(env)
     self._check_system_events_allowed(env)
 
+  @override
   def start(self, session: BrowserSessionRunGroup) -> None:
-    assert not self._is_running
+    super().start(session)
     # Start process directly
     startup_flags = self._get_browser_flags_for_session(session)
     self._log_browser_start(startup_flags)
@@ -135,7 +138,7 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
     self._setup_window()
     self._check_js_from_apple_script_allowed(session.env)
 
-  def _check_system_events_allowed(self, env: HostEnvironment) -> None:
+  def _check_system_events_allowed(self, env: RunnerEnv) -> None:
     try:
       self._exec_apple_script(SYSTEM_EVENTS_CHECK)
     except plt.SubprocessError as e:
@@ -151,7 +154,7 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
       raise ValidationError(
           " Not allowed to run AppleScript and send System Events!") from e
 
-  def _check_js_from_apple_script_allowed(self, env: HostEnvironment) -> None:
+  def _check_js_from_apple_script_allowed(self, env: RunnerEnv) -> None:
     try:
       self.js("return 1")
     except plt.SubprocessError as e:
@@ -170,6 +173,7 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
   def _setup_window(self) -> None:
     pass
 
+  @override
   def js(
       self,
       script: str,
@@ -185,6 +189,7 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
       raise AppleScript.JavaScriptFromAppleScriptException(result)
     return result
 
+  @override
   def show_url(self, url: str, target: Optional[str] = None) -> None:
     if target not in (None, "_self"):
       raise NotImplementedError(
@@ -192,6 +197,7 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
     self._exec_apple_script(self.APPLE_SCRIPT_SET_URL, url=url)
     self.platform.sleep(0.5)
 
+  @override
   def quit(self) -> None:
     self._exec_apple_script("quit")
-    self.platform.wait_and_kill(self._browser_process)
+    self.platform.terminate_gracefully(self._browser_process)

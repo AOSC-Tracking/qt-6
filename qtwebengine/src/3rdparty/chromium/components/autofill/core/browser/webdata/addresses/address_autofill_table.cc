@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/check_deref.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
@@ -19,7 +20,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
-#include "components/autofill/core/browser/data_model/autofill_profile.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/transliterator.h"
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -183,7 +184,7 @@ bool AddLegacyAutofillProfileNamesToProfile(sql::Database* db,
            kConjunctionLastNameStatus, kSecondLastName, kSecondLastNameStatus,
            kLastName, kLastNameStatus, kFullName, kFullNameStatus},
           profile->guid())) {
-    DCHECK_EQ(profile->guid(), s.ColumnString(0));
+    DCHECK_EQ(profile->guid(), s.ColumnStringView(0));
 
     int index = 1;
     for (FieldType type :
@@ -230,7 +231,7 @@ bool AddLegacyAutofillProfileAddressesToProfile(sql::Database* db,
                     kFloor,
                     kFloorStatus},
                    profile->guid())) {
-    DCHECK_EQ(profile->guid(), s.ColumnString(0));
+    DCHECK_EQ(profile->guid(), s.ColumnStringView(0));
     std::u16string street_address = s.ColumnString16(1);
     std::u16string dependent_locality = s.ColumnString16(13);
     std::u16string city = s.ColumnString16(15);
@@ -292,7 +293,7 @@ bool AddLegacyAutofillProfileEmailsToProfile(sql::Database* db,
   sql::Statement s;
   if (SelectByGuid(db, s, kAutofillProfileEmailsTable, {kGuid, kEmail},
                    profile->guid())) {
-    DCHECK_EQ(profile->guid(), s.ColumnString(0));
+    DCHECK_EQ(profile->guid(), s.ColumnStringView(0));
     profile->SetRawInfo(EMAIL_ADDRESS, s.ColumnString16(1));
   }
   return s.Succeeded();
@@ -309,7 +310,7 @@ bool AddLegacyAutofillProfilePhonesToProfile(sql::Database* db,
   sql::Statement s;
   if (SelectByGuid(db, s, kAutofillProfilePhonesTable, {kGuid, kNumber},
                    profile->guid())) {
-    DCHECK_EQ(profile->guid(), s.ColumnString(0));
+    DCHECK_EQ(profile->guid(), s.ColumnStringView(0));
     profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER, s.ColumnString16(1));
   }
   return s.Succeeded();
@@ -335,6 +336,12 @@ std::string_view GetLegacyProfileMetadataTable(
     case AutofillProfile::RecordType::kAccountHome:
     case AutofillProfile::RecordType::kAccountWork:
       return kContactInfoTable;
+    case AutofillProfile::RecordType::kAccountNameEmail:
+      // This code is used for migration between old multi-table schema and new
+      // single-table schema. Users won't ever have a `kAccountNameEmail`
+      // address in either of the two tables, since the schema is migrated on
+      // browser startup.
+      NOTREACHED();
   }
   NOTREACHED();
 }
@@ -347,6 +354,12 @@ std::string_view GetLegacyProfileTypeTokensTable(
     case AutofillProfile::RecordType::kAccountHome:
     case AutofillProfile::RecordType::kAccountWork:
       return kContactInfoTypeTokensTable;
+    case AutofillProfile::RecordType::kAccountNameEmail:
+      // This code is used for migration between old multi-table schema and new
+      // single-table schema. Users won't ever have a `kAccountNameEmail`
+      // address in either of the two tables, since the schema is migrated on
+      // browser startup.
+      NOTREACHED();
   }
   NOTREACHED();
 }
@@ -386,7 +399,7 @@ bool AddProfileMetadataToTable(sql::Database* db,
 // if the write succeeded.
 bool AddProfileTypeTokensToTable(sql::Database* db,
                                  const AutofillProfile& profile) {
-  for (FieldType type : GetDatabaseStoredTypesOfAutofillProfile()) {
+  for (FieldType type : AutofillProfile::kDatabaseStoredTypes) {
     std::u16string value = profile.GetRawInfo(type);
     if (!base::FeatureList::IsEnabled(features::kAutofillUseINAddressModel) &&
         type == ADDRESS_HOME_STREET_LOCATION_AND_LOCALITY) {
@@ -445,10 +458,10 @@ bool AddAutofillProfileToTableVersion113(sql::Database* db,
   if (!s.Run()) {
     return false;
   }
-  // Note that `GetDatabaseStoredTypesOfAutofillProfile()` might change in
+  // Note that `AutofillProfile::kDatabaseStoredTypes` might change in
   // future versions. Due to the flexible layout of the type tokens table, this
   // is not a problem.
-  for (FieldType type : GetDatabaseStoredTypesOfAutofillProfile()) {
+  for (FieldType type : AutofillProfile::kDatabaseStoredTypes) {
     InsertBuilder(db, s, GetLegacyProfileTypeTokensTable(profile.record_type()),
                   {kGuid, kType, kValue, kVerificationStatus});
     s.BindString(0, profile.guid());
@@ -489,7 +502,7 @@ std::optional<std::vector<FieldTypeData>> ReadProfileTypeTokens(
   // As `SelectByGuid()` already calls `s.Step()`, do-while is used here.
   do {
     FieldType type = ToSafeFieldType(s.ColumnInt(0), UNKNOWN_TYPE);
-    if (!GetDatabaseStoredTypesOfAutofillProfile().contains(type)) {
+    if (!AutofillProfile::kDatabaseStoredTypes.contains(type)) {
       // This is possible in two cases:
       // - The database was tampered with by external means.
       // - The type corresponding to `s.ColumnInt(0)` was deprecated. In this
@@ -536,6 +549,17 @@ std::optional<AutofillProfile> GetProfileFromMetadataTable(
   AutofillProfile profile(
       guid, static_cast<AutofillProfile::RecordType>(raw_record_type),
       country_code);
+  if (profile.IsHomeAndWorkProfile() &&
+      !base::FeatureList::IsEnabled(
+          features::kAutofillEnableSupportForHomeAndWork)) {
+    // H/W is only received via CONTACT_INFO if the feature flag is enabled.
+    // However, should the feature get rolled back during the rollout, this
+    // check ensures that H/W is dropped.
+    // (Ideally, it should be removed from the database in this case. But for
+    //  simplicity, it's simply omitted from reads. It will get removed during
+    //  the next sign out)
+    return std::nullopt;
+  }
 
   // Populate the `profile` with metadata.
   auto as_optional_time = [&s](size_t index) -> std::optional<base::Time> {
@@ -566,7 +590,7 @@ AddressAutofillTable::~AddressAutofillTable() = default;
 
 // static
 AddressAutofillTable* AddressAutofillTable::FromWebDatabase(WebDatabase* db) {
-  return static_cast<AddressAutofillTable*>(db->GetTable(GetKey()));
+  return static_cast<AddressAutofillTable*>(CHECK_DEREF(db).GetTable(GetKey()));
 }
 
 WebDatabaseTable::TypeKey AddressAutofillTable::GetTypeKey() const {

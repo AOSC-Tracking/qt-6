@@ -6,6 +6,7 @@
 #include "qquickshapegenericrenderer_p.h"
 #include "qquickshapesoftwarerenderer_p.h"
 #include "qquickshapecurverenderer_p.h"
+#include <private/qsgcurvestrokenode_p.h>
 #include <private/qsgplaintexture_p.h>
 #include <private/qquicksvgparser_p.h>
 #include <QtGui/private/qdrawhelper_p.h>
@@ -217,6 +218,8 @@ void QQuickShapePath::setStrokeColor(const QColor &color)
     When set to a negative value, no stroking occurs.
 
     The default value is 1.
+
+    \sa cosmeticStroke
  */
 
 qreal QQuickShapePath::strokeWidth() const
@@ -232,6 +235,37 @@ void QQuickShapePath::setStrokeWidth(qreal w)
         d->sfp.strokeWidth = w;
         d->dirty |= QQuickShapePathPrivate::DirtyStrokeWidth;
         emit strokeWidthChanged();
+        emit shapePathChanged();
+    }
+}
+
+/*! \since 6.11
+    \qmlproperty real QtQuick.Shapes::ShapePath::cosmeticStroke
+
+    This property holds whether the stroke width remains constant despite rendering scale.
+
+    When this property is set to \c true, the outline of the shape
+    is drawn with constant width in \l {High DPI}{device-independent pixels},
+    as specified by \l strokeWidth, regardless of any transformations applied
+    to the shape, such as \l QtQuick::Item::scale.
+
+    The default value is \c false.
+
+    \sa strokeWidth
+*/
+bool QQuickShapePath::cosmeticStroke() const
+{
+    Q_D(const QQuickShapePath);
+    return d->sfp.cosmeticStroke;
+}
+
+void QQuickShapePath::setCosmeticStroke(bool c)
+{
+    Q_D(QQuickShapePath);
+    if (d->sfp.cosmeticStroke != c) {
+        d->sfp.cosmeticStroke = c;
+        d->dirty |= QQuickShapePathPrivate::DirtyStrokeWidth;
+        emit cosmeticStrokeChanged();
         emit shapePathChanged();
     }
 }
@@ -401,13 +435,13 @@ void QQuickShapePath::setDashOffset(qreal offset)
     \include shapepath.qdocinc {dashPattern-property} {QtQuick.Shapes::ShapePath}
 */
 
-QVector<qreal> QQuickShapePath::dashPattern() const
+QList<qreal> QQuickShapePath::dashPattern() const
 {
     Q_D(const QQuickShapePath);
     return d->sfp.dashPattern;
 }
 
-void QQuickShapePath::setDashPattern(const QVector<qreal> &array)
+void QQuickShapePath::setDashPattern(const QList<qreal> &array)
 {
     Q_D(QQuickShapePath);
     if (d->sfp.dashPattern != array) {
@@ -430,6 +464,9 @@ void QQuickShapePath::setDashPattern(const QVector<qreal> &array)
 
     \note If set to something other than \c{null}, the \c fillGradient will take precedence over
     both \l fillItem and \l fillColor.
+
+    By default, up to 256 different gradients may be displayed simultanously. This limit may be
+    customized with the \c QT_QUICKSHAPES_MAX_GRADIENTS environment variable.
  */
 
 QQuickShapeGradient *QQuickShapePath::fillGradient() const
@@ -449,6 +486,7 @@ void QQuickShapePath::setFillGradient(QQuickShapeGradient *gradient)
         if (d->sfp.fillGradient)
             qmlobject_connect(d->sfp.fillGradient, QQuickShapeGradient, SIGNAL(updated()),
                               this, QQuickShapePath, SLOT(_q_fillGradientChanged()));
+        emit fillGradientChanged();
         d->dirty |= QQuickShapePathPrivate::DirtyFillGradient;
         emit shapePathChanged();
     }
@@ -530,17 +568,17 @@ void QQuickShapePath::setFillItem(QQuickItem *fillItem)
 /*!
     \qmlpropertygroup QtQuick.Shapes::ShapePath::trim
     \qmlproperty real QtQuick.Shapes::ShapePath::trim.start
-    \qmlproperty real QtQuick.Shapes::ShapePath::trim.stop
+    \qmlproperty real QtQuick.Shapes::ShapePath::trim.end
     \qmlproperty real QtQuick.Shapes::ShapePath::trim.offset
     \since 6.10
 
     Specifies the section of this path that will be displayed.
 
-    The section is defined by the path length fractions \c start and \c stop. By default, \c start
-    is 0 (denoting the start of the path) and \c stop is 1 (denoting the end of the path), so the
+    The section is defined by the path length fractions \c start and \c end. By default, \c start
+    is 0 (denoting the start of the path) and \c end is 1 (denoting the end of the path), so the
     entire path is displayed.
 
-    The value of \c offset is added to \c start and \c stop. If that causes over- or underrun of the
+    The value of \c offset is added to \c start and \c end. If that causes over- or underrun of the
     [0, 1] range, the values will be wrapped around, as will the resulting path section. The
     effective range of \c offset is between -1 and 1. The default value is 0.
 */
@@ -1350,6 +1388,16 @@ void QQuickShape::itemChange(ItemChange change, const ItemChangeData &data)
             QQuickShapePathPrivate::get(d->sp[i])->dirty = QQuickShapePathPrivate::DirtyAll;
         d->_q_shapePathChanged();
         d->handleSceneChange(data.window);
+    } else if (change == ItemTransformHasChanged && d->rendererType == QQuickShape::GeometryRenderer) {
+        bool cosmeticStrokeFound = false;
+        for (int i = 0; i < d->sp.size(); ++i) {
+            if (d->sp[i]->cosmeticStroke()) {
+                QQuickShapePathPrivate::get(d->sp[i])->dirty = QQuickShapePathPrivate::DirtyStrokeWidth;
+                cosmeticStrokeFound = true;
+            }
+        }
+        if (cosmeticStrokeFound)
+            d->_q_shapePathChanged();
     }
 
     QQuickItem::itemChange(change, data);
@@ -1450,6 +1498,9 @@ void QQuickShapePrivate::createRenderer()
     rendererType = selectedType;
     rendererChanged = true;
 
+    // If cosmetic stroking is used with GeometryRenderer, we need to be notified when the transform changes
+    q->setFlag(QQuickItem::ItemObservesViewport, rendererType == QQuickShape::GeometryRenderer);
+
     switch (selectedType) {
     case QQuickShape::SoftwareRenderer:
         renderer = new QQuickShapeSoftwareRenderer;
@@ -1531,8 +1582,10 @@ void QQuickShapePrivate::sync()
 
     const int count = sp.size();
     bool countChanged = false;
+    const qreal det = windowToItemTransform().determinant();
+    const qreal adjTriangulationScale = triangulationScale /
+            (qIsNaN(det) || qIsNull(det) ? qreal(1) : qSqrt(qAbs(det)));
     renderer->beginSync(count, &countChanged);
-    renderer->setTriangulationScale(triangulationScale);
 
     qCDebug(lcShapeSync) << "syncing" << count << "path(s)";
     for (int i = 0; i < count; ++i) {
@@ -1549,8 +1602,21 @@ void QQuickShapePrivate::sync()
             qCDebug(lcShapeSync) << "  - DirtyStrokeColor:" << p->strokeColor();
             renderer->setStrokeColor(i, p->strokeColor());
         }
-        if (dirty & QQuickShapePathPrivate::DirtyStrokeWidth)
+        if (dirty & QQuickShapePathPrivate::DirtyStrokeWidth) {
+            // TODO adjust triangulationScale regardless of the env var, after we're satisfied that there are no significant regressions
+            if (p->cosmeticStroke() || QSGCurveStrokeNode::expandingStrokeEnabled()) {
+                renderer->setTriangulationScale(i, adjTriangulationScale);
+                qCDebug(lcShapeSync) << "  - DirtyStrokeWidth:" << p->strokeWidth()
+                                     << "cosmetic:" << p->cosmeticStroke() << "triangulationScale"
+                                     << triangulationScale << "adjusted to" << adjTriangulationScale;
+            } else {
+                renderer->setTriangulationScale(i, triangulationScale);
+                qCDebug(lcShapeSync) << "  - DirtyStrokeWidth:" << p->strokeWidth()
+                                     << "cosmetic:" << p->cosmeticStroke() << "triangulationScale" << triangulationScale;
+            }
             renderer->setStrokeWidth(i, p->strokeWidth());
+            renderer->setCosmeticStroke(i, p->cosmeticStroke());
+        }
         if (dirty & QQuickShapePathPrivate::DirtyFillColor)
             renderer->setFillColor(i, p->fillColor());
         if (dirty & QQuickShapePathPrivate::DirtyFillRule)

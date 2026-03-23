@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "content/browser/web_package/prefetched_signed_exchange_cache.h"
 
 #include <optional>
@@ -14,6 +9,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_macros.h"
@@ -35,6 +31,7 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_features.h"
+#include "ipc/constants.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
@@ -337,10 +334,10 @@ bool ExtractSHA256HashValueFromString(std::string_view value,
   const std::string_view base64_str = value.substr(7);
   std::string decoded;
   if (!base::Base64Decode(base64_str, &decoded) ||
-      decoded.size() != sizeof(out->data)) {
+      decoded.size() != out->size()) {
     return false;
   }
-  memcpy(out->data, decoded.data(), sizeof(out->data));
+  base::span(*out).copy_from(base::as_byte_span(decoded));
   return true;
 }
 
@@ -356,10 +353,10 @@ std::map<GURL, net::SHA256HashValue> GetAllowedAltSXG(
     return result;
 
   for (const auto& value : link_header_util::SplitLinkHeader(link_header)) {
-    std::string link_url;
     std::unordered_map<std::string, std::optional<std::string>> link_params;
-    if (!link_header_util::ParseLinkHeaderValue(value.first, value.second,
-                                                &link_url, &link_params)) {
+    std::optional<std::string> link_url =
+        link_header_util::ParseLinkHeaderValue(value, link_params);
+    if (!link_url) {
       continue;
     }
 
@@ -373,7 +370,7 @@ std::map<GURL, net::SHA256HashValue> GetAllowedAltSXG(
             &header_integrity_value)) {
       continue;
     }
-    result[main_exchange.inner_url().Resolve(link_url)] =
+    result[main_exchange.inner_url().Resolve(*link_url)] =
         header_integrity_value;
   }
   return result;
@@ -451,13 +448,14 @@ PrefetchedSignedExchangeCache::MaybeCreateInterceptor(
                 ? render_frame_host->GetProcess()->GetDeprecatedID()
                 : -1,
             render_frame_host ? render_frame_host->GetRoutingID()
-                              : MSG_ROUTING_NONE,
+                              : IPC::mojom::kRoutingIdNone,
             /*cookie_setting_overrides=*/
             render_frame_host ? render_frame_host->GetCookieSettingOverrides()
                               : net::CookieSettingOverrides(),
             /*devtools_cookie_setting_overrides=*/net::CookieSettingOverrides(),
             cookie_manager.BindNewPipeAndPassReceiver(),
-            render_frame_host ? render_frame_host->CreateCookieAccessObserver()
+            render_frame_host ? render_frame_host->CreateCookieAccessObserver(
+                                    CookieAccessDetails::Source::kNonNavigation)
                               : mojo::NullRemote());
   }
 

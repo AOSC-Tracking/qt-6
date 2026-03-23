@@ -22,7 +22,6 @@
 #include "absl/status/status.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/vec.h"
-#include "ink/types/uri.h"
 
 namespace ink {
 
@@ -197,7 +196,7 @@ struct BrushPaint {
     // possible until Android W at the earliest due to b/267164444.
   };
   // LINT.ThenChange(
-  //   ../storage/proto/brush.proto:blend_mode,
+  //   ../storage/proto/brush_family.proto:blend_mode,
   //   fuzz_domains.cc:blend_mode,
   // )
 
@@ -219,8 +218,8 @@ struct BrushPaint {
   };
 
   struct TextureLayer {
-    // URI that will be used by renderers to retrieve the color texture.
-    Uri color_texture_uri;
+    // String id that will be used by renderers to retrieve the color texture.
+    std::string client_texture_id;
 
     TextureMapping mapping = TextureMapping::kTiling;
     TextureOrigin origin = TextureOrigin::kStrokeSpaceOrigin;
@@ -228,7 +227,8 @@ struct BrushPaint {
     TextureWrap wrap_x = TextureWrap::kRepeat;
     TextureWrap wrap_y = TextureWrap::kRepeat;
 
-    // The size of the texture, specified in `size_unit`s.
+    // The size of (one animation frame of) the texture, specified in
+    // `size_unit`s.
     Vec size = {1, 1};
     // An offset into the texture, specified as fractions of the texture size.
     Vec offset = {0, 0};
@@ -248,6 +248,25 @@ struct BrushPaint {
     // Overall layer opacity.
     float opacity = 1;
 
+    // The number of animation frames in this texture. Must be between 1 and
+    // 2^24 (inclusive). If 1 (the default), then animation is effectively
+    // disabled. If greater than 1, then the texture image is treated as a grid
+    // of frame images, with dimensions `animation_rows` x `animation_columns`,
+    // indexed in row-major order.
+    int animation_frames = 1;
+
+    // The number of rows in the grid of frame images. See `animation_frames`
+    // for more details. Must be between 1 and 2^12 (inclusive).
+    int animation_rows = 1;
+
+    // The number of columns in the grid of frame images. See `animation_frames`
+    // for more details. Must be between 1 and 2^12 (inclusive).
+    int animation_columns = 1;
+
+    // Animation keyframes; currently unused.
+    //
+    // TODO: b/373649343 - Decide if/how this should coexist with
+    // `animation_frames` above.
     std::vector<TextureKeyframe> keyframes;
 
     // The rule by which the texture layers up to and including this one are
@@ -281,6 +300,9 @@ namespace brush_internal {
 // Determines whether the given `BrushPaint` struct is valid to be used in a
 // `BrushFamily`, and returns an error if not.
 absl::Status ValidateBrushPaint(const BrushPaint& paint);
+// Determines whether the given `BrushPaint` struct is valid to be used in a
+// `BrushFamily` assuming that the `BrushPaint::TextureLayer`s are valid.
+absl::Status ValidateBrushPaintTopLevel(const BrushPaint& paint);
 // Determines whether the given `BrushPaint::TextureLayer` struct is valid to be
 // used in a `BrushPaint`, and returns an error if not.
 absl::Status ValidateBrushPaintTextureLayer(
@@ -345,7 +367,7 @@ H AbslHashValue(H h, const BrushPaint::TextureKeyframe& keyframe) {
 
 template <typename H>
 H AbslHashValue(H h, const BrushPaint::TextureLayer& layer) {
-  return H::combine(std::move(h), layer.color_texture_uri, layer.mapping,
+  return H::combine(std::move(h), layer.client_texture_id, layer.mapping,
                     layer.origin, layer.size_unit, layer.wrap_x, layer.wrap_y,
                     layer.size, layer.offset, layer.rotation, layer.size_jitter,
                     layer.offset_jitter, layer.rotation_jitter, layer.opacity,

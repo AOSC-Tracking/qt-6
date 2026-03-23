@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -311,7 +312,7 @@ TEST_F(BodyStreamBufferTest,
 
 TEST_F(BodyStreamBufferTest, DrainAsFormData) {
   V8TestingScope scope;
-  auto* data = MakeGarbageCollected<FormData>(UTF8Encoding());
+  auto* data = MakeGarbageCollected<FormData>(Utf8Encoding());
   data->append("name1", "value1");
   data->append("name2", "value2");
   scoped_refptr<EncodedFormData> input_form_data =
@@ -806,7 +807,7 @@ TEST_F(BodyStreamBufferTest, CachedMetadataHandler) {
     BytesConsumer* src = MakeGarbageCollected<ReplayingBytesConsumer>(
         scope.GetDocument().GetTaskRunner(TaskType::kNetworking));
     auto* handler = MakeGarbageCollected<ScriptCachedMetadataHandler>(
-        WTF::TextEncoding(), nullptr);
+        TextEncoding(), nullptr);
     weak_handler = handler;
     buffer = BodyStreamBuffer::Create(scope.GetScriptState(), src,
                                       /*abort_signal=*/nullptr, handler);
@@ -827,7 +828,7 @@ TEST_F(BodyStreamBufferTest, CachedMetadataHandlerAndTee) {
   BytesConsumer* src = MakeGarbageCollected<ReplayingBytesConsumer>(
       scope.GetDocument().GetTaskRunner(TaskType::kNetworking));
   auto* handler = MakeGarbageCollected<ScriptCachedMetadataHandler>(
-      WTF::TextEncoding(), nullptr);
+      TextEncoding(), nullptr);
   auto* buffer = BodyStreamBuffer::Create(scope.GetScriptState(), src,
                                           /*abort_signal=*/nullptr, handler);
 
@@ -845,7 +846,7 @@ TEST_F(BodyStreamBufferTest,
        CachedMetadataHandlerAndTeeForBufferMadeFromStream) {
   V8TestingScope scope;
   auto* handler = MakeGarbageCollected<ScriptCachedMetadataHandler>(
-      WTF::TextEncoding(), nullptr);
+      TextEncoding(), nullptr);
   auto* stream =
       ReadableStream::Create(scope.GetScriptState(), ASSERT_NO_EXCEPTION);
   auto* buffer = MakeGarbageCollected<BodyStreamBuffer>(scope.GetScriptState(),

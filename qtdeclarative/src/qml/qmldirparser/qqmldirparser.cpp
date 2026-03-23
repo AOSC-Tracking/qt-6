@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qqmldirparser_p.h"
 
@@ -117,9 +118,6 @@ QString QQmlDirParser::scanQuotedWord(const QChar *&ch, quint16 lineNumber, quin
     return result;
 }
 
-/*!
-\a url is used for generating errors.
-*/
 bool QQmlDirParser::parse(const QString &source)
 {
     quint16 lineNumber = 0;

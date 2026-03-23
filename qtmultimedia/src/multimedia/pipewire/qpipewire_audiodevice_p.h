@@ -30,8 +30,8 @@ class Q_MULTIMEDIA_EXPORT QPipewireAudioDevicePrivate : public QAudioDevicePriva
 {
 public:
     QPipewireAudioDevicePrivate(const PwPropertyDict &nodeProperties,
-                                const PwPropertyDict &deviceProperties,
-                                const SpaObjectAudioFormat &, QAudioDevice::Mode, bool isDefault);
+                                std::optional<QByteArray> sysfsPath, const SpaObjectAudioFormat &,
+                                QAudioDevice::Mode, bool isDefault);
     ~QPipewireAudioDevicePrivate() override;
 
     Q_DISABLE_COPY_MOVE(QPipewireAudioDevicePrivate)
@@ -39,17 +39,10 @@ public:
     QByteArray nodeName() const { return m_nodeName; }
 
 private:
-    void setPreferredSamplingRate(int);
-    void setPreferredSamplingRate(QSpan<const int>);
-    void setPreferredSamplingRate(const SpaRange<int> &);
-
-    void setPreferredSampleFormats(spa_audio_format);
-    void setPreferredSampleFormats(const SpaEnum<spa_audio_format> &);
-
-    QByteArray m_sysfsPath;
+    std::optional<QByteArray> m_sysfsPath; // nullopt for virtual devices
     QByteArray m_nodeName;
 
-    QList<spa_audio_channel> m_channelPositions;
+    std::optional<QList<spa_audio_channel>> m_channelPositions;
 };
 
 } // namespace QtPipeWire

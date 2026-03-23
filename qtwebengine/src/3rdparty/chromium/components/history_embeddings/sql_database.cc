@@ -10,6 +10,7 @@
 #include "base/files/file_path.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/sequence_checker.h"
+#include "base/strings/string_util.h"
 #include "components/history/core/browser/history_backend.h"
 #include "components/history_embeddings/history_embeddings_features.h"
 #include "components/history_embeddings/passages_util.h"
@@ -525,11 +526,11 @@ SqlDatabase::MakeUrlDataIterator(std::optional<base::Time> time_range_start) {
         }
         const size_t expected_dimensions =
             sql_database->GetEmbeddingDimensions();
-        if (std::ranges::any_of(data.embeddings,
-                                [=](const Embedding& embedding) {
-                                  return embedding.Dimensions() !=
-                                         expected_dimensions;
-                                })) {
+        if (std::ranges::any_of(
+                data.embeddings,
+                [=](const passage_embeddings::Embedding& embedding) {
+                  return embedding.Dimensions() != expected_dimensions;
+                })) {
           skipped_missized++;
           continue;
         }
@@ -723,7 +724,7 @@ bool SqlDatabase::InsertOrReplacePassages(const UrlData& url_passages) {
   if (blob.empty()) {
     return false;
   }
-  statement.BindBlob(3, blob);
+  statement.BindBlob(3, std::move(blob));
   bool result = statement.Run();
 
   if (result) {
@@ -769,7 +770,8 @@ bool SqlDatabase::InsertOrReplaceEmbeddings(const UrlData& url_embeddings) {
   statement.BindTime(2, url_embeddings.visit_time);
 
   proto::EmbeddingsValue value;
-  for (const Embedding& embedding : url_embeddings.embeddings) {
+  for (const passage_embeddings::Embedding& embedding :
+       url_embeddings.embeddings) {
     CHECK_EQ(GetEmbeddingDimensions(), embedding.Dimensions());
     proto::EmbeddingVector* vector = value.add_vectors();
     for (float f : embedding.GetData()) {

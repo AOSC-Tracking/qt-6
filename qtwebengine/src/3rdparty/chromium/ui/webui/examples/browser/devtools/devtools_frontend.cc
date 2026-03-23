@@ -20,7 +20,7 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
-#include "ipc/ipc_channel.h"
+#include "ipc/constants.mojom.h"
 #include "ui/webui/examples/browser/devtools/devtools_server.h"
 #include "url/gurl.h"
 
@@ -37,7 +37,8 @@ static GURL GetFrontendURL() {
 // This constant should be in sync with
 // the constant
 // kMaxMessageChunkSize in chrome/browser/devtools/devtools_ui_bindings.cc.
-constexpr size_t kMaxMessageChunkSize = IPC::Channel::kMaximumMessageSize / 4;
+constexpr size_t kMaxMessageChunkSize =
+    IPC::mojom::kChannelMaximumMessageSize / 4;
 
 }  // namespace
 
@@ -169,7 +170,17 @@ class DevToolsFrontend::AgentHostClient
       SendMessageAck(request_id, base::Value(std::move(preferences_)));
       return;
     } else if (*method == "getHostConfig") {
-      SendMessageAck(request_id, {});
+      base::Value::Dict response_dict;
+
+      // Chrome's DevToolsUIBindings sets feature flag values to this
+      // devToolsVeLogging dictionary, but they're not accessible from //ui.
+      // Just set the default values instead.
+      base::Value::Dict ve_logging_dict;
+      ve_logging_dict.Set("enabled", true);
+      ve_logging_dict.Set("testing", false);
+      response_dict.Set("devToolsVeLogging", std::move(ve_logging_dict));
+
+      SendMessageAck(request_id, base::Value(std::move(response_dict)));
       return;
     } else if (*method == "setPreference") {
       if (params.size() < 2)

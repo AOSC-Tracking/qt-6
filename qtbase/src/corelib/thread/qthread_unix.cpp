@@ -24,10 +24,6 @@
 #  endif
 #endif
 
-#ifdef __GLIBCXX__
-#include <cxxabi.h>
-#endif
-
 #include <sched.h>
 #include <errno.h>
 #if __has_include(<pthread_np.h>)
@@ -344,57 +340,97 @@ QAbstractEventDispatcher *QThreadPrivate::createEventDispatcher(QThreadData *dat
 
 #if QT_CONFIG(thread)
 
-#if (defined(Q_OS_LINUX) || defined(Q_OS_DARWIN) || defined(Q_OS_QNX))
-static void setCurrentThreadName(const char *name)
+template <typename String>
+static void setCurrentThreadName(QThread *thr, String &objectName)
 {
-#  if defined(Q_OS_LINUX) && !defined(QT_LINUXBASE)
-    prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0);
+    auto setit = [](const char *name) {
+#  if defined(Q_OS_LINUX)
+        prctl(PR_SET_NAME, name);
 #  elif defined(Q_OS_DARWIN)
-    pthread_setname_np(name);
-#  elif defined(Q_OS_QNX)
-    pthread_setname_np(pthread_self(), name);
+        pthread_setname_np(name);
+#  elif defined(Q_OS_OPENBSD)
+        pthread_set_name_np(pthread_self(), name);
+#  elif defined(Q_OS_QNX) || defined(Q_OS_BSD4)
+        pthread_setname_np(pthread_self(), name);
+#  else
+        Q_UNUSED(name)
 #  endif
+    };
+    if (Q_LIKELY(objectName.isEmpty()))
+        setit(thr->metaObject()->className());
+    else
+        setit(std::exchange(objectName, {}).toLocal8Bit());
 }
-#endif
 
-namespace {
-template <typename T>
-void terminate_on_exception(T &&t)
+// Handling of exceptions and cancellations for start(), finish() and cleanup()
+//
+// These routines expect that the user code throw no exceptions. Exiting
+// start() with an exception should cause std::terminate to be called. Thread
+// cancellations are allowed: if one is detected, the implementation is
+// expected to cleanly call QThreadPrivate::finish(), emit the necessary
+// signals and notifications, and clean up after itself. [Note there's a small
+// race between QThread::start() returning and QThreadPrivate::start() turning
+// cancellations off, during which time no finish() is called.]
+//
+// These routines implement application termination by unexpected exceptions by
+// simply not having any try/catch block at all. As start() is called directly
+// from the C library's PThread runtime, there should be no active C++
+// try/catch block (### if we ever change this to std::thread, the assumption
+// needs to be rechecked, though both libc++ and libstdc++ at the time of
+// writing are try/catch-free). [except.handle]/8 says:
+//
+// > If no matching handler is found, the function std::terminate is invoked;
+// > whether or not the stack is unwound before this invocation of std::terminate
+// > is implementation-defined.
+//
+// Both major implementations of Unix C++ Standard Libraries terminate without
+// unwinding, which is useful to detect the unhandled exception in post-mortem
+// debugging. This code adds no try/catch to retain that ability.
+//
+// Because of that, we could have marked these functions noexcept and ignored
+// exception safety. We don't because of PThread cancellations. The GNU libc
+// implements PThread cancellations using stack unwinding, so a cancellation
+// *will* unwind the stack and *will* execute our C++ destructors, unlike
+// exceptions. Therefore, our code in start() must be exception-safe after we
+// turn cancellations back on, and until we turn them off again in finish().
+//
+// Everywhere else, PThread cancellations are handled without unwinding the
+// stack.
+
+static void setCancellationEnabled(bool enable)
 {
-#ifndef QT_NO_EXCEPTIONS
-    try {
-#endif
-        std::forward<T>(t)();
-#ifndef QT_NO_EXCEPTIONS
-#ifdef __GLIBCXX__
-    // POSIX thread cancellation under glibc is implemented by throwing an exception
-    // of this type. Do what libstdc++ is doing and handle it specially in order not to
-    // abort the application if user's code calls a cancellation function.
-    } catch (abi::__forced_unwind &) {
-        throw;
-#endif // __GLIBCXX__
-    } catch (...) {
-        std::terminate();
+#ifdef PTHREAD_CANCEL_DISABLE
+    if (enable) {
+        // may unwind the stack, see above
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+        pthread_testcancel();
+    } else {
+        // this doesn't unwind the stack
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
     }
-#endif // QT_NO_EXCEPTIONS
+#else
+    Q_UNUSED(enable)
+#endif
 }
-} // unnamed namespace
 
 void *QThreadPrivate::start(void *arg)
 {
-#ifdef PTHREAD_CANCEL_DISABLE
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
-#endif
+    setCancellationEnabled(false);
+
     QThread *thr = reinterpret_cast<QThread *>(arg);
     QThreadData *data = QThreadData::get2(thr);
-    // If a QThread is restarted, reuse the QBindingStatus, too
-    data->reuseBindingStatusForNewNativeThread();
 
     // this ensures the thread-local is created as early as possible
     set_thread_data(data);
 
+    // If a QThread is restarted, reuse the QBindingStatus, too
+    data->reuseBindingStatusForNewNativeThread();
+
     pthread_cleanup_push([](void *arg) { static_cast<QThread *>(arg)->d_func()->finish(); }, arg);
-    terminate_on_exception([&] {
+    { // pthread cancellation protection
+
+        // The functions called in this block do not usually throw (but have
+        // qWarning/qCDebug, which may throw std::bad_alloc).
         {
             QMutexLocker locker(&thr->d_func()->mutex);
 
@@ -402,10 +438,6 @@ void *QThreadPrivate::start(void *arg)
             if (thr->d_func()->priority & ThreadPriorityResetFlag) {
                 thr->d_func()->setPriority(QThread::Priority(thr->d_func()->priority & ~ThreadPriorityResetFlag));
             }
-#ifndef Q_OS_DARWIN // For Darwin we set it as an attribute when starting the thread
-            if (thr->d_func()->serviceLevel != QThread::QualityOfService::Auto)
-                thr->d_func()->setQualityOfServiceLevel(thr->d_func()->serviceLevel);
-#endif
 
             // threadId is set in QThread::start()
             Q_ASSERT(data->threadId.loadRelaxed() == QThread::currentThreadId());
@@ -414,28 +446,25 @@ void *QThreadPrivate::start(void *arg)
             data->quitNow = thr->d_func()->exited;
         }
 
+        // Sets the name of the current thread. We can only do this
+        // when the thread is starting, as we don't have a cross
+        // platform way of setting the name of an arbitrary thread.
+        setCurrentThreadName(thr, thr->d_func()->objectName);
+
+        // Re-enable cancellations before calling out to user code in run(),
+        // allowing the event dispatcher to abort this thread starting (exceptions
+        // aren't allowed to do that). This will also deliver a pending
+        // cancellation queued either by a slot connected to started() or by
+        // another thread using QThread::terminate().
+        setCancellationEnabled(true);
+
         data->ensureEventDispatcher();
         data->eventDispatcher.loadRelaxed()->startingUp();
 
-#if (defined(Q_OS_LINUX) || defined(Q_OS_DARWIN) || defined(Q_OS_QNX))
-        {
-            // Sets the name of the current thread. We can only do this
-            // when the thread is starting, as we don't have a cross
-            // platform way of setting the name of an arbitrary thread.
-            if (Q_LIKELY(thr->d_func()->objectName.isEmpty()))
-                setCurrentThreadName(thr->metaObject()->className());
-            else
-                setCurrentThreadName(std::exchange(thr->d_func()->objectName, {}).toLocal8Bit());
-        }
-#endif
-
         emit thr->started(QThread::QPrivateSignal());
-#ifdef PTHREAD_CANCEL_DISABLE
-        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
-        pthread_testcancel();
-#endif
+
         thr->run();
-    });
+    }
 
     // This calls finish(); later, the currentThreadCleanup thread-local
     // destructor will call cleanup().
@@ -445,26 +474,22 @@ void *QThreadPrivate::start(void *arg)
 
 void QThreadPrivate::finish()
 {
-    terminate_on_exception([&] {
-        QThreadPrivate *d = this;
-        QThread *thr = q_func();
+    QThreadPrivate *d = this;
+    QThread *thr = q_func();
 
-        // Disable cancellation; we're already in the finishing touches of this
-        // thread, and we don't want cleanup to be disturbed by
-        // abi::__forced_unwind being thrown from all kinds of functions.
-#ifdef PTHREAD_CANCEL_DISABLE
-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
-#endif
+    // Disable cancellation; we're already in the finishing touches of this
+    // thread, and we don't want cleanup to be disturbed by
+    // abi::__forced_unwind being thrown from all kinds of functions.
+    setCancellationEnabled(false);
 
-        QMutexLocker locker(&d->mutex);
+    QMutexLocker locker(&d->mutex);
 
-        d->threadState = QThreadPrivate::Finishing;
-        locker.unlock();
-        emit thr->finished(QThread::QPrivateSignal());
-        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    d->threadState = QThreadPrivate::Finishing;
+    locker.unlock();
+    emit thr->finished(QThread::QPrivateSignal());
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 
-        QThreadStoragePrivate::finish(&d->data->tls);
-    });
+    QThreadStoragePrivate::finish(&d->data->tls);
 
     if constexpr (QT_CONFIG(broken_threadlocal_dtors))
         cleanup();
@@ -472,31 +497,27 @@ void QThreadPrivate::finish()
 
 void QThreadPrivate::cleanup()
 {
-    terminate_on_exception([&] {
-        QThreadPrivate *d = this;
+    QThreadPrivate *d = this;
 
-        // Disable cancellation again: we did it above, but some user code
-        // running between finish() and cleanup() may have turned them back on.
-#ifdef PTHREAD_CANCEL_DISABLE
-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
-#endif
+    // Disable cancellation again: we did it above, but some user code
+    // running between finish() and cleanup() may have turned them back on.
+    setCancellationEnabled(false);
 
-        QMutexLocker locker(&d->mutex);
-        d->priority = QThread::InheritPriority;
+    QMutexLocker locker(&d->mutex);
+    d->priority = QThread::InheritPriority;
 
-        QAbstractEventDispatcher *eventDispatcher = d->data->eventDispatcher.loadRelaxed();
-        if (eventDispatcher) {
-            d->data->eventDispatcher = nullptr;
-            locker.unlock();
-            eventDispatcher->closingDown();
-            delete eventDispatcher;
-            locker.relock();
-        }
+    QAbstractEventDispatcher *eventDispatcher = d->data->eventDispatcher.loadRelaxed();
+    if (eventDispatcher) {
+        d->data->eventDispatcher = nullptr;
+        locker.unlock();
+        eventDispatcher->closingDown();
+        delete eventDispatcher;
+        locker.relock();
+    }
 
-        d->interruptionRequested.store(false, std::memory_order_relaxed);
+    d->interruptionRequested.store(false, std::memory_order_relaxed);
 
-        d->wakeAll();
-    });
+    d->wakeAll();
 }
 
 
@@ -768,10 +789,14 @@ void QThread::start(Priority priority)
     pthread_attr_init(&attr);
     if constexpr (!UsingPThreadTimedJoin)
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    if (d->serviceLevel != QThread::QualityOfService::Auto) {
 #ifdef Q_OS_DARWIN
-    if (d->serviceLevel != QThread::QualityOfService::Auto)
         pthread_attr_set_qos_class_np(&attr, d->nativeQualityOfServiceClass(), 0);
+#else
+        // No such functionality on other OSes. We promise "no effect", so don't
+        // print a warning either.
 #endif
+    }
 
     d->priority = priority;
 
@@ -993,13 +1018,7 @@ void QThread::setTerminationEnabled(bool enabled)
                "Current thread was not started with QThread.");
 
     Q_UNUSED(thr);
-#if defined(Q_OS_ANDROID)
-    Q_UNUSED(enabled);
-#else
-    pthread_setcancelstate(enabled ? PTHREAD_CANCEL_ENABLE : PTHREAD_CANCEL_DISABLE, nullptr);
-    if (enabled)
-        pthread_testcancel();
-#endif
+    setCancellationEnabled(enabled);
 }
 
 // Caller must lock the mutex

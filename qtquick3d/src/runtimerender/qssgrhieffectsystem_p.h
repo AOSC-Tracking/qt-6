@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRHIEFFECTSYSTEM_P_H
 #define QSSGRHIEFFECTSYSTEM_P_H
@@ -70,7 +72,8 @@ public:
     QRhiTexture *process(const QSSGRenderLayer &layer,
                          QRhiTexture *inTexture,
                          QRhiTexture *inDepthTexture,
-                         QVector2D cameraClipRange);
+                         QRhiTexture *inNormalTexture,
+                         QRhiTexture *inMotionVectorTexture);
 
     static QSSGRenderTextureFormat::Format overriddenOutputFormat(const QSSGRenderEffect *inEffect);
 
@@ -91,9 +94,9 @@ private:
     void applyInstanceValueCmd(const QSSGApplyInstanceValue *inCmd, const QSSGRenderEffect *inEffect);
     void applyValueCmd(const QSSGApplyValue *inCmd, const QSSGRenderEffect *inEffect);
     void bindShaderCmd(const QSSGBindShader *inCmd, const QSSGRenderEffect *inEffect, quint8 viewCount);
-    void renderCmd(QSSGRhiEffectTexture *inTexture, QSSGRhiEffectTexture *target, quint8 viewCount);
+    void renderCmd(const QSSGRenderEffect *inEffect, QSSGRhiEffectTexture *inTexture, QSSGRhiEffectTexture *target, quint8 viewCount);
 
-    void addCommonEffectUniforms(const QSize &inputSize, const QSize &outputSize);
+    void addCommonEffectUniforms(const QSSGRenderEffect *inEffect, const QSize &inputSize, const QSize &outputSize, quint8 viewCount);
     void addTextureToShaderPipeline(const QByteArray &name, QRhiTexture *texture, const QSSGRhiSamplerDescription &samplerDesc);
 
     QSSGRhiEffectTexture *findTexture(const QByteArray &bufferName);
@@ -107,7 +110,11 @@ private:
     std::shared_ptr<QSSGRenderContextInterface> m_sgContext;
     QVector<QSSGRhiEffectTexture *> m_textures;
     QRhiTexture *m_depthTexture = nullptr;
+    QRhiTexture *m_normalTexture = nullptr;
+    QRhiTexture *m_motionVectorTexture = nullptr;
     QVector2D m_cameraClipRange;
+    QVarLengthArray<QMatrix4x4, 2> m_projectionMatrices;
+    QVarLengthArray<QMatrix4x4, 2> m_viewMatrices;
     int m_currentUbufIndex = 0;
     QHash<QSSGEffectSceneCacheKey, QSSGRhiShaderPipelinePtr> m_shaderPipelines;
     QSSGRhiShaderPipeline *m_currentShaderPipeline = nullptr;

@@ -10,6 +10,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/public/mojom/timing/performance_mark_or_measure.mojom-blink.h"
 #include "third_party/blink/public/platform/modules/service_worker/web_service_worker_error.h"
+#include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/public/platform/web_url_response.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
 #include "third_party/blink/renderer/core/dom/abort_signal.h"
@@ -100,8 +101,8 @@ void FetchEvent::ResolveHandledPromise() {
 }
 
 void FetchEvent::RejectHandledPromise(const String& error_message) {
-  handled_property_->Reject(ServiceWorkerError::GetException(
-      nullptr, mojom::blink::ServiceWorkerErrorType::kNetwork, error_message));
+  handled_property_->Reject(ServiceWorkerError::AsException(
+      mojom::blink::ServiceWorkerErrorType::kNetwork, error_message));
 }
 
 const AtomicString& FetchEvent::InterfaceName() const {
@@ -212,7 +213,7 @@ void FetchEvent::OnNavigationPreloadError(
     return;
   }
   preload_response_property_->Reject(
-      ServiceWorkerError::Take(nullptr, *error.get()));
+      ServiceWorkerError::AsException(error->error_type, error->message));
 }
 
 void FetchEvent::OnNavigationPreloadComplete(

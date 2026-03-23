@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
@@ -32,10 +33,6 @@
 #include "ui/gfx/geometry/size.h"
 #endif
 
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-#include "base/containers/span.h"
-#endif
-
 namespace gfx {
 class Point;
 class RectF;
@@ -45,6 +42,7 @@ namespace chrome_pdf {
 
 class PDFiumEngine;
 class Thumbnail;
+struct AccessibilityCharInfo;
 struct AccessibilityHighlightInfo;
 struct AccessibilityImageInfo;
 struct AccessibilityLinkInfo;
@@ -73,6 +71,7 @@ class PDFiumPage {
 
   // Unloads the PDFium data for this page from memory.
   void Unload();
+
   // Gets the FPDF_PAGE for this page, loading and parsing it if necessary.
   FPDF_PAGE GetPage();
 
@@ -85,7 +84,15 @@ class PDFiumPage {
   // Resets loaded text and loads it again.
   void ReloadTextPage();
 
-  // See definition of PDFiumEngine::GetTextRunInfo().
+  // Get all the chars, text runs and images from the page.
+  void GetTextAndImageInfo(std::vector<AccessibilityTextRunInfo>& text_runs,
+                           std::vector<AccessibilityCharInfo>& chars,
+                           std::vector<AccessibilityImageInfo>& images);
+
+  // Given a start char index, find the longest continuous run of text that's
+  // in a single direction and with the same text style. Return a filled out
+  // AccessibilityTextRunInfo on success or std::nullopt on failure. e.g. When
+  // `start_char_index` is out of bounds.
   std::optional<AccessibilityTextRunInfo> GetTextRunInfo(int start_char_index);
 
   // Get a unicode character from the page.
@@ -109,7 +116,8 @@ class PDFiumPage {
   // For all the links on the page, get their urls, underlying text ranges and
   // bounding boxes.
   std::vector<AccessibilityLinkInfo> GetLinkInfo(
-      const std::vector<AccessibilityTextRunInfo>& text_runs);
+      base::span<const AccessibilityTextRunInfo> text_runs);
+
   // For all the images on the page, get their alt texts and bounding boxes. If
   // the alt text is empty or unavailable, and if the user has requested that
   // the OCR service tag the PDF so that it is made accessible, transfer the raw
@@ -121,34 +129,35 @@ class PDFiumPage {
   std::vector<int> GetImageObjectIndices();
 
 #if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-  // Returns the image as a 32-bit bitmap format for OCR.
-  SkBitmap GetImageForOcr(int page_object_index);
+  // Returns if the page has images.
+  bool HasImages();
+
+  // Returns the image as a 32-bit bitmap format for OCR. The image dimensions
+  // will be at most `max_image_dimension`.
+  SkBitmap GetImageForOcr(int page_object_index, int max_image_dimension);
 
   // Called to inform PDFiumPage that OCR operations performed on this page
-  // added `text_objects` into the page.
-  // May be called several times if the page has more than one image.
-  void OnSearchifyGotOcrResult(base::span<FPDF_PAGEOBJECT> text_objects);
+  // added text into the page or not.
+  // May only be called once per PDFiumPage instance.
+  void OnSearchifyGotOcrResult(bool added_text);
 
-  // Returns if searchify has run on the page.
+  // Returns if Searchify has run on the page, regardless of whether it added
+  // any text to the page or not.
   bool IsPageSearchified() const;
+
+  // Returns if the page can be unloaded.
+  bool PageCanBeUnloaded() const;
 #endif  // BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 
   // For all the highlights on the page, get their underlying text ranges and
   // bounding boxes.
   std::vector<AccessibilityHighlightInfo> GetHighlightInfo(
-      const std::vector<AccessibilityTextRunInfo>& text_runs);
+      base::span<const AccessibilityTextRunInfo> text_runs);
 
   // For all the text fields on the page, get their properties like name,
   // value, bounding boxes, etc.
   std::vector<AccessibilityTextFieldInfo> GetTextFieldInfo(
       uint32_t text_run_count);
-
-  // Traverses the entire struct tree of the page recursively and extracts the
-  // text run type or the alt text from struct tree elements corresponding to
-  // the marked content IDs associated with `text_runs` or present in
-  // `marked_content_id_image_map_` respectively.
-  void PopulateTextRunTypeAndImageAltText(
-      std::vector<AccessibilityTextRunInfo>& text_runs);
 
   enum Area {
     NONSELECTABLE_AREA,
@@ -447,6 +456,13 @@ class PDFiumPage {
   // Value  :  Index of the image in the `images_` vector.
   using MarkedContentIdToImageMap = std::map<int, size_t>;
 
+  // Traverses the entire struct tree of the page recursively and extracts the
+  // text run type or the alt text from struct tree elements corresponding to
+  // the marked content IDs associated with `text_runs` or present in
+  // `marked_content_id_image_map_` respectively.
+  void PopulateTextRunTypeAndImageAltText(
+      std::vector<AccessibilityTextRunInfo>& text_runs);
+
   // Traverses a struct element and its sub-tree recursively and extracts the
   // text run type or the alt text from struct elements corresponding to the
   // marked content IDs present in `marked_content_id_text_run_info_map` or
@@ -463,15 +479,6 @@ class PDFiumPage {
   // Generates and sends the thumbnail using `send_callback`.
   void GenerateAndSendThumbnail(float device_pixel_ratio,
                                 SendThumbnailCallback send_callback);
-
-  // Creates a `Thumbnail` for a given `device_pixel_ratio` using this page's
-  // size. The caller is responsible for rendering the page content into the
-  // thumbnail.
-  Thumbnail CreateThumbnail(float device_pixel_ratio);
-
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-  bool IsCharacterAddedBySearchify(int char_index);
-#endif  // BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 
   raw_ptr<PDFiumEngine> engine_;
   ScopedFPDFPage page_;
@@ -497,13 +504,9 @@ class PDFiumPage {
   bool available_ = false;
 
 #if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-  // Indicates whether this page received any Searchify results. Note that it is
-  // possible to receive Searchify results, but the results list is empty.
-  bool got_searchify_results_ = false;
-
-  // The set of text objects added by running Searchify on this page.
-  // Used to help identify if text objects are created by Searchify or not.
-  std::set<FPDF_PAGEOBJECT> searchify_added_text_;
+  // Indicates whether Searchify added text to this page or not. Note that if
+  // this page has never been Searchified, then this is null.
+  std::optional<bool> has_searchify_added_text_;
 #endif
 };
 

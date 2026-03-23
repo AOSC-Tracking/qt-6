@@ -32,6 +32,7 @@ class QQuickItem;
 class QQuickShape;
 class QRectF;
 
+namespace QQuickVectorImageGenerator {
 struct NodeInfo;
 struct ImageNodeInfo;
 struct PathNodeInfo;
@@ -39,6 +40,11 @@ struct TextNodeInfo;
 struct UseNodeInfo;
 struct StructureNodeInfo;
 struct AnimateColorNodeInfo;
+struct MaskNodeInfo;
+struct FilterNodeInfo;
+}
+
+using namespace QQuickVectorImageGenerator;
 
 class Q_QUICKVECTORIMAGEGENERATOR_EXPORT QQuickGenerator
 {
@@ -50,6 +56,7 @@ public:
     QQuickVectorImageGenerator::GeneratorFlags generatorFlags();
 
     bool generate();
+    QQuickVectorImageGenerator::ErrorState errorState() const { return m_errorState; }
 
     virtual QString generateNodeBase(const NodeInfo &info) = 0;
     virtual bool generateDefsNode(const NodeInfo &info) = 0;
@@ -58,14 +65,29 @@ public:
     virtual void generateNode(const NodeInfo &info) = 0;
     virtual void generateTextNode(const TextNodeInfo &info) = 0;
     virtual void generateUseNode(const UseNodeInfo &info) = 0;
+    virtual void generateFilterNode(const FilterNodeInfo &info) = 0;
     virtual bool generateStructureNode(const StructureNodeInfo &info) = 0;
     virtual bool generateRootNode(const StructureNodeInfo &info) = 0;
+    virtual bool generateMaskNode(const MaskNodeInfo &info) = 0;
     virtual void outputShapePath(const PathNodeInfo &info, const QPainterPath *path, const QQuadPath *quadPath, QQuickVectorImageGenerator::PathSelector pathSelector, const QRectF &boundingRect) = 0;
     void optimizePaths(const PathNodeInfo &info, const QRectF &overrideBoundingRect);
     bool isNodeVisible(const NodeInfo &info);
 
 protected:
+    void checkSanityLimit_helper(quint64 limit, QLatin1StringView limitObject);
+    bool checkSanityLimit(quint64 value, quint64 limit, QLatin1StringView limitObject)
+    {
+        if (Q_LIKELY(!errorState())) {
+            if (value <= limit || m_flags.testFlag(QQuickVectorImageGenerator::AssumeTrustedSource))
+                return true;
+            checkSanityLimit_helper(limit, limitObject);
+        }
+        return false;
+    }
+
     QQuickVectorImageGenerator::GeneratorFlags m_flags;
+    QQuickVectorImageGenerator::ErrorState m_errorState = QQuickVectorImageGenerator::NoError;
+
 
 private:
     QString m_fileName;

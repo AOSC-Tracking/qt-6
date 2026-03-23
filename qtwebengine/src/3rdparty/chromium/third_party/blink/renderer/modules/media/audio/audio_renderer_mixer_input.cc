@@ -2,15 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/modules/media/audio/audio_renderer_mixer_input.h"
 
 #include <cmath>
 
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/task/sequenced_task_runner.h"
@@ -19,6 +15,7 @@
 #include "media/base/audio_timestamp_helper.h"
 #include "third_party/blink/renderer/modules/media/audio/audio_renderer_mixer.h"
 #include "third_party/blink/renderer/modules/media/audio/audio_renderer_mixer_pool.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -152,7 +149,7 @@ void AudioRendererMixerInput::GetOutputDeviceInfoAsync(
   // immediately. Per the AudioRendererSink API contract, this must be posted.
   if (device_info_.has_value() && (sink_ || mixer_)) {
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce(std::move(info_cb), *device_info_));
+        FROM_HERE, WTF::BindOnce(std::move(info_cb), *device_info_));
     return;
   }
 
@@ -177,8 +174,8 @@ void AudioRendererMixerInput::GetOutputDeviceInfoAsync(
   // The callback is guaranteed to execute on this thread, so there are no
   // threading issues.
   sink_->GetOutputDeviceInfoAsync(
-      base::BindOnce(&AudioRendererMixerInput::OnDeviceInfoReceived,
-                     base::RetainedRef(this), std::move(info_cb)));
+      WTF::BindOnce(&AudioRendererMixerInput::OnDeviceInfoReceived,
+                    WTF::RetainedRef(this), std::move(info_cb)));
 }
 
 bool AudioRendererMixerInput::IsOptimizedForHardwareParameters() {
@@ -228,8 +225,8 @@ void AudioRendererMixerInput::SwitchOutputDevice(
   // The callback is guaranteed to execute on this thread, so there are no
   // threading issues.
   new_sink->GetOutputDeviceInfoAsync(
-      base::BindOnce(&AudioRendererMixerInput::OnDeviceSwitchReady,
-                     base::RetainedRef(this), std::move(callback), new_sink));
+      WTF::BindOnce(&AudioRendererMixerInput::OnDeviceSwitchReady,
+                    WTF::RetainedRef(this), std::move(callback), new_sink));
 }
 
 double AudioRendererMixerInput::ProvideInput(
@@ -265,7 +262,8 @@ double AudioRendererMixerInput::ProvideInput(
       float* data = audio_bus->channel(ch);
 
       for (int i = 0; i < frames; ++i) {
-        data[i] *= static_cast<float>(start_volume + i) / total_fade_in_frames_;
+        UNSAFE_TODO(data[i]) *=
+            static_cast<float>(start_volume + i) / total_fade_in_frames_;
       }
     }
 

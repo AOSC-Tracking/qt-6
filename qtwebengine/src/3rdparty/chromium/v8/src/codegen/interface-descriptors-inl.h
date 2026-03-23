@@ -5,10 +5,12 @@
 #ifndef V8_CODEGEN_INTERFACE_DESCRIPTORS_INL_H_
 #define V8_CODEGEN_INTERFACE_DESCRIPTORS_INL_H_
 
+#include "src/codegen/interface-descriptors.h"
+// Include the non-inl header before the rest of the headers.
+
 #include <utility>
 
 #include "src/base/logging.h"
-#include "src/codegen/interface-descriptors.h"
 #include "src/codegen/register.h"
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-linkage.h"
@@ -123,7 +125,8 @@ void StaticCallInterfaceDescriptor<DerivedDescriptor>::Initialize(
   DCHECK_GE(return_double_registers.size(), DerivedDescriptor::kReturnCount);
   data->InitializeRegisters(
       DerivedDescriptor::flags(), DerivedDescriptor::kEntrypointTag,
-      DerivedDescriptor::kReturnCount, DerivedDescriptor::GetParameterCount(),
+      DerivedDescriptor::kSandboxingMode, DerivedDescriptor::kReturnCount,
+      DerivedDescriptor::GetParameterCount(),
       DerivedDescriptor::kStackArgumentOrder,
       DerivedDescriptor::GetRegisterParameterCount(), registers.data(),
       double_registers.data(), return_registers.data(),
@@ -533,6 +536,9 @@ OnStackReplacementDescriptor::ExpectedParameterCountRegister() {
 constexpr auto VoidDescriptor::registers() { return RegisterArray(); }
 
 // static
+constexpr auto JSEntryDescriptor::registers() { return RegisterArray(); }
+
+// static
 constexpr auto AllocateDescriptor::registers() {
   return RegisterArray(kAllocateSizeRegister);
 }
@@ -705,14 +711,14 @@ constexpr auto DefineKeyedOwnWithVectorDescriptor::registers() {
 constexpr auto CallApiCallbackOptimizedDescriptor::registers() {
   return RegisterArray(ApiFunctionAddressRegister(),
                        ActualArgumentsCountRegister(),
-                       FunctionTemplateInfoRegister(), HolderRegister());
+                       FunctionTemplateInfoRegister());
 }
 
 // static
 constexpr auto CallApiCallbackGenericDescriptor::registers() {
   return RegisterArray(ActualArgumentsCountRegister(),
                        TopmostScriptHavingContextRegister(),
-                       FunctionTemplateInfoRegister(), HolderRegister());
+                       FunctionTemplateInfoRegister());
 }
 
 // static
@@ -811,9 +817,10 @@ constexpr auto WasmToJSWrapperDescriptor::return_double_registers() {
     using type = DescriptorName##Descriptor;                          \
   };
 BUILTIN_LIST(IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN,
-             /*TSC*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER,
+             /*TFC_TSA*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER,
              /*TFC*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER, IGNORE_BUILTIN,
              /*TFH*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER, IGNORE_BUILTIN,
+             IGNORE_BUILTIN,
              /*ASM*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER)
 #undef DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER
 #define DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER(Name, ...) \

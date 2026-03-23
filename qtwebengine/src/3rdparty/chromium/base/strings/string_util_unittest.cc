@@ -69,15 +69,6 @@ const struct trim_case_ascii {
     {"\t\rTest String\n", TRIM_ALL, "Test String", TRIM_ALL},
 };
 
-// Helper used to test TruncateUTF8ToByteSize.
-bool Truncated(const std::string& input,
-               const size_t byte_size,
-               std::string* output) {
-  size_t prev = input.length();
-  TruncateUTF8ToByteSize(input, byte_size, output);
-  return prev != output->length();
-}
-
 using TestFunction = bool (*)(std::string_view str);
 
 // Helper used to test IsStringUTF8[AllowingNoncharacters].
@@ -201,175 +192,140 @@ void TestNoncharacters(TestFunction fn, bool expected_result) {
 }
 
 TEST(StringUtilTest, TruncateUTF8ToByteSize) {
+  // Just a few tests of the version which takes an output parameter. It's
+  // implemented in terms `TruncateUTF8ToByteSize()` which returns a string
+  // view.
   std::string output;
+  TruncateUTF8ToByteSize("test", 3, &output);
+  EXPECT_EQ("tes", output);
+  TruncateUTF8ToByteSize("test", 0, &output);
+  EXPECT_EQ("", output);
+  TruncateUTF8ToByteSize("", 3, &output);
+  EXPECT_EQ("", output);
 
   // Empty strings and invalid byte_size arguments
-  EXPECT_FALSE(Truncated(std::string(), 0, &output));
-  EXPECT_EQ(output, "");
-  EXPECT_TRUE(Truncated("\xe1\x80\xbf", 0, &output));
-  EXPECT_EQ(output, "");
-  EXPECT_FALSE(Truncated("\xe1\x80\xbf", static_cast<size_t>(-1), &output));
-  EXPECT_FALSE(Truncated("\xe1\x80\xbf", 4, &output));
+  EXPECT_EQ("", TruncateUTF8ToByteSize(std::string(), 0));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xe1\x80\xbf", 0));
+  EXPECT_EQ("\xe1\x80\xbf",
+            TruncateUTF8ToByteSize("\xe1\x80\xbf", static_cast<size_t>(-1)));
+  EXPECT_EQ("\xe1\x80\xbf", TruncateUTF8ToByteSize("\xe1\x80\xbf", 4));
 
   // Testing the truncation of valid UTF8 correctly
-  EXPECT_TRUE(Truncated("abc", 2, &output));
-  EXPECT_EQ(output, "ab");
-  EXPECT_TRUE(Truncated("\xc2\x81\xc2\x81", 2, &output));
-  EXPECT_EQ(output.compare("\xc2\x81"), 0);
-  EXPECT_TRUE(Truncated("\xc2\x81\xc2\x81", 3, &output));
-  EXPECT_EQ(output.compare("\xc2\x81"), 0);
-  EXPECT_FALSE(Truncated("\xc2\x81\xc2\x81", 4, &output));
-  EXPECT_EQ(output.compare("\xc2\x81\xc2\x81"), 0);
+  EXPECT_EQ("ab", TruncateUTF8ToByteSize("abc", 2));
+  EXPECT_EQ("\xc2\x81", TruncateUTF8ToByteSize("\xc2\x81\xc2\x81", 2));
+  EXPECT_EQ("\xc2\x81", TruncateUTF8ToByteSize("\xc2\x81\xc2\x81", 3));
+  EXPECT_EQ("\xc2\x81\xc2\x81", TruncateUTF8ToByteSize("\xc2\x81\xc2\x81", 4));
 
   {
     const char array[] = "\x00\x00\xc2\x81\xc2\x81";
     const std::string array_string(array, std::size(array));
-    EXPECT_TRUE(Truncated(array_string, 4, &output));
-    EXPECT_EQ(output.compare(std::string("\x00\x00\xc2\x81", 4)), 0);
+    EXPECT_EQ(std::string_view("\x00\x00\xc2\x81", 4),
+              TruncateUTF8ToByteSize(array_string, 4));
   }
 
   {
     const char array[] = "\x00\xc2\x81\xc2\x81";
     const std::string array_string(array, std::size(array));
-    EXPECT_TRUE(Truncated(array_string, 4, &output));
-    EXPECT_EQ(output.compare(std::string("\x00\xc2\x81", 3)), 0);
+    EXPECT_EQ(std::string_view("\x00\xc2\x81", 3),
+              TruncateUTF8ToByteSize(array_string, 4));
   }
 
   // Testing invalid UTF8
-  EXPECT_TRUE(Truncated("\xed\xa0\x80\xed\xbf\xbf", 6, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xed\xa0\x8f", 3, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xed\xbf\xbf", 3, &output));
-  EXPECT_EQ(output.compare(""), 0);
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xed\xa0\x80\xed\xbf\xbf", 6));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xed\xa0\x8f", 3));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xed\xbf\xbf", 3));
 
   // Testing invalid UTF8 mixed with valid UTF8
-  EXPECT_FALSE(Truncated("\xe1\x80\xbf", 3, &output));
-  EXPECT_EQ(output.compare("\xe1\x80\xbf"), 0);
-  EXPECT_FALSE(Truncated("\xf1\x80\xa0\xbf", 4, &output));
-  EXPECT_EQ(output.compare("\xf1\x80\xa0\xbf"), 0);
-  EXPECT_FALSE(Truncated("a\xc2\x81\xe1\x80\xbf\xf1\x80\xa0\xbf", 10, &output));
-  EXPECT_EQ(output.compare("a\xc2\x81\xe1\x80\xbf\xf1\x80\xa0\xbf"), 0);
-  EXPECT_TRUE(
-      Truncated("a\xc2\x81\xe1\x80\xbf\xf1"
-                "a"
-                "\x80\xa0",
-                10, &output));
-  EXPECT_EQ(output.compare("a\xc2\x81\xe1\x80\xbf\xf1"
-                           "a"),
-            0);
-  EXPECT_FALSE(
-      Truncated("\xef\xbb\xbf"
-                "abc",
-                6, &output));
-  EXPECT_EQ(output.compare("\xef\xbb\xbf"
-                           "abc"),
-            0);
+  EXPECT_EQ("\xe1\x80\xbf", TruncateUTF8ToByteSize("\xe1\x80\xbf", 3));
+  EXPECT_EQ("\xf1\x80\xa0\xbf", TruncateUTF8ToByteSize("\xf1\x80\xa0\xbf", 4));
+  EXPECT_EQ(
+      "a\xc2\x81\xe1\x80\xbf\xf1\x80\xa0\xbf",
+      TruncateUTF8ToByteSize("a\xc2\x81\xe1\x80\xbf\xf1\x80\xa0\xbf", 10));
+  EXPECT_EQ(
+      "a\xc2\x81\xe1\x80\xbf\xf1"
+      "a",
+      TruncateUTF8ToByteSize("a\xc2\x81\xe1\x80\xbf\xf1"
+                             "a"
+                             "\x80\xa0",
+                             10));
+  EXPECT_EQ(
+      "\xef\xbb\xbf"
+      "abc",
+      TruncateUTF8ToByteSize("\xef\xbb\xbf"
+                             "abc",
+                             6));
 
   // Overlong sequences
-  EXPECT_TRUE(Truncated("\xc0\x80", 2, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xc1\x80\xc1\x81", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xe0\x80\x80", 3, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xe0\x82\x80", 3, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xe0\x9f\xbf", 3, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xf0\x80\x80\x8D", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xf0\x80\x82\x91", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xf0\x80\xa0\x80", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xf0\x8f\xbb\xbf", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xf8\x80\x80\x80\xbf", 5, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xfc\x80\x80\x80\xa0\xa5", 6, &output));
-  EXPECT_EQ(output.compare(""), 0);
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xc0\x80", 2));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xc1\x80\xc1\x81", 4));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xe0\x80\x80", 3));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xe0\x82\x80", 3));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xe0\x9f\xbf", 3));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xf0\x80\x80\x8D", 4));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xf0\x80\x82\x91", 4));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xf0\x80\xa0\x80", 4));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xf0\x8f\xbb\xbf", 4));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xf8\x80\x80\x80\xbf", 5));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xfc\x80\x80\x80\xa0\xa5", 6));
 
   // Beyond U+10FFFF (the upper limit of Unicode codespace)
-  EXPECT_TRUE(Truncated("\xf4\x90\x80\x80", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xf8\xa0\xbf\x80\xbf", 5, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xfc\x9c\xbf\x80\xbf\x80", 6, &output));
-  EXPECT_EQ(output.compare(""), 0);
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xf4\x90\x80\x80", 4));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xf8\xa0\xbf\x80\xbf", 5));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xfc\x9c\xbf\x80\xbf\x80", 6));
 
   // BOMs in UTF-16(BE|LE) and UTF-32(BE|LE)
-  EXPECT_TRUE(Truncated("\xfe\xff", 2, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xff\xfe", 2, &output));
-  EXPECT_EQ(output.compare(""), 0);
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xfe\xff", 2));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xff\xfe", 2));
 
   {
     const char array[] = "\x00\x00\xfe\xff";
     const std::string array_string(array, std::size(array));
-    EXPECT_TRUE(Truncated(array_string, 4, &output));
-    EXPECT_EQ(output.compare(std::string("\x00\x00", 2)), 0);
+    EXPECT_EQ(std::string("\x00\x00", 2),
+              TruncateUTF8ToByteSize(array_string, 4));
   }
 
   // Variants on the previous test
   {
     const char array[] = "\xff\xfe\x00\x00";
     const std::string array_string(array, 4);
-    EXPECT_FALSE(Truncated(array_string, 4, &output));
-    EXPECT_EQ(output.compare(std::string("\xff\xfe\x00\x00", 4)), 0);
+    EXPECT_EQ(std::string_view("\xff\xfe\x00\x00", 4),
+              TruncateUTF8ToByteSize(array_string, 4));
   }
   {
     const char array[] = "\xff\x00\x00\xfe";
     const std::string array_string(array, std::size(array));
-    EXPECT_TRUE(Truncated(array_string, 4, &output));
-    EXPECT_EQ(output.compare(std::string("\xff\x00\x00", 3)), 0);
+    EXPECT_EQ(std::string_view("\xff\x00\x00", 3),
+              TruncateUTF8ToByteSize(array_string, 4));
   }
 
   // Non-characters : U+xxFFF[EF] where xx is 0x00 through 0x10 and <FDD0,FDEF>
-  EXPECT_TRUE(Truncated("\xef\xbf\xbe", 3, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xf0\x8f\xbf\xbe", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xf3\xbf\xbf\xbf", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xef\xb7\x90", 3, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_TRUE(Truncated("\xef\xb7\xaf", 3, &output));
-  EXPECT_EQ(output.compare(""), 0);
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xef\xbf\xbe", 3));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xf0\x8f\xbf\xbe", 4));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xf3\xbf\xbf\xbf", 4));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xef\xb7\x90", 3));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xef\xb7\xaf", 3));
 
   // Strings in legacy encodings that are valid in UTF-8, but
   // are invalid as UTF-8 in real data.
-  EXPECT_TRUE(Truncated("caf\xe9", 4, &output));
-  EXPECT_EQ(output.compare("caf"), 0);
-  EXPECT_TRUE(Truncated("\xb0\xa1\xb0\xa2", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
-  EXPECT_FALSE(Truncated("\xa7\x41\xa6\x6e", 4, &output));
-  EXPECT_EQ(output.compare("\xa7\x41\xa6\x6e"), 0);
-  EXPECT_TRUE(Truncated("\xa7\x41\xa6\x6e\xd9\xee\xe4\xee", 7, &output));
-  EXPECT_EQ(output.compare("\xa7\x41\xa6\x6e"), 0);
-
-  // Testing using the same string as input and output.
-  EXPECT_FALSE(Truncated(output, 4, &output));
-  EXPECT_EQ(output.compare("\xa7\x41\xa6\x6e"), 0);
-  EXPECT_TRUE(Truncated(output, 3, &output));
-  EXPECT_EQ(output.compare("\xa7\x41"), 0);
+  EXPECT_EQ("caf", TruncateUTF8ToByteSize("caf\xe9", 4));
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xb0\xa1\xb0\xa2", 4));
+  EXPECT_EQ("\xa7\x41\xa6\x6e", TruncateUTF8ToByteSize("\xa7\x41\xa6\x6e", 4));
+  EXPECT_EQ("\xa7\x41\xa6\x6e",
+            TruncateUTF8ToByteSize("\xa7\x41\xa6\x6e\xd9\xee\xe4\xee", 7));
 
   // "abc" with U+201[CD] in windows-125[0-8]
-  EXPECT_TRUE(
-      Truncated("\x93"
-                "abc\x94",
-                5, &output));
-  EXPECT_EQ(output.compare("\x93"
-                           "abc"),
-            0);
+  EXPECT_EQ(
+      "\x93"
+      "abc",
+      TruncateUTF8ToByteSize("\x93"
+                             "abc\x94",
+                             5));
 
   // U+0639 U+064E U+0644 U+064E in ISO-8859-6
-  EXPECT_TRUE(Truncated("\xd9\xee\xe4\xee", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xd9\xee\xe4\xee", 4));
 
   // U+03B3 U+03B5 U+03B9 U+03AC in ISO-8859-7
-  EXPECT_TRUE(Truncated("\xe3\xe5\xe9\xdC", 4, &output));
-  EXPECT_EQ(output.compare(""), 0);
+  EXPECT_EQ("", TruncateUTF8ToByteSize("\xe3\xe5\xe9\xdC", 4));
 }
 
 #if defined(WCHAR_T_IS_16_BIT)
@@ -536,11 +492,13 @@ TEST(StringUtilTest, IsStringUTF8) {
 }
 
 TEST(StringUtilTest, IsStringASCII) {
-  static char char_ascii[] = "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
-  static char16_t char16_ascii[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8',
-                                    '9', '0', 'A', 'B', 'C', 'D', 'E', 'F', '0',
-                                    '1', '2', '3', '4', '5', '6', '7', '8', '9',
-                                    '0', 'A', 'B', 'C', 'D', 'E', 'F', 0};
+  static std::array<char, 49> char_ascii{
+      "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"};
+  static auto char16_ascii = std::to_array<char16_t>({
+      '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'A',
+      'B', 'C', 'D', 'E', 'F', '0', '1', '2', '3', '4', '5', '6',
+      '7', '8', '9', '0', 'A', 'B', 'C', 'D', 'E', 'F', 0,
+  });
   static std::wstring wchar_ascii(
       L"0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
 
@@ -553,11 +511,12 @@ TEST(StringUtilTest, IsStringASCII) {
     for (size_t offset = 0; offset < 8; ++offset) {
       for (size_t len = 0, max_len = string_length - offset; len < max_len;
            ++len) {
-        EXPECT_TRUE(IsStringASCII(std::string_view(char_ascii + offset, len)));
+        EXPECT_TRUE(IsStringASCII(std::string_view(
+            base::span(char_ascii).subspan(offset).data(), len)));
         for (size_t char_pos = offset; char_pos < len; ++char_pos) {
           char_ascii[char_pos] |= '\x80';
-          EXPECT_FALSE(
-              IsStringASCII(std::string_view(char_ascii + offset, len)));
+          EXPECT_FALSE(IsStringASCII(std::string_view(
+              base::span(char_ascii).subspan(offset).data(), len)));
           char_ascii[char_pos] &= ~'\x80';
         }
       }
@@ -569,17 +528,17 @@ TEST(StringUtilTest, IsStringASCII) {
     for (size_t offset = 0; offset < 4; ++offset) {
       for (size_t len = 0, max_len = string_length - offset; len < max_len;
            ++len) {
-        EXPECT_TRUE(
-            IsStringASCII(std::u16string_view(char16_ascii + offset, len)));
+        EXPECT_TRUE(IsStringASCII(std::u16string_view(
+            base::span(char16_ascii).subspan(offset).data(), len)));
         for (size_t char_pos = offset; char_pos < len; ++char_pos) {
           char16_ascii[char_pos] |= 0x80;
-          EXPECT_FALSE(
-              IsStringASCII(std::u16string_view(char16_ascii + offset, len)));
+          EXPECT_FALSE(IsStringASCII(std::u16string_view(
+              base::span(char16_ascii).subspan(offset).data(), len)));
           char16_ascii[char_pos] &= ~0x80;
           // Also test when the upper half is non-zero.
           char16_ascii[char_pos] |= 0x100;
-          EXPECT_FALSE(
-              IsStringASCII(std::u16string_view(char16_ascii + offset, len)));
+          EXPECT_FALSE(IsStringASCII(std::u16string_view(
+              base::span(char16_ascii).subspan(offset).data(), len)));
           char16_ascii[char_pos] &= ~0x100;
         }
       }
@@ -608,11 +567,11 @@ TEST(StringUtilTest, IsStringASCII) {
 }
 
 TEST(StringUtilTest, ConvertASCII) {
-  static const char* const char_cases[] = {"Google Video", "Hello, world\n",
-                                           "0123ABCDwxyz \a\b\t\r\n!+,.~"};
+  static const auto char_cases = std::to_array<const char*>(
+      {"Google Video", "Hello, world\n", "0123ABCDwxyz \a\b\t\r\n!+,.~"});
 
-  static const wchar_t* const wchar_cases[] = {
-      L"Google Video", L"Hello, world\n", L"0123ABCDwxyz \a\b\t\r\n!+,.~"};
+  static const auto wchar_cases = std::to_array<const wchar_t*>(
+      {L"Google Video", L"Hello, world\n", L"0123ABCDwxyz \a\b\t\r\n!+,.~"});
 
   for (size_t i = 0; i < std::size(char_cases); ++i) {
     EXPECT_TRUE(IsStringASCII(char_cases[i]));
@@ -1061,6 +1020,172 @@ TEST(StringUtilTest, EndsWith) {
                        base::CompareCase::SENSITIVE));
 }
 
+TEST(StringUtilTest, RemovePrefix) {
+  {
+    std::optional<std::string_view> result;
+
+    result = RemovePrefix("", "");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "");
+    result = RemovePrefix("", "", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "");
+
+    EXPECT_FALSE(RemovePrefix("", "xyz"));
+    EXPECT_FALSE(RemovePrefix("", "xyZ", CompareCase::INSENSITIVE_ASCII));
+
+    result = RemovePrefix("xyz", "");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "xyz");
+    result = RemovePrefix("Xyz", "", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "Xyz");
+
+    EXPECT_FALSE(RemovePrefix("abc", "xyz"));
+    EXPECT_FALSE(RemovePrefix("abc", "xyz", CompareCase::INSENSITIVE_ASCII));
+
+    result = RemovePrefix("xyz", "xyz");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "");
+    result = RemovePrefix("Xyz", "xyZ", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "");
+    EXPECT_EQ(result.value(), "");
+
+    EXPECT_FALSE(RemovePrefix("Xyz", "xyZ"));
+
+    result = RemovePrefix("xyz123", "xyz");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "123");
+    result = RemovePrefix("Xyz123", "xyz", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "123");
+  }
+  {
+    std::optional<std::u16string_view> result;
+
+    result = RemovePrefix(u"", u"");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"");
+    result = RemovePrefix(u"", u"", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"");
+
+    EXPECT_FALSE(RemovePrefix(u"", u"xyz"));
+    EXPECT_FALSE(RemovePrefix(u"", u"xyZ", CompareCase::INSENSITIVE_ASCII));
+
+    result = RemovePrefix(u"xyz", u"");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"xyz");
+    result = RemovePrefix(u"Xyz", u"", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"Xyz");
+
+    EXPECT_FALSE(RemovePrefix(u"abc", u"xyz"));
+    EXPECT_FALSE(RemovePrefix(u"abc", u"xyz", CompareCase::INSENSITIVE_ASCII));
+
+    result = RemovePrefix(u"xyz", u"xyz");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"");
+    result = RemovePrefix(u"Xyz", u"xyZ", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"");
+    EXPECT_EQ(result.value(), u"");
+
+    EXPECT_FALSE(RemovePrefix(u"Xyz", u"xyZ"));
+
+    result = RemovePrefix(u"xyz123", u"xyz");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"123");
+    result = RemovePrefix(u"Xyz123", u"xyz", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"123");
+  }
+}
+
+TEST(StringUtilTest, RemoveSuffix) {
+  {
+    std::optional<std::string_view> result;
+
+    result = RemoveSuffix("", "");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "");
+    result = RemoveSuffix("", "", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "");
+
+    EXPECT_FALSE(RemoveSuffix("", "xyz"));
+    EXPECT_FALSE(RemoveSuffix("", "xyZ", CompareCase::INSENSITIVE_ASCII));
+
+    result = RemoveSuffix("xyz", "");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "xyz");
+    result = RemoveSuffix("Xyz", "", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "Xyz");
+
+    EXPECT_FALSE(RemoveSuffix("abc", "xyz"));
+    EXPECT_FALSE(RemoveSuffix("abc", "xyz", CompareCase::INSENSITIVE_ASCII));
+
+    result = RemoveSuffix("xyz", "xyz");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "");
+    result = RemoveSuffix("Xyz", "xyZ", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "");
+    EXPECT_EQ(result.value(), "");
+
+    EXPECT_FALSE(RemoveSuffix("Xyz", "xyZ"));
+
+    result = RemoveSuffix("123xyz", "xyz");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "123");
+    result = RemoveSuffix("123Xyz", "xyZ", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "123");
+  }
+  {
+    std::optional<std::u16string_view> result;
+
+    result = RemoveSuffix(u"", u"");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"");
+    result = RemoveSuffix(u"", u"", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"");
+
+    EXPECT_FALSE(RemoveSuffix(u"", u"xyz"));
+    EXPECT_FALSE(RemoveSuffix(u"", u"xyZ", CompareCase::INSENSITIVE_ASCII));
+
+    result = RemoveSuffix(u"xyz", u"");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"xyz");
+    result = RemoveSuffix(u"Xyz", u"", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"Xyz");
+
+    EXPECT_FALSE(RemoveSuffix(u"abc", u"xyz"));
+    EXPECT_FALSE(RemoveSuffix(u"abc", u"xyz", CompareCase::INSENSITIVE_ASCII));
+
+    result = RemoveSuffix(u"xyz", u"xyz");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"");
+    result = RemoveSuffix(u"Xyz", u"xyZ", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"");
+    EXPECT_EQ(result.value(), u"");
+
+    EXPECT_FALSE(RemoveSuffix(u"Xyz", u"xyZ"));
+
+    result = RemoveSuffix(u"123xyz", u"xyz");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"123");
+    result = RemoveSuffix(u"123Xyz", u"xyZ", CompareCase::INSENSITIVE_ASCII);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), u"123");
+  }
+}
+
 TEST(StringUtilTest, GetStringFWithOffsets) {
   std::vector<std::u16string> subst;
   subst.push_back(u"1");
@@ -1484,47 +1609,6 @@ TEST(StringUtilTest, WprintfFormatPortabilityTest) {
   }
 }
 
-TEST(StringUtilTest, MakeBasicStringPieceTest) {
-  constexpr char kFoo[] = "Foo";
-  static_assert(MakeStringPiece(kFoo, kFoo + 3) == kFoo, "");
-  static_assert(MakeStringPiece(kFoo, kFoo + 3).data() == kFoo, "");
-  static_assert(MakeStringPiece(kFoo, kFoo + 3).size() == 3, "");
-  static_assert(MakeStringPiece(kFoo + 3, kFoo + 3).empty(), "");
-  static_assert(MakeStringPiece(kFoo + 4, kFoo + 4).empty(), "");
-
-  std::string foo = kFoo;
-  EXPECT_EQ(MakeStringPiece(foo.begin(), foo.end()), foo);
-  EXPECT_EQ(MakeStringPiece(foo.begin(), foo.end()).data(), foo.data());
-  EXPECT_EQ(MakeStringPiece(foo.begin(), foo.end()).size(), foo.size());
-  EXPECT_TRUE(MakeStringPiece(foo.end(), foo.end()).empty());
-
-  constexpr char16_t kBar[] = u"Bar";
-  static_assert(MakeStringPiece16(kBar, kBar + 3) == kBar, "");
-  static_assert(MakeStringPiece16(kBar, kBar + 3).data() == kBar, "");
-  static_assert(MakeStringPiece16(kBar, kBar + 3).size() == 3, "");
-  static_assert(MakeStringPiece16(kBar + 3, kBar + 3).empty(), "");
-  static_assert(MakeStringPiece16(kBar + 4, kBar + 4).empty(), "");
-
-  std::u16string bar = kBar;
-  EXPECT_EQ(MakeStringPiece16(bar.begin(), bar.end()), bar);
-  EXPECT_EQ(MakeStringPiece16(bar.begin(), bar.end()).data(), bar.data());
-  EXPECT_EQ(MakeStringPiece16(bar.begin(), bar.end()).size(), bar.size());
-  EXPECT_TRUE(MakeStringPiece16(bar.end(), bar.end()).empty());
-
-  constexpr wchar_t kBaz[] = L"Baz";
-  static_assert(MakeWStringView(kBaz, kBaz + 3) == kBaz, "");
-  static_assert(MakeWStringView(kBaz, kBaz + 3).data() == kBaz, "");
-  static_assert(MakeWStringView(kBaz, kBaz + 3).size() == 3, "");
-  static_assert(MakeWStringView(kBaz + 3, kBaz + 3).empty(), "");
-  static_assert(MakeWStringView(kBaz + 4, kBaz + 4).empty(), "");
-
-  std::wstring baz = kBaz;
-  EXPECT_EQ(MakeWStringView(baz.begin(), baz.end()), baz);
-  EXPECT_EQ(MakeWStringView(baz.begin(), baz.end()).data(), baz.data());
-  EXPECT_EQ(MakeWStringView(baz.begin(), baz.end()).size(), baz.size());
-  EXPECT_TRUE(MakeWStringView(baz.end(), baz.end()).empty());
-}
-
 TEST(StringUtilTest, RemoveChars) {
   const char kRemoveChars[] = "-/+*";
   std::string input = "A-+bc/d!*";
@@ -1739,34 +1823,6 @@ TEST(StringUtilTest, IsUnicodeWhitespace) {
   EXPECT_TRUE(IsUnicodeWhitespace(L'\v'));
   EXPECT_TRUE(IsUnicodeWhitespace(L'\f'));
   EXPECT_TRUE(IsUnicodeWhitespace(L'\n'));
-}
-
-// Tests that MakeStringViewWithNulChars preserves internal NUL characters.
-TEST(StringUtilTest, MakeStringViewWithNulChars) {
-  {
-    const char kTestString[] = "abd\0def";
-    auto s = MakeStringViewWithNulChars(kTestString);
-    EXPECT_EQ(s.size(), 7u);
-    EXPECT_EQ(base::span(s), base::span_from_cstring(kTestString));
-  }
-  {
-    const wchar_t kTestString[] = L"abd\0def";
-    auto s = MakeStringViewWithNulChars(kTestString);
-    EXPECT_EQ(s.size(), 7u);
-    ASSERT_TRUE(base::span(s) == base::span_from_cstring(kTestString));
-  }
-  {
-    const char16_t kTestString[] = u"abd\0def";
-    auto s = MakeStringViewWithNulChars(kTestString);
-    EXPECT_EQ(s.size(), 7u);
-    EXPECT_TRUE(base::span(s) == base::span_from_cstring(kTestString));
-  }
-  {
-    const char32_t kTestString[] = U"abd\0def";
-    auto s = MakeStringViewWithNulChars(kTestString);
-    EXPECT_EQ(s.size(), 7u);
-    EXPECT_TRUE(base::span(s) == base::span_from_cstring(kTestString));
-  }
 }
 
 class WriteIntoTest : public testing::Test {

@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "graphs2d/qabstractseries.h"
 #include <QtGraphs/qxyseries.h>
@@ -126,7 +128,7 @@ QXYSeries::QXYSeries(QXYSeriesPrivate &dd, QObject *parent)
 }
 
 /*!
-    \qmlmethod XYSeries::append(real x, real y)
+    \qmlmethod void XYSeries::append(real x, real y)
     Appends a point with the coordinates \a x and \a y to the series.
 */
 /*!
@@ -138,7 +140,7 @@ void QXYSeries::append(qreal x, qreal y)
 }
 
 /*!
-    \qmlmethod XYSeries::append(point point)
+    \qmlmethod void XYSeries::append(point point)
     Appends a point with the coordinates \a point to the series.
 */
 /*!
@@ -147,23 +149,23 @@ void QXYSeries::append(qreal x, qreal y)
 void QXYSeries::append(QPointF point)
 {
     Q_D(QXYSeries);
-    if (isValidValue(point)) {
-        if (d->m_graphTransition && d->m_graphTransition->initialized()
-            && d->m_graphTransition->contains(QGraphAnimation::GraphAnimationType::GraphPoint)) {
-            d->m_graphTransition->stop();
+    if (d->m_graphTransition && d->m_graphTransition->initialized()
+        && d->m_graphTransition->contains(QGraphAnimation::GraphAnimationType::GraphPoint)) {
+        d->m_graphTransition->stop();
+        if (isValidValue(point)) {
             d->m_graphTransition->onPointChanged(QGraphTransition::TransitionType::PointAdded,
                                                  d->m_points.size(),
                                                  point);
-        } else {
-            d->m_points << point;
-            emit pointAdded(d->m_points.size() - 1);
-            emit countChanged();
         }
+    } else {
+        d->m_points << point;
+        emit pointAdded(d->m_points.size() - 1);
+        emit countChanged();
     }
 }
 
 /*!
-    \qmlmethod XYSeries::append(list<point> points)
+    \qmlmethod void XYSeries::append(list<point> points)
     Appends points with the coordinates \a points to the series.
     \note This is much faster than appending data points one by one.
     Emits \l pointsAdded when the points have been added.
@@ -180,7 +182,7 @@ void QXYSeries::append(const QList<QPointF> &points)
 }
 
 /*!
-    \qmlmethod XYSeries::replace(real oldX, real oldY, real newX, real newY)
+    \qmlmethod void XYSeries::replace(real oldX, real oldY, real newX, real newY)
     Replaces the point with the coordinates \a oldX and \a oldY with the point
     with the coordinates \a newX and \a newY. Does nothing if the old point does
     not exist.
@@ -196,7 +198,7 @@ void QXYSeries::replace(qreal oldX, qreal oldY, qreal newX, qreal newY)
 }
 
 /*!
-    \qmlmethod XYSeries::replace(point oldPoint, point newPoint)
+    \qmlmethod void XYSeries::replace(point oldPoint, point newPoint)
     Replaces the point with the coordinates \a oldPoint with the point
     with the coordinates \a newPoint. Does nothing if the old point does
     not exist.
@@ -216,7 +218,7 @@ void QXYSeries::replace(QPointF oldPoint, QPointF newPoint)
 }
 
 /*!
-    \qmlmethod XYSeries::replace(int index, real newX, real newY)
+    \qmlmethod void XYSeries::replace(int index, real newX, real newY)
     Replaces the point at the position specified by \a index with the point
     that has the coordinates \a newX and \a newY.
 */
@@ -230,7 +232,7 @@ void QXYSeries::replace(qsizetype index, qreal newX, qreal newY)
 }
 
 /*!
-    \qmlmethod XYSeries::replace(int index, point newPoint)
+    \qmlmethod void XYSeries::replace(int index, point newPoint)
     Replaces the point at the position specified by \a index with the point
     that has the coordinates \a newPoint.
 */
@@ -245,22 +247,22 @@ void QXYSeries::replace(qsizetype index, QPointF newPoint)
     if (index < 0 || index >= d->m_points.size())
         return;
 
-    if (isValidValue(newPoint)) {
-        if (d->m_graphTransition && d->m_graphTransition->initialized()
-            && d->m_graphTransition->contains(QGraphAnimation::GraphAnimationType::GraphPoint)) {
-            d->m_graphTransition->stop();
+    if (d->m_graphTransition && d->m_graphTransition->initialized()
+        && d->m_graphTransition->contains(QGraphAnimation::GraphAnimationType::GraphPoint)) {
+        d->m_graphTransition->stop();
+        if (isValidValue(newPoint)) {
             d->m_graphTransition->onPointChanged(QGraphTransition::TransitionType::PointReplaced,
                                                  index,
                                                  newPoint);
-        } else {
-            d->m_points[index] = newPoint;
-            emit pointReplaced(index);
         }
+    } else {
+        d->m_points[index] = newPoint;
+        emit pointReplaced(index);
     }
 }
 
 /*!
-    \qmlmethod XYSeries::replace(list<point> points)
+    \qmlmethod void XYSeries::replace(list<point> points)
     Replaces the current points with the points specified by \a points
     \note This is much faster than replacing data points one by one, or first
     clearing all data, and then appending the new data. Emits \l pointsReplaced
@@ -283,7 +285,7 @@ void QXYSeries::replace(const QList<QPointF> &points)
 }
 
 /*!
-    \qmlmethod XYSeries::remove(real x, real y)
+    \qmlmethod void XYSeries::remove(real x, real y)
     Removes the point with the coordinates \a x and \a y from the series. Does
     nothing if the point does not exist.
 */
@@ -297,7 +299,7 @@ void QXYSeries::remove(qreal x, qreal y)
 }
 
 /*!
-    \qmlmethod XYSeries::remove(point point)
+    \qmlmethod void XYSeries::remove(point point)
     Removes the point with the coordinates \a point from the series. Does
     nothing if the point does not exist.
 */
@@ -315,7 +317,7 @@ void QXYSeries::remove(QPointF point)
 }
 
 /*!
-    \qmlmethod XYSeries::remove(int index)
+    \qmlmethod void XYSeries::remove(int index)
     Removes the point at the position specified by \a index from the series.
 */
 /*!
@@ -347,7 +349,7 @@ void QXYSeries::remove(qsizetype index)
 }
 
 /*!
-    \qmlmethod XYSeries::removeMultiple(int index, int count)
+    \qmlmethod void XYSeries::removeMultiple(int index, int count)
     Removes the number of points specified by \a count from the series starting
     at the position specified by \a index.
 */
@@ -421,7 +423,7 @@ bool QXYSeries::take(QPointF point)
 }
 
 /*!
-    \qmlmethod XYSeries::insert(int index, point point)
+    \qmlmethod void XYSeries::insert(int index, point point)
     Inserts a point with the coordinates \a point to the position specified
     by \a index in the series. If the index is 0 or less than 0, the point is
     prepended to the list of points. If the index is equal to or greater than
@@ -439,34 +441,32 @@ void QXYSeries::insert(qsizetype index, QPointF point)
 {
     Q_D(QXYSeries);
 
-    if (isValidValue(point)) {
-        index = qMax(0, qMin(index, d->m_points.size()));
+    index = qMax(0, qMin(index, d->m_points.size()));
 
-        d->m_points.insert(index, point);
+    d->m_points.insert(index, point);
 
-        bool callSignal = false;
-        if (!d->m_selectedPoints.isEmpty()) {
-            // if point was inserted we need to move already selected points by 1
-            QSet<qsizetype> selectedAfterInsert;
-            for (const auto &value : std::as_const(d->m_selectedPoints)) {
-                if (value >= index) {
-                    selectedAfterInsert << value + 1;
-                    callSignal = true;
-                } else {
-                    selectedAfterInsert << value;
-                }
+    bool callSignal = false;
+    if (!d->m_selectedPoints.isEmpty()) {
+        // if point was inserted we need to move already selected points by 1
+        QSet<qsizetype> selectedAfterInsert;
+        for (const auto &value : std::as_const(d->m_selectedPoints)) {
+            if (value >= index) {
+                selectedAfterInsert << value + 1;
+                callSignal = true;
+            } else {
+                selectedAfterInsert << value;
             }
-            d->m_selectedPoints = selectedAfterInsert;
         }
-
-        emit pointAdded(index);
-        if (callSignal)
-            emit selectedPointsChanged();
+        d->m_selectedPoints = selectedAfterInsert;
     }
+
+    emit pointAdded(index);
+    if (callSignal)
+        emit selectedPointsChanged();
 }
 
 /*!
-    \qmlmethod XYSeries::clear()
+    \qmlmethod void XYSeries::clear()
     Removes all points from the series.
 */
 /*!
@@ -496,7 +496,7 @@ bool QXYSeries::isPointSelected(qsizetype index) const
 }
 
 /*!
-    \qmlmethod XYSeries::selectPoint(int index)
+    \qmlmethod void XYSeries::selectPoint(int index)
     Marks point at \a index as selected.
     \note Emits QXYSeries::selectedPointsChanged
     \sa setPointSelected()
@@ -512,7 +512,7 @@ void QXYSeries::selectPoint(qsizetype index)
 }
 
 /*!
-    \qmlmethod XYSeries::deselectPoint(int index)
+    \qmlmethod void XYSeries::deselectPoint(int index)
     Deselects point at given \a index.
     \note Emits QXYSeries::selectedPointsChanged
     \sa setPointSelected()
@@ -528,7 +528,7 @@ void QXYSeries::deselectPoint(qsizetype index)
 }
 
 /*!
-    \qmlmethod XYSeries::setPointSelected(int index, bool selected)
+    \qmlmethod void XYSeries::setPointSelected(int index, bool selected)
     Marks point at given \a index as either selected or deselected as specified by \a selected.
     \note Selected points are drawn using the selected color if it was specified. Emits QXYSeries::selectedPointsChanged
     \sa selectAllPoints(), selectedColor
@@ -550,7 +550,7 @@ void QXYSeries::setPointSelected(qsizetype index, bool selected)
 }
 
 /*!
-    \qmlmethod XYSeries::selectAllPoints()
+    \qmlmethod void XYSeries::selectAllPoints()
     Marks all points in the series as selected,
     \note Emits QXYSeries::selectedPointsChanged
     \sa setPointSelected()
@@ -573,7 +573,7 @@ void QXYSeries::selectAllPoints()
 }
 
 /*!
-    \qmlmethod XYSeries::deselectAllPoints()
+    \qmlmethod void XYSeries::deselectAllPoints()
     Deselects all points in the series.
     \note Emits QXYSeries::selectedPointsChanged
     \sa setPointSelected()
@@ -596,7 +596,7 @@ void QXYSeries::deselectAllPoints()
 }
 
 /*!
-    \qmlmethod XYSeries::selectPoints(list<int> indexes)
+    \qmlmethod void XYSeries::selectPoints(list<int> indexes)
     Marks multiple points passed in a \a indexes list as selected.
     \note Emits QXYSeries::selectedPointsChanged
     \sa setPointSelected()
@@ -619,7 +619,7 @@ void QXYSeries::selectPoints(const QList<qsizetype> &indexes)
 }
 
 /*!
-    \qmlmethod XYSeries::deselectPoints(list<int> indexes)
+    \qmlmethod void XYSeries::deselectPoints(list<int> indexes)
     Marks multiple points passed in a \a indexes list as deselected.
     \note Emits QXYSeries::selectedPointsChanged
     \sa setPointSelected()
@@ -642,7 +642,7 @@ void QXYSeries::deselectPoints(const QList<qsizetype> &indexes)
 }
 
 /*!
-    \qmlmethod XYSeries::toggleSelection(list<int> indexes)
+    \qmlmethod void XYSeries::toggleSelection(list<int> indexes)
     Changes selection state of points at given \a indexes to the opposite one.
     \note Emits QXYSeries::selectedPointsChanged
     \sa setPointSelected()
@@ -928,7 +928,7 @@ void QXYSeries::setPointDelegate(QQmlComponent *newPointDelegate)
     By default, \a draggable is set to \c false.
 */
 /*!
-    \qmlproperty bool QXYSeries::draggable
+    \qmlproperty bool XYSeries::draggable
     Controls if the series can be dragged with mouse/touch.
     By default, \a draggable is set to \c false.
 */
@@ -1020,3 +1020,5 @@ void QXYSeriesPrivate::append(const QList<QPointF> &points)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qxyseries.cpp"

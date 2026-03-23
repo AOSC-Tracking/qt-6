@@ -128,7 +128,9 @@ private slots:
     void mousePropagationWithinPopup();
     void shortcutInNestedSubMenuAction();
     void animationOnHeight();
+    void dontDeleteDelegates();
     void loadMenuAsynchronously();
+    void visibleTrue();
 
 private:
     bool nativeMenuSupported = false;
@@ -500,12 +502,8 @@ void tst_QQuickMenu::contextMenuKeyboard()
     // Enter/return should also work.
     // Open the menu.
     menu->open();
-    QTRY_VERIFY(menu->isOpened());
+    TRY_VERIFY_POPUP_OPENED(menu);
     QCOMPARE(visibleSpy.size(), 3);
-    if (auto *popupWindow = menuPrivate->popupWindow) {
-        QVERIFY(QTest::qWaitForWindowExposed(popupWindow));
-        QVERIFY(QQuickTest::qWaitForPolish(popupWindow));
-    }
     // Give the first item focus.
     QTest::keyClick(window, Qt::Key_Tab);
     QVERIFY_ACTIVE_FOCUS(firstItem);
@@ -531,11 +529,7 @@ void tst_QQuickMenu::contextMenuKeyboard()
     QCOMPARE(menu->contentItem()->property("currentIndex"), QVariant(-1));
 
     menu->open();
-    if (auto *popupWindow = menuPrivate->popupWindow) {
-        QVERIFY(QTest::qWaitForWindowExposed(popupWindow));
-        QVERIFY(QQuickTest::qWaitForPolish(popupWindow));
-    }
-    QTRY_VERIFY(menu->isOpened());
+    TRY_VERIFY_POPUP_OPENED(menu);
     QCOMPARE(visibleSpy.size(), 5);
     QVERIFY(parentItem->childItems().contains(menu->contentItem()->parentItem()));
     QVERIFY(!firstItem->hasActiveFocus());
@@ -1361,8 +1355,6 @@ void tst_QQuickMenu::openParentlessMenu()
     centerOnScreen(window);
     window->show();
     QVERIFY(QTest::qWaitForWindowExposed(window));
-
-    QTest::ignoreMessage(QtWarningMsg, QRegularExpression("cannot show menu: parent is null"));
 
     QQuickMenu *menu = window->property("menu").value<QQuickMenu *>();
     QVERIFY(menu);
@@ -2216,7 +2208,7 @@ void tst_QQuickMenu::subMenuFlipsPositionWhenOutOfBounds()
     mainMenu->setPopupType(popupType);
 
     window->show();
-    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QVERIFY(QTest::qWaitForWindowActive(window));
 
     mainMenu->open();
     QTRY_VERIFY(mainMenu->isOpened());
@@ -3540,6 +3532,30 @@ void tst_QQuickMenu::animationOnHeight()
     QCOMPARE_GE(listView->height(), listView->contentHeight());
 }
 
+void tst_QQuickMenu::dontDeleteDelegates()
+{
+    QQuickControlsApplicationHelper helper(this, QLatin1String("dontDeleteDelegates.qml"));
+    QVERIFY2(helper.ready, helper.failureMessage());
+    QQuickApplicationWindow *window = helper.appWindow;
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    auto *menu = window->property("menu").value<QQuickMenu*>();
+    QVERIFY(menu);
+    QPointer<QQmlComponent> delegateComponent1 = window->property("delegateComponent1").value<QQmlComponent *>();
+    QVERIFY(delegateComponent1);
+    QPointer<QQmlComponent> delegateComponent2 = window->property("delegateComponent2").value<QQmlComponent *>();
+    QVERIFY(delegateComponent2);
+
+    // When setting a new delegate, the old one shouldn't be destroyed.
+    menu->setDelegate(delegateComponent2);
+    QVERIFY(delegateComponent1);
+
+    // The same goes for the new delegate: it shouldn't be destroyed when setting the old one.
+    menu->setDelegate(delegateComponent1);
+    QVERIFY(delegateComponent2);
+}
+
 void tst_QQuickMenu::loadMenuAsynchronously()
 {
     QQuickView window(testFileUrl("loadMenuAsynchronously.qml"));
@@ -3579,6 +3595,22 @@ void tst_QQuickMenu::loadMenuAsynchronously()
     auto *enginePriv = QQmlEnginePrivate::get(window.engine());
     if (enginePriv->inProgressCreations)
         QTest::ignoreMessage(QtWarningMsg, QRegularExpression("There are still \\\\\"(\\d+)\\\\\" items in the process of being created at engine destruction\\."));
+}
+
+void tst_QQuickMenu::visibleTrue()
+{
+    QQuickControlsApplicationHelper helper(this, QLatin1String("visibleTrue.qml"));
+    QVERIFY2(helper.ready, helper.failureMessage());
+    QQuickApplicationWindow *window = helper.appWindow;
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    auto *menu = window->property("menu").value<QQuickMenu*>();
+    QVERIFY(menu);
+
+    QTRY_VERIFY(menu->isOpened());
+
+    menu->close();
 }
 
 QTEST_QUICKCONTROLS_MAIN(tst_QQuickMenu)

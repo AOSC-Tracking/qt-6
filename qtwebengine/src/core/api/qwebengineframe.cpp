@@ -47,7 +47,8 @@ QWebEngineFrame::QWebEngineFrame(QWeakPointer<QtWebEngineCore::WebContentsAdapte
 }
 
 /*!
-    Returns \c{true} if this object represents an existing frame; \c{false} otherwise.
+    \property QWebEngineFrame::isValid
+    \brief Whether this object represents an existing frame.
 
     Once a frame is invalid, it never becomes valid again.
 */
@@ -58,7 +59,8 @@ bool QWebEngineFrame::isValid() const
 }
 
 /*!
-    Returns the frame name; that is, what would be returned by \c window.name in JavaScript.
+    \property QWebEngineFrame::name
+    \brief The frame name; that is, what would be returned by \c window.name in JavaScript.
 
     If the frame could not be found, returns a null QString.
 
@@ -71,7 +73,8 @@ QString QWebEngineFrame::name() const
 }
 
 /*!
-    Returns the value of the frame's \c name HTML attribute, or an empty string if it has none.
+    \property QWebEngineFrame::htmlName
+    \brief The value of the frame's \c name HTML attribute, or an empty string if it has none.
 
     If the frame could not be found, returns a null QString.
 
@@ -84,7 +87,8 @@ QString QWebEngineFrame::htmlName() const
 }
 
 /*!
-    Returns a list of the frame's children in an arbitrary order.
+    \property QWebEngineFrame::children
+    \brief A list of the frame's children in an arbitrary order.
 
     If the frame could not be found, returns an empty list.
  */
@@ -98,7 +102,8 @@ QList<QWebEngineFrame> QWebEngineFrame::children() const
 }
 
 /*!
-    Returns the URL of the content currently loaded in this frame.
+    \property QWebEngineFrame::url
+    \brief The URL of the content currently loaded in this frame.
 
     If the frame could not be found, returns an empty QUrl.
  */
@@ -109,7 +114,12 @@ QUrl QWebEngineFrame::url() const
 }
 
 /*!
-    Returns the size of the frame within the viewport.
+    \property QWebEngineFrame::size
+    \brief The size of the frame within the viewport, measured in logical pixels.
+
+    On devices with a scale factor other than 100%, this will not correspond to the on-screen size;
+    instead, it will be the size before scaling is applied. In such cases, the size may contain
+    fractional values.
 
     If the frame could not be found, returns QSizeF().
  */
@@ -120,7 +130,8 @@ QSizeF QWebEngineFrame::size() const
 }
 
 /*!
-    Returns \c{true} if this object represents the page's main frame; \c{false} otherwise.
+    \property QWebEngineFrame::isMainFrame
+    \brief Whether this object represents the page's main frame.
 */
 bool QWebEngineFrame::isMainFrame() const
 {
@@ -176,6 +187,7 @@ void QWebEngineFrame::runJavaScript(const QString &script, quint32 worldId)
     runJavaScript(script, worldId, std::function<void(const QVariant &)>{});
 }
 
+#if QT_DEPRECATED_SINCE(6, 10)
 void QWebEngineFrame::runJavaScript(const QString &script, const QJSValue &callback)
 {
     runJavaScript(script, QWebEngineScript::MainWorld, callback);
@@ -200,6 +212,7 @@ void QWebEngineFrame::runJavaScript(const QString &script, quint32 worldId,
     }
     runJavaScript(script, worldId, wrappedCallback);
 }
+#endif // QT_DEPRECATED_SINCE(6, 10)
 
 /*!
     Renders the current content of the frame into a PDF document and saves it in the location
@@ -245,6 +258,7 @@ void QWebEngineFrame::printToPdf(const std::function<void(const QByteArray &)> &
     adapter->adapterClient()->printToPdf(std::move(wrappedCallback), layout, QPageRanges(), m_id);
 }
 
+#if QT_DEPRECATED_SINCE(6, 10)
 void QWebEngineFrame::printToPdf(const QJSValue &callback)
 {
     LOCK_ADAPTER(adapter, );
@@ -264,6 +278,7 @@ void QWebEngineFrame::printToPdf(const QJSValue &callback)
     QPageLayout layout(QPageSize(QPageSize::A4), QPageLayout::Portrait, QMarginsF());
     adapter->adapterClient()->printToPdf(std::move(wrappedCallback), layout, QPageRanges(), m_id);
 }
+#endif // QT_DEPRECATED_SINCE(6, 10)
 
 /*! \fn bool QWebEngineFrame::operator==(const QWebEngineFrame &left, const QWebEngineFrame &right) noexcept
 

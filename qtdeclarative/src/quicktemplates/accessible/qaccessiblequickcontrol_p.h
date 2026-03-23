@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QACCESSIBLEQUICKCONTROL_H
 #define QACCESSIBLEQUICKCONTROL_H
@@ -21,7 +22,7 @@ QT_BEGIN_NAMESPACE
 
 class QQuickControl;
 
-class QAccessibleQuickControl : public QAccessibleQuickItem, public QAccessibleAttributesInterface
+class QAccessibleQuickControl : public QAccessibleQuickItem
 {
 #ifdef Q_OS_INTEGRITY
     // force instantiation to avoid error #2045
@@ -30,12 +31,9 @@ class QAccessibleQuickControl : public QAccessibleQuickItem, public QAccessibleA
 public:
     QAccessibleQuickControl(QQuickControl *control);
 
-    // QAccessibleInterface
-    void *interface_cast(QAccessible::InterfaceType t) override;
-
     // QAccessibleAttributesInterface
-    virtual QList<QAccessible::Attribute> attributeKeys() const override;
-    virtual QVariant attributeValue(QAccessible::Attribute key) const override;
+    QList<QAccessible::Attribute> attributeKeys() const override;
+    QVariant attributeValue(QAccessible::Attribute key) const override;
 
 private:
     QQuickControl *control() const;

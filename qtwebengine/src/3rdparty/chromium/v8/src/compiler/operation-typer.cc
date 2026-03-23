@@ -65,7 +65,8 @@ Type OperationTyper::WeakenRange(Type previous_range, Type current_range) {
                                             -70368744177664.0,
                                             -140737488355328.0,
                                             -281474976710656.0,
-                                            -562949953421312.0};
+                                            -562949953421312.0,
+                                            kMinAdditiveSafeInteger};
   static const double kWeakenMaxLimits[] = {0.0,
                                             1073741823.0,
                                             2147483647.0,
@@ -86,7 +87,8 @@ Type OperationTyper::WeakenRange(Type previous_range, Type current_range) {
                                             70368744177663.0,
                                             140737488355327.0,
                                             281474976710655.0,
-                                            562949953421311.0};
+                                            562949953421311.0,
+                                            kMaxAdditiveSafeInteger};
   static_assert(arraysize(kWeakenMinLimits) == arraysize(kWeakenMaxLimits));
 
   double current_min = current_range.Min();
@@ -582,19 +584,6 @@ Type OperationTyper::NumberToUint8Clamped(Type type) {
   return cache_->kUint8;
 }
 
-Type OperationTyper::NumberToFloat16RawBits(Type type) {
-  DCHECK(type.Is(Type::Number()));
-
-  if (type.Is(cache_->kUint16)) return type;
-  return cache_->kUint16;
-}
-
-Type OperationTyper::Float16RawBitsToNumber(Type type) {
-  DCHECK(type.Is(Type::Number()));
-  if (type.Is(cache_->kFloat64)) return type;
-  return cache_->kFloat64;
-}
-
 Type OperationTyper::Integral32OrMinusZeroToBigInt(Type type) {
   DCHECK(type.Is(Type::Number()));
 
@@ -608,11 +597,22 @@ Type OperationTyper::Integral32OrMinusZeroToBigInt(Type type) {
 }
 
 Type OperationTyper::NumberSilenceNaN(Type type) {
+#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+  DCHECK(type.Is(Type::NumberOrUndefined()));
+#else
   DCHECK(type.Is(Type::Number()));
+#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
   // TODO(jarin): This is a terrible hack; we definitely need a dedicated type
   // for the hole (tagged and/or double). Otherwise if the input is the hole
   // NaN constant, we'd just eliminate this node in JSTypedLowering.
-  if (type.Maybe(Type::NaN())) return Type::Number();
+#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+  if (type.Maybe(Type::Undefined())) {
+    return Type::NumberOrUndefined();
+  }
+#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+  if (type.Maybe(Type::NaN())) {
+    return Type::Number();
+  }
   return type;
 }
 
@@ -718,7 +718,26 @@ Type OperationTyper::NumberSubtract(Type lhs, Type rhs) {
   return type;
 }
 
-Type OperationTyper::SpeculativeSafeIntegerAdd(Type lhs, Type rhs) {
+Type OperationTyper::SpeculativeAdditiveSafeIntegerAdd(Type lhs, Type rhs) {
+  Type result = SpeculativeNumberAdd(lhs, rhs);
+  if (lhs.Is(cache_->kAdditiveSafeInteger) ||
+      rhs.Is(cache_->kAdditiveSafeInteger)) {
+    return Type::Intersect(result, cache_->kAdditiveSafeInteger, zone());
+  }
+  return result;
+}
+
+Type OperationTyper::SpeculativeAdditiveSafeIntegerSubtract(Type lhs,
+                                                            Type rhs) {
+  Type result = SpeculativeNumberSubtract(lhs, rhs);
+  if (lhs.Is(cache_->kAdditiveSafeInteger) ||
+      rhs.Is(cache_->kAdditiveSafeInteger)) {
+    return Type::Intersect(result, cache_->kAdditiveSafeInteger, zone());
+  }
+  return result;
+}
+
+Type OperationTyper::SpeculativeSmallIntegerAdd(Type lhs, Type rhs) {
   Type result = SpeculativeNumberAdd(lhs, rhs);
   // If we have a Smi or Int32 feedback, the representation selection will
   // either truncate or it will check the inputs (i.e., deopt if not int32).
@@ -728,7 +747,7 @@ Type OperationTyper::SpeculativeSafeIntegerAdd(Type lhs, Type rhs) {
   return Type::Intersect(result, cache_->kSafeIntegerOrMinusZero, zone());
 }
 
-Type OperationTyper::SpeculativeSafeIntegerSubtract(Type lhs, Type rhs) {
+Type OperationTyper::SpeculativeSmallIntegerSubtract(Type lhs, Type rhs) {
   Type result = SpeculativeNumberSubtract(lhs, rhs);
   // If we have a Smi or Int32 feedback, the representation selection will
   // either truncate or it will check the inputs (i.e., deopt if not int32).
@@ -1336,7 +1355,11 @@ Type OperationTyper::CheckBounds(Type index, Type length) {
 Type OperationTyper::CheckFloat64Hole(Type type) {
   if (type.Maybe(Type::Hole())) {
     // Turn a "hole" into undefined.
+#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+    type = Type::Intersect(type, Type::NumberOrUndefined(), zone());
+#else
     type = Type::Intersect(type, Type::Number(), zone());
+#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
     type = Type::Union(type, Type::Undefined(), zone());
   }
   return type;
@@ -1344,6 +1367,10 @@ Type OperationTyper::CheckFloat64Hole(Type type) {
 
 Type OperationTyper::CheckNumber(Type type) {
   return Type::Intersect(type, Type::Number(), zone());
+}
+
+Type OperationTyper::CheckNumberOrUndefined(Type type) {
+  return Type::Intersect(type, Type::NumberOrUndefined(), zone());
 }
 
 Type OperationTyper::CheckNumberFitsInt32(Type type) {

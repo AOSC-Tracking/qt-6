@@ -67,6 +67,18 @@ void QWaylandQuickOutput::update()
  *
  * The default is true.
  */
+
+/*!
+ * \property QWaylandQuickOutput::automaticFrameCallback
+ *
+ * This property holds whether the QWaylandQuickOutput automatically sends frame
+ * callbacks when rendering.
+ *
+ * When \c true, frame callbacks are sent automatically after each frame is
+ * rendered; when \c false, frame callbacks must be sent manually.
+ *
+ * The default is \c true.
+ */
 bool QWaylandQuickOutput::automaticFrameCallback() const
 {
     return m_automaticFrameCallback;

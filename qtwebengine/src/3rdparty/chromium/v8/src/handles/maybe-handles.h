@@ -7,6 +7,7 @@
 
 #include <type_traits>
 
+#include "include/v8-maybe.h"
 #include "src/handles/handles.h"
 
 namespace v8 {
@@ -29,6 +30,7 @@ class MaybeHandle final {
  public:
   V8_INLINE MaybeHandle() = default;
 
+  V8_INLINE MaybeHandle(NullMaybeType) {}
   V8_INLINE MaybeHandle(NullMaybeHandleType) {}
 
   // Constructor for handling automatic up casting from Handle.
@@ -71,6 +73,20 @@ class MaybeHandle final {
 
   template <typename S>
   V8_WARN_UNUSED_RESULT V8_INLINE bool ToHandle(DirectHandle<S>* out) const;
+
+  // Adapter methods to make error handling macros like
+  // ASSIGN_RETURN_ON_EXCEPTION work with MaybeHandles.
+  template <typename S>
+  V8_WARN_UNUSED_RESULT V8_INLINE bool To(Handle<S>* out) const {
+    return ToHandle(out);
+  }
+
+  template <typename S>
+  V8_WARN_UNUSED_RESULT V8_INLINE bool To(DirectHandle<S>* out) const {
+    return ToHandle(out);
+  }
+
+  bool IsEmpty() const { return is_null(); }
 
   // Location equality.
   bool equals(MaybeHandle<T> other) const {
@@ -130,6 +146,8 @@ class MaybeObjectHandle {
   inline bool is_identical_to(const MaybeObjectHandle& other) const;
   bool is_null() const { return handle_.is_null(); }
 
+  HeapObjectReferenceType reference_type() const { return reference_type_; }
+
  private:
   inline MaybeObjectHandle(Tagged<Object> object,
                            HeapObjectReferenceType reference_type,
@@ -150,6 +168,7 @@ class MaybeDirectHandle final {
  public:
   V8_INLINE MaybeDirectHandle() = default;
 
+  V8_INLINE MaybeDirectHandle(NullMaybeType) {}
   V8_INLINE MaybeDirectHandle(NullMaybeHandleType) {}
 
   // Constructor for handling automatic up casting from DirectHandle.
@@ -205,6 +224,15 @@ class MaybeDirectHandle final {
     }
   }
 
+  // Adapter methods to make error handling macros like
+  // ASSIGN_RETURN_ON_EXCEPTION work with MaybeDirectHandles.
+  template <typename S>
+  V8_WARN_UNUSED_RESULT V8_INLINE bool To(DirectHandle<S>* out) const {
+    return ToHandle(out);
+  }
+
+  bool IsEmpty() const { return is_null(); }
+
   // Address equality.
   bool equals(MaybeHandle<T> other) const {
     return address() == other.address();
@@ -239,6 +267,7 @@ template <typename T>
 class MaybeDirectHandle {
  public:
   V8_INLINE MaybeDirectHandle() = default;
+  V8_INLINE MaybeDirectHandle(NullMaybeType) {}
   V8_INLINE MaybeDirectHandle(NullMaybeHandleType) {}
 
   V8_INLINE MaybeDirectHandle(Tagged<T> object, Isolate* isolate)
@@ -275,6 +304,15 @@ class MaybeDirectHandle {
   V8_WARN_UNUSED_RESULT V8_INLINE bool ToHandle(DirectHandle<S>* out) const {
     return handle_.ToHandle(out);
   }
+
+  // Adapter methods to make error handling macros like
+  // ASSIGN_RETURN_ON_EXCEPTION work with MaybeDirectHandles.
+  template <typename S>
+  V8_WARN_UNUSED_RESULT V8_INLINE bool To(DirectHandle<S>* out) const {
+    return ToHandle(out);
+  }
+
+  bool IsEmpty() const { return is_null(); }
 
   V8_INLINE bool is_null() const { return handle_.is_null(); }
 
@@ -316,28 +354,36 @@ class MaybeObjectDirectHandle {
                                  LocalHeap* local_heap);
   inline MaybeObjectDirectHandle(Tagged<Object> object, LocalHeap* local_heap);
   inline MaybeObjectDirectHandle(Tagged<Smi> object, LocalHeap* local_heap);
-  inline explicit MaybeObjectDirectHandle(DirectHandle<Object> object);
+  inline explicit MaybeObjectDirectHandle(DirectHandle<Object> object)
+      : reference_type_(HeapObjectReferenceType::STRONG), handle_(object) {}
 
   inline MaybeObjectDirectHandle(MaybeObjectHandle obj);
 
   static inline MaybeObjectDirectHandle Weak(Tagged<Object> object,
                                              Isolate* isolate);
-  static inline MaybeObjectDirectHandle Weak(DirectHandle<Object> object);
+  static inline MaybeObjectDirectHandle Weak(DirectHandle<Object> object) {
+    return MaybeObjectDirectHandle(object, HeapObjectReferenceType::WEAK);
+  }
 
   inline Tagged<MaybeObject> operator*() const;
   inline Tagged<MaybeObject> operator->() const;
-  inline DirectHandle<Object> object() const;
+  inline DirectHandle<Object> object() const {
+    return handle_.ToHandleChecked();
+  }
 
   inline bool is_identical_to(const MaybeObjectDirectHandle& other) const;
   inline bool is_identical_to(const MaybeObjectHandle& other) const;
   bool is_null() const { return handle_.is_null(); }
+
+  HeapObjectReferenceType reference_type() const { return reference_type_; }
 
  private:
   inline MaybeObjectDirectHandle(Tagged<Object> object,
                                  HeapObjectReferenceType reference_type,
                                  Isolate* isolate);
   inline MaybeObjectDirectHandle(DirectHandle<Object> object,
-                                 HeapObjectReferenceType reference_type);
+                                 HeapObjectReferenceType reference_type)
+      : reference_type_(reference_type), handle_(object) {}
 
   HeapObjectReferenceType reference_type_;
   MaybeDirectHandle<Object> handle_;

@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmldomtypesreader_p.h"
 #include "qqmldomelements_p.h"
@@ -40,6 +41,8 @@ void QmltypesReader::insertProperty(
     prop.isList = property.isList();
     int revision = property.revision();
     prop.isFinal = property.isFinal();
+    prop.isVirtual = property.isVirtual();
+    prop.isOverride = property.isOverride();
     prop.bindable = property.bindable();
     prop.read = property.read();
     prop.write = property.write();
@@ -176,19 +179,19 @@ void QmltypesReader::insertComponent(const QQmlJSScope::ConstPtr &jsScope,
     comp.setIsCreatable(jsScope->isCreatable());
     comp.setIsComposite(jsScope->isComposite());
     comp.setHasCustomParser(jsScope->hasCustomParser());
-    comp.setValueTypeName(jsScope->valueTypeName());
+    comp.setElementTypeName(jsScope->elementTypeName());
     comp.setAccessSemantics(jsScope->accessSemantics());
     comp.setExtensionTypeName(jsScope->extensionTypeName());
     comp.setExtensionIsJavaScript(jsScope->extensionIsJavaScript());
     comp.setExtensionIsNamespace(jsScope->extensionIsNamespace());
-    Path exportSourcePath = qmltypesFile().canonicalPath();
+    Path exportSourcePath = qmltypesFilePtr()->canonicalPath();
     QMap<int, Path> revToPath;
     auto it = objects.end();
     auto begin = objects.begin();
     int objectIndex = 0;
     QList<int> metaRevs;
-    Path compPath = qmltypesFile()
-                            .canonicalPath()
+    Path compPath = qmltypesFilePtr()
+                            ->canonicalPath()
                             .withField(Fields::components)
                             .withKey(comp.name())
                             .withIndex(qmltypesFilePtr()->components().values(comp.name()).size());
@@ -261,7 +264,7 @@ bool QmltypesReader::parse()
 void QmltypesReader::addError(ErrorMessage &&message)
 {
     if (message.file.isEmpty())
-        message.file = qmltypesFile().canonicalFilePath();
+        message.file = qmltypesFilePtr()->canonicalFilePath();
     if (!message.path)
         message.path = m_currentPath;
     qmltypesFilePtr()->addErrorLocal(message.handle());

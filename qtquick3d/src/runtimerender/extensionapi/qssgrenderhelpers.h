@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRENDERHELPERS_H
 #define QSSGRENDERHELPERS_H
@@ -103,8 +105,6 @@ private:
 class Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderHelpers
 {
 public:
-    using NodeList = QList<QSSGNodeId>;
-
     enum class CreateFlag : quint32
     {
         None,
@@ -116,7 +116,7 @@ public:
 
     [[nodiscard]] static QSSGRenderablesId createRenderables(const QSSGFrameData &frameData,
                                                              QSSGPrepContextId prepId,
-                                                             const NodeList &nodes,
+                                                             const QSSGNodeIdList &nodes,
                                                              CreateFlags flags = CreateFlag::None);
 
     [[nodiscard]] static QSSGPrepContextId prepareForRender(const QSSGFrameData &frameData,

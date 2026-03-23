@@ -41,7 +41,7 @@
 #include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/common/capsule.h"
 #include "quiche/common/http/http_header_block.h"
-#include "quiche/common/platform/api/quiche_mem_slice.h"
+#include "quiche/common/quiche_mem_slice.h"
 
 namespace quic {
 
@@ -108,6 +108,15 @@ class QUICHE_EXPORT QuicSpdyStream
     virtual bool OnRouteAdvertisementCapsule(
         const quiche::RouteAdvertisementCapsule& capsule) = 0;
     virtual void OnHeadersWritten() = 0;
+  };
+
+  class QUICHE_EXPORT ConnectUdpBindVisitor {
+   public:
+    virtual ~ConnectUdpBindVisitor() {}
+    virtual bool OnCompressionAssignCapsule(
+        const quiche::CompressionAssignCapsule& capsule) = 0;
+    virtual bool OnCompressionCloseCapsule(
+        const quiche::CompressionCloseCapsule& capsule) = 0;
   };
 
   QuicSpdyStream(QuicStreamId id, QuicSpdySession* spdy_session,
@@ -177,7 +186,8 @@ class QUICHE_EXPORT QuicSpdyStream
   bool OnStreamFrameAcked(QuicStreamOffset offset, QuicByteCount data_length,
                           bool fin_acked, QuicTime::Delta ack_delay_time,
                           QuicTime receive_timestamp,
-                          QuicByteCount* newly_acked_length) override;
+                          QuicByteCount* newly_acked_length,
+                          bool is_retransmission) override;
 
   // Override to report bytes retransmitted via ack_listener_.
   void OnStreamFrameRetransmitted(QuicStreamOffset offset,
@@ -306,6 +316,18 @@ class QUICHE_EXPORT QuicSpdyStream
   // RegisterHttp3DatagramVisitor.
   void UnregisterHttp3DatagramVisitor();
 
+  // Registers |visitor| to receive CONNECT-UDP-BIND capsules. |visitor| must be
+  // valid until a corresponding call to UnregisterConnectUdpBindVisitor.
+  void RegisterConnectUdpBindVisitor(ConnectUdpBindVisitor* visitor);
+
+  // Unregisters a CONNECT-UDP-BIND visitor. Must only be called after a call to
+  // RegisterConnectUdpBindVisitor.
+  void UnregisterConnectUdpBindVisitor();
+
+  // Replaces the current CONNECT-UDP-BIND visitor with a different visitor.
+  // Mainly meant to be used by the visitors' move operators.
+  void ReplaceConnectUdpBindVisitor(ConnectUdpBindVisitor* visitor);
+
   // Replaces the current HTTP/3 datagram visitor with a different visitor.
   // Mainly meant to be used by the visitors' move operators.
   void ReplaceHttp3DatagramVisitor(Http3DatagramVisitor* visitor);
@@ -410,7 +432,8 @@ class QUICHE_EXPORT QuicSpdyStream
   void OnNewDataAcked(QuicStreamOffset offset, QuicByteCount data_length,
                       QuicByteCount newly_acked_length,
                       QuicTime receive_timestamp,
-                      QuicTime::Delta ack_delay_time) override;
+                      QuicTime::Delta ack_delay_time,
+                      bool is_retransmission) override;
 
  private:
   friend class test::QuicSpdyStreamPeer;
@@ -542,6 +565,8 @@ class QUICHE_EXPORT QuicSpdyStream
   Http3DatagramVisitor* datagram_visitor_ = nullptr;
   // CONNECT-IP support.
   ConnectIpVisitor* connect_ip_visitor_ = nullptr;
+  // CONNECT-UDP-BIND support.
+  ConnectUdpBindVisitor* connect_udp_bind_visitor_ = nullptr;
 
   // Present if HTTP/3 METADATA frames should be parsed.
   MetadataVisitor* metadata_visitor_ = nullptr;

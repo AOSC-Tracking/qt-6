@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "render_widget_host_view_qt.h"
 #include "touch_handle_drawable_qt.h"
@@ -86,8 +87,11 @@ void TouchSelectionControllerClientQt::onScrollEnd()
 
 bool TouchSelectionControllerClientQt::IsCommandIdEnabled(int command_id) const
 {
-    bool editable = m_rwhv->getTextInputType() != ui::TEXT_INPUT_TYPE_NONE;
-    bool readable = m_rwhv->getTextInputType() != ui::TEXT_INPUT_TYPE_PASSWORD;
+    const ui::mojom::TextInputState *state = m_rwhv->getTextInputState();
+    ui::TextInputType type = state ? state->type : ui::TEXT_INPUT_TYPE_NONE;
+
+    bool editable = type != ui::TEXT_INPUT_TYPE_NONE;
+    bool readable = type != ui::TEXT_INPUT_TYPE_PASSWORD;
     bool hasSelection = !m_rwhv->GetSelectedText().empty();
 
     switch (command_id) {

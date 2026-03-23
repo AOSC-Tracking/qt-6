@@ -23,7 +23,7 @@ const NON_NETWORK_SCHEMES = [
  * A URL's `scheme` is specced as the `protocol` sans-colon, but isn't exposed on a URL object.
  * This method can take all 3 of these string types as a parameter.
  *
- * @param protocol Either a networkRequest's `protocol` per CDP or a `new URL(href).protocol`
+ * @param protocol - Either a networkRequest's `protocol` per CDP or a `new URL(href).protocol`
  */
 function isNonNetworkProtocol(protocol: string): boolean {
   // Strip off any colon
@@ -60,7 +60,7 @@ class NetworkNode<T = Lantern.AnyNetworkObject> extends BaseNode<T> {
   }
 
   get initiatorType(): string {
-    return this._request.initiator && this._request.initiator.type;
+    return this._request.initiator.type;
   }
 
   get fromDiskCache(): boolean {

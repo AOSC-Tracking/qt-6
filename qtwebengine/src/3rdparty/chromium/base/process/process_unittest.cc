@@ -321,6 +321,20 @@ TEST_F(ProcessTest, WaitForExitWithTimeout) {
   process.Terminate(kDummyExitCode, false);
 }
 
+TEST_F(ProcessTest, WaitForExitWithNegativeTimeout) {
+  Process process(SpawnChild("SleepyChildProcess"));
+  ASSERT_TRUE(process.IsValid());
+
+  int exit_code = kDummyExitCode;
+  EXPECT_FALSE(process.WaitForExitWithTimeout(TimeDelta::Min(), &exit_code));
+  EXPECT_EQ(kDummyExitCode, exit_code);
+
+  EXPECT_FALSE(process.WaitForExitWithTimeout(Seconds(-1000), &exit_code));
+  EXPECT_EQ(kDummyExitCode, exit_code);
+
+  process.Terminate(kDummyExitCode, false);
+}
+
 #if BUILDFLAG(IS_WIN)
 TEST_F(ProcessTest, WaitForExitOrEventWithProcessExit) {
   Process process(SpawnChild("FastSleepyChildProcess"));
@@ -419,7 +433,7 @@ TEST_F(ProcessTest, SetProcessPriority) {
 bool IsThreadRT(PlatformThreadId thread_id) {
   // Check if the thread is running in real-time mode
   int sched = sched_getscheduler(
-      PlatformThread::CurrentId() == thread_id ? 0 : thread_id);
+      PlatformThread::CurrentId() == thread_id ? 0 : thread_id.raw());
   if (sched == -1) {
     // The thread may disappear for any reason so ignore ESRCH.
     DPLOG_IF(ERROR, errno != ESRCH)

@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qqmlsynchronizer_p.h"
 
@@ -408,6 +409,10 @@ public:
 
     If the properties to be synchronized are of different types, the usual
     QML type coercions are applied.
+
+    \note It is not possible to create an alias to a property of a singleton.
+    When using Synchronizer together with singletons, use \l{sourceObject} and
+    \l{sourceProperty} and the respective target properties.
  */
 
 QQmlSynchronizer::QQmlSynchronizer(QObject *parent)

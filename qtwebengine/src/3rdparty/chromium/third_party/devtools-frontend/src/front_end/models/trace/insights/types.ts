@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 import type * as Common from '../../../core/common/common.js';
-import type * as Protocol from '../../../generated/protocol.js';
-import type * as Handlers from '../handlers/handlers.js';
 import type * as Lantern from '../lantern/lantern.js';
 import type * as Types from '../types/types.js';
 
@@ -30,22 +28,10 @@ export interface InsightSetContextWithNavigation {
 }
 
 export interface LanternContext {
+  requests: Array<Lantern.Types.NetworkRequest<Types.Events.SyntheticNetworkRequest>>;
   graph: Lantern.Graph.Node<Types.Events.SyntheticNetworkRequest>;
   simulator: Lantern.Simulation.Simulator<Types.Events.SyntheticNetworkRequest>;
   metrics: Record<string, Lantern.Metrics.MetricResult>;
-}
-
-export interface ForcedReflowAggregatedData {
-  topLevelFunctionCall: Types.Events.CallFrame|Protocol.Runtime.CallFrame;
-  totalReflowTime: number;
-  bottomUpData: Set<string>;
-  topLevelFunctionCallEvents: Types.Events.Event[];
-}
-
-export interface BottomUpCallStack {
-  bottomUpData: Types.Events.CallFrame|Protocol.Runtime.CallFrame;
-  totalTime: number;
-  relatedEvents: Types.Events.Event[];
 }
 
 export type InsightModelsType = typeof Models;
@@ -77,16 +63,43 @@ export enum InsightCategory {
 
 export type RelatedEventsMap = Map<Types.Events.Event, string[]>;
 
-export type InsightModel<R extends Record<string, unknown>> = R&{
-  title: Common.UIString.LocalizedString,
-  description: Common.UIString.LocalizedString,
-  category: InsightCategory,
-  /** True if there is anything of interest to display to the user. */
-  shouldShow: boolean,
-  relatedEvents?: RelatedEventsMap | Types.Events.Event[],
-  warnings?: InsightWarning[],
-  metricSavings?: MetricSavings,
-};
+export type Checklist<Keys extends string> = Record<Keys, {label: Common.UIString.LocalizedString, value: boolean}>;
+
+export type InsightModel<UIStrings extends Record<string, string> = Record<string, string>,
+                                           ExtraDetail extends Record<string, unknown> = Record<string, unknown>> =
+    ExtraDetail&{
+      /** Used internally to identify the type of a model, not shown visibly to users **/
+      insightKey: keyof InsightModelsType,
+      /** Not used within DevTools - this is for external consumers (like Lighthouse). */
+      strings: UIStrings,
+      title: Common.UIString.LocalizedString,
+      description: Common.UIString.LocalizedString,
+      category: InsightCategory,
+      state: 'pass' | 'fail' | 'informative',
+      /** Used by RelatedInsightChips.ts */
+      relatedEvents?: RelatedEventsMap | Types.Events.Event[],
+      warnings?: InsightWarning[],
+      metricSavings?: MetricSavings,
+      /**
+       * An estimate for the number of bytes that this insight deems to have been wasted.
+       * Bytes are in terms of transfer size: for each component of savings related to an
+       * individual request, the insight will estimate its impact on transfer size by using
+       * the compression ratio of the resource.
+       *
+       * This field is only displayed for informational purposes.
+       */
+      wastedBytes?: number,
+      frameId?: string,
+      /**
+       * If this insight is attached to a navigation, this stores its ID.
+       */
+      navigationId?: string,
+      /** This is lazily-generated because some insights may create many overlays. */
+      createOverlays?: () => Types.Overlays.Overlay[],
+    };
+
+export type PartialInsightModel<T> =
+    Omit<T, 'strings'|'title'|'description'|'category'|'state'|'insightKey'|'navigationId'|'frameId'>;
 
 /**
  * Contains insights for a specific navigation. If a trace began after a navigation already started,
@@ -119,8 +132,22 @@ export type InsightModels = {
  */
 export type TraceInsightSets = Map<Types.Events.NavigationId, InsightSet>;
 
-/**
- * Represents the narrow set of dependencies defined by an insight's `deps()` function. `Meta` is always included regardless of `deps()`.
- */
-export type RequiredData<D extends() => Array<keyof typeof Handlers.ModelHandlers>> =
-    Handlers.Types.EnabledHandlerDataWithMeta<Pick<typeof Handlers.ModelHandlers, ReturnType<D>[number]>>;
+export const enum InsightKeys {
+  LCP_BREAKDOWN = 'LCPBreakdown',
+  INP_BREAKDOWN = 'INPBreakdown',
+  CLS_CULPRITS = 'CLSCulprits',
+  THIRD_PARTIES = 'ThirdParties',
+  DOCUMENT_LATENCY = 'DocumentLatency',
+  DOM_SIZE = 'DOMSize',
+  DUPLICATE_JAVASCRIPT = 'DuplicatedJavaScript',
+  FONT_DISPLAY = 'FontDisplay',
+  FORCED_REFLOW = 'ForcedReflow',
+  IMAGE_DELIVERY = 'ImageDelivery',
+  LCP_DISCOVERY = 'LCPDiscovery',
+  LEGACY_JAVASCRIPT = 'LegacyJavaScript',
+  NETWORK_DEPENDENCY_TREE = 'NetworkDependencyTree',
+  RENDER_BLOCKING = 'RenderBlocking',
+  SLOW_CSS_SELECTOR = 'SlowCSSSelector',
+  VIEWPORT = 'Viewport',
+  MODERN_HTTP = 'ModernHTTP',
+}

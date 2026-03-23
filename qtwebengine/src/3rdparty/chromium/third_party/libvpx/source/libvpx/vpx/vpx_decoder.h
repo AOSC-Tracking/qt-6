@@ -60,7 +60,7 @@ extern "C" {
 #define VPX_CODEC_CAP_INPUT_FRAGMENTS 0x100000
 /*!\brief Can support frame-based multi-threading */
 #define VPX_CODEC_CAP_FRAME_THREADING 0x200000
-/*!brief Can support external frame buffers */
+/*!\brief Can support external frame buffers */
 #define VPX_CODEC_CAP_EXTERNAL_FRAME_BUFFER 0x400000
 
 /*! \brief Initialization-time Feature Enabling
@@ -119,6 +119,10 @@ typedef struct vpx_codec_dec_cfg {
  * If the library was configured with --disable-multithread, this call
  * is not thread safe and should be guarded with a lock if being used
  * in a multithreaded context.
+ *
+ * On success, vpx_codec_destroy() must be used to free resources allocated for
+ * the decoder context. If vpx_codec_dec_init_ver() fails, it is not necessary
+ * to call vpx_codec_destroy() on the decoder context.
  *
  * \param[in]    ctx     Pointer to this instance's context.
  * \param[in]    iface   Pointer to the algorithm interface to use.

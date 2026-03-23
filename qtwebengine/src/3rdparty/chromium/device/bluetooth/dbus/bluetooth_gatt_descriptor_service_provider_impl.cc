@@ -2,15 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "device/bluetooth/dbus/bluetooth_gatt_descriptor_service_provider_impl.h"
 
 #include <cstddef>
 
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -274,16 +270,12 @@ void BluetoothGattDescriptorServiceProviderImpl::ReadValue(
     // the delegate, which should know how to handle it.
   }
 
-  // GetValue() promises to only call either the success or error callback.
-  auto split_response_sender =
-      base::SplitOnceCallback(std::move(response_sender));
-
   DCHECK(delegate_);
   delegate_->GetValue(
       device_path,
       base::BindOnce(&BluetoothGattDescriptorServiceProviderImpl::OnReadValue,
                      weak_ptr_factory_.GetWeakPtr(), method_call,
-                     std::move(split_response_sender.first)));
+                     std::move(response_sender)));
 }
 
 void BluetoothGattDescriptorServiceProviderImpl::WriteValue(
@@ -304,7 +296,7 @@ void BluetoothGattDescriptorServiceProviderImpl::WriteValue(
                  << method_call->ToString();
   }
   if (bytes)
-    value.assign(bytes, bytes + length);
+    value.assign(bytes, UNSAFE_TODO(bytes + length));
 
   std::map<std::string, dbus::MessageReader> options;
   dbus::ObjectPath device_path;

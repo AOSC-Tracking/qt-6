@@ -9,6 +9,7 @@ include_rules = [
   "+components/language_detection/core/browser",
   "+components/services/storage/privileged",
   "+components/services/storage/public",
+  "+components/tracing/common",
   "+components/viz/common",
   "+components/viz/host",
   "+device/vr/buildflags",
@@ -22,7 +23,7 @@ include_rules = [
   "+services/network/public/cpp",
   "+services/on_device_model/public",
   "+services/resource_coordinator/public",
-  "+services/tracing/public/mojom",
+  "+services/tracing/public",
   "+services/video_capture/public/mojom",
   "+services/video_effects/public/cpp/buildflags.h",
   "+services/video_effects/public/mojom",
@@ -43,6 +44,7 @@ specific_include_rules = {
   ],
 
   "authenticator_request_client_delegate\.*": [
+    "+components/password_manager/core/common/credential_manager_types.h",
     "+device/fido",
   ],
   "digital_credentials_cross_device\.h": [

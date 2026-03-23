@@ -100,6 +100,8 @@ const char* URLVisitAggregatesTransformTypeName(
       return "SegmentationMetricsData";
     case URLVisitAggregatesTransformType::kHistoryBrowserTypeFilter:
       return "HistoryBrowserTypeFilter";
+    case URLVisitAggregatesTransformType::kTabEventsData:
+      return "TabEventsData";
   }
 }
 
@@ -418,6 +420,9 @@ void VisitedURLRankingServiceImpl::RecordAction(
   VLOG(2) << "visited_url_ranking: RecordAction for " << visit_id << " "
           << static_cast<int>(action);
   base::UmaHistogramEnumeration("VisitedURLRanking.ScoredURLAction", action);
+  if (!visited_url_ranking::features::kVisitedURLRankingRecordActions.Get()) {
+    return;
+  }
 
   const char* event_name = EventNameForAction(action);
   segmentation_platform::DatabaseClient::StructuredEvent visit_event = {
@@ -445,6 +450,15 @@ void VisitedURLRankingServiceImpl::RecordAction(
                      weak_ptr_factory_.GetWeakPtr(), action, visit_id,
                      visit_request_id),
       wait_for_activation);
+}
+
+void VisitedURLRankingServiceImpl::RegisterTransformer(
+    URLVisitAggregatesTransformType type,
+    std::unique_ptr<URLVisitAggregatesTransformer> transformer) {
+  if (transformers_.count(type)) {
+    return;
+  }
+  transformers_.emplace(type, std::move(transformer));
 }
 
 void VisitedURLRankingServiceImpl::TriggerTrainingData(

@@ -11,6 +11,7 @@
 #  include <QtNetwork/qsslconfiguration.h>
 #endif
 
+#include <QtCore/qcompare.h>
 #include <QtCore/qhash.h>
 #include <QtCore/qshareddata.h>
 #include <QtCore/qstringfwd.h>
@@ -22,6 +23,7 @@
 
 QT_BEGIN_NAMESPACE
 
+class QDataStream;
 class QDebug;
 class QVariant;
 class QGrpcSerializationFormat;
@@ -86,8 +88,19 @@ public:
 private:
     QExplicitlySharedDataPointer<QGrpcChannelOptionsPrivate> d_ptr;
 
+    friend Q_GRPC_EXPORT bool comparesEqual(const QGrpcChannelOptions &lhs,
+                                            const QGrpcChannelOptions &rhs);
+    Q_DECLARE_EQUALITY_COMPARABLE_NON_NOEXCEPT(QGrpcChannelOptions)
+
+    friend size_t qHash(const QGrpcChannelOptions &) = delete;
+    friend size_t qHash(const QGrpcChannelOptions &, size_t) = delete;
+
 #ifndef QT_NO_DEBUG_STREAM
     friend Q_GRPC_EXPORT QDebug operator<<(QDebug debug, const QGrpcChannelOptions &chOpts);
+#endif
+#ifndef QT_NO_DATASTREAM
+    friend QDataStream &operator<<(QDataStream &, const QGrpcChannelOptions &) = delete;
+    friend QDataStream &operator>>(QDataStream &, QGrpcChannelOptions &) = delete;
 #endif
 
     Q_DECLARE_PRIVATE(QGrpcChannelOptions)

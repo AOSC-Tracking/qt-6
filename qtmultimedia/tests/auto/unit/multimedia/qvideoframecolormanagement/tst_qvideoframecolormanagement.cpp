@@ -542,6 +542,9 @@ private slots:
     void initTestCase()
     {
         QSKIP_IF_NOT_FFMPEG("This test requires the FFmpeg backend to create test frames");
+
+        if (qEnvironmentVariable("COIN_PLATFORM_ID") == "macos-15-x86_64-tests")
+            QSKIP("Skipping test on macOS 15 x86_64, as it's flaky on CI");
     }
 
     void qImageFromVideoFrame_returnsQImageWithCorrectColors_data()
@@ -594,15 +597,6 @@ private slots:
     {
         QFETCH(const QString, fileName);
         QFETCH(const TestParams, params);
-
-        // Skip fallback from R16->RGBA8 because of QTBUG-126277
-        QRhi *rhi = qEnsureThreadLocalRhi();
-        if (params.pixelFormat == QVideoFrameFormat::Format_YUV420P10
-            && (params.excludedTextures & Exclude_R16
-                || (rhi && !rhi->isTextureFormatSupported(QRhiTexture::R16)))
-            && (params.excludedTextures & Exclude_RG8
-                || (rhi && !rhi->isTextureFormatSupported(QRhiTexture::RG8))))
-            QSKIP("Fallback from R16->RGBA8 skipped due to QTBUG-126277");
 
         // Arrange
         applyExcludedTextures(params.excludedTextures);

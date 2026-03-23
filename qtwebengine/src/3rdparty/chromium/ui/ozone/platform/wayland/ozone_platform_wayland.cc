@@ -17,6 +17,7 @@
 #include "base/no_destructor.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
+#include "mojo/public/cpp/bindings/binder_map.h"
 #include "ui/base/buildflags.h"
 #include "ui/base/cursor/cursor_factory.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_factory_ozone.h"
@@ -58,6 +59,7 @@
 #include "ui/ozone/public/input_controller.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/platform_menu_utils.h"
+#include "ui/ozone/public/platform_session_manager.h"
 #include "ui/ozone/public/stub_input_controller.h"
 #include "ui/ozone/public/system_input_injector.h"
 #include "ui/platform_window/platform_window_init_properties.h"
@@ -78,6 +80,9 @@
 namespace ui {
 
 namespace {
+
+constexpr char kDisableAcceleratedSubwindowsForTesting[] =
+    "disable-accelerated-subwindows-for-testing";
 
 class OzonePlatformWayland : public OzonePlatform,
                              public OSExchangeDataProviderFactoryOzone {
@@ -175,7 +180,8 @@ class OzonePlatformWayland : public OzonePlatform,
   std::unique_ptr<InputMethod> CreateInputMethod(
       ImeKeyEventDispatcher* ime_key_event_dispatcher,
       gfx::AcceleratedWidget widget) override {
-    return std::make_unique<InputMethodAuraLinux>(ime_key_event_dispatcher);
+    return std::make_unique<InputMethodAuraLinux>(ime_key_event_dispatcher,
+                                                  widget);
   }
 
   PlatformMenuUtils* GetPlatformMenuUtils() override {
@@ -359,6 +365,9 @@ class OzonePlatformWayland : public OzonePlatform,
       // API is implemented.
       properties->supports_color_picker_dialog = false;
 
+      // TODO(crbug.com/425715421): Remove this once support is implemented.
+      properties->supports_split_view_drag_and_drop = false;
+
       initialised = true;
     }
 
@@ -383,6 +392,7 @@ class OzonePlatformWayland : public OzonePlatform,
           (connection_->xdg_decoration_manager_v1() != nullptr &&
            override_supports_ssd_for_test == SupportsForTest::kNotSet) ||
           override_supports_ssd_for_test == SupportsForTest::kYes;
+      properties.supports_server_window_menus = connection_->shell();
       properties.supports_overlays =
           connection_->ShouldUseOverlayDelegation() &&
           connection_->viewporter();
@@ -396,19 +406,33 @@ class OzonePlatformWayland : public OzonePlatform,
       properties.needs_background_image =
           connection_->ShouldUseOverlayDelegation() &&
           connection_->viewporter();
-      properties.supports_subwindows_as_accelerated_widgets = true;
+
+      properties.supports_subwindows_as_accelerated_widgets =
+          !base::CommandLine::ForCurrentProcess()->HasSwitch(
+              // TODO(crbug.com/334413759) This switch is used in
+              // testing/xvfb.py to disable accelerated subwindows when running
+              // tests in weston, as the tests still have some issues there with
+              // this feature enabled.
+              kDisableAcceleratedSubwindowsForTesting);
       properties.supports_per_window_scaling =
           (connection_->UsePerSurfaceScaling() &&
            override_supports_per_window_scaling_for_test ==
                SupportsForTest::kNotSet) ||
           (override_supports_per_window_scaling_for_test ==
            SupportsForTest::kYes);
+      properties.supports_session_management =
+          connection_->SupportsSessionManagement();
+
+      GetSessionManager();
 
       if (surface_factory_) {
         DCHECK(has_initialized_gpu());
         properties.supports_native_pixmaps =
             surface_factory_->SupportsNativePixmaps();
       }
+
+      properties.supports_global_application_menus =
+          connection_->org_kde_kwin_appmenu_manager() != nullptr;
     } else if (buffer_manager_) {
       DCHECK(has_initialized_gpu());
       // These properties are set when the GetPlatformRuntimeProperties is
@@ -456,18 +480,18 @@ class OzonePlatformWayland : public OzonePlatform,
     buffer_manager_->AddBindingWaylandBufferManagerGpu(std::move(receiver));
   }
 
-  void PostCreateMainMessageLoop(base::OnceCallback<void()> shutdown_cb,
-                                 scoped_refptr<base::SingleThreadTaskRunner>
-                                     user_input_task_runner) override {
+  void PostCreateMainMessageLoop(
+      base::OnceCallback<void()> shutdown_cb,
+      scoped_refptr<base::SingleThreadTaskRunner>) override {
     DCHECK(connection_);
     connection_->SetShutdownCb(std::move(shutdown_cb));
-    connection_->SetUserInputTaskRunner(std::move(user_input_task_runner));
   }
 
   void PostMainMessageLoopRun() override {
     // TODO(b/324294360): This will cause a lot of dangling pointers, which
     // breaks linux wayland bot. Fix them and enable on linux as well.
 #if BUILDFLAG(IS_CHROMEOS) || !PA_BUILDFLAG(ENABLE_DANGLING_RAW_PTR_CHECKS)
+    cursor_factory_.reset();
     connection_.reset();
 #endif
   }
@@ -490,6 +514,10 @@ class OzonePlatformWayland : public OzonePlatform,
       case PlatformKeyboardHookTypes::kMedia:
         return nullptr;
     }
+  }
+
+  PlatformSessionManager* GetSessionManager() override {
+    return connection_->session_manager();
   }
 
   // OSExchangeDataProviderFactoryOzone:

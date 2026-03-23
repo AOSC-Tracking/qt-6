@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "cc/paint/paint_op_reader.h"
 
 #include <stddef.h>
@@ -28,6 +23,7 @@
 #include "base/numerics/safe_math.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/optional_util.h"
 #include "cc/base/features.h"
 #include "cc/paint/color_filter.h"
@@ -80,9 +76,15 @@ template <typename ValueType>
 void ReadSimpleValueUniformsHelper(
     PaintOpReader& reader,
     std::vector<PaintShader::Uniform<ValueType>>* output_uniforms) {
+  CHECK(output_uniforms);
   size_t count = 0u;
   reader.ReadSize(&count);
-  if (count == 0) {
+  if (!reader.valid() || count == 0u) {
+    return;
+  }
+  if (count > PaintShader::kMaxNumUniformsPerType ||
+      count > output_uniforms->max_size()) {
+    reader.valid_ = false;
     return;
   }
   output_uniforms->reserve(count);
@@ -175,7 +177,7 @@ void PaintOpReader::ReadSimple(T* val) {
   // use assignment.
   *val = *reinterpret_cast<const T*>(const_cast<const uint8_t*>(memory_));
 
-  memory_ += size;
+  UNSAFE_TODO(memory_ += size);
   remaining_bytes_ -= size;
   AssertFieldAlignment();
 }
@@ -186,8 +188,8 @@ uint8_t* PaintOpReader::CopyScratchSpace(size_t bytes) {
   if (options_.scratch_buffer.size() < bytes) {
     options_.scratch_buffer.resize(bytes);
   }
-  memcpy(options_.scratch_buffer.data(), const_cast<const uint8_t*>(memory_),
-         bytes);
+  UNSAFE_TODO(memcpy(options_.scratch_buffer.data(),
+                     const_cast<const uint8_t*>(memory_), bytes));
   return options_.scratch_buffer.data();
 }
 
@@ -202,7 +204,8 @@ void PaintOpReader::ReadData(base::span<uint8_t> data) {
     return;
   }
 
-  memcpy(data.data(), const_cast<const uint8_t*>(memory_), data.size());
+  UNSAFE_TODO(
+      memcpy(data.data(), const_cast<const uint8_t*>(memory_), data.size()));
   DidRead(data.size());
 }
 
@@ -374,9 +377,7 @@ void PaintOpReader::Read(CorePaintFlags* flags) {
   ReadSimple(&flags->bitfields_uint_);
 }
 
-void PaintOpReader::Read(
-    PaintImage* image,
-    PaintFlags::DynamicRangeLimitMixture dynamic_range_limit) {
+void PaintOpReader::Read(PaintImage* image) {
   uint8_t serialized_type_int = 0u;
   Read(&serialized_type_int);
   if (serialized_type_int >
@@ -389,10 +390,6 @@ void PaintOpReader::Read(
       static_cast<PaintOp::SerializedImageType>(serialized_type_int);
   if (serialized_type == PaintOp::SerializedImageType::kNoImage)
     return;
-
-  // Compute the HDR headroom for tone mapping.
-  const float hdr_headroom =
-      dynamic_range_limit.ComputeHdrHeadroom(options_.hdr_headroom);
 
   if (enable_security_constraints_) {
     switch (serialized_type) {
@@ -437,7 +434,6 @@ void PaintOpReader::Read(
                      .set_id(PaintImage::GetNextId())
                      .set_texture_image(SkImages::RasterFromPixmapCopy(pixmap),
                                         PaintImage::kNonLazyStableId)
-                     .set_target_hdr_headroom(hdr_headroom)
                      .TakePaintImage();
       }
         return;
@@ -493,7 +489,6 @@ void PaintOpReader::Read(
                  .set_id(PaintImage::GetNextId())
                  .set_texture_image(std::move(sk_image),
                                     PaintImage::kNonLazyStableId)
-                 .set_target_hdr_headroom(hdr_headroom)
                  .set_reinterpret_as_srgb(reinterpret_as_srgb)
                  .TakePaintImage();
     return;
@@ -530,8 +525,7 @@ void PaintOpReader::Read(
     PaintImageBuilder builder =
         PaintImageBuilder::WithDefault()
             .set_id(PaintImage::GetNextId())
-            .set_texture_image(entry->image(), PaintImage::kNonLazyStableId)
-            .set_target_hdr_headroom(hdr_headroom);
+            .set_texture_image(entry->image(), PaintImage::kNonLazyStableId);
     if (entry->HasGainmap()) {
       builder = std::move(builder).set_gainmap_texture_image(
           entry->gainmap_image(), entry->gainmap_info());
@@ -562,7 +556,7 @@ void PaintOpReader::Read(sk_sp<SkData>* data) {
 
   // This is safe to cast away the volatile as it is just a memcpy internally.
   *data = gfx::MakeSkDataFromSpanWithCopy(
-      base::span(const_cast<const uint8_t*>(memory_), bytes));
+      UNSAFE_TODO(base::span(const_cast<const uint8_t*>(memory_), bytes)));
   DidRead(bytes);
 }
 
@@ -717,8 +711,7 @@ void PaintOpReader::Read(sk_sp<PaintShader>* shader) {
   ReadSimple(&ref.start_degrees_);
   ReadSimple(&ref.end_degrees_);
   Read(&ref.gradient_interpolation_);
-  Read(&ref.image_, PaintFlags::DynamicRangeLimitMixture(
-                        PaintFlags::DynamicRangeLimit::kHigh));
+  Read(&ref.image_);
   bool has_record = false;
   Read(&has_record);
   uint32_t shader_id = PaintShader::kInvalidRecordShaderId;
@@ -747,6 +740,11 @@ void PaintOpReader::Read(sk_sp<PaintShader>* shader) {
   ReadSize(&colors_size);
 
   // If there are too many colors, abort.
+  if (colors_size > ref.colors_.max_size()) {
+    SetInvalid(
+        DeserializationError::kInvalidColorsSize_Read_PaintShader_ColorSize);
+    return;
+  }
   size_t colors_bytes;
   if (!base::CheckMul(colors_size, sizeof(decltype(ref.colors_)::value_type))
            .AssignIfValid(&colors_bytes)) {
@@ -775,7 +773,66 @@ void PaintOpReader::Read(sk_sp<PaintShader>* shader) {
   }
   ReadVectorContent(positions_size, ref.positions_);
 
-  Read(&ref.sksl_command_);
+  ReadSimple(&ref.sk_runtime_effect_id_);
+  if (!valid_) {
+    return;
+  }
+
+  uint32_t entry_state_int = 0u;
+  ReadSimple(&entry_state_int);
+  if (entry_state_int > static_cast<uint32_t>(PaintCacheEntryState::kLast)) {
+    valid_ = false;
+    return;
+  }
+
+  auto* cache = options_.paint_cache;
+  CHECK(cache);
+  switch (static_cast<PaintCacheEntryState>(entry_state_int)) {
+    case PaintCacheEntryState::kCached: {
+      sk_sp<SkRuntimeEffect> cached_effect_shader = nullptr;
+      if (!cache->GetEffect(ref.sk_runtime_effect_id_, &cached_effect_shader)) {
+        valid_ = false;
+        return;
+      }
+      TRACE_EVENT0("cc", "PaintCache_SkRE_CacheHit");
+      ref.cached_sk_runtime_effect_ = std::move(cached_effect_shader);
+      break;
+    }
+    case PaintCacheEntryState::kInlined: {
+      Read(&ref.sksl_command_);
+      if (!valid_) {
+        return;
+      }
+      sk_sp<SkRuntimeEffect> effect =
+          SkRuntimeEffect::MakeForShader(ref.sksl_command_).effect;
+      if (!effect) {
+        valid_ = false;
+        return;
+      }
+      TRACE_EVENT0("cc", "PaintCache_SkRE_CacheMiss");
+      ref.cached_sk_runtime_effect_ = std::move(effect);
+      cache->PutEffect(ref.sk_runtime_effect_id_,
+                       ref.cached_sk_runtime_effect_);
+      break;
+    }
+    case PaintCacheEntryState::kEmpty: {
+      if (ref.shader_type() != PaintShader::Type::kSkSLCommand &&
+          ref.sk_runtime_effect_id_ == 0u) {
+        // Deserializing a non-SkRuntimeEffect shader.
+      } else {
+        // A compromised client could send garbage data. Invalidate it.
+        valid_ = false;
+        return;
+      }
+      break;
+    }
+    case PaintCacheEntryState::kInlinedDoNotCache: {
+      // Client never serializes this enum.
+      valid_ = false;
+      break;
+    }
+  }
+
   Read(&ref.scalar_uniforms_);
   Read(&ref.float2_uniforms_);
   Read(&ref.float4_uniforms_);
@@ -992,7 +1049,7 @@ void PaintOpReader::AlignMemory(size_t alignment) {
   if (padding > remaining_bytes_)
     SetInvalid(DeserializationError::kInsufficientRemainingBytes_AlignMemory);
 
-  memory_ += padding;
+  UNSAFE_TODO(memory_ += padding);
   remaining_bytes_ -= padding;
 }
 
@@ -1364,8 +1421,7 @@ void PaintOpReader::ReadImagePaintFilter(
     sk_sp<PaintFilter>* filter,
     const std::optional<PaintFilter::CropRect>& crop_rect) {
   PaintImage image;
-  Read(&image, PaintFlags::DynamicRangeLimitMixture(
-                   PaintFlags::DynamicRangeLimit::kHigh));
+  Read(&image);
   if (!image) {
     SetInvalid(DeserializationError::kReadImageFailure);
     return;
@@ -1401,7 +1457,8 @@ void PaintOpReader::ReadRecordPaintFilter(
 
   ReadSimple(&record_bounds);
   ReadSimple(&raster_scale);
-  if (raster_scale.width() <= 0.f || raster_scale.height() <= 0.f) {
+  if (!std::isfinite(raster_scale.width()) || raster_scale.width() <= 0.f ||
+      !std::isfinite(raster_scale.height()) || raster_scale.height() <= 0.f) {
     SetInvalid(DeserializationError::kInvalidRasterScale);
     return;
   }
@@ -1706,7 +1763,7 @@ inline void PaintOpReader::DidRead(size_t bytes_read) {
       base::bits::AlignUp(bytes_read, PaintOpWriter::kDefaultAlignment);
   DCHECK_LE(aligned_bytes, remaining_bytes_);
   bytes_read = std::min(aligned_bytes, remaining_bytes_);
-  memory_ += bytes_read;
+  UNSAFE_TODO(memory_ += bytes_read);
   remaining_bytes_ -= bytes_read;
 }
 

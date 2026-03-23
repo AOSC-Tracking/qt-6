@@ -17,11 +17,11 @@ QT_BEGIN_NAMESPACE
 class Generator
 {
     QIODevice &out; // -- QtScxml
-    ClassDef *cdef;
+    const ClassDef *cdef;
     QList<uint> meta_data;
 
 public:
-    Generator(ClassDef *classDef, const QList<QByteArray> &metaTypes,
+    Generator(const ClassDef *classDef, const QList<QByteArray> &metaTypes,
               const QHash<QByteArray, QByteArray> &knownQObjectClasses,
               const QHash<QByteArray, QByteArray> &knownGadgets,
               QIODevice &outfile, // -- QtScxml

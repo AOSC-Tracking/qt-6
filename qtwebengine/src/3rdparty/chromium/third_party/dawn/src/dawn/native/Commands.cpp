@@ -216,6 +216,14 @@ void FreeCommands(CommandIterator* commands) {
                 cmd->~SetBindGroupCmd();
                 break;
             }
+            case Command::SetImmediateData: {
+                SetImmediateDataCmd* cmd = commands->NextCommand<SetImmediateDataCmd>();
+                if (cmd->size > 0) {
+                    commands->NextData<uint8_t>(cmd->size);
+                }
+                cmd->~SetImmediateDataCmd();
+                break;
+            }
             case Command::SetIndexBuffer: {
                 SetIndexBufferCmd* cmd = commands->NextCommand<SetIndexBufferCmd>();
                 cmd->~SetIndexBufferCmd();
@@ -384,6 +392,14 @@ void SkipCommand(CommandIterator* commands, Command type) {
             break;
         }
 
+        case Command::SetImmediateData: {
+            SetImmediateDataCmd* cmd = commands->NextCommand<SetImmediateDataCmd>();
+            if (cmd->size > 0) {
+                commands->NextData<uint8_t>(cmd->size);
+            }
+            break;
+        }
+
         case Command::SetIndexBuffer:
             commands->NextCommand<SetIndexBufferCmd>();
             break;
@@ -436,6 +452,10 @@ RenderPassStorageAttachmentInfo::~RenderPassStorageAttachmentInfo() = default;
 RenderPassDepthStencilAttachmentInfo::RenderPassDepthStencilAttachmentInfo() = default;
 RenderPassDepthStencilAttachmentInfo::~RenderPassDepthStencilAttachmentInfo() = default;
 
+bool ResolveRect::HasValue() const {
+    return updateWidth != 0 && updateHeight != 0;
+}
+
 BeginRenderPassCmd::BeginRenderPassCmd() = default;
 BeginRenderPassCmd::~BeginRenderPassCmd() = default;
 
@@ -482,6 +502,9 @@ SetRenderPipelineCmd::~SetRenderPipelineCmd() = default;
 
 SetBindGroupCmd::SetBindGroupCmd() = default;
 SetBindGroupCmd::~SetBindGroupCmd() = default;
+
+SetImmediateDataCmd::SetImmediateDataCmd() = default;
+SetImmediateDataCmd::~SetImmediateDataCmd() = default;
 
 SetIndexBufferCmd::SetIndexBufferCmd() = default;
 SetIndexBufferCmd::~SetIndexBufferCmd() = default;

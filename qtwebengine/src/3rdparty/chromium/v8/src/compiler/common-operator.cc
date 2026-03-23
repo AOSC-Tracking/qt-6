@@ -395,9 +395,9 @@ RegionObservability RegionObservabilityOf(Operator const* op) {
   return OpParameter<RegionObservability>(op);
 }
 
-Type TypeGuardTypeOf(Operator const* op) {
+compiler::Type TypeGuardTypeOf(Operator const* op) {
   DCHECK_EQ(IrOpcode::kTypeGuard, op->opcode());
-  return OpParameter<Type>(op);
+  return OpParameter<compiler::Type>(op);
 }
 
 std::ostream& operator<<(std::ostream& os,
@@ -1022,7 +1022,7 @@ const Operator* CommonOperatorBuilder::StaticAssert(const char* source) {
 
 const Operator* CommonOperatorBuilder::SLVerifierHint(
     const Operator* semantics,
-    const std::optional<Type>& override_output_type) {
+    const std::optional<compiler::Type>& override_output_type) {
   return zone()->New<Operator1<SLVerifierHintParameters>>(
       IrOpcode::kSLVerifierHint, Operator::kNoProperties, "SLVerifierHint", 1,
       0, 0, 1, 0, 0, SLVerifierHintParameters(semantics, override_output_type));
@@ -1433,8 +1433,8 @@ const Operator* CommonOperatorBuilder::Phi(MachineRepresentation rep,
       rep);                                              // parameter
 }
 
-const Operator* CommonOperatorBuilder::TypeGuard(Type type) {
-  return zone()->New<Operator1<Type>>(        // --
+const Operator* CommonOperatorBuilder::TypeGuard(compiler::Type type) {
+  return zone()->New<Operator1<compiler::Type>>(        // --
       IrOpcode::kTypeGuard, Operator::kPure,  // opcode
       "TypeGuard",                            // name
       1, 1, 1, 1, 1, 0,                       // counts
@@ -1448,7 +1448,7 @@ const Operator* CommonOperatorBuilder::EnterMachineGraph(UseInfo use_info) {
 }
 
 const Operator* CommonOperatorBuilder::ExitMachineGraph(
-    MachineRepresentation output_representation, Type output_type) {
+    MachineRepresentation output_representation, compiler::Type output_type) {
   return zone()->New<Operator1<ExitMachineGraphParameters>>(
       IrOpcode::kExitMachineGraph, Operator::kPure, "ExitMachineGraph", 1, 0, 0,
       1, 0, 0, ExitMachineGraphParameters{output_representation, output_type});
@@ -1712,34 +1712,12 @@ CommonOperatorBuilder::CreateJSToWasmFrameStateFunctionInfo(
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-const Operator* CommonOperatorBuilder::Chained(const Operator* op) {
-  // Use Chained only for operators that are not on the effect chain already.
-  DCHECK_EQ(op->EffectInputCount(), 0);
-  DCHECK_EQ(op->ControlInputCount(), 0);
-  const char* mnemonic;
-  switch (op->opcode()) {
-    case IrOpcode::kChangeInt64ToBigInt:
-      mnemonic = "Chained[ChangeInt64ToBigInt]";
-      break;
-    case IrOpcode::kChangeUint64ToBigInt:
-      mnemonic = "Chained[ChangeUint64ToBigInt]";
-      break;
-    default:
-      UNREACHABLE();
-  }
-  // TODO(nicohartmann@): Need to store operator properties once we have to
-  // support Operator1 operators.
-  Operator::Properties properties = op->properties();
-  return zone()->New<Operator>(op->opcode(), properties, mnemonic,
-                               op->ValueInputCount(), 1, 1,
-                               op->ValueOutputCount(), 1, 0);
-}
-
-const Operator* CommonOperatorBuilder::DeadValue(MachineRepresentation rep) {
+const Operator* CommonOperatorBuilder::DeadValue(MachineRepresentation rep,
+                                                 int value_input_count) {
   return zone()->New<Operator1<MachineRepresentation>>(  // --
       IrOpcode::kDeadValue, Operator::kPure,             // opcode
       "DeadValue",                                       // name
-      1, 0, 0, 1, 0, 0,                                  // counts
+      value_input_count, 0, 0, 1, 0, 0,                  // counts
       rep);                                              // parameter
 }
 

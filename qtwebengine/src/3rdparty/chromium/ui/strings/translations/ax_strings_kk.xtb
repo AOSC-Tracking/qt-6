@@ -66,7 +66,6 @@
 <translation id="3670698553867754311">апта таңдағышы</translation>
 <translation id="3706100364254443312">ауыстыру</translation>
 <translation id="3808586225841795776">термин</translation>
-<translation id="3914173277599553213">Қажет</translation>
 <translation id="3920932319529768807">қорытынды</translation>
 <translation id="3924558731517983934">қолданба</translation>
 <translation id="3944740393230681990">пролог</translation>
@@ -87,6 +86,7 @@
 <translation id="4661075872484491155">tree</translation>
 <translation id="4668956016107839909">қосымша</translation>
 <translation id="4698212723196775569">код</translation>
+<translation id="4710792130811321440">аудиотректі таңдау мәзірін көрсету</translation>
 <translation id="4742539557769756338">мұқаба</translation>
 <translation id="4748357248530471599">экран ойығын толық экранға ауыстыру</translation>
 <translation id="4757246831282535685">қойынды панелі</translation>
@@ -167,6 +167,7 @@
 <translation id="6845533974506654842">басу</translation>
 <translation id="6885760532393684712">каталог</translation>
 <translation id="689129560213475294">баспа белгісі</translation>
+<translation id="6919089238568236262">бейнетректі таңдау мәзірін көрсету</translation>
 <translation id="6934078000481955284">дәйексөз</translation>
 <translation id="693476918119313863">тақырып</translation>
 <translation id="6941933287844615239">мультимедиа файлын жүктеп алу</translation>
@@ -188,7 +189,7 @@
 <translation id="7529102961911894712">кері сілтеме</translation>
 <translation id="7647456547678091388">кеңес</translation>
 <translation id="7661956066982048809">графикалық құжат</translation>
-<translation id="7673697353781729403">Сағаттар</translation>
+<translation id="7673697353781729403">Сағат</translation>
 <translation id="7681220483256441252">индекс</translation>
 <translation id="7740050170769002709">HTML контенті</translation>
 <translation id="775297008183122718">Жазба жарамсыз.</translation>
@@ -237,7 +238,6 @@
 <translation id="9138385573473225930">ескерту</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, <ph name="WEEK_START_DATE" /> күні басталады</translation>
 <translation id="9168329111483466115">төменгі түсіндірме</translation>
-<translation id="945780513535800434">Ішінара тексерілген</translation>
 <translation id="954003015749068518">"суреттегі сурет" режиміне кіру</translation>
 <translation id="966787709310836684">мәзір</translation>
 </translationbundle>

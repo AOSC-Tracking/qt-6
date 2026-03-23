@@ -18,8 +18,8 @@
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/bind_post_task.h"
 #include "gpu/command_buffer/service/abstract_texture_android.h"
@@ -45,8 +45,6 @@ bool IsSurfaceControl(TextureOwner::Mode mode) {
       return true;
     case TextureOwner::Mode::kAImageReaderInsecure:
       return false;
-    case TextureOwner::Mode::kSurfaceTextureInsecure:
-      NOTREACHED();
   }
   NOTREACHED();
 }
@@ -436,7 +434,7 @@ void ImageReaderGLOwner::ReleaseRefOnImageLocked(AImage* image,
   AssertAcquiredDrDcLock();
 
   auto it = image_refs_.find(image);
-  CHECK(it != image_refs_.end(), base::NotFatalUntil::M130);
+  CHECK(it != image_refs_.end());
 
   auto& image_ref = it->second;
   DCHECK_GT(image_ref.count, 0u);
@@ -571,8 +569,7 @@ bool ImageReaderGLOwner::OnMemoryDump(
     base::trace_event::ProcessMemoryDump* pmd) {
   if (args.level_of_detail ==
       base::trace_event::MemoryDumpLevelOfDetail::kBackground) {
-    auto dump_name =
-        base::StringPrintf("gpu/media_texture_owner_%d/", tracing_id());
+    auto dump_name = base::StringPrintf(kMemoryDumpPrefix, tracing_id());
 
     base::trace_event::MemoryAllocatorDump* dump =
         pmd->CreateAllocatorDump(dump_name);
@@ -587,7 +584,7 @@ bool ImageReaderGLOwner::OnMemoryDump(
   base::AutoLock auto_lock(lock_);
   for (const auto& image : image_refs_) {
     std::string dump_name = base::StringPrintf(
-        "gpu/media_texture_owner_%d/image_%d", tracing_id(), i++);
+        "gpu/media_texture_owner_0x%x/image_%d", tracing_id(), i++);
 
     // If we fail to get AImage size for any reason, we still report the image
     // as a empty size, so it can be diagnosed in necessary.

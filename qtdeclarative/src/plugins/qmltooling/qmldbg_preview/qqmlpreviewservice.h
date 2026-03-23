@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLPREVIEWSERVICE_H
 #define QQMLPREVIEWSERVICE_H
@@ -37,7 +38,8 @@ public:
         Directory,
         ClearCache,
         Zoom,
-        Fps
+        Fps,
+        AnimationSpeed,
     };
 
     static const QString s_key;
@@ -65,6 +67,7 @@ Q_SIGNALS:
     void rerun();
     void clearCache();
     void zoom(qreal factor);
+    void animationSpeed(qreal factor);
 
 private:
     QScopedPointer<QQmlPreviewFileEngineHandler> m_fileEngine;

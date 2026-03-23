@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-vsigmoid/scalar-rr2-lut64-p2-div.c.in
 //   Generator: tools/xngen
@@ -9,10 +10,13 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/vunary.h"
 
 
 // Note redefine as uint32[] to avoid redundant bitcasts.
@@ -22,7 +26,7 @@ void xnn_f32_vsigmoid_ukernel__scalar_rr2_lut64_p2_div_u2(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_default_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -30,7 +34,7 @@ void xnn_f32_vsigmoid_ukernel__scalar_rr2_lut64_p2_div_u2(
   assert(output != NULL);
 
   const float vmagic_bias = 0x1.800000p17f;
-  const float vminus_log2e = -0x1.715476p0f;  
+  const float vminus_log2e = -0x1.715476p0f;
   const uint32_t vindex_mask = UINT32_C(0x3F);
   const float vln2_hi = 0x1.630000p-1f;
   const float vln2_lo = -0x1.BD0106p-13f;

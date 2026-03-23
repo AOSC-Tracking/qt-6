@@ -1,12 +1,13 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmllistaccessor_p.h"
 
 #include <private/qqmlmetatype_p.h>
 
 #include <QtCore/qdebug.h>
-#include <QtCore/qsequentialiterable.h>
+#include <QtCore/qmetasequence.h>
 #include <QtCore/qstringlist.h>
 #include <QtCore/qurl.h>
 
@@ -82,7 +83,7 @@ void QQmlListAccessor::setList(const QVariant &v)
     if (int i = 0; [&](){bool ok = false; i = v.toInt(&ok); return ok;}()) {
         // Here we have to check for an upper limit, because down the line code might (well, will)
         // allocate memory depending on the number of elements. The upper limit cannot be INT_MAX:
-        //      QVector<QPointer<QQuickItem>> something;
+        //      QList<QPointer<QQuickItem>> something;
         //      something.resize(count());
         // (See e.g. QQuickRepeater::regenerate())
         // This will allocate data along the lines of:
@@ -116,10 +117,10 @@ void QQmlListAccessor::setList(const QVariant &v)
         return;
     }
 
-    QSequentialIterable iterable;
+    QMetaSequence::Iterable iterable;
     if (QMetaType::convert(
                 variantsType, d.constData(),
-                QMetaType::fromType<QSequentialIterable>(), &iterable)) {
+                QMetaType::fromType<QMetaSequence::Iterable>(), &iterable)) {
         const QMetaSequence sequence = iterable.metaContainer();
 
         if (sequence.hasSize() && sequence.canGetValueAtIndex()) {

@@ -43,10 +43,11 @@
 #include "base/check_op.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/construct_traits.h"
+#include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/type_traits.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
-namespace WTF {
+namespace blink {
 
 template <typename T, wtf_size_t InlineCapacity, typename Allocator>
 class DequeIteratorBase;
@@ -55,14 +56,8 @@ class DequeIterator;
 template <typename T, wtf_size_t InlineCapacity, typename Allocator>
 class DequeConstIterator;
 
-template <typename T,
-          wtf_size_t InlineCapacity = 0,
-          typename Allocator = PartitionAllocator>
-class Deque : public ConditionalDestructor<
-          Deque<T, INLINE_CAPACITY, Allocator>,
-          kVectorNeedsDestructor<T,
-                                INLINE_CAPACITY,
-                                Allocator::kIsGarbageCollected>> {
+template <typename T, wtf_size_t InlineCapacity, typename Allocator>
+class Deque {
   USE_ALLOCATOR(Deque, Allocator);
 
  public:
@@ -72,12 +67,21 @@ class Deque : public ConditionalDestructor<
   typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
 
   Deque();
+
+  ~Deque()
+    requires(!kVectorNeedsDestructor<T,
+                                     INLINE_CAPACITY,
+                                     Allocator::kIsGarbageCollected>)
+  = default;
+  ~Deque()
+    requires(kVectorNeedsDestructor<T,
+                                    INLINE_CAPACITY,
+                                    Allocator::kIsGarbageCollected>);
+
   Deque(const Deque&);
   Deque& operator=(const Deque&);
   Deque(Deque&&);
   Deque& operator=(Deque&&);
-
-  void Finalize();
 
   void Swap(Deque&);
 
@@ -203,7 +207,7 @@ class Deque : public ConditionalDestructor<
                         !VectorTraits<T>::kCanInitializeWithMemset,
                     "Cannot initialize with memset if there is a vtable");
       static_assert(Allocator::kIsGarbageCollected || !IsDisallowNew<T> ||
-                        !IsTraceable<T>::value,
+                        !IsTraceableV<T>,
                     "Cannot put DISALLOW_NEW objects that "
                     "have trace methods into an off-heap Deque");
       static_assert(
@@ -423,7 +427,10 @@ inline void Deque<T, InlineCapacity, Allocator>::DestroyAll() {
 // For design of the destructor, please refer to
 // [here](https://docs.google.com/document/d/1AoGTvb3tNLx2tD1hNqAfLRLmyM59GM0O-7rCHTT_7_U/)
 template <typename T, wtf_size_t InlineCapacity, typename Allocator>
-void Deque<T, InlineCapacity, Allocator>::Finalize()
+inline Deque<T, InlineCapacity, Allocator>::~Deque()
+  requires(kVectorNeedsDestructor<T,
+                                  INLINE_CAPACITY,
+                                  Allocator::kIsGarbageCollected>)
 {
   static_assert(!Allocator::kIsGarbageCollected || INLINE_CAPACITY,
                 "GarbageCollected collections without inline capacity cannot "
@@ -759,8 +766,6 @@ inline void swap(Deque<T, InlineCapacity, Allocator>& a,
   a.Swap(b);
 }
 
-}  // namespace WTF
-
-using WTF::Deque;
+}  // namespace blink
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_DEQUE_H_

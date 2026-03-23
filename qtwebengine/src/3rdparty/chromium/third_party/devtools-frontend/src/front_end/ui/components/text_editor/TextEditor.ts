@@ -10,6 +10,7 @@ import * as CodeHighlighter from '../code_highlighter/code_highlighter.js';
 
 import {baseConfiguration, dummyDarkTheme, dynamicSetting, DynamicSetting, themeSelection} from './config.js';
 import {toLineColumn, toOffset} from './position.js';
+import textEditorStyles from './textEditor.css.js';
 
 declare global {
   interface HTMLElementTagNameMap {
@@ -18,11 +19,10 @@ declare global {
 }
 
 export class TextEditor extends HTMLElement {
-
   readonly #shadow = this.attachShadow({mode: 'open'});
   #activeEditor: CodeMirror.EditorView|undefined = undefined;
-  #dynamicSettings: readonly DynamicSetting<unknown>[] = DynamicSetting.none;
-  #activeSettingListeners: [Common.Settings.Setting<unknown>, (event: {data: unknown}) => void][] = [];
+  #dynamicSettings: ReadonlyArray<DynamicSetting<unknown>> = DynamicSetting.none;
+  #activeSettingListeners: Array<[Common.Settings.Setting<unknown>, (event: {data: unknown}) => void]> = [];
   #pendingState: CodeMirror.EditorState|undefined;
   #lastScrollSnapshot: CodeMirror.StateEffect<unknown>|undefined;
   #resizeTimeout = -1;
@@ -41,7 +41,8 @@ export class TextEditor extends HTMLElement {
   constructor(pendingState?: CodeMirror.EditorState) {
     super();
     this.#pendingState = pendingState;
-    this.#shadow.createChild('style').textContent = CodeHighlighter.codeHighlighterStyles.cssContent;
+    this.#shadow.createChild('style').textContent = CodeHighlighter.codeHighlighterStyles;
+    this.#shadow.createChild('style').textContent = textEditorStyles;
   }
 
   #createEditor(): CodeMirror.EditorView {
@@ -141,7 +142,7 @@ export class TextEditor extends HTMLElement {
 
   #ensureSettingListeners(): void {
     const dynamicSettings = this.#activeEditor ?
-        this.#activeEditor.state.facet<readonly DynamicSetting<unknown>[]>(dynamicSetting) :
+        this.#activeEditor.state.facet<ReadonlyArray<DynamicSetting<unknown>>>(dynamicSetting) :
         DynamicSetting.none;
     if (dynamicSettings === this.#dynamicSettings) {
       return;
@@ -153,7 +154,6 @@ export class TextEditor extends HTMLElement {
     }
     this.#activeSettingListeners = [];
 
-    const settings = Common.Settings.Settings.instance();
     for (const dynamicSetting of dynamicSettings) {
       const handler = ({data}: {data: unknown}): void => {
         const change = dynamicSetting.sync(this.state, data);
@@ -161,7 +161,7 @@ export class TextEditor extends HTMLElement {
           this.#activeEditor.dispatch({effects: change});
         }
       };
-      const setting = settings.moduleSetting(dynamicSetting.settingName);
+      const setting = Common.Settings.Settings.instance().moduleSetting(dynamicSetting.settingName);
       setting.addChangeListener(handler);
       this.#activeSettingListeners.push([setting, handler]);
     }
@@ -184,14 +184,14 @@ export class TextEditor extends HTMLElement {
     }
   }
 
-  revealPosition(selection: CodeMirror.EditorSelection, highlight: boolean = true): void {
+  revealPosition(selection: CodeMirror.EditorSelection, highlight = true): void {
     const view = this.#activeEditor;
     if (!view) {
       return;
     }
 
     const line = view.state.doc.lineAt(selection.main.head);
-    const effects: CodeMirror.StateEffect<unknown>[] = [];
+    const effects: Array<CodeMirror.StateEffect<unknown>> = [];
     if (highlight) {
       // Lazily register the highlight line state.
       if (!view.state.field(highlightedLineState, false)) {

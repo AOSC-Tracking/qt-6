@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGSHADOWMAPHELPERS_P_H
 #define QSSGSHADOWMAPHELPERS_P_H
@@ -31,7 +33,6 @@ namespace ShadowmapHelpers {
 void addDebugFrustum(const QSSGBoxPoints &frustumPoints, const QColor &color, QSSGDebugDrawSystem *debugDrawSystem);
 void addDebugBox(const QSSGBoxPoints &boxUnsorted, const QColor &color, QSSGDebugDrawSystem *debugDrawSystem);
 void addDirectionalLightDebugBox(const QSSGBoxPoints &box, QSSGDebugDrawSystem *debugDrawSystem);
-void addPointLightDebugBox(const QVector3D &lightPos, const float shadowMapFar, QSSGDebugDrawSystem *debugDrawSystem);
 
 QList<QVector3D> intersectBoxByFrustum(const QSSGBoxPoints &frustumPoints,
                                        const QSSGBoxPoints &box,

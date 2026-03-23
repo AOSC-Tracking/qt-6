@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 /**
- * @fileoverview The sources panel (via DebuggerPausedMessage) and the
+ * @file The sources panel (via DebuggerPausedMessage) and the
  * "browser_debugger" module both require localized CategorizedBreakpoint
  * names. We put them "upstream" into "panels/sources" so they are
  * available to both.
@@ -106,7 +106,7 @@ const UIStrings = {
    *@description Title for a checkbox that turns on breakpoints on Trusted Type policy violations
    */
   policyViolations: 'Policy Violations',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/sources/CategorizedBreakpointL10n.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
 
@@ -154,7 +154,7 @@ const LOCALIZED_INSTRUMENTATION_NAMES:
           i18n.i18n.lockedLazyString('getCurrentPosition'),
       [SDK.EventBreakpointsModel.InstrumentationNames.GEOLOCATION_WATCH_POSITION]:
           i18n.i18n.lockedLazyString('watchPosition'),
-      [SDK.EventBreakpointsModel.InstrumentationNames.NOTIFCATION_REQUEST_PERMISSION]:
+      [SDK.EventBreakpointsModel.InstrumentationNames.NOTIFICATION_REQUEST_PERMISSION]:
           i18n.i18n.lockedLazyString('requestPermission'),
       [SDK.EventBreakpointsModel.InstrumentationNames.DOM_WINDOW_CLOSE]: i18n.i18n.lockedLazyString('window.close'),
       [SDK.EventBreakpointsModel.InstrumentationNames.DOCUMENT_WRITE]: i18n.i18n.lockedLazyString('document.write'),

@@ -14,7 +14,7 @@
 
     \list
         \li \l[QtHttpServer]{Qt HTTP Server} - A module for embedding an HTTP
-            server into Qt applications. This module is in technical preview,
+            server into Qt applications. This module is in technology preview,
             API and ABI stability is not guaranteed.
         \li \l[QtQuick3DPhysics]{Qt Quick 3D Physics} - A high-level QML module
             adding physical simulation capabilities to Qt Quick 3D.
@@ -219,6 +219,12 @@
             If not (pragma ComponentBehavior: Bound), then Qt Quick Compiler can
             optimize your code better.
       \endlist
+      \li Module System
+      \list
+        \li Enhanced \c{import} directive in qmldir files with support for
+            default imports, allowing modules to specify imports that
+            \l{qmllint} should assume despite them being optional.
+      \endlist
       \li QML Type Compiler (qmltc)
       \list
           \li Expanded QML language coverage
@@ -233,7 +239,9 @@
       \endlist
       \li QML Linter (qmllint)
       \list
-          \li Added new warnings regarding proper use of QtQuick and QtQuick.Controls
+          \li Added plugin support to \l{qmllint} to enable module-specific
+              diagnostics and behavior.
+          \li Added new warnings regarding proper use of \l[QML]{QtQuick} and \l{QtQuick.Controls}
       \endlist
       \li QML Language Server (qmlls)
       \list

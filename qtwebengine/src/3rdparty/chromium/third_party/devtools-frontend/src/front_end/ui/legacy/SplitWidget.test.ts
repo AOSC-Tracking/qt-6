@@ -28,6 +28,14 @@ describeWithEnvironment('SplitWidget', () => {
     });
   });
 
+  it('can be set to vertical and back', () => {
+    const widget = new SplitWidget(false, false);
+    widget.setVertical(true);
+    assert.isTrue(widget.isVertical());
+    widget.setVertical(false);
+    assert.isFalse(widget.isVertical());
+  });
+
   it('can be instantiated from the template', async () => {
     const container = document.createElement('div');
     renderElementIntoDOM(container);
@@ -36,13 +44,11 @@ describeWithEnvironment('SplitWidget', () => {
     // clang-format off
     render(
         html`
-      <devtools-split-widget .options=${{vertical: true,
-                                         defaultSidebarWidth: 100,
-                                         markAsRoot: true}}
+      <devtools-split-view direction="column" sidebar-initial-size="100"
                              ${widgetRef(SplitWidget, e => {widget = e;})}>
         <div slot="main">Main content</div>
         <div slot="sidebar">Sidebar content</div>
-      </devtools-split-widget>`,
+      </devtools-split-view>`,
         container, {host: this});
     // clang-format on
 

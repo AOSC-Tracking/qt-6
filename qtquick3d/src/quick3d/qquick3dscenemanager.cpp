@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dscenemanager_p.h"
 #include "qquick3dobject_p.h"
@@ -15,6 +17,8 @@
 #include <QtQuick3DRuntimeRender/private/qssgrenderimage_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderlayer_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderroot_p.h>
+#include <QtQuick3DRuntimeRender/ssg/qssgrenderextensions.h>
+#include <QtQuick3DRuntimeRender/private/qssgrenderuserpass_p.h>
 
 #include <QtQuick3DUtils/private/qssgassert_p.h>
 
@@ -187,6 +191,7 @@ QQuick3DSceneManager::SyncResult QQuick3DSceneManager::updateDirtyResourceSecond
     const auto updateDirtyResourceNode = [this](QQuick3DObject *resource) {
         QQuick3DObjectPrivate *po = QQuick3DObjectPrivate::get(resource);
         po->dirtyAttributes = 0; // Not used, but we should still reset it.
+        po->secondaryUpdateRequested = false;
         QSSGRenderGraphObject *node = po->spatialNode;
         po->spatialNode = resource->updateSpatialNode(node);
         if (po->spatialNode)
@@ -233,10 +238,14 @@ void QQuick3DSceneManager::updateDirtyResource(QQuick3DObject *resourceObject)
             resourceLoaders.insert(itemPriv->spatialNode);
         } else if (itemPriv->spatialNode->type == QQuick3DObjectPrivate::Type::Image2D && backendNodeChanged) {
             ++inputHandlingEnabled;
+        } else if (QSSGRenderGraphObjectUtils::isUserRenderPass(itemPriv->type) && itemPriv->spatialNode) {
+            auto *userRenderPass = static_cast<QSSGRenderUserPass *>(itemPriv->spatialNode);
+            if (const auto idx = userRenderPasses.indexOf(userRenderPass); idx == -1)
+                userRenderPasses.push_back(userRenderPass);
         }
     }
 
-    if (QSSGRenderGraphObject::isTexture(itemPriv->type) && qobject_cast<QQuick3DTexture *>(resourceObject)->extensionDirty())
+    if (itemPriv->hasFlag(QQuick3DObjectPrivate::Flags::RequiresSecondaryUpdate) && itemPriv->secondaryUpdateRequested)
         dirtySecondPassResources.insert(resourceObject);
 
     // resource nodes dont go in the tree, so we dont need to parent them
@@ -371,6 +380,17 @@ QQuick3DSceneManager::SyncResult QQuick3DSceneManager::cleanupNodes()
         // longer be usable from this point from the frontend
         m_nodeMap.remove(node);
 
+        if (QSSGRenderGraphObjectUtils::hasInternalFlag(*node, QSSGRenderGraphObjectUtils::InternalFlags::AutoRegisterExtension)) {
+            autoRegisteredExtensions.removeAll(node);
+            autoRegisteredExtensionsDirty = true;
+        }
+
+        if (QSSGRenderGraphObjectUtils::isUserRenderPass(node->type)) {
+            auto *userRenderPass = static_cast<QSSGRenderUserPass *>(node);
+            if (qsizetype idx = userRenderPasses.indexOf(userRenderPass); idx != -1)
+                userRenderPasses.remove(idx);
+        }
+
         // Some nodes will trigger resource cleanups that need to
         // happen at a specified time (when graphics backend is active)
         // So build another queue for graphics assets marked for removal
@@ -466,6 +486,14 @@ QQuick3DSceneManager::SyncResult QQuick3DSceneManager::updateExtensions(QQuick3D
 
         if (po->spatialNode)
             m_nodeMap.insert(po->spatialNode, extension);
+
+        if (newNode && QSSGRenderGraphObjectUtils::hasInternalFlag(*newNode, QSSGRenderGraphObjectUtils::InternalFlags::AutoRegisterExtension)) {
+            const bool shouldInsert = autoRegisteredExtensions.indexOf(static_cast<QSSGRenderExtension *>(newNode)) == -1;
+            if (shouldInsert) {
+                autoRegisteredExtensions.push_back(static_cast<QSSGRenderExtension *>(newNode));
+                autoRegisteredExtensionsDirty = true;
+            }
+        }
     };
 
     // Detach the current list head first, and consume all reachable entries.

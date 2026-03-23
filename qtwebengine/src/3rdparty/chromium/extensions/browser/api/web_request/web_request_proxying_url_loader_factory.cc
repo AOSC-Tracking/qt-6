@@ -20,7 +20,6 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
-#include "base/not_fatal_until.h"
 #include "base/notreached.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
@@ -123,7 +122,8 @@ net::RedirectInfo CreateRedirectInfo(
           ? net::RedirectInfo::FirstPartyURLPolicy::UPDATE_URL_ON_REDIRECT
           : net::RedirectInfo::FirstPartyURLPolicy::NEVER_CHANGE_URL,
       original_request.referrer_policy, original_request.referrer.spec(),
-      response_code, new_url, referrer_policy_header,
+      original_request.request_initiator, response_code, new_url,
+      referrer_policy_header,
       /*insecure_scheme_was_upgraded=*/false, /*copy_fragment=*/false,
       /*is_signed_exchange_fallback_redirect=*/false);
 }
@@ -640,10 +640,16 @@ void WebRequestProxyingURLLoaderFactory::InProgressRequest::OnHeadersReceived(
       TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT,
       "for_cors_preflight", for_cors_preflight_);
 
+  auto parsed_headers = base::MakeRefCounted<net::HttpResponseHeaders>(headers);
   if (!current_request_uses_header_client_) {
     std::move(callback).Run(net::OK, std::nullopt, std::nullopt);
 
-    if (for_cors_preflight_) {
+    // Do not finish proxied preflight requests that require proxy auth.
+    // The request is not finished yet, give control back to network service
+    // which will start authentication process.
+    const int status_code = parsed_headers->response_code();
+    if (for_cors_preflight_ &&
+        status_code != net::HTTP_PROXY_AUTHENTICATION_REQUIRED) {
       // CORS preflight is supported only when "extraHeaders" is specified.
       // Deletes |this|.
       factory_->RemoveRequest(network_service_request_id_, request_id_);
@@ -653,8 +659,7 @@ void WebRequestProxyingURLLoaderFactory::InProgressRequest::OnHeadersReceived(
 
   on_headers_received_callback_ = std::move(callback);
   current_response_ = network::mojom::URLResponseHead::New();
-  current_response_->headers =
-      base::MakeRefCounted<net::HttpResponseHeaders>(headers);
+  current_response_->headers = std::move(parsed_headers);
   current_response_->remote_endpoint = remote_endpoint;
   HandleResponseOrRedirectHeaders(
       base::BindOnce(&InProgressRequest::ContinueToHandleOverrideHeaders,
@@ -698,11 +703,14 @@ void WebRequestProxyingURLLoaderFactory::InProgressRequest::
       kInternalRedirectStatusCode, redirect_url_.spec().c_str());
 
   // Cross-origin requests need to modify the Origin header to 'null'. Since
-  // CorsURLLoader sets |request_initiator| to the Origin request header in
-  // NetworkService, we need to modify |request_initiator| here to craft the
+  // CorsURLLoader sets `request_initiator` to the Origin request header in
+  // NetworkService, we need to modify `request_initiator` here to craft the
   // Origin header indirectly.
   // Following checks implement the step 10 of "4.4. HTTP-redirect fetch",
   // https://fetch.spec.whatwg.org/#http-redirect-fetch
+  // Note: The original initiator is still recorded in `redirect_info`. This is
+  // intentional as it may be used inside the renderer to check if a redirect to
+  // an extension's Web Accessible Resource is safe.
   if (request_.request_initiator &&
       (!url::IsSameOriginWith(redirect_url_, request_.url) &&
        !request_.request_initiator->IsSameOriginWith(request_.url))) {
@@ -1541,6 +1549,9 @@ void WebRequestProxyingURLLoaderFactory::StartProxying(
     scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
+  TRACE_EVENT("extensions",
+              "WebRequestProxyingURLLoaderFactory::StartProxying");
+
   auto proxy = std::make_unique<WebRequestProxyingURLLoaderFactory>(
       browser_context, render_process_id, frame_routing_id, view_routing_id,
       request_id_generator, std::move(navigation_ui_data),
@@ -1609,7 +1620,7 @@ void WebRequestProxyingURLLoaderFactory::OnLoaderCreated(
   }
 
   auto request_it = requests_.find(it->second);
-  CHECK(request_it != requests_.end(), base::NotFatalUntil::M130);
+  CHECK(request_it != requests_.end());
   request_it->second->OnLoaderCreated(std::move(receiver));
 }
 
@@ -1625,7 +1636,7 @@ void WebRequestProxyingURLLoaderFactory::OnLoaderForCorsPreflightCreated(
   // two connections for the actual request and the preflight request before
   // sending request headers is very difficult.
   const uint64_t web_request_id =
-      request_id_generator_->Generate(MSG_ROUTING_NONE, 0);
+      request_id_generator_->Generate(IPC::mojom::kRoutingIdNone, 0);
 
   auto result = requests_.insert(std::make_pair(
       web_request_id, std::make_unique<InProgressRequest>(
@@ -1649,7 +1660,7 @@ void WebRequestProxyingURLLoaderFactory::HandleAuthRequest(
   }
 
   auto request_it = requests_.find(it->second);
-  CHECK(request_it != requests_.end(), base::NotFatalUntil::M130);
+  CHECK(request_it != requests_.end());
   request_it->second->HandleAuthRequest(auth_info, std::move(response_headers),
                                         std::move(callback));
 }

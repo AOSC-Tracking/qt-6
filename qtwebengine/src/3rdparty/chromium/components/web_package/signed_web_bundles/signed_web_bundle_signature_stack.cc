@@ -5,13 +5,14 @@
 #include "components/web_package/signed_web_bundles/signed_web_bundle_signature_stack.h"
 
 #include <algorithm>
+#include <variant>
 
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
-#include "base/functional/overloaded.h"
 #include "base/types/expected.h"
 #include "components/web_package/mojom/web_bundle_parser.mojom.h"
 #include "components/web_package/signed_web_bundles/signed_web_bundle_signature_stack_entry.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 namespace web_package {
 
@@ -50,7 +51,7 @@ SignedWebBundleSignatureStack::Create(
   }
 
   if (std::ranges::all_of(entries, [](const auto& signature) {
-        return absl::holds_alternative<SignedWebBundleSignatureInfoUnknown>(
+        return std::holds_alternative<SignedWebBundleSignatureInfoUnknown>(
             signature.signature_info());
       })) {
     return base::unexpected(
@@ -84,26 +85,16 @@ SignedWebBundleSignatureStack& SignedWebBundleSignatureStack::operator=(
 
 SignedWebBundleSignatureStack::~SignedWebBundleSignatureStack() = default;
 
-bool SignedWebBundleSignatureStack::operator==(
-    const SignedWebBundleSignatureStack& other) const {
-  return entries() == other.entries();
-}
-
-bool SignedWebBundleSignatureStack::operator!=(
-    const SignedWebBundleSignatureStack& other) const {
-  return !operator==(other);
-}
-
 std::vector<PublicKey> SignedWebBundleSignatureStack::public_keys() const {
   std::vector<PublicKey> public_keys;
   for (const auto& signature : entries()) {
-    absl::visit(
-        base::Overloaded{[&](const auto& signature_info) {
-                           public_keys.push_back(signature_info.public_key());
-                         },
-                         [](const SignedWebBundleSignatureInfoUnknown&) {
-                           // Unknown signatures cannot provide a public key.
-                         }},
+    std::visit(
+        absl::Overload{[&](const auto& signature_info) {
+                         public_keys.push_back(signature_info.public_key());
+                       },
+                       [](const SignedWebBundleSignatureInfoUnknown&) {
+                         // Unknown signatures cannot provide a public key.
+                       }},
         signature.signature_info());
   }
   return public_keys;

@@ -112,16 +112,10 @@ bool InputTypeIsCancelable(InputEvent::InputType input_type) {
                                             const InputEventInit* initializer,
                                             ExceptionState& exception_state) {
   InputEvent* result;
-  if (RuntimeEnabledFeatures::InputEventConstructorThrowsEnabled()) {
-    CHECK(!exception_state.HadException());
-    result =
-        MakeGarbageCollected<InputEvent>(type, initializer, exception_state);
-    if (exception_state.HadException()) {
-      return nullptr;
-    }
-  } else {
-    result =
-        MakeGarbageCollected<InputEvent>(type, initializer, IGNORE_EXCEPTION);
+  CHECK(!exception_state.HadException());
+  result = MakeGarbageCollected<InputEvent>(type, initializer, exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
   }
   return result;
 }
@@ -153,7 +147,7 @@ InputEvent::InputEvent(const AtomicString& type,
                        const String& data,
                        DataTransfer* data_transfer,
                        EventIsComposing is_composing,
-                       const StaticRangeVector* ranges)
+                       const GCedStaticRangeVector* ranges)
     : UIEvent(type, &init),
       input_type_(input_type),
       data_(data),
@@ -170,7 +164,7 @@ InputEvent::InputEvent(const AtomicString& type,
 InputEvent* InputEvent::CreateBeforeInput(InputType input_type,
                                           const String& data,
                                           EventIsComposing is_composing,
-                                          const StaticRangeVector* ranges) {
+                                          const GCedStaticRangeVector* ranges) {
   auto* event_init = UIEventInit::Create();
   event_init->setBubbles(true);
   event_init->setCancelable(InputTypeIsCancelable(input_type));
@@ -184,7 +178,7 @@ InputEvent* InputEvent::CreateBeforeInput(InputType input_type,
 InputEvent* InputEvent::CreateBeforeInput(InputType input_type,
                                           DataTransfer* data_transfer,
                                           EventIsComposing is_composing,
-                                          const StaticRangeVector* ranges) {
+                                          const GCedStaticRangeVector* ranges) {
   auto* event_init = UIEventInit::Create();
   event_init->setBubbles(true);
   event_init->setCancelable(InputTypeIsCancelable(input_type));
@@ -198,7 +192,7 @@ InputEvent* InputEvent::CreateBeforeInput(InputType input_type,
 InputEvent* InputEvent::CreateInput(InputType input_type,
                                     const String& data,
                                     EventIsComposing is_composing,
-                                    const StaticRangeVector* ranges) {
+                                    const GCedStaticRangeVector* ranges) {
   auto* event_init = UIEventInit::Create();
   event_init->setBubbles(true);
   event_init->setCancelable(false);

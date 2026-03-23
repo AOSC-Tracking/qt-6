@@ -33,8 +33,8 @@ class AudioRenderer : public Renderer
 {
     Q_OBJECT
 public:
-    AudioRenderer(const TimeController &tc, QAudioOutput *output, QAudioBufferOutput *bufferOutput,
-                  bool pitchCompensation);
+    AudioRenderer(const PlaybackEngineObjectID &id, const TimeController &tc, QAudioOutput *output,
+                  QAudioBufferOutput *bufferOutput, bool pitchCompensation);
 
     void setOutput(QAudioOutput *output);
 
@@ -87,7 +87,7 @@ protected:
 
     void onPlaybackRateChanged() override;
 
-    std::chrono::milliseconds timerInterval() const override;
+    TimePoint nextTimePoint() const override;
 
     void onPauseChanged() override;
 

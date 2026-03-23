@@ -9,6 +9,7 @@
 
 #include "src/common/globals.h"
 #include "src/handles/maybe-handles.h"
+#include "src/objects/free-space.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/instance-type.h"
 #include "src/objects/maybe-object.h"
@@ -25,6 +26,14 @@
 namespace v8::internal {
 
 #include "torque-generated/src/objects/fixed-array-tq.inc"
+
+// Limit all fixed arrays to the same max capacity, so that non-resizing
+// transitions between different elements kinds (like Smi to Double) will not
+// error.
+// This could be larger, but the next power of two up would push the maximum
+// byte size of FixedDoubleArray out of int32 range.
+static constexpr int kMaxFixedArrayCapacity =
+    V8_LOWER_LIMITS_MODE_BOOL ? (16 * 1024 * 1024) : (128 * 1024 * 1024);
 
 namespace detail {
 template <class Super, bool kLengthEqualsCapacity>
@@ -70,7 +79,7 @@ struct TaggedArrayHeaderHelper<
     Shape, Super, std::void_t<typename Shape::template ExtraFields<Super>>> {
   using BaseHeader = ArrayHeaderBase<Super, Shape::kLengthEqualsCapacity>;
   using type = typename Shape::template ExtraFields<BaseHeader>;
-  static_assert(std::is_base_of<BaseHeader, type>::value);
+  static_assert(std::is_base_of_v<BaseHeader, type>);
 };
 template <class Shape, class Super>
 using TaggedArrayHeader = typename TaggedArrayHeaderHelper<Shape, Super>::type;
@@ -84,7 +93,7 @@ using TaggedArrayHeader = typename TaggedArrayHeaderHelper<Shape, Super>::type;
 // Shap using V8_ARRAY_EXTRA_FIELDS.
 V8_OBJECT template <class Derived, class ShapeT, class Super = HeapObjectLayout>
 class TaggedArrayBase : public detail::TaggedArrayHeader<ShapeT, Super> {
-  static_assert(std::is_base_of<HeapObjectLayout, Super>::value);
+  static_assert(std::is_base_of_v<HeapObjectLayout, Super>);
   using ElementT = typename ShapeT::ElementT;
 
   static_assert(sizeof(TaggedMember<ElementT>) == kTaggedSize);
@@ -172,14 +181,11 @@ class TaggedArrayBase : public detail::TaggedArrayHeader<ShapeT, Super> {
   inline SlotType RawFieldOfFirstElement() const;
   inline SlotType RawFieldOfElementAt(int index) const;
 
-  // Maximal allowed capacity, in number of elements. Chosen s.t. the size fits
-  // into a Smi which is necessary for being able to create a free space
+  // Maximal allowed capacity, in number of elements. Chosen s.t. the byte size
+  // fits into a Smi which is necessary for being able to create a free space
   // filler.
-  // TODO(jgruber): The kMaxCapacity could be larger (`(Smi::kMaxValue -
-  // Shape::kHeaderSize) / kElementSize`), but our tests rely on a
-  // smaller maximum to avoid timeouts.
-  static constexpr int kMaxCapacity = 128 * MB - sizeof(Header) / kElementSize;
-  static_assert(Smi::IsValid(SizeFor(kMaxCapacity)));
+  static constexpr int kMaxCapacity = kMaxFixedArrayCapacity;
+  static_assert(SizeFor(kMaxCapacity) <= FreeSpace::kMaxSizeInBytes);
 
   // Maximally allowed length for regular (non large object space) object.
   static constexpr int kMaxRegularCapacity =
@@ -333,8 +339,8 @@ V8_OBJECT class ProtectedFixedArray
   // Allocate a new ProtectedFixedArray of the given capacity, initialized with
   // Smi::zero().
   template <class IsolateT>
-  static inline Handle<ProtectedFixedArray> New(IsolateT* isolate,
-                                                int capacity);
+  static inline Handle<ProtectedFixedArray> New(IsolateT* isolate, int capacity,
+                                                bool shared = false);
 
   DECL_PRINTER(ProtectedFixedArray)
   DECL_VERIFIER(ProtectedFixedArray)
@@ -372,18 +378,13 @@ class FixedArrayBase : public detail::ArrayHeaderBase<HeapObjectLayout, true> {
 
   V8_EXPORT_PRIVATE bool IsCowArray() const;
 
-  // Maximal allowed size, in bytes, of a single FixedArrayBase. Prevents
-  // overflowing size computations, as well as extreme memory consumption.
-  static constexpr int kMaxSize = 128 * kTaggedSize * MB;
-  static_assert(Smi::IsValid(kMaxSize));
-
   DECL_VERIFIER(FixedArrayBase)
 } V8_OBJECT_END;
 
 V8_OBJECT
 template <class Derived, class ShapeT, class Super = HeapObjectLayout>
 class PrimitiveArrayBase : public detail::ArrayHeaderBase<Super, true> {
-  static_assert(std::is_base_of<HeapObjectLayout, Super>::value);
+  static_assert(std::is_base_of_v<HeapObjectLayout, Super>);
 
   using ElementT = typename ShapeT::ElementT;
   static_assert(!is_subtype_v<ElementT, Object>);
@@ -421,15 +422,11 @@ class PrimitiveArrayBase : public detail::ArrayHeaderBase<Super, true> {
 
   static inline Tagged<Derived> FromAddressOfFirstElement(Address address);
 
-  // Maximal allowed length, in number of elements. Chosen s.t. the size fits
-  // into a Smi which is necessary for being able to create a free space
+  // Maximal allowed length, in number of elements. Chosen s.t. the byte size
+  // fits into a Smi which is necessary for being able to create a free space
   // filler.
-  // TODO(jgruber): The kMaxLength could be larger (`(Smi::kMaxValue -
-  // sizeof(Header)) / kElementSize`), but our tests rely on a
-  // smaller maximum to avoid timeouts.
-  static constexpr int kMaxLength =
-      (FixedArrayBase::kMaxSize - sizeof(Header)) / kElementSize;
-  static_assert(Smi::IsValid(SizeFor(kMaxLength)));
+  static constexpr int kMaxLength = kMaxFixedArrayCapacity;
+  static_assert(SizeFor(kMaxLength) <= FreeSpace::kMaxSizeInBytes);
 
   // Maximally allowed length for regular (non large object space) object.
   static constexpr int kMaxRegularLength =
@@ -494,7 +491,7 @@ V8_OBJECT class FixedDoubleArray
   class BodyDescriptor;
 } V8_OBJECT_END;
 
-static_assert(FixedDoubleArray::kMaxLength <= FixedArray::kMaxLength);
+static_assert(FixedDoubleArray::kMaxLength == FixedArray::kMaxLength);
 
 class WeakFixedArrayShape final : public AllStatic {
  public:
@@ -587,7 +584,6 @@ V8_OBJECT class ProtectedWeakFixedArray
 class WeakArrayList
     : public TorqueGeneratedWeakArrayList<WeakArrayList, HeapObject> {
  public:
-  NEVER_READ_ONLY_SPACE
   DECL_PRINTER(WeakArrayList)
 
   V8_EXPORT_PRIVATE static Handle<WeakArrayList> AddToEnd(
@@ -603,8 +599,8 @@ class WeakArrayList
   // Appends an element to the array and possibly compacts and shrinks live weak
   // references to the start of the collection. Only use this method when
   // indices to elements can change.
-  static V8_WARN_UNUSED_RESULT Handle<WeakArrayList> Append(
-      Isolate* isolate, Handle<WeakArrayList> array,
+  static V8_WARN_UNUSED_RESULT DirectHandle<WeakArrayList> Append(
+      Isolate* isolate, DirectHandle<WeakArrayList> array,
       MaybeObjectDirectHandle value,
       AllocationType allocation = AllocationType::kYoung);
 
@@ -623,6 +619,9 @@ class WeakArrayList
   inline void Set(int index, Tagged<MaybeObject> value,
                   WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
   inline void Set(int index, Tagged<Smi> value);
+
+  using TorqueGeneratedWeakArrayList<WeakArrayList, HeapObject>::capacity;
+  inline int capacity(RelaxedLoadTag) const;
 
   static constexpr int SizeForCapacity(int capacity) {
     return SizeFor(capacity);
@@ -645,8 +644,14 @@ class WeakArrayList
 
   class BodyDescriptor;
 
-  static const int kMaxCapacity =
-      (FixedArrayBase::kMaxSize - kHeaderSize) / kTaggedSize;
+  // Maximal allowed length, in number of elements. Chosen s.t. the byte size
+  // fits into a Smi which is necessary for being able to create a free space
+  // filler.
+  // TODO(jgruber): The kMaxLength could be larger (`(Smi::kMaxValue -
+  // sizeof(Header)) / kElementSize`), but our tests rely on a
+  // smaller maximum to avoid timeouts.
+  static constexpr int kMaxCapacity = kMaxFixedArrayCapacity;
+  static_assert(Smi::IsValid(SizeFor(kMaxCapacity)));
 
   static Handle<WeakArrayList> EnsureSpace(
       Isolate* isolate, Handle<WeakArrayList> array, int length,
@@ -709,22 +714,22 @@ V8_OBJECT class ArrayList : public TaggedArrayBase<ArrayList, ArrayListShape> {
   using Shape = ArrayListShape;
 
   template <class IsolateT>
-  static inline Handle<ArrayList> New(
+  static inline DirectHandle<ArrayList> New(
       IsolateT* isolate, int capacity,
       AllocationType allocation = AllocationType::kYoung);
 
   inline int length() const;
   inline void set_length(int value);
 
-  V8_EXPORT_PRIVATE static Handle<ArrayList> Add(
-      Isolate* isolate, Handle<ArrayList> array, Tagged<Smi> obj,
+  V8_EXPORT_PRIVATE static DirectHandle<ArrayList> Add(
+      Isolate* isolate, DirectHandle<ArrayList> array, Tagged<Smi> obj,
       AllocationType allocation = AllocationType::kYoung);
-  V8_EXPORT_PRIVATE static Handle<ArrayList> Add(
-      Isolate* isolate, Handle<ArrayList> array, DirectHandle<Object> obj,
+  V8_EXPORT_PRIVATE static DirectHandle<ArrayList> Add(
+      Isolate* isolate, DirectHandle<ArrayList> array, DirectHandle<Object> obj,
       AllocationType allocation = AllocationType::kYoung);
-  V8_EXPORT_PRIVATE static Handle<ArrayList> Add(
-      Isolate* isolate, Handle<ArrayList> array, DirectHandle<Object> obj0,
-      DirectHandle<Object> obj1,
+  V8_EXPORT_PRIVATE static DirectHandle<ArrayList> Add(
+      Isolate* isolate, DirectHandle<ArrayList> array,
+      DirectHandle<Object> obj0, DirectHandle<Object> obj1,
       AllocationType allocation = AllocationType::kYoung);
 
   V8_EXPORT_PRIVATE static DirectHandle<FixedArray> ToFixedArray(
@@ -741,8 +746,8 @@ V8_OBJECT class ArrayList : public TaggedArrayBase<ArrayList, ArrayListShape> {
   class BodyDescriptor;
 
  private:
-  static Handle<ArrayList> EnsureSpace(
-      Isolate* isolate, Handle<ArrayList> array, int length,
+  static DirectHandle<ArrayList> EnsureSpace(
+      Isolate* isolate, DirectHandle<ArrayList> array, int length,
       AllocationType allocation = AllocationType::kYoung);
 } V8_OBJECT_END;
 
@@ -831,7 +836,7 @@ class TrustedByteArray
 V8_OBJECT
 template <typename T, typename Base>
 class FixedIntegerArrayBase : public Base {
-  static_assert(std::is_integral<T>::value);
+  static_assert(std::is_integral_v<T>);
 
  public:
   // {MoreArgs...} allows passing the `AllocationType` if `Base` is `ByteArray`.

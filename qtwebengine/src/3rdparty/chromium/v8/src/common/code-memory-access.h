@@ -107,11 +107,6 @@ class V8_NODISCARD RwxMemoryWriteScope {
   static int memory_protection_key();
 
   static bool IsPKUWritable();
-
-  // Linux resets key's permissions to kDisableAccess before executing signal
-  // handlers. If the handler requires access to code page bodies it should take
-  // care of changing permissions to the default state (kDisableWrite).
-  static V8_EXPORT void SetDefaultPermissionsForSignalHandler();
 #endif  // V8_HAS_PKU_JIT_WRITE_PROTECT
 
  private:
@@ -297,7 +292,7 @@ class V8_EXPORT ThreadIsolation {
     class JitPage* JitPage() { return jit_page_; }
 
    private:
-    base::SpinningMutexGuard page_lock_;
+    base::MutexGuard page_lock_;
     class JitPage* jit_page_;
     // We get the address from the key of the map when we do a JitPage lookup.
     // We can save some memory by storing it as part of the reference instead.
@@ -310,7 +305,7 @@ class V8_EXPORT ThreadIsolation {
     ~JitPage();
 
    private:
-    base::SpinningMutex mutex_;
+    base::Mutex mutex_;
     typedef std::map<Address, JitAllocation, std::less<Address>,
                      StlAllocator<std::pair<const Address, JitAllocation>>>
         AllocationMap;
@@ -342,7 +337,7 @@ class V8_EXPORT ThreadIsolation {
     int pkey = -1;
 #endif
 
-    base::SpinningMutex* jit_pages_mutex_;
+    base::Mutex* jit_pages_mutex_;
     JitPageMap* jit_pages_;
 
 #if DEBUG
@@ -440,6 +435,11 @@ class WritableJitAllocation {
   V8_INLINE void WriteValue(Address address, T value, RelaxedStoreTag);
 
   V8_INLINE void ClearBytes(size_t offset, size_t len);
+
+#ifdef V8_ENABLE_WEBASSEMBLY
+  void UpdateWasmCodePointer(WasmCodePointer code_pointer,
+                             uint64_t signature_hash);
+#endif
 
   Address address() const { return address_; }
   size_t size() const { return allocation_.Size(); }

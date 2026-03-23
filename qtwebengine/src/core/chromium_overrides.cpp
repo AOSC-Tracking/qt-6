@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "type_conversion.h"
 #include "qtwebenginecoreglobal_p.h"
@@ -12,6 +13,7 @@
 #include "content/common/font_list.h"
 #include "content/public/browser/web_contents_view_delegate.h"
 #include "extensions/buildflags/buildflags.h"
+#include "media/media_buildflags.h"
 #include "extensions/common/constants.h"
 #include "gpu/vulkan/buildflags.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -22,7 +24,7 @@
 #include <QFontDatabase>
 #include <QLibraryInfo>
 
-#if !QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
+#if !BUILDFLAG(ENABLE_WEBRTC) && BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/webrtc_logging_private/webrtc_logging_private_api.h"
 #endif
 
@@ -139,7 +141,7 @@ std::unique_ptr<ui::OSExchangeDataProvider> ui::OSExchangeDataProviderFactory::C
     return nullptr;
 }
 
-#if !QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
+#if !BUILDFLAG(ENABLE_WEBRTC) && BUILDFLAG(ENABLE_EXTENSIONS)
 namespace extensions {
 ExtensionFunction::ResponseAction WebrtcLoggingPrivateSetMetaDataFunction::Run()
 {
@@ -211,4 +213,4 @@ ExtensionFunction::ResponseAction WebrtcLoggingPrivateGetLogsDirectoryFunction::
     return RespondNow(NoArguments());
 }
 } // namespace extensions
-#endif // !QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
+#endif // !BUILDFLAG(ENABLE_WEBRTC) && BUILDFLAG(ENABLE_EXTENSIONS)

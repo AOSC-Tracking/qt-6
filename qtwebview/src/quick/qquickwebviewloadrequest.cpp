@@ -1,8 +1,9 @@
 // Copyright (C) 2015 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickwebviewloadrequest_p.h"
-#include <QtWebView/private/qwebviewloadrequest_p.h>
+#include <QtWebView/qwebviewloadinginfo.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -17,8 +18,8 @@ QT_BEGIN_NAMESPACE
 
     \sa {WebView::loadingChanged()}{WebView.loadingChanged()}
 */
-QQuickWebViewLoadRequest::QQuickWebViewLoadRequest(const QWebViewLoadRequestPrivate &d)
-    : d_ptr(new QWebViewLoadRequestPrivate(d))
+QQuickWebViewLoadRequest::QQuickWebViewLoadRequest(const QWebViewLoadingInfo &d)
+    : d_ptr(new QWebViewLoadingInfo(d))
 {
 }
 
@@ -32,8 +33,7 @@ QQuickWebViewLoadRequest::~QQuickWebViewLoadRequest() { }
  */
 QUrl QQuickWebViewLoadRequest::url() const
 {
-    Q_D(const QWebViewLoadRequest);
-    return d->m_url;
+    return d_ptr->url();
 }
 
 /*!
@@ -50,8 +50,7 @@ QUrl QQuickWebViewLoadRequest::url() const
 */
 QQuickWebView::LoadStatus QQuickWebViewLoadRequest::status() const
 {
-    Q_D(const QWebViewLoadRequest);
-    return QQuickWebView::LoadStatus(d->m_status);
+    return QQuickWebView::LoadStatus(d_ptr->status());
 }
 
 /*!
@@ -62,8 +61,7 @@ QQuickWebView::LoadStatus QQuickWebViewLoadRequest::status() const
 */
 QString QQuickWebViewLoadRequest::errorString() const
 {
-    Q_D(const QWebViewLoadRequest);
-    return d->m_errorString;
+    return d_ptr->errorString();
 }
 
 QT_END_NAMESPACE

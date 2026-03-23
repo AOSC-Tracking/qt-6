@@ -135,7 +135,7 @@ describeWithMockConnection('ConsoleViewMessage', () => {
       const {message} = createConsoleViewMessageWithStubDeps(rawMessage);
       const messageElement = message.toMessageElement();  // Trigger rendering.
       const button = messageElement.querySelector('[aria-label=\'Understand this error. Powered by AI.\']');
-      assert.strictEqual(button?.textContent, 'Understand this errorAI');
+      assert.strictEqual(button?.textContent, 'Understand this error');
     });
 
     it('does not show a hover button if the console message text is empty', () => {
@@ -172,7 +172,7 @@ describeWithMockConnection('ConsoleViewMessage', () => {
     const IGNORE_LIST_LINK = 'ignore-list-link';
 
     function findStackPreviewContainer(element: HTMLElement) {
-      const outer = element.querySelector('span.stack-preview-container');
+      const outer = element.querySelector('.stack-preview-container');
       assert.isNotNull(outer);
       const inner = outer.shadowRoot;
       assert.isNotNull(inner);
@@ -255,7 +255,7 @@ describeWithMockConnection('ConsoleViewMessage', () => {
     }
 
     async function createConsoleMessageWithIgnoreListing(
-        ignoreListFn: (url: string) => Boolean, withBuiltinFrames?: boolean): Promise<HTMLElement> {
+        ignoreListFn: (url: string) => boolean, withBuiltinFrames?: boolean): Promise<HTMLElement> {
       const target = createTarget();
       const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel);
       const stackTrace = createStackTrace([
@@ -279,14 +279,14 @@ describeWithMockConnection('ConsoleViewMessage', () => {
           stackTraceMessage, messageDetails);
       const {message, linkifier} = createConsoleViewMessageWithStubDeps(rawMessage);
 
-      linkifier.linkifyScriptLocation.callsFake((target, scriptId, sourceURL, lineNumber, options) => {
+      linkifier.linkifyScriptLocation.callsFake((_target, _scriptId, sourceURL, lineNumber, options) => {
         const link = Components.Linkifier.Linkifier.linkifyURL(sourceURL, {lineNumber, ...options});
         if (ignoreListFn(sourceURL)) {
           link.classList.add(IGNORE_LIST_LINK);
         }
         return link;
       });
-      linkifier.maybeLinkifyConsoleCallFrame.callsFake((target, callFrame, options) => {
+      linkifier.maybeLinkifyConsoleCallFrame.callsFake((_target, callFrame, options) => {
         const link = Components.Linkifier.Linkifier.linkifyURL(
             urlString`${callFrame.url}`, {lineNumber: callFrame.lineNumber, ...options});
         if (ignoreListFn(callFrame.url)) {

@@ -25,6 +25,12 @@ import {
 import {getThreadUriPrefix} from '../../public/utils';
 import {TrackNode} from '../../public/workspace';
 import ProcessThreadGroupsPlugin from '../dev.perfetto.ProcessThreadGroups';
+import {AreaSelection, areaSelectionsEqual} from '../../public/selection';
+import {
+  metricsFromTableOrSubquery,
+  QueryFlamegraph,
+} from '../../components/query_flamegraph';
+import {Flamegraph} from '../../widgets/flamegraph';
 
 export interface Data extends TrackData {
   tsStarts: BigInt64Array;
@@ -48,20 +54,22 @@ export default class implements PerfettoPlugin {
     for (const it = pResult.iter({upid: NUM}); it.valid(); it.next()) {
       const upid = it.upid;
       const uri = makeUriForProc(upid);
-      const title = `Process Callstacks`;
       ctx.tracks.registerTrack({
         uri,
-        title,
         tags: {
           kind: INSTRUMENTS_SAMPLES_PROFILE_TRACK_KIND,
           upid,
         },
-        track: createProcessInstrumentsSamplesProfileTrack(ctx, uri, upid),
+        renderer: createProcessInstrumentsSamplesProfileTrack(ctx, uri, upid),
       });
       const group = ctx.plugins
         .getPlugin(ProcessThreadGroupsPlugin)
         .getGroupForProcess(upid);
-      const track = new TrackNode({uri, title, sortOrder: -40});
+      const track = new TrackNode({
+        uri,
+        name: 'Process Callstacks',
+        sortOrder: -40,
+      });
       group?.addChildInOrder(track);
     }
     const tResult = await ctx.engine.query(`
@@ -85,31 +93,32 @@ export default class implements PerfettoPlugin {
       it.next()
     ) {
       const {threadName, utid, tid, upid} = it;
-      const title =
+      const name =
         threadName === null
           ? `Thread Callstacks ${tid}`
           : `${threadName} Callstacks ${tid}`;
       const uri = `${getThreadUriPrefix(upid, utid)}_instruments_samples_profile`;
       ctx.tracks.registerTrack({
         uri,
-        title,
         tags: {
           kind: INSTRUMENTS_SAMPLES_PROFILE_TRACK_KIND,
           utid,
           upid: upid ?? undefined,
         },
-        track: createThreadInstrumentsSamplesProfileTrack(ctx, uri, utid),
+        renderer: createThreadInstrumentsSamplesProfileTrack(ctx, uri, utid),
       });
       const group = ctx.plugins
         .getPlugin(ProcessThreadGroupsPlugin)
         .getGroupForThread(utid);
-      const track = new TrackNode({uri, title, sortOrder: -50});
+      const track = new TrackNode({uri, name, sortOrder: -50});
       group?.addChildInOrder(track);
     }
 
     ctx.onTraceReady.addListener(async () => {
       await selectInstrumentsSample(ctx);
     });
+
+    ctx.selection.registerAreaSelectionTab(createAreaSelectionTab(ctx));
   }
 }
 
@@ -132,4 +141,100 @@ async function selectInstrumentsSample(ctx: Trace) {
     end: ctx.traceInfo.end,
     trackUris: [makeUriForProc(upid)],
   });
+}
+
+function createAreaSelectionTab(trace: Trace) {
+  let previousSelection: undefined | AreaSelection;
+  let flamegraph: undefined | QueryFlamegraph;
+
+  return {
+    id: 'instruments_sample_flamegraph',
+    name: 'Instruments Sample Flamegraph',
+    render(selection: AreaSelection) {
+      const changed =
+        previousSelection === undefined ||
+        !areaSelectionsEqual(previousSelection, selection);
+
+      if (changed) {
+        flamegraph = computeInstrumentsSampleFlamegraph(trace, selection);
+        previousSelection = selection;
+      }
+
+      if (flamegraph === undefined) {
+        return undefined;
+      }
+
+      return {isLoading: false, content: flamegraph.render()};
+    },
+  };
+}
+
+function computeInstrumentsSampleFlamegraph(
+  trace: Trace,
+  currentSelection: AreaSelection,
+) {
+  const upids = getUpidsFromInstrumentsSampleAreaSelection(currentSelection);
+  const utids = getUtidsFromInstrumentsSampleAreaSelection(currentSelection);
+  if (utids.length === 0 && upids.length === 0) {
+    return undefined;
+  }
+  const metrics = metricsFromTableOrSubquery(
+    `
+      (
+        select id, parent_id as parentId, name, self_count
+        from _callstacks_for_callsites!((
+          select p.callsite_id
+          from instruments_sample p
+          join thread t using (utid)
+          where p.ts >= ${currentSelection.start}
+            and p.ts <= ${currentSelection.end}
+            and (
+              p.utid in (${utids.join(',')})
+              or t.upid in (${upids.join(',')})
+            )
+        ))
+      )
+    `,
+    [
+      {
+        name: 'Instruments Samples',
+        unit: '',
+        columnName: 'self_count',
+      },
+    ],
+    'include perfetto module appleos.instruments.samples',
+  );
+  return new QueryFlamegraph(trace, metrics, {
+    state: Flamegraph.createDefaultState(metrics),
+  });
+}
+
+function getUpidsFromInstrumentsSampleAreaSelection(
+  currentSelection: AreaSelection,
+) {
+  const upids = [];
+  for (const trackInfo of currentSelection.tracks) {
+    if (
+      trackInfo?.tags?.kind === INSTRUMENTS_SAMPLES_PROFILE_TRACK_KIND &&
+      trackInfo.tags?.utid === undefined
+    ) {
+      upids.push(assertExists(trackInfo.tags?.upid));
+    }
+  }
+  return upids;
+}
+
+function getUtidsFromInstrumentsSampleAreaSelection(
+  currentSelection: AreaSelection,
+) {
+  const utids = [];
+  for (const trackInfo of currentSelection.tracks) {
+    if (
+      trackInfo?.tags?.kind === INSTRUMENTS_SAMPLES_PROFILE_TRACK_KIND &&
+      trackInfo.tags?.utid !== undefined
+    ) {
+      utids.push(trackInfo.tags?.utid);
+    }
+  }
+  return utids;
 }

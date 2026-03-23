@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWINDOWSVISTAANIMATION_P_H
 #define QWINDOWSVISTAANIMATION_P_H
@@ -37,15 +38,6 @@ class QWindowsVistaTransition : public QWindowsVistaAnimation
     Q_OBJECT
 public:
     QWindowsVistaTransition(QObject *target) : QWindowsVistaAnimation(Transition, target) {}
-};
-
-
-// Handles pulse animations (default buttons)
-class QWindowsVistaPulse: public QWindowsVistaAnimation
-{
-    Q_OBJECT
-public:
-    QWindowsVistaPulse(QObject *target) : QWindowsVistaAnimation(Pulse, target) {}
 };
 
 QT_END_NAMESPACE

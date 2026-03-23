@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLLIST_H
 #define QQMLLIST_H
@@ -95,7 +96,13 @@ public:
             if (append == qlist_append)
                 return *static_cast<QList<T *> *>(data);
         }
+        return toList_impl<List>();
+    }
 
+private:
+    template<typename List>
+    List toList_impl()
+    {
         const qsizetype size = count(this);
 
         List result;
@@ -135,7 +142,7 @@ private:
         if (idx < 0 || idx >= length)
             return;
 
-        QVector<T *> stash;
+        QList<T *> stash;
         if (list->clear != qslow_clear) {
             stash.reserve(length);
             for (qsizetype i = 0; i < length; ++i)
@@ -167,7 +174,7 @@ private:
         const qsizetype length = list->count(list) - 1;
         if (length < 0)
             return;
-        QVector<T *> stash;
+        QList<T *> stash;
         stash.reserve(length);
         for (qsizetype i = 0; i < length; ++i)
             stash.append(list->at(list, i));

@@ -22,7 +22,6 @@
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/extensions_3d_util.h"
-#include "third_party/blink/renderer/platform/graphics/graphics_types.h"
 #include "third_party/blink/renderer/platform/graphics/test/test_webgraphics_shared_image_interface_provider.h"
 #include "ui/gl/gpu_preference.h"
 
@@ -83,9 +82,6 @@ class WebGraphicsContext3DProviderForTests
   gpu::TestSharedImageInterface* SharedImageInterface() override {
     return test_shared_image_interface_.get();
   }
-  void CopyVideoFrame(media::PaintCanvasVideoRenderer* video_render,
-                      media::VideoFrame* video_frame,
-                      cc::PaintCanvas* canvas) override {}
   viz::RasterContextProvider* RasterContextProvider() const override {
     return nullptr;
   }
@@ -238,11 +234,10 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
     }
   }
 
-  void GenTextures(GLsizei n, GLuint* textures) override {
-    static GLuint id = 1;
-    for (GLsizei i = 0; i < n; ++i)
-      textures[i] = id++;
-  }
+  void GenTextures(GLsizei n, GLuint* textures) override;
+
+  // ImplementationBase implementation
+  void GenSyncTokenCHROMIUM(GLbyte* sync_token) override;
 
   MOCK_METHOD1(CreateAndTexStorage2DSharedImageCHROMIUMMock,
                void(const GLbyte*));
@@ -255,14 +250,6 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
     last_imported_shared_image_.SetName(
         reinterpret_cast<const gpu::Mailbox*>(mailbox)->name);
     return texture_id;
-  }
-
-  // ImplementationBase implementation
-  void GenSyncTokenCHROMIUM(GLbyte* sync_token) override {
-    static gpu::CommandBufferId::Generator command_buffer_id_generator;
-    gpu::SyncToken source(gpu::GPU_IO,
-                          command_buffer_id_generator.GenerateNextId(), 2);
-    memcpy(sync_token, &source, sizeof(source));
   }
 
   MOCK_METHOD1(WaitSyncTokenCHROMIUMMock, void(const GLbyte* sync_token));
@@ -375,8 +362,8 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
               saved_state_.pixel_pack_buffer_binding);
   }
 
-  gpu::Mailbox* last_imported_shared_image() {
-    return &last_imported_shared_image_;
+  const gpu::Mailbox& last_imported_shared_image() {
+    return last_imported_shared_image_;
   }
 
  private:
@@ -437,13 +424,14 @@ class DrawingBufferForTests : public DrawingBuffer {
       DrawingBuffer::Client* client,
       const gfx::Size& size,
       PreserveDrawingBuffer preserve,
-      UseMultisampling use_multisampling) {
+      UseMultisampling use_multisampling,
+      bool desynchronized = false) {
     std::unique_ptr<Extensions3DUtil> extensions_util =
         Extensions3DUtil::Create(context_provider->ContextGL());
     scoped_refptr<DrawingBufferForTests> drawing_buffer =
         base::AdoptRef(new DrawingBufferForTests(
             std::move(context_provider), graphics_info,
-            std::move(extensions_util), client, preserve));
+            std::move(extensions_util), client, preserve, desynchronized));
     if (!drawing_buffer->Initialize(
             size, use_multisampling != kDisableMultisampling)) {
       drawing_buffer->BeginDestruction();
@@ -460,12 +448,13 @@ class DrawingBufferForTests : public DrawingBuffer {
       const Platform::GraphicsInfo& graphics_info,
       std::unique_ptr<Extensions3DUtil> extensions_util,
       DrawingBuffer::Client* client,
-      PreserveDrawingBuffer preserve)
+      PreserveDrawingBuffer preserve,
+      bool desynchronized)
       : DrawingBuffer(
             std::move(context_provider),
             graphics_info,
             false /* usingSwapChain */,
-            false /* desynchronized */,
+            desynchronized,
             std::move(extensions_util),
             client,
             false /* discardFramebufferSupported */,

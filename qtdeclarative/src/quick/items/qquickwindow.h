@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKWINDOW_H
 #define QQUICKWINDOW_H
@@ -43,11 +44,12 @@ class Q_QUICK_EXPORT QQuickWindow : public QWindow
     Q_OBJECT
     Q_PRIVATE_PROPERTY(QQuickWindow::d_func(), QQmlListProperty<QObject> data READ data DESIGNABLE false)
     Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
-    Q_PROPERTY(QQuickItem* contentItem READ contentItem CONSTANT)
+    Q_PROPERTY(QQuickItem* contentItem READ contentItem CONSTANT VIRTUAL)
     Q_PROPERTY(QQuickItem* activeFocusItem READ activeFocusItem NOTIFY activeFocusItemChanged REVISION(2, 1))
     Q_PRIVATE_PROPERTY(QQuickWindow::d_func(), QQuickPalette *palette READ palette WRITE setPalette
-        RESET resetPalette NOTIFY paletteChanged REVISION(6, 2))
+        RESET resetPalette NOTIFY paletteChanged VIRTUAL REVISION(6, 2))
     QDOC_PROPERTY(QWindow* transientParent READ transientParent WRITE setTransientParent NOTIFY transientParentChanged)
+    Q_PROPERTY(qreal devicePixelRatio READ effectiveDevicePixelRatio NOTIFY devicePixelRatioChanged REVISION(6, 11))
     Q_CLASSINFO("DefaultProperty", "data")
     Q_DECLARE_PRIVATE(QQuickWindow)
 
@@ -189,6 +191,8 @@ Q_SIGNALS:
 
     Q_REVISION(6, 0) void beforeFrameBegin();
     Q_REVISION(6, 0) void afterFrameEnd();
+
+    Q_REVISION(6, 11) void devicePixelRatioChanged();
 
 public Q_SLOTS:
     void update();

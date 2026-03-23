@@ -33,12 +33,12 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include "base/containers/heap_array.h"
 #include "base/containers/span.h"
 #include "base/dcheck_is_on.h"
 #include "base/functional/callback_forward.h"
-#include "base/types/optional_util.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "third_party/blink/public/common/messaging/message_port_channel.h"
 #include "third_party/blink/public/common/messaging/message_port_descriptor.h"
@@ -306,9 +306,7 @@ class CORE_EXPORT SerializedScriptValue
 
   StreamArray& GetStreams() { return streams_; }
 
-  const v8::SharedValueConveyor* MaybeGetSharedValueConveyor() const {
-    return base::OptionalToPtr(shared_value_conveyor_);
-  }
+  const v8::SharedValueConveyor* MaybeGetSharedValueConveyor() const;
 
   bool IsLockedToAgentCluster() const;
 
@@ -363,20 +361,28 @@ class CORE_EXPORT SerializedScriptValue
     return static_cast<T*>(it->value.get());
   }
 
+  struct BufferDeleter {
+    void operator()(uint8_t* buffer) { Partitions::BufferFree(buffer); }
+  };
+  using DataBufferPtr = base::HeapArray<uint8_t, BufferDeleter>;
+
+  // Takes ownership rather than copying.
+  static scoped_refptr<SerializedScriptValue> Create(
+      DataBufferPtr&& data_buffer);
+
+  static DataBufferPtr AllocateBuffer(size_t);
+
+  // Called to take ownership of `data_buffer_` and destroy `this`.
+  // This enforces that there are no other references to `this`.
+  DataBufferPtr ConsumeAndTakeBuffer() &&;
+
  private:
   friend class ScriptValueSerializer;
   friend class V8ScriptValueSerializer;
   friend class UnpackedSerializedScriptValue;
 
-  struct BufferDeleter {
-    void operator()(uint8_t* buffer) { WTF::Partitions::BufferFree(buffer); }
-  };
-  using DataBufferPtr = base::HeapArray<uint8_t, BufferDeleter>;
-
   SerializedScriptValue();
   explicit SerializedScriptValue(DataBufferPtr);
-
-  static DataBufferPtr AllocateBuffer(size_t);
 
   void SetData(DataBufferPtr data) { data_buffer_ = std::move(data); }
 

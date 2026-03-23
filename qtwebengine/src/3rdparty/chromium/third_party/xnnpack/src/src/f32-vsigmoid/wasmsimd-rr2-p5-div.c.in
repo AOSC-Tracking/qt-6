@@ -12,8 +12,8 @@ $ABC = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 #include <wasm_simd128.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/vunary.h"
 
 
 $WASM_V32X4_LANESELECT = "wasm_i32x4_relaxed_laneselect" if RELAXED else "wasm_v128_bitselect"
@@ -23,7 +23,7 @@ void xnn_f32_vsigmoid_ukernel__${ISA}${ARCH_SUFFIX}_rr2_p5_div_u${BATCH_TILE}(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_default_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

@@ -11,6 +11,8 @@ macro(qt_examples_build_begin)
     # Examples are not unity-ready.
     set(CMAKE_UNITY_BUILD OFF)
 
+    qt_internal_sbom_disable_sbom_for_examples_subdir()
+
     # Skip running deployment steps when the developer asked to deploy a minimal subset of examples.
     # Each example can then decide whether it wants to be deployed as part of the minimal subset
     # by unsetting the QT_INTERNAL_SKIP_DEPLOYMENT variable before its qt_internal_add_example call.
@@ -90,6 +92,10 @@ macro(qt_examples_build_begin)
             add_link_options(${active_linker_flags})
         endif()
 
+        if(QT_EXTRA_EXAMPLE_TARGET_DEFINES)
+            add_compile_definitions(${QT_EXTRA_EXAMPLE_TARGET_DEFINES})
+        endif()
+
         # Marker for warnings_as_errors.
         set(QT_INTERNAL_IS_EXAMPLE_IN_TREE_BUILD ON)
     endif()
@@ -114,7 +120,7 @@ macro(qt_examples_build_begin)
     if(NOT QT_IS_EXTERNAL_EXAMPLES_BUILD OR NOT __qt_all_examples_ported_to_external_projects)
         qt_internal_set_up_build_dir_package_paths()
         list(PREPEND CMAKE_FIND_ROOT_PATH "${QT_BUILD_DIR}")
-        list(PREPEND QT_BUILD_CMAKE_PREFIX_PATH "${QT_BUILD_DIR}/${INSTALL_LIBDIR}/cmake")
+        list(PREPEND QT_BUILD_CMAKE_PREFIX_PATH "${QT_BUILD_DIR}/${INSTALL_CMAKEDIR}")
     endif()
 
     # Because CMAKE_INSTALL_RPATH is empty by default in the repo project, examples need to have
@@ -164,6 +170,13 @@ macro(qt_examples_build_end)
             "${CMAKE_CURRENT_SOURCE_DIR}" EXCLUDE UTILITY ALIAS)
 
     foreach(target ${targets})
+        # Skip re-enabling AUTMOC for object libraries created by _qt_internal_add_rcc_pass2,
+        # to avoid build errors.
+        get_target_property(is_rcc_pass2_obj_lib "${target}" _qt_internal_is_rcc_pass2_obj_lib)
+        if(is_rcc_pass2_obj_lib)
+            continue()
+        endif()
+
         qt_autogen_tools(${target} ENABLE_AUTOGEN_TOOLS "moc" "rcc")
         if(TARGET Qt::Widgets)
             qt_autogen_tools(${target} ENABLE_AUTOGEN_TOOLS "uic")
@@ -200,8 +213,11 @@ function(qt_internal_add_example subdir)
     # Don't show warnings for examples that were added via qt_internal_add_example.
     # Those that are added via add_subdirectory will see the warning, due to the parent scope
     # having the variable set to TRUE.
-    if(QT_FEATURE_developer_build AND NOT QT_NO_WARN_ABOUT_EXAMPLE_ADD_SUBDIRECTORY_WARNING)
-        set(QT_WARN_ABOUT_EXAMPLE_ADD_SUBDIRECTORY FALSE)
+    if(QT_FEATURE_developer_build)
+        set(QT_LINT_EXAMPLES ON)
+        if(NOT QT_NO_WARN_ABOUT_EXAMPLE_ADD_SUBDIRECTORY_WARNING)
+            set(QT_WARN_ABOUT_EXAMPLE_ADD_SUBDIRECTORY FALSE)
+        endif()
     endif()
 
     # Pre-compute unique example name based on the subdir, in case of target name clashes.
@@ -354,6 +370,10 @@ function(qt_internal_add_example_external_project subdir)
 
     cmake_parse_arguments(PARSE_ARGV 1 arg "${options}" "${singleOpts}" "${multiOpts}")
 
+    if(QT_FEATURE_developer_build)
+        set(QT_LINT_EXAMPLES ON)
+    endif()
+
     _qt_internal_get_build_vars_for_external_projects(
         CMAKE_DIR_VAR qt_cmake_dir
         PREFIXES_VAR qt_prefixes
@@ -368,6 +388,10 @@ function(qt_internal_add_example_external_project subdir)
         list(APPEND var_defs
             -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${qt_cmake_dir}/qt.toolchain.cmake
         )
+        if(QT_LINT_EXAMPLES)
+            list(APPEND var_defs -DQT_LINT_EXAMPLES=ON)
+        endif()
+
     else()
         list(PREPEND CMAKE_PREFIX_PATH ${qt_prefixes})
 
@@ -383,13 +407,13 @@ function(qt_internal_add_example_external_project subdir)
     # We we need to augment the CMAKE_MODULE_PATH with the current repo cmake build dir, to find
     # files like FindWrapBundledFooConfigExtra.cmake.
     set(module_paths "${qt_prefixes}")
-    list(TRANSFORM module_paths APPEND "/${INSTALL_LIBDIR}/cmake/${QT_CMAKE_EXPORT_NAMESPACE}")
+    list(TRANSFORM module_paths APPEND "/${INSTALL_CMAKEDIR}/${QT_CMAKE_EXPORT_NAMESPACE}")
     list(APPEND CMAKE_MODULE_PATH ${module_paths})
 
     # Pass additional paths where qml plugin config files should be included by Qt6QmlPlugins.cmake.
     # This is needed in prefix builds, where the cmake files are not installed yet.
     set(glob_prefixes "${qt_prefixes}")
-    list(TRANSFORM glob_prefixes APPEND "/${INSTALL_LIBDIR}/cmake/${QT_CMAKE_EXPORT_NAMESPACE}Qml")
+    list(TRANSFORM glob_prefixes APPEND "/${INSTALL_CMAKEDIR}/${QT_CMAKE_EXPORT_NAMESPACE}Qml")
 
     set(qml_plugin_cmake_config_file_glob_prefixes "")
     foreach(glob_prefix IN LISTS glob_prefixes)
@@ -517,6 +541,18 @@ function(qt_internal_add_example_external_project subdir)
         foreach(item_type EXE MODULE SHARED)
             list(APPEND var_defs
                 "-DCMAKE_${item_type}_LINKER_FLAGS_INIT:STRING=${active_linker_flags}")
+        endforeach()
+    endif()
+    if(QT_EXTRA_EXAMPLE_TARGET_DEFINES)
+        unset(extra_args)
+        foreach(def IN LISTS QT_EXTRA_EXAMPLE_TARGET_DEFINES)
+            list(APPEND extra_args "-D${def}")
+        endforeach()
+        list(JOIN extra_args " " extra_defines_str)
+
+        foreach(language IN ITEMS C CXX OBJC OBJCXX)
+            list(APPEND var_defs
+                "-DCMAKE_${language}_FLAGS_INIT:STRING=${extra_defines_str}")
         endforeach()
     endif()
 

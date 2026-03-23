@@ -4,17 +4,56 @@
 
 #include "components/optimization_guide/content/browser/page_content_proto_util.h"
 
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "base/notreached.h"
+#include "base/supports_user_data.h"
+#include "components/optimization_guide/content/browser/page_content_proto_provider.h"
+#include "components/optimization_guide/core/optimization_guide_proto_util.h"
+#include "components/optimization_guide/core/page_content_proto_serializer.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
 #include "third_party/blink/public/mojom/content_extraction/ai_page_content.mojom.h"
+#include "third_party/blink/public/mojom/content_extraction/ai_page_content_metadata.mojom.h"
 #include "third_party/blink/public/mojom/forms/form_control_type.mojom-shared.h"
 #include "url/gurl.h"
 
 namespace optimization_guide {
 
 namespace {
+
+optimization_guide::proto::ClickabilityReason ConvertClickabilityReason(
+    blink::mojom::AIPageContentClickabilityReason reason) {
+  switch (reason) {
+    case blink::mojom::AIPageContentClickabilityReason::kClickableControl:
+      return optimization_guide::proto::CLICKABILITY_REASON_CLICKABLE_CONTROL;
+    case blink::mojom::AIPageContentClickabilityReason::kClickEvents:
+      return optimization_guide::proto::CLICKABILITY_REASON_CLICK_HANDLER;
+    case blink::mojom::AIPageContentClickabilityReason::kMouseEvents:
+      return optimization_guide::proto::CLICKABILITY_REASON_MOUSE_EVENTS;
+    case blink::mojom::AIPageContentClickabilityReason::kKeyEvents:
+      return optimization_guide::proto::CLICKABILITY_REASON_KEY_EVENTS;
+    case blink::mojom::AIPageContentClickabilityReason::kEditable:
+      return optimization_guide::proto::CLICKABILITY_REASON_EDITABLE;
+    case blink::mojom::AIPageContentClickabilityReason::kCursorPointer:
+      return optimization_guide::proto::CLICKABILITY_REASON_CURSOR_POINTER;
+    case blink::mojom::AIPageContentClickabilityReason::kAriaRole:
+      return optimization_guide::proto::CLICKABILITY_REASON_ARIA_ROLE;
+    case blink::mojom::AIPageContentClickabilityReason::kAriaHasPopup:
+      return optimization_guide::proto::CLICKABILITY_REASON_ARIA_HAS_POPUP;
+    case blink::mojom::AIPageContentClickabilityReason::kAriaExpandedTrue:
+      return optimization_guide::proto::CLICKABILITY_REASON_ARIA_EXPANDED_TRUE;
+    case blink::mojom::AIPageContentClickabilityReason::kAriaExpandedFalse:
+      return optimization_guide::proto::CLICKABILITY_REASON_ARIA_EXPANDED_FALSE;
+    case blink::mojom::AIPageContentClickabilityReason::kTabIndex:
+      return optimization_guide::proto::CLICKABILITY_REASON_TAB_INDEX;
+    case blink::mojom::AIPageContentClickabilityReason::kAutocomplete:
+      return optimization_guide::proto::CLICKABILITY_REASON_AUTOCOMPLETE;
+  }
+  NOTREACHED();
+}
+
 optimization_guide::proto::ContentAttributeType ConvertAttributeType(
     blink::mojom::AIPageContentAttributeType type) {
   switch (type) {
@@ -30,6 +69,12 @@ optimization_guide::proto::ContentAttributeType ConvertAttributeType(
       return optimization_guide::proto::CONTENT_ATTRIBUTE_ANCHOR;
     case blink::mojom::AIPageContentAttributeType::kImage:
       return optimization_guide::proto::CONTENT_ATTRIBUTE_IMAGE;
+    case blink::mojom::AIPageContentAttributeType::kSVG:
+      return optimization_guide::proto::CONTENT_ATTRIBUTE_SVG;
+    case blink::mojom::AIPageContentAttributeType::kCanvas:
+      return optimization_guide::proto::CONTENT_ATTRIBUTE_CANVAS;
+    case blink::mojom::AIPageContentAttributeType::kVideo:
+      return optimization_guide::proto::CONTENT_ATTRIBUTE_VIDEO;
     case blink::mojom::AIPageContentAttributeType::kForm:
       return optimization_guide::proto::CONTENT_ATTRIBUTE_FORM;
     case blink::mojom::AIPageContentAttributeType::kFormControl:
@@ -75,8 +120,25 @@ optimization_guide::proto::AnnotatedRole ConvertAnnotatedRole(
       return optimization_guide::proto::ANNOTATED_ROLE_FOOTER;
     case blink::mojom::AIPageContentAnnotatedRole::kContentHidden:
       return optimization_guide::proto::ANNOTATED_ROLE_CONTENT_HIDDEN;
+    case blink::mojom::AIPageContentAnnotatedRole::kPaidContent:
+      return optimization_guide::proto::ANNOTATED_ROLE_PAID_CONTENT;
   }
   NOTREACHED();
+}
+
+void AddDocumentIdentifier(content::GlobalRenderFrameHostToken frame_token,
+                           FrameTokenSet& frame_token_set,
+                           std::string serialized_server_token,
+                           optimization_guide::proto::FrameData* frame_data) {
+  frame_token_set.insert(frame_token);
+  frame_data->mutable_document_identifier()->set_serialized_token(
+      serialized_server_token);
+}
+
+void ConvertSize(const gfx::Size& mojom_size,
+                 optimization_guide::proto::BoundingSize* proto_size) {
+  proto_size->set_width(mojom_size.width());
+  proto_size->set_height(mojom_size.height());
 }
 
 void ConvertRect(const gfx::Rect& mojom_rect,
@@ -95,8 +157,93 @@ void ConvertGeometry(const blink::mojom::AIPageContentGeometry& mojom_geometry,
               proto_geometry->mutable_visible_bounding_box());
   proto_geometry->set_is_fixed_or_sticky_position(
       mojom_geometry.is_fixed_or_sticky_position);
-  proto_geometry->set_scrolls_overflow_x(mojom_geometry.scrolls_overflow_x);
-  proto_geometry->set_scrolls_overflow_y(mojom_geometry.scrolls_overflow_y);
+}
+
+void ConvertScrollerInfo(
+    const blink::mojom::AIPageContentScrollerInfo& mojom_scroller_info,
+    optimization_guide::proto::ScrollerInfo* proto_scroller_info) {
+  ConvertSize(mojom_scroller_info.scrolling_bounds,
+              proto_scroller_info->mutable_scrolling_bounds());
+  ConvertRect(mojom_scroller_info.visible_area,
+              proto_scroller_info->mutable_visible_area());
+  proto_scroller_info->set_user_scrollable_horizontal(
+      mojom_scroller_info.user_scrollable_horizontal);
+  proto_scroller_info->set_user_scrollable_vertical(
+      mojom_scroller_info.user_scrollable_vertical);
+}
+
+void ConvertNodeInteractionInfo(
+    const blink::mojom::AIPageContentNodeInteractionInfo&
+        mojom_node_interaction_info,
+    optimization_guide::proto::InteractionInfo* proto_interaction_info) {
+  if (mojom_node_interaction_info.scroller_info) {
+    ConvertScrollerInfo(*mojom_node_interaction_info.scroller_info,
+                        proto_interaction_info->mutable_scroller_info());
+  }
+  proto_interaction_info->set_is_clickable(
+      mojom_node_interaction_info.is_clickable);
+  proto_interaction_info->set_is_focusable(
+      mojom_node_interaction_info.is_focusable);
+
+  if (mojom_node_interaction_info.document_scoped_z_order) {
+    proto_interaction_info->set_document_scoped_z_order(
+        *mojom_node_interaction_info.document_scoped_z_order);
+  }
+
+  for (const auto& reason : mojom_node_interaction_info.clickability_reasons) {
+    // TODO(khushalsagar): Remove this once consumers move to the new field.
+    proto_interaction_info->add_debug_clickability_reasons(
+        ConvertClickabilityReason(reason));
+
+    proto_interaction_info->add_clickability_reasons(
+        ConvertClickabilityReason(reason));
+  }
+}
+
+void ConvertPoint(const gfx::Point& mojom_point,
+                  optimization_guide::proto::Point* proto_point) {
+  proto_point->set_x(mojom_point.x());
+  proto_point->set_y(mojom_point.y());
+}
+
+void ConvertSelection(
+    const blink::mojom::AIPageContentSelection& mojom_selection,
+    optimization_guide::proto::Selection* proto_selection) {
+  proto_selection->set_selected_text(mojom_selection.selected_text);
+  proto_selection->set_start_node_id(mojom_selection.start_dom_node_id);
+  proto_selection->set_end_node_id(mojom_selection.end_dom_node_id);
+  proto_selection->set_start_offset(mojom_selection.start_offset);
+  proto_selection->set_end_offset(mojom_selection.end_offset);
+}
+
+void ConvertFrameInteractionInfo(
+    const blink::mojom::AIPageContentFrameInteractionInfo&
+        mojom_frame_interaction_info,
+    optimization_guide::proto::FrameInteractionInfo*
+        proto_frame_interaction_info) {
+  if (mojom_frame_interaction_info.selection) {
+    ConvertSelection(*mojom_frame_interaction_info.selection,
+                     proto_frame_interaction_info->mutable_selection());
+  }
+}
+
+void ConvertPageInteractionInfo(
+    const blink::mojom::AIPageContentPageInteractionInfo&
+        mojom_page_interaction_info,
+    optimization_guide::proto::PageInteractionInfo*
+        proto_page_interaction_info) {
+  if (mojom_page_interaction_info.focused_dom_node_id) {
+    proto_page_interaction_info->set_focused_node_id(
+        *mojom_page_interaction_info.focused_dom_node_id);
+  }
+  if (mojom_page_interaction_info.accessibility_focused_dom_node_id) {
+    proto_page_interaction_info->set_accessibility_focused_node_id(
+        *mojom_page_interaction_info.accessibility_focused_dom_node_id);
+  }
+  if (mojom_page_interaction_info.mouse_position) {
+    ConvertPoint(*mojom_page_interaction_info.mouse_position,
+                 proto_page_interaction_info->mutable_mouse_position());
+  }
 }
 
 optimization_guide::proto::TextSize ConvertTextSize(
@@ -134,8 +281,34 @@ void ConvertImageInfo(
     proto_image_info->set_image_caption(*mojom_image_info.image_caption);
   }
   if (mojom_image_info.source_origin) {
-    proto_image_info->set_source_url(
-        mojom_image_info.source_origin->GetURL().spec());
+    SecurityOriginSerializer::Serialize(
+        *mojom_image_info.source_origin,
+        proto_image_info->mutable_security_origin());
+  }
+}
+
+void ConvertSVGData(const blink::mojom::AIPageContentSVGData& mojom_svg_data,
+                    optimization_guide::proto::SVGData* proto_svg_data) {
+  if (mojom_svg_data.inner_text) {
+    proto_svg_data->set_inner_text(*mojom_svg_data.inner_text);
+  }
+}
+
+void ConvertCanvasData(
+    const blink::mojom::AIPageContentCanvasData& mojom_canvas_data,
+    optimization_guide::proto::CanvasData* proto_canvas_data) {
+  proto_canvas_data->set_layout_width(mojom_canvas_data.layout_size.width());
+  proto_canvas_data->set_layout_height(mojom_canvas_data.layout_size.height());
+}
+
+void ConvertVideoData(
+    const blink::mojom::AIPageContentVideoData& mojom_video_data,
+    optimization_guide::proto::VideoData* proto_video_data) {
+  proto_video_data->set_url(mojom_video_data.url.spec());
+  if (mojom_video_data.source_origin) {
+    SecurityOriginSerializer::Serialize(
+        *mojom_video_data.source_origin,
+        proto_video_data->mutable_security_origin());
   }
 }
 
@@ -304,13 +477,9 @@ void ConvertTableRowData(
 bool ConvertAttributes(
     const blink::mojom::AIPageContentAttributes& mojom_attributes,
     optimization_guide::proto::ContentAttributes* proto_attributes) {
-  for (const auto& dom_node_id : mojom_attributes.dom_node_ids) {
-    proto_attributes->add_dom_node_ids(dom_node_id);
-  }
-
-  if (mojom_attributes.common_ancestor_dom_node_id.has_value()) {
+  if (mojom_attributes.dom_node_id.has_value()) {
     proto_attributes->set_common_ancestor_dom_node_id(
-        mojom_attributes.common_ancestor_dom_node_id.value());
+        mojom_attributes.dom_node_id.value());
   }
 
   proto_attributes->set_attribute_type(
@@ -319,6 +488,11 @@ bool ConvertAttributes(
   if (mojom_attributes.geometry) {
     ConvertGeometry(*mojom_attributes.geometry,
                     proto_attributes->mutable_geometry());
+  }
+
+  if (mojom_attributes.node_interaction_info) {
+    ConvertNodeInteractionInfo(*mojom_attributes.node_interaction_info,
+                               proto_attributes->mutable_interaction_info());
   }
 
   if (mojom_attributes.text_info) {
@@ -335,6 +509,27 @@ bool ConvertAttributes(
     }
     ConvertImageInfo(*mojom_attributes.image_info,
                      proto_attributes->mutable_image_data());
+  } else if (mojom_attributes.svg_data) {
+    if (mojom_attributes.attribute_type !=
+        blink::mojom::AIPageContentAttributeType::kSVG) {
+      return false;
+    }
+    ConvertSVGData(*mojom_attributes.svg_data,
+                   proto_attributes->mutable_svg_data());
+  } else if (mojom_attributes.canvas_data) {
+    if (mojom_attributes.attribute_type !=
+        blink::mojom::AIPageContentAttributeType::kCanvas) {
+      return false;
+    }
+    ConvertCanvasData(*mojom_attributes.canvas_data,
+                      proto_attributes->mutable_canvas_data());
+  } else if (mojom_attributes.video_data) {
+    if (mojom_attributes.attribute_type !=
+        blink::mojom::AIPageContentAttributeType::kVideo) {
+      return false;
+    }
+    ConvertVideoData(*mojom_attributes.video_data,
+                     proto_attributes->mutable_video_data());
   } else if (mojom_attributes.anchor_data) {
     if (mojom_attributes.attribute_type !=
         blink::mojom::AIPageContentAttributeType::kAnchor) {
@@ -371,27 +566,123 @@ bool ConvertAttributes(
     ConvertTableRowData(*mojom_attributes.table_row_data,
                         proto_attributes->mutable_table_row_data());
   }
+  if (mojom_attributes.label) {
+    proto_attributes->set_label(*mojom_attributes.label);
+  }
 
   for (const auto& annotated_role : mojom_attributes.annotated_roles) {
     proto_attributes->add_annotated_roles(ConvertAnnotatedRole(annotated_role));
   }
+
+  if (mojom_attributes.aria_role) {
+    proto_attributes->set_aria_role(AXRoleToProto(*mojom_attributes.aria_role));
+  }
+
+  if (mojom_attributes.label_for_dom_node_id) {
+    proto_attributes->set_label_for_dom_node_id(
+        *mojom_attributes.label_for_dom_node_id);
+  }
+
   return true;
 }
 
+void ConvertFrameMetadata(
+    GURL url,
+    const blink::mojom::AIPageContentFrameData& mojom_frame_data,
+    blink::mojom::PageMetadata& metadata) {
+  auto frame_metadata = blink::mojom::FrameMetadata::New();
+  frame_metadata->url = url;
+
+  for (const auto& mojom_meta_tag : mojom_frame_data.meta_data) {
+    auto meta_tag = blink::mojom::MetaTag::New();
+    meta_tag->name = mojom_meta_tag->name;
+    meta_tag->content = mojom_meta_tag->content;
+    frame_metadata->meta_tags.push_back(std::move(meta_tag));
+  }
+  metadata.frame_metadata.push_back(std::move(frame_metadata));
+}
+
+void ConvertScriptTool(
+    const blink::mojom::ScriptTool& tool,
+    optimization_guide::proto::ScriptTool* proto_script_tool) {
+  proto_script_tool->set_name(tool.name);
+  proto_script_tool->set_description(tool.description);
+  proto_script_tool->set_input_schema(tool.input_schema);
+
+  if (tool.annotations) {
+    proto_script_tool->mutable_annotations()->set_read_only(
+        tool.annotations->read_only);
+  }
+}
+
+void ConvertFrameData(
+    const RenderFrameInfo& render_frame_info,
+    const blink::mojom::AIPageContentFrameData& mojom_frame_data,
+    optimization_guide::proto::FrameData* proto_frame_data,
+    blink::mojom::PageMetadata& metadata,
+    FrameTokenSet& frame_token_set) {
+  ConvertFrameMetadata(GetURLForFrameMetadata(render_frame_info.url,
+                                              render_frame_info.source_origin),
+                       mojom_frame_data, metadata);
+  SecurityOriginSerializer::Serialize(
+      render_frame_info.source_origin,
+      proto_frame_data->mutable_security_origin());
+  ConvertFrameInteractionInfo(
+      *mojom_frame_data.frame_interaction_info,
+      proto_frame_data->mutable_frame_interaction_info());
+  if (render_frame_info.url.SchemeIsHTTPOrHTTPS()) {
+    proto_frame_data->set_url(render_frame_info.url.spec());
+  }
+  if (mojom_frame_data.title) {
+    proto_frame_data->set_title(mojom_frame_data.title.value());
+  }
+  AddDocumentIdentifier(render_frame_info.global_frame_token, frame_token_set,
+                        render_frame_info.serialized_server_token,
+                        proto_frame_data);
+
+  if (mojom_frame_data.contains_paid_content) {
+    auto* paid_content_metadata =
+        proto_frame_data->mutable_paid_content_metadata();
+    paid_content_metadata->set_contains_paid_content(
+        mojom_frame_data.contains_paid_content.value());
+  }
+
+  if (render_frame_info.media_data) {
+    *proto_frame_data->mutable_media_data() = *render_frame_info.media_data;
+  }
+
+  for (const auto& tool : mojom_frame_data.script_tools) {
+    ConvertScriptTool(*tool, proto_frame_data->add_script_tools());
+  }
+}
+
+// `mojom_iframe_data` holds information about the iframe provided by the
+// embedder. It comes from the iframe node in the ContentNode tree pulled from
+// the embedder's process.
+//
+// `mojom_local_frame_data` holds information about the embedded Document. This
+// is inlined into the ContentNode tree pulled from the embedder for local
+// frames as an optimization.
 void ConvertIframeData(
     const RenderFrameInfo& render_frame_info,
-    const blink::mojom::AIPageContentIframeData& iframe_data,
+    const blink::mojom::AIPageContentIframeData& mojom_iframe_data,
+    const blink::mojom::AIPageContentFrameData& mojom_local_frame_data,
+    blink::mojom::PageMetadata& metadata,
+    FrameTokenSet& frame_token_set,
     optimization_guide::proto::IframeData* proto_iframe_data) {
-  if (!render_frame_info.source_origin.opaque()) {
-    proto_iframe_data->set_url(render_frame_info.source_origin.Serialize());
-  }
-  proto_iframe_data->set_likely_ad_frame(iframe_data.likely_ad_frame);
+  proto_iframe_data->set_likely_ad_frame(mojom_iframe_data.likely_ad_frame);
+
+  ConvertFrameData(render_frame_info, mojom_local_frame_data,
+                   proto_iframe_data->mutable_frame_data(), metadata,
+                   frame_token_set);
 }
 
 bool ConvertNode(content::GlobalRenderFrameHostToken source_frame_token,
                  const blink::mojom::AIPageContentNode& mojom_node,
                  const AIPageContentMap& page_content_map,
+                 FrameTokenSet& frame_token_set,
                  GetRenderFrameInfo get_render_frame_info,
+                 blink::mojom::PageMetadata& metadata,
                  optimization_guide::proto::ContentNode* proto_node) {
   const auto& mojom_attributes = *mojom_node.content_attributes;
   if (!ConvertAttributes(mojom_attributes,
@@ -416,10 +707,16 @@ bool ConvertNode(content::GlobalRenderFrameHostToken source_frame_token,
       return false;
     }
 
+    const blink::mojom::AIPageContentFrameData* frame_data = nullptr;
     if (frame_token.Is<blink::RemoteFrameToken>()) {
       // RemoteFrame should have no child nodes since the content is out of
       // process.
       if (!mojom_node.children_nodes.empty()) {
+        return false;
+      }
+
+      // The embedder shouldn't be providing LocalFrameData for remote frames.
+      if (iframe_data.local_frame_data) {
         return false;
       }
 
@@ -429,17 +726,26 @@ bool ConvertNode(content::GlobalRenderFrameHostToken source_frame_token,
       }
 
       const auto& frame_page_content = *it->second;
+      frame_data = frame_page_content.frame_data.get();
       auto* proto_child_frame_node = proto_node->add_children_nodes();
       if (!ConvertNode(render_frame_info->global_frame_token,
                        *frame_page_content.root_node, page_content_map,
-                       get_render_frame_info, proto_child_frame_node)) {
+                       frame_token_set, get_render_frame_info, metadata,
+                       proto_child_frame_node)) {
         return false;
       }
+    } else {
+      if (!iframe_data.local_frame_data) {
+        return false;
+      }
+
+      frame_data = iframe_data.local_frame_data.get();
     }
 
     auto* proto_iframe_data =
         proto_node->mutable_content_attributes()->mutable_iframe_data();
-    ConvertIframeData(*render_frame_info, iframe_data, proto_iframe_data);
+    ConvertIframeData(*render_frame_info, iframe_data, *frame_data, metadata,
+                      frame_token_set, proto_iframe_data);
   }
 
   const auto source_frame_for_children =
@@ -448,7 +754,8 @@ bool ConvertNode(content::GlobalRenderFrameHostToken source_frame_token,
   for (const auto& mojom_child : mojom_node.children_nodes) {
     auto* proto_child = proto_node->add_children_nodes();
     if (!ConvertNode(source_frame_for_children, *mojom_child, page_content_map,
-                     get_render_frame_info, proto_child)) {
+                     frame_token_set, get_render_frame_info, metadata,
+                     proto_child)) {
       return false;
     }
   }
@@ -459,25 +766,230 @@ bool ConvertNode(content::GlobalRenderFrameHostToken source_frame_token,
 }  // namespace
 
 bool ConvertAIPageContentToProto(
+    blink::mojom::AIPageContentOptionsPtr main_frame_options,
     content::GlobalRenderFrameHostToken main_frame_token,
     const AIPageContentMap& page_content_map,
     GetRenderFrameInfo get_render_frame_info,
-    optimization_guide::proto::AnnotatedPageContent* proto) {
+    FrameTokenSet& frame_token_set,
+    optimization_guide::AIPageContentResult& page_content_result) {
   auto it = page_content_map.find(main_frame_token);
   if (it == page_content_map.end()) {
     return false;
   }
 
   const auto& main_frame_page_content = *it->second;
-  if (!ConvertNode(main_frame_token, *main_frame_page_content.root_node,
-                   page_content_map, get_render_frame_info,
-                   proto->mutable_root_node())) {
+
+  auto render_frame_info = get_render_frame_info.Run(
+      main_frame_token.child_id, main_frame_token.frame_token);
+  // The frame may have been torn down or crashed before we got a response.
+  if (!render_frame_info) {
     return false;
   }
 
-  proto->set_version(
-      optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
+  ConvertFrameData(*render_frame_info, *main_frame_page_content.frame_data,
+                   page_content_result.proto.mutable_main_frame_data(),
+                   *page_content_result.metadata, frame_token_set);
+  if (!ConvertNode(main_frame_token, *main_frame_page_content.root_node,
+                   page_content_map, frame_token_set, get_render_frame_info,
+                   *page_content_result.metadata,
+                   page_content_result.proto.mutable_root_node())) {
+    return false;
+  }
+
+  if (main_frame_page_content.page_interaction_info) {
+    ConvertPageInteractionInfo(
+        *main_frame_page_content.page_interaction_info,
+        page_content_result.proto.mutable_page_interaction_info());
+  }
+
+  auto version = optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0;
+  auto mode = optimization_guide::proto::ANNOTATED_PAGE_CONTENT_MODE_DEFAULT;
+  if (main_frame_options->mode ==
+      blink::mojom::AIPageContentMode::kActionableElements) {
+    version = optimization_guide::proto::
+        ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0;
+    mode = optimization_guide::proto::
+        ANNOTATED_PAGE_CONTENT_MODE_ACTIONABLE_ELEMENTS;
+  }
+  page_content_result.proto.set_version(version);
+  page_content_result.proto.set_mode(mode);
+
   return true;
+}
+
+bool IsCoordinateInNode(
+    const gfx::Point& coordinate,
+    const optimization_guide::proto::ContentAttributes& node_attributes) {
+  if (!node_attributes.geometry().has_visible_bounding_box()) {
+    return false;
+  }
+  const auto& bounds = node_attributes.geometry().visible_bounding_box();
+  return coordinate.x() >= bounds.x() && coordinate.y() >= bounds.y() &&
+         coordinate.x() < bounds.x() + bounds.width() &&
+         coordinate.y() < bounds.y() + bounds.height();
+}
+
+// Recursive helper function to find the document identifier and the topmost
+// node for a coordinate. Performs a depth first search on current root node
+// and if the hit node is an iframe recurse into it.
+std::optional<TargetNodeInfo> FindNodeAtPointRecursive(
+    const optimization_guide::proto::DocumentIdentifier&
+        current_document_identifier,
+    const optimization_guide::proto::ContentNode* current_root_node,
+    const gfx::Point& coordinate,
+    std::optional<TargetNodeInfo> prev_target_node_info) {
+  std::vector<const optimization_guide::proto::ContentNode*> nodes_for_walk;
+  int highest_z_order = std::numeric_limits<int>::min();
+  const optimization_guide::proto::ContentNode*
+      highest_z_order_node_in_document = nullptr;
+
+  nodes_for_walk.push_back(current_root_node);
+  while (!nodes_for_walk.empty()) {
+    const optimization_guide::proto::ContentNode* node = nodes_for_walk.back();
+    nodes_for_walk.pop_back();
+
+    if (IsCoordinateInNode(coordinate, node->content_attributes()) &&
+        node->content_attributes()
+            .interaction_info()
+            .has_document_scoped_z_order() &&
+        highest_z_order < node->content_attributes()
+                              .interaction_info()
+                              .document_scoped_z_order()) {
+      // If current node's z-order is higher, it becomes the new candidate.
+      highest_z_order = node->content_attributes()
+                            .interaction_info()
+                            .document_scoped_z_order();
+      highest_z_order_node_in_document = node;
+    }
+
+    // APC proto includes iframe contents as nodes under the iframe node. We
+    // will first complete search within current document before recursing into
+    // child frames.
+    if (node->content_attributes().has_iframe_data()) {
+      continue;
+    }
+
+    for (const optimization_guide::proto::ContentNode& child :
+         node->children_nodes()) {
+      nodes_for_walk.push_back(&child);
+    }
+  }
+
+  // If no node in the current document context matches, return the target found
+  // in the last recursive step.
+  if (!highest_z_order_node_in_document) {
+    return prev_target_node_info;
+  }
+
+  // The highest z-order node is not an iframe, so it's the target within the
+  // current document.
+  if (!highest_z_order_node_in_document->content_attributes()
+           .has_iframe_data()) {
+    return {{current_document_identifier, highest_z_order_node_in_document}};
+  }
+
+  // An iframe content node should have exactly 1 child node, i.e. the iframe's
+  // root node. Otherwise fail silently since the data is coming from an
+  // untrusted renderer.
+  if (highest_z_order_node_in_document->children_nodes_size() != 1) {
+    return std::nullopt;
+  }
+  return FindNodeAtPointRecursive(
+      highest_z_order_node_in_document->content_attributes()
+          .iframe_data()
+          .frame_data()
+          .document_identifier(),
+      // Pass the root of iframe's content.
+      &highest_z_order_node_in_document->children_nodes(0), coordinate,
+      // This is the iframe node target in case no nodes in the iframe matches
+      // the coordinate.
+      {{current_document_identifier, highest_z_order_node_in_document}});
+}
+
+std::optional<optimization_guide::TargetNodeInfo> FindNodeAtPoint(
+    const optimization_guide::proto::AnnotatedPageContent&
+        annotated_page_content,
+    const gfx::Point& coordinate) {
+  return FindNodeAtPointRecursive(
+      annotated_page_content.main_frame_data().document_identifier(),
+      &annotated_page_content.root_node(), coordinate, std::nullopt);
+}
+
+// Recursively searches the tree for a node with target_node_id in a frame with
+// matching document identifier. Since the node id is unique per document, the
+// search stops and returns as soon as the node is found in that document.
+std::optional<TargetNodeInfo> FindNodeWithIDRecursive(
+    const proto::ContentNode& current_node,
+    const proto::DocumentIdentifier& current_doc_id,
+    const std::string_view target_document_identifier,
+    const int target_node_id) {
+  if (current_node.has_content_attributes() &&
+      current_node.content_attributes().has_common_ancestor_dom_node_id() &&
+      current_node.content_attributes().common_ancestor_dom_node_id() ==
+          target_node_id &&
+      current_doc_id.serialized_token() == target_document_identifier) {
+    return TargetNodeInfo{current_doc_id, &current_node};
+  }
+
+  // If this node is an iframe, its children has the iframe's document
+  // identifier.
+  const proto::DocumentIdentifier* child_context_doc_id = &current_doc_id;
+  if (current_node.has_content_attributes() &&
+      current_node.content_attributes().has_iframe_data() &&
+      current_node.content_attributes().iframe_data().has_frame_data() &&
+      current_node.content_attributes()
+          .iframe_data()
+          .frame_data()
+          .has_document_identifier()) {
+    child_context_doc_id = &current_node.content_attributes()
+                                .iframe_data()
+                                .frame_data()
+                                .document_identifier();
+  }
+
+  for (const auto& child_node : current_node.children_nodes()) {
+    std::optional<TargetNodeInfo> result =
+        FindNodeWithIDRecursive(child_node, *child_context_doc_id,
+                                target_document_identifier, target_node_id);
+    if (result) {
+      return result;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<TargetNodeInfo> FindNodeWithID(
+    const proto::AnnotatedPageContent& annotated_page_content,
+    const std::string_view document_identifier,
+    const int content_node_id) {
+  // Validate the apc first.
+  if (!annotated_page_content.has_root_node() ||
+      !annotated_page_content.has_main_frame_data() ||
+      !annotated_page_content.main_frame_data().has_document_identifier()) {
+    return std::nullopt;
+  }
+
+  const proto::DocumentIdentifier& main_frame_doc_id =
+      annotated_page_content.main_frame_data().document_identifier();
+
+  return FindNodeWithIDRecursive(annotated_page_content.root_node(),
+                                 main_frame_doc_id, document_identifier,
+                                 content_node_id);
+}
+
+RenderFrameInfo::RenderFrameInfo() = default;
+RenderFrameInfo::RenderFrameInfo(const RenderFrameInfo& other) = default;
+RenderFrameInfo::~RenderFrameInfo() = default;
+
+GURL GetURLForFrameMetadata(const GURL& committed_url,
+                            const url::Origin& committed_origin) {
+  // We could always rely on the origin but the full path of the URL is
+  // important if it's not an opaque origin.
+  if (committed_origin.opaque()) {
+    return committed_origin.GetTupleOrPrecursorTupleIfOpaque().GetURL();
+  }
+  return committed_url;
 }
 
 }  // namespace optimization_guide

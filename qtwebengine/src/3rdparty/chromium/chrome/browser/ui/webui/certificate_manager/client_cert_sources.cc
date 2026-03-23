@@ -13,10 +13,13 @@
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_view_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/thread_pool.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/resources/certificate_manager/certificate_manager.mojom-shared.h"
+#include "chrome/browser/resources/certificate_manager/certificate_manager.mojom.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/webui/certificate_manager/certificate_manager_utils.h"
 #include "chrome/common/net/x509_certificate_model.h"
@@ -34,8 +37,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 #include "ui/shell_dialogs/selected_file_info.h"
-#include "ui/webui/resources/cr_components/certificate_manager/certificate_manager_v2.mojom-shared.h"
-#include "ui/webui/resources/cr_components/certificate_manager/certificate_manager_v2.mojom.h"
 
 #if BUILDFLAG(USE_NSS_CERTS)
 #include "chrome/browser/net/nss_service.h"
@@ -55,7 +56,10 @@
 #endif  // BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/client_certificates/certificate_provisioning_service_factory.h"
+#include "chrome/browser/policy/chrome_browser_policy_connector.h"
+#include "components/enterprise/browser/controller/chrome_browser_cloud_management_controller.h"
 #include "components/enterprise/client_certificates/core/certificate_provisioning_service.h"
 #include "components/enterprise/client_certificates/core/client_certificates_service.h"
 #include "components/enterprise/client_certificates/core/features.h"
@@ -64,7 +68,6 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_features.h"
 #include "chrome/browser/ash/kcer/kcer_factory_ash.h"
-#include "chrome/browser/ash/net/client_cert_store_ash.h"
 #include "chrome/browser/ash/net/client_cert_store_kcer.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/certificate_provider/certificate_provider.h"
@@ -127,29 +130,7 @@ class ClientCertStoreLoader {
       active_requests_;
 };
 
-#if BUILDFLAG(IS_CHROMEOS)
-class ClientCertStoreFactoryAsh : public ClientCertStoreFactory {
- public:
-  explicit ClientCertStoreFactoryAsh(Profile* profile) : profile_(profile) {}
-
-  std::unique_ptr<net::ClientCertStore> CreateClientCertStore() override {
-    CHECK(!ash::features::ShouldUseKcerClientCertStore());
-
-    const user_manager::User* user =
-        ash::ProfileHelper::Get()->GetUserByProfile(profile_);
-    // Use the device-wide system key slot only if the user is affiliated on
-    // the device.
-    const bool use_system_key_slot = user->IsAffiliated();
-    return std::make_unique<ash::ClientCertStoreAsh>(
-        nullptr,  // no additional provider
-        use_system_key_slot, user->username_hash(),
-        ash::ClientCertStoreAsh::PasswordDelegateFactory());
-  }
-
- private:
-  raw_ptr<Profile> profile_;
-};
-#elif BUILDFLAG(USE_NSS_CERTS)
+#if BUILDFLAG(IS_LINUX)
 class ClientCertStoreFactoryNSS : public ClientCertStoreFactory {
  public:
   std::unique_ptr<net::ClientCertStore> CreateClientCertStore() override {
@@ -208,35 +189,52 @@ class NullClientCertStore : public net::ClientCertStore {
 class ClientCertStoreFactoryProvisioned : public ClientCertStoreFactory {
  public:
   explicit ClientCertStoreFactoryProvisioned(
-      client_certificates::CertificateProvisioningService* provisioning_service)
-      : provisioning_service_(provisioning_service) {}
+      client_certificates::CertificateProvisioningService*
+          profile_provisioning_service,
+      client_certificates::CertificateProvisioningService*
+          browser_provisioning_service)
+      : profile_provisioning_service_(profile_provisioning_service),
+        browser_provisioning_service_(browser_provisioning_service) {}
 
   std::unique_ptr<net::ClientCertStore> CreateClientCertStore() override {
     return client_certificates::ClientCertificatesService::Create(
-        provisioning_service_, std::make_unique<NullClientCertStore>());
+        profile_provisioning_service_, browser_provisioning_service_,
+        std::make_unique<NullClientCertStore>());
   }
 
  private:
   raw_ptr<client_certificates::CertificateProvisioningService>
-      provisioning_service_;
+      profile_provisioning_service_;
+  raw_ptr<client_certificates::CertificateProvisioningService>
+      browser_provisioning_service_;
 };
 
 std::unique_ptr<ClientCertStoreLoader> CreateProvisionedClientCertLoader(
     Profile* profile) {
-  if (!profile || !client_certificates::features::
-                      IsManagedClientCertificateForUserEnabled()) {
-    return nullptr;
+  client_certificates::CertificateProvisioningService*
+      profile_provisioning_service = nullptr;
+  if (profile) {
+    profile_provisioning_service = client_certificates::
+        CertificateProvisioningServiceFactory::GetForProfile(profile);
   }
-  auto* provisioning_service =
-      client_certificates::CertificateProvisioningServiceFactory::GetForProfile(
-          profile);
-  if (!provisioning_service) {
+
+  client_certificates::CertificateProvisioningService*
+      browser_provisioning_service = nullptr;
+  if (client_certificates::features::
+          IsManagedBrowserClientCertificateEnabled()) {
+    browser_provisioning_service =
+        g_browser_process->browser_policy_connector()
+            ->chrome_browser_cloud_management_controller()
+            ->GetCertificateProvisioningService();
+  }
+
+  if (!profile_provisioning_service && !browser_provisioning_service) {
     return nullptr;
   }
 
   return std::make_unique<ClientCertStoreLoader>(
       std::make_unique<ClientCertStoreFactoryProvisioned>(
-          provisioning_service));
+          profile_provisioning_service, browser_provisioning_service));
 }
 #endif
 
@@ -244,11 +242,11 @@ void PopulateCertInfosFromCertificateList(
     CertificateManagerPageHandler::GetCertificatesCallback callback,
     const net::CertificateList& certs,
     bool is_deletable) {
-  std::vector<certificate_manager_v2::mojom::SummaryCertInfoPtr> out_infos;
+  std::vector<certificate_manager::mojom::SummaryCertInfoPtr> out_infos;
   for (const auto& cert : certs) {
     x509_certificate_model::X509CertificateModel model(
-        bssl::UpRef(cert->cert_buffer()), "");
-    out_infos.push_back(certificate_manager_v2::mojom::SummaryCertInfo::New(
+        bssl::UpRef(cert->cert_buffer()));
+    out_infos.push_back(certificate_manager::mojom::SummaryCertInfo::New(
         model.HashCertSHA256(), model.GetTitle(), is_deletable));
   }
   std::move(callback).Run(std::move(out_infos));
@@ -258,7 +256,7 @@ net::X509Certificate* FindCertificateFromCertificateList(
     std::string_view sha256_hex_hash,
     const net::CertificateList& certs) {
   net::SHA256HashValue hash;
-  if (!base::HexStringToSpan(sha256_hex_hash, hash.data)) {
+  if (!base::HexStringToSpan(sha256_hex_hash, hash)) {
     return nullptr;
   }
 
@@ -393,7 +391,7 @@ class WritableCertLoader : public CertificateManagerPageHandler::CertSource {
     }
 
     net::SHA256HashValue hash;
-    if (!base::HexStringToSpan(sha256_hex_hash, hash.data)) {
+    if (!base::HexStringToSpan(sha256_hex_hash, hash)) {
       return nullptr;
     }
 
@@ -415,11 +413,11 @@ class WritableCertLoader : public CertificateManagerPageHandler::CertSource {
 
   void ReplyToGetCertificatesCallback(
       CertificateManagerPageHandler::GetCertificatesCallback callback) const {
-    std::vector<certificate_manager_v2::mojom::SummaryCertInfoPtr> out_infos;
+    std::vector<certificate_manager::mojom::SummaryCertInfoPtr> out_infos;
     for (const auto& info : *certs_) {
       x509_certificate_model::X509CertificateModel model(
-          bssl::UpRef(info.cert->cert_buffer()), "");
-      out_infos.push_back(certificate_manager_v2::mojom::SummaryCertInfo::New(
+          bssl::UpRef(info.cert->cert_buffer()));
+      out_infos.push_back(certificate_manager::mojom::SummaryCertInfo::New(
           model.HashCertSHA256(), model.GetTitle(), info.is_deletable));
     }
     std::move(callback).Run(std::move(out_infos));
@@ -436,7 +434,7 @@ class KcerLoader : public WritableCertLoader {
  public:
   explicit KcerLoader(
       Profile* profile,
-      mojo::Remote<certificate_manager_v2::mojom::CertificateManagerPage>*
+      mojo::Remote<certificate_manager::mojom::CertificateManagerPage>*
           remote_client)
       : profile_(profile),
         remote_client_(remote_client),
@@ -467,7 +465,7 @@ class KcerLoader : public WritableCertLoader {
  private:
   void TriggerReload() {
     (*remote_client_)
-        ->TriggerReload({certificate_manager_v2::mojom::CertificateSource::
+        ->TriggerReload({certificate_manager::mojom::CertificateSource::
                              kPlatformClientCert});
   }
 
@@ -517,26 +515,21 @@ class KcerLoader : public WritableCertLoader {
   }
 
   raw_ptr<Profile> profile_;
-  raw_ptr<mojo::Remote<certificate_manager_v2::mojom::CertificateManagerPage>>
+  raw_ptr<mojo::Remote<certificate_manager::mojom::CertificateManagerPage>>
       remote_client_;
   base::WeakPtr<kcer::Kcer> kcer_;
   base::CallbackListSubscription observer_callback_;
   base::WeakPtrFactory<KcerLoader> weak_ptr_factory_{this};
 };
-#endif  // BUILDFLAG(IS_CHROMEOS)
+
+#else   // BUILDFLAG(IS_CHROMEOS)
 
 class NSSLoader : public WritableCertLoader {
  public:
   explicit NSSLoader(Profile* profile)
       : profile_(profile),
         loader_(std::make_unique<ClientCertStoreLoader>(
-#if BUILDFLAG(IS_CHROMEOS)
-            std::make_unique<ClientCertStoreFactoryAsh>(profile)
-#else
-            std::make_unique<ClientCertStoreFactoryNSS>()
-#endif
-                )) {
-  }
+            std::make_unique<ClientCertStoreFactoryNSS>())) {}
   ~NSSLoader() override = default;
 
   void RefreshCachedCertificateList(base::OnceClosure callback) override {
@@ -576,6 +569,7 @@ class NSSLoader : public WritableCertLoader {
   std::unique_ptr<ClientCertStoreLoader> loader_;
   base::WeakPtrFactory<NSSLoader> weak_ptr_factory_{this};
 };
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 // Subclass of ClientCertSource that also allows importing client certificates
 // to the ChromeOS or Linux client cert store.
@@ -584,16 +578,12 @@ class WritableClientCertSource
       public ui::SelectFileDialog::Listener {
  public:
   explicit WritableClientCertSource(
-      mojo::Remote<certificate_manager_v2::mojom::CertificateManagerPage>*
+      mojo::Remote<certificate_manager::mojom::CertificateManagerPage>*
           remote_client,
       Profile* profile)
       : remote_client_(remote_client), profile_(profile) {
 #if BUILDFLAG(IS_CHROMEOS)
-    if (ash::features::ShouldUseKcerClientCertStore()) {
-      cert_loader_ = std::make_unique<KcerLoader>(profile, remote_client);
-    } else {
-      cert_loader_ = std::make_unique<NSSLoader>(profile);
-    }
+    cert_loader_ = std::make_unique<KcerLoader>(profile, remote_client);
 #else
     cert_loader_ = std::make_unique<NSSLoader>(profile);
 #endif
@@ -669,7 +659,7 @@ class WritableClientCertSource
       // This error is not expected to be displayed under normal circumstances,
       // so it's not localized.
       std::move(callback).Run(
-          certificate_manager_v2::mojom::ActionResult::NewError("not allowed"));
+          certificate_manager::mojom::ActionResult::NewError("not allowed"));
       return;
     }
 
@@ -721,7 +711,7 @@ class WritableClientCertSource
   void FileRead(std::optional<std::vector<uint8_t>> file_bytes) {
     if (!file_bytes) {
       std::move(import_callback_)
-          .Run(certificate_manager_v2::mojom::ActionResult::NewError(
+          .Run(certificate_manager::mojom::ActionResult::NewError(
               l10n_util::GetStringUTF8(
                   IDS_SETTINGS_CERTIFICATE_MANAGER_V2_READ_FILE_ERROR)));
       return;
@@ -816,8 +806,7 @@ class WritableClientCertSource
       // be imported into Chaps. `import_hardware_backed_` == true means that
       // the cert came from the "Import and Bind" button and it's import into
       // Chaps by default.
-      if (!import_hardware_backed_ &&
-          chromeos::features::IsPkcs12ToChapsDualWriteEnabled()) {
+      if (!import_hardware_backed_) {
         // Record the dual-write event. Even if the import fails, it's
         // theoretically possible that some related objects are still created
         // and would need to be deleted in case of a rollback.
@@ -873,8 +862,8 @@ class WritableClientCertSource
       // call the import complete callback once the list has been updated.
       cert_loader_->RefreshCachedCertificateList(base::BindOnce(
           std::move(import_callback_),
-          certificate_manager_v2::mojom::ActionResult::NewSuccess(
-              certificate_manager_v2::mojom::SuccessResult::kSuccess)));
+          certificate_manager::mojom::ActionResult::NewSuccess(
+              certificate_manager::mojom::SuccessResult::kSuccess)));
     } else {
       // TODO(crbug.com/40928765): If the error was bad password, could prompt
       // the user to try again rather than just failing and requiring the user
@@ -897,7 +886,7 @@ class WritableClientCertSource
           message_id = IDS_SETTINGS_CERTIFICATE_MANAGER_V2_IMPORT_FAILED;
       }
       std::move(import_callback_)
-          .Run(certificate_manager_v2::mojom::ActionResult::NewError(
+          .Run(certificate_manager::mojom::ActionResult::NewError(
               l10n_util::GetStringUTF8(message_id)));
     }
   }
@@ -918,8 +907,7 @@ class WritableClientCertSource
       // This error is not expected to be displayed under normal circumstances,
       // so it's not localized.
       std::move(callback).Run(
-          certificate_manager_v2::mojom::ActionResult::NewError(
-              "cert not found"));
+          certificate_manager::mojom::ActionResult::NewError("cert not found"));
       return;
     }
 
@@ -992,13 +980,13 @@ class WritableClientCertSource
       // call the deletion complete callback once the list has been updated.
       cert_loader_->RefreshCachedCertificateList(base::BindOnce(
           std::move(callback),
-          certificate_manager_v2::mojom::ActionResult::NewSuccess(
-              certificate_manager_v2::mojom::SuccessResult::kSuccess)));
+          certificate_manager::mojom::ActionResult::NewSuccess(
+              certificate_manager::mojom::SuccessResult::kSuccess)));
     } else {
       // TODO(crbug.com/40928765): pass through better error status codes from
       // the lower level deletion code?
       std::move(callback).Run(
-          certificate_manager_v2::mojom::ActionResult::NewError(
+          certificate_manager::mojom::ActionResult::NewError(
               l10n_util::GetStringUTF8(
                   IDS_SETTINGS_CERTIFICATE_MANAGER_V2_DELETE_ERROR)));
     }
@@ -1008,7 +996,7 @@ class WritableClientCertSource
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
   bool import_hardware_backed_;
   CertificateManagerPageHandler::ImportCertificateCallback import_callback_;
-  raw_ptr<mojo::Remote<certificate_manager_v2::mojom::CertificateManagerPage>>
+  raw_ptr<mojo::Remote<certificate_manager::mojom::CertificateManagerPage>>
       remote_client_;
   raw_ptr<Profile> profile_;
   base::WeakPtrFactory<WritableClientCertSource> weak_ptr_factory_{this};
@@ -1075,7 +1063,7 @@ class ExtensionsClientCertSource
 
 std::unique_ptr<CertificateManagerPageHandler::CertSource>
 CreatePlatformClientCertSource(
-    mojo::Remote<certificate_manager_v2::mojom::CertificateManagerPage>*
+    mojo::Remote<certificate_manager::mojom::CertificateManagerPage>*
         remote_client,
     Profile* profile) {
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
@@ -1109,7 +1097,6 @@ ClientCertManagementAccessControls::ClientCertManagementAccessControls(
     : is_guest_(
           user_manager::UserManager::Get()->IsLoggedInAsGuest() ||
           user_manager::UserManager::Get()->IsLoggedInAsManagedGuestSession()),
-      is_kiosk_(user_manager::UserManager::Get()->IsLoggedInAsAnyKioskApp()),
       client_cert_policy_(static_cast<ClientCertificateManagementPermission>(
           profile->GetPrefs()->GetInteger(
               prefs::kClientCertificateManagementAllowed))) {
@@ -1118,7 +1105,9 @@ ClientCertManagementAccessControls::ClientCertManagementAccessControls(
 
 bool ClientCertManagementAccessControls::IsManagementAllowed(
     KeyStorage key_storage) const {
-  return !(key_storage == kHardwareBacked && is_guest_) && !is_kiosk_ &&
+  // Kiosks should allow client cert management, as per customer issue.
+  // See b/409500766.
+  return !(key_storage == kHardwareBacked && is_guest_) &&
          client_cert_policy_ != ClientCertificateManagementPermission::kNone;
 }
 

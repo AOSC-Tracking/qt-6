@@ -12,6 +12,7 @@
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
@@ -132,7 +133,6 @@ ui::PlatformWindowInitProperties ConvertWidgetInitParamsToInitProperties(
   properties.accept_events = params.accept_events;
   properties.activatable =
       params.activatable == Widget::InitParams::Activatable::kYes;
-  properties.force_show_in_taskbar = params.force_show_in_taskbar;
   properties.z_order = params.EffectiveZOrderLevel();
   properties.keep_on_top = properties.z_order != ui::ZOrderLevel::kNormal;
   properties.is_security_surface =
@@ -167,6 +167,13 @@ ui::PlatformWindowInitProperties ConvertWidgetInitParamsToInitProperties(
     }
   }
   properties.inhibit_keyboard_shortcuts = params.inhibit_keyboard_shortcuts;
+
+  // Forward widget's platform session data.
+  if (auto session_data = params.session_data) {
+    properties.session_id = session_data->session_id;
+    properties.session_window_new_id = session_data->window_id;
+    properties.session_window_restore_id = session_data->restore_id;
+  }
 #endif
 
 #if BUILDFLAG(IS_FUCHSIA)
@@ -224,8 +231,8 @@ DesktopWindowTreeHostPlatform* DesktopWindowTreeHostPlatform::GetHostForWidget(
 }
 
 // static
-std::vector<aura::Window*> DesktopWindowTreeHostPlatform::GetAllOpenWindows() {
-  std::vector<aura::Window*> windows(open_windows().size());
+aura::Window::Windows DesktopWindowTreeHostPlatform::GetAllOpenWindows() {
+  aura::Window::Windows windows(open_windows().size());
   std::ranges::transform(
       open_windows(), windows.begin(),
       DesktopWindowTreeHostPlatform::GetContentWindowForWidget);
@@ -321,6 +328,10 @@ void DesktopWindowTreeHostPlatform::OnWidgetInitDone() {
   GetContentWindow()->SetFillsBoundsCompletely(
       GetWindowMaskForClipping().isEmpty());
 }
+
+void DesktopWindowTreeHostPlatform::OnWidgetThemeChanged(
+    ui::ColorProviderKey::ColorMode color_mode,
+    std::optional<SkColor> background_color) {}
 
 void DesktopWindowTreeHostPlatform::OnActiveWindowChanged(bool active) {
 #if BUILDFLAG(IS_OZONE)
@@ -627,6 +638,11 @@ void DesktopWindowTreeHostPlatform::Minimize() {
 void DesktopWindowTreeHostPlatform::Restore() {
   platform_window()->Restore();
   Show(ui::mojom::WindowShowState::kNormal, gfx::Rect());
+}
+
+void DesktopWindowTreeHostPlatform::ShowWindowControlsMenu(
+    const gfx::Point& point) {
+  platform_window()->ShowWindowControlsMenu(point);
 }
 
 bool DesktopWindowTreeHostPlatform::IsMaximized() const {

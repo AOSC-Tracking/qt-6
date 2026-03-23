@@ -17,10 +17,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/notreached.h"
 #include "base/observer_list.h"
-#include "build/build_config.h"
 #include "components/custom_handlers/pref_names.h"
 #include "components/custom_handlers/protocol_handler.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/user_prefs/user_prefs.h"
@@ -200,7 +199,7 @@ void ProtocolHandlerRegistry::InitProtocolSettings() {
     return;
   }
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (prefs_->HasPrefPath(prefs::kCustomHandlersEnabled)) {
     if (prefs_->GetBoolean(prefs::kCustomHandlersEnabled)) {
       Enable();
@@ -310,8 +309,9 @@ bool ProtocolHandlerRegistry::CanSchemeBeOverridden(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   const ProtocolHandlerList* handlers = GetHandlerList(scheme);
   // If we already have a handler for this scheme, we can add more.
-  if (handlers != NULL && !handlers->empty())
+  if (handlers != nullptr && !handlers->empty()) {
     return true;
+  }
   // Don't override a scheme if it already has an external handler.
   return !delegate_->IsExternalHandlerRegistered(
       static_cast<std::string>(scheme));
@@ -486,7 +486,7 @@ void ProtocolHandlerRegistry::Shutdown() {
 // static
 void ProtocolHandlerRegistry::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   registry->RegisterListPref(prefs::kRegisteredProtocolHandlers);
   registry->RegisterListPref(prefs::kIgnoredProtocolHandlers);
   registry->RegisterListPref(prefs::kPolicyRegisteredProtocolHandlers);
@@ -517,7 +517,7 @@ void ProtocolHandlerRegistry::PromoteHandler(const ProtocolHandler& handler) {
 }
 
 void ProtocolHandlerRegistry::Save() {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (is_loading_) {
     return;
@@ -540,7 +540,7 @@ ProtocolHandlerRegistry::GetHandlerList(std::string_view scheme) const {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   auto p = protocol_handlers_.find(scheme);
   if (p == protocol_handlers_.end()) {
-    return NULL;
+    return nullptr;
   }
   return &p->second;
 }
@@ -549,7 +549,7 @@ void ProtocolHandlerRegistry::SetDefault(const ProtocolHandler& handler) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   const std::string& protocol = handler.protocol();
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ProtocolHandlerMap::const_iterator p = default_handlers_.find(protocol);
   // If we're not loading, and we are setting a default for a new protocol,
   // register with the OS.
@@ -633,7 +633,7 @@ bool ProtocolHandlerRegistry::RegisterProtocolHandler(
 
 std::vector<const base::Value::Dict*>
 ProtocolHandlerRegistry::GetHandlersFromPref(const char* pref_name) const {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   std::vector<const base::Value::Dict*> result;
   if (!prefs_ || !prefs_->HasPrefPath(pref_name)) {
@@ -717,7 +717,7 @@ void ProtocolHandlerRegistry::EraseHandler(const ProtocolHandler& handler,
   list->erase(std::ranges::find(*list, handler));
 }
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void ProtocolHandlerRegistry::OnSetAsDefaultProtocolClientFinished(
     const std::string& protocol,
     bool is_default) {
@@ -738,14 +738,14 @@ base::WeakPtr<ProtocolHandlerRegistry> ProtocolHandlerRegistry::GetWeakPtr() {
 void ProtocolHandlerRegistry::AddPredefinedHandler(
     const ProtocolHandler& handler) {
   DCHECK(!is_loaded_);  // Must be called prior InitProtocolSettings.
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   RegisterProtocolHandler(handler, USER);
 #endif
   SetDefault(handler);
   predefined_protocol_handlers_.push_back(handler);
 }
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 DefaultClientCallback ProtocolHandlerRegistry::GetDefaultWebClientCallback(
     const std::string& protocol) {
   return base::BindOnce(

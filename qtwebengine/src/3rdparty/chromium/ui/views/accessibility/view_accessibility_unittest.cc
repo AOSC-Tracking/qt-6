@@ -5,9 +5,11 @@
 #include "ui/views/accessibility/view_accessibility.h"
 
 #include "base/test/gtest_util.h"
+#include "ui/accessibility/ax_tree_id.h"
 #include "ui/accessibility/platform/ax_platform_for_test.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/views/accessibility/ax_virtual_view.h"
 #include "ui/views/test/views_test_base.h"
 
 namespace views::test {
@@ -250,12 +252,12 @@ TEST_F(ViewAccessibilityTest, AccessibleURL) {
             test_url);
 
   // Setting the root view URL is only supported on the root view.
-  EXPECT_DCHECK_DEATH(
+  EXPECT_CHECK_DEATH(
       child_view()->GetViewAccessibility().SetRootViewURL(test_url));
 }
 
 TEST_F(ViewAccessibilityTest, LazyLoadingNoOverlap) {
-  TestView* lazy_loading_view = new TestView();
+  auto lazy_loading_view = std::make_unique<TestView>();
   lazy_loading_view->GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
 
   EXPECT_FALSE(lazy_loading_view->GetViewAccessibility().is_initialized());
@@ -271,7 +273,7 @@ TEST_F(ViewAccessibilityTest, LazyLoadingNoOverlap) {
 }
 
 TEST_F(ViewAccessibilityTest, LazyLoadingOverlapString) {
-  TestView* lazy_loading_view = new TestView();
+  auto lazy_loading_view = std::make_unique<TestView>();
   lazy_loading_view->GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
 
   lazy_loading_view->lazy_loading_data_.AddStringAttribute(
@@ -282,7 +284,7 @@ TEST_F(ViewAccessibilityTest, LazyLoadingOverlapString) {
 }
 
 TEST_F(ViewAccessibilityTest, LazyLoadingOverlapBool) {
-  TestView* lazy_loading_view = new TestView();
+  auto lazy_loading_view = std::make_unique<TestView>();
   lazy_loading_view->GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
 
   lazy_loading_view->lazy_loading_data_.AddBoolAttribute(
@@ -293,7 +295,7 @@ TEST_F(ViewAccessibilityTest, LazyLoadingOverlapBool) {
 }
 
 TEST_F(ViewAccessibilityTest, LazyLoadingOverlapInt) {
-  TestView* lazy_loading_view = new TestView();
+  auto lazy_loading_view = std::make_unique<TestView>();
   lazy_loading_view->GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
 
   lazy_loading_view->lazy_loading_data_.AddIntAttribute(
@@ -305,7 +307,7 @@ TEST_F(ViewAccessibilityTest, LazyLoadingOverlapInt) {
 
 // Need to rebase to use this function.
 TEST_F(ViewAccessibilityTest, LazyLoadingOverlapFloat) {
-  TestView* lazy_loading_view = new TestView();
+  auto lazy_loading_view = std::make_unique<TestView>();
   lazy_loading_view->GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
 
   lazy_loading_view->lazy_loading_data_.AddFloatAttribute(
@@ -318,7 +320,7 @@ TEST_F(ViewAccessibilityTest, LazyLoadingOverlapFloat) {
 }
 
 TEST_F(ViewAccessibilityTest, LazyLoadingOverlapIntList) {
-  TestView* lazy_loading_view = new TestView();
+  auto lazy_loading_view = std::make_unique<TestView>();
   lazy_loading_view->GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
 
   std::vector<int32_t> list_1 = {1, 2, 3};
@@ -331,7 +333,7 @@ TEST_F(ViewAccessibilityTest, LazyLoadingOverlapIntList) {
 }
 
 TEST_F(ViewAccessibilityTest, CantSetStateInLazyLoading) {
-  TestView* lazy_loading_view = new TestView();
+  auto lazy_loading_view = std::make_unique<TestView>();
   lazy_loading_view->GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
 
   lazy_loading_view->lazy_loading_data_.AddState(ax::mojom::State::kCollapsed);
@@ -340,7 +342,7 @@ TEST_F(ViewAccessibilityTest, CantSetStateInLazyLoading) {
 }
 
 TEST_F(ViewAccessibilityTest, CantSetActionsInLazyLoading) {
-  TestView* lazy_loading_view = new TestView();
+  auto lazy_loading_view = std::make_unique<TestView>();
   lazy_loading_view->GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
 
   lazy_loading_view->lazy_loading_data_.AddAction(
@@ -350,7 +352,7 @@ TEST_F(ViewAccessibilityTest, CantSetActionsInLazyLoading) {
 }
 
 TEST_F(ViewAccessibilityTest, CantSetRelativeBoundsInLazyLoading) {
-  TestView* lazy_loading_view = new TestView();
+  auto lazy_loading_view = std::make_unique<TestView>();
   lazy_loading_view->GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
 
   gfx::RectF relative_bounds(0, 0, 10, 10);
@@ -358,6 +360,147 @@ TEST_F(ViewAccessibilityTest, CantSetRelativeBoundsInLazyLoading) {
       relative_bounds;
   EXPECT_DCHECK_DEATH(
       lazy_loading_view->GetViewAccessibility().CompleteCacheInitialization());
+}
+
+TEST_F(ViewAccessibilityTest, EmptyWhenNoChildren) {
+  auto view = std::make_unique<TestView>();
+  auto children = view->GetViewAccessibility().GetChildren();
+  EXPECT_TRUE(children.empty());
+}
+
+TEST_F(ViewAccessibilityTest, ReturnsVirtualChildrenOnly) {
+  auto view = std::make_unique<TestView>();
+  auto virtual_view_1 = std::make_unique<AXVirtualView>();
+  auto virtual_view_2 = std::make_unique<AXVirtualView>();
+
+  auto virtual_view_1_id = virtual_view_1->ViewAccessibility::GetUniqueId();
+  auto virtual_view_2_id = virtual_view_2->ViewAccessibility::GetUniqueId();
+
+  view->GetViewAccessibility().AddVirtualChildView(std::move(virtual_view_1));
+  view->GetViewAccessibility().AddVirtualChildView(std::move(virtual_view_2));
+
+  auto children = view->GetViewAccessibility().GetChildren();
+  ASSERT_EQ(children.size(), 2u);
+  EXPECT_EQ(children[0]->GetUniqueId(), virtual_view_1_id);
+  EXPECT_EQ(children[1]->GetUniqueId(), virtual_view_2_id);
+}
+
+TEST_F(ViewAccessibilityTest, ReturnsRealViewChildren) {
+  auto parent_view = std::make_unique<TestView>();
+  auto child_view_1 = std::make_unique<TestView>();
+  auto child_view_2 = std::make_unique<TestView>();
+
+  auto child_view_1_id = child_view_1->GetViewAccessibility().GetUniqueId();
+  auto child_view_2_id = child_view_2->GetViewAccessibility().GetUniqueId();
+
+  parent_view->AddChildView(std::move(child_view_1));
+  parent_view->AddChildView(std::move(child_view_2));
+
+  auto children = parent_view->GetViewAccessibility().GetChildren();
+  ASSERT_EQ(children.size(), 2u);
+  EXPECT_EQ(children[0]->GetUniqueId(), child_view_1_id);
+  EXPECT_EQ(children[1]->GetUniqueId(), child_view_2_id);
+}
+
+TEST_F(ViewAccessibilityTest, VirtualChildrenOverrideRealOnes) {
+  auto view = std::make_unique<TestView>();
+  auto virtual_view = std::make_unique<AXVirtualView>();
+  auto child_view = std::make_unique<TestView>();
+
+  auto virtual_view_id = virtual_view->ViewAccessibility::GetUniqueId();
+
+  view->GetViewAccessibility().AddVirtualChildView(std::move(virtual_view));
+  view->AddChildView(std::move(child_view));
+
+  auto children = view->GetViewAccessibility().GetChildren();
+  ASSERT_EQ(children.size(), 1u);
+  EXPECT_EQ(children[0]->GetUniqueId(), virtual_view_id);
+}
+
+TEST_F(ViewAccessibilityTest, EmptyWhenIsLeaf) {
+  auto view = std::make_unique<TestView>();
+  auto virtual_view = std::make_unique<AXVirtualView>();
+  auto child_view = std::make_unique<TestView>();
+  view->AddChildView(std::move(child_view));
+  view->GetViewAccessibility().AddVirtualChildView(std::move(virtual_view));
+
+  view->GetViewAccessibility().SetIsLeaf(true);
+
+  auto children = view->GetViewAccessibility().GetChildren();
+  ASSERT_EQ(children.size(), 0u);
+}
+
+TEST_F(ViewAccessibilityTest, GetParent_ReturnsImmediateParent) {
+  EXPECT_EQ(child_view()->GetViewAccessibility().GetViewAccessibilityParent(),
+            &view()->GetViewAccessibility());
+}
+
+TEST_F(ViewAccessibilityTest, GetParent_NoParent) {
+  auto lone = std::make_unique<TestView>();
+  EXPECT_EQ(lone->GetViewAccessibility().GetViewAccessibilityParent(), nullptr);
+}
+
+TEST_F(ViewAccessibilityTest, GetUnignoredParent_NoParent) {
+  auto lone = std::make_unique<TestView>();
+  EXPECT_EQ(lone->GetViewAccessibility().GetUnignoredParent(), nullptr);
+}
+
+TEST_F(ViewAccessibilityTest, GetUnignoredParent_ImmediateNotIgnored) {
+  auto parent = std::make_unique<TestView>();
+  auto* child = parent->AddChildView(std::make_unique<TestView>());
+  EXPECT_EQ(child->GetViewAccessibility().GetUnignoredParent(),
+            &parent->GetViewAccessibility());
+}
+
+TEST_F(ViewAccessibilityTest, GetUnignoredParent_SkipIgnoredToGrandparent) {
+  auto grand = std::make_unique<TestView>();
+  auto* parent = grand->AddChildView(std::make_unique<TestView>());
+  auto* child = parent->AddChildView(std::make_unique<TestView>());
+  parent->GetViewAccessibility().SetIsIgnored(true);
+  EXPECT_EQ(child->GetViewAccessibility().GetUnignoredParent(),
+            &grand->GetViewAccessibility());
+}
+
+TEST_F(ViewAccessibilityTest, AXVirtualView_GetParent_NoParent) {
+  AXVirtualView v;
+  EXPECT_EQ(v.GetViewAccessibilityParent(), nullptr);
+}
+
+TEST_F(ViewAccessibilityTest,
+       AXVirtualView_GetParent_ImmediateVirtualViewNotIgnored) {
+  AXVirtualView parent;
+  auto child = std::make_unique<AXVirtualView>();
+  auto* child_ptr = child.get();
+  parent.AddChildView(std::move(child));
+
+  EXPECT_EQ(child_ptr->GetViewAccessibilityParent(), &parent);
+}
+
+TEST_F(ViewAccessibilityTest,
+       AXVirtualView_GetUnignoredParent_SkipIgnoredToGrandparentVirtualView) {
+  AXVirtualView grand;
+  auto parent = std::make_unique<AXVirtualView>();
+  parent->SetIsIgnored(true);
+  auto child = std::make_unique<AXVirtualView>();
+  auto* child_ptr = child.get();
+
+  parent->AddChildView(std::move(child));
+  grand.AddChildView(std::move(parent));
+
+  EXPECT_EQ(child_ptr->GetUnignoredParent(), &grand);
+}
+
+TEST_F(ViewAccessibilityTest,
+       AXVirtualView_GetUnignoredParent_VirtualIfNoReal) {
+  auto view = std::make_unique<TestView>();
+  auto parent = std::make_unique<AXVirtualView>();
+  parent->SetIsIgnored(true);
+  auto child = std::make_unique<AXVirtualView>();
+  auto* child_ptr = child.get();
+  parent->AddChildView(std::move(child));
+  view->GetViewAccessibility().AddVirtualChildView(std::move(parent));
+
+  EXPECT_EQ(child_ptr->GetUnignoredParent(), &view->GetViewAccessibility());
 }
 
 }  // namespace views::test

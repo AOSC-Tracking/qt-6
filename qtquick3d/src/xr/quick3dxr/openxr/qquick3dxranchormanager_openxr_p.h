@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QQUICK3DXRANCHORMANAGER_OPENXR_P_H
 #define QQUICK3DXRANCHORMANAGER_OPENXR_P_H
@@ -90,7 +92,6 @@ private:
     XrSession m_session{XR_NULL_HANDLE};
 
     [[nodiscard]] bool checkXrResult(const XrResult &result);
-    bool resolveXrFunction(const char *name, PFN_xrVoidFunction *function);
 
     bool queryAllAnchorsWithSpecificComponentEnabled(const XrSpaceComponentTypeFB componentType);
     bool queryAnchorsByUuids(const QSet<QUuid>& uuidSet);

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4qmlcontext_p.h"
 
@@ -201,7 +202,7 @@ ReturnedValue QQmlContextWrapper::getPropertyAndBase(const QQmlContextWrapper *r
     if (context->imports() && (name->startsWithUpper() || context->valueTypesAreAddressable())) {
         // Search for attached properties, enums and imported scripts
         QQmlTypeNameCache::Result r = context->imports()->query<QQmlImport::AllowRecursion>(
-                name, QQmlTypeLoader::get(ep));
+                name, v4->typeLoader());
 
         if (r.isValid()) {
             if (hasProperty)
@@ -325,8 +326,8 @@ ReturnedValue QQmlContextWrapper::getPropertyAndBase(const QQmlContextWrapper *r
                                                QV4::QObjectWrapper::wrap(v4, scopeObject)));
                         if (QObjectMethod *method = result->as<QObjectMethod>()) {
                             QV4::setupQObjectMethodLookup(
-                                        lookup, ddata, propertyData, val->objectValue(),
-                                        method->d());
+                                    lookup, ddata->propertyCache, propertyData,
+                                    val->objectValue(), method->d());
                             lookup->call = Lookup::Call::ContextGetterScopeObjectMethod;
                         } else {
                             QV4::setupQObjectLookup(
@@ -365,8 +366,8 @@ ReturnedValue QQmlContextWrapper::getPropertyAndBase(const QQmlContextWrapper *r
                                                QV4::QObjectWrapper::wrap(v4, contextObject)));
                         if (QObjectMethod *method = result->as<QObjectMethod>()) {
                             setupQObjectMethodLookup(
-                                        lookup, ddata, propertyData, val->objectValue(),
-                                        method->d());
+                                    lookup, ddata->propertyCache, propertyData,
+                                    val->objectValue(), method->d());
                             if (contextGetterCall == Lookup::Call::ContextGetterScopeObjectProperty)
                                 lookup->call = Lookup::Call::ContextGetterScopeObjectMethod;
                             else
@@ -456,7 +457,7 @@ bool QQmlContextWrapper::virtualPut(Managed *m, PropertyKey id, const Value &val
     if (!context)
         return false;
 
-    // See QV8ContextWrapper::Getter for resolution order
+    // See QQmlContextWrapper::Getter for resolution order
 
     QObject *scopeObject = wrapper->getScopeObject();
     ScopedString name(scope, id.asStringOrSymbol());

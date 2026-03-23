@@ -44,9 +44,10 @@ QAudioFormat audioFormatFromFrame(const Frame &frame)
 
 } // namespace
 
-AudioRenderer::AudioRenderer(const TimeController &tc, QAudioOutput *output,
-                             QAudioBufferOutput *bufferOutput, bool pitchCompensation)
-    : Renderer(tc),
+AudioRenderer::AudioRenderer(const PlaybackEngineObjectID &id, const TimeController &tc,
+                             QAudioOutput *output, QAudioBufferOutput *bufferOutput,
+                             bool pitchCompensation)
+    : Renderer(id, tc),
       m_output(output),
       m_bufferOutput(bufferOutput),
       m_pitchCompensation(pitchCompensation)
@@ -72,7 +73,7 @@ void AudioRenderer::setOutput(QAudioBufferOutput *bufferOutput)
 
 void AudioRenderer::setPitchCompensation(bool enabled)
 {
-    QMetaObject::invokeMethod(this, [this, enabled] {
+    invokePriorityMethod([this, enabled] {
         if (m_pitchCompensation == enabled)
             return;
 
@@ -188,17 +189,26 @@ void AudioRenderer::onPlaybackRateChanged()
     m_audioFrameConverter.reset();
 }
 
-std::chrono::milliseconds AudioRenderer::timerInterval() const
+AudioRenderer::TimePoint AudioRenderer::nextTimePoint() const
 {
+    const TimePoint timePoint = Renderer::nextTimePoint();
+
+    // if the first frame is expected, don't force the immediate job
+    if (m_firstFrameToSink)
+        return timePoint;
+
+    // if the sink is active, don't force the immediate job
+    if (!m_sink || m_sink->state() != QAudio::IdleState)
+        return timePoint;
+
+    // if the waiting interval is out of a heuristic fixable range,
+    // don't force the immediate job.
     constexpr auto MaxFixableInterval = 50ms;
+    if (timePoint == TimePoint::min() ||
+        timePoint - std::chrono::steady_clock::now() > MaxFixableInterval)
+        return timePoint;
 
-    const auto interval = Renderer::timerInterval();
-
-    if (m_firstFrameToSink || !m_sink || m_sink->state() != QAudio::IdleState
-        || interval > MaxFixableInterval)
-        return interval;
-
-    return 0ms;
+    return TimePoint::min(); // do the job now
 }
 
 void AudioRenderer::onPauseChanged()
@@ -210,7 +220,7 @@ void AudioRenderer::onPauseChanged()
 void AudioRenderer::initAudioFrameConverter(const Frame &frame)
 {
     // We recreate the frame converter whenever format or playback rate is changed
-    if (!m_pitchCompensation || qFuzzyCompare(playbackRate(), 1.0f)) {
+    if (!m_pitchCompensation || QtPrivate::fuzzyCompare(playbackRate(), 1.0f)) {
         m_audioFrameConverter = makeTrivialAudioFrameConverter(frame, m_sinkFormat, playbackRate());
     } else {
         m_audioFrameConverter =
@@ -366,15 +376,6 @@ microseconds AudioRenderer::bufferLoadingTime(const SynchronizationStamp &syncSt
         return microseconds(0);
 
     const auto bytes = qMax(m_sink->bufferSize() - syncStamp.audioSinkBytesFree, 0);
-
-#ifdef Q_OS_ANDROID
-    // The hack has been added due to QAndroidAudioSink issues (QTBUG-118609).
-    // The method QAndroidAudioSink::bytesFree returns 0 or bufferSize, intermediate values are not
-    // available now; to be fixed.
-    if (bytes == 0)
-        return m_timings.minSoundDelay + MinDesiredBufferTime;
-#endif
-
     return durationForBytes(bytes);
 }
 

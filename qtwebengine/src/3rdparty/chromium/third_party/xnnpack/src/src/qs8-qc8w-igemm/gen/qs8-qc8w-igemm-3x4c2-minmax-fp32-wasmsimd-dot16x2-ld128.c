@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-igemm/MRx4c2-wasmsimd-dot16x2.c.in
 //   Generator: tools/xngen
@@ -11,8 +12,8 @@
 
 #include <wasm_simd128.h>
 
-#include "xnnpack/igemm.h"
-#include "xnnpack/math.h"
+#include "src/xnnpack/igemm.h"
+#include "src/xnnpack/math.h"
 
 
 void xnn_qs8_qc8w_igemm_minmax_fp32_ukernel_3x4c2__wasmsimd_dot16x2_ld128(
@@ -27,7 +28,7 @@ void xnn_qs8_qc8w_igemm_minmax_fp32_ukernel_3x4c2__wasmsimd_dot16x2_ld128(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qs8_qc8w_conv_minmax_params* restrict params) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 3);

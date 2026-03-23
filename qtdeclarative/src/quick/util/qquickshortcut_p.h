@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKSHORTCUT_P_H
 #define QQUICKSHORTCUT_P_H
@@ -101,7 +102,7 @@ private:
     bool m_autorepeat;
     Qt::ShortcutContext m_context;
     Shortcut m_shortcut;
-    QVector<Shortcut> m_shortcuts;
+    QList<Shortcut> m_shortcuts;
 };
 
 QT_END_NAMESPACE

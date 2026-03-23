@@ -79,15 +79,16 @@ export class UserEducationInternalsElement extends
     };
   }
 
-  filter: string = '';
-  protected tutorials_: FeaturePromoDemoPageInfo[] = [];
-  protected featurePromos_: FeaturePromoDemoPageInfo[] = [];
+  accessor filter: string = '';
+  protected accessor tutorials_: FeaturePromoDemoPageInfo[] = [];
+  protected accessor featurePromos_: FeaturePromoDemoPageInfo[] = [];
   protected newBadges_: FeaturePromoDemoPageInfo[] = [];
   protected whatsNewModules_: WhatsNewModuleDemoPageInfo[] = [];
   protected whatsNewEditions_: WhatsNewEditionDemoPageInfo[] = [];
-  protected featurePromoErrorMessage_: string = '';
-  protected narrow_: boolean = false;
-  protected sessionExpanded_: boolean = false;
+  protected ntpPromos_: FeaturePromoDemoPageInfo[] = [];
+  protected accessor featurePromoErrorMessage_: string = '';
+  protected accessor narrow_: boolean = false;
+  protected accessor sessionExpanded_: boolean = false;
   protected sessionData_: FeaturePromoDemoPageData[] = [];
 
   private handler_: UserEducationInternalsPageHandlerInterface;
@@ -108,7 +109,7 @@ export class UserEducationInternalsElement extends
     // dynamically created, we have to wait until after the element is
     // populated to register the anchor element.
     if (changedProperties.has('featurePromos_')) {
-      if (this.shadowRoot!.querySelector('#IPH_WebUiHelpBubbleTest')) {
+      if (this.shadowRoot.querySelector('#IPH_WebUiHelpBubbleTest')) {
         this.registerHelpBubble(
             'kWebUIIPHDemoElementIdentifier',
             ['#IPH_WebUiHelpBubbleTest', '#launch']);
@@ -141,6 +142,10 @@ export class UserEducationInternalsElement extends
 
     this.handler_.getWhatsNewEditions().then(({whatsNewEditions}) => {
       this.whatsNewEditions_ = whatsNewEditions;
+    });
+
+    this.handler_.getNtpPromos().then(({ntpPromos}) => {
+      this.ntpPromos_ = ntpPromos;
     });
   }
 
@@ -189,12 +194,18 @@ export class UserEducationInternalsElement extends
       } else {
         this.handler_.getFeaturePromos().then(({featurePromos}) => {
           this.featurePromos_ = featurePromos;
+          this.requestUpdate();
         });
       }
     });
   }
 
   protected clearSessionData_() {
+    if (!confirm(
+            'This will reset the browser to a "fresh profile" state,' +
+            ' which may trigger multiple grace periods. Proceed?')) {
+      return;
+    }
     this.handler_.clearSessionData().then(({errorMessage}) => {
       this.featurePromoErrorMessage_ = errorMessage;
       if (errorMessage !== '') {
@@ -202,6 +213,35 @@ export class UserEducationInternalsElement extends
       } else {
         this.handler_.getSessionData().then(({sessionData}) => {
           this.sessionData_ = sessionData;
+          this.requestUpdate();
+        });
+      }
+    });
+  }
+
+  protected forceNewSession_() {
+    this.handler_.forceNewSession().then(({errorMessage}) => {
+      this.featurePromoErrorMessage_ = errorMessage;
+      if (errorMessage !== '') {
+        this.$.errorMessageToast.show();
+      } else {
+        this.handler_.getSessionData().then(({sessionData}) => {
+          this.sessionData_ = sessionData;
+          this.requestUpdate();
+        });
+      }
+    });
+  }
+
+  protected removeGracePeriods_() {
+    this.handler_.removeGracePeriods().then(({errorMessage}) => {
+      this.featurePromoErrorMessage_ = errorMessage;
+      if (errorMessage !== '') {
+        this.$.errorMessageToast.show();
+      } else {
+        this.handler_.getSessionData().then(({sessionData}) => {
+          this.sessionData_ = sessionData;
+          this.requestUpdate();
         });
       }
     });
@@ -218,6 +258,7 @@ export class UserEducationInternalsElement extends
       } else {
         this.handler_.getNewBadges().then(({newBadges}) => {
           this.newBadges_ = newBadges;
+          this.requestUpdate();
         });
       }
     });
@@ -233,9 +274,27 @@ export class UserEducationInternalsElement extends
       } else {
         this.handler_.getWhatsNewModules().then(({whatsNewModules}) => {
           this.whatsNewModules_ = whatsNewModules;
+          this.requestUpdate();
         });
         this.handler_.getWhatsNewEditions().then(({whatsNewEditions}) => {
           this.whatsNewEditions_ = whatsNewEditions;
+          this.requestUpdate();
+        });
+      }
+    });
+  }
+
+  protected clearNtpPromoData_(e: CustomEvent) {
+    const id = e.detail;
+    this.featurePromoErrorMessage_ = '';
+    this.handler_.clearNtpPromoData(id).then(({errorMessage}) => {
+      this.featurePromoErrorMessage_ = errorMessage;
+      if (errorMessage !== '') {
+        this.$.errorMessageToast.show();
+      } else {
+        this.handler_.getNtpPromos().then(({ntpPromos}) => {
+          this.ntpPromos_ = ntpPromos;
+          this.requestUpdate();
         });
       }
     });

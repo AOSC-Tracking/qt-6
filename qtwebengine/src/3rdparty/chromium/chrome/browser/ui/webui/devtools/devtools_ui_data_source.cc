@@ -14,8 +14,10 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/path_service.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_util.h"
 #include "base/task/thread_pool.h"
-#ifndef TOOLKIT_QT
+#include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/devtools_ui_bindings.h"
 #include "chrome/browser/devtools/url_constants.h"
 #endif
@@ -177,7 +179,7 @@ void DevToolsDataSource::StartDataRequest(
     return;
   }
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Serve request to devtools://remote from remote location.
   std::string remote_path_prefix(chrome::kChromeUIDevToolsRemotePath);
   remote_path_prefix += "/";
@@ -224,8 +226,16 @@ std::string DevToolsDataSource::GetMimeType(const GURL& url) {
   return GetMimeTypeForUrl(url);
 }
 
-bool DevToolsDataSource::ShouldAddContentSecurityPolicy() {
-  return false;
+std::string DevToolsDataSource::GetContentSecurityPolicy(
+    network::mojom::CSPDirectiveName directive) {
+  switch (directive) {
+    case network::mojom::CSPDirectiveName::ObjectSrc:
+      return "object-src 'none';";
+    case network::mojom::CSPDirectiveName::ScriptSrc:
+      return "script-src 'self' https://chrome-devtools-frontend.appspot.com;";
+    default:
+      return std::string();
+  }
 }
 
 bool DevToolsDataSource::ShouldDenyXFrameOptions() {
@@ -249,7 +259,7 @@ void DevToolsDataSource::StartBundledDataRequest(
 void DevToolsDataSource::StartRemoteDataRequest(
     const GURL& url,
     content::URLDataSource::GotDataCallback callback) {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   CHECK(url.is_valid());
   net::NetworkTrafficAnnotationTag traffic_annotation =
       net::DefineNetworkTrafficAnnotation("devtools_hard_coded_data_source",

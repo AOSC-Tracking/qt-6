@@ -27,6 +27,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -93,7 +94,7 @@ const UIStrings = {
    * @description Title of a link to the developer documentation.
    */
   learnMore: 'Learn more',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/RequestCookiesView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -111,11 +112,10 @@ export class RequestCookiesView extends UI.Widget.Widget {
   private readonly malformedResponseCookiesList: HTMLElement;
 
   constructor(request: SDK.NetworkRequest.NetworkRequest) {
-    super();
+    super({jslog: `${VisualLogging.pane('cookies').track({resize: true})}`});
     this.registerRequiredCSS(requestCookiesViewStyles);
 
     this.element.classList.add('request-cookies-view');
-    this.element.setAttribute('jslog', `${VisualLogging.pane('cookies').track({resize: true})}`);
 
     this.request = request;
     this.showFilteredOutCookiesSetting = Common.Settings.Settings.instance().createSetting(
@@ -131,7 +131,7 @@ export class RequestCookiesView extends UI.Widget.Widget {
 
     const requestCookiesCheckbox = UI.SettingsUI.createSettingCheckbox(
         i18nString(UIStrings.showFilteredOutRequestCookies), this.showFilteredOutCookiesSetting);
-    requestCookiesCheckbox.checkboxElement.addEventListener('change', () => {
+    requestCookiesCheckbox.addEventListener('change', () => {
       this.refreshRequestCookiesView();
     });
     this.requestCookiesTitle.appendChild(requestCookiesCheckbox);
@@ -169,7 +169,7 @@ export class RequestCookiesView extends UI.Widget.Widget {
   }
 
   private getRequestCookies(): {
-    requestCookies: Array<SDK.Cookie.Cookie>,
+    requestCookies: SDK.Cookie.Cookie[],
     requestCookieToBlockedReasons: Map<SDK.Cookie.Cookie, SDK.CookieModel.BlockedReason[]>,
     requestCookieToExemptionReason: Map<SDK.Cookie.Cookie, SDK.CookieModel.ExemptionReason>,
   } {
@@ -200,10 +200,10 @@ export class RequestCookiesView extends UI.Widget.Widget {
   }
 
   private getResponseCookies(): {
-    responseCookies: Array<SDK.Cookie.Cookie>,
-    responseCookieToBlockedReasons: Map<SDK.Cookie.Cookie, Array<SDK.CookieModel.BlockedReason>>,
+    responseCookies: SDK.Cookie.Cookie[],
+    responseCookieToBlockedReasons: Map<SDK.Cookie.Cookie, SDK.CookieModel.BlockedReason[]>,
     responseCookieToExemptionReason: Map<SDK.Cookie.Cookie, SDK.CookieModel.ExemptionReason>,
-    malformedResponseCookies: Array<SDK.NetworkRequest.BlockedSetCookieWithReason>,
+    malformedResponseCookies: SDK.NetworkRequest.BlockedSetCookieWithReason[],
   } {
     let responseCookies: SDK.Cookie.Cookie[] = [];
     const responseCookieToBlockedReasons = new Map<SDK.Cookie.Cookie, SDK.CookieModel.BlockedReason[]>();

@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dcustomcamera_p.h"
 
@@ -60,7 +62,7 @@ QT_BEGIN_NAMESPACE
  * \internal
  */
 QQuick3DCustomCamera::QQuick3DCustomCamera(QQuick3DNode *parent)
-    : QQuick3DCamera(*(new QQuick3DNodePrivate(QQuick3DNodePrivate::Type::CustomCamera)), parent){}
+    : QQuick3DCamera(*(new QQuick3DNodePrivate(QQuick3DNodePrivate::Type::CustomCamera, QQuick3DContentLayer::LayerAll)), parent){}
 
 /*!
     \qmlproperty matrix4x4 CustomCamera::projection

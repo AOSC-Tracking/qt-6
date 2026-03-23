@@ -12,6 +12,7 @@ devtools_module("types") {
     "Configuration.ts",
     "Extensions.ts",
     "File.ts",
+    "Overlays.ts",
     "Timing.ts",
     "TraceEvents.ts",
   ]
@@ -20,6 +21,7 @@ devtools_module("types") {
     "../../../core/sdk:bundle",
     "../../../generated",
     "../../crux-manager:bundle",
+    "../lantern:bundle",
   ]
 }
 

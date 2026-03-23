@@ -78,11 +78,11 @@ class CXFA_FFTextEdit : public CXFA_FFField {
   explicit CXFA_FFTextEdit(CXFA_Node* pNode);
   uint32_t GetAlignment();
 
-  cppgc::Member<IFWL_WidgetDelegate> m_pOldDelegate;
+  cppgc::Member<IFWL_WidgetDelegate> old_delegate_;
 
  private:
   bool CommitData() override;
-  bool UpdateFWLData() override;
+  void UpdateFWLData() override;
   bool IsDataChanged() override;
   void ValidateNumberField(const WideString& wsText);
 };

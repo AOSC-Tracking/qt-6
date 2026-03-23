@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlincubator.h"
 #include "qqmlcomponent.h"
@@ -7,6 +8,8 @@
 
 #include "qqmlobjectcreator_p.h"
 #include <private/qqmlcomponent_p.h>
+
+QT_BEGIN_NAMESPACE
 
 void QQmlEnginePrivate::incubate(
         QQmlIncubator &i, const QQmlRefPointer<QQmlContextData> &forContext)
@@ -90,6 +93,11 @@ QQmlIncubationController *QQmlEngine::incubationController() const
     return d->incubationController;
 }
 
+/*!
+    \class QQmlIncubatorPrivate
+    \inmodule QtQml
+    \internal
+*/
 QQmlIncubatorPrivate::QQmlIncubatorPrivate(QQmlIncubator *q, QQmlIncubator::IncubationMode m)
     : q(q), status(QQmlIncubator::Null), mode(m), isAsynchronous(false), progress(Execute),
       result(nullptr), enginePriv(nullptr), waitingOnMe(nullptr)
@@ -715,13 +723,15 @@ QObject *QQmlIncubator::object() const
 }
 
 /*!
-Return a pointer to a list of properties which are required but haven't
-been set yet.
-This list can be modified, so that subclasses which implement special logic
-setInitialProperties can mark properties set there as no longer required.
+    \internal
+    Return a pointer to a list of properties which are required but
+    haven't been set yet.
+    This list can be modified, so that subclasses which implement
+    special logic setInitialProperties can mark properties set there
+    as no longer required.
 
-\sa QQmlIncubator::setInitialProperties
-\since 5.15
+    \sa QQmlIncubator::setInitialProperties
+    \since 5.15
 */
 RequiredProperties *QQmlIncubatorPrivate::requiredProperties()
 {
@@ -807,3 +817,4 @@ QQmlIncubator::Status QQmlIncubatorPrivate::calculateStatus() const
         return QQmlIncubator::Null;
 }
 
+QT_END_NAMESPACE

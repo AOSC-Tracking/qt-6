@@ -54,7 +54,8 @@ class CORE_EXPORT DisplayLockUtilities {
         DocumentUpdateReason reason);
     friend void Document::UpdateStyleAndLayoutTreeForElement(
         const Element* node,
-        DocumentUpdateReason reason);
+        DocumentUpdateReason reason,
+        bool only_cv_auto);
     friend void Document::UpdateStyleAndLayoutTreeForSubtree(
         const Element* node,
         DocumentUpdateReason reason);
@@ -222,6 +223,10 @@ class CORE_EXPORT DisplayLockUtilities {
       const Node& node,
       DisplayLockActivationReason reason);
 
+  // Returns a list of the elements in a range and all of their flat tree
+  // ancestors.
+  static VectorOf<Element> InclusiveAncestorsOfRange(const Range& range);
+
   // Ancestor navigation functions.
 
   // Helpers for ancestor navigation to find locks.
@@ -308,7 +313,7 @@ class CORE_EXPORT DisplayLockUtilities {
   // Walks up the ancestor chain and expands all elements with the
   // hidden=until-found attribute found along by removing the hidden attribute.
   // If any were expanded, returns true.
-  // This method may run script because of the mutation events fired when
+  // This method may run script because of the synchronous events fired when
   // removing the hidden attribute.
   static bool RevealHiddenUntilFoundAncestors(const Node&);
 

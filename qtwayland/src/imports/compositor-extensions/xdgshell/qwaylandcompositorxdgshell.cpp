@@ -18,9 +18,9 @@ QT_BEGIN_NAMESPACE
 
     \section2 Usage
     To use this module, import it like this:
-    \qml
+    \code
     import QtWayland.Compositor.XdgShell
-    \endqml
+    \endcode
 */
 QT_END_NAMESPACE
 

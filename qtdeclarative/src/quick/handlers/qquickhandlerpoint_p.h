@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKHANDLERPOINT_H
 #define QQUICKHANDLERPOINT_H
@@ -62,7 +63,7 @@ public:
 
     void reset();
     void reset(const QPointerEvent *event, const QEventPoint &point);
-    void reset(const QVector<QQuickHandlerPoint> &points);
+    void reset(const QList<QQuickHandlerPoint> &points);
 
 private:
     int m_id = -1;

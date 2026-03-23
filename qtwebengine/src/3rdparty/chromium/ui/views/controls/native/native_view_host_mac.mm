@@ -7,8 +7,10 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/apple/foundation_util.h"
+#include "base/notimplemented.h"
 #import "ui/accessibility/platform/ax_platform_node_mac.h"
 #include "ui/compositor/layer.h"
+#include "ui/gfx/native_widget_types.h"
 #import "ui/views/cocoa/native_widget_mac_ns_window_host.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/widget/native_widget_mac.h"
@@ -25,8 +27,8 @@ void EnsureNativeViewHasNoChildWidgets(NSView* native_view) {
   // whether those child Widgets need to be distinguished from Widgets that code
   // might want to associate with the hosted NSView instead.
   {
-    Widget::Widgets child_widgets;
-    Widget::GetAllChildWidgets(native_view, &child_widgets);
+    Widget::Widgets child_widgets =
+        Widget::GetAllChildWidgets(gfx::NativeView(native_view));
     CHECK_GE(1u, child_widgets.size());  // 1 (itself) or 0 if detached.
   }
 }
@@ -296,14 +298,14 @@ void NativeViewHostMac::SetFocus() {
 
 gfx::NativeView NativeViewHostMac::GetNativeViewContainer() const {
   NOTIMPLEMENTED();
-  return nullptr;
+  return gfx::NativeView();
 }
 
 gfx::NativeViewAccessible NativeViewHostMac::GetNativeViewAccessible() {
   if (native_view_hostable_) {
     return native_view_hostable_->ViewsHostableGetAccessibilityElement();
   } else {
-    return native_view_;
+    return gfx::NativeViewAccessible(native_view_);
   }
 }
 
@@ -344,7 +346,7 @@ void NativeViewHostMac::SetParentAccessible(
 gfx::NativeViewAccessible NativeViewHostMac::GetParentAccessible() {
   return native_view_hostable_
              ? native_view_hostable_->ViewsHostableGetParentAccessible()
-             : nullptr;
+             : gfx::NativeViewAccessible();
 }
 
 ui::Layer* NativeViewHostMac::GetUILayer() {

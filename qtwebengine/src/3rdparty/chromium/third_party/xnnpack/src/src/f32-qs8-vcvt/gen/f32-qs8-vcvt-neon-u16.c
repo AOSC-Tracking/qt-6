@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-qs8-vcvt/neon.c.in
 //   Generator: tools/xngen
@@ -7,27 +8,28 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <assert.h>
-
 #include <arm_neon.h>
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/intrinsics-polyfill.h"
-#include "xnnpack/vcvt.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/vcvt.h"
 
 
 void xnn_f32_qs8_vcvt_ukernel__neon_u16(
     size_t batch,
     const float* input,
     int8_t* output,
-    const struct xnn_f32_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_qs8_cvt_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
   assert(input != NULL);
   assert(output != NULL);
 
-  const float32x4_t vscale = vld1q_dup_f32(&params->scalar.scale);
+  const float32x4_t vscale = vdupq_n_f32(params->scalar.scale);
   const float32x4_t vmagic_bias = vdupq_n_f32(12582912.0f);
   const int32x4_t vmagic_bias_less_zero_point = vdupq_n_s32(INT32_C(0x4B400000) - (int32_t) params->scalar.output_zero_point);
   XNN_FORCE_REALIZATION(vmagic_bias);

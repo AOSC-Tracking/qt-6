@@ -37,6 +37,7 @@ class DataTypeControllerDelegate;
 namespace data_sharing {
 class DataSharingNetworkLoader;
 class DataSharingSDKDelegate;
+class Logger;
 class PreviewServerProxy;
 
 // The core class for managing data sharing.
@@ -48,7 +49,8 @@ class DataSharingService : public KeyedService, public base::SupportsUserData {
     kUnknown = 0,
     kPermissionDenied = 1,
     kGroupFull = 2,
-    kOtherFailure = 3
+    kGroupClosedByOrganizationPolicy = 3,
+    kOtherFailure = 4
   };
 
   // GENERATED_JAVA_ENUM_PACKAGE: (
@@ -66,15 +68,6 @@ class DataSharingService : public KeyedService, public base::SupportsUserData {
     kSuccess = 1,
     kTransientFailure = 2,
     kPersistentFailure = 3
-  };
-
-  // GENERATED_JAVA_ENUM_PACKAGE: (
-  //   org.chromium.components.data_sharing)
-  enum class ParseUrlStatus {
-    kUnknown = 0,
-    kSuccess = 1,
-    kHostOrPathMismatchFailure = 2,
-    kQueryMissingFailure = 3
   };
 
   class Observer : public base::CheckedObserver {
@@ -114,6 +107,10 @@ class DataSharingService : public KeyedService, public base::SupportsUserData {
     // to ignore incoming sync events during this duration.
     virtual void OnSyncBridgeUpdateTypeChanged(
         SyncBridgeUpdateType sync_bridge_update_type) {}
+
+    // Invoked when the DataSharingService is being destroyed. Give the subclass
+    // a chance to cleanup.
+    virtual void OnDataSharingServiceDestroyed() {}
   };
 
   using GroupDataOrFailureOutcome =
@@ -122,7 +119,6 @@ class DataSharingService : public KeyedService, public base::SupportsUserData {
       base::expected<std::set<GroupData>, PeopleGroupActionFailure>;
   using SharedDataPreviewOrFailureOutcome =
       base::expected<SharedDataPreview, DataPreviewActionFailure>;
-  using ParseUrlResult = base::expected<GroupToken, ParseUrlStatus>;
 
 #if BUILDFLAG(IS_ANDROID)
   // Returns a Java object of the type DataSharingService for the given
@@ -227,20 +223,19 @@ class DataSharingService : public KeyedService, public base::SupportsUserData {
       const GroupId& group_id,
       base::OnceCallback<void(PeopleGroupActionOutcome)> callback) = 0;
 
-  // Returns whether the current user has attempted to leave a group in the
-  // current session that they had joined before. This is different than if the
-  // member is removed from the group by someone else. Returns true for the
-  // entire current session even after leave attempt has been committed.
-  virtual bool IsLeavingGroup(const GroupId& group_id) = 0;
+  // Returns whether the current user has attempted to leave or delete a group
+  // in the current session that they had joined or created before. This is
+  // different than if the member is removed from the group by someone else.
+  // Returns true for the entire current session even after leave / delete
+  // attempt has been committed.
+  virtual bool IsLeavingOrDeletingGroup(const GroupId& group_id) = 0;
 
   // Returns group events since the DataSharingService was started. This is
   // similar to events exposed to Observers, but allows to collect changes by
   // observer that were created after DataSharingService was started.
   virtual std::vector<GroupEvent> GetGroupEventsSinceStartup() = 0;
 
-  // Check if the given URL should be intercepted.
-  virtual bool ShouldInterceptNavigationForShareURL(const GURL& url) = 0;
-
+  // DEPRECATED: Called when a data sharing type URL has been intercepted.
   // Called when a data sharing type URL has been intercepted.
   virtual void HandleShareURLNavigationIntercepted(
       const GURL& url,
@@ -252,11 +247,6 @@ class DataSharingService : public KeyedService, public base::SupportsUserData {
   // EnsureGroupVisibility API is called before getting the URL for the group.
   virtual std::unique_ptr<GURL> GetDataSharingUrl(
       const GroupData& group_data) = 0;
-
-  // Parse and validate a data sharing URL. This simply parses the url. The
-  // returned group may not be valid, the caller needs to check ReadGroup or
-  // other apis to validate the group.
-  virtual ParseUrlResult ParseDataSharingUrl(const GURL& url) = 0;
 
   // This ensures that the group is open for new members to join. Only owner can
   // call this API. The owner must always call this API before
@@ -292,6 +282,8 @@ class DataSharingService : public KeyedService, public base::SupportsUserData {
   // Get the current DataSharingUIDelegate instance.
   virtual DataSharingUIDelegate* GetUiDelegate() = 0;
 
+  virtual Logger* GetLogger() = 0;
+
   // Sets a group for testing. When ReadGroup is called, the GroupData that
   // matches GroupId will be returned. This function does not notify observers
   // of the group being added. Settings 2 groups with the same GroupId will
@@ -302,6 +294,10 @@ class DataSharingService : public KeyedService, public base::SupportsUserData {
   virtual void SetPreviewServerProxyForTesting(
       std::unique_ptr<PreviewServerProxy> preview_server_proxy) = 0;
   virtual PreviewServerProxy* GetPreviewServerProxyForTesting() = 0;
+
+  // Called when a collaboration group is removed by the user locally. This
+  // happens when user leaves or deletes a group.
+  virtual void OnCollaborationGroupRemoved(const GroupId& group_id) = 0;
 };
 
 }  // namespace data_sharing

@@ -94,7 +94,7 @@ void PageTestBase::MockClipboardHostProvider::Install(
       blink::mojom::blink::ClipboardHost::Name_,
       WTF::BindRepeating(
           &PageTestBase::MockClipboardHostProvider::BindClipboardHost,
-          base::Unretained(this)));
+          WTF::Unretained(this)));
 }
 
 void PageTestBase::MockClipboardHostProvider::BindClipboardHost(
@@ -257,7 +257,7 @@ void PageTestBase::LoadNoto(LocalFrame& frame) {
 
 // Both sets the inner html and runs the document lifecycle.
 void PageTestBase::SetBodyInnerHTML(const String& body_content) {
-  GetDocument().body()->setInnerHTML(body_content, ASSERT_NO_EXCEPTION);
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(body_content);
   UpdateAllLifecyclePhasesForTest();
 }
 
@@ -266,7 +266,8 @@ void PageTestBase::SetBodyContent(const std::string& body_content) {
 }
 
 void PageTestBase::SetHtmlInnerHTML(const std::string& html_content) {
-  GetDocument().documentElement()->setInnerHTML(String::FromUTF8(html_content));
+  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+      String::FromUTF8(html_content));
   UpdateAllLifecyclePhasesForTest();
 }
 
@@ -319,6 +320,10 @@ StyleEngine& PageTestBase::GetStyleEngine() {
 
 Element* PageTestBase::GetElementById(const char* id) const {
   return GetDocument().getElementById(AtomicString(id));
+}
+
+Element* PageTestBase::QuerySelector(const char* selector) const {
+  return GetDocument().QuerySelector(AtomicString(selector));
 }
 
 AnimationClock& PageTestBase::GetAnimationClock() {

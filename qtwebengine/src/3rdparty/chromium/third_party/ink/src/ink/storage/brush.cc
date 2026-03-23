@@ -15,7 +15,10 @@
 #include "ink/storage/brush.h"
 
 #include <cstdint>
+#include <map>
 #include <optional>
+#include <string>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -31,16 +34,14 @@
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
 #include "ink/brush/easing_function.h"
-#include "ink/color/color.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/point.h"
 #include "ink/geometry/vec.h"
-#include "ink/storage/brush_provider.h"
 #include "ink/storage/color.h"
 #include "ink/storage/proto/brush.pb.h"
-#include "ink/storage/proto/coded.pb.h"
+#include "ink/storage/proto/brush_family.pb.h"
+#include "ink/storage/proto/stroke_input_batch.pb.h"
 #include "ink/types/duration.h"
-#include "ink/types/uri.h"
 
 namespace ink {
 namespace {
@@ -389,6 +390,8 @@ proto::BrushBehavior::Target EncodeBrushBehaviorTarget(
     case BrushBehavior::Target::kPositionOffsetLateralInMultiplesOfBrushSize:
       return proto::BrushBehavior::
           TARGET_POSITION_OFFSET_LATERAL_IN_MULTIPLES_OF_BRUSH_SIZE;
+    case BrushBehavior::Target::kTextureAnimationProgressOffset:
+      return proto::BrushBehavior::TARGET_UNSPECIFIED;
     case BrushBehavior::Target::kHueOffsetInRadians:
       return proto::BrushBehavior::TARGET_HUE_OFFSET_IN_RADIANS;
     case BrushBehavior::Target::kSaturationMultiplier:
@@ -443,6 +446,38 @@ absl::StatusOr<BrushBehavior::Target> DecodeBrushBehaviorTarget(
     default:
       return absl::InvalidArgumentError(absl::StrCat(
           "invalid ink.proto.BrushBehavior.Target value: ", target_proto));
+  }
+}
+
+proto::BrushBehavior::PolarTarget EncodeBrushBehaviorPolarTarget(
+    BrushBehavior::PolarTarget target) {
+  switch (target) {
+    case BrushBehavior::PolarTarget::
+        kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize:
+      return proto::BrushBehavior::
+          POLAR_POSITION_OFFSET_ABSOLUTE_IN_RADIANS_AND_MULTIPLES_OF_BRUSH_SIZE;
+    case BrushBehavior::PolarTarget::
+        kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize:
+      return proto::BrushBehavior::
+          POLAR_POSITION_OFFSET_RELATIVE_IN_RADIANS_AND_MULTIPLES_OF_BRUSH_SIZE;
+  }
+  return proto::BrushBehavior::POLAR_UNSPECIFIED;
+}
+
+absl::StatusOr<BrushBehavior::PolarTarget> DecodeBrushBehaviorPolarTarget(
+    proto::BrushBehavior::PolarTarget target_proto) {
+  switch (target_proto) {
+    case proto::BrushBehavior::
+        POLAR_POSITION_OFFSET_ABSOLUTE_IN_RADIANS_AND_MULTIPLES_OF_BRUSH_SIZE:
+      return BrushBehavior::PolarTarget::
+          kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize;
+    case proto::BrushBehavior::
+        POLAR_POSITION_OFFSET_RELATIVE_IN_RADIANS_AND_MULTIPLES_OF_BRUSH_SIZE:
+      return BrushBehavior::PolarTarget::
+          kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize;
+    default:
+      return absl::InvalidArgumentError(absl::StrCat(
+          "invalid ink.proto.BrushBehavior.PolarTarget value: ", target_proto));
   }
 }
 
@@ -776,6 +811,17 @@ void EncodeBrushBehaviorNode(const BrushBehavior::TargetNode& node,
       node.target_modifier_range[1]);
 }
 
+void EncodeBrushBehaviorNode(const BrushBehavior::PolarTargetNode& node,
+                             proto::BrushBehavior::Node& node_proto_out) {
+  proto::BrushBehavior::PolarTargetNode* target_node_proto =
+      node_proto_out.mutable_polar_target_node();
+  target_node_proto->set_target(EncodeBrushBehaviorPolarTarget(node.target));
+  target_node_proto->set_angle_range_start(node.angle_range[0]);
+  target_node_proto->set_angle_range_end(node.angle_range[1]);
+  target_node_proto->set_magnitude_range_start(node.magnitude_range[0]);
+  target_node_proto->set_magnitude_range_end(node.magnitude_range[1]);
+}
+
 absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorSourceNode(
     const proto::BrushBehavior::SourceNode& node_proto) {
   absl::StatusOr<BrushBehavior::Source> source =
@@ -903,6 +949,21 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorTargetNode(
   };
 }
 
+absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorPolarTargetNode(
+    const proto::BrushBehavior::PolarTargetNode& node_proto) {
+  absl::StatusOr<BrushBehavior::PolarTarget> target =
+      DecodeBrushBehaviorPolarTarget(node_proto.target());
+  if (!target.ok()) return target.status();
+
+  return BrushBehavior::PolarTargetNode{
+      .target = *target,
+      .angle_range = {node_proto.angle_range_start(),
+                      node_proto.angle_range_end()},
+      .magnitude_range = {node_proto.magnitude_range_start(),
+                          node_proto.magnitude_range_end()},
+  };
+}
+
 void EncodeBrushBehavior(const BrushBehavior& behavior,
                          proto::BrushBehavior& behavior_proto_out) {
   behavior_proto_out.clear_nodes();
@@ -983,10 +1044,10 @@ proto::BrushPaint::TextureLayer::SizeUnit EncodeBrushPaintSizeUnit(
   switch (size_unit) {
     case BrushPaint::TextureSizeUnit::kBrushSize:
       return proto::BrushPaint::TextureLayer::SIZE_UNIT_BRUSH_SIZE;
-    case BrushPaint::TextureSizeUnit::kStrokeSize:
-      return proto::BrushPaint::TextureLayer::SIZE_UNIT_STROKE_SIZE;
     case BrushPaint::TextureSizeUnit::kStrokeCoordinates:
       return proto::BrushPaint::TextureLayer::SIZE_UNIT_STROKE_COORDINATES;
+    case BrushPaint::TextureSizeUnit::kStrokeSize:
+      return proto::BrushPaint::TextureLayer::SIZE_UNIT_UNSPECIFIED;
   }
   return proto::BrushPaint::TextureLayer::SIZE_UNIT_UNSPECIFIED;
 }
@@ -998,8 +1059,6 @@ absl::StatusOr<BrushPaint::TextureSizeUnit> DecodeBrushPaintSizeUnit(
       return BrushPaint::TextureSizeUnit::kBrushSize;
     case proto::BrushPaint::TextureLayer::SIZE_UNIT_STROKE_COORDINATES:
       return BrushPaint::TextureSizeUnit::kStrokeCoordinates;
-    case proto::BrushPaint::TextureLayer::SIZE_UNIT_STROKE_SIZE:
-      return BrushPaint::TextureSizeUnit::kStrokeSize;
     case proto::BrushPaint::TextureLayer::SIZE_UNIT_UNSPECIFIED:
     default:
       return absl::InvalidArgumentError(absl::StrCat(
@@ -1104,62 +1163,10 @@ absl::StatusOr<BrushPaint::BlendMode> DecodeBrushPaintBlendMode(
   }
 }
 
-void EncodeBrushPaintTextureKeyFrame(
-    const BrushPaint::TextureKeyframe& keyframe,
-    proto::BrushPaint::TextureKeyframe& keyframe_proto) {
-  keyframe_proto.set_progress(keyframe.progress);
-  if (keyframe.size.has_value()) {
-    keyframe_proto.set_size_x(keyframe.size->x);
-    keyframe_proto.set_size_y(keyframe.size->y);
-  }
-  if (keyframe.offset.has_value()) {
-    keyframe_proto.set_offset_x(keyframe.offset->x);
-    keyframe_proto.set_offset_y(keyframe.offset->y);
-  }
-  if (keyframe.rotation.has_value()) {
-    keyframe_proto.set_rotation_in_radians(keyframe.rotation->ValueInRadians());
-  }
-  if (keyframe.opacity.has_value()) {
-    keyframe_proto.set_opacity(*keyframe.opacity);
-  }
-}
-
-absl::StatusOr<BrushPaint::TextureKeyframe> DecodeBrushPaintTextureKeyframe(
-    const proto::BrushPaint::TextureKeyframe& keyframe_proto) {
-  if (keyframe_proto.has_size_y() != keyframe_proto.has_size_x()) {
-    return absl::InvalidArgumentError(
-        "invalid ink.proto.BrushPaint.TextureKeyframe. size_x and size_y "
-        "must both be either set or unset.");
-  }
-  if (keyframe_proto.has_offset_x() != keyframe_proto.has_offset_y()) {
-    return absl::InvalidArgumentError(
-        "invalid ink.proto.BrushPaint.TextureKeyframe. offset_x and offset_y "
-        "must both be either set or unset.");
-  }
-  return BrushPaint::TextureKeyframe{
-      .progress = keyframe_proto.progress(),
-      .size = keyframe_proto.has_size_x()
-                  ? std::optional<Vec>(
-                        {keyframe_proto.size_x(), keyframe_proto.size_y()})
-                  : std::nullopt,
-      .offset = keyframe_proto.has_offset_x()
-                    ? std::optional<Vec>({keyframe_proto.offset_x(),
-                                          keyframe_proto.offset_y()})
-                    : std::nullopt,
-      .rotation = keyframe_proto.has_rotation_in_radians()
-                      ? std::optional<Angle>(Angle::Radians(
-                            keyframe_proto.rotation_in_radians()))
-                      : std::nullopt,
-      .opacity = keyframe_proto.has_opacity()
-                     ? std::optional<float>(keyframe_proto.opacity())
-                     : std::nullopt};
-}
-
 void EncodeBrushPaintTextureLayer(
     const BrushPaint::TextureLayer& layer,
     proto::BrushPaint::TextureLayer& layer_proto_out) {
-  layer_proto_out.set_color_texture_uri(
-      layer.color_texture_uri.ToNormalizedString());
+  layer_proto_out.set_client_texture_id(layer.client_texture_id);
   layer_proto_out.set_size_unit(EncodeBrushPaintSizeUnit(layer.size_unit));
   layer_proto_out.set_wrap_x(EncodeBrushPaintWrap(layer.wrap_x));
   layer_proto_out.set_wrap_y(EncodeBrushPaintWrap(layer.wrap_y));
@@ -1170,29 +1177,13 @@ void EncodeBrushPaintTextureLayer(
   layer_proto_out.set_offset_x(layer.offset.x);
   layer_proto_out.set_offset_y(layer.offset.y);
   layer_proto_out.set_rotation_in_radians(layer.rotation.ValueInRadians());
-  layer_proto_out.set_size_jitter_x(layer.size_jitter.x);
-  layer_proto_out.set_size_jitter_y(layer.size_jitter.y);
-  layer_proto_out.set_offset_jitter_x(layer.offset_jitter.x);
-  layer_proto_out.set_offset_jitter_y(layer.offset_jitter.y);
-  layer_proto_out.set_rotation_jitter_in_radians(
-      layer.rotation_jitter.ValueInRadians());
   layer_proto_out.set_opacity(layer.opacity);
-  for (const BrushPaint::TextureKeyframe& keyframe : layer.keyframes) {
-    EncodeBrushPaintTextureKeyFrame(keyframe, *layer_proto_out.add_keyframes());
-  }
   layer_proto_out.set_blend_mode(EncodeBrushPaintBlendMode(layer.blend_mode));
 }
 
 absl::StatusOr<BrushPaint::TextureLayer> DecodeBrushPaintTextureLayer(
-    const proto::BrushPaint::TextureLayer& layer_proto) {
-  if (!layer_proto.has_color_texture_uri()) {
-    return absl::InvalidArgumentError(
-        "ink.proto.BrushPaint.TextureLayer must specify a texture URI.");
-  }
-  absl::StatusOr<Uri> uri = Uri::Parse(layer_proto.color_texture_uri());
-  if (!uri.ok()) {
-    return uri.status();
-  }
+    const proto::BrushPaint::TextureLayer& layer_proto,
+    ClientTextureIdProvider get_client_texture_id) {
   auto mapping = DecodeBrushPaintTextureMapping(layer_proto.mapping());
   if (!mapping.ok()) {
     return mapping.status();
@@ -1213,51 +1204,47 @@ absl::StatusOr<BrushPaint::TextureLayer> DecodeBrushPaintTextureLayer(
   if (!wrap_y.ok()) {
     return wrap_y.status();
   }
-  std::vector<BrushPaint::TextureKeyframe> keyframes;
-  keyframes.reserve(layer_proto.keyframes_size());
-  for (const proto::BrushPaint::TextureKeyframe& keyframe_proto :
-       layer_proto.keyframes()) {
-    auto keyframe = DecodeBrushPaintTextureKeyframe(keyframe_proto);
-    if (!keyframe.ok()) {
-      return keyframe.status();
-    }
-    keyframes.push_back(*keyframe);
-  }
   auto blend_mode = DecodeBrushPaintBlendMode(layer_proto.blend_mode());
   if (!blend_mode.ok()) {
     return blend_mode.status();
   }
-  return BrushPaint::TextureLayer{
-      .color_texture_uri = *std::move(uri),
+
+  absl::StatusOr<std::string> client_texture_id =
+      get_client_texture_id(layer_proto.client_texture_id());
+  if (!client_texture_id.ok()) {
+    return client_texture_id.status();
+  }
+  BrushPaint::TextureLayer texture_layer{
+      .client_texture_id = *client_texture_id,
       .mapping = *mapping,
       .origin = *origin,
       .size_unit = *size_unit,
       .wrap_x = *wrap_x,
       .wrap_y = *wrap_y,
-      .size = {layer_proto.has_size_x() ? layer_proto.size_x() : 1.0f,
-               layer_proto.has_size_y() ? layer_proto.size_y() : 1.0f},
+      .size = {layer_proto.size_x(), layer_proto.size_y()},
       .offset = {layer_proto.offset_x(), layer_proto.offset_y()},
       .rotation = Angle::Radians(layer_proto.rotation_in_radians()),
-      .size_jitter = {layer_proto.size_jitter_x(), layer_proto.size_jitter_y()},
-      .offset_jitter = {layer_proto.offset_jitter_x(),
-                        layer_proto.offset_jitter_y()},
-      .rotation_jitter =
-          Angle::Radians(layer_proto.rotation_jitter_in_radians()),
-      .opacity = layer_proto.has_opacity() ? layer_proto.opacity() : 1.0f,
-      .keyframes = std::move(keyframes),
+      .opacity = layer_proto.opacity(),
       .blend_mode = *blend_mode};
+  if (absl::Status status =
+          brush_internal::ValidateBrushPaintTextureLayer(texture_layer);
+      !status.ok()) {
+    return status;
+  }
+  return std::move(texture_layer);
 }
 
 void EncodeBrushFamilyInputModel(
-    const BrushFamily::SpringModelV1& model,
+    const BrushFamily::SpringModel& model,
     proto::BrushFamily::InputModel& model_proto_out) {
-  model_proto_out.mutable_spring_model_v1();  // no fields to set
+  model_proto_out.mutable_spring_model();  // no fields to set
 }
 
 void EncodeBrushFamilyInputModel(
-    const BrushFamily::SpringModelV2& model,
+    const BrushFamily::ExperimentalRawPositionModel& model,
     proto::BrushFamily::InputModel& model_proto_out) {
-  model_proto_out.mutable_spring_model_v2();  // no fields to set
+  model_proto_out
+      .mutable_experimental_raw_position_model();  // no fields to set
 }
 
 void EncodeBrushFamilyInputModel(
@@ -1273,10 +1260,10 @@ void EncodeBrushFamilyInputModel(
 absl::StatusOr<BrushFamily::InputModel> DecodeBrushFamilyInputModel(
     const proto::BrushFamily::InputModel& model_proto) {
   switch (model_proto.input_model_case()) {
-    case proto::BrushFamily::InputModel::kSpringModelV1:
-      return BrushFamily::SpringModelV1{};
-    case proto::BrushFamily::InputModel::kSpringModelV2:
-      return BrushFamily::SpringModelV2{};
+    case proto::BrushFamily::InputModel::kSpringModel:
+      return BrushFamily::SpringModel{};
+    case proto::BrushFamily::InputModel::kExperimentalRawPositionModel:
+      return BrushFamily::ExperimentalRawPositionModel{};
     case proto::BrushFamily::InputModel::INPUT_MODEL_NOT_SET:
       break;
   }
@@ -1295,7 +1282,7 @@ void EncodeBrushBehaviorNode(const BrushBehavior::Node& node,
       node);
 }
 
-absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorNode(
+absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorNodeUnvalidated(
     const proto::BrushBehavior::Node& node_proto) {
   switch (node_proto.node_case()) {
     case proto::BrushBehavior::Node::kSourceNode:
@@ -1321,11 +1308,27 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorNode(
           node_proto.interpolation_node());
     case proto::BrushBehavior::Node::kTargetNode:
       return DecodeBrushBehaviorTargetNode(node_proto.target_node());
+    case proto::BrushBehavior::Node::kPolarTargetNode:
+      return DecodeBrushBehaviorPolarTargetNode(node_proto.polar_target_node());
     case proto::BrushBehavior::Node::NODE_NOT_SET:
       break;
   }
   return absl::InvalidArgumentError(
       "ink.proto.BrushBehavior.Node must specify a node");
+}
+
+absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorNode(
+    const proto::BrushBehavior::Node& node_proto) {
+  absl::StatusOr<BrushBehavior::Node> node =
+      DecodeBrushBehaviorNodeUnvalidated(node_proto);
+  if (!node.ok()) {
+    return node.status();
+  }
+  if (absl::Status status = brush_internal::ValidateBrushBehaviorNode(*node);
+      !status.ok()) {
+    return status;
+  }
+  return *node;
 }
 
 void EncodeBrushPaint(const BrushPaint& paint,
@@ -1339,19 +1342,25 @@ void EncodeBrushPaint(const BrushPaint& paint,
 }
 
 absl::StatusOr<BrushPaint> DecodeBrushPaint(
-    const proto::BrushPaint& paint_proto) {
+    const proto::BrushPaint& paint_proto,
+    ClientTextureIdProvider get_client_texture_id) {
   std::vector<BrushPaint::TextureLayer> layers;
   layers.reserve(paint_proto.texture_layers_size());
   for (const proto::BrushPaint::TextureLayer& layer_proto :
        paint_proto.texture_layers()) {
     absl::StatusOr<BrushPaint::TextureLayer> layer =
-        DecodeBrushPaintTextureLayer(layer_proto);
+        DecodeBrushPaintTextureLayer(layer_proto, get_client_texture_id);
     if (!layer.ok()) {
       return layer.status();
     }
     layers.push_back(*std::move(layer));
   }
-  return BrushPaint{.texture_layers = std::move(layers)};
+  BrushPaint paint{.texture_layers = std::move(layers)};
+  if (absl::Status status = brush_internal::ValidateBrushPaintTopLevel(paint);
+      !status.ok()) {
+    return status;
+  }
+  return std::move(paint);
 }
 
 void EncodeBrushTip(const BrushTip& tip, proto::BrushTip& tip_proto_out) {
@@ -1414,123 +1423,168 @@ absl::StatusOr<BrushTip> DecodeBrushTip(const proto::BrushTip& tip_proto) {
     tip.particle_gap_duration =
         Duration32::Seconds(tip_proto.particle_gap_duration_seconds());
   }
+  if (absl::Status status = brush_internal::ValidateBrushTip(tip);
+      !status.ok()) {
+    return status;
+  }
   return tip;
 }
 
 void EncodeBrushCoat(const BrushCoat& coat, proto::BrushCoat& coat_proto_out) {
-  coat_proto_out.mutable_tips()->Clear();
-  coat_proto_out.mutable_tips()->Reserve(coat.tips.size());
-  for (const BrushTip& tip : coat.tips) {
-    EncodeBrushTip(tip, *coat_proto_out.add_tips());
-  }
-
+  EncodeBrushTip(coat.tip, *coat_proto_out.mutable_tip());
   EncodeBrushPaint(coat.paint, *coat_proto_out.mutable_paint());
 }
 
-absl::StatusOr<BrushCoat> DecodeBrushCoat(const proto::BrushCoat& coat_proto) {
-  std::vector<BrushTip> tips;
-  tips.reserve(coat_proto.tips_size());
-  for (const proto::BrushTip& tip_proto : coat_proto.tips()) {
-    absl::StatusOr<BrushTip> tip = DecodeBrushTip(tip_proto);
-    if (!tip.ok()) {
-      return tip.status();
-    }
-    tips.push_back(*std::move(tip));
+absl::StatusOr<BrushCoat> DecodeBrushCoat(
+    const proto::BrushCoat& coat_proto,
+    ClientTextureIdProvider get_client_texture_id) {
+  absl::StatusOr<BrushTip> tip = DecodeBrushTip(coat_proto.tip());
+  if (!tip.ok()) {
+    return tip.status();
   }
-
-  absl::StatusOr<BrushPaint> paint = DecodeBrushPaint(coat_proto.paint());
+  absl::StatusOr<BrushPaint> paint =
+      DecodeBrushPaint(coat_proto.paint(), get_client_texture_id);
   if (!paint.ok()) {
     return paint.status();
   }
+  // There's no further validation to be done here if the paint and tip are
+  // valid.
+  return BrushCoat{.tip = *std::move(tip), .paint = *std::move(paint)};
+}
 
-  return BrushCoat{.tips = std::move(tips), .paint = *std::move(paint)};
+void EncodeBrushFamilyTextureMap(
+    const BrushFamily& family,
+    ::google::protobuf::Map<std::string, std::string>& texture_id_to_bitmap_out,
+    TextureBitmapProvider get_bitmap) {
+  texture_id_to_bitmap_out.clear();
+  // The set of texture ids for which we have already called get_bitmap().
+  std::unordered_set<std::string> seen_ids = {};
+  for (const BrushCoat& coat : family.GetCoats()) {
+    for (const BrushPaint::TextureLayer& layer : coat.paint.texture_layers) {
+      if (seen_ids.find(layer.client_texture_id) != seen_ids.end()) {
+        continue;
+      }
+
+      std::optional<std::string> bitmap = get_bitmap(layer.client_texture_id);
+      seen_ids.insert(layer.client_texture_id);
+      if (!bitmap.has_value()) {
+        continue;
+      }
+
+      texture_id_to_bitmap_out.insert({layer.client_texture_id, *bitmap});
+    }
+  }
 }
 
 void EncodeBrushFamily(const BrushFamily& family,
-                       proto::BrushFamily& family_proto_out) {
+                       proto::BrushFamily& family_proto_out,
+                       TextureBitmapProvider get_bitmap) {
   family_proto_out.Clear();
-
+  EncodeBrushFamilyTextureMap(
+      family, *family_proto_out.mutable_texture_id_to_bitmap(), get_bitmap);
   absl::Span<const BrushCoat> coats = family.GetCoats();
   family_proto_out.mutable_coats()->Reserve(coats.size());
   for (const BrushCoat& coat : coats) {
     EncodeBrushCoat(coat, *family_proto_out.add_coats());
   }
 
-  if (const std::optional<Uri>& uri = family.GetUri()) {
-    family_proto_out.set_uri(uri->ToNormalizedString());
+  if (family.GetClientBrushFamilyId().empty()) {
+    family_proto_out.clear_client_brush_family_id();
   } else {
-    family_proto_out.clear_uri();
+    family_proto_out.set_client_brush_family_id(
+        family.GetClientBrushFamilyId());
   }
 
   EncodeBrushFamilyInputModel(family.GetInputModel(),
                               *family_proto_out.mutable_input_model());
 }
 
-absl::StatusOr<BrushFamily> DecodeBrushFamily(
-    const proto::BrushFamily& family_proto) {
+absl::StatusOr<std::vector<BrushCoat>> DecodeBrushFamilyCoats(
+    const proto::BrushFamily& family_proto,
+    ClientTextureIdProvider get_client_texture_id) {
   std::vector<BrushCoat> coats;
+
   coats.reserve(family_proto.coats_size());
   for (const proto::BrushCoat& coat_proto : family_proto.coats()) {
-    absl::StatusOr<BrushCoat> coat = DecodeBrushCoat(coat_proto);
+    absl::StatusOr<BrushCoat> coat =
+        DecodeBrushCoat(coat_proto, get_client_texture_id);
     if (!coat.ok()) {
       return coat.status();
     }
     coats.push_back(*std::move(coat));
   }
+  return std::move(coats);
+}
 
+absl::StatusOr<BrushFamily> DecodeBrushFamily(
+    const proto::BrushFamily& family_proto,
+    ClientTextureIdProviderAndBitmapReceiver get_client_texture_id) {
+  // ID map that also serves as a record of the IDs for which we've already
+  // called `get_client_texture_id`.
+  std::map<std::string, std::string> old_to_new_id = {};
+
+  ClientTextureIdProvider texture_callback =
+      [&family_proto, &old_to_new_id, &get_client_texture_id](
+          const std::string& old_id) -> absl::StatusOr<std::string> {
+    if (auto it = old_to_new_id.find(old_id); it != old_to_new_id.end()) {
+      // No need to call `get_client_texture_id` again.
+      return it->second;
+    }
+
+    absl::StatusOr<std::string> new_id;
+    if (auto bitmap_it = family_proto.texture_id_to_bitmap().find(old_id);
+        bitmap_it != family_proto.texture_id_to_bitmap().end()) {
+      new_id = get_client_texture_id(old_id, bitmap_it->second);
+    } else {
+      new_id = get_client_texture_id(old_id, std::string());
+    }
+    if (!new_id.ok()) {
+      return new_id.status();
+    }
+    old_to_new_id.insert({old_id, *new_id});
+    return *new_id;
+  };
+
+  absl::StatusOr<std::vector<BrushCoat>> coats =
+      DecodeBrushFamilyCoats(family_proto, texture_callback);
+  if (!coats.ok()) {
+    return coats.status();
+  }
   absl::StatusOr<BrushFamily::InputModel> input_model =
-      BrushFamily::DefaultInputModel();
+      BrushFamily::SpringModel{};
   if (family_proto.has_input_model()) {
     input_model = DecodeBrushFamilyInputModel(family_proto.input_model());
   }
-  if (!input_model.ok()) return input_model.status();
-
-  return BrushFamily::Create(absl::MakeConstSpan(coats), family_proto.uri(),
+  if (!input_model.ok()) {
+    return input_model.status();
+  }
+  // BrushFamily::Create() validates the BrushFamily.
+  return BrushFamily::Create(absl::MakeConstSpan(*coats),
+                             family_proto.client_brush_family_id(),
                              *input_model);
 }
 
-void EncodeBrush(const Brush& brush, proto::Brush& brush_proto_out) {
+void EncodeBrush(const Brush& brush, proto::Brush& brush_proto_out,
+                 TextureBitmapProvider get_bitmap) {
   EncodeColor(brush.GetColor(), *brush_proto_out.mutable_color());
   brush_proto_out.set_size_stroke_space(brush.GetSize());
   brush_proto_out.set_epsilon_stroke_space(brush.GetEpsilon());
-
-  const BrushFamily& family = brush.GetFamily();
-  if (const std::optional<Uri>& uri = family.GetUri()) {
-    brush_proto_out.set_brush_family_uri(uri->ToNormalizedString());
-  } else {
-    EncodeBrushFamily(family, *brush_proto_out.mutable_brush_family());
-  }
+  EncodeBrushFamily(brush.GetFamily(), *brush_proto_out.mutable_brush_family(),
+                    get_bitmap);
 }
 
-absl::StatusOr<Brush> DecodeBrush(const proto::Brush& brush_proto,
-                                  const BrushProvider& brush_provider) {
-  BrushFamily brush_family;
-  switch (brush_proto.family_case()) {
-    case proto::Brush::FAMILY_NOT_SET:
-      return absl::InvalidArgumentError(
-          "ink.proto.Brush must specify a brush family");
-    case proto::Brush::kBrushFamily: {
-      auto result = DecodeBrushFamily(brush_proto.brush_family());
-      if (!result.ok()) {
-        return result.status();
-      }
-      brush_family = *std::move(result);
-    } break;
-    case proto::Brush::kBrushFamilyUri: {
-      absl::StatusOr<Uri> uri = Uri::Parse(brush_proto.brush_family_uri());
-      if (!uri.ok()) {
-        return uri.status();
-      }
-      auto result = brush_provider.GetBrushFamily(*std::move(uri));
-      if (!result.ok()) {
-        return result.status();
-      }
-      brush_family = *std::move(result);
-    } break;
+absl::StatusOr<Brush> DecodeBrush(
+    const proto::Brush& brush_proto,
+    ClientTextureIdProviderAndBitmapReceiver get_client_texture_id) {
+  absl::StatusOr<BrushFamily> brush_family =
+      DecodeBrushFamily(brush_proto.brush_family(), get_client_texture_id);
+  if (!brush_family.ok()) {
+    return brush_family.status();
   }
-  const Color color = DecodeColor(brush_proto.color());
-  return Brush::Create(brush_family, color, brush_proto.size_stroke_space(),
-                       brush_proto.epsilon_stroke_space());
+  // Brush::Create() validates the brush.
+  return Brush::Create(
+      *std::move(brush_family), DecodeColor(brush_proto.color()),
+      brush_proto.size_stroke_space(), brush_proto.epsilon_stroke_space());
 }
 
 }  // namespace ink

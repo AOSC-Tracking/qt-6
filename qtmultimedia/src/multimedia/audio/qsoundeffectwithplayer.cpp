@@ -27,40 +27,23 @@ QSpan<const float> toFloatSpan(QSpan<const char> byteArray)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 QSoundEffectVoice::QSoundEffectVoice(VoiceId voiceId, std::shared_ptr<const QSample> sample,
-                                     float volume, bool muted, int totalLoopCount)
+                                     float volume, bool muted, int totalLoopCount,
+                                     QAudioFormat engineFormat)
     : QRtAudioEngineVoice{ voiceId },
       m_sample{ std::move(sample) },
+      m_engineFormat{ engineFormat },
       m_volume{ volume },
       m_muted{ muted },
       m_loopsRemaining{ totalLoopCount }
 {
 }
 
+QSoundEffectVoice::~QSoundEffectVoice() = default;
+
 VoicePlayResult QSoundEffectVoice::play(QSpan<float> outputBuffer) noexcept QT_MM_NONBLOCKING
 {
-    const QAudioFormat &format = m_sample->format();
-    int totalSamples = m_totalFrames * format.channelCount();
-    int currentSample = format.channelCount() * m_currentFrame;
-
-    const QSpan fullSample = toFloatSpan(m_sample->data());
-    QSpan playbackRange = take(drop(fullSample, currentSample), totalSamples);
-
-    Q_ASSERT(!playbackRange.empty());
-
-    // later: (auto)vectorize?
-    qsizetype samplesToPlay = std::min(playbackRange.size(), outputBuffer.size());
-    if (m_muted || m_volume == 0.f) {
-        auto outputRange = take(outputBuffer, samplesToPlay);
-        std::fill(outputRange.begin(), outputRange.end(), 0.f);
-    } else if (m_volume == 1.f) {
-        for (qsizetype i = 0; i != samplesToPlay; ++i)
-            outputBuffer[i] += playbackRange[i];
-    } else {
-        for (qsizetype i = 0; i != samplesToPlay; ++i)
-            outputBuffer[i] += playbackRange[i] * m_volume;
-    }
-
-    m_currentFrame += samplesToPlay / format.channelCount();
+    qsizetype playedFrames = playVoice(outputBuffer);
+    m_currentFrame += playedFrames;
 
     if (m_currentFrame == m_totalFrames) {
         const bool isInfiniteLoop = loopsRemaining() == QSoundEffect::Infinite;
@@ -73,12 +56,82 @@ VoicePlayResult QSoundEffectVoice::play(QSpan<float> outputBuffer) noexcept QT_M
             if (!isInfiniteLoop)
                 m_currentLoopChanged.set();
             m_currentFrame = 0;
-            QSpan remainingOutputBuffer = drop(outputBuffer, samplesToPlay);
+            QSpan remainingOutputBuffer =
+                    drop(outputBuffer, playedFrames * m_engineFormat.channelCount());
             return play(remainingOutputBuffer);
         }
         return VoicePlayResult::Finished;
     }
     return VoicePlayResult::Playing;
+}
+
+qsizetype QSoundEffectVoice::playVoice(QSpan<float> outputBuffer) noexcept QT_MM_NONBLOCKING
+{
+    const QAudioFormat &format = m_sample->format();
+    const int totalSamples = m_totalFrames * format.channelCount();
+    const int currentSample = format.channelCount() * m_currentFrame;
+
+    const QSpan fullSample = toFloatSpan(m_sample->data());
+    const QSpan playbackRange = take(drop(fullSample, currentSample), totalSamples);
+
+    Q_ASSERT(!playbackRange.empty());
+
+    const int sampleCh = format.channelCount();
+    const int engineCh = m_engineFormat.channelCount();
+    const qsizetype sampleSamples = playbackRange.size();
+    const qsizetype outputSamples = outputBuffer.size();
+    const qsizetype maxFrames = std::min(sampleSamples / sampleCh, outputSamples / engineCh);
+    const qsizetype framesToPlay = maxFrames;
+    const qsizetype outputSamplesPlayed = framesToPlay * engineCh;
+
+    enum ConversionType : uint8_t { SameChannels, MonoToStereo, StereoToMono };
+    const ConversionType conversion = [&] {
+        if (sampleCh == engineCh)
+            return SameChannels;
+        if (sampleCh == 1 && engineCh == 2)
+            return MonoToStereo;
+        if (sampleCh == 2 && engineCh == 1)
+            return StereoToMono;
+        Q_UNREACHABLE_RETURN(SameChannels);
+    }();
+
+    if (m_muted || m_volume == 0.f) {
+        std::fill_n(outputBuffer.begin(), outputSamplesPlayed, 0.f);
+        return framesToPlay;
+    }
+
+    // later: (auto)vectorize?
+    switch (conversion) {
+    case SameChannels:
+        for (qsizetype frame = 0; frame < framesToPlay; ++frame) {
+            const qsizetype sampleBase = frame * sampleCh;
+            const qsizetype outputBase = frame * engineCh;
+            for (int ch = 0; ch < sampleCh; ++ch) {
+                outputBuffer[outputBase + ch] += playbackRange[sampleBase + ch] * m_volume;
+            }
+        }
+        break;
+    case MonoToStereo:
+        for (qsizetype frame = 0; frame < framesToPlay; ++frame) {
+            const qsizetype sampleBase = frame * sampleCh;
+            const qsizetype outputBase = frame * engineCh;
+            const float val = playbackRange[sampleBase] * m_volume;
+            outputBuffer[outputBase] += val;
+            outputBuffer[outputBase + 1] += val;
+        }
+        break;
+    case StereoToMono:
+        float scale = 0.5f * m_volume;
+        for (qsizetype frame = 0; frame < framesToPlay; ++frame) {
+            const qsizetype sampleBase = frame * sampleCh;
+            const qsizetype outputBase = frame * engineCh;
+            const float val = (playbackRange[sampleBase] + playbackRange[sampleBase + 1]) * scale;
+            outputBuffer[outputBase] += val;
+        }
+        break;
+    }
+
+    return framesToPlay;
 }
 
 bool QSoundEffectVoice::isActive() noexcept QT_MM_NONBLOCKING
@@ -89,10 +142,12 @@ bool QSoundEffectVoice::isActive() noexcept QT_MM_NONBLOCKING
     return loopsRemaining() != 0;
 }
 
-std::shared_ptr<QSoundEffectVoice> QSoundEffectVoice::clone() const
+std::shared_ptr<QSoundEffectVoice>
+QSoundEffectVoice::clone(std::optional<QAudioFormat> newEngineFormat) const
 {
     auto clone = std::make_shared<QSoundEffectVoice>(QRtAudioEngine::allocateVoiceId(), m_sample,
-                                                     m_volume, m_muted, loopsRemaining());
+                                                     m_volume, m_muted, loopsRemaining(),
+                                                     newEngineFormat.value_or(m_engineFormat));
 
     // caveat: reading frame is not atomic, so we may have a race here ... is is rare, though,
     // not sure if we really care
@@ -117,11 +172,16 @@ QSoundEffectPrivateWithPlayer::QSoundEffectPrivateWithPlayer(QSoundEffect *q,
         if (m_audioDevice.isNull())
             setResolvedAudioDevice(m_defaultAudioDevice);
     });
+
+    m_playerReleaseTimer.setTimerType(Qt::VeryCoarseTimer);
+    m_playerReleaseTimer.setSingleShot(true);
 }
 
 QSoundEffectPrivateWithPlayer::~QSoundEffectPrivateWithPlayer()
 {
     stop();
+    if (m_sampleLoadFuture)
+        m_sampleLoadFuture->cancelChain();
 }
 
 bool QSoundEffectPrivateWithPlayer::setAudioDevice(QAudioDevice device)
@@ -141,24 +201,34 @@ void QSoundEffectPrivateWithPlayer::setResolvedAudioDevice(QAudioDevice device)
 
     m_resolvedAudioDevice = std::move(device);
 
-    if (!m_player)
-        return;
-
-    for (const auto &voice : m_voices)
-        m_player->stop(voice);
+    if (m_player)
+        for (const auto &voice : m_voices)
+            m_player->stop(voice);
 
     std::vector<std::shared_ptr<QSoundEffectVoice>> voices{
         std::make_move_iterator(m_voices.begin()), std::make_move_iterator(m_voices.end())
     };
     m_voices.clear();
 
-    bool hasPlayer = updatePlayer();
-    if (!hasPlayer)
-        return;
+    if (m_sample) {
+        bool hasPlayer = updatePlayer(m_sample);
+        if (!hasPlayer) {
+            setStatus(QSoundEffect::Error);
+            return;
+        }
 
-    for (const auto &voice : voices)
-        // we re-allocate a new voice ID and play on the new player
-        play(voice->clone());
+        for (const auto &voice : voices)
+            // we re-allocate a new voice ID and play on the new player
+            play(voice->clone(m_player->audioSink().format()));
+
+        setStatus(QSoundEffect::Ready);
+
+        for (const auto &voice : voices)
+            // we re-allocate a new voice ID and play on the new player
+            play(voice->clone());
+    } else {
+        setStatus(m_sampleLoadFuture ? QSoundEffect::Loading : QSoundEffect::Null);
+    }
 }
 
 void QSoundEffectPrivateWithPlayer::resolveAudioDevice()
@@ -175,8 +245,19 @@ QAudioDevice QSoundEffectPrivateWithPlayer::audioDevice() const
 
 bool QSoundEffectPrivateWithPlayer::setSource(const QUrl &url, QSampleCache &sampleCache)
 {
-    if (m_sampleLoadFuture.isValid())
-        m_sampleLoadFuture.cancel();
+    if (m_sampleLoadFuture) {
+        m_sampleLoadFuture->cancelChain();
+        m_sampleLoadFuture = std::nullopt;
+    }
+
+    if (m_player) {
+        QObject::disconnect(m_voiceFinishedConnection);
+        m_playerReleaseTimer.callOnTimeout(this, [player = std::move(m_player)] {
+            // we keep the player referenced for a little longer, so that later calls to
+            // QRtAudioEngine::getEngineFor will be able to reuse the existing instance
+        }, Qt::SingleShotConnection);
+        m_playerReleaseTimer.start();
+    }
 
     m_url = url;
     m_sample = {};
@@ -202,12 +283,18 @@ bool QSoundEffectPrivateWithPlayer::setSource(const QUrl &url, QSampleCache &sam
                 return;
             }
 
+            bool hasPlayer = updatePlayer(result);
             m_sample = std::move(result);
+            if (!hasPlayer) {
+                qWarning("QSoundEffect: playback of this format is not supported on the selected "
+                         "audio device");
+                setStatus(QSoundEffect::Error);
+                return;
+            }
+
             setStatus(QSoundEffect::Ready);
-            bool hasPlayer = updatePlayer();
             if (std::exchange(m_playPending, false)) {
-                if (hasPlayer)
-                    play();
+                play();
             }
         } else {
             qWarning("QSoundEffect: Error decoding source %ls", qUtf16Printable(m_url.toString()));
@@ -315,11 +402,15 @@ void QSoundEffectPrivateWithPlayer::play()
         return;
     }
 
-    // each `play` will start a new voice
+    if (status() != QSoundEffect::Ready)
+        return;
+
     Q_ASSERT(m_player);
 
+    // each `play` will start a new voice
     auto voice = std::make_shared<QSoundEffectVoice>(QRtAudioEngine::allocateVoiceId(), m_sample,
-                                                     m_volume, m_muted, m_loopCount);
+                                                     m_volume, m_muted, m_loopCount,
+                                                     m_player->audioSink().format());
 
     play(std::move(voice));
 }
@@ -363,8 +454,9 @@ void QSoundEffectPrivateWithPlayer::play(std::shared_ptr<QSoundEffectVoice> voic
         emit q_ptr->playingChanged();
 }
 
-bool QSoundEffectPrivateWithPlayer::updatePlayer()
+bool QSoundEffectPrivateWithPlayer::updatePlayer(const SharedSamplePtr &sample)
 {
+    Q_ASSERT(sample);
     Q_ASSERT(m_voices.empty());
     QObject::disconnect(m_voiceFinishedConnection);
 
@@ -372,8 +464,28 @@ bool QSoundEffectPrivateWithPlayer::updatePlayer()
     if (m_resolvedAudioDevice.isNull())
         return false;
 
-    auto player = QRtAudioEngine::getEngineFor(m_resolvedAudioDevice, m_sample->format());
-    m_player = player;
+    m_player = [&]() -> std::shared_ptr<QRtAudioEngine> {
+        auto player = QRtAudioEngine::getEngineFor(m_resolvedAudioDevice, sample->format());
+        if (player)
+            return player;
+
+        QAudioFormat alternativeFormat = sample->format();
+        switch (sample->format().channelCount()) {
+        case 1:
+            alternativeFormat.setChannelCount(2);
+            break;
+        case 2:
+            alternativeFormat.setChannelCount(1);
+            break;
+        default:
+            Q_UNREACHABLE_RETURN({});
+        }
+
+        return QRtAudioEngine::getEngineFor(m_resolvedAudioDevice, alternativeFormat);
+    }();
+
+    if (!m_player)
+        return false;
 
     m_voiceFinishedConnection = QObject::connect(m_player.get(), &QRtAudioEngine::voiceFinished,
                                                  this, [this](VoiceId voiceId) {

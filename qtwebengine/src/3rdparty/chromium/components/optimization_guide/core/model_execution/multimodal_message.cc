@@ -16,6 +16,7 @@
 #include "components/optimization_guide/core/model_execution/on_device_model_execution_proto_descriptors.h"
 #include "components/optimization_guide/proto/descriptors.pb.h"
 #include "components/optimization_guide/proto/model_quality_metadata.pb.h"
+#include "services/on_device_model/ml/chrome_ml_audio_buffer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 namespace optimization_guide {
@@ -50,6 +51,14 @@ MultimodalMessageEditView::MultimodalMessageEditView(
 
 MultimodalMessageEditView::~MultimodalMessageEditView() = default;
 
+void MultimodalMessageEditView::MarkPending(int tag, bool pending) {
+  if (pending) {
+    overlay_->pending.insert(tag);
+  } else {
+    overlay_->pending.erase(tag);
+  }
+}
+
 void MultimodalMessageEditView::Set(int tag, const std::string& v) {
   ProtoStatus status = SetProtoField(&message_.get(), tag, v);
   CHECK_EQ(status, ProtoStatus::kOk);
@@ -59,7 +68,14 @@ void MultimodalMessageEditView::Set(int tag, SkBitmap v) {
   MessageLite* nested_message = GetProtoMutableMessage(&message_.get(), tag);
   CHECK(nested_message);
   CHECK_EQ(nested_message->GetTypeName(), "optimization_guide.proto.Media");
-  overlay_->images.emplace(tag, std::move(v));
+  overlay_->images[tag] = std::move(v);
+}
+
+void MultimodalMessageEditView::Set(int tag, ml::AudioBuffer v) {
+  MessageLite* nested_message = GetProtoMutableMessage(&message_.get(), tag);
+  CHECK(nested_message);
+  CHECK_EQ(nested_message->GetTypeName(), "optimization_guide.proto.Media");
+  overlay_->audio[tag] = std::move(v);
 }
 
 MultimodalMessageEditView MultimodalMessageEditView::GetMutableMessage(
@@ -89,6 +105,48 @@ MultimodalMessageReadView::MultimodalMessageReadView(const MessageLite& message)
 
 MultimodalMessageReadView::~MultimodalMessageReadView() = default;
 
+bool MultimodalMessageReadView::IsPending(
+    const proto::ProtoField& proto_field) const {
+  std::optional<MultimodalMessageReadView> parent = *this;
+  for (int i = 0; i < proto_field.proto_descriptors_size() - 1; i++) {
+    if (!parent->overlay_) {
+      return false;
+    }
+    int32_t tag = proto_field.proto_descriptors(i).tag_number();
+    if (parent->overlay_->pending.contains(tag)) {
+      return true;
+    }
+    parent = parent->GetNested(proto_field.proto_descriptors(i).tag_number());
+    if (!parent) {
+      return false;
+    }
+  }
+  int32_t tag =
+      proto_field.proto_descriptors(proto_field.proto_descriptors_size() - 1)
+          .tag_number();
+  return parent->overlay_ && parent->overlay_->pending.contains(tag);
+}
+
+// Get the type of multimodal content for a field.
+MultimodalType MultimodalMessageReadView::GetMultimodalType(
+    const proto::ProtoField& proto_field) const {
+  std::optional<MultimodalMessageReadView> parent =
+      GetEnclosingMessage(proto_field);
+  if (!parent) {
+    return MultimodalType::kNone;
+  }
+  int32_t leaf_tag =
+      proto_field.proto_descriptors(proto_field.proto_descriptors_size() - 1)
+          .tag_number();
+  if (parent->overlay_->images.contains(leaf_tag)) {
+    return MultimodalType::kImage;
+  }
+  if (parent->overlay_->audio.contains(leaf_tag)) {
+    return MultimodalType::kAudio;
+  }
+  return MultimodalType::kNone;
+}
+
 const SkBitmap* MultimodalMessageReadView::GetImage(
     const proto::ProtoField& proto_field) const {
   CHECK_GE(proto_field.proto_descriptors_size(), 1);
@@ -105,6 +163,27 @@ const SkBitmap* MultimodalMessageReadView::GetImage(
           .tag_number();
   auto it = parent->overlay_->images.find(leaf_tag);
   if (it == parent->overlay_->images.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+const ml::AudioBuffer* MultimodalMessageReadView::GetAudio(
+    const proto::ProtoField& proto_field) const {
+  CHECK_GE(proto_field.proto_descriptors_size(), 1);
+  std::optional<MultimodalMessageReadView> parent =
+      GetEnclosingMessage(proto_field);
+  if (!parent || !parent->overlay_) {
+    // Either proto_field is not a reference to a known Media field,
+    // or the field state was defined by an 'initial' message, and can't contain
+    // audio.
+    return nullptr;
+  }
+  int32_t leaf_tag =
+      proto_field.proto_descriptors(proto_field.proto_descriptors_size() - 1)
+          .tag_number();
+  auto it = parent->overlay_->audio.find(leaf_tag);
+  if (it == parent->overlay_->audio.end()) {
     return nullptr;
   }
   return &it->second;
@@ -206,6 +285,10 @@ MultimodalMessageEditView RepeatedMultimodalMessageEditView::Get(int n) {
   return MultimodalMessageEditView(*message, overlay_->overlays[n]);
 }
 
+void RepeatedMultimodalMessageEditView::MarkIncomplete(bool incomplete) {
+  overlay_->incomplete = incomplete;
+}
+
 RepeatedMultimodalMessageReadView::RepeatedMultimodalMessageReadView(
     const MessageLite& parent,
     int32_t tag,
@@ -231,6 +314,10 @@ MultimodalMessageReadView RepeatedMultimodalMessageReadView::Get(int n) const {
   return MultimodalMessageReadView(*message, &overlay_->overlays[n]);
 }
 
+bool RepeatedMultimodalMessageReadView::IsIncomplete() const {
+  return overlay_ && overlay_->incomplete;
+}
+
 MultimodalMessage::MultimodalMessage() = default;
 MultimodalMessage::MultimodalMessage(const MessageLite& initial_message)
     : message_(initial_message.New()) {
@@ -242,7 +329,10 @@ MultimodalMessage::MultimodalMessage(MultimodalMessage&&) = default;
 MultimodalMessage& MultimodalMessage::operator=(MultimodalMessage&&) = default;
 
 MultimodalMessage MultimodalMessage::Clone() {
-  MultimodalMessage result(*message_);
+  MultimodalMessage result;
+  if (message_) {
+    result = MultimodalMessage(*message_);
+  }
   result.overlay_ = overlay_;
   return result;
 }

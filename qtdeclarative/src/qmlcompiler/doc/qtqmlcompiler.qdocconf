@@ -33,12 +33,12 @@ depends += \
     qtgui \
     qtquick \
     qtdoc \
-    qtlinguist \
     qtwidgets \
     qtquickcontrols \
     qmake \
     qtcmake \
-    qtqml
+    qtqml \
+    qtlinguist
 
 headerdirs  += ..
 

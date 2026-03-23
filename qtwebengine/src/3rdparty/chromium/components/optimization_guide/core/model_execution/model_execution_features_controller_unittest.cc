@@ -16,6 +16,8 @@
 #include "components/optimization_guide/core/model_execution/feature_keys.h"
 #include "components/optimization_guide/core/model_execution/model_execution_features.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
+#include "components/optimization_guide/core/model_execution/performance_class.h"
+#include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_switches.h"
 #include "components/optimization_guide/proto/model_quality_service.pb.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -50,10 +52,11 @@ class ModelExecutionFeaturesControllerTest : public testing::Test {
 
   void CreateController(
       ModelExecutionFeaturesController::DogfoodStatus dogfood_status =
-          ModelExecutionFeaturesController::DogfoodStatus::NON_DOGFOOD) {
+          ModelExecutionFeaturesController::DogfoodStatus::NON_DOGFOOD,
+      bool is_official_build = true) {
     controller_ = std::make_unique<ModelExecutionFeaturesController>(
         pref_service_.get(), identity_test_env_.identity_manager(),
-        local_state_.get(), dogfood_status);
+        local_state_.get(), dogfood_status, is_official_build);
   }
 
   void EnableSignIn() {
@@ -121,7 +124,8 @@ TEST_F(ModelExecutionFeaturesControllerTest, OneFeatureSettingVisible) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures(
       {features::internal::kComposeSettingsVisibility},
-      {features::internal::kComposeGraduated});
+      {features::internal::kWallpaperSearchGraduated,
+       features::internal::kTabOrganizationGraduated});
   CreateController();
 
   EnableSignIn();
@@ -149,8 +153,7 @@ TEST_F(ModelExecutionFeaturesControllerTest,
   scoped_feature_list.InitWithFeaturesAndParameters(
       {{features::internal::kComposeSettingsVisibility, {}},
        {features::internal::kTabOrganizationSettingsVisibility, {}}},
-      {features::internal::kComposeGraduated,
-       features::internal::kTabOrganizationGraduated});
+      {features::internal::kWallpaperSearchGraduated});
   CreateController();
   EXPECT_FALSE(controller()->IsSettingVisible(UserVisibleFeatureKey::kCompose));
   EXPECT_FALSE(
@@ -172,8 +175,7 @@ TEST_F(ModelExecutionFeaturesControllerTest,
         {{"allow_unsigned_user", "true"}}},
        {features::internal::kTabOrganizationSettingsVisibility,
         {{"allow_unsigned_user", "true"}}}},
-      {features::internal::kComposeGraduated,
-       features::internal::kTabOrganizationGraduated});
+      {features::internal::kWallpaperSearchGraduated});
   CreateController();
   EXPECT_TRUE(controller()->IsSettingVisible(UserVisibleFeatureKey::kCompose));
   EXPECT_TRUE(
@@ -195,8 +197,7 @@ TEST_F(ModelExecutionFeaturesControllerTest,
         {{"allow_unsigned_user", "true"}}},
        {features::internal::kTabOrganizationSettingsVisibility,
         {{"allow_unsigned_user", "true"}}}},
-      {features::internal::kComposeGraduated,
-       features::internal::kTabOrganizationGraduated});
+      {features::internal::kWallpaperSearchGraduated});
   CreateController();
   EXPECT_TRUE(controller()->IsSettingVisible(UserVisibleFeatureKey::kCompose));
   EXPECT_TRUE(
@@ -215,7 +216,8 @@ TEST_F(ModelExecutionFeaturesControllerTest,
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures(
       {features::internal::kComposeSettingsVisibility},
-      {features::internal::kComposeGraduated});
+      {features::internal::kWallpaperSearchGraduated,
+       features::internal::kTabOrganizationGraduated});
   CreateController();
   EnableSignInWithoutCapability();
   EXPECT_FALSE(controller()->IsSettingVisible(UserVisibleFeatureKey::kCompose));
@@ -231,7 +233,7 @@ TEST_F(ModelExecutionFeaturesControllerTest,
   scoped_feature_list.InitWithFeatures(
       {features::internal::kComposeSettingsVisibility,
        features::internal::kModelExecutionCapabilityDisable},
-      {features::internal::kComposeGraduated});
+      {features::internal::kTabOrganizationGraduated});
   CreateController();
   EnableSignInWithoutCapability();
 
@@ -240,7 +242,7 @@ TEST_F(ModelExecutionFeaturesControllerTest,
       controller()->IsSettingVisible(UserVisibleFeatureKey::kTabOrganization));
 }
 
-TEST_F(ModelExecutionFeaturesControllerTest, GraduatedFeatureIsNotVisible) {
+TEST_F(ModelExecutionFeaturesControllerTest, GraduatedFeatureIsVisible) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures(
       /*enabled_features=*/
@@ -255,10 +257,10 @@ TEST_F(ModelExecutionFeaturesControllerTest, GraduatedFeatureIsNotVisible) {
 
   EnableSignIn();
   // IsSettingVisible
-  EXPECT_FALSE(controller()->IsSettingVisible(UserVisibleFeatureKey::kCompose));
-  EXPECT_FALSE(
+  EXPECT_TRUE(controller()->IsSettingVisible(UserVisibleFeatureKey::kCompose));
+  EXPECT_TRUE(
       controller()->IsSettingVisible(UserVisibleFeatureKey::kTabOrganization));
-  EXPECT_FALSE(
+  EXPECT_TRUE(
       controller()->IsSettingVisible(UserVisibleFeatureKey::kWallpaperSearch));
   // ShouldFeatureBeCurrentlyEnabledForUser
   EXPECT_TRUE(controller()->ShouldFeatureBeCurrentlyEnabledForUser(
@@ -321,6 +323,27 @@ TEST_F(ModelExecutionFeaturesControllerTest,
 }
 
 TEST_F(ModelExecutionFeaturesControllerTest,
+       Logging_DisabledByEnterprisePolicy_NotOverriddenByDeveloperBuildAlone) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      {features::internal::kComposeSettingsVisibility},
+      {features::internal::kComposeGraduated});
+  CreateController(ModelExecutionFeaturesController::DogfoodStatus::NON_DOGFOOD,
+                   /*is_official_build=*/false);
+
+  auto feature = UserVisibleFeatureKey::kCompose;
+  EnableSignIn();
+  SetEnterprisePolicy(
+      feature, ModelExecutionEnterprisePolicyValue::kAllowWithoutLogging);
+
+  const MqlsFeatureMetadata* metadata =
+      MqlsFeatureRegistry::GetInstance().GetFeature(
+          proto::LogAiDataRequest::FeatureCase::kCompose);
+  EXPECT_FALSE(
+      controller()->ShouldFeatureBeCurrentlyAllowedForLogging(metadata));
+}
+
+TEST_F(ModelExecutionFeaturesControllerTest,
        Logging_DisabledByEnterprisePolicy_NotOverriddenBySwitchAlone) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures(
@@ -349,6 +372,30 @@ TEST_F(ModelExecutionFeaturesControllerTest,
       {features::internal::kComposeSettingsVisibility},
       {features::internal::kComposeGraduated});
   CreateController(ModelExecutionFeaturesController::DogfoodStatus::DOGFOOD);
+
+  auto feature = UserVisibleFeatureKey::kCompose;
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableModelQualityDogfoodLogging);
+  EnableSignIn();
+  SetEnterprisePolicy(
+      feature, ModelExecutionEnterprisePolicyValue::kAllowWithoutLogging);
+
+  const MqlsFeatureMetadata* metadata =
+      MqlsFeatureRegistry::GetInstance().GetFeature(
+          proto::LogAiDataRequest::FeatureCase::kCompose);
+  EXPECT_TRUE(
+      controller()->ShouldFeatureBeCurrentlyAllowedForLogging(metadata));
+}
+
+TEST_F(
+    ModelExecutionFeaturesControllerTest,
+    Logging_DisabledByEnterprisePolicy_OverriddenBySwitchWhenDeveloperBuild) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      {features::internal::kComposeSettingsVisibility},
+      {features::internal::kComposeGraduated});
+  CreateController(ModelExecutionFeaturesController::DogfoodStatus::NON_DOGFOOD,
+                   /*is_official_build=*/false);
 
   auto feature = UserVisibleFeatureKey::kCompose;
   base::CommandLine::ForCurrentProcess()->AppendSwitch(
@@ -407,8 +454,8 @@ TEST_F(ModelExecutionFeaturesControllerTest,
   EnableSignIn();
 
   // Not visible - performance class not in the list
-  local_state()->SetInteger(
-      model_execution::prefs::localstate::kOnDevicePerformanceClass, 2);
+  UpdatePerformanceClassPref(local_state(),
+                             OnDeviceModelPerformanceClass::kVeryLow);
   EXPECT_FALSE(
       controller()->IsSettingVisible(UserVisibleFeatureKey::kHistorySearch));
   histogram_tester()->ExpectUniqueSample(
@@ -418,8 +465,8 @@ TEST_F(ModelExecutionFeaturesControllerTest,
       1);
 
   // Visible - performance class in the list.
-  local_state()->SetInteger(
-      model_execution::prefs::localstate::kOnDevicePerformanceClass, 4);
+  UpdatePerformanceClassPref(local_state(),
+                             OnDeviceModelPerformanceClass::kMedium);
   EXPECT_TRUE(
       controller()->IsSettingVisible(UserVisibleFeatureKey::kHistorySearch));
   histogram_tester()->ExpectBucketCount(

@@ -48,6 +48,9 @@ MarkingBarrier* WriteBarrier::SetForThread(MarkingBarrier* marking_barrier) {
 
 void WriteBarrier::MarkingSlow(Tagged<HeapObject> host, HeapObjectSlot slot,
                                Tagged<HeapObject> value) {
+  SLOW_DCHECK_IMPLIES(kUninterestingPagesCanBeSkipped,
+                      MemoryChunk::FromHeapObject(host)->GetFlags() &
+                          MemoryChunk::kPointersFromHereAreInterestingMask);
   MarkingBarrier* marking_barrier = CurrentMarkingBarrier(host);
   marking_barrier->Write(host, slot, value);
 }
@@ -59,10 +62,9 @@ void WriteBarrier::MarkingSlowFromTracedHandle(Tagged<HeapObject> value) {
 }
 
 // static
-void WriteBarrier::MarkingSlowFromCppHeapWrappable(Heap* heap,
-                                                   Tagged<JSObject> host,
-                                                   CppHeapPointerSlot slot,
-                                                   void* object) {
+void WriteBarrier::MarkingSlowFromCppHeapWrappable(
+    Heap* heap, Tagged<CppHeapPointerWrapperObjectT> host,
+    CppHeapPointerSlot slot, void* object) {
   // Note: this is currently a combined barrier for marking both the
   // CppHeapPointerTable entry and the referenced object (if any).
 
@@ -95,7 +97,7 @@ void WriteBarrier::SharedSlow(Tagged<InstructionStream> host,
   MarkCompactCollector::RecordRelocSlotInfo info =
       MarkCompactCollector::ProcessRelocInfo(host, reloc_info, value);
 
-  base::SpinningMutexGuard write_scope(info.page_metadata->mutex());
+  base::MutexGuard write_scope(info.page_metadata->mutex());
   RememberedSet<OLD_TO_SHARED>::InsertTyped(info.page_metadata, info.slot_type,
                                             info.offset);
 }
@@ -329,7 +331,7 @@ void WriteBarrier::GenerationalBarrierForCodeSlow(
   const MarkCompactCollector::RecordRelocSlotInfo info =
       MarkCompactCollector::ProcessRelocInfo(host, rinfo, value);
 
-  base::SpinningMutexGuard write_scope(info.page_metadata->mutex());
+  base::MutexGuard write_scope(info.page_metadata->mutex());
   RememberedSet<OLD_TO_NEW>::InsertTyped(info.page_metadata, info.slot_type,
                                          info.offset);
 }
@@ -337,6 +339,9 @@ void WriteBarrier::GenerationalBarrierForCodeSlow(
 // static
 void WriteBarrier::CombinedGenerationalAndSharedEphemeronBarrierSlow(
     Tagged<EphemeronHashTable> table, Address slot, Tagged<HeapObject> value) {
+  SLOW_DCHECK_IMPLIES(kUninterestingPagesCanBeSkipped,
+                      MemoryChunk::FromHeapObject(table)->GetFlags() &
+                          MemoryChunk::kPointersFromHereAreInterestingMask);
   if (HeapLayout::InYoungGeneration(value)) {
     MutablePageMetadata* table_chunk =
         MutablePageMetadata::FromHeapObject(table);
@@ -483,10 +488,12 @@ template <typename TSlot>
 // static
 void WriteBarrier::ForRange(Heap* heap, Tagged<HeapObject> object,
                             TSlot start_slot, TSlot end_slot) {
-  if (v8_flags.disable_write_barriers) return;
+  if (v8_flags.disable_write_barriers) {
+    return;
+  }
   MemoryChunk* source_chunk = MemoryChunk::FromHeapObject(object);
-  base::Flags<RangeWriteBarrierMode> mode;
 
+  base::Flags<RangeWriteBarrierMode> mode;
   if (!HeapLayout::InYoungGeneration(object) &&
       !source_chunk->InWritableSharedSpace()) {
     mode |= kDoGenerationalOrShared;

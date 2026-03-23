@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/strings/stringprintf.h"
 #include "base/test/mock_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/web/web_dom_event.h"
@@ -23,14 +24,14 @@ namespace blink {
 
 class WebNodeTest : public PageTestBase {
  protected:
-  void SetInnerHTML(const String& html) {
-    GetDocument().documentElement()->setInnerHTML(html);
+  void SetInnerHTMLWithoutTrustedTypes(const String& html) {
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(html);
   }
 
   void AddScript(String js) {
     GetDocument().GetSettings()->SetScriptEnabled(true);
     Element* script = GetDocument().CreateRawElement(html_names::kScriptTag);
-    script->setInnerHTML(js);
+    script->SetInnerHTMLWithoutTrustedTypes(js);
     GetDocument().body()->AppendChild(script);
     GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
   }
@@ -39,26 +40,26 @@ class WebNodeTest : public PageTestBase {
 };
 
 TEST_F(WebNodeTest, QuerySelectorMatches) {
-  SetInnerHTML("<div id=x><span class=a></span></div>");
+  SetInnerHTMLWithoutTrustedTypes("<div id=x><span class=a></span></div>");
   WebElement element = Root().QuerySelector(AtomicString(".a"));
   EXPECT_FALSE(element.IsNull());
   EXPECT_TRUE(element.HasHTMLTagName("span"));
 }
 
 TEST_F(WebNodeTest, QuerySelectorDoesNotMatch) {
-  SetInnerHTML("<div id=x><span class=a></span></div>");
+  SetInnerHTMLWithoutTrustedTypes("<div id=x><span class=a></span></div>");
   WebElement element = Root().QuerySelector(AtomicString("section"));
   EXPECT_TRUE(element.IsNull());
 }
 
 TEST_F(WebNodeTest, QuerySelectorError) {
-  SetInnerHTML("<div></div>");
+  SetInnerHTMLWithoutTrustedTypes("<div></div>");
   WebElement element = Root().QuerySelector(AtomicString("@invalid-selector"));
   EXPECT_TRUE(element.IsNull());
 }
 
 TEST_F(WebNodeTest, GetElementsByHTMLTagName) {
-  SetInnerHTML(
+  SetInnerHTMLWithoutTrustedTypes(
       "<body><LABEL></LABEL><svg "
       "xmlns='http://www.w3.org/2000/svg'><label></label></svg></body>");
   // WebNode::getElementsByHTMLTagName returns only HTML elements.
@@ -98,21 +99,8 @@ TEST_F(WebNodeSimTest, IsFocused) {
   EXPECT_TRUE(input_node.IsFocusable());
 }
 
-TEST_F(WebNodeTest, CannotFindTextInElementThatIsNotAContainer) {
-  SetInnerHTML(R"HTML(
-    <div><br class="not-a-container"/> Hello world! </div>
-  )HTML");
-  WebElement element = Root().QuerySelector(AtomicString(".not-a-container"));
-
-  EXPECT_FALSE(element.IsNull());
-  EXPECT_TRUE(element
-                  .FindTextInElementWith("Hello world",
-                                         [](const WebString&) { return true; })
-                  .IsEmpty());
-}
-
 TEST_F(WebNodeTest, CannotFindTextNodesThatAreNotContainers) {
-  SetInnerHTML(R"HTML(
+  SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div><br class="not-a-container"/> Hello world! </div>
   )HTML");
   WebElement element = Root().QuerySelector(AtomicString(".not-a-container"));
@@ -121,20 +109,8 @@ TEST_F(WebNodeTest, CannotFindTextNodesThatAreNotContainers) {
   EXPECT_TRUE(element.FindAllTextNodesMatchingRegex(".*").empty());
 }
 
-TEST_F(WebNodeTest, CanFindTextInElementThatIsAContainer) {
-  SetInnerHTML(R"HTML(
-    <body class="container"><div> Hello world! </div></body>
-  )HTML");
-  WebElement element = Root().QuerySelector(AtomicString(".container"));
-
-  EXPECT_FALSE(element.IsNull());
-  EXPECT_EQ(WebString(" Hello world! "),
-            element.FindTextInElementWith(
-                "Hello world", [](const WebString&) { return true; }));
-}
-
 TEST_F(WebNodeTest, CanFindTextNodesThatAreContainers) {
-  SetInnerHTML(R"HTML(
+  SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <body class="container"><div id="id"> Hello world! </div></body>
   )HTML");
   WebElement element = Root().QuerySelector(AtomicString(".container"));
@@ -147,33 +123,8 @@ TEST_F(WebNodeTest, CanFindTextNodesThatAreContainers) {
   EXPECT_EQ(element.GetDocument().GetElementById("id").FirstChild(), nodes[0]);
 }
 
-TEST_F(WebNodeTest, CanFindCaseInsensitiveTextInElement) {
-  SetInnerHTML(R"HTML(
-    <body class="container"><div> HeLLo WoRLd! </div></body>
-  )HTML");
-  WebElement element = Root().QuerySelector(AtomicString(".container"));
-
-  EXPECT_FALSE(element.IsNull());
-  EXPECT_EQ(WebString(" HeLLo WoRLd! "),
-            element.FindTextInElementWith(
-                "hello world", [](const WebString&) { return true; }));
-}
-
-TEST_F(WebNodeTest, CannotFindTextInElementIfValidatorRejectsIt) {
-  SetInnerHTML(R"HTML(
-    <body class="container"><div> Hello world! </div></body>
-  )HTML");
-  WebElement element = Root().QuerySelector(AtomicString(".container"));
-
-  EXPECT_FALSE(element.IsNull());
-  EXPECT_TRUE(element
-                  .FindTextInElementWith("Hello world",
-                                         [](const WebString&) { return false; })
-                  .IsEmpty());
-}
-
 TEST_F(WebNodeTest, CannotFindTextNodesIfMatcherRejectsIt) {
-  SetInnerHTML(R"HTML(
+  SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <body class="container"><div> Hello world! </div></body>
   )HTML");
   WebElement element = Root().QuerySelector(AtomicString(".container"));
@@ -182,37 +133,8 @@ TEST_F(WebNodeTest, CannotFindTextNodesIfMatcherRejectsIt) {
   EXPECT_TRUE(element.FindAllTextNodesMatchingRegex("(?!.*)").empty());
 }
 
-TEST_F(WebNodeTest, CanFindTextInReadonlyTextInputElement) {
-  SetInnerHTML(R"HTML(
-    <body class="container">
-      <input type="text" readonly="" value=" HeLLo WoRLd! ">
-    </body>
-  )HTML");
-  WebElement element = Root().QuerySelector(AtomicString(".container"));
-
-  EXPECT_FALSE(element.IsNull());
-  EXPECT_EQ(WebString(" HeLLo WoRLd! "),
-            element.FindTextInElementWith(
-                "hello world", [](const WebString&) { return true; }));
-}
-
-TEST_F(WebNodeTest, CannotFindTextInNonTextInputElement) {
-  SetInnerHTML(R"HTML(
-    <body class="container">
-      <input type="url" readonly="" value=" HeLLo WoRLd! ">
-    </body>
-  )HTML");
-  WebElement element = Root().QuerySelector(AtomicString(".container"));
-
-  EXPECT_FALSE(element.IsNull());
-  EXPECT_TRUE(element
-                  .FindTextInElementWith("hello world",
-                                         [](const WebString&) { return true; })
-                  .IsEmpty());
-}
-
 TEST_F(WebNodeTest, CannotFindTextNodesInNonTextInputElement) {
-  SetInnerHTML(R"HTML(
+  SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <body class="container">
       <input type="url" readonly="" value=" HeLLo WoRLd! ">
     </body>
@@ -224,23 +146,8 @@ TEST_F(WebNodeTest, CannotFindTextNodesInNonTextInputElement) {
       element.FindAllTextNodesMatchingRegex("^ HeLLo WoRLd! $").empty());
 }
 
-TEST_F(WebNodeTest, CannotFindTextInNonReadonlyTextInputElement) {
-  SetInnerHTML(R"HTML(
-    <body class="container">
-      <input type="text" value=" HeLLo WoRLd! ">
-    </body>
-  )HTML");
-  WebElement element = Root().QuerySelector(AtomicString(".container"));
-
-  EXPECT_FALSE(element.IsNull());
-  EXPECT_TRUE(element
-                  .FindTextInElementWith("hello world",
-                                         [](const WebString&) { return true; })
-                  .IsEmpty());
-}
-
 TEST_F(WebNodeTest, CannotFindTextNodesInNonReadonlyTextInputElement) {
-  SetInnerHTML(R"HTML(
+  SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <body class="container">
       <input type="text" value=" HeLLo WoRLd! ">
     </body>
@@ -266,7 +173,7 @@ TEST_F(WebNodeTest, AddEventListener) {
     EXPECT_CALL(checkpoint, Call("set_caret 3"));
   }
 
-  SetInnerHTML("<textarea id=field>0123456789</textarea>");
+  SetInnerHTMLWithoutTrustedTypes("<textarea id=field>0123456789</textarea>");
 
   // Focuses the textarea.
   auto focus = [&]() {
@@ -293,6 +200,31 @@ TEST_F(WebNodeTest, AddEventListener) {
     // The listener is removed by `remove_listener`'s destructor.
   }
   set_caret(3);
+}
+
+// content-visibility:hidden elements should not be focusable and should not
+// have style/layout run on them when checking focusability.
+// content-visibility:auto elements should be focusable and should have
+// style/layout run on them when checking focusability.
+TEST_F(WebNodeTest, IsFocusableInDisplayLock) {
+  SetInnerHTMLWithoutTrustedTypes(R"HTML(
+    <div style="content-visibility: hidden">
+      <input id=input1>
+    </div>
+    <div style="height: 8000px"></div>
+    <div style="content-visibility: auto">
+      <input id=input2>
+    </div>
+  )HTML");
+  auto* input1 = GetDocument().getElementById(AtomicString("input1"));
+  auto* input2 = GetDocument().getElementById(AtomicString("input2"));
+  WebNode web_input1(input1);
+  WebNode web_input2(input2);
+
+  EXPECT_FALSE(web_input1.IsFocusable());
+  EXPECT_TRUE(web_input2.IsFocusable());
+  EXPECT_FALSE(input1->GetLayoutObject());
+  EXPECT_TRUE(input2->GetLayoutObject());
 }
 
 }  // namespace blink

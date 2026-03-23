@@ -197,7 +197,7 @@ function(qt_run_linker_version_script_support)
     # subsequently executed by xcodebuild, ignores the linker flag, and thus the test
     # seemingly succeeds. Explicitly disable the version script test on darwin platforms.
     # Also makes no sense with MSVC-style command-line
-    if(NOT APPLE AND NOT MSVC)
+    if(NOT APPLE AND NOT (MSVC OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"))
         file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/version_flag.map" [=[
             VERS_1 { global: sym1; };
             VERS_2 { global: sym2; } VERS_1;
@@ -277,7 +277,9 @@ function(qt_internal_print_cmake_darwin_info)
         message(STATUS "QT_APPLE_SDK_PATH: \"${QT_APPLE_SDK_PATH}\"")
         message(STATUS "CMAKE_OSX_DEPLOYMENT_TARGET: \"${CMAKE_OSX_DEPLOYMENT_TARGET}\"")
         message(STATUS "QT_MAC_SDK_VERSION: \"${QT_MAC_SDK_VERSION}\"")
-        message(STATUS "QT_MAC_XCODE_VERSION: \"${QT_MAC_XCODE_VERSION}\"")
+        if(QT_MAC_XCODE_VERSION)
+            message(STATUS "QT_MAC_XCODE_VERSION: \"${QT_MAC_XCODE_VERSION}\"")
+        endif()
 
         if(DEFINED CACHE{QT_IS_MACOS_UNIVERSAL})
             message(STATUS "QT_IS_MACOS_UNIVERSAL: \"${QT_IS_MACOS_UNIVERSAL}\"")
@@ -306,6 +308,36 @@ function(qt_internal_print_cmake_host_and_target_info)
     message(STATUS "CMAKE_SYSTEM_PROCESSOR: \"${CMAKE_SYSTEM_PROCESSOR}\"")
 
     message(STATUS "CMAKE_CROSSCOMPILING: \"${CMAKE_CROSSCOMPILING}\"")
+
+    message(STATUS "CMAKE_CXX_COMPILER_ID: \"${CMAKE_CXX_COMPILER_ID}\"")
+    message(STATUS "CMAKE_CXX_COMPILER_VERSION: \"${CMAKE_CXX_COMPILER_VERSION}\"")
+
+    # The variables might not be defined depending on platform and CMake version.
+    if(CMAKE_CXX_COMPILER_TARGET)
+        message(STATUS "CMAKE_CXX_COMPILER_TARGET: \"${CMAKE_CXX_COMPILER_TARGET}\"")
+    endif()
+    if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+        message(STATUS
+            "CMAKE_CXX_COMPILER_ARCHITECTURE_ID: \"${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}\"")
+    endif()
+    if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT)
+        message(STATUS
+            "CMAKE_CXX_COMPILER_FRONTEND_VARIANT: \"${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}\"")
+    endif()
+
+    if(CMAKE_CXX_COMPILER_LINKER_ID)
+        message(STATUS "CMAKE_CXX_COMPILER_LINKER_ID: \"${CMAKE_CXX_COMPILER_LINKER_ID}\"")
+    endif()
+
+    if(CMAKE_CXX_COMPILER_LINKER_VERSION)
+        message(STATUS
+            "CMAKE_CXX_COMPILER_LINKER_VERSION: \"${CMAKE_CXX_COMPILER_LINKER_VERSION}\"")
+    endif()
+
+    if(CMAKE_CXX_COMPILER_LINKER_FRONTEND_VARIANT)
+        message(STATUS "CMAKE_CXX_COMPILER_LINKER_FRONTEND_VARIANT: "
+            "\"${CMAKE_CXX_COMPILER_LINKER_FRONTEND_VARIANT}\"")
+    endif()
 endfunction()
 qt_internal_print_cmake_host_and_target_info()
 

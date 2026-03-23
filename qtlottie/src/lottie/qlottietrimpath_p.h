@@ -26,15 +26,14 @@ QT_BEGIN_NAMESPACE
 class Q_LOTTIE_EXPORT QLottieTrimPath : public QLottieShape
 {
 public:
-    QLottieTrimPath();
-    QLottieTrimPath(const QJsonObject &definition, QLottieBase *parent = nullptr);
+    QLottieTrimPath(QLottieBase *parent = nullptr);
     explicit QLottieTrimPath(const QLottieTrimPath &other);
 
     void inherit(const QLottieTrimPath &other);
 
     QLottieBase *clone() const override;
 
-    void construct(const QJsonObject &definition);
+    int parse(const QJsonObject &definition) override;
 
     void updateProperties(int frame) override;
     void render(QLottieRenderer &renderer) const override;
@@ -57,7 +56,7 @@ protected:
     QLottieProperty<qreal> m_start;
     QLottieProperty<qreal> m_end;
     QLottieProperty<qreal> m_offset;
-    bool m_isParallel = false;
+    bool m_isParallel = true;
 };
 
 QT_END_NAMESPACE

@@ -145,6 +145,7 @@ QWebEngineDesktopMediaRequest::QWebEngineDesktopMediaRequest(
 {
 }
 
+QWebEngineDesktopMediaRequest::QWebEngineDesktopMediaRequest() = default;
 QWebEngineDesktopMediaRequest::~QWebEngineDesktopMediaRequest() = default;
 
 QWebEngineDesktopMediaRequest::QWebEngineDesktopMediaRequest(
@@ -157,9 +158,10 @@ QWebEngineDesktopMediaRequest::QWebEngineDesktopMediaRequest(
         QWebEngineDesktopMediaRequest &&other) noexcept = default;
 
 /*!
-    Returns a QAbstractListModel for the available screens.
+    \property QWebEngineDesktopMediaRequest::screensModel
+    \brief A QAbstractListModel for the available screens.
 
-    \sa windowsModel()
+    \sa windowsModel
 */
 QAbstractListModel *QWebEngineDesktopMediaRequest::screensModel() const
 {
@@ -167,9 +169,10 @@ QAbstractListModel *QWebEngineDesktopMediaRequest::screensModel() const
 }
 
 /*!
-    Returns a QAbstractListModel for the available windows.
+    \property QWebEngineDesktopMediaRequest::windowsModel
+    \brief A QAbstractListModel for the available windows.
 
-    \sa screensModel()
+    \sa screensModel
 */
 QAbstractListModel *QWebEngineDesktopMediaRequest::windowsModel() const
 {

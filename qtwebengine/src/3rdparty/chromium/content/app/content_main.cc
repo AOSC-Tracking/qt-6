@@ -18,7 +18,6 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/debugger.h"
-#include "base/debug/stack_trace.h"
 #include "base/feature_list.h"
 #include "base/i18n/icu_util.h"
 #include "base/logging.h"
@@ -39,6 +38,7 @@
 #include "base/trace_event/trace_config.h"
 #include "base/trace_event/trace_log.h"
 #include "build/build_config.h"
+#include "components/embedder_support/switches.h"
 #include "components/tracing/common/trace_to_console.h"
 #include "components/tracing/common/tracing_switches.h"
 #include "content/app/content_main_runner_impl.h"
@@ -124,7 +124,6 @@ bool IsSubprocess() {
   auto type = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
       switches::kProcessType);
   return type == switches::kGpuProcess ||
-         type == switches::kPpapiPluginProcess ||
          type == switches::kRendererProcess ||
          type == switches::kUtilityProcess || type == switches::kZygoteProcess;
 }
@@ -311,7 +310,16 @@ NO_STACK_PROTECTOR int RunContentProcess(
 #if BUILDFLAG(IS_IOS)
     base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     command_line->AppendSwitch(switches::kEnableViewport);
-    command_line->AppendSwitch(switches::kUseMobileUserAgent);
+    command_line->AppendSwitch(embedder_support::kUseMobileUserAgent);
+
+#if BUILDFLAG(IS_IOS_TVOS)
+    // Set tvOS to single-process mode by default.
+    command_line->AppendSwitch(switches::kSingleProcess);
+
+    // Enable spatial navigation; we interpret remote control swipes as arrow
+    // keys.
+    command_line->AppendSwitch(switches::kEnableSpatialNavigation);
+#endif
 #endif
 
 #if (BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)) && !defined(COMPONENT_BUILD)

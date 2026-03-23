@@ -13,6 +13,7 @@
 #include "base/scoped_observation.h"
 #include "base/threading/thread_checker.h"
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service_delegate.h"
+#include "components/signin/public/identity_manager/access_token_fetcher.h"
 #include "components/signin/public/identity_manager/ios/device_accounts_provider.h"
 
 class AccountTrackerService;
@@ -40,6 +41,13 @@ class ProfileOAuth2TokenServiceIOSDelegate
       OAuth2AccessTokenConsumer* consumer,
       const std::string& token_binding_challenge) override;
 
+#if BUILDFLAG(IS_IOS)
+  void GetRefreshTokenFromDevice(
+      const CoreAccountId& account_id,
+      const OAuth2AccessTokenManager::ScopeSet& scopes,
+      signin::AccessTokenFetcher::TokenCallback callback) override;
+#endif
+
   // KeyedService
   void Shutdown() override;
 
@@ -55,11 +63,6 @@ class ProfileOAuth2TokenServiceIOSDelegate
       const std::optional<CoreAccountId>& primary_account_id) override;
   void ReloadAccountFromSystem(const CoreAccountId& account_id) override;
 
-  // Adds |account_id| to |accounts_| if it does not exist or udpates
-  // the auth error state of |account_id| if it exists. Fires
-  // |OnRefreshTokenAvailable| if the account info is updated.
-  virtual void AddOrUpdateAccount(const CoreAccountId& account_id);
-
   // DeviceAccountsProvider::Observer:
   void OnAccountsOnDeviceChanged() override;
   void OnAccountOnDeviceUpdated(
@@ -71,14 +74,17 @@ class ProfileOAuth2TokenServiceIOSDelegate
   virtual void RemoveAccount(const CoreAccountId& account_id);
 
  private:
-  friend class ProfileOAuth2TokenServiceIOSDelegateTest;
+  FRIEND_TEST_ALL_PREFIXES(ProfileOAuth2TokenServiceIOSDelegateTest,
+                           OnAuthErrorChangedAfterUpdatingCredentials);
 
   // ProfileOAuth2TokenServiceDelegate implementation:
-  void LoadCredentialsInternal(const CoreAccountId& primary_account_id,
-                               bool is_syncing) override;
+  void LoadCredentialsInternal(
+      const CoreAccountId& primary_account_id) override;
   // This method should not be called when using shared authentication.
-  void UpdateCredentialsInternal(const CoreAccountId& account_id,
-                                 const std::string& refresh_token) override;
+  void UpdateCredentialsInternal(
+      const CoreAccountId& account_id,
+      const std::string& refresh_token,
+      const std::vector<uint8_t>& wrapped_binding_key) override;
   // Removes all credentials from this instance of |ProfileOAuth2TokenService|,
   // however, it does not revoke the identities from the device.
   // Subsequent calls to |RefreshTokenIsAvailable| will return |false|.
@@ -89,6 +95,13 @@ class ProfileOAuth2TokenServiceIOSDelegate
   // each new account. Fires |OnRefreshTokenRevoked| for each account that was
   // removed.
   void ReloadCredentials(const CoreAccountId& primary_account_id);
+
+  // Adds `account_id` to `accounts_` if it does not exist or updates the auth
+  // error state of `account_id` to match `error` if it exists. Fires
+  // `OnRefreshTokenAvailable` if the account info is updated or
+  // `OnAuthErrorChanged` if the auth error changed.
+  void AddOrUpdateAccount(const CoreAccountId& account_id,
+                          GoogleServiceAuthError error);
 
   // Info about the existing accounts.
   std::set<CoreAccountId> accounts_;

@@ -10,7 +10,11 @@
 #include "include/v8config.h"
 #include "src/base/bounds.h"
 #include "src/common/globals.h"
+
+#if V8_ENABLE_WEBASSEMBLY
 #include "src/trap-handler/trap-handler.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
+
 #include "testing/gtest/include/gtest/gtest_prod.h"  // nogncheck
 
 namespace v8 {
@@ -44,7 +48,7 @@ namespace internal {
 class V8_EXPORT_PRIVATE Sandbox {
  public:
   // +-  ~~~  -+----------------------------------------  ~~~  -+-  ~~~  -+
-  // |  32 GB  |                 (Ideally) 1 TB                 |  32 GB  |
+  // |  64 GB  |                 (Ideally) 1 TB                 |  64 GB  |
   // |         |                                                |         |
   // | Guard   |      4 GB      :  ArrayBuffer backing stores,  | Guard   |
   // | Region  |    V8 Heap     :  WASM memory buffers, and     | Region  |
@@ -161,6 +165,14 @@ class V8_EXPORT_PRIVATE Sandbox {
    */
   v8::PageAllocator* page_allocator() const {
     return sandbox_page_allocator_.get();
+  }
+
+  /**
+   * Returns a PageAllocator weak pointer instance that allocates pages inside
+   * the sandbox. This version is for BackingStores that can outlive sandbox.
+   */
+  std::weak_ptr<v8::PageAllocator> page_allocator_weak() const {
+    return sandbox_page_allocator_;
   }
 
   /**
@@ -306,7 +318,7 @@ class V8_EXPORT_PRIVATE Sandbox {
   std::unique_ptr<v8::VirtualAddressSpace> address_space_;
 
   // The page allocator instance for this sandbox.
-  std::unique_ptr<v8::PageAllocator> sandbox_page_allocator_;
+  std::shared_ptr<v8::PageAllocator> sandbox_page_allocator_;
 
   // Constant objects inside this sandbox.
   SandboxedPointerConstants constants_;

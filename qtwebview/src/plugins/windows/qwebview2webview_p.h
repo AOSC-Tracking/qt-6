@@ -1,13 +1,15 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWEBVIEW2WEBVIEW_P_H
 #define QWEBVIEW2WEBVIEW_P_H
 
-#include <private/qabstractwebview_p.h>
+#include <private/qwebview_p.h>
 
 #include <QMap>
 #include <QPointer>
+#include <QtCore/qurl.h>
 #include <webview2.h>
 #include <wrl.h>
 #include <wrl/client.h>
@@ -16,24 +18,26 @@ QT_BEGIN_NAMESPACE
 
 using namespace Microsoft::WRL;
 
-class QWebview2WebViewSettingsPrivate final : public QAbstractWebViewSettings
+class QWebview2WebViewSettingsPrivate final : public QWebViewSettingsPrivate
 {
-    Q_OBJECT
 public:
-    explicit QWebview2WebViewSettingsPrivate(QObject *p = nullptr);
+    explicit QWebview2WebViewSettingsPrivate();
 
     void init(ICoreWebView2Controller* viewController);
 
-    bool localStorageEnabled() const final;
-    bool javaScriptEnabled() const final;
-    bool localContentCanAccessFileUrls() const final;
-    bool allowFileAccess() const final;
+    bool localStorageEnabled() const;
+    bool javaScriptEnabled() const;
+    bool localContentCanAccessFileUrls() const;
+    bool allowFileAccess() const;
 
-public Q_SLOTS:
-    void setLocalContentCanAccessFileUrls(bool enabled) final;
-    void setJavaScriptEnabled(bool enabled) final;
-    void setLocalStorageEnabled(bool enabled) final;
-    void setAllowFileAccess(bool enabled) final;
+    void setLocalContentCanAccessFileUrls(bool enabled);
+    void setJavaScriptEnabled(bool enabled);
+    void setLocalStorageEnabled(bool enabled);
+    void setAllowFileAccess(bool enabled);
+
+private:
+    bool doTestAttribute(WebAttribute attribute) const final;
+    void doSetAttribute(WebAttribute attribute, bool value) final;
 
 private:
     ComPtr<ICoreWebView2Controller> m_webviewController;
@@ -56,15 +60,16 @@ struct QWebViewInitData{
     QString m_httpUserAgent;
 };
 
-class QWebView2WebViewPrivate : public QAbstractWebView
+class QWebView2WebViewPrivate : public QWebViewPrivate
 {
-    Q_OBJECT
 public:
-    explicit QWebView2WebViewPrivate(QObject *parent = nullptr);
+    explicit QWebView2WebViewPrivate(QWebView *view);
     ~QWebView2WebViewPrivate() override;
 
+    void initialize(QObject *context) override { Q_UNUSED(context); };
     QString httpUserAgent() const override;
     void setHttpUserAgent(const QString &userAgent) override;
+    QUrl url() const override;
     void setUrl(const QUrl &url) override;
     bool canGoBack() const override;
     bool canGoForward() const override;
@@ -74,7 +79,6 @@ public:
 
     QWindow* nativeWindow() const override;
 
-public Q_SLOTS:
     void goBack() override;
     void goForward() override;
     void reload() override;
@@ -83,8 +87,10 @@ public Q_SLOTS:
     void setCookie(const QString &domain, const QString &name, const QString &value) override;
     void deleteCookie(const QString &domain, const QString &name) override;
     void deleteAllCookies() override;
+    void runJavaScript(const QString &script,
+                       const std::function<void(const QVariant &)> &resultCallback) override;
 
-private Q_SLOTS:
+private:
     HRESULT onNavigationStarting(ICoreWebView2* webview, ICoreWebView2NavigationStartingEventArgs* args);
     HRESULT onNavigationCompleted(ICoreWebView2* webview, ICoreWebView2NavigationCompletedEventArgs* args);
     HRESULT onWebResourceRequested(ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args);
@@ -94,16 +100,16 @@ private Q_SLOTS:
     void initialize(HWND hWnd);
 
 protected:
-    void runJavaScriptPrivate(const QString &script, int callbackId) override;
-    QAbstractWebViewSettings *getSettings() const override;
+    QWebViewSettingsPrivate *settings() const override;
 
 private:
     ComPtr<ICoreWebView2Controller> m_webviewController;
     ComPtr<ICoreWebView2> m_webview;
     ComPtr<ICoreWebView2CookieManager> m_cookieManager;
     QWebview2WebViewSettingsPrivate *m_settings;
-    QPointer<QWindow> m_window;
+    QWindow *m_window;
     bool m_isLoading;
+    int m_progress;
     QUrl m_url;
     QWebViewInitData m_initData;
 };

@@ -4,15 +4,19 @@
 
 from __future__ import annotations
 
+from typing_extensions import override
+
 from crossbench.benchmarks.base import PressBenchmark
 
 
 class MotionMarkBenchmark(PressBenchmark):
 
   @classmethod
+  @override
   def short_base_name(cls) -> str:
     return "mm"
 
   @classmethod
+  @override
   def base_name(cls) -> str:
     return "motionmark"

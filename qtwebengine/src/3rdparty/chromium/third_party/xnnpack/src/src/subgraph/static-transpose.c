@@ -9,23 +9,22 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/common.h"
-#include "xnnpack/datatype.h"
-#include "xnnpack/log.h"
-#include "xnnpack/node-type.h"
-#include "xnnpack/operator-type.h"
-#include "xnnpack/operator.h"
-#include "xnnpack/subgraph-validation.h"
-#include "xnnpack/subgraph.h"
-#include "pthreadpool.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/datatype.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/node-type.h"
+#include "src/xnnpack/operator-type.h"
+#include "src/xnnpack/operator.h"
+#include "src/xnnpack/subgraph-validation.h"
+#include "src/xnnpack/subgraph.h"
+#include <pthreadpool.h>
 
 static enum xnn_status create_transpose_operator(
   const struct xnn_node* node,
-  const struct xnn_value* values,
+  const struct xnn_runtime_value* values,
   size_t num_values,
   struct xnn_operator_data* opdata,
-  struct xnn_code_cache* code_cache,
   xnn_weights_cache_t weights_cache)
 {
   assert(node->num_inputs == 1);
@@ -35,16 +34,15 @@ static enum xnn_status create_transpose_operator(
   const uint32_t input_id = node->inputs[0];
   assert(input_id != XNN_INVALID_VALUE_ID);
   assert(input_id < num_values);
-  const struct xnn_value *input_value = &values[input_id];
-  switch (input_value->datatype) {
-    case xnn_datatype_fp32:
+  const struct xnn_runtime_value *input_value = &values[input_id];
+  switch (xnn_datatype_size_bits(input_value->datatype)) {
+    case 32:
       status = xnn_create_transpose_nd_x32(node->flags, &opdata->operator_objects[0]);
       break;
-    case xnn_datatype_fp16:
+    case 16:
       status = xnn_create_transpose_nd_x16(node->flags, &opdata->operator_objects[0]);
       break;
-    case xnn_datatype_qint8:
-    case xnn_datatype_quint8:
+    case 8:
       status = xnn_create_transpose_nd_x8(node->flags, &opdata->operator_objects[0]);
       break;
     default:
@@ -52,8 +50,8 @@ static enum xnn_status create_transpose_operator(
   }
 
   if (status == xnn_status_success) {
-    opdata->shape2.num_dims = node->params.transpose.num_dims;
-    memcpy(opdata->shape2.dim, node->params.transpose.perm, opdata->shape2.num_dims * sizeof(size_t));
+    opdata->shape1.num_dims = node->params.transpose.num_dims;
+    memcpy(opdata->shape1.dim, node->params.transpose.perm, opdata->shape1.num_dims * sizeof(size_t));
   }
 
   return status;
@@ -61,7 +59,7 @@ static enum xnn_status create_transpose_operator(
 
 static enum xnn_status reshape_transpose_operator(
   struct xnn_operator_data* opdata,
-  struct xnn_value* values,
+  struct xnn_runtime_value* values,
   size_t num_values,
   pthreadpool_t threadpool)
 {
@@ -69,15 +67,14 @@ static enum xnn_status reshape_transpose_operator(
   const uint32_t input_id = opdata->inputs[0];
   assert(input_id != XNN_INVALID_VALUE_ID);
   assert(input_id < num_values);
-  const struct xnn_value* input = &values[input_id];
+  const struct xnn_runtime_value* input = &values[input_id];
 
   const uint32_t output_id = opdata->outputs[0];
   assert(output_id != XNN_INVALID_VALUE_ID);
   assert(output_id < num_values);
 
-  const size_t num_dims = opdata->shape2.num_dims;
+  const size_t num_dims = opdata->shape1.num_dims;
   assert(input->shape.num_dims == num_dims);
-  memcpy(opdata->shape1.dim, input->shape.dim, num_dims * sizeof(size_t));
 
   switch (opdata->operator_objects[0]->type) {
     case xnn_operator_type_transpose_nd_x16: {
@@ -85,7 +82,7 @@ static enum xnn_status reshape_transpose_operator(
         opdata->operator_objects[0],
         num_dims,
         input->shape.dim,
-        opdata->shape2.dim,
+        opdata->shape1.dim,
         threadpool);
       break;
     }
@@ -94,7 +91,7 @@ static enum xnn_status reshape_transpose_operator(
         opdata->operator_objects[0],
         num_dims,
         input->shape.dim,
-        opdata->shape2.dim,
+        opdata->shape1.dim,
         threadpool);
       break;
     }
@@ -103,7 +100,7 @@ static enum xnn_status reshape_transpose_operator(
         opdata->operator_objects[0],
         num_dims,
         input->shape.dim,
-        opdata->shape2.dim,
+        opdata->shape1.dim,
         threadpool);
       break;
     }
@@ -115,13 +112,13 @@ static enum xnn_status reshape_transpose_operator(
     return status;
   }
 
-  struct xnn_value* output = &values[output_id];
+  struct xnn_runtime_value* output = &values[output_id];
 
   output->shape.num_dims = num_dims;
   for (size_t cur_dim = 0; cur_dim < num_dims; cur_dim++) {
-    output->shape.dim[cur_dim] = input->shape.dim[opdata->shape2.dim[cur_dim]];
+    output->shape.dim[cur_dim] = input->shape.dim[opdata->shape1.dim[cur_dim]];
   }
-  const size_t new_size = xnn_tensor_get_size(output);
+  const size_t new_size = xnn_runtime_tensor_get_size(output);
   if (new_size > output->size) {
     output->size = new_size;
     return xnn_status_reallocation_required;
@@ -131,7 +128,7 @@ static enum xnn_status reshape_transpose_operator(
 
 static enum xnn_status setup_transpose_operator(
   const struct xnn_operator_data* opdata,
-  const struct xnn_value* values,
+  const struct xnn_runtime_value* values,
   size_t num_values,
   pthreadpool_t threadpool)
 {
@@ -143,11 +140,11 @@ static enum xnn_status setup_transpose_operator(
   assert(output_id != XNN_INVALID_VALUE_ID);
   assert(output_id < num_values);
 
-  const struct xnn_value* input_value = values + input_id;
+  const struct xnn_runtime_value* input_value = values + input_id;
   const void* input_data = input_value->data;
   assert(input_data != NULL);
 
-  const struct xnn_value* output_value = values + output_id;
+  const struct xnn_runtime_value* output_value = values + output_id;
   void* output_data = output_value->data;
   assert(output_data != NULL);
 

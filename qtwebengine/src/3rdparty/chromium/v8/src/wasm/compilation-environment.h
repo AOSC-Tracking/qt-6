@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_WASM_COMPILATION_ENVIRONMENT_H_
+#define V8_WASM_COMPILATION_ENVIRONMENT_H_
+
 #if !V8_ENABLE_WEBASSEMBLY
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
-
-#ifndef V8_WASM_COMPILATION_ENVIRONMENT_H_
-#define V8_WASM_COMPILATION_ENVIRONMENT_H_
 
 #include <memory>
 #include <optional>
@@ -33,11 +33,7 @@ struct UnpublishedWasmCode;
 class WasmCode;
 class WasmEngine;
 class WasmError;
-
-enum DynamicTiering : bool {
-  kDynamicTiering = true,
-  kNoDynamicTiering = false
-};
+class WasmModuleCoverageData;
 
 // The Arm architecture does not specify the results in memory of
 // partially-in-bound writes, which does not align with the wasm spec. This
@@ -60,29 +56,29 @@ struct CompilationEnv {
   // Features enabled for this compilation.
   const WasmEnabledFeatures enabled_features;
 
-  const DynamicTiering dynamic_tiering;
-
   const std::atomic<Address>* fast_api_targets;
 
   std::atomic<const MachineSignature*>* fast_api_signatures;
+
+  std::shared_ptr<WasmModuleCoverageData> module_coverage_data;
 
   // Create a {CompilationEnv} object for compilation. The caller has to ensure
   // that the {WasmModule} pointer stays valid while the {CompilationEnv} is
   // being used.
   static inline CompilationEnv ForModule(const NativeModule* native_module);
 
-  static constexpr CompilationEnv NoModuleAllFeaturesForTesting();
+  static CompilationEnv NoModuleAllFeaturesForTesting();
 
  private:
-  constexpr CompilationEnv(
-      const WasmModule* module, WasmEnabledFeatures enabled_features,
-      DynamicTiering dynamic_tiering, std::atomic<Address>* fast_api_targets,
-      std::atomic<const MachineSignature*>* fast_api_signatures)
+  CompilationEnv(const WasmModule* module, WasmEnabledFeatures enabled_features,
+                 std::atomic<Address>* fast_api_targets,
+                 std::atomic<const MachineSignature*>* fast_api_signatures,
+                 std::shared_ptr<WasmModuleCoverageData> module_coverage_data)
       : module(module),
         enabled_features(enabled_features),
-        dynamic_tiering(dynamic_tiering),
         fast_api_targets(fast_api_targets),
-        fast_api_signatures(fast_api_signatures) {}
+        fast_api_signatures(fast_api_signatures),
+        module_coverage_data(std::move(module_coverage_data)) {}
 };
 
 // The wire bytes are either owned by the StreamingDecoder, or (after streaming)
@@ -169,8 +165,6 @@ class V8_EXPORT_PRIVATE CompilationState {
 
   void set_compilation_id(int compilation_id);
 
-  DynamicTiering dynamic_tiering() const;
-
   size_t EstimateCurrentMemoryConsumption() const;
 
   std::vector<WasmCode*> PublishCode(
@@ -192,7 +186,7 @@ class V8_EXPORT_PRIVATE CompilationState {
   // certain scopes.
   static std::unique_ptr<CompilationState> New(
       const std::shared_ptr<NativeModule>&, std::shared_ptr<Counters>,
-      DynamicTiering dynamic_tiering, WasmDetectedFeatures detected_features);
+      WasmDetectedFeatures detected_features);
 };
 
 }  // namespace wasm

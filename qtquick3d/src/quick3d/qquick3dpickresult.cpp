@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dpickresult_p.h"
 #include "qquick3dmodel_p.h"
@@ -31,7 +33,8 @@ QQuick3DPickResult::QQuick3DPickResult(QQuick3DModel *hitObject,
                                        const QVector3D &position,
                                        const QVector3D &normal,
                                        const QVector3D &sceneNormal,
-                                       int instanceIndex)
+                                       int instanceIndex,
+                                       QQuickItem *itemHit)
     : m_objectHit(hitObject)
     , m_distance(distanceFromCamera)
     , m_uvPosition(uvPosition)
@@ -40,7 +43,7 @@ QQuick3DPickResult::QQuick3DPickResult(QQuick3DModel *hitObject,
     , m_normal(normal)
     , m_sceneNormal(sceneNormal)
     , m_instanceIndex(instanceIndex)
-    , m_itemHit(nullptr)
+    , m_itemHit(itemHit)
     , m_hitType(QQuick3DPickResultEnums::HitType::Model)
 {
 

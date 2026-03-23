@@ -48,7 +48,10 @@ TestCase {
         compare(control.textRole, "")
         compare(control.live, true)
         verify(control.delegate)
-        verify(control.popup)
+        if (StyleInfo.styleName !== "iOS")
+            verify(control.popup)
+        else
+            compare(StyleInfo.styleName, "iOS")
     }
 
     // TO-DO: Implement SFPM logic after 6.10
@@ -105,7 +108,9 @@ TestCase {
     }
 
     function test_textRole() {
-        ignoreWarning(/Unable to assign QQmlDMAbstractItemModelData to QString/)
+        if (StyleInfo.styleName !== "iOS")
+            ignoreWarning(/Unable to assign QQmlDMAbstractItemModelData to QString/)
+
         let control = createTemporaryObject(searchField, testCase)
         verify(control)
 
@@ -117,7 +122,10 @@ TestCase {
 
         compare(control.text, "a")
         compare(control.suggestionCount, 5)
-        compare(control.popup.visible,true)
+        if (StyleInfo.styleName !== "iOS")
+            compare(control.popup.visible,true)
+        else
+            compare(StyleInfo.styleName, "iOS")
 
         control.textRole = "color"
 
@@ -125,7 +133,10 @@ TestCase {
 
         compare(control.text, "r")
         compare(control.suggestionCount, 5)
-        compare(control.popup.visible,true)
+        if (StyleInfo.styleName !== "iOS")
+            compare(control.popup.visible,true)
+        else
+            compare(StyleInfo.styleName, "iOS")
     }
 
     Component {
@@ -142,6 +153,9 @@ TestCase {
     }
 
     function test_suggestionPopup() {
+        if (StyleInfo.styleName === "iOS")
+            skip("iOS style does not provide a popup for SearchField.")
+
         let control = createTemporaryObject(suggestion, testCase)
         verify(control)
 
@@ -151,13 +165,13 @@ TestCase {
 
         textItem.text = "a"
         compare(control.suggestionCount, 2)
-        compare(control.currentIndex, 0)
+        compare(control.currentIndex, -1)
         compare(control.highlightedIndex, 0)
         compare(control.popup.visible, true)
 
         textItem.text = "c"
         compare(control.suggestionCount, 3)
-        compare(control.currentIndex, 0)
+        compare(control.currentIndex, -1)
         compare(control.highlightedIndex, 0)
         compare(control.popup.visible, true)
     }
@@ -177,13 +191,53 @@ TestCase {
         textItem.text = "a"
 
         compare(control.text, "a")
+        compare(control.currentIndex, -1)
         compare(textEditedSpy.count, 1)
 
         compare(searchTriggeredSpy.count, 1)
     }
 
-    function test_arrowKeys() {
+    function test_currentIndexResetsOnEdit() {
+        if (StyleInfo.styleName === "iOS")
+            skip("iOS style does not provide a popup for SearchField.")
+
         ignoreWarning(/Unable to assign QQmlDMAbstractItemModelData to QString/)
+
+        let control = createTemporaryObject(searchField, testCase)
+        verify(control)
+
+        control.forceActiveFocus()
+        verify(control.activeFocus)
+
+        control.suggestionModel = fruitModel
+        control.textRole = "name"
+
+        let textItem = control.contentItem
+        textItem.text = "a"
+
+        compare(control.popup.visible, true)
+
+        compare(control.currentIndex, -1)
+        compare(control.highlightedIndex, 0)
+
+        keyClick(Qt.Key_Down)
+        compare(control.currentIndex, -1)
+        compare(control.highlightedIndex, 1)
+
+        keyClick(Qt.Key_Enter)
+        compare(control.currentIndex, 1)
+        compare(control.popup.visible, false)
+
+        textItem.text = control.text + "x"
+        compare(control.currentIndex, -1)
+    }
+
+    function test_arrowKeys() {
+        if (StyleInfo.styleName === "iOS")
+            skip("iOS style does not provide a popup for SearchField.")
+
+        ignoreWarning(/Unable to assign QQmlDMAbstractItemModelData to QString/)
+
         let control = createTemporaryObject(searchField, testCase)
         verify(control)
 
@@ -220,7 +274,7 @@ TestCase {
         compare(control.popup.visible, true)
 
         keyClick(Qt.Key_Down)
-        compare(control.currentIndex, 0)
+        compare(control.currentIndex, -1)
         compare(control.highlightedIndex, 1)
         compare(activatedSpy.count, 0)
         compare(highlightedSpy.count, 1)
@@ -228,7 +282,7 @@ TestCase {
         highlightedSpy.clear()
 
         keyClick(Qt.Key_Down)
-        compare(control.currentIndex, 0)
+        compare(control.currentIndex, -1)
         compare(control.highlightedIndex, 2)
         compare(activatedSpy.count, 0)
         compare(highlightedSpy.count, 1)
@@ -236,7 +290,7 @@ TestCase {
         highlightedSpy.clear()
 
         keyClick(Qt.Key_Up)
-        compare(control.currentIndex, 0)
+        compare(control.currentIndex, -1)
         compare(control.highlightedIndex, 1)
         compare(activatedSpy.count, 0)
         compare(highlightedSpy.count, 1)
@@ -245,6 +299,7 @@ TestCase {
 
         keyClick(Qt.Key_Enter)
         compare(control.text, "Cherry")
+        compare(control.currentIndex, 1)
         compare(acceptedSpy.count, 1)
         compare(searchTriggeredSpy.count, 2)
 
@@ -253,5 +308,30 @@ TestCase {
 
         keyClick(Qt.Key_Escape)
         compare(control.text, "")
+    }
+
+    Component {
+        id: delegateComponent1
+
+        ItemDelegate {}
+    }
+
+    Component {
+        id: delegateComponent2
+
+        ItemDelegate {}
+    }
+
+    function test_dontDeleteDelegates() {
+        let control = createTemporaryObject(searchField, testCase, { delegate: delegateComponent1 })
+        verify(control)
+
+        // When setting a new delegate, the old one shouldn't be destroyed.
+        control.delegate = delegateComponent2
+        verify(delegateComponent1)
+
+        // The same goes for the new delegate: it shouldn't be destroyed when setting the old one.
+        control.delegate = delegateComponent1
+        verify(delegateComponent2)
     }
 }

@@ -59,8 +59,8 @@ with specific features enabled. These features ***must*** be enabled for the
 fenced frame's origin. If any of the required features are disabled, the fenced
 frame will not load.
 
-See: `kFencedFrameFledgeDefaultRequiredFeatures` in
-`third_party/blink/public/common/frame/fenced_frame_permissions_policies.h`.
+See: `network::kFencedFrameFledgeDefaultRequiredFeatures` in
+`services/network/public/cpp/permissions_policy/fenced_frame_permissions_policies.h`.
 
 ## Permissions for Fenced frames created with selectURL()
 
@@ -75,8 +75,8 @@ exfiltrate data out of a fenced frame, so they cannot be enabled. To be safe, we
 are currently only allowing a few permissions-backed features to be enabled that
 are required for functionality purposes.
 
-See: `kFencedFrameSharedStorageDefaultRequiredFeatures` in
-`third_party/blink/public/common/frame/fenced_frame_permissions_policies.h`.
+See: `network::kFencedFrameSharedStorageDefaultRequiredFeatures` in
+`services/network/public/cpp/permissions_policy/fenced_frame_permissions_policies.h`.
 
 ## Permissions for fenced frames with unpartitioned data access
 
@@ -97,8 +97,8 @@ risk, we are currently allowing a small subset of permissions-backed features to
 be enabled. This can be expanded in the future if more use cases are found that
 require other features.
 
-See: `kFencedFrameAllowedFeatures` in
-`third_party/blink/public/common/frame/fenced_frame_permissions_policies.h`.
+See: `network::kFencedFrameAllowedFeatures` in
+`services/network/public/cpp/permissions_policy/fenced_frame_permissions_policies.h`.
 
 ## Permissions policy-based features audit
 
@@ -605,3 +605,15 @@ While data can be exfiltrated through reporting, the data is aggregated, so it
 can’t be traced back to any one frame or reliably joined to build a profile of
 the user. No data can be infiltrated into the fenced frame using this API, nor
 can this API be used as a fingerprinting vector.
+
+### 🔻🔺🖐️ Local Network Access: infiltration/exfiltration/fingerprinting risk
+*Feature: kLocalNetworkAccess*
+
+A colluding server hosted on the local network can be used as a proxy to pass
+information from a fenced frame to its embedder. One side can make a request to
+write data to the server, and the other side can read what data was set in the
+server.
+
+A site can make arbitrary local network requests, scanning for HTTP hosts and
+building a fingerprint of how the network (or device if checking for localhost
+connections) is set up.

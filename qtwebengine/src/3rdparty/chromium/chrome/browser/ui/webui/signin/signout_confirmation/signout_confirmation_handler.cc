@@ -4,53 +4,38 @@
 
 #include "chrome/browser/ui/webui/signin/signout_confirmation/signout_confirmation_handler.h"
 
+#include <vector>
+
 #include "base/functional/bind.h"
-#include "base/functional/callback_forward.h"
-#include "base/metrics/histogram_functions.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/signin/signin_view_controller.h"
 #include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/signin/public/base/signin_pref_names.h"
 #include "components/strings/grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "base/barrier_callback.h"
+#include "chrome/browser/extensions/sync/account_extension_tracker.h"
+#include "chrome/browser/extensions/sync/extension_sync_util.h"
+#include "components/prefs/pref_service.h"
+#include "extensions/browser/icon_util.h"
+#include "extensions/browser/image_loader.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_id.h"
+#include "extensions/common/icons/extension_icon_set.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
+#include "ui/gfx/image/image.h"
+#endif
+
 namespace {
 
-constexpr char kChromeSignoutPromptHistogramBaseName[] =
-    "Signin.ChromeSignoutConfirmationPrompt.";
-constexpr char kChromeSignoutPromptHistogramUnsyncedReauthVariant[] =
-    "UnsyncedReauth";
-constexpr char kChromeSignoutPromptHistogramUnsyncedVariant[] = "Unsynced";
-constexpr char kChromeSignoutPromptHistogramNoUnsyncedVariant[] = "NoUnsynced";
-constexpr char kChromeSignoutPromptHistogramSupervisedProfileVariant[] =
-    "SupervisedProfile";
-
-void RecordChromeSignoutConfirmationPromptMetrics(
-    ChromeSignoutConfirmationPromptVariant variant,
-    ChromeSignoutConfirmationChoice choice) {
-  const char* histogram_variant_name =
-      kChromeSignoutPromptHistogramNoUnsyncedVariant;
-  switch (variant) {
-    case ChromeSignoutConfirmationPromptVariant::kNoUnsyncedData:
-      break;
-    case ChromeSignoutConfirmationPromptVariant::kUnsyncedData:
-      histogram_variant_name = kChromeSignoutPromptHistogramUnsyncedVariant;
-      break;
-    case ChromeSignoutConfirmationPromptVariant::kUnsyncedDataWithReauthButton:
-      histogram_variant_name =
-          kChromeSignoutPromptHistogramUnsyncedReauthVariant;
-      break;
-    case ChromeSignoutConfirmationPromptVariant::kProfileWithParentalControls:
-      histogram_variant_name =
-          kChromeSignoutPromptHistogramSupervisedProfileVariant;
-      break;
-  }
-
-  base::UmaHistogramEnumeration(
-      base::StrCat(
-          {kChromeSignoutPromptHistogramBaseName, histogram_variant_name}),
-      choice);
-}
+constexpr int kIconSize = extension_misc::EXTENSION_ICON_SMALLISH;
 
 int ComputeDialogTitleId(ChromeSignoutConfirmationPromptVariant variant) {
   switch (variant) {
@@ -70,7 +55,7 @@ int ComputeDialogTitleId(ChromeSignoutConfirmationPromptVariant variant) {
 int ComputeDialogSubtitleId(ChromeSignoutConfirmationPromptVariant variant) {
   switch (variant) {
     case ChromeSignoutConfirmationPromptVariant::kNoUnsyncedData:
-      return IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_NO_UNSYNCED_BODY;
+      return IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_NO_UNSYNCED_DATA_BODY;
     case ChromeSignoutConfirmationPromptVariant::kUnsyncedData:
       return IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_UNSYNCED_BODY;
     case ChromeSignoutConfirmationPromptVariant::kUnsyncedDataWithReauthButton:
@@ -89,7 +74,7 @@ int ComputeAcceptButtonLabelId(ChromeSignoutConfirmationPromptVariant variant) {
     case ChromeSignoutConfirmationPromptVariant::kUnsyncedData:
       return IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_DELETE_AND_SIGNOUT_BUTTON;
     case ChromeSignoutConfirmationPromptVariant::kUnsyncedDataWithReauthButton:
-      return IDS_PROFILES_VERIFY_ACCOUNT_BUTTON;
+      return IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_DELETE_AND_SIGNOUT_BUTTON;
     case ChromeSignoutConfirmationPromptVariant::kProfileWithParentalControls:
       return IDS_SCREEN_LOCK_SIGN_OUT;
     default:
@@ -104,7 +89,7 @@ int ComputeCancelButtonLabelId(ChromeSignoutConfirmationPromptVariant variant) {
     case ChromeSignoutConfirmationPromptVariant::kUnsyncedData:
       return IDS_CANCEL;
     case ChromeSignoutConfirmationPromptVariant::kUnsyncedDataWithReauthButton:
-      return IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_SIGNOUT_BUTTON;
+      return IDS_PROFILES_VERIFY_ACCOUNT_BUTTON;
     case ChromeSignoutConfirmationPromptVariant::kProfileWithParentalControls:
       return IDS_CANCEL;
     default:
@@ -116,7 +101,9 @@ int ComputeCancelButtonLabelId(ChromeSignoutConfirmationPromptVariant variant) {
 // consists of strings based on the prompt `variant`.
 signout_confirmation::mojom::SignoutConfirmationDataPtr
 ConstructSignoutConfirmationData(
-    ChromeSignoutConfirmationPromptVariant variant) {
+    ChromeSignoutConfirmationPromptVariant variant,
+    std::vector<signout_confirmation::mojom::ExtensionInfoPtr>
+        extension_infos_mojo) {
   signout_confirmation::mojom::SignoutConfirmationDataPtr
       signout_confirmation_mojo =
           signout_confirmation::mojom::SignoutConfirmationData::New();
@@ -128,64 +115,162 @@ ConstructSignoutConfirmationData(
       l10n_util::GetStringUTF8(ComputeAcceptButtonLabelId(variant));
   signout_confirmation_mojo->cancel_button_label =
       l10n_util::GetStringUTF8(ComputeCancelButtonLabelId(variant));
+
+  signout_confirmation_mojo->has_unsynced_data =
+      variant == ChromeSignoutConfirmationPromptVariant::kUnsyncedData ||
+      variant ==
+          ChromeSignoutConfirmationPromptVariant::kUnsyncedDataWithReauthButton;
+  signout_confirmation_mojo->account_extensions =
+      std::move(extension_infos_mojo);
   return signout_confirmation_mojo;
 }
 
-}  //  namespace
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+
+// Called when the icon for `extension_name` is loaded. Must be called for all
+// account extensions before the `SignoutConfirmationData` is sent.
+signout_confirmation::mojom::ExtensionInfoPtr OnExtensionIconLoaded(
+    const std::string& extension_name,
+    const gfx::Image& icon) {
+  auto extension_info_mojo = signout_confirmation::mojom::ExtensionInfo::New();
+  extension_info_mojo->name = extension_name;
+
+  GURL icon_url = icon.IsEmpty() ? extensions::GetPlaceholderIconUrl(
+                                       kIconSize, extension_name)
+                                 : extensions::GetIconUrlFromImage(icon);
+  extension_info_mojo->icon_url = icon_url.spec();
+  return extension_info_mojo;
+}
+
+bool HasAccountExtensions(Profile* profile) {
+  if (!extensions::sync_util::IsSyncingExtensionsInTransportMode(profile)) {
+    return false;
+  }
+
+  extensions::AccountExtensionTracker* tracker =
+      extensions::AccountExtensionTracker::Get(profile);
+  std::vector<const extensions::Extension*> account_extensions =
+      tracker->GetSignedInAccountExtensions();
+  return !account_extensions.empty();
+}
+
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
+
+}  // namespace
 
 SignoutConfirmationHandler::SignoutConfirmationHandler(
     mojo::PendingReceiver<signout_confirmation::mojom::PageHandler> receiver,
     mojo::PendingRemote<signout_confirmation::mojom::Page> page,
     Browser* browser,
     ChromeSignoutConfirmationPromptVariant variant,
-    base::OnceCallback<void(ChromeSignoutConfirmationChoice)> callback)
+    SignoutConfirmationCallback callback)
     : browser_(browser ? browser->AsWeakPtr() : nullptr),
       variant_(variant),
       completion_callback_(std::move(callback)),
       receiver_(this, std::move(receiver)),
       page_(std::move(page)) {
-  // Send any necessary data to the page.
-  page_->SendSignoutConfirmationData(ConstructSignoutConfirmationData(variant));
-
-  // Explicitly set an initial height for the dialog for it to be shown after
-  // the WebUI has loaded. This eliminates any flicker where the dialog is shown
-  // but the WebUI inside is still loading.
-  if (browser_) {
-    browser_->signin_view_controller()->SetModalSigninHeight(
-        kSignoutConfirmationPromptMinHeight);
-  }
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  ComputeAccountExtensions();
+#else
+  ComputeAndSendSignoutConfirmationDataWithoutExtensions();
+#endif
 }
 
 SignoutConfirmationHandler::~SignoutConfirmationHandler() = default;
 
-void SignoutConfirmationHandler::Accept() {
-  ChromeSignoutConfirmationChoice ok_choice =
-      (variant_ ==
-       ChromeSignoutConfirmationPromptVariant::kUnsyncedDataWithReauthButton)
-          ? ChromeSignoutConfirmationChoice::kCancelSignoutAndReauth
-          : ChromeSignoutConfirmationChoice::kSignout;
-
-  FinishAndCloseDialog(ok_choice);
+void SignoutConfirmationHandler::UpdateViewHeight(uint32_t height) {
+  if (browser_) {
+    browser_->GetFeatures().signin_view_controller()->SetModalSigninHeight(
+        height);
+  }
 }
 
-void SignoutConfirmationHandler::Cancel() {
+void SignoutConfirmationHandler::Accept(bool uninstall_account_extensions) {
+  FinishAndCloseDialog(ChromeSignoutConfirmationChoice::kSignout,
+                       uninstall_account_extensions);
+}
+
+void SignoutConfirmationHandler::Cancel(bool uninstall_account_extensions) {
   ChromeSignoutConfirmationChoice cancel_choice =
       (variant_ ==
        ChromeSignoutConfirmationPromptVariant::kUnsyncedDataWithReauthButton)
-          ? ChromeSignoutConfirmationChoice::kSignout
+          ? ChromeSignoutConfirmationChoice::kCancelSignoutAndReauth
           : ChromeSignoutConfirmationChoice::kCancelSignout;
-  FinishAndCloseDialog(cancel_choice);
+  FinishAndCloseDialog(cancel_choice, uninstall_account_extensions);
 }
 
 void SignoutConfirmationHandler::Close() {
-  FinishAndCloseDialog(ChromeSignoutConfirmationChoice::kCancelSignout);
+  FinishAndCloseDialog(ChromeSignoutConfirmationChoice::kCancelSignout,
+                       /*uninstall_account_extensions=*/false);
 }
 
 void SignoutConfirmationHandler::FinishAndCloseDialog(
-    ChromeSignoutConfirmationChoice choice) {
+    ChromeSignoutConfirmationChoice choice,
+    bool uninstall_account_extensions) {
   RecordChromeSignoutConfirmationPromptMetrics(variant_, choice);
-  std::move(completion_callback_).Run(choice);
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  if (browser_ && HasAccountExtensions(browser_->profile())) {
+    RecordAccountExtensionsSignoutChoice(choice, !uninstall_account_extensions);
+  }
+#endif
+
+  std::move(completion_callback_).Run(choice, uninstall_account_extensions);
   if (browser_) {
-    browser_->signin_view_controller()->CloseModalSignin();
+    browser_->GetFeatures().signin_view_controller()->CloseModalSignin();
   }
 }
+
+void SignoutConfirmationHandler::
+    ComputeAndSendSignoutConfirmationDataWithoutExtensions() {
+  ComputeAndSendSignoutConfirmationData({});
+}
+
+void SignoutConfirmationHandler::ComputeAndSendSignoutConfirmationData(
+    std::vector<signout_confirmation::mojom::ExtensionInfoPtr>
+        account_extensions_info) {
+  page_->SendSignoutConfirmationData(ConstructSignoutConfirmationData(
+      variant_, std::move(account_extensions_info)));
+}
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+void SignoutConfirmationHandler::ComputeAccountExtensions() {
+  if (!browser_ || !extensions::sync_util::IsSyncingExtensionsInTransportMode(
+                       browser_->profile())) {
+    ComputeAndSendSignoutConfirmationDataWithoutExtensions();
+    return;
+  }
+
+  extensions::AccountExtensionTracker* tracker =
+      extensions::AccountExtensionTracker::Get(browser_->profile());
+  std::vector<const extensions::Extension*> account_extensions =
+      tracker->GetSignedInAccountExtensions();
+  if (account_extensions.empty()) {
+    ComputeAndSendSignoutConfirmationDataWithoutExtensions();
+    return;
+  }
+
+  auto barrier_callback = base::BarrierCallback<
+      signout_confirmation::mojom::ExtensionInfoPtr>(
+      account_extensions.size(),
+      base::BindOnce(
+          &SignoutConfirmationHandler::ComputeAndSendSignoutConfirmationData,
+          weak_ptr_factory_.GetWeakPtr()));
+
+  auto* image_loader = extensions::ImageLoader::Get(browser_->profile());
+
+  for (const extensions::Extension* extension : account_extensions) {
+    extensions::ExtensionResource icon = extensions::IconsInfo::GetIconResource(
+        extension, kIconSize, ExtensionIconSet::Match::kBigger);
+    if (icon.empty()) {
+      barrier_callback.Run(
+          ::OnExtensionIconLoaded(extension->name(), gfx::Image()));
+    } else {
+      gfx::Size max_size(kIconSize, kIconSize);
+      image_loader->LoadImageAsync(
+          extension, icon, max_size,
+          base::BindOnce(&::OnExtensionIconLoaded, extension->name())
+              .Then(barrier_callback));
+    }
+  }
+}
+#endif

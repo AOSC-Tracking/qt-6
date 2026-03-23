@@ -17,6 +17,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/sequence_bound.h"
 #include "base/time/time.h"
+#include "content/browser/interest_group/for_debugging_only_report_util.h"
 #include "content/browser/interest_group/interest_group_storage.h"
 #include "content/browser/interest_group/interest_group_update.h"
 #include "content/browser/interest_group/storage_interest_group.h"
@@ -101,6 +102,12 @@ class CONTENT_EXPORT StorageInterestGroups
 class CONTENT_EXPORT InterestGroupCachingStorage {
  public:
   static constexpr base::TimeDelta kMinimumCacheHoldTime = base::Seconds(10);
+
+  // The most the entry will be kept in the cache, even if people keep using
+  // it. (Only effective if clickiness is on, since that requires this for
+  // some degree of freshness).
+  static constexpr base::TimeDelta kMaximumCacheHoldTime = base::Seconds(120);
+
   struct CONTENT_EXPORT CachedOriginsInfo {
     CachedOriginsInfo();
     explicit CachedOriginsInfo(const blink::InterestGroup& group);
@@ -217,12 +224,26 @@ class CONTENT_EXPORT InterestGroupCachingStorage {
                               const std::string& ad_json);
   // Adds an entry to forDebuggingOnly report lockout table if the table is
   // empty. Otherwise replaces the existing entry.
-  void RecordDebugReportLockout(base::Time last_report_sent_time);
+  void RecordDebugReportLockout(base::Time starting_time,
+                                base::TimeDelta duration);
   // Adds an entry to forDebuggingOnly report cooldown table for `origin` if it
   // does not exist, otherwise replaces the existing entry.
   void RecordDebugReportCooldown(const url::Origin& origin,
                                  base::Time cooldown_start,
                                  DebugReportCooldownType cooldown_type);
+  // Records a view or a click event. Aggregate time bucketed view and click
+  // information is provided to bidder's browsing signals in generateBid().
+  void RecordViewClick(network::AdAuctionEventRecord event_record);
+
+  // Invokes `callback` with whether the database has a record of click/view
+  // events for given combination of provider & eligible origins.
+  //
+  // nullopt is passed in in case of an error.
+  void CheckViewClickInfoInDbForTesting(
+      url::Origin provider_origin,
+      url::Origin eligible_origin,
+      base::OnceCallback<void(std::optional<bool>)> callback);
+
   // Records a K-anonymity update for an interest group. If
   // `replace_existing_values` is true, this update will store the new
   // `update_time` and `positive_hashed_values`, replacing the interest
@@ -262,13 +283,15 @@ class CONTENT_EXPORT InterestGroupCachingStorage {
       base::OnceCallback<void(std::vector<InterestGroupUpdateParameter>)>
           callback);
 
-  // Gets lockout for sending forDebuggingOnly reports.
-  void GetDebugReportLockout(
-      base::OnceCallback<void(std::optional<base::Time>)> callback);
-
-  // Gets lockout and cooldown for sending forDebuggingOnly reports.
+  // Gets lockout and cooldowns of `origins` for sending forDebuggingOnly
+  // reports.
   void GetDebugReportLockoutAndCooldowns(
       base::flat_set<url::Origin> origins,
+      base::OnceCallback<void(std::optional<DebugReportLockoutAndCooldowns>)>
+          callback);
+
+  // Gets lockout and all cooldowns for sending forDebuggingOnly reports.
+  void GetDebugReportLockoutAndAllCooldowns(
       base::OnceCallback<void(std::optional<DebugReportLockoutAndCooldowns>)>
           callback);
 
@@ -288,6 +311,7 @@ class CONTENT_EXPORT InterestGroupCachingStorage {
   // Clear out storage for the matching owning storage key.
   void DeleteInterestGroupData(
       StoragePartition::StorageKeyMatcherFunction storage_key_matcher,
+      bool user_initiated_deletion,
       base::OnceClosure callback);
   // Clear out all interest group storage including k-anonymity store.
   void DeleteAllInterestGroupData(base::OnceClosure callback);
@@ -308,16 +332,31 @@ class CONTENT_EXPORT InterestGroupCachingStorage {
 
   // Update B&A keys for a coordinator. This function will overwrite any
   // existing keys for the coordinator.
-  void SetBiddingAndAuctionServerKeys(
-      const url::Origin& coordinator,
-      const std::vector<BiddingAndAuctionServerKey>& keys,
-      base::Time expiration);
+  void SetBiddingAndAuctionServerKeys(const url::Origin& coordinator,
+                                      std::string serialized_keys,
+                                      base::Time expiration);
   // Load stored B&A server keys for a coordinator along with the keys'
   // expiration.
   void GetBiddingAndAuctionServerKeys(
       const url::Origin& coordinator,
-      base::OnceCallback<
-          void(std::pair<base::Time, std::vector<BiddingAndAuctionServerKey>>)>
+      base::OnceCallback<void(std::pair<base::Time, std::string>)> callback);
+
+  // Writes all of these keys to the cache, the first vector with
+  // `is_kanon = true`, and the second vector with `is_kanon = false`.
+  void WriteHashedKAnonymityKeysToCache(
+      const std::vector<std::string>& positive_hashed_keys,
+      const std::vector<std::string>& negative_hashed_keys,
+      base::Time time_fetched);
+
+  // Takes a vector of keys to lookup from the cache. Calls a callback that
+  // provides two vectors of keys: the first a vector that includes those
+  // unexpired keys for which it was found in the cache that that key is
+  // k-anonymous, the second a vector that includes all keys not found in the
+  // cache.
+  void LoadPositiveHashedKAnonymityKeysFromCache(
+      const std::vector<std::string>& keys,
+      base::Time min_valid_time,
+      base::OnceCallback<void(InterestGroupStorage::KAnonymityCacheResponse)>
           callback);
 
   void GetLastMaintenanceTimeForTesting(
@@ -350,7 +389,8 @@ class CONTENT_EXPORT InterestGroupCachingStorage {
 
   // Start a timer that holds a reference to `groups` so that it stays in memory
   // for a minimum amount of time (kMinimumCacheHoldTime). If such a timer
-  // already exists, restart it.
+  // already exists, restart it. Staying in memory is relevant because
+  // `cached_interest_groups_` contains weak pointers.
   void StartTimerForInterestGroupHold(
       const url::Origin& owner,
       scoped_refptr<StorageInterestGroups> groups);

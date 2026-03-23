@@ -1,6 +1,7 @@
 // Copyright (c) 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -139,10 +140,6 @@ const UIStrings = {
   /**
    *@description Text in Service Workers View of the Application panel
    */
-  inspect: 'Inspect',
-  /**
-   *@description Text in Service Workers View of the Application panel
-   */
   startString: 'Start',
   /**
    * @description Text in Service Workers View of the Application panel. Service workers have
@@ -179,7 +176,7 @@ const UIStrings = {
    *@description Link to view all the Service Workers that have been registered.
    */
   seeAllRegistrations: 'See all registrations',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/application/ServiceWorkersView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 let throttleDisabledForDebugging = false;
@@ -200,7 +197,7 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
       Map<SDK.ServiceWorkerManager.ServiceWorkerManager, Common.EventTarget.EventDescriptor[]>;
 
   constructor() {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(serviceWorkersViewStyles);
 
     // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
@@ -262,8 +259,8 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
     this.updateListVisibility();
 
     const drawerChangeHandler = (event: Event): void => {
-      // @ts-ignore: No support for custom event listener
-      const isDrawerOpen = event.detail && event.detail.isDrawerOpen;
+      // @ts-expect-error: No support for custom event listener
+      const isDrawerOpen = event.detail?.isDrawerOpen;
       if (this.manager && !isDrawerOpen) {
         const {serviceWorkerNetworkRequestsPanelStatus: {isOpen, openedAt}} = this.manager;
         if (isOpen) {
@@ -491,7 +488,6 @@ export class Section {
   private sourceField: Element;
   private readonly statusField: Element;
   private readonly clientsField: Element;
-  private readonly linkifier: Components.Linkifier.Linkifier;
   private readonly clientInfoCache: Map<string, Protocol.Target.TargetInfo>;
   private readonly throttler: Common.Throttler.Throttler;
   private updateCycleField?: Element;
@@ -551,7 +547,6 @@ export class Section {
     this.createUpdateCycleField();
     this.maybeCreateRouterField();
 
-    this.linkifier = new Components.Linkifier.Linkifier();
     this.clientInfoCache = new Map();
     this.throttler = new Common.Throttler.Throttler(500);
   }
@@ -584,14 +579,6 @@ export class Section {
       return;
     }
     void this.throttler.schedule(this.update.bind(this));
-  }
-
-  private targetForVersionId(versionId: string): SDK.Target.Target|null {
-    const version = this.manager.findVersion(versionId);
-    if (!version || !version.targetId) {
-      return null;
-    }
-    return SDK.TargetManager.TargetManager.instance().targetById(version.targetId);
   }
 
   private addVersion(versionsStack: Element, icon: string, label: string): Element {
@@ -683,12 +670,6 @@ export class Section {
         const stopButton = UI.UIUtils.createTextButton(
             i18nString(UIStrings.stopString), this.stopButtonClicked.bind(this, active.id), {jslogContext: 'stop'});
         activeEntry.appendChild(stopButton);
-        if (!this.targetForVersionId(active.id)) {
-          const inspectButton = UI.UIUtils.createTextButton(
-              i18nString(UIStrings.inspect), this.inspectButtonClicked.bind(this, active.id),
-              {jslogContext: 'inspect'});
-          activeEntry.appendChild(inspectButton);
-        }
       } else if (active.isStartable()) {
         const startButton = UI.UIUtils.createTextButton(
             i18nString(UIStrings.startString), this.startButtonClicked.bind(this), {jslogContext: 'start'});
@@ -716,14 +697,6 @@ export class Section {
         waitingEntry.createChild('div', 'service-worker-subtitle').textContent =
             i18nString(UIStrings.receivedS, {PH1: new Date(waiting.scriptResponseTime * 1000).toLocaleString()});
       }
-      if (!this.targetForVersionId(waiting.id) && (waiting.isRunning() || waiting.isStarting())) {
-        const inspectButton = UI.UIUtils.createTextButton(
-            i18nString(UIStrings.inspect), this.inspectButtonClicked.bind(this, waiting.id), {
-              title: i18nString(UIStrings.inspect),
-              jslogContext: 'waiting-entry-inspect',
-            });
-        waitingEntry.appendChild(inspectButton);
-      }
     }
     if (installing) {
       const installingEntry = this.addVersion(
@@ -733,14 +706,6 @@ export class Section {
         installingEntry.createChild('div', 'service-worker-subtitle').textContent = i18nString(UIStrings.receivedS, {
           PH1: new Date(installing.scriptResponseTime * 1000).toLocaleString(),
         });
-      }
-      if (!this.targetForVersionId(installing.id) && (installing.isRunning() || installing.isStarting())) {
-        const inspectButton = UI.UIUtils.createTextButton(
-            i18nString(UIStrings.inspect), this.inspectButtonClicked.bind(this, installing.id), {
-              title: i18nString(UIStrings.inspect),
-              jslogContext: 'installing-entry-inspect',
-            });
-        installingEntry.appendChild(inspectButton);
       }
     }
 
@@ -762,7 +727,7 @@ export class Section {
     const versions = this.registration.versionsByMode();
     const active = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.ACTIVE);
     const title = i18nString(UIStrings.routers);
-    if (active && active.routerRules && active.routerRules.length > 0) {
+    if (active?.routerRules && active.routerRules.length > 0) {
       // If there is at least one registered rule in the active version, append the router filed.
       if (!this.routerField) {
         this.routerField = this.wrapWidget(this.section.appendField(title));
@@ -881,10 +846,6 @@ export class Section {
 
   private stopButtonClicked(versionId: string): void {
     void this.manager.stopWorker(versionId);
-  }
-
-  private inspectButtonClicked(versionId: string): void {
-    void this.manager.inspectWorker(versionId);
   }
 
   private wrapWidget(container: Element): Element {

@@ -6,14 +6,8 @@
 
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
-#include "gpu/command_buffer/client/shared_image_interface.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
-#include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
-#include "third_party/blink/renderer/platform/graphics/graphics_types_3d.h"
-#include "third_party/blink/renderer/platform/graphics/image.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
-
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 
 namespace blink {
@@ -35,11 +29,20 @@ bool ImageToBufferCopier::EnsureDestImage(const gfx::Size& size) {
 
     dest_image_size_ = size;
 
+    viz::SharedImageFormat color_buffer_format =
+        viz::SinglePlaneFormat::kRGBA_8888;
+#if BUILDFLAG(IS_MAC)
+    // For Mac, explicitly specify BGRA instead of RGBA so that IOSurface
+    // format matches shared image format. This is necessary for Graphite where
+    // IOSurfaces are always used to allow sharing between ANGLE and Dawn.
+    color_buffer_format = viz::SinglePlaneFormat::kBGRA_8888;
+#endif  // BUILDFLAG(IS_MAC)
+
     // We copy the contents of the source image into the destination SharedImage
     // via GL, followed by giving out the destination SharedImage's native
     // buffer handle to eventually be read by the display compositor.
     dest_shared_image_ = sii_->CreateSharedImage(
-        {viz::SinglePlaneFormat::kRGBA_8888, size, gfx::ColorSpace(),
+        {color_buffer_format, size, gfx::ColorSpace(),
          gpu::SHARED_IMAGE_USAGE_GLES2_WRITE, "ImageToBufferCopier"},
         gpu::kNullSurfaceHandle, gfx::BufferUsage::SCANOUT);
     CHECK(dest_shared_image_);
@@ -48,7 +51,7 @@ bool ImageToBufferCopier::EnsureDestImage(const gfx::Size& size) {
 }
 
 std::pair<gfx::GpuMemoryBufferHandle, gpu::SyncToken>
-ImageToBufferCopier::CopyImage(Image* image) {
+ImageToBufferCopier::CopyImage(StaticBitmapImage* image) {
   if (!image)
     return {};
 
@@ -74,8 +77,7 @@ ImageToBufferCopier::CopyImage(Image* image) {
   gl_->BindTexture(GL_TEXTURE_2D, 0);
 
   // Bind the read framebuffer to our image.
-  StaticBitmapImage* static_image = static_cast<StaticBitmapImage*>(image);
-  auto source_shared_image = static_image->GetSharedImage();
+  auto source_shared_image = image->GetSharedImage();
 
   auto source_si_texture = source_shared_image->CreateGLTexture(gl_);
   auto source_scoped_si_access =
@@ -98,7 +100,7 @@ ImageToBufferCopier::CopyImage(Image* image) {
   dest_shared_image_->UpdateDestructionSyncToken(sync_token);
   dest_si_texture.reset();
 
-  static_image->UpdateSyncToken(sync_token);
+  image->UpdateSyncToken(sync_token);
 
   return std::make_pair(dest_shared_image_
                             ? dest_shared_image_->CloneGpuMemoryBufferHandle()

@@ -6,6 +6,7 @@
 
 #include "base/trace_event/trace_event.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_cssnumericvalue_double.h"
+#include "third_party/blink/renderer/core/animation/animation_trigger.h"
 #include "third_party/blink/renderer/core/animation/document_animations.h"
 #include "third_party/blink/renderer/core/animation/keyframe_effect.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -98,8 +99,11 @@ bool AnimationTimeline::NeedsAnimationTimingUpdate() {
   // We allow |last_current_phase_and_time_| to advance here when there
   // are no animations to allow animations spawned during style
   // recalc to not invalidate this flag.
-  if (animations_needing_update_.empty())
+  if (animations_needing_update_.empty()) {
     last_current_phase_and_time_ = current_phase_and_time;
+    // Make sure triggers get the chance to respond to the updated PhaseAndTime.
+    update_triggers_ = true;
+  }
 
   return !animations_needing_update_.empty();
 }
@@ -109,9 +113,10 @@ void AnimationTimeline::ServiceAnimations(TimingUpdateReason reason) {
 
   auto current_phase_and_time = CurrentPhaseAndTime();
 
-  if (IsProgressBased() &&
-      last_current_phase_and_time_ != current_phase_and_time) {
-    UpdateCompositorTimeline();
+  if (IsProgressBased()) {
+    if (last_current_phase_and_time_ != current_phase_and_time) {
+      UpdateCompositorTimeline();
+    }
   }
 
   last_current_phase_and_time_ = current_phase_and_time;
@@ -159,7 +164,7 @@ void AnimationTimeline::getReplaceableAnimations(
     auto inserted = replaceable_animations_map->insert(target, nullptr);
     if (inserted.is_new_entry) {
       inserted.stored_value->value =
-          MakeGarbageCollected<HeapVector<Member<Animation>>>();
+          MakeGarbageCollected<GCedHeapVector<Member<Animation>>>();
     }
     inserted.stored_value->value->push_back(animation);
   }
@@ -209,10 +214,39 @@ void AnimationTimeline::MarkPendingIfCompositorPropertyAnimationChanges(
   }
 }
 
+void AnimationTimeline::AddAnimationTrigger(AnimationTrigger* trigger) {
+  DCHECK(trigger && trigger->GetTimelineInternal() == this);
+  triggers_.insert(trigger);
+  update_triggers_ = true;
+}
+
+void AnimationTimeline::RemoveAnimationTrigger(AnimationTrigger* trigger) {
+  DCHECK(trigger && trigger->GetTimelineInternal() == this);
+  triggers_.erase(trigger);
+}
+
+void AnimationTimeline::ServiceAnimationTriggers() {
+  DCHECK(RuntimeEnabledFeatures::AnimationTriggerEnabled());
+  PhaseAndTime current_phase_and_time = CurrentPhaseAndTime();
+
+  if (last_current_phase_and_time_ != current_phase_and_time) {
+    update_triggers_ = true;
+  }
+
+  if (update_triggers_) {
+    for (AnimationTrigger* trigger : triggers_) {
+      trigger->Update();
+    }
+  }
+
+  update_triggers_ = false;
+}
+
 void AnimationTimeline::Trace(Visitor* visitor) const {
   visitor->Trace(document_);
   visitor->Trace(animations_needing_update_);
   visitor->Trace(animations_);
+  visitor->Trace(triggers_);
   ScriptWrappable::Trace(visitor);
 }
 

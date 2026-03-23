@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/core/editing/ime/cached_text_input_info.h"
 
-#include "build/chromeos_buildflags.h"
+#include "build/build_config.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/iterators/text_iterator.h"
@@ -131,6 +131,21 @@ void CachedTextInputInfo::EnsureCached(const ContainerNode& container) const {
     DCHECK(layout_object_) << container;
   }
 
+  if (RuntimeEnabledFeatures::FastSelectionSyncEnabled()) {
+    if (const auto* text_control = EnclosingTextControl(&container)) {
+      text_control->AnalyzeInnerEditorValue(&offset_map_);
+      if (IsEditable(*container_)) {
+        // We assume this function is called after `TextControlElement::
+        // SubtreeHasChanged()`. So we can avoid the slow
+        // SerializeInnerEditorValue().
+        text_ = text_control->InnerEditorValue();
+        DCHECK(EqualIgnoringNullity(text_,
+                                    text_control->SerializeInnerEditorValue()));
+      }
+      return;
+    }
+  }
+
   TextIteratorAlgorithm<EditingStrategy> it(ComputeWholeContentRange(container),
                                             Behavior());
   if (it.AtEnd())
@@ -203,7 +218,7 @@ PlainTextRange CachedTextInputInfo::GetPlainTextRange(
           ? start_offset
           : RangeLength(EphemeralRange(container_start, range.EndPosition()));
 // TODO(crbug.com/1256635): This DCHECK is triggered by Crostini on CrOS.
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_CHROMEOS)
   DCHECK_EQ(
       static_cast<unsigned>(TextIterator::RangeLength(
           EphemeralRange(container_start, range.EndPosition()), Behavior())),
@@ -248,7 +263,7 @@ unsigned CachedTextInputInfo::RangeLength(const EphemeralRange& range) const {
               Behavior());
 // TODO(crbug.com/1256635): Revert https://crrev.com/c/3221041 to re-enable this
 // DCHECK on CrOS.
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_CHROMEOS)
       DCHECK_EQ(
           static_cast<unsigned>(TextIterator::RangeLength(range, Behavior())),
           length)

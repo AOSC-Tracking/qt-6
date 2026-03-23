@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -507,7 +508,7 @@ void WebContentsAdapter::initialize(content::SiteInstance *site)
     Q_ASSERT(rvh);
     if (!m_webContents->GetPrimaryMainFrame()->IsRenderFrameLive())
         static_cast<content::WebContentsImpl*>(m_webContents.get())->CreateRenderViewForRenderManager(
-                rvh, std::nullopt, nullptr);
+                rvh, std::nullopt, nullptr, std::nullopt);
 
     m_webContentsDelegate->RenderViewHostChanged(nullptr, rvh);
 
@@ -2268,7 +2269,7 @@ void WebContentsAdapter::undiscard()
     Q_ASSERT(rvh);
     if (!m_webContents->GetPrimaryMainFrame()->IsRenderFrameLive())
         static_cast<content::WebContentsImpl *>(m_webContents.get())
-                ->CreateRenderViewForRenderManager(rvh, std::nullopt, nullptr);
+                ->CreateRenderViewForRenderManager(rvh, std::nullopt, nullptr, std::nullopt);
     m_webContentsDelegate->RenderViewHostChanged(nullptr, rvh);
     m_adapterClient->initializationFinished();
     m_adapterClient->selectionChanged();

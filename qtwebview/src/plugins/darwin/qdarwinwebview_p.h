@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QDARWINWEBVIEW_P_H
 #define QDARWINWEBVIEW_P_H
@@ -19,7 +20,7 @@
 #include <QtCore/qurl.h>
 #include <QtGui/qwindow.h>
 
-#include <private/qabstractwebview_p.h>
+#include <private/qwebview_p.h>
 
 #include <QtCore/qpointer.h>
 
@@ -29,22 +30,24 @@ Q_FORWARD_DECLARE_OBJC_CLASS(WKWebViewConfiguration);
 
 QT_BEGIN_NAMESPACE
 
-class QDarwinWebViewSettingsPrivate : public QAbstractWebViewSettings
+class QDarwinWebViewSettingsPrivate : public QWebViewSettingsPrivate
 {
-    Q_OBJECT
 public:
-    explicit QDarwinWebViewSettingsPrivate(WKWebViewConfiguration *conf, QObject *p = nullptr);
+    explicit QDarwinWebViewSettingsPrivate(WKWebViewConfiguration *conf);
 
     bool localStorageEnabled() const;
     bool javaScriptEnabled() const;
     bool localContentCanAccessFileUrls() const;
     bool allowFileAccess() const;
 
-public Q_SLOTS:
     void setLocalContentCanAccessFileUrls(bool enabled);
     void setJavaScriptEnabled(bool enabled);
     void setLocalStorageEnabled(bool enabled);
     void setAllowFileAccess(bool enabled);
+
+private:
+    bool doTestAttribute(WebAttribute attribute) const final;
+    void doSetAttribute(WebAttribute attribute, bool value) final;
 
 private:
     WKWebViewConfiguration *m_conf = nullptr;
@@ -52,16 +55,17 @@ private:
     bool m_localContentCanAccessFileUrls = false;
 };
 
-class QDarwinWebViewPrivate : public QAbstractWebView
+class QDarwinWebViewPrivate : public QWebViewPrivate
 {
     Q_OBJECT
 public:
-    explicit QDarwinWebViewPrivate(QObject *p = nullptr);
+    explicit QDarwinWebViewPrivate(QWebView *view);
     ~QDarwinWebViewPrivate() override;
 
+    void initialize(QObject *context) override { Q_UNUSED(context); };
     QString httpUserAgent() const override;
     void setHttpUserAgent(const QString &httpUserAgent) override;
-    QUrl url() const;
+    QUrl url() const override;
     void setUrl(const QUrl &url) override;
     bool canGoBack() const override;
     bool canGoForward() const override;
@@ -70,9 +74,8 @@ public:
     bool isLoading() const override;
 
     QWindow *nativeWindow() const override { return m_window; }
-    QAbstractWebViewSettings *getSettings() const override;
+    QWebViewSettingsPrivate *settings() const override;
 
-public Q_SLOTS:
     void goBack() override;
     void goForward() override;
     void reload() override;
@@ -82,9 +85,8 @@ public Q_SLOTS:
     void deleteCookie(const QString &domain, const QString &name) override;
     void deleteAllCookies() override;
 
-protected:
-    void runJavaScriptPrivate(const QString& script,
-                              int callbackId) override;
+    void runJavaScript(const QString &script,
+                       const std::function<void(const QVariant &)> &resultCallback) override;
 
 public:
     WKWebView *wkWebView;

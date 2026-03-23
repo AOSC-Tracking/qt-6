@@ -16,6 +16,7 @@ using namespace Qt::StringLiterals;
 /*!
     \class QGrpcCallOptions
     \inmodule QtGrpc
+    \compares equality
     \brief The QGrpcCallOptions class offers various options for fine-tuning
     individual RPCs.
     \since 6.6
@@ -299,6 +300,33 @@ QGrpcCallOptions &QGrpcCallOptions::setFilterServerMetadata(bool value)
     return *this;
 }
 
+/*
+//! [compares]
+    Returns \c true if the \l{deadlineTimeout}, \l{filterServerMetadata}
+    and \l{metadata(QtGrpc::MultiValue_t)} in \a lhs and \a rhs are
+//! [compares]
+*/
+bool comparesEqual(const QGrpcCallOptions &lhs, const QGrpcCallOptions &rhs)
+{
+    return lhs.deadlineTimeout() == rhs.deadlineTimeout()
+        && lhs.filterServerMetadata() == rhs.filterServerMetadata()
+        && lhs.metadata(QtGrpc::MultiValue) == rhs.metadata(QtGrpc::MultiValue);
+}
+
+/*!
+    \since 6.11
+    \fn bool QGrpcCallOptions::operator==(const QGrpcCallOptions &lhs, const QGrpcCallOptions &rhs)
+    \include qgrpccalloptions.cpp compares
+    equal.
+*/
+
+/*!
+    \since 6.11
+    \fn bool QGrpcCallOptions::operator!=(const QGrpcCallOptions &lhs, const QGrpcCallOptions &rhs)
+    \include qgrpccalloptions.cpp compares
+    not equal.
+*/
+
 #ifndef QT_NO_DEBUG_STREAM
 /*!
     \since 6.8
@@ -311,7 +339,8 @@ QDebug operator<<(QDebug debug, const QGrpcCallOptions &callOpts)
     const QDebugStateSaver save(debug);
     debug.nospace().noquote();
     debug << "QGrpcCallOptions(deadline: " << callOpts.deadlineTimeout()
-          << ", metadata: " << callOpts.metadata(QtGrpc::MultiValue) << ')';
+          << ", metadata: " << callOpts.metadata(QtGrpc::MultiValue) << ", filterServerMetadata: "
+          << callOpts.filterServerMetadata() << ')';
     return debug;
 }
 #endif

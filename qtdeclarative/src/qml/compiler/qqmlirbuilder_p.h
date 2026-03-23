@@ -1,5 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
+
 #ifndef QQMLIRBUILDER_P_H
 #define QQMLIRBUILDER_P_H
 
@@ -283,8 +285,9 @@ struct RequiredPropertyExtraData : public QV4::CompiledData::RequiredPropertyExt
 struct Function
 {
     QV4::CompiledData::Location location;
-    int nameIndex;
-    quint32 index; // index in parsedQML::functions
+    quint32 nameIndex : 31;
+    quint32 isQmlFunction : 1;
+    quint32 index = 0; // index in parsedQML::functions
     QQmlJS::FixedPoolArray<Parameter> formals;
     QV4::CompiledData::ParameterType returnType;
 
@@ -463,6 +466,9 @@ struct Q_QML_COMPILER_EXPORT Pragma
 
 struct Q_QML_COMPILER_EXPORT Document
 {
+    // disable it explicitly, it's implicitly deleted because of the Engine::_pool
+    Q_DISABLE_COPY_MOVE(Document)
+
     Document(const QString &fileName, const QString &finalUrl, bool debugMode);
     QString code;
     QQmlJS::Engine jsParserEngine;
@@ -470,7 +476,7 @@ struct Q_QML_COMPILER_EXPORT Document
     QList<const QV4::CompiledData::Import *> imports;
     QList<Pragma*> pragmas;
     QQmlJS::AST::UiProgram *program;
-    QVector<Object*> objects;
+    QList<Object*> objects;
     QV4::Compiler::JSUnitGenerator jsGenerator;
 
     QQmlRefPointer<QV4::CompiledData::CompilationUnit> javaScriptCompilationUnit;
@@ -512,15 +518,9 @@ public:
     using QQmlJS::AST::Visitor::visit;
     using QQmlJS::AST::Visitor::endVisit;
 
-    bool visit(QQmlJS::AST::UiArrayMemberList *ast) override;
     bool visit(QQmlJS::AST::UiImport *ast) override;
     bool visit(QQmlJS::AST::UiPragma *ast) override;
-    bool visit(QQmlJS::AST::UiHeaderItemList *ast) override;
-    bool visit(QQmlJS::AST::UiObjectInitializer *ast) override;
-    bool visit(QQmlJS::AST::UiObjectMemberList *ast) override;
-    bool visit(QQmlJS::AST::UiParameterList *ast) override;
     bool visit(QQmlJS::AST::UiProgram *) override;
-    bool visit(QQmlJS::AST::UiQualifiedId *ast) override;
     bool visit(QQmlJS::AST::UiArrayBinding *ast) override;
     bool visit(QQmlJS::AST::UiObjectBinding *ast) override;
     bool visit(QQmlJS::AST::UiObjectDefinition *ast) override;
@@ -564,8 +564,8 @@ public:
     QStringView textRefAt(const QQmlJS::SourceLocation &first,
                          const QQmlJS::SourceLocation &last) const;
 
-    void setBindingValue(QV4::CompiledData::Binding *binding, QQmlJS::AST::Statement *statement,
-                         QQmlJS::AST::Node *parentNode);
+    virtual void setBindingValue(QV4::CompiledData::Binding *binding,
+                                 QQmlJS::AST::Statement *statement, QQmlJS::AST::Node *parentNode);
     void tryGeneratingTranslationBinding(QStringView base, QQmlJS::AST::ArgumentList *args, QV4::CompiledData::Binding *binding);
 
     void appendBinding(QQmlJS::AST::UiQualifiedId *name, QQmlJS::AST::Statement *value,
@@ -579,6 +579,9 @@ public:
                        int objectIndex, bool isListItem = false, bool isOnAssignment = false);
 
     bool appendAlias(QQmlJS::AST::UiPublicMember *node);
+
+    enum class IsQmlFunction { Yes, No };
+    virtual void registerFunctionExpr(QQmlJS::AST::FunctionExpression *fexp, IsQmlFunction);
 
     Object *bindingsTarget() const;
 
@@ -606,7 +609,7 @@ public:
 
     QList<const QV4::CompiledData::Import *> _imports;
     QList<Pragma*> _pragmas;
-    QVector<Object*> _objects;
+    QList<Object*> _objects;
 
     QV4::CompiledData::TypeReferenceMap _typeReferences;
 
@@ -637,7 +640,7 @@ struct Q_QML_COMPILER_EXPORT JSCodeGen : public QV4::Compiler::Codegen
               bool storeSourceLocations = false);
 
     // Returns mapping from input functions to index in IR::Module::functions / compiledData->runtimeFunctions
-    QVector<int>
+    QList<int>
     generateJSCodeForFunctionsAndBindings(const QList<CompiledFunctionOrExpression> &functions);
 
     bool generateRuntimeFunctions(QmlIR::Object *object);

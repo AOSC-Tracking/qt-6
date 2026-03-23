@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dcamera_p.h"
 
@@ -60,7 +62,9 @@ QT_BEGIN_NAMESPACE
     \li Orthographic camera
     \row
     \li \image perspectivecamera.png
+               {Perspective camera view of plate}
     \li \image orthographiccamera.png
+               {Orthographic camera view of plate}
     \endtable
 
     \sa {Qt Quick 3D - View3D Example}
@@ -351,6 +355,8 @@ QSSGRenderGraphObject *QQuick3DCamera::updateSpatialNode(QSSGRenderGraphObject *
         camera->markDirty(QSSGRenderCamera::DirtyFlag::CameraDirty);
     if (qUpdateIfNeeded(camera->levelOfDetailPixelThreshold, m_levelOfDetailBias))
         camera->markDirty(QSSGRenderCamera::DirtyFlag::CameraDirty);
+    if (qUpdateIfNeeded(camera->layerMask, quint32(QQuick3DNodePrivate::get(this)->m_tag)))
+        camera->markDirty(QSSGRenderCamera::DirtyFlag::LayerMaskDirty);
 
     return node;
 }

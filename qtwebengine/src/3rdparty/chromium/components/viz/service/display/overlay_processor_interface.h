@@ -36,7 +36,7 @@
 #endif
 
 namespace gpu {
-class SharedImageInterface;
+class SharedImageManager;
 }
 
 namespace viz {
@@ -121,7 +121,7 @@ class VIZ_SERVICE_EXPORT OverlayProcessorInterface {
       gpu::SurfaceHandle surface_handle,
       const OutputSurface::Capabilities& capabilities,
       DisplayCompositorMemoryAndTaskController* display_controller,
-      gpu::SharedImageInterface* shared_image_interface,
+      gpu::SharedImageManager* shared_image_manager,
       const RendererSettings& renderer_settings,
       const DebugRendererSettings* debug_settings);
 
@@ -132,10 +132,7 @@ class VIZ_SERVICE_EXPORT OverlayProcessorInterface {
   virtual ~OverlayProcessorInterface() = default;
 
   virtual bool IsOverlaySupported() const = 0;
-  // Returns a bounding rectangle of the last set of overlay planes scheduled.
-  // It's expected to be called after ProcessForOverlays at frame N-1 has been
-  // called and before GetAndResetOverlayDamage at frame N.
-  virtual gfx::Rect GetPreviousFrameOverlaysBoundingRect() const = 0;
+
   virtual gfx::Rect GetAndResetOverlayDamage() = 0;
 
   // Returns true if the platform supports hw overlays and surface occluding

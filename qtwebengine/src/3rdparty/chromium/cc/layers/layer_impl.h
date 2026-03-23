@@ -54,6 +54,7 @@ class CompositorRenderPass;
 namespace cc {
 
 class AppendQuadsData;
+struct AppendQuadsContext;
 struct LayerDebugInfo;
 class LayerTreeImpl;
 class MicroBenchmarkImpl;
@@ -138,9 +139,10 @@ class CC_EXPORT LayerImpl {
   // the layer is destroyed.
   virtual bool WillDraw(DrawMode draw_mode,
                         viz::ClientResourceProvider* resource_provider);
-  virtual void AppendQuads(viz::CompositorRenderPass* render_pass,
+  virtual void AppendQuads(const AppendQuadsContext& context,
+                           viz::CompositorRenderPass* render_pass,
                            AppendQuadsData* append_quads_data) {}
-  virtual void DidDraw(viz::ClientResourceProvider* resource_provider);
+  virtual void DidDraw(viz::ClientResourceProvider* resource_provider) {}
 
   // Verify that the resource ids in the quad are valid.
   void ValidateQuadResources(viz::DrawQuad* quad) const {
@@ -153,7 +155,7 @@ class CC_EXPORT LayerImpl {
                                      gfx::Size* resource_size,
                                      gfx::SizeF* resource_uv_size) const;
 
-  virtual void NotifyTileStateChanged(const Tile* tile) {}
+  virtual void NotifyTileStateChanged(const Tile* tile, bool update_damage) {}
 
   virtual bool IsScrollbarLayer() const;
 
@@ -163,6 +165,7 @@ class CC_EXPORT LayerImpl {
   void SetDrawsContent(bool draws_content);
   bool draws_content() const { return draws_content_; }
 
+  HitTestOpaqueness hit_test_opaqueness() const { return hit_test_opaqueness_; }
   void SetHitTestOpaqueness(HitTestOpaqueness opaqueness);
   bool HitTestable() const;
   bool OpaqueToHitTest() const;
@@ -212,11 +215,8 @@ class CC_EXPORT LayerImpl {
   gfx::Transform ScreenSpaceTransform() const;
 
   // Setter for draw_properties_.
-  void set_visible_layer_rect(const gfx::Rect& visible_rect) {
+  void SetVisibleLayerRectForTesting(const gfx::Rect& visible_rect) {
     draw_properties_.visible_layer_rect = visible_rect;
-  }
-  void set_clip_rect(const gfx::Rect& clip_rect) {
-    draw_properties_.clip_rect = clip_rect;
   }
 
   // The following are shortcut accessors to get various information from
@@ -267,6 +267,8 @@ class CC_EXPORT LayerImpl {
     PaintFlags::DynamicRangeLimitMixture dynamic_range_limit{
         PaintFlags::DynamicRangeLimit::kHigh};
   };
+
+  bool HasAnyRarePropertySet() { return !!rare_properties_; }
 
   RareProperties& EnsureRareProperties() {
     if (!rare_properties_)
@@ -350,10 +352,16 @@ class CC_EXPORT LayerImpl {
   virtual gfx::Rect GetDamageRect() const;
 
   // Damage tracker will consider layer damaged if `LayerPropertyChanged` is
-  // true, or update_rect() or GetDamageRect() are non-empty. This method
+  // true, or `update_rect()` or `GetDamageRect()` are non-empty. This method
   // returns damage reasons for any and all of these cases. The default
-  // implementation adds kUntracked for all of these cases.
+  // implementation uses `GetDamageReasonsFromLayerPropertyChange` for
+  // `LayerPropertyChanged` and kUntracked for non-empty `update_rect()` or
+  // `GetDamageRect()`.
   virtual DamageReasonSet GetDamageReasons() const;
+
+  // Get damage reasons for `LayerPropertyChanged`. Returns empty set if
+  // `LayerPropertyChanged` is false.
+  DamageReasonSet GetDamageReasonsFromLayerPropertyChange() const;
 
   // This includes |layer_property_changed_not_from_property_trees_| and
   // property_trees changes.
@@ -427,9 +435,6 @@ class CC_EXPORT LayerImpl {
   bool contributes_to_drawn_render_surface() const {
     return contributes_to_drawn_render_surface_;
   }
-
-  void SetMayContainVideo(bool);
-  bool may_contain_video() const { return may_contain_video_; }
 
   // Layers that share a sorting context id will be sorted together in 3d
   // space.  0 is a special value that means this layer will not be sorted and
@@ -541,6 +546,11 @@ class CC_EXPORT LayerImpl {
   static float GetPreferredRasterScale(
       gfx::Vector2dF raster_space_scale_factor);
 
+  // Appends a solid-color quad with color `color`.
+  void AppendSolidQuad(viz::CompositorRenderPass* render_pass,
+                       AppendQuadsData* append_quads_data,
+                       SkColor4f color);
+
  private:
   void ValidateQuadResourcesInternal(viz::DrawQuad* quad) const;
   gfx::Transform GetScaledDrawTransform(float layer_to_content_scale) const;
@@ -564,7 +574,6 @@ class CC_EXPORT LayerImpl {
   bool layer_property_changed_not_from_property_trees_ : 1 = false;
   bool layer_property_changed_from_property_trees_ : 1 = false;
 
-  bool may_contain_video_ : 1 = false;
   bool contents_opaque_ : 1 = false;
   bool contents_opaque_for_text_ : 1 = false;
   bool should_check_backface_visibility_ : 1 = false;
@@ -589,7 +598,6 @@ class CC_EXPORT LayerImpl {
  protected:
   friend class TreeSynchronizer;
 
-  DrawMode current_draw_mode_;
   EffectTree& GetEffectTree() const;
   PropertyTrees* GetPropertyTrees() const;
   ClipTree& GetClipTree() const;

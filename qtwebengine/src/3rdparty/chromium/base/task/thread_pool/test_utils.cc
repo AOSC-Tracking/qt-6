@@ -5,11 +5,11 @@
 #include "base/task/thread_pool/test_utils.h"
 
 #include <utility>
+#include <variant>
 
 #include "base/check.h"
 #include "base/debug/leak_annotations.h"
 #include "base/functional/bind.h"
-#include "base/functional/overloaded.h"
 #include "base/memory/raw_ptr.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/task/thread_pool/pooled_parallel_task_runner.h"
@@ -18,7 +18,7 @@
 #include "base/threading/scoped_blocking_call_internal.h"
 #include "base/threading/thread_restrictions.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 namespace base::internal::test {
 
@@ -270,12 +270,12 @@ MockJobTask::MockJobTask(
     size_t num_tasks_to_run)
     : task_(std::move(worker_task)),
       remaining_num_tasks_to_run_(num_tasks_to_run) {
-  CHECK(!absl::get<decltype(worker_task)>(task_).is_null());
+  CHECK(!std::get<decltype(worker_task)>(task_).is_null());
 }
 
 MockJobTask::MockJobTask(base::OnceClosure worker_task)
     : task_(std::move(worker_task)), remaining_num_tasks_to_run_(1) {
-  CHECK(!absl::get<decltype(worker_task)>(task_).is_null());
+  CHECK(!std::get<decltype(worker_task)>(task_).is_null());
 }
 
 void MockJobTask::SetNumTasksToRun(size_t num_tasks_to_run) {
@@ -283,7 +283,7 @@ void MockJobTask::SetNumTasksToRun(size_t num_tasks_to_run) {
     remaining_num_tasks_to_run_ = 0;
     return;
   }
-  if (auto* closure = absl::get_if<base::OnceClosure>(&task_); closure) {
+  if (auto* closure = std::get_if<base::OnceClosure>(&task_); closure) {
     // 0 is already handled above, so this can only be an attempt to set to
     // a non-zero value for a OnceClosure. In that case, the only permissible
     // value is 1, and the closure must not be null.
@@ -301,8 +301,8 @@ size_t MockJobTask::GetMaxConcurrency(size_t /* worker_count */) const {
 }
 
 void MockJobTask::Run(JobDelegate* delegate) {
-  absl::visit(
-      base::Overloaded{
+  std::visit(
+      absl::Overload{
           [](OnceClosure& closure) { std::move(closure).Run(); },
           [delegate](const RepeatingCallback<void(JobDelegate*)>& callback) {
             callback.Run(delegate);

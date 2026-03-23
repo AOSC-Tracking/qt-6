@@ -6,6 +6,8 @@
 
 #include "QtWaylandCompositor/private/qwltexturesharingextension_p.h"
 
+#include "plugin_p.h"
+
 /*!
     \internal
     \qmlmodule QtWayland.Compositor.TextureSharingExtension 1
@@ -62,7 +64,6 @@ public:
     void registerTypes(const char *uri) override
     {
         Q_ASSERT(uri == QStringLiteral("QtWayland.Compositor.TextureSharingExtension"));
-        qmlRegisterType<QWaylandTextureSharingExtensionQuickExtension>("QtWayland.Compositor.TextureSharingExtension", 1, 0, "TextureSharingExtension");
     }
 
     void initializeEngine(QQmlEngine *engine, const char *uri) override

@@ -34,6 +34,7 @@ MockShoppingService::MockShoppingService()
                                 nullptr,
                                 nullptr,
                                 nullptr,
+                                nullptr,
                                 nullptr) {
   product_specifications_service_ =
       std::make_unique<testing::NiceMock<MockProductSpecificationsService>>();
@@ -67,7 +68,6 @@ void MockShoppingService::SetupPermissiveMock() {
   SetGetAllShoppingBookmarksValue(
       std::vector<const bookmarks::BookmarkNode*>());
   SetResponseForGetPriceInsightsInfoForUrl(std::nullopt);
-  SetGetAllParcelStatusesCallbackValue(std::vector<ParcelTrackingStatus>());
 }
 
 void MockShoppingService::SetAccountChecker(AccountChecker* account_checker) {
@@ -239,22 +239,6 @@ void MockShoppingService::SetResponseForGetDiscountInfoForUrl(
             FROM_HERE, base::BindOnce(std::move(callback), url, infos));
       });
 }
-
-void MockShoppingService::SetGetAllParcelStatusesCallbackValue(
-    std::vector<ParcelTrackingStatus> parcels) {
-  ON_CALL(*this, GetAllParcelStatuses)
-      .WillByDefault(
-          [parcels = std::move(parcels)](GetParcelStatusCallback callback) {
-            base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-                FROM_HERE,
-                base::BindOnce(
-                    std::move(callback), true,
-                    make_unique<std::vector<ParcelTrackingStatus>>(parcels)));
-          });
-}
-
-void StopTrackingParcel(const std::string& tracking_id,
-                        base::OnceCallback<void(bool)> callback) {}
 
 void MockShoppingService::SetResponseForGetProductSpecificationsForUrls(
     ProductSpecifications specs) {

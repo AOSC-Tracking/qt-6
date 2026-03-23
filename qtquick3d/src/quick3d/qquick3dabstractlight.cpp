@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dabstractlight_p.h"
 #include "qquick3dobject_p.h"
@@ -164,7 +166,9 @@ QT_BEGIN_NAMESPACE
     \qmlproperty enumeration Light::softShadowQuality
     \since 6.8
 
-    The property controls the soft shadow quality.
+    The property suggests the soft shadow quality that should be used when
+    shadows are enabled. The actual number of samples used when rendering shadows
+    is determined by highest quality set by any light used by a material.
 
     \value Light.Hard No soft shadows.
     \value Light.PCF4 Percentage-closer filtering soft shadows with 4 samples.
@@ -174,6 +178,8 @@ QT_BEGIN_NAMESPACE
     \value Light.PCF64 Percentage-closer filtering soft shadows with 64 samples.
 
     Default value: \c Light.PCF4
+
+    \note Currently values larger than 16 samples will be treated as 16 samples.
 
     \sa Light::pcfFactor, Light::shadowFilter
 */

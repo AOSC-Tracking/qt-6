@@ -134,6 +134,7 @@ inline constexpr char kOnNameChanged[] = "OnNameChanged";
 inline constexpr char kOnDiscoverableChanged[] = "OnDiscoverableChanged";
 inline constexpr char kOnDeviceFound[] = "OnDeviceFound";
 inline constexpr char kOnDeviceCleared[] = "OnDeviceCleared";
+inline constexpr char kOnDeviceKeyMissing[] = "OnDeviceKeyMissing";
 inline constexpr char kOnDevicePropertiesChanged[] =
     "OnDevicePropertiesChanged";
 inline constexpr char kOnDiscoveringChanged[] = "OnDiscoveringChanged";
@@ -344,6 +345,7 @@ inline constexpr char kOnDevicePolicyEffectChanged[] =
 inline constexpr char kSetAllowedServices[] = "SetAllowedServices";
 inline constexpr char kGetAllowedServices[] = "GetAllowedServices";
 inline constexpr char kGetDevicePolicyEffect[] = "GetDevicePolicyEffect";
+inline constexpr char kSetSimpleSecurePairingEnabled[] = "SetAcceptSspRequest";
 }  // namespace admin
 
 namespace adapter_logging {

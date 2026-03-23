@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_GPU_XR_WEBGL_DRAWING_BUFFER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_GPU_XR_WEBGL_DRAWING_BUFFER_H_
 
+#include "base/containers/flat_set.h"
 #include "base/threading/platform_thread.h"
 #include "cc/layers/texture_layer_client.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
@@ -49,6 +50,8 @@ class PLATFORM_EXPORT XRWebGLDrawingBuffer
       const scoped_refptr<gpu::ClientSharedImage>& buffer_shared_image,
       const gpu::SyncToken& buffer_sync_token);
   void DoneWithSharedBuffer();
+
+  GLuint GetCurrentColorBufferTextureId();
 
   // Prepare for destruction by breaking reference loops. This must be called to
   // avoid memory leaks, drawing buffer and color buffers are refcounted and

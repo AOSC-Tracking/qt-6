@@ -213,7 +213,8 @@ class ContentAutofillDriver : public AutofillDriver,
       mojom::ActionPersistence action_persistence,
       base::span<const FormFieldData> data,
       const url::Origin& triggered_origin,
-      const base::flat_map<FieldGlobalId, FieldType>& field_type_map) override;
+      const base::flat_map<FieldGlobalId, FieldType>& field_type_map,
+      const Section& section_for_clear_form_on_ios) override;
   void ApplyFieldAction(mojom::FieldActionType action_type,
                         mojom::ActionPersistence action_persistence,
                         const FieldGlobalId& field_id,
@@ -229,9 +230,8 @@ class ContentAutofillDriver : public AutofillDriver,
   void RendererShouldTriggerSuggestions(
       const FieldGlobalId& field_id,
       AutofillSuggestionTriggerSource trigger_source) override;
-  void SendTypePredictionsToRenderer(
-      base::span<const raw_ptr<FormStructure, VectorExperimental>> forms)
-      override;
+  void SendTypePredictionsToRenderer(const FormStructure& form) override;
+  void ExposeDomNodeIDs() override;
 
   // Group (1c): browser -> renderer events, directed to to this driver's main
   // driver (see comment above).
@@ -262,11 +262,12 @@ class ContentAutofillDriver : public AutofillDriver,
 
   // Group (2b): renderer -> browser events, routed (see comment above).
   // mojom::AutofillDriver:
-  void AskForValuesToFill(
-      const FormData& form,
-      FieldRendererId field_id,
-      const gfx::Rect& caret_bounds,
-      AutofillSuggestionTriggerSource trigger_source) override;
+  void AskForValuesToFill(const FormData& form,
+                          FieldRendererId field_id,
+                          const gfx::Rect& caret_bounds,
+                          AutofillSuggestionTriggerSource trigger_source,
+                          const std::optional<PasswordSuggestionRequest>&
+                              password_request) override;
   void DidFillAutofillFormData(const FormData& form,
                                base::TimeTicks timestamp) override;
   void FocusOnFormField(const FormData& form,
@@ -275,10 +276,10 @@ class ContentAutofillDriver : public AutofillDriver,
                  const std::vector<FormRendererId>& removed_forms) override;
   void FormSubmitted(const FormData& form,
                      mojom::SubmissionSource submission_source) override;
-  void JavaScriptChangedAutofilledValue(const FormData& form,
-                                        FieldRendererId field_id,
-                                        const std::u16string& old_value,
-                                        bool formatting_only) override;
+  void JavaScriptChangedAutofilledValue(
+      const FormData& form,
+      FieldRendererId field_id,
+      const std::u16string& old_value) override;
   void SelectControlSelectionChanged(const FormData& form,
                                      FieldRendererId field_id) override;
   void SelectFieldOptionsDidChange(const FormData& form) override;

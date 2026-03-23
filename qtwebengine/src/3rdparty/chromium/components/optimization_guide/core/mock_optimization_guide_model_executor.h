@@ -59,7 +59,9 @@ class MockSession : public OptimizationGuideModelExecutor::Session {
               GetTokenLimits,
               (),
               (const, override));
-  MOCK_METHOD(void, SetInput, (MultimodalMessage request));
+  MOCK_METHOD(void,
+              SetInput,
+              (MultimodalMessage request, SetInputCallback callback));
   MOCK_METHOD(void,
               AddContext,
               (const google::protobuf::MessageLite& request_metadata));
@@ -72,26 +74,41 @@ class MockSession : public OptimizationGuideModelExecutor::Session {
       ExecuteModel,
       (const google::protobuf::MessageLite& request_metadata,
        OptimizationGuideModelExecutionResultStreamingCallback callback));
+  MOCK_METHOD(
+      void,
+      ExecuteModelWithResponseConstraint,
+      (const google::protobuf::MessageLite& request_metadata,
+       on_device_model::mojom::ResponseConstraintPtr constraint,
+       OptimizationGuideModelExecutionResultStreamingCallback callback));
   MOCK_METHOD(void,
               GetSizeInTokens,
               (const std::string& text,
                OptimizationGuideModelSizeInTokenCallback callback));
   MOCK_METHOD(void,
               GetExecutionInputSizeInTokens,
-              (const google::protobuf::MessageLite& request_metadata,
+              (MultimodalMessageReadView request_metadata,
                OptimizationGuideModelSizeInTokenCallback callback));
   MOCK_METHOD(void,
               GetContextSizeInTokens,
-              (const google::protobuf::MessageLite& request_metadata,
+              (MultimodalMessageReadView request_metadata,
                OptimizationGuideModelSizeInTokenCallback callback));
   MOCK_METHOD(const optimization_guide::SamplingParams,
               GetSamplingParams,
+              (),
+              (const override));
+  MOCK_METHOD(on_device_model::Capabilities,
+              GetCapabilities,
               (),
               (const override));
   MOCK_METHOD(const proto::Any&,
               GetOnDeviceFeatureMetadata,
               (),
               (const override));
+  MOCK_METHOD(std::unique_ptr<Session>, Clone, (), (override));
+  MOCK_METHOD(void,
+              SetPriority,
+              (on_device_model::mojom::Priority priority),
+              (override));
 };
 
 }  // namespace optimization_guide

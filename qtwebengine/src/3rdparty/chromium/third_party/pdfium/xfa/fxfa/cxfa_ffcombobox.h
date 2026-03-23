@@ -70,15 +70,15 @@ class CXFA_FFComboBox final : public CXFA_FFDropDown {
   // CXFA_FFField:
   bool PtInActiveRect(const CFX_PointF& point) override;
   bool CommitData() override;
-  bool UpdateFWLData() override;
+  void UpdateFWLData() override;
   bool IsDataChanged() override;
 
   uint32_t GetAlignment();
   void FWLEventSelChange(CXFA_EventParam* pParam);
   WideString GetCurrentText() const;
 
-  WideString m_wsNewValue;
-  cppgc::Member<IFWL_WidgetDelegate> m_pOldDelegate;
+  WideString new_value_;
+  cppgc::Member<IFWL_WidgetDelegate> old_delegate_;
 };
 
 #endif  // XFA_FXFA_CXFA_FFCOMBOBOX_H_

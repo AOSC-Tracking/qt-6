@@ -23,15 +23,13 @@
 
 namespace cc {
 
-scoped_refptr<TextureLayer> TextureLayer::CreateForMailbox(
-    TextureLayerClient* client) {
+scoped_refptr<TextureLayer> TextureLayer::Create(TextureLayerClient* client) {
   return scoped_refptr<TextureLayer>(new TextureLayer(client));
 }
 
 TextureLayer::TextureLayer(TextureLayerClient* client)
     : client_(client),
       uv_bottom_right_(1.f, 1.f),
-      premultiplied_alpha_(true),
       blend_background_color_(false),
       force_texture_to_opaque_(false),
       needs_set_resource_(false) {}
@@ -60,13 +58,6 @@ void TextureLayer::SetUV(const gfx::PointF& top_left,
     return;
   uv_top_left_.Write(*this) = top_left;
   uv_bottom_right_.Write(*this) = bottom_right;
-  SetNeedsCommit();
-}
-
-void TextureLayer::SetPremultipliedAlpha(bool premultiplied_alpha) {
-  if (premultiplied_alpha_.Read(*this) == premultiplied_alpha)
-    return;
-  premultiplied_alpha_.Write(*this) = premultiplied_alpha;
   SetNeedsCommit();
 }
 
@@ -207,7 +198,6 @@ void TextureLayer::PushDirtyPropertiesTo(
     TextureLayerImpl* texture_layer = static_cast<TextureLayerImpl*>(layer);
     texture_layer->SetUVTopLeft(uv_top_left_.Read(*this));
     texture_layer->SetUVBottomRight(uv_bottom_right_.Read(*this));
-    texture_layer->SetPremultipliedAlpha(premultiplied_alpha_.Read(*this));
     texture_layer->SetBlendBackgroundColor(blend_background_color_.Read(*this));
     texture_layer->SetForceTextureToOpaque(
         force_texture_to_opaque_.Read(*this));

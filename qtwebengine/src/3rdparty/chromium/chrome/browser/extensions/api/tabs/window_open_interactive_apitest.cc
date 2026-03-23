@@ -14,10 +14,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, WindowOpenFocus) {
   ASSERT_TRUE(RunExtensionTest("window_open/focus")) << message_;
 }
 
-// The test uses the chrome.browserAction.openPopup API, which requires that the
-// window can automatically be activated.
-// TODO(crbug.com/41168657): Fails flakily on Linux.
-#if BUILDFLAG(IS_LINUX)
+// TODO(crbug.com/414913454): Disabled on LSAN builds due to consistent failure.
+#if defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER)
 #define MAYBE_WindowOpen DISABLED_WindowOpen
 #else
 #define MAYBE_WindowOpen WindowOpen

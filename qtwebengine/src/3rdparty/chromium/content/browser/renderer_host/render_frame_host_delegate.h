@@ -22,10 +22,12 @@
 #include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/media_player_watch_time.h"
 #include "content/public/browser/media_stream_request.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/select_audio_output_request.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/visibility.h"
 #include "content/public/common/javascript_dialog_type.h"
+#include "media/base/picture_in_picture_events_info.h"
 #include "media/mojo/mojom/media_player.mojom.h"
 #include "media/mojo/services/media_metrics_provider.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
@@ -35,10 +37,10 @@
 #include "mojo/public/cpp/bindings/scoped_interface_endpoint_handle.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/http/http_response_headers.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "services/device/public/mojom/geolocation_context.mojom.h"
 #include "services/device/public/mojom/wake_lock.mojom.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/mojom/choosers/popup_menu.mojom.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
@@ -58,6 +60,9 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/scoped_java_ref.h"
+#endif
+
+#if BUILDFLAG(IS_ANDROID) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_IOS_TVOS))
 #include "services/device/public/mojom/nfc.mojom.h"
 #endif
 
@@ -93,6 +98,10 @@ namespace mojom {
 class ScreenOrientation;
 }
 }  // namespace device
+
+namespace network {
+struct ResourceRequest;
+}  // namespace network
 
 namespace network::mojom {
 class SharedDictionaryAccessDetails;
@@ -336,9 +345,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // Gets the GeolocationContext associated with this delegate.
   virtual device::mojom::GeolocationContext* GetGeolocationContext();
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_IOS_TVOS))
   // Gets an NFC implementation within the context of this delegate.
-  virtual void GetNFC(RenderFrameHost* render_frame_host,
+  virtual void GetNFC(RenderFrameHostImpl* render_frame_host,
                       mojo::PendingReceiver<device::mojom::NFC> receiver);
 #endif
 
@@ -441,14 +450,22 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // The passed |opener| is the RenderFrameHost initiating the window creation.
   // It will never be null, even if the opener is suppressed via |params|.
   //
+  // The return value is the new WebContents associated with the window, if any.
+  // In some cases there is no WebContents to be returned, either because the
+  // operation failed and the window was not shown, or because the new
+  // WebContents is not meant to be visible/connected to its opener (e.g. when
+  // opening a system app on chromeos). In those cases, ShowCreatedWindow() will
+  // return nullptr. If non-null, the returned WebContents will already be owned
+  // by its WebContentsDelegate.
+  //
   // Note: this is not called "ShowWindow" because that will clash with
   // the Windows function which is actually a #define.
-  virtual void ShowCreatedWindow(
+  virtual WebContents* ShowCreatedWindow(
       RenderFrameHostImpl* opener,
       int main_frame_widget_route_id,
       WindowOpenDisposition disposition,
       const blink::mojom::WindowFeatures& window_features,
-      bool user_gesture) {}
+      bool user_gesture);
 
   // The main frame document element is ready. This happens when the document
   // has finished parsing.
@@ -594,6 +611,15 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual void OnTextCopiedToClipboard(RenderFrameHostImpl* render_frame_host,
                                        const std::u16string& copied_text) {}
 
+  // Allows embedder to override the clipboard types if a policy has inspected
+  // or modified the clipboard content. Called from
+  // `ClipboardHostImpl::ReadAvailableTypes()` by the browser process when a
+  // renderer needs to read available formats. Returns `std::nullopt` if there
+  // is no override for the current clipboard state.
+  virtual std::optional<std::vector<std::u16string>>
+  GetClipboardTypesIfPolicyApplied(
+      const ui::ClipboardSequenceNumberToken& seqno);
+
   // Notified when the main frame of `source` adjusts the page scale.
   virtual void OnPageScaleFactorChanged(PageImpl& source) {}
 
@@ -689,33 +715,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   GetActiveTopLevelDocumentsInBrowsingContextGroup(
       RenderFrameHostImpl* render_frame_host);
 
-  // Returns the list of top-level RenderFrameHosts hosting active documents
-  // that belong to the same CoopRelatedGroup as `render_frame_host`.
-  virtual std::vector<RenderFrameHostImpl*>
-  GetActiveTopLevelDocumentsInCoopRelatedGroup(
-      RenderFrameHostImpl* render_frame_host);
-
   // Returns the PrerenderHostRegistry to start/cancel prerendering. This
   // doesn't return nullptr except for some tests.
   virtual PrerenderHostRegistry* GetPrerenderHostRegistry();
-
-#if BUILDFLAG(ENABLE_PLUGINS)
-  virtual void OnPepperInstanceCreated(RenderFrameHostImpl* source,
-                                       int32_t pp_instance) {}
-  virtual void OnPepperInstanceDeleted(RenderFrameHostImpl* source,
-                                       int32_t pp_instance) {}
-  virtual void OnPepperStartsPlayback(RenderFrameHostImpl* source,
-                                      int32_t pp_instance) {}
-  virtual void OnPepperStopsPlayback(RenderFrameHostImpl* source,
-                                     int32_t pp_instance) {}
-  virtual void OnPepperPluginCrashed(RenderFrameHostImpl* source,
-                                     const base::FilePath& plugin_path,
-                                     base::ProcessId plugin_pid) {}
-  virtual void OnPepperPluginHung(RenderFrameHostImpl* source,
-                                  int plugin_child_id,
-                                  const base::FilePath& path,
-                                  bool is_hung) {}
-#endif
 
   // The load progress for the main frame was changed.
   virtual void DidChangeLoadProgressForMainFrame(RenderFrameHostImpl* source) {}
@@ -738,7 +740,7 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // Returns the base permissions policy that should be applied to the Isolated
   // Web App running in the given RenderFrameHostImpl. If std::nullopt is
   // returned the default non-isolated permissions policy will be applied.
-  virtual std::optional<blink::ParsedPermissionsPolicy>
+  virtual std::optional<network::ParsedPermissionsPolicy>
   GetPermissionsPolicyForIsolatedWebApp(RenderFrameHostImpl* source);
 
   // Updates the draggable regions defined by the app-region CSS property.
@@ -768,6 +770,24 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
 
   // Called when a first contentful paint happened in the primary main frame.
   virtual void OnFirstContentfulPaintInPrimaryMainFrame() {}
+
+  // Returns the top-level native window for the associated WebContents.
+  virtual gfx::NativeWindow GetOwnerNativeWindow();
+
+  // Gets the delegate auto picture in picture information.
+  virtual media::PictureInPictureEventsInfo::AutoPipInfo GetAutoPipInfo() const;
+
+  // Invoked when a fetch keepalive request is created in a RenderFrameHost.
+  //
+  // Note that such request is usually initiated from corresponding renderer
+  // process. This method just captures the time when the request is proxied in
+  // the browser process.
+  //
+  // `resource_request` is the fetch keepalive request that is created.
+  // `initiator_rfh` is the RenderFrameHostImpl that initiates the request.
+  virtual void OnKeepAliveRequestCreated(
+      const network::ResourceRequest& resource_request,
+      RenderFrameHostImpl* initiator_rfh) {}
 
  protected:
   virtual ~RenderFrameHostDelegate() = default;

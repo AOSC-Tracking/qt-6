@@ -37,11 +37,11 @@ inline size_t qHash(const QMetaEnum &key, size_t seed=0) Q_DECL_NOTHROW
 
 static bool isSequentialGadgetType(QMetaType metaType)
 {
-    if (QMetaType::canConvert(metaType, QMetaType::fromType<QSequentialIterable>())) {
+    if (QMetaType::canConvert(metaType, QMetaType::fromType<QMetaSequence::Iterable>())) {
         static QHash<int, bool> lookup;
         if (!lookup.contains(metaType.id())) {
             auto stubVariant = QVariant(metaType, nullptr);
-            auto asIterable = stubVariant.value<QSequentialIterable>();
+            auto asIterable = stubVariant.value<QMetaSequence::Iterable>();
             auto valueMetaType = asIterable.metaContainer().valueMetaType();
             lookup[metaType.id()] = valueMetaType.flags().testFlag(QMetaType::IsGadget);
         }
@@ -52,11 +52,11 @@ static bool isSequentialGadgetType(QMetaType metaType)
 
 static bool isAssociativeGadgetType(QMetaType metaType)
 {
-    if (QMetaType::canConvert(metaType, QMetaType::fromType<QAssociativeIterable>())) {
+    if (QMetaType::canConvert(metaType, QMetaType::fromType<QMetaAssociation::Iterable>())) {
         static QHash<int, bool> lookup;
         if (!lookup.contains(metaType.id())) {
             auto stubVariant = QVariant(metaType, nullptr);
-            auto asIterable = stubVariant.value<QAssociativeIterable>();
+            auto asIterable = stubVariant.value<QMetaAssociation::Iterable>();
             auto valueMetaType = asIterable.metaContainer().mappedMetaType();
             lookup[metaType.id()] = valueMetaType.flags().testFlag(QMetaType::IsGadget);
         }
@@ -152,13 +152,14 @@ QVariant decodeVariant(QVariant &&value, QMetaType metaType)
         bool isRegistered = containerType.isRegistered();
         if (isRegistered) {
             QVariant seq{containerType, nullptr};
-            if (!seq.canView<QSequentialIterable>()) {
+            if (!seq.canView<QMetaSequence::Iterable>()) {
                 qWarning() << "Unsupported container" << qsq_->typeName.constData()
                            << "(not viewable)";
                 return QVariant();
             }
-            QSequentialIterable seqIter = seq.view<QSequentialIterable>();
-            if (!seqIter.metaContainer().canAddValue()) {
+            QMetaSequence::Iterable seqIter = seq.view<QMetaSequence::Iterable>();
+            const QMetaSequence metaSequence = seqIter.metaContainer();
+            if (!metaSequence.canAddValue()) {
                 qWarning() << "Unsupported container" << qsq_->typeName.constData()
                            << "(Unable to add values)";
                 return QVariant();
@@ -171,16 +172,20 @@ QVariant decodeVariant(QVariant &&value, QMetaType metaType)
             QVariant tmp{valueType, nullptr};
             for (quint32 i = 0; i < count; i++) {
                 if (!valueType.load(in, tmp.data())) {
-                    if (seqIter.metaContainer().canRemoveValue() || i == 0) {
+                    if (metaSequence.canRemoveValue() || i == 0) {
                         for (quint32 ii = 0; ii < i; ii++)
-                            seqIter.removeValue();
+                            metaSequence.removeValue(seqIter.mutableIterable());
                         qWarning("QSQ_: unable to load type '%s', returning an empty list.", valueTypeName.constData());
                     } else {
                         qWarning("QSQ_: unable to load type '%s', returning a partial list.", valueTypeName.constData());
                     }
                     break;
                 }
-                seqIter.addValue(tmp);
+
+                QtPrivate::QVariantTypeCoercer coercer;
+                metaSequence.addValue(
+                        seqIter.mutableIterable(),
+                        coercer.coerce(tmp, metaSequence.valueMetaType()));
             }
             value = seq;
 #ifdef QTRO_VERBOSE_PROTOCOL
@@ -204,12 +209,12 @@ QVariant decodeVariant(QVariant &&value, QMetaType metaType)
         bool isRegistered = containerType.isRegistered();
         if (isRegistered) {
             QVariant map{containerType, nullptr};
-            if (!map.canView<QAssociativeIterable>()) {
+            if (!map.canView<QMetaAssociation::Iterable>()) {
                 qWarning() << "Unsupported container" << qas_->typeName.constData()
                            << "(not viewable)";
                 return QVariant();
             }
-            QAssociativeIterable mapIter = map.view<QAssociativeIterable>();
+            QMetaAssociation::Iterable mapIter = map.view<QMetaAssociation::Iterable>();
             if (!mapIter.metaContainer().canSetMappedAtKey()) {
                 qWarning() << "Unsupported container" << qas_->typeName.constData()
                            << "(Unable to insert values)";
@@ -934,16 +939,16 @@ QDataStream &operator>>(QDataStream &stream, QRO_ &info)
 
 QSQ_::QSQ_(const QVariant &variant)
 {
-    QSequentialIterable sequence;
+    QMetaSequence::Iterable sequence;
     QMetaType valueType;
     if (variant.metaType() == QMetaType::fromType<QtROSequentialContainer>()) {
         auto container = static_cast<const QtROSequentialContainer *>(variant.constData());
         typeName = container->m_typeName;
         valueType = container->m_valueType;
         valueTypeName = container->m_valueTypeName;
-        sequence = QSequentialIterable(reinterpret_cast<const QVariantList *>(variant.constData()));
+        sequence = QMetaSequence::Iterable(reinterpret_cast<const QVariantList *>(variant.constData()));
     } else {
-        sequence = variant.value<QSequentialIterable>();
+        sequence = variant.value<QMetaSequence::Iterable>();
         typeName = QByteArray(variant.metaType().name());
         valueType = sequence.metaContainer().valueMetaType();
         valueTypeName = QByteArray(valueType.name());
@@ -984,7 +989,7 @@ QDataStream &operator>>(QDataStream &stream, QSQ_ &sequence)
 
 QAS_::QAS_(const QVariant &variant)
 {
-    QAssociativeIterable map;
+    QMetaAssociation::Iterable map;
     QMetaType keyType, transferType, valueType;
     const QtROAssociativeContainer *container = nullptr;
     if (variant.metaType() == QMetaType::fromType<QtROAssociativeContainer>()) {
@@ -994,9 +999,9 @@ QAS_::QAS_(const QVariant &variant)
         keyTypeName = container->m_keyTypeName;
         valueType = container->m_valueType;
         valueTypeName = container->m_valueTypeName;
-        map = QAssociativeIterable(reinterpret_cast<const QVariantMap *>(variant.constData()));
+        map = QMetaAssociation::Iterable(reinterpret_cast<const QVariantMap *>(variant.constData()));
     } else {
-        map = variant.value<QAssociativeIterable>();
+        map = variant.value<QMetaAssociation::Iterable>();
         typeName = QByteArray(variant.metaType().name());
         keyType = map.metaContainer().keyMetaType();
         keyTypeName = QByteArray(keyType.name());
@@ -1054,7 +1059,7 @@ QAS_::QAS_(const QVariant &variant)
     ds << valueTypeName;
     auto pos = ds.device()->pos();
     ds << quint32(map.size());
-    QAssociativeIterable::const_iterator iter = map.begin();
+    QMetaAssociation::Iterable::const_iterator iter = map.begin();
     for (int i = 0; i < map.size(); i++) {
         QVariant key(container ? container->m_keys.at(i) : iter.key());
         if (transferType != keyType)

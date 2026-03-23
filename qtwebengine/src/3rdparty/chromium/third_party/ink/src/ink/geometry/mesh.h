@@ -51,7 +51,7 @@ class Mesh {
   // `vertex_attributes` should contain one span for each component of the
   // attributes on the vertex, in order, and `triangle_indices` should contain
   // the vertex indices that make up each triangle. E.g., if the vertex has two
-  // attributes of types `kFloat2Unpacked` and `kFloat4PackedIn2Floats`, the
+  // attributes of types `kFloat2Unpacked` and `kFloat4PackedInTwoFloats`, the
   // first two spans are used to populate the components of the first attribute,
   // and the third through sixth spans are used to populate the components of
   // the second attribute.
@@ -282,7 +282,7 @@ class Mesh {
   absl::Span<const std::byte> PackedVertexAttribute(
       uint32_t vertex_index, uint32_t attribute_index) const;
 
-  absl::Nonnull<std::shared_ptr<const Data>> data_;
+  absl_nonnull std::shared_ptr<const Data> data_;
 };
 
 }  // namespace ink

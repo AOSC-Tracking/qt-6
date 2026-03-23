@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlprofilertypedevent_p.h"
 #include "qqmlprofilerclientdefinitions_p.h"
@@ -172,6 +173,26 @@ QDataStream &operator>>(QDataStream &stream, QQmlProfilerTypedEvent &event)
     case RangeEnd: {
         event.type = QQmlProfilerEventType(MaximumMessage, rangeType, -1);
         event.event.setRangeStage(RangeEnd);
+        break;
+    }
+    case Quick3DFrame: {
+        QVarLengthArray<qint64> params;
+        qint64 param = 0;
+        QByteArray str;
+        if (subtype == Quick3DEventData) {
+            stream >> str;
+        } else {
+            while (!stream.atEnd()) {
+                stream >> param;
+                params.push_back(param);
+            }
+        }
+
+        event.type = QQmlProfilerEventType(
+                static_cast<Message>(messageType),
+                MaximumRangeType, subtype);
+        event.type.setData(QString::fromUtf8(str));
+        event.event.setNumbers<QVarLengthArray<qint64>, qint64>(params);
         break;
     }
     default:

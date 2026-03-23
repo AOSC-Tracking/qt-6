@@ -54,7 +54,7 @@ export class ReadingListItemElement extends ReadingListItemElementBase {
     };
   }
 
-  data: ReadLaterEntry = {
+  accessor data: ReadLaterEntry = {
     title: '',
     url: {url: ''},
     displayUrl: '',
@@ -63,7 +63,7 @@ export class ReadingListItemElement extends ReadingListItemElementBase {
     displayTimeSinceUpdate: '',
   };
 
-  buttonRipples: boolean = false;
+  accessor buttonRipples: boolean = false;
   private apiProxy_: ReadingListApiProxy =
       ReadingListApiProxyImpl.getInstance();
 
@@ -117,8 +117,8 @@ export class ReadingListItemElement extends ReadingListItemElementBase {
       this.$.updateStatusButton,
       this.$.deleteButton,
     ];
-    const focusedIndex = focusableElements.indexOf(
-        this.shadowRoot!.activeElement as HTMLElement);
+    const focusedIndex =
+        focusableElements.indexOf(this.shadowRoot.activeElement as HTMLElement);
 
     switch (e.key) {
       case ' ':

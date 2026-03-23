@@ -28,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/check_is_test.h"
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/functional/bind.h"
@@ -38,6 +39,7 @@
 #include "base/observer_list.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/to_string.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/memory_usage_estimator.h"
@@ -238,7 +240,7 @@ class DownloadItemActivatedData
     out->append(
         base::StringPrintf("\"start_offset\":\"%" PRId64 "\",", start_offset_));
     out->append(base::StringPrintf("\"has_user_gesture\":\"%s\"",
-                                   has_user_gesture_ ? "true" : "false"));
+                                   base::ToString(has_user_gesture_).c_str()));
     out->append("}");
   }
 
@@ -484,12 +486,14 @@ DownloadItemImpl::DownloadItemImpl(
     DownloadItemImplDelegate* delegate,
     uint32_t download_id,
     const base::FilePath& path,
+    const base::FilePath& display_name,
     const GURL& url,
     const std::string& mime_type,
     DownloadJob::CancelRequestCallback cancel_request_callback)
     : request_info_(url),
       guid_(base::Uuid::GenerateRandomV4().AsLowercaseString()),
       download_id_(download_id),
+      display_name_(display_name),
       mime_type_(mime_type),
       original_mime_type_(mime_type),
       start_tick_(base::TimeTicks::Now()),
@@ -812,6 +816,15 @@ const std::string& DownloadItemImpl::GetGuid() const {
 
 DownloadItem::DownloadState DownloadItemImpl::GetState() const {
   return InternalToExternalState(state_);
+}
+
+void DownloadItemImpl::SetStateForTesting(DownloadItem::DownloadState state) {
+  CHECK_IS_TEST();
+  state_ = ExternalToInternalState(state);
+}
+
+void DownloadItemImpl::SetDownloadUrlForTesting(GURL url) {
+  request_info_.url_chain.push_back(url);
 }
 
 DownloadInterruptReason DownloadItemImpl::GetLastReason() const {
@@ -1308,7 +1321,7 @@ std::string DownloadItemImpl::DebugString(bool verbose) const {
         IsPaused() ? 'T' : 'F', DebugResumeModeString(GetResumeMode()),
         auto_resume_count_, GetDangerType(), AllDataSaved() ? 'T' : 'F',
         GetLastModifiedTime().c_str(), GetETag().c_str(),
-        download_file_ ? "true" : "false", url_list.c_str(),
+        base::ToString(download_file_).c_str(), url_list.c_str(),
         GetFullPath().value().c_str(), GetTargetFilePath().value().c_str(),
         GetReferrerUrl().spec().c_str(),
         GetSerializedEmbedderDownloadData().c_str());
@@ -1456,6 +1469,15 @@ void DownloadItemImpl::MarkAsComplete() {
 
   DCHECK(AllDataSaved());
   destination_info_.end_time = base::Time::Now();
+#if BUILDFLAG(IS_ANDROID)
+  if (GetTargetFilePath().IsContentUri()) {
+    GetDownloadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            base::IgnoreResult(&DownloadCollectionBridge::PublishDownload),
+            GetTargetFilePath()));
+  }
+#endif
   TransitionTo(COMPLETE_INTERNAL);
   UpdateObservers();
 }

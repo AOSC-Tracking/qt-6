@@ -79,7 +79,7 @@ WebDialogView::WebDialogView(content::BrowserContext* context,
   SetCanResize(!delegate_ || delegate_->can_resize());
   SetModalType(GetDialogModalType());
   web_view_->set_allow_accelerators(true);
-  AddChildView(web_view_.get());
+  AddChildViewRaw(web_view_.get());
   set_contents_view(web_view_);
   SetLayoutManager(std::make_unique<views::FillLayout>());
   // Pressing the Escape key will close the dialog.
@@ -89,8 +89,10 @@ WebDialogView::WebDialogView(content::BrowserContext* context,
     for (const auto& accelerator : delegate_->GetAccelerators()) {
       AddAccelerator(accelerator);
     }
-    RegisterWindowWillCloseCallback(base::BindOnce(
-        &WebDialogView::NotifyDialogWillClose, base::Unretained(this)));
+    RegisterWindowWillCloseCallback(
+        RegisterWillCloseCallbackPassKey(),
+        base::BindOnce(&WebDialogView::NotifyDialogWillClose,
+                       base::Unretained(this)));
   }
 
   if (web_contents) {
@@ -484,6 +486,7 @@ void WebDialogView::BeforeUnloadFired(content::WebContents* tab,
 }
 
 bool WebDialogView::IsWebContentsCreationOverridden(
+    content::RenderFrameHost* opener,
     content::SiteInstance* source_site_instance,
     content::mojom::WindowContainerType window_container_type,
     const GURL& opener_url,

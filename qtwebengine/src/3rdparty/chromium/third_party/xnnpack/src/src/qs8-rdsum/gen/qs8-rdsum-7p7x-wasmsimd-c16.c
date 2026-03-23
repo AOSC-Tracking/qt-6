@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-rdsum/wasmsimd.c.in
 //   Generator: tools/xngen
@@ -7,14 +8,12 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-
 #include <assert.h>
 #include <math.h>
-
 #include <wasm_simd128.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/reduce.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/reduce.h"
 
 void xnn_qs8_rdsum_ukernel_7p7x__wasmsimd_c16(
     size_t rows,
@@ -23,7 +22,7 @@ void xnn_qs8_rdsum_ukernel_7p7x__wasmsimd_c16(
     size_t input_stride,
     const int8_t* zero,
     int32_t* output,
-    const struct xnn_qs8_rsum_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_qs8_rsum_params* restrict params) XNN_OOB_READS
 {
   assert(rows != 0);
   assert(channels != 0);

@@ -49,9 +49,6 @@ class CpuSampler : public sampler::Sampler {
           ProfilerStats::Reason::kIsolateNotLocked);
       return;
     }
-#if V8_HEAP_USE_PKU_JIT_WRITE_PROTECT
-    i::RwxMemoryWriteScope::SetDefaultPermissionsForSignalHandler();
-#endif
     TickSample* sample = processor_->StartTickSample();
     if (sample == nullptr) {
       ProfilerStats::Instance()->AddReason(
@@ -134,6 +131,11 @@ SamplingEventsProcessor::SamplingEventsProcessor(
   precise_sleep_timer_.TryInit();
 #endif  // V8_OS_WIN
 
+  // Check whether the sampler can be used. If this fails on test bots, the
+  // corresponding test probably needs to be disabled in the sandbox +
+  // hardware support configuration until crbug.com/429173713 is resolved.
+  CHECK(HardwareSandboxingDisabledOrSupportsSignalDeliveryInSandbox());
+
   sampler_->Start();
 }
 
@@ -165,8 +167,7 @@ void ProfilerEventsProcessor::AddCurrentStack(
     bool update_stats, const std::optional<uint64_t> trace_id) {
   TickSampleEventRecord record(last_code_event_id_);
   RegisterState regs;
-  StackFrameIterator it(isolate_, isolate_->thread_local_top(),
-                        StackFrameIterator::NoHandles{});
+  StackFrameIterator it(isolate_, isolate_->thread_local_top());
   if (!it.done()) {
     StackFrame* frame = it.frame();
     regs.sp = reinterpret_cast<void*>(frame->sp());
@@ -244,7 +245,7 @@ void SamplingEventsProcessor::SymbolizeAndAddToProfiles(
   Symbolizer::SymbolizedSample symbolized =
       symbolizer_->SymbolizeTickSample(tick_sample);
   profiles_->AddPathToCurrentProfiles(
-      tick_sample.timestamp, symbolized.stack_trace, symbolized.src_line,
+      tick_sample.timestamp, symbolized.stack_trace, symbolized.src_pos,
       tick_sample.update_stats_, tick_sample.sampling_interval_,
       tick_sample.state, tick_sample.embedder_state,
       reinterpret_cast<Address>(tick_sample.context),
@@ -427,6 +428,10 @@ void ProfilerCodeObserver::LogBuiltins() {
   DCHECK(builtins->is_initialized());
   for (Builtin builtin = Builtins::kFirst; builtin <= Builtins::kLast;
        ++builtin) {
+#if V8_ENABLE_WEBASSEMBLY
+    // We add the embedded data entry below.
+    if (builtin == Builtin::kWasmToJsWrapperCSA) continue;
+#endif
     CodeEventsContainer evt_rec(CodeEventRecord::Type::kReportBuiltin);
     ReportBuiltinEventRecord* rec = &evt_rec.ReportBuiltinEventRecord_;
     Tagged<Code> code = builtins->code(builtin);
@@ -435,6 +440,18 @@ void ProfilerCodeObserver::LogBuiltins() {
     rec->builtin = builtin;
     CodeEventHandlerInternal(evt_rec);
   }
+
+#if V8_ENABLE_WEBASSEMBLY
+  // We can call the WasmToJS wrapper from the embedded blob
+  CodeEventsContainer evt_rec(CodeEventRecord::Type::kReportBuiltin);
+  ReportBuiltinEventRecord* rec = &evt_rec.ReportBuiltinEventRecord_;
+  rec->instruction_start =
+      Builtins::EmbeddedEntryOf(Builtin::kWasmToJsWrapperCSA);
+  rec->instruction_size =
+      EmbeddedData::FromBlob().InstructionSizeOf(Builtin::kWasmToJsWrapperCSA);
+  rec->builtin = Builtin::kWasmToJsWrapperCSA;
+  CodeEventHandlerInternal(evt_rec);
+#endif
 }
 
 int CpuProfiler::GetProfilesCount() {
@@ -467,12 +484,12 @@ namespace {
 class CpuProfilersManager {
  public:
   void AddProfiler(Isolate* isolate, CpuProfiler* profiler) {
-    base::SpinningMutexGuard lock(&mutex_);
+    base::MutexGuard lock(&mutex_);
     profilers_.emplace(isolate, profiler);
   }
 
   void RemoveProfiler(Isolate* isolate, CpuProfiler* profiler) {
-    base::SpinningMutexGuard lock(&mutex_);
+    base::MutexGuard lock(&mutex_);
     auto range = profilers_.equal_range(isolate);
     for (auto it = range.first; it != range.second; ++it) {
       if (it->second != profiler) continue;
@@ -484,7 +501,7 @@ class CpuProfilersManager {
 
   void CallCollectSample(Isolate* isolate,
                          const std::optional<uint64_t> trace_id) {
-    base::SpinningMutexGuard lock(&mutex_);
+    base::MutexGuard lock(&mutex_);
     auto range = profilers_.equal_range(isolate);
     for (auto it = range.first; it != range.second; ++it) {
       it->second->CollectSample(trace_id);
@@ -492,7 +509,7 @@ class CpuProfilersManager {
   }
 
   size_t GetAllProfilersMemorySize(Isolate* isolate) {
-    base::SpinningMutexGuard lock(&mutex_);
+    base::MutexGuard lock(&mutex_);
     size_t estimated_memory = 0;
     auto range = profilers_.equal_range(isolate);
     for (auto it = range.first; it != range.second; ++it) {
@@ -503,7 +520,7 @@ class CpuProfilersManager {
 
  private:
   std::unordered_multimap<Isolate*, CpuProfiler*> profilers_;
-  base::SpinningMutex mutex_;
+  base::Mutex mutex_;
 };
 
 DEFINE_LAZY_LEAKY_OBJECT_GETTER(CpuProfilersManager, GetProfilersManager)
@@ -639,8 +656,33 @@ CpuProfilingResult CpuProfiler::StartProfiling(
     TRACE_EVENT0("v8", "CpuProfiler::StartProfiling");
     AdjustSamplingInterval();
     StartProcessorIfNotStarted();
-  }
 
+    // Collect script rundown at the start of profiling if trace category is
+    // turned on
+    bool source_rundown_trace_enabled;
+    bool source_rundown_sources_trace_enabled;
+    TRACE_EVENT_CATEGORY_GROUP_ENABLED(
+        TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown"),
+        &source_rundown_trace_enabled);
+    TRACE_EVENT_CATEGORY_GROUP_ENABLED(
+        TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown-sources"),
+        &source_rundown_sources_trace_enabled);
+    if (source_rundown_trace_enabled || source_rundown_sources_trace_enabled) {
+      Handle<WeakArrayList> script_objects = isolate_->factory()->script_list();
+      for (int i = 0; i < script_objects->length(); i++) {
+        if (Tagged<HeapObject> script_object;
+            script_objects->get(i).GetHeapObjectIfWeak(&script_object)) {
+          Tagged<Script> script(Cast<Script>(script_object));
+          if (source_rundown_trace_enabled) {
+            script->TraceScriptRundown();
+          }
+          if (source_rundown_sources_trace_enabled) {
+            script->TraceScriptRundownSources();
+          }
+        }
+      }
+    }
+  }
   return result;
 }
 

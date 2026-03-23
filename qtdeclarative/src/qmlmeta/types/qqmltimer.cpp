@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmltimer_p.h"
 
@@ -206,7 +207,7 @@ void QQmlTimer::setTriggeredOnStart(bool triggeredOnStart)
 }
 
 /*!
-    \qmlmethod QtQml::Timer::start()
+    \qmlmethod void QtQml::Timer::start()
     \brief Starts the timer
 
     If the timer is already running, calling this method has no effect.  The
@@ -218,7 +219,7 @@ void QQmlTimer::start()
 }
 
 /*!
-    \qmlmethod QtQml::Timer::stop()
+    \qmlmethod void QtQml::Timer::stop()
     \brief Stops the timer
 
     If the timer is not running, calling this method has no effect.  The
@@ -230,7 +231,7 @@ void QQmlTimer::stop()
 }
 
 /*!
-    \qmlmethod QtQml::Timer::restart()
+    \qmlmethod void QtQml::Timer::restart()
     \brief Restarts the timer
 
     If the Timer is not running it will be started, otherwise it will be

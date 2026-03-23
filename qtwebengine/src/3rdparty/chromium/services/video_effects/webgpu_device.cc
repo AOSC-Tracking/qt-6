@@ -4,6 +4,7 @@
 
 #include "services/video_effects/webgpu_device.h"
 
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -24,6 +25,14 @@
 #if MEDIAPIPE_USE_WEBGPU
 #include "third_party/mediapipe/src/mediapipe/gpu/webgpu/webgpu_device_registration.h"
 #endif
+
+namespace {
+
+std::string ToString(wgpu::StringView string_view) {
+  return std::string(std::string_view(string_view));
+}
+
+}  // namespace
 
 namespace video_effects {
 
@@ -68,7 +77,7 @@ void WebGpuDevice::Initialize(DeviceCallback device_cb,
          ErrorCallback error_cb, wgpu::RequestAdapterStatus status,
          wgpu::Adapter adapter, wgpu::StringView message) {
         if (self) {
-          self->OnRequestAdapter(status, std::move(adapter), message,
+          self->OnRequestAdapter(status, std::move(adapter), ToString(message),
                                  std::move(device_cb), std::move(error_cb));
         }
       },
@@ -83,28 +92,25 @@ void WebGpuDevice::Initialize(DeviceCallback device_cb,
 
 void WebGpuDevice::OnRequestAdapter(wgpu::RequestAdapterStatus status,
                                     wgpu::Adapter adapter,
-                                    std::string_view message,
+                                    std::string message,
                                     DeviceCallback device_cb,
                                     ErrorCallback error_cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (status != wgpu::RequestAdapterStatus::Success || !adapter) {
-    std::move(error_cb).Run(Error::kFailedToObtainAdapter, message);
+    std::move(error_cb).Run(Error::kFailedToObtainAdapter, std::move(message));
     return;
   }
 
   adapter_ = std::move(adapter);
 
   // TODO(bialpio): Determine the limits based on the incoming video frames.
-  wgpu::RequiredLimits limits = {
-      .limits = {},
-  };
-
+  wgpu::Limits limits = {};
   auto* device_lost_callback = gpu::webgpu::BindWGPUOnceCallback(
       [](base::WeakPtr<WebGpuDevice> self, const wgpu::Device& device,
          wgpu::DeviceLostReason reason, wgpu::StringView message) {
         if (self) {
-          self->OnDeviceLost(device, reason, message);
+          self->OnDeviceLost(device, reason, ToString(message));
         }
       },
       weak_ptr_factory_.GetWeakPtr());
@@ -118,18 +124,29 @@ void WebGpuDevice::OnRequestAdapter(wgpu::RequestAdapterStatus status,
                                    device_lost_callback->UnboundCallback(),
                                    device_lost_callback->AsUserdata());
 
-  descriptor.SetUncapturedErrorCallback(
-      [](const wgpu::Device&, wgpu::ErrorType type, wgpu::StringView message) {
+  auto* uncaptured_error_callback = gpu::webgpu::BindWGPUOnceCallback(
+      [](base::WeakPtr<WebGpuDevice> self, const wgpu::Device& device,
+         wgpu::ErrorType type, wgpu::StringView message) {
         DVLOG(1) << "wgpu::ErrorType = " << base::to_underlying(type) << "; "
                  << std::string_view(message);
-      });
+        // We're treating uncaptured WebGPU error like a device loss. It likely
+        // signifies programmer error, meaning that we can't really trust the
+        // contents of the textures that we're producing.
+        self->OnDeviceLost(device, wgpu::DeviceLostReason::Unknown,
+                           ToString(message));
+      },
+      weak_ptr_factory_.GetWeakPtr());
+
+  descriptor.SetUncapturedErrorCallback(
+      uncaptured_error_callback->UnboundCallback(),
+      uncaptured_error_callback->AsUserdata());
 
   auto* request_device_callback = gpu::webgpu::BindWGPUOnceCallback(
       [](base::WeakPtr<WebGpuDevice> self, DeviceCallback device_cb,
          ErrorCallback error_cb, wgpu::RequestDeviceStatus status,
          wgpu::Device device, wgpu::StringView message) {
         if (self) {
-          self->OnRequestDevice(status, std::move(device), message,
+          self->OnRequestDevice(status, std::move(device), ToString(message),
                                 std::move(device_cb), std::move(error_cb));
         }
       },
@@ -143,20 +160,16 @@ void WebGpuDevice::OnRequestAdapter(wgpu::RequestAdapterStatus status,
 
 void WebGpuDevice::OnRequestDevice(wgpu::RequestDeviceStatus status,
                                    wgpu::Device device,
-                                   std::string_view message,
+                                   std::string message,
                                    DeviceCallback device_cb,
                                    ErrorCallback error_cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (status != wgpu::RequestDeviceStatus::Success || !device) {
-    std::move(error_cb).Run(Error::kFailedToObtainDevice, message);
+    std::move(error_cb).Run(Error::kFailedToObtainDevice, std::move(message));
     return;
   }
 
-#ifdef WGPU_BREAKING_CHANGE_LOGGING_CALLBACK_TYPE
   device.SetLoggingCallback(&LoggingCallback);
-#else
-  device.SetLoggingCallback(&LoggingCallback, nullptr);
-#endif
 
 #if MEDIAPIPE_USE_WEBGPU
   mediapipe::WebGpuDeviceRegistration::GetInstance().RegisterWebGpuDevice(
@@ -168,19 +181,18 @@ void WebGpuDevice::OnRequestDevice(wgpu::RequestDeviceStatus status,
 
 void WebGpuDevice::OnDeviceLost(const wgpu::Device& device,
                                 wgpu::DeviceLostReason reason,
-                                std::string_view message) {
+                                std::string message) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
 #if MEDIAPIPE_USE_WEBGPU
   mediapipe::WebGpuDeviceRegistration::GetInstance().UnRegisterWebGpuDevice();
 #endif
   if (device_lost_cb_) {
-    std::move(device_lost_cb_).Run(reason, message);
+    std::move(device_lost_cb_).Run(reason, std::move(message));
   }
 }
 
 // static
-#ifdef WGPU_BREAKING_CHANGE_LOGGING_CALLBACK_TYPE
 void WebGpuDevice::LoggingCallback(wgpu::LoggingType type,
                                    wgpu::StringView message) {
   std::string_view message_str{message.data, message.length};
@@ -200,28 +212,6 @@ void WebGpuDevice::LoggingCallback(wgpu::LoggingType type,
       break;
   }
 }
-#else
-void WebGpuDevice::LoggingCallback(WGPULoggingType type,
-                                   WGPUStringView message,
-                                   void* userdata) {
-  std::string_view message_str{message.data, message.length};
-  switch (type) {
-    case WGPULoggingType_Verbose:
-    case WGPULoggingType_Info:
-      DVLOG(1) << message_str;
-      break;
-    case WGPULoggingType_Warning:
-      LOG(WARNING) << message_str;
-      break;
-    case WGPULoggingType_Error:
-      LOG(ERROR) << message_str;
-      break;
-    default:
-      DVLOG(1) << message_str;
-      break;
-  }
-}
-#endif
 
 void WebGpuDevice::EnsureFlush() {
   if (context_provider_->WebGPUInterface()->EnsureAwaitingFlush()) {

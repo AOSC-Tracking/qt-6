@@ -1029,7 +1029,7 @@ void tst_TouchMouse::pinchOnFlickable()
     QTest::touchEvent(&window, touchscreen.get()).release(0, p, &window);
     QTRY_COMPARE(flickable->isAtXBeginning(), false);
     // wait until flicking is done
-    QTRY_COMPARE(flickable->isFlicking(), false);
+    QTRY_COMPARE_WITH_TIMEOUT(flickable->isFlicking(), false, 2s);
 
     // pinch with two touchpoints
     QPoint p1 = QPoint(40, 20);
@@ -1357,7 +1357,7 @@ void tst_TouchMouse::touchPointDeliveryOrder()
 
     QTest::QTouchEventSequence touchSeq = QTest::touchEvent(&window, touchscreen.get(), false);
 
-    QVector<QQuickItem*> events;
+    QList<QQuickItem*> events;
     EventItem *background = window.rootObject()->findChild<EventItem*>("background");
     EventItem *left = window.rootObject()->findChild<EventItem*>("left");
     EventItem *middle = window.rootObject()->findChild<EventItem*>("middle");
@@ -1370,10 +1370,11 @@ void tst_TouchMouse::touchPointDeliveryOrder()
     left->setAcceptTouchEvents(true);
     middle->setAcceptTouchEvents(true);
     right->setAcceptTouchEvents(true);
-    connect(background, &EventItem::onTouchEvent, [&events](QQuickItem* receiver){ events.append(receiver); });
-    connect(left, &EventItem::onTouchEvent, [&events](QQuickItem* receiver){ events.append(receiver); });
-    connect(middle, &EventItem::onTouchEvent, [&events](QQuickItem* receiver){ events.append(receiver); });
-    connect(right, &EventItem::onTouchEvent, [&events](QQuickItem* receiver){ events.append(receiver); });
+    auto appendReceiver = [&events](QQuickItem* receiver) { events.append(receiver); };
+    connect(background, &EventItem::onTouchEvent, this, appendReceiver);
+    connect(left, &EventItem::onTouchEvent, this, appendReceiver);
+    connect(middle, &EventItem::onTouchEvent, this, appendReceiver);
+    connect(right, &EventItem::onTouchEvent, this, appendReceiver);
 
     touchSeq.press(0, pLeft, &window).commit();
     QQuickTouchUtils::flush(&window);

@@ -7,7 +7,7 @@
 
 #include <stddef.h>
 
-#include <memory>
+#include <vector>
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -27,12 +27,15 @@ namespace content {
 class BrowserContext;
 }
 
+namespace extensions {
+class CommandService;
+}
+
 namespace gfx {
 class Image;
 }
 
 namespace extensions {
-class CommandService;
 class ErrorConsole;
 class Extension;
 class ExtensionPrefs;
@@ -62,8 +65,8 @@ class ExtensionInfoGenerator : public ProfileObserver {
   void OnProfileWillBeDestroyed(Profile* profile) override;
 
   // Creates and asynchronously returns an ExtensionInfo for the given
-  // |extension_id|, if the extension can be found.
-  // If the extension cannot be found, an empty vector is passed to |callback|.
+  // `extension_id`, if the extension can be found.
+  // If the extension cannot be found, an empty vector is passed to `callback`.
   void CreateExtensionInfo(const ExtensionId& id,
                            ExtensionInfosCallback callback);
 
@@ -79,21 +82,15 @@ class ExtensionInfoGenerator : public ProfileObserver {
       const URLPatternSet& patterns);
 
  private:
-  // Creates an ExtensionInfo for the given |extension| and |state|, and
-  // asynchronously adds it to the |list|.
-  void CreateExtensionInfoHelper(const Extension& extension,
-                                 api::developer_private::ExtensionState state);
+  // Fills an ExtensionInfo for the given `extension` and `state`, and
+  // asynchronously adds it to the `list`.
+  void FillExtensionInfo(const Extension& extension,
+                         api::developer_private::ExtensionState state,
+                         api::developer_private::ExtensionInfo info);
 
   // Callback for the asynchronous image loading.
-  void OnImageLoaded(
-      std::unique_ptr<api::developer_private::ExtensionInfo> info,
-      const gfx::Image& image);
-
-  // Returns the icon url for the default icon to use.
-  std::string GetDefaultIconUrl(const std::string& name);
-
-  // Returns an icon url from the given image.
-  std::string GetIconUrlFromImage(const gfx::Image& image);
+  void OnImageLoaded(api::developer_private::ExtensionInfo info,
+                     const gfx::Image& image);
 
   // Construct the needed information for the Extension Safety Check and
   // populate the relevant `extension_info` fields.
@@ -114,7 +111,7 @@ class ExtensionInfoGenerator : public ProfileObserver {
   raw_ptr<ImageLoader> image_loader_;
 
   // The number of pending image loads.
-  size_t pending_image_loads_;
+  size_t pending_image_loads_ = 0;
 
   // The list of extension infos that have been generated.
   ExtensionInfoList list_;

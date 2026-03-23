@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #ifndef CLIPBOARD_QT_H
 #define CLIPBOARD_QT_H
@@ -59,10 +60,6 @@ protected:
     void WriteData(const ui::ClipboardFormatType &format, base::span<const uint8_t> data) override;
     void WriteSvg(std::string_view markup) override;
     void WriteFilenames(std::vector<ui::FileInfo> filenames) override;
-
-    void WriteClipboardHistory() override;
-    void WriteUploadCloudClipboard() override;
-    void WriteConfidentialDataForPassword() override;
 
     base::flat_map<ui::ClipboardBuffer, std::unique_ptr<ui::DataTransferEndpoint>> m_dataSrc;
 };

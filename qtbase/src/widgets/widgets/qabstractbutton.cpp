@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "private/qabstractbutton_p.h"
 
@@ -428,6 +429,13 @@ void QAbstractButtonPrivate::emitToggled(bool checked)
             emit group->buttonToggled(q, checked);
     }
 #endif
+}
+
+QStyle::State QAbstractButtonPrivate::styleButtonState(QStyle::State state) const
+{
+    if (down)
+        state |= QStyle::State_Sunken;
+    return state;
 }
 
 /*!
@@ -1236,7 +1244,10 @@ QSize QAbstractButton::iconSize() const
     Q_D(const QAbstractButton);
     if (d->iconSize.isValid())
         return d->iconSize;
-    int e = style()->pixelMetric(QStyle::PM_ButtonIconSize, nullptr, this);
+    QStyleOption opt;
+    opt.initFrom(this);
+    opt.state = d->styleButtonState(opt.state);
+    int e = style()->pixelMetric(QStyle::PM_ButtonIconSize, &opt, this);
     return QSize(e, e);
 }
 

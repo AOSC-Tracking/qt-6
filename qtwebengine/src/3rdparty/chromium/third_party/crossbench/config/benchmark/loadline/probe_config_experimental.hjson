@@ -3,6 +3,7 @@
     trace_processor: {
       queries: [
         "loadline/benchmark_score",
+        "loadline/breakdown",
         "loadline/experimental/cpu",
         "loadline/experimental/dom",
         "loadline/experimental/interaction_latency",
@@ -21,6 +22,7 @@
       merge_runs: false,
     },
     perfetto: {
+      trace_browser_startup: true,
       textproto: '''
         buffers {
           size_kb: 300000

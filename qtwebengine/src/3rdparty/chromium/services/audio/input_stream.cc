@@ -11,6 +11,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/to_string.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "media/audio/audio_manager.h"
@@ -20,7 +21,7 @@
 #include "mojo/public/cpp/system/handle.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 #include "services/audio/input_sync_writer.h"
-#include "third_party/abseil-cpp/absl/utility/utility.h"
+#include "services/audio/reference_signal_provider.h"
 
 namespace audio {
 
@@ -43,6 +44,16 @@ const char* ErrorCodeToString(InputController::ErrorCode error) {
       return "STREAM_OPEN_SYSTEM_PERMISSIONS_ERROR";
     case (InputController::STREAM_OPEN_DEVICE_IN_USE_ERROR):
       return "STREAM_OPEN_DEVICE_IN_USE_ERROR";
+    case (InputController::REFERENCE_STREAM_ERROR):
+      return "REFERENCE_STREAM_ERROR";
+    case (InputController::REFERENCE_STREAM_CREATE_ERROR):
+      return "REFERENCE_STREAM_CREATE_ERROR";
+    case (InputController::REFERENCE_STREAM_OPEN_ERROR):
+      return "REFERENCE_STREAM_OPEN_ERROR";
+    case (InputController::REFERENCE_STREAM_OPEN_SYSTEM_PERMISSIONS_ERROR):
+      return "REFERENCE_STREAM_OPEN_SYSTEM_PERMISSIONS_ERROR";
+    case (InputController::REFERENCE_STREAM_OPEN_DEVICE_IN_USE_ERROR):
+      return "REFERENCE_STREAM_OPEN_DEVICE_IN_USE_ERROR";
     default:
       NOTREACHED();
   }
@@ -67,10 +78,10 @@ InputStream::InputStream(
     mojo::PendingReceiver<media::mojom::AudioInputStream> receiver,
     mojo::PendingRemote<media::mojom::AudioInputStreamClient> client,
     mojo::PendingRemote<media::mojom::AudioInputStreamObserver> observer,
-    mojo::PendingRemote<media::mojom::AudioLog> log,
+    mojo::SharedRemote<media::mojom::AudioLog> log,
     media::AudioManager* audio_manager,
     media::AecdumpRecordingManager* aecdump_recording_manager,
-    DeviceOutputListener* device_output_listener,
+    std::unique_ptr<ReferenceSignalProvider> reference_signal_provider,
     media::mojom::AudioProcessingConfigPtr processing_config,
     const std::string& device_id,
     const media::AudioParameters& params,
@@ -129,7 +140,7 @@ InputStream::InputStream(
   }
 
   controller_ = InputController::Create(
-      audio_manager, this, writer_.get(), device_output_listener,
+      audio_manager, this, writer_.get(), std::move(reference_signal_provider),
       aecdump_recording_manager, std::move(processing_config), params,
       device_id, enable_agc);
 }
@@ -208,7 +219,7 @@ void InputStream::OnCreated(bool initially_muted) {
                                       "initially muted", initially_muted);
   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
   SendLogMessage("%s({muted=%s})", __func__,
-                 initially_muted ? "true" : "false");
+                 base::ToString(initially_muted).c_str());
 
   base::UnsafeSharedMemoryRegion shared_memory_region =
       writer_->TakeSharedMemoryRegion();

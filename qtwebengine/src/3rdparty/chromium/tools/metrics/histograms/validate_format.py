@@ -6,6 +6,8 @@
 
 import argparse
 import logging
+import os
+import re
 import sys
 from typing import List
 import xml.dom.minidom
@@ -13,6 +15,8 @@ import xml.dom.minidom
 import extract_histograms
 import histogram_paths
 import merge_xml
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 import xml_utils
 
 # The allowlist of namespaces (histogram prefixes, case insensitive) that are
@@ -62,6 +66,43 @@ def CheckNamespaces(xml_paths: List[str]):
   return has_errors
 
 
+def _CheckVariantsRegistered(xml_paths: List[str]) -> bool:
+  """Checks that all tokens within histograms are registered.
+
+  All tokens within histograms should be registered as tokens in the same file
+  either inline (as a <token> node) or out of line (as a <variants> node).
+
+  Args:
+    xml_paths: A list of paths to the xml files to validate.
+  """
+  has_errors = False
+  for path in xml_paths:
+    tree = xml.dom.minidom.parse(path)
+    variants, variants_errors = extract_histograms.ExtractVariantsFromXmlTree(
+        tree)
+    has_errors = has_errors or bool(variants_errors)
+
+    for histogram in xml_utils.IterElementsWithTag(tree, 'histogram', depth=3):
+      tokens, tokens_errors = extract_histograms.ExtractTokens(
+          histogram, variants)
+      has_errors = has_errors or bool(tokens_errors)
+
+      token_keys = [token['key'] for token in tokens]
+      token_keys.extend(variants.keys())
+
+      histogram_name = histogram.getAttribute('name')
+
+      tokens_in_name = re.findall(r'\{(.+?)\}', histogram_name)
+      for used_token in tokens_in_name:
+        if used_token not in token_keys:
+          logging.error(
+              'Token {%s} is not registered in histogram %s in file %s.',
+              used_token, histogram_name, path)
+          has_errors = True
+
+  return has_errors
+
+
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument(
@@ -77,7 +118,8 @@ def main():
                              expand_owners_and_extract_components=False)
   _, errors = extract_histograms.ExtractHistogramsFromDom(doc)
   errors = errors or CheckNamespaces(paths_to_check)
-  sys.exit(errors)
+  errors = errors or _CheckVariantsRegistered(paths_to_check)
+  sys.exit(bool(errors))
 
 
 if __name__ == '__main__':

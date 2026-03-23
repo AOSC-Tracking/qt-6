@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLMETATYPEDATA_P_H
 #define QQMLMETATYPEDATA_P_H
@@ -15,9 +16,10 @@
 // We mean it.
 //
 
-#include <private/qqmltype_p.h>
-#include <private/qqmlmetatype_p.h>
 #include <private/qhashedstring_p.h>
+#include <private/qqmlmetatype_p.h>
+#include <private/qqmlscriptdata_p.h>
+#include <private/qqmltype_p.h>
 #include <private/qqmlvaluetype_p.h>
 
 #include <QtCore/qset.h>
@@ -47,8 +49,13 @@ struct QQmlMetaTypeData
     QVector<QHash<QTypeRevision, QQmlPropertyCache::ConstPtr>> typePropertyCaches;
     QHash<int, QQmlValueType *> metaTypeToValueType;
 
-    using CompositeTypes = QHash<const QtPrivate::QMetaTypeInterface *,
-                                 QQmlRefPointer<QV4::CompiledData::CompilationUnit>>;
+    // This has to be a multihash because a user can create a compilation unit using arbitrary
+    // static data, via e.g. QQmlComponent::setData() or Qt.createQmlObject(). Since you can also
+    // freely choose the URL and therefore the metatype for those, we can end up we can end up
+    // with multiple compilation units per URL. Some compilation units need special handling on
+    // removal. Therefore we need to hold on to all of them.
+    using CompositeTypes = QMultiHash<const QtPrivate::QMetaTypeInterface *,
+                                      QQmlRefPointer<QV4::CompiledData::CompilationUnit>>;
     CompositeTypes compositeTypes;
 
     struct VersionedUri {
@@ -92,7 +99,7 @@ struct QQmlMetaTypeData
     QSet<int> interfaces;
 
     QList<QQmlPrivate::AutoParentFunction> parentFunctions;
-    QVector<QQmlPrivate::QmlUnitCacheLookupFunction> lookupCachedQmlUnit;
+    QList<QQmlPrivate::QmlUnitCacheLookupFunction> lookupCachedQmlUnit;
 
     QHash<const QMetaObject *, QQmlPropertyCache::ConstPtr> propertyCaches;
 
@@ -112,6 +119,9 @@ struct QQmlMetaTypeData
     QQmlPropertyCache::ConstPtr propertyCache(const QQmlType &type, QTypeRevision version);
     QQmlPropertyCache::ConstPtr findPropertyCacheInCompositeTypes(QMetaType t) const;
 
+    static QQmlPropertyCache::ConstPtr propertyCacheForPotentialInlineComponentType(
+            QMetaType t, const QQmlMetaTypeData::CompositeTypes::const_iterator &iter);
+
     void setTypeRegistrationFailures(QStringList *failures)
     {
         m_typeRegistrationFailures = failures;
@@ -125,8 +135,14 @@ struct QQmlMetaTypeData
             qWarning("%s", message.toUtf8().constData());
     }
 
-    void clearCompositeMetaTypes();
+    static void clearCompositeType(const QQmlRefPointer<QV4::CompiledData::CompilationUnit> &cu)
+    {
+        if (cu->isESModule())
+            cu->dependentScripts.clear();
+    }
 
+    void clearCompositeTypes();
+    void clearCompositeMetaTypes();
 private:
     QStringList *m_typeRegistrationFailures = nullptr;
 };

@@ -58,6 +58,7 @@
 #include "third_party/blink/renderer/platform/file_metadata.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/text/layout_locale.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/partitions.h"
 #include "third_party/blink/renderer/platform/wtf/date_math.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
@@ -399,7 +400,7 @@ void V8ScriptValueSerializer::WriteUnguessableToken(
 }
 
 void V8ScriptValueSerializer::WriteUTF8String(const StringView& string) {
-  StringUTF8Adaptor utf8(string);
+  StringUtf8Adaptor utf8(string);
   WriteUint32(utf8.size());
   WriteRawBytes(utf8.data(), utf8.size());
 }
@@ -525,23 +526,21 @@ bool V8ScriptValueSerializer::WriteDOMObject(ScriptWrappable* wrappable,
   }
   if (auto* image_data = dispatcher.ToMostDerived<ImageData>()) {
     WriteAndRequireInterfaceTag(kImageDataTag);
-    SerializedImageDataSettings settings(
-        image_data->GetPredefinedColorSpace(),
-        image_data->GetImageDataStorageFormat());
+    SerializedImageDataSettings settings(image_data->GetPredefinedColorSpace(),
+                                         image_data->pixelFormat());
     WriteUint32Enum(ImageSerializationTag::kPredefinedColorSpaceTag);
     WriteUint32Enum(settings.GetSerializedPredefinedColorSpace());
-    WriteUint32Enum(ImageSerializationTag::kImageDataStorageFormatTag);
-    WriteUint32Enum(settings.GetSerializedImageDataStorageFormat());
+    WriteUint32Enum(ImageSerializationTag::kImageDataPixelFormatTag);
+    WriteUint32Enum(settings.GetSerializedImageDataPixelFormat());
     WriteUint32Enum(ImageSerializationTag::kEndTag);
     WriteUint32(image_data->width());
     WriteUint32(image_data->height());
     if (image_data->IsBufferBaseDetached()) {
       WriteUint64(0u);
     } else {
-      SkPixmap image_data_pixmap = image_data->GetSkPixmap();
-      size_t pixel_buffer_length = image_data_pixmap.computeByteSize();
-      WriteUint64(base::strict_cast<uint64_t>(pixel_buffer_length));
-      WriteRawBytes(image_data_pixmap.addr(), pixel_buffer_length);
+      base::span<const uint8_t> image_data_bytes = image_data->RawByteSpan();
+      WriteUint64(base::strict_cast<uint64_t>(image_data_bytes.size()));
+      WriteRawBytes(image_data_bytes.data(), image_data_bytes.size());
     }
     return true;
   }
@@ -707,9 +706,13 @@ bool V8ScriptValueSerializer::WriteDOMObject(ScriptWrappable* wrappable,
           "because it had a rendering context.");
       return false;
     }
+    SerializedTextDirectionSettings serialized_direction(
+        canvas->GetTextDirection(nullptr));
     WriteAndRequireInterfaceTag(kOffscreenCanvasTransferTag);
     WriteUint32(canvas->width());
     WriteUint32(canvas->height());
+    WriteUTF8String(canvas->GetLocale()->LocaleString());
+    WriteUint32Enum(serialized_direction.GetSerializedTextDirection());
     WriteUint64(canvas->PlaceholderCanvasId());
     WriteUint32(canvas->ClientId());
     WriteUint32(canvas->SinkId());
@@ -920,7 +923,7 @@ v8::Maybe<bool> V8ScriptValueSerializer::WriteHostObject(
     return v8::Just(true);
   }
   if (!exception_state.HadException()) {
-    StringView interface = wrappable->GetWrapperTypeInfo()->interface_name;
+    StringView interface = ToWrapperTypeInfo(wrappable)->interface_name;
     exception_state.ThrowDOMException(
         DOMExceptionCode::kDataCloneError,
         interface + " object could not be cloned.");
@@ -1042,13 +1045,13 @@ v8::Maybe<uint32_t> V8ScriptValueSerializer::GetWasmModuleTransferId(
 void* V8ScriptValueSerializer::ReallocateBufferMemory(void* old_buffer,
                                                       size_t size,
                                                       size_t* actual_size) {
-  *actual_size = WTF::Partitions::BufferPotentialCapacity(size);
-  return WTF::Partitions::BufferTryRealloc(old_buffer, *actual_size,
-                                           "SerializedScriptValue buffer");
+  *actual_size = Partitions::BufferPotentialCapacity(size);
+  return Partitions::BufferTryRealloc(old_buffer, *actual_size,
+                                      "SerializedScriptValue buffer");
 }
 
 void V8ScriptValueSerializer::FreeBufferMemory(void* buffer) {
-  return WTF::Partitions::BufferFree(buffer);
+  return Partitions::BufferFree(buffer);
 }
 
 bool V8ScriptValueSerializer::AdoptSharedValueConveyor(

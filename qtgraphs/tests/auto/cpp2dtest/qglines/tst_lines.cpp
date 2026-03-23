@@ -55,6 +55,9 @@ void tst_lines::initialProperties()
     QCOMPARE(m_series->width(), 2.0);
     QCOMPARE(m_series->capStyle(), Qt::PenCapStyle::SquareCap);
     QCOMPARE(m_series->pointDelegate(), nullptr);
+    QCOMPARE(m_series->joinStyle(), Qt::PenJoinStyle::BevelJoin);
+    QCOMPARE(m_series->lineStyle(), QLineSeries::LineStyle::Straight);
+    QCOMPARE(m_series->strokeStyle(), QLineSeries::StrokeStyle::SolidLine);
 
     // Properties from QXYSeries
     QCOMPARE(m_series->color(), QColor(Qt::transparent));
@@ -89,6 +92,12 @@ void tst_lines::initializeProperties()
     QSignalSpy spy10(m_series, &QLineSeries::opacityChanged);
     QSignalSpy spy11(m_series, &QLineSeries::valuesMultiplierChanged);
 
+    QSignalSpy spy12(m_series, &QLineSeries::joinStyleChanged);
+    QSignalSpy spy13(m_series, &QLineSeries::lineStyleChanged);
+    QSignalSpy spy14(m_series, &QLineSeries::strokeStyleChanged);
+    QSignalSpy spy15(m_series, &QLineSeries::dashOffsetChanged);
+    QSignalSpy spy16(m_series, &QLineSeries::dashPatternChanged);
+
     auto marker = new QQmlComponent(this);
 
     m_series->setWidth(5.0);
@@ -106,6 +115,12 @@ void tst_lines::initializeProperties()
     m_series->setOpacity(0.5);
     m_series->setValuesMultiplier(0.5);
 
+    m_series->setJoinStyle(Qt::PenJoinStyle::RoundJoin);
+    m_series->setLineStyle(QLineSeries::LineStyle::StepLeft);
+    m_series->setStrokeStyle(QLineSeries::StrokeStyle::DashLine);
+    m_series->setDashOffset(1.0);
+    m_series->setDashPattern({3, 2});
+
     QCOMPARE(m_series->width(), 5.0);
     QCOMPARE(m_series->capStyle(), Qt::PenCapStyle::RoundCap);
     QCOMPARE(m_series->pointDelegate(), marker);
@@ -121,6 +136,12 @@ void tst_lines::initializeProperties()
     QCOMPARE(m_series->opacity(), 0.5);
     QCOMPARE(m_series->valuesMultiplier(), 0.5);
 
+    QCOMPARE(m_series->joinStyle(), Qt::PenJoinStyle::RoundJoin);
+    QCOMPARE(m_series->lineStyle(), QLineSeries::LineStyle::StepLeft);
+    QCOMPARE(m_series->strokeStyle(), QLineSeries::StrokeStyle::DashLine);
+    QCOMPARE(m_series->dashOffset(), 1.0);
+    QCOMPARE(m_series->dashPattern(), QVector<qreal>({3, 2}));
+
     QCOMPARE(spy0.size(), 1);
     QCOMPARE(spy1.size(), 1);
     QCOMPARE(spy2.size(), 1);
@@ -135,6 +156,12 @@ void tst_lines::initializeProperties()
     QCOMPARE(spy9.size(), 1);
     QCOMPARE(spy10.size(), 1);
     QCOMPARE(spy11.size(), 1);
+
+    QCOMPARE(spy12.size(), 1);
+    QCOMPARE(spy13.size(), 1);
+    QCOMPARE(spy14.size(), 1);
+    QCOMPARE(spy15.size(), 1);
+    QCOMPARE(spy16.size(), 1);
 }
 
 void tst_lines::invalidProperties()

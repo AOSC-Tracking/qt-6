@@ -21,6 +21,10 @@ namespace net::device_bound_sessions {
 std::pair<base::span<const uint8_t>, std::string>
 GetRS256SpkiAndJwkForTesting();
 
+// Returns the public key used for Origin Trial tokens in
+// `GetTestRequestHandler`.
+extern const char kTestOriginTrialPublicKey[];
+
 // Returns a request handler suitable for use with
 // `EmbeddedTestServer`. The server allows registration of device bound
 // sessions.
@@ -45,7 +49,9 @@ class ScopedTestRegistrationFetcher {
       std::string_view origin_string);
 
   // Creates a `ScopedTestRegistrationFetcher` that always fails to register
-  static ScopedTestRegistrationFetcher CreateWithFailure();
+  static ScopedTestRegistrationFetcher CreateWithFailure(
+      SessionError::ErrorType error_type,
+      std::string_view refresh_url_string);
 
   // Creates a `ScopedTestRegistrationFetcher` that always instructs
   // Chrome to terminate the session with given id and site.

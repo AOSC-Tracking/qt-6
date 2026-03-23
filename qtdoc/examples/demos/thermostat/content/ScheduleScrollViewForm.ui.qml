@@ -16,7 +16,7 @@ ScrollView {
     id: scrollView
 
     required property Room room
-    required property var scheduleViewRoot
+    required property ScheduleViewForm scheduleViewRoot
     property bool isBackgroundVisible: false
     property int timeScheduleHeight: 361
     property int timeScheduleWidth: 1087
@@ -24,7 +24,8 @@ ScrollView {
     property int tempSetterWidth: 1087
 
     clip: true
-    padding: 0
+    bottomPadding: 10
+    contentWidth: availableWidth
 
     background: Rectangle {
         color: Constants.accentColor
@@ -33,36 +34,54 @@ ScrollView {
     }
 
     ColumnLayout {
-        width: scrollView.width
-        height: scrollView.height
+        id: layout
+        anchors.horizontalCenter: parent.horizontalCenter
 
         TimeSchedule {
             id: timeSchedule
             Layout.preferredHeight: scrollView.timeScheduleHeight
             Layout.preferredWidth: scrollView.timeScheduleWidth
-            Layout.alignment: Qt.AlignHCenter
             scheduleViewRoot: scrollView.scheduleViewRoot
         }
 
         TemperatureSetter {
             Layout.preferredHeight: scrollView.tempSetterHeight
             Layout.preferredWidth: scrollView.tempSetterWidth
-            Layout.alignment: Qt.AlignHCenter
             scheduleViewRoot: scrollView.scheduleViewRoot
         }
     }
 
     states: [
         State {
-            name: "desktopLayout"
-            when: Constants.isBigDesktopLayout || Constants.isSmallDesktopLayout
+            name: "bigDesktopLayout"
+            when: Constants.isBigDesktopLayout
             PropertyChanges {
                 target: scrollView
                 timeScheduleHeight: 361
-                timeScheduleWidth: 1087
-                tempSetterHeight: 427
-                tempSetterWidth: 1087
+                timeScheduleWidth: layout.width
+                tempSetterHeight: 350
+                tempSetterWidth: layout.width
                 isBackgroundVisible: false
+            }
+            PropertyChanges {
+                target: layout
+                width: 1100
+            }
+        },
+        State {
+            name: "smallDesktopLayout"
+            when: Constants.isSmallDesktopLayout
+            PropertyChanges {
+                target: scrollView
+                timeScheduleHeight: 361
+                timeScheduleWidth: layout.width
+                tempSetterHeight: 350
+                tempSetterWidth: layout.width
+                isBackgroundVisible: false
+            }
+            PropertyChanges {
+                target: layout
+                width: 918
             }
         },
         State {
@@ -71,10 +90,14 @@ ScrollView {
             PropertyChanges {
                 target: scrollView
                 timeScheduleHeight: 314
-                timeScheduleWidth: 327
-                tempSetterHeight: 529
-                tempSetterWidth: 327
+                timeScheduleWidth: layout.width
+                tempSetterHeight: 450
+                tempSetterWidth: layout.width
                 isBackgroundVisible: false
+            }
+            PropertyChanges {
+                target: layout
+                width: 334
             }
         },
         State {
@@ -83,10 +106,14 @@ ScrollView {
             PropertyChanges {
                 target: scrollView
                 timeScheduleHeight: 230
-                timeScheduleWidth: 400
-                tempSetterHeight: 370
-                tempSetterWidth: 400
+                timeScheduleWidth: layout.width
+                tempSetterHeight: 300
+                tempSetterWidth: layout.width
                 isBackgroundVisible: true
+            }
+            PropertyChanges {
+                target: layout
+                width: 427
             }
         }
     ]

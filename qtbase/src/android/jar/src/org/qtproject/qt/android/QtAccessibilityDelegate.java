@@ -8,6 +8,9 @@ import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.system.Os;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.LocaleSpan;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -19,6 +22,7 @@ import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityNodeInfo.CollectionInfo;
 import android.view.accessibility.AccessibilityNodeProvider;
+import java.util.Locale;
 
 class QtAccessibilityDelegate extends View.AccessibilityDelegate
 {
@@ -165,6 +169,15 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
         return true;
     }
 
+    SpannableString addLocaleSpan(int viewId, String value)
+    {
+        SpannableString localeValue = new SpannableString(value);
+        LocaleSpan localeSpan =
+                new LocaleSpan(Locale.forLanguageTag(QtNativeAccessibility.languageTag(viewId)));
+        localeValue.setSpan(localeSpan, 0, localeValue.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return localeValue;
+    }
+
     void notifyScrolledEvent(int viewId)
     {
         QtNative.runAction(() -> sendEventForVirtualViewId(viewId,
@@ -241,13 +254,16 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
                 return;
             }
 
-            final AccessibilityEvent event =
-                    obtainAccessibilityEvent(AccessibilityEvent.TYPE_ANNOUNCEMENT);
+            final CharSequence className = getNodeForVirtualViewId(viewId).getClassName();
+            final int eventType =
+                    className != null && className.equals("android.widget.ProgressBar")
+                    ? AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                    : AccessibilityEvent.TYPE_ANNOUNCEMENT;
+            final AccessibilityEvent event = obtainAccessibilityEvent(eventType);
 
             event.setEnabled(true);
-            event.setClassName(getNodeForVirtualViewId(viewId).getClassName());
-
-            event.setContentDescription(value);
+            event.setClassName(className);
+            event.setContentDescription(addLocaleSpan(viewId, value));
 
             if (event.getText().isEmpty() && TextUtils.isEmpty(event.getContentDescription())) {
                 Log.w(TAG, "No value to announce for " + event.getClassName());
@@ -354,7 +370,9 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
         event.setEnabled(true);
         event.setClassName(getNodeForVirtualViewId(virtualViewId).getClassName());
 
-        event.setContentDescription(QtNativeAccessibility.descriptionForAccessibleObject(virtualViewId));
+        String description = QtNativeAccessibility.descriptionForAccessibleObject(virtualViewId);
+        event.setContentDescription(addLocaleSpan(virtualViewId, description));
+
         if (event.getText().isEmpty() && TextUtils.isEmpty(event.getContentDescription()))
             Log.w(TAG, "AccessibilityEvent with empty description");
 
@@ -456,6 +474,7 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
 
         // set only if valid, otherwise we return a node that is invalid and will crash when accessed
         node.setSource(m_view, virtualViewId);
+        node.setContentDescription(addLocaleSpan(virtualViewId, node.getContentDescription().toString()));
 
         if (TextUtils.isEmpty(node.getText()) && TextUtils.isEmpty(node.getContentDescription()))
             Log.w(TAG, "AccessibilityNodeInfo with empty contentDescription: " + virtualViewId);
@@ -514,17 +533,6 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
             boolean handled = false;
             //Log.i(TAG, "PERFORM ACTION: " + action + " on " + virtualViewId);
             switch (action) {
-                case AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS:
-                    // Only handle the FOCUS action if it's placing focus on
-                    // a different view that was previously focused.
-                    if (m_focusedVirtualViewId != virtualViewId) {
-                        m_focusedVirtualViewId = virtualViewId;
-                        m_view.invalidate();
-                        sendEventForVirtualViewId(virtualViewId,
-                                AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
-                        handled = true;
-                    }
-                    break;
                 case AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS:
                     if (m_focusedVirtualViewId == virtualViewId) {
                         m_focusedVirtualViewId = INVALID_ID;
@@ -565,17 +573,19 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
                 sendEventForVirtualViewId(virtualViewId, AccessibilityEvent.TYPE_VIEW_CLICKED);
             break;
         case AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS:
-            success = QtNativeAccessibility.focusAction(virtualViewId);
+            if (m_focusedVirtualViewId != virtualViewId) {
+                success = QtNativeAccessibility.focusAction(virtualViewId);
+                if (!success) {
+                    notifyObjectFocus(virtualViewId);
+                    success = true;
+                }
+            }
             break;
         case AccessibilityNodeInfo.ACTION_SCROLL_FORWARD:
             success = QtNativeAccessibility.scrollForward(virtualViewId);
-            if (success)
-                sendEventForVirtualViewId(virtualViewId, AccessibilityEvent.TYPE_VIEW_SCROLLED);
             break;
         case AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD:
             success = QtNativeAccessibility.scrollBackward(virtualViewId);
-            if (success)
-                sendEventForVirtualViewId(virtualViewId, AccessibilityEvent.TYPE_VIEW_SCROLLED);
             break;
         }
         return success;

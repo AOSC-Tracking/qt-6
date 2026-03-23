@@ -14,6 +14,7 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
@@ -826,12 +827,13 @@ TEST(PermissionsTest, PermissionMessages) {
   // experimental AI Data command-line flag, we don't need to warn you further.
   skip.insert(APIPermissionID::kExperimentalAiData);
 
+  // The Experimental Actor API is gated on commandline switches, in
+  // addition to the permission in the manifest. If you've turned on the
+  // experimental Actor command-line flag, we don't need to warn you further.
+  skip.insert(APIPermissionID::kExperimentalActor);
+
   // The Identity API has its own server-driven permission prompts.
   skip.insert(APIPermissionID::kIdentity);
-
-  // This API is still in origin trial so we don't want to show a permission
-  // prompt.
-  skip.insert(APIPermissionID::kAILanguageModelOriginTrial);
 
   // These are private.
   skip.insert(APIPermissionID::kAccessibilityPrivate);
@@ -849,7 +851,6 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermissionID::kFeedbackPrivate);
   skip.insert(APIPermissionID::kFileManagerPrivate);
   skip.insert(APIPermissionID::kFirstRunPrivate);
-  skip.insert(APIPermissionID::kSharedStoragePrivate);
   skip.insert(APIPermissionID::kImageLoaderPrivate);
   skip.insert(APIPermissionID::kInputMethodPrivate);
   skip.insert(APIPermissionID::kLanguageSettingsPrivate);
@@ -860,7 +861,6 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermissionID::kPdfViewerPrivate);
   skip.insert(APIPermissionID::kImageWriterPrivate);
   skip.insert(APIPermissionID::kResourcesPrivate);
-  skip.insert(APIPermissionID::kRtcPrivate);
   skip.insert(APIPermissionID::kSafeBrowsingPrivate);
   skip.insert(APIPermissionID::kSmartCardProviderPrivate);
   skip.insert(APIPermissionID::kSystemPrivate);
@@ -1038,9 +1038,9 @@ TEST(PermissionsTest, AccessToDevicesMessages) {
     PermissionSet permissions(std::move(api_permissions),
                               ManifestPermissionSet(), URLPatternSet(),
                               URLPatternSet());
-    VerifyOnePermissionMessage(
+    EXPECT_TRUE(VerifyOnePermissionMessage(
         permissions, Manifest::TYPE_EXTENSION,
-        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_SERIAL));
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_SERIAL)));
   }
   {
     // Testing that multiple permissions will show the one message.
@@ -1050,25 +1050,25 @@ TEST(PermissionsTest, AccessToDevicesMessages) {
     PermissionSet permissions(std::move(api_permissions),
                               ManifestPermissionSet(), URLPatternSet(),
                               URLPatternSet());
-    VerifyOnePermissionMessage(
+    EXPECT_TRUE(VerifyOnePermissionMessage(
         permissions, Manifest::TYPE_EXTENSION,
-        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_SERIAL));
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_SERIAL)));
   }
   {
     scoped_refptr<Extension> extension =
         LoadManifest("permissions", "access_to_devices_bluetooth.json");
     PermissionSet& set = const_cast<PermissionSet&>(
         extension->permissions_data()->active_permissions());
-    VerifyOnePermissionMessage(
+    EXPECT_TRUE(VerifyOnePermissionMessage(
         set, extension->GetType(),
-        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH));
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH)));
 
     // Test Bluetooth and Serial
     set.apis_.insert(APIPermissionID::kSerial);
-    VerifyOnePermissionMessage(
+    EXPECT_TRUE(VerifyOnePermissionMessage(
         set, extension->GetType(),
         l10n_util::GetStringUTF16(
-            IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH_SERIAL));
+            IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH_SERIAL)));
   }
 }
 

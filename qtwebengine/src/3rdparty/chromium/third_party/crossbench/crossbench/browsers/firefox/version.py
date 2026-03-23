@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Final, Optional, Tuple
+from typing import Final, Optional
+
+from typing_extensions import override
 
 from crossbench.browsers.version import BrowserVersion, BrowserVersionChannel
 
@@ -20,7 +22,7 @@ class FirefoxVersion(BrowserVersion):
                            r")"
                            r") ?(?P<channel_long>esr|any)?")
   _SPLIT_RE = re.compile(r"[ab.]")
-  _CHANNEL_LOOKUP: Dict[str, BrowserVersionChannel] = {
+  _CHANNEL_LOOKUP: dict[str, BrowserVersionChannel] = {
       "esr": BrowserVersionChannel.LTS,
       ".": BrowserVersionChannel.STABLE,
       # IRL Firefox version numbers do not distinct beta from stable, so we
@@ -29,15 +31,16 @@ class FirefoxVersion(BrowserVersion):
       "a": BrowserVersionChannel.ALPHA,
       "any": BrowserVersionChannel.ANY,
   }
-  _CHANNEL_LONG_LOOKUP: Dict[str, BrowserVersionChannel] = {
+  _CHANNEL_LONG_LOOKUP: dict[str, BrowserVersionChannel] = {
       "developer edition": BrowserVersionChannel.BETA,
       "nightly": BrowserVersionChannel.ALPHA,
   }
 
   @classmethod
+  @override
   def _parse(
       cls,
-      full_version: str) -> Tuple[Tuple[int, ...], BrowserVersionChannel, str]:
+      full_version: str) -> tuple[tuple[int, ...], BrowserVersionChannel, str]:
     matches = cls._VERSION_RE.fullmatch(full_version.strip())
     if not matches:
       raise cls.parse_error("Could not extract version number", full_version)
@@ -48,7 +51,7 @@ class FirefoxVersion(BrowserVersion):
     version_parts = matches["parts"]
     assert version_parts and version_str
     browser_channel = cls._parse_channel(full_version, matches)
-    parts: Tuple[int, ...] = tuple(map(int, cls._SPLIT_RE.split(version_parts)))
+    parts: tuple[int, ...] = tuple(map(int, cls._SPLIT_RE.split(version_parts)))
     if len(parts) == 2:
       parts += (0,)
     if len(parts) != 3:
@@ -58,8 +61,8 @@ class FirefoxVersion(BrowserVersion):
 
   @classmethod
   def _parse_channel(cls, full_version: str, matches) -> BrowserVersionChannel:
-    channel_long: Optional[str] = matches["channel_long"]
-    channel_short: Optional[str] = matches["channel_short"]
+    channel_long: str | None = matches["channel_long"]
+    channel_short: str | None = matches["channel_short"]
     if not channel_long and not channel_short:
       full_version_lower = full_version.lower()
       for long_name, channel in cls._CHANNEL_LONG_LOOKUP.items():
@@ -76,6 +79,7 @@ class FirefoxVersion(BrowserVersion):
       return True
     return bool(cls._PREFIX_RE.match(prefix))
 
+  @override
   def _channel_name(self, channel: BrowserVersionChannel) -> str:
     if channel == BrowserVersionChannel.LTS:
       return "esr"
@@ -88,9 +92,11 @@ class FirefoxVersion(BrowserVersion):
     raise ValueError(f"Unsupported channel: {channel}")
 
   @property
+  @override
   def has_complete_parts(self) -> bool:
     return len(self.parts) == 3
 
   @property
-  def key(self) -> Tuple[Tuple[int, ...], BrowserVersionChannel]:
+  @override
+  def key(self) -> tuple[tuple[int, ...], BrowserVersionChannel]:
     return (self.comparable_parts(self._PARTS_LEN), self._channel)

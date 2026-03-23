@@ -159,7 +159,7 @@ egl::Error SurfaceMtl::unMakeCurrent(const gl::Context *context)
     return egl::NoError();
 }
 
-egl::Error SurfaceMtl::swap(const gl::Context *context)
+egl::Error SurfaceMtl::swap(const gl::Context *context, SurfaceSwapFeedback *feedback)
 {
     return egl::NoError();
 }
@@ -171,37 +171,37 @@ egl::Error SurfaceMtl::postSubBuffer(const gl::Context *context,
                                      EGLint height)
 {
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+    return egl::Error(EGL_BAD_ACCESS);
 }
 
 egl::Error SurfaceMtl::querySurfacePointerANGLE(EGLint attribute, void **value)
 {
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+    return egl::Error(EGL_BAD_ACCESS);
 }
 
 egl::Error SurfaceMtl::bindTexImage(const gl::Context *context, gl::Texture *texture, EGLint buffer)
 {
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+    return egl::Error(EGL_BAD_ACCESS);
 }
 
 egl::Error SurfaceMtl::releaseTexImage(const gl::Context *context, EGLint buffer)
 {
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+    return egl::Error(EGL_BAD_ACCESS);
 }
 
 egl::Error SurfaceMtl::getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc)
 {
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+    return egl::Error(EGL_BAD_ACCESS);
 }
 
 egl::Error SurfaceMtl::getMscRate(EGLint *numerator, EGLint *denominator)
 {
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+    return egl::Error(EGL_BAD_ACCESS);
 }
 
 void SurfaceMtl::setSwapInterval(const egl::Display *display, EGLint interval) {}
@@ -214,24 +214,6 @@ void SurfaceMtl::setFixedWidth(EGLint width)
 void SurfaceMtl::setFixedHeight(EGLint height)
 {
     UNIMPLEMENTED();
-}
-
-EGLint SurfaceMtl::getWidth() const
-{
-    if (mColorTexture)
-    {
-        return static_cast<EGLint>(mColorTexture->widthAt0());
-    }
-    return 0;
-}
-
-EGLint SurfaceMtl::getHeight() const
-{
-    if (mColorTexture)
-    {
-        return static_cast<EGLint>(mColorTexture->heightAt0());
-    }
-    return 0;
 }
 
 EGLint SurfaceMtl::isPostSubBufferSupported() const
@@ -468,11 +450,11 @@ egl::Error WindowSurfaceMtl::initialize(const egl::Display *display)
     {
         if ([mLayer isKindOfClass:CAMetalLayer.class])
         {
-            mMetalLayer.retainAssign(static_cast<CAMetalLayer *>(mLayer));
+            mMetalLayer = static_cast<CAMetalLayer *>(mLayer);
         }
         else
         {
-            mMetalLayer             = mtl::adoptObjCObj([[CAMetalLayer alloc] init]);
+            mMetalLayer             = angle::adoptObjCPtr([[CAMetalLayer alloc] init]);
             mMetalLayer.get().frame = mLayer.frame;
         }
 
@@ -498,7 +480,7 @@ egl::Error WindowSurfaceMtl::initialize(const egl::Display *display)
     return egl::NoError();
 }
 
-egl::Error WindowSurfaceMtl::swap(const gl::Context *context)
+egl::Error WindowSurfaceMtl::swap(const gl::Context *context, SurfaceSwapFeedback *feedback)
 {
     ANGLE_TO_EGL_TRY(swapImpl(context));
 
@@ -512,15 +494,11 @@ void WindowSurfaceMtl::setSwapInterval(const egl::Display *display, EGLint inter
 #endif
 }
 
-// width and height can change with client window resizing
-EGLint WindowSurfaceMtl::getWidth() const
+// size can change with client window resizing
+gl::Extents WindowSurfaceMtl::getSize() const
 {
-    return static_cast<EGLint>(mCurrentKnownDrawableSize.width);
-}
-
-EGLint WindowSurfaceMtl::getHeight() const
-{
-    return static_cast<EGLint>(mCurrentKnownDrawableSize.height);
+    return gl::Extents(static_cast<EGLint>(mCurrentKnownDrawableSize.width),
+                       static_cast<EGLint>(mCurrentKnownDrawableSize.height), 1);
 }
 
 EGLint WindowSurfaceMtl::getSwapBehavior() const
@@ -670,14 +648,14 @@ angle::Result WindowSurfaceMtl::obtainNextDrawable(const gl::Context *context)
             contextMtl->onBackbufferResized(context, this);
         }
 
-        mCurrentDrawable.retainAssign([mMetalLayer nextDrawable]);
+        mCurrentDrawable = [mMetalLayer nextDrawable];
         if (!mCurrentDrawable)
         {
             // The GPU might be taking too long finishing its rendering to the previous frame.
             // Try again, indefinitely wait until the previous frame render finishes.
             // TODO: this may wait forever here
             mMetalLayer.get().allowsNextDrawableTimeout = NO;
-            mCurrentDrawable.retainAssign([mMetalLayer nextDrawable]);
+            mCurrentDrawable                            = [mMetalLayer nextDrawable];
             mMetalLayer.get().allowsNextDrawableTimeout = YES;
         }
 
@@ -750,17 +728,12 @@ void OffscreenSurfaceMtl::destroy(const egl::Display *display)
     SurfaceMtl::destroy(display);
 }
 
-EGLint OffscreenSurfaceMtl::getWidth() const
+gl::Extents OffscreenSurfaceMtl::getSize() const
 {
-    return mSize.width;
+    return mSize;
 }
 
-EGLint OffscreenSurfaceMtl::getHeight() const
-{
-    return mSize.height;
-}
-
-egl::Error OffscreenSurfaceMtl::swap(const gl::Context *context)
+egl::Error OffscreenSurfaceMtl::swap(const gl::Context *context, SurfaceSwapFeedback *feedback)
 {
     // Check for surface resize.
     ANGLE_TO_EGL_TRY(ensureTexturesSizeCorrect(context));

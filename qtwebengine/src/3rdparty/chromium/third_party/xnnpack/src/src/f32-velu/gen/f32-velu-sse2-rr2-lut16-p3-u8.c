@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-velu/sse-rr2-lut16-p3.c.in
 //   Generator: tools/xngen
@@ -8,20 +9,23 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <emmintrin.h>
 
-#include "xnnpack/vunary.h"
-#include "xnnpack/common.h"
+#include "src/xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
 
 
-extern XNN_INTERNAL const float xnn_table_exp2minus_k_over_16[16];
+extern XNN_INTERNAL const uint32_t xnn_table_exp2minus_k_over_16[16];
 
 void xnn_f32_velu_ukernel__sse2_rr2_lut16_p3_u8(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_elu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_elu_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

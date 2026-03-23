@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qqmlabstractcolumnmodel_p.h"
 
@@ -191,7 +192,7 @@ bool QQmlAbstractColumnModel::setData(const QModelIndex &index, const QVariant &
         return false;
     }
 
-    QVector<int> rolesChanged;
+    QList<int> rolesChanged;
     rolesChanged.append(role);
     emit dataChanged(index, index, rolesChanged);
     emit rowsChanged();
@@ -264,13 +265,14 @@ QQmlAbstractColumnModel::ColumnRoleMetadata QQmlAbstractColumnModel::fetchColumn
                                      << row.typeName() << " instead: " << row;
             return roleData;
         }
-        const QString rolePropertyName = columnRoleGetter.toString();
+
+        QString rolePropertyName = columnRoleGetter.toString();
         const QVariant roleProperty = row.toMap().value(rolePropertyName);
 
         roleData.columnRole = ColumnRole::StringRole;
-        roleData.name = rolePropertyName;
         roleData.type = roleProperty.userType();
         roleData.typeName = QString::fromLatin1(roleProperty.typeName());
+        roleData.name = std::move(rolePropertyName);
     } else if (columnRoleGetter.isCallable()) {
         // The role is provided via a function, which means the row is complex and
         // the user needs to provide the data for it.
@@ -425,6 +427,39 @@ bool QQmlAbstractColumnModel::validateNewRow(QLatin1StringView functionName, con
     return true;
 }
 
+QLatin1StringView QQmlAbstractColumnModel::jsTypeName(const QJSValue &v)
+{
+    if (v.isArray()) return "array"_L1;
+    if (v.isObject()) return "object"_L1;
+    if (v.isString()) return "string"_L1;
+    if (v.isNumber()) return "number"_L1;
+    if (v.isBool()) return "boolean"_L1;
+    if (v.isNull()) return "null"_L1;
+    if (v.isUndefined()) return "undefined"_L1;
+    return "unknown"_L1;
+}
+
+std::optional<QVariantList> QQmlAbstractColumnModel::validateRowsArgument(const QVariant &rows) const
+{
+    if (rows.userType() != qMetaTypeId<QJSValue>()) {
+        qmlWarning(this)
+            << "setRows(): \"rows\" must be an array; actual type is"
+            << rows.typeName();
+        return std::nullopt;
+    }
+
+    const auto rowsAsJSValue = rows.value<QJSValue>();
+
+    if (!rowsAsJSValue.isArray()) {
+        qmlWarning(this)
+            << "setRows(): the type of \"rows\" is"
+            << jsTypeName(rowsAsJSValue)
+            << "but an array is expected";
+        return std::nullopt;
+    }
+
+    return rowsAsJSValue.toVariant().toList();
+}
 
 QT_END_NAMESPACE
 

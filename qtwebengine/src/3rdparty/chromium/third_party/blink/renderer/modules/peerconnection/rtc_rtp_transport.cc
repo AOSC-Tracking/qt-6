@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_transport.h"
 
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
@@ -18,16 +13,14 @@
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 
-namespace WTF {
+namespace blink {
+
 template <>
-struct CrossThreadCopier<Vector<scoped_refptr<blink::FeedbackProvider>>>
+struct CrossThreadCopier<Vector<scoped_refptr<FeedbackProvider>>>
     : public CrossThreadCopierPassThrough<
-          Vector<scoped_refptr<blink::FeedbackProvider>>> {
+          Vector<scoped_refptr<FeedbackProvider>>> {
   STATIC_ONLY(CrossThreadCopier);
 };
-}  // namespace WTF
-
-namespace blink {
 
 // This method runs in the worker context, once PostCustomEvent appears.
 Event* CreateEvent(

@@ -64,7 +64,7 @@ void tst_QRhiWidget::testData()
     QTest::newRow("Null") << QRhiWidget::Api::Null;
 #endif
 
-#if QT_CONFIG(opengl) && QT_CONFIG(run_opengl_tests)
+#if QT_CONFIG(opengl)
     if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::OpenGL))
         QTest::newRow("OpenGL") << QRhiWidget::Api::OpenGL;
 #endif
@@ -326,6 +326,13 @@ void tst_QRhiWidget::simple_data()
 void tst_QRhiWidget::simple()
 {
     QFETCH(QRhiWidget::Api, api);
+
+#ifdef Q_OS_ANDROID
+    if ((QNativeInterface::QAndroidApplication::sdkVersion() == 36)
+        && (QRhiWidget::Api::OpenGL==api)) {
+        QSKIP("Fails and crashes on Android 16 (QTBUG-140627)");
+    }
+#endif
 
     SimpleRhiWidget *rhiWidget = new SimpleRhiWidget;
     rhiWidget->setApi(api);

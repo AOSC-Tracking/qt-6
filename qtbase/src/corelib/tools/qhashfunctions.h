@@ -2,6 +2,7 @@
 // Copyright (C) 2015 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
 // Copyright (C) 2024 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QHASHFUNCTIONS_H
 #define QHASHFUNCTIONS_H
@@ -221,7 +222,7 @@ Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(QFlags<Enum> flags, size_t s
 
 // ### Qt 7: remove this "catch-all" overload logic, and require users
 // to provide the two-argument version of qHash.
-#if (QT_VERSION < QT_VERSION_CHECK(7, 0, 0))
+#if (QT_VERSION < QT_VERSION_CHECK(7, 0, 0)) && !defined(QT_NO_SINGLE_ARGUMENT_QHASH_OVERLOAD)
 // Beware of moving this code from here. It needs to see all the
 // declarations of qHash overloads for C++ fundamental types *before*
 // its own declaration.
@@ -413,14 +414,14 @@ qHashMultiCommutative(size_t seed, const T &... args)
 
 template <typename InputIterator>
 inline size_t qHashRange(InputIterator first, InputIterator last, size_t seed = 0)
-    noexcept(noexcept(qHash(*first))) // assume iterator operations don't throw
+    noexcept(noexcept(qHash(*first, 0))) // assume iterator operations don't throw
 {
     return std::accumulate(first, last, seed, QtPrivate::QHashCombine(seed));
 }
 
 template <typename InputIterator>
 inline size_t qHashRangeCommutative(InputIterator first, InputIterator last, size_t seed = 0)
-    noexcept(noexcept(qHash(*first))) // assume iterator operations don't throw
+    noexcept(noexcept(qHash(*first, 0))) // assume iterator operations don't throw
 {
     return std::accumulate(first, last, seed, QtPrivate::QHashCombineCommutative(seed));
 }

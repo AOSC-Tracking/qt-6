@@ -1,5 +1,6 @@
 // Copyright (C) 2016 Klarälvdalens Datakonsult AB (KDAB).
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 
 #include "qwaylanddatadevice_p.h"
@@ -206,7 +207,7 @@ void QWaylandDataDevice::data_device_drop()
         auto platformDrag =  static_cast<QWaylandDrag *>(QGuiApplicationPrivate::platformIntegration()->drag());
         platformDrag->setDropResponse(response);
         platformDrag->finishDrag();
-    } else if (m_dragOffer) {
+    } else if (m_dragOffer && response.isAccepted()) {
         m_dragOffer->finish();
     }
 }

@@ -51,7 +51,7 @@ uint32_t BuiltinsConstantsTableBuilder::AddObject(Handle<Object> object) {
   // builtin generation, so the main thread pre-adds all the constants. A lock
   // is still needed since the map data structure is still being concurrently
   // accessed.
-  base::SpinningMutexGuard guard(&mutex_);
+  base::MutexGuard guard(&mutex_);
   if (ThreadId::Current() != isolate_->thread_id()) {
     auto find_result = map_.Find(object);
     DCHECK_NOT_NULL(find_result);
@@ -64,6 +64,12 @@ uint32_t BuiltinsConstantsTableBuilder::AddObject(Handle<Object> object) {
     }
     return *find_result.entry;
   }
+}
+
+bool BuiltinsConstantsTableBuilder::HasObject(Handle<Object> object) const {
+  base::MutexGuard guard(&mutex_);
+  auto find_result = map_.Find(object);
+  return find_result != nullptr;
 }
 
 namespace {

@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //
 //  W A R N I N G
@@ -40,11 +42,22 @@ public:
     void setScaleArray(const QList<QVector3D> &newScaleArray);
     void clearScaleArray();
 
+    void setAxisX(QValue3DAxis *axis);
+    void setAxisY(QValue3DAxis *axis);
+    void setAxisZ(QValue3DAxis *axis);
+    void resetAxisX();
+    void resetAxisY();
+    void resetAxisZ();
+
 private:
     qsizetype m_selectedItem;
     float m_itemSize;
     QScatterDataArray m_dataArray;
     QList<QVector3D> m_scaleArray;
+
+    QValue3DAxis *m_axisX = nullptr;
+    QValue3DAxis *m_axisY = nullptr;
+    QValue3DAxis *m_axisZ = nullptr;
 
     friend class QQuickGraphsScatter;
 };

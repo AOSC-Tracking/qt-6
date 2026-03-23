@@ -33,6 +33,18 @@ js_sources = [
   "testing/test_node_generator.js",
 ]
 
+earcons = [
+  "earcons/chromevox_loaded.ogg",
+  "earcons/chromevox_loading.ogg",
+  "earcons/control.wav",
+  "earcons/invalid_keypress.ogg",
+  "earcons/selection.ogg",
+  "earcons/selection_reverse.ogg",
+  "earcons/skim.wav",
+  "earcons/small_room_2.wav",
+  "earcons/static.wav",
+]
+
 # Add typescript files to compile here.
 ts_modules = [
   "action_fulfillment/context_checker.ts",
@@ -65,8 +77,10 @@ ts_modules = [
   "cursors/recovery_strategy.ts",
   "event_generator.ts",
   "event_handler.ts",
+  "features.ts",
   "flags.ts",
-  "instance_checker.ts",
+  "mv2/instance_checker.ts",
+  "mv3/instance_checker.ts",
   "keep_alive.ts",
   "key_code.ts",
   "local_storage.ts",
@@ -137,8 +151,8 @@ run_jsbundler("copied_files") {
   mode = "copy"
   dest_dir = accessibility_common_out_dir
   deps = [ ":ts_build" ]
-  sources =
-      js_sources + filter_include(get_target_outputs(":ts_build"), [ "*.js" ])
+  sources = earcons + js_sources +
+            filter_include(get_target_outputs(":ts_build"), [ "*.js" ])
 
   rewrite_rules = [
     rebase_path(tsc_out_dir, root_build_dir) + ":",

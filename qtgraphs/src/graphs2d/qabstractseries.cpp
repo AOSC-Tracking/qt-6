@@ -1,10 +1,13 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "graphs2d/qabstractseries.h"
 #include <QtGraphs/qabstractseries.h>
 #include <private/qabstractseries_p.h>
 #include <private/qgraphsview_p.h>
+#include <private/qabstractaxis_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -62,7 +65,7 @@ QT_BEGIN_NAMESPACE
     \brief A legend marker's color.
 */
 /*!
-    \qmlproperty color LegendData::color
+    \qmlproperty color legendData::color
     \brief A legend marker's color.
 */
 
@@ -71,7 +74,7 @@ QT_BEGIN_NAMESPACE
     \brief A border color of a legend marker.
 */
 /*!
-    \qmlproperty color LegendData::borderColor
+    \qmlproperty color legendData::borderColor
     \brief A border color of a legend marker.
 */
 
@@ -80,7 +83,7 @@ QT_BEGIN_NAMESPACE
     \brief A name of a legend marker.
 */
 /*!
-    \qmlproperty string LegendData::label
+    \qmlproperty string legendData::label
     \brief A name of a legend marker.
 */
 
@@ -95,6 +98,7 @@ QT_BEGIN_NAMESPACE
     \value Pie A pie graph.
     \value Spline A spline graph.
     \value Area An area graph.
+    \value Custom A custom graph.
 */
 
 /*!
@@ -112,6 +116,7 @@ QT_BEGIN_NAMESPACE
     \value AbstractSeries.SeriesType.Pie A pie graph.
     \value AbstractSeries.SeriesType.Spline A spline graph.
     \value AbstractSeries.SeriesType.Area An area graph.
+    \value AbstractSeries.SeriesType.Custom A custom graph.
 */
 
 /*!
@@ -260,7 +265,7 @@ QT_BEGIN_NAMESPACE
     \sa QLegendData
  */
 /*!
-    \qmlproperty list<LegendData> AbstractSeries::legendData
+    \qmlproperty list<legendData> AbstractSeries::legendData
     Contains information needed to create a legend marker for a data set in a graph.
 */
 
@@ -310,24 +315,24 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlsignal QAbstractSeries::axisXChanged(QAbstractAxis *newAxis)
+    \qmlsignal AbstractSeries::axisXChanged(AbstractAxis newAxis)
     \since 6.10
     This signal is emitted whenever the X axis in control changes.
     The \a newAxis parameter holds the new axis.
 */
 
 /*!
-    \qmlsignal QAbstractSeries::axisYChanged(QAbstractAxis *newAxis)
+    \qmlsignal AbstractSeries::axisYChanged(AbstractAxis newAxis)
     \since 6.10
     This signal is emitted whenever the Y axis in control changes.
     The \a newAxis parameter holds the new axis.
 */
 
 /*!
-    \qmlsignal QAbstractSeries::zValueChanged(int newDrawOrder)
+    \qmlsignal AbstractSeries::zValueChanged(int newDrawOrder)
     \since 6.10
-    This signal is emitted when the series draw order changes.
-    The \a newAxis parameter specifies the new order.
+    This signal is emitted when the series draw order changes to
+    \a newDrawOrder.
 */
 
 /*!
@@ -607,6 +612,23 @@ QGraphsView *QAbstractSeries::graph() const
 void QAbstractSeries::setGraph(QGraphsView *graph)
 {
     Q_D(QAbstractSeries);
+    if (graph && d->m_graph != graph) {
+        if (d->m_graph) {
+            if (d->m_axisX)
+                d->m_graph->removeAxis(d->m_axisX);
+            if (d->m_axisY)
+                d->m_graph->removeAxis(d->m_axisY);
+        }
+        if (d->m_axisX)
+            graph->addAxis(d->m_axisX);
+        if (d->m_axisY)
+            graph->addAxis(d->m_axisY);
+    } else if (!graph && d->m_graph) {
+        if (d->m_axisX)
+            d->m_graph->removeAxis(d->m_axisX);
+        if (d->m_axisY)
+            d->m_graph->removeAxis(d->m_axisY);
+    }
     d->m_graph = graph;
     if (graph) {
         switch (type()) {
@@ -630,6 +652,11 @@ void QAbstractSeries::setGraph(QGraphsView *graph)
         case SeriesType::Area:
 #ifdef USE_AREAGRAPH
             graph->createAreaRenderer();
+#endif
+            break;
+        case SeriesType::Custom:
+#ifdef USE_CUSTOMGRAPH
+            graph->createCustomRenderer();
 #endif
             break;
         default:
@@ -664,6 +691,12 @@ const QList<QLegendData> QAbstractSeries::legendData() const
     return d->m_legendData;
 }
 
+/*!
+    \property QAbstractSeries::seriesChildren
+
+    The list of series child objects. This is a default property that allows child objects to be
+    specified within a series element in QML without explicitly using the children property name.
+*/
 QQmlListProperty<QObject> QAbstractSeries::seriesChildren()
 {
     return QQmlListProperty<QObject>(this, 0, &QAbstractSeriesPrivate::appendSeriesChildren, 0, 0, 0);
@@ -717,4 +750,3 @@ void QAbstractSeriesPrivate::appendSeriesChildren(QQmlListProperty<QObject> *lis
 QT_END_NAMESPACE
 
 #include "moc_qabstractseries.cpp"
-#include "moc_qabstractseries_p.cpp"

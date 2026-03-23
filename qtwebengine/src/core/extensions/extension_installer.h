@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef EXTENSION_INSTALLER_H_
 #define EXTENSION_INSTALLER_H_
@@ -49,7 +50,7 @@ private:
     void uninstallFinished(const std::string &id, bool success);
     void cleanupBrokenInstall(const base::FilePath &dirToDelete, const std::string &error);
     void onInstallFailure(const base::FilePath &brokenInstallDir, const std::string &error,
-                          bool cleanupSucceded);
+                          bool cleanupSucceeded);
 
     raw_ptr<content::BrowserContext> m_browserContext;
     ExtensionManager *m_manager;

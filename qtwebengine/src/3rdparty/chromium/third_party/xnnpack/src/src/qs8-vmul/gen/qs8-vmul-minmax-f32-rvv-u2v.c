@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-vmul/rvv.c.in
 //   Generator: tools/xngen
@@ -9,7 +10,7 @@
 
 #include <assert.h>
 #include <riscv_vector.h>
-#include "xnnpack/vbinary.h"
+#include "src/xnnpack/vbinary.h"
 
 
 void xnn_qs8_vmul_minmax_fp32_ukernel__rvv_u2v(
@@ -17,7 +18,7 @@ void xnn_qs8_vmul_minmax_fp32_ukernel__rvv_u2v(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const union xnn_qs8_mul_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_mul_minmax_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);

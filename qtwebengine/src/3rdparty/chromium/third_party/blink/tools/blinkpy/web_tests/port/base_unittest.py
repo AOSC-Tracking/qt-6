@@ -67,13 +67,14 @@ class PortTest(LoggingTestCase):
         return port
 
     def test_validate_wpt_dirs(self):
+        port = self.make_port()
         # Keys should not have trailing slashes.
-        for wpt_path in Port.WPT_DIRS.keys():
+        for wpt_path in port.wpt_dirs().keys():
             self.assertFalse(wpt_path.endswith('/'))
         # Values should not be empty (except the last one).
-        for url_prefix in list(Port.WPT_DIRS.values())[:-1]:
+        for url_prefix in list(port.wpt_dirs().values())[:-1]:
             self.assertNotEqual(url_prefix, '/')
-        self.assertEqual(list(Port.WPT_DIRS.values())[-1], '/')
+        self.assertEqual(list(port.wpt_dirs().values())[-1], '/')
 
     def test_validate_wpt_regex(self):
         self.assertEquals(
@@ -112,6 +113,36 @@ class PortTest(LoggingTestCase):
     def test_get_option__default(self):
         port = self.make_port()
         self.assertEqual(port.get_option('foo', 'bar'), 'bar')
+
+    def test_allowed_suffixes_legacy(self):
+        port = self.make_port(with_tests=True)
+        # Depending on the `testRunner` call, any kind can be dumped.
+        self.assertEqual(port.allowed_suffixes('failures/expected/text.html'),
+                         {'txt', 'png', 'wav'})
+
+    def test_allowed_suffixes_legacy_reftest(self):
+        port = self.make_port(with_tests=True)
+        self.assertEqual(
+            port.allowed_suffixes('failures/expected/reftest.html'),
+            {'txt', 'wav'})
+
+    def test_allowed_suffixes_wpt_testharness(self):
+        port = self.make_port(with_tests=True)
+        add_manifest_to_mock_filesystem(port)
+        self.assertEqual(
+            port.allowed_suffixes(
+                'external/wpt/dom/ranges/Range-attributes.html'), {'txt'})
+
+    def test_allowed_suffixes_wpt_reftest(self):
+        port = self.make_port(with_tests=True)
+        add_manifest_to_mock_filesystem(port)
+        self.assertEqual(
+            port.allowed_suffixes('external/wpt/html/dom/elements/'
+                                  'global-attributes/dir_auto-EN-L.html'),
+            set())
+        self.assertEqual(
+            port.allowed_suffixes('external/wpt/foo/bar/test-print.html'),
+            set())
 
     def test_output_filename(self):
         port = self.make_port()
@@ -1534,8 +1565,6 @@ class PortTest(LoggingTestCase):
     def test_http_server_supports_ipv6(self):
         port = self.make_port()
         self.assertTrue(port.http_server_supports_ipv6())
-        port.host.platform.os_name = 'win'
-        self.assertFalse(port.http_server_supports_ipv6())
 
     def test_http_server_requires_http_protocol_options_unsafe(self):
         port = self.make_port(
@@ -2335,6 +2364,25 @@ class PortTest(LoggingTestCase):
         port.host.filesystem.write_text_file(port.path_to_smoke_tests_file(),
                                              'passes/text.html\n')
         self.assertTrue(port.skips_test('failures/expected/image.html'))
+
+    def test_skips_test_expands_smoke_tests_file(self):
+        port = self.make_port(with_tests=True)
+        add_manifest_to_mock_filesystem(port)
+        port.default_smoke_test_only = lambda: True
+        port.host.filesystem.write_text_file(
+            port.path_to_smoke_tests_file(),
+            'virtual/virtual_failures/failures/expected/\n'
+            'external/wpt/console/console-is-a-namespace.any.js\n')
+        self.assertTrue(port.skips_test('failures/expected/image.html'))
+        self.assertFalse(
+            port.skips_test(
+                'virtual/virtual_failures/failures/expected/image.html'))
+        self.assertFalse(
+            port.skips_test(
+                'external/wpt/console/console-is-a-namespace.any.html'))
+        self.assertFalse(
+            port.skips_test(
+                'external/wpt/console/console-is-a-namespace.any.worker.html'))
 
     def test_skips_test_no_skip_smoke_tests_file(self):
         port = self.make_port(with_tests=True)

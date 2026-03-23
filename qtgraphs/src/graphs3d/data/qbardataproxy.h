@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QTGRAPHS_QBARDATAPROXY_H
 #define QTGRAPHS_QBARDATAPROXY_H
@@ -8,8 +10,6 @@
 #include <QtCore/qstringlist.h>
 #include <QtGraphs/qabstractdataproxy.h>
 #include <QtGraphs/qbardataitem.h>
-
-Q_MOC_INCLUDE(<QtGraphs / qbar3dseries.h>)
 
 QT_BEGIN_NAMESPACE
 

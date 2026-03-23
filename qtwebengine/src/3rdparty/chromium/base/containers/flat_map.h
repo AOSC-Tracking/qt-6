@@ -237,10 +237,14 @@ class flat_map : public ::base::internal::
   std::enable_if_t<std::is_constructible_v<key_type, K&&>,
                    std::pair<iterator, bool>>
   try_emplace(K&& key, Args&&... args);
+  //   requires(std::is_constructible_v<key_type, K &&>)
+  // std::pair<iterator, bool> try_emplace(K&& key, Args&&... args);
 
   template <class K, class... Args>
   std::enable_if_t<std::is_constructible_v<key_type, K&&>, iterator>
   try_emplace(const_iterator hint, K&& key, Args&&... args);
+  //   requires(std::is_constructible_v<key_type, K &&>)
+  // iterator try_emplace(const_iterator hint, K&& key, Args&&... args);
 
   // --------------------------------------------------------------------------
   // General operations.

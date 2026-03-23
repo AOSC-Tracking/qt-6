@@ -14,24 +14,24 @@
 #include "base/strings/stringprintf.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
-#include "chrome/browser/extensions/extension_api_unittest.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_with_install.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/extensions/permissions/active_tab_permission_granter.h"
 #include "chrome/browser/extensions/permissions/permissions_test_util.h"
 #include "chrome/browser/extensions/permissions/permissions_updater.h"
 #include "chrome/browser/extensions/permissions/scripting_permissions_modifier.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/crx_file/id_util.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/web_contents_tester.h"
 #include "extensions/browser/api_test_utils.h"
 #include "extensions/browser/extension_api_frame_id_map.h"
+#include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/permissions_manager.h"
 #include "extensions/browser/test_extension_registry_observer.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/extension_features.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
@@ -39,6 +39,14 @@
 #include "extensions/test/test_extension_dir.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/test/base/test_browser_window.h"
+#endif
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -110,7 +118,6 @@ class PermissionsAPIUnitTest : public ExtensionServiceTestWithInstall {
   PermissionsAPIUnitTest& operator=(const PermissionsAPIUnitTest&) = delete;
 
   ~PermissionsAPIUnitTest() override = default;
-  Browser* browser() { return browser_.get(); }
 
   // Runs chrome.permissions.contains(|json_query|).
   bool RunContainsFunction(const std::string& manifest_permission,
@@ -148,7 +155,7 @@ class PermissionsAPIUnitTest : public ExtensionServiceTestWithInstall {
     PermissionsUpdater updater(profile());
     updater.InitializePermissions(&extension);
     updater.GrantActivePermissions(&extension);
-    service()->AddExtension(&extension);
+    registrar()->AddExtension(&extension);
   }
 
   // Adds the extension to the ExtensionService, and withheld any initial
@@ -158,7 +165,7 @@ class PermissionsAPIUnitTest : public ExtensionServiceTestWithInstall {
     updater.InitializePermissions(&extension);
     ScriptingPermissionsModifier(profile(), &extension)
         .SetWithholdHostPermissions(true);
-    service()->AddExtension(&extension);
+    registrar()->AddExtension(&extension);
   }
 
  protected:
@@ -168,23 +175,14 @@ class PermissionsAPIUnitTest : public ExtensionServiceTestWithInstall {
     dialog_action_ = PermissionsRequestFunction::SetDialogActionForTests(
         PermissionsRequestFunction::DialogAction::kAutoConfirm);
     InitializeEmptyExtensionService();
-    browser_window_ = std::make_unique<TestBrowserWindow>();
-    Browser::CreateParams params(profile(), true);
-    params.type = Browser::TYPE_NORMAL;
-    params.window = browser_window_.get();
-    browser_.reset(Browser::Create(params));
   }
   // ExtensionServiceTestBase:
   void TearDown() override {
     dialog_action_.reset();
-    browser_.reset();
-    browser_window_.reset();
     ExtensionServiceTestWithInstall::TearDown();
   }
 
  private:
-  std::unique_ptr<TestBrowserWindow> browser_window_;
-  std::unique_ptr<Browser> browser_;
   std::optional<base::AutoReset<PermissionsRequestFunction::DialogAction>>
       dialog_action_;
 };
@@ -240,7 +238,7 @@ TEST_F(PermissionsAPIUnitTest, ContainsAndGetAllWithRuntimeHostPermissions) {
   PermissionsUpdater updater(profile());
   updater.InitializePermissions(extension.get());
   updater.GrantActivePermissions(extension.get());
-  service()->AddExtension(extension.get());
+  registrar()->AddExtension(extension.get());
 
   auto contains_origin = [this, &extension](const char* origin) {
     SCOPED_TRACE(origin);
@@ -747,6 +745,9 @@ TEST_F(PermissionsAPIUnitTest, RequestingFilePermissions) {
   EXPECT_TRUE(extension->permissions_data()->HasHostPermission(file_url));
 }
 
+// TODO(crbug.com/419057482): Once we have a cross-platform interface for
+// browser windows, port this to desktop Android.
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 class PermissionsAPIHostAccessRequestsUnitTest : public PermissionsAPIUnitTest {
  public:
   PermissionsAPIHostAccessRequestsUnitTest() {
@@ -782,6 +783,12 @@ class PermissionsAPIHostAccessRequestsUnitTest : public PermissionsAPIUnitTest {
   void SetUp() override {
     PermissionsAPIUnitTest::SetUp();
 
+    browser_window_ = std::make_unique<TestBrowserWindow>();
+    Browser::CreateParams params(profile(), true);
+    params.type = Browser::TYPE_NORMAL;
+    params.window = browser_window_.get();
+    browser_ = Browser::DeprecatedCreateOwnedForTesting(params);
+
     std::unique_ptr<content::WebContents> web_contents =
         content::WebContentsTester::CreateTestWebContents(profile(), nullptr);
     content::WebContents* raw_web_contents = web_contents.get();
@@ -794,11 +801,16 @@ class PermissionsAPIHostAccessRequestsUnitTest : public PermissionsAPIUnitTest {
     // Detach the web contents.
     web_contents_tester_ = nullptr;
     browser()->tab_strip_model()->DetachAndDeleteWebContentsAt(/*index=*/0);
-
+    browser_.reset();
+    browser_window_.reset();
     PermissionsAPIUnitTest::TearDown();
   }
 
+  Browser* browser() { return browser_.get(); }
+
  private:
+  std::unique_ptr<TestBrowserWindow> browser_window_;
+  std::unique_ptr<Browser> browser_;
   base::test::ScopedFeatureList scoped_feature_list_;
   raw_ptr<content::WebContentsTester> web_contents_tester_;
 };
@@ -1004,7 +1016,7 @@ TEST_F(PermissionsAPIHostAccessRequestsUnitTest,
        AddHostAccessRequest_NoHostPermissions) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("Extension").AddAPIPermission("activeTab").Build();
-  service()->AddExtension(extension.get());
+  registrar()->AddExtension(extension.get());
 
   // Open tab on any url.
   NavigateTo("http://www.example.com");
@@ -1076,7 +1088,7 @@ TEST_F(PermissionsAPIHostAccessRequestsUnitTest,
           .SetManifestKey("optional_host_permissions",
                           base::Value::List().Append("*://*.optional.com/*"))
           .Build();
-  service()->AddExtension(extension.get());
+  registrar()->AddExtension(extension.get());
 
   auto* permissions_manager = PermissionsManager::Get(profile());
 
@@ -1216,8 +1228,7 @@ TEST_F(PermissionsAPIHostAccessRequestsUnitTest,
   int tab_id = ExtensionTabUtil::GetTabId(web_contents);
 
   // Grant one-time host access.
-  TabHelper::FromWebContents(web_contents)
-      ->active_tab_permission_granter()
+  ActiveTabPermissionGranter::FromWebContents(web_contents)
       ->GrantIfRequested(extension.get());
 
   // Add host access request for requested.com. Request is invalid because
@@ -1585,5 +1596,6 @@ TEST_F(PermissionsAPIHostAccessRequestsUnitTest,
         tab_id, extension->id()));
   }
 }
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 }  // namespace extensions

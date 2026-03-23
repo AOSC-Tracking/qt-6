@@ -39,7 +39,6 @@ load("@bazel_skylib//lib:selects.bzl", "selects")
 cc_library(
   name = "common",
   srcs = [
-    "common.cc",
     "vertex_pulling_config.cc",
   ],
   hdrs = [
@@ -50,14 +49,11 @@ cc_library(
   deps = [
     "//src/tint/utils",
     "//src/tint/utils/containers",
-    "//src/tint/utils/diagnostic",
     "//src/tint/utils/ice",
     "//src/tint/utils/macros",
     "//src/tint/utils/math",
     "//src/tint/utils/memory",
-    "//src/tint/utils/result",
     "//src/tint/utils/rtti",
-    "//src/tint/utils/text",
     "//src/utils",
   ],
   copts = COPTS,
@@ -75,14 +71,11 @@ cc_library(
     "//src/tint/api/common",
     "//src/tint/utils",
     "//src/tint/utils/containers",
-    "//src/tint/utils/diagnostic",
     "//src/tint/utils/ice",
     "//src/tint/utils/macros",
     "//src/tint/utils/math",
     "//src/tint/utils/memory",
-    "//src/tint/utils/result",
     "//src/tint/utils/rtti",
-    "//src/tint/utils/text",
     "@gtest",
     "//src/utils",
   ],

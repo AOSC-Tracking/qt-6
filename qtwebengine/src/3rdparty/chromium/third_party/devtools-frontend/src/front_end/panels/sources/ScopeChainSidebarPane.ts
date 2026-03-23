@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2008 Apple Inc. All Rights Reserved.
@@ -44,7 +45,7 @@ const UIStrings = {
   /**
    *@description Loading indicator in Scope Sidebar Pane of the Sources panel
    */
-  loading: 'Loading...',
+  loading: 'Loading…',
   /**
    *@description Not paused message element text content in Call Stack Sidebar Pane of the Sources panel
    */
@@ -62,7 +63,7 @@ const UIStrings = {
    *@description Text that refers to closure as a programming term
    */
   closure: 'Closure',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/sources/ScopeChainSidebarPane.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 let scopeChainSidebarPaneInstance: ScopeChainSidebarPane;
@@ -75,7 +76,7 @@ export class ScopeChainSidebarPane extends UI.Widget.VBox implements UI.ContextF
   #scopeChainModel: SourceMapScopes.ScopeChainModel.ScopeChainModel|null = null;
 
   private constructor() {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(scopeChainSidebarPaneStyles);
 
     this.contentElement.setAttribute('jslog', `${VisualLogging.section('sources.scope-chain')}`);

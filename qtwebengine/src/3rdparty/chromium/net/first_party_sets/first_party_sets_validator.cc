@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/map_util.h"
 #include "net/base/schemeful_site.h"
 
 namespace net {
@@ -42,10 +43,15 @@ bool FirstPartySetsValidator::IsValid() const {
   });
 }
 
+bool FirstPartySetsValidator::IsSiteValid(const SchemefulSite& site) const {
+  const SiteState* state = base::FindOrNull(site_metadatas_, site);
+  return state && IsSitePrimaryValid(state->first_seen_primary);
+}
+
 bool FirstPartySetsValidator::IsSitePrimaryValid(
     const SchemefulSite& primary) const {
-  const auto it = primary_states_.find(primary);
-  return it != primary_states_.end() && it->second.IsValid();
+  const PrimarySiteState* state = base::FindOrNull(primary_states_, primary);
+  return state && state->IsValid();
 }
 
 bool FirstPartySetsValidator::PrimarySiteState::IsValid() const {

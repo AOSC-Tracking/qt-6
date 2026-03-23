@@ -7,6 +7,8 @@
 
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
+#include "build/build_config.h"
+#include "content/public/common/buildflags.h"
 
 namespace features {
 
@@ -46,6 +48,7 @@ extern const base::FeatureParam<DevToolsFreestylerExecutionMode>
     kDevToolsFreestylerExecutionMode;
 extern const base::FeatureParam<bool> kDevToolsFreestylerPatching;
 extern const base::FeatureParam<bool> kDevToolsFreestylerMultimodal;
+extern const base::FeatureParam<bool> kDevToolsFreestylerMultimodalUploadInput;
 extern const base::FeatureParam<bool> kDevToolsFreestylerFunctionCalling;
 
 BASE_DECLARE_FEATURE(kDevToolsAiAssistanceNetworkAgent);
@@ -63,6 +66,8 @@ extern const base::FeatureParam<double>
     kDevToolsAiAssistancePerformanceAgentTemperature;
 extern const base::FeatureParam<DevToolsFreestylerUserTier>
     kDevToolsAiAssistancePerformanceAgentUserTier;
+extern const base::FeatureParam<bool>
+    kDevToolsAiAssistancePerformanceAgentInsightsEnabled;
 
 BASE_DECLARE_FEATURE(kDevToolsAiAssistanceFileAgent);
 extern const base::FeatureParam<std::string>
@@ -72,13 +77,30 @@ extern const base::FeatureParam<double>
 extern const base::FeatureParam<DevToolsFreestylerUserTier>
     kDevToolsAiAssistanceFileAgentUserTier;
 
+BASE_DECLARE_FEATURE(kDevToolsAiCodeCompletion);
+extern const base::FeatureParam<std::string> kDevToolsAiCodeCompletionModelId;
+extern const base::FeatureParam<double> kDevToolsAiCodeCompletionTemperature;
+extern const base::FeatureParam<DevToolsFreestylerUserTier>
+    kDevToolsAiCodeCompletionUserTier;
+
 BASE_DECLARE_FEATURE(kDevToolsSharedProcessInfobar);
-BASE_DECLARE_FEATURE(kDevToolsVeLogging);
-extern const base::FeatureParam<bool> kDevToolsVeLoggingTesting;
 
 BASE_DECLARE_FEATURE(kDevToolsAnimationStylesInStylesTab);
 
-BASE_DECLARE_FEATURE(kDevToolsImprovedWorkspaces);
+BASE_DECLARE_FEATURE(kDevToolsWellKnown);
+
+BASE_DECLARE_FEATURE(kDevToolsAiGeneratedTimelineLabels);
+
+BASE_DECLARE_FEATURE(kDevToolsNewPermissionDialog);
+
+BASE_DECLARE_FEATURE(kDevToolsVerticalDrawer);
+
+#if BUILDFLAG(ENABLE_PWA_INSTALL_ON_CROS_TEST)
+BASE_DECLARE_FEATURE(kDevToolsPwaHandler);
+#endif  // BUILDFLAG(ENABLE_PWA_INSTALL_ON_CROS_TEST)
+
+BASE_DECLARE_FEATURE(kDevToolsAiSubmenuPrompts);
+BASE_DECLARE_FEATURE(kDevToolsAiDebugWithAi);
 
 }  // namespace features
 

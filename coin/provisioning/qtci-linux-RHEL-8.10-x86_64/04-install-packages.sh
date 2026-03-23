@@ -17,8 +17,6 @@ installPackages+=(ca-certificates)
 installPackages+=(git)
 installPackages+=(zlib-devel)
 installPackages+=(glib2-devel)
-installPackages+=(openssl3)
-installPackages+=(openssl3-devel)
 installPackages+=(freetype-devel)
 installPackages+=(fontconfig-devel)
 installPackages+=(curl-devel)
@@ -92,7 +90,7 @@ installPackages+=(nss-devel)
 installPackages+=(libatomic)
 installPackages+=(mesa-libgbm-devel-21.3.4-1.el8.x86_64)
 # For Android builds
-installPackages+=(java-17-openjdk-devel-17.0.9.0.9)
+installPackages+=(java-21-openjdk-devel-21.0.9.0.10-1.el9)
 # For receiving shasum
 installPackages+=(perl-Digest-SHA)
 # INTEGRITY requirements
@@ -160,7 +158,7 @@ installPackages+=(perl-JSON)
 
 sudo yum -y install "${installPackages[@]}"
 
-sudo dnf -y module install nodejs:16
+sudo dnf -y module install nodejs:20
 
 # We shouldn't use yum to install virtualenv. The one found from package repo is not
 # working, but we can use installed pip
@@ -172,20 +170,24 @@ sudo pip config --user set global.extra-index-url https://pypi.org/simple/
 sudo pip3 install virtualenv wheel
 sudo python3.11 -m pip install virtualenv wheel html5lib
 sudo python3.11 -m pip install -r "${BASH_SOURCE%/*}/../common/shared/requirements.txt"
-# For now we don't set QT_SBOM_PYTHON_APPS_PATH here, and rely on the build system to find the
-# system python3.11.
 
 sudo /usr/bin/pip3 install wheel
 sudo /usr/bin/pip3 install dataclasses
+
+# Provisioning during installation says:
+# 'The script sbom2doc is installed in '/usr/local/bin' which is not on PATH.'
+# hence the explicit assignment to SBOM_PYTHON_APPS_PATH.
+source "${BASH_SOURCE%/*}/../common/unix/SetEnvVar.sh"
+SetEnvVar "SBOM_PYTHON_APPS_PATH" "/usr/local/bin"
+
+# Set SBOM_PYTHON_INTERP_PATH to Python3 instance which was used to install SBOM packages from requirements
+SetEnvVar "SBOM_PYTHON_INTERP_PATH" "/usr/bin/python3.11"
 
 gccVersion="$(gcc --version |grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' |head -n 1)"
 echo "GCC = $gccVersion" >> versions.txt
 
 glibcVersion="$(ldd --version |grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' |head -n 1)"
 echo "glibc = $glibcVersion" >> versions.txt
-
-OpenSSLVersion="$(openssl3 version |cut -b 9-14)"
-echo "System's OpenSSL = $OpenSSLVersion" >> ~/versions.txt
 
 # List all available updates
 sudo yum -y list updates

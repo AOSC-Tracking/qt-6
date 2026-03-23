@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_LAYER_H
 #define QSSG_RENDER_LAYER_H
@@ -51,8 +53,9 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
 
     enum class TAAMode : quint8
     {
-        Off,
-        On
+        Off = 0,
+        Default,
+        MotionVector
     };
 
     enum class AAQuality : quint8
@@ -130,8 +133,16 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
     enum class OITMethod : quint8
     {
         None = 0,
-        WeightedBlended
+        WeightedBlended,
+        LinkedList
     };
+
+    enum class RenderOverrides : quint8
+    {
+        None = 0,
+        DisableInternalPasses = 0x1,
+    };
+    using RenderOverridesT = std::underlying_type_t<RenderOverrides>;
 
     enum class DirtyFlag : quint8
     {
@@ -162,11 +173,12 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
     // First effect in a list of effects.
     QSSGRenderEffect *firstEffect;
     QSSGLayerRenderData *renderData = nullptr;
-    enum class RenderExtensionStage { Underlay, Overlay, Count };
+    enum class RenderExtensionStage { TextureProviders, Underlay, Overlay, Count };
     QList<QSSGRenderExtension *> renderExtensions[size_t(RenderExtensionStage::Count)];
 
     QSSGRenderLayer::AAMode antialiasingMode;
     QSSGRenderLayer::AAQuality antialiasingQuality;
+    QVector4D currentAndLastJitter;
 
     QSSGRenderLayer::Background background;
     QVector3D clearColor;
@@ -202,12 +214,15 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
     bool specularAAEnabled;
     OITMethod oitMethod;
     bool oitMethodDirty;
+    int oitNodeCount;
 
     //TODO: move render state somewhere more suitable
     bool temporalAAIsActive;
     bool progressiveAAIsActive;
     uint tempAAPassIndex;
     uint progAAPassIndex;
+
+    RenderOverridesT renderOverrides { RenderOverridesT(RenderOverrides::None) };
 
     // The camera explicitly set on the view by the user. (backend node can be null)
     QVarLengthArray<QSSGRenderCamera *, 2> explicitCameras;
@@ -226,6 +241,7 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
     QRhiShaderResourceBindings *skyBoxSrb = nullptr;
     QVarLengthArray<QRhiShaderResourceBindings *, 4> item2DSrbs;
     bool skyBoxIsRgbe8 = false;
+    bool skyBoxIsSrgb = false;
 
     // Skybox
     float skyboxBlurAmount = 0.0f;
@@ -268,6 +284,7 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
     bool drawCascades = false;
     bool drawSceneCascadeIntersection = false;
     bool disableShadowCameraUpdate = false;
+    bool drawCulledObjects = false;
 
     // Would ideally be in QSSGLayerRenderData but it is created too late
     // so needs to be set here.
@@ -289,9 +306,10 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
 
     [[nodiscard]] bool isMsaaEnabled() const { return antialiasingMode == AAMode::MSAA; }
     [[nodiscard]] bool isSsaaEnabled() const { return antialiasingMode == AAMode::SSAA; }
-    [[nodiscard]] bool isProgressiveAAEnabled() const { return antialiasingMode == AAMode::ProgressiveAA; }
+    // NOTE: Progressive AA is not enabled when temporalAA mode is MotionVector.
+    [[nodiscard]] bool isProgressiveAAEnabled() const { return antialiasingMode == AAMode::ProgressiveAA && temporalAAMode != TAAMode::MotionVector; }
     // NOTE: Temporal AA is not enabled when MSAA is enabled.
-    [[nodiscard]] bool isTemporalAAEnabled() const { return (temporalAAMode == TAAMode::On) && !isMsaaEnabled(); }
+    [[nodiscard]] bool isTemporalAAEnabled() const { return (temporalAAMode != TAAMode::Off) && !isMsaaEnabled(); }
 
     static constexpr float ssaaMultiplierForQuality(QSSGRenderLayer::AAQuality quality)
     {

@@ -159,8 +159,8 @@ class CONTENT_EXPORT SavePackage final
       std::unordered_map<SaveItemId, std::unique_ptr<SaveItem>>;
 
   using FileNameSet = std::set<base::FilePath::StringType,
-                               bool (*)(base::FilePath::StringPieceType,
-                                        base::FilePath::StringPieceType)>;
+                               bool (*)(base::FilePath::StringViewType,
+                                        base::FilePath::StringViewType)>;
 
   using FileNameCountMap =
       std::unordered_map<base::FilePath::StringType, uint32_t>;
@@ -468,6 +468,10 @@ class CONTENT_EXPORT SavePackage final
   // UKM IDs for reporting.
   ukm::SourceId ukm_source_id_;
   uint64_t ukm_download_id_;
+
+  // Display name of the main file. If this is empty, the name will be
+  // inferred from `saved_main_file_path_`.
+  base::FilePath saved_main_file_display_name_;
 
   base::WeakPtrFactory<SavePackage> weak_ptr_factory_{this};
 };

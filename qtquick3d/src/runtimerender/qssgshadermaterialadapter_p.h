@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_SHADER_MATERIAL_ADAPTER_H
 #define QSSG_SHADER_MATERIAL_ADAPTER_H
@@ -239,14 +241,28 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGShaderCustomMaterialAdapter final : pub
     using StringPair = QPair<QByteArray, QByteArray>;
     using StringPairList = QVarLengthArray<StringPair, 16>;
     using ShaderCodeAndMetaData = QPair<QByteArray, QSSGCustomShaderMetaData>;
-    static ShaderCodeAndMetaData prepareCustomShader(QByteArray &dst,
-                                                     const QByteArray &shaderCode,
-                                                     QSSGShaderCache::ShaderType type,
-                                                     const StringPairList &baseUniforms,
-                                                     const StringPairList &baseInputs = StringPairList(),
-                                                     const StringPairList &baseOutputs = StringPairList(),
-                                                     bool multiViewCompatible = false,
-                                                     const StringPairList &multiViewDependentSamplers = {});
+
+    struct CustomShaderPrepWorkData {
+        QByteArrayList inputs;
+        QByteArrayList outputs;
+    };
+
+    static void beginPrepareCustomShader(CustomShaderPrepWorkData *workData,
+                                         ShaderCodeAndMetaData *codeAndMetaData,
+                                         const QByteArray &shaderCode,
+                                         QSSGShaderCache::ShaderType type,
+                                         bool multiViewCompatible);
+
+    static void finishPrepareCustomShader(QByteArray *dst,
+                                          const CustomShaderPrepWorkData &workData,
+                                          const ShaderCodeAndMetaData &codeAndMetaData,
+                                          QSSGShaderCache::ShaderType type,
+                                          bool multiViewCompatible,
+                                          const StringPairList &baseUniforms,
+                                          const StringPairList &baseInputs,
+                                          const StringPairList &baseOutputs,
+                                          const StringPairList &multiViewDependentSamplers,
+                                          const StringPairList &multiViewDependentUniforms);
 
 private:
     const QSSGRenderCustomMaterial &m_material;

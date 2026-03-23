@@ -13,20 +13,20 @@
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/web_test/common/fake_bluetooth_chooser.mojom-forward.h"
 #include "content/web_test/common/web_test.mojom-forward.h"
-#include "mojo/public/cpp/bindings/binder_map.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/unique_receiver_set.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "third_party/blink/public/mojom/badging/badging.mojom.h"
 #include "third_party/blink/public/mojom/clipboard/clipboard.mojom.h"
-#include "third_party/blink/public/mojom/compute_pressure/web_pressure_manager_automation.mojom-forward.h"
-#include "third_party/blink/public/mojom/cookie_manager/cookie_manager_automation.mojom-forward.h"
-#include "third_party/blink/public/mojom/device_posture/device_posture_provider_automation.mojom-forward.h"
-#include "third_party/blink/public/mojom/permissions/permission_automation.mojom-forward.h"
-#include "third_party/blink/public/mojom/sensor/web_sensor_provider_automation.mojom-forward.h"
-#include "third_party/blink/public/mojom/storage_access/storage_access_automation.mojom-forward.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request_automation.mojom-forward.h"
+#include "third_party/blink/public/test/mojom/compute_pressure/web_pressure_manager_automation.test-mojom-forward.h"
+#include "third_party/blink/public/test/mojom/cookie_manager/cookie_manager_automation.test-mojom-forward.h"
+#include "third_party/blink/public/test/mojom/device_posture/device_posture_provider_automation.test-mojom-forward.h"
+#include "third_party/blink/public/test/mojom/permissions/permission_automation.test-mojom-forward.h"
+#include "third_party/blink/public/test/mojom/privacy_sandbox/web_privacy_sandbox_automation.test-mojom-forward.h"
+#include "third_party/blink/public/test/mojom/sensor/web_sensor_provider_automation.test-mojom-forward.h"
+#include "third_party/blink/public/test/mojom/storage_access/storage_access_automation.test-mojom-forward.h"
+#include "third_party/blink/public/test/mojom/webid/federated_auth_request_automation.test-mojom-forward.h"
 
 namespace blink {
 namespace web_pref {
@@ -34,12 +34,18 @@ struct WebPreferences;
 }
 }  // namespace blink
 
+namespace mojo {
+template <typename>
+class BinderMapWithContext;
+}  // namespace mojo
+
 namespace content {
 class FakeBluetoothChooser;
 class FakeBluetoothChooserFactory;
 class FakeBluetoothDelegate;
 class MockBadgeService;
 class MockClipboardHost;
+class NavigationThrottleRegistry;
 class WebTestBrowserContext;
 class WebTestSensorProviderManager;
 
@@ -73,9 +79,8 @@ class WebTestContentBrowserClient : public ShellContentBrowserClient {
   void OverrideWebPreferences(WebContents* web_contents,
                               SiteInstance& main_frame_site,
                               blink::web_pref::WebPreferences* prefs) override;
-  std::vector<std::unique_ptr<content::NavigationThrottle>>
-  CreateThrottlesForNavigation(
-      content::NavigationHandle* navigation_handle) override;
+  void CreateThrottlesForNavigation(
+      content::NavigationThrottleRegistry& registry) override;
   void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
                                       int child_process_id) override;
   std::unique_ptr<BrowserMainParts> CreateBrowserMainParts(
@@ -104,16 +109,16 @@ class WebTestContentBrowserClient : public ShellContentBrowserClient {
   content::TtsPlatform* GetTtsPlatform() override;
   std::unique_ptr<LoginDelegate> CreateLoginDelegate(
       const net::AuthChallengeInfo& auth_info,
-      content::WebContents* web_contents,
-      content::BrowserContext* browser_context,
-      const content::GlobalRequestID& request_id,
+      WebContents* web_contents,
+      BrowserContext* browser_context,
+      const GlobalRequestID& request_id,
       bool is_request_for_primary_main_frame_navigation,
       bool is_request_for_navigation,
       const GURL& url,
       scoped_refptr<net::HttpResponseHeaders> response_headers,
       bool first_auth_attempt,
       GuestPageHolder* guest,
-      LoginAuthRequiredCallback auth_required_callback) override;
+      LoginDelegate::LoginAuthRequiredCallback auth_required_callback) override;
 #if BUILDFLAG(IS_WIN)
   bool PreSpawnChild(sandbox::TargetConfig* config,
                      sandbox::mojom::Sandbox sandbox_type,
@@ -185,6 +190,11 @@ class WebTestContentBrowserClient : public ShellContentBrowserClient {
   void BindWebPressureManagerAutomation(
       RenderFrameHost* render_frame_host,
       mojo::PendingReceiver<blink::test::mojom::WebPressureManagerAutomation>
+          receiver);
+
+  void BindWebPrivacySandboxAutomation(
+      RenderFrameHost* render_frame_host,
+      mojo::PendingReceiver<blink::test::mojom::WebPrivacySandboxAutomation>
           receiver);
 
   void BindWebTestControlHost(

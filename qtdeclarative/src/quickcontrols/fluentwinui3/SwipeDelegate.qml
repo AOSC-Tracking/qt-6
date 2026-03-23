@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -23,11 +24,7 @@ T.SwipeDelegate {
 
     icon.width: 16
     icon.height: 16
-    icon.color: control.down ? __pressedText : control.palette.buttonText
 
-    readonly property color __pressedText: Application.styleHints.colorScheme === Qt.Light
-        ? Color.transparent(control.palette.buttonText, 0.62)
-        : Color.transparent(control.palette.buttonText, 0.7725)
     readonly property string __currentState: [
         !control.enabled && "disabled",
         control.highlighted && "highlighted",
@@ -47,9 +44,14 @@ T.SwipeDelegate {
         alignment: control.display === IconLabel.IconOnly || control.display === IconLabel.TextUnderIcon ? Qt.AlignCenter : Qt.AlignLeft
 
         icon: control.icon
+        defaultIconColor: control.down ? pressedText : control.palette.buttonText
         text: control.text
         font: control.font
-        color: control.icon.color
+        color: defaultIconColor
+
+        readonly property color pressedText: Application.styleHints.colorScheme === Qt.Light
+            ? Color.transparent(control.palette.buttonText, 0.62)
+            : Color.transparent(control.palette.buttonText, 0.7725)
     }
 
     background: Rectangle {

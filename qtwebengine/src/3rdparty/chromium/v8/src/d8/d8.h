@@ -84,6 +84,7 @@ class CounterCollection {
 };
 
 using CounterMap = std::unordered_map<std::string, Counter*>;
+using PerformanceMarkMap = std::unordered_map<std::string, double>;
 
 class SourceGroup {
  public:
@@ -180,7 +181,7 @@ class SerializationDataQueue {
   void Clear();
 
  private:
-  base::SpinningMutex mutex_;
+  base::Mutex mutex_;
   std::vector<std::unique_ptr<SerializationData>> data_;
 };
 
@@ -188,7 +189,8 @@ class Worker : public std::enable_shared_from_this<Worker> {
  public:
   static constexpr i::ExternalPointerTag kManagedTag = i::kD8WorkerTag;
 
-  explicit Worker(Isolate* parent_isolate, const char* script);
+  explicit Worker(Isolate* parent_isolate, const char* script,
+                  bool flush_denormals);
   ~Worker();
 
   // Post a message to the worker. The worker will take ownership of the
@@ -267,6 +269,7 @@ class Worker : public std::enable_shared_from_this<Worker> {
 
   base::Thread* thread_ = nullptr;
   char* script_;
+  bool flush_denormals_;
   std::atomic<State> state_;
   bool is_joined_ = false;
   // For signalling that the worker has started.
@@ -278,7 +281,7 @@ class Worker : public std::enable_shared_from_this<Worker> {
 
   // Protects reading / writing task_runner_. (The TaskRunner itself doesn't
   // need locking, but accessing the Worker's data member does.)
-  base::SpinningMutex worker_mutex_;
+  base::Mutex worker_mutex_;
 
   // The isolate should only be accessed by the worker itself, or when holding
   // the worker_mutex_ and after checking the worker state.
@@ -378,6 +381,8 @@ class PerIsolateData {
            std::pair<Global<Context>, Global<Function>>>
       worker_message_callbacks_;
 
+  PerformanceMarkMap performance_mark_map_;
+
   int RealmIndexOrThrow(const v8::FunctionCallbackInfo<v8::Value>& info,
                         int arg_offset);
   int RealmFind(Local<Context> context);
@@ -399,8 +404,7 @@ class ShellOptions {
   // repeated flags for identical boolean values. We allow exceptions for flags
   // with enum-like arguments since their conflicts can also be specified
   // completely.
-  template <class T,
-            bool kAllowIdenticalAssignment = std::is_same<T, bool>::value>
+  template <class T, bool kAllowIdenticalAssignment = std::is_same_v<T, bool>>
   class DisallowReassignment {
    public:
     DisallowReassignment(const char* name, T value)
@@ -431,7 +435,7 @@ class ShellOptions {
     T value_;
     bool specified_ = false;
   };
-
+  DisallowReassignment<bool> can_block = {"can_block", true};
   DisallowReassignment<const char*> d8_path = {"d8-path", ""};
   DisallowReassignment<bool> fuzzilli_coverage_statistics = {
       "fuzzilli-coverage-statistics", false};
@@ -551,8 +555,10 @@ class Shell : public i::AllStatic {
   static MaybeLocal<Context> CreateEvaluationContext(Isolate* isolate);
   static int RunMain(Isolate* isolate, bool last_run);
   static int Main(int argc, char* argv[]);
+  static void InitializeDefaultCounters(Isolate* isolate);
   static void Exit(int exit_code);
   static void OnExit(Isolate* isolate, bool dispose);
+  static void DumpCounters();
   static void CollectGarbage(Isolate* isolate);
   static bool EmptyMessageQueues(Isolate* isolate);
   static bool CompleteMessageLoop(Isolate* isolate);
@@ -576,10 +582,13 @@ class Shell : public i::AllStatic {
 
   static void PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void PerformanceMark(const v8::FunctionCallbackInfo<v8::Value>& info);
+  static bool LookupPerformanceMark(Isolate* isolate, v8::Local<String> name,
+                                    double* result);
   static void PerformanceMeasure(
       const v8::FunctionCallbackInfo<v8::Value>& info);
   static void PerformanceMeasureMemory(
       const v8::FunctionCallbackInfo<v8::Value>& info);
+  static void PerformanceStub(const v8::FunctionCallbackInfo<v8::Value>& info);
 
   static void RealmCurrent(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void RealmOwner(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -644,7 +653,9 @@ class Shell : public i::AllStatic {
   static void NotifyDone(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void QuitOnce(v8::FunctionCallbackInfo<v8::Value>* info);
   static void Quit(const v8::FunctionCallbackInfo<v8::Value>& info);
-  static void Terminate(const v8::FunctionCallbackInfo<v8::Value>& info);
+  static void TerminateNow(const v8::FunctionCallbackInfo<v8::Value>& info);
+  static void ScheduleTermination(
+      const v8::FunctionCallbackInfo<v8::Value>& info);
   static void Version(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void WriteFile(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void ReadFile(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -777,6 +788,7 @@ class Shell : public i::AllStatic {
 
   static void Initialize(Isolate* isolate, D8Console* console,
                          bool isOnMainThread = true);
+  static void InitializeMainThreadCounters(Isolate* isolate);
 
   static void PromiseRejectCallback(v8::PromiseRejectMessage reject_message);
 
@@ -789,13 +801,13 @@ class Shell : public i::AllStatic {
   static base::OnceType quit_once_;
   static Global<Function> stringify_function_;
 
-  static base::SpinningMutex profiler_end_callback_lock_;
+  static base::Mutex profiler_end_callback_lock_;
   static std::map<Isolate*, std::pair<Global<Function>, Global<Context>>>
       profiler_end_callback_;
 
   static const char* stringify_source_;
   static CounterMap* counter_map_;
-  static base::SpinningMutex counter_mutex_;
+  static base::Mutex counter_mutex_;
   // We statically allocate a set of local counters to be used if we
   // don't want to store the stats in a memory-mapped file
   static CounterCollection local_counters_;
@@ -830,7 +842,6 @@ class Shell : public i::AllStatic {
   static Local<ObjectTemplate> CreateOSTemplate(Isolate* isolate);
   static Local<FunctionTemplate> CreateWorkerTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateAsyncHookTemplate(Isolate* isolate);
-  static Local<ObjectTemplate> CreateTestRunnerTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreatePerformanceTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateRealmTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateD8Template(Isolate* isolate);

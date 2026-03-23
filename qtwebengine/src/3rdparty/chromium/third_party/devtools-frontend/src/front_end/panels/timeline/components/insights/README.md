@@ -1,8 +1,12 @@
 # Building performance insights UI
 
-**Last updated: Jan 2025**
+**Last updated: Mar 2025**
 
 If you want to add an insight to the Performance panel sidebar, you need to create and render an HTML component that follows certain conventions which will mean it integrates nicely into the rest of the performance panel, and all its overlays/active state/etc is managed for you.
+
+## 0. (Optional) Add your insight to `EXPERIMENTAL_INSIGHTS`
+
+The insights often require multiple CLs to implement. If you want your WIP insight only be visible when the 'enable experimental performance insights' experiment is active, you can add it to the insight to `EXPERIMENTAL_INSIGHTS`.
 
 ## 1. Extend `BaseInsightComponent`
 
@@ -48,7 +52,7 @@ override renderContent(): LitHtml.LitTemplate {
 
 If your component should render overlays when it is expanded, you will need to define those in the `createOverlays` method.
 
-This should return an array of `Overlays.Overlays.TimelineOverlay` objects. When your insight is expanded/collapsed, they will automatically be created / destroyed.
+This should return an array of `Trace.Types.Overlays.TimelineOverlay` objects. When your insight is expanded/collapsed, they will automatically be created / destroyed.
 
 ## 4. Custom styling
 
@@ -65,4 +69,10 @@ override connectedCallback(): void {
 
 ## 5. Render!
 
-Add your insight to the UI in `SidebarSingleInsightSet.ts` in the `#renderInsights` method.
+Add your insight to the UI in `SidebarSingleInsightSet.ts` in the `INSIGHT_NAME_TO_COMPONENT` method.
+
+## 6. Before you submit your CL
+
+- Add your related VE logging context values in the `KnownContextValues.ts`
+- Update the tests in `SidebarSingleInsightSet.test.ts`
+- WHen you want to ship the insight, make sure it is not in the experiments: `EXPERIMENTAL_INSIGHTS`.

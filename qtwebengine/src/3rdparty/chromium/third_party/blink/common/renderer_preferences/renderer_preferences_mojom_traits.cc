@@ -62,7 +62,8 @@ bool StructTraits<blink::mojom::RendererPreferencesDataView,
   if (!data.ReadWebrtcIpHandlingUrls(&out->webrtc_ip_handling_urls)) {
     return false;
   }
-
+  out->webrtc_post_quantum_key_agreement =
+      data.webrtc_post_quantum_key_agreement();
   out->webrtc_udp_min_port = data.webrtc_udp_min_port();
   out->webrtc_udp_max_port = data.webrtc_udp_max_port();
 
@@ -127,6 +128,10 @@ bool StructTraits<blink::mojom::RendererPreferencesDataView,
           &out->explicitly_allowed_network_ports)) {
     return false;
   }
+
+  out->canvas_noise_token = data.canvas_noise_token();
+
+  out->view_source_line_wrap_enabled = data.view_source_line_wrap_enabled();
 
   return true;
 }

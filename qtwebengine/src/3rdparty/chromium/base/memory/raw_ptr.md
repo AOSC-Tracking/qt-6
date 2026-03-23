@@ -57,7 +57,7 @@ remains an Undefined Behavior.
 `raw_ptr<T>` protection is enabled by default in all non-Renderer processes, on:
 - Android (incl. AndroidWebView, Android WebEngine, & Android ChromeCast)
 - Windows
-- ChromeOS (incl. Ash & Lacros)
+- ChromeOS
 - macOS
 - Linux
 - Fuchsia
@@ -94,7 +94,7 @@ exclusions via:
       Make sure to look at
       [the "Extra pointer rules" section](#Extra-pointer-rules)
       before resorting to this exclusion.
-- [RawPtrManualPathsToIgnore.h](../../tools/clang/plugins/RawPtrManualPathsToIgnore.h)
+- [RawPtrManualPathsToIgnore.h](../../tools/clang/raw_ptr_plugin/RawPtrManualPathsToIgnore.h)
   to exclude at a directory level (NOTE, use it as last resort, and be aware
   it'll require a Clang plugin roll).  Examples:
     - Renderer-only code (i.e. code in paths that contain `/renderer/` or
@@ -220,7 +220,7 @@ result in compile errors:
   [Rewrite exclusion statistics](https://docs.google.com/document/d/1uAsWnwy8HfIJhDPSh1efohnqfGsv2LJmYTRBj0JzZh8/edit#heading=h.dg4eebu87wg9)
   )
 - Pointers in unions, as well as pointer fields in classes/structs that are used
-  in unions (side note, absl::variant is strongly preferred)
+  in unions (side note, std::variant is strongly preferred)
 - Code that doesn’t depend on `//base` (including non-Chromium repositories and
   third party libraries)
 - Code in `//ppapi`
@@ -260,7 +260,7 @@ Use raw C++ pointers instead of `raw_ptr<T>` in the following scenarios:
   the security benefit of UaF protection is lower for such short-lived
   pointers.)
 - Pointer fields in unions. However, note that a much better, modern alternative
-  is `absl::variant` + `raw_ptr<T>`. If use of C++ union is absolutely
+  is `std::variant` + `raw_ptr<T>`. If use of C++ union is absolutely
   unavoidable, prefer a regular C++ pointer: incorrect management of a
   `raw_ptr<T>` field can easily lead to ref-count corruption.
 - Pointers whose addresses are used only as identifiers and which are

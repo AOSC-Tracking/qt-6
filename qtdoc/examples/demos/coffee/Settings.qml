@@ -6,7 +6,7 @@ import Qt.labs.synchronizer
 SettingsForm {
     id: settingsForm
 
-    required property var appFlow
+    required property ApplicationFlow appFlow
     required property CoffeeConfig coffeeConfig
 
     foamAmount: coffeeConfig.foamAmount

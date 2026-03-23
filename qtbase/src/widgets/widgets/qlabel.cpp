@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qpainter.h"
 #include "qevent.h"
@@ -51,7 +52,9 @@ QLabelPrivate::~QLabelPrivate()
     \ingroup basicwidgets
     \inmodule QtWidgets
 
-    \image fusion-label.png
+    \image fusion-label.png {Label}
+
+
 
     QLabel is used for displaying text or an image. No user
     interaction functionality is provided. The visual appearance of
@@ -187,6 +190,9 @@ QLabel::QLabel(const QString &text, QWidget *parent, Qt::WindowFlags f)
 QLabel::~QLabel()
 {
     Q_D(QLabel);
+
+    if (d->buddy)
+        d->buddy->d_func()->labels.removeAll(this);
     d->clearContents();
 }
 
@@ -510,6 +516,12 @@ void QLabel::setMargin(int margin)
     d->margin = margin;
     d->updateLabel();
 }
+
+/*!
+    \class QLabelPrivate
+    \inmodule QtWidgets
+    \internal
+*/
 
 /*!
     Returns the size that will be used if the width of the label is \a
@@ -1139,15 +1151,19 @@ void QLabel::setBuddy(QWidget *buddy)
 {
     Q_D(QLabel);
 
-    if (d->buddy)
+    if (d->buddy) {
         QObjectPrivate::disconnect(d->buddy, &QObject::destroyed,
                                    d, &QLabelPrivate::buddyDeleted);
+        d->buddy->d_func()->labels.removeAll(this);
+    }
 
     d->buddy = buddy;
 
-    if (buddy)
+    if (buddy) {
+        buddy->d_func()->labels.append(this);
         QObjectPrivate::connect(buddy, &QObject::destroyed,
                                 d, &QLabelPrivate::buddyDeleted);
+    }
 
     if (d->isTextLabel) {
         if (d->shortcutId)

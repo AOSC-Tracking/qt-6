@@ -17,6 +17,7 @@
 #include "build/build_config.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/bluetooth/web_bluetooth_pairing_manager_delegate.h"
+#include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/bluetooth_delegate.h"
 #include "content/public/browser/bluetooth_scanning_prompt.h"
@@ -468,6 +469,10 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   // |watch_advertisements_discovery_session_| is active.
   bool HasActiveDiscoverySession();
 
+  // Prevents the associated RenderFrameHost from entering the back forward
+  // cache and evicts it if it was already added.
+  void PreventBackForwardCache();
+
   // WebBluetoothPairingManagerDelegate implementation:
   blink::WebBluetoothDeviceId GetCharacteristicDeviceID(
       const std::string& characteristic_instance_id) override;
@@ -555,9 +560,18 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   std::unique_ptr<WebBluetoothPairingManager> pairing_manager_;
 #endif
 
+  // When valid, prevents the frame from entering the back forward cache.
+  RenderFrameHostImpl::BackForwardCacheDisablingFeatureHandle
+      back_forward_cache_feature_handle_;
+
   base::ScopedObservation<BluetoothDelegate,
                           BluetoothDelegate::FramePermissionObserver>
       observer_{this};
+
+  // A set contains device ids that have GATT connection attempt ongoing.
+  std::unordered_set<blink::WebBluetoothDeviceId,
+                     blink::WebBluetoothDeviceIdHash>
+      pending_connection_device_ids_;
 
   base::WeakPtrFactory<WebBluetoothServiceImpl> weak_ptr_factory_{this};
 };

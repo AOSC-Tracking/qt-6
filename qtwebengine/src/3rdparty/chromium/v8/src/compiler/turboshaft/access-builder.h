@@ -57,7 +57,6 @@ class AccessBuilderTS : public AllStatic {
   TF_FIELD_ACCESS(String, Word32, ForStringLength)
   TF_FIELD_ACCESS(Name, Word32, ForNameRawHashField)
   TF_FIELD_ACCESS(HeapNumber, Float64, ForHeapNumberValue)
-  TF_FIELD_ACCESS(HeapNumber, Word32, ForHeapInt32Value)
   using HeapNumberOrOddballOrHole = Union<HeapNumber, Oddball, Hole>;
   TF_FIELD_ACCESS(HeapNumberOrOddballOrHole, Float64,
                   ForHeapNumberOrOddballOrHoleValue)
@@ -80,6 +79,7 @@ class AccessBuilderTS : public AllStatic {
   }
   TF_ELEMENT_ACCESS(SeqOneByteString, Word32, ForSeqOneByteStringCharacter)
   TF_ELEMENT_ACCESS(SeqTwoByteString, Word32, ForSeqTwoByteStringCharacter)
+  TF_ELEMENT_ACCESS(Object, Object, ForOrderedHashMapEntryValue)
 #undef TF_ELEMENT_ACCESS
 
   template <IsTagged T>

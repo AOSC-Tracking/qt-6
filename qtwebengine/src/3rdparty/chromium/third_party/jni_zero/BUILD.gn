@@ -60,6 +60,10 @@ component("jni_zero") {
   ]
   configs += [ ":jni_include_dir" ]
 
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
   defines = []
   if (enable_jni_multiplexing) {
     defines += [ "JNI_ZERO_MULTIPLEXING_ENABLED" ]
@@ -110,7 +114,6 @@ if (enable_java_templates && is_android) {
       "java/src/org/jni_zero/CheckDiscard.java",
       "java/src/org/jni_zero/JniStaticTestMocker.java",
       "java/src/org/jni_zero/JniTestInstanceHolder.java",
-      "java/src/org/jni_zero/NativeLibraryLoadedStatus.java",
       "java/src/org/jni_zero/internal/NullUnmarked.java",
       "java/src/org/jni_zero/internal/Nullable.java",
     ]

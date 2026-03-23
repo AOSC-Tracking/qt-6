@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "cc/trees/property_tree.h"
+
 #include <stddef.h>
 
 #include <algorithm>
@@ -11,6 +13,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/debug/crash_logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/checked_math.h"
@@ -21,7 +24,6 @@
 #include "cc/trees/compositor_commit_data.h"
 #include "cc/trees/effect_node.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "cc/trees/property_tree.h"
 #include "cc/trees/scroll_node.h"
 #include "cc/trees/transform_node.h"
 #include "cc/trees/viewport_property_ids.h"
@@ -122,6 +124,13 @@ bool PropertyTree<T>::operator==(const PropertyTree<T>& other) const {
   return nodes() == other.nodes() && needs_update() == other.needs_update() &&
          element_id_to_node_index() == other.element_id_to_node_index();
 }
+
+template <typename T>
+std::string PropertyTree<T>::ToString() const {
+  base::trace_event::TracedValueJSON value;
+  AsValueInto(&value);
+  return value.ToFormattedJSON();
+}
 #endif
 
 template <typename T>
@@ -133,6 +142,7 @@ void PropertyTree<T>::AsValueInto(base::trace_event::TracedValue* value) const {
     value->EndDictionary();
   }
   value->EndArray();
+  value->SetBooleanWithCopiedName("needs_update", needs_update_);
 }
 
 template class PropertyTree<TransformNode>;
@@ -189,7 +199,7 @@ bool TransformTree::OnTransformAnimated(ElementId element_id,
     return false;
   node->local = transform;
   node->needs_local_transform_update = true;
-  node->transform_changed = true;
+  node->SetTransformChanged(DamageReason::kUntracked);
   property_trees()->set_changed(true);
   set_needs_update(true);
   return true;
@@ -199,7 +209,7 @@ void TransformTree::ResetChangeTracking() {
   for (int id = kContentsRootPropertyNodeId; id < static_cast<int>(size());
        ++id) {
     TransformNode* node = Node(id);
-    node->transform_changed = false;
+    node->ClearTransformChanged();
   }
 }
 
@@ -401,7 +411,7 @@ gfx::Vector2dF TransformTree::StickyPositionOffset(TransformNode* node) {
   // We need the scroll offset from the transform tree, not the scroll tree.
   // Tracking the scroll tree here would make sticky elements run "ahead" of a
   // main-repainted scroll.
-  gfx::PointF scroll_position = transform_node->scroll_offset;
+  gfx::PointF scroll_position = transform_node->scroll_offset();
   if (transform_node->scrolls) {
     // The scroll position does not include snapping which shifts the scroll
     // offset to align to a pixel boundary, we need to manually include it here.
@@ -567,7 +577,7 @@ gfx::Vector2dF TransformTree::AnchorPositionOffset(
       // We don't ever expect that an anchor node or any of its scrolling
       // containers should have an invalid transform_id.
       DCHECK(container_transform_id != kInvalidPropertyNodeId);
-      accumulated_offset += transform_node->scroll_offset.OffsetFromOrigin();
+      accumulated_offset += transform_node->scroll_offset().OffsetFromOrigin();
       // TODO(crbug.com/325613705): Should we consider snap_amount here?
     } else if (TransformNode* container_transform =
                    property_trees()
@@ -619,7 +629,7 @@ void TransformTree::UndoOverscroll(
 
   const TransformNode* overscroll_node = Node(transform_id);
   const gfx::Vector2dF overscroll_offset =
-      overscroll_node->scroll_offset.OffsetFromOrigin();
+      overscroll_node->scroll_offset().OffsetFromOrigin();
   if (overscroll_offset.IsZero())
     return;
 
@@ -663,12 +673,12 @@ void TransformTree::UpdateLocalTransform(
   if (node->should_undo_overscroll)
     UndoOverscroll(node, position_adjustment, viewport_property_ids);
   transform.Translate(position_adjustment -
-                      node->scroll_offset.OffsetFromOrigin());
+                      node->scroll_offset().OffsetFromOrigin());
   transform.Translate(StickyPositionOffset(node));
   if (node->anchor_position_scroll_data_id >= 0) {
     transform.Translate(AnchorPositionOffset(node, node->id - 1, update_data));
     // Make sure the damage rect is tracked.
-    node->transform_changed = true;
+    node->SetTransformChanged(DamageReason::kUntracked);
   }
   transform.PreConcat(node->local);
   transform.Translate3d(gfx::Point3F() - node->origin);
@@ -753,8 +763,9 @@ void TransformTree::UpdateSnapping(TransformNode* node) {
 void TransformTree::UpdateTransformChanged(TransformNode* node,
                                            TransformNode* parent_node) {
   DCHECK(parent_node);
-  if (parent_node->transform_changed)
-    node->transform_changed = true;
+  if (parent_node->transform_changed()) {
+    node->CopyTransformChangedFrom(*parent_node);
+  }
 }
 
 void TransformTree::UpdateNodeAndAncestorsAreAnimatedOrInvertible(
@@ -995,11 +1006,11 @@ void EffectTree::UpdateEffectChanged(EffectNode* node,
 }
 
 void EffectTree::UpdateHasFilters(EffectNode* node, EffectNode* parent_node) {
-  node->node_or_ancestor_has_filters =
-      !node->filters.IsEmpty() || node->has_potential_filter_animation;
+  node->lcd_text_disallowed_by_filter =
+      node->has_potential_filter_animation || !node->filters.AllowsLCDText();
   if (parent_node) {
-    node->node_or_ancestor_has_filters |=
-        parent_node->node_or_ancestor_has_filters;
+    node->lcd_text_disallowed_by_filter |=
+        parent_node->lcd_text_disallowed_by_filter;
   }
 }
 
@@ -1068,6 +1079,19 @@ void EffectTree::UpdateSurfaceContentsScale(EffectNode* effect_node) {
   const gfx::Vector2dF old_scale = effect_node->surface_contents_scale;
   effect_node->surface_contents_scale = gfx::ComputeTransform2dScaleComponents(
       transform_tree.ToScreen(transform_node->id), layer_scale_factor);
+
+  // To avoid seams we apply only scale as draw transform instead of raster
+  // content transform.
+  if (effect_node->render_surface_reason ==
+      RenderSurfaceReason::k2DScaleTransformWithCompositedDescendants) {
+    // We raster at closest positive integer scale and then apply the rest as
+    // the draw transform, e.g scale 3.5 will rastered at 4 and 0.875 (3.5/4)
+    // will be applied as draw transform.
+    effect_node->surface_contents_scale.set_x(
+        std::ceil(std::abs(effect_node->surface_contents_scale.x())));
+    effect_node->surface_contents_scale.set_y(
+        std::ceil(std::abs(effect_node->surface_contents_scale.y())));
+  }
 
   // If surface contents scale changes, draw transforms are no longer valid.
   // Invalidates the draw transform cache and updates the clip for the surface.
@@ -1158,6 +1182,8 @@ void EffectTree::UpdateClosestAncestorSharedElement(EffectNode* node,
 void EffectTree::AddCopyRequest(
     int node_id,
     std::unique_ptr<viz::CopyOutputRequest> request) {
+  EffectNode* effect_node = Node(node_id);
+  effect_node->has_copy_request = true;
   copy_requests_.insert(std::make_pair(node_id, std::move(request)));
 }
 
@@ -2260,9 +2286,6 @@ bool PropertyTrees::ElementIsAnimatingChanged(
       case TargetProperty::OPACITY:
         if (EffectNode* effect_node =
                 effect_tree_mutable().FindNodeFromElementId(element_id)) {
-          if (mask.currently_running[property])
-            effect_node->is_currently_animating_opacity =
-                state.currently_running[property];
           if (mask.potentially_animating[property]) {
             effect_node->has_potential_opacity_animation =
                 state.potentially_animating[property];
@@ -2278,9 +2301,6 @@ bool PropertyTrees::ElementIsAnimatingChanged(
       case TargetProperty::FILTER:
         if (EffectNode* effect_node =
                 effect_tree_mutable().FindNodeFromElementId(element_id)) {
-          if (mask.currently_running[property])
-            effect_node->is_currently_animating_filter =
-                state.currently_running[property];
           if (mask.potentially_animating[property])
             effect_node->has_potential_filter_animation =
                 state.potentially_animating[property];
@@ -2295,9 +2315,6 @@ bool PropertyTrees::ElementIsAnimatingChanged(
       case TargetProperty::BACKDROP_FILTER:
         if (EffectNode* effect_node =
                 effect_tree_mutable().FindNodeFromElementId(element_id)) {
-          if (mask.currently_running[property])
-            effect_node->is_currently_animating_backdrop_filter =
-                state.currently_running[property];
           if (mask.potentially_animating[property])
             effect_node->has_potential_backdrop_filter_animation =
                 state.potentially_animating[property];
@@ -2316,6 +2333,7 @@ bool PropertyTrees::ElementIsAnimatingChanged(
   }
   return updated_transform;
 }
+#undef DCHECK_NODE_EXISTENCE
 
 void PropertyTrees::MaximumAnimationScaleChanged(ElementId element_id,
                                                  float maximum_scale) {
@@ -2352,8 +2370,9 @@ void PropertyTrees::GetChangedNodes(std::vector<int>& effect_nodes,
   }
   for (int id = kContentsRootPropertyNodeId;
        id < static_cast<int>(transform_tree().size()); ++id) {
-    if (transform_tree().Node(id)->transform_changed)
+    if (transform_tree().Node(id)->transform_changed()) {
       transform_nodes.push_back(id);
+    }
   }
 }
 
@@ -2361,10 +2380,13 @@ void PropertyTrees::ApplyChangedNodes(
     const std::vector<int>& changed_effect_nodes,
     const std::vector<int>& changed_transform_nodes) {
   if (changed_effect_nodes.size() || changed_transform_nodes.size()) {
-    for (int i : changed_effect_nodes)
+    for (int i : changed_effect_nodes) {
       effect_tree_mutable().Node(i)->effect_changed = true;
-    for (int i : changed_transform_nodes)
-      transform_tree_mutable().Node(i)->transform_changed = true;
+    }
+    for (int i : changed_transform_nodes) {
+      transform_tree_mutable().Node(i)->SetTransformChanged(
+          DamageReason::kUntracked);
+    }
     UpdateChangeTracking();
   }
 }
@@ -2570,13 +2592,13 @@ bool PropertyTrees::GetFromTarget(int transform_id,
 
 DrawTransformData& PropertyTrees::FetchDrawTransformsDataFromCache(
     int transform_id,
-    int dest_id) const {
+    int effect_id) const {
   for (auto& transform_data : cached_data_.draw_transforms[transform_id]) {
     // We initialize draw_transforms with 1 element vectors when
     // ResetCachedData, so if we hit an invalid target id, it means it's the
     // first time we compute draw transforms after reset.
-    if (transform_data.target_id == dest_id ||
-        transform_data.target_id == kInvalidPropertyNodeId) {
+    if (transform_data.effect_id == effect_id ||
+        transform_data.effect_id == kInvalidPropertyNodeId) {
       return transform_data;
     }
   }
@@ -2584,7 +2606,7 @@ DrawTransformData& PropertyTrees::FetchDrawTransformsDataFromCache(
   cached_data_.draw_transforms[transform_id].push_back(DrawTransformData());
   DrawTransformData& data = cached_data_.draw_transforms[transform_id].back();
   data.update_number = kInvalidUpdateNumber;
-  data.target_id = dest_id;
+  data.effect_id = effect_id;
   return data;
 }
 
@@ -2616,10 +2638,10 @@ DrawTransforms& PropertyTrees::GetDrawTransforms(int transform_id,
   int dest_id = effect_node->transform_id;
 
   DrawTransformData& data =
-      FetchDrawTransformsDataFromCache(transform_id, dest_id);
+      FetchDrawTransformsDataFromCache(transform_id, effect_id);
 
   DCHECK(data.update_number != cached_data_.transform_tree_update_number ||
-         data.target_id != kInvalidPropertyNodeId);
+         data.effect_id != kInvalidPropertyNodeId);
   if (data.update_number == cached_data_.transform_tree_update_number)
     return data.transforms;
 
@@ -2659,7 +2681,7 @@ DrawTransforms& PropertyTrees::GetDrawTransforms(int transform_id,
   if (!already_computed_inverse)
     data.transforms.to_valid = true;
   data.update_number = cached_data_.transform_tree_update_number;
-  data.target_id = dest_id;
+  data.effect_id = effect_id;
   data.transforms.from_target = from_target;
   data.transforms.to_target = target_space_transform;
   return data.transforms;
@@ -2677,7 +2699,7 @@ void PropertyTrees::ResetCachedData() {
   for (auto& draw_transforms_for_id : cached_data_.draw_transforms) {
     draw_transforms_for_id.resize(1);
     draw_transforms_for_id[0].update_number = kInvalidUpdateNumber;
-    draw_transforms_for_id[0].target_id = kInvalidPropertyNodeId;
+    draw_transforms_for_id[0].effect_id = kInvalidPropertyNodeId;
   }
 }
 

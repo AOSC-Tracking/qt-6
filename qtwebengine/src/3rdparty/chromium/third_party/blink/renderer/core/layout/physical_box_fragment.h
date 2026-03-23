@@ -98,7 +98,7 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     return base::span(children_);
   }
 
-  const HeapVector<Member<Node>>* ReadingFlowNodes() const {
+  const GCedHeapVector<Member<Node>>* ReadingFlowNodes() const {
     if (rare_data_) {
       return rare_data_->reading_flow_nodes_;
     }
@@ -109,7 +109,7 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
   // post-layout, and therefore all descendants are safe.
   PhysicalFragment::PostLayoutChildLinkList PostLayoutChildren() const {
     DCHECK(children_valid_);
-    return PostLayoutChildLinkList(children_.size(), children_.data());
+    return PostLayoutChildLinkList(base::span(children_));
   }
 
   // This exposes a mutable part of the fragment for |OutOfFlowLayoutPart|.
@@ -118,25 +118,20 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
 
    protected:
     friend class OutOfFlowLayoutPart;
-    base::span<PhysicalFragmentLink> Children() const {
-      // TODO(crbug.com/351564777): Resolve a buffer safety issue.
-      return UNSAFE_TODO(base::span(buffer_, num_children_));
-    }
+    base::span<PhysicalFragmentLink> Children() const { return span_; }
 
    private:
     friend class PhysicalBoxFragment;
-    MutableChildrenForOutOfFlow(const PhysicalFragmentLink* buffer,
-                                wtf_size_t num_children)
-        : buffer_(const_cast<PhysicalFragmentLink*>(buffer)),
-          num_children_(num_children) {}
+    explicit MutableChildrenForOutOfFlow(base::span<PhysicalFragmentLink> span)
+        : span_(span) {}
 
-    PhysicalFragmentLink* buffer_;
-    wtf_size_t num_children_;
+    base::span<PhysicalFragmentLink> span_;
   };
 
   MutableChildrenForOutOfFlow GetMutableChildrenForOutOfFlow() const {
     DCHECK(children_valid_);
-    return MutableChildrenForOutOfFlow(children_.data(), children_.size());
+    return MutableChildrenForOutOfFlow(
+        base::span(const_cast<PhysicalBoxFragment*>(this)->children_));
   }
 
   // Returns |FragmentItems| if this fragment has one.
@@ -172,15 +167,15 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
            !Style().ShouldIgnoreOverflowPropertyForInlineBlockBaseline();
   }
 
-  const GapFragmentData::GapGeometry* GapGeometry() const {
-    return rare_data_->gap_geometry_.Get();
+  const GapGeometry* GetGapGeometry() const {
+    return rare_data_ ? rare_data_->gap_geometry_.Get() : nullptr;
   }
 
   LogicalRect TableGridRect() const {
     return rare_data_->GetField(FieldId::kTableGridRect)->table_grid_rect;
   }
 
-  const TableFragmentData::ColumnGeometries* TableColumnGeometries() const {
+  const GCedTableColumnGeometries* TableColumnGeometries() const {
     return rare_data_->table_column_geometries_.Get();
   }
 
@@ -188,8 +183,7 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     return rare_data_ ? rare_data_->table_collapsed_borders_.Get() : nullptr;
   }
 
-  const TableFragmentData::CollapsedBordersGeometry*
-  TableCollapsedBordersGeometry() const {
+  const CollapsedTableBordersGeometry* TableCollapsedBordersGeometry() const {
     if (const auto* field =
             GetRareField(FieldId::kTableCollapsedBordersGeometry)) {
       return field->table_collapsed_borders_geometry.get();
@@ -294,6 +288,14 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
       return field->inflow_bounds;
     }
     return std::nullopt;
+  }
+
+  PhysicalOffset OffsetFromRootFragmentationContext() const {
+    if (const auto* field =
+            GetRareField(FieldId::kOffsetFromRootFragmentationContext)) {
+      return field->offset_from_root_fragmentation_context;
+    }
+    return PhysicalOffset();
   }
 
   // Return true if this is either a container that establishes an inline
@@ -423,7 +425,7 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
 
   bool HasDescendantsForTablePart() const {
     DCHECK(IsTablePart() || IsTableCell());
-    return bit_field_.get<HasDescendantsForTablePartFlag>();
+    return children_.size() || NeedsOOFPositionedInfoPropagation();
   }
 
   bool IsFragmentationContextRoot() const {
@@ -488,6 +490,7 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     MutableForContainerLayout(base::PassKey<PhysicalBoxFragment>,
                               PhysicalBoxFragment& fragment);
     void SetMargins(const PhysicalBoxStrut& margins);
+    void SetOffsetFromRootFragmentationContext(PhysicalOffset);
 
    private:
     PhysicalBoxFragment& fragment_;
@@ -539,15 +542,7 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     }
 
     // Remove existing children, and add those from new_fragment.
-    void ReplaceChildren(const PhysicalBoxFragment& new_fragment) {
-      // Replacing children that establish an inline formatting context is not
-      // supported. An anonymous wrapper block should have been created.
-      DCHECK(!new_fragment.HasItems());
-      DCHECK(!fragment_.HasItems());
-
-      fragment_.children_.clear();
-      fragment_.children_.AppendVector(new_fragment.children_);
-    }
+    void ReplaceChildren(const PhysicalBoxFragment& new_fragment);
 
    private:
     explicit MutableForCloning(const PhysicalBoxFragment& fragment)
@@ -620,9 +615,9 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
 #endif
 
  private:
-  using BitField = WTF::ConcurrentlyReadBitField<uint32_t>;
+  using BitField = ConcurrentlyReadBitField<uint32_t>;
   using ConstHasFragmentItemsFlag =
-      BitField::DefineFirstValue<bool, 1, WTF::BitFieldValueConstness::kConst>;
+      BitField::DefineFirstValue<bool, 1, BitFieldValueConstness::kConst>;
   using IsInlineFormattingContextFlag =
       ConstHasFragmentItemsFlag::DefineNextValue<bool, 1>;
   using IncludeBorderTopFlag =
@@ -635,10 +630,8 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
   using InkOverflowTypeValue =
       IncludeBorderLeftFlag::DefineNextValue<uint8_t, InkOverflow::kTypeBits>;
   using IsFirstForNodeFlag = InkOverflowTypeValue::DefineNextValue<bool, 1>;
-  using HasDescendantsForTablePartFlag =
-      IsFirstForNodeFlag::DefineNextValue<bool, 1>;
   using IsFragmentationContextRootFlag =
-      HasDescendantsForTablePartFlag::DefineNextValue<bool, 1>;
+      IsFirstForNodeFlag::DefineNextValue<bool, 1>;
   using IsMonolithicFlag =
       IsFragmentationContextRootFlag::DefineNextValue<bool, 1>;
   using IsMonolithicOverflowPropagationDisabledFlag =
@@ -678,9 +671,10 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
 
   const FragmentItems* ComputeItemsAddress() const {
     DCHECK(HasItems());
-    // TODO(crbug.com/351564777): Resolve a buffer safety issue.
+    // SAFETY: FragmentItems is placed just after this object. So `this + 1`
+    // is valid. See Create() and AdditionalByteSize().
     return reinterpret_cast<const FragmentItems*>(base::bits::AlignUp(
-        reinterpret_cast<const uint8_t*>(UNSAFE_TODO(this + 1)),
+        reinterpret_cast<const uint8_t*>(UNSAFE_BUFFERS(this + 1)),
         alignof(FragmentItems)));
   }
 

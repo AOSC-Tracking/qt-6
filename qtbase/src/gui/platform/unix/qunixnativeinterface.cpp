@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtGui/private/qtguiglobal_p.h>
 
@@ -290,6 +291,11 @@ QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QVxKeyMapper);
 /*!
     \fn wl_seat *QNativeInterface::QWaylandApplication::seat() const
     \return the seat associated with the default input device.
+*/
+
+/*!
+    \fn struct xkb_context *QNativeInterface::QWaylandApplication::xkbContext() const
+    \return the XKB context associated with the application.
 */
 
 QT_DEFINE_NATIVE_INTERFACE(QWaylandApplication);

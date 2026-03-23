@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Templates as T
@@ -30,7 +31,6 @@ T.MenuItem {
 
     icon.width: 24
     icon.height: 24
-    icon.color: control.palette.windowText
 
     contentItem: IconLabel {
         readonly property real arrowPadding: control.subMenu && control.arrow ? control.arrow.width + control.spacing : 0
@@ -44,9 +44,10 @@ T.MenuItem {
         alignment: Qt.AlignLeft
 
         icon: control.icon
+        defaultIconColor: control.palette.windowText
         text: control.text
         font: control.font
-        color: control.palette.windowText
+        color: defaultIconColor
     }
 
     arrow: Image {

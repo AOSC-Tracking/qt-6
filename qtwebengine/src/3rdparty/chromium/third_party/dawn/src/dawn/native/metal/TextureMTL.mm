@@ -101,6 +101,26 @@ MTLTextureType MetalTextureViewType(wgpu::TextureViewDimension dimension,
     }
 }
 
+MTLTextureSwizzle MetalTextureSwizzle(wgpu::ComponentSwizzle swizzle) {
+    switch (swizzle) {
+        case wgpu::ComponentSwizzle::Zero:
+            return MTLTextureSwizzleZero;
+        case wgpu::ComponentSwizzle::One:
+            return MTLTextureSwizzleOne;
+        case wgpu::ComponentSwizzle::R:
+            return MTLTextureSwizzleRed;
+        case wgpu::ComponentSwizzle::G:
+            return MTLTextureSwizzleGreen;
+        case wgpu::ComponentSwizzle::B:
+            return MTLTextureSwizzleBlue;
+        case wgpu::ComponentSwizzle::A:
+            return MTLTextureSwizzleAlpha;
+
+        case wgpu::ComponentSwizzle::Undefined:
+            DAWN_UNREACHABLE();
+    }
+}
+
 bool RequiresCreatingNewTextureView(
     const TextureBase* texture,
     wgpu::TextureUsage internalViewUsage,
@@ -154,6 +174,16 @@ bool RequiresCreatingNewTextureView(
             return true;
         default:
             break;
+    }
+
+    // TODO(414312052): Use TextureViewBase::UsesNonDefaultSwizzle() instead of
+    // textureViewDescriptor.
+    if (auto* swizzleDesc = textureViewDescriptor.Get<TextureComponentSwizzleDescriptor>()) {
+        auto swizzle = swizzleDesc->swizzle.WithTrivialFrontendDefaults();
+        if (swizzle.r != wgpu::ComponentSwizzle::R || swizzle.g != wgpu::ComponentSwizzle::G ||
+            swizzle.b != wgpu::ComponentSwizzle::B || swizzle.a != wgpu::ComponentSwizzle::A) {
+            return true;
+        }
     }
 
     return false;
@@ -674,50 +704,46 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
                 (largestMipSize.width / blockInfo.width) * blockInfo.byteSize;
             uint64_t largestMipBytesPerImage = static_cast<uint64_t>(largestMipBytesPerRow) *
                                                (largestMipSize.height / blockInfo.height);
-            uint64_t bufferSize = largestMipBytesPerImage * largestMipSize.depthOrArrayLayers;
+            uint64_t uploadSize = largestMipBytesPerImage * largestMipSize.depthOrArrayLayers;
 
-            if (bufferSize > std::numeric_limits<NSUInteger>::max()) {
-                return DAWN_OUT_OF_MEMORY_ERROR("Unable to allocate buffer.");
-            }
+            DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
+                uploadSize, blockInfo.byteSize, [&](UploadReservation reservation) -> MaybeError {
+                    memset(reservation.mappedPointer, clearColor, uploadSize);
 
-            DynamicUploader* uploader = device->GetDynamicUploader();
-            UploadHandle uploadHandle;
-            DAWN_TRY_ASSIGN(
-                uploadHandle,
-                uploader->Allocate(bufferSize, device->GetQueue()->GetPendingCommandSerial(),
-                                   blockInfo.byteSize));
-            memset(uploadHandle.mappedBuffer, clearColor, bufferSize);
+                    id<MTLBuffer> buffer = ToBackend(reservation.buffer)->GetMTLBuffer();
+                    for (uint32_t level = range.baseMipLevel;
+                         level < range.baseMipLevel + range.levelCount; ++level) {
+                        Extent3D virtualSize =
+                            GetMipLevelSingleSubresourceVirtualSize(level, aspect);
 
-            id<MTLBuffer> uploadBuffer = ToBackend(uploadHandle.stagingBuffer)->GetMTLBuffer();
+                        for (uint32_t arrayLayer = range.baseArrayLayer;
+                             arrayLayer < range.baseArrayLayer + range.layerCount; ++arrayLayer) {
+                            if (clearValue == TextureBase::ClearValue::Zero &&
+                                IsSubresourceContentInitialized(SubresourceRange::SingleMipAndLayer(
+                                    level, arrayLayer, aspect))) {
+                                // Skip lazy clears if already initialized.
+                                continue;
+                            }
 
-            for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
-                 ++level) {
-                Extent3D virtualSize = GetMipLevelSingleSubresourceVirtualSize(level, aspect);
-
-                for (uint32_t arrayLayer = range.baseArrayLayer;
-                     arrayLayer < range.baseArrayLayer + range.layerCount; ++arrayLayer) {
-                    if (clearValue == TextureBase::ClearValue::Zero &&
-                        IsSubresourceContentInitialized(
-                            SubresourceRange::SingleMipAndLayer(level, arrayLayer, aspect))) {
-                        // Skip lazy clears if already initialized.
-                        continue;
+                            MTLBlitOption blitOption = ComputeMTLBlitOption(aspect);
+                            [commandContext->EnsureBlit()
+                                     copyFromBuffer:buffer
+                                       sourceOffset:reservation.offsetInBuffer
+                                  sourceBytesPerRow:largestMipBytesPerRow
+                                sourceBytesPerImage:largestMipBytesPerImage
+                                         sourceSize:MTLSizeMake(virtualSize.width,
+                                                                virtualSize.height,
+                                                                virtualSize.depthOrArrayLayers)
+                                          toTexture:GetMTLTexture(aspect)
+                                   destinationSlice:arrayLayer
+                                   destinationLevel:level
+                                  destinationOrigin:MTLOriginMake(0, 0, 0)
+                                            options:blitOption];
+                        }
                     }
 
-                    MTLBlitOption blitOption = ComputeMTLBlitOption(aspect);
-                    [commandContext->EnsureBlit()
-                             copyFromBuffer:uploadBuffer
-                               sourceOffset:uploadHandle.startOffset
-                          sourceBytesPerRow:largestMipBytesPerRow
-                        sourceBytesPerImage:largestMipBytesPerImage
-                                 sourceSize:MTLSizeMake(virtualSize.width, virtualSize.height,
-                                                        virtualSize.depthOrArrayLayers)
-                                  toTexture:GetMTLTexture(aspect)
-                           destinationSlice:arrayLayer
-                           destinationLevel:level
-                          destinationOrigin:MTLOriginMake(0, 0, 0)
-                                    options:blitOption];
-                }
-            }
+                    return {};
+                }));
         }
     }
     return {};
@@ -812,10 +838,26 @@ MaybeError TextureView::Initialize(const UnpackedPtr<TextureViewDescriptor>& des
         auto mipLevelRange = NSMakeRange(descriptor->baseMipLevel, descriptor->mipLevelCount);
         auto arrayLayerRange = NSMakeRange(descriptor->baseArrayLayer, descriptor->arrayLayerCount);
 
-        mMtlTextureView = AcquireNSPRef([mtlTexture newTextureViewWithPixelFormat:viewFormat
-                                                                      textureType:textureViewType
-                                                                           levels:mipLevelRange
-                                                                           slices:arrayLayerRange]);
+        if (UsesNonDefaultSwizzle()) {
+            MTLTextureSwizzleChannels swizzle;
+            swizzle.red = MetalTextureSwizzle(GetSwizzleRed());
+            swizzle.green = MetalTextureSwizzle(GetSwizzleGreen());
+            swizzle.blue = MetalTextureSwizzle(GetSwizzleBlue());
+            swizzle.alpha = MetalTextureSwizzle(GetSwizzleAlpha());
+            mMtlTextureView =
+                AcquireNSPRef([mtlTexture newTextureViewWithPixelFormat:viewFormat
+                                                            textureType:textureViewType
+                                                                 levels:mipLevelRange
+                                                                 slices:arrayLayerRange
+                                                                swizzle:swizzle]);
+        } else {
+            mMtlTextureView =
+                AcquireNSPRef([mtlTexture newTextureViewWithPixelFormat:viewFormat
+                                                            textureType:textureViewType
+                                                                 levels:mipLevelRange
+                                                                 slices:arrayLayerRange]);
+        }
+
         if (mMtlTextureView == nil) {
             return DAWN_INTERNAL_ERROR("Failed to create MTLTexture view.");
         }

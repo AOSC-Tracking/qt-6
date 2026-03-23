@@ -38,14 +38,19 @@
 }
 
 .text-filter {
-  width: 200px;
+  flex-grow: 1;
+  min-width: var(--sys-size-25);
+  max-width: var(--sys-size-36);
 }
 
 .filter-bitset-filter {
   padding: 2px;
   display: inline-flex;
   overflow: hidden;
-  height: 24px;
+  min-height: var(--sys-size-11);
+  height: auto;
+  flex-wrap: wrap;
+  row-gap: var(--sys-size-2);
   position: relative;
   margin: 0;
 }
@@ -68,19 +73,26 @@
 }
 
 .filter-bitset-filter span:focus-visible {
-  outline: -webkit-focus-ring-color auto 5px;
+  outline: var(--sys-size-2) solid var(--sys-color-state-focus-ring);
 }
 
 .filter-bitset-filter span:hover {
-  outline: none;
   background: var(--sys-color-state-hover-on-subtle);
+}
+
+.filter-bitset-filter span:hover:not(:focus-visible) {
+  outline: none;
 }
 
 .filter-bitset-filter span.selected,
 .filter-bitset-filter span:active {
   color: var(--sys-color-on-tonal-container);
-  outline: none;
   background-color: var(--sys-color-tonal-container);
+}
+
+.filter-bitset-filter span.selected:not(:focus-visible),
+.filter-bitset-filter span:active:not(:focus-visible) {
+  outline: none;
 }
 
 .filter-bitset-filter-divider {
@@ -103,7 +115,7 @@
   position: relative;
 }
 
-.filter-checkbox-filter > dt-checkbox {
+.filter-checkbox-filter > devtools-checkbox {
   display: flex;
   margin: auto 0;
 }
@@ -150,7 +162,7 @@
   justify-content: space-between;
   align-items: center;
   height: var(--sys-size-9);
-  padding: 0 var(--sys-size-3) 0 var(--sys-size-5);
+  margin: 0 var(--sys-size-3) 0 var(--sys-size-5);
   border: none;
   border-radius: var(--sys-shape-corner-extra-small);
   display: flex;

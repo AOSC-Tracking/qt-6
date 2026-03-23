@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgrendershadercodegenerator_p.h"
 
@@ -29,6 +31,8 @@ static inline void addEndCond(QByteArray &block, const T &var)
     if (var.conditionType != QSSGRenderShaderMetadata::Uniform::None)
         block += QByteArrayLiteral("#endif\n");
 }
+
+int QSSGShaderResourceMergeContext::s_additionalBuffers = 0;
 
 struct QSSGShaderGeneratedProgramOutput
 {
@@ -65,6 +69,8 @@ void QSSGStageGeneratorBase::begin(QSSGShaderGeneratorStageFlags inEnabledStages
     m_enabledStages = inEnabledStages;
     m_addedFunctions.clear();
     m_addedDefinitions.clear();
+    m_addedTypeDeclarations.clear();
+    m_prefixes.clear();
     // the shared buffers will be cleared elsewhere.
 }
 
@@ -192,6 +198,7 @@ void QSSGStageGeneratorBase::addShaderUniformMap()
             m_mergeContext->registerUniformMember(iter.value().second, name);
     }
     addShaderPass2Marker(ShaderItemType::Uniform);
+    addShaderPass2Marker(ShaderItemType::Image);
 }
 
 void QSSGStageGeneratorBase::addShaderOutgoingMap()
@@ -238,6 +245,14 @@ void QSSGStageGeneratorBase::addInclude(const QByteArray &name) { m_includes.ins
 void QSSGStageGeneratorBase::buildShaderSourcePass1(QSSGShaderResourceMergeContext *mergeContext)
 {
     m_mergeContext = mergeContext;
+
+    if (m_prefixes.size())
+        m_finalBuilder.append("\n");
+    for (const auto &prefix : std::as_const(m_prefixes)) {
+        m_finalBuilder.append(prefix);
+        m_finalBuilder.append("\n");
+    }
+
     addShaderIncomingMap();
     addShaderUniformMap();
     addShaderConstantBufferItemMap("uniform", m_constantBuffers, m_constantBufferParams);
@@ -254,6 +269,11 @@ void QSSGStageGeneratorBase::buildShaderSourcePass1(QSSGShaderResourceMergeConte
         if (!iter.value().isEmpty())
             m_finalBuilder.append(QByteArrayLiteral(" ") + iter.value());
         m_finalBuilder.append("\n#endif\n");
+    }
+
+    for (const auto& value : std::as_const(m_addedTypeDeclarations)) {
+        m_finalBuilder.append(value);
+        m_finalBuilder.append("\n");
     }
 
     // Sort for deterministic shader text when printing/debugging
@@ -275,6 +295,9 @@ QByteArray QSSGStageGeneratorBase::buildShaderSourcePass2(QSSGShaderResourceMerg
     const int prefixLen = 4;
     const int typeLen = 1;
     int from = 0;
+
+    mergeContext->rearrangeResources();
+
     for (; ;) {
         int pos = m_finalBuilder.indexOf(prefix, from);
         if (pos >= 0) {
@@ -284,7 +307,7 @@ QByteArray QSSGStageGeneratorBase::buildShaderSourcePass2(QSSGShaderResourceMerg
             case ShaderItemType::VertexInput:
                 if (m_stage == QSSGShaderGeneratorStage::Vertex) {
                     QByteArray block;
-                    for (const QSSGShaderResourceMergeContext::InOutVar &var : mergeContext->m_inOutVars) {
+                    for (const QSSGShaderResourceMergeContext::InOutVar &var : std::as_const(mergeContext->m_inOutVars)) {
                         if (var.stagesInputIn.testFlag(m_stage))
                             block += QString::asprintf("layout(location = %d) in %s %s;\n", var.location, var.type.constData(), var.name.constData()).toUtf8();
                     }
@@ -294,7 +317,7 @@ QByteArray QSSGStageGeneratorBase::buildShaderSourcePass2(QSSGShaderResourceMerg
             case ShaderItemType::Input:
             {
                 QByteArray block;
-                for (const QSSGShaderResourceMergeContext::InOutVar &var : mergeContext->m_inOutVars) {
+                for (const QSSGShaderResourceMergeContext::InOutVar &var : std::as_const(mergeContext->m_inOutVars)) {
                     if (var.stagesInputIn.testFlag(m_stage))
                         block += QString::asprintf("layout(location = %d) in %s%s %s;\n", var.location, var.flat ? "flat " : "", var.type.constData(), var.name.constData()).toUtf8();
                 }
@@ -304,13 +327,29 @@ QByteArray QSSGStageGeneratorBase::buildShaderSourcePass2(QSSGShaderResourceMerg
             case ShaderItemType::Output:
             {
                 QByteArray block;
-                for (const QSSGShaderResourceMergeContext::InOutVar &var : mergeContext->m_inOutVars) {
+                for (const QSSGShaderResourceMergeContext::InOutVar &var : std::as_const(mergeContext->m_inOutVars)) {
                     if (var.stageOutputFrom.testFlag(m_stage))
                         block += QString::asprintf("layout(location = %d) out %s%s %s;\n", var.location, var.flat ? "flat " : "", var.type.constData(), var.name.constData()).toUtf8();
                 }
                 m_finalBuilder.replace(pos, prefixLen + typeLen, block);
             }
                 break;
+            case ShaderItemType::Image:
+            {
+                QByteArray block;
+
+                for (const auto &image : std::as_const(mergeContext->m_images)) {
+                    addStartCond(block, image);
+                    block += QString::asprintf("layout(binding = %d, %s) uniform %s %s %s;\n",
+                                               image.binding,
+                                               image.imgType.constData(),
+                                               image.qualifiers.constData(),
+                                               image.type.constData(),
+                                               image.name.constData()).toUtf8();
+                    addEndCond(block, image);
+                }
+                m_finalBuilder.replace(pos, prefixLen + typeLen, block);
+            } break;
             case ShaderItemType::Uniform:
             {
                 QByteArray block;
@@ -370,9 +409,21 @@ void QSSGStageGeneratorBase::addFunction(const QByteArray &functionName)
     }
 }
 
+void QSSGStageGeneratorBase::addPrefix(const QByteArray &data)
+{
+    m_prefixes.append(data);
+}
+
 void QSSGStageGeneratorBase::addDefinition(const QByteArray &name, const QByteArray &value)
 {
     m_addedDefinitions.insert(name, value);
+}
+
+void QSSGStageGeneratorBase::addTypeDeclaration(const QByteArray &typeName, const QByteArray &snippet)
+{
+    if (snippet.isEmpty())
+        return;
+    m_addedTypeDeclarations.insert(typeName, snippet);
 }
 
 void QSSGProgramGenerator::linkStages()
@@ -447,6 +498,9 @@ void QSSGProgramGenerator::registerShaderMetaDataFromSource(QSSGShaderResourceMe
         }
     }
 
+    for (const QSSGRenderShaderMetadata::Image &img : std::as_const(meta.images))
+        mergeContext->registerImage(img.type, img.name, img.imageType, img.qualifiers, img.condition, img.conditionName);
+
     for (const QSSGRenderShaderMetadata::InputOutput &inputVar : std::as_const(meta.inputs)) {
         if (inputVar.stage == stage)
             mergeContext->registerInput(stage, inputVar.type, inputVar.name, inputVar.flat);
@@ -468,6 +522,7 @@ QSSGRhiShaderPipelinePtr QSSGProgramGenerator::compileGeneratedRhiShader(const Q
                                                                          QSSGShaderLibraryManager &shaderLibraryManager,
                                                                          QSSGShaderCache &theCache,
                                                                          QSSGRhiShaderPipeline::StageFlags stageFlags,
+                                                                         const QSSGUserShaderAugmentation &shaderAugmentation,
                                                                          int viewCount,
                                                                          bool perTargetCompilation)
 {
@@ -505,6 +560,8 @@ QSSGRhiShaderPipelinePtr QSSGProgramGenerator::compileGeneratedRhiShader(const Q
         }
     }
 
+    QSSGShaderResourceMergeContext::setAdditionalBufferAmount(0);
+
     // qDebug("VERTEX:\n%s\n\n", m_vs.m_finalBuilder.constData());
     // qDebug("FRAGMENT:\n%s\n\n", m_fs.m_finalBuilder.constData());
 
@@ -513,6 +570,7 @@ QSSGRhiShaderPipelinePtr QSSGProgramGenerator::compileGeneratedRhiShader(const Q
                                    m_fs.m_finalBuilder,
                                    inFeatureSet,
                                    stageFlags,
+                                   shaderAugmentation,
                                    viewCount,
                                    perTargetCompilation);
 }

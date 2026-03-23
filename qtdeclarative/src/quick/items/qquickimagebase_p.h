@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKIMAGEBASE_P_H
 #define QQUICKIMAGEBASE_P_H
@@ -28,14 +29,14 @@ class Q_QUICK_EXPORT QQuickImageBase : public QQuickImplicitSizeItem
 
     Q_PROPERTY(Status status READ status NOTIFY statusChanged)
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged)
-    Q_PROPERTY(qreal progress READ progress NOTIFY progressChanged)
+    Q_PROPERTY(qreal progress READ progress NOTIFY progressChanged VIRTUAL)
     Q_PROPERTY(bool asynchronous READ asynchronous WRITE setAsynchronous NOTIFY asynchronousChanged)
     Q_PROPERTY(bool cache READ cache WRITE setCache NOTIFY cacheChanged)
     Q_PROPERTY(bool mirror READ mirror WRITE setMirror NOTIFY mirrorChanged)
     Q_PROPERTY(bool mirrorVertically READ mirrorVertically WRITE setMirrorVertically NOTIFY mirrorVerticallyChanged REVISION(6, 2))
     Q_PROPERTY(bool retainWhileLoading READ retainWhileLoading WRITE setRetainWhileLoading NOTIFY retainWhileLoadingChanged REVISION(6, 8))
-    Q_PROPERTY(int currentFrame READ currentFrame WRITE setCurrentFrame NOTIFY currentFrameChanged REVISION(2, 14))
-    Q_PROPERTY(int frameCount READ frameCount NOTIFY frameCountChanged REVISION(2, 14))
+    Q_PROPERTY(int currentFrame READ currentFrame WRITE setCurrentFrame NOTIFY currentFrameChanged VIRTUAL REVISION(2, 14))
+    Q_PROPERTY(int frameCount READ frameCount NOTIFY frameCountChanged VIRTUAL REVISION(2, 14))
     Q_PROPERTY(QColorSpace colorSpace READ colorSpace WRITE setColorSpace NOTIFY colorSpaceChanged REVISION(2, 15))
 
     QML_NAMED_ELEMENT(ImageBase);

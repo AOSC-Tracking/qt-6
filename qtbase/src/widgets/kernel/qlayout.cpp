@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qlayout.h"
 
@@ -342,6 +343,17 @@ void QLayout::getContentsMargins(int *left, int *top, int *right, int *bottom) c
     d->getMargin(right, d->userRightMargin, QStyle::PM_LayoutRightMargin);
     d->getMargin(bottom, d->userBottomMargin, QStyle::PM_LayoutBottomMargin);
 }
+
+/*!
+    \property QLayout::contentsMargins
+    \since 4.6
+    \brief the margins used around the layout
+
+    By default, QLayout uses the values provided by the style. On
+    most platforms, the margin is 11 pixels in all directions.
+
+    \sa setContentsMargins(), getContentsMargins()
+*/
 
 /*!
     \since 4.6
@@ -757,6 +769,12 @@ void QLayoutPrivate::reparentChildWidgets(QWidget *mw)
         }
     }
 }
+
+/*!
+    \class QLayoutPrivate
+    \inmodule QtWidgets
+    \internal
+*/
 
 /*!
     Returns \c true if the \a widget can be added to the \a layout;

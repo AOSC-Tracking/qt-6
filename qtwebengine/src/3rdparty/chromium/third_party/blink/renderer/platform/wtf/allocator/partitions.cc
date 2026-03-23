@@ -48,7 +48,7 @@
 #include "partition_alloc/partition_root.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
 
-namespace WTF {
+namespace blink {
 
 const char* const Partitions::kAllocatedObjectPoolName =
     "partition_alloc/allocated_objects";
@@ -103,27 +103,11 @@ partition_alloc::PartitionOptions PartitionOptionsFromFeatures() {
   const auto memory_tagging =
       enable_memory_tagging ? partition_alloc::PartitionOptions::kEnabled
                             : partition_alloc::PartitionOptions::kDisabled;
-#if PA_BUILDFLAG(USE_FREELIST_DISPATCHER)
-  const bool pool_offset_freelists_enabled =
-      base::FeatureList::IsEnabled(base::features::kUsePoolOffsetFreelists);
-#else
-  const bool pool_offset_freelists_enabled = false;
-#endif  // PA_BUILDFLAG(USE_FREELIST_DISPATCHER)
-  const auto use_pool_offset_freelists =
-      pool_offset_freelists_enabled
-          ? partition_alloc::PartitionOptions::kEnabled
-          : partition_alloc::PartitionOptions::kDisabled;
   // No need to call ChangeMemoryTaggingModeForAllThreadsPerProcess() as it will
   // be handled in ReconfigureAfterFeatureListInit().
   PartitionOptions opts;
   opts.backup_ref_ptr = brp_setting;
   opts.memory_tagging = {.enabled = memory_tagging};
-  opts.use_pool_offset_freelists = use_pool_offset_freelists;
-  opts.use_small_single_slot_spans =
-      base::FeatureList::IsEnabled(
-          base::features::kPartitionAllocUseSmallSingleSlotSpans)
-          ? partition_alloc::PartitionOptions::kEnabled
-          : partition_alloc::PartitionOptions::kDisabled;
   return opts;
 }
 
@@ -282,7 +266,7 @@ size_t Partitions::TotalSizeOfCommittedPages() {
 // static
 size_t Partitions::TotalActiveBytes() {
   LightPartitionStatsDumperImpl dumper;
-  WTF::Partitions::DumpMemoryStats(true, &dumper);
+  Partitions::DumpMemoryStats(true, &dumper);
   return dumper.TotalActiveBytes();
 }
 
@@ -480,4 +464,4 @@ void Partitions::AdjustPartitionsForBackground() {
   }
 }
 
-}  // namespace WTF
+}  // namespace blink

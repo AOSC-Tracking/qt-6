@@ -6,9 +6,11 @@
 package org.qtproject.qt.android;
 
 import android.app.Activity;
+import android.app.UiModeManager;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.graphics.Color;
 import android.os.Build;
 import android.view.Window;
@@ -27,6 +29,9 @@ abstract class QtActivityDelegateBase
     private boolean m_membersInitialized = false;
     private boolean m_contextMenuVisible = false;
 
+    static native boolean canOverrideColorSchemeHint();
+    static native void updateUiContrast(float newUiContrast);
+
     // Subclass must implement these
     abstract void startNativeApplicationImpl(String appParams, String mainLib);
 
@@ -41,7 +46,9 @@ abstract class QtActivityDelegateBase
         m_activity = activity;
         QtNative.setActivity(m_activity);
         m_displayManager = new QtDisplayManager(m_activity);
-        m_inputDelegate = new QtInputDelegate(m_displayManager::reinstateFullScreen);
+        m_inputDelegate = new QtInputDelegate(() -> {
+            QtWindowInsetsController.restoreFullScreenVisibility(m_activity);
+        });
         m_accessibilityDelegate = new QtAccessibilityDelegate();
     }
 
@@ -94,21 +101,28 @@ abstract class QtActivityDelegateBase
         hideSplashScreen(0);
     }
 
-    void handleUiModeChange(int uiMode)
+    void handleUiModeChange()
     {
-        // QTBUG-108365
-        if (Build.VERSION.SDK_INT >= 30) {
-            // Since 29 version we are using Theme_DeviceDefault_DayNight
+        Resources resources = m_activity.getResources();
+        Configuration config = resources.getConfiguration();
+        int uiMode = config.uiMode & Configuration.UI_MODE_NIGHT_MASK;
+
+        if (QtWindowInsetsController.decorFitsSystemWindows(m_activity)) {
             Window window = m_activity.getWindow();
-            WindowInsetsController controller = window.getInsetsController();
-            if (controller != null) {
-                // set APPEARANCE_LIGHT_STATUS_BARS if needed
-                int appearanceLight = Color.luminance(window.getStatusBarColor()) > 0.5 ?
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS : 0;
-                controller.setSystemBarsAppearance(appearanceLight,
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
-            }
+            QtWindowInsetsController.enableSystemBarsBackgroundDrawing(window);
+            int status = QtWindowInsetsController.getThemeDefaultStatusBarColor(m_activity);
+            QtWindowInsetsController.setStatusBarColor(window, status);
+            int nav = QtWindowInsetsController.getThemeDefaultNavigationBarColor(m_activity);
+            QtWindowInsetsController.setNavigationBarColor(window, nav);
         }
+
+        // Don't override color scheme if the app has it set explicitly.
+        if (canOverrideColorSchemeHint()) {
+            boolean isLight = uiMode == Configuration.UI_MODE_NIGHT_NO;
+            QtWindowInsetsController.setStatusBarColorHint(m_activity, isLight);
+            QtWindowInsetsController.setNavigationBarColorHint(m_activity, isLight);
+        }
+
         switch (uiMode) {
             case Configuration.UI_MODE_NIGHT_NO:
                 ExtractStyle.runIfNeeded(m_activity, false);
@@ -118,6 +132,13 @@ abstract class QtActivityDelegateBase
                 ExtractStyle.runIfNeeded(m_activity, true);
                 QtDisplayManager.handleUiDarkModeChanged(1);
                 break;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // FIXME: Handle contrast changes the same way as uiMode changes (QTBUG-140749).
+            UiModeManager uiModeManager =
+                (UiModeManager) m_activity.getSystemService(m_activity.UI_MODE_SERVICE);
+            updateUiContrast(uiModeManager.getContrast());
         }
     }
 }

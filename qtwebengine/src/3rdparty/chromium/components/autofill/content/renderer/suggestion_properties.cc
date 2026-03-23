@@ -29,13 +29,13 @@ bool ShouldAutofillOnEmptyValues(
     case AutofillSuggestionTriggerSource::kContentEditableClicked:
     case AutofillSuggestionTriggerSource::kPasswordManagerProcessedFocusedField:
     case AutofillSuggestionTriggerSource::kAutofillAi:
+    case AutofillSuggestionTriggerSource::kProactivePasswordRecovery:
       return true;
     case AutofillSuggestionTriggerSource::kTextFieldValueChanged:
       return false;
-    // `kShowCardsFromAccount`, `kPasswordManager`, `kiOS`, and
-    // `kPlusAddressUpdatedInBrowserProcess` are not used in the renderer code.
-    // As such, suggestion properties don't apply to them.
-    case AutofillSuggestionTriggerSource::kShowCardsFromAccount:
+    // `kPasswordManager`, `kiOS`, and `kPlusAddressUpdatedInBrowserProcess` are
+    // not used in the renderer code. As such, suggestion properties don't apply
+    // to them.
     case AutofillSuggestionTriggerSource::kPasswordManager:
     case AutofillSuggestionTriggerSource::kiOS:
     case AutofillSuggestionTriggerSource::kPlusAddressUpdatedInBrowserProcess:
@@ -64,8 +64,8 @@ bool ShouldAutofillOnLongValues(
     case AutofillSuggestionTriggerSource::kPasswordManagerProcessedFocusedField:
     case AutofillSuggestionTriggerSource::kAutofillAi:
     case AutofillSuggestionTriggerSource::kPlusAddressUpdatedInBrowserProcess:
+    case AutofillSuggestionTriggerSource::kProactivePasswordRecovery:
       return false;
-    case AutofillSuggestionTriggerSource::kShowCardsFromAccount:
     case AutofillSuggestionTriggerSource::kPasswordManager:
     case AutofillSuggestionTriggerSource::kiOS:
     case AutofillSuggestionTriggerSource::kUnspecified:
@@ -91,11 +91,11 @@ bool RequiresCaretAtEnd(AutofillSuggestionTriggerSource trigger_source) {
     case AutofillSuggestionTriggerSource::kComposeDelayedProactiveNudge:
     case AutofillSuggestionTriggerSource::kPasswordManagerProcessedFocusedField:
     case AutofillSuggestionTriggerSource::kAutofillAi:
+    case AutofillSuggestionTriggerSource::kProactivePasswordRecovery:
       return false;
-    // `kShowCardsFromAccount`, `kPasswordManager`, `kiOS`, and
-    // `kPlusAddressUpdatedInBrowserProcess` are not used in the renderer code.
-    // As such, suggestion properties don't apply to them.
-    case AutofillSuggestionTriggerSource::kShowCardsFromAccount:
+    // `kPasswordManager`, `kiOS`, and `kPlusAddressUpdatedInBrowserProcess` are
+    // not used in the renderer code. As such, suggestion properties don't apply
+    // to them.
     case AutofillSuggestionTriggerSource::kPasswordManager:
     case AutofillSuggestionTriggerSource::kiOS:
     case AutofillSuggestionTriggerSource::kPlusAddressUpdatedInBrowserProcess:
@@ -128,15 +128,15 @@ bool ShouldShowFullSuggestionListForPasswordManager(
     case AutofillSuggestionTriggerSource::kComposeDelayedProactiveNudge:
     case AutofillSuggestionTriggerSource::kAutofillAi:
       return false;
-    // `kShowCardsFromAccount`, `kPasswordManager`, `kiOS`, and
-    // `kPlusAddressUpdatedInBrowserProcess` are not used in the renderer code.
-    // As such, suggestion properties don't apply to them.
-    // `kPasswordManager` specifically is used to identify password manager
-    // suggestions in the browser process. In the renderer, the logic triggering
-    // suggestions through Blink events is shared. Thus, the return values for
-    // `kFormControlElementClicked` etc. matter for the password manager in the
-    // renderer.
-    case AutofillSuggestionTriggerSource::kShowCardsFromAccount:
+    case AutofillSuggestionTriggerSource::kProactivePasswordRecovery:
+      return true;
+    // `kPasswordManager`, `kiOS`, and `kPlusAddressUpdatedInBrowserProcess`
+    // are not used in the renderer code. As such, suggestion properties
+    // don't apply to them. `kPasswordManager` specifically is used to
+    // identify password manager suggestions in the browser process. In the
+    // renderer, the logic triggering suggestions through Blink events is
+    // shared. Thus, the return values for `kFormControlElementClicked` etc.
+    // matter for the password manager in the renderer.
     case AutofillSuggestionTriggerSource::kPasswordManager:
     case AutofillSuggestionTriggerSource::kiOS:
     case AutofillSuggestionTriggerSource::kPlusAddressUpdatedInBrowserProcess:

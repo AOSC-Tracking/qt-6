@@ -7,11 +7,14 @@
 #include <linux/net_tstamp.h>
 #include <netinet/in.h>
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 
 #include "quiche/quic/core/quic_syscall_wrapper.h"
+#include "quiche/quic/core/quic_types.h"
+#include "quiche/quic/platform/api/quic_flag_utils.h"
 #include "quiche/quic/platform/api/quic_ip_address.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
@@ -262,13 +265,22 @@ size_t QuicLinuxSocketUtils::SetIpInfoInCmsg(const QuicIpAddress& self_address,
 }
 
 // static
-WriteResult QuicLinuxSocketUtils::WritePacket(int fd, const QuicMsgHdr& hdr) {
+WriteResult QuicLinuxSocketUtils::WritePacket(int fd, const QuicMsgHdr& hdr,
+                                              bool enobufs_blocked) {
   int rc;
   do {
     rc = GetGlobalSyscallWrapper()->Sendmsg(fd, hdr.hdr(), 0);
   } while (rc < 0 && errno == EINTR);
   if (rc >= 0) {
     return WriteResult(WRITE_STATUS_OK, rc);
+  }
+  if (errno == ENOBUFS) {
+    QUIC_CODE_COUNT(quic_sendmsg_enobufs);
+    if (enobufs_blocked) {
+      return WriteResult(WRITE_STATUS_BLOCKED, errno);
+    } else {
+      errno = ENOBUFS;
+    }
   }
   return WriteResult((errno == EAGAIN || errno == EWOULDBLOCK)
                          ? WRITE_STATUS_BLOCKED

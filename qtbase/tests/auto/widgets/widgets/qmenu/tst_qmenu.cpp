@@ -73,6 +73,7 @@ private slots:
     void overrideMenuAction();
     void statusTip();
     void widgetActionFocus();
+    void widgetActionFocusReason();
     void mouseActivation();
     void tearOff();
     void submenuTearOffDontClose();
@@ -126,6 +127,7 @@ private slots:
 #endif
 
     void invisibleActions();
+    void execReturnsWidgetAction();
 
 protected slots:
     void onActivated(QAction*);
@@ -659,6 +661,63 @@ void tst_QMenu::widgetActionFocus()
     QTest::keyClick(QApplication::focusWidget(), Qt::Key_Up);
     QVERIFY(l->hasFocus());
     QCOMPARE(m.activeAction(), (QAction *)wa);
+}
+
+void tst_QMenu::widgetActionFocusReason()
+{
+    class FocusReasonWidget : public QWidget
+    {
+    public:
+        explicit FocusReasonWidget(QWidget *parent = nullptr)
+            : QWidget(parent)
+        {
+            setFocusPolicy(Qt::StrongFocus);
+            // Give it some size so it doesn't skip over it.
+            setFixedSize(QSize(10, 10));
+        }
+        Qt::FocusReason focusInEventReason = Qt::NoFocusReason;
+
+    protected:
+        void focusInEvent(QFocusEvent *event) override
+        {
+            QWidget::focusInEvent(event);
+            focusInEventReason = event->reason();
+        }
+    };
+
+    // test if the backtab/tab focus reason is correctly handled when going down and up.
+    QWidget widget;
+    widget.show();
+    QVERIFY(QTest::qWaitForWindowActive(&widget));
+    QMenu *menu = new QMenu(&widget);
+
+    auto *w = new FocusReasonWidget(menu);
+
+    QWidgetAction *wa = new QWidgetAction(menu);
+    wa->setDefaultWidget(w);
+
+    menu->setActiveAction(menu->addAction("Top"));
+    menu->addAction(wa);
+    menu->addAction("Bottom");
+
+    menu->popup(QPoint());
+
+    QVERIFY(menu->isVisible());
+    QVERIFY(!w->hasFocus());
+
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Down);
+    QVERIFY(w->hasFocus());
+    QCOMPARE(w->focusInEventReason, Qt::TabFocusReason);
+
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Down);
+    QVERIFY(!w->hasFocus());
+
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Up);
+    QVERIFY(w->hasFocus());
+    QCOMPARE(w->focusInEventReason, Qt::BacktabFocusReason);
+
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Up);
+    QVERIFY(!w->hasFocus());
 }
 
 static QMenu *getTornOffMenu()
@@ -2264,7 +2323,6 @@ void tst_QMenu::dontSelectDisabledActionByShortcut()
     QMainWindow w;
     auto mb = w.menuBar();
     auto m = mb->addMenu("me&nu");
-    auto zero = m->addAction("placeholder");
     auto first = m->addAction("disabled &o");
     auto second = m->addAction(QStringLiteral("enabled &o"));
 
@@ -2277,6 +2335,27 @@ void tst_QMenu::dontSelectDisabledActionByShortcut()
     QCOMPARE(spy.count(), 1);
 }
 #endif
+
+void tst_QMenu::execReturnsWidgetAction()
+{
+    QWidget window;
+
+    QMenu menu(&window);
+    QWidgetAction *widgetAction = new QWidgetAction(&menu);
+    QPushButton *menuButton = new QPushButton("Button", &menu);
+    widgetAction->setDefaultWidget(menuButton);
+    QObject::connect(menuButton, &QPushButton::clicked, widgetAction, &QAction::trigger);
+
+    menu.addAction("First");
+    menu.addAction(widgetAction);
+    menu.addAction("Last");
+
+    window.show();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+
+    QTimer::singleShot(0, menuButton, &QPushButton::click);
+    QCOMPARE(menu.exec(window.geometry().center()), widgetAction);
+}
 
 QTEST_MAIN(tst_QMenu)
 #include "tst_qmenu.moc"

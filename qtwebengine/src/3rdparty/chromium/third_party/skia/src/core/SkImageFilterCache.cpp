@@ -163,7 +163,6 @@ sk_sp<SkImageFilterCache> SkImageFilterCache::Get(CreateIfNecessary createIfNece
     if (createIfNecessary == CreateIfNecessary::kNo) {
         return sk_ref_sp(cache);
     }
-
-    once([]{ cache = SkImageFilterCache::Create(kDefaultCacheSize).release(); });
+    once([] { cache = SkImageFilterCache::Create(kDefaultCacheSize).release(); });
     return sk_ref_sp(cache);
 }

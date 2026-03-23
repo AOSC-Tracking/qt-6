@@ -2,182 +2,165 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as ThirdPartyWeb from '../../../third_party/third-party-web/third-party-web.js';
+import type * as ThirdPartyWeb from '../../../third_party/third-party-web/third-party-web.js';
 import * as Handlers from '../handlers/handlers.js';
 import * as Helpers from '../helpers/helpers.js';
 import * as Types from '../types/types.js';
 
+import * as TraceFilter from './TraceFilter.js';
+import * as TraceTree from './TraceTree.js';
+
 export type Entity = typeof ThirdPartyWeb.ThirdPartyWeb.entities[number];
 
-export interface Summary {
+interface BaseSummary {
+  entity: Entity;
   transferSize: number;
-  mainThreadTime: Types.Timing.Micro;
+  mainThreadTime: Types.Timing.Milli;
 }
 
-export interface ThirdPartySummary {
-  byEntity: Map<Entity, Summary>;
-  byEvent: Map<Types.Events.Event, Summary>;
-  eventsByEntity: Map<Entity, Types.Events.Event[]>;
-  madeUpEntityCache: Map<string, Entity>;
+export interface EntitySummary extends BaseSummary {
+  relatedEvents: Types.Events.Event[];
 }
 
-function getOrMakeSummary(thirdPartySummary: ThirdPartySummary, event: Types.Events.Event, url: string): Summary|null {
-  const entity = ThirdPartyWeb.ThirdPartyWeb.getEntity(url) ??
-      Handlers.Helpers.makeUpEntity(thirdPartySummary.madeUpEntityCache, url);
-  if (!entity) {
-    return null;
-  }
-
-  const events = thirdPartySummary.eventsByEntity.get(entity) ?? [];
-  events.push(event);
-  thirdPartySummary.eventsByEntity.set(entity, events);
-
-  let summary = thirdPartySummary.byEntity.get(entity);
-  if (summary) {
-    thirdPartySummary.byEvent.set(event, summary);
-    return summary;
-  }
-
-  summary = {transferSize: 0, mainThreadTime: Types.Timing.Micro(0)};
-  thirdPartySummary.byEntity.set(entity, summary);
-  thirdPartySummary.byEvent.set(event, summary);
-  return summary;
-}
-
-function collectMainThreadActivity(
-    thirdPartySummary: ThirdPartySummary, parsedTrace: Handlers.Types.ParsedTrace,
-    bounds: Types.Timing.TraceWindowMicro): void {
-  for (const process of parsedTrace.Renderer.processes.values()) {
-    if (!process.isOnMainFrame) {
-      continue;
-    }
-
-    for (const thread of process.threads.values()) {
-      if (thread.name === 'CrRendererMain') {
-        if (!thread.tree) {
-          break;
-        }
-
-        for (const event of thread.entries) {
-          if (!Helpers.Timing.eventIsInBounds(event, bounds)) {
-            continue;
-          }
-
-          const node = parsedTrace.Renderer.entryToNode.get(event);
-          if (!node || !node.selfTime) {
-            continue;
-          }
-
-          const url = Handlers.Helpers.getNonResolvedURL(event, parsedTrace as Handlers.Types.ParsedTrace);
-          if (!url) {
-            continue;
-          }
-
-          const summary = getOrMakeSummary(thirdPartySummary, event, url);
-          if (summary) {
-            summary.mainThreadTime = (summary.mainThreadTime + node.selfTime) as Types.Timing.Micro;
-          }
-        }
-      }
-    }
-  }
-}
-
-function collectNetworkActivity(
-    thirdPartySummary: ThirdPartySummary, requests: Types.Events.SyntheticNetworkRequest[]): void {
-  for (const request of requests) {
-    const url = request.args.data.url;
-    const summary = getOrMakeSummary(thirdPartySummary, request, url);
-    if (summary) {
-      summary.transferSize += request.args.data.encodedDataLength;
-    }
-  }
+export interface URLSummary extends BaseSummary {
+  url: string;
+  request?: Types.Events.SyntheticNetworkRequest;
 }
 
 /**
- * @param networkRequests Won't be filtered by trace bounds, so callers should ensure it is filtered.
+ *
+ * Returns Main frame main thread events.
+ * These events are inline with the ones used by selectedEvents() of TimelineTreeViews
  */
-export function summarizeThirdParties(
-    parsedTrace: Handlers.Types.ParsedTrace, traceBounds: Types.Timing.TraceWindowMicro,
-    networkRequests: Types.Events.SyntheticNetworkRequest[]): ThirdPartySummary {
-  const thirdPartySummary: ThirdPartySummary = {
-    byEntity: new Map(),
-    byEvent: new Map(),
-    eventsByEntity: new Map(),
-    madeUpEntityCache: new Map(),
+function collectMainThreadActivity(parsedTrace: Handlers.Types.ParsedTrace): Types.Events.Event[] {
+  // TODO: Note b/402658800 could be an issue here.
+  const mainFrameMainThread = parsedTrace.Renderer.processes.values()
+                                  .find(p => {
+                                    const url = p.url ?? '';
+                                    // Frame url checked a la CompatibilityTracksAppenders's addThreadAppenders
+                                    return p.isOnMainFrame && !url.startsWith('about:') && !url.startsWith('chrome:');
+                                  })
+                                  ?.threads.values()
+                                  .find(t => t.name === 'CrRendererMain');
+
+  if (!mainFrameMainThread) {
+    return [];
+  }
+
+  return mainFrameMainThread.entries;
+}
+
+export function summarizeByThirdParty(
+    parsedTrace: Handlers.Types.ParsedTrace, traceBounds: Types.Timing.TraceWindowMicro): EntitySummary[] {
+  const mainThreadEvents = collectMainThreadActivity(parsedTrace).sort(Helpers.Trace.eventTimeComparator);
+  const groupingFunction = (event: Types.Events.Event): string => {
+    const entity = parsedTrace.Renderer.entityMappings.entityByEvent.get(event);
+    return entity?.name ?? '';
   };
+  const node = getBottomUpTree(mainThreadEvents, traceBounds, groupingFunction);
+  const summaries = summarizeBottomUpByEntity(node, parsedTrace);
 
-  collectMainThreadActivity(thirdPartySummary, parsedTrace, traceBounds);
-  collectNetworkActivity(thirdPartySummary, networkRequests);
-
-  return thirdPartySummary;
+  return summaries;
 }
 
-function getSummaryMapWithMapping(
-    events: Types.Events.Event[], entityByEvent: Map<Types.Events.Event, Handlers.Helpers.Entity>,
-    eventsByEntity: Map<Handlers.Helpers.Entity, Types.Events.Event[]>): ThirdPartySummary {
-  const byEvent = new Map<Types.Events.Event, Summary>();
-  const byEntity = new Map<Handlers.Helpers.Entity, Summary>();
-  const defaultSummary: Summary = {transferSize: 0, mainThreadTime: Types.Timing.Micro(0)};
+/**
+ * Used only by Lighthouse.
+ */
+export function summarizeByURL(
+    parsedTrace: Handlers.Types.ParsedTrace, traceBounds: Types.Timing.TraceWindowMicro): URLSummary[] {
+  const mainThreadEvents = collectMainThreadActivity(parsedTrace).sort(Helpers.Trace.eventTimeComparator);
+  const groupingFunction = (event: Types.Events.Event): string => {
+    return Handlers.Helpers.getNonResolvedURL(event, parsedTrace) ?? '';
+  };
+  const node = getBottomUpTree(mainThreadEvents, traceBounds, groupingFunction);
+  const summaries = summarizeBottomUpByURL(node, parsedTrace);
 
-  for (const event of events) {
-    const urlSummary = byEvent.get(event) || {...defaultSummary};
-    if (Types.Events.isSyntheticNetworkRequest(event)) {
-      urlSummary.transferSize += event.args.data.encodedDataLength;
-    }
-    byEvent.set(event, urlSummary);
-  }
+  return summaries;
+}
 
-  // Map each request's stat to a particular entity.
-  for (const [request, requestSummary] of byEvent.entries()) {
-    const entity = entityByEvent.get(request);
-    if (!entity) {
-      byEvent.delete(request);
+function summarizeBottomUpByEntity(
+    root: TraceTree.BottomUpRootNode, parsedTrace: Handlers.Types.ParsedTrace): EntitySummary[] {
+  const summaries: EntitySummary[] = [];
+
+  // Top nodes are the 3P entities.
+  const topNodes = [...root.children().values()].flat();
+  for (const node of topNodes) {
+    if (node.id === '') {
       continue;
     }
 
-    const entitySummary = byEntity.get(entity) || {...defaultSummary};
-    entitySummary.transferSize += requestSummary.transferSize;
-    byEntity.set(entity, entitySummary);
+    const entity = parsedTrace.Renderer.entityMappings.entityByEvent.get(node.event);
+    if (!entity) {
+      continue;
+    }
+
+    // Lets use the mapper events as our source of events, since we use the main thread to construct
+    // the bottom up tree. The mapper will give us all related events.
+    const summary: EntitySummary = {
+      transferSize: node.transferSize,
+      mainThreadTime: Types.Timing.Milli(node.selfTime),
+      entity,
+      relatedEvents: parsedTrace.Renderer.entityMappings.eventsByEntity.get(entity) ?? [],
+    };
+    summaries.push(summary);
   }
 
-  return {byEntity, byEvent, eventsByEntity, madeUpEntityCache: new Map()};
+  return summaries;
 }
 
-// TODO(crbug.com/352244718): Remove or refactor to use summarizeThirdParties/collectMainThreadActivity/etc.
-/**
- * Note: unlike summarizeThirdParties, this does not calculate mainThreadTime. The reason is that it is not
- * needed for its one use case, and when dragging the trace bounds it takes a long time to calculate.
- * If it is ever needed, we need to make getSelfTimeByUrl (see deleted code/blame) much faster (cache + bucket?).
- */
-export function getSummariesAndEntitiesWithMapping(
-    parsedTrace: Handlers.Types.ParsedTrace, traceBounds: Types.Timing.TraceWindowMicro,
-    entityMapping: Handlers.Helpers.EntityMappings): {
-  summaries: ThirdPartySummary,
-  entityByEvent: Map<Types.Events.Event, Handlers.Helpers.Entity>,
-} {
-  const entityByEvent = new Map(entityMapping.entityByEvent);
-  const eventsByEntity = new Map(entityMapping.eventsByEntity);
+function summarizeBottomUpByURL(
+    root: TraceTree.BottomUpRootNode, parsedTrace: Handlers.Types.ParsedTrace): URLSummary[] {
+  const summaries: URLSummary[] = [];
+  const allRequests = parsedTrace.NetworkRequests.byTime;
 
-  // Consider events only in bounds.
-  const entityByEventArr = Array.from(entityByEvent.entries());
-  const filteredEntries = entityByEventArr.filter(([event]) => {
-    return Helpers.Timing.eventIsInBounds(event, traceBounds);
-  });
-  const entityByEventFiltered = new Map(filteredEntries);
+  // Top nodes are URLs.
+  const topNodes = [...root.children().values()].flat();
+  for (const node of topNodes) {
+    if (node.id === '' || typeof node.id !== 'string') {
+      continue;
+    }
 
-  // Consider events only in bounds.
-  const eventsByEntityArr = Array.from(eventsByEntity.entries());
-  const filtered = eventsByEntityArr.filter(([, events]) => {
-    events.map(event => {
-      return Helpers.Timing.eventIsInBounds(event, traceBounds);
-    });
-    return events.length > 0;
-  });
-  const eventsByEntityFiltered = new Map(filtered);
+    const entity = parsedTrace.Renderer.entityMappings.entityByEvent.get(node.event);
+    if (!entity) {
+      continue;
+    }
 
-  const allEvents = Array.from(entityByEvent.keys());
-  const summaries = getSummaryMapWithMapping(allEvents, entityByEventFiltered, eventsByEntityFiltered);
+    const url = node.id;
+    const request = allRequests.find(r => r.args.data.url === url);
 
-  return {summaries, entityByEvent: entityByEventFiltered};
+    const summary: URLSummary = {
+      request,
+      url,
+      entity,
+      transferSize: node.transferSize,
+      mainThreadTime: Types.Timing.Milli(node.selfTime),
+    };
+    summaries.push(summary);
+  }
+
+  return summaries;
+}
+
+function getBottomUpTree(
+    mainThreadEvents: Types.Events.Event[], tracebounds: Types.Timing.TraceWindowMicro,
+    groupingFunction: ((arg0: Types.Events.Event) => string)|null): TraceTree.BottomUpRootNode {
+  // Use the same filtering as front_end/panels/timeline/TimelineTreeView.ts.
+  const visibleEvents = Helpers.Trace.VISIBLE_TRACE_EVENT_TYPES.values().toArray();
+  const filter =
+      new TraceFilter.VisibleEventsFilter(visibleEvents.concat([Types.Events.Name.SYNTHETIC_NETWORK_REQUEST]));
+
+  // The bottom up root node handles all the "in Tracebounds" checks we need for the insight.
+  const startTime = Helpers.Timing.microToMilli(tracebounds.min);
+  const endTime = Helpers.Timing.microToMilli(tracebounds.max);
+  const node = new TraceTree.BottomUpRootNode(mainThreadEvents, {
+    textFilter: new TraceFilter.ExclusiveNameFilter([]),
+    filters: [filter],
+    startTime,
+    endTime,
+    eventGroupIdCallback: groupingFunction,
+    calculateTransferSize: true,
+    // Ensure we group by 3P alongside eventID for correct 3P grouping.
+    forceGroupIdCallback: true,
+  }) as TraceTree.BottomUpRootNode;
+  return node;
 }

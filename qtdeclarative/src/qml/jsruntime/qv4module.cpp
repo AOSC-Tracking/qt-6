@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 
 #include "qv4module_p.h"
@@ -203,9 +204,9 @@ PropertyKey ModuleNamespaceIterator::next(const Object *o, Property *pd, Propert
         Scope scope(module->engine());
         ScopedString exportName(scope, scope.engine->newString(exportedNames.at(exportIndex)));
         exportIndex++;
-        const Value *v = module->resolveExport(exportName->toPropertyKey());
         if (pd) {
-            if (v->isEmpty())
+            const Value *v = module->resolveExport(exportName->toPropertyKey());
+            if (!v || v->isEmpty())
                 scope.engine->throwReferenceError(exportName);
             else
                 pd->value = *v;

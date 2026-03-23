@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import Qt5Compat.GraphicalEffects.private
@@ -8,9 +9,13 @@ import Qt5Compat.GraphicalEffects.private
     \qmltype Colorize
     \inqmlmodule Qt5Compat.GraphicalEffects
     \since QtGraphicalEffects 1.0
-    \inherits QtQuick2::Item
+    \inherits QtQuick::Item
     \ingroup qtgraphicaleffects-color
     \brief Sets the color in the HSL color space.
+
+    \note The MultiEffect component provides a colorize effect with some performance
+    advantages. For new code, it should be considered as an alternative to using Qt Graphical
+    Effects.
 
     The effect is similar to what happens when a colorized glass is put on top
     of a grayscale image. Colorize uses the hue, saturation, and lightness (HSL)

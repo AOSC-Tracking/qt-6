@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "ink/geometry/internal/jni/mesh_format_jni_helper.h"
 #include "ink/geometry/mesh_format.h"
 #include "ink/jni/internal/jni_defines.h"
 #include "ink/jni/internal/jni_throw_util.h"
@@ -27,19 +28,15 @@
 namespace {
 
 using ::ink::MeshFormat;
+using ::ink::jni::CastToMeshFormat;
 using ::ink::jni::ThrowExceptionFromStatus;
 using ::ink::skia_common_internal::MeshSpecificationData;
 
-const MeshFormat* GetMeshFormat(jlong native_address) {
-  return reinterpret_cast<MeshFormat*>(native_address);
-}
-
 absl::StatusOr<MeshSpecificationData> GetMeshSpecificationData(
     jlong raw_ptr_to_mesh_format, jboolean packed) {
-  const MeshFormat* mesh_format = GetMeshFormat(raw_ptr_to_mesh_format);
-  return packed
-             ? MeshSpecificationData::CreateForStroke(*mesh_format)
-             : MeshSpecificationData::CreateForInProgressStroke(*mesh_format);
+  const MeshFormat& mesh_format = CastToMeshFormat(raw_ptr_to_mesh_format);
+  return packed ? MeshSpecificationData::CreateForStroke(mesh_format)
+                : MeshSpecificationData::CreateForInProgressStroke(mesh_format);
 }
 
 }  // namespace
@@ -48,7 +45,7 @@ extern "C" {
 
 JNI_METHOD(rendering_android_canvas_internal, CanvasMeshRenderer, void,
            fillSkiaMeshSpecData)
-(JNIEnv* env, jclass clazz, jlong raw_ptr_to_mesh_format, jboolean packed,
+(JNIEnv* env, jobject object, jlong raw_ptr_to_mesh_format, jboolean packed,
  jintArray attribute_types_out, jintArray attribute_offsets_out,
  jobjectArray attribute_names_out, jintArray vertex_stride_out,
  jintArray varying_types_out, jobjectArray varying_names_out,
@@ -138,7 +135,7 @@ JNI_METHOD(rendering_android_canvas_internal, CanvasMeshRenderer, void,
 // it can be used with `raw_ptr_to_mesh_format`.
 JNI_METHOD(rendering_android_canvas_internal, CanvasMeshRenderer, jboolean,
            nativeIsMeshFormatRenderable)
-(JNIEnv* env, jclass clazz, jlong raw_ptr_to_mesh_format, jboolean packed) {
+(JNIEnv* env, jobject object, jlong raw_ptr_to_mesh_format, jboolean packed) {
   return GetMeshSpecificationData(raw_ptr_to_mesh_format, packed).ok();
 }
 

@@ -12,30 +12,29 @@
 #include <stddef.h>
 
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/bits.h"
 #include "base/containers/adapters.h"
 #include "base/containers/contains.h"
+#include "base/containers/span.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/gtest_util.h"
 #include "build/build_config.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-#if BUILDFLAG(ENABLE_BASE_TRACING)
-#include <optional>
-
-#include "third_party/perfetto/include/perfetto/test/traced_value_test_support.h"  // no-presubmit-check nogncheck
-#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
+#include "third_party/perfetto/include/perfetto/test/traced_value_test_support.h"
 
 namespace base {
 
@@ -47,12 +46,12 @@ namespace base {
 // extra storage for supporting debug checks for things like iterators.
 TEST(ValuesTest, SizeOfValue) {
 #if defined(__GLIBCXX__)
-  // libstdc++ std::string takes already 4 machine words, so the absl::variant
+  // libstdc++ std::string takes already 4 machine words, so the std::variant
   // takes 5
   constexpr size_t kExpectedSize = 5 * sizeof(void*);
 #else   // !defined(__GLIBCXX__)
   // libc++'s std::string and std::vector both take 3 machine words. An
-  // additional word is used by absl::variant for the type index.
+  // additional word is used by std::variant for the type index.
   constexpr size_t kExpectedSize = 4 * sizeof(void*);
 #endif  // defined(__GLIBCXX__)
 
@@ -1561,14 +1560,14 @@ TEST(ValuesTest, BinaryValue) {
   ASSERT_EQ(original_buffer, binary.GetBlob().data());
   ASSERT_EQ(15U, binary.GetBlob().size());
 
-  char stack_buffer[42];
-  memset(stack_buffer, '!', 42);
-  binary = Value(Value::BlobStorage(stack_buffer, stack_buffer + 42));
+  std::array<char, 42> stack_buffer;
+  std::fill(stack_buffer.begin(), stack_buffer.end(), '!');
+  binary = Value(Value::BlobStorage(stack_buffer.begin(), stack_buffer.end()));
   ASSERT_TRUE(binary.GetBlob().data());
-  ASSERT_NE(stack_buffer,
+  ASSERT_NE(stack_buffer.data(),
             reinterpret_cast<const char*>(binary.GetBlob().data()));
   ASSERT_EQ(42U, binary.GetBlob().size());
-  ASSERT_EQ(0, memcmp(stack_buffer, binary.GetBlob().data(),
+  ASSERT_EQ(0, memcmp(stack_buffer.data(), binary.GetBlob().data(),
                       binary.GetBlob().size()));
 }
 
@@ -1806,7 +1805,7 @@ TEST(ValuesTest, SpecializedEquals) {
       // subtypes.
       outer_value.Visit([&](const auto& outer_member) {
         using T = std::decay_t<decltype(outer_member)>;
-        if constexpr (!std::is_same_v<T, absl::monostate> &&
+        if constexpr (!std::is_same_v<T, std::monostate> &&
                       !std::is_same_v<T, Value::BlobStorage>) {
           if (should_be_equal) {
             EXPECT_EQ(outer_member, inner_value);
@@ -2208,7 +2207,6 @@ TEST(ValuesTest, MutableGetBlob) {
   EXPECT_EQ(new_blob, value.GetBlob());
 }
 
-#if BUILDFLAG(ENABLE_BASE_TRACING)
 TEST(ValuesTest, TracingSupport) {
   EXPECT_EQ(perfetto::TracedValueToString(Value(false)), "false");
   EXPECT_EQ(perfetto::TracedValueToString(Value(1)), "1");
@@ -2232,43 +2230,42 @@ TEST(ValuesTest, TracingSupport) {
               "{key:value}");
   }
 }
-#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
 TEST(ValueViewTest, BasicConstruction) {
   {
     ValueView v = true;
-    EXPECT_EQ(true, absl::get<bool>(v.data_view_for_test()));
+    EXPECT_EQ(true, std::get<bool>(v.data_view_for_test()));
   }
   {
     ValueView v = 25;
-    EXPECT_EQ(25, absl::get<int>(v.data_view_for_test()));
+    EXPECT_EQ(25, std::get<int>(v.data_view_for_test()));
   }
   {
     ValueView v = 3.14;
-    EXPECT_DOUBLE_EQ(3.14, absl::get<ValueView::DoubleStorageForTest>(
+    EXPECT_DOUBLE_EQ(3.14, std::get<ValueView::DoubleStorageForTest>(
                                v.data_view_for_test()));
   }
   {
     ValueView v = std::string_view("hello world");
     EXPECT_EQ("hello world",
-              absl::get<std::string_view>(v.data_view_for_test()));
+              std::get<std::string_view>(v.data_view_for_test()));
   }
   {
     ValueView v = "hello world";
     EXPECT_EQ("hello world",
-              absl::get<std::string_view>(v.data_view_for_test()));
+              std::get<std::string_view>(v.data_view_for_test()));
   }
   {
     std::string str = "hello world";
     ValueView v = str;
     EXPECT_EQ("hello world",
-              absl::get<std::string_view>(v.data_view_for_test()));
+              std::get<std::string_view>(v.data_view_for_test()));
   }
   {
     Value::Dict dict;
     dict.Set("hello", "world");
     ValueView v = dict;
-    EXPECT_EQ(dict, absl::get<std::reference_wrapper<const Value::Dict>>(
+    EXPECT_EQ(dict, std::get<std::reference_wrapper<const Value::Dict>>(
                         v.data_view_for_test()));
   }
   {
@@ -2276,7 +2273,7 @@ TEST(ValueViewTest, BasicConstruction) {
     list.Append("hello");
     list.Append("world");
     ValueView v = list;
-    EXPECT_EQ(list, absl::get<std::reference_wrapper<const Value::List>>(
+    EXPECT_EQ(list, std::get<std::reference_wrapper<const Value::List>>(
                         v.data_view_for_test()));
   }
 }
@@ -2285,31 +2282,31 @@ TEST(ValueViewTest, ValueConstruction) {
   {
     Value val(true);
     ValueView v = val;
-    EXPECT_EQ(true, absl::get<bool>(v.data_view_for_test()));
+    EXPECT_EQ(true, std::get<bool>(v.data_view_for_test()));
   }
   {
     Value val(25);
     ValueView v = val;
-    EXPECT_EQ(25, absl::get<int>(v.data_view_for_test()));
+    EXPECT_EQ(25, std::get<int>(v.data_view_for_test()));
   }
   {
     Value val(3.14);
     ValueView v = val;
-    EXPECT_DOUBLE_EQ(3.14, absl::get<ValueView::DoubleStorageForTest>(
+    EXPECT_DOUBLE_EQ(3.14, std::get<ValueView::DoubleStorageForTest>(
                                v.data_view_for_test()));
   }
   {
     Value val("hello world");
     ValueView v = val;
     EXPECT_EQ("hello world",
-              absl::get<std::string_view>(v.data_view_for_test()));
+              std::get<std::string_view>(v.data_view_for_test()));
   }
   {
     Value::Dict dict;
     dict.Set("hello", "world");
     Value val(dict.Clone());
     ValueView v = val;
-    EXPECT_EQ(dict, absl::get<std::reference_wrapper<const Value::Dict>>(
+    EXPECT_EQ(dict, std::get<std::reference_wrapper<const Value::Dict>>(
                         v.data_view_for_test()));
   }
   {
@@ -2318,7 +2315,7 @@ TEST(ValueViewTest, ValueConstruction) {
     list.Append("world");
     Value val(list.Clone());
     ValueView v = val;
-    EXPECT_EQ(list, absl::get<std::reference_wrapper<const Value::List>>(
+    EXPECT_EQ(list, std::get<std::reference_wrapper<const Value::List>>(
                         v.data_view_for_test()));
   }
 }

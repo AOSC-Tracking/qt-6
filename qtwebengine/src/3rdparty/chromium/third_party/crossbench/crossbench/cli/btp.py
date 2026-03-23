@@ -3,9 +3,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import argparse
 import logging
-from typing import Dict, Optional, Sequence
+from typing import Sequence
 
 from perfetto.batch_trace_processor.api import (BatchTraceProcessor,
                                                 BatchTraceProcessorConfig,
@@ -26,9 +28,10 @@ DEFAULT_CONFIG_PATH = (
     ROOT_DIR / "config" / "benchmark" / "loadline" / "probe_config.hjson")
 
 class MergedTraceUriResolver(TraceUriResolver):
-  def __init__(self, result_path: pth.LocalPath):
 
-    def metadata(path) -> Dict[str, str]:
+  def __init__(self, result_path: pth.LocalPath) -> None:
+
+    def metadata(path) -> dict[str, str]:
       parts = str(path).split("/")
       return {
           "cb_browser": parts[-7],
@@ -47,7 +50,8 @@ class MergedTraceUriResolver(TraceUriResolver):
     return self._resolved
 
 class BTPUtil:
-  def __init__(self):
+
+  def __init__(self) -> None:
     self.parser = CrossBenchArgumentParser(
       description=("Runs trace processor queries in a batch mode on existing "
                    "benchmark results, without re-running the benchmark "
@@ -76,11 +80,11 @@ class BTPUtil:
         help=("Name of the query to compute (the query must be present in the "
               "trace_processor/queries/ dir). Repeat for multiple queries."))
 
-  def run(self, argv: Sequence[str]):
+  def run(self, argv: Sequence[str]) -> None:
     args = self.parser.parse_args(argv)
 
-    probe_config = ProbeListConfig.parse_path(args.probe_config)
-    tp: Optional[TraceProcessorProbe] = None
+    probe_config = ProbeListConfig.parse(args.probe_config)
+    tp: TraceProcessorProbe | None = None
     for probe in probe_config.probes:
       if isinstance(probe, TraceProcessorProbe):
         tp = probe

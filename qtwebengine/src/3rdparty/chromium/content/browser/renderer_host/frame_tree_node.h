@@ -26,6 +26,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/frame_type.h"
 #include "content/public/browser/navigation_discard_reason.h"
+#include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "services/network/public/mojom/content_security_policy.mojom-forward.h"
 #include "services/network/public/mojom/referrer_policy.mojom-forward.h"
 #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
@@ -107,6 +108,10 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
   // guest view.
   bool IsMainFrame() const;
   bool IsOutermostMainFrame() const;
+
+  // Returns true if all the ancestors of the current frame have a potentially
+  // trustworthy origin.
+  bool AreAncestorsSecure();
 
   FrameTree& frame_tree() const { return frame_tree_.get(); }
   Navigator& navigator();
@@ -218,6 +223,21 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
   // current one for this frame (such as when it's pending deletion).
   const url::Origin& current_origin() const {
     return render_manager_.current_replication_state().origin;
+  }
+
+  // Returns the origin of the last *successfully* committed page in this
+  // frame. This may be different from current_origin() if the current page is
+  // an error page.
+  // IMPORTANT: Use current_origin() instead, as all security-relevant decisions
+  // should be made using the current origin of the frame. The last successful
+  // origin is only relevant for specific abuse mitigations that require
+  // tracking the previous state of a frame before an error page navigation.
+  const url::Origin& last_successful_origin() const {
+    return last_successful_origin_;
+  }
+
+  void set_last_successful_origin(const url::Origin& origin) {
+    last_successful_origin_ = origin;
   }
 
   // Returns the latest frame policy (sandbox flags and container policy) for
@@ -714,7 +734,8 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
       const GURL& original_url,
       std::unique_ptr<CrossOriginEmbedderPolicyReporter> coep_reporter,
       std::unique_ptr<DocumentIsolationPolicyReporter> dip_reporter,
-      int http_response_code) override;
+      int http_response_code,
+      base::TimeTicks actual_navigation_start) override;
   void CancelNavigation(NavigationDiscardReason reason) override;
   void ResetNavigationsForDiscard() override;
   bool Credentialless() const override;
@@ -942,6 +963,14 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
   // used to cancel the task.
   // See `CancelRestartingBackForwardCacheNavigation()`.
   base::CancelableTaskTracker restart_back_forward_cached_navigation_tracker_;
+
+  // The last successfully committed origin in this frame. Set in two scenarios:
+  // 1. By RenderFrameHostImpl::DidNavigate() when a navigation in this frame
+  //    succeeds.
+  // 2. By RenderFrameHostImpl::SetOriginDependentStateOfNewFrame() when a new
+  //    frame is first created, which will reflect the origin of the initial
+  //    about::blank document before any navigation has committed.
+  url::Origin last_successful_origin_;
 
   // Manages creation and swapping of RenderFrameHosts for this frame.
   //

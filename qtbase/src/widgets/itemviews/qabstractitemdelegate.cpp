@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qabstractitemdelegate.h"
 
@@ -61,7 +62,7 @@ QT_BEGIN_NAMESPACE
     We give an example of drawing a progress bar in items; in our case
     for a package management program.
 
-    \image widgetdelegate.png
+    \image widgetdelegate.png {Package manager showing download progress}
 
     We create the \c WidgetDelegate class, which inherits from
     QStyledItemDelegate. We do the drawing in the paint() function:

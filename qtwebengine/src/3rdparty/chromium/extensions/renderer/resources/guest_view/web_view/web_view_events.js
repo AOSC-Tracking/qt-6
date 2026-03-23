@@ -25,7 +25,7 @@ var WebRequestMessageEvent = CreateEvent('webViewInternal.onMessage');
 function WebViewEvents(webViewImpl) {
   $Function.call(GuestViewEvents, this, webViewImpl);
 
-  this.setupWebRequestEvents();
+  this.view.setRequestPropertyOnWebViewElement(this.createWebRequestEvents());
 }
 
 function createOnMessageEvent(name, schema, options, webviewId) {
@@ -178,7 +178,7 @@ for (var eventName in WebViewEvents.EVENTS) {
   WebViewEvents.EVENTS[eventName].__proto__ = null;
 }
 
-WebViewEvents.prototype.setupWebRequestEvents = function() {
+WebViewEvents.prototype.createWebRequestEvents = function() {
   var request = {};
   var createWebRequestEvent = $Function.bind(function(webRequestEvent) {
     return this.weakWrapper(function() {
@@ -233,15 +233,16 @@ WebViewEvents.prototype.setupWebRequestEvents = function() {
     var eventSchema = WebRequestSchema.events[i];
 
     // Skip "onActionIgnored" which is not relevant for webviews.
-    if (eventSchema.name === 'onActionIgnored')
+    if (eventSchema.name === 'onActionIgnored') {
       continue;
+    }
 
     var webRequestEvent = createWebRequestEvent(eventSchema);
     $Object.defineProperty(
         request, eventSchema.name, {get: webRequestEvent, enumerable: true});
   }
 
-  this.view.setRequestPropertyOnWebViewElement(request);
+  return request;
 };
 
 WebViewEvents.prototype.getEvents = function() {
@@ -267,9 +268,10 @@ WebViewEvents.prototype.handleLoadAbortEvent = function(event, eventName) {
     window.console.warn(tagLogMessage(
         this.view.getLogTag(),
         $String.replace(
+        $String.replace(
             $String.replace(
                 WebViewConstants.WARNING_MSG_LOAD_ABORTED, '%1', event.code),
-            '%2', event.reason)));
+            '%2', event.reason), '%3', event.url)));
   }
 };
 

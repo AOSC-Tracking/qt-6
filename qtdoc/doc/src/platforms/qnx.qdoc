@@ -131,7 +131,7 @@
                     \li Qt Webview
                 \endlist
         \row
-            \li \l{Qt Add-Ons in Technical Preview}
+            \li \l{Qt Add-Ons in Technology Preview}
             \li Supported
             \li Supported
         \row
@@ -156,7 +156,6 @@
     so there is no guarantee that the QNX SDP content matches with the current default
     installation from QNX Software Center. The safest way to avoid binary compatibility
     issues is always to build Qt binaries using your own QNX SDP installation.
-
 */
 
 /*!
@@ -383,7 +382,7 @@
     \section1 QNX screen graphics subsystem
 
     Before any Qt application can be started, the
-    \l {http://www.qnx.com/developers/docs/7.1/#com.qnx.doc.screen/topic/manual/cscreen_about.html}
+    \l {https://www.qnx.com/developers/docs/7.1/#com.qnx.doc.screen/topic/manual/cscreen_about.html}
     {QNX Screen Graphics Subsystem} (also called just "Screen") must be
     running. \c Screen consists of a driver and several utilities and services
     which are used by Qt. This includes processing of mouse and keyboard events
@@ -414,7 +413,7 @@
     \section1 System logger
 
     QNX provides the
-    \l {http://www.qnx.com/developers/docs/7.1/#com.qnx.doc.neutrino.utilities/topic/s/slogger2.html}
+    \l {https://www.qnx.com/developers/docs/7.1/#com.qnx.doc.neutrino.utilities/topic/s/slogger2.html}
     {slog2} logging framework tailored to specifics of embedded systems. The
     major advantage of it is a much better performance than a text output to
     files. Qt uses this framework by default for any logging output going
@@ -510,5 +509,46 @@
     and delay applications' start-up significantly. If not needed, fontconfig
     can be disabled with -DFEATURE_fontconfig=OFF on configure time.
 
-*/
+    \section1 Using QCursor on the QNX platform
 
+    QNX supports changing your cursor shape for a window, but you'll need to deploy
+    and specify the images associated with the shapes you want to use through the
+    Screen configuration file, \c {graphics.conf}. See the cursor-type parameter of
+    \l {https://www.qnx.com/developers/docs/8.0/com.qnx.doc.screen/topic/manual/cscreen_config_intro.html#screen_winmgr_display}{Configure display subsection}
+    for more details. In addition to the default cursor, no additional cursors are provided in QNX.
+    Therefore, any extra cursor graphics must be provided manually in bitmap format.
+    The table below shows the cursor name used in \c {graphics.conf} for each Qt::CursorShape value.
+
+    \table
+    \header \li Qt::CursorShape value
+    \li QNX Screen Configuration name
+\row
+    \li Qt::ArrowCursor
+    \li arrow
+\row
+    \li Qt::CrossCursor
+    \li cross
+\row
+    \li Qt::WaitCursor
+    \li wait
+\row
+    \li Qt::IBeamCursor
+    \li ibeam
+\row
+    \li Qt::PointingHandCursor
+    \li hand
+\row
+    \li Qt::OpenHandCursor
+    \li grab
+\row
+    \li Qt::ClosedHandCursor
+    \li grabbing
+\row
+    \li Qt::DragMoveCursor
+    \li move
+\row
+    \li All other cursor shapes
+    \li arrow (default)
+\endtable
+
+*/

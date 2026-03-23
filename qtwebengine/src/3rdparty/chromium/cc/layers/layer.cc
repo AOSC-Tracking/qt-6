@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -16,7 +17,6 @@
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram.h"
-#include "base/not_fatal_until.h"
 #include "base/notreached.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
@@ -159,7 +159,7 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
 
     layer_tree_host()->UnregisterLayer(this);
     if (element_id)
-      layer_tree_host()->UnregisterElement(element_id);
+      layer_tree_host()->UnregisterElement(element_id, this);
     if (!IsUsingLayerLists()) {
       layer_tree_host()->property_trees()->set_needs_rebuild(true);
       property_tree_indices_invalid = true;
@@ -209,10 +209,10 @@ void Layer::SetNeedsCommit() {
   layer_tree_host()->SetNeedsCommit();
 }
 
-void Layer::SetDebugName(const std::string& name) {
-  if (name.empty() && !debug_info_.Read(*this))
-    return;
-  EnsureDebugInfo().name = name;
+void Layer::SetDebugName(std::string name) {
+  if (!name.empty() || debug_info_.Read(*this)) {
+    EnsureDebugInfo().name = std::move(name);
+  }
 }
 
 viz::ViewTransitionElementResourceId Layer::ViewTransitionResourceId() const {
@@ -394,7 +394,7 @@ void Layer::ReplaceChild(Layer* reference, scoped_refptr<Layer> new_layer) {
   auto& inputs = inputs_.Write(*this);
   auto reference_it =
       std::ranges::find(inputs.children, reference, &scoped_refptr<Layer>::get);
-  CHECK(reference_it != inputs.children.end(), base::NotFatalUntil::M130);
+  CHECK(reference_it != inputs.children.end());
   size_t reference_index = reference_it - inputs.children.begin();
   reference->RemoveFromParent();
 
@@ -695,7 +695,7 @@ void Layer::SetBackdropFilters(const FilterOperations& filters) {
   SetNeedsCommit();
 }
 
-void Layer::SetBackdropFilterBounds(const gfx::RRectF& backdrop_filter_bounds) {
+void Layer::SetBackdropFilterBounds(const SkPath& backdrop_filter_bounds) {
   EnsureLayerTreeInputs().backdrop_filter_bounds = backdrop_filter_bounds;
 }
 
@@ -931,7 +931,7 @@ void Layer::SetPosition(const gfx::PointF& position) {
     transform_node->post_translation =
         position.OffsetFromOrigin() + parent()->offset_to_transform_parent();
     transform_node->needs_local_transform_update = true;
-    transform_node->transform_changed = true;
+    transform_node->SetTransformChanged(DamageReason::kUntracked);
     layer_tree_host()
         ->property_trees()
         ->transform_tree_mutable()
@@ -978,7 +978,7 @@ void Layer::SetTransform(const gfx::Transform& transform) {
           Are2dAxisAligned(inputs.transform, transform);
       transform_node->local = transform;
       transform_node->needs_local_transform_update = true;
-      transform_node->transform_changed = true;
+      transform_node->SetTransformChanged(DamageReason::kUntracked);
       layer_tree_host()
           ->property_trees()
           ->transform_tree_mutable()
@@ -1013,7 +1013,7 @@ void Layer::SetTransformOrigin(const gfx::Point3F& transform_origin) {
     DCHECK_EQ(transform_tree_index(), transform_node->id);
     transform_node->origin = transform_origin;
     transform_node->needs_local_transform_update = true;
-    transform_node->transform_changed = true;
+    transform_node->SetTransformChanged(DamageReason::kUntracked);
     layer_tree_host()
         ->property_trees()
         ->transform_tree_mutable()
@@ -1081,7 +1081,7 @@ void Layer::UpdatePropertyTreeScrollOffset() {
   auto* transform_node =
       property_trees.transform_tree_mutable().Node(transform_tree_index());
   DCHECK_EQ(transform_tree_index(), transform_node->id);
-  transform_node->scroll_offset = scroll_offset();
+  transform_node->SetScrollOffset(scroll_offset(), DamageReason::kUntracked);
   transform_node->needs_local_transform_update = true;
   property_trees.transform_tree_mutable().set_needs_update(true);
 }
@@ -1197,6 +1197,20 @@ void Layer::SetWheelEventRegion(Region wheel_event_region) {
   EnsureRareInputs().wheel_event_region = std::move(wheel_event_region);
   SetNeedsCommit();
 }
+
+#if BUILDFLAG(IS_ANDROID)
+void Layer::SetXrHitTestOrder(std::vector<ElementId> xr_hit_test_order) {
+  CHECK(IsPropertyChangeAllowed());
+  const auto& rare_inputs = inputs_.Read(*this).rare_inputs;
+  if (!rare_inputs && xr_hit_test_order.empty()) {
+    return;
+  }
+  if (rare_inputs && rare_inputs->xr_hit_test_order == xr_hit_test_order) {
+    return;
+  }
+  EnsureRareInputs().xr_hit_test_order = std::move(xr_hit_test_order);
+}
+#endif
 
 RenderSurfaceReason Layer::GetRenderSurfaceReason() const {
   if (!IsAttached())
@@ -1471,7 +1485,6 @@ void Layer::PushDirtyPropertiesTo(LayerImpl* layer,
     if (subtree_property_changed_.Read(*this)) {
       layer->NoteLayerPropertyChanged();
     }
-    layer->SetMayContainVideo(may_contain_video());
     layer->SetTouchActionRegion(inputs.touch_action_region);
     layer->SetContentsOpaque(inputs.contents_opaque);
     layer->SetContentsOpaqueForText(inputs.contents_opaque_for_text);
@@ -1514,6 +1527,8 @@ void Layer::PushDirtyPropertiesTo(LayerImpl* layer,
     subtree_property_changed_.Write(*this) = false;
     update_rect_.Write(*this) = gfx::Rect();
   }
+
+  layer->SetNeedsPushProperties();
 }
 
 void Layer::PushPropertiesTo(LayerImpl* layer_impl,
@@ -1689,7 +1704,7 @@ void Layer::SetElementId(ElementId id) {
                "element", id.ToString());
   auto& inputs = inputs_.Write(*this);
   if (IsAttached() && inputs.element_id)
-    layer_tree_host()->UnregisterElement(inputs.element_id);
+    layer_tree_host()->UnregisterElement(inputs.element_id, this);
 
   inputs.element_id = id;
 

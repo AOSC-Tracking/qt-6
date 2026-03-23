@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssglayerrenderdata_p.h"
 
@@ -24,6 +26,7 @@
 #include <QtQuick3DRuntimeRender/private/qssgruntimerenderlogging_p.h>
 #include <QtQuick3DRuntimeRender/private/qssglightmapper_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgdebugdrawsystem_p.h>
+#include <QtQuick3DRuntimeRender/private/qssgshadermaterialadapter_p.h>
 
 #include <QtQuick3DUtils/private/qssgutils_p.h>
 #include <QtQuick3DUtils/private/qssgassert_p.h>
@@ -99,12 +102,12 @@ struct LayerNodeStatResult
     }
 };
 
-static LayerNodeStatResult statLayerNodes(const QSSGLayerRenderData::LayerNodes &layerNodes) {
+static LayerNodeStatResult statLayerNodes(const QSSGLayerRenderData::LayerNodes &layerNodes, quint32 layerMask) {
 
     LayerNodeStatResult stat;
 
     for (auto *node : layerNodes) {
-        if (node->getGlobalState(QSSGRenderNode::GlobalState::Active)) {
+        if (node->getGlobalState(QSSGRenderNode::GlobalState::Active) && (node->tag.isSet(layerMask))) {
             if (node->type == QSSGRenderGraphObject::Type::Model)
                 ++stat.modelCount;
             else if (node->type == QSSGRenderGraphObject::Type::Particles)
@@ -161,6 +164,23 @@ qsizetype QSSGLayerRenderData::frustumCullingInline(const QSSGClippingFrustum &c
     while (front <= back) {
         const auto &b = renderables.at(front).obj->globalBounds;
         if (clipFrustum.intersectsWith(b))
+            ++front;
+        else
+            renderables.swapItemsAt(front, back--);
+    }
+
+    return back + 1;
+}
+
+qsizetype QSSGLayerRenderData::filterLayerMaskInline(quint32 layerMask, QSSGRenderableObjectList &renderables)
+{
+    const qint32 end = renderables.size();
+    qint32 front = 0;
+    qint32 back = end - 1;
+
+    while (front <= back) {
+        const auto &b = renderables.at(front).tag;
+        if (layerMask & b.value())
             ++front;
         else
             renderables.swapItemsAt(front, back--);
@@ -292,15 +312,20 @@ void QSSGLayerRenderData::ensureCachedCameraDatas()
 }
 
 // Per-frame cache of renderable objects post-sort.
-const QVector<QSSGRenderableObjectHandle> &QSSGLayerRenderData::getSortedOpaqueRenderableObjects(const QSSGRenderCamera &camera, size_t index)
+const QVector<QSSGRenderableObjectHandle> &QSSGLayerRenderData::getSortedOpaqueRenderableObjects(const QSSGRenderCamera &camera, size_t index, quint32 layerMask)
 {
     index = index * size_t(index < opaqueObjectStore.size());
-    auto &sortedOpaqueObjects = sortedOpaqueObjectCache[index][&camera];
+    auto &sortedOpaqueObjects = sortedOpaqueObjectCache[index][{&camera, layerMask}];
     if (!sortedOpaqueObjects.empty())
         return sortedOpaqueObjects;
 
     if (layer.layerFlags.testFlag(QSSGRenderLayer::LayerFlag::EnableDepthTest))
         sortedOpaqueObjects = std::as_const(opaqueObjectStore)[index];
+
+    if (camera.layerMask != layerMask) {
+        const auto filteredObjects = filterLayerMaskInline(layerMask, sortedOpaqueObjects);
+        sortedOpaqueObjects.resize(filteredObjects);
+    }
 
     const auto &clippingFrustum = getCameraRenderData(&camera).clippingFrustum;
     if (clippingFrustum.has_value()) { // Frustum culling
@@ -315,10 +340,10 @@ const QVector<QSSGRenderableObjectHandle> &QSSGLayerRenderData::getSortedOpaqueR
 }
 
 // If layer depth test is false, this may also contain opaque objects.
-const QVector<QSSGRenderableObjectHandle> &QSSGLayerRenderData::getSortedTransparentRenderableObjects(const QSSGRenderCamera &camera, size_t index)
+const QVector<QSSGRenderableObjectHandle> &QSSGLayerRenderData::getSortedTransparentRenderableObjects(const QSSGRenderCamera &camera, size_t index, quint32 layerMask)
 {
     index = index * size_t(index < transparentObjectStore.size());
-    auto &sortedTransparentObjects = sortedTransparentObjectCache[index][&camera];
+    auto &sortedTransparentObjects = sortedTransparentObjectCache[index][{&camera, layerMask}];
 
     if (!sortedTransparentObjects.empty())
         return sortedTransparentObjects;
@@ -328,6 +353,11 @@ const QVector<QSSGRenderableObjectHandle> &QSSGLayerRenderData::getSortedTranspa
     if (!layer.layerFlags.testFlag(QSSGRenderLayer::LayerFlag::EnableDepthTest)) {
         const auto &opaqueObjects = std::as_const(opaqueObjectStore)[index];
         sortedTransparentObjects.append(opaqueObjects);
+    }
+
+    if (camera.layerMask != layerMask) {
+        const auto filteredObjects = filterLayerMaskInline(layerMask, sortedTransparentObjects);
+        sortedTransparentObjects.resize(filteredObjects);
     }
 
     const auto &clippingFrustum = getCameraRenderData(&camera).clippingFrustum;
@@ -346,7 +376,7 @@ const QVector<QSSGRenderableObjectHandle> &QSSGLayerRenderData::getSortedScreenT
 {
     index = index * size_t(index < screenTextureObjectStore.size());
     const auto &screenTextureObjects = std::as_const(screenTextureObjectStore)[index];
-    auto &renderedScreenTextureObjects = sortedScreenTextureObjectCache[index][&camera];
+    auto &renderedScreenTextureObjects = sortedScreenTextureObjectCache[index][{&camera, camera.layerMask}];
 
     if (!renderedScreenTextureObjects.empty())
         return renderedScreenTextureObjects;
@@ -413,8 +443,8 @@ const QSSGLayerRenderData::RenderableItem2DEntries &QSSGLayerRenderData::getRend
 // Depth Write List
 void QSSGLayerRenderData::updateSortedDepthObjectsListImp(const QSSGRenderCamera &camera, size_t index)
 {
-    auto &depthWriteObjects = sortedDepthWriteCache[index][&camera];
-    auto &depthPrepassObjects = sortedOpaqueDepthPrepassCache[index][&camera];
+    auto &depthWriteObjects = sortedDepthWriteCache[index][{&camera, camera.layerMask}];
+    auto &depthPrepassObjects = sortedOpaqueDepthPrepassCache[index][{&camera, camera.layerMask}];
 
     if (!depthWriteObjects.isEmpty() || !depthPrepassObjects.isEmpty())
         return;
@@ -534,7 +564,7 @@ static void createRenderablesHelper(QSSGLayerRenderData &layer, const QSSGRender
     }
 }
 
-QSSGRenderablesId QSSGLayerRenderData::createRenderables(QSSGPrepContextId prepId, const QList<QSSGNodeId> &nodes, QSSGRenderHelpers::CreateFlags createFlags)
+QSSGRenderablesId QSSGLayerRenderData::createRenderables(QSSGPrepContextId prepId, const QSSGNodeIdList &nodes, QSSGRenderHelpers::CreateFlags createFlags)
 {
     QSSG_ASSERT_X(verifyPrepContext(prepId, *renderer), "Expired or invalid prep id", return {});
 
@@ -747,61 +777,6 @@ QSSGPrepResultId QSSGLayerRenderData::prepareModelsForRender(QSSGRenderContextIn
     return static_cast<QSSGPrepResultId>(prepId);
 }
 
-QMatrix4x4 QSSGLayerRenderData::getGlobalTransform(QSSGRenderNodeHandle h, QMatrix4x4 defaultValue) const
-{
-    return nodeData->getGlobalTransform(h, defaultValue);
-}
-
-QMatrix4x4 QSSGLayerRenderData::getGlobalTransform(QSSGRenderNodeHandle h) const
-{
-    return nodeData->getGlobalTransform(h, QMatrix4x4());
-}
-
-QMatrix4x4 QSSGLayerRenderData::getGlobalTransform(const QSSGRenderNode &node) const
-{
-    return nodeData->getGlobalTransform(node.h, node.localTransform);
-}
-
-QMatrix3x3 QSSGLayerRenderData::getNormalMatrix(QSSGRenderModelHandle h) const
-{
-    return modelData->getNormalMatrix(h, QMatrix3x3(Qt::Uninitialized));
-}
-
-QMatrix3x3 QSSGLayerRenderData::getNormalMatrix(const QSSGRenderModel &model) const
-{
-    return modelData->getNormalMatrix(model);
-}
-
-QSSGLayerRenderData::ModelViewProjections QSSGLayerRenderData::getModelMvps(QSSGRenderModelHandle h) const
-{
-    return modelData->getModelViewProjection(h);
-}
-
-QSSGLayerRenderData::ModelViewProjections QSSGLayerRenderData::getModelMvps(const QSSGRenderModel &model) const
-{
-    return modelData->getModelViewProjection(model);
-}
-
-QSSGLayerRenderData::InstanceTransforms QSSGLayerRenderData::getInstanceTransforms(QSSGRenderNodeHandle h) const
-{
-    return nodeData->getInstanceTransforms(h);
-}
-
-QSSGLayerRenderData::InstanceTransforms QSSGLayerRenderData::getInstanceTransforms(const QSSGRenderNode &node) const
-{
-    return nodeData->getInstanceTransforms(node.h);
-}
-
-float QSSGLayerRenderData::getGlobalOpacity(QSSGRenderNodeHandle h, float defaultValue) const
-{
-    return nodeData->getGlobalOpacity(h, defaultValue);
-}
-
-float QSSGLayerRenderData::getGlobalOpacity(const QSSGRenderNode &node) const
-{
-    return nodeData->getGlobalOpacity(node.h);
-}
-
 static constexpr size_t pipelineStateIndex(QSSGRenderablesFilter filter)
 {
     switch (filter) {
@@ -892,13 +867,13 @@ void QSSGLayerRenderData::renderRenderables(QSSGRenderContextInterface &ctx, QSS
 const QSSGRenderableObjectList &QSSGLayerRenderData::getSortedRenderedDepthWriteObjects(const QSSGRenderCamera &camera, size_t index)
 {
     updateSortedDepthObjectsListImp(camera, index);
-    return sortedDepthWriteCache[index][&camera];
+    return sortedDepthWriteCache[index][{&camera, camera.layerMask}];
 }
 
 const QSSGRenderableObjectList &QSSGLayerRenderData::getSortedrenderedOpaqueDepthPrepassObjects(const QSSGRenderCamera &camera, size_t index)
 {
     updateSortedDepthObjectsListImp(camera, index);
-    return sortedOpaqueDepthPrepassCache[index][&camera];;
+    return sortedOpaqueDepthPrepassCache[index][{&camera, camera.layerMask}];
 }
 
 /**
@@ -918,42 +893,6 @@ template <typename T>
     static_assert(std::is_trivially_destructible_v<T>, "Objects allocated using the per-frame allocator needs to be trivially destructible!");
     const size_t asize = sizeof(T) * count;
     return { reinterpret_cast<T *>(QSSGLayerRenderData::perFrameAllocator(ctx)->allocate(asize)), qsizetype(count) };
-}
-
-QSSGShaderDefaultMaterialKey QSSGLayerRenderData::generateLightingKey(
-        QSSGRenderDefaultMaterial::MaterialLighting inLightingType, const QSSGShaderLightListView &lights, bool receivesShadows)
-{
-    QSSGShaderDefaultMaterialKey theGeneratedKey(qHash(features));
-    const bool lighting = inLightingType != QSSGRenderDefaultMaterial::MaterialLighting::NoLighting;
-    defaultMaterialShaderKeyProperties.m_hasLighting.setValue(theGeneratedKey, lighting);
-    if (lighting) {
-        defaultMaterialShaderKeyProperties.m_hasIbl.setValue(theGeneratedKey, layer.lightProbe != nullptr);
-
-        quint32 numLights = quint32(lights.size());
-        Q_ASSERT(numLights <= QSSGShaderDefaultMaterialKeyProperties::LightCount);
-        defaultMaterialShaderKeyProperties.m_lightCount.setValue(theGeneratedKey, numLights);
-
-        int shadowMapCount = 0;
-        for (int lightIdx = 0, lightEnd = lights.size(); lightIdx < lightEnd; ++lightIdx) {
-            QSSGRenderLight *theLight(lights[lightIdx].light);
-            const bool isDirectional = theLight->type == QSSGRenderLight::Type::DirectionalLight;
-            const bool isSpot = theLight->type == QSSGRenderLight::Type::SpotLight;
-            const bool castsShadows = theLight->m_castShadow
-                    && !theLight->m_fullyBaked
-                    && receivesShadows
-                    && shadowMapCount < QSSG_MAX_NUM_SHADOW_MAPS;
-            if (castsShadows)
-                ++shadowMapCount;
-
-            defaultMaterialShaderKeyProperties.m_lightFlags[lightIdx].setValue(theGeneratedKey, !isDirectional);
-            defaultMaterialShaderKeyProperties.m_lightSpotFlags[lightIdx].setValue(theGeneratedKey, isSpot);
-            defaultMaterialShaderKeyProperties.m_lightShadowFlags[lightIdx].setValue(theGeneratedKey, castsShadows);
-            defaultMaterialShaderKeyProperties.m_lightShadowMapSize[lightIdx].setValue(theGeneratedKey, theLight->m_shadowMapRes);
-            defaultMaterialShaderKeyProperties.m_lightSoftShadowQuality[lightIdx].setValue(theGeneratedKey,
-                                                                                           quint32(theLight->m_softShadowQuality));
-        }
-    }
-    return theGeneratedKey;
 }
 
 void QSSGLayerRenderData::prepareImageForRender(QSSGRenderImage &inImage,
@@ -1034,6 +973,9 @@ void QSSGLayerRenderData::prepareImageForRender(QSSGRenderImage &inImage,
 
         if (texture.m_flags.isLinear())
             theKeyProp.setLinear(inShaderKey, true);
+
+        if (texture.m_flags.isPreMultipliedAlpha())
+            theKeyProp.setPreMultipliedAlpha(inShaderKey, true);
 
         if (ioFirstImage == nullptr)
             ioFirstImage = theImage;
@@ -1139,12 +1081,12 @@ void QSSGLayerRenderData::setVertexInputPresence(const QSSGRenderableObjectFlags
 QSSGDefaultMaterialPreparationResult QSSGLayerRenderData::prepareDefaultMaterialForRender(
         QSSGRenderDefaultMaterial &inMaterial,
         QSSGRenderableObjectFlags &inExistingFlags,
-        float inOpacity,
-        const QSSGShaderLightListView &lights,
+        float inOpacity, bool hasAnyLights,
+        bool anyLightHasShadows,
         QSSGLayerRenderPreparationResultFlags &ioFlags)
 {
     QSSGRenderDefaultMaterial *theMaterial = &inMaterial;
-    QSSGDefaultMaterialPreparationResult retval(generateLightingKey(theMaterial->lighting, lights, inExistingFlags.receivesShadows()));
+    QSSGDefaultMaterialPreparationResult retval(QSSGShaderDefaultMaterialKey(qHash(features)));
     retval.renderableFlags = inExistingFlags;
     QSSGRenderableObjectFlags &renderableFlags(retval.renderableFlags);
     QSSGShaderDefaultMaterialKey &theGeneratedKey(retval.materialKey);
@@ -1157,6 +1099,14 @@ QSSGDefaultMaterialPreparationResult QSSGLayerRenderData::prepareDefaultMaterial
     subsetOpacity *= theMaterial->opacity;
 
     QSSGRenderableImage *firstImage = nullptr;
+
+    const bool lighting = theMaterial->lighting != QSSGRenderDefaultMaterial::MaterialLighting::NoLighting;
+    defaultMaterialShaderKeyProperties.m_hasLighting.setValue(theGeneratedKey, lighting);
+    if (lighting) {
+        defaultMaterialShaderKeyProperties.m_hasPunctualLights.setValue(theGeneratedKey, hasAnyLights);
+        defaultMaterialShaderKeyProperties.m_hasShadows.setValue(theGeneratedKey, anyLightHasShadows);
+        defaultMaterialShaderKeyProperties.m_hasIbl.setValue(theGeneratedKey, layer.lightProbe != nullptr);
+    }
 
     defaultMaterialShaderKeyProperties.m_specularAAEnabled.setValue(theGeneratedKey, layer.specularAAEnabled);
 
@@ -1183,8 +1133,9 @@ QSSGDefaultMaterialPreparationResult QSSGLayerRenderData::prepareDefaultMaterial
 
     // propagate the flag indicating the presence of a lightmap
     defaultMaterialShaderKeyProperties.m_lightmapEnabled.setValue(theGeneratedKey, renderableFlags.rendersWithLightmap());
-
+    defaultMaterialShaderKeyProperties.m_metallicRoughnessEnabled.setValue(theGeneratedKey, theMaterial->type == QSSGRenderDefaultMaterial::Type::PrincipledMaterial);
     defaultMaterialShaderKeyProperties.m_specularGlossyEnabled.setValue(theGeneratedKey, theMaterial->type == QSSGRenderGraphObject::Type::SpecularGlossyMaterial);
+
 
     // debug modes
     defaultMaterialShaderKeyProperties.m_debugMode.setValue(theGeneratedKey, int(layer.debugMode));
@@ -1228,43 +1179,24 @@ QSSGDefaultMaterialPreparationResult QSSGLayerRenderData::prepareDefaultMaterial
 
         const bool specularEnabled = theMaterial->isSpecularEnabled();
         const bool metalnessEnabled = theMaterial->isMetalnessEnabled();
-        defaultMaterialShaderKeyProperties.m_specularEnabled.setValue(theGeneratedKey, (specularEnabled || metalnessEnabled));
-        if (specularEnabled || metalnessEnabled)
-            defaultMaterialShaderKeyProperties.m_specularModel.setSpecularModel(theGeneratedKey, theMaterial->specularModel);
-
+        defaultMaterialShaderKeyProperties.m_specularEnabled.setValue(theGeneratedKey, specularEnabled || metalnessEnabled);
+        defaultMaterialShaderKeyProperties.m_specularModel.setSpecularModel(theGeneratedKey, theMaterial->specularModel);
+        defaultMaterialShaderKeyProperties.m_diffuseModel.setDiffuseModel(theGeneratedKey, theMaterial->diffuseModel);
         defaultMaterialShaderKeyProperties.m_fresnelScaleBiasEnabled.setValue(theGeneratedKey, theMaterial->isFresnelScaleBiasEnabled());
-
         defaultMaterialShaderKeyProperties.m_clearcoatFresnelScaleBiasEnabled.setValue(theGeneratedKey, theMaterial->isClearcoatFresnelScaleBiasEnabled());
-
         defaultMaterialShaderKeyProperties.m_fresnelEnabled.setValue(theGeneratedKey, theMaterial->isFresnelEnabled());
-
-        defaultMaterialShaderKeyProperties.m_fresnelEnabled.setValue(theGeneratedKey, theMaterial->isFresnelEnabled());
-
-        defaultMaterialShaderKeyProperties.m_baseColorSingleChannelEnabled.setValue(theGeneratedKey,
-                                                                            theMaterial->isBaseColorSingleChannelEnabled());
-        defaultMaterialShaderKeyProperties.m_specularSingleChannelEnabled.setValue(theGeneratedKey,
-                                                                            theMaterial->isSpecularAmountSingleChannelEnabled());
-        defaultMaterialShaderKeyProperties.m_emissiveSingleChannelEnabled.setValue(theGeneratedKey,
-                                                                                   theMaterial->isEmissiveSingleChannelEnabled());
-        defaultMaterialShaderKeyProperties.m_invertOpacityMapValue.setValue(theGeneratedKey,
-                                                                            theMaterial->isInvertOpacityMapValue());
-        defaultMaterialShaderKeyProperties.m_vertexColorsEnabled.setValue(theGeneratedKey,
-                                                                                      theMaterial->isVertexColorsEnabled());
-        defaultMaterialShaderKeyProperties.m_vertexColorsMaskEnabled.setValue(theGeneratedKey,
-                                                                         theMaterial->isVertexColorsMaskEnabled());
-        defaultMaterialShaderKeyProperties.m_vertexColorRedMask.setValue(theGeneratedKey,
-                                                                         theMaterial->vertexColorRedMask.toInt());
-        defaultMaterialShaderKeyProperties.m_vertexColorGreenMask.setValue(theGeneratedKey,
-                                                                         quint16(theMaterial->vertexColorGreenMask.toInt()));
-        defaultMaterialShaderKeyProperties.m_vertexColorBlueMask.setValue(theGeneratedKey,
-                                                                         quint16(theMaterial->vertexColorBlueMask.toInt()));
-        defaultMaterialShaderKeyProperties.m_vertexColorAlphaMask.setValue(theGeneratedKey,
-                                                                         quint16(theMaterial->vertexColorAlphaMask.toInt()));
-
-        defaultMaterialShaderKeyProperties.m_clearcoatEnabled.setValue(theGeneratedKey,
-                                                                                   theMaterial->isClearcoatEnabled());
-        defaultMaterialShaderKeyProperties.m_transmissionEnabled.setValue(theGeneratedKey,
-                                                                                      theMaterial->isTransmissionEnabled());
+        defaultMaterialShaderKeyProperties.m_baseColorSingleChannelEnabled.setValue(theGeneratedKey, theMaterial->isBaseColorSingleChannelEnabled());
+        defaultMaterialShaderKeyProperties.m_specularSingleChannelEnabled.setValue(theGeneratedKey, theMaterial->isSpecularAmountSingleChannelEnabled());
+        defaultMaterialShaderKeyProperties.m_emissiveSingleChannelEnabled.setValue(theGeneratedKey, theMaterial->isEmissiveSingleChannelEnabled());
+        defaultMaterialShaderKeyProperties.m_invertOpacityMapValue.setValue(theGeneratedKey, theMaterial->isInvertOpacityMapValue());
+        defaultMaterialShaderKeyProperties.m_vertexColorsEnabled.setValue(theGeneratedKey, theMaterial->isVertexColorsEnabled());
+        defaultMaterialShaderKeyProperties.m_vertexColorsMaskEnabled.setValue(theGeneratedKey, theMaterial->isVertexColorsMaskEnabled());
+        defaultMaterialShaderKeyProperties.m_vertexColorRedMask.setValue(theGeneratedKey, quint16(theMaterial->vertexColorRedMask.toInt()));
+        defaultMaterialShaderKeyProperties.m_vertexColorGreenMask.setValue(theGeneratedKey, quint16(theMaterial->vertexColorGreenMask.toInt()));
+        defaultMaterialShaderKeyProperties.m_vertexColorBlueMask.setValue(theGeneratedKey, quint16(theMaterial->vertexColorBlueMask.toInt()));
+        defaultMaterialShaderKeyProperties.m_vertexColorAlphaMask.setValue(theGeneratedKey, quint16(theMaterial->vertexColorAlphaMask.toInt()));
+        defaultMaterialShaderKeyProperties.m_clearcoatEnabled.setValue(theGeneratedKey, theMaterial->isClearcoatEnabled());
+        defaultMaterialShaderKeyProperties.m_transmissionEnabled.setValue(theGeneratedKey, theMaterial->isTransmissionEnabled());
 
         // Run through the material's images and prepare them for render.
         // this may in fact set pickable on the renderable flags if one of the images
@@ -1367,12 +1299,10 @@ QSSGDefaultMaterialPreparationResult QSSGLayerRenderData::prepareDefaultMaterial
 
 QSSGDefaultMaterialPreparationResult QSSGLayerRenderData::prepareCustomMaterialForRender(
         QSSGRenderCustomMaterial &inMaterial, QSSGRenderableObjectFlags &inExistingFlags,
-        float inOpacity, bool alreadyDirty, const QSSGShaderLightListView &lights,
+        float inOpacity, bool alreadyDirty, bool hasAnyLights, bool anyLightHasShadows,
         QSSGLayerRenderPreparationResultFlags &ioFlags)
 {
-    QSSGDefaultMaterialPreparationResult retval(
-                generateLightingKey(QSSGRenderDefaultMaterial::MaterialLighting::FragmentLighting,
-                                    lights, inExistingFlags.receivesShadows()));
+    QSSGDefaultMaterialPreparationResult retval(QSSGShaderDefaultMaterialKey(qHash(features)));
     retval.renderableFlags = inExistingFlags;
     QSSGRenderableObjectFlags &renderableFlags(retval.renderableFlags);
     QSSGShaderDefaultMaterialKey &theGeneratedKey(retval.materialKey);
@@ -1393,11 +1323,19 @@ QSSGDefaultMaterialPreparationResult QSSGLayerRenderData::prepareCustomMaterialF
     else
         renderableFlags |= QSSGRenderableObjectFlag::HasTransparency;
 
+    defaultMaterialShaderKeyProperties.m_hasLighting.setValue(theGeneratedKey, true);
+    defaultMaterialShaderKeyProperties.m_hasPunctualLights.setValue(theGeneratedKey, hasAnyLights);
+    defaultMaterialShaderKeyProperties.m_hasShadows.setValue(theGeneratedKey, anyLightHasShadows);
+    defaultMaterialShaderKeyProperties.m_hasIbl.setValue(theGeneratedKey, layer.lightProbe != nullptr);
+    defaultMaterialShaderKeyProperties.m_specularEnabled.setValue(theGeneratedKey, true);
+
     defaultMaterialShaderKeyProperties.m_specularAAEnabled.setValue(theGeneratedKey, layer.specularAAEnabled);
 
     // isDoubleSided
-    defaultMaterialShaderKeyProperties.m_isDoubleSided.setValue(theGeneratedKey,
-                                                                            inMaterial.m_cullMode == QSSGCullFaceMode::Disabled);
+    defaultMaterialShaderKeyProperties.m_isDoubleSided.setValue(theGeneratedKey, inMaterial.m_cullMode == QSSGCullFaceMode::Disabled);
+
+    // Custom Materials are always Metallic Roughness Workflow
+    defaultMaterialShaderKeyProperties.m_metallicRoughnessEnabled.setValue(theGeneratedKey, true);
 
     // Does the material override the position output
     const bool overridesPosition = inMaterial.m_renderFlags.testFlag(QSSGRenderCustomMaterial::RenderFlag::OverridesPosition);
@@ -1464,13 +1402,22 @@ QSSGDefaultMaterialPreparationResult QSSGLayerRenderData::prepareCustomMaterialF
     if (inMaterial.m_renderFlags.testFlag(QSSGRenderCustomMaterial::RenderFlag::DepthTexture))
         ioFlags.setRequiresDepthTexture(true);
 
+    if (inMaterial.m_renderFlags.testFlag(QSSGRenderCustomMaterial::RenderFlag::NormalTexture)) {
+        ioFlags.setRequiresNormalTexture(true);
+        renderableFlags |= QSSGRenderableObjectFlag::RequiresNormalTexture;
+    }
+
     if (inMaterial.m_renderFlags.testFlag(QSSGRenderCustomMaterial::RenderFlag::AoTexture)) {
         ioFlags.setRequiresDepthTexture(true);
         ioFlags.setRequiresSsaoPass(true);
     }
     if (orderIndependentTransparencyEnabled && renderableFlags.hasTransparency())
         defaultMaterialShaderKeyProperties.m_orderIndependentTransparency.setValue(theGeneratedKey, int(layer.oitMethod));
+
     retval.firstImage = nullptr;
+
+    if (inMaterial.m_renderFlags.testFlag(QSSGRenderCustomMaterial::RenderFlag::MotionVectorTexture))
+        ioFlags.setRequiresMotionVectorPass(true);
 
     if (retval.dirty || alreadyDirty)
         renderer->addMaterialDirtyClear(&inMaterial);
@@ -1610,6 +1557,8 @@ bool QSSGLayerRenderData::prepareModelsForRender(QSSGRenderContextInterface &con
         if (meshSubsetCount > 0) {
             const QSSGRenderSubset &theSubset = meshSubsets.at(0);
 
+            renderableFlagsForModel.setMotionVectorParticipant(model.motionVectorEnabled);
+
             renderableFlagsForModel.setCastsShadows(model.castsShadows);
             renderableFlagsForModel.setReceivesShadows(model.receivesShadows);
             renderableFlagsForModel.setReceivesReflections(model.receivesReflections);
@@ -1668,6 +1617,16 @@ bool QSSGLayerRenderData::prepareModelsForRender(QSSGRenderContextInterface &con
                                                      lights.end(),
                                                      [](const QSSGShaderLight &light) { return light.shadows; })
                 != lights.end();
+        const bool hasAnyLights = !lights.isEmpty();
+        QSSGRenderLight::SoftShadowQuality maxSoftShadowQuality = QSSGRenderLight::SoftShadowQuality::Hard;
+        if (anyLightHasShadows) {
+            // Iterate the light list to find the maximum shadow quality of lights that cast shadows
+            for (const QSSGShaderLight &light : lights) {
+                if (light.shadows && light.light->m_softShadowQuality > maxSoftShadowQuality)
+                    maxSoftShadowQuality = light.light->m_softShadowQuality;
+            }
+        }
+
 
         // Subset(s)
         auto &renderableSubsets = theModelContext.subsets;
@@ -1776,7 +1735,7 @@ bool QSSGLayerRenderData::prepareModelsForRender(QSSGRenderContextInterface &con
                 theMaterialObject->type == QSSGRenderGraphObject::Type::PrincipledMaterial ||
                 theMaterialObject->type == QSSGRenderGraphObject::Type::SpecularGlossyMaterial) {
                 QSSGRenderDefaultMaterial &theMaterial(static_cast<QSSGRenderDefaultMaterial &>(*theMaterialObject));
-                QSSGDefaultMaterialPreparationResult theMaterialPrepResult(prepareDefaultMaterialForRender(theMaterial, renderableFlags, subsetOpacity, lights, ioFlags));
+                QSSGDefaultMaterialPreparationResult theMaterialPrepResult(prepareDefaultMaterialForRender(theMaterial, renderableFlags, subsetOpacity, hasAnyLights, anyLightHasShadows, ioFlags));
                 QSSGShaderDefaultMaterialKey &theGeneratedKey(theMaterialPrepResult.materialKey);
                 subsetOpacity = theMaterialPrepResult.opacity;
                 QSSGRenderableImage *firstImage(theMaterialPrepResult.firstImage);
@@ -1788,6 +1747,9 @@ bool QSSGLayerRenderData::prepareModelsForRender(QSSGRenderContextInterface &con
                 // Blend particles
                 defaultMaterialShaderKeyProperties.m_blendParticles.setValue(theGeneratedKey, usesBlendParticles);
 
+                if (defaultMaterialShaderKeyProperties.m_orderIndependentTransparency.getValue(theGeneratedKey) == int(QSSGRenderLayer::OITMethod::LinkedList))
+                    defaultMaterialShaderKeyProperties.m_oitMSAA.setValue(theGeneratedKey, rhiCtx->mainPassSampleCount() > 1);
+
                 // Skin
                 const auto boneCount = model.skin ? model.skin->boneCount :
                                                     model.skeleton ? model.skeleton->boneCount : 0;
@@ -1796,6 +1758,9 @@ bool QSSGLayerRenderData::prepareModelsForRender(QSSGRenderContextInterface &con
                     const auto attr = theSubset.rhi.ia.inputLayout.attributeAt(idJoint);
                     defaultMaterialShaderKeyProperties.m_usesFloatJointIndices.setValue(theGeneratedKey, checkF32TypeIndex(attr->format()));
                 }
+
+                // SoftShadow quality
+                defaultMaterialShaderKeyProperties.m_shadowSoftness.setShadowSoftness(theGeneratedKey, maxSoftShadowQuality);
 
                 // Instancing
                 defaultMaterialShaderKeyProperties.m_usesInstancing.setValue(theGeneratedKey, usesInstancing);
@@ -1842,7 +1807,7 @@ bool QSSGLayerRenderData::prepareModelsForRender(QSSGRenderContextInterface &con
 
                 QSSGDefaultMaterialPreparationResult theMaterialPrepResult(
                         prepareCustomMaterialForRender(theMaterial, renderableFlags, subsetOpacity, wasDirty,
-                                                       lights, ioFlags));
+                                                       hasAnyLights, anyLightHasShadows, ioFlags));
                 QSSGShaderDefaultMaterialKey &theGeneratedKey(theMaterialPrepResult.materialKey);
                 subsetOpacity = theMaterialPrepResult.opacity;
                 QSSGRenderableImage *firstImage(theMaterialPrepResult.firstImage);
@@ -1852,6 +1817,12 @@ bool QSSGLayerRenderData::prepareModelsForRender(QSSGRenderContextInterface &con
                     defaultMaterialShaderKeyProperties.m_blendParticles.setValue(theGeneratedKey, true);
                 else
                     defaultMaterialShaderKeyProperties.m_blendParticles.setValue(theGeneratedKey, false);
+
+                if (defaultMaterialShaderKeyProperties.m_orderIndependentTransparency.getValue(theGeneratedKey) == int(QSSGRenderLayer::OITMethod::LinkedList))
+                    defaultMaterialShaderKeyProperties.m_oitMSAA.setValue(theGeneratedKey, rhiCtx->mainPassSampleCount() > 1);
+
+                // SoftShadow quality
+                defaultMaterialShaderKeyProperties.m_shadowSoftness.setShadowSoftness(theGeneratedKey, maxSoftShadowQuality);
 
                 // Skin
                 const auto boneCount = model.skin ? model.skin->boneCount :
@@ -1919,17 +1890,17 @@ bool QSSGLayerRenderData::prepareModelsForRender(QSSGRenderContextInterface &con
 
             if (ro.renderableFlags.requiresScreenTexture()) {
                 depthPrepassObjectsState |= DepthPrepassObjectStateT(ppState[ObjectType::ScreenTexture][size_t(depthMode == QSSGDepthDrawMode::OpaquePrePass)]);
-                screenTextureObjects.push_back({&ro, ro.camdistSq});
+                screenTextureObjects.push_back({&ro, ro.camdistSq, model.tag});
             } else if (ro.renderableFlags.hasTransparency()) {
                 depthPrepassObjectsState |= DepthPrepassObjectStateT(ppState[ObjectType::Transparent][size_t(depthMode == QSSGDepthDrawMode::OpaquePrePass)]);
-                transparentObjects.push_back({&ro, ro.camdistSq});
+                transparentObjects.push_back({&ro, ro.camdistSq, model.tag});
             } else {
                 depthPrepassObjectsState |= DepthPrepassObjectStateT(ppState[ObjectType::Opaque][size_t(depthMode == QSSGDepthDrawMode::OpaquePrePass)]);
-                opaqueObjects.push_back({&ro, ro.camdistSq});
+                opaqueObjects.push_back({&ro, ro.camdistSq, model.tag});
             }
 
             if (ro.renderableFlags.usedInBakedLighting())
-                bakedLightingObjects.push_back({&ro, ro.camdistSq});
+                bakedLightingObjects.push_back({&ro, ro.camdistSq, model.tag});
         }
 
         if (!bakedLightingObjects.isEmpty())
@@ -1952,8 +1923,11 @@ bool QSSGLayerRenderData::prepareParticlesForRender(const RenderableNodeEntries 
     auto &transparentObjects = transparentObjectStore[0];
     auto &screenTextureObjects = screenTextureObjectStore[0];
 
-    for (const auto &renderable : renderableParticles) {
-        const QSSGRenderParticles &particles = *static_cast<QSSGRenderParticles *>(renderable.node);
+    for (auto &renderable : renderableParticles) {
+        QSSGShaderParticleMaterialKeyProperties &properties = particleMaterialShaderKeyProperties;
+
+        QSSGRenderParticles &particles = *static_cast<QSSGRenderParticles *>(renderable.node);
+        QSSGShaderParticleMaterialKey &theGeneratedKey(particles.materialKey);
         const auto &lights = renderable.lights;
 
         QSSGRenderableObjectFlags renderableFlags;
@@ -1967,6 +1941,33 @@ bool QSSGLayerRenderData::prepareParticlesForRender(const RenderableNodeEntries 
         renderableFlags.setCastsReflections(particles.m_castsReflections);
         if (particles.m_hasTransparency && particles.m_blendMode != QSSGRenderParticles::BlendMode::SourceOver)
             ioFlags.setHasCustomBlendMode(true);
+
+        properties.m_isLineParticle.setValue(theGeneratedKey, particles.m_featureLevel >= QSSGRenderParticles::FeatureLevel::Line);
+        const bool animated = particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::LineAnimated
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::Animated
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::AnimatedVLight
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::LineAnimatedVLight;
+        const bool mapped = particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::LineMapped
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::Mapped
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::MappedVLight
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::LineMappedVLight;
+        const bool lit = particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::LineVLight
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::AnimatedVLight
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::MappedVLight
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::LineMappedVLight
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::LineAnimatedVLight
+                || particles.m_featureLevel == QSSGRenderParticles::FeatureLevel::SimpleVLight;
+        properties.m_isAnimated.setValue(theGeneratedKey, animated);
+        properties.m_isMapped.setValue(theGeneratedKey, mapped);
+        properties.m_hasLighting.setValue(theGeneratedKey, lit);
+        properties.m_viewCount.setValue(theGeneratedKey, layer.viewCount);
+        if (renderableFlags.hasTransparency() && orderIndependentTransparencyEnabled) {
+            properties.m_orderIndependentTransparency.setValue(theGeneratedKey, int(layer.oitMethod));
+            if (layer.oitMethod == QSSGRenderLayer::OITMethod::LinkedList)
+                properties.m_oitMSAA.setValue(theGeneratedKey, contextInterface.rhiContext()->mainPassSampleCount() > 1);
+        } else {
+            properties.m_orderIndependentTransparency.setValue(theGeneratedKey, int(0));
+        }
 
         float opacity = getGlobalOpacity(particles);
         QVector3D center(particles.m_particleBuffer.bounds().center());
@@ -1982,6 +1983,7 @@ bool QSSGLayerRenderData::prepareParticlesForRender(const RenderableNodeEntries 
             const QSSGRenderImageTexture texture = bufferManager->loadRenderImage(particles.m_sprite);
             QSSGRenderableImage *theImage = RENDER_FRAME_NEW<QSSGRenderableImage>(contextInterface, QSSGRenderableImage::Type::Diffuse, *particles.m_sprite, texture);
             firstImage = theImage;
+            properties.m_isSpriteLinear.setValue(theGeneratedKey, texture.m_flags.isLinear());
         }
 
         QSSGRenderableImage *colorTable = nullptr;
@@ -1995,6 +1997,7 @@ bool QSSGLayerRenderData::prepareParticlesForRender(const RenderableNodeEntries 
 
             QSSGRenderableImage *theImage = RENDER_FRAME_NEW<QSSGRenderableImage>(contextInterface, QSSGRenderableImage::Type::Diffuse, *particles.m_colorTable, texture);
             colorTable = theImage;
+            properties.m_isColorTableLinear.setValue(theGeneratedKey, texture.m_flags.isLinear());
         }
 
         if (opacity > 0.0f && particles.m_particleBuffer.particleCount()) {
@@ -2008,82 +2011,20 @@ bool QSSGLayerRenderData::prepareParticlesForRender(const RenderableNodeEntries 
                                                                                   firstImage,
                                                                                   colorTable,
                                                                                   lights,
-                                                                                  opacity);
+                                                                                  opacity,
+                                                                                  theGeneratedKey);
             if (theRenderableObject) {
                 if (theRenderableObject->renderableFlags.requiresScreenTexture())
-                    screenTextureObjects.push_back({theRenderableObject, getCameraDistanceSq(*theRenderableObject, cameraData)});
+                    screenTextureObjects.push_back({theRenderableObject, getCameraDistanceSq(*theRenderableObject, cameraData), particles.tag});
                 else if (theRenderableObject->renderableFlags.hasTransparency())
-                    transparentObjects.push_back({theRenderableObject, getCameraDistanceSq(*theRenderableObject, cameraData)});
+                    transparentObjects.push_back({theRenderableObject, getCameraDistanceSq(*theRenderableObject, cameraData), particles.tag});
                 else
-                    opaqueObjects.push_back({theRenderableObject, getCameraDistanceSq(*theRenderableObject, cameraData)});
+                    opaqueObjects.push_back({theRenderableObject, getCameraDistanceSq(*theRenderableObject, cameraData), particles.tag});
             }
         }
     }
 
     return dirty;
-}
-
-bool QSSGLayerRenderData::prepareItem2DsForRender(const QSSGRenderContextInterface &ctxIfc,
-                                                  const QSSGItem2DsView &renderableItem2Ds)
-{
-    const bool hasItems = (renderableItem2Ds.size() != 0);
-    if (hasItems) {
-        const auto &rhiCtx = ctxIfc.rhiContext();
-        const auto &clipSpaceCorrMatrix = ctxIfc.rhiContext()->rhi()->clipSpaceCorrMatrix();
-        const QSSGRenderCameraDataList &cameraDatas(getCachedCameraDatas());
-
-        item2DDataMap.clear();
-        item2DDataMap.reserve(size_t(renderableItem2Ds.size()));
-        renderer->populateItem2DDataMapForLayer(layer, item2DDataMap);
-        const auto getItem2DData = [&](const QSSGRenderItem2D *item) {
-            const auto foundIt = item2DDataMap.find(item);
-            return (foundIt != item2DDataMap.cend()) ? foundIt->second : QSSGRenderer::Item2DData{};
-        };
-
-        for (const auto &theItem2D : renderableItem2Ds) {
-            QSSGRenderer::Item2DData i2d = getItem2DData(theItem2D);
-            i2d.layer = &layer;
-            i2d.item = theItem2D;
-            ModelViewProjections &mvps = i2d.mvps;
-
-            // Check that we have a renderer and that it hasn't changed (would indicate a context change)
-            // and we need to update all the data.
-            QSGRenderContext *sgRc = QSSGRendererPrivate::getSgRenderContext(*renderer);
-            QSSG_ASSERT(sgRc != nullptr, continue);
-            const bool contextChanged = (item2DRenderContext && item2DRenderContext != sgRc);
-            item2DRenderContext = sgRc;
-            if (contextChanged) {
-                delete i2d.renderer;
-                i2d.renderer = nullptr;
-            }
-
-            if (!i2d.renderer)
-                i2d.renderer = sgRc->createRenderer(QSGRendererInterface::RenderMode3D);
-
-            if (i2d.renderer->rootNode() != theItem2D->m_rootNode) {
-                i2d.renderer->setRootNode(theItem2D->m_rootNode);
-                theItem2D->m_rootNode->markDirty(QSGNode::DirtyForceUpdate); // Force matrix, clip and opacity update.
-                i2d.renderer->nodeChanged(theItem2D->m_rootNode, QSGNode::DirtyForceUpdate); // Force render list update.
-            }
-
-            if (!i2d.rpd)
-                i2d.rpd = rhiCtx->mainRenderPassDescriptor()->newCompatibleRenderPassDescriptor();
-
-            for (size_t i = 0, end = qMin(cameraDatas.size(), 2); i < end; ++i) {
-                const QSSGRenderCameraData &camData = cameraDatas[i];
-                QMatrix4x4 mvp = camData.viewProjection * getGlobalTransform(*theItem2D);
-                static const QMatrix4x4 flipMatrix(1.0f, 0.0f, 0.0f, 0.0f,
-                                                0.0f, -1.0f, 0.0f, 0.0f,
-                                                0.0f, 0.0f, 1.0f, 0.0f,
-                                                0.0f, 0.0f, 0.0f, 1.0f);
-                mvps[i] = clipSpaceCorrMatrix * mvp * flipMatrix;
-            }
-            if (i2d.isValid())
-                renderer->registerItem2DData(i2d);
-        }
-    }
-
-    return hasItems;
 }
 
 void QSSGLayerRenderData::prepareResourceLoaders()
@@ -2170,7 +2111,7 @@ static bool scopeLight(QSSGRenderNode *node, QSSGRenderNode *lightScope)
     return false;
 }
 
-static const int REDUCED_MAX_LIGHT_COUNT_THRESHOLD_BYTES = 4096; // 256 vec4
+static const int REDUCED_MAX_LIGHT_COUNT_THRESHOLD_BYTES = 5200; // 325 vec4s
 
 static inline int effectiveMaxLightCount(const QSSGShaderFeatures &features)
 {
@@ -2178,6 +2119,14 @@ static inline int effectiveMaxLightCount(const QSSGShaderFeatures &features)
         return QSSG_REDUCED_MAX_NUM_LIGHTS;
 
     return QSSG_MAX_NUM_LIGHTS;
+}
+
+static inline int effectiveMaxDirectionalLightCount(const QSSGShaderFeatures &features)
+{
+    if (features.isSet(QSSGShaderFeatures::Feature::ReduceMaxNumLights))
+        return QSSG_REDUCED_MAX_NUM_DIRECTIONAL_LIGHTS;
+
+    return QSSG_MAX_NUM_DIRECTIONAL_LIGHTS;
 }
 
 static void updateDirtySkeletons(const QSSGLayerRenderData &renderData, const QSSGLayerRenderData::QSSGModelsView &renderableNodes)
@@ -2226,6 +2175,20 @@ static void updateDirtySkeletons(const QSSGLayerRenderData &renderData, const QS
     dirtySkeletons.clear();
 }
 
+QSSGNodeIdList QSSGLayerRenderData::filter(const QSSGGlobalRenderNodeData::LayerNodeView &layerNodes,
+                                           quint32 layerMask,
+                                           quint32 typeMask)
+{
+    QSSGNodeIdList res;
+    for (auto *n : layerNodes) {
+        // Check mask
+        if (((quint32(n->type) & typeMask) == typeMask) && n->tag.isSet(layerMask))
+            res.push_back(QSSGNodeId(reinterpret_cast<quintptr>(n)));
+    }
+
+    return res;
+}
+
 void QSSGLayerRenderData::prepareForRender()
 {
     QSSG_ASSERT_X(layerPrepResult.isNull(), "Prep-result was not reset for render!", layerPrepResult = {});
@@ -2258,6 +2221,11 @@ void QSSGLayerRenderData::prepareForRender()
     bool wasDataDirty = false;
     wasDirty = layer.isDirty();
 
+    const bool shouldDisableInternalPasses = (layer.renderOverrides & size_t(QSSGRenderLayer::RenderOverrides::DisableInternalPasses)) != 0;
+    wasDirty |= (shouldDisableInternalPasses != disableMainPasses);
+    disableMainPasses = shouldDisableInternalPasses;
+
+    // NOTE: Prep-state is implicitly set to "DataPrep"
     layerPrepResult = { theViewport, layer };
 
     // SSAO
@@ -2267,13 +2235,19 @@ void QSSGLayerRenderData::prepareForRender()
 
     // Effects
     bool requiresDepthTexture = SSAOEnabled;
+    bool requiresNormalTexture = false;
+    bool requiresMotionVectorTexture = false;
     for (QSSGRenderEffect *theEffect = layer.firstEffect; theEffect; theEffect = theEffect->m_nextEffect) {
         if (theEffect->isDirty()) {
             wasDirty = true;
             theEffect->clearDirty();
         }
-        if (theEffect->requiresDepthTexture)
+        if (theEffect->testFlag(QSSGRenderEffect::Flags::UsesDepthTexture))
             requiresDepthTexture = true;
+        if (theEffect->testFlag(QSSGRenderEffect::Flags::UsesNormalTexture))
+            requiresNormalTexture = true;
+        if (theEffect->testFlag(QSSGRenderEffect::Flags::UsesMotionVectorTexture))
+            requiresMotionVectorTexture = true;
     }
 
     const auto &rhiCtx = renderer->contextInterface()->rhiContext();
@@ -2283,7 +2257,14 @@ void QSSGLayerRenderData::prepareForRender()
         if (rhiCtx->mainPassSampleCount() > 1)
             orderIndependentTransparencyEnabled |= rhiCtx->rhi()->isFeatureSupported(QRhi::TexelFetch) && rhiCtx->rhi()->isFeatureSupported(QRhi::SampleVariables);
         if (!orderIndependentTransparencyEnabled && !oitWarningUnsupportedShown) {
-            qCWarning(lcQuick3DRender) << "Order Independent Transparency is requested, but it is not supported.";
+            qCWarning(lcQuick3DRender) << "WeightedBlended OIT is requested, but it is not supported.";
+            oitWarningUnsupportedShown = true;
+        }
+    } else if (layer.oitMethod == QSSGRenderLayer::OITMethod::LinkedList) {
+        if (rhiCtx->mainPassSampleCount() > 1)
+            orderIndependentTransparencyEnabled |= rhiCtx->rhi()->isFeatureSupported(QRhi::SampleVariables);
+        if (!orderIndependentTransparencyEnabled && !oitWarningUnsupportedShown) {
+            qCWarning(lcQuick3DRender) << "LinkedList OIT is requested, but it is not supported.";
             oitWarningUnsupportedShown = true;
         }
     }
@@ -2294,6 +2275,10 @@ void QSSGLayerRenderData::prepareForRender()
     }
 
     layerPrepResult.flags.setRequiresDepthTexture(requiresDepthTexture);
+
+    layerPrepResult.flags.setRequiresNormalTexture(requiresNormalTexture);
+
+    layerPrepResult.flags.setRequiresMotionVectorPass(requiresMotionVectorTexture);
 
     // Tonemapping. Except when there are effects, then it is up to the
     // last pass of the last effect to perform tonemapping.
@@ -2388,7 +2373,20 @@ void QSSGLayerRenderData::prepareForRender()
         wasDataDirty |= transformAndOpacityDirty;
     }
 
-    const bool restatNodes = (layerTreeWasDirty || (globalStateResult & QSSGRenderDataHelpers::GlobalStateResult::ActiveChanged));
+    // Check if we have an explicit camera!
+    // NOTE: We only do layering if we have an explicit camera!!!
+
+    const bool hasExplicitCamera = (layer.explicitCameras.size() != 0);
+    bool cameraLayerMaskDirty = false;
+    quint32 layerMask = QSSGRenderCamera::LayerMaskAll;
+    if (hasExplicitCamera) {
+        QSSGRenderCamera *explicitCamera = layer.explicitCameras[0];
+        layerMask = explicitCamera->tag.value();
+        cameraLayerMaskDirty = explicitCamera->isDirty(QSSGRenderCamera::DirtyFlag::LayerMaskDirty);
+        explicitCamera->clearDirty(QSSGRenderCamera::DirtyFlag::LayerMaskDirty);
+    }
+
+    const bool restatNodes = (layerTreeWasDirty || (globalStateResult & QSSGRenderDataHelpers::GlobalStateResult::ActiveChanged) || cameraLayerMaskDirty);
 
     if (restatNodes) {
         modelsView.clear();
@@ -2397,10 +2395,11 @@ void QSSGLayerRenderData::prepareForRender()
         camerasView.clear();
         lightsView.clear();
         reflectionProbesView.clear();
+        nonCategorizedView.clear();
 
-        enum NodeType : size_t { Model = 0, Particles, Item2D, Camera, Light, ReflectionProbe, Other, Inactive };
-        static const auto nodeType = [](QSSGRenderNode *node) -> NodeType {
-            if (!node->getGlobalState(QSSGRenderNode::GlobalState::Active))
+        enum NodeType : size_t { Model = 0, Particles, Item2D, Camera, ImportedCamera, Light, ReflectionProbe, Other, Inactive };
+        const auto nodeType = [layerMask](QSSGRenderNode *node) -> NodeType {
+            if (!(node->getGlobalState(QSSGRenderNode::GlobalState::Active) && (node->tag.isSet(layerMask))))
                 return NodeType::Inactive;
             switch (node->type) {
             case QSSGRenderGraphObject::Type::Model: return NodeType::Model;
@@ -2410,8 +2409,13 @@ void QSSGLayerRenderData::prepareForRender()
             default: break;
             }
 
-            if (QSSGRenderGraphObject::isCamera(node->type))
-                return NodeType::Camera;
+            if (QSSGRenderGraphObject::isCamera(node->type)) {
+                // NOTE: To keep compatibility with old code, we collect shared and non-shared cameras differently,
+                // so that shared cameras (import scene) are picked after non-shared ones.
+                const bool isImported = node->getGlobalState(QSSGRenderNode::GlobalState::Imported);
+                constexpr NodeType cameraTypes[2] { NodeType::Camera, NodeType::ImportedCamera };
+                return cameraTypes[size_t(isImported)];
+            }
             if (QSSGRenderGraphObject::isLight(node->type))
                 return NodeType::Light;
 
@@ -2429,13 +2433,13 @@ void QSSGLayerRenderData::prepareForRender()
             // which is stored based on the nodes' order in the world tree).
             layerNodesCategorized = { layerNodes.begin(), layerNodes.end() };
             // NOTE: Due to the ordering of item2ds, we need to use stable_sort.
-            std::stable_sort(layerNodesCategorized.begin(), layerNodesCategorized.end(), [](QSSGRenderNode *a, QSSGRenderNode *b) {
+            std::stable_sort(layerNodesCategorized.begin(), layerNodesCategorized.end(), [nodeType](QSSGRenderNode *a, QSSGRenderNode *b) {
                 return nodeType(a) < nodeType(b);
             });
         }
 
         // Group nodes by type inline and keep track of the individual parts using QSSGDataViews
-        const LayerNodeStatResult stat = statLayerNodes(layerNodesCategorized);
+        const LayerNodeStatResult stat = statLayerNodes(layerNodesCategorized, layerMask);
 
         // Go through the sorted nodes and create the views
         size_t next = 0;
@@ -2528,6 +2532,9 @@ void QSSGLayerRenderData::prepareForRender()
     const QSSGRenderCameraDataList &renderCameraData = getCachedCameraDatas();
     modelData->updateModelData(modelsView, renderer, renderCameraData);
 
+    // Item2Ds
+    item2DData->updateItem2DData(item2DsView, renderer, renderCameraData);
+
     // ResourceLoaders
     prepareResourceLoaders();
 
@@ -2535,39 +2542,52 @@ void QSSGLayerRenderData::prepareForRender()
     updateDirtySkeletons(*this, modelsView);
 
     // Lights
+    int directionalLightsCount = 0;
+    int positionalLightsCount = 0;
+    const int maxLightCount = effectiveMaxLightCount(features);
+    const int maxDirectionalLights = effectiveMaxDirectionalLightCount(features);
+    QSSGShaderLightList renderableLights;
     int shadowMapCount = 0;
     bool hasScopedLights = false;
+
     // Determine which lights will actually Render
     // Determine how many lights will need shadow maps
     // NOTE: This culling is specific to our Forward renderer
-    const int maxLightCount = effectiveMaxLightCount(features);
-    const bool showLightCountWarning = !tooManyLightsWarningShown && (lightsView.size() > maxLightCount);
-    if (showLightCountWarning) {
-        qWarning("Too many lights in scene, maximum is %d", maxLightCount);
-        tooManyLightsWarningShown = true;
-    }
-
-    QSSGShaderLightList renderableLights; // All lights (upto 'maxLightCount')
-
-    // List should contain only enabled lights (active && birghtness > 0).
     {
         auto it = std::make_reverse_iterator(lightsView.end());
         const auto end = it + qMin(maxLightCount, lightsView.size());
         for (; it != end; ++it) {
             QSSGRenderLight *renderLight = (*it);
             QMatrix4x4 renderLightTransform = getGlobalTransform(*renderLight);
-            hasScopedLights |= (renderLight->m_scope != nullptr);
-            const bool mightCastShadows = renderLight->m_castShadow && !renderLight->m_fullyBaked;
-            const bool shadows = mightCastShadows && (shadowMapCount < QSSG_MAX_NUM_SHADOW_MAPS);
-            shadowMapCount += int(shadows);
-            const auto &direction = QSSGRenderNode::getScalingCorrectDirection(renderLightTransform);
-            renderableLights.push_back(QSSGShaderLight{ renderLight, shadows, direction });
-        }
+            if (renderLight->type == QSSGRenderGraphObject::Type::DirectionalLight)
+                directionalLightsCount++;
+            else
+                positionalLightsCount++;
 
-        if ((shadowMapCount >= QSSG_MAX_NUM_SHADOW_MAPS) && !tooManyShadowLightsWarningShown) {
-            qWarning("Too many shadow casting lights in scene, maximum is %d", QSSG_MAX_NUM_SHADOW_MAPS);
-            tooManyShadowLightsWarningShown = true;
+            if (positionalLightsCount > maxLightCount)
+                continue;
+            if (directionalLightsCount > maxDirectionalLights)
+                continue;
+
+
+            hasScopedLights |= (renderLight->m_scope != nullptr);
+            const bool castShadows = renderLight->m_castShadow && !renderLight->m_fullyBaked;
+            shadowMapCount += int(castShadows);
+            const auto &direction = renderLight->getScalingCorrectDirection(renderLightTransform);
+            renderableLights.push_back(QSSGShaderLight{ renderLight, castShadows, direction });
         }
+    }
+
+    const bool showLightCountWarning = !tooManyLightsWarningShown && (positionalLightsCount > maxLightCount);
+    if (showLightCountWarning) {
+        qWarning("Too many lights in scene, maximum is %d", maxLightCount);
+        tooManyLightsWarningShown = true;
+    }
+
+    const bool showDirectionalLightCountWarning = !tooManyDirectionalLightsWarningShown && (directionalLightsCount > maxDirectionalLights);
+    if (showDirectionalLightCountWarning) {
+        qWarning("Too many directional lights in scene, maximum is %d", maxDirectionalLights);
+        tooManyDirectionalLightsWarningShown = true;
     }
 
     if (shadowMapCount > 0) { // Setup Shadow Maps Entries for Lights casting shadows
@@ -2649,6 +2669,13 @@ void QSSGLayerRenderData::prepareForRender()
         }
     }
 
+    // User render passes
+    {
+        const auto &userRenderPassManager = requestUserRenderPassManager();
+        userRenderPassManager->updateUserPassOrder(layerTreeWasDirty); // NOTE: If the tree was dirty we need to force an update.
+        userRenderPasses.userPasses = userRenderPassManager->scheduledUserPasses();
+    }
+
     auto &opaqueObjects = opaqueObjectStore[0];
     auto &transparentObjects = transparentObjectStore[0];
     auto &screenTextureObjects = screenTextureObjectStore[0];
@@ -2659,7 +2686,8 @@ void QSSGLayerRenderData::prepareForRender()
             const auto &cameraDatas = getCachedCameraDatas();
             wasDirty |= prepareParticlesForRender(renderableParticles, cameraDatas[0], layerPrepResult.flags);
         }
-        wasDirty |= prepareItem2DsForRender(*renderer->contextInterface(), item2DsView);
+        // If there's item2Ds we set wasDirty.
+        wasDirty |= (item2DsView.size() != 0);
     }
     if (orderIndependentTransparencyEnabled) {
         // OIT blending mode must be SourceOver and have transparent objects
@@ -2706,9 +2734,19 @@ void QSSGLayerRenderData::prepareForRender()
     }
 
     if (temporalAA) {
-        const int t = 1 - 2 * (layer.tempAAPassIndex % 2);
-        const float f = t * layer.temporalAAStrength;
-        vertexOffsetsAA = { f / float(theViewport.width()/2.0), f / float(theViewport.height()/2.0) };
+        if (layer.temporalAAMode == QSSGRenderLayer::TAAMode::MotionVector && layer.tempAAPassIndex > 0) {
+            if (layer.tempAAPassIndex >= quint32(MAX_AA_LEVELS) + 1)
+                layer.tempAAPassIndex = 1;
+            int idx = layer.tempAAPassIndex - 1;
+            vertexOffsetsAA = s_ProgressiveAAVertexOffsets[idx] / QVector2D{ float(theViewport.width()/2.0), float(theViewport.height()/2.0) };
+            layer.currentAndLastJitter = QVector4D(vertexOffsetsAA, layer.currentAndLastJitter.x(), layer.currentAndLastJitter.y());
+            layerPrepResult.flags.setRequiresMotionVectorPass(true);
+            layerPrepResult.flags.setRequiresDepthTexture(true);
+        }else {
+            const int t = 1 - 2 * (layer.tempAAPassIndex % 2);
+            const float f = t * layer.temporalAAStrength;
+            vertexOffsetsAA = { f / float(theViewport.width()/2.0), f / float(theViewport.height()/2.0) };
+        }
     }
 
     if (!renderedCameras.isEmpty()) {
@@ -2740,15 +2778,22 @@ void QSSGLayerRenderData::prepareForRender()
     ps.flags.setFlag(QSSGRhiGraphicsPipelineState::Flag::DepthTestEnabled, depthTestEnableDefault);
     ps.flags.setFlag(QSSGRhiGraphicsPipelineState::Flag::DepthWriteEnabled, depthWriteEnableDefault);
 
+
+    // All data prep is done, from now on the layer content shouldn't change.
+    layerPrepResult.setState(QSSGLayerRenderPreparationResult::State::Done);
+
     // Prepare passes
     QSSG_ASSERT(activePasses.isEmpty(), activePasses.clear());
     // If needed, generate a depth texture with the opaque objects. This
-    // and the SSAO texture must come first since other passes may want to
+    // and normal and the SSAO texture must come first since other passes may want to
     // expose these textures to their shaders.
     if (layerPrepResult.flags.requiresDepthTexture())
         activePasses.push_back(&depthMapPass);
     if (layerPrepResult.flags.requiresDepthTextureMS())
         activePasses.push_back(&depthMapPassMS);
+
+    if (layerPrepResult.flags.requiresNormalTexture())
+        activePasses.push_back(&normalPass);
 
     // Screen space ambient occlusion. Relies on the depth texture and generates an AO map.
     if (layerPrepResult.flags.requiresSsaoPass())
@@ -2758,7 +2803,7 @@ void QSSGLayerRenderData::prepareForRender()
     if (layerPrepResult.flags.requiresShadowMapPass())
         activePasses.push_back(&shadowMapPass);
 
-    if (zPrePassActive)
+    if (zPrePassActive && !disableMainPasses)
         activePasses.push_back(&zPrePassPass);
 
     // Screen texture with opaque objects.
@@ -2768,32 +2813,44 @@ void QSSGLayerRenderData::prepareForRender()
     // Reflection pass
     activePasses.push_back(&reflectionMapPass);
 
+    auto &textureExtensionPass = userPasses[size_t(QSSGRenderLayer::RenderExtensionStage::TextureProviders)];
+    if (textureExtensionPass.hasData())
+        activePasses.push_back(&textureExtensionPass);
+
     auto &underlayPass = userPasses[size_t(QSSGRenderLayer::RenderExtensionStage::Underlay)];
     if (underlayPass.hasData())
         activePasses.push_back(&underlayPass);
 
+    // Generated User render passes (QML)
+    if (userRenderPasses.hasData())
+        activePasses.push_back(&userRenderPasses);
+
     const bool hasOpaqueObjects = (opaqueObjects.size() > 0);
 
-    if (hasOpaqueObjects)
+    if (hasOpaqueObjects && !disableMainPasses)
         activePasses.push_back(&opaquePass);
+
+    // MotionVector Pass
+    if (layerPrepResult.flags.requiresMotionVectorPass())
+        activePasses.push_back(&motionVectorMapPass);
 
     // NOTE: When the a screen texture is used, the skybox pass will be called twice. First from
     // the screen texture pass and later as part of the normal run through the list.
     if (renderer->contextInterface()->rhiContext()->rhi()->isFeatureSupported(QRhi::TexelFetch)) {
-        if (layer.background == QSSGRenderLayer::Background::SkyBoxCubeMap && layer.skyBoxCubeMap)
+        if (layer.background == QSSGRenderLayer::Background::SkyBoxCubeMap && layer.skyBoxCubeMap && !disableMainPasses)
             activePasses.push_back(&skyboxCubeMapPass);
-        else if (layer.background == QSSGRenderLayer::Background::SkyBox && layer.lightProbe)
+        else if (layer.background == QSSGRenderLayer::Background::SkyBox && layer.lightProbe && !disableMainPasses)
             activePasses.push_back(&skyboxPass);
     }
 
-    if (hasItem2Ds)
+    if (hasItem2Ds && !disableMainPasses)
         activePasses.push_back(&item2DPass);
 
     if (layerPrepResult.flags.requiresScreenTexture())
         activePasses.push_back(&reflectionPass);
 
     // Note: Transparent pass includeds opaque objects when layerEnableDepthTest is false.
-    if (transparentObjects.size() > 0 || (!layerEnableDepthTest && hasOpaqueObjects)) {
+    if ((transparentObjects.size() > 0 || (!layerEnableDepthTest && hasOpaqueObjects)) && !disableMainPasses) {
         if (orderIndependentTransparencyEnabled) {
             activePasses.push_back(&oitRenderPass);
             activePasses.push_back(&oitCompositePass);
@@ -2811,7 +2868,7 @@ void QSSGLayerRenderData::prepareForRender()
     if (layer.gridEnabled)
         activePasses.push_back(&infiniteGridPass);
 
-    if (const auto &dbgDrawSystem = renderer->contextInterface()->debugDrawSystem(); dbgDrawSystem && dbgDrawSystem->isEnabled())
+    if (const auto &dbgDrawSystem = renderer->contextInterface()->debugDrawSystem(); dbgDrawSystem && dbgDrawSystem->isEnabled() && !disableMainPasses)
         activePasses.push_back(&debugDrawPass);
 }
 
@@ -2867,10 +2924,14 @@ void QSSGLayerRenderData::resetForFrame()
 
         renderablesModifiedByExtension = false;
     }
+
+    if (userRenderPassManager)
+        userRenderPassManager->resetForFrame();
 }
 
 QSSGLayerRenderPreparationResult::QSSGLayerRenderPreparationResult(const QRectF &inViewport, QSSGRenderLayer &inLayer)
     : layer(&inLayer)
+    , m_state(State::DataPrep)
 {
     viewport = inViewport;
 }
@@ -2899,16 +2960,21 @@ QSSGLayerRenderData::QSSGLayerRenderData(QSSGRenderLayer &inLayer, QSSGRenderer 
     auto *root = layer.rootNode;
     nodeData = root->globalNodeData();
     modelData = std::make_unique<QSSGRenderModelData>(nodeData);
+    item2DData = std::make_unique<QSSGRenderItem2DData>(nodeData);
+
+    inRenderer.registerItem2DData(*item2DData);
 }
 
 QSSGLayerRenderData::~QSSGLayerRenderData()
 {
-    for (auto &pass : activePasses)
-        pass->resetForFrame();
-
     for (auto &renderResult : renderResults)
         renderResult.reset();
     oitRenderContext.reset();
+
+    if (userRenderPassManager)
+        userRenderPassManager->releaseAll();
+
+    renderer->unregisterItem2DData(*item2DData);
 }
 
 static void sortInstances(QByteArray &sortedData, QList<QSSGRhiSortData> &sortData, const void *instances,
@@ -2981,7 +3047,8 @@ bool QSSGLayerRenderData::prepareInstancing(QSSGRhiContext *rhiCtx,
     bool cameraDirectionChanged = !qFuzzyCompare(instanceData.sortedCameraDirection, cameraDirection);
     bool cameraPositionChanged = !qFuzzyCompare(instanceData.cameraPosition, cameraPosition);
     bool updateInstanceBuffer = table->serial() != instanceData.serial || sortingChanged || (cameraDirectionChanged && table->isDepthSortingEnabled());
-    bool updateForLod = cameraPositionChanged && usesLod;
+    bool instanceBufferSizeChanged = instanceData.buffer && instanceBufferSize != instanceData.buffer->size();
+    bool updateForLod = (cameraPositionChanged || instanceBufferSizeChanged) && usesLod;
     if (sortingChanged && !table->isDepthSortingEnabled()) {
         instanceData.sortedData.clear();
         instanceData.sortData.clear();
@@ -3122,6 +3189,23 @@ const QSSGRenderReflectionMapPtr &QSSGLayerRenderData::requestReflectionMapManag
     if (!reflectionMapManager && QSSG_GUARD(renderer && renderer->contextInterface()))
         reflectionMapManager.reset(new QSSGRenderReflectionMap(*renderer->contextInterface()));
     return reflectionMapManager;
+}
+
+
+const QSSGUserRenderPassManagerPtr &QSSGLayerRenderData::requestUserRenderPassManager()
+{
+    if (!userRenderPassManager) {
+        userRenderPassManager = QSSGUserRenderPassManager::create();
+        renderer->contextInterface()->bufferManager()->registerUserRenderPassManager(userRenderPassManager);
+    }
+    return userRenderPassManager;
+}
+
+const QSSGRenderMotionVectorMapPtr &QSSGLayerRenderData::requestMotionVectorMapManager()
+{
+    if (!motionVectorMapManager && QSSG_GUARD(renderer && renderer->contextInterface()))
+        motionVectorMapManager.reset(new QSSGRenderMotionVectorMap(*renderer->contextInterface()));
+    return motionVectorMapManager;
 }
 
 QT_END_NAMESPACE

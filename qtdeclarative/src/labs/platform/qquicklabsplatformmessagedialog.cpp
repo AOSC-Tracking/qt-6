@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicklabsplatformmessagedialog_p.h"
 
@@ -15,7 +16,7 @@ QT_BEGIN_NAMESPACE
 //!     \nativetype QQuickLabsPlatformMessageDialog
     \inqmlmodule Qt.labs.platform
     \since 5.8
-    \deprecated [6.9] Use QtQuick.Dialogs::MessageDialog instead.
+    \deprecated [6.9] Use \l [QtQuickDialogs] {MessageDialog}{QtQuick.Dialogs MessageDialog} instead.
     \brief A native message dialog.
 
     The MessageDialog type provides a QML API for native platform message dialogs.

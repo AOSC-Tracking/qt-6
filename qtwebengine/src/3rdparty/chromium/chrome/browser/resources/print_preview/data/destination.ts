@@ -6,7 +6,7 @@ import '/strings.m.js';
 
 import {assert} from 'chrome://resources/js/assert.js';
 
-import type {Cdd, ColorCapability, ColorOption, CopiesCapability, DpiOption, DuplexType, MediaSizeOption, MediaTypeOption} from './cdd.js';
+import type {Cdd, ColorCapability, ColorOption, CopiesCapability, DpiOption, DuplexType, MediaSizeOption} from './cdd.js';
 /**
  * Enumeration of the origin types for destinations.
  */
@@ -26,11 +26,9 @@ export enum DestinationOrigin {
  * Must match PrinterType in printing/mojom/print.mojom
  */
 export enum PrinterType {
-  PRIVET_PRINTER_DEPRECATED = 0,
-  EXTENSION_PRINTER = 1,
-  PDF_PRINTER = 2,
-  LOCAL_PRINTER = 3,
-  CLOUD_PRINTER_DEPRECATED = 4
+  EXTENSION_PRINTER = 0,
+  PDF_PRINTER = 1,
+  LOCAL_PRINTER = 2,
 }
 
 /**
@@ -348,7 +346,7 @@ export class Destination {
     const defaultOptions = capability.option.filter(option => {
       return option.is_default;
     });
-    return defaultOptions.length !== 0 ? defaultOptions[0] : null;
+    return defaultOptions.length > 0 ? defaultOptions[0]! : null;
   }
 
   /**
@@ -366,7 +364,7 @@ export class Destination {
         return option.type === typesToLookFor[i];
       });
       if (matchingOptions.length > 0) {
-        return matchingOptions[0];
+        return matchingOptions[0]!;
       }
     }
     return null;
@@ -379,16 +377,6 @@ export class Destination {
   getMediaSize(width: number, height: number): MediaSizeOption|undefined {
     return this.capabilities?.printer.media_size?.option.find(o => {
       return o.width_microns === width && o.height_microns === height;
-    });
-  }
-
-  /**
-   * @return Media type value of the destination with the given vendor id.
-   * Returns undefined if there is no such media type value.
-   */
-  getMediaType(vendorId: string): MediaTypeOption|undefined {
-    return this.capabilities?.printer.media_type?.option.find(o => {
-      return o.vendor_id === vendorId;
     });
   }
 

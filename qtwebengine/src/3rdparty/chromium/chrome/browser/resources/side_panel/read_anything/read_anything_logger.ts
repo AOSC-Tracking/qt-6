@@ -6,18 +6,9 @@ import {MetricsBrowserProxyImpl, ReadAnythingSpeechError, ReadAnythingVoiceType}
 import type {MetricsBrowserProxy, ReadAloudSettingsChange, ReadAnythingSettingsChange} from './metrics_browser_proxy.js';
 import {isEspeak, isNatural} from './voice_language_util.js';
 
-// TODO(crbug.com/40927698) - Investigate if both App and AppConstructor logs
-// are needed.
 export enum TimeFrom {
   APP = 'App',
-  APP_CONSTRUCTOR = 'AppConstructor',
   TOOLBAR = 'Toolbar',
-  TOOLBAR_CONSTRUCTOR = 'ToolbarConstructor',
-}
-
-export enum TimeTo {
-  CONNNECTED_CALLBACK = 'ConnectedCallback',
-  CONSTRUCTOR = 'Constructor',
 }
 
 export enum SpeechControls {
@@ -30,6 +21,10 @@ export enum SpeechControls {
 // Handles the business logic for logging.
 export class ReadAnythingLogger {
   private metrics: MetricsBrowserProxy = MetricsBrowserProxyImpl.getInstance();
+
+  logSpeechStopSource(source: number) {
+    this.metrics.recordSpeechStopSource(source);
+  }
 
   logSpeechError(errorCode: string) {
     let error: ReadAnythingSpeechError;
@@ -70,10 +65,9 @@ export class ReadAnythingLogger {
     this.metrics.recordSpeechError(error);
   }
 
-  logTimeBetween(
-      from: TimeFrom, to: TimeTo, startTime: number, endTime: number) {
+  logTimeFrom(from: TimeFrom, startTime: number, endTime: number) {
     const umaName = 'Accessibility.ReadAnything.' +
-        'TimeFrom' + from + 'StartedTo' + to;
+        'TimeFrom' + from + 'StartedToConstructor';
     this.metrics.recordTime(umaName, endTime - startTime);
   }
 
@@ -91,7 +85,7 @@ export class ReadAnythingLogger {
     this.metrics.recordHighlightGranularity(highlight);
   }
 
-  private logVoiceTypeUsedForReading_(voice: SpeechSynthesisVoice|undefined) {
+  private logVoiceTypeUsedForReading_(voice: SpeechSynthesisVoice|null) {
     if (!voice) {
       return;
     }
@@ -102,10 +96,10 @@ export class ReadAnythingLogger {
     } else if (isEspeak(voice)) {
       voiceType = ReadAnythingVoiceType.ESPEAK;
     } else {
-      // <if expr="chromeos_ash">
+      // <if expr="is_chromeos">
       voiceType = ReadAnythingVoiceType.CHROMEOS;
       // </if>
-      // <if expr="not chromeos_ash">
+      // <if expr="not is_chromeos">
       voiceType = ReadAnythingVoiceType.SYSTEM;
       // </if>
     }
@@ -118,13 +112,13 @@ export class ReadAnythingLogger {
       return;
     }
 
-    // See tools/metrics/histograms/enums.xml enum LocaleCodeISO639. The enum
+    // See tools/metrics/histograms/enums.xml enum LocaleCodeBCP47. The enum
     // there doesn't always have locales where the base lang and the locale
     // are the same (e.g. they don't have id-id, but do have id). So if the
     // base lang and the locale are the same, just use the base lang.
     let langToLog = lang;
     const langSplit = lang.toLowerCase().split('-');
-    if (langSplit.length === 2 && langSplit[0] === langSplit[1]) {
+    if (langSplit.length === 2 && langSplit[0]! === langSplit[1]!) {
       langToLog = langSplit[0];
     }
     this.metrics.recordLanguage(langToLog);
@@ -142,8 +136,7 @@ export class ReadAnythingLogger {
     this.metrics.recordVoiceSpeed(index);
   }
 
-  logSpeechPlaySession(
-      startTime: number, voice: SpeechSynthesisVoice|undefined) {
+  logSpeechPlaySession(startTime: number, voice: SpeechSynthesisVoice|null) {
     this.logVoiceTypeUsedForReading_(voice);
     this.logLanguageUsedForReading_(voice?.lang);
     this.metrics.recordSpeechPlaybackLength(Date.now() - startTime);

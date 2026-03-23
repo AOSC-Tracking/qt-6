@@ -29,17 +29,18 @@
 
 #include <memory>
 
+#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_message_event_init.h"
 #include "third_party/blink/renderer/core/event_interface_names.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/user_activation.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding.h"
+#include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
 namespace blink {
-
-// extern
-const V8PrivateProperty::SymbolKey kPrivatePropertyMessageEventCachedData;
 
 static inline bool IsValidSource(EventTarget* source) {
   return !source || source->ToDOMWindow() || source->ToMessagePort() ||
@@ -99,7 +100,7 @@ MessageEvent::MessageEvent(const AtomicString& type,
   if (initializer->hasSource() && IsValidSource(initializer->source()))
     source_ = initializer->source();
   if (initializer->hasPorts())
-    ports_ = MakeGarbageCollected<MessagePortArray>(initializer->ports());
+    ports_ = MakeGarbageCollected<GCedMessagePortArray>(initializer->ports());
   if (initializer->hasUserActivation())
     user_activation_ = initializer->userActivation();
   DCHECK(IsValidSource(source_.Get()));
@@ -108,7 +109,7 @@ MessageEvent::MessageEvent(const AtomicString& type,
 MessageEvent::MessageEvent(const String& origin,
                            const String& last_event_id,
                            EventTarget* source,
-                           MessagePortArray* ports)
+                           GCedMessagePortArray* ports)
     : Event(event_type_names::kMessage, Bubbles::kNo, Cancelable::kNo),
       data_type_(kDataTypeScriptValue),
       origin_(origin),
@@ -123,7 +124,7 @@ MessageEvent::MessageEvent(scoped_refptr<SerializedScriptValue> data,
                            MessageOriginKind message_origin_kind,
                            const String& last_event_id,
                            EventTarget* source,
-                           MessagePortArray* ports,
+                           GCedMessagePortArray* ports,
                            UserActivation* user_activation)
     : Event(event_type_names::kMessage, Bubbles::kNo, Cancelable::kNo),
       data_type_(kDataTypeSerializedScriptValue),
@@ -239,7 +240,7 @@ void MessageEvent::initMessageEvent(const AtomicString& type,
   if (ports.empty()) {
     ports_ = nullptr;
   } else {
-    ports_ = MakeGarbageCollected<MessagePortArray>(std::move(ports));
+    ports_ = MakeGarbageCollected<GCedMessagePortArray>(std::move(ports));
   }
   is_ports_dirty_ = true;
 }
@@ -253,7 +254,7 @@ void MessageEvent::initMessageEvent(
     MessageOriginKind message_origin_kind,
     const String& last_event_id,
     EventTarget* source,
-    MessagePortArray* ports,
+    GCedMessagePortArray* ports,
     UserActivation* user_activation,
     mojom::blink::DelegatedCapability delegated_capability) {
   if (IsBeingDispatched())
@@ -284,7 +285,7 @@ void MessageEvent::initMessageEvent(const AtomicString& type,
                                     const String& origin,
                                     const String& last_event_id,
                                     EventTarget* source,
-                                    MessagePortArray* ports) {
+                                    GCedMessagePortArray* ports) {
   if (IsBeingDispatched())
     return;
 
@@ -303,6 +304,31 @@ void MessageEvent::initMessageEvent(const AtomicString& type,
 }
 
 ScriptValue MessageEvent::data(ScriptState* script_state) {
+  // Measure how often developers access `data` prior to accessing (and
+  // hopefully evaluating!) `origin` as a way of evaluating the viability of
+  // https://github.com/mikewest/incentivize-origin-checks/.
+  if (should_measure_data_access_before_origin_) {
+    if (ExecutionContext* context = ExecutionContext::From(script_state)) {
+      scoped_refptr<SecurityOrigin> sending_origin =
+          SecurityOrigin::CreateFromString(origin_);
+      const SecurityOrigin* receiving_origin = context->GetSecurityOrigin();
+      if (sending_origin->IsSameOriginWith(receiving_origin)) {
+        UseCounter::Count(context,
+                          WebFeature::kMessageEventDataBeforeSameOrigin);
+      } else if (sending_origin->IsSameSiteWith(receiving_origin)) {
+        UseCounter::Count(context,
+                          WebFeature::kMessageEventDataBeforeSameSiteOrigin);
+      } else if (sending_origin->IsOpaque()) {
+        UseCounter::Count(context,
+                          WebFeature::kMessageEventDataBeforeOpaqueOrigin);
+      } else {
+        UseCounter::Count(context,
+                          WebFeature::kMessageEventDataBeforeCrossSiteOrigin);
+      }
+    }
+    should_measure_data_access_before_origin_ = false;
+  }
+
   is_data_dirty_ = false;
 
   v8::Isolate* isolate = script_state->GetIsolate();
@@ -357,6 +383,7 @@ ScriptValue MessageEvent::data(ScriptState* script_state) {
 
 const String& MessageEvent::originForBindings() {
   data_is_from_untrusted_source_ = false;
+  should_measure_data_access_before_origin_ = false;
   return origin();
 }
 
@@ -370,7 +397,7 @@ MessagePortArray MessageEvent::ports() {
   // Avoid copying once we can make sure that the binding layer won't
   // modify the content.
   is_ports_dirty_ = false;
-  return ports_ ? *ports_ : MessagePortArray();
+  return ports_ ? MessagePortArray(*ports_) : MessagePortArray();
 }
 
 bool MessageEvent::IsOriginCheckRequiredToAccessData() const {
@@ -413,40 +440,6 @@ void MessageEvent::Trace(Visitor* visitor) const {
 
 void MessageEvent::LockToAgentCluster() {
   locked_to_agent_cluster_ = true;
-}
-
-v8::Local<v8::Object> MessageEvent::AssociateWithWrapper(
-    v8::Isolate* isolate,
-    const WrapperTypeInfo* wrapper_type,
-    v8::Local<v8::Object> wrapper) {
-  wrapper = Event::AssociateWithWrapper(isolate, wrapper_type, wrapper);
-
-  // Let V8 know the memory usage of the platform object, especially of |data|
-  // IDL attribute which could consume huge memory, so that V8 can best schedule
-  // GCs.
-  switch (data_type_) {
-    case kDataTypeNull:
-    // V8 is already aware of memory usage of ScriptValue.
-    case kDataTypeScriptValue:
-    case kDataTypeSerializedScriptValue:
-      break;
-    case kDataTypeString:
-      V8PrivateProperty::GetSymbol(isolate,
-                                   kPrivatePropertyMessageEventCachedData)
-          .Set(wrapper, V8String(isolate, data_as_string_));
-      break;
-    case kDataTypeBlob:
-      break;
-    case kDataTypeArrayBuffer:
-      V8PrivateProperty::GetSymbol(isolate,
-                                   kPrivatePropertyMessageEventCachedData)
-          .Set(wrapper, ToV8Traits<DOMArrayBuffer>::ToV8(
-                            ScriptState::ForRelevantRealm(isolate, wrapper),
-                            data_as_array_buffer_));
-      break;
-  }
-
-  return wrapper;
 }
 
 }  // namespace blink

@@ -50,7 +50,7 @@ TEST(VideoLayerImplTest, Occlusion) {
       &provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
-  video_layer_impl->set_visible_layer_rect(gfx::Rect(layer_size));
+  video_layer_impl->SetVisibleLayerRectForTesting(gfx::Rect(layer_size));
   CopyProperties(impl.root_layer(), video_layer_impl);
 
   impl.CalcDrawProps(viewport_size);
@@ -321,7 +321,7 @@ TEST(VideoLayerImplTest, SoftwareVideoFrameGeneratesYUVQuad) {
       &provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
-  video_layer_impl->set_visible_layer_rect(gfx::Rect(layer_size));
+  video_layer_impl->SetVisibleLayerRectForTesting(gfx::Rect(layer_size));
   CopyProperties(impl.root_layer(), video_layer_impl);
 
   impl.CalcDrawProps(layer_size);
@@ -355,7 +355,7 @@ TEST(VideoLayerImplTest, HibitSoftwareVideoFrameGeneratesYUVQuad) {
       &provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
-  video_layer_impl->set_visible_layer_rect(gfx::Rect(layer_size));
+  video_layer_impl->SetVisibleLayerRectForTesting(gfx::Rect(layer_size));
   CopyProperties(impl.root_layer(), video_layer_impl);
 
   impl.CalcDrawProps(layer_size);
@@ -378,14 +378,22 @@ TEST(VideoLayerImplTest, NativeYUVFrameGeneratesYUVQuad) {
   LayerTreeImplTestBase impl;
   DebugSetImplThreadAndMainThreadBlocked(impl.task_runner_provider());
 
+  auto si_size = gfx::Size(10, 10);
+  gpu::SharedImageMetadata metadata;
+  metadata.format = viz::SinglePlaneFormat::kRGBA_8888;
+  metadata.size = si_size;
+  metadata.color_space = gfx::ColorSpace::CreateSRGB();
+  metadata.surface_origin = kTopLeft_GrSurfaceOrigin;
+  metadata.alpha_type = kOpaque_SkAlphaType;
+  metadata.usage = gpu::SharedImageUsageSet();
   scoped_refptr<gpu::ClientSharedImage> shared_image =
-      gpu::ClientSharedImage::CreateForTesting();
+      gpu::ClientSharedImage::CreateForTesting(metadata);
 
   scoped_refptr<media::VideoFrame> video_frame =
       media::VideoFrame::WrapSharedImage(media::PIXEL_FORMAT_I420, shared_image,
                                          gpu::SyncToken(), base::DoNothing(),
-                                         gfx::Size(10, 10), gfx::Rect(10, 10),
-                                         gfx::Size(10, 10), base::TimeDelta());
+                                         si_size, gfx::Rect(si_size), si_size,
+                                         base::TimeDelta());
   ASSERT_TRUE(video_frame);
   video_frame->metadata().allow_overlay = true;
   FakeVideoFrameProvider provider;
@@ -395,7 +403,7 @@ TEST(VideoLayerImplTest, NativeYUVFrameGeneratesYUVQuad) {
       &provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
-  video_layer_impl->set_visible_layer_rect(gfx::Rect(layer_size));
+  video_layer_impl->SetVisibleLayerRectForTesting(gfx::Rect(layer_size));
   CopyProperties(impl.root_layer(), video_layer_impl);
   impl.CalcDrawProps(layer_size);
 
@@ -417,15 +425,22 @@ TEST(VideoLayerImplTest, NativeARGBFrameGeneratesTextureQuad) {
   LayerTreeImplTestBase impl;
   DebugSetImplThreadAndMainThreadBlocked(impl.task_runner_provider());
 
+  auto si_size = gfx::Size(10, 10);
+  gpu::SharedImageMetadata metadata;
+  metadata.format = viz::SinglePlaneFormat::kRGBA_8888;
+  metadata.size = si_size;
+  metadata.color_space = gfx::ColorSpace::CreateSRGB();
+  metadata.surface_origin = kTopLeft_GrSurfaceOrigin;
+  metadata.alpha_type = kOpaque_SkAlphaType;
+  metadata.usage = gpu::SharedImageUsageSet();
   scoped_refptr<gpu::ClientSharedImage> shared_image =
-      gpu::ClientSharedImage::CreateForTesting();
+      gpu::ClientSharedImage::CreateForTesting(metadata);
 
-  gfx::Size resource_size = gfx::Size(10, 10);
   scoped_refptr<media::VideoFrame> video_frame =
       media::VideoFrame::WrapSharedImage(media::PIXEL_FORMAT_ARGB, shared_image,
                                          gpu::SyncToken(), base::DoNothing(),
-                                         resource_size, gfx::Rect(10, 10),
-                                         resource_size, base::TimeDelta());
+                                         si_size, gfx::Rect(si_size), si_size,
+                                         base::TimeDelta());
   ASSERT_TRUE(video_frame);
   video_frame->metadata().allow_overlay = true;
   FakeVideoFrameProvider provider;
@@ -435,7 +450,7 @@ TEST(VideoLayerImplTest, NativeARGBFrameGeneratesTextureQuad) {
       &provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
-  video_layer_impl->set_visible_layer_rect(gfx::Rect(layer_size));
+  video_layer_impl->SetVisibleLayerRectForTesting(gfx::Rect(layer_size));
   CopyProperties(impl.root_layer(), video_layer_impl);
 
   impl.CalcDrawProps(layer_size);
@@ -446,10 +461,6 @@ TEST(VideoLayerImplTest, NativeARGBFrameGeneratesTextureQuad) {
   EXPECT_EQ(1u, impl.quad_list().size());
   const viz::DrawQuad* draw_quad = impl.quad_list().ElementAt(0);
   ASSERT_EQ(viz::DrawQuad::Material::kTextureContent, draw_quad->material);
-
-  const viz::TextureDrawQuad* texture_draw_quad =
-      viz::TextureDrawQuad::MaterialCast(draw_quad);
-  EXPECT_EQ(texture_draw_quad->resource_size_in_pixels(), resource_size);
 }
 
 TEST(VideoLayerImplTest, GetDamageReasons) {

@@ -19,7 +19,9 @@
             },
             {
                 "domain": "Browser",
-                "include": ["getVersion", "getHistograms", "getHistogram", "getBrowserCommandLine", "grantPermissions", "setDownloadBehavior", "cancelDownload", "resetPermissions", "crash", "crashGpuProcess", "setPermission", "close"]
+                "include": ["getVersion", "getHistograms", "getHistogram", "getBrowserCommandLine", "grantPermissions", "setDownloadBehavior", "cancelDownload", "resetPermissions", "crash", "crashGpuProcess", "setPermission",
+                "addPrivacySandboxCoordinatorKeyConfig", "close"],
+                "async": ["addPrivacySandboxCoordinatorKeyConfig"]
             },
             {
                 "domain": "DOM",
@@ -42,8 +44,12 @@
                   "setDevicePostureOverride",
                   "clearDevicePostureOverride",
 
+                  "setDisplayFeaturesOverride",
+                  "clearDisplayFeaturesOverride",
+
                   "setPressureSourceOverrideEnabled",
                   "setPressureStateOverride",
+                  "setPressureDataOverride",
 
                   "setIdleOverride",
                   "clearIdleOverride",
@@ -61,7 +67,8 @@
                 "async": [
                   "getOverriddenSensorInformation",
                   "setSensorOverrideReadings",
-                  "setPressureStateOverride"
+                  "setPressureStateOverride",
+                  "setPressureDataOverride"
                 ]
             },
             {
@@ -145,7 +152,7 @@
             },
             {
                 "domain": "Target",
-                "async": ["createBrowserContext", "disposeBrowserContext", "setAutoAttach", "autoAttachRelated" ]
+                "async": ["createBrowserContext", "disposeBrowserContext", "setAutoAttach", "autoAttachRelated", "exposeDevToolsProtocol" ]
             },
             {
                 "domain": "Tethering",
@@ -176,8 +183,19 @@
             {
                 "domain": "BluetoothEmulation",
                 "async": [
+                    "setSimulatedCentralState",
                     "simulatePreconnectedPeripheral",
-                    "simulateAdvertisement"
+                    "simulateAdvertisement",
+                    "simulateGATTOperationResponse",
+                    "simulateCharacteristicOperationResponse",
+                    "simulateDescriptorOperationResponse",
+                    "addService",
+                    "removeService",
+                    "addCharacteristic",
+                    "removeCharacteristic",
+                    "addDescriptor",
+                    "removeDescriptor",
+                    "simulateGATTDisconnection"
                 ]
             }
         ]

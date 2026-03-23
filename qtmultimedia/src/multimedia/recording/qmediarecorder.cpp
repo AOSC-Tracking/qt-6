@@ -421,7 +421,7 @@ qint64 QMediaRecorder::duration() const
 #endif
 
 /*!
-    \qmlmethod QtMultimedia::MediaRecorder::record()
+    \qmlmethod void QtMultimedia::MediaRecorder::record()
     \brief Starts recording.
 
     While the recorder state is changed immediately to
@@ -500,7 +500,8 @@ QT_WARNING_POP
         if (settings.videoResolution() != d->encoderSettings.videoResolution())
             emit videoResolutionChanged();
 
-        if (!qFuzzyCompare(settings.videoFrameRate(), d->encoderSettings.videoFrameRate()))
+        if (!QtPrivate::fuzzyCompare(settings.videoFrameRate(),
+                                     d->encoderSettings.videoFrameRate()))
             emit videoFrameRateChanged();
 
         if (settings.videoBitRate() != d->encoderSettings.videoBitRate())
@@ -517,7 +518,7 @@ QT_WARNING_POP
     }
 }
 /*!
-    \qmlmethod QtMultimedia::MediaRecorder::pause()
+    \qmlmethod void QtMultimedia::MediaRecorder::pause()
     \brief Pauses recording.
 
     The recorder state is changed to QMediaRecorder.PausedState.
@@ -541,7 +542,7 @@ void QMediaRecorder::pause()
         d->control->pause();
 }
 /*!
-    \qmlmethod QtMultimedia::MediaRecorder::stop()
+    \qmlmethod void QtMultimedia::MediaRecorder::stop()
     \brief Stops the recording.
 
     The recorder will stop the recording. Processing pending video and audio data might
@@ -884,6 +885,12 @@ void QMediaRecorder::setMediaFormat(const QMediaFormat &format)
 */
 
 /*!
+    \property QMediaRecorder::encodingMode
+    \brief the encoding mode.
+    \sa EncodingMode
+*/
+
+/*!
     Returns the encoding mode.
 
     \sa EncodingMode
@@ -956,6 +963,14 @@ void QMediaRecorder::setQuality(Quality quality)
     on what is available from the video source and the limitations of the codec.
 */
 
+/*!
+    \property QMediaRecorder::videoResolution
+    \since 6.6
+    \brief the resolution of the encoded video.
+
+    An empty QSize indicates the recorder will choose an optimal resolution based
+    on what is available from the video source and the limitations of the codec.
+*/
 
 /*!
     Returns the resolution of the encoded video.
@@ -1003,6 +1018,15 @@ void QMediaRecorder::setVideoResolution(const QSize &size)
 */
 
 /*!
+    \property QMediaRecorder::videoFrameRate
+    \since 6.6
+    \brief the video frame rate.
+
+    A value of 0 indicates the recorder should make an optimal choice based on what is available
+    from the video source and the limitations of the codec.
+*/
+
+/*!
     Returns the video frame rate.
 */
 qreal QMediaRecorder::videoFrameRate() const
@@ -1038,6 +1062,12 @@ void QMediaRecorder::setVideoFrameRate(qreal frameRate)
 */
 
 /*!
+    \property QMediaRecorder::videoBitRate
+    \since 6.6
+    \brief the bit rate of the compressed video stream in bits per second.
+*/
+
+/*!
     Returns the bit rate of the compressed video stream in bits per second.
 */
 int QMediaRecorder::videoBitRate() const
@@ -1070,6 +1100,10 @@ void QMediaRecorder::setVideoBitRate(int bitRate)
 */
 
 /*!
+    \property QMediaRecorder::audioBitRate
+    \brief the bit rate of the compressed audio stream in bits per second.
+*/
+/*!
     Returns the bit rate of the compressed audio stream in bits per second.
 */
 int QMediaRecorder::audioBitRate() const
@@ -1099,6 +1133,11 @@ void QMediaRecorder::setAudioBitRate(int bitRate)
     \qmlproperty int QtMultimedia::MediaRecorder::audioChannelCount
     \since 6.6
     \brief This property holds the number of audio channels.
+*/
+
+/*!
+    \property QMediaRecorder::audioChannelCount
+    \brief the number of audio channels.
 */
 
 /*!
@@ -1134,6 +1173,11 @@ void QMediaRecorder::setAudioChannelCount(int channels)
     \qmlproperty int QtMultimedia::MediaRecorder::audioSampleRate
     \since 6.6
     \brief This property holds the audio sample rate in Hz.
+*/
+
+/*!
+    \property QMediaRecorder::audioSampleRate
+    \brief the audio sample rate in Hz.
 */
 
 /*!

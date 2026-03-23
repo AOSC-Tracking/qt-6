@@ -59,12 +59,15 @@ public:
     static bool isInPwThreadLoop();
     static pw_loop *getEventLoop();
 
-    PwNodeHandle bindNode(ObjectId id);
+    PwNodeHandle bindNode(ObjectId);
+    PwMetadataHandle bindMetadata(ObjectId);
 
     void syncRegistry();
 
     void registerStreamReference(std::shared_ptr<QPipewireAudioStream>);
     void unregisterStreamReference(const std::shared_ptr<QPipewireAudioStream> &);
+
+    const PwCoreConnectionHandle &coreConnection() const;
 
 private:
     std::shared_ptr<QPipeWireInstance> m_libraryInstance;
@@ -94,9 +97,10 @@ private:
     static void objectRemovedCb(void *data, uint32_t id);
     void objectAdded(ObjectId id, uint32_t permissions, PipewireRegistryType, uint32_t version,
                      const spa_dict &props);
+    void objectRemoved(ObjectId id);
 
-    // default metadata
-    void startListenDefaultMetadata(ObjectId, uint32_t version);
+    // default metadata object
+    void startListenDefaultMetadataObject(ObjectId, uint32_t version);
     struct MetadataRecord
     {
         const char *key;
@@ -104,10 +108,10 @@ private:
         const char *value;
     };
 
-    int handleMetadata(const MetadataRecord &record);
+    int handleDefaultMetadataObjectEvent(ObjectId subject, const MetadataRecord &);
 
-    PwMetadataHandle m_defaultMetadata;
-    struct spa_hook m_defaultMetadataListener{};
+    PwMetadataHandle m_defaultMetadataObject;
+    struct spa_hook m_defaultMetadataObjectListener{};
 
     QMutex m_activeStreamMutex;
     std::set<std::shared_ptr<QPipewireAudioStream>> m_activeStreams;

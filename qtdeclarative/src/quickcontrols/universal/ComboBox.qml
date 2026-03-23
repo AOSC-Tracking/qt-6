@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 pragma ComponentBehavior: Bound
 
@@ -8,6 +9,7 @@ import QtQuick.Window
 import QtQuick.Controls.impl
 import QtQuick.Templates as T
 import QtQuick.Controls.Universal
+import QtQuick.Controls.Universal.impl
 
 T.ComboBox {
     id: control
@@ -72,6 +74,10 @@ T.ComboBox {
         selectionColor: control.Universal.accent
         selectedTextColor: control.Universal.chromeWhiteColor
         verticalAlignment: Text.AlignVCenter
+
+        ContextMenu.menu: TextEditingContextMenu {
+            editor: parent
+        }
     }
 
     background: Rectangle {

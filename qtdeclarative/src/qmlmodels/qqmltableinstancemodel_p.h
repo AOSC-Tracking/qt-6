@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLTABLEINSTANCEMODEL_P_H
 #define QQMLTABLEINSTANCEMODEL_P_H
@@ -102,6 +103,9 @@ public:
 
     QQmlDelegateModelItem *getModelItem(int index);
 
+signals:
+    void modelChanged();
+
 private:
     enum DestructionMode {
         Deferred,
@@ -127,8 +131,9 @@ private:
     QQmlDelegateModelItem *resolveModelItem(int index);
     void destroyModelItem(QQmlDelegateModelItem *modelItem, DestructionMode mode);
 
-    void dataChangedCallback(const QModelIndex &begin, const QModelIndex &end, const QVector<int> &roles);
+    void dataChangedCallback(const QModelIndex &begin, const QModelIndex &end, const QList<int> &roles);
     void modelAboutToBeResetCallback();
+    void forceSetModel(const QVariant &model);
 
     static bool isDoneIncubating(QQmlDelegateModelItem *modelItem);
     static void deleteModelItemLater(QQmlDelegateModelItem *modelItem);

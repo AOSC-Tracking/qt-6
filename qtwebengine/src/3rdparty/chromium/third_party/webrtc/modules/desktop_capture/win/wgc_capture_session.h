@@ -17,20 +17,25 @@
 #include <windows.graphics.h>
 #include <wrl/client.h>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "api/sequence_checker.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/desktop_region.h"
 #include "modules/desktop_capture/screen_capture_frame_queue.h"
 #include "modules/desktop_capture/shared_desktop_frame.h"
-#include "modules/desktop_capture/win/wgc_capture_source.h"
-#include "rtc_base/event.h"
 
 namespace webrtc {
 
 class WgcCaptureSession final {
  public:
-  // `source_id` is used to retreive the HMONITOR for the captured window.
+  // WgcCaptureSession supports capturing a window as well as a screen.
+  // If it is a window, `source_id` is the HWND of the window to be
+  // captured, which is never `0`'. If it is a screen, `source_id` is a number
+  // in a 0-based monitor index.
   WgcCaptureSession(
       intptr_t source_id,
       Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device,
@@ -149,11 +154,17 @@ class WgcCaptureSession final {
   // false.
   DesktopRegion damage_region_;
 
-  // Captures the device scale factor of the monitor where the frame is captured
-  // from. This value is the same as the scale from windows settings. Valid
-  // values are some distinct numbers in the range of [100,500], for example,
-  // 100, 150, 250, etc.
-  DEVICE_SCALE_FACTOR device_scale_factor_ = DEVICE_SCALE_FACTOR_INVALID;
+  // The unique id to represent a Source of current DesktopCapturer.
+  intptr_t source_id_;
+
+  // The monitor that is being captured when the target source_id is a
+  // screen. For window sources, it can't be used because the window can move
+  // around around the different monitors.
+  std::optional<HMONITOR> monitor_;
+
+  // The source type of the capture session. It can be either a window or a
+  // screen.
+  bool is_window_source_;
 
   SequenceChecker sequence_checker_;
 };

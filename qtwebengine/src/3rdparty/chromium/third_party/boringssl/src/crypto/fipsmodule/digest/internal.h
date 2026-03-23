@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef OPENSSL_HEADER_DIGEST_INTERNAL_H
-#define OPENSSL_HEADER_DIGEST_INTERNAL_H
+#ifndef OPENSSL_HEADER_CRYPTO_FIPSMODULE_DIGEST_INTERNAL_H
+#define OPENSSL_HEADER_CRYPTO_FIPSMODULE_DIGEST_INTERNAL_H
 
 #include <openssl/base.h>
 
@@ -22,6 +22,8 @@ extern "C" {
 #endif
 
 
+// env_md_st is typoed ("evp" -> "env"), but the typo comes from OpenSSL and
+// some consumers forward-declare these structures so we're leaving it alone.
 struct env_md_st {
   // type contains a NID identifing the digest function. (For example,
   // NID_md5.)
@@ -55,11 +57,11 @@ struct env_md_st {
 struct evp_md_pctx_ops {
   // free is called when an |EVP_MD_CTX| is being freed and the |pctx| also
   // needs to be freed.
-  void (*free) (EVP_PKEY_CTX *pctx);
+  void (*free)(EVP_PKEY_CTX *pctx);
 
   // dup is called when an |EVP_MD_CTX| is copied and so the |pctx| also needs
   // to be copied.
-  EVP_PKEY_CTX* (*dup) (EVP_PKEY_CTX *pctx);
+  EVP_PKEY_CTX *(*dup)(EVP_PKEY_CTX *pctx);
 };
 
 
@@ -67,4 +69,4 @@ struct evp_md_pctx_ops {
 }  // extern C
 #endif
 
-#endif  // OPENSSL_HEADER_DIGEST_INTERNAL
+#endif  // OPENSSL_HEADER_CRYPTO_FIPSMODULE_DIGEST_INTERNAL_H

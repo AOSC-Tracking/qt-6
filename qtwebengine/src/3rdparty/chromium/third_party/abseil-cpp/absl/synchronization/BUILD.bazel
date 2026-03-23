@@ -14,6 +14,9 @@
 # limitations under the License.
 #
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(
     "//absl:copts/configure_copts.bzl",
     "ABSL_DEFAULT_COPTS",
@@ -140,6 +143,7 @@ cc_library(
         "//absl/base:core_headers",
         "//absl/base:dynamic_annotations",
         "//absl/base:malloc_internal",
+        "//absl/base:nullability",
         "//absl/base:raw_logging_internal",
         "//absl/base:tracing_internal",
         "//absl/debugging:stacktrace",
@@ -230,7 +234,6 @@ cc_test(
         ":graphcycles_internal",
         "//absl/base:raw_logging_internal",
         "@google_benchmark//:benchmark_main",
-        "@googletest//:gtest",
     ],
 )
 
@@ -266,6 +269,7 @@ cc_test(
         "//absl/log",
         "//absl/log:check",
         "//absl/memory",
+        "//absl/random",
         "//absl/time",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
@@ -359,6 +363,7 @@ cc_test(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     tags = [
         "no_test_wasm",
+        "noubsan",  # TODO(b/417700722):  timeouts under UBSAN.
     ],
     deps = [
         ":per_thread_sem_test_common",

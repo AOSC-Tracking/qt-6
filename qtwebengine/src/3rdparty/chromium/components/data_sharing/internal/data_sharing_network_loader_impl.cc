@@ -12,6 +12,9 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_status_code.h"
 
+using endpoint_fetcher::EndpointFetcher;
+using endpoint_fetcher::EndpointResponse;
+
 namespace data_sharing {
 
 namespace {
@@ -85,7 +88,7 @@ void DataSharingNetworkLoaderImpl::OnDownloadComplete(
   }
   std::move(callback).Run(
       std::make_unique<DataSharingNetworkLoader::LoadResult>(
-          std::move(response->response), status));
+          std::move(response->response), status, response->http_status_code));
 }
 
 const net::NetworkTrafficAnnotationTag&

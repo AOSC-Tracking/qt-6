@@ -13,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/check_deref.h"
@@ -34,7 +35,9 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/types/zip.h"
 #include "build/build_config.h"
 #include "components/autofill/content/renderer/synchronous_form_cache.h"
 #include "components/autofill/content/renderer/timing.h"
@@ -45,6 +48,7 @@
 #include "components/autofill/core/common/field_data_manager.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/metrics_enums.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "components/password_manager/core/common/password_manager_features.h"
@@ -160,6 +164,7 @@ constexpr std::string_view kName = "name";
 constexpr std::string_view kNoScript = "noscript";
 constexpr std::string_view kOption = "option";
 constexpr std::string_view kParagraph = "p";
+constexpr std::string_view kPattern = "pattern";
 constexpr std::string_view kPlaceholder = "placeholder";
 constexpr std::string_view kRole = "role";
 constexpr std::string_view kScript = "script";
@@ -206,6 +211,19 @@ WebString GetAttribute(const WebElement& element) {
   return element.GetAttribute(GetWebString<attribute>());
 }
 
+// Indicates whether we want to extract forms on `url`.
+bool IsAdmissibleUrl(const blink::WebURL& url) {
+  if (url.ProtocolIs("https") || url.ProtocolIs("http") ||
+      url.ProtocolIs("data")) {
+    return true;
+  }
+  if (url.ProtocolIs("about") && GURL(url).IsAboutSrcdoc()) {
+    return true;
+  }
+  return !base::FeatureList::IsEnabled(
+      features::kAutofillExtractOnlyOnAdmissibleUrls);
+}
+
 // Returns the form's |name| attribute if non-empty; otherwise the form's |id|
 // attribute.
 std::u16string GetFormIdentifier(const WebFormElement& form) {
@@ -246,35 +264,49 @@ WebNode NextWebNode(const WebNode& current_node, bool forward) {
   }
 }
 
-// All text fields, including password fields, should be extracted.
-bool IsTextInput(const WebInputElement& element) {
-  return element && element.IsTextField();
+// True for
+// - all text-type <input> elements (which does not include <textarea>) and
+// - elements that have ever been <input type=password>.
+bool IsTextInput(const WebFormControlElement& element) {
+  std::optional<FormControlType> type = GetAutofillFormControlType(element);
+  if (!type) {
+    return false;
+  }
+  switch (*type) {
+    case FormControlType::kContentEditable:
+    case FormControlType::kInputCheckbox:
+    case FormControlType::kInputMonth:
+    case FormControlType::kInputDate:
+    case FormControlType::kInputRadio:
+    case FormControlType::kSelectOne:
+    case FormControlType::kTextArea:
+      return false;
+    case FormControlType::kInputEmail:
+    case FormControlType::kInputNumber:
+    case FormControlType::kInputPassword:
+    case FormControlType::kInputSearch:
+    case FormControlType::kInputTelephone:
+    case FormControlType::kInputText:
+    case FormControlType::kInputUrl:
+      return true;
+  }
+  NOTREACHED();
 }
 
 bool IsSelectElement(const WebFormControlElement& element) {
-  return element && element.FormControlTypeForAutofill() ==
-                        blink::mojom::FormControlType::kSelectOne;
+  return GetAutofillFormControlType(element) == FormControlType::kSelectOne;
 }
 
-bool IsTextInput(const WebFormControlElement& element) {
-  return IsTextInput(element.DynamicTo<WebInputElement>());
-}
-
-bool IsMonthInput(const WebFormControlElement& element) {
-  return element && element.FormControlTypeForAutofill() ==
-                        blink::mojom::FormControlType::kInputMonth;
-}
-
+// TODO(crbug.com/402071086): Remove when AutofillIgnoreCheckableElements is
+// removed.
 bool IsCheckableElement(const WebFormControlElement& element) {
   using FCT = blink::mojom::FormControlType;
-  // We intentionally use `FormControlType()` instead of
-  // `FormControlTypeForAutofill()` because the existing callers do not care if
-  // the field has ever been a password field before.
-  return element &&
-         (element.FormControlType() == FCT::kInputCheckbox ||  // nocheck
-          element.FormControlType() == FCT::kInputRadio);      // nocheck
+  return element && (element.FormControlTypeForAutofill() == FCT::kInputCheckbox ||
+                     element.FormControlTypeForAutofill() == FCT::kInputRadio);
 }
 
+// TODO(crbug.com/402071086): Remove when AutofillIgnoreCheckableElements is
+// removed.
 bool IsCheckableElement(const WebElement& element) {
   return IsCheckableElement(element.DynamicTo<WebInputElement>());
 }
@@ -1027,43 +1059,6 @@ std::optional<InferredLabel> InferLabelFromAncestors(
   return std::nullopt;
 }
 
-// The first <option> of <select> elements sometimes represents a default value
-// like <option>Select country</option> (with no value attribute). In this case,
-// the text of this <option> is a useful label.
-// `InferLabelFromDefaultSelectValue()` attempts to decide if this is the case,
-// by checking if only the first <option> is lacking a value.
-std::optional<InferredLabel> InferLabelFromDefaultSelectText(
-    const WebFormControlElement& element) {
-  if (!base::FeatureList::IsEnabled(
-          features::kAutofillInferLabelFromDefaultSelectText)) {
-    return std::nullopt;
-  }
-  CHECK(IsSelectElement(element));
-  std::vector<WebElement> options =
-      element.To<WebSelectElement>().GetListItems();
-  // `options` can contain other elements like <optgroup>.
-  std::erase_if(options, [](const WebElement& e) {
-    return !e.DynamicTo<WebOptionElement>();
-  });
-  auto has_non_empty_value_attribute = [](const WebElement& e) {
-    // If an <option>'s value is unspecified, it default to its text content.
-    // For this reason the `HasAttribute<>()` check is necessary.
-    if (!HasAttribute<kValue>(e)) {
-      return false;
-    }
-    std::u16string value = GetAttribute<kValue>(e).Utf16();
-    base::TrimWhitespace(value, base::TRIM_ALL, &value);
-    return !value.empty();
-  };
-  if (options.size() >= 2 && !has_non_empty_value_attribute(options[0]) &&
-      std::all_of(options.begin() + 1, options.end(),
-                  has_non_empty_value_attribute)) {
-    return InferredLabel::BuildIfValid(FindChildText(options[0]),
-                                       LabelSource::kDefaultSelectText);
-  }
-  return std::nullopt;
-}
-
 // Infers corresponding label for `element` from surrounding context in the DOM,
 // e.g. the contents of the preceding <p> tag or text element. Returns an empty
 // string if it could not find a label for `element`.
@@ -1093,11 +1088,6 @@ std::optional<InferredLabel> InferLabelForElement(
   // If we didn't find a label, check the `element`'s ancestors.
   if (auto r = InferLabelFromAncestors(element)) {
     return r;
-  }
-  if (IsSelectElement(element)) {
-    if (auto r = InferLabelFromDefaultSelectText(element)) {
-      return r;
-    }
   }
   // If we didn't find a label, check the value attr used as the placeholder.
   if (auto r = InferLabelFromValueAttribute(element)) {
@@ -1246,11 +1236,10 @@ bool ShouldSkipFillField(const FormFieldData::FillData& field,
   constexpr char kSkipReasonHistogram[] = "Autofill.RendererFillSkipReason";
   // Skip all checkable or non-modifiable elements, except select fields because
   // some synthetic select element use a hidden select element.
-  if (!element.IsConnected() || !IsAutofillableElement(element) ||
+  if (!IsAccessible(element) || !IsAutofillableElement(element) ||
       !element.IsEnabled() || element.IsReadOnly() ||
       IsCheckableElement(element) ||
-      (!IsWebElementFocusableForAutofill(element) &&
-       !IsSelectElement(element))) {
+      (!element.IsFocusable() && !IsSelectElement(element))) {
     base::UmaHistogramEnumeration(kSkipReasonHistogram,
                                   SkipReason::kUnfillable);
     return true;
@@ -1309,61 +1298,100 @@ bool ShouldSkipFillField(const FormFieldData::FillData& field,
 // causing the background to be blue.
 void FillFormField(const FormFieldData::FillData& data,
                    bool is_initiating_node,
-                   WebFormControlElement& field,
+                   WebFormControlElement& form_control,
                    FieldDataManager& field_data_manager) {
-  // Fill fields for text input, textarea and select fields.
-  // Filling not supported for checkboxes and radio buttons.
-  if (!IsTextInput(field) && !IsMonthInput(field) &&
-      !IsTextAreaElement(field) && !IsSelectElement(field)) {
+  std::optional<FormControlType> type =
+      GetAutofillFormControlType(form_control);
+  if (!type) {
     return;
   }
+  switch (*type) {
+    case FormControlType::kInputCheckbox:
+    case FormControlType::kInputRadio:
+      return;
+    case FormControlType::kContentEditable:
+      NOTREACHED();
+    case FormControlType::kInputDate:
+    case FormControlType::kInputEmail:
+    case FormControlType::kInputMonth:
+    case FormControlType::kInputNumber:
+    case FormControlType::kInputPassword:
+    case FormControlType::kInputSearch:
+    case FormControlType::kInputTelephone:
+    case FormControlType::kInputText:
+    case FormControlType::kInputUrl:
+    case FormControlType::kSelectOne:
+    case FormControlType::kTextArea:
+      break;
+  }
+
   WebAutofillState new_autofill_state = data.is_autofilled
                                             ? WebAutofillState::kAutofilled
                                             : WebAutofillState::kNotFilled;
 
-  if (IsTextInput(field)) {
+  if (IsTextInput(form_control)) {
     field_data_manager.UpdateFieldDataMap(
-        GetFieldRendererId(field), data.value.substr(0, field.MaxLength()),
+        GetFieldRendererId(form_control),
+        data.value.substr(0, form_control.MaxLength()),
         FieldPropertiesFlags::kAutofilledOnUserTrigger);
   }
 
-  field.SetAutofillValue(WebString::FromUTF16(data.value), new_autofill_state);
+  form_control.SetAutofillValue(WebString::FromUTF16(data.value),
+                                new_autofill_state);
   // Changing the field's value might trigger JavaScript, which is capable
   // of destroying the frame.
-  if (!field.GetDocument().GetFrame()) {
+  if (!form_control.GetDocument().GetFrame()) {
     return;
   }
 
-  if (!is_initiating_node || IsSelectElement(field)) {
+  if (!is_initiating_node || IsSelectElement(form_control)) {
     return;
   }
-  auto length = base::checked_cast<unsigned>(field.Value().length());
-  field.SetSelectionRange(length, length);
+  auto length = base::checked_cast<unsigned>(form_control.Value().length());
+  form_control.SetSelectionRange(length, length);
   // selectionchange event is capable of destroying the frame.
-  if (!field.GetDocument().GetFrame()) {
+  if (!form_control.GetDocument().GetFrame()) {
     return;
   }
   // Clear the current IME composition (the underline), if there is one.
-  field.GetDocument().GetFrame()->UnmarkText();
+  form_control.GetDocument().GetFrame()->UnmarkText();
 }
 
 // Sets the |field|'s "suggested" (non JS visible) value to the value in |data|.
 // Also sets the "autofilled" attribute, causing the background to be blue.
 void PreviewFormField(const FormFieldData::FillData& data,
-                      WebFormControlElement& field,
+                      WebFormControlElement& form_control,
                       FieldDataManager& field_data_manager) {
-  // Preview text input, textarea and select fields.
-  // Preview not supported for checkboxes and radio buttons.
-  if (!IsTextInput(field) && !IsMonthInput(field) &&
-      !IsTextAreaElement(field) && !IsSelectElement(field)) {
+  std::optional<FormControlType> type =
+      GetAutofillFormControlType(form_control);
+  if (!type) {
     return;
   }
+  switch (*type) {
+    case FormControlType::kInputCheckbox:
+    case FormControlType::kInputRadio:
+      return;
+    case FormControlType::kContentEditable:
+      NOTREACHED();
+    case FormControlType::kInputDate:
+    case FormControlType::kInputEmail:
+    case FormControlType::kInputMonth:
+    case FormControlType::kInputNumber:
+    case FormControlType::kInputPassword:
+    case FormControlType::kInputSearch:
+    case FormControlType::kInputTelephone:
+    case FormControlType::kInputText:
+    case FormControlType::kInputUrl:
+    case FormControlType::kSelectOne:
+    case FormControlType::kTextArea:
+      break;
+  }
 
-  field.SetSuggestedValue(WebString::FromUTF16(data.value));
+  form_control.SetSuggestedValue(WebString::FromUTF16(data.value));
   WebAutofillState new_autofill_state = data.is_autofilled
                                             ? WebAutofillState::kPreviewed
                                             : WebAutofillState::kNotFilled;
-  field.SetAutofillState(new_autofill_state);
+  form_control.SetAutofillState(new_autofill_state);
 }
 
 // A less-than comparator for FormFieldData's pointer by their FieldRendererId.
@@ -1545,7 +1573,7 @@ bool IsWebElementVisible(const WebElement& element) {
     constexpr int kMinPixelSize = 10;
     return size.width() >= kMinPixelSize && size.height() >= kMinPixelSize;
   };
-  return element && IsWebElementFocusableForAutofill(element) &&
+  return element && element.IsFocusable() &&
          (IsCheckableElement(element) || HasMinSize(element.GetClientSize()) ||
           HasMinSize(element.GetScrollSize()));
 }
@@ -1659,8 +1687,8 @@ bool IsVisibleIframe(const WebElement& element) {
   // positive bounds. The threshold of 10 pixels is chosen rather arbitrarily.
   constexpr int kMinPixelSize = 10;
   gfx::Rect bounds = element.BoundsInWidget();
-  return IsWebElementFocusableForAutofill(element) &&
-         bounds.width() > kMinPixelSize && bounds.height() > kMinPixelSize;
+  return element.IsFocusable() && bounds.width() > kMinPixelSize &&
+         bounds.height() > kMinPixelSize;
 }
 
 // A necessary condition for an iframe to be added to FormData::child_frames.
@@ -1857,7 +1885,7 @@ std::vector<WebFormControlElement> GetOwnedFormControls(
       return e.OwnerShadowHost() && HasFormAncestor(e);
     });
   }
-  std::erase_if(form_controls, std::not_fn(&WebNode::IsConnected));
+  std::erase_if(form_controls, std::not_fn(&IsAccessible));
   return form_controls;
 }
 
@@ -1875,7 +1903,7 @@ void WebFormControlElementToFormField(
   DCHECK(field);
   DCHECK(element);
   DCHECK(element.GetDocument().GetFrame());
-  DCHECK(element.IsConnected());
+  DCHECK(IsAccessible(element));
   DCHECK(IsAutofillableElement(element));
 
   const FieldRendererId renderer_id = GetFieldRendererId(element);
@@ -1887,8 +1915,7 @@ void WebFormControlElementToFormField(
   field->set_renderer_id(renderer_id);
   field->set_host_form_id(GetFormRendererId(form_element));
   field->set_form_control_ax_id(element.GetAxId());
-  field->set_form_control_type(
-      ToAutofillFormControlType(element.FormControlTypeForAutofill()));
+  field->set_form_control_type(*GetAutofillFormControlType(element));
   field->set_max_length(GetMaxLength(element));
   field->set_autocomplete_attribute(GetAutocompleteAttribute(element));
   field->set_parsed_autocomplete(
@@ -1897,6 +1924,10 @@ void WebFormControlElementToFormField(
   if (base::EqualsCaseInsensitiveASCII(GetAttribute<kRole>(element).Utf16(),
                                        "presentation")) {
     field->set_role(FormFieldData::RoleAttribute::kPresentation);
+  }
+
+  if (HasAttribute<kPattern>(element)) {
+    field->set_pattern(GetAttribute<kPattern>(element).Utf16());
   }
 
   field->set_placeholder(GetAttribute<kPlaceholder>(element).Utf16());
@@ -1966,7 +1997,7 @@ void WebFormControlElementToFormField(
   // The browser doesn't need to differentiate between preview and autofill.
   field->set_is_autofilled(element.IsAutofilled());
   field->set_is_user_edited(element.UserHasEditedTheField());
-  field->set_is_focusable(IsWebElementFocusableForAutofill(element));
+  field->set_is_focusable(element.IsFocusable());
   field->set_is_visible(kAutofillDetectFieldVisibilityEnabled
                             ? IsWebElementVisible(element)
                             : field->is_focusable());
@@ -1985,6 +2016,11 @@ void WebFormControlElementToFormField(
     if (extract_options.contains(ExtractOption::kDatalist) ||
         base::FeatureList::IsEnabled(
             features::kAutofillOptimizeFormExtraction)) {
+      // TODO(crbug.com/316143236): Remove this metric once debugging is
+      // complete.
+      base::UmaHistogramEnumeration(
+          "Autofill.DataList.Events",
+          AutofillDataListEvents::kDataListOptionsParsed);
       field->set_datalist_options(GetDataListOptions(input_element));
     }
   } else if (IsTextAreaElement(element)) {
@@ -2037,8 +2073,16 @@ std::optional<FormData> ExtractFormDataWithFieldsAndFrames(
     const WebDocument& document,
     const WebFormElement& form_element,
     const FieldDataManager& field_data_manager,
+    ButtonTitlesCache* button_titles_cache,
     DenseSet<ExtractOption> extract_options) {
-  if (form_element && !form_element.IsConnected()) {
+  CHECK(!form_element || form_element.GetDocument() == document,
+        base::NotFatalUntil::M141);
+
+  if (form_element && !IsAccessible(form_element)) {
+    return std::nullopt;
+  }
+
+  if (!IsAdmissibleUrl(document.Url())) {
     return std::nullopt;
   }
 
@@ -2085,7 +2129,7 @@ std::optional<FormData> ExtractFormDataWithFieldsAndFrames(
   child_frames.resize(iframe_elements.size());
   size_t next_iframe = 0;
   for (const WebFormControlElement& control_element : control_elements) {
-    DCHECK(control_element.IsConnected());
+    DCHECK(IsAccessible(control_element));
     DCHECK(IsAutofillableElement(control_element));
 
     fields.emplace_back();
@@ -2125,13 +2169,14 @@ std::optional<FormData> ExtractFormDataWithFieldsAndFrames(
 
   // Extracts the frame tokens of |iframe_elements|.
   DCHECK_EQ(child_frames.size(), iframe_elements.size());
-  for (size_t i = 0; i < iframe_elements.size(); ++i) {
-    WebFrame* iframe = WebFrame::FromFrameOwnerElement(iframe_elements[i]);
+  for (auto [iframe_element, child_frame] :
+       base::zip(iframe_elements, child_frames)) {
+    WebFrame* iframe = WebFrame::FromFrameOwnerElement(iframe_element);
     if (iframe && iframe->IsWebLocalFrame()) {
-      child_frames[i].token = LocalFrameToken(
+      child_frame.token = LocalFrameToken(
           iframe->ToWebLocalFrame()->GetLocalFrameToken().value());
     } else if (iframe && iframe->IsWebRemoteFrame()) {
-      child_frames[i].token = RemoteFrameToken(
+      child_frame.token = RemoteFrameToken(
           iframe->ToWebRemoteFrame()->GetRemoteFrameToken().value());
     } else if (base::FeatureList::IsEnabled(
                    features::kAutofillOptimizeFormExtraction)) {
@@ -2141,8 +2186,8 @@ std::optional<FormData> ExtractFormDataWithFieldsAndFrames(
   if (!base::FeatureList::IsEnabled(
           features::kAutofillOptimizeFormExtraction)) {
     std::erase_if(child_frames, [](const auto& child_frame) {
-      return absl::visit([](const auto& token) { return token.is_empty(); },
-                         child_frame.token);
+      return std::visit([](const auto& token) { return token.is_empty(); },
+                        child_frame.token);
     });
     if (child_frames.size() > kMaxExtractableChildFrames) {
       child_frames.clear();
@@ -2177,14 +2222,12 @@ std::optional<FormData> ExtractFormDataWithFieldsAndFrames(
   }
   form.set_fields(std::move(fields));
   form.set_child_frames(std::move(child_frames));
+  form.set_button_titles(GetButtonTitles(form_element, button_titles_cache));
   // `likely_contains_captcha` is only needed for Android for the autosubmission
   // after filling credentials from TTF bottom sheet.
 #if BUILDFLAG(IS_ANDROID)
-  if (base::FeatureList::IsEnabled(
-          password_manager::features::kPasswordSuggestionBottomSheetV2)) {
-    form.set_likely_contains_captcha(
-        std::ranges::any_of(iframe_elements, IsLikelyCaptchaIframe));
-  }
+  form.set_likely_contains_captcha(
+      std::ranges::any_of(iframe_elements, IsLikelyCaptchaIframe));
 #endif
   return form;
 }
@@ -2198,12 +2241,14 @@ InferredLabel::InferredLabel(std::u16string label, LabelSource source)
 std::optional<InferredLabel> InferredLabel::BuildIfValid(std::u16string label,
                                                          LabelSource source) {
   // List of characters a label can't be entirely made of (this list can grow).
-  const std::u16string_view invalid_chars =
-      u"+*:-\u2013()";  // U+2013 is the En Dash "–".
-  auto is_valid_label_character = [&invalid_chars](char16_t c) {
-    return !base::Contains(invalid_chars, c) &&
+  // LINT.IfChange(InvalidLabelCriteria)
+  auto is_valid_label_character = [](char16_t c) {
+    static constexpr std::u16string_view kInvalidChars =
+        u"+*:-\u2013()/.";  // U+2013 is the En Dash "–".
+    return !base::Contains(kInvalidChars, c) &&
            !base::Contains(std::u16string_view(base::kWhitespaceUTF16), c);
   };
+  // LINT.ThenChange(/components/autofill/ios/form_util/resources/fill_element_inference_util.ts:InvalidLabelCriteria)
   if (std::ranges::any_of(label, is_valid_label_character)) {
     base::TrimWhitespace(label, base::TRIM_ALL, &label);
     return InferredLabel{std::move(label), source};
@@ -2228,10 +2273,12 @@ std::optional<FormData> ExtractFormData(
     const WebFormElement& form_element,
     const FieldDataManager& field_data_manager,
     const CallTimerState& timer_state,
+    ButtonTitlesCache* button_titles_cache,
     DenseSet<ExtractOption> extract_options) {
   ScopedCallTimer timer("ExtractFormData", timer_state);
   return ExtractFormDataWithFieldsAndFrames(
-      document, form_element, field_data_manager, extract_options);
+      document, form_element, field_data_manager, button_titles_cache,
+      extract_options);
 }
 
 GURL GetCanonicalActionForForm(const WebFormElement& form) {
@@ -2244,25 +2291,39 @@ GURL GetCanonicalActionForForm(const WebFormElement& form) {
 }
 
 bool IsTextAreaElement(const WebFormControlElement& element) {
-  return element && element.FormControlTypeForAutofill() ==
-                        blink::mojom::FormControlType::kTextArea;
+  return GetAutofillFormControlType(element) == FormControlType::kTextArea;
 }
 
 bool IsTextAreaElementOrTextInput(const WebFormControlElement& element) {
   return IsTextAreaElement(element) || IsTextInput(element);
 }
 
-bool IsAutofillableElement(const WebFormControlElement& element) {
-  const WebInputElement input_element = element.DynamicTo<WebInputElement>();
-  return IsTextInput(input_element) || IsMonthInput(input_element) ||
-         IsCheckableElement(input_element) || IsSelectElement(element) ||
-         IsTextAreaElement(element);
+bool IsAccessible(const blink::WebNode& node) {
+  return node.IsConnected() && !node.IsInUserAgentShadowRoot();  // nocheck
 }
 
-FormControlType ToAutofillFormControlType(blink::mojom::FormControlType type) {
+bool IsAutofillableElement(const WebFormControlElement& element) {
+  return GetAutofillFormControlType(element).has_value();
+}
+
+std::optional<FormControlType> ToAutofillFormControlType(
+    blink::mojom::FormControlType type) {
+  // We cache this for performance reasons (crbug.com/428506178). This should
+  // not affect tests because the only tests that explicitly set the feature are
+  // two browser tests (form_autofill_util_browsertest.cc and
+  // form_structure_browsertest.cc) whose renderer processes are hopefully never
+  // shared with other tests.
+  const static bool g_autofill_ignore_checkable_elements_enabled =
+      base::FeatureList::IsEnabled(features::kAutofillIgnoreCheckableElements);
+
+  // Note that adding a new field type here automatically makes
+  // IsAutofillableElement() return true.
   switch (type) {
     case blink::mojom::FormControlType::kInputCheckbox:
-      return FormControlType::kInputCheckbox;
+      if (!g_autofill_ignore_checkable_elements_enabled) {
+        return FormControlType::kInputCheckbox;
+      }
+      break;
     case blink::mojom::FormControlType::kInputEmail:
       return FormControlType::kInputEmail;
     case blink::mojom::FormControlType::kInputMonth:
@@ -2272,7 +2333,10 @@ FormControlType ToAutofillFormControlType(blink::mojom::FormControlType type) {
     case blink::mojom::FormControlType::kInputPassword:
       return FormControlType::kInputPassword;
     case blink::mojom::FormControlType::kInputRadio:
-      return FormControlType::kInputRadio;
+      if (!g_autofill_ignore_checkable_elements_enabled) {
+        return FormControlType::kInputRadio;
+      }
+      break;
     case blink::mojom::FormControlType::kInputSearch:
       return FormControlType::kInputSearch;
     case blink::mojom::FormControlType::kInputTelephone:
@@ -2283,35 +2347,38 @@ FormControlType ToAutofillFormControlType(blink::mojom::FormControlType type) {
       return FormControlType::kInputUrl;
     case blink::mojom::FormControlType::kSelectOne:
       return FormControlType::kSelectOne;
-    case blink::mojom::FormControlType::kSelectMultiple:
-      return FormControlType::kSelectMultiple;
     case blink::mojom::FormControlType::kTextArea:
       return FormControlType::kTextArea;
-    default:
-      NOTREACHED();
+    case blink::mojom::FormControlType::kInputDate:
+      return FormControlType::kInputDate;
+    case blink::mojom::FormControlType::kButtonButton:
+    case blink::mojom::FormControlType::kButtonSubmit:
+    case blink::mojom::FormControlType::kButtonReset:
+    case blink::mojom::FormControlType::kButtonPopover:
+    case blink::mojom::FormControlType::kFieldset:
+    case blink::mojom::FormControlType::kInputButton:
+    case blink::mojom::FormControlType::kInputColor:
+    case blink::mojom::FormControlType::kInputDatetimeLocal:
+    case blink::mojom::FormControlType::kInputFile:
+    case blink::mojom::FormControlType::kInputHidden:
+    case blink::mojom::FormControlType::kInputImage:
+    case blink::mojom::FormControlType::kInputRange:
+    case blink::mojom::FormControlType::kInputReset:
+    case blink::mojom::FormControlType::kInputSubmit:
+    case blink::mojom::FormControlType::kInputTime:
+    case blink::mojom::FormControlType::kInputWeek:
+    case blink::mojom::FormControlType::kOutput:
+    case blink::mojom::FormControlType::kSelectMultiple:
+      break;
   }
+  return std::nullopt;
 }
 
-bool IsCheckable(FormControlType form_control_type) {
-  switch (form_control_type) {
-    case FormControlType::kInputCheckbox:
-    case FormControlType::kInputRadio:
-      return true;
-    case FormControlType::kContentEditable:
-    case FormControlType::kInputEmail:
-    case FormControlType::kInputMonth:
-    case FormControlType::kInputNumber:
-    case FormControlType::kInputPassword:
-    case FormControlType::kInputSearch:
-    case FormControlType::kInputTelephone:
-    case FormControlType::kInputText:
-    case FormControlType::kInputUrl:
-    case FormControlType::kSelectOne:
-    case FormControlType::kSelectMultiple:
-    case FormControlType::kTextArea:
-      return false;
-  }
-  NOTREACHED();
+std::optional<FormControlType> GetAutofillFormControlType(
+    const WebFormControlElement& element) {
+  return element
+             ? ToAutofillFormControlType(element.FormControlTypeForAutofill())
+             : std::nullopt;
 }
 
 bool IsWebauthnTaggedElement(const WebFormControlElement& element) {
@@ -2322,10 +2389,6 @@ bool IsWebauthnTaggedElement(const WebFormControlElement& element) {
 
 bool IsElementEditable(const WebInputElement& element) {
   return element.IsEnabled() && !element.IsReadOnly();
-}
-
-bool IsWebElementFocusableForAutofill(const WebElement& element) {
-  return element.IsFocusable();
 }
 
 FormRendererId GetFormRendererId(const WebElement& e) {
@@ -2382,18 +2445,20 @@ FindFormAndFieldForFormControlElement(
     const WebFormControlElement& element,
     const FieldDataManager& field_data_manager,
     const CallTimerState& timer_state,
+    form_util::ButtonTitlesCache* button_titles_cache,
     DenseSet<ExtractOption> extract_options,
     const SynchronousFormCache& form_cache) {
   DCHECK(element);
 
-  if (!element.IsConnected() || !IsAutofillableElement(element)) {
+  if (!IsAccessible(element) || !IsAutofillableElement(element)) {
     return std::nullopt;
   }
 
   WebDocument document = element.GetDocument();
   WebFormElement owning_form = element.GetOwningFormForAutofill();
   std::optional<FormData> form = form_cache.GetOrExtractForm(
-      document, owning_form, field_data_manager, timer_state, extract_options);
+      document, owning_form, field_data_manager, timer_state,
+      button_titles_cache, extract_options);
   const bool extract_form_data_succeeded = form.has_value();
 
   if (!form) {
@@ -2418,11 +2483,8 @@ FindFormAndFieldForFormControlElement(
   // base::Contains(GetOwnedFormControls(element.GetOwningFormForAutofill()),
   //                element)
   // ```
-  // This does not hold if `element` is an unowned element in a
-  // shadow DOM and kAutofillIncludeShadowDomInUnassociatedListedElements is
-  // disabled. Then `element.GetOwningFormForAutofill()` returns the unowned
-  // form, but `GetOwnedFormControls()` does not include the field.
-  // See crbug.com/347059988 for more details.
+  // It's not clear if that condition is true. See crbug.com/347059988 for the
+  // ongoing debugging.
   GURL url;
   if (WebDocument doc = element.GetDocument()) {
     url = doc.Url();
@@ -2453,10 +2515,16 @@ FindFormAndFieldForFormControlElement(
                ? static_cast<int>(GetOwnedFormControls(document, form).size())
                : -1;
   };
+  auto is_connected = [](const WebNode& node) {
+    return node.IsConnected();  // nocheck
+  };
+  auto get_form_control_elements = [](const WebFormElement& form) {
+    return form.GetFormControlElements();  // nocheck
+  };
   WebFormElement assoc_form_element = element.Form();  // nocheck
 
   // clang-format off
-  SCOPED_CRASH_KEY_STRING64("Autofill", "url", url.spec());
+  SCOPED_CRASH_KEY_STRING256("Autofill", "url", url.spec());
   SCOPED_CRASH_KEY_BOOL("Autofill", "ExtractFormData_succeeded", extract_form_data_succeeded);
   SCOPED_CRASH_KEY_NUMBER("Autofill", "extracted_form_size", form->fields().size());
 
@@ -2467,39 +2535,45 @@ FindFormAndFieldForFormControlElement(
 
   SCOPED_CRASH_KEY_BOOL("Autofill", "elem_autofillable", IsAutofillableElement(element));
   SCOPED_CRASH_KEY_BOOL("Autofill", "elem_document", !!document);
-  SCOPED_CRASH_KEY_BOOL("Autofill", "elem_connected", element.IsConnected());
+  SCOPED_CRASH_KEY_BOOL("Autofill", "elem_connected", is_connected(element));
   SCOPED_CRASH_KEY_BOOL("Autofill", "elem_in_shadow_dom", !!element.OwnerShadowHost());
 
-#define SCOPED_CRASH_KEYS_FOR_FORM(prefix, f)                                                                              \
-  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_non_null", !!f);                                                                \
-  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_connected", f && f.IsConnected());                                    \
-  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_in_shadow_dom", f && !!f.OwnerShadowHost());                          \
-  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_in_same_dom", f && element.OwnerShadowHost() == f.OwnerShadowHost()); \
-  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_is_top_level", is_top_level(f));                                      \
-  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_has_nested_form", has_nested_form(f, element));                       \
-  SCOPED_CRASH_KEY_NUMBER("Autofill", #prefix "_form_size", get_form_size(f));                                           \
+#define SCOPED_CRASH_KEYS_FOR_FORM(prefix, f)                                                                                  \
+  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_non_null", !!f);                                                            \
+  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_connected", f && is_connected(f));                                          \
+  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_owns_element", f && base::Contains(get_form_control_elements(f), element)); \
+  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_in_shadow_dom", f && !!f.OwnerShadowHost());                                \
+  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_in_same_dom", f && element.OwnerShadowHost() == f.OwnerShadowHost());       \
+  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_is_top_level", is_top_level(f));                                            \
+  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_has_nested_form", has_nested_form(f, element));                             \
+  SCOPED_CRASH_KEY_NUMBER("Autofill", #prefix "_form_size", get_form_size(f));                                                 \
   SCOPED_CRASH_KEY_STRING64("Autofill", #prefix "_form_id", get_id(f));
   SCOPED_CRASH_KEYS_FOR_FORM(assoc, assoc_form_element);
   SCOPED_CRASH_KEYS_FOR_FORM(owng, owning_form);
 #undef FORM_CRASH_KEYS
   // clang-format on
-  NOTREACHED(base::NotFatalUntil::M137);
+  CHECK(base::Contains(GetOwnedFormControls(element.GetDocument(),
+                                            element.GetOwningFormForAutofill()),
+                       element),
+        base::NotFatalUntil::M141);
+  NOTREACHED(base::NotFatalUntil::M141);
   return std::nullopt;
 }
 
 std::optional<FormData> FindFormForContentEditable(
     const WebElement& content_editable) {
+  WebDocument document = content_editable.GetDocument();
+
   if (content_editable.DynamicTo<WebFormElement>() ||
       content_editable.DynamicTo<WebFormControlElement>() ||
       !content_editable.IsContentEditable() ||
       content_editable != content_editable.RootEditableElement() ||
-      !content_editable.IsConnected()) {
+      !IsAccessible(content_editable) || !IsAdmissibleUrl(document.Url())) {
     return std::nullopt;
   }
 
   std::vector<FormFieldData> fields(1);
   FormFieldData& field = fields.back();
-  WebDocument document = content_editable.GetDocument();
   field.set_id_attribute(content_editable.GetIdAttribute().Utf16());
   field.set_name_attribute(GetAttribute<kName>(content_editable).Utf16());
   field.set_name(!field.id_attribute().empty() ? field.id_attribute()
@@ -2549,7 +2623,7 @@ std::optional<FormData> FindFormForContentEditable(
   return form;
 }
 
-std::vector<std::pair<FieldRef, WebAutofillState>> ApplyFieldsAction(
+std::vector<std::pair<FieldRendererId, WebAutofillState>> ApplyFieldsAction(
     const WebDocument& document,
     base::span<const FormFieldData::FillData> fields,
     mojom::FormActionType action_type,
@@ -2557,7 +2631,7 @@ std::vector<std::pair<FieldRef, WebAutofillState>> ApplyFieldsAction(
     FieldDataManager& field_data_manager) {
   // This container stores the FormFieldData::FillData* of `form.fields` that
   // will be filled into their corresponding blink elements.
-  std::vector<std::pair<FieldRef, WebAutofillState>> filled_fields;
+  std::vector<std::pair<FieldRendererId, WebAutofillState>> filled_fields;
   filled_fields.reserve(fields.size());
 
   struct Field {
@@ -2592,9 +2666,7 @@ std::vector<std::pair<FieldRef, WebAutofillState>> ApplyFieldsAction(
       continue;
     }
     if ((action_type == mojom::FormActionType::kFill &&
-         ShouldSkipFillField(field, element)) ||
-        (action_type == mojom::FormActionType::kUndo &&
-         !element.IsAutofilled())) {
+         ShouldSkipFillField(field, element))) {
       continue;
     }
     if (element.Focused()) {
@@ -2609,7 +2681,7 @@ std::vector<std::pair<FieldRef, WebAutofillState>> ApplyFieldsAction(
     // In preview mode, only fill the field if it changes the fields value.
     // With this, the WebAutofillState is not changed from kAutofilled to
     // kPreviewed. This prevents the highlighting to change.
-    filled_fields.emplace_back(focused_field.element,
+    filled_fields.emplace_back(GetFieldRendererId(focused_field.element),
                                focused_field.element.GetAutofillState());
     if (action_persistence == mojom::ActionPersistence::kFill) {
       FillFormField(*focused_field.data, /*is_initiating_node=*/true,
@@ -2636,7 +2708,8 @@ std::vector<std::pair<FieldRef, WebAutofillState>> ApplyFieldsAction(
   // WebFormControlElement::SetAutofillValue fires the focus and blur
   // events.
   for (Field& field : unfocused_fields) {
-    filled_fields.emplace_back(field.element, field.element.GetAutofillState());
+    filled_fields.emplace_back(GetFieldRendererId(field.element),
+                               field.element.GetAutofillState());
     if (action_persistence == mojom::ActionPersistence::kFill) {
       FillFormField(*field.data, /*is_initiating_node=*/false, field.element,
                     field_data_manager);
@@ -2728,7 +2801,7 @@ WebFormElement GetFormByRendererId(FormRendererId form_renderer_id) {
   }
   WebNode node = WebNode::FromDomNodeId(form_renderer_id.value());
   WebFormElement form = node.DynamicTo<WebFormElement>();
-  return form && form.IsConnected() && form.GetDocument().GetFrame()
+  return form && IsAccessible(form) && form.GetDocument().GetFrame()
              ? form
              : WebFormElement();
 }
@@ -2740,7 +2813,7 @@ WebFormControlElement GetFormControlByRendererId(
   }
   WebNode node = WebNode::FromDomNodeId(queried_form_control.value());
   WebFormControlElement form_control = node.DynamicTo<WebFormControlElement>();
-  return form_control && form_control.IsConnected() &&
+  return form_control && IsAccessible(form_control) &&
                  form_control.GetDocument().GetFrame()
              ? form_control
              : WebFormControlElement();

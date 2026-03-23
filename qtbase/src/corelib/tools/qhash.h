@@ -1,6 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QHASH_H
 #define QHASH_H
@@ -23,7 +24,13 @@ QT_BEGIN_NAMESPACE
 
 struct QHashDummyValue
 {
-    bool operator==(const QHashDummyValue &) const noexcept { return true; }
+    explicit QHashDummyValue() = default;
+    friend constexpr bool operator==(QHashDummyValue, QHashDummyValue) noexcept { return true; }
+#ifndef __cpp_impl_three_way_comparison
+    friend constexpr bool operator!=(QHashDummyValue, QHashDummyValue) noexcept { return false; }
+#endif
+    friend constexpr size_t qHash(QHashDummyValue) noexcept = delete;
+    friend constexpr size_t qHash(QHashDummyValue, size_t) noexcept = delete;
 };
 
 namespace QHashPrivate {
@@ -87,7 +94,7 @@ struct Node
     {
         value = T(std::forward<Args>(args)...);
     }
-    T &&takeValue() noexcept(std::is_nothrow_move_assignable_v<T>)
+    T &&takeValue() noexcept
     {
         return std::move(value);
     }
@@ -110,7 +117,7 @@ struct Node<Key, QHashDummyValue> {
     void emplaceValue(Args &&...)
     {
     }
-    ValueType takeValue() { return QHashDummyValue(); }
+    ValueType takeValue() noexcept { return QHashDummyValue(); }
     bool valuesEqual(const Node *) const { return true; }
 };
 
@@ -215,10 +222,9 @@ struct MultiNode
 };
 
 template<typename  Node>
-constexpr bool isRelocatable()
-{
-    return QTypeInfo<typename Node::KeyType>::isRelocatable && QTypeInfo<typename Node::ValueType>::isRelocatable;
-}
+inline constexpr bool isRelocatable_v =
+        QTypeInfo<typename Node::KeyType>::isRelocatable &&
+        QTypeInfo<typename Node::ValueType>::isRelocatable;
 
 struct SpanConstants {
     static constexpr size_t SpanShift = 7;
@@ -359,7 +365,7 @@ struct Span {
         fromSpan.offsets[fromIndex] = SpanConstants::UnusedEntry;
         Entry &fromEntry = fromSpan.entries[fromOffset];
 
-        if constexpr (isRelocatable<Node>()) {
+        if constexpr (isRelocatable_v<Node>) {
             memcpy(&toEntry, &fromEntry, sizeof(Entry));
         } else {
             new (&toEntry.node()) Node(std::move(fromEntry.node()));
@@ -396,7 +402,7 @@ struct Span {
         Entry *newEntries = new Entry[alloc];
         // we only add storage if the previous storage was fully filled, so
         // simply copy the old data over
-        if constexpr (isRelocatable<Node>()) {
+        if constexpr (isRelocatable_v<Node>) {
             if (allocated)
                 memcpy(newEntries, entries, allocated * sizeof(Entry));
         } else {
@@ -1031,9 +1037,11 @@ private:
 
         if (it.isUnused())
             return T();
-        T value = it.node()->takeValue();
-        d->erase(it);
-        return value;
+        return [&] {
+            T value = it.node()->takeValue();
+            d->erase(it);
+            return value;
+        }();
     }
 
 public:
@@ -1356,9 +1364,25 @@ public:
     {
         return find(key);
     }
+
     iterator insert(const Key &key, const T &value)
     {
         return emplace(key, value);
+    }
+
+    iterator insert(const Key &key, T &&value)
+    {
+        return emplace(key, std::move(value));
+    }
+
+    iterator insert(Key &&key, const T &value)
+    {
+        return emplace(std::move(key), value);
+    }
+
+    iterator insert(Key &&key, T &&value)
+    {
+        return emplace(std::move(key), std::move(value));
     }
 
     void insert(const QHash &hash)
@@ -2284,6 +2308,21 @@ public:
         return emplace(key, value);
     }
 
+    iterator insert(const Key &key, T &&value)
+    {
+        return emplace(key, std::move(value));
+    }
+
+    iterator insert(Key &&key, const T &value)
+    {
+        return emplace(std::move(key), value);
+    }
+
+    iterator insert(Key &&key, T &&value)
+    {
+        return emplace(std::move(key), std::move(value));
+    }
+
     template <typename ...Args>
     iterator emplace(const Key &key, Args &&... args)
     {
@@ -2507,7 +2546,7 @@ public:
         }
         auto it = other.d->begin();
         for (const auto end = other.d->end(); it != end; ++it)
-            emplace(std::move(it.node()->key), std::move(it.node()->takeValue()));
+            emplace(std::move(it.node()->key), it.node()->takeValue());
         other.clear();
         return *this;
     }

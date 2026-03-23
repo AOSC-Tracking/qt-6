@@ -26,6 +26,8 @@ GL_EXPORT extern const char kANGLEImplementationDefaultName[];
 GL_EXPORT extern const char kANGLEImplementationD3D9Name[];
 GL_EXPORT extern const char kANGLEImplementationD3D11Name[];
 GL_EXPORT extern const char kANGLEImplementationD3D11on12Name[];
+GL_EXPORT extern const char kANGLEImplementationD3D11WarpName[];
+GL_EXPORT extern const char kANGLEImplementationD3D11WarpForWebGLName[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLName[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLEGLName[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLESName[];
@@ -71,11 +73,13 @@ GL_EXPORT extern const char kUseGpuInTests[];
 GL_EXPORT extern const char kEnableSgiVideoSync[];
 GL_EXPORT extern const char kDisableGLExtensions[];
 GL_EXPORT extern const char kEnableSwapBuffersWithBounds[];
+GL_EXPORT extern const char kDisableDirectComposition[];
 GL_EXPORT extern const char kEnableDirectCompositionVideoOverlays[];
 GL_EXPORT extern const char kUseAdapterLuid[];
 GL_EXPORT extern const char kEnableUnsafeSwiftShader[];
 
 GL_EXPORT extern const char kDirectCompositionVideoSwapChainFormat[];
+GL_EXPORT extern const char kTintDcLayer[];
 
 // These flags are used by the test harness code, not passed in by users.
 GL_EXPORT extern const char kDisableGLDrawingForTests[];
@@ -93,16 +97,14 @@ GL_EXPORT extern const char kDisableAndroidNativeFenceSyncForTesting[];
 namespace features {
 
 GL_EXPORT BASE_DECLARE_FEATURE(kDCompDebugVisualization);
-GL_EXPORT BASE_DECLARE_FEATURE(kDCompTripleBufferRootSwapChain);
 GL_EXPORT BASE_DECLARE_FEATURE(kDCompTripleBufferVideoSwapChain);
 GL_EXPORT BASE_DECLARE_FEATURE(kDirectCompositionSoftwareOverlays);
+GL_EXPORT BASE_DECLARE_FEATURE(kEarlyFullScreenVideoOptimization);
 GL_EXPORT BASE_DECLARE_FEATURE(kDirectCompositionLetterboxVideoOptimization);
 GL_EXPORT BASE_DECLARE_FEATURE(kDirectCompositionUnlimitedOverlays);
+GL_EXPORT BASE_DECLARE_FEATURE(kDesktopPlaneRemovalForMFFullScreenLetterbox);
 GL_EXPORT BASE_DECLARE_FEATURE(kEGLDualGPURendering);
 GL_EXPORT BASE_DECLARE_FEATURE(kIntelVpSuperResolution);
-GL_EXPORT BASE_DECLARE_FEATURE(kNvidiaVpSuperResolution);
-GL_EXPORT BASE_DECLARE_FEATURE(kNvidiaVpTrueHDR);
-GL_EXPORT BASE_DECLARE_FEATURE(kDefaultANGLEOpenGL);
 GL_EXPORT BASE_DECLARE_FEATURE(kDefaultANGLEMetal);
 GL_EXPORT BASE_DECLARE_FEATURE(kDefaultANGLEVulkan);
 GL_EXPORT BASE_DECLARE_FEATURE(kTrackCurrentShaders);

@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_SHADER_CACHE_H
 #define QSSG_RENDER_SHADER_CACHE_H
@@ -34,6 +36,57 @@ class QSSGRenderContextInterface;
 class QSSGRhiShaderPipeline;
 class QShaderBaker;
 class QRhi;
+
+using QSSGUserShaderFragmentOutputs = QVector<QByteArrayView>;
+
+struct QSSGShaderDefine
+{
+    QByteArray name;
+    QByteArray value;
+};
+
+using QSSGShaderDefineList = QList<QSSGShaderDefine>;
+
+class QSSGUserShaderAugmentation
+{
+public:
+    QByteArray preamble;
+    QByteArray body;
+
+    bool needsBaseColor = false;
+    bool needsRoughness = false;
+    bool needsMetalness = false;
+    bool needsDiffuseLight = false;
+    bool needsSpecularLight = false;
+    bool needsEmissiveLight = false;
+    bool needsWorldNormal = false;
+    bool needsWorldTangent = false;
+    bool needsWorldBinormal = false;
+    bool needsF0 = false;
+    bool needsF90 = false;
+
+    QSSGUserShaderFragmentOutputs outputs;
+
+    using Property = QSSGBaseTypeProperty;
+
+    using PropertyUniformsList = QVector<Property>;
+    PropertyUniformsList propertyUniforms;
+
+    QSSGShaderDefineList defines;
+
+    bool hasUserAugmentation() const
+    {
+        return (body.size() > 0);
+    }
+
+    bool hasPropertyUniforms() const
+    {
+        return propertyUniforms.size() > 0;
+    }
+
+};
+
+
 
 struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGShaderFeatures
 {
@@ -83,7 +136,9 @@ enum class Feature : FlagType
     Lightmap = (1 << 23) + 15,
     DisableMultiView = (1 << 24) + 16,
     ForceIblExposure = (1 << 25) + 17,
-
+    NormalPass = (1 << 26) + 18,
+    UserRenderPass = (1 << 27) + 19,
+    MotionVector = (1 << 28) + 20,
     LastFeature
 };
 
@@ -185,18 +240,22 @@ private:
     QString m_persistentShaderStorageFileName;
     QSSGBuiltInRhiShaderCache m_builtInShaders;
 
-    QSSGRhiShaderPipelinePtr loadBuiltinUncached(const QByteArray &inKey, int viewCount);
+    QSSGRhiShaderPipelinePtr loadBuiltinUncached(const QByteArray &inKey, int viewCount,
+                                                 QSSGRhiShaderPipeline::StageFlags vertexStageFlags);
 
     void addShaderPreprocessor(QByteArray &str,
                                const QByteArray &inKey,
                                ShaderType shaderType,
                                const QSSGShaderFeatures &inFeatures,
+                               const QSSGUserShaderAugmentation &shaderAugmentation,
                                int viewCount);
 
 public:
     QSSGShaderCache(QSSGRhiContext &ctx,
                     const InitBakerFunc initBakeFn = nullptr);
     ~QSSGShaderCache();
+
+    QSSGRhiContext &rhiContext() { return m_rhiContext; }
 
     void releaseCachedResources();
 
@@ -221,6 +280,7 @@ public:
                                            const QByteArray &inFrag,
                                            const QSSGShaderFeatures &inFeatures,
                                            QSSGRhiShaderPipeline::StageFlags stageFlags,
+                                           const QSSGUserShaderAugmentation &shaderAugmentation,
                                            int viewCount,
                                            bool perTargetCompilation);
 
@@ -228,6 +288,8 @@ public:
 
     static QByteArray resourceFolder();
     static QByteArray shaderCollectionFile();
+    static QByteArray particleShaderCollectionFile();
+    static void initBakerForPersistentUse(QShaderBaker *baker, QRhi *rhi);
 };
 
 namespace QtQuick3DEditorHelpers {

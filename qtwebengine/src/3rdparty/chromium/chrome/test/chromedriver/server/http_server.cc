@@ -2,19 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/test/chromedriver/server/http_server.h"
 
+#include "base/compiler_specific.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_interfaces.h"
 #include "net/base/sys_addrinfo.h"
+#include "net/http/http_status_code.h"
 #include "url/gurl.h"
 
 namespace {
@@ -52,7 +49,7 @@ bool IsMatch(const std::string& system_host, const std::string& hostname) {
 
 void GetCanonicalHostName(std::vector<std::string>* canonical_host_names) {
   struct addrinfo hints, *info = nullptr, *p;
-  memset(&hints, 0, sizeof(hints));
+  UNSAFE_TODO(memset(&hints, 0, sizeof(hints)));
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_CANONNAME;
@@ -238,6 +235,14 @@ HttpServer::~HttpServer() = default;
 
 void HttpServer::OnWebSocketRequest(int connection_id,
                                     const net::HttpServerRequestInfo& info) {
+  if (!RequestIsSafeToServe(info, allow_remote_, whitelisted_ips_,
+                            allowed_origins_)) {
+    server_->Send(connection_id, net::HTTP_FORBIDDEN,
+                  "Host header or origin header is specified and is not "
+                  "whitelisted or localhost.",
+                  "text/html", TRAFFIC_ANNOTATION_FOR_TESTS);
+    return;
+  }
   cmd_runner_->PostTask(
       FROM_HERE, base::BindOnce(&HttpHandler::OnWebSocketRequest, handler_,
                                 this, connection_id, info));

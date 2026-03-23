@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-qs8-vcvt/hvx.c.in
 //   Generator: tools/xngen
@@ -9,14 +10,14 @@
 
 #include <assert.h>
 
-#include "xnnpack/simd/f32-hvx.h"
-#include "xnnpack/vcvt.h"
+#include "src/xnnpack/simd/f32-hvx.h"
+#include "src/xnnpack/vcvt.h"
 
 void xnn_f32_qs8_vcvt_ukernel__hvx_u64(
     size_t batch,
     const float* input,
     int8_t* output,
-    const struct xnn_f32_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_qs8_cvt_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -63,9 +64,7 @@ void xnn_f32_qs8_vcvt_ukernel__hvx_u64(
     output += 32;
   }
   if XNN_UNLIKELY(batch != 0) {
-    assert(batch >= 1 * sizeof(float));
-    assert(batch < 32 * sizeof(float));
-    HVX_Vector vx = xnn_loadu_f32(input);
+    HVX_Vector vx = xnn_load_tail_f32(input, batch >> XNN_LOG2_SIZEOF_FLOAT);
 
     vx = xnn_fmadd_f32(vx, vscale, vmagic_bias);
 

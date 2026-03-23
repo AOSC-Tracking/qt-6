@@ -84,20 +84,17 @@ BubbleDialogModelHost::FieldType GetFieldTypeForField(
 int GetFieldTopMargin(LayoutProvider* layout_provider,
                       const BubbleDialogModelHost::FieldType& field_type,
                       const BubbleDialogModelHost::FieldType& last_field_type) {
-  DCHECK(layout_provider);
   // Menu item preceded by non-menu item should have margin
   if (field_type == BubbleDialogModelHost::FieldType::kMenuItem &&
       last_field_type == BubbleDialogModelHost::FieldType::kMenuItem) {
     return 0;
   }
-  if (field_type == BubbleDialogModelHost::FieldType::kControl &&
-      last_field_type == BubbleDialogModelHost::FieldType::kControl) {
-    // TODO(pbos): Move DISTANCE_CONTROL_LIST_VERTICAL to views::LayoutProvider
-    // and replace "12" here.
-    return 12;
-  }
+  const bool is_control_list =
+      field_type == BubbleDialogModelHost::FieldType::kControl &&
+      last_field_type == BubbleDialogModelHost::FieldType::kControl;
   return layout_provider->GetDistanceMetric(
-      DISTANCE_UNRELATED_CONTROL_VERTICAL);
+      is_control_list ? DISTANCE_CONTROL_LIST_VERTICAL
+                      : DISTANCE_UNRELATED_CONTROL_VERTICAL);
 }
 
 int GetDialogTopMargins(LayoutProvider* layout_provider,
@@ -478,12 +475,11 @@ class BubbleDialogModelHostContentsView final : public DialogModelSectionHost {
             model_field, GetPassKey()),
         model_field->label());
     item->SetImageModel(Button::STATE_NORMAL, model_field->icon());
-    // TODO(pbos): Move DISTANCE_CONTROL_LIST_VERTICAL to
-    // views::LayoutProvider and replace "12" here. See below for another "12"
-    // use that also needs to be replaced.
-    item->SetBorder(views::CreateEmptyBorder(
-        gfx::Insets::VH(12 / 2, LayoutProvider::Get()->GetDistanceMetric(
-                                    DISTANCE_BUTTON_HORIZONTAL_PADDING))));
+    const auto* const layout_provider = LayoutProvider::Get();
+    item->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(
+        layout_provider->GetDistanceMetric(DISTANCE_CONTROL_LIST_VERTICAL) / 2,
+        layout_provider->GetDistanceMetric(
+            DISTANCE_BUTTON_HORIZONTAL_PADDING))));
 
     item->SetEnabled(model_field->is_enabled());
     item->SetProperty(kElementIdentifierKey, model_field->id());
@@ -584,7 +580,8 @@ class BubbleDialogModelHostContentsView final : public DialogModelSectionHost {
             [](ui::DialogModelTextfield* model_field,
                base::PassKey<DialogModelFieldHost> pass_key,
                Textfield* textfield) {
-              model_field->OnTextChanged(pass_key, textfield->GetText());
+              model_field->OnTextChanged(pass_key,
+                                         std::u16string(textfield->GetText()));
             },
             model_field, GetPassKey(), textfield.get())));
 
@@ -816,8 +813,9 @@ BubbleDialogModelHost::ThemeChangedObserver::ThemeChangedObserver(
 }
 BubbleDialogModelHost::ThemeChangedObserver::~ThemeChangedObserver() = default;
 
-void BubbleDialogModelHost::ThemeChangedObserver::OnViewThemeChanged(View*) {
-  parent_->UpdateWindowIcon();
+void BubbleDialogModelHost::ThemeChangedObserver::OnViewThemeChanged(
+    View* view) {
+  parent_->UpdateWindowIcon(view->GetColorProvider());
 }
 
 BubbleDialogModelHost::BubbleDialogModelHost(
@@ -853,6 +851,7 @@ BubbleDialogModelHost::BubbleDialogModelHost(
               base::BindRepeating(&BubbleDialogModelHost::OnContentsViewChanged,
                                   base::Unretained(this)))),
       theme_observer_(this, contents_view_) {
+  SetOwnedByWidget(OwnedByWidgetPassKey());
   model_->set_host(DialogModelHost::GetPassKey(), this);
 
   // Dialog callbacks can safely refer to |model_|, they can't be called after
@@ -1058,7 +1057,7 @@ void BubbleDialogModelHost::OnWidgetInitialized() {
         banner.Rasterize(contents_view_->GetColorProvider()),
         (dark_mode_banner.IsEmpty() ? banner : dark_mode_banner)
             .Rasterize(contents_view_->GetColorProvider()),
-        base::BindRepeating(&views::BubbleDialogDelegate::GetBackgroundColor,
+        base::BindRepeating(&views::BubbleDialogDelegate::background_color,
                             base::Unretained(this)));
     // The banner is supposed to be purely decorative.
     banner_view->GetViewAccessibility().SetIsIgnored(true);
@@ -1134,13 +1133,16 @@ void BubbleDialogModelHost::OnDialogButtonChanged() {
   UpdateDialogButtons();
 }
 
-void BubbleDialogModelHost::UpdateWindowIcon() {
+void BubbleDialogModelHost::UpdateWindowIcon(
+    const ui::ColorProvider* color_provider) {
   if (!ShouldShowWindowIcon()) {
     return;
   }
   const ui::ImageModel dark_mode_icon =
       model_->dark_mode_icon(DialogModelHost::GetPassKey());
-  if (!dark_mode_icon.IsEmpty() && color_utils::IsDark(GetBackgroundColor())) {
+  if (!dark_mode_icon.IsEmpty() &&
+      color_utils::IsDark(
+          background_color().ResolveToSkColor(color_provider))) {
     SetIcon(dark_mode_icon);
     return;
   }

@@ -13,6 +13,7 @@
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/timer/elapsed_timer.h"
 #include "components/sqlite_proto/key_value_data.h"
 #include "components/sqlite_proto/key_value_table.h"
 #include "components/sqlite_proto/proto_table_manager.h"
@@ -58,12 +59,10 @@ class NET_EXPORT SessionStoreImpl : public SessionStore {
   // SessionStore implementation:
   void LoadSessions(LoadSessionsCallback callback) override;
   void SaveSession(const SchemefulSite& site, const Session& session) override;
-  void DeleteSession(const SchemefulSite& site,
-                     const Session::Id& session_id) override;
+  void DeleteSession(const SessionKey& key) override;
   SessionsMap GetAllSessions() const override;
   void RestoreSessionBindingKey(
-      const SchemefulSite& site,
-      const Session::Id& session_id,
+      const SessionKey& session_key,
       RestoreSessionBindingKeyCallback callback) override;
 
   DBStatus db_status() const { return db_status_; }
@@ -78,8 +77,12 @@ class NET_EXPORT SessionStoreImpl : public SessionStore {
                            PruneLoadedEntryWithInvalidSession);
   FRIEND_TEST_ALL_PREFIXES(SessionStoreImplTest,
                            PruneLoadedEntryWithSessionMissingWrappedKey);
+  FRIEND_TEST_ALL_PREFIXES(SessionStoreImplTest,
+                           PruneLoadedEntryWithInvalidRefreshInitiator);
 
-  void OnDatabaseLoaded(LoadSessionsCallback callback, DBStatus status);
+  void OnDatabaseLoaded(LoadSessionsCallback callback,
+                        base::ElapsedTimer timer,
+                        DBStatus status);
 
   // Helper function called by `OnDatabaseLoaded` to prune out any invalid
   // entries found in the data loaded from disk. Returns a map of valid

@@ -17,7 +17,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/android_buildflags.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "chrome/browser/media/media_access_handler.h"
 #include "chrome/browser/media/prefs/capture_device_ranking.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
@@ -50,9 +49,9 @@
 #include "content/public/common/content_features.h"
 #endif  //  BUILDFLAG(IS_ANDROID)
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/media/chromeos_login_and_lock_media_access_handler.h"
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/controlled_frame/controlled_frame_media_access_handler.h"
@@ -77,7 +76,7 @@ MediaCaptureDevicesDispatcher::MediaCaptureDevicesDispatcher()
       media_stream_capture_indicator_(new MediaStreamCaptureIndicator()) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-#if BUILDFLAG(IS_DESKTOP_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   if (base::FeatureList::IsEnabled(kAndroidMediaPicker)) {
     media_access_handlers_.push_back(
         std::make_unique<DisplayMediaAccessHandler>());
@@ -88,7 +87,7 @@ MediaCaptureDevicesDispatcher::MediaCaptureDevicesDispatcher()
 #endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   media_access_handlers_.push_back(
       std::make_unique<ChromeOSLoginAndLockMediaAccessHandler>());
 #endif

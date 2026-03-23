@@ -405,12 +405,10 @@ class ImmediatesPrinter {
     if (imm.type.is_index()) use_type(imm.type.ref_index());
   }
 
-  void ValueType(HeapTypeImmediate& imm, bool is_nullable) {
+  void ValueType(ValueType type) {
     out_ << " ";
-    names()->PrintValueType(
-        out_, ValueType::RefMaybeNull(imm.type,
-                                      is_nullable ? kNullable : kNonNullable));
-    if (imm.type.is_index()) use_type(imm.type.ref_index());
+    names()->PrintValueType(out_, type);
+    if (type.has_index()) use_type(type.ref_index());
   }
 
   void BrOnCastFlags(BrOnCastImmediate& flags) {
@@ -462,6 +460,27 @@ class ImmediatesPrinter {
     }
   }
 
+  void EffectHandlerTable(EffectHandlerTableImmediate& imm) {
+    const uint8_t* pc = imm.table;
+    for (uint32_t i = 0; i < imm.table_count; i++) {
+      uint8_t kind = owner_->read_u8<ValidationTag>(pc);
+      pc += 1;
+      auto [tag, length] = owner_->read_u32v<ValidationTag>(pc);
+      out_ << "(on ";
+      names()->PrintTagName(out_, tag);
+      out_ << " ";
+      pc += length;
+      if (kind == kOnSuspend) {
+        auto [target, tlen] = owner_->read_u32v<ValidationTag>(pc);
+        PrintDepthAsLabel(target);
+        pc += tlen;
+        out_ << ")";
+      } else {
+        out_ << " switch)";
+      }
+    }
+  }
+
   void CallIndirect(CallIndirectImmediate& imm) {
     PrintSignature(imm.sig_imm.index);
     if (imm.table_imm.index != 0) TableIndex(imm.table_imm);
@@ -477,6 +496,18 @@ class ImmediatesPrinter {
     if (imm.alignment != GetDefaultAlignment(owner_->current_opcode_)) {
       out_ << " align=" << (1u << imm.alignment);
     }
+  }
+
+  void MemoryOrder(const MemoryOrderImmediate& memory_order) {
+    switch (memory_order.order) {
+      case AtomicMemoryOrder::kAcqRel:
+        out_ << " acqrel";
+        return;
+      case AtomicMemoryOrder::kSeqCst:
+        out_ << " seqcst";
+        return;
+    }
+    out_ << " INVALID(" << static_cast<int>(memory_order.order) << ')';
   }
 
   void SimdLane(SimdLaneImmediate& imm) { out_ << " " << uint32_t{imm.lane}; }
@@ -757,13 +788,24 @@ void ModuleDisassembler::PrintTypeDefinition(uint32_t type_index,
   uint32_t offset = offsets_->type_offset(type_index);
   out_.NextLine(offset);
   out_ << indentation << "(type ";
+  size_t num_closing_parens = 2;  // One for "(type", one for "(struct" etc.
   names_->PrintTypeName(out_, type_index, index_as_comment);
   const TypeDefinition& type = module_->types[type_index];
-  bool has_super = type.supertype != kNoSuperType;
-  if (has_super) {
+  if (type.supertype != kNoSuperType) {
     out_ << " (sub ";
+    num_closing_parens++;
     if (type.is_final) out_ << "final ";
-    names_->PrintHeapType(out_, HeapType(type.supertype));
+    names_->PrintTypeName(out_, type.supertype);
+  }
+  if (type.is_descriptor()) {
+    out_ << " (describes ";
+    num_closing_parens++;
+    names_->PrintTypeName(out_, type.describes);
+  }
+  if (type.has_descriptor()) {
+    out_ << " (descriptor ";
+    num_closing_parens++;
+    names_->PrintTypeName(out_, type.descriptor);
   }
   if (type.kind == TypeDefinition::kArray) {
     const ArrayType* atype = type.array_type;
@@ -805,8 +847,9 @@ void ModuleDisassembler::PrintTypeDefinition(uint32_t type_index,
       out_ << ")";
     }
   }
-  // Closes "(type", "(sub", and "(array" / "(struct" / "(func".
-  out_ << (has_super ? ")))" : "))");
+  constexpr const char* parens = ")))))";
+  DCHECK_LE(num_closing_parens, strlen(parens));
+  out_.write(parens, num_closing_parens);
 }
 
 void ModuleDisassembler::PrintModule(Indentation indentation, size_t max_mb) {
@@ -1161,7 +1204,7 @@ void ModuleDisassembler::PrintInitExpression(const ConstantExpression& init,
       break;
     case ConstantExpression::Kind::kRefNull:
       out_ << " (ref.null ";
-      names_->PrintHeapType(out_, HeapType(init.repr()));
+      names_->PrintHeapType(out_, init.type());
       out_ << ")";
       break;
     case ConstantExpression::Kind::kRefFunc:

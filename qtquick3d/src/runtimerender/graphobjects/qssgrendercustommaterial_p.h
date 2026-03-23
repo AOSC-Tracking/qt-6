@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_CUSTOM_MATERIAL_H
 #define QSSG_RENDER_CUSTOM_MATERIAL_H
@@ -110,6 +112,8 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderCustomMaterial : public QSSGRende
         ClearcoatFresnelScaleBias = 1 << 15,
         FresnelScaleBias = 1 << 16,
         Transmission = 1 << 17,
+        NormalTexture = 1 << 18,
+        MotionVectorTexture = 1 << 19
     };
     Q_DECLARE_FLAGS(RenderFlags, RenderFlag)
 

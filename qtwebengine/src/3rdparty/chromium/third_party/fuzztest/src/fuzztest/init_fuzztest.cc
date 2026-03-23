@@ -176,6 +176,13 @@ FUZZTEST_DEFINE_FLAG(
 //
 // These flags are meant to be set only by the parent controller process for its
 // child processes.
+//
+// TODO(b/406001082): Remove these flags once they are no longer needed.
+
+FUZZTEST_DEFINE_FLAG(
+    std::optional<std::string>, internal_centipede_command, std::nullopt,
+    "If set, run the Centipede command in separate processes as the fuzzing "
+    "engine. This flag is for internal use only.");
 
 FUZZTEST_DEFINE_FLAG(
     std::optional<std::string>, internal_override_fuzz_test, std::nullopt,
@@ -204,6 +211,21 @@ FUZZTEST_DEFINE_FLAG(
               std::getenv("CENTIPEDE_RUNNER_FLAGS") != nullptr,
           "must not set --" FUZZTEST_FLAG_PREFIX
           "internal_override_total_time_limit directly");
+    });
+
+FUZZTEST_DEFINE_FLAG(std::optional<std::string>,
+                     internal_crashing_input_to_reproduce, std::nullopt,
+                     "Internal-only flag - do not use directly. If both this "
+                     "and --" FUZZTEST_FLAG_PREFIX
+                     "internal_override_fuzz_test are set, replay "
+                     "the input in the corpus database with the specified ID.")
+    .OnUpdate([] {
+      FUZZTEST_INTERNAL_CHECK_PRECONDITION(
+          !absl::GetFlag(FUZZTEST_FLAG(internal_crashing_input_to_reproduce))
+                  .has_value() ||
+              std::getenv("CENTIPEDE_RUNNER_FLAGS") != nullptr,
+          "must not set --" FUZZTEST_FLAG_PREFIX
+          "internal_crashing_input_to_reproduce directly");
     });
 
 namespace fuzztest {
@@ -307,18 +329,26 @@ internal::Configuration CreateConfigurationsFromFlags(
   return internal::Configuration{
       absl::GetFlag(FUZZTEST_FLAG(corpus_database)),
       /*stats_root=*/"",
+      /*workdir_root=*/"",
       std::string(binary_identifier),
       /*fuzz_tests=*/ListRegisteredTests(),
       /*fuzz_tests_in_current_shard=*/ListRegisteredTests(),
-      reproduce_findings_as_separate_tests, replay_coverage_inputs,
+      reproduce_findings_as_separate_tests,
+      replay_coverage_inputs,
       /*only_replay=*/
       replay_corpus_time_limit.has_value(),
+      /*replay_in_single_process=*/false,
       absl::GetFlag(FUZZTEST_FLAG(execution_id)),
       absl::GetFlag(FUZZTEST_FLAG(print_subprocess_log)),
       /*stack_limit=*/absl::GetFlag(FUZZTEST_FLAG(stack_limit_kb)) * 1024,
       /*rss_limit=*/absl::GetFlag(FUZZTEST_FLAG(rss_limit_mb)) * 1024 * 1024,
-      absl::GetFlag(FUZZTEST_FLAG(time_limit_per_input)), time_limit,
-      time_budget_type, jobs.value_or(0)};
+      absl::GetFlag(FUZZTEST_FLAG(time_limit_per_input)),
+      time_limit,
+      time_budget_type,
+      jobs.value_or(0),
+      absl::GetFlag(FUZZTEST_FLAG(internal_centipede_command)),
+      absl::GetFlag(FUZZTEST_FLAG(internal_crashing_input_to_reproduce)),
+  };
 }
 }  // namespace
 
@@ -342,6 +372,7 @@ void InitFuzzTest(int* argc, char*** argv, std::string_view binary_id) {
     for (const auto& name : ListRegisteredTests()) {
       std::cout << "[*] Fuzz test: " << name << '\n';
     }
+    std::cout << std::flush;
     std::exit(0);
   }
   std::optional<absl::Duration> fuzzing_time_limit = GetFuzzingTime();

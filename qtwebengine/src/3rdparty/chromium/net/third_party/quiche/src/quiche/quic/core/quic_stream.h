@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <list>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -34,13 +35,14 @@
 #include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/core/quic_stream_priority.h"
 #include "quiche/quic/core/quic_stream_send_buffer.h"
+#include "quiche/quic/core/quic_stream_send_buffer_base.h"
 #include "quiche/quic/core/quic_stream_sequencer.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/session_notifier_interface.h"
 #include "quiche/quic/core/stream_delegate_interface.h"
 #include "quiche/quic/platform/api/quic_export.h"
-#include "quiche/common/platform/api/quiche_mem_slice.h"
 #include "quiche/common/platform/api/quiche_reference_counted.h"
+#include "quiche/common/quiche_mem_slice.h"
 
 namespace quic {
 
@@ -291,6 +293,9 @@ class QUICHE_EXPORT QuicStream : public QuicStreamSequencer::StreamInterface {
   QuicStreamOffset NumBytesConsumed() const {
     return sequencer()->NumBytesConsumed();
   }
+  QuicStreamOffset send_window_offset() const {
+    return flow_controller_->send_window_offset();
+  }
 
   // Called when endpoint receives a frame which could increase the highest
   // offset.
@@ -359,7 +364,8 @@ class QUICHE_EXPORT QuicStream : public QuicStreamSequencer::StreamInterface {
                                   QuicByteCount data_length, bool fin_acked,
                                   QuicTime::Delta ack_delay_time,
                                   QuicTime receive_timestamp,
-                                  QuicByteCount* newly_acked_length);
+                                  QuicByteCount* newly_acked_length,
+                                  bool is_retransmission);
 
   // Called when data [offset, offset + data_length) was retransmitted.
   // |fin_retransmitted| indicates whether fin was retransmitted.
@@ -506,7 +512,8 @@ class QUICHE_EXPORT QuicStream : public QuicStreamSequencer::StreamInterface {
                               QuicByteCount data_length,
                               QuicByteCount newly_acked_length,
                               QuicTime receive_timestamp,
-                              QuicTime::Delta ack_delay_time);
+                              QuicTime::Delta ack_delay_time,
+                              bool is_retransmission);
 
   void set_rst_received(bool rst_received) { rst_received_ = rst_received; }
   void set_stream_error(QuicResetStreamError error) { stream_error_ = error; }
@@ -521,9 +528,9 @@ class QUICHE_EXPORT QuicStream : public QuicStreamSequencer::StreamInterface {
 
   const QuicIntervalSet<QuicStreamOffset>& bytes_acked() const;
 
-  const QuicStreamSendBuffer& send_buffer() const { return send_buffer_; }
+  const QuicStreamSendBufferBase& send_buffer() const { return *send_buffer_; }
 
-  QuicStreamSendBuffer& send_buffer() { return send_buffer_; }
+  QuicStreamSendBufferBase& send_buffer() { return *send_buffer_; }
 
   // Called when the write side of the stream is closed, and all of the outgoing
   // data has been acknowledged.  This corresponds to the "Data Recvd" state of
@@ -642,7 +649,7 @@ class QUICHE_EXPORT QuicStream : public QuicStreamSequencer::StreamInterface {
 
   // Send buffer of this stream. Send buffer is cleaned up when data gets acked
   // or discarded.
-  QuicStreamSendBuffer send_buffer_;
+  std::unique_ptr<QuicStreamSendBufferBase> send_buffer_;
 
   // Latched value of quic_buffered_data_threshold.
   const QuicByteCount buffered_data_threshold_;

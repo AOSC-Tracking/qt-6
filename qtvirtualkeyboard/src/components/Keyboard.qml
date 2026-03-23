@@ -103,6 +103,10 @@ Item {
         function onDefaultInputMethodDisabledChanged() {
             updateInputMethod()
         }
+        function onArrowKeyNavigationEnabledChanged() {
+            if (!VirtualKeyboardSettings.arrowKeyNavigationEnabled)
+                keyboard.navigationModeActive = false
+        }
     }
     onAvailableLocaleIndicesChanged: hideLanguagePopup()
     onAvailableCustomLocaleIndicesChanged: hideLanguagePopup()
@@ -500,7 +504,6 @@ Item {
                 InputContext.priv.previewRectangle = Qt.binding(function() {return previewRect})
             else
                 openedByNavigationKeyLongPress = false
-            InputContext.priv.previewVisible = visible
         }
     }
     FunctionPopupList {
@@ -585,7 +588,7 @@ Item {
     Binding {
         target: InputContext.priv
         property: "previewVisible"
-        value: characterPreview.visible || languagePopupListActive
+        value: characterPreview.visible || languagePopupListActive || alternativeKeys.visible
         restoreMode: Binding.RestoreBinding
     }
     Loader {
@@ -649,11 +652,9 @@ Item {
         objectName: "shadowInputControl"
         z: -3
         anchors.left: parent.left
-        anchors.right: parent.right
         anchors.bottom: wordCandidateView.top
-        height: keyboard.screenHeight -
-                keyboard.height -
-                wordCandidateView.height
+        width: Math.min(shadowInputControl.contentWidth, parent.width)
+        height: shadowInputControl.contentHeight
         visible: fullScreenMode && (shadowInputControlVisibleTimer.running || InputContext.animating)
 
         Connections {
@@ -694,11 +695,11 @@ Item {
         clip: true
         z: -2
         property bool empty: true
-        readonly property bool visibleCondition: (((!wordCandidateView.empty || wordCandidateViewAutoHideTimer.running) &&
-                                                   InputContext.inputEngine.wordCandidateListVisibleHint) || VirtualKeyboardSettings.wordCandidateList.alwaysVisible) &&
-                                                 keyboard.active
+        readonly property bool visibleCondition: keyboard.active && InputContext.inputEngine.wordCandidateListVisibleHint &&
+                                                 (!wordCandidateView.empty || wordCandidateViewAutoHideTimer.running)
+        readonly property bool alwaysVisibleCondition: InputContext.inputEngine.wordCandidateListVisibleHint &&
+                                                       (keyboard.fullScreenMode || VirtualKeyboardSettings.wordCandidateList.alwaysVisible)
         readonly property real visibleYOffset: -height
-        readonly property real currentYOffset: visibleCondition ? visibleYOffset : 0
         height: style ? style.selectionListHeight : 0
         anchors.left: parent.left
         anchors.right: parent.right
@@ -760,7 +761,7 @@ Item {
             },
             State {
                 name: "alwaysVisible"
-                when: keyboard.fullScreenMode || VirtualKeyboardSettings.wordCandidateList.alwaysVisible
+                when: wordCandidateView.alwaysVisibleCondition
                 PropertyChanges {
                     target: wordCandidateView
                     y: wordCandidateView.visibleYOffset
@@ -845,9 +846,22 @@ Item {
 
         Item {
             id: keyboardInnerContainer
+            readonly property int calculatedWidth: Math.round(keyboardBackground.width)
+            readonly property int calculatedHeight: Math.round(style.keyboardDesignHeight * calculatedWidth / style.keyboardDesignWidth)
             z: 1
-            width: Math.round(keyboardBackground.width)
-            height: style ? Math.round(style.keyboardDesignHeight * width / style.keyboardDesignWidth) : 0
+            width: {
+                if (style && style.keyboardDesignMaximumHeight > 0 && calculatedHeight > style.keyboardDesignMaximumHeight)
+                    return Math.round(style.keyboardDesignMaximumHeight * style.keyboardDesignWidth / style.keyboardDesignHeight)
+                return calculatedWidth
+            }
+            height: {
+                if (style) {
+                    if (style.keyboardDesignMaximumHeight > 0 && calculatedHeight > style.keyboardDesignMaximumHeight)
+                        return style.keyboardDesignMaximumHeight
+                    return calculatedHeight
+                }
+                return 0
+            }
             anchors.horizontalCenter: parent.horizontalCenter
             LayoutMirroring.enabled: false
             LayoutMirroring.childrenInherit: true
@@ -1350,6 +1364,13 @@ Item {
                                                wordCandidateContextMenuList.height)
         }
 
+        Loader {
+            sourceComponent: keyboard.style.popupListBackground
+            anchors.fill: wordCandidateContextMenuList
+            z: -1
+            visible: wordCandidateContextMenuList.visible
+        }
+
         ListModel {
             id: wordCandidateContextMenuListModel
 
@@ -1406,6 +1427,7 @@ Item {
             })
 
             wordCandidateContextMenuList.enabled = true
+            wordCandidateContextMenuList.currentIndex = 0
         }
 
         function hide() {

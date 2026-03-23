@@ -39,6 +39,9 @@ source_set("qt_interface") {
   # target instead.
   public = [ "qt_interface.h" ]
   sources = [ "qt_interface.cc" ]
+
+  # Don't use libc++ modules as this depends on libstdc++.
+  use_libcxx_modules = false
 }
 
 template("qt_shim") {
@@ -99,6 +102,11 @@ template("qt_shim") {
       sources += get_target_outputs(":generate_moc" + invoker.qt_version)
       deps += [ ":generate_moc" + invoker.qt_version ]
     }
+
+    # Don't depend on libcxx modules. This binary doesn't depend on the standard
+    # library in libcxx. Instead it depends on the libcxx in the sysroot, so
+    # using libcxx will just confuse it with duplicate definitions.
+    use_libcxx_modules = false
   }
 }
 if (use_qt5) {

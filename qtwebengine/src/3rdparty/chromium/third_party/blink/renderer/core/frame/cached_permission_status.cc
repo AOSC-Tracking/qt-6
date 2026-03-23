@@ -36,7 +36,6 @@ CachedPermissionStatus::CachedPermissionStatus(LocalDOMWindow* local_dom_window)
       permission_service_(local_dom_window),
       permission_observer_receivers_(this, local_dom_window) {
   CHECK(local_dom_window);
-  CHECK(RuntimeEnabledFeatures::PermissionElementEnabled(local_dom_window));
 }
 
 void CachedPermissionStatus::Trace(Visitor* visitor) const {
@@ -109,15 +108,23 @@ void CachedPermissionStatus::RegisterPermissionObserver(
   mojo::ReceiverId id = permission_observer_receivers_.Add(
       observer.InitWithNewPipeAndPassReceiver(), descriptor->name,
       GetTaskRunner());
-  GetPermissionService()->AddPageEmbeddedPermissionObserver(
+  GetPermissionService()->AddCombinedPermissionObserver(
       descriptor.Clone(), current_status, std::move(observer));
   auto inserted = permission_to_receivers_map_.insert(descriptor->name, id);
   CHECK(inserted.is_new_entry);
 }
 
 void CachedPermissionStatus::OnPermissionStatusChange(PermissionStatus status) {
-  permission_status_map_.Set(permission_observer_receivers_.current_context(),
-                             status);
+  auto permission_name = permission_observer_receivers_.current_context();
+  permission_status_map_.Set(permission_name, status);
+  auto it = clients_.find(permission_name);
+  if (it == clients_.end()) {
+    return;
+  }
+  const auto client_set = it->value;
+  for (auto const& client : client_set) {
+    client->OnPermissionStatusChange(permission_name, status);
+  }
 }
 
 PermissionService* CachedPermissionStatus::GetPermissionService() {

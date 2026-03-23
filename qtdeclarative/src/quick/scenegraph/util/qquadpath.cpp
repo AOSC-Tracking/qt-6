@@ -552,6 +552,36 @@ QQuadPath QQuadPath::fromPainterPath(const QPainterPath &path, PathHints hints)
     return res;
 }
 
+static bool hasOverlappingLines(const QQuadPath &path)
+{
+    QVarLengthArray<int, 16> lines;
+    for (int i = 0; i < path.elementCount(); i++) {
+        const QQuadPath::Element &e = path.elementAt(i);
+        if (e.isLine()) {
+            const QVector2D tangent = e.tangentAtFraction(0);
+            const bool isHorizontal = qAbs(tangent.x()) > qAbs(tangent.y());
+            float e1 = isHorizontal ? e.startPoint().x() : e.startPoint().y();
+            float e2 = isHorizontal ? e.endPoint().x() : e.endPoint().y();
+            if (e1 > e2)
+                qSwap(e1, e2);
+            for (int j = 0; j < lines.size(); j++) {
+                const QQuadPath::Element &line = path.elementAt(j);
+                if (QQuadPath::isPointOnLine(e.controlPoint(), line.startPoint(), line.endPoint())) {
+                    // Check overlap
+                    float l1 = isHorizontal ? line.startPoint().x() : line.startPoint().y();
+                    float l2 = isHorizontal ? line.endPoint().x() : line.endPoint().y();
+                    if (l1 > l2)
+                        qSwap(l1, l2);
+                    if (qMax(l1, e1) <= qMin(l2, e2))
+                        return true;
+                }
+            }
+            lines.append(i);
+        }
+    }
+    return false;
+}
+
 void QQuadPath::addCurvatureData()
 {
     // We use the convention that the inside of a curve is on the *right* side of the
@@ -573,7 +603,11 @@ void QQuadPath::addCurvatureData()
             return Element::CurvatureUndetermined;
     };
 
-    static bool checkAnomaly = qEnvironmentVariableIntValue("QT_QUICKSHAPES_CHECK_ALL_CURVATURE") != 0;
+    static bool checkAnomalyEnv = qEnvironmentVariableIntValue("QT_QUICKSHAPES_CHECK_ALL_CURVATURE") != 0;
+    constexpr int overlapTestLimit = 64;
+    // Line overlap test becomes expensive for large counts; leave to manual override with CHECK_ALL
+    const bool checkAnomaly =
+            checkAnomalyEnv || (lineCount() <= overlapTestLimit && hasOverlappingLines(*this));
     const bool pathHasFillOnRight = testHint(PathFillOnRight);
 
     Element::CurvatureFlags flags = Element::CurvatureUndetermined;
@@ -953,9 +987,11 @@ static void printElement(QDebug stream, const QQuadPath::Element &element)
     printPoint(element.controlPoint());
     printPoint(element.endPoint());
     stream << "} " << (element.isLine() ? "L " : "C ") << (element.isConvex() ? "X " : "O ")
+           << (element.isFillOnRight() ? "R " : "L ")
            << (element.isSubpathStart() ? "S" : element.isSubpathEnd() ? "E" : "");
 }
 
+#ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug stream, const QQuadPath::Element &element)
 {
     QDebugStateSaver saver(stream);
@@ -972,15 +1008,17 @@ QDebug operator<<(QDebug stream, const QQuadPath &path)
     stream.nospace();
     stream << "QuadPath(" << path.elementCount() << " main elements, "
            << path.elementCountRecursive() << " leaf elements, "
-           << (path.fillRule() == Qt::OddEvenFill ? "OddEven" : "Winding") << Qt::endl;
+           << (path.fillRule() == Qt::OddEvenFill ? "OddEven" : "Winding")
+           << ", hints: " << path.pathHints() << Qt::endl;
     int count = 0;
     path.iterateElements([&](const QQuadPath::Element &e, int) {
-        stream << " " << count++ << (e.isSubpathStart() ? " >" : " ");
+        stream << " " << count++ << (e.isSubpathStart() ? ">" : e.isSubpathEnd() ? "<" : " ");
         printElement(stream, e);
         stream << Qt::endl;
     });
     stream << ")";
     return stream;
 }
+#endif
 
 QT_END_NAMESPACE

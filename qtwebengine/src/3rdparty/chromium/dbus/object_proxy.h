@@ -62,13 +62,16 @@ class CHROME_DBUS_EXPORT ObjectProxy
   };
 
   // Special timeout constants.
-  //
-  // The constants correspond to DBUS_TIMEOUT_USE_DEFAULT and
-  // DBUS_TIMEOUT_INFINITE. Here we use literal numbers instead of these
-  // macros as these aren't defined with D-Bus earlier than 1.4.12.
   enum {
+    // The constant corresponds to DBUS_TIMEOUT_USE_DEFAULT. Here we use literal
+    // numbers instead of these macros as these aren't defined with D-Bus
+    // earlier than 1.4.12.
     TIMEOUT_USE_DEFAULT = -1,
-    TIMEOUT_INFINITE = 0x7fffffff,
+
+    // Max timeout for methods calls. Long method calls add to `pending_replies"
+    // in dbus_daemon and it has a limit. Once that limit is exceeded, no more
+    // calls could be made on the relevant DBusConnection.
+    TIMEOUT_MAX = base::Hours(1).InMilliseconds(),
   };
 
   // Called when an error response is returned or no response is returned.
@@ -146,26 +149,6 @@ class CHROME_DBUS_EXPORT ObjectProxy
   virtual void CallMethodWithErrorResponse(MethodCall* method_call,
                                            int timeout_ms,
                                            ResponseOrErrorCallback callback);
-
-  // DEPRECATED. Please use CallMethodWithErrorResponse() instead.
-  // TODO(hidehiko): Remove this when migration is done.
-  // Requests to call the method of the remote object.
-  //
-  // |callback| and |error_callback| will be called in the origin thread, once
-  // the method call is complete. As it's called in the origin thread,
-  // |callback| can safely reference objects in the origin thread (i.e.
-  // UI thread in most cases).
-  //
-  // If the method call is successful, |callback| will be invoked with a
-  // Response object. If unsuccessful, |error_callback| will be invoked with an
-  // ErrorResponse object (if the remote object returned an error) or nullptr
-  // (if a response was not received at all).
-  //
-  // Must be called in the origin thread.
-  virtual void CallMethodWithErrorCallback(MethodCall* method_call,
-                                           int timeout_ms,
-                                           ResponseCallback callback,
-                                           ErrorCallback error_callback);
 
   // Requests to connect to the signal from the remote object.
   //

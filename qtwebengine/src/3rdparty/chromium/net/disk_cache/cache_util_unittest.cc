@@ -19,7 +19,8 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/threading/platform_thread.h"
-#include "build/chromeos_buildflags.h"
+#include "build/build_config.h"
+#include "net/base/cache_type.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -74,7 +75,7 @@ TEST_F(CacheUtilTest, MoveCache) {
   EXPECT_TRUE(base::PathExists(dest_file1_));
   EXPECT_TRUE(base::PathExists(dest_file2_));
   EXPECT_TRUE(base::PathExists(dest_dir1_));
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   EXPECT_TRUE(base::PathExists(cache_dir_)); // old cache dir stays
 #else
   EXPECT_FALSE(base::PathExists(cache_dir_)); // old cache is gone
@@ -130,7 +131,7 @@ TEST_F(CacheUtilTest, CleanupDirectory) {
           base::SafeBaseName::Create(path);
       ASSERT_EQ(dirname, tmp_dir_.GetPath());
       ASSERT_TRUE(basename.has_value());
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
       if (basename->path().value() == FILE_PATH_LITERAL("Cache")) {
         // See the comment above.
         ASSERT_TRUE(base::IsDirectoryEmpty(dirname.Append(*basename)));
@@ -254,13 +255,14 @@ TEST_F(CacheUtilTest, PreferredCacheSize) {
             PreferredCacheSize(50000 * kMiBInBytes,
                                net::GENERATED_NATIVE_CODE_CACHE));
 
-  for (int cache_size_exeriment : {100, 200, 250, 300}) {
+  for (int cache_size_exeriment : {100, 200, 250, 300, 400}) {
     base::test::ScopedFeatureList scoped_feature_list;
     std::map<std::string, std::string> field_trial_params;
     field_trial_params["percent_relative_size"] =
         base::NumberToString(cache_size_exeriment);
     scoped_feature_list.InitAndEnableFeatureWithParameters(
-        disk_cache::kChangeDiskCacheSizeExperiment, field_trial_params);
+        disk_cache::kChangeGeneratedCodeCacheSizeExperiment,
+        field_trial_params);
 
     for (const auto& test_case : kTestCases) {
       int expected = 0;
@@ -277,16 +279,23 @@ TEST_F(CacheUtilTest, PreferredCacheSize) {
         case 300:
           expected = test_case.expected_300percent;
           break;
+        case 400:
+          expected = test_case.expected_400percent;
+          break;
         default:
           NOTREACHED();
       }
 
-      EXPECT_EQ(expected, PreferredCacheSize(test_case.available));
+      // Generate byte code cache size is appropriately scaled.
+      EXPECT_EQ(expected, PreferredCacheSize(test_case.available,
+                                             net::GENERATED_BYTE_CODE_CACHE));
 
-      // For caches other than disk cache, the size is not scaled.
-      EXPECT_EQ(test_case.expected_100percent,
-                PreferredCacheSize(test_case.available,
-                                   net::GENERATED_BYTE_CODE_CACHE));
+      // For caches other than generated code cache, the size is not scaled
+      // through `kChangeGeneratedCodeCacheSizeExperiment`.
+      int64_t default_expected = kHTTPCacheSizeIsIncreased
+                                     ? test_case.expected_400percent
+                                     : test_case.expected_100percent;
+      EXPECT_EQ(default_expected, PreferredCacheSize(test_case.available));
 
       // Preferred size for WebUI code cache is not scaled by the trial, and
       // should never be more than 5 MB.
@@ -309,10 +318,11 @@ TEST_F(CacheUtilTest, PreferredCacheSize) {
   {
     base::test::ScopedFeatureList scoped_feature_list;
     scoped_feature_list.InitAndEnableFeature(
-        disk_cache::kChangeDiskCacheSizeExperiment);
+        disk_cache::kChangeGeneratedCodeCacheSizeExperiment);
     for (const auto& test_case : kTestCases) {
       EXPECT_EQ(test_case.expected_400percent,
-                PreferredCacheSize(test_case.available));
+                PreferredCacheSize(test_case.available,
+                                   net::GENERATED_BYTE_CODE_CACHE));
     }
     // Check that the cache size cap is 50% higher for native code caches.
     EXPECT_EQ(((320 * kMiBInBytes) / 2) * 3,

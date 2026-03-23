@@ -49,14 +49,14 @@ DirectHandle<JSArray> TemplateObjectDescription::GetTemplateObject(
     Isolate* isolate, DirectHandle<NativeContext> native_context,
     DirectHandle<TemplateObjectDescription> description,
     DirectHandle<SharedFunctionInfo> shared_info, int slot_id) {
-  int function_literal_id = shared_info->function_literal_id();
+  int function_literal_id = shared_info->function_literal_id(kRelaxedLoad);
 
   // Check the template weakmap to see if the template object already exists.
   DirectHandle<Script> script(Cast<Script>(shared_info->script(isolate)),
                               isolate);
   int32_t hash =
       EphemeronHashTable::TodoShape::Hash(ReadOnlyRoots(isolate), script);
-  MaybeHandle<ArrayList> maybe_cached_templates;
+  MaybeDirectHandle<ArrayList> maybe_cached_templates;
 
   if (!IsUndefined(native_context->template_weakmap(), isolate)) {
     DisallowGarbageCollection no_gc;
@@ -71,7 +71,7 @@ DirectHandle<JSArray> TemplateObjectDescription::GetTemplateObject(
     if (!IsTheHole(cached_templates_lookup, roots)) {
       Tagged<ArrayList> cached_templates =
           Cast<ArrayList>(cached_templates_lookup);
-      maybe_cached_templates = handle(cached_templates, isolate);
+      maybe_cached_templates = direct_handle(cached_templates, isolate);
 
       // Linear search over the cached template array list for a template
       // object matching the given function_literal_id + slot_id.
@@ -96,7 +96,7 @@ DirectHandle<JSArray> TemplateObjectDescription::GetTemplateObject(
           cooked_strings, raw_strings, function_literal_id, slot_id);
 
   // Insert the template object into the cached template array list.
-  Handle<ArrayList> cached_templates;
+  DirectHandle<ArrayList> cached_templates;
   if (!maybe_cached_templates.ToHandle(&cached_templates)) {
     cached_templates = isolate->factory()->NewArrayList(1);
   }

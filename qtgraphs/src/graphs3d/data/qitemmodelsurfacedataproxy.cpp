@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qitemmodelsurfacedataproxy_p.h"
 #include "surfaceitemmodelhandler_p.h"
@@ -1388,3 +1390,5 @@ void QItemModelSurfaceDataProxyPrivate::connectItemModelHandler()
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qitemmodelsurfacedataproxy.cpp"

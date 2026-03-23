@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QABSTRACTITEMVIEW_P_H
 #define QABSTRACTITEMVIEW_P_H
@@ -271,6 +272,18 @@ public:
         return isIndexValid(index) && isIndexSelectable(index);
     }
 
+#if QT_CONFIG(accessibility)
+    virtual int accessibleChildIndex(const QModelIndex &index) const
+    {
+        Q_UNUSED(index);
+        return -1;
+    }
+#endif
+
+#if QT_CONFIG(accessibility)
+    void updateItemAccessibility(const QModelIndex &index, const QList<int> &roles);
+#endif
+
     // reimplemented from QAbstractScrollAreaPrivate
     QPoint contentsOffset() const override {
         Q_Q(const QAbstractItemView);
@@ -382,6 +395,7 @@ public:
 
     QString keyboardInput;
     QElapsedTimer keyboardInputTime;
+    Qt::MatchFlags keyboardSearchFlags = Qt::MatchStartsWith | Qt::MatchWrap;
 
     bool autoScroll;
     QBasicTimer autoScrollTimer;

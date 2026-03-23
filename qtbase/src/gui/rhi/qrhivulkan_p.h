@@ -425,7 +425,8 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
             TransitionPassResources,
             Dispatch,
             ExecuteSecondary,
-            SetShadingRate
+            SetShadingRate,
+            MemoryBarrier
         };
         Cmd cmd;
 
@@ -461,6 +462,13 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
                 int count;
                 int index;
             } imageBarrier;
+            struct {
+                VkPipelineStageFlags srcStageMask;
+                VkPipelineStageFlags dstStageMask;
+                VkAccessFlags srcAccessMask;
+                VkAccessFlags dstAccessMask;
+                VkDependencyFlags dependencyFlags;
+            } memoryBarrier;
             struct {
                 VkPipelineStageFlags srcStageMask;
                 VkPipelineStageFlags dstStageMask;
@@ -560,7 +568,7 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
     };
 
     QRhiBackendCommandList<Command> commands;
-    QVarLengthArray<QRhiPassResourceTracker, 8> passResTrackers;
+    QVector<QRhiPassResourceTracker> passResTrackers;
     int currentPassResTrackerIndex;
 
     void resetCommands() {
@@ -936,6 +944,7 @@ public:
 
     struct {
         bool compute = false;
+        bool depthClamp = false;
         bool wideLines = false;
         bool debugUtils = false;
         bool vertexAttribDivisor = false;

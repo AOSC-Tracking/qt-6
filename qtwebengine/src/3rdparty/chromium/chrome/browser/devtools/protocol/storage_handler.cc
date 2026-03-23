@@ -16,7 +16,7 @@
 #include "chrome/browser/first_party_sets/first_party_sets_policy_service_factory.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/tpcd/metadata/manager_factory.h"
-#include "content/public/browser/dips_service.h"
+#include "content/public/browser/btm_service.h"
 #include "content/public/browser/web_contents.h"
 #include "net/first_party_sets/first_party_set_entry.h"
 
@@ -28,20 +28,20 @@ StorageHandler::StorageHandler(content::WebContents* web_contents,
 
 StorageHandler::~StorageHandler() = default;
 
-// TODO: crbug.com/380896828 - move CDP support for DIPS to //content.
+// TODO: crbug.com/380896828 - move CDP support for BTM to //content.
 void StorageHandler::RunBounceTrackingMitigations(
     std::unique_ptr<RunBounceTrackingMitigationsCallback> callback) {
-  content::BtmService* dips_service =
+  content::BtmService* btm_service =
       web_contents_
           ? content::BtmService::Get(web_contents_->GetBrowserContext())
           : nullptr;
 
-  if (!dips_service) {
+  if (!btm_service) {
     callback->sendFailure(protocol::Response::ServerError("No BtmService"));
     return;
   }
 
-  dips_service->DeleteEligibleSitesImmediately(
+  btm_service->DeleteEligibleSitesImmediately(
       base::BindOnce(&StorageHandler::GotDeletedSites, std::move(callback)));
 }
 

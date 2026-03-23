@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRENDERBASETYPES_H
 #define QSSGRENDERBASETYPES_H
@@ -15,12 +17,16 @@
 
 #include <QtCore/qtypes.h>
 
+#include <QtCore/qlist.h>
+
 QT_BEGIN_NAMESPACE
 
 enum class QSSGNodeId : quint64 { Invalid = 0 };
 enum class QSSGResourceId : quint64 { Invalid = 0 };
 enum class QSSGCameraId : quint64 { Invalid = 0 };
 enum class QSSGExtensionId : quint64 { Invalid = 0 };
+
+using QSSGNodeIdList = QList<QSSGNodeId>;
 
 QT_END_NAMESPACE
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKOVERLAY_P_H
 #define QQUICKOVERLAY_P_H
@@ -45,7 +46,7 @@ public:
     QQmlComponent *modeless() const;
     void setModeless(QQmlComponent *modeless);
 
-    static QQuickOverlay *overlay(QQuickWindow *window);
+    static QQuickOverlay *overlay(QQuickWindow *window, QQuickItem *parent = nullptr);
 
     static QQuickOverlayAttached *qmlAttachedProperties(QObject *object);
 

@@ -40,7 +40,7 @@ class Backend;
 
 class PhysicalDevice : public d3d::PhysicalDevice {
   public:
-    PhysicalDevice(Backend* backend, ComPtr<IDXGIAdapter4> hardwareAdapter);
+    PhysicalDevice(Backend* backend, ComPtr<IDXGIAdapter3> hardwareAdapter);
     ~PhysicalDevice() override;
 
     // PhysicalDeviceBase Implementation
@@ -55,6 +55,8 @@ class PhysicalDevice : public d3d::PhysicalDevice {
     const D3D12DeviceInfo& GetDeviceInfo() const;
     Backend* GetBackend() const;
     ComPtr<ID3D12Device> GetDevice() const;
+
+    bool SupportsBufferMapExtendedUsages() const;
 
   private:
     using Base = d3d::PhysicalDevice;

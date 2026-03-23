@@ -15,7 +15,6 @@
 #include "src/base/logging.h"
 #include "src/base/macros.h"
 #include "src/base/platform/condition-variable.h"
-#include "src/base/platform/mutex.h"
 #include "src/common/assert-scope.h"
 #include "src/common/ptr-compr.h"
 #include "src/common/thread-local-storage.h"
@@ -172,21 +171,24 @@ class V8_EXPORT_PRIVATE LocalHeap {
   V8_WARN_UNUSED_RESULT inline AllocationResult AllocateRaw(
       int size_in_bytes, AllocationType allocation,
       AllocationOrigin origin = AllocationOrigin::kRuntime,
-      AllocationAlignment alignment = kTaggedAligned);
+      AllocationAlignment alignment = kTaggedAligned,
+      AllocationHint hint = AllocationHint());
 
   // Allocate an uninitialized object.
   template <HeapAllocator::AllocationRetryMode mode>
   Tagged<HeapObject> AllocateRawWith(
       int size_in_bytes, AllocationType allocation,
       AllocationOrigin origin = AllocationOrigin::kRuntime,
-      AllocationAlignment alignment = kTaggedAligned);
+      AllocationAlignment alignment = kTaggedAligned,
+      AllocationHint hint = AllocationHint());
 
   // Allocates an uninitialized object and crashes when object
   // cannot be allocated.
   V8_WARN_UNUSED_RESULT inline Address AllocateRawOrFail(
       int size_in_bytes, AllocationType allocation,
       AllocationOrigin origin = AllocationOrigin::kRuntime,
-      AllocationAlignment alignment = kTaggedAligned);
+      AllocationAlignment alignment = kTaggedAligned,
+      AllocationHint hint = AllocationHint());
 
   void NotifyObjectSizeChange(Tagged<HeapObject> object, int old_size,
                               int new_size,
@@ -235,6 +237,10 @@ class V8_EXPORT_PRIVATE LocalHeap {
 #if V8_OS_DARWIN
   pthread_t thread_handle() { return thread_handle_; }
 #endif
+
+  void Iterate(RootVisitor* visitor);
+
+  HeapAllocator* allocator() { return &heap_allocator_; }
 
  private:
   using ParkedBit = base::BitField8<bool, 0, 1>;
@@ -395,6 +401,7 @@ class V8_EXPORT_PRIVATE LocalHeap {
   std::unique_ptr<MarkingBarrier> marking_barrier_;
 
   GCCallbacksInSafepoint gc_epilogue_callbacks_;
+  base::SmallVector<GCRootsProvider*, 4> roots_providers_;
 
   HeapAllocator heap_allocator_;
 
@@ -411,6 +418,7 @@ class V8_EXPORT_PRIVATE LocalHeap {
   friend class IsolateSafepointScope;
   friend class ParkedScope;
   friend class UnparkedScope;
+  friend class GCRootsProviderScope;
 };
 
 }  // namespace internal

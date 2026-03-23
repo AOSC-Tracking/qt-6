@@ -6,8 +6,11 @@
 #include <QLoggingCategory>
 #include <QRegularExpression>
 #include <QRegularExpressionMatch>
+#include <QString>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::Literals::StringLiterals;
 
 Q_LOGGING_CATEGORY(lcLottieQtLottieParser, "qt.lottieqt.lottie.parser", QtWarningMsg);
 Q_LOGGING_CATEGORY(lcLottieQtLottieUpdate, "qt.lottieqt.lottie.update");
@@ -67,6 +70,17 @@ void QLottieBase::setType(int type)
     m_type = type;
 }
 
+bool QLottieBase::isShapeElement() const
+{
+    return (m_type >= LOTTIE_SHAPE_ELLIPSE_IX && m_type <= LOTTIE_SHAPE_REPEATER_IX);
+}
+
+bool QLottieBase::isPathElement() const
+{
+    return (m_type == LOTTIE_SHAPE_ELLIPSE_IX || m_type == LOTTIE_SHAPE_RECT_IX
+            || m_type == LOTTIE_SHAPE_SHAPE_IX || m_type == LOTTIE_SHAPE_STAR_IX);
+}
+
 void QLottieBase::prependChild(QLottieBase *child)
 {
     m_children.push_front(child);
@@ -111,12 +125,28 @@ void QLottieBase::render(QLottieRenderer &renderer) const
         return;
 
     renderer.saveState();
-    for (QLottieBase *child : std::as_const(m_children)) {
-        if (child->m_hidden)
-            continue;
-        child->render(renderer);
-    }
+    renderChildren(renderer);
     renderer.restoreState();
+}
+
+void QLottieBase::renderChildren(QLottieRenderer &renderer) const
+{
+    QList<QLottieBase *> pathElements;
+    for (QLottieBase *child : std::as_const(m_children)) {
+        if (child->isPathElement()) {
+            if (!child->m_hidden)
+                pathElements.prepend(child);
+        } else {
+            if (!pathElements.isEmpty()) {
+                renderer.renderPathElements(pathElements);
+                pathElements.clear();
+            }
+            if (!child->m_hidden)
+                child->render(renderer);
+        }
+    }
+    if (!pathElements.isEmpty())
+        renderer.renderPathElements(pathElements);
 }
 
 bool QLottieBase::isStructureDumping() const
@@ -145,19 +175,21 @@ QLottieBase *QLottieBase::topRoot() const
     return m_topRoot;
 }
 
-void QLottieBase::parse(const QJsonObject &definition)
+int QLottieBase::parse(const QJsonObject &definition)
 {
     qCDebug(lcLottieQtLottieParser) << "QLottieBase::parse()";
 
     m_definition = definition;
 
-    m_hidden = definition.value(QLatin1String("hd")).toBool(false);
-    m_name = definition.value(QLatin1String("nm")).toString();
-    m_matchName = definition.value(QLatin1String("mn")).toString();
-    m_autoOrient = definition.value(QLatin1String("ao")).toBool();
+    m_hidden = definition.value("hd"_L1).toBool(false);
+    m_name = definition.value("nm"_L1).toString();
+    m_matchName = definition.value("mn"_L1).toString();
+    m_autoOrient = definition.value("ao"_L1).toBool();
 
     if (m_autoOrient)
         qCInfo(lcLottieQtLottieParser, "Element has auto-orientation set, but it is not supported");
+
+    return 0;
 }
 
 const QJsonObject &QLottieBase::definition() const
@@ -176,6 +208,11 @@ bool QLottieBase::hidden() const
     return m_hidden;
 }
 
+QSize QLottieBase::layerSize() const
+{
+    return m_parent ? m_parent->layerSize() : QSize();
+}
+
 void QLottieBase::setParent(QLottieBase *parent)
 {
     m_parent = parent;
@@ -184,7 +221,7 @@ void QLottieBase::setParent(QLottieBase *parent)
 
 const QJsonObject QLottieBase::resolveExpression(const QJsonObject &definition)
 {
-    QString expr = definition.value(QLatin1String("x")).toString();
+    QString expr = definition.value("x"_L1).toString();
 
     // If there is no expression, return the original object definition
     if (expr.isEmpty())
@@ -205,9 +242,9 @@ const QJsonObject QLottieBase::resolveExpression(const QJsonObject &definition)
 
     if (QLottieBase *source = m_topRoot->findChild(effect)) {
         if (source->children().size())
-            retVal = source->children().at(0)->definition().value(QLatin1String("v")).toObject();
+            retVal = source->children().at(0)->definition().value("v"_L1).toObject();
         else
-            retVal = source->definition().value(QLatin1String("v")).toObject();
+            retVal = source->definition().value("v"_L1).toObject();
         if (source->children().size() > 1)
             qCWarning(lcLottieQtLottieParser) << "Effect source points"
                                                 "to a group that has"
@@ -219,9 +256,21 @@ const QJsonObject QLottieBase::resolveExpression(const QJsonObject &definition)
 
     // Let users of the json know that it is originated from expression,
     // so they can adjust their behavior accordingly
-    retVal.insert(QLatin1String("fromExpression"), true);
+    retVal.insert("fromExpression"_L1, true);
 
     return retVal;
+}
+
+bool QLottieBase::checkRequiredKeys(const QJsonObject &definition, const QLatin1StringView type,
+                                    const QList<QLatin1StringView> &keys, const QString &name) const
+{
+    for (auto key : keys) {
+        if (!definition.contains(key)) {
+            qCWarning(lcLottieQtLottieParser) << type << name << "is missing required key \"" << key << "\"";
+            return false;
+        }
+    }
+    return true;
 }
 
 QT_END_NAMESPACE

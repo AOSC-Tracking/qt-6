@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLJSLEXER_P_H
 #define QQMLJSLEXER_P_H
@@ -34,29 +35,6 @@ class Directives;
 class QML_PARSER_EXPORT Lexer: public QQmlJSGrammar
 {
 public:
-    enum {
-        T_ABSTRACT = T_RESERVED_WORD,
-        T_BOOLEAN = T_RESERVED_WORD,
-        T_BYTE = T_RESERVED_WORD,
-        T_CHAR = T_RESERVED_WORD,
-        T_DOUBLE = T_RESERVED_WORD,
-        T_FLOAT = T_RESERVED_WORD,
-        T_GOTO = T_RESERVED_WORD,
-        T_IMPLEMENTS = T_RESERVED_WORD,
-        T_INT = T_RESERVED_WORD,
-        T_INTERFACE = T_RESERVED_WORD,
-        T_LONG = T_RESERVED_WORD,
-        T_NATIVE = T_RESERVED_WORD,
-        T_PACKAGE = T_RESERVED_WORD,
-        T_PRIVATE = T_RESERVED_WORD,
-        T_PROTECTED = T_RESERVED_WORD,
-        T_SHORT = T_RESERVED_WORD,
-        T_SYNCHRONIZED = T_RESERVED_WORD,
-        T_THROWS = T_RESERVED_WORD,
-        T_TRANSIENT = T_RESERVED_WORD,
-        T_VOLATILE = T_RESERVED_WORD
-    };
-
     enum Error {
         NoError,
         IllegalCharacter,

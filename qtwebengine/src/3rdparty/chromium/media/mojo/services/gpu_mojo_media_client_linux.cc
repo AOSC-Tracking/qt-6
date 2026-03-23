@@ -23,7 +23,7 @@ namespace {
 
 BASE_FEATURE(kAcceleratedVideoDecodeLinuxZeroCopyGL,
              "AcceleratedVideoDecodeLinuxZeroCopyGL",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 VideoDecoderType GetPreferredLinuxDecoderImplementation() {
   // VaapiVideoDecoder flag is required for VaapiVideoDecoder.
@@ -31,15 +31,8 @@ VideoDecoderType GetPreferredLinuxDecoderImplementation() {
     return VideoDecoderType::kUnknown;
   }
 
-  switch (media::GetOutOfProcessVideoDecodingMode()) {
-    case media::OOPVDMode::kEnabledWithGpuProcessAsProxy:
-      return VideoDecoderType::kOutOfProcess;
-    case media::OOPVDMode::kEnabledWithoutGpuProcessAsProxy:
-      // The browser process ensures that this path is never reached for this
-      // OOP-VD mode.
-      NOTREACHED();
-    case media::OOPVDMode::kDisabled:
-      break;
+  if (IsOutOfProcessVideoDecodingEnabled()) {
+    return VideoDecoderType::kOutOfProcess;
   }
 
 #if BUILDFLAG(USE_VAAPI)
@@ -127,14 +120,14 @@ VideoDecoderType GetActualPlatformDecoderImplementation(
       if (gpu_preferences.gr_context_type != gpu::GrContextType::kVulkan) {
         return VideoDecoderType::kUnknown;
       }
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
       if (!base::FeatureList::IsEnabled(features::kVulkanFromANGLE)) {
         return VideoDecoderType::kUnknown;
       }
       if (!base::FeatureList::IsEnabled(features::kDefaultANGLEVulkan)) {
         return VideoDecoderType::kUnknown;
       }
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
       // If Vulkan is active, check Vulkan info if VaapiVideoDecoder is allowed.
       if (!gpu_info.vulkan_info.has_value()) {
         return VideoDecoderType::kUnknown;
@@ -221,9 +214,9 @@ class GpuMojoMediaClientLinux final : public GpuMojoMediaClient {
   }
 
   void NotifyPlatformDecoderSupport(
-      mojo::PendingRemote<stable::mojom::StableVideoDecoder> oop_video_decoder,
-      base::OnceCallback<void(
-          mojo::PendingRemote<stable::mojom::StableVideoDecoder>)> cb) final {
+      mojo::PendingRemote<mojom::VideoDecoder> oop_video_decoder,
+      base::OnceCallback<void(mojo::PendingRemote<mojom::VideoDecoder>)> cb)
+      final {
     switch (
         GetActualPlatformDecoderImplementation(gpu_preferences_, gpu_info_)) {
       case VideoDecoderType::kOutOfProcess:

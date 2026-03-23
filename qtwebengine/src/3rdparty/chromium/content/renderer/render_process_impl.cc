@@ -81,15 +81,6 @@ GetThreadPoolInitParams() {
   size_t desired_num_threads =
       std::max(kMaxNumThreadsInForegroundPoolLowerBound,
                content::GetMinForegroundThreadsInRendererThreadPool());
-  if (base::FeatureList::IsEnabled(base::kThreadPoolCap2)) {
-    // Cap the threadpool to an initial fixed size.
-    // Note: The size can still grow beyond the value set here
-    // when tasks are blocked for a certain period of time.
-    const int max_allowed_workers_per_pool =
-        base::kThreadPoolCapRestrictedCount.Get();
-    desired_num_threads = std::min(
-        desired_num_threads, static_cast<size_t>(max_allowed_workers_per_pool));
-  }
   return std::make_unique<base::ThreadPoolInstance::InitParams>(
       desired_num_threads);
 }
@@ -154,22 +145,27 @@ RenderProcessImpl::RenderProcessImpl()
 
     SetV8FlagIfOverridden(features::kV8VmFuture, "--future", "--no-future");
 
+#if BUILDFLAG(IS_ANDROID)
+    SetV8FlagIfOverridden(features::kV8AndroidDesktopHighEndConfig,
+                          "--high-end-android", "--no-high-end-android");
+#endif
+
     SetV8FlagIfOverridden(features::kWebAssemblyBaseline, "--liftoff",
                           "--no-liftoff");
 
-    // V8's WASM stack switching support is sufficient to enable JavaScript
+    // V8's Wasm stack switching support is sufficient to enable JavaScript
     // Promise Integration.
     SetV8FlagIfOverridden(features::kEnableExperimentalWebAssemblyJSPI,
                           "--experimental-wasm-jspi",
                           "--no-experimental-wasm-jspi");
 
+    SetV8FlagIfOverridden(
+        features::kEnableExperimentalWebAssemblySharedEverything,
+        "--experimental-wasm-shared", "--no-experimental-wasm-shared");
+
     SetV8FlagIfOverridden(features::kWebAssemblyLazyCompilation,
                           "--wasm-lazy-compilation",
                           "--no-wasm-lazy-compilation");
-
-    SetV8FlagIfOverridden(features::kWebAssemblyMemory64,
-                          "--experimental-wasm-memory64",
-                          "--no-experimental-wasm-memory64");
 
     SetV8FlagIfOverridden(features::kWebAssemblyTiering, "--wasm-tier-up",
                           "--no-wasm-tier-up");
@@ -181,6 +177,10 @@ RenderProcessImpl::RenderProcessImpl()
     SetV8FlagIfOverridden(blink::features::kWebAssemblyJSStringBuiltins,
                           "--experimental-wasm-imported-strings",
                           "--no-experimental-wasm-imported-strings");
+
+    SetV8FlagIfOverridden(blink::features::kJavaScriptSourcePhaseImports,
+                          "--js-source-phase-imports",
+                          "--no-js-source-phase-imports");
   }
 
   bool enable_shared_array_buffer_unconditionally =

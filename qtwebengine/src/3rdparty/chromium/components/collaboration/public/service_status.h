@@ -11,8 +11,10 @@ namespace collaboration {
 //   org.chromium.components.collaboration)
 enum class SigninStatus {
   kNotSignedIn = 0,
-  kSignedInPaused = 1,
-  kSignedIn = 2
+  // Signin is disabled either in user setting or by enterprise policy.
+  kSigninDisabled = 1,
+  kSignedInPaused = 2,
+  kSignedIn = 3
 };
 
 // GENERATED_JAVA_ENUM_PACKAGE: (
@@ -20,7 +22,8 @@ enum class SigninStatus {
 enum class SyncStatus {
   kNotSyncing = 0,
   kSyncWithoutTabGroup = 1,
-  kSyncEnabled = 2
+  kSyncEnabled = 2,
+  kSyncDisabledByEnterprise = 3,
 };
 
 // GENERATED_JAVA_ENUM_PACKAGE: (
@@ -28,16 +31,22 @@ enum class SyncStatus {
 enum class CollaborationStatus {
   // Users are not allowed to either join or create.
   kDisabled = 0,
+  // Disabled while loading some mandatory information.
+  kDisabledPending = 1,
   // The Chrome policy disables this feature, eg: enterprise policies.
-  kDisabledForPolicy = 1,
+  kDisabledForPolicy = 2,
   // Users are allowed to join only but have not joined a shared tab group
   // yet.
-  kAllowedToJoin = 2,
+  kAllowedToJoin = 3,
   // Users are allowed to join only and have already joined at least 1 shared
   // tab group.
-  kEnabledJoinOnly = 3,
+  kEnabledJoinOnly = 4,
   // Users are allowed to join and create shared tab groups.
-  kEnabledCreateAndJoin = 4
+  kEnabledCreateAndJoin = 5,
+  // Due to version out of date disable shared date types.
+  kVersionOutOfDate = 6,
+  // Due to version out of date disable shared date types and show update ui.
+  kVersionOutOfDateShowUpdateChromeUi = 7
 };
 
 struct ServiceStatus {

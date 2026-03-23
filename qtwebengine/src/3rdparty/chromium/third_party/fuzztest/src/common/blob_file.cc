@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "absl/base/nullability.h"
+#include "absl/base/optimization.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
@@ -47,7 +48,7 @@
 #include "riegeli/records/record_writer.h"
 #endif  // CENTIPEDE_DISABLE_RIEGELI
 
-namespace centipede {
+namespace fuzztest::internal {
 namespace {
 
 constexpr size_t kMagicLen = 11;
@@ -179,11 +180,11 @@ class DefaultBlobFileReader : public BlobFileReader {
     ASSIGN_OR_RETURN_IF_NOT_OK(std::unique_ptr<riegeli::Reader> new_reader,
                                CreateRiegeliFileReader(path));
     riegeli_reader_.Reset(std::move(new_reader));
-    if (riegeli_reader_.CheckFileFormat()) [[likely]] {
+    if (ABSL_PREDICT_TRUE(riegeli_reader_.CheckFileFormat())) {
       // File could be opened and is in the Riegeli format.
       return absl::OkStatus();
     }
-    if (!riegeli_reader_.src()->ok()) [[unlikely]] {
+    if (ABSL_PREDICT_FALSE(!riegeli_reader_.src()->ok())) {
       // File could not be opened.
       return riegeli_reader_.src()->status();
     }
@@ -210,8 +211,7 @@ class DefaultBlobFileReader : public BlobFileReader {
     else
       return absl::FailedPreconditionError("no reader open");
 #else
-    if (legacy_reader_) [[unlikely]]
-      return legacy_reader_->Read(blob);
+    if (ABSL_PREDICT_FALSE(legacy_reader_)) return legacy_reader_->Read(blob);
 
     absl::string_view record;
     if (!riegeli_reader_.ReadRecord(record)) {
@@ -230,8 +230,7 @@ class DefaultBlobFileReader : public BlobFileReader {
     legacy_reader_ = nullptr;
     return absl::OkStatus();
 #else
-    // NOLINTNEXTLINE(readability/braces). Similar to b/278586863.
-    if (legacy_reader_) [[unlikely]] {
+    if (ABSL_PREDICT_FALSE(legacy_reader_)) {
       legacy_reader_ = nullptr;
       return absl::OkStatus();
     }
@@ -462,10 +461,9 @@ ByteArray PackBytesForAppendFile(ByteSpan blob) {
 }
 
 // Reverse to a sequence of PackBytesForAppendFile() appended to each other.
-void UnpackBytesFromAppendFile(
-    const ByteArray &packed_data,
-    absl::Nullable<std::vector<ByteArray> *> unpacked,
-    absl::Nullable<std::vector<std::string> *> hashes) {
+void UnpackBytesFromAppendFile(const ByteArray &packed_data,
+                               std::vector<ByteArray> *absl_nullable unpacked,
+                               std::vector<std::string> *absl_nullable hashes) {
   auto pos = packed_data.cbegin();
   while (true) {
     pos = std::search(pos, packed_data.end(), &kPackBegMagic[0],
@@ -506,4 +504,4 @@ std::unique_ptr<BlobFileWriter> DefaultBlobFileWriterFactory(bool riegeli) {
     return std::make_unique<SimpleBlobFileWriter>();
 }
 
-}  // namespace centipede
+}  // namespace fuzztest::internal

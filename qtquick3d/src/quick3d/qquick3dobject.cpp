@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dobject.h"
 #include "qquick3dobject_p.h"
@@ -8,6 +10,7 @@
 #include "qquick3dmodel_p.h"
 
 #include <QtQuick3DRuntimeRender/private/qssgrendergraphobject_p.h>
+#include <ssg/qssgrenderextensions.h>
 
 #include <QtQml/private/qqmlglobal_p.h>
 #include <QtQuick/private/qquickstategroup_p.h>
@@ -261,7 +264,7 @@ void QQuick3DObject::preSync()
 
 }
 
-QQuick3DObjectPrivate::QQuick3DObjectPrivate(QQuick3DObjectPrivate::Type t)
+QQuick3DObjectPrivate::QQuick3DObjectPrivate(Type t, FlagsT f)
     : _stateGroup(nullptr)
     , dirtyAttributes(0)
     , nextDirtyItem(nullptr)
@@ -271,6 +274,17 @@ QQuick3DObjectPrivate::QQuick3DObjectPrivate(QQuick3DObjectPrivate::Type t)
     , parentItem(nullptr)
     , subFocusItem(nullptr)
     , type(t)
+    , flags(f)
+{
+}
+
+QQuick3DObjectPrivate::QQuick3DObjectPrivate(Type t, Flags f)
+    : QQuick3DObjectPrivate(t, FlagsT(f))
+{
+}
+
+QQuick3DObjectPrivate::QQuick3DObjectPrivate(QQuick3DObjectPrivate::Type t)
+    : QQuick3DObjectPrivate(t, Flags::None)
 {
 }
 
@@ -1107,6 +1121,7 @@ quint64 QQuick3DObjectPrivate::_q_createJSWrapper(QQmlV4ExecutionEnginePtr engin
 }
 
 QQuick3DObjectPrivate::ExtraData::ExtraData() : hideRefCount(0) {}
+
 
 QT_END_NAMESPACE
 

@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-f16-vcvt/scalar-fabsf.c.in
 //   Generator: tools/xngen
@@ -9,10 +10,12 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
-#include "xnnpack/vcvt.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/vcvt.h"
 
 
 void xnn_f32_f16_vcvt_ukernel__scalar_fabsf_u1(

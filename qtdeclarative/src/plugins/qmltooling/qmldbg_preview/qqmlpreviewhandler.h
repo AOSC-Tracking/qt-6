@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLPREVIEWHANDLER_H
 #define QQMLPREVIEWHANDLER_H
@@ -47,6 +48,7 @@ public:
     void dropCU(const QUrl &url);
     void rerun();
     void zoom(qreal newFactor);
+    void setAnimationSpeed(qreal newFactor);
 
     void clear();
 
@@ -84,7 +86,7 @@ private:
     QScopedPointer<QQuickItem> m_dummyItem;
     QList<QQmlEngine *> m_engines;
     QPointer<QQuickItem> m_currentRootItem;
-    QVector<QPointer<QObject>> m_createdObjects;
+    QList<QPointer<QObject>> m_createdObjects;
     QScopedPointer<QQmlComponent> m_component;
     QPointer<QQuickWindow> m_currentWindow;
     qreal m_zoomFactor = 1.0;

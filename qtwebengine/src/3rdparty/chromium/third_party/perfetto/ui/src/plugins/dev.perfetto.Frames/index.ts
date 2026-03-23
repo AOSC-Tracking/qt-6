@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Trace} from '../../public/trace';
+import {createAggregationTab} from '../../components/aggregation_adapter';
 import {PerfettoPlugin} from '../../public/plugin';
+import {Trace} from '../../public/trace';
 import {TrackNode} from '../../public/workspace';
 import {NUM, STR} from '../../trace_processor/query_result';
+import ProcessThreadGroupsPlugin from '../dev.perfetto.ProcessThreadGroups';
 import {createActualFramesTrack} from './actual_frames_track';
 import {createExpectedFramesTrack} from './expected_frames_track';
 import {
   ACTUAL_FRAMES_SLICE_TRACK_KIND,
   FrameSelectionAggregator,
 } from './frame_selection_aggregator';
-import ProcessThreadGroupsPlugin from '../dev.perfetto.ProcessThreadGroups';
 
 // Build a standardized URI for a frames track
 function makeUri(upid: number, kind: 'expected_frames' | 'actual_frames') {
@@ -36,8 +37,8 @@ export default class implements PerfettoPlugin {
   async onTraceLoad(ctx: Trace): Promise<void> {
     this.addExpectedFrames(ctx);
     this.addActualFrames(ctx);
-    ctx.selection.registerAreaSelectionAggregator(
-      new FrameSelectionAggregator(),
+    ctx.selection.registerAreaSelectionTab(
+      createAggregationTab(ctx, new FrameSelectionAggregator(), 10),
     );
   }
 
@@ -73,12 +74,10 @@ export default class implements PerfettoPlugin {
       const trackIds = rawTrackIds.split(',').map((v) => Number(v));
       const maxDepth = it.maxDepth;
 
-      const title = 'Expected Timeline';
       const uri = makeUri(upid, 'expected_frames');
       ctx.tracks.registerTrack({
         uri,
-        title,
-        track: createExpectedFramesTrack(ctx, uri, maxDepth, trackIds),
+        renderer: createExpectedFramesTrack(ctx, uri, maxDepth, trackIds),
         tags: {
           trackIds,
           upid,
@@ -87,7 +86,11 @@ export default class implements PerfettoPlugin {
       const group = ctx.plugins
         .getPlugin(ProcessThreadGroupsPlugin)
         .getGroupForProcess(upid);
-      const track = new TrackNode({uri, title, sortOrder: -50});
+      const track = new TrackNode({
+        uri,
+        name: 'Expected Timeline',
+        sortOrder: -50,
+      });
       group?.addChildInOrder(track);
     }
   }
@@ -123,12 +126,10 @@ export default class implements PerfettoPlugin {
       const trackIds = rawTrackIds.split(',').map((v) => Number(v));
       const maxDepth = it.maxDepth;
 
-      const title = 'Actual Timeline';
       const uri = makeUri(upid, 'actual_frames');
       ctx.tracks.registerTrack({
         uri,
-        title,
-        track: createActualFramesTrack(ctx, uri, maxDepth, trackIds),
+        renderer: createActualFramesTrack(ctx, uri, maxDepth, trackIds),
         tags: {
           upid,
           trackIds,
@@ -138,7 +139,11 @@ export default class implements PerfettoPlugin {
       const group = ctx.plugins
         .getPlugin(ProcessThreadGroupsPlugin)
         .getGroupForProcess(upid);
-      const track = new TrackNode({uri, title, sortOrder: -50});
+      const track = new TrackNode({
+        uri,
+        name: 'Actual Timeline',
+        sortOrder: -50,
+      });
       group?.addChildInOrder(track);
     }
   }

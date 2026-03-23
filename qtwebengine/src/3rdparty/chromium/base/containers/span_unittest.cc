@@ -25,6 +25,7 @@
 #include "base/memory/raw_span.h"
 #include "base/numerics/byte_conversions.h"
 #include "base/strings/cstring_view.h"
+#include "base/strings/to_string.h"
 #include "base/strings/utf_ostream_operators.h"
 #include "base/test/gtest_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -1267,14 +1268,13 @@ TEST(SpanTest, TemplatedLastOnDynamicSpan) {
   }
 }
 
-TEST(SpanTest, TemplatedSubspanFromDynamicSpan) {
+TEST(SpanTest, TemplatedSubspanOnDynamicSpan) {
   int array[] = {1, 2, 3};
-  span<int, 3> span(array);
+  span<int> span(array);
 
   {
     auto subspan = span.subspan<0>();
     EXPECT_EQ(span.data(), subspan.data());
-    static_assert(3 == decltype(subspan)::extent);
     EXPECT_THAT(subspan, ElementsAre(1, 2, 3));
   }
 
@@ -1283,7 +1283,6 @@ TEST(SpanTest, TemplatedSubspanFromDynamicSpan) {
     // SAFETY: `array` has three elmenents, so `span` has three elements, so
     // `span.data() + 1` points within it.
     EXPECT_EQ(UNSAFE_BUFFERS(span.data() + 1), subspan.data());
-    static_assert(2 == decltype(subspan)::extent);
     EXPECT_THAT(subspan, ElementsAre(2, 3));
   }
 
@@ -1292,7 +1291,6 @@ TEST(SpanTest, TemplatedSubspanFromDynamicSpan) {
     // SAFETY: `array` has three elmenents, so `span` has three elements, so
     // `span.data() + 2` points within it.
     EXPECT_EQ(UNSAFE_BUFFERS(span.data() + 2), subspan.data());
-    static_assert(1 == decltype(subspan)::extent);
     EXPECT_THAT(subspan, ElementsAre(3));
   }
 
@@ -1302,7 +1300,6 @@ TEST(SpanTest, TemplatedSubspanFromDynamicSpan) {
     // `span.data() + 3` points to one byte beyond the object as permitted by
     // C++ specification.
     EXPECT_EQ(UNSAFE_BUFFERS(span.data() + 3), subspan.data());
-    static_assert(0 == decltype(subspan)::extent);
     EXPECT_THAT(subspan, IsEmpty());
   }
 
@@ -1942,37 +1939,6 @@ TEST(SpanTest, ByteSpansFromNonUnique) {
   }
 }
 
-TEST(SpanTest, AsStringView) {
-  {
-    constexpr uint8_t kArray[] = {'h', 'e', 'l', 'l', 'o'};
-    // Fixed size span.
-    auto s = as_string_view(kArray);
-    static_assert(std::is_same_v<decltype(s), std::string_view>);
-    EXPECT_EQ(s.data(), reinterpret_cast<const char*>(&kArray[0u]));
-    EXPECT_EQ(s.size(), std::size(kArray));
-
-    // Dynamic size span.
-    auto s2 = as_string_view(span<const uint8_t>(kArray));
-    static_assert(std::is_same_v<decltype(s2), std::string_view>);
-    EXPECT_EQ(s2.data(), reinterpret_cast<const char*>(&kArray[0u]));
-    EXPECT_EQ(s2.size(), std::size(kArray));
-  }
-  {
-    constexpr char kArray[] = {'h', 'e', 'l', 'l', 'o'};
-    // Fixed size span.
-    auto s = as_string_view(kArray);
-    static_assert(std::is_same_v<decltype(s), std::string_view>);
-    EXPECT_EQ(s.data(), &kArray[0u]);
-    EXPECT_EQ(s.size(), std::size(kArray));
-
-    // Dynamic size span.
-    auto s2 = as_string_view(span<const char>(kArray));
-    static_assert(std::is_same_v<decltype(s2), std::string_view>);
-    EXPECT_EQ(s2.data(), &kArray[0u]);
-    EXPECT_EQ(s2.size(), std::size(kArray));
-  }
-}
-
 TEST(SpanTest, EnsureConstexprGoodness) {
   static constexpr std::array<int, 5> kArray = {5, 4, 3, 2, 1};
   constexpr span<const int> constexpr_span(kArray);
@@ -2062,51 +2028,6 @@ TEST(SpanTest, OutOfBoundsDeath) {
   // Copying more values than exist in the source.
   ASSERT_DEATH_IF_SUPPORTED(
       std::copy_n(span_len2.begin(), 3, span_len3.begin()), "");
-}
-
-TEST(SpanTest, IteratorIsRangeMoveSafe) {
-  static constexpr int kArray[] = {1, 6, 1, 8, 0};
-  const size_t kNumElements = 5;
-  constexpr span<const int> span(kArray);
-
-  static constexpr int kOverlappingStartIndexes[] = {-4, 0, 3, 4};
-  static constexpr int kNonOverlappingStartIndexes[] = {-7, -5, 5, 7};
-
-  // Overlapping ranges.
-  for (const int dest_start_index : kOverlappingStartIndexes) {
-    EXPECT_FALSE(CheckedContiguousIterator<const int>::IsRangeMoveSafe(
-        span.begin(), span.end(),
-        // SAFETY: TODO(tsepez): iterator constructor safety is dubious
-        // given that we are adding indices like -4 to `data()`.
-        UNSAFE_BUFFERS(CheckedContiguousIterator<const int>(
-            span.data() + dest_start_index,
-            span.data() + dest_start_index + kNumElements))));
-  }
-
-  // Non-overlapping ranges.
-  for (const int dest_start_index : kNonOverlappingStartIndexes) {
-    EXPECT_TRUE(CheckedContiguousIterator<const int>::IsRangeMoveSafe(
-        span.begin(), span.end(),
-        // SAFETY: TODO(tsepez): iterator constructor safety is dubious
-        // given that we are adding indices like -7 to `data()`.
-        UNSAFE_BUFFERS(CheckedContiguousIterator<const int>(
-            span.data() + dest_start_index,
-            span.data() + dest_start_index + kNumElements))));
-  }
-
-  // IsRangeMoveSafe is true if the length to be moved is 0.
-  EXPECT_TRUE(CheckedContiguousIterator<const int>::IsRangeMoveSafe(
-      span.begin(), span.begin(),
-      // SAFETY: Empty range at the start of a span is always valid.
-      UNSAFE_BUFFERS(
-          CheckedContiguousIterator<const int>(span.data(), span.data()))));
-
-  // IsRangeMoveSafe is false if end < begin.
-  EXPECT_FALSE(CheckedContiguousIterator<const int>::IsRangeMoveSafe(
-      span.end(), span.begin(),
-      // SAFETY: Empty range at the start of a span is always valid.
-      UNSAFE_BUFFERS(
-          CheckedContiguousIterator<const int>(span.data(), span.data()))));
 }
 
 TEST(SpanTest, Sort) {
@@ -3333,44 +3254,6 @@ TEST(SpanTest, Example_UnsafeBuffersPatterns) {
     // Replace an unbounded pointer a span, though.
     two_byte_spans(span(array), byte_span_from_ref(val));
   }
-}
-
-TEST(SpanTest, Printing) {
-  struct S {
-    std::string ToString() const { return "S()"; }
-  };
-
-  // Gtest prints values in the spans. Chars are special.
-  EXPECT_EQ(testing::PrintToString(span<const int>({1, 2, 3})), "[1, 2, 3]");
-  EXPECT_EQ(testing::PrintToString(span<const S>({S(), S()})), "[S(), S()]");
-  EXPECT_EQ(testing::PrintToString(span<const char>({'a', 'b', 'c'})),
-            "[\"abc\"]");
-  EXPECT_EQ(testing::PrintToString(span<const char>({'a', 'b', 'c', '\0'})),
-            std::string_view("[\"abc\0\"]", 8u));
-  EXPECT_EQ(
-      testing::PrintToString(span<const char>({'a', 'b', '\0', 'c', '\0'})),
-      std::string_view("[\"ab\0c\0\"]", 9u));
-  EXPECT_EQ(testing::PrintToString(span<int>()), "[]");
-  EXPECT_EQ(testing::PrintToString(span<char>()), "[\"\"]");
-
-  EXPECT_EQ(testing::PrintToString(span<const char16_t>({u'a', u'b', u'c'})),
-            "[u\"abc\"]");
-  EXPECT_EQ(testing::PrintToString(span<const wchar_t>({L'a', L'b', L'c'})),
-            "[L\"abc\"]");
-
-  // Base prints values in spans. Chars are special.
-  EXPECT_EQ(ToString(span<const int>({1, 2, 3})), "[1, 2, 3]");
-  EXPECT_EQ(ToString(span<const S>({S(), S()})), "[S(), S()]");
-  EXPECT_EQ(ToString(span<const char>({'a', 'b', 'c'})), "[\"abc\"]");
-  EXPECT_EQ(ToString(span<const char>({'a', 'b', 'c', '\0'})),
-            std::string_view("[\"abc\0\"]", 8u));
-  EXPECT_EQ(ToString(span<const char>({'a', 'b', '\0', 'c', '\0'})),
-            std::string_view("[\"ab\0c\0\"]", 9u));
-  EXPECT_EQ(ToString(span<int>()), "[]");
-  EXPECT_EQ(ToString(span<char>()), "[\"\"]");
-
-  EXPECT_EQ(ToString(span<const char16_t>({u'a', u'b', u'c'})), "[u\"abc\"]");
-  EXPECT_EQ(ToString(span<const wchar_t>({L'a', L'b', L'c'})), "[L\"abc\"]");
 }
 
 }  // namespace base

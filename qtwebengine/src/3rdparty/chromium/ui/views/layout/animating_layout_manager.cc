@@ -12,6 +12,7 @@
 
 #include "base/auto_reset.h"
 #include "base/containers/contains.h"
+#include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/observer_list.h"
@@ -31,6 +32,14 @@
 namespace views {
 
 namespace {
+
+// When enabled, a call to gfx::Animation::ShouldRenderRichAnimation() is
+// avoided when not needed. Behind a feature to assess impact
+// (go/chrome-performance-work-should-be-finched).
+// TODO(crbug.com/40897031): Clean up when experiment is complete.
+BASE_FEATURE(kAvoidUnnecessaryShouldRenderRichAnimation,
+             "AvoidUnnecessaryShouldRenderRichAnimation",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Returns the ChildLayout data for the child view in the proposed layout, or
 // nullptr if not found.
@@ -206,15 +215,13 @@ void AnimatingLayoutManager::AnimationDelegate::UpdateAnimationParameters() {
       std::min(target_layout_manager_->animation_duration(),
                target_layout_manager_->opacity_animation_duration());
   if (!opacity_animation_duration.is_zero()) {
-    fade_in_opacity_animation_ = std::make_unique<gfx::MultiAnimation>(
-        std::vector<gfx::MultiAnimation::Part>{
-            gfx::MultiAnimation::Part(
-                target_layout_manager_->animation_duration() -
-                    opacity_animation_duration,
-                gfx::Tween::Type::LINEAR, 0.0, 0.0),
-            gfx::MultiAnimation::Part(
-                opacity_animation_duration,
-                target_layout_manager_->opacity_tween_type(), 0.0, 1.0)});
+    fade_in_opacity_animation_ =
+        std::make_unique<gfx::MultiAnimation>(gfx::MultiAnimation::Parts{
+            {target_layout_manager_->animation_duration() -
+                 opacity_animation_duration,
+             gfx::Tween::Type::LINEAR, 0.0, 0.0},
+            {opacity_animation_duration,
+             target_layout_manager_->opacity_tween_type(), 0.0, 1.0}});
     fade_in_opacity_animation_->SetContainer(container_);
     fade_in_opacity_animation_->set_continuous(false);
     const base::TimeDelta fade_out_opacity_duration =
@@ -223,15 +230,13 @@ void AnimatingLayoutManager::AnimationDelegate::UpdateAnimationParameters() {
             ? opacity_animation_duration
             : target_layout_manager_->animation_duration() -
                   opacity_animation_duration;
-    fade_out_opacity_animation_ = std::make_unique<gfx::MultiAnimation>(
-        std::vector<gfx::MultiAnimation::Part>{
-            gfx::MultiAnimation::Part(
-                fade_out_opacity_duration,
-                target_layout_manager_->opacity_tween_type(), 1.0, 0.0),
-            gfx::MultiAnimation::Part(
-                target_layout_manager_->animation_duration() -
-                    fade_out_opacity_duration,
-                gfx::Tween::Type::LINEAR, 0.0, 0.0)});
+    fade_out_opacity_animation_ =
+        std::make_unique<gfx::MultiAnimation>(gfx::MultiAnimation::Parts{
+            {fade_out_opacity_duration,
+             target_layout_manager_->opacity_tween_type(), 1.0, 0.0},
+            {target_layout_manager_->animation_duration() -
+                 fade_out_opacity_duration,
+             gfx::Tween::Type::LINEAR, 0.0, 0.0}});
     fade_out_opacity_animation_->SetContainer(container_);
     fade_out_opacity_animation_->set_continuous(false);
   }
@@ -466,6 +471,16 @@ gfx::Size AnimatingLayoutManager::GetPreferredSize(const View* host) const {
     return gfx::Size();
   }
 
+  // gfx::Animation::ShouldRenderRichAnimation() is a source of jank
+  // (go/jank-from-should-render-rich-animation-jun2025). Avoid calling it when
+  // `bounds_animation_mode_` is `kUseHostBounds`, since it won't affect the
+  // outcome.
+  if (base::FeatureList::IsEnabled(
+          kAvoidUnnecessaryShouldRenderRichAnimation) &&
+      bounds_animation_mode_ == BoundsAnimationMode::kUseHostBounds) {
+    return target_layout_manager()->GetPreferredSize(host);
+  }
+
   // If animation is disabled, preferred size does not change with current
   // animation state.
   if (!gfx::Animation::ShouldRenderRichAnimation()) {
@@ -473,8 +488,11 @@ gfx::Size AnimatingLayoutManager::GetPreferredSize(const View* host) const {
   }
 
   switch (bounds_animation_mode_) {
-    case BoundsAnimationMode::kUseHostBounds:
+    case BoundsAnimationMode::kUseHostBounds: {
+      CHECK(!base::FeatureList::IsEnabled(
+          kAvoidUnnecessaryShouldRenderRichAnimation));
       return target_layout_manager()->GetPreferredSize(host);
+    }
     case BoundsAnimationMode::kAnimateMainAxis: {
       // Animating only main axis, so cross axis is preferred size.
       gfx::Size result = current_layout_.host_size;
@@ -484,8 +502,9 @@ gfx::Size AnimatingLayoutManager::GetPreferredSize(const View* host) const {
                        target_layout_manager()->GetPreferredSize(host)));
       return result;
     }
-    case BoundsAnimationMode::kAnimateBothAxes:
+    case BoundsAnimationMode::kAnimateBothAxes: {
       return current_layout_.host_size;
+    }
   }
 }
 

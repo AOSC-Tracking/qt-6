@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "graphobjects/qssgrendergraphobject_p.h"
 #include "qssgrendershadercache_p.h"
@@ -78,6 +80,9 @@ static constexpr DefineEntry DefineTable[] {
     { "QSSG_ENABLE_LIGHTMAP", QSSGShaderFeatures::Feature::Lightmap },
     { "QSSG_DISABLE_MULTIVIEW", QSSGShaderFeatures::Feature::DisableMultiView },
     { "QSSG_FORCE_IBL_EXPOSURE", QSSGShaderFeatures::Feature::ForceIblExposure },
+    { "QSSG_ENABLE_NORMAL_PASS", QSSGShaderFeatures::Feature::NormalPass },
+    { "QSSG_ENABLE_USER_RENDER_PASS", QSSGShaderFeatures::Feature::UserRenderPass},
+    { "QSSG_ENABLE_MOTION_VECTOR", QSSGShaderFeatures::Feature::MotionVector }
 };
 
 static_assert(std::size(DefineTable) == QSSGShaderFeatures::Count, "Missing feature define?");
@@ -121,16 +126,19 @@ static void initBakerForNonPersistentUse(QShaderBaker *baker, QRhi *rhi)
 #endif
         if (format.profile() == QSurfaceFormat::CoreProfile && format.version() >= qMakePair(3, 3)) {
             outputs.append({ QShader::GlslShader, QShaderVersion(330) }); // OpenGL 3.3+
+            outputs.append({ QShader::GlslShader, QShaderVersion(420) }); // OpenGL 4.2+
         } else {
             bool isGLESModule = false;
 #if QT_CONFIG(opengl)
             isGLESModule = QOpenGLContext::openGLModuleType() == QOpenGLContext::LibGLES;
 #endif
             if (format.renderableType() == QSurfaceFormat::OpenGLES || isGLESModule) {
-                if (format.majorVersion() >= 3)
+                if (format.majorVersion() >= 3) {
                     outputs.append({ QShader::GlslShader, QShaderVersion(300, QShaderVersion::GlslEs) }); // GLES 3.0+
-                else
+                    outputs.append({ QShader::GlslShader, QShaderVersion(310, QShaderVersion::GlslEs) }); // GLES 3.1+
+                } else {
                     outputs.append({ QShader::GlslShader, QShaderVersion(100, QShaderVersion::GlslEs) }); // GLES 2.0
+                }
             } else {
                 // Need to default to at least GLSL 130 (OpenGL 3.0), not 120.
                 // The difference is actually relevant when it comes to certain
@@ -163,7 +171,7 @@ static void initBakerForNonPersistentUse(QShaderBaker *baker, QRhi *rhi)
     baker->setGeneratedShaderVariants({ QShader::StandardShader });
 }
 
-static void initBakerForPersistentUse(QShaderBaker *baker, QRhi *)
+void QSSGShaderCache::initBakerForPersistentUse(QShaderBaker *baker, QRhi *)
 {
     QVector<QShaderBaker::GeneratedShader> outputs;
     outputs.reserve(8);
@@ -177,12 +185,15 @@ static void initBakerForPersistentUse(QShaderBaker *baker, QRhi *)
 #else
     outputs.append({ QShader::MslShader, QShaderVersion(12) }); // Metal 1.2
 #endif // Q_OS_VISIONOS
+
+    outputs.append({ QShader::GlslShader, QShaderVersion(420) }); // OpenGL 4.2+
     outputs.append({ QShader::GlslShader, QShaderVersion(330) }); // OpenGL 3.3+
     outputs.append({ QShader::GlslShader, QShaderVersion(140) }); // OpenGL 3.1+
     outputs.append({ QShader::GlslShader, QShaderVersion(130) }); // OpenGL 3.0+
     outputs.append({ QShader::GlslShader, QShaderVersion(100, QShaderVersion::GlslEs) }); // GLES 2.0
 #endif
     outputs.append({ QShader::GlslShader, QShaderVersion(300, QShaderVersion::GlslEs) }); // GLES 3.0+
+    outputs.append({ QShader::GlslShader, QShaderVersion(310, QShaderVersion::GlslEs) }); // GLES 3.1+
 
     // If one of the above cannot be generated due to failing at the
     // SPIRV-Cross translation stage, it will be skipped, but bake() will not
@@ -207,7 +218,7 @@ static void initBakerForNonPersistentUse(QShaderBaker *, QRhi *)
 {
 }
 
-static void initBakerForPersistentUse(QShaderBaker *, QRhi *)
+static void QSSGShaderCache::initBakerForPersistentUse(QShaderBaker *, QRhi *)
 {
 }
 #endif // QT_QUICK3D_HAS_RUNTIME_SHADERS
@@ -293,7 +304,7 @@ QSSGShaderCache::QSSGShaderCache(QSSGRhiContext &ctx,
         // the cache directory was not available (no file system, no
         // permissions, etc.).
         m_initBaker = m_persistentShaderStorageFileName.isEmpty() ? initBakerForNonPersistentUse
-                                                                  : initBakerForPersistentUse;
+                                                                  : QSSGShaderCache::initBakerForPersistentUse;
     }
 }
 
@@ -330,6 +341,7 @@ void QSSGShaderCache::addShaderPreprocessor(QByteArray &str,
                                             const QByteArray &inKey,
                                             ShaderType shaderType,
                                             const QSSGShaderFeatures &inFeatures,
+                                            const QSSGUserShaderAugmentation &shaderAugmentation,
                                             int viewCount)
 {
     m_insertStr.clear();
@@ -366,8 +378,20 @@ void QSSGShaderCache::addShaderPreprocessor(QByteArray &str,
     insertPos += int(m_insertStr.size());
 
     m_insertStr.clear();
-    if (fragOutputEnabled)
-        m_insertStr += "layout(location = 0) out vec4 fragOutput;\n";
+    if (fragOutputEnabled) {
+        if (shaderAugmentation.outputs.size() != 0) {
+            const auto &outputs = shaderAugmentation.outputs;
+            for (int i = 0; i < outputs.size(); ++i) {
+                m_insertStr += "layout(location = ";
+                m_insertStr += QByteArray::number(i);
+                m_insertStr += ") out vec4 ";
+                m_insertStr += outputs[i];
+                m_insertStr += ";\n";
+            }
+        } else {
+            m_insertStr += "layout(location = 0) out vec4 fragOutput;\n";
+        }
+    }
 
     str.insert(insertPos, m_insertStr);
 }
@@ -382,8 +406,14 @@ QByteArray QSSGShaderCache::shaderCollectionFile()
     return QByteArrayLiteral("qtappshaders.qsbc");
 }
 
+QByteArray QSSGShaderCache::particleShaderCollectionFile()
+{
+    return QByteArrayLiteral("qtparticleshaders.qsbc");
+}
+
 QSSGRhiShaderPipelinePtr QSSGShaderCache::compileForRhi(const QByteArray &inKey, const QByteArray &inVert, const QByteArray &inFrag,
                                                         const QSSGShaderFeatures &inFeatures, QSSGRhiShaderPipeline::StageFlags stageFlags,
+                                                        const QSSGUserShaderAugmentation &shaderAugmentation,
                                                         int viewCount,
                                                         bool perTargetCompilation)
 {
@@ -400,10 +430,10 @@ QSSGRhiShaderPipelinePtr QSSGShaderCache::compileForRhi(const QByteArray &inKey,
     QByteArray fragmentCode = inFrag;
 
     if (!vertexCode.isEmpty())
-        addShaderPreprocessor(vertexCode, inKey, ShaderType::Vertex, inFeatures, viewCount);
+        addShaderPreprocessor(vertexCode, inKey, ShaderType::Vertex, inFeatures, shaderAugmentation, viewCount);
 
     if (!fragmentCode.isEmpty())
-        addShaderPreprocessor(fragmentCode, inKey, ShaderType::Fragment, inFeatures, viewCount);
+        addShaderPreprocessor(fragmentCode, inKey, ShaderType::Fragment, inFeatures, shaderAugmentation, viewCount);
 
     // lo and behold the final shader strings are ready
 
@@ -560,13 +590,27 @@ QSSGRhiShaderPipelinePtr QSSGShaderCache::newPipelineFromPregenerated(const QByt
     // Note that we are required to return a non-null (but empty) shader set even if loading fails.
     QSSGRhiShaderPipelinePtr shaders(new QSSGRhiShaderPipeline(m_rhiContext));
 
-    const QString collectionFile = QString::fromLatin1(resourceFolder() + shaderCollectionFile());
+    const QStringList collectionFiles
+            = {QString::fromLatin1(resourceFolder() + shaderCollectionFile()),
+               QString::fromLatin1(resourceFolder() + particleShaderCollectionFile())};
 
-    QQsbIODeviceCollection qsbc(collectionFile);
     QQsbCollection::EntryDesc entryDesc;
-    if (qsbc.map(QQsbIODeviceCollection::Read))
-        qsbc.extractEntry(entry, entryDesc);
-    else
+    QScopedPointer<QQsbIODeviceCollection> qsbc;
+    for (const auto &collectionFile : collectionFiles) {
+        QFileInfo info(collectionFile);
+        if (!info.exists())
+            continue;
+
+        qsbc.reset(new QQsbIODeviceCollection(collectionFile));
+        if (qsbc->map(QQsbIODeviceCollection::Read)) {
+            if (qsbc->extractEntry(entry, entryDesc))
+                break;
+            else
+                qsbc.reset();
+        }
+    }
+
+    if (qsbc.isNull())
         qWarning("Failed to open entry %s", entry.key.constData());
 
     if (entryDesc.vertShader.isValid() && entryDesc.fragShader.isValid()) {
@@ -587,7 +631,8 @@ QSSGRhiShaderPipelinePtr QSSGShaderCache::newPipelineFromPregenerated(const QByt
     cacheKey.updateHashCode();
 
     const auto inserted = m_rhiShaders.insert(cacheKey, shaders);
-    qsbc.unmap();
+    if (qsbc)
+        qsbc->unmap();
     return inserted.value();
 }
 
@@ -627,7 +672,8 @@ QSSGRhiShaderPipelinePtr QSSGShaderCache::tryNewPipelineFromPersistentCache(cons
     return {};
 }
 
-QSSGRhiShaderPipelinePtr QSSGShaderCache::loadBuiltinUncached(const QByteArray &inKey, int viewCount)
+QSSGRhiShaderPipelinePtr QSSGShaderCache::loadBuiltinUncached(const QByteArray &inKey, int viewCount,
+                                                              QSSGRhiShaderPipeline::StageFlags vertexStageFlags)
 {
     const bool shaderDebug = !QSSGRhiContextPrivate::editorMode() && QSSGRhiContextPrivate::shaderDebuggingEnabled();
     if (shaderDebug)
@@ -675,7 +721,7 @@ QSSGRhiShaderPipelinePtr QSSGShaderCache::loadBuiltinUncached(const QByteArray &
     }
 
     if (vertexShader.isValid() && fragmentShader.isValid()) {
-        shaders->addStage(QRhiShaderStage(QRhiShaderStage::Vertex, vertexShader), QSSGRhiShaderPipeline::UsedWithoutIa);
+        shaders->addStage(QRhiShaderStage(QRhiShaderStage::Vertex, vertexShader), vertexStageFlags);
         shaders->addStage(QRhiShaderStage(QRhiShaderStage::Fragment, fragmentShader));
         if (shaderDebug)
             qDebug("Loading of vertex and fragment stages succeeded");

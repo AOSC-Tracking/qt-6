@@ -6,11 +6,11 @@
 #include <assert.h>
 #include <stddef.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/config.h"
-#include "xnnpack/init-once.h"
-#include "xnnpack/microfnptr.h"
-#include "xnnpack/pad.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/config.h"
+#include "src/xnnpack/init-once.h"
+#include "src/xnnpack/microfnptr.h"
+#include "src/xnnpack/pad.h"
 
 static struct xnn_xx_pad_config xx_pad_config = {0};
 
@@ -20,9 +20,9 @@ static void init_xx_pad_config(void) {
   #if XNN_ARCH_ARM
     const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
     assert(hardware_config != NULL);
-    if (hardware_config->use_arm_neon) {
+    if ((hardware_config->arch_flags & xnn_arch_arm_neon)) {
       xx_pad_config.ukernel = (xnn_pad_ukernel_fn) xnn_xx_pad_ukernel_p16__neon_u16;
-    } else if (!XNN_PLATFORM_MOBILE) {
+    } else {
       xx_pad_config.ukernel = (xnn_pad_ukernel_fn) xnn_xx_pad_ukernel_p4__scalar_u16;
     }
   #elif XNN_ARCH_ARM64

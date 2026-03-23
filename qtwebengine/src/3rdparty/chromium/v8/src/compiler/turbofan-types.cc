@@ -195,6 +195,7 @@ Type::bitset BitsetType::Lub(MapRefLike map, JSHeapBroker* broker) {
       UNREACHABLE();
     case HEAP_NUMBER_TYPE:
       return kNumber;
+    case CPP_HEAP_EXTERNAL_OBJECT_TYPE:
     case JS_ARRAY_ITERATOR_PROTOTYPE_TYPE:
     case JS_ITERATOR_PROTOTYPE_TYPE:
     case JS_MAP_ITERATOR_PROTOTYPE_TYPE:
@@ -266,7 +267,6 @@ Type::bitset BitsetType::Lub(MapRefLike map, JSHeapBroker* broker) {
     case JS_ARRAY_ITERATOR_TYPE:
     case JS_REG_EXP_TYPE:
     case JS_REG_EXP_STRING_ITERATOR_TYPE:
-    case JS_TYPED_ARRAY_TYPE:
     case JS_DATA_VIEW_TYPE:
     case JS_RAB_GSAB_DATA_VIEW_TYPE:
     case JS_SET_TYPE:
@@ -294,7 +294,7 @@ Type::bitset BitsetType::Lub(MapRefLike map, JSHeapBroker* broker) {
     case JS_SHARED_STRUCT_TYPE:
     case JS_ATOMICS_CONDITION_TYPE:
     case JS_ATOMICS_MUTEX_TYPE:
-    case JS_TEMPORAL_CALENDAR_TYPE:
+#ifdef V8_TEMPORAL_SUPPORT
     case JS_TEMPORAL_DURATION_TYPE:
     case JS_TEMPORAL_INSTANT_TYPE:
     case JS_TEMPORAL_PLAIN_DATE_TYPE:
@@ -302,8 +302,8 @@ Type::bitset BitsetType::Lub(MapRefLike map, JSHeapBroker* broker) {
     case JS_TEMPORAL_PLAIN_MONTH_DAY_TYPE:
     case JS_TEMPORAL_PLAIN_TIME_TYPE:
     case JS_TEMPORAL_PLAIN_YEAR_MONTH_TYPE:
-    case JS_TEMPORAL_TIME_ZONE_TYPE:
     case JS_TEMPORAL_ZONED_DATE_TIME_TYPE:
+#endif  // V8_TEMPORAL_SUPPORT
     case JS_RAW_JSON_TYPE:
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_GLOBAL_OBJECT_TYPE:
@@ -342,6 +342,10 @@ Type::bitset BitsetType::Lub(MapRefLike map, JSHeapBroker* broker) {
 #undef TYPED_ARRAY_CONSTRUCTORS_SWITCH
       DCHECK(!map.is_undetectable());
       return kCallableFunction;
+    case JS_TYPED_ARRAY_TYPE:
+      DCHECK(!map.is_callable());
+      DCHECK(!map.is_undetectable());
+      return kTypedArray;
     case JS_CLASS_CONSTRUCTOR_TYPE:
       return kClassConstructor;
     case JS_PROXY_TYPE:
@@ -400,7 +404,6 @@ Type::bitset BitsetType::Lub(MapRefLike map, JSHeapBroker* broker) {
     case INSTRUCTION_STREAM_TYPE:
     case CODE_TYPE:
     case PROPERTY_CELL_TYPE:
-    case CONTEXT_SIDE_PROPERTY_CELL_TYPE:
     case SOURCE_TEXT_MODULE_TYPE:
     case SOURCE_TEXT_MODULE_INFO_ENTRY_TYPE:
     case SYNTHETIC_MODULE_TYPE:
@@ -412,6 +415,7 @@ Type::bitset BitsetType::Lub(MapRefLike map, JSHeapBroker* broker) {
     case REG_EXP_DATA_TYPE:
     case ATOM_REG_EXP_DATA_TYPE:
     case IR_REG_EXP_DATA_TYPE:
+    case CONTEXT_CELL_TYPE:
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_TYPE_INFO_TYPE:
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -938,6 +942,9 @@ Type Type::Constant(JSHeapBroker* broker, ObjectRef ref, Zone* zone) {
   }
   if (ref.HoleType() != HoleType::kNone) {
     return Type::Hole();
+  }
+  if (ref.IsJSTypedArray()) {
+    return Type::TypedArray();
   }
   // If we see a HeapNumber wrapped in a Constant node,
   // then it should be a mutable HeapNumber, and it should be

@@ -13,6 +13,7 @@ export {DeclutterPageElement} from './declutter/declutter_page.js';
 export {LazyListElement} from './lazy_list.js';
 export {search, SearchOptions} from './search.js';
 export {SelectableLazyListElement} from './selectable_lazy_list.js';
+export {SplitNewTabPageAppElement} from './split_view/app.js';
 export {getHostname, getTabGroupTitle, getTitle, ItemData, TabData, TabItemType} from './tab_data.js';
 export {Color as TabGroupColor} from './tab_group_types.mojom-webui.js';
 export {TabOrganizationSelectorElement} from './tab_organization_selector.js';
@@ -21,7 +22,7 @@ export {PageCallbackRouter, PageRemote, ProfileData, RecentlyClosedTab, Recently
 export {TabSearchApiProxy, TabSearchApiProxyImpl} from './tab_search_api_proxy.js';
 export {TabSearchGroupItemElement} from './tab_search_group_item.js';
 export {TabSearchItemElement} from './tab_search_item.js';
-export {TabSearchPageElement} from './tab_search_page.js';
+export {SEARCH_QUERY_MAX_LENGTH, TabSearchPageElement} from './tab_search_page.js';
 export {TabSearchSyncBrowserProxy, TabSearchSyncBrowserProxyImpl} from './tab_search_sync_browser_proxy.js';
 export {TabAlertState} from './tabs.mojom-webui.js';
 export {TitleItem} from './title_item.js';

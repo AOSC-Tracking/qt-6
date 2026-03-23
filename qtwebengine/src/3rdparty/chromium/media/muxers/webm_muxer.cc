@@ -2,22 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "media/muxers/webm_muxer.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
+#include <variant>
 
 #include "base/check.h"
+#include "base/compiler_specific.h"
 #include "base/containers/circular_deque.h"
+#include "base/containers/span.h"
+#include "base/containers/span_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
@@ -75,28 +75,28 @@ constexpr uint8_t codec_private[4] = {
 constexpr base::TimeDelta kMinimumForcedClusterDuration =
     base::Milliseconds(100);
 
-void WriteOpusHeader(const AudioParameters& params, uint8_t* header) {
+void WriteOpusHeader(const AudioParameters& params,
+                     base::span<uint8_t> header) {
   // See https://wiki.xiph.org/OggOpus#ID_Header.
   // Set magic signature.
-  std::string label = "OpusHead";
-  memcpy(header + OPUS_EXTRADATA_LABEL_OFFSET, label.c_str(), label.size());
+  static constexpr char label[] = "OpusHead";
+  base::SpanWriter writer(header);
+  writer.Write(base::byte_span_from_cstring(label));
   // Set Opus version.
-  header[OPUS_EXTRADATA_VERSION_OFFSET] = 1;
+  writer.WriteU8LittleEndian(1);
   // Set channel count.
   DCHECK_LE(params.channels(), 2);
-  header[OPUS_EXTRADATA_CHANNELS_OFFSET] = params.channels();
+  writer.WriteU8LittleEndian(params.channels());
   // Set pre-skip
   uint16_t skip = 0;
-  memcpy(header + OPUS_EXTRADATA_SKIP_SAMPLES_OFFSET, &skip, sizeof(uint16_t));
+  writer.WriteU16LittleEndian(skip);
   // Set original input sample rate in Hz.
-  uint32_t sample_rate = params.sample_rate();
-  memcpy(header + OPUS_EXTRADATA_SAMPLE_RATE_OFFSET, &sample_rate,
-         sizeof(uint32_t));
+  writer.WriteU32LittleEndian(params.sample_rate());
   // Set output gain in dB.
   uint16_t gain = 0;
-  memcpy(header + OPUS_EXTRADATA_GAIN_OFFSET, &gain, 2);
-
-  header[OPUS_EXTRADATA_CHANNEL_MAPPING_OFFSET] = 0;
+  writer.WriteU16LittleEndian(gain);
+  // Set channel mapping family (Mono or L/R Stereo).
+  writer.WriteU8LittleEndian(0);
 }
 
 static double GetFrameRate(const Muxer::VideoParameters& params) {
@@ -198,6 +198,30 @@ std::optional<mkvmuxer::Colour> ColorFromColorSpace(
   return colour;
 }
 
+void SetProjection(mkvmuxer::VideoTrack* video_track,
+                   VideoTransformation transformation) {
+  mkvmuxer::Projection proj = mkvmuxer::Projection();
+  // This is based off ffmpeg matroska encoding code. The following is to
+  // determine the roll and yaw (mirroring) of the Projection (mirroring).
+  const int roll = [transformation]() {
+    switch (transformation.rotation) {
+      case VIDEO_ROTATION_0:
+        return 0;
+      case VIDEO_ROTATION_90:
+        return transformation.mirrored ? 90 : -90;
+      case VIDEO_ROTATION_180:
+        return 180;
+      case VIDEO_ROTATION_270:
+        return transformation.mirrored ? -90 : 90;
+    }
+  }();
+  proj.set_pose_pitch(0);
+  proj.set_pose_roll(roll);
+  proj.set_pose_yaw(transformation.mirrored ? 180 : 0);
+
+  video_track->SetProjection(proj);
+}
+
 }  // anonymous namespace
 
 // -----------------------------------------------------------------------------
@@ -217,7 +241,10 @@ mkvmuxer::int32 WebmMuxer::Delegate::Write(const void* buf,
   DCHECK(buf);
 
   last_data_output_timestamp_ = base::TimeTicks::Now();
-  const auto result = DoWrite(buf, len);
+  const auto result = DoWrite(
+      // SAFETY: Caller is explicitly calling us with a `buf` of size `len` from
+      // a 3rd party library that we can't change to use spans.
+      UNSAFE_BUFFERS(base::span(static_cast<const uint8_t*>(buf), len)));
   position_ += len;
   return result;
 }
@@ -265,7 +292,8 @@ bool WebmMuxer::Flush() {
 void WebmMuxer::AddVideoTrack(
     const gfx::Size& frame_size,
     double frame_rate,
-    const std::optional<gfx::ColorSpace>& color_space) {
+    std::optional<gfx::ColorSpace> color_space,
+    std::optional<VideoTransformation> transformation) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK_EQ(0u, video_track_index_)
       << "WebmMuxer can only be initialized once.";
@@ -285,6 +313,10 @@ void WebmMuxer::AddVideoTrack(
       video_track->SetColour(*colour);
     }
   }
+  if (transformation) {
+    SetProjection(video_track, transformation.value());
+  }
+
   DCHECK(video_track);
   video_track->set_codec_id(MkvCodeIcForMediaVideoCodecId(video_codec_));
   DCHECK_EQ(0ull, video_track->crop_right());
@@ -356,7 +388,7 @@ bool WebmMuxer::PutFrame(EncodedFrame frame,
                          base::TimeDelta relative_timestamp) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  AudioParameters* audio_params = absl::get_if<AudioParameters>(&frame.params);
+  AudioParameters* audio_params = std::get_if<AudioParameters>(&frame.params);
   TRACE_EVENT2("media", __func__, "timestamp", relative_timestamp,
                "is_keyframe", frame.data->is_key_frame());
   DVLOG(2) << __func__ << " - " << (audio_params ? "A " : "V ")
@@ -372,7 +404,7 @@ bool WebmMuxer::PutFrame(EncodedFrame frame,
     if (frame.data->empty()) {
       return true;
     }
-    auto* video_params = absl::get_if<VideoParameters>(&frame.params);
+    auto* video_params = std::get_if<VideoParameters>(&frame.params);
     CHECK(video_params);
 #if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
     DCHECK(video_params->codec == VideoCodec::kVP8 ||
@@ -401,7 +433,8 @@ bool WebmMuxer::PutFrame(EncodedFrame frame,
       // http://www.matroska.org/technical/specs/index.html#Tracks
       video_codec_ = video_params->codec;
       AddVideoTrack(video_params->visible_rect_size,
-                    GetFrameRate(*video_params), video_params->color_space);
+                    GetFrameRate(*video_params), video_params->color_space,
+                    video_params->transformation);
 
       // Add codec private for AV1.
       if (video_params->codec == VideoCodec::kAV1 &&
@@ -438,16 +471,17 @@ bool WebmMuxer::WriteWebmFrame(EncodedFrame frame,
   }
 
   auto recorded_timestamp = relative_timestamp.InNanoseconds();
-  uint8_t track_index = absl::get_if<AudioParameters>(&frame.params)
+  uint8_t track_index = std::get_if<AudioParameters>(&frame.params)
                             ? audio_track_index_
                             : video_track_index_;
+  auto frame_data_span = base::span(*frame.data);
   return frame.data->side_data() && !frame.data->side_data()->alpha_data.empty()
              ? segment_.AddFrameWithAdditional(
-                   frame.data->data(), frame.data->size(),
+                   frame_data_span.data(), frame_data_span.size(),
                    frame.data->side_data()->alpha_data.data(),
                    frame.data->side_data()->alpha_data.size(), /*add_id=*/1,
                    track_index, recorded_timestamp, frame.data->is_key_frame())
-             : segment_.AddFrame(frame.data->data(), frame.data->size(),
+             : segment_.AddFrame(frame_data_span.data(), frame_data_span.size(),
                                  track_index, recorded_timestamp,
                                  frame.data->is_key_frame());
 }

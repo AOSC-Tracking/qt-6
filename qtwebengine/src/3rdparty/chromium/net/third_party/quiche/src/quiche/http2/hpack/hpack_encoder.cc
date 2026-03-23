@@ -82,11 +82,12 @@ bool DefaultPolicy(absl::string_view name, absl::string_view /* value */) {
 }  // namespace
 
 HpackEncoder::HpackEncoder()
-    : output_stream_(),
+    : table_size_upper_bound_(std::numeric_limits<size_t>::max()),
       min_table_size_setting_received_(std::numeric_limits<size_t>::max()),
       listener_(NoOpListener),
       should_index_(DefaultPolicy),
-      enable_compression_(true),
+      enable_dynamic_table_(true),
+      enable_huffman_(true),
       should_emit_table_size_(false),
       crumble_cookies_(true) {}
 
@@ -121,7 +122,8 @@ std::string HpackEncoder::EncodeHeaderBlock(
 }
 
 void HpackEncoder::ApplyHeaderTableSizeSetting(size_t size_setting) {
-  if (size_setting == header_table_.settings_size_bound()) {
+  if (size_setting == header_table_.settings_size_bound() &&
+      size_setting <= table_size_upper_bound_) {
     return;
   }
   if (size_setting < header_table_.settings_size_bound()) {
@@ -129,6 +131,9 @@ void HpackEncoder::ApplyHeaderTableSizeSetting(size_t size_setting) {
         std::min(size_setting, min_table_size_setting_received_);
   }
   header_table_.SetSettingsHeaderTableSize(size_setting);
+  if (size_setting > table_size_upper_bound_) {
+    header_table_.SetMaxSize(table_size_upper_bound_);
+  }
   should_emit_table_size_ = true;
 }
 
@@ -137,7 +142,7 @@ std::string HpackEncoder::EncodeRepresentations(RepresentationIterator* iter) {
   while (iter->HasNext()) {
     const auto header = iter->Next();
     listener_(header.first, header.second);
-    if (enable_compression_) {
+    if (enable_dynamic_table_) {
       size_t index =
           header_table_.GetByNameAndValue(header.first, header.second);
       if (index != kHpackEntryNotFound) {
@@ -145,14 +150,26 @@ std::string HpackEncoder::EncodeRepresentations(RepresentationIterator* iter) {
       } else if (should_index_(header.first, header.second)) {
         EmitIndexedLiteral(header);
       } else {
-        EmitNonIndexedLiteral(header, enable_compression_);
+        EmitNonIndexedLiteral(header);
       }
     } else {
-      EmitNonIndexedLiteral(header, enable_compression_);
+      EmitNonIndexedLiteral(header);
     }
   }
 
   return output_stream_.TakeString();
+}
+
+void HpackEncoder::SetHeaderTableSizeBound(size_t max_size) {
+  table_size_upper_bound_ = max_size;
+  enable_dynamic_table_ = (table_size_upper_bound_ != 0);
+
+  const size_t new_dynamic_table_size =
+      std::min(table_size_upper_bound_, header_table_.settings_size_bound());
+  if (header_table_.max_size() != new_dynamic_table_size) {
+    header_table_.SetMaxSize(new_dynamic_table_size);
+    should_emit_table_size_ = true;
+  }
 }
 
 void HpackEncoder::EmitIndex(size_t index) {
@@ -169,13 +186,12 @@ void HpackEncoder::EmitIndexedLiteral(const Representation& representation) {
   header_table_.TryAddEntry(representation.first, representation.second);
 }
 
-void HpackEncoder::EmitNonIndexedLiteral(const Representation& representation,
-                                         bool enable_compression) {
+void HpackEncoder::EmitNonIndexedLiteral(const Representation& representation) {
   QUICHE_DVLOG(2) << "Emitting nonindexed literal: (" << representation.first
                   << ", " << representation.second << ")";
   output_stream_.AppendPrefix(kLiteralNoIndexOpcode);
   size_t name_index = header_table_.GetByName(representation.first);
-  if (enable_compression && name_index != kHpackEntryNotFound) {
+  if (enable_dynamic_table_ && name_index != kHpackEntryNotFound) {
     output_stream_.AppendUint32(name_index);
   } else {
     output_stream_.AppendUint32(0);
@@ -196,8 +212,8 @@ void HpackEncoder::EmitLiteral(const Representation& representation) {
 }
 
 void HpackEncoder::EmitString(absl::string_view str) {
-  size_t encoded_size =
-      enable_compression_ ? http2::HuffmanSize(str) : str.size();
+  const size_t encoded_size =
+      enable_huffman_ ? http2::HuffmanSize(str) : str.size();
   if (encoded_size < str.size()) {
     QUICHE_DVLOG(2) << "Emitted Huffman-encoded string of length "
                     << encoded_size;
@@ -216,16 +232,19 @@ void HpackEncoder::MaybeEmitTableSize() {
   if (!should_emit_table_size_) {
     return;
   }
-  const size_t current_size = CurrentHeaderTableSizeSetting();
-  QUICHE_DVLOG(1) << "MaybeEmitTableSize current_size=" << current_size;
-  QUICHE_DVLOG(1) << "MaybeEmitTableSize min_table_size_setting_received_="
-                  << min_table_size_setting_received_;
-  if (min_table_size_setting_received_ < current_size) {
+  const size_t target_size =
+      std::min(CurrentHeaderTableSizeSetting(), table_size_upper_bound_);
+  QUICHE_DVLOG(1) << "MaybeEmitTableSize settings_max_table_size="
+                  << CurrentHeaderTableSizeSetting()
+                  << ", min_table_size_setting_received_="
+                  << min_table_size_setting_received_
+                  << ", table_size_upper_bound_=" << table_size_upper_bound_;
+  if (min_table_size_setting_received_ < target_size) {
     output_stream_.AppendPrefix(kHeaderTableSizeUpdateOpcode);
     output_stream_.AppendUint32(min_table_size_setting_received_);
   }
   output_stream_.AppendPrefix(kHeaderTableSizeUpdateOpcode);
-  output_stream_.AppendUint32(current_size);
+  output_stream_.AppendUint32(target_size);
   min_table_size_setting_received_ = std::numeric_limits<size_t>::max();
   should_emit_table_size_ = false;
 }
@@ -352,14 +371,14 @@ HpackEncoder::Encoderator::Encoderator(const Representations& representations,
 std::string HpackEncoder::Encoderator::Next(size_t max_encoded_bytes) {
   QUICHE_BUG_IF(spdy_bug_61_1, !has_next_)
       << "Encoderator::Next called with nothing left to encode.";
-  const bool enable_compression = encoder_->enable_compression_;
+  const bool enable_dynamic_table = encoder_->enable_dynamic_table_;
 
   // Encode up to max_encoded_bytes of headers.
   while (header_it_->HasNext() &&
          encoder_->output_stream_.size() <= max_encoded_bytes) {
     const Representation header = header_it_->Next();
     encoder_->listener_(header.first, header.second);
-    if (enable_compression) {
+    if (enable_dynamic_table) {
       size_t index = encoder_->header_table_.GetByNameAndValue(header.first,
                                                                header.second);
       if (index != kHpackEntryNotFound) {
@@ -367,10 +386,10 @@ std::string HpackEncoder::Encoderator::Next(size_t max_encoded_bytes) {
       } else if (encoder_->should_index_(header.first, header.second)) {
         encoder_->EmitIndexedLiteral(header);
       } else {
-        encoder_->EmitNonIndexedLiteral(header, enable_compression);
+        encoder_->EmitNonIndexedLiteral(header);
       }
     } else {
-      encoder_->EmitNonIndexedLiteral(header, enable_compression);
+      encoder_->EmitNonIndexedLiteral(header);
     }
   }
 

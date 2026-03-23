@@ -164,6 +164,7 @@ private slots:
 #endif
     void cleanupRhi();
     void dontRecreateRootElementOnWindowChange();
+    void preserveClearColorOnWindowChange();
     void setInitialProperties();
     void fromModuleCtor();
     void loadFromModule_data();
@@ -1129,6 +1130,9 @@ void tst_qquickwidget::focusOnClick()
 #if QT_CONFIG(graphicsview)
 void tst_qquickwidget::focusOnClickInProxyWidget()
 {
+#ifdef Q_OS_ANDROID
+    QSKIP("Crashes on Android, see QTBUG-139400");
+#endif
     QGraphicsScene scene(0,0,400,400);
 
     QGraphicsView view1(&scene);
@@ -1174,7 +1178,7 @@ void tst_qquickwidget::focusOnClickInProxyWidget()
 
     QVERIFY(QTest::qWaitForWindowExposed(&view2));
     QWindow *window2 = view2.windowHandle();
-    QVERIFY(window2);
+    QVERIFY(QTest::qWaitForWindowActive(window2));
 
     QTest::mouseClick(window2, Qt::LeftButton, Qt::KeyboardModifiers(), QPoint(300, 300));
     QTRY_VERIFY(!text1->hasActiveFocus());
@@ -1359,6 +1363,22 @@ void tst_qquickwidget::dontRecreateRootElementOnWindowChange()
     QCoreApplication::sendEvent(quickWidget, &event);
 
     QVERIFY(!wasDestroyed);
+}
+
+void tst_qquickwidget::preserveClearColorOnWindowChange()
+{
+    auto *quickWidget = new QQuickWidget();
+    quickWidget->setSource(testFileUrl("rectangle.qml"));
+
+    QColor color("#F00BAA");
+    quickWidget->setClearColor(color);
+
+    QVERIFY(quickWidget->quickWindow()->color() == color);
+
+    QEvent event(QEvent::WindowChangeInternal);
+    QCoreApplication::sendEvent(quickWidget, &event);
+
+    QVERIFY(quickWidget->quickWindow()->color() == color);
 }
 
 void tst_qquickwidget::setInitialProperties()

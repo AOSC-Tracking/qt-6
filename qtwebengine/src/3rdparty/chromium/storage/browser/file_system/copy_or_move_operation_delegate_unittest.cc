@@ -41,7 +41,6 @@
 #include "storage/browser/file_system/file_system_context.h"
 #include "storage/browser/file_system/file_system_operation.h"
 #include "storage/browser/file_system/file_system_url.h"
-#include "storage/browser/file_system/file_system_util.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/test/async_file_test_helper.h"
 #include "storage/browser/test/file_system_test_file_set.h"
@@ -350,10 +349,8 @@ class CopyOrMoveOperationTestHelper {
 
     // Grant relatively big quota initially.
     quota_manager_->SetQuota(blink::StorageKey::CreateFirstParty(origin_),
-                             FileSystemTypeToQuotaStorageType(src_type_),
                              1024 * 1024);
     quota_manager_->SetQuota(blink::StorageKey::CreateFirstParty(origin_),
-                             FileSystemTypeToQuotaStorageType(dest_type_),
                              1024 * 1024);
   }
 

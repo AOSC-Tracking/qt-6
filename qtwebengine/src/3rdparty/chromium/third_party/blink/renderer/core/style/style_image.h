@@ -34,10 +34,6 @@ namespace gfx {
 class SizeF;
 }  // namespace gfx
 
-namespace WTF {
-class String;
-}  // namespace WTF
-
 namespace blink {
 
 class CSSValue;
@@ -46,6 +42,7 @@ class ImageResourceContent;
 class Document;
 class ComputedStyle;
 class ImageResourceObserver;
+class Node;
 enum class CSSValuePhase;
 
 // A const pointer to either an ImageResource or a CSSImageGeneratorValue. It is
@@ -145,7 +142,7 @@ class CORE_EXPORT StyleImage : public GarbageCollected<StyleImage> {
   // `target_size` is not zoomed.
   virtual scoped_refptr<Image> GetImage(
       const ImageResourceObserver&,
-      const Document&,
+      const Node&,
       const ComputedStyle&,
       const gfx::SizeF& target_size) const = 0;
 
@@ -171,6 +168,9 @@ class CORE_EXPORT StyleImage : public GarbageCollected<StyleImage> {
     return default_orientation;
   }
 
+  // Whether this <image> depends on the current color.
+  virtual bool DependsOnCurrentColor() const { return false; }
+
   ALWAYS_INLINE bool IsImageResource() const { return is_image_resource_; }
   ALWAYS_INLINE bool IsPendingImage() const { return is_pending_image_; }
   ALWAYS_INLINE bool IsGeneratedImage() const { return is_generated_image_; }
@@ -188,7 +188,7 @@ class CORE_EXPORT StyleImage : public GarbageCollected<StyleImage> {
 
   virtual bool IsLoadedAfterMouseover() const { return false; }
 
-  virtual bool IsOriginClean() const { return true; }
+  virtual bool IsFromOriginCleanStyleSheet() const { return true; }
 
   virtual void Trace(Visitor* visitor) const {}
 

@@ -1,5 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dreflectionprobe_p.h"
 #include "qquick3dnode_p_p.h"
@@ -192,7 +194,7 @@ QQuick3DCubeMapTexture *QQuick3DReflectionProbe::texture() const
 }
 
 /*!
-    \qmlmethod ReflectionProbe::scheduleUpdate()
+    \qmlmethod void ReflectionProbe::scheduleUpdate()
 
     Updates the reflection probe render when called while \l ReflectionProbe::refreshMode
     is set as \c ReflectionProbe.FirstFrame.

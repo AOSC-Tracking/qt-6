@@ -150,6 +150,9 @@ class TestBluetoothAdapter final : public BluetoothAdapter {
   void SetServiceAllowList(const UUIDList& uuids,
                            base::OnceClosure callback,
                            ErrorCallback error_callback) override {}
+  void SetSimpleSecurePairingEnabled(bool enabled,
+                                     base::OnceClosure callback,
+                                     ErrorCallback error_callback) override {}
 
   LowEnergyScanSessionHardwareOffloadingStatus
   GetLowEnergyScanSessionHardwareOffloadingStatus() override {
@@ -166,11 +169,9 @@ class TestBluetoothAdapter final : public BluetoothAdapter {
   std::vector<BluetoothRole> GetSupportedRoles() override {
     return std::vector<BluetoothRole>{};
   }
-#endif  // BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
   void SetStandardChromeOSAdapterName() override {}
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
   void OnStartDiscoverySessionQuitLoop(
       base::OnceClosure run_loop_quit,

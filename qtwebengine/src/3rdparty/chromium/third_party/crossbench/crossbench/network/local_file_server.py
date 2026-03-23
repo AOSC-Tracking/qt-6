@@ -11,11 +11,13 @@ import json
 import logging
 import os
 import threading
-from typing import (TYPE_CHECKING, Final, Iterator, Mapping, Optional, Tuple,
-                    Type)
+from typing import (TYPE_CHECKING, Final, Iterator, Mapping, Optional, Type,
+                    TypeVar)
 
 from immutabledict import immutabledict
+from typing_extensions import override
 
+from crossbench import exception
 from crossbench.network.base import Network
 from crossbench.parse import ObjectParser
 
@@ -47,7 +49,7 @@ class CustomHeadersRequestHandler(http.server.SimpleHTTPRequestHandler):
 
   @classmethod
   def bind(
-      cls: Type[CustomHeadersRequestHandler],
+      cls,
       server_dir: LocalPath,
       extra_headers: Mapping[str, str],
   ) -> Type[http.server.SimpleHTTPRequestHandler]:
@@ -67,20 +69,22 @@ class CustomHeadersRequestHandler(http.server.SimpleHTTPRequestHandler):
                *args,
                directory: Optional[str] = None,
                extra_headers: Optional[Mapping[str, str]] = None,
-               **kwargs):
+               **kwargs) -> None:
     self._extra_headers: immutabledict[str, str] = (
         immutabledict(extra_headers) if extra_headers else immutabledict())
     super().__init__(*args, directory=directory, **kwargs)
 
-  def end_headers(self):
+  def end_headers(self) -> None:
     if self._extra_headers:
       self._send_custom_headers()
     super().end_headers()
 
-  def _send_custom_headers(self):
+  def _send_custom_headers(self) -> None:
     for key, value in self._extra_headers.items():
       self.send_header(key, value)
 
+
+LocalFileNetworkT = TypeVar("LocalFileNetworkT", bound="LocalFileNetwork")
 
 class LocalFileNetwork(Network):
 
@@ -88,7 +92,7 @@ class LocalFileNetwork(Network):
                path: LocalPath,
                url: Optional[str],
                traffic_shaper: Optional[TrafficShaper] = None,
-               browser_platform: Optional[plt.Platform] = None):
+               browser_platform: Optional[plt.Platform] = None) -> None:
     super().__init__(traffic_shaper, browser_platform)
     self._path = path
     self._host, self._port = self._parse_url(url)
@@ -98,6 +102,7 @@ class LocalFileNetwork(Network):
       self._validate_extra_headers()
 
   @property
+  @override
   def is_local_file_server(self) -> bool:
     return True
 
@@ -105,7 +110,7 @@ class LocalFileNetwork(Network):
   def path(self) -> LocalPath:
     return self._path
 
-  def _parse_url(self, url: Optional[str]) -> Tuple[str, int]:
+  def _parse_url(self, url: Optional[str]) -> tuple[str, int]:
     host: str = _DEFAULT_HOST
     port: int = _DEFAULT_PORT
     if not url:
@@ -126,12 +131,11 @@ class LocalFileNetwork(Network):
 
   def _read_headers_file(self,
                          header_file: LocalPath) -> immutabledict[str, str]:
-    with header_file.open("rb") as f:
-      # Reuse python's email message library to parse headers
-      message = email.parser.BytesParser().parsebytes(f.read())
-      return immutabledict(message)
+    # Reuse python's email message library to parse headers
+    message = email.parser.BytesParser().parsebytes(header_file.read_bytes())
+    return immutabledict(message)
 
-  def _validate_extra_headers(self):
+  def _validate_extra_headers(self) -> None:
     for key, value in self._extra_headers.items():
       if key.lower() in _CONFLICTING_EXTRA_HEADERS:
         logging.error(
@@ -139,7 +143,9 @@ class LocalFileNetwork(Network):
             key, value)
 
   @contextlib.contextmanager
-  def open(self, session: BrowserSessionRunGroup) -> Iterator[Network]:
+  @override
+  def open(self: LocalFileNetworkT,
+           session: BrowserSessionRunGroup) -> Iterator[LocalFileNetworkT]:
     with super().open(session):
       with self._open_local_file_server():
         # TODO: properly hook up traffic shaper for the local http server
@@ -153,8 +159,10 @@ class LocalFileNetwork(Network):
     # TODO: support  https server using SSLContext.wrap_socket(httpd.socket)
     request_handler_cls = CustomHeadersRequestHandler.bind(
         self._path, self._extra_headers)
-    server = http.server.ThreadingHTTPServer((self._host, self._port),
-                                             request_handler_cls)
+    with exception.annotate(
+        f"Starting fileserver on {self.host}:{self.http_port}"):
+      server = http.server.ThreadingHTTPServer((self._host, self._port),
+                                               request_handler_cls)
     with self._server_thread(server):
       logging.info("%s custom host=%s, port=%s",
                    type(self).__name__, self.host, self.http_port)
@@ -176,26 +184,31 @@ class LocalFileNetwork(Network):
   @contextlib.contextmanager
   def _forward_ports(self, session: BrowserSessionRunGroup) -> Iterator:
     browser_platform = session.browser_platform
+    ports = browser_platform.ports
     if browser_platform.is_remote:
       logging.info("REMOTE PORT FORWARDING: %s <= %s", self.host_platform,
                    browser_platform)
-      # TODO: create port-forwarder service that is shut down properly.
       # TODO: make ports configurable
-      browser_platform.reverse_port_forward(self._port, self._port)
-    yield
-    if browser_platform.is_remote:
-      browser_platform.stop_reverse_port_forward(self._port)
+      ports.reverse_forward(self._port, self._port)
+    try:
+      yield
+    finally:
+      if browser_platform.is_remote:
+        ports.stop_reverse_forward(self._port)
 
   @property
+  @override
   def http_port(self) -> Optional[int]:
     return self._port
 
   @property
+  @override
   def https_port(self) -> Optional[int]:
     # TODO: support https locally
     return None
 
   @property
+  @override
   def host(self) -> Optional[str]:
     return self._host
 
@@ -204,5 +217,5 @@ class LocalFileNetwork(Network):
     if self._extra_headers:
       formatted_headers = json.dumps(dict(self._extra_headers))
       extra_headers_str = f" extra_headers={formatted_headers}"
-    return ("LOCAL(path={self._path}, "
+    return (f"LOCAL(path={self._path}, "
             f"speed={self.traffic_shaper}{extra_headers_str})")

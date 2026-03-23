@@ -13,6 +13,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "cc/animation/animation_host.h"
 #include "cc/input/scrollbar_animation_controller.h"
+#include "cc/layers/append_quads_context.h"
 #include "cc/layers/append_quads_data.h"
 #include "cc/layers/nine_patch_thumb_scrollbar_layer.h"
 #include "cc/layers/nine_patch_thumb_scrollbar_layer_impl.h"
@@ -142,14 +143,15 @@ class BaseScrollbarLayerTest : public testing::Test {
   }
 
  protected:
-  raw_ptr<FakeResourceTrackingUIResourceManager, DanglingUntriaged>
-      fake_ui_resource_manager_;
   FakeLayerTreeHostClient fake_client_;
   StubLayerTreeHostSingleThreadClient single_thread_client_;
   TestTaskGraphRunner task_graph_runner_;
   LayerTreeSettings layer_tree_settings_;
   std::unique_ptr<AnimationHost> animation_host_;
   std::unique_ptr<FakeLayerTreeHost> layer_tree_host_;
+  // Declare after layer_tree_host_ so it's destroyed before the LayerTreeHost
+  // that owns the object it points to.
+  raw_ptr<FakeResourceTrackingUIResourceManager> fake_ui_resource_manager_;
 };
 
 class CommitToActiveTreeScrollbarLayerTest : public BaseScrollbarLayerTest {
@@ -810,7 +812,9 @@ TEST_F(CommitToActiveTreeScrollbarLayerTest, SolidColorDrawQuads) {
   {
     auto render_pass = viz::CompositorRenderPass::Create();
     AppendQuadsData data;
-    scrollbar_layer_impl->AppendQuads(render_pass.get(), &data);
+    scrollbar_layer_impl->AppendQuads(
+        AppendQuadsContext{DRAW_MODE_HARDWARE, {}, false}, render_pass.get(),
+        &data);
 
     const auto& quads = render_pass->quad_list;
     ASSERT_EQ(1u, quads.size());
@@ -825,7 +829,9 @@ TEST_F(CommitToActiveTreeScrollbarLayerTest, SolidColorDrawQuads) {
   {
     auto render_pass = viz::CompositorRenderPass::Create();
     AppendQuadsData data;
-    scrollbar_layer_impl->AppendQuads(render_pass.get(), &data);
+    scrollbar_layer_impl->AppendQuads(
+        AppendQuadsContext{DRAW_MODE_HARDWARE, {}, false}, render_pass.get(),
+        &data);
 
     const auto& quads = render_pass->quad_list;
     ASSERT_EQ(1u, quads.size());
@@ -840,7 +846,9 @@ TEST_F(CommitToActiveTreeScrollbarLayerTest, SolidColorDrawQuads) {
   {
     auto render_pass = viz::CompositorRenderPass::Create();
     AppendQuadsData data;
-    scrollbar_layer_impl->AppendQuads(render_pass.get(), &data);
+    scrollbar_layer_impl->AppendQuads(
+        AppendQuadsContext{DRAW_MODE_HARDWARE, {}, false}, render_pass.get(),
+        &data);
 
     const auto& quads = render_pass->quad_list;
     ASSERT_EQ(1u, quads.size());
@@ -893,7 +901,9 @@ TEST_F(CommitToActiveTreeScrollbarLayerTest, LayerDrivenSolidColorDrawQuads) {
     auto render_pass = viz::CompositorRenderPass::Create();
 
     AppendQuadsData data;
-    scrollbar_layer_impl->AppendQuads(render_pass.get(), &data);
+    scrollbar_layer_impl->AppendQuads(
+        AppendQuadsContext{DRAW_MODE_HARDWARE, {}, false}, render_pass.get(),
+        &data);
 
     const auto& quads = render_pass->quad_list;
     ASSERT_EQ(1u, quads.size());

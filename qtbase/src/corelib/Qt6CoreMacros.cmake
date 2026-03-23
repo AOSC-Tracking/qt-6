@@ -174,7 +174,9 @@ endif()
 function(qt6_wrap_cpp)
     # check if the first argument is a target
     if(TARGET ${ARGV0})
-        _qt_internal_wrap_cpp(dummy TARGET ${ARGV})
+        _qt_internal_wrap_cpp(__qt_internal_target_signature_marker
+            TARGET ${ARGV}
+        )
     else()
         set(output_parameter ${ARGV0})
         _qt_internal_wrap_cpp(${ARGV})
@@ -194,9 +196,7 @@ function(qt6_wrap_cpp)
     endif()
 endfunction()
 
-# _qt_internal_wrap_cpp(outfiles inputfile ... )
-
-function(_qt_internal_wrap_cpp outfiles)
+function(_qt_internal_wrap_cpp outfiles_var)
     # get include dirs
     _qt_internal_get_moc_flags(moc_flags)
 
@@ -214,6 +214,7 @@ function(_qt_internal_wrap_cpp outfiles)
     set(moc_target ${_WRAP_CPP_TARGET})
     set(moc_depends ${_WRAP_CPP_DEPENDS})
 
+    set(outfiles "")
     set(metatypes_json_list "")
 
     foreach(it ${moc_files})
@@ -225,7 +226,7 @@ function(_qt_internal_wrap_cpp outfiles)
 
         if(it_ext MATCHES "${HEADER_REGEX}")
             _qt_internal_make_output_file("${it}" moc_ cpp outfile)
-            set(is_header_file TRUE)
+            list(APPEND outfiles "${outfile}")
         else()
             set(found_source_extension FALSE)
             foreach(LANG C CXX OBJC OBJCXX CUDA)
@@ -239,7 +240,7 @@ function(_qt_internal_wrap_cpp outfiles)
             if(found_extension)
                 if(TARGET ${moc_target})
                     _qt_internal_make_output_file(${it} "" moc outfile)
-                    target_sources(${moc_target} PRIVATE "${outfile}")
+                    list(APPEND outfiles "${outfile}")
                     target_include_directories("${moc_target}" PRIVATE
                         "${CMAKE_CURRENT_BINARY_DIR}")
                 else()
@@ -270,14 +271,27 @@ function(_qt_internal_wrap_cpp outfiles)
         _qt_internal_create_moc_command(
             ${it} ${outfile} "${moc_flags}" "${moc_options}" "${moc_target}" "${moc_depends}"
             "${out_json_file_var}")
-        list(APPEND ${outfiles} ${outfile})
         if(_WRAP_CPP___QT_INTERNAL_OUTPUT_MOC_JSON_FILES)
             list(APPEND metatypes_json_list "${${out_json_file_var}}")
         endif()
     endforeach()
 
-    if(is_header_file)
-        set(${outfiles} "${${outfiles}}" PARENT_SCOPE)
+    if(NOT outfiles STREQUAL "")
+        list(APPEND "${outfiles_var}" ${outfiles})
+        set("${outfiles_var}" "${${outfiles_var}}" PARENT_SCOPE)
+
+        if(TARGET ${moc_target})
+            get_target_property(moc_target_source_dir ${moc_target} SOURCE_DIR)
+            if(NOT moc_target_source_dir STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+                # qt_wrap_cpp is not called in ${moc_target}'s directory scope.
+                # Add a custom target that drives the creation of moc's output files.
+                _qt_internal_unique_target_name(driver_target "_qt_${moc_target}_moc_driver")
+                add_custom_target(${driver_target} DEPENDS ${outfiles})
+                _qt_internal_assign_to_internal_targets_folder(${driver_target})
+                add_dependencies(${moc_target} ${driver_target})
+            endif()
+            target_sources(${moc_target} PRIVATE ${outfiles})
+        endif()
     endif()
 
     if(metatypes_json_list)
@@ -594,7 +608,9 @@ function(_qt_internal_add_rcc_pass2)
         "$<TARGET_PROPERTY:Qt6::Core,INTERFACE_COMPILE_DEFINITIONS>")
     set_target_properties(${arg_OBJECT_LIB} PROPERTIES
         AUTOMOC OFF
-        AUTOUIC OFF)
+        AUTOUIC OFF
+        _qt_internal_is_rcc_pass2_obj_lib TRUE
+    )
     # The modification of TARGET_OBJECTS needs the following change in cmake
     # https://gitlab.kitware.com/cmake/cmake/commit/93c89bc75ceee599ba7c08b8fe1ac5104942054f
     add_custom_command(
@@ -741,6 +757,9 @@ function(_qt_internal_create_executable target)
         )
 
         qt6_android_apply_arch_suffix("${target}")
+        if(QT_USE_ANDROID_MODERN_BUNDLE)
+            _qt_internal_set_android_application_gradle_defaults(${target})
+        endif()
     else()
         cmake_policy(PUSH)
         __qt_internal_set_cmp0156()
@@ -941,6 +960,11 @@ function(_qt_internal_finalize_source_groups target)
         set(generated_source_group "Source Files/Generated")
     endif()
 
+    get_target_property(resource_source_files "${target}" _qt_resource_source_files)
+    if(NOT resource_source_files)
+        set(resource_source_files "")
+    endif()
+
     foreach(source IN LISTS sources)
         string(GENEX_STRIP "${source}" source)
 
@@ -962,6 +986,9 @@ function(_qt_internal_finalize_source_groups target)
         # due to https://gitlab.kitware.com/cmake/cmake/-/issues/25597
         if(${source_file_path} MATCHES "(\\.qml$)|(\\.js$)")
             source_group("Source Files" FILES ${source_file_path})
+
+            # Remove them from resources files, so they stay as source files.
+            list(REMOVE_ITEM resource_source_files ${source} ${source_file_path})
         endif()
 
         get_source_file_property(is_generated "${source_file_path}" GENERATED)
@@ -969,6 +996,10 @@ function(_qt_internal_finalize_source_groups target)
             source_group(${generated_source_group} FILES ${source_file_path})
         endif()
     endforeach()
+
+    if(NOT QT_NO_AUTO_RESOURCE_SOURCE_GROUPS)
+        source_group("Resources" FILES ${resource_source_files})
+    endif()
 endfunction()
 
 function(_qt_internal_darwin_permission_finalizer target)
@@ -1142,6 +1173,18 @@ function(_qt_internal_assign_to_internal_targets_folder target)
     endif()
 endfunction()
 
+# Returns the metatypes build dir where the Qt build system places module metatypes json files and
+# other supporting metatypes files like ${target}_json_file_list.txt.
+# The path is usually the target's BINARY_DIR + "/meta_types"
+function(_qt_internal_get_metatypes_build_dir out_var target)
+    get_target_property(target_binary_dir "${target}" BINARY_DIR)
+    set(out_dir "${target_binary_dir}/meta_types")
+    set(${out_var} "${out_dir}" PARENT_SCOPE)
+endfunction()
+
+# The AUTOGEN build dir is the location where all the generated .cpp files are placed, as well
+# as the moc_predefs.h, timestamp file and deps files.
+# E.g. ${CMAKE_CURRENT_BINARY_DIR}/${target}_autogen/moc_predefs.h
 function(_qt_internal_get_target_autogen_build_dir target out_var)
     get_property(target_autogen_build_dir TARGET ${target} PROPERTY AUTOGEN_BUILD_DIR)
     if(target_autogen_build_dir)
@@ -1150,6 +1193,14 @@ function(_qt_internal_get_target_autogen_build_dir target out_var)
         get_property(target_binary_dir TARGET ${target} PROPERTY BINARY_DIR)
         set(${out_var} "${target_binary_dir}/${target}_autogen" PARENT_SCOPE)
     endif()
+endfunction()
+
+# The AUTOGEN info dir is the location where AutogenInfo.json and ParseCache.txt files are placed.
+# E.g. ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${target}_autogen.dir/ParseCache.txt
+function(_qt_internal_get_target_autogen_info_dir target out_var)
+    get_target_property(target_binary_dir ${target} BINARY_DIR)
+    set(autogen_info_dir "${target_binary_dir}/CMakeFiles/${target}_autogen.dir")
+    set(${out_var} "${autogen_info_dir}" PARENT_SCOPE)
 endfunction()
 
 function(_qt_internal_should_install_metatypes target)
@@ -1339,12 +1390,14 @@ function(qt6_extract_metatypes target)
         return()
     endif()
 
-    get_target_property(target_binary_dir ${target} BINARY_DIR)
-    set(type_list_file "${target_binary_dir}/meta_types/${target}_json_file_list.txt")
-    set(type_list_file_manual "${target_binary_dir}/meta_types/${target}_json_file_list_manual.txt")
+    _qt_internal_get_metatypes_build_dir(metatypes_dir "${target}")
+
+    set(type_list_file "${metatypes_dir}/${target}_json_file_list.txt")
+    set(type_list_file_manual "${metatypes_dir}/${target}_json_file_list_manual.txt")
 
     set(target_autogen_build_dir "")
     _qt_internal_get_target_autogen_build_dir(${target} target_autogen_build_dir)
+    _qt_internal_get_target_autogen_info_dir(${target} target_autogen_info_dir)
 
     get_target_property(uses_automoc ${target} AUTOMOC)
     set(automoc_args)
@@ -1358,21 +1411,18 @@ function(qt6_extract_metatypes target)
 
         get_property(is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
         if(NOT is_multi_config)
-            set(cmake_autogen_cache_file
-                "${target_binary_dir}/CMakeFiles/${target}_autogen.dir/ParseCache.txt")
+            set(cmake_autogen_cache_file "${target_autogen_info_dir}/ParseCache.txt")
             set(multi_config_args
                 --cmake-autogen-include-dir-path "${target_autogen_build_dir}/include"
             )
         else()
-            set(cmake_autogen_cache_file
-                "${target_binary_dir}/CMakeFiles/${target}_autogen.dir/ParseCache_$<CONFIG>.txt")
+            set(cmake_autogen_cache_file "${target_autogen_info_dir}/ParseCache_$<CONFIG>.txt")
             set(multi_config_args
                 --cmake-autogen-include-dir-path "${target_autogen_build_dir}/include_$<CONFIG>"
                 "--cmake-multi-config")
         endif()
 
-        set(cmake_autogen_info_file
-            "${target_binary_dir}/CMakeFiles/${target}_autogen.dir/AutogenInfo.json")
+        set(cmake_autogen_info_file "${target_autogen_info_dir}/AutogenInfo.json")
 
         set (use_dep_files FALSE)
         if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.17") # Requires automoc changes present only in 3.17
@@ -1487,11 +1537,11 @@ function(qt6_extract_metatypes target)
 
     string(TOLOWER ${target} target_lowercase)
     set(metatypes_file_name "qt6${target_lowercase}_metatypes.json")
-    set(metatypes_file "${target_binary_dir}/meta_types/${metatypes_file_name}")
-    set(metatypes_file_gen "${target_binary_dir}/meta_types/${metatypes_file_name}.gen")
+    set(metatypes_file "${metatypes_dir}/${metatypes_file_name}")
+    set(metatypes_file_gen "${metatypes_dir}/${metatypes_file_name}.gen")
 
     set(metatypes_dep_file_name "qt6${target_lowercase}_metatypes_dep.txt")
-    set(metatypes_dep_file "${target_binary_dir}/meta_types/${metatypes_dep_file_name}")
+    set(metatypes_dep_file "${metatypes_dir}/${metatypes_dep_file_name}")
 
     # Due to generated source file dependency rules being tied to the directory
     # scope in which they are created it is not possible for other targets which
@@ -1502,7 +1552,7 @@ function(qt6_extract_metatypes target)
     # file is then replaced with the contents of the generated file during
     # build.
     if (NOT EXISTS ${metatypes_file})
-        file(MAKE_DIRECTORY "${target_binary_dir}/meta_types")
+        file(MAKE_DIRECTORY "${metatypes_dir}")
         file(TOUCH ${metatypes_file})
     endif()
 
@@ -1522,9 +1572,22 @@ function(qt6_extract_metatypes target)
         VERBATIM
     )
 
-    if(CMAKE_GENERATOR MATCHES " Makefiles")
-        # Work around https://gitlab.kitware.com/cmake/cmake/-/issues/19005 to trigger the command
-        # that generates ${metatypes_file}.
+    if(CMAKE_GENERATOR MATCHES "Visual Studio")
+        # MSBuild cannot track BYPRODUCTS for dependency ordering between
+        # CustomBuild items. Without an explicit OUTPUT rule, MSBuild may run
+        # qmltyperegistrar (which depends on metatypes.json) before
+        # moc --collect-json (which produces metatypes.json as a BYPRODUCT).
+        # Use 'touch' instead of 'true' because MSBuild needs the output file's
+        # timestamp to be updated, otherwise the rule re-fires on every build.
+        add_custom_command(
+            OUTPUT ${metatypes_file}
+            DEPENDS ${metatypes_file_gen}
+            COMMAND ${CMAKE_COMMAND} -E touch ${metatypes_file}
+            VERBATIM
+        )
+    elseif(CMAKE_GENERATOR MATCHES " Makefiles")
+        # Work around https://gitlab.kitware.com/cmake/cmake/-/issues/19005
+        # to trigger the command that generates ${metatypes_file}.
         add_custom_command(
             OUTPUT ${metatypes_file}
             DEPENDS ${metatypes_file_gen}
@@ -2466,6 +2529,9 @@ function(_qt_internal_process_resource target resourceName)
         _qt_internal_expose_source_file_to_ide(${target} "${file}")
     endforeach()
 
+    set_property(TARGET ${target}
+        APPEND PROPERTY _qt_resource_source_files ${resource_files})
+
     # </qresource></RCC>
     string(APPEND qrcContents "  </qresource>\n</RCC>\n")
 
@@ -3173,41 +3239,64 @@ function(_qt_internal_setup_deploy_support)
         endif()
     endif()
 
-    # Generate path to the target (not host) qtpaths file. Needed for windeployqt when
-    # cross-compiling from an x86_64 host to an arm64 target, so it knows which architecture
-    # libraries should be deployed.
-    if(CMAKE_HOST_WIN32)
-        if(CMAKE_CROSSCOMPILING)
-            set(qt_paths_ext ".bat")
-        else()
-            set(qt_paths_ext ".exe")
-        endif()
-    else()
-        set(qt_paths_ext "")
-    endif()
+    # Generate path to the qtpaths executable or script, that will give info about the target
+    # platform, but which can run on the host. Needed for windeployqt when cross-compiling from
+    # an x86_64 host to an arm64 target, so it knows which architecture libraries should be
+    # deployed.
+    set(base_name "qtpaths")
+    set(base_names "")
 
-
-
-    set(target_qtpaths_path "")
-    set(qtpaths_prefix "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}")
     get_property(qt_major_version TARGET "${target}" PROPERTY INTERFACE_QT_MAJOR_VERSION)
     if(qt_major_version)
-        set(target_qtpaths_with_major_version_path
-            "${qtpaths_prefix}/qtpaths${qt_major_version}${qt_paths_ext}")
-        if(EXISTS "${target_qtpaths_with_major_version_path}")
-            set(target_qtpaths_path "${target_qtpaths_with_major_version_path}")
-        endif()
+        list(APPEND base_names "${base_name}${qt_major_version}")
     endif()
+    list(APPEND base_names "${base_name}")
 
-    if(NOT target_qtpaths_path)
-        set(target_qtpaths_path_without_version "${qtpaths_prefix}/qtpaths${qt_paths_ext}")
-        if(EXISTS "${target_qtpaths_path_without_version}")
-            set(target_qtpaths_path "${target_qtpaths_path_without_version}")
+    set(qtpaths_name_candidates "")
+    foreach(base_name IN LISTS base_names)
+        if(CMAKE_HOST_WIN32)
+            if(CMAKE_CROSSCOMPILING)
+                set(qt_paths_ext ".bat")
+                # Depending on whether QT_FORCE_BUILD_TOOLS was set when building Qt, a 'host-'
+                # prefix is prepended to the created qtpaths wrapper, not to collide with the
+                # cross-compiled excutable.
+                # Rather than exporting that QT_FORCE_BUILD_TOOLS to be available during user
+                # project configuration, search for both, with the bare one searched first.
+                list(APPEND qtpaths_name_candidates "${base_name}${qt_paths_ext}")
+                list(APPEND qtpaths_name_candidates "host-${base_name}${qt_paths_ext}")
+            else()
+                set(qt_paths_ext ".exe")
+                list(APPEND qtpaths_name_candidates "${base_name}${qt_paths_ext}")
+            endif()
+        else()
+            list(APPEND qtpaths_name_candidates "${base_name}")
         endif()
-    endif()
+    endforeach()
 
-    if(NOT target_qtpaths_path)
-        message(DEBUG "No qtpaths executable found for deployment purposes.")
+    set(qtpaths_prefix "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}")
+
+    set(candidate_paths "")
+    foreach(qtpaths_name_candidate IN LISTS qtpaths_name_candidates)
+        set(candidate_path "${qtpaths_prefix}/${qtpaths_name_candidate}")
+        list(APPEND candidate_paths "${candidate_path}")
+    endforeach()
+
+    set(target_qtpaths_path "")
+    foreach(candidate_path IN LISTS candidate_paths)
+        if(EXISTS "${candidate_path}")
+            set(target_qtpaths_path "${candidate_path}")
+            break()
+        endif()
+    endforeach()
+
+    list(JOIN candidate_paths "\n    " candidate_paths_joined)
+
+    if(WIN32 AND NOT QT_BUILDING_QT AND NOT QT_NO_QTPATHS_DEPLOYMENT_WARNING
+        AND NOT target_qtpaths_path)
+        message(WARNING
+            "No qtpaths executable found for deployment purposes. Candidates searched: \n    "
+            "${candidate_paths_joined}"
+        )
     endif()
 
     file(GENERATE OUTPUT "${QT_DEPLOY_SUPPORT}" CONTENT
@@ -3616,21 +3705,6 @@ macro(qt6_standard_project_setup)
         if(NOT DEFINED QT_I18N_SOURCE_LANGUAGE)
             set(QT_I18N_SOURCE_LANGUAGE ${__qt_sps_arg_I18N_SOURCE_LANGUAGE})
         endif()
-
-        if(CMAKE_GENERATOR STREQUAL "Xcode")
-            # Ensure we always use device SDK for Xcode for single-arch Qt builds
-            set(qt_osx_arch_count 0)
-            if(QT_OSX_ARCHITECTURES)
-                list(LENGTH QT_OSX_ARCHITECTURES qt_osx_arch_count)
-            endif()
-            if(NOT qt_osx_arch_count GREATER 1 AND "${CMAKE_OSX_SYSROOT}" MATCHES "^[a-z]+simulator$")
-                # Xcode expects the base SDK to be the device SDK
-                set(simulator_sysroot "${CMAKE_OSX_SYSROOT}")
-                string(REGEX REPLACE "simulator" "os" CMAKE_OSX_SYSROOT "${CMAKE_OSX_SYSROOT}")
-                set(CMAKE_OSX_SYSROOT "${CMAKE_OSX_SYSROOT}" CACHE STRING "" FORCE)
-                set(CMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS "${simulator_sysroot}")
-            endif()
-        endif()
     endif()
 endmacro()
 
@@ -3674,6 +3748,7 @@ function(_qt_internal_get_i18n_catalogs_for_modules out_var)
             list(APPEND result ${catalog})
         endforeach()
     endforeach()
+    list(REMOVE_DUPLICATES result)
     set("${out_var}" "${result}" PARENT_SCOPE)
 endfunction()
 

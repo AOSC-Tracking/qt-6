@@ -378,6 +378,7 @@ below:
         Pretty-print
       </message>
 
+
 <!-- The following IDS_FORM_VALIDATION_* messages were taken from Mozilla's dom.properties file.
 
 # ***** BEGIN LICENSE BLOCK *****
@@ -458,6 +459,9 @@ below:
         Please lengthen this text to <ph name="MIN_CHARACTERS">$2<ex>101</ex></ph> characters or more (you are currently using <ph name="CURRENT_LENGTH">$1<ex>100</ex></ph> characters).
       </message>
 
+      <message name="IDS_MEDIA_SESSION_DATA_SOURCE" desc="The name of the media session source if the media is from a data URL.">
+        Data URL
+      </message>
       <message name="IDS_MEDIA_SESSION_FILE_SOURCE" desc="The name of the media session source if the media is a local file.">
         File on your device
       </message>
@@ -465,6 +469,18 @@ below:
         Captions
       </message>
       <message name="IDS_MEDIA_OVERFLOW_MENU_CLOSED_CAPTIONS_SUBMENU_TITLE" desc="Media controls overflow menu title for the closed captions submenu. The text for this overflow menu should be short.">
+        Options
+      </message>
+      <message name="IDS_MEDIA_TRACK_IDENTIFIER_VERBOSE_TITLE_NUMBERED" desc="Track identifier prefix for when tracks have no name. The numeric track identifier will be joined after a space, like 'Track #2'">
+        Track #<ph name="TRACK_NUMBER">$1<ex>1</ex></ph>
+      </message>
+      <message name="IDS_MEDIA_OVERFLOW_MENU_SHOW_AUDIO_TRACK_MENU_BUTTON" desc="Media controls overflow menu item label for an audio track selection button. The text for this overflow menu should be short.">
+        Audio Tracks
+      </message>
+      <message name="IDS_MEDIA_OVERFLOW_MENU_SHOW_VIDEO_TRACK_MENU_BUTTON" desc="Media controls overflow menu item label for a video track selection button. The text for this overflow menu should be short.">
+        Video Tracks
+      </message>
+      <message name="IDS_MEDIA_OVERFLOW_MENU_TRACK_SELECTION_SUBMENU_TITLE" desc="Media controls overflow menu title for the video track selection submenu. The text for this overflow menu should be short.">
         Options
       </message>
       <message name="IDS_MEDIA_OVERFLOW_MENU_PLAYBACK_SPEED" desc="Media controls overflow menu item label for a playback speed button. The text for this overflow menu should be short.">

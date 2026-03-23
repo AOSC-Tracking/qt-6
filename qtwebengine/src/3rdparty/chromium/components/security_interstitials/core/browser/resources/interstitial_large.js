@@ -83,8 +83,6 @@ function setupEvents() {
   const supervisedUserVerifySubframe =
       interstitialType === 'SUPERVISED_USER_VERIFY_SUBFRAME';
   const hidePrimaryButton = loadTimeData.getBoolean('hide_primary_button');
-  const showRecurrentErrorParagraph =
-      loadTimeData.getBoolean('show_recurrent_error_paragraph');
   const showBlockedSiteMessage =
       loadTimeData.valueExists('show_blocked_site_message') ?
       loadTimeData.getBoolean('show_blocked_site_message') :
@@ -214,14 +212,6 @@ function setupEvents() {
     document.querySelector('#final-paragraph').classList.add(HIDDEN_CLASS);
   }
 
-
-  if (!ssl || !showRecurrentErrorParagraph) {
-    document.querySelector('#recurrent-error-message')
-        .classList.add(HIDDEN_CLASS);
-  } else {
-    body.classList.add('showing-recurrent-error-message');
-  }
-
   if (showBlockedSiteMessage) {
     document.querySelector('#blocked-site-message')
         .classList.remove(HIDDEN_CLASS);
@@ -243,6 +233,15 @@ function setupEvents() {
   if (learnMoreLink) {
     learnMoreLink.addEventListener('click', function(event) {
       sendCommand(SecurityInterstitialCommandId.CMD_OPEN_HELP_CENTER);
+    });
+  }
+
+  const androidAdvancedProtectionLink =
+      document.querySelector('#android-advanced-protection-settings-link');
+  if (androidAdvancedProtectionLink) {
+    androidAdvancedProtectionLink.addEventListener('click', function(event) {
+      sendCommand(SecurityInterstitialCommandId
+                      .CMD_OPEN_ANDROID_ADVANCED_PROTECTION_SETTINGS);
     });
   }
 

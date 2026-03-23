@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQMLLSHELPUTILS_P_H
 #define QQMLLSHELPUTILS_P_H
@@ -48,6 +49,8 @@ private:
     collectDocumentationLinks(const QQmlJS::Dom::DomItem &item, const QQmlJSScope::ConstPtr &scope,
                               const QString &name) const;
     void registerDocumentations(const QStringList &docs) const;
+
+    mutable QMutex m_mutex;
     std::unique_ptr<QQmlLSHelpProviderBase> m_helpPlugin;
     QString m_docRootPath;
     QHash<QString, QString> m_cppTypesToQmlTypes;

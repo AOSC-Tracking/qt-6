@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 #include "ink/geometry/affine_transform.h"
 #include "ink/geometry/angle.h"
+#include "ink/geometry/internal/jni/partitioned_mesh_jni_helper.h"
 #include "ink/geometry/intersects.h"
-#include "ink/geometry/partitioned_mesh.h"
 #include "ink/geometry/point.h"
 #include "ink/geometry/quad.h"
 #include "ink/geometry/rect.h"
@@ -30,23 +30,21 @@ namespace {
 using ::ink::AffineTransform;
 using ::ink::Angle;
 using ::ink::Intersects;
-using ::ink::PartitionedMesh;
 using ::ink::Point;
 using ::ink::Quad;
 using ::ink::Rect;
 using ::ink::Segment;
 using ::ink::Triangle;
+using ::ink::jni::CastToPartitionedMesh;
 
-PartitionedMesh* GetPartitionedMesh(jlong raw_ptr_to_partitioned_mesh) {
-  return reinterpret_cast<PartitionedMesh*>(raw_ptr_to_partitioned_mesh);
-}
 }  // namespace
 
 extern "C" {
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeVecSegmentIntersects)
-(JNIEnv* env, jclass clazz, jfloat vec_x, jfloat vec_y, jfloat segment_start_x,
- jfloat segment_start_y, jfloat segment_end_x, jfloat segment_end_y) {
+(JNIEnv* env, jobject object, jfloat vec_x, jfloat vec_y,
+ jfloat segment_start_x, jfloat segment_start_y, jfloat segment_end_x,
+ jfloat segment_end_y) {
   Point point{vec_x, vec_y};
   Segment segment{{segment_start_x, segment_start_y},
                   {segment_end_x, segment_end_y}};
@@ -54,7 +52,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeVecSegmentIntersects)
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeVecTriangleIntersects)
-(JNIEnv* env, jclass clazz, jfloat vec_x, jfloat vec_y, jfloat triangle_p0_x,
+(JNIEnv* env, jobject object, jfloat vec_x, jfloat vec_y, jfloat triangle_p0_x,
  jfloat triangle_p0_y, jfloat triangle_p1_x, jfloat triangle_p1_y,
  jfloat triangle_p2_x, jfloat triangle_p2_y) {
   Point point{vec_x, vec_y};
@@ -65,7 +63,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeVecTriangleIntersects)
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeVecBoxIntersects)
-(JNIEnv* env, jclass clazz, jfloat vec_x, jfloat vec_y, jfloat box_x_min,
+(JNIEnv* env, jobject object, jfloat vec_x, jfloat vec_y, jfloat box_x_min,
  jfloat box_y_min, jfloat box_x_max, jfloat box_y_max) {
   Point point{vec_x, vec_y};
   Rect rect =
@@ -74,7 +72,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeVecBoxIntersects)
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeVecParallelogramIntersects)
-(JNIEnv* env, jclass clazz, jfloat vec_x, jfloat vec_y,
+(JNIEnv* env, jobject object, jfloat vec_x, jfloat vec_y,
  jfloat parallelogram_center_x, jfloat parallelogram_center_y,
  jfloat parallelogram_width, jfloat parallelogram_height,
  jfloat parallelogram_angle_radian, jfloat parallelogram_shear_factor) {
@@ -87,9 +85,10 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeVecParallelogramIntersects)
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeSegmentSegmentIntersects)
-(JNIEnv* env, jclass clazz, jfloat segment_1_start_x, jfloat segment_1_start_y,
- jfloat segment_1_end_x, jfloat segment_1_end_y, jfloat segment_2_start_x,
- jfloat segment_2_start_y, jfloat segment_2_end_x, jfloat segment_2_end_y) {
+(JNIEnv* env, jobject object, jfloat segment_1_start_x,
+ jfloat segment_1_start_y, jfloat segment_1_end_x, jfloat segment_1_end_y,
+ jfloat segment_2_start_x, jfloat segment_2_start_y, jfloat segment_2_end_x,
+ jfloat segment_2_end_y) {
   Segment segment1{{segment_1_start_x, segment_1_start_y},
                    {segment_1_end_x, segment_1_end_y}};
   Segment segment2{{segment_2_start_x, segment_2_start_y},
@@ -98,7 +97,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeSegmentSegmentIntersects)
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeSegmentTriangleIntersects)
-(JNIEnv* env, jclass clazz, jfloat segment_start_x, jfloat segment_start_y,
+(JNIEnv* env, jobject object, jfloat segment_start_x, jfloat segment_start_y,
  jfloat segment_end_x, jfloat segment_end_y, jfloat triangle_p0_x,
  jfloat triangle_p0_y, jfloat triangle_p1_x, jfloat triangle_p1_y,
  jfloat triangle_p2_x, jfloat triangle_p2_y) {
@@ -111,7 +110,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeSegmentTriangleIntersects)
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeSegmentBoxIntersects)
-(JNIEnv* env, jclass clazz, jfloat segment_start_x, jfloat segment_start_y,
+(JNIEnv* env, jobject object, jfloat segment_start_x, jfloat segment_start_y,
  jfloat segment_end_x, jfloat segment_end_y, jfloat box_x_min, jfloat box_y_min,
  jfloat box_x_max, jfloat box_y_max) {
   Segment segment{{segment_start_x, segment_start_y},
@@ -123,7 +122,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeSegmentBoxIntersects)
 
 JNI_METHOD(geometry, Intersection, jboolean,
            nativeSegmentParallelogramIntersects)
-(JNIEnv* env, jclass clazz, jfloat segment_start_x, jfloat segment_start_y,
+(JNIEnv* env, jobject object, jfloat segment_start_x, jfloat segment_start_y,
  jfloat segment_end_x, jfloat segment_end_y, jfloat parallelogram_center_x,
  jfloat parallelogram_center_y, jfloat parallelogram_width,
  jfloat parallelogram_height, jfloat parallelogram_angle_radian,
@@ -138,7 +137,7 @@ JNI_METHOD(geometry, Intersection, jboolean,
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeTriangleTriangleIntersects)
-(JNIEnv* env, jclass clazz, jfloat triangle_1_p0_x, jfloat triangle_1_p0_y,
+(JNIEnv* env, jobject object, jfloat triangle_1_p0_x, jfloat triangle_1_p0_y,
  jfloat triangle_1_p1_x, jfloat triangle_1_p1_y, jfloat triangle_1_p2_x,
  jfloat triangle_1_p2_y, jfloat triangle_2_p0_x, jfloat triangle_2_p0_y,
  jfloat triangle_2_p1_x, jfloat triangle_2_p1_y, jfloat triangle_2_p2_x,
@@ -153,7 +152,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeTriangleTriangleIntersects)
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeTriangleBoxIntersects)
-(JNIEnv* env, jclass clazz, jfloat triangle_p0_x, jfloat triangle_p0_y,
+(JNIEnv* env, jobject object, jfloat triangle_p0_x, jfloat triangle_p0_y,
  jfloat triangle_p1_x, jfloat triangle_p1_y, jfloat triangle_p2_x,
  jfloat triangle_p2_y, jfloat box_x_min, jfloat box_y_min, jfloat box_x_max,
  jfloat box_y_max) {
@@ -167,7 +166,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeTriangleBoxIntersects)
 
 JNI_METHOD(geometry, Intersection, jboolean,
            nativeTriangleParallelogramIntersects)
-(JNIEnv* env, jclass clazz, jfloat triangle_p0_x, jfloat triangle_p0_y,
+(JNIEnv* env, jobject object, jfloat triangle_p0_x, jfloat triangle_p0_y,
  jfloat triangle_p1_x, jfloat triangle_p1_y, jfloat triangle_p2_x,
  jfloat triangle_p2_y, jfloat parallelogram_center_x,
  jfloat parallelogram_center_y, jfloat parallelogram_width,
@@ -184,7 +183,7 @@ JNI_METHOD(geometry, Intersection, jboolean,
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeBoxBoxIntersects)
-(JNIEnv* env, jclass clazz, jfloat box_1_x_min, jfloat box_1_y_min,
+(JNIEnv* env, jobject object, jfloat box_1_x_min, jfloat box_1_y_min,
  jfloat box_1_x_max, jfloat box_1_y_max, jfloat box_2_x_min, jfloat box_2_y_min,
  jfloat box_2_x_max, jfloat box_2_y_max) {
   Rect rect1 = Rect::FromTwoPoints({box_1_x_min, box_1_y_min},
@@ -195,7 +194,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeBoxBoxIntersects)
 }
 
 JNI_METHOD(geometry, Intersection, jboolean, nativeBoxParallelogramIntersects)
-(JNIEnv* env, jclass clazz, jfloat box_x_min, jfloat box_y_min,
+(JNIEnv* env, jobject object, jfloat box_x_min, jfloat box_y_min,
  jfloat box_x_max, jfloat box_y_max, jfloat parallelogram_center_x,
  jfloat parallelogram_center_y, jfloat parallelogram_width,
  jfloat parallelogram_height, jfloat parallelogram_angle_radian,
@@ -211,7 +210,7 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeBoxParallelogramIntersects)
 
 JNI_METHOD(geometry, Intersection, jboolean,
            nativeParallelogramParallelogramIntersects)
-(JNIEnv* env, jclass clazz, jfloat parallelogram_1_center_x,
+(JNIEnv* env, jobject object, jfloat parallelogram_1_center_x,
  jfloat parallelogram_1_center_y, jfloat parallelogram_1_width,
  jfloat parallelogram_1_height, jfloat parallelogram_1_angle_in_radian,
  jfloat parallelogram_1_shear_factor, jfloat parallelogram_2_center_x,
@@ -231,26 +230,27 @@ JNI_METHOD(geometry, Intersection, jboolean,
   return Intersects(quad1, quad2);
 }
 
-JNI_METHOD(geometry, Intersection, jboolean, nativeMeshVecIntersects)
-(JNIEnv* env, jclass clazz, jlong raw_ptr_to_partitioned_mesh, jfloat vec_x,
- jfloat vec_y, jfloat vec_to_partitionedMesh_transform_a,
+JNI_METHOD(geometry, Intersection, jboolean, nativePartitionedMeshVecIntersects)
+(JNIEnv* env, jobject object, jlong partitioned_mesh_native_pointer,
+ jfloat vec_x, jfloat vec_y, jfloat vec_to_partitionedMesh_transform_a,
  jfloat vec_to_partitionedMesh_transform_b,
  jfloat vec_to_partitionedMesh_transform_c,
  jfloat vec_to_partitionedMesh_transform_d,
  jfloat vec_to_partitionedMesh_transform_e,
  jfloat vec_to_partitionedMesh_transform_f) {
   Point point{vec_x, vec_y};
-  PartitionedMesh* partitioned_mesh =
-      GetPartitionedMesh(raw_ptr_to_partitioned_mesh);
+
   AffineTransform transform(
       vec_to_partitionedMesh_transform_a, vec_to_partitionedMesh_transform_b,
       vec_to_partitionedMesh_transform_c, vec_to_partitionedMesh_transform_d,
       vec_to_partitionedMesh_transform_e, vec_to_partitionedMesh_transform_f);
-  return Intersects(point, *partitioned_mesh, transform);
+  return Intersects(
+      point, CastToPartitionedMesh(partitioned_mesh_native_pointer), transform);
 }
 
-JNI_METHOD(geometry, Intersection, jboolean, nativeMeshSegmentIntersects)
-(JNIEnv* env, jclass clazz, jlong raw_ptr_to_partitioned_mesh,
+JNI_METHOD(geometry, Intersection, jboolean,
+           nativePartitionedMeshSegmentIntersects)
+(JNIEnv* env, jobject object, jlong partitioned_mesh_native_pointer,
  jfloat segment_start_x, jfloat segment_start_y, jfloat segment_end_x,
  jfloat segment_end_y, jfloat segment_to_partitionedMesh_transform_a,
  jfloat segment_to_partitionedMesh_transform_b,
@@ -260,19 +260,20 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeMeshSegmentIntersects)
  jfloat segment_to_partitionedMesh_transform_f) {
   Segment segment{{segment_start_x, segment_start_y},
                   {segment_end_x, segment_end_y}};
-  PartitionedMesh* partitioned_mesh =
-      GetPartitionedMesh(raw_ptr_to_partitioned_mesh);
   AffineTransform transform(segment_to_partitionedMesh_transform_a,
                             segment_to_partitionedMesh_transform_b,
                             segment_to_partitionedMesh_transform_c,
                             segment_to_partitionedMesh_transform_d,
                             segment_to_partitionedMesh_transform_e,
                             segment_to_partitionedMesh_transform_f);
-  return Intersects(segment, *partitioned_mesh, transform);
+  return Intersects(segment,
+                    CastToPartitionedMesh(partitioned_mesh_native_pointer),
+                    transform);
 }
 
-JNI_METHOD(geometry, Intersection, jboolean, nativeMeshTriangleIntersects)
-(JNIEnv* env, jclass clazz, jlong raw_ptr_to_partitioned_mesh,
+JNI_METHOD(geometry, Intersection, jboolean,
+           nativePartitionedMeshTriangleIntersects)
+(JNIEnv* env, jobject object, jlong partitioned_mesh_native_pointer,
  jfloat triangle_p0_x, jfloat triangle_p0_y, jfloat triangle_p1_x,
  jfloat triangle_p1_y, jfloat triangle_p2_x, jfloat triangle_p2_y,
  jfloat triangle_to_partitionedMesh_transform_a,
@@ -281,8 +282,6 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeMeshTriangleIntersects)
  jfloat triangle_to_partitionedMesh_transform_d,
  jfloat triangle_to_partitionedMesh_transform_e,
  jfloat triangle_to_partitionedMesh_transform_f) {
-  PartitionedMesh* partitioned_mesh =
-      GetPartitionedMesh(raw_ptr_to_partitioned_mesh);
   Triangle triangle{{triangle_p0_x, triangle_p0_y},
                     {triangle_p1_x, triangle_p1_y},
                     {triangle_p2_x, triangle_p2_y}};
@@ -292,31 +291,33 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeMeshTriangleIntersects)
                             triangle_to_partitionedMesh_transform_d,
                             triangle_to_partitionedMesh_transform_e,
                             triangle_to_partitionedMesh_transform_f);
-  return Intersects(triangle, *partitioned_mesh, transform);
+  return Intersects(triangle,
+                    CastToPartitionedMesh(partitioned_mesh_native_pointer),
+                    transform);
 }
 
-JNI_METHOD(geometry, Intersection, jboolean, nativeMeshBoxIntersects)
-(JNIEnv* env, jclass clazz, jlong raw_ptr_to_partitioned_mesh, jfloat box_x_min,
- jfloat box_y_min, jfloat box_x_max, jfloat box_y_max,
+JNI_METHOD(geometry, Intersection, jboolean, nativePartitionedMeshBoxIntersects)
+(JNIEnv* env, jobject object, jlong partitioned_mesh_native_pointer,
+ jfloat box_x_min, jfloat box_y_min, jfloat box_x_max, jfloat box_y_max,
  jfloat box_to_partitionedMesh_transform_a,
  jfloat box_to_partitionedMesh_transform_b,
  jfloat box_to_partitionedMesh_transform_c,
  jfloat box_to_partitionedMesh_transform_d,
  jfloat box_to_partitionedMesh_transform_e,
  jfloat box_to_partitionedMesh_transform_f) {
-  PartitionedMesh* partitioned_mesh =
-      GetPartitionedMesh(raw_ptr_to_partitioned_mesh);
   Rect rect =
       Rect::FromTwoPoints({box_x_min, box_y_min}, {box_x_max, box_y_max});
   AffineTransform transform(
       box_to_partitionedMesh_transform_a, box_to_partitionedMesh_transform_b,
       box_to_partitionedMesh_transform_c, box_to_partitionedMesh_transform_d,
       box_to_partitionedMesh_transform_e, box_to_partitionedMesh_transform_f);
-  return Intersects(rect, *partitioned_mesh, transform);
+  return Intersects(
+      rect, CastToPartitionedMesh(partitioned_mesh_native_pointer), transform);
 }
 
-JNI_METHOD(geometry, Intersection, jboolean, nativeMeshParallelogramIntersects)
-(JNIEnv* env, jclass clazz, jlong raw_ptr_to_partitioned_mesh,
+JNI_METHOD(geometry, Intersection, jboolean,
+           nativePartitionedMeshParallelogramIntersects)
+(JNIEnv* env, jobject object, jlong partitioned_mesh_native_pointer,
  jfloat parallelogram_center_x, jfloat parallelogram_center_y,
  jfloat parallelogram_width, jfloat parallelogram_height,
  jfloat parallelogram_angle_radian, jfloat parallelogram_shear_factor,
@@ -326,8 +327,6 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeMeshParallelogramIntersects)
  jfloat parallelogram_to_partitionedMesh_transform_d,
  jfloat parallelogram_to_partitionedMesh_transform_e,
  jfloat parallelogram_to_partitionedMesh_transform_f) {
-  PartitionedMesh* partitioned_mesh =
-      GetPartitionedMesh(raw_ptr_to_partitioned_mesh);
   Quad quad = Quad::FromCenterDimensionsRotationAndShear(
       Point{parallelogram_center_x, parallelogram_center_y},
       parallelogram_width, parallelogram_height,
@@ -338,23 +337,20 @@ JNI_METHOD(geometry, Intersection, jboolean, nativeMeshParallelogramIntersects)
                             parallelogram_to_partitionedMesh_transform_d,
                             parallelogram_to_partitionedMesh_transform_e,
                             parallelogram_to_partitionedMesh_transform_f);
-  return Intersects(quad, *partitioned_mesh, transform);
+  return Intersects(
+      quad, CastToPartitionedMesh(partitioned_mesh_native_pointer), transform);
 }
 
 JNI_METHOD(geometry, Intersection, jboolean,
-           nativeMeshPartitionedMeshIntersects)
-(JNIEnv* env, jclass clazz, jlong raw_pointer_to_this_partitioned_mesh,
- jlong raw_pointer_to_other_partitioned_mesh, jfloat this_to_common_transform_a,
+           nativePartitionedMeshPartitionedMeshIntersects)
+(JNIEnv* env, jobject object, jlong this_partitioned_mesh_native_pointer,
+ jlong other_partitioned_mesh_native_pointer, jfloat this_to_common_transform_a,
  jfloat this_to_common_transform_b, jfloat this_to_common_transform_c,
  jfloat this_to_common_transform_d, jfloat this_to_common_transform_e,
  jfloat this_to_common_transform_f, jfloat other_to_common_transform_a,
  jfloat other_to_common_transform_b, jfloat other_to_common_transform_c,
  jfloat other_to_common_transform_d, jfloat other_to_common_transform_e,
  jfloat other_to_common_transform_f) {
-  PartitionedMesh* this_partitioned_mesh =
-      GetPartitionedMesh(raw_pointer_to_this_partitioned_mesh);
-  PartitionedMesh* other_partitioned_mesh =
-      GetPartitionedMesh(raw_pointer_to_other_partitioned_mesh);
   AffineTransform this_to_common_transform(
       this_to_common_transform_a, this_to_common_transform_b,
       this_to_common_transform_c, this_to_common_transform_d,
@@ -363,8 +359,11 @@ JNI_METHOD(geometry, Intersection, jboolean,
       other_to_common_transform_a, other_to_common_transform_b,
       other_to_common_transform_c, other_to_common_transform_d,
       other_to_common_transform_e, other_to_common_transform_f);
-  return Intersects(*this_partitioned_mesh, this_to_common_transform,
-                    *other_partitioned_mesh, other_to_common_transform);
+  return Intersects(
+      CastToPartitionedMesh(this_partitioned_mesh_native_pointer),
+      this_to_common_transform,
+      CastToPartitionedMesh(other_partitioned_mesh_native_pointer),
+      other_to_common_transform);
 }
 
 }  // extern "C

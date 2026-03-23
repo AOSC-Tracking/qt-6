@@ -45,7 +45,6 @@ export interface DownloadsItemElement {
     'controlled-by': HTMLElement,
     'file-icon': HTMLImageElement,
     'file-link': HTMLAnchorElement,
-    'referrer-url': HTMLAnchorElement,
     'url': HTMLAnchorElement,
   };
 }
@@ -100,29 +99,29 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
       // </if>
 
       useFileIcon_: {type: Boolean},
-      showReferrerUrl_: {type: Boolean},
+      showInitiatorOrigin_: {type: Boolean},
     };
   }
 
-  data?: MojomData;
+  accessor data: MojomData|undefined;
   // <if expr="_google_chrome">
-  showEsbPromotion: boolean = false;
+  accessor showEsbPromotion: boolean = false;
   // </if>
   private mojoHandler_: PageHandlerInterface|null = null;
-  protected isDangerous_: boolean = false;
-  protected isReviewable_: boolean = false;
-  protected pauseOrResumeText_: string = '';
-  protected showCancel_: boolean = false;
-  protected showProgress_: boolean = false;
-  protected showDeepScan_: boolean = false;
-  protected showOpenAnyway_: boolean = false;
-  protected useFileIcon_: boolean = false;
-  protected showReferrerUrl_: boolean =
-      loadTimeData.getBoolean('showReferrerUrl');
+  protected accessor isDangerous_: boolean = false;
+  protected accessor isReviewable_: boolean = false;
+  protected accessor pauseOrResumeText_: string = '';
+  protected accessor showCancel_: boolean = false;
+  protected accessor showProgress_: boolean = false;
+  protected accessor showDeepScan_: boolean = false;
+  protected accessor showOpenAnyway_: boolean = false;
+  protected accessor useFileIcon_: boolean = false;
+  protected accessor showInitiatorOrigin_: boolean =
+      loadTimeData.getBoolean('showInitiatorOrigin');
   private restoreFocusAfterCancel_: boolean = false;
-  private displayType_: DisplayType = DisplayType.NORMAL;
-  private completelyOnDisk_: boolean = true;
-  protected shouldLinkFilename_: boolean = true;
+  private accessor displayType_: DisplayType = DisplayType.NORMAL;
+  private accessor completelyOnDisk_: boolean = true;
+  protected accessor shouldLinkFilename_: boolean = true;
   override overrideCustomEquivalent: boolean = true;
 
   override firstUpdated() {
@@ -549,12 +548,6 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
             switch (data.tailoredWarningType) {
               case TailoredWarningType.kCookieTheft:
                 return loadTimeData.getString('dangerDownloadCookieTheft');
-              case TailoredWarningType.kCookieTheftWithAccountInfo:
-                return data.accountEmail ?
-                    loadTimeData.getStringF(
-                        'dangerDownloadCookieTheftAndAccountDesc',
-                        data.accountEmail) :
-                    loadTimeData.getString('dangerDownloadCookieTheft');
               case TailoredWarningType.kSuspiciousArchive:
               case TailoredWarningType.kNoApplicableTailoredWarningType:
                 return loadTimeData.getString('dangerDownloadDesc');
@@ -567,7 +560,6 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
                 return loadTimeData.getString(
                     'dangerUncommonSuspiciousArchiveDesc');
               case TailoredWarningType.kCookieTheft:
-              case TailoredWarningType.kCookieTheftWithAccountInfo:
               case TailoredWarningType.kNoApplicableTailoredWarningType:
                 return loadTimeData.getString('dangerUncommonDesc');
               default:
@@ -695,7 +687,7 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
       }
 
       assert(this.displayType_ === DisplayType.NORMAL);
-      const dangerType = this.data.dangerType as DangerType;
+      const dangerType: DangerType = this.data.dangerType;
       if (this.isSuspiciousEnterpriseApVerdict_(
               loadTimeData.getBoolean('requestsApVerdicts'), dangerType)) {
         return 'cr:warning';
@@ -1032,13 +1024,13 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
     }
   }
 
-  protected shouldShowReferrerUrl_(): boolean {
-    return this.showReferrerUrl_ && !!this.data &&
-        this.data.displayReferrerUrl.data.length > 0;
-  }
-
-  getReferrerUrlAnchorElement(): HTMLAnchorElement|null {
-    return this.$['referrer-url'].querySelector('a') || null;
+  protected computeInitiatorOriginText_(): string {
+    if (!this.data || this.data.displayInitiatorOrigin.data.length === 0) {
+      return '';
+    }
+    return loadTimeData.getStringF(
+        'initiatorLine',
+        mojoString16ToString(this.data.displayInitiatorOrigin));
   }
 
   private updateUiForStateChange_() {
@@ -1047,32 +1039,8 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
       this.$['file-link'].removeAttribute('href');
     };
 
-    const updateReferrerUrlLinkHref = (hrefValue?: string) => {
-      const referrerUrlLink = this.getReferrerUrlAnchorElement();
-      if (!referrerUrlLink) {
-        // No <a> tag, nothing to do.
-        return;
-      }
-      if (!hrefValue) {
-        referrerUrlLink.removeAttribute('href');
-        return;
-      }
-      referrerUrlLink.setAttribute('href', hrefValue);
-      referrerUrlLink.setAttribute('focus-row-control', '');
-      referrerUrlLink.setAttribute('focus-type', 'referrerUrl');
-      referrerUrlLink.setAttribute('target', '_blank');
-      referrerUrlLink.setAttribute('rel', 'noopener');
-    };
-
     if (!this.data) {
       return;
-    }
-
-    // "else" case already handled by `shouldShowReferrerUrl_`.
-    if (this.data.displayReferrerUrl.data.length > 0) {
-      const referrerLine = loadTimeData.getStringF(
-          'referrerLine', mojoString16ToString(this.data.displayReferrerUrl));
-      this.$['referrer-url'].innerHTML = sanitizeInnerHtml(referrerLine);
     }
 
     // Returns whether to use the file icon, and additionally clears file url
@@ -1081,7 +1049,6 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
       const use = this.displayType_ === DisplayType.NORMAL;
       if (!use) {
         removeFileUrlLinks();
-        updateReferrerUrlLinkHref();
       }
       return use;
     };
@@ -1096,13 +1063,6 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
       this.$.url.href = this.data.url.url;
     } else {
       removeFileUrlLinks();
-    }
-
-    // The file is not dangerous. Link the referrer_url if supplied.
-    if (this.data.referrerUrl) {
-      updateReferrerUrlLinkHref(this.data.referrerUrl.url);
-    } else {
-      updateReferrerUrlLinkHref();
     }
 
     const path = this.data.filePath;
@@ -1129,8 +1089,13 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
     if (!this.data || !this.data.url) {
       return;
     }
-    navigator.clipboard.writeText(this.data.url.url);
-    this.displayCopyToast_(e);
+    let copied = true;
+    navigator.clipboard.writeText(this.data.url.url)
+        .catch(error => {
+          console.error('Unable to copy to clipboard:', error);
+          copied = false;
+        })
+        .finally(() => this.displayCopyToast_(e, copied));
   }
 
   protected onMoreActionsClick_() {
@@ -1233,19 +1198,24 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
     this.getMoreActionsMenu().close();
   }
 
-  private displayCopyToast_(e: Event) {
+  private displayCopyToast_(e: Event, copied: boolean) {
     if (!this.data || !this.data.url) {
       return;
     }
-
-    const pieces = loadTimeData.getSubstitutedStringPieces(
-                       loadTimeData.getString('toastCopiedDownloadLink'),
-                       this.data.url.url) as unknown as
-        Array<{collapsible: boolean, value: string, arg: string}>;
-    pieces.forEach(p => {
-      p.collapsible = !!p.arg;
-    });
-    getToastManager().showForStringPieces(pieces, /*hideSlotted=*/ true);
+    if (copied) {
+      const pieces = loadTimeData.getSubstitutedStringPieces(
+                         loadTimeData.getString('toastCopiedDownloadLink'),
+                         this.data.url.url) as unknown as
+          Array<{collapsible: boolean, value: string, arg: string}>;
+      pieces.forEach(p => {
+        p.collapsible = !!p.arg;
+      });
+      getToastManager().showForStringPieces(pieces, /*hideSlotted=*/ true);
+    } else {
+      getToastManager().show(
+          loadTimeData.getString('toastCopyDownloadLinkFailed'),
+          /*hideSlotted=*/ true);
+    }
 
     e.stopPropagation();
     e.preventDefault();
@@ -1333,7 +1303,7 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
     setTimeout(() => {
       const element = this.getFocusRow().getFirstFocusable('retry');
       if (element) {
-        (element as HTMLElement).focus();
+        element.focus();
       }
     });
   }

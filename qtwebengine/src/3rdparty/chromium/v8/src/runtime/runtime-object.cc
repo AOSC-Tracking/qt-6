@@ -248,9 +248,19 @@ RUNTIME_FUNCTION(Runtime_HasOwnConstDataProperty) {
       case LookupIterator::DATA:
         return isolate->heap()->ToBoolean(it.constness() ==
                                           PropertyConstness::kConst);
-      default:
+      case LookupIterator::INTERCEPTOR:
+      case LookupIterator::TRANSITION:
+      case LookupIterator::ACCESS_CHECK:
+      case LookupIterator::JSPROXY:
+      case LookupIterator::WASM_OBJECT:
+      case LookupIterator::TYPED_ARRAY_INDEX_NOT_FOUND:
+      case LookupIterator::ACCESSOR:
         return ReadOnlyRoots(isolate).undefined_value();
+
+      case LookupIterator::STRING_LOOKUP_START_OBJECT:
+        UNREACHABLE();
     }
+    UNREACHABLE();
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -320,7 +330,7 @@ RUNTIME_FUNCTION(Runtime_AddPrivateBrand) {
   DCHECK_GE(depth, 0);
   for (; depth > 0; depth--) {
     context = direct_handle(
-        Cast<Context>(context->get(Context::PREVIOUS_INDEX)), isolate);
+        Cast<Context>(context->GetNoCell(Context::PREVIOUS_INDEX)), isolate);
   }
   DCHECK_EQ(context->scope_info()->scope_type(), ScopeType::CLASS_SCOPE);
   Maybe<bool> added_brand = Object::AddDataProperty(
@@ -366,7 +376,7 @@ RUNTIME_FUNCTION(Runtime_ObjectCreate) {
   return *obj;
 }
 
-MaybeHandle<Object> Runtime::SetObjectProperty(
+MaybeDirectHandle<Object> Runtime::SetObjectProperty(
     Isolate* isolate, DirectHandle<JSAny> lookup_start_obj,
     DirectHandle<Object> key, DirectHandle<Object> value,
     MaybeDirectHandle<JSAny> maybe_receiver, StoreOrigin store_origin,
@@ -394,7 +404,7 @@ MaybeHandle<Object> Runtime::SetObjectProperty(
   // Check if the given key is an array index.
   bool success = false;
   PropertyKey lookup_key(isolate, key, &success);
-  if (!success) return MaybeHandle<Object>();
+  if (!success) return MaybeDirectHandle<Object>();
   LookupIterator it(isolate, receiver, lookup_key, lookup_start_obj);
   if (IsSymbol(*key) && Cast<Symbol>(*key)->is_private_name()) {
     Maybe<bool> can_store = JSReceiver::CheckPrivateNameStore(&it, false);
@@ -407,10 +417,10 @@ MaybeHandle<Object> Runtime::SetObjectProperty(
   MAYBE_RETURN_NULL(
       Object::SetProperty(&it, value, store_origin, should_throw));
 
-  return indirect_handle(value, isolate);
+  return value;
 }
 
-MaybeHandle<Object> Runtime::SetObjectProperty(
+MaybeDirectHandle<Object> Runtime::SetObjectProperty(
     Isolate* isolate, DirectHandle<JSAny> object, DirectHandle<Object> key,
     DirectHandle<Object> value, StoreOrigin store_origin,
     Maybe<ShouldThrow> should_throw) {
@@ -418,11 +428,9 @@ MaybeHandle<Object> Runtime::SetObjectProperty(
                            should_throw);
 }
 
-MaybeHandle<Object> Runtime::DefineObjectOwnProperty(Isolate* isolate,
-                                                     DirectHandle<JSAny> object,
-                                                     DirectHandle<Object> key,
-                                                     Handle<Object> value,
-                                                     StoreOrigin store_origin) {
+MaybeDirectHandle<Object> Runtime::DefineObjectOwnProperty(
+    Isolate* isolate, DirectHandle<JSAny> object, DirectHandle<Object> key,
+    DirectHandle<Object> value, StoreOrigin store_origin) {
   if (IsNullOrUndefined(*object, isolate)) {
     MaybeDirectHandle<String> maybe_property =
         Object::NoSideEffectsToMaybeString(isolate, key);
@@ -441,7 +449,7 @@ MaybeHandle<Object> Runtime::DefineObjectOwnProperty(Isolate* isolate,
   // Check if the given key is an array index.
   bool success = false;
   PropertyKey lookup_key(isolate, key, &success);
-  if (!success) return MaybeHandle<Object>();
+  if (!success) return MaybeDirectHandle<Object>();
 
   if (IsSymbol(*key) && Cast<Symbol>(*key)->is_private_name()) {
     LookupIterator it(isolate, object, lookup_key, LookupIterator::OWN);
@@ -699,7 +707,8 @@ RUNTIME_FUNCTION(Runtime_GetProperty) {
         if (Smi::ToInt(*key_obj) >= lookup_start_object->elements()->length()) {
           elements_kind = IsHoleyElementsKind(elements_kind) ? HOLEY_ELEMENTS
                                                              : PACKED_ELEMENTS;
-          JSObject::TransitionElementsKind(lookup_start_object, elements_kind);
+          JSObject::TransitionElementsKind(isolate, lookup_start_object,
+                                           elements_kind);
         }
       } else {
         DCHECK(IsSmiOrObjectElementsKind(elements_kind) ||
@@ -742,7 +751,7 @@ RUNTIME_FUNCTION(Runtime_DefineObjectOwnProperty) {
 
   DirectHandle<JSAny> object = args.at<JSAny>(0);
   DirectHandle<Object> key = args.at(1);
-  Handle<Object> value = args.at(2);
+  DirectHandle<Object> value = args.at(2);
 
   RETURN_RESULT_OR_FAILURE(
       isolate, Runtime::DefineObjectOwnProperty(isolate, object, key, value,
@@ -971,12 +980,12 @@ RUNTIME_FUNCTION(Runtime_SetFunctionName) {
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
   DirectHandle<Object> value = args.at(0);
-  Handle<Name> name = args.at<Name>(1);
+  DirectHandle<Name> name = args.at<Name>(1);
   DCHECK(IsJSFunction(*value));
   auto function = Cast<JSFunction>(value);
   DCHECK(!function->shared()->HasSharedName());
   DirectHandle<Map> function_map(function->map(), isolate);
-  if (!JSFunction::SetName(function, name,
+  if (!JSFunction::SetName(isolate, function, name,
                            isolate->factory()->empty_string())) {
     return ReadOnlyRoots(isolate).exception();
   }
@@ -1024,7 +1033,7 @@ RUNTIME_FUNCTION(Runtime_DefineKeyedOwnPropertyInLiteral) {
     auto function = Cast<JSFunction>(value);
     DCHECK(!function->shared()->HasSharedName());
     DirectHandle<Map> function_map(function->map(), isolate);
-    if (!JSFunction::SetName(function, Cast<Name>(name),
+    if (!JSFunction::SetName(isolate, function, Cast<Name>(name),
                              isolate->factory()->empty_string())) {
       return ReadOnlyRoots(isolate).exception();
     }
@@ -1076,13 +1085,14 @@ RUNTIME_FUNCTION(Runtime_DefineGetterPropertyUnchecked) {
   HandleScope scope(isolate);
   DCHECK_EQ(4, args.length());
   DirectHandle<JSObject> object = args.at<JSObject>(0);
-  Handle<Name> name = args.at<Name>(1);
+  DirectHandle<Name> name = args.at<Name>(1);
   DirectHandle<JSFunction> getter = args.at<JSFunction>(2);
   auto attrs = PropertyAttributesFromInt(args.smi_value_at(3));
 
   if (Cast<String>(getter->shared()->Name())->length() == 0) {
     DirectHandle<Map> getter_map(getter->map(), isolate);
-    if (!JSFunction::SetName(getter, name, isolate->factory()->get_string())) {
+    if (!JSFunction::SetName(isolate, getter, name,
+                             isolate->factory()->get_string())) {
       return ReadOnlyRoots(isolate).exception();
     }
     CHECK_EQ(*getter_map, getter->map());
@@ -1222,13 +1232,14 @@ RUNTIME_FUNCTION(Runtime_DefineSetterPropertyUnchecked) {
   HandleScope scope(isolate);
   DCHECK_EQ(4, args.length());
   DirectHandle<JSObject> object = args.at<JSObject>(0);
-  Handle<Name> name = args.at<Name>(1);
+  DirectHandle<Name> name = args.at<Name>(1);
   DirectHandle<JSFunction> setter = args.at<JSFunction>(2);
   auto attrs = PropertyAttributesFromInt(args.smi_value_at(3));
 
   if (Cast<String>(setter->shared()->Name())->length() == 0) {
     DirectHandle<Map> setter_map(setter->map(), isolate);
-    if (!JSFunction::SetName(setter, name, isolate->factory()->set_string())) {
+    if (!JSFunction::SetName(isolate, setter, name,
+                             isolate->factory()->set_string())) {
       return ReadOnlyRoots(isolate).exception();
     }
     CHECK_EQ(*setter_map, setter->map());
@@ -1324,7 +1335,7 @@ RUNTIME_FUNCTION(Runtime_SetOwnPropertyIgnoreAttributes) {
   DCHECK_EQ(4, args.length());
   DirectHandle<JSObject> o = args.at<JSObject>(0);
   DirectHandle<String> key = args.at<String>(1);
-  Handle<Object> value = args.at(2);
+  DirectHandle<Object> value = args.at(2);
   int attributes = args.smi_value_at(3);
 
   RETURN_RESULT_OR_FAILURE(isolate,
@@ -1371,14 +1382,14 @@ void CollectPrivateMethodsAndAccessorsFromContext(
     std::vector<PrivateMember>* results) {
   DirectHandle<ScopeInfo> scope_info(context->scope_info(), isolate);
   VariableLookupResult lookup_result;
-  int context_index = scope_info->ContextSlotIndex(desc, &lookup_result);
+  int context_index = scope_info->ContextSlotIndex(*desc, &lookup_result);
   if (context_index == -1 ||
       !IsPrivateMethodOrAccessorVariableMode(lookup_result.mode) ||
       lookup_result.is_static_flag != is_static_flag) {
     return;
   }
 
-  Handle<Object> slot_value(context->get(context_index), isolate);
+  Handle<Object> slot_value(context->GetNoCell(context_index), isolate);
   DCHECK_IMPLIES(lookup_result.mode == VariableMode::kPrivateMethod,
                  IsJSFunction(*slot_value));
   DCHECK_IMPLIES(lookup_result.mode != VariableMode::kPrivateMethod,
@@ -1398,11 +1409,10 @@ Maybe<bool> CollectPrivateMembersFromReceiver(
   PropertyFilter key_filter =
       static_cast<PropertyFilter>(PropertyFilter::PRIVATE_NAMES_ONLY);
   DirectHandle<FixedArray> keys;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+  ASSIGN_RETURN_ON_EXCEPTION(
       isolate, keys,
       KeyAccumulator::GetKeys(isolate, receiver, KeyCollectionMode::kOwnOnly,
-                              key_filter, GetKeysConversion::kConvertToString),
-      Nothing<bool>());
+                              key_filter, GetKeysConversion::kConvertToString));
 
   if (IsJSFunction(*receiver)) {
     Handle<JSFunction> func(Cast<JSFunction>(*receiver), isolate);
@@ -1422,9 +1432,8 @@ Maybe<bool> CollectPrivateMembersFromReceiver(
     Handle<Symbol> symbol(Cast<Symbol>(*obj_key), isolate);
     CHECK(symbol->is_private_name());
     Handle<Object> value;
-    ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-        isolate, value, Object::GetProperty(isolate, receiver, symbol),
-        Nothing<bool>());
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, value,
+                               Object::GetProperty(isolate, receiver, symbol));
 
     if (symbol->is_private_brand()) {
       DirectHandle<Context> value_context(Cast<Context>(*value), isolate);
@@ -1449,7 +1458,7 @@ Maybe<bool> CollectPrivateMembersFromReceiver(
 
 Maybe<bool> FindPrivateMembersFromReceiver(Isolate* isolate,
                                            DirectHandle<JSReceiver> receiver,
-                                           Handle<String> desc,
+                                           DirectHandle<String> desc,
                                            MessageTemplate not_found_message,
                                            PrivateMember* result) {
   std::vector<PrivateMember> results;
@@ -1458,12 +1467,10 @@ Maybe<bool> FindPrivateMembersFromReceiver(Isolate* isolate,
       Nothing<bool>());
 
   if (results.empty()) {
-    THROW_NEW_ERROR_RETURN_VALUE(isolate, NewError(not_found_message, desc),
-                                 Nothing<bool>());
+    THROW_NEW_ERROR(isolate, NewError(not_found_message, desc));
   } else if (results.size() > 1) {
-    THROW_NEW_ERROR_RETURN_VALUE(
-        isolate, NewError(MessageTemplate::kConflictingPrivateName, desc),
-        Nothing<bool>());
+    THROW_NEW_ERROR(isolate,
+                    NewError(MessageTemplate::kConflictingPrivateName, desc));
   }
 
   *result = results[0];
@@ -1472,7 +1479,8 @@ Maybe<bool> FindPrivateMembersFromReceiver(Isolate* isolate,
 }  // namespace
 
 MaybeDirectHandle<Object> Runtime::GetPrivateMember(
-    Isolate* isolate, DirectHandle<JSReceiver> receiver, Handle<String> desc) {
+    Isolate* isolate, DirectHandle<JSReceiver> receiver,
+    DirectHandle<String> desc) {
   PrivateMember result;
   MAYBE_RETURN_NULL(FindPrivateMembersFromReceiver(
       isolate, receiver, desc, MessageTemplate::kInvalidPrivateMemberRead,
@@ -1501,8 +1509,8 @@ MaybeDirectHandle<Object> Runtime::GetPrivateMember(
 }
 
 MaybeDirectHandle<Object> Runtime::SetPrivateMember(
-    Isolate* isolate, DirectHandle<JSReceiver> receiver, Handle<String> desc,
-    DirectHandle<Object> value) {
+    Isolate* isolate, DirectHandle<JSReceiver> receiver,
+    DirectHandle<String> desc, DirectHandle<Object> value) {
   PrivateMember result;
   MAYBE_RETURN_NULL(FindPrivateMembersFromReceiver(
       isolate, receiver, desc, MessageTemplate::kInvalidPrivateMemberRead,
@@ -1543,14 +1551,14 @@ RUNTIME_FUNCTION(Runtime_GetPrivateMember) {
   DCHECK_EQ(args.length(), 2);
   DirectHandle<Object> receiver = args.at<Object>(0);
   Handle<String> desc = args.at<String>(1);
-  if (IsNullOrUndefined(*receiver, isolate)) {
-    THROW_NEW_ERROR_RETURN_FAILURE(
-        isolate, NewTypeError(MessageTemplate::kNonObjectPrivateNameAccess,
-                              desc, receiver));
+  if (IsJSReceiver(*receiver)) {
+    RETURN_RESULT_OR_FAILURE(
+        isolate,
+        Runtime::GetPrivateMember(isolate, Cast<JSReceiver>(receiver), desc));
   }
-  RETURN_RESULT_OR_FAILURE(
-      isolate,
-      Runtime::GetPrivateMember(isolate, Cast<JSReceiver>(receiver), desc));
+  THROW_NEW_ERROR_RETURN_FAILURE(
+      isolate, NewTypeError(MessageTemplate::kNonObjectPrivateNameAccess, desc,
+                            receiver));
 }
 
 RUNTIME_FUNCTION(Runtime_SetPrivateMember) {
@@ -1560,15 +1568,15 @@ RUNTIME_FUNCTION(Runtime_SetPrivateMember) {
   DCHECK_EQ(args.length(), 3);
   DirectHandle<Object> receiver = args.at<Object>(0);
   Handle<String> desc = args.at<String>(1);
-  if (IsNullOrUndefined(*receiver, isolate)) {
-    THROW_NEW_ERROR_RETURN_FAILURE(
-        isolate, NewTypeError(MessageTemplate::kNonObjectPrivateNameAccess,
-                              desc, receiver));
+  if (IsJSReceiver(*receiver)) {
+    DirectHandle<Object> value = args.at<Object>(2);
+    RETURN_RESULT_OR_FAILURE(
+        isolate, Runtime::SetPrivateMember(isolate, Cast<JSReceiver>(receiver),
+                                           desc, value));
   }
-  DirectHandle<Object> value = args.at<Object>(2);
-  RETURN_RESULT_OR_FAILURE(
-      isolate, Runtime::SetPrivateMember(isolate, Cast<JSReceiver>(receiver),
-                                         desc, value));
+  THROW_NEW_ERROR_RETURN_FAILURE(
+      isolate, NewTypeError(MessageTemplate::kNonObjectPrivateNameAccess, desc,
+                            receiver));
 }
 
 RUNTIME_FUNCTION(Runtime_LoadPrivateSetter) {

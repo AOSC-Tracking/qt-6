@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_WASM_MODULE_COMPILER_H_
+#define V8_WASM_MODULE_COMPILER_H_
+
 #if !V8_ENABLE_WEBASSEMBLY
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
-
-#ifndef V8_WASM_MODULE_COMPILER_H_
-#define V8_WASM_MODULE_COMPILER_H_
 
 #include <atomic>
 #include <functional>
@@ -67,12 +67,9 @@ V8_EXPORT_PRIVATE WasmError ValidateAndSetBuiltinImports(
 // cache entry. Assumes the key already exists in the cache but has not been
 // compiled yet.
 V8_EXPORT_PRIVATE
-WasmCode* CompileImportWrapperForTest(Isolate* isolate,
-                                      NativeModule* native_module,
-                                      ImportCallKind kind,
-                                      const CanonicalSig* sig,
-                                      CanonicalTypeIndex type_index,
-                                      int expected_arity, Suspend suspend);
+std::shared_ptr<wasm::WasmImportWrapperHandle> CompileImportWrapperForTest(
+    Isolate* isolate, ImportCallKind kind, const CanonicalSig* sig,
+    CanonicalTypeIndex type_index, int expected_arity, Suspend suspend);
 
 // Triggered by the WasmCompileLazy builtin. The return value indicates whether
 // compilation was successful. Lazy compilation can fail only if validation is
@@ -179,11 +176,12 @@ class AsyncCompileJob {
                                size_t code_size_estimate);
   void PrepareRuntimeObjects();
 
-  void FinishCompile(bool is_after_cache_hit);
+  // {FinishCompile} and {Failed} invalidate the {AsyncCompileJob}, so we only
+  // allow to call them on r-value references to make this clear at call sites.
+  void FinishCompile(bool is_after_cache_hit) &&;
+  void Failed() &&;
 
-  void Failed();
-
-  void AsyncCompileSucceeded(Handle<WasmModuleObject> result);
+  void AsyncCompileSucceeded(DirectHandle<WasmModuleObject> result);
 
   void FinishSuccessfully();
 
@@ -224,7 +222,6 @@ class AsyncCompileJob {
   const WasmEnabledFeatures enabled_features_;
   WasmDetectedFeatures detected_features_;
   CompileTimeImports compile_imports_;
-  const DynamicTiering dynamic_tiering_;
   base::TimeTicks start_time_;
   // Copy of the module wire bytes, moved into the {native_module_} on its
   // creation.

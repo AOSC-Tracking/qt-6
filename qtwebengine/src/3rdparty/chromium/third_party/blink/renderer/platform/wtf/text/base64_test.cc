@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "third_party/blink/renderer/platform/wtf/text/base64.h"
 
@@ -18,7 +14,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
-namespace WTF {
+namespace blink {
 
 TEST(Base64Test, Encode) {
   struct {
@@ -80,10 +76,10 @@ TEST(Base64Test, DecodeNoPaddingValidation) {
 
   for (const auto& test : kTestCases) {
     SCOPED_TRACE(::testing::Message() << test.in);
-    Vector<char> out;
+    Vector<uint8_t> out;
     String in = String(test.in);
     bool expected_success = test.expected_out != nullptr;
-    Vector<char> expected_out;
+    Vector<uint8_t> expected_out;
     if (expected_success) {
       expected_out.insert(0, test.expected_out, strlen(test.expected_out));
     }
@@ -142,10 +138,10 @@ TEST(Base64Test, ForgivingBase64Decode) {
 
   for (const auto& test : kTestCases) {
     SCOPED_TRACE(::testing::Message() << test.in);
-    Vector<char> out;
+    Vector<uint8_t> out;
     String in = String(test.in);
     bool expected_success = test.expected_out != nullptr;
-    Vector<char> expected_out;
+    Vector<uint8_t> expected_out;
     if (expected_success) {
       expected_out.insert(0, test.expected_out, strlen(test.expected_out));
     }
@@ -165,4 +161,4 @@ TEST(Base64Test, ForgivingBase64Decode) {
   }
 }
 
-}  // namespace WTF
+}  // namespace blink

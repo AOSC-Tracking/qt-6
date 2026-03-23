@@ -16,6 +16,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
@@ -68,12 +69,12 @@ namespace management = api::management;
 
 namespace {
 
-typedef std::vector<management::ExtensionInfo> ExtensionInfoList;
-typedef std::vector<management::IconInfo> IconInfoList;
+using ExtensionInfoList = std::vector<management::ExtensionInfo>;
+using IconInfoList = std::vector<management::IconInfo>;
 
-enum AutoConfirmForTest { DO_NOT_SKIP = 0, PROCEED, ABORT };
+enum class AutoConfirmForTest { kDoNotSkip = 0, kProceed, kAbort };
 
-AutoConfirmForTest auto_confirm_for_test = DO_NOT_SKIP;
+AutoConfirmForTest auto_confirm_for_test = AutoConfirmForTest::kDoNotSkip;
 
 // Returns true if the extension should be exposed via the chrome.management
 // API.
@@ -92,8 +93,7 @@ std::vector<std::string> CreateWarningsList(const Extension* extension) {
 }
 
 std::vector<management::LaunchType> GetAvailableLaunchTypes(
-    const Extension& extension,
-    const ManagementAPIDelegate* delegate) {
+    const Extension& extension) {
   std::vector<management::LaunchType> launch_type_list;
   if (extension.is_platform_app()) {
     launch_type_list.push_back(management::LaunchType::kOpenAsWindow);
@@ -113,6 +113,7 @@ management::ExtensionInfo CreateExtensionInfo(
   ExtensionRegistry* registry = ExtensionRegistry::Get(context);
   const ManagementAPIDelegate* delegate =
       ManagementAPI::GetFactoryInstance()->Get(context)->GetDelegate();
+  CHECK(delegate);
   management::ExtensionInfo info;
 
   info.id = extension.id();
@@ -258,7 +259,7 @@ management::ExtensionInfo CreateExtensionInfo(
         NOTREACHED();
     }
 
-    info.available_launch_types = GetAvailableLaunchTypes(extension, delegate);
+    info.available_launch_types = GetAvailableLaunchTypes(extension);
   }
 
   return info;
@@ -282,12 +283,9 @@ void AddExtensionInfo(const Extension* source_extension,
 }
 
 bool PlatformSupportsApprovalFlowForExtensions() {
-#if BUILDFLAG(IS_CHROMEOS)
-  // ChromeOS devices have this feature already shipped.
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_WIN)
   return true;
-#elif BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
-  return base::FeatureList::IsEnabled(
-      supervised_user::kEnableExtensionsPermissionsForSupervisedUsersOnDesktop);
 #else
   return false;
 #endif
@@ -433,6 +431,8 @@ ExtensionFunction::ResponseAction ManagementSetEnabledFunction::Run() {
       management::SetEnabled::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
   extension_id_ = params->id;
+  base::UmaHistogramBoolean(kSetEnabledHasUserGestureHistogramName,
+                            user_gesture());
 
   if (ExtensionsBrowserClient::Get()->IsAppModeForcedForApp(extension_id_)) {
     return RespondNow(Error(keys::kCannotChangePrimaryKioskAppError));
@@ -849,9 +849,9 @@ void ManagementUninstallFunctionBase::UninstallExtension() {
   Finish(success, error);
 }
 
-ManagementUninstallFunction::ManagementUninstallFunction() {}
+ManagementUninstallFunction::ManagementUninstallFunction() = default;
 
-ManagementUninstallFunction::~ManagementUninstallFunction() {}
+ManagementUninstallFunction::~ManagementUninstallFunction() = default;
 
 ExtensionFunction::ResponseAction ManagementUninstallFunction::Run() {
   std::optional<management::Uninstall::Params> params =
@@ -863,9 +863,9 @@ ExtensionFunction::ResponseAction ManagementUninstallFunction::Run() {
   return Uninstall(params->id, show_confirm_dialog);
 }
 
-ManagementUninstallSelfFunction::ManagementUninstallSelfFunction() {}
+ManagementUninstallSelfFunction::ManagementUninstallSelfFunction() = default;
 
-ManagementUninstallSelfFunction::~ManagementUninstallSelfFunction() {}
+ManagementUninstallSelfFunction::~ManagementUninstallSelfFunction() = default;
 
 ExtensionFunction::ResponseAction ManagementUninstallSelfFunction::Run() {
   std::optional<management::UninstallSelf::Params> params =
@@ -878,14 +878,17 @@ ExtensionFunction::ResponseAction ManagementUninstallSelfFunction::Run() {
   return Uninstall(extension_->id(), show_confirm_dialog);
 }
 
-ManagementCreateAppShortcutFunction::ManagementCreateAppShortcutFunction() {}
+ManagementCreateAppShortcutFunction::ManagementCreateAppShortcutFunction() =
+    default;
 
-ManagementCreateAppShortcutFunction::~ManagementCreateAppShortcutFunction() {}
+ManagementCreateAppShortcutFunction::~ManagementCreateAppShortcutFunction() =
+    default;
 
 // static
 void ManagementCreateAppShortcutFunction::SetAutoConfirmForTest(
     bool should_proceed) {
-  auto_confirm_for_test = should_proceed ? PROCEED : ABORT;
+  auto_confirm_for_test = should_proceed ? AutoConfirmForTest::kProceed
+                                         : AutoConfirmForTest::kAbort;
 }
 
 void ManagementCreateAppShortcutFunction::OnCloseShortcutPrompt(bool created) {
@@ -924,11 +927,12 @@ ExtensionFunction::ResponseAction ManagementCreateAppShortcutFunction::Run() {
   }
 #endif
 
-  if (auto_confirm_for_test != DO_NOT_SKIP) {
+  if (auto_confirm_for_test != AutoConfirmForTest::kDoNotSkip) {
     // Matched with a Release() in OnCloseShortcutPrompt().
     AddRef();
 
-    OnCloseShortcutPrompt(auto_confirm_for_test == PROCEED);
+    OnCloseShortcutPrompt(auto_confirm_for_test ==
+                          AutoConfirmForTest::kProceed);
     // OnCloseShortcutPrompt() might have called Respond() already.
     return did_respond() ? AlreadyResponded() : RespondLater();
   }
@@ -974,7 +978,7 @@ ExtensionFunction::ResponseAction ManagementSetLaunchTypeFunction::Run() {
   }
 
   std::vector<management::LaunchType> available_launch_types =
-      GetAvailableLaunchTypes(*extension, delegate);
+      GetAvailableLaunchTypes(*extension);
 
   management::LaunchType app_launch_type = params->launch_type;
   if (!base::Contains(available_launch_types, app_launch_type)) {
@@ -1061,10 +1065,10 @@ ExtensionFunction::ResponseAction ManagementGenerateAppForLinkFunction::Run() {
 }
 
 ManagementInstallReplacementWebAppFunction::
-    ManagementInstallReplacementWebAppFunction() {}
+    ManagementInstallReplacementWebAppFunction() = default;
 
 ManagementInstallReplacementWebAppFunction::
-    ~ManagementInstallReplacementWebAppFunction() {}
+    ~ManagementInstallReplacementWebAppFunction() = default;
 
 ExtensionFunction::ResponseAction
 ManagementInstallReplacementWebAppFunction::Run() {
@@ -1194,7 +1198,7 @@ ManagementAPI::ManagementAPI(content::BrowserContext* context)
   event_router->RegisterObserver(this, management::OnDisabled::kEventName);
 }
 
-ManagementAPI::~ManagementAPI() {}
+ManagementAPI::~ManagementAPI() = default;
 
 void ManagementAPI::Shutdown() {
   // Ensure that SupervisedUserExtensionsDelegate is released prior to

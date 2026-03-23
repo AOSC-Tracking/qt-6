@@ -1,10 +1,18 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dlightmapbaker_p.h"
 #include "qquick3dviewport_p.h"
 
 QT_BEGIN_NAMESPACE
+
+/*!
+    \class QQuick3DLightmapBaker
+    \inmodule QtQuick3D
+    \internal
+*/
 
 QQuick3DLightmapBaker::QQuick3DLightmapBaker(QQuick3DViewport *view) :
     QObject(view), m_bakingControl(new BakingControl()), m_view(view)

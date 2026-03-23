@@ -5,7 +5,6 @@
 <translation id="1140871961407805696">Arka kamera</translation>
 <translation id="1196338895211115272">Özel anahtar dışa alınamadı.</translation>
 <translation id="132960226125594336">"<ph name="RELATIVE_PATH" />" dosyası, maksimum komut dosyası boyutunu veya uzantının maksimum toplam içerik komut dosyası boyutunu aşacağından içerik komut dosyası olarak yüklenemedi.</translation>
-<translation id="1420684932347524586">Hata! Rastgele RSA özel anahtarı oluşturulamadı.</translation>
 <translation id="1445572445564823378">Bu uzantı <ph name="PRODUCT_NAME" /> uygulamasını yavaşlatıyor. <ph name="PRODUCT_NAME" /> uygulamasının performansını eski haline getirmek için bu uzantıyı devre dışı bırakmalısınız.</translation>
 <translation id="1468038450257740950">WebGL desteklenmez.</translation>
 <translation id="1610570795592207282">Komut dosyası için "<ph name="RELATIVE_PATH" />" CSS'si yüklenemedi.</translation>
@@ -49,12 +48,14 @@
 <translation id="7068383018033524534">Manifest dosyası geçersiz</translation>
 <translation id="7217838517480956708">Bu makinenin yöneticisi <ph name="EXTENSION_NAME" /> yüklenmesini gerektiriyor. Kaldırılamaz veya değiştirilemez.</translation>
 <translation id="7612608473764576263">Özel anahtarın giriş değeri geçerli bir biçimde (PKCS#8 biçimli PEM kodlamalı RSA anahtarı) olmalıdır.</translation>
+<translation id="7876803335449432072">İçerik komut dosyasının "<ph name="RELATIVE_PATH" />" dosyası yüklenemedi. İçerik komut dosyası stil sayfaları yalnızca .css dosyaları gibi desteklenen stil sayfası dosyalarından yüklenebilir.</translation>
 <translation id="7939686037314084444">Uzantı doğru şekilde yüklenemedi. Ağ isteklerine müdahale edemeyebilir.</translation>
 <translation id="7972881773422714442">Seçenekler: <ph name="EXTENSIONOPTIONS_TAG_NAME" /></translation>
 <translation id="8035920974645200807">Ön kamera</translation>
 <translation id="8047248493720652249">Başka bir uzantı (<ph name="EXTENSION_NAME" />) farklı bir dosya adı ("<ph name="ACTUAL_FILENAME" />") belirlediğinden, uzantı indirilen dosyayı "<ph name="ATTEMPTED_FILENAME" />" olarak adlandıramadı.</translation>
 <translation id="8284835137979141223"><ph name="VENDOR_NAME" /> adlı firmadan <ph name="PRODUCT_NAME" /></translation>
 <translation id="8517576857589387417">Manifest dosyası eksik veya okunamıyor</translation>
+<translation id="8621383749470166852">İçerik komut dosyasının "<ph name="RELATIVE_PATH" />" dosyası yüklenemedi. İçerik komut dosyaları yalnızca .js dosyaları gibi desteklenen JavaScript dosyalarından yüklenebilir.</translation>
 <translation id="8636666366616799973">Paket geçersiz. Ayrıntılar: '<ph name="ERROR_MESSAGE" />'</translation>
 <translation id="8761756413268424715">"<ph name="APP_NAME" />" uygulaması cihazlarınızdan birine erişim izni istiyor:</translation>
 <translation id="8885905466771744233">Belirtilen uzantıya ilişkin özel anahtar zaten var. Var olan anahtarı yeniden kullanın veya öncelikle bu anahtarı silin.</translation>

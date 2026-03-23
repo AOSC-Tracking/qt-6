@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@
 
 #include <optional>
 
-#include "absl/log/absl_check.h"
+#include "absl/status/status.h"
 #include "ink/geometry/angle.h"
 #include "ink/jni/internal/jni_defines.h"
+#include "ink/jni/internal/jni_throw_util.h"
 #include "ink/strokes/input/stroke_input.h"
 #include "ink/strokes/input/stroke_input_batch.h"
 #include "ink/strokes/internal/jni/stroke_input_jni_helper.h"
@@ -31,143 +32,142 @@
 #define MUTABLE_STROKE_INPUT_BATCH_JNI_METHOD(return_type, method_name) \
   JNI_METHOD(strokes, MutableStrokeInputBatchNative, return_type, method_name)
 
+namespace {
+
+using ::ink::Angle;
+using ::ink::Duration32;
+using ::ink::PhysicalDistance;
+using ::ink::StrokeInput;
+using ::ink::StrokeInputBatch;
+using ::ink::jni::CastToMutableStrokeInputBatch;
+using ::ink::jni::CastToStrokeInputBatch;
+using ::ink::jni::DeleteNativeStrokeInputBatch;
+using ::ink::jni::JIntToToolType;
+using ::ink::jni::NewNativeStrokeInputBatch;
+using ::ink::jni::ThrowExceptionFromStatus;
+using ::ink::jni::ToolTypeToJInt;
+using ::ink::jni::UpdateJObjectInputOrThrow;
+
+}  // namespace
+
 extern "C" {
 
 // ******** Native Implementation of Immutable/Mutable StrokeInputBatch ********
-STROKE_INPUT_BATCH_JNI_METHOD(jlong, createNativePeer)
-(JNIEnv* env, jobject thiz) {
-  auto* batch = new ink::StrokeInputBatch();
-  return reinterpret_cast<jlong>(batch);
-}
+STROKE_INPUT_BATCH_JNI_METHOD(jlong, create)
+(JNIEnv* env, jobject thiz) { return NewNativeStrokeInputBatch(); }
 
-STROKE_INPUT_BATCH_JNI_METHOD(void, freeNativePeer)
+STROKE_INPUT_BATCH_JNI_METHOD(void, free)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  ABSL_CHECK_NE(native_pointer, 0)
-      << "Invalid native pointer for StrokeInputBatch.";
-  delete reinterpret_cast<ink::StrokeInputBatch*>(native_pointer);
+  DeleteNativeStrokeInputBatch(native_pointer);
 }
 
 STROKE_INPUT_BATCH_JNI_METHOD(jint, getSize)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  const ink::StrokeInputBatch& batch =
-      ink::CastToStrokeInputBatch(native_pointer);
-  return batch.Size();
+  return CastToStrokeInputBatch(native_pointer).Size();
 }
 
 STROKE_INPUT_BATCH_JNI_METHOD(void, populate)
-(JNIEnv* env, jobject thiz, jlong native_pointer, jint index, jobject j_input,
- jclass input_tool_type_class) {
-  const ink::StrokeInputBatch& batch =
-      ink::CastToStrokeInputBatch(native_pointer);
-  ink::StrokeInput input = batch.Get(index);
-  ink::UpdateJObjectInput(env, input, j_input, input_tool_type_class);
+(JNIEnv* env, jobject thiz, jlong native_pointer, jint index, jobject j_input) {
+  StrokeInput input = CastToStrokeInputBatch(native_pointer).Get(index);
+  UpdateJObjectInputOrThrow(env, input, j_input);
 }
 
 STROKE_INPUT_BATCH_JNI_METHOD(jlong, getDurationMillis)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  const ink::StrokeInputBatch& batch =
-      ink::CastToStrokeInputBatch(native_pointer);
-  return batch.GetDuration().ToMillis();
+  return CastToStrokeInputBatch(native_pointer).GetDuration().ToMillis();
 }
 
 STROKE_INPUT_BATCH_JNI_METHOD(jint, getToolType)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  const ink::StrokeInputBatch& batch =
-      ink::CastToStrokeInputBatch(native_pointer);
-  return ink::ToolTypeToJInt(batch.GetToolType());
+  return ToolTypeToJInt(CastToStrokeInputBatch(native_pointer).GetToolType());
 }
 
 STROKE_INPUT_BATCH_JNI_METHOD(jfloat, getStrokeUnitLengthCm)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  const ink::StrokeInputBatch& batch =
-      ink::CastToStrokeInputBatch(native_pointer);
-  std::optional<ink::PhysicalDistance> stroke_unit_length =
-      batch.GetStrokeUnitLength();
+  std::optional<PhysicalDistance> stroke_unit_length =
+      CastToStrokeInputBatch(native_pointer).GetStrokeUnitLength();
   if (!stroke_unit_length.has_value()) return 0;
   return stroke_unit_length->ToCentimeters();
 }
 
 STROKE_INPUT_BATCH_JNI_METHOD(jboolean, hasStrokeUnitLength)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  ABSL_CHECK_NE(native_pointer, 0)
-      << "Invalid native pointer for StrokeInputBatch.";
-  const ink::StrokeInputBatch& batch =
-      ink::CastToStrokeInputBatch(native_pointer);
-  return batch.HasStrokeUnitLength();
+  return CastToStrokeInputBatch(native_pointer).HasStrokeUnitLength();
 }
 
 STROKE_INPUT_BATCH_JNI_METHOD(jboolean, hasPressure)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  const ink::StrokeInputBatch& batch =
-      ink::CastToStrokeInputBatch(native_pointer);
+  const StrokeInputBatch& batch = CastToStrokeInputBatch(native_pointer);
   return batch.HasPressure();
 }
 
 STROKE_INPUT_BATCH_JNI_METHOD(jboolean, hasTilt)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  const ink::StrokeInputBatch& batch =
-      ink::CastToStrokeInputBatch(native_pointer);
+  const StrokeInputBatch& batch = CastToStrokeInputBatch(native_pointer);
   return batch.HasTilt();
 }
 
 STROKE_INPUT_BATCH_JNI_METHOD(jboolean, hasOrientation)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  const ink::StrokeInputBatch& batch =
-      ink::CastToStrokeInputBatch(native_pointer);
+  const StrokeInputBatch& batch = CastToStrokeInputBatch(native_pointer);
   return batch.HasOrientation();
 }
 
+STROKE_INPUT_BATCH_JNI_METHOD(jint, getNoiseSeed)
+(JNIEnv* env, jobject thiz, jlong native_pointer) {
+  const StrokeInputBatch& batch = CastToStrokeInputBatch(native_pointer);
+  return batch.GetNoiseSeed();
+}
+
 // ************ Native Implementation of MutableStrokeInputBatch ************
-MUTABLE_STROKE_INPUT_BATCH_JNI_METHOD(jstring, appendSingle)
+MUTABLE_STROKE_INPUT_BATCH_JNI_METHOD(jboolean, appendSingle)
 (JNIEnv* env, jobject thiz, jlong native_pointer, jint tool_type, jfloat x,
  jfloat y, jlong elapsed_time_millis, jfloat stroke_unit_length_cm,
  jfloat pressure, jfloat tilt, jfloat orientation) {
-  ink::StrokeInputBatch* batch =
-      ink::CastToMutableStrokeInputBatch(native_pointer);
+  StrokeInput input = {.tool_type = JIntToToolType(tool_type),
+                       .position = {x, y},
+                       .elapsed_time = Duration32::Millis(elapsed_time_millis),
+                       .stroke_unit_length =
+                           PhysicalDistance::Centimeters(stroke_unit_length_cm),
+                       .pressure = pressure,
+                       .tilt = Angle::Radians(tilt),
+                       .orientation = Angle::Radians(orientation)};
 
-  ink::StrokeInput input = {
-      .tool_type = ink::JIntToToolType(tool_type),
-      .position = {x, y},
-      .elapsed_time = ink::Duration32::Millis(elapsed_time_millis),
-      .stroke_unit_length =
-          ink::PhysicalDistance::Centimeters(stroke_unit_length_cm),
-      .pressure = pressure,
-      .tilt = ink::Angle::Radians(tilt),
-      .orientation = ink::Angle::Radians(orientation)};
-  auto status = batch->Append(input);
-  if (!status.ok()) {
-    return env->NewStringUTF(status.ToString().c_str());
+  if (absl::Status status =
+          CastToMutableStrokeInputBatch(native_pointer).Append(input);
+      !status.ok()) {
+    ThrowExceptionFromStatus(env, status);
+    return false;
   }
-  return nullptr;
+  return true;
 }
 
-MUTABLE_STROKE_INPUT_BATCH_JNI_METHOD(jstring, appendBatch)
+MUTABLE_STROKE_INPUT_BATCH_JNI_METHOD(jboolean, appendBatch)
 (JNIEnv* env, jobject thiz, jlong native_pointer,
  jlong append_from_native_pointer) {
-  ink::StrokeInputBatch* batch =
-      ink::CastToMutableStrokeInputBatch(native_pointer);
-  const ink::StrokeInputBatch& append_from_batch =
-      ink::CastToStrokeInputBatch(append_from_native_pointer);
-
-  auto status = batch->Append(append_from_batch);
-  if (!status.ok()) {
-    return env->NewStringUTF(status.ToString().c_str());
+  if (absl::Status status =
+          CastToMutableStrokeInputBatch(native_pointer)
+              .Append(CastToStrokeInputBatch(append_from_native_pointer));
+      !status.ok()) {
+    ThrowExceptionFromStatus(env, status);
+    return false;
   }
-  return nullptr;
+  return true;
 }
 
 MUTABLE_STROKE_INPUT_BATCH_JNI_METHOD(void, clear)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  ink::StrokeInputBatch* batch =
-      ink::CastToMutableStrokeInputBatch(native_pointer);
-  batch->Clear();
+  CastToMutableStrokeInputBatch(native_pointer).Clear();
 }
 
-MUTABLE_STROKE_INPUT_BATCH_JNI_METHOD(jlong, copy)
+MUTABLE_STROKE_INPUT_BATCH_JNI_METHOD(jlong, newCopy)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  ink::StrokeInputBatch* batch =
-      ink::CastToMutableStrokeInputBatch(native_pointer);
-  return reinterpret_cast<jlong>(new ink::StrokeInputBatch(*batch));
+  return NewNativeStrokeInputBatch(CastToStrokeInputBatch(native_pointer));
+}
+
+MUTABLE_STROKE_INPUT_BATCH_JNI_METHOD(void, setNoiseSeed)
+(JNIEnv* env, jobject thiz, jlong native_pointer, jint seed) {
+  CastToMutableStrokeInputBatch(native_pointer).SetNoiseSeed(seed);
 }
 
 }  // extern "C"

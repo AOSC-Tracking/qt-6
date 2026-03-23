@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qqmlgotodefinitionsupport_p.h"
 #include "qqmllsutils_p.h"
@@ -11,7 +12,7 @@ QT_BEGIN_NAMESPACE
 
 using namespace Qt::StringLiterals;
 
-QmlGoToDefinitionSupport::QmlGoToDefinitionSupport(QmlLsp::QQmlCodeModel *codeModel)
+QmlGoToDefinitionSupport::QmlGoToDefinitionSupport(QmlLsp::QQmlCodeModelManager *codeModel)
     : BaseT(codeModel)
 {
 }
@@ -49,7 +50,14 @@ void QmlGoToDefinitionSupport::process(RequestPointerArgument request)
 
     auto &front = std::get<QList<QQmlLSUtils::ItemLocation>>(itemsFound).front();
 
-    auto location = QQmlLSUtils::findDefinitionOf(front.domItem);
+    const QByteArray shortestRootUrl =
+            m_codeModelManager->shortestRootUrlForFile(request->m_parameters.textDocument.uri);
+
+    const QStringList headerDirectories = shortestRootUrl.isEmpty()
+            ? QStringList{}
+            : QStringList{ QUrl::fromEncoded(shortestRootUrl).toLocalFile() };
+
+    const auto location = QQmlLSUtils::findDefinitionOf(front.domItem, headerDirectories);
     if (!location)
         return;
 

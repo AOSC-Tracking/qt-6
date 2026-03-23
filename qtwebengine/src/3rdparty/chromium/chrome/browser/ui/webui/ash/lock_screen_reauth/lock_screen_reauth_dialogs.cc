@@ -279,7 +279,7 @@ LockScreenStartReauthDialog::LockScreenStartReauthDialog()
 
   HttpAuthDialog::AddObserver(this);
 
-  enable_ash_httpauth_ = HttpAuthDialog::Enable();
+  enable_system_httpauth_ = HttpAuthDialog::Enable();
 
   g_browser_process->profile_manager()->CreateProfileAsync(
       ProfileHelper::GetLockScreenProfileDir(),
@@ -299,18 +299,38 @@ void LockScreenStartReauthDialog::OnWebviewLoadAborted() {
   UpdateState(NetworkError::ERROR_REASON_FRAME_ERROR);
 }
 
+LockScreenReauthHandler* LockScreenStartReauthDialog::GetHandler() {
+  auto* web_ui = webui();
+  if (!web_ui) {
+    return nullptr;
+  }
+  auto* controller = web_ui->GetController();
+  if (!controller) {
+    return nullptr;
+  }
+  return static_cast<LockScreenStartReauthUI*>(controller)->GetMainHandler();
+}
+
 void LockScreenStartReauthDialog::TerminateAutoReload() {
-  LockScreenReauthHandler* reauth_handler =
-      static_cast<LockScreenStartReauthUI*>(webui()->GetController())
-          ->GetMainHandler();
-  reauth_handler->GetAutoReloadManager().Terminate();
+  LockScreenReauthHandler* reauth_handler = GetHandler();
+  if (reauth_handler) {
+    reauth_handler->GetAutoReloadManager().Terminate();
+  }
 }
 
 void LockScreenStartReauthDialog::ReactivateAutoReload() {
-  LockScreenReauthHandler* reauth_handler =
-      static_cast<LockScreenStartReauthUI*>(webui()->GetController())
-          ->GetMainHandler();
-  reauth_handler->ActivateAutoReload();
+  LockScreenReauthHandler* reauth_handler = GetHandler();
+  if (reauth_handler) {
+    reauth_handler->ActivateAutoReload();
+  }
+}
+
+bool LockScreenStartReauthDialog::IsAutoReloadActive() {
+  LockScreenReauthHandler* reauth_handler = GetHandler();
+  if (reauth_handler) {
+    return reauth_handler->GetAutoReloadManager().IsAutoReloadActive();
+  }
+  return false;
 }
 
 void LockScreenStartReauthDialog::UpdateState(
@@ -338,7 +358,7 @@ void LockScreenStartReauthDialog::UpdateState(
       should_reload_gaia_ = true;
     }
   } else {
-    if (state == NetworkStateInformer::ONLINE) {
+    if (state == NetworkStateInformer::ONLINE && !IsAutoReloadActive()) {
       ReactivateAutoReload();
     }
     DismissLockScreenCaptivePortalDialog();
@@ -346,10 +366,8 @@ void LockScreenStartReauthDialog::UpdateState(
   }
   if (should_reload_gaia_) {
     DismissLockScreenNetworkDialog();
-    LockScreenReauthHandler* reauth_handler =
-        static_cast<LockScreenStartReauthUI*>(webui()->GetController())
-            ->GetMainHandler();
-    if (reauth_handler->IsAuthenticatorLoaded({})) {
+    LockScreenReauthHandler* reauth_handler = GetHandler();
+    if (reauth_handler && reauth_handler->IsAuthenticatorLoaded({})) {
       reauth_handler->ReloadGaiaAuthenticator();
       should_reload_gaia_ = false;
     }
@@ -384,6 +402,11 @@ void LockScreenStartReauthDialog::OnReadyForTesting() {
   if (on_dialog_loaded_callback_for_testing_) {
     std::move(on_dialog_loaded_callback_for_testing_).Run();
   }
+}
+
+void LockScreenStartReauthDialog::ForceUpdateStateForTesting(
+    NetworkError::ErrorReason reason) {
+  UpdateState(reason);
 }
 
 web_modal::WebContentsModalDialogHost*

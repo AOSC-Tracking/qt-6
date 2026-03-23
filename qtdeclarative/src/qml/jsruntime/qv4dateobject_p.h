@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 #ifndef QV4DATEOBJECT_P_H
 #define QV4DATEOBJECT_P_H
 
@@ -222,6 +223,9 @@ DECLARE_HEAP_OBJECT(DateObject, ReferenceObject) {
 
         QV4::Scope scope(internalClass->engine);
         QV4::ScopedObject o(scope, object());
+
+        if (!isConnected() && QV4::ReferenceObject::shouldConnect(this))
+            QV4::ReferenceObject::connect(this);
 
         bool wasRead = false;
         if (isVariant()) {

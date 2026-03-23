@@ -91,7 +91,10 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
                                   uint64_t salt) override;
   blink::WebString UserAgent() override;
   blink::UserAgentMetadata UserAgentMetadata() override;
-  bool IsRedirectSafe(const GURL& from_url, const GURL& to_url) override;
+  bool IsRedirectSafe(
+      const GURL& from_url,
+      const GURL& to_url,
+      const std::optional<url::Origin>& request_initiator) override;
   void AppendVariationsThrottles(
       const url::Origin& top_origin,
       std::vector<std::unique_ptr<blink::URLLoaderThrottle>>* throttles)
@@ -136,16 +139,16 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       const blink::WebAudioSinkDescriptor& sink_descriptor,
       unsigned number_of_output_channels,
       const blink::WebAudioLatencyHint& latency_hint,
+      std::optional<float> context_sample_rate,
       media::AudioRendererSink::RenderCallback* callback) override;
   bool DecodeAudioFileData(blink::WebAudioBus* destination_bus,
-                           const char* audio_file_data,
-                           size_t data_size) override;
+                           base::span<const char> audio_file_data) override;
   scoped_refptr<media::AudioCapturerSource> NewAudioCapturerSource(
       blink::WebLocalFrame* web_frame,
       const media::AudioSourceParameters& params) override;
   scoped_refptr<viz::RasterContextProvider> SharedMainThreadContextProvider()
       override;
-  scoped_refptr<cc::RasterContextProviderWrapper>
+  scoped_refptr<viz::RasterContextProvider>
   SharedCompositorWorkerContextProvider(
       cc::RasterDarkModeFilter* dark_mode_filter) override;
   bool IsGpuRemoteDisconnected() override;
@@ -187,12 +190,13 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   std::unique_ptr<blink::WebGraphicsContext3DProvider>
   CreateWebGPUGraphicsContext3DProvider(
       const blink::WebURL& document_url) override;
-  gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() override;
   blink::WebString ConvertIDNToUnicode(const blink::WebString& host) override;
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   void SetThreadType(base::PlatformThreadId thread_id,
                      base::ThreadType) override;
 #endif
+  std::optional<int> GetWebUIBundledCodeCacheResourceId(
+      const GURL& webui_resource_url) override;
   std::unique_ptr<blink::WebDedicatedWorkerHostFactoryClient>
   CreateDedicatedWorkerHostFactoryClient(
       blink::WebDedicatedWorker*,
@@ -226,6 +230,10 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       blink::MediaInspectorContext* inspector_context,
       scoped_refptr<base::SingleThreadTaskRunner> owner_task_runner,
       bool is_on_worker) override;
+  void AddCreateRemoteChildrenEvent(
+      const std::optional<base::UnguessableToken>& navigation_metrics_token,
+      const base::TimeTicks& start_time,
+      const base::TimeDelta& elapsed_time) override;
   media::GpuVideoAcceleratorFactories* GetGpuFactories() override;
   scoped_refptr<base::SequencedTaskRunner> MediaThreadTaskRunner() override;
   base::WeakPtr<media::DecoderFactory> GetMediaDecoderFactory() override;
@@ -256,6 +264,11 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   // Tells this platform that the renderer is locked to a site (i.e., a scheme
   // plus eTLD+1, such as https://google.com), or to a more specific origin.
   void SetIsLockedToSite();
+
+  void set_webui_resource_to_code_cache_id_map(
+      const base::flat_map<GURL, int>& resource_map) {
+    webui_resource_to_code_cache_id_map_ = resource_map;
+  }
 
  private:
   bool CheckPreparsedJsCachingEnabled() const;
@@ -293,6 +306,10 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   // [std::numeric_limits<int32_t>::max() + 1,
   // std::numeric_limits<uint32_t>::max()] range.
   uint32_t next_frame_sink_id_;
+
+  // Maps WebUI resource URLs to the resource ID of their associated bundled
+  // code cache.
+  base::flat_map<GURL, int> webui_resource_to_code_cache_id_map_;
 
   THREAD_CHECKER(main_thread_checker_);
 

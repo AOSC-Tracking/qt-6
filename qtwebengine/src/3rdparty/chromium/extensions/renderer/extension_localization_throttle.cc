@@ -8,6 +8,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_util.h"
+#include "base/strings/string_view_util.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "extensions/common/constants.h"
@@ -237,9 +238,11 @@ void ExtensionLocalizationThrottle::WillProcessResponse(
     const GURL& response_url,
     network::mojom::URLResponseHead* response_head,
     bool* defer) {
-  // ExtensionURLLoader can only redirect requests within the
-  // chrome-extension:// scheme.
-  DCHECK(response_url.SchemeIs(extensions::kExtensionScheme));
+  if (!response_url.SchemeIs(extensions::kExtensionScheme)) {
+    // The chrome-extension:// URL resource request was redirected by
+    // webRequest API. In that case, we don't process the response.
+    return;
+  }
   if (!base::StartsWith(response_head->mime_type, "text/css",
                         base::CompareCase::INSENSITIVE_ASCII)) {
     return;

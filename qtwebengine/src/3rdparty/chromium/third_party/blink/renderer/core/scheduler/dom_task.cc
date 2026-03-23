@@ -23,7 +23,8 @@
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/scheduler/dom_task_signal.h"
-#include "third_party/blink/renderer/core/scheduler/script_wrappable_task_state.h"
+#include "third_party/blink/renderer/core/scheduler/scheduler_task_context.h"
+#include "third_party/blink/renderer/core/scheduler/task_attribution_task_state.h"
 #include "third_party/blink/renderer/core/scheduler/web_scheduling_task_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
@@ -59,23 +60,23 @@ class TaskPromiseResolveHandler final
 
 DOMTask::DOMTask(ScriptPromiseResolver<IDLAny>* resolver,
                  V8SchedulerPostTaskCallback* callback,
-                 AbortSignal* abort_source,
-                 DOMTaskSignal* priority_source,
+                 SchedulerTaskContext* task_context,
                  DOMScheduler::DOMTaskQueue* task_queue,
                  base::TimeDelta delay,
                  uint64_t task_id_for_tracing)
     : callback_(callback),
       resolver_(resolver),
-      abort_source_(abort_source),
-      priority_source_(priority_source),
+      scheduler_task_context_(task_context),
       task_queue_(task_queue),
       delay_(delay),
       task_id_for_tracing_(task_id_for_tracing) {
   CHECK(task_queue_);
   CHECK(callback_);
+  CHECK(scheduler_task_context_);
 
-  if (abort_source_ && abort_source_->CanAbort()) {
-    abort_handle_ = abort_source_->AddAlgorithm(
+  if (AbortSignal* abort_source = scheduler_task_context_->AbortSource();
+      abort_source && abort_source->CanAbort()) {
+    abort_handle_ = abort_source->AddAlgorithm(
         WTF::BindOnce(&DOMTask::OnAbort, WrapWeakPersistent(this)));
   }
 
@@ -90,7 +91,7 @@ DOMTask::DOMTask(ScriptPromiseResolver<IDLAny>* resolver,
   if (script_state->World().IsMainWorld()) {
     if (auto* tracker = scheduler::TaskAttributionTracker::From(
             script_state->GetIsolate())) {
-      parent_task_ = tracker->RunningTask();
+      task_state_ = tracker->CurrentTaskState();
     }
   }
 
@@ -105,11 +106,10 @@ DOMTask::DOMTask(ScriptPromiseResolver<IDLAny>* resolver,
 void DOMTask::Trace(Visitor* visitor) const {
   visitor->Trace(callback_);
   visitor->Trace(resolver_);
-  visitor->Trace(abort_source_);
-  visitor->Trace(priority_source_);
+  visitor->Trace(scheduler_task_context_);
   visitor->Trace(abort_handle_);
   visitor->Trace(task_queue_);
-  visitor->Trace(parent_task_);
+  visitor->Trace(task_state_);
 }
 
 void DOMTask::Invoke() {
@@ -171,19 +171,18 @@ void DOMTask::InvokeInternal(ScriptState* script_state) {
   // For the main thread (tracker exists), create the task scope with the signal
   // to set up propagation. On workers, set the current context here since there
   // is no tracker.
-  if (auto* tracker =
-          scheduler::TaskAttributionTracker::From(script_state->GetIsolate())) {
+  auto* tracker =
+      scheduler::TaskAttributionTracker::From(script_state->GetIsolate());
+  if (tracker) {
     task_attribution_scope = tracker->CreateTaskScope(
-        script_state, parent_task_,
+        task_state_,
         scheduler::TaskAttributionTracker::TaskScopeType::kSchedulerPostTask,
-        abort_source_, priority_source_);
-  } else if (RuntimeEnabledFeatures::SchedulerYieldEnabled(
-                 ExecutionContext::From(script_state))) {
+        scheduler_task_context_);
+  } else {
     auto* task_state = MakeGarbageCollected<WebSchedulingTaskState>(
-        /*TaskAttributionInfo=*/nullptr, abort_source_, priority_source_);
-    ScriptWrappableTaskState::SetCurrent(
-        script_state,
-        MakeGarbageCollected<ScriptWrappableTaskState>(task_state));
+        /*TaskAttributionInfo=*/nullptr, scheduler_task_context_);
+    TaskAttributionTaskState::SetCurrent(script_state->GetIsolate(),
+                                         task_state);
   }
 
   execution_state_ = ExecutionState::kRunningSync;
@@ -205,6 +204,11 @@ void DOMTask::InvokeInternal(ScriptState* script_state) {
   }
   execution_state_ = pending_result.IsEmpty() ? ExecutionState::kFinished
                                               : ExecutionState::kRunningAsync;
+  // If this is a worker, clear the context to prevent it from leaking to the
+  // next task (`task_attribution_scope` handles this on the main thread).
+  if (!tracker) {
+    TaskAttributionTaskState::SetCurrent(script_state->GetIsolate(), nullptr);
+  }
 }
 
 void DOMTask::OnAbort() {
@@ -246,14 +250,17 @@ void DOMTask::OnAbort() {
                                 task_id_for_tracing_);
 
   // TODO(crbug.com/1293949): Add an error message.
-  resolver_->Reject(abort_source_->reason(resolver_script_state)
+  CHECK(scheduler_task_context_->AbortSource());
+  resolver_->Reject(scheduler_task_context_->AbortSource()
+                        ->reason(resolver_script_state)
                         .V8ValueFor(resolver_script_state));
 }
 
 void DOMTask::RemoveAbortAlgorithm() {
   if (abort_handle_) {
-    CHECK(abort_source_);
-    abort_source_->RemoveAlgorithm(abort_handle_);
+    AbortSignal* abort_source = scheduler_task_context_->AbortSource();
+    CHECK(abort_source);
+    abort_source->RemoveAlgorithm(abort_handle_);
     abort_handle_ = nullptr;
   }
 }

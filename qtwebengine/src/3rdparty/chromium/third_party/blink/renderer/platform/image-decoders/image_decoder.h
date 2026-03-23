@@ -321,6 +321,9 @@ class PLATFORM_EXPORT ImageDecoder {
   // Image decoders that support HDR metadata can override this.
   virtual std::optional<gfx::HDRMetadata> GetHDRMetadata() const;
 
+  // Image decoders that support C2PA manifest embedding can override this.
+  virtual bool HasC2PAManifest() const;
+
   // Returns the information required to decide whether or not hardware
   // acceleration can be used to decode this image. Callers of this function
   // must ensure the header was successfully parsed prior to calling this
@@ -422,7 +425,7 @@ class PLATFORM_EXPORT ImageDecoder {
   // Clears decoded pixel data from all frames except the provided frame. If
   // subsequent frames depend on this frame's required previous frame, then that
   // frame is also kept in cache to prevent re-decoding from the beginning.
-  // Callers may pass WTF::kNotFound to clear all frames.
+  // Callers may pass kNotFound to clear all frames.
   // Note: If |frame_buffer_cache_| contains only one frame, it won't be
   // cleared. Returns the number of bytes of frame data actually cleared.
   virtual wtf_size_t ClearCacheExceptFrame(wtf_size_t);
@@ -458,7 +461,7 @@ class PLATFORM_EXPORT ImageDecoder {
   // order to decode frame |frame_index|, based on frame disposal methods
   // and |frame_rect_is_opaque|, where |frame_rect_is_opaque| signifies whether
   // the rectangle of frame at |frame_index| is known to be opaque.
-  // If no previous frame's data is required, returns WTF::kNotFound.
+  // If no previous frame's data is required, returns kNotFound.
   //
   // This function requires that the previous frame's
   // |required_previous_frame_index_| member has been set correctly. The

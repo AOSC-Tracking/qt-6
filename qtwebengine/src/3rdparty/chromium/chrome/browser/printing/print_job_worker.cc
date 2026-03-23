@@ -159,7 +159,7 @@ void PrintJobWorker::OnNewPage() {
     return;
 
   bool do_spool_document = true;
-#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   const bool source_is_pdf =
       !print_job_->document()->settings().is_modifiable();
   if (!ShouldPrintUsingXps(source_is_pdf)) {

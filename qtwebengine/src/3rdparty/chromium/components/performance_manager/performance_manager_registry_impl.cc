@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "base/not_fatal_until.h"
 #include "base/observer_list.h"
 #include "components/performance_manager/embedder/binders.h"
 #include "components/performance_manager/graph/page_node_impl.h"
@@ -95,14 +94,7 @@ void PerformanceManagerRegistryImpl::SetPageType(
   PerformanceManagerTabHelper* tab_helper =
       PerformanceManagerTabHelper::FromWebContents(web_contents);
   DCHECK(tab_helper);
-
-  PerformanceManager::CallOnGraph(
-      FROM_HERE,
-      // Unretained() is safe because PerformanceManagerTabHelper owns the
-      // PageNodeImpl and deletes it by posting a task to the PerformanceManager
-      // sequence, which will be sequenced after the task posted here.
-      base::BindOnce(&PageNodeImpl::SetType,
-                     base::Unretained(tab_helper->primary_page_node()), type));
+  tab_helper->primary_page_node()->SetType(type);
 }
 
 void PerformanceManagerRegistryImpl::NotifyBrowserContextAdded(
@@ -145,7 +137,7 @@ void PerformanceManagerRegistryImpl::NotifyBrowserContextRemoved(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   auto it = worker_watchers_.find(browser_context);
-  CHECK(it != worker_watchers_.end(), base::NotFatalUntil::M130);
+  CHECK(it != worker_watchers_.end());
   it->second->TearDown();
   worker_watchers_.erase(it);
 
@@ -182,11 +174,10 @@ void PerformanceManagerRegistryImpl::TearDown() {
     PerformanceManagerTabHelper* tab_helper =
         PerformanceManagerTabHelper::FromWebContents(web_contents);
     DCHECK(tab_helper);
-    // Clear the destruction observer to avoid a nested notification.
+    // Clear the destruction observer to avoid a notification that will modify
+    // `web_contents_` while iterating.
     tab_helper->SetDestructionObserver(nullptr);
-    // Destroy the tab helper.
-    tab_helper->TearDown();
-    web_contents->RemoveUserData(PerformanceManagerTabHelper::UserDataKey());
+    tab_helper->TearDownAndSelfDelete();
   }
   web_contents_.clear();
 

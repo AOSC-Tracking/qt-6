@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f16-rminmax/avx512skx.c.in
 //   Generator: tools/xngen
@@ -8,18 +9,23 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/reduce.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/reduce.h"
 
 
 void xnn_f16_rmin_ukernel__avx512skx_u32_acc2(
     size_t batch,
     const xnn_float16* input,
     xnn_float16* output,
-    const struct xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_default_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -27,7 +33,8 @@ void xnn_f16_rmin_ukernel__avx512skx_u32_acc2(
   assert(output != NULL);
 
   const uint16_t* i = (const uint16_t*) input;
-  __m512 vmin0 = _mm512_cvtph_ps(_mm256_set1_epi16(*i));
+  uint16_t* o = (uint16_t*) output;
+  __m512 vmin0 = _mm512_cvtph_ps(_mm256_set1_epi16(*o));
   __m512 vmin1 = vmin0;
   for (; batch >= 32 * sizeof(uint16_t); batch -= 32 * sizeof(uint16_t)) {
     const __m512 vt0 = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i*) i));

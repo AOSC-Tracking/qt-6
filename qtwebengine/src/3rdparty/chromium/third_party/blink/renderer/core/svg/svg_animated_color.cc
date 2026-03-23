@@ -46,10 +46,11 @@ void Accumulate(RGBATuple& base, const RGBATuple& addend) {
 RGBATuple ToRGBATuple(const StyleColor& color,
                       Color fallback_color,
                       mojom::blink::ColorScheme color_scheme) {
-  const Color resolved = color.Resolve(fallback_color, color_scheme);
-  RGBATuple tuple;
-  resolved.GetRGBA(tuple.red, tuple.green, tuple.blue, tuple.alpha);
-  return tuple;
+  Color resolved = color.Resolve(fallback_color, color_scheme);
+  // We're interpolating in sRGB for legacy reasons.
+  resolved.ConvertToColorSpace(Color::ColorSpace::kSRGB);
+  return {resolved.Param0(), resolved.Param1(), resolved.Param2(),
+          resolved.Alpha()};
 }
 
 StyleColor ToStyleColor(const RGBATuple& tuple) {
@@ -77,8 +78,10 @@ mojom::blink::ColorScheme ColorSchemeForSVGElement(
 SVGColorProperty::SVGColorProperty(const String& color_string)
     : style_color_(StyleColor::CurrentColor()) {
   Color color;
-  if (CSSParser::ParseColor(color, color_string.StripWhiteSpace()))
+  if (CSSParser::ParseColor(color, color_string.StripWhiteSpace(),
+                            /*strict=*/false)) {
     style_color_ = StyleColor(color);
+  }
 }
 
 String SVGColorProperty::ValueAsString() const {
@@ -86,11 +89,6 @@ String SVGColorProperty::ValueAsString() const {
              ? "currentColor"
              : cssvalue::CSSColor::SerializeAsCSSComponentValue(
                    style_color_.GetColor());
-}
-
-SVGPropertyBase* SVGColorProperty::CloneForAnimation(const String&) const {
-  // SVGAnimatedColor is deprecated. So No SVG DOM animation.
-  NOTREACHED();
 }
 
 void SVGColorProperty::Add(const SVGPropertyBase* other,

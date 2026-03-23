@@ -43,7 +43,7 @@ modules, or to merge sets of QML modules under a common base point.
 
 \title QT_QML_GENERATE_QMLLS_INI_NO_CMAKE_CALLS
 
-\brief Customizes the value of \c no-cmake-calls in .qmlls.ini files for \QMLLS.
+\brief Customizes the value of no-cmake-calls in .qmlls.ini files for \QMLLS.
 \cmakevariablesince 6.10
 
 \c QT_QML_GENERATE_QMLLS_INI_NO_CMAKE_CALLS is a boolean that controls the \c no-cmake-calls value in
@@ -59,7 +59,7 @@ to the cmake executable.
 
 This variable has no effect if \l{QT_QML_GENERATE_QMLLS_INI} is disabled.
 
-\sa QT_QML_GENERATE_QMLLS_INI, {Disabling automatic CMake builds}
+\sa QT_QML_GENERATE_QMLLS_INI, {Configuring Automatic CMake Builds}
 */
 
 /*!
@@ -69,6 +69,7 @@ This variable has no effect if \l{QT_QML_GENERATE_QMLLS_INI} is disabled.
 \title QT_QML_GENERATE_QMLLS_INI
 
 \brief Enables autogeneration of .qmlls.ini files for \QMLLS.
+\warning This variable is deprecated since Qt 6.10. No replacement needed.
 \cmakevariablesince 6.7
 
 \c QT_QML_GENERATE_QMLLS_INI is a boolean that describes whether
@@ -96,7 +97,7 @@ to your top-level project \c{.gitignore}, for example.
 The globbing is required because .qmlls.ini files are generated in \e{all source
 subdirectories} that define QML Modules.
 
-\sa QT_QML_GENERATE_QMLLS_INI_NO_CMAKE_CALLS, {Disabling automatic CMake builds}
+\sa QT_QML_GENERATE_QMLLS_INI_NO_CMAKE_CALLS, {Configuring Automatic CMake Builds}
 */
 
 /*!
@@ -158,4 +159,34 @@ CMakeLists.txt file before the first call to \l{qt_add_qml_module}.
 set(QT_QML_GENERATE_AOTSTATS OFF)
 \endcode
 
+*/
+
+/*!
+\page cmake-variable-qt-qmllint-no-context-property-dump.html
+\ingroup cmake-variables-qtqml
+
+\title QT_QMLLINT_CONTEXT_PROPERTY_DUMP
+
+\brief Enables dumping of context properties in lint targets.
+\cmakevariablesince 6.11
+
+When the \c QT_QMLLINT_CONTEXT_PROPERTY_DUMP variable is enabled, \l{qmllint-auto}{linting targets}
+created by \l{qt_add_qml_module} will run \l qmlcontextpropertydump before running \l qmllint. This
+allows \l qmllint to warn on the usage of context properties in QML.
+
+To enable this feature, set the \c QT_QMLLINT_CONTEXT_PROPERTY_DUMP variable using
+one of the following methods:
+
+\list
+    \li Pass the option to the CMake executable:
+        \badcode
+        -DQT_QMLLINT_CONTEXT_PROPERTY_DUMP=ON
+        \endcode
+
+    \li Add the setting to your \c CMakeLists.txt file before the first call to
+        \l{qt_add_qml_module}:
+        \badcode
+        set(QT_QMLLINT_CONTEXT_PROPERTY_DUMP ON)
+        \endcode
+\endlist
 */

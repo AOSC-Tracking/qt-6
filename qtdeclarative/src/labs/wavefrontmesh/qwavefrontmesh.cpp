@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qwavefrontmesh_p.h"
 
@@ -36,9 +37,9 @@ public:
         return mesh->d_func();
     }
 
-    QVector<std::pair<ushort, ushort> > indexes;
-    QVector<QVector3D> vertexes;
-    QVector<QVector2D> textureCoordinates;
+    QList<std::pair<ushort, ushort> > indexes;
+    QList<QVector3D> vertexes;
+    QList<QVector2D> textureCoordinates;
 
     QUrl source;
     QWavefrontMesh::Error lastError;

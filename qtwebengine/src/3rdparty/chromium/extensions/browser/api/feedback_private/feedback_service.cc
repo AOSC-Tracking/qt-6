@@ -19,9 +19,11 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "build/chromeos_buildflags.h"
+#include "components/embedder_support/user_agent_utils.h"
 #include "components/feedback/feedback_data.h"
 #include "components/feedback/feedback_report.h"
 #include "components/feedback/redaction_tool/redaction_tool.h"
@@ -32,6 +34,7 @@
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/api/feedback_private/feedback_private_delegate.h"
 #include "extensions/browser/blob_reader.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "net/base/network_change_notifier.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -190,7 +193,7 @@ void FeedbackService::SendFeedback(
     SendFeedbackCallback callback) {
   auto* browser_client = ExtensionsBrowserClient::Get();
   feedback_data->set_locale(browser_client->GetApplicationLocale());
-  feedback_data->set_user_agent(browser_client->GetUserAgent());
+  feedback_data->set_user_agent(embedder_support::GetUserAgent());
 
   FetchAttachedFileAndScreenshot(
       feedback_data,

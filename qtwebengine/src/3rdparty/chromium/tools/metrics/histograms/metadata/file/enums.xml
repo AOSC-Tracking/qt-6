@@ -569,6 +569,7 @@ chromium-metrics-reviews@google.com.
   <int value="14" label="Disable Drive preference set"/>
   <int value="15" label="Drive disabled for account type"/>
   <int value="16" label="Cannot get relative path"/>
+  <int value="17" label="DriveFs unavailable"/>
 </enum>
 
 <enum name="OfficeFileHandler">
@@ -890,6 +891,7 @@ chromium-metrics-reviews@google.com.
   <int value="19" label="Cancelled at fallback after open attempt"/>
   <int value="20" label="Cannot get fallback choice after open attempt"/>
   <int value="21" label="File already being opened"/>
+  <int value="22" label="Cannot get source type"/>
 </enum>
 
 <enum name="RestoreFailedNoParentType">

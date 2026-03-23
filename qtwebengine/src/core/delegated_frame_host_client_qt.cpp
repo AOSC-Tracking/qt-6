@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "delegated_frame_host_client_qt.h"
 
@@ -39,7 +40,9 @@ void DelegatedFrameHostClientQt::InvalidateLocalSurfaceIdOnEviction()
 
 viz::FrameEvictorClient::EvictIds DelegatedFrameHostClientQt::CollectSurfaceIdsForEviction()
 {
-    return viz::FrameEvictorClient::EvictIds(p->host()->CollectSurfaceIdsForEviction(), viz::SurfaceId());
+    viz::FrameEvictorClient::EvictIds ids;
+    ids.embedded_ids = p->host()->CollectSurfaceIdsForEviction();
+    return ids;
 }
 
 bool DelegatedFrameHostClientQt::ShouldShowStaleContentOnEviction()

@@ -23,11 +23,13 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 
+#include <array>
 #include <memory>
 #include <vector>
 
 #include "base/containers/adapters.h"
 #include "base/containers/contains.h"
+#include "base/containers/span.h"
 
 #if defined(ANDROID)
 // Work-around for buggy headers in Android's NDK
@@ -43,7 +45,6 @@
 #include "base/system/sys_info.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "sandbox/linux/bpf_dsl/bpf_dsl.h"
 #include "sandbox/linux/bpf_dsl/errorcode.h"
 #include "sandbox/linux/bpf_dsl/linux_syscall_ranges.h"
@@ -329,9 +330,9 @@ ResultExpr ErrnoTestPolicy::EvaluateSyscall(int sysno) const {
 
 BPF_TEST_C(SandboxBPF, ErrnoTest, ErrnoTestPolicy) {
   // Verify that dup2() returns success, but doesn't actually run.
-  int fds[4];
-  BPF_ASSERT(pipe(fds) == 0);
-  BPF_ASSERT(pipe(fds + 2) == 0);
+  std::array<int, 4> fds;
+  BPF_ASSERT(pipe(fds.data()) == 0);
+  BPF_ASSERT(pipe(base::span(fds).subspan(2u).data()) == 0);
   BPF_ASSERT(dup2(fds[2], fds[0]) == 0);
   char buf[1] = {};
   BPF_ASSERT(write(fds[1], "\x55", 1) == 1);
@@ -1055,7 +1056,7 @@ class EqualityStressTest {
     return err;
   }
 
-  void Verify(int sysno, intptr_t* args, const ArgValue& arg_value) {
+  void Verify(int sysno, base::span<intptr_t> args, const ArgValue& arg_value) {
     uint32_t mismatched = 0;
     // Iterate over all the k_values in arg_value.tests[] and verify that
     // we see the expected return values from system calls, when we pass
@@ -1090,7 +1091,7 @@ class EqualityStressTest {
     args[arg_value.argno] = 0;
   }
 
-  void VerifyErrno(int sysno, intptr_t* args, int err) {
+  void VerifyErrno(int sysno, base::span<intptr_t> args, int err) {
     // We installed BPF filters that return different errno values
     // based on the system call number and the parameters that we decided
     // to pass in. Verify that this condition holds true.
@@ -2164,7 +2165,7 @@ SANDBOX_TEST(SandboxBPF, Tsync) {
   const bool supports_multi_threaded = SandboxBPF::SupportsSeccompSandbox(
       SandboxBPF::SeccompLevel::MULTI_THREADED);
 // On Chrome OS tsync is mandatory.
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   if (base::SysInfo::IsRunningOnChromeOS()) {
     BPF_ASSERT_EQ(true, supports_multi_threaded);
   }

@@ -16,6 +16,7 @@
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "content/browser/download/save_file_manager.h"
@@ -148,7 +149,7 @@ struct GeneratedFiles {
   const base::FilePath::CharType* expected_name;
   bool need_htm_ext;
 };
-const auto kGeneratedFiles = std::to_array<GeneratedFiles>({
+constexpr auto kGeneratedFiles = std::to_array<GeneratedFiles>({
     // We mainly focus on testing duplicated names here, since retrieving file
     // name from disposition and url has been tested in DownloadManagerTest.
 
@@ -365,9 +366,9 @@ TEST_F(SavePackageFencedFrameTest,
 
   EXPECT_TRUE(save_package->Init(base::DoNothing()));
 
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_TRUE(local_frame_for_primary.is_called());
+  ASSERT_TRUE(base::test::RunUntil([&local_frame_for_primary]() {
+    return local_frame_for_primary.is_called();
+  }));
   EXPECT_FALSE(local_frame_for_fenced_frame.is_called());
 }
 

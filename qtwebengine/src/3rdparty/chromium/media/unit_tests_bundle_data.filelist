@@ -46,6 +46,8 @@
 //media/test/data/av1-1-b8-02-allintra.ivf.json
 //media/test/data/av1-I-frame-1280x720
 //media/test/data/av1-I-frame-320x240
+//media/test/data/av1-I-frame-320x240-agtm
+//media/test/data/av1-I-frame-320x240-agtm.ivf
 //media/test/data/av1-film_grain.ivf
 //media/test/data/av1-monochrome-I-frame-320x240-10bpp
 //media/test/data/av1-monochrome-I-frame-320x240-12bpp
@@ -282,6 +284,8 @@
 //media/test/data/bear_audio_longer_than_video_vp8.ogv
 //media/test/data/bear_audio_shorter_than_video.ogv
 //media/test/data/bear_audio_shorter_than_video_vp8.ogv
+//media/test/data/bear_av1_720p_444_10bit.ivf
+//media/test/data/bear_av1_720p_444_8bit.ivf
 //media/test/data/bear_dtsc.mp4
 //media/test/data/bear_dtse.mp4
 //media/test/data/bear_dtsx.mp4
@@ -352,6 +356,7 @@
 //media/test/data/eme_player_js/widevine_player.js
 //media/test/data/eme_remove_session_test.html
 //media/test/data/encrypted_frame_size_change.html
+//media/test/data/extra-nalu.ts
 //media/test/data/four-colors-aspect-4x3.mp4
 //media/test/data/four-colors-av1.mp4
 //media/test/data/four-colors-hevc.mp4
@@ -365,6 +370,7 @@
 //media/test/data/four-colors.png
 //media/test/data/four-colors.y4m
 //media/test/data/frame_size_change-av_enc-v.webm
+//media/test/data/front-discard.mp4
 //media/test/data/gbrp-av1.mp4
 //media/test/data/gbrp-h264.mp4
 //media/test/data/gbrp-h265.mp4
@@ -385,6 +391,7 @@
 //media/test/data/hls/hls_support_matrix.html
 //media/test/data/hls/init_0.mp4
 //media/test/data/hls/mp_mp4_avc1.m3u8
+//media/test/data/hls/mp_ts_avc1.hls
 //media/test/data/hls/mp_ts_avc1.m3u8
 //media/test/data/hls/multi-bitrate-multivariant-bear/out_0.m3u8
 //media/test/data/hls/multi-bitrate-multivariant-bear/out_00.ts
@@ -401,6 +408,7 @@
 //media/test/data/media_foundation_fallback.html
 //media/test/data/media_source_player.html
 //media/test/data/media_suspend_test.html
+//media/test/data/mid-file-start-time.mp4
 //media/test/data/midstream_config_change.mp3
 //media/test/data/mono_cpe.adts
 //media/test/data/mse_config_change.html
@@ -439,10 +447,6 @@
 //media/test/data/puppets-480x270.nv12.yuv.json
 //media/test/data/puppets-640x360.nv12.yuv.json
 //media/test/data/puppets-640x360_in_640x480.nv12.yuv.json
-//media/test/data/quick-brown-fox-1280x720-hevc-rext-8bit-400-no-audio.mp4
-//media/test/data/quick-brown-fox-1280x720-hevc-rext-8bit-420-no-audio.mp4
-//media/test/data/quick-brown-fox-1280x720-hevc-rext-8bit-422-no-audio.mp4
-//media/test/data/quick-brown-fox-1280x720-hevc-rext-8bit-444-no-audio.mp4
 //media/test/data/quick-brown-fox-1280x720-hevc-rext-10bit-400-no-audio.mp4
 //media/test/data/quick-brown-fox-1280x720-hevc-rext-10bit-420-no-audio.mp4
 //media/test/data/quick-brown-fox-1280x720-hevc-rext-10bit-422-no-audio.mp4
@@ -451,6 +455,10 @@
 //media/test/data/quick-brown-fox-1280x720-hevc-rext-12bit-420-no-audio.mp4
 //media/test/data/quick-brown-fox-1280x720-hevc-rext-12bit-422-no-audio.mp4
 //media/test/data/quick-brown-fox-1280x720-hevc-rext-12bit-444-no-audio.mp4
+//media/test/data/quick-brown-fox-1280x720-hevc-rext-8bit-400-no-audio.mp4
+//media/test/data/quick-brown-fox-1280x720-hevc-rext-8bit-420-no-audio.mp4
+//media/test/data/quick-brown-fox-1280x720-hevc-rext-8bit-422-no-audio.mp4
+//media/test/data/quick-brown-fox-1280x720-hevc-rext-8bit-444-no-audio.mp4
 //media/test/data/quick-brown-fox.png
 //media/test/data/rapid_video_change_test.html
 //media/test/data/red-a500hz.webm
@@ -497,6 +505,7 @@
 //media/test/data/test-25fps.vp9_2
 //media/test/data/test-25fps.vp9_2.json
 //media/test/data/test_key_system_instantiation.html
+//media/test/data/testsrc-no-durations-h264.mkv
 //media/test/data/tos-h264-opus.mp4
 //media/test/data/track-disabled.mp4
 //media/test/data/trailing-garbage.mp3

@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/x8-packw/scalar.c.in
 //   Generator: tools/xngen
@@ -7,14 +8,13 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack/math.h"
-#include "xnnpack/packw.h"
-#include "xnnpack/unaligned.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/packw.h"
+#include "src/xnnpack/unaligned.h"
 
 void xnn_x8_packw_gemm_goi_ukernel_x2__scalar_u2(
   size_t g,

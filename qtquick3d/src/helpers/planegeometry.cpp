@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "planegeometry_p.h"
 #include <limits>
@@ -285,6 +287,7 @@ void PlaneGeometry::updateGeometry(const GeometryData &geometryData)
         Q_EMIT statusChanged();
     }
     update();
+    emit geometryChanged();
 }
 
 PlaneGeometry::GeometryData PlaneGeometry::generatePlaneGeometry(float width, float height, QSize meshResolution, Plane plane, bool reversed, bool mirrored)

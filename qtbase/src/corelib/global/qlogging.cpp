@@ -379,7 +379,7 @@ using namespace QtPrivate;
 
     One example of direct use is to forward errors that stem from a scripting language, e.g. QML:
 
-    \snippet code/qlogging/qlogging.cpp 1
+    \snippet qlogging/qlogging.cpp 1
 
     \sa QMessageLogContext, qDebug(), qInfo(), qWarning(), qCritical(), qFatal()
 */
@@ -449,7 +449,7 @@ void QMessageLogger::info(const char *msg, ...) const
     This is a typedef for a pointer to a function with the following
     signature:
 
-    \snippet code/qlogging/qlogging.cpp 2
+    \snippet qlogging/qlogging.cpp 2
 
     The \c Q_DECLARE_LOGGING_CATEGORY macro generates a function declaration
     with this signature, and \c Q_LOGGING_CATEGORY generates its definition.
@@ -1445,7 +1445,8 @@ Q_NEVER_INLINE void QInternalMessageLogContext::populateBacktrace(int frameCount
 {
     assert(frameCount >= 0);
     BacktraceStorage &result = backtrace.emplace(TypicalBacktraceFrameCount + frameCount);
-    int n = ::backtrace(result.data(), result.size());
+    Q_ASSERT(result.size() == int(result.size()));
+    int n = ::backtrace(result.data(), int(result.size()));
     if (n <= 0)
         result.clear();
     else
@@ -1492,11 +1493,12 @@ backtraceFramesForLogMessage(int frameCount,
             else
                 return std::move(function).toUtf8();    // -> QByteArray
         }();
-        QScopedPointer<char, QScopedPointerPodDeleter> demangled;
-        demangled.reset(abi::__cxa_demangle(fn, nullptr, nullptr, nullptr));
+        auto cleanup = [](auto *p) { free(p); };
+        using Ptr = std::unique_ptr<char, decltype(cleanup)>;
+        auto demangled = Ptr(abi::__cxa_demangle(fn, nullptr, nullptr, nullptr), cleanup);
 
         if (demangled)
-            return QString::fromUtf8(qCleanupFuncinfo(demangled.data()));
+            return QString::fromUtf8(qCleanupFuncinfo(demangled.get()));
         else
             return QString::fromUtf8(fn);       // restore
     };
@@ -1537,8 +1539,10 @@ backtraceFramesForLogMessage(int frameCount,
     static const QRegularExpression rx(QStringLiteral("^(?:[^(]*/)?([^(/]+)\\(([^+]*)(?:[\\+[a-f0-9x]*)?\\) \\[[a-f0-9x]*\\]$"));
 
     auto decodeFrame = [&](void *&addr) -> DecodedFrame {
-        QScopedPointer<char*, QScopedPointerPodDeleter> strings(backtrace_symbols(&addr, 1));
-        QString trace = QString::fromUtf8(strings.data()[0]);
+        auto cleanup = [](auto *p) { free(p); };
+        auto strings =
+            std::unique_ptr<char *, decltype(cleanup)>(backtrace_symbols(&addr, 1), cleanup);
+        QString trace = QString::fromUtf8(strings.get()[0]);
         QRegularExpressionMatch m = rx.match(trace);
         if (!m.hasMatch())
             return {};
@@ -2269,7 +2273,7 @@ void qErrnoWarning(int code, const char *msg, ...)
     Here is an example of a message handler that logs to a local file
     before calling the default handler:
 
-    \snippet code/src_corelib_global_qglobal.cpp 23
+    \snippet code/src_corelib_global_qglobal_widgets.cpp 2
 
     Note that the C++ standard guarantees that \c{static FILE *f} is
     initialized in a thread-safe way. We can also expect \c{fprintf()}

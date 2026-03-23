@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtGui/qtguiglobal.h>
 
@@ -266,6 +267,23 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSViewMenuHelper);
         return;
 
     qCDebug(lcQpaWindow) << "Done moving" << self << "to" << self.window;
+}
+
+// QWindow::setParent() promises that the child window will be clipped
+// to its parent, which we rely on in e.g. Qt Widgets when a native window
+// is added to a scroll area. We try to be smart and only enable clipping
+// if we have potential child QWindows that rely on this behavior.
+// FIXME: Be even smarter, and only consider QWindow based subviews,
+// in a way that also includes foreign windows.
+
+- (void)didAddSubview:(NSView *)subview
+{
+    self.clipsToBounds = YES;
+}
+
+- (void)willRemoveSubview:(NSView *)subview
+{
+    self.clipsToBounds = self.subviews.count > 1;
 }
 
 // ----------------------------------------------------------------------------

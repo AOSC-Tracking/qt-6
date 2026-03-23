@@ -42,6 +42,8 @@ template<class Function, class ResultType>
 class FailureHandler;
 #endif
 
+struct UnwrapHandler;
+
 #if QT_CORE_REMOVED_SINCE(6, 10)
 void Q_CORE_EXPORT watchContinuationImpl(const QObject *context,
                                          QtPrivate::QSlotObjectBase *slotObj,
@@ -129,6 +131,8 @@ public:
     void cancel();
     void cancelAndFinish() { cancel(CancelMode::CancelAndFinish); }
     void cancelChain();
+    void setAddResultsIfCanceledEnabled(bool enable);
+    bool isAddResultsIfCanceledEnabled() const;
 
     void setSuspended(bool suspend);
     void toggleSuspended();
@@ -186,6 +190,8 @@ private:
     template<class Function, class ResultType>
     friend class QtPrivate::FailureHandler;
 #endif
+
+    friend struct QtPrivate::UnwrapHandler;
 
 #if QT_CORE_REMOVED_SINCE(6, 10)
     friend Q_CORE_EXPORT void QtPrivate::watchContinuationImpl(
@@ -315,7 +321,7 @@ template <typename T>
 inline bool QFutureInterface<T>::reportResult(const T *result, int index)
 {
     QMutexLocker<QMutex> locker{&mutex()};
-    if (this->queryState(Canceled) || this->queryState(Finished))
+    if ((this->queryState(Canceled) && !this->isAddResultsIfCanceledEnabled()) || this->queryState(Finished))
         return false;
 
     Q_ASSERT(!hasException());
@@ -338,7 +344,7 @@ template<typename...Args, std::enable_if_t<std::is_constructible_v<T, Args...>, 
 bool QFutureInterface<T>::reportAndEmplaceResult(int index, Args&&...args)
 {
     QMutexLocker<QMutex> locker{&mutex()};
-    if (queryState(Canceled) || queryState(Finished))
+    if ((queryState(Canceled) && !isAddResultsIfCanceledEnabled()) || queryState(Finished))
         return false;
 
     Q_ASSERT(!hasException());
@@ -374,7 +380,7 @@ template<typename T>
 inline bool QFutureInterface<T>::reportResults(const QList<T> &_results, int beginIndex, int count)
 {
     QMutexLocker<QMutex> locker{&mutex()};
-    if (this->queryState(Canceled) || this->queryState(Finished))
+    if ((this->queryState(Canceled) && !this->isAddResultsIfCanceledEnabled()) || this->queryState(Finished))
         return false;
 
     Q_ASSERT(!hasException());

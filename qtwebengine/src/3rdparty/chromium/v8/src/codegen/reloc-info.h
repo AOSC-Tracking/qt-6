@@ -131,7 +131,8 @@ class RelocInfo {
     // JSDispatchTable.
     JS_DISPATCH_HANDLE,
 
-    // An off-heap instruction stream target. See http://goo.gl/Z2HUiM.
+    // An off-heap instruction stream target. See:
+    // https://docs.google.com/document/d/1XmiXT54FQ0qqroWzRc8nzrpSSo_xoyFRkVgmonONEJk
     // TODO(ishell): rename to BUILTIN_ENTRY.
     OFF_HEAP_TARGET,  // FIRST_BUILTIN_ENTRY_MODE
     // An un-embedded off-heap instruction stream target.
@@ -380,6 +381,10 @@ class RelocInfo {
            ModeMask(RelocInfo::COMPRESSED_EMBEDDED_OBJECT);
   }
 
+  static int JSDispatchHandleModeMask() {
+    return ModeMask(RelocInfo::JS_DISPATCH_HANDLE);
+  }
+
   // In addition to modes covered by the apply mask (which is applied at GC
   // time, among others), this covers all modes that are relocated by
   // InstructionStream::CopyFromNoFlush after code generation.
@@ -446,6 +451,11 @@ class WritableRelocInfo : public RelocInfo {
 
   V8_INLINE void set_target_external_reference(
       Address, ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED);
+
+  void set_js_dispatch_handle(
+      Tagged<InstructionStream> host, JSDispatchHandle handle,
+      WriteBarrierMode write_barrier_mode = UPDATE_WRITE_BARRIER,
+      ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED);
 
   V8_INLINE WritableJitAllocation& jit_allocation() { return jit_allocation_; }
 

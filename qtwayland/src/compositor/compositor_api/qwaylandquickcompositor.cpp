@@ -84,6 +84,7 @@ void QWaylandQuickCompositor::componentComplete()
 }
 
 /*!
+ * \internal
  * Grab the surface content from the given \a buffer.
  * Reimplemented from QWaylandCompositor::grabSurface.
  */

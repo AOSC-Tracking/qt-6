@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_MIRRORING_SERVICE_OPENSCREEN_SESSION_HOST_H_
 #define COMPONENTS_MIRRORING_SERVICE_OPENSCREEN_SESSION_HOST_H_
 
+#include <vector>
+
 #include "base/component_export.h"
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
@@ -187,6 +189,10 @@ class COMPONENT_EXPORT(MIRRORING_SERVICE) OpenscreenSessionHost final
   void OnVideoEncoderStatus(const media::cast::FrameSenderConfig& config,
                             media::cast::OperationalStatus status);
 
+  // Callback by MirroringGpuFactoriesFactory to indicate that the
+  // GPU factory was lost (and must be replaced).
+  void OnGpuFactoryContextLost(const media::cast::FrameSenderConfig& config);
+
   // Callback by media::cast::VideoSender to report resource utilization.
   void ProcessFeedback(const media::VideoCaptureFeedback& feedback);
 
@@ -224,6 +230,10 @@ class COMPONENT_EXPORT(MIRRORING_SERVICE) OpenscreenSessionHost final
 
   // Called to provide Open Screen with access to this host's network proxy.
   network::mojom::NetworkContext* GetNetworkContext();
+
+  // Called to disable the given hardware codec for the remainder of the
+  // session, if it has not already been disabled.
+  void MaybeDenylistHardwareCodecAndRenegotiate(media::VideoCodec codec);
 
   // Provided by client.
   const mojom::SessionParameters session_params_;
@@ -314,10 +324,6 @@ class COMPONENT_EXPORT(MIRRORING_SERVICE) OpenscreenSessionHost final
   // NOTE: this is lazy initialized on the first session negotiation, and then
   // destructed only on the destruction of this class.
   scoped_refptr<media::cast::CastEnvironment> cast_environment_;
-
-  // Task runners used specifically for audio, video encoding.
-  scoped_refptr<base::SingleThreadTaskRunner> audio_encode_thread_;
-  scoped_refptr<base::SingleThreadTaskRunner> video_encode_thread_;
 
   // Called when audio is successfully captured by `audio_input_device_`.
   std::unique_ptr<AudioCapturingCallback> audio_capturing_callback_;

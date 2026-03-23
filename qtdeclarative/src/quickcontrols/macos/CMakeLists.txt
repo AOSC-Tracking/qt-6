@@ -17,6 +17,7 @@ set(qml_files
     "Dial.qml"
     "Dialog.qml"
     "DialogButtonBox.qml"
+    "DoubleSpinBox.qml"
     "Frame.qml"
     "GroupBox.qml"
     "ItemDelegate.qml"
@@ -90,6 +91,7 @@ qt_internal_add_qml_module(qtquickcontrols2macosstyleplugin
         Qt::QuickControls2Private
         Qt::QuickPrivate
         Qt::QuickTemplates2Private
+        Qt::QuickControls2FusionPrivate
 )
 
 # Native style is a dependency of the macOS style.

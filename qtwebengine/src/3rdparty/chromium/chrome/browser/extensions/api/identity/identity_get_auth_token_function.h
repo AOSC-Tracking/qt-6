@@ -27,10 +27,6 @@
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
 
-#if BUILDFLAG(IS_CHROMEOS)
-#include "chrome/browser/ash/crosapi/device_oauth2_token_service_ash.h"
-#endif
-
 namespace signin {
 class AccessTokenFetcher;
 struct AccessTokenInfo;
@@ -108,11 +104,6 @@ class IdentityGetAuthTokenFunction : public ExtensionFunction,
   // Starts a login access token request.
   virtual void StartTokenKeyAccountAccessTokenRequest();
 
-#if BUILDFLAG(IS_CHROMEOS)
-  void OnAccessTokenForDeviceAccountFetchCompleted(
-      crosapi::mojom::AccessTokenResultPtr result);
-#endif
-
   void OnAccessTokenFetchCompleted(GoogleServiceAuthError error,
                                    signin::AccessTokenInfo access_token_info);
 
@@ -138,11 +129,6 @@ class IdentityGetAuthTokenFunction : public ExtensionFunction,
   // Exposed for testing.
   GaiaId GetSelectedUserId() const;
 
-#if BUILDFLAG(IS_CHROMEOS)
-  using DeviceOAuth2TokenFetcher = crosapi::DeviceOAuth2TokenServiceAsh;
-  std::unique_ptr<DeviceOAuth2TokenFetcher> device_oauth2_token_fetcher_;
-#endif
-
   // Pending fetcher for an access token for |token_key_.account_id| (via
   // IdentityManager).
   std::unique_ptr<signin::AccessTokenFetcher>
@@ -160,7 +146,11 @@ class IdentityGetAuthTokenFunction : public ExtensionFunction,
   FRIEND_TEST_ALL_PREFIXES(GetAuthTokenFunctionTest, InteractiveQueueShutdown);
   FRIEND_TEST_ALL_PREFIXES(GetAuthTokenFunctionTest, NoninteractiveShutdown);
 
+  class RefreshTokensLoadedWaiter;
   enum class InteractionType { kSignin, kConsent };
+#if BUILDFLAG(IS_CHROMEOS)
+  class DeviceOAuth2TokenFetcher;
+#endif
 
   // If `gaia_id` is empty or the account is not present in Chrome, this will
   // use the primary account if it exists. Otherwise, interactive sign in flow
@@ -212,6 +202,12 @@ class IdentityGetAuthTokenFunction : public ExtensionFunction,
   // 1. Enterprise kiosk mode.
   // 2. Allowlisted first party apps in public session.
   virtual void StartDeviceAccessTokenRequest();
+
+  // Called on completion of `StartDeviceAccessTokenRequest`.
+  void OnAccessTokenForDeviceAccountFetchCompleted(
+      const std::optional<std::string>& access_token,
+      base::Time expiration_time,
+      const GoogleServiceAuthError& error);
 #endif
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -226,9 +222,6 @@ class IdentityGetAuthTokenFunction : public ExtensionFunction,
   virtual void ShowExtensionLoginPrompt();
   virtual void ShowRemoteConsentDialog(
       const RemoteConsentResolutionData& resolution_data);
-
-  // Checks if there is a master login token to mint tokens for the extension.
-  bool HasRefreshTokenForTokenKeyAccount() const;
 
   std::string GetOAuth2ClientId() const;
 
@@ -269,6 +262,7 @@ class IdentityGetAuthTokenFunction : public ExtensionFunction,
   // When launched in interactive mode, and if there is no existing grant,
   // a permissions prompt will be popped up to the user.
   RemoteConsentResolutionData resolution_data_;
+  std::unique_ptr<RefreshTokensLoadedWaiter> refresh_tokens_loaded_waiter_;
   std::unique_ptr<GaiaRemoteConsentFlow> gaia_remote_consent_flow_;
   std::string consent_result_;
   // Added for debugging https://crbug.com/1091423.
@@ -282,6 +276,10 @@ class IdentityGetAuthTokenFunction : public ExtensionFunction,
       scoped_identity_manager_observation_{this};
 
   bool waiting_on_account_ = false;
+
+#if BUILDFLAG(IS_CHROMEOS)
+  std::unique_ptr<DeviceOAuth2TokenFetcher> device_oauth2_token_fetcher_;
+#endif
 
   base::WeakPtrFactory<IdentityGetAuthTokenFunction> weak_ptr_factory_{this};
 };

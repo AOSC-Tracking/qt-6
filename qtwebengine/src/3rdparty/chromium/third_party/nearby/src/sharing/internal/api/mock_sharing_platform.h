@@ -15,13 +15,13 @@
 #ifndef THIRD_PARTY_NEARBY_SHARING_INTERNAL_API_MOCK_SHARING_PLATFORM_H_
 #define THIRD_PARTY_NEARBY_SHARING_INTERNAL_API_MOCK_SHARING_PLATFORM_H_
 
-#include <filesystem>  // NOLINT
 #include <functional>
 #include <memory>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "absl/strings/string_view.h"
+#include "internal/base/file_path.h"
 #include "internal/platform/clock.h"
 #include "internal/platform/device_info.h"
 #include "internal/platform/implementation/account_manager.h"
@@ -51,16 +51,12 @@ class MockSharingPlatform : public SharingPlatform {
   MOCK_METHOD(void, InitProductIdGetter,
               (absl::string_view (*product_id_getter)()), (override));
 
-  MOCK_METHOD(void, InitLogging, (absl::string_view log_file_base_name),
+  MOCK_METHOD(std::unique_ptr<nearby::api::NetworkMonitor>,
+              CreateNetworkMonitor,
+              (std::function<void(nearby::api::NetworkMonitor::ConnectionType,
+                                  bool, bool)>
+                   callback),
               (override));
-
-  MOCK_METHOD(void, UpdateLoggingLevel, (), (override));
-
-  MOCK_METHOD(
-      std::unique_ptr<nearby::api::NetworkMonitor>, CreateNetworkMonitor,
-      (std::function<void(nearby::api::NetworkMonitor::ConnectionType, bool)>
-           callback),
-      (override));
 
   MOCK_METHOD(nearby::sharing::api::BluetoothAdapter&, GetBluetoothAdapter, (),
               (override));
@@ -86,15 +82,15 @@ class MockSharingPlatform : public SharingPlatform {
   MOCK_METHOD(TaskRunner&, GetDefaultTaskRunner, (), (override));
   MOCK_METHOD(nearby::DeviceInfo&, GetDeviceInfo, (), (override));
   MOCK_METHOD(std::unique_ptr<PublicCertificateDatabase>,
-              CreatePublicCertificateDatabase,
-              (absl::string_view database_path), (override));
+              CreatePublicCertificateDatabase, (const FilePath& database_path),
+              (override));
   MOCK_METHOD(
       std::unique_ptr<SharingRpcClientFactory>, CreateSharingRpcClientFactory,
       (Clock * clock,
        nearby::sharing::analytics::AnalyticsRecorder* analytics_recorder),
       (override));
-  MOCK_METHOD(bool, UpdateFileOriginMetadata, (
-      std::vector<std::filesystem::path>& file_paths), (override));
+  MOCK_METHOD(bool, UpdateFileOriginMetadata,
+              (std::vector<FilePath> & file_paths), (override));
 };
 
 }  // namespace nearby::sharing::api

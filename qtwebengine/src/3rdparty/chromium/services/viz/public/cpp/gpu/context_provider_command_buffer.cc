@@ -39,7 +39,6 @@
 #include "gpu/command_buffer/client/webgpu_implementation.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/skia_utils.h"
-#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/skia_limits.h"
 #include "gpu/ipc/client/client_shared_image_interface.h"
 #include "gpu/ipc/client/command_buffer_proxy_impl.h"
@@ -148,9 +147,9 @@ gpu::ContextResult ContextProviderCommandBuffer::BindToCurrentSequence() {
   // GPU process.
   command_buffer_ = std::make_unique<gpu::CommandBufferProxyImpl>(
       channel_, stream_id_, default_task_runner_, buffer_mapper_);
-  bind_result_ =
-      command_buffer_->Initialize(/*shared_command_buffer=*/nullptr,
-                                  stream_priority_, attributes_, active_url_);
+  bind_result_ = command_buffer_->Initialize(
+      /*shared_command_buffer=*/nullptr, stream_priority_, attributes_,
+      active_url_, command_buffer_metrics::ContextTypeToString(context_type_));
   if (bind_result_ != gpu::ContextResult::kSuccess) {
     DLOG(ERROR) << "GpuChannelHost failed to create command buffer.";
     command_buffer_metrics::UmaRecordContextInitFailed(context_type_);
@@ -219,7 +218,6 @@ gpu::ContextResult ContextProviderCommandBuffer::BindToCurrentSequence() {
     DCHECK(channel_);
     auto raster_impl = std::make_unique<gpu::raster::RasterImplementation>(
         raster_helper.get(), transfer_buffer.get(),
-        attributes_.bind_generates_resource,
         attributes_.lose_context_when_out_of_memory, command_buffer_.get(),
         channel_->image_decode_accelerator_proxy());
     bind_result_ = raster_impl->Initialize(memory_limits_);
@@ -268,13 +266,13 @@ gpu::ContextResult ContextProviderCommandBuffer::BindToCurrentSequence() {
       gles2_impl = std::make_unique<
           skia_bindings::GLES2ImplementationWithGrContextSupport>(
           gles2_helper.get(), /*share_group=*/nullptr, transfer_buffer.get(),
-          attributes_.bind_generates_resource,
+          /*bind_generates_resource=*/false,
           attributes_.lose_context_when_out_of_memory,
           support_client_side_arrays, command_buffer_.get());
     } else {
       gles2_impl = std::make_unique<gpu::gles2::GLES2Implementation>(
           gles2_helper.get(), /*share_group=*/nullptr, transfer_buffer.get(),
-          attributes_.bind_generates_resource,
+          /*bind_generates_resource=*/false,
           attributes_.lose_context_when_out_of_memory,
           support_client_side_arrays, command_buffer_.get());
     }
@@ -413,7 +411,7 @@ class GrDirectContext* ContextProviderCommandBuffer::GrContext() {
     return gr_context_->get();
   }
 
-  if (attributes_.enable_oop_rasterization) {
+  if (attributes_.enable_gpu_rasterization) {
     return nullptr;
   }
 

@@ -67,10 +67,12 @@ class COMPONENT_EXPORT(SODA_INSTALLER) SodaInstaller {
   // uninstallation, and if so, triggers uninstallation.
   virtual void Init(PrefService* profile_prefs, PrefService* global_prefs);
 
-  // Schedules SODA for uninstallation if no SODA client features are
-  // currently enabled. Should be called when client features using SODA are
-  // disabled.
-  void SetUninstallTimer(PrefService* profile_prefs, PrefService* global_prefs);
+  // Schedules a SODA language pack for uninstallation. The language pack will
+  // not be uninstalled if it's the default language for a enabled feature that
+  // uses it. The SODA binary will be uninstalled when the last installed
+  // language pack is uninstalled.
+  void SetUninstallTimer(PrefService* global_prefs,
+                         const std::string& language);
 
   // Gets the directory path of the installed SODA lib bundle, or an empty path
   // if not installed. Currently Chrome OS only, returns empty path on other
@@ -123,11 +125,17 @@ class COMPONENT_EXPORT(SODA_INSTALLER) SodaInstaller {
   // Removes an observer from the observer list.
   void RemoveObserver(Observer* observer);
 
-  // Method for checking in-progress downloads.
+  // Returns whether the given SODA language pack is currently downloading or
+  // the SODA language pack is installed but the SODA library is still
+  // downloading.
+  bool IsSodaLanguageDownloading(LanguageCode language_code) const;
+
+  // Returns whether the SODA library is downloading or the given SODA language
+  // pack is downloading.
   bool IsSodaDownloading(LanguageCode language_code) const;
 
-  // Returns the error encountered while installing soda for the language code
-  // or soda binary.
+  // Returns the error encountered while installing SODA for the language code
+  // or SODA binary.
   std::optional<ErrorCode> GetSodaInstallErrorCode(
       LanguageCode language_code) const;
 
@@ -137,7 +145,7 @@ class COMPONENT_EXPORT(SODA_INSTALLER) SodaInstaller {
     never_download_soda_for_testing_ = true;
   }
 
-  // The soda binary is encoded as LanguageCode::kNone.
+  // The SODA binary is encoded as LanguageCode::kNone.
   void NotifySodaInstalledForTesting(
       LanguageCode language_code = LanguageCode::kNone);
   void NotifySodaErrorForTesting(
@@ -146,7 +154,7 @@ class COMPONENT_EXPORT(SODA_INSTALLER) SodaInstaller {
   void UninstallSodaForTesting();
   void NotifySodaProgressForTesting(
       int progress,
-      LanguageCode language_code = LanguageCode::kNone);
+      LanguageCode language_code = LanguageCode::kEnUs);
   bool IsAnyLanguagePackInstalledForTesting() const;
 
   const std::set<LanguageCode> InstalledLanguages() const;
@@ -159,6 +167,16 @@ class COMPONENT_EXPORT(SODA_INSTALLER) SodaInstaller {
 
   void UnregisterLanguage(const std::string& language,
                           PrefService* global_prefs);
+
+  bool IsLanguageEnabled(const std::string& language);
+
+  // Uninstalls unused language packs. Uninstalls the SODA binary if no
+  // installed language packs remain.
+  void MaybeUninstallSoda(PrefService* profile_prefs,
+                          PrefService* global_prefs);
+
+  // Returns whether SODA was used recently.
+  bool WasSodaUsedRecently(PrefService* global_prefs);
 
  protected:
   // Initializes language and installs the per-language components.
@@ -213,7 +231,12 @@ class COMPONENT_EXPORT(SODA_INSTALLER) SodaInstaller {
   friend class SodaInstallerImplChromeOSTest;
   friend class SodaInstallerImplTest;
   // Any new feature using SODA should add its pref here.
-  bool IsAnyFeatureUsingSodaEnabled(PrefService* prefs);
+  bool IsAnyFeatureUsingSodaEnabled(PrefService* prefs) const;
+
+#if !BUILDFLAG(IS_CHROMEOS)
+  bool IsLanguageActiveDefault(const std::string& language,
+                               PrefService* profile_prefs) const;
+#endif  // !BUILDFLAG(IS_CHROMEOS)
 };
 
 }  // namespace speech

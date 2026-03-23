@@ -23,18 +23,19 @@ class QuicServerId;
 class QUICHE_EXPORT QuicSpdyClientSession : public QuicSpdyClientSessionBase {
  public:
   // Takes ownership of |connection|.
-  QuicSpdyClientSession(const QuicConfig& config,
-                        const ParsedQuicVersionVector& supported_versions,
-                        QuicConnection* connection,
-                        const QuicServerId& server_id,
-                        QuicCryptoClientConfig* crypto_config);
+  QuicSpdyClientSession(
+      const QuicConfig& config,
+      const ParsedQuicVersionVector& supported_versions,
+      QuicConnection* connection, const QuicServerId& server_id,
+      QuicCryptoClientConfig* crypto_config,
+      QuicPriorityType priority_type = QuicPriorityType::kHttp);
 
-  QuicSpdyClientSession(const QuicConfig& config,
-                        const ParsedQuicVersionVector& supported_versions,
-                        QuicConnection* connection,
-                        QuicSession::Visitor* visitor,
-                        const QuicServerId& server_id,
-                        QuicCryptoClientConfig* crypto_config);
+  QuicSpdyClientSession(
+      const QuicConfig& config,
+      const ParsedQuicVersionVector& supported_versions,
+      QuicConnection* connection, QuicSession::Visitor* visitor,
+      const QuicServerId& server_id, QuicCryptoClientConfig* crypto_config,
+      QuicPriorityType priority_type = QuicPriorityType::kHttp);
 
   QuicSpdyClientSession(const QuicSpdyClientSession&) = delete;
   QuicSpdyClientSession& operator=(const QuicSpdyClientSession&) = delete;
@@ -44,7 +45,6 @@ class QUICHE_EXPORT QuicSpdyClientSession : public QuicSpdyClientSessionBase {
 
   // QuicSession methods:
   QuicSpdyClientStream* CreateOutgoingBidirectionalStream() override;
-  QuicSpdyClientStream* CreateOutgoingUnidirectionalStream() override;
   QuicCryptoClientStreamBase* GetMutableCryptoStream() override;
   const QuicCryptoClientStreamBase* GetCryptoStream() const override;
 
@@ -99,7 +99,6 @@ class QUICHE_EXPORT QuicSpdyClientSession : public QuicSpdyClientSessionBase {
   QuicSpdyStream* CreateIncomingStream(PendingStream* pending) override;
   // If an outgoing stream can be created, return true.
   bool ShouldCreateOutgoingBidirectionalStream() override;
-  bool ShouldCreateOutgoingUnidirectionalStream() override;
 
   // If an incoming stream can be created, return true.
   // TODO(fayang): move this up to QuicSpdyClientSessionBase.

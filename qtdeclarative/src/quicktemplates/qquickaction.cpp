@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickaction_p.h"
 #include "qquickaction_p_p.h"
@@ -14,6 +15,7 @@
 #endif
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtQuick/private/qquickitem_p.h>
+#include <QtQuickTemplates2/private/qquickicon_p_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -371,10 +373,20 @@ QQuickIcon QQuickAction::icon() const
 void QQuickAction::setIcon(const QQuickIcon &icon)
 {
     Q_D(QQuickAction);
-    if (d->icon == icon)
-        return;
+    // Similar to QQuickAbstractButtonPrivate::updateEffectiveIcon, we don't want to rely
+    // purely on QQuickIcon::operator==, because it doesn't account for the color being resolved.
+    // If we didn't check the resolve mask and the user set the color to transparent (the default),
+    // the resolveMask of d->icon wouldn't indicate that the color was resolved and iconChanged
+    // wouldn't be emitted, leading to the user's request being ignored.
+    const bool oldColorResolved = QQuickIconPrivate::isResolved(d->icon, QQuickIconPrivate::ColorResolved);
+    const bool newColorResolved = QQuickIconPrivate::isResolved(icon, QQuickIconPrivate::ColorResolved);
+    const bool unchanged = d->icon == icon && oldColorResolved && !newColorResolved;
 
     d->icon = icon;
+
+    if (unchanged)
+        return;
+
     d->icon.ensureRelativeSourceResolved(this);
     emit iconChanged(icon);
 }

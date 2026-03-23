@@ -24,14 +24,12 @@ qt_internal_add_plugin(QAndroidIntegrationPlugin
         qandroidplatformfiledialoghelper.cpp qandroidplatformfiledialoghelper.h
         qandroidplatformfontdatabase.cpp qandroidplatformfontdatabase.h
         qandroidplatformforeignwindow.cpp qandroidplatformforeignwindow.h
+        qandroidplatformfileiconengine.cpp qandroidplatformfileiconengine.h
         qandroidplatformiconengine.cpp qandroidplatformiconengine.h
         qandroidplatformintegration.cpp qandroidplatformintegration.h
         qandroidplatformmenu.cpp qandroidplatformmenu.h
         qandroidplatformmenubar.cpp qandroidplatformmenubar.h
         qandroidplatformmenuitem.cpp qandroidplatformmenuitem.h
-        qandroidplatformoffscreensurface.cpp qandroidplatformoffscreensurface.h
-        qandroidplatformopenglcontext.cpp qandroidplatformopenglcontext.h
-        qandroidplatformopenglwindow.cpp qandroidplatformopenglwindow.h
         qandroidplatformscreen.cpp qandroidplatformscreen.h
         qandroidplatformservices.cpp qandroidplatformservices.h
         qandroidplatformtheme.cpp qandroidplatformtheme.h
@@ -59,14 +57,12 @@ qt_internal_add_plugin(QAndroidIntegrationPlugin
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${QtBase_SOURCE_DIR}/src/3rdparty/android
     LIBRARIES
-        EGL::EGL
         Qt::Core
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
         android
         jnigraphics
-        EGL::EGL
 )
 
 ## Scopes:
@@ -93,6 +89,18 @@ qt_internal_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_accessi
         qandroidplatformaccessibility.cpp qandroidplatformaccessibility.h
     NO_UNITY_BUILD_SOURCES
         androidjniaccessibility.cpp
+)
+
+qt_internal_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_egl
+    SOURCES
+        qandroidplatformopenglcontext.cpp qandroidplatformopenglcontext.h
+        qandroidplatformopenglwindow.cpp qandroidplatformopenglwindow.h
+        qandroidplatformoffscreensurface.cpp qandroidplatformoffscreensurface.h
+    LIBRARIES
+        EGL::EGL
+    NO_UNITY_BUILD_SOURCES
+        qandroidplatformopenglcontext.cpp qandroidplatformopenglwindow.cpp
+        qandroidplatformoffscreensurface.cpp
 )
 
 qt_internal_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_vulkan

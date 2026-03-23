@@ -23,6 +23,14 @@ Node {
         onScenePosChanged: {
             const touchOffset = view.processTouch(scenePos, root.touchId)
             handModel.position = touchOffset
+
+            //! [touch handling]
+            const touchState = view.touchpointState(root.touchId)
+            const gadget = touchState.model as XrGadget
+            if (gadget) {
+                gadget.handleTouch(touchState.uvPosition, root.touchId, touchState.pressed)
+            }
+            //! [touch handling]
         }
     }
 

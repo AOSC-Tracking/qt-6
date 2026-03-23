@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 /*!
     \class QMdiSubWindow
@@ -16,6 +17,7 @@
     title bar and a center area for the internal widget.
 
     \image qmdisubwindowlayout.png
+           {MDI window with a title bar and an internal widget}
 
     The most common way to construct a QMdiSubWindow is to call
     QMdiArea::addSubWindow() with the internal widget as the argument.
@@ -2218,7 +2220,7 @@ QMdiSubWindow::QMdiSubWindow(QWidget *parent, Qt::WindowFlags flags)
     d->titleBarPalette = d->desktopPalette();
     d->font = QApplication::font("QMdiSubWindowTitleBar");
     // We don't want the menu icon by default on mac.
-#ifndef Q_OS_MAC
+#ifndef Q_OS_DARWIN
     if (windowIcon().isNull())
         d->menuIcon = style()->standardIcon(QStyle::SP_TitleBarMenuButton, nullptr, this);
     else
@@ -2646,7 +2648,7 @@ bool QMdiSubWindow::eventFilter(QObject *object, QEvent *event)
                 close();
         } else if (event->type() == QEvent::MouseMove) {
             QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
-            d->hoveredSubControl = d->getSubControl(mapFromGlobal(mouseEvent->globalPosition().toPoint()));
+            d->hoveredSubControl = d->getSubControl(mapFromGlobal(mouseEvent->globalPosition()).toPoint());
         } else if (event->type() == QEvent::Hide) {
             d->activeSubControl = QStyle::SC_None;
             update(QRegion(0, 0, width(), d->titleBarHeight()));
@@ -2660,7 +2662,7 @@ bool QMdiSubWindow::eventFilter(QObject *object, QEvent *event)
         if (event->type() != QEvent::MouseButtonPress || !testOption(QMdiSubWindow::RubberBandResize))
             return QWidget::eventFilter(object, event);
         const QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
-        d->mousePressPosition = parentWidget()->mapFromGlobal(mouseEvent->globalPosition().toPoint());
+        d->mousePressPosition = parentWidget()->mapFromGlobal(mouseEvent->globalPosition()).toPoint();
         d->oldGeometry = geometry();
         d->currentOperation = isLeftToRight() ? QMdiSubWindowPrivate::BottomRightResize
                                               : QMdiSubWindowPrivate::BottomLeftResize;
@@ -2845,8 +2847,11 @@ bool QMdiSubWindow::event(QEvent *event)
         break;
     case QEvent::WindowIconChange:
         d->menuIcon = windowIcon();
+        // We don't want the default menu icon on mac.
+#ifndef Q_OS_DARWIN
         if (d->menuIcon.isNull())
             d->menuIcon = style()->standardIcon(QStyle::SP_TitleBarMenuButton, nullptr, this);
+#endif
         if (d->controlContainer)
             d->controlContainer->updateWindowIcon(d->menuIcon);
         if (!maximizedSystemMenuIconWidget())
@@ -3298,7 +3303,7 @@ void QMdiSubWindow::mouseMoveEvent(QMouseEvent *mouseEvent)
         if ((d->isResizeOperation() && d->resizeEnabled) || (d->isMoveOperation() && d->moveEnabled)) {
             // As setNewGeometry moves the window, it invalidates the pos() value of any mouse move events that are
             // currently queued in the event loop. Map to parent using globalPos() instead.
-            d->setNewGeometry(parentWidget()->mapFromGlobal(mouseEvent->globalPosition().toPoint()));
+            d->setNewGeometry(parentWidget()->mapFromGlobal(mouseEvent->globalPosition()).toPoint());
         }
         return;
     }

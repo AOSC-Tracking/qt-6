@@ -38,10 +38,9 @@
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "ui/events/types/scroll_types.h"
-
-namespace gfx {
-class Rect;
-}
+#include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace ui {
 class ColorProvider;
@@ -291,6 +290,10 @@ class CORE_EXPORT Scrollbar : public GarbageCollected<Scrollbar>,
   float ScrollableAreaTargetPos() const;
   bool ThumbWillBeUnderMouse() const;
   bool DeltaWillScroll(ScrollOffset delta) const;
+
+  // Theme color set as a web pref that will only be applied to root scrollbars
+  // when no other modification is present (high contrast or css styling).
+  std::optional<blink::Color> RootScrollbarThemeColor() const;
 
   bool track_and_buttons_need_repaint_ = true;
   bool thumb_needs_repaint_ = true;

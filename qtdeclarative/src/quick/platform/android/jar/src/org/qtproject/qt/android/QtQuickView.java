@@ -37,14 +37,16 @@ public class QtQuickView extends QtView {
     private QtQmlStatus m_lastStatus = QtQmlStatus.NULL;
     private boolean m_hasQueuedStatus = false;
     private WeakReference<QtQuickViewContent> m_loadedComponent;
+    private QtSignalQueue m_signalQueue = new QtSignalQueue();
 
     native void createQuickView(String qmlUri, int width, int height, long parentWindowReference,
                                 long viewReference, String[] qmlImportPaths);
     native void setRootObjectProperty(long windowReference, String propertyName, Object value);
     native Object getRootObjectProperty(long windowReference, String propertyName);
-    native int addRootObjectSignalListener(long windowReference, String signalName,
-                                           Class<?>[] argTypes, Object listener);
+    native boolean addRootObjectSignalListener(long windowReference, String signalName,
+                                               Class<?>[] argTypes, Object listener, int id);
     native boolean removeRootObjectSignalListener(long windowReference, int signalListenerId);
+    native void invokeMethod(long windowReference, String methodName, Object[] params);
 
     /**
      * Creates a QtQuickView to load and view a QML component. Instantiating a QtQuickView will load
@@ -143,12 +145,22 @@ public class QtQuickView extends QtView {
         // and windowReference() returns a reference to native QQuickView
         // instance, after that. We don't load library again if the view
         // exists.
-        if (windowReference() == 0) {
+        if (getWindowReference() == 0) {
             loadQtLibraries(libName);
         } else {
-            createQuickView(m_qmlUri, getWidth(), getHeight(), 0, windowReference(),
+            createQuickView(m_qmlUri, getWidth(), getHeight(), 0, getWindowReference(),
                             m_qmlImportPaths);
         }
+    }
+
+    @Override
+    void setWindowReference(long windowReference) {
+        super.setWindowReference(windowReference);
+        m_signalQueue.connectQueuedSignalListeners(this);
+    }
+
+    private boolean hasUnderlyingView() {
+        return getWindowReference() != 0L;
     }
 
     /**
@@ -167,7 +179,7 @@ public class QtQuickView extends QtView {
 
     @Override
     protected void createWindow(long parentWindowReference) {
-        createQuickView(m_qmlUri, getWidth(), getHeight(), parentWindowReference, windowReference(),
+        createQuickView(m_qmlUri, getWidth(), getHeight(), parentWindowReference, getWindowReference(),
                         m_qmlImportPaths);
     }
 
@@ -188,7 +200,7 @@ public class QtQuickView extends QtView {
      **/
     public void setProperty(String propertyName, Object value)
     {
-        setRootObjectProperty(windowReference(), propertyName, value);
+        setRootObjectProperty(getWindowReference(), propertyName, value);
     }
 
     /**
@@ -211,18 +223,21 @@ public class QtQuickView extends QtView {
     @SuppressWarnings("unchecked")
     public <T> T getProperty(String propertyName)
     {
-        return (T)getRootObjectProperty(windowReference(), propertyName);
+        return (T)getRootObjectProperty(getWindowReference(), propertyName);
     }
 
     /**
-     * Connects a SignalListener to a signal of the QML root object.
+     * Connects a SignalListener to a signal of the QML root object. This will delay forming a
+     * connection until the root object is ready.
      *
      * @param signalName the name of the root object signal
      * @param argType    the Class type of the signal argument
      * @param listener   an instance of the QtSignalListener interface
      * @return a connection id between signal and listener or the existing connection id if there is
      *         an existing connection between the same signal and listener. Return a negative value
-     *         if the signal does not exists on the QML root object.
+     *         if the signal does not exists on the QML root object. Always returns
+     *         <code>true</code> if the root object is not ready, as the connection is queued until
+     *         the root object is ready.
      **/
     public <T> int connectSignalListener(String signalName, Class<T> argType,
                                          QtSignalListener<T> listener)
@@ -231,7 +246,8 @@ public class QtQuickView extends QtView {
     }
 
     /**
-     * Connects a SignalListener to a signal of the QML root object.
+     * Connects a SignalListener to a signal of the QML root object. Will delay forming a
+     * connection until the root object is ready.
      *
      * @param signalName the name of the root object's signal
      * @param argTypes   the Class types of the signal arguments
@@ -239,16 +255,33 @@ public class QtQuickView extends QtView {
      * @return a connection id between signal and listener or the existing connection id if there
      *         is an existing connection between the same signal and listener. Otherwise, a
      *         negative value is returned if the signal does not exist on the QML root object.
+     *         Always returns <code>true</code> if the root object is not ready.
      **/
     public int connectSignalListener(String signalName, Class<?>[] argTypes, Object listener)
     {
-        int signalListenerId =
-                addRootObjectSignalListener(windowReference(), signalName, argTypes, listener);
-        if (signalListenerId < 0) {
-            Log.w(TAG, "The signal " + signalName + " does not exist in the root object "
-                                     + "or the arguments do not match with the listener.");
-        }
-        return signalListenerId;
+        final int id = QtQuickViewContent.generateSignalId();
+        connectSignalListener(signalName, argTypes, listener, id);
+        return id;
+    }
+
+    /**
+     * Convenience function to call the native addRootObjectSignalListener() method from
+     * QtQuickViewContent.
+     *
+     * If the underlying C++ QAndroidQuickView has not been set yet, this connection is queued
+     * until that happens. This is because the QAndroidQuickView does not exist yet, so we cannot
+     * connect to its signals.
+     *
+     * This is provided as a way for QtSignalQueue to call addRootObjectSignalListener() while
+     * providing a pre-generated ID. The regular public API generates its own ID, which is not
+     * desired for queued signal connections.
+     */
+    void connectSignalListener(String signalName, Class<?>[] argTypes, Object listener, int id)
+    {
+        if (hasUnderlyingView())
+            addRootObjectSignalListener(getWindowReference(), signalName, argTypes, listener, id);
+        else
+            m_signalQueue.add(signalName, argTypes, listener, id);
     }
 
     /**
@@ -263,7 +296,10 @@ public class QtQuickView extends QtView {
      **/
     public boolean disconnectSignalListener(int signalListenerId)
     {
-        return removeRootObjectSignalListener(windowReference(), signalListenerId);
+        if (hasUnderlyingView())
+            return removeRootObjectSignalListener(getWindowReference(), signalListenerId);
+        else
+            return m_signalQueue.remove(signalListenerId);
     }
 
     /**
@@ -301,6 +337,41 @@ public class QtQuickView extends QtView {
         }
     }
 
+    /**
+     * Invokes a QML method of the root object.
+     *
+     * Supported parameter types are {@link java.lang.Integer},{@link java.lang.Double},
+     * {@link java.lang.Float}, {@link java.lang.Boolean} and {@link java.lang.String}.
+     * These types get converted to their corresponding types: <code>int</code>,
+     * <code>double</code>, <code>real</code>, <code>bool</code>, and <code>string</code>,
+     * respectively.
+     *
+     * @param methodName name of the method
+     * @param params array of parameters that are passed to the method
+     *
+     * @see <a href="https://doc.qt.io/qt-6/qml-int.html">QML int</a>
+     * @see <a href="https://doc.qt.io/qt-6/qml-double.html">QML double</a>
+     * @see <a href="https://doc.qt.io/qt-6/qml-real.html">QML real</a>
+     * @see <a href="https://doc.qt.io/qt-6/qml-bool.html">QML bool</a>
+     * @see <a href="https://doc.qt.io/qt-6/qml-string.html">QML string</a>
+     **/
+    public void invokeMethod(String methodName, Object[] params)
+    {
+        invokeMethod(getWindowReference(), methodName, params);
+    }
+
+    /**
+     * Invokes a QML method of the root object.
+     *
+     * @param methodName name of the method
+     *
+     * @see QtQuickView#invokeMethod(String, Object[])
+     */
+    public void invokeMethod(String methodName)
+    {
+        invokeMethod(getWindowReference(), methodName, new Object[] {});
+    }
+
     private void handleStatusChange(int status)
     {
         try {
@@ -318,15 +389,12 @@ public class QtQuickView extends QtView {
 
     private void sendStatusChanged(QtQmlStatus status)
     {
-        QtNative.runAction(() -> {
-            if (m_statusChangeListener != null) {
-                QtQuickViewContent content = m_loadedComponent != null ?
-                    m_loadedComponent.get() : null;
-                if (content == null)
-                    m_statusChangeListener.onStatusChanged(status);
-                else
-                    m_statusChangeListener.onStatusChanged(status, content);
-            }
-        });
+        if (m_statusChangeListener != null) {
+            QtQuickViewContent content = m_loadedComponent != null ? m_loadedComponent.get() : null;
+            if (content == null)
+                m_statusChangeListener.onStatusChanged(status);
+            else
+                m_statusChangeListener.onStatusChanged(status, content);
+        }
     }
 }

@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "ipcz/router.h"
 
 #include <algorithm>
@@ -432,6 +437,7 @@ IpczResult Router::BeginPut(IpczBeginPutFlags flags,
   if (data) {
     *data = parcel->data_view().data();
   }
+  absl::MutexLock lock(&mutex_);
   if (!pending_puts_) {
     pending_puts_ = std::make_unique<PendingTransactionSet>();
   }
@@ -450,15 +456,18 @@ IpczResult Router::EndPut(IpczTransaction transaction,
     return IPCZ_RESULT_INVALID_ARGUMENT;
   }
 
-  if (!pending_puts_) {
-    return IPCZ_RESULT_INVALID_ARGUMENT;
-  }
-
   std::unique_ptr<Parcel> parcel;
-  if (aborted) {
-    parcel = pending_puts_->FinalizeForPut(transaction, 0);
-  } else {
-    parcel = pending_puts_->FinalizeForPut(transaction, num_bytes_produced);
+  {
+    absl::MutexLock lock(&mutex_);
+    if (!pending_puts_) {
+      return IPCZ_RESULT_INVALID_ARGUMENT;
+    }
+
+    if (aborted) {
+      parcel = pending_puts_->FinalizeForPut(transaction, 0);
+    } else {
+      parcel = pending_puts_->FinalizeForPut(transaction, num_bytes_produced);
+    }
   }
 
   if (!parcel) {
@@ -800,6 +809,8 @@ Ref<Router> Router::Deserialize(const RouterDescriptor& descriptor,
       }
     }
   }
+
+  from_node_link.AcceptEarlyParcelsForSublink(descriptor.new_sublink);
 
   if (!new_outward_link) {
     // The new portal is DOA, either because the associated NodeLink is dead, or

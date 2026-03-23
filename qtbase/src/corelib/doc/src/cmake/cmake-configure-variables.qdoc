@@ -81,6 +81,48 @@ is written out as part of the deployment settings for a target.
 */
 
 /*!
+\page cmake-variable-qt-android-post-build-gradle-cleanup.html
+\ingroup cmake-variables-qtcore
+\ingroup cmake-android-manifest-properties
+
+\title QT_ANDROID_POST_BUILD_GRADLE_CLEANUP
+\target cmake-variable-QT_ANDROID_POST_BUILD_GRADLE_CLEANUP
+
+\summary {Perform a Gradle cleanup after the Android package is created.}
+
+\cmakevariablesince 6.11
+\preliminarycmakevariable
+\cmakevariableandroidonly
+
+After the Android package build is done and the APK is created, perform a Gradle
+clean task to remove build artifacts. This is useful to keep disk space taken
+by Qt for Android projects at a minimal.
+
+\sa{qt6_android_generate_deployment_settings}{qt_android_generate_deployment_settings()}
+*/
+
+/*!
+\page cmake-variable-qt-android-create-symlinks-only.html
+\ingroup cmake-variables-qtcore
+\ingroup cmake-android-manifest-properties
+
+\title QT_ANDROID_CREATE_SYMLINKS_ONLY
+\target cmake-variable-QT_ANDROID_CREATE_SYMLINKS_ONLY
+
+\summary {Only create symlinks for dependencies under the Gradle project directory.}
+
+\cmakevariablesince 6.11
+\preliminarycmakevariable
+\cmakevariableandroidonly
+
+Create symlinks for shared libraries, jars and resource, etc. instead of a full
+copy. This can be useful to avoid projects taking extra space, and instead directly
+use, for example, library files referenced from a Qt installation.
+
+\sa{qt6_android_generate_deployment_settings}{qt_android_generate_deployment_settings()}
+*/
+
+/*!
 \page cmake-variable-qt-android-deployment-type.html
 \ingroup cmake-variables-qtcore
 \ingroup cmake-android-build-properties

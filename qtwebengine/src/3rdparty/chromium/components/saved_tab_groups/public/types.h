@@ -6,14 +6,13 @@
 #define COMPONENTS_SAVED_TAB_GROUPS_PUBLIC_TYPES_H_
 
 #include <optional>
-#include <string>
 #include <variant>
 
 #include "base/logging.h"
 #include "base/token.h"
-#include "base/types/strong_alias.h"
 #include "base/uuid.h"
 #include "build/build_config.h"
+#include "components/sync/base/collaboration_id.h"
 #include "components/tab_groups/tab_group_id.h"
 #include "google_apis/gaia/gaia_id.h"
 
@@ -34,8 +33,9 @@ using LocalTabGroupID = tab_groups::TabGroupId;
 typedef std::variant<base::Uuid, LocalTabGroupID> EitherGroupID;
 typedef std::variant<base::Uuid, LocalTabID> EitherTabID;
 
-using CollaborationId =
-    base::StrongAlias<class CollaborationIdTag, std::string>;
+// TODO(crbug.com/380406615): migrate to syncer::CollaborationId all the call
+// sites.
+using CollaborationId = syncer::CollaborationId;
 
 // Base context for tab group actions. Platforms can subclass this to pass
 // additional context such as a browser window.
@@ -67,23 +67,25 @@ enum class SavedTabGroupType {
   SHARED = 1,
 };
 
-// The state of the sync bridge wrt sign-in / sign-out, i.e. whether the bridge
-// has completed initial merge and isn't in the process of disabling sync.
+// The state of the sync bridge wrt sign-in / sign-out, e.g. whether the bridge
+// is currently undergoing initial merge or in the process of disabling sync.
 // Interested consumers might want to ignore the incoming updates from sync
 // based on this enum.
 enum class SyncBridgeUpdateType {
   // The bridge is currently undergoing initial merge. After this stage, it will
-  // transition to `kDefaultState`.
+  // transition to `kCompletedInitialMergeThisSession`.
   kInitialMerge = 0,
+
+  // The bridge has completed initial merge this session.
+  kCompletedInitialMergeThisSession = 1,
 
   // The bridge is currently in the process of disabling, i.e.
   // ApplyDisableSyncChanges has been invoked. After this stage, it will
-  // transition to `kDefaultState`.
-  kDisableSync = 1,
+  // transition to `kCompletedDisableSyncThisSession`.
+  kDisableSync = 2,
 
-  // The bridge is not currently doing an initial merge or disable sync
-  // operation.
-  kDefaultState = 2,
+  // The bridge has completed disable sync this session.
+  kCompletedDisableSyncThisSession = 3,
 };
 
 // LINT.IfChange(OpeningSource)
@@ -116,8 +118,11 @@ enum class OpeningSource {
   kConnectOnGroupShare = 8,
   // The group was connected as a part of un-sharing a group.
   kConnectOnGroupUnShare = 9,
+  // Desktop only. The group was open from user clicking on the action button of
+  // the toast message.
+  kOpenedFromToastAction = 10,
 
-  kMaxValue = kConnectOnGroupUnShare,
+  kMaxValue = kOpenedFromToastAction,
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/tab/enums.xml:GroupOpeningSource)
 
@@ -198,6 +203,19 @@ struct SharedAttribution {
   // Obfuscated Gaia ID of the user who last updated the group or tab.
   GaiaId updated_by;
 };
+
+// The current schema version of the SavedTabGroupData which is used for the
+// local DB.
+const int kCurrentSavedTabGroupDataProtoVersion = 1;
+
+// The current proto version for SavedTabGroupSpecifics.
+inline constexpr int kCurrentSavedTabGroupSpecificsProtoVersion = 1;
+
+// The current proto version for SharedTabGroupDataSpecifics.
+inline constexpr int kCurrentSharedTabGroupDataSpecificsProtoVersion = 1;
+
+// The current proto version for SharedTabGroupAccountDataSpecifics.
+inline constexpr int kCurrentSharedTabGroupAccountDataSpecificsProtoVersion = 1;
 
 }  // namespace tab_groups
 

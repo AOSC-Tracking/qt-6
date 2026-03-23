@@ -9,9 +9,9 @@
 
 #include "src/gpu/graphite/dawn/DawnAsyncWait.h"
 #include "src/gpu/graphite/dawn/DawnCommandBuffer.h"
+#include "src/gpu/graphite/dawn/DawnGraphiteUtils.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
-#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 
 namespace skgpu::graphite {
 namespace {
@@ -37,9 +37,6 @@ DawnWorkSubmissionWithAsyncWait::DawnWorkSubmissionWithAsyncWait(
         const DawnSharedContext* sharedContext)
         : GpuWorkSubmission(std::move(cmdBuffer), queueManager), fAsyncWait(sharedContext) {
     queueManager->dawnQueue().OnSubmittedWorkDone(
-            // This is parameter is being removed:
-            // https://github.com/webgpu-native/webgpu-headers/issues/130
-            /*signalValue=*/0,
             [](WGPUQueueWorkDoneStatus, void* userData) {
                 auto asyncWaitPtr = static_cast<DawnAsyncWait*>(userData);
                 asyncWaitPtr->signal();
@@ -75,7 +72,7 @@ DawnWorkSubmissionWithFuture::DawnWorkSubmissionWithFuture(std::unique_ptr<Comma
                                                            DawnQueueManager* queueManager)
         : GpuWorkSubmission(std::move(cmdBuffer), queueManager) {
     fSubmittedWorkDoneFuture = queueManager->dawnQueue().OnSubmittedWorkDone(
-            wgpu::CallbackMode::WaitAnyOnly, [](wgpu::QueueWorkDoneStatus) {});
+            wgpu::CallbackMode::WaitAnyOnly, [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {});
 }
 
 bool DawnWorkSubmissionWithFuture::onIsFinished(const SharedContext* sharedContext) {

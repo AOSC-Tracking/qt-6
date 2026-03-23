@@ -17,13 +17,12 @@ namespace blink {
 v8_inspector::StringView ToV8InspectorStringView(const StringView& string) {
   if (string.IsNull())
     return v8_inspector::StringView();
-  if (string.Is8Bit())
-    return v8_inspector::StringView(
-        reinterpret_cast<const uint8_t*>(string.Characters8()),
-        string.length());
-  return v8_inspector::StringView(
-      reinterpret_cast<const uint16_t*>(string.Characters16()),
-      string.length());
+  if (string.Is8Bit()) {
+    auto span8 = string.Span8();
+    return v8_inspector::StringView(span8.data(), span8.size());
+  }
+  auto span16 = string.SpanUint16();
+  return v8_inspector::StringView(span16.data(), span16.size());
 }
 
 std::unique_ptr<v8_inspector::StringBuffer> ToV8InspectorStringBuffer(
@@ -81,20 +80,6 @@ class BinaryBasedOnUint8Vector : public Binary::Impl {
   Vector<uint8_t> values_;
 };
 
-class BinaryBasedOnCharVector : public Binary::Impl {
- public:
-  explicit BinaryBasedOnCharVector(Vector<char> values)
-      : values_(std::move(values)) {}
-
-  const uint8_t* data() const override {
-    return reinterpret_cast<const uint8_t*>(values_.data());
-  }
-  size_t size() const override { return values_.size(); }
-
- private:
-  Vector<char> values_;
-};
-
 class BinaryBasedOnCachedData : public Binary::Impl {
  public:
   explicit BinaryBasedOnCachedData(
@@ -120,9 +105,9 @@ String Binary::toBase64() const {
 
 // static
 Binary Binary::fromBase64(const String& base64, bool* success) {
-  Vector<char> out;
-  *success = WTF::Base64Decode(base64, out);
-  return Binary(base::AdoptRef(new BinaryBasedOnCharVector(std::move(out))));
+  Vector<uint8_t> out;
+  *success = Base64Decode(base64, out);
+  return Binary(base::AdoptRef(new BinaryBasedOnUint8Vector(std::move(out))));
 }
 
 // static
@@ -153,8 +138,8 @@ using blink::protocol::Binary;
 using blink::protocol::StringUtil;
 
 // static
-bool ProtocolTypeTraits<WTF::String>::Deserialize(DeserializerState* state,
-                                                  String* value) {
+bool ProtocolTypeTraits<blink::String>::Deserialize(DeserializerState* state,
+                                                    blink::String* value) {
   auto* tokenizer = state->tokenizer();
   if (tokenizer->TokenTag() == crdtp::cbor::CBORTokenTag::STRING8) {
     const auto str = tokenizer->GetString8();
@@ -172,25 +157,18 @@ bool ProtocolTypeTraits<WTF::String>::Deserialize(DeserializerState* state,
 }
 
 // static
-void ProtocolTypeTraits<WTF::String>::Serialize(const String& value,
-                                                std::vector<uint8_t>* bytes) {
+void ProtocolTypeTraits<blink::String>::Serialize(const blink::String& value,
+                                                  std::vector<uint8_t>* bytes) {
   if (value.length() == 0) {
     crdtp::cbor::EncodeString8(crdtp::span<uint8_t>(), bytes);  // Empty string.
     return;
   }
   if (value.Is8Bit()) {
-    crdtp::cbor::EncodeFromLatin1(
-        crdtp::span<uint8_t>(
-            reinterpret_cast<const uint8_t*>(value.Characters8()),
-            value.length()),
-        bytes);
+    crdtp::cbor::EncodeFromLatin1(crdtp::span<uint8_t>(value.Span8()), bytes);
     return;
   }
-  crdtp::cbor::EncodeFromUTF16(
-      crdtp::span<uint16_t>(
-          reinterpret_cast<const uint16_t*>(value.Characters16()),
-          value.length()),
-      bytes);
+  crdtp::cbor::EncodeFromUTF16(crdtp::span<uint16_t>(value.SpanUint16()),
+                               bytes);
 }
 
 // static
@@ -204,7 +182,7 @@ bool ProtocolTypeTraits<blink::protocol::Binary>::Deserialize(
   }
   if (tokenizer->TokenTag() == crdtp::cbor::CBORTokenTag::STRING8) {
     const auto str_span = tokenizer->GetString8();
-    String str = StringUtil::fromUTF8(str_span.data(), str_span.size());
+    blink::String str = StringUtil::fromUTF8(str_span.data(), str_span.size());
     bool success = false;
     *value = Binary::fromBase64(str, &success);
     return success;

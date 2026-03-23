@@ -69,6 +69,8 @@ QueueName GetUITaskQueueName(BrowserTaskQueues::QueueType queue_type) {
       return QueueName::UI_SERVICE_WORKER_STORAGE_CONTROL_RESPONSE_TQ;
     case BrowserTaskQueues::QueueType::kBeforeUnloadBrowserResponse:
       return QueueName::UI_BEFORE_UNLOAD_BROWSER_RESPONSE_TQ;
+    case BrowserTaskQueues::QueueType::kStartup:
+      return QueueName::UI_STARTUP_TQ;
   }
 }
 
@@ -90,6 +92,8 @@ QueueName GetIOTaskQueueName(BrowserTaskQueues::QueueType queue_type) {
       return QueueName::IO_SERVICE_WORKER_STORAGE_CONTROL_RESPONSE_TQ;
     case BrowserTaskQueues::QueueType::kBeforeUnloadBrowserResponse:
       return QueueName::IO_BEFORE_UNLOAD_BROWSER_RESPONSE_TQ;
+    case BrowserTaskQueues::QueueType::kStartup:
+      return QueueName::IO_STARTUP_TQ;
   }
 }
 
@@ -134,6 +138,12 @@ void BrowserTaskQueues::Handle::EnableAllExceptBestEffortQueues() {
                      base::Unretained(outer_)));
 }
 
+void BrowserTaskQueues::Handle::EnableTaskQueue(QueueType type) {
+  control_task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&BrowserTaskQueues::EnableTaskQueue,
+                                base::Unretained(outer_), type));
+}
+
 void BrowserTaskQueues::Handle::ScheduleRunAllPendingTasksForTesting(
     base::OnceClosure on_pending_task_ran) {
   control_task_runner_->PostTask(
@@ -152,9 +162,7 @@ BrowserTaskQueues::BrowserTaskQueues(
         base::sequence_manager::TaskQueue::Spec(
             GetTaskQueueName(thread_id, static_cast<QueueType>(i))));
     queue_data_[i].voter = queue_data_[i].task_queue->CreateQueueEnabledVoter();
-    if (static_cast<QueueType>(i) != QueueType::kDefault) {
-      queue_data_[i].voter->SetVoteToEnable(false);
-    }
+    queue_data_[i].voter->SetVoteToEnable(false);
   }
 
   GetBrowserTaskQueue(QueueType::kUserVisible)
@@ -229,6 +237,10 @@ void BrowserTaskQueues::OnStartupComplete() {
       ->SetQueuePriority(BrowserTaskPriority::kHighPriority);
 }
 
+void BrowserTaskQueues::EnableTaskQueue(QueueType type) {
+  queue_data_[static_cast<size_t>(type)].voter->SetVoteToEnable(true);
+}
+
 void BrowserTaskQueues::EnableAllExceptBestEffortQueues() {
   for (size_t i = 0; i < queue_data_.size(); ++i) {
     if (i != static_cast<size_t>(QueueType::kBestEffort)) {
@@ -267,6 +279,19 @@ void BrowserTaskQueues::EndRunAllPendingTasksForTesting(
     for (const auto& queue : queue_data_) {
       queue.task_queue->RemoveFence();
     }
+  }
+}
+
+void BrowserTaskQueues::SetOnTaskCompletedHandler(
+    base::sequence_manager::TaskQueue::OnTaskCompletedHandler handler) {
+  for (auto& queue : queue_data_) {
+    queue.task_queue->SetOnTaskCompletedHandler(handler);
+  }
+}
+
+void BrowserTaskQueues::AddTaskObserver(base::TaskObserver* task_observer) {
+  for (const auto& queue : queue_data_) {
+    queue.task_queue->AddTaskObserver(task_observer);
   }
 }
 

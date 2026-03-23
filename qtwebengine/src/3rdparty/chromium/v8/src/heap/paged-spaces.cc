@@ -8,8 +8,8 @@
 #include <iterator>
 
 #include "src/base/logging.h"
+#include "src/base/numerics/safe_conversions.h"
 #include "src/base/platform/mutex.h"
-#include "src/base/safe_conversions.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate.h"
 #include "src/execution/vm-state-inl.h"
@@ -93,17 +93,24 @@ PageMetadata* PagedSpaceBase::InitializePage(
 }
 
 void PagedSpaceBase::TearDown() {
+  const bool is_marking = heap_->isolate()->isolate_data()->is_marking();
   while (!memory_chunk_list_.Empty()) {
     MutablePageMetadata* chunk = memory_chunk_list_.front();
     memory_chunk_list_.Remove(chunk);
-    heap()->memory_allocator()->Free(MemoryAllocator::FreeMode::kImmediately,
-                                     chunk);
+    const auto mode = (id_ == NEW_SPACE || id_ == OLD_SPACE)
+                          ? MemoryAllocator::FreeMode::kPool
+                          : MemoryAllocator::FreeMode::kImmediately;
+    if (mode == MemoryAllocator::FreeMode::kPool &&
+        (is_marking || V8_ENABLE_STICKY_MARK_BITS_BOOL)) {
+      chunk->ClearLiveness();
+    }
+    heap()->memory_allocator()->Free(mode, chunk);
   }
   accounting_stats_.Clear();
 }
 
 void PagedSpaceBase::MergeCompactionSpace(CompactionSpace* other) {
-  base::SpinningMutexGuard guard(mutex());
+  base::MutexGuard guard(mutex());
 
   DCHECK_NE(NEW_SPACE, identity());
   DCHECK_NE(NEW_SPACE, other->identity());
@@ -120,7 +127,7 @@ void PagedSpaceBase::MergeCompactionSpace(CompactionSpace* other) {
     other->RemovePage(p);
     AddPage(p);
     DCHECK_IMPLIES(
-        !p->Chunk()->IsFlagSet(MemoryChunk::NEVER_ALLOCATE_ON_PAGE),
+        !p->never_allocate_on_chunk(),
         p->AvailableInFreeList() == p->AvailableInFreeListFromAllocatedBytes());
 
     // TODO(leszeks): Here we should allocation step, but:
@@ -213,7 +220,7 @@ void PagedSpaceBase::RefineAllocatedBytesAfterSweeping(PageMetadata* page) {
 }
 
 PageMetadata* PagedSpaceBase::RemovePageSafe(int size_in_bytes) {
-  base::SpinningMutexGuard guard(mutex());
+  base::MutexGuard guard(mutex());
   PageMetadata* page = free_list()->GetPageForSize(size_in_bytes);
   if (!page) return nullptr;
   RemovePage(page);
@@ -272,13 +279,6 @@ void PagedSpaceBase::RemovePage(PageMetadata* page) {
   DecrementCommittedPhysicalMemory(page->CommittedPhysicalMemory());
 }
 
-size_t PagedSpaceBase::ShrinkPageToHighWaterMark(PageMetadata* page) {
-  size_t unused = page->ShrinkToHighWaterMark();
-  accounting_stats_.DecreaseCapacity(static_cast<intptr_t>(unused));
-  AccountUncommitted(unused);
-  return unused;
-}
-
 void PagedSpaceBase::ResetFreeList() {
   for (PageMetadata* page : *this) {
     free_list_->EvictFreeListItems(page);
@@ -287,21 +287,12 @@ void PagedSpaceBase::ResetFreeList() {
   DCHECK_EQ(0, free_list_->Available());
 }
 
-void PagedSpaceBase::ShrinkImmortalImmovablePages() {
-  DCHECK(!heap()->deserialization_complete());
-  ResetFreeList();
-  for (PageMetadata* page : *this) {
-    DCHECK(page->Chunk()->IsFlagSet(MemoryChunk::NEVER_EVACUATE));
-    ShrinkPageToHighWaterMark(page);
-  }
-}
-
 bool PagedSpaceBase::TryExpand(LocalHeap* local_heap, AllocationOrigin origin) {
   DCHECK_EQ(!local_heap, origin == AllocationOrigin::kGC);
   const size_t accounted_size =
       MemoryChunkLayout::AllocatableMemoryInMemoryChunk(identity());
   if (origin != AllocationOrigin::kGC && identity() != NEW_SPACE) {
-    base::SpinningMutexGuard expansion_guard(heap_->heap_expansion_mutex());
+    base::MutexGuard expansion_guard(heap_->heap_expansion_mutex());
     if (!heap()->IsOldGenerationExpansionAllowed(accounted_size,
                                                  expansion_guard)) {
       return false;
@@ -309,7 +300,7 @@ bool PagedSpaceBase::TryExpand(LocalHeap* local_heap, AllocationOrigin origin) {
   }
   const MemoryAllocator::AllocationMode allocation_mode =
       (identity() == NEW_SPACE || identity() == OLD_SPACE)
-          ? MemoryAllocator::AllocationMode::kUsePool
+          ? MemoryAllocator::AllocationMode::kTryDelayedAndPooled
           : MemoryAllocator::AllocationMode::kRegular;
   PageMetadata* page = heap()->memory_allocator()->AllocatePage(
       allocation_mode, this, executable());
@@ -338,12 +329,11 @@ size_t PagedSpaceBase::Waste() const {
   return free_list_->wasted_bytes();
 }
 
-void PagedSpaceBase::ReleasePage(PageMetadata* page) {
-  ReleasePageImpl(page, MemoryAllocator::FreeMode::kImmediately);
+void PagedSpaceBase::RemovePageFromSpace(PageMetadata* page) {
+  RemovePageFromSpaceImpl(page);
 }
 
-void PagedSpaceBase::ReleasePageImpl(PageMetadata* page,
-                                     MemoryAllocator::FreeMode free_mode) {
+void PagedSpaceBase::RemovePageFromSpaceImpl(PageMetadata* page) {
   DCHECK(page->SweepingDone());
   DCHECK_EQ(0, page->live_bytes());
   DCHECK_EQ(page->owner(), this);
@@ -362,7 +352,6 @@ void PagedSpaceBase::ReleasePageImpl(PageMetadata* page,
   AccountUncommitted(page->size());
   DecrementCommittedPhysicalMemory(page->CommittedPhysicalMemory());
   accounting_stats_.DecreaseCapacity(page->area_size());
-  heap()->memory_allocator()->Free(free_mode, page);
 }
 
 std::unique_ptr<ObjectIterator> PagedSpaceBase::GetObjectIterator(Heap* heap) {
@@ -544,7 +533,7 @@ size_t PagedSpaceBase::RelinkFreeListCategories(PageMetadata* page) {
   });
   free_list()->increase_wasted_bytes(page->wasted_memory());
 
-  DCHECK_IMPLIES(!page->Chunk()->IsFlagSet(MemoryChunk::NEVER_ALLOCATE_ON_PAGE),
+  DCHECK_IMPLIES(!page->never_allocate_on_chunk(),
                  page->AvailableInFreeList() ==
                      page->AvailableInFreeListFromAllocatedBytes());
   return added;
@@ -554,14 +543,14 @@ void PagedSpaceBase::RefillFreeList() {
   // Any PagedSpace might invoke RefillFreeList.
   DCHECK(identity() == OLD_SPACE || identity() == CODE_SPACE ||
          identity() == SHARED_SPACE || identity() == NEW_SPACE ||
-         identity() == TRUSTED_SPACE);
+         identity() == TRUSTED_SPACE || identity() == SHARED_TRUSTED_SPACE);
   DCHECK_IMPLIES(identity() == NEW_SPACE, heap_->IsMainThread());
   DCHECK(!is_compaction_space());
 
   for (PageMetadata* p : heap()->sweeper()->GetAllSweptPagesSafe(this)) {
     // We regularly sweep NEVER_ALLOCATE_ON_PAGE pages. We drop the freelist
     // entries here to make them unavailable for allocations.
-    if (p->Chunk()->IsFlagSet(MemoryChunk::NEVER_ALLOCATE_ON_PAGE)) {
+    if (p->never_allocate_on_chunk()) {
       free_list_->EvictFreeListItems(p);
     }
 
@@ -600,7 +589,7 @@ void CompactionSpace::RefillFreeList() {
          (p = sweeper->GetSweptPageSafe(this))) {
     // We regularly sweep NEVER_ALLOCATE_ON_PAGE pages. We drop the freelist
     // entries here to make them unavailable for allocations.
-    if (p->Chunk()->IsFlagSet(MemoryChunk::NEVER_ALLOCATE_ON_PAGE)) {
+    if (p->never_allocate_on_chunk()) {
       free_list()->EvictFreeListItems(p);
     }
 
@@ -609,7 +598,7 @@ void CompactionSpace::RefillFreeList() {
     // during compaction.
     DCHECK_NE(this, p->owner());
     PagedSpace* owner = static_cast<PagedSpace*>(p->owner());
-    base::SpinningMutexGuard guard(owner->mutex());
+    base::MutexGuard guard(owner->mutex());
     owner->RefineAllocatedBytesAfterSweeping(p);
     owner->RemovePage(p);
     added += AddPage(p);
@@ -642,21 +631,29 @@ CompactionSpaceCollection::CompactionSpaceCollection(
 // -----------------------------------------------------------------------------
 // OldSpace implementation
 
-void OldSpace::AddPromotedPage(PageMetadata* page) {
+void OldSpace::AddPromotedPage(PageMetadata* page, FreeMode free_mode) {
+  DCHECK_EQ(page->area_size(), page->allocated_bytes());
   if (v8_flags.minor_ms) {
     // Reset the page's allocated bytes. The page will be swept and the
     // allocated bytes will be updated to match the live bytes.
-    DCHECK_EQ(page->area_size(), page->allocated_bytes());
     page->DecreaseAllocatedBytes(page->area_size());
   }
   AddPageImpl(page);
-  if (!v8_flags.minor_ms) {
+  if (free_mode == FreeMode::kLinkCategory) {
     RelinkFreeListCategories(page);
   }
 }
 
-void OldSpace::ReleasePage(PageMetadata* page) {
-  ReleasePageImpl(page, MemoryAllocator::FreeMode::kPool);
+void OldSpace::RelinkQuarantinedPageFreeList(PageMetadata* page,
+                                             size_t filler_size_on_page) {
+  base::MutexGuard guard(mutex());
+  DCHECK_EQ(this, page->owner());
+  DCHECK(page->SweepingDone());
+  DCHECK_EQ(page->live_bytes(), 0);
+  DCHECK_EQ(accounting_stats_.AllocatedOnPage(page),
+            MemoryChunkLayout::AllocatableMemoryInMemoryChunk(OLD_SPACE));
+  DecreaseAllocatedBytes(filler_size_on_page, page);
+  RelinkFreeListCategories(page);
 }
 
 // -----------------------------------------------------------------------------
@@ -665,16 +662,6 @@ void OldSpace::ReleasePage(PageMetadata* page) {
 void StickySpace::AdjustDifferenceInAllocatedBytes(size_t diff) {
   DCHECK_GE(allocated_old_size_, diff);
   allocated_old_size_ -= diff;
-}
-
-// -----------------------------------------------------------------------------
-// SharedSpace implementation
-
-void SharedSpace::ReleasePage(PageMetadata* page) {
-  // Old-to-new slots in old objects may be overwritten with references to
-  // shared objects. Postpone releasing empty pages so that updating old-to-new
-  // slots in dead old objects may access the dead shared objects.
-  ReleasePageImpl(page, MemoryAllocator::FreeMode::kPostpone);
 }
 
 }  // namespace internal

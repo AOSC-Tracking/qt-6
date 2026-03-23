@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "device/fido/cable/v2_handshake.h"
 
 #include <algorithm>
+#include <array>
 #include <string_view>
 
+#include "base/compiler_specific.h"
+#include "base/containers/auto_spanification_helper.h"
 #include "base/containers/contains.h"
 #include "base/rand_util.h"
 #include "base/test/scoped_feature_list.h"
@@ -21,6 +19,7 @@
 #include "crypto/random.h"
 #include "device/fido/cable/cable_discovery_data.h"
 #include "device/fido/features.h"
+#include "device/fido/fido_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/boringssl/src/include/openssl/ec.h"
 #include "third_party/boringssl/src/include/openssl/ec_key.h"
@@ -76,7 +75,7 @@ TEST(CableV2Encoding, EIDEncrypt) {
 
   const std::optional<CableEidArray> eid2 = eid::Decrypt(advert, key);
   ASSERT_TRUE(eid2.has_value());
-  EXPECT_TRUE(memcmp(eid.data(), eid2->data(), eid.size()) == 0);
+  UNSAFE_TODO(EXPECT_TRUE(memcmp(eid.data(), eid2->data(), eid.size()) == 0));
 
   advert[0] ^= 1;
   EXPECT_FALSE(eid::Decrypt(advert, key).has_value());
@@ -89,35 +88,30 @@ TEST(CableV2Encoding, EIDEncrypt) {
 }
 
 TEST(CableV2Encoding, QRs) {
-  for (bool supports_linking : {false, true}) {
-    SCOPED_TRACE(supports_linking);
-    base::test::ScopedFeatureList scoped_feature_list;
-    scoped_feature_list.InitWithFeatureState(device::kWebAuthnHybridLinking,
-                                             supports_linking);
-    std::array<uint8_t, kQRKeySize> qr_key;
-    crypto::RandBytes(qr_key);
-    std::string url = qr::Encode(qr_key, FidoRequestType::kMakeCredential);
-    const std::optional<qr::Components> decoded = qr::Parse(url);
-    ASSERT_TRUE(decoded.has_value()) << url;
-    static_assert(kQRKeySize >= std::tuple_size_v<decltype(decoded->secret)>);
-    EXPECT_EQ(memcmp(decoded->secret.data(),
-                     &qr_key[qr_key.size() - decoded->secret.size()],
-                     decoded->secret.size()),
-              0);
-    // There are two registered domains at the time of writing the test. That
-    // number should only grow over time.
-    EXPECT_GE(decoded->num_known_domains, 2u);
+  base::test::ScopedFeatureList scoped_feature_list;
+  std::array<uint8_t, kQRKeySize> qr_key;
+  crypto::RandBytes(qr_key);
+  std::string url = qr::Encode(qr_key, FidoRequestType::kMakeCredential);
+  const std::optional<qr::Components> decoded = qr::Parse(url);
+  ASSERT_TRUE(decoded.has_value()) << url;
+  static_assert(kQRKeySize >= std::tuple_size_v<decltype(decoded->secret)>);
+  UNSAFE_TODO(EXPECT_EQ(memcmp(decoded->secret.data(),
+                               &qr_key[qr_key.size() - decoded->secret.size()],
+                               decoded->secret.size()),
+                        0));
+  // There are two registered domains at the time of writing the test. That
+  // number should only grow over time.
+  EXPECT_GE(decoded->num_known_domains, 2u);
 
-    // Chromium always sets this flag.
-    EXPECT_EQ(decoded->supports_linking.value_or(false), supports_linking);
+  // Chromium never offers linking for WebAuthn.
+  EXPECT_FALSE(*decoded->supports_linking);
 
-    EXPECT_EQ(decoded->request_type,
-              RequestType(FidoRequestType::kMakeCredential));
+  EXPECT_EQ(decoded->request_type,
+            RequestType(FidoRequestType::kMakeCredential));
 
-    url[0] ^= 4;
-    EXPECT_FALSE(qr::Parse(url));
-    EXPECT_FALSE(qr::Parse("nonsense"));
-  }
+  url[0] ^= 4;
+  EXPECT_FALSE(qr::Parse(url));
+  EXPECT_FALSE(qr::Parse("nonsense"));
 }
 
 TEST(CableV2Encoding, KnownQRs) {
@@ -150,7 +144,8 @@ TEST(CableV2Encoding, KnownQRs) {
           // QR with an invalid compressed point.
           [](cbor::Value::MapValue* m) {
             uint8_t invalid_point[sizeof(kCompressedPoint)];
-            memcpy(invalid_point, kCompressedPoint, sizeof(invalid_point));
+            UNSAFE_TODO(
+                memcpy(invalid_point, kCompressedPoint, sizeof(invalid_point)));
             invalid_point[sizeof(invalid_point) - 1] ^= 3;
             m->emplace(0, base::span(invalid_point));
             m->emplace(1, base::span(kQRSecret));
@@ -318,22 +313,18 @@ TEST(CableV2Encoding, RequestTypeToString) {
 }
 
 TEST(CableV2Encoding, ShouldOfferLinking) {
-  for (const auto type :
-       {FidoRequestType::kMakeCredential, FidoRequestType::kGetAssertion}) {
-    EXPECT_TRUE(ShouldOfferLinking(type));
-  }
   {
-    base::test::ScopedFeatureList disable_linking_for_dc;
-    disable_linking_for_dc.InitAndDisableFeature(
-        device::kDigitalCredentialsHybridLinking);
-    EXPECT_FALSE(ShouldOfferLinking(CredentialRequestType::kPresentation));
-  }
-  {
-    base::test::ScopedFeatureList enable_linking_for_dc;
-    enable_linking_for_dc.InitAndEnableFeature(
-        device::kDigitalCredentialsHybridLinking);
+    base::test::ScopedFeatureList scoped_feature_list{
+        kDigitalCredentialsHybridLinking};
     EXPECT_TRUE(ShouldOfferLinking(CredentialRequestType::kPresentation));
   }
+  {
+    base::test::ScopedFeatureList scoped_feature_list;
+    scoped_feature_list.InitAndDisableFeature(kDigitalCredentialsHybridLinking);
+    EXPECT_FALSE(ShouldOfferLinking(CredentialRequestType::kPresentation));
+  }
+  EXPECT_FALSE(ShouldOfferLinking(FidoRequestType::kGetAssertion));
+  EXPECT_FALSE(ShouldOfferLinking(FidoRequestType::kMakeCredential));
 }
 
 TEST(CableV2Encoding, PaddedCBOR) {
@@ -349,7 +340,7 @@ TEST(CableV2Encoding, PaddedCBOR) {
 
   cbor::Value::MapValue map2;
   uint8_t blob[kPostHandshakeMsgPaddingGranularity] = {};
-  map2.emplace(1, base::span<const uint8_t>(blob, sizeof(blob)));
+  map2.emplace(1, UNSAFE_TODO(base::span<const uint8_t>(blob, sizeof(blob))));
   encoded = EncodePaddedCBORMap(std::move(map2));
   ASSERT_TRUE(encoded);
   EXPECT_EQ(kPostHandshakeMsgPaddingGranularity * 2, encoded->size());
@@ -416,18 +407,17 @@ std::array<uint8_t, kP256X962Length> PublicKeyOf(const EC_KEY* private_key) {
 }
 
 TEST(CableV2Encoding, Digits) {
-  uint8_t test_data[24];
+  std::array<uint8_t, 24> test_data;
   base::RandBytes(test_data);
 
   // |BytesToDigits| and |DigitsToBytes| should round-trip.
-  for (size_t i = 0; i < sizeof(test_data); i++) {
-    std::string digits =
-        qr::BytesToDigits(base::span<const uint8_t>(test_data, i));
+  for (size_t i = 0; i < base::SpanificationSizeofForStdArray(test_data); i++) {
+    std::string digits = qr::BytesToDigits(
+        UNSAFE_TODO(base::span<const uint8_t>(test_data.data(), i)));
     std::optional<std::vector<uint8_t>> test_data_again =
         qr::DigitsToBytes(digits);
     ASSERT_TRUE(test_data_again.has_value());
-    ASSERT_EQ(test_data_again.value(),
-              std::vector<uint8_t>(test_data, test_data + i));
+    ASSERT_EQ(test_data_again, base::span(test_data).first(i));
   }
 
   // |DigitsToBytes| should reject non-digit inputs.
@@ -441,7 +431,7 @@ TEST(CableV2Encoding, Digits) {
 
   // |DigitsToBytes| should reject impossible input lengths.
   char digits[20];
-  memset(digits, '0', sizeof(digits));
+  UNSAFE_TODO(memset(digits, '0', sizeof(digits)));
   for (size_t i = 0; i < sizeof(digits); i++) {
     std::optional<std::vector<uint8_t>> bytes =
         qr::DigitsToBytes(std::string_view(digits, i));

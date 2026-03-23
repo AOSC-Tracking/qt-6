@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
@@ -14,7 +15,7 @@ const UIStrings = {
    * @description The title of the button that leads to the feedback form.
    */
   feedback: 'Feedback',
-};
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('ui/components/panel_feedback/FeedbackButton.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -24,7 +25,6 @@ export interface FeedbackButtonData {
 }
 export class FeedbackButton extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
-  readonly #boundRender = this.#render.bind(this);
 
   #props: FeedbackButtonData = {
     feedbackUrl: Platform.DevToolsPath.EmptyUrlString,
@@ -32,7 +32,7 @@ export class FeedbackButton extends HTMLElement {
 
   set data(data: FeedbackButtonData) {
     this.#props = data;
-    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#boundRender);
+    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
   }
 
   #onFeedbackClick(): void {

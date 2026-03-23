@@ -28,10 +28,23 @@ QAudioFormat makeHostFormatForSource(const QAudioDevice &device, const QAudioFor
 {
     const QWindowsAudioDevice *winDevice = QAudioDevicePrivate::handle<QWindowsAudioDevice>(device);
 
+    auto status = winDevice->m_probeDataFuture.wait_for(QAudioDevicePrivate::formatProbeTimeout);
+    switch (status) {
+    case std::future_status::ready:
+    case std::future_status::deferred:
+        // proceed
+        break;
+    case std::future_status::timeout:
+        return QAudioFormat{};
+    default:
+        Q_UNREACHABLE();
+    }
+
+    auto [minProbedChannels, maxProbedChannels] = winDevice->m_probeDataFuture.get().channelCountRange;
+    auto [minProbedSampleRate, maxProbedSampleRate] = winDevice->m_probeDataFuture.get().sampleRateRange;
+
     QAudioFormat hostFormat = format;
     const int requestedChannelCount = format.channelCount();
-    auto [minProbedChannels, maxProbedChannels] = winDevice->m_probedChannelCountRange;
-
     if (requestedChannelCount < device.minimumChannelCount()) {
         hostFormat.setChannelCount(minProbedChannels);
         hostFormat.setChannelConfig(
@@ -43,8 +56,6 @@ QAudioFormat makeHostFormatForSource(const QAudioDevice &device, const QAudioFor
     }
 
     const int requestedSampleRate = format.sampleRate();
-    auto [minProbedSampleRate, maxProbedSampleRate] = winDevice->m_probedSampleRateRange;
-
     if (requestedSampleRate < device.minimumSampleRate())
         hostFormat.setSampleRate(minProbedSampleRate);
     else if (requestedSampleRate > device.maximumSampleRate())
@@ -83,6 +94,8 @@ QWASAPIAudioSourceStream::~QWASAPIAudioSourceStream() = default;
 bool QWASAPIAudioSourceStream::start(QIODevice *ioDevice)
 {
     auto immDevice = QAudioDevicePrivate::handle<QWindowsAudioDevice>(m_audioDevice)->open();
+    if (!immDevice)
+        return false;
 
     bool clientOpen = openAudioClient(std::move(immDevice));
     if (!clientOpen)
@@ -91,16 +104,14 @@ bool QWASAPIAudioSourceStream::start(QIODevice *ioDevice)
     setQIODevice(ioDevice);
     createQIODeviceConnections(ioDevice);
 
-    bool started = startAudioClient();
-    if (!started)
-        return false;
-
-    return true;
+    return startAudioClient();
 }
 
 QIODevice *QWASAPIAudioSourceStream::start()
 {
     auto immDevice = QAudioDevicePrivate::handle<QWindowsAudioDevice>(m_audioDevice)->open();
+    if (!immDevice)
+        return nullptr;
 
     bool clientOpen = openAudioClient(std::move(immDevice));
     if (!clientOpen)
@@ -114,15 +125,14 @@ QIODevice *QWASAPIAudioSourceStream::start()
     createQIODeviceConnections(ioDevice);
 
     bool started = startAudioClient();
-    if (!started)
-        return nullptr;
-
-    return ioDevice;
+    return started ? ioDevice : nullptr;
 }
 
 bool QWASAPIAudioSourceStream::start(AudioCallback &&cb)
 {
     auto immDevice = QAudioDevicePrivate::handle<QWindowsAudioDevice>(m_audioDevice)->open();
+    if (!immDevice)
+        return false;
 
     bool clientOpen = openAudioClient(std::move(immDevice));
     if (!clientOpen)
@@ -152,9 +162,9 @@ void QWASAPIAudioSourceStream::stop(ShutdownPolicy shutdownPolicy)
 
     requestStop();
     disconnectQIODeviceConnections();
-
     QWindowsAudioUtils::audioClientStop(m_audioClient);
-    m_workerThread->wait();
+
+    joinWorkerThread();
     QWindowsAudioUtils::audioClientReset(m_audioClient);
 
     finalizeQIODevice(shutdownPolicy);
@@ -214,7 +224,13 @@ bool QWASAPIAudioSourceStream::startAudioClient()
     m_workerThread->setObjectName(u"QWASAPIAudioSourceStream");
     m_workerThread->start();
 
-    return audioClientStart(m_audioClient);
+    bool clientStarted = audioClientStart(m_audioClient);
+    if (!clientStarted) {
+        joinWorkerThread();
+        return false;
+    }
+
+    return true;
 }
 
 void QWASAPIAudioSourceStream::runProcessLoop()
@@ -316,6 +332,14 @@ void QWASAPIAudioSourceStream::handleAudioClientError()
     });
 }
 
+void QWASAPIAudioSourceStream::joinWorkerThread()
+{
+    requestStop();
+    ::SetEvent(m_wasapiHandle.get()); // force wakeup
+    m_workerThread->wait();
+    m_workerThread = {};
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 QWindowsAudioSource::QWindowsAudioSource(QAudioDevice audioDevice, const QAudioFormat &fmt,
@@ -323,6 +347,9 @@ QWindowsAudioSource::QWindowsAudioSource(QAudioDevice audioDevice, const QAudioF
     : BaseClass(std::move(audioDevice), fmt, parent)
 {
 }
+
+QWindowsAudioSource::~QWindowsAudioSource()
+    = default;
 
 } // namespace QtWASAPI
 

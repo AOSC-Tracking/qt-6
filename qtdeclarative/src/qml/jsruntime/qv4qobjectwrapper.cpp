@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qv4qobjectwrapper_p.h"
 
@@ -386,18 +387,6 @@ ReturnedValue QObjectWrapper::getProperty(
     } else {
         return loadProperty(engine, wrapper, object, *property);
     }
-}
-
-ReturnedValue QObjectWrapper::getMethodFallback(
-        ExecutionEngine *engine, Heap::Object *wrapper, QObject *qobject,
-        QV4::String *name, Flags flags)
-{
-    QQmlPropertyData local;
-    const QQmlPropertyData *property = QQmlPropertyCache::property(
-            qobject, name, engine->callingQmlContext(), &local);
-    return property
-            ? getProperty(engine, wrapper, qobject, property, flags)
-            : Encode::undefined();
 }
 
 static OptionalReturnedValue getDestroyOrToStringMethod(
@@ -1120,19 +1109,36 @@ ReturnedValue QObjectWrapper::virtualResolveLookupGetter(const Object *object, E
     QQmlData *ddata = QQmlData::get(qobj, false);
     if (auto methodValue = getDestroyOrToStringMethod(engine, name, This->d())) {
         Scoped<QObjectMethod> method(scope, *methodValue);
-        setupQObjectMethodLookup(
-                    lookup, ddata ? ddata : QQmlData::get(qobj, true), nullptr, This, method->d());
+        if (!ddata)
+            ddata = QQmlData::get(qobj, true);
+        const QQmlPropertyCache::ConstPtr propertyCache = (ddata && ddata->propertyCache)
+                ? ddata->propertyCache
+                : QQmlMetaType::propertyCacheForType(QMetaType::fromType<QObject *>());
+        setupQObjectMethodLookup(lookup, propertyCache, nullptr, This, method->d());
         lookup->call = Lookup::Call::GetterQObjectMethod;
         return method.asReturnedValue();
     }
 
     if (!ddata || !ddata->propertyCache) {
-        QV4::ScopedValue result(scope, getMethodFallback(
-                engine, This->d(), qobj, name, lookup->forCall ? NoFlag : AttachMethods));
-        lookup->qobjectMethodLookup.ic.set(engine, object->internalClass());
-        if (QObjectMethod *method = result->as<QObjectMethod>())
+        QQmlPropertyData local;
+        const QQmlPropertyData *property = QQmlPropertyCache::property(
+                qobj, name, engine->callingQmlContext(), &local);
+        if (!property)
+            return Encode::undefined();
+        QV4::ScopedValue result(scope, getProperty(
+                engine, This->d(), qobj, property, lookup->forCall ? NoFlag : AttachMethods));
+        if (QObjectMethod *method = result->as<QObjectMethod>()) {
+            lookup->qobjectMethodLookup.ic.set(engine, object->internalClass());
             lookup->qobjectMethodLookup.method.set(engine, method->d());
-        lookup->call = Lookup::Call::GetterQObjectMethodFallback;
+            lookup->call = Lookup::Call::GetterQObjectMethodFallback;
+        } else {
+            lookup->qobjectFallbackLookup.metaObject = quintptr(qobj->metaObject()) + 1;
+            lookup->qobjectFallbackLookup.metaType = quintptr(property->propType().iface()) + 1;
+            lookup->qobjectFallbackLookup.coreIndex = property->coreIndex();
+            lookup->qobjectFallbackLookup.notifyIndex = property->notifyIndex();
+            lookup->qobjectFallbackLookup.isConstantOrResettable = property->isConstant() ? 1 : 0;
+            lookup->call = Lookup::Call::GetterQObjectPropertyFallback;
+        }
         return result->asReturnedValue();
     }
     const QQmlPropertyData *property = ddata->propertyCache->property(name.getPointer(), qobj, qmlContext);
@@ -1151,7 +1157,7 @@ ReturnedValue QObjectWrapper::virtualResolveLookupGetter(const Object *object, E
             && !property->isVMEFunction() // Handled by QObjectLookup
             && !property->isSignalHandler()) { // TODO: Optimize SignalHandler, too
         QV4::Heap::QObjectMethod *method = nullptr;
-        setupQObjectMethodLookup(lookup, ddata, property, This, method);
+        setupQObjectMethodLookup(lookup, ddata->propertyCache, property, This, method);
         lookup->call = Lookup::Call::GetterQObjectMethod;
         return lookup->getter(engine, *object);
     }
@@ -1578,10 +1584,9 @@ void QObjectWrapper::destroyObject(bool lastCall)
                     o->deleteLater();
             } else {
                 // If the object is C++-owned, we still have to release the weak reference we have
-                // to it.
-                ddata->jsWrapper.clear();
-                if (lastCall && ddata->propertyCache)
-                    ddata->propertyCache.reset();
+                // to it. If the "main" wrapper is not ours, we should leave it alone, though.
+                if (ddata->jsWrapper.as<QObjectWrapper>() == this)
+                    ddata->jsWrapper.clear();
             }
         }
     }
@@ -1594,15 +1599,8 @@ DEFINE_OBJECT_VTABLE(QObjectWrapper);
 
 namespace {
 
-template<typename A, typename B, typename C, typename D, typename E, typename F, typename G, typename H>
-class MaxSizeOf8 {
-    template<typename Z, typename X>
-    struct SMax {
-        char dummy[sizeof(Z) > sizeof(X) ? sizeof(Z) : sizeof(X)];
-    };
-public:
-    static const size_t Size = sizeof(SMax<A, SMax<B, SMax<C, SMax<D, SMax<E, SMax<F, SMax<G, H> > > > > > >);
-};
+template<typename... Types>
+constexpr std::size_t MaxSizeOfN = (std::max)({sizeof(Types)...});
 
 struct CallArgument {
     Q_DISABLE_COPY_MOVE(CallArgument);
@@ -1641,14 +1639,14 @@ private:
         std::vector<QModelIndex> *stdVectorQModelIndexPtr;
 #endif
 
-        char allocData[MaxSizeOf8<QVariant,
+        char allocData[MaxSizeOfN<QVariant,
                                   QString,
                                   QList<QObject *>,
                                   QJSValue,
                                   QJSManagedValue,
                                   QJsonArray,
                                   QJsonObject,
-                                  QJsonValue>::Size];
+                                  QJsonValue>];
         qint64 q_for_alignment;
     };
 
@@ -1667,6 +1665,19 @@ private:
 
     int type = QMetaType::UnknownType;
 };
+}
+
+// TODO: This is nasty because we destruct QVariant-owned data.
+//       We need to do this because ConstructInPlace evidently constructs it again.
+//       We rely on the call to ConstructInPlace to happen right after, so that the
+//       QVariant will be fixed before it has a chance to get destructed or copied.
+static void destroyReturnValueBeforeConstructInPlace(
+        QMetaType returnType, void *returnValue, QMetaObject::Call callType)
+{
+    if (callType == QMetaObject::ConstructInPlace
+            && (returnType.flags() & QMetaType::NeedsDestruction)) {
+        returnType.destruct(returnValue);
+    }
 }
 
 static ReturnedValue CallMethod(const QQmlObjectOrGadget &object, int index, QMetaType returnType, int argCount,
@@ -1706,6 +1717,7 @@ static ReturnedValue CallMethod(const QQmlObjectOrGadget &object, int index, QMe
         for (int ii = 0; ii < args.size(); ++ii)
             argData[ii] = args[ii].dataPtr();
 
+        destroyReturnValueBeforeConstructInPlace(returnType, argData[0], callType);
         object.metacall(callType, index, argData.data());
 
         return args[0].toValue(engine);
@@ -1717,6 +1729,7 @@ static ReturnedValue CallMethod(const QQmlObjectOrGadget &object, int index, QMe
 
         void *args[] = { arg.dataPtr() };
 
+        destroyReturnValueBeforeConstructInPlace(returnType, args[0], callType);
         object.metacall(callType, index, args);
 
         return arg.toValue(engine);
@@ -2519,11 +2532,8 @@ bool CallArgument::fromValue(QMetaType metaType, ExecutionEngine *engine, const 
         }
 
         if (type == qMetaTypeId<QJSManagedValue>()) {
-            Scope scope(engine);
-            ScopedValue v(scope, value);
-            qjsManagedValuePtr = new (&allocData) QJSManagedValue;
-            // This points to a JS heap object that cannot be immutable. const_cast-ing is fine here.
-            *QJSManagedValuePrivate::memberPtr(qjsManagedValuePtr) = const_cast<Value *>(&value);
+            qjsManagedValuePtr = new (&allocData) QJSManagedValue(
+                    QJSManagedValuePrivate::create(engine, value));
             return true;
         }
 
@@ -3169,6 +3179,8 @@ void QObjectMethod::callInternalWithMetaTypes(
         QV4::coerceAndCall(
                 v4, &metaMethod, argv, types, argc,
                 [v4, thisMeta, object](void **argv, int) {
+            if (!argv[0])
+                return;
             *static_cast<QString *>(argv[0])
                     = QObjectWrapper::objectToString(v4, thisMeta, object.qObject());
         });

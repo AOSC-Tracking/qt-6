@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 #include <QtGraphs/qgraphs3dnamespace.h>
 QT_BEGIN_NAMESPACE
 /*!
@@ -216,6 +218,7 @@ QT_BEGIN_NAMESPACE
 
     \brief Specifies which transparency technique to use. The Default value is \c{Default}.
            When rendering transparent surface graphs, use \c{Approximate} or \c{Accurate}.
+           \c Default should be used for other graph types.
 
     \value Default
            Indicates that order-independent transparency techniques are not used.
@@ -233,9 +236,8 @@ QT_BEGIN_NAMESPACE
     \value Accurate
            Indicates that accurate order-independent transparency is used.
            Use when perfect transparency rendering is needed.
-           \note Accurate transparency is not yet implemented
-                and will be enabled when the required functionality
-                is added to QtQuick3D.
  */
 
 QT_END_NAMESPACE
+
+#include "moc_qgraphs3dnamespace.cpp"

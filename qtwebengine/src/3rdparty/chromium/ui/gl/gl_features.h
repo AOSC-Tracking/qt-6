@@ -28,13 +28,7 @@ GL_EXPORT BASE_DECLARE_FEATURE(kDefaultPassthroughCommandDecoder);
 GL_EXPORT BASE_DECLARE_FEATURE(kAddDelayToGLCompileShader);
 #endif
 
-#if BUILDFLAG(IS_MAC)
-GL_EXPORT BASE_DECLARE_FEATURE(kWriteMetalShaderCacheToDisk);
-GL_EXPORT BASE_DECLARE_FEATURE(kUseBuiltInMetalShaderCache);
-#endif
-
 #if BUILDFLAG(IS_WIN)
-GL_EXPORT BASE_DECLARE_FEATURE(kUsePrimaryMonitorVSyncIntervalOnSV3);
 GL_EXPORT BASE_DECLARE_FEATURE(kUseCompositorClockVSyncInterval);
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -42,6 +36,7 @@ GL_EXPORT bool IsAndroidFrameDeadlineEnabled();
 
 GL_EXPORT bool UsePassthroughCommandDecoder();
 GL_EXPORT bool IsANGLEValidationEnabled();
+GL_EXPORT bool IsANGLEPassthroughShadersAllowed();
 
 GL_EXPORT void GetANGLEFeaturesFromCommandLineAndFinch(
     const base::CommandLine* command_line,
@@ -65,6 +60,18 @@ GL_EXPORT bool IsSwiftShaderAllowedByFeature();
 // SwiftShader is allowed by either IsSwiftShaderAllowedByCommandLine or
 // IsSwiftShaderAllowedByFeature.
 GL_EXPORT bool IsSwiftShaderAllowed(const base::CommandLine* command_line);
+
+#if BUILDFLAG(IS_WIN)
+GL_EXPORT BASE_DECLARE_FEATURE(kAllowD3D11WarpFallback);
+#endif
+
+// Check if any form of software WebGL fallback is available
+GL_EXPORT bool IsAnySoftwareGLAllowed(const base::CommandLine* command_line);
+
+// Check if falling back to software GL due to crashes on hardware GL is
+// allowed.
+GL_EXPORT bool IsSoftwareGLFallbackDueToCrashesAllowed(
+    const base::CommandLine* command_line);
 
 // Query the delay we add to glCompileShader.
 // Default is 0 if kAddDelayToGLCompileShader is off.

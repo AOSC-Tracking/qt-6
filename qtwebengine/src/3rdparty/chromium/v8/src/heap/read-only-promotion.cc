@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <string>
 
+#include "src/codegen/external-reference-encoder.h"
 #include "src/common/assert-scope.h"
 #include "src/execution/isolate.h"
 #include "src/heap/heap-layout-inl.h"
@@ -42,6 +43,25 @@ bool Contains(const HeapObjectMap& s, Tagged<HeapObject> o) {
   return s.count(o) != 0;
 }
 
+enum class PromoRecommendation {
+  // Do not promote this object.
+  kReject,
+  // Do promote this object.
+  kPromote,
+
+  // Promote if it's referenced by an object that must be promoted, otherwise
+  // do not promote.
+  // This is a rare case when by looking at an object itself it's not clear
+  // whether it should be promoted or not. The decision can be made later
+  // only taking into account where it's used.
+  // One of such examples is ArrayList which shouldn't be promoted unless
+  // it's a value of TemplateInfoWithProperties::property_list or
+  // TemplateInfoWithProperties::property_accessors of a template that
+  // should be promoted to RO space.
+  kMatchHost,
+};
+// using enum PromoRecommendation;
+
 class Committee final {
  public:
   static HeapObjectList DeterminePromotees(
@@ -51,7 +71,10 @@ class Committee final {
   }
 
  private:
-  explicit Committee(Isolate* isolate) : isolate_(isolate) {}
+  explicit Committee(Isolate* isolate)
+      : isolate_(isolate), ref_encoder_(isolate) {}
+
+  const ExternalReferenceEncoder& ref_encoder() const { return ref_encoder_; }
 
   HeapObjectList DeterminePromotees(const SafepointScope& safepoint_scope) {
     DCHECK(promo_accepted_.empty());
@@ -81,7 +104,7 @@ class Committee final {
       HeapObjectSet accepted_subgraph;  // Either all are accepted or none.
       HeapObjectList accepted_subgraph_list;
       HeapObjectSet visited;            // Cycle detection.
-      if (!EvaluateSubgraph(o, &accepted_subgraph, &visited,
+      if (!EvaluateSubgraph(std::nullopt, o, &accepted_subgraph, &visited,
                             &accepted_subgraph_list)) {
         continue;
       }
@@ -97,6 +120,11 @@ class Committee final {
       promo_accepted_list.insert(promo_accepted_list.end(),
                                  accepted_subgraph_list.begin(),
                                  accepted_subgraph_list.end());
+    }
+    if (V8_UNLIKELY(v8_flags.trace_read_only_promotion)) {
+      for (auto o : promo_deferred_) {
+        LogRejectedPromotionForNoMatchingHost(o);
+      }
     }
 
     // Remove duplicates from the promo_accepted_list. Note we have to jump
@@ -118,22 +146,42 @@ class Committee final {
   // Returns `false` if the subgraph rooted at `o` is rejected.
   // Returns `true` if it is accepted, or if we've reached a cycle and `o`
   // will be processed further up the callchain.
-  bool EvaluateSubgraph(Tagged<HeapObject> o, HeapObjectSet* accepted_subgraph,
+  bool EvaluateSubgraph(std::optional<Tagged<HeapObject>> maybe_host,
+                        Tagged<HeapObject> o, HeapObjectSet* accepted_subgraph,
                         HeapObjectSet* visited, HeapObjectList* promotees) {
     if (HeapLayout::InReadOnlySpace(o)) return true;
     if (Contains(promo_rejected_, o)) return false;
     if (Contains(promo_accepted_, o)) return true;
     if (Contains(*visited, o)) return true;
     visited->insert(o);
-    if (!IsPromoCandidate(isolate_, o)) {
-      const auto& [it, inserted] = promo_rejected_.insert(o);
-      if (V8_UNLIKELY(v8_flags.trace_read_only_promotion) && inserted) {
-        LogRejectedPromotionForFailedPredicate(o);
+    PromoRecommendation recommendation =
+        GetPromoRecommendation(this, isolate_, o);
+    switch (recommendation) {
+      case PromoRecommendation::kPromote:
+        break;
+      case PromoRecommendation::kReject: {
+        const auto& [it, inserted] = promo_rejected_.insert(o);
+        if (V8_UNLIKELY(v8_flags.trace_read_only_promotion) && inserted) {
+          LogRejectedPromotionForFailedPredicate(o);
+        }
+        return false;
       }
-      return false;
+      case PromoRecommendation::kMatchHost:
+        if (!maybe_host.has_value()) {
+          // We've met this object during regular heap iteration and don't know
+          // yet how it's used. Postpone the decision for later.
+          DCHECK(!Contains(promo_deferred_, o));
+          promo_deferred_.insert(o);
+          visited->erase(o);
+          return false;
+        }
+        // This object is referenced by another promotion candidate, so
+        // let this one be promoted too.
+        promo_deferred_.erase(o);
+        break;
     }
     // Recurse into outgoing pointers.
-    CandidateVisitor v(this, accepted_subgraph, visited, promotees);
+    CandidateVisitor v(this, accepted_subgraph, visited, promotees, maybe_host);
     VisitObject(isolate_, o, &v);
     if (!v.all_slots_are_promo_candidates()) {
       const auto& [it, inserted] = promo_rejected_.insert(o);
@@ -141,19 +189,36 @@ class Committee final {
         LogRejectedPromotionForInvalidSubgraph(o,
                                                v.first_rejected_slot_offset());
       }
+      if (Tagged<TemplateInfo> info; TryCast<TemplateInfo>(o, &info)) {
+        CHECK_WITH_MSG(!info->should_promote_to_read_only(),
+                       "v8::Template was asked to be promoted to "
+                       "read only space but it wasn't possible. "
+                       "Use --trace-read-only-promotion for debugging.");
+      }
       return false;
     }
 
     accepted_subgraph->insert(o);
     promotees->push_back(o);
+
+    // Some sanity checks for general-purpose objects (they should be included
+    // only as a part of expected hosts).
+    DCHECK_IMPLIES(IsArrayList(o),
+                   maybe_host.has_value() &&
+                       IsTemplateInfoWithProperties(maybe_host.value()));
     return true;
   }
 
 #define PROMO_CANDIDATE_TYPE_LIST(V) \
   V(AccessCheckInfo)                 \
   V(AccessorInfo)                    \
+  V(ArrayList)                       \
   V(Code)                            \
   V(CodeWrapper)                     \
+  V(JSExternalObject)                \
+  V(ObjectTemplateInfo)              \
+  V(FunctionTemplateInfo)            \
+  V(FunctionTemplateRareData)        \
   V(InterceptorInfo)                 \
   V(ScopeInfo)                       \
   V(SharedFunctionInfo)              \
@@ -161,42 +226,74 @@ class Committee final {
   // TODO(jgruber): Don't forget to extend ReadOnlyPromotionImpl::Verify when
   // adding new object types here.
 
-  static bool IsPromoCandidate(Isolate* isolate, Tagged<HeapObject> o) {
+  static PromoRecommendation GetPromoRecommendation(Committee* committee,
+                                                    Isolate* isolate,
+                                                    Tagged<HeapObject> o) {
     const InstanceType itype = o->map(isolate)->instance_type();
-#define V(TYPE)                                            \
-  if (InstanceTypeChecker::Is##TYPE(itype)) {              \
-    return IsPromoCandidate##TYPE(isolate, Cast<TYPE>(o)); \
-    /* NOLINTNEXTLINE(readability/braces) */               \
+#define V(TYPE)                                                             \
+  if (InstanceTypeChecker::Is##TYPE(itype)) {                               \
+    return GetPromoRecommendation##TYPE(committee, isolate, Cast<TYPE>(o)); \
+    /* NOLINTNEXTLINE(readability/braces) */                                \
   } else
     PROMO_CANDIDATE_TYPE_LIST(V)
     /* if { ... } else */ {
-      return false;
+      return PromoRecommendation::kReject;
     }
 #undef V
     UNREACHABLE();
   }
 #undef PROMO_CANDIDATE_TYPE_LIST
 
-#define DEF_PROMO_CANDIDATE(Type)                                        \
-  static bool IsPromoCandidate##Type(Isolate* isolate, Tagged<Type> o) { \
-    return true;                                                         \
+#define DEF_PROMO_CANDIDATE(Type)                               \
+  static PromoRecommendation GetPromoRecommendation##Type(      \
+      Committee* committee, Isolate* isolate, Tagged<Type> o) { \
+    return PromoRecommendation::kPromote;                                            \
+  }
+#define DEF_MATCH_HOST_CANDIDATE(Type)                          \
+  static PromoRecommendation GetPromoRecommendation##Type(      \
+      Committee* committee, Isolate* isolate, Tagged<Type> o) { \
+    return PromoRecommendation::kMatchHost;                                          \
   }
 
   DEF_PROMO_CANDIDATE(AccessCheckInfo)
   DEF_PROMO_CANDIDATE(AccessorInfo)
-  static bool IsPromoCandidateCode(Isolate* isolate, Tagged<Code> o) {
-    return Builtins::kCodeObjectsAreInROSpace && o->is_builtin();
+  DEF_MATCH_HOST_CANDIDATE(ArrayList)
+  // Promote v8::External only if it's used by a v8::Template that was
+  // explicitly requested to be promoted to RO space.
+  DEF_MATCH_HOST_CANDIDATE(JSExternalObject)
+
+  static PromoRecommendation GetPromoRecommendationFunctionTemplateInfo(
+      Committee* committee, Isolate* isolate, Tagged<FunctionTemplateInfo> o) {
+    // This flag is set by the embedder explicitly by calling
+    // v8::FunctionTemplate::SealAndPrepareForPromotionToReadOnly(..).
+    return o->should_promote_to_read_only() ? PromoRecommendation::kPromote : PromoRecommendation::kReject;
   }
-  static bool IsPromoCandidateCodeWrapper(Isolate* isolate,
-                                          Tagged<CodeWrapper> o) {
-    return IsPromoCandidateCode(isolate, o->code(isolate));
+  DEF_PROMO_CANDIDATE(FunctionTemplateRareData)
+
+  static PromoRecommendation GetPromoRecommendationCode(Committee* committee,
+                                                        Isolate* isolate,
+                                                        Tagged<Code> o) {
+    return Builtins::kCodeObjectsAreInROSpace && o->is_builtin() ? PromoRecommendation::kPromote
+                                                                 : PromoRecommendation::kReject;
+  }
+  static PromoRecommendation GetPromoRecommendationCodeWrapper(
+      Committee* committee, Isolate* isolate, Tagged<CodeWrapper> o) {
+    return GetPromoRecommendationCode(committee, isolate, o->code(isolate));
   }
   DEF_PROMO_CANDIDATE(InterceptorInfo)
+
+  static PromoRecommendation GetPromoRecommendationObjectTemplateInfo(
+      Committee* committee, Isolate* isolate, Tagged<ObjectTemplateInfo> o) {
+    // This flag is set by the embedder explicitly by calling
+    // v8::ObjectTemplate::SealAndPrepareForPromotionToReadOnly(..).
+    return o->should_promote_to_read_only() ? PromoRecommendation::kPromote : PromoRecommendation::kReject;
+  }
+
   DEF_PROMO_CANDIDATE(ScopeInfo)
-  static bool IsPromoCandidateSharedFunctionInfo(Isolate* isolate,
-                                                 Tagged<SharedFunctionInfo> o) {
+  static PromoRecommendation GetPromoRecommendationSharedFunctionInfo(
+      Committee* committee, Isolate* isolate, Tagged<SharedFunctionInfo> o) {
     // Only internal SFIs are guaranteed to remain immutable.
-    if (o->has_script(kAcquireLoad)) return false;
+    if (o->has_script(kAcquireLoad)) return PromoRecommendation::kReject;
     // kIllegal is used for js_global_object_function, which is created during
     // bootstrapping but never rooted. We currently assumed that all objects in
     // the snapshot are live. But RO space is 1) not GC'd and 2) serialized
@@ -205,7 +302,12 @@ class Committee final {
     // TODO(jgruber): A better solution. Remove the liveness assumption (see
     // test-heap-profiler.cc)? Overwrite dead RO objects with fillers
     // pre-serialization? Implement a RO GC pass pre-serialization?
-    return o->HasBuiltinId() && o->builtin_id() != Builtin::kIllegal;
+    if (o->HasBuiltinId() && o->builtin_id() != Builtin::kIllegal) {
+      return PromoRecommendation::kPromote;
+    }
+    // Api functions are good candidates for promotion.
+    if (o->IsApiFunction()) return PromoRecommendation::kPromote;
+    return PromoRecommendation::kReject;
   }
   DEF_PROMO_CANDIDATE(Symbol)
 
@@ -216,11 +318,17 @@ class Committee final {
   class CandidateVisitor : public ObjectVisitor {
    public:
     CandidateVisitor(Committee* committee, HeapObjectSet* accepted_subgraph,
-                     HeapObjectSet* visited, HeapObjectList* promotees)
+                     HeapObjectSet* visited, HeapObjectList* promotees,
+                     std::optional<Tagged<HeapObject>> maybe_host)
         : committee_(committee),
           accepted_subgraph_(accepted_subgraph),
           visited_(visited),
-          promotees_(promotees) {}
+          promotees_(promotees),
+          maybe_host_(maybe_host) {}
+
+    // Promotion decisions for some objects might depend on the properties
+    // of the "outer" object.
+    std::optional<Tagged<HeapObject>> maybe_host() const { return maybe_host_; }
 
     int first_rejected_slot_offset() const {
       return first_rejected_slot_offset_;
@@ -236,8 +344,9 @@ class Committee final {
         Tagged<MaybeObject> maybe_object = slot.load(committee_->isolate_);
         Tagged<HeapObject> heap_object;
         if (!maybe_object.GetHeapObject(&heap_object)) continue;
-        if (!committee_->EvaluateSubgraph(heap_object, accepted_subgraph_,
-                                          visited_, promotees_)) {
+        if (!committee_->EvaluateSubgraph({host}, heap_object,
+                                          accepted_subgraph_, visited_,
+                                          promotees_)) {
           first_rejected_slot_offset_ =
               static_cast<int>(slot.address() - host.address());
           DCHECK_GE(first_rejected_slot_offset_, 0);
@@ -263,6 +372,7 @@ class Committee final {
     HeapObjectSet* const accepted_subgraph_;
     HeapObjectSet* const visited_;
     HeapObjectList* const promotees_;
+    std::optional<Tagged<HeapObject>> maybe_host_;
     int first_rejected_slot_offset_ = -1;
   };
 
@@ -276,6 +386,14 @@ class Committee final {
 
   static void LogRejectedPromotionForFailedPredicate(Tagged<HeapObject> o) {
     std::cout << "ro-promotion: rejected due to failed predicate "
+              << reinterpret_cast<void*>(o.ptr()) << " ("
+              << o->map()->instance_type() << ")"
+              << "\n";
+  }
+
+  void LogRejectedPromotionForNoMatchingHost(Tagged<HeapObject> o) {
+    std::cout << "ro-promotion: rejected because it wasn't included into any "
+                 "accepted set "
               << reinterpret_cast<void*>(o.ptr()) << " ("
               << o->map()->instance_type() << ")"
               << "\n";
@@ -301,8 +419,10 @@ class Committee final {
   }
 
   Isolate* const isolate_;
+  ExternalReferenceEncoder ref_encoder_;
   HeapObjectSet promo_accepted_;
   HeapObjectSet promo_rejected_;
+  HeapObjectSet promo_deferred_;
 };
 
 class ReadOnlyPromotionImpl final : public AllStatic {
@@ -395,6 +515,9 @@ class ReadOnlyPromotionImpl final : public AllStatic {
     Heap* heap = isolate->heap();
     CHECK(HeapLayout::InReadOnlySpace(
         heap->promise_all_resolve_element_closure_shared_fun()));
+    CHECK(HeapLayout::InReadOnlySpace(heap->error_stack_getter_fun_template()));
+    CHECK(HeapLayout::InReadOnlySpace(heap->error_stack_setter_fun_template()));
+
     // TODO(jgruber): Extend here with more objects as they are added to
     // the promotion algorithm.
 

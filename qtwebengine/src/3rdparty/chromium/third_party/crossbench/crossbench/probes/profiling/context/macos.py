@@ -9,8 +9,10 @@ import logging
 import time
 from typing import TYPE_CHECKING, Final, Optional
 
+from typing_extensions import override
+
 import crossbench.path as pth
-from crossbench.helper.spinner import Spinner
+from crossbench.cli import ui
 from crossbench.probes.profiling.context.base import PosixProfilingContext
 from crossbench.probes.profiling.enum import TargetMode
 
@@ -26,7 +28,7 @@ _MAC_TRACE_TEMPLATE_PATH: Final[pth.LocalPath] = pth.LocalPath(
 _XPATH_EXPRESSION: Final[str] = (
     "//trace-toc/run/data/table["
     "@category=\"PointsOfInterest\" and @schema=\"os-signpost\"]|"
-    "//trace-toc/run/data/table[@schema=\"time-profile\"]")
+    "//trace-toc/run/data/table[@schema=\"cpu-profile\"]")
 
 
 class MacOSProfilingContext(PosixProfilingContext):
@@ -37,10 +39,11 @@ class MacOSProfilingContext(PosixProfilingContext):
         TargetMode.SYSTEM_WIDE, TargetMode.RENDERER_PROCESS_ONLY), (
             f"Unsupported profiling mode for Mac: {str(self.probe.target)}")
 
+  @override
   def get_default_result_path(self) -> pth.AnyPath:
     return super().get_default_result_path().parent / "profile.trace"
 
-  def _start_xctrace(self, pid: Optional[int] = None):
+  def _start_xctrace(self, pid: Optional[int] = None) -> None:
     assert self.browser_platform.is_file(_MAC_TRACE_TEMPLATE_PATH), (
         f"Didn't find {_MAC_TRACE_TEMPLATE_PATH}")
 
@@ -59,6 +62,7 @@ class MacOSProfilingContext(PosixProfilingContext):
   def start(self) -> None:
     pass
 
+  @override
   def start_story_run(self) -> None:
     super().start_story_run()
     # In theory this could start earlier but we leave it here as the
@@ -84,7 +88,7 @@ class MacOSProfilingContext(PosixProfilingContext):
     trace_xml_path = self.result_path.with_name("profile.trace.xml")
     with self.run.actions(
         f"Probe {self.probe.name}: Exporting {trace_xml_path.name}",
-        verbose=True), Spinner():
+        verbose=True), ui.spinner():
       self.browser_platform.sh("xctrace", "export", "--input", self.result_path,
                                "--output", trace_xml_path, "--xpath",
                                _XPATH_EXPRESSION)
@@ -94,8 +98,8 @@ class MacOSProfilingContext(PosixProfilingContext):
     if not self._profiling_process:
       return
     logging.info("  Waiting for xctrace profiles (slow)...")
-    with Spinner():
-      self.browser_platform.wait_and_kill(
+    with ui.spinner():
+      self.browser_platform.terminate_gracefully(
           self._profiling_process,
           signal=self.browser_platform.signals.SIGINT,
           timeout=60)

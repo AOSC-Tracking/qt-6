@@ -54,7 +54,6 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
 
   ~OverlayProcessorUsingStrategy() override;
 
-  gfx::Rect GetPreviousFrameOverlaysBoundingRect() const final;
   gfx::Rect GetAndResetOverlayDamage() final;
 
   // Override OverlayProcessor.
@@ -112,6 +111,13 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
   // 10 was chosen because worst case the copy request might be 15 fps and
   // we might have display with 120 Hz.
   static const int kCopyRequestSkipOverlayFrames = 10;
+
+  const std::unordered_map<ProposedCandidateKey,
+                           OverlayCandidateTemporalTracker,
+                           ProposedCandidateKeyHasher>&
+  GetTrackedCandidatesForTesting() const {
+    return tracked_candidates_;
+  }
 
  protected:
   virtual gfx::Rect GetOverlayDamageRectForOutputSurface(

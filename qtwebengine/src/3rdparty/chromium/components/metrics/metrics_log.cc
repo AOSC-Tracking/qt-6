@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/374320451): Fix and remove.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "components/metrics/metrics_log.h"
 
@@ -28,13 +24,13 @@
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/histogram_snapshot_manager.h"
 #include "base/metrics/metrics_hashes.h"
+#include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/system/sys_info.h"
 #include "base/time/clock.h"
 #include "base/time/default_clock.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "components/flags_ui/flags_ui_switches.h"
 #include "components/metrics/delegating_provider.h"
 #include "components/metrics/environment_recorder.h"
 #include "components/metrics/histogram_encoder.h"
@@ -45,6 +41,7 @@
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/variations/hashing.h"
+#include "components/webui/flags/flags_ui_switches.h"
 #include "crypto/random.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 #include "third_party/metrics_proto/histogram_event.pb.h"
@@ -206,6 +203,8 @@ metrics::SystemProfileProto::OS::XdgCurrentDesktop ToProtoCurrentDesktop(
       return metrics::SystemProfileProto::OS::XFCE;
     case base::nix::DesktopEnvironment::DESKTOP_ENVIRONMENT_LXQT:
       return metrics::SystemProfileProto::OS::LXQT;
+    case base::nix::DesktopEnvironment::DESKTOP_ENVIRONMENT_COSMIC:
+      return metrics::SystemProfileProto::OS::COSMIC;
   }
 
   NOTREACHED();
@@ -215,9 +214,8 @@ metrics::SystemProfileProto::OS::XdgCurrentDesktop ToProtoCurrentDesktop(
 // Gets the hash of this session. A random hash is generated the first time this
 // is called (which is cached and returned for the remainder of the session).
 uint64_t GetSessionHash() {
-  static const std::vector<uint8_t> session_hash =
-      crypto::RandBytesAsVector(/*length=*/8);
-  return *reinterpret_cast<const uint64_t*>(session_hash.data());
+  static const uint64_t session_hash = base::RandUint64();
+  return session_hash;
 }
 
 }  // namespace
@@ -336,6 +334,12 @@ void MetricsLog::AssignFinalizedRecordId(PrefService* local_state) {
   DCHECK(!uma_proto_.has_finalized_record_id());
   uma_proto_.set_finalized_record_id(
       IncrementAndUpdate(local_state, prefs::kMetricsLogFinalizedRecordId));
+}
+
+void MetricsLog::SetLogCreationType(
+    ChromeUserMetricsExtension::LogType log_type) {
+  CHECK(!uma_proto_.has_log_type());
+  uma_proto_.set_log_type(log_type);
 }
 
 void MetricsLog::AssignRecordId(PrefService* local_state) {
@@ -460,7 +464,7 @@ void MetricsLog::RecordCoreSystemProfile(
 #endif
 }
 
-void MetricsLog::RecordHistogramDelta(const std::string& histogram_name,
+void MetricsLog::RecordHistogramDelta(std::string_view histogram_name,
                                       const base::HistogramSamples& snapshot) {
   DCHECK(!closed_);
   log_metadata_.AddSampleCount(snapshot.TotalCount());

@@ -1,23 +1,20 @@
 // Copyright (c) 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import * as i18n from '../../../../core/i18n/i18n.js';
 import {html, render, svg} from '../../../lit/lit.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 
-import pieChartStylesRaw from './pieChart.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const pieChartStyles = new CSSStyleSheet();
-pieChartStyles.replaceSync(pieChartStylesRaw.cssContent);
+import pieChartStyles from './pieChart.css.js';
 
 const UIStrings = {
   /**
    *@description Text for sum
    */
   total: 'Total',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/perf_ui/PieChart.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -54,10 +51,6 @@ export class PieChart extends HTMLElement {
   private readonly innerR = 0.618;
   private lastAngle = -Math.PI / 2;
 
-  connectedCallback(): void {
-    this.shadow.adoptedStyleSheets = [pieChartStyles];
-  }
-
   set data(data: PieChartData) {
     this.chartName = data.chartName;
     this.size = data.size;
@@ -73,6 +66,7 @@ export class PieChart extends HTMLElement {
     this.lastAngle = -Math.PI / 2;
     // clang-format off
     const output = html`
+      <style>${pieChartStyles}</style>
       <div class="root" role="group" @keydown=${this.onKeyDown} aria-label=${this.chartName}
           jslog=${VisualLogging.pieChart().track({keydown: 'ArrowUp|ArrowDown'})}>
         <div class="chart-root" style="width: ${this.size}px; height: ${this.size}px;">

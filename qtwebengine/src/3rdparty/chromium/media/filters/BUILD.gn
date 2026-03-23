@@ -6,6 +6,20 @@ import("//build/config/jumbo.gni")
 import("//media/gpu/args.gni")
 import("//media/media_options.gni")
 
+if (media_use_symphonia) {
+  rust_static_library("symphonia_glue") {
+    # Needed because CXX generates unsafe code, for example using export_name
+    # is inherently unsafe.
+    allow_unsafe = true
+
+    crate_root = "symphonia_glue.rs"
+    sources = [ "symphonia_glue.rs" ]
+    cxx_bindings = [ "symphonia_glue.rs" ]
+    visibility = [ ":filters" ]
+    deps = [ "//third_party/rust/symphonia/v0_5:lib" ]
+  }
+}
+
 jumbo_source_set("filters") {
   # Do not expand the visibility here without double-checking with OWNERS, this
   # is a roll-up target which is part of the //media component. Most other DEPs
@@ -72,7 +86,6 @@ jumbo_source_set("filters") {
 
   deps = [
     "//base",
-    "//build:chromeos_buildflags",
     "//cc/base",  # For MathUtil.
     "//media:media_buildflags",
     "//media/base",
@@ -82,7 +95,7 @@ jumbo_source_set("filters") {
     "//media/video",
     "//net",
     "//third_party/libyuv",
-    "//ui/gfx/geometry:geometry",
+    "//ui/gfx/geometry",
   ]
 
   libs = []
@@ -127,6 +140,14 @@ jumbo_source_set("filters") {
       "media_file_checker.cc",
       "media_file_checker.h",
     ]
+  }
+
+  if (media_use_symphonia) {
+    sources += [
+      "symphonia_audio_decoder.cc",
+      "symphonia_audio_decoder.h",
+    ]
+    deps += [ ":symphonia_glue" ]
   }
 
   if (media_use_libvpx) {
@@ -242,8 +263,6 @@ jumbo_source_set("filters") {
       "hls_demuxer_status.h",
       "hls_manifest_demuxer_engine.cc",
       "hls_manifest_demuxer_engine.h",
-      "hls_media_player_tag_recorder.cc",
-      "hls_media_player_tag_recorder.h",
       "hls_network_access.cc",
       "hls_network_access.h",
       "hls_network_access_impl.cc",
@@ -322,7 +341,7 @@ source_set("unit_tests") {
 
   deps = [
     "//base/test:test_support",
-    "//build:chromeos_buildflags",
+    "//crypto",
     "//media:test_support",
     "//testing/gmock",
     "//testing/gtest",
@@ -406,7 +425,6 @@ source_set("unit_tests") {
       "hls_data_source_provider_impl_unittest.cc",
       "hls_data_source_provider_unittest.cc",
       "hls_manifest_demuxer_engine_unittest.cc",
-      "hls_media_player_tag_recorder_unittest.cc",
       "hls_network_access_impl_unittest.cc",
       "hls_rendition_impl_unittest.cc",
       "hls_test_helpers.cc",
@@ -414,6 +432,10 @@ source_set("unit_tests") {
       "manifest_demuxer_unittest.cc",
       "stream_parser_factory_unittest.cc",
     ]
+
+    # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+    # enable the diagnostic by removing this line.
+    configs += [ "//build/config/compiler:no_exit_time_destructors" ]
   }
 
   if (media_use_ffmpeg) {

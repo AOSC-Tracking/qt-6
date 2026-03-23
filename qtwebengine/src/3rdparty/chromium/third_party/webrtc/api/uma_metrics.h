@@ -192,7 +192,12 @@ enum SdpMungingType {
   kIceMode = 23,
   kDtlsSetup = 24,
   kMid = 25,
+  kPayloadTypes = 26,
   kSsrcs = 27,
+  kIceOptionsRenomination = 28,
+  kDirection = 29,
+  kRtcpMux = 30,
+  kIceOptionsTrickle = 31,
   // RTP header extension munging.
   kRtpHeaderExtensionRemoved = 40,
   kRtpHeaderExtensionAdded = 41,
@@ -203,14 +208,36 @@ enum SdpMungingType {
   kAudioCodecsReordered = 62,
   kAudioCodecsAddedMultiOpus = 63,
   kAudioCodecsAddedL16 = 64,
+  kAudioCodecsRtcpFbAudioNack = 65,
+  kAudioCodecsFmtpOpusFec = 66,
+  kAudioCodecsFmtpOpusCbr = 67,
   kAudioCodecsFmtpOpusStereo = 68,
+  kAudioCodecsFmtpOpusDtx = 69,
+  kAudioCodecsFmtp = 70,
+  kAudioCodecsRtcpFb = 71,
+  kAudioCodecsRtcpFbRrtr = 72,
+  kAudioCodecsRtcpReducedSize = 73,
   // Video-related munging.
   kVideoCodecsRemoved = 80,
   kVideoCodecsAdded = 81,
   kVideoCodecsReordered = 82,
   kVideoCodecsLegacySimulcast = 83,
   kVideoCodecsFmtpH264SpsPpsIdrInKeyframe = 84,
+  kVideoCodecsFmtp = 85,
+  kVideoCodecsRtcpFb = 86,
+  kVideoCodecsAddedWithRawPacketization = 87,
+  kVideoCodecsModifiedWithRawPacketization = 88,
+  kVideoCodecsRtcpReducedSize = 89,
   kMaxValue,
+};
+
+// The outcome of setting the local description, whether SDP munging is detected
+// and if the should be accepted or rejected. Keep in sync with
+// SdpMungingOutcome from tools/metrics/histograms/metadata/web_rtc/enums.xml
+enum class SdpMungingOutcome {
+  kAccepted = 0,
+  kRejected = 1,
+  kMaxValue = kRejected,
 };
 
 // When adding new metrics please consider using the style described in

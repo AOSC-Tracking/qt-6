@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "pref_service_adapter.h"
 
@@ -98,6 +99,7 @@ void PrefServiceAdapter::setup(const ProfileAdapter &profileAdapter)
     registry->RegisterIntegerPref(prefs::kNotificationNextPersistentId, 10000);
     // chrome/browser/push_messaging
     registry->RegisterDictionaryPref(prefs::kPushMessagingAppIdentifierMap);
+    registry->RegisterListPref(prefs::kPushMessagingUnsubscribedEntriesList);
     // chrome/browser/gcm
     gcm::RegisterPrefs(registry.get());
 
@@ -117,7 +119,6 @@ void PrefServiceAdapter::setup(const ProfileAdapter &profileAdapter)
     registry->RegisterListPref(extensions::pref_names::kInstallDenyList);
     registry->RegisterDictionaryPref(extensions::pref_names::kInstallForceList);
     registry->RegisterListPref(extensions::pref_names::kAllowedTypes);
-    registry->RegisterBooleanPref(extensions::pref_names::kStorageGarbageCollect, false);
     registry->RegisterListPref(extensions::pref_names::kAllowedInstallSites);
     registry->RegisterStringPref(extensions::pref_names::kLastChromeVersion, std::string());
     registry->RegisterListPref(extensions::pref_names::kNativeMessagingBlocklist);
@@ -127,6 +128,7 @@ void PrefServiceAdapter::setup(const ProfileAdapter &profileAdapter)
     registry->RegisterDictionaryPref(extensions::kUserPermissions.name);
     // Should match "kExternalUninstalls" in extensions/browser/extension_prefs.cc
     registry->RegisterListPref("extensions.external_uninstalls");
+    registry->RegisterBooleanPref("migrated_user_scripts_toggle", false);
 #endif // BUILDFLAG(ENABLE_EXTENSIONS)
 
     // Media device salt id key

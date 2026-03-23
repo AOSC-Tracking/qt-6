@@ -5,7 +5,7 @@ import type * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Trace from '../../models/trace/trace.js';
 
-import {buildGroupStyle, buildTrackHeader, getFormattedTime} from './AppenderUtils.js';
+import {buildGroupStyle, buildTrackHeader, getDurationString} from './AppenderUtils.js';
 import {
   type CompatibilityTracksAppender,
   type PopoverInfo,
@@ -23,7 +23,7 @@ const UIStrings = {
    *@description Text in Timeline Flame Chart Data Provider of the Performance panel
    */
   timings: 'Timings',
-};
+} as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimingsTrackAppender.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -63,9 +63,9 @@ export class TimingsTrackAppender implements TrackAppender {
   /**
    * Appends into the flame chart data the data corresponding to the
    * timings track.
-   * @param trackStartLevel the horizontal level of the flame chart events where
+   * @param trackStartLevel - the horizontal level of the flame chart events where
    * the track's events will start being appended.
-   * @param expanded wether the track should be rendered expanded.
+   * @param expanded - wether the track should be rendered expanded.
    * @returns the first available level to append more data after having
    * appended the track's events.
    */
@@ -75,9 +75,9 @@ export class TimingsTrackAppender implements TrackAppender {
         m => !Trace.Handlers.ModelHandlers.ExtensionTraceData.extensionDataInPerformanceTiming(m));
     const performanceMeasures = this.#parsedTrace.UserTimings.performanceMeasures.filter(
         m => !Trace.Handlers.ModelHandlers.ExtensionTraceData.extensionDataInPerformanceTiming(m));
-    const timestampEvents = this.#parsedTrace.UserTimings.timestampEvents;
+    const timestampEvents = this.#parsedTrace.UserTimings.timestampEvents.filter(
+        timeStamp => !Trace.Handlers.ModelHandlers.ExtensionTraceData.extensionDataInConsoleTimeStamp(timeStamp));
     const consoleTimings = this.#parsedTrace.UserTimings.consoleTimings;
-
     if (extensionMarkersAreEmpty && performanceMarks.length === 0 && performanceMeasures.length === 0 &&
         timestampEvents.length === 0 && consoleTimings.length === 0) {
       return trackStartLevel;
@@ -96,7 +96,7 @@ export class TimingsTrackAppender implements TrackAppender {
    * flame chart data. A group has a predefined style and a reference
    * to the definition of the legacy track (which should be removed
    * in the future).
-   * @param currentLevel the flame chart level at which the header is
+   * @param currentLevel - the flame chart level at which the header is
    * appended.
    */
   #appendTrackHeaderAtLevel(currentLevel: number, expanded?: boolean): void {
@@ -109,7 +109,7 @@ export class TimingsTrackAppender implements TrackAppender {
   }
   /**
    * Adds into the flame chart data the ExtensionMarkers.
-   * @param currentLevel the flame chart level from which markers will
+   * @param currentLevel - the flame chart level from which markers will
    * be appended.
    * @returns the next level after the last occupied by the appended
    * extension markers (the first available level to append more data).
@@ -244,7 +244,7 @@ export class TimingsTrackAppender implements TrackAppender {
       }
     }
     if (Trace.Types.Events.isConsoleTimeStamp(event)) {
-      return `TimeStamp: ${event.args.data?.name ?? '(name unknown)'}`;
+      return `TimeStamp: ${event.args.data?.message ?? '(name unknown)'}`;
     }
     if (Trace.Types.Events.isPerformanceMark(event)) {
       return `[mark]: ${event.name}`;
@@ -256,19 +256,25 @@ export class TimingsTrackAppender implements TrackAppender {
   }
 
   setPopoverInfo(event: Trace.Types.Events.Event, info: PopoverInfo): void {
-    // If an event is a marker event, rather than show a duration of 0, we can instead show the time that the event happened, which is much more useful. We do this currently for:
+    // If an event is a marker event, rather than show a duration of 0, we can
+    // instead show the time that the event happened, which is much more
+    // useful. We do this currently for:
     // Page load events: DCL, FCP and LCP
-    // performance.mark() events
+    // performance.mark() events (including extensibility events)
     // console.timestamp() events
+
+    const isExtensibilityMarker = Trace.Types.Extensions.isSyntheticExtensionEntry(event) &&
+        Trace.Types.Extensions.isExtensionPayloadMarker(event.args);
+
     if (Trace.Types.Events.isMarkerEvent(event) || Trace.Types.Events.isPerformanceMark(event) ||
-        Trace.Types.Events.isConsoleTimeStamp(event)) {
+        Trace.Types.Events.isConsoleTimeStamp(event) || isExtensibilityMarker) {
       const timeOfEvent = Trace.Helpers.Timing.timeStampForEventAdjustedByClosestNavigation(
           event,
           this.#parsedTrace.Meta.traceBounds,
           this.#parsedTrace.Meta.navigationsByNavigationId,
           this.#parsedTrace.Meta.navigationsByFrameId,
       );
-      info.formattedTime = getFormattedTime(timeOfEvent);
+      info.formattedTime = getDurationString(timeOfEvent);
     }
   }
 }

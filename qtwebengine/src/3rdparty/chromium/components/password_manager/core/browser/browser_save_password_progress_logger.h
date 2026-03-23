@@ -14,6 +14,7 @@
 #include "components/autofill/core/browser/proto/password_requirements.pb.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom.h"
 #include "components/autofill/core/common/save_password_progress_logger.h"
+#include "components/password_manager/core/browser/password_manager_metrics_recorder.h"
 #include "components/password_manager/core/browser/votes_uploader.h"
 #include "url/gurl.h"
 
@@ -60,6 +61,7 @@ class BrowserSavePasswordProgressLogger
   void LogFormStructure(
       StringID label,
       const autofill::FormStructure& form,
+      const autofill::EncodeUploadRequestOptions& vote_metadata,
       std::optional<PasswordAttributesMetadata> password_attributes);
 
   // Browser-specific addition to the base class' Log* methods. The input is
@@ -84,6 +86,11 @@ class BrowserSavePasswordProgressLogger
                                autofill::FieldSignature field_signature,
                                const autofill::PasswordRequirementsSpec& spec);
 
+  void LogProvisionalSaveFailure(
+      PasswordManagerMetricsRecorder::ProvisionalSaveFailure failure,
+      std::optional<GURL> main_frame_url = std::nullopt,
+      std::optional<GURL> form_origin = std::nullopt);
+
  protected:
   // autofill::SavePasswordProgressLogger:
   void SendLog(const std::string& log) override;
@@ -98,7 +105,8 @@ class BrowserSavePasswordProgressLogger
 
   // Returns the string representation of `form`.
   static std::string FormStructureToFieldsLogString(
-      const autofill::FormStructure& form);
+      const autofill::FormStructure& form,
+      const autofill::EncodeUploadRequestOptions& vote_metadata);
 
   // Returns the string representation of votes related password attributes from
   // the `password_attributes`.

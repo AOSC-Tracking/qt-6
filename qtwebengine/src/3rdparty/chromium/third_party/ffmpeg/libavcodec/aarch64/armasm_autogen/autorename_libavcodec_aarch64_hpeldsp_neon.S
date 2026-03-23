@@ -853,6 +853,9 @@
 
 
 
+
+
+
         ;.arch           armv8.6-a+crc
 
 
@@ -1034,7 +1037,7 @@
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel16_mc00_neon
 
@@ -1059,7 +1062,7 @@ ff_put_h264_qpel16_mc00_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels16_neon
 
@@ -1094,7 +1097,7 @@ temp_label_0
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels16_x2_neon
 
@@ -1129,7 +1132,7 @@ temp_label_1
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels16_x2_no_rnd_neon
 
@@ -1164,7 +1167,7 @@ temp_label_2
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels16_y2_neon
 
@@ -1207,7 +1210,7 @@ temp_label_3
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels16_y2_no_rnd_neon
 
@@ -1250,7 +1253,7 @@ temp_label_4
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels16_xy2_neon
 
@@ -1320,7 +1323,7 @@ temp_label_5
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels16_xy2_no_rnd_neon
 
@@ -1400,7 +1403,7 @@ temp_label_6
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel16_mc00_neon
 
@@ -1425,7 +1428,7 @@ ff_avg_h264_qpel16_mc00_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels16_neon
 
@@ -1469,7 +1472,7 @@ temp_label_7
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels16_x2_neon
 
@@ -1509,7 +1512,7 @@ temp_label_8
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels16_x2_no_rnd_neon
 
@@ -1549,7 +1552,7 @@ temp_label_9
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels16_y2_neon
 
@@ -1602,7 +1605,7 @@ temp_label_10
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels16_y2_no_rnd_neon
 
@@ -1655,7 +1658,7 @@ temp_label_11
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels16_xy2_neon
 
@@ -1733,7 +1736,7 @@ temp_label_12
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels16_xy2_no_rnd_neon
 
@@ -1821,7 +1824,7 @@ temp_label_13
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_h264_qpel8_mc00_neon
 
@@ -1846,7 +1849,7 @@ ff_put_h264_qpel8_mc00_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels8_neon
 
@@ -1881,7 +1884,7 @@ temp_label_14
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels8_x2_neon
 
@@ -1916,7 +1919,7 @@ temp_label_15
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels8_x2_no_rnd_neon
 
@@ -1951,7 +1954,7 @@ temp_label_16
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels8_y2_neon
 
@@ -1994,7 +1997,7 @@ temp_label_17
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels8_y2_no_rnd_neon
 
@@ -2037,7 +2040,7 @@ temp_label_18
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels8_xy2_neon
 
@@ -2094,7 +2097,7 @@ temp_label_19
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_put_pixels8_xy2_no_rnd_neon
 
@@ -2157,7 +2160,7 @@ temp_label_20
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_h264_qpel8_mc00_neon
 
@@ -2182,7 +2185,7 @@ ff_avg_h264_qpel8_mc00_neon
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels8_neon
 
@@ -2226,7 +2229,7 @@ temp_label_21
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels8_x2_neon
 
@@ -2266,7 +2269,7 @@ temp_label_22
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels8_y2_neon
 
@@ -2319,7 +2322,7 @@ temp_label_23
 
 
         AREA |.text|, CODE, READONLY, ALIGN=4, CODEALIGN
-        ALIGN 4
+        ALIGN 16
 
         EXPORT ff_avg_pixels8_xy2_neon
 

@@ -19,6 +19,7 @@
 #include <concepts>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -106,31 +107,6 @@ BASE_EXPORT size_t wcslcpy(wchar_t* dst, const wchar_t* src, size_t dst_size);
 //
 // This function is intended to be called from base::vswprintf.
 BASE_EXPORT bool IsWprintfFormatPortable(const wchar_t* format);
-
-// Simplified implementation of C++20's std::basic_string_view(It, End).
-// Reference: https://wg21.link/string.view.cons
-template <typename CharT, typename Iter>
-constexpr std::basic_string_view<CharT> MakeBasicStringPiece(Iter begin,
-                                                             Iter end) {
-  DCHECK_GE(end - begin, 0);
-  return {base::to_address(begin), static_cast<size_t>(end - begin)};
-}
-
-// Explicit instantiations of MakeBasicStringPiece.
-template <typename Iter>
-constexpr std::string_view MakeStringPiece(Iter begin, Iter end) {
-  return MakeBasicStringPiece<char>(begin, end);
-}
-
-template <typename Iter>
-constexpr std::u16string_view MakeStringPiece16(Iter begin, Iter end) {
-  return MakeBasicStringPiece<char16_t>(begin, end);
-}
-
-template <typename Iter>
-constexpr std::wstring_view MakeWStringView(Iter begin, Iter end) {
-  return MakeBasicStringPiece<wchar_t>(begin, end);
-}
 
 // ASCII-specific tolower.  The standard library's tolower is locale sensitive,
 // so we don't want to use it here.
@@ -244,9 +220,10 @@ BASE_EXPORT extern const char16_t
     kWhitespaceNoCrLfUTF16[];  // Unicode w/o CR/LF.
 BASE_EXPORT extern const char kWhitespaceASCII[];
 BASE_EXPORT extern const char16_t kWhitespaceASCIIAs16[];  // No unicode.
-                                                           //
+
 // https://infra.spec.whatwg.org/#ascii-whitespace
-BASE_EXPORT extern const char kInfraAsciiWhitespace[];
+// Note that this array is not null-terminated.
+inline constexpr char kInfraAsciiWhitespace[] = {0x09, 0x0A, 0x0C, 0x0D, 0x20};
 
 // Null-terminated string representing the UTF-8 byte order mark.
 BASE_EXPORT extern const char kUtf8ByteOrderMark[];
@@ -306,9 +283,11 @@ BASE_EXPORT std::string_view TrimString(std::string_view input,
 
 // Truncates a string to the nearest UTF-8 character that will leave
 // the string less than or equal to the specified byte size.
-BASE_EXPORT void TruncateUTF8ToByteSize(const std::string& input,
+BASE_EXPORT void TruncateUTF8ToByteSize(std::string_view input,
                                         const size_t byte_size,
                                         std::string* output);
+BASE_EXPORT std::string_view TruncateUTF8ToByteSize(std::string_view input,
+                                                    size_t byte_size);
 
 // Trims any whitespace from either end of the input string.
 //
@@ -407,6 +386,32 @@ BASE_EXPORT bool EndsWith(
 BASE_EXPORT bool EndsWith(
     std::u16string_view str,
     std::u16string_view search_for,
+    CompareCase case_sensitivity = CompareCase::SENSITIVE);
+
+// If `string` begins with `prefix`, return a view into the portion
+// of `string` following `prefix`. Otherwise, return nullopt. The
+// `case_sensitivity` argument is the same as would be passed to
+// StartsWith() above.
+BASE_EXPORT std::optional<std::string_view> RemovePrefix(
+    std::string_view string,
+    std::string_view prefix,
+    CompareCase case_sensitivity = CompareCase::SENSITIVE);
+BASE_EXPORT std::optional<std::u16string_view> RemovePrefix(
+    std::u16string_view string,
+    std::u16string_view prefix,
+    CompareCase case_sensitivity = CompareCase::SENSITIVE);
+
+// If `string` ends with `suffix`, return a view into the portion
+// of `string` preceding `suffix`. Otherwise, return nullopt. The
+// `case_sensitivity` argument is the same as would be passed to
+// EndsWith() above.
+BASE_EXPORT std::optional<std::string_view> RemoveSuffix(
+    std::string_view string,
+    std::string_view suffix,
+    CompareCase case_sensitivity = CompareCase::SENSITIVE);
+BASE_EXPORT std::optional<std::u16string_view> RemoveSuffix(
+    std::u16string_view string,
+    std::u16string_view suffix,
     CompareCase case_sensitivity = CompareCase::SENSITIVE);
 
 // Determines the type of ASCII character, independent of locale (the C
@@ -637,16 +642,6 @@ BASE_EXPORT std::u16string ReplaceStringPlaceholders(
     std::u16string_view format_string,
     std::u16string_view subst,
     size_t* offset);
-
-// Helper function for creating a std::string_view from a string literal that
-// preserves internal NUL characters.
-template <class CharT, size_t N>
-std::basic_string_view<CharT> MakeStringViewWithNulChars(
-    const CharT (&lit LIFETIME_BOUND)[N])
-    ENABLE_IF_ATTR(lit[N - 1u] == CharT{0},
-                   "requires string literal as input") {
-  return std::basic_string_view<CharT>(lit, N - 1u);
-}
 
 }  // namespace base
 

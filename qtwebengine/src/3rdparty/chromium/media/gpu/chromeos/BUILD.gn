@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
 import("//gpu/vulkan/features.gni")
 import("//media/gpu/args.gni")
 import("//testing/test.gni")
@@ -36,7 +35,7 @@ source_set("chromeos") {
     "//media/gpu:buildflags",
     "//media/gpu:command_buffer_helper",
     "//media/gpu:common",
-    "//media/mojo/common:common",
+    "//media/mojo/common",
   ]
 
   if (use_vaapi) {
@@ -61,6 +60,8 @@ source_set("common") {
   defines = [ "MEDIA_GPU_IMPLEMENTATION" ]
   sources = [
     "chromeos_status.h",
+    "dmabuf_video_frame_converter.cc",
+    "dmabuf_video_frame_converter.h",
     "dmabuf_video_frame_pool.cc",
     "dmabuf_video_frame_pool.h",
     "frame_registry.cc",
@@ -103,16 +104,15 @@ source_set("common") {
     ":video_frame_resource",
     ":video_frame_utils",
     "//gpu/ipc/service",
-    "//media/mojo/mojom/stable:stable_video_decoder",
+    "//media/mojo/mojom",
     "//ui/ozone",
   ]
 
   deps = [
     ":fourcc",
     "//base",
-    "//build:chromeos_buildflags",
     "//build/config/linux/libdrm",
-    "//gpu/ipc/common:common",
+    "//gpu/ipc/common",
     "//media",
     "//media/gpu:buffer_validation",
     "//media/gpu:buildflags",
@@ -135,7 +135,7 @@ source_set("common") {
     ]
     deps += [
       "//gpu/command_buffer/service:gles2",
-      "//gpu/vulkan/init:init",
+      "//gpu/vulkan/init",
     ]
   }
 
@@ -195,7 +195,8 @@ source_set("video_frame_utils") {
   deps = [
     "//base",
     "//build/config/linux/libdrm",
-    "//gpu/ipc/common:common",
+    "//components/viz/common:shared_image_format",
+    "//gpu/ipc/common",
     "//media",
     "//media/gpu:buffer_validation",
     "//media/gpu:common",
@@ -204,6 +205,7 @@ source_set("video_frame_utils") {
     "//ui/gfx:memory_buffer",
     "//ui/gfx/linux:drm",
     "//ui/gfx/linux:gbm",
+    "//ui/ozone",
   ]
 }
 
@@ -241,7 +243,8 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//build/config/linux/libdrm",
-    "//gpu/ipc/service:service",
+    "//gpu:test_support",
+    "//gpu/ipc/service",
     "//media",
     "//media:test_support",
     "//media/gpu:buildflags",
@@ -264,10 +267,14 @@ source_set("unit_tests") {
     "video_decoder_pipeline_unittest.cc",
     "video_frame_resource_unittest.cc",
   ]
-  if (is_chromeos_ash) {
+  if (is_chromeos) {
     deps +=
         [ "//chromeos/components/cdm_factory_daemon:cdm_factory_daemon_gpu" ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("perf_test_utils") {
@@ -283,6 +290,10 @@ source_set("perf_test_utils") {
     "perf_test_util.cc",
     "perf_test_util.h",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 test("image_processor_test") {
@@ -290,7 +301,7 @@ test("image_processor_test") {
   deps = [
     ":chromeos",
     "//base/test:test_support",
-    "//build:chromeos_buildflags",
+    "//gpu:test_support",
     "//media:test_support",
     "//media/gpu:buildflags",
     "//media/gpu:video_frame_mapper_common",
@@ -306,7 +317,7 @@ test("image_processor_test") {
     "//ui/gl:test_support",
   ]
   if (use_vaapi) {
-    deps += [ "//media/gpu/vaapi:vaapi" ]
+    deps += [ "//media/gpu/vaapi" ]
   }
   if (use_v4l2_codec) {
     deps += [ "//media/gpu/v4l2" ]
@@ -314,6 +325,10 @@ test("image_processor_test") {
   if (enable_vulkan) {
     deps += [ "//gpu/command_buffer/service:gles2" ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (use_v4l2_codec) {
@@ -323,10 +338,12 @@ if (use_v4l2_codec) {
       ":chromeos",
       ":perf_test_utils",
       "//base/test:test_support",
+      "//gpu:test_support",
       "//media:test_support",
       "//media/gpu:video_frame_mapper_common",
       "//media/gpu/test:helpers",
       "//media/gpu/test:video_test_environment",
+      "//testing/gmock",
       "//testing/gtest",
       "//testing/perf",
       "//third_party/libyuv",
@@ -346,6 +363,7 @@ if (use_v4l2_codec && enable_vulkan) {
       ":chromeos",
       ":perf_test_utils",
       "//base/test:test_support",
+      "//gpu:test_support",
       "//gpu/command_buffer/service:gles2",
       "//media:test_support",
       "//media/gpu:video_frame_mapper_common",

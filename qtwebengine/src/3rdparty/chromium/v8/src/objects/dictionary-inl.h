@@ -5,11 +5,13 @@
 #ifndef V8_OBJECTS_DICTIONARY_INL_H_
 #define V8_OBJECTS_DICTIONARY_INL_H_
 
+#include "src/objects/dictionary.h"
+// Include the non-inl header before the rest of the headers.
+
 #include <optional>
 
 #include "src/execution/isolate-utils-inl.h"
 #include "src/numbers/hash-seed-inl.h"
-#include "src/objects/dictionary.h"
 #include "src/objects/hash-table-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/oddball.h"
@@ -166,7 +168,7 @@ void Dictionary<Derived, Shape>::SetEntry(InternalIndex entry,
                                           Tagged<Object> value,
                                           PropertyDetails details) {
   DCHECK(Dictionary::kEntrySize == 2 || Dictionary::kEntrySize == 3);
-  DCHECK(!IsName(key) || details.dictionary_index() > 0);
+  DCHECK(!IsName(key) || details.dictionary_index() > 0 || !Shape::kHasDetails);
   int index = DerivedHashTable::EntryToIndex(entry);
   DisallowGarbageCollection no_gc;
   WriteBarrierMode mode = this->GetWriteBarrierMode(no_gc);
@@ -286,7 +288,7 @@ bool NumberDictionaryBaseShape::IsMatch(uint32_t key, Tagged<Object> other) {
 }
 
 uint32_t NumberDictionaryBaseShape::Hash(ReadOnlyRoots roots, uint32_t key) {
-  return ComputeSeededHash(key, HashSeed(roots));
+  return ComputeSeededHash(key, HashSeed(roots).seed());
 }
 
 uint32_t NumberDictionaryBaseShape::HashForObject(ReadOnlyRoots roots,
@@ -294,7 +296,7 @@ uint32_t NumberDictionaryBaseShape::HashForObject(ReadOnlyRoots roots,
   DCHECK(IsNumber(other));
   return ComputeSeededHash(
       static_cast<uint32_t>(Object::NumberValue(Cast<Number>(other))),
-      HashSeed(roots));
+      HashSeed(roots).seed());
 }
 
 template <AllocationType allocation>
@@ -311,6 +313,10 @@ DirectHandle<Object> NumberDictionaryBaseShape::AsHandle(LocalIsolate* isolate,
 
 DirectHandle<Map> NumberDictionary::GetMap(RootsTable& roots) {
   return roots.number_dictionary_map();
+}
+
+DirectHandle<Map> SimpleNameDictionary::GetMap(RootsTable& roots) {
+  return roots.simple_name_dictionary_map();
 }
 
 DirectHandle<Map> SimpleNumberDictionary::GetMap(RootsTable& roots) {

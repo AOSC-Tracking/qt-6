@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlthread_p.h"
 
@@ -15,6 +16,12 @@
 QT_REQUIRE_CONFIG(qml_type_loader_thread);
 
 QT_BEGIN_NAMESPACE
+
+/*!
+    \class QQmlThread
+    \inmodule QtQml
+    \internal
+*/
 
 class QQmlThreadPrivate : public QThread
 {
@@ -224,14 +231,22 @@ bool QQmlThread::isThisThread() const
     return d->isCurrentThread();
 }
 
+bool QQmlThread::isParentThread() const
+{
+    // The thread() of the QQmlThread is its parent thread.
+    return d->thread()->isCurrentThread();
+}
+
 QThread *QQmlThread::thread() const
 {
     return const_cast<QThread *>(static_cast<const QThread *>(d));
 }
 
 /*!
- * And object living in the QML thread, in case you want to parent other objects to it.
- */
+    \internal
+    An object living in the QML thread, in case you want to parent
+    other objects to it.
+*/
 QObject *QQmlThread::threadObject() const
 {
     return &d->m_threadObject;

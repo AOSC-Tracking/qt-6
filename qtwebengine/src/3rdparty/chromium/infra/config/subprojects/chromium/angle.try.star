@@ -2,10 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/builders.star", "cpu", "os", "siso")
-load("//lib/builder_config.star", "builder_config")
-load("//lib/gn_args.star", "gn_args")
-load("//lib/try.star", "try_")
+load("@chromium-luci//builder_config.star", "builder_config")
+load("@chromium-luci//builders.star", "cpu", "os")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//try.star", "try_")
+load("//lib/siso.star", "siso")
 load("//lib/xcode.star", "xcode")
 
 try_.defaults.set(
@@ -55,5 +56,6 @@ angle_ios_builder(
             "no_symbols",
         ],
     ),
-    pool = "luci.chromium.gpu.mac.mini.intel.try",
+    pool = "luci.chromium.gpu.try",
+    max_concurrent_builds = 1,
 )

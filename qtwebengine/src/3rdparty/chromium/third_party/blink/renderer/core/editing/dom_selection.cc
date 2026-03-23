@@ -175,22 +175,6 @@ bool DOMSelection::isCollapsed() const {
   DomWindow()->document()->UpdateStyleAndLayout(
       DocumentUpdateReason::kSelection);
 
-  if (!RuntimeEnabledFeatures::SelectionIsCollapsedShadowDOMSupportEnabled()) {
-    Node* node =
-        Selection().ComputeVisibleSelectionInDOMTree().Anchor().AnchorNode();
-    if (node && node->IsInShadowTree() &&
-        DomWindow()->document()->AncestorInThisScope(node)) {
-      // Count if range is not collapsed, but we are returning true because
-      // feature is disabled and anchor node is in shadow tree.
-      TemporaryRange temp_range(this, PrimaryRangeOrNull());
-      if (temp_range.GetRange() && !temp_range.GetRange()->collapsed()) {
-        UseCounter::Count(DomWindow(),
-                          WebFeature::kSelectionIsCollapsedBehaviorChange);
-      }
-      return true;
-    }
-  }
-
   TemporaryRange temp_range(this, PrimaryRangeOrNull());
   if (temp_range.GetRange()) {
     return temp_range.GetRange()->collapsed();
@@ -531,7 +515,13 @@ void DOMSelection::extend(Node* node,
 
   // 3. Let oldAnchor and oldFocus be the context object's anchor and focus, and
   // let newFocus be the boundary point (node, offset).
-  const Position old_anchor(anchorNode(), anchorOffset());
+  Position old_anchor(anchorNode(), anchorOffset());
+  if (RuntimeEnabledFeatures::
+          UseSelectionInDOMTreeAnchorInExtendSelectionEnabled()) {
+    old_anchor =
+        Selection().GetSelectionInDOMTree().Anchor().ToOffsetInAnchor();
+  }
+
   DCHECK(!old_anchor.IsNull());
   const Position new_focus(node, offset);
 
@@ -771,19 +761,26 @@ void DOMSelection::deleteFromDocument() {
   DomWindow()->document()->UpdateStyleAndLayout(
       DocumentUpdateReason::kSelection);
 
-  // The following code is necessary for
-  // editing/selection/deleteFromDocument-crash.html, which assumes
-  // deleteFromDocument() for text selection in a TEXTAREA deletes the TEXTAREA
-  // value.
-
-  if (Selection().ComputeVisibleSelectionInDOMTree().IsNone())
-    return;
+  if (!RuntimeEnabledFeatures::
+          SelectionDeleteFromDocumentUaShadowFixEnabled()) {
+    // The following code is necessary for
+    // editing/selection/deleteFromDocument-crash.html, which assumes
+    // deleteFromDocument() for text selection in a TEXTAREA deletes the
+    // TEXTAREA value.
+    if (Selection().ComputeVisibleSelectionInDOMTree().IsNone()) {
+      return;
+    }
+  }
 
   Range* selected_range = CreateRange(Selection()
                                           .ComputeVisibleSelectionInDOMTree()
                                           .ToNormalizedEphemeralRange());
   if (!selected_range)
     return;
+  if (RuntimeEnabledFeatures::SelectionDeleteFromDocumentUaShadowFixEnabled() &&
+      selected_range->startContainer()->IsInUserAgentShadowRoot()) {
+    return;
+  }
 
   // |selectedRange| may point nodes in a different root.
   selected_range->deleteContents(ASSERT_NO_EXCEPTION);

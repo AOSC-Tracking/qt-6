@@ -3,14 +3,15 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#pragma once
+#ifndef XNNPACK_SRC_XNNPACK_REFERENCE_CONFIG_H_
+#define XNNPACK_SRC_XNNPACK_REFERENCE_CONFIG_H_
 
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "xnnpack.h"
-#include "xnnpack/common.h"
-#include "xnnpack/config-types.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/config-types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,3 +28,5 @@ xnn_init_binary_reference_config(enum xnn_binary_operator op,
 #ifdef __cplusplus
 }  // extern "C"
 #endif
+
+#endif  // XNNPACK_SRC_XNNPACK_REFERENCE_CONFIG_H_

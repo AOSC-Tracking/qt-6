@@ -5,7 +5,6 @@
 assert(is_win || is_mac || is_linux || is_chromeos || is_android)
 
 import("//build/config/chromeos/ui_mode.gni")
-import("//extensions/buildflags/buildflags.gni")
 
 source_set("feedback_enum") {
   sources = [ "public/feedback_source.h" ]
@@ -29,6 +28,7 @@ source_set("feedback") {
       "//base",
       "//chrome/browser/feedback/android:jni_headers",
       "//chrome/browser/profiles:profile",
+      "//chrome/browser/signin",
       "//content/public/browser",
       "//google_apis",
       "//services/network/public/cpp",
@@ -52,7 +52,6 @@ source_set("feedback") {
       "//chrome/browser/feedback:feedback_enum",
       "//components/feedback",
       "//components/feedback/content:factory",
-      "//components/invalidation/public",
       "//components/sessions:session_id",
       "//components/signin/public/identity_manager",
     ]
@@ -101,8 +100,12 @@ source_set("feedback_impl") {
       "//chrome/browser:browser_process",
       "//chrome/browser/crash_upload_list",
       "//chrome/browser/devtools",
+      "//chrome/browser/extensions",
+      "//chrome/browser/first_party_sets",
       "//chrome/browser/google",
+      "//chrome/browser/performance_manager/public/user_tuning",
       "//chrome/browser/profiles:profile",
+      "//chrome/browser/signin",
       "//chrome/browser/sync",
       "//chrome/browser/sync:factories",
       "//chrome/browser/ui:ui_features",
@@ -113,17 +116,12 @@ source_set("feedback_impl") {
       "//components/performance_manager",
       "//components/supervised_user/core/browser",
       "//content/public/browser",
+      "//extensions/browser",
+      "//extensions/browser/api/feedback_private",
+      "//extensions/browser/api/power",
       "//net",
       "//services/cert_verifier:lib",
     ]
-    if (enable_extensions) {
-      deps += [
-        "//chrome/browser/extensions",
-        "//extensions/browser",
-        "//extensions/browser/api/feedback_private",
-        "//extensions/browser/api/power",
-      ]
-    }
   }
   if (is_chromeos) {
     deps += [
@@ -152,5 +150,12 @@ source_set("feedback_impl") {
   }
   if (is_win || is_mac) {
     deps += [ "//chrome/browser/updater:browser_updater_client" ]
+  }
+  if (is_linux) {
+    sources += [
+      "system_logs/log_sources/ozone_platform_state_dump_source.cc",
+      "system_logs/log_sources/ozone_platform_state_dump_source.h",
+    ]
+    deps += [ "//ui/ozone" ]
   }
 }

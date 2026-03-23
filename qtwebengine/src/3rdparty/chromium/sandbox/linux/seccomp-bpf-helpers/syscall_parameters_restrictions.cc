@@ -22,10 +22,13 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "base/allocator/partition_alloc_features.h"
+#include "base/android/background_thread_pool_field_trial.h"
+#include "base/feature_list.h"
+#include "base/features.h"
 #include "base/notreached.h"
 #include "base/synchronization/synchronization_buildflags.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "sandbox/linux/bpf_dsl/bpf_dsl.h"
 #include "sandbox/linux/bpf_dsl/seccomp_macros.h"
 #include "sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h"
@@ -40,8 +43,7 @@
 #define MAP_DROPPABLE	0x08    // Zero memory under memory pressure.
 #endif
 
-#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
-    !defined(__arm__) && !defined(__aarch64__) &&             \
+#if BUILDFLAG(IS_LINUX) && !defined(__arm__) && !defined(__aarch64__) && \
     !defined(PTRACE_GET_THREAD_AREA)
 // Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
 // the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
@@ -112,7 +114,7 @@ inline bool IsArchitectureMips() {
 // to allow those futex(2) calls to fail with EINVAL, instead of crashing the
 // process. See crbug.com/598471.
 inline bool IsBuggyGlibcSemPost() {
-#if defined(LIBC_GLIBC) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(LIBC_GLIBC) && !BUILDFLAG(IS_CHROMEOS)
   return true;
 #else
   return false;
@@ -249,6 +251,13 @@ ResultExpr RestrictMmapFlags() {
   return If((flags & ~kAllowedMask) == 0, Allow()).Else(CrashSIGSYS());
 }
 
+SANDBOX_EXPORT ResultExpr RestrictMremapFlagsForODML() {
+  // No flags are allowed.
+  const uint64_t kAllowedMask = 0;
+  const Arg<int> flags(3);
+  return If((flags & ~kAllowedMask) == 0, Allow()).Else(CrashSIGSYS());
+}
+
 ResultExpr RestrictMprotectFlags() {
   // The flags you see are actually the allowed ones, and the variable is a
   // "denied" mask because of the negation operator.
@@ -346,17 +355,26 @@ ResultExpr RestrictKillTarget(pid_t target_pid, int sysno) {
 
 ResultExpr RestrictFutex() {
   const uint64_t kAllowedFutexFlags = FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME;
+  ResultExpr error = IsBuggyGlibcSemPost() ? Error(EINVAL) : CrashSIGSYSFutex();
   const Arg<int> op(1);
   return Switch(op & ~kAllowedFutexFlags)
       .Cases({FUTEX_WAIT, FUTEX_WAKE, FUTEX_REQUEUE, FUTEX_CMP_REQUEUE,
-#if BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE)
-              // Enable priority-inheritance operations.
-              FUTEX_LOCK_PI, FUTEX_UNLOCK_PI, FUTEX_TRYLOCK_PI,
-              FUTEX_WAIT_REQUEUE_PI, FUTEX_CMP_REQUEUE_PI,
-#endif  // BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE)
               FUTEX_WAKE_OP, FUTEX_WAIT_BITSET, FUTEX_WAKE_BITSET},
              Allow())
-      .Default(IsBuggyGlibcSemPost() ? Error(EINVAL) : CrashSIGSYSFutex());
+#if BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE) && BUILDFLAG(IS_ANDROID)
+      // Priority-inheritance futex operations are enabled only on Android
+      // kernels 6.1+. Bionic uses the PI variants of the futex operations
+      // (FUTEX_LOCK_PI2, FUTEX_UNLOCK_PI) to implement priority inheriting
+      // mutexes.
+      .Cases({FUTEX_LOCK_PI, FUTEX_UNLOCK_PI, FUTEX_TRYLOCK_PI,
+              FUTEX_WAIT_REQUEUE_PI, FUTEX_CMP_REQUEUE_PI, FUTEX_LOCK_PI2},
+             base::android::BackgroundThreadPoolFieldTrial::
+                     ShouldUsePriorityInheritanceLocks()
+                 ? Allow()
+                 : error)
+#endif  // BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE)  &&
+        // BUILDFLAG(IS_ANDROID)
+      .Default(error);
 }
 
 ResultExpr RestrictGetSetpriority(pid_t target_pid) {
@@ -531,6 +549,20 @@ SANDBOX_EXPORT bpf_dsl::ResultExpr RestrictSockSendFlags(int sysno) {
   // vulnerabilities, see crbug.com/428177287.
   const Arg<int> flags(argIndex);
   return If((flags & ~(MSG_DONTWAIT | MSG_NOSIGNAL)) == 0, Allow())
+      .Else(CrashSIGSYS());
+}
+
+SANDBOX_EXPORT bpf_dsl::ResultExpr RestrictMemfdCreate() {
+  const Arg<int> flags(1);
+  return If((flags & ~(MFD_CLOEXEC | MFD_ALLOW_SEALING)) == 0, Allow())
+      // ChromeOS uses ~0 as the flags to check if memfd_create exists (will
+      // return -EINVAL).
+      // https://source.chromium.org/chromium/chromium/src/+/main:mojo/core/channel_linux.cc;drc=c4987dbe36be309f8db36cba174310cb8a23e989;l=918
+      // Instead of doing something fancy to avoid this, just allow the syscall.
+      // ~0 will always be invalid; even if every flag bit gets a usage in the
+      // future, `flags` still encodes the huge page size which must be a power
+      // of 2, which it will not be if every bit is set.
+      .ElseIf(flags == ~0, Allow())
       .Else(CrashSIGSYS());
 }
 

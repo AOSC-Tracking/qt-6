@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-gemm/c8-wasmdot.c.in
 //   Generator: tools/xngen
@@ -11,8 +12,8 @@
 
 #include <wasm_simd128.h>
 
-#include "xnnpack/gemm.h"
-#include "xnnpack/math.h"
+#include "src/xnnpack/gemm.h"
+#include "src/xnnpack/math.h"
 
 
 void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_3x8c8__wasmsdot(
@@ -25,7 +26,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_3x8c8__wasmsdot(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qs8_qc8w_conv_minmax_params* restrict params) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 3);

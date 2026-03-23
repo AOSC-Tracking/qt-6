@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef AUTHENTICATOR_REQUEST_CLIENT_DELEGATE_QT_H
 #define AUTHENTICATOR_REQUEST_CLIENT_DELEGATE_QT_H
@@ -32,18 +33,21 @@ public:
     operator=(const AuthenticatorRequestClientDelegateQt &) = delete;
     ~AuthenticatorRequestClientDelegateQt();
 
-    // content::AuthenticatorRequestClientDelegate ovverrides
+    // content::AuthenticatorRequestClientDelegate overrides
     void SetRelyingPartyId(const std::string &rp_id) override;
     bool DoesBlockRequestOnFailure(InterestingFailureReason reason) override;
     void RegisterActionCallbacks(
-        base::OnceClosure cancel_callback,
-        base::RepeatingClosure start_over_callback,
-        AccountPreselectedCallback account_preselected_callback,
-        device::FidoRequestHandlerBase::RequestCallback request_callback,
-        base::RepeatingClosure bluetooth_adapter_power_on_callback,
-        base::RepeatingCallback<
-            void(device::FidoRequestHandlerBase::BlePermissionCallback)>
-            request_ble_permission_callback) override;
+            base::OnceClosure cancel_callback,
+            base::OnceClosure immediate_not_found_callback,
+            base::RepeatingClosure start_over_callback,
+            AccountPreselectedCallback account_preselected_callback,
+            PasswordSelectedCallback password_selected_callback,
+            device::FidoRequestHandlerBase::RequestCallback request_callback,
+            base::OnceClosure cancel_ui_timeout_callback,
+            base::RepeatingClosure bluetooth_adapter_power_on_callback,
+            base::RepeatingCallback<
+                    void(device::FidoRequestHandlerBase::BlePermissionCallback)>
+                    request_ble_permission_callback) override;
     void SelectAccount(
             std::vector<device::AuthenticatorGetAssertionResponse> responses,
             base::OnceCallback<void(device::AuthenticatorGetAssertionResponse)> callback) override;

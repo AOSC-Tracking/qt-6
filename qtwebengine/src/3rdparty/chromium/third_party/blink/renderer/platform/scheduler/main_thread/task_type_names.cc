@@ -10,7 +10,7 @@ namespace blink {
 namespace scheduler {
 
 // static
-const char* TaskTypeNames::TaskTypeToString(TaskType task_type) {
+perfetto::StaticString TaskTypeNames::TaskTypeToString(TaskType task_type) {
   // These names are used in finch trials and should not be changed.
   switch (task_type) {
     case TaskType::kDeprecatedNone:
@@ -51,6 +51,8 @@ const char* TaskTypeNames::TaskTypeToString(TaskType task_type) {
       return "WebSocket";
     case TaskType::kPostedMessage:
       return "PostedMessage";
+    case TaskType::kBackForwardCachePostedMessage:
+      return "BackForwardCachePostedMessage";
     case TaskType::kUnshippedPortMessage:
       return "UnshippedPortMessage";
     case TaskType::kFileReading:

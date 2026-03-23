@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickcontext2dcommandbuffer_p.h"
 #include "qquickcanvasitem_p.h"
@@ -328,7 +329,7 @@ void QQuickContext2DCommandBuffer::replay(QPainter* p, QQuickContext2D::State& s
         case QQuickContext2D::LineDash:
         {
             const qreal count = takeReal();
-            QVector<qreal> pattern;
+            QList<qreal> pattern;
             pattern.reserve(count);
             for (uint i = 0; i < count; i++) {
                 pattern.append(takeReal());

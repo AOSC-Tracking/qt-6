@@ -12,6 +12,7 @@
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/color/color_id.h"
 #include "ui/color/color_provider.h"
+#include "ui/color/color_variant.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
@@ -27,7 +28,7 @@ Link::Link(const std::u16string& title, int text_context, int text_style)
     : Label(title, text_context, text_style) {
   RecalculateFont();
 
-  enabled_changed_subscription_ = AddEnabledChangedCallback(
+  enabled_changed_subscription_ = AddEnabledInViewsSubtreeChangedCallback(
       base::BindRepeating(&Link::RecalculateFont, base::Unretained(this)));
 
   GetViewAccessibility().SetRole(ax::mojom::Role::kLink);
@@ -48,11 +49,11 @@ SkColor Link::GetColor() const {
   // TODO(crbug.com/40268779): Use TypographyProvider::GetColorId().
   const ui::ColorProvider* color_provider = GetColorProvider();
   DCHECK(color_provider);
-  if (!GetEnabled()) {
+  if (!GetEnabledInViewsSubtree()) {
     return color_provider->GetColor(ui::kColorLinkForegroundDisabled);
   }
 
-  if (requested_enabled_color_.has_value()) {
+  if (requested_enabled_color_) {
     return requested_enabled_color_.value();
   }
 
@@ -80,7 +81,7 @@ bool Link::GetForceUnderline() const {
 }
 
 ui::Cursor Link::GetCursor(const ui::MouseEvent& event) {
-  if (!GetEnabled()) {
+  if (!GetEnabledInViewsSubtree()) {
     return ui::Cursor();
   }
   return ui::mojom::CursorType::kHand;
@@ -188,7 +189,7 @@ void Link::SetFontList(const gfx::FontList& font_list) {
   RecalculateFont();
 }
 
-void Link::SetText(const std::u16string& text) {
+void Link::SetText(std::u16string_view text) {
   Label::SetText(text);
   // Prevent invisible links from being announced by screen reader.
   GetViewAccessibility().SetIsIgnored(text.empty());
@@ -200,8 +201,12 @@ void Link::OnThemeChanged() {
   Label::SetEnabledColor(GetColor());
 }
 
-void Link::SetEnabledColor(SkColor color) {
-  requested_enabled_color_ = color;
+void Link::SetEnabledColor(ui::ColorVariant color) {
+  if (color.IsPhysical()) {
+    requested_enabled_color_ =
+        color.ResolveToSkColor(/*color_provider=*/nullptr);
+  }
+
   if (GetWidget()) {
     Label::SetEnabledColor(GetColor());
   }
@@ -230,7 +235,8 @@ void Link::OnClick(const ui::Event& event) {
 void Link::RecalculateFont() {
   const int style = font_list().GetFontStyle();
   const int intended_style =
-      ((GetEnabled() && (HasFocus() || IsMouseHovered())) || force_underline_)
+      ((GetEnabledInViewsSubtree() && (HasFocus() || IsMouseHovered())) ||
+       force_underline_)
           ? (style | gfx::Font::UNDERLINE)
           : (style & ~gfx::Font::UNDERLINE);
 

@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/core/workers/dedicated_worker_messaging_proxy.h"
 
 #include <memory>
-#include "base/feature_list.h"
 #include "base/trace_event/typed_macros.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "third_party/blink/public/common/features.h"
@@ -81,8 +80,6 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
     const KURL& script_url,
     const FetchClientSettingsObjectSnapshot& outside_settings_object,
     const v8_inspector::V8StackTraceId& stack_id,
-    const String& source_code,
-    RejectCoepUnsafeNone reject_coep_unsafe_none,
     const blink::DedicatedWorkerToken& token,
     mojo::PendingRemote<mojom::blink::DedicatedWorkerHost>
         dedicated_worker_host,
@@ -100,33 +97,35 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
   pending_dedicated_worker_host_ = std::move(dedicated_worker_host);
   pending_back_forward_cache_controller_host_ =
       std::move(back_forward_cache_controller_host);
-  InitializeWorkerThread(
+  bool initialized = InitializeWorkerThread(
       std::move(creation_params),
       CreateBackingThreadStartupData(GetExecutionContext()->GetIsolate()),
       token);
+  if (base::FeatureList::IsEnabled(
+          blink::features::kWorkerThreadRespectTermRequest) &&
+      !initialized) {
+    virtual_time_pauser_.UnpauseVirtualTime();
+    // if the current thread (i.e. parent thread) has been asked to terminate,
+    // we do not start the child thread.
+    return;
+  }
 
   // Step 13: "Obtain script by switching on the value of options's type
   // member:"
-  if (options->type() == script_type_names::kClassic) {
+  if (options->type() == V8WorkerType::Enum::kClassic) {
     // "classic: Fetch a classic worker script given url, outside settings,
     // destination, and inside settings."
     UseCounter::Count(GetExecutionContext(),
                       WebFeature::kClassicDedicatedWorker);
-    if (base::FeatureList::IsEnabled(features::kPlzDedicatedWorker)) {
-      auto* resource_timing_notifier =
-          WorkerResourceTimingNotifierImpl::CreateForOutsideResourceFetcher(
-              *GetExecutionContext());
-      // TODO(crbug.com/1177199): pass a proper policy container
-      GetWorkerThread()->FetchAndRunClassicScript(
-          script_url, std::move(worker_main_script_load_params),
-          /*policy_container=*/nullptr, outside_settings_object.CopyData(),
-          resource_timing_notifier, stack_id);
-    } else {
-      // Legacy code path (to be deprecated, see https://crbug.com/835717):
-      GetWorkerThread()->EvaluateClassicScript(
-          script_url, source_code, nullptr /* cached_meta_data */, stack_id);
-    }
-  } else if (options->type() == script_type_names::kModule) {
+    auto* resource_timing_notifier =
+        WorkerResourceTimingNotifierImpl::CreateForOutsideResourceFetcher(
+            *GetExecutionContext());
+    // TODO(crbug.com/1177199): pass a proper policy container
+    GetWorkerThread()->FetchAndRunClassicScript(
+        script_url, std::move(worker_main_script_load_params),
+        /*policy_container=*/nullptr, outside_settings_object.CopyData(),
+        resource_timing_notifier, stack_id);
+  } else if (options->type() == V8WorkerType::Enum::kModule) {
     // "module: Fetch a module worker script graph given url, outside settings,
     // destination, the value of the credentials member of options, and inside
     // settings."
@@ -143,7 +142,7 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
     GetWorkerThread()->FetchAndRunModuleScript(
         script_url, std::move(worker_main_script_load_params),
         /*policy_container=*/nullptr, outside_settings_object.CopyData(),
-        resource_timing_notifier, credentials_mode, reject_coep_unsafe_none);
+        resource_timing_notifier, credentials_mode);
   } else {
     NOTREACHED();
   }
@@ -278,7 +277,7 @@ void DedicatedWorkerMessagingProxy::PostMessageToWorkerObject(
 
   ThreadDebugger* debugger =
       ThreadDebugger::From(GetExecutionContext()->GetIsolate());
-  MessagePortArray* ports = MessagePort::EntanglePorts(
+  GCedMessagePortArray* ports = MessagePort::EntanglePorts(
       *GetExecutionContext(), std::move(message.ports));
   debugger->ExternalAsyncTaskStarted(message.sender_stack_trace_id);
   if (message.message->CanDeserializeIn(GetExecutionContext())) {
@@ -303,11 +302,13 @@ void DedicatedWorkerMessagingProxy::PostMessageToWorkerObject(
 
 void DedicatedWorkerMessagingProxy::DispatchErrorEvent(
     const String& error_message,
-    std::unique_ptr<SourceLocation> location,
+    const CrossThreadSourceLocation& cross_location,
     int exception_id) {
   DCHECK(IsParentContextThread());
   if (!worker_object_)
     return;
+
+  SourceLocation* location = cross_location.CreateSourceLocation();
 
   // We don't bother checking the AskedToTerminate() flag for dispatching the
   // event on the owner context, because exceptions should *always* be reported
@@ -317,8 +318,7 @@ void DedicatedWorkerMessagingProxy::DispatchErrorEvent(
   // the original Document, even if some of the workers along this chain have
   // been terminated and garbage collected."
   // https://html.spec.whatwg.org/C/#runtime-script-errors-2
-  ErrorEvent* event =
-      ErrorEvent::Create(error_message, location->Clone(), nullptr);
+  ErrorEvent* event = ErrorEvent::Create(error_message, location, nullptr);
   if (worker_object_->DispatchEvent(*event) !=
       DispatchEventResult::kNotCanceled)
     return;

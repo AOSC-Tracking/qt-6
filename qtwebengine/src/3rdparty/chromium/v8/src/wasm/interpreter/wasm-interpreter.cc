@@ -16,6 +16,7 @@
 #include "src/heap/heap-write-barrier.h"
 #include "src/objects/object-macros.h"
 #include "src/snapshot/embedded/embedded-data-inl.h"
+#include "src/wasm/canonical-types.h"
 #include "src/wasm/decoder.h"
 #include "src/wasm/function-body-decoder-impl.h"
 #include "src/wasm/interpreter/wasm-interpreter-inl.h"
@@ -157,7 +158,7 @@ WasmInterpreterThread* WasmInterpreterThreadMap::GetCurrentInterpreterThread(
     Isolate* isolate) {
   const int current_thread_id = ThreadId::Current().ToInteger();
   {
-    base::SpinningMutexGuard guard(&mutex_);
+    base::MutexGuard guard(&mutex_);
 
     auto it = map_.find(current_thread_id);
     if (it == map_.end()) {
@@ -170,7 +171,7 @@ WasmInterpreterThread* WasmInterpreterThreadMap::GetCurrentInterpreterThread(
 }
 
 void WasmInterpreterThreadMap::NotifyIsolateDisposal(Isolate* isolate) {
-  base::SpinningMutexGuard guard(&mutex_);
+  base::MutexGuard guard(&mutex_);
 
   auto it = map_.begin();
   while (it != map_.end()) {
@@ -186,21 +187,21 @@ void WasmInterpreterThreadMap::NotifyIsolateDisposal(Isolate* isolate) {
 
 void FrameState::SetCaughtException(Isolate* isolate,
                                     uint32_t catch_block_index,
-                                    Handle<Object> exception) {
+                                    DirectHandle<Object> exception) {
   if (caught_exceptions_.is_null()) {
     DCHECK_NOT_NULL(current_function_);
     uint32_t blocks_count = current_function_->GetBlocksCount();
-    Handle<FixedArray> caught_exceptions =
+    DirectHandle<FixedArray> caught_exceptions =
         isolate->factory()->NewFixedArrayWithHoles(blocks_count);
     caught_exceptions_ = isolate->global_handles()->Create(*caught_exceptions);
   }
   caught_exceptions_->set(catch_block_index, *exception);
 }
 
-Handle<Object> FrameState::GetCaughtException(
+DirectHandle<Object> FrameState::GetCaughtException(
     Isolate* isolate, uint32_t catch_block_index) const {
-  Handle<Object> exception =
-      handle(caught_exceptions_->get(catch_block_index), isolate);
+  DirectHandle<Object> exception(caught_exceptions_->get(catch_block_index),
+                                 isolate);
   DCHECK(!IsTheHole(*exception));
   return exception;
 }
@@ -352,8 +353,8 @@ void NopFinalizer(const v8::WeakCallbackInfo<void>& data) {
   GlobalHandles::Destroy(global_handle_location);
 }
 
-Handle<WasmInstanceObject> MakeWeak(
-    Isolate* isolate, Handle<WasmInstanceObject> instance_object) {
+IndirectHandle<WasmInstanceObject> MakeWeak(
+    Isolate* isolate, DirectHandle<WasmInstanceObject> instance_object) {
   Handle<WasmInstanceObject> weak_instance =
       isolate->global_handles()->Create<WasmInstanceObject>(*instance_object);
   Address* global_handle_location = weak_instance.location();
@@ -448,7 +449,7 @@ WasmInterpreterThread::WasmInterpreterThread(Isolate* isolate)
       current_ref_stack_size_(0),
       execution_timer_(isolate, true) {
   PageAllocator* page_allocator = GetPlatformPageAllocator();
-  stack_mem_ = AllocatePages(page_allocator, nullptr, kMaxStackSize,
+  stack_mem_ = AllocatePages(page_allocator, kMaxStackSize,
                              page_allocator->AllocatePageSize(),
                              PageAllocator::kNoAccess);
   if (!stack_mem_ ||
@@ -473,7 +474,7 @@ void WasmInterpreterThread::EnsureRefStackSpace(size_t new_size) {
                       std::max(2 * current_ref_stack_size_, requested_size));
   int grow_by = static_cast<int>(new_size - current_ref_stack_size_);
   HandleScope handle_scope(isolate_);  // Avoid leaking handles.
-  Handle<FixedArray> new_ref_stack =
+  DirectHandle<FixedArray> new_ref_stack =
       isolate_->factory()->CopyFixedArrayAndGrow(reference_stack_, grow_by);
   new_ref_stack->FillWithHoles(static_cast<int>(current_ref_stack_size_),
                                static_cast<int>(new_size));
@@ -491,8 +492,7 @@ void WasmInterpreterThread::RaiseException(Isolate* isolate,
                                            MessageTemplate message) {
   DCHECK_EQ(WasmInterpreterThread::TRAPPED, state_);
   if (!isolate->has_exception()) {
-    ClearThreadInWasmScope wasm_flag(isolate);
-    Handle<JSObject> error_obj =
+    DirectHandle<JSObject> error_obj =
         isolate->factory()->NewWasmRuntimeError(message);
     JSObject::AddProperty(isolate, error_obj,
                           isolate->factory()->wasm_uncatchable_symbol(),
@@ -577,8 +577,6 @@ INSTRUCTION_HANDLER_FUNC TrapMemOutOfBounds(
 void InitTrapHandlersOnce(Isolate* isolate) {
   CHECK_LE(kInstructionCount, kInstructionTableSize);
 
-  ClearThreadInWasmScope wasm_flag(isolate);
-
   // Overwrites the instruction handlers that access memory and can cause an
   // out-of-bounds trap with builtin versions that don't have explicit bounds
   // check but rely on a trap handler to intercept the access violation and
@@ -630,9 +628,10 @@ void InitInstructionTableOnce(Isolate* isolate) {
 }
 #endif  // !V8_DRUMBRAKE_BOUNDS_CHECKS
 
-WasmInterpreter::WasmInterpreter(Isolate* isolate, const WasmModule* module,
-                                 const ModuleWireBytes& wire_bytes,
-                                 Handle<WasmInstanceObject> instance_object)
+WasmInterpreter::WasmInterpreter(
+    Isolate* isolate, const WasmModule* module,
+    const ModuleWireBytes& wire_bytes,
+    DirectHandle<WasmInstanceObject> instance_object)
     : zone_(isolate->allocator(), ZONE_NAME),
       instance_object_(MakeWeak(isolate, instance_object)),
       module_bytes_(wire_bytes.start(), wire_bytes.end(), &zone_),
@@ -4635,9 +4634,9 @@ class Handlers : public HandlersBase {
     Simd128 s = pop<Simd128>(sp, code, wasm_runtime);                          \
     stype ss = s.to_##name();                                                  \
     auto res = ss.val[LANE(lane, ss)];                                         \
-    DCHECK(std::is_signed<decltype(res)>::value);                              \
-    if (std::is_unsigned<extended_type>::value) {                              \
-      using unsigned_type = std::make_unsigned<decltype(res)>::type;           \
+    DCHECK(std::is_signed_v<decltype(res)>);                                   \
+    if (std::is_unsigned_v<extended_type>) {                                   \
+      using unsigned_type = std::make_unsigned_t<decltype(res)>;               \
       push(sp, code, wasm_runtime,                                             \
            static_cast<extended_type>(static_cast<unsigned_type>(res)));       \
     } else {                                                                   \
@@ -5360,38 +5359,38 @@ class Handlers : public HandlersBase {
       s2s_DoSimdLoadExtend<int16x8, int16_t, int8_t, uint32_t,
                            memory_offset32_t>;
   static auto constexpr s2s_SimdS128Load8x8S_Idx64 =
-      s2s_DoSimdLoadExtend<int16x8, int16_t, int8_t, uint32_t,
-                           memory_offset32_t>;
+      s2s_DoSimdLoadExtend<int16x8, int16_t, int8_t, uint64_t,
+                           memory_offset64_t>;
   static auto constexpr s2s_SimdS128Load8x8U =
       s2s_DoSimdLoadExtend<int16x8, uint16_t, uint8_t, uint32_t,
                            memory_offset32_t>;
   static auto constexpr s2s_SimdS128Load8x8U_Idx64 =
-      s2s_DoSimdLoadExtend<int16x8, uint16_t, uint8_t, uint32_t,
-                           memory_offset32_t>;
+      s2s_DoSimdLoadExtend<int16x8, uint16_t, uint8_t, uint64_t,
+                           memory_offset64_t>;
   static auto constexpr s2s_SimdS128Load16x4S =
       s2s_DoSimdLoadExtend<int32x4, int32_t, int16_t, uint32_t,
                            memory_offset32_t>;
   static auto constexpr s2s_SimdS128Load16x4S_Idx64 =
-      s2s_DoSimdLoadExtend<int32x4, int32_t, int16_t, uint32_t,
-                           memory_offset32_t>;
+      s2s_DoSimdLoadExtend<int32x4, int32_t, int16_t, uint64_t,
+                           memory_offset64_t>;
   static auto constexpr s2s_SimdS128Load16x4U =
       s2s_DoSimdLoadExtend<int32x4, uint32_t, uint16_t, uint32_t,
                            memory_offset32_t>;
   static auto constexpr s2s_SimdS128Load16x4U_Idx64 =
-      s2s_DoSimdLoadExtend<int32x4, uint32_t, uint16_t, uint32_t,
-                           memory_offset32_t>;
+      s2s_DoSimdLoadExtend<int32x4, uint32_t, uint16_t, uint64_t,
+                           memory_offset64_t>;
   static auto constexpr s2s_SimdS128Load32x2S =
       s2s_DoSimdLoadExtend<int64x2, int64_t, int32_t, uint32_t,
                            memory_offset32_t>;
   static auto constexpr s2s_SimdS128Load32x2S_Idx64 =
-      s2s_DoSimdLoadExtend<int64x2, int64_t, int32_t, uint32_t,
-                           memory_offset32_t>;
+      s2s_DoSimdLoadExtend<int64x2, int64_t, int32_t, uint64_t,
+                           memory_offset64_t>;
   static auto constexpr s2s_SimdS128Load32x2U =
       s2s_DoSimdLoadExtend<int64x2, uint64_t, uint32_t, uint32_t,
                            memory_offset32_t>;
   static auto constexpr s2s_SimdS128Load32x2U_Idx64 =
-      s2s_DoSimdLoadExtend<int64x2, uint64_t, uint32_t, uint32_t,
-                           memory_offset32_t>;
+      s2s_DoSimdLoadExtend<int64x2, uint64_t, uint32_t, uint64_t,
+                           memory_offset64_t>;
 
   template <typename s_type, typename load_type, typename MemIdx,
             typename MemOffsetT>
@@ -5561,15 +5560,15 @@ class Handlers : public HandlersBase {
   INSTRUCTION_HANDLER_FUNC s2s_Throw(const uint8_t* code, uint32_t* sp,
                                      WasmInterpreterRuntime* wasm_runtime,
                                      int64_t r0, double fp0) {
-    Isolate* isolate = wasm_runtime->GetIsolate();
+    Isolate* isolate = Isolate::Current();
     {
       HandleScope handle_scope(isolate);  // Avoid leaking handles.
 
       uint32_t tag_index = Read<int32_t>(code);
 
-      Handle<WasmExceptionPackage> exception_object =
+      DirectHandle<WasmExceptionPackage> exception_object =
           wasm_runtime->CreateWasmExceptionPackage(tag_index);
-      Handle<FixedArray> encoded_values = Cast<FixedArray>(
+      DirectHandle<FixedArray> encoded_values = Cast<FixedArray>(
           WasmExceptionPackage::GetExceptionValues(isolate, exception_object));
 
       // Encode the exception values on the operand stack into the exception
@@ -5614,9 +5613,9 @@ class Handlers : public HandlersBase {
           }
           case kRef:
           case kRefNull: {
-            Handle<Object> ref = pop<WasmRef>(sp, code, wasm_runtime);
+            DirectHandle<Object> ref = pop<WasmRef>(sp, code, wasm_runtime);
             if (IsWasmNull(*ref, isolate)) {
-              ref = handle(ReadOnlyRoots(isolate).null_value(), isolate);
+              ref = direct_handle(ReadOnlyRoots(isolate).null_value(), isolate);
             }
             encoded_values->set(encoded_index++, *ref);
             break;
@@ -5742,10 +5741,10 @@ class Handlers : public HandlersBase {
                         bool null_succeeds,
                         WasmInterpreterRuntime* wasm_runtime) {
     if (target_type.is_index()) {
-      Handle<Map> rtt = wasm_runtime->RttCanon(target_type.ref_index().index);
+      DirectHandle<Map> rtt =
+          wasm_runtime->RttCanon(target_type.ref_index().index);
       return wasm_runtime->SubtypeCheck(ref, ref_type, rtt,
-                                        ValueType::Rtt(target_type.ref_index()),
-                                        null_succeeds);
+                                        target_type.ref_index(), null_succeeds);
     } else {
       switch (target_type.representation()) {
         case HeapType::kEq:
@@ -5793,8 +5792,9 @@ class Handlers : public HandlersBase {
       const uint8_t* code, uint32_t* sp, WasmInterpreterRuntime* wasm_runtime,
       int64_t r0, double fp0) {
     bool null_succeeds = Read<int32_t>(code);
-    HeapType target_type(
-        ModuleTypeIndex({static_cast<uint32_t>(Read<int32_t>(code))}));
+
+    HeapType target_type =
+        HeapType::FromBits(static_cast<uint32_t>(Read<int32_t>(code)));
 
     WasmRef ref = pop<WasmRef>(sp, code, wasm_runtime);
     const uint32_t ref_bitfield = Read<int32_t>(code);
@@ -5831,8 +5831,9 @@ class Handlers : public HandlersBase {
       const uint8_t* code, uint32_t* sp, WasmInterpreterRuntime* wasm_runtime,
       int64_t r0, double fp0) {
     bool null_succeeds = Read<int32_t>(code);
-    HeapType target_type(
-        ModuleTypeIndex({static_cast<uint32_t>(Read<int32_t>(code))}));
+
+    HeapType target_type =
+        HeapType::FromBits(static_cast<uint32_t>(Read<int32_t>(code)));
 
     WasmRef ref = pop<WasmRef>(sp, code, wasm_runtime);
     const uint32_t ref_bitfield = Read<int32_t>(code);
@@ -5928,9 +5929,9 @@ class Handlers : public HandlersBase {
                                          WasmInterpreterRuntime* wasm_runtime,
                                          int64_t r0, double fp0) {
     uint32_t index = Read<int32_t>(code);
-    std::pair<Handle<WasmStruct>, const StructType*> struct_new_result =
+    std::pair<DirectHandle<WasmStruct>, const StructType*> struct_new_result =
         wasm_runtime->StructNewUninitialized(index);
-    Handle<HeapObject> struct_obj = struct_new_result.first;
+    DirectHandle<HeapObject> struct_obj = struct_new_result.first;
     const StructType* struct_type = struct_new_result.second;
 
     {
@@ -5998,9 +5999,9 @@ class Handlers : public HandlersBase {
       const uint8_t* code, uint32_t* sp, WasmInterpreterRuntime* wasm_runtime,
       int64_t r0, double fp0) {
     uint32_t index = Read<int32_t>(code);
-    std::pair<Handle<WasmStruct>, const StructType*> struct_new_result =
+    std::pair<DirectHandle<WasmStruct>, const StructType*> struct_new_result =
         wasm_runtime->StructNewUninitialized(index);
-    Handle<HeapObject> struct_obj = struct_new_result.first;
+    DirectHandle<HeapObject> struct_obj = struct_new_result.first;
     const StructType* struct_type = struct_new_result.second;
 
     {
@@ -6092,9 +6093,9 @@ class Handlers : public HandlersBase {
     Address field_addr = (*struct_obj).ptr() + offset;
     // DrumBrake expects pointer compression.
     Tagged_t ref_tagged = base::ReadUnalignedValue<uint32_t>(field_addr);
-    Isolate* isolate = wasm_runtime->GetIsolate();
+    Isolate* isolate = Isolate::Current();
     Tagged<Object> ref_uncompressed(
-        V8HeapCompressionScheme::DecompressTagged(isolate, ref_tagged));
+        V8HeapCompressionScheme::DecompressTagged(ref_tagged));
     WasmRef ref_handle = handle(ref_uncompressed, isolate);
     push<WasmRef>(sp, code, wasm_runtime, ref_handle);
 
@@ -6151,9 +6152,9 @@ class Handlers : public HandlersBase {
     const uint32_t elem_count = pop<int32_t>(sp, code, wasm_runtime);
     const T value = pop<T>(sp, code, wasm_runtime);
 
-    std::pair<Handle<WasmArray>, const ArrayType*> array_new_result =
+    std::pair<DirectHandle<WasmArray>, const ArrayType*> array_new_result =
         wasm_runtime->ArrayNewUninitialized(elem_count, array_index);
-    Handle<WasmArray> array = array_new_result.first;
+    DirectHandle<WasmArray> array = array_new_result.first;
     if (V8_UNLIKELY(array.is_null())) {
       TRAP(TrapReason::kTrapArrayTooLarge)
     }
@@ -6194,9 +6195,9 @@ class Handlers : public HandlersBase {
     const uint32_t elem_count = pop<int32_t>(sp, code, wasm_runtime);
     const WasmRef value = pop<WasmRef>(sp, code, wasm_runtime);
 
-    std::pair<Handle<WasmArray>, const ArrayType*> array_new_result =
+    std::pair<DirectHandle<WasmArray>, const ArrayType*> array_new_result =
         wasm_runtime->ArrayNewUninitialized(elem_count, array_index);
-    Handle<WasmArray> array = array_new_result.first;
+    DirectHandle<WasmArray> array = array_new_result.first;
     if (V8_UNLIKELY(array.is_null())) {
       TRAP(TrapReason::kTrapArrayTooLarge)
     }
@@ -6233,9 +6234,9 @@ class Handlers : public HandlersBase {
     const uint32_t array_index = Read<int32_t>(code);
     const uint32_t elem_count = Read<int32_t>(code);
 
-    std::pair<Handle<WasmArray>, const ArrayType*> array_new_result =
+    std::pair<DirectHandle<WasmArray>, const ArrayType*> array_new_result =
         wasm_runtime->ArrayNewUninitialized(elem_count, array_index);
-    Handle<WasmArray> array = array_new_result.first;
+    DirectHandle<WasmArray> array = array_new_result.first;
     if (V8_UNLIKELY(array.is_null())) {
       TRAP(TrapReason::kTrapArrayTooLarge)
     }
@@ -6310,9 +6311,9 @@ class Handlers : public HandlersBase {
     const uint32_t array_index = Read<int32_t>(code);
     const uint32_t elem_count = pop<int32_t>(sp, code, wasm_runtime);
 
-    std::pair<Handle<WasmArray>, const ArrayType*> array_new_result =
+    std::pair<DirectHandle<WasmArray>, const ArrayType*> array_new_result =
         wasm_runtime->ArrayNewUninitialized(elem_count, array_index);
-    Handle<WasmArray> array = array_new_result.first;
+    DirectHandle<WasmArray> array = array_new_result.first;
     if (V8_UNLIKELY(array.is_null())) {
       TRAP(TrapReason::kTrapArrayTooLarge)
     }
@@ -6578,8 +6579,10 @@ class Handlers : public HandlersBase {
       TRAP(TrapReason::kTrapArrayOutOfBounds)
     }
 
-    push<WasmRef>(sp, code, wasm_runtime,
-                  wasm_runtime->GetWasmArrayRefElement(array, index));
+    WasmRef element =
+        Handle<Object>(*wasm_runtime->GetWasmArrayRefElement(array, index),
+                       wasm_runtime->GetIsolate());
+    push<WasmRef>(sp, code, wasm_runtime, element);
 
     NextOp();
   }
@@ -6751,8 +6754,8 @@ class Handlers : public HandlersBase {
   INSTRUCTION_HANDLER_FUNC RefCast(const uint8_t* code, uint32_t* sp,
                                    WasmInterpreterRuntime* wasm_runtime,
                                    int64_t r0, double fp0) {
-    HeapType target_type(
-        ModuleTypeIndex({static_cast<uint32_t>(Read<int32_t>(code))}));
+    HeapType target_type =
+        HeapType::FromBits(static_cast<uint32_t>(Read<int32_t>(code)));
 
     WasmRef ref = pop<WasmRef>(sp, code, wasm_runtime);
 
@@ -6774,8 +6777,8 @@ class Handlers : public HandlersBase {
   INSTRUCTION_HANDLER_FUNC RefTest(const uint8_t* code, uint32_t* sp,
                                    WasmInterpreterRuntime* wasm_runtime,
                                    int64_t r0, double fp0) {
-    HeapType target_type(
-        ModuleTypeIndex({static_cast<uint32_t>(Read<int32_t>(code))}));
+    HeapType target_type =
+        HeapType::FromBits(static_cast<uint32_t>(Read<int32_t>(code)));
 
     WasmRef ref = pop<WasmRef>(sp, code, wasm_runtime);
 
@@ -7131,7 +7134,6 @@ char const* kInstructionHandlerNames[kInstructionTableSize];
 #endif  // V8_ENABLE_DRUMBRAKE_TRACING
 
 PWasmOp* kInstructionTable[kInstructionTableSize] = {
-
 // 1. Add "small" (compressed) instruction handlers.
 
 #if !V8_DRUMBRAKE_BOUNDS_CHECKS
@@ -7170,7 +7172,6 @@ PWasmOp* kInstructionTable[kInstructionTableSize] = {
                 FOREACH_LOAD_STORE_INSTR_HANDLER(V)
                     FOREACH_LOAD_STORE_DUPLICATED_INSTR_HANDLER(V)
 #undef V
-
 #endif  // !V8_DRUMBRAKE_BOUNDS_CHECKS
 
 #define V(name) Handlers<false>::name,
@@ -7319,6 +7320,7 @@ void WasmEHDataGenerator::RecordPotentialExceptionThrowingInstruction(
 WasmBytecode::WasmBytecode(int func_index, const uint8_t* code_data,
                            size_t code_length, uint32_t stack_frame_size,
                            const FunctionSig* signature,
+                           const CanonicalSig* canonical_signature,
                            const InterpreterCode* interpreter_code,
                            size_t blocks_count, const uint8_t* const_slots_data,
                            size_t const_slots_length, uint32_t ref_slots_count,
@@ -7327,6 +7329,7 @@ WasmBytecode::WasmBytecode(int func_index, const uint8_t* code_data,
     : code_(code_data, code_data + code_length),
       code_bytes_(code_.data()),
       signature_(signature),
+      canonical_signature_(canonical_signature),
       interpreter_code_(interpreter_code),
       const_slots_values_(const_slots_data,
                           const_slots_data + const_slots_length),
@@ -7361,11 +7364,12 @@ pc_t WasmBytecode::GetPcFromTrapCode(const uint8_t* current_code) const {
 }
 
 // static
-size_t WasmBytecodeGenerator::total_bytecode_size_ = 0;
+std::atomic<size_t> WasmBytecodeGenerator::total_bytecode_size_ = 0;
 // static
-size_t WasmBytecodeGenerator::emitted_short_slot_offset_count_ = 0;
+std::atomic<size_t> WasmBytecodeGenerator::emitted_short_slot_offset_count_ = 0;
 // static
-size_t WasmBytecodeGenerator::emitted_short_memory_offset_count_ = 0;
+std::atomic<size_t> WasmBytecodeGenerator::emitted_short_memory_offset_count_ =
+    0;
 
 WasmBytecodeGenerator::WasmBytecodeGenerator(uint32_t function_index,
                                              InterpreterCode* wasm_code,
@@ -7820,16 +7824,20 @@ void WasmBytecodeGenerator::StoreBlockParamsAndResultsIntoSlots(
       target_block_index == 0 ? 0 : ParamsCount(target_block_data);
   uint32_t rets_count = ReturnsCount(target_block_data);
 
-  // There could be valid code where there are not enough elements in the
-  // stack if some code in unreachable (for example if a 'i32.const 0' is
-  // followed by a 'br_if' the if branch is never reachable).
-  uint32_t count = std::min(static_cast<uint32_t>(stack_.size()), rets_count);
-  for (uint32_t i = 0; i < count; i++) {
-    uint32_t from_slot_index = stack_[stack_top_index() - (count - 1) + i];
-    uint32_t to_slot_index = target_block_data.first_block_index_ + i;
-    if (from_slot_index != to_slot_index) {
-      EmitCopySlot(GetReturnType(target_block_data, i), from_slot_index,
-                   to_slot_index);
+  // If we are branching to a loop block we go back to the beginning of the
+  // block, therefore we don't need to store the block results.
+  if (!is_target_loop_block || !is_branch) {
+    // There could be valid code where there are not enough elements in the
+    // stack if some code in unreachable (for example if a 'i32.const 0' is
+    // followed by a 'br_if' the if branch is never reachable).
+    uint32_t count = std::min(static_cast<uint32_t>(stack_.size()), rets_count);
+    for (uint32_t i = 0; i < count; i++) {
+      uint32_t from_slot_index = stack_[stack_top_index() - (count - 1) + i];
+      uint32_t to_slot_index = target_block_data.first_block_index_ + i;
+      if (from_slot_index != to_slot_index) {
+        EmitCopySlot(GetReturnType(target_block_data, i), from_slot_index,
+                     to_slot_index);
+      }
     }
   }
 
@@ -7976,6 +7984,7 @@ WasmInstruction WasmBytecodeGenerator::DecodeInstruction(pc_t pc,
   }
 
   WasmInstruction::Optional optional;
+  WasmDetectedFeatures detected;
   switch (orig) {
     case kExprUnreachable:
       break;
@@ -7985,7 +7994,7 @@ WasmInstruction WasmBytecodeGenerator::DecodeInstruction(pc_t pc,
     case kExprLoop:
     case kExprIf:
     case kExprTry: {
-      BlockTypeImmediate imm(WasmEnabledFeatures::All(), &decoder,
+      BlockTypeImmediate imm(WasmEnabledFeatures::All(), &detected, &decoder,
                              wasm_code_->at(pc + 1), Decoder::kNoValidation);
       if (imm.sig_index.valid()) {
         // The block has at least one argument or at least two results, its
@@ -8078,7 +8087,7 @@ WasmInstruction WasmBytecodeGenerator::DecodeInstruction(pc_t pc,
     case kExprSelect:
       break;
     case kExprSelectWithType: {
-      SelectTypeImmediate imm(WasmEnabledFeatures::All(), &decoder,
+      SelectTypeImmediate imm(WasmEnabledFeatures::All(), &detected, &decoder,
                               wasm_code_->at(pc + 1), Decoder::kNoValidation);
       len = 1 + imm.length;
       break;
@@ -8137,7 +8146,6 @@ WasmInstruction WasmBytecodeGenerator::DecodeInstruction(pc_t pc,
   case kExpr##name: {                                                     \
     MemoryAccessImmediate imm(                                            \
         &decoder, wasm_code_->at(pc + 1), sizeof(ctype),                  \
-        !module_->memories.empty() && module_->memories[0].is_memory64(), \
         Decoder::kNoValidation);                                          \
     len = 1 + imm.length;                                                 \
     optional.offset = imm.offset;                                         \
@@ -8163,7 +8171,6 @@ WasmInstruction WasmBytecodeGenerator::DecodeInstruction(pc_t pc,
   case kExpr##name: {                                                     \
     MemoryAccessImmediate imm(                                            \
         &decoder, wasm_code_->at(pc + 1), sizeof(ctype),                  \
-        !module_->memories.empty() && module_->memories[0].is_memory64(), \
         Decoder::kNoValidation);                                          \
     len = 1 + imm.length;                                                 \
     optional.offset = imm.offset;                                         \
@@ -8263,9 +8270,10 @@ WasmInstruction WasmBytecodeGenerator::DecodeInstruction(pc_t pc,
 #undef EXECUTE_UNOP
 
     case kExprRefNull: {
-      HeapTypeImmediate imm(WasmEnabledFeatures::All(), &decoder,
+      HeapTypeImmediate imm(WasmEnabledFeatures::All(), &detected, &decoder,
                             wasm_code_->at(pc + 1), Decoder::kNoValidation);
-      optional.ref_type = imm.type.representation();
+      value_type_reader::Populate(&imm.type, module_);
+      optional.ref_type_bit_field = imm.type.raw_bit_field();
       len = 1 + imm.length;
       break;
     }
@@ -8326,6 +8334,7 @@ void WasmBytecodeGenerator::DecodeGCOp(WasmOpcode opcode,
                                        WasmInstruction::Optional* optional,
                                        Decoder* decoder, InterpreterCode* code,
                                        pc_t pc, int* const len) {
+  WasmDetectedFeatures detected;
   switch (opcode) {
     case kExprStructNew:
     case kExprStructNewDefault: {
@@ -8410,11 +8419,12 @@ void WasmBytecodeGenerator::DecodeGCOp(WasmOpcode opcode,
     case kExprRefCastNull:
     case kExprRefTest:
     case kExprRefTestNull: {
-      HeapTypeImmediate imm(WasmEnabledFeatures::All(), decoder,
+      HeapTypeImmediate imm(WasmEnabledFeatures::All(), &detected, decoder,
                             code->at(pc + *len), Decoder::kNoValidation);
+      value_type_reader::Populate(&imm.type, module_);
       optional->gc_heap_type_immediate.length = imm.length;
-      optional->gc_heap_type_immediate.type_representation =
-          imm.type.representation();
+      optional->gc_heap_type_immediate.heap_type_bit_field =
+          imm.type.raw_bit_field();
       *len += imm.length;
       break;
     }
@@ -8427,15 +8437,21 @@ void WasmBytecodeGenerator::DecodeGCOp(WasmOpcode opcode,
       BranchDepthImmediate branch(decoder, code->at(pc + *len),
                                   Decoder::kNoValidation);
       *len += branch.length;
-      HeapTypeImmediate source_imm(WasmEnabledFeatures::All(), decoder,
-                                   code->at(pc + *len), Decoder::kNoValidation);
+      HeapTypeImmediate source_imm(WasmEnabledFeatures::All(), &detected,
+                                   decoder, code->at(pc + *len),
+                                   Decoder::kNoValidation);
+      value_type_reader::Populate(&source_imm.type, module_);
       *len += source_imm.length;
-      HeapTypeImmediate target_imm(WasmEnabledFeatures::All(), decoder,
-                                   code->at(pc + *len), Decoder::kNoValidation);
+      HeapTypeImmediate target_imm(WasmEnabledFeatures::All(), &detected,
+                                   decoder, code->at(pc + *len),
+                                   Decoder::kNoValidation);
+      value_type_reader::Populate(&target_imm.type, module_);
       *len += target_imm.length;
+      DCHECK(target_imm.type.raw_bit_field() <
+             (1 << kBranchOnCastDataTargetTypeBitSize));
       optional->br_on_cast_data = BranchOnCastData{
           branch.depth, flags_imm.flags.src_is_null,
-          flags_imm.flags.res_is_null, target_imm.type.representation()};
+          flags_imm.flags.res_is_null, target_imm.type.raw_bit_field()};
       break;
     }
 
@@ -8550,7 +8566,7 @@ void WasmBytecodeGenerator::DecodeAtomicOp(WasmOpcode opcode,
       MachineType memtype = MachineType::Uint32();
       MemoryAccessImmediate imm(decoder, code->at(pc + *len),
                                 ElementSizeLog2Of(memtype.representation()),
-                                IsMemory64(), Decoder::kNoValidation);
+                                Decoder::kNoValidation);
       optional->offset = imm.offset;
       *len += imm.length;
       break;
@@ -8559,7 +8575,7 @@ void WasmBytecodeGenerator::DecodeAtomicOp(WasmOpcode opcode,
       MachineType memtype = MachineType::Uint64();
       MemoryAccessImmediate imm(decoder, code->at(pc + *len),
                                 ElementSizeLog2Of(memtype.representation()),
-                                IsMemory64(), Decoder::kNoValidation);
+                                Decoder::kNoValidation);
       optional->offset = imm.offset;
       *len += imm.length;
       break;
@@ -8573,7 +8589,7 @@ void WasmBytecodeGenerator::DecodeAtomicOp(WasmOpcode opcode,
     MachineType memtype = MachineType::Type();                              \
     MemoryAccessImmediate imm(decoder, code->at(pc + *len),                 \
                               ElementSizeLog2Of(memtype.representation()),  \
-                              IsMemory64(), Decoder::kNoValidation);        \
+                              Decoder::kNoValidation);                      \
     optional->offset = imm.offset;                                          \
     *len += imm.length;                                                     \
     break;                                                                  \
@@ -8586,7 +8602,7 @@ void WasmBytecodeGenerator::DecodeAtomicOp(WasmOpcode opcode,
     MachineType memtype = MachineType::Type();                             \
     MemoryAccessImmediate imm(decoder, code->at(pc + *len),                \
                               ElementSizeLog2Of(memtype.representation()), \
-                              IsMemory64(), Decoder::kNoValidation);       \
+                              Decoder::kNoValidation);                     \
     optional->offset = imm.offset;                                         \
     *len += imm.length;                                                    \
     break;                                                                 \
@@ -8668,13 +8684,15 @@ void WasmInterpreter::GlobalTearDown() {
 
 // static
 void WasmBytecodeGenerator::PrintBytecodeCompressionStats() {
-  printf("Total bytecode size: %zu bytes.\n", total_bytecode_size_);
-  size_t space_saved_in_bytes = 2 * emitted_short_slot_offset_count_ +
-                                4 * emitted_short_memory_offset_count_;
-  double saved_pct = (total_bytecode_size_ + space_saved_in_bytes == 0)
+  size_t total_bytecode_size = std::atomic_load(&total_bytecode_size_);
+  printf("Total bytecode size: %zu bytes.\n", total_bytecode_size);
+  size_t space_saved_in_bytes =
+      2 * std::atomic_load(&emitted_short_slot_offset_count_) +
+      4 * std::atomic_load(&emitted_short_memory_offset_count_);
+  double saved_pct = (total_bytecode_size + space_saved_in_bytes == 0)
                          ? .0
                          : 100.0 * space_saved_in_bytes /
-                               (total_bytecode_size_ + space_saved_in_bytes);
+                               (total_bytecode_size + space_saved_in_bytes);
   printf("Bytes saved: %zu (%.1f%%).\n", space_saved_in_bytes, saved_pct);
 }
 
@@ -9741,7 +9759,7 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
           GetTargetBranch(br_on_cast_data.label_depth);
       bool null_succeeds = br_on_cast_data.res_is_null;
       const ValueType target_type = ValueType::RefMaybeNull(
-          ModuleTypeIndex({br_on_cast_data.target_type}),
+          HeapType::FromBits(br_on_cast_data.target_type_bit_fields),
           null_succeeds ? kNullable : kNonNullable);
 
       const ValueType obj_type = slots_[stack_.back()].value_type;
@@ -9768,10 +9786,10 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
         EMIT_INSTR_HANDLER(s2s_BranchOnCast);
         EmitI32Const(null_succeeds);
         HeapType br_on_cast_data_target_type(
-            ModuleTypeIndex({br_on_cast_data.target_type}));
+            HeapType::FromBits(br_on_cast_data.target_type_bit_fields));
         EmitI32Const(br_on_cast_data_target_type.is_index()
-                         ? br_on_cast_data_target_type.representation()
-                         : target_type.heap_type().representation());
+                         ? br_on_cast_data_target_type.raw_bit_field()
+                         : target_type.heap_type().raw_bit_field());
         ValueType value_type = RefPop();
         EmitRefValueType(value_type.raw_bit_field());
         RefPush(value_type);
@@ -9794,8 +9812,8 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
       int32_t target_branch_index =
           GetTargetBranch(br_on_cast_data.label_depth);
       bool null_succeeds = br_on_cast_data.res_is_null;
-      HeapType br_on_cast_data_target_type(
-          ModuleTypeIndex({br_on_cast_data.target_type}));
+      HeapType br_on_cast_data_target_type =
+          HeapType::FromBits(br_on_cast_data.target_type_bit_fields);
       const ValueType target_type =
           ValueType::RefMaybeNull(br_on_cast_data_target_type,
                                   null_succeeds ? kNullable : kNonNullable);
@@ -9828,8 +9846,8 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
         EMIT_INSTR_HANDLER(s2s_BranchOnCastFail);
         EmitI32Const(null_succeeds);
         EmitI32Const(br_on_cast_data_target_type.is_index()
-                         ? br_on_cast_data_target_type.representation()
-                         : target_type.heap_type().representation());
+                         ? br_on_cast_data_target_type.raw_bit_field()
+                         : target_type.heap_type().raw_bit_field());
         ValueType value_type = RefPop();
         EmitRefValueType(value_type.raw_bit_field());
         RefPush(value_type);
@@ -11160,8 +11178,8 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
 
     case kExprRefNull: {
       EMIT_INSTR_HANDLER(s2s_RefNull);
-      ValueType value_type =
-          ValueType::RefNull(HeapType(instr.optional.ref_type));
+      ValueType value_type = ValueType::RefNull(
+          HeapType::FromBits(instr.optional.ref_type_bit_field));
       EmitRefValueType(value_type.raw_bit_field());
       RefPush(value_type);
       break;
@@ -11176,8 +11194,9 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
     case kExprRefFunc: {
       EMIT_INSTR_HANDLER(s2s_RefFunc);
       EmitI32Const(instr.optional.index);
-      ValueType value_type =
-          ValueType::Ref(module_->functions[instr.optional.index].sig_index);
+      ModuleTypeIndex sig_index =
+          module_->functions[instr.optional.index].sig_index;
+      ValueType value_type = ValueType::Ref(module_->heap_type(sig_index));
       RefPush(value_type);
       break;
     }
@@ -11208,14 +11227,16 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
         Pop(kind);
       }
 
-      RefPush(ValueType::Ref(ModuleTypeIndex({instr.optional.index})));
+      ModuleTypeIndex type_index{instr.optional.index};
+      RefPush(ValueType::Ref(module_->heap_type(type_index)));
       break;
     }
 
     case kExprStructNewDefault: {
       EMIT_INSTR_HANDLER(s2s_StructNewDefault);
       EmitI32Const(instr.optional.index);
-      RefPush(ValueType::Ref(ModuleTypeIndex({instr.optional.index})));
+      ModuleTypeIndex type_index{instr.optional.index};
+      RefPush(ValueType::Ref(module_->heap_type(type_index)));
       break;
     }
 
@@ -11410,7 +11431,8 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
           UNREACHABLE();
       }
       // Push the new array.
-      RefPush(ValueType::Ref(ModuleTypeIndex({array_index})));
+      RefPush(
+          ValueType::Ref(module_->heap_type(ModuleTypeIndex({array_index}))));
       break;
     }
 
@@ -11453,7 +11475,8 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
         }
       }
       // Push the new array.
-      RefPush(ValueType::Ref(ModuleTypeIndex({array_index})));
+      RefPush(
+          ValueType::Ref(module_->heap_type(ModuleTypeIndex({array_index}))));
       break;
     }
 
@@ -11462,7 +11485,9 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
       EmitI32Const(instr.optional.index);
       I32Pop();
       // Push the new array.
-      RefPush(ValueType::Ref(ModuleTypeIndex({instr.optional.index})));
+      ModuleTypeIndex array_index{instr.optional.index};
+      RefPush(
+          ValueType::Ref(module_->heap_type(ModuleTypeIndex({array_index}))));
       break;
     }
 
@@ -11476,7 +11501,8 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
       I32Pop();
       I32Pop();
       // Push the new array.
-      RefPush(ValueType::Ref(ModuleTypeIndex({array_index})));
+      RefPush(
+          ValueType::Ref(module_->heap_type(ModuleTypeIndex({array_index}))));
       break;
     }
 
@@ -11490,7 +11516,8 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
       I32Pop();
       I32Pop();
       // Push the new array.
-      RefPush(ValueType::Ref(ModuleTypeIndex({array_index})));
+      RefPush(
+          ValueType::Ref(module_->heap_type(ModuleTypeIndex({array_index}))));
       break;
     }
 
@@ -11744,7 +11771,7 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
     case kExprRefI31: {
       EMIT_INSTR_HANDLER(s2s_RefI31);
       I32Pop();
-      RefPush(ValueType::Ref(HeapType::kI31));
+      RefPush(ValueType::Ref(kWasmRefI31));
       break;
     }
 
@@ -11765,7 +11792,8 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
     case kExprRefCast:
     case kExprRefCastNull: {
       bool null_succeeds = (instr.opcode == kExprRefCastNull);
-      HeapType target_type = instr.optional.gc_heap_type_immediate.type();
+      HeapType target_type = HeapType::FromBits(
+          instr.optional.gc_heap_type_immediate.heap_type_bit_field);
       ValueType resulting_value_type = ValueType::RefMaybeNull(
           target_type, null_succeeds ? kNullable : kNonNullable);
 
@@ -11802,7 +11830,7 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
         } else {
           EMIT_INSTR_HANDLER_WITH_PC(s2s_RefCastNull, instr.pc);
         }
-        EmitI32Const(instr.optional.gc_heap_type_immediate.type_representation);
+        EmitI32Const(instr.optional.gc_heap_type_immediate.heap_type_bit_field);
         ValueType value_type = RefPop();
         EmitRefValueType(value_type.raw_bit_field());
         RefPush(resulting_value_type);
@@ -11813,7 +11841,8 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
     case kExprRefTest:
     case kExprRefTestNull: {
       bool null_succeeds = (instr.opcode == kExprRefTestNull);
-      HeapType target_type = instr.optional.gc_heap_type_immediate.type();
+      HeapType target_type = HeapType::FromBits(
+          instr.optional.gc_heap_type_immediate.heap_type_bit_field);
 
       ValueType obj_type = slots_[stack_.back()].value_type;
       DCHECK(obj_type.is_object_reference());
@@ -11842,7 +11871,7 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
         } else {
           EMIT_INSTR_HANDLER(s2s_RefTestNull);
         }
-        EmitI32Const(instr.optional.gc_heap_type_immediate.type_representation);
+        EmitI32Const(instr.optional.gc_heap_type_immediate.heap_type_bit_field);
         ValueType value_type = RefPop();
         EmitRefValueType(value_type.raw_bit_field());
         I32Push();  // bool
@@ -11854,7 +11883,7 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
       EMIT_INSTR_HANDLER_WITH_PC(s2s_AnyConvertExtern, instr.pc);
       ValueType extern_val = RefPop();
       ValueType intern_type = ValueType::RefMaybeNull(
-          HeapType::kAny, Nullability(extern_val.is_nullable()));
+          kWasmAnyRef, Nullability(extern_val.is_nullable()));
       RefPush(intern_type);
       break;
     }
@@ -11863,7 +11892,7 @@ RegMode WasmBytecodeGenerator::DoEncodeInstruction(const WasmInstruction& instr,
       EMIT_INSTR_HANDLER(s2s_ExternConvertAny);
       ValueType value_type = RefPop();
       ValueType extern_type = ValueType::RefMaybeNull(
-          HeapType::kExtern, Nullability(value_type.is_nullable()));
+          kWasmExternRef, Nullability(value_type.is_nullable()));
       RefPush(extern_type);
       break;
     }
@@ -12963,8 +12992,9 @@ std::unique_ptr<WasmBytecode> WasmBytecodeGenerator::GenerateBytecode() {
     _PushSlot(wasm_code_->locals.local_types[index]);
   }
 
-  current_block_index_ =
-      BeginBlock(kExprBlock, {wasm_code_->function->sig_index, kBottom});
+  current_block_index_ = BeginBlock(
+      kExprBlock,
+      {wasm_code_->function->sig_index, kWasmBottom.raw_bit_field()});
 
   WasmInstruction curr_instr;
   WasmInstruction next_instr;
@@ -13008,11 +13038,15 @@ std::unique_ptr<WasmBytecode> WasmBytecodeGenerator::GenerateBytecode() {
 
   total_bytecode_size_ += code_.size();
 
+  CanonicalTypeIndex canonical_sig_index =
+      module_->canonical_sig_id(module_->functions[function_index_].sig_index);
+  const CanonicalSig* canonicalized_sig =
+      GetTypeCanonicalizer()->LookupFunctionSignature(canonical_sig_index);
   return std::make_unique<WasmBytecode>(
       function_index_, code_.data(), code_.size(), slot_offset_,
-      module_->functions[function_index_].sig, wasm_code_, blocks_.size(),
-      const_slots_values_.data(), const_slots_values_.size(), ref_slots_count_,
-      std::move(eh_data_), std::move(code_pc_map_));
+      module_->functions[function_index_].sig, canonicalized_sig, wasm_code_,
+      blocks_.size(), const_slots_values_.data(), const_slots_values_.size(),
+      ref_slots_count_, std::move(eh_data_), std::move(code_pc_map_));
 }
 
 int32_t WasmBytecodeGenerator::BeginBlock(
@@ -13143,23 +13177,6 @@ bool WasmBytecodeGenerator::TryCompactInstructionHandler(
     return true;
   }
   return false;
-}
-
-ClearThreadInWasmScope::ClearThreadInWasmScope(Isolate* isolate)
-    : isolate_(isolate) {
-  DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
-                 trap_handler::IsThreadInWasm());
-  trap_handler::ClearThreadInWasm();
-}
-
-ClearThreadInWasmScope ::~ClearThreadInWasmScope() {
-  DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
-                 !trap_handler::IsThreadInWasm());
-  if (!isolate_->has_exception()) {
-    trap_handler::SetThreadInWasm();
-  }
-  // Otherwise we only want to set the flag if the exception is caught in
-  // wasm. This is handled by the unwinder.
 }
 
 }  // namespace wasm

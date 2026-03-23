@@ -112,8 +112,7 @@ std::optional<syncer::ModelError> ParseDeskTemplatesOnBackendSequence(
       if (!uuid.is_valid()) {
         return syncer::ModelError(
             FROM_HERE,
-            base::StringPrintf("Failed to parse WorkspaceDeskSpecifics uuid %s",
-                               specifics->uuid().c_str()));
+            syncer::ModelError::Type::kWorkspaceDeskFailedToParseUuid);
       }
 
       std::unique_ptr<ash::DeskTemplate> entry =
@@ -124,7 +123,8 @@ std::optional<syncer::ModelError> ParseDeskTemplatesOnBackendSequence(
       (*desk_templates)[uuid] = std::move(entry);
     } else {
       return syncer::ModelError(
-          FROM_HERE, "Failed to deserialize WorkspaceDeskSpecifics.");
+          FROM_HERE,
+          syncer::ModelError::Type::kWorkspaceDeskFailedToDeserializeSpecifics);
     }
   }
 
@@ -169,8 +169,10 @@ std::optional<syncer::ModelError> DeskSyncBridge::MergeFullSyncData(
   // TODO(yzd) We will add a template update timestamp and update this logic to
   // be: for templates that exist on both local and server side, we will keep
   // the one with later update timestamp.
-  return ApplyIncrementalSyncChanges(std::move(metadata_change_list),
-                                     std::move(entity_data));
+  std::optional<syncer::ModelError> result = ApplyIncrementalSyncChanges(
+      std::move(metadata_change_list), std::move(entity_data));
+  OnMergeFullSyncDataFinished();
+  return result;
 }
 
 std::optional<syncer::ModelError> DeskSyncBridge::ApplyIncrementalSyncChanges(
@@ -263,12 +265,12 @@ std::unique_ptr<syncer::DataBatch> DeskSyncBridge::GetAllDataForDebugging() {
 }
 
 std::string DeskSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   return GetStorageKey(entity_data);
 }
 
 std::string DeskSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   return entity_data.specifics.workspace_desk().uuid();
 }
 
@@ -660,6 +662,22 @@ bool DeskSyncBridge::HasUuid(const base::Uuid& uuid) const {
 
 std::string DeskSyncBridge::GetCacheGuid() {
   return change_processor()->TrackedCacheGuid();
+}
+
+void DeskSyncBridge::SetOnMergeFullSyncDataCallback(
+    base::OnceClosure callback) {
+  if (merge_full_sync_data_finished_) {
+    std::move(callback).Run();
+    return;
+  }
+  on_merge_full_sync_data_callback_ = std::move(callback);
+}
+
+void DeskSyncBridge::OnMergeFullSyncDataFinished() {
+  if (on_merge_full_sync_data_callback_) {
+    std::move(on_merge_full_sync_data_callback_).Run();
+  }
+  merge_full_sync_data_finished_ = true;
 }
 
 }  // namespace desks_storage

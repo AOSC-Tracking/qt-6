@@ -9,7 +9,9 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/json/values_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/affiliations/core/browser/affiliation_utils.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/suggestions/suggestion_test_helpers.h"
@@ -184,11 +186,6 @@ Matcher<std::vector<Suggestion>> IsSingleCreatePlusAddressSuggestion() {
                 &feature_engagement::kIPHPlusAddressCreateSuggestionFeature)),
 #endif
       Field(&Suggestion::icon, Suggestion::Icon::kPlusAddress),
-#if BUILDFLAG(IS_ANDROID)
-      Field(&Suggestion::iph_description_text,
-            l10n_util::GetStringUTF16(
-                IDS_PLUS_ADDRESS_CREATE_SUGGESTION_IPH_ANDROID)),
-#endif  // BUILDFLAG(IS_ANDROID)
       Field(&Suggestion::labels, labels)));
 }
 

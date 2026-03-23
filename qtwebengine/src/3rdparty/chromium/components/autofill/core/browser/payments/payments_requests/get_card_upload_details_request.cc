@@ -7,7 +7,6 @@
 #include <string>
 
 #include "base/json/json_writer.h"
-#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -98,21 +97,13 @@ std::string GetCardUploadDetailsRequest::GetRequestContent() {
     case UploadCardSource::UPSTREAM_CARD_OCR:
       request_dict.Set("upload_card_source", "UPSTREAM_CARD_OCR");
       break;
-    case UploadCardSource::LOCAL_CARD_MIGRATION_CHECKOUT_FLOW:
-      request_dict.Set("upload_card_source",
-                       "LOCAL_CARD_MIGRATION_CHECKOUT_FLOW");
-      break;
-    case UploadCardSource::LOCAL_CARD_MIGRATION_SETTINGS_PAGE:
-      request_dict.Set("upload_card_source",
-                       "LOCAL_CARD_MIGRATION_SETTINGS_PAGE");
-      break;
     default:
       NOTREACHED();
   }
 
   std::string request_content;
   base::JSONWriter::Write(request_dict, &request_content);
-  VLOG(3) << "getdetailsforsavecard request body: " << request_content;
+  DVLOG(3) << "getdetailsforsavecard request body: " << request_content;
   return request_content;
 }
 
@@ -143,32 +134,6 @@ void GetCardUploadDetailsRequest::RespondToDelegate(
     PaymentsAutofillClient::PaymentsRpcResult result) {
   std::move(callback_).Run(result, context_token_, std::move(legal_message_),
                            supported_card_bin_ranges_);
-}
-
-std::vector<std::pair<int, int>>
-GetCardUploadDetailsRequest::ParseSupportedCardBinRangesString(
-    const std::string& supported_card_bin_ranges_string) {
-  std::vector<std::pair<int, int>> supported_card_bin_ranges;
-  std::vector<std::string> range_strings =
-      base::SplitString(supported_card_bin_ranges_string, ",",
-                        base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-
-  for (std::string& range_string : range_strings) {
-    std::vector<std::string> range = base::SplitString(
-        range_string, "-", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-    DCHECK(range.size() <= 2);
-    int start;
-    base::StringToInt(range[0], &start);
-    if (range.size() == 1) {
-      supported_card_bin_ranges.emplace_back(start, start);
-    } else {
-      int end;
-      base::StringToInt(range[1], &end);
-      DCHECK_LE(start, end);
-      supported_card_bin_ranges.emplace_back(start, end);
-    }
-  }
-  return supported_card_bin_ranges;
 }
 
 }  // namespace autofill::payments

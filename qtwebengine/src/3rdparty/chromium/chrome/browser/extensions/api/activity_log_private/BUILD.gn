@@ -4,8 +4,8 @@
 
 import("//extensions/buildflags/buildflags.gni")
 
-assert(enable_extensions,
-       "Cannot depend on extensions because enable_extensions=false.")
+assert(enable_extensions_core,
+       "Cannot depend on extensions because enable_extensions_core=false.")
 
 source_set("activity_log_private") {
   sources = [
@@ -18,9 +18,9 @@ source_set("activity_log_private") {
   deps = [
     "//base",
     "//chrome/browser:browser_process",
-    "//chrome/browser/extensions:extensions",
-    "//chrome/common/extensions/api:api",
-    "//components/prefs:prefs",
+    "//chrome/browser/extensions",
+    "//chrome/common/extensions/api",
+    "//components/prefs",
     "//extensions/browser",
   ]
 }

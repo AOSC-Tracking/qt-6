@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_CODEGEN_LOONG64_MACRO_ASSEMBLER_LOONG64_H_
+#define V8_CODEGEN_LOONG64_MACRO_ASSEMBLER_LOONG64_H_
+
 #ifndef INCLUDED_FROM_MACRO_ASSEMBLER_H
 #error This header must be included via macro-assembler.h
 #endif
-
-#ifndef V8_CODEGEN_LOONG64_MACRO_ASSEMBLER_LOONG64_H_
-#define V8_CODEGEN_LOONG64_MACRO_ASSEMBLER_LOONG64_H_
 
 #include <optional>
 
@@ -738,6 +738,11 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void LoadFeedbackVector(Register dst, Register closure, Register scratch,
                           Label* fbv_undef);
 
+  void LoadInterpreterDataBytecodeArray(Register destination,
+                                        Register interpreter_data);
+  void LoadInterpreterDataInterpreterTrampoline(Register destination,
+                                                Register interpreter_data);
+
   // If the value is a NaN, canonicalize the value else, do nothing.
   void FPUCanonicalizeNaN(const DoubleRegister dst, const DoubleRegister src);
 
@@ -816,11 +821,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   static int ActivationFrameAlignment();
 
   // Load Scaled Address instructions. Parameter sa (shift argument) must be
-  // between [1, 31] (inclusive). The scratch register may be clobbered.
-  void Alsl_w(Register rd, Register rj, Register rk, uint8_t sa,
-              Register scratch = t7);
-  void Alsl_d(Register rd, Register rj, Register rk, uint8_t sa,
-              Register scratch = t7);
+  // between [1, 31] (inclusive).
+  void Alsl_w(Register rd, Register rj, Register rk, uint8_t sa);
+  void Alsl_d(Register rd, Register rj, Register rk, uint8_t sa);
 
   // Compute the start of the generated instruction stream from the current PC.
   // This is an alternative to embedding the {CodeObject} handle as a reference.
@@ -863,7 +866,8 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
                            const MemOperand& field_operand);
 
   void AtomicDecompressTaggedSigned(Register dst, const MemOperand& src);
-  void AtomicDecompressTagged(Register dst, const MemOperand& src);
+  // Returns the pc offset of the atomic load instruction.
+  int AtomicDecompressTagged(Register dst, const MemOperand& src);
 
   // ---------------------------------------------------------------------------
   // V8 Sandbox support
@@ -932,6 +936,11 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void LoadCodeEntrypointViaCodePointer(Register destination,
                                         MemOperand field_operand,
                                         CodeEntrypointTag tag);
+
+  // Load the value of Code pointer table corresponding to
+  // IsolateGroup::current()->code_pointer_table_.
+  // Only available when the sandbox is enabled.
+  void LoadCodePointerTableBase(Register destination);
 #endif
 
 #ifdef V8_ENABLE_LEAPTIERING
@@ -998,6 +1007,16 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void JumpIfNotRoot(Register with, RootIndex index, Label* if_not_equal) {
     Branch(if_not_equal, ne, with, index);
   }
+
+#if V8_STATIC_ROOTS_BOOL
+  // Fast variant which is guaranteed to not actually load the instance type
+  // from the map.
+  void BranchObjectTypeFast(Label* target, Condition cc, Register heap_object,
+                            Register compressed_map_scratch, InstanceType type);
+  void BranchInstanceTypeWithUniqueCompressedMap(Label* target, Condition cc,
+                                                 Register map, Register scratch,
+                                                 InstanceType type);
+#endif  // V8_STATIC_ROOTS_BOOL
 
   // Checks if value is in range [lower_limit, higher_limit] using a single
   // comparison.
@@ -1243,11 +1262,12 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
                           Register scratch) NOOP_UNLESS_DEBUG_CODE;
   void AssertFeedbackVector(Register object,
                             Register scratch) NOOP_UNLESS_DEBUG_CODE;
-  void ReplaceClosureCodeWithOptimizedCode(Register optimized_code,
-                                           Register closure);
+  // TODO(olivf): Rename to GenerateTailCallToUpdatedFunction.
   void GenerateTailCallToReturnedCode(Runtime::FunctionId function_id);
 
 #ifndef V8_ENABLE_LEAPTIERING
+  void ReplaceClosureCodeWithOptimizedCode(Register optimized_code,
+                                           Register closure);
   void LoadFeedbackVectorFlagsAndJumpIfNeedsProcessing(
       Register flags, Register feedback_vector, CodeKind current_code_kind,
       Label* flags_need_processing);

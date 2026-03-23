@@ -16,6 +16,7 @@
 #include "third_party/blink/public/mojom/css/preferred_contrast.mojom-shared.h"
 #include "third_party/blink/public/mojom/v8_cache_options.mojom-forward.h"
 #include "third_party/blink/public/mojom/webpreferences/web_preferences.mojom-shared.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -74,7 +75,6 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // 'Save-Data: on'.
   bool data_saver_enabled = false;
   bool local_storage_enabled = false;
-  bool databases_enabled = false;
   bool tabs_to_links = true;
   bool disable_ipc_flooding_protection = false;
   bool hyperlink_auditing_enabled = true;
@@ -83,7 +83,6 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   bool allow_remote_access_from_local_urls = true;
   bool webgl1_enabled = true;
   bool webgl2_enabled = true;
-  bool pepper_3d_enabled = false;
   bool privileged_webgl_extensions_enabled = false;
   bool webgl_errors_to_console_enabled = true;
   bool hide_scrollbars = false;
@@ -138,8 +137,8 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   bool sync_xhr_in_documents_enabled = true;
   // TODO(https://crbug.com/1163644): Remove once Chrome Apps are deprecated.
   bool target_blank_implies_no_opener_enabled_will_be_removed = true;
-  // TODO(https://crbug.com/1172495): Remove once Chrome Apps are deprecated.
-  bool allow_non_empty_navigator_plugins = false;
+  // TODO(https://crbug.com/404106817): Remove once Chrome Apps are deprecated.
+  bool ignore_permission_for_device_changed_event = false;
   int number_of_cpu_cores = 1;
   blink::mojom::EditingBehavior editing_behavior =
 #if BUILDFLAG(IS_APPLE)
@@ -361,6 +360,10 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // Forced colors are disabled for sites in the `kPageColorsBlockList` pref.
   bool is_forced_colors_disabled = false;
 
+  // Holds the browser's theme color to be used to render root non-overlay
+  // Fluent scrollbars. Stored from an SkColor as ARGB.
+  std::optional<SkColor> root_scrollbar_theme_color;
+
   // The preferred color scheme set by the user's browser settings. The variable
   // follows the browser's color mode setting unless a browser theme (custom or
   // not) is defined, in which case the color scheme is set to the default
@@ -415,11 +418,11 @@ struct BLINK_COMMON_EXPORT WebPreferences {
 
   // Whether touch input can trigger HTML drag-and-drop operations. The
   // default value depends on the platform.
-  bool touch_drag_drop_enabled;  // Set in web_preferences.cc
+  bool touch_drag_drop_enabled = false;
 
   // Whether the end of a drag fires a contextmenu event and possibly shows a
-  // context-menu (depends on how the event is handled).  Currently touch-drags
-  // cannot show context menus, see crbug.com/1096189.
+  // context-menu (depends on how the event is handled). Follows
+  // `touch_drag_drop_enabled` in Windows.
   bool touch_dragend_context_menu = false;
 
   // By default, WebXR's immersive-ar session creation is allowed, but this can
@@ -443,6 +446,17 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // browser controls shown ratio. This value is used in web settings only
   // when feature DynamicSafeAreaInsets is enabled.
   bool dynamic_safe_area_insets_enabled = false;
+
+  // Whether PaymentRequest is enabled. Controlled by WebView settings on
+  // WebView and by `kWebPayments` feature flag everywhere.
+  bool payment_request_enabled = false;
+
+  // Whether API-specific interventions aimed at reducing the efficacy of
+  // fingerprinting are enabled.
+  bool api_based_fingerprinting_interventions_enabled = false;
+
+  // Whether fingerprinting protection based on page content is enabled.
+  bool content_based_fingerprinting_protection_enabled = false;
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

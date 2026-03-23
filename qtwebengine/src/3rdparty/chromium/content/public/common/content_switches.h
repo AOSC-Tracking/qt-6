@@ -43,7 +43,6 @@ CONTENT_EXPORT extern const char
 CONTENT_EXPORT extern const char kDisableBackgroundTimerThrottling[];
 CONTENT_EXPORT extern const char kDisableBackForwardCache[];
 CONTENT_EXPORT extern const char kDisableBlinkFeatures[];
-CONTENT_EXPORT extern const char kDisableDatabases[];
 CONTENT_EXPORT extern const char kDisableDisplayList2dCanvas[];
 extern const char kDisableDomainBlockingFor3DAPIs[];
 CONTENT_EXPORT extern const char kDisableInProcessStackTraces[];
@@ -61,6 +60,7 @@ CONTENT_EXPORT extern const char kDisableScrollToTextFragment[];
 CONTENT_EXPORT extern const char kDisableSoftwareCompositingFallback[];
 CONTENT_EXPORT extern const char kDisableGpuWatchdog[];
 CONTENT_EXPORT extern const char kDisableIpcFloodingProtection[];
+CONTENT_EXPORT extern const char kDisableIgnoreDuplicateNavsForTesting[];
 CONTENT_EXPORT extern const char kDisableJavaScriptHarmonyShipping[];
 CONTENT_EXPORT extern const char kDisableLowLatencyDxva[];
 extern const char kDisableHistogramCustomizer[];
@@ -73,7 +73,7 @@ CONTENT_EXPORT extern const char kDisableNewContentRenderingTimeout[];
 CONTENT_EXPORT extern const char kDisableNotifications[];
 CONTENT_EXPORT extern const char kDisableNv12DxgiVideo[];
 CONTENT_EXPORT extern const char kDisableOriginTrialControlledBlinkFeatures[];
-extern const char kDisablePepper3d[];
+CONTENT_EXPORT extern const char kDisablePlatformAccessibilityIntegration[];
 CONTENT_EXPORT extern const char kDisablePresentationAPI[];
 CONTENT_EXPORT extern const char kDisablePushStateThrottle[];
 CONTENT_EXPORT extern const char kDisableReadingFromCanvas[];
@@ -162,10 +162,6 @@ CONTENT_EXPORT extern const char kNoUnsandboxedZygote[];
 CONTENT_EXPORT extern const char kNoZygote[];
 CONTENT_EXPORT extern const char kOverrideLanguageDetection[];
 CONTENT_EXPORT extern const char kPdfRenderer[];
-CONTENT_EXPORT extern const char kPpapiInProcess[];
-extern const char kPpapiPluginLauncher[];
-CONTENT_EXPORT extern const char kPpapiPluginProcess[];
-extern const char kPpapiStartupDialog[];
 CONTENT_EXPORT extern const char kPrivateAggregationDeveloperMode[];
 CONTENT_EXPORT extern const char kProcessPerSite[];
 CONTENT_EXPORT extern const char kProcessPerTab[];
@@ -173,9 +169,9 @@ CONTENT_EXPORT extern const char kProcessType[];
 CONTENT_EXPORT extern const char kProtectedAudiencesConsentedDebugToken[];
 CONTENT_EXPORT extern const char kPullToRefresh[];
 CONTENT_EXPORT extern const char kReduceAcceptLanguage[];
+CONTENT_EXPORT extern const char kReduceAcceptLanguageHTTP[];
 CONTENT_EXPORT extern const char kReduceUserAgentMinorVersion[];
 CONTENT_EXPORT extern const char kReduceUserAgentPlatformOsCpu[];
-CONTENT_EXPORT extern const char kRegisterPepperPlugins[];
 CONTENT_EXPORT extern const char kRemoteDebuggingPipe[];
 CONTENT_EXPORT extern const char kRemoteDebuggingPort[];
 CONTENT_EXPORT extern const char kRemoteAllowOrigins[];
@@ -198,6 +194,7 @@ CONTENT_EXPORT extern const char kStartFullscreen[];
 CONTENT_EXPORT extern const char kStatsCollectionController[];
 extern const char kSkiaFontCacheLimitMb[];
 extern const char kSkiaResourceCacheLimitMb[];
+CONTENT_EXPORT extern const char kTargetDeviceScaleForTesting[];
 CONTENT_EXPORT extern const char kTestType[];
 CONTENT_EXPORT extern const char kTimeTicksAtUnixEpoch[];
 CONTENT_EXPORT extern const char kTouchEventFeatureDetection[];
@@ -209,18 +206,15 @@ CONTENT_EXPORT extern const char kUseFakeUIForDigitalIdentity[];
 CONTENT_EXPORT extern const char kUseFakeUIForFedCM[];
 CONTENT_EXPORT extern const char kUseFakeUIForMediaStream[];
 CONTENT_EXPORT extern const char kVideoImageTextureTarget[];
-#if BUILDFLAG(IS_WIN)
-CONTENT_EXPORT extern const char kUseFontDataManager[];
-#endif
 #if BUILDFLAG(IS_ANDROID) && BUILDFLAG(INCLUDE_BOTH_V8_SNAPSHOTS)
 CONTENT_EXPORT extern const char kUseContextSnapshotSwitch[];
 #endif
-CONTENT_EXPORT extern const char kUseMobileUserAgent[];
 CONTENT_EXPORT extern const char kUseMockCertVerifierForTesting[];
 extern const char kUtilityCmdPrefix[];
 CONTENT_EXPORT extern const char kUtilityProcess[];
 CONTENT_EXPORT extern const char kUtilityStartupDialog[];
 CONTENT_EXPORT extern const char kUtilitySubType[];
+CONTENT_EXPORT extern const char kUtilityImmediateCrashForTesting[];
 CONTENT_EXPORT extern const char kV8CacheOptions[];
 CONTENT_EXPORT extern const char kDisallowV8FeatureFlagOverrides[];
 CONTENT_EXPORT extern const char kVerifyPixels[];
@@ -238,6 +232,7 @@ CONTENT_EXPORT extern const char kWebOtpBackendAuto[];
 CONTENT_EXPORT extern const char kWebRtcLocalEventLogging[];
 extern const char kWebRtcMaxCaptureFramerate[];
 #endif
+CONTENT_EXPORT extern const char kWebSettingsForTesting[];
 CONTENT_EXPORT extern const char kWebXrForceRuntime[];
 CONTENT_EXPORT extern const char kWebXrRuntimeNone[];
 CONTENT_EXPORT extern const char kWebXrRuntimeArCore[];
@@ -271,8 +266,6 @@ CONTENT_EXPORT extern const char kEnableSpeechDispatcher[];
 #if BUILDFLAG(IS_WIN)
 CONTENT_EXPORT extern const char kPrefetchArgumentRenderer[];
 CONTENT_EXPORT extern const char kPrefetchArgumentGpu[];
-CONTENT_EXPORT extern const char kPrefetchArgumentPpapi[];
-CONTENT_EXPORT extern const char kPrefetchArgumentPpapiBroker[];
 CONTENT_EXPORT extern const char kPrefetchArgumentOther[];
 // This switch contains the device scale factor passed to certain processes
 // like renderers, etc.
@@ -280,8 +273,6 @@ CONTENT_EXPORT extern const char kDeviceScaleFactor[];
 CONTENT_EXPORT extern const char kDisableLegacyIntermediateWindow[];
 // Switch to pass the font cache shared memory handle to the renderer.
 CONTENT_EXPORT extern const char kFontCacheSharedHandle[];
-CONTENT_EXPORT extern const char kPpapiAntialiasedTextEnabled[];
-CONTENT_EXPORT extern const char kPpapiSubpixelRenderingSetting[];
 CONTENT_EXPORT extern const char kRaiseTimerFrequency[];
 CONTENT_EXPORT extern const char kGpu2StartupDialog[];
 CONTENT_EXPORT extern const char kAudioProcessHighPriority[];
@@ -294,7 +285,7 @@ extern const char kIpcDumpDirectory[];
 extern const char kIpcFuzzerTestcase[];
 #endif
 
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
 extern const char kApplicationName[];
 extern const char kCdmWidevinePath[];
 #endif

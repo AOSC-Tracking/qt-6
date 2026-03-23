@@ -89,6 +89,12 @@ export class Switch extends LitElement {
   `;
 
   /** @nocollapse */
+  static override shadowRootOptions = {
+    ...LitElement.shadowRootOptions,
+    delegatesFocus: true,
+  };
+
+  /** @nocollapse */
   static override properties = {
     selected: {type: Boolean, reflect: true},
     disabled: {type: Boolean, reflect: true},
@@ -102,9 +108,9 @@ export class Switch extends LitElement {
   } as const;
 
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
   /** @export */
-  selected: boolean;
+  declare selected: boolean;
 
   get mdSwitch(): MdSwitch|undefined|null {
     return this.shadowRoot!.querySelector('md-switch');

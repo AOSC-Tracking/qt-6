@@ -30,7 +30,8 @@ class AnimationInterpolableValueTest : public testing::Test {
     // suffices for this, and also means we can ignore the AnimatableValues for
     // the compositor (as z-index isn't compositor-compatible).
     PropertyHandle property_handle(GetCSSPropertyZIndex());
-    CSSNumberInterpolationType interpolation_type(property_handle);
+    CSSNumberInterpolationType* interpolation_type(
+        MakeGarbageCollected<CSSNumberInterpolationType>(property_handle));
     InterpolationValue start(MakeGarbageCollected<InterpolableNumber>(a));
     InterpolationValue end(MakeGarbageCollected<InterpolableNumber>(b));
     TransitionInterpolation* i = MakeGarbageCollected<TransitionInterpolation>(
@@ -167,22 +168,22 @@ TEST_F(AnimationInterpolableValueTest, InterpolableNumberAsExpression) {
     double interpolation_fraction;
     double interpolation_result;
   } test_cases[] = {
-      {"progress(11em from 1rem to 110px) * 10", 10.0, 10.0, 5.0,
-       "progress(11em from 1rem to 110px) * 11", 11.0, 0.5, 10.5},
-      {"10deg", 10.0, 10.0, 5.0, "progress(11em from 1rem to 110px) * 11deg",
-       11.0, 0.5, 10.5},
-      {"progress(11em from 1rem to 110px) * 10deg", 10.0, 10.0, 5.0, "11deg",
-       11.0, 0.5, 10.5},
+      {"progress(11em, 1rem, 110px) * 10", 10.0, 10.0, 5.0,
+       "progress(11em, 1rem, 110px) * 11", 11.0, 0.5, 10.5},
+      {"10deg", 10.0, 10.0, 5.0, "progress(11em, 1rem, 110px) * 11deg", 11.0,
+       0.5, 10.5},
+      {"progress(11em, 1rem, 110px) * 10deg", 10.0, 10.0, 5.0, "11deg", 11.0,
+       0.5, 10.5},
   };
 
   using enum CSSMathExpressionNode::Flag;
   using Flags = CSSMathExpressionNode::Flags;
 
-  Font font;
+  Font* font = MakeGarbageCollected<Font>();
   CSSToLengthConversionData length_resolver =
       CSSToLengthConversionData(/*element=*/nullptr);
   length_resolver.SetFontSizes(
-      CSSToLengthConversionData::FontSizes(10.0f, 10.0f, &font, 1.0f));
+      CSSToLengthConversionData::FontSizes(10.0f, 10.0f, font, 1.0f));
 
   const CSSParserContext* context = MakeGarbageCollected<CSSParserContext>(
       kHTMLStandardMode, SecureContextMode::kInsecureContext);

@@ -17,6 +17,8 @@ LayerTreeSettings::LayerTreeSettings()
     : default_tile_size(gfx::Size(256, 256)),
       max_untiled_layer_size(gfx::Size(512, 512)),
       minimum_occlusion_tracking_size(gfx::Size(160, 160)),
+      use_layer_lists(
+          base::FeatureList::IsEnabled(features::kUseLayerListsByDefault)),
       memory_policy(64 * 1024 * 1024,
                     gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
                     ManagedMemoryPolicy::kDefaultNumResourcesLimit) {}
@@ -24,13 +26,13 @@ LayerTreeSettings::LayerTreeSettings()
 LayerTreeSettings::LayerTreeSettings(const LayerTreeSettings& other) = default;
 LayerTreeSettings::~LayerTreeSettings() = default;
 
-bool LayerTreeSettings::UseLayerContextForDisplay() const {
-  return use_layer_lists && !is_display_tree &&
+bool LayerTreeSettings::TreesInVizInClientProcess() const {
+  return !is_layer_tree_for_ui && !trees_in_viz_in_viz_process &&
          base::FeatureList::IsEnabled(features::kTreesInViz);
 }
 
 bool LayerTreeSettings::UseLayerContextForAnimations() const {
-  return UseLayerContextForDisplay() &&
+  return TreesInVizInClientProcess() &&
          base::FeatureList::IsEnabled(features::kTreeAnimationsInViz);
 }
 
@@ -43,8 +45,6 @@ SchedulerSettings LayerTreeSettings::ToSchedulerSettings() const {
   scheduler_settings.wait_for_all_pipeline_stages_before_draw =
       wait_for_all_pipeline_stages_before_draw;
   scheduler_settings.disable_frame_rate_limit = disable_frame_rate_limit;
-  scheduler_settings.use_layer_context_for_display =
-      UseLayerContextForDisplay();
 
   if (base::FeatureList::IsEnabled(::features::kDeferImplInvalidation)) {
     scheduler_settings.delay_impl_invalidation_frames =

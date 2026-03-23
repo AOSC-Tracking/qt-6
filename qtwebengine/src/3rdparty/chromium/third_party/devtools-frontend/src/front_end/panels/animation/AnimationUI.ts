@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
-import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import type * as SDK from '../../core/sdk/sdk.js';
@@ -27,15 +26,15 @@ const UIStrings = {
    *@example {anilogo} PH1
    */
   sSlider: '{PH1} slider',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/animation/AnimationUI.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 interface CachedElement {
   group: HTMLElement|null;
   animationLine: HTMLElement|null;
-  keyframePoints: {[x: number]: HTMLElement};
-  keyframeRender: {[x: number]: HTMLElement};
+  keyframePoints: Record<number, HTMLElement>;
+  keyframeRender: Record<number, HTMLElement>;
 }
 
 export class AnimationUI {
@@ -198,7 +197,7 @@ export class AnimationUI {
     if (keyframeIndex <= 0) {
       circle.style.fill = this.#color;
     }
-    this.#cachedElements[iteration].keyframePoints[keyframeIndex] = (circle as HTMLElement);
+    this.#cachedElements[iteration].keyframePoints[keyframeIndex] = (circle);
 
     if (!attachEvents) {
       return;
@@ -256,7 +255,7 @@ export class AnimationUI {
     } else {
       const stepFunction = StepTimingFunction.parse(easing);
       group.removeChildren();
-      const offsetMap: {[x: string]: number} = {start: 0, middle: 0.5, end: 1};
+      const offsetMap: Record<string, number> = {start: 0, middle: 0.5, end: 1};
       if (stepFunction) {
         const offsetWeight = offsetMap[stepFunction.stepAtPosition];
         for (let i = 0; i < stepFunction.steps; i++) {
@@ -301,7 +300,7 @@ export class AnimationUI {
     }
     while (iteration < this.#cachedElements.length) {
       const poppedElement = this.#cachedElements.pop();
-      if (poppedElement && poppedElement.group) {
+      if (poppedElement?.group) {
         poppedElement.group.remove();
       }
     }
@@ -438,16 +437,6 @@ export class AnimationUI {
     } else {
       this.#animationInternal.setTiming(this.duration(), this.delayOrStartTime());
     }
-
-    Host.userMetrics.animationPointDragged(
-        this.#mouseEventType === Events.ANIMATION_DRAG ? Host.UserMetrics.AnimationPointDragType.ANIMATION_DRAG :
-            this.#mouseEventType === Events.KEYFRAME_MOVE ?
-                                                         Host.UserMetrics.AnimationPointDragType.KEYFRAME_MOVE :
-            this.#mouseEventType === Events.START_ENDPOINT_MOVE ?
-                                                         Host.UserMetrics.AnimationPointDragType.START_ENDPOINT_MOVE :
-            this.#mouseEventType === Events.FINISH_ENDPOINT_MOVE ?
-                                                         Host.UserMetrics.AnimationPointDragType.FINISH_ENDPOINT_MOVE :
-                                                         Host.UserMetrics.AnimationPointDragType.OTHER);
 
     this.#movementInMs = 0;
     this.redraw();

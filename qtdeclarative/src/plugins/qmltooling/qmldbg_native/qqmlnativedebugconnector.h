@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLNATIVEDEBUGCONNECTOR_H
 #define QQMLNATIVEDEBUGCONNECTOR_H
@@ -32,8 +33,8 @@ private:
     void sendMessages(const QString &name, const QList<QByteArray> &messages);
     void announceObjectAvailability(const QString &objectType, QObject *object, bool available);
 
-    QVector<QQmlDebugService *> m_services;
-    QVector<QJSEngine *> m_engines;
+    QList<QQmlDebugService *> m_services;
+    QList<QJSEngine *> m_engines;
     bool m_blockingMode;
 };
 

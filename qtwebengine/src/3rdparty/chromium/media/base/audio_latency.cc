@@ -13,16 +13,11 @@
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "media/base/limits.h"
 #include "media/media_buildflags.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/build_info.h"
-#endif
-
-#if BUILDFLAG(IS_MAC)
-#include "media/base/mac/audio_latency_mac.h"
 #endif
 
 #if BUILDFLAG(IS_FUCHSIA)
@@ -70,7 +65,7 @@ int LCM(int a, int b) {
 
 // static
 bool AudioLatency::IsResamplingPassthroughSupported(Type type) {
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   return true;
 #elif BUILDFLAG(IS_FUCHSIA)
   return true;

@@ -15,10 +15,17 @@
 // We mean it.
 //
 
+#include <QtGrpc/private/qabstractgrpcchannel_p.h>
+#include <QtGrpc/qabstractgrpcchannel.h>
 #include <QtGrpc/qgrpcoperation.h>
+#include <QtGrpc/qgrpcoperationcontext.h>
 
 #include <QtCore/private/qobject_p.h>
 #include <QtCore/qatomic.h>
+#include <QtCore/qbytearray.h>
+
+#include <memory>
+#include <optional>
 
 QT_BEGIN_NAMESPACE
 
@@ -26,17 +33,24 @@ class QGrpcOperationPrivate : public QObjectPrivate
 {
     Q_DECLARE_PUBLIC(QGrpcOperation)
 public:
-    explicit QGrpcOperationPrivate(std::shared_ptr<QGrpcOperationContext> &&operationContext_)
-        : operationContext(std::move(operationContext_))
-    {
-    }
+    enum class State : quint8 {
+        Invalid,
+        Valid,
+        Finished,
+    };
+
     ~QGrpcOperationPrivate() override;
 
     QByteArray data;
-    std::shared_ptr<QGrpcOperationContext> operationContext;
-    QAtomicInteger<bool> isFinished{ false };
+    std::weak_ptr<QAbstractGrpcChannel> channel;
+    QGrpcOperationContext *operationContext = nullptr;
+    State state = State::Invalid;
 
     static const QGrpcOperationPrivate *get(const QGrpcOperation *op) { return op->d_func(); }
+    static QGrpcOperationPrivate *get(QGrpcOperation *op) { return op->d_func(); }
+
+    void asyncFinishInvalid(QGrpcStatus &&status);
+    std::optional<QByteArray> serializeInitialMessage(const QProtobufMessage &message);
 };
 
 QT_END_NAMESPACE

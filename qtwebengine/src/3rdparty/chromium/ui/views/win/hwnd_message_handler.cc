@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/compiler_specific.h"
 #include "base/containers/heap_array.h"
 #include "base/debug/gdi_debug_util_win.h"
 #include "base/functional/bind.h"
@@ -24,7 +25,10 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/notimplemented.h"
+#include "base/strings/string_util.h"
 #include "base/strings/string_util_win.h"
+#include "base/strings/stringprintf.h"
 #include "base/task/current_thread.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
@@ -32,9 +36,11 @@
 #include "base/win/dark_mode_support.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/win_util.h"
+#include "base/win/windows_version.h"
 #include "services/tracing/public/cpp/perfetto/macros.h"
 #include "third_party/perfetto/protos/perfetto/trace/track_event/chrome_window_handle_event_info.pbzero.h"
 #include "third_party/skia/include/core/SkPath.h"
+#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/platform/ax_fragment_root_win.h"
 #include "ui/accessibility/platform/ax_platform.h"
 #include "ui/accessibility/platform/ax_platform_node_win.h"
@@ -51,6 +57,7 @@
 #include "ui/base/win/session_change_observer.h"
 #include "ui/base/win/touch_input.h"
 #include "ui/base/win/win_cursor.h"
+#include "ui/display/screen.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/display/win/dpi.h"
 #include "ui/display/win/screen_win.h"
@@ -291,6 +298,23 @@ int GetFlagsFromRawInputMessage(RAWINPUT* input) {
   return ui::GetModifiersFromKeyState() | flags;
 }
 
+// Maps HWNDs to their owners.
+using WindowOwnerMap = base::flat_map<HWND, std::vector<HWND>>;
+
+// Callback for GetOwnedWindows(). For each window checks for an owner. If an
+// owner exists, it adds the window to the owner's list in the map.
+BOOL CALLBACK EnumOwnedWindowsProc(HWND hwnd, LPARAM l_param) {
+  HWND owner = ::GetWindow(hwnd, GW_OWNER);
+  if (owner) {
+    // The LPARAM is a direct pointer to our flat_map.
+    WindowOwnerMap* window_owner_map =
+        reinterpret_cast<WindowOwnerMap*>(l_param);
+    // Create an entry if it doesn't exist.
+    (*window_owner_map)[owner].push_back(hwnd);
+  }
+  return TRUE;  // Continue enumeration.
+}
+
 constexpr auto kTouchDownContextResetTimeout = base::Milliseconds(500);
 
 // Windows does not flag synthesized mouse messages from touch or pen in all
@@ -299,19 +323,6 @@ constexpr auto kTouchDownContextResetTimeout = base::Milliseconds(500);
 // between the touch/pen message and the mouse move is within 500 ms and at the
 // same location as the cursor.
 constexpr int kSynthesizedMouseMessagesTimeDifference = 500;
-
-// Returns true if the window is arranged via Snap. For example, the browser
-// window is snapped via buttons shown when the mouse is hovered over window
-// maximize button.
-bool IsWindowArranged(HWND window) {
-  // IsWindowArranged() is not a part of any header file.
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-iswindowarranged
-  using IsWindowArrangedFuncType = BOOL(WINAPI*)(HWND);
-  static const auto is_window_arranged_func =
-      reinterpret_cast<IsWindowArrangedFuncType>(
-          base::win::GetUser32FunctionPointer("IsWindowArranged"));
-  return is_window_arranged_func ? is_window_arranged_func(window) : false;
-}
 
 }  // namespace
 
@@ -409,11 +420,11 @@ bool HWNDMessageHandler::handle_pen_events_in_client_area_ = true;
 // static
 std::unique_ptr<HWNDMessageHandler> HWNDMessageHandler::Create(
     HWNDMessageHandlerDelegate* delegate,
-    const std::string& debugging_id,
-    bool headless_mode) {
+    const std::string& debugging_id) {
   HWNDMessageHandler* message_handler =
-      headless_mode ? new HWNDMessageHandlerHeadless(delegate, debugging_id)
-                    : new HWNDMessageHandler(delegate, debugging_id);
+      display::Screen::GetScreen()->IsHeadless()
+          ? new HWNDMessageHandlerHeadless(delegate, debugging_id)
+          : new HWNDMessageHandler(delegate, debugging_id);
   return base::WrapUnique(message_handler);
 }
 
@@ -436,6 +447,7 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate,
       menu_depth_(0),
       id_generator_(0),
       pen_processor_(&id_generator_, true),
+      user_resize_detector_(delegate),
       touch_down_contexts_(0),
       last_mouse_hwheel_time_(0),
       dwm_transition_desired_(false),
@@ -467,7 +479,9 @@ void HWNDMessageHandler::Init(HWND parent, const gfx::Rect& bounds) {
 }
 
 void HWNDMessageHandler::InitModalType(ui::mojom::ModalType modal_type) {
-  if (modal_type == ui::mojom::ModalType::kNone) {
+  // Windows only knows about window-level modality. Ignore other modalities:
+  // Child-modal is handled by the client. System-modal is not supported on Win.
+  if (modal_type != ui::mojom::ModalType::kWindow) {
     return;
   }
   // We implement modality by crawling up the hierarchy of windows starting
@@ -619,6 +633,43 @@ void HWNDMessageHandler::SetParentOrOwner(HWND new_parent) {
   }
 }
 
+std::vector<HWND> HWNDMessageHandler::GetOwnedWindows() {
+  std::vector<HWND> owned_windows;
+
+  // Build a map associating owned HWNDs with their owners.
+  WindowOwnerMap window_owner_map;
+  ::EnumThreadWindows(GetCurrentThreadId(), &EnumOwnedWindowsProc,
+                      reinterpret_cast<LPARAM>(&window_owner_map));
+
+  // If this handler's hwnd() is not in the map it doesn't own any windows.
+  if (window_owner_map.find(hwnd()) == window_owner_map.end()) {
+    return owned_windows;
+  }
+
+  // BFS to find all transitively owned windows.
+  base::queue<HWND> to_process;
+  to_process.push(hwnd());
+
+  while (!to_process.empty()) {
+    HWND current_owner = to_process.front();
+    to_process.pop();
+
+    // Find all windows directly owned by the current HWND.
+    auto it = window_owner_map.find(current_owner);
+    if (it != window_owner_map.end()) {
+      for (HWND owned_child : it->second) {
+        // The window could have been destroyed between EnumWindows and now.
+        if (IsWindow(owned_child)) {
+          owned_windows.push_back(owned_child);
+          // Queue the current child for BFS exploration.
+          to_process.push(owned_child);
+        }
+      }
+    }
+  }
+  return owned_windows;
+}
+
 void HWNDMessageHandler::SetDwmFrameExtension(DwmFrameState state) {
   if (!delegate_->HasFrame() && !is_translucent_) {
     MARGINS m = {0, 0, 0, 0};
@@ -650,14 +701,21 @@ void HWNDMessageHandler::SetRegion(HRGN region) {
 void HWNDMessageHandler::StackAbove(HWND other_hwnd) {
   // Windows API allows to stack behind another windows only.
   DCHECK(other_hwnd);
-  HWND next_window = GetNextWindow(other_hwnd, GW_HWNDPREV);
-  SetWindowPos(hwnd(), next_window ? next_window : HWND_TOP, 0, 0, 0, 0,
-               SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
+  HWND next_window = ::GetNextWindow(other_hwnd, GW_HWNDPREV);
+
+  // ::SetWindowPos can trigger a nested message loop with WindowPosChanged
+  // which can cause an unneeded resize.
+  base::AutoReset<bool> auto_reset(&ignore_window_pos_changes_, true);
+  ::SetWindowPos(hwnd(), next_window ? next_window : HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
 }
 
 void HWNDMessageHandler::StackAtTop() {
-  SetWindowPos(hwnd(), HWND_TOP, 0, 0, 0, 0,
-               SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
+  // ::SetWindowPos can trigger a nested message loop with WindowPosChanged
+  // which can cause an unneeded resize.
+  base::AutoReset<bool> auto_reset(&ignore_window_pos_changes_, true);
+  ::SetWindowPos(hwnd(), HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
 }
 
 void HWNDMessageHandler::Show(ui::mojom::WindowShowState show_state,
@@ -674,7 +732,8 @@ void HWNDMessageHandler::Show(ui::mojom::WindowShowState show_state,
     SetWindowPlacement(hwnd(), &placement);
     native_show_state = SW_SHOWMAXIMIZED;
   } else {
-    const bool is_maximized = IsMaximized();
+    const bool is_maximized_or_arranged =
+        IsMaximized() || IsWindowArranged(hwnd());
 
     // Use SW_SHOW/SW_SHOWNA instead of SW_SHOWNORMAL/SW_SHOWNOACTIVATE so that
     // the window is not restored to its original position if it is maximized.
@@ -684,7 +743,8 @@ void HWNDMessageHandler::Show(ui::mojom::WindowShowState show_state,
     // position, some do not. See crbug.com/1296710
     switch (show_state) {
       case ui::mojom::WindowShowState::kInactive:
-        native_show_state = is_maximized ? SW_SHOWNA : SW_SHOWNOACTIVATE;
+        native_show_state =
+            is_maximized_or_arranged ? SW_SHOWNA : SW_SHOWNOACTIVATE;
         break;
       case ui::mojom::WindowShowState::kMaximized:
         native_show_state = SW_SHOWMAXIMIZED;
@@ -695,9 +755,11 @@ void HWNDMessageHandler::Show(ui::mojom::WindowShowState show_state,
       case ui::mojom::WindowShowState::kNormal:
         if ((GetWindowLong(hwnd(), GWL_EXSTYLE) & WS_EX_TRANSPARENT) ||
             (GetWindowLong(hwnd(), GWL_EXSTYLE) & WS_EX_NOACTIVATE)) {
-          native_show_state = is_maximized ? SW_SHOWNA : SW_SHOWNOACTIVATE;
+          native_show_state =
+              is_maximized_or_arranged ? SW_SHOWNA : SW_SHOWNOACTIVATE;
         } else {
-          native_show_state = is_maximized ? SW_SHOW : SW_SHOWNORMAL;
+          native_show_state =
+              is_maximized_or_arranged ? SW_SHOW : SW_SHOWNORMAL;
         }
         break;
       case ui::mojom::WindowShowState::kFullscreen:
@@ -995,7 +1057,7 @@ void HWNDMessageHandler::SetAspectRatio(float aspect_ratio,
 
   // Convert to pixels.
   excluded_margin_ =
-      display::win::ScreenWin::DIPToScreenSize(hwnd(), excluded_margin);
+      display::win::GetScreenWin()->DIPToScreenSize(hwnd(), excluded_margin);
 
   // When the aspect ratio is set, size the window to adhere to it. This keeps
   // the same origin point as the original window.
@@ -1010,27 +1072,34 @@ void HWNDMessageHandler::SetAspectRatio(float aspect_ratio,
 
 void HWNDMessageHandler::SizeConstraintsChanged() {
   LONG style = GetWindowLong(hwnd(), GWL_STYLE);
-  // Ignore if this is not a standard window.
-  if (style & static_cast<LONG>(WS_POPUP | WS_CHILD)) {
-    return;
-  }
 
-  // Windows cannot have WS_THICKFRAME set if translucent.
-  // See CalculateWindowStylesFromInitParams().
-  if (delegate_->CanResize() && !is_translucent_) {
-    style |= WS_THICKFRAME | WS_MAXIMIZEBOX;
-    if (!delegate_->CanMaximize()) {
-      style &= ~WS_MAXIMIZEBOX;
+  // Key style considerations:
+  // - WS_THICKFRAME: Enables resizing. Cannot be used with translucent
+  //   windows (see CalculateWindowStylesFromInitParams() for details).
+  // - WS_CAPTION: Influences the default non-client frame thickness. It is used
+  //   in conjunction with WS_THICKFRAME to align with TYPE_WINDOW behavior,
+  //   allowing ui::GetResizableFrameThickness() to be used consistently when
+  //   removing the visible system frame.
+  const bool had_caption_on_init = window_style() & WS_CAPTION;
+  const bool can_resize = !is_translucent_ && delegate_->CanResize();
+  const bool can_maximize = can_resize && delegate_->CanMaximize();
+
+  auto set_style_func = [&style](LONG bit, bool should_set) {
+    if (should_set) {
+      style |= bit;
+    } else {
+      style &= ~bit;
     }
-  } else {
-    style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
-  }
-  if (delegate_->CanMinimize()) {
-    style |= WS_MINIMIZEBOX;
-  } else {
-    style &= ~WS_MINIMIZEBOX;
-  }
+  };
+  set_style_func(WS_THICKFRAME, can_resize);
+  set_style_func(WS_CAPTION,
+                 (can_resize | had_caption_on_init) &&
+                     !(style & static_cast<LONG>(WS_POPUP | WS_CHILD)));
+  set_style_func(WS_MAXIMIZEBOX, can_maximize);
+  set_style_func(WS_MINIMIZEBOX, delegate_->CanMinimize());
+
   SetWindowLong(hwnd(), GWL_STYLE, style);
+  SendFrameChanged();
 }
 
 // static
@@ -1153,7 +1222,7 @@ void HWNDMessageHandler::OnCaretBoundsChanged(
 
   const gfx::Rect dip_caret_bounds(client->GetCaretBounds());
   gfx::Rect caret_bounds =
-      display::win::ScreenWin::DIPToScreenRect(hwnd(), dip_caret_bounds);
+      display::win::GetScreenWin()->DIPToScreenRect(hwnd(), dip_caret_bounds);
   // Collapse any selection.
   caret_bounds.set_width(1);
   ax_system_caret_->MoveCaretTo(caret_bounds);
@@ -1247,13 +1316,6 @@ LRESULT HWNDMessageHandler::HandleNcHitTestMessage(unsigned int message,
       gfx::Point(CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param)));
   *handled = !ref.get() || msg_handled_;
   return ret;
-}
-
-void HWNDMessageHandler::HandleParentChanged() {
-  // If the forwarder window's parent is changed then we need to reset our
-  // context as we will not receive touch releases if the touch was initiated
-  // in the forwarder window.
-  touch_ids_.clear();
 }
 
 void HWNDMessageHandler::ApplyPinchZoomScale(float scale) {
@@ -1580,7 +1642,9 @@ void HWNDMessageHandler::ClientAreaSizeChanged() {
 
 bool HWNDMessageHandler::GetClientAreaInsets(gfx::Insets* insets,
                                              HMONITOR monitor) const {
-  if (delegate_->GetClientAreaInsets(insets, monitor)) {
+  int frame_thickness = ui::GetResizableFrameThicknessFromMonitorInPixels(
+      monitor, GetWindowLong(hwnd(), GWL_STYLE) & WS_CAPTION);
+  if (delegate_->GetClientAreaInsets(insets, frame_thickness)) {
     return true;
   }
   DCHECK(insets->IsEmpty());
@@ -1594,7 +1658,6 @@ bool HWNDMessageHandler::GetClientAreaInsets(gfx::Insets* insets,
   if (IsMaximized()) {
     // Windows automatically adds a standard width border to all sides when a
     // window is maximized.
-    int frame_thickness = ui::GetFrameThickness(monitor);
     if (!delegate_->HasFrame()) {
       frame_thickness -= 1;
     }
@@ -1639,7 +1702,8 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
     mi.cbSize = sizeof mi;
     GetMonitorInfo(monitor, &mi);
     RECT work_rect = mi.rcWork;
-    OffsetRect(&work_rect, -window_rect.left, -window_rect.top);
+    OffsetRect(&work_rect, static_cast<int>(-window_rect.left),
+               static_cast<int>(-window_rect.top));
     new_region.reset(CreateRectRgnIndirect(&work_rect));
   } else {
     SkPath window_mask;
@@ -1774,6 +1838,13 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
     ::SetProp(hwnd(), ui::kWindowTranslucent, reinterpret_cast<HANDLE>(1));
   }
 
+  if (base::win::GetVersion() >= base::win::Version::WIN11 &&
+      use_rounded_corner_) {
+    DWM_WINDOW_CORNER_PREFERENCE corner_pref = DWMWCP_ROUND;
+    DwmSetWindowAttribute(hwnd(), DWMWA_WINDOW_CORNER_PREFERENCE, &corner_pref,
+                          sizeof(corner_pref));
+  }
+
   fullscreen_handler_->set_hwnd(hwnd());
 
   base::win::AllowDarkModeForWindow(hwnd(), true);
@@ -1807,7 +1878,7 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
   // the DPI and thus must initialize dpi_ now. See https://crbug.com/1282804
   // for details.
   if (initial_bounds_valid_) {
-    dpi_ = display::win::ScreenWin::GetDPIForHWND(hwnd());
+    dpi_ = display::win::GetScreenWin()->GetDPIForHWND(hwnd());
   }
 
   // TODO(beng): move more of NWW::OnCreate here.
@@ -1816,7 +1887,7 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
 
 void HWNDMessageHandler::OnDestroy() {
   ::RemoveProp(hwnd(), ui::kWindowTranslucent);
-  session_change_observer_.reset(nullptr);
+  session_change_observer_.reset();
   delegate_->HandleDestroying();
   // If the window going away is a fullscreen window then remove its references
   // from the full screen window map.
@@ -1827,11 +1898,21 @@ void HWNDMessageHandler::OnDestroy() {
     map.erase(i);
   }
 
-  // If we have ever returned a UIA object via WM_GETOBJECT, signal that all
-  // objects associated with this HWND can be discarded. See:
-  // https://docs.microsoft.com/en-us/windows/win32/api/uiautomationcoreapi/nf-uiautomationcoreapi-uiareturnrawelementprovider#remarks
+  if (ax_fragment_root_ &&
+      base::FeatureList::IsEnabled(features::kUiaDisconnectRootProviders)) {
+    // Note that the fragment root's element provider is being disconnected so
+    // that re-entrant WM_GETOBJECT messages are not serviced.
+    disconnecting_fragment_root_ = true;
+
+    // Clean up UIA resources associated with this window's fragment root; see
+    // https://learn.microsoft.com/en-us/windows/win32/api/uiautomationcoreapi/nf-uiautomationcoreapi-uiadisconnectprovider.
+    ::UiaDisconnectProvider(ax_fragment_root_->GetProvider());
+  }
+
   if (did_return_uia_object_) {
-    UiaReturnRawElementProvider(hwnd(), 0, 0, nullptr);
+    // Disassociate this window from MSAA clients that are observing events; see
+    // https://docs.microsoft.com/en-us/windows/win32/api/uiautomationcoreapi/nf-uiautomationcoreapi-uiareturnrawelementprovider#remarks
+    ::UiaReturnRawElementProvider(hwnd(), 0, 0, nullptr);
   }
 }
 
@@ -1844,7 +1925,7 @@ void HWNDMessageHandler::OnDisplayChange(UINT bits_per_pixel,
   // that case, when monitors are added or removed, without a lot of extra
   // updates of the global ScreenWin DisplayInfos state. See
   // https://crbug.com/1413940 for more info.
-  display::win::ScreenWin::UpdateDisplayInfosIfNeeded();
+  display::win::GetScreenWin()->UpdateDisplayInfosIfNeeded();
 
   base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   delegate_->HandleDisplayChange();
@@ -1880,7 +1961,7 @@ LRESULT HWNDMessageHandler::OnDpiChanged(UINT msg,
     dpi = display::win::GetDPIFromScalingFactor(scaling_factor);
   } else {
     dpi = LOWORD(w_param);
-    scaling_factor = display::win::ScreenWin::GetScaleFactorForDPI(dpi);
+    scaling_factor = display::win::GetScreenWin()->GetScaleFactorForDPI(dpi);
   }
 
   // The first WM_DPICHANGED originates from EnableChildWindowDpiMessage during
@@ -1900,7 +1981,7 @@ LRESULT HWNDMessageHandler::OnDpiChanged(UINT msg,
   // in which the display a window is on has a different scale factor than the
   // window, when the window handles the scale factor change.
   // See https://crbug.com/1368455 for more info.
-  display::win::ScreenWin::UpdateDisplayInfos();
+  display::win::GetScreenWin()->UpdateDisplayInfos();
   SetBoundsInternal(gfx::Rect(*reinterpret_cast<RECT*>(l_param)), false);
   delegate_->HandleWindowScaleFactorChanged(scaling_factor);
   return 0;
@@ -1913,6 +1994,7 @@ void HWNDMessageHandler::OnEnterMenuLoop(BOOL from_track_popup_menu) {
 }
 
 void HWNDMessageHandler::OnEnterSizeMove() {
+  user_resize_detector_.OnEnterSizeMove();
   delegate_->HandleBeginWMSizeMove();
   SetMsgHandled(FALSE);
 }
@@ -1943,6 +2025,7 @@ void HWNDMessageHandler::OnExitMenuLoop(BOOL is_shortcut_menu) {
 }
 
 void HWNDMessageHandler::OnExitSizeMove() {
+  user_resize_detector_.OnExitSizeMove();
   delegate_->HandleEndWMSizeMove();
   SetMsgHandled(FALSE);
   // If the window was moved to a monitor which has a fullscreen window active,
@@ -2002,6 +2085,14 @@ LRESULT HWNDMessageHandler::OnGetObject(UINT message,
   const bool is_uia_active =
       is_uia_request && ::ui::AXPlatform::GetInstance().IsUiaProviderEnabled();
   const bool is_msaa_request = static_cast<DWORD>(OBJID_CLIENT) == obj_id;
+
+  if (is_uia_active && disconnecting_fragment_root_) {
+    // An application that calls UiaDisconnectProvider should not respond to a
+    // re-entrant WM_GETOBJECT message by returning a pointer to the provider
+    // that it is trying to disconnect.
+    // https://learn.microsoft.com/en-us/windows/win32/api/uiautomationcoreapi/nf-uiautomationcoreapi-uiadisconnectprovider
+    return 0;
+  }
 
   if (is_uia_request) {
     ::ui::AXPlatform::GetInstance().OnUiaProviderRequested(is_uia_active);
@@ -2135,9 +2226,6 @@ LRESULT HWNDMessageHandler::OnMouseActivate(UINT message,
   if (delegate_->HasNonClientView()) {
     if (delegate_->CanActivate()) {
       return MA_ACTIVATE;
-    }
-    if (delegate_->WantsMouseEventsWhenInactive()) {
-      return MA_NOACTIVATE;
     }
     return MA_NOACTIVATEANDEAT;
   }
@@ -2502,7 +2590,8 @@ void HWNDMessageHandler::OnNCPaint(HRGN rgn) {
     }
 
     // rgn_bounding_box is in screen coordinates. Map it to window coordinates.
-    OffsetRect(&dirty_region, -window_rect.left, -window_rect.top);
+    OffsetRect(&dirty_region, static_cast<int>(-window_rect.left),
+               static_cast<int>(-window_rect.top));
   }
 
   // We only do non-client painting if we're not using the system frame.
@@ -2518,7 +2607,8 @@ void HWNDMessageHandler::OnNCPaint(HRGN rgn) {
     ::GetClientRect(hwnd(), &client_rect);
     ::MapWindowPoints(hwnd(), nullptr, reinterpret_cast<POINT*>(&client_rect),
                       2);
-    ::OffsetRect(&client_rect, -window_rect.left, -window_rect.top);
+    ::OffsetRect(&client_rect, static_cast<int>(-window_rect.left),
+                 static_cast<int>(-window_rect.top));
     // client_rect now is in window space.
 
     base::win::ScopedGDIObject<HRGN> base(
@@ -2590,7 +2680,10 @@ void HWNDMessageHandler::OnPaint(HDC dc) {
   }
 
   if (!IsRectEmpty(&ps.rcPaint)) {
-    HBRUSH brush = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    HBRUSH brush = delegate_->GetBackgroundPaintBrush();
+    if (!brush) {
+      brush = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    }
 
     if (HasChildRenderingWindow()) {
       // If there's a child window that's being rendered to then clear the
@@ -2761,6 +2854,8 @@ void HWNDMessageHandler::OnSize(UINT param, const gfx::Size& size) {
 }
 
 void HWNDMessageHandler::OnSizing(UINT param, RECT* rect) {
+  user_resize_detector_.OnSizing();
+
   // If the aspect ratio was not specified for the window, do nothing.
   if (!aspect_ratio_.has_value()) {
     return;
@@ -3547,7 +3642,8 @@ bool HWNDMessageHandler::IsSynthesizedMouseMessage(unsigned int message,
     ::ClientToScreen(hwnd(), &mouse_location);
     POINT cursor_pos = {0};
     ::GetCursorPos(&cursor_pos);
-    return memcmp(&cursor_pos, &mouse_location, sizeof(POINT)) == 0;
+    return UNSAFE_TODO(memcmp(&cursor_pos, &mouse_location, sizeof(POINT))) ==
+           0;
   }
   return false;
 }

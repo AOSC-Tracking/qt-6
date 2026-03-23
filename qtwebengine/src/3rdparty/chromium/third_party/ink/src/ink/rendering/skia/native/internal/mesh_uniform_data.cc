@@ -54,6 +54,14 @@ SkMeshSpecification::Uniform::Type ExpectedSkiaUniformType(
       return SkMeshSpecification::Uniform::Type::kFloat4;
     case MeshSpecificationData::UniformId::kTextureMapping:
       return SkMeshSpecification::Uniform::Type::kInt;
+    case MeshSpecificationData::UniformId::kTextureAnimationProgress:
+      return SkMeshSpecification::Uniform::Type::kFloat;
+    case MeshSpecificationData::UniformId::kNumTextureAnimationFrames:
+      return SkMeshSpecification::Uniform::Type::kInt;
+    case MeshSpecificationData::UniformId::kNumTextureAnimationRows:
+      return SkMeshSpecification::Uniform::Type::kInt;
+    case MeshSpecificationData::UniformId::kNumTextureAnimationColumns:
+      return SkMeshSpecification::Uniform::Type::kInt;
   }
   ABSL_LOG(FATAL) << "Got `uniform_id` with non-enumerator value: "
                   << static_cast<int>(uniform_id);
@@ -117,6 +125,10 @@ void SetUnpackingTransform(MeshSpecificationData::UniformId uniform_id,
     case MeshSpecificationData::UniformId::kObjectToCanvasLinearComponent:
     case MeshSpecificationData::UniformId::kBrushColor:
     case MeshSpecificationData::UniformId::kTextureMapping:
+    case MeshSpecificationData::UniformId::kTextureAnimationProgress:
+    case MeshSpecificationData::UniformId::kNumTextureAnimationFrames:
+    case MeshSpecificationData::UniformId::kNumTextureAnimationRows:
+    case MeshSpecificationData::UniformId::kNumTextureAnimationColumns:
       break;
     case MeshSpecificationData::UniformId::kPositionUnpackingTransform:
     case MeshSpecificationData::UniformId::kSideDerivativeUnpackingTransform:

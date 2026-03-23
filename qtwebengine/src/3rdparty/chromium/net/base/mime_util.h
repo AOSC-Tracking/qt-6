@@ -48,6 +48,13 @@ NET_EXPORT bool GetWellKnownMimeTypeFromExtension(
 NET_EXPORT bool GetMimeTypeFromFile(const base::FilePath& file_path,
                                     std::string* mime_type);
 
+// Gets the mime type (if any) that is associated with the given file. Returns
+// true if a corresponding mime type exists. In this method, the search for a
+// mime type is constrained to a limited set of types known to the net library,
+// the OS/registry is not consulted.
+NET_EXPORT bool GetWellKnownMimeTypeFromFile(const base::FilePath& file_path,
+                                             std::string* mime_type);
+
 // Gets the preferred extension (if any) associated with the given mime type.
 // Returns true if a corresponding file extension exists.  The extension is
 // returned without a prefixed dot, ex "html".
@@ -57,8 +64,12 @@ NET_EXPORT bool GetPreferredExtensionForMimeType(
 
 // Returns true if this the mime_type_pattern matches a given mime-type.
 // Checks for absolute matching and wildcards. MIME types are case insensitive.
+// If `validate_mime_type` is true, MIME types in patterns containing wildcards
+// are validated to ensure they have exactly one slash in the type/subtype
+// portion (before any parameters).
 NET_EXPORT bool MatchesMimeType(std::string_view mime_type_pattern,
-                                std::string_view mime_type);
+                                std::string_view mime_type,
+                                bool validate_mime_type = false);
 
 // Parses |type_str| for |mime_type| and any |params|. Returns false if mime
 // cannot be parsed, and does not modify |mime_type| or |params|.

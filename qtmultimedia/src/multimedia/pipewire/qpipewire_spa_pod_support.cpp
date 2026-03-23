@@ -3,8 +3,6 @@
 
 #include "qpipewire_spa_pod_support_p.h"
 
-#include "qpipewire_support_p.h"
-
 #include <QtCore/qdebug.h>
 
 #include <pipewire/version.h>
@@ -17,6 +15,14 @@
 #  include "qpipewire_spa_compat_p.h"
 #endif
 
+#if PW_CHECK_VERSION(0, 3, 44)
+#  include <spa/param/audio/iec958.h>
+#else
+#  include "qpipewire_spa_compat_p.h"
+static constexpr spa_format SPA_FORMAT_AUDIO_iec958Codec = spa_format(65542);
+static constexpr spa_media_subtype SPA_MEDIA_SUBTYPE_iec958 = spa_media_subtype(3);
+#endif
+
 QT_BEGIN_NAMESPACE
 
 namespace QtPipeWire {
@@ -26,72 +32,53 @@ namespace {
 std::optional<std::variant<spa_audio_format, SpaEnum<spa_audio_format>>>
 parseSampleFormat(const spa_pod &pod)
 {
-    const spa_pod *format_pod = nullptr;
-    int res = spa_pod_parse_object(&pod, SPA_TYPE_OBJECT_Format, nullptr, SPA_FORMAT_AUDIO_format,
-                                   SPA_POD_OPT_PodChoice(&format_pod));
-    if (res < 0)
-        return std::nullopt;
+    std::optional<spa_audio_format> format = spaParsePodPropertyScalar<spa_audio_format>(
+            pod, SPA_TYPE_OBJECT_Format, SPA_FORMAT_AUDIO_format);
+    if (format)
+        return format;
 
-    if (!format_pod) {
-        qWarning() << "parseSampleFormat: parse error" << pod;
-        return std::nullopt;
-    }
-
-    if (spa_pod_is_choice(format_pod)) {
-        switch (SPA_POD_CHOICE_TYPE(format_pod)) {
-        case SPA_CHOICE_Enum: {
-            std::optional<SpaEnum<spa_audio_format>> formats =
-                    SpaEnum<spa_audio_format>::parse(format_pod);
-            if (formats)
-                return *formats;
-
-            qWarning() << "cannot parse audio format";
-            return std::nullopt;
-        }
-
-        default:
-            // TODO: can we obtain the full list of supported types?
-            qWarning() << "unhandled type" << SPA_POD_CHOICE_TYPE(format_pod);
-            return std::nullopt;
-        }
-    }
-
+    std::optional<SpaEnum<spa_audio_format>> choice =
+            spaParsePodPropertyChoice<spa_audio_format, SPA_CHOICE_Enum>(
+                    pod, SPA_TYPE_OBJECT_Format, SPA_FORMAT_AUDIO_format);
+    if (choice)
+        return *choice;
     return std::nullopt;
 }
 
-std::optional<std::variant<int, std::vector<int>, SpaRange<int>>>
-parseSamplingRates(const spa_pod &pod)
+std::optional<std::variant<SpaRange<int>, int>> parseSamplingRates(const spa_pod &pod)
 {
-    const spa_pod *rate_pod = nullptr;
-    int res = spa_pod_parse_object(&pod, SPA_TYPE_OBJECT_Format, nullptr, SPA_FORMAT_AUDIO_rate,
-                                   SPA_POD_OPT_PodChoice(&rate_pod));
-    if (res < 0)
-        return std::nullopt;
+    std::optional<int> rate =
+            spaParsePodPropertyScalar<int>(pod, SPA_TYPE_OBJECT_Format, SPA_FORMAT_AUDIO_format);
+    if (rate)
+        return rate;
 
-    if (!rate_pod) {
-        qWarning() << "parseSamplingRates: parse error" << pod;
-        return std::nullopt;
-    }
-
-    if (spa_pod_is_choice(rate_pod)) {
-        switch (SPA_POD_CHOICE_TYPE(rate_pod)) {
-        case SPA_CHOICE_Range: {
-            std::optional<SpaRange<int>> range = SpaRange<int>::parse(rate_pod);
-            if (range)
-                return *range;
-
-            qWarning() << "cannot parse sampling rates";
-            return std::nullopt;
-        }
-
-        default:
-            // TODO: can we obtain the full list of supported rates?
-            qWarning() << "unhandled type" << SPA_POD_CHOICE_TYPE(rate_pod);
-            return std::nullopt;
-        }
-    }
-
+    std::optional<SpaRange<int>> choice = spaParsePodPropertyChoice<int, SPA_CHOICE_Range>(
+            pod, SPA_TYPE_OBJECT_Format, SPA_FORMAT_AUDIO_rate);
+    if (choice)
+        return *choice;
     return std::nullopt;
+}
+
+bool isIec958Device(const spa_pod &pod)
+{
+    return spaParsePodPropertyScalar<spa_media_subtype>(pod, SPA_TYPE_OBJECT_Format,
+                                                        SPA_FORMAT_mediaSubtype)
+            == SPA_MEDIA_SUBTYPE_iec958;
+}
+
+bool isIec958PCMDevice(const spa_pod &pod)
+{
+    std::optional<spa_audio_iec958_codec> codec = spaParsePodPropertyScalar<spa_audio_iec958_codec>(
+            pod, SPA_TYPE_OBJECT_Format, SPA_FORMAT_AUDIO_iec958Codec);
+    if (codec)
+        return codec == spa_audio_iec958_codec::SPA_AUDIO_IEC958_CODEC_PCM;
+
+    std::optional<SpaEnum<spa_audio_iec958_codec>> choice =
+            spaParsePodPropertyChoice<spa_audio_iec958_codec, SPA_CHOICE_Enum>(
+                    pod, SPA_TYPE_OBJECT_Format, SPA_FORMAT_AUDIO_iec958Codec);
+    if (choice)
+        return choice->defaultValue() == spa_audio_iec958_codec::SPA_AUDIO_IEC958_CODEC_PCM;
+    return false;
 }
 
 } // namespace
@@ -105,27 +92,50 @@ std::optional<SpaObjectAudioFormat> SpaObjectAudioFormat::parse(const spa_pod_ob
     SpaObjectAudioFormat result;
     result.channelCount = int(info.channels);
 
+    bool isIec958 = isIec958Device(obj->pod);
+
     if (info.format != spa_audio_format::SPA_AUDIO_FORMAT_UNKNOWN) {
         result.sampleTypes = info.format;
+    } else if (isIec958) {
+        bool isIec958Pcm = isIec958PCMDevice(obj->pod);
+        if (isIec958Pcm) {
+            result.channelCount = 2; // IEC958 PCM is always stereo
+            result.sampleTypes = spa_audio_iec958_codec::SPA_AUDIO_IEC958_CODEC_PCM;
+        } else {
+            return std::nullopt;
+        }
     } else {
         auto optionalSampleFormat = parseSampleFormat(obj->pod);
         if (!optionalSampleFormat)
             return std::nullopt;
 
-        result.sampleTypes = std::move(*optionalSampleFormat);
+        std::visit([&](auto &&arg) {
+            result.sampleTypes = std::forward<decltype(arg)>(arg);
+        }, *optionalSampleFormat);
     }
 
     if (info.rate != 0) {
         result.rates = int(info.rate);
     } else {
         auto optionalSamplingRates = parseSamplingRates(obj->pod);
-        if (!optionalSamplingRates)
-            return std::nullopt;
-        result.rates = std::move(*optionalSamplingRates);
+        // note: some virtual devices don't expose any sampling rate
+        if (optionalSamplingRates) {
+            std::visit([&](auto arg) {
+                result.rates = arg;
+            }, *optionalSamplingRates);
+        }
     }
 
-    for (int channelIndex = 0; channelIndex != result.channelCount; ++channelIndex)
-        result.channelPositions.push_back(spa_audio_channel(info.position[channelIndex]));
+    if (isIec958) {
+        // IEC958 PCM is always stereo, and the POD won't contain any information about channel
+        // positioning.
+    } else if (!SPA_FLAG_IS_SET(info.flags, SPA_AUDIO_FLAG_UNPOSITIONED)) {
+        result.channelPositions = QList<spa_audio_channel>();
+        for (int channelIndex = 0; channelIndex != result.channelCount; ++channelIndex)
+            result.channelPositions->push_back(spa_audio_channel(info.position[channelIndex]));
+    } else {
+        // unpositionioned
+    }
 
     return result;
 }

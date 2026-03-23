@@ -31,7 +31,6 @@
 #include "third_party/blink/renderer/core/css/resolver/filter_operation_resolver.h"
 
 #include "third_party/blink/renderer/core/css/css_function_value.h"
-#include "third_party/blink/renderer/core/css/css_primitive_value_mappings.h"
 #include "third_party/blink/renderer/core/css/css_uri_value.h"
 #include "third_party/blink/renderer/core/css/resolver/style_builder_converter.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver_state.h"
@@ -190,12 +189,10 @@ FilterOperations FilterOperationResolver::CreateFilterOperations(
       CountFilterUse(FilterOperation::OperationType::kReference,
                      state.GetDocument());
 
-      SVGResource* resource =
-          state.GetElementStyleResources().GetSVGResourceFromValue(property_id,
-                                                                   *url_value);
       operations.Operations().push_back(
           MakeGarbageCollected<ReferenceFilterOperation>(
-              url_value->ValueForSerialization(), resource));
+              url_value->ValueForSerialization(),
+              state.GetSVGResource(property_id, *url_value)));
       continue;
     }
 

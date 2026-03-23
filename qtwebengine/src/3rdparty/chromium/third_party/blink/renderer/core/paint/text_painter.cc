@@ -16,18 +16,20 @@
 #include "third_party/blink/renderer/core/paint/decoration_line_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/svg_object_painter.h"
+#include "third_party/blink/renderer/core/paint/text_decoration_info.h"
 #include "third_party/blink/renderer/core/paint/text_paint_style.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_detector.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/style/paint_order_array.h"
 #include "third_party/blink/renderer/core/style/shadow_list.h"
 #include "third_party/blink/renderer/platform/fonts/font.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
 #include "third_party/blink/renderer/platform/fonts/text_fragment_paint_info.h"
+#include "third_party/blink/renderer/platform/geometry/stroke_data.h"
 #include "third_party/blink/renderer/platform/graphics/draw_looper_builder.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context_state_saver.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
-#include "third_party/blink/renderer/platform/graphics/stroke_data.h"
 
 namespace blink {
 
@@ -257,7 +259,7 @@ void PrepareSvgPaints(const TextPainter::SvgTextPaintState& state,
                                 &state]() -> const ComputedStyle& {
     if (state.IsPaintingSelection()) {
       if (const ComputedStyle* pseudo_selection_style =
-              layout_parent.GetSelectionStyle()) {
+              layout_parent.StyleRef().HighlightData().Selection()) {
         return *pseudo_selection_style;
       }
     }
@@ -462,43 +464,29 @@ void TextPainter::PaintSelectedText(
 }
 
 void TextPainter::SetEmphasisMark(const AtomicString& emphasis_mark,
-                                  TextEmphasisPosition position) {
+                                  LineLogicalSide emphasis_line_side) {
   emphasis_mark_ = emphasis_mark;
   const SimpleFontData* font_data = font_.PrimaryFont();
   DCHECK(font_data);
 
   if (!font_data || emphasis_mark.IsNull()) {
     emphasis_mark_offset_ = 0;
-  } else if ((horizontal_ && IsOver(position)) ||
-             (!horizontal_ && IsRight(position))) {
+  } else if (emphasis_line_side == LineLogicalSide::kOver) {
     emphasis_mark_offset_ = -font_data->GetFontMetrics().Ascent() -
                             font_.EmphasisMarkDescent(emphasis_mark);
   } else {
-    DCHECK(!IsOver(position) || position == TextEmphasisPosition::kOverLeft);
+    DCHECK(emphasis_line_side == LineLogicalSide::kUnder);
     emphasis_mark_offset_ = font_data->GetFontMetrics().Descent() +
                             font_.EmphasisMarkAscent(emphasis_mark);
   }
 }
 
-void TextPainter::PaintDecorationLine(
-    const TextDecorationInfo& decoration_info,
-    const Color& line_color,
-    const TextFragmentPaintInfo* fragment_paint_info) {
-  DecorationLinePainter decoration_painter(graphics_context_, decoration_info);
-  if (fragment_paint_info &&
-      decoration_info.TargetStyle().TextDecorationSkipInk() ==
-          ETextDecorationSkipInk::kAuto) {
-    // In order to ignore intersects less than 0.5px, inflate by -0.5.
-    gfx::RectF decoration_bounds = decoration_info.Bounds();
-    decoration_bounds.Inset(gfx::InsetsF::VH(0.5, 0));
-    ClipDecorationsStripe(
-        *fragment_paint_info,
-        decoration_info.InkSkipClipUpper(decoration_bounds.y()),
-        decoration_bounds.height(),
-        std::min(decoration_info.ResolvedThickness(),
-                 kDecorationClipMaxDilation));
-  }
+void TextPainter::PaintDecorationLine(const TextDecorationInfo& decoration_info,
+                                      const Color& line_color,
+                                      const AutoDarkMode& auto_dark_mode) {
+  const DecorationGeometry& geometry = decoration_info.GetGeometry();
 
+  DecorationLinePainter decoration_painter(graphics_context_);
   if (svg_text_paint_state_.has_value() &&
       !decoration_info.HasDecorationOverride()) {
     SvgPaints paints;
@@ -509,27 +497,36 @@ void TextPainter::PaintDecorationLine(
     const OrderedPaints ordered_paints =
         OrderPaints(paints, state.Style().PaintOrder());
     DrawPaintOrderPasses(ordered_paints, [&](const cc::PaintFlags& flags) {
-      decoration_painter.Paint(line_color, &flags);
+      decoration_painter.Paint(geometry, line_color, auto_dark_mode, &flags);
     });
   } else {
-    decoration_painter.Paint(line_color, nullptr);
+    decoration_painter.Paint(geometry, line_color, auto_dark_mode, nullptr);
   }
 }
 
-void TextPainter::ClipDecorationsStripe(
-    const TextFragmentPaintInfo& fragment_paint_info,
-    float upper,
-    float stripe_width,
-    float dilation) {
+void TextPainter::ClipDecorationLine(
+    const DecorationGeometry& geometry,
+    float text_baseline,
+    const TextFragmentPaintInfo& fragment_paint_info) {
   if (fragment_paint_info.from >= fragment_paint_info.to ||
-      !fragment_paint_info.shape_result)
+      !fragment_paint_info.shape_result) {
     return;
+  }
+
+  // In order to ignore intersects less than 0.5px, inflate by -0.5.
+  gfx::RectF decoration_bounds = DecorationLinePainter::Bounds(geometry);
+  decoration_bounds.Inset(gfx::InsetsF::VH(0.5, 0));
+
+  const float upper = decoration_bounds.y() - text_baseline;
+  const float stripe_width = decoration_bounds.height();
 
   Vector<Font::TextIntercept> text_intercepts;
   font_.GetTextIntercepts(fragment_paint_info, graphics_context_.FillFlags(),
                           std::make_tuple(upper, upper + stripe_width),
                           text_intercepts);
 
+  const float dilation =
+      std::min(geometry.Thickness(), kDecorationClipMaxDilation);
   for (auto intercept : text_intercepts) {
     gfx::PointF clip_origin(text_origin_);
     gfx::RectF clip_rect(

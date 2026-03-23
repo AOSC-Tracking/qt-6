@@ -24,7 +24,7 @@ export class Icons {
   static readonly SortedDesc = 'arrow_downward';
   static readonly GoBack = 'chevron_left';
   static readonly GoForward = 'chevron_right';
-  static readonly AddColumn = 'add';
+  static readonly Add = 'add';
   static readonly Close = 'close';
   static readonly Hide = 'visibility_off';
   static readonly Filter = 'filter_list';
@@ -41,4 +41,23 @@ export class Icons {
   static readonly ChangeTab = 'tab';
   static readonly Crashed = 'warning';
   static readonly Chart = 'bar_chart';
+  static readonly Change = 'change_circle';
+  static readonly GoTo = 'arrow_forward';
+  static readonly ContextMenuAlt = 'more_vert';
+  static readonly Warning = 'warning';
+  static readonly Help = 'help';
+  static readonly Download = 'download';
+  static readonly Check = 'check';
+
+  // Page control
+  static readonly NextPage = 'chevron_right';
+  static readonly PrevPage = 'chevron_left';
+  static readonly LastPage = 'last_page';
+  static readonly FirstPage = 'first_page';
+
+  // Sorting
+  static readonly SortAsc = 'arrow_upward';
+  static readonly SortDesc = 'arrow_downward';
+  static readonly ResetState = 'restart_alt';
+  static readonly Remove = 'clear';
 }

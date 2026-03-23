@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qcategory3daxis.h"
 #include "qquickgraphsscatter_p.h"
@@ -196,6 +198,114 @@ QScatter3DSeries::QScatter3DSeries(QScatterDataProxy *dataProxy, QObject *parent
 {
     Q_D(QScatter3DSeries);
     d->setDataProxy(dataProxy);
+}
+
+/*!
+ * \property QScatter3DSeries::axisX
+ * \since 6.11
+ *
+ * \brief Holds an additional X-axis for the series
+ *  If an axis is given, the series will be fitted
+ *  to the minimum and maximum values of the axis.
+ */
+void QScatter3DSeries::setAxisX(QValue3DAxis *axis) {
+    Q_D(QScatter3DSeries);
+    if (d->m_axisX == axis) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "value is already set to:" << axis;
+        return;
+    }
+    d->setAxisX(axis);
+    emit axisXChanged(axis);
+}
+
+QValue3DAxis *QScatter3DSeries::axisX() const {
+    Q_D(const QScatter3DSeries);
+    return d->m_axisX;
+}
+
+void QScatter3DSeries::resetAxisX()
+{
+    Q_D(QScatter3DSeries);
+    if (!d->m_axisX) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "axis X is not set";
+        return;
+    }
+    d->resetAxisX();
+    emit axisXChanged(nullptr);
+}
+
+/*!
+ * \property QScatter3DSeries::axisY
+ * \since 6.11
+ *
+ * \brief Holds an additional Y-axis for the series
+ *  If an axis is given, the series will be fitted
+ *  to the minimum and maximum values of the axis.
+ */
+void QScatter3DSeries::setAxisY(QValue3DAxis *axis) {
+    Q_D(QScatter3DSeries);
+    if (d->m_axisY == axis) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "value is already set to:" << axis;
+        return;
+    }
+    d->setAxisY(axis);
+    emit axisYChanged(axis);
+}
+
+QValue3DAxis *QScatter3DSeries::axisY() const {
+    Q_D(const QScatter3DSeries);
+    return d->m_axisY;
+}
+
+void QScatter3DSeries::resetAxisY()
+{
+    Q_D(QScatter3DSeries);
+    if (!d->m_axisY) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "axis Y is not set";
+        return;
+    }
+    d->resetAxisY();
+    emit axisYChanged(nullptr);
+}
+
+/*!
+ * \property QScatter3DSeries::axisZ
+ * \since 6.11
+ *
+ * \brief Holds an additional Z-axis for the series
+ *  If an axis is given, the series will be fitted
+ *  to the minimum and maximum values of the axis.
+ */
+void QScatter3DSeries::setAxisZ(QValue3DAxis *axis) {
+    Q_D(QScatter3DSeries);
+    if (d->m_axisZ == axis) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "value is already set to:" << axis;
+        return;
+    }
+    d->setAxisZ(axis);
+    emit axisZChanged(axis);
+}
+
+QValue3DAxis *QScatter3DSeries::axisZ() const {
+    Q_D(const QScatter3DSeries);
+    return d->m_axisZ;
+}
+
+void QScatter3DSeries::resetAxisZ()
+{
+    Q_D(QScatter3DSeries);
+    if (!d->m_axisZ) {
+        qCDebug(lcProperties3D) << __FUNCTION__
+            << "axis Z is not set";
+        return;
+    }
+    d->resetAxisZ();
+    emit axisZChanged(nullptr);
 }
 
 /*!
@@ -561,4 +671,36 @@ void QScatter3DSeriesPrivate::clearScaleArray()
     m_scaleArray.clear();
 }
 
+void QScatter3DSeriesPrivate::setAxisX(QValue3DAxis *axis)
+{
+    m_axisX = axis;
+}
+
+void QScatter3DSeriesPrivate::resetAxisX()
+{
+    m_axisX = nullptr;
+}
+
+void QScatter3DSeriesPrivate::setAxisY(QValue3DAxis *axis)
+{
+    m_axisY = axis;
+}
+
+void QScatter3DSeriesPrivate::resetAxisY()
+{
+    m_axisY = nullptr;
+}
+
+void QScatter3DSeriesPrivate::setAxisZ(QValue3DAxis *axis)
+{
+    m_axisZ = axis;
+}
+
+void QScatter3DSeriesPrivate::resetAxisZ()
+{
+    m_axisZ = nullptr;
+}
+
 QT_END_NAMESPACE
+
+#include "moc_qscatter3dseries.cpp"

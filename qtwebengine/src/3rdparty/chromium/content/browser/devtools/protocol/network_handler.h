@@ -9,6 +9,7 @@
 #include <optional>
 #include <vector>
 
+#include "base/functional/callback.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/memory/raw_ptr.h"
@@ -22,7 +23,7 @@
 #include "net/base/net_errors.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_setting_override.h"
-#include "net/filter/source_stream.h"
+#include "net/filter/source_stream_type.h"
 #include "net/net_buildflags.h"
 #include "services/network/public/mojom/devtools_observer.mojom-forward.h"
 #include "services/network/public/mojom/http_raw_headers.mojom-forward.h"
@@ -51,6 +52,7 @@ class URLLoaderFactoryOverride;
 
 namespace content {
 class BrowserContext;
+class DevToolsAgentHostClient;
 class DevToolsAgentHostImpl;
 class DevToolsIOContext;
 class DevToolsURLLoaderInterceptor;
@@ -71,11 +73,14 @@ class NetworkHandler : public DevToolsDomainHandler,
 #endif  // BUILDFLAG(ENABLE_REPORTING)
                        public Network::Backend {
  public:
-  NetworkHandler(const std::string& host_id,
-                 const base::UnguessableToken& devtools_token,
-                 DevToolsIOContext* io_context,
-                 base::RepeatingClosure update_loader_factories_callback,
-                 DevToolsAgentHostClient* client);
+  NetworkHandler(
+      const std::string& host_id,
+      const base::UnguessableToken& devtools_token,
+      DevToolsIOContext* io_context,
+      base::RepeatingClosure update_loader_factories_callback,
+      DevToolsAgentHostClient* client,
+      base::OnceClosure cleanup_after_modifications_callback =
+          base::OnceClosure());
 
   NetworkHandler(const NetworkHandler&) = delete;
   NetworkHandler& operator=(const NetworkHandler&) = delete;
@@ -106,7 +111,8 @@ class NetworkHandler : public DevToolsDomainHandler,
 
   Response Enable(std::optional<int> max_total_size,
                   std::optional<int> max_resource_size,
-                  std::optional<int> max_post_data_size) override;
+                  std::optional<int> max_post_data_size,
+                  std::optional<bool> report_direct_socket_traffic) override;
   Response Disable() override;
 
 #if BUILDFLAG(ENABLE_REPORTING)
@@ -216,11 +222,11 @@ class NetworkHandler : public DevToolsDomainHandler,
       bool is_download,
       network::mojom::URLLoaderFactoryOverride* intercepting_factory);
 
-  void ApplyOverrides(net::HttpRequestHeaders* headers,
-                      bool* skip_service_worker,
-                      bool* disable_cache,
-                      std::optional<std::vector<net::SourceStream::SourceType>>*
-                          accepted_stream_types);
+  void ApplyOverrides(
+      net::HttpRequestHeaders* headers,
+      bool* skip_service_worker,
+      bool* disable_cache,
+      std::optional<std::vector<net::SourceStreamType>>* accepted_stream_types);
   void ApplyCookieControlsOverrides(net::CookieSettingOverrides& overrides);
   void PrefetchRequestWillBeSent(
       const std::string& request_id,
@@ -406,8 +412,10 @@ class NetworkHandler : public DevToolsDomainHandler,
            std::unique_ptr<LoadNetworkResourceCallback>,
            base::UniquePtrComparator>
       loaders_;
-  std::optional<std::set<net::SourceStream::SourceType>> accepted_stream_types_;
+  std::optional<std::set<net::SourceStreamType>> accepted_stream_types_;
   std::unordered_map<String, std::pair<String, bool>> received_body_data_;
+  bool did_modifications_ = false;
+  base::OnceClosure cleanup_after_modifications_callback_;
   base::WeakPtrFactory<NetworkHandler> weak_factory_{this};
 };
 

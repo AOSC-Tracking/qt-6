@@ -7,10 +7,13 @@
 #include <algorithm>
 
 #include "base/memory/scoped_refptr.h"
+#include "base/strings/string_view_util.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "services/network/public/mojom/integrity_algorithm.mojom-blink.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
 #include "third_party/blink/renderer/platform/crypto.h"
+#include "third_party/blink/renderer/platform/feature_context.h"
 #include "third_party/blink/renderer/platform/loader/fetch/integrity_metadata.h"
 #include "third_party/blink/renderer/platform/loader/fetch/raw_resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
@@ -25,6 +28,7 @@
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+#include "third_party/blink/renderer/platform/wtf/text/base64.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -70,14 +74,6 @@ constexpr char kBadSha256AndBadSha384Integrities[] =
 constexpr char kUnsupportedHashFunctionIntegrity[] =
     "sha1-JfLW308qMPKfb4DaHpUBEESwuPc=";
 
-auto CompareIntegrityMetadataPair = [](const IntegrityMetadataPair& a,
-                                       const IntegrityMetadataPair& b) {
-  if (a.first != b.first) {
-    return WTF::CodeUnitCompareLessThan(a.first, b.first);
-  }
-  return a.second < b.second;
-};
-
 }  // namespace
 
 class SubresourceIntegrityTest : public testing::Test {
@@ -88,6 +84,15 @@ class SubresourceIntegrityTest : public testing::Test {
         context(MakeGarbageCollected<MockFetchContext>()) {}
 
  protected:
+  network::IntegrityMetadata CreateIntegrityMetadata(
+      const String& digest,
+      IntegrityAlgorithm algorithm) {
+    std::optional<network::IntegrityMetadata> expected =
+        network::IntegrityMetadata::CreateFromBase64(algorithm, digest.Ascii());
+    CHECK(expected);
+    return *expected;
+  }
+
   String AlgorithmToPrefix(IntegrityAlgorithm alg) {
     switch (alg) {
       case IntegrityAlgorithm::kSha256:
@@ -103,11 +108,11 @@ class SubresourceIntegrityTest : public testing::Test {
 
   void ExpectAlgorithm(const String& text,
                        IntegrityAlgorithm expected_algorithm) {
-    StringUTF8Adaptor string_data(text);
+    StringUtf8Adaptor string_data(text);
 
     IntegrityAlgorithm algorithm;
     auto result = SubresourceIntegrity::ParseAttributeAlgorithm(
-        base::as_string_view(string_data), algorithm);
+        base::as_string_view(string_data), nullptr, algorithm);
     ASSERT_TRUE(result.has_value());
     // All algorithm identifiers are currently 6 or 7 characters long.
     EXPECT_TRUE(result.value() == 6u || result.value() == 7u);
@@ -117,17 +122,17 @@ class SubresourceIntegrityTest : public testing::Test {
   void ExpectAlgorithmFailure(
       const String& text,
       SubresourceIntegrity::AlgorithmParseError expected_error) {
-    StringUTF8Adaptor string_data(text);
+    StringUtf8Adaptor string_data(text);
 
     IntegrityAlgorithm algorithm;
     auto result = SubresourceIntegrity::ParseAttributeAlgorithm(
-        base::as_string_view(string_data), algorithm);
+        base::as_string_view(string_data), nullptr, algorithm);
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(expected_error, result.error());
   }
 
   void ExpectDigest(const String& text, const char* expected_digest) {
-    StringUTF8Adaptor string_data(text);
+    StringUtf8Adaptor string_data(text);
 
     String digest;
     EXPECT_TRUE(SubresourceIntegrity::ParseDigest(
@@ -136,7 +141,7 @@ class SubresourceIntegrityTest : public testing::Test {
   }
 
   void ExpectDigestFailure(const String& text) {
-    StringUTF8Adaptor string_data(text);
+    StringUtf8Adaptor string_data(text);
 
     String digest;
     EXPECT_FALSE(SubresourceIntegrity::ParseDigest(
@@ -148,13 +153,16 @@ class SubresourceIntegrityTest : public testing::Test {
                    const char* expected_digest,
                    IntegrityAlgorithm expected_algorithm) {
     IntegrityMetadataSet metadata_set;
-    SubresourceIntegrity::ParseIntegrityAttribute(integrity_attribute,
-                                                  metadata_set);
+    SubresourceIntegrity::ParseIntegrityAttribute(
+        integrity_attribute, metadata_set, /*feature_context=*/nullptr);
     EXPECT_EQ(1u, metadata_set.hashes.size());
     if (metadata_set.hashes.size() > 0) {
-      IntegrityMetadata metadata = *metadata_set.hashes.begin();
-      EXPECT_EQ(expected_digest, metadata.Digest());
-      EXPECT_EQ(expected_algorithm, metadata.Algorithm());
+      Vector<uint8_t> expected_binary_digest;
+      ASSERT_TRUE(Base64Decode(expected_digest, expected_binary_digest));
+
+      network::IntegrityMetadata expected(expected_algorithm,
+                                          std::move(expected_binary_digest));
+      EXPECT_EQ(expected, *metadata_set.hashes.begin());
     }
   }
 
@@ -163,29 +171,29 @@ class SubresourceIntegrityTest : public testing::Test {
       base::span<const IntegrityMetadata> expected_metadata) {
     IntegrityMetadataSet expected_metadata_set;
     for (const auto& expected : expected_metadata) {
-      expected_metadata_set.hashes.insert(expected.ToPair());
+      expected_metadata_set.Insert(std::move(expected));
     }
     IntegrityMetadataSet metadata_set;
-    SubresourceIntegrity::ParseIntegrityAttribute(integrity_attribute,
-                                                  metadata_set);
+    SubresourceIntegrity::ParseIntegrityAttribute(
+        integrity_attribute, metadata_set, /*feature_context=*/nullptr);
     EXPECT_EQ(expected_metadata_set, metadata_set);
   }
 
   void ExpectParseFailure(const char* integrity_attribute) {
     IntegrityMetadataSet metadata_set;
-    SubresourceIntegrity::ParseIntegrityAttribute(integrity_attribute,
-                                                  metadata_set);
+    SubresourceIntegrity::ParseIntegrityAttribute(
+        integrity_attribute, metadata_set, /*feature_context=*/nullptr);
     EXPECT_EQ(metadata_set.hashes.size(), 0u);
-    EXPECT_EQ(metadata_set.signatures.size(), 0u);
+    EXPECT_EQ(metadata_set.public_keys.size(), 0u);
   }
 
   void ExpectEmptyParseResult(const char* integrity_attribute) {
     IntegrityMetadataSet metadata_set;
 
-    SubresourceIntegrity::ParseIntegrityAttribute(integrity_attribute,
-                                                  metadata_set);
+    SubresourceIntegrity::ParseIntegrityAttribute(
+        integrity_attribute, metadata_set, /*feature_context=*/nullptr);
     EXPECT_EQ(0u, metadata_set.hashes.size());
-    EXPECT_EQ(0u, metadata_set.signatures.size());
+    EXPECT_EQ(0u, metadata_set.public_keys.size());
   }
 
   enum ServiceWorkerMode {
@@ -213,8 +221,8 @@ class SubresourceIntegrityTest : public testing::Test {
                               const TestCase& test,
                               Expectation expectation) {
     IntegrityMetadataSet metadata_set;
-    SubresourceIntegrity::ParseIntegrityAttribute(String(integrity),
-                                                  metadata_set);
+    SubresourceIntegrity::ParseIntegrityAttribute(
+        String(integrity), metadata_set, /*feature_context=*/nullptr);
     SegmentedBuffer buffer;
     buffer.Append(base::span_from_cstring(kBasicScript));
     IntegrityReport integrity_report;
@@ -223,7 +231,7 @@ class SubresourceIntegrityTest : public testing::Test {
                   metadata_set, &buffer, test.url,
                   *CreateTestResource(test.url, test.request_mode,
                                       test.response_type),
-                  integrity_report, nullptr));
+                  nullptr, integrity_report, nullptr));
   }
 
   Resource* CreateTestResource(
@@ -399,12 +407,13 @@ TEST_F(SubresourceIntegrityTest, Parsing) {
   ExpectParseMultipleHashes("    ", {});
 
   const IntegrityMetadata valid_sha384_and_sha512[] = {
-      IntegrityMetadata(
+      CreateIntegrityMetadata(
           "XVVXBGoYw6AJOh9J+Z8pBDMVVPfkBpngexkA7JqZu8d5GENND6TEIup/tA1v5GPr",
           IntegrityAlgorithm::kSha384),
-      IntegrityMetadata("tbUPioKbVBplr0b1ucnWB57SJWt4x9dOE0Vy2mzCXvH3FepqDZ+"
-                        "07yMK81ytlg0MPaIrPAjcHqba5csorDWtKg==",
-                        IntegrityAlgorithm::kSha512),
+      CreateIntegrityMetadata(
+          "tbUPioKbVBplr0b1ucnWB57SJWt4x9dOE0Vy2mzCXvH3FepqDZ+"
+          "07yMK81ytlg0MPaIrPAjcHqba5csorDWtKg==",
+          IntegrityAlgorithm::kSha512),
   };
   ExpectParseMultipleHashes(
       "sha384-XVVXBGoYw6AJOh9J+Z8pBDMVVPfkBpngexkA7JqZu8d5GENND6TEIup/tA1v5GPr "
@@ -413,25 +422,25 @@ TEST_F(SubresourceIntegrityTest, Parsing) {
       valid_sha384_and_sha512);
 
   const IntegrityMetadata valid_sha256_and_sha256[] = {
-      IntegrityMetadata("BpfBw7ivV8q2jLiT13fxDYAe2tJllusRSZ273h2nFSE=",
-                        IntegrityAlgorithm::kSha256),
-      IntegrityMetadata("deadbeef", IntegrityAlgorithm::kSha256),
+      CreateIntegrityMetadata("BpfBw7ivV8q2jLiT13fxDYAe2tJllusRSZ273h2nFSE=",
+                              IntegrityAlgorithm::kSha256),
+      CreateIntegrityMetadata("deadbeef", IntegrityAlgorithm::kSha256),
   };
   ExpectParseMultipleHashes(
       "sha256-BpfBw7ivV8q2jLiT13fxDYAe2tJllusRSZ273h2nFSE= sha256-deadbeef",
       valid_sha256_and_sha256);
 
   const IntegrityMetadata valid_sha256_and_invalid_sha256[] = {
-      IntegrityMetadata("BpfBw7ivV8q2jLiT13fxDYAe2tJllusRSZ273h2nFSE=",
-                        IntegrityAlgorithm::kSha256),
+      CreateIntegrityMetadata("BpfBw7ivV8q2jLiT13fxDYAe2tJllusRSZ273h2nFSE=",
+                              IntegrityAlgorithm::kSha256),
   };
   ExpectParseMultipleHashes(
       "sha256-BpfBw7ivV8q2jLiT13fxDYAe2tJllusRSZ273h2nFSE= sha256-!!!!",
       valid_sha256_and_invalid_sha256);
 
   const IntegrityMetadata invalid_sha256_and_valid_sha256[] = {
-      IntegrityMetadata("BpfBw7ivV8q2jLiT13fxDYAe2tJllusRSZ273h2nFSE=",
-                        IntegrityAlgorithm::kSha256),
+      CreateIntegrityMetadata("BpfBw7ivV8q2jLiT13fxDYAe2tJllusRSZ273h2nFSE=",
+                              IntegrityAlgorithm::kSha256),
   };
   ExpectParseMultipleHashes(
       "sha256-!!! sha256-BpfBw7ivV8q2jLiT13fxDYAe2tJllusRSZ273h2nFSE=",
@@ -578,16 +587,17 @@ TEST_F(SubresourceIntegrityTest, FindBestAlgorithm) {
       IntegrityAlgorithm::kEd25519,
   };
 
-  WTF::HashSet<IntegrityMetadataPair> alg_set;
+  WTF::Vector<IntegrityMetadata> alg_set;
   for (IntegrityAlgorithm alg : algs) {
     SCOPED_TRACE(alg);
 
     // Check that each algorithm is the strongest in a single-item list.
-    EXPECT_EQ(alg, SubresourceIntegrity::FindBestAlgorithm({{"", alg}}));
+    EXPECT_EQ(alg, SubresourceIntegrity::FindBestAlgorithm(
+                       {CreateIntegrityMetadata("", alg)}));
 
     // Check that each algorithm in the test cases is stronger than the
     // previously-tested algorithms.
-    alg_set.insert(std::make_pair("", alg));
+    alg_set.push_back(CreateIntegrityMetadata("", alg));
     EXPECT_EQ(alg, SubresourceIntegrity::FindBestAlgorithm(alg_set));
   }
 }
@@ -599,8 +609,28 @@ class SubresourceIntegritySignatureTest
     : public SubresourceIntegrityTest,
       public ::testing::WithParamInterface<bool> {
  public:
+  class SignatureFeatureContext : public FeatureContext {
+   public:
+    explicit SignatureFeatureContext(bool status) : status_(status) {}
+
+    // This would need to be more complicated if we had more than one feature
+    // under test. Happily, we don't.
+    bool FeatureEnabled(mojom::blink::OriginTrialFeature) const override {
+      return status_;
+    }
+    RuntimeFeatureStateOverrideContext* GetRuntimeFeatureStateOverrideContext()
+        const override {
+      return nullptr;
+    }
+
+   private:
+    bool status_;
+  };
+
   SubresourceIntegritySignatureTest()
-      : scoped_integrity_(GetParam()), scoped_inline_integrity_(GetParam()) {}
+      : feature_context_(GetParam()),
+        scoped_integrity_(GetParam()),
+        scoped_inline_integrity_(GetParam()) {}
 
   bool SignaturesEnabled() { return GetParam(); }
 
@@ -610,28 +640,31 @@ class SubresourceIntegritySignatureTest
   void ValidateSingleSignatureBasedItem(const String& integrity_attribute,
                                         const String& digest) {
     IntegrityMetadataSet metadata_set;
-    SubresourceIntegrity::ParseIntegrityAttribute(integrity_attribute,
-                                                  metadata_set);
+    SubresourceIntegrity::ParseIntegrityAttribute(
+        integrity_attribute, metadata_set, /*feature_context=*/nullptr);
     EXPECT_EQ(0u, metadata_set.hashes.size());
     if (SignaturesEnabled()) {
-      ASSERT_EQ(1u, metadata_set.signatures.size());
+      ASSERT_EQ(1u, metadata_set.public_keys.size());
 
-      IntegrityMetadata metadata = *metadata_set.signatures.begin();
-      EXPECT_EQ(digest, metadata.Digest());
-      EXPECT_EQ(IntegrityAlgorithm::kEd25519, metadata.Algorithm());
+      Vector<uint8_t> binary_digest;
+      ASSERT_TRUE(Base64Decode(digest, binary_digest));
+
+      network::IntegrityMetadata expected(IntegrityAlgorithm::kEd25519,
+                                          std::move(binary_digest));
+      EXPECT_EQ(expected, *metadata_set.public_keys.begin());
     } else {
-      ASSERT_EQ(0u, metadata_set.signatures.size());
+      ASSERT_EQ(0u, metadata_set.public_keys.size());
     }
   }
 
   // Evalutes whether the given string is parsed into a set of IntegrityMetadata
-  // items that contains each of the items in |hashes| and |signatures|.
+  // items that contains each of the items in |hashes| and |public_keys|.
   void ValidateMultipleItems(const String& integrity_attribute,
-                             const Vector<IntegrityMetadataPair>& hashes,
-                             const Vector<IntegrityMetadataPair>& signatures) {
+                             const Vector<IntegrityMetadata>& hashes,
+                             const Vector<IntegrityMetadata>& public_keys) {
     IntegrityMetadataSet metadata_set;
-    SubresourceIntegrity::ParseIntegrityAttribute(integrity_attribute,
-                                                  metadata_set);
+    SubresourceIntegrity::ParseIntegrityAttribute(
+        integrity_attribute, metadata_set, /*feature_context=*/nullptr);
 
     // Validate hashes:
     ASSERT_EQ(hashes.size(), metadata_set.hashes.size());
@@ -641,14 +674,17 @@ class SubresourceIntegritySignatureTest
 
     // And then signatures:
     if (SignaturesEnabled()) {
-      ASSERT_EQ(signatures.size(), metadata_set.signatures.size());
-      for (const auto& item : signatures) {
-        EXPECT_TRUE(metadata_set.signatures.Contains(item));
+      ASSERT_EQ(public_keys.size(), metadata_set.public_keys.size());
+      for (const auto& item : public_keys) {
+        EXPECT_TRUE(metadata_set.public_keys.Contains(item));
       }
     } else {
-      ASSERT_EQ(0u, metadata_set.signatures.size());
+      ASSERT_EQ(0u, metadata_set.public_keys.size());
     }
   }
+
+ protected:
+  SignatureFeatureContext feature_context_;
 
  private:
   ScopedSignatureBasedIntegrityForTest scoped_integrity_;
@@ -704,20 +740,20 @@ TEST_P(SubresourceIntegritySignatureTest, ParseSingleSignature) {
 }
 
 TEST_P(SubresourceIntegritySignatureTest, ParseMultipleSignatures) {
-  Vector<IntegrityMetadataPair> signature_pairs = {
-      std::make_pair("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-                     IntegrityAlgorithm::kEd25519),
-      std::make_pair("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
-                     IntegrityAlgorithm::kEd25519),
-      std::make_pair("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=",
-                     IntegrityAlgorithm::kEd25519),
+  Vector<IntegrityMetadata> signature_pairs = {
+      CreateIntegrityMetadata("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                              IntegrityAlgorithm::kEd25519),
+      CreateIntegrityMetadata("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+                              IntegrityAlgorithm::kEd25519),
+      CreateIntegrityMetadata("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=",
+                              IntegrityAlgorithm::kEd25519),
   };
 
   do {
     StringBuilder attribute;
     for (const auto& pair : signature_pairs) {
-      attribute.Append(AlgorithmToPrefix(pair.second));
-      attribute.Append(pair.first);
+      attribute.Append(AlgorithmToPrefix(pair.algorithm));
+      attribute.Append(Base64Encode(pair.value));
       attribute.Append(' ');
     }
     SCOPED_TRACE(attribute.ToString());
@@ -731,41 +767,42 @@ TEST_P(SubresourceIntegritySignatureTest, ParseMultipleSignatures) {
     // Valid + invalid:
     ValidateMultipleItems(attribute.ToString() + " ed25519-???", {},
                           signature_pairs);
-  } while (std::next_permutation(signature_pairs.begin(), signature_pairs.end(),
-                                 CompareIntegrityMetadataPair));
+  } while (
+      std::next_permutation(signature_pairs.begin(), signature_pairs.end()));
 }
 
 TEST_P(SubresourceIntegritySignatureTest, ParseBoth) {
-  Vector<IntegrityMetadataPair> hash_pairs = {
+  Vector<IntegrityMetadata> hash_pairs = {
       // "Hello, world."
-      std::make_pair("+MO/YqmqPm/BYZwlDkir51GTc9Pt9BvmLrXcRRma8u8=",
-                     IntegrityAlgorithm::kSha256),
-      std::make_pair(
+      CreateIntegrityMetadata("+MO/YqmqPm/BYZwlDkir51GTc9Pt9BvmLrXcRRma8u8=",
+                              IntegrityAlgorithm::kSha256),
+      CreateIntegrityMetadata(
           "S7LmUoguRQsq3IHIZ0Xhm5jjCDqH6uUQbumuj5CnrIFDk+RyBW/dWuqzEiV4mPaB",
           IntegrityAlgorithm::kSha384),
-      std::make_pair("rQw3wx1psxXzqB8TyM3nAQlK2RcluhsNwxmcqXE2YbgoDW735o8TPmIR4"
-                     "uWpoxUERddvFwjgRSGw7gNPCwuvJg==",
-                     IntegrityAlgorithm::kSha512),
+      CreateIntegrityMetadata(
+          "rQw3wx1psxXzqB8TyM3nAQlK2RcluhsNwxmcqXE2YbgoDW735o8TPmIR4"
+          "uWpoxUERddvFwjgRSGw7gNPCwuvJg==",
+          IntegrityAlgorithm::kSha512),
   };
-  Vector<IntegrityMetadataPair> signature_pairs = {
-      std::make_pair("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-                     IntegrityAlgorithm::kEd25519),
-      std::make_pair("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
-                     IntegrityAlgorithm::kEd25519),
-      std::make_pair("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=",
-                     IntegrityAlgorithm::kEd25519),
+  Vector<IntegrityMetadata> signature_pairs = {
+      CreateIntegrityMetadata("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                              IntegrityAlgorithm::kEd25519),
+      CreateIntegrityMetadata("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+                              IntegrityAlgorithm::kEd25519),
+      CreateIntegrityMetadata("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=",
+                              IntegrityAlgorithm::kEd25519),
   };
 
   do {
     StringBuilder attribute;
     for (const auto& pair : signature_pairs) {
-      attribute.Append(AlgorithmToPrefix(pair.second));
-      attribute.Append(pair.first);
+      attribute.Append(AlgorithmToPrefix(pair.algorithm));
+      attribute.Append(Base64Encode(pair.value));
       attribute.Append(' ');
     }
     for (const auto& pair : hash_pairs) {
-      attribute.Append(AlgorithmToPrefix(pair.second));
-      attribute.Append(pair.first);
+      attribute.Append(AlgorithmToPrefix(pair.algorithm));
+      attribute.Append(Base64Encode(pair.value));
       attribute.Append(' ');
     }
     SCOPED_TRACE(attribute.ToString());
@@ -779,8 +816,8 @@ TEST_P(SubresourceIntegritySignatureTest, ParseBoth) {
     // Valid + invalid:
     ValidateMultipleItems(attribute.ToString() + " ed25519-???", hash_pairs,
                           signature_pairs);
-  } while (std::next_permutation(signature_pairs.begin(), signature_pairs.end(),
-                                 CompareIntegrityMetadataPair));
+  } while (
+      std::next_permutation(signature_pairs.begin(), signature_pairs.end()));
 }
 
 TEST_P(SubresourceIntegritySignatureTest, CheckEmpty) {
@@ -791,37 +828,38 @@ TEST_P(SubresourceIntegritySignatureTest, CheckEmpty) {
   String raw_headers = "";
   EXPECT_TRUE(SubresourceIntegrity::CheckSubresourceIntegrity(
       metadata_set, /*buffer=*/nullptr, sec_url, FetchResponseType::kCors,
-      raw_headers, integrity_report))
+      raw_headers, /*feature_context=*/nullptr, integrity_report))
       << "Fetch variant";
 
   Resource* resource =
       CreateTestResource(sec_url, RequestMode::kCors, FetchResponseType::kCors);
   EXPECT_TRUE(SubresourceIntegrity::CheckSubresourceIntegrity(
-      metadata_set, /*buffer=*/nullptr, sec_url, *resource, integrity_report,
-      nullptr))
+      metadata_set, /*buffer=*/nullptr, sec_url, *resource,
+      /*feature_context=*/nullptr, integrity_report, nullptr))
       << "Resource variant";
 }
 
 TEST_P(SubresourceIntegritySignatureTest, CheckNotSigned) {
   IntegrityReport integrity_report;
   IntegrityMetadataSet metadata_set;
-  metadata_set.signatures.insert(
-      std::make_pair("", IntegrityAlgorithm::kEd25519));
+  metadata_set.Insert(
+      CreateIntegrityMetadata("", IntegrityAlgorithm::kEd25519));
   String raw_headers = "";
 
   // If the flag is set, the lack of a signature will fail any signature
   // integrity requirement.
-  EXPECT_EQ(!SignaturesEnabled(),
-            SubresourceIntegrity::CheckSubresourceIntegrity(
-                metadata_set, /*buffer=*/nullptr, sec_url,
-                FetchResponseType::kCors, raw_headers, integrity_report));
+  EXPECT_EQ(
+      !SignaturesEnabled(),
+      SubresourceIntegrity::CheckSubresourceIntegrity(
+          metadata_set, /*buffer=*/nullptr, sec_url, FetchResponseType::kCors,
+          raw_headers, /*feature_context=*/nullptr, integrity_report));
 
   Resource* resource =
       CreateTestResource(sec_url, RequestMode::kCors, FetchResponseType::kCors);
   EXPECT_EQ(!SignaturesEnabled(),
             SubresourceIntegrity::CheckSubresourceIntegrity(
                 metadata_set, /*buffer=*/nullptr, sec_url, *resource,
-                integrity_report, nullptr))
+                /*feature_context=*/nullptr, integrity_report, nullptr))
       << "Resource variant";
 }
 
@@ -850,13 +888,13 @@ TEST_P(SubresourceIntegritySignatureTest, CheckValidSignature) {
 
   IntegrityReport integrity_report;
   IntegrityMetadataSet metadata_set;
-  metadata_set.signatures = {
-      std::make_pair(kPublicKey, IntegrityAlgorithm::kEd25519)};
+  metadata_set.public_keys = {
+      CreateIntegrityMetadata(kPublicKey, IntegrityAlgorithm::kEd25519)};
 
   // Valid signature matching the integrity requirement should always pass.
   EXPECT_TRUE(SubresourceIntegrity::CheckSubresourceIntegrity(
       metadata_set, /*buffer=*/nullptr, sec_url, FetchResponseType::kCors,
-      raw_headers, integrity_report));
+      raw_headers, /*feature_context=*/nullptr, integrity_report));
 
   Resource* resource =
       CreateTestResource(sec_url, RequestMode::kCors, FetchResponseType::kCors);
@@ -868,8 +906,8 @@ TEST_P(SubresourceIntegritySignatureTest, CheckValidSignature) {
   response.SetHttpHeaderField(http_names::kSignature,
                               AtomicString(kValidSignatureHeader));
   EXPECT_TRUE(SubresourceIntegrity::CheckSubresourceIntegrity(
-      metadata_set, /*buffer=*/nullptr, sec_url, *resource, integrity_report,
-      nullptr))
+      metadata_set, /*buffer=*/nullptr, sec_url, *resource,
+      /*feature_context=*/nullptr, integrity_report, nullptr))
       << "Resource variant";
 }
 
@@ -886,8 +924,8 @@ TEST_P(SubresourceIntegritySignatureTest, Inline_NoSignatures) {
   };
 
   for (const char* test : cases) {
-    EXPECT_TRUE(
-        SubresourceIntegrity::VerifyInlineIntegrity(kIntegrity, test, kSource));
+    EXPECT_TRUE(SubresourceIntegrity::VerifyInlineIntegrity(
+        kIntegrity, test, kSource, &feature_context_));
   }
 }
 
@@ -899,19 +937,19 @@ TEST_P(SubresourceIntegritySignatureTest, Inline_MatchingSignature) {
       "QEVqirecUGwbPaVWGWXWF6CcZrhYlVwB2+"
       "64fDhfMKBXQna2RLH4lBBOPjWkZ8juVmIRItaoCQ==";
 
-  EXPECT_TRUE(SubresourceIntegrity::VerifyInlineIntegrity(kIntegrity,
-                                                          kSignature, kSource));
+  EXPECT_TRUE(SubresourceIntegrity::VerifyInlineIntegrity(
+      kIntegrity, kSignature, kSource, &feature_context_));
   // Valid + valid = Verified
   EXPECT_TRUE(SubresourceIntegrity::VerifyInlineIntegrity(
-      kIntegrity, kSignature + " " + kSignature, kSource));
+      kIntegrity, kSignature + " " + kSignature, kSource, &feature_context_));
 
   // Valid + invalid = Verified
   EXPECT_TRUE(SubresourceIntegrity::VerifyInlineIntegrity(
-      kIntegrity, kSignature + " ed25519-aaa", kSource));
+      kIntegrity, kSignature + " ed25519-aaa", kSource, &feature_context_));
 
   // Invalid + valid = Verified
   EXPECT_TRUE(SubresourceIntegrity::VerifyInlineIntegrity(
-      kIntegrity, "ed25519-aaa " + kSignature, kSource));
+      kIntegrity, "ed25519-aaa " + kSignature, kSource, &feature_context_));
 }
 
 TEST_P(SubresourceIntegritySignatureTest, Inline_NonMatchingSignature) {
@@ -926,23 +964,67 @@ TEST_P(SubresourceIntegritySignatureTest, Inline_NonMatchingSignature) {
 
   // Non-matching => Fail verification
   EXPECT_EQ(should_fail_verification,
-            SubresourceIntegrity::VerifyInlineIntegrity(kIntegrity, kSignature,
-                                                        kSource));
+            SubresourceIntegrity::VerifyInlineIntegrity(
+                kIntegrity, kSignature, kSource, &feature_context_));
 
   // Non-matching + Non-matching => Fail verification
   EXPECT_EQ(should_fail_verification,
             SubresourceIntegrity::VerifyInlineIntegrity(
-                kIntegrity, kSignature + " " + kSignature, kSource));
+                kIntegrity, kSignature + " " + kSignature, kSource,
+                &feature_context_));
 
   // Non-matching + invalid => Fail verification
-  EXPECT_EQ(should_fail_verification,
-            SubresourceIntegrity::VerifyInlineIntegrity(
-                kIntegrity, kSignature + " ed25519-aaa", kSource));
+  EXPECT_EQ(
+      should_fail_verification,
+      SubresourceIntegrity::VerifyInlineIntegrity(
+          kIntegrity, kSignature + " ed25519-aaa", kSource, &feature_context_));
 
   // Invalid + non-matching => Fail verification
-  EXPECT_EQ(should_fail_verification,
-            SubresourceIntegrity::VerifyInlineIntegrity(
-                kIntegrity, "ed25519-aaa " + kSignature, kSource));
+  EXPECT_EQ(
+      should_fail_verification,
+      SubresourceIntegrity::VerifyInlineIntegrity(
+          kIntegrity, "ed25519-aaa " + kSignature, kSource, &feature_context_));
+}
+
+TEST_P(SubresourceIntegritySignatureTest, UseCounter) {
+  // Just public key:
+  {
+    String kIntegrity = "ed25519-JrQLj5P/89iXES9+vFgrIy29clF9CC/oPPsw3c5D0bs=";
+    IntegrityMetadataSet metadata;
+    IntegrityReport report;
+    SubresourceIntegrity::ParseIntegrityAttribute(kIntegrity, metadata,
+                                                  &feature_context_, &report);
+    EXPECT_FALSE(
+        report.UseCountersForTesting().Contains(WebFeature::kSRIHashAssertion));
+    EXPECT_EQ(SignaturesEnabled(), report.UseCountersForTesting().Contains(
+                                       WebFeature::kSRIPublicKeyAssertion));
+  }
+  // Just hash:
+  {
+    String kIntegrity = "sha256-GAF48QOoxRvu0gZAmQivUdJPyBacqznBAXwnkfpmQX4=";
+    IntegrityMetadataSet metadata;
+    IntegrityReport report;
+    SubresourceIntegrity::ParseIntegrityAttribute(kIntegrity, metadata,
+                                                  &feature_context_, &report);
+    EXPECT_TRUE(
+        report.UseCountersForTesting().Contains(WebFeature::kSRIHashAssertion));
+    EXPECT_FALSE(report.UseCountersForTesting().Contains(
+        WebFeature::kSRIPublicKeyAssertion));
+  }
+  // Both:
+  {
+    String kIntegrity =
+        "sha256-GAF48QOoxRvu0gZAmQivUdJPyBacqznBAXwnkfpmQX4= "
+        "ed25519-JrQLj5P/89iXES9+vFgrIy29clF9CC/oPPsw3c5D0bs=";
+    IntegrityMetadataSet metadata;
+    IntegrityReport report;
+    SubresourceIntegrity::ParseIntegrityAttribute(kIntegrity, metadata,
+                                                  &feature_context_, &report);
+    EXPECT_TRUE(
+        report.UseCountersForTesting().Contains(WebFeature::kSRIHashAssertion));
+    EXPECT_EQ(SignaturesEnabled(), report.UseCountersForTesting().Contains(
+                                       WebFeature::kSRIPublicKeyAssertion));
+  }
 }
 
 }  // namespace blink

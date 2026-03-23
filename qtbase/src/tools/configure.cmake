@@ -18,6 +18,12 @@ qt_feature("macdeployqt" PRIVATE
     AUTODETECT CMAKE_HOST_APPLE
     CONDITION MACOS AND QT_FEATURE_thread)
 
+qt_feature("wasmdeployqt" PRIVATE
+    SECTION "Deployment"
+    LABEL "WebAssembly deployment tool"
+    PURPOSE "The WebAssembly deployment tool is designed to automate the process of creating a deployable folder especially for dynamic linking case variant."
+    CONDITION QT_FEATURE_process)
+
 qt_feature("windeployqt" PRIVATE
     SECTION "Deployment"
     LABEL "Windows deployment tool"
@@ -31,7 +37,7 @@ qt_feature("qmake" PRIVATE
         QT_FEATURE_datestring AND QT_FEATURE_regularexpression AND QT_FEATURE_temporaryfile)
 
 qt_feature("qtwaylandscanner" PRIVATE
-    CONDITION TARGET Wayland::Scanner
+    CONDITION TARGET Wayland::Scanner AND NOT INTEGRITY AND NOT ANDROID AND NOT WASM AND NOT IOS AND NOT QNX AND NOT VXWORKS
 )
 
 qt_configure_add_summary_section(NAME "Core tools")

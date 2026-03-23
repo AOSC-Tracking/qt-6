@@ -9,10 +9,10 @@
 #include <optional>
 #include <string>
 
+#include "base/auto_reset.h"
 #include "base/types/expected.h"
 #include "base/types/optional_ref.h"
 #include "net/base/cronet_buildflags.h"
-#include "net/base/features.h"
 #include "net/base/net_export.h"
 #include "net/base/network_isolation_key.h"
 #include "net/base/schemeful_site.h"
@@ -129,9 +129,7 @@ class NET_EXPORT CookiePartitionKey {
   // TODO(crbug.com/40188414) Consider removing this factory method and
   // `from_script_` flag when BlinkStorageKey is available in
   // ServiceWorkerGlobalScope.
-  static std::optional<CookiePartitionKey> FromScript() {
-    return std::make_optional(CookiePartitionKey(true));
-  }
+  static CookiePartitionKey FromScript() { return CookiePartitionKey(true); }
 
   // Create a new CookiePartitionKey from the components of a StorageKey.
   // Forwards to FromWire, but unlike that method in this one the optional nonce
@@ -170,6 +168,10 @@ class NET_EXPORT CookiePartitionKey {
   // Cookie partition keys whose internal site is opaque cannot be serialized.
   bool IsSerializeable() const;
 
+  // Returns true if unpartitioned cookie access is forbidden for the current
+  // cookie partition key.
+  bool ForbidsUnpartitionedCookieAccess() const { return nonce_.has_value(); }
+
   const std::optional<base::UnguessableToken>& nonce() const { return nonce_; }
 
   static bool HasNonce(base::optional_ref<const CookiePartitionKey> key) {
@@ -179,6 +181,22 @@ class NET_EXPORT CookiePartitionKey {
   bool IsThirdParty() const {
     return ancestor_chain_bit_ == AncestorChainBit::kCrossSite;
   }
+
+#if BUILDFLAG(IS_ANDROID)
+  // Globally disable cookie partitioning. This must be called before any
+  // CookiePartitionKeys are created.
+  // This is used to disable CHIPS in WebView, and should not be used by any
+  // other embedder.
+  static void DisablePartitioningInWebView();
+
+  // Return whether partitioning has been disabled in WebView.
+  // Other embedders should not use this method.
+  static bool IsPartitioningDisabledInWebView();
+
+  // Disable partitioning in unit tests.
+  [[nodiscard]]
+  static base::AutoReset<bool> DisablePartitioningInScopeForTesting();
+#endif  // BUILDFLAG(IS_ANDROID)
 
  private:
   // Used by DeserializeInternal to determine how strict the context should be
@@ -207,15 +225,17 @@ class NET_EXPORT CookiePartitionKey {
       CookiePartitionKey::AncestorChainBit has_cross_site_ancestor,
       CookiePartitionKey::ParsingMode parsing_mode);
 
-  AncestorChainBit MaybeAncestorChainBit() const;
+  AncestorChainBit GetAncestorChainBit() const { return ancestor_chain_bit_; }
+
+#if BUILDFLAG(IS_ANDROID)
+  static bool g_partitioning_disabled_in_webview_;
+  // Used to assert that no constructors are called before partitioning is
+  // disabled.
+  static bool g_constructor_called_;
+#endif  // BUILDFLAG(IS_ANDROID)
 
   SchemefulSite site_;
   bool from_script_ = false;
-  // crbug.com/328043119 remove code associated with
-  // kAncestorChainBitEnabledInPartitionedCookies
-  //  when feature is no longer needed.
-  bool ancestor_chain_enabled_ = base::FeatureList::IsEnabled(
-      features::kAncestorChainBitEnabledInPartitionedCookies);
 
   // Having a nonce is a way to force a transient opaque `CookiePartitionKey`
   // for non-opaque origins.

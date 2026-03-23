@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLABSTRACTPROFILERADAPTER_P_H
 #define QQMLABSTRACTPROFILERADAPTER_P_H
@@ -9,6 +10,7 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QElapsedTimer>
+#include <QtCore/QThread>
 
 //
 //  W A R N I N G
@@ -32,9 +34,16 @@ class Q_QML_EXPORT QQmlAbstractProfilerAdapter : public QObject, public QQmlProf
 public:
     static const int s_numMessagesPerBatch = 1000;
 
-    QQmlAbstractProfilerAdapter(QObject *parent = nullptr) :
-        QObject(parent), service(nullptr), waiting(true), featuresEnabled(0) {}
-    ~QQmlAbstractProfilerAdapter() override {}
+    QQmlAbstractProfilerAdapter(QObject *parent = nullptr) : QObject(parent) {}
+    ~QQmlAbstractProfilerAdapter() override
+    {
+        QThread *currentThread = QThread::currentThread();
+        QThread *mainThread = thread();
+        if (currentThread != mainThread) {
+            qFatal("Qml debugging framework was cleaned up from wrong thread. Did you leak your "
+                   "QCoreApplication?");
+        }
+    }
     void setService(QQmlProfilerService *new_service) { service = new_service; }
 
     virtual qint64 sendMessages(qint64 until, QList<QByteArray> &messages) = 0;
@@ -48,7 +57,7 @@ public:
     void stopWaiting() { waiting = false; }
     void startWaiting() { waiting = true; }
 
-    bool isRunning() const { return featuresEnabled != 0; }
+    bool isRunning() const { return running; }
     quint64 features() const { return featuresEnabled; }
 
     void synchronize(const QElapsedTimer &t) { Q_EMIT referenceTimeKnown(t); }
@@ -64,11 +73,12 @@ Q_SIGNALS:
     void referenceTimeKnown(const QElapsedTimer &timer);
 
 protected:
-    QQmlProfilerService *service;
+    QQmlProfilerService *service = nullptr;
 
 private:
-    bool waiting;
-    quint64 featuresEnabled;
+    quint64 featuresEnabled = 0;
+    bool waiting = true;
+    bool running = false;
 };
 
 class Q_QML_EXPORT QQmlAbstractProfilerAdapterFactory : public QObject

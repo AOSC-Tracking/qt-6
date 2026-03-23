@@ -26,6 +26,7 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
@@ -159,9 +160,11 @@ bool PermissionBubbleMediaAccessHandler::CheckMediaAccessPermission(
   // instead.
   return render_frame_host->GetBrowserContext()
              ->GetPermissionController()
-             ->GetPermissionStatusForCurrentDocument(permission_type,
-                                                     render_frame_host) ==
-         blink::mojom::PermissionStatus::GRANTED;
+             ->GetPermissionStatusForCurrentDocument(
+                 content::PermissionDescriptorUtil::
+                     CreatePermissionDescriptorForPermissionType(
+                         permission_type),
+                 render_frame_host) == blink::mojom::PermissionStatus::GRANTED;
 }
 
 void PermissionBubbleMediaAccessHandler::HandleRequest(
@@ -355,7 +358,7 @@ void PermissionBubbleMediaAccessHandler::OnAccessRequestResponse(
                  system_audio_permission == SystemPermission::kDenied) {
         content_settings::UpdateLocationBarUiForWebContents(web_contents);
         final_result =
-            blink::mojom::MediaStreamRequestResult::SYSTEM_PERMISSION_DENIED;
+            blink::mojom::MediaStreamRequestResult::PERMISSION_DENIED_BY_SYSTEM;
         system_media_permissions::SystemAudioCapturePermissionBlocked();
       } else {
         DCHECK_EQ(system_audio_permission, SystemPermission::kAllowed);
@@ -383,7 +386,7 @@ void PermissionBubbleMediaAccessHandler::OnAccessRequestResponse(
                  system_video_permission == SystemPermission::kDenied) {
         content_settings::UpdateLocationBarUiForWebContents(web_contents);
         final_result =
-            blink::mojom::MediaStreamRequestResult::SYSTEM_PERMISSION_DENIED;
+            blink::mojom::MediaStreamRequestResult::PERMISSION_DENIED_BY_SYSTEM;
         system_media_permissions::SystemVideoCapturePermissionBlocked();
       } else {
         DCHECK_EQ(system_video_permission, SystemPermission::kAllowed);
@@ -405,6 +408,12 @@ void PermissionBubbleMediaAccessHandler::OnAccessRequestResponse(
         base::BindOnce(
             &PermissionBubbleMediaAccessHandler::ProcessQueuedAccessRequest,
             base::Unretained(this), base::UnsafeDangling(web_contents)));
+  }
+
+  if (final_result != blink::mojom::MediaStreamRequestResult::OK) {
+    std::move(callback).Run(blink::mojom::StreamDevicesSet(), final_result,
+                            std::move(ui));
+    return;
   }
 
   std::move(callback).Run(stream_devices_set, final_result, std::move(ui));

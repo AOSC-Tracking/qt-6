@@ -67,7 +67,7 @@ class CORE_EXPORT LayoutImageResource
   // the "broken image".
   void UseBrokenImage();
 
-  virtual bool HasIntrinsicSize() const;
+  bool IsAccessAllowed() const;
 
   virtual NaturalSizingInfo GetNaturalDimensions(float multiplier) const;
   virtual RespectImageOrientationEnum ImageOrientation() const;

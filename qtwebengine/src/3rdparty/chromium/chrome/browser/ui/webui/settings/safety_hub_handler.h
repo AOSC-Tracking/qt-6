@@ -14,7 +14,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/safety_hub/extensions_result.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
-#include "chrome/browser/upgrade_detector/build_state_observer.h"
 #include "components/content_settings/core/common/content_settings_constraints.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "extensions/browser/extension_prefs_observer.h"
@@ -27,17 +26,6 @@ class ExtensionPrefs;
 class ExtensionRegistry;
 }  // namespace extensions
 
-// The state of Safe Browsing settings.
-enum class SafeBrowsingState {
-  kEnabledEnhanced = 0,
-  kEnabledStandard = 1,
-  kDisabledByAdmin = 2,
-  kDisabledByExtension = 3,
-  kDisabledByUser = 4,
-  // New enum values must go above here.
-  kMaxValue = kDisabledByUser,
-};
-
 /**
  * This handler deals with the permission-related operations on the site
  * settings page.
@@ -45,8 +33,7 @@ enum class SafeBrowsingState {
 
 class SafetyHubHandler : public settings::SettingsPageUIHandler,
                          public extensions::ExtensionPrefsObserver,
-                         public extensions::ExtensionRegistryObserver,
-                         public BuildStateObserver {
+                         public extensions::ExtensionRegistryObserver {
  public:
   enum class SafetyHubModule {
     kExtensions,
@@ -70,8 +57,7 @@ class SafetyHubHandler : public settings::SettingsPageUIHandler,
 
  private:
   friend class SafetyHubHandlerTest;
-  friend class
-      SafetyHubHandlerEitherAbusiveOrUnusedPermissionRevocationDisabledTest;
+  friend class SafetyHubHandlerUnusedPermissionRevocationDisabledTest;
   FRIEND_TEST_ALL_PREFIXES(SafetyHubHandlerTest,
                            PopulateUnusedSitePermissionsData);
   FRIEND_TEST_ALL_PREFIXES(SafetyHubHandlerTest,
@@ -109,19 +95,18 @@ class SafetyHubHandler : public settings::SettingsPageUIHandler,
   FRIEND_TEST_ALL_PREFIXES(SafetyHubHandlerParameterizedTest,
                            PasswordCardState);
   FRIEND_TEST_ALL_PREFIXES(SafetyHubHandlerTest, PasswordCardCheckTime);
-  FRIEND_TEST_ALL_PREFIXES(SafetyHubHandlerTest,
-                           VersionCardUpToDate_ThenOutOfDate);
+  FRIEND_TEST_ALL_PREFIXES(SafetyHubHandlerTest, VersionCardUpToDate);
   FRIEND_TEST_ALL_PREFIXES(SafetyHubHandlerTest, VersionCardOutOfDate);
   FRIEND_TEST_ALL_PREFIXES(SafetyHubHandlerTest,
                            ExtensionPrefAndInitialization);
   FRIEND_TEST_ALL_PREFIXES(
-      SafetyHubHandlerEitherAbusiveOrUnusedPermissionRevocationDisabledTest,
+      SafetyHubHandlerUnusedPermissionRevocationDisabledTest,
       PopulateSitePermissionsData);
   FRIEND_TEST_ALL_PREFIXES(
-      SafetyHubHandlerEitherAbusiveOrUnusedPermissionRevocationDisabledTest,
+      SafetyHubHandlerUnusedPermissionRevocationDisabledTest,
       HandleAllowPermissionsAgainForSite);
   FRIEND_TEST_ALL_PREFIXES(
-      SafetyHubHandlerEitherAbusiveOrUnusedPermissionRevocationDisabledTest,
+      SafetyHubHandlerUnusedPermissionRevocationDisabledTest,
       HandleAcknowledgeRevokedSitePermissionsList);
 
   // SettingsPageUIHandler implementation.
@@ -210,9 +195,6 @@ class SafetyHubHandler : public settings::SettingsPageUIHandler,
 
   // Fetches data for the version card to return data to the UI.
   base::Value::Dict GetVersionCardData();
-
-  // BuildStateObserver implementation to track changes to Chrome version.
-  void OnUpdate(const BuildState* build_state) override;
 
   // Returns the data for Safety Hub entry point.
   void HandleGetSafetyHubEntryPointData(const base::Value::List& args);

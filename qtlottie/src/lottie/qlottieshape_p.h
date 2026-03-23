@@ -26,25 +26,11 @@ class QLottieFill;
 class QLottieStroke;
 class QLottieTrimPath;
 
-#define LOTTIE_SHAPE_ANY_TYPE_IX    -1
-#define LOTTIE_SHAPE_ELLIPSE_IX     0
-#define LOTTIE_SHAPE_FILL_IX        1
-#define LOTTIE_SHAPE_GFILL_IX       2
-#define LOTTIE_SHAPE_GSTROKE_IX     3
-#define LOTTIE_SHAPE_GROUP_IX       4
-#define LOTTIE_SHAPE_RECT_IX        5
-#define LOTTIE_SHAPE_ROUND_IX       6
-#define LOTTIE_SHAPE_SHAPE_IX       7
-#define LOTTIE_SHAPE_STAR_IX        8
-#define LOTTIE_SHAPE_STROKE_IX      9
-#define LOTTIE_SHAPE_TRIM_IX        10
-#define LOTTIE_SHAPE_TRANS_IX       11
-#define LOTTIE_SHAPE_REPEATER_IX    12
-
 class Q_LOTTIE_EXPORT QLottieShape : public QLottieBase
 {
 public:
-    QLottieShape() = default;
+    QLottieShape();
+    ~QLottieShape();
     explicit QLottieShape(const QLottieShape &other);
 
     QLottieBase *clone() const override;
@@ -54,14 +40,29 @@ public:
     virtual const QPainterPath &path() const;
     virtual bool acceptsTrim() const;
     virtual void applyTrim(const QLottieTrimPath& trimmer);
-    const QLottieTrimPath *currentTrim() const { return m_appliedTrim; };
+    const QLottieTrimPath *currentTrim() const;
 
     int direction() const;
     bool hasReversedDirection() const { return m_direction == 3; }
 
 protected:
+    enum class OwnsAppliedTrim: bool { No = false, Yes = true};
+    struct AppliedTrimPtr
+    {
+        Q_DISABLE_COPY_MOVE(AppliedTrimPtr)
+    public:
+        AppliedTrimPtr();
+        ~AppliedTrimPtr();
+
+        void reset(QLottieTrimPath *appliedTrim, OwnsAppliedTrim owns);
+        QLottieTrimPath *data() const;
+        bool owns() const;
+    private:
+        QTaggedPointer<QLottieTrimPath, OwnsAppliedTrim> m_appliedTrim;
+    };
+
     QPainterPath m_path;
-    QLottieTrimPath *m_appliedTrim = nullptr;
+    AppliedTrimPtr m_appliedTrim;
     int m_direction = 0;
 };
 

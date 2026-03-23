@@ -79,6 +79,12 @@ private slots:
     void completions();
 
     void cmakeBuildCommand();
+    void maxFilesToSearch();
+
+    void findFilePathsFromFileNames_data();
+    void findFilePathsFromFileNames();
+    void findFilePathFromFileName_data();
+    void findFilePathFromFileName();
 
 private:
     using EnvironmentAndFile = std::tuple<QQmlJS::Dom::DomItem, QQmlJS::Dom::DomItem>;

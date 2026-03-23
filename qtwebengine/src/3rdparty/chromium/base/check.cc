@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "base/check.h"
 
 #include <optional>
@@ -19,16 +14,7 @@
 #include "base/thread_annotations.h"
 #include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
-
-#if BUILDFLAG(IS_NACL)
-// Forward declaring this ptr for code simplicity below, we'll never dereference
-// it under NaCl.
-namespace base::debug {
-class CrashKeyString;
-}  // namespace base::debug
-#else
 #include "base/debug/crash_logging.h"
-#endif  // !BUILDFLAG(IS_NACL)
 
 namespace logging {
 
@@ -62,53 +48,37 @@ LogSeverity GetCheckSeverity(base::NotFatalUntil fatal_milestone) {
 }
 
 base::debug::CrashKeyString* GetNotReachedCrashKey() {
-#if BUILDFLAG(IS_NACL)
-  return nullptr;
-#else
   static auto* const key = ::base::debug::AllocateCrashKeyString(
       "Logging-NOTREACHED_MESSAGE", base::debug::CrashKeySize::Size1024);
   return key;
-#endif  // BUILDFLAG(IS_NACL)
 }
 
 base::debug::CrashKeyString* GetDCheckCrashKey() {
-#if BUILDFLAG(IS_NACL)
-  return nullptr;
-#else
   static auto* const key = ::base::debug::AllocateCrashKeyString(
       "Logging-DCHECK_MESSAGE", base::debug::CrashKeySize::Size1024);
   return key;
-#endif  // BUILDFLAG(IS_NACL)
 }
 
 base::debug::CrashKeyString* GetDumpWillBeCheckCrashKey() {
-#if BUILDFLAG(IS_NACL)
-  return nullptr;
-#else
   static auto* const key = ::base::debug::AllocateCrashKeyString(
       "Logging-DUMP_WILL_BE_CHECK_MESSAGE",
       base::debug::CrashKeySize::Size1024);
   return key;
-#endif  // BUILDFLAG(IS_NACL)
 }
 
-#if !BUILDFLAG(IS_NACL)
 base::debug::CrashKeyString* GetFatalMilestoneCrashKey() {
   static auto* const key = ::base::debug::AllocateCrashKeyString(
       "Logging-FATAL_MILESTONE", base::debug::CrashKeySize::Size32);
   return key;
 }
-#endif  // BUILDFLAG(IS_NACL)
 
 void MaybeSetFatalMilestoneCrashKey(base::NotFatalUntil fatal_milestone) {
-#if !BUILDFLAG(IS_NACL)
   if (fatal_milestone == base::NotFatalUntil::NoSpecifiedMilestoneInternal) {
     return;
   }
   base::debug::SetCrashKeyString(
       GetFatalMilestoneCrashKey(),
       base::NumberToString(base::to_underlying(fatal_milestone)));
-#endif  // BUILDFLAG(IS_NACL)
 }
 
 void DumpWithoutCrashing(base::debug::CrashKeyString* message_key,
@@ -116,12 +86,10 @@ void DumpWithoutCrashing(base::debug::CrashKeyString* message_key,
                          const base::Location& location,
                          base::NotFatalUntil fatal_milestone) {
   const std::string crash_string = log_message->BuildCrashString();
-#if !BUILDFLAG(IS_NACL)
   base::debug::ScopedCrashKeyString scoped_message_key(message_key,
                                                        crash_string);
 
   MaybeSetFatalMilestoneCrashKey(fatal_milestone);
-#endif  // !BUILDFLAG(IS_NACL)
   // Copy the crash message to stack memory to make sure it can be recovered in
   // crash dumps. This is easier to recover in minidumps than crash keys during
   // local debugging.
@@ -132,9 +100,7 @@ void DumpWithoutCrashing(base::debug::CrashKeyString* message_key,
   // repeat reports for the same bug.
   base::debug::DumpWithoutCrashing(location, base::Days(30));
 
-#if !BUILDFLAG(IS_NACL)
   base::debug::ClearCrashKeyString(GetFatalMilestoneCrashKey());
-#endif  // !BUILDFLAG(IS_NACL)
 }
 
 void HandleCheckErrorLogMessage(base::debug::CrashKeyString* message_key,
@@ -243,38 +209,42 @@ class DCheckErrnoLogMessage : public ErrnoLogMessage {
 
 }  // namespace
 
+CheckError::CheckError(LogMessage* log_message) : log_message_(log_message) {}
+
 CheckError CheckError::Check(const char* condition,
                              base::NotFatalUntil fatal_milestone,
                              const base::Location& location) {
   auto* const log_message = new CheckLogMessage(
       location, GetCheckSeverity(fatal_milestone), fatal_milestone);
+  // TODO(pbos): Make this output CHECK instead of Check.
   log_message->stream() << "Check failed: " << condition << ". ";
   return CheckError(log_message);
 }
 
-CheckError CheckError::CheckOp(char* log_message_str,
-                               base::NotFatalUntil fatal_milestone,
-                               const base::Location& location) {
+LogMessage* CheckError::CheckOp(char* log_message_str,
+                                base::NotFatalUntil fatal_milestone,
+                                const base::Location& location) {
   auto* const log_message = new CheckLogMessage(
       location, GetCheckSeverity(fatal_milestone), fatal_milestone);
-  log_message->stream() << log_message_str;
+  // TODO(pbos): Make this output CHECK instead of Check.
+  log_message->stream() << "Check failed: " << log_message_str;
   free(log_message_str);
-  return CheckError(log_message);
+  return log_message;
 }
 
 CheckError CheckError::DCheck(const char* condition,
                               const base::Location& location) {
   auto* const log_message = new DCheckLogMessage(location);
-  log_message->stream() << "Check failed: " << condition << ". ";
+  log_message->stream() << "DCHECK failed: " << condition << ". ";
   return CheckError(log_message);
 }
 
-CheckError CheckError::DCheckOp(char* log_message_str,
-                                const base::Location& location) {
+LogMessage* CheckError::DCheckOp(char* log_message_str,
+                                 const base::Location& location) {
   auto* const log_message = new DCheckLogMessage(location);
-  log_message->stream() << log_message_str;
+  log_message->stream() << "DCHECK failed: " << log_message_str;
   free(log_message_str);
-  return CheckError(log_message);
+  return log_message;
 }
 
 CheckError CheckError::DumpWillBeCheck(const char* condition,
@@ -282,18 +252,20 @@ CheckError CheckError::DumpWillBeCheck(const char* condition,
   auto* const log_message =
       new CheckLogMessage(location, GetDumpSeverity(),
                           base::NotFatalUntil::NoSpecifiedMilestoneInternal);
+  // TODO(pbos): Make this output CHECK instead of Check.
   log_message->stream() << "Check failed: " << condition << ". ";
   return CheckError(log_message);
 }
 
-CheckError CheckError::DumpWillBeCheckOp(char* log_message_str,
-                                         const base::Location& location) {
+LogMessage* CheckError::DumpWillBeCheckOp(char* log_message_str,
+                                          const base::Location& location) {
   auto* const log_message =
       new CheckLogMessage(location, GetDumpSeverity(),
                           base::NotFatalUntil::NoSpecifiedMilestoneInternal);
-  log_message->stream() << log_message_str;
+  // TODO(pbos): Make this output CHECK instead of Check.
+  log_message->stream() << "Check failed: " << log_message_str;
   free(log_message_str);
-  return CheckError(log_message);
+  return log_message;
 }
 
 CheckError CheckError::DPCheck(const char* condition,
@@ -304,7 +276,7 @@ CheckError CheckError::DPCheck(const char* condition,
 #elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   auto* const log_message = new DCheckErrnoLogMessage(location, err_code);
 #endif
-  log_message->stream() << "Check failed: " << condition << ". ";
+  log_message->stream() << "DCHECK failed: " << condition << ". ";
   return CheckError(log_message);
 }
 
@@ -312,6 +284,7 @@ CheckError CheckError::NotImplemented(const char* function,
                                       const base::Location& location) {
   auto* const log_message = new LogMessage(
       location.file_name(), location.line_number(), LOGGING_ERROR);
+  // TODO(pbos): Make this output NOTIMPLEMENTED instead of Not implemented.
   log_message->stream() << "Not implemented reached in " << function;
   return CheckError(log_message);
 }
@@ -340,8 +313,6 @@ CheckError::~CheckError() {
   }
 }
 
-CheckError::CheckError(LogMessage* log_message) : log_message_(log_message) {}
-
 // Note: This function ends up in crash stack traces. If its full name changes,
 // the crash server's magic signature logic needs to be updated. See
 // cl/306632920.
@@ -360,18 +331,20 @@ CheckNoreturnError CheckNoreturnError::Check(const char* condition,
   auto* const log_message =
       new CheckLogMessage(location, LOGGING_FATAL,
                           base::NotFatalUntil::NoSpecifiedMilestoneInternal);
+  // TODO(pbos): Make this output CHECK instead of Check.
   log_message->stream() << "Check failed: " << condition << ". ";
   return CheckNoreturnError(log_message);
 }
 
-CheckNoreturnError CheckNoreturnError::CheckOp(char* log_message_str,
-                                               const base::Location& location) {
+LogMessage* CheckNoreturnError::CheckOp(char* log_message_str,
+                                        const base::Location& location) {
   auto* const log_message =
       new CheckLogMessage(location, LOGGING_FATAL,
                           base::NotFatalUntil::NoSpecifiedMilestoneInternal);
-  log_message->stream() << log_message_str;
+  // TODO(pbos): Make this output CHECK instead of Check.
+  log_message->stream() << "Check failed: " << log_message_str;
   free(log_message_str);
-  return CheckNoreturnError(log_message);
+  return log_message;
 }
 
 CheckNoreturnError CheckNoreturnError::PCheck(const char* condition,
@@ -384,6 +357,7 @@ CheckNoreturnError CheckNoreturnError::PCheck(const char* condition,
   auto* const log_message = new ErrnoLogMessage(
       location.file_name(), location.line_number(), LOGGING_FATAL, err_code);
 #endif
+  // TODO(pbos): Make this output CHECK instead of Check.
   log_message->stream() << "Check failed: " << condition << ". ";
   return CheckNoreturnError(log_message);
 }
@@ -397,8 +371,7 @@ NotReachedError NotReachedError::NotReached(base::NotFatalUntil fatal_milestone,
   auto* const log_message = new NotReachedLogMessage(
       location, GetCheckSeverity(fatal_milestone), fatal_milestone);
 
-  // TODO(pbos): Consider a better message for NotReached(), this is here to
-  // match existing behavior + test expectations.
+  // TODO(pbos): Make this output "NOTREACHED hit." like the other NOTREACHEDs.
   log_message->stream() << "Check failed: false. ";
   return NotReachedError(log_message);
 }

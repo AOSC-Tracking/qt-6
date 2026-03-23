@@ -24,7 +24,9 @@
 #include "config.h"
 
 #include <stdint.h>
+#ifndef _MSC_VER
 #include <stdalign.h>
+#endif
 
 #include "attributes.h"
 #include "macros.h"
@@ -80,8 +82,8 @@
     #define DECLARE_ASM_CONST(n,t,v)    alignas(FFMIN(n, 16)) static const t av_used v
 #elif defined(_MSC_VER)
     #define DECLARE_ALIGNED_T(n,t,v)    __declspec(align(n)) t v
-    #define DECLARE_ASM_ALIGNED(n,t,v)  __declspec(align(n)) t v
-    #define DECLARE_ASM_CONST(n,t,v)    __declspec(align(n)) static const t v
+    #define DECLARE_ASM_ALIGNED(n,t,v)  __declspec(align(n)) t av_used v
+    #define DECLARE_ASM_CONST(n,t,v)    __declspec(align(n)) static const t av_used v
 #else
     #define DECLARE_ALIGNED_T(n,t,v)    alignas(n) t v
     #define DECLARE_ASM_ALIGNED(n,t,v)  alignas(n) t av_used v
@@ -128,5 +130,7 @@
 #define LOCAL_ALIGNED_16(t, v, ...) E1(LOCAL_ALIGNED_D(16, t, v, __VA_ARGS__,,))
 
 #define LOCAL_ALIGNED_32(t, v, ...) E1(LOCAL_ALIGNED_D(32, t, v, __VA_ARGS__,,))
+
+#define LOCAL_ALIGNED_64(t, v, ...) E1(LOCAL_ALIGNED_D(64, t, v, __VA_ARGS__,,))
 
 #endif /* AVUTIL_MEM_INTERNAL_H */

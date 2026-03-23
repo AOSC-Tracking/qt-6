@@ -84,6 +84,8 @@ private slots:
     void removeAndDestroyObjectModelItem_data();
     void removeAndDestroyObjectModelItem();
 
+    void fastMouseWheel();
+
 private:
     void flickWithTouch(QQuickWindow *window, const QPoint &from, const QPoint &to);
     std::unique_ptr<QPointingDevice> touchscreen{QTest::createTouchDevice()};
@@ -1435,6 +1437,8 @@ void tst_QQuickListView2::delegateModelAccess()
     QQuickListView *listView = qobject_cast<QQuickListView *>(object.data());
     QVERIFY(listView);
 
+    QSignalSpy modelChangedSpy(listView, &QQuickItemView::modelChanged);
+
     if (delegateKind == Delegate::Untyped && modelKind == Model::Array)
         QSKIP("Properties of objects in arrays are not exposed as context properties");
 
@@ -1459,20 +1463,34 @@ void tst_QQuickListView2::delegateModelAccess()
             ? access != QQmlDelegateModel::ReadOnly
             : access == QQmlDelegateModel::ReadWrite;
 
+    // Only the array is actually updated itself. The other models are pointers
+    const bool writeShouldSignal = modelKind == Model::Kind::Array;
+
     double expected = 11;
+
+    // Initial setting of the model, signals one update
+    int expectedModelUpdates = 1;
+    QCOMPARE(modelChangedSpy.count(), expectedModelUpdates);
 
     QCOMPARE(delegate->property("immediateX").toDouble(), expected);
     QCOMPARE(delegate->property("modelX").toDouble(), expected);
 
-    if (modelWritable)
+    if (modelWritable) {
         expected = 3;
+        if (writeShouldSignal)
+            ++expectedModelUpdates;
+    }
 
     QMetaObject::invokeMethod(delegate, "writeThroughModel");
     QCOMPARE(delegate->property("immediateX").toDouble(), expected);
     QCOMPARE(delegate->property("modelX").toDouble(), expected);
+    QCOMPARE(modelChangedSpy.count(), expectedModelUpdates);
 
-    if (immediateWritable)
+    if (immediateWritable) {
         expected = 1;
+        if (writeShouldSignal)
+            ++expectedModelUpdates;
+    }
 
     QMetaObject::invokeMethod(delegate, "writeImmediate");
 
@@ -1481,6 +1499,7 @@ void tst_QQuickListView2::delegateModelAccess()
              delegateKind == Delegate::Untyped ? expected : 1);
 
     QCOMPARE(delegate->property("modelX").toDouble(), expected);
+    QCOMPARE(modelChangedSpy.count(), expectedModelUpdates);
 }
 
 enum RemovalPolicy {
@@ -1531,6 +1550,36 @@ void tst_QQuickListView2::removeAndDestroyObjectModelItem()
             QVERIFY(QQuickTest::qWaitForPolish(listView));
     }
     listView->positionViewAtEnd();
+}
+
+void tst_QQuickListView2::fastMouseWheel()
+{
+    QScopedPointer<QQuickView> window(createView());
+    QTRY_VERIFY(window);
+    window->setSource(testFileUrl("qtbug134502.qml"));
+    window->resize(640, 480);
+    window->show();
+    QQuickViewTestUtils::moveMouseAway(window.data());
+    QVERIFY(QTest::qWaitForWindowExposed(window.data()));
+    auto sendWheelEvent = [](QQuickView *window, const QPoint &angleDelta, quint64 timestamp) {
+        QPoint pos(100, 100);
+        QWheelEvent event(pos, window->mapToGlobal(pos), QPoint(), angleDelta, Qt::NoButton,
+                          Qt::NoModifier, Qt::NoScrollPhase, false);
+        event.setAccepted(false);
+        event.setTimestamp(timestamp);
+        QGuiApplication::sendEvent(window, &event);
+    };
+
+    QQuickListView *listview = findItem<QQuickListView>(window->rootObject(), "objects");
+    QTRY_VERIFY(listview != nullptr);
+
+    QGuiApplication::styleHints()->setWheelScrollLines(60);
+    sendWheelEvent(window.data(), QPoint(0, -120), 100);
+    QTRY_VERIFY(listview->isMoving() == false);
+    sendWheelEvent(window.data(), QPoint(0, -120), 132);
+    QTRY_VERIFY(listview->isMoving() == false);
+    sendWheelEvent(window.data(), QPoint(0, -240), 194);
+    QTRY_VERIFY(listview->isMoving() == false);
 }
 
 QTEST_MAIN(tst_QQuickListView2)

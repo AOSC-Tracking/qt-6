@@ -228,7 +228,7 @@ std::optional<size_t> FindIndexInEnumStringTable(
     base::span<const char* const> enum_value_table) {
   for (size_t i = 0; i < enum_value_table.size(); ++i) {
     // Avoid operator== because of the strlen inside a StringView construction.
-    if (WTF::EqualToCString(str_value, enum_value_table[i])) {
+    if (EqualToCString(str_value, enum_value_table[i])) {
       return i;
     }
   }
@@ -400,7 +400,7 @@ void PerformAttributeSetCEReactionsReflect(
     return;
   }
 
-  CEReactionsScope ce_reactions_scope;
+  CEReactionsScope ce_reactions_scope(isolate);
 
   Element* blink_receiver = V8Element::ToWrappableUnsafe(isolate, info.This());
   auto&& arg_value = NativeValueTraits<IDLType>::NativeValue(

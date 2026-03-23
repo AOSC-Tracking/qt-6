@@ -15,6 +15,7 @@
 #include "ink/strokes/stroke.h"
 
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "gmock/gmock.h"
@@ -23,6 +24,7 @@
 #include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush.h"
 #include "ink/brush/brush_coat.h"
@@ -32,7 +34,6 @@
 #include "ink/brush/fuzz_domains.h"
 #include "ink/brush/type_matchers.h"
 #include "ink/color/color.h"
-#include "ink/geometry/affine_transform.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/envelope.h"
 #include "ink/geometry/mesh_test_helpers.h"
@@ -44,7 +45,6 @@
 #include "ink/strokes/input/stroke_input_batch.h"
 #include "ink/strokes/input/type_matchers.h"
 #include "ink/types/duration.h"
-#include "ink/types/uri.h"
 
 namespace ink {
 namespace {
@@ -54,11 +54,7 @@ using ::testing::IsEmpty;
 using ::testing::Not;
 using ::testing::SizeIs;
 
-Uri CreateTestTextureUri() {
-  auto uri = Uri::Parse("ink://ink/texture:test-texture");
-  ABSL_CHECK_OK(uri);
-  return *uri;
-}
+constexpr absl::string_view kTestTextureId = "test-texture";
 
 Brush CreateBrush() {
   auto family = BrushFamily::Create(
@@ -67,7 +63,7 @@ Brush CreateBrush() {
           .corner_rounding = 0,
           .rotation = kFullTurn / 8,
       },
-      {.texture_layers = {{.color_texture_uri = CreateTestTextureUri(),
+      {.texture_layers = {{.client_texture_id = std::string(kTestTextureId),
                            .mapping = BrushPaint::TextureMapping::kWinding,
                            .size_unit = BrushPaint::TextureSizeUnit::kBrushSize,
                            .size = {3, 5},
@@ -585,7 +581,7 @@ TEST(StrokeTest, GetInputDuration) {
 }
 
 TEST(StrokeDeathTest, ConstructFromMismatchedShapeAndBrush) {
-  BrushCoat coat = BrushCoat{.tips = {BrushTip()}};
+  BrushCoat coat = BrushCoat{.tip = BrushTip()};
   absl::StatusOr<BrushFamily> family = BrushFamily::Create({coat, coat});
   ASSERT_EQ(family.status(), absl::OkStatus());
   absl::StatusOr<Brush> brush = Brush::Create(*family, Color::White(), 10, 0.1);
@@ -608,7 +604,7 @@ void CanConstructStrokeFromAnyInputBatch(const Brush& brush,
 // TODO(b/299275580): Add fuzz tests for stroke mesh generation. This currently
 // fails, being unable to create a PartitionedMesh in Stroke::RegenerateShape.
 FUZZ_TEST(DISABLED_StrokeTest, CanConstructStrokeFromAnyInputBatch)
-    .WithDomains(ArbitraryBrush(), ArbitraryStrokeInputBatch());
+    .WithDomains(ValidBrush(), ArbitraryStrokeInputBatch());
 
 }  // namespace
 }  // namespace ink

@@ -8,7 +8,6 @@
 #include <stdint.h>
 
 #include <memory>
-#include <queue>
 
 #include "base/containers/flat_map.h"
 #include "base/gtest_prod_util.h"
@@ -98,8 +97,7 @@ class COMPONENT_EXPORT(INPUT) InputRouterImpl
   void DidStartScrollingViewport() override;
   void ImeCompositionRangeChanged(
       const gfx::Range& range,
-      const std::optional<std::vector<gfx::Rect>>& character_bounds,
-      const std::optional<std::vector<gfx::Rect>>& line_bounds) override;
+      const std::optional<std::vector<gfx::Rect>>& character_bounds) override;
   void SetMouseCapture(bool capture) override;
   void SetAutoscrollSelectionActiveInMainFrame(
       bool autoscroll_selection) override;

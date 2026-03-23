@@ -13,8 +13,7 @@ BASE_DECLARE_FEATURE(kCollaborationMessaging);
 
 BASE_DECLARE_FEATURE(kCollaborationMessagingDatabase);
 
-// Enable Collaboration flow controller on Android.
-BASE_DECLARE_FEATURE(kCollaborationFlowAndroid);
+BASE_DECLARE_FEATURE(kCollaborationComments);
 
 }  // namespace collaboration::features
 

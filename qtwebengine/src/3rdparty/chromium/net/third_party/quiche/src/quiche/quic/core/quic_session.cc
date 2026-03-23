@@ -18,6 +18,7 @@
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "quiche/quic/core/crypto/crypto_protocol.h"
 #include "quiche/quic/core/frames/quic_ack_frequency_frame.h"
 #include "quiche/quic/core/frames/quic_reset_stream_at_frame.h"
 #include "quiche/quic/core/frames/quic_window_update_frame.h"
@@ -38,7 +39,6 @@
 #include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_server_stats.h"
-#include "quiche/quic/platform/api/quic_stack_trace.h"
 #include "quiche/common/platform/api/quiche_logging.h"
 #include "quiche/common/quiche_callbacks.h"
 #include "quiche/common/quiche_text_utils.h"
@@ -178,6 +178,10 @@ void QuicSession::Initialize() {
       config_.SetDiscardLengthToSend(kDefaultMaxPacketSize);
     } else if (config_.HasClientSentConnectionOption(kCHP2, perspective_)) {
       config_.SetDiscardLengthToSend(kDefaultMaxPacketSize * 2);
+    }
+    if (config_.HasClientRequestedIndependentOption(kAFIA, perspective_) &&
+        connection_->version().HasIetfQuicFrames()) {
+      config_.SetMinAckDelayDraft10Ms(kDefaultMinAckDelayTimeMs);
     }
   } else if (GetQuicReloadableFlag(quic_receive_ack_frequency) &&
              connection_->version().HasIetfQuicFrames()) {
@@ -704,6 +708,11 @@ void QuicSession::OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) {
 }
 
 void QuicSession::OnBlockedFrame(const QuicBlockedFrame& frame) {
+  if (frame.stream_id == QuicUtils::GetInvalidStreamId(transport_version())) {
+    QUIC_CODE_COUNT(quic_data_blocked_frame_received);
+  } else {
+    QUIC_CODE_COUNT(quic_stream_data_blocked_frame_received);
+  }
   // TODO(rjshade): Compare our flow control receive windows for specified
   //                streams: if we have a large window then maybe something
   //                had gone wrong with the flow control accounting.
@@ -2472,7 +2481,8 @@ QuicStream* QuicSession::GetActiveStream(QuicStreamId id) const {
 
 bool QuicSession::OnFrameAcked(const QuicFrame& frame,
                                QuicTime::Delta ack_delay_time,
-                               QuicTime receive_timestamp) {
+                               QuicTime receive_timestamp,
+                               bool is_retransmission) {
   if (frame.type == MESSAGE_FRAME) {
     OnMessageAcked(frame.message_frame->message_id, receive_timestamp);
     return true;
@@ -2499,7 +2509,7 @@ bool QuicSession::OnFrameAcked(const QuicFrame& frame,
     new_stream_data_acked = stream->OnStreamFrameAcked(
         frame.stream_frame.offset, frame.stream_frame.data_length,
         frame.stream_frame.fin, ack_delay_time, receive_timestamp,
-        &newly_acked_length);
+        &newly_acked_length, is_retransmission);
     if (!stream->HasPendingRetransmission()) {
       streams_with_pending_retransmission_.erase(stream->id());
     }

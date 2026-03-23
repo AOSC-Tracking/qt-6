@@ -54,7 +54,7 @@ class MEDIA_EXPORT WebmMuxer : public Muxer {
     // Does the actual writing of |len| bytes from the given |buf| depending on
     // the mode desired by the concrete implementation of this delegate.
     // Returns 0 on success, -1 otherwise.
-    virtual mkvmuxer::int32 DoWrite(const void* buf, mkvmuxer::uint32 len) = 0;
+    virtual mkvmuxer::int32 DoWrite(base::span<const uint8_t> buf) = 0;
 
     SEQUENCE_CHECKER(sequence_checker_);
 
@@ -90,6 +90,7 @@ class MEDIA_EXPORT WebmMuxer : public Muxer {
 
  private:
   friend class WebmMuxerTest;
+  friend class WebmMuxerTestUnparametrized;
 
   // Methods for creating and adding video and audio tracks, called upon
   // receiving the first frame of a given Track.
@@ -98,7 +99,8 @@ class MEDIA_EXPORT WebmMuxer : public Muxer {
   // frame size.
   void AddVideoTrack(const gfx::Size& frame_size,
                      double frame_rate,
-                     const std::optional<gfx::ColorSpace>& color_space);
+                     std::optional<gfx::ColorSpace> color_space,
+                     std::optional<VideoTransformation> transformation);
   void AddAudioTrack(const AudioParameters& params);
   bool WriteWebmFrame(EncodedFrame frame, base::TimeDelta relative_timestamp);
 

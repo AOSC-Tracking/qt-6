@@ -17,6 +17,7 @@
 #include "src/objects/js-list-format.h"
 #include "src/objects/js-number-format-inl.h"
 #include "src/objects/js-plural-rules-inl.h"
+#include "src/runtime/runtime-utils.h"
 
 namespace v8 {
 namespace internal {

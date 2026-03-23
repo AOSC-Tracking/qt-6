@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qcheckbox.h"
 #include "qapplication.h"
@@ -24,6 +25,7 @@ public:
     QCheckBoxPrivate()
         : QAbstractButtonPrivate(QSizePolicy::CheckBox), tristate(false), noChange(false),
           hovering(true), publishedState(Qt::Unchecked) {}
+    QStyle::State styleButtonState(QStyle::State state) const override;
 
     uint tristate : 1;
     uint noChange : 1;
@@ -33,6 +35,19 @@ public:
     void init();
 };
 
+QStyle::State QCheckBoxPrivate::styleButtonState(QStyle::State state) const
+{
+    Q_Q(const QCheckBox);
+    state = QAbstractButtonPrivate::styleButtonState(state);
+    if (tristate && noChange)
+        state |= QStyle::State_NoChange;
+    else
+        state |= (checked ? QStyle::State_On : QStyle::State_Off);
+    if (q->testAttribute(Qt::WA_Hover) && q->underMouse())
+        state.setFlag(QStyle::State_MouseOver, hovering);
+    return state;
+}
+
 /*!
     \class QCheckBox
     \brief The QCheckBox widget provides a checkbox with a text label.
@@ -40,7 +55,7 @@ public:
     \ingroup basicwidgets
     \inmodule QtWidgets
 
-    \image fusion-checkbox.png
+    \image fusion-checkbox.png {Check box for the save option}
 
     A QCheckBox is an option button that can be switched on (checked) or off
     (unchecked). Checkboxes are typically used to represent features in an
@@ -55,7 +70,9 @@ public:
 
     \table
     \row \li \inlineimage checkboxes-exclusive.png
+             {Check box group that allows only one option checked}
          \li \inlineimage checkboxes-non-exclusive.png
+             {Check box group that allows multiple options checked}
     \endtable
 
     Whenever a checkbox is checked or cleared, it emits the signal
@@ -134,15 +151,7 @@ void QCheckBox::initStyleOption(QStyleOptionButton *option) const
         return;
     Q_D(const QCheckBox);
     option->initFrom(this);
-    if (d->down)
-        option->state |= QStyle::State_Sunken;
-    if (d->tristate && d->noChange)
-        option->state |= QStyle::State_NoChange;
-    else
-        option->state |= d->checked ? QStyle::State_On : QStyle::State_Off;
-    if (testAttribute(Qt::WA_Hover) && underMouse()) {
-        option->state.setFlag(QStyle::State_MouseOver, d->hovering);
-    }
+    option->state = d->styleButtonState(option->state);
     option->text = d->text;
     option->icon = d->icon;
     option->iconSize = iconSize();

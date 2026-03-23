@@ -149,7 +149,7 @@ class BacktrackStack {
   int sp() const { return static_cast<int>(data_.size()); }
   void set_sp(uint32_t new_sp) {
     DCHECK_LE(new_sp, sp());
-    data_.resize_no_init(new_sp);
+    data_.resize(new_sp);
   }
 
  private:
@@ -578,12 +578,12 @@ IrregexpInterpreter::Result RawMatch(
       ADVANCE_CURRENT_POSITION(LoadPacked24Signed(insn));
       DISPATCH();
     }
-    BYTECODE(CHECK_GREEDY) {
+    BYTECODE(CHECK_FIXED_LENGTH) {
       if (current == backtrack_stack.peek()) {
         SET_PC_FROM_OFFSET(Load32Aligned(pc + 4));
         backtrack_stack.pop();
       } else {
-        ADVANCE(CHECK_GREEDY);
+        ADVANCE(CHECK_FIXED_LENGTH);
       }
       DISPATCH();
     }
@@ -1177,10 +1177,17 @@ IrregexpInterpreter::Result IrregexpInterpreter::MatchInternal(
 
 // This method is called through an external reference from RegExpExecInternal
 // builtin.
+#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
+// Hardware sandboxing is incompatible with ASAN, see crbug.com/432168626.
+DISABLE_ASAN
+#endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
 int IrregexpInterpreter::MatchForCallFromJs(
     Address subject, int32_t start_position, Address, Address,
     int* output_registers, int32_t output_register_count,
     RegExp::CallOrigin call_origin, Isolate* isolate, Address regexp_data) {
+  // TODO(422992937): investigate running the interpreter in sandboxed mode.
+  ExitSandboxScope unsandboxed;
+
   DCHECK_NOT_NULL(isolate);
   DCHECK_NOT_NULL(output_registers);
   DCHECK(call_origin == RegExp::CallOrigin::kFromJs);

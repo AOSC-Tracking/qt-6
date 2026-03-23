@@ -19,7 +19,6 @@ qt_internal_add_qml_module(VirtualKeyboardSettings
         QT_NO_CAST_FROM_ASCII
         QT_NO_CAST_FROM_BYTEARRAY
         QT_NO_CAST_TO_ASCII
-        QT_VIRTUALKEYBOARD_DEFAULT_LAYOUTS_DIR="qrc:${VKB_LAYOUTS_PREFIX}"
     LIBRARIES
         Qt::Core
         Qt::Gui
@@ -28,19 +27,6 @@ qt_internal_add_qml_module(VirtualKeyboardSettings
         Qt::VirtualKeyboardPrivate
     NO_GENERATE_CPP_EXPORTS
 )
-
-if (Qt6Multimedia_FOUND)
-    target_compile_definitions(VirtualKeyboardSettings
-        PRIVATE
-            QT_VIRTUALKEYBOARD_SOUNDS_ENABLED
-    )
-    target_link_libraries(VirtualKeyboardSettings
-        PRIVATE
-            Qt::Multimedia
-    )
-else ()
-    message("No Qt multimmedia, no sounds.")
-endif ()
 
 qt_internal_extend_target(VirtualKeyboardSettings CONDITION QT_FEATURE_vkb_no_builtin_style
     DEFINES

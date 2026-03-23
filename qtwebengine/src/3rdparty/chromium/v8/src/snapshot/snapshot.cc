@@ -256,10 +256,8 @@ void Snapshot::ClearReconstructableDataForSerialization(
 
 #if V8_ENABLE_WEBASSEMBLY
     // Clear the cached js-to-wasm wrappers.
-    DirectHandle<WeakFixedArray> wrappers(
-        isolate->heap()->js_to_wasm_wrappers(), isolate);
-    MemsetTagged(wrappers->RawFieldOfFirstElement(), ClearedValue(isolate),
-                 wrappers->length());
+    isolate->heap()->SetJSToWasmWrappers(
+        ReadOnlyRoots(isolate).empty_weak_fixed_array());
 #endif  // V8_ENABLE_WEBASSEMBLY
 
     // Must happen after heap iteration since SFI::DiscardCompiled may allocate.
@@ -277,7 +275,7 @@ void Snapshot::ClearReconstructableDataForSerialization(
       if (!IsJSFunction(o, cage_base)) continue;
 
       i::Tagged<i::JSFunction> fun = i::Cast<i::JSFunction>(o);
-      fun->CompleteInobjectSlackTrackingIfActive();
+      fun->CompleteInobjectSlackTrackingIfActive(isolate);
 
       i::Tagged<i::SharedFunctionInfo> shared = fun->shared();
       if (IsScript(shared->script(cage_base), cage_base) &&
@@ -288,7 +286,7 @@ void Snapshot::ClearReconstructableDataForSerialization(
 
       // Also, clear out feedback vectors and recompilable code.
       if (fun->CanDiscardCompiled(isolate)) {
-        fun->UpdateCode(*BUILTIN_CODE(isolate, CompileLazy));
+        fun->UpdateCode(isolate, *BUILTIN_CODE(isolate, CompileLazy));
       }
       if (!IsUndefined(fun->raw_feedback_cell(cage_base)->value(cage_base))) {
         fun->raw_feedback_cell(cage_base)->set_value(
@@ -297,14 +295,14 @@ void Snapshot::ClearReconstructableDataForSerialization(
 #ifdef DEBUG
       if (clear_recompilable_data) {
 #if V8_ENABLE_WEBASSEMBLY
-        DCHECK(fun->shared()->HasWasmExportedFunctionData() ||
-               fun->shared()->HasBuiltinId() ||
+        DCHECK(fun->shared()->HasBuiltinId() ||
                fun->shared()->IsApiFunction() ||
-               fun->shared()->HasUncompiledDataWithoutPreparseData());
+               fun->shared()->HasWasmExportedFunctionData(isolate) ||
+               fun->shared()->HasUncompiledDataWithoutPreparseData(isolate));
 #else
         DCHECK(fun->shared()->HasBuiltinId() ||
                fun->shared()->IsApiFunction() ||
-               fun->shared()->HasUncompiledDataWithoutPreparseData());
+               fun->shared()->HasUncompiledDataWithoutPreparseData(isolate));
 #endif  // V8_ENABLE_WEBASSEMBLY
       }
 #endif  // DEBUG
@@ -332,7 +330,7 @@ void Snapshot::ClearReconstructableDataForSerialization(
         if (fun->shared()->HasAsmWasmData()) {
           FATAL("asm.js functions are not supported in snapshots");
         }
-        if (fun->shared()->HasWasmExportedFunctionData()) {
+        if (fun->shared()->HasWasmExportedFunctionData(isolate)) {
           FATAL(
               "Exported WebAssembly functions are not supported in snapshots");
         }
@@ -951,7 +949,7 @@ void SnapshotCreatorImpl::SetDefaultContext(
   DCHECK(contexts_[kDefaultContextIndex].handle_location == nullptr);
   DCHECK(!context.is_null());
   DCHECK(!created());
-  CHECK_EQ(isolate_, context->GetIsolate());
+  CHECK(isolate_->heap()->Contains(*context));
   contexts_[kDefaultContextIndex].handle_location =
       isolate_->global_handles()->Create(*context).location();
   contexts_[kDefaultContextIndex].callback = callback;
@@ -962,7 +960,7 @@ size_t SnapshotCreatorImpl::AddContext(
     SerializeEmbedderFieldsCallback callback) {
   DCHECK(!context.is_null());
   DCHECK(!created());
-  CHECK_EQ(isolate_, context->GetIsolate());
+  CHECK(isolate_->heap()->Contains(*context));
   size_t index = contexts_.size() - kFirstAddtlContextIndex;
   contexts_.emplace_back(
       isolate_->global_handles()->Create(*context).location(), callback);
@@ -971,17 +969,17 @@ size_t SnapshotCreatorImpl::AddContext(
 
 size_t SnapshotCreatorImpl::AddData(DirectHandle<NativeContext> context,
                                     Address object) {
-  CHECK_EQ(isolate_, context->GetIsolate());
+  CHECK(isolate_->heap()->Contains(*context));
   DCHECK_NE(object, kNullAddress);
   DCHECK(!created());
   HandleScope scope(isolate_);
   DirectHandle<Object> obj(Tagged<Object>(object), isolate_);
-  Handle<ArrayList> list;
+  DirectHandle<ArrayList> list;
   if (!IsArrayList(context->serialized_objects())) {
     list = ArrayList::New(isolate_, 1);
   } else {
-    list = Handle<ArrayList>(Cast<ArrayList>(context->serialized_objects()),
-                             isolate_);
+    list =
+        direct_handle(Cast<ArrayList>(context->serialized_objects()), isolate_);
   }
   size_t index = static_cast<size_t>(list->length());
   list = ArrayList::Add(isolate_, list, obj);
@@ -994,11 +992,11 @@ size_t SnapshotCreatorImpl::AddData(Address object) {
   DCHECK(!created());
   HandleScope scope(isolate_);
   DirectHandle<Object> obj(Tagged<Object>(object), isolate_);
-  Handle<ArrayList> list;
+  DirectHandle<ArrayList> list;
   if (!IsArrayList(isolate_->heap()->serialized_objects())) {
     list = ArrayList::New(isolate_, 1);
   } else {
-    list = Handle<ArrayList>(
+    list = direct_handle(
         Cast<ArrayList>(isolate_->heap()->serialized_objects()), isolate_);
   }
   size_t index = static_cast<size_t>(list->length());

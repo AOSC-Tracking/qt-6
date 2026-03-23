@@ -34,13 +34,13 @@
 #                       Do not modify this file directly
 ################################################################################
 
+include(lang/msl/ir/transform/BUILD.cmake)
+
 ################################################################################
 # Target:    tint_lang_msl_ir
 # Kind:      lib
 ################################################################################
 tint_add_target(tint_lang_msl_ir lib
-  lang/msl/ir/binary.cc
-  lang/msl/ir/binary.h
   lang/msl/ir/builtin_call.cc
   lang/msl/ir/builtin_call.h
   lang/msl/ir/component.cc
@@ -67,7 +67,6 @@ tint_target_add_dependencies(tint_lang_msl_ir lib
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text
@@ -82,7 +81,6 @@ tint_target_add_external_dependencies(tint_lang_msl_ir lib
 # Kind:      test
 ################################################################################
 tint_add_target(tint_lang_msl_ir_test test
-  lang/msl/ir/binary_test.cc
   lang/msl/ir/builtin_call_test.cc
   lang/msl/ir/member_builtin_call_test.cc
 )
@@ -105,7 +103,6 @@ tint_target_add_dependencies(tint_lang_msl_ir_test test
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text

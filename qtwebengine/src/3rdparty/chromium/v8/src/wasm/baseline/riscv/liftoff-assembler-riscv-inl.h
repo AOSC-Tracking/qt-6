@@ -199,9 +199,10 @@ void LiftoffAssembler::PatchPrepareStackFrame(
     PushRegisters(regs_to_save);
     li(WasmHandleStackOverflowDescriptor::GapRegister(), frame_size);
     AddWord(WasmHandleStackOverflowDescriptor::FrameBaseRegister(), fp,
-            Operand(stack_param_slots * kStackSlotSize +
+            Operand(stack_param_slots * kSystemPointerSize +
                     CommonFrameConstants::kFixedFrameSizeAboveFp));
     CallBuiltin(Builtin::kWasmHandleStackOverflow);
+    safepoint_table_builder->DefineSafepoint(this);
     PopRegisters(regs_to_save);
   } else {
     Call(static_cast<Address>(Builtin::kWasmStackOverflow),
@@ -344,6 +345,8 @@ void LiftoffAssembler::emit_f64_copysign(DoubleRegister dst, DoubleRegister lhs,
                                      DoubleRegister rhs) {                   \
     instruction(dst, lhs, rhs);                                              \
   }
+
+
 #define FP_UNOP(name, instruction)                                             \
   void LiftoffAssembler::emit_##name(DoubleRegister dst, DoubleRegister src) { \
     instruction(dst, src);                                                     \
@@ -1140,7 +1143,6 @@ void LiftoffAssembler::emit_i8x16_shl(LiftoffRegister dst, LiftoffRegister lhs,
 
 void LiftoffAssembler::emit_i8x16_shli(LiftoffRegister dst, LiftoffRegister lhs,
                                        int32_t rhs) {
-  DCHECK(is_uint5(rhs));
   VU.set(kScratchReg, E8, m1);
   vsll_vi(dst.fp().toV(), lhs.fp().toV(), rhs % 8);
 }
@@ -1306,7 +1308,6 @@ void LiftoffAssembler::emit_i16x8_shr_u(LiftoffRegister dst,
 
 void LiftoffAssembler::emit_i16x8_shri_u(LiftoffRegister dst,
                                          LiftoffRegister lhs, int32_t rhs) {
-  DCHECK(is_uint5(rhs));
   VU.set(kScratchReg, E16, m1);
   vsrl_vi(dst.fp().toV(), lhs.fp().toV(), rhs % 16);
 }
@@ -2586,6 +2587,19 @@ bool LiftoffAssembler::emit_f16x8_qfms(LiftoffRegister dst,
                                        LiftoffRegister src3) {
   return false;
 }
+
+void LiftoffAssembler::emit_inc_i32_at(Address address) {
+  UseScratchRegisterScope temps(this);
+  Register counter_addr = temps.Acquire();
+  Register value = temps.Acquire();
+  li(counter_addr, Operand(static_cast<uint64_t>(address)));
+  LoadWord(value, MemOperand(counter_addr, 0));
+  AddWord(value, value, Operand(1));
+  StoreWord(value, MemOperand(counter_addr, 0));
+}
+
+void LiftoffAssembler::AtomicFence() { sync(); }
+void LiftoffAssembler::Pause() { sync(); }
 
 }  // namespace v8::internal::wasm
 

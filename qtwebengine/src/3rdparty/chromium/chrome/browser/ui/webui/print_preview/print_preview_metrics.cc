@@ -6,10 +6,8 @@
 
 #include <optional>
 
-#include "base/containers/flat_set.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/no_destructor.h"
 #include "base/strings/strcat.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -109,17 +107,6 @@ void ReportPrintSettingsStats(const base::Value::Dict& print_settings,
                                       ? PrintSettingsBuckets::kColor
                                       : PrintSettingsBuckets::kBlackAndWhite);
     }
-
-    // Record whether the printing backend does not understand the printer's
-    // color capabilities. Do this only once per device.
-    static base::NoDestructor<base::flat_set<std::string>> seen_devices;
-    auto result =
-        seen_devices->insert(*print_settings.FindString(kSettingDeviceName));
-    bool is_new_device = result.second;
-    if (is_new_device) {
-      base::UmaHistogramBoolean("Printing.CUPS.UnknownPpdColorModel",
-                                unknown_color_model);
-    }
   }
 
   if (preview_settings.FindInt(kSettingMarginsType).value_or(0) != 0) {
@@ -189,7 +176,7 @@ void ReportUserActionHistogram(UserActionBuckets event) {
 
 void RecordGetPrintersTimeHistogram(mojom::PrinterType printer_type,
                                     const base::TimeTicks& start_time) {
-  std::string printer_type_metric;
+  std::string_view printer_type_metric;
   switch (printer_type) {
     case mojom::PrinterType::kExtension:
       printer_type_metric = "Extension";
@@ -200,10 +187,8 @@ void RecordGetPrintersTimeHistogram(mojom::PrinterType printer_type,
     case mojom::PrinterType::kLocal:
       printer_type_metric = "Local";
       break;
-    case mojom::PrinterType::kPrivetDeprecated:
-    case mojom::PrinterType::kCloudDeprecated:
-      NOTREACHED();
   }
+  CHECK(!printer_type_metric.empty());
   base::UmaHistogramCustomTimes(
       base::StrCat({"PrintPreview.GetPrintersTime.", printer_type_metric}),
       /*sample=*/base::TimeTicks::Now() - start_time,

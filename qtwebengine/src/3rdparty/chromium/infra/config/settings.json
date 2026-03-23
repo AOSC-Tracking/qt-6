@@ -1,9 +1,9 @@
 {
-    "project": "chromium-m134",
-    "project_title": "Chromium M134",
-    "ref": "refs/branch-heads/6998",
-    "chrome_project": "chrome-m134",
-    "dawn_ref": "refs/heads/chromium/6998",
+    "project": "chromium-m140",
+    "project_title": "Chromium M140",
+    "ref": "refs/branch-heads/7339",
+    "chrome_project": "chrome-m140",
+    "dawn_ref": "refs/heads/chromium/7339",
     "is_main": false,
     "platforms": {
         "android": {

@@ -5,6 +5,7 @@
 #include <QQmlEngine>
 #include <QLoggingCategory>
 #include <QQmlComponent>
+#include <QRandomGenerator>
 
 #include <private/qv4mm_p.h>
 #include <private/qv4qobjectwrapper_p.h>
@@ -53,6 +54,11 @@ private slots:
     void markObjectWrappersAfterMarkWeakValues();
     void variantAssociationObjectMarksMember();
 
+#ifdef QT_BUILD_INTERNAL
+    void validateIncrementalMarkPhase_data();
+    void validateIncrementalMarkPhase();
+#endif
+
     void trackObjectDoesNotAccessGarbageOnTheStackOnAllocation();
     void spreadArgumentDoesNotAccessGarbageOnTheStackOnAllocation();
     void scopedConvertToStringFromReturnedValueDoesNotAccessGarbageOnTheStackOnAllocation();
@@ -61,6 +67,12 @@ private slots:
     void scopedConvertToObjectFromValueDoesNotAccessGarbageOnTheStackOnAllocation();
 
     void dontCrashOnScopedStackFrame();
+    void sweepTriggeringChunkAllocation_data();
+    void sweepTriggeringChunkAllocation();
+
+    void partitionGrowingContainer();
+    void transitionWithExpiredDeadline();
+    void redrainDuringSweepWhenRunningToCompletion();
 };
 
 tst_qv4mm::tst_qv4mm()
@@ -246,7 +258,7 @@ void tst_qv4mm::accessParentOnDestruction()
     QVERIFY(obj);
     QPointer<QObject> timer = qvariant_cast<QObject *>(obj->property("timer"));
     QVERIFY(timer);
-    QTRY_VERIFY(!timer->property("running").toBool());
+    QTRY_VERIFY_WITH_TIMEOUT(!timer->property("running").toBool(), 2s);
     QCOMPARE(obj->property("iterations").toInt(), 100);
     QCOMPARE(obj->property("creations").toInt(), 100);
     gc(engine); // ensure incremental gc has finished, and collected all objects
@@ -899,20 +911,199 @@ void tst_qv4mm::variantAssociationObjectMarksMember()
     QVERIFY(mapping->inUse());
 }
 
+#ifdef QT_BUILD_INTERNAL
+void tst_qv4mm::validateIncrementalMarkPhase_data() {
+    QTest::addColumn<void>("");
+    for (quint8 i = 1; i <= 100; ++i)
+        QTest::addRow("Randomized Sample %d", i);
+}
+
+void tst_qv4mm::validateIncrementalMarkPhase() {
+    QRandomGenerator& generator = *QRandomGenerator::global();
+
+    auto undefined = [](QQmlEngine&) {
+        return QJSValue();
+    };
+
+    auto null = [](QQmlEngine&) {
+        return QJSValue(QJSValue::NullValue);
+    };
+
+    auto boolean = [&generator](QQmlEngine& engine) {
+        return engine.toScriptValue(generator.bounded(2) == 0);
+    };
+
+    auto number = [&generator](QQmlEngine& engine) {
+        return engine.toScriptValue(generator.bounded(std::numeric_limits<double>::max()));
+    };
+
+    auto qstring = [&generator]() {
+        // We don't really care much about the actual content, just
+        // that we have randomized objects on the heap that might or
+        // might not be hit by the random mutations, thus the naive
+        // and limited randomization.
+        int length = generator.bounded(1, 10);
+
+        QString new_string(length, 'a');
+        std::generate_n(new_string.begin(), length, [&generator](){
+            return QChar(generator.bounded('a', 'z'));
+        });
+
+        return new_string;
+    };
+
+    auto string = [&qstring](QQmlEngine& engine) {
+        return engine.toScriptValue(qstring());
+    };
+
+    auto symbol = [&qstring](QQmlEngine& engine) {
+        return engine.newSymbol(qstring());
+    };
+
+    auto regex = [&qstring](QQmlEngine& engine) {
+        return engine.toScriptValue(qstring());
+    };
+
+    auto date = [&generator](QQmlEngine& engine) {
+        return engine.toScriptValue(QTime(
+            generator.bounded(24),
+            generator.bounded(60),
+            generator.bounded(60),
+            generator.bounded(1000)
+        ));
+    };
+
+    auto array = [&generator](QQmlEngine& engine, quint8 max_depth, auto value) {
+        int length = generator.bounded(10);
+        auto new_array = engine.newArray(length);
+
+        for (int i = 0; i < length; ++i)
+            new_array.setProperty(i, value(engine, max_depth - 1, value));
+
+        return new_array;
+    };
+
+    auto object = [&qstring, &generator](QQmlEngine& engine, quint8 max_depth, auto value) {
+        auto new_object = engine.newObject();
+
+        int max_count = generator.bounded(10);
+        for (int i = 0; i < max_count; ++i) {
+            auto prop = qstring();
+            if (new_object.hasProperty(prop)) continue;
+            new_object.setProperty(prop, value(engine, max_depth - 1, value));
+        }
+
+        return new_object;
+    };
+
+    auto value = [&](QQmlEngine& engine, quint8 max_depth, auto value) {
+        bool generate_leaf = max_depth == 0;
+
+        switch (generator.bounded(generate_leaf ? 8 : 10)) {
+            case 0: return undefined(engine);
+            case 1: return null(engine);
+            case 2: return boolean(engine);
+            case 3: return number(engine);
+            case 4: return string(engine);
+            case 5: return symbol(engine);
+            case 6: return regex(engine);
+            case 7: return date(engine);
+            case 8: return array(engine, max_depth, value);
+            case 9: return object(engine, max_depth, value);
+            default: Q_UNREACHABLE();
+        };
+    };
+
+    QQmlEngine engine;
+    auto handle = engine.handle();
+    handle->memoryManager->crossValidateIncrementalGC = true;
+
+    std::vector<QJSValue> values;
+    {
+        int object_count = generator.bounded(30,100);
+        values.reserve(object_count);
+
+        while (object_count > 0) {
+            values.emplace_back(value(engine, 5, value));
+            --object_count;
+        }
+    }
+
+    engine.collectGarbage();
+
+    auto state_machine = handle->memoryManager->gcStateMachine.get();
+    QCOMPARE(handle->memoryManager->gcBlocked, QV4::MemoryManager::Unblocked);
+    state_machine->reset();
+    handle->memoryManager->gcBlocked = QV4::MemoryManager::NormalBlocked;
+    while (state_machine->state != QV4::GCState::CrossValidateIncrementalMarkPhase) {
+        QV4::GCStateInfo& stateInfo = state_machine->stateInfoMap[int(state_machine->state)];
+        state_machine->state = stateInfo.execute(state_machine, state_machine->stateData);
+    }
+
+    std::vector<QV4::GCStateMachine::BitmapError> block_mutations;
+    {
+        std::size_t mutations_count = generator.bounded(30);
+        block_mutations.reserve(mutations_count);
+
+        std::size_t fuel = 100;
+
+        auto& chunks = handle->memoryManager->blockAllocator.chunks;
+
+        while (mutations_count > 0 && fuel > 0) {
+            std::size_t chunk_index = generator.bounded(quint64(chunks.size()));
+            QV4::Chunk* chunk = chunks[chunk_index];
+
+            std::size_t bitmap_index = generator.bounded(quint64(QV4::Chunk::EntriesInBitmap));
+            auto& bitmap = chunk->blackBitmap[bitmap_index];
+
+            if (bitmap) {
+                std::vector<quintptr> object_aligned_masks{};
+
+                quintptr copy = bitmap;
+                for (quintptr mask{1}; copy; mask <<= 1) {
+                    if (copy & mask) {
+                        object_aligned_masks.push_back(mask);
+                        copy ^= mask;
+                    }
+                }
+
+                quintptr choice = object_aligned_masks[generator.bounded(quint64(object_aligned_masks.size()))];
+
+                bitmap ^= choice;
+
+                block_mutations.emplace_back(chunk_index, bitmap_index, std::log2(choice));
+
+                --mutations_count;
+            } else {
+                --fuel;
+            }
+        }
+    }
+    std::sort(block_mutations.begin(), block_mutations.end());
+
+    QCOMPARE(state_machine->state, QV4::GCState::CrossValidateIncrementalMarkPhase);
+    QV4::GCStateInfo& stateInfo = state_machine->stateInfoMap[int(state_machine->state)];
+    state_machine->state = stateInfo.execute(state_machine, state_machine->stateData);
+
+    QCOMPARE(state_machine->bitmapErrors.size(), block_mutations.size());
+
+    for (std::size_t i = 0; i < block_mutations.size(); ++i)
+        QCOMPARE(state_machine->bitmapErrors[i], block_mutations[i]);
+}
+#endif
+
 void tst_qv4mm::trackObjectDoesNotAccessGarbageOnTheStackOnAllocation()
 {
 #if defined(QT_NO_DEBUG) && !defined(QT_FORCE_ASSERTS)
     QSKIP("Our main visibility tool for this test is an assertion. Thus the test needs assertions to be enabled.");
 #endif
 
-    qputenv("QV4_MM_AGGRESSIVE_GC", "1");
-    QScopeGuard env_guard([](){ qunsetenv("QV4_MM_AGGRESSIVE_GC"); });
-
-    qputenv("QV4_GC_TIMELIMIT", "0");
-    QScopeGuard env_guard2([](){ qunsetenv("QV4_GC_TIMELIMIT"); });
-
     QJSEngine jsengine;
     QV4::ExecutionEngine* engine = jsengine.handle();
+
+    engine->memoryManager->aggressiveGC = true;
+    engine->memoryManager->setGCTimeLimit(0);
+
     *engine->jsStackTop = QV4::Value::fromHeapObject(engine->memoryManager->allocManaged<QV4::String>());
 
     jsengine.collectGarbage();
@@ -930,14 +1121,11 @@ void tst_qv4mm::spreadArgumentDoesNotAccessGarbageOnTheStackOnAllocation()
     QSKIP("Our main visibility tool for this test is an assertion. Thus the test needs assertions to be enabled.");
 #endif
 
-    qputenv("QV4_MM_AGGRESSIVE_GC", "1");
-    QScopeGuard env_guard([](){ qunsetenv("QV4_MM_AGGRESSIVE_GC"); });
-
-    qputenv("QV4_GC_TIMELIMIT", "0");
-    QScopeGuard env_guard2([](){ qunsetenv("QV4_GC_TIMELIMIT"); });
-
     QJSEngine jsengine;
     QV4::ExecutionEngine* engine = jsengine.handle();
+
+    engine->memoryManager->aggressiveGC = true;
+    engine->memoryManager->setGCTimeLimit(0);
 
     QJSValue function = jsengine.evaluate("function foo(){}; foo");
     QV4::Value* function_value = QJSValuePrivate::takeManagedValue(&function);
@@ -964,14 +1152,12 @@ void tst_qv4mm::scopedConvertToStringFromReturnedValueDoesNotAccessGarbageOnTheS
     QSKIP("Our main visibility tool for this test is an assertion. Thus the test needs assertions to be enabled.");
 #endif
 
-    qputenv("QV4_MM_AGGRESSIVE_GC", "1");
-    QScopeGuard env_guard([](){ qunsetenv("QV4_MM_AGGRESSIVE_GC"); });
-
-    qputenv("QV4_GC_TIMELIMIT", "0");
-    QScopeGuard env_guard2([](){ qunsetenv("QV4_GC_TIMELIMIT"); });
-
     QJSEngine jsengine;
     QV4::ExecutionEngine* engine = jsengine.handle();
+
+    engine->memoryManager->aggressiveGC = true;
+    engine->memoryManager->setGCTimeLimit(0);
+
     *engine->jsStackTop = QV4::Value::fromHeapObject(engine->memoryManager->allocManaged<QV4::String>());
 
     jsengine.collectGarbage();
@@ -986,14 +1172,12 @@ void tst_qv4mm::scopedConvertToObjectFromReturnedValueDoesNotAccessGarbageOnTheS
     QSKIP("Our main visibility tool for this test is an assertion. Thus the test needs assertions to be enabled.");
 #endif
 
-    qputenv("QV4_MM_AGGRESSIVE_GC", "1");
-    QScopeGuard env_guard([](){ qunsetenv("QV4_MM_AGGRESSIVE_GC"); });
-
-    qputenv("QV4_GC_TIMELIMIT", "0");
-    QScopeGuard env_guard2([](){ qunsetenv("QV4_GC_TIMELIMIT"); });
-
     QJSEngine jsengine;
     QV4::ExecutionEngine* engine = jsengine.handle();
+
+    engine->memoryManager->aggressiveGC = true;
+    engine->memoryManager->setGCTimeLimit(0);
+
     *engine->jsStackTop = QV4::Value::fromHeapObject(engine->memoryManager->allocManaged<QV4::String>());
 
     jsengine.collectGarbage();
@@ -1008,14 +1192,12 @@ void tst_qv4mm::scopedConvertToStringFromValueDoesNotAccessGarbageOnTheStackOnAl
     QSKIP("Our main visibility tool for this test is an assertion. Thus the test needs assertions to be enabled.");
 #endif
 
-    qputenv("QV4_MM_AGGRESSIVE_GC", "1");
-    QScopeGuard env_guard([](){ qunsetenv("QV4_MM_AGGRESSIVE_GC"); });
-
-    qputenv("QV4_GC_TIMELIMIT", "0");
-    QScopeGuard env_guard2([](){ qunsetenv("QV4_GC_TIMELIMIT"); });
-
     QJSEngine jsengine;
     QV4::ExecutionEngine* engine = jsengine.handle();
+
+    engine->memoryManager->aggressiveGC = true;
+    engine->memoryManager->setGCTimeLimit(0);
+
     *engine->jsStackTop = QV4::Value::fromHeapObject(engine->memoryManager->allocManaged<QV4::String>());
 
     jsengine.collectGarbage();
@@ -1031,14 +1213,12 @@ void tst_qv4mm::scopedConvertToObjectFromValueDoesNotAccessGarbageOnTheStackOnAl
     QSKIP("Our main visibility tool for this test is an assertion. Thus the test needs assertions to be enabled.");
 #endif
 
-    qputenv("QV4_MM_AGGRESSIVE_GC", "1");
-    QScopeGuard env_guard([](){ qunsetenv("QV4_MM_AGGRESSIVE_GC"); });
-
-    qputenv("QV4_GC_TIMELIMIT", "0");
-    QScopeGuard env_guard2([](){ qunsetenv("QV4_GC_TIMELIMIT"); });
-
     QJSEngine jsengine;
     QV4::ExecutionEngine* engine = jsengine.handle();
+
+    engine->memoryManager->aggressiveGC = true;
+    engine->memoryManager->setGCTimeLimit(0);
+
     *engine->jsStackTop = QV4::Value::fromHeapObject(engine->memoryManager->allocManaged<QV4::String>());
 
     jsengine.collectGarbage();
@@ -1056,6 +1236,225 @@ void tst_qv4mm::dontCrashOnScopedStackFrame()
     QV4::ScopedStackFrame frame(scope, engine->rootContext());
 
     jsengine.collectGarbage();
+}
+
+void tst_qv4mm::sweepTriggeringChunkAllocation_data()
+{
+    QTest::addColumn<bool>("doInitalAlloc");
+    QTest::addRow("without_inital")  << true;
+    QTest::addRow("with_inital")  << false;
+}
+
+QT_BEGIN_NAMESPACE
+
+namespace QV4 {
+
+namespace Heap {
+
+struct AllocatingDestroy : Object {
+    void init(bool *wasDestroyed, QV4::PersistentValue *pval) {
+        Object::init();
+        m_wasDestroyed = wasDestroyed;
+        m_pval = pval;
+    }
+    void destroy() {
+        auto v4 = internalClass->engine;
+        for (int i = 0; i != 4096; ++i) {
+            v4->newArrayObject(100);
+        }
+        m_pval->set(v4, v4->newString(QLatin1String("foobar"))->asReturnedValue());
+        *m_wasDestroyed = true;
+        Object::destroy();
+    }
+
+    QV4::PersistentValue *m_pval;
+    bool *m_wasDestroyed;
+};
+
+} // Heap
+
+
+struct AllocatingDestroy : Object {
+    V4_OBJECT2(AllocatingDestroy, Object)
+    V4_NEEDS_DESTROY
+};
+
+DEFINE_OBJECT_VTABLE(AllocatingDestroy);
+}
+
+QT_END_NAMESPACE
+
+
+
+void tst_qv4mm::sweepTriggeringChunkAllocation()
+{
+    QFETCH(bool, doInitalAlloc);
+    QJSEngine jsEngine;
+    QV4::ExecutionEngine &engine = *jsEngine.handle();
+    QV4::PersistentValue pval;
+
+
+    bool wasDestroyed = false;
+
+    engine.memoryManager->gcBlocked = QV4::MemoryManager::InCriticalSection;
+    if (doInitalAlloc) {
+        // ensure that we end up with an empty Chunk,
+        // so that with a "dead" first chunk which doesn't allocate
+        for (int i = 0; i != 1024; ++i) {
+            engine.newArrayObject(100);
+        }
+    }
+
+    engine.memoryManager->allocate<QV4::AllocatingDestroy>(&wasDestroyed, &pval);
+    engine.memoryManager->gcBlocked = QV4::MemoryManager::Unblocked;
+    gc(engine);
+    QVERIFY(wasDestroyed);
+    QVERIFY(!pval.isEmpty());
+    QVERIFY(pval.asManaged()->inUse());
+    QCOMPARE(pval.asManaged()->toQStringNoThrow(), QLatin1String("foobar"));
+
+    for (const QV4::BlockAllocator *allocator : {
+                 &engine.memoryManager->blockAllocator,
+                 &engine.memoryManager->icAllocator }) {
+        std::vector<QV4::HeapItem *> freeItems;
+        if (QV4::HeapItem *nextFree = allocator->nextFree) {
+            // nextFree has to point into some live chunk.
+            const auto it = std::find(
+                    allocator->chunks.begin(), allocator->chunks.end(), nextFree->chunk());
+            QVERIFY(it != allocator->chunks.end());
+            freeItems.push_back(nextFree);
+        }
+
+        for (int i = 0; i < QV4::BlockAllocator::NumBins; ++i) {
+            for (QV4::HeapItem *heapItem = allocator->freeBins[i];
+                    heapItem; heapItem = heapItem->freeData.next) {
+
+                // Every free list item has to be part of some live chunk.
+                auto it = std::find(
+                        allocator->chunks.cbegin(), allocator->chunks.cend(), heapItem->chunk());
+                QVERIFY(it != allocator->chunks.cend());
+                freeItems.push_back(heapItem);
+            }
+        }
+
+        // There must not be any duplicate free list items.
+        std::sort(freeItems.begin(), freeItems.end());
+        const auto it = std::unique(freeItems.begin(), freeItems.end());
+        QCOMPARE(it, freeItems.end());
+    }
+}
+
+void tst_qv4mm::partitionGrowingContainer()
+{
+    std::vector<int> prePopulated;
+    std::vector<int> growing;
+    std::vector<int> extraEntries;
+
+    for (int i = 0; i < 256; ++i) {
+        growing.push_back((i * 37) % 512);
+        extraEntries.push_back((i * 41) % 512);
+    }
+
+    prePopulated = growing;
+    prePopulated.insert(prePopulated.end(), extraEntries.begin(), extraEntries.end());
+
+    std::size_t predicateCallsPrePopulated = 0;
+    const auto it = std::partition(prePopulated.begin(), prePopulated.end(), [&](int entry) {
+        ++predicateCallsPrePopulated;
+        return entry < 256;
+    });
+
+    std::size_t predicateCallsGrowing = 0;
+    const std::size_t j = QV4::partition(growing, [&](const std::size_t index) {
+        ++predicateCallsGrowing;
+        if (index < extraEntries.size())
+            growing.push_back(extraEntries[index]);
+        return growing[index] < 256;
+    });
+
+    // We've iterated every entry exactly once, thereby adding each extraEntry exactly once.
+    // Now the sizes of the two vectors are the same.
+    QCOMPARE(predicateCallsGrowing, growing.size());
+    QCOMPARE(predicateCallsPrePopulated, prePopulated.size());
+    QCOMPARE(growing.size(), prePopulated.size());
+
+    // Since both vectors have the same entries, the partitioning point is at the same place.
+    QCOMPARE(j, it - prePopulated.begin());
+
+    // The entries before the partition point fulfill the predicate
+    for (std::size_t index = 0; index < j; ++index) {
+        QVERIFY(growing[index] < 256);
+        QVERIFY(prePopulated[index] < 256);
+    }
+
+    // The entries after the partition point don't fulfill the predicate
+    for (std::size_t index = j; index < growing.size(); ++index) {
+        QVERIFY(growing[index] >= 256);
+        QVERIFY(prePopulated[index] >= 256);
+    }
+}
+
+void tst_qv4mm::transitionWithExpiredDeadline()
+{
+    QV4::ExecutionEngine engine;
+    auto *mm = engine.memoryManager;
+    auto *sm = mm->gcStateMachine.get();
+
+    for (int i = 0; i < 1000; ++i) {
+        if (sm->state != QV4::GCState::Invalid) {
+            sm->timeLimit = std::chrono::microseconds(0);
+            while (sm->state != QV4::GCState::Invalid)
+                sm->transition();
+        }
+        mm->m_markStack.reset();
+        mm->gcBlocked = QV4::MemoryManager::NormalBlocked;
+        sm->reset();
+
+        QCOMPARE(sm->state, QV4::GCState::MarkStart);
+        QVERIFY(!mm->m_markStack);
+
+        // Minimal timeLimit to maximize chance of deadline expiring before first check.
+        sm->timeLimit = std::chrono::microseconds(1);
+        sm->transition();
+
+        // At least one step must have executed. That creates the mark stack.
+        QVERIFY(mm->m_markStack);
+    }
+}
+
+void tst_qv4mm::redrainDuringSweepWhenRunningToCompletion()
+{
+    // When running GC to completion (timeLimit == 0), the markStack should be
+    // drained before each state (via redrainDuringSweep).
+
+    QV4::ExecutionEngine engine;
+    auto *mm = engine.memoryManager;
+    auto *sm = mm->gcStateMachine.get();
+
+    QV4::Scope scope(&engine);
+
+    // Run GC up to HandleQObjectWrappers (after InitCallDestroyObjects)
+    mm->gcBlocked = QV4::MemoryManager::NormalBlocked;
+    sm->reset();
+    while (sm->state != QV4::GCState::Invalid
+           && sm->state < QV4::GCState::HandleQObjectWrappers) {
+        QV4::GCStateInfo &stateInfo = sm->stateInfoMap[int(sm->state)];
+        sm->state = stateInfo.execute(sm, sm->stateData);
+    }
+    QCOMPARE(sm->state, QV4::GCState::HandleQObjectWrappers);
+    QVERIFY(mm->m_markStack);
+
+    QV4::ScopedObject referenced(scope, engine.newObject());
+    QVERIFY(!referenced->heapObject()->isMarked());
+
+    sm->timeLimit = std::chrono::microseconds(0);
+    sm->transition();
+
+    QCOMPARE(sm->state, QV4::GCState::Invalid);
+    mm->gcBlocked = QV4::MemoryManager::Unblocked;
+
+    // The referenced object has to survive the GC completion because it's on the stack.
+    QVERIFY(referenced->heapObject()->inUse());
 }
 
 QTEST_MAIN(tst_qv4mm)

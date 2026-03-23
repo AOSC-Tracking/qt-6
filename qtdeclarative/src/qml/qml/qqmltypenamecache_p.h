@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLTYPENAMECACHE_P_H
 #define QQMLTYPENAMECACHE_P_H
@@ -31,7 +32,7 @@ struct QQmlImportRef {
         : scriptIndex(-1)
     {}
     // Imported module
-    QVector<QQmlTypeModuleVersion> modules;
+    QList<QQmlTypeModuleVersion> modules;
 
     // Or, imported script
     int scriptIndex;
@@ -222,7 +223,7 @@ private:
     }
 
     template<typename Key>
-    Result typeSearch(const QVector<QQmlTypeModuleVersion> &modules, Key key) const
+    Result typeSearch(const QList<QQmlTypeModuleVersion> &modules, Key key) const
     {
         for (auto it = modules.crbegin(), end = modules.crend(); it != end; ++it) {
             QQmlType type = it->type(key);
@@ -235,7 +236,7 @@ private:
 
     QStringHash<QQmlImportRef> m_namedImports;
     QMap<const QQmlImportRef *, QStringHash<QQmlImportRef> > m_namespacedImports;
-    QVector<QQmlTypeModuleVersion> m_anonymousImports;
+    QList<QQmlTypeModuleVersion> m_anonymousImports;
     QStringHash<QUrl> m_anonymousCompositeSingletons;
     QQmlRefPointer<QQmlImports> m_imports;
 };

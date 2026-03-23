@@ -103,13 +103,6 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
     // Overrides the home directory path for the `primary_user`.
     virtual void OverrideDirHome(const User& primary_user) = 0;
 
-    // Returns whether user session restore is in progress.
-    virtual bool IsUserSessionRestoreInProgress() = 0;
-
-    // Returns UserType for the DeviceLocalAccount of the given `email`.
-    virtual std::optional<UserType> GetDeviceLocalAccountUserType(
-        std::string_view email) = 0;
-
     // Verifies the Profile's state for the given `user` on login.
     virtual void CheckProfileOnLogin(const User& user) = 0;
 
@@ -122,9 +115,13 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
 
   // Creates UserManagerImpl on UI thread with given `local_state`.
   // `local_state` must outlive this UserManager.
+  UserManagerImpl(std::unique_ptr<Delegate> delegate, PrefService* local_state);
+
+  // DEPRECATED. Kept only for the compatibility with existing tests.
+  // To be removed after tests are cleaned up.
   UserManagerImpl(std::unique_ptr<Delegate> delegate,
                   PrefService* local_state,
-                  ash::CrosSettings* cros_settings);
+                  ash::CrosSettings* /*unused*/);
 
   UserManagerImpl(const UserManagerImpl&) = delete;
   UserManagerImpl& operator=(const UserManagerImpl&) = delete;
@@ -142,7 +139,7 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
 
   // UserManager implementation:
   void Shutdown() override;
-  const UserList& GetUsers() const override;
+  const UserList& GetPersistedUsers() const override;
   UserList GetUsersAllowedForMultiUserSignIn() const override;
   UserList FindLoginAllowedUsersFrom(const UserList& users) const final;
   const UserList& GetLoggedInUsers() const override;
@@ -154,9 +151,10 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
 
   const AccountId& GetLastSessionActiveAccountId() const override;
   void UserLoggedIn(const AccountId& account_id,
-                    const std::string& user_id_hash,
-                    bool browser_restart,
-                    bool is_child) override;
+                    const std::string& user_id_hash) override;
+  bool EnsureUser(const AccountId& account_id,
+                  UserType user_type,
+                  bool is_ephemeral) override;
   bool OnUserProfileCreated(const AccountId& account_id,
                             PrefService* prefs) override;
   void OnUserProfileWillBeDestroyed(const AccountId& account_id) override;
@@ -210,9 +208,10 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
   bool IsLoggedInAsChildUser() const override;
   bool IsLoggedInAsManagedGuestSession() const override;
   bool IsLoggedInAsGuest() const override;
-  bool IsLoggedInAsKioskApp() const override;
-  bool IsLoggedInAsWebKioskApp() const override;
+  bool IsLoggedInAsKioskChromeApp() const override;
+  bool IsLoggedInAsKioskWebApp() const override;
   bool IsLoggedInAsKioskIWA() const override;
+  bool IsLoggedInAsKioskArcvmApp() const override;
   bool IsLoggedInAsAnyKioskApp() const override;
   bool IsLoggedInAsStub() const override;
   bool IsUserNonCryptohomeDataEphemeral(
@@ -242,6 +241,7 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
                          UserRemovalReason reason) override;
   void NotifyUserNotAllowed(const std::string& user_email) final;
   bool IsGuestSessionAllowed() const override;
+  void SetGuestSessionAllowed(bool value) override;
   bool IsGaiaUserAllowed(const User& user) const override;
   bool IsUserAllowed(const User& user) const override;
   PrefService* GetLocalState() const final;
@@ -267,9 +267,6 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
 
  protected:
   friend class ash::UserManagerTest;
-
-  ash::CrosSettings* cros_settings() { return cros_settings_; }
-  const ash::CrosSettings* cros_settings() const { return cros_settings_; }
 
   // Add a new regular user with a Gaia account. Returns the created user.
   // `user_type` must be kRegular or kChild, which can hold a Gaia account.
@@ -334,6 +331,9 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
   // |RemoveNonOwnerUserInternal|.
   void RemoveUserInternal(const AccountId& account_id,
                           UserRemovalReason reason);
+  void RemoveUserInternalWithOwnerAccountId(const AccountId& account_id,
+                                            UserRemovalReason reason,
+                                            const AccountId& owner_account_id);
 
   // Removes data stored or cached outside the user's cryptohome (wallpaper,
   // avatar, OAuth token status, display name, display email).
@@ -345,11 +345,10 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
   void SetEphemeralModeConfig(
       EphemeralModeConfig ephemeral_mode_config) override;
 
+  void SetShowUsersOnSignIn(bool value) override;
+
   virtual void ResetOwnerId();
   void SetOwnerId(const AccountId& owner_account_id) override;
-
-  // If there's pending user switch, processes it.
-  void ProcessPendingUserSwitchId();
 
   // TODO(b/278643115): Move to private, once we migrate fake implementation
   // closer enough to the production behavior.
@@ -376,7 +375,7 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
   // List of all known users. User instances are owned by |this|. Regular users
   // are removed by |RemoveUserFromList|, device local accounts by
   // |UpdateAndCleanUpDeviceLocalAccounts|.
-  UserList users_;
+  UserList persisted_users_;
 
   // List of all users that are logged in current session. These point to User
   // instances in |users_|. Only one of them could be marked as active.
@@ -467,8 +466,11 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
 
   const raw_ptr<PrefService, DanglingUntriaged> local_state_;
 
-  // Interface to the signed settings store.
-  const raw_ptr<ash::CrosSettings> cros_settings_;
+  // Whether or not guest session is allowed.
+  bool guest_session_allowed_ = false;
+
+  // Whether or not to show the users on sign-in page.
+  bool show_users_on_sign_in_ = true;
 
   // Cached flag of whether the currently logged-in user existed before this
   // login.
@@ -500,10 +502,6 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
 
   // Time at which this object was created.
   base::TimeTicks manager_creation_time_ = base::TimeTicks::Now();
-
-  // ID of the user just added to the session that needs to be activated
-  // as soon as user's profile is loaded.
-  AccountId pending_user_switch_ = EmptyAccountId();
 
   // ID of the user that was active in the previous session.
   // Preference value is stored here before first user signs in

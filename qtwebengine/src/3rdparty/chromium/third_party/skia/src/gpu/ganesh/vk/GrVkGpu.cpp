@@ -7,6 +7,7 @@
 
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 
+#include "build/build_config.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
@@ -205,6 +206,7 @@ GrVkGpu::GrVkGpu(GrDirectContext* direct,
         , fResourceProvider(this)
         , fStagingBufferManager(this)
         , fDisconnected(false)
+        , fHasNewVkPipelineCacheData(false)
         , fProtectedContext(backendContext.fProtectedContext)
         , fDeviceLostContext(backendContext.fDeviceLostContext)
         , fDeviceLostProc(backendContext.fDeviceLostProc) {
@@ -1689,7 +1691,7 @@ bool GrVkGpu::createVkImageForBackendSurface(VkFormat vkFormat,
     imageDesc.fMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     imageDesc.fIsProtected = fProtectedContext;
 
-#if defined(TOOLKIT_QT) && defined(SK_BUILD_FOR_WIN)
+#if BUILDFLAG(IS_QTWEBENGINE) && defined(SK_BUILD_FOR_WIN)
     if (fPhysDevProps.vendorID == 0x8086) {
         // FIXME: This is a workaround for Intel drivers on Windows.
         // The imported VkImage has artifacts if the tiling is not linear.
@@ -2742,8 +2744,23 @@ void GrVkGpu::addDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler> drawable) 
     fDrawables.emplace_back(std::move(drawable));
 }
 
-void GrVkGpu::storeVkPipelineCacheData() {
-    if (this->getContext()->priv().getPersistentCache()) {
-        this->resourceProvider().storePipelineCacheData();
+void GrVkGpu::pipelineCompileWasRequired() {
+    fHasNewVkPipelineCacheData = true;
+}
+
+bool GrVkGpu::canDetectNewVkPipelineCacheData() const {
+    return this->vkCaps().supportsPipelineCreationCacheControl();
+}
+
+bool GrVkGpu::hasNewVkPipelineCacheData() const {
+    return fHasNewVkPipelineCacheData;
+}
+
+void GrVkGpu::storeVkPipelineCacheData(size_t maxSize) {
+    if (!this->getContext()->priv().getPersistentCache()) {
+        return;
     }
+
+    this->resourceProvider().storePipelineCacheData(maxSize);
+    fHasNewVkPipelineCacheData = false;
 }

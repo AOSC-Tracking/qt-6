@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "web_contents_view_qt.h"
 
@@ -87,7 +88,7 @@ void WebContentsViewQt::CreateView(gfx::NativeView context)
 
 gfx::NativeView WebContentsViewQt::GetNativeView() const
 {
-    return nullptr;
+    return {};
 }
 
 gfx::Rect WebContentsViewQt::GetContainerBounds() const

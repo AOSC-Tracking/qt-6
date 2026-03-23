@@ -71,10 +71,6 @@ void SafeBrowsingQuietErrorUI::PopulateStringsForHtml(
       PopulateBillingLoadTimeData(load_time_data);
       break;
   }
-
-  // Not used by this interstitial.
-  load_time_data.Set("recurrentErrorParagraph", "");
-  load_time_data.Set("show_recurrent_error_paragraph", false);
 }
 
 void SafeBrowsingQuietErrorUI::SetGiantWebViewForTesting(
@@ -113,6 +109,7 @@ void SafeBrowsingQuietErrorUI::HandleCommand(
     case CMD_OPEN_ENHANCED_PROTECTION_SETTINGS:
     case CMD_CLOSE_INTERSTITIAL_WITHOUT_UI:
     case CMD_REQUEST_SITE_ACCESS_PERMISSION:
+    case CMD_OPEN_ANDROID_ADVANCED_PROTECTION_SETTINGS:
       NOTREACHED();
   }
 }

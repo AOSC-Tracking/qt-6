@@ -33,9 +33,7 @@ TEST(WideString, ElementAccess) {
   EXPECT_EQ(L'a', abc[0]);
   EXPECT_EQ(L'b', abc[1]);
   EXPECT_EQ(L'c', abc[2]);
-#ifndef NDEBUG
-  EXPECT_DEATH({ abc[4]; }, "");
-#endif
+  EXPECT_DEATH_IF_SUPPORTED({ abc[4]; }, "");
 
   pdfium::span<const wchar_t> abc_span = abc.span();
   EXPECT_EQ(3u, abc_span.size());
@@ -69,10 +67,7 @@ TEST(WideString, ElementAccess) {
   mutable_abc.SetAt(2, L'f');
   EXPECT_EQ(L"abc", abc);
   EXPECT_EQ(L"def", mutable_abc);
-#ifndef NDEBUG
-  EXPECT_DEATH({ mutable_abc.SetAt(3, L'g'); }, "");
-  EXPECT_EQ(L"abc", abc);
-#endif
+  EXPECT_DEATH_IF_SUPPORTED({ mutable_abc.SetAt(3, L'g'); }, "");
 }
 
 TEST(WideString, Construct) {
@@ -1476,6 +1471,16 @@ TEST(WideString, FromDefANSI) {
                                              "y"));
 }
 
+TEST(WideStringView, ConstexprCtors) {
+  static constexpr WideStringView null_string;
+  static_assert(null_string.GetLength() == 0);
+  static_assert(null_string.IsEmpty());
+
+  static constexpr WideStringView copied_null_string(null_string);
+  static_assert(copied_null_string.GetLength() == 0);
+  static_assert(copied_null_string.IsEmpty());
+}
+
 TEST(WideStringView, FromVector) {
   std::vector<WideStringView::UnsignedType> null_vec;
   WideStringView null_string(null_vec);
@@ -1500,9 +1505,7 @@ TEST(WideStringView, ElementAccess) {
   EXPECT_EQ(L'a', static_cast<wchar_t>(abc[0]));
   EXPECT_EQ(L'b', static_cast<wchar_t>(abc[1]));
   EXPECT_EQ(L'c', static_cast<wchar_t>(abc[2]));
-#ifndef NDEBUG
-  EXPECT_DEATH({ abc[4]; }, "");
-#endif
+  EXPECT_DEATH_IF_SUPPORTED({ abc[4]; }, "");
 }
 
 TEST(WideStringView, OperatorLT) {

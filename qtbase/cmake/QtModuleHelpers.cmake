@@ -19,6 +19,9 @@ macro(qt_internal_get_internal_add_module_keywords option_args single_args multi
         NO_HEADERSCLEAN_CHECK
         NO_GENERATE_CPP_EXPORTS
         NO_UNITY_BUILD
+        NO_PACKAGE_CONFIG_FILE
+        NO_MODULE_JSON_FILE
+        NO_QMAKE_SUPPORT_FILES
         ${__qt_internal_sbom_optional_args}
     )
     set(${single_args}
@@ -319,7 +322,12 @@ function(qt_internal_add_module target)
             # Without FEATURE_no_direct_extern_access, applications cannot use
             # -fPIE any more and must use -fPIC. Even then, this may fail.
             # Consider upgrading.
-            target_compile_options(${target} INTERFACE -fPIC)
+            #
+            # When a Swift library links to a Qt module, it fails to link because cmake passes
+            # -fPIC to it, and the swiftc compiler doesn't know that option.
+            # Prevent passing it.
+            set(fpic_flag "$<$<NOT:$<COMPILE_LANGUAGE:Swift>>:-fPIC>")
+            target_compile_options(${target} INTERFACE "${fpic_flag}")
         endif()
     endif()
 
@@ -638,7 +646,6 @@ function(qt_internal_add_module target)
             QT_DEPRECATED_WARNINGS
             QT_BUILDING_QT
             QT_BUILD_${module_define_infix}_LIB ### FIXME: use QT_BUILD_ADDON for Add-ons or remove if we don't have add-ons anymore
-            ${deprecation_define}
             )
         list(APPEND arg_LIBRARIES Qt::PlatformModuleInternal)
     endif()
@@ -705,7 +712,6 @@ function(qt_internal_add_module target)
         PUBLIC_LIBRARIES ${arg_PUBLIC_LIBRARIES}
         LIBRARIES ${arg_LIBRARIES}
         PRIVATE_MODULE_INTERFACE ${arg_PRIVATE_MODULE_INTERFACE}
-        FEATURE_DEPENDENCIES ${arg_FEATURE_DEPENDENCIES}
         DBUS_ADAPTOR_SOURCES ${arg_DBUS_ADAPTOR_SOURCES}
         DBUS_ADAPTOR_FLAGS ${arg_DBUS_ADAPTOR_FLAGS}
         DBUS_INTERFACE_SOURCES ${arg_DBUS_INTERFACE_SOURCES}
@@ -741,8 +747,6 @@ function(qt_internal_add_module target)
             LIBRARY "${target}"
             PUBLIC_FILE "${module_config_header}"
             PRIVATE_FILE "${module_config_private_header}"
-            PUBLIC_DEPENDENCIES ${arg_FEATURE_DEPENDENCIES}
-            PRIVATE_DEPENDENCIES ${arg_FEATURE_DEPENDENCIES}
         )
         include(${configureFile})
         qt_feature_module_end("${target}")
@@ -1017,16 +1021,18 @@ set(QT_ALLOW_MISSING_TOOLS_PACKAGES TRUE)")
         unset(arg_NO_PRIVATE_MODULE)
     endif()
 
-    qt_describe_module(${target})
+    if(NOT arg_NO_MODULE_JSON_FILE)
+        qt_describe_module(${target})
+    endif()
 
     if(QT_GENERATE_SBOM)
         set(sbom_args "")
 
         # 3rd party header modules should not be treated as Qt modules.
         if(arg_IS_QT_3RD_PARTY_HEADER_MODULE)
-            list(APPEND sbom_args TYPE QT_THIRD_PARTY_MODULE)
+            list(APPEND sbom_args DEFAULT_SBOM_ENTITY_TYPE QT_THIRD_PARTY_MODULE)
         else()
-            list(APPEND sbom_args TYPE QT_MODULE)
+            list(APPEND sbom_args DEFAULT_SBOM_ENTITY_TYPE QT_MODULE)
         endif()
 
         qt_get_cmake_configurations(configs)
@@ -1072,7 +1078,19 @@ set(QT_ALLOW_MISSING_TOOLS_PACKAGES TRUE)")
         qt_internal_extend_qt_entity_sbom(${target} ${sbom_args})
     endif()
 
-    qt_add_list_file_finalizer(qt_finalize_module ${target} ${arg_INTERNAL_MODULE} ${arg_NO_PRIVATE_MODULE})
+    if(arg_NO_PACKAGE_CONFIG_FILE)
+        set_target_properties("${target}" PROPERTIES _qt_no_package_config_file TRUE)
+    endif()
+
+    if(arg_NO_QMAKE_SUPPORT_FILES)
+        set_target_properties("${target}" PROPERTIES _qt_no_qmake_support_files TRUE)
+    endif()
+
+    qt_add_list_file_finalizer(qt_finalize_module
+        ${target}
+        ${arg_INTERNAL_MODULE}
+        ${arg_NO_PRIVATE_MODULE}
+    )
 endfunction()
 
 # Write and install the basic Qt6Foo and Qt6FooPrivate packages.
@@ -1098,9 +1116,29 @@ function(qt_internal_write_basic_module_package target target_private)
     if(arg_PRIVATE)
         set(package_name "${INSTALL_CMAKE_NAMESPACE}${target_private}")
         set(module_config_input_file "QtModuleConfigPrivate.cmake.in")
+        qt_configure_file(
+            OUTPUT "${arg_CONFIG_BUILD_DIR}/${package_name}TargetsPrecheck.cmake"
+            CONTENT
+"
+_qt_internal_should_include_targets(
+    TARGETS ${target_private}
+    NAMESPACE ${INSTALL_CMAKE_NAMESPACE}::
+    OUT_VAR_SHOULD_SKIP __qt_${target_private}_skip_include_targets_file
+)
+")
     else()
         set(package_name "${INSTALL_CMAKE_NAMESPACE}${target}")
         set(module_config_input_file "QtModuleConfig.cmake.in")
+        qt_configure_file(
+            OUTPUT "${arg_CONFIG_BUILD_DIR}/${package_name}TargetsPrecheck.cmake"
+            CONTENT
+"
+_qt_internal_should_include_targets(
+    TARGETS ${target}
+    NAMESPACE ${INSTALL_CMAKE_NAMESPACE}::
+    OUT_VAR_SHOULD_SKIP __qt_${target}_skip_include_targets_file
+)
+")
         if(arg_FIND_PRIVATE_MODULE)
             set(always_load_private_module ON)
         endif()
@@ -1144,6 +1182,7 @@ set(__qt_${target}_always_load_private_module ON)
         "${arg_CONFIG_BUILD_DIR}/${package_name}Config.cmake"
         "${arg_CONFIG_BUILD_DIR}/${package_name}ConfigVersion.cmake"
         "${arg_CONFIG_BUILD_DIR}/${package_name}ConfigVersionImpl.cmake"
+        "${arg_CONFIG_BUILD_DIR}/${package_name}TargetsPrecheck.cmake"
         DESTINATION "${arg_CONFIG_INSTALL_DIR}"
         COMPONENT Devel
     )
@@ -1270,9 +1309,18 @@ function(qt_finalize_module target)
     )
 
     qt_finalize_framework_headers_copy(${target})
-    qt_generate_prl_file(${target} "${INSTALL_LIBDIR}")
-    qt_generate_module_pri_file("${target}" ${ARGN})
-    qt_internal_generate_pkg_config_file(${target})
+
+    get_target_property(no_qmake_support_files "${target}" _qt_no_qmake_support_files)
+    if(NOT no_qmake_support_files)
+        qt_generate_prl_file(${target} "${INSTALL_LIBDIR}")
+        qt_generate_module_pri_file("${target}" ${ARGN})
+    endif()
+
+    get_target_property(no_package_config_file "${target}" _qt_no_package_config_file)
+    if(NOT no_package_config_file)
+        qt_internal_generate_pkg_config_file(${target})
+    endif()
+
     qt_internal_apply_apple_privacy_manifest(${target})
     _qt_internal_finalize_sbom(${target})
 endfunction()
@@ -1467,6 +1515,7 @@ function(qt_internal_list_to_json_array out_var list_var)
 endfunction()
 
 # Generate a module description file based on the template in ModuleDescription.json.in
+# Keep this in sync with `utils/json_schema/modules.json`
 function(qt_describe_module target)
     set(path_suffix "${INSTALL_DESCRIPTIONSDIR}")
     qt_path_join(build_dir ${QT_BUILD_DIR} ${path_suffix})
@@ -1585,9 +1634,13 @@ ${indent3}\"name\": \"${platform_name}\",")
             string(APPEND platforms_information "
 ${indent3}\"variant\": \"${platform_variant}\",")
         endif()
-        if(NOT "${CMAKE_SYSTEM_VERSION}" STREQUAL "")
+        if(NOT "${CMAKE_SYSTEM_VERSION}" STREQUAL "" AND
+            NOT platform_name STREQUAL "Linux")
             string(APPEND platforms_information "
 ${indent3}\"version\": \"${CMAKE_SYSTEM_VERSION}\",")
+        else()
+            string(APPEND platforms_information "
+${indent3}\"version\": null,")
         endif()
         string(APPEND platforms_information "
 ${indent3}\"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",

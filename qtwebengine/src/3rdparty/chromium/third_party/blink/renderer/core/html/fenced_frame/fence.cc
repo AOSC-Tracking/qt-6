@@ -266,8 +266,8 @@ void Fence::setReportEventDataForAutomaticBeacons(
   std::optional<mojom::blink::AutomaticBeaconType> beacon_type =
       GetAutomaticBeaconType(event->eventType());
   if (!beacon_type.has_value()) {
-    AddConsoleMessage(event->eventType() +
-                      " is not a valid automatic beacon event type.");
+    AddConsoleMessage(StrCat(
+        {event->eventType(), " is not a valid automatic beacon event type."}));
     return;
   }
   if (event->hasEventData() &&
@@ -279,8 +279,8 @@ void Fence::setReportEventDataForAutomaticBeacons(
   }
   if (event->eventType() ==
       blink::kDeprecatedFencedFrameTopNavigationBeaconType) {
-    AddConsoleMessage(event->eventType() + " is deprecated in favor of " +
-                          kFencedFrameTopNavigationCommitBeaconType + ".",
+    AddConsoleMessage(StrCat({event->eventType(), " is deprecated in favor of ",
+                              kFencedFrameTopNavigationCommitBeaconType, "."}),
                       mojom::blink::ConsoleMessageLevel::kWarning);
   }
   LocalFrame* frame = DomWindow()->GetFrame();
@@ -346,6 +346,8 @@ ScriptPromise<IDLUndefined> Fence::disableUntrustedNetwork(
     ScriptState* script_state,
     ExceptionState& exception_state) {
   if (!DomWindow()) {
+    RecordDisableUntrustedNetworkOutcome(
+        DisableUntrustedNetworkOutcome::kNotActive);
     exception_state.ThrowSecurityError(
         "May not use a Fence object associated with a Document that is not "
         "fully active.");
@@ -359,6 +361,8 @@ ScriptPromise<IDLUndefined> Fence::disableUntrustedNetwork(
                                            ->FencedFrameProperties()
                                            ->can_disable_untrusted_network();
   if (!can_disable_untrusted_network) {
+    RecordDisableUntrustedNetworkOutcome(
+        DisableUntrustedNetworkOutcome::kNotAllowed);
     exception_state.ThrowTypeError(
         "This frame is not allowed to disable untrusted network.");
     return EmptyPromise();
@@ -370,6 +374,8 @@ ScriptPromise<IDLUndefined> Fence::disableUntrustedNetwork(
   frame->GetLocalFrameHostRemote().DisableUntrustedNetworkInFencedFrame(
       WTF::BindOnce(
           [](ScriptPromiseResolver<IDLUndefined>* resolver) {
+            RecordDisableUntrustedNetworkOutcome(
+                DisableUntrustedNetworkOutcome::kResolved);
             resolver->Resolve();
           },
           WrapPersistent(resolver)));
@@ -380,12 +386,10 @@ void Fence::reportPrivateAggregationEvent(const String& event,
                                           ExceptionState& exception_state) {
   if (!base::FeatureList::IsEnabled(blink::features::kPrivateAggregationApi) ||
       !blink::features::kPrivateAggregationApiEnabledInProtectedAudience
-           .Get() ||
-      !blink::features::kPrivateAggregationApiProtectedAudienceExtensionsEnabled
            .Get()) {
     exception_state.ThrowSecurityError(
-        "FLEDGE extensions must be enabled to use reportEvent() for private "
-        "aggregation events.");
+        "Private Aggregation in Protected Audience must be enabled to use "
+        "reportEvent() for private aggregation events.");
     return;
   }
   if (!DomWindow()) {
@@ -417,6 +421,7 @@ void Fence::reportPrivateAggregationEvent(const String& event,
 void Fence::notifyEvent(const Event* triggering_event,
                         ExceptionState& exception_state) {
   if (!DomWindow()) {
+    RecordNotifyEventOutcome(NotifyEventOutcome::kNotActive);
     exception_state.ThrowSecurityError(
         "May not use a Fence object associated with a Document that is not "
         "fully active.");
@@ -425,8 +430,8 @@ void Fence::notifyEvent(const Event* triggering_event,
 
   LocalFrame* frame = DomWindow()->GetFrame();
   CHECK(frame);
-  // notifyEvent is not allowed in iframes.
   if (!frame->IsFencedFrameRoot()) {
+    RecordNotifyEventOutcome(NotifyEventOutcome::kNotFencedFrameRoot);
     exception_state.ThrowSecurityError(
         "notifyEvent is only available in fenced frame "
         "roots.");
@@ -435,6 +440,7 @@ void Fence::notifyEvent(const Event* triggering_event,
 
   if (!triggering_event || !triggering_event->isTrusted() ||
       !triggering_event->IsBeingDispatched()) {
+    RecordNotifyEventOutcome(NotifyEventOutcome::kInvalidEvent);
     exception_state.ThrowSecurityError(
         "The triggering_event object is in an invalid "
         "state.");
@@ -442,6 +448,7 @@ void Fence::notifyEvent(const Event* triggering_event,
   }
 
   if (!CanNotifyEventTypeAcrossFence(triggering_event->type().Ascii())) {
+    RecordNotifyEventOutcome(NotifyEventOutcome::kUnsupportedEventType);
     exception_state.ThrowSecurityError(
         "notifyEvent called with an unsupported event type.");
     return;

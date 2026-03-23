@@ -1,5 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dlightmapper_p.h"
 
@@ -27,7 +29,7 @@ QT_BEGIN_NAMESPACE
     to the original mesh files, Lightmapper settings or other scene changes will
     require a new bake to be executed to see the updated result.
 
-    \note As of Qt 6.4, lightmap baking is in an early technical preview state.
+    \note As of Qt 6.4, lightmap baking is in an early technology preview state.
     Changes to features, quality, and API are likely to happen in future releases.
 
     The Lightmapper object works in combination with:
@@ -39,7 +41,9 @@ QT_BEGIN_NAMESPACE
     \li the engine's built-in lightmap baker.
     \endlist
 
-    \sa {Lightmaps and Global Illumination}, {Qt Quick 3D - Baked Lightmap Example}
+    \sa {Lightmaps and Global Illumination},
+        {Qt Quick 3D - Baked Lightmap Example},
+        {Qt Quick 3D - SSGI Lightmap Example}
  */
 
 /*!

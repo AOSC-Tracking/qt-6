@@ -4,22 +4,11 @@
 
 #include "services/webnn/tflite/op_resolver.h"
 
-#include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
-#include "third_party/tflite/buildflags.h"
 #include "third_party/tflite/src/tensorflow/lite/kernels/builtin_op_kernels.h"
-
-#if BUILDFLAG(BUILD_TFLITE_WITH_NNAPI)
-#include "third_party/tflite/src/tensorflow/lite/core/c/c_api_types.h"
-#include "third_party/tflite/src/tensorflow/lite/delegates/nnapi/nnapi_delegate.h"
-#endif
-
-#if BUILDFLAG(BUILD_TFLITE_WITH_XNNPACK)
-#include "third_party/tflite/src/tensorflow/lite/tflite_with_xnnpack_optional.h"
-#endif
 
 namespace webnn::tflite {
 
-OpResolver::OpResolver(const mojom::CreateContextOptions& options) {
+OpResolver::OpResolver() {
   AddBuiltin(::tflite::BuiltinOperator_ABS,
              ::tflite::ops::builtin::Register_ABS());
   AddBuiltin(::tflite::BuiltinOperator_AVERAGE_POOL_2D,
@@ -270,26 +259,6 @@ OpResolver::OpResolver(const mojom::CreateContextOptions& options) {
              ::tflite::ops::builtin::Register_TRANSPOSE_CONV(),
              /* min_version = */ 1,
              /* max_version = */ 3);
-
-#if BUILDFLAG(BUILD_TFLITE_WITH_NNAPI)
-  if (options.device == mojom::CreateContextOptions::Device::kNpu) {
-    delegate_creators_.push_back([](TfLiteContext* context) {
-      return std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)>(
-          new ::tflite::StatefulNnApiDelegate(), [](TfLiteDelegate* delegate) {
-            // Cast `delegate` back to a C++ object type so that the correct
-            // destructor is invoked.
-            delete static_cast<::tflite::StatefulNnApiDelegate*>(delegate);
-          });
-    });
-  }
-#endif
-
-#if BUILDFLAG(BUILD_TFLITE_WITH_XNNPACK)
-  delegate_creators_.push_back([](TfLiteContext* context) {
-    return ::tflite::MaybeCreateXNNPACKDelegate(
-        context, ::tflite::XNNPackQS8Options::default_value);
-  });
-#endif
 }
 
 }  // namespace webnn::tflite

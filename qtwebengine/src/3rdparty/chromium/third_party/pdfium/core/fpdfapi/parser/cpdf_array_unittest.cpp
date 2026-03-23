@@ -40,8 +40,9 @@ TEST(ArrayTest, RemoveAt) {
     for (const int elem : {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}) {
       arr->AppendNew<CPDF_Number>(elem);
     }
-    for (size_t i = 0; i < 3; ++i)
+    for (size_t i = 0; i < 3; ++i) {
       arr->RemoveAt(3);
+    }
     static constexpr std::array<int, 7> expected = {{1, 2, 3, 7, 8, 9, 10}};
     ASSERT_EQ(expected.size(), arr->size());
     for (size_t i = 0; i < expected.size(); ++i) {
@@ -51,8 +52,9 @@ TEST(ArrayTest, RemoveAt) {
     arr->RemoveAt(4);
     static constexpr std::array<int, 5> expected2 = {{1, 2, 3, 7, 10}};
     ASSERT_EQ(std::size(expected2), arr->size());
-    for (size_t i = 0; i < std::size(expected2); ++i)
+    for (size_t i = 0; i < std::size(expected2); ++i) {
       EXPECT_EQ(expected2[i], arr->GetIntegerAt(i));
+    }
   }
   {
     // When the range is out of bound, RemoveAt() has no effect.
@@ -148,8 +150,8 @@ TEST(ArrayTest, Clone) {
         auto obj = pdfium::MakeRetain<CPDF_Number>(elems[i][j]);
         // Starts object number from 1.
         int obj_num = i * kNumOfColumns + j + 1;
-        obj_holder->ReplaceIndirectObjectIfHigherGeneration(obj_num,
-                                                            std::move(obj));
+        ASSERT_TRUE(obj_holder->ReplaceIndirectObjectIfHigherGeneration(
+            obj_num, std::move(obj)));
         arr_elem->InsertNewAt<CPDF_Reference>(j, obj_holder.get(), obj_num);
       }
       arr->InsertAt(i, std::move(arr_elem));

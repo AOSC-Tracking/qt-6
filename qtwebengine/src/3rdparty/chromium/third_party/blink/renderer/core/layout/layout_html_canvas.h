@@ -83,8 +83,6 @@ class CORE_EXPORT LayoutHTMLCanvas final : public LayoutReplaced {
     return &children_;
   }
 
-  void DidInvalidatePaintForPlacedElement(Element* placedElement);
-
  private:
   LayoutObjectChildList* VirtualChildren() final {
     NOT_DESTROYED();
@@ -96,13 +94,13 @@ class CORE_EXPORT LayoutHTMLCanvas final : public LayoutReplaced {
   }
   bool CanHaveChildren() const final {
     NOT_DESTROYED();
-    return RuntimeEnabledFeatures::CanvasPlaceElementEnabled();
+    return RuntimeEnabledFeatures::CanvasDrawElementEnabled();
   }
   bool IsChildAllowed(LayoutObject*, const ComputedStyle&) const final;
 
   void PaintReplaced(const PaintInfo&,
                      const PhysicalOffset& paint_offset) const override;
-  void IntrinsicSizeChanged() override {
+  void NaturalSizeChanged() override {
     NOT_DESTROYED();
     CanvasSizeChanged();
   }

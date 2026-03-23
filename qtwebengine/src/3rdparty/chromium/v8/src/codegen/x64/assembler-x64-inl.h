@@ -5,10 +5,12 @@
 #ifndef V8_CODEGEN_X64_ASSEMBLER_X64_INL_H_
 #define V8_CODEGEN_X64_ASSEMBLER_X64_INL_H_
 
+#include "src/codegen/x64/assembler-x64.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/base/cpu.h"
 #include "src/base/memory.h"
 #include "src/codegen/flush-instruction-cache.h"
-#include "src/codegen/x64/assembler-x64.h"
 #include "src/debug/debug.h"
 #include "src/heap/heap-layout-inl.h"
 #include "src/objects/objects-inl.h"
@@ -305,8 +307,7 @@ Tagged<HeapObject> RelocInfo::target_object(PtrComprCageBase cage_base) {
   if (IsCompressedEmbeddedObject(rmode_)) {
     Tagged_t compressed = ReadUnalignedValue<Tagged_t>(pc_);
     DCHECK(!HAS_SMI_TAG(compressed));
-    Tagged<Object> obj(
-        V8HeapCompressionScheme::DecompressTagged(cage_base, compressed));
+    Tagged<Object> obj(V8HeapCompressionScheme::DecompressTagged(compressed));
     return Cast<HeapObject>(obj);
   }
   DCHECK(IsFullEmbeddedObject(rmode_));

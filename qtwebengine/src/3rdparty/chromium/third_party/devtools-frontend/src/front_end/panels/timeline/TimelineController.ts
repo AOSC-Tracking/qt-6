@@ -7,10 +7,12 @@ import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as CrUXManager from '../../models/crux-manager/crux-manager.js';
-import * as EmulationModel from '../../models/emulation/emulation.js';
 import * as Extensions from '../../models/extensions/extensions.js';
 import * as LiveMetrics from '../../models/live-metrics/live-metrics.js';
 import * as Trace from '../../models/trace/trace.js';
+import * as Tracing from '../../services/tracing/tracing.js';
+
+import * as RecordingMetadata from './RecordingMetadata.js';
 
 const UIStrings = {
   /**
@@ -19,13 +21,13 @@ const UIStrings = {
    * worker) doesn't support it.
    */
   tracingNotSupported: 'Performance trace recording not supported for this type of target',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelineController.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-export class TimelineController implements Trace.TracingManager.TracingManagerClient {
+export class TimelineController implements Tracing.TracingManager.TracingManagerClient {
   readonly primaryPageTarget: SDK.Target.Target;
   readonly rootTarget: SDK.Target.Target;
-  private tracingManager: Trace.TracingManager.TracingManager|null;
+  private tracingManager: Tracing.TracingManager.TracingManager|null;
   #collectedEvents: Trace.Types.Events.Event[] = [];
   #navigationUrls: string[] = [];
   #fieldData: CrUXManager.PageResult[]|null = null;
@@ -64,7 +66,7 @@ export class TimelineController implements Trace.TracingManager.TracingManagerCl
     this.rootTarget = rootTarget;
     // Ensure the tracing manager is the one for the Root Target, NOT the
     // primaryPageTarget, as that is the one we have to invoke tracing against.
-    this.tracingManager = rootTarget.model(Trace.TracingManager.TracingManager);
+    this.tracingManager = rootTarget.model(Tracing.TracingManager.TracingManager);
     this.client = client;
   }
 
@@ -93,10 +95,14 @@ export class TimelineController implements Trace.TracingManager.TracingManagerCl
       Trace.Types.Events.Categories.Loading,
       Trace.Types.Events.Categories.UserTiming,
       'devtools.timeline',
-      disabledByDefault('devtools.timeline'),
+      disabledByDefault('devtools.target-rundown'),
       disabledByDefault('devtools.timeline.frame'),
       disabledByDefault('devtools.timeline.stack'),
-      disabledByDefault('v8.compile'),
+      disabledByDefault('devtools.timeline'),
+      disabledByDefault('devtools.v8-source-rundown-sources'),
+      disabledByDefault('devtools.v8-source-rundown'),
+      disabledByDefault('layout_shift.debug'),
+      // Looking for disabled-by-default-v8.compile? We disabled it: crbug.com/414330508.
       disabledByDefault('v8.inspector'),
       disabledByDefault('v8.cpu_profiler.hires'),
       disabledByDefault('lighthouse'),
@@ -125,13 +131,8 @@ export class TimelineController implements Trace.TracingManager.TracingManagerCl
     }
     if (options.captureSelectorStats) {
       categoriesArray.push(disabledByDefault('blink.debug'));
-    }
-    if (Root.Runtime.experiments.isEnabled('timeline-enhanced-traces')) {
-      categoriesArray.push(disabledByDefault('devtools.target-rundown'));
-      categoriesArray.push(disabledByDefault('devtools.v8-source-rundown'));
-    }
-    if (Root.Runtime.experiments.isEnabled('timeline-compiled-sources')) {
-      categoriesArray.push(disabledByDefault('devtools.v8-source-rundown-sources'));
+      // enable invalidation nodes
+      categoriesArray.push(disabledByDefault('devtools.timeline.invalidationTracking'));
     }
 
     await LiveMetrics.LiveMetrics.instance().disable();
@@ -177,8 +178,24 @@ export class TimelineController implements Trace.TracingManager.TracingManagerCl
     throttlingManager.setCPUThrottlingOption(SDK.CPUThrottlingManager.NoThrottlingOption);
 
     this.client.loadingStarted();
-    this.#fieldData = await this.fetchFieldData();
-    await this.waitForTracingToStop();
+
+    // Give `TimelinePanel.#executeNewTrace` a chance to retain source maps from SDK.SourceMap.SourceMapManager.
+    SDK.SourceMap.SourceMap.retainRawSourceMaps = true;
+
+    const [fieldData] =
+        await Promise
+            .all([
+              this.fetchFieldData(),
+              // TODO(crbug.com/366072294): Report the progress of this resumption, as it can be lengthy on heavy pages.
+              SDK.TargetManager.TargetManager.instance().resumeAllTargets(),
+              this.waitForTracingToStop(),
+            ])
+            .catch(e => {
+              // Normally set false in allSourcesFinished, but just in case something fails, catch it here.
+              SDK.SourceMap.SourceMap.retainRawSourceMaps = false;
+              throw e;
+            });
+    this.#fieldData = fieldData;
 
     // Now we re-enable throttling again to maintain the setting being persistent.
     throttlingManager.setCPUThrottlingOption(optionDuringRecording);
@@ -194,19 +211,7 @@ export class TimelineController implements Trace.TracingManager.TracingManagerCl
     }
 
     const urls = [...new Set(this.#navigationUrls)];
-    return Promise.all(urls.map(url => cruxManager.getFieldDataForPage(url)));
-  }
-
-  private async createMetadata(): Promise<Trace.Types.File.MetaData> {
-    const deviceModeModel = EmulationModel.DeviceModeModel.DeviceModeModel.tryInstance();
-    let emulatedDeviceTitle;
-    if (deviceModeModel?.type() === EmulationModel.DeviceModeModel.Type.Device) {
-      emulatedDeviceTitle = deviceModeModel.device()?.title ?? undefined;
-    } else if (deviceModeModel?.type() === EmulationModel.DeviceModeModel.Type.Responsive) {
-      emulatedDeviceTitle = 'Responsive';
-    }
-    return Trace.Extras.Metadata.forNewRecording(
-        false, this.#recordingStartTime ?? undefined, emulatedDeviceTitle, this.#fieldData ?? undefined);
+    return await Promise.all(urls.map(url => cruxManager.getFieldDataForPage(url)));
   }
 
   private async waitForTracingToStop(): Promise<void> {
@@ -224,7 +229,7 @@ export class TimelineController implements Trace.TracingManager.TracingManagerCl
     // all the functions data.
     await SDK.TargetManager.TargetManager.instance().suspendAllTargets('performance-timeline');
     this.tracingCompletePromise = Promise.withResolvers();
-    const response = await this.tracingManager.start(this, categories, '');
+    const response = await this.tracingManager.start(this, categories);
     await this.warmupJsProfiler();
     Extensions.ExtensionServer.ExtensionServer.instance().profilingStarted();
     return response;
@@ -259,14 +264,16 @@ export class TimelineController implements Trace.TracingManager.TracingManagerCl
   }
 
   private async allSourcesFinished(): Promise<void> {
-    // TODO(crbug.com/366072294): Report the progress of this resumption, as it can be lengthy on heavy pages.
-    await SDK.TargetManager.TargetManager.instance().resumeAllTargets();
     Extensions.ExtensionServer.ExtensionServer.instance().profilingStopped();
 
     this.client.processingStarted();
-    const metadata = await this.createMetadata();
+    const metadata = await RecordingMetadata.forTrace({
+      recordingStartTime: this.#recordingStartTime ?? undefined,
+      cruxFieldData: this.#fieldData ?? undefined,
+    });
     await this.client.loadingComplete(this.#collectedEvents, /* exclusiveFilter= */ null, metadata);
     this.client.loadingCompleteForTest();
+    SDK.SourceMap.SourceMap.retainRawSourceMaps = false;
   }
 
   tracingBufferUsage(usage: number): void {

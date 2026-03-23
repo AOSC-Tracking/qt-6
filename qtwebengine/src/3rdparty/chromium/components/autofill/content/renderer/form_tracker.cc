@@ -5,6 +5,7 @@
 #include "components/autofill/content/renderer/form_tracker.h"
 
 #include <optional>
+#include <variant>
 
 #include "base/check.h"
 #include "base/feature_list.h"
@@ -18,6 +19,7 @@
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "content/public/renderer/render_frame.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/web/modules/autofill/web_form_element_observer.h"
 #include "third_party/blink/public/web/web_element.h"
@@ -241,15 +243,51 @@ void FormTracker::TrackAutofilledElement(const WebFormControlElement& element) {
   TrackElement(mojom::SubmissionSource::DOM_MUTATION_AFTER_AUTOFILL);
 }
 
+void FormTracker::TrackAutofilledElement(
+    const base::flat_map<FieldRendererId, FormRendererId>&
+        filled_fields_and_forms) {
+  auto field_is_owned =
+      [](const std::pair<FieldRendererId, FormRendererId>&
+             filled_field_and_form) {
+        return !form_util::GetFormByRendererId(filled_field_and_form.second)
+                    .IsNull();
+      };
+  if (auto it = std::ranges::find_if(filled_fields_and_forms, field_is_owned);
+      it != filled_fields_and_forms.end()) {
+    const auto& [filled_field_id, filled_form_id] = *it;
+    if (base::FeatureList::IsEnabled(
+            features::kAutofillAcceptDomMutationAfterAutofillSubmission)) {
+      TrackAutofilledElement(
+          form_util::GetFormControlByRendererId(filled_field_id));
+    } else {
+      UpdateLastInteractedElement(filled_form_id);
+    }
+  } else {
+    for (const auto& [filled_field_id, filled_form_id] :
+         filled_fields_and_forms) {
+      WebFormControlElement control_element =
+          form_util::GetFormControlByRendererId(filled_field_id);
+      CHECK(control_element);
+      if (base::FeatureList::IsEnabled(
+              features::kAutofillAcceptDomMutationAfterAutofillSubmission)) {
+        TrackAutofilledElement(control_element);
+      } else {
+        UpdateLastInteractedElement(
+            form_util::GetFieldRendererId(control_element));
+      }
+    }
+  }
+}
+
 void FormTracker::FormControlDidChangeImpl(FieldRendererId element_id,
                                            SaveFormReason change_source) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(form_tracker_sequence_checker_);
+  CHECK_NE(change_source, SaveFormReason::kWillSendSubmitEvent);
   WebFormControlElement element =
       form_util::GetFormControlByRendererId(element_id);
-  // The frame or document or element could be null because this function is
-  // called asynchronously.
-  if (!unsafe_render_frame() || !element || !element.GetDocument() ||
-      !element.GetDocument().GetFrame()) {
+  // This function may be called asynchronously, so a navigation may have
+  // happened. Since this event isn't submission-related.
+  if (!form_util::IsOwnedByFrame(element, unsafe_render_frame())) {
     return;
   }
   blink::WebFormElement form_element = element.GetOwningFormForAutofill();
@@ -334,8 +372,7 @@ void FormTracker::WillSubmitForm(const WebFormElement& form) {
   // form submission event. If we didn't, we would send |form| to an
   // AutofillAgent and then to a ContentAutofillDriver etc. which haven't seen
   // this form before. See crbug.com/1240247#c13 for details.
-  if (!unsafe_render_frame() ||
-      !form_util::IsOwnedByFrame(form, unsafe_render_frame())) {
+  if (!form_util::IsOwnedByFrame(form, unsafe_render_frame())) {
     return;
   }
   FireFormSubmission(mojom::SubmissionSource::FORM_SUBMISSION, form);
@@ -399,15 +436,14 @@ bool FormTracker::CanInferFormSubmitted() {
     return !last_interacted_form ||
            std::ranges::none_of(
                last_interacted_form.GetFormControlElements(),  // nocheck
-               &form_util::IsWebElementFocusableForAutofill);
+               &WebElement::IsFocusable);
   }
   if (last_interacted_.formless_element.GetId()) {
     WebFormControlElement last_interacted_formless_element =
         last_interacted_.formless_element.GetField();
     // Infer submission if the field was removed or it's hidden.
     return !last_interacted_formless_element ||
-           !form_util::IsWebElementFocusableForAutofill(
-               last_interacted_formless_element);
+           !last_interacted_formless_element.IsFocusable();
   }
   return false;
 }
@@ -437,26 +473,41 @@ void FormTracker::TrackElement(mojom::SubmissionSource source) {
 }
 
 void FormTracker::UpdateLastInteractedElement(
-    absl::variant<FormRendererId, FieldRendererId> element_id) {
+    std::variant<FormRendererId, FieldRendererId> element_id) {
   ResetLastInteractedElements();
-  if (absl::holds_alternative<FormRendererId>(element_id)) {
-    FormRendererId form_id = absl::get<FormRendererId>(element_id);
-    CHECK(form_id);
-    last_interacted_.form = FormRef(form_util::GetFormByRendererId(form_id));
-  } else {
-    FieldRendererId field_id = absl::get<FieldRendererId>(element_id);
-    CHECK(field_id);
-    last_interacted_.formless_element =
-        FieldRef(form_util::GetFormControlByRendererId(field_id));
-  }
-  last_interacted_.saved_state =
-      unsafe_render_frame()
-          ? form_util::ExtractFormData(
-                unsafe_render_frame()->GetWebFrame()->GetDocument(),
-                last_interacted_.form.GetForm(), agent_->field_data_manager(),
-                agent_->GetCallTimerState(
-                    CallTimerState::CallSite::kUpdateLastInteractedElement))
-          : std::nullopt;
+
+  // `document` is the WebDocument of `element_id`'s element. It is not
+  // necessarily the same as the current frame's document.
+  //
+  // `form` is null if `element_id` is a FieldRendererId.
+  auto [document, form_element] = std::visit(
+      absl::Overload{
+          [this](FormRendererId form_id) {
+            CHECK(form_id);
+            WebFormElement form = form_util::GetFormByRendererId(form_id);
+            last_interacted_.form =
+                FormRef(form_util::GetFormByRendererId(form_id));
+            return std::pair(form.GetDocument(), form);
+          },
+          [this](FieldRendererId field_id) {
+            CHECK(field_id);
+            WebFormControlElement form_control =
+                form_util::GetFormControlByRendererId(field_id);
+            last_interacted_.formless_element = FieldRef(form_control);
+            return std::pair(form_control.GetDocument(), WebFormElement());
+          },
+      },
+      element_id);
+  CHECK(document);
+
+  // We use the element's `document`, not the current frame's document, because
+  // `element_id` may refer to an element that is not in the current frame's
+  // document.
+  last_interacted_.saved_state = form_util::ExtractFormData(
+      document, form_element, agent_->field_data_manager(),
+      agent_->GetCallTimerState(
+          CallTimerState::CallSite::kUpdateLastInteractedElement),
+      agent_->button_titles_cache());
 }
 
 void FormTracker::ResetLastInteractedElements() {

@@ -24,9 +24,12 @@
 #include "net/base/network_delegate.h"
 #include "net/base/proxy_chain.h"
 #include "net/base/schemeful_site.h"
+#include "net/base/task/task_runner.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cookies/cookie_setting_override.h"
 #include "net/cookies/cookie_util.h"
+#include "net/filter/source_stream.h"
+#include "net/filter/source_stream_type.h"
 #include "net/log/net_log.h"
 #include "net/log/net_log_capture_mode.h"
 #include "net/log/net_log_event_type.h"
@@ -48,6 +51,14 @@ base::Value::Dict SourceStreamSetParams(SourceStream* source_stream) {
   return event_params;
 }
 
+const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunnerURJ(
+    net::RequestPriority priority) {
+  if (features::kNetTaskSchedulerURLRequestJob.Get()) {
+    return net::GetTaskRunner(priority);
+  }
+  return base::SingleThreadTaskRunner::GetCurrentDefault();
+}
+
 }  // namespace
 
 // Each SourceStreams own the previous SourceStream in the chain, but the
@@ -57,7 +68,7 @@ base::Value::Dict SourceStreamSetParams(SourceStream* source_stream) {
 class URLRequestJob::URLRequestJobSourceStream : public SourceStream {
  public:
   explicit URLRequestJobSourceStream(URLRequestJob* job)
-      : SourceStream(SourceStream::TYPE_NONE), job_(job) {
+      : SourceStream(SourceStreamType::kNone), job_(job) {
     DCHECK(job_);
   }
 
@@ -149,11 +160,19 @@ bool URLRequestJob::GetCharset(std::string* charset) {
   return false;
 }
 
+void URLRequestJob::GetClientSideContentDecodingTypes(
+    std::vector<net::SourceStreamType>* types) const {}
+
 void URLRequestJob::GetResponseInfo(HttpResponseInfo* info) {
 }
 
 void URLRequestJob::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
   // Only certain request types return more than just request start times.
+}
+
+void URLRequestJob::PopulateLoadTimingInternalInfo(
+    LoadTimingInternalInfo* load_timing_internal_info) const {
+  // Only certain request types populate LoadTimingInternalInfo.
 }
 
 bool URLRequestJob::GetTransactionRemoteEndpoint(IPEndPoint* endpoint) const {
@@ -458,7 +477,8 @@ void URLRequestJob::NotifyHeadersComplete() {
     RedirectInfo redirect_info = RedirectInfo::ComputeRedirectInfo(
         request_->method(), request_->url(), request_->site_for_cookies(),
         request_->first_party_url_policy(), request_->referrer_policy(),
-        request_->referrer(), http_status_code, new_location,
+        request_->referrer(), request_->initiator(), http_status_code,
+        new_location,
         net::RedirectUtil::GetReferrerPolicyHeader(
             request_->response_headers()),
         insecure_scheme_was_upgraded, CopyFragmentOnRedirect(new_location));
@@ -492,7 +512,7 @@ void URLRequestJob::NotifyFinalHeadersReceived() {
       OnDone(ERR_CONTENT_DECODING_INIT_FAILED, true /* notify_done */);
       return;
     }
-    if (source_stream_->type() == SourceStream::TYPE_NONE) {
+    if (source_stream_->type() == SourceStreamType::kNone) {
       // If the subclass didn't set |expected_content_size|, and there are
       // headers, and the response body is not compressed, try to get the
       // expected content size from the headers.
@@ -581,9 +601,9 @@ void URLRequestJob::OnDone(int net_error, bool notify_done) {
   if (notify_done) {
     // Complete this notification later.  This prevents us from re-entering the
     // delegate if we're done because of a synchronous call.
-    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE,
-        base::BindOnce(&URLRequestJob::NotifyDone, weak_factory_.GetWeakPtr()));
+    TaskRunnerURJ(request_->priority())
+        ->PostTask(FROM_HERE, base::BindOnce(&URLRequestJob::NotifyDone,
+                                             weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -715,7 +735,7 @@ void URLRequestJob::GatherRawReadStats(int bytes_read) {
 
   if (bytes_read > 0) {
     // If there is a filter, bytes will be logged after the filter is applied.
-    if (source_stream_->type() != SourceStream::TYPE_NONE &&
+    if (source_stream_->type() != SourceStreamType::kNone &&
         request()->net_log().IsCapturing()) {
       request()->net_log().AddByteTransferEvent(
           NetLogEventType::URL_REQUEST_JOB_BYTES_READ, bytes_read,

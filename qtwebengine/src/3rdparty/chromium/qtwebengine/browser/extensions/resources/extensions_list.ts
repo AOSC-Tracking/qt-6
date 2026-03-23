@@ -20,18 +20,21 @@ export class ExtensionsInfoList extends PolymerElement {
   static get properties() {
     return {
       extensionsInfo: {
-        type: Array,  // Correctly define the type as Array
+        type: Array,
+        value: () => [],
       },
+
       isLoading: {
-        type: Boolean,  // Correctly define the type as Boolean
-      }
+        type: Boolean,
+        value: () => false,
+      },
     };
   }
 
   private extensionUiBrowserProxy: ExtensionsUIBrowserProxy =
       ExtensionsUIBrowserProxy.getInstance();
-  private extensionsInfo: ExtensionInfo[] = [];
-  private isLoading: boolean = false;
+  declare private extensionsInfo: ExtensionInfo[];
+  declare private isLoading: boolean;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -94,13 +97,12 @@ export class ExtensionsInfoList extends PolymerElement {
     const id = (event.currentTarget as HTMLElement).dataset['id']!;
     const enabled = (event.currentTarget as HTMLElement).dataset['enabled']!;
     const isEnabled = (enabled == 'Enabled');
-    this.extensionUiBrowserProxy.handler.setExtensionEnabled(id, !isEnabled)
-        .then(() => {
-          window.location.reload();
-        })
-        .catch(error => {
-          console.error('Failed to change extension state:', error);
-        });
+    try {
+      await this.extensionUiBrowserProxy.handler.setExtensionEnabled(id, !isEnabled);
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to change extension state:', error);
+    }
   }
 }
 

@@ -17,6 +17,8 @@
 #include "gn/settings.h"
 #include "gn/target.h"
 
+#include <regex>
+
 RspTargetWriter::RspTargetWriter(const NinjaCBinaryTargetWriter* writer,
                                  const Target* target,
                                  Type type,
@@ -120,10 +122,18 @@ void RspTargetWriter::Run() {
     case LFLAGS: {
       EscapeOptions opts;
       opts.mode = ESCAPE_COMMAND;
-      // First the ldflags from the target and its config.
-      RecursiveTargetConfigStringsToStream(kRecursiveWriterKeepDuplicates,
-                                           target_, &ConfigValues::ldflags,
-                                           opts, out_);
+      if (lflags_remove_pattern_.length() > 0) {
+        std::ostringstream out;
+        RecursiveTargetConfigStringsToStream(kRecursiveWriterKeepDuplicates,
+                                             target_, &ConfigValues::ldflags,
+                                             opts, out);
+        out_ << std::regex_replace(out.str(),
+                                   std::regex(lflags_remove_pattern_), "");
+      } else {
+        RecursiveTargetConfigStringsToStream(kRecursiveWriterKeepDuplicates,
+                                             target_, &ConfigValues::ldflags,
+                                             opts, out_);
+      }
       out_.flush();
     } break;
     case LDIR: {
@@ -134,10 +144,9 @@ void RspTargetWriter::Run() {
                                    settings->build_settings()->root_path_utf8(),
                                    ESCAPE_COMMAND);
         for (size_t i = 0; i < all_lib_dirs.size(); i++) {
-          out_ << " -L\"";
+          out_ << " -L";
           lib_path_output.WriteDir(out_, all_lib_dirs[i],
                                    PathOutput::DIR_NO_LAST_SLASH);
-          out_ << "\"";
         }
         out_.flush();
       }

@@ -22,11 +22,13 @@
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/country_type.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
-#include "components/autofill/core/browser/data_manager/entities/entity_data_manager.h"
+#include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #endif
 #include "components/autofill/core/browser/filling/filling_product.h"
-#include "components/autofill/core/browser/integrators/fast_checkout_client.h"
+#include "components/autofill/core/browser/integrators/fast_checkout/fast_checkout_client.h"
+#include "components/autofill/core/browser/integrators/identity_credential/identity_credential_delegate.h"
 #include "components/autofill/core/browser/integrators/password_form_classification.h"
+#include "components/autofill/core/browser/integrators/password_manager/password_manager_delegate.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
@@ -43,8 +45,8 @@
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/security_state/core/security_state.h"
 #include "components/translate/core/browser/language_state.h"
-#include "services/metrics/public/cpp/ukm_source_id.h"
 #endif
+#include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -52,7 +54,12 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
+class GoogleGroupsManager;
 class PrefService;
+
+namespace network {
+class SharedURLLoaderFactory;
+}
 
 namespace signin {
 class IdentityManager;
@@ -62,12 +69,16 @@ namespace syncer {
 class SyncService;
 }
 
-namespace ukm {
-class UkmRecorder;
+namespace optimization_guide {
+class ModelQualityLogsUploaderService;
 }
 
 namespace optimization_guide::proto {
-class UserAnnotationsEntry;
+class AnnotatedPageContent;
+}
+
+namespace ukm {
+class UkmRecorder;
 }
 
 namespace version_info {
@@ -88,14 +99,19 @@ class AutofillSnackbarControllerImpl;
 #endif  // BUILDFLAG(IS_ANDROID)
 class AutofillSuggestionDelegate;
 class AutofillPlusAddressDelegate;
-class AutofillAiDelegate;
+class AutofillAiManager;
+class AutofillAiModelCache;
+class AutofillAiModelExecutor;
 class AutofillProfile;
+class EntityDataManager;
 class FieldClassificationModelHandler;
 class FormDataImporter;
 class LogManager;
+class OtpSuggestionDelegate;
 class PersonalDataManager;
 class SingleFieldFillRouter;
 class StrikeDatabase;
+class ValuablesDataManager;
 class VotesUploader;
 struct Suggestion;
 enum class WebauthnDialogState;
@@ -204,6 +220,30 @@ class AutofillClient {
     ArrowPosition arrow_position;
   };
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
+  // Contains the result of a user interaction with the save/update AutofillAi
+  // prompt.
+  struct EntitySaveOrUpdatePromptResult final {
+    EntitySaveOrUpdatePromptResult();
+    EntitySaveOrUpdatePromptResult(bool did_user_decline,
+                                   std::optional<EntityInstance> entity);
+    EntitySaveOrUpdatePromptResult(const EntitySaveOrUpdatePromptResult&);
+    EntitySaveOrUpdatePromptResult(EntitySaveOrUpdatePromptResult&&);
+    EntitySaveOrUpdatePromptResult& operator=(
+        const EntitySaveOrUpdatePromptResult&);
+    EntitySaveOrUpdatePromptResult& operator=(EntitySaveOrUpdatePromptResult&&);
+    ~EntitySaveOrUpdatePromptResult();
+
+    // Whether the user explicitly declined the dialog.
+    bool did_user_decline = false;
+
+    // Non-empty iff the prompt was accepted.
+    std::optional<EntityInstance> entity;
+  };
+  using EntitySaveOrUpdatePromptResultCallback =
+      base::OnceCallback<void(EntitySaveOrUpdatePromptResult result)>;
+#endif
+
   // Callback to run when the user makes a decision on whether to save the
   // profile. If the user edits the Autofill profile and then accepts edits, the
   // edited version of the profile should be passed as the second parameter. No
@@ -260,9 +300,14 @@ class AutofillClient {
   virtual PersonalDataManager& GetPersonalDataManager() = 0;
   const PersonalDataManager& GetPersonalDataManager() const;
 
+  // Gets the ValuablesDataManager instance associated with the profile.
+  virtual ValuablesDataManager* GetValuablesDataManager() = 0;
+  const ValuablesDataManager* GetValuablesDataManager() const;
+
   // Gets the EntityDataManager instance associated with the client, if there is
   // one.
   virtual EntityDataManager* GetEntityDataManager() = 0;
+  const EntityDataManager* GetEntityDataManager() const;
 #endif
 
   // Gets the AutofillOptimizationGuide instance associated with the client.
@@ -293,14 +338,46 @@ class AutofillClient {
   virtual AutofillComposeDelegate* GetComposeDelegate();
 
 #if !BUILDFLAG(IS_QTWEBENGINE)
-  // Returns the `AutofillAiDelegate` instance for the tab of this client.
+  // Attempts to the annotated page content for the current tab and calls
+  // `callback` with the results.
+  using GetAiPageContentCallback = base::OnceCallback<void(
+      std::optional<optimization_guide::proto::AnnotatedPageContent>)>;
+  virtual void GetAiPageContent(GetAiPageContentCallback callback);
+
+  // Returns the `AutofillAiManager` instance for the tab of this client.
   // Returns `nullptr` if, at the time of the AutofillClient's construction, the
   // Autofill AI feature is unsupported.
-  virtual AutofillAiDelegate* GetAutofillAiDelegate();
+  virtual AutofillAiManager* GetAutofillAiManager();
+
+  // Returns the per-profile `AutofillAiModelCache`. Returns `nullptr` if the
+  // `kAutofillAiServerModel` is not enabled.
+  virtual AutofillAiModelCache* GetAutofillAiModelCache();
+
+  // Returns the per-profile `AutofillAiModelExecutor`. Returns `nullptr` if the
+  // `kAutofillAiServerModel` is not enabled or the profile is OTR.
+  virtual AutofillAiModelExecutor* GetAutofillAiModelExecutor();
+
+  // Returns nullptr if no identity credential conditional request was made
+  // before.
+  const IdentityCredentialDelegate* GetIdentityCredentialDelegate() const {
+    return const_cast<const IdentityCredentialDelegate*>(
+        const_cast<AutofillClient*>(this)->GetIdentityCredentialDelegate());
+  }
+
+  virtual IdentityCredentialDelegate* GetIdentityCredentialDelegate();
 
   // Returns the `AutofillPlusAddressDelegate` associated with the profile of
   // the window of this tab.
   virtual AutofillPlusAddressDelegate* GetPlusAddressDelegate();
+
+  // Returns the `PasswordManagerDelegate` responsible to provide
+  // password suggestions for the given `field_id`.
+  virtual PasswordManagerDelegate* GetPasswordManagerDelegate(
+      const FieldGlobalId& field_id);
+
+  // Returns the `OtpSuggestionDelegate` associated with the profile of
+  // the window of this tab.
+  virtual OtpSuggestionDelegate* GetOtpSuggestionDelegate();
 
   // TODO(crbug.com/365494310): Move these methods to a plus-address-specific
   // client class.
@@ -345,6 +422,9 @@ class AutofillClient {
   virtual signin::IdentityManager* GetIdentityManager() = 0;
   virtual const signin::IdentityManager* GetIdentityManager() const = 0;
 
+  // Gets the `GoogleGroupsManager` associated with the client.
+  virtual const GoogleGroupsManager* GetGoogleGroupsManager() const;
+
   // Gets the FormDataImporter instance owned by the client.
   virtual FormDataImporter* GetFormDataImporter() = 0;
 
@@ -385,7 +465,7 @@ class AutofillClient {
   // Returns the translate driver, if available, which is used to observe the
   // page language for language-dependent heuristics.
   virtual translate::TranslateDriver* GetTranslateDriver() = 0;
-#endif
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Retrieves the country code of the user from Chrome variation service.
   // If the variation service is not available, return an empty string.
@@ -486,6 +566,9 @@ class AutofillClient {
   virtual void TriggerUserPerceptionOfAutofillSurvey(
       FillingProduct filling_product,
       const std::map<std::string, std::string>& field_filling_stats_data);
+
+  // Triggers a survey to ask the user why they declined saving an address.
+  virtual void TriggerDeclinedSaveAddressReasonSurvey();
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns true if either Profile or CreditCard Autofill is enabled.
@@ -573,13 +656,16 @@ class AutofillClient {
   // Notifies the IPH code that `feature` was used.
   virtual void NotifyIphFeatureUsed(AutofillClient::IphFeature feature);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Stores test addresses provided by devtools and used to help developers
   // debug their forms with a list of well formatted addresses. Differently from
   // other `AutofillProfile`s/addresses, this list is stored in the client,
   // instead of the `PersonalDataManager`.
   virtual void set_test_addresses(std::vector<AutofillProfile> test_addresses);
 
-  virtual base::span<const AutofillProfile> GetTestAddresses() const;
+  virtual base::span<const AutofillProfile> GetTestAddresses() const
+      LIFETIME_BOUND;
+#endif
 
   // Returns the heuristics predictions for the renderer form to which
   // `field_id` belongs inside the form with `form_id`. The browser form with
@@ -596,6 +682,20 @@ class AutofillClient {
   // TODO: crbug.com/348139343 - Move back for components/plus_addresses.
   virtual void TriggerPlusAddressUserPerceptionSurvey(
       plus_addresses::hats::SurveyType survey_type);
+
+#if !BUILDFLAG(IS_QTWEBENGINE)
+  // Returns the service used in order to log metrics into MQLS.
+  virtual optimization_guide::ModelQualityLogsUploaderService*
+  GetMqlsUploadService();
+
+  // Shows a bubble asking whether the user wants to save or update Autofill AI
+  // data. `old_entity` is present in the update cases. It is used to give users
+  // a better understanding of what was updated.
+  virtual void ShowEntitySaveOrUpdateBubble(
+      EntityInstance new_entity,
+      std::optional<EntityInstance> old_entity,
+      EntitySaveOrUpdatePromptResultCallback save_prompt_acceptance_callback);
+#endif
 };
 
 }  // namespace autofill

@@ -112,6 +112,15 @@ class PLATFORM_EXPORT SimpleFontData final : public FontData {
   const std::optional<float>& IdeographicAdvanceWidth() const;
   const std::optional<float>& IdeographicAdvanceHeight() const;
 
+  // The inter-script spacing by the CSS `text-autospace` property.
+  // https://drafts.csswg.org/css-text-4/#inter-script-spacing
+  float TextAutoSpaceInlineSize() const;
+
+  // The approximated advance of “0” (ZERO, U+0030) character in the inline
+  // axis. This is currently used to support the `ch` unit.
+  // https://drafts.csswg.org/css-values-4/#ch
+  inline float ZeroInlineSize() const;
+
   // |sTypoAscender| and |sTypoDescender| in |OS/2| table, normalized to 1em.
   // This metrics can simulate ideographics em-box when the font doesn't have
   // better ways to compute it.
@@ -152,6 +161,7 @@ class PLATFORM_EXPORT SimpleFontData final : public FontData {
   const SimpleFontData* FontDataForCharacter(UChar32) const override;
 
   Glyph GlyphForCharacter(UChar32) const;
+  Glyph GlyphForMathCharacter(UChar32, TextDirection) const;
 
   bool IsCustomFont() const override { return custom_font_data_; }
   bool IsLoading() const override {

@@ -9,22 +9,21 @@ import dataclasses
 import datetime as dt
 import shlex
 import subprocess
-from typing import TYPE_CHECKING
+from math import ceil
+from typing import TYPE_CHECKING, Optional, Self
 
-from crossbench.action_runner.screenshot_annotation import \
-    ScreenshotPointAnnotation, ScreenshotRectAnnotation
 import crossbench.path as pth
-from crossbench.action_runner.action import all as i_action
 from crossbench.action_runner.default_action_runner import DefaultActionRunner
 from crossbench.action_runner.display_rectangle import DisplayRectangle
 from crossbench.action_runner.element_not_found_error import \
     ElementNotFoundError
+from crossbench.action_runner.screenshot_annotation import (
+    ScreenshotPointAnnotation, ScreenshotRectAnnotation)
 from crossbench.benchmarks.loading.point import Point
 from crossbench.parse import NumberParser
 
 if TYPE_CHECKING:
-  from typing import Optional, Tuple, Type
-
+  from crossbench.action_runner.action import all as i_action
   from crossbench.runner.actions import Actions
   from crossbench.runner.run import Run
 
@@ -33,10 +32,11 @@ SCRIPTS_DIR = pth.LocalPath(__file__).parent / "chromeos_scripts"
 
 class ChromeOSViewportInfo:
 
-  def __init__(self, device_pixel_ratio, window_outer_width, window_inner_width,
-               window_inner_height, screen_width, screen_height,
-               screen_avail_width, screen_avail_height, window_offset_x,
-               window_offset_y,
+  def __init__(self, device_pixel_ratio: float, window_outer_width: int,
+               window_inner_width: int, window_inner_height: int,
+               screen_width: int, screen_height: int, screen_avail_width: int,
+               screen_avail_height: int, window_offset_x: int,
+               window_offset_y: int,
                element_rect: Optional[DisplayRectangle]) -> None:
     # The actual screen width and height in pixels.
     # Corrects for any zoom/scaling factors.
@@ -78,7 +78,7 @@ class ChromeOSViewportInfo:
     self._browser_viewable = DisplayRectangle(
         Point(window_offset_x, window_offset_y), visible_width, visible_height)
 
-    self._element_rect: Optional[DisplayRectangle] = None
+    self._element_rect: DisplayRectangle | None = None
     if element_rect:
       self._element_rect = self._dom_rect_to_native_rect(element_rect)
 
@@ -124,14 +124,14 @@ class TouchDevice:
   y_max: int
 
   @classmethod
-  def parse_str(cls: Type[TouchDevice], config: str) -> TouchDevice:
+  def parse_str(cls, config: str) -> Self:
     # The first line of output is always 'Performing autotest_lib import'
     # Followed by the output we care about.
     touch_device_values = config.splitlines()[1].split(" ")
 
-    return TouchDevice(touch_device_values[0],
-                       NumberParser.positive_zero_int(touch_device_values[1]),
-                       NumberParser.positive_zero_int(touch_device_values[2]))
+    return cls(touch_device_values[0],
+               NumberParser.positive_zero_int(touch_device_values[1]),
+               NumberParser.positive_zero_int(touch_device_values[2]))
 
   def __str__(self) -> str:
     return f"{self.device_path} {self.x_max} {self.y_max}"
@@ -150,7 +150,7 @@ class ChromeOSTouchEvent:
   # The start position in terms of the device's screen resolution
   start_position: Point
   # The end position in terms of the device's screen resolution
-  end_position: Optional[Point] = None
+  end_position: Point | None = None
 
   duration: dt.timedelta = dt.timedelta()
 
@@ -257,15 +257,16 @@ E: <time> 0000 0000 0
 
 
 class ChromeOSInputActionRunner(DefaultActionRunner):
+  """Custom ActionRunner for chromeOS devices."""
 
-  def __init__(self):
+  def __init__(self) -> None:
     super().__init__()
-    self._touch_device: Optional[TouchDevice] = None
-    self._mouse_process: Optional[subprocess.Popen] = None
+    self._touch_device: TouchDevice | None = None
+    self._mouse_process: subprocess.Popen | None = None
 
     atexit.register(self._kill_mouse_process)
 
-  def _kill_mouse_process(self):
+  def _kill_mouse_process(self) -> None:
     if self._mouse_process:
       self._mouse_process.kill()
       self._mouse_process.wait()
@@ -354,27 +355,21 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
       (scrollable_top, scrollable_bottom,
        max_swipe_distance) = scroll_area.get_scrollable_area()
 
-      remaining_distance = abs(total_scroll_distance)
+      swipe_count = ceil(abs(total_scroll_distance) / max_swipe_distance)
+      swipe_distance = abs(total_scroll_distance) / swipe_count
+      swipe_duration = action.duration / swipe_count
 
-      while remaining_distance > 0:
-
-        current_distance = min(max_swipe_distance, remaining_distance)
-
-        # The duration for this swipe should be only a fraction of the total
-        # duration since the entire distance may not be covered in one swipe.
-        current_duration = (current_distance /
-                            abs(total_scroll_distance)) * action.duration
-
+      for _ in range(swipe_count):
         if total_scroll_distance > 0:
           # If scrolling down, the swipe should start at the bottom and end
           # above.
           y_start: int = scrollable_bottom
-          y_end: int = round(scrollable_bottom - current_distance)
+          y_end: int = round(scrollable_bottom - swipe_distance)
 
         else:
           # If scrolling up, the swipe should start at the top and end below.
           y_start = scrollable_top
-          y_end = round(scrollable_top + current_distance)
+          y_end = round(scrollable_top + swipe_distance)
 
         self._execute_touch_playback(
             run,
@@ -383,19 +378,20 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
                 viewport_info.native_screen,
                 Point(scroll_area.middle.x, y_start),
                 end_position=Point(scroll_area.middle.x, y_end),
-                duration=current_duration))
-
-        remaining_distance -= current_distance
+                duration=swipe_duration))
 
   def text_input_keyboard(self, run: Run,
                           action: i_action.TextInputAction) -> None:
+    if action.keyevent:
+      raise ValueError("Keyevents are currently not supported on ChromeOS")
+
     browser_platform = run.browser_platform
 
     script = (SCRIPTS_DIR / "text_input.py").read_text()
 
     with browser_platform.NamedTemporaryFile() as script_file:
-      browser_platform.set_file_contents(script_file, script)
-      typing_process: Optional[subprocess.Popen] = None
+      browser_platform.write_text(script_file, script)
+      typing_process: subprocess.Popen | None = None
       try:
         typing_process = browser_platform.popen(
             "python3", script_file, bufsize=0, stdin=subprocess.PIPE)
@@ -413,7 +409,7 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
 
   def _get_click_location(
       self, actions: Actions, action: i_action.ClickAction
-  ) -> Tuple[Optional[Point], ChromeOSViewportInfo]:
+  ) -> tuple[Optional[Point], ChromeOSViewportInfo]:
     if selector_config := action.position.selector:
       if selector_config.wait:
         self.wait_for_element_impl(
@@ -421,7 +417,8 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
             selector=selector_config.selector,
             timeout=action.timeout,
             scroll_into_view=selector_config.scroll_into_view,
-            check_element_rect=True)
+            check_element_rect=True,
+            required=selector_config.required)
 
       viewport_info = self._get_viewport_info(actions, selector_config.selector,
                                               selector_config.scroll_into_view)
@@ -437,19 +434,19 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
       self.add_failure_screenshot_annotation(
           ScreenshotPointAnnotation(label="click", point=click_location))
       return (click_location, viewport_info)
-    elif coordinates_config := action.position.coordinates:
+    if coordinates_config := action.position.coordinates:
       viewport_info = self._get_viewport_info(actions, None, False)
       click_location = coordinates_config.point()
       self.add_failure_screenshot_annotation(
           ScreenshotPointAnnotation(label="click", point=click_location))
       return (click_location, viewport_info)
-    else:
-      raise RuntimeError("Missing coordinates")
+    raise RuntimeError("Missing coordinates")
 
-  def _get_viewport_info(self,
-                         actions: Actions,
-                         selector: Optional[str],
-                         scroll_into_view=False) -> ChromeOSViewportInfo:
+  def _get_viewport_info(
+      self,
+      actions: Actions,
+      selector: Optional[str],
+      scroll_into_view: bool = False) -> ChromeOSViewportInfo:
 
     script = ""
     if selector:
@@ -462,7 +459,7 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
      element_left, element_top, element_width, element_height) = actions.js(
          script, arguments=[selector, scroll_into_view])
 
-    element_rect: Optional[DisplayRectangle] = None
+    element_rect: DisplayRectangle | None = None
 
     if found_element:
       element_rect = DisplayRectangle(
@@ -501,7 +498,7 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
     script = (SCRIPTS_DIR / "mouse.py").read_text()
 
     with browser_platform.NamedTemporaryFile() as script_file:
-      browser_platform.set_file_contents(script_file, script)
+      browser_platform.write_text(script_file, script)
 
       mouse_process = browser_platform.popen(
           "python3",
@@ -540,7 +537,7 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
     browser_platform = run.browser_platform
 
     with browser_platform.NamedTemporaryFile() as playback_file:
-      browser_platform.set_file_contents(playback_file, touch_event_cmds)
+      browser_platform.write_text(playback_file, touch_event_cmds)
       # Then run evemu-play with the input redirected from the temp file.
       run.browser_platform.sh(
           f"evemu-play --insert-slot0 "

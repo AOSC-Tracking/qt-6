@@ -18,7 +18,6 @@
 #include "base/cancelable_callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/rand_util.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
@@ -200,6 +199,8 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient,
 
   void FlushImageControllerTasksForTesting();
 
+  void DisbleMetricsSubsamplingForTesting() { metrics_sampling_rate_ = 1.; }
+
   void OnRasterTaskCompleted(Tile::Id tile_id,
                              ResourcePool::InUsePoolResource resource,
                              bool was_canceled);
@@ -300,6 +301,7 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient,
   void ReduceTileMemoryWhenIdle();
   void TrimPrepaintTiles();
 
+  // True if tile resources are present and freed.
   void FreeResourcesForTile(Tile* tile);
   void FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(Tile* tile);
   scoped_refptr<TileTask> CreateRasterTask(
@@ -324,11 +326,10 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient,
   void MarkTilesOutOfMemory(
       std::unique_ptr<RasterTilePriorityQueue> queue) const;
 
-  viz::SharedImageFormat DetermineFormat(const Tile* tile) const;
-
   void DidFinishRunningTileTasksRequiredForActivation();
   void DidFinishRunningTileTasksRequiredForDraw();
-  void DidFinishRunningAllTileTasks(bool has_pending_queries);
+  void DidFinishRunningAllTileTasks(base::TimeTicks start_time,
+                                    bool has_pending_queries);
   void ExternalDependencyCompletedForRasterTask(
       scoped_refptr<TileTask> dependent);
   void ExternalDependencyCompletedForNonRasterTask(
@@ -379,11 +380,11 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient,
                                uint16_t priority,
                                bool use_foreground_category);
 
-  raw_ptr<TileManagerClient, DanglingUntriaged> client_;
+  raw_ptr<TileManagerClient> client_;
   raw_ptr<base::SequencedTaskRunner> task_runner_;
-  raw_ptr<ResourcePool, DanglingUntriaged> resource_pool_;
+  raw_ptr<ResourcePool> resource_pool_;
   std::unique_ptr<TileTaskManager> tile_task_manager_;
-  raw_ptr<RasterBufferProvider, DanglingUntriaged> raster_buffer_provider_;
+  raw_ptr<RasterBufferProvider> raster_buffer_provider_;
   GlobalStateThatImpactsTilePriority global_state_;
   size_t scheduled_raster_task_limit_;
   const bool running_on_renderer_process_;
@@ -442,19 +443,12 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient,
   raw_ptr<const base::TickClock> tick_clock_for_testing_ = nullptr;
 
   base::MetricsSubSampler metrics_sub_sampler_;
+  float metrics_sampling_rate_ = .01;
 
   // The callback scheduled to poll whether the GPU side work for pending tiles
   // has completed.
   bool has_pending_queries_ = false;
   base::CancelableOnceClosure check_pending_tile_queries_callback_;
-
-  // Signaled inside FinishTasksAndCleanUp() to avoid deadlock.
-  // FinishTasksAndCleanUp() may block waiting for worker thread tasks to finish
-  // and worker thread tasks may block on this thread causing deadlock. Worker
-  // thread tasks can use WaitableEvent::WaitMany() to wait on two events, one
-  // for the original task completion plus this event to cancel waiting on
-  // completion when FinishTasksAndCleanUp() runs.
-  base::WaitableEvent shutdown_event_;
 
   // We need two WeakPtrFactory objects as the invalidation pattern of each is
   // different. The |task_set_finished_weak_ptr_factory_| is invalidated any

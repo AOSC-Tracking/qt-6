@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f16-f32acc-rdsum/neon.c.in
 //   Generator: tools/xngen
@@ -7,13 +8,15 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <assert.h>
-
 #include <arm_neon.h>
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/reduce.h"
-#include "xnnpack/math.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/reduce.h"
 
 
 void xnn_f16_f32acc_rdsum_ukernel_7p7x__neonfp16arith_c32(
@@ -23,14 +26,14 @@ void xnn_f16_f32acc_rdsum_ukernel_7p7x__neonfp16arith_c32(
     size_t input_stride,
     const xnn_float16* zero,
     float* output,
-    const struct xnn_f16_f32acc_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_f32acc_scale_params* restrict params)
 {
   assert(rows != 0);
   assert(channels != 0);
   assert(input != NULL);
   assert(output != NULL);
 
-  const float32x4_t vscale = vld1q_dup_f32(&params->scalar.scale);
+  const float32x4_t vscale = vdupq_n_f32(params->scalar.scale);
 
   size_t input_increment = 7 * input_stride;
   for (; channels >= 32; channels -= 32) {

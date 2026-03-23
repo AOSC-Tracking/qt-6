@@ -1,6 +1,7 @@
 // Copyright 2018 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -98,7 +99,7 @@ const UIStrings = {
    *@description Text for the issuer of an item
    */
   issuer: 'Issuer',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/SignedExchangeInfoView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class SignedExchangeInfoView extends UI.Widget.VBox {
@@ -122,7 +123,7 @@ export class SignedExchangeInfoView extends UI.Widget.VBox {
 
     const errorFieldSetMap = new Map<number|undefined, Set<string>>();
 
-    if (signedExchangeInfo.errors && signedExchangeInfo.errors.length) {
+    if (signedExchangeInfo.errors?.length) {
       const errorMessagesCategory = new Category(root, i18nString(UIStrings.errors));
       for (const error of signedExchangeInfo.errors) {
         const fragment = document.createDocumentFragment();

@@ -11,10 +11,15 @@ find_package(Qt6 REQUIRED COMPONENTS
              Core
              Gui
              Qml
+             QmlAssetDownloaderPrivate
              Quick
              Quick3D
              Svg
-             ExamplesAssetDownloaderPrivate)
+             TaskTree
+             Network
+             Concurrent
+             OPTIONAL_COMPONENTS
+             QuickStudioComponents)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -40,7 +45,10 @@ target_link_libraries(carconfigurator PRIVATE
 
 include(buildsetup.cmake)
 include(qmlmodules.cmake)
-include(qmlcomponents.cmake)
+
+if (NOT TARGET Qt6::QuickStudioComponents)
+    include(qmlcomponents.cmake)
+endif()
 
 if (ANDROID)
     FetchContent_Declare(

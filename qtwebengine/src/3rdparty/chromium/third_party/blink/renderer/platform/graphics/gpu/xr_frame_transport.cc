@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/platform/graphics/gpu/xr_frame_transport.h"
 
 #include "base/logging.h"
+#include "base/notimplemented.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -19,7 +20,6 @@
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/mojo/mojo_binding_context.h"
 #include "ui/gfx/gpu_fence.h"
-#include "ui/gfx/gpu_memory_buffer.h"
 
 namespace blink {
 
@@ -112,7 +112,7 @@ void XRFrameTransport::FrameSubmitMissing(
     device::mojom::blink::XRPresentationProvider* vr_presentation_provider,
     gpu::gles2::GLES2Interface* gl,
     int16_t vr_frame_id) {
-  TRACE_EVENT0("gpu", __FUNCTION__);
+  TRACE_EVENT0("gpu", "FrameSubmitMissing");
   gpu::SyncToken sync_token;
   // https://crbug.com/1132837 : Apparently the GL context is sometimes null
   // when reaching this method. Avoid a crash in that case, but do send the mojo
@@ -127,7 +127,7 @@ void XRFrameTransport::FrameSubmitMissingWebGPU(
     device::mojom::blink::XRPresentationProvider* vr_presentation_provider,
     scoped_refptr<DawnControlClientHolder> dawn_control_client,
     int16_t vr_frame_id) {
-  TRACE_EVENT0("gpu", __FUNCTION__);
+  TRACE_EVENT0("gpu", "FrameSubmitMissingWebGPU");
   gpu::SyncToken sync_token;
 
   if (dawn_control_client) {
@@ -151,7 +151,7 @@ bool XRFrameTransport::FrameSubmit(
     gpu::gles2::GLES2Interface* gl,
     gpu::SharedImageInterface* sii,
     DrawingBuffer::Client* drawing_buffer_client,
-    scoped_refptr<Image> image_ref,
+    scoped_refptr<StaticBitmapImage> image_ref,
     int16_t vr_frame_id) {
   DCHECK(transport_options_);
 
@@ -189,8 +189,9 @@ bool XRFrameTransport::FrameSubmit(
     // passed over IPC.
     vr_presentation_provider->SubmitFrameWithTextureHandle(
         vr_frame_id,
-        mojo::PlatformHandle(
-            gpu_memory_buffer_handle.dxgi_handle().TakeBufferHandle()),
+        mojo::PlatformHandle(std::move(gpu_memory_buffer_handle)
+                                 .dxgi_handle()
+                                 .TakeBufferHandle()),
         sync_token);
 #else
     NOTIMPLEMENTED();
@@ -202,8 +203,7 @@ bool XRFrameTransport::FrameSubmit(
     // mailbox is used via CreateAndTexStorage2DSharedImageCHROMIUM, the mailbox
     // itself does not keep it alive. We must keep a reference to the
     // image until the mailbox was consumed.
-    StaticBitmapImage* static_image =
-        static_cast<StaticBitmapImage*>(image_ref.get());
+    StaticBitmapImage* static_image = image_ref.get();
     static_image->EnsureSyncTokenVerified();
 
     // Conditionally wait for the previous render to finish. A late wait here
@@ -307,7 +307,7 @@ bool XRFrameTransport::FrameSubmitWebGPU(
 }
 
 void XRFrameTransport::OnSubmitFrameTransferred(bool success) {
-  DVLOG(3) << __FUNCTION__;
+  DVLOG(3) << __func__;
   waiting_for_previous_frame_transfer_ = false;
   last_transfer_succeeded_ = success;
 }
@@ -322,7 +322,7 @@ void XRFrameTransport::WaitForPreviousTransfer() {
   TRACE_EVENT0("gpu", "waitForPreviousTransferToFinish");
   while (waiting_for_previous_frame_transfer_) {
     if (!submit_frame_client_receiver_.WaitForIncomingCall()) {
-      DLOG(ERROR) << __FUNCTION__ << ": Failed to receive response";
+      DLOG(ERROR) << __func__ << ": Failed to receive response";
       break;
     }
   }
@@ -330,7 +330,7 @@ void XRFrameTransport::WaitForPreviousTransfer() {
 }
 
 void XRFrameTransport::OnSubmitFrameRendered() {
-  DVLOG(3) << __FUNCTION__;
+  DVLOG(3) << __func__;
   waiting_for_previous_frame_render_ = false;
   if (on_submit_frame_rendered_callback_) {
     on_submit_frame_rendered_callback_.Run();
@@ -343,7 +343,7 @@ base::TimeDelta XRFrameTransport::WaitForPreviousRenderToFinish() {
   base::TimeTicks start = base::TimeTicks::Now();
   while (waiting_for_previous_frame_render_) {
     if (!submit_frame_client_receiver_.WaitForIncomingCall()) {
-      DLOG(ERROR) << __FUNCTION__ << ": Failed to receive response";
+      DLOG(ERROR) << __func__ << ": Failed to receive response";
       break;
     }
   }
@@ -366,7 +366,7 @@ base::TimeDelta XRFrameTransport::WaitForGpuFenceReceived() {
   base::TimeTicks start = base::TimeTicks::Now();
   while (waiting_for_previous_frame_fence_) {
     if (!submit_frame_client_receiver_.WaitForIncomingCall()) {
-      DLOG(ERROR) << __FUNCTION__ << ": Failed to receive response";
+      DLOG(ERROR) << __func__ << ": Failed to receive response";
       break;
     }
   }

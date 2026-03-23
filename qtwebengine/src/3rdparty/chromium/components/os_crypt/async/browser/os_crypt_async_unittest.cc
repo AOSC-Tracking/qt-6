@@ -10,7 +10,9 @@
 #include "base/run_loop.h"
 #include "base/test/bind.h"
 #include "base/test/gtest_util.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
+#include "base/test/test_future.h"
 #include "components/os_crypt/async/browser/key_provider.h"
 #include "components/os_crypt/async/browser/test_utils.h"
 #include "components/os_crypt/async/common/algorithm.mojom.h"
@@ -35,18 +37,9 @@ class OSCryptAsyncTest : public ::testing::Test {
   Encryptor GetInstanceSync(
       OSCryptAsync& factory,
       Encryptor::Option option = Encryptor::Option::kNone) {
-    base::RunLoop run_loop;
-    std::optional<Encryptor> encryptor;
-    auto sub =
-        factory.GetInstance(base::BindLambdaForTesting(
-                                [&](Encryptor encryptor_param, bool success) {
-                                  EXPECT_TRUE(success);
-                                  encryptor.emplace(std::move(encryptor_param));
-                                  run_loop.Quit();
-                                }),
-                            option);
-    run_loop.Run();
-    return std::move(*encryptor);
+    base::test::TestFuture<Encryptor> future;
+    factory.GetInstance(future.GetCallback(), option);
+    return future.Take();
   }
 
   // Simulate a 'locked' OSCrypt keychain on platforms that need it, which makes
@@ -403,45 +396,17 @@ TEST_F(OSCryptAsyncTest, MultipleCalls) {
   size_t calls = 0;
   const size_t kExpectedCalls = 10;
   base::RunLoop run_loop;
-  std::list<base::CallbackListSubscription> subs;
   for (size_t call = 0; call < kExpectedCalls; call++) {
-    subs.push_back(factory.GetInstance(base::BindLambdaForTesting(
-        [&calls, &run_loop](Encryptor encryptor, bool success) {
+    factory.GetInstance(
+        base::BindLambdaForTesting([&calls, &run_loop](Encryptor encryptor) {
           calls++;
           if (calls == kExpectedCalls) {
             run_loop.Quit();
           }
-        })));
+        }));
   }
   run_loop.Run();
   EXPECT_EQ(calls, kExpectedCalls);
-}
-
-// This test verifies that if the subscription from CallbackList moves out of
-// scope, then the callback never occurs.
-TEST_F(OSCryptAsyncTest, SubscriptionCancelled) {
-  ProviderList providers;
-  providers.emplace_back(
-      /*precedence=*/10u,
-      std::make_unique<SlowTestKeyProvider>(base::Seconds(1)));
-  OSCryptAsync factory(std::move(providers));
-
-  {
-    auto sub = factory.GetInstance(
-        base::BindOnce([](Encryptor encryptor, bool success) {
-          // This should not be called, as the subscription went out of scope.
-          NOTREACHED();
-        }));
-  }
-
-  // Complete the init on a nested RunLoop.
-  base::RunLoop run_loop;
-  auto sub = factory.GetInstance(
-      base::BindLambdaForTesting([&](Encryptor encryptor_param, bool success) {
-        EXPECT_TRUE(success);
-        run_loop.Quit();
-      }));
-  run_loop.Run();
 }
 
 TEST_F(OSCryptAsyncTest, TestOSCryptAsyncInterface) {
@@ -529,10 +494,17 @@ TEST_F(OSCryptAsyncTest, TestEncryptorIsEncryptionAvailable) {
 }
 
 class FailingKeyProvider : public TestKeyProvider {
+ public:
+  FailingKeyProvider(KeyProvider::KeyError reason, const std::string& name)
+      : reason_(reason), name_(name) {}
+
  private:
   void GetKey(KeyCallback callback) override {
-    std::move(callback).Run("BLAH", std::nullopt);
+    std::move(callback).Run(name_, base::unexpected(reason_));
   }
+
+  const KeyProvider::KeyError reason_;
+  const std::string name_;
 };
 
 // Some tests require a working OSCrypt.
@@ -553,6 +525,7 @@ class OSCryptAsyncTestWithOSCrypt : public OSCryptAsyncTest {
 // OSCrypt. The rest of the encryption tests for this mode are located in
 // encryptor_unittest.cc.
 TEST_F(OSCryptAsyncTestWithOSCrypt, Empty) {
+  base::HistogramTester histograms;
   ProviderList providers;
   OSCryptAsync factory(std::move(providers));
   Encryptor encryptor = GetInstanceSync(factory);
@@ -571,12 +544,21 @@ TEST_F(OSCryptAsyncTestWithOSCrypt, Empty) {
         std::string(ciphertext->begin(), ciphertext->end()), &plaintext));
     EXPECT_EQ("moresecrets", plaintext);
   }
+  histograms.ExpectBucketCount("OSCrypt.EncryptorKeyCount", 0, 1);
+  histograms.ExpectBucketCount("OSCrypt.EncryptorKeyCount.Available", 0, 1);
+  histograms.ExpectBucketCount(
+      "OSCrypt.EncryptorKeyCount.TemporarilyUnavailable", 0, 1);
+  histograms.ExpectBucketCount(
+      "OSCrypt.EncryptorKeyCount.PermanentlyUnavailable", 0, 1);
 }
 
 TEST_F(OSCryptAsyncTestWithOSCrypt, FailingKeyProvider) {
+  base::HistogramTester histograms;
   ProviderList providers;
-  providers.emplace_back(/*precedence=*/10u,
-                         std::make_unique<FailingKeyProvider>());
+  providers.emplace_back(
+      /*precedence=*/10u,
+      std::make_unique<FailingKeyProvider>(
+          KeyProvider::KeyError::kPermanentlyUnavailable, "BLAH"));
   OSCryptAsync factory(std::move(providers));
   // TODO: Work out how best to handle provider failures.
   Encryptor encryptor = GetInstanceSync(factory);
@@ -599,6 +581,127 @@ TEST_F(OSCryptAsyncTestWithOSCrypt, FailingKeyProvider) {
     // this case, there are no providers at all.
     EXPECT_TRUE(encryptor.DecryptString(ciphertext, &plaintext));
     EXPECT_EQ("secrets", plaintext);
+  }
+
+  // Permanently failing key providers never get emplaced into the keyring at
+  // all.
+  histograms.ExpectBucketCount("OSCrypt.EncryptorKeyCount", 1, 1);
+  histograms.ExpectBucketCount("OSCrypt.EncryptorKeyCount.Available", 0, 1);
+  histograms.ExpectBucketCount(
+      "OSCrypt.EncryptorKeyCount.TemporarilyUnavailable", 0, 1);
+  histograms.ExpectBucketCount(
+      "OSCrypt.EncryptorKeyCount.PermanentlyUnavailable", 1, 1);
+}
+
+TEST_F(OSCryptAsyncTestWithOSCrypt, TemporarilyFailingKeyProvider) {
+  std::optional<std::vector<uint8_t>> ciphertext;
+
+  // First, encrypt some data with the BLAH key provider.
+  {
+    ProviderList providers;
+    providers.emplace_back(
+        /*precedence=*/10u,
+        std::make_unique<TestKeyProvider>("BLAH", /*use_for_encryption=*/true));
+    OSCryptAsync factory(std::move(providers));
+    Encryptor encryptor = GetInstanceSync(factory);
+    ciphertext = encryptor.EncryptString("secrets");
+    EXPECT_TRUE(ciphertext);
+  }
+
+  // Next, cause this key provider to fail temporarily. This should cause
+  // decryption to fail but with kFailureKeyTemporarilyUnavailable.
+  {
+    base::HistogramTester histograms;
+    ProviderList providers;
+    providers.emplace_back(
+        /*precedence=*/10u,
+        std::make_unique<FailingKeyProvider>(
+            KeyProvider::KeyError::kTemporarilyUnavailable, "BLAH"));
+    OSCryptAsync factory(std::move(providers));
+    Encryptor encryptor = GetInstanceSync(factory);
+    Encryptor::DecryptFlags flags;
+    const auto plaintext = encryptor.DecryptData(*ciphertext, &flags);
+    EXPECT_FALSE(plaintext);
+    EXPECT_TRUE(flags.temporarily_unavailable);
+
+    // Encryption should still work, even with a temporarily failing key
+    // provider, but it will delegate to OSCrypt.
+    {
+      const auto ciphertext2 = encryptor.EncryptString("secret");
+      EXPECT_TRUE(ciphertext2);
+      std::string plaintext2;
+      EXPECT_TRUE(OSCrypt::DecryptString(
+          std::string(ciphertext2->begin(), ciphertext2->end()), &plaintext2));
+      EXPECT_EQ(plaintext2, "secret");
+    }
+    histograms.ExpectBucketCount("OSCrypt.EncryptorKeyCount", 1, 1);
+    histograms.ExpectBucketCount("OSCrypt.EncryptorKeyCount.Available", 0, 1);
+    histograms.ExpectBucketCount(
+        "OSCrypt.EncryptorKeyCount.TemporarilyUnavailable", 1, 1);
+    histograms.ExpectBucketCount(
+        "OSCrypt.EncryptorKeyCount.PermanentlyUnavailable", 0, 1);
+  }
+
+  // Test permanently unavailable.
+  {
+    ProviderList providers;
+    providers.emplace_back(
+        /*precedence=*/10u,
+        std::make_unique<FailingKeyProvider>(
+            KeyProvider::KeyError::kPermanentlyUnavailable, "BLAH"));
+    OSCryptAsync factory(std::move(providers));
+    Encryptor encryptor = GetInstanceSync(factory);
+    Encryptor::DecryptFlags flags;
+    const auto plaintext = encryptor.DecryptData(*ciphertext, &flags);
+    // Since there is no key at all, this case has fallback to OSCrypt sync
+    // which cannot decrypt data encrypted with BLAH key.
+    EXPECT_FALSE(plaintext);
+    EXPECT_FALSE(flags.temporarily_unavailable);
+
+    // With no key provided at all (a permanent failure), encryption is
+    // delegated to OSCrypt.
+    {
+      const auto ciphertext2 = encryptor.EncryptString("secret");
+      EXPECT_TRUE(ciphertext2);
+      std::string plaintext2;
+      EXPECT_TRUE(OSCrypt::DecryptString(
+          std::string(ciphertext2->begin(), ciphertext2->end()), &plaintext2));
+      EXPECT_EQ(plaintext2, "secret");
+    }
+  }
+}
+
+TEST_F(OSCryptAsyncTest, MultipleKeysSomeTemporarilyUnavailable) {
+  std::optional<std::vector<uint8_t>> ciphertext;
+  {
+    ProviderList providers;
+    providers.emplace_back(
+        /*precedence=*/10u,
+        std::make_unique<TestKeyProvider>("BLAH", /*use_for_encryption=*/true));
+    // Note: TEST is higher precedence so would normally be picked for
+    // encryption, were it not unavailable.
+    providers.emplace_back(
+        /*precedence=*/15u,
+        std::make_unique<FailingKeyProvider>(
+            KeyProvider::KeyError::kTemporarilyUnavailable, "TEST"));
+    OSCryptAsync factory(std::move(providers));
+    Encryptor encryptor = GetInstanceSync(factory);
+    ciphertext = encryptor.EncryptString("secret data");
+    EXPECT_TRUE(ciphertext);
+  }
+
+  // Verify that BLAH is used by creating a new encryptor with only BLAH and
+  // decrypting.
+  {
+    ProviderList providers;
+    providers.emplace_back(
+        /*precedence=*/10u,
+        std::make_unique<TestKeyProvider>("BLAH", /*use_for_encryption=*/true));
+    OSCryptAsync factory(std::move(providers));
+    Encryptor encryptor = GetInstanceSync(factory);
+    const auto plaintext = encryptor.DecryptData(*ciphertext);
+    EXPECT_TRUE(plaintext);
+    EXPECT_EQ(*plaintext, "secret data");
   }
 }
 
@@ -803,6 +906,36 @@ TEST_F(OSCryptAsyncTest, NoCrashWithLongNames) {
       std::make_unique<TestKeyProvider>("XYZ", /*use_for_encryption=*/true));
   OSCryptAsync factory(std::move(providers));
   GetInstanceSync(factory);
+}
+
+TEST_F(OSCryptAsyncTest, Metrics) {
+  base::HistogramTester histograms;
+  ProviderList providers;
+  providers.emplace_back(
+      /*precedence=*/10u,
+      std::make_unique<TestKeyProvider>("ABC", /*use_for_encryption=*/true));
+  providers.emplace_back(
+      /*precedence=*/15u,
+      std::make_unique<TestKeyProvider>("DEF", /*use_for_encryption=*/true));
+  providers.emplace_back(
+      /*precedence=*/20u,
+      std::make_unique<FailingKeyProvider>(
+          KeyProvider::KeyError::kPermanentlyUnavailable, "GHI"));
+  providers.emplace_back(
+      /*precedence=*/25u,
+      std::make_unique<FailingKeyProvider>(
+          KeyProvider::KeyError::kTemporarilyUnavailable, "JKL"));
+
+  OSCryptAsync factory(std::move(providers));
+  GetInstanceSync(factory);
+  // See TemporarilyFailingKeyProvider, FailingKeyProvider and Empty tests above
+  // for further testing of these counts.
+  histograms.ExpectBucketCount("OSCrypt.EncryptorKeyCount", 4, 1);
+  histograms.ExpectBucketCount("OSCrypt.EncryptorKeyCount.Available", 2, 1);
+  histograms.ExpectBucketCount(
+      "OSCrypt.EncryptorKeyCount.TemporarilyUnavailable", 1, 1);
+  histograms.ExpectBucketCount(
+      "OSCrypt.EncryptorKeyCount.PermanentlyUnavailable", 1, 1);
 }
 
 }  // namespace os_crypt_async

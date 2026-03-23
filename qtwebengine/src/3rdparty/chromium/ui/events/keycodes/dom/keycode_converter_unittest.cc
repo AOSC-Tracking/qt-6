@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "ui/events/keycodes/dom/keycode_converter.h"
 
 #include <stddef.h>
@@ -17,6 +12,7 @@
 #include <map>
 #include <set>
 
+#include "base/compiler_specific.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/keycodes/dom/dom_code.h"
@@ -29,7 +25,7 @@ namespace {
 // Number of native codes expected to be mapped for each kind of native code.
 // These are in the same order as the columns in dom_code_data.inc
 // as reflected in the DOM_CODE() macro below.
-const auto expected_mapped_key_count = std::to_array<size_t>({
+constexpr auto expected_mapped_key_count = std::to_array<size_t>({
     225,  // evdev
     225,  // xkb
     157,  // windows
@@ -42,7 +38,7 @@ struct KeycodeConverterData {
   uint32_t usb_keycode;
   const char* code;
   const char* id;
-  int native_keycode[kNativeColumns];
+  std::array<int, kNativeColumns> native_keycode;
 };
 
 #define DOM_CODE(usb, evdev, xkb, win, mac, code, id) \
@@ -128,7 +124,7 @@ TEST(UsbKeycodeMap, Basic) {
 
   size_t numEntries = ui::KeycodeConverter::NumKeycodeMapEntriesForTest();
   for (size_t i = 0; i < numEntries; ++i) {
-    const ui::KeycodeMapEntry* entry = &keycode_map[i];
+    const ui::KeycodeMapEntry* entry = &UNSAFE_TODO(keycode_map[i]);
     // Don't test keys with no native keycode mapping on this platform.
     if (entry->native_keycode == ui::KeycodeConverter::InvalidNativeKeycode())
       continue;
@@ -172,7 +168,7 @@ TEST(KeycodeConverter, DomCode) {
   size_t numEntries = ui::KeycodeConverter::NumKeycodeMapEntriesForTest();
   for (size_t i = 0; i < numEntries; ++i) {
     SCOPED_TRACE(i);
-    const ui::KeycodeMapEntry* entry = &keycode_map[i];
+    const ui::KeycodeMapEntry* entry = &UNSAFE_TODO(keycode_map[i]);
     if (entry->code) {
       ui::DomCode code = ui::KeycodeConverter::CodeStringToDomCode(entry->code);
       EXPECT_STREQ(entry->code,

@@ -5,7 +5,6 @@
 <translation id="1140871961407805696">Zadnja kamera</translation>
 <translation id="1196338895211115272">Izvoz privatnog ključa nije uspio.</translation>
 <translation id="132960226125594336">Učitavanje fajla "<ph name="RELATIVE_PATH" />" za skriptu sadržaja nije uspjelo jer bi premašilo maksimalnu veličinu skripte ili maksimalnu ukupnu veličinu skripte sadržaja ekstenzije.</translation>
-<translation id="1420684932347524586">Ups! Generiranje nasumičnog RSA privatnog ključa nije uspjelo.</translation>
 <translation id="1445572445564823378">Ova ekstenzija usporava aplikaciju <ph name="PRODUCT_NAME" />. Trebate je onemogućiti kako biste vratili performanse aplikacije <ph name="PRODUCT_NAME" />.</translation>
 <translation id="1468038450257740950">Sistem ne podržava WebGL</translation>
 <translation id="1610570795592207282">Učitavanje CSS-a "<ph name="RELATIVE_PATH" />" za skriptu nije uspjelo.</translation>
@@ -49,12 +48,14 @@
 <translation id="7068383018033524534">Fajl deklaracije je nevažeći</translation>
 <translation id="7217838517480956708">Administrator ovog uređaja traži instaliranje ekstenzije <ph name="EXTENSION_NAME" />. Uklanjanje ili izmjena nisu mogući.</translation>
 <translation id="7612608473764576263">Ulazna vrijednost za privatni ključ mora biti važeći format (PKCS#8-format PEM-kodiran RSA ključ).</translation>
+<translation id="7876803335449432072">Učitavanje fajla "<ph name="RELATIVE_PATH" />" za skriptu sadržaja nije uspjelo. Stilski listovi skripti sadržaja se mogu učitati samo iz podržanih fajlova stilskih listi kao što su CSS fajlovi.</translation>
 <translation id="7939686037314084444">Pravilno učitavanje ekstenzije nije uspjelo. Možda neće moći presresti mrežne zahtjeve.</translation>
 <translation id="7972881773422714442">Opcije: <ph name="EXTENSIONOPTIONS_TAG_NAME" /></translation>
 <translation id="8035920974645200807">Prednja kamera</translation>
 <translation id="8047248493720652249">Ova ekstenzija nije uspjela dati naziv preuzimanju "<ph name="ATTEMPTED_FILENAME" />" jer je druga ekstenzija (<ph name="EXTENSION_NAME" />) odredila drugačiji naziv fajla. "<ph name="ACTUAL_FILENAME" />".</translation>
 <translation id="8284835137979141223"><ph name="PRODUCT_NAME" /> od <ph name="VENDOR_NAME" /></translation>
 <translation id="8517576857589387417">Fajl s deklaracijom nedostaje ili je nečitljiv</translation>
+<translation id="8621383749470166852">Učitavanje fajla "<ph name="RELATIVE_PATH" />" za skriptu sadržaja nije uspjelo. Skripte sadržaja se mogu učitati samo iz podržanih JavaScript fajlova kao što su JS fajlovi.</translation>
 <translation id="8636666366616799973">Paket je nevažeći. Detalji: "<ph name="ERROR_MESSAGE" />".</translation>
 <translation id="8761756413268424715">Aplikacija "<ph name="APP_NAME" />" zahtijeva pristup jednom vašem uređaju:</translation>
 <translation id="8885905466771744233">Privatni ključ za navedenu ekstenziju već postoji. Ponovo iskoristite ključ ili ga prvo izbrišite.</translation>

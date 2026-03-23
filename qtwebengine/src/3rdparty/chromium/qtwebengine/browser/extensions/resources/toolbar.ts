@@ -18,11 +18,14 @@ export class ExtensionsToolbarElement extends PolymerElement {
 
   static get properties() {
     return {
-      showToolbar_: Boolean,
+      showToolbar_: {
+        type: Boolean,
+        value: () => true,
+      },
     };
   }
 
-  private showToolbar_: Boolean = true
+  declare private showToolbar_: boolean;
   private proxy_: ExtensionsUIBrowserProxy =
       ExtensionsUIBrowserProxy.getInstance();
 

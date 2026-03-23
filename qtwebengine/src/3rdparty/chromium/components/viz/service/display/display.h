@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_VIZ_SERVICE_DISPLAY_DISPLAY_H_
 #define COMPONENTS_VIZ_SERVICE_DISPLAY_DISPLAY_H_
 
+#include <deque>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -25,7 +26,6 @@
 #include "components/viz/service/display/display_compositor_memory_and_task_controller.h"
 #include "components/viz/service/display/display_resource_provider.h"
 #include "components/viz/service/display/display_scheduler.h"
-#include "components/viz/service/display/frame_rate_decider.h"
 #include "components/viz/service/display/output_surface_client.h"
 #include "components/viz/service/display/overdraw_tracker.h"
 #include "components/viz/service/display/overlay_processor_interface.h"
@@ -39,6 +39,10 @@
 #include "ui/gfx/overlay_transform.h"
 #include "ui/gfx/swap_result.h"
 #include "ui/latency/latency_info.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "ui/gfx/android/surface_control_frame_rate.h"
+#endif
 
 namespace gfx {
 class Size;
@@ -77,8 +81,7 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
                                    public OutputSurfaceClient,
                                    public ContextLostObserver,
                                    public LatestLocalSurfaceIdLookupDelegate,
-                                   public SoftwareOutputDeviceClient,
-                                   public FrameRateDecider::Client {
+                                   public SoftwareOutputDeviceClient {
  public:
   // The |begin_frame_source| and |scheduler| may be null (together). In that
   // case, DrawAndSwap must be called externally when needed.
@@ -107,11 +110,8 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   static constexpr base::TimeDelta kDrawToSwapMax = base::Milliseconds(50);
   static constexpr uint32_t kDrawToSwapUsBuckets = 50;
 
-  void Initialize(DisplayClient* client,
-                  SurfaceManager* surface_manager,
-                  bool hw_support_for_multiple_refresh_rates = false);
+  void Initialize(DisplayClient* client, SurfaceManager* surface_manager);
 
-  // May be null depending on if kUseFrameIntervalDecider is enabled.
   FrameIntervalDecider* frame_interval_decider() const {
     return frame_interval_decider_.get();
   }
@@ -179,12 +179,6 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   void SoftwareDeviceUpdatedCALayerParams(
       const gfx::CALayerParams& ca_layer_params) override;
 
-  // FrameRateDecider::Client implementation
-  void SetPreferredFrameInterval(base::TimeDelta interval) override;
-  base::TimeDelta GetPreferredFrameIntervalForFrameSinkId(
-      const FrameSinkId& id,
-      mojom::CompositorFrameSinkType* type) override;
-
   bool has_scheduler() const { return !!scheduler_; }
   bool visible() const { return visible_; }
   const RendererSettings& settings() const { return settings_; }
@@ -195,15 +189,11 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   }
 
   void ForceImmediateDrawAndSwapIfPossible();
-  void SetNeedsOneBeginFrame();
-
-  void SetSupportedFrameIntervals(base::flat_set<base::TimeDelta> intervals);
-
-  void SetHwSupportForMultipleRefreshRates(bool support);
+  void SetNeedsOneBeginFrame(const BeginFrameArgs& args);
 
 #if BUILDFLAG(IS_ANDROID)
   bool OutputSurfaceSupportsSetFrameRate();
-  void SetFrameIntervalOnOutputSurface(base::TimeDelta interval);
+  void SetFrameIntervalOnOutputSurface(gfx::SurfaceControlFrameRate frame_rate);
 #endif
 
   void PreserveChildSurfaceControls();
@@ -325,9 +315,6 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   // destroyed first.
   std::unique_ptr<DisplaySchedulerBase> scheduler_;
   bool last_wide_color_enabled_ = false;
-  std::unique_ptr<FrameRateDecider> frame_rate_decider_;
-
-  // Replaces `frame_rate_decider_` behind a feature.
   std::unique_ptr<FrameIntervalDecider> frame_interval_decider_;
 
   // This may be null if the Display is on a thread without a MessageLoop.
@@ -359,9 +346,8 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   // Callback that will be run after all pending swaps have acked.
   base::OnceClosure no_pending_swaps_callback_;
 
-  int64_t swapped_trace_id_ = 0;
-  int64_t last_swap_ack_trace_id_ = 0;
-  int64_t last_presented_trace_id_ = 0;
+  std::deque<int64_t> pending_swap_ack_trace_ids_;
+  std::deque<int64_t> pending_presented_trace_ids_;
   int pending_swaps_ = 0;
 
   uint64_t frame_sequence_number_ = 0;

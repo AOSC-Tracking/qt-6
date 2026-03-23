@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QTABLEVIEW_P_H
 #define QTABLEVIEW_P_H
@@ -140,11 +141,15 @@ public:
 
     QStyleOptionViewItem::ViewItemPosition viewItemPosition(const QModelIndex &index) const;
 
-    inline int accessibleTable2Index(const QModelIndex &index) const {
+#if QT_CONFIG(accessibility)
+    inline int accessibleChildIndex(const QModelIndex &index) const override
+    {
+        Q_ASSERT(index.isValid());
         const int vHeader = verticalHeader ? 1 : 0;
         return (index.row() + (horizontalHeader ? 1 : 0)) * (index.model()->columnCount() + vHeader)
             + index.column() + vHeader;
     }
+#endif
 
     int sectionSpanEndLogical(const QHeaderView *header, int logical, int span) const;
     int sectionSpanSize(const QHeaderView *header, int logical, int span) const;

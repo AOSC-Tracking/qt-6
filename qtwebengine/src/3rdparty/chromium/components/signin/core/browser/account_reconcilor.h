@@ -12,6 +12,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/scoped_observation.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -66,22 +67,6 @@ class AccountReconcilor
    private:
     base::WeakPtr<AccountReconcilor> reconcilor_;
     THREAD_CHECKER(thread_checker_);
-  };
-
-  // Helper class to indicate that synced data is being deleted. The object
-  // must be destroyed when the data deletion is complete.
-  class ScopedSyncedDataDeletion {
-   public:
-    ScopedSyncedDataDeletion(const ScopedSyncedDataDeletion&) = delete;
-    ScopedSyncedDataDeletion& operator=(const ScopedSyncedDataDeletion&) =
-        delete;
-
-    ~ScopedSyncedDataDeletion();
-
-   private:
-    friend class AccountReconcilor;
-    explicit ScopedSyncedDataDeletion(AccountReconcilor* reconcilor);
-    base::WeakPtr<AccountReconcilor> reconcilor_;
   };
 
   class Observer {
@@ -149,11 +134,6 @@ class AccountReconcilor
   // Adds ands removes observers.
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
-
-  // ScopedSyncedDataDeletion can be created when synced data is being removed
-  // and destroyed when the deletion is complete. It prevents the Sync account
-  // from being invalidated during the deletion.
-  std::unique_ptr<ScopedSyncedDataDeletion> GetScopedSyncDataDeletion();
 
   // Returns true if reconcilor is blocked.
   bool IsReconcileBlocked() const;
@@ -223,16 +203,16 @@ class AccountReconcilor
                            HandleSigninDuringReconcile);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTest,
                            DiceReconcileReuseGaiaFirstAccount);
-  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTest, DeleteCookie);
-  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTestForSupervisedUsers,
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTest,
                            DeleteCookieForNonSyncingSupervisedUsers);
-  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTestForSupervisedUsers,
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTest,
                            DeleteCookieForSyncingSupervisedUsers);
-  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTestWithUnoDesktop,
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTest, DeleteCookie);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTest,
                            DeleteCookieForSignedInUser);
-  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTestWithUnoDesktop,
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTest,
                            DeleteCookieForSyncingUser);
-  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTestWithUnoDesktop,
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceTest,
                            PendingStateThenClearPrimaryAccount);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMirrorTest, TokensNotLoaded);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMirrorTest,
@@ -414,6 +394,8 @@ class AccountReconcilor
       const signin::AccountsInCookieJarInfo& accounts_in_cookie_jar_info,
       const GoogleServiceAuthError& error) override;
   void OnAccountsCookieDeletedByUserAction() override;
+  void OnIdentityManagerShutdown(
+      signin::IdentityManager* identity_manager) override;
 
   void FinishReconcileWithMultiloginEndpoint(
       const CoreAccountId& primary_account,
@@ -465,6 +447,9 @@ class AccountReconcilor
 
   // The IdentityManager associated with this reconcilor.
   raw_ptr<signin::IdentityManager> identity_manager_;
+  base::ScopedObservation<signin::IdentityManager,
+                          signin::IdentityManager::Observer>
+      identity_manager_observer_{this};
 
   // The SigninClient associated with this reconcilor.
   raw_ptr<SigninClient> client_;
@@ -537,10 +522,6 @@ class AccountReconcilor
   std::unique_ptr<base::OneShotTimer> timer_ =
       std::make_unique<base::OneShotTimer>();
   base::TimeDelta timeout_;
-
-  // Greater than 0 when synced data is being deleted, and it is important to
-  // not invalidate the primary token while this is happening.
-  int synced_data_deletion_in_progress_count_ = 0;
 
   // Note: when the reconcilor is blocked with `BlockReconcile()` the state is
   // set to kScheduled rather than kInactive as this is only used to temporarily

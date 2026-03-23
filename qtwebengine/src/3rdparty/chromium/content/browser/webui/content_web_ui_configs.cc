@@ -22,7 +22,7 @@
 #include "media/media_buildflags.h"
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-#include "content/browser/tracing/trace_report/trace_report_internals_ui.h"
+#include "content/browser/tracing/traces_internals/traces_internals_ui.h"
 #include "content/browser/tracing/tracing_ui.h"
 #endif
 
@@ -55,7 +55,8 @@ void RegisterContentWebUIConfigs() {
 #endif
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_FUCHSIA)
-  map.AddWebUIConfig(std::make_unique<TraceReportInternalsUIConfig>());
+  map.AddWebUIConfig(std::make_unique<TracesInternalsUIConfig>());
+  map.AddWebUIConfig(std::make_unique<TracesInternalsLegacyUIConfig>());
   map.AddWebUIConfig(std::make_unique<TracingUIConfig>());
 #endif
 }

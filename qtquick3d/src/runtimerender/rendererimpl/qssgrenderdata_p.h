@@ -1,5 +1,7 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGRENDERDATA_P_H
 #define QSSGRENDERDATA_P_H
@@ -20,6 +22,7 @@
 #include "qssgrenderableobjects_p.h"
 
 #include <vector>
+#include <unordered_map>
 #include <memory>
 
 QT_BEGIN_NAMESPACE
@@ -29,8 +32,11 @@ class QSSGRenderRoot;
 
 class QThreadPool;
 
+class QSGRenderContext;
+class QSGRenderer;
+
 // Per window node data
-class QSSGGlobalRenderNodeData
+class Q_QUICK3DRUNTIMERENDER_EXPORT QSSGGlobalRenderNodeData
 {
     Q_DISABLE_COPY_MOVE(QSSGGlobalRenderNodeData)
 public:
@@ -54,10 +60,15 @@ public:
     using NodeStore = std::vector<QSSGRenderNode *>;
     using LayerNodeViewStore = std::vector<LayerNodeSection>;
 
-    QSSGGlobalRenderNodeData();
+    explicit QSSGGlobalRenderNodeData(QSSGRenderRoot *root);
     ~QSSGGlobalRenderNodeData();
 
-    void reindex(QSSGRenderRoot *rootNode);
+    void reindex();
+
+    // Once this is called we expect teardown as bugn and no further
+    // updates will be made. We do however keep the data around in case
+    // anyone holding a reference to us decides to query something.
+    void invalidate();
 
     [[nodiscard]] quint32 version() const { return m_version; }
 
@@ -100,6 +111,7 @@ private:
     std::unique_ptr<QThreadPool> m_threadPool;
 #endif // QT_CONFIG(thread)
 
+    QSSGRenderRoot *m_rootNode = nullptr;
     size_t m_size = 0;
     size_t m_nodeCount = 0;
     quint32 m_version = 0;
@@ -234,6 +246,51 @@ private:
     void prepareMaterials(const QSSGModelsView &models);
 
     QSSGGlobalRenderNodeDataPtr m_gnd;
+
+    quint32 m_version = 0;
+};
+
+class QSSGRenderItem2DData
+{
+    Q_DISABLE_COPY_MOVE(QSSGRenderItem2DData)
+public:
+    explicit QSSGRenderItem2DData(const QSSGGlobalRenderNodeDataPtr &globalNodeData);
+    ~QSSGRenderItem2DData();
+
+    using ModelViewProjections = std::array<QMatrix4x4, 2>;
+    using ModelViewProjectionStore = std::vector<ModelViewProjections>;
+
+    using Item2DRenderer = QPointer<QSGRenderer>;
+
+    [[nodiscard]] ModelViewProjections getModelViewProjection(QSSGRenderItem2DHandle h) const;
+    [[nodiscard]] ModelViewProjections getModelViewProjection(const QSSGRenderItem2D &item) const;
+
+    [[nodiscard]] Item2DRenderer getItem2DRenderer(const QSSGRenderItem2D &item) const;
+
+    [[nodiscard]] const QSSGGlobalRenderNodeDataPtr &globalNodeData() const { return m_gnd; }
+
+    void updateItem2DData(QSSGItem2DsView &items, QSSGRenderer *renderer, const QSSGRenderCameraDataList &renderCameraData);
+
+    void releaseRenderData(const QSSGRenderItem2D &item);
+    void releaseAll();
+
+private:
+    // The association between the 2D item and its renderer and render pass descriptor, is cached and has
+    // a strong connection to the item itself. We therefore use a map here. The other stores are
+    // indexed stores as those are pure data.
+    using Item2DRendererStore = std::unordered_map<const QSSGRenderItem2D *, Item2DRenderer>;
+
+    QSSGGlobalRenderNodeDataPtr m_gnd;
+
+    QPointer<QSGRenderContext> item2DRenderContext;
+    Item2DRendererStore item2DRenderers;
+    ModelViewProjectionStore modelViewProjections;
+
+    const QMatrix4x4 flipMatrix { 1.0f, 0.0f, 0.0f, 0.0f,
+                                  0.0f, -1.0f, 0.0f, 0.0f,
+                                  0.0f, 0.0f, 1.0f, 0.0f,
+                                  0.0f, 0.0f, 0.0f, 1.0f };
+
 
     quint32 m_version = 0;
 };

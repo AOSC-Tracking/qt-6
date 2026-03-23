@@ -30,6 +30,7 @@
 #include <optional>
 
 #include "base/auto_reset.h"
+#include "base/trace_event/trace_event.h"
 #include "third_party/blink/public/mojom/scroll/scroll_into_view_params.mojom-blink.h"
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/accessibility/blink_ax_event_intent.h"
@@ -215,6 +216,7 @@ void FrameSelection::MoveCaretSelection(const gfx::Point& point) {
 
 void FrameSelection::SetSelection(const SelectionInDOMTree& selection,
                                   const SetSelectionOptions& data) {
+  TRACE_EVENT0("blink", "FrameSelection::SetSelection");
   if (SetSelectionDeprecated(selection, data))
     DidSetSelectionDeprecated(selection, data);
 }
@@ -591,18 +593,12 @@ bool FrameSelection::SelectionHasFocus() const {
       focused_element->IsScrollMarkerGroupPseudoElement()) {
     return false;
   }
-  if (RuntimeEnabledFeatures::SelectionOnShadowDOMWithDelegatesFocusEnabled()) {
-    // If focus is on the delegated target of a shadow host with delegatesFocus,
-    // selection could be on focus even if focused element does not contain
-    // current selection start.
-    if (focused_element->IsTextControl() &&
-        focused_element->ContainsIncludingHostElements(*current)) {
-      return true;
-    }
-  } else {
-    if (focused_element->IsTextControl()) {
-      return focused_element->ContainsIncludingHostElements(*current);
-    }
+  // If focus is on the delegated target of a shadow host with delegatesFocus,
+  // selection could be on focus even if focused element does not contain
+  // current selection start.
+  if (focused_element->IsTextControl() &&
+      focused_element->ContainsIncludingHostElements(*current)) {
+    return true;
   }
 
   // Selection has focus if it contains the focused element.
@@ -611,6 +607,23 @@ bool FrameSelection::SelectionHasFocus() const {
   if (ComputeVisibleSelectionInFlatTree().Start() <= focused_position &&
       ComputeVisibleSelectionInFlatTree().End() >= focused_position)
     return true;
+
+  // Selection has focus if current selection matches the focused
+  // element's visible position and the focused element is focusable but not
+  // editable (e.g., tabindex="-1"). This handles cases where text selection
+  // should be visible in focusable but non-editable elements.
+  if (RuntimeEnabledFeatures::
+          SelectionAndFocusedVisiblePositionMatchEnabled()) {
+    if (GetDocument().FocusedElement() && focused_element->IsFocusable() &&
+        !IsEditable(*focused_element)) {
+      const VisiblePositionInFlatTree focused_visible_position =
+          CreateVisiblePosition(focused_position);
+      if (focused_visible_position.DeepEquivalent() ==
+          ComputeVisibleSelectionInFlatTree().Start()) {
+        return true;
+      }
+    }
+  }
 
   bool is_editable = IsEditable(*current);
   const TreeScope* tree_scope = &current->GetTreeScope();
@@ -623,8 +636,7 @@ bool FrameSelection::SelectionHasFocus() const {
       // ComputedStyleBuilder::ComputedStyleBuilder and
       // StyleResolver::InitStyle. We should check editability only if we are in
       // the same tree scope.
-      if (!RuntimeEnabledFeatures::MouseFocusFlatTreeParentEnabled() ||
-          tree_scope == &current->GetTreeScope()) {
+      if (tree_scope == &current->GetTreeScope()) {
         return false;
       }
     }
@@ -632,28 +644,21 @@ bool FrameSelection::SelectionHasFocus() const {
     // Selection has focus if its sub tree has focus.
     if (current == focused_element)
       return true;
-    if (RuntimeEnabledFeatures::
-            SelectionOnShadowDOMWithDelegatesFocusEnabled()) {
-      // If current is a shadow host with delegatesFocus, then it cannot be the
-      // focused element and we should compare with its focusable area instead.
-      if (const Element* el = DynamicTo<Element>(current);
-          el && el->IsShadowHostWithDelegatesFocus() &&
-          el->GetFocusableArea() == focused_element) {
-        return true;
-      }
+    // If current is a shadow host with delegatesFocus, then it cannot be the
+    // focused element and we should compare with its focusable area instead.
+    if (const Element* el = DynamicTo<Element>(current);
+        el && el->IsShadowHostWithDelegatesFocus() &&
+        el->GetFocusableArea() == focused_element) {
+      return true;
     }
-    if (RuntimeEnabledFeatures::MouseFocusFlatTreeParentEnabled()) {
-      // If we are stepping out of a shadow tree, the tree scope should be
-      // updated to the tree we step into.
-      bool stepping_out_of_shadow_tree =
-          tree_scope == &current->GetTreeScope() &&
-          DynamicTo<ShadowRoot>(current->parentNode());
-      current = FlatTreeTraversal::Parent(*current);
-      if (stepping_out_of_shadow_tree && current) {
-        tree_scope = &current->GetTreeScope();
-      }
-    } else {
-      current = current->ParentOrShadowHostNode();
+    // If we are stepping out of a shadow tree, the tree scope should be
+    // updated to the tree we step into.
+    bool stepping_out_of_shadow_tree =
+        tree_scope == &current->GetTreeScope() &&
+        DynamicTo<ShadowRoot>(current->parentNode());
+    current = FlatTreeTraversal::Parent(*current);
+    if (stepping_out_of_shadow_tree && current) {
+      tree_scope = &current->GetTreeScope();
     }
   } while (current);
 
@@ -740,6 +745,10 @@ bool FrameSelection::ShouldPaintCaret(
 gfx::Rect FrameSelection::AbsoluteCaretBounds() const {
   DCHECK(ComputeVisibleSelectionInDOMTree().IsValidFor(*frame_->GetDocument()));
   return frame_caret_->AbsoluteCaretBounds();
+}
+
+CaretShape FrameSelection::GetCaretShape() const {
+  return frame_caret_->GetCaretShape();
 }
 
 bool FrameSelection::ComputeAbsoluteBounds(gfx::Rect& anchor,
@@ -1134,11 +1143,7 @@ void FrameSelection::SetFocusedNodeIfNeeded() {
                                                                   frame_);
         return;
       }
-      if (RuntimeEnabledFeatures::MouseFocusFlatTreeParentEnabled()) {
-        target = FlatTreeTraversal::ParentElement(*target);
-      } else {
-        target = target->ParentOrShadowHostElement();
-      }
+      target = FlatTreeTraversal::ParentElement(*target);
     }
     GetDocument().ClearFocusedElement();
   }
@@ -1182,6 +1187,7 @@ String FrameSelection::SelectedHTMLForClipboard() const {
                           .SetShouldAnnotateForInterchange(true)
                           .SetShouldResolveURLs(kResolveNonLocalURLs)
                           .SetIgnoresCSSTextTransformsForRenderedText(true)
+                          .SetShouldSkipUnselectableContent(true)
                           .Build());
 }
 

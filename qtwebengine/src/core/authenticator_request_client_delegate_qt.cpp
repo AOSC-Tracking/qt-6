@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "authenticator_request_client_delegate_qt.h"
 #include "authenticator_request_dialog_controller.h"
@@ -106,9 +107,12 @@ bool AuthenticatorRequestClientDelegateQt::DoesBlockRequestOnFailure(
 
 void AuthenticatorRequestClientDelegateQt::RegisterActionCallbacks(
         base::OnceClosure cancel_callback,
+        base::OnceClosure immediate_not_found_callback,
         base::RepeatingClosure start_over_callback,
         AccountPreselectedCallback account_preselected_callback,
+        PasswordSelectedCallback password_selected_callback,
         device::FidoRequestHandlerBase::RequestCallback request_callback,
+        base::OnceClosure cancel_ui_timeout_callback,
         base::RepeatingClosure bluetooth_adapter_power_on_callback,
         base::RepeatingCallback<
                 void(device::FidoRequestHandlerBase::BlePermissionCallback)>
@@ -172,7 +176,7 @@ void AuthenticatorRequestClientDelegateQt::OnTransportAvailabilityEnumerated(
 
     // Start WebAuth UX
     // we may need to pass data as well. for SelectAccount and SupportPin it is not required,
-    // skipping that for the timebeing.
+    // skipping that for the time being.
     m_dialogController->startRequest();
 }
 

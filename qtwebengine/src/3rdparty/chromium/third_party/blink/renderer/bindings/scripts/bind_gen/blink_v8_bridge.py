@@ -5,6 +5,7 @@
 import web_idl
 
 from . import name_style
+from .union_name_mapper import UnionNameMapper
 from .code_node import FormatNode
 from .code_node import Likeliness
 from .code_node import SymbolDefinitionNode
@@ -37,6 +38,9 @@ def blink_class_name(idl_definition):
             idl_definition.element_type.
             type_name_with_extended_attribute_key_values)
     elif isinstance(idl_definition, web_idl.Union):
+        # See if there are overrides.
+        if class_name := UnionNameMapper.instance().class_name(idl_definition):
+            return class_name
         # Technically this name is not guaranteed to be unique because
         # (X or sequence<Y or Z>) and (X or Y or sequence<Z>) have the same
         # name, but it's highly unlikely to cause a conflict in the actual use
@@ -402,7 +406,10 @@ def blink_type_info(idl_type):
         if inner_type.has_null_value:
             return inner_type
         if inner_type.is_heap_vector_type:
-            return TypeInfo(inner_type.typename,
+            # Since the type is Member<>, we need to used GCedHeapVector<T>
+            # as inner type as we require MakeGarbageCollected() for the
+            # vector type.
+            return TypeInfo("GCed{}".format(inner_type.typename),
                             member_fmt="Member<{}>",
                             ref_fmt="{}*",
                             const_ref_fmt="const {}*",
@@ -430,12 +437,13 @@ def native_value_tag(idl_type, argument=None, apply_optional_to_last_arg=True):
             and not (idl_type.is_nullable or argument.default_value)
             and (apply_optional_to_last_arg
                  or argument != argument.owner.arguments[-1])):
-        return "IDLOptional<{}>".format(_native_value_tag_impl(idl_type))
+        return "IDLOptional<{}>".format(
+            _native_value_tag_impl(idl_type, argument))
 
-    return _native_value_tag_impl(idl_type)
+    return _native_value_tag_impl(idl_type, argument)
 
 
-def _pass_as_span_conversion_arguments(idl_type):
+def _pass_as_span_conversion_arguments(idl_type, support_reentry):
     real_type = idl_type.unwrap(typedef=True)
     types = real_type.flattened_member_types if real_type.is_union else [
         real_type
@@ -473,15 +481,18 @@ def _pass_as_span_conversion_arguments(idl_type):
         "AllowShared" in t.effective_annotations for t in types)
     if allow_shared:
         flags.append("PassAsSpanMarkerBase::Flags::kAllowShared")
+    if support_reentry:
+        flags.append("PassAsSpanMarkerBase::Flags::kSupportReentry")
 
     return [
         " | ".join(flags) or "PassAsSpanMarkerBase::Flags::kNone", native_type
     ]
 
 
-def _native_value_tag_impl(idl_type):
+def _native_value_tag_impl(idl_type, argument=None):
     """Returns the tag type of NativeValueTraits."""
     assert isinstance(idl_type, web_idl.IdlType)
+    assert argument is None or isinstance(argument, web_idl.Argument)
 
     if idl_type.is_event_handler:
         return "IDL{}".format(idl_type.identifier)
@@ -489,7 +500,12 @@ def _native_value_tag_impl(idl_type):
     real_type = idl_type.unwrap(typedef=True)
 
     if "PassAsSpan" in idl_type.effective_annotations:
-        conversion_arguments = _pass_as_span_conversion_arguments(idl_type)
+        assert argument, "PassAsSpan can only appear on an argument"
+        # TODO(caseq): This works for now. Refine this to check no args
+        # involving JS calls (strings, dicts) is passed after this one.
+        support_reentry = "NoAllocDirectCall" not in argument.owner.extended_attributes
+        conversion_arguments = _pass_as_span_conversion_arguments(
+            idl_type, support_reentry)
         return "PassAsSpan<{}>".format(", ".join(conversion_arguments))
 
     if (real_type.is_boolean or real_type.is_numeric or real_type.is_string
@@ -848,10 +864,7 @@ def make_v8_to_blink_value(blink_var_name,
                 v8_value_expr,
                 "${exception_state}",
             ]
-        if "StringContext" in idl_type.effective_annotations:
-            arguments.append("${class_like_name}")
-            arguments.append("${property_name}")
-            arguments.append("${execution_context_of_document_tree}")
+
         blink_value_expr = _format("NativeValueTraits<{_1}>::{_2}({_3})",
                                    _1=native_value_tag(
                                        idl_type,
@@ -945,10 +958,6 @@ def make_v8_to_blink_value_variadic(blink_var_name, v8_array,
         "${isolate}", v8_array,
         str(v8_array_start_index), "${exception_state}"
     ]
-    if "StringContext" in idl_type.element_type.effective_annotations:
-        arguments.append("${class_like_name}")
-        arguments.append("${property_name}")
-        arguments.append("${execution_context_of_document_tree}")
     text = _format(
         pattern,
         _1=blink_var_name,
@@ -979,6 +988,7 @@ def typed_array_element_type(idl_type):
         'Uint32Array': 'unsigned long',
         'BigUint64Array': 'unsigned long long',
         'Uint8ClampedArray': 'octet',
+        'Float16Array': 'unsigned short',
         'Float32Array': 'unrestricted float',
         'Float64Array': 'unrestricted double',
     }

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLPROFILERCLIENT_P_H
 #define QQMLPROFILERCLIENT_P_H
@@ -24,6 +25,7 @@
 
 QT_BEGIN_NAMESPACE
 
+struct QQmlDebugContextInfo;
 class QQmlProfilerClientPrivate;
 class QQmlProfilerClient : public QQmlDebugClient
 {
@@ -61,6 +63,10 @@ Q_SIGNALS:
     void recordedFeaturesChanged(quint64 features);
 
     void cleared();
+
+private:
+    void receiveDebugMessage(
+            QtMsgType type, const QString &text, const QQmlDebugContextInfo &context);
 };
 
 QT_END_NAMESPACE

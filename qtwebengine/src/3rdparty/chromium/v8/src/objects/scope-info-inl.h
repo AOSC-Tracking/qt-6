@@ -5,9 +5,11 @@
 #ifndef V8_OBJECTS_SCOPE_INFO_INL_H_
 #define V8_OBJECTS_SCOPE_INFO_INL_H_
 
+#include "src/objects/scope-info.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/fixed-array-inl.h"
-#include "src/objects/scope-info.h"
 #include "src/objects/string.h"
 #include "src/roots/roots-inl.h"
 #include "src/torque/runtime-macro-shims.h"
@@ -27,6 +29,10 @@ bool ScopeInfo::IsAsmModule() const { return IsAsmModuleBit::decode(Flags()); }
 
 bool ScopeInfo::HasSimpleParameters() const {
   return HasSimpleParametersBit::decode(Flags());
+}
+
+bool ScopeInfo::HasContextCells() const {
+  return HasContextCellsBit::decode(Flags());
 }
 
 uint32_t ScopeInfo::Flags() const { return flags(kRelaxedLoad); }

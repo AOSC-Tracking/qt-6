@@ -217,6 +217,8 @@ class UI_ANDROID_EXPORT ViewAndroid {
   void RequestDisallowInterceptTouchEvent();
   void RequestUnbufferedDispatch(const MotionEventAndroid& event);
 
+  void SetTooltip(const std::u16string& text);
+
   void SetCopyOutputCallback(CopyViewCallback callback);
   // Return the CopyOutputRequest back if view cannot perform readback.
   std::unique_ptr<viz::CopyOutputRequest> MaybeRequestCopyOfView(
@@ -234,6 +236,8 @@ class UI_ANDROID_EXPORT ViewAndroid {
 
   void NotifyVirtualKeyboardOverlayRect(const gfx::Rect& keyboard_rect);
 
+  void ShowInterestInElement(int);
+
   void SetLayoutForTesting(int x, int y, int width, int height);
 
   EventForwarder* event_forwarder() { return event_forwarder_.get(); }
@@ -244,6 +248,8 @@ class UI_ANDROID_EXPORT ViewAndroid {
 
  protected:
   void RemoveAllChildren(bool attached_to_window);
+
+  void OnPointerLockRelease();
 
   raw_ptr<ViewAndroid> parent_;
 
@@ -257,6 +263,7 @@ class UI_ANDROID_EXPORT ViewAndroid {
   FRIEND_TEST_ALL_PREFIXES(ViewAndroidBoundsTest, OnSizeChanged);
   friend class EventForwarder;
   friend class ViewAndroidBoundsTest;
+  friend class WindowAndroid;
 
   bool OnDragEvent(const DragEventAndroid& event);
   bool OnTouchEvent(const MotionEventAndroid& event);

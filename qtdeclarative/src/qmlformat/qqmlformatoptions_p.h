@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLFORMATOPTIONS_P_H
 #define QQMLFORMATOPTIONS_P_H
@@ -73,8 +74,19 @@ public:
     bool functionsSpacing() const { return m_options.functionsSpacing; }
     void setFunctionsSpacing(bool spacing) { m_options.functionsSpacing = spacing; }
 
+    bool groupAttributesTogether() const { return m_options.groupAttributesTogether; }
+    void setGroupAttributesTogether(bool keep)
+    {
+        m_options.groupAttributesTogether = keep;
+        if (keep)
+            m_options.attributesSequence = AttributesSequence::Normalize;
+    }
+
     bool sortImports() const { return m_options.sortImports; }
     void setSortImports(bool sort) { m_options.sortImports = sort; }
+
+    bool singleLineEmptyObjects() const { return m_options.singleLineEmptyObjects; }
+    void setSingleLineEmptyObjects(bool singleLineEmptyObjects) { m_options.singleLineEmptyObjects = singleLineEmptyObjects; }
 
     int indentWidth() const { return m_options.formatOptions.indentSize; }
     void setIndentWidth(int width) { m_options.formatOptions.indentSize = width; }
@@ -123,9 +135,15 @@ public:
     {
         m_writeDefaultSettings = newWriteDefaultSettings;
     }
+    bool outputOptionsEnabled() const { return m_outputOptions; }
+    void setOutputOptionsEnabled(bool newOutputOptions) { m_outputOptions = newOutputOptions; }
 
     bool indentWidthSet() const { return m_indentWidthSet; }
     void setIndentWidthSet(bool newIndentWidthSet) { m_indentWidthSet = newIndentWidthSet; }
+    bool dryRun() const { return m_dryRun; }
+    void setDryRun(bool newDryRun) { m_dryRun = newDryRun; }
+    QString settingsFile() const { return m_settingsFile; }
+    void setSettingsFile(const QString &newSettingsFile) { m_settingsFile = newSettingsFile; }
     QStringList errors() const { return m_errors; }
     void addError(const QString &newError) { m_errors.append(newError); };
 
@@ -143,8 +161,11 @@ public:
         NewlineType,
         ObjectsSpacing,
         FunctionsSpacing,
+        GroupAttributesTogether,
         SortImports,
+        SingleLineEmptyObjects,
         SemicolonRule,
+        SettingsFile,
         SettingsCount
     };
 
@@ -169,8 +190,11 @@ private:
     bool m_force = false;
     bool m_ignoreSettings = false;
     bool m_writeDefaultSettings = false;
+    bool m_outputOptions = false;
     bool m_indentWidthSet = false;
     std::bitset<SettingsCount> m_settingBits;
+    bool m_dryRun = false;
+    QString m_settingsFile;
 };
 
 QT_END_NAMESPACE

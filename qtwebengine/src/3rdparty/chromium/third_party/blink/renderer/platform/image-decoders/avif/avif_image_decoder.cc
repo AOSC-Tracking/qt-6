@@ -31,11 +31,11 @@
 #include "cc/base/math_util.h"
 #include "media/base/video_color_space.h"
 #include "skia/ext/cicp.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/platform/image-decoders/fast_shared_buffer_reader.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_animation.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
 #include "third_party/blink/renderer/platform/image-decoders/rw_buffer.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/libavif/src/include/avif/avif.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
@@ -483,11 +483,10 @@ bool AVIFImageDecoder::MatchesAVIFSignature(
   // the ftyp box in ISO BMFF for the 'avif' or 'avis' brand. So the maximum
   // number of bytes read is 144 bytes (size 4 bytes, type 4 bytes, major brand
   // 4 bytes, minor version 4 bytes, and 4 bytes * 32 compatible brands).
-  char buffer[144];
+  std::array<uint8_t, 144> buffer;
   avifROData input;
   input.size = std::min(sizeof(buffer), fast_reader.size());
-  input.data = reinterpret_cast<const uint8_t*>(
-      fast_reader.GetConsecutiveData(0, input.size, buffer));
+  input.data = fast_reader.GetConsecutiveData(0, input.size, buffer).data();
   return avifPeekCompatibleFileType(&input);
 }
 
@@ -757,8 +756,7 @@ bool AVIFImageDecoder::UpdateDemuxer() {
     // crbug.com/1198455.
     decoder_->strictFlags &= ~AVIF_STRICT_PIXI_REQUIRED;
 
-    if (base::FeatureList::IsEnabled(features::kAvifGainmapHdrImages) &&
-        aux_image_ == cc::AuxImage::kGainmap) {
+    if (aux_image_ == cc::AuxImage::kGainmap) {
       decoder_->imageContentToDecode = AVIF_IMAGE_CONTENT_GAIN_MAP;
     }
 
@@ -1207,9 +1205,6 @@ void AVIFImageDecoder::ColorCorrectImage(int from_row,
 bool AVIFImageDecoder::GetGainmapInfoAndData(
     SkGainmapInfo& out_gainmap_info,
     scoped_refptr<SegmentReader>& out_gainmap_data) const {
-  if (!base::FeatureList::IsEnabled(features::kAvifGainmapHdrImages)) {
-    return false;
-  }
   // Ensure that parsing succeeded.
   if (!IsDecodedSizeAvailable()) {
     return false;

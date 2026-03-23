@@ -44,6 +44,8 @@ source_set("functions") {
     "math.h",
     "pprof_functions.cc",
     "pprof_functions.h",
+    "replace_numbers_function.cc",
+    "replace_numbers_function.h",
     "sqlite3_str_split.cc",
     "sqlite3_str_split.h",
     "stack_functions.cc",
@@ -71,8 +73,7 @@ source_set("functions") {
     "../../../../../protos/perfetto/trace_processor:zero",
     "../../../../base",
     "../../../containers",
-    "../../../db",
-    "../../../db/column",
+    "../../../dataframe",
     "../../../importers/common",
     "../../../importers/ftrace:ftrace_descriptors",
     "../../../perfetto_sql/intrinsics/table_functions",
@@ -80,7 +81,7 @@ source_set("functions") {
     "../../../storage",
     "../../../tables",
     "../../../types",
-    "../../../util",
+    "../../../util:glob",
     "../../../util:profile_builder",
     "../../../util:regex",
     "../../../util:sql_argument",
@@ -90,6 +91,16 @@ source_set("functions") {
     "../types",
   ]
   public_deps = [ ":interface" ]
+  if (enable_perfetto_llvm_symbolizer) {
+    sources += [
+      "symbolize.cc",
+      "symbolize.h",
+    ]
+    deps += [
+      "../../../../profiling/symbolizer:llvm_symbolizer",
+      "../../../../profiling/symbolizer:llvm_symbolizer_c_api",
+    ]
+  }
 }
 
 source_set("interface") {
@@ -111,7 +122,10 @@ perfetto_tp_tables("tables") {
 
 perfetto_unittest_source_set("unittests") {
   testonly = true
-  sources = [ "sqlite3_str_split_unittest.cc" ]
+  sources = [
+    "replace_numbers_function_unittest.cc",
+    "sqlite3_str_split_unittest.cc",
+  ]
   deps = [
     ":functions",
     "../../../../../gn:default_deps",

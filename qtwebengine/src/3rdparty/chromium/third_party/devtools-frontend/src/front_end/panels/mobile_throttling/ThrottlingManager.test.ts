@@ -3,15 +3,17 @@
 // found in the LICENSE file.
 
 import * as SDK from '../../core/sdk/sdk.js';
-import {dispatchClickEvent} from '../../testing/DOMHelpers.js';
-import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {spyCall} from '../../testing/ExpectStubCall.js';
+import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
 
 import * as MobileThrottling from './mobile_throttling.js';
 
 describeWithEnvironment('ThrottlingManager', () => {
   describe('OfflineToolbarCheckbox', () => {
     it('has initial checked state which depends on throttling setting', () => {
-      const throttlingManager = MobileThrottling.ThrottlingManager.throttlingManager();
+      SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+      const throttlingManager = MobileThrottling.ThrottlingManager.ThrottlingManager.instance({forceNew: true});
 
       SDK.NetworkManager.MultitargetNetworkManager.instance().setNetworkConditions(
           SDK.NetworkManager.OfflineConditions);
@@ -24,7 +26,8 @@ describeWithEnvironment('ThrottlingManager', () => {
     });
 
     it('listens to changes in throttling setting', () => {
-      const throttlingManager = MobileThrottling.ThrottlingManager.throttlingManager();
+      SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+      const throttlingManager = MobileThrottling.ThrottlingManager.ThrottlingManager.instance({forceNew: true});
       const checkbox = throttlingManager.createOfflineToolbarCheckbox();
       assert.isFalse(checkbox.checked());
 
@@ -38,33 +41,34 @@ describeWithEnvironment('ThrottlingManager', () => {
     });
 
     it('updates setting when checkbox is clicked on', () => {
-      const throttlingManager = MobileThrottling.ThrottlingManager.throttlingManager();
-      const multiTargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance();
+      const multiTargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+      const throttlingManager = MobileThrottling.ThrottlingManager.ThrottlingManager.instance({forceNew: true});
 
       multiTargetNetworkManager.setNetworkConditions(SDK.NetworkManager.OfflineConditions);
       const checkbox = throttlingManager.createOfflineToolbarCheckbox();
       assert.isTrue(checkbox.checked());
 
-      dispatchClickEvent(checkbox.inputElement);
+      checkbox.element.click();
       assert.isFalse(checkbox.checked());
       assert.strictEqual(SDK.NetworkManager.NoThrottlingConditions, multiTargetNetworkManager.networkConditions());
 
       multiTargetNetworkManager.setNetworkConditions(SDK.NetworkManager.Slow3GConditions);
       assert.isFalse(checkbox.checked());
 
-      dispatchClickEvent(checkbox.inputElement);
+      checkbox.element.click();
       assert.isTrue(checkbox.checked());
       assert.strictEqual(SDK.NetworkManager.OfflineConditions, multiTargetNetworkManager.networkConditions());
 
-      dispatchClickEvent(checkbox.inputElement);
+      checkbox.element.click();
       assert.isFalse(checkbox.checked());
       assert.strictEqual(SDK.NetworkManager.Slow3GConditions, multiTargetNetworkManager.networkConditions());
     });
   });
   describe('CPU throttling', () => {
     it('listens to changes in cpu throttling setting', () => {
+      SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
       const cpuThrottlingPresets = MobileThrottling.ThrottlingPresets.ThrottlingPresets.cpuThrottlingPresets;
-      const throttlingManager = MobileThrottling.ThrottlingManager.throttlingManager();
+      const throttlingManager = MobileThrottling.ThrottlingManager.ThrottlingManager.instance({forceNew: true});
       const selector = throttlingManager.createCPUThrottlingSelector().control;
       assert.strictEqual(cpuThrottlingPresets[selector.selectedIndex()], SDK.CPUThrottlingManager.NoThrottlingOption);
 
@@ -76,6 +80,40 @@ describeWithEnvironment('ThrottlingManager', () => {
       SDK.CPUThrottlingManager.CPUThrottlingManager.instance().setCPUThrottlingOption(
           SDK.CPUThrottlingManager.NoThrottlingOption);
       assert.strictEqual(cpuThrottlingPresets[selector.selectedIndex()], SDK.CPUThrottlingManager.NoThrottlingOption);
+    });
+  });
+});
+
+describeWithMockConnection('ThrottlingManager', () => {
+  describe('DataSaverEmulation', () => {
+    it('creates a select element which sets the data saver emulation mode', async () => {
+      setMockConnectionResponseHandler('Emulation.setDataSaverOverride', () => ({}));
+      const emulationModel = createTarget().model(SDK.EmulationModel.EmulationModel);
+      assert.exists(emulationModel);
+      assert.lengthOf(SDK.TargetManager.TargetManager.instance().models(SDK.EmulationModel.EmulationModel), 1);
+      assert.strictEqual(
+          SDK.TargetManager.TargetManager.instance().models(SDK.EmulationModel.EmulationModel)[0], emulationModel);
+      const select = MobileThrottling.ThrottlingManager.ThrottlingManager.instance({forceNew: true})
+                         .createSaveDataOverrideSelector();
+      const options = select.options();
+      assert.deepEqual(
+          options.map(option => option.textContent),
+          ['\'Save-Data\': default', '\'Save-Data\': force on', '\'Save-Data\': force off']);
+
+      let emulationModelSpy = spyCall(emulationModel, 'setDataSaverOverride');
+      select.select(options[0]);
+      select.element.dispatchEvent(new Event('change'));
+      assert.strictEqual((await emulationModelSpy).args[0], SDK.EmulationModel.DataSaverOverride.UNSET);
+
+      emulationModelSpy = spyCall(emulationModel, 'setDataSaverOverride');
+      select.select(options[1]);
+      select.element.dispatchEvent(new Event('change'));
+      assert.strictEqual((await emulationModelSpy).args[0], SDK.EmulationModel.DataSaverOverride.ENABLED);
+
+      emulationModelSpy = spyCall(emulationModel, 'setDataSaverOverride');
+      select.select(options[2]);
+      select.element.dispatchEvent(new Event('change'));
+      assert.strictEqual((await emulationModelSpy).args[0], SDK.EmulationModel.DataSaverOverride.DISABLED);
     });
   });
 });

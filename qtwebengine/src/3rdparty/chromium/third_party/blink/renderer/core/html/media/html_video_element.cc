@@ -29,10 +29,12 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
+#include "cc/layers/layer.h"
 #include "cc/paint/paint_canvas.h"
 #include "media/base/video_frame.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/web_fullscreen_video_status.h"
+#include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_fullscreen_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_image_bitmap_options.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
@@ -65,6 +67,7 @@
 #include "third_party/blink/renderer/platform/graphics/gpu/extensions_3d_util.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
+#include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/video_frame_image_util.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -467,7 +470,7 @@ void HTMLVideoElement::OnFirstFrame(base::TimeTicks frame_time,
     video_timing->SetTimingAllowPassed(
         GetWebMediaPlayer()->PassedTimingAllowOriginCheck());
 
-    PaintTimingDetector::NotifyImagePaint(
+    PaintTimingDetector::NotifyFirstVideoFrame(
         *layout_object, videoVisibleSize(), *video_timing,
         layout_object->FirstFragment().LocalBorderBoxProperties(),
         layout_object->AbsoluteBoundingBoxRect());
@@ -486,7 +489,8 @@ void HTMLVideoElement::EnterFullscreen() {
 void HTMLVideoElement::DidEnterFullscreen() {
   UpdateControlsVisibility();
 
-  if (GetDisplayType() == DisplayType::kPictureInPicture && !IsInAutoPIP()) {
+  if (GetDisplayType() == WebMediaPlayer::DisplayType::kVideoPictureInPicture &&
+      !IsInAutoPIP()) {
     PictureInPictureController::From(GetDocument())
         .ExitPictureInPicture(this, nullptr);
   }
@@ -579,18 +583,15 @@ scoped_refptr<StaticBitmapImage> HTMLVideoElement::CreateStaticBitmapImage(
     return nullptr;
   }
 
-  // TODO(https://crbug.com/1341235): The choice of color type and alpha type
-  // is inappropriate in many circumstances.
-  const auto resource_provider_info = SkImageInfo::Make(
-      gfx::SizeToSkISize(dest_size), kN32_SkColorType, kPremul_SkAlphaType,
-      reinterpret_as_srgb
-          ? SkColorSpace::MakeSRGB()
-          : media_video_frame->CompatRGBColorSpace().ToSkColorSpace());
+  gfx::ColorSpace dest_color_space =
+      reinterpret_as_srgb ? gfx::ColorSpace::CreateSRGB()
+                          : media_video_frame->CompatRGBColorSpace();
   if (!resource_provider_ ||
       (resource_provider_->IsAccelerated() &&
        resource_provider_->IsGpuContextLost()) ||
       allow_accelerated_images != allow_accelerated_images_ ||
-      resource_provider_info != resource_provider_info_) {
+      dest_size != resource_provider_->Size() ||
+      dest_color_space != resource_provider_->GetColorSpace()) {
     viz::RasterContextProvider* raster_context_provider = nullptr;
     if (allow_accelerated_images) {
       if (auto wrapper = SharedGpuContext::ContextProviderWrapper()) {
@@ -600,11 +601,13 @@ scoped_refptr<StaticBitmapImage> HTMLVideoElement::CreateStaticBitmapImage(
     }
     resource_provider_.reset();
     // Providing a null |raster_context_provider| creates a software provider.
+    // TODO(https://crbug.com/1341235): The choice of color type and alpha type
+    // is inappropriate in many circumstances.
     resource_provider_ = CreateResourceProviderForVideoFrame(
-        resource_provider_info, raster_context_provider);
+        dest_size, GetN32FormatForCanvas(), kPremul_SkAlphaType,
+        dest_color_space, raster_context_provider);
     if (!resource_provider_)
       return nullptr;
-    resource_provider_info_ = resource_provider_info;
     allow_accelerated_images_ = allow_accelerated_images;
   }
   cache_deleting_timer_.StartOneShot(kTemporaryResourceDeletionDelay,
@@ -623,11 +626,7 @@ scoped_refptr<StaticBitmapImage> HTMLVideoElement::CreateStaticBitmapImage(
 scoped_refptr<Image> HTMLVideoElement::GetSourceImageForCanvas(
     FlushReason,
     SourceImageStatus* status,
-    const gfx::SizeF&,
-    const AlphaDisposition alpha_disposition) {
-  // UnpremultiplyAlpha is not implemented yet.
-  DCHECK_EQ(alpha_disposition, kPremultiplyAlpha);
-
+    const gfx::SizeF&) {
   scoped_refptr<Image> snapshot = CreateStaticBitmapImage();
   if (!snapshot) {
     *status = kInvalidSourceImageStatus;
@@ -700,14 +699,18 @@ bool HTMLVideoElement::SupportsPictureInPicture() const {
          PictureInPictureController::Status::kEnabled;
 }
 
-DisplayType HTMLVideoElement::GetDisplayType() const {
+WebMediaPlayer::DisplayType HTMLVideoElement::GetDisplayType() const {
   if (is_auto_picture_in_picture_ ||
       PictureInPictureController::IsElementInPictureInPicture(this)) {
-    return DisplayType::kPictureInPicture;
+    return WebMediaPlayer::DisplayType::kVideoPictureInPicture;
+  }
+
+  if (PictureInPictureController::IsInDocumentPictureInPicture(this)) {
+    return WebMediaPlayer::DisplayType::kDocumentPictureInPicture;
   }
 
   if (is_effectively_fullscreen_)
-    return DisplayType::kFullscreen;
+    return WebMediaPlayer::DisplayType::kFullscreen;
 
   return HTMLMediaElement::GetDisplayType();
 }
@@ -716,8 +719,26 @@ bool HTMLVideoElement::IsInAutoPIP() const {
   return is_auto_picture_in_picture_;
 }
 
+void HTMLVideoElement::DidPlayerMediaPositionStateChange(
+    double playback_rate,
+    base::TimeDelta duration,
+    base::TimeDelta position,
+    bool end_of_media) {
+  HTMLMediaElement::DidPlayerMediaPositionStateChange(playback_rate, duration,
+                                                      position, end_of_media);
+
+  if (PictureInPictureController::IsElementInPictureInPicture(this)) {
+    PictureInPictureController::From(GetDocument())
+        .OnMediaPositionStateChanged(
+            media_session::mojom::blink::MediaPosition::New(
+                playback_rate, duration, position, base::TimeTicks::Now(),
+                end_of_media));
+  }
+}
+
 void HTMLVideoElement::OnPictureInPictureStateChange() {
-  if (GetDisplayType() != DisplayType::kPictureInPicture || IsInAutoPIP()) {
+  if (GetDisplayType() != WebMediaPlayer::DisplayType::kVideoPictureInPicture ||
+      IsInAutoPIP()) {
     return;
   }
 

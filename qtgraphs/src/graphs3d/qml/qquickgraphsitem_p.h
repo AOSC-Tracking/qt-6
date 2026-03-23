@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QQUICKGRAPHSITEM_H
 #define QQUICKGRAPHSITEM_H
@@ -18,12 +20,13 @@
 #include "qabstract3daxis.h"
 #include "qabstract3dseries.h"
 #include "qcategory3daxis.h"
+#include "qqmlcomponent.h"
 #include "qvalue3daxis.h"
 
 #include <QtQuick3D/private/qquick3dviewport_p.h>
-Q_MOC_INCLUDE(<QtGraphs / q3dscene.h>)
 
 QT_BEGIN_NAMESPACE
+
 class Q3DScene;
 
 class QAbstract3DAxis;
@@ -98,11 +101,27 @@ struct Abstract3DChangeBitField
     bool axisXTitleOffsetChanged : 1;
     bool axisYTitleOffsetChanged : 1;
     bool axisZTitleOffsetChanged : 1;
+    bool multiAxisChanged : 1;
     bool polarChanged : 1;
     bool labelMarginChanged : 1;
     bool radialLabelOffsetChanged : 1;
     bool marginChanged : 1;
     bool cameraChanged : 1;
+    bool themeBackgroundColorChanged : 1;
+    bool themeBackgroundVisibilityChanged : 1;
+    bool themeAxisXChanged : 1;
+    bool themeAxisYChanged : 1;
+    bool themeAxisZChanged : 1;
+    bool themeGridChanged : 1;
+    bool themeGridVisibilityChanged : 1;
+    bool themeLabelBackgroundColorChanged : 1;
+    bool themeLabelBackgroundVisibilityChanged : 1;
+    bool themeLabelBorderVisibilityChanged : 1;
+    bool themeLabelFontChanged : 1;
+    bool themeLabelTextColorChanged : 1;
+    bool themeLabelsVisibilityChanged : 1;
+    bool themePlotAreaBackgroundColorChanged : 1;
+    bool themePlotAreaBackgroundVisibilityChanged : 1;
 
     Abstract3DChangeBitField()
         : themeChanged(true)
@@ -159,6 +178,21 @@ struct Abstract3DChangeBitField
         , radialLabelOffsetChanged(true)
         , marginChanged(true)
         , cameraChanged(true)
+        , themeBackgroundColorChanged(true)
+        , themeBackgroundVisibilityChanged(true)
+        , themeAxisXChanged(true)
+        , themeAxisYChanged(true)
+        , themeAxisZChanged(true)
+        , themeGridChanged(true)
+        , themeGridVisibilityChanged(true)
+        , themeLabelBackgroundColorChanged(true)
+        , themeLabelBackgroundVisibilityChanged(true)
+        , themeLabelBorderVisibilityChanged(true)
+        , themeLabelFontChanged(true)
+        , themeLabelTextColorChanged(true)
+        , themeLabelsVisibilityChanged(true)
+        , themePlotAreaBackgroundColorChanged(true)
+        , themePlotAreaBackgroundVisibilityChanged(true)
     {}
 };
 
@@ -197,6 +231,8 @@ class Q_GRAPHS_EXPORT QQuickGraphsItem : public QQuick3DViewport
     Q_PROPERTY(
         QVector3D queriedGraphPosition READ queriedGraphPosition NOTIFY queriedGraphPositionChanged)
     Q_PROPERTY(qreal margin READ margin WRITE setMargin NOTIFY marginChanged)
+    Q_PROPERTY(qreal cutoffMargin READ cutoffMargin WRITE setCutoffMargin NOTIFY
+                   cutoffMarginChanged REVISION (6, 11))
     Q_PROPERTY(float cameraXRotation READ cameraXRotation WRITE setCameraXRotation NOTIFY
                    cameraXRotationChanged)
     Q_PROPERTY(float cameraYRotation READ cameraYRotation WRITE setCameraYRotation NOTIFY
@@ -276,6 +312,9 @@ public:
     virtual void handleSeriesVisibilityChangedBySender(QObject *sender);
     virtual void handleLightingModeChanged() = 0;
     virtual void adjustAxisRanges() = 0;
+
+    virtual void handleMultiAxisChanged(QAbstract3DAxis *axis);
+    void handleMultiAxisDirty();
 
     bool graphPositionQueryPending() const { return m_graphPositionQueryPending; }
     void setGraphPositionQueryPending(const bool &pending)
@@ -399,7 +438,8 @@ public:
     void setMargin(qreal margin);
     qreal margin() const;
 
-    QMutex *mutex() { return &m_mutex; }
+    void setCutoffMargin(qreal margin);
+    qreal cutoffMargin() const;
 
     bool isReady() { return isComponentComplete(); }
     QQuick3DNode *rootNode() const;
@@ -565,6 +605,8 @@ public Q_SLOTS:
     void handleAxisTitleOffsetChanged(float offset);
     void handleInputPositionChanged(QPoint position);
     void handleSeriesVisibilityChanged(bool visible);
+    void handleItemLabelVisibleChanged(bool visible);
+    virtual void handleItemLabelVisibleChangedBySender(bool visible, QObject *sender) = 0;
 
     void handleThemeColorStyleChanged(QGraphsTheme::ColorStyle style);
     void handleThemeBaseColorsChanged(const QList<QColor> &color);
@@ -600,6 +642,7 @@ Q_SIGNALS:
     void localeChanged(const QLocale &locale);
     void queriedGraphPositionChanged(QVector3D data);
     void marginChanged(qreal margin);
+    Q_REVISION(6, 11) void cutoffMarginChanged(qreal newMargin);
     void cameraPresetChanged(QtGraphs3D::CameraPreset preset);
     void cameraXRotationChanged(float rotation);
     void cameraYRotationChanged(float rotation);
@@ -665,7 +708,8 @@ protected:
     virtual void createSliceView();
     QQuick3DViewport *createOffscreenSliceView(QtGraphs3D::SliceCaptureType sliceType);
 
-    void handleQueryPositionChanged(QPoint position);
+    void handleGraphQueryPositionChanged(QPoint position);
+    void handleSelectionQueryPositionChanged(QPoint position);
 
     void handlePrimarySubViewportChanged(const QRect rect);
     void handleSecondarySubViewportChanged(const QRect rect);
@@ -683,7 +727,9 @@ protected:
                       QVector3D labelTrans,
                       const QQuaternion &totalRotation,
                       float labelsMaxWidth,
-                      QVector3D scale);
+                      QVector3D scale,
+                      QAbstract3DAxis *axis = nullptr,
+                      QQuick3DNode *label = nullptr);
     void updateYTitle(QVector3D sideLabelRotation,
                       QVector3D backLabelRotation,
                       QVector3D sideLabelTrans,
@@ -691,12 +737,16 @@ protected:
                       const QQuaternion &totalSideRotation,
                       const QQuaternion &totalBackRotation,
                       float labelsMaxWidth,
-                      QVector3D scale);
+                      QVector3D scale,
+                      QAbstract3DAxis *axis = nullptr,
+                      QQuick3DNode *label = nullptr);
     void updateZTitle(QVector3D labelRotation,
                       QVector3D labelTrans,
                       const QQuaternion &totalRotation,
                       float labelsMaxWidth,
-                      QVector3D scale);
+                      QVector3D scale,
+                      QAbstract3DAxis *axis = nullptr,
+                      QQuick3DNode *label = nullptr);
 
     virtual void calculateSceneScalingFactors() = 0;
     void positionAndScaleLine(QQuick3DNode *lineNode, QVector3D scale, QVector3D position);
@@ -714,6 +764,10 @@ protected:
     void updateGrid();
     void updateGridLineType();
     void updateLabels();
+    QVector3D calculateLabelRotation(float labelAutoAngle,
+                                     float fractionCamX,
+                                     float fractionCamY,
+                                     Qt::Axis axis);
     void updateSliceGrid(
         QQuick3DModel *sliceGrid = nullptr,
         QtGraphs3D::SliceCaptureType selectedFlag = QtGraphs3D::SliceCaptureType::NoImage);
@@ -766,6 +820,25 @@ protected:
 
     virtual void handleLabelCountChanged(QQuick3DRepeater *repeater, QColor axisLabelColor);
 
+    struct MultiAxis
+    {
+        QQuick3DRepeater *repeater = nullptr;
+        QQuick3DNode *titleLabel = nullptr;
+        QQmlComponent *delegateModel = nullptr;
+        QQuick3DModel *grid = nullptr;
+        qsizetype seriesIndex = -1;
+    };
+
+    void updateMultiAxis();
+    void updateMultiAxisLabels(qsizetype axisIndex, QAbstract3DAxis *axis);
+    MultiAxis getMultiAxis(qsizetype axisIndex, QAbstract3DAxis *axis);
+    MultiAxis createMultiAxis(qsizetype axisIndex);
+    void updateMultiAxisGrid(qsizetype axisIndex, QAbstract3DAxis *axis);
+    void releaseMultiAxis(QAbstract3DAxis::AxisOrientation orientation, qsizetype index);
+    void connectMultiAxis(QAbstract3DAxis *axis);
+    virtual QAbstract3DAxis *getSeriesMultiAxis(QAbstract3DSeries *series,
+                       QAbstract3DAxis::AxisOrientation orientation) = 0;
+
     bool isGridUpdated() { return m_gridUpdated; }
     void setGridUpdated(bool updated) { m_gridUpdated = updated; }
 
@@ -779,8 +852,6 @@ protected:
                        QAbstract3DAxis **axisPtr);
     virtual void startRecordingRemovesAndInserts();
 
-    QSharedPointer<QMutex> m_nodeMutex;
-
     QMap<QCustom3DVolume *, Volume> m_customVolumes;
 
     Q3DScene *m_scene = nullptr;
@@ -790,6 +861,7 @@ protected:
     QAbstract3DAxis *m_axisZ = nullptr;
 
     QList<QAbstract3DAxis *> m_axes; // List of all added axes
+
     bool m_isDataDirty = true;
     bool m_isCustomDataDirty = true;
     bool m_isCustomItemDirty = true;
@@ -810,8 +882,8 @@ protected:
     int m_selectedLabelIndex = -1;
     qsizetype m_selectedCustomItemIndex = -1;
     qreal m_margin = -1.0;
+    qreal m_cutoffMargin = 0.0;
 
-    QMutex m_renderMutex;
     QQuickGraphsItem *m_qml = nullptr;
 
     QQuick3DViewport *m_customView = nullptr;
@@ -853,6 +925,10 @@ private:
     QQuick3DNode *m_titleLabelY = nullptr;
     QQuick3DNode *m_titleLabelZ = nullptr;
 
+    QList<MultiAxis> m_multiAxesX;
+    QList<MultiAxis> m_multiAxesY;
+    QList<MultiAxis> m_multiAxesZ;
+
     QQuickItem *m_itemLabel = nullptr;
     QQuick3DNode *m_sliceItemLabel = nullptr;
 
@@ -877,7 +953,6 @@ private:
     int m_windowSamples = 0;
     QSize m_initialisedSize = QSize(0, 0);
     bool m_runningInDesigner;
-    QMutex m_mutex;
 
     bool m_xFlipped = false;
     bool m_yFlipped = false;

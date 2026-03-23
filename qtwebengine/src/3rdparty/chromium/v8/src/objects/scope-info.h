@@ -131,6 +131,8 @@ class ScopeInfo : public TorqueGeneratedScopeInfo<ScopeInfo, HeapObject> {
 
   inline bool HasSimpleParameters() const;
 
+  inline bool HasContextCells() const;
+
   // Return the function_name if present.
   V8_EXPORT_PRIVATE Tagged<UnionOf<Smi, String>> FunctionName() const;
 
@@ -193,8 +195,8 @@ class ScopeInfo : public TorqueGeneratedScopeInfo<ScopeInfo, HeapObject> {
   // returns a value < 0. The name must be an internalized string.
   // If the slot is present and mode != nullptr, sets *mode to the corresponding
   // mode for that variable.
-  int ContextSlotIndex(DirectHandle<String> name);
-  int ContextSlotIndex(DirectHandle<String> name,
+  int ContextSlotIndex(Tagged<String> name);
+  int ContextSlotIndex(Tagged<String> name,
                        VariableLookupResult* lookup_result);
 
   // Lookup metadata of a MODULE-allocated variable.  Return 0 if there is no
@@ -250,7 +252,6 @@ class ScopeInfo : public TorqueGeneratedScopeInfo<ScopeInfo, HeapObject> {
   // come from debug evaluate but are different to IsDebugEvaluateScope().
   bool IsReplModeScope() const;
 
-#ifdef DEBUG
   // For LiveEdit we ignore:
   //   - position info: "unchanged" functions are allowed to move in a script
   //   - module info: SourceTextModuleInfo::Equals compares exact FixedArray
@@ -258,8 +259,8 @@ class ScopeInfo : public TorqueGeneratedScopeInfo<ScopeInfo, HeapObject> {
   //   - outer scope info: LiveEdit already analyses outer scopes of unchanged
   //     functions. Also checking it here will break in really subtle cases
   //     e.g. changing a let to a const in an outer function, which is fine.
-  bool Equals(Tagged<ScopeInfo> other, bool is_live_edit_compare = false) const;
-#endif
+  bool Equals(Tagged<ScopeInfo> other, bool is_live_edit_compare = false,
+              int* out_last_checked_field = nullptr) const;
 
   template <typename IsolateT>
   static Handle<ScopeInfo> Create(IsolateT* isolate, Zone* zone, Scope* scope,

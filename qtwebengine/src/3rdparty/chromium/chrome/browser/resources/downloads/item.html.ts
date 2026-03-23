@@ -32,22 +32,23 @@ export function getHtml(this: DownloadsItemElement) {
             href="${this.data?.url?.url || ''}"
             @click="${this.onFileLinkClick_}" focus-row-control
             focus-type="fileLink"
+            title="${this.data?.fileName || ''}"
             ?hidden="${!this.shouldLinkFilename_}"><!-- No line break
           -->${this.data?.fileName || ''}<!-- No line break
         --></a><!--
         Before #name.
         --><span id="name"
+            title="${this.data?.fileName || ''}"
             ?hidden="${this.shouldLinkFilename_}"><!-- No line break
           -->${this.data?.fileName || ''}</span>
         <span id="tag">${this.computeTag_()}</span>
       </div>
 
       <div role="gridcell">
-        <div id="referrer-url"
-            ?hidden="${!this.shouldShowReferrerUrl_()}">
-          <!-- Text populated dynamically -->
+        <div id="initiator-origin" ?hidden="${!this.showInitiatorOrigin_}">
+          ${this.computeInitiatorOriginText_()}
         </div>
-        <a id="url" ?hidden="${this.showReferrerUrl_}" target="_blank"
+        <a id="url" ?hidden="${this.showInitiatorOrigin_}" target="_blank"
           @click="${this.onUrlClick_}" focus-row-control
           focus-type="url">${this.getDisplayUrlStr_()}</a>
       </div>

@@ -6,11 +6,10 @@
 
 #include "base/base64.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/to_string.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/scoped_feature_list.h"
 #include "components/os_crypt/sync/os_crypt.h"
 #include "components/os_crypt/sync/os_crypt_mocker.h"
-#include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/password_hash_data.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -44,7 +43,7 @@ void EncryptAndSave(const PasswordHashData& password_hash_data,
   std::string encrypted_length_and_salt = EncryptString(LengthAndSaltToString(
       password_hash_data.salt, password_hash_data.length));
   std::string encrypted_is_gaia_value =
-      EncryptString(password_hash_data.is_gaia_password ? "true" : "false");
+      EncryptString(base::ToString(password_hash_data.is_gaia_password));
 
   base::Value::Dict encrypted_password_hash_entry;
   encrypted_password_hash_entry.Set("username", encrypted_username);
@@ -75,7 +74,6 @@ class HashPasswordManagerTest : public testing::Test {
   ~HashPasswordManagerTest() override { OSCryptMocker::TearDown(); }
 
  protected:
-  base::test::ScopedFeatureList scoped_feature_list_;
   TestingPrefServiceSimple prefs_;
   TestingPrefServiceSimple local_prefs_;
 };
@@ -180,8 +178,6 @@ TEST_F(HashPasswordManagerTest, SavingPasswordHashDataNotCanonicalized) {
 }
 
 TEST_F(HashPasswordManagerTest, SavingGaiaPasswordAndNonGaiaPassword) {
-  scoped_feature_list_.InitAndEnableFeature(
-      password_manager::features::kLocalStateEnterprisePasswordHashes);
   ASSERT_FALSE(prefs_.HasPrefPath(prefs::kPasswordHashDataList));
   HashPasswordManager hash_password_manager;
   hash_password_manager.set_prefs(&prefs_);
@@ -203,8 +199,6 @@ TEST_F(HashPasswordManagerTest, SavingGaiaPasswordAndNonGaiaPassword) {
 }
 
 TEST_F(HashPasswordManagerTest, SavingMultipleHashesAndRetrieveAll) {
-  scoped_feature_list_.InitAndEnableFeature(
-      password_manager::features::kLocalStateEnterprisePasswordHashes);
   ASSERT_FALSE(prefs_.HasPrefPath(prefs::kPasswordHashDataList));
   HashPasswordManager hash_password_manager;
   hash_password_manager.set_prefs(&prefs_);
@@ -258,8 +252,6 @@ TEST_F(HashPasswordManagerTest, SavingMultipleHashesAndRetrieveAll) {
 }
 
 TEST_F(HashPasswordManagerTest, ClearingPasswordHashData) {
-  scoped_feature_list_.InitAndEnableFeature(
-      password_manager::features::kLocalStateEnterprisePasswordHashes);
   ASSERT_FALSE(prefs_.HasPrefPath(prefs::kPasswordHashDataList));
   HashPasswordManager hash_password_manager;
   hash_password_manager.set_prefs(&prefs_);
@@ -328,38 +320,7 @@ TEST_F(HashPasswordManagerTest, RetrievingPasswordHashData) {
 }
 
 TEST_F(HashPasswordManagerTest,
-       EnterprisePasswordHashesAreNotMigratedToLocalState) {
-  scoped_feature_list_.InitAndDisableFeature(
-      password_manager::features::kLocalStateEnterprisePasswordHashes);
-  HashPasswordManager hash_password_manager;
-  hash_password_manager.set_prefs(&prefs_);
-  hash_password_manager.set_local_prefs(&local_prefs_);
-
-  std::u16string password(u"password");
-  PasswordHashData phd1("user1", password, /*force_update=*/true);
-  PasswordHashData phd2("user2", password, /*force_update=*/true,
-                        /*is_gaia_password=*/false);
-  PasswordHashData phd3("user3", password, /*force_update=*/true);
-  PasswordHashData phd4("user4", password, /*force_update=*/true,
-                        /*is_gaia_password=*/false);
-  EncryptAndSave(phd1, &prefs_, prefs::kPasswordHashDataList);
-  EncryptAndSave(phd2, &prefs_, prefs::kPasswordHashDataList);
-  EncryptAndSave(phd3, &prefs_, prefs::kPasswordHashDataList);
-  EncryptAndSave(phd4, &prefs_, prefs::kPasswordHashDataList);
-
-  // Verify that all password hashes are saved under the profile pref.
-  EXPECT_EQ(4u, prefs_.GetList(prefs::kPasswordHashDataList).size());
-  // Try migrating enterprise password hashes to the local state pref.
-  hash_password_manager.MigrateEnterprisePasswordHashes();
-  // Verify that enterprise password hashes have not been moved.
-  EXPECT_EQ(4u, prefs_.GetList(prefs::kPasswordHashDataList).size());
-  EXPECT_EQ(0u, local_prefs_.GetList(prefs::kLocalPasswordHashDataList).size());
-}
-
-TEST_F(HashPasswordManagerTest,
        EnterprisePasswordHashesAreMigratedToLocalState) {
-  scoped_feature_list_.InitAndEnableFeature(
-      password_manager::features::kLocalStateEnterprisePasswordHashes);
   HashPasswordManager hash_password_manager;
   hash_password_manager.set_prefs(&prefs_);
   hash_password_manager.set_local_prefs(&local_prefs_);
@@ -388,8 +349,6 @@ TEST_F(HashPasswordManagerTest,
 }
 
 TEST_F(HashPasswordManagerTest, QueryingDefaultEmptyPrefListDoesNotCrash) {
-  scoped_feature_list_.InitAndEnableFeature(
-      password_manager::features::kLocalStateEnterprisePasswordHashes);
   HashPasswordManager hash_password_manager;
   hash_password_manager.set_prefs(&prefs_);
   hash_password_manager.set_local_prefs(&local_prefs_);

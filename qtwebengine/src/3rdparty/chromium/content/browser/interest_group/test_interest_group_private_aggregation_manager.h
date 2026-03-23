@@ -63,6 +63,10 @@ class TestInterestGroupPrivateAggregationManager
   void ContributeToHistogram(
       std::vector<blink::mojom::AggregatableReportHistogramContributionPtr>
           contribution_ptrs) override;
+  void ContributeToHistogramOnEvent(
+      blink::mojom::PrivateAggregationErrorEvent error_event,
+      std::vector<blink::mojom::AggregatableReportHistogramContributionPtr>
+          contribution_ptrs) override;
   void EnableDebugMode(blink::mojom::DebugKeyPtr debug_key) override;
 
   // Returns a logging callback and saves all requests passed to it. These can
@@ -80,7 +84,7 @@ class TestInterestGroupPrivateAggregationManager
   // SendHistogramReport() receives asynchronously calls over the Mojo pipe
   // returned by BindNewReceiver().
   std::map<url::Origin,
-           InterestGroupAuctionReporter::PrivateAggregationRequests>
+           InterestGroupAuctionReporter::FinalizedPrivateAggregationRequests>
   TakePrivateAggregationRequests();
 
   std::vector<auction_worklet::mojom::PrivateAggregationRequestPtr>
@@ -96,11 +100,12 @@ class TestInterestGroupPrivateAggregationManager
 
   const url::Origin expected_top_frame_origin_;
 
-  // Contributions received through `ContributeToHistogram()`.
-  std::map<
-      mojo::ReceiverId,
-      std::vector<blink::mojom::AggregatableReportHistogramContributionPtr>>
-      private_aggregation_contributions_;
+  // Contributions received through `ContributeToHistogram()` or
+  // `ContributeToHistogramOnEvent()`. However, note that the debug_mode_details
+  // still needs to be filled in for each request.
+  std::map<mojo::ReceiverId,
+           InterestGroupAuctionReporter::FinalizedPrivateAggregationRequests>
+      private_aggregation_requests_;
 
   // Debug details set through `EnableDebugMode()`.
   std::map<mojo::ReceiverId, blink::mojom::DebugModeDetailsPtr>

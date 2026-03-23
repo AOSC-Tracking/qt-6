@@ -13,7 +13,6 @@
 #include "base/functional/callback.h"
 #include "base/supports_user_data.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "components/policy/core/browser/signin/profile_separation_policies.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/identity_manager/primary_account_mutator.h"
@@ -66,7 +65,7 @@ class ScopedForceSigninSetterForTesting {
       const ScopedForceSigninSetterForTesting&) = delete;
 };
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
 // Utility class that moves cookies linked to a URL from one profile to the
 // other. This will be mostly used when a new profile is created after a
 // signin interception of an account linked a SAML signin.
@@ -98,7 +97,7 @@ class CookiesMover {
   base::OnceCallback<void()> callback_;
   base::WeakPtrFactory<CookiesMover> weak_pointer_factory_{this};
 };
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
 
 // Return whether the force sign in policy is enabled or not.
 // The state of this policy will not be changed without relaunch Chrome.
@@ -168,6 +167,24 @@ bool IsSigninPending(signin::IdentityManager* identity_manager);
 
 // Returns the current state of the primary account that is used in Chrome.
 SignedInState GetSignedInState(const signin::IdentityManager* identity_manager);
+
+// Returns a string representation of `SignedInState`.
+std::string SignedInStateToString(SignedInState state);
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+// Returns if the necessary conditions to show the History Sync Optin screen
+// are met.
+// This method does not take into account any feature flags related to the above
+// screen.
+// TODO(crbug.com/419741847): Consider using also on mobile and moving the
+// method as necessary.
+bool ShouldShowHistorySyncOptinScreen(Profile& profile);
+
+// The avatar sync promo is only shown to users with specific sign in states.
+// Requires the feature enabling through
+// `switches::IsAvatarSyncPromoFeatureEnabled()`.
+bool ShouldShowAvatarSyncPromo(Profile* profile);
+#endif  // BUILDFLAG(IS_LINUX) ||  BUILDFLAG(IS_MAC) ||  BUILDFLAG(IS_WIN)
 
 }  // namespace signin_util
 

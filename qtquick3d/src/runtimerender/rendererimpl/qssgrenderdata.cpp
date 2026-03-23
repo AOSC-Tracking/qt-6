@@ -1,5 +1,7 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgrenderdata_p.h"
 
@@ -7,8 +9,12 @@
 #include <QtCore/qthreadpool.h>
 #endif // QT_CONFIG(thread)
 
+#include <QtQuick/private/qsgcontext_p.h>
+#include <QtQuick/private/qsgrenderer_p.h>
+
 #include "graphobjects/qssgrenderroot_p.h"
 #include "graphobjects/qssgrenderlayer_p.h"
+#include "graphobjects/qssgrenderitem2d_p.h"
 #include "qssgrendercontextcore.h"
 #include "qssgrenderer_p.h"
 #include "resourcemanager/qssgrenderbuffermanager_p.h"
@@ -107,10 +113,16 @@ static bool calcGlobalNodeDataIndexedImpl(QSSGRenderNode *node,
     if (Q_UNLIKELY(!node || (node->h.version() != version)))
         return false;
 
-    constexpr bool forcedRebuilf = (Strategy == QSSGRenderDataHelpers::Strategy::Initial);
-    bool retval = forcedRebuilf || node->isDirty(TransformAndOpacityDirty);
+    constexpr bool forcedRebuild = (Strategy == QSSGRenderDataHelpers::Strategy::Initial);
+    bool retval = forcedRebuild || node->isDirty(TransformAndOpacityDirty);
 
-    if (retval) {
+    // NOTE 1: Nodes shared across windows will be marked with a stick dirty flag.
+    //         Officially this isn't supported, but in practice it can happen so
+    //         we try to be nice and try to keep things moving (literally).
+    // NOTE 2: We don't change the return value, as that would interfere with the progressive AA.
+    const bool alwaysDirty = node->isDirty(DirtyFlag::StickyDirty);
+
+    if (retval || alwaysDirty) {
         const auto idx = node->h.index();
 
         auto &globalTransform = globalTransforms[idx];
@@ -144,15 +156,16 @@ QSSGRenderDataHelpers::GlobalStateResult QSSGRenderDataHelpers::updateGlobalNode
     using DirtyFlag = QSSGRenderNode::DirtyFlag;
     using FlagT = QSSGRenderNode::FlagT;
 
-    constexpr DirtyFlag ActiveOrPickableDirty = DirtyFlag(FlagT(DirtyFlag::ActiveDirty) | FlagT(DirtyFlag::PickableDirty));
+    constexpr DirtyFlag ClearDirtyMask = DirtyFlag(FlagT(DirtyFlag::ActiveDirty) | FlagT(DirtyFlag::PickableDirty) | FlagT(DirtyFlag::ImportDirty));
 
     if (Q_UNLIKELY(!node || (node->h.version() != version)))
         return GlobalStateResult::None;
 
     const bool activeDirty = node->isDirty(DirtyFlag::ActiveDirty);
     const bool pickableDirty = node->isDirty(DirtyFlag::PickableDirty);
+    const bool importedDirty = node->isDirty(DirtyFlag::ImportDirty);
 
-    const bool updateState = activeDirty || pickableDirty;
+    const bool updateState = activeDirty || pickableDirty || importedDirty;
 
     if (updateState) {
         const QSSGRenderNode *parent = node->parent;
@@ -161,9 +174,11 @@ QSSGRenderDataHelpers::GlobalStateResult QSSGRenderDataHelpers::updateGlobalNode
         node->flags = globallyActive ? (node->flags | FlagT(GlobalState::Active)) : (node->flags & ~FlagT(GlobalState::Active));
         const bool globallyPickable = node->getLocalState(LocalState::Pickable) || (hasParent && parent->getGlobalState(GlobalState::Pickable));
         node->flags = globallyPickable ? (node->flags | FlagT(GlobalState::Pickable)) : (node->flags & ~FlagT(GlobalState::Pickable));
+        const bool globallyImported = node->getLocalState(LocalState::Imported) || (hasParent && parent->getGlobalState(GlobalState::Imported));
+        node->flags = globallyImported ? (node->flags | FlagT(GlobalState::Imported)) : (node->flags & ~FlagT(GlobalState::Imported));
 
-        // Clear dirty flags (Transform, Opacity, Active, Pickable)
-        node->clearDirty(ActiveOrPickableDirty);
+        // Clear dirty flags (Active, Pickable, Imported)
+        node->clearDirty(ClearDirtyMask);
     }
 
     return GlobalStateResult((activeDirty << 1) | (pickableDirty << 2));
@@ -227,9 +242,12 @@ bool QSSGRenderDataHelpers::calcInstanceTransforms(QSSGRenderNode *node,
     return retval;
 }
 
-QSSGGlobalRenderNodeData::QSSGGlobalRenderNodeData()
+QSSGGlobalRenderNodeData::QSSGGlobalRenderNodeData(QSSGRenderRoot *root)
 #if QT_CONFIG(thread)
     : m_threadPool(new QThreadPool)
+    , m_rootNode(root)
+#else
+    : m_rootNode(root)
 #endif // QT_CONFIG(thread)
 {
 
@@ -240,9 +258,9 @@ QSSGGlobalRenderNodeData::~QSSGGlobalRenderNodeData()
 
 }
 
-void QSSGGlobalRenderNodeData::reindex(QSSGRenderRoot *rootNode)
+void QSSGGlobalRenderNodeData::reindex()
 {
-    if (rootNode) {
+    if (m_rootNode) {
         quint32 dfsIdx = 0;
         m_nodeCount = 0;
 
@@ -250,12 +268,12 @@ void QSSGGlobalRenderNodeData::reindex(QSSGRenderRoot *rootNode)
         // this check ensures we accidentally don't reindex with the
         // same version, as that can cause problems.
         // The start version should be set to the last layer's last version.
-        if (m_version == rootNode->startVersion())
-            m_version = rootNode->startVersion() + 1;
+        if (m_version == m_rootNode->startVersion())
+            m_version = m_rootNode->startVersion() + 1;
         else
             ++m_version;
 
-        ::reindex(rootNode, m_version, dfsIdx, m_nodeCount);
+        ::reindex(m_rootNode, m_version, dfsIdx, m_nodeCount);
 
         // Actual storage size (Some nodes, like the layers, will all use index 0).
         // NOTE: This can differ from the node count, as nodes are collected for each
@@ -267,11 +285,16 @@ void QSSGGlobalRenderNodeData::reindex(QSSGRenderRoot *rootNode)
         globalOpacities.resize(m_size, 1.0f);
         instanceTransforms.resize(m_size, { QMatrix4x4{ Qt::Uninitialized }, QMatrix4x4{ Qt::Uninitialized } });
 
-        collectNodes(rootNode);
+        collectNodes(m_rootNode);
         // NOTE: If the tree was dirty we force a full rebuild of the global transforms etc. since
         //       the stored data is invalid for the new index order.
         updateGlobalState();
     }
+}
+
+void QSSGGlobalRenderNodeData::invalidate()
+{
+    m_rootNode = nullptr;
 }
 
 QMatrix4x4 QSSGGlobalRenderNodeData::getGlobalTransform(QSSGRenderNodeHandle h, QMatrix4x4 defaultValue) const
@@ -329,9 +352,9 @@ QSSGGlobalRenderNodeData::LayerNodeView QSSGGlobalRenderNodeData::getLayerNodeVi
     if (!validVersion || !(layerNodes.size() > index))
         return { };
 
-    auto &seciont = layerNodes[index];
+    auto &section = layerNodes[index];
 
-    return { nodes.data() + seciont.offset, qsizetype(seciont.size) };
+    return { nodes.data() + section.offset, qsizetype(section.size) };
 }
 
 QSSGGlobalRenderNodeData::LayerNodeView QSSGGlobalRenderNodeData::getLayerNodeView(const QSSGRenderLayer &layer) const
@@ -542,6 +565,11 @@ void QSSGRenderModelData::updateModelData(QSSGModelsView &models, QSSGRenderer *
     const bool versionChanged = m_version != m_gnd->version();
     const bool storageSizeChanged = (normalMatrices.size() < modelCount);
 
+    // If the version or storage size changed we need to re-index the models.
+    // NOTE: We always do this due to layer masking with shared scenes (import scene)
+    // in the future we should find a way to track when it is actually needed.
+    const bool reIndexNeeded = versionChanged || storageSizeChanged || true;
+
     const QMatrix3x3 defaultNormalMatrix;
     const QMatrix4x4 defaultModelViewProjection;
 
@@ -551,9 +579,8 @@ void QSSGRenderModelData::updateModelData(QSSGModelsView &models, QSSGRenderer *
     meshes.resize(modelCount, nullptr);
     materials.resize(modelCount, {});
 
-    // If the version or storage size changed we need to re-index the models.
-    // NOTE: Node data's version is incremented when the node graph changes and starts at 1.
-    if (versionChanged || storageSizeChanged) {
+    if (reIndexNeeded) {
+        // NOTE: Node data's version is incremented when the node graph changes and starts at 1.
         m_version = m_gnd->version();
 
         for (quint32 i = 0; i < modelCount; ++i) {
@@ -618,6 +645,141 @@ bool QSSGRenderDataHelpers::updateGlobalNodeDataIndexed(QSSGRenderNode *node, co
 bool QSSGRenderDataHelpers::calcGlobalVariablesIndexed(QSSGRenderNode *node, const quint32 version, QSSGGlobalRenderNodeData::GlobalTransformStore &globalTransforms, QSSGGlobalRenderNodeData::GlobalOpacityStore &globalOpacities)
 {
     return calcGlobalNodeDataIndexedImpl<Strategy::Initial>(node, version, globalTransforms, globalOpacities);
+}
+
+QSSGRenderItem2DData::Item2DRenderer QSSGRenderItem2DData::getItem2DRenderer(const QSSGRenderItem2D &item) const
+{
+    const auto foundIt = item2DRenderers.find(&item);
+    return (foundIt != item2DRenderers.cend()) ? foundIt->second : Item2DRenderer{};
+}
+
+QSSGRenderItem2DData::ModelViewProjections QSSGRenderItem2DData::getModelViewProjection(QSSGRenderItem2DHandle h) const
+{
+    const bool hasId = h.hasId();
+    const bool validVersion = hasId && (h.version() == m_version);
+    const auto index = h.index();
+
+    if (!validVersion || !(modelViewProjections.size() > index))
+        return {};
+
+    return modelViewProjections[index];
+}
+
+QSSGRenderItem2DData::ModelViewProjections QSSGRenderItem2DData::getModelViewProjection(const QSSGRenderItem2D &item) const
+{
+    return getModelViewProjection(item.ih);
+}
+
+QSSGRenderItem2DData::QSSGRenderItem2DData(const QSSGGlobalRenderNodeDataPtr &globalNodeData)
+{
+    m_gnd = globalNodeData;
+    m_version = globalNodeData->version();
+}
+
+QSSGRenderItem2DData::~QSSGRenderItem2DData()
+{
+    releaseAll();
+}
+
+void QSSGRenderItem2DData::updateItem2DData(QSSGItem2DsView &items, QSSGRenderer *renderer, const QSSGRenderCameraDataList &renderCameraData)
+{
+    const auto itemCount = size_t(items.size());
+
+    if (itemCount == 0)
+        return;
+
+    const bool versionChanged = m_version != m_gnd->version();
+    const bool storageSizeChanged = (modelViewProjections.size() < itemCount);
+
+    // NOTE: We always do this due to layer masking with shared scenes (import scene)
+    // in the future we should find a way to track when it is actually needed.
+    const bool reIndexNeeded = versionChanged || storageSizeChanged || true;
+
+    const QMatrix4x4 defaultModelViewProjection;
+
+    const auto &rhiCtx = renderer->contextInterface()->rhiContext();
+
+    // resize the storage if needed
+    modelViewProjections.resize(itemCount, { defaultModelViewProjection, defaultModelViewProjection });
+
+    if (reIndexNeeded) {
+        // NOTE: Node data's version is incremented when the node graph changes and starts at 1.
+        m_version = m_gnd->version();
+
+        for (quint32 i = 0; i < itemCount; ++i) {
+            QSSGRenderItem2D *item = items[i];
+            item->ih = QSSGRenderItem2DHandle(item->h.context(), item->h.version(), i);
+        }
+    }
+
+
+    const auto &clipSpaceCorrMatrix = rhiCtx->rhi()->clipSpaceCorrMatrix();
+
+    // - MVPs
+    const auto doMVPs = [&]() {
+        for (const QSSGRenderItem2D *item : std::as_const(items)) {
+            int mvpCount = 0;
+            const QMatrix4x4 globalTransform = m_gnd->getGlobalTransform(*item);
+            auto &mvps = modelViewProjections[item->ih.index()];
+            for (const QSSGRenderCameraData &cameraData : renderCameraData) {
+                const QMatrix4x4 &mvp = cameraData.viewProjection * globalTransform;
+                mvps[mvpCount++] = clipSpaceCorrMatrix * mvp * flipMatrix;
+            }
+        }
+    };
+
+    doMVPs();
+
+    // Check that we have a renderer and that it hasn't changed (would indicate a context change)
+    // and we need to update all the data.
+    QSGRenderContext *sgRc = QSSGRendererPrivate::getSgRenderContext(*renderer);
+    const bool contextChanged = (item2DRenderContext && item2DRenderContext != sgRc);
+    item2DRenderContext = sgRc;
+
+    for (const QSSGRenderItem2D *theItem2D : std::as_const(items)) {
+        auto item2DRenderer = getItem2DRenderer(*theItem2D);
+        if (contextChanged) {
+            delete item2DRenderer;
+            // NOTE: Should already be "cleared" as the QObject is deleted
+            // but we do it here for clarity.
+            item2DRenderer.clear();
+        }
+
+        if (!item2DRenderer) {
+            item2DRenderer = sgRc->createRenderer(QSGRendererInterface::RenderMode3D);
+            QObject::connect(item2DRenderer, SIGNAL(sceneGraphChanged()), theItem2D->m_frontEndObject, SLOT(update()));
+        }
+
+        if (item2DRenderer->rootNode() != theItem2D->m_rootNode) {
+            item2DRenderer->setRootNode(theItem2D->m_rootNode);
+            theItem2D->m_rootNode->markDirty(QSGNode::DirtyForceUpdate); // Force matrix, clip and opacity update.
+            item2DRenderer->nodeChanged(theItem2D->m_rootNode, QSGNode::DirtyForceUpdate); // Force render list update.
+        }
+
+        item2DRenderers[theItem2D] = item2DRenderer;
+    }
+}
+
+void QSSGRenderItem2DData::releaseRenderData(const QSSGRenderItem2D &item)
+{
+    const auto foundIt = item2DRenderers.find(&item);
+    if (foundIt != item2DRenderers.cend()) {
+        delete foundIt->second;
+        item2DRenderers.erase(foundIt);
+
+        // Removing an item should trigger a reindex of the remaining items
+        ++m_version;
+    }
+}
+
+void QSSGRenderItem2DData::releaseAll()
+{
+    for (auto &it : item2DRenderers)
+        delete it.second;
+    item2DRenderers.clear();
+    item2DRenderContext = nullptr;
+    modelViewProjections.clear();
+    m_version = 0;
 }
 
 QT_END_NAMESPACE

@@ -1,5 +1,5 @@
 # ~~~
-# Copyright (c) 2023-2024 LunarG, Inc.
+# Copyright (c) 2023-2025 LunarG, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,6 +32,9 @@ if (UPDATE_DEPS)
         list(APPEND update_dep_command "${CMAKE_GENERATOR_PLATFORM}")
     endif()
 
+    list(APPEND update_dep_command "--pointer_size")
+    list(APPEND update_dep_command "${CMAKE_SIZEOF_VOID_P}")
+
     if (NOT CMAKE_BUILD_TYPE)
         message(WARNING "CMAKE_BUILD_TYPE not set. Using Debug for dependency build type")
         set(_build_type Debug)
@@ -49,13 +52,17 @@ if (UPDATE_DEPS)
     else()
         math(EXPR bitness "8 * ${CMAKE_SIZEOF_VOID_P}")
         set(UPDATE_DEPS_DIR_SUFFIX "${UPDATE_DEPS_DIR_SUFFIX}/${bitness}")
-    endif()    
+    endif()
     set(UPDATE_DEPS_DIR "${PROJECT_SOURCE_DIR}/external/${UPDATE_DEPS_DIR_SUFFIX}" CACHE PATH "Location where update_deps.py installs packages")
     list(APPEND update_dep_command "--dir" )
     list(APPEND update_dep_command "${UPDATE_DEPS_DIR}")
 
     if (VVL_ENABLE_ASAN)
         list(APPEND update_dep_command "--asan")
+    endif()
+
+    if (VVL_ENABLE_UBSAN)
+        list(APPEND update_dep_command "--ubsan")
     endif()
 
     if (NOT BUILD_TESTS)
@@ -94,6 +101,11 @@ if (UPDATE_DEPS)
         list(APPEND cmake_var "--cmake_var" "VUL_MOCK_ANDROID=ON")
     endif()
 
+    # Enable mimalloc statistics level 1. This is useful for release builds.
+    # Default value for release builds is MI_STAT=0, for debug builds it is MI_STAT=2.
+    if (VVL_ENABLE_MI_STAT)
+         list(APPEND cmake_var "--cmake_var" "MI_EXTRA_CPPDEFS=\"MI_STAT=1\"")
+    endif()
 
     if (cmake_var)
         list(APPEND update_dep_command "${cmake_var}")
@@ -126,10 +138,7 @@ if (UPDATE_DEPS)
         include("${UPDATE_DEPS_DIR}/helper.cmake")
     endif()
 endif()
-if (ROBIN_HOOD_HASHING_INSTALL_DIR)
-    list(APPEND CMAKE_PREFIX_PATH ${ROBIN_HOOD_HASHING_INSTALL_DIR})
-    set(CMAKE_REQUIRE_FIND_PACKAGE_robin_hood TRUE PARENT_SCOPE)
-endif()
+
 if (GLSLANG_INSTALL_DIR)
     list(APPEND CMAKE_PREFIX_PATH ${GLSLANG_INSTALL_DIR})
     set(CMAKE_REQUIRE_FIND_PACKAGE_glslang TRUE PARENT_SCOPE)

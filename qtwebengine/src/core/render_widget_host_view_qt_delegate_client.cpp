@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "render_widget_host_view_qt_delegate_client.h"
 
@@ -355,7 +356,11 @@ QVariant RenderWidgetHostViewQtDelegateClient::inputMethodQuery(Qt::InputMethodQ
 {
     switch (query) {
     case Qt::ImEnabled:
-        return QVariant(m_rwhv->getTextInputType() != ui::TEXT_INPUT_TYPE_NONE);
+        if (const auto *state = m_rwhv->getTextInputState()) {
+            return QVariant(state->mode != ui::TEXT_INPUT_MODE_NONE
+                            && state->type != ui::TEXT_INPUT_TYPE_NONE);
+        }
+        return QVariant(false);
     case Qt::ImFont:
         // TODO: Implement this
         return QVariant();
@@ -387,8 +392,7 @@ QVariant RenderWidgetHostViewQtDelegateClient::inputMethodQuery(Qt::InputMethodQ
         // TODO: Implement this
         return QVariant(); // No limit.
     case Qt::ImHints:
-        return int(toQtInputMethodHints(m_rwhv->getTextInputType()) | Qt::ImhNoPredictiveText
-                   | Qt::ImhNoTextHandles | Qt::ImhNoEditMenu);
+        return static_cast<int>(m_rwhv->inputMethodHints());
     default:
         return QVariant();
     }
@@ -880,7 +884,7 @@ void RenderWidgetHostViewQtDelegateClient::handleInputMethodEvent(QInputMethodEv
 
     m_receivedEmptyImeEvent = false;
 
-    // Finish compostion: insert or erase text.
+    // Finish composition: insert or erase text.
     if (!commitString.isEmpty() || replacementLength > 0) {
         m_rwhv->host()->ImeCommitText(toString16(commitString), underlines, replacementRange, 0);
         m_imeInProgress = false;
@@ -919,10 +923,12 @@ void RenderWidgetHostViewQtDelegateClient::clearPreviousTouchMotionState()
 void RenderWidgetHostViewQtDelegateClient::selectionChanged()
 {
     m_rwhv->resetInputManagerState();
-    ui::TextInputType type = m_rwhv->getTextInputType();
-    content::TextInputManager *text_input_manager = m_rwhv->GetTextInputManager();
 
-    // Handle text selection out of an input field
+    const content::TextInputManager *manager = m_rwhv->GetTextInputManager();
+    const ui::mojom::TextInputState *state = m_rwhv->getTextInputState();
+    ui::TextInputType type = state ? state->type : ui::TEXT_INPUT_TYPE_NONE;
+
+    // Handle text selection out of an editable field
     if (type == ui::TEXT_INPUT_TYPE_NONE) {
         if (m_rwhv->GetSelectedText().empty() && m_emptyPreviousSelection)
             return;
@@ -942,8 +948,8 @@ void RenderWidgetHostViewQtDelegateClient::selectionChanged()
         // RenderWidgetHostViewQt::OnUpdateTextInputStateCalled() does not update the cursor
         // position if the selection is cleared because TextInputState changes before the
         // TextSelection change.
-        Q_ASSERT(text_input_manager->GetTextInputState());
-        m_cursorPosition = text_input_manager->GetTextInputState()->selection.start();
+        Q_ASSERT(state);
+        m_cursorPosition = state->selection.start();
         m_rwhv->delegate()->inputMethodStateChanged(true /*editorVisible*/,
                                                     type == ui::TEXT_INPUT_TYPE_PASSWORD);
 
@@ -958,8 +964,7 @@ void RenderWidgetHostViewQtDelegateClient::selectionChanged()
         return;
     }
 
-    const content::TextInputManager::TextSelection *selection =
-            text_input_manager->GetTextSelection();
+    const content::TextInputManager::TextSelection *selection = manager->GetTextSelection();
     if (!selection)
         return;
 
@@ -969,7 +974,7 @@ void RenderWidgetHostViewQtDelegateClient::selectionChanged()
     int newAnchorPositionWithinSelection = 0;
     int newCursorPositionWithinSelection = 0;
 
-    if (text_input_manager->GetSelectionRegion()->anchor.type() == gfx::SelectionBound::RIGHT) {
+    if (manager->GetSelectionRegion()->anchor.type() == gfx::SelectionBound::RIGHT) {
         newAnchorPositionWithinSelection = selection->range().GetMax() - selection->offset();
         newCursorPositionWithinSelection = selection->range().GetMin() - selection->offset();
     } else {

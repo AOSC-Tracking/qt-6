@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlnativedebugconnector.h"
 
@@ -192,7 +193,7 @@ bool QQmlNativeDebugConnector::blockingMode() const
 
 QQmlDebugService *QQmlNativeDebugConnector::service(const QString &name) const
 {
-    for (QVector<QQmlDebugService *>::ConstIterator i = m_services.begin(); i != m_services.end();
+    for (QList<QQmlDebugService *>::ConstIterator i = m_services.begin(); i != m_services.end();
          ++i) {
         if ((*i)->name() == name)
             return *i;
@@ -277,7 +278,7 @@ bool QQmlNativeDebugConnector::addService(const QString &name, QQmlDebugService 
 
 bool QQmlNativeDebugConnector::removeService(const QString &name)
 {
-    for (QVector<QQmlDebugService *>::Iterator i = m_services.begin(); i != m_services.end(); ++i) {
+    for (QList<QQmlDebugService *>::Iterator i = m_services.begin(); i != m_services.end(); ++i) {
         if ((*i)->name() == name) {
             QQmlDebugService *service = *i;
             m_services.erase(i);

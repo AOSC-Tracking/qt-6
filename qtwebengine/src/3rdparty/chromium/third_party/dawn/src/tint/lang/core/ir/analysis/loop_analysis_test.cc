@@ -69,7 +69,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_IndexLessThanConstant_IncByOne) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -132,7 +132,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_ConstantLessThanIndex_IncByOne) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -195,7 +195,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_IndexGreaterThanConstant_IncByOne) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -260,7 +260,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_IndexLessThanParam_IncByOne) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -325,7 +325,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_IndexLessThanLet_IncByOne) {
     %end:u32 = let 10u
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -388,7 +388,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_IndexLessThanConstant_IncByOne_I32) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, i32, read_write> = var, 0i
+        %idx:ptr<function, i32, read_write> = var 0i
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -451,7 +451,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_IndexLessThanConstant_OnePlusIndex) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -514,7 +514,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_IndexLessThanConstant_DecByOne) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -577,7 +577,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_NonZeroInit) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 5u
+        %idx:ptr<function, u32, read_write> = var 5u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -643,7 +643,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_BreakInFalse) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -719,7 +719,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_MultipleLoads) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         %3:u32 = load %idx
         %4:u32 = load %idx
         %5:u32 = add %3, %4
@@ -797,7 +797,7 @@ TEST_F(IR_LoopAnalysisTest, Finite_Bitcasts) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -882,9 +882,9 @@ TEST_F(IR_LoopAnalysisTest, Finite_MultipleVars) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %v1:ptr<function, u32, read_write> = var, 0u
-        %idx:ptr<function, u32, read_write> = var, 0u
-        %v2:ptr<function, u32, read_write> = var, 0u
+        %v1:ptr<function, u32, read_write> = var 0u
+        %idx:ptr<function, u32, read_write> = var 0u
+        %v2:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -967,7 +967,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_MissingInc) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1029,7 +1029,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_IncByZero) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1092,7 +1092,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_IncByTwo) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1157,7 +1157,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_IncByNonConstant) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1221,7 +1221,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_EndBoundIsVar) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1286,7 +1286,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_EndBoundIsLetInBody) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1350,7 +1350,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_OneMinusIndex) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, i32, read_write> = var, 10i
+        %idx:ptr<function, i32, read_write> = var 10i
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1413,7 +1413,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_NotAddOrSub) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1476,7 +1476,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_NonInteger) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, f32, read_write> = var, 0.0f
+        %idx:ptr<function, f32, read_write> = var 0.0f
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1539,7 +1539,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_MissingStore) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1605,7 +1605,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_ContinueBeforeBreak) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1673,7 +1673,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_IncThenDec) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1738,7 +1738,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_AnotherStoreInBody) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1803,7 +1803,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_MultipleStoresInContinuing) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1872,7 +1872,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_ConditionalStore) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -1932,7 +1932,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_ConditionalAdd) {
             auto* load = b.Load(idx);
             auto* inc = b.InstructionResult<u32>();
             auto* cond_add = b.If(false);
-            cond_add->SetResults(Vector{inc});
+            cond_add->SetResult(inc);
             b.Append(cond_add->True(), [&] {  //
                 b.ExitIf(cond_add, b.Add<u32>(load, 1_u));
             });
@@ -1950,7 +1950,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_ConditionalAdd) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -2036,7 +2036,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_PassVarPointerToFunction) {
   $B2: {
     loop [i: $B3, b: $B4, c: $B5] {  # loop_1
       $B3: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B4
       }
       $B4: {  # body
@@ -2116,7 +2116,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_PassVarPointerToFunction_ViaLet) {
   $B2: {
     loop [i: $B3, b: $B4, c: $B5] {  # loop_1
       $B3: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B4
       }
       $B4: {  # body
@@ -2177,7 +2177,7 @@ TEST_F(IR_LoopAnalysisTest, MaybeInfinite_VarOutsideInit) {
     auto* src = R"(
 %func = func():void {
   $B1: {
-    %idx:ptr<function, u32, read_write> = var, 0u
+    %idx:ptr<function, u32, read_write> = var 0u
     loop [b: $B2, c: $B3] {  # loop_1
       $B2: {  # body
         %3:u32 = load %idx
@@ -2307,7 +2307,7 @@ TEST_F(IR_LoopAnalysisTest, MultipleLoops) {
   $B1: {
     loop [i: $B2, b: $B3, c: $B4] {  # loop_1
       $B2: {  # initializer
-        %idx:ptr<function, u32, read_write> = var, 0u
+        %idx:ptr<function, u32, read_write> = var 0u
         next_iteration  # -> $B3
       }
       $B3: {  # body
@@ -2320,7 +2320,7 @@ TEST_F(IR_LoopAnalysisTest, MultipleLoops) {
         }
         loop [i: $B6, b: $B7, c: $B8] {  # loop_2
           $B6: {  # initializer
-            %idx_1:ptr<function, u32, read_write> = var, 0u  # %idx_1: 'idx'
+            %idx_1:ptr<function, u32, read_write> = var 0u  # %idx_1: 'idx'
             next_iteration  # -> $B7
           }
           $B7: {  # body
@@ -2348,7 +2348,7 @@ TEST_F(IR_LoopAnalysisTest, MultipleLoops) {
     }
     loop [i: $B10, b: $B11, c: $B12] {  # loop_3
       $B10: {  # initializer
-        %idx_2:ptr<function, u32, read_write> = var, 0u  # %idx_2: 'idx'
+        %idx_2:ptr<function, u32, read_write> = var 0u  # %idx_2: 'idx'
         next_iteration  # -> $B11
       }
       $B11: {  # body
@@ -2361,7 +2361,7 @@ TEST_F(IR_LoopAnalysisTest, MultipleLoops) {
         }
         loop [i: $B14, b: $B15, c: $B16] {  # loop_4
           $B14: {  # initializer
-            %idx_3:ptr<function, u32, read_write> = var, 0u  # %idx_3: 'idx'
+            %idx_3:ptr<function, u32, read_write> = var 0u  # %idx_3: 'idx'
             next_iteration  # -> $B15
           }
           $B15: {  # body
@@ -2415,6 +2415,1142 @@ TEST_F(IR_LoopAnalysisTest, MultipleLoops) {
     ASSERT_NE(info_inner_2, nullptr);
     EXPECT_TRUE(info_inner_2->IsFinite());
     EXPECT_EQ(info_inner_2->index_var, idx_inner_2);
+}
+
+TEST_F(IR_LoopAnalysisTest, Finite_IndexLessThanEqualConstant_IncByOne_I32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1
+            idx = b.Var("idx", 1_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx <= 10
+            binary = b.LessThanEqual<bool>(b.Load(idx), 10_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 1i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = lte %3, 10i
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:i32 = load %idx
+        %6:i32 = add %5, 1i
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->IsFinite());
+    EXPECT_EQ(info->index_var, idx);
+}
+
+TEST_F(IR_LoopAnalysisTest, Finite_IndexLessThanEqualConstant_IncByOne_U32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1
+            idx = b.Var("idx", 1_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx <= 10
+            binary = b.LessThanEqual<bool>(b.Load(idx), 10_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 1u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = lte %3, 10u
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:u32 = load %idx
+        %6:u32 = add %5, 1u
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->IsFinite());
+    EXPECT_EQ(info->index_var, idx);
+}
+
+TEST_F(IR_LoopAnalysisTest, MaybeInfinite_IndexLessThanEqualHighestValue_IncByOne_I32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1
+            idx = b.Var("idx", 1_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx <= i32::kHighestValue
+            binary = b.LessThanEqual<bool>(b.Load(idx), i32::Highest());
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 1i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = lte %3, 2147483647i
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:i32 = load %idx
+        %6:i32 = add %5, 1i
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_FALSE(info->IsFinite());
+    EXPECT_EQ(info->index_var, nullptr);
+}
+
+TEST_F(IR_LoopAnalysisTest, MaybeInfinite_IndexLessThanEqualHighestValue_IncByOne_U32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1
+            idx = b.Var("idx", 1_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx <= u32::kHighestValue
+            binary = b.LessThanEqual<bool>(b.Load(idx), u32::Highest());
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 1u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = lte %3, 4294967295u
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:u32 = load %idx
+        %6:u32 = add %5, 1u
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_FALSE(info->IsFinite());
+    EXPECT_EQ(info->index_var, nullptr);
+}
+
+TEST_F(IR_LoopAnalysisTest, Finite_ConstantLessThanEqualIndex_DecByOne_I32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // 1 <= idx
+            binary = b.LessThanEqual<bool>(1_i, b.Load(idx));
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx--
+            b.Store(idx, b.Subtract<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 10i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = lte 1i, %3
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:i32 = load %idx
+        %6:i32 = sub %5, 1i
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->IsFinite());
+    EXPECT_EQ(info->index_var, idx);
+}
+
+TEST_F(IR_LoopAnalysisTest, Finite_ConstantLessThanEqualIndex_DecByOne_U32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // 1 <= idx
+            binary = b.LessThanEqual<bool>(1_u, b.Load(idx));
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx--
+            b.Store(idx, b.Subtract<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 10u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = lte 1u, %3
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:u32 = load %idx
+        %6:u32 = sub %5, 1u
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->IsFinite());
+    EXPECT_EQ(info->index_var, idx);
+}
+
+TEST_F(IR_LoopAnalysisTest, MaybeInfinite_LowestValueLessThanEqualIndex_DecByOne_I32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // i32::kLowestValue <= idx
+            binary = b.LessThanEqual<bool>(i32::Lowest(), b.Load(idx));
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx--
+            b.Store(idx, b.Subtract<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 10i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = lte -2147483648i, %3
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:i32 = load %idx
+        %6:i32 = sub %5, 1i
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_FALSE(info->IsFinite());
+    EXPECT_EQ(info->index_var, nullptr);
+}
+
+TEST_F(IR_LoopAnalysisTest, MaybeInfinite_LowestValueLessThanEqualIndex_DecByOne_U32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // u32::kLowestValue <= idx
+            binary = b.LessThanEqual<bool>(u32::Lowest(), b.Load(idx));
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx--
+            b.Store(idx, b.Subtract<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 10u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = lte 0u, %3
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:u32 = load %idx
+        %6:u32 = sub %5, 1u
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_FALSE(info->IsFinite());
+    EXPECT_EQ(info->index_var, nullptr);
+}
+
+TEST_F(IR_LoopAnalysisTest, Finite_IndexGreaterThanEqualConstant_DecByOne_I32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx >= 1
+            binary = b.GreaterThanEqual<bool>(b.Load(idx), 1_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx--
+            b.Store(idx, b.Subtract<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 10i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = gte %3, 1i
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:i32 = load %idx
+        %6:i32 = sub %5, 1i
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->IsFinite());
+    EXPECT_EQ(info->index_var, idx);
+}
+
+TEST_F(IR_LoopAnalysisTest, Finite_IndexGreaterThanEqualConstant_DecByOne_U32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx <= 1
+            binary = b.GreaterThanEqual<bool>(b.Load(idx), 1_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx--
+            b.Store(idx, b.Subtract<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 10u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = gte %3, 1u
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:u32 = load %idx
+        %6:u32 = sub %5, 1u
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->IsFinite());
+    EXPECT_EQ(info->index_var, idx);
+}
+
+TEST_F(IR_LoopAnalysisTest, MaybeInfinite_IndexGreaterThanEqualLowestValue_DecByOne_I32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx >= i32::kLowestValue
+            binary = b.GreaterThanEqual<bool>(b.Load(idx), i32::Lowest());
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx--
+            b.Store(idx, b.Subtract<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 10i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = gte %3, -2147483648i
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:i32 = load %idx
+        %6:i32 = sub %5, 1i
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_FALSE(info->IsFinite());
+    EXPECT_EQ(info->index_var, nullptr);
+}
+
+TEST_F(IR_LoopAnalysisTest, MaybeInfinite_IndexGreaterThanEqualLowestValue_DecByOne_U32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx >= u32::kLowestValue
+            binary = b.GreaterThanEqual<bool>(b.Load(idx), u32::Lowest());
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx--
+            b.Store(idx, b.Subtract<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 10u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = gte %3, 0u
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:u32 = load %idx
+        %6:u32 = sub %5, 1u
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_FALSE(info->IsFinite());
+    EXPECT_EQ(info->index_var, nullptr);
+}
+
+TEST_F(IR_LoopAnalysisTest, Finite_ConstantGreaterThanEqualIndex_IncByOne_I32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1
+            idx = b.Var("idx", 1_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // 10 >= idx
+            binary = b.GreaterThanEqual<bool>(10_i, b.Load(idx));
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 1i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = gte 10i, %3
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:i32 = load %idx
+        %6:i32 = add %5, 1i
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->IsFinite());
+    EXPECT_EQ(info->index_var, idx);
+}
+
+TEST_F(IR_LoopAnalysisTest, Finite_ConstantGreaterThanEqualIndex_IncByOne_U32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1
+            idx = b.Var("idx", 1_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // 10 >= idx
+            binary = b.GreaterThanEqual<bool>(10_u, b.Load(idx));
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 1u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = gte 10u, %3
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:u32 = load %idx
+        %6:u32 = add %5, 1u
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->IsFinite());
+    EXPECT_EQ(info->index_var, idx);
+}
+
+TEST_F(IR_LoopAnalysisTest, MaybeInfinite_HighestValueGreaterThanEqualIndex_IncByOne_I32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // i32::kHighestValue >= idx
+            binary = b.GreaterThanEqual<bool>(i32::Highest(), b.Load(idx));
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 10i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = gte 2147483647i, %3
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:i32 = load %idx
+        %6:i32 = add %5, 1i
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_FALSE(info->IsFinite());
+    EXPECT_EQ(info->index_var, nullptr);
+}
+
+TEST_F(IR_LoopAnalysisTest, MaybeInfinite_HighestValueGreaterThanEqualIndex_IncByOne_U32) {
+    Var* idx = nullptr;
+    Loop* loop = nullptr;
+    Binary* binary = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10
+            idx = b.Var("idx", 10_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // u32::kHighestValue >= idx
+            binary = b.GreaterThanEqual<bool>(u32::Highest(), b.Load(idx));
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 10u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = gte 4294967295u, %3
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %5:u32 = load %idx
+        %6:u32 = add %5, 1u
+        store %idx, %6
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    LoopAnalysis analysis(*func);
+    auto* info = analysis.GetInfo(*loop);
+    ASSERT_NE(info, nullptr);
+    EXPECT_FALSE(info->IsFinite());
+    EXPECT_EQ(info->index_var, nullptr);
 }
 
 }  // namespace

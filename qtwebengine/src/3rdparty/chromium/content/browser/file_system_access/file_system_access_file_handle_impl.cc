@@ -142,21 +142,23 @@ FileSystemAccessFileHandleImpl::FileSystemAccessFileHandleImpl(
     FileSystemAccessManagerImpl* manager,
     const BindingContext& context,
     const storage::FileSystemURL& url,
+    const std::string& display_name,
     const SharedHandleState& handle_state)
-    : FileSystemAccessHandleBase(manager, context, url, handle_state) {}
+    : FileSystemAccessHandleBase(manager, context, url, handle_state),
+      display_name_(display_name) {}
 
 FileSystemAccessFileHandleImpl::~FileSystemAccessFileHandleImpl() = default;
 
 void FileSystemAccessFileHandleImpl::GetPermissionStatus(
-    bool writable,
+    blink::mojom::FileSystemAccessPermissionMode mode,
     GetPermissionStatusCallback callback) {
-  DoGetPermissionStatus(writable, std::move(callback));
+  DoGetPermissionStatus(mode, std::move(callback));
 }
 
 void FileSystemAccessFileHandleImpl::RequestPermission(
-    bool writable,
+    blink::mojom::FileSystemAccessPermissionMode mode,
     RequestPermissionCallback callback) {
-  DoRequestPermission(writable, std::move(callback));
+  DoRequestPermission(mode, std::move(callback));
 }
 
 void FileSystemAccessFileHandleImpl::AsBlob(AsBlobCallback callback) {
@@ -189,7 +191,9 @@ void FileSystemAccessFileHandleImpl::CreateFileWriter(
     CreateFileWriterCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  RunWithWritePermission(
+  // TODO(crbug.com/40276567): Review whether to switch to write-only.
+  RunWithPermission(
+      blink::mojom::FileSystemAccessPermissionMode::kReadWrite,
       base::BindOnce(&FileSystemAccessFileHandleImpl::CreateFileWriterImpl,
                      weak_factory_.GetWeakPtr(), keep_existing_data, auto_close,
                      mode),
@@ -210,7 +214,9 @@ void FileSystemAccessFileHandleImpl::Move(
   RenderFrameHost* rfh = RenderFrameHost::FromID(context().frame_id);
   bool has_transient_user_activation = rfh && rfh->HasTransientUserActivation();
 
-  RunWithWritePermission(
+  // TODO(crbug.com/40276567): Review whether to switch to write-only.
+  RunWithPermission(
+      blink::mojom::FileSystemAccessPermissionMode::kReadWrite,
       base::BindOnce(&FileSystemAccessHandleBase::DoMove,
                      weak_factory_.GetWeakPtr(),
                      std::move(destination_directory), new_entry_name,
@@ -229,7 +235,9 @@ void FileSystemAccessFileHandleImpl::Rename(const std::string& new_entry_name,
   RenderFrameHost* rfh = RenderFrameHost::FromID(context().frame_id);
   bool has_transient_user_activation = rfh && rfh->HasTransientUserActivation();
 
-  RunWithWritePermission(
+  // TODO(crbug.com/40276567): Review whether to switch to write-only.
+  RunWithPermission(
+      blink::mojom::FileSystemAccessPermissionMode::kReadWrite,
       base::BindOnce(&FileSystemAccessHandleBase::DoRename,
                      weak_factory_.GetWeakPtr(), new_entry_name,
                      has_transient_user_activation),
@@ -243,7 +251,9 @@ void FileSystemAccessFileHandleImpl::Rename(const std::string& new_entry_name,
 void FileSystemAccessFileHandleImpl::Remove(RemoveCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  RunWithWritePermission(
+  // TODO(crbug.com/40276567): Review whether to switch to write-only.
+  RunWithPermission(
+      blink::mojom::FileSystemAccessPermissionMode::kReadWrite,
       base::BindOnce(&FileSystemAccessHandleBase::DoRemove,
                      weak_factory_.GetWeakPtr(), url(), /*recurse=*/false),
       base::BindOnce([](blink::mojom::FileSystemAccessErrorPtr result,
@@ -310,7 +320,9 @@ void FileSystemAccessFileHandleImpl::DidTakeAccessHandleLock(
                            weak_factory_.GetWeakPtr(), std::move(lock))
           : base::BindOnce(&FileSystemAccessFileHandleImpl::DoOpenFile,
                            weak_factory_.GetWeakPtr(), std::move(lock));
-  RunWithWritePermission(
+  // TODO(crbug.com/40276567): Review whether to switch to write-only.
+  RunWithPermission(
+      blink::mojom::FileSystemAccessPermissionMode::kReadWrite,
       std::move(open_file_callback),
       base::BindOnce([](blink::mojom::FileSystemAccessErrorPtr result,
                         OpenAccessHandleCallback callback) {
@@ -326,7 +338,8 @@ void FileSystemAccessFileHandleImpl::DoOpenIncognitoFile(
     scoped_refptr<FileSystemAccessLockManager::LockHandle> lock,
     OpenAccessHandleCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK_EQ(GetWritePermissionStatus(),
+  // TODO(crbug.com/40276567): Update if this only needs write-only permission
+  DCHECK_EQ(GetReadWritePermissionStatus(),
             blink::mojom::PermissionStatus::GRANTED);
 
   mojo::PendingRemote<blink::mojom::FileSystemAccessFileDelegateHost>
@@ -348,7 +361,8 @@ void FileSystemAccessFileHandleImpl::DoOpenFile(
     scoped_refptr<FileSystemAccessLockManager::LockHandle> lock,
     OpenAccessHandleCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK_EQ(GetWritePermissionStatus(),
+  // TODO(crbug.com/40276567): Update if this only needs write-only permission
+  DCHECK_EQ(GetReadWritePermissionStatus(),
             blink::mojom::PermissionStatus::GRANTED);
 
   manager()->DoFileSystemOperation(
@@ -488,17 +502,13 @@ void FileSystemAccessFileHandleImpl::DidGetMetaDataForBlob(
   std::string uuid = base::Uuid::GenerateRandomV4().AsLowercaseString();
   std::string content_type;
 
-  base::FilePath::StringType extension = url().path().Extension();
-  if (!extension.empty()) {
-    std::string mime_type;
-    // TODO(crbug.com/41458368): Using GetMimeTypeFromExtension and
-    // including platform defined mime type mappings might be nice/make sense,
-    // however that method can potentially block and thus can't be called from
-    // the IO thread.
-    if (net::GetWellKnownMimeTypeFromExtension(extension.substr(1),
-                                               &mime_type)) {
-      content_type = std::move(mime_type);
-    }
+  // TODO(crbug.com/41458368): Using GetMimeTypeFromExtension and including
+  // platform defined mime type mappings might be nice/make sense, however that
+  // method can potentially block and thus can't be called from the IO thread.
+  std::string mime_type;
+  if (net::GetWellKnownMimeTypeFromFile(
+          base::FilePath::FromUTF8Unsafe(display_name_), &mime_type)) {
+    content_type = std::move(mime_type);
   }
   // TODO(crbug.com/41458368): Consider some kind of fallback type when
   // the above mime type detection fails.
@@ -528,7 +538,8 @@ void FileSystemAccessFileHandleImpl::CreateFileWriterImpl(
     blink::mojom::FileSystemAccessWritableFileStreamLockMode mode,
     CreateFileWriterCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK_EQ(GetWritePermissionStatus(),
+  // TODO(crbug.com/40276567): Update if this only needs write-only permission
+  DCHECK_EQ(GetReadWritePermissionStatus(),
             blink::mojom::PermissionStatus::GRANTED);
 
   // TODO(crbug.com/40194651): Expand this check to all backends.
@@ -604,7 +615,8 @@ void FileSystemAccessFileHandleImpl::StartCreateSwapFile(
     return;
   }
 
-  if (GetWritePermissionStatus() != blink::mojom::PermissionStatus::GRANTED) {
+  // TODO(crbug.com/40276567): Update if this only needs write-only permission
+  if (GetReadWritePermissionStatus() != PermissionStatus::GRANTED) {
     std::move(callback).Run(file_system_access_error::FromStatus(
                                 FileSystemAccessStatus::kPermissionDenied),
                             mojo::NullRemote());

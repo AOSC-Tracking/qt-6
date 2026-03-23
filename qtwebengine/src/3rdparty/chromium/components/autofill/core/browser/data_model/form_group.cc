@@ -7,9 +7,9 @@
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "components/autofill/core/browser/autofill_type.h"
-#include "components/autofill/core/browser/data_model/autofill_profile.h"
-#include "components/autofill/core/browser/data_model/autofill_profile_comparator.h"
-#include "components/autofill/core/browser/data_model/autofill_structured_address_component.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile_comparator.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_structured_address_component.h"
 #include "components/autofill/core/common/autofill_l10n_util.h"
 
 namespace autofill {
@@ -29,11 +29,9 @@ void FormGroup::GetMatchingTypes(const std::u16string& text,
 
   std::u16string canonicalized_text =
       AutofillProfileComparator::NormalizeForComparison(text);
-  FieldTypeSet types;
-  GetSupportedTypes(&types);
-  for (FieldType type : types) {
+  for (FieldType type : GetSupportedTypes()) {
     if (comparator.Compare(canonicalized_text, GetInfo(type, app_locale),
-                           AutofillProfileComparator::DISCARD_WHITESPACE,
+                           AutofillProfileComparator::WhitespaceSpec::kDiscard,
                            type)) {
       matching_types->insert(type);
     }
@@ -42,9 +40,7 @@ void FormGroup::GetMatchingTypes(const std::u16string& text,
 
 void FormGroup::GetNonEmptyTypes(const std::string& app_locale,
                                  FieldTypeSet* non_empty_types) const {
-  FieldTypeSet types;
-  GetSupportedTypes(&types);
-  for (FieldType type : types) {
+  for (FieldType type : GetSupportedTypes()) {
     if (!GetInfo(type, app_locale).empty()) {
       non_empty_types->insert(type);
     }
@@ -53,6 +49,11 @@ void FormGroup::GetNonEmptyTypes(const std::string& app_locale,
 
 bool FormGroup::HasRawInfo(FieldType type) const {
   return !GetRawInfo(type).empty();
+}
+
+std::u16string FormGroup::GetInfo(FieldType type,
+                                  const std::string& app_locale) const {
+  return GetInfo(AutofillType(type), app_locale);
 }
 
 bool FormGroup::SetInfo(FieldType type,

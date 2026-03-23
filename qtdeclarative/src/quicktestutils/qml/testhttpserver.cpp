@@ -92,7 +92,7 @@ quint16 TestHTTPServer::port() const
 
 QUrl TestHTTPServer::url(const QString &documentPath) const
 {
-    return baseUrl().resolved(documentPath);
+    return baseUrl().resolved(QUrl{documentPath});
 }
 
 QString TestHTTPServer::urlString(const QString &documentPath) const
@@ -249,6 +249,11 @@ void TestHTTPServer::readyRead()
                 m_data += socket->readAll();
                 break;
             } else {
+                qsizetype prefixIndex = line.indexOf(':');
+                if (prefixIndex > 0) {
+                    const QByteArray prefix = line.left(prefixIndex);
+                    line = std::move(line).replace(prefix, prefix.toLower());
+                }
                 bool prefixFound = false;
                 for (const QByteArray &prefix : m_waitData.headerPrefixes) {
                     if (line.startsWith(prefix)) {
@@ -426,7 +431,7 @@ QUrl ThreadedTestHTTPServer::baseUrl() const
 
 QUrl ThreadedTestHTTPServer::url(const QString &documentPath) const
 {
-    return baseUrl().resolved(documentPath);
+    return baseUrl().resolved(QUrl{documentPath});
 }
 
 QString ThreadedTestHTTPServer::urlString(const QString &documentPath) const

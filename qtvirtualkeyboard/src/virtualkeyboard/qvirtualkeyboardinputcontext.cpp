@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtVirtualKeyboard/qvirtualkeyboardinputcontext.h>
 #include <QtVirtualKeyboard/private/qvirtualkeyboardinputcontext_p.h>
@@ -392,14 +393,14 @@ QVirtualKeyboardInputContextPrivate *QVirtualKeyboardInputContext::priv() const
 
 /*!
     \property QVirtualKeyboardInputContext::keyboardObserver
-    \since QtQuick.VirtualKeyboard 6.1
+    \since 6.1
     \brief Holds the keyboard observer object, which can be used to receive
     notifications of keyboard change events.
 */
 /*!
     \qmlproperty KeyboardObserver InputContext::keyboardObserver
     \readonly
-    \since QtQuick.VirtualKeyboard 6.1
+    \since 6.1
     \brief Holds the keyboard observer object, which can be used to receive
     notifications of keyboard change events.
 */

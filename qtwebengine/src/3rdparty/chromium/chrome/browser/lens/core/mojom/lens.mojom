@@ -41,6 +41,7 @@ enum UserAction {
   kCopyAsImage = 15,
   kSaveAsImage = 16,
   kMathSelection = 17,
+  kFullScreenshotRegionSelection = 18,
 };
 
 // LINT.ThenChange(//tools/metrics/histograms/metadata/lens/enums.xml:LensOverlayUserAction)
@@ -92,6 +93,9 @@ interface LensPageHandler {
   // When this method is called, the C++ coordinator will add a blur to the
   // tab contents.
   AddBackgroundBlur();
+
+  // Enables/disables the live blurring of the background
+  SetLiveBlur(bool enabled);
 
   // When this method is called, the C++ coordinator will show the feedback
   // dialog.
@@ -220,6 +224,9 @@ interface LensPage {
   ScreenshotDataReceived(
       skia.mojom.BitmapMappedFromTrustedProcess screenshot_data);
 
+  // Notifies the WebUI that the handshake to the Lens backend is complete.
+  NotifyHandshakeComplete();
+
   // Notifies the WebUI that our results panel is currently opening.
   NotifyResultsPanelOpened();
 
@@ -262,9 +269,9 @@ interface LensPage {
   // selected.
   ClearAllSelections();
 
-  // Copies the currently selected text to the users clipboard and displays the
-  // text copied chip.
-  TriggerCopyText();
+  // Copies the currently selected text or image to the users clipboard and
+  // displays the relevant copied toast.
+  OnCopyCommand();
 
   // Suppress the ghost loader when tab is foregrounded.
   SuppressGhostLoader();

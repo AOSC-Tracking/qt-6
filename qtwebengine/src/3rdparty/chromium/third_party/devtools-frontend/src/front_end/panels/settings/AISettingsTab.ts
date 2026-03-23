@@ -1,12 +1,14 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
+import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import type * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as Input from '../../ui/components/input/input.js';
@@ -16,11 +18,7 @@ import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
-import aiSettingsTabStylesRaw from './aiSettingsTab.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const aiSettingsTabStyles = new CSSStyleSheet();
-aiSettingsTabStyles.replaceSync(aiSettingsTabStylesRaw.cssContent);
+import aiSettingsTabStyles from './aiSettingsTab.css.js';
 
 const {html, Directives: {ifDefined, classMap}} = Lit;
 
@@ -48,7 +46,6 @@ const UIStrings = {
    */
   sendsDataToGoogleNoLogging:
       'Your content will not be used by human reviewers to improve AI. Your organization may change these settings at any time.',
-
   /**
    *@description Text describing a fact to consider when using AI features
    */
@@ -63,6 +60,10 @@ const UIStrings = {
    */
   helpUnderstandConsole: 'Helps you understand and fix console warnings and errors',
   /**
+   *@description Text describing the 'Auto Annotations' feature
+   */
+  getAIAnnotationsSuggestions: 'Get AI suggestions for performance panel annotations',
+  /**
    *@description Label for a button to expand an accordion
    */
   showMore: 'Show more',
@@ -71,7 +72,7 @@ const UIStrings = {
    */
   showLess: 'Show less',
   /**
-   *@description Header for a list of feature attributes. 'When (the feature is turned) on, you'll be able to ...'
+   *@description Header for a list of feature attributes. 'When (the feature is turned) on, you'll be able to …'
    */
   whenOn: 'When on',
   /**
@@ -116,6 +117,10 @@ const UIStrings = {
   helpUnderstandStylingNetworkPerformanceAndFile:
       'Get help with understanding CSS styles, network requests, performance, and files',
   /**
+   *@description Text describing the 'Code suggestions' feature
+   */
+  helpUnderstandCodeSuggestions: 'Get help completing your code',
+  /**
    *@description Text which is a hyperlink to more documentation
    */
   learnMore: 'Learn more',
@@ -144,12 +149,37 @@ const UIStrings = {
    *@description Explainer for which data is being sent by the AI assistance feature
    */
   freestylerSendsData:
-      'Any data the inspected page can access via Web APIs, network requests, files, and performance traces are sent to Google to generate explanations. This data may be seen by human reviewers to improve this feature. Don’t use on pages with personal or sensitive information.',
+      'Any user query and data the inspected page can access via Web APIs, network requests, files, and performance traces are sent to Google to generate explanations. This data may be seen by human reviewers to improve this feature. Don’t use on pages with personal or sensitive information.',
   /**
    *@description Explainer for which data is being sent by the AI assistance feature
    */
   freestylerSendsDataNoLogging:
-      'Any data the inspected page can access via Web APIs, network requests, files, and performance traces are sent to Google to generate explanations. This data will not be used to improve Google’s AI models.',
+      'Any user query and data the inspected page can access via Web APIs, network requests, files, and performance traces are sent to Google to generate explanations. This data will not be used to improve Google’s AI models.',
+  /**
+   *@description Explainer for which data is being sent by the AI generated annotations feature
+   */
+  generatedAiAnnotationsSendData:
+      'Your performance trace is sent to Google to generate an explanation. This data will be used to improve Google’s AI models.',
+  /**
+   *@description Explainer for which data is being sent by the AI assistance feature
+   */
+  generatedAiAnnotationsSendDataNoLogging:
+      'Your performance trace is sent to Google to generate an explanation. This data will not be used to improve Google’s AI models.',
+  /**
+   *@description Description of the 'Code suggestions' feature
+   */
+  asYouTypeCodeSuggestions:
+      'As you type in the Console or Sources panel, you’ll get code suggestions. Press Tab to accept one.',
+  /**
+   *@description Explainer for which data is being sent for the 'Code suggestions' feature
+   */
+  codeSuggestionsSendData:
+      'To generate code suggestions, your console input, the history of your current console session, and the contents of the currently open file are shared with Google. This data may be seen by human reviewers to improve this feature.',
+  /**
+   *@description Explainer for which data is being sent for the 'Code suggestions' feature when logging is not enabled
+   */
+  codeSuggestionsSendDataNoLogging:
+      'To generate code suggestions, your console input, the history of your current console session, and the contents of the currently open file are shared with Google. This data will not be used to improve Google’s AI models.',
   /**
    *@description Label for a link to the terms of service
    */
@@ -167,30 +197,43 @@ const UIStrings = {
    */
   enableAiAssistance: 'Enable AI assistance',
   /**
-   * @description Message shown to the user if the age check is not successful.
+   *@description Label for a toggle to enable the AI assistance feature
    */
-  ageRestricted: 'This feature is only available to users who are 18 years of age or older.',
-  /**
-   * @description The error message when the user is not logged in into Chrome.
-   */
-  notLoggedIn: 'This feature is only available when you sign into Chrome with your Google account.',
-  /**
-   * @description Message shown when the user is offline.
-   */
-  offline: 'This feature is only available with an active internet connection.',
-};
+  enableAiSuggestedAnnotations: 'Enable AI suggestions for performance panel annotations',
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/settings/AISettingsTab.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+
+interface SettingItem {
+  iconName: string;
+  text: Common.UIString.LocalizedString;
+}
+
+interface AiSettingParams {
+  settingName: Platform.UIString.LocalizedString;
+  iconName: string;
+  settingDescription: Platform.UIString.LocalizedString;
+  enableSettingText: Common.UIString.LocalizedString;
+  settingItems: SettingItem[];
+  toConsiderSettingItems: SettingItem[];
+  learnMoreLink: {url: string, linkJSLogContext: string};
+  settingExpandState: {
+    isSettingExpanded: boolean,
+    expandSettingJSLogContext: string,
+  };
+}
 
 export class AISettingsTab extends LegacyWrapper.LegacyWrapper.WrappableComponent {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #consoleInsightsSetting?: Common.Settings.Setting<boolean>;
+  #aiAnnotationsSetting?: Common.Settings.Setting<boolean>;
   #aiAssistanceSetting?: Common.Settings.Setting<boolean>;
-  #aiAssistanceHistorySetting?: Common.Settings.Setting<unknown[]>;
-  #isConsoleInsightsSettingExpanded = false;
-  #isAiAssistanceSettingExpanded = false;
+  #aiCodeCompletionSetting?: Common.Settings.Setting<boolean>;
   #aidaAvailability = Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL;
   #boundOnAidaAvailabilityChange: () => Promise<void>;
+  // Setting to parameters needed to display it in the UI.
+  // To display a a setting, it needs to be added to this map.
+  #settingToParams = new Map<Common.Settings.Setting<boolean>, AiSettingParams>();
 
   constructor() {
     super();
@@ -204,18 +247,23 @@ export class AISettingsTab extends LegacyWrapper.LegacyWrapper.WrappableComponen
     } catch {
       this.#aiAssistanceSetting = undefined;
     }
-    try {
-      this.#aiAssistanceHistorySetting =
-          // Name needs to match the one in AiHistoryStorage
-          Common.Settings.Settings.instance().moduleSetting('ai-assistance-history-entries');
-    } catch {
-      this.#aiAssistanceHistorySetting = undefined;
+
+    if (Root.Runtime.hostConfig.devToolsAiGeneratedTimelineLabels?.enabled) {
+      // Get an existing setting or, if it does not exist, create a new one.
+      this.#aiAnnotationsSetting = Common.Settings.Settings.instance().createSetting('ai-annotations-enabled', false);
     }
+
+    if (Root.Runtime.hostConfig.devToolsAiCodeCompletion?.enabled) {
+      // Get an existing setting or, if it does not exist, create a new one.
+      this.#aiCodeCompletionSetting =
+          Common.Settings.Settings.instance().createSetting('ai-code-completion-fre-completed', false);
+    }
+
     this.#boundOnAidaAvailabilityChange = this.#onAidaAvailabilityChange.bind(this);
+    this.#initSettings();
   }
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [Input.checkboxStyles, aiSettingsTabStyles];
     Host.AidaClient.HostConfigTracker.instance().addEventListener(
         Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnAidaAvailabilityChange);
     void this.#onAidaAvailabilityChange();
@@ -224,6 +272,118 @@ export class AISettingsTab extends LegacyWrapper.LegacyWrapper.WrappableComponen
   disconnectedCallback(): void {
     Host.AidaClient.HostConfigTracker.instance().removeEventListener(
         Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnAidaAvailabilityChange);
+  }
+
+  // Define all parameter needed to render a setting
+  #initSettings(): void {
+    const noLogging = Root.Runtime.hostConfig.aidaAvailability?.enterprisePolicyValue ===
+        Root.Runtime.GenAiEnterprisePolicyValue.ALLOW_WITHOUT_LOGGING;
+
+    if (this.#consoleInsightsSetting) {
+      const consoleInsightsData: AiSettingParams = {
+        settingName: i18n.i18n.lockedString('Console Insights'),
+        iconName: 'lightbulb-spark',
+        settingDescription: i18nString(UIStrings.helpUnderstandConsole),
+        enableSettingText: i18nString(UIStrings.enableConsoleInsights),
+        settingItems: [
+          {iconName: 'lightbulb', text: i18nString(UIStrings.explainConsole)},
+          {iconName: 'code', text: i18nString(UIStrings.receiveSuggestions)}
+        ],
+        toConsiderSettingItems: [{
+          iconName: 'google',
+          text: noLogging ? i18nString(UIStrings.consoleInsightsSendsDataNoLogging) :
+                            i18nString(UIStrings.consoleInsightsSendsData)
+        }],
+        learnMoreLink: {
+          url: 'https://developer.chrome.com/docs/devtools/console/understand-messages',
+          linkJSLogContext: 'learn-more.console-insights',
+        },
+        settingExpandState: {
+          isSettingExpanded: false,
+          expandSettingJSLogContext: 'console-insights.accordion',
+        },
+      };
+
+      this.#settingToParams.set(this.#consoleInsightsSetting, consoleInsightsData);
+    }
+
+    if (this.#aiAssistanceSetting) {
+      const aiAssistanceData: AiSettingParams = {
+        settingName: i18n.i18n.lockedString('AI assistance'),
+        iconName: 'smart-assistant',
+        settingDescription: this.#getAiAssistanceSettingDescription(),
+        enableSettingText: i18nString(UIStrings.enableAiAssistance),
+        settingItems: [
+          {iconName: 'info', text: this.#getAiAssistanceSettingInfo()},
+          {iconName: 'pen-spark', text: i18nString(UIStrings.receiveStylingSuggestions)}
+        ],
+        toConsiderSettingItems: [{
+          iconName: 'google',
+          text: noLogging ? i18nString(UIStrings.freestylerSendsDataNoLogging) :
+                            i18nString(UIStrings.freestylerSendsData)
+        }],
+        learnMoreLink: {
+          url: 'https://developer.chrome.com/docs/devtools/ai-assistance',
+          linkJSLogContext: 'learn-more.ai-assistance',
+        },
+        settingExpandState: {
+          isSettingExpanded: false,
+          expandSettingJSLogContext: 'freestyler.accordion',
+        },
+      };
+
+      this.#settingToParams.set(this.#aiAssistanceSetting, aiAssistanceData);
+    }
+
+    if (this.#aiAnnotationsSetting) {
+      const aiAnnotationsData: AiSettingParams = {
+        settingName: i18n.i18n.lockedString('Auto annotations'),
+        iconName: 'pen-spark',
+        settingDescription: i18nString(UIStrings.getAIAnnotationsSuggestions),
+        enableSettingText: i18nString(UIStrings.enableAiSuggestedAnnotations),
+        settingItems: [
+          {iconName: 'pen-spark', text: i18nString(UIStrings.getAIAnnotationsSuggestions)},
+        ],
+        toConsiderSettingItems: [{
+          iconName: 'google',
+          text: noLogging ? i18nString(UIStrings.generatedAiAnnotationsSendDataNoLogging) :
+                            i18nString(UIStrings.generatedAiAnnotationsSendData)
+        }],
+        learnMoreLink: {
+          url: 'https://developer.chrome.com/docs/devtools/performance/annotations#auto-annotations',
+          linkJSLogContext: 'learn-more.auto-annotations'
+        },
+        settingExpandState: {
+          isSettingExpanded: false,
+          expandSettingJSLogContext: 'auto-annotations.accordion',
+        },
+      };
+
+      this.#settingToParams.set(this.#aiAnnotationsSetting, aiAnnotationsData);
+    }
+
+    if (this.#aiCodeCompletionSetting) {
+      const aiCodeCompletionData: AiSettingParams = {
+        settingName: i18n.i18n.lockedString('Code suggestions'),
+        iconName: 'text-analysis',
+        settingDescription: i18nString(UIStrings.helpUnderstandCodeSuggestions),
+        enableSettingText: i18nString(UIStrings.enableAiSuggestedAnnotations),
+        settingItems: [{iconName: 'code', text: i18nString(UIStrings.asYouTypeCodeSuggestions)}],
+        toConsiderSettingItems: [{
+          iconName: 'google',
+          text: noLogging ? i18nString(UIStrings.codeSuggestionsSendDataNoLogging) :
+                            i18nString(UIStrings.codeSuggestionsSendData)
+        }],
+        // TODO: Add a relevant link
+        learnMoreLink: {url: '', linkJSLogContext: 'learn-more.code-completion'},
+        settingExpandState: {
+          isSettingExpanded: false,
+          expandSettingJSLogContext: 'code-completion.accordion',
+        },
+      };
+
+      this.#settingToParams.set(this.#aiCodeCompletionSetting, aiCodeCompletionData);
+    }
   }
 
   async #onAidaAvailabilityChange(): Promise<void> {
@@ -235,84 +395,77 @@ export class AISettingsTab extends LegacyWrapper.LegacyWrapper.WrappableComponen
   }
 
   #getAiAssistanceSettingDescription(): Platform.UIString.LocalizedString {
-    const config = Common.Settings.Settings.instance().getHostConfig();
-    if (config.devToolsAiAssistancePerformanceAgent?.enabled) {
+    const {hostConfig} = Root.Runtime;
+    if (hostConfig.devToolsAiAssistancePerformanceAgent?.enabled) {
       return i18nString(UIStrings.helpUnderstandStylingNetworkPerformanceAndFile);
     }
-    if (config.devToolsAiAssistanceFileAgent?.enabled) {
+    if (hostConfig.devToolsAiAssistanceFileAgent?.enabled) {
       return i18nString(UIStrings.helpUnderstandStylingNetworkAndFile);
     }
-    if (config.devToolsAiAssistanceNetworkAgent?.enabled) {
+    if (hostConfig.devToolsAiAssistanceNetworkAgent?.enabled) {
       return i18nString(UIStrings.helpUnderstandStylingAndNetworkRequest);
     }
     return i18nString(UIStrings.helpUnderstandStyling);
   }
 
   #getAiAssistanceSettingInfo(): Platform.UIString.LocalizedString {
-    const config = Common.Settings.Settings.instance().getHostConfig();
-    if (config.devToolsAiAssistancePerformanceAgent?.enabled) {
+    const {hostConfig} = Root.Runtime;
+    if (hostConfig.devToolsAiAssistancePerformanceAgent?.enabled) {
       return i18nString(UIStrings.explainStylingNetworkPerformanceAndFile);
     }
-    if (config.devToolsAiAssistanceFileAgent?.enabled) {
+    if (hostConfig.devToolsAiAssistanceFileAgent?.enabled) {
       return i18nString(UIStrings.explainStylingNetworkAndFile);
     }
-    if (config.devToolsAiAssistanceNetworkAgent?.enabled) {
+    if (hostConfig.devToolsAiAssistanceNetworkAgent?.enabled) {
       return i18nString(UIStrings.explainStylingAndNetworkRequest);
     }
     return i18nString(UIStrings.explainStyling);
   }
 
-  #expandConsoleInsightsSetting(): void {
-    this.#isConsoleInsightsSettingExpanded = !this.#isConsoleInsightsSettingExpanded;
+  #expandSetting(setting: Common.Settings.Setting<boolean>): void {
+    const settingData = this.#settingToParams.get(setting);
+    if (!settingData) {
+      return;
+    }
+    settingData.settingExpandState.isSettingExpanded = !settingData.settingExpandState.isSettingExpanded;
     void this.render();
   }
 
-  #toggleConsoleInsightsSetting(ev: Event): void {
+  #toggleSetting(setting: Common.Settings.Setting<boolean>, ev: Event): void {
     // If the switch is being clicked, there is both a click- and a
     // change-event. Aborting on click avoids running this method twice.
     if (ev.target instanceof Switch.Switch.Switch && ev.type !== Switch.Switch.SwitchChangeEvent.eventName) {
       return;
     }
-    if (!this.#consoleInsightsSetting) {
+
+    const settingData = this.#settingToParams.get(setting);
+    if (!settingData) {
       return;
     }
-    const oldSettingValue = this.#consoleInsightsSetting.get();
-    this.#consoleInsightsSetting.set(!oldSettingValue);
-    if (!oldSettingValue && !this.#isConsoleInsightsSettingExpanded) {
-      this.#isConsoleInsightsSettingExpanded = true;
-    }
-    if (oldSettingValue === false) {
-      // Allows skipping the consent reminder if the user enabled the feature via settings in the current session
-      Common.Settings.Settings.instance()
-          .createSetting('console-insights-skip-reminder', true, Common.Settings.SettingStorageType.SESSION)
-          .set(true);
-    }
-    void this.render();
-  }
 
-  #expandAiAssistanceSetting(): void {
-    this.#isAiAssistanceSettingExpanded = !this.#isAiAssistanceSettingExpanded;
-    void this.render();
-  }
-
-  #toggleAiAssistanceSetting(ev: Event): void {
-    // If the switch is being clicked, there is both a click- and a
-    // change-event. Aborting on click avoids running this method twice.
-    if (ev.target instanceof Switch.Switch.Switch && ev.type !== Switch.Switch.SwitchChangeEvent.eventName) {
-      return;
-    }
-    if (!this.#aiAssistanceSetting) {
-      return;
-    }
-    const oldSettingValue = this.#aiAssistanceSetting.get();
-    this.#aiAssistanceSetting.set(!oldSettingValue);
-    if (!oldSettingValue && !this.#isAiAssistanceSettingExpanded) {
-      this.#isAiAssistanceSettingExpanded = true;
+    const oldSettingValue = setting.get();
+    setting.set(!oldSettingValue);
+    if (!oldSettingValue && !settingData.settingExpandState.isSettingExpanded) {
+      settingData.settingExpandState.isSettingExpanded = true;
     }
 
-    // If history was create create and the value changes to `false`
-    if (this.#aiAssistanceHistorySetting && !this.#aiAssistanceSetting.get()) {
-      this.#aiAssistanceHistorySetting.set([]);
+    // Custom settings logic
+    if (setting.name === 'console-insights-enabled') {
+      if (oldSettingValue) {
+        // If the user turns the feature off, we want them to go through the full onboarding flow should they later turn
+        // the feature on again. We achieve this by resetting the onboardig setting.
+        Common.Settings.Settings.instance()
+            .createLocalSetting('console-insights-onboarding-finished', false)
+            .set(false);
+      } else {
+        // Allows skipping the consent reminder if the user enabled the feature via settings in the current session
+        Common.Settings.Settings.instance()
+            .createSetting('console-insights-skip-reminder', true, Common.Settings.SettingStorageType.SESSION)
+            .set(true);
+      }
+    } else if (setting.name === 'ai-assistance-enabled' && !setting.get()) {
+      // If the "AI Assistance" is toggled off, we remove all the history entries related to the feature.
+      void AiAssistanceModel.AiHistoryStorage.instance().deleteAll();
     }
     void this.render();
   }
@@ -343,7 +496,7 @@ export class AISettingsTab extends LegacyWrapper.LegacyWrapper.WrappableComponen
     const privacyNoticeLink = UI.XLink.XLink.create(
         'https://policies.google.com/privacy', i18nString(UIStrings.privacyNotice), undefined, undefined,
         'privacy-notice');
-    const noLogging = Common.Settings.Settings.instance().getHostConfig().aidaAvailability?.enterprisePolicyValue ===
+    const noLogging = Root.Runtime.hostConfig.aidaAvailability?.enterprisePolicyValue ===
         Root.Runtime.GenAiEnterprisePolicyValue.ALLOW_WITHOUT_LOGGING;
 
     const bulletPoints = [
@@ -364,6 +517,7 @@ export class AISettingsTab extends LegacyWrapper.LegacyWrapper.WrappableComponen
         })}`,
       },
     ];
+
     return html`
       <div class="shared-disclaimer">
         <h2>${i18nString(UIStrings.boostYourProductivity)}</h2>
@@ -375,77 +529,56 @@ export class AISettingsTab extends LegacyWrapper.LegacyWrapper.WrappableComponen
     `;
   }
 
-  #renderSettingItem(icon: string, text: Common.UIString.LocalizedString): Lit.TemplateResult {
+  #renderSettingItem(settingItem: SettingItem): Lit.TemplateResult {
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     return html`
       <div>
         <devtools-icon .data=${{
-          iconName: icon,
+          iconName: settingItem.iconName,
           width: 'var(--sys-size-9)',
           height: 'var(--sys-size-9)',
         } as IconButton.Icon.IconData}>
         </devtools-icon>
       </div>
-      <div class="padded">${text}</div>
+      <div class="padded">${settingItem.text}</div>
     `;
     // clang-format on
   }
 
-  #getDisabledReasons(): string[] {
-    const reasons = [];
-    switch (this.#aidaAvailability) {
-      case Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL:
-      case Host.AidaClient.AidaAccessPreconditions.SYNC_IS_PAUSED:
-        reasons.push(i18nString(UIStrings.notLoggedIn));
-        break;
-      // @ts-expect-error
-      case Host.AidaClient.AidaAccessPreconditions.NO_INTERNET:  // fallthrough
-        reasons.push(i18nString(UIStrings.offline));
-      case Host.AidaClient.AidaAccessPreconditions.AVAILABLE: {
-        // No age check if there is no logged in user. Age check would always fail in that case.
-        const config = Common.Settings.Settings.instance().getHostConfig();
-        if (config?.aidaAvailability?.blockedByAge === true) {
-          reasons.push(i18nString(UIStrings.ageRestricted));
-        }
-      }
+  #renderSetting(setting: Common.Settings.Setting<boolean>): Lit.LitTemplate {
+    const settingData = this.#settingToParams.get(setting);
+    if (!settingData) {
+      return Lit.nothing;
     }
-    // `consoleInsightsSetting` and `aiAssistantSetting` are both disabled for the same reasons.
-    const disabledReasons = this.#consoleInsightsSetting?.disabledReasons() || [];
-    reasons.push(...disabledReasons);
-    return reasons;
-  }
-
-  #renderConsoleInsightsSetting(disabledReasons: string[]): Lit.TemplateResult {
+    const disabledReasons = AiAssistanceModel.getDisabledReasons(this.#aidaAvailability);
     const isDisabled = disabledReasons.length > 0;
     const disabledReasonsJoined = disabledReasons.join('\n') || undefined;
     const detailsClasses = {
       'whole-row': true,
-      open: this.#isConsoleInsightsSettingExpanded,
+      open: settingData.settingExpandState.isSettingExpanded,
     };
-    const tabindex = this.#isConsoleInsightsSettingExpanded ? '0' : '-1';
-    const noLogging = Common.Settings.Settings.instance().getHostConfig().aidaAvailability?.enterprisePolicyValue ===
-        Root.Runtime.GenAiEnterprisePolicyValue.ALLOW_WITHOUT_LOGGING;
+    const tabindex = settingData.settingExpandState.isSettingExpanded ? '0' : '-1';
 
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     return html`
-      <div class="accordion-header" @click=${this.#expandConsoleInsightsSetting}>
+      <div class="accordion-header" @click=${this.#expandSetting.bind(this, setting)}>
         <div class="icon-container centered">
-          <devtools-icon name="lightbulb-spark"></devtools-icon>
+          <devtools-icon name=${settingData.iconName}></devtools-icon>
         </div>
         <div class="setting-card">
-          <h2>${i18n.i18n.lockedString('Console Insights')}</h2>
-          <div class="setting-description">${i18nString(UIStrings.helpUnderstandConsole)}</div>
+          <h2>${settingData.settingName}</h2>
+          <div class="setting-description">${settingData.settingDescription}</div>
         </div>
         <div class="dropdown centered">
           <devtools-button
             .data=${{
-              title: this.#isConsoleInsightsSettingExpanded ? i18nString(UIStrings.showLess) : i18nString(UIStrings.showMore),
+              title: settingData.settingExpandState.isSettingExpanded ? i18nString(UIStrings.showLess) : i18nString(UIStrings.showMore),
               size: Buttons.Button.Size.SMALL,
-              iconName: this.#isConsoleInsightsSettingExpanded ? 'chevron-up' : 'chevron-down',
+              iconName: settingData.settingExpandState.isSettingExpanded ? 'chevron-up' : 'chevron-down',
               variant: Buttons.Button.Variant.ICON,
-              jslogContext: 'console-insights.accordion',
+              jslogContext: settingData.settingExpandState.expandSettingJSLogContext,
             } as Buttons.Button.ButtonData}
           ></devtools-button>
         </div>
@@ -453,102 +586,29 @@ export class AISettingsTab extends LegacyWrapper.LegacyWrapper.WrappableComponen
       <div class="divider"></div>
       <div class="toggle-container centered"
         title=${ifDefined(disabledReasonsJoined)}
-        @click=${this.#toggleConsoleInsightsSetting.bind(this)}
+        @click=${this.#toggleSetting.bind(this, setting)}
       >
         <devtools-switch
-          .checked=${Boolean(this.#consoleInsightsSetting?.get()) && !isDisabled}
-          .jslogContext=${this.#consoleInsightsSetting?.name || ''}
+          .checked=${Boolean(setting.get()) && !isDisabled}
+          .jslogContext=${setting.name || ''}
           .disabled=${isDisabled}
-          @switchchange=${this.#toggleConsoleInsightsSetting.bind(this)}
-          aria-label=${disabledReasonsJoined || i18nString(UIStrings.enableConsoleInsights)}
+          @switchchange=${this.#toggleSetting.bind(this, setting)}
+          aria-label=${disabledReasonsJoined || settingData.enableSettingText}
         ></devtools-switch>
       </div>
       <div class=${classMap(detailsClasses)}>
         <div class="overflow-hidden">
           <div class="expansion-grid">
             <h3 class="expansion-grid-whole-row">${i18nString(UIStrings.whenOn)}</h3>
-            ${this.#renderSettingItem('lightbulb', i18nString(UIStrings.explainConsole))}
-            ${this.#renderSettingItem('code', i18nString(UIStrings.receiveSuggestions))}
+            ${settingData.settingItems.map(item => this.#renderSettingItem(item))}
             <h3 class="expansion-grid-whole-row">${i18nString(UIStrings.thingsToConsider)}</h3>
-            ${this.#renderSettingItem('google', noLogging ? i18nString(UIStrings.consoleInsightsSendsDataNoLogging) : i18nString(UIStrings.consoleInsightsSendsData))}
+            ${settingData.toConsiderSettingItems.map(item => this.#renderSettingItem(item))}
             <div class="expansion-grid-whole-row">
               <x-link
-                href="https://goo.gle/devtools-console-messages-ai"
+                href=${settingData.learnMoreLink.url}
                 class="link"
                 tabindex=${tabindex}
-                jslog=${VisualLogging.link('learn-more.console-insights').track({
-                  click: true,
-                })}
-              >${i18nString(UIStrings.learnMore)}</x-link>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-    // clang-format on
-  }
-
-  #renderAiAssistanceSetting(disabledReasons: string[]): Lit.TemplateResult {
-    const isDisabled = disabledReasons.length > 0;
-    const disabledReasonsJoined = disabledReasons.join('\n') || undefined;
-    const detailsClasses = {
-      'whole-row': true,
-      open: this.#isAiAssistanceSettingExpanded,
-    };
-    const tabindex = this.#isAiAssistanceSettingExpanded ? '0' : '-1';
-    const noLogging = Common.Settings.Settings.instance().getHostConfig().aidaAvailability?.enterprisePolicyValue ===
-        Root.Runtime.GenAiEnterprisePolicyValue.ALLOW_WITHOUT_LOGGING;
-
-    // Disabled until https://crbug.com/1079231 is fixed.
-    // clang-format off
-    return html`
-      <div class="accordion-header" @click=${this.#expandAiAssistanceSetting}>
-        <div class="icon-container centered">
-          <devtools-icon name="smart-assistant"></devtools-icon>
-        </div>
-        <div class="setting-card">
-          <h2>${i18n.i18n.lockedString('AI assistance')}</h2>
-          <div class="setting-description">${this.#getAiAssistanceSettingDescription()}</div>
-        </div>
-        <div class="dropdown centered">
-          <devtools-button
-            .data=${{
-              title: this.#isAiAssistanceSettingExpanded ? i18nString(UIStrings.showLess) : i18nString(UIStrings.showMore),
-              size: Buttons.Button.Size.SMALL,
-              iconName: this.#isAiAssistanceSettingExpanded ? 'chevron-up' : 'chevron-down',
-              variant: Buttons.Button.Variant.ICON,
-              jslogContext: 'freestyler.accordion',
-            } as Buttons.Button.ButtonData}
-          ></devtools-button>
-        </div>
-      </div>
-      <div class="divider"></div>
-      <div class="toggle-container centered"
-        title=${ifDefined(disabledReasonsJoined)}
-        @click=${this.#toggleAiAssistanceSetting.bind(this)}
-      >
-        <devtools-switch
-          .checked=${Boolean(this.#aiAssistanceSetting?.get()) && !isDisabled}
-          .jslogContext=${this.#aiAssistanceSetting?.name || ''}
-          .disabled=${isDisabled}
-          @switchchange=${this.#toggleAiAssistanceSetting.bind(this)}
-          aria-label=${disabledReasonsJoined || i18nString(UIStrings.enableAiAssistance)}
-        ></devtools-switch>
-      </div>
-      <div class=${classMap(detailsClasses)}>
-        <div class="overflow-hidden">
-          <div class="expansion-grid">
-            <h3 class="expansion-grid-whole-row">${i18nString(UIStrings.whenOn)}</h3>
-            ${this.#renderSettingItem('info', this.#getAiAssistanceSettingInfo())}
-            ${this.#renderSettingItem('pen-spark', i18nString(UIStrings.receiveStylingSuggestions))}
-            <h3 class="expansion-grid-whole-row">${i18nString(UIStrings.thingsToConsider)}</h3>
-            ${this.#renderSettingItem('google', noLogging ? i18nString(UIStrings.freestylerSendsDataNoLogging) : i18nString(UIStrings.freestylerSendsData))}
-            <div class="expansion-grid-whole-row">
-              <x-link
-                href="https://goo.gle/devtools-ai-assistance"
-                class="link"
-                tabindex=${tabindex}
-                jslog=${VisualLogging.link('learn-more.ai-assistance').track({
+                jslog=${VisualLogging.link(settingData.learnMoreLink.linkJSLogContext).track({
                   click: true,
                 })}
               >${i18nString(UIStrings.learnMore)}</x-link>
@@ -583,18 +643,19 @@ export class AISettingsTab extends LegacyWrapper.LegacyWrapper.WrappableComponen
   }
 
   override async render(): Promise<void> {
-    const disabledReasons = this.#getDisabledReasons();
+    const disabledReasons = AiAssistanceModel.getDisabledReasons(this.#aidaAvailability);
 
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     Lit.render(html`
+      <style>${Input.checkboxStyles}</style>
+      <style>${aiSettingsTabStyles}</style>
       <div class="settings-container-wrapper" jslog=${VisualLogging.pane('chrome-ai')}>
         ${this.#renderSharedDisclaimer()}
-        ${this.#consoleInsightsSetting || this.#aiAssistanceSetting ? html`
+        ${this.#settingToParams.size > 0 ? html`
           ${disabledReasons.length ? this.#renderDisabledExplainer(disabledReasons) : Lit.nothing}
           <div class="settings-container">
-            ${this.#consoleInsightsSetting ? this.#renderConsoleInsightsSetting(disabledReasons) : Lit.nothing}
-            ${this.#aiAssistanceSetting ? this.#renderAiAssistanceSetting(disabledReasons) : Lit.nothing}
+            ${this.#settingToParams.keys().map(setting => this.#renderSetting(setting))}
           </div>
         ` : Lit.nothing}
       </div>

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicklistview_p.h"
 #include "qquickitemview_p_p.h"
@@ -375,7 +376,7 @@ public:
         : removedAtIndex(false)
         , backwards(iEnd < iBegin)
     {
-        conn = QObject::connect(model, &QQmlInstanceModel::modelUpdated,
+        conn = QObject::connect(model, &QQmlInstanceModel::modelUpdated, model,
                 [&] (const QQmlChangeSet &changeSet, bool /*reset*/)
         {
             for (const QQmlChangeSet::Change &rem : changeSet.removes()) {
@@ -806,6 +807,10 @@ void QQuickListViewPrivate::removeItem(FxViewItem *item)
 #endif
     {
         qCDebug(lcItemViewDelegateLifecycle) << "\treleasing stationary item" << item->index << (QObject *)(item->item);
+        if (auto *att = static_cast<QQuickListViewAttached*>(item->attached)) {
+            releaseSectionItem(att->m_sectionItem);
+            att->m_sectionItem = nullptr;
+        }
         releaseItem(item, reusableFlag);
     }
 }
@@ -2457,6 +2462,7 @@ QQuickListView::~QQuickListView()
 
 /*!
     \qmlproperty enumeration QtQuick::ListView::delegateModelAccess
+    \since 6.10
 
     \include delegatemodelaccess.qdocinc
 */
@@ -3684,7 +3690,7 @@ qreal QQuickListView::maxXExtent() const
 }
 
 /*!
-    \qmlmethod QtQuick::ListView::incrementCurrentIndex()
+    \qmlmethod void QtQuick::ListView::incrementCurrentIndex()
 
     Increments the current index.  The current index will wrap
     if keyNavigationWraps is true and it is currently at the end.
@@ -3704,7 +3710,7 @@ void QQuickListView::incrementCurrentIndex()
 }
 
 /*!
-    \qmlmethod QtQuick::ListView::decrementCurrentIndex()
+    \qmlmethod void QtQuick::ListView::decrementCurrentIndex()
 
     Decrements the current index.  The current index will wrap
     if keyNavigationWraps is true and it is currently at the beginning.
@@ -3740,7 +3746,7 @@ void QQuickListViewPrivate::updateSectionCriteria()
 bool QQuickListViewPrivate::applyInsertionChange(const QQmlChangeSet::Change &change, ChangeResult *insertResult, QList<FxViewItem *> *addedItems, QList<MovedItem> *movingIntoView)
 {
     Q_Q(QQuickListView);
-#if QT_CONFIG(quick_viewtransitions)
+#if !QT_CONFIG(quick_viewtransitions)
     Q_UNUSED(movingIntoView)
 #endif
     int modelIndex = change.index;
@@ -3966,7 +3972,7 @@ void QQuickListViewPrivate::translateAndTransitionItemsAfter(int afterModelIndex
 #endif
 
 /*!
-    \qmlmethod QtQuick::ListView::positionViewAtIndex(int index, PositionMode mode)
+    \qmlmethod void QtQuick::ListView::positionViewAtIndex(int index, PositionMode mode)
 
     Positions the view such that the \a index is at the position specified by \a mode:
 
@@ -3999,8 +4005,8 @@ void QQuickListViewPrivate::translateAndTransitionItemsAfter(int afterModelIndex
 */
 
 /*!
-    \qmlmethod QtQuick::ListView::positionViewAtBeginning()
-    \qmlmethod QtQuick::ListView::positionViewAtEnd()
+    \qmlmethod void QtQuick::ListView::positionViewAtBeginning()
+    \qmlmethod void QtQuick::ListView::positionViewAtEnd()
 
     Positions the view at the beginning or end, taking into account any header or footer.
 
@@ -4059,7 +4065,7 @@ void QQuickListViewPrivate::translateAndTransitionItemsAfter(int afterModelIndex
 */
 
 /*!
-    \qmlmethod QtQuick::ListView::forceLayout()
+    \qmlmethod void QtQuick::ListView::forceLayout()
 
     Responding to changes in the model is usually batched to happen only once
     per frame. This means that inside script blocks it is possible for the

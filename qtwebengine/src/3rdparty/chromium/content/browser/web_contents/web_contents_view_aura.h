@@ -107,7 +107,7 @@ class CONTENT_EXPORT WebContentsViewAura
                             std::unique_ptr<DropData> drop_data,
                             DropMetadata drop_metadata,
                             std::unique_ptr<ui::OSExchangeData> data,
-                            base::ScopedClosureRunner end_drag_runner,
+                            base::ScopedClosureRunner drop_exit_cleanup,
                             std::optional<gfx::PointF> transformed_pt,
                             gfx::PointF screen_pt);
     OnPerformingDropContext(const OnPerformingDropContext& other) = delete;
@@ -120,7 +120,7 @@ class CONTENT_EXPORT WebContentsViewAura
     std::unique_ptr<DropData> drop_data;
     DropMetadata drop_metadata;
     std::unique_ptr<ui::OSExchangeData> data;
-    base::ScopedClosureRunner end_drag_runner;
+    base::ScopedClosureRunner drop_exit_cleanup;
     std::optional<gfx::PointF> transformed_pt;
     gfx::PointF screen_pt;
   };
@@ -149,6 +149,10 @@ class CONTENT_EXPORT WebContentsViewAura
                            Drop_DropZone_DelegateBlocks);
   FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest, StartDragging);
   FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest, GetDropCallback_Run);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest,
+                           DragInProgressFinishesAfterDrop);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest,
+                           DragInProgressFinishesAfterNoDrop);
   FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest, GetDropCallback_Cancelled);
   FRIEND_TEST_ALL_PREFIXES(
       WebContentsViewAuraTest,
@@ -168,6 +172,10 @@ class CONTENT_EXPORT WebContentsViewAura
       EmptyTextWithUrlInDropDataIsEmptyInOSExchangeDataGetString);
   FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest,
                            UrlInDropDataReturnsUrlInOSExchangeDataGetString);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest,
+                           IgnoreInputs_OngoingDropGetsCleared);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest,
+                           EndDragIsCalledAfterAsyncDrop);
 
   class WindowObserver;
 
@@ -219,7 +227,6 @@ class CONTENT_EXPORT WebContentsViewAura
   void SetOverscrollControllerEnabled(bool enabled) override;
   void OnCapturerCountChanged() override;
   void FullscreenStateChanged(bool is_fullscreen) override;
-  void UpdateWindowControlsOverlay(const gfx::Rect& bounding_rect) override;
   BackForwardTransitionAnimationManager*
   GetBackForwardTransitionAnimationManager() override;
   void DestroyBackForwardTransitionAnimationManager() override;
@@ -325,6 +332,10 @@ class CONTENT_EXPORT WebContentsViewAura
       std::unique_ptr<ui::OSExchangeData> data,
       ui::mojom::DragOperation& output_drag_op,
       std::unique_ptr<ui::LayerTreeOwner> drag_image_layer_owner);
+
+  // Run when drop callback completes to ensure |drag_in_progess_| is
+  // flipped to false before EndDrag runs.
+  void OnDropExit();
 
   // For unit testing, registers a callback for when a drop operation
   // completes.

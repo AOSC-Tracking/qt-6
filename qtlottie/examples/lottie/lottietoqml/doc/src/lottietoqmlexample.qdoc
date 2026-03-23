@@ -5,14 +5,13 @@
     \title lottietoqml Example
     \example lottietoqml
     \image lottietoqmlexample.png
+           {Grid of animated vector graphics}
     \brief An example demonstrating the use of lottietoqml in an application.
     \ingroup qtlottieexamples
     \examplecategory {Graphics}
 
     This example demonstrates how the \l{lottietoqml} tool can be used to convert Lottie files
     into QML and then use these in an application.
-
-    \note lottietoqml is currently in tech preview.
 
     \section1 Overview
 
@@ -23,6 +22,7 @@
     image is vector-based, it will remain crisp without any scaling artifacts.
 
     \image lottietoqmlexample-closeup.png
+           {Zoomed view of single animated vector graphic}
 
     The \l{lottietoqml} does the equivalent to what \l{svgtoqml} does for .SVG files. It converts
     as much as possible of the original vector image and animation to \l{Qt Quick Shapes} and other
@@ -32,6 +32,11 @@
     For convenience, Lottie files can also be loaded at run-time through the \l{VectorImage}
     component. However, pregenerating the QML file is usually preferable, since this allows
     preprocessing the QML scene for faster loading.
+
+    \snippet lottietoqml/CMakeLists.txt lottietoqml
+
+    In this example, the Lottie files are automatically converted to QML using the
+    CMake function \l{qt_target_qml_from_lottie}{qt_target_qml_from_lottie()}.
 
     \section1 Assets
 

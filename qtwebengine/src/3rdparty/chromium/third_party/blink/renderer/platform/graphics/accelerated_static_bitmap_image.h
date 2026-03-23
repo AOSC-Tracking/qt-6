@@ -11,10 +11,9 @@
 #include "components/viz/common/resources/release_callback.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "third_party/blink/renderer/platform/graphics/mailbox_ref.h"
+#include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
-
-struct SkImageInfo;
 
 namespace gpu {
 class ClientSharedImage;
@@ -40,8 +39,6 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   // the texture is bound to the shared image, stays alive and has a read lock
   // on the shared image until the |release_callback| is invoked.
   //
-  // |sk_image_info| provides the metadata associated with the backing.
-  //
   // |context_provider| is the context that the shared image was created with.
   // |context_thread_ref| and |context_task_runner| refer to the thread the
   // context is bound to. If the image is created on a different thread than
@@ -58,7 +55,7 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
       scoped_refptr<gpu::ClientSharedImage>,
       const gpu::SyncToken&,
       GLuint shared_image_texture_id,
-      const SkImageInfo& sk_image_info,
+      SkAlphaType alpha_type,
       base::WeakPtr<WebGraphicsContext3DProviderWrapper>,
       base::PlatformThreadRef context_thread_ref,
       scoped_refptr<base::SingleThreadTaskRunner> context_task_runner,
@@ -70,12 +67,12 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   // This takes ownership of the shared image.
   static scoped_refptr<AcceleratedStaticBitmapImage>
   CreateFromExternalSharedImage(
-      const gpu::ExportedSharedImage& exported_shared_image,
+      gpu::ExportedSharedImage exported_shared_image,
       const gpu::SyncToken& sync_token,
-      const SkImageInfo& sk_image_info,
+      SkAlphaType alpha_type,
       base::OnceCallback<void(const gpu::SyncToken&)> release_callback);
 
-  bool CurrentFrameKnownToBeOpaque() override;
+  bool IsOpaque() override;
   bool IsTextureBacked() const override { return true; }
 
   void Draw(cc::PaintCanvas*,
@@ -94,10 +91,10 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
                      GLenum dest_target,
                      GLuint dest_texture_id,
                      GLint dest_level,
-                     bool unpack_premultiply_alpha,
-                     bool unpack_flip_y,
+                     SkAlphaType dest_alpha_type,
+                     GrSurfaceOrigin destination_origin,
                      const gfx::Point& dest_point,
-                     const gfx::Rect& source_sub_rectangle) override;
+                     const gfx::Rect& src_rect) override;
 
   bool CopyToResourceProvider(CanvasResourceProvider* resource_provider,
                               const gfx::Rect& copy_rect) override;
@@ -121,13 +118,17 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   gpu::MailboxHolder GetMailboxHolder() const final;
   scoped_refptr<gpu::ClientSharedImage> GetSharedImage() const final;
   gpu::SyncToken GetSyncToken() const final;
-  bool IsOriginTopLeft() const final {
-    return shared_image_->surface_origin() == kTopLeft_GrSurfaceOrigin;
-  }
 
   PaintImage PaintImageForCurrentFrame() override;
 
-  SkImageInfo GetSkImageInfo() const override;
+  gfx::Size GetSize() const override { return shared_image_->size(); }
+  SkAlphaType GetAlphaType() const override { return alpha_type_; }
+  gfx::ColorSpace GetColorSpace() const override {
+    return shared_image_->color_space();
+  }
+  viz::SharedImageFormat GetSharedImageFormat() const override {
+    return shared_image_->format();
+  }
 
  private:
   struct ReleaseContext {
@@ -142,7 +143,7 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
       scoped_refptr<gpu::ClientSharedImage>,
       const gpu::SyncToken&,
       GLuint shared_image_texture_id,
-      const SkImageInfo& sk_image_info,
+      SkAlphaType alpha_type,
       const ImageOrientation& orientation,
       base::WeakPtr<WebGraphicsContext3DProviderWrapper>,
       base::PlatformThreadRef context_thread_ref,
@@ -153,7 +154,7 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   void InitializeTextureBacking(GLuint shared_image_texture_id);
 
   scoped_refptr<gpu::ClientSharedImage> shared_image_;
-  const SkImageInfo sk_image_info_;
+  SkAlphaType alpha_type_;
 
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper_;
   scoped_refptr<MailboxRef> mailbox_ref_;

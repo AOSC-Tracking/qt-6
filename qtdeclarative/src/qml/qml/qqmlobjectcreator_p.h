@@ -1,5 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
+
 #ifndef QQMLOBJECTCREATOR_P_H
 #define QQMLOBJECTCREATOR_P_H
 
@@ -50,7 +52,7 @@ struct RequiredPropertyInfo
     QString propertyName;
     QUrl fileUrl;
     QV4::CompiledData::Location location;
-    QVector<AliasToRequiredInfo> aliasesToRequired;
+    QList<AliasToRequiredInfo> aliasesToRequired;
 };
 
 struct RequiredPropertyKey
@@ -293,7 +295,7 @@ private:
                 sharedState->allJavaScriptObjects, ObjectInCreationGCAnchorList(valueScope));
 
         Q_ASSERT(topLevelCreator);
-        QV4::QmlContext *qmlContext = static_cast<QV4::QmlContext *>(valueScope.alloc());
+        QV4::QmlContext *qmlContext = static_cast<QV4::QmlContext *>(valueScope.constructUndefined(1));
 
         qt_ptr_swap(_qmlContext, qmlContext);
 
@@ -322,6 +324,7 @@ private:
         qt_ptr_swap(_qmlContext, qmlContext);
         qt_ptr_swap(_scopeObject, scopeObject);
     }
+    void registerPostHocRequiredProperties(const QV4::CompiledData::Binding *binding);
 };
 
 struct QQmlObjectCreatorRecursionWatcher

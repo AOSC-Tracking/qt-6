@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 
 #ifndef QMACSTYLE_MAC_P_P_H
@@ -177,7 +178,7 @@ public:
 
 public:
     mutable QPointer<QObject> autoDefaultButton;
-    static  QVector<QPointer<QObject> > scrollBars;
+    static  QList<QPointer<QObject> > scrollBars;
 
     mutable QPointer<QQuickItem> focusWidget; // TODO: rename to focusItem
     mutable NSView *backingStoreNSView;

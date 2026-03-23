@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import Dict, Optional
 
 
 class DurationMeasureContext:
@@ -32,7 +31,7 @@ class Durations:
   """
 
   def __init__(self) -> None:
-    self._durations: Dict[str, dt.timedelta] = {}
+    self._durations: dict[str, dt.timedelta] = {}
 
   def __getitem__(self, name: str) -> dt.timedelta:
     return self._durations[name]
@@ -49,7 +48,7 @@ class Durations:
         f"Cannot measure '{name}' duration twice!")
     return DurationMeasureContext(self, name)
 
-  def to_json(self) -> Dict[str, float]:
+  def to_json(self) -> dict[str, float]:
     return {
         name: self._durations[name].total_seconds()
         for name in sorted(self._durations.keys())
@@ -64,7 +63,7 @@ class TimeScope:
   def __init__(self, message: str, level: int = 3) -> None:
     self._message = message
     self._level = level
-    self._start: Optional[dt.datetime] = None
+    self._start: dt.datetime | None = None
     self._duration: dt.timedelta = dt.timedelta()
 
   @property

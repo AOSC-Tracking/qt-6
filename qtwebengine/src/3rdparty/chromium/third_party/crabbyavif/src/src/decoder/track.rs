@@ -17,18 +17,7 @@ use crate::parser::mp4box::ItemProperty;
 use crate::parser::mp4box::MetaBox;
 use crate::*;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum RepetitionCount {
-    Unknown,
-    Infinite,
-    Finite(i32),
-}
-
-impl Default for RepetitionCount {
-    fn default() -> Self {
-        Self::Finite(0)
-    }
-}
+use std::num::NonZeroU32;
 
 #[derive(Debug, Default)]
 pub struct Track {
@@ -45,10 +34,15 @@ pub struct Track {
     pub sample_table: Option<SampleTable>,
     pub elst_seen: bool,
     pub meta: Option<MetaBox>,
+    pub handler_type: String,
 }
 
 impl Track {
-    pub(crate) fn check_limits(&self, size_limit: u32, dimension_limit: u32) -> bool {
+    pub(crate) fn check_limits(
+        &self,
+        size_limit: Option<NonZeroU32>,
+        dimension_limit: Option<NonZeroU32>,
+    ) -> bool {
         check_limits(self.width, self.height, size_limit, dimension_limit)
     }
 
@@ -59,11 +53,29 @@ impl Track {
             false
         }
     }
+    pub(crate) fn is_video_handler(&self) -> bool {
+        // Handler types known to be associated with video content.
+        self.handler_type == "pict" || self.handler_type == "vide" || self.handler_type == "auxv"
+    }
     pub(crate) fn is_aux(&self, primary_track_id: u32) -> bool {
+        // Do not check the track's handler_type. It should be "auxv" according to
+        // HEIF (ISO/IEC 23008-12:2022), Section 7.5.3.1, but old versions of libavif used to write
+        // "pict" instead.
         self.has_av1_samples() && self.aux_for_id == Some(primary_track_id)
     }
     pub(crate) fn is_color(&self) -> bool {
+        // Do not check the track's handler_type. It should be "pict" according to
+        // HEIF (ISO/IEC 23008-12:2022), Section 7 but some existing files might be using "vide".
         self.has_av1_samples() && self.aux_for_id.is_none()
+    }
+
+    pub(crate) fn is_auxiliary_alpha(&self) -> bool {
+        if let Some(properties) = self.get_properties() {
+            if let Some(aux_type) = &find_property!(properties, AuxiliaryType) {
+                return is_auxiliary_type_alpha(aux_type);
+            }
+        }
+        true // Assume alpha if no type is present
     }
 
     pub(crate) fn get_properties(&self) -> Option<&Vec<ItemProperty>> {
@@ -95,7 +107,7 @@ impl Track {
                     ));
                 }
                 let repetition_count: u64 = self.track_duration.div_ceil(self.segment_duration) - 1;
-                return match i32::try_from(repetition_count) {
+                return match u32_from_u64(repetition_count) {
                     Ok(value) => Ok(RepetitionCount::Finite(value)),
                     Err(_) => Ok(RepetitionCount::Infinite),
                 };

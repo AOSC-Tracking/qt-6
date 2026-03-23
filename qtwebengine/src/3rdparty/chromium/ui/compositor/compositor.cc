@@ -12,12 +12,13 @@
 #include <utility>
 #include <vector>
 
+#include "base/check.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/observer_list.h"
 #include "base/power_monitor/power_monitor.h"
 #include "base/strings/string_number_conversions.h"
@@ -37,8 +38,11 @@
 #include "cc/metrics/begin_main_frame_metrics.h"
 #include "cc/metrics/custom_metrics_recorder.h"
 #include "cc/metrics/frame_sequence_tracker.h"
+#include "cc/trees/clip_node.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "cc/trees/property_ids.h"
+#include "cc/trees/property_tree.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
@@ -62,6 +66,7 @@
 #include "ui/compositor/overscroll/scroll_input_handler.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/display/display_switches.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/icc_profile.h"
 #include "ui/gfx/presentation_feedback.h"
@@ -74,19 +79,15 @@
 
 namespace ui {
 
-// Used to hold on to IssueExternalBeginFrame arguments if
-// |external_begin_frame_controller_| isn't ready yet.
-struct PendingBeginFrameArgs {
-  PendingBeginFrameArgs(
-      const viz::BeginFrameArgs& args,
-      bool force,
-      base::OnceCallback<void(const viz::BeginFrameAck&)> callback)
-      : args(args), force(force), callback(std::move(callback)) {}
+#if !BUILDFLAG(IS_IOS)
+Compositor::PendingBeginFrameArgs::PendingBeginFrameArgs(
+    const viz::BeginFrameArgs& args,
+    bool force,
+    base::OnceCallback<void(const viz::BeginFrameAck&)> callback)
+    : args(args), force(force), callback(std::move(callback)) {}
 
-  viz::BeginFrameArgs args;
-  bool force;
-  base::OnceCallback<void(const viz::BeginFrameAck&)> callback;
-};
+Compositor::PendingBeginFrameArgs::~PendingBeginFrameArgs() = default;
+#endif
 
 Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
                        ui::ContextFactory* context_factory,
@@ -231,9 +232,6 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
   }
 #endif
 
-  settings.enable_shared_image_cache_for_gpu =
-      base::FeatureList::IsEnabled(features::kUIEnableSharedImageCacheForGpu);
-
   animation_host_ = cc::AnimationHost::CreateMainInstance();
 
   cc::LayerTreeHost::InitParams params;
@@ -248,10 +246,14 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
   if (uses_layer_lists_) {
     property_tree_delegate_ =
         std::make_unique<ui::CompositorPropertyTreeDelegate>();
+    property_tree_delegate_->set_compositor(this);
     params.property_tree_delegate = property_tree_delegate_.get();
   }
 
   host_ = cc::LayerTreeHost::CreateSingleThreaded(this, std::move(params));
+  if (uses_layer_lists_) {
+    property_trees_.emplace(*host_);
+  }
 
   const base::WeakPtr<cc::CompositorDelegateForInput>& compositor_delegate =
       host_->GetDelegateForInput();
@@ -307,6 +309,12 @@ Compositor::~Compositor() {
 
   if (animation_timeline_)
     animation_host_->RemoveAnimationTimeline(animation_timeline_.get());
+
+  if (uses_layer_lists_) {
+    // Delete references to the host_ before it is destroyed.
+    property_tree_delegate_->set_compositor(nullptr);
+    property_trees_.reset();
+  }
 
   // Stop all outstanding draws before telling the ContextFactory to tear
   // down any contexts that the |host_| may rely upon.
@@ -377,9 +385,14 @@ void Compositor::SetExternalBeginFrameController(
   DCHECK(use_external_begin_frame_control());
   external_begin_frame_controller_ = std::move(external_begin_frame_controller);
   if (pending_begin_frame_args_) {
+#if BUILDFLAG(IS_IOS)
+    external_begin_frame_controller_->IssueExternalBeginFrameNoAck(
+        *pending_begin_frame_args_);
+#else
     external_begin_frame_controller_->IssueExternalBeginFrame(
         pending_begin_frame_args_->args, pending_begin_frame_args_->force,
         std::move(pending_begin_frame_args_->callback));
+#endif
     pending_begin_frame_args_.reset();
   }
 }
@@ -401,6 +414,15 @@ void Compositor::SetRootLayer(Layer* root_layer) {
   root_cc_layer_->RemoveAllChildren();
   if (root_layer_)
     root_layer_->SetCompositor(this, root_cc_layer_);
+
+  if (uses_layer_lists_) {
+    cc::ClipTree& ui_clip_tree = property_trees_->clip_tree_mutable();
+    if (ui_clip_tree.size() > 2) {
+      ui_clip_tree.RemoveNodes(ui_clip_tree.size() - 2);
+      // TODO(crbug.com/389771428): Figure out what to do w/ needs_update.
+      ui_clip_tree.set_needs_update(true);
+    }
+  }
 }
 
 void Compositor::DisableAnimations() {
@@ -478,6 +500,23 @@ void Compositor::SetScaleAndSize(float scale,
     size_ = size_in_pixel;
     host_->SetViewportRectAndScale(gfx::Rect(size_in_pixel), scale,
                                    local_surface_id);
+    if (uses_layer_lists_) {
+      cc::ClipTree& ui_clip_tree = property_trees_->clip_tree_mutable();
+      if (viewport_clip_id_ == cc::kInvalidPropertyNodeId) {
+        cc::ClipNode clip_node;
+        clip_node.clip = gfx::RectF(size_);
+        clip_node.transform_id = cc::kRootPropertyNodeId;
+        viewport_clip_id_ =
+            ui_clip_tree.Insert(clip_node, cc::kRootPropertyNodeId);
+      } else {
+        ui_clip_tree.Node(viewport_clip_id_)->clip = gfx::RectF(size_);
+      }
+      ui_clip_tree.SetViewportClip(gfx::RectF(size_));
+
+      // TODO(crbug.com/389771428): Figure out what to do w/ needs_update.
+      ui_clip_tree.set_needs_update(true);
+    }
+
     root_cc_layer_->SetBounds(size_in_pixel);
     if (display_private_ && (size_changed || disabled_swap_until_resize_)) {
       display_private_->Resize(size_in_pixel);
@@ -715,6 +754,17 @@ bool Compositor::HasAnimationObserver(
   return animation_observer_list_.HasObserver(observer);
 }
 
+#if BUILDFLAG(IS_IOS)
+void Compositor::IssueExternalBeginFrameNoAck(const viz::BeginFrameArgs& args) {
+  if (!external_begin_frame_controller_) {
+    // It's ok to call this repeatedly until |external_begin_frame_controller_|
+    // is ready - we'll just update the |pending_begin_frame_args_|.
+    pending_begin_frame_args_.emplace(args);
+    return;
+  }
+  external_begin_frame_controller_->IssueExternalBeginFrameNoAck(args);
+}
+#else
 void Compositor::IssueExternalBeginFrame(
     const viz::BeginFrameArgs& args,
     bool force,
@@ -723,21 +773,21 @@ void Compositor::IssueExternalBeginFrame(
     // IssueExternalBeginFrame() shouldn't be called again before the previous
     // begin frame is acknowledged.
     DCHECK(!pending_begin_frame_args_);
-    pending_begin_frame_args_ = std::make_unique<PendingBeginFrameArgs>(
-        args, force, std::move(callback));
+    pending_begin_frame_args_.emplace(args, force, std::move(callback));
     return;
   }
   external_begin_frame_controller_->IssueExternalBeginFrame(
       args, force, std::move(callback));
 }
+#endif
 
 CompositorMetricsTracker Compositor::RequestNewCompositorMetricsTracker() {
   return CompositorMetricsTracker(next_compositor_metrics_tracker_id_++,
                                   weak_ptr_factory_.GetWeakPtr());
 }
 
-double Compositor::GetPercentDroppedFrames() const {
-  return host_->GetPercentDroppedFrames();
+double Compositor::GetAverageThroughput() const {
+  return host_->GetAverageThroughput();
 }
 
 std::unique_ptr<cc::EventsMetricsManager::ScopedMonitor>
@@ -897,7 +947,7 @@ void Compositor::StartMetricsTracker(
 
 bool Compositor::StopMetricsTracker(TrackerId tracker_id) {
   auto it = compositor_metrics_tracker_map_.find(tracker_id);
-  CHECK(it != compositor_metrics_tracker_map_.end(), base::NotFatalUntil::M130);
+  CHECK(it != compositor_metrics_tracker_map_.end());
 
   // Clean up if report has happened since StopCompositorMetricsTracking would
   // not trigger report in this case.
@@ -913,7 +963,7 @@ bool Compositor::StopMetricsTracker(TrackerId tracker_id) {
 
 void Compositor::CancelMetricsTracker(TrackerId tracker_id) {
   auto it = compositor_metrics_tracker_map_.find(tracker_id);
-  CHECK(it != compositor_metrics_tracker_map_.end(), base::NotFatalUntil::M130);
+  CHECK(it != compositor_metrics_tracker_map_.end());
 
   const bool should_stop = !it->second.report_attempted;
 
@@ -1058,6 +1108,34 @@ void Compositor::RemoveScopedKeepSurfaceAlive(
   CHECK(pending_surface_copies_.find(scoped_keep_surface_alive_id) !=
         pending_surface_copies_.end());
   pending_surface_copies_.erase(scoped_keep_surface_alive_id);
+}
+
+const cc::PropertyTrees* Compositor::property_trees() const {
+  CHECK(uses_layer_lists_);
+  CHECK(property_trees_.has_value());
+  return &property_trees_.value();
+}
+
+void Compositor::CheckPropertyTrees() const {
+  DCHECK(uses_layer_lists_);
+  // TODO(crbug.com/389771428): Make this work for all of the property trees.
+
+#if DCHECK_IS_ON()
+  // Check that just the first two nodes and the viewport clip are correct.
+  // TODO: Get the whole clip tree to pass, not just the first two nodes.
+  const cc::ClipTree& ui_clip_tree = property_trees_->clip_tree();
+  const cc::ClipTree& cc_clip_tree = host_->property_trees()->clip_tree();
+  DCHECK_EQ(*ui_clip_tree.Node(cc::kRootPropertyNodeId),
+            *cc_clip_tree.Node(cc::kRootPropertyNodeId));
+  DCHECK_EQ(ui_clip_tree.ViewportClip(), cc_clip_tree.ViewportClip());
+  DCHECK_NE(viewport_clip_id_, cc::kInvalidPropertyNodeId);
+  DCHECK_EQ(*ui_clip_tree.Node(viewport_clip_id_),
+            *cc_clip_tree.Node(viewport_clip_id_));
+
+  if (!root_layer()) {
+    DCHECK_EQ(ui_clip_tree.size(), (unsigned long)2);
+  }
+#endif
 }
 
 }  // namespace ui

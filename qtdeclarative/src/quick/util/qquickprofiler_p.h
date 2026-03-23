@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQUICKPROFILER_P_H
 #define QQUICKPROFILER_P_H
@@ -302,7 +303,7 @@ public:
     ~QQuickProfiler() override;
 
 Q_SIGNALS:
-    void dataReady(const QVector<QQuickProfilerData> &data);
+    void dataReady(const QList<QQuickProfilerData> &data);
 
 protected:
     friend class QQuickProfilerAdapter;
@@ -310,7 +311,7 @@ protected:
     static QQuickProfiler *s_instance;
     QMutex m_dataMutex;
     QElapsedTimer m_timer;
-    QVector<QQuickProfilerData> m_data;
+    QList<QQuickProfilerData> m_data;
     QQuickProfilerSceneGraphData m_sceneGraphData;
 
     QQuickProfiler(QObject *parent);

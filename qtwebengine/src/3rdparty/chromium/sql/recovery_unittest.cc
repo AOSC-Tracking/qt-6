@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/dcheck_is_on.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -30,11 +31,9 @@
 #include "base/test/bind.h"
 #include "base/test/gtest_util.h"
 #include "base/test/metrics/histogram_tester.h"
-#include "base/test/scoped_feature_list.h"
 #include "build/buildflag.h"
 #include "sql/database.h"
 #include "sql/meta_table.h"
-#include "sql/sql_features.h"
 #include "sql/sqlite_result_code.h"
 #include "sql/sqlite_result_code_values.h"
 #include "sql/statement.h"
@@ -69,8 +68,6 @@ class SqlRecoveryTest : public testing::Test,
  public:
   SqlRecoveryTest()
       : db_(DatabaseOptions().set_wal_mode(ShouldEnableWal()), test::kTestTag) {
-    scoped_feature_list_.InitWithFeatureStates(
-        {{features::kEnableWALModeByDefault, ShouldEnableWal()}});
   }
 
   bool ShouldEnableWal() { return GetParam(); }
@@ -105,7 +102,6 @@ class SqlRecoveryTest : public testing::Test,
   }
 
  protected:
-  base::test::ScopedFeatureList scoped_feature_list_;
   base::ScopedTempDir temp_dir_;
   base::FilePath db_path_;
   Database db_;
@@ -878,8 +874,17 @@ TEST_P(SqlRecoveryTest, CannotRecoverDbWithErrorCallback) {
 // that it is passed a non-null database pointer and will instead likely result
 // in unexpected behavior or crashes.
 TEST_P(SqlRecoveryTest, CannotRecoverNullDb) {
-  EXPECT_CHECK_DEATH(std::ignore = Recovery::RecoverDatabase(
-                         nullptr, Recovery::Strategy::kRecoverOrRaze));
+  // TODO(pbos): Consider consolidating these so that DCHECK builds crash in the
+  // same spot. Probably either by upgrading DCHECKs to CHECKs, or if feasible
+  // by setting up the test to make it past failing DCHECKs to the expected
+  // CHECK.
+  if (DCHECK_IS_ON()) {
+    EXPECT_DCHECK_DEATH(std::ignore = Recovery::RecoverDatabase(
+                            nullptr, Recovery::Strategy::kRecoverOrRaze));
+  } else {
+    EXPECT_CHECK_DEATH(std::ignore = Recovery::RecoverDatabase(
+                           nullptr, Recovery::Strategy::kRecoverOrRaze));
+  }
 }
 
 // TODO(crbug.com/40199997): Ideally this would be a

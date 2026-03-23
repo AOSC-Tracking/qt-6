@@ -38,6 +38,15 @@ BASE_FEATURE_PARAM(int,
                    "GroupByOriginContextLimit",
                    10);
 
+BASE_FEATURE(kFledgeNumberSellerWorkletGroupByOriginContextsToKeep,
+             "FledgeSellerWorkletGroupByOriginContextsToKeep",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE_PARAM(int,
+                   kFledgeNumberSellerWorkletGroupByOriginContextsToKeepValue,
+                   &kFledgeNumberSellerWorkletGroupByOriginContextsToKeep,
+                   "SellerGroupByOriginContextLimit",
+                   10);
+
 BASE_FEATURE(kFledgePrepareBidderContextsInAdvance,
              "FledgePrepareBidderContextsInAdvance",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -61,6 +70,11 @@ BASE_FEATURE_PARAM(int,
                    &kFledgePrepareBidderContextsInAdvance,
                    "BidderContextsMultiplier",
                    1);
+BASE_FEATURE_PARAM(bool,
+                   kFledgeWaitForPromisesToPrepareContexts,
+                   &kFledgePrepareBidderContextsInAdvance,
+                   "WaitForPromisesToPrepareContexts",
+                   false);
 
 BASE_FEATURE(kFledgeBidderUseBalancingThreadSelector,
              "FledgeBidderUseBalancingThreadSelector",
@@ -73,15 +87,19 @@ BASE_FEATURE_PARAM(int,
 
 BASE_FEATURE(kFledgePrepareSellerContextsInAdvance,
              "FledgePrepareSellerContextsInAdvance",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(int,
                    kFledgeMaxSellerContextsPerThreadInAdvance,
                    &kFledgePrepareSellerContextsInAdvance,
                    "MaxSellerContextsPerThread",
                    10);
 
-BASE_FEATURE(kFledgeSplitTrustedSignalsFetchingURL,
-             "FledgeSplitTrustedSignalsFetchingURL",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kFledgeSellerSignalsRequestsOneAtATime,
+             "FledgeSellerSignalsRequestsOneAtATime",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kFledgeTextConversionHelpers,
+             "FledgeTextConversionHelpers",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace features

@@ -10,9 +10,11 @@
 #include "include/v8-callbacks.h"
 #include "src/base/small-vector.h"
 #include "src/base/strings.h"
+#include "src/codegen/script-details.h"
 #include "src/common/high-allocation-throughput-scope.h"
 #include "src/execution/isolate.h"
 #include "src/heap/factory.h"
+#include "src/objects/descriptor-array.h"
 #include "src/objects/objects.h"
 #include "src/objects/string.h"
 #include "src/roots/roots.h"
@@ -40,8 +42,8 @@ class JsonString final {
         has_escape_(false),
         is_index_(true) {}
 
-  JsonString(int start, int length, bool needs_conversion, bool internalize,
-             bool has_escape)
+  JsonString(uint32_t start, uint32_t length, bool needs_conversion,
+             bool internalize, bool has_escape)
       : start_(start),
         length_(length),
         needs_conversion_(needs_conversion),
@@ -64,12 +66,12 @@ class JsonString final {
     return has_escape_;
   }
 
-  int start() const {
+  uint32_t start() const {
     DCHECK(!is_index_);
     return start_;
   }
 
-  int length() const {
+  uint32_t length() const {
     DCHECK(!is_index_);
     return length_;
   }
@@ -83,10 +85,10 @@ class JsonString final {
 
  private:
   union {
-    const int start_;
+    const uint32_t start_;
     const uint32_t index_;
   };
-  const int length_;
+  const uint32_t length_;
   const bool needs_conversion_ : 1;
   const bool internalize_ : 1;
   const bool has_escape_ : 1;
@@ -159,17 +161,18 @@ class JsonParser final {
 
   V8_WARN_UNUSED_RESULT static bool CheckRawJson(Isolate* isolate,
                                                  Handle<String> source) {
-    return JsonParser(isolate, source).ParseRawJson();
+    return JsonParser(isolate, source, std::nullopt).ParseRawJson();
   }
 
   V8_WARN_UNUSED_RESULT static MaybeHandle<Object> Parse(
-      Isolate* isolate, Handle<String> source, Handle<Object> reviver) {
+      Isolate* isolate, Handle<String> source, Handle<Object> reviver,
+      std::optional<ScriptDetails> script_details) {
     HighAllocationThroughputScope high_throughput_scope(
         V8::GetCurrentPlatform());
     Handle<Object> result;
     MaybeHandle<Object> val_node;
     {
-      JsonParser parser(isolate, source);
+      JsonParser parser(isolate, source, script_details);
       ASSIGN_RETURN_ON_EXCEPTION(isolate, result, parser.ParseJson(reviver));
       val_node = parser.parsed_val_node_;
     }
@@ -209,7 +212,8 @@ class JsonParser final {
     uint32_t elements;
   };
 
-  JsonParser(Isolate* isolate, Handle<String> source);
+  JsonParser(Isolate* isolate, Handle<String> source,
+             std::optional<ScriptDetails> script_details);
   ~JsonParser();
 
   // Parse a string containing a single JSON value.
@@ -238,23 +242,26 @@ class JsonParser final {
     advance();
   }
 
-  void Expect(JsonToken token,
-              std::optional<MessageTemplate> errorMessage = std::nullopt) {
+  V8_WARN_UNUSED_RESULT bool Expect(
+      JsonToken token,
+      std::optional<MessageTemplate> errorMessage = std::nullopt) {
     if (V8_LIKELY(peek() == token)) {
       advance();
-    } else {
-      errorMessage ? ReportUnexpectedToken(peek(), errorMessage.value())
-                   : ReportUnexpectedToken(peek());
+      return true;
     }
+    errorMessage ? ReportUnexpectedToken(peek(), errorMessage.value())
+                 : ReportUnexpectedToken(peek());
+    return false;
   }
 
-  void ExpectNext(JsonToken token,
-                  std::optional<MessageTemplate> errorMessage = std::nullopt) {
+  V8_WARN_UNUSED_RESULT bool ExpectNext(
+      JsonToken token,
+      std::optional<MessageTemplate> errorMessage = std::nullopt) {
     SkipWhitespace();
-    errorMessage ? Expect(token, errorMessage.value()) : Expect(token);
+    return errorMessage ? Expect(token, errorMessage.value()) : Expect(token);
   }
 
-  bool Check(JsonToken token) {
+  V8_WARN_UNUSED_RESULT bool Check(JsonToken token) {
     SkipWhitespace();
     if (next_ != token) return false;
     advance();
@@ -268,7 +275,7 @@ class JsonParser final {
     // the next character. The first character was compared before we jumped
     // to ScanLiteral.
     static_assert(N > 2);
-    size_t remaining = static_cast<size_t>(end_ - cursor_);
+    size_t remaining = remaining_chars();
     if (V8_LIKELY(remaining >= N - 1 &&
                   CompareCharsEqual(s + 1, cursor_ + 1, N - 2))) {
       cursor_ += N - 1;
@@ -307,7 +314,7 @@ class JsonParser final {
                             Handle<String> hint = Handle<String>());
 
   template <typename SinkChar>
-  void DecodeString(SinkChar* sink, int start, int length);
+  void DecodeString(SinkChar* sink, uint32_t start, uint32_t length);
 
   template <typename SinkSeqString>
   Handle<String> DecodeString(const JsonString& string,
@@ -336,10 +343,16 @@ class JsonParser final {
       Handle<Map> feedback = {});
   MaybeHandle<Object> ParseJsonArray();
   MaybeHandle<Object> ParseJsonObject(Handle<Map> feedback);
+  template <DescriptorArray::FastIterableState fast_iterable_state>
+  V8_INLINE bool ParseJsonObjectProperties(JsonContinuation* cont,
+                                           MessageTemplate first_token_msg,
+                                           Handle<DescriptorArray> descriptors);
+  V8_INLINE bool ParseJsonPropertyValue(const JsonString& key);
+  V8_INLINE bool FastKeyMatch(const uint8_t* key_chars, uint32_t key_length);
 
   template <bool should_track_json_source>
   Handle<JSObject> BuildJsonObject(const JsonContinuation& cont,
-                                   Handle<Map> feedback);
+                                   DirectHandle<Map> feedback);
   Handle<Object> BuildJsonArray(size_t start);
 
   static const int kMaxContextCharacters = 10;
@@ -399,16 +412,21 @@ class JsonParser final {
     return cursor_ == end_;
   }
 
-  int position() const { return static_cast<int>(cursor_ - chars_); }
+  size_t remaining_chars() const { return end_ - cursor_; }
+
+  uint32_t position() const { return static_cast<uint32_t>(cursor_ - chars_); }
 
   Isolate* isolate_;
-  const uint64_t hash_seed_;
   JsonToken next_;
   // Indicates whether the bytes underneath source_ can relocate during GC.
   bool chars_may_relocate_;
   Handle<JSFunction> object_constructor_;
   const Handle<String> original_source_;
   Handle<String> source_;
+  // Script details for error reporting. When provided, error Script
+  // objects will use this information instead of inferring from the
+  // stack frame.
+  std::optional<ScriptDetails> script_details_;
   // The parsed value's source to be passed to the reviver, if the reviver is
   // callable.
   MaybeHandle<Object> parsed_val_node_;

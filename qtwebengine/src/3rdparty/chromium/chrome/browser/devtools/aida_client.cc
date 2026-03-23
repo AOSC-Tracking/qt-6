@@ -5,6 +5,7 @@
 #include "chrome/browser/devtools/aida_client.h"
 
 #include <string>
+#include <variant>
 
 #include "base/check_is_test.h"
 #include "base/containers/fixed_flat_set.h"
@@ -26,14 +27,11 @@
 #include "google_apis/gaia/gaia_constants.h"
 #include "net/base/load_flags.h"
 
-const char kAidaEndpointUrl[] =
-    "https://aida.googleapis.com/v1/aida:doConversation";
-
 constexpr auto kLoggingDisallowedCountries =
     base::MakeFixedFlatSet<std::string_view>(
-        {"at", "be", "bg", "ch", "cy", "cz", "de", "dk", "ee", "es", "fi",
-         "fr", "gb", "gr", "hr", "hu", "ie", "is", "it", "li", "lt", "lu",
-         "lv", "mt", "nl", "no", "pl", "pt", "ro", "se", "si", "sk"});
+        {"at", "be", "bg", "cy", "cz", "de", "dk", "ee", "es", "fi", "fr",
+         "gb", "gr", "hr", "hu", "ie", "is", "it", "li", "lt", "lu", "lv",
+         "mt", "nl", "no", "pl", "pt", "ro", "se", "si", "sk"});
 
 constexpr auto kAidaSupportedCountries =
     base::MakeFixedFlatSet<std::string_view>(
@@ -58,7 +56,6 @@ constexpr auto kAidaSupportedCountries =
 
 AidaClient::AidaClient(Profile* profile)
     : profile_(*profile),
-      aida_endpoint_(kAidaEndpointUrl),
       aida_scope_(GaiaConstants::kAidaOAuth2Scope) {}
 
 AidaClient::~AidaClient() = default;
@@ -150,10 +147,7 @@ AidaClient::ScopedOverride AidaClient::OverrideCountryForTesting(
       base::BindOnce([]() { GetCountryCodeOverride().reset(); }));
 }
 
-void AidaClient::OverrideAidaEndpointAndScopeForTesting(
-    const std::string& aida_endpoint,
-    const std::string& aida_scope) {
-  aida_endpoint_ = aida_endpoint;
+void AidaClient::OverrideAidaScopeForTesting(const std::string& aida_scope) {
   aida_scope_ = aida_scope;
 }
 
@@ -163,7 +157,7 @@ void AidaClient::RemoveAccessToken() {
 
 void AidaClient::PrepareRequestOrFail(
     base::OnceCallback<
-        void(absl::variant<network::ResourceRequest, std::string>)> callback) {
+        void(std::variant<network::ResourceRequest, std::string>)> callback) {
   if (!access_token_.empty() && base::Time::Now() < access_token_expiration_) {
     PrepareAidaRequest(std::move(callback));
     return;
@@ -184,7 +178,7 @@ void AidaClient::PrepareRequestOrFail(
 
 void AidaClient::AccessTokenFetchFinished(
     base::OnceCallback<
-        void(absl::variant<network::ResourceRequest, std::string>)> callback,
+        void(std::variant<network::ResourceRequest, std::string>)> callback,
     GoogleServiceAuthError error,
     signin::AccessTokenInfo access_token_info) {
   if (error.state() != GoogleServiceAuthError::NONE) {
@@ -201,11 +195,10 @@ void AidaClient::AccessTokenFetchFinished(
 
 void AidaClient::PrepareAidaRequest(
     base::OnceCallback<
-        void(absl::variant<network::ResourceRequest, std::string>)> callback) {
+        void(std::variant<network::ResourceRequest, std::string>)> callback) {
   CHECK(!access_token_.empty());
 
   network::ResourceRequest aida_request;
-  aida_request.url = GURL(aida_endpoint_);
   aida_request.load_flags = net::LOAD_DISABLE_CACHE;
   aida_request.credentials_mode = network::mojom::CredentialsMode::kOmit;
   aida_request.method = "POST";

@@ -29,9 +29,9 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerPPC
   void CheckCharacterGT(base::uc16 limit, Label* on_greater) override;
   void CheckCharacterLT(base::uc16 limit, Label* on_less) override;
 
-  // A "greedy loop" is a loop that is both greedy and with a simple
+  // A "fixed length loop" is a loop that is both greedy and with a simple
   // body. It has a particularly simple implementation.
-  void CheckGreedyLoop(Label* on_tos_equals_current_position) override;
+  void CheckFixedLengthLoop(Label* on_tos_equals_current_position) override;
   void CheckNotAtStart(int cp_offset, Label* on_not_at_start) override;
   void CheckNotBackReference(int start_reg, bool read_backward,
                              Label* on_no_match) override;
@@ -63,7 +63,8 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerPPC
   bool CheckSpecialClassRanges(StandardCharacterSet type,
                                Label* on_no_match) override;
   void Fail() override;
-  Handle<HeapObject> GetCode(Handle<String> source, RegExpFlags flags) override;
+  DirectHandle<HeapObject> GetCode(DirectHandle<String> source,
+                                   RegExpFlags flags) override;
   void GoTo(Label* label) override;
   void IfRegisterGE(int reg, int comparand, Label* if_ge) override;
   void IfRegisterLT(int reg, int comparand, Label* if_lt) override;
@@ -191,11 +192,11 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerPPC
 
   // Equivalent to a conditional branch to the label, unless the label
   // is nullptr, in which case it is a conditional Backtrack.
-  void BranchOrBacktrack(Condition condition, Label* to, CRegister cr = cr7);
+  void BranchOrBacktrack(Condition condition, Label* to, CRegister cr = cr0);
 
   // Call and return internally in the generated code in a way that
   // is GC-safe (i.e., doesn't leave absolute code addresses on the stack)
-  inline void SafeCall(Label* to, Condition cond = al, CRegister cr = cr7);
+  inline void SafeCall(Label* to, Condition cond = al, CRegister cr = cr0);
   inline void SafeReturn();
   inline void SafeCallTarget(Label* name);
 

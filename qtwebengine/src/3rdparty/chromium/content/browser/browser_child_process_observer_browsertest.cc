@@ -9,7 +9,7 @@
 #include "build/build_config.h"
 #include "content/browser/browser_child_process_host_impl.h"
 #include "content/browser/child_process_host_impl.h"
-#include "content/browser/utility_process_host.h"
+#include "content/browser/service_host/utility_process_host.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/child_process_data.h"
@@ -188,7 +188,7 @@ class TestSandboxedProcessLauncherDelegate
 };
 
 // A test-specific type of process host. Self-owned.
-class TestProcessHost : public BrowserChildProcessHostDelegate {
+class TestProcessHost final : public BrowserChildProcessHostDelegate {
  public:
   static base::WeakPtr<TestProcessHost> Create() {
     auto* instance = new TestProcessHost();
@@ -196,10 +196,7 @@ class TestProcessHost : public BrowserChildProcessHostDelegate {
   }
 
   TestProcessHost()
-      : process_(BrowserChildProcessHost::Create(
-            PROCESS_TYPE_UTILITY,
-            this,
-            ChildProcessHost::IpcMode::kNormal)) {}
+      : process_(BrowserChildProcessHost::Create(PROCESS_TYPE_UTILITY, this)) {}
   ~TestProcessHost() override = default;
 
   // Returns the ID of the child process.

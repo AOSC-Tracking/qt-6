@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/extensions/extension_side_panel_utils.h"
 #include "chrome/common/extensions/api/side_panel.h"
 #include "chrome/common/extensions/api/side_panel/side_panel_info.h"
+#include "chrome/common/pref_names.h"
 #include "components/sessions/core/session_id.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/pref_types.h"
@@ -272,8 +273,7 @@ base::expected<bool, std::string> SidePanelService::OpenSidePanelForTab(
         "The specified tab does not belong to the specified window.");
   }
 
-  // Next, determine if we an active side panel (contextual or global) for that
-  // tab.
+  // Verify that an active side panel (contextual or global) exists for the tab.
   api::side_panel::PanelOptions panel_options = GetOptions(extension, tab_id);
   if (!panel_options.path || !panel_options.enabled.has_value() ||
       !(*panel_options.enabled)) {
@@ -305,6 +305,16 @@ base::expected<bool, std::string> SidePanelService::OpenSidePanelForTab(
   }
 
   return true;
+}
+
+api::side_panel::PanelLayout SidePanelService::GetSidePanelLayout() {
+  Profile* profile = Profile::FromBrowserContext(browser_context_);
+  api::side_panel::PanelLayout layout;
+  layout.side =
+      profile->GetPrefs()->GetBoolean(prefs::kSidePanelHorizontalAlignment)
+          ? api::side_panel::Side::kRight
+          : api::side_panel::Side::kLeft;
+  return layout;
 }
 
 void SidePanelService::AddObserver(Observer* observer) {

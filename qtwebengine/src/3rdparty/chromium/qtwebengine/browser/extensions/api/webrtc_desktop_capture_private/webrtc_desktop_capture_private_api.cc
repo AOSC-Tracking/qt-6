@@ -52,7 +52,7 @@ WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::Run() {
   request_id_ = request_id_value.GetInt();
   DesktopCaptureRequestsRegistry::GetInstance()->AddRequest(source_process_id(),
                                                             request_id_, this);
-  mutable_args().erase(args().begin());
+  GetMutableArgs().erase(args().begin());
 
   std::optional<Params> params = Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);

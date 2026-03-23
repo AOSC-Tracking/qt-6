@@ -30,7 +30,6 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
-#include "src/tint/utils/ice/ice.h"
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -119,6 +118,8 @@ Result<SuccessType> RemoveContinueInSwitch(Module& ir) {
                                               core::ir::Capability::kAllowVectorElementPointer,
                                               core::ir::Capability::kAllowHandleVarsWithoutBindings,
                                               core::ir::Capability::kAllowClipDistancesOnF32,
+                                              core::ir::Capability::kAllowDuplicateBindings,
+                                              core::ir::Capability::kAllowNonCoreTypes,
                                           });
     if (result != Success) {
         return result;

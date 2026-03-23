@@ -5,10 +5,10 @@
 #include "components/autofill/core/browser/webdata/payments/payments_sync_bridge_util.h"
 
 #include <algorithm>
+#include <variant>
 
 #include "base/base64.h"
 #include "base/check.h"
-#include "base/functional/overloaded.h"
 #include "base/pickle.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -16,20 +16,23 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/country_type.h"
-#include "components/autofill/core/browser/data_model/autofill_offer_data.h"
-#include "components/autofill/core/browser/data_model/autofill_wallet_usage_data.h"
-#include "components/autofill/core/browser/data_model/bank_account.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
-#include "components/autofill/core/browser/data_model/credit_card_cloud_token_data.h"
-#include "components/autofill/core/browser/data_model/iban.h"
-#include "components/autofill/core/browser/data_model/payment_instrument.h"
+#include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
+#include "components/autofill/core/browser/data_model/payments/autofill_wallet_usage_data.h"
+#include "components/autofill/core/browser/data_model/payments/bank_account.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card_cloud_token_data.h"
+#include "components/autofill/core/browser/data_model/payments/iban.h"
+#include "components/autofill/core/browser/data_model/payments/payment_instrument.h"
 #include "components/autofill/core/browser/data_quality/autofill_data_util.h"
+#include "components/autofill/core/browser/payments/constants.h"
 #include "components/autofill/core/browser/payments/payments_customer_data.h"
 #include "components/autofill/core/browser/webdata/payments/payments_autofill_table.h"
+#include "components/autofill/core/browser/webdata/payments/server_cvc.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/core/common/autofill_util.h"
 #include "components/autofill/core/common/credit_card_network_identifiers.h"
 #include "components/sync/protocol/entity_data.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 using ::autofill::data_util::TruncateUTF8;
 using ::sync_pb::AutofillWalletSpecifics;
@@ -51,8 +54,7 @@ sync_pb::WalletMaskedCreditCard::WalletCardType WalletCardTypeFromCardNetwork(
     return sync_pb::WalletMaskedCreditCard::MASTER_CARD;
   if (network == kUnionPay)
     return sync_pb::WalletMaskedCreditCard::UNIONPAY;
-  if (network == kVerveCard &&
-      base::FeatureList::IsEnabled(features::kAutofillEnableVerveCardSupport)) {
+  if (network == kVerveCard) {
     return sync_pb::WalletMaskedCreditCard::VERVE;
   }
   if (network == kVisaCard)
@@ -78,11 +80,7 @@ const char* CardNetworkFromWalletCardType(
     case sync_pb::WalletMaskedCreditCard::UNIONPAY:
       return kUnionPay;
     case sync_pb::WalletMaskedCreditCard::VERVE:
-      if (base::FeatureList::IsEnabled(
-              features::kAutofillEnableVerveCardSupport)) {
-        return kVerveCard;
-      }
-      return kGenericCard;
+      return kVerveCard;
     case sync_pb::WalletMaskedCreditCard::VISA:
       return kVisaCard;
 
@@ -111,6 +109,22 @@ CategoryBenefitTypeFromBenefitCategory(
       return sync_pb::CardBenefit::STREAMING;
     case CreditCardCategoryBenefit::BenefitCategory::kGroceryStores:
       return sync_pb::CardBenefit::GROCERY_STORES;
+    case CreditCardCategoryBenefit::BenefitCategory::kAirMilesPartner:
+      return sync_pb::CardBenefit::AIR_MILES_PARTNER;
+    case CreditCardCategoryBenefit::BenefitCategory::kAlcoholStores:
+      return sync_pb::CardBenefit::ALCOHOL_STORES;
+    case CreditCardCategoryBenefit::BenefitCategory::kDrugstores:
+      return sync_pb::CardBenefit::DRUGSTORES;
+    case CreditCardCategoryBenefit::BenefitCategory::kOfficeSupplies:
+      return sync_pb::CardBenefit::OFFICE_SUPPLIES;
+    case CreditCardCategoryBenefit::BenefitCategory::kRecurringBills:
+      return sync_pb::CardBenefit::RECURRING_BILLS;
+    case CreditCardCategoryBenefit::BenefitCategory::kTransit:
+      return sync_pb::CardBenefit::TRANSIT;
+    case CreditCardCategoryBenefit::BenefitCategory::kTravel:
+      return sync_pb::CardBenefit::TRAVEL;
+    case CreditCardCategoryBenefit::BenefitCategory::kWholesaleClubs:
+      return sync_pb::CardBenefit::WHOLESALE_CLUBS;
     case CreditCardCategoryBenefit::BenefitCategory::kUnknownBenefitCategory:
       return sync_pb::CardBenefit::CATEGORY_BENEFIT_TYPE_UNKNOWN;
   }
@@ -132,6 +146,22 @@ BenefitCategoryFromCategoryBenefitType(
       return CreditCardCategoryBenefit::BenefitCategory::kStreaming;
     case sync_pb::CardBenefit::GROCERY_STORES:
       return CreditCardCategoryBenefit::BenefitCategory::kGroceryStores;
+    case sync_pb::CardBenefit::AIR_MILES_PARTNER:
+      return CreditCardCategoryBenefit::BenefitCategory::kAirMilesPartner;
+    case sync_pb::CardBenefit::ALCOHOL_STORES:
+      return CreditCardCategoryBenefit::BenefitCategory::kAlcoholStores;
+    case sync_pb::CardBenefit::DRUGSTORES:
+      return CreditCardCategoryBenefit::BenefitCategory::kDrugstores;
+    case sync_pb::CardBenefit::OFFICE_SUPPLIES:
+      return CreditCardCategoryBenefit::BenefitCategory::kOfficeSupplies;
+    case sync_pb::CardBenefit::RECURRING_BILLS:
+      return CreditCardCategoryBenefit::BenefitCategory::kRecurringBills;
+    case sync_pb::CardBenefit::TRANSIT:
+      return CreditCardCategoryBenefit::BenefitCategory::kTransit;
+    case sync_pb::CardBenefit::TRAVEL:
+      return CreditCardCategoryBenefit::BenefitCategory::kTravel;
+    case sync_pb::CardBenefit::WHOLESALE_CLUBS:
+      return CreditCardCategoryBenefit::BenefitCategory::kWholesaleClubs;
     case sync_pb::CardBenefit::CATEGORY_BENEFIT_TYPE_UNKNOWN:
       return CreditCardCategoryBenefit::BenefitCategory::
           kUnknownBenefitCategory;
@@ -332,6 +362,26 @@ CreditCard CardFromSpecifics(const sync_pb::WalletMaskedCreditCard& card) {
       break;
   }
   result.set_card_info_retrieval_enrollment_state(enrollment_state);
+
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillEnableCardBenefitsSourceSync)) {
+    std::string benefit_source;
+    switch (card.card_benefit_source()) {
+      case sync_pb::WalletMaskedCreditCard::SOURCE_UNKNOWN:
+        benefit_source = "";
+        break;
+      case sync_pb::WalletMaskedCreditCard::SOURCE_AMEX:
+        benefit_source = std::string(kAmexCardBenefitSource);
+        break;
+      case sync_pb::WalletMaskedCreditCard::SOURCE_BMO:
+        benefit_source = std::string(kBmoCardBenefitSource);
+        break;
+      case sync_pb::WalletMaskedCreditCard::SOURCE_CURINOS:
+        benefit_source = std::string(kCurinosCardBenefitSource);
+        break;
+    }
+    result.set_benefit_source(benefit_source);
+  }
 
   return result;
 }
@@ -555,6 +605,20 @@ void SetAutofillWalletSpecificsFromServerCard(
       break;
   }
   wallet_card->set_card_info_retrieval_enrollment_state(enrollment_state);
+
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillEnableCardBenefitsSourceSync)) {
+    sync_pb::WalletMaskedCreditCard::CardBenefitSource benefit_source =
+        sync_pb::WalletMaskedCreditCard::SOURCE_UNKNOWN;
+    if (card.benefit_source() == kAmexCardBenefitSource) {
+      benefit_source = sync_pb::WalletMaskedCreditCard::SOURCE_AMEX;
+    } else if (card.benefit_source() == kBmoCardBenefitSource) {
+      benefit_source = sync_pb::WalletMaskedCreditCard::SOURCE_BMO;
+    } else if (card.benefit_source() == kCurinosCardBenefitSource) {
+      benefit_source = sync_pb::WalletMaskedCreditCard::SOURCE_CURINOS;
+    }
+    wallet_card->set_card_benefit_source(benefit_source);
+  }
 }
 
 void SetAutofillWalletSpecificsFromPaymentsCustomerData(
@@ -615,7 +679,7 @@ void SetAutofillWalletSpecificsFromCardBenefit(
     sync_pb::AutofillWalletSpecifics& wallet_specifics) {
   sync_pb::CardBenefit* wallet_benefit =
       wallet_specifics.mutable_masked_card()->add_card_benefit();
-  const CreditCardBenefitBase& benefit_base = absl::visit(
+  const CreditCardBenefitBase& benefit_base = std::visit(
       [](const auto& a) -> const CreditCardBenefitBase& { return a; }, benefit);
   if (enforce_utf8) {
     wallet_benefit->set_benefit_id(
@@ -633,8 +697,8 @@ void SetAutofillWalletSpecificsFromCardBenefit(
     wallet_benefit->set_end_time_unix_epoch_milliseconds(
         benefit_base.expiry_time().InMillisecondsSinceUnixEpoch());
   }
-  absl::visit(
-      base::Overloaded{
+  std::visit(
+      absl::Overload{
           [&wallet_benefit](const CreditCardFlatRateBenefit&) {
             wallet_benefit->mutable_flat_rate_benefit();
           },

@@ -98,9 +98,6 @@ class CONTENT_EXPORT NestedTracingScenario : public TracingScenarioBase {
   // Enables a disabled scenario. Cannot be called after the scenario is
   // enabled.
   void Enable() override;
-  // Request to stop an active scenario. Upload rules are still active until
-  // Disable() is called.
-  void Stop();
 
   State current_state() const { return current_state_; }
 
@@ -138,6 +135,8 @@ class CONTENT_EXPORT TracingScenario : public TracingScenarioBase,
     kEnabled,
     // The tracing session was setup and the scenario is ready to start.
     kSetup,
+    // The tracing session is starting.
+    kStarting,
     // The tracing session is recording.
     kRecording,
     // A stop rule was triggered and the tracing session is stopping.
@@ -163,6 +162,9 @@ class CONTENT_EXPORT TracingScenario : public TracingScenarioBase,
     virtual bool OnScenarioCloned(TracingScenario* scenario) = 0;
     // Called when |scenario| starts recording a trace.
     virtual void OnScenarioRecording(TracingScenario* scenario) = 0;
+    // Called when |scenario| has an error.
+    virtual void OnScenarioError(TracingScenario* scenario,
+                                 perfetto::TracingError error) = 0;
     // Called when a trace was collected.
     virtual void SaveTrace(TracingScenario* scenario,
                            base::Token trace_uuid,
@@ -194,6 +196,8 @@ class CONTENT_EXPORT TracingScenario : public TracingScenarioBase,
 
   void GenerateMetadataProto(
       perfetto::protos::pbzero::ChromeMetadataPacket* metadata);
+
+  std::string description() const { return description_; }
 
   State current_state() const { return current_state_; }
   bool privacy_filter_enabled() const { return privacy_filtering_enabled_; }
@@ -259,6 +263,7 @@ class CONTENT_EXPORT TracingScenario : public TracingScenarioBase,
   base::WeakPtr<TracingScenario> GetWeakPtr();
   void SetState(State new_state);
 
+  const std::string description_;
   const bool privacy_filtering_enabled_;
   const bool is_local_scenario_;
   const bool request_startup_tracing_;

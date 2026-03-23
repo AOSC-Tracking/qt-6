@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLBUILTINFUNCTIONS_P_H
 #define QQMLBUILTINFUNCTIONS_P_H
@@ -145,6 +146,12 @@ public:
     Q_INVOKABLE QString btoa(const QString &data) const;
     Q_INVOKABLE QString atob(const QString &data) const;
 
+    Q_INVOKABLE QByteArray btoa(const QByteArray &data) const;
+    Q_INVOKABLE QByteArray atob(const QByteArray &data) const;
+
+    Q_INVOKABLE QByteArray btoa(const QVariantList &data) const;
+    Q_INVOKABLE QByteArray atob(const QVariantList &data) const;
+
     Q_INVOKABLE void quit() const;
     Q_INVOKABLE void exit(int retCode) const;
 
@@ -204,12 +211,12 @@ private:
         Q_ASSERT(engine);
 
         // It's fine to hold a bare pointer to the internals of a QJSManagedValue
-        // The managed value keeps a QV4::PersistentValue after all.
+        // The managed value keeps a QV4::PersistentValue after all
+        // (unless it's default-constructed).
         QV4::Value *internal = QJSManagedValuePrivate::member(&enumType);
-        Q_ASSERT(internal);
 
         QV4::Heap::QQmlEnumWrapper *enumWrapper = nullptr;
-        if (QV4::QQmlEnumWrapper *wrapper = internal->as<QV4::QQmlEnumWrapper>()) {
+        if (auto *wrapper = internal ? internal->as<QV4::QQmlEnumWrapper>() : nullptr) {
             enumWrapper = wrapper->d();
         } else {
             engine->throwTypeError("Invalid first argument, expected enum"_L1);

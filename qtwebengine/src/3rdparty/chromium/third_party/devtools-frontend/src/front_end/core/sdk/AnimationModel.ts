@@ -10,7 +10,6 @@ import {DeferredDOMNode, type DOMNode} from './DOMModel.js';
 import {RemoteObject} from './RemoteObject.js';
 import {Events as ResourceTreeModelEvents, ResourceTreeModel} from './ResourceTreeModel.js';
 import {Events as RuntimeModelEvents, type EventTypes as RuntimeModelEventTypes, RuntimeModel} from './RuntimeModel.js';
-import {ScreenCaptureModel} from './ScreenCaptureModel.js';
 import {SDKModel} from './SDKModel.js';
 import {Capability, type Target} from './Target.js';
 
@@ -54,14 +53,13 @@ async function resolveToObjectInWorld(domNode: DOMNode, worldName: string): Prom
  */
 export class AnimationDOMNode {
   #domNode: DOMNode;
-  #scrollListenersById: Map<number, ScrollListener>;
+  #scrollListenersById = new Map<number, ScrollListener>();
   #scrollBindingListener?: BindingListener;
 
-  static lastAddedListenerId: number = 0;
+  static lastAddedListenerId = 0;
 
   constructor(domNode: DOMNode) {
     this.#domNode = domNode;
-    this.#scrollListenersById = new Map();
   }
 
   async #addReportScrollPositionBinding(): Promise<void> {
@@ -138,14 +136,14 @@ export class AnimationDOMNode {
       }
 
       const scrollingElement = ('scrollingElement' in this ? this.scrollingElement : this) as HTMLElement;
-      // @ts-ignore We're setting a custom field on `Element` or `Document` for retaining the function on the page.
+      // @ts-expect-error We're setting a custom field on `Element` or `Document` for retaining the function on the page.
       this[scrollListenerNameInPage] = () => {
-        // @ts-ignore `reportScrollPosition` binding is injected to the page before calling the function.
+        // @ts-expect-error `reportScrollPosition` binding is injected to the page before calling the function.
         globalThis[reportScrollPositionBindingName](
             JSON.stringify({scrollTop: scrollingElement.scrollTop, scrollLeft: scrollingElement.scrollLeft, id}));
       };
 
-      // @ts-ignore We've already defined the function used below.
+      // @ts-expect-error We've already defined the function used below.
       this.addEventListener('scroll', this[scrollListenerNameInPage], true);
     }
   }
@@ -168,15 +166,15 @@ export class AnimationDOMNode {
     }
 
     function removeScrollListenerInPage(this: HTMLElement|Document, scrollListenerNameInPage: string): void {
-      // @ts-ignore We've already set this custom field while adding scroll listener.
+      // @ts-expect-error We've already set this custom field while adding scroll listener.
       this.removeEventListener('scroll', this[scrollListenerNameInPage]);
-      // @ts-ignore We've already set this custom field while adding scroll listener.
+      // @ts-expect-error We've already set this custom field while adding scroll listener.
       delete this[scrollListenerNameInPage];
     }
   }
 
   async scrollTop(): Promise<number|null> {
-    return this.#domNode.callFunction(scrollTopInPage).then(res => res?.value ?? null);
+    return await this.#domNode.callFunction(scrollTopInPage).then(res => res?.value ?? null);
 
     function scrollTopInPage(this: Element|Document): number {
       if ('scrollingElement' in this) {
@@ -191,7 +189,7 @@ export class AnimationDOMNode {
   }
 
   async scrollLeft(): Promise<number|null> {
-    return this.#domNode.callFunction(scrollLeftInPage).then(res => res?.value ?? null);
+    return await this.#domNode.callFunction(scrollLeftInPage).then(res => res?.value ?? null);
 
     function scrollLeftInPage(this: Element|Document): number {
       if ('scrollingElement' in this) {
@@ -238,7 +236,7 @@ export class AnimationDOMNode {
   }
 
   async verticalScrollRange(): Promise<number|null> {
-    return this.#domNode.callFunction(verticalScrollRangeInPage).then(res => res?.value ?? null);
+    return await this.#domNode.callFunction(verticalScrollRangeInPage).then(res => res?.value ?? null);
 
     function verticalScrollRangeInPage(this: Element|Document): number {
       if ('scrollingElement' in this) {
@@ -254,7 +252,7 @@ export class AnimationDOMNode {
   }
 
   async horizontalScrollRange(): Promise<number|null> {
-    return this.#domNode.callFunction(horizontalScrollRangeInPage).then(res => res?.value ?? null);
+    return await this.#domNode.callFunction(horizontalScrollRangeInPage).then(res => res?.value ?? null);
 
     function horizontalScrollRangeInPage(this: Element|Document): number {
       if ('scrollingElement' in this) {
@@ -288,11 +286,10 @@ function shouldGroupAnimations(firstAnimation: AnimationImpl, anim: AnimationImp
 export class AnimationModel extends SDKModel<EventTypes> {
   readonly runtimeModel: RuntimeModel;
   readonly agent: ProtocolProxyApi.AnimationApi;
-  #animationsById: Map<string, AnimationImpl>;
-  readonly animationGroups: Map<string, AnimationGroup>;
-  #pendingAnimations: Set<string>;
-  playbackRate: number;
-  readonly #screenshotCapture?: ScreenshotCapture;
+  #animationsById = new Map<string, AnimationImpl>();
+  readonly animationGroups = new Map<string, AnimationGroup>();
+  #pendingAnimations = new Set<string>();
+  playbackRate = 1;
   #flushPendingAnimations: () => void;
 
   constructor(target: Target) {
@@ -300,10 +297,6 @@ export class AnimationModel extends SDKModel<EventTypes> {
     this.runtimeModel = (target.model(RuntimeModel) as RuntimeModel);
     this.agent = target.animationAgent();
     target.registerAnimationDispatcher(new AnimationDispatcher(this));
-    this.#animationsById = new Map();
-    this.animationGroups = new Map();
-    this.#pendingAnimations = new Set();
-    this.playbackRate = 1;
 
     if (!target.suspended()) {
       void this.agent.invoke_enable();
@@ -311,10 +304,6 @@ export class AnimationModel extends SDKModel<EventTypes> {
 
     const resourceTreeModel = (target.model(ResourceTreeModel) as ResourceTreeModel);
     resourceTreeModel.addEventListener(ResourceTreeModelEvents.PrimaryPageChanged, this.reset, this);
-    const screenCaptureModel = target.model(ScreenCaptureModel);
-    if (screenCaptureModel) {
-      this.#screenshotCapture = new ScreenshotCapture(this, screenCaptureModel);
-    }
 
     this.#flushPendingAnimations = Common.Debouncer.debounce(() => {
       while (this.#pendingAnimations.size) {
@@ -414,9 +403,6 @@ export class AnimationModel extends SDKModel<EventTypes> {
 
     if (!matchedGroup) {
       this.animationGroups.set(incomingGroup.id(), incomingGroup);
-      if (this.#screenshotCapture) {
-        this.#screenshotCapture.captureScreenshots(incomingGroup.finiteDuration(), incomingGroup.screenshotsInternal);
-      }
       this.dispatchEventToListeners(Events.AnimationGroupStarted, incomingGroup);
     } else {
       this.dispatchEventToListeners(Events.AnimationGroupUpdated, matchedGroup);
@@ -455,6 +441,12 @@ export class AnimationModel extends SDKModel<EventTypes> {
   setPlaybackRate(playbackRate: number): void {
     this.playbackRate = playbackRate;
     void this.agent.invoke_setPlaybackRate({playbackRate});
+  }
+
+  async releaseAllAnimations(): Promise<void> {
+    const animationIds = [...this.animationGroups.values()].flatMap(
+        animationGroup => animationGroup.animations().map(animation => animation.id()));
+    await this.agent.invoke_releaseAnimations({animations: animationIds});
   }
 
   releaseAnimations(animations: string[]): void {
@@ -561,10 +553,6 @@ export class AnimationImpl {
 
   playState(): string {
     return this.#playStateInternal || this.#payloadInternal.playState;
-  }
-
-  setPlayState(playState: string): void {
-    this.#playStateInternal = playState;
   }
 
   playbackRate(): number {
@@ -850,16 +838,11 @@ export class AnimationGroup {
   #scrollNodeInternal: AnimationDOMNode|undefined;
   #animationsInternal: AnimationImpl[];
   #pausedInternal: boolean;
-  screenshotsInternal: string[];
-  readonly #screenshotImages: HTMLImageElement[];
   constructor(animationModel: AnimationModel, id: string, animations: AnimationImpl[]) {
     this.#animationModel = animationModel;
     this.#idInternal = id;
     this.#animationsInternal = animations;
     this.#pausedInternal = false;
-    this.screenshotsInternal = [];
-
-    this.#screenshotImages = [];
   }
 
   isScrollDriven(): boolean {
@@ -1014,16 +997,6 @@ export class AnimationGroup {
     this.#animationsInternal = group.#animationsInternal;
     this.#scrollNodeInternal = undefined;
   }
-
-  screenshots(): HTMLImageElement[] {
-    for (let i = 0; i < this.screenshotsInternal.length; ++i) {
-      const image = new Image();
-      image.src = 'data:image/jpeg;base64,' + this.screenshotsInternal[i];
-      this.#screenshotImages.push(image);
-    }
-    this.screenshotsInternal = [];
-    return this.#screenshotImages;
-  }
 }
 
 export class AnimationDispatcher implements ProtocolProxyApi.AnimationDispatcher {
@@ -1063,71 +1036,7 @@ export class AnimationDispatcher implements ProtocolProxyApi.AnimationDispatcher
   }
 }
 
-export class ScreenshotCapture {
-  #requests: Request[];
-  readonly #screenCaptureModel: ScreenCaptureModel;
-  readonly #animationModel: AnimationModel;
-  #stopTimer?: number;
-  #endTime?: number;
-  #capturing?: boolean;
-  constructor(animationModel: AnimationModel, screenCaptureModel: ScreenCaptureModel) {
-    this.#requests = [];
-    this.#screenCaptureModel = screenCaptureModel;
-    this.#animationModel = animationModel;
-    this.#animationModel.addEventListener(Events.ModelReset, this.stopScreencast, this);
-  }
-
-  captureScreenshots(duration: number, screenshots: string[]): void {
-    const screencastDuration = Math.min(duration / this.#animationModel.playbackRate, 3000);
-    const endTime = screencastDuration + window.performance.now();
-    this.#requests.push({endTime, screenshots});
-
-    if (!this.#endTime || endTime > this.#endTime) {
-      clearTimeout(this.#stopTimer);
-      this.#stopTimer = window.setTimeout(this.stopScreencast.bind(this), screencastDuration);
-      this.#endTime = endTime;
-    }
-
-    if (this.#capturing) {
-      return;
-    }
-    this.#capturing = true;
-    this.#screenCaptureModel.startScreencast(
-        Protocol.Page.StartScreencastRequestFormat.Jpeg, 80, undefined, 300, 2, this.screencastFrame.bind(this),
-        _visible => {});
-  }
-
-  private screencastFrame(base64Data: string, _metadata: Protocol.Page.ScreencastFrameMetadata): void {
-    function isAnimating(request: Request): boolean {
-      return request.endTime >= now;
-    }
-
-    if (!this.#capturing) {
-      return;
-    }
-
-    const now = window.performance.now();
-    this.#requests = this.#requests.filter(isAnimating);
-    for (const request of this.#requests) {
-      request.screenshots.push(base64Data);
-    }
-  }
-
-  private stopScreencast(): void {
-    if (!this.#capturing) {
-      return;
-    }
-
-    this.#stopTimer = undefined;
-    this.#endTime = undefined;
-    this.#requests = [];
-    this.#capturing = false;
-    this.#screenCaptureModel.stopScreencast();
-  }
-}
-
 SDKModel.register(AnimationModel, {capabilities: Capability.DOM, autostart: true});
 export interface Request {
   endTime: number;
-  screenshots: string[];
 }

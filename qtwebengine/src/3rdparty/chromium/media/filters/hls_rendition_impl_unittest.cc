@@ -6,8 +6,10 @@
 
 #include <string_view>
 
+#include "base/strings/string_view_util.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/test/task_environment.h"
+#include "crypto/random.h"
 #include "media/base/mock_media_log.h"
 #include "media/base/test_helpers.h"
 #include "media/filters/hls_network_access_impl.h"
@@ -311,16 +313,15 @@ class HlsRenditionImplUnittest : public testing::Test {
         });
   }
 
-  std::tuple<std::string, std::unique_ptr<crypto::SymmetricKey>> Encrypt(
+  static constexpr size_t kKeySize = 16;
+  std::tuple<std::string, std::array<uint8_t, kKeySize>> Encrypt(
       std::string cleartext,
-      std::string ivstr) {
-    std::string ciphertext;
-    auto mode = crypto::SymmetricKey::AES;
-    auto key = crypto::SymmetricKey::GenerateRandomKey(mode, 128);
-    auto encryptor = std::make_unique<crypto::Encryptor>();
-    encryptor->Init(key.get(), crypto::Encryptor::Mode::CBC, ivstr);
-    encryptor->Encrypt(cleartext, &ciphertext);
-    return std::make_tuple(ciphertext, std::move(key));
+      base::span<const uint8_t, crypto::aes_cbc::kBlockSize> iv) {
+    std::array<uint8_t, kKeySize> key;
+    crypto::RandBytes(key);
+    auto ciphertext =
+        crypto::aes_cbc::Encrypt(key, iv, base::as_byte_span(cleartext));
+    return std::make_tuple(std::string(base::as_string_view(ciphertext)), key);
   }
 
  public:
@@ -607,7 +608,7 @@ TEST_F(HlsRenditionImplUnittest, TestPauseAndUnpause) {
   auto parsed = hls::MediaPlaylist::Parse(
       kSecondFetchLivePlaylist, GURL("http://example.com"), 3, nullptr);
   CHECK(parsed.has_value());
-  rendition->UpdatePlaylist(std::move(parsed).value(), std::nullopt);
+  rendition->UpdatePlaylist(std::move(parsed).value());
 
   // Once again, the pipeline finishes it's seeking, and a new media CheckState
   // event happens, this time for 200 seconds. Now the media_time is way past
@@ -711,8 +712,12 @@ TEST_F(HlsRenditionImplUnittest, TestAES128Content) {
 
   std::string cleartext = "some kind of ts content.";
   std::string ciphertext;
-  std::unique_ptr<crypto::SymmetricKey> key;
-  std::tie(ciphertext, key) = Encrypt(cleartext, "ffffffffffffffff");
+  std::array<uint8_t, kKeySize> key;
+  static constexpr std::array<uint8_t, crypto::aes_cbc::kBlockSize> kFIv{
+      'f', 'f', 'f', 'f', 'f', 'f', 'f', 'f',
+      'f', 'f', 'f', 'f', 'f', 'f', 'f', 'f',
+  };
+  std::tie(ciphertext, key) = Encrypt(cleartext, kFIv);
 
   /* START CHECK 1 */
   // CheckState will start the paused player, query BufferedRanges, get 0-0,
@@ -723,13 +728,14 @@ TEST_F(HlsRenditionImplUnittest, TestAES128Content) {
   // The fetch will request the segment at "media_0.ts", which has an encryption
   // data attached. We need to populate that here so we can use the same key to
   // encrypt our plaintext.
-  InterceptEncDataOnFetch("https://example.com/media_0.ts", ciphertext,
-                          base::BindOnce(
-                              [](crypto::SymmetricKey* key,
-                                 hls::MediaSegment::EncryptionData* enc_data) {
-                                enc_data->ImportKey(key->key());
-                              },
-                              key.get()));
+  InterceptEncDataOnFetch(
+      "https://example.com/media_0.ts", ciphertext,
+      base::BindOnce(
+          [](base::span<const uint8_t, kKeySize> key,
+             hls::MediaSegment::EncryptionData* enc_data) {
+            enc_data->ImportKey(std::string(base::as_string_view(key)));
+          },
+          key));
 
   // The cleartext will get appended, and the network speed will be updated
   // to some massive number.
@@ -758,7 +764,12 @@ TEST_F(HlsRenditionImplUnittest, TestAES128Content) {
 
   // There's a new key, and a new IV.
   std::string ciphertext2;
-  std::tie(ciphertext2, key) = Encrypt(cleartext, "gggggggggggggggg");
+
+  static constexpr std::array<uint8_t, crypto::aes_cbc::kBlockSize> kGIv{
+      'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g',
+      'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g',
+  };
+  std::tie(ciphertext2, key) = Encrypt(cleartext, kGIv);
 
   // CheckState will start the paused player, query BufferedRanges, get 0-4
   // which will trigger an attempt to fetch.
@@ -767,13 +778,14 @@ TEST_F(HlsRenditionImplUnittest, TestAES128Content) {
 
   // The fetch will request the segment at "media_2.ts", which has a new
   // encryption data.
-  InterceptEncDataOnFetch("https://example.com/media_2.ts", ciphertext2,
-                          base::BindOnce(
-                              [](crypto::SymmetricKey* key,
-                                 hls::MediaSegment::EncryptionData* enc_data) {
-                                enc_data->ImportKey(key->key());
-                              },
-                              key.get()));
+  InterceptEncDataOnFetch(
+      "https://example.com/media_2.ts", ciphertext2,
+      base::BindOnce(
+          [](base::span<const uint8_t, kKeySize> key,
+             hls::MediaSegment::EncryptionData* enc_data) {
+            enc_data->ImportKey(std::string(base::as_string_view(key)));
+          },
+          key));
 
   RequireAppend(base::as_byte_span(cleartext));
   rendition->CheckState(base::Seconds(0), 0.0,
@@ -784,11 +796,11 @@ TEST_F(HlsRenditionImplUnittest, TestAES128Content) {
 
   // Update the playlist. The segment stream should keep around media_3.ts,
   // but follow it up with mediax_4.ts
-  auto parsed = hls::MediaPlaylist::Parse(
-      kAESContentReplacement, GURL("https://example.com/manifest.m3u8"), 3,
-      nullptr);
+  GURL manifest_uri = GURL("https://example.com/manifest.m3u8");
+  auto parsed = hls::MediaPlaylist::Parse(kAESContentReplacement, manifest_uri,
+                                          3, nullptr);
   CHECK(parsed.has_value());
-  rendition->UpdatePlaylist(std::move(parsed).value(), std::nullopt);
+  rendition->UpdatePlaylist(std::move(parsed).value());
 
   // The encryption data is the same for segment 3, since it didn't change.
   RespondWithRangeTwice(base::Seconds(0), base::Seconds(2), base::Seconds(0),
@@ -805,7 +817,11 @@ TEST_F(HlsRenditionImplUnittest, TestAES128Content) {
   // a key fetch.
 
   std::string ciphertext3;
-  std::tie(ciphertext3, key) = Encrypt(cleartext, "hhhhhhhhhhhhhhhh");
+  static constexpr std::array<uint8_t, crypto::aes_cbc::kBlockSize> kHIv{
+      'h', 'h', 'h', 'h', 'h', 'h', 'h', 'h',
+      'h', 'h', 'h', 'h', 'h', 'h', 'h', 'h',
+  };
+  std::tie(ciphertext3, key) = Encrypt(cleartext, kHIv);
 
   // CheckState will start the paused player, query BufferedRanges, get 0-4
   // which will trigger an attempt to fetch.
@@ -814,13 +830,14 @@ TEST_F(HlsRenditionImplUnittest, TestAES128Content) {
 
   // The fetch will request the segment at "mediax_4.ts", for which the
   // encryption data has not been fetched.
-  InterceptEncDataOnFetch("https://example.com/mediax_4.ts", ciphertext3,
-                          base::BindOnce(
-                              [](crypto::SymmetricKey* key,
-                                 hls::MediaSegment::EncryptionData* enc_data) {
-                                enc_data->ImportKey(key->key());
-                              },
-                              key.get()));
+  InterceptEncDataOnFetch(
+      "https://example.com/mediax_4.ts", ciphertext3,
+      base::BindOnce(
+          [](base::span<const uint8_t, kKeySize> key,
+             hls::MediaSegment::EncryptionData* enc_data) {
+            enc_data->ImportKey(std::string(base::as_string_view(key)));
+          },
+          key));
   RequireAppend(base::as_byte_span(cleartext));
   rendition->CheckState(base::Seconds(0), 0.0,
                         BindCheckState(base::Seconds(0)));
@@ -836,6 +853,125 @@ TEST_F(HlsRenditionImplUnittest, TestAES128Content) {
   rendition->CheckState(base::Seconds(0), 0.0,
                         BindCheckState(base::Seconds(0)));
   task_environment_.RunUntilIdle();
+}
+
+TEST_F(HlsRenditionImplUnittest, TestCanPlayWhenThereIsAGap) {
+  auto rendition = MakeVodRendition(kDiscontinuous);
+  ASSERT_NE(rendition, nullptr);
+  std::string content = "123";
+  Ranges<base::TimeDelta> empty_range;
+  Ranges<base::TimeDelta> split_range;
+  split_range.Add(base::Seconds(0), base::Milliseconds(998));
+  split_range.Add(base::Seconds(3), base::Milliseconds(3999));
+  EXPECT_CALL(*mock_mdeh_, GetBufferedRanges("test"))
+      .WillOnce(Return(empty_range))   // CheckState #1
+      .WillOnce(Return(split_range));  // OnSegmentData #1
+  RespondToUrl("https://example.com/bip00.ts", content);
+  RequireAppend(base::as_byte_span(content));
+  rendition->CheckState(base::Seconds(0), 0.0, BindCheck0Sec());
+}
+
+TEST_F(HlsRenditionImplUnittest, TestCantSkipOverLargeGaps) {
+  auto rendition = MakeVodRendition(kDiscontinuous);
+  ASSERT_NE(rendition, nullptr);
+  std::string content = "123";
+  Ranges<base::TimeDelta> split_range;
+  split_range.Add(base::Seconds(0), base::Milliseconds(998));
+  split_range.Add(base::Seconds(3), base::Milliseconds(3999));
+  EXPECT_CALL(*mock_mdeh_, GetBufferedRanges("test"))
+      .WillOnce(Return(split_range));
+  EXPECT_CALL(*mock_hrh_, Quit(_));
+  rendition->CheckState(base::Milliseconds(999), 0.0, BindCheckStateNoExpect());
+}
+
+TEST_F(HlsRenditionImplUnittest, TestCantSkipIntoTinyRangeMiddle) {
+  auto rendition = MakeVodRendition(kDiscontinuous);
+  ASSERT_NE(rendition, nullptr);
+  std::string content = "123";
+  Ranges<base::TimeDelta> split_range;
+  Ranges<base::TimeDelta> truncated;
+  split_range.Add(base::Milliseconds(10), base::Milliseconds(80));
+  split_range.Add(base::Milliseconds(100), base::Milliseconds(102));
+  split_range.Add(base::Milliseconds(104), base::Milliseconds(112));
+  split_range.Add(base::Milliseconds(114), base::Milliseconds(130));
+  split_range.Add(base::Milliseconds(132), base::Milliseconds(190));
+  truncated.Add(base::Milliseconds(132), base::Milliseconds(190));
+  EXPECT_CALL(*mock_mdeh_, GetBufferedRanges("test"))
+      .WillOnce(Return(split_range))
+      .WillOnce(Return(truncated));
+
+  EXPECT_CALL(*mock_mdeh_,
+              Remove(_, base::Seconds(0), base::Milliseconds(130)));
+  EXPECT_CALL(*mock_mdeh_, RequestSeek(base::Milliseconds(132)));
+  rendition->CheckState(base::Milliseconds(90), 0.0,
+                        BindCheckState(kNoTimestamp));
+}
+
+TEST_F(HlsRenditionImplUnittest, TestSkipsAheadIfBehind) {
+  auto rendition = MakeVodRendition(kDiscontinuous);
+  ASSERT_NE(rendition, nullptr);
+  std::string content = "123";
+  Ranges<base::TimeDelta> split_range;
+  split_range.Add(base::Milliseconds(100), base::Milliseconds(102));
+  split_range.Add(base::Milliseconds(104), base::Milliseconds(112));
+  split_range.Add(base::Milliseconds(114), base::Milliseconds(130));
+  split_range.Add(base::Milliseconds(132), base::Milliseconds(190));
+  EXPECT_CALL(*mock_mdeh_, GetBufferedRanges("test"))
+      .WillRepeatedly(Return(split_range));
+
+  EXPECT_CALL(*mock_mdeh_, RequestSeek(base::Milliseconds(100)));
+  rendition->CheckState(base::Milliseconds(0), 1, BindCheckState(kNoTimestamp));
+}
+
+TEST_F(HlsRenditionImplUnittest, TestCantSkipIntoTheFarFuture) {
+  auto rendition = MakeVodRendition(kDiscontinuous);
+  ASSERT_NE(rendition, nullptr);
+  std::string content = "123";
+  Ranges<base::TimeDelta> split_range;
+  split_range.Add(base::Milliseconds(3100), base::Milliseconds(3102));
+  split_range.Add(base::Milliseconds(3104), base::Milliseconds(3112));
+  split_range.Add(base::Milliseconds(3114), base::Milliseconds(3130));
+  split_range.Add(base::Milliseconds(3132), base::Milliseconds(3190));
+  EXPECT_CALL(*mock_mdeh_, GetBufferedRanges("test"))
+      .WillOnce(Return(split_range));
+
+  EXPECT_CALL(*mock_hrh_, Quit(_));
+  rendition->CheckState(base::Milliseconds(0), 1, BindCheckStateNoExpect());
+}
+
+TEST_F(HlsRenditionImplUnittest, TestWillDelayUntilRangeWhenBufferFull) {
+  auto rendition = MakeVodRendition(kDiscontinuous);
+  ASSERT_NE(rendition, nullptr);
+  Ranges<base::TimeDelta> split_range;
+  split_range.Add(base::Seconds(0), base::Seconds(2));
+  split_range.Add(base::Seconds(3), base::Seconds(20));
+  EXPECT_CALL(*mock_mdeh_, GetBufferedRanges("test"))
+      .WillRepeatedly(Return(split_range));
+
+  // The delay is set until the end of the first loaded range, because it is
+  // closer than the "ideal buffer size"
+  rendition->CheckState(base::Seconds(1), 1, BindCheckState(base::Seconds(1)));
+}
+
+TEST_F(HlsRenditionImplUnittest, TestRemoveOldDataForSkipRemovesAllBuffers) {
+  auto rendition = MakeVodRendition(kDiscontinuous);
+  ASSERT_NE(rendition, nullptr);
+  std::string content = "123";
+  Ranges<base::TimeDelta> split_range;
+  Ranges<base::TimeDelta> truncated;
+  split_range.Add(base::Milliseconds(10), base::Milliseconds(80));
+  split_range.Add(base::Milliseconds(100), base::Milliseconds(102));
+  split_range.Add(base::Milliseconds(104), base::Milliseconds(112));
+  split_range.Add(base::Milliseconds(114), base::Milliseconds(130));
+  split_range.Add(base::Milliseconds(132), base::Milliseconds(190));
+  EXPECT_CALL(*mock_mdeh_, GetBufferedRanges("test"))
+      .WillOnce(Return(split_range))
+      .WillOnce(Return(truncated));
+
+  EXPECT_CALL(*mock_mdeh_,
+              Remove(_, base::Seconds(0), base::Milliseconds(130)));
+  EXPECT_CALL(*mock_hrh_, Quit(_));
+  rendition->CheckState(base::Milliseconds(90), 0.0, BindCheckStateNoExpect());
 }
 
 }  // namespace media

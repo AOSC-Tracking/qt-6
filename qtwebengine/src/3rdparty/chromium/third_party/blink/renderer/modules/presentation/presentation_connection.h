@@ -20,10 +20,6 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
-namespace WTF {
-class AtomicString;
-}  // namespace WTF
-
 namespace blink {
 
 class DOMArrayBuffer;
@@ -32,7 +28,6 @@ enum class FileErrorCode;
 class PresentationController;
 class PresentationReceiver;
 class PresentationRequest;
-class ScriptPromiseResolverBase;
 class V8PresentationConnectionState;
 class WebString;
 
@@ -101,7 +96,8 @@ class MODULES_EXPORT PresentationConnection
   void ContextDestroyed() override;
 
   // ExecutionContextLifecycleStateObserver implementation.
-  void ContextLifecycleStateChanged(mojom::FrameLifecycleState state) override;
+  void ContextLifecycleStateChanged(
+      mojom::blink::FrameLifecycleState state) override;
 
   String id_;
   KURL url_;
@@ -167,12 +163,11 @@ class MODULES_EXPORT PresentationConnection
 class MODULES_EXPORT ControllerPresentationConnection final
     : public PresentationConnection {
  public:
-  // For CallbackPromiseAdapter.
-  static ControllerPresentationConnection* Take(
-      ScriptPromiseResolverBase*,
+  static ControllerPresentationConnection* Create(
+      ExecutionContext*,
       const mojom::blink::PresentationInfo&,
       PresentationRequest*);
-  static ControllerPresentationConnection* Take(
+  static ControllerPresentationConnection* Create(
       PresentationController*,
       const mojom::blink::PresentationInfo&,
       PresentationRequest*);
@@ -205,7 +200,7 @@ class MODULES_EXPORT ControllerPresentationConnection final
 // result of creating the controller side connection of a 1-UA presentation.
 class ReceiverPresentationConnection final : public PresentationConnection {
  public:
-  static ReceiverPresentationConnection* Take(
+  static ReceiverPresentationConnection* Create(
       PresentationReceiver*,
       const mojom::blink::PresentationInfo&,
       mojo::PendingRemote<mojom::blink::PresentationConnection>

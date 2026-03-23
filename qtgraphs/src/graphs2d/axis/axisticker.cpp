@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "axisticker_p.h"
 
@@ -49,7 +51,7 @@ qreal AxisTicker::smoothing() const
 
 void AxisTicker::setSmoothing(qreal newSmoothing)
 {
-    if (qFuzzyCompare(m_smoothing, newSmoothing))
+    if (QtPrivate::fuzzyCompare(m_smoothing, newSmoothing))
         return;
     m_smoothing = newSmoothing;
     emit smoothingChanged();
@@ -88,7 +90,7 @@ qreal AxisTicker::spacing() const
 
 void AxisTicker::setSpacing(qreal newSpacing)
 {
-    if (qFuzzyCompare(m_spacing, newSpacing))
+    if (QtPrivate::fuzzyCompare(m_spacing, newSpacing))
         return;
     m_spacing = newSpacing;
     emit spacingChanged();
@@ -101,7 +103,7 @@ qreal AxisTicker::displacement() const
 
 void AxisTicker::setDisplacement(qreal newDisplacement)
 {
-    if (qFuzzyCompare(m_displacement, newDisplacement))
+    if (QtPrivate::fuzzyCompare(m_displacement, newDisplacement))
         return;
     m_displacement = newDisplacement;
     emit displacementChanged();
@@ -140,7 +142,7 @@ qreal AxisTicker::subTickLineWidth() const
 
 void AxisTicker::setSubTickLineWidth(qreal newSubTickLineWidth)
 {
-    if (qFuzzyCompare(m_subTickLineWidth, newSubTickLineWidth))
+    if (QtPrivate::fuzzyCompare(m_subTickLineWidth, newSubTickLineWidth))
         return;
     m_subTickLineWidth = newSubTickLineWidth;
     emit subTickLineWidthChanged();
@@ -153,7 +155,7 @@ qreal AxisTicker::tickLineWidth() const
 
 void AxisTicker::setTickLineWidth(qreal newTickLineWidth)
 {
-    if (qFuzzyCompare(m_tickLineWidth, newTickLineWidth))
+    if (QtPrivate::fuzzyCompare(m_tickLineWidth, newTickLineWidth))
         return;
     m_tickLineWidth = newTickLineWidth;
     emit tickLineWidthChanged();
@@ -166,7 +168,7 @@ qreal AxisTicker::subTickScale() const
 
 void AxisTicker::setSubTickScale(qreal newSubTickScale)
 {
-    if (qFuzzyCompare(m_subTickScale, newSubTickScale))
+    if (QtPrivate::fuzzyCompare(m_subTickScale, newSubTickScale))
         return;
     m_subTickScale = newSubTickScale;
     emit subTickScaleChanged();
@@ -179,7 +181,7 @@ qreal AxisTicker::subTickLength() const
 
 void AxisTicker::setSubTickLength(qreal newSubTickLength)
 {
-    if (qFuzzyCompare(m_subTickLength, newSubTickLength))
+    if (QtPrivate::fuzzyCompare(m_subTickLength, newSubTickLength))
         return;
     m_subTickLength = newSubTickLength;
     emit subTickLengthChanged();
@@ -213,3 +215,5 @@ void AxisTicker::setFlipped(bool newFlipped)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_axisticker_p.cpp"

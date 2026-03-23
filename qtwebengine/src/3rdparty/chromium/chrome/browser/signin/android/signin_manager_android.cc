@@ -19,6 +19,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/chrome_browsing_data_remover_constants.h"
 #include "chrome/browser/enterprise/util/managed_browser_utils.h"
+#include "chrome/browser/password_manager/android/password_manager_android_util.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_factory.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_mobile.h"
 #include "chrome/browser/profiles/profile.h"
@@ -27,6 +28,7 @@
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "components/google/core/common/google_util.h"
+#include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/split_stores_and_local_upm.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #include "components/policy/core/common/policy_switches.h"
@@ -36,7 +38,6 @@
 #include "components/signin/public/identity_manager/account_managed_status_finder.h"
 #include "components/signin/public/identity_manager/accounts_cookie_mutator.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
-#include "components/sync/service/sync_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browsing_data_filter_builder.h"
 #include "content/public/browser/browsing_data_remover.h"
@@ -74,16 +75,12 @@ class ProfileDataRemover : public content::BrowsingDataRemover::Observer {
     if (all_data) {
       chrome_browsing_data_remover::DataType removed_types =
           chrome_browsing_data_remover::ALL_DATA_TYPES;
-      if (password_manager::UsesSplitStoresAndUPMForLocal(
-              profile_->GetPrefs())) {
-        // If usesSplitStoresAndUPMForLocal() is true, browser sign-in won't
-        // upload existing passwords, so there's no reason to wipe them
-        // immediately before. Similarly, on browser sign-out, account passwords
-        // should survive (outside of the browser) to be used by other apps,
-        // until system-level sign-out. In other words, the browser has no
-        // business deleting any passwords here.
-        removed_types &= ~chrome_browsing_data_remover::DATA_TYPE_PASSWORDS;
-      }
+      // Browser sign-in won't upload existing passwords, so there's no reason
+      // to wipe them immediately before. Similarly, on browser sign-out,
+      // account passwords should survive (outside of the browser) to be used by
+      // other apps, until system-level sign-out. In other words, the browser
+      // has no business deleting any passwords here.
+      removed_types &= ~chrome_browsing_data_remover::DATA_TYPE_PASSWORDS;
       remover_->RemoveAndReply(base::Time(), base::Time::Max(), removed_types,
                                chrome_browsing_data_remover::ALL_ORIGIN_TYPES,
                                this);
@@ -160,19 +157,13 @@ SigninManagerAndroid::SigninManagerAndroid(
   DCHECK(user_cloud_policy_manager_);
   DCHECK(user_policy_signin_service_);
 
-  signin_allowed_.Init(
-      prefs::kSigninAllowed, profile_->GetPrefs(),
-      base::BindRepeating(&SigninManagerAndroid::OnSigninAllowedPrefChanged,
-                          base::Unretained(this)));
-
   force_browser_signin_.Init(prefs::kForceBrowserSignin,
                              g_browser_process->local_state());
 
   java_signin_manager_ = Java_SigninManagerImpl_create(
       base::android::AttachCurrentThread(), reinterpret_cast<intptr_t>(this),
       profile_, identity_manager_,
-      identity_manager_->GetIdentityMutatorJavaObject(),
-      SyncServiceFactory::GetForProfile(profile_)->GetJavaObject());
+      identity_manager_->GetIdentityMutatorJavaObject());
 }
 
 base::android::ScopedJavaLocalRef<jobject>
@@ -197,14 +188,6 @@ SigninManagerAndroid::ManagementCredentials::ManagementCredentials(
 
 SigninManagerAndroid::ManagementCredentials::~ManagementCredentials() = default;
 
-bool SigninManagerAndroid::IsSigninAllowed() const {
-  return signin_allowed_.GetValue();
-}
-
-bool SigninManagerAndroid::IsSigninAllowedByPolicy(JNIEnv* env) const {
-  return IsSigninAllowed();
-}
-
 bool SigninManagerAndroid::IsForceSigninEnabled(JNIEnv* env) {
   return force_browser_signin_.GetValue();
 }
@@ -215,13 +198,6 @@ bool SigninManagerAndroid::MatchesCachedIsAccountManagedEntry(
     const CoreAccountInfo& account) {
   return cached_entry.gaia_id == account.gaia &&
          cached_entry.expiration_time > base::Time::Now();
-}
-
-void SigninManagerAndroid::OnSigninAllowedPrefChanged() const {
-  VLOG(1) << "::OnSigninAllowedPrefChanged() " << IsSigninAllowed();
-  Java_SigninManagerImpl_onSigninAllowedByPolicyChanged(
-      base::android::AttachCurrentThread(), java_signin_manager_,
-      IsSigninAllowed());
 }
 
 void SigninManagerAndroid::StopApplyingCloudPolicy(JNIEnv* env) {

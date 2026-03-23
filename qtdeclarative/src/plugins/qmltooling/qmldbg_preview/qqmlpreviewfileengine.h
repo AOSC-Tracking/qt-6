@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLPREVIEWFILEENGINE_H
 #define QQMLPREVIEWFILEENGINE_H
@@ -64,7 +65,6 @@ public:
     bool setSize(qint64 size) override;
     bool caseSensitive() const override;
     bool isRelativePath() const override;
-    QStringList entryList(QDir::Filters filters, const QStringList &filterNames) const override;
     bool setPermissions(uint perms) override;
     QByteArray id() const override;
     QString owner(FileOwner) const override;

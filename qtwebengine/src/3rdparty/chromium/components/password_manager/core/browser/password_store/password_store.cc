@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "base/barrier_callback.h"
 #include "base/functional/bind.h"
@@ -51,7 +52,7 @@ void InvokeCallbacksForSuspectedChanges(
     PasswordChangesOrError changes_or_error) {
   DCHECK(notifying_callback);
   bool success =
-      !absl::holds_alternative<PasswordStoreBackendError>(changes_or_error);
+      !std::holds_alternative<PasswordStoreBackendError>(changes_or_error);
 
   std::move(notifying_callback)
       .Run(GetPasswordChangesOrNulloptOnFailure(std::move(changes_or_error)));
@@ -121,7 +122,6 @@ void PasswordStore::AddLogins(const std::vector<PasswordForm>& forms,
     CHECK(!form.blocked_by_user ||
           (form.username_value.empty() && form.password_value.empty()));
     backend_->AddLoginAsync(form, barrier_callback);
-    backend_->RecordAddLoginAsyncCalledFromTheStore();
   }
 }
 
@@ -157,7 +157,6 @@ void PasswordStore::UpdateLogins(const std::vector<PasswordForm>& forms,
     CHECK(!form.blocked_by_user ||
           (form.username_value.empty() && form.password_value.empty()));
     backend_->UpdateLoginAsync(form, barrier_callback);
-    backend_->RecordUpdateLoginAsyncCalledFromTheStore();
   }
 }
 
@@ -205,7 +204,6 @@ void PasswordStore::UpdateLoginWithPrimaryKey(
   backend_->RemoveLoginAsync(FROM_HERE, old_primary_key, barrier_callback);
   backend_->AddLoginAsync(new_form_with_correct_password_issues,
                           barrier_callback);
-  backend_->RecordAddLoginAsyncCalledFromTheStore();
 }
 
 void PasswordStore::RemoveLogin(const base::Location& location,
@@ -527,13 +525,13 @@ void PasswordStore::NotifyLoginsRetainedOnMainSequence(
   }
 
   // Clients don't expect errors yet, so just wait for the next notification.
-  if (absl::holds_alternative<PasswordStoreBackendError>(result)) {
+  if (std::holds_alternative<PasswordStoreBackendError>(result)) {
     return;
   }
 
   std::vector<PasswordForm> retained_logins;
-  retained_logins.reserve(absl::get<LoginsResult>(result).size());
-  for (auto& login : absl::get<LoginsResult>(result)) {
+  retained_logins.reserve(std::get<LoginsResult>(result).size());
+  for (auto& login : std::get<LoginsResult>(result)) {
     retained_logins.push_back(std::move(login));
   }
 

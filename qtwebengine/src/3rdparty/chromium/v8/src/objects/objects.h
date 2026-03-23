@@ -124,7 +124,8 @@ ShouldThrow GetShouldThrow(Isolate* isolate, Maybe<ShouldThrow> should_throw);
 // allocation of the C++ vtable.
 // There must only be a single data member in Object: the Address ptr,
 // containing the tagged heap pointer that this Object instance refers to.
-// For a design overview, see https://goo.gl/Ph4CGz.
+// For a design overview, see:
+// https://docs.google.com/document/d/1_w49sakC1XM1OptjTurBDqO86NE16FH8LwbeUAtrbCo
 class Object : public AllStatic {
  public:
   enum class Conversion {
@@ -144,6 +145,12 @@ class Object : public AllStatic {
   V8_EXPORT_PRIVATE static bool ToInt32(Tagged<Object> obj, int32_t* value);
   static inline bool ToUint32(Tagged<Object> obj, uint32_t* value);
 
+  // ES6 section 7.1.5 ToIntegerOrInfinity
+  template <typename T, template <typename> typename HandleType>
+    requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+  V8_WARN_UNUSED_RESULT static inline Maybe<double> IntegerValue(
+      Isolate* isolate, HandleType<T> input);
+
   static inline Representation OptimalRepresentation(
       Tagged<Object> obj, PtrComprCageBase cage_base);
 
@@ -159,8 +166,9 @@ class Object : public AllStatic {
 
   static inline bool FilterKey(Tagged<Object> obj, PropertyFilter filter);
 
-  static Handle<FieldType> OptimalType(Tagged<Object> obj, Isolate* isolate,
-                                       Representation representation);
+  static DirectHandle<FieldType> OptimalType(Tagged<Object> obj,
+                                             Isolate* isolate,
+                                             Representation representation);
 
   V8_EXPORT_PRIVATE static Handle<UnionOf<JSAny, Hole>> NewStorageFor(
       Isolate* isolate, Handle<UnionOf<JSAny, Hole>> object,
@@ -356,6 +364,11 @@ class Object : public AllStatic {
                        DirectHandle<Name> name, DirectHandle<Object> value,
                        Maybe<ShouldThrow> should_throw = Nothing<ShouldThrow>(),
                        StoreOrigin store_origin = StoreOrigin::kMaybeKeyed);
+  V8_WARN_UNUSED_RESULT static inline MaybeDirectHandle<Object>
+  SetPropertyOrElement(Isolate* isolate, DirectHandle<JSAny> object,
+                       PropertyKey key, DirectHandle<Object> value,
+                       Maybe<ShouldThrow> should_throw = Nothing<ShouldThrow>(),
+                       StoreOrigin store_origin = StoreOrigin::kMaybeKeyed);
 
   V8_WARN_UNUSED_RESULT static Maybe<bool> SetSuperProperty(
       LookupIterator* it, DirectHandle<Object> value, StoreOrigin store_origin,
@@ -388,9 +401,8 @@ class Object : public AllStatic {
 
   V8_WARN_UNUSED_RESULT static inline MaybeHandle<Object> GetPropertyOrElement(
       Isolate* isolate, DirectHandle<JSAny> object, DirectHandle<Name> name);
-  V8_WARN_UNUSED_RESULT static inline MaybeDirectHandle<Object>
-  GetPropertyOrElement(DirectHandle<JSAny> receiver, DirectHandle<Name> name,
-                       DirectHandle<JSReceiver> holder);
+  V8_WARN_UNUSED_RESULT static inline MaybeHandle<Object> GetPropertyOrElement(
+      Isolate* isolate, DirectHandle<JSAny> object, PropertyKey key);
   V8_WARN_UNUSED_RESULT static inline MaybeHandle<Object> GetProperty(
       Isolate* isolate, DirectHandle<JSAny> object, DirectHandle<Name> name);
 
@@ -719,9 +731,6 @@ V8_INLINE bool IsWasmObject(T obj, Isolate* = nullptr) {
 V8_INLINE bool IsJSObjectThatCanBeTrackedAsPrototype(Tagged<Object> obj);
 V8_INLINE bool IsJSObjectThatCanBeTrackedAsPrototype(Tagged<HeapObject> obj);
 
-V8_INLINE bool IsJSApiWrapperObject(Tagged<HeapObject> obj);
-V8_INLINE bool IsJSApiWrapperObject(Tagged<Map> map);
-
 #define DECL_STRUCT_PREDICATE(NAME, Name, name) \
   V8_INLINE bool Is##Name(Tagged<Object> obj);  \
   V8_INLINE bool Is##Name(Tagged<Object> obj, PtrComprCageBase cage_base);
@@ -851,6 +860,9 @@ class FixedBodyDescriptor;
 
 template <int start_offset>
 class FlexibleBodyDescriptor;
+
+template <int start_offset, int end_offset, int size>
+class FixedWeakBodyDescriptor;
 
 template <int start_offset>
 class FlexibleWeakBodyDescriptor;

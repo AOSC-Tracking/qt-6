@@ -430,7 +430,7 @@ void ElementInnerTextCollector::ProcessOptionElement(
 
 void ElementInnerTextCollector::ProcessOptGroupElement(
     const HTMLOptGroupElement& optgroup) {
-  CHECK(RuntimeEnabledFeatures::SelectParserRelaxationEnabled());
+  CHECK(HTMLSelectElement::SelectParserRelaxationEnabled(&optgroup));
   // Note: We should emit newline for OPTGROUP even if it has no OPTION.
   // e.g. <div>a<select><optgroup></select>b</div>.innerText == "a\nb"
   result_.EmitRequiredLineBreak(1);
@@ -458,7 +458,7 @@ void ElementInnerTextCollector::ProcessOptGroupElement(
 
 void ElementInnerTextCollector::ProcessSelectElement(
     const HTMLSelectElement& select_element) {
-  if (RuntimeEnabledFeatures::SelectParserRelaxationEnabled()) {
+  if (HTMLSelectElement::SelectParserRelaxationEnabled(&select_element)) {
     // TODO(crbug.com/40271842): Consider Handling display:none on various
     // elements here, especially options.
     Element* descendant = ElementTraversal::FirstChild(select_element);
@@ -529,7 +529,7 @@ void ElementInnerTextCollector::ProcessTextNode(const Text& node) {
 
 void ElementInnerTextCollector::Result::EmitNewline() {
   FlushRequiredLineBreak();
-  builder_.Append(kNewlineCharacter);
+  builder_.Append(uchar::kLineFeed);
 }
 
 void ElementInnerTextCollector::Result::EmitRequiredLineBreak(
@@ -551,7 +551,7 @@ void ElementInnerTextCollector::Result::EmitRequiredLineBreak(
 
 void ElementInnerTextCollector::Result::EmitTab() {
   FlushRequiredLineBreak();
-  builder_.Append(kTabulationCharacter);
+  builder_.Append(uchar::kTab);
 }
 
 void ElementInnerTextCollector::Result::EmitText(const StringView& text) {

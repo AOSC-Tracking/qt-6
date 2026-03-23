@@ -11,9 +11,12 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observation.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom-shared.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/ozone/platform/wayland/host/wayland_window.h"
+#include "ui/ozone/platform/wayland/host/xdg_session.h"
+#include "ui/ozone/public/platform_session_manager.h"
 #include "ui/platform_window/extensions/system_modal_extension.h"
 #include "ui/platform_window/extensions/wayland_extension.h"
 #include "ui/platform_window/extensions/workspace_extension.h"
@@ -27,15 +30,16 @@ enum class TooltipTrigger;
 
 namespace ui {
 
-class GtkSurface1;
-class ShellToplevelWrapper;
+class OrgKdeKwinAppmenu;
+class XdgToplevel;
 
 class WaylandToplevelWindow : public WaylandWindow,
                               public WmMoveResizeHandler,
                               public WmMoveLoopHandler,
                               public WaylandToplevelExtension,
                               public WorkspaceExtension,
-                              public SystemModalExtension {
+                              public SystemModalExtension,
+                              public XdgSession::Observer {
  public:
   WaylandToplevelWindow(PlatformWindowDelegate* delegate,
                         WaylandConnection* connection);
@@ -43,10 +47,13 @@ class WaylandToplevelWindow : public WaylandWindow,
   WaylandToplevelWindow& operator=(const WaylandToplevelWindow&) = delete;
   ~WaylandToplevelWindow() override;
 
-  ShellToplevelWrapper* shell_toplevel() const { return shell_toplevel_.get(); }
+  XdgToplevel* xdg_toplevel() const { return xdg_toplevel_.get(); }
 
   // Sets the window's origin.
   void SetOrigin(const gfx::Point& origin);
+
+  // Notify that this window's active state may change.
+  void UpdateActivationState();
 
   // WaylandWindow overrides:
   void UpdateWindowScale(bool update_bounds) override;
@@ -91,6 +98,7 @@ class WaylandToplevelWindow : public WaylandWindow,
   void Maximize() override;
   void Minimize() override;
   void Restore() override;
+  void ShowWindowControlsMenu(const gfx::Point& point) override;
   void Activate() override;
   void SetWindowIcons(const gfx::ImageSkia& window_icon,
                       const gfx::ImageSkia& app_icon) override;
@@ -110,7 +118,6 @@ class WaylandToplevelWindow : public WaylandWindow,
       std::optional<std::vector<gfx::Rect>> region_px) override;
   void SetInputRegion(std::optional<std::vector<gfx::Rect>> region_px) override;
   bool IsClientControlledWindowMovementSupported() const override;
-  void NotifyStartupComplete(const std::string& startup_id) override;
 
   // WmMoveLoopHandler:
   bool RunMoveLoop(const gfx::Vector2d& drag_offset) override;
@@ -122,6 +129,9 @@ class WaylandToplevelWindow : public WaylandWindow,
       bool allow_system_drag) override;
   bool SupportsPointerLock() override;
   void LockPointer(bool enabled) override;
+  void SetAppmenu(const std::string& service_name,
+                  const std::string& object_path) override;
+  void UnsetAppmenu() override;
 
   // WorkspaceExtension:
   std::string GetWorkspace() const override;
@@ -135,7 +145,26 @@ class WaylandToplevelWindow : public WaylandWindow,
 
   void DumpState(std::ostream& out) const override;
 
+  // XdgSession::Observer:
+  void OnSessionDestroying() override;
+
  private:
+  // XdgToplevelSession instances are owned by toplevel windows, given their
+  // close lifecycle, though ownership might be transferred to the associated
+  // XdgSession, during removals, for example. To make this relationship more
+  // explicit and keep the public API clean and concise, friendship is used
+  // here. See XdgSession::RemoveToplevel for further context.
+  friend class XdgSession;
+  std::unique_ptr<XdgToplevelSession> TakeToplevelSession() {
+    return std::move(toplevel_session_);
+  }
+  std::string session_id() const {
+    return session_data_ ? session_data_->session_id : "";
+  }
+  int32_t session_toplevel_id() const {
+    return session_data_ ? session_data_->window_id : 0;
+  }
+
   // WaylandWindow protected overrides:
   // Calls UpdateWindowShape, set_input_region and set_opaque_region for this
   // toplevel window.
@@ -157,8 +186,10 @@ class WaylandToplevelWindow : public WaylandWindow,
 
   WaylandOutput* GetWaylandOutputForDisplayId(int64_t display_id);
 
-  // Creates a surface window, which is visible as a main window.
-  bool CreateShellToplevel();
+  // Creates and initializes the underlying xdg_toplevel surface, which
+  // is the protocol object the makes it possible for this map this as a
+  // toplevel window.
+  bool CreateXdgToplevel();
 
   WmMoveResizeHandler* AsWmMoveResizeHandler();
 
@@ -172,8 +203,14 @@ class WaylandToplevelWindow : public WaylandWindow,
   // Sets decoration mode for a window.
   void OnDecorationModeChanged();
 
-  // Wrappers around shell surface.
-  std::unique_ptr<ShellToplevelWrapper> shell_toplevel_;
+  // Issues session management requests, if needed, at mapping- and
+  // configure-time stages of the toplevel window initialization.
+  void UpdateSessionStateIfNeeded();
+
+  // Try to announce the appmenu associated with this toplevel, if there's any.
+  void TryAnnounceAppmenu();
+
+  std::unique_ptr<XdgToplevel> xdg_toplevel_;
 
   // True if it's maximized before requesting the window state change from the
   // client.
@@ -182,10 +219,8 @@ class WaylandToplevelWindow : public WaylandWindow,
   // The display ID to switch to in case the state is `kFullscreen`.
   int64_t fullscreen_display_id_ = display::kInvalidDisplayId;
 
-  // Contains the current state of the tiled edges.
-  WindowTiledEdges tiled_state_;
-
   bool is_active_ = false;
+  bool is_xdg_active_ = false;
   bool is_suspended_ = false;
 
   // Id of the chromium app passed through
@@ -196,10 +231,6 @@ class WaylandToplevelWindow : public WaylandWindow,
 
   // Title of the ShellToplevel.
   std::u16string window_title_;
-
-  // |gtk_surface1_| is the optional GTK surface that provides better
-  // integration with the desktop shell.
-  std::unique_ptr<GtkSurface1> gtk_surface1_;
 
   // When use_native_frame is false, client-side decoration is set.
   // When use_native_frame is true, server-side decoration is set.
@@ -219,6 +250,19 @@ class WaylandToplevelWindow : public WaylandWindow,
   ZOrderLevel z_order_ = ZOrderLevel::kNormal;
 
   raw_ptr<WorkspaceExtensionDelegate> workspace_extension_delegate_ = nullptr;
+
+  gfx::ImageSkia initial_icon_;
+
+  std::optional<PlatformSessionWindowData> session_data_;
+  raw_ptr<XdgSession> session_;
+  base::ScopedObservation<XdgSession, XdgSession::Observer> session_observer_{
+      this};
+  std::unique_ptr<XdgToplevelSession> toplevel_session_;
+
+  // Global application menu integration.
+  std::unique_ptr<OrgKdeKwinAppmenu> appmenu_;
+  std::string appmenu_service_name_;
+  std::string appmenu_object_path_;
 
   base::WeakPtrFactory<WaylandToplevelWindow> weak_ptr_factory_{this};
 };

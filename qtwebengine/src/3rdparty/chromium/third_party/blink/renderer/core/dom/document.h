@@ -35,9 +35,11 @@
 
 #include "base/check_op.h"
 #include "base/containers/enum_set.h"
+#include "base/containers/lru_cache.h"
 #include "base/dcheck_is_on.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/stack_allocated.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/uuid.h"
@@ -49,7 +51,6 @@
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/css/preferred_color_scheme.mojom-blink-forward.h"
-#include "third_party/blink/public/mojom/facilitated_payments/payment_link_handler.mojom-blink.h"
 #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/page/page.mojom-blink-forward.h"
@@ -72,6 +73,7 @@
 #include "third_party/blink/renderer/core/dom/document_timing.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/events/event_path.h"
+#include "third_party/blink/renderer/core/dom/focus_params.h"
 #include "third_party/blink/renderer/core/dom/live_node_list_registry.h"
 #include "third_party/blink/renderer/core/dom/node_list_invalidation_type.h"
 #include "third_party/blink/renderer/core/dom/qualified_name.h"
@@ -79,23 +81,28 @@
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
 #include "third_party/blink/renderer/core/dom/user_action_element_set.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
+#include "third_party/blink/renderer/core/frame/widget_creation_observer.h"
 #include "third_party/blink/renderer/core/html/forms/listed_element.h"
 #include "third_party/blink/renderer/core/html/parser/parser_synchronization_policy.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_linked_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap_observer_list.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
-#include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
-#include "third_party/blink/renderer/platform/wtf/gc_plugin.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value_forward.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "third_party/blink/public/mojom/facilitated_payments/payment_link_handler.mojom-blink.h"
+#include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
+#endif
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -199,6 +206,8 @@ class HTMLMetaElement;
 class HitTestRequest;
 class HttpRefreshScheduler;
 class IntersectionObserverController;
+class InvalidateNodeListCachesScope;
+class ImportNodeOptions;
 class LayoutUpgrade;
 class LayoutView;
 class LazyLoadImageObserver;
@@ -215,6 +224,7 @@ class MediaQueryMatcher;
 class NodeIterator;
 class NthIndexCache;
 class Page;
+class PaintLayerScrollableArea;
 class PendingAnimations;
 class PendingLinkPreload;
 class ProcessingInstruction;
@@ -235,10 +245,12 @@ class ScriptRunnerDelayer;
 class ScriptValue;
 class ScriptableDocumentParser;
 class ScriptedAnimationController;
+class ScrollMarkerGroupData;
 class SecurityOrigin;
 class SelectorQueryCache;
 class SerializedScriptValue;
 class SetHTMLOptions;
+class SetHTMLUnsafeOptions;
 class Settings;
 class SlotAssignmentEngine;
 class StyleEngine;
@@ -251,6 +263,7 @@ class TreeWalker;
 class TrustedHTML;
 class V8DocumentReadyState;
 class V8NodeFilter;
+class V8UnionElementCreationOptionsOrString;
 class V8UnionStringOrTrustedHTML;
 class ViewportData;
 class VisitedLinkState;
@@ -266,7 +279,6 @@ enum class CSSPropertyID;
 struct DraggableRegionValue;
 struct FocusParams;
 struct IconURL;
-struct PhysicalOffset;
 struct TextDiffRange;
 struct WebPrintPageDescription;
 
@@ -294,26 +306,12 @@ enum class DocumentClass {
 using DocumentClassFlags = base::
     EnumSet<DocumentClass, DocumentClass::kMinValue, DocumentClass::kMaxValue>;
 
-// A map of IDL attribute name to Element list value, for one particular
-// element. For example,
-//   el1.ariaActiveDescendant = el2
-// would add the following pair to the ExplicitlySetAttrElementMap for el1:
-//   ("ariaActiveDescendant", el2)
-// This represents 'explicitly set attr-element' in the HTML specification.
-// https://whatpr.org/html/3917/common-dom-interfaces.html#reflecting-content-attributes-in-idl-attributes:element-2
-// Note that in the interest of simplicitly, attributes that reflect a single
-// element reference are implemented using the same ExplicitlySetAttrElementsMap
-// storage, but only store a single element vector which is DCHECKED at the
-// calling site.
-using ExplicitlySetAttrElementsMap =
-    HeapHashMap<QualifiedName, Member<HeapLinkedHashSet<WeakMember<Element>>>>;
-
 // A map of IDL attribute name to Element FrozenArray value, for one particular
 // element.
 // This represents 'cached attr-associated elements' in the HTML specification.
 // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#cached-attr-associated-elements
 using CachedAttrAssociatedElementsMap =
-    HeapHashMap<QualifiedName, Member<FrozenArray<Element>>>;
+    GCedHeapHashMap<QualifiedName, Member<FrozenArray<Element>>>;
 
 // Represents the start and end time of the unload event.
 struct UnloadEventTiming {
@@ -358,6 +356,7 @@ struct UnloadEventTimingInfo {
 class CORE_EXPORT Document : public ContainerNode,
                              public TreeScope,
                              public UseCounter,
+                             public WidgetCreationObserver,
                              public Supplementable<Document> {
   DEFINE_WRAPPERTYPEINFO();
 
@@ -407,14 +406,6 @@ class CORE_EXPORT Document : public ContainerNode,
   bool IsPrerendering() const { return is_prerendering_; }
 
   bool HasDocumentPictureInPictureWindow() const;
-
-  void SetIsTrackingSoftNavigationHeuristics(bool value) {
-    is_tracking_soft_navigation_heuristics_ = value;
-  }
-
-  bool IsTrackingSoftNavigationHeuristics() const {
-    return is_tracking_soft_navigation_heuristics_;
-  }
 
   network::mojom::ReferrerPolicy GetReferrerPolicy() const;
 
@@ -480,7 +471,39 @@ class CORE_EXPORT Document : public ContainerNode,
   Attr* createAttributeNS(const AtomicString& namespace_uri,
                           const AtomicString& qualified_name,
                           ExceptionState&);
+
+  Node* importNode(Node* imported_node,
+                   ImportNodeOptions* options,
+                   ExceptionState&);
   Node* importNode(Node* imported_node, bool deep, ExceptionState&);
+
+  Node* importNode(Node* imported_node,
+                   bool deep,
+                   CustomElementRegistry*,
+                   ExceptionState&);
+
+  Element* CreateElementForBinding(const AtomicString& local_name,
+                                   ExceptionState& = ASSERT_NO_EXCEPTION);
+  Element* CreateElementForBinding(
+      const AtomicString& local_name,
+      const V8UnionElementCreationOptionsOrString* string_or_options,
+      ExceptionState& exception_state);
+
+  // "create an element" defined in DOM standard. This supports both of
+  // autonomous custom elements and customized built-in elements.
+  Element* CreateElement(const QualifiedName&,
+                         const CreateElementFlags,
+                         const AtomicString& is,
+                         CustomElementRegistry* custom_element_registry);
+
+  Element* createElementNS(const AtomicString& namespace_uri,
+                           const AtomicString& qualified_name,
+                           ExceptionState&);
+  Element* createElementNS(
+      const AtomicString& namespace_uri,
+      const AtomicString& qualified_name,
+      const V8UnionElementCreationOptionsOrString* string_or_options,
+      ExceptionState& exception_state);
 
   // Creates an element without custom element processing.
   Element* CreateRawElement(const QualifiedName&,
@@ -510,7 +533,6 @@ class CORE_EXPORT Document : public ContainerNode,
   // [1] https://drafts.csswg.org/scroll-animations-1/#avoiding-cycles
   Element* ScrollingElementNoLayout();
 
-  bool KeyboardFocusableScrollersEnabled();
   bool StandardizedBrowserZoomEnabled() const;
 
   V8DocumentReadyState readyState() const;
@@ -756,7 +778,13 @@ class CORE_EXPORT Document : public ContainerNode,
   // does its own ancestor tree walk).
   void UpdateStyleAndLayoutTreeForThisDocument();
 
-  void UpdateStyleAndLayoutTreeForElement(const Element*, DocumentUpdateReason);
+  // `only_cv_auto` is passed to the constructor of
+  // DisplayLockUtilities::ScopedForcedUpdate. When set to true, this element
+  // won't get a style/layout update if it is inside a content-visibility:hidden
+  // subtree.
+  void UpdateStyleAndLayoutTreeForElement(const Element*,
+                                          DocumentUpdateReason,
+                                          bool only_cv_auto = false);
   void UpdateStyleAndLayoutTreeForSubtree(const Element*, DocumentUpdateReason);
 
   void UpdateStyleAndLayout(DocumentUpdateReason);
@@ -840,6 +868,17 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void CheckCompleted();
 
+  enum class BeforeUnloadUse {
+    kNoDialogNoText,
+    kNoDialogNoUserGesture,
+    kNoDialogMultipleConfirmationForNavigation,
+    kNoDialogSandboxedIframe,
+    kShowDialog,
+    kNoDialogAutoCancelTrue,
+    kNotSupportedInDocumentPictureInPicture,
+    kMaxValue = kNotSupportedInDocumentPictureInPicture,
+  };
+
   // Dispatches beforeunload into this document. Returns true if the
   // beforeunload handler indicates that it is safe to proceed with an unload,
   // false otherwise.
@@ -890,9 +929,27 @@ class CORE_EXPORT Document : public ContainerNode,
   void writeln(v8::Isolate*, const Vector<String>& text, ExceptionState&);
 
   // TrustedHTML variants of the above.
-  // TODO(mkwst): Write a spec for this.
   void write(v8::Isolate*, TrustedHTML*, ExceptionState&);
   void writeln(v8::Isolate*, TrustedHTML*, ExceptionState&);
+  void write(v8::Isolate*,
+             TrustedHTML*,
+             HeapVector<Member<V8UnionStringOrTrustedHTML>>,
+             ExceptionState&);
+  void writeln(v8::Isolate*,
+               TrustedHTML*,
+               HeapVector<Member<V8UnionStringOrTrustedHTML>>,
+               ExceptionState&);
+
+  // Corresponds to https://html.spec.whatwg.org/#document-write-steps
+  //
+  // This implements steps 1-5 of the algorithm, and calls
+  // write(const String&, LocalDOMWindow*, ExceptionState&) for the remainder.
+  void Write(v8::Isolate*,
+             TrustedHTML*,
+             HeapVector<Member<V8UnionStringOrTrustedHTML>>,
+             bool line_feed,
+             const char* sink,
+             ExceptionState&);
 
   bool WellFormed() const { return well_formed_; }
 
@@ -992,6 +1049,9 @@ class CORE_EXPORT Document : public ContainerNode,
     kPaintingPreviewSkipAcceleratedContent,
   };
   PaintPreviewState GetPaintPreviewState() const { return paint_preview_; }
+  bool AreScrollbarsAllowedInPaintPreview() const {
+    return allow_scrollbars_in_paint_preview_;
+  }
   bool IsPrintingOrPaintingPreview() const {
     return Printing() ||
            GetPaintPreviewState() != Document::kNotPaintingPreview;
@@ -1049,15 +1109,6 @@ class CORE_EXPORT Document : public ContainerNode,
   const UserActionElementSet& UserActionElements() const {
     return user_action_elements_;
   }
-
-  ExplicitlySetAttrElementsMap* GetExplicitlySetAttrElementsMap(const Element*);
-  void MoveElementExplicitlySetAttrElementsMapToNewDocument(
-      const Element*,
-      Document& new_document);
-  inline bool HasExplicitlySetAttrElements() const {
-    return !element_explicitly_set_attr_elements_map_.empty();
-  }
-  bool HasExplicitlySetAttrElements(const Element* element) const;
 
   CachedAttrAssociatedElementsMap* GetCachedAttrAssociatedElementsMap(Element*);
   void MoveElementCachedAttrAssociatedElementsMapToNewDocument(
@@ -1163,28 +1214,17 @@ class CORE_EXPORT Document : public ContainerNode,
   // keep track of what types of event listeners are registered, so we don't
   // dispatch events unnecessarily
   enum ListenerType {
-    kDOMSubtreeModifiedListener = 1,
-    kDOMNodeInsertedListener = 1 << 1,
-    kDOMNodeRemovedListener = 1 << 2,
-    kDOMNodeRemovedFromDocumentListener = 1 << 3,
-    kDOMNodeInsertedIntoDocumentListener = 1 << 4,
-    kDOMCharacterDataModifiedListener = 1 << 5,
-    kAnimationEndListener = 1 << 6,
-    kAnimationStartListener = 1 << 7,
-    kAnimationIterationListener = 1 << 8,
-    kAnimationCancelListener = 1 << 9,
-    kTransitionRunListener = 1 << 10,
-    kTransitionStartListener = 1 << 11,
-    kTransitionEndListener = 1 << 12,
-    kTransitionCancelListener = 1 << 13,
-    kScrollListener = 1 << 14,
-    kLoadListenerAtCapturePhaseOrAtStyleElement = 1 << 15,
-    // 0 bits remaining
-    kDOMMutationEventListener =
-        kDOMSubtreeModifiedListener | kDOMNodeInsertedListener |
-        kDOMNodeRemovedListener | kDOMNodeRemovedFromDocumentListener |
-        kDOMNodeInsertedIntoDocumentListener |
-        kDOMCharacterDataModifiedListener,
+    kAnimationEndListener = 1,
+    kAnimationStartListener = 1 << 1,
+    kAnimationIterationListener = 1 << 2,
+    kAnimationCancelListener = 1 << 3,
+    kTransitionRunListener = 1 << 4,
+    kTransitionStartListener = 1 << 5,
+    kTransitionEndListener = 1 << 6,
+    kTransitionCancelListener = 1 << 7,
+    kScrollListener = 1 << 8,
+    kLoadListenerAtCapturePhaseOrAtStyleElement = 1 << 9,
+    // 6 bits remaining
   };
 
   bool HasListenerType(ListenerType listener_type) const;
@@ -1311,13 +1351,22 @@ class CORE_EXPORT Document : public ContainerNode,
   // or move it and make it sensitive to the type of document.
   static bool IsValidName(const StringView&);
 
+  // https://github.com/whatwg/dom/pull/1079
+  static bool IsValidAttributeLocalNameNewSpec(const StringView&);
+  static bool IsValidElementLocalNameNewSpec(const StringView&);
+
   // The following breaks a qualified name into a prefix and a local name.
   // It also does a validity check, and returns false if the qualified name
-  // is invalid.  It also sets ExceptionCode when name is invalid.
+  // is invalid. It also sets ExceptionCode when name is invalid.
+  enum class QualifiedNameParsingMode {
+    kParsingAttribute,
+    kParsingElement,
+  };
   static bool ParseQualifiedName(const AtomicString& qualified_name,
                                  AtomicString& prefix,
                                  AtomicString& local_name,
-                                 ExceptionState&);
+                                 ExceptionState&,
+                                 QualifiedNameParsingMode parsing_mode);
 
   // Checks to make sure prefix and namespace do not conflict (per DOM Core 3)
   static bool HasValidNamespaceForElements(const QualifiedName&);
@@ -1437,9 +1486,7 @@ class CORE_EXPORT Document : public ContainerNode,
   void FinishedParsing();
 
   void SetEncodingData(const DocumentEncodingData& new_data);
-  const WTF::TextEncoding& Encoding() const {
-    return encoding_data_.Encoding();
-  }
+  const TextEncoding& Encoding() const { return encoding_data_.Encoding(); }
 
   bool EncodingWasDetectedHeuristically() const {
     return encoding_data_.WasDetectedHeuristically();
@@ -1464,7 +1511,7 @@ class CORE_EXPORT Document : public ContainerNode,
   bool AllowInlineEventHandler(Node*,
                                EventListener*,
                                const String& context_url,
-                               const WTF::OrdinalNumber& context_line);
+                               const OrdinalNumber& context_line);
 
   void StatePopped(scoped_refptr<SerializedScriptValue>);
 
@@ -1595,6 +1642,8 @@ class CORE_EXPORT Document : public ContainerNode,
   void DidAddPendingParserBlockingStylesheet();
   void DidLoadAllPendingParserBlockingStylesheets();
   void DidRemoveAllPendingStylesheets();
+  void NotifyParserPauseByUserTiming();
+  void NotifyParserResumeByUserTiming();
 
   bool InStyleRecalc() const;
 
@@ -1660,11 +1709,6 @@ class CORE_EXPORT Document : public ContainerNode,
 
   HeapLinkedHashSet<Member<HTMLDialogElement>>& AllOpenDialogs() {
     return all_open_dialogs_;
-  }
-
-  void SetKeyboardInterestTargetElement(Element*);
-  Member<Element> KeyboardInterestTargetElement() const {
-    return keyboard_interest_target_element_;
   }
 
   // https://crbug.com/1453291
@@ -1811,7 +1855,6 @@ class CORE_EXPORT Document : public ContainerNode,
   // null if the document is stopped.
   FontMatchingMetrics* GetFontMatchingMetrics();
 
-  void MaybeRecordShapeTextElapsedTime(base::TimeDelta elapsed_time);
   void MaybeRecordSvgImageProcessingTime(
       int data_change_count,
       base::TimeDelta data_change_elapsed_time) const;
@@ -1856,16 +1899,8 @@ class CORE_EXPORT Document : public ContainerNode,
     return slot_assignment_recalc_depth_ == 1;
   }
 
-  bool ShouldSuppressMutationEvents() const {
-    return suppress_mutation_events_;
-  }
-  // To be called from MutationEventSuppressionScope.
-  void SetSuppressMutationEvents(bool suppress) {
-    suppress_mutation_events_ = suppress;
-  }
-
   bool IsVerticalScrollEnforced() const { return is_vertical_scroll_enforced_; }
-  bool IsFocusAllowed() const;
+  bool IsFocusAllowed(FocusTrigger trigger) const;
 
   LazyLoadImageObserver& EnsureLazyLoadImageObserver();
 
@@ -1877,7 +1912,7 @@ class CORE_EXPORT Document : public ContainerNode,
   DisplayLockDocumentState& GetDisplayLockDocumentState() const;
 
   // Deferred compositor commits are disallowed by default, and are only allowed
-  // for same-origin navigations to an html document fetched with http.
+  // for html documents fetched via the http family of protocols.
   bool DeferredCompositorCommitIsAllowed() const;
   void SetDeferredCompositorCommitIsAllowed(bool new_value) {
     deferred_compositor_commit_is_allowed_ = new_value;
@@ -1911,6 +1946,10 @@ class CORE_EXPORT Document : public ContainerNode,
   // A META element with name=supports-reduced-motion was added, removed, or
   // modified. Re-collect the META values.
   void SupportsReducedMotionMetaChanged();
+
+  // A META element with name=responsive-embedded-sizing was added, removed, or
+  // modified. Re-collect the META values.
+  void ResponsiveEmbeddedSizingChanged();
 
   // Use counter related functions.
   void CountUse(mojom::WebFeature feature) final;
@@ -1982,13 +2021,25 @@ class CORE_EXPORT Document : public ContainerNode,
     return render_blocking_resource_manager_.Get();
   }
 
-  void SetHasRenderBlockingExpectLinkElements(bool flag) {
-    has_render_blocking_expect_link_elements_ = flag;
-  }
+  void SetHasRenderBlockingExpectLinkElements(bool flag);
 
   bool HasRenderBlockingExpectLinkElements() const {
     return has_render_blocking_expect_link_elements_;
   }
+
+  void SetHasFullFrameRateBlockingExpectLinkElements(bool flag);
+
+  bool HasFullFrameRateBlockingExpectLinkElements() const {
+    return has_frame_rate_blocking_expect_link_elements_;
+  }
+
+  // Whether the document has any pending elements that need to be tracked for
+  // full render blocking or full frame rate blocking.
+  bool HasPendingExpectLinkElements() const {
+    return has_pending_expect_link_elements_;
+  }
+
+  void UpdateRenderFrameRate();
 
   // Called when a previously render-blocking resource is no longer render-
   // blocking, due to it has finished loading or has given up render-blocking.
@@ -2024,7 +2075,9 @@ class CORE_EXPORT Document : public ContainerNode,
     STACK_ALLOCATED();
 
    public:
-    PaintPreviewScope(Document& document, PaintPreviewState state);
+    PaintPreviewScope(Document& document,
+                      PaintPreviewState state,
+                      bool allow_scrollbars);
     ~PaintPreviewScope();
 
     PaintPreviewScope(PaintPreviewScope&) = delete;
@@ -2095,13 +2148,11 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void ResetAgent(Agent& agent);
 
-  bool SupportsLegacyDOMMutations();
-
   void EnqueuePageRevealEvent();
 
   // https://github.com/whatwg/html/pull/9538
   static Document* parseHTMLUnsafe(ExecutionContext* context,
-                                   const String& html,
+                                   const V8UnionStringOrTrustedHTML* html,
                                    ExceptionState& exception_state);
 
   // https://wicg.github.io/sanitizer-api/#framework
@@ -2110,8 +2161,8 @@ class CORE_EXPORT Document : public ContainerNode,
   // the |options| parameter. Long-term, the two parseHTMLUnsage methods
   // should be merged.
   static Document* parseHTMLUnsafe(ExecutionContext* context,
-                                   const String& html,
-                                   SetHTMLOptions* options,
+                                   const V8UnionStringOrTrustedHTML* html,
+                                   SetHTMLUnsafeOptions* options,
                                    ExceptionState& exception_state);
   static Document* parseHTML(ExecutionContext* context,
                              const String& html,
@@ -2136,6 +2187,24 @@ class CORE_EXPORT Document : public ContainerNode,
   // creation on the next layout.
   void ScheduleShadowTreeCreation(HTMLInputElement& element);
   void UnscheduleShadowTreeCreation(HTMLInputElement& element);
+
+  // Traverses DOM tree and collects HTMLAnchorElements to closest ancestor
+  // element with scroll-target-group property.
+  void UpdateScrollTargetGroupRelations();
+  void SetNeedsScrollTargetGroupRelationsUpdate() {
+    needs_scroll_target_group_relations_update_ = true;
+  }
+
+  // Subscribes each ScrollMarkerGroupData to all scrollers
+  // that own corresponding scroll marker's scroll target (see
+  // scroll_target_group_to_scrollable_areas_ for details), so that the scroller
+  // will notify ScrollMarkerGroupData of updates.
+  void UpdateScrollTargetGroupToScrollableAreasMap();
+  void AddScrollTargetGroup(ScrollMarkerGroupData* scroll_target_group);
+  void RemoveScrollTargetGroup(ScrollMarkerGroupData* scroll_target_group);
+  void SetNeedsScrollTargetGroupsMapUpdate() {
+    needs_scroll_target_groups_map_update_ = true;
+  }
 
   void ScheduleSelectionchangeEvent();
 
@@ -2169,6 +2238,9 @@ class CORE_EXPORT Document : public ContainerNode,
   void HandlePaymentLink(const KURL& href);
 #endif
 
+  // WidgetCreationObserver implementation
+  void OnLocalRootWidgetCreated() override;
+
  protected:
   void ClearXMLVersion() { xml_version_ = String(); }
 
@@ -2181,6 +2253,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
  private:
   friend class DocumentTest;
+  friend class DocumentURLCacheTest;
   friend class IgnoreDestructiveWriteCountIncrementer;
   friend class ThrowOnDynamicMarkupInsertionCountIncrementer;
   friend class IgnoreOpensDuringUnloadCountIncrementer;
@@ -2191,6 +2264,7 @@ class CORE_EXPORT Document : public ContainerNode,
   friend class OffscreenCanvasRenderingAPIUkmMetricsTest;
   friend class TapFriendlinessCheckerTest;
   friend class DocumentStorageAccess;
+  friend class InvalidateNodeListCachesScope;
   FRIEND_TEST_ALL_PREFIXES(LazyLoadAutomaticImagesTest,
                            LoadAllImagesIfPrinting);
   FRIEND_TEST_ALL_PREFIXES(FrameFetchContextSubresourceFilterTest,
@@ -2248,8 +2322,47 @@ class CORE_EXPORT Document : public ContainerNode,
     void Trace(Visitor*) const;
 
    private:
+    void LogSyntheticSelectMetrics(Document& owner) const;
+
     HeapVector<Member<HTMLFormElement>> list_;
     bool dirty_ = false;
+  };
+
+  class CORE_EXPORT URLCache {
+   public:
+    URLCache();
+    ~URLCache();
+
+    URLCache(const URLCache&) = delete;
+    URLCache& operator=(const URLCache&) = delete;
+
+    KURL Get(const KURL& base, const String& relative);
+    void Put(const KURL& base, const String& relative, KURL url);
+
+    // If the document's base URL is changed, we remove entries corresponding to
+    // the previous base URL, as we're unlikely to reuse those entries.
+    void RemoveOldEntries(const KURL& base);
+
+    size_t CacheSizeForTesting() { return cache_.size(); }
+
+   private:
+    // The relative URL is not stored as an AtomicString (which is what
+    // getAttribute() returns), as some callers are not guaranteed to always
+    // pass an AtomicString. However, when the underlying StringImpl originated
+    // from an AtomicString, we use the same fastpath for hashing as
+    // AtomicString.
+    struct KeyHash {
+      std::size_t operator()(const std::pair<KURL, String>& key) const;
+    };
+
+    // The cache's key is made up of the base KURL and relative URL String, and
+    // the value is the resolved KURL.
+    // The base URL is stored as part of the cache key to allow reusing results
+    // from PreloadRequest::CompleteURL() calling CompleteURLWithOverride() with
+    // a different base URL than the Document's current base URL without
+    // updating it.
+    base::HashingLRUCache<std::pair<KURL, String>, KURL, URLCache::KeyHash>
+        cache_;
   };
 
   friend class AXContext;
@@ -2349,8 +2462,6 @@ class CORE_EXPORT Document : public ContainerNode,
   void AddListenerType(ListenerType listener_type) {
     listener_types_ |= listener_type;
   }
-  void AddMutationEventListenerTypeIfEnabled(ListenerType);
-
   void ClearFocusedElementTimerFired(TimerBase*);
 
   bool HaveScriptBlockingStylesheetsLoaded() const;
@@ -2369,6 +2480,17 @@ class CORE_EXPORT Document : public ContainerNode,
       CheckPseudoHasCacheScope* check_pseudo_has_cache_scope) {
     DCHECK(!check_pseudo_has_cache_scope_ || !check_pseudo_has_cache_scope);
     check_pseudo_has_cache_scope_ = check_pseudo_has_cache_scope;
+  }
+
+  InvalidateNodeListCachesScope* GetInvalidateNodeListCachesScope() const {
+    return invalidate_node_list_caches_scope_;
+  }
+
+  void SetInvalidateNodeListCachesScope(
+      InvalidateNodeListCachesScope* invalidate_node_list_caches_scope) {
+    DCHECK_NE(!invalidate_node_list_caches_scope_,
+              !invalidate_node_list_caches_scope);
+    invalidate_node_list_caches_scope_ = invalidate_node_list_caches_scope;
   }
 
   // See CheckPseudoHasCacheScope constructor.
@@ -2418,9 +2540,9 @@ class CORE_EXPORT Document : public ContainerNode,
   // Common implementation for parseHTML and parseHTMLUnsafe.
   static Document* parseHTMLInternal(ExecutionContext* context,
                                      const String& html,
-                                     SetHTMLOptions* options,
-                                     bool safe,
                                      ExceptionState& exception_state);
+
+  bool CanThrottleFrameRate();
 
   // Mutable because the token is lazily-generated on demand if no token is
   // explicitly set.
@@ -2482,13 +2604,15 @@ class CORE_EXPORT Document : public ContainerNode,
 
   bool well_formed_ = false;
 
-  bool is_tracking_soft_navigation_heuristics_ = false;
-
   // Document URLs.
   KURL url_;  // Document.URL: The URL from which this document was retrieved.
   KURL base_url_;  // Node.baseURI: The URL to use when resolving relative URLs.
   KURL base_url_override_;  // An alternative base URL that takes precedence
                             // over base_url_ (but not base_element_url_).
+
+  // The URL cache is mutable because the changes that are made to it during
+  // CompleteURLWithOverride() are not observable by callers.
+  mutable URLCache url_cache_;
 
   // Indicates whether all the conditions are met to trigger recording of counts
   // for cases where sandboxed srcdoc documents use their base url to resolve
@@ -2519,6 +2643,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   PrintingState printing_ = kNotPrinting;
   PaintPreviewState paint_preview_ = kNotPaintingPreview;
+  bool allow_scrollbars_in_paint_preview_ = false;
 
   CompatibilityMode compatibility_mode_ = kNoQuirksMode;
   // This is cheaper than making setCompatibilityMode virtual.
@@ -2607,6 +2732,10 @@ class CORE_EXPORT Document : public ContainerNode,
 
   bool has_render_blocking_expect_link_elements_ = false;
 
+  bool has_frame_rate_blocking_expect_link_elements_ = false;
+
+  bool has_pending_expect_link_elements_ = false;
+
   // Set to true whenever shadow root is attached to document. Does not
   // get reset if all roots are removed.
   bool may_contain_shadow_roots_ = false;
@@ -2679,15 +2808,22 @@ class CORE_EXPORT Document : public ContainerNode,
   // the stack and cleared upon leaving its allocated scope. Hence it
   // is acceptable not to trace it -- should a conservative GC occur,
   // the cache object's references will be traced by a stack walk.
-  GC_PLUGIN_IGNORE("https://crbug.com/461878")
+  STACK_ALLOCATED_IGNORE("https://crbug.com/461878")
   NthIndexCache* nth_index_cache_ = nullptr;
 
   // This is an untraced pointer to the cache-scoped object that is first
   // allocated on the stack. It is set upon the first object being allocated
   // on the stack, and cleared upon leaving its allocated scope. The object's
   // references will be traced by a stack walk.
-  GC_PLUGIN_IGNORE("https://crbug.com/669058")
+  STACK_ALLOCATED_IGNORE("https://crbug.com/669058")
   CheckPseudoHasCacheScope* check_pseudo_has_cache_scope_ = nullptr;
+
+  // This is an untraced pointer to the first stack-allocated scoping object
+  // that defers invalidation of the node list caches. It is set upon the first
+  // object being allocated on the stack, and cleared upon leaving its
+  // allocated scope. The object's references will be traced by a stack walk.
+  STACK_ALLOCATED_IGNORE("https://crbug.com/40874584")
+  InvalidateNodeListCachesScope* invalidate_node_list_caches_scope_ = nullptr;
 
   bool in_pseudo_has_checking_ = false;
 
@@ -2743,7 +2879,7 @@ class CORE_EXPORT Document : public ContainerNode,
   // is distinct from popover_pointerdown_target_ because the same pointer
   // action could trigger light dismiss on a containing popover and not a
   // containing dialog, or vice versa. This will be nullptr for a click on
-  // the ::backdrop pseudo element for a dialog.
+  // the ::backdrop pseudo-element for a dialog.
   Member<const HTMLDialogElement> dialog_pointerdown_target_;
   // A set of popovers for which hidePopover() has been called, but animations
   // are still running.
@@ -2753,11 +2889,6 @@ class CORE_EXPORT Document : public ContainerNode,
 
   // The ordered list of currently-open dialogs, in order they were opened.
   HeapLinkedHashSet<Member<HTMLDialogElement>> all_open_dialogs_;
-
-  // If there was a keyboard-activated element with the `interesttarget`
-  // attribute, it will be stored here, so that when other elements are shown
-  // interest, this element can first "lose interest".
-  Member<Element> keyboard_interest_target_element_;
 
   Member<DocumentPartRoot> document_part_root_;
 
@@ -2838,7 +2969,6 @@ class CORE_EXPORT Document : public ContainerNode,
 #endif
   unsigned slot_assignment_recalc_depth_ = 0;
   unsigned flat_tree_traversal_forbidden_recursion_depth_ = 0;
-  bool suppress_mutation_events_ = false;
 
   Member<DOMFeaturePolicy> policy_;
 
@@ -2892,8 +3022,6 @@ class CORE_EXPORT Document : public ContainerNode,
 
   Member<FragmentDirective> fragment_directive_;
 
-  HeapHashMap<WeakMember<const Element>, Member<ExplicitlySetAttrElementsMap>>
-      element_explicitly_set_attr_elements_map_;
   HeapHashMap<WeakMember<Element>, Member<CachedAttrAssociatedElementsMap>>
       element_cached_attr_associated_elements_map_;
 
@@ -2961,8 +3089,26 @@ class CORE_EXPORT Document : public ContainerNode,
   // Number of disabled <fieldset> elements in this document.
   unsigned disabled_fieldset_count_ = 0;
 
-  // If legacy DOM Mutation event listeners are supported by the embedder.
-  std::optional<bool> legacy_dom_mutations_supported_;
+  // True if the document has scroll marker groups that need to be
+  // recalculated due to e.g. a new element with scroll-target-group
+  // property was added or removed, hence it can now be a container
+  // for some html anchor scroll marker elements of other container.
+  bool needs_scroll_target_group_relations_update_ = false;
+  // True if the document has elements with scroll-target-group property
+  // and some html anchor scroll marker elements. It is a signal to update a
+  // map between scroll marker groups and scrollable areas to subscribe scroll
+  // marker groups to scrollable areas changes.
+  bool needs_scroll_target_groups_map_update_ = false;
+  // Every element with scroll-target-group property set collects
+  // HTMLAnchorElements as scroll markers inside its ScrollMarkerGroupData.
+  // This is the map of ScrollMarkerGroupData to all scrollers that is the
+  // closest scroller to scroll marker's scroll target (e.g. scroll marker is <a
+  // href="#target"> then scroll target is some element with id="target" and
+  // scroller is closest ancestor scroller of scroll target).
+  // It's needed to subscribe ScrollMarkerGroupData to changes in scrollers.
+  HeapHashMap<Member<ScrollMarkerGroupData>,
+              HeapHashSet<Member<PaintLayerScrollableArea>>>
+      scroll_target_group_to_scrollable_areas_;
 
   // For rendering media URLs in a top-level context that use the
   // Content-Security-Policy header to sandbox their content. This causes
@@ -2991,6 +3137,8 @@ class CORE_EXPORT Document : public ContainerNode,
   // If a payment link is handled before.
   bool payment_link_handled_ = false;
 #endif
+
+  bool responsive_embedded_sizing_ = false;
 
   // If you want to add new data members to blink::Document, please reconsider
   // if the members really should be in blink::Document.  document.h is a very

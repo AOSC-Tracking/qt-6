@@ -100,7 +100,7 @@ std::unique_ptr<OutputSurface> OutputSurfaceProviderImpl::CreateOutputSurface(
 #endif
 
   if (!gpu_compositing) {
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
     return CreateSoftwareOutputSurface(renderer_settings);
 #else
     return std::make_unique<SoftwareOutputSurface>(

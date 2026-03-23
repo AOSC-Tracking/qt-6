@@ -19,7 +19,7 @@
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "third_party/skia/include/gpu/ganesh/GrTypes.h"
 #include "ui/gfx/buffer_types.h"
-#include "ui/gfx/gpu_memory_buffer.h"
+#include "ui/gfx/gpu_memory_buffer_handle.h"
 
 namespace gfx {
 class Size;
@@ -75,6 +75,7 @@ class GPU_GLES2_EXPORT SharedImageBackingFactory {
       SkAlphaType alpha_type,
       SharedImageUsageSet usage,
       std::string debug_label,
+      bool is_thread_safe,
       gfx::GpuMemoryBufferHandle handle);
 
   // This new api is introduced for MappableSI work where client code sends

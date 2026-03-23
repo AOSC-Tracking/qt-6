@@ -30,7 +30,7 @@ namespace {
 
 #if defined(COMPILER_MSVC)
 #define RETURN_ADDRESS() _ReturnAddress()
-#elif defined(COMPILER_GCC) && !BUILDFLAG(IS_NACL)
+#elif defined(COMPILER_GCC)
 #define RETURN_ADDRESS() \
   __builtin_extract_return_addr(__builtin_return_address(0))
 #else
@@ -117,7 +117,7 @@ void AXEventRecorderWinUia::Thread::ThreadMain() {
                    IID_IUIAutomation, &uia_);
   CHECK(uia_.Get());
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Register the custom event to mark the end of the test.
   shutdown_sentinel_ = UiaRegistrarWin::GetInstance().GetTestCompleteEventId();
 #endif

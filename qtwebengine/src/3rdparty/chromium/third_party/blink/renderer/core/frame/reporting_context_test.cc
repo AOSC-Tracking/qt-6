@@ -101,6 +101,17 @@ class MockReportingServiceProxy : public mojom::blink::ReportingServiceProxy {
       std::move(reached_callback_).Run();
   }
 
+  void QueueIntegrityViolationReport(const KURL& url,
+                                     const String& endpoint,
+                                     const String& document_url,
+                                     const String& blocked_url,
+                                     const String& destionation,
+                                     bool report_only) override {
+    if (reached_callback_) {
+      std::move(reached_callback_).Run();
+    }
+  }
+
   void QueuePermissionsPolicyViolationReport(const KURL& url,
                                              const String& endpoint,
                                              const String& policy_id,
@@ -122,6 +133,7 @@ class MockReportingServiceProxy : public mojom::blink::ReportingServiceProxy {
       const String& disposition,
       const String& message,
       const String& allow_attribute,
+      const String& src_attribute,
       const String& source_file,
       int32_t line_number,
       int32_t column_number) override {

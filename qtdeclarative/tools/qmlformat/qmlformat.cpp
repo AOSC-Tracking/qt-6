@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #include <QCoreApplication>
 #include <QFile>
@@ -35,23 +36,6 @@ static void logParsingErrors(const DomItem &fileItem, const QString &filename)
             },
             true);
     qWarning().noquote() << "Failed to parse" << filename;
-}
-
-// TODO
-// refactor this workaround. ExternalOWningItem is not recognized as an owning type
-// in ownerAs.
-static std::shared_ptr<ExternalOwningItem> getFileItemOwner(const DomItem &fileItem)
-{
-    std::shared_ptr<ExternalOwningItem> filePtr = nullptr;
-    switch (fileItem.internalKind()) {
-    case DomType::JsFile:
-        filePtr = fileItem.ownerAs<JsFile>();
-        break;
-    default:
-        filePtr = fileItem.ownerAs<QmlFile>();
-        break;
-    }
-    return filePtr;
 }
 
 // TODO refactor
@@ -91,12 +75,8 @@ static bool parseFile(const QString &filename, const QQmlFormatOptions &options)
 
     const auto &code = getFileItemOwner(fileItem)->code();
     auto lwOptions = options.optionsForCode(code);
-    WriteOutChecks checks = WriteOutCheck::Default;
-    //Disable writeOutChecks for some usecases
-    if (options.sortImports() || options.forceEnabled() || options.isMaxColumnWidthSet() || code.size() > 32000
-        || fileItem.internalKind() == DomType::JsFile) {
-        checks = WriteOutCheck::None;
-    }
+    // Use checks only for test purposes
+    WriteOutChecks checks = WriteOutCheck::None;
 
     bool res = false;
     if (options.isInplace()) {
@@ -110,7 +90,7 @@ static bool parseFile(const QString &filename, const QQmlFormatOptions &options)
         if (out.open(stdout, QIODevice::WriteOnly)) {
             auto lw = createLineWriter([&out](QStringView s) { out.write(s.toUtf8()); }, filename,
                                        lwOptions);
-            OutWriter ow(*lw);
+            OutWriter ow(getFileItemOwner(fileItem), *lw);
             res = fileItem.writeOutForFile(ow, checks);
             ow.flush();
         } else {
@@ -136,8 +116,16 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    if (options.dryRun()) {
+        settings.reportConfigForFiles(options.arguments());
+        return 0;
+    }
+
     if (options.writeDefaultSettingsEnabled())
         return settings.writeDefaults() ? 0 : -1;
+
+    if (options.outputOptionsEnabled())
+        return settings.outputOptions() ? 0 : -1;
 
     bool success = true;
     if (!options.files().isEmpty()) {

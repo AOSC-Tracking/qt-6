@@ -2,16 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "components/bookmarks/browser/bookmark_model.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include <array>
 #include <optional>
 #include <set>
 #include <string>
@@ -28,6 +24,7 @@
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
+#include "base/scoped_observation.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -54,6 +51,7 @@
 #include "components/favicon_base/favicon_callback.h"
 #include "components/favicon_base/favicon_types.h"
 #include "components/query_parser/query_parser.h"
+#include "components/signin/public/base/signin_switches.h"
 #include "components/sync/base/features.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -70,21 +68,22 @@ using NodeTypeForUuidLookup = BookmarkModel::NodeTypeForUuidLookup;
 
 using base::ASCIIToUTF16;
 using base::Time;
+using testing::_;
 using testing::ElementsAre;
 using testing::Invoke;
+using testing::IsEmpty;
 using testing::WithArg;
-
-constexpr std::string_view kRemoveAccountPermanentFoldersDurationMetricName =
-    "Bookmarks.RemoveAccountPermanentFoldersDuration";
+using testing::WithArgs;
 
 // Test cases used to test the removal of extra whitespace when adding
 // a new folder/bookmark or updating a title of a folder/bookmark.
 // Note that whitespace characters are all replaced with spaces, but spaces are
 // not collapsed or trimmed.
-constexpr struct {
+struct UrlWhitespaceTestCases {
   std::string_view input_title;
   std::string_view expected_title;
-} kUrlWhitespaceTestCases[] = {
+};
+constexpr auto kUrlWhitespaceTestCases = std::to_array<UrlWhitespaceTestCases>({
     {"foobar", "foobar"},
     // Newlines.
     {"foo\nbar", "foo bar"},
@@ -106,36 +105,38 @@ constexpr struct {
     {"  foo\tbar\n", "  foo bar "},
     {"\t foo \t  bar  \t", "  foo    bar   "},
     {"\n foo\r\n\tbar\n \t", "  foo   bar   "},
-};
+});
 
 // Test cases used to test the removal of extra whitespace when adding
 // a new folder/bookmark or updating a title of a folder/bookmark.
-constexpr struct {
+struct TitleWhitespaceTestCases {
   std::string_view input_title;
   std::string_view expected_title;
-} kTitleWhitespaceTestCases[] = {
-    {"foobar", "foobar"},
-    // Newlines.
-    {"foo\nbar", "foo bar"},
-    {"foo\n\nbar", "foo  bar"},
-    {"foo\n\n\nbar", "foo   bar"},
-    {"foo\r\nbar", "foo  bar"},
-    {"foo\r\n\r\nbar", "foo    bar"},
-    {"\nfoo\nbar\n", " foo bar "},
-    // Spaces.
-    {"foo  bar", "foo  bar"},
-    {" foo bar ", " foo bar "},
-    {"  foo  bar  ", "  foo  bar  "},
-    // Tabs.
-    {"\tfoo\tbar\t", " foo bar "},
-    {"\tfoo bar\t", " foo bar "},
-    // Mixed cases.
-    {"\tfoo\nbar\t", " foo bar "},
-    {"\tfoo\r\nbar\t", " foo  bar "},
-    {"  foo\tbar\n", "  foo bar "},
-    {"\t foo \t  bar  \t", "  foo    bar   "},
-    {"\n foo\r\n\tbar\n \t", "  foo   bar   "},
 };
+constexpr auto kTitleWhitespaceTestCases =
+    std::to_array<TitleWhitespaceTestCases>({
+        {"foobar", "foobar"},
+        // Newlines.
+        {"foo\nbar", "foo bar"},
+        {"foo\n\nbar", "foo  bar"},
+        {"foo\n\n\nbar", "foo   bar"},
+        {"foo\r\nbar", "foo  bar"},
+        {"foo\r\n\r\nbar", "foo    bar"},
+        {"\nfoo\nbar\n", " foo bar "},
+        // Spaces.
+        {"foo  bar", "foo  bar"},
+        {" foo bar ", " foo bar "},
+        {"  foo  bar  ", "  foo  bar  "},
+        // Tabs.
+        {"\tfoo\tbar\t", " foo bar "},
+        {"\tfoo bar\t", " foo bar "},
+        // Mixed cases.
+        {"\tfoo\nbar\t", " foo bar "},
+        {"\tfoo\r\nbar\t", " foo  bar "},
+        {"  foo\tbar\n", "  foo bar "},
+        {"\t foo \t  bar  \t", "  foo    bar   "},
+        {"\n foo\r\n\tbar\n \t", "  foo   bar   "},
+    });
 
 // TestBookmarkClient that also has basic support for undoing removals.
 class TestBookmarkClientWithUndo : public TestBookmarkClient {
@@ -170,7 +171,7 @@ class TestBookmarkClientWithUndo : public TestBookmarkClient {
   }
 
  private:
-  raw_ptr<const BookmarkNode, DanglingUntriaged> parent_ = nullptr;
+  raw_ptr<const BookmarkNode> parent_ = nullptr;
   size_t index_ = 0;
   std::unique_ptr<BookmarkNode> last_removed_node_;
 };
@@ -549,12 +550,44 @@ class BookmarkModelTest : public testing::Test, public BookmarkModelObserver {
     return managed_node;
   }
 
+  std::vector<const BookmarkPermanentNode*> GetVisiblePermanentNodes() const {
+    std::vector<const BookmarkPermanentNode*> visible_nodes;
+    for (const auto& node : model_->root_node()->children()) {
+      if (node->IsVisible()) {
+        visible_nodes.push_back(
+            static_cast<const BookmarkPermanentNode*>(node.get()));
+      }
+    }
+    return visible_nodes;
+  }
+
+  // For the provided model index, returns the visible index of the permanent
+  // node at this index.
+  //
+  // This can be called in either of the two cases:
+  // 1. Steady state, in which case the permanent node at `index` is visible
+  // 2. In an onRemoved call for the node, in which case the permanent node was
+  //    previously at `index` and visible, but has now been removed.
+  size_t GetVisibleIndexForPermanentNode(size_t index) const {
+    CHECK_LE(index, model_->root_node()->children().size());
+    size_t visible_index = 0;
+
+    for (size_t m_index = 0; m_index < index; ++m_index) {
+      const auto& child = model_->root_node()->children()[m_index];
+      if (child->IsVisible()) {
+        ++visible_index;
+      }
+    }
+
+    return visible_index;
+  }
+
   base::HistogramTester* histogram_tester() { return &histogram_tester_; }
   base::UserActionTester* user_action_tester() { return &user_action_tester_; }
 
  protected:
   base::test::ScopedFeatureList features_{
-      syncer::kSyncEnableBookmarksInTransportMode};
+      switches::kSyncEnableBookmarksInTransportMode};
   std::unique_ptr<BookmarkModel> model_;
   ObserverDetails observer_details_;
   ObserverDetails before_observer_details_;
@@ -1529,9 +1562,9 @@ TEST_F(BookmarkModelTest, MoveWithUuidCollisionInDescendant) {
 // Tests the default node if no bookmarks have been added yet
 TEST_F(BookmarkModelTest, ParentForNewNodesWithEmptyModel) {
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  ASSERT_EQ(model_->mobile_node(), GetParentForNewNodes(model_.get()));
+  EXPECT_EQ(model_->mobile_node(), GetParentForNewNodes(model_.get()));
 #else
-  ASSERT_EQ(model_->bookmark_bar_node(), GetParentForNewNodes(model_.get()));
+  EXPECT_EQ(model_->other_node(), GetParentForNewNodes(model_.get()));
 #endif
 }
 
@@ -1543,7 +1576,7 @@ TEST_F(BookmarkModelTest, ParentCanBeBookmarkBarOnAndroid) {
   const GURL kUrl("http://foo.com");
 
   model_->AddURL(model_->bookmark_bar_node(), 0, kTitle, kUrl);
-  ASSERT_EQ(model_->bookmark_bar_node(), GetParentForNewNodes(model_.get()));
+  EXPECT_EQ(model_->bookmark_bar_node(), GetParentForNewNodes(model_.get()));
 }
 #endif
 
@@ -1553,7 +1586,7 @@ TEST_F(BookmarkModelTest, ParentForNewNodes) {
   const GURL kUrl("http://foo.com");
 
   model_->AddURL(model_->other_node(), 0, kTitle, kUrl);
-  ASSERT_EQ(model_->other_node(), GetParentForNewNodes(model_.get()));
+  EXPECT_EQ(model_->other_node(), GetParentForNewNodes(model_.get()));
 }
 
 // Tests that adding a URL to a folder updates the last modified time.
@@ -1562,7 +1595,7 @@ TEST_F(BookmarkModelTest, ParentForNewMobileNodes) {
   const GURL kUrl("http://foo.com");
 
   model_->AddURL(model_->mobile_node(), 0, kTitle, kUrl);
-  ASSERT_EQ(model_->mobile_node(), GetParentForNewNodes(model_.get()));
+  EXPECT_EQ(model_->mobile_node(), GetParentForNewNodes(model_.get()));
 }
 
 // Make sure recently modified stays in sync when adding a URL.
@@ -1621,7 +1654,7 @@ TEST_F(BookmarkModelTest, MostRecentlyAddedEntries) {
 // bookmarks.
 TEST_F(BookmarkModelTest, MostRecentlyAddedEntriesLocalAndAccountBookmarks) {
   base::test::ScopedFeatureList scoped_feature_list{
-      syncer::kSyncEnableBookmarksInTransportMode};
+      switches::kSyncEnableBookmarksInTransportMode};
   model_->CreateAccountPermanentFolders();
 
   // Add nodes such that the following holds for the creation time of the
@@ -1852,6 +1885,7 @@ TEST_F(BookmarkModelTest, NodeVisibility) {
   const BookmarkNode* parent = model_->mobile_node();
   PopulateBookmarkNode(&bbn, model_.get(), parent);
   EXPECT_TRUE(parent->children().front()->IsVisible());
+
   parent = model_->other_node();
   PopulateBookmarkNode(&bbn, model_.get(), parent);
   EXPECT_TRUE(parent->children().front()->IsVisible());
@@ -1860,6 +1894,458 @@ TEST_F(BookmarkModelTest, NodeVisibility) {
   EXPECT_TRUE(model_->mobile_node()->IsVisible());
   EXPECT_TRUE(model_->other_node()->IsVisible());
 }
+
+TEST_F(BookmarkModelTest, NodeVisibility_AddBookmarkToNonVisibleFolder) {
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  const BookmarkPermanentNode* permanent_folder = model_->other_node();
+#else
+  const BookmarkPermanentNode* permanent_folder = model_->mobile_node();
+#endif
+
+  // This permanent folder is not visible when empty.
+  ASSERT_FALSE(permanent_folder->IsVisible());
+
+  testing::StrictMock<MockBookmarkModelObserver> observer;
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(model_.get());
+
+  // Expect first a callback that the folder is visible, then that the child
+  // bookmark is added.
+  testing::InSequence enforce_callback_order;
+  EXPECT_CALL(observer,
+              BookmarkPermanentNodeVisibilityChanged(permanent_folder))
+      .WillOnce([](const BookmarkPermanentNode* node) {
+        EXPECT_TRUE(node->IsVisible());
+        EXPECT_THAT(node->children(), IsEmpty());
+      });
+  EXPECT_CALL(observer, BookmarkNodeAdded(permanent_folder, _, _))
+      .WillOnce(WithArg<0>([](const BookmarkNode* parent) {
+        EXPECT_TRUE(parent->IsVisible());
+      }));
+
+  // Add a bookmark to the permanent folder.
+  model_->AddURL(permanent_folder, 0, u"Title", GURL("http://foo.com"));
+  EXPECT_TRUE(permanent_folder->IsVisible());
+}
+
+#if !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
+TEST_F(BookmarkModelTest, NodeVisibility_AddFirstLocalBookmarkToOtherFolder) {
+  model_->CreateAccountPermanentFolders();
+
+  // To start with, only the account permanent folders are visible.
+  ASSERT_THAT(GetVisiblePermanentNodes(),
+              ElementsAre(model_->account_bookmark_bar_node(),
+                          model_->account_other_node()));
+
+  testing::StrictMock<MockBookmarkModelObserver> observer;
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(model_.get());
+
+  // Expect first a callback that the folder is visible, then that the child
+  // bookmark is added.
+  testing::InSequence enforce_callback_order;
+  EXPECT_CALL(observer,
+              BookmarkPermanentNodeVisibilityChanged(model_->other_node()))
+      .WillOnce([this](const BookmarkPermanentNode* node) {
+        EXPECT_THAT(GetVisiblePermanentNodes(),
+                    ElementsAre(model_->other_node(),
+                                model_->account_bookmark_bar_node(),
+                                model_->account_other_node()));
+        EXPECT_THAT(node->children(), IsEmpty());
+      });
+  EXPECT_CALL(observer, BookmarkNodeAdded(model_->other_node(), _, _))
+      .WillOnce(WithArg<0>([this](const BookmarkNode* parent) {
+        EXPECT_THAT(GetVisiblePermanentNodes(),
+                    ElementsAre(model_->other_node(),
+                                model_->account_bookmark_bar_node(),
+                                model_->account_other_node()));
+      }));
+  EXPECT_CALL(observer, BookmarkPermanentNodeVisibilityChanged(
+                            model_->bookmark_bar_node()))
+      .WillOnce([this](const BookmarkPermanentNode* node) {
+        EXPECT_THAT(
+            GetVisiblePermanentNodes(),
+            ElementsAre(model_->bookmark_bar_node(), model_->other_node(),
+                        model_->account_bookmark_bar_node(),
+                        model_->account_other_node()));
+        EXPECT_THAT(node->children(), IsEmpty());
+      });
+
+  // Add a bookmark to the local mobile folder.
+  model_->AddURL(model_->other_node(), 0, u"Title", GURL("http://foo.com"));
+  EXPECT_THAT(GetVisiblePermanentNodes(),
+              ElementsAre(model_->bookmark_bar_node(), model_->other_node(),
+                          model_->account_bookmark_bar_node(),
+                          model_->account_other_node()));
+}
+
+TEST_F(BookmarkModelTest, NodeVisibility_AddFirstLocalBookmarkToMobileFolder) {
+  model_->CreateAccountPermanentFolders();
+
+  // To start with, only the account permanent folders are visible.
+  ASSERT_THAT(GetVisiblePermanentNodes(),
+              ElementsAre(model_->account_bookmark_bar_node(),
+                          model_->account_other_node()));
+
+  testing::StrictMock<MockBookmarkModelObserver> observer;
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(model_.get());
+
+  // Expect first a callback that the folder is visible, then that the child
+  // bookmark is added.
+  testing::InSequence enforce_callback_order;
+  EXPECT_CALL(observer,
+              BookmarkPermanentNodeVisibilityChanged(model_->mobile_node()))
+      .WillOnce([this](const BookmarkPermanentNode* node) {
+        EXPECT_THAT(GetVisiblePermanentNodes(),
+                    ElementsAre(model_->mobile_node(),
+                                model_->account_bookmark_bar_node(),
+                                model_->account_other_node()));
+        EXPECT_THAT(node->children(), IsEmpty());
+      });
+  EXPECT_CALL(observer, BookmarkNodeAdded(model_->mobile_node(), _, _))
+      .WillOnce(WithArg<0>([this](const BookmarkNode* parent) {
+        EXPECT_THAT(GetVisiblePermanentNodes(),
+                    ElementsAre(model_->mobile_node(),
+                                model_->account_bookmark_bar_node(),
+                                model_->account_other_node()));
+      }));
+  EXPECT_CALL(observer, BookmarkPermanentNodeVisibilityChanged(
+                            model_->bookmark_bar_node()))
+      .WillOnce([this](const BookmarkPermanentNode* node) {
+        EXPECT_THAT(
+            GetVisiblePermanentNodes(),
+            ElementsAre(model_->bookmark_bar_node(), model_->mobile_node(),
+                        model_->account_bookmark_bar_node(),
+                        model_->account_other_node()));
+        EXPECT_THAT(node->children(), IsEmpty());
+      });
+  EXPECT_CALL(observer,
+              BookmarkPermanentNodeVisibilityChanged(model_->other_node()))
+      .WillOnce([this](const BookmarkPermanentNode* node) {
+        EXPECT_THAT(GetVisiblePermanentNodes(),
+                    ElementsAre(model_->bookmark_bar_node(),
+                                model_->other_node(), model_->mobile_node(),
+                                model_->account_bookmark_bar_node(),
+                                model_->account_other_node()));
+        EXPECT_THAT(node->children(), IsEmpty());
+      });
+
+  // Add a bookmark to the local mobile folder.
+  model_->AddURL(model_->mobile_node(), 0, u"Title", GURL("http://foo.com"));
+  EXPECT_THAT(
+      GetVisiblePermanentNodes(),
+      ElementsAre(model_->bookmark_bar_node(), model_->other_node(),
+                  model_->mobile_node(), model_->account_bookmark_bar_node(),
+                  model_->account_other_node()));
+}
+#endif  // !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
+
+TEST_F(BookmarkModelTest, NodeVisibility_RemoveLastBookmarkFromVisibleFolder) {
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  const BookmarkPermanentNode* permanent_folder = model_->other_node();
+#else
+  const BookmarkPermanentNode* permanent_folder = model_->mobile_node();
+#endif
+
+  // This permanent folder is not visible when empty; visible when non-empty.
+  ASSERT_FALSE(permanent_folder->IsVisible());
+  const BookmarkNode* bookmark =
+      model_->AddURL(permanent_folder, 0, u"Title", GURL("http://foo.com"));
+  ASSERT_TRUE(permanent_folder->IsVisible());
+
+  testing::StrictMock<MockBookmarkModelObserver> observer;
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(model_.get());
+
+  // Expect first a callback that the folder is visible, then that the child
+  // bookmark is added.
+  testing::InSequence enforce_callback_order;
+  EXPECT_CALL(observer, OnWillRemoveBookmarks(_, _, bookmark, _));
+  EXPECT_CALL(observer, BookmarkNodeRemoved(_, _, bookmark, _, _))
+      .WillOnce(WithArg<2>(
+          [](const BookmarkNode* node) { EXPECT_TRUE(node->IsVisible()); }));
+  EXPECT_CALL(observer,
+              BookmarkPermanentNodeVisibilityChanged(permanent_folder))
+      .WillOnce([](const BookmarkPermanentNode* node) {
+        EXPECT_FALSE(node->IsVisible());
+      });
+
+  // Remove the bookmark.
+  model_->Remove(bookmark, bookmarks::metrics::BookmarkEditSource::kOther,
+                 FROM_HERE);
+  EXPECT_FALSE(permanent_folder->IsVisible());
+}
+
+#if !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
+TEST_F(BookmarkModelTest,
+       NodeVisibility_MoveBookmarkChangesVisibilityOfSourceFolder) {
+  const BookmarkPermanentNode* source_folder = model_->mobile_node();
+
+  // This permanent folder is not visible when empty; visible when non-empty.
+  ASSERT_FALSE(source_folder->IsVisible());
+  ASSERT_TRUE(model_->bookmark_bar_node()->IsVisible());
+  const BookmarkNode* bookmark =
+      model_->AddURL(source_folder, 0, u"Title", GURL("http://foo.com"));
+  ASSERT_TRUE(source_folder->IsVisible());
+
+  testing::StrictMock<MockBookmarkModelObserver> observer;
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(model_.get());
+
+  // Expect first a callback that the folder is visible, then that the child
+  // bookmark is added.
+  testing::InSequence enforce_callback_order;
+  EXPECT_CALL(observer, OnWillMoveBookmarkNode(source_folder, 0,
+                                               model_->bookmark_bar_node(), 0));
+  EXPECT_CALL(observer, BookmarkNodeMoved(source_folder, 0,
+                                          model_->bookmark_bar_node(), 0))
+      .WillOnce(WithArg<0>(
+          [](const BookmarkNode* node) { EXPECT_TRUE(node->IsVisible()); }));
+  EXPECT_CALL(observer, BookmarkPermanentNodeVisibilityChanged(source_folder))
+      .WillOnce([](const BookmarkPermanentNode* node) {
+        EXPECT_FALSE(node->IsVisible());
+      });
+
+  // Remove the bookmark.
+  model_->Move(bookmark, model_->bookmark_bar_node(), 0);
+  EXPECT_FALSE(source_folder->IsVisible());
+}
+
+TEST_F(BookmarkModelTest,
+       NodeVisibility_MoveBookmarkChangesVisibilityOfDestinationFolder) {
+  const BookmarkPermanentNode* source_folder = model_->other_node();
+  const BookmarkPermanentNode* destination_folder = model_->mobile_node();
+
+  // This source folder is visible when empty, destination folder is not.
+  ASSERT_TRUE(source_folder->IsVisible());
+  ASSERT_FALSE(destination_folder->IsVisible());
+  const BookmarkNode* bookmark =
+      model_->AddURL(source_folder, 0, u"Title", GURL("http://foo.com"));
+
+  testing::StrictMock<MockBookmarkModelObserver> observer;
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(model_.get());
+
+  // Expect first a callback that the folder is visible, then that the child
+  // bookmark is added.
+  testing::InSequence enforce_callback_order;
+  EXPECT_CALL(observer,
+              OnWillMoveBookmarkNode(source_folder, 0, destination_folder, 0));
+  EXPECT_CALL(observer,
+              BookmarkPermanentNodeVisibilityChanged(destination_folder))
+      .WillOnce([](const BookmarkPermanentNode* node) {
+        EXPECT_TRUE(node->IsVisible());
+        EXPECT_THAT(node->children(), IsEmpty());
+      });
+  EXPECT_CALL(observer,
+              BookmarkNodeMoved(source_folder, 0, destination_folder, 0));
+
+  // Remove the bookmark.
+  model_->Move(bookmark, destination_folder, 0);
+  EXPECT_TRUE(destination_folder->IsVisible());
+}
+
+TEST_F(
+    BookmarkModelTest,
+    NodeVisibility_MoveBookmarkChangesVisibilityOfSourceAndDestinationFolder) {
+  // Create empty account folders.
+  model_->CreateAccountPermanentFolders();
+
+  const BookmarkPermanentNode* source_folder = model_->account_mobile_node();
+  const BookmarkPermanentNode* destination_folder = model_->mobile_node();
+
+  // Add a node to the local bookmark bar, to simplify the test by avoiding all
+  // local folders becoming invisible.
+  model_->AddURL(model_->bookmark_bar_node(), 0, u"Title",
+                 GURL("http://bar.com"));
+  const BookmarkNode* bookmark =
+      model_->AddURL(source_folder, 0, u"Title", GURL("http://foo.com"));
+  ASSERT_TRUE(source_folder->IsVisible());
+  ASSERT_FALSE(destination_folder->IsVisible());
+
+  ASSERT_THAT(
+      GetVisiblePermanentNodes(),
+      ElementsAre(model_->bookmark_bar_node(), model_->other_node(),
+                  model_->account_bookmark_bar_node(),
+                  model_->account_other_node(), model_->account_mobile_node()));
+
+  testing::StrictMock<MockBookmarkModelObserver> observer;
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(model_.get());
+
+  // Expect first a callback that the folder is visible, then that the child
+  // bookmark is added.
+  testing::InSequence enforce_callback_order;
+  EXPECT_CALL(observer,
+              OnWillMoveBookmarkNode(source_folder, 0, destination_folder, 0));
+  EXPECT_CALL(observer,
+              BookmarkPermanentNodeVisibilityChanged(destination_folder))
+      .WillOnce([](const BookmarkPermanentNode* destination) {
+        EXPECT_TRUE(destination->IsVisible());
+      });
+  EXPECT_CALL(observer,
+              BookmarkNodeMoved(source_folder, 0, destination_folder, 0))
+      .WillOnce(WithArgs<0, 2>(
+          [](const BookmarkNode* source, const BookmarkNode* destination) {
+            EXPECT_TRUE(source->IsVisible());
+            EXPECT_TRUE(destination->IsVisible());
+          }));
+  EXPECT_CALL(observer, BookmarkPermanentNodeVisibilityChanged(source_folder))
+      .WillOnce([](const BookmarkPermanentNode* source) {
+        EXPECT_FALSE(source->IsVisible());
+      });
+
+  // Remove the bookmark.
+  model_->Move(bookmark, destination_folder, 0);
+  EXPECT_FALSE(source_folder->IsVisible());
+  EXPECT_TRUE(destination_folder->IsVisible());
+}
+
+TEST_F(BookmarkModelTest, NodeVisibility_CreateAccountPermanentFolders) {
+  // Check per-platform visibility of empty permanent nodes.
+  ASSERT_THAT(GetVisiblePermanentNodes(),
+              ElementsAre(model_->bookmark_bar_node(), model_->other_node()));
+
+  testing::StrictMock<MockBookmarkModelObserver> observer;
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(model_.get());
+  testing::InSequence enforce_callback_order;
+
+  // First expect callbacks for the previously-visible local permanent folders.
+  EXPECT_CALL(observer, BookmarkPermanentNodeVisibilityChanged(
+                            model_->bookmark_bar_node()))
+      .WillOnce([&](const BookmarkPermanentNode* node) {
+        EXPECT_THAT(GetVisiblePermanentNodes(),
+                    ElementsAre(model_->other_node()));
+      });
+  EXPECT_CALL(observer,
+              BookmarkPermanentNodeVisibilityChanged(model_->other_node()))
+      .WillOnce([&](const BookmarkPermanentNode* node) {
+        EXPECT_THAT(GetVisiblePermanentNodes(), IsEmpty());
+      });
+
+  // Now expect callbacks for the newly-visible account permanent folders.
+  EXPECT_CALL(observer, BookmarkNodeAdded(_, 3, _))
+      .WillOnce(
+          WithArgs<0, 1>([this](const BookmarkNode* parent, size_t index) {
+            const BookmarkNode* node = parent->children()[index].get();
+            EXPECT_EQ(node, model_->account_bookmark_bar_node());
+            EXPECT_TRUE(node->IsVisible());
+            EXPECT_THAT(GetVisiblePermanentNodes(),
+                        ElementsAre(model_->account_bookmark_bar_node()));
+          }));
+
+  EXPECT_CALL(observer, BookmarkNodeAdded(_, 4, _))
+      .WillOnce(
+          WithArgs<0, 1>([this](const BookmarkNode* parent, size_t index) {
+            const BookmarkNode* node = parent->children()[index].get();
+            EXPECT_EQ(node, model_->account_other_node());
+            EXPECT_TRUE(node->IsVisible());
+            EXPECT_THAT(GetVisiblePermanentNodes(),
+                        ElementsAre(model_->account_bookmark_bar_node(),
+                                    model_->account_other_node()));
+          }));
+
+  EXPECT_CALL(observer, BookmarkNodeAdded(_, 5, _))
+      .WillOnce(
+          WithArgs<0, 1>([this](const BookmarkNode* parent, size_t index) {
+            const BookmarkNode* node = parent->children()[index].get();
+            EXPECT_EQ(node, model_->account_mobile_node());
+            EXPECT_FALSE(node->IsVisible());
+            EXPECT_THAT(GetVisiblePermanentNodes(),
+                        ElementsAre(model_->account_bookmark_bar_node(),
+                                    model_->account_other_node()));
+          }));
+
+  // Create empty account folders.
+  model_->CreateAccountPermanentFolders();
+  EXPECT_THAT(GetVisiblePermanentNodes(),
+              ElementsAre(model_->account_bookmark_bar_node(),
+                          model_->account_other_node()));
+}
+
+TEST_F(BookmarkModelTest, NodeVisibility_RemoveAccountPermanentFolders) {
+  // Create empty account folders.
+  model_->CreateAccountPermanentFolders();
+  const BookmarkPermanentNode* local_bb = model_->bookmark_bar_node();
+  const BookmarkPermanentNode* local_other = model_->other_node();
+  const BookmarkPermanentNode* account_bb = model_->account_bookmark_bar_node();
+  const BookmarkPermanentNode* account_other = model_->account_other_node();
+
+  ASSERT_THAT(GetVisiblePermanentNodes(),
+              ElementsAre(account_bb, account_other));
+
+  // Set up observer expectations.
+  testing::NiceMock<MockBookmarkModelObserver> observer;
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(model_.get());
+  testing::InSequence enforce_callback_order;
+
+  // Then expect callbacks for the previously-invisible local permanent
+  // folders.
+  EXPECT_CALL(observer, BookmarkPermanentNodeVisibilityChanged(local_bb))
+      .WillOnce([&](const BookmarkPermanentNode* node) {
+        EXPECT_TRUE(model_->IsLocalOnlyNode(*node));
+        EXPECT_TRUE(node->IsVisible());
+        EXPECT_THAT(GetVisiblePermanentNodes(),
+                    ElementsAre(local_bb, account_bb, account_other));
+      });
+
+  EXPECT_CALL(observer, BookmarkPermanentNodeVisibilityChanged(local_other))
+      .WillOnce([&](const BookmarkPermanentNode* node) {
+        EXPECT_TRUE(model_->IsLocalOnlyNode(*node));
+        EXPECT_TRUE(node->IsVisible());
+        EXPECT_THAT(
+            GetVisiblePermanentNodes(),
+            ElementsAre(local_bb, local_other, account_bb, account_other));
+      });
+
+  // In the callbacks below, ensure that the sequencing is such that observing
+  // code can determine what the previous visible index of the deleted nodes
+  // was.
+  //
+  // This is checked by calling GetVisibleIndexForPermanentNode().
+  EXPECT_CALL(observer,
+              BookmarkNodeRemoved(_, _, model_->account_mobile_node(), _, _))
+      .WillOnce(WithArg<2>([&](const BookmarkNode* node) {
+        EXPECT_FALSE(model_->IsLocalOnlyNode(*node));
+        EXPECT_FALSE(node->IsVisible());
+        EXPECT_THAT(
+            GetVisiblePermanentNodes(),
+            ElementsAre(local_bb, local_other, account_bb, account_other));
+      }));
+
+  EXPECT_CALL(observer, BookmarkNodeRemoved(_, _, account_other, _, _))
+      .WillOnce(WithArgs<1, 2>([&](size_t old_index, const BookmarkNode* node) {
+        EXPECT_FALSE(model_->IsLocalOnlyNode(*node));
+        EXPECT_EQ(GetVisibleIndexForPermanentNode(old_index), 3u);
+        EXPECT_THAT(GetVisiblePermanentNodes(),
+                    ElementsAre(local_bb, local_other, account_bb));
+      }));
+
+  EXPECT_CALL(observer, BookmarkNodeRemoved(_, _, account_bb, _, _))
+      .WillOnce(WithArgs<1, 2>([&](size_t old_index, const BookmarkNode* node) {
+        EXPECT_FALSE(model_->IsLocalOnlyNode(*node));
+        EXPECT_EQ(GetVisibleIndexForPermanentNode(old_index), 2u);
+        EXPECT_THAT(GetVisiblePermanentNodes(),
+                    ElementsAre(local_bb, local_other));
+      }));
+
+  // Remove the account folders.
+  model_->RemoveAccountPermanentFolders();
+  EXPECT_THAT(GetVisiblePermanentNodes(), ElementsAre(local_bb, local_other));
+}
+#endif  // !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
 
 TEST_F(BookmarkModelTest, NodeVisibility_AllBookmarksPhase0) {
   base::test::ScopedFeatureList feature_list;
@@ -2441,7 +2927,7 @@ TEST(BookmarkModelLoadTest, NodesPopulatedOnLoad) {
 
 TEST(BookmarkModelLoadTest, NodesPopulatedIncludingAccountNodesOnLoad) {
   base::test::ScopedFeatureList features{
-      syncer::kSyncEnableBookmarksInTransportMode};
+      switches::kSyncEnableBookmarksInTransportMode};
 
   // Create a model with one local-or-syncable url and one account url.
   base::ScopedTempDir tmp_dir;
@@ -2480,9 +2966,10 @@ TEST(BookmarkModelLoadTest, NodesPopulatedIncludingAccountNodesOnLoad) {
 
 TEST(BookmarkModelLoadTest, AccountSyncMetadataPopulatedWithoutNodesOnLoad) {
   base::test::ScopedFeatureList features{
-      syncer::kSyncEnableBookmarksInTransportMode};
+      switches::kSyncEnableBookmarksInTransportMode};
 
-  // Since metadata str serialized proto, it could contain non-ASCII characters.
+  // Since metadata str serialized proto, it could contain non-ASCII
+  // characters.
   const std::string sync_metadata_str("a/2'\"");
 
   // Create a model with one local-or-syncable url and no account bookmarks.
@@ -2524,6 +3011,49 @@ TEST(BookmarkModelLoadTest, AccountSyncMetadataPopulatedWithoutNodesOnLoad) {
   EXPECT_EQ(sync_metadata_str, client_ptr->account_bookmark_sync_metadata());
 }
 
+TEST(BookmarkModelLoadTest, RemoveAccountPermanentFoldersUponMetadataDecoding) {
+  base::test::ScopedFeatureList features{
+      switches::kSyncEnableBookmarksInTransportMode};
+
+  // Create a model with account bookmarks.
+  base::ScopedTempDir tmp_dir;
+  ASSERT_TRUE(tmp_dir.CreateUniqueTempDir());
+  base::test::TaskEnvironment task_environment{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+
+  {
+    auto model =
+        std::make_unique<BookmarkModel>(std::make_unique<TestBookmarkClient>());
+    model->Load(tmp_dir.GetPath());
+    test::WaitForBookmarkModelToLoad(model.get());
+    model->CreateAccountPermanentFolders();
+
+    // This is necessary to ensure the save completes.
+    task_environment.FastForwardUntilNoTasksRemain();
+  }
+
+  testing::StrictMock<MockBookmarkModelObserver> observer;
+  EXPECT_CALL(observer, BookmarkModelLoaded);
+
+  // Load the model from disk, but pretend that the client responded with
+  // `kMustRemoveAccountPermanentFolders` when decoding account sync metadata.
+  auto client = std::make_unique<TestBookmarkClient>();
+  client->SetDecodeAccountBookmarkSyncMetadataResult(
+      BookmarkClient::DecodeAccountBookmarkSyncMetadataResult::
+          kMustRemoveAccountPermanentFolders);
+  BookmarkModel model(std::move(client));
+  base::ScopedObservation<BookmarkModel, BookmarkModelObserver> observation(
+      &observer);
+  observation.Observe(&model);
+
+  model.Load(tmp_dir.GetPath());
+  test::WaitForBookmarkModelToLoad(&model);
+
+  EXPECT_EQ(nullptr, model.account_bookmark_bar_node());
+  EXPECT_EQ(nullptr, model.account_other_node());
+  EXPECT_EQ(nullptr, model.account_mobile_node());
+}
+
 // Verifies the TitledUrlIndex is properly loaded.
 TEST(BookmarkModelLoadTest, TitledUrlIndexPopulatedOnLoad) {
   // Create a model with a single url.
@@ -2558,7 +3088,7 @@ TEST(BookmarkModelLoadTest, TitledUrlIndexPopulatedOnLoad) {
 // Verifies the TitledUrlIndex is properly loaded for account bookmarks.
 TEST(BookmarkModelLoadTest, TitledUrlIndexPopulatedForAccountNodesOnLoad) {
   base::test::ScopedFeatureList features{
-      syncer::kSyncEnableBookmarksInTransportMode};
+      switches::kSyncEnableBookmarksInTransportMode};
 
   // Create a model with a single url.
   base::ScopedTempDir tmp_dir;
@@ -2627,7 +3157,7 @@ TEST(BookmarkModelLoadTest, UuidIndexPopulatedOnLoad) {
 // Verifies the UUID index is properly loaded, for account nodes.
 TEST(BookmarkModelLoadTest, UuidIndexPopulatedForAccountNodesOnLoad) {
   base::test::ScopedFeatureList features{
-      syncer::kSyncEnableBookmarksInTransportMode};
+      switches::kSyncEnableBookmarksInTransportMode};
 
   // Create a model with a single url.
   base::ScopedTempDir tmp_dir;
@@ -2666,7 +3196,7 @@ TEST(BookmarkModelLoadTest, UuidIndexPopulatedForAccountNodesOnLoad) {
 TEST(BookmarkModelStorageTest,
      GetTotalNumberOfUrlsAndFoldersIncludingManagedNodes) {
   base::test::ScopedFeatureList features{
-      syncer::kSyncEnableBookmarksInTransportMode};
+      switches::kSyncEnableBookmarksInTransportMode};
 
   // Create a model with a single url.
   base::ScopedTempDir tmp_dir;
@@ -2732,7 +3262,7 @@ TEST(BookmarkModelStorageTest,
 
 TEST(BookmarkModelStorageTest, SaveExactlyOneFile) {
   base::test::ScopedFeatureList features{
-      syncer::kSyncEnableBookmarksInTransportMode};
+      switches::kSyncEnableBookmarksInTransportMode};
 
   base::ScopedTempDir tmp_dir;
   ASSERT_TRUE(tmp_dir.CreateUniqueTempDir());
@@ -2880,9 +3410,6 @@ TEST_F(BookmarkModelTest, RemoveAccountPermanentFolders) {
   ASSERT_NE(nullptr, model_->account_other_node());
   ASSERT_NE(nullptr, model_->account_mobile_node());
 
-  histogram_tester()->ExpectTotalCount(
-      kRemoveAccountPermanentFoldersDurationMetricName, 0);
-
   ClearCounts();
   model_->RemoveAccountPermanentFolders();
 
@@ -2891,18 +3418,12 @@ TEST_F(BookmarkModelTest, RemoveAccountPermanentFolders) {
   EXPECT_EQ(nullptr, model_->account_mobile_node());
 
   AssertObserverCount(0, 0, 3, 0, 0, 3, 0, 0, 0, 0);
-
-  histogram_tester()->ExpectTotalCount(
-      kRemoveAccountPermanentFoldersDurationMetricName, 1);
 }
 
 TEST_F(BookmarkModelTest, NoOpRemoveAccountPermanentFolders) {
   ASSERT_EQ(nullptr, model_->account_bookmark_bar_node());
   ASSERT_EQ(nullptr, model_->account_other_node());
   ASSERT_EQ(nullptr, model_->account_mobile_node());
-
-  histogram_tester()->ExpectTotalCount(
-      kRemoveAccountPermanentFoldersDurationMetricName, 0);
 
   ClearCounts();
   model_->RemoveAccountPermanentFolders();
@@ -2912,9 +3433,6 @@ TEST_F(BookmarkModelTest, NoOpRemoveAccountPermanentFolders) {
   EXPECT_EQ(nullptr, model_->account_mobile_node());
 
   AssertObserverCount(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-
-  histogram_tester()->ExpectTotalCount(
-      kRemoveAccountPermanentFoldersDurationMetricName, 0);
 }
 
 TEST_F(BookmarkModelTest, IsLocalOnlyNodeWithSyncFeatureOff) {
@@ -3026,6 +3544,70 @@ TEST_F(BookmarkModelTest, UserFolderDepthHistograms) {
   histogram_tester()->ExpectTotalCount(kUrlOpenedMetricName, 6);
   histogram_tester()->ExpectBucketCount(kUrlOpenedMetricName,
                                         /*sample=*/2, /*expected_count=*/3);
+}
+
+// TODO(crbug.com/395071423): remove this test (split into smaller ones)
+TEST_F(BookmarkModelTest, IsVisible) {
+  // Test with empty local folders only.
+  EXPECT_TRUE(model_->root_node()->IsVisible());
+
+  // Check per-platform visibility of empty permanent nodes.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  EXPECT_FALSE(model_->bookmark_bar_node()->IsVisible());
+  EXPECT_FALSE(model_->other_node()->IsVisible());
+  EXPECT_TRUE(model_->mobile_node()->IsVisible());
+#else
+  EXPECT_TRUE(model_->bookmark_bar_node()->IsVisible());
+  EXPECT_TRUE(model_->other_node()->IsVisible());
+  EXPECT_FALSE(model_->mobile_node()->IsVisible());
+#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+
+  // Create empty account folders.
+  model_->CreateAccountPermanentFolders();
+
+  // All empty local permanent folders are now hidden.
+  // The account permanent folders are visible, except for the mobile node.
+  EXPECT_TRUE(model_->root_node()->IsVisible());
+  EXPECT_FALSE(model_->bookmark_bar_node()->IsVisible());
+  EXPECT_FALSE(model_->other_node()->IsVisible());
+
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  EXPECT_TRUE(model_->mobile_node()->IsVisible());
+#else
+  EXPECT_FALSE(model_->mobile_node()->IsVisible());
+#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+
+  // Check per-platform visibility of empty account permanent nodes.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  EXPECT_FALSE(model_->account_bookmark_bar_node()->IsVisible());
+  EXPECT_FALSE(model_->account_other_node()->IsVisible());
+  EXPECT_TRUE(model_->account_mobile_node()->IsVisible());
+#else
+  EXPECT_TRUE(model_->account_bookmark_bar_node()->IsVisible());
+  EXPECT_TRUE(model_->account_other_node()->IsVisible());
+  EXPECT_FALSE(model_->account_mobile_node()->IsVisible());
+#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+
+  // Make the local bookmark bar node non-empty. Nodes that were previously
+  // hidden because there were no local bookmarks are now visible.
+  model_->AddURL(model_->bookmark_bar_node(), 0, u"Chromium",
+                 GURL("http://www.chromium.org"));
+  EXPECT_TRUE(model_->bookmark_bar_node()->IsVisible());
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  // On mobile, the other node is always hidden when empty and the mobile node
+  // is always visible (so there is no change as a result of the bookmark bar
+  // becoming non-empty).
+  EXPECT_FALSE(model_->other_node()->IsVisible());
+  EXPECT_TRUE(model_->mobile_node()->IsVisible());
+#else
+  // On desktop, the other node was previously hidden and is now visible.
+  EXPECT_TRUE(model_->other_node()->IsVisible());
+#endif
+
+  // Make the account mobile node folder non-empty. It is now visible.
+  model_->AddURL(model_->account_mobile_node(), 0, u"Chromium",
+                 GURL("http://www.chromium.org"));
+  EXPECT_TRUE(model_->account_mobile_node()->IsVisible());
 }
 
 }  // namespace
@@ -3190,6 +3772,184 @@ TEST_F(BookmarkModelFaviconTest, ShouldResetFaviconStatusAfterRestore) {
 
   EXPECT_FALSE(node->is_favicon_loading());
   EXPECT_FALSE(node->is_favicon_loaded());
+}
+
+class BookmarkModelPeriodicLoggingTest : public testing::Test {
+ public:
+  BookmarkModelPeriodicLoggingTest() {
+    auto client = std::make_unique<TestBookmarkClient>();
+    test_client_ = client.get();
+    model_ = TestBookmarkClient::CreateModelWithClient(std::move(client));
+  }
+
+  BookmarkModel* model() { return model_.get(); }
+  base::HistogramTester* histogram_tester() { return &histogram_tester_; }
+
+  // Triggers the metrics callback in the testing client - simulates that the
+  // logging interval has reached.
+  void SimulatePersistentLogIntervalTriggered() {
+    test_client_->TriggerPersistentLogInterval();
+  }
+
+ private:
+  base::HistogramTester histogram_tester_;
+
+  std::unique_ptr<BookmarkModel> model_;
+  raw_ptr<TestBookmarkClient> test_client_;
+
+  base::test::ScopedFeatureList features_{
+      switches::kSyncEnableBookmarksInTransportMode};
+};
+
+TEST_F(BookmarkModelPeriodicLoggingTest, LogOnlyIfAccountNodes) {
+  model()->AddURL(model()->bookmark_bar_node(), 0, u"title",
+                  GURL("http://foo.com"));
+
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar", 0);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks", 0);
+
+  model()->CreateAccountPermanentFolders();
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar", 1);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks", 1);
+}
+
+TEST_F(BookmarkModelPeriodicLoggingTest, LogOnlyIfHaveBookmarks) {
+  model()->CreateAccountPermanentFolders();
+
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar", 0);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks", 0);
+
+  model()->AddURL(model()->bookmark_bar_node(), 0, u"title",
+                  GURL("http://foo.com"));
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar", 1);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks", 1);
+}
+
+TEST_F(BookmarkModelPeriodicLoggingTest, LogAllBookmarks) {
+  model()->CreateAccountPermanentFolders();
+  const BookmarkNode* local_node = model()->AddURL(
+      model()->other_node(), 0, u"local", GURL("http://foo.com"));
+
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectUniqueSample(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kLocalOnly, 1);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar", 0);
+
+  // Add an account bookmark in a different permanent folder.
+  model()->AddURL(model()->account_mobile_node(), 0, u"account",
+                  GURL("http://foo.com"));
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kLocalOnly, 1);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kLocalAndAccount, 1);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks", 2);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar", 0);
+
+  model()->Remove(local_node, metrics::BookmarkEditSource::kOther, FROM_HERE);
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kLocalOnly, 1);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kLocalAndAccount, 1);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kAccountOnly, 1);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks", 3);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar", 0);
+}
+
+TEST_F(BookmarkModelPeriodicLoggingTest, LogBookmarksBarAndAllBookmarks) {
+  model()->CreateAccountPermanentFolders();
+  const BookmarkNode* account_node =
+      model()->AddURL(model()->account_bookmark_bar_node(), 0, u"account",
+                      GURL("http://foo.com"));
+
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectUniqueSample(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar",
+      metrics::BookmarksExistInStorageType::kAccountOnly, 1);
+  histogram_tester()->ExpectUniqueSample(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kAccountOnly, 1);
+
+  // Add a local bookmark in the bookmark bar node.
+  model()->AddURL(model()->bookmark_bar_node(), 0, u"local",
+                  GURL("http://foo.com"));
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar",
+      metrics::BookmarksExistInStorageType::kAccountOnly, 1);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar",
+      metrics::BookmarksExistInStorageType::kLocalAndAccount, 1);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar", 2);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kAccountOnly, 1);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kLocalAndAccount, 1);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks", 2);
+
+  model()->Remove(account_node, metrics::BookmarkEditSource::kOther, FROM_HERE);
+  SimulatePersistentLogIntervalTriggered();
+
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar",
+      metrics::BookmarksExistInStorageType::kLocalOnly, 1);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar",
+      metrics::BookmarksExistInStorageType::kLocalAndAccount, 1);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar",
+      metrics::BookmarksExistInStorageType::kAccountOnly, 1);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.UnderBookmarksBar", 3);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kLocalOnly, 1);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kLocalAndAccount, 1);
+  histogram_tester()->ExpectBucketCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks",
+      metrics::BookmarksExistInStorageType::kAccountOnly, 1);
+  histogram_tester()->ExpectTotalCount(
+      "Bookmarks.BookmarksExistInStorageType.ConsideringAllBookmarks", 3);
 }
 
 }  // namespace bookmarks

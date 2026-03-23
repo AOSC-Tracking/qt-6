@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import m from 'mithril';
-import {PageAttrs} from '../../../public/page';
 import {RecordingManager} from '../recording_manager';
 import {Icon} from '../../../widgets/icon';
 import {RecordSubpage, supportsPlatform} from '../config/config_interfaces';
@@ -21,19 +20,25 @@ import {Probe} from './probe_renderer';
 import {Button} from '../../../widgets/button';
 import {classNames} from '../../../base/classnames';
 import {showModal} from '../../../widgets/modal';
-import {CopyableLink} from '../../../widgets/copyable_link';
-import {assertExists} from '../../../base/logging';
 import {BUCKET_NAME} from '../../../base/gcs_uploader';
 import {RecordingTarget} from '../interfaces/recording_target';
 import {exists} from '../../../base/utils';
+import {SHARE_SUBPAGE, shareRecordConfig} from '../config/config_sharing';
+import {App} from '../../../public/app';
+import {Callout} from '../../../widgets/callout';
+import {Intent} from '../../../widgets/common';
+import {Icons} from '../../../base/semantic_icons';
+import {Stack} from '../../../widgets/stack';
+import {Anchor} from '../../../widgets/anchor';
 
-export type RecordPageAttrs = PageAttrs & {
-  getRecordingManager: () => RecordingManager;
-};
+export interface RecordPageAttrs {
+  readonly app: App;
+  readonly subpage?: string;
+  readonly getRecordingManager: () => RecordingManager;
+}
 
 const DEFAULT_SUBPAGE = 'target';
 const PERSIST_EVERY_MS = 1000;
-const SHARE_SUBPAGE = 'share';
 
 // By design this interface overlaps with RecordConfigSection so we can use the
 // same for custom subpages (record, config) and the probe settings.
@@ -67,10 +72,27 @@ export class RecordPageV2 implements m.ClassComponent<RecordPageAttrs> {
       exists(attrs.subpage) && attrs.subpage.length > 0
         ? attrs.subpage.substring(1)
         : DEFAULT_SUBPAGE;
+
+    const cmdlineUrl =
+      'https://perfetto.dev/docs/quickstart/android-tracing#perfetto-cmdline';
     return m(
       '.record-page',
       m(
-        '.record-container',
+        Stack,
+        {className: 'record-container'},
+        this.recMgr.recordConfig.traceConfig.mode === 'LONG_TRACE' &&
+          m(
+            Callout,
+            {intent: Intent.Warning, icon: Icons.Warning},
+            `
+              Recording in long trace mode through the UI is not supported.
+              Please copy the command and `,
+            m(
+              Anchor,
+              {href: cmdlineUrl, target: '_blank'},
+              `collect the trace using ADB.`,
+            ),
+          ),
         m(
           '.record-container-content',
           this.renderMenu(), //
@@ -125,7 +147,7 @@ export class RecordPageV2 implements m.ClassComponent<RecordPageAttrs> {
         m(Button, {
           icon: 'share',
           title: 'Share current config',
-          onclick: () => this.share(),
+          onclick: () => shareRecordConfig(this.recMgr.serializeSession()),
         }),
       ),
       m(
@@ -186,21 +208,6 @@ export class RecordPageV2 implements m.ClassComponent<RecordPageAttrs> {
         m('.sub', rc.subtitle),
       ),
     );
-  }
-
-  private async share() {
-    const msg =
-      'This will generate a publicly-readable link to the ' +
-      'current config which cannot be deleted. Continue?';
-    if (!confirm(msg)) return;
-    const url = await this.recMgr.share();
-    const hash = assertExists(url.split('/').pop());
-    showModal({
-      title: 'Permalink',
-      content: m(CopyableLink, {
-        url: `${self.location.origin}/#!/record/${SHARE_SUBPAGE}/${hash}`,
-      }),
-    });
   }
 
   private async loadShared(hash: string) {
@@ -268,7 +275,9 @@ class RecordingCtl implements m.ClassComponent<RecCtlAttrs> {
           })
         : m(Button, {
             icon: 'not_started',
-            disabled: target === undefined,
+            disabled:
+              target === undefined ||
+              this.recMgr.recordConfig.traceConfig.mode === 'LONG_TRACE',
             iconFilled: true,
             title: 'Start tracing',
             className: 'rec',

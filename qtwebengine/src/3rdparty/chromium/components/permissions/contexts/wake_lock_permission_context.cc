@@ -6,14 +6,14 @@
 
 #include "base/check.h"
 #include "base/notreached.h"
-#include "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom.h"
+#include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
 
 namespace permissions {
 
 WakeLockPermissionContext::WakeLockPermissionContext(
     content::BrowserContext* browser_context,
     ContentSettingsType content_settings_type)
-    : PermissionContextBase(
+    : ContentSettingPermissionContextBase(
           browser_context,
           content_settings_type,
           content_settings_type == ContentSettingsType::WAKE_LOCK_SCREEN
@@ -25,7 +25,7 @@ WakeLockPermissionContext::WakeLockPermissionContext(
 
 WakeLockPermissionContext::~WakeLockPermissionContext() = default;
 
-ContentSetting WakeLockPermissionContext::GetPermissionStatusInternal(
+ContentSetting WakeLockPermissionContext::GetContentSettingStatusInternal(
     content::RenderFrameHost* render_frame_host,
     const GURL& requesting_origin,
     const GURL& embedding_origin) const {

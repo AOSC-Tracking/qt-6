@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickapplicationwindow_p.h"
 #include "qquickapplicationwindow_p_p.h"
@@ -45,9 +46,10 @@ using namespace Qt::StringLiterals;
     the window's properties, appearance and layout from QML.
 
     \image qtquickcontrols-applicationwindow-wireframe.png
+           {Window layout showing menu bar, header, content area, and footer}
 
     \qml
-    import QtQuick.Controls 2.12
+    import QtQuick.Controls
 
     ApplicationWindow {
         visible: true

@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 
+#include "error_message/error_location.h"
 #include "stateless/stateless_validation.h"
 
 namespace stateless {
@@ -67,6 +68,13 @@ static const uint8_t kUtF8ThreeByteCode = 0xF0;
 static const uint8_t kUtF8ThreeByteMask = 0xF8;
 static const uint8_t kUtF8DataByteCode = 0x80;
 static const uint8_t kUtF8DataByteMask = 0xC0;
+
+typedef enum VkStringErrorFlagBits {
+    VK_STRING_ERROR_NONE = 0x00000000,
+    VK_STRING_ERROR_LENGTH = 0x00000001,
+    VK_STRING_ERROR_BAD_DATA = 0x00000002,
+} VkStringErrorFlagBits;
+typedef VkFlags VkStringErrorFlags;
 
 static VkStringErrorFlags ValidateVkString(const int max_length, const char *utf8) {
     VkStringErrorFlags result = VK_STRING_ERROR_NONE;
@@ -185,6 +193,43 @@ bool Context::ValidateStringArray(const Location &count_loc, const Location &arr
     return skip;
 }
 
+// We decided in https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/9578 that structs in pNext chains are allowed
+// regardless of the extension. pNext structs all are based on a sType/pNext system (VkBaseInStructure/VkBaseOutStructure) and they
+// can be safely ignored.
+//
+// However.. some structs we determined to warn the user because it might produce subtle effects, but this is the edge case, not the
+// normal case.
+bool Context::ValidatePnextStructExtension(const Location &loc, const VkBaseOutStructure *header) const {
+    bool skip = false;
+    switch (header->sType) {
+        case VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO: {
+            auto buffer_flags2_ci = (const VkBufferUsageFlags2CreateInfo *)header;
+            if (buffer_flags2_ci->usage != 0 && !IsExtEnabled(extensions.vk_khr_maintenance5)) {
+                skip |= log.LogWarning(
+                    "WARNING-VkBufferUsageFlags2CreateInfo-Extension", error_obj.handle, loc.dot(Field::pNext),
+                    "points to a VkBufferUsageFlags2CreateInfo struct but VK_KHR_maintenance5 has not been enabled. "
+                    "Without checking for and enabling the extension, you might have a situation where your buffer usage "
+                    "flags are ignored if the driver doesn't support VK_KHR_maintenance5");
+            }
+        } break;
+
+        case VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO: {
+            auto pipeline_flags2_ci = (const VkPipelineCreateFlags2CreateInfo *)header;
+            if (pipeline_flags2_ci->flags != 0 && !IsExtEnabled(extensions.vk_khr_maintenance5)) {
+                skip |= log.LogWarning(
+                    "WARNING-VkPipelineCreateFlags2CreateInfo-Extension", error_obj.handle, loc.dot(Field::pNext),
+                    "points to a VkPipelineCreateFlags2CreateInfo struct but VK_KHR_maintenance5 has not been enabled. "
+                    "Without checking for and enabling the extension, you might have a situation where your buffer usage "
+                    "flags are ignored if the driver doesn't support VK_KHR_maintenance5");
+            }
+        } break;
+
+        default:
+            break;
+    }
+    return skip;
+}
+
 bool Context::ValidateStructPnext(const Location &loc, const void *next, size_t allowed_type_count,
                                   const VkStructureType *allowed_types, uint32_t header_version, const char *pnext_vuid,
                                   const char *stype_vuid, const bool is_const_param) const {
@@ -201,10 +246,10 @@ bool Context::ValidateStructPnext(const Location &loc, const void *next, size_t 
 
         const Location pNext_loc = loc.dot(Field::pNext);
         if ((allowed_type_count == 0) && (GetCustomStypeInfo().empty())) {
-            std::string message = "must be NULL. ";
+            std::string message = "must be NULL.\n%s\n";
             message += disclaimer;
-            skip |=
-                log.LogError(pnext_vuid, error_obj.handle, pNext_loc, message.c_str(), header_version, pNext_loc.Fields().c_str());
+            skip |= log.LogError(pnext_vuid, error_obj.handle, pNext_loc, message.c_str(),
+                                 PrintPNextChain(Struct::Empty, next).c_str(), header_version, pNext_loc.Fields().c_str());
         } else {
             const VkStructureType *start = allowed_types;
             const VkStructureType *end = allowed_types + allowed_type_count;
@@ -212,13 +257,12 @@ bool Context::ValidateStructPnext(const Location &loc, const void *next, size_t 
 
             while (current != nullptr) {
                 if ((loc.function != Func::vkCreateInstance || (current->sType != VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO)) &&
-                        (loc.function != Func::vkCreateDevice || (current->sType != VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO))) {
-                    std::string type_name = string_VkStructureType(current->sType);
+                    (loc.function != Func::vkCreateDevice || (current->sType != VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO))) {
                     if (unique_stype_check.find(current->sType) != unique_stype_check.end() && !IsDuplicatePnext(current->sType)) {
                         // stype_vuid will only be null if there are no listed pNext and will hit disclaimer check
-                        skip |=
-                            log.LogError(stype_vuid, error_obj.handle, pNext_loc,
-                                    "chain contains duplicate structure types: %s appears multiple times.", type_name.c_str());
+                        skip |= log.LogError(stype_vuid, error_obj.handle, pNext_loc,
+                                             "chain contains duplicate structure types: %s appears multiple times.\n%s",
+                                             string_VkStructureName(current->sType), PrintPNextChain(loc.structure, next).c_str());
                     } else {
                         unique_stype_check.insert(current->sType);
                     }
@@ -233,21 +277,25 @@ bool Context::ValidateStructPnext(const Location &loc, const void *next, size_t 
                     }
                     if (!custom) {
                         if (std::find(start, end, current->sType) == end) {
-                            // String returned by string_VkStructureType for an unrecognized type.
+                            const std::string type_name = string_VkStructureType(current->sType);
                             if (type_name.compare("Unhandled VkStructureType") == 0) {
-                                std::string message = "chain includes a structure with unknown VkStructureType (%" PRIu32 "). ";
+                                std::string message =
+                                    "chain includes a structure with unknown VkStructureType (%" PRIu32 ").\n%s\n";
                                 message += disclaimer;
                                 skip |= log.LogError(pnext_vuid, error_obj.handle, pNext_loc, message.c_str(), current->sType,
-                                        header_version, pNext_loc.Fields().c_str());
+                                                     PrintPNextChain(Struct::Empty, next).c_str(), header_version,
+                                                     pNext_loc.Fields().c_str());
                             } else {
-                                std::string message = "chain includes a structure with unexpected VkStructureType %s. ";
+                                std::string message = "chain includes a structure with unexpected VkStructureType %s.\n%s\n";
                                 message += disclaimer;
                                 skip |= log.LogError(pnext_vuid, error_obj.handle, pNext_loc, message.c_str(), type_name.c_str(),
-                                        header_version, pNext_loc.Fields().c_str());
+                                                     PrintPNextChain(Struct::Empty, next).c_str(), header_version,
+                                                     pNext_loc.Fields().c_str());
                             }
                         }
                         // Send Location without pNext field so the pNext() connector can be used
                         skip |= ValidatePnextStructContents(loc, current, pnext_vuid, is_const_param);
+                        skip |= ValidatePnextStructExtension(loc, current);
                         // pNext contents for vkGetPhysicalDeviceProperties2KHR() is no longer checked.
                         if (loc.function == Func::vkGetPhysicalDeviceFeatures2 ||
                             loc.function == Func::vkGetPhysicalDeviceFeatures2KHR || loc.function == Func::vkCreateDevice) {
@@ -302,6 +350,14 @@ bool Context::ValidateReservedFlags(const Location &loc, VkFlags value, const ch
     bool skip = false;
     if (value != 0) {
         skip |= log.LogError(vuid, error_obj.handle, loc, "is %" PRIu32 ", but must be 0.", value);
+    }
+    return skip;
+}
+
+bool Context::ValidateReservedFlags(const Location &loc, VkFlags64 value, const char *vuid) const {
+    bool skip = false;
+    if (value != 0) {
+        skip |= log.LogError(vuid, error_obj.handle, loc, "is %" PRIu64 ", but must be 0.", value);
     }
     return skip;
 }

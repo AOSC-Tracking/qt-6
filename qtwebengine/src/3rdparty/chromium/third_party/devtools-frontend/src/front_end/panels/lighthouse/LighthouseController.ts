@@ -93,6 +93,10 @@ const UIStrings = {
    */
   applyMobileEmulationDuring: 'Apply mobile emulation during auditing',
   /**
+   *@description Tooltip text of checkbox to emulate desktop device behavior when running audits in Lighthouse
+   */
+  applyDesktopEmulationDuring: 'Apply desktop emulation during auditing',
+  /**
    * @description ARIA label for a radio button input to select the Lighthouse mode.
    */
   lighthouseMode: 'Lighthouse mode',
@@ -174,7 +178,7 @@ const UIStrings = {
    */
   javaScriptDisabled:
       'JavaScript is disabled. You need to enable JavaScript to audit this page. Open the Command Menu and run the Enable JavaScript command to enable JavaScript.',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/lighthouse/LighthouseController.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -407,7 +411,7 @@ export class LighthouseController extends Common.ObjectWrapper.ObjectWrapper<Eve
   }
 
   async getInspectedURL(options?: {force: boolean}): Promise<Platform.DevToolsPath.UrlString> {
-    if (options && options.force || !this.inspectedURL) {
+    if (options?.force || !this.inspectedURL) {
       this.inspectedURL = await this.evaluateInspectedURL();
     }
     return this.inspectedURL;
@@ -659,9 +663,7 @@ export const Presets: Preset[] = [
   },
 ];
 
-export interface Flags {
-  [flag: string]: string|boolean;
-}
+export type Flags = Record<string, string|boolean>;
 
 export const RuntimeSettings: RuntimeSetting[] = [
   {
@@ -674,8 +676,16 @@ export const RuntimeSettings: RuntimeSetting[] = [
       flags.formFactor = value;
     },
     options: [
-      {label: i18nLazyString(UIStrings.mobile), value: 'mobile'},
-      {label: i18nLazyString(UIStrings.desktop), value: 'desktop'},
+      {
+        label: i18nLazyString(UIStrings.mobile),
+        tooltip: i18nLazyString(UIStrings.applyMobileEmulationDuring),
+        value: 'mobile'
+      },
+      {
+        label: i18nLazyString(UIStrings.desktop),
+        tooltip: i18nLazyString(UIStrings.applyDesktopEmulationDuring),
+        value: 'desktop'
+      },
     ],
     learnMore: undefined,
   },
@@ -795,11 +805,11 @@ export interface RuntimeSetting {
   setting: Common.Settings.Setting<string|boolean>;
   description: () => Common.UIString.LocalizedString;
   setFlags: (flags: Flags, value: string|boolean) => void;
-  options?: {
+  options?: Array<{
     label: () => Common.UIString.LocalizedString,
     value: string,
     tooltip?: () => Common.UIString.LocalizedString,
-  }[];
+  }>;
   title?: () => Common.UIString.LocalizedString;
   learnMore?: Platform.DevToolsPath.UrlString;
 }

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 #include "qquickstylehelper_p.h"
 #include "qquickwindowsxpstyle_p.h"
 #include "qquickwindowsxpstyle_p_p.h"
@@ -306,7 +307,7 @@ HWND QWindowsXPStylePrivate::winId(const QWindow *window)
     // Find top level with native window (there might be dialogs that do not have one).
     const auto allWindows = QGuiApplication::allWindows();
     for (const QWindow *window : allWindows) {
-        if (window->isTopLevel() && window->type() != Qt::Desktop && window->handle() != nullptr)
+        if (window->isTopLevel() && window->handle() != nullptr)
             return reinterpret_cast<HWND>(window->winId());
     }
 

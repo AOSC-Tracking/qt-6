@@ -43,16 +43,20 @@ void ProfileReportGenerator::SetExtensionsEnabledCallback(
   extensions_enabled_callback_ = std::move(callback);
 }
 
-std::unique_ptr<em::ChromeUserProfileInfo>
-ProfileReportGenerator::MaybeGenerate(const base::FilePath& path,
-                                      ReportType report_type) {
+void ProfileReportGenerator::MaybeGenerate(
+    const base::FilePath& path,
+    ReportType report_type,
+    base::OnceCallback<void(std::unique_ptr<em::ChromeUserProfileInfo>)>
+        callback) {
   if (!delegate_->Init(path)) {
-    return nullptr;
+    std::move(callback).Run(nullptr);
+    return;
   }
 
   report_ = std::make_unique<em::ChromeUserProfileInfo>();
 
   switch (report_type) {
+    // TODO(crbug.com/330336666): Rename report type `kFull` to `kBrowser`.
     case ReportType::kFull:
       report_->set_id(path.AsUTF8Unsafe());
       break;
@@ -99,7 +103,7 @@ ProfileReportGenerator::MaybeGenerate(const base::FilePath& path,
     }
   }
 
-  return std::move(report_);
+  std::move(callback).Run(std::move(report_));
 }
 
 void ProfileReportGenerator::GetChromePolicyInfo() {

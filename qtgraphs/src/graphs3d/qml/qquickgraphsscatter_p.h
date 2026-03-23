@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 //
 //  W A R N I N G
 //  -------------
@@ -88,6 +90,9 @@ public:
                                                        bool autoAdjust) override;
     void handleAxisRangeChangedBySender(QObject *sender) override;
     void adjustAxisRanges() override;
+
+    void handleMultiAxisChanged(QAbstract3DAxis *axis) override;
+
     bool hasChangedSeriesList() const { return !m_changedSeriesList.empty(); }
     bool isSeriesVisualsDirty() const { return m_isSeriesVisualsDirty; }
     void setSeriesVisualsDirty() { m_isSeriesVisualsDirty = true; }
@@ -122,6 +127,8 @@ protected:
     void updateShadowQuality(QtGraphs3D::ShadowQuality quality) override;
     void updateLightStrength() override;
     void startRecordingRemovesAndInserts() override;
+    QAbstract3DAxis *getSeriesMultiAxis(QAbstract3DSeries *series,
+                       QAbstract3DAxis::AxisOrientation orientation) override;
 
 private:
     Scatter3DChangeBitField m_changeTracker;
@@ -241,7 +248,7 @@ private:
     QColor m_selectedSeriesColor;
     bool selectedItemInSeries(const QScatter3DSeries *series);
 
-    bool isDotPositionInAxisRange(QVector3D dotPos);
+    bool isDotPositionInAxisRange(QVector3D dotPos, QScatter3DSeries *series);
 
     QQmlComponent *createRepeaterDelegate(QAbstract3DSeries::Mesh MeshType);
     float calculatePointScaleSize();
@@ -261,6 +268,8 @@ private:
     void setSelected(QQuick3DModel *root, qsizetype index);
     void clearSelectionModel();
     void clearAllSelectionInstanced();
+
+    void handleItemLabelVisibleChangedBySender(bool visible, QObject *sender) override;
 
     void optimizationChanged(QtGraphs3D::OptimizationHint toOptimization);
 

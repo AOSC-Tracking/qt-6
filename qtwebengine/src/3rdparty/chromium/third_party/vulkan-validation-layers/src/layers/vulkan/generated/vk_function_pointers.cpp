@@ -473,11 +473,13 @@ PFN_vkCmdBindIndexBuffer2KHR CmdBindIndexBuffer2KHR;
 PFN_vkGetRenderingAreaGranularityKHR GetRenderingAreaGranularityKHR;
 PFN_vkGetDeviceImageSubresourceLayoutKHR GetDeviceImageSubresourceLayoutKHR;
 PFN_vkGetImageSubresourceLayout2KHR GetImageSubresourceLayout2KHR;
+PFN_vkWaitForPresent2KHR WaitForPresent2KHR;
 PFN_vkCreatePipelineBinariesKHR CreatePipelineBinariesKHR;
 PFN_vkDestroyPipelineBinaryKHR DestroyPipelineBinaryKHR;
 PFN_vkGetPipelineKeyKHR GetPipelineKeyKHR;
 PFN_vkGetPipelineBinaryDataKHR GetPipelineBinaryDataKHR;
 PFN_vkReleaseCapturedPipelineDataKHR ReleaseCapturedPipelineDataKHR;
+PFN_vkReleaseSwapchainImagesKHR ReleaseSwapchainImagesKHR;
 PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR GetPhysicalDeviceCooperativeMatrixPropertiesKHR;
 PFN_vkCmdSetLineStippleKHR CmdSetLineStippleKHR;
 PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsKHR GetPhysicalDeviceCalibrateableTimeDomainsKHR;
@@ -668,12 +670,17 @@ PFN_vkCreatePrivateDataSlotEXT CreatePrivateDataSlotEXT;
 PFN_vkDestroyPrivateDataSlotEXT DestroyPrivateDataSlotEXT;
 PFN_vkSetPrivateDataEXT SetPrivateDataEXT;
 PFN_vkGetPrivateDataEXT GetPrivateDataEXT;
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 PFN_vkCreateCudaModuleNV CreateCudaModuleNV;
 PFN_vkGetCudaModuleCacheNV GetCudaModuleCacheNV;
 PFN_vkCreateCudaFunctionNV CreateCudaFunctionNV;
 PFN_vkDestroyCudaModuleNV DestroyCudaModuleNV;
 PFN_vkDestroyCudaFunctionNV DestroyCudaFunctionNV;
 PFN_vkCmdCudaLaunchKernelNV CmdCudaLaunchKernelNV;
+#endif  // VK_ENABLE_BETA_EXTENSIONS
+PFN_vkCmdDispatchTileQCOM CmdDispatchTileQCOM;
+PFN_vkCmdBeginPerTileExecutionQCOM CmdBeginPerTileExecutionQCOM;
+PFN_vkCmdEndPerTileExecutionQCOM CmdEndPerTileExecutionQCOM;
 #ifdef VK_USE_PLATFORM_METAL_EXT
 PFN_vkExportMetalObjectsEXT ExportMetalObjectsEXT;
 #endif  // VK_USE_PLATFORM_METAL_EXT
@@ -784,6 +791,17 @@ PFN_vkCmdSetCoverageModulationTableNV CmdSetCoverageModulationTableNV;
 PFN_vkCmdSetShadingRateImageEnableNV CmdSetShadingRateImageEnableNV;
 PFN_vkCmdSetRepresentativeFragmentTestEnableNV CmdSetRepresentativeFragmentTestEnableNV;
 PFN_vkCmdSetCoverageReductionModeNV CmdSetCoverageReductionModeNV;
+PFN_vkCreateTensorARM CreateTensorARM;
+PFN_vkDestroyTensorARM DestroyTensorARM;
+PFN_vkCreateTensorViewARM CreateTensorViewARM;
+PFN_vkDestroyTensorViewARM DestroyTensorViewARM;
+PFN_vkGetTensorMemoryRequirementsARM GetTensorMemoryRequirementsARM;
+PFN_vkBindTensorMemoryARM BindTensorMemoryARM;
+PFN_vkGetDeviceTensorMemoryRequirementsARM GetDeviceTensorMemoryRequirementsARM;
+PFN_vkCmdCopyTensorARM CmdCopyTensorARM;
+PFN_vkGetPhysicalDeviceExternalTensorPropertiesARM GetPhysicalDeviceExternalTensorPropertiesARM;
+PFN_vkGetTensorOpaqueCaptureDescriptorDataARM GetTensorOpaqueCaptureDescriptorDataARM;
+PFN_vkGetTensorViewOpaqueCaptureDescriptorDataARM GetTensorViewOpaqueCaptureDescriptorDataARM;
 PFN_vkGetShaderModuleIdentifierEXT GetShaderModuleIdentifierEXT;
 PFN_vkGetShaderModuleCreateInfoIdentifierEXT GetShaderModuleCreateInfoIdentifierEXT;
 PFN_vkGetPhysicalDeviceOpticalFlowImageFormatsNV GetPhysicalDeviceOpticalFlowImageFormatsNV;
@@ -807,10 +825,25 @@ PFN_vkLatencySleepNV LatencySleepNV;
 PFN_vkSetLatencyMarkerNV SetLatencyMarkerNV;
 PFN_vkGetLatencyTimingsNV GetLatencyTimingsNV;
 PFN_vkQueueNotifyOutOfBandNV QueueNotifyOutOfBandNV;
+PFN_vkCreateDataGraphPipelinesARM CreateDataGraphPipelinesARM;
+PFN_vkCreateDataGraphPipelineSessionARM CreateDataGraphPipelineSessionARM;
+PFN_vkGetDataGraphPipelineSessionBindPointRequirementsARM GetDataGraphPipelineSessionBindPointRequirementsARM;
+PFN_vkGetDataGraphPipelineSessionMemoryRequirementsARM GetDataGraphPipelineSessionMemoryRequirementsARM;
+PFN_vkBindDataGraphPipelineSessionMemoryARM BindDataGraphPipelineSessionMemoryARM;
+PFN_vkDestroyDataGraphPipelineSessionARM DestroyDataGraphPipelineSessionARM;
+PFN_vkCmdDispatchDataGraphARM CmdDispatchDataGraphARM;
+PFN_vkGetDataGraphPipelineAvailablePropertiesARM GetDataGraphPipelineAvailablePropertiesARM;
+PFN_vkGetDataGraphPipelinePropertiesARM GetDataGraphPipelinePropertiesARM;
+PFN_vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM;
+PFN_vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM;
 PFN_vkCmdSetAttachmentFeedbackLoopEnableEXT CmdSetAttachmentFeedbackLoopEnableEXT;
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
 PFN_vkGetScreenBufferPropertiesQNX GetScreenBufferPropertiesQNX;
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+PFN_vkCmdBindTileMemoryQCOM CmdBindTileMemoryQCOM;
+PFN_vkCreateExternalComputeQueueNV CreateExternalComputeQueueNV;
+PFN_vkDestroyExternalComputeQueueNV DestroyExternalComputeQueueNV;
+PFN_vkGetExternalComputeQueueDataNV GetExternalComputeQueueDataNV;
 PFN_vkGetClusterAccelerationStructureBuildSizesNV GetClusterAccelerationStructureBuildSizesNV;
 PFN_vkCmdBuildClusterAccelerationStructureIndirectNV CmdBuildClusterAccelerationStructureIndirectNV;
 PFN_vkGetPartitionedAccelerationStructuresBuildSizesNV GetPartitionedAccelerationStructuresBuildSizesNV;
@@ -824,11 +857,15 @@ PFN_vkCreateIndirectExecutionSetEXT CreateIndirectExecutionSetEXT;
 PFN_vkDestroyIndirectExecutionSetEXT DestroyIndirectExecutionSetEXT;
 PFN_vkUpdateIndirectExecutionSetPipelineEXT UpdateIndirectExecutionSetPipelineEXT;
 PFN_vkUpdateIndirectExecutionSetShaderEXT UpdateIndirectExecutionSetShaderEXT;
+#ifdef VK_USE_PLATFORM_OHOS
+PFN_vkCreateSurfaceOHOS CreateSurfaceOHOS;
+#endif  // VK_USE_PLATFORM_OHOS
 PFN_vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV;
 #ifdef VK_USE_PLATFORM_METAL_EXT
 PFN_vkGetMemoryMetalHandleEXT GetMemoryMetalHandleEXT;
 PFN_vkGetMemoryMetalHandlePropertiesEXT GetMemoryMetalHandlePropertiesEXT;
 #endif  // VK_USE_PLATFORM_METAL_EXT
+PFN_vkCmdEndRendering2EXT CmdEndRendering2EXT;
 PFN_vkCreateAccelerationStructureKHR CreateAccelerationStructureKHR;
 PFN_vkDestroyAccelerationStructureKHR DestroyAccelerationStructureKHR;
 PFN_vkCmdBuildAccelerationStructuresKHR CmdBuildAccelerationStructuresKHR;
@@ -1343,6 +1380,10 @@ void InitExtensionFromCore(const char* extension_name) {
             }
         },
         {
+            "VK_EXT_swapchain_maintenance1", []() {
+            }
+        },
+        {
             "VK_EXT_private_data", []() {
                 CreatePrivateDataSlotEXT = CreatePrivateDataSlot;
                 DestroyPrivateDataSlotEXT = DestroyPrivateDataSlot;
@@ -1585,6 +1626,13 @@ void InitInstanceExtension(VkInstance instance, const char* extension_name) {
             }
         },
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+#ifdef VK_USE_PLATFORM_OHOS
+        {
+            "VK_OHOS_surface", [](VkInstance instance) {
+                CreateSurfaceOHOS = reinterpret_cast<PFN_vkCreateSurfaceOHOS>(GetInstanceProcAddr(instance, "vkCreateSurfaceOHOS"));
+            }
+        },
+#endif  // VK_USE_PLATFORM_OHOS
 
     };
 
@@ -1863,12 +1911,22 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             }
         },
         {
+            "VK_KHR_present_wait2", [](VkInstance , VkDevice device) {
+                WaitForPresent2KHR = reinterpret_cast<PFN_vkWaitForPresent2KHR>(GetDeviceProcAddr(device, "vkWaitForPresent2KHR"));
+            }
+        },
+        {
             "VK_KHR_pipeline_binary", [](VkInstance , VkDevice device) {
                 CreatePipelineBinariesKHR = reinterpret_cast<PFN_vkCreatePipelineBinariesKHR>(GetDeviceProcAddr(device, "vkCreatePipelineBinariesKHR"));
                 DestroyPipelineBinaryKHR = reinterpret_cast<PFN_vkDestroyPipelineBinaryKHR>(GetDeviceProcAddr(device, "vkDestroyPipelineBinaryKHR"));
                 GetPipelineKeyKHR = reinterpret_cast<PFN_vkGetPipelineKeyKHR>(GetDeviceProcAddr(device, "vkGetPipelineKeyKHR"));
                 GetPipelineBinaryDataKHR = reinterpret_cast<PFN_vkGetPipelineBinaryDataKHR>(GetDeviceProcAddr(device, "vkGetPipelineBinaryDataKHR"));
                 ReleaseCapturedPipelineDataKHR = reinterpret_cast<PFN_vkReleaseCapturedPipelineDataKHR>(GetDeviceProcAddr(device, "vkReleaseCapturedPipelineDataKHR"));
+            }
+        },
+        {
+            "VK_KHR_swapchain_maintenance1", [](VkInstance , VkDevice device) {
+                ReleaseSwapchainImagesKHR = reinterpret_cast<PFN_vkReleaseSwapchainImagesKHR>(GetDeviceProcAddr(device, "vkReleaseSwapchainImagesKHR"));
             }
         },
         {
@@ -2198,6 +2256,7 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
                 GetPrivateDataEXT = reinterpret_cast<PFN_vkGetPrivateDataEXT>(GetDeviceProcAddr(device, "vkGetPrivateDataEXT"));
             }
         },
+#ifdef VK_ENABLE_BETA_EXTENSIONS
         {
             "VK_NV_cuda_kernel_launch", [](VkInstance , VkDevice device) {
                 CreateCudaModuleNV = reinterpret_cast<PFN_vkCreateCudaModuleNV>(GetDeviceProcAddr(device, "vkCreateCudaModuleNV"));
@@ -2206,6 +2265,14 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
                 DestroyCudaModuleNV = reinterpret_cast<PFN_vkDestroyCudaModuleNV>(GetDeviceProcAddr(device, "vkDestroyCudaModuleNV"));
                 DestroyCudaFunctionNV = reinterpret_cast<PFN_vkDestroyCudaFunctionNV>(GetDeviceProcAddr(device, "vkDestroyCudaFunctionNV"));
                 CmdCudaLaunchKernelNV = reinterpret_cast<PFN_vkCmdCudaLaunchKernelNV>(GetDeviceProcAddr(device, "vkCmdCudaLaunchKernelNV"));
+            }
+        },
+#endif  // VK_ENABLE_BETA_EXTENSIONS
+        {
+            "VK_QCOM_tile_shading", [](VkInstance , VkDevice device) {
+                CmdDispatchTileQCOM = reinterpret_cast<PFN_vkCmdDispatchTileQCOM>(GetDeviceProcAddr(device, "vkCmdDispatchTileQCOM"));
+                CmdBeginPerTileExecutionQCOM = reinterpret_cast<PFN_vkCmdBeginPerTileExecutionQCOM>(GetDeviceProcAddr(device, "vkCmdBeginPerTileExecutionQCOM"));
+                CmdEndPerTileExecutionQCOM = reinterpret_cast<PFN_vkCmdEndPerTileExecutionQCOM>(GetDeviceProcAddr(device, "vkCmdEndPerTileExecutionQCOM"));
             }
         },
 #ifdef VK_USE_PLATFORM_METAL_EXT
@@ -2412,6 +2479,21 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             }
         },
         {
+            "VK_ARM_tensors", [](VkInstance instance, VkDevice device) {
+                CreateTensorARM = reinterpret_cast<PFN_vkCreateTensorARM>(GetDeviceProcAddr(device, "vkCreateTensorARM"));
+                DestroyTensorARM = reinterpret_cast<PFN_vkDestroyTensorARM>(GetDeviceProcAddr(device, "vkDestroyTensorARM"));
+                CreateTensorViewARM = reinterpret_cast<PFN_vkCreateTensorViewARM>(GetDeviceProcAddr(device, "vkCreateTensorViewARM"));
+                DestroyTensorViewARM = reinterpret_cast<PFN_vkDestroyTensorViewARM>(GetDeviceProcAddr(device, "vkDestroyTensorViewARM"));
+                GetTensorMemoryRequirementsARM = reinterpret_cast<PFN_vkGetTensorMemoryRequirementsARM>(GetDeviceProcAddr(device, "vkGetTensorMemoryRequirementsARM"));
+                BindTensorMemoryARM = reinterpret_cast<PFN_vkBindTensorMemoryARM>(GetDeviceProcAddr(device, "vkBindTensorMemoryARM"));
+                GetDeviceTensorMemoryRequirementsARM = reinterpret_cast<PFN_vkGetDeviceTensorMemoryRequirementsARM>(GetDeviceProcAddr(device, "vkGetDeviceTensorMemoryRequirementsARM"));
+                CmdCopyTensorARM = reinterpret_cast<PFN_vkCmdCopyTensorARM>(GetDeviceProcAddr(device, "vkCmdCopyTensorARM"));
+                GetTensorOpaqueCaptureDescriptorDataARM = reinterpret_cast<PFN_vkGetTensorOpaqueCaptureDescriptorDataARM>(GetDeviceProcAddr(device, "vkGetTensorOpaqueCaptureDescriptorDataARM"));
+                GetTensorViewOpaqueCaptureDescriptorDataARM = reinterpret_cast<PFN_vkGetTensorViewOpaqueCaptureDescriptorDataARM>(GetDeviceProcAddr(device, "vkGetTensorViewOpaqueCaptureDescriptorDataARM"));
+                GetPhysicalDeviceExternalTensorPropertiesARM = reinterpret_cast<PFN_vkGetPhysicalDeviceExternalTensorPropertiesARM>(GetInstanceProcAddr(instance, "vkGetPhysicalDeviceExternalTensorPropertiesARM"));
+            }
+        },
+        {
             "VK_EXT_shader_module_identifier", [](VkInstance , VkDevice device) {
                 GetShaderModuleIdentifierEXT = reinterpret_cast<PFN_vkGetShaderModuleIdentifierEXT>(GetDeviceProcAddr(device, "vkGetShaderModuleIdentifierEXT"));
                 GetShaderModuleCreateInfoIdentifierEXT = reinterpret_cast<PFN_vkGetShaderModuleCreateInfoIdentifierEXT>(GetDeviceProcAddr(device, "vkGetShaderModuleCreateInfoIdentifierEXT"));
@@ -2512,6 +2594,21 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             }
         },
         {
+            "VK_ARM_data_graph", [](VkInstance instance, VkDevice device) {
+                CreateDataGraphPipelinesARM = reinterpret_cast<PFN_vkCreateDataGraphPipelinesARM>(GetDeviceProcAddr(device, "vkCreateDataGraphPipelinesARM"));
+                CreateDataGraphPipelineSessionARM = reinterpret_cast<PFN_vkCreateDataGraphPipelineSessionARM>(GetDeviceProcAddr(device, "vkCreateDataGraphPipelineSessionARM"));
+                GetDataGraphPipelineSessionBindPointRequirementsARM = reinterpret_cast<PFN_vkGetDataGraphPipelineSessionBindPointRequirementsARM>(GetDeviceProcAddr(device, "vkGetDataGraphPipelineSessionBindPointRequirementsARM"));
+                GetDataGraphPipelineSessionMemoryRequirementsARM = reinterpret_cast<PFN_vkGetDataGraphPipelineSessionMemoryRequirementsARM>(GetDeviceProcAddr(device, "vkGetDataGraphPipelineSessionMemoryRequirementsARM"));
+                BindDataGraphPipelineSessionMemoryARM = reinterpret_cast<PFN_vkBindDataGraphPipelineSessionMemoryARM>(GetDeviceProcAddr(device, "vkBindDataGraphPipelineSessionMemoryARM"));
+                DestroyDataGraphPipelineSessionARM = reinterpret_cast<PFN_vkDestroyDataGraphPipelineSessionARM>(GetDeviceProcAddr(device, "vkDestroyDataGraphPipelineSessionARM"));
+                CmdDispatchDataGraphARM = reinterpret_cast<PFN_vkCmdDispatchDataGraphARM>(GetDeviceProcAddr(device, "vkCmdDispatchDataGraphARM"));
+                GetDataGraphPipelineAvailablePropertiesARM = reinterpret_cast<PFN_vkGetDataGraphPipelineAvailablePropertiesARM>(GetDeviceProcAddr(device, "vkGetDataGraphPipelineAvailablePropertiesARM"));
+                GetDataGraphPipelinePropertiesARM = reinterpret_cast<PFN_vkGetDataGraphPipelinePropertiesARM>(GetDeviceProcAddr(device, "vkGetDataGraphPipelinePropertiesARM"));
+                GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM>(GetInstanceProcAddr(instance, "vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM"));
+                GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM>(GetInstanceProcAddr(instance, "vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM"));
+            }
+        },
+        {
             "VK_EXT_attachment_feedback_loop_dynamic_state", [](VkInstance , VkDevice device) {
                 CmdSetAttachmentFeedbackLoopEnableEXT = reinterpret_cast<PFN_vkCmdSetAttachmentFeedbackLoopEnableEXT>(GetDeviceProcAddr(device, "vkCmdSetAttachmentFeedbackLoopEnableEXT"));
             }
@@ -2523,6 +2620,18 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             }
         },
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+        {
+            "VK_QCOM_tile_memory_heap", [](VkInstance , VkDevice device) {
+                CmdBindTileMemoryQCOM = reinterpret_cast<PFN_vkCmdBindTileMemoryQCOM>(GetDeviceProcAddr(device, "vkCmdBindTileMemoryQCOM"));
+            }
+        },
+        {
+            "VK_NV_external_compute_queue", [](VkInstance , VkDevice device) {
+                CreateExternalComputeQueueNV = reinterpret_cast<PFN_vkCreateExternalComputeQueueNV>(GetDeviceProcAddr(device, "vkCreateExternalComputeQueueNV"));
+                DestroyExternalComputeQueueNV = reinterpret_cast<PFN_vkDestroyExternalComputeQueueNV>(GetDeviceProcAddr(device, "vkDestroyExternalComputeQueueNV"));
+                GetExternalComputeQueueDataNV = reinterpret_cast<PFN_vkGetExternalComputeQueueDataNV>(GetDeviceProcAddr(device, "vkGetExternalComputeQueueDataNV"));
+            }
+        },
         {
             "VK_NV_cluster_acceleration_structure", [](VkInstance , VkDevice device) {
                 GetClusterAccelerationStructureBuildSizesNV = reinterpret_cast<PFN_vkGetClusterAccelerationStructureBuildSizesNV>(GetDeviceProcAddr(device, "vkGetClusterAccelerationStructureBuildSizesNV"));
@@ -2566,6 +2675,11 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             }
         },
 #endif  // VK_USE_PLATFORM_METAL_EXT
+        {
+            "VK_EXT_fragment_density_map_offset", [](VkInstance , VkDevice device) {
+                CmdEndRendering2EXT = reinterpret_cast<PFN_vkCmdEndRendering2EXT>(GetDeviceProcAddr(device, "vkCmdEndRendering2EXT"));
+            }
+        },
         {
             "VK_KHR_acceleration_structure", [](VkInstance , VkDevice device) {
                 CreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(GetDeviceProcAddr(device, "vkCreateAccelerationStructureKHR"));
@@ -2774,11 +2888,13 @@ void ResetAllExtensions() {
     GetRenderingAreaGranularityKHR = nullptr;
     GetDeviceImageSubresourceLayoutKHR = nullptr;
     GetImageSubresourceLayout2KHR = nullptr;
+    WaitForPresent2KHR = nullptr;
     CreatePipelineBinariesKHR = nullptr;
     DestroyPipelineBinaryKHR = nullptr;
     GetPipelineKeyKHR = nullptr;
     GetPipelineBinaryDataKHR = nullptr;
     ReleaseCapturedPipelineDataKHR = nullptr;
+    ReleaseSwapchainImagesKHR = nullptr;
     GetPhysicalDeviceCooperativeMatrixPropertiesKHR = nullptr;
     CmdSetLineStippleKHR = nullptr;
     GetPhysicalDeviceCalibrateableTimeDomainsKHR = nullptr;
@@ -2969,12 +3085,17 @@ void ResetAllExtensions() {
     DestroyPrivateDataSlotEXT = nullptr;
     SetPrivateDataEXT = nullptr;
     GetPrivateDataEXT = nullptr;
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     CreateCudaModuleNV = nullptr;
     GetCudaModuleCacheNV = nullptr;
     CreateCudaFunctionNV = nullptr;
     DestroyCudaModuleNV = nullptr;
     DestroyCudaFunctionNV = nullptr;
     CmdCudaLaunchKernelNV = nullptr;
+#endif  // VK_ENABLE_BETA_EXTENSIONS
+    CmdDispatchTileQCOM = nullptr;
+    CmdBeginPerTileExecutionQCOM = nullptr;
+    CmdEndPerTileExecutionQCOM = nullptr;
 #ifdef VK_USE_PLATFORM_METAL_EXT
     ExportMetalObjectsEXT = nullptr;
 #endif  // VK_USE_PLATFORM_METAL_EXT
@@ -3085,6 +3206,17 @@ void ResetAllExtensions() {
     CmdSetShadingRateImageEnableNV = nullptr;
     CmdSetRepresentativeFragmentTestEnableNV = nullptr;
     CmdSetCoverageReductionModeNV = nullptr;
+    CreateTensorARM = nullptr;
+    DestroyTensorARM = nullptr;
+    CreateTensorViewARM = nullptr;
+    DestroyTensorViewARM = nullptr;
+    GetTensorMemoryRequirementsARM = nullptr;
+    BindTensorMemoryARM = nullptr;
+    GetDeviceTensorMemoryRequirementsARM = nullptr;
+    CmdCopyTensorARM = nullptr;
+    GetPhysicalDeviceExternalTensorPropertiesARM = nullptr;
+    GetTensorOpaqueCaptureDescriptorDataARM = nullptr;
+    GetTensorViewOpaqueCaptureDescriptorDataARM = nullptr;
     GetShaderModuleIdentifierEXT = nullptr;
     GetShaderModuleCreateInfoIdentifierEXT = nullptr;
     GetPhysicalDeviceOpticalFlowImageFormatsNV = nullptr;
@@ -3108,10 +3240,25 @@ void ResetAllExtensions() {
     SetLatencyMarkerNV = nullptr;
     GetLatencyTimingsNV = nullptr;
     QueueNotifyOutOfBandNV = nullptr;
+    CreateDataGraphPipelinesARM = nullptr;
+    CreateDataGraphPipelineSessionARM = nullptr;
+    GetDataGraphPipelineSessionBindPointRequirementsARM = nullptr;
+    GetDataGraphPipelineSessionMemoryRequirementsARM = nullptr;
+    BindDataGraphPipelineSessionMemoryARM = nullptr;
+    DestroyDataGraphPipelineSessionARM = nullptr;
+    CmdDispatchDataGraphARM = nullptr;
+    GetDataGraphPipelineAvailablePropertiesARM = nullptr;
+    GetDataGraphPipelinePropertiesARM = nullptr;
+    GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM = nullptr;
+    GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM = nullptr;
     CmdSetAttachmentFeedbackLoopEnableEXT = nullptr;
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
     GetScreenBufferPropertiesQNX = nullptr;
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+    CmdBindTileMemoryQCOM = nullptr;
+    CreateExternalComputeQueueNV = nullptr;
+    DestroyExternalComputeQueueNV = nullptr;
+    GetExternalComputeQueueDataNV = nullptr;
     GetClusterAccelerationStructureBuildSizesNV = nullptr;
     CmdBuildClusterAccelerationStructureIndirectNV = nullptr;
     GetPartitionedAccelerationStructuresBuildSizesNV = nullptr;
@@ -3125,11 +3272,15 @@ void ResetAllExtensions() {
     DestroyIndirectExecutionSetEXT = nullptr;
     UpdateIndirectExecutionSetPipelineEXT = nullptr;
     UpdateIndirectExecutionSetShaderEXT = nullptr;
+#ifdef VK_USE_PLATFORM_OHOS
+    CreateSurfaceOHOS = nullptr;
+#endif  // VK_USE_PLATFORM_OHOS
     GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV = nullptr;
 #ifdef VK_USE_PLATFORM_METAL_EXT
     GetMemoryMetalHandleEXT = nullptr;
     GetMemoryMetalHandlePropertiesEXT = nullptr;
 #endif  // VK_USE_PLATFORM_METAL_EXT
+    CmdEndRendering2EXT = nullptr;
     CreateAccelerationStructureKHR = nullptr;
     DestroyAccelerationStructureKHR = nullptr;
     CmdBuildAccelerationStructuresKHR = nullptr;

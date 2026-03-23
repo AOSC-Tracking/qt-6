@@ -279,9 +279,9 @@ RegExpTree* RegExpTextBuilder::PopLastAtom() {
 
 RegExpTree* RegExpTextBuilder::ToRegExp() {
   FlushText();
-  size_t num_alternatives = terms_->size();
-  if (num_alternatives == 0) return zone()->New<RegExpEmpty>();
-  if (num_alternatives == 1) return terms_->back();
+  size_t number_of_terms = terms_->size();
+  if (number_of_terms == 0) return zone()->New<RegExpEmpty>();
+  if (number_of_terms == 1) return terms_->back();
   return zone()->New<RegExpAlternative>(zone()->New<ZoneList<RegExpTree*>>(
       base::VectorOf(terms_->begin(), terms_->size()), zone()));
 }
@@ -636,7 +636,6 @@ class RegExpParserImpl final {
   ZoneMap<RegExpCapture*, ZoneList<int>*, RegExpCaptureNameLess>*
       named_captures_;
   ZoneList<RegExpBackReference*>* named_back_references_;
-  ZoneList<CharacterRange>* temp_ranges_;
   const CharT* const input_;
   const int input_length_;
   base::uc32 current_;
@@ -1646,7 +1645,7 @@ bool RegExpParserImpl<CharT>::CreateNamedCaptureAtIndex(
         DCHECK_NOT_NULL(named_capture_indices);
         DCHECK(!named_capture_indices->is_empty());
         for (int named_index : *named_capture_indices) {
-          if (named_index < non_participating_capture_group_interval.first ||
+          if (named_index <= non_participating_capture_group_interval.first ||
               named_index > non_participating_capture_group_interval.second) {
             ReportError(RegExpError::kDuplicateCaptureGroupName);
             return false;
@@ -1741,7 +1740,7 @@ RegExpCapture* RegExpParserImpl<CharT>::GetCapture(int index) {
   // zero-based.
   const int known_captures =
       is_scanned_for_captures_ ? capture_count_ : captures_started_;
-  DCHECK(index <= known_captures);
+  SBXCHECK(index >= 1 && index <= known_captures);
   if (captures_ == nullptr) {
     captures_ =
         zone()->template New<ZoneList<RegExpCapture*>>(known_captures, zone());

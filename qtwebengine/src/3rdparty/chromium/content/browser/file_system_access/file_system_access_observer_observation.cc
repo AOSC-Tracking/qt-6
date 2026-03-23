@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -38,28 +39,25 @@ namespace content {
 
 namespace {
 
-FileSystemAccessPermissionContext::HandleType GetHandleType(
-    const absl::variant<std::unique_ptr<FileSystemAccessDirectoryHandleImpl>,
-                        std::unique_ptr<FileSystemAccessFileHandleImpl>>&
-        handle) {
-  return absl::get_if<std::unique_ptr<FileSystemAccessDirectoryHandleImpl>>(
-             &handle)
-             ? FileSystemAccessPermissionContext::HandleType::kDirectory
-             : FileSystemAccessPermissionContext::HandleType::kFile;
-}
+// A visitor for a variant of file system access handles that returns the
+// appropriate `FileSystemAccessPermissionContext::HandleType`.
+struct GetHandleTypeVisitor {
+  FileSystemAccessPermissionContext::HandleType operator()(
+      const std::unique_ptr<FileSystemAccessDirectoryHandleImpl>&) const {
+    return FileSystemAccessPermissionContext::HandleType::kDirectory;
+  }
+  FileSystemAccessPermissionContext::HandleType operator()(
+      const std::unique_ptr<FileSystemAccessFileHandleImpl>&) const {
+    return FileSystemAccessPermissionContext::HandleType::kFile;
+  }
+};
 
 FileSystemAccessHandleBase& AsHandleBase(
-    const absl::variant<std::unique_ptr<FileSystemAccessDirectoryHandleImpl>,
-                        std::unique_ptr<FileSystemAccessFileHandleImpl>>&
+    const std::variant<std::unique_ptr<FileSystemAccessDirectoryHandleImpl>,
+                       std::unique_ptr<FileSystemAccessFileHandleImpl>>&
         handle) {
-  auto* dir_handle_ptr =
-      absl::get_if<std::unique_ptr<FileSystemAccessDirectoryHandleImpl>>(
-          &handle);
-  if (dir_handle_ptr) {
-    return *static_cast<FileSystemAccessHandleBase*>(dir_handle_ptr->get());
-  }
-
-  return *absl::get<std::unique_ptr<FileSystemAccessFileHandleImpl>>(handle);
+  return std::visit(
+      [](const auto& h) -> FileSystemAccessHandleBase& { return *h; }, handle);
 }
 
 // TODO(crbug.com/40105284): Move this to a helper shared with
@@ -93,7 +91,9 @@ blink::mojom::FileSystemAccessEntryPtr CreateEntryForUrl(
     case FileSystemAccessPermissionContext::HandleType::kFile:
       return blink::mojom::FileSystemAccessEntry::New(
           blink::mojom::FileSystemAccessHandle::NewFile(
-              manager.CreateFileHandle(binding_context, url, handle_state)),
+              manager.CreateFileHandle(
+                  binding_context, url,
+                  url.virtual_path().BaseName().AsUTF8Unsafe(), handle_state)),
           url.virtual_path().BaseName().AsUTF8Unsafe());
     case FileSystemAccessPermissionContext::HandleType::kDirectory:
       return blink::mojom::FileSystemAccessEntry::New(
@@ -143,8 +143,8 @@ FileSystemAccessObserverObservation::FileSystemAccessObserverObservation(
     FileSystemAccessObserverHost* host,
     std::unique_ptr<FileSystemAccessObservationGroup::Observer> observation,
     mojo::PendingRemote<blink::mojom::FileSystemAccessObserver> remote,
-    absl::variant<std::unique_ptr<FileSystemAccessDirectoryHandleImpl>,
-                  std::unique_ptr<FileSystemAccessFileHandleImpl>> handle)
+    std::variant<std::unique_ptr<FileSystemAccessDirectoryHandleImpl>,
+                 std::unique_ptr<FileSystemAccessFileHandleImpl>> handle)
     : WebContentsObserver(
           WebContents::FromRenderFrameHost(RenderFrameHostImpl::FromID(
               AsHandleBase(handle).context().frame_id))),
@@ -236,15 +236,15 @@ void FileSystemAccessObserverObservation::OnChanges(
     // It is illegal to receive a change outside of the observed scope.
     CHECK(observation_->scope().Contains(change.url));
 
-    blink::mojom::FileSystemAccessEntryPtr root_entry =
-        CreateEntryForUrl(*manager, binding_context, handle_state, handle_url,
-                          GetHandleType(handle_));
+    const auto handle_type = std::visit(GetHandleTypeVisitor(), handle_);
+    blink::mojom::FileSystemAccessEntryPtr root_entry = CreateEntryForUrl(
+        *manager, binding_context, handle_state, handle_url, handle_type);
     const auto& change_info = change.change_info;
     FileSystemAccessPermissionContext::HandleType changed_entry_handle_type;
     switch (change_info.file_path_type) {
       case FileSystemAccessChangeSource::FilePathType::kUnknown:
         // Fall back to using the same handle type as the root handle.
-        changed_entry_handle_type = GetHandleType(handle_);
+        changed_entry_handle_type = handle_type;
         break;
       case FileSystemAccessChangeSource::FilePathType::kDirectory:
         changed_entry_handle_type =
@@ -381,12 +381,13 @@ void FileSystemAccessObserverObservation::HandleError() {
   const storage::FileSystemURL& handle_url = handle_base.url();
   // TODO(crbug.com/377903461): Don't send changedHandle for `kErrored` events.
   // Renderer side, changedHandle() getter returns null for this case.
+  const auto handle_type = std::visit(GetHandleTypeVisitor(), handle_);
   mojo_changes.emplace_back(blink::mojom::FileSystemAccessChange::New(
       blink::mojom::FileSystemAccessChangeMetadata::New(
           CreateEntryForUrl(*manager, binding_context, handle_state, handle_url,
-                            GetHandleType(handle_)),
+                            handle_type),
           CreateEntryForUrl(*manager, binding_context, handle_state, handle_url,
-                            GetHandleType(handle_)),
+                            handle_type),
           std::vector<std::string>()),
       blink::mojom::FileSystemAccessChangeType::NewErrored(
           blink::mojom::FileSystemAccessChangeTypeErrored::New())));
@@ -435,12 +436,13 @@ void FileSystemAccessObserverObservation::RenderFrameHostStateChanged(
       AsHandleBase(handle_).handle_state();
   const storage::FileSystemURL& handle_url = AsHandleBase(handle_).url();
 
+  const auto handle_type = std::visit(GetHandleTypeVisitor(), handle_);
   mojo_changes.emplace_back(blink::mojom::FileSystemAccessChange::New(
       blink::mojom::FileSystemAccessChangeMetadata::New(
           CreateEntryForUrl(*manager, binding_context, handle_state, handle_url,
-                            GetHandleType(handle_)),
+                            handle_type),
           CreateEntryForUrl(*manager, binding_context, handle_state, handle_url,
-                            GetHandleType(handle_)),
+                            handle_type),
           std::vector<std::string>()),
       blink::mojom::FileSystemAccessChangeType::NewUnknown(
           blink::mojom::FileSystemAccessChangeTypeUnknown::New())));

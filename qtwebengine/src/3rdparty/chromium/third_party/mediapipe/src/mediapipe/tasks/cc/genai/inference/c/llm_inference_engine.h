@@ -23,6 +23,10 @@
 #include <stdint.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <functional>
+#endif  // __EMSCRIPTEN__
+
 #ifndef ODML_EXPORT
 #define ODML_EXPORT __attribute__((visibility("default")))
 #endif  // ODML_EXPORT
@@ -34,6 +38,10 @@ extern "C" {
 typedef void LlmInferenceEngine_Engine;
 
 typedef void LlmInferenceEngine_Session;
+
+typedef void SentencePieceProcessor;
+
+typedef void Constraint;
 
 // LlmActivationDataType defines the activation data type for the model.
 typedef enum {
@@ -53,10 +61,43 @@ typedef enum {
   kLlmActivationDataTypeInt8 = 4,
 } LlmActivationDataType;
 
+// Specify the LiteRT backend to use for the LLM model. If not specified, the
+// default backend will be used.
+typedef enum {
+  // Use default backend extracted from the model.
+  kLlmPreferredBackendDefault = 0,
+
+  // Use GPU backend.
+  kLlmPreferredBackendGpu = 1,
+
+  // Use CPU backend.
+  kLlmPreferredBackendCpu = 2,
+} LlmPreferredBackend;
+
 // LlmSessionConfig configures how to execute the model.
 typedef struct {
   // Path to the model artifact.
   const char* model_path;
+
+#ifdef __EMSCRIPTEN__
+  // Web only supports the following model loading methods:
+  // * File System loading for converted LLMs. model_path has to be set and its
+  //  name has to end with .task.
+  // * Stream loading for handwritten LLMs. read_model_fn has to be set.
+
+  // Function to read model file.
+  // The function returns a pointer to heap memory that contains the model file
+  // contents started from `offset` with `size`.
+  // Since the model file is hosted on JavaScript layer and this function copies
+  // the data to the heap memory, the `mode` instructs how the source model file
+  // data should be manipulated:
+  //   0: Data will be kept in memory after read.
+  //   1: Data will not be accessed again and can be discarded.
+  //   2: All data has been used and can be discarded.
+  using ReadDataFn =
+      std::function<void*(uint64_t offset, uint64_t size, int mode)>;
+  ReadDataFn* read_model_fn;
+#endif  // __EMSCRIPTEN__
 
   // Path to the vision encoder to use for vision modality. Optional.
   const char* vision_encoder_path;
@@ -71,6 +112,9 @@ typedef struct {
 
   // Maximum number of tokens for input and output.
   size_t max_num_tokens;
+
+  // Maximum number of images to be used for vision modality.
+  size_t max_num_images;
 
   // Number of decode steps per sync. Used by GPU only. The default value is 3.
   size_t num_decode_steps_per_sync;
@@ -110,7 +154,31 @@ typedef struct {
 
   // Whether the submodel should be used if available.
   bool use_submodel;
+
+  // Optional setting to prefer specific backend instead.
+  LlmPreferredBackend preferred_backend;
 } LlmModelSettings;
+
+// LlmPromptTemplates defines the prompt templates for the session.
+typedef struct {
+  // The prompt prefix for the user role.
+  const char* user_prefix;
+
+  // The prompt suffix for the user role.
+  const char* user_suffix;
+
+  // The prompt prefix for the model role.
+  const char* model_prefix;
+
+  // The prompt suffix for the model role.
+  const char* model_suffix;
+
+  // The prompt prefix for the system role.
+  const char* system_prefix;
+
+  // The prompt suffix for the system role.
+  const char* system_suffix;
+} LlmPromptTemplates;
 
 // LlmSessionConfig configures how to execute the model.
 typedef struct {
@@ -138,12 +206,35 @@ typedef struct {
 
   // Whether to configure the graph to include the vision modality.
   bool enable_vision_modality;
+
+  // Prompt templates to use for the session.
+  // If not provided, the default prompt templates will be used.
+  const LlmPromptTemplates* prompt_templates;
 } LlmSessionConfig;
+
+// The config used to update the runtime behavior of the session.
+typedef struct {
+  // Top K number of tokens to be sampled from for each decoding step.
+  size_t* topk;
+
+  // Maximum cumulative probability over the tokens to sample from in each
+  // decoding step for top-p / nucleus sampling.
+  float* topp;
+
+  // Randomness when decoding the next token, 0.0f means greedy decoding.
+  float* temperature;
+
+  // random seed, for reproducible sampling.
+  size_t* random_seed;
+
+  // The constraint to use for the session.
+  Constraint* constraint;
+} SessionRuntimeConfig;
 
 // LlmResponseContext is the return type for
 // LlmInferenceEngine_Session_PredictSync.
 typedef struct {
-  // An array of string. The size of the array depends on the number of
+  // An array of strings. The size of the array depends on the number of
   // responses.
   char** response_array;
 
@@ -163,7 +254,13 @@ ODML_EXPORT int LlmInferenceEngine_CreateEngine(
     const LlmModelSettings* model_settings,
     LlmInferenceEngine_Engine** engine_out, char** error_msg);
 
-// Free the engine, will wait until graph is done executing.
+// Returns the SentencePieceProcessor handle used by the engine.
+ODML_EXPORT int LlmInferenceEngine_GetSentencePieceProcessor(
+    LlmInferenceEngine_Engine* engine,
+    const SentencePieceProcessor** processor_out, char** error_msg);
+
+// Free the engine, will release ownership of resource held by the engine.
+// Resource might be freed if no sessions are referencing to it.
 ODML_EXPORT void LlmInferenceEngine_Engine_Delete(
     LlmInferenceEngine_Engine* engine);
 
@@ -172,8 +269,13 @@ ODML_EXPORT int LlmInferenceEngine_CreateSession(
     LlmInferenceEngine_Engine* engine, const LlmSessionConfig* session_config,
     LlmInferenceEngine_Session** session_out, char** error_msg);
 
+// Update the runtime config for the session.
+ODML_EXPORT int LlmInferenceEngine_UpdateRuntimeConfig(
+    LlmInferenceEngine_Session* session,
+    const SessionRuntimeConfig* runtime_config, char** error_msg);
+
 // Free the session, will wait until graph is done executing.
-ODML_EXPORT void LlmInferenceEngine_Session_Delete(
+ODML_EXPORT int LlmInferenceEngine_Session_Delete(
     LlmInferenceEngine_Session* session);
 
 // Add query chunk to the session. This can be called multiple times to add
@@ -205,6 +307,10 @@ ODML_EXPORT int LlmInferenceEngine_Session_PredictAsync(
     char** error_msg,
     void (*callback)(void* callback_context,
                      LlmResponseContext* response_context));
+
+// Request cancellation for pending processes.
+ODML_EXPORT int LlmInferenceEngine_Session_PendingProcessCancellation(
+    LlmInferenceEngine_Session* session, char** error_msg);
 
 // Clone the provided session.
 ODML_EXPORT int LlmInferenceEngine_Session_Clone(

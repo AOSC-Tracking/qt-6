@@ -9,6 +9,7 @@
 #include "base/json/values_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -40,6 +41,7 @@
 #include "content/public/test/web_contents_tester.h"
 #include "content/test/test_render_view_host.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
+#include "services/network/public/cpp/features.h"
 #include "third_party/blink/public/mojom/browsing_topics/browsing_topics.mojom.h"
 
 namespace browsing_topics {
@@ -183,7 +185,7 @@ class BrowsingTopicsServiceImplTest
     // during tests where expiration is irrelevant.
     scoped_feature_list_.InitWithFeaturesAndParameters(
         /*enabled_features=*/
-        {{blink::features::kBrowsingTopics, {}},
+        {{network::features::kBrowsingTopics, {}},
          {blink::features::kBrowsingTopicsParameters,
           {{"time_period_per_epoch",
             base::StrCat({base::NumberToString(kEpoch.InSeconds()), "s"})},
@@ -212,6 +214,7 @@ class BrowsingTopicsServiceImplTest
     tracking_protection_settings_ =
         std::make_unique<privacy_sandbox::TrackingProtectionSettings>(
             &prefs_, host_content_settings_map_.get(),
+            /*management_service=*/nullptr,
             /*is_incognito=*/false);
     cookie_settings_ = base::MakeRefCounted<content_settings::CookieSettings>(
         host_content_settings_map_.get(), &prefs_,
@@ -462,7 +465,7 @@ TEST_F(BrowsingTopicsServiceImplTest,
   scoped_feature_list_.Reset();
   scoped_feature_list_.InitWithFeaturesAndParameters(
       /*enabled_features=*/
-      {{blink::features::kBrowsingTopics, {}},
+      {{network::features::kBrowsingTopics, {}},
        {blink::features::kBrowsingTopicsParameters,
         {{"epoch_retention_duration",
           base::StrCat(
@@ -1506,7 +1509,7 @@ TEST_F(BrowsingTopicsServiceImplTest,
   scoped_feature_list_.Reset();
   scoped_feature_list_.InitWithFeaturesAndParameters(
       /*enabled_features=*/
-      {{blink::features::kBrowsingTopics, {}},
+      {{network::features::kBrowsingTopics, {}},
        {blink::features::kBrowsingTopicsParameters,
         {{"time_period_per_epoch",
           base::StrCat({base::NumberToString(kEpoch.InSeconds()), "s"})},
@@ -2738,7 +2741,7 @@ TEST_F(BrowsingTopicsServiceImplTest, BlockTopicWithFinch) {
   scoped_feature_list_.Reset();
   scoped_feature_list_.InitWithFeaturesAndParameters(
       /*enabled_features=*/
-      {{blink::features::kBrowsingTopics, {}},
+      {{network::features::kBrowsingTopics, {}},
        {blink::features::kBrowsingTopicsParameters,
         {{"time_period_per_epoch",
           base::StrCat({base::NumberToString(kEpoch.InSeconds()), "s"})},

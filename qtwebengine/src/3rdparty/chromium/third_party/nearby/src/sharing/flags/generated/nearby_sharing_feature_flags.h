@@ -70,12 +70,6 @@ constexpr auto kShowAutoUpdateSetting =
 // When true, use gRpc client to access backend.
 constexpr auto kUseGrpcClient =
     flags::Flag<bool>(kConfigPackage, "45630055", false);
-// When true, call the 3P Nearby Identity API instead of the 1P private API
-constexpr auto kCallNearbyIdentityApi =
-    flags::Flag<bool>(kConfigPackage, "45667328", false);
-// When true, dedup in UnregisterShareTarget.
-constexpr auto kDedupInUnregisterShareTarget =
-    flags::Flag<bool>(kConfigPackage, "45664277", false);
 // When true, delete the file payload which received unexpectedly.
 constexpr auto kDeleteUnexpectedReceivedFileFix =
     flags::Flag<bool>(kConfigPackage, "45657036", false);
@@ -92,6 +86,9 @@ constexpr auto kHonor3PClientIdAndSecret =
 // receive disabled state after a transfer.
 constexpr auto kUnregisterTargetDiscoveryCacheLostExpiryMs =
     flags::Flag<int64_t>(kConfigPackage, "45663103", 10000);
+// When true, enable alternate BLE service UUID for discovery.
+constexpr auto kUseAlternateServiceUuidForDiscovery =
+    flags::Flag<bool>(kConfigPackage, "45683539", false);
 // Enable/disable QR Code UI
 constexpr auto kEnableQrCodeUi =
     flags::Flag<bool>(kConfigPackage, "45417647", false);
@@ -104,12 +101,15 @@ constexpr auto kUpdateTrack =
 // Timeout between displays of the conflict banner.
 constexpr auto kConflictBannerTimeout =
     flags::Flag<int64_t>(kConfigPackage, "45668886", 604800);
+// Enable a persistent BETA label.
+constexpr auto kEnableBetaLabel =
+    flags::Flag<bool>(kConfigPackage, "45662570", true);
 // Enable the info banner to display duplicate Quick Share apps.
 constexpr auto kEnableConflictBanner =
     flags::Flag<bool>(kConfigPackage, "45661130", false);
-// Enable a persistent BETA label.
-constexpr auto kEnableMacosBetaLabel =
-    flags::Flag<bool>(kConfigPackage, "45662570", true);
+// When true, enables UI experiments.
+constexpr auto kEnableUiExperiments =
+    flags::Flag<bool>(kConfigPackage, "45678202", false);
 
 inline absl::btree_map<int, const flags::Flag<bool>&> GetBoolFlags() {
   return {
@@ -124,15 +124,15 @@ inline absl::btree_map<int, const flags::Flag<bool>&> GetBoolFlags() {
       {45411353, kSenderSkipsConfirmation},
       {45409033, kShowAutoUpdateSetting},
       {45630055, kUseGrpcClient},
-      {45667328, kCallNearbyIdentityApi},
-      {45664277, kDedupInUnregisterShareTarget},
       {45657036, kDeleteUnexpectedReceivedFileFix},
       {45673628, kEnableWifiHotspotForHpRealtekDevices},
       {45665616, kHonor3PClientIdAndSecret},
+      {45683539, kUseAlternateServiceUuidForDiscovery},
       {45417647, kEnableQrCodeUi},
       {45410558, kShowAdminModeWarning},
+      {45662570, kEnableBetaLabel},
       {45661130, kEnableConflictBanner},
-      {45662570, kEnableMacosBetaLabel},
+      {45678202, kEnableUiExperiments},
   };
 }
 

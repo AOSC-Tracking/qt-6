@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwasmcssstyle.h"
 
@@ -229,6 +230,14 @@ const char *Style = R"css(
     overflow: hidden;
     padding: 0;
     position: absolute;
+}
+
+.hidden-drag-image {
+    visibility: visible;
+    display: block;
+    opacity: 1.0;
+    position: absolute;
+    z-index: -1;
 }
 
 )css";

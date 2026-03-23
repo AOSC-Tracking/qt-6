@@ -96,6 +96,7 @@ LocalHeap::LocalHeap(Heap* heap, ThreadKind kind,
     Isolate::SetCurrent(heap_->isolate());
     LocalHeap::SetCurrent(this);
   }
+  stack_.SetScanSimulatorCallback(Isolate::IterateRegistersAndStackOfSimulator);
 }
 
 LocalHeap::~LocalHeap() {
@@ -462,6 +463,13 @@ void LocalHeap::RemoveGCEpilogueCallback(GCEpilogueCallback* callback,
                                          void* data) {
   DCHECK(IsRunning());
   gc_epilogue_callbacks_.Remove(callback, data);
+}
+
+void LocalHeap::Iterate(RootVisitor* visitor) {
+  handles_->Iterate(visitor);
+  for (GCRootsProvider* provider : roots_providers_) {
+    provider->Iterate(visitor);
+  }
 }
 
 void LocalHeap::InvokeGCEpilogueCallbacksInSafepoint(

@@ -21,6 +21,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cinttypes>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -48,6 +49,7 @@
 #include "perfetto/ext/base/getopt.h"  // IWYU pragma: keep
 #include "perfetto/ext/base/scoped_file.h"
 #include "perfetto/ext/base/scoped_mmap.h"
+#include "perfetto/ext/base/status_macros.h"
 #include "perfetto/ext/base/status_or.h"
 #include "perfetto/ext/base/string_splitter.h"
 #include "perfetto/ext/base/string_utils.h"
@@ -69,7 +71,6 @@
 #include "src/trace_processor/read_trace_internal.h"
 #include "src/trace_processor/rpc/stdiod.h"
 #include "src/trace_processor/util/sql_modules.h"
-#include "src/trace_processor/util/status_macros.h"
 
 #include "protos/perfetto/trace_processor/trace_processor.pbzero.h"
 
@@ -330,7 +331,7 @@ class ErrorPrinter : public google::protobuf::io::ErrorCollector {
   }
 };
 
-// This function returns an indentifier for a metric suitable for use
+// This function returns an identifier for a metric suitable for use
 // as an SQL table name (i.e. containing no forward or backward slashes).
 std::string BaseName(std::string metric_path) {
   std::replace(metric_path.begin(), metric_path.end(), '\\', '/');
@@ -584,7 +585,7 @@ base::Status RunQueriesAndPrintResult(const std::string& sql_query,
   if (prev_with_output > 0) {
     return base::ErrStatus(
         "Result rows were returned for multiples queries. Ensure that only the "
-        "final statement is a SELECT statment or use `suppress_query_output` "
+        "final statement is a SELECT statement or use `suppress_query_output` "
         "to prevent function invocations causing this "
         "error (see "
         "https://perfetto.dev/docs/contributing/"
@@ -697,6 +698,8 @@ struct CommandLineOptions {
 
   bool enable_httpd = false;
   std::string port_number;
+  std::string listen_ip;
+  std::vector<std::string> additional_cors_origins;
   bool enable_stdiod = false;
   bool launch_shell = false;
 
@@ -705,10 +708,12 @@ struct CommandLineOptions {
 
   std::string query_file_path;
   std::string query_string;
-  std::string sql_module_path;
-  std::vector<std::string> override_sql_module_paths;
+  std::vector<std::string> sql_package_paths;
+  std::vector<std::string> override_sql_package_paths;
 
-  std::string compute_metrics_v2;
+  bool summary = false;
+  std::string summary_metrics_v2;
+  std::string summary_metadata_query;
   std::vector<std::string> summary_specs;
   std::string summary_output;
 
@@ -748,10 +753,17 @@ General purpose:
 Behavioural:
  -D, --httpd                          Enables the HTTP RPC server.
  --http-port PORT                     Specify what port to run HTTP RPC server.
+ --http-ip-address ip                 Specify what ip address to run HTTP RPC server.
+ --http-additional-cors-origins origin1,origin2,...
+                                      Specify a comma-separated list of
+                                      additional CORS allowed origins for the
+                                      HTTP RPC server. These are in addition to
+                                      the default origins: [https://ui.perfetto.dev,
+                                      http://localhost:10000, http://127.0.0.1:10000]
  --stdiod                             Enables the stdio RPC server.
  -i, --interactive                    Starts interactive mode even after
                                       executing some other commands (-q, -Q,
-                                      --run-metrics, --compute-metrics-v2).
+                                      --run-metrics, --summary).
 
 Parsing:
  --full-sort                          Forces the trace processor into performing
@@ -772,24 +784,35 @@ PerfettoSQL:
                                       If used with --run-metrics, the query is
                                       executed after the selected metrics and
                                       the metrics output is suppressed.
- --add-sql-module PACKAGE_PATH         Files from the directory will be treated
+ --add-sql-package PACKAGE_PATH       Files from the directory will be treated
                                       as a new SQL package and can be used for
                                       INCLUDE PERFETTO MODULE statements. The
-                                      name of the directory is the module name.
- --override-sql-module PACKAGE_PATH   Will override trace processor package with
+                                      name of the directory is the package name.
+ --override-sql-package PACKAGE_PATH  Will override trace processor package with
                                       passed contents. The outer directory will
                                       specify the package name.
 
 Trace summarization:
-  --compute-metrics-v2 ID1,ID2,ID3    Computes all v2 trace-based metrics
-                                      with the given, comma separated list of
-                                      metric ids. The spec for every metric must
+  --summary                           Enables the trace summarization features of
+                                      trace processor. Required for any flags
+                                      starting with --summary-* to be meaningful.
+                                      --summary-format can be used to control the
+                                      output format.
+  --summary-metrics-v2 ID1,ID2,ID3    Specifies that the given v2 metrics (as
+                                      defined by a comma separated set of ids)
+                                      should be computed and returned as part of
+                                      the trace summary. The spec for every metric
+                                      must exist in one of the files passed to
+                                      --summary-spec. Specify `all` to execute all
+                                      available v2 metrics.
+  --summary-metadata-query ID         Specifies that the given query id should be
+                                      used to populate the `metadata` field of the
+                                      trace summary. The spec for the query must
                                       exist in one of the files passed to
-                                      --summary-spec. --summary-format can be
-                                      used to control the output format.
+                                      --summary-spec.
   --summary-spec SUMMARY_PATH         Parses the spec at the specified path and
-                                      makes it available to other summarization
-                                      operators (--compute-metrics-v2). Spec
+                                      makes it available to all summarization
+                                      operators (--summary-metrics-v2). Spec
                                       files must be instances of the
                                       perfetto.protos.TraceSummarySpec proto.
                                       If the file extension is `.textproto` then
@@ -849,11 +872,17 @@ Advanced:
                                       passed contents. The outer directory will
                                       be ignored. Only allowed when --dev is
                                       specified.
+ --add-sql-module PACKAGE_PATH        Alias for --add-sql-package, kept for
+                                      backwards compatibility. Prefer
+                                      --add-sql-package.
+ --override-sql-module PACKAGE_PATH   Alias for --override-sql-package, kept for
+                                      backwards compatibility. Prefer
+                                      --override-sql-package.
 
 Metrics (v1):
 
   NOTE: the trace-based metrics system has been "soft" deprecated. Specifically,
-  all exisiting metrics will continue functioning but we will not be building
+  all existing metrics will continue functioning but we will not be building
   any new features nor developing any metrics there further. Please use the
   metrics v2 system as part of trace summarization.
 
@@ -882,15 +911,19 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
   CommandLineOptions command_line_options;
   enum LongOption {
     OPT_HTTP_PORT = 1000,
+    OPT_HTTP_IP,
+    OPT_HTTP_ADDITIONAL_CORS_ORIGINS,
     OPT_STDIOD,
 
     OPT_FORCE_FULL_SORT,
     OPT_NO_FTRACE_RAW,
 
-    OPT_ADD_SQL_MODULE,
-    OPT_OVERRIDE_SQL_MODULE,
+    OPT_ADD_SQL_PACKAGE,
+    OPT_OVERRIDE_SQL_PACKAGE,
 
-    OPT_COMPUTE_METRICS_V2,
+    OPT_SUMMARY,
+    OPT_SUMMARY_METRICS_V2,
+    OPT_SUMMARY_METADATA_QUERY,
     OPT_SUMMARY_SPEC,
     OPT_SUMMARY_FORMAT,
 
@@ -917,6 +950,9 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
 
       {"httpd", no_argument, nullptr, 'D'},
       {"http-port", required_argument, nullptr, OPT_HTTP_PORT},
+      {"http-ip-address", required_argument, nullptr, OPT_HTTP_IP},
+      {"http-additional-cors-origins", required_argument, nullptr,
+       OPT_HTTP_ADDITIONAL_CORS_ORIGINS},
       {"stdiod", no_argument, nullptr, OPT_STDIOD},
       {"interactive", no_argument, nullptr, 'i'},
 
@@ -925,12 +961,18 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
 
       {"query-file", required_argument, nullptr, 'q'},
       {"query-string", required_argument, nullptr, 'Q'},
-      {"add-sql-module", required_argument, nullptr, OPT_ADD_SQL_MODULE},
+      {"add-sql-module", required_argument, nullptr, OPT_ADD_SQL_PACKAGE},
+      {"add-sql-package", required_argument, nullptr, OPT_ADD_SQL_PACKAGE},
       {"override-sql-module", required_argument, nullptr,
-       OPT_OVERRIDE_SQL_MODULE},
+       OPT_OVERRIDE_SQL_PACKAGE},
+      {"override-sql-package", required_argument, nullptr,
+       OPT_OVERRIDE_SQL_PACKAGE},
 
-      {"compute-metrics-v2", required_argument, nullptr,
-       OPT_COMPUTE_METRICS_V2},
+      {"summary", no_argument, nullptr, OPT_SUMMARY},
+      {"summary-metrics-v2", required_argument, nullptr,
+       OPT_SUMMARY_METRICS_V2},
+      {"summary-metadata-query", required_argument, nullptr,
+       OPT_SUMMARY_METADATA_QUERY},
       {"summary-spec", required_argument, nullptr, OPT_SUMMARY_SPEC},
       {"summary-format", required_argument, nullptr, OPT_SUMMARY_FORMAT},
 
@@ -1009,6 +1051,17 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
       continue;
     }
 
+    if (option == OPT_HTTP_IP) {
+      command_line_options.listen_ip = optarg;
+      continue;
+    }
+
+    if (option == OPT_HTTP_ADDITIONAL_CORS_ORIGINS) {
+      command_line_options.additional_cors_origins =
+          base::SplitString(optarg, ",");
+      continue;
+    }
+
     if (option == OPT_STDIOD) {
       command_line_options.enable_stdiod = true;
       continue;
@@ -1071,13 +1124,13 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
       continue;
     }
 
-    if (option == OPT_ADD_SQL_MODULE) {
-      command_line_options.sql_module_path = optarg;
+    if (option == OPT_ADD_SQL_PACKAGE) {
+      command_line_options.sql_package_paths.emplace_back(optarg);
       continue;
     }
 
-    if (option == OPT_OVERRIDE_SQL_MODULE) {
-      command_line_options.override_sql_module_paths.emplace_back(optarg);
+    if (option == OPT_OVERRIDE_SQL_PACKAGE) {
+      command_line_options.override_sql_package_paths.emplace_back(optarg);
       continue;
     }
 
@@ -1116,8 +1169,18 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
       continue;
     }
 
-    if (option == OPT_COMPUTE_METRICS_V2) {
-      command_line_options.compute_metrics_v2 = optarg;
+    if (option == OPT_SUMMARY) {
+      command_line_options.summary = true;
+      continue;
+    }
+
+    if (option == OPT_SUMMARY_METRICS_V2) {
+      command_line_options.summary_metrics_v2 = optarg;
+      continue;
+    }
+
+    if (option == OPT_SUMMARY_METADATA_QUERY) {
+      command_line_options.summary_metadata_query = optarg;
       continue;
     }
 
@@ -1140,7 +1203,7 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
                                command_line_options.query_file_path.empty() &&
                                command_line_options.query_string.empty() &&
                                command_line_options.export_file_path.empty() &&
-                               command_line_options.compute_metrics_v2.empty());
+                               !command_line_options.summary);
 
   // Only allow non-interactive queries to emit perf data.
   if (!command_line_options.perf_file_path.empty() &&
@@ -1149,9 +1212,9 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
     exit(1);
   }
 
-  if (!command_line_options.compute_metrics_v2.empty() &&
+  if (command_line_options.summary &&
       !command_line_options.metric_v1_names.empty()) {
-    PERFETTO_ELOG("Cannot specify both metrics v1 and v2 computation");
+    PERFETTO_ELOG("Cannot specify both metrics v1 and trace summarization");
     exit(1);
   }
 
@@ -1189,7 +1252,6 @@ base::Status LoadTrace(const std::string& trace_file_path, double* size_mb) {
         *size_mb = static_cast<double>(parsed_size) / 1E6;
         fprintf(stderr, "\rLoading trace: %.2f MB\r", *size_mb);
       });
-  g_tp->Flush();
   if (!read_status.ok()) {
     return base::ErrStatus("Could not read trace file (path: %s): %s",
                            trace_file_path.c_str(), read_status.c_message());
@@ -1200,6 +1262,7 @@ base::Status LoadTrace(const std::string& trace_file_path, double* size_mb) {
                                       getenv("PERFETTO_SYMBOLIZER_MODE"));
 
   if (symbolizer) {
+    g_tp->Flush();
     profiling::SymbolizeDatabase(
         g_tp, symbolizer.get(), [](const std::string& trace_proto) {
           std::unique_ptr<uint8_t[]> buf(new uint8_t[trace_proto.size()]);
@@ -1211,11 +1274,11 @@ base::Status LoadTrace(const std::string& trace_file_path, double* size_mb) {
             return;
           }
         });
-    g_tp->Flush();
   }
 
   auto maybe_map = profiling::GetPerfettoProguardMapPath();
   if (!maybe_map.empty()) {
+    g_tp->Flush();
     profiling::ReadProguardMapsToDeobfuscationPackets(
         maybe_map, [](const std::string& trace_proto) {
           std::unique_ptr<uint8_t[]> buf(new uint8_t[trace_proto.size()]);
@@ -1310,7 +1373,7 @@ base::Status ParseMetricExtensionPaths(
   return CheckForDuplicateMetricExtension(metric_extensions);
 }
 
-base::Status IncludeSqlModule(std::string root, bool allow_override) {
+base::Status IncludeSqlPackage(std::string root, bool allow_override) {
   // Remove trailing slash
   if (root.back() == '/')
     root = root.substr(0, root.length() - 1);
@@ -1318,30 +1381,39 @@ base::Status IncludeSqlModule(std::string root, bool allow_override) {
   if (!base::FileExists(root))
     return base::ErrStatus("Directory %s does not exist.", root.c_str());
 
-  // Get module name
+  // Get package name
   size_t last_slash = root.rfind('/');
-  if ((last_slash == std::string::npos) ||
-      (root.find('.') != std::string::npos))
-    return base::ErrStatus("Module path must point to the directory: %s",
+  if (last_slash == std::string::npos) {
+    return base::ErrStatus("Package path must point to a directory: %s",
                            root.c_str());
+  }
 
-  std::string module_name = root.substr(last_slash + 1);
+  std::string package_name = root.substr(last_slash + 1);
 
   std::vector<std::string> paths;
   RETURN_IF_ERROR(base::ListFilesRecursive(root, paths));
   sql_modules::NameToPackage modules;
   for (const auto& path : paths) {
-    if (base::GetFileExtension(path) != ".sql")
+    if (base::GetFileExtension(path) != ".sql") {
       continue;
+    }
+
+    std::string path_no_extension = path.substr(0, path.rfind('.'));
+    if (path_no_extension.find('.') != std::string_view::npos) {
+      PERFETTO_ELOG("Skipping module %s as it contains a dot in its path.",
+                    path_no_extension.c_str());
+      continue;
+    }
 
     std::string filename = root + "/" + path;
     std::string file_contents;
-    if (!base::ReadFile(filename, &file_contents))
+    if (!base::ReadFile(filename, &file_contents)) {
       return base::ErrStatus("Cannot read file %s", filename.c_str());
+    }
 
     std::string import_key =
-        module_name + "." + sql_modules::GetIncludeKey(path);
-    modules.Insert(module_name, {})
+        package_name + "." + sql_modules::GetIncludeKey(path);
+    modules.Insert(package_name, {})
         .first->push_back({import_key, file_contents});
   }
   for (auto module_it = modules.GetIterator(); module_it; ++module_it) {
@@ -1670,7 +1742,7 @@ base::Status MaybeWriteMetatrace(const std::string& metatrace_path) {
   return base::OkStatus();
 }
 
-base::Status MaybeUpdateSqlModules(const CommandLineOptions& options) {
+base::Status MaybeUpdateSqlPackages(const CommandLineOptions& options) {
   if (!options.override_stdlib_path.empty()) {
     if (!options.dev)
       return base::ErrStatus("Overriding stdlib requires --dev flag");
@@ -1681,20 +1753,23 @@ base::Status MaybeUpdateSqlModules(const CommandLineOptions& options) {
                              status.c_message());
   }
 
-  if (!options.override_sql_module_paths.empty()) {
-    for (const auto& override_sql_module_path :
-         options.override_sql_module_paths) {
-      auto status = IncludeSqlModule(override_sql_module_path, true);
+  if (!options.override_sql_package_paths.empty()) {
+    for (const auto& override_sql_package_path :
+         options.override_sql_package_paths) {
+      auto status = IncludeSqlPackage(override_sql_package_path, true);
       if (!status.ok())
-        return base::ErrStatus("Couldn't override stdlib module: %s",
+        return base::ErrStatus("Couldn't override stdlib package: %s",
                                status.c_message());
     }
   }
 
-  if (!options.sql_module_path.empty()) {
-    auto status = IncludeSqlModule(options.sql_module_path, false);
-    if (!status.ok())
-      return base::ErrStatus("Couldn't add SQL module: %s", status.c_message());
+  if (!options.sql_package_paths.empty()) {
+    for (const auto& add_sql_package_path : options.sql_package_paths) {
+      auto status = IncludeSqlPackage(add_sql_package_path, false);
+      if (!status.ok())
+        return base::ErrStatus("Couldn't add SQL package: %s",
+                               status.c_message());
+    }
   }
   return base::OkStatus();
 }
@@ -1733,13 +1808,13 @@ TraceSummarySpecBytes::Format GuessSummarySpecFormat(
   return TraceSummarySpecBytes::Format::kBinaryProto;
 }
 
-TraceSummaryOutputFormat GetSummaryOutputFormat(
+TraceSummaryOutputSpec::Format GetSummaryOutputFormat(
     const CommandLineOptions& options) {
   if (options.summary_output == "text" || options.summary_output == "") {
-    return TraceSummaryOutputFormat::kTextProto;
+    return TraceSummaryOutputSpec::Format::kTextProto;
   }
   if (options.summary_output == "binary") {
-    return TraceSummaryOutputFormat::kBinaryProto;
+    return TraceSummaryOutputSpec::Format::kBinaryProto;
   }
   PERFETTO_ELOG("Unknown summary output format %s",
                 options.summary_output.c_str());
@@ -1787,7 +1862,7 @@ base::Status TraceProcessorMain(int argc, char** argv) {
   std::unique_ptr<TraceProcessor> tp = TraceProcessor::CreateInstance(config);
   g_tp = tp.get();
 
-  RETURN_IF_ERROR(MaybeUpdateSqlModules(options));
+  RETURN_IF_ERROR(MaybeUpdateSqlPackages(options));
 
   // Enable metatracing as soon as possible.
   if (!options.metatrace_path.empty()) {
@@ -1842,8 +1917,8 @@ base::Status TraceProcessorMain(int argc, char** argv) {
     RETURN_IF_ERROR(RunQueriesFromFile(options.pre_metrics_v1_path, false));
   }
 
-  // v2 metrics.
-  if (!options.compute_metrics_v2.empty()) {
+  // Trace summarization
+  if (options.summary) {
     PERFETTO_CHECK(options.metric_v1_names.empty());
 
     std::vector<std::string> spec_content;
@@ -1866,10 +1941,28 @@ base::Status TraceProcessorMain(int argc, char** argv) {
       });
     }
 
+    TraceSummaryComputationSpec computation_config;
+
+    if (options.summary_metrics_v2.empty()) {
+      computation_config.v2_metric_ids = std::vector<std::string>();
+    } else if (base::CaseInsensitiveEqual(options.summary_metrics_v2, "all")) {
+      computation_config.v2_metric_ids = std::nullopt;
+    } else {
+      computation_config.v2_metric_ids =
+          base::SplitString(options.summary_metrics_v2, ",");
+    }
+
+    computation_config.metadata_query_id =
+        options.summary_metadata_query.empty()
+            ? std::nullopt
+            : std::make_optional(options.summary_metadata_query);
+
+    TraceSummaryOutputSpec output_spec;
+    output_spec.format = GetSummaryOutputFormat(options);
+
     std::vector<uint8_t> output;
-    RETURN_IF_ERROR(g_tp->ComputeV2Metrics(
-        specs, &output, GetSummaryOutputFormat(options),
-        base::SplitString(options.compute_metrics_v2, ",")));
+    RETURN_IF_ERROR(
+        g_tp->Summarize(computation_config, specs, &output, output_spec));
     if (options.query_file_path.empty()) {
       fwrite(output.data(), sizeof(char), output.size(), stdout);
     }
@@ -1878,7 +1971,7 @@ base::Status TraceProcessorMain(int argc, char** argv) {
   // v1 metrics.
   std::vector<MetricNameAndPath> metrics;
   if (!options.metric_v1_names.empty()) {
-    PERFETTO_CHECK(options.compute_metrics_v2.empty());
+    PERFETTO_CHECK(!options.summary);
     RETURN_IF_ERROR(LoadMetrics(options.metric_v1_names, pool, metrics));
   }
 
@@ -1928,7 +2021,12 @@ base::Status TraceProcessorMain(int argc, char** argv) {
 #endif
 
 #if PERFETTO_BUILDFLAG(PERFETTO_TP_HTTPD)
-    RunHttpRPCServer(std::move(tp), options.port_number);
+    RunHttpRPCServer(
+        /*preloaded_instance=*/std::move(tp),
+        /*is_preloaded_eof=*/!options.trace_file_path.empty(),
+        /*listen_ip=*/options.listen_ip,
+        /*port_number=*/options.port_number,
+        /*additional_cors_origins=*/options.additional_cors_origins);
     PERFETTO_FATAL("Should never return");
 #else
     PERFETTO_FATAL("HTTP not available");
@@ -1936,7 +2034,7 @@ base::Status TraceProcessorMain(int argc, char** argv) {
   }
 
   if (options.enable_stdiod) {
-    return RunStdioRpcServer(std::move(tp));
+    return RunStdioRpcServer(std::move(tp), !options.trace_file_path.empty());
   }
 
   if (options.launch_shell) {

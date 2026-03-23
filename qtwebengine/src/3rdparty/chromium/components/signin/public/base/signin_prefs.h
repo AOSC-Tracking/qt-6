@@ -110,6 +110,31 @@ class SigninPrefs {
   void IncrementAutofillSigninPromoDismissCount(const GaiaId& gaia_id);
   int GetAutofillSigninPromoDismissCount(const GaiaId& gaia_id) const;
 
+  void SetExtensionsExplicitBrowserSignin(const GaiaId& gaia_id, bool enabled);
+  bool GetExtensionsExplicitBrowserSignin(const GaiaId& gaia_id) const;
+
+  void SetBookmarksExplicitBrowserSignin(const GaiaId& gaia_id, bool enabled);
+  bool GetBookmarksExplicitBrowserSignin(const GaiaId& gaia_id) const;
+
+  // History Sync experiment promo on the avatar button.
+  void IncrementHistorySyncPromoIdentityPillShownCount(const GaiaId& gaia_id);
+  int GetHistorySyncPromoIdentityPillShownCount(const GaiaId& gaia_id) const;
+  void IncrementHistorySyncPromoIdentityPillUsedCount(const GaiaId& gaia_id);
+  int GetHistorySyncPromoIdentityPillUsedCount(const GaiaId& gaia_id) const;
+  // Sync promo on the avatar button.
+  void IncrementSyncPromoIdentityPillShownCount(const GaiaId& gaia_id);
+  int GetSyncPromoIdentityPillShownCount(const GaiaId& gaia_id) const;
+  void IncrementSyncPromoIdentityPillUsedCount(const GaiaId& gaia_id);
+  int GetSyncPromoIdentityPillUsedCount(const GaiaId& gaia_id) const;
+
+  // Updates the dismiss count of the promo and last time it was dismissed.
+  void IncrementBookmarkBatchUploadPromoDismissCountWithLastTime(
+      const GaiaId& gaia_id);
+  // Returns the number of time the promo was dismissed and the last time it was
+  // dismissed.
+  std::pair<int, std::optional<base::Time>>
+  GetBookmarkBatchUploadPromoDismissCountWithLastTime(const GaiaId& gaia_id);
+
   // Note: `callback` will be notified on every change in the main dictionary
   // and sub-dictionries (account dictionaries).
   static void ObserveSigninPrefsChanges(PrefChangeRegistrar& registrar,
@@ -134,6 +159,16 @@ class SigninPrefs {
   // Gets any specified `pref` of type int for the given `gaia_id`.
   // Returns 0 if the corresponding `pref` doesn't exist for `gaia_id`.
   int GetIntPrefForAccount(const GaiaId& gaia_id, std::string_view pref) const;
+
+  // Sets any specified `pref` of type bool for the given `gaia_id` to
+  // `enabled`.
+  void SetBooleanPrefForAccount(const GaiaId& gaia_id,
+                                std::string_view pref,
+                                bool enabled);
+  // Gets any specified `pref` of type bool for the given `gaia_id`.
+  // Returns false if the corresponding `pref` doesn't exist for `gaia_id`.
+  bool GetBooleanPrefForAccount(const GaiaId& gaia_id,
+                                std::string_view pref) const;
 
   // Time pref related, returns by default std::nullopt if the pref is not
   // created yet for the given `gaia_id`.

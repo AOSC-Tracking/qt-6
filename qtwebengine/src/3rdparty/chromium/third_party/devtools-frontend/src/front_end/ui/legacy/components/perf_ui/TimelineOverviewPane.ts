@@ -27,9 +27,11 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../../../core/common/common.js';
 import * as Trace from '../../../../models/trace/trace.js';
+import * as TraceBounds from '../../../../services/trace_bounds/trace_bounds.js';
 import * as VisualLoggging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
 import * as ThemeSupport from '../../theme_support/theme_support.js';
@@ -44,17 +46,19 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
   private readonly overviewGrid: OverviewGrid;
   private readonly cursorArea: HTMLElement;
   private cursorElement: HTMLElement;
-  private overviewControls: TimelineOverview[];
-  private markers: Map<number, HTMLDivElement>;
+  private overviewControls: TimelineOverview[] = [];
+  private markers = new Map<number, HTMLDivElement>();
   private readonly overviewInfo: OverviewInfo;
-  private readonly updateThrottler: Common.Throttler.Throttler;
-  private cursorEnabled: boolean;
-  private cursorPosition: number;
-  private lastWidth: number;
-  private windowStartTime: number;
-  private windowEndTime: number;
-  private muteOnWindowChanged: boolean;
+  private readonly updateThrottler = new Common.Throttler.Throttler(100);
+  private cursorEnabled = false;
+  private cursorPosition = 0;
+  private lastWidth = 0;
+  private windowStartTime = Trace.Types.Timing.Milli(0);
+  private windowEndTime = Trace.Types.Timing.Milli(Infinity);
+  private muteOnWindowChanged = false;
+  private hasPointer = false;
   #dimHighlightSVG: Element;
+  readonly #boundOnThemeChanged = this.#onThemeChanged.bind(this);
 
   constructor(prefix: string) {
     super();
@@ -67,26 +71,18 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
     this.element.appendChild(this.overviewGrid.element);
     this.cursorArea = this.overviewGrid.element.createChild('div', 'overview-grid-cursor-area');
     this.cursorElement = this.overviewGrid.element.createChild('div', 'overview-grid-cursor-position');
-    this.cursorArea.addEventListener('mousemove', this.onMouseMove.bind(this), true);
-    this.cursorArea.addEventListener('mouseleave', this.hideCursor.bind(this), true);
+    this.cursorArea.addEventListener('pointerdown', this.onMouseDown.bind(this), true);
+    this.cursorArea.addEventListener('pointerup', this.onMouseCancel.bind(this), true);
+    this.cursorArea.addEventListener('pointercancel', this.onMouseCancel.bind(this), true);
+    this.cursorArea.addEventListener('pointermove', this.onMouseMove.bind(this), true);
+    this.cursorArea.addEventListener('pointerleave', this.hideCursor.bind(this), true);
 
     this.overviewGrid.setResizeEnabled(false);
     this.overviewGrid.addEventListener(OverviewGridEvents.WINDOW_CHANGED_WITH_POSITION, this.onWindowChanged, this);
     this.overviewGrid.addEventListener(OverviewGridEvents.BREADCRUMB_ADDED, this.onBreadcrumbAdded, this);
     this.overviewGrid.setClickHandler(this.onClick.bind(this));
-    this.overviewControls = [];
-    this.markers = new Map();
 
     this.overviewInfo = new OverviewInfo(this.cursorElement);
-    this.updateThrottler = new Common.Throttler.Throttler(100);
-
-    this.cursorEnabled = false;
-    this.cursorPosition = 0;
-    this.lastWidth = 0;
-
-    this.windowStartTime = 0;
-    this.windowEndTime = Infinity;
-    this.muteOnWindowChanged = false;
 
     this.#dimHighlightSVG = UI.UIUtils.createSVGChild(this.element, 'svg', 'timeline-minimap-dim-highlight-svg hidden');
     this.#initializeDimHighlightSVG();
@@ -94,8 +90,31 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
 
   enableCreateBreadcrumbsButton(): void {
     const breadcrumbsElement = this.overviewGrid.enableCreateBreadcrumbsButton();
-    breadcrumbsElement.addEventListener('mousemove', this.onMouseMove.bind(this), true);
-    breadcrumbsElement.addEventListener('mouseleave', this.hideCursor.bind(this), true);
+    breadcrumbsElement.addEventListener('pointerdown', this.onMouseDown.bind(this), true);
+    breadcrumbsElement.addEventListener('pointerup', this.onMouseCancel.bind(this), true);
+    breadcrumbsElement.addEventListener('pointercancel', this.onMouseCancel.bind(this), true);
+    breadcrumbsElement.addEventListener('pointermove', this.onMouseMove.bind(this), true);
+    breadcrumbsElement.addEventListener('pointerleave', this.hideCursor.bind(this), true);
+  }
+
+  private onMouseDown(event: PointerEvent): void {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+
+    event.target.setPointerCapture(event.pointerId);
+    this.overviewInfo.hide();
+    this.hasPointer = true;
+  }
+
+  private onMouseCancel(event: PointerEvent): void {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+
+    event.target.releasePointerCapture(event.pointerId);
+    this.overviewInfo.show();
+    this.hasPointer = false;
   }
 
   private onMouseMove(event: Event): void {
@@ -122,7 +141,9 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
       this.dispatchEventToListeners(Events.OVERVIEW_PANE_MOUSE_LEAVE);
     }
 
-    void this.overviewInfo.setContent(this.buildOverviewInfo());
+    if (!this.hasPointer) {
+      void this.overviewInfo.setContent(this.buildOverviewInfo());
+    }
   }
 
   private async buildOverviewInfo(): Promise<DocumentFragment> {
@@ -130,7 +151,7 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
     const x = this.cursorPosition;
     const elements = await Promise.all(this.overviewControls.map(control => control.overviewInfoPromise(x)));
     const fragment = document.createDocumentFragment();
-    const nonNullElements = (elements.filter(element => element !== null) as Element[]);
+    const nonNullElements = (elements.filter(element => element !== null));
     fragment.append(...nonNullElements);
     return fragment;
   }
@@ -141,12 +162,24 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
     this.overviewInfo.hide();
   }
 
+  #onThemeChanged(): void {
+    this.scheduleUpdate();
+  }
+
   override wasShown(): void {
-    this.update();
+    super.wasShown();
+    const start = TraceBounds.TraceBounds.BoundsManager.instance().state()?.milli.minimapTraceBounds.min;
+    const end = TraceBounds.TraceBounds.BoundsManager.instance().state()?.milli.minimapTraceBounds.max;
+    this.update(start, end);
+    ThemeSupport.ThemeSupport.instance().addEventListener(
+        ThemeSupport.ThemeChangeEvent.eventName, this.#boundOnThemeChanged);
   }
 
   override willHide(): void {
+    ThemeSupport.ThemeSupport.instance().removeEventListener(
+        ThemeSupport.ThemeChangeEvent.eventName, this.#boundOnThemeChanged);
     this.overviewInfo.hide();
+    super.willHide();
   }
 
   override onResize(): void {
@@ -213,14 +246,10 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
     this.markers = markers;
   }
 
-  getMarkers(): Map<number, HTMLDivElement> {
-    return this.markers;
-  }
-
   /**
    * Dim the time marker outside the highlight time bounds.
    *
-   * @param highlightBounds the time bounds to highlight, if it is empty, it means to highlight everything.
+   * @param highlightBounds - the time bounds to highlight, if it is empty, it means to highlight everything.
    */
   #dimMarkers(highlightBounds?: Trace.Types.Timing.TraceWindowMicro): void {
     for (const time of this.markers.keys()) {
@@ -253,8 +282,8 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
   }
 
   reset(): void {
-    this.windowStartTime = 0;
-    this.windowEndTime = Infinity;
+    this.windowStartTime = Trace.Types.Timing.Milli(0);
+    this.windowEndTime = Trace.Types.Timing.Milli(Infinity);
     this.overviewCalculator.reset();
     this.overviewGrid.reset();
     this.overviewGrid.setResizeEnabled(false);
@@ -288,10 +317,10 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
       return;
     }
 
-    this.windowStartTime =
-        event.data.rawStartValue === this.overviewCalculator.minimumBoundary() ? 0 : event.data.rawStartValue;
-    this.windowEndTime =
-        event.data.rawEndValue === this.overviewCalculator.maximumBoundary() ? Infinity : event.data.rawEndValue;
+    this.windowStartTime = Trace.Types.Timing.Milli(
+        event.data.rawStartValue === this.overviewCalculator.minimumBoundary() ? 0 : event.data.rawStartValue);
+    this.windowEndTime = Trace.Types.Timing.Milli(
+        event.data.rawEndValue === this.overviewCalculator.maximumBoundary() ? Infinity : event.data.rawEndValue);
 
     const windowTimes = {
       startTime: Trace.Types.Timing.Milli(this.windowStartTime),
@@ -301,7 +330,7 @@ export class TimelineOverviewPane extends Common.ObjectWrapper.eventMixin<EventT
     this.dispatchEventToListeners(Events.OVERVIEW_PANE_WINDOW_CHANGED, windowTimes);
   }
 
-  setWindowTimes(startTime: number, endTime: number): void {
+  setWindowTimes(startTime: Trace.Types.Timing.Milli, endTime: Trace.Types.Timing.Milli): void {
     if (startTime === this.windowStartTime && endTime === this.windowEndTime) {
       return;
     }
@@ -486,7 +515,7 @@ export class TimelineOverviewBase extends UI.Widget.VBox implements TimelineOver
     if (!this.contextInternal) {
       throw new Error('Unable to retrieve canvas context');
     }
-    return this.contextInternal as CanvasRenderingContext2D;
+    return this.contextInternal;
   }
 
   calculator(): TimelineOverviewCalculator|null {
@@ -538,7 +567,7 @@ export class OverviewInfo {
     this.anchorElement = anchor;
     this.glassPane = new UI.GlassPane.GlassPane();
     this.glassPane.setPointerEventsBehavior(UI.GlassPane.PointerEventsBehavior.PIERCE_CONTENTS);
-    this.glassPane.setMarginBehavior(UI.GlassPane.MarginBehavior.ARROW);
+    this.glassPane.setMarginBehavior(UI.GlassPane.MarginBehavior.DEFAULT_MARGIN);
     this.glassPane.setSizeBehavior(UI.GlassPane.SizeBehavior.MEASURE_CONTENT);
     this.visible = false;
     this.element =
@@ -556,12 +585,17 @@ export class OverviewInfo {
     this.element.appendChild(content);
     this.glassPane.setContentAnchorBox(this.anchorElement.boxInWindow());
     if (!this.glassPane.isShowing()) {
-      this.glassPane.show((this.anchorElement.ownerDocument as Document));
+      this.glassPane.show((this.anchorElement.ownerDocument));
     }
   }
 
   hide(): void {
     this.visible = false;
     this.glassPane.hide();
+  }
+
+  show(): void {
+    this.visible = true;
+    this.glassPane.show(window.document);
   }
 }

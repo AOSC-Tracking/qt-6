@@ -46,6 +46,9 @@
 #include "third_party/blink/renderer/core/css/css_font_face_source.h"
 #include "third_party/blink/renderer/core/css/css_font_palette_values_rule.h"
 #include "third_party/blink/renderer/core/css/css_font_selector.h"
+#include "third_party/blink/renderer/core/css/css_function_declarations_rule.h"
+#include "third_party/blink/renderer/core/css/css_function_descriptors.h"
+#include "third_party/blink/renderer/core/css/css_function_rule.h"
 #include "third_party/blink/renderer/core/css/css_gradient_value.h"
 #include "third_party/blink/renderer/core/css/css_import_rule.h"
 #include "third_party/blink/renderer/core/css/css_keyframe_rule.h"
@@ -53,6 +56,7 @@
 #include "third_party/blink/renderer/core/css/css_layer_block_rule.h"
 #include "third_party/blink/renderer/core/css/css_layer_statement_rule.h"
 #include "third_party/blink/renderer/core/css/css_media_rule.h"
+#include "third_party/blink/renderer/core/css/css_pending_substitution_value.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
 #include "third_party/blink/renderer/core/css/css_property_name.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
@@ -65,8 +69,10 @@
 #include "third_party/blink/renderer/core/css/css_style_rule.h"
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
 #include "third_party/blink/renderer/core/css/css_supports_rule.h"
+#include "third_party/blink/renderer/core/css/css_unparsed_declaration_value.h"
 #include "third_party/blink/renderer/core/css/css_value.h"
 #include "third_party/blink/renderer/core/css/css_variable_data.h"
+#include "third_party/blink/renderer/core/css/document_style_environment_variables.h"
 #include "third_party/blink/renderer/core/css/font_face.h"
 #include "third_party/blink/renderer/core/css/font_size_functions.h"
 #include "third_party/blink/renderer/core/css/media_list.h"
@@ -76,6 +82,7 @@
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_local_context.h"
+#include "third_party/blink/renderer/core/css/parser/css_variable_parser.h"
 #include "third_party/blink/renderer/core/css/properties/computed_style_utils.h"
 #include "third_party/blink/renderer/core/css/properties/css_parsing_utils.h"
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
@@ -88,11 +95,14 @@
 #include "third_party/blink/renderer/core/css/resolver/style_rule_usage_tracker.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
+#include "third_party/blink/renderer/core/css/style_environment_variables.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_rule_font_palette_values.h"
+#include "third_party/blink/renderer/core/css/style_rule_function_declarations.h"
 #include "third_party/blink/renderer/core/css/style_sheet.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/css/style_sheet_list.h"
+#include "third_party/blink/renderer/core/css/zoom_adjusted_pixel_value.h"
 #include "third_party/blink/renderer/core/display_lock/display_lock_utilities.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
@@ -111,6 +121,7 @@
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/inspector/identifiers_factory.h"
 #include "third_party/blink/renderer/core/inspector/inspected_frames.h"
+#include "third_party/blink/renderer/core/inspector/inspector_base_agent.h"
 #include "third_party/blink/renderer/core/inspector/inspector_contrast.h"
 #include "third_party/blink/renderer/core/inspector/inspector_ghost_rules.h"
 #include "third_party/blink/renderer/core/inspector/inspector_history.h"
@@ -120,15 +131,18 @@
 #include "third_party/blink/renderer/core/inspector/inspector_style_resolver.h"
 #include "third_party/blink/renderer/core/inspector/inspector_style_sheet.h"
 #include "third_party/blink/renderer/core/inspector/protocol/css.h"
+#include "third_party/blink/renderer/core/layout/constraint_space.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/inline/inline_cursor.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
+#include "third_party/blink/renderer/core/layout/layout_result.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
+#include "third_party/blink/renderer/core/style/scoped_css_name.h"
 #include "third_party/blink/renderer/core/style/style_generated_image.h"
 #include "third_party/blink/renderer/core/style/style_image.h"
 #include "third_party/blink/renderer/core/style_property_shorthand.h"
@@ -140,12 +154,16 @@
 #include "third_party/blink/renderer/platform/fonts/font_custom_platform_data.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/caching_word_shaper.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
+#include "third_party/blink/renderer/platform/geometry/layout_unit.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/clear_collection_scope.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/text_run.h"
+#include "third_party/blink/renderer/platform/text/writing_direction_mode.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_concatenate.h"
 
 namespace blink {
@@ -167,9 +185,25 @@ Element* GetPseudoIdAndTag(Element* element,
                            PseudoId& element_pseudo_id,
                            AtomicString& view_transition_name) {
   auto* resolved_element = element;
-  if ((pseudo_element = DynamicTo<PseudoElement>(element))) {
-    resolved_element = IsTransitionPseudoElement(pseudo_element->GetPseudoId())
-                           ? pseudo_element->UltimateOriginatingElement()
+  auto* try_pseudo = DynamicTo<PseudoElement>(element);
+  bool is_transition =
+      try_pseudo && IsTransitionPseudoElement(try_pseudo->GetPseudoId());
+  // If nested pseudo-element support is turned on, it is better not to do this
+  // translation, as it is lossy. We can query styles directly from the pseudo-
+  // element node instead of using the originating element and pseudo id.
+  // TODO(crbug.com/373478544): Remove this function once this flag is no longer
+  // necessary.
+  if (RuntimeEnabledFeatures::CSSNestedPseudoElementsEnabled()) {
+    // View transition pseudo-elements depend on the old logic; always translate
+    // them.
+    if (!is_transition) {
+      return resolved_element;
+    }
+  }
+  if (try_pseudo) {
+    pseudo_element = try_pseudo;
+    resolved_element = is_transition
+                           ? &pseudo_element->UltimateOriginatingElement()
                            : pseudo_element->ParentOrShadowHostElement();
     // TODO(khushalsagar) : This should never be null.
     if (!resolved_element)
@@ -189,7 +223,7 @@ String CreateShorthandValue(Document& document,
   auto* style_sheet_contents =
       MakeGarbageCollected<StyleSheetContents>(StrictCSSParserContext(
           document.GetExecutionContext()->GetSecureContextMode()));
-  String text = " div { " + shorthand + ": " + old_text + "; }";
+  String text = StrCat({" div { ", shorthand, ": ", old_text, "; }"});
   CSSParser::ParseSheet(MakeGarbageCollected<CSSParserContext>(document),
                         style_sheet_contents, text);
 
@@ -207,7 +241,7 @@ HeapVector<Member<CSSStyleRule>> FilterDuplicateRules(
   HeapVector<Member<CSSStyleRule>> uniq_rules;
   HeapHashSet<Member<CSSRule>> uniq_rules_set;
   for (unsigned i = rule_list ? rule_list->size() : 0; i > 0; --i) {
-    CSSRule* rule = rule_list->at(i - 1).first;
+    CSSRule* rule = rule_list->at(i - 1).rule.Get();
     auto* style_rule = DynamicTo<CSSStyleRule>(rule);
     if (!style_rule || uniq_rules_set.Contains(rule))
       continue;
@@ -250,6 +284,49 @@ CSSSyntaxDefinition CreateCombinedSyntax() {
       CSSSyntaxDefinition::Consume(stream);
   DCHECK(syntax_definition.has_value());
   return *syntax_definition;
+}
+
+bool IsMarginPaddingProperty(CSSPropertyName property_name) {
+  return property_name.Id() == CSSPropertyID::kMarginBottom ||
+         property_name.Id() == CSSPropertyID::kMarginLeft ||
+         property_name.Id() == CSSPropertyID::kMarginRight ||
+         property_name.Id() == CSSPropertyID::kMarginTop ||
+         property_name.Id() == CSSPropertyID::kPaddingBottom ||
+         property_name.Id() == CSSPropertyID::kPaddingLeft ||
+         property_name.Id() == CSSPropertyID::kPaddingRight ||
+         property_name.Id() == CSSPropertyID::kPaddingTop;
+}
+
+bool IsInsetProperty(CSSPropertyName property_name) {
+  return property_name.Id() == CSSPropertyID::kBottom ||
+         property_name.Id() == CSSPropertyID::kLeft ||
+         property_name.Id() == CSSPropertyID::kRight ||
+         property_name.Id() == CSSPropertyID::kTop;
+}
+
+bool IsSizingProperty(CSSPropertyName property_name) {
+  return property_name.Id() == CSSPropertyID::kHeight ||
+         property_name.Id() == CSSPropertyID::kWidth ||
+         property_name.Id() == CSSPropertyID::kMinHeight ||
+         property_name.Id() == CSSPropertyID::kMinWidth ||
+         property_name.Id() == CSSPropertyID::kMaxHeight ||
+         property_name.Id() == CSSPropertyID::kMaxWidth;
+}
+
+LayoutUnit PickInlineOrBlockSize(LogicalSize value,
+                                 CSSPropertyID property_id,
+                                 WritingDirectionMode writing_direction_mode) {
+  const CSSProperty& property = CSSProperty::Get(property_id);
+  CSSPropertyID logical_property_id =
+      property.ToLogical(writing_direction_mode).PropertyID();
+  if (logical_property_id == CSSPropertyID::kInsetBlockEnd ||
+      logical_property_id == CSSPropertyID::kInsetBlockStart ||
+      logical_property_id == CSSPropertyID::kBlockSize ||
+      logical_property_id == CSSPropertyID::kMaxBlockSize ||
+      logical_property_id == CSSPropertyID::kMinBlockSize) {
+    return value.block_size;
+  }
+  return value.inline_size;
 }
 
 }  // namespace
@@ -414,8 +491,7 @@ class InspectorCSSAgent::SetStyleSheetTextAction final
   }
 
   String MergeId() override {
-    return String::Format("SetStyleSheetText %s",
-                          style_sheet_->Id().Utf8().c_str());
+    return StrCat({"SetStyleSheetText ", style_sheet_->Id()});
   }
 
   void Merge(Action* action) override {
@@ -631,8 +707,7 @@ class InspectorCSSAgent::SetElementStyleAction final
   }
 
   String MergeId() override {
-    return String::Format("SetElementStyleAction:%s",
-                          style_sheet_->Id().Utf8().c_str());
+    return StrCat({"SetElementStyleAction:", style_sheet_->Id()});
   }
 
   std::unique_ptr<protocol::CSS::CSSStyle> TakeSerializedStyle(
@@ -920,13 +995,13 @@ void InspectorCSSAgent::SetActiveStyleSheets(
     Document* document,
     const HeapVector<Member<CSSStyleSheet>>& all_sheets_vector) {
   auto it = document_to_css_style_sheets_.find(document);
-  HeapHashSet<Member<CSSStyleSheet>>* document_css_style_sheets = nullptr;
+  GCedHeapHashSet<Member<CSSStyleSheet>>* document_css_style_sheets = nullptr;
 
   if (it != document_to_css_style_sheets_.end()) {
     document_css_style_sheets = it->value;
   } else {
     document_css_style_sheets =
-        MakeGarbageCollected<HeapHashSet<Member<CSSStyleSheet>>>();
+        MakeGarbageCollected<GCedHeapHashSet<Member<CSSStyleSheet>>>();
     document_to_css_style_sheets_.Set(document, document_css_style_sheets);
   }
 
@@ -1244,8 +1319,8 @@ protocol::Response InspectorCSSAgent::getLocationForSelector(
   }
 
   if ((*ranges)->empty()) {
-    String message = "Failed to find selector '" + selector_text +
-                     "' in style sheet " + style_sheet->FinalURL();
+    String message = StrCat({"Failed to find selector '", selector_text,
+                             "' in style sheet ", style_sheet->FinalURL()});
     return protocol::Response::InvalidParams(message.Utf8());
   }
 
@@ -1267,13 +1342,24 @@ protocol::Response InspectorCSSAgent::getAnimatedStylesForNode(
     return response;
   }
 
+  auto* owner_document = element->ownerDocument();
+  if (!owner_document) {
+    return protocol::Response::ServerError(
+        "Element does not have an owner document");
+  }
+
+  if (!owner_document->GetFrame()) {
+    return protocol::Response::ServerError(
+        "Owner document does not have a frame attached");
+  }
+
   Element* animating_element = element;
   PseudoId element_pseudo_id = kPseudoIdNone;
   AtomicString view_transition_name = g_null_atom;
   PseudoElement* pseudo_element = nullptr;
-  // If the requested element is a pseudo element, `element` becomes
-  // the first non-pseudo parent element or shadow host element
-  // after `GetPseudoIdAndTag` call below.
+  // If the requested element is a view transition pseudo-element, `element`
+  // becomes the first non-pseudo parent element or shadow host element after
+  // `GetPseudoIdAndTag` call below.
   element = GetPseudoIdAndTag(element, pseudo_element, element_pseudo_id,
                               view_transition_name);
   if (!element) {
@@ -1332,7 +1418,9 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
         css_property_registrations,
     std::unique_ptr<protocol::CSS::CSSFontPaletteValuesRule>*
         css_font_palette_values_rule,
-    std::optional<int>* parent_layout_node_id) {
+    std::optional<int>* parent_layout_node_id,
+    std::unique_ptr<protocol::Array<protocol::CSS::CSSFunctionRule>>*
+        css_function_rules) {
   protocol::Response response = AssertEnabled();
   if (!response.IsSuccess())
     return response;
@@ -1346,9 +1434,9 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
 
   PseudoId element_pseudo_id = kPseudoIdNone;
   AtomicString view_transition_name = g_null_atom;
-  // If the requested element is a pseudo element, `element` becomes
-  // the first non-pseudo parent element or shadow host element
-  // after `GetPseudoIdAndTag` call below.
+  // If the requested element is a view transition pseudo-element, `element`
+  // becomes the first non-pseudo parent element or shadow host element after
+  // `GetPseudoIdAndTag` call below.
   PseudoElement* pseudo_element = nullptr;
   element = GetPseudoIdAndTag(element, pseudo_element, element_pseudo_id,
                               view_transition_name);
@@ -1361,6 +1449,7 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
     return protocol::Response::ServerError("Document is not active");
 
   InspectorGhostRules ghost_rules;
+  HeapVector<Member<CSSStyleSheet>> ghost_sheets;
 
   // The source text of mutable stylesheets needs to be updated
   // to sync the latest changes.
@@ -1368,11 +1457,12 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
        css_style_sheet_to_inspector_style_sheet_.Values()) {
     stylesheet->SyncTextIfNeeded();
     if (RuntimeEnabledFeatures::InspectorGhostRulesEnabled()) {
-      ghost_rules.Populate(*stylesheet->PageStyleSheet());
+      ghost_sheets.push_back(stylesheet->PageStyleSheet());
     }
   }
 
   if (RuntimeEnabledFeatures::InspectorGhostRulesEnabled()) {
+    ghost_rules.PopulateSheetsWithAssertion(std::move(ghost_sheets));
     ghost_rules.Activate(document);
   }
 
@@ -1413,9 +1503,9 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
   std::tie(*css_property_rules, *css_property_registrations) =
       CustomPropertiesForNode(element);
 
-  // Pseudo elements.
-  // Some pseudo elements can have nested pseudo elements,
-  // and we need to show them in the originating pseudo element's
+  // Pseudo-elements.
+  // Some pseudo-elements can have nested pseudo-elements,
+  // and we need to show them in the originating pseudo-element's
   // styles.
   if (pseudo_element) {
     if (!pseudo_element->CanHaveNestedPseudoElement()) {
@@ -1509,6 +1599,62 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
     }
   }
 
+  DocumentStyleSheets::iterator css_style_sheets_for_document_it =
+      document_to_css_style_sheets_.find(&document);
+  if (css_style_sheets_for_document_it != document_to_css_style_sheets_.end() &&
+      resolver.MatchedRules()) {
+    HeapHashMap<Member<const ScopedCSSName>, Member<CSSFunctionRule>>
+        function_hash_map;
+    CollectReferencedFunctionRules(*css_style_sheets_for_document_it->value,
+                                   *resolver.MatchedRules(), function_hash_map);
+    if (!function_hash_map.empty()) {
+      *css_function_rules =
+          std::make_unique<protocol::Array<protocol::CSS::CSSFunctionRule>>();
+      for (const auto& [scoped_name, rule] : function_hash_map) {
+        (*css_function_rules)->emplace_back(BuildObjectForFunctionRule(rule));
+      }
+    }
+  }
+  return protocol::Response::Success();
+}
+
+protocol::Response InspectorCSSAgent::getEnvironmentVariables(
+    std::unique_ptr<protocol::DictionaryValue>* environment_variables) {
+  StyleEnvironmentVariables& vars =
+      StyleEnvironmentVariables::GetRootInstance();
+  *environment_variables = protocol::DictionaryValue::create();
+
+  // LINT.IfChange(EnvironmentVariables)
+  auto variables = {UADefinedVariable::kSafeAreaInsetTop,
+                    UADefinedVariable::kSafeAreaInsetLeft,
+                    UADefinedVariable::kSafeAreaInsetBottom,
+                    UADefinedVariable::kSafeAreaInsetRight,
+                    UADefinedVariable::kSafeAreaMaxInsetTop,
+                    UADefinedVariable::kSafeAreaMaxInsetLeft,
+                    UADefinedVariable::kSafeAreaMaxInsetBottom,
+                    UADefinedVariable::kSafeAreaMaxInsetRight,
+                    UADefinedVariable::kKeyboardInsetTop,
+                    UADefinedVariable::kKeyboardInsetLeft,
+                    UADefinedVariable::kKeyboardInsetBottom,
+                    UADefinedVariable::kKeyboardInsetRight,
+                    UADefinedVariable::kKeyboardInsetWidth,
+                    UADefinedVariable::kKeyboardInsetHeight,
+                    UADefinedVariable::kTitlebarAreaX,
+                    UADefinedVariable::kTitlebarAreaY,
+                    UADefinedVariable::kTitlebarAreaWidth,
+                    UADefinedVariable::kTitlebarAreaHeight,
+                    UADefinedVariable::kPreferredTextScale,
+                    UADefinedVariable::kSafePrintableInset};
+  // LINT.ThenChange(//third_party/blink/renderer/core/css/style_environment_variables.h:UADefinedVariable)
+
+  for (auto variable : variables) {
+    auto name = StyleEnvironmentVariables::GetVariableName(variable, nullptr);
+    auto* value = vars.ResolveVariable(name, {});
+    if (value) {
+      (*environment_variables)
+          ->setValue(name, protocol::StringValue::create(value->Serialize()));
+    }
+  }
   return protocol::Response::Success();
 }
 
@@ -1621,25 +1767,41 @@ InspectorCSSAgent::PositionTryRulesForElement(
   return css_position_try_rules;
 }
 
+// Find CSSRules of type T. The callback may return 'true' to keep searching,
+// or 'false' to stop.
+template <class T, class CSSRuleCollection, class CallbackFunc>
+static void TraverseCSSRules(CSSRuleCollection* css_rules,
+                             CallbackFunc callback) {
+  if (!css_rules) {
+    return;
+  }
+  for (unsigned j = 0; j < css_rules->length(); ++j) {
+    CSSRule* css_rule = css_rules->item(j);
+    if (auto* typed_css_rule = DynamicTo<T>(css_rule)) {
+      bool keep_searching = callback(*typed_css_rule);
+      if (!keep_searching) {
+        return;
+      }
+    } else if (auto* css_import_rule = DynamicTo<CSSImportRule>(css_rule)) {
+      TraverseCSSRules<T>(css_import_rule->styleSheet(), callback);
+    } else {
+      TraverseCSSRules<T>(css_rule->cssRules(), callback);
+    }
+  }
+}
+
 template <class CSSRuleCollection>
 static CSSPropertyRule* FindPropertyRule(CSSRuleCollection* css_rules,
                                          StyleRuleProperty* property_rule) {
-  if (!css_rules) {
-    return nullptr;
-  }
-
   CSSPropertyRule* result = nullptr;
-  for (unsigned j = 0; j < css_rules->length() && !result; ++j) {
-    CSSRule* css_rule = css_rules->item(j);
-    if (auto* css_style_rule = DynamicTo<CSSPropertyRule>(css_rule)) {
-      if (css_style_rule->Property() == property_rule)
-        result = css_style_rule;
-    } else if (auto* css_import_rule = DynamicTo<CSSImportRule>(css_rule)) {
-      result = FindPropertyRule(css_import_rule->styleSheet(), property_rule);
-    } else {
-      result = FindPropertyRule(css_rule->cssRules(), property_rule);
-    }
-  }
+  TraverseCSSRules<CSSPropertyRule>(
+      css_rules, [&result, property_rule](CSSPropertyRule& css_rule) {
+        if (css_rule.Property() == property_rule) {
+          result = &css_rule;
+          return false;
+        }
+        return true;  // Keep searching.
+      });
   return result;
 }
 
@@ -1672,9 +1834,15 @@ InspectorCSSAgent::CustomPropertiesForNode(Element* element) {
   Document& document = element->GetDocument();
   DCHECK(!document.NeedsLayoutTreeUpdateForNode(*element));
 
-  const ComputedStyle* style = element->EnsureComputedStyle();
-  if (!style /*|| !style->HasVariableReference()*/)
+  auto style_sheets = document_to_css_style_sheets_.find(&document);
+  if (style_sheets == document_to_css_style_sheets_.end()) {
     return result;
+  }
+
+  const ComputedStyle* style = element->EnsureComputedStyle();
+  if (!style) {
+    return result;
+  }
 
   for (const AtomicString& var_name : style->GetVariableNames()) {
     const auto* registration =
@@ -1686,8 +1854,7 @@ InspectorCSSAgent::CustomPropertiesForNode(Element* element) {
     if (StyleRuleProperty* rule = registration->PropertyRule()) {
       // Find CSSOM wrapper.
       CSSPropertyRule* property_rule = nullptr;
-      for (CSSStyleSheet* style_sheet :
-           *document_to_css_style_sheets_.at(&document)) {
+      for (CSSStyleSheet* style_sheet : *style_sheets->value) {
         property_rule = FindPropertyRule(style_sheet, rule);
         if (property_rule)
           break;
@@ -1750,10 +1917,14 @@ InspectorCSSAgent::FontPalettesForNode(Element& element) {
     return {};
   }
 
+  auto style_sheets = document_to_css_style_sheets_.find(&document);
+  if (style_sheets == document_to_css_style_sheets_.end()) {
+    return {};
+  }
+
   // Find CSSOM wrapper.
   CSSFontPaletteValuesRule* values_rule = nullptr;
-  for (CSSStyleSheet* style_sheet :
-       *document_to_css_style_sheets_.at(&document)) {
+  for (CSSStyleSheet* style_sheet : *style_sheets->value) {
     values_rule = FindFontPaletteValuesRule(style_sheet, rule);
     if (values_rule)
       break;
@@ -1769,12 +1940,12 @@ CSSKeyframesRule*
 InspectorCSSAgent::FindKeyframesRuleFromUAViewTransitionStylesheet(
     Element* element,
     StyleRuleKeyframes* keyframes_style_rule) {
-  // This function should only be called for transition pseudo elements.
+  // This function should only be called for transition pseudo-elements.
   CHECK(IsTransitionPseudoElement(element->GetPseudoId()));
-  auto* transition = ViewTransitionUtils::GetTransition(element->GetDocument());
+  auto* transition = ViewTransitionUtils::GetTransition(*element);
 
   // There must be a transition and an active UAStyleSheet for the
-  // transition when the queried element is a transition pseudo element.
+  // transition when the queried element is a transition pseudo-element.
   CHECK(transition && transition->UAStyleSheet());
 
   if (!user_agent_view_transition_style_sheet_) {
@@ -1844,8 +2015,8 @@ InspectorCSSAgent::AnimationsForNode(Element* element,
   Document& document = element->GetDocument();
   DCHECK(!document.NeedsLayoutTreeUpdateForNode(*element));
   // We want to match the animation name of the animating element not the parent
-  // element's animation names for pseudo elements. When the `element` is a
-  // non-pseudo element then `animating_element` and the `element` are the same.
+  // element's animation names for pseudo-elements. When the `element` is a
+  // non-pseudo-element then `animating_element` and the `element` are the same.
   const ComputedStyle* style = animating_element->EnsureComputedStyle();
   if (!style)
     return css_keyframes_rules;
@@ -1888,9 +2059,10 @@ InspectorCSSAgent::AnimationsForNode(Element* element,
         protocol::CSS::Value::create()
             .setText(css_keyframes_rule->name())
             .build();
-    if (source_data)
+    if (source_data) {
       name->setRange(inspector_style_sheet->BuildSourceRangeObject(
           source_data->rule_header_range));
+    }
     css_keyframes_rules->emplace_back(protocol::CSS::CSSKeyframesRule::create()
                                           .setAnimationName(std::move(name))
                                           .setKeyframes(std::move(keyframes))
@@ -1976,6 +2148,71 @@ protocol::Response InspectorCSSAgent::getComputedStyleForNode(
   return protocol::Response::Success();
 }
 
+// Resolve percentages in the context of the given element values for margin,
+// padding, inset, sizing properties. Return `original_value` string if
+// there was an error during percentage resolution. Returns null string if the
+// value doesn't have percentages or `property_name` is not margin,
+// padding, inset or sizing property.
+String InspectorCSSAgent::ResolvePercentagesValues(
+    Element* element,
+    CSSPropertyName property_name,
+    const CSSValue* parsed_value,
+    const String& original_value) {
+  CHECK(!element->GetDocument().View()->NeedsLayout());
+  if (!IsMarginPaddingProperty(property_name) &&
+      !IsInsetProperty(property_name) && !IsSizingProperty(property_name)) {
+    return g_null_atom;
+  }
+  if (!parsed_value) {
+    return g_null_atom;
+  }
+  auto* primitive_value = DynamicTo<CSSPrimitiveValue>(parsed_value);
+  if (!primitive_value) {
+    return g_null_atom;
+  }
+
+  ElementResolveContext element_resolve_context(*element);
+  CSSToLengthConversionData::Flags ignored_flags = 0;
+  CSSToLengthConversionData length_conversion_data(
+      element->ComputedStyleRef(), element_resolve_context.ParentStyle(),
+      element_resolve_context.RootElementStyle(),
+      CSSToLengthConversionData::ViewportSize(),
+      CSSToLengthConversionData::ContainerSizes(),
+      CSSToLengthConversionData::AnchorData(),
+      element->GetComputedStyle()->EffectiveZoom(), ignored_flags, element);
+  Length length_value =
+      primitive_value->ConvertToLength(length_conversion_data);
+  if (!length_value.HasPercent()) {
+    return g_null_atom;
+  }
+
+  if (auto* box = DynamicTo<LayoutBox>(element->GetLayoutObject())) {
+    if (!box->GetLayoutResults().size()) {
+      return original_value;
+    }
+    // Using the first LayoutResult is okay, as all fragments have the same
+    // percentage resolution sizes.
+    const ConstraintSpace& constraint_space =
+        box->GetLayoutResult(0)->GetConstraintSpaceForCaching();
+    LogicalSize percentage_resolution_size =
+        IsMarginPaddingProperty(property_name)
+            ? constraint_space.MarginPaddingPercentageResolutionSize()
+            : constraint_space.PercentageResolutionSize();
+    LayoutUnit percentage_resolution_value = PickInlineOrBlockSize(
+        percentage_resolution_size, property_name.Id(),
+        element->GetComputedStyle()->GetWritingDirection());
+    if (percentage_resolution_value == kIndefiniteSize) {
+      return original_value;
+    }
+    CSSValue* resolved_percentage_value = ZoomAdjustedPixelValue(
+        MinimumValueForLength(length_value, percentage_resolution_value),
+        element->ComputedStyleRef());
+    return resolved_percentage_value->CssText();
+  }
+
+  return original_value;
+}
+
 protocol::Response InspectorCSSAgent::resolveValues(
     std::unique_ptr<protocol::Array<String>> values,
     int node_id,
@@ -2000,6 +2237,8 @@ protocol::Response InspectorCSSAgent::resolveValues(
   }
 
   Document& document = element->GetDocument();
+  document.UpdateStyleAndLayoutForNode(element,
+                                       DocumentUpdateReason::kInspector);
   CSSParserContext* parser_context =
       MakeGarbageCollected<CSSParserContext>(document);
   ExecutionContext* execution_context = element->GetExecutionContext();
@@ -2017,59 +2256,67 @@ protocol::Response InspectorCSSAgent::resolveValues(
     }
   }
 
-  std::optional<CSSPropertyName> property_name;
+  if (!element->GetComputedStyle()) {
+    return protocol::Response::ServerError(
+        "Computed style of element is null.");
+  }
+
   const AtomicString custom_property_name(
       ("--" + base::UnguessableToken::Create().ToString()).c_str());
   std::optional<AutoRegistration> auto_registration;
+  CSSSyntaxDefinition syntax_definition = CreateCombinedSyntax();
+  PropertyRegistration* property_registration =
+      MakeGarbageCollected<PropertyRegistration>(
+          custom_property_name, syntax_definition, /* inherits */ false,
+          /* initial */ nullptr);
+  // Temporary register property with combined syntax.
+  auto_registration.emplace(document, custom_property_name,
+                            *property_registration);
+  CustomProperty temporary_custom_property(custom_property_name, document);
 
+  std::optional<CSSPropertyName> property_name =
+      CSSPropertyName(custom_property_name);
   if (property_name_str.has_value()) {
     property_name =
         CSSPropertyName::From(execution_context, *property_name_str);
-
     if (!property_name.has_value()) {
       return protocol::Response::ServerError(
           "Could not resolve property name.");
     }
-  } else {
-    property_name = CSSPropertyName(custom_property_name);
-    CSSSyntaxDefinition syntax_definition = CreateCombinedSyntax();
-    PropertyRegistration* property_registration =
-        MakeGarbageCollected<PropertyRegistration>(
-            custom_property_name, syntax_definition, /* inherits */ false,
-            /* initial */ nullptr);
-    // Temporary register property with combined syntax.
-    auto_registration.emplace(document, custom_property_name,
-                              *property_registration);
   }
-  DCHECK(property_name.has_value());
+
+  if (CSSProperty::Get(property_name->Id()).IsShorthand()) {
+    return protocol::Response::ServerError(
+        "Property name should not be a shorthand.");
+  }
 
   *results = std::make_unique<protocol::Array<String>>();
   for (auto value : *values) {
-    const CSSValue* parsed_value = nullptr;
-    if (property_name->IsCustomProperty()) {
-      CustomProperty custom_property(property_name->ToAtomicString(), document);
-      auto local_context = CSSParserLocalContext();
-      parsed_value =
-          custom_property.Parse(value, *parser_context, local_context);
+    const CSSValue* computed_value = nullptr;
+    const CSSValue* parsed_value =
+        CSSParser::ParseSingleValue(property_name->Id(), value, parser_context);
+    if (parsed_value) {
+      computed_value =
+          StyleResolver::ComputeValue(element, *property_name, *parsed_value);
+      if (String resolved_value = ResolvePercentagesValues(
+              element, *property_name, computed_value, value)) {
+        (*results)->emplace_back(resolved_value);
+        continue;
+      }
     } else {
-      parsed_value = CSSParser::ParseSingleValue(property_name->Id(), value,
-                                                 parser_context);
+      auto local_context = CSSParserLocalContext();
+      parsed_value = temporary_custom_property.Parse(value, *parser_context,
+                                                     local_context);
+      if (!parsed_value) {
+        (*results)->emplace_back(value);
+        continue;
+      }
+      computed_value = StyleResolver::ComputeValue(
+          element, CSSPropertyName(custom_property_name), *parsed_value);
     }
-
-    if (!parsed_value) {
-      (*results)->emplace_back(String());
-      continue;
-    }
-
-    if (!element->GetComputedStyle()) {
-      continue;
-    }
-
-    const CSSValue* computed_value =
-        StyleResolver::ComputeValue(element, *property_name, *parsed_value);
 
     if (!computed_value) {
-      (*results)->emplace_back(String());
+      (*results)->emplace_back(value);
       continue;
     }
 
@@ -2573,9 +2820,10 @@ protocol::Response InspectorCSSAgent::setMediaText(
   if (success) {
     CSSMediaRule* rule = InspectorCSSAgent::AsCSSMediaRule(action->TakeRule());
     String source_url = rule->parentStyleSheet()->Contents()->BaseURL();
-    if (source_url.empty())
+    if (source_url.empty()) {
       source_url = InspectorDOMAgent::DocumentURLString(
           rule->parentStyleSheet()->OwnerDocument());
+    }
     *result = BuildMediaObject(rule->media(), kMediaListSourceMediaRule,
                                source_url, rule->parentStyleSheet());
   }
@@ -3024,9 +3272,10 @@ void InspectorCSSAgent::CollectMediaQueriesFromRule(
 
   if (parent_style_sheet) {
     source_url = parent_style_sheet->Contents()->BaseURL();
-    if (source_url.empty())
+    if (source_url.empty()) {
       source_url = InspectorDOMAgent::DocumentURLString(
           parent_style_sheet->OwnerDocument());
+    }
   } else {
     source_url = "";
   }
@@ -3092,6 +3341,9 @@ InspectorCSSAgent::BuildContainerQueryObject(CSSContainerRule* rule) {
   }
   if (rule->Selector().SelectsScrollStateContainers()) {
     container_query_object->setQueriesScrollState(true);
+  }
+  if (rule->Selector().SelectsAnchoredContainers()) {
+    container_query_object->setQueriesAnchored(true);
   }
   return container_query_object;
 }
@@ -3319,6 +3571,113 @@ void InspectorCSSAgent::CollectScopesFromRule(
   }
 }
 
+std::unique_ptr<protocol::CSS::CSSFunctionConditionNode>
+InspectorCSSAgent::BuildObjectForFunctionConditionNode(CSSConditionRule* rule) {
+  return protocol::CSS::CSSFunctionConditionNode::create()
+      .setConditionText(rule->ConditionTextInternal())
+      .setChildren(BuildArrayForFunctionNodeChildren(rule->cssRules()))
+      .build();
+}
+
+std::unique_ptr<protocol::Array<protocol::CSS::CSSFunctionNode>>
+InspectorCSSAgent::BuildArrayForFunctionNodeChildren(CSSRuleList* rule_list) {
+  std::unique_ptr<protocol::Array<protocol::CSS::CSSFunctionNode>> result =
+      std::make_unique<protocol::Array<protocol::CSS::CSSFunctionNode>>();
+
+  const unsigned length = rule_list->length();
+  for (unsigned i = 0; i < length; ++i) {
+    CSSRule* rule = rule_list->item(i);
+    std::unique_ptr<protocol::CSS::CSSFunctionNode> function_node =
+        protocol::CSS::CSSFunctionNode::create().build();
+    switch (rule->GetType()) {
+      case CSSRule::kFunctionDeclarationsRule: {
+        CSSFunctionDeclarationsRule* function_rule =
+            To<CSSFunctionDeclarationsRule>(rule);
+        InspectorStyleSheet* inspector_style_sheet =
+            BindStyleSheet(function_rule->parentStyleSheet());
+        function_node->setStyle(inspector_style_sheet->BuildObjectForStyle(
+            function_rule->style(), nullptr));
+        break;
+      }
+      case CSSRule::kContainerRule: {
+        CSSContainerRule* container_rule = To<CSSContainerRule>(rule);
+        std::unique_ptr<protocol::CSS::CSSFunctionConditionNode> condition =
+            BuildObjectForFunctionConditionNode(container_rule);
+        condition->setContainerQueries(
+            BuildContainerQueryObject(container_rule));
+        function_node->setCondition(std::move(condition));
+        break;
+      }
+      case CSSRule::kMediaRule: {
+        CSSMediaRule* media_rule = To<CSSMediaRule>(rule);
+        std::unique_ptr<protocol::CSS::CSSFunctionConditionNode> condition =
+            BuildObjectForFunctionConditionNode(media_rule);
+        String source_url =
+            media_rule->parentStyleSheet()->Contents()->BaseURL();
+        if (source_url.empty()) {
+          source_url = InspectorDOMAgent::DocumentURLString(
+              media_rule->parentStyleSheet()->OwnerDocument());
+        }
+        condition->setMedia(
+            BuildMediaObject(media_rule->media(), kMediaListSourceMediaRule,
+                             source_url, media_rule->parentStyleSheet()));
+        function_node->setCondition(std::move(condition));
+        break;
+      }
+      case CSSRule::kSupportsRule: {
+        CSSSupportsRule* supports_rule = To<CSSSupportsRule>(rule);
+        std::unique_ptr<protocol::CSS::CSSFunctionConditionNode> condition =
+            BuildObjectForFunctionConditionNode(supports_rule);
+        condition->setSupports(BuildSupportsObject(supports_rule));
+        function_node->setCondition(std::move(condition));
+        break;
+      }
+      default:
+        DCHECK(false) << "Unexpected rule type: " << rule->GetType();
+        break;
+    }
+    result->emplace_back(std::move(function_node));
+  }
+  return result;
+}
+
+std::unique_ptr<protocol::CSS::CSSFunctionRule>
+InspectorCSSAgent::BuildObjectForFunctionRule(CSSFunctionRule* function_rule) {
+  InspectorStyleSheet* inspector_style_sheet =
+      BindStyleSheet(function_rule->parentStyleSheet());
+  std::unique_ptr<protocol::CSS::Value> name =
+      protocol::CSS::Value::create().setText(function_rule->name()).build();
+
+  if (CSSRuleSourceData* source_data =
+          inspector_style_sheet->SourceDataForRule(function_rule)) {
+    name->setRange(inspector_style_sheet->BuildSourceRangeObject(
+        source_data->rule_header_range));
+  }
+
+  std::unique_ptr<protocol::Array<protocol::CSS::CSSFunctionParameter>>
+      parameters = std::make_unique<
+          protocol::Array<protocol::CSS::CSSFunctionParameter>>();
+  for (const auto& parameter : function_rule->getParameters()) {
+    parameters->emplace_back(protocol::CSS::CSSFunctionParameter::create()
+                                 .setName(parameter->name())
+                                 .setType(parameter->type())
+                                 .build());
+  }
+  std::unique_ptr<protocol::CSS::CSSFunctionRule> result =
+      protocol::CSS::CSSFunctionRule::create()
+          .setName(std::move(name))
+          .setOrigin(inspector_style_sheet->Origin())
+          .setParameters(std::move(parameters))
+          .setChildren(
+              BuildArrayForFunctionNodeChildren(function_rule->cssRules()))
+          .build();
+  if (inspector_style_sheet->CanBindOrigin() &&
+      !inspector_style_sheet->Id().empty()) {
+    result->setStyleSheetId(inspector_style_sheet->Id());
+  }
+  return result;
+}
+
 InspectorStyleSheetForInlineStyle* InspectorCSSAgent::AsInspectorStyleSheet(
     Element* element) {
   NodeToInspectorStyleSheet::iterator it =
@@ -3389,9 +3748,10 @@ String InspectorCSSAgent::UnbindStyleSheet(
     InspectorStyleSheet* inspector_style_sheet) {
   String id = inspector_style_sheet->Id();
   id_to_inspector_style_sheet_.erase(id);
-  if (inspector_style_sheet->PageStyleSheet())
+  if (inspector_style_sheet->PageStyleSheet()) {
     css_style_sheet_to_inspector_style_sheet_.erase(
         inspector_style_sheet->PageStyleSheet());
+  }
   return id;
 }
 
@@ -3404,9 +3764,10 @@ InspectorStyleSheet* InspectorCSSAgent::InspectorStyleSheetForRule(
   // pointers if they are coming from user agent stylesheets. To work around
   // this issue, we use CSSOM wrapper created by inspector.
   if (!rule->parentStyleSheet()) {
-    if (!inspector_user_agent_style_sheet_)
+    if (!inspector_user_agent_style_sheet_) {
       inspector_user_agent_style_sheet_ = MakeGarbageCollected<CSSStyleSheet>(
           CSSDefaultStyleSheets::Instance().DefaultStyleSheet());
+    }
     rule->SetParentStyleSheet(inspector_user_agent_style_sheet_.Get());
   }
   return BindStyleSheet(rule->parentStyleSheet());
@@ -3531,7 +3892,7 @@ InspectorCSSAgent::BuildArrayForMatchedRuleList(
   HeapHashMap<Member<CSSStyleRule>, std::unique_ptr<Vector<unsigned>>>
       rule_indices;
   for (auto it = rule_list->rbegin(); it != rule_list->rend(); ++it) {
-    CSSRule* rule = it->first;
+    CSSRule* rule = it->rule.Get();
     auto* style_rule = DynamicTo<CSSStyleRule>(rule);
     if (!style_rule)
       continue;
@@ -3540,7 +3901,8 @@ InspectorCSSAgent::BuildArrayForMatchedRuleList(
       uniq_rules.push_back(style_rule);
       rule_indices.Set(style_rule, std::make_unique<Vector<unsigned>>());
     }
-    rule_indices.at(style_rule)->push_back(it->second);
+
+    rule_indices.at(style_rule)->push_back(it->index);
   }
 
   for (auto it = uniq_rules.rbegin(); it != uniq_rules.rend(); ++it) {
@@ -3653,10 +4015,6 @@ InspectorCSSAgent::BuildArrayForCSSAnimationStyleList(Element* element) {
       name = css_animation->animationName();
     }
 
-    auto property_pass_filter = [](const PropertyHandle& property) {
-      return property.IsCSSProperty();
-    };
-
     EffectStack& effect_stack = element_animations->GetEffectStack();
     HashSet<PropertyHandle> affected_properties =
         effect_stack.AffectedProperties(
@@ -3666,10 +4024,10 @@ InspectorCSSAgent::BuildArrayForCSSAnimationStyleList(Element* element) {
             &effect_stack,
             /*new_animations=*/nullptr,
             /*suppressed_animations=*/nullptr,
-            KeyframeEffect::Priority::kDefaultPriority, property_pass_filter,
-            effect);
+            KeyframeEffect::Priority::kDefaultPriority, effect);
 
-    PropertyHandleSet animation_properties = effect->Model()->Properties();
+    PropertyHandleSet animation_properties =
+        effect->Model()->Properties().UniqueProperties();
     MutableCSSPropertyValueSet* property_values =
         MakeGarbageCollected<MutableCSSPropertyValueSet>(
             CSSParserMode::kHTMLStandardMode);
@@ -3701,10 +4059,6 @@ InspectorCSSAgent::BuildArrayForCSSAnimationStyleList(Element* element) {
 
 std::unique_ptr<protocol::CSS::CSSStyle>
 InspectorCSSAgent::BuildObjectForTransitionsStyle(Element* element) {
-  auto property_pass_filter = [](const PropertyHandle& property) {
-    return property.IsCSSProperty();
-  };
-
   ElementAnimations* element_animations =
       element->GetAnimationTarget()->GetElementAnimations();
   if (!element_animations || element_animations->IsEmpty()) {
@@ -3719,8 +4073,7 @@ InspectorCSSAgent::BuildObjectForTransitionsStyle(Element* element) {
           &effect_stack,
           /*new_animations=*/nullptr,
           /*suppressed_animations=*/nullptr,
-          KeyframeEffect::Priority::kTransitionPriority, property_pass_filter,
-          nullptr);
+          KeyframeEffect::Priority::kTransitionPriority, nullptr);
 
   MutableCSSPropertyValueSet* property_values =
       MakeGarbageCollected<MutableCSSPropertyValueSet>(
@@ -3788,7 +4141,7 @@ void InspectorCSSAgent::DidMutateStyleSheet(CSSStyleSheet* css_style_sheet) {
 void InspectorCSSAgent::GetTextPosition(wtf_size_t offset,
                                         const String* text,
                                         TextPosition* result) {
-  std::unique_ptr<Vector<wtf_size_t>> line_endings = WTF::GetLineEndings(*text);
+  std::unique_ptr<Vector<wtf_size_t>> line_endings = GetLineEndings(*text);
   *result = TextPosition::FromOffsetAndLineEndings(offset, *line_endings);
 }
 
@@ -3982,11 +4335,12 @@ protocol::Response InspectorCSSAgent::setEffectivePropertyValueForNode(
       style_sheet_text.Substring(body_range.start, body_range.length());
   SourceRange change_range;
   if (found_index == -1) {
-    String new_property_text = "\n" + longhand + ": " + value +
-                               (force_important ? " !important" : "") + ";";
+    String new_property_text =
+        StrCat({"\n", longhand, ": ", value,
+                (force_important ? " !important" : ""), ";"});
     if (!style_text.empty() && !style_text.StripWhiteSpace().EndsWith(';'))
-      new_property_text = ";" + new_property_text;
-    style_text = style_text + new_property_text;
+      new_property_text = StrCat({";", new_property_text});
+    style_text = StrCat({style_text, new_property_text});
     change_range.start = body_range.end;
     change_range.end = body_range.end + new_property_text.length();
   } else {
@@ -3999,9 +4353,9 @@ protocol::Response InspectorCSSAgent::setEffectivePropertyValueForNode(
       new_value_text = value;
     }
 
-    String new_property_text =
-        declaration.name + ": " + new_value_text +
-        (declaration.important || force_important ? " !important" : "") + ";";
+    String new_property_text = StrCat(
+        {declaration.name, ": ", new_value_text,
+         (declaration.important || force_important ? " !important" : ""), ";"});
     style_text.replace(declaration.range.start - body_range.start,
                        declaration.range.length(), new_property_text);
     change_range.start = declaration.range.start;
@@ -4055,6 +4409,164 @@ void InspectorCSSAgent::GetBackgroundColors(Element* element,
   auto text_info = contrast.GetTextInfo(element);
   *computed_font_size = text_info.font_size;
   *computed_font_weight = text_info.font_weight;
+}
+
+namespace {
+
+// Collects instances of <dashed-function>, and the functions referenced by
+// them.
+//
+// The process starts from a CSSPropertyValueSet, where all relevant
+// declarations are scanned. Any <dashed-function>s found are
+// then "dereferenced" into StyleRuleFunctions, and *their* bodies
+// are then scanned for further <dashed-function>s.
+class TransitiveFunctionCollector {
+  STACK_ALLOCATED();
+
+ public:
+  // Collect <dashed-function>s within a CSSPropertyValueSet,
+  // typically representing the block of a style rule.
+  //
+  // The TreeScope must be the originating TreeScope for the rule
+  // holding `set`.
+  void CollectFromPropertySet(const TreeScope& tree_scope,
+                              const CSSPropertyValueSet& set) {
+    HashSet<AtomicString> names;
+    for (CSSPropertyValue property_value : set.Properties()) {
+      if (CSSVariableData* data = GetVariableData(property_value.Value());
+          data && data->HasDashedFunctions()) {
+        StringView text = data->OriginalText();
+        CSSParserTokenStream stream(text);
+        CSSVariableParser::CollectDashedFunctions(stream, names);
+      }
+    }
+    for (const AtomicString& name : names) {
+      auto* dashed_function =
+          MakeGarbageCollected<ScopedCSSName>(name, &tree_scope);
+      CollectFromDashedFunction(*dashed_function);
+    }
+  }
+
+  // Once a <dashed-function> has been found, this finds the corresponding
+  // StyleRuleFunction, and adds it to the list. It also continues looking
+  // for <dashed-function>s within the StyleRuleFunction.
+  void CollectFromDashedFunction(const ScopedCSSName& dashed_function) {
+    if (seen_dashed_functions_.Contains(&dashed_function)) {
+      // Already processed.
+      return;
+    }
+    auto [function, tree_scope] = LookupFunction(dashed_function);
+    // Note: This insertion may insert an explicit nullptr.
+    seen_dashed_functions_.insert(&dashed_function, function);
+    if (function) {
+      CollectFromFunctionBody(*tree_scope, *function);
+    }
+  }
+
+  // The TreeScope must be the originating TreeScope for
+  // the function rule.
+  //
+  // The `rule` parameter may be the function rule itself (StyleRuleFunction),
+  // it may be some conditional rule (e.g. StyleRuleMedia, etc),
+  // or it may be StyleRuleFunctionDeclarations, which act as the "leaf nodes"
+  // containing local variables / 'result' descriptors.
+  void CollectFromFunctionBody(const TreeScope& tree_scope,
+                               const StyleRuleBase& rule) {
+    if (auto* function_declarations =
+            DynamicTo<StyleRuleFunctionDeclarations>(rule)) {
+      CollectFromPropertySet(tree_scope, function_declarations->Properties());
+    } else if (auto* group_rule = DynamicTo<StyleRuleGroup>(rule)) {
+      // Note that StyleRuleFunction, StyleRuleMedia, StyleRuleSupports,
+      // and StyleRuleContainer are all subclasses of StyleRuleGroup.
+      for (StyleRuleBase* child : group_rule->ChildRules()) {
+        CollectFromFunctionBody(tree_scope, *child);
+      }
+    }
+  }
+
+  HeapHashMap<Member<const ScopedCSSName>, Member<StyleRuleFunction>>
+  TakeResult() {
+    return std::move(seen_dashed_functions_);
+  }
+
+ private:
+  CSSVariableData* GetVariableData(const CSSValue& value) {
+    // Handles custom properties and longhands.
+    if (auto* unparsed = DynamicTo<CSSUnparsedDeclarationValue>(value)) {
+      return unparsed->VariableDataValue();
+    }
+    // Handles shorthands.
+    if (auto* pending_substitution =
+            DynamicTo<cssvalue::CSSPendingSubstitutionValue>(value)) {
+      return pending_substitution->ShorthandValue()->VariableDataValue();
+    }
+    return nullptr;
+  }
+
+  // For a given <dashed-function>, returns the corresponding StyleRuleFunction
+  // and the TreeScope that StyleRuleFunction was found in. The returned
+  // TreeScope may or may not be the same as the TreeScope of `dashed_function`.
+  std::pair<StyleRuleFunction*, const TreeScope*> LookupFunction(
+      const ScopedCSSName& dashed_function) {
+    StyleEngine& style_engine =
+        dashed_function.GetTreeScope()->GetDocument().GetStyleEngine();
+    return style_engine.FindFunctionAcrossScopes(
+        dashed_function.GetName(), dashed_function.GetTreeScope());
+  }
+
+  // Note that this implicitly uses HashTraits which compares keys by value
+  // (see scoped_css_name.h).
+  HeapHashMap<Member<const ScopedCSSName>, Member<StyleRuleFunction>>
+      seen_dashed_functions_;
+};
+
+}  // namespace
+
+// static
+void InspectorCSSAgent::CollectReferencedFunctionRules(
+    const HeapHashSet<Member<CSSStyleSheet>>& document_style_sheets,
+    const RuleIndexList& rule_list,
+    HeapHashMap<Member<const ScopedCSSName>, Member<CSSFunctionRule>>& result) {
+  TransitiveFunctionCollector collector;
+  for (const IndexedRule& rule : rule_list) {
+    if (!rule.tree_scope) {
+      // The tree-scope is nullptr for UA rules. At-rules are generally
+      // not supported in UA sheets, so there should be no custom function
+      // calls there either.
+      continue;
+    }
+    if (const auto* style_rule = DynamicTo<CSSStyleRule>(*rule.rule)) {
+      collector.CollectFromPropertySet(
+          *rule.tree_scope, style_rule->GetStyleRule()->Properties());
+    }
+  }
+
+  HeapHashMap<Member<const ScopedCSSName>, Member<StyleRuleFunction>>
+      seen_functions = collector.TakeResult();
+
+  if (seen_functions.empty()) {
+    return;
+  }
+
+  // Build a mapping from StyleRuleFunction to CSSFunctionRule.
+  HeapHashMap<Member<StyleRuleFunction>, Member<CSSFunctionRule>> to_css_rule;
+  for (CSSStyleSheet* style_sheet : document_style_sheets) {
+    TraverseCSSRules<CSSFunctionRule>(
+        style_sheet, [&to_css_rule](CSSFunctionRule& rule) {
+          to_css_rule.insert(&rule.FunctionRule(), &rule);
+          return true;  // Keep traversing.
+        });
+  }
+
+  // Emit the final results, which map ScopedCSSNames to CSSFunctionRules.
+  for (const auto& [scoped_name, style_rule] : seen_functions) {
+    if (!style_rule) {
+      // An explicit nullptr means the function was referenced,
+      // but no corresponding @function rule was found.
+      continue;
+    }
+    result.insert(scoped_name, to_css_rule.at(style_rule));
+  }
 }
 
 void InspectorCSSAgent::SetCoverageEnabled(bool enabled) {

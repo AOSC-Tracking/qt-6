@@ -29,13 +29,13 @@
 #include <algorithm>
 #include <limits>
 #include <utility>
+#include <variant>
 
 #include "base/auto_reset.h"
 #include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/not_fatal_until.h"
 #include "base/strings/to_string.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
@@ -78,6 +78,7 @@
 #include "third_party/blink/renderer/core/html/media/audio_output_device_controller.h"
 #include "third_party/blink/renderer/core/html/media/autoplay_policy.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element_controls_list.h"
+#include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/html/media/media_controls.h"
 #include "third_party/blink/renderer/core/html/media/media_error.h"
 #include "third_party/blink/renderer/core/html/media/media_fragment_uri_parser.h"
@@ -103,11 +104,14 @@
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/speech/speech_synthesis_base.h"
+#include "third_party/blink/renderer/core/timing/soft_navigation_heuristics.h"
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/audio_source_provider_client.h"
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/media/remote_playback_client.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_descriptor.h"
@@ -118,7 +122,9 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/event_loop.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+#include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "ui/accessibility/accessibility_features.h"
 #include "ui/display/screen_info.h"
@@ -137,7 +143,7 @@
 
 namespace blink {
 
-using WeakMediaElementSet = HeapHashSet<WeakMember<HTMLMediaElement>>;
+using WeakMediaElementSet = GCedHeapHashSet<WeakMember<HTMLMediaElement>>;
 using DocumentElementSetMap =
     HeapHashMap<WeakMember<Document>, Member<WeakMediaElementSet>>;
 
@@ -182,21 +188,36 @@ enum class ProgressEventTimerState {
   kMaxValue = kStalledEventAlreadyScheduled
 };
 
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class MediaPlaybackInterruptionType {
+  kPlayAttemptWhileFrameHidden = 0,
+  kFrameHiddenWhilePlaying = 1,
+  kMaxValue = kFrameHiddenWhilePlaying
+};
+
 static const base::TimeDelta kStalledNotificationInterval = base::Seconds(3);
+
+void RecordMediaPlaybackInterruptionType(MediaPlaybackInterruptionType type) {
+  base::UmaHistogramEnumeration(
+      "Media.MediaPlaybackWhileNotVisible.InterruptionType", type);
+}
 
 String UrlForLoggingMedia(const KURL& url) {
   static const unsigned kMaximumURLLengthForLogging = 128;
 
   if (url.GetString().length() < kMaximumURLLengthForLogging)
     return url.GetString();
-  return url.GetString().GetString().Substring(0, kMaximumURLLengthForLogging) +
-         "...";
+  return StrCat(
+      {url.GetString().GetString().Substring(0, kMaximumURLLengthForLogging),
+       "..."});
 }
 
 DocumentElementSetMap& DocumentToElementSetMap() {
-  DEFINE_STATIC_LOCAL(Persistent<DocumentElementSetMap>, map,
-                      (MakeGarbageCollected<DocumentElementSetMap>()));
-  return *map;
+  using DocumentElementSetMapHolder = DisallowNewWrapper<DocumentElementSetMap>;
+  DEFINE_STATIC_LOCAL(Persistent<DocumentElementSetMapHolder>, holder,
+                      (MakeGarbageCollected<DocumentElementSetMapHolder>()));
+  return holder->Value();
 }
 
 void AddElementToDocumentMap(HTMLMediaElement* element, Document* document) {
@@ -216,7 +237,7 @@ void RemoveElementFromDocumentMap(HTMLMediaElement* element,
                                   Document* document) {
   DocumentElementSetMap& map = DocumentToElementSetMap();
   auto it = map.find(document);
-  CHECK(it != map.end(), base::NotFatalUntil::M130);
+  CHECK(it != map.end());
   WeakMediaElementSet* set = it->value;
   set->erase(element);
   if (set->empty())
@@ -304,6 +325,40 @@ String PreloadTypeToString(WebMediaPlayer::Preload preload_type) {
 bool IsValidPlaybackRate(double rate) {
   return rate == 0.0 || (rate >= HTMLMediaElement::kMinPlaybackRate &&
                          rate <= HTMLMediaElement::kMaxPlaybackRate);
+}
+
+HTMLMediaElement::PlayPromiseError PauseReasonToPlayPromiseError(
+    WebMediaPlayer::PauseReason pause_reason) {
+  switch (pause_reason) {
+    case WebMediaPlayer::PauseReason::kPageHidden:
+      return HTMLMediaElement::PlayPromiseError::kPaused_PageHidden;
+    case WebMediaPlayer::PauseReason::kSuspendedPlayerIdleTimeout:
+      return HTMLMediaElement::PlayPromiseError::
+          kPaused_SuspendedPlayerIdleTimeout;
+    case WebMediaPlayer::PauseReason::kRemotePlayStateChange:
+      return HTMLMediaElement::PlayPromiseError::kPaused_RemotePlayStateChange;
+    case WebMediaPlayer::PauseReason::kFrameFrozen:
+      return HTMLMediaElement::PlayPromiseError::kPaused_FrameFrozen;
+    case WebMediaPlayer::PauseReason::kFrameHidden:
+      return HTMLMediaElement::PlayPromiseError::kPaused_FrameHidden;
+    case WebMediaPlayer::PauseReason::kEndOfPlayback:
+      return HTMLMediaElement::PlayPromiseError::kPaused_EndOfPlayback;
+    case WebMediaPlayer::PauseReason::kPauseCalled:
+      return HTMLMediaElement::PlayPromiseError::kPaused_PauseCalled;
+    case WebMediaPlayer::PauseReason::kPauseRequestedByUser:
+      return HTMLMediaElement::PlayPromiseError::kPaused_PauseRequestedByUser;
+    case WebMediaPlayer::PauseReason::kPauseRequestedInternally:
+      return HTMLMediaElement::PlayPromiseError::
+          kPaused_PauseRequestedInternally;
+    case WebMediaPlayer::PauseReason::kRemovedFromDocument:
+      return HTMLMediaElement::PlayPromiseError::kPaused_RemovedFromDocument;
+    case WebMediaPlayer::PauseReason::kAutoplayAutoPause:
+      return HTMLMediaElement::PlayPromiseError::kPaused_AutoplayAutoPause;
+    case WebMediaPlayer::PauseReason::kLetAudioDescriptionFinish:
+      return HTMLMediaElement::PlayPromiseError::
+          kPaused_LetAudioDescriptionFinish;
+  }
+  NOTREACHED();
 }
 
 std::ostream& operator<<(std::ostream& stream,
@@ -424,7 +479,6 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
       muted_(false),
       paused_(true),
       seeking_(false),
-      paused_by_context_paused_(false),
       show_poster_flag_(true),
       sent_stalled_event_(false),
       ignore_preload_none_(false),
@@ -642,6 +696,19 @@ bool HTMLMediaElement::ShouldReusePlayer(Document& old_document,
          opener_document_ == &new_document;
 }
 
+bool HTMLMediaElement::CanPlayWhileHidden() const {
+  return GetDocument().GetExecutionContext()->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kMediaPlaybackWhileNotVisible,
+      ReportOptions::kDoNotReport);
+}
+
+bool HTMLMediaElement::IsFrameHidden() const {
+  auto* view = GetDocument().View();
+  return view && (view->GetFrameVisibility().value_or(
+                      mojom::blink::FrameVisibility::kRenderedInViewport) ==
+                  mojom::blink::FrameVisibility::kNotRendered);
+}
+
 void HTMLMediaElement::AttachToNewFrame() {
   // The opener has closed, so definitely nothing else should use this.
   opener_document_ = nullptr;
@@ -715,6 +782,9 @@ void HTMLMediaElement::ParseAttribute(
                         StyleChangeReasonForTracing::FromAttribute(name));
     // Trigger a reload, as long as the 'src' attribute is present.
     if (!params.new_value.IsNull()) {
+      if (auto* video_element = DynamicTo<HTMLVideoElement>(this)) {
+        SoftNavigationHeuristics::OnVideoSrcChanged(video_element);
+      }
       ignore_preload_none_ = false;
       InvokeLoadAlgorithm();
     }
@@ -882,10 +952,10 @@ void HTMLMediaElement::SetSrcObjectVariant(
   DVLOG(1) << __func__ << "(" << *this << ")";
   src_object_stream_descriptor_ = nullptr;
   src_object_media_source_handle_ = nullptr;
-  if (auto** desc = absl::get_if<MediaStreamDescriptor*>(&src_object_variant)) {
+  if (auto** desc = std::get_if<MediaStreamDescriptor*>(&src_object_variant)) {
     src_object_stream_descriptor_ = *desc;
   } else if (auto** handle =
-                 absl::get_if<MediaSourceHandle*>(&src_object_variant)) {
+                 std::get_if<MediaSourceHandle*>(&src_object_variant)) {
     src_object_media_source_handle_ = *handle;
   }
 
@@ -893,6 +963,9 @@ void HTMLMediaElement::SetSrcObjectVariant(
            << ": stream_descriptor=" << src_object_stream_descriptor_
            << ", media_source_handle=" << src_object_media_source_handle_;
 
+  if (auto* video_element = DynamicTo<HTMLVideoElement>(this)) {
+    SoftNavigationHeuristics::OnVideoSrcChanged(video_element);
+  }
   InvokeLoadAlgorithm();
 }
 
@@ -1431,7 +1504,7 @@ LocalFrame* HTMLMediaElement::LocalFrameForPlayer() {
 
 bool HTMLMediaElement::IsValidBuiltinCommand(HTMLElement& invoker,
                                              CommandEventType command) {
-  if (!RuntimeEnabledFeatures::HTMLInvokeActionsV2Enabled()) {
+  if (!RuntimeEnabledFeatures::HTMLCommandActionsV2Enabled()) {
     return HTMLElement::IsValidBuiltinCommand(invoker, command);
   }
 
@@ -1597,12 +1670,28 @@ void HTMLMediaElement::StartPlayerLoad() {
       FastHasAttribute(html_names::kDisableremoteplaybackAttr));
 
   if (RuntimeEnabledFeatures::
-          MediaPlaybackWhileNotVisiblePermissionPolicyEnabled()) {
+          MediaPlaybackWhileNotVisiblePermissionPolicyEnabled(
+              GetExecutionContext())) {
+    UseCounter::Count(
+        GetDocument(),
+        WebFeature::kMediaPlaybackWhileNotVisiblePermissionPolicy);
     web_media_player_->SetShouldPauseWhenFrameIsHidden(
         !GetDocument().GetExecutionContext()->IsFeatureEnabled(
             network::mojom::PermissionsPolicyFeature::
                 kMediaPlaybackWhileNotVisible,
             ReportOptions::kDoNotReport));
+  }
+
+  if (!CanPlayWhileHidden()) {
+    // The "media-playback-while-not-visible" permission policy default value
+    // was overridden, which means that either this frame or an ancestor frame
+    // changed the permission policy's default value. This should only happen if
+    // the MediaPlaybackWhileNotVisiblePermissionPolicyEnabled runtime flag is
+    // enabled.
+    UseCounter::Count(
+        GetDocument(),
+        WebFeature::kMediaPlaybackWhileNotVisiblePermissionPolicy);
+    web_media_player_->SetShouldPauseWhenFrameIsHidden(true);
   }
 
   bool is_cache_disabled = false;
@@ -1800,7 +1889,8 @@ bool HTMLMediaElement::IsSafeToLoadURL(const KURL& url,
       GetDocument().AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
           mojom::ConsoleMessageSource::kSecurity,
           mojom::ConsoleMessageLevel::kError,
-          "Not allowed to load local resource: " + url.ElidedString()));
+          StrCat(
+              {"Not allowed to load local resource: ", url.ElidedString()})));
     }
     DVLOG(3) << "isSafeToLoadURL(" << *this << ", " << UrlForLoggingMedia(url)
              << ") -> FALSE rejected by SecurityOrigin";
@@ -2707,8 +2797,8 @@ void HTMLMediaElement::setPlaybackRate(double rate,
     // DOMException and don't update the value.
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
-        "The provided playback rate (" + String::Number(rate) +
-            ") is not in the " + "supported playback range.");
+        StrCat({"The provided playback rate (", String::Number(rate),
+                ") is not in the supported playback range."}));
 
     // Do not update |playback_rate_|.
     return;
@@ -2857,6 +2947,15 @@ std::optional<DOMExceptionCode> HTMLMediaElement::Play() {
       autoplay_policy_->RequestPlay();
 
   if (exception_code == DOMExceptionCode::kNotAllowedError) {
+    if (IsFrameHidden() && web_media_player_ &&
+        web_media_player_->GetShouldPauseWhenFrameIsHidden()) {
+      // The HTMLMediaElement is not allowed to start because the frame has the
+      // MediaPlaybackWhileNotVisible policy applied and is hidden. Record this
+      // in a histogram.
+      RecordMediaPlaybackInterruptionType(
+          MediaPlaybackInterruptionType::kPlayAttemptWhileFrameHidden);
+    }
+
     // If we're already playing, then this play would do nothing anyway.
     // Call playInternal to handle scheduling the promise resolution.
     if (!paused_) {
@@ -2930,7 +3029,7 @@ void HTMLMediaElement::pause() {
 
   // When updating pause, be sure to update PauseToLetDescriptionFinish().
   autoplay_policy_->StopAutoplayMutedWhenVisible();
-  PauseInternal(PlayPromiseError::kPaused_PauseCalled);
+  PauseInternal(WebMediaPlayer::PauseReason::kPauseCalled);
 }
 
 void HTMLMediaElement::PauseToLetDescriptionFinish() {
@@ -2938,12 +3037,11 @@ void HTMLMediaElement::PauseToLetDescriptionFinish() {
 
   autoplay_policy_->StopAutoplayMutedWhenVisible();
 
-  // Passing in pause_speech as false to pause everything except the speech.
-  PauseInternal(PlayPromiseError::kPaused_PauseCalled, false);
+  // Pause everything except the speech.
+  PauseInternal(WebMediaPlayer::PauseReason::kLetAudioDescriptionFinish);
 }
 
-void HTMLMediaElement::PauseInternal(PlayPromiseError code,
-                                     bool pause_speech /* = true */) {
+void HTMLMediaElement::PauseInternal(WebMediaPlayer::PauseReason pause_reason) {
   DVLOG(3) << "pauseInternal(" << *this << ")";
 
   if (network_state_ == kNetworkEmpty)
@@ -2962,10 +3060,10 @@ void HTMLMediaElement::PauseInternal(PlayPromiseError code,
     // time to accurately reflect movie time at the moment we paused.
     SetOfficialPlaybackPosition(CurrentPlaybackPosition());
 
-    ScheduleRejectPlayPromises(code);
+    ScheduleRejectPlayPromises(PauseReasonToPlayPromiseError(pause_reason));
   }
 
-  UpdatePlayState(pause_speech);
+  UpdatePlayState(pause_reason);
 }
 
 bool HTMLMediaElement::preservesPitch() const {
@@ -3184,7 +3282,7 @@ void HTMLMediaElement::PlaybackProgressTimerFired() {
                         WebFeature::kHTMLMediaElementPauseAtFragmentEnd);
       // changes paused to true and fires a simple event named pause at the
       // media element.
-      PauseInternal(PlayPromiseError::kPaused_EndOfPlayback);
+      PauseInternal(WebMediaPlayer::PauseReason::kEndOfPlayback);
     }
   }
 
@@ -3253,14 +3351,14 @@ void HTMLMediaElement::AudioTrackChanged(AudioTrack* track) {
 }
 
 void HTMLMediaElement::AudioTracksTimerFired(TimerBase*) {
-  std::vector<WebMediaPlayer::TrackId> enabled_track_ids;
   for (unsigned i = 0; i < audioTracks().length(); ++i) {
     AudioTrack* track = audioTracks().AnonymousIndexedGetter(i);
-    if (track->enabled())
-      enabled_track_ids.push_back(track->id());
+    if (track->enabled()) {
+      web_media_player_->EnabledAudioTracksChanged(track->id());
+      return;
+    }
   }
-
-  web_media_player_->EnabledAudioTracksChanged(enabled_track_ids);
+  web_media_player_->EnabledAudioTracksChanged(std::nullopt);
 }
 
 VideoTrackList& HTMLMediaElement::videoTracks() {
@@ -3673,6 +3771,7 @@ void HTMLMediaElement::TimeChanged() {
     FinishSeek();
   }
 
+  std::optional<WebMediaPlayer::PauseReason> pause_reason;
   // When the current playback position reaches the end of the media resource
   // when the direction of playback is forwards, then the user agent must follow
   // these steps:
@@ -3698,14 +3797,16 @@ void HTMLMediaElement::TimeChanged() {
         // changes paused to true and fires a simple event named pause at the
         // media element.
         paused_ = true;
+        pause_reason = WebMediaPlayer::PauseReason::kEndOfPlayback;
         ScheduleNamedEvent(event_type_names::kPause);
-        ScheduleRejectPlayPromises(PlayPromiseError::kPaused_EndOfPlayback);
+        ScheduleRejectPlayPromises(
+            PauseReasonToPlayPromiseError(pause_reason.value()));
       }
       // Queue a task to fire a simple event named ended at the media element.
       ScheduleNamedEvent(event_type_names::kEnded);
     }
   }
-  UpdatePlayState();
+  UpdatePlayState(pause_reason);
 }
 
 void HTMLMediaElement::DurationChanged() {
@@ -3876,7 +3977,9 @@ bool HTMLMediaElement::StoppedDueToErrors() const {
   return false;
 }
 
-void HTMLMediaElement::UpdatePlayState(bool pause_speech /* = true */) {
+void HTMLMediaElement::UpdatePlayState(
+    std::optional<WebMediaPlayer::PauseReason>
+        pause_reason /* = std::nullopt */) {
   bool is_playing = web_media_player_ && !web_media_player_->Paused();
   bool should_be_playing = PotentiallyPlaying();
 
@@ -3910,14 +4013,22 @@ void HTMLMediaElement::UpdatePlayState(bool pause_speech /* = true */) {
     StartPlaybackProgressTimer();
     playing_ = true;
   } else {  // Should not be playing right now
-    // Always tell WMP about the pause since it may need to clear a pending
-    // automatic playback resumption.
-    if (web_media_player_ && ready_state_ >= kHaveMetadata) {
-      web_media_player_->Pause();
-    }
-    if (is_playing && pause_speech &&
-        ::features::IsTextBasedAudioDescriptionEnabled()) {
-      SpeechSynthesis()->Pause();
+    if (pause_reason) {
+      // Always tell WMP about the pause since it may need to clear a pending
+      // automatic playback resumption.
+      if (web_media_player_ && ready_state_ >= kHaveMetadata) {
+        if (pause_reason == WebMediaPlayer::PauseReason::kFrameHidden) {
+          RecordMediaPlaybackInterruptionType(
+              MediaPlaybackInterruptionType::kFrameHiddenWhilePlaying);
+        }
+        web_media_player_->Pause(pause_reason.value());
+      }
+
+      if ((pause_reason ==
+           WebMediaPlayer::PauseReason::kLetAudioDescriptionFinish) &&
+          is_playing && ::features::IsTextBasedAudioDescriptionEnabled()) {
+        SpeechSynthesis()->Pause();
+      }
     }
 
     playback_progress_timer_.Stop();
@@ -3990,22 +4101,14 @@ void HTMLMediaElement::ClearMediaPlayer() {
 }
 
 void HTMLMediaElement::ContextLifecycleStateChanged(
-    mojom::FrameLifecycleState state) {
-  if (state == mojom::FrameLifecycleState::kFrozenAutoResumeMedia && playing_) {
-    paused_by_context_paused_ = true;
-    pause();
+    mojom::blink::FrameLifecycleState state) {
+  if (state == mojom::blink::FrameLifecycleState::kFrozen) {
+    if (playing_) {
+      PausePlayback(WebMediaPlayer::PauseReason::kFrameFrozen);
+    }
     if (web_media_player_) {
       web_media_player_->OnFrozen();
     }
-  } else if (state == mojom::FrameLifecycleState::kFrozen && playing_) {
-    pause();
-    if (web_media_player_) {
-      web_media_player_->OnFrozen();
-    }
-  } else if (state == mojom::FrameLifecycleState::kRunning &&
-             paused_by_context_paused_) {
-    paused_by_context_paused_ = false;
-    Play();
   }
 }
 
@@ -4576,9 +4679,6 @@ void HTMLMediaElement::RejectScheduledPlayPromises() {
 
   const char* reason = "";
   switch (play_promise_error_code_) {
-    case PlayPromiseError::kPaused_Unknown:
-      reason = " because the media paused";
-      break;
     case PlayPromiseError::kPaused_PauseCalled:
       reason = " by a call to pause()";
       break;
@@ -4606,10 +4706,16 @@ void HTMLMediaElement::RejectScheduledPlayPromises() {
     case PlayPromiseError::kPaused_PauseRequestedInternally:
       reason = " because a pause was requested by the browser";
       break;
+    case PlayPromiseError::kPaused_FrameFrozen:
+      reason = " because the containing page was frozen";
+      break;
     case PlayPromiseError::kPaused_FrameHidden:
       reason =
           " because the media playback is not allowed by the "
           "media-playback-while-not-visible permission policy";
+      break;
+    case PlayPromiseError::kPaused_LetAudioDescriptionFinish:
+      reason = " because the audio description has not finished yet";
       break;
     case PlayPromiseError::kNotSupported:
       NOTREACHED();
@@ -4645,7 +4751,7 @@ void HTMLMediaElement::OnRemovedFromDocumentTimerFired(TimerBase*) {
   // Video should not pause when playing in Picture-in-Picture and subsequently
   // removed from the Document.
   if (!PictureInPictureController::IsElementInPictureInPicture(this))
-    PauseInternal(PlayPromiseError::kPaused_RemovedFromDocument);
+    PauseInternal(WebMediaPlayer::PauseReason::kRemovedFromDocument);
 }
 
 void HTMLMediaElement::AudioSourceProviderImpl::Wrap(
@@ -4656,8 +4762,14 @@ void HTMLMediaElement::AudioSourceProviderImpl::Wrap(
     web_audio_source_provider_->SetClient(nullptr);
 
   web_audio_source_provider_ = std::move(provider);
-  if (web_audio_source_provider_)
+  if (web_audio_source_provider_) {
     web_audio_source_provider_->SetClient(client_.Get());
+    if (connection_to_destination_ready_) {
+      // The destination is already connected, then we need to notify the
+      // provider.
+      web_audio_source_provider_->ConnectToDestinationReady();
+    }
+  }
 }
 
 void HTMLMediaElement::AudioSourceProviderImpl::SetClient(
@@ -4694,6 +4806,16 @@ void HTMLMediaElement::AudioSourceProviderImpl::ProvideInput(
   web_audio_source_provider_->ProvideInput(web_audio_data, frames_to_process);
 }
 
+void HTMLMediaElement::AudioSourceProviderImpl::ConnectToDestinationReady() {
+  base::AutoLock locker(provide_input_lock);
+
+  if (web_audio_source_provider_) {
+    web_audio_source_provider_->ConnectToDestinationReady();
+  } else {
+    connection_to_destination_ready_ = true;
+  }
+}
+
 void HTMLMediaElement::AudioClientImpl::SetFormat(uint32_t number_of_channels,
                                                   float sample_rate) {
   if (client_)
@@ -4716,8 +4838,9 @@ bool HTMLMediaElement::IsAudioElement() {
   return IsHTMLAudioElement();
 }
 
-DisplayType HTMLMediaElement::GetDisplayType() const {
-  return IsFullscreen() ? DisplayType::kFullscreen : DisplayType::kInline;
+WebMediaPlayer::DisplayType HTMLMediaElement::GetDisplayType() const {
+  return IsFullscreen() ? WebMediaPlayer::DisplayType::kFullscreen
+                        : WebMediaPlayer::DisplayType::kInline;
 }
 
 gfx::ColorSpace HTMLMediaElement::TargetColorSpace() {
@@ -4739,21 +4862,8 @@ void HTMLMediaElement::ResumePlayback() {
   PlayInternal();
 }
 
-void HTMLMediaElement::PausePlayback(PauseReason pause_reason) {
-  switch (pause_reason) {
-    case PauseReason::kUnknown:
-      return PauseInternal(PlayPromiseError::kPaused_Unknown);
-    case PauseReason::kPageHidden:
-      return PauseInternal(PlayPromiseError::kPaused_PageHidden);
-    case PauseReason::kSuspendedPlayerIdleTimeout:
-      return PauseInternal(
-          PlayPromiseError::kPaused_SuspendedPlayerIdleTimeout);
-    case PauseReason::kRemotePlayStateChange:
-      return PauseInternal(PlayPromiseError::kPaused_RemotePlayStateChange);
-    case PauseReason::kFrameHidden:
-      return PauseInternal(PlayPromiseError::kPaused_FrameHidden);
-  }
-  NOTREACHED();
+void HTMLMediaElement::PausePlayback(WebMediaPlayer::PauseReason pause_reason) {
+  return PauseInternal(pause_reason);
 }
 
 void HTMLMediaElement::DidPlayerStartPlaying() {
@@ -4870,8 +4980,8 @@ void HTMLMediaElement::RequestPause(bool triggered_by_user) {
     }
   }
   PauseInternal(triggered_by_user
-                    ? PlayPromiseError::kPaused_PauseRequestedByUser
-                    : PlayPromiseError::kPaused_PauseRequestedInternally);
+                    ? WebMediaPlayer::PauseReason::kPauseRequestedByUser
+                    : WebMediaPlayer::PauseReason::kPauseRequestedInternally);
 }
 
 void HTMLMediaElement::RequestSeekForward(base::TimeDelta seek_time) {
@@ -4914,6 +5024,15 @@ void HTMLMediaElement::SetAudioSinkId(const String& sink_id) {
 void HTMLMediaElement::SuspendForFrameClosed() {
   if (web_media_player_)
     web_media_player_->SuspendForFrameClosed();
+}
+
+void HTMLMediaElement::RecordAutoPictureInPictureInfo(
+    const media::PictureInPictureEventsInfo::AutoPipInfo&
+        auto_picture_in_picture_info) {
+  if (web_media_player_) {
+    web_media_player_->RecordAutoPictureInPictureInfo(
+        auto_picture_in_picture_info);
+  }
 }
 
 bool HTMLMediaElement::MediaShouldBeOpaque() const {
@@ -4974,6 +5093,15 @@ std::string HTMLMediaElement::GetActivePresentationId() {
 ExecutionContext* HTMLMediaElement::GetExecutionContextForPlayer() const {
   return opener_document_ ? opener_document_->GetExecutionContext()
                           : GetExecutionContext();
+}
+
+void HTMLMediaElement::ConnectToDestinationReady() {
+  if (!audio_source_node_ || is_audio_destination_connected_) {
+    return;
+  }
+
+  is_audio_destination_connected_ = true;
+  GetAudioSourceProvider().ConnectToDestinationReady();
 }
 
 HTMLMediaElement::OpenerContextObserver::OpenerContextObserver(

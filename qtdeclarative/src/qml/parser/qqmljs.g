@@ -1,10 +1,10 @@
 -- Copyright (C) 2016 The Qt Company Ltd.
 -- SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+-- Qt-Security score:critical reason:dataparser
 
 %parser         QQmlJSGrammar
 %decl           qqmljsparser_p.h
 %impl           qqmljsparser.cpp
-%expect         1
 
 %token T_AND "&"                T_AND_AND "&&"              T_AND_EQ "&="
 %token T_BREAK "break"          T_CASE "case"               T_CATCH "catch"
@@ -38,7 +38,6 @@
 %token T_NULL "null"            T_TRUE "true"               T_FALSE "false"
 %token T_CONST "const"          T_LET "let"                 T_AT "@"
 %token T_DEBUGGER "debugger"
-%token T_RESERVED_WORD "reserved word"
 %token T_MULTILINE_STRING_LITERAL "multiline string literal"
 %token T_COMMENT "comment"
 %token T_COMPATIBILITY_SEMICOLON
@@ -64,13 +63,31 @@
 %token T_TEMPLATE_TAIL "(template tail)"
 
 --- context keywords.
-%token T_PUBLIC "public"
+%token T_PACKAGE "package"
 %token T_IMPORT "import"
 %token T_PRAGMA "pragma"
+
+%token T_ABSTRACT "abstract"
+%token T_INTERFACE "interface"
+%token T_IMPLEMENTS "implements"
+%token T_PUBLIC "public"
+%token T_PROTECTED "protected"
+%token T_PRIVATE "private"
+
+%token T_NATIVE "native"
+%token T_VOLATILE "volatile"
+%token T_TRANSIENT "transient"
+%token T_SYNCHRONIZED "synchronized"
+
 %token T_AS "as"
 %token T_OF "of"
+%token T_ON "on"
 %token T_GET "get"
 %token T_SET "set"
+%token T_THROWS "throws"
+
+%token T_VIRTUAL "virtual"
+%token T_OVERRIDE "override"
 
 -- token representing no token
 %token T_NONE
@@ -99,10 +116,16 @@
 %token T_FOR_LOOKAHEAD_OK "(for lookahead ok)"
 
 --%left T_PLUS T_MINUS
-%nonassoc T_IDENTIFIER T_COLON T_SIGNAL T_PROPERTY T_READONLY T_ON T_SET T_GET T_OF T_STATIC T_FROM T_AS T_REQUIRED T_COMPONENT
+
+-- non-associative keywords
+%nonassoc T_ABSTRACT T_AS T_COLON T_COMPONENT T_FROM T_GET T_IDENTIFIER T_IMPLEMENTS
+%nonassoc T_INTERFACE T_NATIVE T_OF T_ON T_PACKAGE T_PRIVATE T_PROPERTY T_PROTECTED T_PUBLIC
+%nonassoc T_SET T_SIGNAL T_STATIC T_SYNCHRONIZED T_THROWS T_TRANSIENT T_VOLATILE
+%nonassoc T_VIRTUAL T_OVERRIDE T_FINAL T_READONLY T_REQUIRED T_DEFAULT
+
 %nonassoc REDUCE_HERE
 %right T_THEN T_ELSE
-%right T_WITHOUTAS T_AS
+%right T_WITHOUTAS
 
 %start TopLevel
 
@@ -1064,13 +1087,16 @@ UiAnnotatedObjectMember: UiObjectMember;
 
 UiObjectMember: UiObjectDefinition;
 
-UiObjectMember: UiQualifiedId T_COLON ExpressionStatementLookahead T_LBRACKET UiArrayMemberList T_RBRACKET;
+CommaOpt: T_COMMA;
+CommaOpt: ;
+
+UiObjectMember: UiQualifiedId T_COLON ExpressionStatementLookahead T_LBRACKET UiArrayMemberList CommaOpt T_RBRACKET;
 /.
     case $rule_number: {
         AST::UiArrayBinding *node = new (pool) AST::UiArrayBinding(sym(1).UiQualifiedId, sym(5).UiArrayMemberList->finish());
         node->colonToken = loc(2);
         node->lbracketToken = loc(4);
-        node->rbracketToken = loc(6);
+        node->rbracketToken = loc(7);
         sym(1).Node = node;
     } break;
 ./
@@ -1177,8 +1203,6 @@ UiObjectMember: UiQualifiedId Semicolon;
 ./
 
 UiPropertyType: T_VAR;
-/.  case $rule_number: Q_FALLTHROUGH(); ./
-UiPropertyType: T_RESERVED_WORD;
 /.  case $rule_number: Q_FALLTHROUGH(); ./
 UiPropertyType: T_FINAL;
 /.  case $rule_number: Q_FALLTHROUGH(); ./
@@ -1300,6 +1324,8 @@ AttrRequired:  T_REQUIRED %prec REDUCE_HERE;
 AttrReadonly:  T_READONLY %prec REDUCE_HERE;
 AttrDefault:  T_DEFAULT %prec REDUCE_HERE;
 AttrFinal: T_FINAL %prec REDUCE_HERE;
+AttrVirtual:  T_VIRTUAL %prec REDUCE_HERE;
+AttrOverride:  T_OVERRIDE %prec REDUCE_HERE;
 
 UiPropertyAttributes: AttrRequired UiPropertyAttributes;
 /.
@@ -1339,8 +1365,52 @@ UiPropertyAttributes: AttrFinal UiPropertyAttributes;
     case $rule_number: {
         AST::UiPropertyAttributes *node = sym(2).UiPropertyAttributes;
         if (node->isFinal())
-            diagnostic_messages.append(compileError(node->finalToken(), QLatin1String("Duplicated 'final' attribute is not allowed."), QtCriticalMsg));
+            syntaxError(node->finalToken(), "Duplicated 'final' attribute is not allowed.");
         node->m_finalToken = loc(1);
+        if (node->isVirtual()) {
+            syntaxError(node->virtualToken(), "The 'virtual' cannot be combined with 'final', as these attributes are mutually exclusive");
+        }
+        if (node->isOverride()) {
+            syntaxError(node->overrideToken(), "'override' is redundant when a property is marked as 'final'");
+        }
+        sym(1).UiPropertyAttributes = node;
+    } break;
+./
+
+UiPropertyAttributes: AttrVirtual UiPropertyAttributes;
+/.
+    case $rule_number: {
+        AST::UiPropertyAttributes *node = sym(2).UiPropertyAttributes;
+        if (node->isVirtual())
+            syntaxError(node->virtualToken(), "Duplicated 'virtual' attribute is not allowed.");
+        if (node->isOverride()) {
+            syntaxError(loc(1), "'virtual' is redundant when overriding a property. The 'override' "
+            "must only be used when actually overriding an existing property; using it on a "
+            "new property is an error.");
+        }
+        if (node->isFinal()) {
+            syntaxError(loc(1), "The 'virtual' cannot be combined with 'final', as these attributes are mutually exclusive");
+        }
+        node->m_virtualToken = loc(1);
+        sym(1).UiPropertyAttributes = node;
+    } break;
+./
+
+UiPropertyAttributes: AttrOverride UiPropertyAttributes;
+/.
+    case $rule_number: {
+        AST::UiPropertyAttributes *node = sym(2).UiPropertyAttributes;
+        if (node->isOverride())
+            syntaxError(node->overrideToken(), "Duplicated 'override' attribute is not allowed.");
+        if (node->isVirtual()) {
+            syntaxError(node->virtualToken(), "'virtual' is redundant when overriding a property. The 'override' "
+            "must only be used when actually overriding an existing property; using it on a "
+            "new property is an error.");
+        }
+        if (node->isFinal()) {
+            syntaxError(loc(1), "'override' is redundant when a property is marked as 'final'");
+        }
+        node->m_overrideToken = loc(1);
         sym(1).UiPropertyAttributes = node;
     } break;
 ./
@@ -1443,7 +1513,7 @@ UiObjectMemberWithScriptStatement: UiPropertyAttributes T_IDENTIFIER T_LT UiProp
 
 UiObjectMember: UiObjectMemberWithScriptStatement;
 
-UiObjectMemberWithArray: UiPropertyAttributes T_IDENTIFIER T_LT UiPropertyType T_GT QmlIdentifier T_COLON ExpressionStatementLookahead T_LBRACKET UiArrayMemberList T_RBRACKET Semicolon;
+UiObjectMemberWithArray: UiPropertyAttributes T_IDENTIFIER T_LT UiPropertyType T_GT QmlIdentifier T_COLON ExpressionStatementLookahead T_LBRACKET UiArrayMemberList CommaOpt T_RBRACKET Semicolon;
 /.
     case $rule_number: {
         AST::UiPublicMember *node = new (pool) AST::UiPublicMember(sym(4).UiQualifiedId->finish(), stringRef(6));
@@ -1465,7 +1535,7 @@ UiObjectMemberWithArray: UiPropertyAttributes T_IDENTIFIER T_LT UiPropertyType T
         AST::UiArrayBinding *binding = new (pool) AST::UiArrayBinding(propertyName, sym(10).UiArrayMemberList->finish());
         binding->colonToken = loc(7);
         binding->lbracketToken = loc(9);
-        binding->rbracketToken = loc(11);
+        binding->rbracketToken = loc(12);
 
         node->binding = binding;
 
@@ -1647,35 +1717,72 @@ EnumMemberList: EnumMemberList T_COMMA T_IDENTIFIER T_EQ T_MINUS T_NUMERIC_LITER
     }
 ./
 
+--------------------------------------------------------------------------------------------------------
+-- Keywords & Identifiers
+--------------------------------------------------------------------------------------------------------
+ECMAContextualKeyword: T_GET | T_SET | T_FROM | T_OF;
+--- T_DEFAULT should also be a part of QMLContextualKeyword, however it also belongs to ECMAKeyword
+--- and because of the workaround for JsIdentifier, it can't currently be included here
+QMLContextualKeyword: T_PROPERTY | T_SIGNAL | T_READONLY | T_ON | T_REQUIRED | T_COMPONENT | T_FINAL
+                    | T_VIRTUAL | T_OVERRIDE;
+
+--- as per ES7 these words are no longer reserved, however we might be interested in
+--- keeping them reserved for future usage in QML
+QMLFutureReservedWord: T_PACKAGE | T_ABSTRACT | T_INTERFACE | T_IMPLEMENTS | T_PUBLIC | T_PROTECTED
+                    | T_PRIVATE | T_NATIVE | T_VOLATILE | T_TRANSIENT | T_SYNCHRONIZED | T_THROWS;
+
+--- QMLReserved means can't be used as QmlIdentifier
+--- todo: consider making all QMLContextualKeyword-s reserved ones or the other way around
+QMLReservedWord: T_STATIC | T_AS | QMLFutureReservedWord;
+
+--- 262 ES 7 11.6.2.1
+ECMAKeyword: T_BREAK | T_DO | T_IN | T_TYPEOF | T_CASE | T_ELSE | T_INSTANCEOF
+            | T_VAR | T_CATCH | T_EXPORT | T_NEW | T_VOID | T_CLASS | T_EXTENDS
+            | T_RETURN | T_WHILE | T_CONST | T_FINALLY | T_SUPER | T_WITH | T_CONTINUE
+            | T_FOR | T_SWITCH | T_DEBUGGER | T_FUNCTION | T_THIS | T_DEFAULT
+            | T_IF | T_THROW | T_DELETE | T_IMPORT | T_TRY;
+
+--- 262 ES 7 11.6.2.2
+--- Note await token is missing
+ECMAFutureReservedWord: T_ENUM;
+
+--- 262 ES 7 11.8.1
+ECMANullLiteral: T_NULL;
+
+--- 262 ES 7 11.8.2
+ECMABooleanLiteral: T_TRUE | T_FALSE;
+
+--- 262 ES 7 11.6.2
+ECMAReservedWord: ECMAKeyword
+                | ECMAFutureReservedWord
+                | ECMANullLiteral
+                | ECMABooleanLiteral;
+
+--- Preserving older ones, which should probably be part of ECMAContextualKeyword
+--- both static and let are treated as reserved through semantic restrictions
+--- rather than the lexical grammar (see NOTE 262 ES 7 11.6.2.1)
+ECMAReservedWord: T_LET;
+
+--- QML Identifiers
+--- note: some of the ECMAKeyword could probably be added as qml identifiers
 QmlIdentifier: T_IDENTIFIER
-             | T_PROPERTY
-             | T_SIGNAL
-             | T_READONLY
-             | T_ON
-             | T_GET
-             | T_SET
-             | T_FROM
-             | T_OF
-             | T_REQUIRED
-             | T_COMPONENT;
+            | ECMAContextualKeyword
+            | QMLContextualKeyword;
 
+--- ECMA Identifiers (262 ES 7 12.1)
+--- since qlarl doesn't support "NOT" we can't define a set IdentifierName \ ECMAReservedWord
+--- introducing JsIdentifier as a workaround,
+--- so that IdentifierName = JsIdentifier U ECMAReservedWord
 JsIdentifier: T_IDENTIFIER
-            | T_PROPERTY
-            | T_SIGNAL
-            | T_READONLY
-            | T_ON
-            | T_GET
-            | T_SET
-            | T_FROM
-            | T_STATIC
-            | T_OF
-            | T_AS
-            | T_REQUIRED
-            | T_COMPONENT;
+            | ECMAContextualKeyword
+            | QMLContextualKeyword
+            | QMLReservedWord;
 
+--- Note yield token is missing (262 ES 7 11.6.2.2)
 IdentifierReference: JsIdentifier;
-BindingIdentifier: IdentifierReference;
+BindingIdentifier: JsIdentifier;
 
+IdentifierName: JsIdentifier | ECMAReservedWord;
 --------------------------------------------------------------------------------------------------------
 -- Types
 --------------------------------------------------------------------------------------------------------
@@ -1684,6 +1791,8 @@ Type: UiQualifiedId T_LT SimpleType T_GT;
 /.
     case $rule_number: {
         sym(1).Type = new (pool) AST::Type(sym(1).UiQualifiedId, sym(3).Type);
+        sym(1).Type->lAngleBracketToken = loc(2);
+        sym(1).Type->rAngleBracketToken = loc(4);
     } break;
 ./
 
@@ -1692,10 +1801,6 @@ Type: SimpleType;
 SimpleType: T_VAR;
 /.  case $rule_number: Q_FALLTHROUGH(); ./
 SimpleType: T_VOID;
-/.  case $rule_number: Q_FALLTHROUGH(); ./
-SimpleType: T_FINAL;
-/.  case $rule_number: Q_FALLTHROUGH(); ./
-SimpleType: T_RESERVED_WORD;
 /.
     case $rule_number: {
         AST::UiQualifiedId *id = new (pool) AST::UiQualifiedId(stringRef(1));
@@ -1946,6 +2051,7 @@ ArrayLiteral: T_LBRACKET ElementList T_COMMA ElisionOpt T_RBRACKET;
         auto *list = sym(2).PatternElementList;
         if (sym(4).Elision) {
             AST::PatternElementList *l = new (pool) AST::PatternElementList(sym(4).Elision, nullptr);
+            l->commaToken = loc(3);
             list = list->append(l);
         }
         AST::ArrayPattern *node = new (pool) AST::ArrayPattern(list->finish());
@@ -1960,16 +2066,22 @@ ArrayLiteral: T_LBRACKET ElementList T_COMMA ElisionOpt T_RBRACKET;
 ElementList: AssignmentExpression_In;
 /.
     case $rule_number: {
-        AST::PatternElement *e = new (pool) AST::PatternElement(sym(1).Expression);
+        auto *expression = sym(1).Expression;
+        AST::PatternElement *e = new (pool) AST::PatternElement(expression);
         sym(1).Node = new (pool) AST::PatternElementList(nullptr, e);
+        if (auto *be = expression->binaryExpressionCast(); be && be->op == QSOperator::Assign)
+            e->equalToken = be->operatorToken;
     } break;
 ./
 
 ElementList: Elision AssignmentExpression_In;
 /.
     case $rule_number: {
-        AST::PatternElement *e = new (pool) AST::PatternElement(sym(2).Expression);
+        auto *expression = sym(2).Expression;
+        AST::PatternElement *e = new (pool) AST::PatternElement(expression);
         sym(1).Node = new (pool) AST::PatternElementList(sym(1).Elision->finish(), e);
+        if (auto *be = expression->binaryExpressionCast(); be && be->op == QSOperator::Assign)
+            e->equalToken = be->operatorToken;
     } break;
 ./
 
@@ -1984,9 +2096,13 @@ ElementList: ElisionOpt SpreadElement;
 ElementList: ElementList T_COMMA ElisionOpt AssignmentExpression_In;
 /.
     case $rule_number: {
-        AST::PatternElement *e = new (pool) AST::PatternElement(sym(4).Expression);
+        auto *expression = sym(4).Expression;
+        AST::PatternElement *e = new (pool) AST::PatternElement(expression);
         AST::PatternElementList *node = new (pool) AST::PatternElementList(sym(3).Elision, e);
+        node->commaToken = loc(2);
         sym(1).Node = sym(1).PatternElementList->append(node);
+        if (auto *be = expression->binaryExpressionCast(); be && be->op == QSOperator::Assign)
+            e->equalToken = be->operatorToken;
     } break;
 ./
 
@@ -1994,6 +2110,7 @@ ElementList: ElementList T_COMMA ElisionOpt SpreadElement;
 /.
     case $rule_number: {
         AST::PatternElementList *node = new (pool) AST::PatternElementList(sym(3).Elision, sym(4).PatternElement);
+        node->commaToken = loc(2);
         sym(1).Node = sym(1).PatternElementList->append(node);
     } break;
 ./
@@ -2033,8 +2150,11 @@ ElisionOpt: Elision;
 SpreadElement: T_ELLIPSIS AssignmentExpression;
 /.
     case $rule_number: {
-        AST::PatternElement *node = new (pool) AST::PatternElement(sym(2).Expression, AST::PatternElement::SpreadElement);
+        auto *expression = sym(2).Expression;
+        AST::PatternElement *node = new (pool) AST::PatternElement(expression, AST::PatternElement::SpreadElement);
         sym(1).Node = node;
+        if (auto *be = expression->binaryExpressionCast(); be && be->op == QSOperator::Assign)
+            node->equalToken = be->operatorToken;
     } break;
 ./
 
@@ -2173,49 +2293,6 @@ LiteralPropertyName: T_NUMERIC_LITERAL;
         sym(1).Node = node;
     } break;
 ./
-
-IdentifierName: IdentifierReference;
-IdentifierName: ReservedIdentifier;
-
-ReservedIdentifier: T_BREAK;
-ReservedIdentifier: T_CASE;
-ReservedIdentifier: T_CATCH;
-ReservedIdentifier: T_CONTINUE;
-ReservedIdentifier: T_DEFAULT;
-ReservedIdentifier: T_DELETE;
-ReservedIdentifier: T_DO;
-ReservedIdentifier: T_ELSE;
-ReservedIdentifier: T_ENUM;
-ReservedIdentifier: T_FALSE;
-ReservedIdentifier: T_FINALLY;
-ReservedIdentifier: T_FOR;
-ReservedIdentifier: T_FUNCTION;
-ReservedIdentifier: T_IF;
-ReservedIdentifier: T_IN;
-ReservedIdentifier: T_INSTANCEOF;
-ReservedIdentifier: T_NEW;
-ReservedIdentifier: T_NULL;
-ReservedIdentifier: T_RETURN;
-ReservedIdentifier: T_SWITCH;
-ReservedIdentifier: T_THIS;
-ReservedIdentifier: T_THROW;
-ReservedIdentifier: T_TRUE;
-ReservedIdentifier: T_TRY;
-ReservedIdentifier: T_TYPEOF;
-ReservedIdentifier: T_VAR;
-ReservedIdentifier: T_VOID;
-ReservedIdentifier: T_WHILE;
-ReservedIdentifier: T_CONST;
-ReservedIdentifier: T_LET;
-ReservedIdentifier: T_DEBUGGER;
-ReservedIdentifier: T_RESERVED_WORD;
-ReservedIdentifier: T_FINAL;
-ReservedIdentifier: T_SUPER;
-ReservedIdentifier: T_WITH;
-ReservedIdentifier: T_CLASS;
-ReservedIdentifier: T_EXTENDS;
-ReservedIdentifier: T_EXPORT;
-ReservedIdentifier: T_IMPORT;
 
 ComputedPropertyName: T_LBRACKET AssignmentExpression_In T_RBRACKET;
 /.
@@ -3387,6 +3464,7 @@ ArrayBindingPattern: BindingElementList T_COMMA ElisionOpt BindingRestElementOpt
     case $rule_number: {
         if (sym(3).Elision || sym(4).Node) {
             auto *l = new (pool) AST::PatternElementList(sym(3).Elision, sym(4).PatternElement);
+            l->commaToken = loc(2);
             l = sym(1).PatternElementList->append(l);
             sym(1).Node = l;
         }
@@ -3414,6 +3492,7 @@ BindingElementList: BindingElementList T_COMMA BindingElisionElement;
 /.
     case $rule_number: {
         sym(1).PatternElementList = sym(1).PatternElementList->append(sym(3).PatternElementList);
+        sym(3).PatternElementList->commaToken = loc(2);
     } break;
 ./
 
@@ -3973,8 +4052,7 @@ FunctionDeclaration: Function BindingIdentifier T_LPAREN FormalParameters T_RPAR
     case $rule_number: {
         if (!ensureNoFunctionTypeAnnotations(sym(6).TypeAnnotation, sym(4).FormalParameterList))
             return false;
-        AST::FunctionDeclaration *node = new (pool) AST::FunctionDeclaration(stringRef(2), sym(4).FormalParameterList, sym(8).StatementList,
-                                                                             /*type annotation*/nullptr);
+        AST::FunctionDeclaration *node = new (pool) AST::FunctionDeclaration(stringRef(2), sym(4).FormalParameterList, sym(8).StatementList, sym(6).TypeAnnotation);
         node->functionToken = loc(1);
         node->identifierToken = loc(2);
         node->lparenToken = loc(3);
@@ -4007,7 +4085,7 @@ FunctionDeclaration_Default: Function T_LPAREN FormalParameters T_RPAREN TypeAnn
         if (!ensureNoFunctionTypeAnnotations(sym(5).TypeAnnotation, sym(3).FormalParameterList))
             return false;
         AST::FunctionDeclaration *node = new (pool) AST::FunctionDeclaration(QStringView(), sym(3).FormalParameterList, sym(7).StatementList,
-                                                                             /*type annotation*/nullptr);
+                                                                             sym(5).TypeAnnotation);
         node->functionToken = loc(1);
         node->lparenToken = loc(2);
         node->rparenToken = loc(4);
@@ -4023,7 +4101,7 @@ FunctionExpression: T_FUNCTION BindingIdentifier T_LPAREN FormalParameters T_RPA
         if (!ensureNoFunctionTypeAnnotations(sym(6).TypeAnnotation, sym(4).FormalParameterList))
             return false;
         AST::FunctionExpression *node = new (pool) AST::FunctionExpression(stringRef(2), sym(4).FormalParameterList, sym(8).StatementList,
-                                                                           /*type annotation*/nullptr);
+                                                                           sym(6).TypeAnnotation);
         node->functionToken = loc(1);
         if (! stringRef(2).isNull())
           node->identifierToken = loc(2);
@@ -4041,7 +4119,7 @@ FunctionExpression: T_FUNCTION T_LPAREN FormalParameters T_RPAREN TypeAnnotation
         if (!ensureNoFunctionTypeAnnotations(sym(5).TypeAnnotation, sym(3).FormalParameterList))
             return false;
         AST::FunctionExpression *node = new (pool) AST::FunctionExpression(QStringView(), sym(3).FormalParameterList, sym(7).StatementList,
-                                                                           /*type annotation*/nullptr);
+                                                                           sym(5).TypeAnnotation);
         node->functionToken = loc(1);
         node->lparenToken = loc(2);
         node->rparenToken = loc(4);

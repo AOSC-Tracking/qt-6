@@ -62,6 +62,7 @@ QPipewireAudioSinkStream::QPipewireAudioSinkStream(QAudioDevice device,
 
 QPipewireAudioSinkStream::~QPipewireAudioSinkStream()
 {
+    resetStream();
     Q_ASSERT(!m_deviceRemovalObserver);
 }
 
@@ -333,6 +334,11 @@ void QPipewireAudioSinkStream::stateChanged(pw_stream_state oldState, pw_stream_
     }
 }
 
+void QPipewireAudioSinkStream::finalizeStream()
+{
+    requestStop();
+}
+
 void QPipewireAudioSinkStream::disconnectStream()
 {
     auto self = shared_from_this(); // extend lifetime until this function returns;
@@ -371,6 +377,9 @@ QPipewireAudioSink::QPipewireAudioSink(QAudioDevice device, const QAudioFormat &
     : BaseClass(std::move(device), format, parent)
 {
 }
+
+QPipewireAudioSink::~QPipewireAudioSink()
+    = default;
 
 void QPipewireAudioSink::reportXRuns(int numberOfXruns)
 {

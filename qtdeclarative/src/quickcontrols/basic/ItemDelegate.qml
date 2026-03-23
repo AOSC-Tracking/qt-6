@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 import QtQuick
 import QtQuick.Controls.impl
@@ -19,7 +20,6 @@ T.ItemDelegate {
 
     icon.width: 24
     icon.height: 24
-    icon.color: control.palette.text
 
     contentItem: IconLabel {
         spacing: control.spacing
@@ -28,6 +28,7 @@ T.ItemDelegate {
         alignment: control.display === IconLabel.IconOnly || control.display === IconLabel.TextUnderIcon ? Qt.AlignCenter : Qt.AlignLeft
 
         icon: control.icon
+        defaultIconColor: control.palette.text
         text: control.text
         font: control.font
         color: control.highlighted ? control.palette.highlightedText : control.palette.text

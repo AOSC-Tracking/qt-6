@@ -4,12 +4,18 @@
 
 #include "services/network/public/cpp/cookie_manager_mojom_traits.h"
 
+#include "base/debug/alias.h"
+#include "base/debug/crash_logging.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/time/time.h"
 #include "mojo/public/cpp/base/time_mojom_traits.h"
+#include "mojo/public/cpp/bindings/string_data_view.h"
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_options.h"
 #include "services/network/public/mojom/cookie_manager.mojom-shared.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
+#include "services/network/public/mojom/schemeful_site.mojom-shared.h"
+#include "url/mojom/origin.mojom-shared.h"
 
 namespace mojo {
 
@@ -542,6 +548,8 @@ EnumTraits<network::mojom::CookieChangeCause, net::CookieChangeCause>::ToMojom(
       return network::mojom::CookieChangeCause::EVICTED;
     case net::CookieChangeCause::EXPIRED_OVERWRITE:
       return network::mojom::CookieChangeCause::EXPIRED_OVERWRITE;
+    case net::CookieChangeCause::INSERTED_NO_CHANGE_OVERWRITE:
+      return network::mojom::CookieChangeCause::INSERTED_NO_CHANGE_OVERWRITE;
     default:
       break;
   }
@@ -572,6 +580,9 @@ bool EnumTraits<network::mojom::CookieChangeCause, net::CookieChangeCause>::
       return true;
     case network::mojom::CookieChangeCause::EXPIRED_OVERWRITE:
       *output = net::CookieChangeCause::EXPIRED_OVERWRITE;
+      return true;
+    case network::mojom::CookieChangeCause::INSERTED_NO_CHANGE_OVERWRITE:
+      *output = net::CookieChangeCause::INSERTED_NO_CHANGE_OVERWRITE;
       return true;
     default:
       break;
@@ -675,16 +686,18 @@ bool StructTraits<network::mojom::CookiePartitionKeyDataView,
           FromMojom(partition_key.ancestor_chain_bit());
 
   if (partition_key.from_script()) {
-    *out = net::CookiePartitionKey::FromScript().value();
+    *out = net::CookiePartitionKey::FromScript();
     return true;
   }
   net::SchemefulSite site;
-  if (!partition_key.ReadSite(&site))
+  if (!partition_key.ReadSite(&site)) {
     return false;
+  }
 
   std::optional<base::UnguessableToken> nonce;
-  if (!partition_key.ReadNonce(&nonce))
+  if (!partition_key.ReadNonce(&nonce)) {
     return false;
+  }
 
   *out = net::CookiePartitionKey::FromWire(
       site,

@@ -4,8 +4,10 @@
 
 #include "third_party/blink/renderer/core/frame/remote_frame.h"
 
+#include "base/timer/elapsed_timer.h"
 #include "base/types/optional_util.h"
 #include "cc/layers/surface_layer.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-blink.h"
 #include "third_party/blink/public/common/fenced_frame/fenced_frame_utils.h"
 #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
@@ -60,6 +62,7 @@
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_request.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_client_settings_object.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher_properties.h"
@@ -76,11 +79,13 @@ namespace {
 
 // Maintain a global (statically-allocated) hash map indexed by the the result
 // of hashing the |frame_token| passed on creation of a RemoteFrame object.
-typedef HeapHashMap<uint64_t, WeakMember<RemoteFrame>> RemoteFramesByTokenMap;
+using RemoteFramesByTokenMap = HeapHashMap<uint64_t, WeakMember<RemoteFrame>>;
 static RemoteFramesByTokenMap& GetRemoteFramesMap() {
-  DEFINE_STATIC_LOCAL(Persistent<RemoteFramesByTokenMap>, map,
-                      (MakeGarbageCollected<RemoteFramesByTokenMap>()));
-  return *map;
+  using RemoteFramesByTokenMapHolder =
+      DisallowNewWrapper<RemoteFramesByTokenMap>;
+  DEFINE_STATIC_LOCAL(Persistent<RemoteFramesByTokenMapHolder>, holder,
+                      (MakeGarbageCollected<RemoteFramesByTokenMapHolder>()));
+  return holder->Value();
 }
 
 }  // namespace
@@ -261,6 +266,7 @@ void RemoteFrame::Navigate(FrameLoadRequest& frame_request,
       !frame_request.GetRequestorBaseURL().IsEmpty()) {
     params->initiator_base_url = frame_request.GetRequestorBaseURL();
   }
+  params->actual_navigation_start = frame_request.GetCreationTime();
   params->post_body =
       blink::GetRequestBodyForWebURLRequest(WrappedResourceRequest(request));
   DCHECK_EQ(!!params->post_body, request.HttpMethod().Utf8() == "POST");
@@ -283,8 +289,7 @@ void RemoteFrame::Navigate(FrameLoadRequest& frame_request,
       base::OptionalFromPtr(base::OptionalToPtr(initiator_frame_token));
   params->source_location = network::mojom::blink::SourceLocation::New();
 
-  std::unique_ptr<SourceLocation> source_location =
-      frame_request.TakeSourceLocation();
+  SourceLocation* source_location = frame_request.GetSourceLocation();
   if (!source_location->IsUnknown()) {
     params->source_location->url =
         source_location->Url() ? source_location->Url() : "";
@@ -515,7 +520,7 @@ void RemoteFrame::DidChangeVisibleToHitTesting() {
 }
 
 void RemoteFrame::SetReplicatedPermissionsPolicyHeader(
-    const ParsedPermissionsPolicy& parsed_header) {
+    const network::ParsedPermissionsPolicy& parsed_header) {
   permissions_policy_header_ = parsed_header;
   ApplyReplicatedPermissionsPolicyHeader();
 }
@@ -728,6 +733,7 @@ void RemoteFrame::ScrollRectToVisible(
 
   scroll_into_view_util::ScrollRectToVisible(*owner_object, absolute_rect,
                                              std::move(params),
+                                             /*container=*/nullptr,
                                              /*from_remote_frame=*/true);
 }
 
@@ -736,8 +742,10 @@ void RemoteFrame::IntrinsicSizingInfoOfChildChanged(
   FrameOwner* owner = Owner();
   // Only communication from HTMLPluginElement-owned subframes is allowed
   // at present. This includes <embed> and <object> tags.
-  if (!owner || !owner->IsPlugin())
+  if (!owner || (!owner->IsPlugin() &&
+                 !RuntimeEnabledFeatures::ResponsiveIframesEnabled())) {
     return;
+  }
 
   // TODO(https://crbug.com/1044304): Should either remove the native
   // C++ Blink type and use the Mojo type everywhere or typemap the
@@ -747,9 +755,9 @@ void RemoteFrame::IntrinsicSizingInfoOfChildChanged(
   sizing_info.aspect_ratio = info->aspect_ratio;
   sizing_info.has_width = info->has_width;
   sizing_info.has_height = info->has_height;
-  View()->SetIntrinsicSizeInfo(sizing_info);
+  View()->SetNaturalDimensions(sizing_info);
 
-  owner->IntrinsicSizingInfoChanged();
+  owner->NaturalSizingInfoChanged();
 }
 
 // Update the proxy's SecurityContext with new sandbox flags or permissions
@@ -762,18 +770,18 @@ void RemoteFrame::IntrinsicSizingInfoOfChildChanged(
 // this proxy ever parents a local frame.
 void RemoteFrame::DidSetFramePolicyHeaders(
     network::mojom::blink::WebSandboxFlags sandbox_flags,
-    const WTF::Vector<ParsedPermissionsPolicyDeclaration>&
+    const WTF::Vector<network::ParsedPermissionsPolicyDeclaration>&
         parsed_permissions_policy) {
   TRACE_EVENT("navigation", "RemoteFrame::DidSetFramePolicyHeaders");
 
   SetReplicatedSandboxFlags(sandbox_flags);
-  // Convert from WTF::Vector<ParsedPermissionsPolicyDeclaration>
-  // to std::vector<ParsedPermissionsPolicyDeclaration>, since
-  // ParsedPermissionsPolicy is an alias for the later.
+  // Convert from WTF::Vector<network::ParsedPermissionsPolicyDeclaration>
+  // to std::vector<network::ParsedPermissionsPolicyDeclaration>, since
+  // network::ParsedPermissionsPolicy is an alias for the later.
   //
   // TODO(crbug.com/1047273): Remove this conversion by switching
-  // ParsedPermissionsPolicy to operate over Vector
-  ParsedPermissionsPolicy parsed_permissions_policy_copy(
+  // network::ParsedPermissionsPolicy to operate over Vector
+  network::ParsedPermissionsPolicy parsed_permissions_policy_copy(
       parsed_permissions_policy.size());
   for (wtf_size_t i = 0; i < parsed_permissions_policy.size(); ++i)
     parsed_permissions_policy_copy[i] = parsed_permissions_policy[i];
@@ -929,12 +937,12 @@ bool RemoteFrame::DetachChildren() {
 }
 
 void RemoteFrame::ApplyReplicatedPermissionsPolicyHeader() {
-  const PermissionsPolicy* parent_permissions_policy = nullptr;
+  const network::PermissionsPolicy* parent_permissions_policy = nullptr;
   if (Frame* parent_frame = Parent()) {
     parent_permissions_policy =
         parent_frame->GetSecurityContext()->GetPermissionsPolicy();
   }
-  ParsedPermissionsPolicy container_policy;
+  network::ParsedPermissionsPolicy container_policy;
   if (Owner())
     container_policy = Owner()->GetFramePolicy().container_policy;
   security_context_.InitializePermissionsPolicy(
@@ -1159,8 +1167,13 @@ void RemoteFrame::CreateRemoteChild(
 }
 
 void RemoteFrame::CreateRemoteChildren(
-    Vector<mojom::blink::CreateRemoteChildParamsPtr> params) {
+    Vector<mojom::blink::CreateRemoteChildParamsPtr> params,
+    const std::optional<base::UnguessableToken>& navigation_metrics_token) {
+  base::ElapsedTimer timer;
   Client()->CreateRemoteChildren(params);
+  Platform::Current()->AddCreateRemoteChildrenEvent(
+      navigation_metrics_token, timer.start_time(), timer.Elapsed());
+  // Add any new code above the AddCreateRemoteChildrenEvent call.
 }
 
 void RemoteFrame::ForwardFencedFrameEventToEmbedder(

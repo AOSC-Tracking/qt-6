@@ -28,7 +28,7 @@
 
 namespace content {
 class NavigationHandle;
-class NavigationThrottle;
+class NavigationThrottleRegistry;
 class Page;
 class RenderFrameHost;
 }  // namespace content
@@ -178,9 +178,8 @@ class ContentSubresourceFilterThrottleManager
   // frame is activated.
   //
   // Note that there is currently no constraints on the ordering of throttles.
-  void MaybeAppendNavigationThrottles(
-      content::NavigationHandle* navigation_handle,
-      std::vector<std::unique_ptr<content::NavigationThrottle>>* throttles);
+  void MaybeCreateAndAddNavigationThrottles(
+      content::NavigationThrottleRegistry& registry);
 
   PageLoadStatistics* page_load_statistics() const { return statistics_.get(); }
 
@@ -269,12 +268,11 @@ class ContentSubresourceFilterThrottleManager
       AdTagCarriesAcrossProcesses);
   FRIEND_TEST_ALL_PREFIXES(ContentSubresourceFilterThrottleManagerTest,
                            FirstDisallowedLoadCalledOutOfOrder);
-  std::unique_ptr<SafeBrowsingChildNavigationThrottle>
-  MaybeCreateChildNavigationThrottle(
-      content::NavigationHandle* navigation_handle);
+  void MaybeCreateAndAddChildNavigationThrottle(
+      content::NavigationThrottleRegistry& registry);
   std::unique_ptr<ActivationStateComputingNavigationThrottle>
   MaybeCreateActivationStateComputingThrottle(
-      content::NavigationHandle* navigation_handle);
+      content::NavigationThrottleRegistry& registry);
 
   // Will return nullptr if the parent frame of this navigation is not
   // activated (and therefore has no subresource filter).
@@ -346,10 +344,6 @@ class ContentSubresourceFilterThrottleManager
       const mojom::ActivationLevel& activation_level,
       bool did_inherit_opener_activation);
 
-  void RecordExperimentalUmaHistogramsForNavigation(
-      content::NavigationHandle* navigation_handle,
-      bool passed_through_ready_to_commit);
-
   // Sets whether the frame is considered an ad frame. If the value has changed,
   // we also update the replication state and inform observers.
   void SetIsAdFrame(content::RenderFrameHost* render_frame_host,
@@ -369,10 +363,6 @@ class ContentSubresourceFilterThrottleManager
   std::map<int64_t,
            raw_ptr<ActivationStateComputingNavigationThrottle, CtnExperimental>>
       ongoing_activation_throttles_;
-
-  // The set of navigations that have passed through ReadyToCommitNavigation,
-  // but haven't yet passed through DidFinishNavigation. Keyed by navigation id.
-  base::flat_set<int64_t> ready_to_commit_navigations_;
 
   // Set of frames that have been identified as ads, identified by FrameTreeNode
   // ID. A RenderFrameHost is an ad frame iff the FrameAdEvidence
@@ -407,8 +397,7 @@ class ContentSubresourceFilterThrottleManager
   bool current_committed_load_has_notified_disallowed_load_ = false;
 
   // This member outlives this class.
-  raw_ptr<VerifiedRulesetDealer::Handle, AcrossTasksDanglingUntriaged>
-      dealer_handle_;
+  raw_ptr<VerifiedRulesetDealer::Handle> dealer_handle_;
 
   scoped_refptr<safe_browsing::SafeBrowsingDatabaseManager> database_manager_;
 

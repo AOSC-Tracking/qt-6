@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgrhicontext_p.h"
 
@@ -11,11 +13,14 @@
 #include <QtQuick3DUtils/private/qssgassert_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderableimage_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendermesh_p.h>
+#include <QtQuick3DRuntimeRender/private/qssguserrenderpassmanager_p.h>
 #include <QtQuick3DUtils/private/qssgutils_p.h>
 #include <QtQuick3DUtils/private/qssgassert_p.h>
 #include <qtquick3d_tracepoints_p.h>
 
 #include <QtGui/qquaternion.h>
+
+#include <memory>
 
 QT_BEGIN_NAMESPACE
 
@@ -444,12 +449,16 @@ void QSSGRhiShaderPipeline::addStage(const QRhiShaderStage &stage, StageFlags fl
     for (const QShaderDescription::InOutVariable &var : combinedImageSamplers)
         m_combinedImageSamplers[var.name] = var;
 
+    const QVector<QShaderDescription::InOutVariable> storageImages  = stage.shader().description().storageImages() + stage.shader().description().separateImages();
+    for (const QShaderDescription::InOutVariable &var : storageImages)
+        m_storageImages[var.name] = var;
+
     std::fill(m_materialImageSamplerBindings,
               m_materialImageSamplerBindings + size_t(QSSGRhiSamplerBindingHints::BindingMapSize),
               -1);
 }
 
-int QSSGRhiShaderPipeline::ub0ShadowDataOffset() const
+int QSSGRhiShaderPipeline::ub0DirectionalLightDataOffset() const
 {
     return m_ub0NextUBufOffset + m_context.rhi()->ubufAligned(sizeof(QSSGShaderLightsUniformData));
 }
@@ -996,8 +1005,8 @@ void QSSGRhiShaderPipeline::setUniformArray(char *ubufData, const char *name, co
 void QSSGRhiShaderPipeline::ensureCombinedUniformBuffer(QRhiBuffer **ubuf)
 {
     const quint32 alignedLightsSize = m_context.rhi()->ubufAligned(sizeof(QSSGShaderLightsUniformData));
-    const quint32 alignedShadowsSize = m_context.rhi()->ubufAligned(sizeof(QSSGShaderShadowsUniformData));
-    const quint32 totalBufferSize = m_ub0NextUBufOffset + alignedLightsSize + alignedShadowsSize;
+    const quint32 alignedDirectionalLightsSize = m_context.rhi()->ubufAligned(sizeof(QSSGShaderDirectionalLightsUniformData));
+    const quint32 totalBufferSize = m_ub0NextUBufOffset + alignedLightsSize + alignedDirectionalLightsSize;
     if (!*ubuf) {
         *ubuf = m_context.rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, totalBufferSize);
         (*ubuf)->create();
@@ -1031,6 +1040,44 @@ int QSSGRhiShaderPipeline::bindingForTexture(const char *name, int hint)
 
     return binding;
 }
+
+int QSSGRhiShaderPipeline::bindingForImage(const char *name)
+{
+    auto it = m_storageImages.constFind(QByteArray::fromRawData(name, strlen(name)));
+    const int binding = it != m_storageImages.cend() ? it->binding : -1;
+    return binding;
+}
+
+void QSSGRhiShaderPipeline::setShaderResources(char *ubufData,
+                                               QSSGBufferManager &theBufferManager,
+                                               const QByteArray &inPropertyName,
+                                               const QVariant &propertyValue,
+                                               QSSGRenderShaderValue::Type inPropertyType)
+{
+    if (inPropertyType == QSSGRenderShaderValue::Texture) {
+        QSSGRenderImage *image = propertyValue.value<QSSGRenderImage *>();
+        if (image) {
+            const QSSGRenderImageTexture texture = theBufferManager.loadRenderImage(image);
+            if (texture.m_texture) {
+                const QSSGRhiTexture t = {
+                    inPropertyName,
+                    texture.m_texture,
+                    { QSSGRhiHelpers::toRhi(image->m_minFilterType),
+                            QSSGRhiHelpers::toRhi(image->m_magFilterType),
+                            image->m_mipFilterType != QSSGRenderTextureFilterOp::None ? QSSGRhiHelpers::toRhi(image->m_mipFilterType) : QRhiSampler::None,
+                            QSSGRhiHelpers::toRhi(image->m_horizontalTilingMode),
+                            QSSGRhiHelpers::toRhi(image->m_verticalTilingMode),
+                            QSSGRhiHelpers::toRhi(image->m_depthTilingMode)
+                    }
+                };
+                addExtraTexture(t);
+            }
+        }
+    } else {
+        setUniformValue(ubufData, inPropertyName, propertyValue, inPropertyType);
+    }
+}
+
 
 /*!
     \internal
@@ -1594,6 +1641,25 @@ void QSSGRhiShaderResourceBindingList::addUniformBuffer(int binding, QRhiShaderR
     d->u.ubuf.hasDynamicOffset = false;
 }
 
+void QSSGRhiShaderResourceBindingList::addStorageBuffer(int binding, QRhiShaderResourceBinding::StageFlags stage, QRhiBuffer *buf, int offset, int size)
+{
+#ifdef QT_DEBUG
+    if (p == MAX_SIZE) {
+        qWarning("Out of shader resource bindings slots (max is %d)", MAX_SIZE);
+        return;
+    }
+#endif
+    QRhiShaderResourceBinding::Data *d = QRhiImplementation::shaderResourceBindingData(v[p++]);
+    h ^= qintptr(buf);
+    d->binding = binding;
+    d->stage = stage;
+    d->type = QRhiShaderResourceBinding::BufferLoadStore;
+    d->u.ubuf.buf = buf;
+    d->u.ubuf.offset = offset;
+    d->u.ubuf.maybeSize = size; // 0 = all
+    d->u.ubuf.hasDynamicOffset = false;
+}
+
 void QSSGRhiShaderResourceBindingList::addTexture(int binding, QRhiShaderResourceBinding::StageFlags stage, QRhiTexture *tex, QRhiSampler *sampler)
 {
 #ifdef QT_DEBUG
@@ -1612,7 +1678,56 @@ void QSSGRhiShaderResourceBindingList::addTexture(int binding, QRhiShaderResourc
     d->u.stex.texSamplers[0].sampler = sampler;
 }
 
-QT_END_NAMESPACE
+void QSSGRhiShaderResourceBindingList::addImageLoad(int binding, QRhiShaderResourceBinding::StageFlags stage, QRhiTexture *tex, int level)
+{
+#ifdef QT_DEBUG
+    if (p == QSSGRhiShaderResourceBindingList::MAX_SIZE) {
+        qWarning("Out of shader resource bindings slots (max is %d)", MAX_SIZE);
+        return;
+    }
+#endif
+    QRhiShaderResourceBinding::Data *d = QRhiImplementation::shaderResourceBindingData(v[p++]);
+    h ^= qintptr(tex) ^ qintptr(level);
+    d->binding = binding;
+    d->stage = stage;
+    d->type = QRhiShaderResourceBinding::ImageLoad;
+    d->u.simage.tex = tex;
+    d->u.simage.level = level;
+}
+
+void QSSGRhiShaderResourceBindingList::addImageStore(int binding, QRhiShaderResourceBinding::StageFlags stage, QRhiTexture *tex, int level)
+{
+#ifdef QT_DEBUG
+    if (p == QSSGRhiShaderResourceBindingList::MAX_SIZE) {
+        qWarning("Out of shader resource bindings slots (max is %d)", MAX_SIZE);
+        return;
+    }
+#endif
+    QRhiShaderResourceBinding::Data *d = QRhiImplementation::shaderResourceBindingData(v[p++]);
+    h ^= qintptr(tex) ^ qintptr(level);
+    d->binding = binding;
+    d->stage = stage;
+    d->type = QRhiShaderResourceBinding::ImageStore;
+    d->u.simage.tex = tex;
+    d->u.simage.level = level;
+}
+
+void QSSGRhiShaderResourceBindingList::addImageLoadStore(int binding, QRhiShaderResourceBinding::StageFlags stage, QRhiTexture *tex, int level)
+{
+#ifdef QT_DEBUG
+    if (p == QSSGRhiShaderResourceBindingList::MAX_SIZE) {
+        qWarning("Out of shader resource bindings slots (max is %d)", MAX_SIZE);
+        return;
+    }
+#endif
+    QRhiShaderResourceBinding::Data *d = QRhiImplementation::shaderResourceBindingData(v[p++]);
+    h ^= qintptr(tex) ^ qintptr(level);
+    d->binding = binding;
+    d->stage = stage;
+    d->type = QRhiShaderResourceBinding::ImageLoadStore;
+    d->u.simage.tex = tex;
+    d->u.simage.level = level;
+}
 
 bool QSSGRhiContextPrivate::shaderDebuggingEnabled()
 {
@@ -1722,3 +1837,122 @@ QRhiCommandBuffer::BeginPassFlags QSSGRhiContext::commonPassFlags() const
     // get a small performance gain with OpenGL by declaring this.
     return QRhiCommandBuffer::DoNotTrackResourcesForCompute;
 }
+
+QSSGRhiRenderableTextureV2::~QSSGRhiRenderableTextureV2()
+{
+    for (auto &tex : textures)
+        tex->invalidate();
+}
+
+/*!
+    \internal
+
+    \fn void QSSGRhiRenderableTextureV2::setDescription(QRhi *rhi, QRhiTextureRenderTargetDescription rtDesc)
+
+    Takes ownership of the textures in \a rtDesc and creates a render target.
+    Once set the textures should be assume owned by this object references to
+    individual textures can be gotten via the textures() method.
+ */
+void QSSGRhiRenderableTextureV2::setDescription(QRhi *rhi, QRhiTextureRenderTargetDescription rtDesc, QRhiTextureRenderTarget::Flags flags)
+{
+    Q_ASSERT(rhi);
+
+    textures.clear();
+    const size_t colorAttachmentCount = rtDesc.colorAttachmentCount();
+    for (size_t i = 0; i < colorAttachmentCount; ++i)
+        textures.push_back(std::make_unique<QSSGManagedRhiTexture>(m_manager, rtDesc.colorAttachmentAt(i)->texture(), QSSGManagedRhiTexture::Private::Initialize));
+
+    if (rtDesc.depthTexture()) {
+        depthTexture = std::make_unique<QSSGManagedRhiTexture>(m_manager, rtDesc.depthTexture(), QSSGManagedRhiTexture::Private::Initialize);
+        depthStencil.reset();
+    } else if (rtDesc.depthStencilBuffer()) {
+        depthStencil.reset(rtDesc.depthStencilBuffer());
+        depthTexture.reset();
+    } else {
+        depthTexture.reset();
+        depthStencil = nullptr;
+    }
+
+    dirty = ColorTextureDirty | DepthTextureDirty | DepthStencilDirty;
+
+    rt.reset(rhi->newTextureRenderTarget(rtDesc));
+    rt->setName(rtName);
+    rt->setFlags(flags);
+    rpDesc.reset(rt->newCompatibleRenderPassDescriptor());
+    rt->setRenderPassDescriptor(rpDesc.get());
+    if (!rt->create()) {
+        qWarning("Failed to create renderable texture render target");
+        rt.reset();
+        return;
+    }
+}
+
+void QSSGRhiRenderableTextureV2::resetRenderTarget()
+{
+    rt.reset();
+    rpDesc.reset();
+}
+
+void QSSGRhiRenderableTextureV2::reset()
+{
+    if (rt)
+        rt->setDescription({/* empty */});
+
+    resetRenderTarget();
+
+    textures.clear();
+
+    depthStencil = nullptr;
+    depthTexture.reset();
+}
+
+// Called by the manager when it's being destroyed and since it owns the resource
+// it will release them.
+void QSSGRhiRenderableTextureV2::invalidate()
+{
+    // NOTE: This does not delete the texture wrappers, just releases the underlying QRhiTexture.
+    for (auto &tex : textures)
+        tex->invalidate();
+
+    if (depthTexture)
+        depthTexture->invalidate();
+
+    reset();
+}
+
+QSSGManagedRhiTexture::QSSGManagedRhiTexture(const std::shared_ptr<QSSGUserRenderPassManager> &manager, QRhiTexture *texture, Private)
+    : m_manager(manager)
+    , m_texture(texture)
+{
+    Q_ASSERT(m_manager != nullptr);
+    m_manager->registerManagedTexture(this);
+}
+
+QSSGManagedRhiTexture::QSSGManagedRhiTexture(const std::shared_ptr<QSSGUserRenderPassManager> &manager, std::unique_ptr<QRhiTexture> texture)
+    : m_manager(manager)
+    , m_texture(std::move(texture))
+{
+    Q_ASSERT(m_manager != nullptr);
+    m_manager->registerManagedTexture(this);
+}
+
+QSSGManagedRhiTexture::~QSSGManagedRhiTexture()
+{
+    invalidate();
+}
+
+void QSSGManagedRhiTexture::invalidate()
+{
+    if (m_manager)
+        m_manager->unregisterManagedTexture(this);
+
+    if (Q_UNLIKELY(!m_manager && m_texture)) {
+        qWarning("QSSGManagedRhiTexture: No manager for tracked resource!");
+        delete m_texture.release();
+    }
+
+    // Under normal circumstances, the manager is responsible for deleting the texture.
+    (void)m_texture.release();
+}
+
+QT_END_NAMESPACE

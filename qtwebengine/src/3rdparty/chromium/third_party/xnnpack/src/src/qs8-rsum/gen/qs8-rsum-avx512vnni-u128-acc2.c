@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-rsum/avx512vnni.c.in
 //   Generator: tools/xngen
@@ -8,17 +9,21 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/reduce.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/reduce.h"
 
 void xnn_qs8_rsum_ukernel__avx512vnni_u128_acc2(
     size_t batch,
     const int8_t* input,
     int32_t* output,
-    const struct xnn_qs8_rsum_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_qs8_rsum_params* restrict params)
 {
   assert(batch != 0);
   assert(input != NULL);

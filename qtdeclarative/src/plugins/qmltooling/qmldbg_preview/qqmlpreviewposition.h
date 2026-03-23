@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLPREVIEWPOSITION_H
 #define QQMLPREVIEWPOSITION_H
@@ -67,9 +68,9 @@ private:
     QString m_settingsKey;
     QTimer m_savePositionTimer;
     Position m_lastWindowPosition;
-    QVector<QWindow *> m_positionedWindows;
+    QList<QWindow *> m_positionedWindows;
 
-    QVector<ScreenData> m_currentInitScreensData;
+    QList<ScreenData> m_currentInitScreensData;
 };
 
 QT_END_NAMESPACE

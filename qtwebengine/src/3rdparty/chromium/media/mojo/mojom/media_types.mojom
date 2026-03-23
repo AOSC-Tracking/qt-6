@@ -206,7 +206,6 @@ struct AudioDecoderConfig {
   ChannelLayout target_output_channel_layout;
   SampleFormat target_output_sample_format;
   bool should_discard_decoder_delay;
-  array<uint8> aac_extra_data;
 };
 
 // This defines a mojo transport format for media::VideoDecoderConfig.
@@ -386,7 +385,7 @@ struct VideoFrameMetadata {
 
   VideoTransformation? transformation;
 
-  bool texture_owner;
+  bool in_surface_view;
 
   bool wants_promotion_hint;
 
@@ -469,6 +468,8 @@ union VideoFrameData {
   GpuMemoryBufferSharedImageVideoFrameData gpu_memory_buffer_shared_image_data;
   SharedImageVideoFrameData shared_image_data;
   OpaqueVideoFrameData opaque_data;
+  [EnableIf=is_chromeos|is_linux]
+  DmabufVideoFrameData dmabuf_data;
 };
 
 // A marker for EOS frames.
@@ -496,14 +497,47 @@ struct GpuMemoryBufferSharedImageVideoFrameData {
 struct SharedImageVideoFrameData {
   gpu.mojom.ExportedSharedImage shared_image;
   gpu.mojom.SyncToken sync_token;
-  // |ycbcr_data| is present on Android (and sometimes Fuchsia) when the
+  // TODO(crbug.com/40263579): Remove this bool once all VideoFrame
+  // clients use MappableSI.
+  bool is_mappable_si_enabled;
+  // |ycbcr_data| is present on Android when the
   // video is hardware decoded and the display compositor uses Vulkan.
+  [EnableIf=is_android]
   gpu.mojom.VulkanYCbCrInfo? ycbcr_data;
 };
 
 // An empty structure used for STORAGE_OPAQUE VideoFrame.
 struct OpaqueVideoFrameData {
 };
+
+[EnableIf=is_chromeos|is_linux]
+struct ColorPlaneLayout {
+  // Stride, offsets, and sizes for each ColorPlaneLayout. Offsets are relative
+  // to the start of the DMA buffer.
+  uint64 stride;
+  uint64 offset;
+  uint64 size;
+};
+
+[EnableIf=is_chromeos|is_linux]
+struct DmabufVideoFrameData {
+  // The following members are needed to transmit the VideoFrameLayout.
+  array<ColorPlaneLayout> planes;
+  // |is_multi_planar| is true when a format uses multiple backing buffers to
+  // store its planes.
+  bool is_multi_planar;
+  // |buffer_addr_align| contains the memory address alignment for the buffers.
+  uint64 buffer_addr_align;
+  // |modifier| is retrieved from the GBM library. It can be different from
+  // kNoModifier only if the VideoFrame is created by using NativePixmap.
+  uint64 modifier;
+
+  // An array of FD's to the DMA Buffers. Note: there may be more
+  // ColorLayoutPlanes than FD's. This can happen when the planes are stored
+  // in a single buffer. The "extra" planes will refer to the last FD.
+  array<handle<platform>> fds;
+};
+
 
 struct PipelineStatistics {
   uint64 audio_bytes_decoded;
@@ -562,7 +596,6 @@ struct StatusData {
   mojo_base.mojom.ListValue frames;
   StatusData? cause;
   mojo_base.mojom.Value data;
-  uint64 packed_root_cause;
 };
 
 struct EncoderStatus {
@@ -601,7 +634,7 @@ enum InputStreamErrorCode {
 enum RendererType {
   kRendererImpl = 0,     // RendererImplFactory
   kMojo = 1,             // MojoRendererFactory
-  kMediaPlayer = 2,      // MediaPlayerRendererClientFactory
+  // kMediaPlayer = 2,   // Deprecated
   kCourier = 3,          // CourierRendererFactory
   kFlinging = 4,         // FlingingRendererClientFactory
   kCast = 5,             // CastRendererClientFactory
@@ -619,7 +652,7 @@ enum DemuxerType {
   kMockDemuxer = 1,
   kFFmpegDemuxer = 2,
   kChunkDemuxer = 3,
-  kMediaUrlDemuxer = 4,
+  // kMediaUrlDemuxer = 4,    // Deprecated
   kFrameInjectingDemuxer = 5,
   kStreamProviderDemuxer = 6,
   kManifestDemuxer = 7,
@@ -642,7 +675,7 @@ enum CreateCdmStatus {
   kUnsupportedKeySystem = 12,
   kDisconnectionError = 13,
   kNotAllowedOnUniqueOrigin = 14,
-  kMediaDrmBridgeCreationFailed = 15,
+  //kMediaDrmBridgeCreationFailed = 15,     // Deprecated
   kMediaCryptoNotAvailable = 16,
   kNoMoreInstances = 17,
   kInsufficientGpuResources = 18,
@@ -657,4 +690,24 @@ enum CreateCdmStatus {
   kAndroidFailedToStartProvisioning = 27,
   kAndroidFailedMediaCryptoCreate = 28,
   kAndroidUnsupportedMediaCryptoScheme = 29,
+};
+
+// See media/base/picture_in_picture_events_info.h for description. Typemapped
+// to `media::PictureInPictureEventsInfo::AutoPipReason`.
+enum AutoPipReason {
+  kUnknown = 0,
+  kVideoConferencing = 1,
+  kMediaPlayback = 2,
+};
+
+// See media/base/picture_in_picture_events_info.h for description. Typemapped
+// to `media::PictureInPictureEventsInfo::AutoPipInfo`.
+struct AutoPipInfo {
+  AutoPipReason auto_pip_reason;
+  bool has_audio_focus;
+  bool is_playing;
+  bool was_recently_audible;
+  bool has_safe_url;
+  bool meets_media_engagement_conditions;
+  bool blocked_due_to_content_setting;
 };

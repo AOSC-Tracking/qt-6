@@ -1,5 +1,7 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qcustom3ditem.h"
 #include "qquickgraphsnode_p.h"
@@ -9,7 +11,7 @@ QT_BEGIN_NAMESPACE
 
 /*!
  * \qmltype GraphsNode
- * \inherits Node
+ * \inherits QtQuick3D::Node
  * \qmlabstract
  * \inqmlmodule QtGraphs
  * \ingroup graphs_qml_3D
@@ -749,3 +751,5 @@ QCustom3DItem *QQuickGraphsNode::selectedCustomItem() const
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qquickgraphsnode_p.cpp"

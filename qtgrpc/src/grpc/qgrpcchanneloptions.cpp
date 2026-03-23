@@ -19,6 +19,7 @@ using namespace QtGrpc;
     \class QGrpcChannelOptions
     \inmodule QtGrpc
     \since 6.6
+    \compares equality
     \brief The QGrpcChannelOptions class offers various options for fine-tuning
     a gRPC channel.
 
@@ -380,6 +381,39 @@ std::optional<QSslConfiguration> QGrpcChannelOptions::sslConfiguration() const
 }
 #endif
 
+/*
+//! [compares]
+    Returns \c true if the \l{deadlineTimeout}, \l{filterServerMetadata},
+    \l{metadata(QtGrpc::MultiValue_t)}, \l{serializationFormat} and
+    \l{sslConfiguration} in \a lhs and \a rhs are
+//! [compares]
+*/
+bool comparesEqual(const QGrpcChannelOptions &lhs, const QGrpcChannelOptions &rhs)
+{
+    return lhs.deadlineTimeout() == rhs.deadlineTimeout()
+        && lhs.filterServerMetadata() == rhs.filterServerMetadata()
+        && lhs.metadata(QtGrpc::MultiValue) == rhs.metadata(QtGrpc::MultiValue)
+        && lhs.serializationFormat() == rhs.serializationFormat()
+#if QT_CONFIG(ssl)
+        && lhs.sslConfiguration() == rhs.sslConfiguration()
+#endif
+        ;
+}
+
+/*!
+    \since 6.11
+    \fn bool QGrpcChannelOptions::operator==(const QGrpcChannelOptions &lhs, const QGrpcChannelOptions &rhs)
+    \include qgrpcchanneloptions.cpp compares
+    equal.
+*/
+
+/*!
+    \since 6.11
+    \fn bool QGrpcChannelOptions::operator!=(const QGrpcChannelOptions &lhs, const QGrpcChannelOptions &rhs)
+    \include qgrpcchanneloptions.cpp compares
+    not equal.
+*/
+
 #ifndef QT_NO_DEBUG_STREAM
 /*!
     \since 6.8
@@ -393,6 +427,7 @@ QDebug operator<<(QDebug debug, const QGrpcChannelOptions &chOpts)
     debug.nospace().noquote();
     debug << "QGrpcChannelOptions(deadline: " << chOpts.deadlineTimeout()
           << ", metadata: " << chOpts.metadata(QtGrpc::MultiValue)
+          << ", filterServerMetadata: " << chOpts.filterServerMetadata()
           << ", serializationFormat: " << chOpts.serializationFormat().suffix()
           << ", sslConfiguration: ";
 #  if QT_CONFIG(ssl)

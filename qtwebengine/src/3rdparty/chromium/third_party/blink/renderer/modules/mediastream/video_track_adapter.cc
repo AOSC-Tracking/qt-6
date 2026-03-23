@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/modules/mediastream/video_track_adapter.h"
 
 #include <algorithm>
@@ -34,24 +29,10 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
-#include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_gfx.h"
+#include "third_party/blink/renderer/platform/wtf/cross_thread_copier_media.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/thread_safe_ref_counted.h"
-
-namespace WTF {
-
-// Template specializations of [1], needed to be able to pass WTF callbacks
-// that have VideoTrackAdapterSettings or gfx::Size parameters across threads.
-//
-// [1] third_party/blink/renderer/platform/wtf/cross_thread_copier.h.
-template <>
-struct CrossThreadCopier<blink::VideoTrackAdapterSettings>
-    : public CrossThreadCopierPassThrough<blink::VideoTrackAdapterSettings> {
-  STATIC_ONLY(CrossThreadCopier);
-};
-
-}  // namespace WTF
 
 namespace blink {
 
@@ -83,6 +64,8 @@ struct ComputedSettings {
   base::TimeDelta prev_frame_timestamp = base::TimeDelta::Max();
   base::TimeTicks new_frame_rate_timestamp;
   base::TimeTicks last_update_timestamp;
+  std::optional<gfx::Size> metadata_frame_source_size;
+  std::optional<float> device_scale_factor;
 };
 
 int ClampToValidDimension(int dimension) {
@@ -156,7 +139,7 @@ VideoTrackAdapterSettings ReturnSettingsMaybeOverrideMaxFps(
 // tracks on the video task runner. All method calls must be on the video task
 // runner.
 class VideoTrackAdapter::VideoFrameResolutionAdapter
-    : public WTF::ThreadSafeRefCounted<VideoFrameResolutionAdapter> {
+    : public ThreadSafeRefCounted<VideoFrameResolutionAdapter> {
  public:
   struct VideoTrackCallbacks {
     VideoCaptureDeliverFrameInternalCallback frame_callback;
@@ -231,7 +214,7 @@ class VideoTrackAdapter::VideoFrameResolutionAdapter
 
  private:
   virtual ~VideoFrameResolutionAdapter();
-  friend class WTF::ThreadSafeRefCounted<VideoFrameResolutionAdapter>;
+  friend class ThreadSafeRefCounted<VideoFrameResolutionAdapter>;
 
   void DoDeliverFrame(
       scoped_refptr<media::VideoFrame> video_frame,
@@ -334,7 +317,9 @@ void VideoTrackAdapter::VideoFrameResolutionAdapter::AddCallbacks(
   if (!callbacks_.empty() && track_settings_.frame_size.width() > 0 &&
       track_settings_.frame_size.height() > 0) {
     settings_callback.Run(track_settings_.frame_size,
-                          track_settings_.frame_rate);
+                          track_settings_.frame_rate,
+                          track_settings_.metadata_frame_source_size,
+                          track_settings_.device_scale_factor);
   }
 
   VideoTrackCallbacks track_callbacks = {
@@ -567,10 +552,18 @@ void VideoTrackAdapter::VideoFrameResolutionAdapter::MaybeUpdateTrackSettings(
   ComputeFrameRate(frame.timestamp(), &track_settings_.frame_rate,
                    &track_settings_.prev_frame_timestamp);
   if (MaybeUpdateFrameRate(&track_settings_) ||
-      frame.natural_size() != track_settings_.frame_size) {
+      frame.natural_size() != track_settings_.frame_size ||
+      frame.metadata().source_size !=
+          track_settings_.metadata_frame_source_size ||
+      frame.metadata().device_scale_factor !=
+          track_settings_.device_scale_factor) {
     track_settings_.frame_size = frame.natural_size();
+    track_settings_.metadata_frame_source_size = frame.metadata().source_size;
+    track_settings_.device_scale_factor = frame.metadata().device_scale_factor;
     settings_callback.Run(track_settings_.frame_size,
-                          track_settings_.frame_rate);
+                          track_settings_.frame_rate,
+                          track_settings_.metadata_frame_source_size,
+                          track_settings_.device_scale_factor);
   }
 }
 void VideoTrackAdapter::VideoFrameResolutionAdapter::MaybeUpdateTracksFormat(
@@ -590,7 +583,10 @@ void VideoTrackAdapter::VideoFrameResolutionAdapter::MaybeUpdateTracksFormat(
 void VideoTrackAdapter::VideoFrameResolutionAdapter::ResetFrameRate() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(video_sequence_checker_);
   for (const auto& callback : callbacks_) {
-    callback.second.settings_callback.Run(track_settings_.frame_size, 0.0);
+    callback.second.settings_callback.Run(
+        track_settings_.frame_size, 0.0,
+        track_settings_.metadata_frame_source_size,
+        track_settings_.device_scale_factor);
   }
 }
 
@@ -614,12 +610,7 @@ VideoTrackAdapter::~VideoTrackAdapter() {
 
 void VideoTrackAdapter::AddTrack(
     const MediaStreamVideoTrack* track,
-    VideoCaptureDeliverFrameCB frame_callback,
-    VideoCaptureNotifyFrameDroppedCB notify_frame_dropped_callback,
-    EncodedVideoFrameCB encoded_frame_callback,
-    VideoCaptureSubCaptureTargetVersionCB sub_capture_target_version_callback,
-    VideoTrackSettingsCallback settings_callback,
-    VideoTrackFormatCallback format_callback,
+    MediaStreamVideoSourceCallbacks video_stream_fallbacks,
     const VideoTrackAdapterSettings& settings) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -628,13 +619,18 @@ void VideoTrackAdapter::AddTrack(
       CrossThreadBindOnce(
           &VideoTrackAdapter::AddTrackOnVideoTaskRunner,
           WTF::CrossThreadUnretained(this), WTF::CrossThreadUnretained(track),
-          CrossThreadBindRepeating(std::move(frame_callback)),
-          CrossThreadBindRepeating(std::move(notify_frame_dropped_callback)),
-          CrossThreadBindRepeating(std::move(encoded_frame_callback)),
           CrossThreadBindRepeating(
-              std::move(sub_capture_target_version_callback)),
-          CrossThreadBindRepeating(std::move(settings_callback)),
-          CrossThreadBindRepeating(std::move(format_callback)), settings));
+              std::move(video_stream_fallbacks.deliver_frame_cb)),
+          CrossThreadBindRepeating(
+              std::move(video_stream_fallbacks.frame_dropped_cb)),
+          CrossThreadBindRepeating(
+              std::move(video_stream_fallbacks.encoded_frame_cb)),
+          CrossThreadBindRepeating(
+              std::move(video_stream_fallbacks.sub_capture_target_version_cb)),
+          CrossThreadBindRepeating(
+              std::move(video_stream_fallbacks.settings_cb)),
+          CrossThreadBindRepeating(std::move(video_stream_fallbacks.format_cb)),
+          settings));
 }
 
 void VideoTrackAdapter::AddTrackOnVideoTaskRunner(
@@ -830,7 +826,10 @@ void VideoTrackAdapter::SetSourceFrameSizeOnVideoTaskRunner(
 void VideoTrackAdapter::RemoveTrackOnVideoTaskRunner(
     const MediaStreamVideoTrack* track) {
   DCHECK(video_task_runner_->RunsTasksInCurrentSequence());
-  for (auto it = adapters_.begin(); it != adapters_.end(); ++it) {
+  for (auto it = adapters_.begin(); it != adapters_.end();
+       // SAFETY: The iterator is used only for traversal, and the loop is
+       // exited directly after the erase.
+       UNSAFE_BUFFERS(++it)) {
     (*it)->RemoveCallbacks(track);
     if ((*it)->IsEmpty()) {
       adapters_.erase(it);
@@ -846,7 +845,10 @@ void VideoTrackAdapter::ReconfigureTrackOnVideoTaskRunner(
 
   VideoFrameResolutionAdapter::VideoTrackCallbacks track_callbacks;
   // Remove the track.
-  for (auto it = adapters_.begin(); it != adapters_.end(); ++it) {
+  for (auto it = adapters_.begin(); it != adapters_.end();
+       // SAFETY: The iterator is used only for traversal, and the loop is
+       // exited directly after the erase.
+       UNSAFE_BUFFERS(++it)) {
     track_callbacks = (*it)->RemoveAndGetCallbacks(track);
     if (!track_callbacks.frame_callback)
       continue;

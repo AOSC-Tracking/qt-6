@@ -1,6 +1,7 @@
 // Copyright 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -85,7 +86,7 @@ const UIStrings = {
    *and warnings through the Report-to API. Following this label will be the URL of the server.
    */
   reportingTo: 'reporting to',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/application/OpenedWindowDetailsView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const booleanToYesNo = (b: boolean): Common.UIString.LocalizedString =>

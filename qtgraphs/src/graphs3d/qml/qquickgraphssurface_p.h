@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 //
 //  W A R N I N G
@@ -142,7 +144,10 @@ public:
                                                        bool autoAdjust) override;
     void handleAxisRangeChangedBySender(QObject *sender) override;
     void handleSeriesVisibilityChangedBySender(QObject *sender) override;
+    void handleItemLabelVisibleChangedBySender(bool visible, QObject *sender) override;
     void adjustAxisRanges() override;
+
+    void handleMultiAxisChanged(QAbstract3DAxis *axis) override;
 
     void handleLightingModeChanged() override;
 
@@ -165,6 +170,8 @@ protected:
     void handleThemeTypeChange() override;
     bool doPicking(QPointF position) override;
     bool doRayPicking(QVector3D origin, QVector3D direction) override;
+    QAbstract3DAxis *getSeriesMultiAxis(QAbstract3DSeries *series,
+                       QAbstract3DAxis::AxisOrientation orientation) override;
 
     void createSliceView() override;
     void updateSliceItemLabel(const QString &label, QVector3D position) override;
@@ -215,10 +222,10 @@ private:
         QQuick3DModel *sliceModel;
         QQuick3DModel *sliceGridModel;
         QQuick3DModel *fillModel;
-        QVector<SurfaceVertex> vertices;
-        QVector<QVector4D> heights;
-        QVector<quint32> indices;
-        QVector<quint32> gridIndices;
+        QList<SurfaceVertex> vertices;
+        QList<QVector4D> heights;
+        QList<quint32> indices;
+        QList<quint32> gridIndices;
         QSurface3DSeries *series;
         QQuick3DTexture *gradientTexture;
         QQuick3DTexture *texture;
@@ -235,8 +242,8 @@ private:
         bool ascendingZ;
     };
 
-    QVector3D getNormalizedVertex(const QSurfaceDataItem &data, bool polar, bool flipXZ);
-    QRect calculateSampleSpace(SurfaceModel *model);
+    QVector3D getNormalizedVertex(const QSurfaceDataItem &data, bool polar, bool flipXZ, QSurface3DSeries *series = nullptr);
+    QRect calculateSampleSpace(SurfaceModel *model, const QSurfaceDataArray &array);
     QPointF mapCoordsToWorldSpace(SurfaceModel *model, QPointF coords);
     QPoint mapCoordsToSampleSpace(SurfaceModel *model, QPointF coords);
     void createIndices(SurfaceModel *model, qsizetype columnCount, qsizetype rowCount);
@@ -251,6 +258,7 @@ private:
     void addModel(QSurface3DSeries *series);
     void addFillModel(SurfaceModel *model);
     void addSliceModel(SurfaceModel *model);
+    QSurfaceDataArray removeNaNRows(const QSurfaceDataArray &array);
 
     void handleMeshTypeChanged(QAbstract3DSeries::Mesh mesh);
     void handlePointerChanged(const QString &filename);
@@ -266,7 +274,7 @@ private:
                                    const std::array<QVector3D, 3> &triangle);
     bool intersectWithAABB(QVector3D boundMin, QVector3D boundsMax, QVector3D origin, QVector3D dir);
 
-    QVector<SurfaceModel *> m_model;
+    QList<SurfaceModel *> m_model;
     QMap<QSurface3DSeries *, QQuick3DModel *> m_selectionPointers = {};
     QMap<QSurface3DSeries *, QQuick3DModel *> m_sliceSelectionPointers = {};
 

@@ -10,6 +10,7 @@
 
 #include "base/check_is_test.h"
 #include "base/functional/bind.h"
+#include "base/notimplemented.h"
 #include "base/observer_list.h"
 #include "base/run_loop.h"
 #include "base/trace_event/trace_event.h"
@@ -374,10 +375,6 @@ int64_t WindowTreeHostPlatform::OnStateUpdate(
       old.window_scale != latest.window_scale) {
     bool origin_changed = old.bounds_dip.origin() != latest.bounds_dip.origin();
     OnBoundsChanged({origin_changed});
-  }
-
-  if (old.raster_scale != latest.raster_scale) {
-    compositor()->SetExternalPageScaleFactor(latest.raster_scale);
   }
 
   bool needs_frame = latest.WillProduceFrameOnUpdateFrom(old);

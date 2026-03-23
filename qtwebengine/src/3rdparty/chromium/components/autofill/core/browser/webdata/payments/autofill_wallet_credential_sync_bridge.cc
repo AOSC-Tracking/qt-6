@@ -8,12 +8,13 @@
 #include <utility>
 
 #include "base/check.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_number_conversions.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/browser/webdata/autofill_sync_metadata_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_backend.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/autofill/core/browser/webdata/payments/payments_autofill_table.h"
 #include "components/autofill/core/browser/webdata/payments/payments_sync_bridge_util.h"
 #include "components/sync/base/data_type.h"
 #include "components/sync/base/deletion_origin.h"
@@ -22,6 +23,7 @@
 #include "components/sync/model/sync_metadata_store_change_list.h"
 #include "components/sync/protocol/autofill_wallet_credential_specifics.pb.h"
 #include "components/sync/protocol/entity_data.h"
+#include "components/webdata/common/web_database.h"
 
 namespace autofill {
 
@@ -65,7 +67,8 @@ AutofillWalletCredentialSyncBridge::AutofillWalletCredentialSyncBridge(
   if (!web_data_backend_ || !web_data_backend_->GetDatabase() ||
       !GetAutofillTable()) {
     DataTypeSyncBridge::change_processor()->ReportError(
-        {FROM_HERE, "Failed to load AutofillWebDatabase."});
+        {FROM_HERE,
+         syncer::ModelError::Type::kWalletCredentialFailedToLoadDatabase});
     return;
   }
   scoped_observation_.Observe(web_data_backend_.get());
@@ -100,6 +103,9 @@ AutofillWalletCredentialSyncBridge::ApplyIncrementalSyncChanges(
     std::unique_ptr<syncer::MetadataChangeList> metadata_change_list,
     syncer::EntityChangeList entity_data) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  auto transaction = web_data_backend_->GetDatabase()->AcquireTransaction();
+
   PaymentsAutofillTable* table = GetAutofillTable();
 
   for (const std::unique_ptr<syncer::EntityChange>& change : entity_data) {
@@ -112,8 +118,8 @@ AutofillWalletCredentialSyncBridge::ApplyIncrementalSyncChanges(
             !base::StringToInt64(change->storage_key(), &storage_key) ||
             !table->RemoveServerCvc(storage_key)) {
           return syncer::ModelError(
-              FROM_HERE,
-              "Failed to delete the Wallet credential data from the table");
+              FROM_HERE, syncer::ModelError::Type::
+                             kWalletCredentialFailedToDeleteFromDatabase);
         }
         break;
       // TODO(crbug.com/40926464): Merge the Add and Update APIs for
@@ -125,7 +131,7 @@ AutofillWalletCredentialSyncBridge::ApplyIncrementalSyncChanges(
                     wallet_credential_specifics))) {
           return syncer::ModelError(
               FROM_HERE,
-              "Failed to add the Wallet credential data to the table");
+              syncer::ModelError::Type::kWalletCredentialFailedToAddDatabase);
         }
         break;
       case syncer::EntityChange::ACTION_UPDATE:
@@ -134,15 +140,21 @@ AutofillWalletCredentialSyncBridge::ApplyIncrementalSyncChanges(
                 AutofillWalletCvcStructDataFromWalletCredentialSpecifics(
                     wallet_credential_specifics))) {
           return syncer::ModelError(
-              FROM_HERE,
-              "Failed to update the Wallet credential data to the table");
+              FROM_HERE, syncer::ModelError::Type::
+                             kWalletCredentialFailedToUpdateDatabase);
         }
         break;
     }
   }
   // Commit the transaction to make sure the data and the metadata with the
   // new progress marker is written down.
+  // Commits changes through CommitChanges(...) or through the scoped
+  // sql::Transaction `transaction` depending on the
+  // 'SqlScopedTransactionWebDatabase' Finch experiment.
   web_data_backend_->CommitChanges();
+  if (transaction) {
+    transaction->Commit();
+  }
 
   // There can be cases where `ApplyIncrementalSyncChanges` is called with
   // empty `entity_data`, where only the metadata needs to be updated. This
@@ -180,7 +192,7 @@ AutofillWalletCredentialSyncBridge::GetAllDataForDebugging() {
 }
 
 std::string AutofillWalletCredentialSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   CHECK(IsEntityDataValid(entity_data));
   const sync_pb::AutofillWalletCredentialSpecifics&
       autofill_wallet_credential_data =
@@ -190,7 +202,7 @@ std::string AutofillWalletCredentialSyncBridge::GetClientTag(
 }
 
 std::string AutofillWalletCredentialSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   // Storage key and client tag are equivalent for this DataType.
   return GetClientTag(entity_data);
 }
@@ -198,6 +210,9 @@ std::string AutofillWalletCredentialSyncBridge::GetStorageKey(
 void AutofillWalletCredentialSyncBridge::ApplyDisableSyncChanges(
     std::unique_ptr<syncer::MetadataChangeList> delete_metadata_change_list) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  auto transaction = web_data_backend_->GetDatabase()->AcquireTransaction();
+
   PaymentsAutofillTable* table = GetAutofillTable();
   // Check if we have data to delete.
   if (table->GetAllServerCvcs().size() == 0) {
@@ -209,9 +224,18 @@ void AutofillWalletCredentialSyncBridge::ApplyDisableSyncChanges(
   // a `REMOVE` call to the Chrome Sync server.
   if (!table || !table->ClearServerCvcs()) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to delete wallet credential data from the table."});
+        {FROM_HERE,
+         syncer::ModelError::Type::kWalletCredentialFailedToDeleteOnDisable});
   }
+
+  // Commits changes through CommitChanges(...) or through the scoped
+  // sql::Transaction `transaction` depending on the
+  // 'SqlScopedTransactionWebDatabase' Finch experiment.
   web_data_backend_->CommitChanges();
+  if (transaction) {
+    transaction->Commit();
+  }
+
   web_data_backend_->NotifyOnAutofillChangedBySync(
       syncer::AUTOFILL_WALLET_CREDENTIAL);
 }
@@ -267,6 +291,10 @@ void AutofillWalletCredentialSyncBridge::ActOnLocalChange(
                                  syncer::DeletionOrigin::Unspecified(),
                                  metadata_change_list.get());
       break;
+    case ServerCvcChange::HIDE_IN_AUTOFILL:
+      // `HIDE_IN_AUTOFILL` is not supported for wallet credentials.
+      NOTIMPLEMENTED();
+      break;
   }
 }
 
@@ -279,7 +307,7 @@ void AutofillWalletCredentialSyncBridge::LoadMetadata() {
           syncer::AUTOFILL_WALLET_CREDENTIAL, batch.get())) {
     change_processor()->ReportError(
         {FROM_HERE,
-         "Failed reading Autofill Wallet Credential data from WebDatabase."});
+         syncer::ModelError::Type::kWalletCredentialFailedToReadMetadata});
     return;
   }
   change_processor()->ModelReadyToSync(std::move(batch));

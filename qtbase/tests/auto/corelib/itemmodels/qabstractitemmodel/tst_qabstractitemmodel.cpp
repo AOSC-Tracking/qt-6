@@ -514,8 +514,8 @@ void tst_QAbstractItemModel::match()
     QCOMPARE(res.size(), 3);
 }
 
-typedef QPair<int, int> Position;
-typedef QList<QPair<int, int> > Selection;
+using Position = std::pair<int, int>;
+using Selection = QList<Position>;
 typedef QList<QList<QString> > StringTable;
 typedef QList<QString> StringTableRow;
 
@@ -1990,13 +1990,13 @@ void tst_QAbstractItemModel::testReset()
 class CustomRoleModel : public QStringListModel
 {
     Q_OBJECT
-    Q_ENUMS(Roles)
 public:
     enum Roles {
         Custom1 = Qt::UserRole + 1,
         Custom2,
         UserRole
     };
+    Q_ENUM(Roles)
 
     CustomRoleModel(QObject *parent = nullptr)
       : QStringListModel(QStringList() << "a" << "b" << "c", parent)

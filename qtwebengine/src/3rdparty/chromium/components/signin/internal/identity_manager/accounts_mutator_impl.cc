@@ -43,12 +43,8 @@ CoreAccountId AccountsMutatorImpl::AddOrUpdateAccount(
     const std::string& refresh_token,
     bool is_under_advanced_protection,
     signin_metrics::AccessPoint access_point,
-    signin_metrics::SourceForRefreshTokenOperation source
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-    ,
-    const std::vector<uint8_t>& wrapped_binding_key
-#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-) {
+    signin_metrics::SourceForRefreshTokenOperation source,
+    const std::vector<uint8_t>& wrapped_binding_key) {
 #if BUILDFLAG(IS_CHROMEOS)
   NOTREACHED();
 #else
@@ -62,12 +58,8 @@ CoreAccountId AccountsMutatorImpl::AddOrUpdateAccount(
   // tracker, which is not intended.
   account_tracker_service_->CommitPendingAccountChanges();
 
-  token_service_->UpdateCredentials(account_id, refresh_token, source
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-                                    ,
-                                    wrapped_binding_key
-#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  );
+  token_service_->UpdateCredentials(account_id, refresh_token, source,
+                                    wrapped_binding_key);
 
   return account_id;
 #endif
@@ -126,8 +118,7 @@ void AccountsMutatorImpl::InvalidateRefreshTokenForPrimaryAccount(
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 void AccountsMutatorImpl::MoveAccount(AccountsMutator* target,
                                       const CoreAccountId& account_id) {
-  if (switches::IsExplicitBrowserSigninUIOnDesktopEnabled() &&
-      primary_account_manager_->GetPrimaryAccountId(
+  if (primary_account_manager_->GetPrimaryAccountId(
           signin::ConsentLevel::kSignin) == account_id) {
     // Remove to avoid the primary account remaining in the original
     // profile without a refresh token which might lead to a crash. The account

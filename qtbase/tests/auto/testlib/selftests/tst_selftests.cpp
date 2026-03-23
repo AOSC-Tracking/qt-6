@@ -697,6 +697,12 @@ bool TestLogger::shouldIgnoreTest(const QString &test) const
         return true;
 #endif
 
+#if defined(QT_NO_EXCEPTIONS) || !QT_CONFIG(future) || defined(QT_NO_CONCURRENT)
+    // This test requires exceptions, QException, and QtConcurrent::run():
+    if (test == "throwonfailandskip")
+        return true;
+#endif
+
     if (test == "benchlibcallgrind") {
 #if defined(__GNUC__) && (defined(__i386) || defined(__x86_64)) && defined(Q_OS_LINUX)
 #  ifdef __AVX512F__
@@ -724,6 +730,11 @@ bool TestLogger::shouldIgnoreTest(const QString &test) const
     }
 #endif
 
+    if (!QT_CONFIG(signaling_nan) && test == "float") {
+        WARN("Test output was designed for machines with signaling NaN");
+        return true;
+    }
+
     if (logger != QTestLog::Plain || outputMode == FileOutput) {
         // The following tests only work with plain text output to stdout,
         // either because they execute multiple test objects or because
@@ -734,6 +745,7 @@ bool TestLogger::shouldIgnoreTest(const QString &test) const
             || test == "benchliboptions"
             || test == "printdatatags"
             || test == "printdatatagswithglobaltags"
+            || test == "selected"
             || test == "silent"
             || test == "silent_fatal")
             return true;
@@ -797,6 +809,7 @@ void checkErrorOutput(const QString &test, const QByteArray &errorOutput)
         || test == "fetchbogus"
         || test == "watchdog"
         || test == "junit"
+        || test == "selected" // Reports unknown test functions to stderr
         || test == "benchlibcallgrind")
         return;
 

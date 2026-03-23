@@ -153,7 +153,7 @@ bool LinkLoader::LoadLink(const LinkLoadParameters& params,
 void LinkLoader::LoadStylesheet(
     const LinkLoadParameters& params,
     const AtomicString& local_name,
-    const WTF::TextEncoding& charset,
+    const TextEncoding& charset,
     FetchParameters::DeferOption defer_option,
     Document& document,
     ResourceClient* link_client,
@@ -184,10 +184,11 @@ void LinkLoader::LoadStylesheet(
   String integrity_attr = params.integrity;
   if (!integrity_attr.empty()) {
     IntegrityMetadataSet metadata_set;
-    SubresourceIntegrity::ParseIntegrityAttribute(integrity_attr, metadata_set);
+    SubresourceIntegrity::ParseIntegrityAttribute(integrity_attr, metadata_set,
+                                                  context);
     link_fetch_params.SetIntegrityMetadata(metadata_set);
-    link_fetch_params.MutableResourceRequest().SetFetchIntegrity(
-        integrity_attr);
+    link_fetch_params.MutableResourceRequest().SetFetchIntegrity(integrity_attr,
+                                                                 context);
   }
 
   CSSStyleSheetResource::Fetch(link_fetch_params, context->Fetcher(),

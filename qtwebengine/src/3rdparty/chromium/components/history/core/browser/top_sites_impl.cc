@@ -230,6 +230,11 @@ void TopSitesImpl::ClearBlockedUrls() {
   NotifyTopSitesChanged(TopSitesObserver::ChangeReason::BLOCKED_URLS);
 }
 
+int TopSitesImpl::NumBlockedSites() const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return pref_service_->GetDict(kBlockedUrlsPrefsKey).size();
+}
+
 bool TopSitesImpl::IsFull() {
   return loaded_ && top_sites_.size() >= kTopSitesNumber;
 }
@@ -284,7 +289,10 @@ void TopSitesImpl::StartQueryForMostVisited() {
       num_results_to_request_from_history(),
       base::BindOnce(&TopSitesImpl::OnGotMostVisitedURLsFromHistory,
                      base::Unretained(this), request),
-      &cancelable_task_tracker_);
+      &cancelable_task_tracker_,
+      /*recency_factor_name=*/std::nullopt,
+      /*recency_window_days=*/std::nullopt,
+      /*check_visual_deduplication_flag=*/true);
 
   // Request the most repeated queries if the corresponding feature is enabled
   // and the default search provider is available.
@@ -414,7 +422,7 @@ void TopSitesImpl::SetTopSites(MostVisitedURLList top_sites,
 int TopSitesImpl::num_results_to_request_from_history() const {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  return kTopSitesNumber + pref_service_->GetDict(kBlockedUrlsPrefsKey).size();
+  return kTopSitesNumber + NumBlockedSites();
 }
 
 void TopSitesImpl::MoveStateToLoaded() {

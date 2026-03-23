@@ -34,26 +34,8 @@
 #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 #include "url/gurl.h"
 
-using base::Time;
-
-namespace features {
-BASE_FEATURE(kKeywordTableHashVerification,
-             "KeywordTableHashVerification",
-// Only enable this hash checking feature on Windows. This because the value of
-// OSCrypt::IsEncryptionAvailable can vary and is platform specific. E.g.
-// os_crypt_posix.cc historically returned 'false' for IsEncryptionAvailable. On
-// Linux, OSCrypt::IsEncryptionAvailable can return `false` if v11 encryption is
-// not available, but data could still be encrypted with v10 encryption, and the
-// backend can change for various reasons including command line options or
-// desktop window manager.
-#if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_WIN)
-);
-
-}  // namespace features
+using ::base::Time;
+using ::country_codes::CountryId;
 
 namespace {
 
@@ -302,7 +284,7 @@ bool KeywordTable::GetKeywords(Keywords* keywords) {
   while (s.Step()) {
     const auto data = GetKeywordDataFromStatement(s);
     if (data) {
-      keywords->emplace_back(std::move(*data));
+      keywords->emplace_back(*std::move(data));
     } else {
       bad_entries.insert(s.ColumnInt64(0));
     }
@@ -327,15 +309,15 @@ bool KeywordTable::ClearBuiltinKeywordMilestone() {
   return meta_table()->DeleteKey(kBuiltinKeywordMilestone);
 }
 
-bool KeywordTable::SetBuiltinKeywordCountry(int country_id) {
-  return meta_table()->SetValue(kBuiltinKeywordCountry, country_id);
+bool KeywordTable::SetBuiltinKeywordCountry(CountryId country_id) {
+  return meta_table()->SetValue(kBuiltinKeywordCountry, country_id.Serialize());
 }
 
-int KeywordTable::GetBuiltinKeywordCountry() {
+CountryId KeywordTable::GetBuiltinKeywordCountry() {
   int country_id = 0;
   return meta_table()->GetValue(kBuiltinKeywordCountry, &country_id)
-             ? country_id
-             : 0;
+             ? CountryId::Deserialize(country_id)
+             : CountryId();
 }
 
 bool KeywordTable::SetStarterPackKeywordVersion(int version) {
@@ -523,10 +505,12 @@ bool KeywordTable::MigrateToVersion137AddHashColumn() {
                               all_rows_migrated);
   };
 
+  // See the comment in `GetKeywordDataFromStatement` as to why this code is
+  // only enabled for Windows.
+#if BUILDFLAG(IS_WIN)
   // If there is no platform encryption, nothing left to do, since the
   // `url_hash` column will just be NULL.
-  if (!base::FeatureList::IsEnabled(features::kKeywordTableHashVerification) ||
-      !encryptor()->IsEncryptionAvailable()) {
+  if (!encryptor()->IsEncryptionAvailable()) {
     return transaction.Commit();
   }
 
@@ -548,9 +532,10 @@ bool KeywordTable::MigrateToVersion137AddHashColumn() {
     }
 
     data.SetURL(maybe_url);
-    const auto url_hash = data.GenerateHash();
-    const auto encrypted_hash = encryptor()->EncryptString(
-        std::string(url_hash.begin(), url_hash.end()));
+    const std::vector<uint8_t> url_hash = data.GenerateHash();
+    const std::optional<std::vector<uint8_t>> encrypted_hash =
+        encryptor()->EncryptString(
+            std::string(url_hash.begin(), url_hash.end()));
     if (!encrypted_hash) {
       all_rows_migrated = false;
       continue;
@@ -560,7 +545,7 @@ bool KeywordTable::MigrateToVersion137AddHashColumn() {
     sql::Statement update_statement(db()->GetCachedStatement(
         SQL_FROM_HERE, "UPDATE keywords SET url_hash=? WHERE id=?"));
 
-    update_statement.BindBlob(0, *encrypted_hash);
+    update_statement.BindBlob(0, *std::move(encrypted_hash));
     update_statement.BindInt64(1, data.id);
 
     if (!update_statement.Run()) {
@@ -568,7 +553,7 @@ bool KeywordTable::MigrateToVersion137AddHashColumn() {
       continue;
     }
   }
-
+#endif  // BUILDFLAG(IS_WIN)
   return transaction.Commit();
 }
 
@@ -582,7 +567,7 @@ std::optional<TemplateURLData> KeywordTable::GetKeywordDataFromStatement(
   // reading these out.  (GetKeywords() will delete these entries on return.)
   // NOTE: This code should only be needed as long as we might be reading such
   // potentially-old data and can be removed afterward.
-  if (s.ColumnString(4).empty()) {
+  if (s.ColumnStringView(4).empty()) {
     return std::nullopt;
   }
   data.SetURL(s.ColumnString(4));
@@ -592,17 +577,20 @@ std::optional<TemplateURLData> KeywordTable::GetKeywordDataFromStatement(
   data.search_url_post_params = s.ColumnString(17);
   data.suggestions_url_post_params = s.ColumnString(18);
   data.image_url_post_params = s.ColumnString(19);
-  data.favicon_url = GURL(s.ColumnString(3));
-  data.originating_url = GURL(s.ColumnString(6));
+  data.favicon_url = GURL(s.ColumnStringView(3));
+  data.originating_url = GURL(s.ColumnStringView(6));
   data.safe_for_autoreplace = s.ColumnBool(5);
   data.input_encodings = base::SplitString(
-      s.ColumnString(9), ";", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+      s.ColumnStringView(9), ";", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   data.id = s.ColumnInt64(0);
   data.date_created = s.ColumnTime(7);
   data.last_modified = s.ColumnTime(13);
   data.policy_origin =
       static_cast<TemplateURLData::PolicyOrigin>(s.ColumnInt(12));
-  data.created_from_play_api = s.ColumnBool(22);
+  // TODO(b:322513019): support other regulatory programs.
+  data.regulatory_origin = s.ColumnBool(22)
+                               ? RegulatoryExtensionType::kAndroidEEA
+                               : RegulatoryExtensionType::kDefault;
   data.usage_count = s.ColumnInt(8);
   data.prepopulate_id = s.ColumnInt(11);
   data.sync_guid = s.ColumnString(14);
@@ -611,7 +599,8 @@ std::optional<TemplateURLData> KeywordTable::GetKeywordDataFromStatement(
   data.enforced_by_policy = s.ColumnBool(25);
   data.featured_by_policy = s.ColumnBool(26);
 
-  std::optional<base::Value> value(base::JSONReader::Read(s.ColumnString(15)));
+  std::optional<base::Value> value(
+      base::JSONReader::Read(s.ColumnStringView(15)));
   if (value && value->is_list()) {
     for (const base::Value& alternate_url : value->GetList()) {
       if (alternate_url.is_string()) {
@@ -628,9 +617,16 @@ std::optional<TemplateURLData> KeywordTable::GetKeywordDataFromStatement(
                                   status);
   };
 
-  if (!base::FeatureList::IsEnabled(features::kKeywordTableHashVerification)) {
-    status = HashValidationStatus::kNotVerifiedFeatureDisabled;
-  } else if (!encryptor()->IsDecryptionAvailable()) {
+// Only enable this hash checking feature on Windows. This because the value of
+// `OSCrypt::IsEncryptionAvailable` (exposed via the `Encryptor`
+// `IsDecryptionAvailable` API) can vary and is platform specific. E.g.
+// os_crypt_posix.cc historically returned 'false' for `IsEncryptionAvailable`.
+// On Linux, `IsEncryptionAvailable` can return `false` if v11 encryption is
+// not available, but data could still be encrypted with v10 encryption, and the
+// backend can change for various reasons including command line options or
+// desktop window manager.
+#if BUILDFLAG(IS_WIN)
+  if (!encryptor()->IsDecryptionAvailable()) {
     status = HashValidationStatus::kNotVerifiedNoCrypto;
   } else {
     const auto hash = encryptor()->DecryptData(s.ColumnBlob(27));
@@ -653,7 +649,9 @@ std::optional<TemplateURLData> KeywordTable::GetKeywordDataFromStatement(
       return std::nullopt;
     }
   }
-
+#else
+  status = HashValidationStatus::kNotVerifiedFeatureDisabled;
+#endif  // BUILDFLAG(IS_WIN)
   return data;
 }
 
@@ -701,17 +699,20 @@ void KeywordTable::BindURLToStatement(const TemplateURLData& data,
   s->BindString(starting_column + 18, data.image_url_post_params);
   s->BindString(starting_column + 19, data.new_tab_url);
   s->BindTime(starting_column + 20, data.last_visited);
-  s->BindBool(starting_column + 21, data.created_from_play_api);
+  // TODO(b:322513019): support other regulatory programs.
+  s->BindBool(starting_column + 21,
+              data.regulatory_origin == RegulatoryExtensionType::kAndroidEEA);
   s->BindInt(starting_column + 22, static_cast<int>(data.is_active));
   s->BindInt(starting_column + 23, data.starter_pack_id);
   s->BindBool(starting_column + 24, data.enforced_by_policy);
   s->BindBool(starting_column + 25, data.featured_by_policy);
   if (encryptor()->IsEncryptionAvailable()) {
-    const auto url_hash = data.GenerateHash();
-    const auto encrypted_hash = encryptor()->EncryptString(
-        std::string(url_hash.begin(), url_hash.end()));
+    const std::vector<uint8_t> url_hash = data.GenerateHash();
+    std::optional<std::vector<uint8_t>> encrypted_hash =
+        encryptor()->EncryptString(
+            std::string(url_hash.begin(), url_hash.end()));
     CHECK(encrypted_hash);
-    s->BindBlob(starting_column + 26, *encrypted_hash);
+    s->BindBlob(starting_column + 26, *std::move(encrypted_hash));
   } else {
     s->BindNull(starting_column + 26);
   }

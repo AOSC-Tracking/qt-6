@@ -6,6 +6,20 @@
 // their fields, such as storing SkBitmap for image data fields, and tracking
 // fields being in an incomplete state. These can only be used for proto types
 // that have been registered via OnDeviceFeatureProtoRegistry.
+//
+// Typical usage involves creating an initial message with all of the non-media
+// fields set, then creating the Multimodal message and providing media fields.
+//
+// Example:
+//   using RequestProto = optimization_guide::proto::ExampleForTestingRequest;
+//   using NestedProto = optimization_guide::proto::ExampleForTestingMessage;
+//   RequestProto initial;
+//   initial.mutable_nested1().set_string_value("caption");
+//   MultimodalMessage request(initial);
+//   request.edit()
+//       .GetMutableMessage(RequestProto::kNested1FieldNumber)
+//       .Set(NestedProto::kMediaFieldNumber, std::move(skbitmap1));
+//   session->SetInput(std::move(request));
 
 #ifndef COMPONENTS_OPTIMIZATION_GUIDE_CORE_MODEL_EXECUTION_MULTIMODAL_MESSAGE_H_
 #define COMPONENTS_OPTIMIZATION_GUIDE_CORE_MODEL_EXECUTION_MULTIMODAL_MESSAGE_H_
@@ -13,11 +27,13 @@
 #include <cstddef>
 #include <map>
 #include <optional>
+#include <set>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "components/optimization_guide/proto/descriptors.pb.h"
+#include "services/on_device_model/ml/chrome_ml_audio_buffer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 namespace optimization_guide {
@@ -25,6 +41,12 @@ namespace optimization_guide {
 struct RepeatedMultimodalMessageData;
 class RepeatedMultimodalMessageReadView;
 class RepeatedMultimodalMessageEditView;
+
+enum class MultimodalType {
+  kNone = 0,
+  kImage,
+  kAudio,
+};
 
 // Stores extra information associated with a proto message's fields.
 struct MultimodalMessageData final {
@@ -35,8 +57,14 @@ struct MultimodalMessageData final {
   MultimodalMessageData& operator=(MultimodalMessageData&&);
   ~MultimodalMessageData();
 
+  // Which fields are currently marked pending.
+  std::set<int> pending;
+
   // Images stored for fields of the message.
   std::map<int, SkBitmap> images;
+
+  // Audio data for fields of the message.
+  std::map<int, ml::AudioBuffer> audio;
 
   // Overlay data for singular message fields.
   // The message may also have message type fields with no overlays,
@@ -65,6 +93,9 @@ struct RepeatedMultimodalMessageData final {
   // effectively have no overlay, and default initialized values can be created
   // for them lazily.
   std::vector<MultimodalMessageData> overlays;
+
+  // If this field is expected to have more data added later.
+  bool incomplete = false;
 };
 
 // A mutable view of a MultimodalMessage (or a submessage of it).
@@ -77,11 +108,18 @@ class MultimodalMessageEditView {
                             MultimodalMessageData& overlay);
   ~MultimodalMessageEditView();
 
+  // Marks a field as pending (or clears it if pending = false).
+  // Substitutions will truncate where they would depend on this field.
+  void MarkPending(int tag, bool pending = true);
+
   // Sets a string field value.
   void Set(int tag, const std::string& v);
 
   // Sets a media field value.
   void Set(int tag, SkBitmap v);
+
+  // Sets a media field value.
+  void Set(int tag, ml::AudioBuffer v);
 
   // Retrieve a message field overlay created by a previous "Set" call.
   // Mutations through the returned view will not invalidate this view, but
@@ -119,10 +157,21 @@ class MultimodalMessageReadView {
   ~MultimodalMessageReadView();
 
   // Get the type of the underlying message.
-  std::string GetTypeName() const { return message_->GetTypeName(); }
+  std::string GetTypeName() const {
+    return std::string(message_->GetTypeName());
+  }
+
+  // Returns true iff the field or any parent has been marked pending.
+  bool IsPending(const proto::ProtoField& proto_field) const;
+
+  // Get the type of multimodal content for a field.
+  MultimodalType GetMultimodalType(const proto::ProtoField& proto_field) const;
 
   // Retrieve an image associated with a field.
   const SkBitmap* GetImage(const proto::ProtoField& proto_field) const;
+
+  // Retrieve an image associated with a field.
+  const ml::AudioBuffer* GetAudio(const proto::ProtoField& proto_field) const;
 
   // Retrieve an value stored in a proto field.
   std::optional<proto::Value> GetValue(
@@ -164,6 +213,11 @@ class RepeatedMultimodalMessageEditView {
   // Get a previously added message.
   MultimodalMessageEditView Get(int n);
 
+  // Indicate that more content may be appended to this field later.
+  // Substitutions will truncate where they would depend on whether more
+  // messages are present.
+  void MarkIncomplete(bool incomplete = true);
+
  private:
   // The underlying message that owns the repeated field.
   const raw_ref<google::protobuf::MessageLite> parent_;
@@ -191,6 +245,9 @@ class RepeatedMultimodalMessageReadView {
   // Gets a view for the nth element of the field.
   // Will crash on out of bounds access.
   MultimodalMessageReadView Get(int n) const;
+
+  // Return whether this list was marked incomplete.
+  bool IsIncomplete() const;
 
  private:
   // The underlying message that owns the repeated field.
@@ -232,7 +289,9 @@ class MultimodalMessage final {
     return MultimodalMessageReadView(*message_, &overlay_);
   }
 
-  std::string GetTypeName() const { return message_->GetTypeName(); }
+  std::string GetTypeName() const {
+    return std::string(message_->GetTypeName());
+  }
 
  private:
   std::unique_ptr<google::protobuf::MessageLite> message_;

@@ -41,7 +41,6 @@
 #include "ui/gl/gl_version_info.h"
 #include "ui/gl/init/create_gr_gl_interface.h"
 #include "ui/gl/init/gl_factory.h"
-#include "ui/gl/startup_trace.h"
 
 #if BUILDFLAG(IS_MAC)
 #include "base/apple/bundle_locations.h"
@@ -90,7 +89,7 @@ scoped_refptr<gl::GLSurface> InitializeGLSurface(gl::GLDisplay* display) {
 }
 
 scoped_refptr<gl::GLContext> InitializeGLContext(gl::GLSurface* surface) {
-  GPU_STARTUP_TRACE_EVENT("gpu_info_collector::InitializeGLContext");
+  TRACE_EVENT("gpu,startup", "gpu_info_collector::InitializeGLContext");
   gl::GLContextAttribs attribs;
   attribs.client_major_es_version = 2;
   scoped_refptr<gl::GLContext> context(
@@ -198,6 +197,8 @@ std::string GetDisplayTypeString(gl::DisplayType type) {
       return "ANGLE_METAL";
     case gl::ANGLE_METAL_NULL:
       return "ANGLE_METAL_NULL";
+    case gl::ANGLE_D3D11_WARP:
+      return "ANGLE_D3D11_WARP";
     default:
       NOTREACHED();
   }
@@ -279,23 +280,33 @@ void GetDawnTogglesForWebGPU(
 #if BUILDFLAG(SKIA_USE_DAWN)
 void GetDawnTogglesForSkiaGraphite(
     std::vector<const char*>* force_enabled_toggles,
-    std::vector<const char*>* force_disabled_toggles) {
+    std::vector<const char*>* force_disabled_toggles,
+    wgpu::BackendType backend_type) {
 #if DCHECK_IS_ON()
   force_enabled_toggles->push_back("use_user_defined_labels_in_backend");
 #else
   force_enabled_toggles->push_back("disable_robustness");
   force_enabled_toggles->push_back("skip_validation");
-  force_disabled_toggles->push_back("lazy_clear_resource_on_first_use");
+  force_enabled_toggles->push_back(
+      "disable_lazy_clear_for_mapped_at_creation_buffer");
+#if BUILDFLAG(IS_WIN)
+  if (backend_type == wgpu::BackendType::D3D11) {
+    force_enabled_toggles->push_back(
+        "use_packed_depth24_unorm_stencil8_format");
+  }
+#endif  // BUILDFLAG(IS_WIN)
+  if (backend_type == wgpu::BackendType::Vulkan) {
+    force_enabled_toggles->push_back("vulkan_monolithic_pipeline_cache");
+#if BUILDFLAG(IS_ANDROID)
+    force_enabled_toggles->push_back(
+        "ignore_imported_ahardwarebuffer_vulkan_image_size");
 #endif
+  }
+#endif  // DCHECK_IS_ON()
 }
 #endif  // BUILDFLAG(SKIA_USE_DAWN)
 
 void ReportWebGPUAdapterMetrics(dawn::native::Instance* instance) {
-  static BASE_FEATURE(kCollectDawnGpuMetrics, "CollectDawnGpuMetrics",
-                      base::FEATURE_ENABLED_BY_DEFAULT);
-  if (!base::FeatureList::IsEnabled(kCollectDawnGpuMetrics)) {
-    return;
-  }
   WGPULimits max_limits{};
   wgpu::AdapterType adapter_type = wgpu::AdapterType::Unknown;
 
@@ -309,7 +320,6 @@ void ReportWebGPUAdapterMetrics(dawn::native::Instance* instance) {
   adapter_options.backendType = wgpu::BackendType::Vulkan;
 #endif
 
-  bool supports_shader_f16 = false;
   for (dawn::native::Adapter& nativeAdapter :
        instance->EnumerateAdapters(&adapter_options)) {
     nativeAdapter.SetUseTieredLimits(false);
@@ -322,21 +332,17 @@ void ReportWebGPUAdapterMetrics(dawn::native::Instance* instance) {
       continue;
     }
 
-    wgpu::SupportedLimits limits;
-    limits.nextInChain = nullptr;
+    wgpu::Limits limits = {};
     if (adapter.GetLimits(&limits) != wgpu::Status::Success) {
       continue;
     }
 
     // Prefer the adapter with larger buffer binding size.
-    if (limits.limits.maxStorageBufferBindingSize >
+    if (limits.maxStorageBufferBindingSize >
         max_limits.maxStorageBufferBindingSize) {
-      max_limits = limits.limits;
+      max_limits = limits;
       adapter_type = info.adapterType;
     }
-
-    supports_shader_f16 |=
-        wgpu::Adapter(adapter.Get()).HasFeature(wgpu::FeatureName::ShaderF16);
   }
 
   bool has_gpu_adapter = adapter_type != wgpu::AdapterType::Unknown;
@@ -351,9 +357,6 @@ void ReportWebGPUAdapterMetrics(dawn::native::Instance* instance) {
     base::UmaHistogramCounts100000(
         "GPU.WebGPU.MaxTextureDimension2D." + adapter_string,
         max_limits.maxTextureDimension2D);
-
-    base::UmaHistogramBoolean("GPU.WebGPU.Support.ShaderF16",
-                              supports_shader_f16);
   }
 }
 
@@ -534,7 +537,7 @@ bool CollectGraphicsDeviceInfoFromCommandLine(
 
 bool CollectBasicGraphicsInfo(const base::CommandLine* command_line,
                               GPUInfo* gpu_info) {
-  GPU_STARTUP_TRACE_EVENT("gpu_info_collector::CollectBasicGraphicsInfo");
+  TRACE_EVENT("gpu,startup", "gpu_info_collector::CollectBasicGraphicsInfo");
   // In the info-collection GPU process on Windows, we get the device info from
   // the browser.
   if (CollectGraphicsDeviceInfoFromCommandLine(command_line, gpu_info)) {
@@ -583,14 +586,9 @@ bool CollectBasicGraphicsInfo(const base::CommandLine* command_line,
 }
 
 bool CollectGraphicsInfoGL(GPUInfo* gpu_info, gl::GLDisplay* display) {
-  GPU_STARTUP_TRACE_EVENT("gpu_info_collector::CollectGraphicsInfoGL");
+  TRACE_EVENT("gpu,startup", "gpu_info_collector::CollectGraphicsInfoGL");
   DCHECK_NE(gl::GetGLImplementationParts(), gl::kGLImplementationNone);
   gl::GLDisplayEGL* egl_display = display->GetAs<gl::GLDisplayEGL>();
-
-  // Now that we can check GL extensions, update passthrough support info.
-  if (!gl::PassthroughCommandDecoderSupported()) {
-    gpu_info->passthrough_cmd_decoder = false;
-  }
 
   scoped_refptr<gl::GLSurface> surface(InitializeGLSurface(display));
   if (!surface.get()) {
@@ -663,7 +661,7 @@ bool CollectGraphicsInfoGL(GPUInfo* gpu_info, gl::GLDisplay* display) {
       gfx::HasExtension(extension_set, "GL_ARB_robustness");
   if (supports_robustness) {
     glGetIntegerv(
-        GL_RESET_NOTIFICATION_STRATEGY_ARB,
+        GL_RESET_NOTIFICATION_STRATEGY,
         reinterpret_cast<GLint*>(&gpu_info->gl_reset_notification_strategy));
   }
 
@@ -809,7 +807,7 @@ void CollectGraphicsInfoForTesting(GPUInfo* gpu_info) {
 
 bool CollectGpuExtraInfo(gfx::GpuExtraInfo* gpu_extra_info,
                          const GpuPreferences& prefs) {
-  GPU_STARTUP_TRACE_EVENT("gpu_info_collector::CollectGpuExtraInfo");
+  TRACE_EVENT("gpu,startup", "gpu_info_collector::CollectGpuExtraInfo");
   // Populate the list of ANGLE features by querying the functions exposed by
   // EGL_ANGLE_feature_control if it's available.
   if (gl::g_driver_egl.client_ext.b_EGL_ANGLE_feature_control) {
@@ -842,7 +840,7 @@ bool CollectGpuExtraInfo(gfx::GpuExtraInfo* gpu_extra_info,
 void CollectDawnInfo(const gpu::GpuPreferences& gpu_preferences,
                      bool collect_metrics,
                      std::vector<std::string>* dawn_info_list) {
-  GPU_STARTUP_TRACE_EVENT("gpu_info_collector::CollectDawnInfo");
+  TRACE_EVENT("gpu,startup", "gpu_info_collector::CollectDawnInfo");
 #if BUILDFLAG(USE_DAWN)
   DawnProcTable procs = dawn::native::GetProcs();
   dawnProcSetProcs(&procs);
@@ -946,7 +944,9 @@ void CollectDawnInfo(const gpu::GpuPreferences& gpu_preferences,
       wgpu::AdapterInfo info = {};
       adapter.GetInfo(&info);
       if (featureLevel == wgpu::FeatureLevel::Compatibility &&
-          info.backendType != wgpu::BackendType::OpenGLES) {
+          adapter.HasFeature(wgpu::FeatureName::CoreFeaturesAndLimits)) {
+        // If this adapter also supports Core feature level, then skip listing it as Compat
+        // mode adapter.
         continue;
       }
 
@@ -1015,13 +1015,14 @@ void CollectDawnInfo(const gpu::GpuPreferences& gpu_preferences,
 #if BUILDFLAG(SKIA_USE_DAWN)
         if (gpu_preferences.gr_context_type == GrContextType::kGraphiteDawn) {
           // Get the list of required toggles for Skia.
-          // TODO(sunnyps): Ideally these should come from a single source of
-          // truth e.g. from DawnContextProvider or a common helper, instead of
-          // just assuming some values here.
+          // TODO(crbug.com/407497928): Ideally these should come from a single
+          // source of truth e.g. from DawnContextProvider or a common helper,
+          // instead of just assuming some values here.
           std::vector<const char*> force_enabled_toggles_skia;
           std::vector<const char*> force_disabled_toggles_skia;
           GetDawnTogglesForSkiaGraphite(&force_enabled_toggles_skia,
-                                        &force_disabled_toggles_skia);
+                                        &force_disabled_toggles_skia,
+                                        info.backendType);
 
           if (!force_enabled_toggles_skia.empty()) {
             dawn_info_list->push_back("[Skia Required Toggles - enabled]");

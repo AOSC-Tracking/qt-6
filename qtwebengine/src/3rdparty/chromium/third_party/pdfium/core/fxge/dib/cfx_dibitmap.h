@@ -33,12 +33,16 @@ class CFX_DIBitmap final : public CFX_DIBBase {
   // un-premultiplies in the dtor if pre-multiplication was required.
   class ScopedPremultiplier {
    public:
-    // `bitmap` must start out un-premultiplied.
-    // ScopedPremultiplier is a no-op if `do_premultiply` is false.
-    ScopedPremultiplier(RetainPtr<CFX_DIBitmap> bitmap, bool do_premultiply);
+    // ScopedPremultiplier is a no-op if `bitmap` does not need to be
+    // pre-multiplied, as determined by NeedToPremultiplyBitmap().
+    explicit ScopedPremultiplier(RetainPtr<CFX_DIBitmap> bitmap);
     ~ScopedPremultiplier();
 
    private:
+    // Returns true if Skia is enabled at runtime and `bitmap_` is an format
+    // that has un-premultiplied alpha.
+    bool NeedToPremultiplyBitmap() const;
+
     RetainPtr<CFX_DIBitmap> const bitmap_;
     const bool do_premultiply_;
   };
@@ -67,7 +71,7 @@ class CFX_DIBitmap final : public CFX_DIBBase {
     pdfium::span<const uint8_t> src = GetBuffer();
     // SAFETY: const_cast<>() doesn't change size.
     return UNSAFE_BUFFERS(
-        pdfium::make_span(const_cast<uint8_t*>(src.data()), src.size()));
+        pdfium::span(const_cast<uint8_t*>(src.data()), src.size()));
   }
 
   // Note that the returned scanline includes unused space at the end, if any.
@@ -75,7 +79,7 @@ class CFX_DIBitmap final : public CFX_DIBBase {
     pdfium::span<const uint8_t> src = GetScanline(line);
     // SAFETY: const_cast<>() doesn't change size.
     return UNSAFE_BUFFERS(
-        pdfium::make_span(const_cast<uint8_t*>(src.data()), src.size()));
+        pdfium::span(const_cast<uint8_t*>(src.data()), src.size()));
   }
 
   // Note that the returned scanline does not include unused space at the end,
@@ -83,7 +87,7 @@ class CFX_DIBitmap final : public CFX_DIBBase {
   template <typename T>
   pdfium::span<T> GetWritableScanlineAs(int line) {
     return fxcrt::reinterpret_span<T>(GetWritableScanline(line))
-        .first(GetWidth());
+        .first(static_cast<size_t>(GetWidth()));
   }
 
   void TakeOver(RetainPtr<CFX_DIBitmap>&& pSrcBitmap);
@@ -147,7 +151,7 @@ class CFX_DIBitmap final : public CFX_DIBBase {
                      int height,
                      uint32_t color);
 
-  bool ConvertColorScale(uint32_t forecolor, uint32_t backcolor);
+  void ConvertColorScale(uint32_t forecolor, uint32_t backcolor);
 
   // |width| and |height| must be greater than 0.
   // |format| must have a valid bits per pixel count.
@@ -198,7 +202,7 @@ class CFX_DIBitmap final : public CFX_DIBBase {
                                   int src_left,
                                   int src_top);
 
-  MaybeOwned<uint8_t, FxFreeDeleter> m_pBuffer;
+  MaybeOwned<uint8_t, FxFreeDeleter> buffer_;
 };
 
 #endif  // CORE_FXGE_DIB_CFX_DIBITMAP_H_

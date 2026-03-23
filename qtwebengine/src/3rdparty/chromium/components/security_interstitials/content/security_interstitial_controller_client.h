@@ -11,8 +11,9 @@
 #include "url/gurl.h"
 
 namespace content {
-  class WebContents;
-}
+class RenderFrameHost;
+class WebContents;
+}  // namespace content
 
 namespace security_interstitials {
 
@@ -48,6 +49,9 @@ class SecurityInterstitialControllerClient
   void OpenUrlInCurrentTab(const GURL& url) override;
   void OpenUrlInNewForegroundTab(const GURL& url) override;
   void OpenEnhancedProtectionSettings() override;
+#if BUILDFLAG(IS_ANDROID)
+  void OpenAdvancedProtectionSettings() override;
+#endif
   PrefService* GetPrefService() override;
   const std::string& GetApplicationLocale() const override;
   bool CanLaunchDateAndTimeSettings() override;
@@ -58,6 +62,7 @@ class SecurityInterstitialControllerClient
   // security_interstitials::ControllerClient overrides.
   const std::string GetExtendedReportingPrefName() const override;
   content::WebContents* web_contents() { return &*web_contents_; }
+  content::RenderFrameHost* InterstitialRenderFrameHost() const;
 
  private:
   base::WeakPtr<content::WebContents> web_contents_;

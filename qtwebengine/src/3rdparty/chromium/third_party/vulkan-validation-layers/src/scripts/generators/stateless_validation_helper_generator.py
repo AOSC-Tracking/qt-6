@@ -5,6 +5,7 @@
 # Copyright (c) 2015-2025 LunarG, Inc.
 # Copyright (c) 2015-2025 Google Inc.
 # Copyright (c) 2023-2025 RasterGrid Kft.
+# Copyright (C) 2025 Arm Limited.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,8 +22,8 @@
 import os
 import re
 from generators.generator_utils import buildListVUID, PlatformGuardHelper
-from generators.vulkan_object import Member, Struct
-from generators.base_generator import BaseGenerator
+from vulkan_object import Member, Struct
+from base_generator import BaseGenerator
 
 # This class is a container for any source code, data, or other behavior that is necessary to
 # customize the generator script for a specific target API variant (e.g. Vulkan SC). As such,
@@ -39,12 +40,6 @@ class APISpecific:
             # Vulkan specific custom validation (currently none)
             case 'vulkan':
                 return None
-
-def isDeviceStruct(struct: Struct):
-    for extension in struct.extensions:
-        if not extension.device:
-            return False
-    return True
 
 class StatelessValidationHelperOutputGenerator(BaseGenerator):
     def __init__(self,
@@ -74,6 +69,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'vkCreateBufferView',
             'vkCreateSemaphore',
             'vkCreateEvent',
+            'vkCreateTensorARM',
             'vkFreeDescriptorSets',
             'vkUpdateDescriptorSets',
             'vkBeginCommandBuffer',
@@ -94,6 +90,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'vkCmdPushDescriptorSet',
             'vkCmdPushDescriptorSet2',
             'vkGetDescriptorEXT',
+            'vkCmdSetDescriptorBufferOffsetsEXT',
             'vkCmdSetDescriptorBufferOffsets2EXT',
             'vkCmdBindDescriptorBufferEmbeddedSamplers2EXT',
             'vkCmdPushDescriptorSetWithTemplate2',
@@ -157,6 +154,9 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'vkCmdSetScissorWithCount',
             'vkCmdBindVertexBuffers2',
             'vkCmdCopyBuffer2',
+            'vkCmdPipelineBarrier2',
+            'vkCmdSetEvent2',
+            'vkCmdWaitEvents2',
             'vkCmdBuildAccelerationStructuresKHR',
             'vkCmdBuildAccelerationStructuresIndirectKHR',
             'vkBuildAccelerationStructuresKHR',
@@ -215,6 +215,9 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'vkGetMicromapBuildSizesEXT',
             'vkWriteMicromapsPropertiesEXT',
             'vkReleaseSwapchainImagesEXT',
+            'vkReleaseSwapchainImagesKHR',
+            'vkConvertCooperativeVectorMatrixNV',
+            'vkCmdConvertCooperativeVectorMatrixNV',
         ]
 
         # Commands to ignore
@@ -279,12 +282,24 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'VkIndirectExecutionSetPipelineInfoEXT', # VkIndirectExecutionSetShaderInfoEXT is done manually
         ]
 
+        # These functions entrypoints we as VVL expose
+        self.layerExtensionFunctions = [
+            # VK_EXT_debug_utils
+            'vkCmdBeginDebugUtilsLabelEXT',
+            'vkCmdEndDebugUtilsLabelEXT',
+            'vkCmdInsertDebugUtilsLabelEXT',
+            'vkCreateDebugUtilsMessengerEXT',
+            'vkDestroyDebugUtilsMessengerEXT',
+            'vkQueueBeginDebugUtilsLabelEXT',
+            'vkQueueEndDebugUtilsLabelEXT',
+            'vkQueueInsertDebugUtilsLabelEXT',
+            'vkSetDebugUtilsObjectNameEXT',
+            'vkSetDebugUtilsObjectTagEXT',
+            'vkSubmitDebugUtilsMessageEXT',
+        ]
+
         # Map of structs type names to generated validation code for that struct type
         self.validatedStructs = dict()
-        # Map of flags typenames
-        self.flags = set()
-        # Map of flag bits typename to list of values
-        self.flagBits = dict()
 
         self.stype_version_dict = dict()
 
@@ -328,9 +343,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
         out.append('#pragma once\n')
 
         guard_helper = PlatformGuardHelper()
-        for command in [x for x in self.vk.commands.values() if x.name not in self.blacklist]:
-            if command.instance != want_instance:
-                continue
+        for command in [x for x in self.vk.commands.values() if x.name not in self.blacklist and x.instance == want_instance]:
             out.extend(guard_helper.add_guard(command.protect))
             prototype = command.cPrototype.split('VKAPI_CALL ')[1]
             prototype = f'bool PreCallValidate{prototype[2:]}'
@@ -358,7 +371,9 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
         structMemberBlacklist = {
             'VkWriteDescriptorSet' : ['dstSet'],
             'VkAccelerationStructureGeometryKHR' :['geometry'],
-            'VkDescriptorDataEXT' :['pSampler']
+            'VkDescriptorDataEXT' :['pSampler'],
+            # https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9887
+            'VkClusterAccelerationStructureInputInfoNV' :['opInput'],
         }
         for struct in [x for x in self.vk.structs.values() if x.name in structMemberBlacklist]:
             for member in [x for x in struct.members if x.name in structMemberBlacklist[struct.name]]:
@@ -394,7 +409,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             for extension in extensions.findall('extension'):
                 extension_name = extension.get('name')
                 promoted_ext = extToPromotedExtDict[extension_name]
-                while promoted_ext is not None and not 'VK_VERSION' in promoted_ext:
+                while promoted_ext is not None and 'VK_VERSION' not in promoted_ext:
                     promoted_ext = extToPromotedExtDict[promoted_ext]
                 # TODO Issue 5103 - this is being used to remove false positive currently
                 promoted_to_core = promoted_ext is not None and 'VK_VERSION' in promoted_ext
@@ -506,27 +521,32 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             classname = 'Instance' if command.instance else 'Device'
             out.append(f'bool {classname}::PreCallValidate{prototype} const {{\n')
             out.append('    bool skip = false;\n')
+
+            # Temporarily hold on, if there is no validation, will discard
+            context = ''
+
             # For vkCreateDevice, the extensions member has already been set up properly
             # for other VkPhysicalDevice calls, we need to use their supported extensions rather
             # than the extensions members, which is how the VkInstance was configured.
             if command.params[0].type == 'VkPhysicalDevice' and command.name != 'vkCreateDevice':
-                out.append('''
+                context = '''
                     const auto &physdev_extensions = physical_device_extensions.at(physicalDevice);
                     Context context(*this, error_obj, physdev_extensions, IsExtEnabled(physdev_extensions.vk_khr_maintenance5));
-                ''')
+                '''
             else:
-                out.append('    Context context(*this, error_obj, extensions);\n')
+                context = '    Context context(*this, error_obj, extensions);\n'
 
             # Create a copy here to make the logic simpler passing into ValidatePnextStructContents
-            out.append('    [[maybe_unused]] const Location loc = error_obj.location;\n')
+            location = '    [[maybe_unused]] const Location loc = error_obj.location;\n'
 
+            functionBody = []
             # Cannot validate extension dependencies for device extension APIs having a physical device as their dispatchable object
-            if command.extensions and (not any(x.device for x in command.extensions) or command.params[0].type != 'VkPhysicalDevice'):
+            if command.extensions and command.name not in self.layerExtensionFunctions and (not any(self.vk.extensions[x].device for x in command.extensions) or command.params[0].type != 'VkPhysicalDevice'):
                 cExpression =  []
                 outExpression =  []
                 for extension in command.extensions:
-                    outExpression.append(f'vvl::Extension::_{extension.name}')
-                    cExpression.append(f'IsExtEnabled(extensions.{extension.name.lower()})')
+                    outExpression.append(f'vvl::Extension::_{extension}')
+                    cExpression.append(f'IsExtEnabled(extensions.{extension.lower()})')
 
                 cExpression = " || ".join(cExpression)
                 if len(outExpression) > 1:
@@ -534,7 +554,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
 
                 if command.name in alias_but_not_core:
                     cExpression += f' && loc.function == vvl::Func::{command.name}'
-                out.append(f'if (!{cExpression}) skip |= OutputExtensionError(loc, {{{", ".join(outExpression)}}});\n')
+                functionBody.append(f'if (!{cExpression}) skip |= OutputExtensionError(loc, {{{", ".join(outExpression)}}});\n')
 
             if command.alias and command.alias in self.vk.commands:
                 # For alias that are promoted, just point to new function, ErrorObject will allow us to distinguish the caller
@@ -542,7 +562,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                 paramList = [param.name for param in command.params]
                 paramList.append('error_obj')
                 params = ', '.join(paramList)
-                out.append(f'skip |= PreCallValidate{command.alias[2:]}({params});')
+                functionBody.append(f'skip |= PreCallValidate{command.alias[2:]}({params});')
             else:
                 # Skip first parameter if it is a dispatch handle (everything except vkCreateInstance)
                 startIndex = 0 if command.name == 'vkCreateInstance' else 1
@@ -550,14 +570,22 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
 
                 if command.instance and command.version:
                     # check function name so KHR version doesn't trigger flase positive
-                    out.append(f'if (loc.function == vvl::Func::{command.name} && CheckPromotedApiAgainstVulkanVersion({command.params[0].name}, loc, {command.version.nameApi})) return true;\n')
+                    functionBody.append(f'if (loc.function == vvl::Func::{command.name} && CheckPromotedApiAgainstVulkanVersion({command.params[0].name}, loc, {command.version.nameApi})) return true;\n')
+
+                if not command.allowNoQueues and command.params[0].type == 'VkDevice':
+                    if 'vkCreate' in command.name or 'vkAllocate' in command.name:
+                        functionBody.append(f'''
+                            if (has_zero_queues) {{
+                                skip |= LogError("VUID-{command.name}-device-queuecount", device, error_obj.location, "device was created with queueCreateInfoCount of zero.");
+                            }}
+                            ''')
 
                 for line in lines:
                     if isinstance(line, list):
                         for sub in line:
-                            out.append(sub)
+                            functionBody.append(sub)
                     else:
-                        out.append(line)
+                        functionBody.append(line)
                 # Insert call to custom-written function if present
                 if command.name in self.functionsWithManualChecks:
                     manualCheckCmd = command.name
@@ -569,7 +597,17 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                 if manualCheckCmd:
                     # Generate parameter list for manual fcn and down-chain calls
                     params_text = ', '.join([x.name for x in command.params]) + ', context'
-                    out.append(f'    if (!skip) skip |= manual_PreCallValidate{manualCheckCmd[2:]}({params_text});\n')
+                    functionBody.append(f'    if (!skip) skip |= manual_PreCallValidate{manualCheckCmd[2:]}({params_text});\n')
+
+            # Only apply if there is actually validation
+            if functionBody:
+                # Will remove a few exta declartion of the Context when not needed
+                if len(functionBody) > 1 or 'context' in functionBody[0]:
+                    out.append(context)
+                if len(functionBody) > 1 or 'loc' in functionBody[0]:
+                    out.append(location)
+                out.extend(functionBody)
+
             out.append('return skip;\n')
             out.append('}\n')
         out.extend(guard_helper.add_guard(None, extra_newline=True))
@@ -588,21 +626,6 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
         ''')
         self.write("".join(out))
 
-    def genType(self, typeinfo, name, alias):
-        BaseGenerator.genType(self, typeinfo, name, alias)
-        if (typeinfo.elem.get('category') == 'bitmask' and not alias):
-            self.flags.add(name)
-
-    def genGroup(self, groupinfo, groupName, alias):
-        BaseGenerator.genGroup(self, groupinfo, groupName, alias)
-        if 'FlagBits' in groupName and groupName != 'VkStructureType':
-            bits = []
-            for elem in groupinfo.elem.findall('enum'):
-                if elem.get('supported') != 'disabled' and elem.get('alias') is None:
-                    bits.append(elem.get('name'))
-            if bits:
-                self.flagBits[groupName] = bits
-
     def isHandleOptional(self, member: Member, lengthMember: Member) -> bool :
         # Simple, if it's optional, return true
         if member.optional or member.optionalPointer:
@@ -614,6 +637,13 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
         if lengthMember and lengthMember.optional:
             return True
         return
+
+    def isFlagReserved(self, flag) -> bool:
+        bitmask = self.vk.flags[flag].bitmaskName
+        # Check if doesn't have an associated bitmask type, or if the associated bitmask type is empty
+        if bitmask is None or len(self.vk.bitmasks[bitmask].flags) == 0:
+            return True
+        return False
 
     # Get VUID identifier from implicit VUID tag
     def GetVuid(self, name, suffix):
@@ -738,6 +768,8 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
 
     # Process struct validation code for inclusion in function or parent struct validation code
     def expandStructCode(self, item_type, funcName, errorLoc, memberNamePrefix, memberDisplayNamePrefix, output, context):
+        if item_type not in self.validatedStructs:
+            return ""
         lines = self.validatedStructs[item_type]
         for line in lines:
             if output:
@@ -756,7 +788,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
         lines = []    # Generated lines of code
         duplicateCountVuid = [] # prevent duplicate VUs being generated
 
-        # TODO Using a regex in this context is not ideal. Would be nicer if usedLines were a list of objects with "settings" 
+        # TODO Using a regex in this context is not ideal. Would be nicer if usedLines were a list of objects with "settings"
         validatePNextRegex = re.compile(r'(.*ValidateStructPnext\(.*)(\).*\n*)', re.M)
 
         # Special struct since lots of functions have this, but it can be all combined to the same call (since it is always from the top level of a funciton)
@@ -881,11 +913,11 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                         countRequiredVuid = self.GetVuid(callerName, f"{member.length}-arraylength")
                         # This is an array with an integer count value
                         usedLines.append(f'skip |= {context}ValidateHandleArray({errorLoc}.dot(Field::{member.length}), {errorLoc}.dot(Field::{member.name}), {valuePrefix}{member.length}, {valuePrefix}{member.name}, {counValueRequired}, {arrayRequired}, {countRequiredVuid});\n')
-                    elif member.type in self.flags and member.const:
+                    elif member.type in self.vk.flags and member.const:
                         # Generate check string for an array of VkFlags values
-                        flagBitsName = member.type.replace('Flags', 'FlagBits')
-                        if flagBitsName not in self.vk.bitmasks:
+                        if self.isFlagReserved(member.type):
                             raise Exception('Unsupported parameter validation case: array of reserved VkFlags')
+                        flagBitsName = self.vk.flags[member.type].bitmaskName
                         allFlags = 'All' + flagBitsName
                         countRequiredVuid = self.GetVuid(callerName, f"{member.length}-arraylength")
                         arrayRequiredVuid = self.GetVuid(callerName, f"{member.name}-parameter")
@@ -988,23 +1020,20 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                     elif member.type in self.vk.handles:
                         if not member.optional:
                             usedLines.append(f'skip |= {context}ValidateRequiredHandle({errorLoc}.dot(Field::{member.name}), {valuePrefix}{member.name});\n')
-                    elif member.type in self.flags and member.type.replace('Flags', 'FlagBits') not in self.flagBits:
+                    elif member.type in self.vk.flags and self.isFlagReserved(member.type):
                         vuid = self.GetVuid(callerName, f"{member.name}-zerobitmask")
                         usedLines.append(f'skip |= {context}ValidateReservedFlags({errorLoc}.dot(Field::{member.name}), {valuePrefix}{member.name}, {vuid});\n')
-                    elif member.type in self.flags or member.type in self.flagBits:
-                        if member.type in self.flags:
-                            flagBitsName = member.type.replace('Flags', 'FlagBits')
+                    elif member.type in self.vk.flags or member.type in self.vk.bitmasks:
+                        if member.type in self.vk.flags:
+                            flagBitsName = self.vk.flags[member.type].bitmaskName
                             flagsType = 'kOptionalFlags' if member.optional else 'kRequiredFlags'
                             invalidVuid = self.GetVuid(callerName, f"{member.name}-parameter")
                             zeroVuid = self.GetVuid(callerName, f"{member.name}-requiredbitmask")
-                        elif member.type in self.flagBits:
+                        elif member.type in self.vk.bitmasks:
                             flagBitsName = member.type
                             flagsType = 'kOptionalSingleBit' if member.optional else 'kRequiredSingleBit'
                             invalidVuid = self.GetVuid(callerName, f"{member.name}-parameter")
                             zeroVuid = invalidVuid
-                        # Bad workaround, but this whole file will be refactored soon
-                        if flagBitsName == 'VkBuildAccelerationStructureFlagBitsNV':
-                            flagBitsName = 'VkBuildAccelerationStructureFlagBitsKHR'
                         allFlagsName = 'All' + flagBitsName
                         zeroVuidArg = '' if member.optional else ', ' + zeroVuid
                         condition = [item for item in self.structMemberValidationConditions if (item['struct'] == structTypeName and item['field'] == flagBitsName)]
@@ -1032,8 +1061,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                     usedLines = [checkedExpr]
 
                 lines += usedLines
-        if not lines:
-            lines.append('// No xml-driven validation\n')
+
         return lines
 
     # Joins strings in English fashion
@@ -1058,49 +1086,6 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
         if struct.name == 'VkPhysicalDeviceLayeredApiPropertiesListKHR':
             return ""
 
-        if struct.sType and struct.version and all(not x.promotedTo for x in struct.extensions):
-            pNextCheck += f'''
-                if (extensions.api_version < {struct.version.nameApi}) {{
-                    skip |= log.LogError(
-                            pnext_vuid, error_obj.handle, loc.dot(Field::pNext),
-                            "includes a pointer to a VkStructureType ({struct.sType}) which was added in {struct.version.nameApi} but the "
-                            "current effective API version is %s.", StringAPIVersion(extensions.api_version).c_str());
-                }}
-                '''
-
-        elif struct.sType and len(struct.extensions) > 0:
-            extNames = set([x.name for x in struct.extensions])
-
-            # Skip extensions that are not in the target API
-            # This check is needed because parts of the base generator code bypass the
-            # dependency resolution logic in the registry tooling and thus the generator
-            # may attempt to generate code for extensions which are not supported in the
-            # target API variant, thus this check needs to happen even if any specific
-            # target API variant may not specifically need it
-            extNames.intersection(self.vk.extensions.keys())
-            if len(extNames) == 0:
-                return ""
-
-            extNames = sorted(list(extNames)) # make the order deterministic
-
-            # Dependent on enabled extension
-            extension_conditionals = list()
-            for ext_name in extNames:
-                extension = self.vk.extensions[ext_name]
-                extension_conditionals.append( f'(!IsExtEnabled(extensions.{extension.name.lower()}))' )
-            if len(extension_conditionals) == 1 and extension_conditionals[0][0] == '(' and extension_conditionals[0][-1] == ')':
-                extension_conditionals[0] = extension_conditionals[0][1:-1]# strip extraneous parentheses
-
-            extension_check = f'if ({" && ".join(extension_conditionals)}) {{'
-            pNextCheck += f'''
-                    {extension_check}
-                        skip |= log.LogError(
-                            pnext_vuid, error_obj.handle, loc.dot(Field::pNext),
-                            "includes a pointer to a VkStructureType ({struct.sType}), but its parent extension "
-                            "{self.englishJoin(extNames, "or")} has not been enabled.");
-                    }}
-                '''
-
         expr = self.expandStructCode(struct.name, struct.name, 'pNext_loc', 'structure->', '', [], '')
         structValidationSource = self.ScrubStructCode(expr)
         if structValidationSource != '':
@@ -1112,15 +1097,6 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                 pNextCheck += 'if (is_const_param) {\n'
 
             pNextCheck += f'[[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::{struct.name});\n'
-
-            # Can have a struct from a device extension be extended by an instance extension struct
-            # https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/7803
-            # This is true already for all Properties/Features so exclude them here
-            check_for_instance = False
-            if nonPropFeature and isDeviceStruct(struct):
-                for extend in struct.extends:
-                    if not isDeviceStruct(self.vk.structs[extend]):
-                        check_for_instance = True
 
             structValidationSource = f'{struct.name} *structure = ({struct.name} *) header;\n{structValidationSource}'
             structValidationSource += '}\n'

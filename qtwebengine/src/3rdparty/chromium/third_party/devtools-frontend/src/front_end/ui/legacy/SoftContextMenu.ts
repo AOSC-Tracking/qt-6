@@ -28,6 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* eslint-disable rulesdir/no-imperative-dom-api */
+
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as IconButton from '../../ui/components/icon_button/icon_button.js';
@@ -62,7 +64,11 @@ const UIStrings = {
    *@example {44 %} PH2
    */
   sS: '{PH1}, {PH2}',
-};
+  /**
+   * @description Accessible text exposed to screen readers appended to menu items that have a new badge.
+   */
+  newFeature: 'This is a new feature',
+} as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/SoftContextMenu.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -304,6 +310,9 @@ export class SoftContextMenu {
     } else if (item.shortcut) {
       accessibleName = i18nString(UIStrings.sS, {PH1: String(item.label), PH2: item.shortcut});
     }
+    if (item.element?.className === 'new-badge') {
+      accessibleName = i18nString(UIStrings.sS, {PH1: String(item.label), PH2: i18nString(UIStrings.newFeature)});
+    }
     ARIAUtils.setLabel(menuItemElement, accessibleName);
 
     this.detailsForElementMap.set(menuItemElement, detailsForElement);
@@ -375,7 +384,7 @@ export class SoftContextMenu {
   }
 
   private root(): SoftContextMenu {
-    let root: SoftContextMenu = (this as SoftContextMenu);
+    let root: SoftContextMenu = this;
     while (root.parentMenu) {
       root = root.parentMenu;
     }
@@ -481,7 +490,7 @@ export class SoftContextMenu {
       const detailsForElement = this.detailsForElementMap.get(this.highlightedMenuItemElement);
       this.highlightedMenuItemElement.classList.remove('force-white-icons');
       this.highlightedMenuItemElement.classList.remove('soft-context-menu-item-mouse-over');
-      if (detailsForElement && detailsForElement.subItems && detailsForElement.subMenuTimer) {
+      if (detailsForElement?.subItems && detailsForElement.subMenuTimer) {
         window.clearTimeout(detailsForElement.subMenuTimer);
         delete detailsForElement.subMenuTimer;
       }
@@ -492,13 +501,12 @@ export class SoftContextMenu {
       this.highlightedMenuItemElement.classList.add('force-white-icons');
       this.highlightedMenuItemElement.classList.add('soft-context-menu-item-mouse-over');
       const detailsForElement = this.detailsForElementMap.get(this.highlightedMenuItemElement);
-      if (detailsForElement && detailsForElement.customElement &&
-          !detailsForElement.customElement.classList.contains('location-menu')) {
+      if (detailsForElement?.customElement && !detailsForElement.customElement.classList.contains('location-menu')) {
         detailsForElement.customElement.focus();
       } else {
         this.highlightedMenuItemElement.focus();
       }
-      if (scheduleSubMenu && detailsForElement && detailsForElement.subItems && !detailsForElement.subMenuTimer) {
+      if (scheduleSubMenu && detailsForElement?.subItems && !detailsForElement.subMenuTimer) {
         detailsForElement.subMenuTimer =
             window.setTimeout(this.showSubMenu.bind(this, this.highlightedMenuItemElement), 150);
       }
@@ -535,7 +543,7 @@ export class SoftContextMenu {
     let menuItemDetails: (ElementMenuDetails|undefined) =
         menuItemElement ? this.detailsForElementMap.get((menuItemElement as HTMLElement)) : undefined;
     while (menuItemElement &&
-           (menuItemDetails && menuItemDetails.isSeparator ||
+           (menuItemDetails?.isSeparator ||
             (menuItemElement as HTMLElement).classList.contains('soft-context-menu-disabled'))) {
       menuItemElement = menuItemElement.nextSibling;
       menuItemDetails = menuItemElement ? this.detailsForElementMap.get((menuItemElement as HTMLElement)) : undefined;
@@ -545,8 +553,7 @@ export class SoftContextMenu {
     }
   }
 
-  private menuKeyDown(event: Event): void {
-    const keyboardEvent = (event as KeyboardEvent);
+  private menuKeyDown(keyboardEvent: KeyboardEvent): void {
     function onEnterOrSpace(this: SoftContextMenu): void {
       if (!this.highlightedMenuItemElement) {
         return;
@@ -585,7 +592,7 @@ export class SoftContextMenu {
           break;
         }
         const detailsForElement = this.detailsForElementMap.get(this.highlightedMenuItemElement);
-        if (detailsForElement && detailsForElement.subItems) {
+        if (detailsForElement?.subItems) {
           this.showSubMenu(this.highlightedMenuItemElement);
           if (this.subMenu) {
             this.subMenu.highlightNext();
@@ -650,6 +657,8 @@ export interface SoftContextMenuDescriptor {
   shortcut?: string;
   tooltip?: Platform.UIString.LocalizedString;
   jslogContext?: string;
+  /** A no-op. For native context menus, feature name will request showing a new badge. */
+  featureName?: string;
 }
 interface ElementMenuDetails {
   customElement?: HTMLElement;

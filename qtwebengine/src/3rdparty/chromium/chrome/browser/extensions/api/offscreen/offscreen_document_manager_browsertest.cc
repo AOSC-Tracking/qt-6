@@ -5,9 +5,11 @@
 #include "extensions/browser/api/offscreen/offscreen_document_manager.h"
 
 #include "base/test/bind.h"
+#include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/browser/api/offscreen/lifetime_enforcer_factories.h"
@@ -23,10 +25,7 @@
 #include "extensions/common/switches.h"
 #include "extensions/test/test_extension_dir.h"
 
-#if BUILDFLAG(IS_ANDROID)
-#include "chrome/browser/extensions/extension_platform_apitest.h"
-#else
-#include "chrome/browser/extensions/extension_apitest.h"
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/ui/browser.h"
 #endif
 
@@ -77,19 +76,13 @@ std::unique_ptr<OffscreenDocumentLifetimeEnforcer> CreateTestLifetimeEnforcer(
 
 }  // namespace
 
-#if BUILDFLAG(IS_ANDROID)
-using ExtensionApiTestBase = ExtensionPlatformApiTest;
-#else
-using ExtensionApiTestBase = ExtensionApiTest;
-#endif
-
-class OffscreenDocumentManagerBrowserTest : public ExtensionApiTestBase {
+class OffscreenDocumentManagerBrowserTest : public ExtensionApiTest {
  public:
   OffscreenDocumentManagerBrowserTest() = default;
   ~OffscreenDocumentManagerBrowserTest() override = default;
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
-    ExtensionApiTestBase::SetUpCommandLine(command_line);
+    ExtensionApiTest::SetUpCommandLine(command_line);
     // Add the kOffscreenDocumentTesting switch to allow the use of the
     // `TESTING` reason in offscreen document creation.
     command_line->AppendSwitch(switches::kOffscreenDocumentTesting);
@@ -191,7 +184,7 @@ IN_PROC_BROWSER_TEST_F(OffscreenDocumentManagerBrowserTest,
     // document should be closed.
     ExtensionHostTestHelper host_waiter(profile());
     host_waiter.RestrictToHost(offscreen_document);
-    DisableExtension(extension->id(), disable_reason::DISABLE_USER_ACTION);
+    DisableExtension(extension->id(), {disable_reason::DISABLE_USER_ACTION});
     host_waiter.WaitForHostDestroyed();
     // Note: `offscreen_document` is destroyed at this point.
   }
@@ -521,15 +514,15 @@ IN_PROC_BROWSER_TEST_F(OffscreenDocumentManagerBrowserTest,
                    ->GetBrowserContext()
                    ->IsOffTheRecord());
 
-#if BUILDFLAG(IS_ANDROID)
-  Profile* incognito_profile =
-      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
-#else
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   // Create an incognito browser and an incognito offscreen document, and
   // validate that the proper context is used.
   Browser* incognito_browser = CreateIncognitoBrowser();
   ASSERT_TRUE(incognito_browser);
   Profile* incognito_profile = incognito_browser->profile();
+#else
+  Profile* incognito_profile =
+      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
 #endif
 
   OffscreenDocumentHost* incognito_host = CreateDocumentAndWaitForLoad(

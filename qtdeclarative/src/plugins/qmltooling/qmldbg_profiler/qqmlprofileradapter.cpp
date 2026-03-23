@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlprofileradapter.h"
 #include "qqmlprofilerservice.h"
@@ -106,7 +107,7 @@ qint64 QQmlProfilerAdapter::sendMessages(qint64 until, QList<QByteArray> &messag
     return -1;
 }
 
-void QQmlProfilerAdapter::receiveData(const QVector<QQmlProfilerData> &new_data,
+void QQmlProfilerAdapter::receiveData(const QList<QQmlProfilerData> &new_data,
                                       const QQmlProfiler::LocationHash &new_locations)
 {
     if (data.isEmpty())

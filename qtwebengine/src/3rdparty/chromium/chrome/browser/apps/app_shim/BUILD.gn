@@ -28,9 +28,12 @@ source_set("app_shim") {
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
 
   deps = [
+    "//apps",
     "//chrome/browser/profiles:profile_util",
     "//chrome/browser/ui:browser_list",
     "//chrome/browser/ui:ui_features",
+    "//chrome/browser/ui/profiles",
+    "//chrome/browser/ui/web_applications",
     "//chrome/common",
     "//chrome/common:app_mode_app_support",
     "//chrome/common:constants",
@@ -43,7 +46,7 @@ source_set("app_shim") {
     "//components/webapps/common",
     "//content/public/browser",
     "//content/public/common",
-    "//ui/views:views",
+    "//ui/views",
   ]
 
   if (enable_extensions) {
@@ -57,9 +60,10 @@ source_set("app_shim") {
       "//chrome/browser/apps/app_service",
       "//chrome/browser/apps/app_service:constants",
       "//chrome/browser:browser_process",
+      "//chrome/browser/profiles",
       "//chrome/browser/profiles:profile",
-      "//chrome/browser/web_applications:web_applications",
-      "//services/preferences/public/cpp:cpp",
+      "//chrome/browser/web_applications",
+      "//services/preferences/public/cpp",
     ]
   }
 }

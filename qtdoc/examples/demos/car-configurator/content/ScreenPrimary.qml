@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Timeline
 import QtQuick3D
 import QtQuick3D.Effects
+import QtQuick3D.Particles3D
 import QtQuick3D.Helpers
 import CarRendering
 import Quick3DAssets.Venodhb_LOD0
@@ -17,6 +17,7 @@ import Quick3DAssets.EV_SportsCar_low
 import Quick3DAssets.Pebbles
 import Quick3DAssets.InteriorShadow
 import Quick3DAssets.ShadowPlane
+import Quick3DAssets.Snow
 
 Rectangle {
     id: root
@@ -43,6 +44,7 @@ Rectangle {
     readonly property bool perfMode: Qt.platform.os === 'android'
 
     property real demoCameraRotation: 0
+    required property url downloadBase
 
     Timer {
         id: preloadTimer
@@ -57,7 +59,7 @@ Rectangle {
     Connections {
         target: preloadTimer
 
-        onTriggered: {
+        function onTriggered() {
             if (preloadTimer.count == 0)
                 btnAnimated.toggleCheck()
             else if (preloadTimer.count == 1)
@@ -78,12 +80,49 @@ Rectangle {
         }
     }
 
+    ParticleMask {
+        id: particleMaskGround
+        clipNear: 345
+        clipFar: 355
+        particleSize: 7
+        width: 1500
+        height: 1500
+        nodePosition: originalSnowParticleSystem.scenePosition
+        snowParticleSystemVisible: btnSnow.checked
+    }
+
+    ParticleMask {
+        id: particleMaskCar
+        clipNear: 260
+        clipFar: 270
+        particleSize: 6
+        width: 512
+        height: 512
+        nodePosition: originalSnowParticleSystem.scenePosition
+        snowParticleSystemVisible: btnSnow.checked
+    }
+
     View3D {
         id: view3D
+        visible: true
 
         anchors.fill: parent
         camera: sceneCamera2
         environment: showhall
+
+        Texture {
+            id: particleMaskGroundTexture
+            sourceItem: particleMaskGround.maskSource
+            scaleU: -1
+            scaleV: -1
+        }
+
+        Texture {
+            id: particleMaskCarTexture
+            sourceItem: particleMaskCar.maskSource
+            scaleU: -1
+            scaleV: -1
+        }
 
         Node {
             id: scene2
@@ -208,6 +247,7 @@ Rectangle {
                     scale.x: 0.1
                     scale.y: 0.1
                     scale.z: 0.1
+                    downloadBase: root.downloadBase
 
                     Model {
                         id: backlight_red
@@ -234,9 +274,11 @@ Rectangle {
                     scale.x: 10
                     scale.y: 10
                     scale.z: 10
+                    downloadBase: root.downloadBase
 
                     Pebbles {
                         id: pebbles
+                        downloadBase: root.downloadBase
                     }
                 }
 
@@ -353,17 +395,37 @@ Rectangle {
 
                 Model {
                     id: animatedstateFloor
-
-                    y: 0
                     visible: false
-                    source: "#Rectangle"
-                    eulerRotation.x: -90
+                    geometry: PlaneGeometry {
+                        width: 100.0
+                        height: 100.0
+                        plane: PlaneGeometry.XZ
+                        meshResolution: Qt.size(200, 200)
+                    }
                     materials: rectMaterial4
-                    scale.y: 20
-                    eulerRotation.y: 0
-                    scale.z: 20
-                    scale.x: 20
+                    scale.z: 15
+                    scale.y: 15
+                    scale.x: 15
                     receivesReflections: true
+                    castsReflections: true
+                }
+                Model {
+                    visible: animatedstateFloor.visible
+                    source: "#Rectangle"
+                    pickable: true
+                    materials: rectMaterialBase
+                    y: -0.1
+                    eulerRotation.x: -90
+                    scale.x: 45
+                    scale.y: 45
+                    scale.z: 45
+                    receivesReflections: true
+                    castsReflections: true
+                }
+
+                SnowParticlesSystem {
+                    id: originalSnowParticleSystem
+                    visible: btnSnow.checked
                 }
 
                 Ev_SportsCar_low {
@@ -371,6 +433,8 @@ Rectangle {
                     x: -19
                     y: 1.965
                     desert: false
+                    rain: btnRain.checked
+                    snowStrength: __materialLibrary__.snowStrength
                     headlightsVisible: !btnLight.checked
                     trunkIsOpen: trunkbutton.isChecked
                     hoodIsOpen: hoodButton.isChecked
@@ -383,6 +447,9 @@ Rectangle {
                     lightsOn: btnLight.checked
                     doorLeftIsOpen: doorButtonLeft.isChecked
                     doorRightIsOpen: doorButtonRight.isChecked
+                    downloadBase: root.downloadBase
+                    particleMaskCar: particleMaskCar
+                    particleMaskCarTexture: particleMaskCarTexture
 
                     PointLight {
                         id: lightPoint
@@ -430,6 +497,7 @@ Rectangle {
                     InteriorShadow {
                         id: interiorShadow
                         visible: true
+                        downloadBase: root.downloadBase
                     }
 
                     ShadowPlane {
@@ -437,6 +505,7 @@ Rectangle {
                         visible: false
                         hoodOpen: ev_SportsCar_low.hoodIsOpen
                         doorOpen: ev_SportsCar_low.doorLeftIsOpen
+                        downloadBase: root.downloadBase
                     }
                 }
             }
@@ -445,7 +514,7 @@ Rectangle {
                 id: lightDirectional
 
                 castsShadow: false
-                brightness: 0.5
+                brightness: btnRain.checked ? 0.2 : 0.5
                 eulerRotation.z: -180
                 eulerRotation.y: 180
                 eulerRotation.x: -54.99136
@@ -457,16 +526,25 @@ Rectangle {
                 shadowFactor: 100
                 shadowMapQuality: Light.ShadowMapQualityVeryHigh
                 castsShadow: false
-                brightness: 0.5
+                brightness: btnRain.checked ? 0.2 : 0.5
                 eulerRotation.z: -0.00002
                 eulerRotation.y: 0.00002
                 eulerRotation.x: -57.72036
             }
         }
+        SceneRain {
+            id: sceneRain
+            enabled: btnRain.checked
+            scene: scene2
+            center: ev_SportsCar_low.scenePosition
+            extents: Qt.vector3d(1000, 500, 1000)
+            excluded: [animatedstateFloor, shadowPlane, interiorShadow, headlights, ...ev_SportsCar_low.shapeExluded]
+        }
 
         Node {
             id: environments1
 
+            //! [Showhall Scene Environment]
             ExtendedSceneEnvironment {
                 id: showhall
 
@@ -486,19 +564,21 @@ Rectangle {
                 depthPrePassEnabled: false
                 depthTestEnabled: true
                 antialiasingMode: SceneEnvironment.MSAA
-                antialiasingQuality: perfMode ? SceneEnvironment.Medium : SceneEnvironment.VeryHigh
+                antialiasingQuality: root.perfMode ? SceneEnvironment.Medium : SceneEnvironment.VeryHigh
                 clearColor: "#000000"
                 probeHorizon: 0.5
 
                 Texture {
                     id: _Hall
-                    source: rootWindow.downloadBase + "/content/images/HDR/_Hall.ktx"
+                    source: root.downloadBase + "/content/images/HDR/_Hall.ktx"
                     mipFilter: Texture.Linear
                     scaleV: 2
                 }
                 temporalAAEnabled: false
             }
+            //! [Showhall Scene Environment]
 
+            //! [Desert Scene Environment]
             ExtendedSceneEnvironment {
                 id: desert
 
@@ -508,18 +588,20 @@ Rectangle {
                 glowEnabled: true
 
                 depthPrePassEnabled: false
-                probeExposure: 1.5
+                probeExposure: btnRain.checked ? 1.0 : 1.5
                 tonemapMode: SceneEnvironment.TonemapModeLinear
                 backgroundMode: SceneEnvironment.SkyBox
                 depthTestEnabled: true
                 antialiasingMode: SceneEnvironment.MSAA
-                antialiasingQuality: perfMode ? SceneEnvironment.Medium : SceneEnvironment.VeryHigh
+                antialiasingQuality: root.perfMode ? SceneEnvironment.Medium : SceneEnvironment.VeryHigh
                 clearColor: "#000000"
                 probeHorizon: 0.5
                 temporalAAEnabled: false
                 fog: Fog {}
             }
+            //! [Desert Scene Environment]
 
+            //! [Videoroom Scene Environment]
             ExtendedSceneEnvironment {
                 id: videoRoom
 
@@ -528,7 +610,7 @@ Rectangle {
                 probeExposure: 1
                 tonemapMode: SceneEnvironment.TonemapModeLinear
                 antialiasingMode: SceneEnvironment.MSAA
-                antialiasingQuality: perfMode ? SceneEnvironment.Medium : SceneEnvironment.VeryHigh
+                antialiasingQuality: root.perfMode ? SceneEnvironment.Medium : SceneEnvironment.VeryHigh
                 clearColor: "#000000"
                 depthPrePassEnabled: false
                 backgroundMode: SceneEnvironment.Color
@@ -541,7 +623,9 @@ Rectangle {
                 }
                 temporalAAEnabled: false
             }
+            //! [Videoroom Scene Environment]
 
+            //! [Studio Scene Environment]
             ExtendedSceneEnvironment {
                 id: studio
                 aoEnabled: false
@@ -557,6 +641,7 @@ Rectangle {
                 backgroundMode: SceneEnvironment.Color
                 depthPrePassEnabled: false
             }
+            //! [Studio Scene Environment]
         }
 
         Node {
@@ -615,6 +700,7 @@ Rectangle {
                         height: videoBG.videoWallHeight
                         timeRunning: visible
                         visible: videoBG.sourceItem == wallEffect1
+                        downloadBase: root.downloadBase
                     }
 
                     WallEffect2 {
@@ -624,6 +710,7 @@ Rectangle {
                         height: videoBG.videoWallHeight
                         timeRunning: visible
                         visible: videoBG.sourceItem == wallEffect2
+                        downloadBase: root.downloadBase
                     }
 
                     WallEffect3 {
@@ -633,6 +720,7 @@ Rectangle {
                         height: videoBG.videoWallHeight
                         timeRunning: visible
                         visible: videoBG.sourceItem == wallEffect3
+                        downloadBase: root.downloadBase
                     }
                 }
                 roughness: 0
@@ -654,14 +742,14 @@ Rectangle {
 
             Texture {
                 id: _Desert
-                source: rootWindow.downloadBase + "/content/images/HDR/low/_Desert.ktx"
+                source: root.downloadBase + "/content/images/HDR/low/_Desert.ktx"
                 mipFilter: Texture.Linear
                 scaleV: 3
             }
 
             Texture {
                 id: concrete1_Height1
-                source: rootWindow.downloadBase + "/content/images/concrete1_Height.png"
+                source: root.downloadBase + "/content/images/concrete1_Height.png"
                 mipFilter: Texture.Linear
                 scaleV: 10
                 mappingMode: Texture.UV
@@ -671,7 +759,7 @@ Rectangle {
 
             Texture {
                 id: concrete1_Normalogl1
-                source: rootWindow.downloadBase + "/content/images/concrete1_Normal-ogl.png"
+                source: root.downloadBase + "/content/images/concrete1_Normal-ogl.png"
                 mipFilter: Texture.Linear
                 scaleV: 10
                 generateMipmaps: true
@@ -680,13 +768,13 @@ Rectangle {
 
             Texture {
                 id: ground1
-                source: rootWindow.downloadBase + "/content/images/Ground.png"
+                source: root.downloadBase + "/content/images/Ground.png"
                 autoOrientation: true
             }
 
             Texture {
                 id: tg1kfdzq_2K_Albedo
-                source: rootWindow.downloadBase + "/content/images/tg1kfdzq_2K_Albedo.jpg"
+                source: root.downloadBase + "/content/images/tg1kfdzq_2K_Albedo.jpg"
                 mipFilter: Texture.Linear
                 scaleV: 40
                 generateMipmaps: true
@@ -695,7 +783,7 @@ Rectangle {
 
             Texture {
                 id: tg1kfdzq_2K_AO
-                source: rootWindow.downloadBase + "/content/images/tg1kfdzq_2K_AO.jpg"
+                source: root.downloadBase + "/content/images/tg1kfdzq_2K_AO.jpg"
                 mipFilter: Texture.Linear
                 scaleV: 40
                 generateMipmaps: true
@@ -704,7 +792,7 @@ Rectangle {
 
             Texture {
                 id: tg1kfdzq_2K_Normal
-                source: rootWindow.downloadBase + "/content/images/tg1kfdzq_2K_Normal.jpg"
+                source: root.downloadBase + "/content/images/tg1kfdzq_2K_Normal.jpg"
                 mipFilter: Texture.Linear
                 scaleV: 40
                 generateMipmaps: true
@@ -713,7 +801,7 @@ Rectangle {
 
             Texture {
                 id: tg1kfdzq_2K_Roughness
-                source: rootWindow.downloadBase + "/content/images/tg1kfdzq_2K_Roughness.jpg"
+                source: root.downloadBase + "/content/images/tg1kfdzq_2K_Roughness.jpg"
                 mipFilter: Texture.Linear
                 scaleV: 40
                 generateMipmaps: true
@@ -746,7 +834,7 @@ Rectangle {
 
             Texture {
                 id: vlkhcah_2K_Albedo
-                source: rootWindow.downloadBase + "/content/images/vlkhcah_2K_Albedo.jpg"
+                source: root.downloadBase + "/content/images/vlkhcah_2K_Albedo.jpg"
                 mipFilter: Texture.Linear
                 scaleV: 20
                 generateMipmaps: true
@@ -755,7 +843,7 @@ Rectangle {
 
             Texture {
                 id: vlkhcah_2K_AO
-                source: rootWindow.downloadBase + "/content/images/vlkhcah_2K_AO.jpg"
+                source: root.downloadBase + "/content/images/vlkhcah_2K_AO.jpg"
                 mipFilter: Texture.Linear
                 scaleV: 20
                 generateMipmaps: true
@@ -764,7 +852,7 @@ Rectangle {
 
             Texture {
                 id: vlkhcah_2K_Normal
-                source: rootWindow.downloadBase + "/content/images/vlkhcah_2K_Normal.jpg"
+                source: root.downloadBase + "/content/images/vlkhcah_2K_Normal.jpg"
                 mipFilter: Texture.Linear
                 scaleV: 20
                 generateMipmaps: true
@@ -773,26 +861,66 @@ Rectangle {
 
             Texture {
                 id: vlkhcah_2K_Roughness
-                source: rootWindow.downloadBase + "/content/images/vlkhcah_2K_Roughness.jpg"
+                source: root.downloadBase + "/content/images/vlkhcah_2K_Roughness.jpg"
                 mipFilter: Texture.Linear
                 scaleV: 20
                 generateMipmaps: true
                 scaleU: 20
             }
 
-            PrincipledMaterial {
+            property real snowStrength: 1.0
+            NumberAnimation {
+                running: !btnSnow.checked
+                target: __materialLibrary__
+                property: "snowStrength"
+                to: 0
+                duration: 10000
+            }
+
+            NumberAnimation {
+                running: btnSnow.checked
+                target: __materialLibrary__
+                property: "snowStrength"
+                to: 1.
+                duration: 5000
+            }
+
+            PrincipledExSnowMaterial {
                 id: rectMaterial4
                 specularAmount: 0.5
                 clearcoatAmount: 0
-                specularTint: 0
+                snowStrength: __materialLibrary__.snowStrength
+                snowViewProjection: particleMaskGround.viewProjection
+                snowDisplacementMap: particleMaskGroundTexture
+                snowMaxDisplacement: 5
+                // specularTint: 0
                 baseColor: "#222222"
                 objectName: "rectMaterial4"
                 baseColorMap: vlkhcah_2K_Albedo1
-                depthDrawMode: Material.OpaqueOnlyDepthDraw
                 normalMap: vlkhcah_2K_Normal1
+                roughnessChannel: Material.G
                 roughnessMap: vlkhcah_2K_Roughness1
                 roughness: 0.35
                 occlusionMap: vlkhcah_2K_AO1
+                clearcoatRoughnessAmount: 0
+            }
+
+
+            PrincipledMaterial {
+                id: rectMaterialBase
+                specularAmount: 0.5
+                clearcoatAmount: 0
+                // specularTint: 0
+                baseColor: "#222222"
+                objectName: "rectMaterialBase"
+                baseColorMap: vlkhcah_2K_Albedo1Tile
+                normalMap: vlkhcah_2K_Normal1Tile
+                roughnessChannel: Material.G
+                roughnessMap: vlkhcah_2K_Roughness1Tile
+                roughness: 0.35
+                occlusionMap: vlkhcah_2K_AO1Tile
+                clearcoatRoughnessAmount: 0
+                opacityMap: sphereMask
             }
 
             DefaultMaterial {
@@ -818,59 +946,141 @@ Rectangle {
 
             Texture {
                 id: vlkhcah_2K_Albedo1
-                source: rootWindow.downloadBase + "/content/images/vlkhcah_2K_Albedo.jpg"
+                source: root.downloadBase + "/content/images/vlkhcah_2K_Albedo.jpg"
                 mipFilter: Texture.Linear
-                scaleV: 20
+                scaleV: 3
                 generateMipmaps: true
-                scaleU: 20
+                scaleU: 3
             }
 
             Texture {
                 id: vlkhcah_2K_AO1
-                source: rootWindow.downloadBase + "/content/images/vlkhcah_2K_AO.jpg"
+                source: root.downloadBase + "/content/images/vlkhcah_2K_AO.jpg"
                 mipFilter: Texture.Linear
-                scaleV: 20
+                scaleV: 3
                 generateMipmaps: true
-                scaleU: 20
+                scaleU: 3
             }
 
             Texture {
                 id: vlkhcah_2K_Normal1
-                source: rootWindow.downloadBase + "/content/images/vlkhcah_2K_Normal.jpg"
+                source: root.downloadBase + "/content/images/vlkhcah_2K_Normal.jpg"
                 mipFilter: Texture.Linear
-                scaleV: 20
+                scaleV: 3
                 generateMipmaps: true
-                scaleU: 20
+                scaleU: 3
             }
 
             Texture {
                 id: vlkhcah_2K_Roughness1
-                source: rootWindow.downloadBase + "/content/images/vlkhcah_2K_Roughness.jpg"
+                source: root.downloadBase + "/content/images/vlkhcah_2K_Roughness.jpg"
                 mipFilter: Texture.Linear
-                scaleV: 20
+                scaleV: 3
                 generateMipmaps: true
-                scaleU: 20
+                scaleU: 3
+            }
+
+            Texture {
+                id: vlkhcah_2K_Albedo1Tile
+                source: root.downloadBase + "/content/images/vlkhcah_2K_Albedo.jpg"
+                mipFilter: Texture.Linear
+                scaleV: 9
+                generateMipmaps: true
+                scaleU: 9
+            }
+
+            Texture {
+                id: vlkhcah_2K_AO1Tile
+                source: root.downloadBase + "/content/images/vlkhcah_2K_AO.jpg"
+                mipFilter: Texture.Linear
+                scaleV: 9
+                generateMipmaps: true
+                scaleU: 9
+            }
+
+            Texture {
+                id: vlkhcah_2K_Normal1Tile
+                source: root.downloadBase + "/content/images/vlkhcah_2K_Normal.jpg"
+                mipFilter: Texture.Linear
+                scaleV: 9
+                generateMipmaps: true
+                scaleU: 9
+            }
+
+            Texture {
+                id: vlkhcah_2K_Roughness1Tile
+                source: root.downloadBase + "/content/images/vlkhcah_2K_Roughness.jpg"
+                mipFilter: Texture.Linear
+                scaleV: 9
+                generateMipmaps: true
+                scaleU: 9
             }
 
             Texture {
                 id: backlight1
-                source: rootWindow.downloadBase + "/content/images/backlight.png"
+                source: root.downloadBase + "/content/images/backlight.png"
             }
 
             Texture {
                 id: dot
-                source: rootWindow.downloadBase + "/content/images/dot.png"
+                source: root.downloadBase + "/content/images/dot.png"
+            }
+
+            Texture {
+                id: sphereMask
+                source: "qrc:/qt/qml/Quick3DAssets/Snow/sphere.png"
             }
         }
+
+
     }
 
     MouseRotatorAndWASD {
         xInvert: false
         yInvert: true
+        controlledObject: btnDemo.checked? null : cameraRoot
+    }
+
+    Timer {
+        id: releaseTimer
+        running: false
+        interval: 1000
+        onTriggered: {
+            particleMaskGround.brushPositionInUV = Qt.vector2d(-10., -10.)
+            particleMaskCar.brushPositionInUV = Qt.vector2d(-10., -10.)
+        }
+    }
+
+    DragHandler {
+        id: dragHandler
+
+        target: null
+        enabled: true
+        acceptedButtons: Qt.RightButton
+
+        onCentroidChanged: {
+            let result = view3D.pick(centroid.position.x, centroid.position.y)
+
+            if (result) {
+                if (result.scenePosition.y > animatedstateFloor.scenePosition.y) {
+                    const viewWidth = particleMaskCar.width
+                    particleMaskCar.brushPositionInUV = Qt.vector2d(((result.scenePosition.x - originalSnowParticleSystem.scenePosition.x) / viewWidth + 0.5),
+                                                                   ((result.scenePosition.z - originalSnowParticleSystem.scenePosition.z) / viewWidth + 0.5))
+                    particleMaskCar.brushSize = sceneCamera2.scenePosition.minus(ev_SportsCar_low.scenePosition).length() / viewWidth * 0.03
+                }else {
+                    const viewWidth = particleMaskGround.width
+                    particleMaskGround.brushPositionInUV = Qt.vector2d(((result.scenePosition.x - originalSnowParticleSystem.scenePosition.x) / viewWidth + 0.5),
+                                                                   ((result.scenePosition.z - originalSnowParticleSystem.scenePosition.z) / viewWidth + 0.5))
+                    particleMaskGround.brushSize = sceneCamera2.scenePosition.minus(ev_SportsCar_low.scenePosition).length() / viewWidth * 0.03
+                }
+                releaseTimer.restart()
+            }
+        }
     }
 
     PinchWidget {
         anchors.fill: parent
+        camera: sceneCamera2
     }
 
     DoorButton {
@@ -881,6 +1091,10 @@ Rectangle {
         isRendered: cameraRoot.eulerRotation.y < 123 && !demo.running || cameraRoot.eulerRotation.y > 326 && !demo.running || ev_SportsCar_low.doorLeftIsOpen? 1.0 : 0.0 && !demo.running
         visible: true
         trackedWorldPosition: ev_SportsCar_low.leftDoorPositionerPos
+        designEffectBackgroundLayer: view3D
+        rootItem: root
+        downloadBase: root.downloadBase
+        camera: sceneCamera2
     }
     DoorButton {
         id: doorButtonRight
@@ -889,6 +1103,10 @@ Rectangle {
         isRendered: cameraRoot.eulerRotation.y < 305 && cameraRoot.eulerRotation.y > 150 && !demo.running || ev_SportsCar_low.doorRightIsOpen? 1.0 : 0.0 && !demo.running
         visible: true
         trackedWorldPosition: ev_SportsCar_low.rightDoorPositionerPos
+        designEffectBackgroundLayer: view3D
+        rootItem: root
+        downloadBase: root.downloadBase
+        camera: sceneCamera2
     }
     DoorButton {
         id: hoodButton
@@ -897,6 +1115,10 @@ Rectangle {
         isRendered: cameraRoot.eulerRotation.y < 50 && !demo.running || cameraRoot.eulerRotation.y > 226 && !demo.running || ev_SportsCar_low.hoodIsOpen? 1.0 : 0.0&& !demo.running
         visible: true
         trackedWorldPosition: ev_SportsCar_low.hoodPositionerPos
+        designEffectBackgroundLayer: view3D
+        rootItem: root
+        downloadBase: root.downloadBase
+        camera: sceneCamera2
     }
     DoorButton {
         id: trunkbutton
@@ -905,6 +1127,10 @@ Rectangle {
         isRendered: cameraRoot.eulerRotation.y > 50 && cameraRoot.eulerRotation.y < 226 && !demo.running || ev_SportsCar_low.trunkIsOpen? 1.0 : 0.0&& !demo.running
         visible: true
         trackedWorldPosition: ev_SportsCar_low.trunkPositionerPos
+        designEffectBackgroundLayer: view3D
+        rootItem: root
+        downloadBase: root.downloadBase
+        camera: sceneCamera2
     }
     Item {
         id: gui
@@ -938,6 +1164,64 @@ Rectangle {
             anchors.topMargin: 15
 
             sView: view3D
+        }
+
+
+        Item {
+            id: weatherControls
+
+            visible: btnWeather.checked
+            width: weatherRow.width
+            height: weatherRow.height
+            anchors.right: mainControls.right
+            anchors.rightMargin: 95
+            anchors.bottomMargin: 5
+            anchors.bottom: mainControls.top
+
+            scale: mainControls.scale
+
+            Column {
+                id: weatherRow
+
+                spacing: 5
+
+                KissButton {
+                    id: btnRain
+                    visible: btnWeather.checked
+                    downloadBase: root.downloadBase
+                    iconId: btnRain.checked ? 27 : 26
+                    buttonText: "Rain"
+                    group: "toggle"
+                    checked: false
+                    onClicked: {
+                        ev_SportsCar_low.stateController = btnRain.checked ? ev_SportsCar_low.stateController + 4 : ev_SportsCar_low.stateController
+                        if (checked)
+                            btnSnow.checked = false
+                    }
+                }
+
+                KissButton {
+                    id: btnSnow
+                    visible: btnWeather.checked
+                    downloadBase: root.downloadBase
+                    iconId: btnSnow.checked ? 29 : 28
+                    buttonText: "Snow"
+                    group: "toggle"
+                    checked: false
+                    property bool btnAnimatedCheckState: btnAnimated.checked
+                    onBtnAnimatedCheckStateChanged: {
+                        if (!btnAnimatedCheckState && checked)
+                            btnSnow.toggleCheck()
+                    }
+                    onClicked: {
+                        if (checked) {
+                            btnRain.checked = false
+                            if (!btnAnimated.checked)
+                                btnAnimated.toggleCheck()
+                        }
+                    }
+                }
+            }
         }
 
         Rectangle {
@@ -975,10 +1259,11 @@ Rectangle {
                     iconId: 5
                     group: groupVideo
                     checked: true
+                    downloadBase: root.downloadBase
 
                     Image {
-                        source: btnVideo1.checked ? rootWindow.downloadBase + "/content/images/1_active.png"
-                                                  : rootWindow.downloadBase + "/content/images/1_idle.png"
+                        source: btnVideo1.checked ? root.downloadBase + "/content/images/1_active.png"
+                                                  : root.downloadBase + "/content/images/1_idle.png"
                         anchors.centerIn: parent
                     }
 
@@ -993,12 +1278,12 @@ Rectangle {
                     radius: 8
                     iconId: 5
                     group: groupVideo
-
+                    downloadBase: root.downloadBase
                     onClicked: videoBG.sourceItem = wallEffect2
 
                     Image {
-                        source: btnVideo2.checked ? rootWindow.downloadBase + "/content/images/2_active.png"
-                                                  : rootWindow.downloadBase + "/content/images/2_idle.png"
+                        source: btnVideo2.checked ? root.downloadBase + "/content/images/2_active.png"
+                                                  : root.downloadBase + "/content/images/2_idle.png"
                         anchors.centerIn: parent
                     }
                 }
@@ -1011,12 +1296,12 @@ Rectangle {
                     radius: 8
                     iconId: 5
                     group: groupVideo
-
+                    downloadBase: root.downloadBase
                     onClicked: videoBG.sourceItem = wallEffect3
 
                     Image {
-                        source: btnVideo3.checked ? rootWindow.downloadBase + "/content/images/3_active.png"
-                                                  : rootWindow.downloadBase + "/content/images/3_idle.png"
+                        source: btnVideo3.checked ? root.downloadBase + "/content/images/3_active.png"
+                                                  : root.downloadBase + "/content/images/3_idle.png"
                         anchors.centerIn: parent
                     }
                 }
@@ -1090,6 +1375,7 @@ Rectangle {
                 iconId: btnDemo.checked ? 8 : 7
                 buttonText: "Demo Mode"
                 group: "toggle"
+                downloadBase: root.downloadBase
                 onClicked: {
                     cameraRoot.eulerRotation.y > 180? cameraResetAnimation.yVal = 365 : cameraResetAnimation.yVal = 5
                     btnDemo.checked? cameraResetAnimation.running = true : demo.running = false
@@ -1102,7 +1388,7 @@ Rectangle {
 
                 iconId: btnReset.checked ? 2 : 3
                 buttonText: "Reset camera"
-
+                downloadBase: root.downloadBase
                 onClicked: {
                     cameraRoot.eulerRotation.y > 180? cameraResetAnimation.yVal = 360 : cameraResetAnimation.yVal = 0
                     cameraResetAnimation.running = true
@@ -1128,6 +1414,7 @@ Rectangle {
                 buttonText: "Desert"
                 iconId: btnDesert.checked ? 22 : 23
                 group: groupScene
+                downloadBase: root.downloadBase
             }
 
             KissButton {
@@ -1136,6 +1423,7 @@ Rectangle {
                 buttonText: "Garage"
                 iconId: btnGarage.checked ? 20 : 19
                 group: groupScene
+                downloadBase: root.downloadBase
             }
 
             KissButton {
@@ -1144,6 +1432,7 @@ Rectangle {
                 buttonText: "Studio"
                 iconId: btnStudio.checked ? 4 : 21
                 group: groupScene
+                downloadBase: root.downloadBase
 
             }
 
@@ -1153,7 +1442,7 @@ Rectangle {
                 buttonText: "Animated"
                 iconId: btnAnimated.checked ? 13 : 1
                 group: groupScene
-
+                downloadBase: root.downloadBase
             }
 
             KissButtonSeparator {
@@ -1174,6 +1463,7 @@ Rectangle {
                 group: groupPaint
 
                 onClicked: ev_SportsCar_low.stateController = 1
+                downloadBase: root.downloadBase
             }
 
             KissButton {
@@ -1183,6 +1473,7 @@ Rectangle {
                 iconId: 11
                 buttonText: "Black"
                 group: groupPaint
+                downloadBase: root.downloadBase
 
                 onClicked: ev_SportsCar_low.stateController = 0
             }
@@ -1193,6 +1484,7 @@ Rectangle {
                 iconId: 16
                 buttonText: "Yellow"
                 group: groupPaint
+                downloadBase: root.downloadBase
 
                 onClicked: ev_SportsCar_low.stateController = 2
             }
@@ -1203,6 +1495,7 @@ Rectangle {
                 iconId: 18
                 buttonText: "Red"
                 group: groupPaint
+                downloadBase: root.downloadBase
 
                 onClicked: ev_SportsCar_low.stateController = 3
             }
@@ -1217,6 +1510,22 @@ Rectangle {
                 buttonText: "Lights"
                 group: "toggle"
                 checked: true
+                downloadBase: root.downloadBase
+            }
+
+            KissButton {
+                id: btnWeather
+                downloadBase: root.downloadBase
+                iconId: btnWeather.checked ? 31 : 30
+                buttonText: "Weather"
+                group: "toggle"
+                checked: false
+                onClicked: {
+                    if (!checked) {
+                        btnRain.checked = false
+                        btnSnow.checked = false
+                    }
+                }
             }
 
             KissButtonSeparator {
@@ -1230,6 +1539,7 @@ Rectangle {
                 buttonText: ""
                 width: 70
                 visible: false
+                downloadBase: root.downloadBase
             }
         }
 
@@ -1247,6 +1557,7 @@ Rectangle {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 38 - (1 - mainControls.scale) * 60
             onCheckedChanged: !checked? mainControls.isOn = false : mainControls.isOn = true
+            downloadBase: root.downloadBase
             onClicked: {
                 buttonLoopAnimation.running = false
                 menutoggle.scale = 1
@@ -1330,7 +1641,7 @@ Rectangle {
             }
 
             Keyframe {
-                value: 22.85
+                value: 23.85
                 frame: 21004
             }
 
@@ -2229,7 +2540,7 @@ Rectangle {
                 glowBloom: 0.15158
                 glowEnabled: false
                 aoEnabled: false
-                probeExposure: 2
+                probeExposure:  btnRain.checked ? 1.0 : 2
             }
 
             PropertyChanges {
@@ -2267,11 +2578,6 @@ Rectangle {
             }
 
             PropertyChanges {
-                target: rectMaterial4
-                lightProbe: _Desert
-            }
-
-            PropertyChanges {
                 target: backlight_red
                 x: -0.001
                 y: 252.129
@@ -2292,7 +2598,7 @@ Rectangle {
 
             PropertyChanges {
                 target: _Desert
-                source: rootWindow.downloadBase + "/content/images/HDR/low/_Desert.ktx"
+                source: root.downloadBase + "/content/images/HDR/low/_Desert.ktx"
             }
 
             PropertyChanges {
@@ -2454,12 +2760,6 @@ Rectangle {
             }
 
             PropertyChanges {
-                target: rectMaterial4
-                normalStrength: 1
-                metalness: 0.18864
-            }
-
-            PropertyChanges {
                 target: videoRoom
                 temporalAAStrength: 2
                 temporalAAEnabled: true
@@ -2524,14 +2824,7 @@ Rectangle {
 
             PropertyChanges {
                 target: animatedstateFloor
-                x: -0
-                y: -0
                 visible: true
-                castsReflections: true
-                receivesReflections: true
-                scale.y: 66.01047
-                scale.x: 49.36702
-                z: -23.71246
             }
 
             PropertyChanges {
@@ -2555,17 +2848,6 @@ Rectangle {
             }
 
             PropertyChanges {
-                target: rectMaterial2
-                lighting: PrincipledMaterial.FragmentLighting
-                cullMode: Material.BackFaceCulling
-                depthDrawMode: Material.NeverDepthDraw
-                alphaMode: PrincipledMaterial.Blend
-                specularAmount: 0.25
-                clearcoatAmount: 0
-                roughness: 0.4
-            }
-
-            PropertyChanges {
                 target: principledMaterial2
                 cullMode: Material.NoCulling
                 baseColor: "#ffffff"
@@ -2575,46 +2857,6 @@ Rectangle {
             PropertyChanges {
                 target: sceneObjects1
                 z: -750
-            }
-
-            PropertyChanges {
-                target: vlkhcah_2K_Albedo1
-                scaleU: 20
-            }
-
-            PropertyChanges {
-                target: vlkhcah_2K_AO1
-                scaleU: 20
-            }
-
-            PropertyChanges {
-                target: vlkhcah_2K_Normal1
-                scaleU: 20
-            }
-
-            PropertyChanges {
-                target: vlkhcah_2K_Roughness1
-                scaleU: 20
-            }
-
-            PropertyChanges {
-                target: rectMaterial4
-                opacityMap: dot
-                clearcoatRoughnessAmount: 0
-                roughnessChannel: Material.G
-                roughness: 0.30017
-                metalness: 0.16695
-                normalStrength: 0.5
-            }
-
-            PropertyChanges {
-                target: groundMat1
-                opacity: 1
-            }
-
-            PropertyChanges {
-                target: studio
-                lightProbe: _Desert
             }
 
             PropertyChanges {

@@ -10,31 +10,40 @@ static_library("spotlight") {
   sources = [
     "spotlight_crd_manager_impl.cc",
     "spotlight_crd_manager_impl.h",
+    "spotlight_oauth_token_fetcher_impl.cc",
+    "spotlight_oauth_token_fetcher_impl.h",
   ]
+
+  public_deps = [ "//chrome/browser:browser_public_dependencies" ]
 
   deps = [
     "//ash",
     "//ash/constants",
     "//base",
-    "//chrome/browser/ash/policy/remote_commands/crd",
+    "//chrome/browser/ash/policy/remote_commands/crd/public",
+    "//chrome/browser/ash/policy/remote_commands/crd/public:interface",
     "//chromeos/ash/components/boca:spotlight",
-    "//components/policy/core/common:internal",
+    "//chromeos/ash/components/boca:spotlight_lib",
   ]
 }
 
-source_set("unit_tests") {
+source_set("browser_tests") {
   testonly = true
 
-  sources = [ "spotlight_crd_manager_impl_unittest.cc" ]
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+
+  sources = [ "spotlight_crd_manager_impl_browsertest.cc" ]
 
   deps = [
     ":spotlight",
+    "//ash",
     "//ash/constants",
     "//base",
     "//base/test:test_support",
-    "//chrome/browser/ash/policy/remote_commands/crd",
-    "//chrome/browser/ash/policy/remote_commands/crd:test_support",
-    "//components/policy/core/common:internal",
+    "//chrome/browser",
+    "//chrome/browser/ash/policy/remote_commands/crd/public:interface",
+    "//chrome/browser/ui/ash/system_web_apps",
+    "//chrome/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
   ]

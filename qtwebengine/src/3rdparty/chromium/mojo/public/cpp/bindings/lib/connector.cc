@@ -8,17 +8,15 @@
 
 #include <memory>
 
+#include "base/check.h"
 #include "base/check_op.h"
-#include "base/compiler_specific.h"
 #include "base/debug/alias.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
-#include "base/rand_util.h"
 #include "base/run_loop.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
@@ -549,7 +547,8 @@ bool Connector::DispatchMessage(ScopedMessageHandle handle) {
             interface_name_);
 
         static const uint8_t* flow_enabled =
-            TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED("toplevel.flow");
+            TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
+                "toplevel.flow,mojom.flow");
         if (!*flow_enabled)
           return;
 

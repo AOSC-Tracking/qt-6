@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickanimator_p_p.h"
 #include "qquickanimatorjob_p.h"
@@ -44,6 +45,8 @@ QT_BEGIN_NAMESPACE
     to provide a set of common properties and methods, available across all the
     other animator types that inherit from it. Attempting to use the Animator
     type directly will result in an error.
+
+    \include animatornotes.qdocinc
  */
 
 QQuickAnimator::QQuickAnimator(QQuickAnimatorPrivate &dd, QObject *parent)
@@ -296,7 +299,7 @@ QAbstractAnimationJob *QQuickAnimator::transition(QQuickStateActions &actions,
 
     \snippet qml/animators.qml x on
 
-
+    \include animatornotes.qdocinc
  */
 
 QQuickXAnimator::QQuickXAnimator(QObject *parent) : QQuickAnimator(parent) {}
@@ -329,7 +332,7 @@ QQuickAnimatorJob *QQuickXAnimator::createJob() const { return new QQuickXAnimat
 
     \snippet qml/animators.qml y on
 
-
+    \include animatornotes.qdocinc
  */
 
 QQuickYAnimator::QQuickYAnimator(QObject *parent) : QQuickAnimator(parent) {}
@@ -361,6 +364,8 @@ QQuickAnimatorJob *QQuickYAnimator::createJob() const { return new QQuickYAnimat
     ScaleAnimator directly to an Item instance.
 
     \snippet qml/animators.qml scale on
+
+    \include animatornotes.qdocinc
 
     \sa Item::transformOrigin, RotationAnimator
  */
@@ -395,6 +400,7 @@ QQuickAnimatorJob *QQuickScaleAnimator::createJob() const { return new QQuickSca
 
     \snippet qml/animators.qml opacity on
 
+    \include animatornotes.qdocinc
  */
 
 QQuickOpacityAnimator::QQuickOpacityAnimator(QObject *parent) : QQuickAnimator(parent) {}
@@ -427,6 +433,8 @@ QQuickAnimatorJob *QQuickOpacityAnimator::createJob() const { return new QQuickO
     instance.
 
     \snippet qml/animators.qml rotation on
+
+    \include animatornotes.qdocinc
 
     \sa Item::transformOrigin, ScaleAnimator
  */
@@ -503,6 +511,8 @@ QQuickRotationAnimator::RotationDirection QQuickRotationAnimator::direction() co
     instance.
 
     \snippet qml/animators.qml shader on
+
+    \include animatornotes.qdocinc
 
     \sa ShaderEffect, ShaderEffectSource
  */

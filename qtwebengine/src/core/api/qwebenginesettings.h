@@ -67,6 +67,7 @@ public:
         PreferCSSMarginsForPrinting,
         TouchEventsApiEnabled,
         BackForwardCacheEnabled,
+        TrimAccessibilityIdentifiers,
     };
 
     enum FontSize {

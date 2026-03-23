@@ -329,6 +329,7 @@ void IDBTransaction::SetActive(bool new_is_active) {
   state_ = new_is_active ? kActive : kInactive;
 
   if (!new_is_active && request_list_.empty()) {
+    state_ = kCommitting;
     remote_->Commit(num_errors_handled_);
   }
 }
@@ -459,8 +460,7 @@ void IDBTransaction::OnComplete() {
     return;
   }
 
-  DCHECK_NE(state_, kFinished);
-  state_ = kCommitting;
+  DCHECK_EQ(state_, kCommitting);
 
   // See comments in `OnAbort()` on importance of ordering.
   database_->TransactionWillFinish(this);
@@ -542,12 +542,12 @@ void IDBTransaction::Put(int64_t object_store_id,
     }
   }
 
-  size_t arg_size =
-      value->DataSize() + primary_key->SizeEstimate() + index_keys_size;
+  size_t estimated_size =
+      value->Data().size() + primary_key->SizeEstimate() + index_keys_size;
 
   const size_t max_put_value_size = max_put_value_size_override_.value_or(
       mojom::blink::kIDBMaxMessageSize - mojom::blink::kIDBMaxMessageOverhead);
-  if (arg_size >= max_put_value_size) {
+  if (estimated_size >= max_put_value_size) {
     std::move(callback).Run(
         mojom::blink::IDBTransactionPutResult::NewErrorResult(
             mojom::blink::IDBError::New(
@@ -555,12 +555,23 @@ void IDBTransaction::Put(int64_t object_store_id,
                 String::Format("The serialized keys and/or value are too large"
                                " (size=%" PRIuS " bytes, max=%" PRIuS
                                " bytes).",
-                               arg_size, max_put_value_size))));
+                               estimated_size, max_put_value_size))));
     return;
   }
 
   remote_->Put(object_store_id, std::move(value), std::move(primary_key),
                put_mode, std::move(index_keys), std::move(callback));
+}
+
+void IDBTransaction::SetIndexKeys(int64_t object_store_id,
+                                  std::unique_ptr<IDBKey> primary_key,
+                                  IDBIndexKeys index_keys) {
+  remote_->SetIndexKeys(object_store_id, std::move(primary_key),
+                        std::move(index_keys));
+}
+
+void IDBTransaction::SetIndexReady(int64_t object_store_id) {
+  remote_->SetIndexKeysDone();
 }
 
 void IDBTransaction::FlushForTesting() {

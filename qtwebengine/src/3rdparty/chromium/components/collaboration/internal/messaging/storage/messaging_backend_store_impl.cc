@@ -44,6 +44,50 @@ bool IsMessageExpired(const collaboration_pb::Message& message,
   return message.event_timestamp() < expiration_time;
 }
 
+bool IsMemberAddRemoveMessage(const collaboration_pb::Message& message) {
+  return message.event_type() == collaboration_pb::COLLABORATION_MEMBER_ADDED ||
+         message.event_type() == collaboration_pb::COLLABORATION_MEMBER_REMOVED;
+}
+
+std::pair<std::optional<std::string>, std::optional<collaboration_pb::Message>>
+AddOrReplaceCollaborationMessage(
+    std::vector<collaboration_pb::Message>& collaboration_messages,
+    const collaboration_pb::Message& new_message) {
+  std::optional<std::string> message_id_to_remove;
+  std::optional<collaboration_pb::Message> message_to_update;
+
+  // Loop through the messages and find if there is a message for the same
+  // affected user. If yes, erase the older of the two message in favor of
+  // keeping the new one.
+  bool found_matching_message = false;
+  for (auto it = collaboration_messages.begin();
+       it != collaboration_messages.end(); it++) {
+    auto message = *it;
+    if (IsMemberAddRemoveMessage(message) &&
+        IsMemberAddRemoveMessage(new_message) &&
+        message.affected_user_gaia_id() ==
+            new_message.affected_user_gaia_id()) {
+      found_matching_message = true;
+      if (IsMessageMoreRecent(new_message, message)) {
+        message_id_to_remove = message.uuid();
+        message_to_update = new_message;
+        collaboration_messages.erase(it);
+        collaboration_messages.emplace_back(new_message);
+      }
+      break;
+    }
+  }
+
+  // If we didn't find a matching message for the same user, just add the
+  // message.
+  if (!found_matching_message) {
+    message_to_update = new_message;
+    collaboration_messages.emplace_back(new_message);
+  }
+
+  return std::make_pair<>(message_id_to_remove, message_to_update);
+}
+
 }  // namespace
 
 MessagesPerGroup::MessagesPerGroup() = default;
@@ -145,12 +189,14 @@ MessagingBackendStoreImpl::ClearDirtyTabMessagesForGroup(
 }
 
 std::vector<collaboration_pb::Message>
-MessagingBackendStoreImpl::GetDirtyMessages(DirtyType dirty_type) {
+MessagingBackendStoreImpl::GetDirtyMessages(
+    std::optional<DirtyType> dirty_type) {
   std::vector<collaboration_pb::Message> result;
   TraverseMessages(base::BindRepeating(
-      [](std::vector<collaboration_pb::Message>* result, DirtyType dirty_type,
+      [](std::vector<collaboration_pb::Message>* result,
+         std::optional<DirtyType> dirty_type,
          collaboration_pb::Message& message) {
-        if (IsDirty(message, dirty_type)) {
+        if (!dirty_type.has_value() || IsDirty(message, dirty_type.value())) {
           result->push_back(message);
         }
         return true;
@@ -258,6 +304,14 @@ MessagingBackendStoreImpl::GetRecentMessagesForGroup(
 
 void MessagingBackendStoreImpl::AddMessage(
     const collaboration_pb::Message& message) {
+  last_added_message_for_testing_ = message;
+
+  if (message.collaboration_id().empty()) {
+    ungrouped_messages_.emplace_back(message);
+    database_->Update(message);
+    return;
+  }
+
   data_sharing::GroupId collaboration_id =
       data_sharing::GroupId(message.collaboration_id());
   CHECK(!collaboration_id->empty());
@@ -303,9 +357,10 @@ void MessagingBackendStoreImpl::AddMessage(
       }
     }
   } else if (category == MessageCategory::kCollaboration) {
-    // For collaboration messages, keep all the messages.
-    messages_per_group->collaboration_messages.push_back(message);
-    message_to_update = message;
+    // For collaboration messages, keep the latest per user.
+    std::tie(message_id_to_delete, message_to_update) =
+        AddOrReplaceCollaborationMessage(
+            messages_per_group->collaboration_messages, message);
   }
 
   if (message_id_to_delete) {
@@ -316,14 +371,71 @@ void MessagingBackendStoreImpl::AddMessage(
   }
 }
 
-void MessagingBackendStoreImpl::RemoveMessage(const std::string& message_id) {
-  // TODO(crbug.com/389948455): Implement.
+void MessagingBackendStoreImpl::RemoveMessages(
+    const std::set<std::string>& message_ids) {
+  for (auto& [key, messages_per_group] : messages_) {
+    auto& tab_messages = messages_per_group->tab_messages;
+    for (auto it = tab_messages.begin(); it != tab_messages.end();) {
+      std::string message_uuid = it->second.uuid();
+      if (base::Contains(message_ids, message_uuid)) {
+        it = tab_messages.erase(it);
+      } else {
+        ++it;
+      }
+    }
+
+    auto& tab_group_messages = messages_per_group->tab_group_messages;
+    for (auto it = tab_group_messages.begin();
+         it != tab_group_messages.end();) {
+      std::string message_uuid = it->second.uuid();
+      if (base::Contains(message_ids, message_uuid)) {
+        it = tab_group_messages.erase(it);
+      } else {
+        ++it;
+      }
+    }
+
+    auto& collab_messages = messages_per_group->collaboration_messages;
+    for (auto it = collab_messages.begin(); it != collab_messages.end();) {
+      std::string message_uuid = it->uuid();
+      if (base::Contains(message_ids, message_uuid)) {
+        it = collab_messages.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  // Iterate across ungrouped_messages.
+  for (auto it = ungrouped_messages_.begin();
+       it != ungrouped_messages_.end();) {
+    std::string message_uuid = it->uuid();
+    if (base::Contains(message_ids, message_uuid)) {
+      it = ungrouped_messages_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  database_->Delete(
+      std::vector<std::string>(message_ids.begin(), message_ids.end()));
+}
+
+void MessagingBackendStoreImpl::RemoveAllMessages() {
+  messages_.clear();
+  ungrouped_messages_.clear();
+  database_->DeleteAllData();
 }
 
 std::optional<MessagesPerGroup*>
 MessagingBackendStoreImpl::GetMessagesPerGroupForTesting(
     const data_sharing::GroupId& collaboration_id) {
   return GetMessagesPerGroup(collaboration_id);
+}
+
+std::optional<collaboration_pb::Message>
+MessagingBackendStoreImpl::GetLastMessageForTesting() {
+  return last_added_message_for_testing_;
 }
 
 std::optional<MessagesPerGroup*> MessagingBackendStoreImpl::GetMessagesPerGroup(
@@ -357,6 +469,12 @@ void MessagingBackendStoreImpl::TraverseMessages(
       if (!message_callback.Run(collaboration_message)) {
         return;
       }
+    }
+  }
+
+  for (auto& message : ungrouped_messages_) {
+    if (!message_callback.Run(message)) {
+      return;
     }
   }
 }

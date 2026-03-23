@@ -32,6 +32,7 @@ namespace skgpu::graphite {
 
 class Caps;
 class Context;
+class DrawContext;
 class Image;
 class Recorder;
 class TextureProxyView;
@@ -63,9 +64,11 @@ sk_sp<SkImage> MakeFromBitmap(Recorder*,
                               SkImage::RequiredProperties,
                               std::string_view label);
 
+// NOTE: This estimates a GPU size assuming the texture is not actually memoryless.
 size_t ComputeSize(SkISize dimensions, const TextureInfo&);
 
 sk_sp<Image> CopyAsDraw(Recorder*,
+                        DrawContext* drawContext,
                         const SkImage* image,
                         const SkIRect& subset,
                         const SkColorInfo& dstColorInfo,
@@ -81,7 +84,7 @@ sk_sp<SkImage> RescaleImage(Recorder*,
                             SkImage::RescaleGamma rescaleGamma,
                             SkImage::RescaleMode rescaleMode);
 
-bool GenerateMipmaps(Recorder*, sk_sp<TextureProxy>, const SkColorInfo&);
+bool GenerateMipmaps(Recorder*, DrawContext*, sk_sp<TextureProxy>, const SkColorInfo&);
 
 // Returns the underlying TextureProxyView if it's a non-YUVA Graphite-backed image.
 TextureProxyView AsView(const SkImage*);

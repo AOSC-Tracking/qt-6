@@ -136,13 +136,9 @@ class CppBundleGenerator(object):
     ifdefs = []
     for platform in model_object.platforms:
       if platform == Platforms.CHROMEOS:
-        ifdefs.append('BUILDFLAG(IS_CHROMEOS_ASH)')
-      elif platform == Platforms.FUCHSIA:
-        ifdefs.append('BUILDFLAG(IS_FUCHSIA)')
-      elif platform == Platforms.LACROS:
-        # TODO(crbug.com/40118868): For readability, this should become
-        # BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(IS_CHROMEOS_LACROS).
-        ifdefs.append('BUILDFLAG(IS_CHROMEOS_LACROS)')
+        ifdefs.append('BUILDFLAG(IS_CHROMEOS)')
+      elif platform == Platforms.DESKTOP_ANDROID:
+        ifdefs.append('BUILDFLAG(IS_DESKTOP_ANDROID)')
       elif platform == Platforms.LINUX:
         ifdefs.append('BUILDFLAG(IS_LINUX)')
       elif platform == Platforms.MAC:
@@ -251,8 +247,8 @@ class _APICCGenerator(object):
     c.Append('#include "%s"' % (cpp_util.ToPosixPath(
         os.path.join(self._bundle._impl_dir, 'generated_api_registration.h'))))
     c.Append()
+    c.Append('#include "build/android_buildflags.h"')
     c.Append('#include "build/build_config.h"')
-    c.Append('#include "build/chromeos_buildflags.h"')
     c.Append()
     for namespace in self._bundle._model.namespaces.values():
       namespace_name = namespace.unix_name.replace("experimental_", "")

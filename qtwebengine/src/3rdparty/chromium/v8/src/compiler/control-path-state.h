@@ -30,11 +30,10 @@ enum NodeUniqueness { kUniqueInstance, kMultipleInstances };
 template <typename NodeState, NodeUniqueness node_uniqueness>
 class ControlPathState {
  public:
+  static_assert(std::is_member_function_pointer_v<decltype(&NodeState::IsSet)>,
+                "{NodeState} needs an {IsSet} method");
   static_assert(
-      std::is_member_function_pointer<decltype(&NodeState::IsSet)>::value,
-      "{NodeState} needs an {IsSet} method");
-  static_assert(
-      std::is_member_object_pointer<decltype(&NodeState::node)>::value,
+      std::is_member_object_pointer_v<decltype(&NodeState::node)>,
       "{NodeState} needs to hold a pointer to the {Node*} owner of the state");
 
   explicit ControlPathState(Zone* zone) : states_(zone) {}
@@ -86,7 +85,8 @@ class ControlPathState {
 template <typename NodeState, NodeUniqueness node_uniqueness>
 class AdvancedReducerWithControlPathState : public AdvancedReducer {
  protected:
-  AdvancedReducerWithControlPathState(Editor* editor, Zone* zone, Graph* graph)
+  AdvancedReducerWithControlPathState(Editor* editor, Zone* zone,
+                                      TFGraph* graph)
       : AdvancedReducer(editor),
         zone_(zone),
         node_states_(graph->NodeCount(), zone),

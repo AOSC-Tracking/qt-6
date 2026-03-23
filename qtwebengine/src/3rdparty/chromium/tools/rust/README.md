@@ -89,7 +89,8 @@ from `third_party/rust-src`. Since Chromium uses gn as its build system, we
 need some way to translate build files from Rust's build system, cargo, to gn
 rules. This is the responsibility of `gnrt`, which is a Chromium-specific tool
 that lives in [`tools/crates/gnrt`](https://crsrc.org/c/tools/crates/gnrt/),
-written in Rust. `gnrt gen` takes a cargo workspace, runs `cargo metadata` on
+written in Rust. `gnrt gen` takes a cargo workspace, runs `cargo metadata`
+(or, more accurately `cargo guppy`) on
 it to get information about sources and dependencies, and outputs gn rules
 corresponding to the cargo build rules. Rust has a
 [`sysroot`](https://github.com/rust-lang/rust/tree/master/library/sysroot)
@@ -176,7 +177,7 @@ To fix the error:
   script targets end with the suffix `_build_script`. For example:
   ```
   [13627/84339] RUST(BIN) clang_x64_for_rust_host_build_tools/compiler_builtins_compiler_builtins_vunknown_build_script
-  python3 ../../build/rust/rustc_wrapper.py --rustc=../../third_party/rust-toolchain/bin/rustc --depfi...(too long)
+  python3 ../../build/rust/gni_impl/rustc_wrapper.py --rustc=../../third_party/rust-toolchain/bin/rustc --depfi...(too long)
   ERROR: file not in GN sources: ../../third_party/rust-toolchain/lib/rustlib/src/rust/library/vendor/compiler_builtins-0.1.123/configure.rs
   ```
 * Determine if the missing file should go in `sources` or `inputs`.

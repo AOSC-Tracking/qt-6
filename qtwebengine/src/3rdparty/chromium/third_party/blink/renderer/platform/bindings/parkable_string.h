@@ -11,6 +11,7 @@
 #include "base/check_op.h"
 #include "base/dcheck_is_on.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/synchronization/lock.h"
 #include "base/thread_annotations.h"
@@ -43,7 +44,7 @@ struct BackgroundTaskParams;
 // |ToString()| on a parked string.
 // |Lock()| does *not* unpark a string.
 class PLATFORM_EXPORT ParkableStringImpl
-    : public WTF::ThreadSafeRefCounted<ParkableStringImpl> {
+    : public ThreadSafeRefCounted<ParkableStringImpl> {
  public:
   enum class ParkingMode {
     kSynchronousOnly,
@@ -110,7 +111,15 @@ class PLATFORM_EXPORT ParkableStringImpl
     return metadata_->length_;
   }
   size_t CharactersSizeInBytes() const;
+
   size_t MemoryFootprintForDump() const;
+
+  struct MemoryUsage {
+    size_t this_size;
+    raw_ptr<const void> string_impl;
+    size_t string_impl_size;
+  };
+  MemoryUsage MemoryUsageForSnapshot() const;
 
   // Returns true iff the string can be parked. This does not mean that the
   // string can be parked now, merely that it is eligible to be parked at some
@@ -390,8 +399,12 @@ class PLATFORM_EXPORT ParkableString final {
 
   // Causes the string to be unparked. Note that the pointer must not be
   // cached.
-  const LChar* Characters8() const { return ToString().Characters8(); }
-  const UChar* Characters16() const { return ToString().Characters16(); }
+  base::span<const char> SpanChar() const {
+    return base::as_chars(ToString().Span8());
+  }
+  const base::span<const uint16_t> SpanUint16() const {
+    return ToString().SpanUint16();
+  }
 
  private:
   scoped_refptr<ParkableStringImpl> impl_;

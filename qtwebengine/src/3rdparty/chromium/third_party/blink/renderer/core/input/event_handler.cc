@@ -32,7 +32,9 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/input/web_mouse_wheel_event.h"
@@ -73,7 +75,6 @@
 #include "third_party/blink/renderer/core/input/input_device_capabilities.h"
 #include "third_party/blink/renderer/core/input_type_names.h"
 #include "third_party/blink/renderer/core/layout/custom_scrollbar.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/core/layout/hit_test_request.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
@@ -100,6 +101,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/cursors.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/graphics/image_orientation.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -1016,13 +1018,6 @@ WebInputEventResult EventHandler::HandleMouseMoveEvent(
   if (!page)
     return result;
 
-  if (PaintLayer* layer =
-          event_handling_util::LayerForNode(hovered_node_result.InnerNode())) {
-    if (ScrollableArea* layer_scrollable_area =
-            event_handling_util::AssociatedScrollableArea(layer))
-      layer_scrollable_area->MouseMovedInContentArea();
-  }
-
   // Should not convert the hit shadow element to its shadow host, so that
   // tooltips in the shadow tree appear correctly.
   if (!HasTitleAndNotSVGUseElement(hovered_node_result)) {
@@ -1360,6 +1355,17 @@ WebInputEventResult EventHandler::UpdateDragAndDrop(
   // Drag events should never go to text nodes (following IE, and proper
   // mouseover/out dispatch)
   Node* new_target = mev.InnerElement();
+
+  // The drag target could be something inside a UA shadow root, in which case
+  // it should be retargeted to the shadow host.
+  if (RuntimeEnabledFeatures::RetargetDragEventsEnabled()) {
+    ShadowRoot* containing_root =
+        new_target ? new_target->ContainingShadowRoot() : nullptr;
+    while (containing_root && containing_root->IsUserAgent()) {
+      new_target = &containing_root->host();
+      containing_root = new_target->ContainingShadowRoot();
+    }
+  }
 
   if (AutoscrollController* controller =
           scroll_manager_->GetAutoscrollController()) {
@@ -2411,12 +2417,7 @@ void EventHandler::DragSourceEndedAt(
   }
 
   mouse_event_manager_->DragSourceEndedAt(event, operation);
-
-  if (frame_->GetSettings() &&
-      frame_->GetSettings()->GetTouchDragDropEnabled() &&
-      frame_->GetSettings()->GetTouchDragEndContextMenu()) {
-    gesture_manager_->SendContextMenuEventTouchDragEnd(event);
-  }
+  gesture_manager_->HandleTouchDragEnd(event);
 }
 
 void EventHandler::UpdateDragStateAfterEditDragIfNeeded(

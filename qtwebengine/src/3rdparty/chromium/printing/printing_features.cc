@@ -11,28 +11,29 @@
 #include "base/metrics/field_trial_params.h"
 #endif
 
-namespace printing {
-namespace features {
+namespace printing::features {
 
 #if BUILDFLAG(IS_CHROMEOS)
 // Add printers via printscanmgr instead of debugd.
 BASE_FEATURE(kAddPrinterViaPrintscanmgr,
              "AddPrinterViaPrintscanmgr",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Controls whether chrome.printing API uses margins and scale ticket items when
+// submitting a print job.
+BASE_FEATURE(kApiPrintingMarginsAndScale,
+             "ApiPrintingMarginsAndScale",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_LINUX)
 // Use the CUPS IPP printing backend instead of the original CUPS backend that
 // calls the deprecated PPD API.
 BASE_FEATURE(kCupsIppPrintingBackend,
              "CupsIppPrintingBackend",
-#if BUILDFLAG(IS_LINUX)
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+#endif  // BUILDFLAG(IS_LINUX)
 
 #if BUILDFLAG(IS_WIN)
 // When using PostScript level 3 printing, render text with Type 42 fonts if
@@ -91,5 +92,4 @@ const base::FeatureParam<bool> kEnableOopPrintDriversSingleProcess{
 #endif
 #endif  // BUILDFLAG(ENABLE_OOP_PRINTING)
 
-}  // namespace features
-}  // namespace printing
+}  // namespace printing::features

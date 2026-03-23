@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-vlrelu/wasmsimd-laneselect.c.in
 //   Generator: tools/xngen
@@ -11,15 +12,15 @@
 
 #include <wasm_simd128.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/vunary.h"
 
 
 void xnn_f32_vlrelu_ukernel__wasmrelaxedsimd_laneselect_u8(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f32_lrelu_params* restrict params) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

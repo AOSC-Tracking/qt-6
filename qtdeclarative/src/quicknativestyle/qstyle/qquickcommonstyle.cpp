@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquickcommonstyle.h"
 #include "qquickcommonstyle_p.h"
@@ -147,7 +148,7 @@ void QCommonStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, Q
         int posX = opt->rect.x() + (opt->rect.width() - markW)/2 + 1;
         int posY = opt->rect.y() + (opt->rect.height() - markH)/2;
 
-        QVector<QLineF> a;
+        QList<QLineF> a;
         a.reserve(markH);
 
         int i, xx, yy;

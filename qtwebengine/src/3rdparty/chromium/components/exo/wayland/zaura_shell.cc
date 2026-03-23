@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -27,14 +28,15 @@
 #include "ash/wm/overview/overview_observer.h"
 #include "ash/wm/window_state.h"
 #include "base/bit_cast.h"
+#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chromeos/constants/chromeos_features.h"
-#include "chromeos/ui/base/chromeos_ui_constants.h"
 #include "chromeos/ui/base/window_properties.h"
 #include "chromeos/ui/base/window_state_type.h"
+#include "chromeos/ui/frame/frame_utils.h"
 #include "chromeos/ui/frame/multitask_menu/float_controller_base.h"
 #include "components/exo/display.h"
 #include "components/exo/seat.h"
@@ -295,7 +297,8 @@ void aura_surface_show_tooltip(wl_client* client,
                                uint32_t show_delay,
                                uint32_t hide_delay) {
   GetUserDataAs<AuraSurface>(resource)->ShowTooltip(
-      text, gfx::Point(x, y), trigger, base::Milliseconds((uint64_t)show_delay),
+      base::UTF8ToUTF16(text), gfx::Point(x, y), trigger,
+      base::Milliseconds((uint64_t)show_delay),
       base::Milliseconds((uint64_t)hide_delay));
 }
 
@@ -651,7 +654,7 @@ void AuraSurface::ThrottleFrameRate(bool on) {
 }
 
 void AuraSurface::OnTooltipShown(Surface* surface,
-                                 const std::u16string& text,
+                                 std::u16string_view text,
                                  const gfx::Rect& bounds) {
   if (wl_resource_get_version(resource_) <
       ZAURA_SURFACE_TOOLTIP_SHOWN_SINCE_VERSION) {
@@ -691,12 +694,12 @@ void AuraSurface::Unpin() {
   surface_->Unpin();
 }
 
-void AuraSurface::ShowTooltip(const char* text,
+void AuraSurface::ShowTooltip(std::u16string text,
                               const gfx::Point& position,
                               uint32_t trigger,
                               const base::TimeDelta& show_delay,
                               const base::TimeDelta& hide_delay) {
-  tooltip_text_ = base::UTF8ToUTF16(text);
+  tooltip_text_ = std::move(text);
   auto* window = surface_->window();
   wm::SetTooltipText(window, &tooltip_text_);
   wm::SetTooltipId(window, surface_);
@@ -1287,17 +1290,11 @@ class WaylandAuraShell : public ash::DesksController::Observer,
 
     if (wl_resource_get_version(aura_shell_resource_) >=
         ZAURA_SHELL_WINDOW_CORNERS_RADII_SINCE_VERSION) {
-      const int window_corner_radius =
-          chromeos::features::IsRoundedWindowsEnabled()
-              ? chromeos::features::RoundedWindowsRadius()
-              : chromeos::kTopCornerRadiusWhenRestored;
-
+      const auto window_radii = chromeos::GetWindowRoundedCorners();
       zaura_shell_send_window_corners_radii(
-          aura_shell_resource_, window_corner_radius, window_corner_radius,
-          chromeos::features::IsRoundedWindowsEnabled() ? window_corner_radius
-                                                        : 0,
-          chromeos::features::IsRoundedWindowsEnabled() ? window_corner_radius
-                                                        : 0);
+          aura_shell_resource_, window_radii.upper_left(),
+          window_radii.upper_right(), window_radii.lower_right(),
+          window_radii.lower_left());
     }
 
     display->seat()->AddObserver(this, kAuraShellSeatObserverPriority);
@@ -1384,7 +1381,7 @@ class WaylandAuraShell : public ash::DesksController::Observer,
       std::string name = base::UTF16ToUTF8(desk->name());
       char* desk_name =
           static_cast<char*>(wl_array_add(&desk_names, name.size() + 1));
-      strcpy(desk_name, name.c_str());
+      UNSAFE_TODO(strcpy(desk_name, name.c_str()));
     }
 
     zaura_shell_send_desks_changed(aura_shell_resource_, &desk_names);

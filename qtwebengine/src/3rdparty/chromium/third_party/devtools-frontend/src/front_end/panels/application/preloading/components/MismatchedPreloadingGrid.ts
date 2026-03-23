@@ -1,6 +1,7 @@
 // Copyright 2023 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../../../ui/legacy/components/data_grid/data_grid.js';
 
@@ -55,7 +56,7 @@ const UIStrings = {
    *@description Text in grid and details: Preloading failed.
    */
   statusFailure: 'Failure',
-};
+} as const;
 const str_ =
     i18n.i18n.registerUIStrings('panels/application/preloading/components/MismatchedPreloadingGrid.ts', UIStrings);
 export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -104,7 +105,6 @@ export class MismatchedPreloadingGrid extends LegacyWrapper.LegacyWrapper.Wrappa
   #data: MismatchedPreloadingGridData|null = null;
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [];
     this.#render();
   }
 

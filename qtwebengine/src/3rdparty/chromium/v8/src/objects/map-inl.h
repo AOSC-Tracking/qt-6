@@ -5,6 +5,9 @@
 #ifndef V8_OBJECTS_MAP_INL_H_
 #define V8_OBJECTS_MAP_INL_H_
 
+#include "src/objects/map.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/heap/heap-layout-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/api-callbacks-inl.h"
@@ -16,7 +19,6 @@
 #include "src/objects/instance-type-inl.h"
 #include "src/objects/js-function-inl.h"
 #include "src/objects/map-updater.h"
-#include "src/objects/map.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/property.h"
 #include "src/objects/prototype-info-inl.h"
@@ -42,6 +44,11 @@ TQ_OBJECT_CONSTRUCTORS_IMPL(Map)
 
 ACCESSORS(Map, instance_descriptors, Tagged<DescriptorArray>,
           kInstanceDescriptorsOffset)
+#if V8_ENABLE_WEBASSEMBLY
+ACCESSORS_CHECKED(Map, custom_descriptor, Tagged<WasmStruct>,
+                  kInstanceDescriptorsOffset, IsWasmStructMap(*this))
+#endif  // V8_ENABLE_WEBASSEMBLY
+
 RELAXED_ACCESSORS(Map, instance_descriptors, Tagged<DescriptorArray>,
                   kInstanceDescriptorsOffset)
 RELEASE_ACQUIRE_ACCESSORS(Map, instance_descriptors, Tagged<DescriptorArray>,
@@ -172,7 +179,7 @@ bool Map::IsDetached(Isolate* isolate) const {
 // static
 void Map::GeneralizeIfCanHaveTransitionableFastElementsKind(
     Isolate* isolate, InstanceType instance_type,
-    Representation* representation, Handle<FieldType>* field_type) {
+    Representation* representation, DirectHandle<FieldType>* field_type) {
   if (CanHaveFastTransitionableElementsKind(instance_type)) {
     // We don't support propagation of field generalization through elements
     // kind transitions because they are inserted into the transition tree
@@ -361,6 +368,10 @@ DirectHandle<Map> Map::AddMissingTransitionsForTesting(
     Isolate* isolate, DirectHandle<Map> split_map,
     DirectHandle<DescriptorArray> descriptors) {
   return AddMissingTransitions(isolate, split_map, descriptors);
+}
+
+void Map::set_instance_type(InstanceType value) {
+  RELAXED_WRITE_UINT16_FIELD(*this, kInstanceTypeOffset, value);
 }
 
 int Map::UnusedPropertyFields() const {
@@ -585,6 +596,26 @@ bool Map::TryGetPrototypeInfo(Tagged<PrototypeInfo>* result) const {
   return true;
 }
 
+// static
+bool Map::TryGetValidityCellHolderMap(
+    Tagged<Map> map, Isolate* isolate,
+    Tagged<Map>* out_validity_cell_holder_map) {
+  if (map->is_prototype_map()) {
+    // For prototype maps we can use their validity cell for guarding changes.
+    *out_validity_cell_holder_map = map;
+    return true;
+  }
+  // For non-prototype maps we use prototype's map's validity cell.
+  Tagged<Object> maybe_prototype =
+      map->GetPrototypeChainRootMap(isolate)->prototype();
+
+  if (!IsJSObjectThatCanBeTrackedAsPrototype(maybe_prototype)) {
+    return false;
+  }
+  *out_validity_cell_holder_map = Cast<JSObject>(maybe_prototype)->map();
+  return true;
+}
+
 void Map::set_elements_kind(ElementsKind elements_kind) {
   CHECK_LT(static_cast<int>(elements_kind), kElementsKindCount);
   set_bit_field2(
@@ -711,16 +742,27 @@ void Map::NotifyLeafMapLayoutChange(Isolate* isolate) {
 bool Map::CanTransition() const {
   // Only JSObject and subtypes have map transitions and back pointers.
   const InstanceType type = instance_type();
+  // JSExternalObjects are non-extensible and thus the map is allocated in
+  // read only sapce.
+  DCHECK_IMPLIES(InstanceTypeChecker::IsMaybeReadOnlyJSObject(type),
+                 HeapLayout::InReadOnlySpace(*this));
   // Shared JS objects have fixed shapes and do not transition. Their maps are
   // either in shared space or RO space.
   DCHECK_IMPLIES(InstanceTypeChecker::IsAlwaysSharedSpaceJSObject(type),
                  HeapLayout::InAnySharedSpace(*this));
   return InstanceTypeChecker::IsJSObject(type) &&
+         !InstanceTypeChecker::IsMaybeReadOnlyJSObject(type) &&
          !InstanceTypeChecker::IsAlwaysSharedSpaceJSObject(type);
 }
 
 bool IsBooleanMap(Tagged<Map> map) {
   return map == GetReadOnlyRoots().boolean_map();
+}
+
+bool IsNullMap(Tagged<Map> map) { return map == GetReadOnlyRoots().null_map(); }
+
+bool IsUndefinedMap(Tagged<Map> map) {
+  return map == GetReadOnlyRoots().undefined_map();
 }
 
 bool IsNullOrUndefinedMap(Tagged<Map> map) {
@@ -873,18 +915,18 @@ DEF_GETTER(Map, raw_native_context_or_null, Tagged<Object>) {
 ACCESSORS_CHECKED(Map, wasm_type_info, Tagged<WasmTypeInfo>,
                   kConstructorOrBackPointerOrNativeContextOffset,
                   IsWasmStructMap(*this) || IsWasmArrayMap(*this) ||
-                      IsWasmFuncRefMap(*this))
+                      IsWasmFuncRefMap(*this) ||
+                      IsWasmContinuationObjectMap(*this))
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 bool Map::IsPrototypeValidityCellValid() const {
   Tagged<Object> validity_cell = prototype_validity_cell(kRelaxedLoad);
-  if (IsSmi(validity_cell)) {
+  if (validity_cell == Map::kNoValidityCellSentinel) {
     // Smi validity cells should always be considered valid.
-    DCHECK_EQ(Cast<Smi>(validity_cell).value(), Map::kPrototypeChainValid);
     return true;
   }
-  Tagged<Smi> cell_value = Cast<Smi>(Cast<Cell>(validity_cell)->value());
-  return cell_value == Smi::FromInt(Map::kPrototypeChainValid);
+  return Cast<Cell>(validity_cell)->maybe_value() !=
+         Map::kPrototypeChainInvalid;
 }
 
 bool Map::BelongsToSameNativeContextAs(Tagged<Map> other_map) const {
@@ -1017,8 +1059,6 @@ int Map::SlackForArraySize(int old_size, int size_limit) {
 int Map::InstanceSizeFromSlack(int slack) const {
   return instance_size() - slack * kTaggedSize;
 }
-
-NEVER_READ_ONLY_SPACE_IMPL(NormalizedMapCache)
 
 int NormalizedMapCache::GetIndex(Isolate* isolate, Tagged<Map> map,
                                  Tagged<HeapObject> prototype) {

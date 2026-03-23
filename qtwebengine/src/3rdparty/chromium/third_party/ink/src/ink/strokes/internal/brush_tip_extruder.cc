@@ -68,22 +68,18 @@ void BrushTipExtruder::StartStroke(float brush_epsilon,
   deleted_save_point_extrusions_.clear();
   geometry_.Reset(MutableMeshView(mesh));
   bounds_ = {};
-  outline_.TruncateIndices({0, 0});
+  // Pre-allocate the first outline.
+  num_outlines_ = 1;
+  if (outlines_.empty()) {
+    outlines_.resize(1);
+  }
+  // Clear all the outlines from the previous stroke.
+  for (StrokeOutline& outline : outlines_) {
+    outline.TruncateIndices({0, 0});
+  }
 }
 
 namespace {
-
-// Appends left and right indices to `outline` that have been added to
-// `geometry` since the last call to `BrushTipExtruder::Restore()`.
-void AppendNewIndicesToOutline(const Geometry& geometry,
-                               StrokeOutline& outline) {
-  StrokeOutline::IndexCounts counts = outline.GetIndexCounts();
-  auto new_left_indices =
-      absl::MakeSpan(geometry.LeftSide().indices).subspan(counts.left);
-  auto new_right_indices =
-      absl::MakeSpan(geometry.RightSide().indices).subspan(counts.right);
-  outline.AppendNewIndices(new_left_indices, new_right_indices);
-}
 
 StrokeShapeUpdate ConstructUpdate(const Geometry& geometry,
                                   uint32_t triangle_count_before_update,
@@ -137,8 +133,6 @@ StrokeShapeUpdate BrushTipExtruder::ExtendStroke(
 
   ExtrudeBreakPoint();
   geometry_.UpdateMeshDerivatives();
-
-  AppendNewIndicesToOutline(geometry_, outline_);
   UpdateCurrentBounds();
   return ConstructUpdate(geometry_, triangle_count_before_update,
                          vertex_count_before_update);
@@ -225,13 +219,38 @@ void BrushTipExtruder::Save() {
   geometry_.SetSavePoint();
 }
 
+void BrushTipExtruder::TruncateOutlines() {
+  ABSL_DCHECK_LE(geometry_.ExtrusionBreakCount(), outlines_.size());
+  // Prune the outline after the last break point to the first mutation.
+  uint32_t max_num_outlines = geometry_.ExtrusionBreakCount() + 1;
+  if (num_outlines_ >= max_num_outlines) {
+    num_outlines_ = max_num_outlines;
+    const Geometry::IndexCounts& last_extrusion_break_offset =
+        geometry_.IndexCountsAtLastExtrusionBreak();
+    ABSL_DCHECK_GE(geometry_.FirstMutatedLeftIndexOffsetInCurrentPartition(),
+                   last_extrusion_break_offset.left);
+    ABSL_DCHECK_GE(geometry_.FirstMutatedRightIndexOffsetInCurrentPartition(),
+                   last_extrusion_break_offset.right);
+    StrokeOutline& last_outline = outlines_[num_outlines_ - 1];
+    last_outline.TruncateIndices({
+        .left = geometry_.FirstMutatedLeftIndexOffsetInCurrentPartition() -
+                last_extrusion_break_offset.left,
+        .right = geometry_.FirstMutatedRightIndexOffsetInCurrentPartition() -
+                 last_extrusion_break_offset.right,
+    });
+  }
+  // Clear any later outlines.
+  for (uint32_t i = max_num_outlines; i < outlines_.size(); i++) {
+    outlines_[i].TruncateIndices({0, 0});
+  }
+}
+
 void BrushTipExtruder::Restore() {
   extrusions_.resize(saved_extrusion_data_count_);
   absl::c_copy(deleted_save_point_extrusions_,
                extrusions_.end() - deleted_save_point_extrusions_.size());
   geometry_.RevertToSavePoint();
-  outline_.TruncateIndices({.left = geometry_.FirstMutatedLeftIndexOffset(),
-                            .right = geometry_.FirstMutatedRightIndexOffset()});
+  TruncateOutlines();
 }
 
 void BrushTipExtruder::ClearSinceLastExtrusionBreak(
@@ -268,8 +287,7 @@ void BrushTipExtruder::ClearSinceLastExtrusionBreak(
 
   extrusions_.erase(first_extrusion_to_erase, extrusions_.end());
   geometry_.ClearSinceLastExtrusionBreak();
-  outline_.TruncateIndices({.left = geometry_.FirstMutatedLeftIndexOffset(),
-                            .right = geometry_.FirstMutatedRightIndexOffset()});
+  TruncateOutlines();
   ClearCachedPartialBounds();
 }
 
@@ -429,11 +447,13 @@ void ExtrudeGeometry(const ExtrusionPoints& points,
 
   for (Point point : points.left) {
     geometry.AppendLeftVertex(point, opacity_shift, hsl_shift,
-                              compute_surface_uv(point));
+                              compute_surface_uv(point),
+                              tip_state.texture_animation_progress_offset);
   }
   for (Point point : points.right) {
     geometry.AppendRightVertex(point, opacity_shift, hsl_shift,
-                               compute_surface_uv(point));
+                               compute_surface_uv(point),
+                               tip_state.texture_animation_progress_offset);
   }
   geometry.ProcessNewVertices(simplification_threshold, tip_state);
 }
@@ -507,8 +527,45 @@ void BrushTipExtruder::ExtrudeBreakPoint() {
   ExtrudeGeometry(current_extrusion_points_, extrusions_.back().GetState(),
                   simplification_threshold_, is_winding_texture_particle_brush_,
                   geometry_);
+
+  // If no new geometry was added after the last breakpoint, we don't need to
+  // do anything.
+  Geometry::IndexCounts counts_at_last_break =
+      geometry_.IndexCountsAtLastExtrusionBreak();
+
+  if (geometry_.LeftSide().indices.size() <= counts_at_last_break.left &&
+      geometry_.RightSide().indices.size() <= counts_at_last_break.right) {
+    return;
+  }
+
+  // Allocate more capacity if we need it.
+  if (outlines_.size() == geometry_.ExtrusionBreakCount()) {
+    outlines_.resize(outlines_.size() * 2);
+  }
+
+  // Add to the count of outlines if we're completing an entirely new outline
+  // instead of refinishing an in-progress one.
+  if (num_outlines_ == geometry_.ExtrusionBreakCount()) {
+    num_outlines_++;
+  }
+
   geometry_.AddExtrusionBreak();
   extrusions_.emplace_back(BrushTipExtrusion::BreakPoint{});
+
+  StrokeOutline& outline = outlines_[num_outlines_ - 1];
+  ABSL_DCHECK_EQ(geometry_.ExtrusionBreakCount(), num_outlines_);
+  StrokeOutline::IndexCounts outline_counts = outline.GetIndexCounts();
+  ABSL_DCHECK_GE(geometry_.LeftSide().indices.size(),
+                 counts_at_last_break.left + outline_counts.left);
+  absl::Span<const uint32_t> new_left_indices =
+      absl::MakeSpan(geometry_.LeftSide().indices)
+          .subspan(counts_at_last_break.left + outline_counts.left);
+  ABSL_DCHECK_GE(geometry_.RightSide().indices.size(),
+                 counts_at_last_break.right + outline_counts.right);
+  absl::Span<const uint32_t> new_right_indices =
+      absl::MakeSpan(geometry_.RightSide().indices)
+          .subspan(counts_at_last_break.right + outline_counts.right);
+  outline.AppendNewIndices(new_left_indices, new_right_indices);
 }
 
 }  // namespace ink::strokes_internal

@@ -297,7 +297,7 @@ void tst_QMediaRecorder::record_emitsSignals_whenSettingsChange()
 
         encoder->record();
         QCOMPARE_EQ(videoFrameRateChanged.size(), 1);
-        QVERIFY(qFuzzyCompare(encoder->videoFrameRate(), 60));
+        QCOMPARE_EQ(encoder->videoFrameRate(), 60);
     }
 
     {
@@ -378,14 +378,14 @@ void tst_QMediaRecorder::setOutputLocation_resetsActualLocation()
     QFETCH(QString, initialOutputLocation);
     QFETCH(QString, newOutputLocation);
 
-    encoder->setOutputLocation(initialOutputLocation);
+    encoder->setOutputLocation(QUrl{initialOutputLocation});
     encoder->record();
     encoder->stop();
 
     QCOMPARE_NE(encoder->actualLocation(), QUrl());
 
     // Act
-    encoder->setOutputLocation(newOutputLocation);
+    encoder->setOutputLocation(QUrl{newOutputLocation});
 
     // Assert
     QCOMPARE(encoder->actualLocation(), QUrl());
@@ -564,7 +564,7 @@ void tst_QMediaRecorder::testVideoSettings()
         QSignalSpy videoFrameRateChanged{ &recorder, &QMediaRecorder::videoFrameRateChanged };
         QCOMPARE(recorder.videoFrameRate(), -1);
         recorder.setVideoFrameRate(60);
-        QVERIFY(qFuzzyCompare(recorder.videoFrameRate(), qreal(60)));
+        QCOMPARE_EQ(recorder.videoFrameRate(), 60);
         QCOMPARE_EQ(videoFrameRateChanged.size(), 1);
 
         recorder.setVideoFrameRate(60);

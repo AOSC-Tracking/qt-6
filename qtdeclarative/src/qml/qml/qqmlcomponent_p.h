@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLCOMPONENT_P_H
 #define QQMLCOMPONENT_P_H
@@ -37,7 +38,7 @@ class QQmlEngine;
 
 class QQmlComponentAttached;
 class Q_QML_EXPORT QQmlComponentPrivate
-    : public QObjectPrivate, public QQmlTypeData::TypeDataCallback
+    : public QObjectPrivate, public QQmlNotifyingBlob::Callback
 {
     Q_DECLARE_PUBLIC(QQmlComponent)
 
@@ -144,8 +145,8 @@ public:
             const QQmlRefPointer<QQmlContextData> &context,
             const QQmlRefPointer<QQmlContextData> &forContext);
 
-    void typeDataReady(QQmlTypeData *) override;
-    void typeDataProgress(QQmlTypeData *, qreal) override;
+    void ready(QQmlNotifyingBlob *) final;
+    void progress(QQmlNotifyingBlob *, qreal) final;
 
     void fromTypeData(const QQmlRefPointer<QQmlTypeData> &data);
 

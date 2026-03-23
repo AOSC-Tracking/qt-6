@@ -208,7 +208,7 @@ to import the containing module. Afterwards, you can access the singleton via it
 name. Reading its properties and writing to them inside JavaScript contexts is
 done in the same way as with normal objects:
 
-\code
+\qml
 import QtQuick
 import MyModule
 
@@ -216,11 +216,11 @@ Item {
     x: MySingleton.posX
     Component.onCompleted: MySingleton.ready = true;
 }
-\endcode
+\endqml
 
 Setting up bindings on a singletons properties is not possible; however, if it
 is needed, a \l{Binding} element can be used to achieve the same result:
-\code
+\qml
 import QtQuick
 import MyModule
 
@@ -232,7 +232,7 @@ Item {
         value: root.x
     }
 }
-\endcode
+\endqml
 
 \note Care must be taken when installing a binding on a singleton property: If
 done by more than one file, the results are not defined.

@@ -1,5 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include <QtCore/QList>
 #include "QtGraphs/QSplineSeries"
@@ -9,6 +11,8 @@
 #include "private/qsplineseries_p.h"
 #include "private/qxyseries_p.h"
 #include "private/qxyseriesanimation_p.h"
+
+QT_BEGIN_NAMESPACE
 
 /*!
     \qmltype GraphTransition
@@ -176,3 +180,7 @@ void QGraphTransition::clear(QQmlListProperty<QObject> *)
 {
     Q_UNIMPLEMENTED();
 }
+
+QT_END_NAMESPACE
+
+#include "moc_qgraphtransition_p.cpp"

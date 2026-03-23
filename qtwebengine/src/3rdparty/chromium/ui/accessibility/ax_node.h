@@ -24,6 +24,7 @@
 #include "ui/accessibility/ax_export.h"
 #include "ui/accessibility/ax_hypertext.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_states.h"
 #include "ui/accessibility/ax_text_attributes.h"
 #include "ui/accessibility/ax_tree_id.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -81,59 +82,70 @@ class AX_EXPORT AXNode final {
     ChildIteratorBase(const ChildIteratorBase& it)
         : parent_(it.parent_), child_(it.child_) {}
     ~ChildIteratorBase() = default;
-    bool operator==(const ChildIteratorBase& rhs) const
-    {
-        return parent_ == rhs.parent_ && child_ == rhs.child_;
+    friend bool operator==(const ChildIteratorBase& lhs,
+                           const ChildIteratorBase& rhs) {
+      return lhs.parent_ == rhs.parent_ && lhs.child_ == rhs.child_;
     }
-    bool operator!=(const ChildIteratorBase& rhs) const
-    {
-        return parent_ != rhs.parent_ || child_ != rhs.child_;
-    }
-    ChildIteratorBase& operator++() {
-        // |child_ = nullptr| denotes the iterator's past-the-end condition. When we
-        // increment the iterator past the end, we remain at the past-the-end iterator
-        // condition.
-        if (child_ && parent_) {
-          if (child_ == (parent_.get()->*LastChild)())
-            child_ = nullptr;
-        else
-            child_ = (child_.get()->*NextSibling)();
-        }
 
-        return *this;
+    ChildIteratorBase& operator++() {
+      // |child_ = nullptr| denotes the iterator's past-the-end condition. When we
+      // increment the iterator past the end, we remain at the past-the-end iterator
+      // condition.
+      if (child_ && parent_) {
+        if (!last_child_) {
+          last_child_ = (parent_.get()->*LastChild)();
+        }
+        child_ = child_ == last_child_ ? nullptr : (child_.get()->*NextSibling)();
+      }
+
+      return *this;
     }
+
     ChildIteratorBase& operator--() {
-        if (parent_) {
-          // If the iterator is past the end, |child_=nullptr|, decrement the iterator
-          // gives us the last iterator element.
-          if (!child_)
-            child_ = (parent_.get()->*LastChild)();
+      if (parent_) {
+        // If the iterator is past the end, |child_=nullptr|, decrement the iterator
+        // gives us the last iterator element.
+        if (!child_) {
+          if (!last_child_) {
+            last_child_ = (parent_.get()->*LastChild)();
+          }
+          child_ = last_child_;
+        } else {
+          if (!first_child_) {
+            first_child_ = (parent_.get()->*FirstChild)();
+          }
           // Decrement the iterator gives us the previous element, except when the
           // iterator is at the beginning; in which case, decrementing the iterator
           // remains at the beginning.
-          else if (child_ != (parent_.get()->*FirstChild)())
+          if (child_ != first_child_) {
             child_ = (child_.get()->*PreviousSibling)();
+          }
         }
+      }
 
-        return *this;
+      return *this;
     }
+
     NodeType* get() const {
-        DCHECK(child_);
-        return child_;
+      DCHECK(child_);
+      return child_;
     }
+
     NodeType& operator*() const {
-        DCHECK(child_);
-        return *child_;
+      DCHECK(child_);
+      return *child_;
     }
 
     NodeType* operator->() const {
-        DCHECK(child_);
-        return child_;
+      DCHECK(child_);
+      return child_;
     }
 
    protected:
     raw_ptr<const NodeType> parent_;
     raw_ptr<NodeType, DanglingUntriaged> child_;
+    raw_ptr<NodeType, DanglingUntriaged> first_child_{nullptr};
+    raw_ptr<NodeType, DanglingUntriaged> last_child_{nullptr};
   };
 
   // The constructor requires a parent, id, and index in parent, but
@@ -145,7 +157,7 @@ class AX_EXPORT AXNode final {
          AXNodeID id,
          size_t index_in_parent,
          size_t unignored_index_in_parent = 0u);
-  virtual ~AXNode();
+  ~AXNode();
 
   // Accessors.
   AXTree* tree() const { return tree_; }
@@ -227,13 +239,8 @@ class AX_EXPORT AXNode final {
   // Iterators for walking the tree in depth-first pre-order.
   //
 
-  using AllChildIterator = ChildIteratorBase<AXNode,
-                                             &AXNode::GetNextSibling,
-                                             &AXNode::GetPreviousSibling,
-                                             &AXNode::GetFirstChild,
-                                             &AXNode::GetLastChild>;
-  AllChildIterator AllChildrenBegin() const;
-  AllChildIterator AllChildrenEnd() const;
+  // Use a range-based for loop on GetAllChildren() to iterate over all of a
+  // node's direct children.
 
   using AllChildCrossingTreeBoundaryIterator =
       ChildIteratorBase<AXNode,
@@ -411,16 +418,14 @@ class AX_EXPORT AXNode final {
     return data().GetFloatAttribute(attribute);
   }
 
-  const std::vector<std::pair<ax::mojom::IntAttribute, int32_t>>&
-  GetIntAttributes() const {
+  const AXIntAttributes& GetIntAttributes() const {
     return data().int_attributes;
   }
   bool HasIntAttribute(ax::mojom::IntAttribute attribute) const;
   bool CanComputeIntAttribute(ax::mojom::IntAttribute attribute) const;
   int GetIntAttribute(ax::mojom::IntAttribute attribute) const;
 
-  const std::vector<std::pair<ax::mojom::StringAttribute, std::string>>&
-  GetStringAttributes() const {
+  const AXStringAttributes& GetStringAttributes() const {
     return data().string_attributes;
   }
   bool HasStringAttribute(ax::mojom::StringAttribute attribute) const;
@@ -437,9 +442,7 @@ class AX_EXPORT AXNode final {
   std::u16string GetInheritedString16Attribute(
       ax::mojom::StringAttribute attribute) const;
 
-  const std::vector<
-      std::pair<ax::mojom::IntListAttribute, std::vector<int32_t>>>&
-  GetIntListAttributes() const {
+  const AXIntListAttributes& GetIntListAttributes() const {
     return data().intlist_attributes;
   }
   bool HasIntListAttribute(ax::mojom::IntListAttribute attribute) const;
@@ -463,10 +466,9 @@ class AX_EXPORT AXNode final {
     return data().GetTextAttributes();
   }
 
+  AXStates GetStates() const { return data().GetStates(); }
+
   bool HasState(ax::mojom::State state) const { return data().HasState(state); }
-  ax::mojom::State GetState() const {
-    return static_cast<ax::mojom::State>(data().state);
-  }
 
   bool HasAction(ax::mojom::Action action) const {
     return data().HasAction(action);
@@ -630,6 +632,11 @@ class AX_EXPORT AXNode final {
   // table header container node, or nullptr if not applicable.
   const std::vector<raw_ptr<AXNode, VectorExperimental>>* GetExtraMacNodes()
       const;
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+  AXNode* GetExtraAnnouncementNode(
+      ax::mojom::AriaNotificationPriority priority_property) const;
+#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
 
   // Return true for mock nodes added to the map, such as extra mac nodes.
   bool IsGenerated() const;

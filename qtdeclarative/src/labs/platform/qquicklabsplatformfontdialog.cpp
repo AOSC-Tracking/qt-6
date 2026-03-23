@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qquicklabsplatformfontdialog_p.h"
 
@@ -13,7 +14,7 @@ QT_BEGIN_NAMESPACE
 //!     \nativetype QQuickLabsPlatformFontDialog
     \inqmlmodule Qt.labs.platform
     \since 5.8
-    \deprecated [6.9] Use QtQuick.Dialogs::FontDialog instead.
+    \deprecated [6.9] Use \l [QtQuickDialogs] {FontDialog}{QtQuick.Dialogs FontDialog} instead.
     \brief A native font dialog.
 
     The FontDialog type provides a QML API for native platform font dialogs.

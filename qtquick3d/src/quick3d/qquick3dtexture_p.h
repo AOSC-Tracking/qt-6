@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSGIMAGE_H
 #define QSSGIMAGE_H
@@ -29,6 +31,7 @@ QT_BEGIN_NAMESPACE
 class QSGLayer;
 struct QSSGRenderImage;
 class QQuick3DRenderExtension;
+class QQuickWindow;
 
 class Q_QUICK3D_EXPORT QQuick3DTexture : public QQuick3DObject, public QQuickItemChangeListener
 {
@@ -114,8 +117,6 @@ public:
     Q_REVISION(6, 7) QQuick3DRenderExtension *textureProvider() const;
     Q_REVISION(6, 7) void setTextureProvider(QQuick3DRenderExtension *newRenderTexture);
 
-    bool extensionDirty() const { return m_dirtyFlags.testFlag(DirtyFlag::ExtensionDirty); }
-
     bool hasSourceData() const
     {
         return !m_source.isEmpty() || m_sourceItem || m_textureData;
@@ -181,6 +182,7 @@ protected:
 
 private Q_SLOTS:
     void sourceItemDestroyed(QObject *item);
+    void sourceItemWindowChanged(QQuickWindow *window);
 
 private:
     enum class DirtyFlag {
@@ -194,7 +196,7 @@ private:
         ExtensionDirty = (1 << 7)
     };
     Q_DECLARE_FLAGS(DirtyFlags, DirtyFlag)
-    void markDirty(DirtyFlag type);
+    void markDirty(DirtyFlag type, bool requestSecondaryUpdate = false);
     void trySetSourceParent();
     bool effectiveFlipV(const QSSGRenderImage &imageNode) const;
 

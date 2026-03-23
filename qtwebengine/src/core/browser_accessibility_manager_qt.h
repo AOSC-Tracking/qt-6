@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef BROWSER_ACCESSIBILITY_MANAGER_QT_H
 #define BROWSER_ACCESSIBILITY_MANAGER_QT_H
@@ -10,6 +11,7 @@
 #include <QtCore/qtconfigmacros.h>
 
 QT_FORWARD_DECLARE_CLASS(QAccessibleInterface)
+QT_FORWARD_DECLARE_CLASS(QWebEngineSettings)
 
 namespace QtWebEngineCore {
 class WebContentsAccessibilityQt;
@@ -33,6 +35,7 @@ public:
 
     QAccessibleInterface *rootParentAccessible();
     bool isValid() const { return m_valid; }
+    QWebEngineSettings *webEngineSettings() const;
 
 private:
     Q_DISABLE_COPY(BrowserAccessibilityManagerQt)

@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_OBJECTS_JS_PLURAL_RULES_H_
+#define V8_OBJECTS_JS_PLURAL_RULES_H_
+
 #ifndef V8_INTL_SUPPORT
 #error Internationalization is expected to be enabled.
 #endif  // V8_INTL_SUPPORT
-
-#ifndef V8_OBJECTS_JS_PLURAL_RULES_H_
-#define V8_OBJECTS_JS_PLURAL_RULES_H_
 
 #include <set>
 #include <string>
@@ -40,7 +40,7 @@ class JSPluralRules
  public:
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<JSPluralRules> New(
       Isolate* isolate, DirectHandle<Map> map, DirectHandle<Object> locales,
-      DirectHandle<Object> options);
+      DirectHandle<Object> options, const char* method_name);
 
   static DirectHandle<JSObject> ResolvedOptions(
       Isolate* isolate, DirectHandle<JSPluralRules> plural_rules);

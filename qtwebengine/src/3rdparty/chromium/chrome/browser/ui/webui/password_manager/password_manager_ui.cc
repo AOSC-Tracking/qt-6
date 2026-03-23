@@ -4,12 +4,14 @@
 
 #include "chrome/browser/ui/webui/password_manager/password_manager_ui.h"
 
-#include "base/feature_list.h"
 #include "base/i18n/message_formatter.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/extensions/api/passwords_private/passwords_private_delegate.h"
 #include "chrome/browser/extensions/api/passwords_private/passwords_private_delegate_factory.h"
+#include "chrome/browser/password_manager/chrome_password_change_service.h"
+#include "chrome/browser/password_manager/password_change_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/extension_control_handler.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
@@ -39,8 +41,6 @@
 #include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/leak_detection_dialog_utils.h"
 #include "components/password_manager/core/common/password_manager_constants.h"
-#include "components/password_manager/core/common/password_manager_features.h"
-#include "components/signin/public/base/signin_switches.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
@@ -119,11 +119,17 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
        IDS_PASSWORD_MANAGER_UI_ALREADY_CHANGED_PASSWORD},
       {"appsLabel", IDS_PASSWORD_MANAGER_UI_APPS_LABEL},
       {"authTimedOut", IDS_PASSWORD_MANAGER_UI_AUTH_TIMED_OUT},
+      {"automatedPasswordChangeTitle",
+       IDS_PASSWORD_MANAGER_UI_PASSWORD_CHANGE_SETTINGS_TITLE},
+      {"automatedPasswordChangeDescription",
+       IDS_PASSWORD_MANAGER_UI_PASSWORD_CHANGE_SETTINGS_DESCRIPTION},
       {"autosigninLabel", IDS_PASSWORD_MANAGER_UI_AUTOSIGNIN_TOGGLE_LABEL},
       {"backToCheckup",
        IDS_PASSWORD_MANAGER_UI_BACK_TO_CHECKUP_ARIA_DESCRIPTION},
       {"backToPasswords",
        IDS_PASSWORD_MANAGER_UI_BACK_TO_PASSWORDS_ARIA_DESCRIPTION},
+      {"backupPasswordDetailsCardAriaLabel",
+       IDS_PASSWORD_MANAGER_UI_BACKUP_PASSWORD_DETAILS_CARD_ARIA_LABEL},
       {"blockedSitesDescription",
        IDS_PASSWORD_MANAGER_UI_BLOCKED_SITES_DESCRIPTION},
       {"blockedSitesTitle", IDS_PASSWORD_MANAGER_UI_BLOCKED_SITES_TITLE},
@@ -337,6 +343,10 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
        IDS_PASSWORD_MANAGER_UI_PASSKEY_DETAILS_CARD_DELETE_BUTTON_NO_USERNAME_ARIA_LABEL},
       {"passkeyManagementInfoLabel",
        IDS_PASSWORD_MANAGER_UI_PASSKEY_MANAGEMENT_INFO_LABEL},
+      {"passkeyUpgradeSettingsToggleLabel",
+       IDS_PASSWORD_MANAGER_UI_PASSKEY_UPGRADE_TOGGLE_LABEL},
+      {"passkeyUpgradeSettingsToggleSubLabel",
+       IDS_PASSWORD_MANAGER_UI_PASSKEY_UPGRADE_TOGGLE_SUBLABEL},
       {"passwordChangeSettingLabel", IDS_SETTINGS_PASSWORD_CHANGE_LABEL},
       {"passwordChangeSettingSubLabel", IDS_SETTINGS_PASSWORD_CHANGE_SUBLABEL},
       {"passwordChangeSettingDataBreach",
@@ -361,6 +371,10 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
        IDS_PASSWORD_MANAGER_UI_PASSWORD_DETAILS_CARD_DELETE_BUTTON_ARIA_LABEL},
       {"passwordDetailsCardDeleteButtonNoUsernameAriaLabel",
        IDS_PASSWORD_MANAGER_UI_PASSWORD_DETAILS_CARD_DELETE_BUTTON_NO_USERNAME_ARIA_LABEL},
+      {"passwordDetailsCardBackupPasswordNote",
+       IDS_PASSWORD_MANAGER_UI_BACKUP_PASSWORD_SETTINGS_DESCRIPTION},
+      {"passwordDetailsCardBackupPasswordNoteDetails",
+       IDS_PASSWORD_MANAGER_UI_BACKUP_PASSWORD_SETTINGS_DESCRIPTION_DETAILS},
       {"passwordLabel", IDS_PASSWORD_MANAGER_UI_PASSWORD_LABEL},
       {"passwordManager",
        IDS_PASSWORD_BUBBLES_PASSWORD_MANAGER_LINK_TEXT_SYNCED_TO_ACCOUNT},
@@ -517,11 +531,6 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
                              g_browser_process->local_state()));
 #endif
 
-  source->AddBoolean(
-      "enableWebAuthnGpmPin",
-      base::FeatureList::IsEnabled(device::kWebAuthnEnclaveAuthenticator) &&
-          device::kWebAuthnGpmPin.Get());
-
   source->AddString("passwordSharingLearnMoreURL",
                     chrome::kPasswordSharingLearnMoreURL);
 
@@ -624,8 +633,18 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
 
   source->AddBoolean("canAddShortcut", web_app::AreWebAppsEnabled(profile));
 
-  source->AddBoolean("isBatchUploadDesktopEnabled",
-                     switches::IsBatchUploadDesktopEnabled());
+  source->AddBoolean(
+      "passkeyUpgradeSettingsToggleVisible",
+      base::FeatureList::IsEnabled(device::kWebAuthnPasskeyUpgrade));
+
+  source->AddBoolean("passwordChangeAvailable",
+                     PasswordChangeServiceFactory::GetForProfile(profile)
+                         ->UserIsActivePasswordChangeUser());
+
+  source->AddBoolean(
+      "enablePasswordManagerMojoApi",
+      base::FeatureList::IsEnabled(
+          password_manager::features::kEnablePasswordManagerMojoApi));
 
   content::URLDataSource::Add(
       profile, std::make_unique<FaviconSource>(
@@ -764,4 +783,20 @@ void PasswordManagerUI::CreateHelpBubbleHandler(
           PasswordManagerUI::kSharePasswordElementId,
           PasswordManagerUI::kAccountStoreToggleElementId,
           PasswordManagerUI::kOverflowMenuElementId});
+}
+
+void PasswordManagerUI::BindInterface(
+    mojo::PendingReceiver<password_manager::mojom::PageHandlerFactory>
+        receiver) {
+  password_manager_page_factory_receiver_.reset();
+  password_manager_page_factory_receiver_.Bind(std::move(receiver));
+}
+
+void PasswordManagerUI::CreatePageHandler(
+    mojo::PendingRemote<password_manager::mojom::Page> page,
+    mojo::PendingReceiver<password_manager::mojom::PageHandler> receiver) {
+  DCHECK(page);
+  password_manager_ui_handler_ = std::make_unique<PasswordManagerUIHandler>(
+      std::move(receiver), std::move(page), passwords_private_delegate_,
+      web_ui()->GetWebContents());
 }

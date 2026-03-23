@@ -193,7 +193,9 @@ class TestWebFrameWidgetHost : public mojom::blink::WidgetHost,
       mojo::PendingReceiver<viz::mojom::blink::CompositorFrameSink>
           compositor_frame_sink_receiver,
       mojo::PendingRemote<viz::mojom::blink::CompositorFrameSinkClient>
-          compositor_frame_sink_client) override;
+          compositor_frame_sink_client,
+      mojo::PendingRemote<blink::mojom::blink::RenderInputRouterClient>
+          viz_rir_client_remote) override;
   void RegisterRenderFrameMetadataObserver(
       mojo::PendingReceiver<cc::mojom::blink::RenderFrameMetadataObserverClient>
           render_frame_metadata_observer_client_receiver,
@@ -219,7 +221,8 @@ class TestWebFrameWidgetHost : public mojom::blink::WidgetHost,
       mojo::PendingRemote<mojom::blink::RenderInputRouterClient> remote);
   void GetWidgetInputHandler(
       mojo::PendingReceiver<mojom::blink::WidgetInputHandler> request,
-      mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> host);
+      mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> host,
+      bool from_viz);
 
  private:
   size_t cursor_set_count_ = 0;
@@ -279,7 +282,8 @@ class TestWebFrameWidget : public WebFrameWidgetImpl {
   }
 
   void RequestDecode(const cc::DrawImage&,
-                     base::OnceCallback<void(bool)>) override;
+                     base::OnceCallback<void(bool)>,
+                     bool speculative) override;
 
   using WebFrameWidgetImpl::GetOriginalScreenInfo;
 
@@ -555,6 +559,7 @@ class TestWebFrameClient : public WebLocalFrameClient {
       const WebURLRequest&,
       const WebWindowFeatures&,
       const WebString& name,
+      const gfx::Rect& requested_screen_rect,
       WebNavigationPolicy,
       network::mojom::blink::WebSandboxFlags,
       const SessionStorageNamespaceId&,
@@ -623,8 +628,7 @@ class TestWidgetInputHandlerHost : public mojom::blink::WidgetInputHandlerHost {
   void ImeCancelComposition() override;
   void ImeCompositionRangeChanged(
       const gfx::Range& range,
-      const std::optional<WTF::Vector<gfx::Rect>>& character_bounds,
-      const std::optional<WTF::Vector<gfx::Rect>>& line_bounds) override;
+      const std::optional<WTF::Vector<gfx::Rect>>& character_bounds) override;
   void SetMouseCapture(bool capture) override;
   void SetAutoscrollSelectionActiveInMainFrame(
       bool autoscroll_selection) override;

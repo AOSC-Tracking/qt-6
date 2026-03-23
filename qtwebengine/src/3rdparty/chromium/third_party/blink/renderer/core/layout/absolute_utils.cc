@@ -125,10 +125,12 @@ void ComputeUnclampedIMCBInOneAxis(
     const LayoutUnit available_size,
     const std::optional<LayoutUnit>& inset_start,
     const std::optional<LayoutUnit>& inset_end,
+    bool is_static_alignment_parallel,
     const LayoutUnit static_position_offset,
     InsetBias static_position_inset_bias,
     InsetBias alignment_inset_bias,
     const std::optional<InsetBias>& safe_inset_bias,
+    const std::optional<InsetBias>& alt_safe_inset_bias,
     const std::optional<InsetBias>& default_inset_bias,
     LayoutUnit* imcb_start_out,
     LayoutUnit* imcb_end_out,
@@ -166,6 +168,8 @@ void ComputeUnclampedIMCBInOneAxis(
         break;
     }
     *imcb_inset_bias_out = static_position_inset_bias;
+    *safe_inset_bias_out =
+        is_static_alignment_parallel ? safe_inset_bias : alt_safe_inset_bias;
   } else {
     // Otherwise we just resolve auto to 0.
     *imcb_start_out = inset_start.value_or(LayoutUnit());
@@ -217,19 +221,23 @@ InsetModifiedContainingBlock ComputeUnclampedIMCB(
                             /* is_justify_axis */ !is_parallel,
                             &block_safe_inset_bias, &block_default_inset_bias);
 
+  const bool is_static_alignment_parallel =
+      static_position.align_self_direction ==
+      LogicalStaticPosition::LogicalAlignmentDirection::kBlock;
+
   ComputeUnclampedIMCBInOneAxis(
       available_size.inline_size, insets.inline_start, insets.inline_end,
-      static_position.offset.inline_offset,
+      is_static_alignment_parallel, static_position.offset.inline_offset,
       GetStaticPositionInsetBias(static_position.inline_edge),
       inline_alignment_inset_bias, inline_safe_inset_bias,
-      inline_default_inset_bias, &imcb.inline_start, &imcb.inline_end,
-      &imcb.inline_inset_bias, &imcb.inline_safe_inset_bias,
+      block_safe_inset_bias, inline_default_inset_bias, &imcb.inline_start,
+      &imcb.inline_end, &imcb.inline_inset_bias, &imcb.inline_safe_inset_bias,
       &imcb.inline_default_inset_bias);
   ComputeUnclampedIMCBInOneAxis(
       available_size.block_size, insets.block_start, insets.block_end,
-      static_position.offset.block_offset,
+      is_static_alignment_parallel, static_position.offset.block_offset,
       GetStaticPositionInsetBias(static_position.block_edge),
-      block_alignment_inset_bias, block_safe_inset_bias,
+      block_alignment_inset_bias, block_safe_inset_bias, inline_safe_inset_bias,
       block_default_inset_bias, &imcb.block_start, &imcb.block_end,
       &imcb.block_inset_bias, &imcb.block_safe_inset_bias,
       &imcb.block_default_inset_bias);
@@ -318,6 +326,7 @@ void ComputeInsets(const LayoutUnit available_size,
                    LayoutUnit* inset_start_out,
                    LayoutUnit* inset_end_out) {
   DCHECK_NE(available_size, kIndefiniteSize);
+  const LayoutUnit margin_box_size = margin_start + size + margin_end;
 
   LayoutUnit imcb_start = original_imcb_start;
   LayoutUnit imcb_end = original_imcb_end;
@@ -340,7 +349,7 @@ void ComputeInsets(const LayoutUnit available_size,
   // "justify-self: safe start", clamp the free-space to zero and bias towards
   // the safe edge (may be end if RTL for example).
   LayoutUnit free_space =
-      available_size - imcb_start - imcb_end - margin_start - size - margin_end;
+      available_size - imcb_start - imcb_end - margin_box_size;
   InsetBias bias = imcb_inset_bias;
   bool apply_safe_bias = safe_inset_bias && free_space < LayoutUnit();
   if (apply_safe_bias) {
@@ -361,18 +370,28 @@ void ComputeInsets(const LayoutUnit available_size,
   // containing-block. It will prioritize the edge specified by
   // `default_inset_bias`.
   if (default_inset_bias && !apply_safe_bias) {
+    // If the margin-box fits within the IMCB, use that for the default
+    // alignment overflow - otherwise use the union of the IMCB, and the
+    // original containing-block.
+    const bool use_imcb = margin_box_size <= available_size -
+                                                 original_imcb_start -
+                                                 original_imcb_end;
+
     // If the insets shifted the IMCB outside the containing-block, we consider
     // that to be the safe edge.
     auto adjust_start = [&]() {
       const LayoutUnit safe_start =
-          std::min(original_imcb_start, -container_start);
+          use_imcb ? original_imcb_start
+                   : std::min(original_imcb_start, -container_start);
       if (imcb_start < safe_start) {
         imcb_end += (imcb_start - safe_start);
         imcb_start = safe_start;
       }
     };
     auto adjust_end = [&]() {
-      const LayoutUnit safe_end = std::min(original_imcb_end, -container_end);
+      const LayoutUnit safe_end =
+          use_imcb ? original_imcb_end
+                   : std::min(original_imcb_end, -container_end);
       if (imcb_end < safe_end) {
         imcb_start += (imcb_end - safe_end);
         imcb_end = safe_end;
@@ -702,8 +721,7 @@ bool ComputeOofInlineDimensions(
     const Length& auto_length = ([&]() {
       // Tables always shrink-to-fit unless explicitly asked to stretch.
       if (node.IsTable()) {
-        return is_explicit_stretch ? Length::FillAvailable()
-                                   : Length::FitContent();
+        return is_explicit_stretch ? Length::Stretch() : Length::FitContent();
       }
       // We'd like to apply the aspect-ratio.
       // The aspect-ratio applies from the block-axis if we can compute our
@@ -721,7 +739,7 @@ bool ComputeOofInlineDimensions(
         }
         return Length::FitContent();
       }
-      return is_stretch ? Length::FillAvailable() : Length::FitContent();
+      return is_stretch ? Length::Stretch() : Length::FitContent();
     })();
 
     const LayoutUnit main_inline_size = ResolveMainInlineLength(
@@ -730,7 +748,8 @@ bool ComputeOofInlineDimensions(
     const MinMaxSizes min_max_inline_sizes = ComputeMinMaxInlineSizes(
         space, node, border_padding,
         apply_automatic_min_size ? &Length::MinIntrinsic() : nullptr,
-        MinMaxSizesFunc, TransferredSizesMode::kNormal, imcb.InlineSize());
+        MinMaxSizesFunc, TransferredSizesMode::kNormal, FitContentMode::kNormal,
+        imcb.InlineSize());
 
     inline_size = min_max_inline_sizes.ClampSizeToMinAndMax(main_inline_size);
   }
@@ -805,8 +824,8 @@ const LayoutResult* ComputeOofBlockDimensions(
     // Nothing depends on our intrinsic-size, so we can safely use the initial
     // variant of these functions.
     const LayoutUnit main_block_size = ResolveMainBlockLength(
-        space, style, border_padding, style.LogicalHeight(),
-        &Length::FillAvailable(), kIndefiniteSize, imcb.BlockSize());
+        space, style, border_padding, style.LogicalHeight(), &Length::Stretch(),
+        kIndefiniteSize, imcb.BlockSize());
     const MinMaxSizes min_max_block_sizes = ComputeInitialMinMaxBlockSizes(
         space, node, border_padding, imcb.BlockSize());
     block_size = min_max_block_sizes.ClampSizeToMinAndMax(main_block_size);

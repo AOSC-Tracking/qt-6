@@ -446,6 +446,15 @@ Options (in lexicographical order):)",
                Forwards this option to the validator.  See the validator help
                for details.)");
   printf(R"(
+  --canonicalize-ids
+               Canonicalize IDs to improve compression of SPIR-V binary files. The resulting
+               modules have an increased ID range (IDs are not as tightly packed
+               around zero), but will compress better when multiple modules are
+               compressed together, since the compressor's dictionary can find better
+               cross module commonality. This pass should be run after most optimization
+               passes except for --strip-debug because this pass will use OpName to
+               canonicalize IDs. i.e. Run --strip-debug after this pass.)");
+  printf(R"(
   --relax-struct-store
                Forwards this option to the validator.  See the validator help
                for details.)");
@@ -455,15 +464,21 @@ Options (in lexicographical order):)",
                instructions.)");
   printf(R"(
   --remove-unused-interface-variables
-               Removes variables referenced on the |OpEntryPoint| instruction 
-               that are not referenced in the entry point function or any function 
-               in its call tree.  Note that this could cause the shader interface 
+               Removes variables referenced on the |OpEntryPoint| instruction
+               that are not referenced in the entry point function or any function
+               in its call tree.  Note that this could cause the shader interface
                to no longer match other shader stages.)");
   printf(R"(
   --replace-invalid-opcode
                Replaces instructions whose opcode is valid for shader modules,
                but not for the current shader stage.  To have an effect, all
                entry points must have the same execution model.)");
+  printf(R"(
+  --resolve-binding-conflicts
+               Renumber bindings to avoid conflicts.
+               When an image and sampler share the same desriptor set and binding,
+               increment the binding number of the sampler. Recursively ripple
+               to higher-numbered bindings until all conflicts resolved resolved.)");
   printf(R"(
   --ssa-rewrite
                Replace loads and stores to function local variables with
@@ -500,6 +515,11 @@ Options (in lexicographical order):)",
                Will not validate the SPIR-V before optimizing.  If the SPIR-V
                is invalid, the optimizer may fail or generate incorrect code.
                This options should be used rarely, and with caution.)");
+  printf(R"(
+  --split-combined-image-sampler
+               Replace combined image sampler variables and parameters into
+               pairs of images and samplers.  New variables have the same
+               bindings as the original variable.)");
   printf(R"(
   --strength-reduction
                Replaces instructions with equivalent and less expensive ones.)");

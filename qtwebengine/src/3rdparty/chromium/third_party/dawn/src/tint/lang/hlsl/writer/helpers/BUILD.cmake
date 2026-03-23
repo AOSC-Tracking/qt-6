@@ -50,11 +50,6 @@ tint_target_add_dependencies(tint_lang_hlsl_writer_helpers lib
   tint_lang_core_ir
   tint_lang_core_type
   tint_lang_hlsl_writer_common
-  tint_lang_wgsl
-  tint_lang_wgsl_ast
-  tint_lang_wgsl_features
-  tint_lang_wgsl_program
-  tint_lang_wgsl_sem
   tint_utils
   tint_utils_containers
   tint_utils_diagnostic
@@ -62,7 +57,6 @@ tint_target_add_dependencies(tint_lang_hlsl_writer_helpers lib
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text

@@ -28,10 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include <array>
 
@@ -908,11 +904,11 @@ TEST(KURLTest, urlStrippedForUseAsReferrerRespectsReferrerScheme) {
 
   EXPECT_EQ("", foobar_url.StrippedForUseAsReferrer().Utf8());
 #if DCHECK_IS_ON()
-  WTF::SetIsBeforeThreadCreatedForTest();  // Required for next operation:
+  SetIsBeforeThreadCreatedForTest();  // Required for next operation:
 #endif
   SchemeRegistry::RegisterURLSchemeAsAllowedForReferrer(foobar_scheme);
   EXPECT_EQ("foobar://somepage/", foobar_url.StrippedForUseAsReferrer());
-  SchemeRegistry::RemoveURLSchemeAsAllowedForReferrer(foobar_scheme);
+  SchemeRegistry::RemoveURLSchemeAsAllowedForReferrerForTest(foobar_scheme);
 }
 
 TEST(KURLTest, strippedForUseAsReferrer) {
@@ -943,7 +939,7 @@ TEST(KURLTest, ThreadSafesStaticKurlGetters) {
 #if DCHECK_IS_ON()
   // Simulate the static getters being called during/after threads have been
   // started, so that StaticSingleton's thread checks will be applied.
-  WTF::WillCreateThread();
+  WillCreateThread();
 #endif
 
   // Take references to the static KURLs, so that each has two references to
@@ -972,7 +968,7 @@ TEST(KURLTest, ThreadSafesStaticKurlGetters) {
 
 #if DCHECK_IS_ON()
   // Restore the IsBeforeThreadCreated() flag.
-  WTF::SetIsBeforeThreadCreatedForTest();
+  SetIsBeforeThreadCreatedForTest();
 #endif
 }
 
@@ -1110,30 +1106,6 @@ TEST(KURLTest, InvalidKURLToGURL) {
   // becomes an escaped percent sign (%25), and the invalid UTF-8
   // character becomes REPLACEMENT CHARACTER' (U+FFFD) encoded as UTF-8.
   EXPECT_EQ(gurl.host_piece(), "%25t%EF%BF%BD");
-}
-
-TEST(KURLTest, HasIDNA2008DeviationCharacters) {
-  // èxample.com:
-  EXPECT_FALSE(
-      KURL("http://\xE8xample.com/path").HasIDNA2008DeviationCharacter());
-  // faß.de (contains Sharp-S):
-  EXPECT_TRUE(KURL(u"http://fa\u00df.de/path").HasIDNA2008DeviationCharacter());
-  // βόλος.com (contains Greek Final Sigma):
-  EXPECT_TRUE(KURL(u"http://\u03b2\u03cc\u03bb\u03bf\u03c2.com/path")
-                  .HasIDNA2008DeviationCharacter());
-  // ශ්‍රී.com (contains Zero Width Joiner):
-  EXPECT_TRUE(KURL(u"http://\u0DC1\u0DCA\u200D\u0DBB\u0DD3.com")
-                  .HasIDNA2008DeviationCharacter());
-  // http://نامه\u200cای.com (contains Zero Width Non-Joiner):
-  EXPECT_TRUE(KURL(u"http://\u0646\u0627\u0645\u0647\u200C\u0627\u06CC.com")
-                  .HasIDNA2008DeviationCharacter());
-
-  // Copying the URL from a canonical string presently doesn't copy the boolean.
-  KURL url1(u"http://\u03b2\u03cc\u03bb\u03bf\u03c2.com/path");
-  std::string url_string = url1.GetString().Utf8();
-  KURL url2(AtomicString::FromUTF8(url_string), url1.GetParsed(),
-            url1.IsValid());
-  EXPECT_FALSE(url2.HasIDNA2008DeviationCharacter());
 }
 
 TEST(KURLTest, IPv4EmbeddedIPv6Address) {
@@ -1295,7 +1267,7 @@ class KURLTestTraits {
   using UrlType = blink::KURL;
 
   static UrlType CreateUrlFromString(std::string_view s) {
-    return blink::KURL(String::FromUTF8(s));
+    return blink::KURL(blink::String::FromUTF8(s));
   }
 
   static bool IsAboutBlank(const UrlType& url) { return url.IsAboutBlankURL(); }

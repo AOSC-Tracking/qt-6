@@ -18,6 +18,7 @@
 #include <private/qplatformaudiodevices_p.h>
 
 #include <private/qplatformvideodevices_p.h>
+#include "qwasmjs_p.h"
 
 #include <QtCore/private/qstdweb_p.h>
 #include <qaudio.h>
@@ -47,32 +48,45 @@ public:
 
 protected:
     QList<QCameraDevice> findVideoInputs() const override;
+    void connectNotify(const QMetaMethod &signal) override;
 
 private:
     // weak
     QWasmMediaDevices *m_mediaDevices;
 };
 
-// TODO: get rid of the inheritance. Instead, we should create QWasmAudioDevices,
-// and use QWasmMediaDevices in both, QWasmAudioDevices and QWasmVideoDevices.
-class QWasmMediaDevices : public QPlatformAudioDevices
+class QWasmAudioDevices : public QPlatformAudioDevices
 {
 public:
-    QWasmMediaDevices();
-
-    QList<QCameraDevice> videoInputs() const;
+    QWasmAudioDevices();
 
     QPlatformAudioSource *createAudioSource(const QAudioDevice &, const QAudioFormat &,
                                             QObject *parent) override;
     QPlatformAudioSink *createAudioSink(const QAudioDevice &, const QAudioFormat &,
                                         QObject *parent) override;
-    void initDevices();
 
     QLatin1String backendName() const override { return QLatin1String{ "WebAssembly" }; }
+    using QPlatformAudioDevices::onAudioInputsChanged;
+    using QPlatformAudioDevices::onAudioOutputsChanged;
 
 protected:
     QList<QAudioDevice> findAudioInputs() const override;
     QList<QAudioDevice> findAudioOutputs() const override;
+    void connectNotify(const QMetaMethod &signal) override;
+
+};
+
+class QWasmMediaDevices
+{
+public:
+    QWasmMediaDevices();
+    static QWasmMediaDevices *instance();
+    QList<QCameraDevice> videoInputs() const;
+
+    QList<QAudioDevice> audioInputs() const;
+    QList<QAudioDevice> audioOutputs() const;
+
+    void initDevices();
 
 private:
     void updateCameraDevices();
@@ -83,7 +97,6 @@ private:
     QMap <std::string, QAudioDevice> m_audioOutputs;
     QMap <std::string, QAudioDevice> m_audioInputs;
     QMap <std::string, QCameraDevice> m_cameraDevices;
-
 
     std::unique_ptr<qstdweb::EventCallback> m_deviceChangedCallback;
 

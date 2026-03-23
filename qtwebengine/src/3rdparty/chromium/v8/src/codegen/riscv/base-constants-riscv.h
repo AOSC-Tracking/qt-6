@@ -1,6 +1,7 @@
 // Copyright 2022 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #ifndef V8_CODEGEN_RISCV_BASE_CONSTANTS_RISCV_H_
 #define V8_CODEGEN_RISCV_BASE_CONSTANTS_RISCV_H_
 
@@ -92,8 +93,8 @@ enum VSew {
 
 // RISC-V can perform PC-relative jumps within a 32-bit range using the
 // following two instructions:
-//   auipc   t6, imm20    ; t0 = PC + imm20 * 2^12
-//   jalr    ra, t6, imm12; ra = PC + 4, PC = t0 + imm12,
+//   auipc   t6, imm20    ; t6 = PC + imm20 * 2^12
+//   jalr    ra, t6, imm12; ra = PC + 4, PC = t6 + imm12,
 // Both imm20 and imm12 are treated as two's-complement signed values, usually
 // calculated as:
 //   imm20 = (offset + 0x800) >> 12
@@ -1227,8 +1228,8 @@ class InstructionGetters : public T {
     }
   }
 
-#define sext(x, len) (((int32_t)(x) << (32 - len)) >> (32 - len))
-#define zext(x, len) (((uint32_t)(x) << (32 - len)) >> (32 - len))
+#define sext(x, len) ((static_cast<int32_t>(x) << (32 - len)) >> (32 - len))
+#define zext(x, len) ((static_cast<uint32_t>(x) << (32 - len)) >> (32 - len))
 
   inline int32_t RvvSimm5() const {
     DCHECK(this->InstructionType() == InstructionBase::kVType);

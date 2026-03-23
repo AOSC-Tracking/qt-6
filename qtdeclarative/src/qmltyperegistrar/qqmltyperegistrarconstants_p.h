@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+// Qt-Security score:significant
 
 #ifndef QQMLTYPEREGISTRARCONSTANTS_P_H
 #define QQMLTYPEREGISTRARCONSTANTS_P_H
@@ -67,6 +68,7 @@ static constexpr QLatin1StringView S_MODULE                       { "Module" };
 static constexpr QLatin1StringView S_NAME                         { "name" };
 static constexpr QLatin1StringView S_NONE                         { "none" };
 static constexpr QLatin1StringView S_NOTIFY                       { "notify" };
+static constexpr QLatin1StringView S_IS_OVERRIDE                  { "isOverride" };
 static constexpr QLatin1StringView S_PARAMETER                    { "Parameter" };
 static constexpr QLatin1StringView S_PARENT_PROPERTY              { "parentProperty" };
 static constexpr QLatin1StringView S_PRIVATE_CLASS                { "privateClass" };
@@ -82,6 +84,7 @@ static constexpr QLatin1StringView S_TYPE                         { "type" };
 static constexpr QLatin1StringView S_VALUE                        { "value" };
 static constexpr QLatin1StringView S_VALUES                       { "values" };
 static constexpr QLatin1StringView S_VALUE_TYPE                   { "valueType" };
+static constexpr QLatin1StringView S_IS_VIRTUAL                   { "isVirtual" };
 static constexpr QLatin1StringView S_WRITE                        { "write" };
 }
 
@@ -123,6 +126,7 @@ static constexpr QLatin1StringView S_NAME                         { "name" };
 static constexpr QLatin1StringView S_NAMESPACE                    { "namespace" };
 static constexpr QLatin1StringView S_NOTIFY                       { "notify" };
 static constexpr QLatin1StringView S_OBJECT                       { "object" };
+static constexpr QLatin1StringView S_OVERRIDE                     { "override" };
 static constexpr QLatin1StringView S_PARENT_PROPERTY              { "ParentProperty" };
 static constexpr QLatin1StringView S_PRIVATE                      { "private" };
 static constexpr QLatin1StringView S_PRIVATE_CLASS                { "privateClass" };
@@ -132,6 +136,7 @@ static constexpr QLatin1StringView S_PROTECTED                    { "protected" 
 static constexpr QLatin1StringView S_PUBLIC                       { "public" };
 static constexpr QLatin1StringView S_QUALIFIED_CLASS_NAME         { "qualifiedClassName" };
 static constexpr QLatin1StringView S_READ                         { "read" };
+static constexpr QLatin1StringView S_VIRTUAL                      { "virtual" };
 
 static constexpr QLatin1StringView S_REGISTER_ENUM_CLASSES_UNSCOPED {
     "RegisterEnumClassesUnscoped"

@@ -61,15 +61,6 @@ class PrefMemberBase;
 class ScopedUserPrefUpdateBase;
 }
 
-#if BUILDFLAG(IS_CHROMEOS)
-namespace pref_service_util {
-// Gets all the dotted paths from `dict`. For example if values stored are
-// `{"a" : { "b" : true, "c": false }}`, then `paths` gets ["a.b", "a.c"].
-void COMPONENTS_PREFS_EXPORT GetAllDottedPaths(const base::Value::Dict& dict,
-                                               std::vector<std::string>& paths);
-}  // namespace pref_service_util
-#endif
-
 // Base class for PrefServices. You can use the base class to read and
 // interact with preferences, but not to register new preferences; for
 // that see e.g. PrefRegistrySimple.
@@ -356,6 +347,10 @@ class COMPONENTS_PREFS_EXPORT PrefService {
   // Tell our PrefValueStore to update itself to |command_line_store|.
   // Takes ownership of the store.
   virtual void UpdateCommandLinePrefStore(PrefStore* command_line_store);
+
+  // Tells the PrefValueStore to update itself with `extension_store`.
+  // Takes ownership of the store.
+  void UpdateExtensionPrefStore(PrefStore* extension_store);
 
   // We run the callback once, when initialization completes. The bool
   // parameter will be set to true for successful initialization,

@@ -4,23 +4,31 @@
 
 package org.chromium.components.payments.secure_payment_confirmation;
 
+import static org.chromium.build.NullUtil.assertNonNull;
+import static org.chromium.build.NullUtil.assumeNonNull;
+
 import android.content.Context;
+import android.content.res.Resources;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.text.SpannableString;
 import android.util.Pair;
 import android.view.View;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
+import androidx.annotation.IntDef;
+import androidx.annotation.StringRes;
 import androidx.annotation.VisibleForTesting;
 import androidx.core.content.res.ResourcesCompat;
 
 import org.chromium.base.Callback;
+import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetContent;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetControllerProvider;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetObserver;
 import org.chromium.components.browser_ui.bottomsheet.EmptyBottomSheetObserver;
+import org.chromium.components.payments.PaymentFeatureList;
 import org.chromium.components.payments.R;
 import org.chromium.components.payments.ui.CurrencyFormatter;
 import org.chromium.components.payments.ui.InputProtector;
@@ -31,8 +39,13 @@ import org.chromium.payments.mojom.PaymentItem;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
+import org.chromium.ui.text.ChromeClickableSpan;
+import org.chromium.ui.text.SpanApplier;
+import org.chromium.ui.text.SpanApplier.SpanInfo;
 import org.chromium.url.Origin;
 
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.util.Locale;
 
 /**
@@ -41,12 +54,38 @@ import java.util.Locale;
  * component from other components and acts as the point of contact between them. Any code in this
  * component that needs to interact with another component does that through this controller.
  */
+@NullMarked
 public class SecurePaymentConfirmationAuthnController {
+    // LINT.IfChange(SecurePaymentRequestOutcome)
+    @IntDef({
+        SpcResponseStatus.UNKNOWN,
+        SpcResponseStatus.ACCEPT,
+        SpcResponseStatus.ANOTHER_WAY,
+        SpcResponseStatus.CANCEL,
+        SpcResponseStatus.OPT_OUT
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface SpcResponseStatus {
+        int UNKNOWN = 0;
+        int ACCEPT = 1;
+        int ANOTHER_WAY = 2;
+        int CANCEL = 3;
+        int OPT_OUT = 4;
+        int COUNT = 5;
+    }
+
+    // LINT.ThenChange(//tools/metrics/histograms/metadata/payment/enums.xml:SecurePaymentRequestOutcome)
+
     private final WebContents mWebContents;
-    private Runnable mHider;
-    private Callback<Boolean> mResponseCallback;
-    private Runnable mOptOutCallback;
-    private SecurePaymentConfirmationAuthnView mView;
+    private @Nullable Runnable mHider;
+
+    private @Nullable Callback<Integer> mResponseCallback;
+
+    private @Nullable Runnable mOptOutCallback;
+
+    private @Nullable SecurePaymentConfirmationAuthnView mView;
+
+    private @Nullable Boolean mInformOnly;
 
     private InputProtector mInputProtector = new InputProtector();
 
@@ -66,11 +105,12 @@ public class SecurePaymentConfirmationAuthnController {
             new BottomSheetContent() {
                 @Override
                 public View getContentView() {
+                    assumeNonNull(mView);
                     return mView.getContentView();
                 }
 
                 @Override
-                public View getToolbarView() {
+                public @Nullable View getToolbarView() {
                     return null;
                 }
 
@@ -102,34 +142,29 @@ public class SecurePaymentConfirmationAuthnController {
                 }
 
                 @Override
-                public int getPeekHeight() {
-                    return HeightMode.DISABLED;
-                }
-
-                @Override
                 public boolean swipeToDismissEnabled() {
                     return false;
                 }
 
                 @Override
-                public @NonNull String getSheetContentDescription(Context context) {
+                public String getSheetContentDescription(Context context) {
                     return context.getString(
                             R.string.secure_payment_confirmation_authentication_sheet_description);
                 }
 
                 @Override
-                public int getSheetHalfHeightAccessibilityStringId() {
+                public @StringRes int getSheetHalfHeightAccessibilityStringId() {
                     assert false : "This method should not be called";
-                    return 0;
+                    return Resources.ID_NULL;
                 }
 
                 @Override
-                public int getSheetFullHeightAccessibilityStringId() {
+                public @StringRes int getSheetFullHeightAccessibilityStringId() {
                     return R.string.secure_payment_confirmation_authentication_sheet_opened;
                 }
 
                 @Override
-                public int getSheetClosedAccessibilityStringId() {
+                public @StringRes int getSheetClosedAccessibilityStringId() {
                     return R.string.secure_payment_confirmation_authentication_sheet_closed;
                 }
             };
@@ -139,7 +174,8 @@ public class SecurePaymentConfirmationAuthnController {
      *
      * @param webContents The WebContents of the merchant.
      */
-    public static SecurePaymentConfirmationAuthnController create(WebContents webContents) {
+    public static @Nullable SecurePaymentConfirmationAuthnController create(
+            WebContents webContents) {
         return webContents != null
                 ? new SecurePaymentConfirmationAuthnController(webContents)
                 : null;
@@ -155,23 +191,30 @@ public class SecurePaymentConfirmationAuthnController {
      * @param paymentIcon The icon of the payment instrument.
      * @param paymentInstrumentLabel The label to display for the payment instrument.
      * @param total The total amount of the transaction.
-     * @param responseCallback The function to call on sheet dismiss; false if it failed.
+     * @param responseCallback The function to call on sheet dismiss; called with SpcResponseStatus.
      * @param optOutCallback The function to call on user opt out.
      * @param payeeName The name of the payee, or null if not specified.
      * @param payeeOrigin The origin of the payee, or null if not specified.
      * @param showOptOut Whether to show the opt out UX to the user.
      * @param rpId The relying party ID for the SPC credential.
+     * @param informOnly Whether to show the inform-only UX.
      */
     public boolean show(
             Drawable paymentIcon,
             String paymentInstrumentLabel,
             PaymentItem total,
-            Callback<Boolean> responseCallback,
+            Callback<Integer> responseCallback,
             Runnable optOutCallback,
             @Nullable String payeeName,
             @Nullable Origin payeeOrigin,
             boolean showOptOut,
-            String rpId) {
+            String rpId,
+            boolean informOnly) {
+        assert !informOnly
+                || PaymentFeatureList.isEnabledOrExperimentalFeaturesEnabled(
+                        PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION_FALLBACK);
+        mInformOnly = informOnly;
+
         if (mHider != null) return false;
 
         WindowAndroid windowAndroid = mWebContents.getTopLevelNativeWindow();
@@ -200,6 +243,26 @@ public class SecurePaymentConfirmationAuthnController {
                 new SecurePaymentConfirmationAuthnView.OptOutInfo(
                         showOptOut, rpId, this::onOptOutPressed);
 
+        SpannableString footnote = null;
+        if (!mInformOnly
+                && PaymentFeatureList.isEnabledOrExperimentalFeaturesEnabled(
+                        PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION_FALLBACK)) {
+            footnote =
+                    SpanApplier.applySpans(
+                            context.getString(R.string.secure_payment_confirmation_footnote),
+                            new SpanInfo(
+                                    "BEGIN_LINK",
+                                    "END_LINK",
+                                    new ChromeClickableSpan(
+                                            context,
+                                            (widget) -> {
+                                                hide();
+                                                assumeNonNull(mResponseCallback);
+                                                mResponseCallback.onResult(
+                                                        SpcResponseStatus.ANOTHER_WAY);
+                                            })));
+        }
+
         PropertyModel model =
                 new PropertyModel.Builder(SecurePaymentConfirmationAuthnProperties.ALL_KEYS)
                         .with(
@@ -224,6 +287,21 @@ public class SecurePaymentConfirmationAuthnController {
                         .with(
                                 SecurePaymentConfirmationAuthnProperties.CANCEL_BUTTON_CALLBACK,
                                 this::onCancelPressed)
+                        .with(
+                                SecurePaymentConfirmationAuthnProperties.TITLE,
+                                mInformOnly
+                                        ? context.getString(
+                                                R.string
+                                                        .secure_payment_confirmation_inform_only_title)
+                                        : context.getString(
+                                                R.string
+                                                        .secure_payment_confirmation_verify_purchase))
+                        .with(
+                                SecurePaymentConfirmationAuthnProperties.CONTINUE_BUTTON_LABEL,
+                                mInformOnly
+                                        ? context.getString(R.string.payments_confirm_button)
+                                        : context.getString(R.string.payments_continue_button))
+                        .with(SecurePaymentConfirmationAuthnProperties.FOOTNOTE, footnote)
                         .build();
 
         bottomSheet.addObserver(mBottomSheetObserver);
@@ -263,7 +341,7 @@ public class SecurePaymentConfirmationAuthnController {
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.NONE)
-    public SecurePaymentConfirmationAuthnView getView() {
+    public @Nullable SecurePaymentConfirmationAuthnView getView() {
         return mView;
     }
 
@@ -272,12 +350,13 @@ public class SecurePaymentConfirmationAuthnController {
         return mHider == null;
     }
 
-    private String getStoreLabel(@Nullable String payeeName, @Nullable Origin payeeOrigin) {
+    private String getStoreLabel(
+            @Nullable String payeeName, @Nullable Origin payeeOrigin) {
         // At least one of the payeeName and payeeOrigin must be non-null in SPC; this should be
         // enforced by PaymentRequestService.isValidSecurePaymentConfirmationRequest.
         assert payeeName != null || payeeOrigin != null;
 
-        if (payeeOrigin == null) return payeeName;
+        if (payeeOrigin == null) return assertNonNull(payeeName);
 
         String origin =
                 UrlFormatter.formatOriginForSecurityDisplay(
@@ -295,7 +374,13 @@ public class SecurePaymentConfirmationAuthnController {
 
     private void onConfirm() {
         hide();
-        mResponseCallback.onResult(true);
+        assumeNonNull(mInformOnly);
+        assumeNonNull(mResponseCallback);
+        if (mInformOnly) {
+            mResponseCallback.onResult(SpcResponseStatus.ANOTHER_WAY);
+        } else {
+            mResponseCallback.onResult(SpcResponseStatus.ACCEPT);
+        }
     }
 
     private void onConfirmPressed() {
@@ -304,7 +389,13 @@ public class SecurePaymentConfirmationAuthnController {
 
     private void onCancel() {
         hide();
-        mResponseCallback.onResult(false);
+        assumeNonNull(mResponseCallback);
+        if (PaymentFeatureList.isEnabledOrExperimentalFeaturesEnabled(
+                PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION_FALLBACK)) {
+            mResponseCallback.onResult(SpcResponseStatus.CANCEL);
+        } else {
+            mResponseCallback.onResult(SpcResponseStatus.ANOTHER_WAY);
+        }
     }
 
     private void onCancelPressed() {

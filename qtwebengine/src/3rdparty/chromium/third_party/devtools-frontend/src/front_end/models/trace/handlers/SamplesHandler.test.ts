@@ -29,7 +29,7 @@ async function handleEventsFromCpuProfile(context: Mocha.Context|Mocha.Suite|nul
     Promise<Trace.Handlers.ModelHandlers.Samples.SamplesHandlerData> {
   const profile = await TraceLoader.rawCPUProfile(context, name);
 
-  const contents = Trace.Extras.TimelineJSProfile.TimelineJSProfileProcessor.createFakeTraceFromCpuProfile(
+  const contents = Trace.Helpers.SamplesIntegrator.SamplesIntegrator.createFakeTraceFromCpuProfile(
       profile, Trace.Types.Events.ThreadID(1));
 
   Trace.Handlers.ModelHandlers.Samples.reset();
@@ -74,21 +74,21 @@ describeWithEnvironment('SamplesHandler', function() {
     const tid = Trace.Types.Events.ThreadID(1);
 
     function makeProfileChunkEvent(
-        nodes: {
+        nodes: Array<{
           id: number,
           children: number[],
           codeType?: string,
           url?: string,
           functionName?: string,
           scriptId?: number,
-        }[],
+        }>,
         samples: number[],
         timeDeltas: number[],
         ts: number,
         ): Trace.Types.Events.ProfileChunk {
       return {
         cat: '',
-        name: 'ProfileChunk',
+        name: Trace.Types.Events.Name.PROFILE_CHUNK,
         ph: Trace.Types.Events.Phase.SAMPLE,
         pid,
         tid: Trace.Types.Events.ThreadID(0),
@@ -119,7 +119,7 @@ describeWithEnvironment('SamplesHandler', function() {
       const E = 4;
       const root = 9;
       const mockProfileEvent: Trace.Types.Events.Profile = {
-        name: 'Profile',
+        name: Trace.Types.Events.Name.PROFILE,
         id,
         args: {data: {startTime: Trace.Types.Timing.Micro(0)}},
         cat: '',
@@ -255,8 +255,7 @@ describeWithEnvironment('SamplesHandler', function() {
       assert.strictEqual(profileById.size, 1);
       const cpuProfileData = profileById.values().next().value as Trace.Handlers.ModelHandlers.Samples.ProfileData;
       const cpuProfile = cpuProfileData.rawProfile;
-      assert.deepEqual(
-          Object.keys(cpuProfile), ['startTime', 'endTime', 'nodes', 'samples', 'timeDeltas', 'lines', 'traceIds']);
+      assert.deepEqual(Object.keys(cpuProfile), ['startTime', 'endTime', 'nodes', 'samples', 'timeDeltas', 'lines']);
       assert.lengthOf(cpuProfile.nodes, 153);
       assert.strictEqual(cpuProfile.startTime, 287510826176);
       assert.strictEqual(cpuProfile.endTime, 287510847633);

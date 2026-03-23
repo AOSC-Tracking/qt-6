@@ -65,6 +65,7 @@ class TestCSSParserObserver : public CSSParserObserver {
                        bool is_parsed) override {
     if (IsAtTargetLevel()) {
       property_start_ = start_offset;
+      property_end_ = end_offset;
     }
   }
   void ObserveComment(unsigned start_offset, unsigned end_offset) override {}
@@ -89,6 +90,7 @@ class TestCSSParserObserver : public CSSParserObserver {
 
   StyleRule::RuleType rule_type_ = StyleRule::RuleType::kStyle;
   unsigned property_start_ = 0;
+  unsigned property_end_ = 0;
   unsigned rule_header_start_ = 0;
   unsigned rule_header_end_ = 0;
   unsigned rule_body_start_ = 0;
@@ -546,6 +548,21 @@ TEST(CSSParserImplTest, ObserveNestedLayer) {
   EXPECT_EQ(test_css_parser_observer.rule_header_end_, 53u);
   EXPECT_EQ(test_css_parser_observer.rule_body_start_, 54u);
   EXPECT_EQ(test_css_parser_observer.rule_body_end_, 82u);
+}
+
+TEST(CSSParserImplTest, ObserveInvalidImportant) {
+  test::TaskEnvironment task_environment;
+  String sheet_text = ".element { font-size: 10px !imp; }";
+
+  auto* context = MakeGarbageCollected<CSSParserContext>(
+      kHTMLStandardMode, SecureContextMode::kInsecureContext);
+  auto* sheet = MakeGarbageCollected<StyleSheetContents>(context);
+  TestCSSParserObserver test_css_parser_observer;
+  CSSParserImpl::ParseStyleSheetForInspector(sheet_text, context, sheet,
+                                             test_css_parser_observer);
+
+  EXPECT_EQ(test_css_parser_observer.property_start_, 11u);
+  EXPECT_EQ(test_css_parser_observer.property_end_, 31u);
 }
 
 TEST(CSSParserImplTest, NestedIdent) {
@@ -1247,7 +1264,7 @@ TEST(CSSParserImplTest, AllPropertiesCanParseImportant) {
   }
 
   // So that we don't introduce more, or break the entire test inadvertently.
-  EXPECT_EQ(broken_properties, 17);
+  EXPECT_EQ(broken_properties, 16);
 }
 
 TEST(CSSParserImplTest, ParseSupportsBlinkFeature) {
@@ -1269,7 +1286,8 @@ TEST(CSSParserImplTest, ParseSupportsBlinkFeature) {
   StyleRuleSupports* supports_rule = DynamicTo<StyleRuleSupports>(rule);
   ASSERT_TRUE(supports_rule->ConditionIsSupported());
 
-  HeapVector<Member<StyleRuleBase>> child_rules = supports_rule->ChildRules();
+  const HeapVector<Member<StyleRuleBase>>& child_rules =
+      supports_rule->ChildRules();
   ASSERT_EQ(child_rules.size(), 2u);
   ASSERT_EQ(String("div"),
             To<StyleRule>(child_rules[0].Get())->SelectorsText());
@@ -1316,7 +1334,8 @@ TEST(CSSParserImplTest, ParseSupportsBlinkFeatureDisabledFeature) {
   StyleRuleSupports* supports_rule = DynamicTo<StyleRuleSupports>(rule);
   ASSERT_FALSE(supports_rule->ConditionIsSupported());
 
-  HeapVector<Member<StyleRuleBase>> child_rules = supports_rule->ChildRules();
+  const HeapVector<Member<StyleRuleBase>>& child_rules =
+      supports_rule->ChildRules();
   ASSERT_EQ(child_rules.size(), 2u);
   ASSERT_EQ(String("div"),
             To<StyleRule>(child_rules[0].Get())->SelectorsText());
@@ -1401,6 +1420,17 @@ TEST(CSSParserImplTest, ParseNestedRule) {
             To<StyleRule>(nested)
                 ->FirstSelector()
                 ->SelectorTextExpandingPseudoReferences(/*scope_id=*/0));
+}
+
+TEST(CSSParserImplTest, UnexpectedTokenInVar_IdentFunctionDisabled) {
+  test::TaskEnvironment task_environment;
+  ScopedNullExecutionContext execution_context;
+  ScopedCSSIdentFunctionForTest scoped_feature(false);
+  Document* document =
+      Document::CreateForTest(execution_context.GetExecutionContext());
+  // Don't crash:
+  css_test_helpers::ParseRule(*document, ".a { color: var(42); }");
+  css_test_helpers::ParseRule(*document, ".a { color: var(ident('thing')); }");
 }
 
 }  // namespace blink

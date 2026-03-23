@@ -5,7 +5,7 @@
 #include "components/autofill/core/browser/data_quality/autofill_data_util.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "components/autofill/core/browser/data_model/autofill_profile.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -259,7 +259,41 @@ INSTANTIATE_TEST_SUITE_P(
         // Lowercase is invalid.
         ValidCountryCodeTestCase{"us", false},
         ValidCountryCodeTestCase{"Ca", false},
-        ValidCountryCodeTestCase{"cN", false}));
+        ValidCountryCodeTestCase{"cN", false},
+
+        // Non Ascii is invalid.
+        ValidCountryCodeTestCase{"CÄ", false}));
+
+struct HasKatakanaCharacterTestCase {
+  std::string test_name;
+  std::u16string text;
+  bool has_katakana_character;
+};
+
+class HasKatakanaCharacterTest
+    : public ::testing::TestWithParam<HasKatakanaCharacterTestCase> {};
+
+TEST_P(HasKatakanaCharacterTest, HasKatakanaCharacter) {
+  const HasKatakanaCharacterTestCase& test_case = GetParam();
+
+  EXPECT_EQ(HasKatakanaCharacter(test_case.text), test_case.has_katakana_character);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    JpTests,
+    HasKatakanaCharacterTest,
+    testing::ValuesIn<HasKatakanaCharacterTestCase>({
+        {"Empty", u"", false},
+        {"Latin", u"abcd", false},
+        {"Hiragana", u"あいうえお", false},
+        {"HiraganaWithSpaces", u"あ い う え お", false},
+        {"Katakana", u"アイウエオ", true},
+        {"KatakanaWithSpaces", u"ア イ ウ エ オ", true},
+        {"Mixed", u"あアイウエオ", true},
+    }),
+    [](const testing::TestParamInfo<HasKatakanaCharacterTest::ParamType>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace data_util

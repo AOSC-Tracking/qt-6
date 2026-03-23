@@ -142,6 +142,12 @@
   If the default built-in keymap is not sufficient, you can specify a different
   one via the \c keymap parameter.
 
+  \note As with other configuration files for \c eglfs, these legacy keymap
+  files are considered trusted content that is fully controlled and managed by
+  the device or platform creator. They are not expected to be exposed to the
+  end-users of the device, and are not meant to allow the loading of
+  user-provided keymap files.
+
   \note Special system key combinations, such as console switching (\uicontrol{Ctrl+Alt+Fx}) or
   zap (\uicontrol{Ctrl+Alt+Backspace}) are not currently supported and are ignored.
 
@@ -224,6 +230,13 @@
   logging rule, for example by setting the \c QT_LOGGING_RULES environment variable to
   \c{qt.qpa.input=true}. This is useful for detecting which device is being used, or for
   troubleshooting device discovery issues.
+
+  For more detailed logging of input subsystems (mouse, keyboard, touch),
+  enable all input-related logging categories with:
+
+  \code
+  export QT_LOGGING_RULES="qt.qpa.input.*=true;qt.qpa.events=true"
+  \endcode
 
   \section2 Use Custom Mouse Cursor Images
 

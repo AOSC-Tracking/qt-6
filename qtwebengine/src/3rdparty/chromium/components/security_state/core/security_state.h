@@ -61,10 +61,8 @@ enum SecurityLevel {
   // HTTPS, but a certificate chain anchored to a root certificate installed
   // by the system administrator has been observed in this profile, suggesting
   // a MITM was present.
-  //
-  // TODO(crbug.com/40928765): remove this option, as it is unused on all
-  // platforms.
-  SECURE_WITH_POLICY_INSTALLED_CERT = 4,
+  // DEPRECATED: This behaviour no longer exists.
+  // SECURE_WITH_POLICY_INSTALLED_CERT = 4,
 
   // Attempted HTTPS and failed, page not authenticated, HTTPS with
   // insecure active content on the page, malware, phishing, or any other
@@ -174,6 +172,7 @@ struct VisibleSecurityState {
   // The following fields contain information about the connection
   // used to load the page or request.
   scoped_refptr<net::X509Certificate> certificate;
+  scoped_refptr<net::X509Certificate> two_qwac;
   net::CertStatus cert_status;
   int connection_status;
   // The ID of the (EC)DH group used by the key exchange. The value is zero if

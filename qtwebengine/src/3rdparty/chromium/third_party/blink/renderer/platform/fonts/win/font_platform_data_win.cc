@@ -34,6 +34,7 @@
 #include <windows.h>
 
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/web_test_support.h"
 #include "third_party/skia/include/core/SkFont.h"
 #include "third_party/skia/include/core/SkTypeface.h"
@@ -48,11 +49,6 @@ SkFont FontPlatformData::CreateSkFont(const FontDescription*) const {
 
   bool use_subpixel_rendering = style_.use_subpixel_rendering;
   bool use_anti_alias = style_.use_anti_alias;
-
-  if (RuntimeEnabledFeatures::DisableAhemAntialiasEnabled() && IsAhem()) {
-    use_subpixel_rendering = false;
-    use_anti_alias = false;
-  }
 
   if (use_subpixel_rendering) {
     font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
@@ -86,7 +82,8 @@ WebFontRenderStyle FontPlatformData::QuerySystemForRenderStyle() {
   style.use_anti_alias = 0;
   style.use_subpixel_rendering = 0;
 
-  if (WebTestSupport::IsRunningWebTest()) {
+  if (WebTestSupport::IsRunningWebTest() ||
+      RuntimeEnabledFeatures::NoFontAntialiasingEnabled()) {
     if (WebTestSupport::IsFontAntialiasingEnabledForTest()) {
       style.use_anti_alias = 1;
     }

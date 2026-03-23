@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/check_deref.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/notreached.h"
@@ -20,6 +21,7 @@
 #include "content/browser/compute_pressure/web_contents_pressure_manager_proxy.h"
 #include "content/browser/device_posture/device_posture_provider_impl.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
+#include "content/browser/devtools/protocol/emulation.h"
 #include "content/browser/generic_sensor/web_contents_sensor_provider_proxy.h"
 #include "content/browser/idle/idle_manager_impl.h"
 #include "content/browser/renderer_host/input/touch_emulator_impl.h"
@@ -488,10 +490,23 @@ Response EmulationHandler::SetPressureSourceOverrideEnabled(
 #endif  // BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
 }
 
+// TODO: Remove obsolete method.
+// `SetPressureStateOverride` will be replaced by SetPressureDataOverride.
+// The method UpdateVirtualPressureSourceState called previously
+// was removed in //content.
 void EmulationHandler::SetPressureStateOverride(
     const Emulation::PressureSource& source,
     const Emulation::PressureState& state,
     std::unique_ptr<SetPressureStateOverrideCallback> callback) {
+  callback->sendFailure(Response::InternalError());
+  return;
+}
+
+void EmulationHandler::SetPressureDataOverride(
+    const Emulation::PressureSource& source,
+    const Emulation::PressureState& state,
+    std::optional<double> own_contribution_estimate,
+    std::unique_ptr<SetPressureDataOverrideCallback> callback) {
   if (!host_) {
     callback->sendFailure(Response::InternalError());
     return;
@@ -516,9 +531,10 @@ void EmulationHandler::SetPressureStateOverride(
         Response::InvalidParams(kPressureSourceIsNotOverridden));
     return;
   }
-  it->second->UpdateVirtualPressureSourceState(
-      mojo_state, base::BindOnce(&SetPressureStateOverrideCallback::sendSuccess,
-                                 std::move(callback)));
+  it->second->UpdateVirtualPressureSourceData(
+      mojo_state, own_contribution_estimate.value_or(0.0),
+      base::BindOnce(&SetPressureDataOverrideCallback::sendSuccess,
+                     std::move(callback)));
 #else
   callback->sendFailure(Response::InternalError());
 #endif  // BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
@@ -542,7 +558,12 @@ Response EmulationHandler::ClearIdleOverride() {
 Response EmulationHandler::SetGeolocationOverride(
     std::optional<double> latitude,
     std::optional<double> longitude,
-    std::optional<double> accuracy) {
+    std::optional<double> accuracy,
+    std::optional<double> altitude,
+    std::optional<double> altitude_accuracy,
+    std::optional<double> heading,
+    std::optional<double> speed
+) {
   if (!host_)
     return Response::InternalError();
 
@@ -553,6 +574,18 @@ Response EmulationHandler::SetGeolocationOverride(
     position->latitude = latitude.value();
     position->longitude = longitude.value();
     position->accuracy = accuracy.value();
+    if (altitude.has_value()) {
+      position->altitude = altitude.value();
+    }
+    if (altitude_accuracy.has_value()) {
+      position->altitude_accuracy = altitude_accuracy.value();
+    }
+    if (heading.has_value()) {
+      position->heading = heading.value();
+    }
+    if (speed.has_value()) {
+      position->speed = speed.value();
+    }
     position->timestamp = base::Time::Now();
     if (!device::ValidateGeoposition(*position)) {
       return Response::ServerError("Invalid geolocation");
@@ -925,6 +958,14 @@ Response EmulationHandler::SetUserAgentOverride(
     new_ua_metadata.wow64 = default_ua_metadata.wow64;
   }
 
+  for (const auto& form_factor :
+       *ua_metadata.GetFormFactors(&default_ua_metadata.form_factors)) {
+    if (!ValidateClientHintString(form_factor)) {
+      return Response::InvalidParams("Invalid form factor string");
+    }
+    new_ua_metadata.form_factors.push_back(form_factor);
+  }
+
   // All checks OK, can update user_agent_metadata_.
   user_agent_metadata_.emplace(std::move(new_ua_metadata));
   return Response::FallThrough();
@@ -1081,6 +1122,65 @@ Response EmulationHandler::ClearDevicePostureOverride() {
         ->GetDevicePostureProvider()
         ->DisableDevicePostureOverrideForEmulation();
   }
+  return Response::Success();
+}
+
+Response EmulationHandler::SetDisplayFeaturesOverride(
+    std::unique_ptr<protocol::Array<protocol::Emulation::DisplayFeature>>
+        features) {
+  if (!host_->GetView()) {
+    return Response::InternalError();
+  }
+
+  // TODO(crbug.com/40113439): Chromium only supports one display feature at the
+  // moment.
+  if (features->size() > 1) {
+    return Response::InvalidParams("Only one display feature is supported");
+  }
+  protocol::Emulation::DisplayFeature& emu_display_feature =
+      CHECK_DEREF(features->front().get());
+  std::optional<content::DisplayFeature::Orientation> disp_orientation =
+      DisplayFeatureOrientationTypeFromString(
+          emu_display_feature.GetOrientation());
+  if (!disp_orientation) {
+    return Response::InvalidParams("Invalid display feature orientation type");
+  }
+  content::DisplayFeature::ParamErrorEnum error;
+  const gfx::Size viewport_size = host_->GetView()->GetVisibleViewportSize();
+  std::optional<content::DisplayFeature> content_display_feature =
+      content::DisplayFeature::Create(
+          *disp_orientation, emu_display_feature.GetOffset(),
+          emu_display_feature.GetMaskLength(), viewport_size.width(),
+          viewport_size.height(), &error);
+
+  if (!content_display_feature) {
+    switch (error) {
+      case content::DisplayFeature::ParamErrorEnum::
+          kDisplayFeatureWithZeroScreenSize:
+        return Response::InvalidParams(
+            "Cannot specify a display feature with zero width and height");
+      case content::DisplayFeature::ParamErrorEnum::
+          kNegativeDisplayFeatureParams:
+        return Response::InvalidParams("Negative display feature parameters");
+      case content::DisplayFeature::ParamErrorEnum::kOutsideScreenWidth:
+        return Response::InvalidParams(
+            "Display feature viewport segments outside screen width");
+      case content::DisplayFeature::ParamErrorEnum::kOutsideScreenHeight:
+        return Response::InvalidParams(
+            "Display feature viewport segments outside screen height");
+    }
+  }
+
+  host_->GetView()->OverrideDisplayFeatureForEmulation(
+      &content_display_feature.value());
+  return Response::Success();
+}
+
+Response EmulationHandler::ClearDisplayFeaturesOverride() {
+  if (!host_->GetView()) {
+    return Response::InternalError();
+  }
+  host_->GetView()->DisableDisplayFeatureOverrideForEmulation();
   return Response::Success();
 }
 

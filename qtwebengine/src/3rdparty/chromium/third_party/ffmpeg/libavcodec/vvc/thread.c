@@ -283,6 +283,13 @@ static void add_progress_listener(VVCFrame *ref, ProgressListener *l,
     ff_vvc_add_progress_listener(ref, (VVCProgressListener*)l);
 }
 
+static void ep_init_wpp(EntryPoint *next, const EntryPoint *ep, const VVCSPS *sps)
+{
+    memcpy(next->cabac_state, ep->cabac_state, sizeof(next->cabac_state));
+    memcpy(next->pp, ep->pp, sizeof(next->pp));
+    ff_vvc_ep_init_stat_coeff(next, sps->bit_depth, sps->r->sps_persistent_rice_adaptation_enabled_flag);
+}
+
 static void schedule_next_parse(VVCContext *s, VVCFrameContext *fc, const SliceContext *sc, const VVCTask *t)
 {
     VVCFrameThread *ft = fc->ft;
@@ -292,10 +299,8 @@ static void schedule_next_parse(VVCContext *s, VVCFrameContext *fc, const SliceC
     if (sps->r->sps_entropy_coding_sync_enabled_flag) {
         if (t->rx == fc->ps.pps->ctb_to_col_bd[t->rx]) {
             EntryPoint *next = ep + 1;
-            if (next < sc->eps + sc->nb_eps && !is_first_row(fc, t->rx, t->ry + 1)) {
-                memcpy(next->cabac_state, ep->cabac_state, sizeof(next->cabac_state));
-                ff_vvc_ep_init_stat_coeff(next, sps->bit_depth, sps->r->sps_persistent_rice_adaptation_enabled_flag);
-            }
+            if (next < sc->eps + sc->nb_eps && !is_first_row(fc, t->rx, t->ry + 1))
+                ep_init_wpp(next, ep, sps);
         }
         if (t->ry + 1 < ft->ctu_height && !is_first_row(fc, t->rx, t->ry + 1))
             frame_thread_add_score(s, ft, t->rx, t->ry + 1, VVC_TASK_STAGE_PARSE);
@@ -601,8 +606,6 @@ static int run_alf(VVCContext *s, VVCLocalContext *lc, VVCTask *t)
     return 0;
 }
 
-#define VVC_THREAD_DEBUG
-#ifdef VVC_THREAD_DEBUG
 const static char* task_name[] = {
     "INIT",
     "P",
@@ -615,7 +618,6 @@ const static char* task_name[] = {
     "S",
     "A"
 };
-#endif
 
 typedef int (*run_func)(VVCContext *s, VVCLocalContext *lc, VVCTask *t);
 
@@ -638,9 +640,7 @@ static void task_run_stage(VVCTask *t, VVCContext *s, VVCLocalContext *lc)
         run_alf,
     };
 
-#ifdef VVC_THREAD_DEBUG
-    av_log(s->avctx, AV_LOG_DEBUG, "frame %5d, %s(%3d, %3d)\r\n", (int)t->fc->decode_order, task_name[stage], t->rx, t->ry);
-#endif
+    ff_dlog(s->avctx, "frame %5d, %s(%3d, %3d)\r\n", (int)t->fc->decode_order, task_name[stage], t->rx, t->ry);
 
     lc->sc = t->sc;
 
@@ -846,8 +846,6 @@ int ff_vvc_frame_wait(VVCContext *s, VVCFrameContext *fc)
     ff_mutex_unlock(&ft->lock);
     ff_vvc_report_frame_finished(fc->ref);
 
-#ifdef VVC_THREAD_DEBUG
-    av_log(s->avctx, AV_LOG_DEBUG, "frame %5d done\r\n", (int)fc->decode_order);
-#endif
+    ff_dlog(s->avctx, "frame %5d done\r\n", (int)fc->decode_order);
     return ft->ret;
 }

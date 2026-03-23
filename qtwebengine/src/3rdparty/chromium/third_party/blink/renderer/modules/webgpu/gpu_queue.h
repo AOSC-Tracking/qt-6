@@ -14,7 +14,7 @@
 #include "third_party/blink/renderer/core/typed_arrays/array_buffer_view_helpers.h"
 #include "third_party/blink/renderer/modules/webgpu/dawn_object.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
-#include "third_party/blink/renderer/platform/graphics/graphics_types.h"
+#include "third_party/blink/renderer/platform/graphics/predefined_color_space.h"
 
 namespace blink {
 
@@ -22,9 +22,9 @@ class ExceptionState;
 class GPUBuffer;
 class GPUCommandBuffer;
 class GPUImageCopyExternalImage;
-class GPUImageCopyTexture;
 class GPUImageCopyTextureTagged;
-class GPUImageDataLayout;
+class GPUTexelCopyBufferLayout;
+class GPUTexelCopyTextureInfo;
 class ScriptState;
 class StaticBitmapImage;
 struct ExternalTextureSource;
@@ -38,7 +38,7 @@ class GPUQueue : public DawnObject<wgpu::Queue> {
   GPUQueue(const GPUQueue&) = delete;
   GPUQueue& operator=(const GPUQueue&) = delete;
 
-  // gpu_queue.idl
+  // gpu_queue.idl {{{
   void submit(ScriptState* script_state,
               const HeapVector<Member<GPUCommandBuffer>>& buffers);
   ScriptPromise<IDLUndefined> onSubmittedWorkDone(ScriptState* script_state);
@@ -69,35 +69,36 @@ class GPUQueue : public DawnObject<wgpu::Queue> {
                    uint64_t byte_size,
                    ExceptionState& exception_state);
   void writeTexture(ScriptState* script_state,
-                    GPUImageCopyTexture* destination,
+                    GPUTexelCopyTextureInfo* destination,
                     const MaybeShared<DOMArrayBufferView>& data,
-                    GPUImageDataLayout* data_layout,
+                    GPUTexelCopyBufferLayout* data_layout,
                     const V8GPUExtent3D* write_size,
                     ExceptionState& exception_state);
   void writeTexture(ScriptState* script_state,
-                    GPUImageCopyTexture* destination,
+                    GPUTexelCopyTextureInfo* destination,
                     const DOMArrayBufferBase* data,
-                    GPUImageDataLayout* data_layout,
+                    GPUTexelCopyBufferLayout* data_layout,
                     const V8GPUExtent3D* write_size,
                     ExceptionState& exception_state);
   void copyExternalImageToTexture(GPUImageCopyExternalImage* copyImage,
                                   GPUImageCopyTextureTagged* destination,
                                   const V8GPUExtent3D* copySize,
                                   ExceptionState& exception_state);
+  // }}} End of WebIDL binding implementation.
 
  private:
   void CopyFromVideoElement(const ExternalTextureSource source,
                             const wgpu::Extent2D& video_frame_natural_size,
                             const wgpu::Origin2D& origin,
                             const wgpu::Extent3D& copy_size,
-                            const wgpu::ImageCopyTexture& destination,
+                            const wgpu::TexelCopyTextureInfo& destination,
                             bool dst_premultiplied_alpha,
                             PredefinedColorSpace dst_color_space,
                             bool flipY);
   bool CopyFromCanvasSourceImage(StaticBitmapImage* image,
                                  const wgpu::Origin2D& origin,
                                  const wgpu::Extent3D& copy_size,
-                                 const wgpu::ImageCopyTexture& destination,
+                                 const wgpu::TexelCopyTextureInfo& destination,
                                  bool dst_premultiplied_alpha,
                                  PredefinedColorSpace dst_color_space,
                                  bool flipY);
@@ -110,13 +111,13 @@ class GPUQueue : public DawnObject<wgpu::Queue> {
                        std::optional<uint64_t> byte_size,
                        ExceptionState& exception_state);
   void WriteTextureImpl(ScriptState* script_state,
-                        GPUImageCopyTexture* destination,
+                        GPUTexelCopyTextureInfo* destination,
                         base::span<const uint8_t> data,
-                        GPUImageDataLayout* data_layout,
+                        GPUTexelCopyBufferLayout* data_layout,
                         const V8GPUExtent3D* write_size,
                         ExceptionState& exception_state);
 
-  void setLabelImpl(const String& value) override {
+  void SetLabelImpl(const String& value) override {
     std::string utf8_label = value.Utf8();
     GetHandle().SetLabel(utf8_label.c_str());
   }

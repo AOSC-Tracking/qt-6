@@ -428,7 +428,7 @@ BASE_EXPORT bool CreateTemporaryFileInDir(const FilePath& dir,
 // Returns the file name for a temporary file by using a platform-specific
 // naming scheme that incorporates |identifier|.
 BASE_EXPORT FilePath
-FormatTemporaryFileName(FilePath::StringPieceType identifier);
+FormatTemporaryFileName(FilePath::StringViewType identifier);
 
 // Create and open a temporary file stream for exclusive read, write, and delete
 // access. The full path is placed in `path`. Returns the opened file stream, or
@@ -463,14 +463,17 @@ BASE_EXPORT bool CreateNewTempDirectory(const FilePath::StringType& prefix,
 // Extra characters will be appended to |prefix| to ensure that the
 // new directory does not have the same name as an existing directory.
 BASE_EXPORT bool CreateTemporaryDirInDir(const FilePath& base_dir,
-                                         FilePath::StringPieceType prefix,
+                                         FilePath::StringViewType prefix,
                                          FilePath* new_dir);
 
-// Creates a directory, as well as creating any parent directories, if they
-// don't exist. Returns 'true' on successful creation, or if the directory
-// already exists.  The directory is only readable by the current user.
-// Returns true on success, leaving *error unchanged.
-// Returns false on failure and sets *error appropriately, if it is non-NULL.
+// Ensures a directory exists, if necessary, creating it and parent directories.
+// Returns true if the directory already existed or was created, leaving *error
+// unchanged.
+// Returns false on failure and sets *error appropriately if it is non-NULL.
+//
+// The created directories can only be accessed by the current user, except on
+// ChromeOS, where the directories created under `~/MyFiles` or `/media` can
+// also be accessed by ChromeOS services.
 BASE_EXPORT bool CreateDirectoryAndGetError(const FilePath& full_path,
                                             File::Error* error);
 
@@ -485,18 +488,20 @@ BASE_EXPORT OnceCallback<std::optional<int64_t>()> GetFileSizeCallback(
     const FilePath& path);
 
 // Sets |real_path| to |path| with symbolic links and junctions expanded.
-// On Windows, the function ensures that the resulting |real_path| starts with a
-// drive letter.
 //
 // The |path| parameter can reference either a file or a directory. The function
-// will fail if |path| points to a nonexistent path or to a volume that isn't
-// mapped to a drive letter on Windows.
+// will fail if |path| points to a nonexistent path.
 //
 // In addition, on Windows this function will fail if the resulting |real_path|
 // would exceed 'MAX_PATH' characters in length.
 BASE_EXPORT bool NormalizeFilePath(const FilePath& path, FilePath* real_path);
 
 #if BUILDFLAG(IS_WIN)
+
+// Removes the Windows extended-length path prefix from a prefixed path.
+// Exported for testing. Refer to the function implementation for details.
+BASE_EXPORT FilePath
+RemoveWindowsExtendedPathPrefixForTesting(std::wstring_view prefixed_path);
 
 // Given a path in NT native form ("\Device\HarddiskVolumeXX\..."),
 // return in |drive_letter_path| the equivalent path that starts with
@@ -725,6 +730,19 @@ BASE_EXPORT int GetMaximumPathComponentLength(const base::FilePath& path);
 // you intend to create executable shmem segments so this function can find
 // an appropriate location.
 BASE_EXPORT bool GetShmemTempDir(bool executable, FilePath* path);
+#endif
+
+#if BUILDFLAG(IS_ANDROID)
+// Resolves this FilePath to a content URI if it represents a virtual
+// document path or is already a content URI. Returns std::nullopt otherwise.
+BASE_EXPORT std::optional<FilePath> ResolveToContentUri(const FilePath& path);
+
+// Resolves this FilePath to a virtual document path if it's a content URI
+// representing a document tree or is already a virtual document path. Returns
+// std::nullopt otherwise.
+BASE_EXPORT std::optional<FilePath> ResolveToVirtualDocumentPath(
+    const FilePath& path);
+
 #endif
 
 // Internal --------------------------------------------------------------------

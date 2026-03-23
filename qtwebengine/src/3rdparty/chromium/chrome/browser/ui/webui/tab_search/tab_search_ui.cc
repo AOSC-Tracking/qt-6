@@ -15,9 +15,11 @@
 #include "chrome/browser/ui/tabs/organization/tab_organization_utils.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
+#include "chrome/browser/ui/webui/metrics_reporter/metrics_reporter_service.h"
 #include "chrome/browser/ui/webui/plural_string_handler.h"
 #include "chrome/browser/ui/webui/tab_search/tab_search_prefs.h"
 #include "chrome/browser/ui/webui/tab_search/tab_search_sync_handler.h"
+#include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/tab_search_resources.h"
 #include "chrome/grit/tab_search_resources_map.h"
@@ -33,6 +35,10 @@
 #include "ui/views/style/platform_style.h"
 #include "ui/webui/color_change_listener/color_change_handler.h"
 #include "ui/webui/webui_util.h"
+
+#if BUILDFLAG(ENABLE_GLIC)
+#include "chrome/browser/glic/resources/grit/glic_browser_resources.h"
+#endif
 
 TabSearchUIConfig::TabSearchUIConfig()
     : DefaultTopChromeWebUIConfig(content::kChromeUIScheme,
@@ -171,6 +177,11 @@ TabSearchUI::TabSearchUI(content::WebUI* web_ui)
       {"backButtonAriaLabel", IDS_TAB_ORGANIZATION_BACK_BUTTON_ARIA_LABEL},
       {"declutterSelectorSubheading", IDS_DECLUTTER_SELECTOR_SUBHEADING},
       {"selectorAriaLabel", IDS_TAB_ORGANIZATION_SELECTOR_ARIA_LABEL},
+      // Split view new tab page strings
+      {"splitViewEmptyBody", IDS_SPLIT_VIEW_NTP_EMPTY_BODY},
+      {"splitViewEmptyTitle", IDS_SPLIT_VIEW_NTP_EMPTY_TITLE},
+      {"splitViewTabTitle", IDS_SPLIT_VIEW_NTP_TAB_TITLE},
+      {"splitViewTitle", IDS_SPLIT_VIEW_NTP_TITLE},
   };
   source->AddLocalizedStrings(kStrings);
   source->AddBoolean("useRipples", views::PlatformStyle::kUseRipples);
@@ -202,6 +213,13 @@ TabSearchUI::TabSearchUI(content::WebUI* web_ui)
       features::IsTabstripDeclutterEnabled() && !profile->IsIncognitoProfile());
   source->AddBoolean("dedupeEnabled", features::IsTabstripDedupeEnabled() &&
                                           !profile->IsIncognitoProfile());
+  source->AddBoolean("splitViewEnabled",
+                     base::FeatureList::IsEnabled(features::kSideBySide));
+
+#if BUILDFLAG(ENABLE_GLIC)
+  source->AddResourcePath("alert_indicators/tab_media_glic_active.svg",
+                          IDR_GLIC_TAB_MEDIA_GLIC_ACTIVE);
+#endif
 
   ui::Accelerator accelerator(ui::VKEY_A,
                               ui::EF_SHIFT_DOWN | ui::EF_PLATFORM_ACCELERATOR);
@@ -212,6 +230,7 @@ TabSearchUI::TabSearchUI(content::WebUI* web_ui)
   source->AddString(
       "declutterInactiveBody",
       l10n_util::GetStringFUTF16(IDS_DECLUTTER_INACTIVE_BODY, u"7"));
+  source->AddString("newTabPageUrl", chrome::kChromeUINewTabPageURL);
 
   webui::SetupWebUIDataSource(source, kTabSearchResources,
                               IDR_TAB_SEARCH_TAB_SEARCH_HTML);
@@ -252,11 +271,6 @@ void TabSearchUI::BindInterface(
   page_factory_receiver_.Bind(std::move(receiver));
 }
 
-void TabSearchUI::BindInterface(
-    mojo::PendingReceiver<metrics_reporter::mojom::PageMetricsHost> receiver) {
-  metrics_reporter_.BindInterface(std::move(receiver));
-}
-
 void TabSearchUI::CreatePageHandler(
     mojo::PendingRemote<tab_search::mojom::Page> page,
     mojo::PendingReceiver<tab_search::mojom::PageHandler> receiver) {
@@ -274,10 +288,14 @@ void TabSearchUI::CreatePageHandler(
     page_handler_timer_.reset();
   }
 
+  MetricsReporterService* service =
+      MetricsReporterService::GetFromWebContents(web_ui()->GetWebContents());
+
   // TODO(tluk): Investigate whether we can avoid recreating this multiple times
   // per instance of the TabSearchUI.
   page_handler_ = std::make_unique<TabSearchPageHandler>(
-      std::move(receiver), std::move(page), web_ui(), this, &metrics_reporter_);
+      std::move(receiver), std::move(page), web_ui(), this,
+      service->metrics_reporter());
 
   if (!page_handler_creation_callback_.is_null()) {
     std::move(page_handler_creation_callback_).Run();

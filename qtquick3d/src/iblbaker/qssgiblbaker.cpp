@@ -1,5 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qssgiblbaker_p.h"
 #include <QFile>
@@ -544,7 +546,8 @@ QString renderToKTXFileInternal(const char *name, const QString &inPath, const Q
             // Read back texture
             Q_ASSERT(rhi->isRecordingFrame());
 
-            const auto texture = renderTarget->description().cbeginColorAttachments()->texture();
+            const auto descr = renderTarget->description();
+            const auto texture = descr.cbeginColorAttachments()->texture();
 
             QRhiReadbackResult result;
             QRhiReadbackDescription readbackDesc(texture); // null src == read from swapchain backbuffer

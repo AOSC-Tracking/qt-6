@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/navigation_transitions/navigation_transition_utils.h"
 
+#include "base/time/time.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "content/browser/compositor/surface_utils.h"
@@ -445,6 +446,18 @@ bool NavigationTransitionUtils::
   // meaning we will capture at full-size, unless specified by tests.
   const gfx::Size output_size = g_output_size_for_test;
 
+#if BUILDFLAG(IS_ANDROID)
+  static_cast<RenderWidgetHostViewBase*>(rwhv)
+      ->CopyFromExactSurfaceWithIpcDelay(
+          /*src_rect=*/gfx::Rect(), output_size,
+          base::BindOnce(
+              &CacheScreenshotImpl, navigation_controller.GetWeakPtr(),
+              navigation_request.GetWeakPtr(),
+              last_committed_entry->navigation_transition_data().unique_id(),
+              /*is_copied_from_embedder=*/false, request_sequence,
+              SupportsETC1NonPowerOfTwo(navigation_request)),
+          NavigationTransitionConfig::ScreenshotSendResultDelay());
+#else
   static_cast<RenderWidgetHostViewBase*>(rwhv)->CopyFromExactSurface(
       /*src_rect=*/gfx::Rect(), output_size,
       base::BindOnce(
@@ -453,6 +466,7 @@ bool NavigationTransitionUtils::
           last_committed_entry->navigation_transition_data().unique_id(),
           /*is_copied_from_embedder=*/false, request_sequence,
           SupportsETC1NonPowerOfTwo(navigation_request)));
+#endif
 
   ++g_num_copy_requests_issued_for_testing;
 

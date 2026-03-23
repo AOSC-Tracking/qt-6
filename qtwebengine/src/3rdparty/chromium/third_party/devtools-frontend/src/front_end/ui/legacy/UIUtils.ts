@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2011 Google Inc.  All rights reserved.
@@ -38,6 +39,7 @@ import './Toolbar.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Buttons from '../components/buttons/buttons.js';
 import * as IconButton from '../components/icon_button/icon_button.js';
@@ -53,15 +55,15 @@ import inlineButtonStyles from './inlineButton.css.js';
 import inspectorCommonStyles from './inspectorCommon.css.js';
 import {KeyboardShortcut, Keys} from './KeyboardShortcut.js';
 import smallBubbleStyles from './smallBubble.css.js';
-import * as ThemeSupport from './theme_support/theme_support.js';
 import type {ToolbarButton} from './Toolbar.js';
 import {Tooltip} from './Tooltip.js';
 import type {TreeOutline} from './Treeoutline.js';
 import {Widget} from './Widget.js';
+import type {XWidget} from './XWidget.js';
 
 declare global {
   interface HTMLElementTagNameMap {
-    'dt-checkbox': CheckboxLabel;
+    'devtools-checkbox': CheckboxLabel;
     'dt-close-button': DevToolsCloseButton;
     'dt-icon-label': DevToolsIconLabel;
     'dt-small-bubble': DevToolsSmallBubble;
@@ -113,7 +115,11 @@ const UIStrings = {
    *@description Text to cancel something
    */
   cancel: 'Cancel',
-};
+  /**
+   *@description Text for the new badge appearing next to some menu items
+   */
+  new: 'NEW',
+} as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/UIUtils.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -123,11 +129,11 @@ export const highlightedCurrentSearchResultClassName = 'current-search-result';
 export function installDragHandle(
     element: Element, elementDragStart: ((arg0: MouseEvent) => boolean)|null, elementDrag: (arg0: MouseEvent) => void,
     elementDragEnd: ((arg0: MouseEvent) => void)|null, cursor: string|null, hoverCursor?: string|null,
-    startDelay?: number): void {
+    startDelay?: number, mouseDownPreventDefault = true): void {
   function onMouseDown(event: Event): void {
     const dragHandler = new DragHandler();
-    const dragStart = (): void =>
-        dragHandler.elementDragStart(element, elementDragStart, elementDrag, elementDragEnd, cursor, event);
+    const dragStart = (): void => dragHandler.elementDragStart(
+        element, elementDragStart, elementDrag, elementDragEnd, cursor, event, mouseDownPreventDefault);
     if (startDelay) {
       startTimer = window.setTimeout(dragStart, startDelay);
     } else {
@@ -204,7 +210,7 @@ class DragHandler {
   elementDragStart(
       targetElement: Element, elementDragStart: ((arg0: MouseEvent) => boolean)|null,
       elementDrag: (arg0: MouseEvent) => void|boolean, elementDragEnd: ((arg0: MouseEvent) => void)|null,
-      cursor: string|null, ev: Event): void {
+      cursor: string|null, ev: Event, preventDefault = true): void {
     const event = (ev as MouseEvent);
     // Only drag upon left button. Right will likely cause a context menu. So will ctrl-click on mac.
     if (event.button || (Host.Platform.isMac() && event.ctrlKey)) {
@@ -215,7 +221,7 @@ class DragHandler {
       return;
     }
 
-    if (elementDragStart && !elementDragStart((event as MouseEvent))) {
+    if (elementDragStart && !elementDragStart((event))) {
       return;
     }
 
@@ -254,7 +260,10 @@ class DragHandler {
       targetHtmlElement.style.cursor = oldCursor;
       this.restoreCursorAfterDrag = undefined;
     }
-    event.preventDefault();
+
+    if (preventDefault) {
+      event.preventDefault();
+    }
   }
 
   private mouseOutWhileDragging(): void {
@@ -463,7 +472,8 @@ function modifiedHexValue(hexString: string, event: Event): string|null {
   return resultString;
 }
 
-export function modifiedFloatNumber(number: number, event: Event, modifierMultiplier?: number): number|null {
+export function modifiedFloatNumber(
+    number: number, event: Event, modifierMultiplier?: number, range?: {min?: number, max?: number}): number|null {
   const direction = getValueModificationDirection(event);
   if (!direction) {
     return null;
@@ -494,7 +504,13 @@ export function modifiedFloatNumber(number: number, event: Event, modifierMultip
 
   // Make the new number and constrain it to a precision of 6, this matches numbers the engine returns.
   // Use the Number constructor to forget the fixed precision, so 1.100000 will print as 1.1.
-  const result = Number((number + delta).toFixed(6));
+  let result = Number((number + delta).toFixed(6));
+  if (range?.min !== undefined) {
+    result = Math.max(result, range.min);
+  }
+  if (range?.max !== undefined) {
+    result = Math.min(result, range.max);
+  }
   if (!String(result).match(numberRegex)) {
     return null;
   }
@@ -503,13 +519,14 @@ export function modifiedFloatNumber(number: number, event: Event, modifierMultip
 
 export function createReplacementString(
     wordString: string, event: Event,
-    customNumberHandler?: ((arg0: string, arg1: number, arg2: string) => string)): string|null {
+    customNumberHandler?: ((prefix: string, number: number, suffix: string) => string),
+    stepping?: {step?: number, range?: {min?: number, max?: number}}): string|null {
   let prefix;
   let suffix;
   let number;
   let replacementString: string|null = null;
   let matches = /(.*#)([\da-fA-F]+)(.*)/.exec(wordString);
-  if (matches && matches.length) {
+  if (matches?.length) {
     prefix = matches[1];
     suffix = matches[3];
     number = modifiedHexValue(matches[2], event);
@@ -518,10 +535,10 @@ export function createReplacementString(
     }
   } else {
     matches = /(.*?)(-?(?:\d+(?:\.\d+)?|\.\d+))(.*)/.exec(wordString);
-    if (matches && matches.length) {
+    if (matches?.length) {
       prefix = matches[1];
       suffix = matches[3];
-      number = modifiedFloatNumber(parseFloat(matches[2]), event);
+      number = modifiedFloatNumber(parseFloat(matches[2]), event, stepping?.step, stepping?.range);
       if (number !== null) {
         replacementString =
             customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
@@ -553,7 +570,7 @@ export function handleElementValueModifications(
   void VisualLogging.logKeyDown(event.currentTarget, event, 'element-value-modification');
 
   const selection = element.getComponentSelection();
-  if (!selection || !selection.rangeCount) {
+  if (!selection?.rangeCount) {
     return false;
   }
 
@@ -567,7 +584,7 @@ export function handleElementValueModifications(
       selectionRange.startContainer, selectionRange.startOffset, StyleValueDelimiters, element);
   const wordString = wordRange.toString();
 
-  if (suggestionHandler && suggestionHandler(wordString)) {
+  if (suggestionHandler?.(wordString)) {
     return false;
   }
 
@@ -615,7 +632,7 @@ export function anotherProfilerActiveLabel(): string {
 }
 
 export function asyncStackTraceLabel(
-    description: string|undefined, previousCallFrames: {functionName: string}[]): string {
+    description: string|undefined, previousCallFrames: Array<{functionName: string}>): string {
   if (description) {
     if (description === 'Promise.resolve') {
       return i18nString(UIStrings.promiseResolvedAsync);
@@ -638,7 +655,8 @@ export function addPlatformClass(element: HTMLElement): void {
 }
 
 export function installComponentRootStyles(element: HTMLElement): void {
-  injectCoreStyles(element);
+  Platform.DOMUtilities.appendStyle(element, inspectorCommonStyles);
+  Platform.DOMUtilities.appendStyle(element, Buttons.textButtonStyles);
 
   // Detect overlay scrollbar enable by checking for nonzero scrollbar width.
   if (!Host.Platform.isMac() && measuredScrollbarWidth(element.ownerDocument) === 0) {
@@ -837,6 +855,7 @@ export function highlightRangesWithStyleClass(
   return highlightNodes;
 }
 
+// Used in chromium/src/third_party/blink/web_tests/http/tests/devtools/components/utilities-highlight-results.js
 export function applyDomChanges(domChanges: HighlightChange[]): void {
   for (let i = 0, size = domChanges.length; i < size; ++i) {
     const entry = domChanges[i];
@@ -883,7 +902,7 @@ export function measurePreferredSize(element: Element, containerElement?: Elemen
 }
 
 class InvokeOnceHandlers {
-  private handlers: Map<Object, Set<Function>>|null;
+  private handlers: Map<object, Set<(...args: any[]) => void>>|null;
   private readonly autoInvoke: boolean;
   constructor(autoInvoke: boolean) {
     this.handlers = null;
@@ -951,10 +970,10 @@ export function invokeOnceAfterBatchUpdate(object: Object, method: () => void): 
 }
 
 export function animateFunction(
-    window: Window, func: Function, params: {
+    window: Window, func: (...args: any[]) => void, params: Array<{
       from: number,
       to: number,
-    }[],
+    }>,
     duration: number, animationComplete?: (() => void)): () => void {
   const start = window.performance.now();
   let raf = window.requestAnimationFrame(animationStep);
@@ -1107,6 +1126,13 @@ export function createTextButton(text: string, clickHandler?: ((arg0: Event) => 
   button.variant = opts?.variant ? opts.variant : Buttons.Button.Variant.OUTLINED;
   if (clickHandler) {
     button.addEventListener('click', clickHandler);
+    button.addEventListener('keydown', (event: KeyboardEvent): void => {
+      if (event.key === 'Enter' || event.key === 'Space') {
+        // Make sure we don't propagate 'Enter' or 'Space' key events to parents,
+        // so that these get turned into 'click' events properly.
+        event.stopImmediatePropagation();
+      }
+    });
   }
   if (opts?.jslogContext) {
     button.setAttribute('jslog', `${VisualLogging.action().track({click: true}).context(opts.jslogContext)}`);
@@ -1176,7 +1202,8 @@ export function createHistoryInput(type = 'search', className?: string): HTMLInp
   }
 }
 
-export function createSelect(name: string, options: string[]|Map<string, string[]>[]|Set<string>): HTMLSelectElement {
+export function createSelect(
+    name: string, options: string[]|Array<Map<string, string[]>>|Set<string>): HTMLSelectElement {
   const select = document.createElement('select');
   ARIAUtils.setLabel(select, name);
   for (const option of options) {
@@ -1219,7 +1246,7 @@ export function createLabel(title: string, className?: string, associatedControl
 }
 
 export function createIconLabel(
-    options: {title?: string, iconName: string, color?: string, width?: '14px'|'20px', height?: '14px'|'20px'}):
+    options: {iconName: string, title?: string, color?: string, width?: '14px'|'20px', height?: '14px'|'20px'}):
     DevToolsIconLabel {
   const element = document.createElement('dt-icon-label');
   if (options.title) {
@@ -1250,9 +1277,9 @@ export function createIconLabel(
  * html`<label><input type="radio" name=${name} jslog=${jslog}>${title}</label>`
  * ```
  *
- * @param name the name of the radio group.
- * @param title the label text for the radio button.
- * @param jslogContext the context string for the `jslog` attribute.
+ * @param name - the name of the radio group.
+ * @param title - the label text for the radio button.
+ * @param jslogContext - the context string for the `jslog` attribute.
  * @returns the pair of `HTMLLabelElement` and `HTMLInputElement`.
  * @see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/radio
  */
@@ -1279,9 +1306,9 @@ export function createRadioButton(
  * html`<input type="range" min=${min} max=${max} tabindex=${tabIndex}>`
  * ```
  *
- * @param min the minimum allowed value.
- * @param max the maximum allowed value.
- * @param tabIndex the value for the `tabindex` attribute.
+ * @param min - the minimum allowed value.
+ * @param max - the maximum allowed value.
+ * @param tabIndex - the value for the `tabindex` attribute.
  * @returns the newly created `HTMLInputElement` for the slider.
  * @see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/range
  */
@@ -1300,55 +1327,139 @@ export function setTitle(element: HTMLElement, title: string): void {
 }
 
 export class CheckboxLabel extends HTMLElement {
-  private readonly shadowRootInternal!: DocumentFragment;
-  checkboxElement!: HTMLInputElement;
-  textElement!: HTMLElement;
+  static readonly observedAttributes = ['checked', 'disabled', 'indeterminate', 'name', 'title', 'aria-label'];
+
+  readonly #shadowRoot!: DocumentFragment;
+  #checkboxElement!: HTMLInputElement;
+  #textElement!: HTMLElement;
 
   constructor() {
     super();
     CheckboxLabel.lastId = CheckboxLabel.lastId + 1;
     const id = 'ui-checkbox-label' + CheckboxLabel.lastId;
-    this.shadowRootInternal = createShadowRootWithCoreStyles(this, {cssFile: checkboxTextLabelStyles});
-    this.checkboxElement = this.shadowRootInternal.createChild('input');
-    this.checkboxElement.type = 'checkbox';
-    this.checkboxElement.setAttribute('id', id);
-    this.textElement = this.shadowRootInternal.createChild('label', 'dt-checkbox-text');
-    this.textElement.setAttribute('for', id);
-    this.shadowRootInternal.createChild('slot');
+    this.#shadowRoot = createShadowRootWithCoreStyles(this, {cssFile: checkboxTextLabelStyles, delegatesFocus: true});
+    this.#checkboxElement = this.#shadowRoot.createChild('input');
+    this.#checkboxElement.type = 'checkbox';
+    this.#checkboxElement.setAttribute('id', id);
+    // Change event is not composable, so it doesn't bubble up through the shadow root.
+    this.#checkboxElement.addEventListener('change', () => this.dispatchEvent(new Event('change')));
+    this.#textElement = this.#shadowRoot.createChild('label', 'devtools-checkbox-text');
+    this.#textElement.setAttribute('for', id);
+    // Click events are composable, so both label and checkbox bubble up through the shadow root.
+    // However, clicking the label, also triggers the checkbox click, so we stop the label event
+    // propagation here to avoid duplicate events.
+    this.#textElement.addEventListener('click', e => e.stopPropagation());
+    this.#textElement.createChild('slot');
   }
 
   static create(
       title?: Platform.UIString.LocalizedString, checked?: boolean, subtitle?: Platform.UIString.LocalizedString,
       jslogContext?: string, small?: boolean): CheckboxLabel {
-    const element = document.createElement('dt-checkbox');
-    element.checkboxElement.checked = Boolean(checked);
+    const element = document.createElement('devtools-checkbox');
+    element.#checkboxElement.checked = Boolean(checked);
     if (jslogContext) {
-      element.checkboxElement.setAttribute(
+      element.#checkboxElement.setAttribute(
           'jslog', `${VisualLogging.toggle().track({change: true}).context(jslogContext)}`);
     }
     if (title !== undefined) {
-      element.textElement.textContent = title;
-      element.checkboxElement.title = title;
+      element.#textElement.textContent = title;
+      element.#checkboxElement.title = title;
       if (subtitle !== undefined) {
-        element.textElement.createChild('div', 'dt-checkbox-subtitle').textContent = subtitle;
+        element.#textElement.createChild('div', 'devtools-checkbox-subtitle').textContent = subtitle;
       }
     }
-    element.checkboxElement.classList.toggle('small', small);
+    element.#checkboxElement.classList.toggle('small', small);
     return element;
   }
 
+  attributeChangedCallback(name: string, _oldValue: string|null, newValue: string|null): void {
+    if (name === 'checked') {
+      this.#checkboxElement.checked = newValue !== null;
+    } else if (name === 'disabled') {
+      this.#checkboxElement.disabled = newValue !== null;
+    } else if (name === 'indeterminate') {
+      this.#checkboxElement.indeterminate = newValue !== null;
+    } else if (name === 'name') {
+      this.#checkboxElement.name = newValue ?? '';
+    } else if (name === 'title') {
+      this.#checkboxElement.title = newValue ?? '';
+      this.#textElement.title = newValue ?? '';
+    } else if (name === 'aria-label') {
+      this.#checkboxElement.ariaLabel = newValue;
+    }
+  }
+
+  getLabelText(): string|null {
+    return this.#textElement.textContent;
+  }
+
+  setLabelText(content: string): void {
+    this.#textElement.textContent = content;
+  }
+
+  override get ariaLabel(): string|null {
+    return this.#checkboxElement.ariaLabel;
+  }
+
+  override set ariaLabel(ariaLabel: string) {
+    this.setAttribute('aria-label', ariaLabel);
+  }
+
+  get checked(): boolean {
+    return this.#checkboxElement.checked;
+  }
+
+  set checked(checked: boolean) {
+    this.toggleAttribute('checked', checked);
+  }
+
+  set disabled(disabled: boolean) {
+    this.toggleAttribute('disabled', disabled);
+  }
+
+  get disabled(): boolean {
+    return this.#checkboxElement.disabled;
+  }
+
+  set indeterminate(indeterminate: boolean) {
+    this.toggleAttribute('indeterminate', indeterminate);
+  }
+
+  get indeterminate(): boolean {
+    return this.#checkboxElement.indeterminate;
+  }
+
+  override set title(title: string) {
+    this.setAttribute('title', title);
+  }
+
+  override get title(): string {
+    return this.#checkboxElement.title;
+  }
+
+  set name(name: string) {
+    this.setAttribute('name', name);
+  }
+
+  get name(): string {
+    return this.#checkboxElement.name;
+  }
+
+  override click(): void {
+    this.#checkboxElement.click();
+  }
+
   /** Only to be used when the checkbox label is 'generated' (a regex, a className, etc). Most checkboxes should be create()'d with UIStrings */
-  static createWithStringLiteral(
-      title?: string, checked?: boolean, subtitle?: Platform.UIString.LocalizedString, jslogContext?: string,
-      small?: boolean): CheckboxLabel {
+  static createWithStringLiteral(title?: string, checked?: boolean, jslogContext?: string, small?: boolean):
+      CheckboxLabel {
     const stringLiteral = title as Platform.UIString.LocalizedString;
-    return CheckboxLabel.create(stringLiteral, checked, subtitle, jslogContext, small);
+    return CheckboxLabel.create(stringLiteral, checked, undefined, jslogContext, small);
   }
 
   private static lastId = 0;
 }
 
-customElements.define('dt-checkbox', CheckboxLabel);
+customElements.define('devtools-checkbox', CheckboxLabel);
 
 export class DevToolsIconLabel extends HTMLElement {
   readonly #icon: IconButton.Icon.Icon;
@@ -1425,16 +1536,17 @@ export class DevToolsCloseButton extends HTMLElement {
       this.#button.tabIndex = -1;
     }
   }
+
+  override focus(): void {
+    this.#button.focus();
+  }
 }
 
 customElements.define('dt-close-button', DevToolsCloseButton);
 
 export function bindInput(
-    input: HTMLInputElement, apply: (arg0: string) => void, validate: (arg0: string) => {
-      valid: boolean,
-      errorMessage: (string | undefined),
-    },
-    numeric: boolean, modifierMultiplier?: number): (arg0: string) => void {
+    input: HTMLInputElement, apply: (arg0: string) => void, validate: (arg0: string) => boolean, numeric: boolean,
+    modifierMultiplier?: number): (arg0: string) => void {
   input.addEventListener('change', onChange, false);
   input.addEventListener('input', onInput, false);
   input.addEventListener('keydown', onKeyDown, false);
@@ -1445,7 +1557,7 @@ export function bindInput(
   }
 
   function onChange(): void {
-    const {valid} = validate(input.value);
+    const valid = validate(input.value);
     input.classList.toggle('error-input', !valid);
     if (valid) {
       apply(input.value);
@@ -1454,7 +1566,7 @@ export function bindInput(
 
   function onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Enter') {
-      const {valid} = validate(input.value);
+      const valid = validate(input.value);
       if (valid) {
         apply(input.value);
       }
@@ -1471,7 +1583,7 @@ export function bindInput(
       return;
     }
     const stringValue = String(value);
-    const {valid} = validate(stringValue);
+    const valid = validate(stringValue);
     if (valid) {
       setValue(stringValue);
     }
@@ -1482,7 +1594,7 @@ export function bindInput(
     if (value === input.value) {
       return;
     }
-    const {valid} = validate(value);
+    const valid = validate(value);
     input.classList.toggle('error-input', !valid);
     input.value = value;
   }
@@ -1557,34 +1669,6 @@ export function measureTextWidth(context: CanvasRenderingContext2D, text: string
 
 let measureTextWidthCache: Map<string, Map<string, number>>|null = null;
 
-/**
- * Adds a 'utm_source=devtools' as query parameter to the url.
- */
-export function addReferrerToURL(url: Platform.DevToolsPath.UrlString): Platform.DevToolsPath.UrlString {
-  if (/(\?|&)utm_source=devtools/.test(url)) {
-    return url;
-  }
-  if (url.indexOf('?') === -1) {
-    // If the URL does not contain a query, add the referrer query after path
-    // and before (potential) anchor.
-    return url.replace(/^([^#]*)(#.*)?$/g, '$1?utm_source=devtools$2') as Platform.DevToolsPath.UrlString;
-  }
-  // If the URL already contains a query, add the referrer query after the last query
-  // and before (potential) anchor.
-  return url.replace(/^([^#]*)(#.*)?$/g, '$1&utm_source=devtools$2') as Platform.DevToolsPath.UrlString;
-}
-
-/**
- * We want to add a referrer query param to every request to
- * 'web.dev' or 'developers.google.com'.
- */
-export function addReferrerToURLIfNecessary(url: Platform.DevToolsPath.UrlString): Platform.DevToolsPath.UrlString {
-  if (/(\/\/developers.google.com\/|\/\/web.dev\/|\/\/developer.chrome.com\/)/.test(url)) {
-    return addReferrerToURL(url);
-  }
-  return url;
-}
-
 export function loadImage(url: string): Promise<HTMLImageElement|null> {
   return new Promise(fulfill => {
     const image = new Image();
@@ -1622,7 +1706,7 @@ export function createFileSelectorElement(callback: (arg0: File) => void, accept
 export const MaxLengthForDisplayedURLs = 150;
 
 export class MessageDialog {
-  static async show(message: string, where?: Element|Document, jslogContext?: string): Promise<void> {
+  static async show(header: string, message: string, where?: Element|Document, jslogContext?: string): Promise<void> {
     const dialog = new Dialog(jslogContext);
     dialog.setSizeBehavior(SizeBehavior.MEASURE_CONTENT);
     dialog.setDimmed(true);
@@ -1631,6 +1715,7 @@ export class MessageDialog {
     await new Promise(resolve => {
       const okButton = createTextButton(
           i18nString(UIStrings.ok), resolve, {jslogContext: 'confirm', variant: Buttons.Button.Variant.PRIMARY});
+      content.createChild('span', 'header').textContent = header;
       content.createChild('div', 'message').createChild('span').textContent = message;
       content.createChild('div', 'button').appendChild(okButton);
       dialog.setOutsideClickCallback(event => {
@@ -1645,13 +1730,17 @@ export class MessageDialog {
 }
 
 export class ConfirmDialog {
-  static async show(message: string, where?: Element|Document, options?: ConfirmDialogOptions): Promise<boolean> {
+  static async show(message: string, header?: string, where?: Element|Document, options?: ConfirmDialogOptions):
+      Promise<boolean> {
     const dialog = new Dialog(options?.jslogContext);
     dialog.setSizeBehavior(SizeBehavior.MEASURE_CONTENT);
     dialog.setDimmed(true);
     ARIAUtils.setLabel(dialog.contentElement, message);
     const shadowRoot = createShadowRootWithCoreStyles(dialog.contentElement, {cssFile: confirmDialogStyles});
     const content = shadowRoot.createChild('div', 'widget');
+    if (header) {
+      content.createChild('span', 'header').textContent = header;
+    }
     content.createChild('div', 'message').createChild('span').textContent = message;
     const buttonsBar = content.createChild('div', 'button');
     const result = await new Promise<boolean>(resolve => {
@@ -1700,7 +1789,7 @@ export abstract class Renderer {
       return null;
     }
     const renderer = await extension.loadRenderer();
-    return renderer.render(object, options);
+    return await renderer.render(object, options);
   }
 }
 
@@ -1811,9 +1900,10 @@ export function getApplicableRegisteredRenderers(object: Object): RendererRegist
     return false;
   }
 }
+
 export interface RendererRegistration {
   loadRenderer: () => Promise<Renderer>;
-  contextTypes: () => Array<Function>;
+  contextTypes: () => Array<Platform.Constructor.ConstructorOrAbstract<unknown>>;
 }
 
 export interface ConfirmDialogOptions {
@@ -1835,7 +1925,7 @@ function updateWidgetfocusWidgetForNode(node: Node|null): void {
   }
 
   let widget = Widget.get(node);
-  while (widget && widget.parentWidget()) {
+  while (widget?.parentWidget()) {
     const parentWidget = widget.parentWidget();
     if (!parentWidget) {
       break;
@@ -1847,15 +1937,13 @@ function updateWidgetfocusWidgetForNode(node: Node|null): void {
 }
 
 function updateXWidgetfocusWidgetForNode(node: Node|null): void {
-  node = node && node.parentNodeOrShadowHost();
-  const XWidgetCtor = customElements.get('x-widget');
+  node = node?.parentNodeOrShadowHost() ?? null;
+  const XWidgetConstructor = customElements.get('x-widget') as Platform.Constructor.Constructor<XWidget>| undefined;
   let widget = null;
   while (node) {
-    if (XWidgetCtor && node instanceof XWidgetCtor) {
+    if (XWidgetConstructor && node instanceof XWidgetConstructor) {
       if (widget) {
-        // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (node as any).defaultFocusedElement = widget;
+        node.defaultFocusedElement = widget;
       }
       widget = node;
     }
@@ -1871,38 +1959,30 @@ function focusChanged(event: Event): void {
   updateXWidgetfocusWidgetForNode(element);
 }
 
-export function injectCoreStyles(elementOrShadowRoot: Element|ShadowRoot): void {
-  ThemeSupport.ThemeSupport.instance().appendStyle(elementOrShadowRoot, inspectorCommonStyles);
-  ThemeSupport.ThemeSupport.instance().appendStyle(elementOrShadowRoot, Buttons.textButtonStyles);
-}
-
 /**
  * Creates a new shadow DOM tree with the core styles and an optional list of
  * additional styles, and attaches it to the specified `element`.
  *
- * @param element the `Element` to attach the shadow DOM tree to.
- * @param options optional additional style sheets and options for `Element#attachShadow()`.
+ * @param element - the `Element` to attach the shadow DOM tree to.
+ * @param options - optional additional style sheets and options for `Element#attachShadow()`.
  * @returns the newly created `ShadowRoot`.
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Element/attachShadow
  */
-export function createShadowRootWithCoreStyles(
-    element: Element, options: {cssFile?: ({cssContent: string})[]|{cssContent: string}, delegatesFocus?: boolean} = {
-      delegatesFocus: undefined,
-      cssFile: undefined,
-    }): ShadowRoot {
-  const {
-    cssFile,
-    delegatesFocus,
-  } = options;
+export function createShadowRootWithCoreStyles(element: Element, options: {
+  cssFile?: CSSInJS[]|CSSInJS,
+  delegatesFocus?: boolean,
+} = {
+  delegatesFocus: undefined,
+  cssFile: undefined,
+}): ShadowRoot {
+  const {cssFile, delegatesFocus} = options;
 
   const shadowRoot = element.attachShadow({mode: 'open', delegatesFocus});
-  injectCoreStyles(shadowRoot);
+  Platform.DOMUtilities.appendStyle(shadowRoot, inspectorCommonStyles, Buttons.textButtonStyles);
   if (Array.isArray(cssFile)) {
-    for (const cf of cssFile) {
-      ThemeSupport.ThemeSupport.instance().appendStyle(shadowRoot, cf);
-    }
+    Platform.DOMUtilities.appendStyle(shadowRoot, ...cssFile);
   } else if (cssFile) {
-    ThemeSupport.ThemeSupport.instance().appendStyle(shadowRoot, cssFile);
+    Platform.DOMUtilities.appendStyle(shadowRoot, cssFile);
   }
   shadowRoot.addEventListener('focus', focusChanged, true);
   return shadowRoot;
@@ -1931,4 +2011,140 @@ export function measuredScrollbarWidth(document?: Document|null): number {
   cachedMeasuredScrollbarWidth = scrollDiv.offsetWidth - scrollDiv.clientWidth;
   document.body.removeChild(scrollDiv);
   return cachedMeasuredScrollbarWidth;
+}
+
+/**
+ * Opens the given `url` in a new Chrome tab.
+ *
+ * If the `url` is a Google owned documentation page (currently that includes
+ * `web.dev`, `developers.google.com`, and `developer.chrome.com`), the `url`
+ * will also be checked for UTM parameters:
+ *
+ * - If no `utm_source` search parameter is present, this method will add a new
+ *   search parameter `utm_source=devtools` to `url`.
+ * - If no `utm_campaign` search parameter is present, and DevTools is running
+ *   within a branded build, this method will add `utm_campaign=<channel>` to
+ *   the search parameters, with `<channel>` being the release channel of
+ *   Chrome ("stable", "beta", "dev", or "canary").
+ *
+ * @param url - the URL to open in a new tab.
+ * @throws TypeError if `url` is not a valid URL.
+ * @see https://en.wikipedia.org/wiki/UTM_parameters
+ */
+export function openInNewTab(url: URL|string): void {
+  url = new URL(`${url}`);
+  if (['developer.chrome.com', 'developers.google.com', 'web.dev'].includes(url.hostname)) {
+    if (!url.searchParams.has('utm_source')) {
+      url.searchParams.append('utm_source', 'devtools');
+    }
+    const {channel} = Root.Runtime.hostConfig;
+    if (!url.searchParams.has('utm_campaign') && typeof channel === 'string') {
+      url.searchParams.append('utm_campaign', channel);
+    }
+  }
+  Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(Platform.DevToolsPath.urlString`${url}`);
+}
+
+export interface PromotionDisplayState {
+  displayCount: number;
+  firstRegistered: number;
+  featureInteractionCount: number;
+}
+
+const MAX_DISPLAY_COUNT = 10;
+// 60 days in ms
+const MAX_DURATION = 60 * 24 * 60 * 60 * 1000;
+const MAX_INTERACTION_COUNT = 2;
+
+export class PromotionManager {
+  static #instance?: PromotionManager;
+
+  static instance(): PromotionManager {
+    if (!PromotionManager.#instance) {
+      PromotionManager.#instance = new PromotionManager();
+    }
+    return PromotionManager.#instance;
+  }
+
+  private getPromotionDisplayState(id: string): PromotionDisplayState|null {
+    const displayStateString = localStorage.getItem(id);
+    return displayStateString ? JSON.parse(displayStateString) : null;
+  }
+
+  private setPromotionDisplayState(id: string, promotionDisplayState: PromotionDisplayState): void {
+    localStorage.setItem(id, JSON.stringify(promotionDisplayState));
+  }
+
+  private registerPromotion(id: string): void {
+    this.setPromotionDisplayState(id, {
+      displayCount: 0,
+      firstRegistered: Date.now(),
+      featureInteractionCount: 0,
+    });
+  }
+
+  private recordPromotionShown(id: string): void {
+    const displayState = this.getPromotionDisplayState(id);
+    if (!displayState) {
+      throw new Error(`Cannot record promotion shown for unregistered promotion ${id}`);
+    }
+    this.setPromotionDisplayState(id, {
+      ...displayState,
+      displayCount: displayState.displayCount + 1,
+    });
+  }
+
+  canShowPromotion(id: string): boolean {
+    const displayState = this.getPromotionDisplayState(id);
+    if (!displayState) {
+      this.registerPromotion(id);
+      return true;
+    }
+    return displayState.displayCount < MAX_DISPLAY_COUNT && Date.now() - displayState.firstRegistered < MAX_DURATION &&
+        displayState.featureInteractionCount < MAX_INTERACTION_COUNT;
+  }
+
+  recordFeatureInteraction(id: string): void {
+    const displayState = this.getPromotionDisplayState(id);
+    if (!displayState) {
+      throw new Error(`Cannot record feature interaction for unregistered promotion ${id}`);
+    }
+    this.setPromotionDisplayState(id, {
+      ...displayState,
+      featureInteractionCount: displayState.featureInteractionCount + 1,
+    });
+  }
+
+  maybeShowPromotion(id: string): boolean {
+    if (this.canShowPromotion(id)) {
+      this.recordPromotionShown(id);
+      return true;
+    }
+    return false;
+  }
+}
+
+/**
+ * Creates a `<div>` element with the localized text NEW.
+ *
+ * The element is automatically styled correctly, as long as the core styles (in particular
+ * `inspectorCommon.css` is injected into the current document / shadow root). The lit
+ * equivalent of calling this method is:
+ *
+ * ```js
+ * const jslog = VisualLogging.badge('new-badge');
+ * html`<div class='new-badge' jsog=${jslog}>i18nString(UIStrings.new)</div>`
+ *
+ * @returns the newly created `HTMLDivElement` for the new badge.
+ */
+export function maybeCreateNewBadge(promotionId: string): HTMLDivElement|undefined {
+  const promotionManager = PromotionManager.instance();
+  if (promotionManager.maybeShowPromotion(promotionId)) {
+    const badge = document.createElement('div');
+    badge.className = 'new-badge';
+    badge.textContent = i18nString(UIStrings.new);
+    badge.setAttribute('jslog', `${VisualLogging.badge('new-badge')}`);
+    return badge;
+  }
+  return undefined;
 }

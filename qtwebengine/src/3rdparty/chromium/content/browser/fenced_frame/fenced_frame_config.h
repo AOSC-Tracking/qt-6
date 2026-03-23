@@ -87,7 +87,7 @@ namespace content {
 
 class FencedFrameURLMapping;
 
-extern const char kUrnUuidPrefix[];
+inline constexpr char kUrnUuidPrefix[] = "urn:uuid:";
 GURL CONTENT_EXPORT GenerateUrnUuid();
 
 // Used by the fenced frame properties getter. It specifies the node source
@@ -426,7 +426,7 @@ class CONTENT_EXPORT FencedFrameProperties {
   // inheritance. This is called before the fenced frame-targeting navigation
   // commits.
   void UpdateParentParsedPermissionsPolicy(
-      const blink::PermissionsPolicy* parent_policy,
+      const network::PermissionsPolicy* parent_policy,
       const url::Origin& parent_origin);
 
   const std::optional<FencedFrameProperty<GURL>>& mapped_url() const {

@@ -68,8 +68,10 @@ class CollaborationGroupSyncBridge : public syncer::DataTypeSyncBridge {
   std::unique_ptr<syncer::DataBatch> GetDataForCommit(
       StorageKeyList storage_keys) override;
   std::unique_ptr<syncer::DataBatch> GetAllDataForDebugging() override;
-  std::string GetClientTag(const syncer::EntityData& entity_data) override;
-  std::string GetStorageKey(const syncer::EntityData& entity_data) override;
+  std::string GetClientTag(
+      const syncer::EntityData& entity_data) const override;
+  std::string GetStorageKey(
+      const syncer::EntityData& entity_data) const override;
   void ApplyDisableSyncChanges(std::unique_ptr<syncer::MetadataChangeList>
                                    delete_metadata_change_list) override;
   bool IsEntityDataValid(const syncer::EntityData& entity_data) const override;
@@ -80,6 +82,11 @@ class CollaborationGroupSyncBridge : public syncer::DataTypeSyncBridge {
   std::optional<sync_pb::CollaborationGroupSpecifics> GetSpecifics(
       const GroupId& group_id) const;
   bool IsDataLoaded() const;
+
+  // Called when user leaves or deletes a group. Because it may take some time
+  // for sync to invalidate the group, this method informs observers to remove
+  // the group from cache so they don't have to wait.
+  void RemoveGroupLocally(const GroupId& group_id);
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);

@@ -7,14 +7,18 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "base/containers/contains.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/strings/strcat.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/unguessable_token.h"
 #include "components/ip_protection/common/ip_protection_data_types.h"
+#include "components/ip_protection/common/masked_domain_list.h"
 #include "components/privacy_sandbox/masked_domain_list/masked_domain_list.pb.h"
 #include "net/base/features.h"
 #include "net/base/network_anonymization_key.h"
@@ -23,11 +27,11 @@
 #include "services/network/public/mojom/proxy_config.mojom-shared.h"
 #include "testing/gmock/include/gmock/gmock-matchers.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 #include "url/url_util.h"
 
 namespace ip_protection {
 namespace {
-using ::masked_domain_list::MaskedDomainList;
 using ::masked_domain_list::Resource;
 using ::masked_domain_list::ResourceOwner;
 using ::testing::Eq;
@@ -153,9 +157,7 @@ const char kFirstUpdateTimeHistogram[] =
 
 }  // namespace
 
-class MaskedDomainListManagerBaseTest : public testing::Test {};
-
-class MaskedDomainListManagerTest : public MaskedDomainListManagerBaseTest {
+class MaskedDomainListManagerTest : public testing::Test {
  public:
   MaskedDomainListManagerTest()
       : allow_list_no_bypass_(
@@ -165,15 +167,13 @@ class MaskedDomainListManagerTest : public MaskedDomainListManagerBaseTest {
                 kFirstPartyToTopLevelFrame) {}
 
   void SetUp() override {
-    MaskedDomainList mdl;
+    masked_domain_list::MaskedDomainList mdl;
     auto* resource_owner = mdl.add_resource_owners();
     resource_owner->set_owner_name("foo");
     resource_owner->add_owned_properties("property.com");
     resource_owner->add_owned_resources()->set_domain(std::string(kTestDomain));
-    allow_list_no_bypass_.UpdateMaskedDomainList(
-        mdl, /*exclusion_list=*/std::vector<std::string>());
-    allow_list_first_party_bypass_.UpdateMaskedDomainList(
-        mdl, /*exclusion_list=*/std::vector<std::string>());
+    allow_list_no_bypass_.UpdateMaskedDomainListForTesting(mdl);
+    allow_list_first_party_bypass_.UpdateMaskedDomainListForTesting(mdl);
   }
 
  protected:
@@ -181,7 +181,11 @@ class MaskedDomainListManagerTest : public MaskedDomainListManagerBaseTest {
   MaskedDomainListManager allow_list_first_party_bypass_;
 };
 
-TEST_F(MaskedDomainListManagerBaseTest, IsNotEnabledByDefault) {
+TEST_F(MaskedDomainListManagerTest, IsNotEnabledByDefault) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(
+      network::features::kMaskedDomainList);
+
   MaskedDomainListManager allow_list_no_bypass(
       network::mojom::IpProtectionProxyBypassPolicy::kNone);
   MaskedDomainListManager allow_list_first_party_bypass(
@@ -192,7 +196,7 @@ TEST_F(MaskedDomainListManagerBaseTest, IsNotEnabledByDefault) {
   EXPECT_FALSE(allow_list_first_party_bypass.IsEnabled());
 }
 
-TEST_F(MaskedDomainListManagerBaseTest, IsEnabledWhenManuallySet) {
+TEST_F(MaskedDomainListManagerTest, IsEnabledWhenManuallySet) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures({net::features::kEnableIpProtectionProxy,
                                         network::features::kMaskedDomainList},
@@ -204,38 +208,35 @@ TEST_F(MaskedDomainListManagerBaseTest, IsEnabledWhenManuallySet) {
   EXPECT_TRUE(allow_list.IsEnabled());
 }
 
-TEST_F(MaskedDomainListManagerBaseTest, AllowListIsNotPopulatedByDefault) {
+TEST_F(MaskedDomainListManagerTest, AllowListIsNotPopulatedByDefault) {
   MaskedDomainListManager allow_list(
       network::mojom::IpProtectionProxyBypassPolicy::kNone);
   EXPECT_FALSE(allow_list.IsPopulated());
 }
 
-TEST_F(MaskedDomainListManagerBaseTest,
-       AllowlistIsPopulated_MdlHasResourceOwners) {
-  MaskedDomainListManager allow_list(
+TEST_F(MaskedDomainListManagerTest, AllowlistIsPopulated_MdlHasResourceOwners) {
+  MaskedDomainListManager mdl_manager(
       network::mojom::IpProtectionProxyBypassPolicy::kNone);
-  MaskedDomainList mdl;
+  masked_domain_list::MaskedDomainList mdl;
   auto* resource_owner = mdl.add_resource_owners();
   resource_owner->set_owner_name("foo");
   resource_owner->add_owned_resources()->set_domain("example.com");
-  allow_list.UpdateMaskedDomainList(
-      mdl,
-      /*exclusion_list=*/std::vector<std::string>());
+  mdl_manager.UpdateMaskedDomainListForTesting(mdl);
 
-  EXPECT_TRUE(allow_list.IsPopulated());
+  EXPECT_TRUE(mdl_manager.IsPopulated());
 }
 
-TEST_F(MaskedDomainListManagerBaseTest, AllowlistAcceptsMultipleUpdates) {
+TEST_F(MaskedDomainListManagerTest, AllowlistAcceptsMultipleUpdates) {
   base::HistogramTester histogram_tester;
-  MaskedDomainListManager allow_list(
+  MaskedDomainListManager mdl_manager(
       network::mojom::IpProtectionProxyBypassPolicy::kNone);
-  MaskedDomainList mdl1;
+  masked_domain_list::MaskedDomainList mdl1;
   {
     auto* resource_owner = mdl1.add_resource_owners();
     resource_owner->set_owner_name("foo");
     resource_owner->add_owned_resources()->set_domain("example.com");
   }
-  MaskedDomainList mdl2;
+  masked_domain_list::MaskedDomainList mdl2;
   {
     auto* resource_owner = mdl2.add_resource_owners();
     resource_owner->set_owner_name("foo");
@@ -249,21 +250,23 @@ TEST_F(MaskedDomainListManagerBaseTest, AllowlistAcceptsMultipleUpdates) {
   histogram_tester.ExpectTotalCount(kFirstUpdateTimeHistogram, 0);
 
   // First update.
-  allow_list.UpdateMaskedDomainList(
-      mdl1, /*exclusion_list=*/std::vector<std::string>());
+  mdl_manager.UpdateMaskedDomainListForTesting(mdl1);
 
-  EXPECT_TRUE(allow_list.IsPopulated());
-  EXPECT_TRUE(allow_list.Matches(kHttpsRequestUrl1, kEmptyNak));
-  EXPECT_FALSE(allow_list.Matches(kHttpsRequestUrl2, kEmptyNak));
+  EXPECT_TRUE(mdl_manager.IsPopulated());
+  EXPECT_TRUE(
+      mdl_manager.Matches(kHttpsRequestUrl1, kEmptyNak, MdlType::kIncognito));
+  EXPECT_FALSE(
+      mdl_manager.Matches(kHttpsRequestUrl2, kEmptyNak, MdlType::kIncognito));
   histogram_tester.ExpectTotalCount(kFirstUpdateTimeHistogram, 1);
 
   // Second update. Removes old rules, adds new ones.
-  allow_list.UpdateMaskedDomainList(
-      mdl2, /*exclusion_list=*/std::vector<std::string>());
+  mdl_manager.UpdateMaskedDomainListForTesting(mdl2);
 
-  EXPECT_TRUE(allow_list.IsPopulated());
-  EXPECT_FALSE(allow_list.Matches(kHttpsRequestUrl1, kEmptyNak));
-  EXPECT_TRUE(allow_list.Matches(kHttpsRequestUrl2, kEmptyNak));
+  EXPECT_TRUE(mdl_manager.IsPopulated());
+  EXPECT_TRUE(
+      mdl_manager.Matches(kHttpsRequestUrl2, kEmptyNak, MdlType::kIncognito));
+  EXPECT_FALSE(
+      mdl_manager.Matches(kHttpsRequestUrl1, kEmptyNak, MdlType::kIncognito));
   histogram_tester.ExpectTotalCount(kFirstUpdateTimeHistogram, 1);
 }
 
@@ -272,10 +275,10 @@ TEST_F(MaskedDomainListManagerTest, ShouldMatchHttp) {
   const auto kHttpCrossSiteNak = net::NetworkAnonymizationKey::CreateCrossSite(
       net::SchemefulSite(GURL("http://top.com")));
 
-  EXPECT_TRUE(
-      allow_list_no_bypass_.Matches(kHttpRequestUrl, kHttpCrossSiteNak));
-  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(kHttpRequestUrl,
-                                                     kHttpCrossSiteNak));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpRequestUrl, kHttpCrossSiteNak,
+                                            MdlType::kIncognito));
+  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(
+      kHttpRequestUrl, kHttpCrossSiteNak, MdlType::kIncognito));
 }
 
 TEST_F(MaskedDomainListManagerTest, ShouldMatchWss) {
@@ -283,9 +286,10 @@ TEST_F(MaskedDomainListManagerTest, ShouldMatchWss) {
   const auto kHttpCrossSiteNak = net::NetworkAnonymizationKey::CreateCrossSite(
       net::SchemefulSite(GURL("http://top.com")));
 
-  EXPECT_TRUE(allow_list_no_bypass_.Matches(kWssRequestUrl, kHttpCrossSiteNak));
-  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(kWssRequestUrl,
-                                                     kHttpCrossSiteNak));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(kWssRequestUrl, kHttpCrossSiteNak,
+                                            MdlType::kIncognito));
+  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(
+      kWssRequestUrl, kHttpCrossSiteNak, MdlType::kIncognito));
 }
 
 TEST_F(MaskedDomainListManagerTest, ShouldMatchWs) {
@@ -293,9 +297,10 @@ TEST_F(MaskedDomainListManagerTest, ShouldMatchWs) {
   const auto kHttpCrossSiteNak = net::NetworkAnonymizationKey::CreateCrossSite(
       net::SchemefulSite(GURL("http://top.com")));
 
-  EXPECT_TRUE(allow_list_no_bypass_.Matches(kWsRequestUrl, kHttpCrossSiteNak));
-  EXPECT_TRUE(
-      allow_list_first_party_bypass_.Matches(kWsRequestUrl, kHttpCrossSiteNak));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(kWsRequestUrl, kHttpCrossSiteNak,
+                                            MdlType::kIncognito));
+  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(
+      kWsRequestUrl, kHttpCrossSiteNak, MdlType::kIncognito));
 }
 
 TEST_F(MaskedDomainListManagerTest, ShouldMatchThirdPartyToTopLevelFrame) {
@@ -309,15 +314,15 @@ TEST_F(MaskedDomainListManagerTest, ShouldMatchThirdPartyToTopLevelFrame) {
   // Regardless of whether the NAK is cross-site, the request URL should be
   // considered third-party because the request URL doesn't match the top-level
   // site.
-  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsThirdPartyRequestUrl,
-                                            kHttpsCrossSiteNak));
-  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(kHttpsThirdPartyRequestUrl,
-                                                     kHttpsCrossSiteNak));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(
+      kHttpsThirdPartyRequestUrl, kHttpsCrossSiteNak, MdlType::kIncognito));
+  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(
+      kHttpsThirdPartyRequestUrl, kHttpsCrossSiteNak, MdlType::kIncognito));
 
-  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsThirdPartyRequestUrl,
-                                            kHttpsSameSiteNak));
-  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(kHttpsThirdPartyRequestUrl,
-                                                     kHttpsSameSiteNak));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(
+      kHttpsThirdPartyRequestUrl, kHttpsSameSiteNak, MdlType::kIncognito));
+  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(
+      kHttpsThirdPartyRequestUrl, kHttpsSameSiteNak, MdlType::kIncognito));
 }
 
 TEST_F(MaskedDomainListManagerTest,
@@ -329,14 +334,14 @@ TEST_F(MaskedDomainListManagerTest,
   const auto kHttpsCrossSiteNak = net::NetworkAnonymizationKey::CreateCrossSite(
       net::SchemefulSite(kHttpsFirstPartyRequestUrl));
 
-  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsFirstPartyRequestUrl,
-                                            kHttpsSameSiteNak));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(
+      kHttpsFirstPartyRequestUrl, kHttpsSameSiteNak, MdlType::kIncognito));
   EXPECT_FALSE(allow_list_first_party_bypass_.Matches(
-      kHttpsFirstPartyRequestUrl, kHttpsSameSiteNak));
-  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsFirstPartyRequestUrl,
-                                            kHttpsCrossSiteNak));
+      kHttpsFirstPartyRequestUrl, kHttpsSameSiteNak, MdlType::kIncognito));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(
+      kHttpsFirstPartyRequestUrl, kHttpsCrossSiteNak, MdlType::kIncognito));
   EXPECT_FALSE(allow_list_first_party_bypass_.Matches(
-      kHttpsFirstPartyRequestUrl, kHttpsCrossSiteNak));
+      kHttpsFirstPartyRequestUrl, kHttpsCrossSiteNak, MdlType::kIncognito));
 }
 
 TEST_F(MaskedDomainListManagerTest,
@@ -344,9 +349,10 @@ TEST_F(MaskedDomainListManagerTest,
   const auto kHttpsRequestUrl = GURL(base::StrCat({"https://", kTestDomain}));
   const auto kEmptyNak = net::NetworkAnonymizationKey();
 
-  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsRequestUrl, kEmptyNak));
-  EXPECT_FALSE(
-      allow_list_first_party_bypass_.Matches(kHttpsRequestUrl, kEmptyNak));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsRequestUrl, kEmptyNak,
+                                            MdlType::kIncognito));
+  EXPECT_FALSE(allow_list_first_party_bypass_.Matches(
+      kHttpsRequestUrl, kEmptyNak, MdlType::kIncognito));
 }
 
 TEST_F(MaskedDomainListManagerTest,
@@ -356,10 +362,10 @@ TEST_F(MaskedDomainListManagerTest,
       net::SchemefulSite(), /*is_cross_site=*/true,
       base::UnguessableToken::Create());
 
-  EXPECT_FALSE(
-      allow_list_no_bypass_.Matches(kHttpsOtherRequestUrl, kNakWithNonce));
-  EXPECT_FALSE(allow_list_first_party_bypass_.Matches(kHttpsOtherRequestUrl,
-                                                      kNakWithNonce));
+  EXPECT_FALSE(allow_list_no_bypass_.Matches(
+      kHttpsOtherRequestUrl, kNakWithNonce, MdlType::kIncognito));
+  EXPECT_FALSE(allow_list_first_party_bypass_.Matches(
+      kHttpsOtherRequestUrl, kNakWithNonce, MdlType::kIncognito));
 }
 
 TEST_F(MaskedDomainListManagerTest, ShouldMatchWithFencedFrameNakIfUrlMatches) {
@@ -368,9 +374,10 @@ TEST_F(MaskedDomainListManagerTest, ShouldMatchWithFencedFrameNakIfUrlMatches) {
       net::SchemefulSite(), /*is_cross_site=*/true,
       base::UnguessableToken::Create());
 
-  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsRequestUrl, kNakWithNonce));
-  EXPECT_TRUE(
-      allow_list_first_party_bypass_.Matches(kHttpsRequestUrl, kNakWithNonce));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsRequestUrl, kNakWithNonce,
+                                            MdlType::kIncognito));
+  EXPECT_TRUE(allow_list_first_party_bypass_.Matches(
+      kHttpsRequestUrl, kNakWithNonce, MdlType::kIncognito));
 }
 
 TEST_F(MaskedDomainListManagerTest, CustomSchemeTopLevelSite) {
@@ -384,16 +391,16 @@ TEST_F(MaskedDomainListManagerTest, CustomSchemeTopLevelSite) {
           GURL("chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef/")));
   ASSERT_FALSE(kExtensionUrlNak.IsTransient());
 
-  EXPECT_TRUE(
-      allow_list_no_bypass_.Matches(kHttpsRequestUrl, kExtensionUrlNak));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsRequestUrl, kExtensionUrlNak,
+                                            MdlType::kIncognito));
 
   {
     base::test::ScopedFeatureList scoped_feature_list;
     scoped_feature_list.InitAndEnableFeatureWithParameters(
         net::features::kEnableIpProtectionProxy,
         {{net::features::kIpPrivacyRestrictTopLevelSiteSchemes.name, "true"}});
-    EXPECT_FALSE(allow_list_first_party_bypass_.Matches(kHttpsRequestUrl,
-                                                        kExtensionUrlNak));
+    EXPECT_FALSE(allow_list_first_party_bypass_.Matches(
+        kHttpsRequestUrl, kExtensionUrlNak, MdlType::kIncognito));
   }
 
   {
@@ -401,8 +408,8 @@ TEST_F(MaskedDomainListManagerTest, CustomSchemeTopLevelSite) {
     scoped_feature_list.InitAndEnableFeatureWithParameters(
         net::features::kEnableIpProtectionProxy,
         {{net::features::kIpPrivacyRestrictTopLevelSiteSchemes.name, "false"}});
-    EXPECT_TRUE(allow_list_first_party_bypass_.Matches(kHttpsRequestUrl,
-                                                       kExtensionUrlNak));
+    EXPECT_TRUE(allow_list_first_party_bypass_.Matches(
+        kHttpsRequestUrl, kExtensionUrlNak, MdlType::kIncognito));
   }
 }
 
@@ -414,15 +421,16 @@ TEST_F(MaskedDomainListManagerTest, DataUrlTopLevelSite) {
       net::SchemefulSite(GURL("data:text/html,<html></html>")));
   ASSERT_TRUE(kDataUrlNak.IsTransient());
 
-  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsRequestUrl, kDataUrlNak));
+  EXPECT_TRUE(allow_list_no_bypass_.Matches(kHttpsRequestUrl, kDataUrlNak,
+                                            MdlType::kIncognito));
 
   {
     base::test::ScopedFeatureList scoped_feature_list;
     scoped_feature_list.InitAndEnableFeatureWithParameters(
         net::features::kEnableIpProtectionProxy,
         {{net::features::kIpPrivacyRestrictTopLevelSiteSchemes.name, "true"}});
-    EXPECT_FALSE(
-        allow_list_first_party_bypass_.Matches(kHttpsRequestUrl, kDataUrlNak));
+    EXPECT_FALSE(allow_list_first_party_bypass_.Matches(
+        kHttpsRequestUrl, kDataUrlNak, MdlType::kIncognito));
   }
 
   {
@@ -430,21 +438,16 @@ TEST_F(MaskedDomainListManagerTest, DataUrlTopLevelSite) {
     scoped_feature_list.InitAndEnableFeatureWithParameters(
         net::features::kEnableIpProtectionProxy,
         {{net::features::kIpPrivacyRestrictTopLevelSiteSchemes.name, "false"}});
-    EXPECT_TRUE(
-        allow_list_first_party_bypass_.Matches(kHttpsRequestUrl, kDataUrlNak));
+    EXPECT_TRUE(allow_list_first_party_bypass_.Matches(
+        kHttpsRequestUrl, kDataUrlNak, MdlType::kIncognito));
   }
-}
-
-TEST_F(MaskedDomainListManagerTest, AllowListWithoutBypassUsesLessMemory) {
-  EXPECT_GT(allow_list_first_party_bypass_.EstimateMemoryUsage(),
-            allow_list_no_bypass_.EstimateMemoryUsage());
 }
 
 TEST_F(MaskedDomainListManagerTest, Matches_MdlType_MatchesCorrectly) {
   MaskedDomainListManager mdl_manager(
       network::mojom::IpProtectionProxyBypassPolicy::kNone);
 
-  MaskedDomainList mdl;
+  masked_domain_list::MaskedDomainList mdl;
 
   ResourceOwner* resource_owner = mdl.add_resource_owners();
   resource_owner->set_owner_name("example");
@@ -458,13 +461,12 @@ TEST_F(MaskedDomainListManagerTest, Matches_MdlType_MatchesCorrectly) {
       Resource::Experiment::Resource_Experiment_EXPERIMENT_EXTERNAL_REGULAR);
   resource->set_exclude_default_group(true);
 
-  mdl_manager.UpdateMaskedDomainList(
-      mdl, /*exclusion_list=*/std::vector<std::string>());
+  mdl_manager.UpdateMaskedDomainListForTesting(mdl);
 
-  // The default MDL resource should ONLY match for mdl type kDefault.
+  // The default MDL resource should ONLY match for mdl type kIncognito.
   EXPECT_TRUE(
       mdl_manager.Matches(GURL(base::StrCat({"https://", default_mdl_domain})),
-                          net::NetworkAnonymizationKey(), MdlType::kDefault));
+                          net::NetworkAnonymizationKey(), MdlType::kIncognito));
   EXPECT_FALSE(mdl_manager.Matches(
       GURL(base::StrCat({"https://", default_mdl_domain})),
       net::NetworkAnonymizationKey(), MdlType::kRegularBrowsing));
@@ -472,18 +474,22 @@ TEST_F(MaskedDomainListManagerTest, Matches_MdlType_MatchesCorrectly) {
   // The regular MDL resource should ONLY match for mdl type kRegularBrowsing.
   EXPECT_FALSE(
       mdl_manager.Matches(GURL(base::StrCat({"https://", regular_mdl_domain})),
-                          net::NetworkAnonymizationKey(), MdlType::kDefault));
+                          net::NetworkAnonymizationKey(), MdlType::kIncognito));
   EXPECT_TRUE(mdl_manager.Matches(
       GURL(base::StrCat({"https://", regular_mdl_domain})),
       net::NetworkAnonymizationKey(), MdlType::kRegularBrowsing));
 }
 
 class MaskedDomainListManagerMatchTest
-    : public MaskedDomainListManagerBaseTest,
+    : public MaskedDomainListManagerTest,
       public testing::WithParamInterface<MatchTest> {};
 
 TEST_P(MaskedDomainListManagerMatchTest, Match) {
-  const MatchTest& p = GetParam();
+  const MatchTest& match_test = GetParam();
+
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      network::features::kMaskedDomainList);
 
   MaskedDomainListManager allow_list_no_bypass(
       network::mojom::IpProtectionProxyBypassPolicy::kNone);
@@ -491,7 +497,7 @@ TEST_P(MaskedDomainListManagerMatchTest, Match) {
       network::mojom::IpProtectionProxyBypassPolicy::
           kFirstPartyToTopLevelFrame);
 
-  MaskedDomainList mdl;
+  masked_domain_list::MaskedDomainList mdl;
 
   ResourceOwner* resource_owner = mdl.add_resource_owners();
   resource_owner->set_owner_name("example");
@@ -517,20 +523,20 @@ TEST_P(MaskedDomainListManagerMatchTest, Match) {
   resource = resource_owner->add_owned_resources();
   resource->set_domain("sub.co.jp");
 
-  allow_list_no_bypass.UpdateMaskedDomainList(
-      mdl, /*exclusion_list=*/std::vector<std::string>());
-  allow_list_first_party_bypass.UpdateMaskedDomainList(
-      mdl, /*exclusion_list=*/std::vector<std::string>());
+  allow_list_no_bypass.UpdateMaskedDomainListForTesting(mdl);
+  allow_list_first_party_bypass.UpdateMaskedDomainListForTesting(mdl);
 
-  GURL request_url(base::StrCat({"https://", p.req}));
+  GURL request_url(base::StrCat({"https://", match_test.req}));
   auto network_anonymization_key =
       net::NetworkAnonymizationKey::CreateCrossSite(
-          net::SchemefulSite(GURL(base::StrCat({"https://", p.top}))));
+          net::SchemefulSite(GURL(base::StrCat({"https://", match_test.top}))));
 
-  EXPECT_EQ(p.matches, allow_list_no_bypass.Matches(request_url,
-                                                    network_anonymization_key));
-  EXPECT_EQ(p.matches_with_bypass, allow_list_first_party_bypass.Matches(
-                                       request_url, network_anonymization_key));
+  EXPECT_EQ(match_test.matches,
+            allow_list_no_bypass.Matches(request_url, network_anonymization_key,
+                                         MdlType::kIncognito));
+  EXPECT_EQ(match_test.matches_with_bypass,
+            allow_list_first_party_bypass.Matches(
+                request_url, network_anonymization_key, MdlType::kIncognito));
 }
 
 INSTANTIATE_TEST_SUITE_P(All,
@@ -539,99 +545,4 @@ INSTANTIATE_TEST_SUITE_P(All,
                          [](const testing::TestParamInfo<MatchTest>& info) {
                            return info.param.name;
                          });
-
-TEST_F(MaskedDomainListManagerBaseTest, ExclusionSetDomainsRemovedFromMDL) {
-  auto mdl_manager = MaskedDomainListManager(
-      network::mojom::IpProtectionProxyBypassPolicy::kExclusionList);
-
-  // Determine domains that should be excluded from the MDL.
-  std::string example_com = "example.com";
-  std::string excluded_tld = "excluded-tld";
-  std::string irrelevant_tld = "irrelevant-tld";  // Not in the MDL.
-  std::vector<std::string> exclusion_list = {example_com, excluded_tld,
-                                             irrelevant_tld};
-
-  // The following map contains domains as keys and any subdomains as
-  // values. This will be used to create the MDL being tested. Any domains
-  // excluded from the MDL will be tracked in the exclusion list. Excluded
-  // domains and their subdomains should not be matched on.
-  std::map<std::string, std::vector<std::string>> tld_map_with_domains = {
-      {example_com,
-       {
-           "subdomain.example.com",
-           "sub.subdomain.example.com",
-       }},
-      {"example.net",
-       {
-           "subdomain.example.net",
-           "example.com.example.net",
-       }},
-      {"included-tld",
-       {
-           "subdomain.included-tld",
-       }},
-      {excluded_tld,
-       {
-           "subdomain.excluded-tld",
-       }},
-      {"unrelated-example.com", {}},  // No subdomains for this domain.
-      {"com", {}}};
-
-  // Create an MDL with domains above:
-  MaskedDomainList mdl;
-  for (auto const& [domain, subdomains] : tld_map_with_domains) {
-    // Create a ResourceOwner for the domain. The owner name here is abritrary,
-    // but needs to be set. The more important thing is the owned resources must
-    // include the domain itself as well as any subdomains.
-    ResourceOwner* resource_owner = mdl.add_resource_owners();
-    resource_owner->set_owner_name(domain);
-    resource_owner->add_owned_resources()->set_domain(domain);
-    for (auto const& subdomain : subdomains) {
-      resource_owner->add_owned_resources()->set_domain(subdomain);
-    }
-  }
-
-  // First update the MDL and provide an empty exclusion list.
-  mdl_manager.UpdateMaskedDomainList(mdl, /*exclusion_list=*/{});
-
-  // Every domain in the domain map should be matched on b/c no domains are
-  // excluded.
-  for (auto const& [domain, subdomains] : tld_map_with_domains) {
-    EXPECT_TRUE(mdl_manager.Matches(GURL(base::StrCat({"https://", domain})),
-                                    net::NetworkAnonymizationKey()));
-    EXPECT_TRUE(mdl_manager.Matches(GURL(base::StrCat({"wss://", domain})),
-                                    net::NetworkAnonymizationKey()));
-    EXPECT_TRUE(mdl_manager.Matches(GURL(base::StrCat({"ws://", domain})),
-                                    net::NetworkAnonymizationKey()));
-    for (auto const& subdomain : subdomains) {
-      EXPECT_TRUE(
-          mdl_manager.Matches(GURL(base::StrCat({"https://", subdomain})),
-                              net::NetworkAnonymizationKey()));
-      EXPECT_TRUE(mdl_manager.Matches(GURL(base::StrCat({"wss://", subdomain})),
-                                      net::NetworkAnonymizationKey()));
-      EXPECT_TRUE(mdl_manager.Matches(GURL(base::StrCat({"ws://", subdomain})),
-                                      net::NetworkAnonymizationKey()));
-    }
-  }
-
-  // Now update the MDL with an exclusion list.
-  mdl_manager.UpdateMaskedDomainList(mdl, exclusion_list);
-
-  // An excluded domain nor its subdomains should not be matched on.
-  for (auto const& [domain, subdomains] : tld_map_with_domains) {
-    bool should_match = !base::Contains(exclusion_list, domain);
-    net::NetworkAnonymizationKey nak;
-
-    // If the domain is excluded, it should not be matched on and vice versa.
-    EXPECT_EQ(should_match, mdl_manager.Matches(
-                                GURL(base::StrCat({"https://", domain})), nak));
-
-    for (auto const& subdomain : subdomains) {
-      EXPECT_EQ(should_match,
-                mdl_manager.Matches(GURL(base::StrCat({"https://", subdomain})),
-                                    nak));
-    }
-  }
-}
-
 }  // namespace ip_protection

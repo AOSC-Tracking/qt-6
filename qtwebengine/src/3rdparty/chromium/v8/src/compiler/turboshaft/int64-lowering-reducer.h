@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_COMPILER_TURBOSHAFT_INT64_LOWERING_REDUCER_H_
+#define V8_COMPILER_TURBOSHAFT_INT64_LOWERING_REDUCER_H_
+
 #if !V8_ENABLE_WEBASSEMBLY
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
-
-#ifndef V8_COMPILER_TURBOSHAFT_INT64_LOWERING_REDUCER_H_
-#define V8_COMPILER_TURBOSHAFT_INT64_LOWERING_REDUCER_H_
 
 #include "src/codegen/machine-type.h"
 #include "src/compiler/turboshaft/assembler.h"
@@ -330,7 +330,12 @@ class Int64LoweringReducer : public Next {
         // TODO(jkummerow): Support non-zero scales in AtomicWord32PairOp, and
         // remove the corresponding bailout in MachineOptimizationReducer to
         // allow generating them.
-        CHECK_EQ(element_scale, 0);
+        if (element_scale != 0 && index.has_value()) {
+          DCHECK_EQ(element_scale, 3);
+          index = __ Word32ShiftLeft(index.value(), element_scale);
+        }
+        // Manually subtract the pointer tag if present.
+        offset -= kind.tagged_base;
         return __ AtomicWord32PairLoad(base, index, offset);
       }
       if (result_rep == RegisterRepresentation::Word64()) {
@@ -369,7 +374,12 @@ class Int64LoweringReducer : public Next {
         // TODO(jkummerow): Support non-zero scales in AtomicWord32PairOp, and
         // remove the corresponding bailout in MachineOptimizationReducer to
         // allow generating them.
-        CHECK_EQ(element_size_log2, 0);
+        if (element_size_log2 != 0 && index.has_value()) {
+          DCHECK_EQ(element_size_log2, 3);
+          index = __ Word32ShiftLeft(index.value(), element_size_log2);
+        }
+        // Manually subtract the pointer tag if present.
+        offset -= kind.tagged_base;
         return __ AtomicWord32PairStore(base, index, low, high, offset);
       }
       // low store
@@ -396,14 +406,20 @@ class Int64LoweringReducer : public Next {
                             OptionalOpIndex expected, AtomicRMWOp::BinOp bin_op,
                             RegisterRepresentation in_out_rep,
                             MemoryRepresentation memory_rep,
-                            MemoryAccessKind kind) {
+                            MemoryAccessKind kind,
+                            RegisterRepresentation base_rep) {
     if (in_out_rep != RegisterRepresentation::Word64()) {
       return Next::ReduceAtomicRMW(base, index, value, expected, bin_op,
-                                   in_out_rep, memory_rep, kind);
+                                   in_out_rep, memory_rep, kind, base_rep);
     }
     auto [value_low, value_high] = Unpack(value);
     if (memory_rep == MemoryRepresentation::Int64() ||
         memory_rep == MemoryRepresentation::Uint64()) {
+      if (base_rep == RegisterRepresentation::Tagged()) {
+        DCHECK_EQ(__ output_graph().Get(base).outputs_rep()[0],
+                  RegisterRepresentation::Tagged());
+        base = __ BitcastTaggedToWordPtr(base);
+      }
       if (bin_op == AtomicRMWOp::BinOp::kCompareExchange) {
         auto [expected_low, expected_high] = Unpack(expected.value());
         return __ AtomicWord32PairCompareExchange(
@@ -419,10 +435,11 @@ class Int64LoweringReducer : public Next {
       auto [expected_low, expected_high] = Unpack(expected.value());
       new_expected = expected_low;
     }
-    return __ Tuple(Next::ReduceAtomicRMW(
-                        base, index, value_low, new_expected, bin_op,
-                        RegisterRepresentation::Word32(), memory_rep, kind),
-                    __ Word32Constant(0));
+    return __ Tuple(
+        Next::ReduceAtomicRMW(base, index, value_low, new_expected, bin_op,
+                              RegisterRepresentation::Word32(), memory_rep,
+                              kind, base_rep),
+        __ Word32Constant(0));
   }
 
   OpIndex REDUCE(Phi)(base::Vector<const OpIndex> inputs,

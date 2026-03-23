@@ -14,16 +14,16 @@
 #include "base/test/gmock_callback_support.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
-#include "base/test/with_feature_override.h"
 #include "base/uuid.h"
 #include "build/buildflag.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager_test_utils.h"
-#include "components/autofill/core/browser/data_model/autofill_profile.h"
-#include "components/autofill/core/browser/data_model/autofill_profile_test_api.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile_test_api.h"
 #include "components/autofill/core/browser/data_quality/addresses/profile_token_quality_test_api.h"
 #include "components/autofill/core/browser/strike_databases/test_inmemory_strike_database.h"
 #include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
 #include "components/autofill/core/browser/webdata/addresses/address_autofill_table.h"
+#include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/common/autofill_clock.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_prefs.h"
@@ -33,7 +33,6 @@
 #include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
-#include "components/sync/base/features.h"
 #include "components/sync/service/sync_user_settings.h"
 #include "components/sync/test/test_sync_service.h"
 #include "components/webdata/common/web_database_service.h"
@@ -60,6 +59,19 @@ class MockAddressDataManagerObserver : public AddressDataManager::Observer {
  public:
   MOCK_METHOD(void, OnAddressDataChanged, (), (override));
 };
+
+class MockWebDataServiceObserver
+    : public AutofillWebDataServiceObserverOnDBSequence {
+ public:
+  MOCK_METHOD(void,
+              AutofillProfileChanged,
+              (const AutofillProfileChange&),
+              (override));
+};
+
+MATCHER_P(AutofillProfileChangeHasCorrectType, type, "") {
+  return arg.type() == type;
+}
 
 class AddressDataManagerTest : public testing::Test {
  protected:
@@ -291,40 +303,6 @@ TEST_F(AddressDataManagerTest, GetProfiles_Order) {
                                    Pointee(profile3)));
 }
 
-// Tests that `GetProfiles()` and `GetProfilesByRecordType()` filters incomplete
-// H/W addresses.
-TEST_F(AddressDataManagerTest, GetProfiles_CompletenessFiltering) {
-  AutofillProfile local_profile = test::GetFullProfile();
-  AutofillProfile regular_account_profile = test::GetFullProfile2();
-  test_api(regular_account_profile)
-      .set_record_type(AutofillProfile::RecordType::kAccount);
-  AutofillProfile complete_home_profile = test::GetFullCanadianProfile();
-  test_api(complete_home_profile)
-      .set_record_type(AutofillProfile::RecordType::kAccountHome);
-  // `GetIncompleteProfile1()` is only missing a phone number, but is not
-  // lacking any address information. `GetIncompleteProfile2()` is.
-  AutofillProfile incomplete_work_profile = test::GetIncompleteProfile2();
-  ASSERT_FALSE(incomplete_work_profile.HasInfo(ADDRESS_HOME_STREET_ADDRESS));
-  test_api(incomplete_work_profile)
-      .set_record_type(AutofillProfile::RecordType::kAccountWork);
-
-  AddProfileToAddressDataManager(local_profile);
-  AddProfileToAddressDataManager(regular_account_profile);
-  AddProfileToAddressDataManager(complete_home_profile);
-  AddProfileToAddressDataManager(incomplete_work_profile);
-
-  EXPECT_THAT(address_data_manager().GetProfiles(),
-              testing::UnorderedElementsAre(Pointee(local_profile),
-                                            Pointee(regular_account_profile),
-                                            Pointee(complete_home_profile)));
-  EXPECT_THAT(address_data_manager().GetProfilesByRecordType(
-                  AutofillProfile::RecordType::kAccountHome),
-              testing::UnorderedElementsAre(Pointee(complete_home_profile)));
-  EXPECT_THAT(address_data_manager().GetProfilesByRecordType(
-                  AutofillProfile::RecordType::kAccountWork),
-              testing::IsEmpty());
-}
-
 // Test that profiles are not shown if |kAutofillProfileEnabled| is set to
 // |false|.
 TEST_F(AddressDataManagerTest, GetProfilesToSuggest_ProfileAutofillDisabled) {
@@ -398,9 +376,9 @@ TEST_F(AddressDataManagerTest, GetProfilesForSettings) {
   local_profile.usage_history().set_modification_date(kSomeLaterTime);
   AddProfileToAddressDataManager(local_profile);
 
-  EXPECT_THAT(address_data_manager().GetProfilesForSettings(),
-              testing::ElementsAre(testing::Pointee(local_profile),
-                                   testing::Pointee(account_profile)));
+  EXPECT_THAT(
+      address_data_manager().GetProfilesForSettings(),
+      testing::ElementsAre(Pointee(local_profile), Pointee(account_profile)));
 }
 
 // Adding, updating, removing operations without waiting in between.
@@ -665,6 +643,49 @@ TEST_F(AddressDataManagerTest, RemoveLocalProfilesModifiedBetween) {
       UnorderedElementsAre(Pointee(local_profile1), Pointee(account_profile)));
 }
 
+TEST_F(AddressDataManagerTest, RemoveProfileTriggeredByDeduplication) {
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillDeduplicateAccountAddresses};
+  AutofillProfile local_profile1 = test::GetFullProfile();
+  AutofillProfile local_profile2 = test::GetFullProfile2();
+  AutofillProfile account_profile1 = test::GetFullCanadianProfile();
+  test_api(account_profile1)
+      .set_record_type(AutofillProfile::RecordType::kAccount);
+  AutofillProfile account_profile2 = test::GetFullValidProfileForCanada();
+  test_api(account_profile2)
+      .set_record_type(AutofillProfile::RecordType::kAccount);
+
+  AddProfileToAddressDataManager(local_profile1);
+  AddProfileToAddressDataManager(local_profile2);
+  AddProfileToAddressDataManager(account_profile1);
+  AddProfileToAddressDataManager(account_profile2);
+
+  // Expect that local profiles or deletions not triggered by deduplication, are
+  // permanently removed.
+  testing::NiceMock<MockWebDataServiceObserver> observer;
+  profile_database_service_->AddObserver(&observer);
+  EXPECT_CALL(observer,
+              AutofillProfileChanged(AutofillProfileChangeHasCorrectType(
+                  AutofillProfileChange::REMOVE)))
+      .Times(3);
+  address_data_manager().RemoveProfile(local_profile1.guid(),
+                                       /*is_deduplication_initiated=*/false);
+  address_data_manager().RemoveProfile(local_profile2.guid(),
+                                       /*is_deduplication_initiated=*/false);
+  address_data_manager().RemoveProfile(account_profile1.guid(),
+                                       /*is_deduplication_initiated=*/false);
+  task_environment_.RunUntilIdle();
+
+  // Expect that account profile deletions triggered by deduplication, are
+  // marked as hide in autofill.
+  EXPECT_CALL(observer,
+              AutofillProfileChanged(AutofillProfileChangeHasCorrectType(
+                  AutofillProfileChange::HIDE_IN_AUTOFILL)));
+  address_data_manager().RemoveProfile(account_profile2.guid(),
+                                       /*is_deduplication_initiated=*/true);
+  task_environment_.RunUntilIdle();
+}
+
 // Tests that `UpdateProfile()` takes changes in the `ProfileTokenQuality`
 // observations into considerations.
 TEST_F(AddressDataManagerTest, UpdateProfile_NewObservations) {
@@ -726,11 +747,6 @@ TEST_F(AddressDataManagerTest, IsEligibleForAddressAccountStorage) {
   // No Sync, no account storage.
   address_data_manager().SetSyncServiceForTest(nullptr);
   EXPECT_FALSE(address_data_manager().IsEligibleForAddressAccountStorage());
-}
-
-TEST_F(AddressDataManagerTest, IsCountryEligibleForAccountStorage) {
-  EXPECT_TRUE(address_data_manager().IsCountryEligibleForAccountStorage("AT"));
-  EXPECT_FALSE(address_data_manager().IsCountryEligibleForAccountStorage("IR"));
 }
 
 TEST_F(AddressDataManagerTest, MigrateProfileToAccount) {
@@ -829,7 +845,7 @@ TEST_F(AddressDataManagerTest, Refresh) {
                        "joewayne@me.xyz", "Fox", "1212 Center.", "Bld. 5",
                        "Orlando", "FL", "32801", "US", "19482937549");
 
-  profile_database_service_->AddAutofillProfile(profile2);
+  profile_database_service_->AddAutofillProfile(profile2, base::DoNothing());
 
   address_data_manager().LoadProfiles();
   WaitForOnAddressDataChanged();
@@ -838,8 +854,10 @@ TEST_F(AddressDataManagerTest, Refresh) {
               UnorderedElementsAre(Pointee(profile0), Pointee(profile1),
                                    Pointee(profile2)));
 
-  profile_database_service_->RemoveAutofillProfile(profile1.guid());
-  profile_database_service_->RemoveAutofillProfile(profile2.guid());
+  profile_database_service_->RemoveAutofillProfile(
+      profile1.guid(), AutofillProfileChange::REMOVE, base::DoNothing());
+  profile_database_service_->RemoveAutofillProfile(
+      profile2.guid(), AutofillProfileChange::REMOVE, base::DoNothing());
 
   address_data_manager().LoadProfiles();
   WaitForOnAddressDataChanged();
@@ -849,7 +867,7 @@ TEST_F(AddressDataManagerTest, Refresh) {
   EXPECT_EQ(profile0, *results[0]);
 
   profile0.SetRawInfo(NAME_FIRST, u"Mar");
-  profile_database_service_->UpdateAutofillProfile(profile0);
+  profile_database_service_->UpdateAutofillProfile(profile0, base::DoNothing());
 
   address_data_manager().LoadProfiles();
   WaitForOnAddressDataChanged();
@@ -965,6 +983,33 @@ TEST_F(AddressDataManagerTest,
             updated_more_recently_used_profile);
   EXPECT_EQ(address_data_manager().GetProfiles()[0]->usage_history().use_date(),
             newer_use_data);
+}
+
+// Tests that when an update of one of the profiles makes it a duplicate of the
+// other, already existing profile. Both of them are preserved if
+// `kAutofillDeduplicateAccountAddresses` is enabled.
+TEST_F(AddressDataManagerTest, CreateDuplicateWithAnUpdate_BothProfilesExists) {
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillDeduplicateAccountAddresses};
+  AutofillProfile profile1(test::GetFullProfile());
+  AutofillProfile profile2(test::GetFullProfile2());
+
+  AddProfileToAddressDataManager(profile1);
+  AddProfileToAddressDataManager(profile2);
+
+  ASSERT_EQ(address_data_manager().GetProfiles().size(), 2U);
+
+  // Now make an update to `profile2` that makes it a duplicate of `profile1`.
+  AutofillProfile updated_profile2 = profile1;
+  updated_profile2.set_guid(profile2.guid());
+
+  address_data_manager().UpdateProfile(updated_profile2);
+  WaitForOnAddressDataChanged();
+
+  // Verify that both profiles are preserved.
+  EXPECT_THAT(
+      address_data_manager().GetProfiles(),
+      UnorderedElementsAre(Pointee(profile1), Pointee(updated_profile2)));
 }
 
 TEST_F(AddressDataManagerTest, RecordUseOf) {
@@ -1169,8 +1214,6 @@ TEST_F(AddressDataManagerTest,
 TEST_F(AddressDataManagerTest, AutofillSyncToggleAvailableInTransportMode) {
   ResetAddressDataManager(
       /*use_sync_transport_mode=*/true);
-  base::test::ScopedFeatureList feature_list{
-      ::switches::kExplicitBrowserSigninUIOnDesktop};
   const CoreAccountInfo& account = sync_service_.GetAccountInfo();
   identity_test_env_.SimulateSuccessfulFetchOfAccountInfo(
       account.account_id, account.email, account.gaia,

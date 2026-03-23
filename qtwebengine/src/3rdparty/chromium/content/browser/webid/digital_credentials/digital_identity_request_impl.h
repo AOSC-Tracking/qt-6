@@ -17,7 +17,6 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "services/data_decoder/public/cpp/data_decoder.h"
 #include "third_party/blink/public/mojom/webid/digital_identity_request.mojom.h"
-#include "url/gurl.h"
 
 namespace content {
 
@@ -40,12 +39,13 @@ class CONTENT_EXPORT DigitalIdentityRequestImpl
       RenderFrameHost&,
       mojo::PendingReceiver<blink::mojom::DigitalIdentityRequest>);
 
-  // Returns the type of interstitial to show based on the request contents.
+  // Returns the type of interstitial to show based on the request contents and
+  // the origin of the request.
   static std::optional<DigitalIdentityInterstitialType> ComputeInterstitialType(
-      const url::Origin& rp_origin,
+      RenderFrameHost& render_frame_host,
       const DigitalIdentityProvider* provider,
-      const std::string& protocol,
-      const data_decoder::DataDecoder::ValueOrError& request_data);
+      const std::vector<blink::mojom::DigitalCredentialGetRequestPtr>&
+          digital_credential_requests);
 
   DigitalIdentityRequestImpl(const DigitalIdentityRequestImpl&) = delete;
   DigitalIdentityRequestImpl& operator=(const DigitalIdentityRequestImpl&) =
@@ -54,14 +54,13 @@ class CONTENT_EXPORT DigitalIdentityRequestImpl
   ~DigitalIdentityRequestImpl() override;
 
   // blink::mojom::DigitalIdentityRequest:
-  void Get(std::vector<blink::mojom::DigitalCredentialRequestPtr>
+  void Get(std::vector<blink::mojom::DigitalCredentialGetRequestPtr>
                digital_credential_requests,
-           blink::mojom::GetRequestFormat format,
            GetCallback) override;
 
-  void Create(
-      blink::mojom::DigitalCredentialRequestPtr digital_credential_request,
-      CreateCallback) override;
+  void Create(std::vector<blink::mojom::DigitalCredentialCreateRequestPtr>
+                  digital_credential_requests,
+              CreateCallback) override;
 
   void Abort() override;
 
@@ -69,12 +68,6 @@ class CONTENT_EXPORT DigitalIdentityRequestImpl
   DigitalIdentityRequestImpl(
       RenderFrameHost&,
       mojo::PendingReceiver<blink::mojom::DigitalIdentityRequest>);
-
-  // Called when the get request JSON has been parsed.
-  void OnGetRequestJsonParsed(
-      std::string protocol,
-      base::Value request_to_send,
-      data_decoder::DataDecoder::ValueOrError parsed_result);
 
   // Called when the create request JSON has been parsed.
   void OnCreateRequestJsonParsed(
@@ -92,7 +85,7 @@ class CONTENT_EXPORT DigitalIdentityRequestImpl
   // Called when the user has fulfilled the interstitial requirement. Will be
   // called immediately after OnGetRequestJsonParsed() if no interstitial is
   // needed.
-  void OnInterstitialDone(std::string protocol,
+  void OnInterstitialDone(std::optional<std::string> protocol,
                           base::Value request_to_send,
                           DigitalIdentityProvider::RequestStatusForMetrics
                               status_after_interstitial);
@@ -101,8 +94,8 @@ class CONTENT_EXPORT DigitalIdentityRequestImpl
   // `status_for_metrics`.
   void CompleteRequest(
       std::optional<std::string> protocol,
-      const base::expected<std::string,
-                           DigitalIdentityProvider::RequestStatusForMetrics>&
+      base::expected<DigitalIdentityProvider::DigitalCredential,
+                     DigitalIdentityProvider::RequestStatusForMetrics>
           status_for_metrics);
 
   void CompleteRequestWithError(
@@ -111,8 +104,8 @@ class CONTENT_EXPORT DigitalIdentityRequestImpl
   void CompleteRequestWithStatus(
       std::optional<std::string> protocol,
       blink::mojom::RequestDigitalIdentityStatus status,
-      const base::expected<std::string,
-                           DigitalIdentityProvider::RequestStatusForMetrics>&
+      base::expected<DigitalIdentityProvider::DigitalCredential,
+                     DigitalIdentityProvider::RequestStatusForMetrics>
           response);
 
   std::unique_ptr<DigitalIdentityProvider> provider_;

@@ -12,9 +12,8 @@
 #include "build/build_config.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
-#include "components/autofill/core/browser/integrators/touch_to_fill_delegate.h"
+#include "components/autofill/core/browser/integrators/touch_to_fill/touch_to_fill_delegate.h"
 #include "components/autofill/core/browser/payments/autofill_offer_manager.h"
-#include "components/autofill/core/browser/payments/bnpl_manager.h"
 #include "components/autofill/core/browser/payments/credit_card_cvc_authenticator.h"
 #include "components/autofill/core/browser/payments/credit_card_otp_authenticator.h"
 #include "components/autofill/core/browser/payments/mandatory_reauth_manager.h"
@@ -34,10 +33,6 @@
 #include "components/webauthn/core/browser/internal_authenticator.h"
 #endif  // !BUILDFLAG(IS_IOS)
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-#include "components/autofill/core/browser/payments/local_card_migration_manager.h"
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-
 namespace autofill::payments {
 
 TestPaymentsAutofillClient::TestPaymentsAutofillClient(AutofillClient* client)
@@ -54,27 +49,6 @@ void TestPaymentsAutofillClient::LoadRiskData(
 }
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-void TestPaymentsAutofillClient::ShowLocalCardMigrationDialog(
-    base::OnceClosure show_migration_dialog_closure) {
-  std::move(show_migration_dialog_closure).Run();
-}
-
-void TestPaymentsAutofillClient::ConfirmMigrateLocalCardToCloud(
-    const LegalMessageLines& legal_message_lines,
-    const std::string& user_email,
-    const std::vector<MigratableCreditCard>& migratable_credit_cards,
-    PaymentsAutofillClient::LocalCardMigrationCallback
-        start_migrating_cards_callback) {
-  // If `migration_card_selection_` hasn't been preset by tests, default to
-  // selecting all migratable cards.
-  if (migration_card_selection_.empty()) {
-    for (MigratableCreditCard card : migratable_credit_cards) {
-      migration_card_selection_.push_back(card.credit_card().guid());
-    }
-  }
-  std::move(start_migrating_cards_callback).Run(migration_card_selection_);
-}
-
 void TestPaymentsAutofillClient::ConfirmSaveIbanLocally(
     const Iban& iban,
     bool should_show_prompt,
@@ -119,6 +93,11 @@ TestPaymentsAutofillClient::GetPaymentsNetworkInterface() {
   return payments_network_interface_.get();
 }
 
+MockMultipleRequestPaymentsNetworkInterface*
+TestPaymentsAutofillClient::GetMultipleRequestPaymentsNetworkInterface() {
+  return multiple_request_payments_network_interface_.get();
+}
+
 void TestPaymentsAutofillClient::ShowAutofillProgressDialog(
     AutofillProgressDialogType autofill_progress_dialog_type,
     base::OnceClosure cancel_callback) {
@@ -141,6 +120,7 @@ void TestPaymentsAutofillClient::ShowAutofillErrorDialog(
 }
 
 void TestPaymentsAutofillClient::ShowCardUnmaskOtpInputDialog(
+    CreditCard::RecordType card_type,
     const CardUnmaskChallengeOption& challenge_option,
     base::WeakPtr<OtpUnmaskDelegate> delegate) {
   show_otp_input_dialog_ = true;
@@ -157,10 +137,18 @@ PaymentsWindowManager* TestPaymentsAutofillClient::GetPaymentsWindowManager() {
 VirtualCardEnrollmentManager*
 TestPaymentsAutofillClient::GetVirtualCardEnrollmentManager() {
   if (!virtual_card_enrollment_manager_) {
+    PaymentsNetworkInterfaceVariation payments_network_interface;
+    if (base::FeatureList::IsEnabled(
+            features::
+                kAutofillEnableMultipleRequestInVirtualCardDownstreamEnrollment)) {
+      payments_network_interface = GetMultipleRequestPaymentsNetworkInterface();
+    } else {
+      payments_network_interface = GetPaymentsNetworkInterface();
+    }
     virtual_card_enrollment_manager_ =
         std::make_unique<VirtualCardEnrollmentManager>(
             &client_->GetPersonalDataManager().payments_data_manager(),
-            GetPaymentsNetworkInterface(), &client_.get());
+            payments_network_interface, &client_.get());
   }
 
   return virtual_card_enrollment_manager_.get();
@@ -198,14 +186,6 @@ void TestPaymentsAutofillClient::ShowMandatoryReauthOptInPrompt(
   mandatory_reauth_opt_in_prompt_was_shown_ = true;
 }
 
-BnplManager* TestPaymentsAutofillClient::GetPaymentsBnplManager() {
-  if (!bnpl_manager_) {
-    bnpl_manager_ = std::make_unique<BnplManager>(this);
-  }
-
-  return bnpl_manager_.get();
-}
-
 MockIbanManager* TestPaymentsAutofillClient::GetIbanManager() {
   if (!mock_iban_manager_) {
     mock_iban_manager_ = std::make_unique<testing::NiceMock<MockIbanManager>>(
@@ -223,6 +203,14 @@ MockIbanAccessManager* TestPaymentsAutofillClient::GetIbanAccessManager() {
   return mock_iban_access_manager_.get();
 }
 
+MockSaveAndFillManager* TestPaymentsAutofillClient::GetSaveAndFillManager() {
+  if (!mock_save_and_fill_manager_) {
+    mock_save_and_fill_manager_ =
+        std::make_unique<testing::NiceMock<MockSaveAndFillManager>>();
+  }
+  return mock_save_and_fill_manager_.get();
+}
+
 void TestPaymentsAutofillClient::ShowMandatoryReauthOptInConfirmation() {
   mandatory_reauth_opt_in_prompt_was_reshown_ = true;
 }
@@ -238,9 +226,12 @@ AutofillOfferManager* TestPaymentsAutofillClient::GetAutofillOfferManager() {
 
 bool TestPaymentsAutofillClient::ShowTouchToFillCreditCard(
     base::WeakPtr<TouchToFillDelegate> delegate,
-    base::span<const CreditCard> cards_to_suggest,
     base::span<const Suggestion> suggestions) {
   return false;
+}
+
+bool TestPaymentsAutofillClient::IsTabModalPopupDeprecated() const {
+  return is_tab_model_popup_;
 }
 
 #if !BUILDFLAG(IS_IOS)
@@ -260,8 +251,7 @@ TestPaymentsAutofillClient::GetOrCreatePaymentsMandatoryReauthManager() {
   return mock_payments_mandatory_reauth_manager_.get();
 }
 
-const PaymentsDataManager& TestPaymentsAutofillClient::GetPaymentsDataManager()
-    const {
+PaymentsDataManager& TestPaymentsAutofillClient::GetPaymentsDataManager() {
   return client_->GetPersonalDataManager().payments_data_manager();
 }
 
@@ -271,6 +261,10 @@ bool TestPaymentsAutofillClient::GetMandatoryReauthOptInPromptWasShown() {
 
 bool TestPaymentsAutofillClient::GetMandatoryReauthOptInPromptWasReshown() {
   return mandatory_reauth_opt_in_prompt_was_reshown_;
+}
+
+bool TestPaymentsAutofillClient::IsRiskBasedAuthEffectivelyAvailable() const {
+  return true;
 }
 
 void TestPaymentsAutofillClient::set_virtual_card_enrollment_manager(

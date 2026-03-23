@@ -6,6 +6,7 @@
 #define COMPONENTS_SAFE_BROWSING_CORE_BROWSER_PASSWORD_PROTECTION_PASSWORD_PROTECTION_SERVICE_BASE_H_
 
 #include <set>
+#include <vector>
 
 #include "base/feature_list.h"
 #include "base/gtest_prod_util.h"
@@ -31,13 +32,16 @@
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/sessions/core/session_id.h"
 #include "components/signin/public/identity_manager/account_info.h"
-#include "components/signin/public/identity_manager/identity_manager.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/protobuf/src/google/protobuf/repeated_field.h"
 #include "ui/gfx/geometry/size.h"
 
 class GURL;
+
+namespace signin {
+class IdentityManager;
+}
 
 namespace safe_browsing {
 
@@ -115,9 +119,6 @@ class PasswordProtectionServiceBase : public history::HistoryServiceObserver {
       const std::string& verdict_token,
       ReusedPasswordAccountType password_type) = 0;
 
-// The following functions are disabled on Android, because enterprise reporting
-// extension is not supported.
-#if !BUILDFLAG(IS_ANDROID)
   // Triggers the safeBrowsingPrivate.OnPolicySpecifiedPasswordReuseDetected.
   virtual void MaybeReportPasswordReuseDetected(const GURL& main_frame_url,
                                                 const std::string& username,
@@ -128,7 +129,6 @@ class PasswordProtectionServiceBase : public history::HistoryServiceObserver {
   // Called when a protected password change is detected. Must be called on
   // UI thread.
   virtual void ReportPasswordChanged() = 0;
-#endif
 
   scoped_refptr<SafeBrowsingDatabaseManager> database_manager();
 
@@ -245,10 +245,6 @@ class PasswordProtectionServiceBase : public history::HistoryServiceObserver {
   // Returns the URL where PasswordProtectionRequest instances send requests.
   static GURL GetPasswordProtectionRequestUrl();
 
-  // Gets the UserPopulation value for this profile.
-  virtual ChromeUserPopulation::UserPopulation GetUserPopulationPref()
-      const = 0;
-
   std::set<scoped_refptr<PasswordProtectionRequest>>&
   get_pending_requests_for_testing() {
     return pending_requests_;
@@ -340,8 +336,6 @@ class PasswordProtectionServiceBase : public history::HistoryServiceObserver {
   // the reused |password_type| and the |main_frame_url|.
   virtual bool CanShowInterstitial(ReusedPasswordAccountType password_type,
                                    const GURL& main_frame_url) = 0;
-
-  void CheckCsdAllowlistOnIOThread(const GURL& url, bool* check_result);
 
   // Get information about Delayed Warnings and Omnibox URL display experiments.
   // This information is sent in PhishGuard pings.

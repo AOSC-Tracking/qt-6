@@ -5,24 +5,29 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_FILLING_FORM_FILLER_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_FILLING_FORM_FILLER_H_
 
+#include <optional>
 #include <string>
+#include <variant>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "components/autofill/core/browser/data_model/autofill_profile.h"
-#include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/autofill_trigger_source.h"
+#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+// #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/filling/field_filling_skip_reason.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/filling/form_autofill_history.h"
-#include "components/autofill/core/browser/foundations/autofill_client.h"
-#include "components/autofill/core/browser/foundations/autofill_driver.h"
+#include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/autofill/core/common/autofill_constants.h"
 
 namespace autofill {
 
 class BrowserAutofillManager;
+class EntityInstance;
 
 // Denotes the reason for triggering a refill attempt.
 // These values are persisted to UMA logs. Entries should not be renumbered and
@@ -35,10 +40,15 @@ enum class RefillTriggerReason {
   kMaxValue = kExpirationDateFormatted
 };
 
-using AutofillAiFillingPayload = base::flat_map<FieldGlobalId, std::u16string>;
-using FillingPayload = absl::variant<const AutofillProfile*,
-                                     const CreditCard*,
-                                     AutofillAiFillingPayload>;
+using VerifiedProfile = std::map<FieldType, std::u16string>;
+
+using OtpFillData = std::map<FieldGlobalId, std::u16string>;
+
+using FillingPayload = std::variant<const AutofillProfile*,
+                                    const CreditCard*,
+                                    const EntityInstance*,
+                                    const VerifiedProfile*,
+                                    const OtpFillData*>;
 
 // Helper class responsible for [re]filling forms and fields.
 //
@@ -63,6 +73,11 @@ using FillingPayload = absl::variant<const AutofillProfile*,
 // It holds any state that is only relevant for [re]filling.
 class FormFiller {
  public:
+  struct ValueAndType {
+    std::u16string value;
+    FieldType type = NO_SERVER_DATA;
+  };
+
   explicit FormFiller(BrowserAutofillManager& manager);
 
   FormFiller(const FormFiller&) = delete;
@@ -70,13 +85,29 @@ class FormFiller {
 
   virtual ~FormFiller();
 
+  class RefillOptions {
+   public:
+    static RefillOptions NotRefill();
+    static RefillOptions Refill(DenseSet<FieldTypeGroup> originally_filled);
+
+    bool is_refill() const;
+    bool may_refill(const FieldTypeSet& field_type) const;
+
+   private:
+    RefillOptions();
+
+    std::optional<DenseSet<FieldTypeGroup>> originally_filled_;
+  };
+
   // Given `field`, the corresponding `autofill_field` to fill, and the
   // `trigger_field`, return the set of all reasons for that field to be skipped
   // for filling. If the field should not be skipped, an empty set is returned
   // (and not {FieldFillingSkipReason::kNotSkipped}).
   // `type_count` tracks the number of times a type of field has been filled.
-  // `type_group_originally_filled` denotes, in case of a refill, what groups
+  // `type_groups_originally_filled` denotes, in case of a refill, what groups
   // where filled in the initial filling.
+  // `blocked_fields` are fields which must not be filled because another
+  // filling product of higher priority claims them.
   // `filling_product` is the type of filling calling this function.
   // TODO(crbug.com/40281552): Make `type_groups_originally_filled` also a
   // FieldTypeSet.
@@ -85,10 +116,10 @@ class FormFiller {
       const FormFieldData& field,
       const AutofillField& autofill_field,
       const AutofillField& trigger_field,
+      const RefillOptions& refill_options,
       base::flat_map<FieldType, size_t>& type_count,
-      std::optional<DenseSet<FieldTypeGroup>> type_group_originally_filled,
-      FillingProduct filling_product,
-      bool is_refill = false);
+      const base::flat_set<FieldGlobalId>& blocked_fields,
+      FillingProduct filling_product);
 
   // Resets states that FormFiller holds and maintains.
   void Reset();
@@ -101,22 +132,21 @@ class FormFiller {
   // TODO(crbug.com/40281552): Make `type_groups_originally_filled` also a
   // FieldTypeSet.
   base::flat_map<FieldGlobalId, DenseSet<FieldFillingSkipReason>>
-  GetFieldFillingSkipReasons(
-      base::span<const FormFieldData> fields,
-      const FormStructure& form_structure,
-      const AutofillField& trigger_field,
-      std::optional<DenseSet<FieldTypeGroup>> type_groups_originally_filled,
-      FillingProduct filling_product,
-      bool is_refill) const;
+  GetFieldFillingSkipReasons(base::span<const FormFieldData> fields,
+                             const FormStructure& form_structure,
+                             const AutofillField& trigger_field,
+                             const RefillOptions& refill_options,
+                             FillingProduct filling_product) const;
 
   // Reverts the last autofill operation on `form` that affected
   // `trigger_field`. `renderer_action` denotes whether this is an actual
-  // filling or a preview operation on the renderer side. Returns the filling
-  // product of the operation being undone.
-  FillingProduct UndoAutofill(mojom::ActionPersistence action_persistence,
-                              FormData form,
-                              FormStructure& form_structure,
-                              const FormFieldData& trigger_field);
+  // filling or a preview operation on the renderer side.
+  // TODO(crbug.com/40227496): Keep only one of `form` and `form_structure`.
+  void UndoAutofill(mojom::ActionPersistence action_persistence,
+                    FormData form,
+                    FormStructure& form_structure,
+                    const FormFieldData& trigger_field,
+                    FillingProduct filling_product);
 
   // Records filling information if possible and routes back to the renderer.
   void FillOrPreviewField(mojom::ActionPersistence action_persistence,
@@ -135,122 +165,86 @@ class FormFiller {
       const FillingPayload& filling_payload,
       FormStructure& form_structure,
       AutofillField& autofill_field,
-      DenseSet<FieldFillingSkipReason> ignorable_skip_reasons,
       AutofillTriggerSource trigger_source,
-      bool is_refill = false);
+      std::optional<RefillTriggerReason> refill_trigger_reason = std::nullopt);
 
-  // Whether there should be an attempts to refill the form. Returns true if all
-  // the following are satisfied:
-  // - There have been no refills on this page yet.
-  // - A non-empty form name was recorded in a previous fill
-  // - That form name matched the currently parsed form name
-  // - It's been less than kLimitBeforeRefill since the original fill.
-  // - `refill_trigger_reason != kFormChanged`, or `form_structure` and the
-  //   previously filled form have different structures.
-  bool ShouldTriggerRefill(const FormStructure& form_structure,
-                           RefillTriggerReason refill_trigger_reason);
-
-  // Schedules a call of TriggerRefill. Virtual for testing.
-  virtual void ScheduleRefill(const FormData& form,
-                              const FormStructure& form_structure,
-                              AutofillTriggerSource trigger_source,
-                              RefillTriggerReason refill_trigger_reason);
-
-  // Attempts to refill the form that was changed dynamically. Should only be
-  // called if ShouldTriggerRefill returns true.
-  void TriggerRefill(const FormData& form,
-                     AutofillTriggerSource trigger_source,
-                     RefillTriggerReason refill_trigger_reason);
-
-  // This function is called by JavaScriptChangedAutofilledValue and may trigger
-  // a refill in case the website used JavaScript to reformat an expiration date
-  // like "05/2023" into "05 / 20" (i.e. it broke the year by cutting the last
-  // two digits instead of stripping the first two digits).
-  void MaybeTriggerRefillForExpirationDate(
+  // May or may not trigger a refill operation on `form`. `field` and
+  // `old_value` are only needed when `refill_trigger_reason` is
+  // `RefillTriggerReason::kExpirationDateFormatted`, and in that case `field`
+  // is the one that was reformatted and `old_value` is the value `field` had
+  // before the reformatting.
+  void MaybeTriggerRefill(
       const FormData& form,
-      const FormFieldData& field,
       const FormStructure& form_structure,
-      const std::u16string& old_value,
-      AutofillTriggerSource trigger_source);
+      RefillTriggerReason refill_trigger_reason,
+      AutofillTriggerSource trigger_source,
+      base::optional_ref<const FormFieldData> field = std::nullopt,
+      base::optional_ref<const std::u16string> old_value = std::nullopt);
 
  private:
   friend class FormFillerTestApi;
+  friend class TestFormFiller;
 
-  // Keeps track of the filling context for a form, used to make refill
-  // attempts.
-  struct RefillContext {
-    // |filling_payload| contains the data used to perform the initial filling
-    // operation.
-    RefillContext(const AutofillField& field,
-                  const FillingPayload& filling_payload);
-    ~RefillContext();
-
-    // Whether a refill attempt was made.
-    bool attempted_refill = false;
-    // The profile or credit card that was used for the initial fill. This is
-    // slightly different from `filling_payload` that is used by the filling
-    // function: This contains actual objects because this needs to survive
-    // potential storage mutation, and this only contains payloads that support
-    // refills.
-    absl::variant<CreditCard, AutofillProfile> profile_or_credit_card;
-    // Possible identifiers of the field that was focused when the form was
-    // initially filled. A refill shall be triggered from the same field.
-    const FieldGlobalId filled_field_id;
-    const FieldSignature filled_field_signature;
-    // The security origin from which the field was filled.
-    url::Origin filled_origin;
-    // The time at which the initial fill occurred.
-    // TODO(crbug.com/41490871): Remove in favor of
-    // FormStructure::last_filling_timestamp_.
-    const base::TimeTicks original_fill_time;
-    // The timer used to trigger a refill.
-    base::OneShotTimer on_refill_timer;
-    // The field type groups that were initially filled.
-    DenseSet<FieldTypeGroup> type_groups_originally_filled;
-    // If populated, this map determines which values will be filled into a
-    // field (it does not matter whether the field already contains a value).
-    // TODO(crbug.com/40947225): Investigate removing when
-    // `AutofillFixCachingOnJavaScriptChanges` launches.
-    std::map<FieldGlobalId, std::u16string> forced_fill_values;
-    // The form filled in the first attempt for filling. Used to check whether
-    // a refill should be attempted upon parsing an updated FormData.
-    std::optional<FormData> filled_form;
-  };
+  struct AugmentedFillingPayload;
+  struct RefillContext;
 
   void SetRefillContext(FormGlobalId form_id,
                         std::unique_ptr<RefillContext> context);
 
   RefillContext* GetRefillContext(FormGlobalId form_id);
 
-  // Stores the value to be filled into a field, along with its field type and
-  // if it's an override.
-  struct FieldFillingData {
-    std::u16string value_to_fill;
-    std::optional<FieldType> field_type;
-    bool value_is_an_override;
+  // Schedules a call of TriggerRefill. Virtual for testing.
+  virtual void ScheduleRefill(const FormData& form,
+                              RefillContext& refill_context,
+                              AutofillTriggerSource trigger_source,
+                              RefillTriggerReason refill_trigger_reason);
+
+  // Attempts to refill `form`.
+  void TriggerRefill(const FormData& form,
+                     AutofillTriggerSource trigger_source,
+                     RefillTriggerReason refill_trigger_reason);
+
+  struct ValueAndTypeAndOverride : public ValueAndType {
+    bool value_is_an_override = false;
   };
 
   // Returns the value to fill along with the field type and if the value is an
   // override.
-  FieldFillingData GetFieldFillingData(
+  ValueAndTypeAndOverride GetFieldFillingData(
       const AutofillField& autofill_field,
-      const FillingPayload& filling_payload,
-      const std::map<FieldGlobalId, std::u16string>& forced_fill_values,
+      const AugmentedFillingPayload& filling_payload,
+      const std::map<FieldGlobalId, ValueAndType>& forced_fill_values,
       const FormFieldData& field_data,
       mojom::ActionPersistence action_persistence,
       std::string* failure_to_fill);
 
   // Fills `field_data` and modifies `autofill_field` given all other states.
-  // Returns true if the field has been filled, false otherwise. This is
-  // independent of whether the field was filled or autofilled before.
+  // Returns the FieldType of the value that was filled, or std::nullopt if no
+  // value was filled. If the FieldType is not known, returns UNKNOWN_TYPE. The
+  // return value is independent of whether the field was filled or autofilled
+  // before. When `allow_suggestion_swapping` is true, the method still returns
+  // the FieldType if the `autofill_field` is emptied.
   // TODO(crbug.com/40227071): Cleanup API and logic.
-  bool FillField(
+  std::optional<FieldType> FillField(
       AutofillField& autofill_field,
-      const FillingPayload& filling_payload,
-      const std::map<FieldGlobalId, std::u16string>& forced_fill_values,
+      const AugmentedFillingPayload& filling_payload,
+      const std::map<FieldGlobalId, ValueAndType>& forced_fill_values,
       FormFieldData& field_data,
       mojom::ActionPersistence action_persistence,
+      bool allow_suggestion_swapping,
       std::string* failure_to_fill);
+
+  // Appends TriggerFillFieldLogEvent and FillFieldLogEvents to the relevant
+  // fields in the `form_structure` if there was a filling operation.
+  void AppendFillLogEvents(
+      const FormData& form,
+      FormStructure& form_structure,
+      AutofillField& trigger_autofill_field,
+      const base::flat_set<FieldGlobalId>& safe_field_ids,
+      const base::flat_map<FieldGlobalId, DenseSet<FieldFillingSkipReason>>&
+          skip_reasons,
+      const FillingPayload& filling_payload,
+      bool is_refill);
 
   LogManager* log_manager();
 

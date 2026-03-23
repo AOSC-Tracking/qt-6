@@ -13,12 +13,8 @@
 // for all new work.
 enum IPCMessageStart {
   AutomationMsgStart = 0,
-  QtMsgStart,
   TestMsgStart,
   WorkerMsgStart,
-  NaClMsgStart,
-  PpapiMsgStart,
-  NaClHostMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

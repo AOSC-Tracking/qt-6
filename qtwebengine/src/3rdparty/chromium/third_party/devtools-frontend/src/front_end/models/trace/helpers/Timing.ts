@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Platform from '../../../core/platform/platform.js';
 import * as Types from '../types/types.js';
 
 import {getNavigationForTraceEvent} from './Trace.js';
@@ -73,7 +74,7 @@ export interface EventTimingsData<ValueType extends Types.Timing.Micro|Types.Tim
 
 export function eventTimingsMicroSeconds(event: Types.Events.Event): EventTimingsData<Types.Timing.Micro> {
   return {
-    startTime: event.ts as Types.Timing.Micro,
+    startTime: event.ts,
     endTime: (event.ts + (event.dur ?? 0)) as Types.Timing.Micro,
     duration: (event.dur || 0) as Types.Timing.Micro,
   };
@@ -94,14 +95,6 @@ export function traceWindowMilliSeconds(bounds: Types.Timing.TraceWindowMicro): 
   };
 }
 
-export function traceWindowMillisecondsToMicroSeconds(bounds: Types.Timing.TraceWindowMilli):
-    Types.Timing.TraceWindowMicro {
-  return {
-    min: milliToMicro(bounds.min),
-    max: milliToMicro(bounds.max),
-    range: milliToMicro(bounds.range),
-  };
-}
 export function traceWindowMicroSecondsToMilliSeconds(bounds: Types.Timing.TraceWindowMicro):
     Types.Timing.TraceWindowMilli {
   return {
@@ -126,7 +119,7 @@ export function traceWindowFromMicroSeconds(
   const traceWindow: Types.Timing.TraceWindowMicro = {
     min,
     max,
-    range: Types.Timing.Micro(max - min),
+    range: (max - min) as Types.Timing.Micro,
   };
   return traceWindow;
 }
@@ -134,9 +127,69 @@ export function traceWindowFromMicroSeconds(
 export function traceWindowFromEvent(event: Types.Events.Event): Types.Timing.TraceWindowMicro {
   return {
     min: event.ts,
-    max: Types.Timing.Micro(event.ts + (event.dur ?? 0)),
-    range: event.dur ?? Types.Timing.Micro(0),
+    max: event.ts + (event.dur ?? 0) as Types.Timing.Micro,
+    range: event.dur ?? 0 as Types.Timing.Micro,
   };
+}
+
+export function traceWindowFromOverlay(overlay: Types.Overlays.Overlay): Types.Timing.TraceWindowMicro|null {
+  switch (overlay.type) {
+    case 'ENTRY_LABEL':
+    case 'ENTRY_OUTLINE':
+    case 'ENTRY_SELECTED': {
+      return traceWindowFromEvent(overlay.entry);
+    }
+
+    case 'TIMESPAN_BREAKDOWN': {
+      const windows = overlay.sections.map(s => s.bounds);
+      if (overlay.entry) {
+        windows.push(traceWindowFromEvent(overlay.entry));
+      }
+      return combineTraceWindowsMicro(windows);
+    }
+
+    case 'CANDY_STRIPED_TIME_RANGE':
+    case 'TIME_RANGE': {
+      return structuredClone(overlay.bounds);
+    }
+
+    case 'ENTRIES_LINK': {
+      const from = traceWindowFromEvent(overlay.entryFrom);
+      if (!overlay.entryTo) {
+        return from;
+      }
+
+      const to = traceWindowFromEvent(overlay.entryTo);
+      return combineTraceWindowsMicro([from, to]);
+    }
+
+    case 'TIMESTAMP_MARKER':
+      return traceWindowFromMicroSeconds(overlay.timestamp, overlay.timestamp);
+    case 'TIMINGS_MARKER':
+      return traceWindowFromMicroSeconds(overlay.adjustedTimestamp, overlay.adjustedTimestamp);
+
+    default:
+      Platform.TypeScriptUtilities.assertNever(overlay, `Unexpected overlay ${overlay}`);
+  }
+}
+
+/**
+ * Combines (as in a union) multiple windows into one.
+ */
+export function combineTraceWindowsMicro(windows: Types.Timing.TraceWindowMicro[]): Types.Timing.TraceWindowMicro|null {
+  if (!windows.length) {
+    return null;
+  }
+
+  const result: Types.Timing.TraceWindowMicro = structuredClone(windows[0]);
+  for (const bounds of windows.slice(1)) {
+    result.min = Math.min(result.min, bounds.min) as Types.Timing.Micro;
+    result.max = Math.max(result.max, bounds.max) as Types.Timing.Micro;
+  }
+
+  result.range = result.max - result.min as Types.Timing.Micro;
+
+  return result;
 }
 
 export interface BoundsIncludeTimeRange {

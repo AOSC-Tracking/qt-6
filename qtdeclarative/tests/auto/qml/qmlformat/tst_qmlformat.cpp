@@ -43,14 +43,28 @@ private Q_SLOTS:
     void qml_data();
     void qml();
 
+    void qmlSnippet_data();
+    void qmlSnippet();
+
     void semicolonRule_data();
     void semicolonRule();
+
+    void disableViaComments_data();
+    void disableViaComments();
+
+    void normalizedId_data();
+    void normalizedId();
 
 private:
     QString formatInMemory(const QString &fileToFormat, bool *didSucceed = nullptr,
                            LineWriterOptions options = LineWriterOptions(),
                            WriteOutChecks extraChecks = WriteOutCheck::ReparseCompare,
                            WriteOutChecks largeChecks = WriteOutCheck::None);
+    QString formatSnippetInMemory(const QString &snippet, bool *didSucceed,
+                                  LineWriterOptions options);
+    QString formatInMemoryImpl(bool *didSucceed, LineWriterOptions options,
+                               WriteOutChecks extraChecks, WriteOutChecks largeChecks,
+                               std::shared_ptr<DomEnvironment> &&env, FileToLoad &&fileToLoad);
 };
 
 // Don't fail on warnings because we read a lot of QML files that might intentionally be malformed.
@@ -241,8 +255,18 @@ QString TestQmlformat::formatInMemory(const QString &fileToFormat, bool *didSucc
             QStringList(), // as we load no dependencies we do not need any paths
             QQmlJS::Dom::DomEnvironment::Option::SingleThreaded
                     | QQmlJS::Dom::DomEnvironment::Option::NoDependencies);
+
+    return formatInMemoryImpl(didSucceed, options, extraChecks, largeChecks, std::move(env),
+                              FileToLoad::fromFileSystem(env, fileToFormat));
+}
+
+QString TestQmlformat::formatInMemoryImpl(bool *didSucceed, LineWriterOptions options,
+                                          WriteOutChecks extraChecks, WriteOutChecks largeChecks,
+                                          std::shared_ptr<DomEnvironment> &&env,
+                                          FileToLoad &&fileToLoad)
+{
     DomItem tFile;
-    env->loadFile(FileToLoad::fromFileSystem(env, fileToFormat),
+    env->loadFile(fileToLoad,
                   [&tFile](Path, const DomItem &, const DomItem &newIt) { tFile = newIt; });
     env->loadPendingDependencies();
     MutableDomItem myFile = tFile.field(Fields::currentItem);
@@ -257,9 +281,9 @@ QString TestQmlformat::formatInMemory(const QString &fileToFormat, bool *didSucc
 
         QTextStream res(&resultStr);
         LineWriter lw([&res](QStringView s) { res << s; }, QLatin1String("*testStream*"), options);
-        OutWriter ow(lw);
-        ow.indentNextlines = true;
         DomItem qmlFile = tFile.field(Fields::currentItem);
+        OutWriter ow(getFileItemOwner(qmlFile), lw);
+        ow.indentNextlines = true;
         writtenOut = qmlFile.writeOutForFile(ow, checks);
         lw.eof();
         res.flush();
@@ -267,6 +291,19 @@ QString TestQmlformat::formatInMemory(const QString &fileToFormat, bool *didSucc
     if (didSucceed)
         *didSucceed = writtenOut;
     return resultStr;
+}
+
+QString TestQmlformat::formatSnippetInMemory(const QString &snippet, bool *didSucceed,
+                                             LineWriterOptions options)
+{
+    auto env = DomEnvironment::create(
+            QStringList(), // as we load no dependencies we do not need any paths
+            QQmlJS::Dom::DomEnvironment::Option::SingleThreaded
+                    | QQmlJS::Dom::DomEnvironment::Option::NoDependencies);
+
+    return formatInMemoryImpl(didSucceed, options, WriteOutCheck::None, WriteOutCheck::None,
+                              std::move(env),
+                              FileToLoad::fromMemory(env, testFile("file.qml"), snippet));
 }
 
 void TestQmlformat::qml_data()
@@ -395,6 +432,35 @@ void TestQmlformat::qml()
     QCOMPARE(output, exp);
 }
 
+void TestQmlformat::qmlSnippet_data()
+{
+    QTest::addColumn<QString>("unformatted");
+    QTest::addColumn<QString>("expectedResult");
+
+    QTest::addRow("QmlObjectComment")
+            << u"EIUMAPQTE.ResourceMapHistoryControls { // qmllint disable required\n}"_s
+            << u"EIUMAPQTE.ResourceMapHistoryControls { // qmllint disable required\n}\n"_s;
+}
+
+void TestQmlformat::qmlSnippet()
+{
+    QFETCH(QString, unformatted);
+    QFETCH(QString, expectedResult);
+
+    constexpr QLatin1String snippetTemplate = R"(import QtQuick
+
+%1)"_L1;
+
+    bool wasSuccessful;
+    LineWriterOptions opts;
+    opts.attributesSequence = LineWriterOptions::AttributesSequence::Preserve;
+    // the expected snippets use unix newlines, also on windows
+    opts.lineEndings = LineWriterOptions::LineEndings::Unix;
+    QString output = formatSnippetInMemory(snippetTemplate.arg(unformatted), &wasSuccessful, opts);
+    QVERIFY(wasSuccessful && !output.isEmpty());
+    QCOMPARE(output, snippetTemplate.arg(expectedResult));
+}
+
 void TestQmlformat::semicolonRule_data()
 {
     QTest::addColumn<QString>("file");
@@ -441,6 +507,90 @@ void TestQmlformat::semicolonRule()
 
     QVERIFY(wasSuccessful && !output.isEmpty());
     QCOMPARE(output, readTestFile(formattedFile));
+}
+
+void TestQmlformat::disableViaComments_data()
+{
+    QTest::addColumn<QString>("file");
+    QTest::addColumn<QString>("fileFormatted");
+    QTest::addColumn<LineWriterOptions>("opts");
+    {
+        // Basic test for the disableViaComments feature
+        LineWriterOptions opts;
+        opts.attributesSequence = LineWriterOptions::AttributesSequence::Preserve;
+        QTest::newRow("disableFormat") << "disableViaComments/qmlobject.qml"
+                                       << "disableViaComments/qmlobject.formatted.qml" << opts;
+        QTest::newRow("disableFormatScriptExpressions")
+                << "disableViaComments/scriptExpressions.qml"
+                << "disableViaComments/scriptExpressions.formatted.qml" << opts;
+    }
+    {
+        // Basic test non-functional disableViaComments feature, i.e in normalized mode and
+        // sortImports
+        LineWriterOptions opt1;
+        opt1.attributesSequence = LineWriterOptions::AttributesSequence::Preserve;
+        opt1.sortImports = true;
+        QTest::newRow("disableFormatInSortImports")
+                << "disableViaComments/qmlobject.qml"
+                << "disableViaComments/qmlobject.nodisable.qml" << opt1;
+        opt1.attributesSequence = LineWriterOptions::AttributesSequence::Normalize;
+        QTest::newRow("disableFormatInNormalizedMode")
+                << "disableViaComments/scriptExpressions.qml"
+                << "disableViaComments/scriptExpressions.nodisable.qml" << opt1;
+    }
+    {
+        // Basic test for the disableViaComments feature
+        LineWriterOptions opts;
+        opts.attributesSequence = LineWriterOptions::AttributesSequence::Preserve;
+        QTest::newRow("disableFormatFuzzy") << "disableViaComments/fuzzy.qml"
+                                            << "disableViaComments/fuzzy.formatted.qml" << opts;
+    }
+}
+
+void TestQmlformat::disableViaComments()
+{
+    QFETCH(QString, file);
+    QFETCH(QString, fileFormatted);
+    QFETCH(LineWriterOptions, opts);
+
+    bool wasSuccessful = false;
+
+#ifdef Q_OS_WIN
+    opts.lineEndings = QQmlJS::Dom::LineWriterOptions::LineEndings::Windows;
+#endif
+    QString output = formatInMemory(testFile(file), &wasSuccessful, opts, WriteOutCheck::None);
+    QVERIFY(wasSuccessful && !output.isEmpty());
+    auto exp = readTestFile(fileFormatted);
+    QCOMPARE(output, exp);
+}
+
+void TestQmlformat::normalizedId_data()
+{
+    QTest::addColumn<QString>("fileNameBase");
+
+    QTest::addRow("soloId") << "normalizedSoloId";
+    QTest::addRow("soloIdCommented") << "normalizedSoloIdCommented";
+    QTest::addRow("idAndItem") << "normalizedIdAndItem";
+    QTest::addRow("idAndItemCommented") << "normalizedIdAndItemCommented";
+}
+
+void TestQmlformat::normalizedId()
+{
+    QFETCH(QString, fileNameBase);
+
+    bool wasSuccessful = false;
+
+    LineWriterOptions opts;
+    opts.attributesSequence = QQmlJS::Dom::LineWriterOptions::AttributesSequence::Normalize;
+#ifdef Q_OS_WIN
+    opts.lineEndings = QQmlJS::Dom::LineWriterOptions::LineEndings::Windows;
+#endif
+
+    const QString file = testFile(fileNameBase + ".qml");
+    QString output = formatInMemory(file, &wasSuccessful, opts, WriteOutCheck::None);
+    QVERIFY(wasSuccessful && !output.isEmpty());
+    auto exp = readTestFile(fileNameBase + ".formatted.qml");
+    QCOMPARE(output, exp);
 }
 
 QTEST_MAIN(TestQmlformat)

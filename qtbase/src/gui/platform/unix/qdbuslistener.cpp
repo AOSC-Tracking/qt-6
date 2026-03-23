@@ -1,12 +1,14 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qdbuslistener_p.h"
 #include "qdbussettings_p.h"
 #include <private/qguiapplication_p.h>
 #include <qpa/qplatformintegration.h>
 #include <qpa/qplatformservices.h>
-#include <private/qdbustrayicon_p.h>
+#include <qdbusconnection.h>
+#include <qfile.h>
 #include <qjsonarray.h>
 #include <qjsondocument.h>
 #include <qjsonobject.h>

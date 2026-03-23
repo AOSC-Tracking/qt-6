@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dloader_p.h"
 
@@ -451,14 +453,22 @@ void QQuick3DLoader::sourceLoaded()
     }
 
     QQmlContext *creationContext = m_component->creationContext();
-    if (!creationContext) creationContext = qmlContext(this);
-    m_itemContext = new QQmlContext(creationContext);
-    m_itemContext->setContextObject(this);
+    if (!creationContext)
+        creationContext = qmlContext(this);
+
+    QQmlComponentPrivate *cp = QQmlComponentPrivate::get(m_component);
+    QQmlContext *context = [&](){
+        if (cp->isBound())
+            return creationContext;
+        m_itemContext = new QQmlContext(creationContext);
+        m_itemContext->setContextObject(this);
+        return m_itemContext;
+    }();
 
     delete m_incubator;
     m_incubator = new QQuick3DLoaderIncubator(this, m_asynchronous ? QQmlIncubator::Asynchronous : QQmlIncubator::AsynchronousIfNested);
 
-    m_component->create(*m_incubator, m_itemContext);
+    m_component->create(*m_incubator, context);
 
     if (m_incubator && m_incubator->status() == QQmlIncubator::Loading)
         emit statusChanged();
@@ -614,7 +624,8 @@ void QQuick3DLoader::setInitialState(QObject *obj)
         item->setParentItem(this);
     }
     if (obj) {
-        QQml_setParent_noEvent(m_itemContext, obj);
+        if (m_itemContext)
+            QQml_setParent_noEvent(m_itemContext, obj);
         QQml_setParent_noEvent(obj, this);
         m_itemContext = nullptr;
     }

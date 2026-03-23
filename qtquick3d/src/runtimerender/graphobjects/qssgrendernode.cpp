@@ -1,6 +1,8 @@
 // Copyright (C) 2008-2012 NVIDIA Corporation.
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 
 #include "qssgrendernode_p.h"
@@ -36,7 +38,7 @@ void QSSGRenderNode::markDirty(DirtyFlag dirtyFlag)
 {
     if ((flags & FlagT(dirtyFlag)) == 0) { // If not already marked
         flags |= FlagT(dirtyFlag);
-        const bool markSubtreeDirty = ((FlagT(dirtyFlag) & FlagT(DirtyFlag::GlobalValuesDirty)) != 0);
+        const bool markSubtreeDirty = ((FlagT(dirtyFlag) & FlagT(DirtyFlag::SubtreeUpdateMask)) != 0);
         if (markSubtreeDirty) {
             for (auto &child : children)
                 child.markDirty(dirtyFlag);
@@ -64,6 +66,9 @@ void QSSGRenderNode::setState(LocalState state, bool on)
             break;
         case QSSGRenderNode::LocalState::Pickable:
             markDirty(DirtyFlag::PickableDirty);
+            break;
+        case QSSGRenderNode::LocalState::Imported:
+            markDirty(DirtyFlag::ImportDirty);
             break;
         }
     }

@@ -177,7 +177,9 @@ class MockClientSocketHandleFactory {
         scoped_refptr<ClientSocketPool::SocketParams>(),
         std::nullopt /* proxy_annotation_tag */, MEDIUM, SocketTag(),
         ClientSocketPool::RespectLimits::ENABLED, CompletionOnceCallback(),
-        ClientSocketPool::ProxyAuthCallback(), &pool_, NetLogWithSource());
+        ClientSocketPool::ProxyAuthCallback(),
+        /*fail_if_alias_requires_proxy_override=*/false, &pool_,
+        NetLogWithSource());
     return socket_handle;
   }
 
@@ -519,8 +521,7 @@ class WebSocketHandshakeStreamCreateHelperTest
             base::DefaultTickClock::GetInstance(),
             base::SingleThreadTaskRunner::GetCurrentDefault().get(),
             /*socket_performance_watcher=*/nullptr,
-            ConnectionEndpointMetadata(), /*report_ecn=*/true,
-            /*enable_origin_frame=*/true,
+            ConnectionEndpointMetadata(), /*enable_origin_frame=*/true,
             /*allow_server_preferred_address=*/true,
             MultiplexedSessionCreationInitiator::kUnknown,
             NetLogWithSource::Make(NetLogSourceType::NONE));

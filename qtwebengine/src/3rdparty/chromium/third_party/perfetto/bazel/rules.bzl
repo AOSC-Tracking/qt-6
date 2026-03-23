@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@perfetto//bazel:proto_gen.bzl", "proto_descriptor_gen", "proto_gen")
+load("@perfetto//bazel:run_ait_with_adb.bzl", "android_instrumentation_test")
 load("@perfetto_cfg//:perfetto_cfg.bzl", "PERFETTO_CONFIG")
 load("@rules_android//android:rules.bzl", "android_binary", "android_library")
 
@@ -23,9 +24,10 @@ load("@rules_android//android:rules.bzl", "android_binary", "android_library")
 def default_cc_args():
     return {
         "deps": PERFETTO_CONFIG.deps.build_config,
-        "copts": PERFETTO_CONFIG.default_copts + [
+        "copts": [
             "-Wno-pragma-system-header-outside-header",
-        ],
+        ] + PERFETTO_CONFIG.default_copts,
+        "cxxopts": PERFETTO_CONFIG.default_cxxopts,
         "includes": ["include"],
         "linkopts": select({
             "@perfetto//bazel:os_linux": ["-ldl", "-lrt", "-lpthread"],
@@ -160,6 +162,10 @@ def _perfetto_android_jni_library(
         srcs = [binary_target_name],
         target_compatible_with = ["@platforms//os:android"],
     )
+
+def perfetto_android_instrumentation_test(**kwargs):
+    if not _rule_override("android_instrumentation_test", **kwargs):
+        android_instrumentation_test(**kwargs)
 
 # +----------------------------------------------------------------------------+
 # | Misc rules.                                                                |
@@ -414,10 +420,17 @@ def perfetto_cc_tp_tables(name, srcs, outs, deps = [], **kwargs):
 
     cmd = ["$(location " + name + "_tool)"]
     cmd += ["--gen-dir", "$(RULEDIR)"]
-    cmd += ["--inputs", "$(SRCS)"]
+    # Do not use $(SRCS) expansion for --inputs.
+    # Arguments given to --inputs are converted into python modules, using
+    # brittle string manipulation. Instead, do the string manipulation here.
+    # If $(SRCS) expansion is used, filepaths can contain a path prefix, making
+    # it difficult to get the correct python module name.
+    # The py_library above, ${name}_lib, bundles python modules to be
+    # available on the python path for the py_binary, ${name}_tool.
+    module_names = [src.replace("/", ".").removesuffix(".py") for src in srcs]
+    cmd += ["--inputs", " ".join(module_names)]
     if PERFETTO_CONFIG.root != "//":
         cmd += ["--import-prefix", PERFETTO_CONFIG.root[2:]]
-        cmd += ["--relative-input-dir", PERFETTO_CONFIG.root[2:]]
 
     perfetto_genrule(
         name = name + "_gen",

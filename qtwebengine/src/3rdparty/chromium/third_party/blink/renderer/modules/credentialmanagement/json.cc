@@ -41,7 +41,7 @@ namespace blink {
 namespace {
 
 std::optional<DOMArrayBuffer*> WebAuthnBase64UrlDecode(const String& in) {
-  VectorOf<char> out;
+  VectorOf<uint8_t> out;
   if (!Base64UnpaddedURLDecode(in, out)) {
     return std::nullopt;
   }
@@ -241,8 +241,8 @@ AuthenticationExtensionsClientInputsFromJSON(
 }  // namespace
 
 WTF::String WebAuthnBase64UrlEncode(DOMArrayPiece buffer) {
-  // WTF::Base64URLEncode always pads, so we strip trailing '='.
-  String encoded = WTF::Base64URLEncode(buffer.ByteSpan());
+  // Base64URLEncode always pads, so we strip trailing '='.
+  String encoded = Base64URLEncode(buffer.ByteSpan());
   unsigned padding_start = encoded.length();
   for (; padding_start > 0; --padding_start) {
     if (encoded[padding_start - 1] != '=') {

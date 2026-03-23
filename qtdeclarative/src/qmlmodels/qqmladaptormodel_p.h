@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef QQMLADAPTORMODEL_P_H
 #define QQMLADAPTORMODEL_P_H
@@ -59,7 +60,7 @@ public:
                 const QList<QQmlDelegateModelItem *> &,
                 int,
                 int,
-                const QVector<int> &) const { return false; }
+                const QList<int> &) const { return false; }
         virtual void replaceWatchedRoles(
                 QQmlAdaptorModel &,
                 const QList<QByteArray> &,
@@ -131,7 +132,7 @@ public:
             const QList<QQmlDelegateModelItem *> &items,
             int index,
             int count,
-            const QVector<int> &roles) const {
+            const QList<int> &roles) const {
         return accessors->notify(*this, items, index, count, roles); }
     inline void replaceWatchedRoles(
             const QList<QByteArray> &oldRoles, const QList<QByteArray> &newRoles) {

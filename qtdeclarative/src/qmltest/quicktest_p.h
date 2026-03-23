@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QUICKTEST_P_H
 #define QUICKTEST_P_H
@@ -74,7 +75,7 @@ private Q_SLOTS:
 private:
     QTestRootObject(QObject *parent = nullptr)
         : QObject(parent), hasQuit(false), m_windowShown(false), m_hasTestCase(false)  {
-        m_defined = new QQmlPropertyMap(this);
+        m_defined = QQmlPropertyMap::create(this);
 #if defined(QT_OPENGL_ES_2_ANGLE)
         m_defined->insert(QLatin1String("QT_OPENGL_ES_2_ANGLE"), QVariant(true));
 #endif

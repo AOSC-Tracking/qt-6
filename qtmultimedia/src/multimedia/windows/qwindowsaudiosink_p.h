@@ -82,13 +82,14 @@ private:
     template <typename Functor>
     bool visitAudioClientBuffer(Functor &&f);
 
-    void fillInitialHostBuffer();
+    void fillInitialHostBuffer(StreamType);
     void runProcessRingbufferLoop();
     void runProcessCallbackLoop();
     bool processRingbuffer() noexcept QT_MM_NONBLOCKING;
     bool processCallback() noexcept QT_MM_NONBLOCKING;
 
     void handleAudioClientError();
+    void joinWorkerThread();
 
     ComPtr<IAudioClient3> m_audioClient;
     ComPtr<IAudioRenderClient> m_renderClient;
@@ -124,6 +125,7 @@ class QWindowsAudioSink final
 
 public:
     QWindowsAudioSink(QAudioDevice, const QAudioFormat &, QObject *parent);
+    ~QWindowsAudioSink() override;
 };
 
 } // namespace QtWASAPI

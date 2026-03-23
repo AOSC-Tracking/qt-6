@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/flat_set.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_forward.h"
@@ -24,6 +25,7 @@
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
+#include "content/browser/interest_group/interest_group_features.h"
 #include "content/browser/interest_group/interest_group_manager_impl.h"
 #include "content/browser/interest_group/test_interest_group_observer.h"
 #include "content/public/browser/k_anonymity_service_delegate.h"
@@ -187,6 +189,9 @@ TEST_F(InterestGroupManagerImplTest, JoinInterestGroupWithNoAds) {
 }
 
 TEST_F(InterestGroupManagerImplTest, JoinInterestGroupWithOneAd) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(features::kFledgeCacheKAnonHashedKeys);
+
   base::HistogramTester histograms;
   const url::Origin test_origin =
       url::Origin::Create(GURL("https://owner.example.com"));
@@ -221,8 +226,10 @@ TEST_F(InterestGroupManagerImplTest, JoinInterestGroupWithOneAd) {
 
 TEST_F(InterestGroupManagerImplTest,
        JoinInterestGroupWithOneAdAndSelectableBuyerAndSellerReportingIds) {
-  base::test::ScopedFeatureList feature_list{
-      blink::features::kFledgeAuctionDealSupport};
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures({blink::features::kFledgeAuctionDealSupport},
+                                {features::kFledgeCacheKAnonHashedKeys});
+
   base::HistogramTester histograms;
   const url::Origin test_origin =
       url::Origin::Create(GURL("https://owner.example.com"));
@@ -340,6 +347,9 @@ TEST_F(InterestGroupManagerImplTest, UpdateInterestGroupWithNoAds) {
 }
 
 TEST_F(InterestGroupManagerImplTest, UpdateInterestGroupWithOneAd) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(features::kFledgeCacheKAnonHashedKeys);
+
   base::HistogramTester histograms;
   const url::Origin test_origin =
       url::Origin::Create(GURL("https://owner.example.com"));
@@ -380,8 +390,10 @@ TEST_F(InterestGroupManagerImplTest, UpdateInterestGroupWithOneAd) {
 
 TEST_F(InterestGroupManagerImplTest,
        UpdateInterestGroupWithOneAdAndSelectableBuyerAndSellerReportingIds) {
-  base::test::ScopedFeatureList feature_list{
-      blink::features::kFledgeAuctionDealSupport};
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures({blink::features::kFledgeAuctionDealSupport},
+                                {features::kFledgeCacheKAnonHashedKeys});
+
   base::HistogramTester histograms;
   const url::Origin test_origin =
       url::Origin::Create(GURL("https://owner.example.com"));
@@ -460,6 +472,29 @@ TEST_F(InterestGroupManagerImplTest,
     EXPECT_EQ("metadata1", ad.metadata);
     EXPECT_EQ(ad.selectable_buyer_and_seller_reporting_ids, std::nullopt);
   }
+}
+
+TEST_F(InterestGroupManagerImplTest, RecordRandomDebugReportLockout) {
+  base::test::TestFuture<std::optional<DebugReportLockoutAndCooldowns>> result;
+  base::flat_set<url::Origin> origins;
+  interest_group_manager_->GetDebugReportLockoutAndCooldowns(
+      origins, result.GetCallback());
+  ASSERT_TRUE(result.Get().has_value());
+  EXPECT_FALSE(result.Get()->lockout.has_value());
+
+  base::Time now = base::Time::Now();
+  interest_group_manager_->RecordRandomDebugReportLockout(now);
+  base::test::TestFuture<std::optional<DebugReportLockoutAndCooldowns>> result2;
+  interest_group_manager_->GetDebugReportLockoutAndCooldowns(
+      origins, result2.GetCallback());
+
+  ASSERT_TRUE(result2.Get().has_value());
+  EXPECT_TRUE(result2.Get()->lockout.has_value());
+  base::Time expected_time = base::Time::FromDeltaSinceWindowsEpoch(
+      now.ToDeltaSinceWindowsEpoch().CeilToMultiple(base::Hours(1)));
+  EXPECT_EQ(expected_time, result2.Get()->lockout->starting_time);
+  EXPECT_GE(result2.Get()->lockout->duration, base::Days(1));
+  EXPECT_LE(result2.Get()->lockout->duration, base::Days(90));
 }
 }  // namespace
 }  // namespace content

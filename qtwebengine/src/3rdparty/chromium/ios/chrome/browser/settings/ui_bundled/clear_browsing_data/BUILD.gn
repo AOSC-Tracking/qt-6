@@ -40,6 +40,7 @@ source_set("clear_browsing_data") {
   deps = [
     ":ui_constants",
     ":util",
+    "//components/application_locale_storage",
     "//components/browsing_data/core",
     "//components/browsing_data/core:cookie_or_cache_deletion_choice",
     "//components/feature_engagement/public",
@@ -62,9 +63,10 @@ source_set("clear_browsing_data") {
     "//ios/chrome/browser/discover_feed/model:discover_feed_factory",
     "//ios/chrome/browser/feature_engagement/model",
     "//ios/chrome/browser/history/model",
-    "//ios/chrome/browser/intents:intents_donation_helper",
+    "//ios/chrome/browser/intents/model:model_donation_helper",
     "//ios/chrome/browser/keyboard/ui_bundled",
     "//ios/chrome/browser/net/model:crurl",
+    "//ios/chrome/browser/saved_tab_groups/model:tab_group_service",
     "//ios/chrome/browser/search_engines/model",
     "//ios/chrome/browser/settings/ui_bundled:settings_root",
     "//ios/chrome/browser/settings/ui_bundled/cells",
@@ -140,6 +142,7 @@ source_set("unit_tests") {
     "//ios/chrome/browser/browsing_data/model:feature_flags",
     "//ios/chrome/browser/browsing_data/model:test_support",
     "//ios/chrome/browser/discover_feed/model:discover_feed_factory",
+    "//ios/chrome/browser/feature_engagement/model",
     "//ios/chrome/browser/history/model",
     "//ios/chrome/browser/net/model:crurl",
     "//ios/chrome/browser/search_engines/model",
@@ -189,7 +192,7 @@ source_set("eg2_tests") {
   testonly = true
   sources = [
     "clear_browsing_data_egtest.mm",
-    "quick_delete_browing_data_egtest.mm",
+    "quick_delete_browsing_data_egtest.mm",
     "quick_delete_egtest.mm",
   ]
   deps = [
@@ -198,6 +201,7 @@ source_set("eg2_tests") {
     "//base/test:test_support",
     "//components/browsing_data/core",
     "//components/browsing_data/core:cookie_or_cache_deletion_choice",
+    "//components/data_sharing/public:features",
     "//components/signin/internal/identity_manager:capabilities",
     "//components/signin/public/base",
     "//components/strings",
@@ -206,6 +210,7 @@ source_set("eg2_tests") {
     "//ios/chrome/browser/authentication/ui_bundled:eg_test_support+eg2",
     "//ios/chrome/browser/autofill/ui_bundled:eg_test_support+eg2",
     "//ios/chrome/browser/metrics/model:eg_test_support+eg2",
+    "//ios/chrome/browser/popup_menu/ui_bundled:constants",
     "//ios/chrome/browser/recent_tabs/ui_bundled:ui_constants",
     "//ios/chrome/browser/settings/ui_bundled/cells:clear_browsing_data_constants",
     "//ios/chrome/browser/settings/ui_bundled/password:eg_test_support+eg2",
@@ -218,7 +223,6 @@ source_set("eg2_tests") {
     "//ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups:tab_groups_constant",
     "//ios/chrome/browser/tab_switcher/ui_bundled/test:utils",
     "//ios/chrome/browser/tabs/model/inactive_tabs:features",
-    "//ios/chrome/browser/ui/popup_menu:constants",
     "//ios/chrome/common/ui/confirmation_alert:constants",
     "//ios/chrome/test/earl_grey:eg_test_support+eg2",
     "//ios/testing/earl_grey:eg_test_support+eg2",
@@ -227,6 +231,10 @@ source_set("eg2_tests") {
     "//ui/base",
   ]
   frameworks = [ "UIKit.framework" ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("features") {

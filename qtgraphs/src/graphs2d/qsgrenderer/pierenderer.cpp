@@ -1,10 +1,15 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
+
+#include "pierenderer_p.h"
 #include <QtGraphs/qpieseries.h>
 #include <QtGraphs/qpieslice.h>
 #include <QtQuick/private/qquicktext_p.h>
 #include <QtQuick/private/qquicktaphandler_p.h>
+#include <limits>
+#include <private/qquickdraghandler_p.h>
 #include <private/pierenderer_p.h>
 #include <private/qabstractseries_p.h>
 #include <private/qgraphsview_p.h>
@@ -13,7 +18,23 @@
 #include <private/qquickshape_p.h>
 #include <private/qquicksvgparser_p.h>
 
+#include <qtgraphs_tracepoints_p.h>
+
 QT_BEGIN_NAMESPACE
+
+Q_TRACE_PREFIX(qtgraphs,
+              "QT_BEGIN_NAMESPACE" \
+               "class PieRenderer;" \
+              "QT_END_NAMESPACE"
+          )
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DPieRendererAfterPolish_entry, int cleanupSeriesCount);
+Q_TRACE_POINT(qtgraphs, QGraphs2DPieRendererAfterPolish_exit);
+
+Q_TRACE_POINT(qtgraphs, QGraphs2DPieRendererHandlePolish_entry, int sliceCount);
+Q_TRACE_POINT(qtgraphs, QGraphs2DPieRendererHandlePolish_exit);
+
+constexpr qreal qrealMax = std::numeric_limits<qreal>::max();
 
 PieRenderer::PieRenderer(QGraphsView *graph, bool clipPlotArea)
     : QQuickItem(graph)
@@ -31,6 +52,12 @@ PieRenderer::PieRenderer(QGraphsView *graph, bool clipPlotArea)
     connect(m_tapHandler, &QQuickTapHandler::singleTapped, this, &PieRenderer::onSingleTapped);
     connect(m_tapHandler, &QQuickTapHandler::doubleTapped, this, &PieRenderer::onDoubleTapped);
     connect(m_tapHandler, &QQuickTapHandler::pressedChanged, this, &PieRenderer::onPressedChanged);
+
+    m_dragHandler = new QQuickDragHandler(this);
+    m_dragHandler->setTarget(nullptr);
+    connect(m_dragHandler, &QQuickDragHandler::grabChanged, this, &PieRenderer::onGrabChanged);
+    connect(m_dragHandler, &QQuickDragHandler::translationChanged, this,
+            &PieRenderer::onTranslationChanged);
 }
 
 PieRenderer::~PieRenderer() {}
@@ -40,10 +67,9 @@ void PieRenderer::setSize(QSizeF size)
     QQuickItem::setSize(size);
 }
 
-void PieRenderer::handlePolish(QPieSeries *series)
+void PieRenderer::updateActiveSlices(QPieSeries *series, QList<QPieSlice *> slicelist)
 {
-    auto slices = series->slices();
-    for (QPieSlice *slice : std::as_const(slices)) {
+    for (QPieSlice *slice : std::as_const(slicelist)) {
         QPieSlicePrivate *d = slice->d_func();
         QQuickShapePath *shapePath = d->m_shapePath;
         QQuickShapePath *labelPath = d->m_labelPath;
@@ -81,7 +107,15 @@ void PieRenderer::handlePolish(QPieSeries *series)
             labelShape->setParent(this);
             labelShape->setParentItem(this);
         }
+
+        updateActiveSlices(series, slice->subSlices());
     }
+}
+
+void PieRenderer::handlePolish(QPieSeries *series)
+{
+    auto slices = series->slices();
+    updateActiveSlices(series, slices);
 
     if (!series->isVisible())
         return;
@@ -102,34 +136,59 @@ void PieRenderer::handlePolish(QPieSeries *series)
         m_colorIndex = m_graph->graphSeriesCount();
     m_graph->setGraphSeriesCount(m_colorIndex + series->slices().size());
 
-    qreal sliceAngle = series->startAngle();
-    int sliceIndex = 0;
     QList<QLegendData> legendDataList;
     auto slicelist = series->slices();
+    Q_TRACE(QGraphs2DPieRendererHandlePolish_entry, static_cast<int>(slicelist.count()));
+    handleSlicesPolish(series, legendDataList, slicelist, series->startAngle(), series->endAngle(),
+                       center, radius, 1.0);
+    Q_TRACE(QGraphs2DPieRendererHandlePolish_exit);
+
+    series->d_func()->setLegendData(legendDataList);
+}
+
+void PieRenderer::handleSlicesPolish(QPieSeries *series,
+                                     QList<QLegendData> &legendDataList,
+                                     QList<QPieSlice *> slicelist,
+                                     qreal startAngle,
+                                     qreal endAngle,
+                                     QPointF center,
+                                     qreal radius,
+                                     qreal radiusRatio)
+{
+    QGraphsTheme *theme = m_graph->theme();
+
+    int sliceIndex = 0;
+    qreal sliceAngle = startAngle;
     for (QPieSlice *slice : std::as_const(slicelist)) {
         m_painterPath.clear();
 
         QPieSlicePrivate *d = slice->d_func();
         d->setStartAngle(sliceAngle);
-        d->setAngleSpan((series->endAngle() - series->startAngle()) * slice->percentage()
+        d->setAngleSpan((endAngle - startAngle) * slice->percentage()
                         * series->valuesMultiplier());
 
         // update slice
         QQuickShapePath *shapePath = d->m_shapePath;
 
+        // border color
         const auto &borderColors = theme->borderColors();
         int index = sliceIndex % borderColors.size();
         QColor borderColor = borderColors.at(index);
-        if (d->m_borderColor.isValid())
+        if (d->m_borderColor.isValid() && d->m_borderColor.alpha() != 0)
             borderColor = d->m_borderColor;
+
+        // border width
         qreal borderWidth = theme->borderWidth();
         if (d->m_borderWidth >= 1.0)
             borderWidth = d->m_borderWidth;
+
+        // color
         const auto &seriesColors = theme->seriesColors();
         index = sliceIndex % seriesColors.size();
         QColor color = seriesColors.at(index);
-        if (d->m_color.isValid())
+        if (d->m_color.isValid() && d->m_color.alpha() != 0)
             color = d->m_color;
+
         shapePath->setStrokeWidth(borderWidth);
         shapePath->setStrokeColor(borderColor);
         shapePath->setFillColor(color);
@@ -144,8 +203,8 @@ void PieRenderer::handlePolish(QPieSeries *series)
             return;
 
         qreal radian = qDegreesToRadians(slice->startAngle());
-        qreal startBigX = radius * qSin(radian);
-        qreal startBigY = radius * qCos(radian);
+        qreal startBigX = radius * qSin(radian) * radiusRatio;
+        qreal startBigY = radius * qCos(radian) * radiusRatio;
 
         qreal startSmallX = startBigX * series->holeSize();
         qreal startSmallY = startBigY * series->holeSize();
@@ -160,10 +219,12 @@ void PieRenderer::handlePolish(QPieSeries *series)
         qreal pointX = startBigY * qSin(radian) + startBigX * qCos(radian);
         qreal pointY = startBigY * qCos(radian) - startBigX * qSin(radian);
 
-        QRectF rect(center.x() - radius + (explodeDistance * qSin(radian)),
-                    center.y() - radius - (explodeDistance * qCos(radian)),
-                    radius * 2,
-                    radius * 2);
+        qreal newCenterX = center.x() + (explodeDistance * qSin(radian));
+        qreal newCenterY = center.y() - (explodeDistance * qCos(radian));
+        QRectF rect(newCenterX - radius * radiusRatio,
+                    newCenterY - radius * radiusRatio,
+                    radius * 2 * radiusRatio,
+                    radius * 2 * radiusRatio);
 
         shapePath->setStartX(center.x());
         shapePath->setStartY(center.y());
@@ -199,8 +260,8 @@ void PieRenderer::handlePolish(QPieSeries *series)
         m_painterPath.clear();
 
         radian = qDegreesToRadians(slice->startAngle() + (slice->angleSpan() * .5));
-        startBigX = radius * qSin(radian);
-        startBigY = radius * qCos(radian);
+        startBigX = radius * qSin(radian) * radiusRatio;
+        startBigY = radius * qCos(radian) * radiusRatio;
 
         pointX = radius * (1.0 + d->m_labelArmLengthFactor) * qSin(radian);
         pointY = radius * (1.0 + d->m_labelArmLengthFactor) * qCos(radian);
@@ -220,33 +281,48 @@ void PieRenderer::handlePolish(QPieSeries *series)
 
         sliceAngle += slice->angleSpan();
         sliceIndex++;
+
+        handleSlicesPolish(series,
+            legendDataList,
+            slice->subSlices(),
+            slice->startAngle(),
+            slice->startAngle() + slice->angleSpan(),
+            {newCenterX, newCenterY},
+            radius,
+            radiusRatio * slice->subSlicesRatio());
+
         legendDataList.push_back({color, borderColor, d->m_labelText});
     }
-
-    series->d_func()->setLegendData(legendDataList);
 }
 
 void PieRenderer::afterPolish(QList<QAbstractSeries *> &cleanupSeries)
 {
+    Q_TRACE(QGraphs2DPieRendererAfterPolish_entry, static_cast<int>(cleanupSeries.count()));
     for (auto series : cleanupSeries) {
         auto pieSeries = qobject_cast<QPieSeries *>(series);
-        if (pieSeries) {
-            auto slices = pieSeries->slices();
-            for (QPieSlice *slice : std::as_const(slices)) {
-                QPieSlicePrivate *d = slice->d_func();
-                auto labelElements = d->m_labelPath->pathElements();
-                auto shapeElements = d->m_shapePath->pathElements();
-
-                labelElements.clear(&labelElements);
-                shapeElements.clear(&shapeElements);
-
-                slice->deleteLater();
-                d->m_labelItem->deleteLater();
-
-                m_activeSlices.remove(slice);
-            }
-        }
+        if (pieSeries)
+            handleSlicesAfterPolish(pieSeries->slices());
     }
+}
+
+void PieRenderer::handleSlicesAfterPolish(QList<QPieSlice *> slicelist)
+{
+    for (QPieSlice *slice : std::as_const(slicelist)) {
+        QPieSlicePrivate *d = slice->d_func();
+        auto labelElements = d->m_labelPath->pathElements();
+        auto shapeElements = d->m_shapePath->pathElements();
+
+        labelElements.clear(&labelElements);
+        shapeElements.clear(&shapeElements);
+
+        slice->deleteLater();
+        d->m_labelItem->deleteLater();
+
+        m_activeSlices.remove(slice);
+
+        handleSlicesAfterPolish(slice->subSlices());
+    }
+    Q_TRACE(QGraphs2DPieRendererAfterPolish_exit);
 }
 
 void PieRenderer::updateSeries(QPieSeries *series)
@@ -280,6 +356,11 @@ void PieRenderer::markedDeleted(QList<QPieSlice *> deleted)
         d->m_labelItem->deleteLater();
         m_activeSlices.remove(slice);
     }
+    // We could mark m_currentHoverSlice null only if
+    // it matches to a deleted slice, but as removals
+    // affect other slices positions it is probably
+    // better to just always disable current hovering.
+    m_currentHoverSlice = nullptr;
 }
 
 bool PieRenderer::isPointInSlice(QPointF point, QPieSlice *slice, qreal *angle)
@@ -294,13 +375,11 @@ bool PieRenderer::isPointInSlice(QPointF point, QPieSlice *slice, qreal *angle)
     if (slice->isExploded())
         explodeDistance = slice->explodeDistanceFactor() * radius;
     qreal radian = qDegreesToRadians(slice->startAngle() + (slice->angleSpan() * .5));
-    qreal xShift = center.x() + (explodeDistance * qSin(radian));
-    qreal yShift = center.y() - (explodeDistance * qCos(radian));
+    qreal xShift = center.x() + explodeDistance * qSin(radian);
+    qreal yShift = center.y() - explodeDistance * qCos(radian);
 
     QPointF adjustedPosition = QPointF(point.x() - xShift,
                                        point.y() - yShift);
-    qreal distance = qSqrt(qPow(adjustedPosition.x(), 2) +
-                           qPow(adjustedPosition.y(), 2));
     qreal foundAngle = qRadiansToDegrees(qAtan2(adjustedPosition.y(), adjustedPosition.x())) + 90;
     if (foundAngle < 0)
         foundAngle += 360;
@@ -308,12 +387,43 @@ bool PieRenderer::isPointInSlice(QPointF point, QPieSlice *slice, qreal *angle)
     if (angle)
         *angle = foundAngle;
 
-    if (distance <= radius
-        && foundAngle >= slice->startAngle()
-        && foundAngle <= (slice->startAngle() + slice->angleSpan())) {
-        return true;
+    // Check if we are in a sub slice
+    if (isPointInSubSlices(point, slice))
+        return false;
+
+    QPieSlicePrivate *d = slice->d_func();
+    QQuickShapePath *shapePath = d->m_shapePath;
+    QPainterPath painterPath = shapePath->path();
+    return painterPath.contains(point);
+}
+
+bool PieRenderer::isPointInSubSlices(QPointF point, QPieSlice *slice)
+{
+    auto slices = slice->subSlices();
+    for (const auto &subSlice : std::as_const(slices)) {
+        QPieSlicePrivate *d = subSlice->d_func();
+        QQuickShapePath *shapePath = d->m_shapePath;
+        QPainterPath painterPath = shapePath->path();
+        if (painterPath.contains(point))
+            return true;
+        if (isPointInSubSlices(point, subSlice))
+            return true;
     }
     return false;
+}
+
+qreal PieRenderer::distanceToSegment(const QVector2D p, const QVector2D segmentStart,
+                                     const QVector2D segmentEnd)
+{
+    static qreal maxdistance = 15.0;
+    QVector2D line(segmentEnd - segmentStart);
+    QVector2D startToP(p - segmentStart);
+    qreal t = QVector2D::dotProduct(startToP, line) / line.lengthSquared();
+
+    t = qBound(0.0, t, 1.0);
+    QVector2D proj = segmentStart + t * line;
+    qreal distance = (p - proj).length();
+    return distance <= maxdistance ? distance : qrealMax;
 }
 
 bool PieRenderer::handleHoverMove(QHoverEvent *event)
@@ -409,4 +519,85 @@ void PieRenderer::onPressedChanged()
     }
 }
 
+void PieRenderer::onGrabChanged(QPointingDevice::GrabTransition transition, QEventPoint eventPoint)
+{
+    QList<QPieSlice *> slices = m_activeSlices.keys();
+    if (transition == QPointingDevice::GrabTransition::GrabPassive) {
+        const qreal radiusRatio = 1.0;
+        for (const auto &slice : std::as_const(slices)) {
+            if (isPointInSlice(eventPoint.position(), slice)) {
+                m_dragSlice = slice;
+                // Slice side length
+                qreal radius = size().width() > size().height() ? size().height() : size().width();
+                radius *= (.5 * slice->series()->pieSize());
+                m_dragState.dragSeriesRadius = radius;
+                qreal startAngle = -slice->startAngle() + 90;
+                qreal startRadian = qDegreesToRadians(startAngle);
+                qreal endRadian = qDegreesToRadians(startAngle - slice->angleSpan());
+                QVector2D center(size().width() * slice->series()->horizontalPosition(),
+                                 size().height() * slice->series()->verticalPosition());
+                m_dragState.dragSeriesCenter = center;
+                QVector2D leftEndPoint(center.x() + (radius * radiusRatio * qCos(startRadian)),
+                                       center.y() - (radius * radiusRatio * qSin(startRadian)));
+                QVector2D rightEndPoint(center.x() + (radius * radiusRatio * qCos(endRadian)),
+                                        center.y() - (radius * radiusRatio * qSin(endRadian)));
+
+                qreal d_left =
+                        distanceToSegment(QVector2D(eventPoint.position()), center, leftEndPoint);
+                qreal d_right =
+                        distanceToSegment(QVector2D(eventPoint.position()), center, rightEndPoint);
+
+                if (d_left < qrealMax && d_left < d_right)
+                    m_closerEdge = Qt::LeftEdge;
+                else if (d_right < qrealMax && d_left > d_right)
+                    m_closerEdge = Qt::RightEdge;
+                else
+                    return;
+
+                m_dragState.dragging = true;
+                break;
+            }
+        }
+    } else if (transition == QPointingDevice::UngrabPassive) {
+        m_dragSlice = nullptr;
+        m_dragState.dragging = false;
+    }
+}
+
+void PieRenderer::onTranslationChanged(QVector2D delta)
+{
+    if (!m_dragState.dragging)
+        return;
+
+    qreal startAngle = -m_dragSlice->startAngle() + 90;
+    qreal startRadian = qDegreesToRadians(startAngle);
+    qreal endRadian = qDegreesToRadians(startAngle - m_dragSlice->angleSpan());
+    QVector2D leftEndPoint(
+            m_dragState.dragSeriesCenter.x() + (m_dragState.dragSeriesRadius * qCos(startRadian)),
+            m_dragState.dragSeriesCenter.y() - (m_dragState.dragSeriesRadius * qSin(startRadian)));
+    QVector2D rightEndPoint(
+            m_dragState.dragSeriesCenter.x() + (m_dragState.dragSeriesRadius * qCos(endRadian)),
+            m_dragState.dragSeriesCenter.y() - (m_dragState.dragSeriesRadius * qSin(endRadian)));
+    // Calculate the edge
+    QVector2D edgeCenter;
+    if (m_closerEdge == Qt::LeftEdge)
+        edgeCenter = (leftEndPoint - m_dragState.dragSeriesCenter) / 2;
+    else if (m_closerEdge == Qt::RightEdge)
+        edgeCenter = (rightEndPoint - m_dragState.dragSeriesCenter) / 2;
+
+    QVector2D perpendicular(-edgeCenter.y(), edgeCenter.x());
+    perpendicular.normalize();
+    delta.normalize();
+    float dragAmount = QVector2D::dotProduct(delta, perpendicular);
+    if (qAbs(dragAmount) < qCos((qDegreesToRadians(45))))
+        return;
+
+    const float sensitivity = 0.1f;
+    qreal change = dragAmount * sensitivity;
+    change = m_closerEdge == Qt::RightEdge ? change : change * -1;
+    m_dragSlice->setValue(m_dragSlice->value() + change);
+}
+
 QT_END_NAMESPACE
+
+#include "moc_pierenderer_p.cpp"

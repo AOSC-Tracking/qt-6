@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <AppKit/AppKit.h>
 
@@ -18,7 +19,7 @@ QT_USE_NAMESPACE
 
 Q_STATIC_LOGGING_CATEGORY(lcAccessibilityTable, "qt.accessibility.table")
 
-using namespace Qt::Literals::StringLiterals;
+using namespace Qt::StringLiterals;
 
 #if QT_CONFIG(accessibility)
 
@@ -713,12 +714,51 @@ static void convertLineOffset(QAccessibleTextInterface *text, int *line, int *of
         iface->setText(QAccessible::Description, QString::fromNSString(label));
 }
 
+- (NSAccessibilityOrientation)accessibilityOrientation {
+    QAccessibleInterface *iface = self.qtInterface;
+    if (!iface)
+        return NSAccessibilityOrientationUnknown;
+
+    NSAccessibilityOrientation nsOrientation = NSAccessibilityOrientationUnknown;
+    if (QAccessibleAttributesInterface *attributesIface = iface->attributesInterface()) {
+        const QVariant orientationVariant =
+                attributesIface->attributeValue(QAccessible::Attribute::Orientation);
+        if (orientationVariant.isValid()) {
+            Q_ASSERT(orientationVariant.canConvert<Qt::Orientation>());
+            const Qt::Orientation orientation = orientationVariant.value<Qt::Orientation>();
+            nsOrientation = orientation == Qt::Horizontal ? NSAccessibilityOrientationHorizontal
+                                                          : NSAccessibilityOrientationVertical;
+        }
+    }
+    return nsOrientation;
+}
+
 - (id) accessibilityValue {
     if (QAccessibleInterface *iface = self.qtInterface) {
         // VoiceOver asks for the value attribute for all elements. Return nil
         // if we don't want the element to have a value attribute.
         if (QCocoaAccessible::hasValueAttribute(iface))
             return QCocoaAccessible::getValueAttribute(iface);
+    }
+    return nil;
+}
+
+
+- (id) accessibilityMinValue {
+    if (QAccessibleInterface *iface = self.qtInterface) {
+        if (iface->valueInterface()) {
+            return iface->valueInterface()->minimumValue().toString().toNSString();
+        }
+    }
+    return nil;
+}
+
+
+- (id) accessibilityMaxValue {
+    if (QAccessibleInterface *iface = self.qtInterface) {
+        if (iface->valueInterface()) {
+            return iface->valueInterface()->maximumValue().toString().toNSString();
+        }
     }
     return nil;
 }

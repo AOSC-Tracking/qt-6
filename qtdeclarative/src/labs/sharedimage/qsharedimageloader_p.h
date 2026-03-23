@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QSHAREDIMAGELOADER_H
 #define QSHAREDIMAGELOADER_H
@@ -38,7 +39,7 @@ class Q_LABSSHAREDIMAGE_EXPORT QSharedImageLoader : public QObject
     QML_ADDED_IN_VERSION(1, 0)
 
 public:
-    typedef QVector<QVariant> ImageParameters;
+    typedef QList<QVariant> ImageParameters;
 
     QSharedImageLoader(QObject *parent = nullptr);
     ~QSharedImageLoader();

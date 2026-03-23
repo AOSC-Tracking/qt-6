@@ -54,7 +54,9 @@ installPackages+=(libgbm-dev)
 installPackages+=(libxkbfile-dev)
 installPackages+=(libxshmfence-dev)
 installPackages+=(libxss-dev)
-# installPackages+=(nodejs) too old
+installPackages+=(rustc)
+installPackages+=(bindgen)
+installPackages+=(clang)
 installPackages+=(python3-html5lib)
 #
 ## Common event loop handling
@@ -268,6 +270,9 @@ pip install --user -r "${BASH_SOURCE%/*}/../common/shared/requirements.txt"
 source "${BASH_SOURCE%/*}/../common/unix/SetEnvVar.sh"
 
 SetEnvVar "SBOM_PYTHON_APPS_PATH" "/home/qt/.local/bin"
+
+# Set SBOM_PYTHON_INTERP_PATH to Python3 instance which was used to install SBOM packages from requirements
+SetEnvVar "SBOM_PYTHON_INTERP_PATH" "/usr/local/bin/python3"
 
 # SetEnvVar "PATH" "/usr/lib/nodejs-mozilla/bin:\$PATH"
 

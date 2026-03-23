@@ -14,12 +14,15 @@
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/threading/hang_watcher.h"
 #include "base/threading/thread.h"
+#include "base/threading/thread_id_name_manager.h"
 #include "build/build_config.h"
 #include "build/config/compiler/compiler_buildflags.h"
 #include "content/child/child_thread_impl.h"
 #include "content/common/process_visibility_tracker.h"
 #include "mojo/public/cpp/bindings/interface_endpoint_client.h"
 #include "sandbox/policy/sandbox_type.h"
+#include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/sequence_manager_configurator.h"
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "third_party/blink/public/common/features.h"
 
@@ -104,9 +107,6 @@ ChildProcess::ChildProcess(base::ThreadType io_thread_type,
     initialized_thread_pool_ = true;
   }
 
-  tracing::InitTracingPostThreadPoolStartAndFeatureList(
-      /* enable_consumer */ false);
-
   // Ensure the visibility tracker is created on the main thread.
   ProcessVisibilityTracker::GetInstance();
 
@@ -123,6 +123,20 @@ ChildProcess::ChildProcess(base::ThreadType io_thread_type,
   // of process.
   thread_options.thread_type = base::ThreadType::kDisplayCritical;
 #endif
+
+  // If the NetworkServiceTaskScheduler feature is enabled and this is the main
+  // thread for the Network Service Utility process, configure the
+  // SequenceManager with specific settings for network service task scheduler.
+  // This ensures the network thread's task scheduling is handled by the
+  // experimental scheduler infrastructure.
+  if (base::FeatureList::IsEnabled(
+          network::features::kNetworkServiceTaskScheduler) &&
+      base::ThreadIdNameManager::GetInstance()->GetName(
+          base::PlatformThread::CurrentId()) ==
+          std::string_view("network.CrUtilityMain")) {
+    network::ConfigureSequenceManager(thread_options);
+  }
+
   CHECK(io_thread_->StartWithOptions(std::move(thread_options)));
   io_thread_runner_ = io_thread_->task_runner();
 }
@@ -162,7 +176,7 @@ ChildProcess::~ChildProcess() {
     base::ThreadPoolInstance::Get()->Shutdown();
   }
 
-#if BUILDFLAG(CLANG_PROFILING_INSIDE_SANDBOX) && BUILDFLAG(CLANG_PGO)
+#if BUILDFLAG(CLANG_PROFILING_INSIDE_SANDBOX) && BUILDFLAG(CLANG_PGO_PROFILING)
   // Flush the profiling data to disk. Doing this manually (vs relying on this
   // being done automatically when the process exits) will ensure that this data
   // doesn't get lost if the process is fast killed.

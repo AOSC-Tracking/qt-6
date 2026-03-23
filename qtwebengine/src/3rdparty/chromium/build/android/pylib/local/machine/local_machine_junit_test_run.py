@@ -91,7 +91,7 @@ class LocalMachineJunitTestRun(test_run.TestRun):
                  'android_resource_apk=%s\n' % resource_apk)
       props = [
           'application = android.app.Application',
-          'sdk = 28',
+          'sdk = 29',
           ('shadows = org.chromium.testing.local.'
            'CustomShadowApplicationPackageManager'),
       ]
@@ -101,6 +101,8 @@ class LocalMachineJunitTestRun(test_run.TestRun):
   def _CreateJvmArgsList(self, for_listing=False, allow_debugging=True):
     # Creates a list of jvm_args (robolectric, code coverage, etc...)
     jvm_args = [
+        # Disable warning about mockito/bytebuddy dynamically adding an agent.
+        '-XX:+EnableDynamicAgentLoading',
         '-Drobolectric.dependency.dir=%s' %
         self._test_instance.robolectric_runtime_deps_dir,
         '-Ddir.source.root=%s' % constants.DIR_SOURCE_ROOT,

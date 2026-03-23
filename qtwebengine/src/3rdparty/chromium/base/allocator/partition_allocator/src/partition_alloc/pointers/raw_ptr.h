@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 // IWYU pragma: private, include "base/memory/raw_ptr.h"
 
 #ifndef PARTITION_ALLOC_POINTERS_RAW_PTR_H_
@@ -652,7 +657,7 @@ class PA_TRIVIAL_ABI PA_GSL_POINTER raw_ptr {
     return EphemeralRawAddr(*this);
   }
 
-  PA_ALWAYS_INLINE constexpr explicit operator bool() const {
+  PA_ALWAYS_INLINE explicit operator bool() const {
     return !!wrapped_ptr_;
   }
 
@@ -1269,20 +1274,16 @@ struct pointer_traits<::raw_ptr<T, Traits>> {
 // error about being unable to invoke `std::ranges::equal_to()`.
 template <typename T,
           base::RawPtrTraits Traits,
-          template <typename>
-          typename TQ,
-          template <typename>
-          typename UQ>
+          template <typename> typename TQ,
+          template <typename> typename UQ>
 struct basic_common_reference<base::raw_ptr<T, Traits>, T*, TQ, UQ> {
   using type = T*;
 };
 
 template <typename T,
           base::RawPtrTraits Traits,
-          template <typename>
-          typename TQ,
-          template <typename>
-          typename UQ>
+          template <typename> typename TQ,
+          template <typename> typename UQ>
 struct basic_common_reference<T*, base::raw_ptr<T, Traits>, TQ, UQ> {
   using type = T*;
 };

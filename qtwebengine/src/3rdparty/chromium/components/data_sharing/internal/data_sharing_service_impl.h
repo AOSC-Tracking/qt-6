@@ -10,6 +10,7 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "base/version_info/channel.h"
 #include "components/data_sharing/internal/collaboration_group_sync_bridge.h"
 #include "components/data_sharing/internal/group_data_model.h"
@@ -48,6 +49,7 @@ namespace data_sharing {
 class DataSharingNetworkLoader;
 class PreviewServerProxy;
 class AvatarFetcher;
+class Logger;
 
 // The internal implementation of the DataSharingService.
 class DataSharingServiceImpl : public DataSharingService,
@@ -112,14 +114,12 @@ class DataSharingServiceImpl : public DataSharingService,
   void LeaveGroup(
       const GroupId& group_id,
       base::OnceCallback<void(PeopleGroupActionOutcome)> callback) override;
-  bool IsLeavingGroup(const GroupId& group_id) override;
+  bool IsLeavingOrDeletingGroup(const GroupId& group_id) override;
   std::vector<GroupEvent> GetGroupEventsSinceStartup() override;
-  bool ShouldInterceptNavigationForShareURL(const GURL& url) override;
   void HandleShareURLNavigationIntercepted(
       const GURL& url,
       std::unique_ptr<ShareURLInterceptionContext> context) override;
   std::unique_ptr<GURL> GetDataSharingUrl(const GroupData& group_data) override;
-  ParseUrlResult ParseDataSharingUrl(const GURL& url) override;
   void Shutdown() override;
   void EnsureGroupVisibility(
       const GroupId& group_id,
@@ -139,10 +139,12 @@ class DataSharingServiceImpl : public DataSharingService,
   void SetUIDelegate(
       std::unique_ptr<DataSharingUIDelegate> ui_delegate) override;
   DataSharingUIDelegate* GetUiDelegate() override;
+  Logger* GetLogger() override;
   void AddGroupDataForTesting(GroupData group_data) override;
   void SetPreviewServerProxyForTesting(
       std::unique_ptr<PreviewServerProxy> preview_server_proxy) override;
   PreviewServerProxy* GetPreviewServerProxyForTesting() override;
+  void OnCollaborationGroupRemoved(const GroupId& group_id) override;
 
   // GroupDataModel::Observer implementation.
   void OnModelLoaded() override;
@@ -203,6 +205,8 @@ class DataSharingServiceImpl : public DataSharingService,
   // model to be updated too.
   void OnSDKDelegateUpdated();
 
+  THREAD_CHECKER(thread_checker_);
+
   // It must be destroyed after the `sdk_delegate_` member because
   // `sdk_delegate` needs the `data_sharing_network_loader_`.
   std::unique_ptr<DataSharingNetworkLoader> data_sharing_network_loader_;
@@ -219,6 +223,7 @@ class DataSharingServiceImpl : public DataSharingService,
   base::ObserverList<DataSharingService::Observer> observers_;
   std::unique_ptr<PreviewServerProxy> preview_server_proxy_;
   std::unique_ptr<AvatarFetcher> avatar_fetcher_;
+  std::unique_ptr<Logger> logger_;
 
   // An in-memory map of groups that have been removed this session. This is
   // required to be able to inform users about which groups they have been
@@ -231,7 +236,7 @@ class DataSharingServiceImpl : public DataSharingService,
   // The set of groups that the user has attempted to leave in the current
   // session. Not cleared until a chrome restart.
   std::set<GroupId>
-      groups_attempted_to_leave_by_current_user_in_current_session_;
+      groups_attempted_to_leave_or_delete_by_current_user_in_current_session_;
 
   base::WeakPtrFactory<DataSharingServiceImpl> weak_ptr_factory_{this};
 };

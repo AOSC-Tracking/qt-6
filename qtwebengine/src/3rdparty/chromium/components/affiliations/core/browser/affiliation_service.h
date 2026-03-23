@@ -11,7 +11,6 @@
 #include "components/affiliations/core/browser/affiliation_source.h"
 #include "components/affiliations/core/browser/affiliation_utils.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 
 class GURL;
 
@@ -22,17 +21,6 @@ namespace affiliations {
 // See affiliation_utils.h for details of what this means.
 class AffiliationService : public KeyedService {
  public:
-  // Controls whether to send a network request or fail on a cache miss.
-  enum class StrategyOnCacheMiss {
-    // Affiliation service will keep trying to send request with exponential
-    // backlog.
-    FETCH_OVER_NETWORK,
-    // Request will fail immediately.
-    FAIL,
-    // After first request failure affiliation service will stop trying.
-    TRY_ONCE_OVER_NETWORK
-  };
-
   using ResultCallback =
       base::OnceCallback<void(const AffiliatedFacets& /* results */,
                               bool /* success */)>;

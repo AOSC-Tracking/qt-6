@@ -15,19 +15,18 @@
 #ifndef INK_RENDERING_SKIA_NATIVE_INTERNAL_SHADER_CACHE_H_
 #define INK_RENDERING_SKIA_NATIVE_INTERNAL_SHADER_CACHE_H_
 
+#include <string>
 #include <utility>
 
 #include "absl/base/nullability.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/color/color.h"
 #include "ink/color/color_space.h"
-#include "ink/geometry/affine_transform.h"
-#include "ink/rendering/bitmap.h"
-#include "ink/rendering/texture_bitmap_store.h"
+#include "ink/rendering/skia/native/texture_bitmap_store.h"
 #include "ink/strokes/input/stroke_input_batch.h"
-#include "ink/types/uri.h"
 #include "include/core/SkBlender.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
@@ -39,7 +38,7 @@ namespace ink::skia_native_internal {
 class ShaderCache {
  public:
   // If non-null, `texture_provider` must outlive the `ShaderCache`.
-  explicit ShaderCache(absl::Nullable<const TextureBitmapStore*> provider);
+  explicit ShaderCache(const TextureBitmapStore* absl_nullable provider);
 
   ShaderCache(const ShaderCache&) = delete;
   ShaderCache(ShaderCache&&) = default;
@@ -72,13 +71,10 @@ class ShaderCache {
       const BrushPaint::TextureLayer& layer);
 
   // Returns an `SkImage` object with the bitmap data for the given texture
-  // URI. The `SkImage` object will be cached, so that the same instance is
-  // returned for the same texture URI.
-  absl::StatusOr<sk_sp<SkImage>> GetImageForTexture(const Uri& texture_uri);
-
-  // Creates a new `SkImage` object from the given Ink `Bitmap`.
-  absl::StatusOr<sk_sp<SkImage>> CreateImageFromBitmap(
-      const Bitmap& ink_bitmap);
+  // ID. The `SkImage` object will be cached, so that the same instance is
+  // returned for the same texture ID.
+  absl::StatusOr<sk_sp<SkImage>> GetImageForTexture(
+      absl::string_view texture_id);
 
   // Returns the `SkColorSpace` corresponding to the given Ink `ColorSpace` and
   // `Color::Format`. The `SkColorSpace` object will be cached, so that the same
@@ -86,10 +82,10 @@ class ShaderCache {
   sk_sp<SkColorSpace> GetColorSpace(ColorSpace color_space,
                                     Color::Format format);
 
-  absl::Nullable<const TextureBitmapStore*> texture_provider_ = nullptr;
+  const TextureBitmapStore* absl_nullable texture_provider_ = nullptr;
   absl::flat_hash_map<std::pair<ColorSpace, Color::Format>, sk_sp<SkColorSpace>>
       color_spaces_;
-  absl::flat_hash_map<Uri, sk_sp<SkImage>> texture_images_;
+  absl::flat_hash_map<std::string, sk_sp<SkImage>> texture_images_;
   absl::flat_hash_map<BrushPaint::TextureLayer, sk_sp<SkShader>> layer_shaders_;
 };
 

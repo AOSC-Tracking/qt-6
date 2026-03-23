@@ -19,7 +19,7 @@
 #include <openssl/rand.h>
 
 #include "../bcm_support.h"
-#include "sysrand_internal.h"
+#include "internal.h"
 
 #if defined(OPENSSL_RAND_URANDOM)
 
@@ -60,7 +60,6 @@
 #endif  // OPENSSL_LINUX
 
 #include <openssl/mem.h>
-#include <openssl/thread.h>
 
 #include "../internal.h"
 #include "getrandom_fillin.h"

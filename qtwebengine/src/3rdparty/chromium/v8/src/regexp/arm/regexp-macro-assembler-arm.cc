@@ -217,7 +217,7 @@ void RegExpMacroAssemblerARM::CheckCharacterLT(base::uc16 limit,
   BranchOrBacktrack(lt, on_less);
 }
 
-void RegExpMacroAssemblerARM::CheckGreedyLoop(Label* on_equal) {
+void RegExpMacroAssemblerARM::CheckFixedLengthLoop(Label* on_equal) {
   __ ldr(r0, MemOperand(backtrack_stackpointer(), 0));
   __ cmp(current_input_offset(), r0);
   __ add(backtrack_stackpointer(), backtrack_stackpointer(),
@@ -696,8 +696,8 @@ void RegExpMacroAssemblerARM::PopRegExpBasePointer(Register stack_pointer_out,
   StoreRegExpStackPointerToMemory(stack_pointer_out, scratch);
 }
 
-Handle<HeapObject> RegExpMacroAssemblerARM::GetCode(Handle<String> source,
-                                                    RegExpFlags flags) {
+DirectHandle<HeapObject> RegExpMacroAssemblerARM::GetCode(
+    DirectHandle<String> source, RegExpFlags flags) {
   Label return_r0;
   // Finalize code - write the entry point code now we know how many
   // registers we need.

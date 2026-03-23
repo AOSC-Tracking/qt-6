@@ -26,9 +26,19 @@
 #include "perfetto/tracing/string_helpers.h"
 #include "perfetto/tracing/track_event_category_registry.h"
 
-// Ignore GCC warning about a missing argument for a variadic macro parameter.
 #if defined(__GNUC__) || defined(__clang__)
+#if defined(__clang__)
+#pragma clang diagnostic push
+// Fix 'error: #pragma system_header ignored in main file' for clang in Google3.
+#pragma clang diagnostic ignored "-Wpragma-system-header-outside-header"
+#endif
+
+// Ignore GCC warning about a missing argument for a variadic macro parameter.
 #pragma GCC system_header
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 #endif
 
 // Defines data structures for backing a category registry.
@@ -87,14 +97,12 @@
 // Defines the TrackEvent data source for the current track event namespace.
 // `virtual ~TrackEvent` is added to avoid `-Wweak-vtables` warning.
 // Learn more : aosp/2019906
-#define PERFETTO_INTERNAL_DECLARE_TRACK_EVENT_DATA_SOURCE(attrs)               \
-  struct attrs TrackEvent : public ::perfetto::internal::TrackEventDataSource< \
-                                TrackEvent, &internal::kCategoryRegistry> {    \
-    virtual ~TrackEvent();                                                     \
-  }
+#define PERFETTO_INTERNAL_DECLARE_TRACK_EVENT_DATA_SOURCE(attrs) \
+  struct attrs PERFETTO_COMPONENT_EXPORT TrackEvent              \
+      : public ::perfetto::internal::TrackEvent<                 \
+            &internal::kCategoryRegistry> {}
 
-#define PERFETTO_INTERNAL_DEFINE_TRACK_EVENT_DATA_SOURCE() \
-  TrackEvent::~TrackEvent() = default;
+#define PERFETTO_INTERNAL_DEFINE_TRACK_EVENT_DATA_SOURCE()
 
 // At compile time, turns a category name represented by a static string into an
 // index into the current category registry. A build error will be generated if

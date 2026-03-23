@@ -4,8 +4,8 @@
 
 import("//extensions/buildflags/buildflags.gni")
 
-assert(enable_extensions,
-       "Cannot depend on extensions because enable_extensions=false.")
+assert(enable_extensions_core,
+       "Cannot depend on extensions because enable_extensions_core=false.")
 
 source_set("management") {
   sources = [
@@ -34,6 +34,7 @@ source_set("management") {
     "//components/supervised_user/core/common:buildflags",
     "//components/supervised_user/core/common:features",
     "//content/public/browser",
+    "//extensions/browser/api:extensions_api_client",
     "//extensions/common:mojom",
   ]
 }

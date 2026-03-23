@@ -2,15 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
 
 #include <cstring>
 
+#include "base/compiler_specific.h"
 #include "base/memory/values_equivalent.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/origin_trials/origin_trial_feature.mojom-shared.h"
@@ -151,7 +147,16 @@ TEST_F(CSSPropertyTest, InternalFontSizeDeltaNotWebExposed) {
       CSSProperty::Get(CSSPropertyID::kInternalFontSizeDelta).IsWebExposed());
 }
 
-TEST_F(CSSPropertyTest, VisitedPropertiesCanParseValues) {
+class VisitedPropertiesCanParseValues
+    : public CSSPropertyTest,
+      public testing::WithParamInterface<bool> {};
+
+INSTANTIATE_TEST_SUITE_P(CSSPropertyTest,
+                         VisitedPropertiesCanParseValues,
+                         ::testing::Bool());
+
+TEST_P(VisitedPropertiesCanParseValues, ParsesAllProperties) {
+  ScopedCSSGapDecorationForTest scoped_gap_decoration(GetParam());
   const ComputedStyle& initial_style =
       GetDocument().GetStyleResolver().InitialStyle();
 
@@ -178,9 +183,30 @@ TEST_F(CSSPropertyTest, VisitedPropertiesCanParseValues) {
     const CSSValue* parsed_visited_value = css_test_helpers::ParseLonghand(
         GetDocument(), *visited, initial_value->CssText());
 
-    // The properties should have identical parsing behavior.
-    EXPECT_TRUE(
-        base::ValuesEquivalent(parsed_regular_value, parsed_visited_value));
+    // Special handling for 'column-rule-color' when gap decorations are
+    // enabled. In this case, the regular property returns a `CSSValueList` with
+    // a single value, while the visited property returns a single `CSSValue`.
+    // This discrepancy arises because visited styles are not applied to
+    // 'column-rule-color' when multiple values are used. To ensure accurate
+    // comparison, we extract the sole value from the regular property's list
+    // and compare it directly with the visited value.
+    //
+    // TODO(crbug.com/357648037): Remove this check once the visited
+    // partitioning work is done.
+    if (GetParam() && property_id == CSSPropertyID::kColumnRuleColor) {
+      EXPECT_TRUE(parsed_regular_value->IsValueList());
+      const CSSValueList* parsed_regular_value_list =
+          DynamicTo<CSSValueList>(parsed_regular_value);
+      EXPECT_EQ(parsed_regular_value_list->length(), 1);
+      const CSSValue* parsed_regular_color =
+          &parsed_regular_value_list->Item(0);
+      EXPECT_TRUE(
+          base::ValuesEquivalent(parsed_regular_color, parsed_visited_value));
+    } else {
+      // The properties should have identical parsing behavior.
+      EXPECT_TRUE(
+          base::ValuesEquivalent(parsed_regular_value, parsed_visited_value));
+    }
 
     num_visited++;
   }
@@ -289,12 +315,12 @@ TEST_F(CSSPropertyTest, AlternativePropertyData) {
                 alternative.GetPropertyNameAtomicString());
       EXPECT_EQ(property.GetPropertyNameString(),
                 alternative.GetPropertyNameString());
-      EXPECT_EQ(std::strcmp(property.GetPropertyName(),
-                            alternative.GetPropertyName()),
-                0);
-      EXPECT_EQ(std::strcmp(property.GetJSPropertyName(),
-                            alternative.GetJSPropertyName()),
-                0);
+      UNSAFE_TODO(EXPECT_EQ(std::strcmp(property.GetPropertyName(),
+                                        alternative.GetPropertyName()),
+                            0));
+      UNSAFE_TODO(EXPECT_EQ(std::strcmp(property.GetJSPropertyName(),
+                                        alternative.GetJSPropertyName()),
+                            0));
 
       // Alternative properties should should also use the same CSSSampleId.
       EXPECT_EQ(GetCSSSampleId(property_id), GetCSSSampleId(alternative_id));
@@ -318,7 +344,7 @@ TEST_F(CSSPropertyTest, AlternativePropertyExposure) {
       bool alternative_exposed = alternative.Exposure() != CSSExposure::kNone;
 
       // If the alternative is exposed, the main property can not be exposed.
-      EXPECT_TRUE(alternative_exposed ? !property_exposed : true);
+      EXPECT_TRUE(!alternative_exposed || !property_exposed);
     }
   }
 }
@@ -477,26 +503,152 @@ TEST_F(CSSPropertyTest, AnchorModeHeight) {
             ComputedValue("max-height", "anchor-size(width, 0px)", context));
 }
 
-TEST_F(CSSPropertyTest, AnchorSizeInsetsMarginsDisabled) {
-  ScopedCSSAnchorSizeInsetsMarginsForTest enabled(false);
+TEST_F(CSSPropertyTest, IdentFunctionFeatureDisabled) {
+  ScopedCSSIdentFunctionForTest scoped_feature(false);
 
-  String anchor_size_value("anchor-size(width)");
-  EXPECT_EQ(Parse("top", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("left", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("bottom", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("right", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("inset-block-start", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("inset-block-end", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("inset-inline-start", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("inset-inline-end", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("margin-top", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("margin-left", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("margin-bottom", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("margin-right", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("margin-block-start", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("margin-block-end", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("margin-inline-start", anchor_size_value), nullptr);
-  EXPECT_EQ(Parse("margin-inline-end", anchor_size_value), nullptr);
+  EXPECT_FALSE(Parse("view-transition-name", "ident(a)"));
+}
+
+struct DirectionAwarePropertyData {
+  CSSPropertyID physical;
+  CSSPropertyID logical;
+  WritingDirectionMode writing_mode;
+};
+
+const DirectionAwarePropertyData DirectionAwareConverterTestData[] = {
+    {CSSPropertyID::kMarginRight,
+     CSSPropertyID::kMarginBlockEnd,
+     {WritingMode::kVerticalLr, TextDirection::kRtl}},
+    {CSSPropertyID::kMarginTop,
+     CSSPropertyID::kMarginBlockStart,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kMarginTop,
+     CSSPropertyID::kMarginBlockStart,
+     {WritingMode::kHorizontalTb, TextDirection::kRtl}},
+    {CSSPropertyID::kPaddingLeft,
+     CSSPropertyID::kPaddingInlineStart,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kPaddingTop,
+     CSSPropertyID::kPaddingInlineEnd,
+     {WritingMode::kVerticalLr, TextDirection::kRtl}},
+    {CSSPropertyID::kPaddingBottom,
+     CSSPropertyID::kPaddingBlockEnd,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kPaddingRight,
+     CSSPropertyID::kPaddingBlockStart,
+     {WritingMode::kSidewaysRl, TextDirection::kLtr}},
+    {CSSPropertyID::kPaddingLeft,
+     CSSPropertyID::kPaddingBlockEnd,
+     {WritingMode::kSidewaysRl, TextDirection::kRtl}},
+    {CSSPropertyID::kHeight,
+     CSSPropertyID::kBlockSize,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kHeight,
+     CSSPropertyID::kInlineSize,
+     {WritingMode::kVerticalRl, TextDirection::kLtr}},
+    {CSSPropertyID::kHeight,
+     CSSPropertyID::kInlineSize,
+     {WritingMode::kVerticalRl, TextDirection::kRtl}},
+    {CSSPropertyID::kHeight,
+     CSSPropertyID::kInlineSize,
+     {WritingMode::kVerticalLr, TextDirection::kRtl}},
+    {CSSPropertyID::kHeight,
+     CSSPropertyID::kInlineSize,
+     {WritingMode::kVerticalLr, TextDirection::kRtl}},
+    {CSSPropertyID::kHeight,
+     CSSPropertyID::kInlineSize,
+     {WritingMode::kSidewaysRl, TextDirection::kRtl}},
+    {CSSPropertyID::kMinHeight,
+     CSSPropertyID::kMinBlockSize,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kMaxHeight,
+     CSSPropertyID::kMaxBlockSize,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kMaxWidth,
+     CSSPropertyID::kMaxInlineSize,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kMinWidth,
+     CSSPropertyID::kMinInlineSize,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kWidth,
+     CSSPropertyID::kInlineSize,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kBorderTopLeftRadius,
+     CSSPropertyID::kBorderStartStartRadius,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kBorderTopLeftRadius,
+     CSSPropertyID::kBorderStartEndRadius,
+     {WritingMode::kHorizontalTb, TextDirection::kRtl}},
+    {CSSPropertyID::kBorderTopLeftRadius,
+     CSSPropertyID::kBorderEndStartRadius,
+     {WritingMode::kVerticalRl, TextDirection::kLtr}},
+    {CSSPropertyID::kBorderTopLeftRadius,
+     CSSPropertyID::kBorderEndEndRadius,
+     {WritingMode::kSidewaysRl, TextDirection::kRtl}},
+    {CSSPropertyID::kBorderTopRightRadius,
+     CSSPropertyID::kBorderStartStartRadius,
+     {WritingMode::kSidewaysRl, TextDirection::kLtr}},
+    {CSSPropertyID::kBorderBottomLeftRadius,
+     CSSPropertyID::kBorderStartEndRadius,
+     {WritingMode::kVerticalLr, TextDirection::kLtr}},
+    {CSSPropertyID::kBorderBottomLeftRadius,
+     CSSPropertyID::kBorderStartStartRadius,
+     {WritingMode::kVerticalLr, TextDirection::kRtl}},
+    {CSSPropertyID::kBorderBottomLeftRadius,
+     CSSPropertyID::kBorderEndEndRadius,
+     {WritingMode::kHorizontalTb, TextDirection::kRtl}},
+    {CSSPropertyID::kBorderBottomRightRadius,
+     CSSPropertyID::kBorderEndEndRadius,
+     {WritingMode::kSidewaysLr, TextDirection::kRtl}},
+    {CSSPropertyID::kTop,
+     CSSPropertyID::kInsetInlineEnd,
+     {WritingMode::kVerticalLr, TextDirection::kRtl}},
+    {CSSPropertyID::kLeft,
+     CSSPropertyID::kInsetInlineStart,
+     {WritingMode::kHorizontalTb, TextDirection::kLtr}},
+    {CSSPropertyID::kBottom,
+     CSSPropertyID::kInsetBlockEnd,
+     {WritingMode::kHorizontalTb, TextDirection::kRtl}},
+    {CSSPropertyID::kRight,
+     CSSPropertyID::kInsetBlockStart,
+     {WritingMode::kVerticalRl, TextDirection::kRtl}},
+};
+
+class DirectionAwareConverterTest
+    : public CSSPropertyTest,
+      public testing::WithParamInterface<DirectionAwarePropertyData> {};
+
+INSTANTIATE_TEST_SUITE_P(CSSPropertyTest,
+                         DirectionAwareConverterTest,
+                         testing::ValuesIn(DirectionAwareConverterTestData));
+
+TEST_P(DirectionAwareConverterTest, ToPhysical) {
+  DirectionAwarePropertyData property_data = GetParam();
+
+  const CSSProperty& property = CSSProperty::Get(property_data.logical);
+  EXPECT_EQ(static_cast<int>(
+                property.ToPhysical(property_data.writing_mode).PropertyID()),
+            static_cast<int>(property_data.physical));
+}
+
+TEST_P(DirectionAwareConverterTest, TestToLogical) {
+  DirectionAwarePropertyData property_data = GetParam();
+  const CSSProperty& property = CSSProperty::Get(property_data.physical);
+  EXPECT_EQ(static_cast<int>(
+                property.ToLogical(property_data.writing_mode).PropertyID()),
+            static_cast<int>(property_data.logical));
+}
+
+TEST_P(DirectionAwareConverterTest, TestConvertsEquality) {
+  DirectionAwarePropertyData property_data = GetParam();
+  const CSSProperty& physical = CSSProperty::Get(property_data.physical);
+  const CSSProperty& logical = CSSProperty::Get(property_data.logical);
+  EXPECT_EQ(static_cast<int>(
+                physical.ToLogical(property_data.writing_mode).PropertyID()),
+            static_cast<int>(logical.PropertyID()));
+  EXPECT_EQ(static_cast<int>(physical.PropertyID()),
+            static_cast<int>(
+                logical.ToPhysical(property_data.writing_mode).PropertyID()));
 }
 
 }  // namespace blink

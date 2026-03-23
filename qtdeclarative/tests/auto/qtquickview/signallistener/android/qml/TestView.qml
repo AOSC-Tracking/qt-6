@@ -18,6 +18,10 @@ Item {
         doubleValue: double,
         stringValue: string)
 
+    // Early register QtQuickView, QtQuickViewContent
+    signal earlyRegistrationQuickViewSignal(value: int)
+    signal earlyRegistrationQuickViewContentSignal(value: int)
+
     readonly property int signalWaitTime: 1000
 
     TestActivityCommunicator {
@@ -53,6 +57,16 @@ Item {
         id: manyTypeSpy
         target: communicator
         signalName: "manyTypeSignal"
+    }
+    SignalSpy {
+        id: earlyRegistrationQuickViewSignalSpy
+        target: communicator
+        signalName: "earlyRegistrationQuickViewSignal"
+    }
+    SignalSpy {
+        id: earlyRegistrationQuickViewContentSignalSpy
+        target: communicator
+        signalName: "earlyRegistrationQuickViewContentSignal"
     }
 
     function wipeSpies() {
@@ -148,7 +162,7 @@ Item {
         name: "spamSignaling"
         when: windowShown
 
-        readonly property int spam_count: 100000
+        readonly property int spam_count: 500
 
         function init() { root.wipeSpies() }
 
@@ -158,7 +172,6 @@ Item {
         }
 
         function test_basic() {
-            skip("QTBUG-138104 Global reference table overflow")
             compare(basicSpy.count, 0)
             for (let i = 0; i < spam_count; ++i) {
                 root.basicSignal()
@@ -169,7 +182,6 @@ Item {
         }
 
         function test_int() {
-            skip("QTBUG-138104 Global reference table overflow")
             const testVal = 123
             compare(intSpy.count, 0)
             for (let i = 0; i < spam_count; ++i) {
@@ -184,7 +196,6 @@ Item {
         }
 
         function test_bool() {
-            skip("QTBUG-138104 Global reference table overflow")
             const testVal = false
             compare(boolSpy.count, 0)
             for (let i = 0; i < spam_count; ++i) {
@@ -199,7 +210,6 @@ Item {
         }
 
         function test_double() {
-            skip("QTBUG-138104 Global reference table overflow")
             const testVal = 123.123
             compare(doubleSpy.count, 0)
             for (let i = 0; i < spam_count; ++i) {
@@ -214,7 +224,6 @@ Item {
         }
 
         function test_string() {
-            skip("QTBUG-138104 Global reference table overflow")
             const testVal = "Testing testing, is this thing on?"
             compare(stringSpy.count, 0)
             for (let i = 0; i < spam_count; ++i) {
@@ -324,13 +333,92 @@ Item {
         }
     }
 
-    // Workaround for QTBUG-137025, allow the Android UI thread to loop.
     TestCase {
-        name: "aDelayToAllowProcessing"
+        name: "registerUnregister"
         when: windowShown
-        function test_a() {
-            wait(1000)
-            verify(true)
+
+        function init() {
+            communicator.registerSignals()
+            root.wipeSpies()
+        }
+
+        function test_reconnection() {
+            communicator.unregisterSignals()
+
+            root.basicSignal()
+            root.intSignal(123)
+            root.boolSignal(false)
+            root.doubleSignal(123.123)
+            root.stringSignal("Testing testing, is this thing on?")
+
+            wait(1000);
+
+            compare(basicSpy.count, 0)
+            compare(intSpy.count, 0)
+            compare(boolSpy.count, 0)
+            compare(doubleSpy.count, 0)
+            compare(stringSpy.count, 0)
+
+            communicator.registerSignals()
+
+            root.basicSignal()
+            basicSpy.wait(root.signalWaitTime)
+            compare(basicSpy.count, 1)
+
+            const testInt = 123123123
+            root.intSignal(testInt)
+            intSpy.wait(root.signalWaitTime)
+            compare(intSpy.count, 1)
+            compare(intSpy.signalArguments.length, 1)
+            compare(intSpy.signalArguments[0][0], testInt)
+
+            const testBool = true
+            root.boolSignal(testBool)
+            boolSpy.wait(root.signalWaitTime)
+            compare(boolSpy.count, 1)
+            compare(boolSpy.signalArguments.length, 1)
+            compare(boolSpy.signalArguments[0][0], testBool)
+
+            const testDouble = 123.123
+            root.doubleSignal(testDouble)
+            doubleSpy.wait(root.signalWaitTime)
+            compare(doubleSpy.count, 1)
+            compare(doubleSpy.signalArguments.length, 1)
+            compare(doubleSpy.signalArguments[0][0], testDouble)
+
+            const testString = "Testing testing, is this thing on?"
+            root.stringSignal(testString)
+            stringSpy.wait(root.signalWaitTime)
+            compare(stringSpy.count, 1)
+            compare(stringSpy.signalArguments.length, 1)
+            compare(stringSpy.signalArguments[0][0], testString)
+        }
+
+        function cleanup() {
+            communicator.registerSignals()
+        }
+    }
+
+    TestCase {
+        name: "earlySignals"
+        when: windowShown
+
+        function test_quickView() {
+            earlyRegistrationQuickViewSignalSpy.clear()
+            root.earlyRegistrationQuickViewSignal(512)
+            earlyRegistrationQuickViewSignalSpy.wait(root.signalWatTime)
+            compare(earlyRegistrationQuickViewSignalSpy.count, 1)
+            compare(earlyRegistrationQuickViewSignalSpy.signalArguments.length, 1)
+            compare(earlyRegistrationQuickViewSignalSpy.signalArguments[0][0], 512)
+        }
+
+        function test_quickViewContent() {
+            earlyRegistrationQuickViewContentSignalSpy.clear()
+            root.earlyRegistrationQuickViewContentSignal(512)
+            earlyRegistrationQuickViewContentSignalSpy.wait(root.signalWatTime)
+            compare(earlyRegistrationQuickViewContentSignalSpy.count, 1)
+            compare(earlyRegistrationQuickViewContentSignalSpy.signalArguments.length, 1)
+            compare(earlyRegistrationQuickViewContentSignalSpy.signalArguments[0][0], 512)
         }
     }
 

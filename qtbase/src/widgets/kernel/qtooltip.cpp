@@ -1,31 +1,29 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtWidgets/private/qtwidgetsglobal_p.h>
 
 #include <qapplication.h>
 #include <qevent.h>
-#include <qpointer.h>
 #include <qstyle.h>
 #include <qstyleoption.h>
 #include <qstylepainter.h>
 #if QT_CONFIG(effects)
 #include <private/qeffects_p.h>
 #endif
-#include <qtextdocument.h>
-#include <qdebug.h>
 #include <qpa/qplatformscreen.h>
 #include <qpa/qplatformcursor.h>
 #if QT_CONFIG(style_stylesheet)
 #include <private/qstylesheetstyle_p.h>
 #endif
+#include <qpa/qplatformwindow.h>
+#include <qpa/qplatformwindow_p.h>
 
-#include <qlabel.h>
 #include <QtWidgets/private/qlabel_p.h>
 #include <QtGui/private/qhighdpiscaling_p.h>
 #include <qtooltip.h>
-
-#include <QtCore/qbasictimer.h>
+#include <QtWidgets/private/qtooltip_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -90,57 +88,6 @@ using namespace Qt::StringLiterals;
     \sa QWidget::toolTip, QAction::toolTip
 */
 
-class QTipLabel : public QLabel
-{
-    Q_OBJECT
-public:
-    QTipLabel(const QString &text, const QPoint &pos, QWidget *w, int msecDisplayTime);
-    ~QTipLabel();
-    static QTipLabel *instance;
-
-    void adjustTooltipScreen(const QPoint &pos);
-    void updateSize(const QPoint &pos);
-
-    bool eventFilter(QObject *, QEvent *) override;
-
-    QBasicTimer hideTimer, expireTimer;
-
-    bool fadingOut;
-
-    void reuseTip(const QString &text, int msecDisplayTime, const QPoint &pos);
-    void hideTip();
-    void hideTipImmediately();
-    void setTipRect(QWidget *w, const QRect &r);
-    void restartExpireTimer(int msecDisplayTime);
-    bool tipChanged(const QPoint &pos, const QString &text, QObject *o);
-    void placeTip(const QPoint &pos, QWidget *w);
-
-    static QScreen *getTipScreen(const QPoint &pos, QWidget *w);
-protected:
-    void timerEvent(QTimerEvent *e) override;
-    void paintEvent(QPaintEvent *e) override;
-    void mouseMoveEvent(QMouseEvent *e) override;
-    void resizeEvent(QResizeEvent *e) override;
-
-#if QT_CONFIG(style_stylesheet)
-public slots:
-    /** \internal
-      Cleanup the _q_stylesheet_parent property.
-     */
-    void styleSheetParentDestroyed() {
-        setProperty("_q_stylesheet_parent", QVariant());
-        styleSheetParent = nullptr;
-    }
-
-private:
-    QWidget *styleSheetParent;
-#endif
-
-private:
-    QWidget *widget;
-    QRect rect;
-};
-
 QTipLabel *QTipLabel::instance = nullptr;
 
 QTipLabel::QTipLabel(const QString &text, const QPoint &pos, QWidget *w, int msecDisplayTime)
@@ -149,6 +96,7 @@ QTipLabel::QTipLabel(const QString &text, const QPoint &pos, QWidget *w, int mse
     , styleSheetParent(nullptr)
 #endif
     , widget(nullptr)
+    , fadingOut(false)
 {
     delete instance;
     instance = this;
@@ -163,7 +111,6 @@ QTipLabel::QTipLabel(const QString &text, const QPoint &pos, QWidget *w, int mse
     qApp->installEventFilter(this);
     setWindowOpacity(style()->styleHint(QStyle::SH_ToolTipLabel_Opacity, nullptr, this) / 255.0);
     setMouseTracking(true);
-    fadingOut = false;
     reuseTip(text, msecDisplayTime, pos);
 }
 
@@ -237,10 +184,10 @@ void QTipLabel::resizeEvent(QResizeEvent *e)
 void QTipLabel::mouseMoveEvent(QMouseEvent *e)
 {
     if (!rect.isNull()) {
-        QPoint pos = e->globalPosition().toPoint();
+        QPointF pos = e->globalPosition();
         if (widget)
             pos = widget->mapFromGlobal(pos);
-        if (!rect.contains(pos))
+        if (!rect.contains(pos.toPoint()))
             hideTip();
     }
     QLabel::mouseMoveEvent(e);
@@ -385,6 +332,20 @@ void QTipLabel::placeTip(const QPoint &pos, QWidget *w)
 
         p += offset;
 
+#if QT_CONFIG(wayland)
+        if (w) {
+            create();
+            if (auto waylandWindow = dynamic_cast<QNativeInterface::Private::QWaylandWindow*>(windowHandle()->handle())) {
+                // based on the existing code below, by default position at 'p' stored at the bottom right of our rect
+                // then  flip to the other arbitrary 4x24 space if constrained
+                const QRect controlGeometry = QRect(p.x() - 4, p.y() - 24, 4, 24)
+                    .translated(-w->window()->mapToGlobal(QPoint(0, 0)));
+                waylandWindow->setParentControlGeometry(controlGeometry);
+                waylandWindow->setExtendedWindowType(QNativeInterface::Private::QWaylandWindow::ToolTip);
+            }
+        }
+#endif
+
         QRect screenRect = screen->geometry();
         if (p.x() + this->width() > screenRect.x() + screenRect.width())
             p.rx() -= 4 + this->width();
@@ -414,6 +375,15 @@ bool QTipLabel::tipChanged(const QPoint &pos, const QString &text, QObject *o)
         return !rect.contains(pos);
     else
        return false;
+}
+
+/** \internal
+  Cleanup the _q_stylesheet_parent property.
+ */
+void QTipLabel::styleSheetParentDestroyed()
+{
+    setProperty("_q_stylesheet_parent", QVariant());
+    styleSheetParent = nullptr;
 }
 
 /*!
@@ -577,4 +547,4 @@ void QToolTip::setFont(const QFont &font)
 
 QT_END_NAMESPACE
 
-#include "qtooltip.moc"
+#include "moc_qtooltip_p.cpp"

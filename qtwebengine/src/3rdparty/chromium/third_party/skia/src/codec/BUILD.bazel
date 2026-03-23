@@ -1,6 +1,5 @@
 load(
     "//bazel:skia_rules.bzl",
-    "generate_cpp_files_for_headers",
     "skia_cc_library",
     "skia_filegroup",
     "split_srcs_and_hdrs",
@@ -54,6 +53,7 @@ skia_cc_library(
     visibility = [
         "//experimental/rust_png:__subpackages__",
         "//src/encode:__pkg__",
+        "//src/pdf:__pkg__",
         "//src/ports:__pkg__",
     ],
     deps = [
@@ -91,6 +91,7 @@ skia_cc_library(
         "//modules/skottie/src:__pkg__",
         "//modules/skresources:__pkg__",
         "//src/android:__pkg__",
+        "//src/pdf:__pkg__",
         "//tools:__pkg__",
     ],
     deps = [
@@ -388,14 +389,6 @@ skia_cc_library(
         "//src/core",
         "//src/core:core_priv",
         "@libwebp",
-    ],
-)
-
-generate_cpp_files_for_headers(
-    name = "headers_to_compile",
-    headers = [
-        "SkPixmapUtilsPriv.h",
-        "SkScalingCodec.h",
     ],
 )
 

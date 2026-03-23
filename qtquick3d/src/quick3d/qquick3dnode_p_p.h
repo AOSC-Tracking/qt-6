@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QQUICK3DNODE_P_P_H
 #define QQUICK3DNODE_P_P_H
@@ -20,6 +22,7 @@
 
 #include "qquick3dobject_p.h"
 #include "qquick3dnode_p.h"
+#include "qquick3dcontentlayer_p.h"
 
 #include <QtQuick3DUtils/private/qssgutils_p.h>
 
@@ -37,7 +40,8 @@ class Q_QUICK3D_EXPORT QQuick3DNodePrivate : public QQuick3DObjectPrivate
 
 public:
 
-    explicit QQuick3DNodePrivate(QQuick3DObjectPrivate::Type t);
+    explicit QQuick3DNodePrivate(QQuick3DObjectPrivate::Type t,
+                                 QQuick3DContentLayer::LayerFlag layerFlag = QQuick3DContentLayer::Layer0);
     ~QQuick3DNodePrivate();
     void init();
 
@@ -61,6 +65,7 @@ public:
     QVector3D m_position;
     QVector3D m_scale{ 1.0f, 1.0f, 1.0f };
     QVector3D m_pivot;
+    QSSGRenderNodeTag m_tag;
     float m_opacity = 1.0f;
     int m_staticFlags = 0;
     bool m_visible = true;

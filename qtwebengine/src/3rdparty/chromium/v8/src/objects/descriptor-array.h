@@ -13,6 +13,7 @@
 #include "src/objects/objects.h"
 #include "src/objects/struct.h"
 #include "src/utils/utils.h"
+#include "torque-generated/bit-fields.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -56,8 +57,29 @@ class DescriptorArray
  public:
   DECL_INT16_ACCESSORS(number_of_all_descriptors)
   DECL_INT16_ACCESSORS(number_of_descriptors)
+  DECL_RELAXED_PRIMITIVE_ACCESSORS(flags, uint32_t)
   inline int16_t number_of_slack_descriptors() const;
   inline int number_of_entries() const;
+
+  enum class FastIterableState : uint8_t {
+    // Descriptors are JSON fast iterable, iff all of the following conditions
+    // are met:
+    // - No key is a symbol.
+    // - All keys are enumberable.
+    // - All keys are one-byte and don't contain any character that requires
+    //   escaping.
+    // - All properties are located in field.
+    kJsonFast = 0b00,
+    kJsonSlow = 0b01,
+    kUnknown = 0b11
+  };
+
+  DEFINE_TORQUE_GENERATED_DESCRIPTOR_ARRAY_FLAGS()
+
+  inline FastIterableState fast_iterable() const;
+  inline void set_fast_iterable(FastIterableState value);
+  inline void set_fast_iterable_if(FastIterableState new_value,
+                                   FastIterableState if_value);
 
   void ClearEnumCache();
   inline void CopyEnumCacheFrom(Tagged<DescriptorArray> array);
@@ -81,6 +103,10 @@ class DescriptorArray
   inline Tagged<FieldType> GetFieldType(InternalIndex descriptor_number);
   inline Tagged<FieldType> GetFieldType(PtrComprCageBase cage_base,
                                         InternalIndex descriptor_number);
+
+  // Returns true if given entry is already initialized. Useful in cases
+  // when a heap stats collector might see a half-initialized descriptor.
+  inline bool IsInitializedDescriptor(InternalIndex descriptor_number) const;
 
   inline Tagged<Name> GetSortedKey(int descriptor_number);
   inline Tagged<Name> GetSortedKey(PtrComprCageBase cage_base,

@@ -20,12 +20,26 @@ QWaylandShell::QWaylandShell(QWaylandObject *waylandObject)
 }
 
 /*!
+ * \class QWaylandShell
+ * \inmodule QtWaylandCompositor
+ * \abstract
+ * \brief Abstract class for implementing a wayland shell.
+ */
+
+/*!
  * \enum QWaylandShell::FocusPolicy
  *
  * This enum type is used to specify the focus policy for shell surfaces.
  *
  * \value AutomaticFocus Shell surfaces will automatically get keyboard focus when they are created.
  * \value ManualFocus The compositor will decide whether shell surfaces should get keyboard focus or not.
+ */
+
+/*!
+ * \qmltype Shell
+ * \nativetype QWaylandShell
+ * \inqmlmodule QtWayland.Compositor
+ * \brief Abrtract type for implementing a wayland shell.
  */
 
 /*!

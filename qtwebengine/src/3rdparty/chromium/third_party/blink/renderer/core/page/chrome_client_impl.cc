@@ -171,6 +171,21 @@ bool DisplayModeIsBorderless(LocalFrame& frame) {
   return widget->DisplayMode() == mojom::blink::DisplayMode::kBorderless;
 }
 
+gfx::Rect AdjustWindowRectForMinimum(const gfx::Rect& pending_rect,
+                                     int minimum_size) {
+  gfx::Rect window = pending_rect;
+
+  // Let size 0 pass through, since that indicates default size, not minimum
+  // size.
+  if (window.width()) {
+    window.set_width(std::max(minimum_size, window.width()));
+  }
+  if (window.height()) {
+    window.set_height(std::max(minimum_size, window.height()));
+  }
+  return window;
+}
+
 }  // namespace
 
 static bool g_can_browser_handle_focus = false;
@@ -227,7 +242,7 @@ void ChromeClientImpl::SetWindowRect(const gfx::Rect& requested_rect,
   // Permission state is not readily available, so adjusted bounds are clamped
   // to the same-screen, to retain legacy behavior of synchronous pending values
   // and to avoid exposing other screen details to frames without permission.
-  // TODO(crbug.com/897300): Use permission state for better sync estimates or
+  // TODO(crbug.com/40092782): Use permission state for better sync estimates or
   // store unadjusted pending window rects if that will not break many sites.
   web_view_->MainFrameViewWidget()->SetWindowRect(rect_adjusted_for_minimum,
                                                   adjusted_rect);
@@ -329,6 +344,11 @@ bool ChromeClientImpl::AcceptsLoadDrops() const {
   return web_view_->GetRendererPreferences().can_accept_load_drops;
 }
 
+std::optional<bool> ChromeClientImpl::GetWebRTCPostQuantumKeyAgreement() const {
+  CHECK(web_view_);
+  return web_view_->GetRendererPreferences().webrtc_post_quantum_key_agreement;
+}
+
 Page* ChromeClientImpl::CreateWindowDelegate(
     LocalFrame* frame,
     const FrameLoadRequest& r,
@@ -344,18 +364,33 @@ Page* ChromeClientImpl::CreateWindowDelegate(
   if (!web_frame)
     return nullptr;
 
+  // These are the bounds we expect for the new window if it's placed on the
+  // same screen as the opener. In the event that the actual geometry is not
+  // returned synchronously from the browser, we apply this to the widget so it
+  // will have sane geometry until the UpdateScreenRects() message arrives.
+  // Permission state is not readily available, so bounds are clamped to the
+  // same-screen, to retain legacy behavior of synchronous pending values and to
+  // avoid exposing other screen details to frames without permission.
+  // TODO(crbug.com/40092782): Use permission state for better sync estimates or
+  // store unadjusted pending window rects if that will not break many sites.
+  gfx::Rect bounds(features.x, features.y, features.width, features.height);
+  const gfx::Rect requested_screen_rect =
+      AdjustWindowRectForDisplay(bounds, *frame, /*minimum_size*/ 0);
+
   NotifyPopupOpeningObservers();
   const AtomicString& frame_name =
       !EqualIgnoringASCIICase(name, "_blank") ? name : g_empty_atom;
   WebViewImpl* new_view =
       static_cast<WebViewImpl*>(web_frame->Client()->CreateNewWindow(
           WrappedResourceRequest(r.GetResourceRequest()), features, frame_name,
+          requested_screen_rect,
           static_cast<WebNavigationPolicy>(r.GetNavigationPolicy()),
           sandbox_flags, session_storage_namespace_id, consumed_user_gesture,
           r.Impression(), r.GetPictureInPictureWindowOptions(),
           r.GetRequestorBaseURL()));
-  if (!new_view)
+  if (!new_view) {
     return nullptr;
+  }
   return new_view->GetPage();
 }
 
@@ -544,7 +579,8 @@ void ChromeClientImpl::InvalidateContainer() {
 }
 
 void ChromeClientImpl::ScheduleAnimation(const LocalFrameView* frame_view,
-                                         base::TimeDelta delay) {
+                                         base::TimeDelta delay,
+                                         bool urgent) {
   LocalFrame& frame = frame_view->GetFrame();
   // If the frame is still being created, it might not yet have a WebWidget.
   // TODO(dcheng): Is this the right thing to do? Is there a way to avoid having
@@ -553,7 +589,7 @@ void ChromeClientImpl::ScheduleAnimation(const LocalFrameView* frame_view,
   // WebFrameWidget needs to be initialized before initializing the core frame?
   FrameWidget* widget = frame.GetWidgetForLocalRoot();
   if (widget) {
-    widget->RequestAnimationAfterDelay(delay);
+    widget->RequestAnimationAfterDelay(delay, urgent);
   }
 }
 
@@ -611,6 +647,11 @@ const display::ScreenInfo& ChromeClientImpl::GetScreenInfo(
 const display::ScreenInfos& ChromeClientImpl::GetScreenInfos(
     LocalFrame& frame) const {
   return frame.GetWidgetForLocalRoot()->GetScreenInfos();
+}
+
+const display::ScreenInfo& ChromeClientImpl::GetOriginalScreenInfo(
+    LocalFrame& frame) const {
+  return frame.GetWidgetForLocalRoot()->GetOriginalScreenInfo();
 }
 
 float ChromeClientImpl::InputEventsScaleForEmulation() const {
@@ -971,7 +1012,7 @@ PopupMenu* ChromeClientImpl::OpenPopupMenu(LocalFrame& frame,
                                            HTMLSelectElement& select) {
   NotifyPopupOpeningObservers();
 
-  if (WebViewImpl::UseExternalPopupMenus()) {
+  if (use_external_popup_menus_) {
     return MakeGarbageCollected<ExternalPopupMenu>(frame, select);
   }
 
@@ -992,6 +1033,10 @@ void ChromeClientImpl::ClosePagePopup(PagePopup* popup) {
 DOMWindow* ChromeClientImpl::PagePopupWindowForTesting() const {
   DCHECK(web_view_);
   return web_view_->PagePopupWindow();
+}
+
+void ChromeClientImpl::SetUseExternalPopupMenusForTesting(bool value) {
+  use_external_popup_menus_ = value;
 }
 
 void ChromeClientImpl::SetBrowserControlsState(float top_height,
@@ -1042,9 +1087,15 @@ viz::FrameSinkId ChromeClientImpl::GetFrameSinkId(LocalFrame* frame) {
 
 void ChromeClientImpl::RequestDecode(LocalFrame* frame,
                                      const cc::DrawImage& image,
-                                     base::OnceCallback<void(bool)> callback) {
+                                     base::OnceCallback<void(bool)> callback,
+                                     bool speculative) {
   FrameWidget* widget = frame->GetWidgetForLocalRoot();
-  widget->RequestDecode(image, std::move(callback));
+  widget->RequestDecode(image, std::move(callback), speculative);
+}
+
+bool ChromeClientImpl::SpeculativeDecodeRequestInFlight(
+    LocalFrame* frame) const {
+  return frame->GetWidgetForLocalRoot()->SpeculativeDecodeRequestInFlight();
 }
 
 void ChromeClientImpl::NotifyPresentationTime(LocalFrame& frame,
@@ -1053,11 +1104,6 @@ void ChromeClientImpl::NotifyPresentationTime(LocalFrame& frame,
   if (!widget)
     return;
   widget->NotifyPresentationTime(std::move(callback));
-}
-
-void ChromeClientImpl::RequestBeginMainFrameNotExpected(LocalFrame& frame,
-                                                        bool request) {
-  frame.GetWidgetForLocalRoot()->RequestBeginMainFrameNotExpected(request);
 }
 
 int ChromeClientImpl::GetLayerTreeId(LocalFrame& frame) {
@@ -1153,6 +1199,19 @@ void ChromeClientImpl::StopDeferringCommits(
   WebLocalFrameImpl::FromFrame(main_frame)
       ->FrameWidgetImpl()
       ->StopDeferringCommits(trigger);
+}
+
+void ChromeClientImpl::SetShouldThrottleFrameRate(bool flag,
+                                                  LocalFrame& main_frame) {
+  DCHECK(main_frame.IsLocalRoot());
+  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(main_frame);
+  WebFrameWidgetImpl* widget = web_frame->LocalRootFrameWidget();
+  // The widget can be null for web frames that are being replaced.
+  if (!widget) {
+    return;
+  }
+
+  widget->SetShouldThrottleFrameRate(flag);
 }
 
 void ChromeClientImpl::SetHasScrollEventHandlers(LocalFrame* frame,
@@ -1449,22 +1508,6 @@ void ChromeClientImpl::PasswordFieldReset(HTMLInputElement& element) {
 float ChromeClientImpl::ZoomFactorForViewportLayout() {
   DCHECK(web_view_);
   return web_view_->ZoomFactorForViewportLayout();
-}
-
-gfx::Rect ChromeClientImpl::AdjustWindowRectForMinimum(
-    const gfx::Rect& pending_rect,
-    int minimum_size) {
-  gfx::Rect window = pending_rect;
-
-  // Let size 0 pass through, since that indicates default size, not minimum
-  // size.
-  if (window.width()) {
-    window.set_width(std::max(minimum_size, window.width()));
-  }
-  if (window.height()) {
-    window.set_height(std::max(minimum_size, window.height()));
-  }
-  return window;
 }
 
 gfx::Rect ChromeClientImpl::AdjustWindowRectForDisplay(

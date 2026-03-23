@@ -4,6 +4,11 @@
 
 #include "extensions/browser/disable_reason.h"
 
+#include <ostream>
+
+#include "base/check_op.h"
+#include "base/types/cxx23_to_underlying.h"
+
 namespace extensions {
 
 bool IsValidDisableReason(int reason) {
@@ -54,5 +59,13 @@ base::flat_set<int> BitflagToIntegerSet(int bit_flag) {
     }
   }
   return set;
+}
+
+base::flat_set<int> DisableReasonSetToIntegerSet(const DisableReasonSet& set) {
+  base::flat_set<int> result;
+  for (disable_reason::DisableReason reason : set) {
+    result.insert(base::to_underlying(reason));
+  }
+  return result;
 }
 }  // namespace extensions

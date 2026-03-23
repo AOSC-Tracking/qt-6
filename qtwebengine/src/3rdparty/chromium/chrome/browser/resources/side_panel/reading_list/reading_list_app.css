@@ -6,9 +6,8 @@
  * #type=style-lit
  * #import=chrome://read-later.top-chrome/shared/sp_shared_style_lit.css.js
  * #import=chrome://resources/cr_elements/cr_hidden_style_lit.css.js
- * #import=chrome://resources/cr_elements/mwb_element_shared_style_lit.css.js
  * #scheme=relative
- * #include=mwb-element-shared-style-lit cr-hidden-style-lit sp-shared-style-lit
+ * #include=cr-hidden-style-lit sp-shared-style-lit
  * #css_wrapper_metadata_end */
 
 :host {
@@ -22,7 +21,8 @@
 }
 
 cr-icon-button {
-  cursor: pointer;
+  --cr-icon-button-icon-size: var(--mwb-icon-size);
+  --cr-icon-button-size: calc(var(--mwb-icon-size) * 1.5);
 }
 
 cr-lazy-list {
@@ -38,14 +38,15 @@ reading-list-item:first-of-type:last-of-type {
 }
 
 #readingListList {
+  /* Display the scroll bar in the gutter outside the card. */
+  margin-right: -8px;
   max-height: none;
   overflow: auto;
-  padding-block-start: var(--sp-body-padding);
 }
 
 .sp-card {
   display: flex;
-  height: calc(100% - var(--sp-footer-height) - 4 * var(--sp-body-padding));
+  max-height: calc(100% - var(--sp-footer-height) - 4 * var(--sp-body-padding));
   margin: var(--sp-body-padding);
 }
 

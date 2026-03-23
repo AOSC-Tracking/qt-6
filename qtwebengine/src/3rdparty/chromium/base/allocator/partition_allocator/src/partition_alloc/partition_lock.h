@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef PARTITION_ALLOC_PARTITION_LOCK_H_
 #define PARTITION_ALLOC_PARTITION_LOCK_H_
 
@@ -78,6 +83,28 @@ class PA_LOCKABLE Lock {
         // PA_BUILDFLAG(ENABLE_PARTITION_LOCK_REENTRANCY_CHECK)
     lock_.Release();
   }
+
+  bool TryAcquire() PA_EXCLUSIVE_TRYLOCK_FUNCTION(true) {
+    // Unlike `Acquire()`, `TryAcquire()` does not provide any reentrancy
+    // protection. Instead, it just fails and returns `false`.
+    // Hence this should not be used in (de)allocation code path.
+    if (!lock_.Try()) {
+      return false;
+    }
+
+#if PA_BUILDFLAG(DCHECKS_ARE_ON) || \
+    PA_BUILDFLAG(ENABLE_PARTITION_LOCK_REENTRANCY_CHECK)
+#if PA_BUILDFLAG(ENABLE_THREAD_ISOLATION)
+    LiftThreadIsolationScope lift_thread_isolation_restrictions;
+#endif
+
+    base::PlatformThreadRef current_thread = base::PlatformThread::CurrentRef();
+    owning_thread_ref_.store(current_thread, std::memory_order_release);
+#endif
+
+    return true;
+  }
+
   void AssertAcquired() const PA_ASSERT_EXCLUSIVE_LOCK() {
     lock_.AssertAcquired();
 #if PA_BUILDFLAG(DCHECKS_ARE_ON) || \
@@ -101,6 +128,10 @@ class PA_LOCKABLE Lock {
         // PA_BUILDFLAG(ENABLE_PARTITION_LOCK_REENTRANCY_CHECK)
     lock_.Reinit();
   }
+
+#if PA_BUILDFLAG(ENABLE_PARTITION_LOCK_PRIORITY_INHERITANCE)
+  bool HasWaitersForTesting() const { return lock_.HasWaitersForTesting(); }
+#endif
 
  private:
   [[noreturn]] PA_NOINLINE PA_NOT_TAIL_CALLED void ReentrancyIssueDetected() {

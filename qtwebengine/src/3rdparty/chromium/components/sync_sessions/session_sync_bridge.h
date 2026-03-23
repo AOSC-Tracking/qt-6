@@ -67,8 +67,10 @@ class SessionSyncBridge : public syncer::DataTypeSyncBridge,
   std::unique_ptr<syncer::DataBatch> GetDataForCommit(
       StorageKeyList storage_keys) override;
   std::unique_ptr<syncer::DataBatch> GetAllDataForDebugging() override;
-  std::string GetClientTag(const syncer::EntityData& entity_data) override;
-  std::string GetStorageKey(const syncer::EntityData& entity_data) override;
+  std::string GetClientTag(
+      const syncer::EntityData& entity_data) const override;
+  std::string GetStorageKey(
+      const syncer::EntityData& entity_data) const override;
   void ApplyDisableSyncChanges(std::unique_ptr<syncer::MetadataChangeList>
                                    delete_metadata_change_list) override;
   void OnSyncPaused() override;
@@ -115,7 +117,6 @@ class SessionSyncBridge : public syncer::DataTypeSyncBridge,
     std::unique_ptr<LocalSessionEventHandlerImpl> local_session_event_handler;
   };
 
-  // TODO(mastiz): We should rather rename this to |syncing_state_|.
   // Non-empty while sync is active, i.e. started and not paused.
   std::optional<SyncingState> syncing_;
 

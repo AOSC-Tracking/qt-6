@@ -56,7 +56,7 @@ type vec3<T>
 type vec4<T>
 @display("vec{N}<{T}>")     type vec<N: num, T>
 
-type array<T>
+@display("array<{T}>") type runtime_array<T>
 
 type texture_2d<T>
 type texture_2d_array<T>
@@ -103,33 +103,55 @@ match storage: address_space.storage
 
 match f32_texel_format
   : texel_format.r8unorm
+  | texel_format.r8snorm
+  | texel_format.rg8unorm
+  | texel_format.rg8snorm
   | texel_format.bgra8unorm
   | texel_format.rgba8unorm
   | texel_format.rgba8snorm
+  | texel_format.r16unorm
+  | texel_format.r16snorm
+  | texel_format.rg16unorm
+  | texel_format.rg16snorm
+  | texel_format.rgba16unorm
+  | texel_format.rgba16snorm
+  | texel_format.r16float
+  | texel_format.rg16float
   | texel_format.rgba16float
   | texel_format.r32float
   | texel_format.rg32float
   | texel_format.rgba32float
-
-match u32_texel_format
-  : texel_format.rgba8uint
-  | texel_format.rgba16uint
-  | texel_format.r32uint
-  | texel_format.rg32uint
-  | texel_format.rgba32uint
+  | texel_format.rgb10a2unorm
+  | texel_format.rg11b10ufloat
 
 match i32_texel_format
-  : texel_format.rgba8sint
+  : texel_format.r8sint
+  | texel_format.rg8sint
+  | texel_format.rgba8sint
+  | texel_format.r16sint
+  | texel_format.rg16sint
   | texel_format.rgba16sint
   | texel_format.r32sint
   | texel_format.rg32sint
   | texel_format.rgba32sint
 
+match u32_texel_format
+  : texel_format.r8uint
+  | texel_format.rg8uint
+  | texel_format.r16uint
+  | texel_format.rg16uint
+  | texel_format.rgba8uint
+  | texel_format.rgba16uint
+  | texel_format.r32uint
+  | texel_format.rg32uint
+  | texel_format.rgba32uint
+  | texel_format.rgb10a2uint
+
 ////////////////////////////////////////////////////////////////////////////////
 // Builtin Functions                                                          //
 ////////////////////////////////////////////////////////////////////////////////
 
-@member_function @must_use implicit(T, A: access) fn length(ptr<storage, array<T>, A>) -> i32
+@member_function @must_use implicit(T, A: access) fn length(ptr<storage, runtime_array<T>, A>) -> i32
 
 @stage("compute") fn barrier()
 @stage("compute") fn memoryBarrierBuffer()

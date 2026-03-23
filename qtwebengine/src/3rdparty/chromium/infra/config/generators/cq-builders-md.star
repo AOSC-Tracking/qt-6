@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/try.star", "location_filters_without_defaults", "owner_whitelist_group_without_defaults", "try_")
+load("@chromium-luci//try.star", "location_filters_without_defaults", "owner_whitelist_group_without_defaults", "try_")
 load("//outages/config.star", outages_config = "config")
 
 _MD_HEADER = """\
@@ -13,13 +13,7 @@ _MD_HEADER = """\
 
 [TOC]
 
-Changes that only modify files in //infra/config, which do not change any build
-outputs, only require the chromium_presubmit builder to pass before landing.
-
-Each builder name links to that builder on Milo. The "matching builders" links
-point to the file used to determine which configurations a builder should copy
-when running. These links might 404 or error; they are hard-coded right now,
-using common assumptions about how builders are configured.
+Each builder name links to that builder on Milo.
 """
 
 _REQUIRED_HEADER = """\

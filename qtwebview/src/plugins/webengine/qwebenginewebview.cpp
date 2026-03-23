@@ -1,9 +1,10 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwebenginewebview_p.h"
-#include <QtWebView/private/qwebview_p.h>
-#include <QtWebView/private/qwebviewloadrequest_p.h>
+#include <QtWebView/qwebview.h>
+#include <QtWebView/private/qwebviewfactory_p.h>
 #include <QtWebViewQuick/private/qquickwebview_p.h>
 
 #include <QtCore/qmap.h>
@@ -14,9 +15,9 @@
 
 #include <QtQml/qqml.h>
 
-#include <QtQuick/qquickwindow.h>
 #include <QtQuick/qquickview.h>
 #include <QtQuick/qquickitem.h>
+#include <QtQuick/private/qquickitem_p.h>
 
 #include <QtWebEngineQuick/private/qquickwebengineview_p.h>
 #include <QtWebEngineCore/qwebengineloadinginfo.h>
@@ -26,25 +27,14 @@
 
 QT_BEGIN_NAMESPACE
 
-static QByteArray qmlSource()
-{
-    return QByteArrayLiteral("import QtWebEngine 1.1\n"
-                             "    WebEngineView {\n"
-                             "         anchors.fill: parent"
-                             "}\n");
-}
+using namespace Qt::StringLiterals;
 
-QWebEngineWebViewPrivate::QWebEngineWebViewPrivate(QObject *p)
-    : QAbstractWebView(p), m_profile(nullptr)
+QWebEngineWebViewPrivate::QWebEngineWebViewPrivate(QWebView *p) : QWebViewPrivate(p)
 {
     m_settings = new QWebEngineWebViewSettingsPrivate(this);
-    m_webEngineView.m_parent = this;
-    m_cookieStore.m_webEngineViewPtr = &m_webEngineView;
 }
 
-QWebEngineWebViewPrivate::~QWebEngineWebViewPrivate()
-{
-}
+QWebEngineWebViewPrivate::~QWebEngineWebViewPrivate() = default;
 
 QString QWebEngineWebViewPrivate::httpUserAgent() const
 {
@@ -56,57 +46,63 @@ void QWebEngineWebViewPrivate::setHttpUserAgent(const QString &userAgent)
     m_httpUserAgent = userAgent;
     if (m_profile) {
         m_profile->setHttpUserAgent(userAgent);
-        Q_EMIT httpUserAgentChanged(userAgent);
+        emit q_ptr->httpUserAgentStringChanged(userAgent);
     }
+}
+
+QUrl QWebEngineWebViewPrivate::url() const
+{
+    return view()->url();
 }
 
 void QWebEngineWebViewPrivate::setUrl(const QUrl &url)
 {
-    m_webEngineView->setUrl(url);
+    view()->setUrl(url);
 }
 
 void QWebEngineWebViewPrivate::loadHtml(const QString &html, const QUrl &baseUrl)
 {
-    m_webEngineView->loadHtml(html, baseUrl);
+    view()->loadHtml(html, baseUrl);
 }
 
 bool QWebEngineWebViewPrivate::canGoBack() const
 {
-    return m_webEngineView->canGoBack();
+    return view()->canGoBack();
 }
 
 void QWebEngineWebViewPrivate::goBack()
 {
-    m_webEngineView->goBack();
+    view()->goBack();
 }
 
 bool QWebEngineWebViewPrivate::canGoForward() const
 {
-    return m_webEngineView->canGoForward();
+    return view()->canGoForward();
 }
 
 void QWebEngineWebViewPrivate::goForward()
 {
-    m_webEngineView->goForward();
+    view()->goForward();
 }
 
 void QWebEngineWebViewPrivate::reload()
 {
-    m_webEngineView->reload();
+    view()->reload();
 }
 
 QString QWebEngineWebViewPrivate::title() const
 {
-    return m_webEngineView->title();
+    return view()->title();
 }
 
-void QWebEngineWebViewPrivate::runJavaScriptPrivate(const QString &script,
-                                                    int callbackId)
+void QWebEngineWebViewPrivate::runJavaScript(
+        const QString &script, const std::function<void(const QVariant &)> &resultCallback)
 {
-    m_webEngineView->runJavaScript(script, QQuickWebView::takeCallback(callbackId));
+    view()->runJavaScript(script, resultCallback);
 }
 
-void QWebEngineWebViewPrivate::setCookie(const QString &domain, const QString &name, const QString &value)
+void QWebEngineWebViewPrivate::setCookie(const QString &domain, const QString &name,
+                                         const QString &value)
 {
     QNetworkCookie cookie;
     cookie.setDomain(domain);
@@ -132,63 +128,65 @@ void QWebEngineWebViewPrivate::deleteAllCookies()
     m_cookieStore->deleteAllCookies();
 }
 
-QAbstractWebViewSettings *QWebEngineWebViewPrivate::getSettings() const
+QWebViewSettingsPrivate *QWebEngineWebViewPrivate::settings() const
 {
     return m_settings;
 }
 
 int QWebEngineWebViewPrivate::loadProgress() const
 {
-    return m_webEngineView->loadProgress();
+    return view()->loadProgress();
 }
 
 bool QWebEngineWebViewPrivate::isLoading() const
 {
-    return m_webEngineView->isLoading();
+    return view()->isLoading();
 }
 
 void QWebEngineWebViewPrivate::stop()
 {
-    m_webEngineView->stop();
+    view()->stop();
 }
 
 void QWebEngineWebViewPrivate::q_urlChanged()
 {
-    Q_EMIT urlChanged(m_webEngineView->url());
+    emit q_ptr->urlChanged(view()->url());
 }
 
 void QWebEngineWebViewPrivate::q_loadProgressChanged()
 {
-    Q_EMIT loadProgressChanged(m_webEngineView->loadProgress());
+    emit q_ptr->loadProgressChanged(view()->loadProgress());
 }
 
 void QWebEngineWebViewPrivate::q_titleChanged()
 {
-    Q_EMIT titleChanged(m_webEngineView->title());
+    emit q_ptr->titleChanged(view()->title());
 }
 
 void QWebEngineWebViewPrivate::q_loadingChanged(const QWebEngineLoadingInfo &loadRequest)
 {
-    QWebViewLoadRequestPrivate lr(loadRequest.url(),
-                                  static_cast<QWebView::LoadStatus>(loadRequest.status()), // These "should" match...
-                                  loadRequest.errorString());
-
-    Q_EMIT loadingChanged(lr);
+    QWebViewLoadingInfo lr(QWebViewFactory::LoadingInfo::create(
+            loadRequest.url(),
+            static_cast<QWebViewLoadingInfo::LoadStatus>(
+                    loadRequest.status()), // These "should" match...
+            loadRequest.errorString()));
+    emit q_ptr->loadingChanged(lr);
 }
 
 void QWebEngineWebViewPrivate::q_profileChanged()
 {
-    auto profile = m_webEngineView->profile();
+    auto profile = view()->profile();
     if (profile == m_profile)
         return;
 
     m_profile = profile;
+    m_profile->setStorageName(QCoreApplication::applicationName());
     auto userAgent = m_profile->httpUserAgent();
     if (m_httpUserAgent == userAgent)
         return;
     m_httpUserAgent = userAgent;
     QObject::connect(m_profile, &QQuickWebEngineProfile::httpUserAgentChanged, this, &QWebEngineWebViewPrivate::q_httpUserAgentChanged);
-    Q_EMIT httpUserAgentChanged(userAgent);
+    emit q_ptr->httpUserAgentStringChanged(userAgent);
 }
 
 void QWebEngineWebViewPrivate::q_httpUserAgentChanged()
@@ -197,92 +195,157 @@ void QWebEngineWebViewPrivate::q_httpUserAgentChanged()
     if (m_httpUserAgent == httpUserAgent)
         return;
      m_httpUserAgent = httpUserAgent;
-     Q_EMIT httpUserAgentChanged(m_httpUserAgent);
+     emit q_ptr->httpUserAgentStringChanged(m_httpUserAgent);
 }
 
 void QWebEngineWebViewPrivate::q_cookieAdded(const QNetworkCookie &cookie)
 {
-    Q_EMIT cookieAdded(cookie.domain(), cookie.name());
+    emit q_ptr->cookieAdded(cookie.domain(), cookie.name());
 }
 
 void QWebEngineWebViewPrivate::q_cookieRemoved(const QNetworkCookie &cookie)
 {
-    Q_EMIT cookieRemoved(cookie.domain(), cookie.name());
+    emit q_ptr->cookieRemoved(cookie.domain(), cookie.name());
 }
 
-void QWebEngineWebViewPrivate::QQuickWebEngineViewPtr::init() const
+void QWebEngineWebViewPrivate::initialize(QObject *context)
 {
-    Q_ASSERT(!m_webEngineView);
-    QObject *p = qobject_cast<QObject *>(m_parent);
-    QQuickItem *parentItem = nullptr;
-    while (p) {
-        p = p->parent();
-        parentItem = qobject_cast<QQuickWebView *>(p);
-        if (parentItem)
-            break;
-    }
-
-    if (!parentItem) {
-        qWarning("Could not find QQuickWebView");
-        return;
-    }
-    QQmlEngine *engine = qmlEngine(parentItem);
-    if (!engine) {
-        qWarning("Could not initialize qmlEngine");
-        return;
-    }
-    QQmlComponent *component = new QQmlComponent(engine);
-    component->setData(qmlSource(), QUrl::fromLocalFile(QLatin1String("")));
-    QQuickWebEngineView *webEngineView = qobject_cast<QQuickWebEngineView *>(component->create());
+    Q_UNUSED(context);
+    QQuickWebEngineView *webEngineView = view();
     Q_ASSERT(webEngineView);
     QQuickWebEngineProfile *profile = webEngineView->profile();
     Q_ASSERT(profile);
     QQuickWebEngineSettings *settings = webEngineView->settings();
-    Q_ASSERT(settings);
-    m_parent->m_profile = profile;
-    if (!m_parent->m_settings)
-        m_parent->m_settings = new QWebEngineWebViewSettingsPrivate(m_parent);
-    m_parent->m_settings->init(settings);
+    m_profile = profile;
+    m_profile->setStorageName(QCoreApplication::applicationName());
+    Q_ASSERT(m_settings);
+    m_settings->init(settings);
     webEngineView->settings()->setErrorPageEnabled(false);
     webEngineView->settings()->setPluginsEnabled(true);
     // When the httpUserAgent is set as a property then it will be set before
     // init() is called
-    if (m_parent->m_httpUserAgent.isEmpty())
-        m_parent->m_httpUserAgent = profile->httpUserAgent();
+    if (m_httpUserAgent.isEmpty())
+        m_httpUserAgent = profile->httpUserAgent();
     else
-        profile->setHttpUserAgent(m_parent->m_httpUserAgent);
-    QObject::connect(webEngineView, &QQuickWebEngineView::urlChanged, m_parent, &QWebEngineWebViewPrivate::q_urlChanged);
-    QObject::connect(webEngineView, &QQuickWebEngineView::loadProgressChanged, m_parent, &QWebEngineWebViewPrivate::q_loadProgressChanged);
-    QObject::connect(webEngineView, &QQuickWebEngineView::loadingChanged, m_parent, &QWebEngineWebViewPrivate::q_loadingChanged);
-    QObject::connect(webEngineView, &QQuickWebEngineView::titleChanged, m_parent, &QWebEngineWebViewPrivate::q_titleChanged);
-    QObject::connect(webEngineView, &QQuickWebEngineView::profileChanged,m_parent, &QWebEngineWebViewPrivate::q_profileChanged);
-    QObject::connect(profile, &QQuickWebEngineProfile::httpUserAgentChanged, m_parent, &QWebEngineWebViewPrivate::q_httpUserAgentChanged);
+        profile->setHttpUserAgent(m_httpUserAgent);
+    QObject::connect(webEngineView, &QQuickWebEngineView::urlChanged, this,
+                     &QWebEngineWebViewPrivate::q_urlChanged);
+    QObject::connect(webEngineView, &QQuickWebEngineView::loadProgressChanged, this,
+                     &QWebEngineWebViewPrivate::q_loadProgressChanged);
+    QObject::connect(webEngineView, &QQuickWebEngineView::loadingChanged, this,
+                     &QWebEngineWebViewPrivate::q_loadingChanged);
+    QObject::connect(webEngineView, &QQuickWebEngineView::titleChanged, this,
+                     &QWebEngineWebViewPrivate::q_titleChanged);
+    QObject::connect(webEngineView, &QQuickWebEngineView::profileChanged, this,
+                     &QWebEngineWebViewPrivate::q_profileChanged);
+    QObject::connect(profile, &QQuickWebEngineProfile::httpUserAgentChanged, this,
+                     &QWebEngineWebViewPrivate::q_httpUserAgentChanged);
 
-    webEngineView->setParentItem(parentItem);
-    m_webEngineView.reset(webEngineView);
+    m_cookieStore = m_profile->cookieStore();
 
-    if (!m_parent->m_cookieStore.m_cookieStore)
-        m_parent->m_cookieStore.init();
+    QObject::connect(m_cookieStore, &QWebEngineCookieStore::cookieAdded, this,
+                     &QWebEngineWebViewPrivate::q_cookieAdded);
+    QObject::connect(m_cookieStore, &QWebEngineCookieStore::cookieRemoved, this,
+                     &QWebEngineWebViewPrivate::q_cookieRemoved);
 }
 
-void QWebEngineWebViewPrivate::QWebEngineCookieStorePtr::init() const
+// QQuickViewWebEngineWebViewPrivate
+
+QQuickViewWebEngineWebViewPrivate::QQuickViewWebEngineWebViewPrivate(QWebView *p)
+    : QWebEngineWebViewPrivate(p), m_view(new QQuickView(p)), m_webEngineView(nullptr)
 {
-    if (!m_webEngineViewPtr->m_webEngineView)
-        m_webEngineViewPtr->init();
-    else {
-        QWebEngineWebViewPrivate * parent = m_webEngineViewPtr->m_parent;
-        QWebEngineCookieStore *cookieStore = parent->m_profile->cookieStore();
-        m_cookieStore = cookieStore;
-
-        QObject::connect(cookieStore, &QWebEngineCookieStore::cookieAdded, parent, &QWebEngineWebViewPrivate::q_cookieAdded);
-        QObject::connect(cookieStore, &QWebEngineCookieStore::cookieRemoved, parent, &QWebEngineWebViewPrivate::q_cookieRemoved);
-    }
+    connect(p, &QWindow::visibleChanged, m_view.get(), &QWindow::setVisible);
+    connect(p, &QWindow::widthChanged, m_view.get(), &QWindow::setWidth);
+    connect(p, &QWindow::heightChanged, m_view.get(), &QWindow::setHeight);
 }
+
+QQuickViewWebEngineWebViewPrivate::~QQuickViewWebEngineWebViewPrivate() = default;
+
+void QQuickViewWebEngineWebViewPrivate::initialize(QObject *context)
+{
+    Q_ASSERT(!m_webEngineView);
+    m_view->setResizeMode(QQuickView::SizeRootObjectToView);
+    m_view->loadFromModule("QtWebEngine"_L1, "WebEngineView"_L1);
+    m_webEngineView = qobject_cast<QQuickWebEngineView *>(m_view->rootObject());
+    Q_ASSERT(m_webEngineView);
+    QWebEngineWebViewPrivate::initialize(context);
+}
+
+QQuickWebEngineView *QQuickViewWebEngineWebViewPrivate::view() const
+{
+    return m_webEngineView;
+}
+
+// QQuickItemWebEngineWebViewPrivate
+
+QQuickItemWebEngineWebViewPrivate::QQuickItemWebEngineWebViewPrivate(QWebView *p)
+    : QWebEngineWebViewPrivate(p), m_parentItem(nullptr)
+{
+}
+
+QQuickItemWebEngineWebViewPrivate::~QQuickItemWebEngineWebViewPrivate() = default;
+
+void QQuickItemWebEngineWebViewPrivate::initialize(QObject *context)
+{
+    m_parentItem = qobject_cast<QQuickItem *>(context);
+    if (!m_parentItem)
+        return;
+    Q_ASSERT(!m_webEngineView);
+    QQmlEngine *engine = qmlEngine(m_parentItem);
+    Q_ASSERT(engine);
+    QQmlComponent component(engine);
+    component.loadFromModule("QtWebEngine"_L1, "WebEngineView"_L1);
+    m_webEngineView.reset(qobject_cast<QQuickWebEngineView *>(component.create()));
+    Q_ASSERT(m_webEngineView);
+    m_webEngineView->setParentItem(m_parentItem);
+    QQuickItemPrivate::get(m_webEngineView.get())->anchors()->setFill(m_parentItem);
+    QWebEngineWebViewPrivate::initialize(context);
+}
+
+QQuickWebEngineView *QQuickItemWebEngineWebViewPrivate::view() const
+{
+    return m_webEngineView.get();
+}
+
+// QWebEngineWebViewSettingsPrivate
 
 QWebEngineWebViewSettingsPrivate::QWebEngineWebViewSettingsPrivate(QWebEngineWebViewPrivate *p)
-    : QAbstractWebViewSettings(p)
+    : parent(p)
 {
 
+}
+
+bool QWebEngineWebViewSettingsPrivate::doTestAttribute(WebAttribute attribute) const
+{
+    switch (attribute) {
+    case QWebViewSettings::WebAttribute::LocalStorageEnabled:
+        return localStorageEnabled();
+    case QWebViewSettings::WebAttribute::JavaScriptEnabled:
+        return javaScriptEnabled();
+    case QWebViewSettings::WebAttribute::AllowFileAccess:
+        return allowFileAccess();
+    case QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls:
+        return localContentCanAccessFileUrls();
+    }
+    return false;
+}
+
+void QWebEngineWebViewSettingsPrivate::doSetAttribute(WebAttribute attribute, bool value)
+{
+    switch (attribute) {
+    case QWebViewSettings::WebAttribute::LocalStorageEnabled:
+        setLocalStorageEnabled(value);
+        break;
+    case QWebViewSettings::WebAttribute::JavaScriptEnabled:
+        setJavaScriptEnabled(value);
+        break;
+    case QWebViewSettings::WebAttribute::AllowFileAccess:
+        setAllowFileAccess(value);
+        break;
+    case QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls:
+        setLocalContentCanAccessFileUrls(value);
+        break;
+    }
 }
 
 bool QWebEngineWebViewSettingsPrivate::localStorageEnabled() const
@@ -317,11 +380,10 @@ void QWebEngineWebViewSettingsPrivate::setJavaScriptEnabled(bool enabled)
 }
 void QWebEngineWebViewSettingsPrivate::setLocalStorageEnabled(bool enabled)
 {
-    // This separation is a bit different on the mobile platforms, so for now
-    // we'll interpret this property to also affect the "off the record" profile setting.
-    if (auto webview = qobject_cast<QWebEngineWebViewPrivate *>(parent())) {
-        if (webview->m_profile)
-            webview->m_profile->setOffTheRecord(enabled);
+    // Interpret this property to also affect the "off the record" profile setting.
+    if (parent) {
+        if (parent->m_profile)
+            parent->m_profile->setOffTheRecord(!enabled);
     }
 
     if (m_settings)
@@ -332,6 +394,7 @@ void QWebEngineWebViewSettingsPrivate::setLocalStorageEnabled(bool enabled)
 void QWebEngineWebViewSettingsPrivate::setAllowFileAccess(bool enabled)
 {
     Q_UNUSED(enabled);
+    qWarning("setAllowFileAccess() not supported with the WebEngine backend");
 }
 
 void QWebEngineWebViewSettingsPrivate::init(QQuickWebEngineSettings *settings)

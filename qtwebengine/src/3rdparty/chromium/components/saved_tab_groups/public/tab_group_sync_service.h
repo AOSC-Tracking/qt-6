@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,10 +20,10 @@
 #include "components/saved_tab_groups/proto/url_restriction.pb.h"
 #include "components/saved_tab_groups/public/saved_tab_group.h"
 #include "components/saved_tab_groups/public/types.h"
+#include "components/sync/base/collaboration_id.h"
 #include "components/sync/model/data_type_controller_delegate.h"
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tab_groups/tab_group_visual_data.h"
-#include "ui/gfx/range/range.h"
 #include "url/gurl.h"
 
 #if BUILDFLAG(IS_ANDROID)
@@ -33,37 +34,13 @@ namespace tab_groups {
 class CollaborationFinder;
 class TabGroupSyncDelegate;
 class TabGroupSyncMetricsLogger;
+class VersioningMessageController;
 
 // A RAII class that pauses local tab model observers when required.
 class ScopedLocalObservationPauser {
  public:
   ScopedLocalObservationPauser() = default;
   virtual ~ScopedLocalObservationPauser() = default;
-};
-
-// Contains information about the currently selected tab.
-struct SelectedTabInfo {
-  SelectedTabInfo();
-  SelectedTabInfo(const std::optional<base::Uuid>& tab_group_id,
-                  const std::optional<base::Uuid>& tab_id,
-                  const std::optional<std::u16string>& tab_title);
-  ~SelectedTabInfo();
-
-  // Copy / assign.
-  SelectedTabInfo(const SelectedTabInfo&);
-  SelectedTabInfo& operator=(const SelectedTabInfo&);
-
-  // Sync ID of the tab group that the tab belongs to, std::nullopt if the tab
-  // isn't part of any tab group.
-  std::optional<base::Uuid> tab_group_id;
-
-  // Sync ID of the tab.
-  std::optional<base::Uuid> tab_id;
-
-  // Title of the tab.
-  std::optional<std::u16string> tab_title;
-
-  bool operator==(const SelectedTabInfo& other) const;
 };
 
 // The core service class for handling tab group sync across devices. Provides
@@ -93,6 +70,22 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
     virtual void OnTabGroupUpdated(const SavedTabGroup& group,
                                    TriggerSource source) {}
 
+    // Observer methods that notify before and after applying a sync change.
+    // After Android java-to-native migration is complete, we will merge
+    // OnTabGroupUpdated with AfterTabGroupUpdateFromRemote since they are
+    // essentially the same.
+
+    // Invoked before applying a remote update to the local tab model so that
+    // the observers have a chance to cache the previous state of the world.
+    // Only invoked for remote updates.
+    virtual void BeforeTabGroupUpdateFromRemote(
+        const base::Uuid& sync_group_id) {}
+
+    // Invoked after applying a remote update to the local tab model.
+    // Only invoked for remote updates.
+    virtual void AfterTabGroupUpdateFromRemote(
+        const base::Uuid& sync_group_id) {}
+
     // The local tab group corresponding to the |local_id| was removed.
     virtual void OnTabGroupRemoved(const LocalTabGroupID& local_id,
                                    TriggerSource source) {}
@@ -103,9 +96,17 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
     virtual void OnTabGroupRemoved(const base::Uuid& sync_id,
                                    TriggerSource source) {}
 
-    // Invoked when a tab corresponding to `selected_tab_info` became the active
-    // tab.
-    virtual void OnTabSelected(const SelectedTabInfo& selected_tab_info) {}
+    // Invoked whenever there is a change in the set of active tabs across all
+    // browser windows. Can include the same set of tabs across two invocations.
+    // It's the responsibility of the observer to figure out the diff between
+    // two updates.
+    virtual void OnTabSelected(const std::set<LocalTabID>& selected_tabs) {}
+
+    // Invoked when the last_seen_time for a shared tab has been updated.
+    // This happens either when the user activates a tab locally or the
+    // model is updated from the account data sync bridge.
+    virtual void OnTabLastSeenTimeChanged(const base::Uuid& tab_id,
+                                          TriggerSource source) {}
 
     // The existing SavedTabGroup has been replaced by a new one. This happens
     // when the originating SavedTabGroup was transitioned to a shared one. The
@@ -215,9 +216,6 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
                              const LocalTabID& tab_id,
                              const std::u16string& title) = 0;
 
-  // Invoked to find info about the currently selected tab.
-  virtual SelectedTabInfo GetCurrentlySelectedTabInfo() = 0;
-
   // SaveGroup / UnsaveGroup are temporary solutions used during desktop's
   // migration. Other clients should use AddGroup / RemoveGroup.
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
@@ -230,9 +228,15 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
   // given `collaboration_id` (this is the same as data_sharing::GroupId). The
   // tab group must not be shared. `callback` will be called with the result if
   // provided.
-  virtual void MakeTabGroupShared(const LocalTabGroupID& local_group_id,
-                                  std::string_view collaboration_id,
-                                  TabGroupSharingCallback callback) = 0;
+  virtual void MakeTabGroupShared(
+      const LocalTabGroupID& local_group_id,
+      const syncer::CollaborationId& collaboration_id,
+      TabGroupSharingCallback callback) = 0;
+  // For testing only. This is needed to test shared tab groups flow without
+  // depending on real people groups from data sharing service backend.
+  virtual void MakeTabGroupSharedForTesting(
+      const LocalTabGroupID& local_group_id,
+      const syncer::CollaborationId& collaboration_id) = 0;
 
   // Mutator methods for shared tab groups.
   // Starts the process of converting a shared tab group to saved tab group. Due
@@ -248,8 +252,27 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
   virtual void OnTabGroupUnShareComplete(const LocalTabGroupID& local_group_id,
                                          bool success) = 0;
 
+  // Called when a collaboration group is removed. This call will mark the
+  // shared group associated with the collaboration as hidden. The actual group
+  // deletion happens in the server in response to the collaboration group
+  // deletion. This trickles back to the sync bridge thereby removing the tab
+  // group from the model.
+  virtual void OnCollaborationRemoved(
+      const syncer::CollaborationId& collaboration_id) = 0;
+
   // Accessor methods.
+  // ReadAllGroups and GetAllGroups both return the same list of groups,
+  // filtered by whether they should be exposed to external callers.
+  // ReadAllGroups should be used by default since it doesnt require copying
+  // unless there is a specific reason for using GetAllGroups.
+  // Note that the pointers returned by ReadAllGroups are affected by any
+  // insertion or deletion operations on the tab group, so don't hold the this
+  // vector while doing any insertion deletion, or use this pointer across
+  // multiple calls to ReadAllGroups.
+  virtual std::vector<const SavedTabGroup*> ReadAllGroups() const = 0;
   virtual std::vector<SavedTabGroup> GetAllGroups() const = 0;
+
+  // Returns groups (even if they would be filtered out in Get/ReadAllGroups).
   virtual std::optional<SavedTabGroup> GetGroup(
       const base::Uuid& guid) const = 0;
   virtual std::optional<SavedTabGroup> GetGroup(
@@ -262,8 +285,9 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
       const CollaborationId& collaboration_id) const = 0;
 
   // Method invoked from UI to open a remote tab group in the local tab model.
-  virtual void OpenTabGroup(const base::Uuid& sync_group_id,
-                            std::unique_ptr<TabGroupActionContext> context) = 0;
+  virtual std::optional<LocalTabGroupID> OpenTabGroup(
+      const base::Uuid& sync_group_id,
+      std::unique_ptr<TabGroupActionContext> context) = 0;
 
   // Book-keeping methods to maintain in-memory mapping of sync and local IDs.
   // `opening_source` and `closing_source` refer to the user actions and
@@ -305,6 +329,13 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
   virtual bool WasTabGroupClosedLocally(
       const base::Uuid& sync_tab_group_id) const = 0;
 
+  // Method to find out the currently selected tabs from the tab model.
+  // Result contains the set of selected tabs from all open browser windows.
+  virtual std::set<LocalTabID> GetSelectedTabs();
+
+  // Method to find out the current title of a live tab in the tab model.
+  virtual std::u16string GetTabTitle(const LocalTabID& local_tab_id);
+
   // Helper method to record metrics for certain tab group events.
   // While metrics are implicitly recorded in the native for most of the tab
   // group events, there are certain events that don't have a clean way of
@@ -314,6 +345,18 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
   // close tab group events only, but see implementation for more details.
   virtual void RecordTabGroupEvent(const EventDetails& event_details) = 0;
 
+  // Method to update the archival status via timestamp of the local tab group.
+  // No timestamp indicates that the tab group is not currently archived.
+  virtual void UpdateArchivalStatus(const base::Uuid& sync_id,
+                                    bool archival_status) = 0;
+
+  // Method to update the last seen timestamp for a tab. This method exists for
+  // external callers such as messaging card dismiss button to be able to clear
+  // the dots of all unseen tabs without actually switching to the tabs.
+  virtual void UpdateTabLastSeenTime(const base::Uuid& group_id,
+                                     const base::Uuid& tab_id,
+                                     TriggerSource source) = 0;
+
   // For accessing the centralized metrics logger.
   virtual TabGroupSyncMetricsLogger* GetTabGroupSyncMetricsLogger() = 0;
 
@@ -322,6 +365,8 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
   GetSavedTabGroupControllerDelegate() = 0;
   virtual base::WeakPtr<syncer::DataTypeControllerDelegate>
   GetSharedTabGroupControllerDelegate() = 0;
+  virtual base::WeakPtr<syncer::DataTypeControllerDelegate>
+  GetSharedTabGroupAccountControllerDelegate() = 0;
 
   // Helper method to pause / resume local observer.
   virtual std::unique_ptr<ScopedLocalObservationPauser>
@@ -342,13 +387,27 @@ class TabGroupSyncService : public KeyedService, public base::SupportsUserData {
   virtual std::unique_ptr<std::vector<SavedTabGroup>>
   TakeSharedTabGroupsAvailableAtStartupForMessaging() = 0;
 
+  // Returns if shared tab group existed during startup. If
+  // `open_shared_tab_groups` is true, returns whether there were open shared
+  // tab groups during startup.
+  virtual bool HadSharedTabGroupsLastSession(bool open_shared_tab_groups) = 0;
+
+  // Called when the last tab in a group is closed.
+  virtual void OnLastTabClosed(const SavedTabGroup& saved_tab_group) = 0;
+
   // Add / remove observers.
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
 
+  // Returns the versioning message controller which is responsible for business
+  // logic related to shared tab groups versioning related messages.
+  virtual VersioningMessageController* GetVersioningMessageController() = 0;
+
   // For testing only. This is needed to test the API calls received before
   // service init as we need to explicitly un-initialize the service for these
-  // scenarios.
+  // scenarios. When calling this method the MessagingBackendService will need
+  // to be faked or have its store callbacks set first. (see
+  // EmptyMessagingBackendService)
   virtual void SetIsInitializedForTesting(bool initialized) {}
 
   // For testing only. This is needed to test shared tab groups flow without

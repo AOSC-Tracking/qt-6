@@ -27,7 +27,7 @@
 #include "absl/time/time.h"
 #include "./common/logging.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 namespace {
 
 TEST(PeriodicActionTest, OnlyPeriodicInvocations) {
@@ -50,13 +50,13 @@ TEST(PeriodicActionTest, OnlyNudgedInvocations) {
   constexpr absl::Duration kDuration = absl::Seconds(3);
   constexpr absl::Duration kNudgeInterval = absl::Milliseconds(100);
   int count = 0;
+  PeriodicAction::Options options;
+  // Effectively disable periodic invocations: only `Nudge()` calls
+  // below will trigger them.
+  options.sleep_before_each = [](size_t) { return absl::InfiniteDuration(); };
   PeriodicAction action{
       [&count]() { ++count; },
-      {
-          // Effectively disable periodic invocations: only `Nudge()` calls
-          // below will trigger them.
-          .sleep_before_each = [](size_t) { return absl::InfiniteDuration(); },
-      },
+      std::move(options),
   };
   int expected_count = 0;
   const absl::Time end_time = absl::Now() + kDuration;
@@ -225,4 +225,4 @@ TEST(PeriodicActionTest, ActionIsMoveable) {
 }
 
 }  // namespace
-}  // namespace centipede
+}  // namespace fuzztest::internal

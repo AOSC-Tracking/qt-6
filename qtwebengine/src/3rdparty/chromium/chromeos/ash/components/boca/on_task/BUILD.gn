@@ -24,11 +24,13 @@ static_library("on_task") {
 
   deps = [
     ":activity",
-    "//ash/constants:constants",
+    "//ash/constants",
     "//ash/public/cpp",
     "//ash/resources/vector_icons",
+    "//ash/webui/boca_ui:constants",
     "//base",
     "//chromeos/ash/components/boca",
+    "//chromeos/ash/components/boca:spotlight_notification_constants",
     "//chromeos/ash/components/boca/proto",
     "//chromeos/strings:strings_grit",
     "//components/google/core/common",
@@ -36,6 +38,7 @@ static_library("on_task") {
     "//components/pref_registry",
     "//components/sessions",
     "//components/sessions:session_id",
+    "//components/url_matcher",
     "//content/public/browser",
     "//ui/message_center",
   ]
@@ -46,10 +49,20 @@ static_library("activity") {
     "activity/active_tab_tracker.cc",
     "activity/active_tab_tracker.h",
   ]
+
   deps = [
     "//base",
     "//chromeos/ash/components/boca",
   ]
+}
+
+static_library("util") {
+  sources = [
+    "util/mock_clock.cc",
+    "util/mock_clock.h",
+  ]
+
+  deps = [ "//base" ]
 }
 
 source_set("unit_tests") {
@@ -64,9 +77,11 @@ source_set("unit_tests") {
   deps = [
     ":activity",
     ":on_task",
+    "//ash/webui/boca_ui:constants",
     "//base",
     "//chrome/test:test_support",
     "//chromeos/ash/components/boca/proto",
+    "//chromeos/strings:strings_grit",
     "//components/sessions:session_id",
   ]
 }

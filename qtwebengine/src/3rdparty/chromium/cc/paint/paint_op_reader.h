@@ -87,8 +87,7 @@ class CC_PAINT_EXPORT PaintOpReader {
   void Read(SkPath* path);
   void Read(PaintFlags* flags);
   void Read(CorePaintFlags* flags);
-  void Read(PaintImage* image,
-            PaintFlags::DynamicRangeLimitMixture dynamic_range_limit);
+  void Read(PaintImage* image);
   void Read(sk_sp<SkData>* data);
   void Read(sk_sp<sktext::gpu::Slug>* slug);
   void Read(sk_sp<DrawLooper>* looper);
@@ -126,6 +125,9 @@ class CC_PAINT_EXPORT PaintOpReader {
   void Read(SkColorType* color_type) {
     ReadEnum<SkColorType, kLastEnum_SkColorType>(color_type);
   }
+  void Read(SkAlphaType* alpha_type) {
+    ReadEnum<SkAlphaType, kLastEnum_SkAlphaType>(alpha_type);
+  }
   void Read(PaintFlags::FilterQuality* quality) {
     ReadEnum<PaintFlags::FilterQuality, PaintFlags::FilterQuality::kLast>(
         quality);
@@ -162,6 +164,7 @@ class CC_PAINT_EXPORT PaintOpReader {
   }
 
   template <typename T>
+    requires(!std::is_const_v<T>)
   void Read(std::vector<T>& vec) {
     size_t size = 0;
     ReadSize(&size);
@@ -252,8 +255,9 @@ class CC_PAINT_EXPORT PaintOpReader {
     kHdrMetadataDeserializeFailure = 55,
     kNonFiniteSkColor4f = 56,
     kInvalidSkColor4fAlpha = 57,
+    kInvalidColorsSize_Read_PaintShader_ColorSize = 58,
 
-    kMaxValue = kInvalidSkColor4fAlpha
+    kMaxValue = kInvalidColorsSize_Read_PaintShader_ColorSize
   };
 
   template <typename T>
@@ -359,6 +363,7 @@ class CC_PAINT_EXPORT PaintOpReader {
   void DidRead(size_t bytes_read);
 
   template <typename T>
+    requires(!std::is_const_v<T>)
   void ReadVectorContent(size_t size, std::vector<T>& vec) {
     vec.resize(size);
     for (base::span span(vec); !span.empty();

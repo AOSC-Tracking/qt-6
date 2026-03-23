@@ -48,8 +48,10 @@ class PasskeySyncBridge : public syncer::DataTypeSyncBridge,
       StorageKeyList storage_keys) override;
   std::unique_ptr<syncer::DataBatch> GetAllDataForDebugging() override;
   bool IsEntityDataValid(const syncer::EntityData& entity_data) const override;
-  std::string GetClientTag(const syncer::EntityData& entity_data) override;
-  std::string GetStorageKey(const syncer::EntityData& entity_data) override;
+  std::string GetClientTag(
+      const syncer::EntityData& entity_data) const override;
+  std::string GetStorageKey(
+      const syncer::EntityData& entity_data) const override;
   void ApplyDisableSyncChanges(std::unique_ptr<syncer::MetadataChangeList>
                                    delete_metadata_change_list) override;
 
@@ -70,12 +72,16 @@ class PasskeySyncBridge : public syncer::DataTypeSyncBridge,
   GetPasskeysForRelyingPartyId(const std::string& rp_id) const override;
   bool DeletePasskey(const std::string& credential_id,
                      const base::Location& location) override;
+  bool SetPasskeyHidden(const std::string& credential_id, bool hidden) override;
   void DeleteAllPasskeys() override;
   bool UpdatePasskey(const std::string& credential_id,
                      PasskeyUpdate change,
                      bool updated_by_user) override;
   bool UpdatePasskeyTimestamp(const std::string& credential_id,
                               base::Time last_used_time) override;
+  bool UpdatePasskeyEncryptedBlob(
+      const std::string& credential_id,
+      const std::string& new_encrypted_blob) override;
   sync_pb::WebauthnCredentialSpecifics CreatePasskey(
       std::string_view rp_id,
       const UserEntity& user_entity,

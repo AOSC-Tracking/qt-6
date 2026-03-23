@@ -3,9 +3,8 @@
 # found in the LICENSE file.
 
 import("//build/buildflag_header.gni")
-import("//build/config/chromeos/ui_mode.gni")
 
-assert(is_chromeos_ash, "Projector App is ash-chrome only")
+assert(is_chromeos, "Projector App is ChromeOS only")
 
 static_library("annotator") {
   sources = [
@@ -53,7 +52,7 @@ source_set("test_support") {
   ]
 
   public_deps = [
-    "//ash/public/cpp:cpp",
+    "//ash/public/cpp",
     "//ash/public/cpp:test_support",
     "//ash/webui/annotator/mojom:annotator_mojo_bindings",
     "//ash/webui/annotator/public/cpp",

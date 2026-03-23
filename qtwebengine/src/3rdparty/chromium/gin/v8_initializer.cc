@@ -27,6 +27,7 @@
 #include "base/files/file_path.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
@@ -218,6 +219,7 @@ void SetV8FlagsIfOverridden(const base::Feature& feature,
 }
 
 constexpr std::string_view kV8FlagFeaturePrefix = "V8Flag_";
+constexpr std::string_view kV8FlagParam = "V8FlagParam";
 
 }  // namespace
 
@@ -247,8 +249,15 @@ class V8FeatureVisitor : public base::FeatureVisitor {
         break;
 
       case base::FeatureList::OverrideState::OVERRIDE_ENABLE_FEATURE:
-        SetV8FlagsFormatted("--%s", flag_name.c_str());
-        for (const auto& [param_name, param_value] : params) {
+        auto it = params.begin();
+        if (it != params.end() && it->first == kV8FlagParam) {
+          SetV8FlagsFormatted("--%s=%s", flag_name.c_str(), it->second.c_str());
+          ++it;
+        } else {
+          SetV8FlagsFormatted("--%s", flag_name.c_str());
+        }
+        for (; it != params.end(); ++it) {
+          const auto& [param_name, param_value] = *it;
           SetV8FlagsFormatted("--%s=%s", param_name.c_str(),
                               param_value.c_str());
         }
@@ -278,6 +287,21 @@ void SetFlags(IsolateHolder::ScriptMode mode,
   }
 }
 
+// Sets feature flags that are default to enabled.
+//
+// This function must be called *before* SetFeatureFlags is called, so that
+// default-enabled flags may be overridden and disabled.
+//
+// Usually V8 is the source of truth for the default state of feature flags.
+// However, some features must be shipped from the blink side because they add
+// new globals, which requires updating web tests that cannot be skipped (to
+// safeguard against accidentally breaking the web).
+void SetDefaultEnabledFeatureFlags() {
+  SetV8Flags("--js-float16array");
+  SetV8Flags("--js-explicit-resource-management");
+  SetV8Flags("--js-regexp-escape");
+}
+
 // Sets feature controlled V8 flags.
 void SetFeatureFlags() {
   // Chromium features prefixed with "V8Flag_" are forwarded to V8 as V8 flags,
@@ -299,6 +323,16 @@ void SetFeatureFlags() {
   // will be converted, on V8 initialization, to V8 flags:
   //
   //   --foo --bar --bar_param=20 --no-baz
+  //
+  // If an argument is needed for the main flag, a "V8FlagParam" param can be be
+  // used as the first parameter. Additional parameters can still be passed. For
+  // example, running Chromium with:
+  //
+  //   --enable-features=V8Flag_foo:V8FlagParam/bar/baz_param/20
+  //
+  // will be converted to these V8 flags:
+  //
+  //   --foo=bar --baz_param=20
   V8FeatureVisitor feature_visitor;
   base::FeatureList::VisitFeaturesAndParams(feature_visitor,
                                             kV8FlagFeaturePrefix);
@@ -357,9 +391,6 @@ void SetFeatureFlags() {
   SetV8FlagsIfOverridden(features::kV8ExternalMemoryAccountedInGlobalLimit,
                          "--external-memory-accounted-in-global-limit",
                          "--no-external-memory-accounted-in-global-limit");
-  SetV8FlagsIfOverridden(features::kV8GCSpeedUsesCounters,
-                         "--gc-speed-uses-counters",
-                         "--no-gc-speed-uses-counters");
   SetV8FlagsIfOverridden(features::kV8TurboFastApiCalls,
                          "--turbo-fast-api-calls", "--no-turbo-fast-api-calls");
   SetV8FlagsIfOverridden(features::kV8MegaDomIC, "--mega-dom-ic",
@@ -372,6 +403,14 @@ void SetFeatureFlags() {
     SetV8FlagsFormatted("--memory-reducer-gc-count=%i",
                         features::kV8MemoryReducerGCCount.Get());
   }
+  if (base::FeatureList::IsEnabled(features::kV8PreconfigureOldGen)) {
+    SetV8FlagsFormatted("--preconfigured-old-space-size=%i",
+                        features::kV8PreconfigureOldGenSize.Get());
+  }
+  if (base::FeatureList::IsEnabled(features::kV8HighEndAndroid)) {
+    SetV8FlagsFormatted("--high-end-android-physical-memory-threshold=%i",
+                        features::kV8HighEndAndroidMemoryThreshold.Get());
+  }
   SetV8FlagsIfOverridden(features::kV8IncrementalMarkingStartUserVisible,
                          "--incremental-marking-start-user-visible",
                          "--no-incremental-marking-start-user-visible");
@@ -383,8 +422,6 @@ void SetFeatureFlags() {
     SetV8FlagsFormatted("--scavenger-max-new-space-capacity-mb=%i",
                         features::kV8ScavengerMaxCapacity.Get());
   }
-  SetV8FlagsIfOverridden(features::kV8SeparateGCPhases, "--separate-gc-phases",
-                         "--no-separate-gc-phases");
   SetV8FlagsIfOverridden(features::kV8Sparkplug, "--sparkplug",
                          "--no-sparkplug");
   SetV8FlagsIfOverridden(features::kV8Turbofan, "--turbofan", "--no-turbofan");
@@ -446,23 +483,6 @@ void SetFeatureFlags() {
     }
   }
 
-  if (base::FeatureList::IsEnabled(features::kV8EfficiencyModeTiering)) {
-    int delay = features::kV8EfficiencyModeTieringDelayTurbofan.Get();
-    if (delay == 0) {
-      SetV8FlagsFormatted(
-          "--efficiency-mode-for-tiering-heuristics "
-          "--efficiency-mode-disable-turbofan");
-    } else {
-      SetV8FlagsFormatted(
-          "--efficiency-mode-for-tiering-heuristics "
-          "--noefficiency-mode-disable-turbofan "
-          "--efficiency-mode-delay-turbofan=%i",
-          delay);
-    }
-  } else {
-    SetV8FlagsFormatted("--no-efficiency-mode-for-tiering-heuristics");
-  }
-
   // Make sure aliases of kV8SlowHistograms only enable the feature to
   // avoid contradicting settings between multiple finch experiments.
   bool any_slow_histograms_alias =
@@ -489,10 +509,6 @@ void SetFeatureFlags() {
                          "--intel-jcc-erratum-mitigation",
                          "--no-intel-jcc-erratum-mitigation");
 
-  SetV8FlagsIfOverridden(features::kV8UpdateLimitAfterLoading,
-                         "--update-allocation-limits-after-loading",
-                         "--no-update-allocation-limits-after-loading");
-
   SetV8FlagsIfOverridden(features::kV8UseLibmTrigFunctions,
                          "--use-libm-trig-functions",
                          "--no-use-libm-trig-functions");
@@ -502,40 +518,18 @@ void SetFeatureFlags() {
                          "--no-use-original-message-for-stack-trace");
 
   // JavaScript language features.
-  SetV8FlagsIfOverridden(features::kJavaScriptIteratorHelpers,
-                         "--harmony-iterator-helpers",
-                         "--no-harmony-iterator-helpers");
-  SetV8FlagsIfOverridden(features::kJavaScriptPromiseWithResolvers,
-                         "--js-promise-withresolvers",
-                         "--no-js-promise-withresolvers");
   SetV8FlagsIfOverridden(features::kJavaScriptRegExpModifiers,
                          "--js-regexp-modifiers", "--no-js-regexp-modifiers");
   SetV8FlagsIfOverridden(features::kJavaScriptImportAttributes,
                          "--harmony-import-attributes",
                          "--no-harmony-import-attributes");
-  SetV8FlagsIfOverridden(features::kJavaScriptSetMethods,
-                         "--harmony-set-methods", "--no-harmony-set-methods");
   SetV8FlagsIfOverridden(features::kJavaScriptRegExpDuplicateNamedGroups,
                          "--js-regexp-duplicate-named-groups",
                          "--no-js-duplicate-named-groups");
   SetV8FlagsIfOverridden(features::kJavaScriptPromiseTry, "--js-promise-try",
                          "--no-js-promise-try");
 
-  // WebAssembly features.
-
-  SetV8FlagsIfOverridden(features::kWebAssemblyDeopt, "--wasm-deopt",
-                         "--no-wasm-deopt");
-  SetV8FlagsIfOverridden(features::kWebAssemblyInliningCallIndirect,
-                         "--wasm-inlining-call-indirect",
-                         "--no-wasm-inlining-call-indirect");
-  SetV8FlagsIfOverridden(features::kWebAssemblyMultipleMemories,
-                         "--experimental-wasm-multi-memory",
-                         "--no-experimental-wasm-multi-memory");
-  SetV8FlagsIfOverridden(features::kWebAssemblyTurboshaft, "--turboshaft-wasm",
-                         "--no-turboshaft-wasm");
-  SetV8FlagsIfOverridden(features::kWebAssemblyTurboshaftInstructionSelection,
-                         "--turboshaft-wasm-instruction-selection-staged",
-                         "--no-turboshaft-wasm-instruction-selection-staged");
+  // WebAssembly features (currently none).
 }
 
 }  // namespace
@@ -553,6 +547,7 @@ void V8Initializer::Initialize(IsolateHolder::ScriptMode mode,
   // instrumentation initialization, see https://crbug.com/v8/11043. --js-flags
   // and other mandatory flags in `SetFlags` must be ordered after feature flag
   // overrides.
+  SetDefaultEnabledFeatureFlags();
   if (!disallow_v8_feature_flag_overrides) {
     SetFeatureFlags();
   }

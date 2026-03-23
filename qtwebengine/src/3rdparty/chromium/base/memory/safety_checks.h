@@ -5,14 +5,19 @@
 #ifndef BASE_MEMORY_SAFETY_CHECKS_H_
 #define BASE_MEMORY_SAFETY_CHECKS_H_
 
+#include <stdint.h>
+
 #include <new>
 #include <type_traits>
 
+#include "base/base_export.h"
 #include "base/compiler_specific.h"
 #include "base/dcheck_is_on.h"
+#include "base/memory/stack_allocated.h"
 #include "partition_alloc/buildflags.h"
 
 #if PA_BUILDFLAG(USE_PARTITION_ALLOC)
+#include "base/allocator/partition_alloc_support.h"
 #include "partition_alloc/partition_alloc_constants.h"  // nogncheck
 #endif
 
@@ -52,10 +57,12 @@
 //   }
 //   ```
 
+namespace base {
+
 // We cannot hide things behind anonymous namespace because they are referenced
 // via macro, which can be defined anywhere.
 // To avoid tainting ::base namespace, define things inside this namespace.
-namespace base::internal {
+namespace internal {
 
 enum class MemorySafetyCheck : uint32_t {
   kNone = 0,
@@ -194,7 +201,7 @@ NOINLINE void HandleMemorySafetyCheckedOperatorDelete(
   ::operator delete(ptr, alignment);
 }
 
-}  // namespace base::internal
+}  // namespace internal
 
 // Macros to annotate class/struct's default memory safety check.
 // ADVANCED_MEMORY_SAFETY_CHECKS(): Enable Check |kAdvancedChecks| for this
@@ -307,5 +314,45 @@ NOINLINE void HandleMemorySafetyCheckedOperatorDelete(
                                 kNone __VA_OPT__(, ) __VA_ARGS__,         \
                                 base::internal::MemorySafetyCheck::kNone, \
                                 base::internal::MemorySafetyCheck::kNone)
+
+// Utility function to detect Double-Free or Out-of-Bounds writes.
+// This function can be called to memory assumed to be valid.
+// If not, this may crash (not guaranteed).
+// This is useful if you want to investigate crashes at `free()`,
+// to know which point at execution it goes wrong.
+BASE_EXPORT void CheckHeapIntegrity(const void* ptr);
+
+// The function here is called right before crashing with
+// `DoubleFreeOrCorruptionDetected()`. We provide an address for the slot start
+// to the function, and it may use that for debugging purpose.
+void SetDoubleFreeOrCorruptionDetectedFn(void (*fn)(uintptr_t));
+
+// Utility class to exclude deallocation from optional safety checks when an
+// instance is on the stack. Can be applied to performance critical functions.
+class BASE_EXPORT ScopedSafetyChecksExclusion {
+  STACK_ALLOCATED();
+
+ public:
+  // Make this non-trivially-destructible to suppress unused variable warning.
+  ~ScopedSafetyChecksExclusion() {}  // NOLINT(modernize-use-equals-default)
+
+ private:
+#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+  base::allocator::ScopedSchedulerLoopQuarantineExclusion
+      opt_out_scheduler_loop_quarantine_;
+#endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+};
+
+#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+using base::allocator::SchedulerLoopQuarantineScanPolicyUpdater;
+#else
+class SchedulerLoopQuarantineScanPolicyUpdater {
+ public:
+  ALWAYS_INLINE void DisallowScanlessPurge() {}
+  ALWAYS_INLINE void AllowScanlessPurge() {}
+};
+#endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+
+}  // namespace base
 
 #endif  // BASE_MEMORY_SAFETY_CHECKS_H_

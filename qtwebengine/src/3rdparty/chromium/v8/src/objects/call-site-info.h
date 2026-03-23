@@ -23,7 +23,6 @@ class StructBodyDescriptor;
 
 class CallSiteInfo : public TorqueGeneratedCallSiteInfo<CallSiteInfo, Struct> {
  public:
-  NEVER_READ_ONLY_SPACE
   DEFINE_TORQUE_GENERATED_CALL_SITE_INFO_FLAGS()
 
 #if V8_ENABLE_WEBASSEMBLY
@@ -76,7 +75,7 @@ class CallSiteInfo : public TorqueGeneratedCallSiteInfo<CallSiteInfo, Struct> {
 
   static Handle<PrimitiveHeapObject> GetEvalOrigin(
       DirectHandle<CallSiteInfo> info);
-  V8_EXPORT_PRIVATE static Handle<PrimitiveHeapObject> GetFunctionName(
+  V8_EXPORT_PRIVATE static DirectHandle<PrimitiveHeapObject> GetFunctionName(
       DirectHandle<CallSiteInfo> info);
   static DirectHandle<String> GetFunctionDebugName(
       DirectHandle<CallSiteInfo> info);

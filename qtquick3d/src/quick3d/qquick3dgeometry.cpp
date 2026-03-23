@@ -1,5 +1,7 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "qquick3dgeometry_p.h"
 #include "qquick3dscenemanager_p.h"
@@ -211,6 +213,7 @@
     geometry from a Model:
 
     \image customgeometry.jpg
+           {Black triangle with gray background showing custom geometry}
 
     \note Vertex data is expected to follow OpenGL conventions. This means the
     data must be provided with the assumption that the Y axis is pointing up in

@@ -23,14 +23,14 @@
 #include "components/network_hints/renderer/web_prescient_networking_impl.h"
 #include "components/visitedlink/renderer/visitedlink_reader.h"
 #include "components/web_cache/renderer/web_cache_impl.h"
-#include "content/public/renderer/render_frame.h"
+#include "content/public/common/buildflags.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "extensions/buildflags/buildflags.h"
 #include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "net/base/net_errors.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/platform/web_url_error.h"
@@ -71,6 +71,7 @@
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "content/renderer/render_frame_impl.h"
+#include "qtwebengine/common/plugin.mojom.h"
 #include "plugins/loadable_plugin_placeholder_qt.h"
 #endif // ENABLE_PLUGINS
 
@@ -387,21 +388,23 @@ bool ContentRendererClientQt::IsPluginHandledExternally(content::RenderFrame *re
                                    const std::string &original_mime_type)
 {
 #if BUILDFLAG(ENABLE_EXTENSIONS) && BUILDFLAG(ENABLE_PLUGINS)
-    bool found = false;
-    content::WebPluginInfo plugin_info;
-    std::string mime_type;
+    mojo::AssociatedRemote<qtwebengine::mojom::PluginInfoHost> plugin_info_host;
+    render_frame->GetRemoteAssociatedInterfaces()->GetInterface(
+            &plugin_info_host);
+    qtwebengine::mojom::PluginInfoPtr plugin_info = qtwebengine::mojom::PluginInfo::New();
+    plugin_info_host->GetPluginInfo(
+            original_url, render_frame->GetWebFrame()->Top()->GetSecurityOrigin(),
+            original_mime_type, &plugin_info);
 
-    static_cast<content::RenderFrameImpl *>(render_frame)->GetPepperHost()->GetPluginInfo(
-                original_url, original_mime_type, &found, &plugin_info, &mime_type);
-    if (!found)
-        return false;
+#if QT_CONFIG(webengine_printing_and_pdf)
     if (IsPdfExtensionOrigin(render_frame->GetWebFrame()->GetSecurityOrigin()))
         return true;
+#endif
     return extensions::MimeHandlerViewContainerManager::Get(
                 content::RenderFrame::FromWebFrame(
                     plugin_element.GetDocument().GetFrame()),
                 true /* create_if_does_not_exist */)
-                    ->CreateFrameContainer(plugin_element, original_url, mime_type, plugin_info);
+                    ->CreateFrameContainer(plugin_element, original_url, plugin_info->actual_mime_type, plugin_info->plugin);
 #else
     return false;
 #endif
@@ -417,40 +420,32 @@ bool ContentRendererClientQt::OverrideCreatePlugin(content::RenderFrame *render_
 #endif // ENABLE_EXTENSIONS
 
 #if BUILDFLAG(ENABLE_PLUGINS)
-    content::WebPluginInfo info;
-    std::string actual_mime_type;
-    bool found = false;
+    std::string orig_mime_type = params.mime_type.Utf8();
+    GURL url(params.url);
+    mojo::AssociatedRemote<qtwebengine::mojom::PluginInfoHost> plugin_info_host;
+    render_frame->GetRemoteAssociatedInterfaces()->GetInterface(&plugin_info_host);
 
-    static_cast<content::RenderFrameImpl *>(render_frame)
-            ->GetPepperHost()
-            ->GetPluginInfo(params.url, params.mime_type.Utf8(), &found, &info, &actual_mime_type);
-    if (!found) {
-        *plugin = LoadablePluginPlaceholderQt::CreateLoadableMissingPlugin(render_frame, params)->plugin();
-        return true;
-    }
+    qtwebengine::mojom::PluginInfoPtr plugin_info = qtwebengine::mojom::PluginInfo::New();
+    plugin_info_host->GetPluginInfo(url, render_frame->GetWebFrame()->Top()->GetSecurityOrigin(),
+                                    orig_mime_type, &plugin_info);
 #if QT_CONFIG(webengine_printing_and_pdf)
-    if (info.name == u"Chromium PDF Viewer") {
+    if (plugin_info->plugin.name == u"Chromium PDF Viewer") {
         blink::WebPluginParams new_params(params);
-        for (const auto& mime_type : info.mime_types) {
-          if (mime_type.mime_type == params.mime_type.Utf8()) {
-            AppendParams(mime_type.additional_params, &new_params.attribute_names,
-                         &new_params.attribute_values);
-            break;
-          }
+        for (const auto& mime_type : plugin_info->plugin.mime_types) {
+            if (mime_type.mime_type == params.mime_type.Utf8()) {
+                AppendParams(mime_type.additional_params, &new_params.attribute_names,
+                             &new_params.attribute_values);
+                break;
+            }
         }
 
         *plugin = pdf::CreateInternalPlugin(std::move(new_params), render_frame, GetAdditionalPdfInternalPluginAllowedOrigins());
         return true;
     }
 #endif
-    *plugin = render_frame->CreatePlugin(info, params);
+    *plugin = LoadablePluginPlaceholderQt::CreateLoadableMissingPlugin(render_frame, params)->plugin();
 #endif // BUILDFLAG(ENABLE_PLUGINS)
     return true;
-}
-
-bool ContentRendererClientQt::IsOriginIsolatedPepperPlugin(const base::FilePath& plugin_path)
-{
-    return plugin_path.value() == FILE_PATH_LITERAL("internal-pdf-viewer");
 }
 
 #if QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)

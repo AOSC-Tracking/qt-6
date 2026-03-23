@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlprofilerclient_p_p.h"
 #include "qqmldebugconnection_p.h"
@@ -233,30 +234,37 @@ quint64 QQmlProfilerClient::recordedFeatures() const
     return d->recordedFeatures;
 }
 
+void QQmlProfilerClient::receiveDebugMessage(
+        QtMsgType type, const QString &text, const QQmlDebugContextInfo &context)
+{
+    Q_D(QQmlProfilerClient);
+    d->updateFeatures(ProfileDebugMessages);
+    d->currentEvent.event.setTimestamp(context.timestamp > 0 ? context.timestamp : 0);
+    d->currentEvent.event.setTypeIndex(-1);
+    d->currentEvent.event.setString(text);
+    d->currentEvent.type = QQmlProfilerEventType(
+            DebugMessage, MaximumRangeType, type,
+            QQmlProfilerEventLocation(context.file, context.line, 1));
+    d->currentEvent.serverTypeId = 0;
+    d->processCurrentEvent();
+}
+
 void QQmlProfilerClient::setRequestedFeatures(quint64 features)
 {
     Q_D(QQmlProfilerClient);
+
+    const quint64 messagesFlag = 1ull << ProfileDebugMessages;
+    const bool hadMessagesBefore = d->requestedFeatures & messagesFlag;
+    const bool hasMessagesNow = features & messagesFlag;
+
     d->requestedFeatures = features;
-    if (features & static_cast<quint64>(1) << ProfileDebugMessages) {
-        if (d->messageClient.isNull()) {
-            d->messageClient.reset(new QQmlDebugMessageClient(connection()));
-            connect(d->messageClient.data(), &QQmlDebugMessageClient::message, this,
-                    [this](QtMsgType type, const QString &text, const QQmlDebugContextInfo &context)
-            {
-                Q_D(QQmlProfilerClient);
-                d->updateFeatures(ProfileDebugMessages);
-                d->currentEvent.event.setTimestamp(context.timestamp > 0 ? context.timestamp : 0);
-                d->currentEvent.event.setTypeIndex(-1);
-                d->currentEvent.event.setString(text);
-                d->currentEvent.type = QQmlProfilerEventType(
-                            DebugMessage, MaximumRangeType, type,
-                            QQmlProfilerEventLocation(context.file, context.line, 1));
-                d->currentEvent.serverTypeId = 0;
-                d->processCurrentEvent();
-            });
-        }
-    } else {
-        d->messageClient.reset();
+
+    if (!hadMessagesBefore && hasMessagesNow) {
+        connect(d->messageClient.data(), &QQmlDebugMessageClient::message,
+                this, &QQmlProfilerClient::receiveDebugMessage);
+    } else if (hadMessagesBefore && !hasMessagesNow) {
+        disconnect(d->messageClient.data(), &QQmlDebugMessageClient::message,
+                   this, &QQmlProfilerClient::receiveDebugMessage);
     }
 }
 

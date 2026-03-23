@@ -71,12 +71,12 @@ class PageInfoDelegate {
   // Returns std::nullopt if `site_url` is not recognised as a member of any
   // RWS or if RWS functionality is not allowed .
   virtual std::optional<std::u16string> GetRwsOwner(const GURL& site_url) = 0;
-  virtual bool IsRwsManaged() = 0;
+  virtual bool IsRwsManaged(const GURL& site_url) = 0;
 
   // Creates an infobars::ContentInfoBarManager and an InfoBarDelegate using it,
   // if possible. Returns true if an InfoBarDelegate was created, false
   // otherwise.
-  virtual bool CreateInfoBarDelegate() = 0;
+  virtual bool CreateInfoBarDelegate(content::ReloadType reload_type) = 0;
 
   virtual std::unique_ptr<content_settings::CookieControlsController>
   CreateCookieControlsController() = 0;
@@ -84,8 +84,10 @@ class PageInfoDelegate {
   virtual bool IsIsolatedWebApp() = 0;
   virtual void ShowSiteSettings(const GURL& site_url) = 0;
   virtual void ShowCookiesSettings() = 0;
+  virtual void ShowIncognitoSettings() = 0;
   virtual void ShowAllSitesSettingsFilteredByRwsOwner(
       const std::u16string& rws_owner) = 0;
+  virtual void ShowSyncSettings() = 0;
   virtual void OpenCookiesDialog() = 0;
   virtual void OpenCertificateDialog(net::X509Certificate* certificate) = 0;
   virtual void OpenConnectionHelpCenterPage(const ui::Event& event) = 0;

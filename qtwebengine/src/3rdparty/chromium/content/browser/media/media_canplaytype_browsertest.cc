@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/to_string.h"
 #include "build/build_config.h"
 #include "content/browser/media/media_browsertest.h"
 #include "content/public/test/browser_test.h"
@@ -86,8 +87,8 @@ IN_PROC_BROWSER_TEST_F(MediaCanPlayTypeTest, CodecSupportTest_mp4) {
   const bool is_ac3_eac3_supported =
       media::IsDecoderSupportedAudioType({media::AudioCodec::kAC3});
   ExecuteTest(base::StringPrintf("testMp4Variants(true, %s, %s)",
-                                 is_hevc_supported ? "true" : "false",
-                                 is_ac3_eac3_supported ? "true" : "false"));
+                                 base::ToString(is_hevc_supported),
+                                 base::ToString(is_ac3_eac3_supported)));
 #endif  // !BUILDFLAG(USE_PROPRIETARY_CODECS)
 }
 
@@ -163,7 +164,7 @@ IN_PROC_BROWSER_TEST_F(MediaCanPlayTypeTest, CodecSupportTest_Mpeg2Ts) {
 IN_PROC_BROWSER_TEST_F(MediaCanPlayTypeTest, CodecSupportTest_NewVp9Variants) {
 // Profile 2 and 3 support is currently disabled on Android prior to P and MIPS.
 #if (defined(ARCH_CPU_ARM_FAMILY) && !BUILDFLAG(IS_WIN) && \
-     !BUILDFLAG(IS_MAC)) ||                                \
+     !BUILDFLAG(IS_APPLE)) ||                              \
     defined(ARCH_CPU_MIPS_FAMILY)
 #if BUILDFLAG(IS_ANDROID)
   if (base::android::BuildInfo::GetInstance()->sdk_int() >=

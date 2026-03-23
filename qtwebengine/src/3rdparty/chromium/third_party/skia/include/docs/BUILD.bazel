@@ -24,3 +24,9 @@ skia_filegroup(
     srcs = ["SkPDFDocument.h"],
     visibility = ["//src/pdf:__pkg__"],
 )
+
+skia_filegroup(
+    name = "pdf_jpeg_hdrs",
+    srcs = ["SkPDFJpegHelpers.h"],
+    visibility = ["//src/pdf:__pkg__"],
+)

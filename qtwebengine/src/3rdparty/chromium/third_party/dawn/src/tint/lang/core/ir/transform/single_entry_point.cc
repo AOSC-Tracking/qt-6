@@ -27,8 +27,8 @@
 
 #include "src/tint/lang/core/ir/transform/single_entry_point.h"
 
-#include <utility>
-
+#include "src/tint/lang/core/ir/block.h"
+#include "src/tint/lang/core/ir/instruction_result.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/referenced_functions.h"
 #include "src/tint/lang/core/ir/referenced_module_decls.h"
@@ -53,7 +53,9 @@ Result<SuccessType> Run(ir::Module& ir, std::string_view entry_point_name) {
         }
     }
     if (!entry_point) {
-        TINT_ICE() << "entry point '" << entry_point_name << "' not found";
+        StringStream err;
+        err << "entry point '" << entry_point_name << "' not found";
+        return Failure{err.str()};
     }
 
     // Remove unused functions.
@@ -82,7 +84,10 @@ Result<SuccessType> Run(ir::Module& ir, std::string_view entry_point_name) {
         auto prev = inst->prev;
         if (!referenced_vars.Contains(inst)) {
             // There shouldn't be any remaining references to the variable.
-            TINT_ASSERT(inst->Result(0)->NumUsages() == 0);
+            if (inst->Result()->NumUsages() != 0) {
+                TINT_ICE() << " Unexpected usages remain when applying single entry point IR for  '"
+                           << entry_point_name << "' ";
+            }
             inst->Destroy();
         }
         inst = prev;
@@ -94,8 +99,8 @@ Result<SuccessType> Run(ir::Module& ir, std::string_view entry_point_name) {
 }  // namespace
 
 Result<SuccessType> SingleEntryPoint(Module& ir, std::string_view entry_point_name) {
-    auto result = ValidateAndDumpIfNeeded(
-        ir, "core.SingleEntryPoint", core::ir::Capabilities{core::ir::Capability::kAllowOverrides});
+    auto result =
+        ValidateAndDumpIfNeeded(ir, "core.SingleEntryPoint", kSingleEntryPointCapabilities);
     if (result != Success) {
         return result.Failure();
     }

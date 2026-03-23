@@ -1,5 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #ifndef QSSG_RENDER_PARTICLES_H
 #define QSSG_RENDER_PARTICLES_H
@@ -18,12 +20,12 @@
 #include <QtQuick3DRuntimeRender/private/qssgrendernode_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendercustommaterial_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderlight_p.h>
+#include <QtQuick3DRuntimeRender/private/qssgrenderparticleshaderkeys_p.h>
 #include <QtQuick3DUtils/private/qssgrenderbasetypes_p.h>
 
 QT_BEGIN_NAMESPACE
 
 struct QSSGRenderImage;
-struct QSSGShaderMaterialAdapter;
 
 struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGParticleSimple
 {
@@ -112,8 +114,9 @@ private:
     QSSGBounds3 m_bounds;
 };
 
-struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderParticles : public QSSGRenderNode
+class Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderParticles : public QSSGRenderNode
 {
+public:
     enum class BlendMode : quint8
     {
         SourceOver = 0,
@@ -156,6 +159,7 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderParticles : public QSSGRenderNode
     QSSGRenderImage *m_colorTable = nullptr;
     QSSGRenderParticles::FeatureLevel m_featureLevel = FeatureLevel::Simple;
     bool m_castsReflections = true;
+    QSSGShaderParticleMaterialKey materialKey;
 
     QSSGRenderParticles();
     ~QSSGRenderParticles() = default;

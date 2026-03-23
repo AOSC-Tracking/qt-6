@@ -1,5 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 
 #include "graphs2d/qabstractseries_p.h"
 #include <QtGraphs/qabstractseries.h>
@@ -115,11 +117,20 @@ QT_BEGIN_NAMESPACE
     \property QBarSeries::labelsVisible
     \brief The visibility of the labels in a bar series.
     The default label visibility is \c false.
+
+    \note The default label only displays the value for the set.
+    You can create custom labels with a \l barDelegate.
+    \sa barDelegate
 */
 /*!
     \qmlproperty bool BarSeries::labelsVisible
     The visibility of the labels in a bar series.
     The default label visibility is \c false.
+
+    \note The default label only displays the value for the set.
+    You can create custom labels with a \l barDelegate.
+
+    \sa barDelegate
 */
 
 /*!
@@ -387,13 +398,10 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlmethod BarSet BarSeries::insert(int index, string label, VariantList values)
-    Adds a new bar set with \a label and \a values to \a index. \a values can be a list
-    of real values or a list of XYPoint types.
-
-    If the index value is equal to or less than zero, the new bar set is prepended to the bar
-    series. If the index value is equal to or greater than the number of bar sets in the bar
-    series, the new bar set is appended to the bar series.
+    \qmlmethod BarSet BarSeries::insert(int index, BarSet barset)
+    Inserts a bar set specified by \a barset to a series at the position specified by \a index.
+    If the set is \c null or already belongs to the series, the set is not
+    appended. Returns \c true if inserting succeeds.
 
     \sa append()
 */
@@ -417,7 +425,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlmethod BarSeries::clear()
+    \qmlmethod void BarSeries::clear()
     Removes all bar sets from the series.
 */
 
@@ -439,7 +447,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlmethod BarSeries::removeMultiple(int index, int count)
+    \qmlmethod void BarSeries::removeMultiple(int index, int count)
     Removes a range of bar sets as specified by the \a index and \a count. The call
     traverses over all sets even if removal of one fails.
 */
@@ -1177,7 +1185,7 @@ void QBarSeriesPrivate::setBarWidth(qreal width)
 {
     Q_Q(QBarSeries);
     width = std::clamp<qreal>(width, 0.0, 1.0);
-    if (!qFuzzyCompare(width, m_barWidth)) {
+    if (!qFuzzyCompare(width + 1, m_barWidth + 1)) {
         m_barWidth = width;
         emit q->update();
     }
@@ -1261,7 +1269,7 @@ qreal QBarSeriesPrivate::percentageAt(int set, int category)
 
     qreal value = m_barSets.at(set)->at(category);
     qreal sum = categorySum(category);
-    if (qFuzzyCompare(sum, 0))
+    if (qFuzzyIsNull(sum))
         return 0;
 
     return value / sum;

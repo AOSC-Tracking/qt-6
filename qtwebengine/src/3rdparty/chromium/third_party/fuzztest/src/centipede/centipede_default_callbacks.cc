@@ -15,8 +15,10 @@
 #include "./centipede/centipede_default_callbacks.h"
 
 #include <cstddef>
+#include <cstdlib>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "absl/log/check.h"
@@ -31,7 +33,7 @@
 #include "./common/defs.h"
 #include "./common/logging.h"  // IWYU pragma: keep
 
-namespace centipede {
+namespace fuzztest::internal {
 
 CentipedeDefaultCallbacks::CentipedeDefaultCallbacks(const Environment &env)
     : CentipedeCallbacks(env) {
@@ -72,37 +74,46 @@ CentipedeDefaultCallbacks::GetSerializedTargetConfig() {
       "Failed to get serialized configuration from the target binary.");
 }
 
-void CentipedeDefaultCallbacks::Mutate(
-    const std::vector<MutationInputRef> &inputs, size_t num_mutants,
-    std::vector<ByteArray> &mutants) {
-  mutants.resize(num_mutants);
-  if (num_mutants == 0) return;
+std::vector<ByteArray> CentipedeDefaultCallbacks::Mutate(
+    const std::vector<MutationInputRef> &inputs, size_t num_mutants) {
+  if (num_mutants == 0) return {};
   // Try to use the custom mutator if it hasn't been disabled.
   if (custom_mutator_is_usable_.value_or(true)) {
-    if (MutateViaExternalBinary(env_.binary, inputs, mutants)) {
+    MutationResult result =
+        MutateViaExternalBinary(env_.binary, inputs, num_mutants);
+    if (result.exit_code() == EXIT_SUCCESS) {
       if (!custom_mutator_is_usable_.has_value()) {
-        LOG(INFO) << "Custom mutator detected: will use it";
-        custom_mutator_is_usable_ = true;
+        custom_mutator_is_usable_ = result.has_custom_mutator();
+        if (*custom_mutator_is_usable_) {
+          LOG(INFO) << "Custom mutator detected; will use it.";
+        } else {
+          LOG(INFO) << "Custom mutator not detected; falling back to the "
+                       "built-in mutator.";
+        }
       }
-      if (!mutants.empty()) return;
-      LOG_FIRST_N(WARNING, 5)
-          << "Custom mutator returned no mutants: falling back to internal "
-             "default mutator";
+      if (*custom_mutator_is_usable_) {
+        // TODO(b/398261908): Exit with failure instead of crashing.
+        CHECK(result.has_custom_mutator())
+            << "Test binary no longer has a custom mutator, even though it was "
+               "previously detected.";
+        if (!result.mutants().empty()) return std::move(result).mutants();
+        LOG_FIRST_N(WARNING, 5) << "Custom mutator returned no mutants; will "
+                                   "generate some using the built-in mutator.";
+      }
     } else if (ShouldStop()) {
       LOG(WARNING) << "Custom mutator failed, but ignored since the stop "
                       "condition it met. Possibly what triggered the stop "
                       "condition also interrupted the mutator.";
-      return;
+      // Returning whatever mutants we got before the failure.
+      return std::move(result).mutants();
     } else {
-      LOG(WARNING) << "Custom mutator undetected or misbehaving:";
-      CHECK(!custom_mutator_is_usable_.has_value())
-          << "Custom mutator is unreliable, aborting";
-      LOG(WARNING) << "Falling back to internal default mutator";
-      custom_mutator_is_usable_ = false;
+      LOG(ERROR) << "Test binary failed when asked to mutate inputs - exiting.";
+      RequestEarlyStop(EXIT_FAILURE);
+      return {};
     }
   }
-  // Fallback of the internal mutator.
-  CentipedeCallbacks::Mutate(inputs, num_mutants, mutants);
+  // Fall back to the internal mutator.
+  return CentipedeCallbacks::Mutate(inputs, num_mutants);
 }
 
-}  // namespace centipede
+}  // namespace fuzztest::internal

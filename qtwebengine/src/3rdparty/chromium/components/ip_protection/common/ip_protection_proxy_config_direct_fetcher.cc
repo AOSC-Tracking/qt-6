@@ -4,12 +4,17 @@
 
 #include "components/ip_protection/common/ip_protection_proxy_config_direct_fetcher.h"
 
+#include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "base/base64.h"
-#include "base/functional/callback.h"
+#include "base/check.h"
+#include "base/debug/crash_logging.h"
+#include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "base/types/expected.h"
 #include "components/ip_protection/common/ip_protection_data_types.h"
@@ -18,11 +23,13 @@
 #include "net/base/proxy_chain.h"
 #include "net/base/proxy_server.h"
 #include "net/base/proxy_string_util.h"
+#include "net/http/http_request_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "third_party/abseil-cpp/absl/time/time.h"
 #include "url/gurl.h"
@@ -210,8 +217,13 @@ IpProtectionProxyConfigDirectFetcher::GetProxyListFromProxyConfigResponse(
           chain_id > net::ProxyChain::kMaxIpProtectionChainId) {
         chain_id = net::ProxyChain::kDefaultIpProtectionChainId;
       }
-      proxy_list.push_back(
-          net::ProxyChain::ForIpProtection(std::move(proxies), chain_id));
+      auto chain =
+          net::ProxyChain::ForIpProtection(std::move(proxies), chain_id);
+      // `add_server()` fails if the proxy server is invalid, and `ok` will be
+      // false in that case, so it's safe to assume the chain we create here
+      // will be valid.
+      CHECK(chain.IsValid());
+      proxy_list.push_back(std::move(chain));
     }
   }
 
@@ -244,7 +256,9 @@ net::ProxyChain IpProtectionProxyConfigDirectFetcher::MakeChainForTesting(
     servers.push_back(net::ProxyServer::FromSchemeHostAndPort(
         net::ProxyServer::SCHEME_HTTPS, hostname, std::nullopt));
   }
-  return net::ProxyChain::ForIpProtection(servers, chain_id);
+  auto chain = net::ProxyChain::ForIpProtection(servers, chain_id);
+  CHECK(chain.IsValid());
+  return chain;
 }
 
 IpProtectionProxyConfigDirectFetcher::Retriever::Retriever(
@@ -338,7 +352,7 @@ void IpProtectionProxyConfigDirectFetcher::Retriever::
 void IpProtectionProxyConfigDirectFetcher::Retriever::OnGetProxyConfigCompleted(
     std::unique_ptr<network::SimpleURLLoader> url_loader,
     RetrieveCallback callback,
-    std::unique_ptr<std::string> response) {
+    std::optional<std::string> response) {
   if (!response) {
     std::move(callback).Run(base::unexpected("Failed GetProxyConfig request"));
     return;

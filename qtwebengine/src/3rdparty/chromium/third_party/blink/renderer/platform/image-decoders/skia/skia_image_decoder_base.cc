@@ -87,13 +87,14 @@ void SkiaImageDecoderBase::OnSetData(scoped_refptr<SegmentReader> data) {
 
     switch (codec_creation_result) {
       case SkCodec::kSuccess: {
-        segment_stream_ = segment_stream_ptr;
         // OnCreateSkCodec needs to read enough of the image to create
         // SkEncodedInfo so now is an okay time to ask the `codec_` about 1) the
         // image size and 2) the color profile.
         SkImageInfo image_info = codec_->getInfo();
         if (!SetSize(static_cast<unsigned>(image_info.width()),
                      static_cast<unsigned>(image_info.height()))) {
+          codec_.reset();
+          SetFailed();
           return;
         }
         if (!IgnoresColorSpace()) {
@@ -101,12 +102,14 @@ void SkiaImageDecoderBase::OnSetData(scoped_refptr<SegmentReader> data) {
             SetEmbeddedColorProfile(std::make_unique<ColorProfile>(*profile));
           }
         }
+        segment_stream_ = segment_stream_ptr;
         orientation_ = static_cast<ImageOrientationEnum>(codec_->getOrigin());
         return;
       }
 
       case SkCodec::kIncompleteInput:
         if (IsAllDataReceived()) {
+          codec_.reset();
           SetFailed();
         }
         return;
@@ -124,7 +127,11 @@ int SkiaImageDecoderBase::RepetitionCount() const {
   }
 
   DCHECK(!Failed());
+  repetition_count_ = RepetitionCountInternal();
+  return repetition_count_;
+}
 
+int SkiaImageDecoderBase::RepetitionCountInternal() const {
   // This value can arrive at any point in the image data stream.  Most GIFs
   // in the wild declare it near the beginning of the file, so it usually is
   // set by the time we've decoded the size, but (depending on the GIF and the
@@ -136,25 +143,31 @@ int SkiaImageDecoderBase::RepetitionCount() const {
 
   switch (repetition_count) {
     case 0: {
-      // SkCodec returns 0 for both still images and animated images which only
-      // play once.
-      if (IsAllDataReceived() && codec_->getFrameCount() == 1) {
-        repetition_count_ = kAnimationNone;
-        break;
+      // SkCodec returns 0 both for 1) still images and 2) animated images which
+      // only play once.  First try to disambiguate using by checking
+      // `isAnimated`.
+      switch (codec_->isAnimated()) {
+        case SkCodec::IsAnimated::kYes:
+          return kAnimationLoopOnce;
+        case SkCodec::IsAnimated::kNo:
+          return kAnimationNone;
+        case SkCodec::IsAnimated::kUnknown:
+          break;
       }
 
-      repetition_count_ = kAnimationLoopOnce;
-      break;
+      // Otherwise, fall back to frame-count-based heuristics.  This may end up
+      // incorrectly returning `kAnimationLoopOnce` for static/single-frame
+      // images that are only partially-received so far.
+      if (IsAllDataReceived() && codec_->getFrameCount() == 1) {
+        return kAnimationNone;
+      }
+      return kAnimationLoopOnce;
     }
     case SkCodec::kRepetitionCountInfinite:
-      repetition_count_ = kAnimationLoopInfinite;
-      break;
+      return kAnimationLoopInfinite;
     default:
-      repetition_count_ = repetition_count;
-      break;
+      return repetition_count;
   }
-
-  return repetition_count_;
 }
 
 bool SkiaImageDecoderBase::FrameIsReceivedAtIndex(wtf_size_t index) const {
@@ -311,6 +324,7 @@ void SkiaImageDecoderBase::Decode(wtf_size_t index) {
         }
 
         if (IsFailedFrameIndex(previous_frame_index)) {
+          SetFailedFrameIndex(current_frame_index);
           continue;
         }
 
@@ -329,7 +343,17 @@ void SkiaImageDecoderBase::Decode(wtf_size_t index) {
       }
     }
 
-    if (frame.GetStatus() == ImageFrame::kFrameInitialized) {
+    bool already_started_current_frame =
+        already_started_frame_.has_value() &&
+        already_started_frame_.value() == current_frame_index;
+    if (!already_started_current_frame) {
+      // `kFrameEmpty` and `kFrameComplete` are handled above.
+      // `kFrameInitialized` is possible when decoding a frame from scratch.
+      // `kFramePartial` is possible when resuming to decode a frame that
+      // previously returned `kIncompleteInput` from `incrementalDecode`.
+      DCHECK(frame.GetStatus() == ImageFrame::kFrameInitialized ||
+             frame.GetStatus() == ImageFrame::kFramePartial);
+
       SkCodec::FrameInfo frame_info;
       bool frame_info_received =
           codec_->getFrameInfo(current_frame_index, &frame_info);
@@ -355,10 +379,22 @@ void SkiaImageDecoderBase::Decode(wtf_size_t index) {
       }
       DCHECK_NE(color_type, kUnknown_SkColorType);
 
+      sk_sp<SkColorSpace> color_space;
+      if (const ColorProfileTransform* transform = ColorTransform()) {
+        const skcms_ICCProfile* dst_profile = transform->DstProfile();
+        DCHECK(dst_profile);  // Always non-null ptr to `dst_profile_` field.
+        color_space = SkColorSpace::Make(*dst_profile);
+      } else {
+        // Explicitly ask for no color transformation.  This avoids transforming
+        // into sRGB if/when `SkEncodedInfo::makeImageInfo` has set
+        // `codec_->getInfo().colorSpace()` to sRGB as a fallback.
+        color_space = nullptr;
+      }
+
       SkImageInfo image_info = codec_->getInfo()
                                    .makeColorType(color_type)
-                                   .makeColorSpace(ColorSpaceForSkImages())
-                                   .makeAlphaType(alpha_type);
+                                   .makeAlphaType(alpha_type)
+                                   .makeColorSpace(color_space);
 
       SkCodec::Options options;
       options.fFrameIndex = current_frame_index;
@@ -378,11 +414,13 @@ void SkiaImageDecoderBase::Decode(wtf_size_t index) {
           continue;
       }
       frame.SetStatus(ImageFrame::kFramePartial);
+      already_started_frame_.emplace(current_frame_index);
     }
 
     SkCodec::Result incremental_decode_result = codec_->incrementalDecode();
     switch (incremental_decode_result) {
       case SkCodec::kSuccess: {
+        already_started_frame_.reset();
         SkCodec::FrameInfo frame_info;
         bool frame_info_received =
             codec_->getFrameInfo(current_frame_index, &frame_info);
@@ -401,6 +439,7 @@ void SkiaImageDecoderBase::Decode(wtf_size_t index) {
         }
         break;
       default:
+        already_started_frame_.reset();
         frame.SetPixelsChanged(true);
         SetFailedFrameIndex(current_frame_index);
         break;
@@ -458,6 +497,16 @@ void SkiaImageDecoderBase::SetFailedFrameIndex(wtf_size_t index) {
 
 bool SkiaImageDecoderBase::IsFailedFrameIndex(wtf_size_t index) const {
   return decode_failed_frames_.contains(index);
+}
+
+bool SkiaImageDecoderBase::SetSize(unsigned width, unsigned height) {
+  DCHECK(!IsDecodedSizeAvailable());
+  // Protect against large images. See http://bugzil.la/251381 for more details.
+  // The limit of `1000000` has been copied from `blink::PNGImageDecoder` and
+  // originates all the way back in WebKit.
+  const uint32_t kMaxSize = 1000000;
+  return (width <= kMaxSize) && (height <= kMaxSize) &&
+         ImageDecoder::SetSize(width, height);
 }
 
 }  // namespace blink

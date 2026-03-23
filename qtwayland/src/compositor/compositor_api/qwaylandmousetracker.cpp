@@ -69,17 +69,18 @@ qreal QWaylandMouseTracker::mouseY() const
     return d->mousePos.y();
 }
 
-#if QT_CONFIG(cursor)
 void QWaylandMouseTracker::setWindowSystemCursorEnabled(bool enable)
 {
     Q_D(QWaylandMouseTracker);
     if (d->windowSystemCursorEnabled != enable) {
         d->windowSystemCursorEnabled = enable;
+#if QT_CONFIG(cursor)
         if (enable) {
             unsetCursor();
         } else {
             setCursor(QCursor(d->cursorPixmap));
         }
+#endif
         emit windowSystemCursorEnabledChanged();
     }
 }
@@ -89,7 +90,6 @@ bool QWaylandMouseTracker::windowSystemCursorEnabled() const
     Q_D(const QWaylandMouseTracker);
     return d->windowSystemCursorEnabled;
 }
-#endif
 
 bool QWaylandMouseTracker::hovered() const
 {

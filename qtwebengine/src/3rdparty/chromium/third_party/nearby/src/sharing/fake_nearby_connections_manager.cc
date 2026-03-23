@@ -16,7 +16,6 @@
 
 #include <stdint.h>
 
-#include <filesystem>  // NOLINT(build/c++17)
 #include <functional>
 #include <map>
 #include <memory>
@@ -30,6 +29,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "internal/base/file_path.h"
 #include "sharing/common/nearby_share_enums.h"
 #include "sharing/internal/public/logging.h"
 #include "sharing/nearby_connections_manager.h"
@@ -92,6 +92,7 @@ void FakeNearbyConnectionsManager::StopAdvertising(
 
 void FakeNearbyConnectionsManager::StartDiscovery(
     DiscoveryListener* listener, DataUsage data_usage,
+    std::optional<uint16_t> alternate_service_uuid,
     ConnectionsCallback callback) {
   is_shutdown_ = false;
   absl::MutexLock lock(&listener_mutex_);
@@ -315,20 +316,19 @@ void FakeNearbyConnectionsManager::SetCustomSavePath(
   custom_save_path_ = custom_save_path;
 }
 
-absl::flat_hash_set<std::filesystem::path>
+absl::flat_hash_set<FilePath>
 FakeNearbyConnectionsManager::GetAndClearUnknownFilePathsToDelete() {
-  absl::flat_hash_set<std::filesystem::path> file_paths_to_delete =
-      file_paths_to_delete_;
+  absl::flat_hash_set<FilePath> file_paths_to_delete = file_paths_to_delete_;
   file_paths_to_delete_.clear();
   return file_paths_to_delete;
 }
 
-absl::flat_hash_set<std::filesystem::path>
+absl::flat_hash_set<FilePath>
 FakeNearbyConnectionsManager::GetUnknownFilePathsToDeleteForTesting() {
   return file_paths_to_delete_;
 }
 void FakeNearbyConnectionsManager::AddUnknownFilePathsToDeleteForTesting(
-    std::filesystem::path file_path) {
+    FilePath file_path) {
   file_paths_to_delete_.insert(file_path);
 }
 

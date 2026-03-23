@@ -11,16 +11,19 @@
 
 #include "base/check_is_test.h"
 #include "base/containers/contains.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
-#include "base/syslog_logging.h"
+#include "build/build_config.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/policy/core/common/cloud/cloud_policy_validator.h"
 #include "components/policy/core/common/cloud/enterprise_metrics.h"
+#include "components/policy/core/common/features.h"
+#include "components/policy/core/common/policy_logger.h"
 #include "components/policy/core/common/remote_commands/remote_commands_factory.h"
 #include "components/policy/core/common/remote_commands/remote_commands_fetch_reason.h"
 #include "components/policy/proto/device_management_backend.pb.h"
@@ -214,13 +217,7 @@ RemoteCommandsService::~RemoteCommandsService() = default;
 
 bool RemoteCommandsService::FetchRemoteCommands(
     RemoteCommandsFetchReason reason) {
-  if (!client_->is_registered()) {
-    SYSLOG(WARNING) << "Client is not registered.";
-    return false;
-  }
-
-  if (command_fetch_in_progress_) {
-    has_enqueued_fetch_request_ = true;
+  if (!CanFetchRemoteCommands()) {
     return false;
   }
 
@@ -275,7 +272,7 @@ void RemoteCommandsService::VerifyAndEnqueueSignedCommand(
   auto ignore_result = base::BindOnce(
       [](RemoteCommandsService* self, const char* error_msg,
          MetricReceivedRemoteCommand metric) {
-        SYSLOG(ERROR) << error_msg;
+        LOG_POLICY(ERROR, REMOTE_COMMANDS) << error_msg;
         em::RemoteCommandResult result;
         result.set_result(em::RemoteCommandResult_ResultType_RESULT_IGNORED);
         result.set_command_id(-1);
@@ -330,7 +327,7 @@ void RemoteCommandsService::EnqueueCommand(
     const em::RemoteCommand& command,
     const em::SignedData& signed_command) {
   if (!command.has_type() || !command.has_command_id()) {
-    SYSLOG(ERROR) << "Invalid remote command from server.";
+    LOG_POLICY(ERROR, REMOTE_COMMANDS) << "Invalid remote command from server.";
     const auto metric = !command.has_command_id()
                             ? MetricReceivedRemoteCommand::kInvalid
                             : MetricReceivedRemoteCommand::kUnknownType;
@@ -350,8 +347,9 @@ void RemoteCommandsService::EnqueueCommand(
       factory_->BuildJobForType(command.type(), this);
 
   if (!job || !job->Init(queue_.GetNowTicks(), command, signed_command)) {
-    SYSLOG(ERROR) << "Initialization of remote command type " << command.type()
-                  << " with id " << command.command_id() << " failed.";
+    LOG_POLICY(ERROR, REMOTE_COMMANDS)
+        << "Initialization of remote command type " << command.type()
+        << " with id " << command.command_id() << " failed.";
     const auto metric = job == nullptr
                             ? MetricReceivedRemoteCommand::kInvalidScope
                             : MetricReceivedRemoteCommand::kInvalid;
@@ -367,6 +365,42 @@ void RemoteCommandsService::EnqueueCommand(
   RecordReceivedRemoteCommand(RemoteCommandMetricFromType(command.type()));
 
   queue_.AddJob(std::move(job));
+}
+
+bool RemoteCommandsService::CanFetchRemoteCommands() {
+  if (!client_->is_registered()) {
+    LOG_POLICY(WARNING, REMOTE_COMMANDS) << "Client is not registered.";
+    return false;
+  }
+
+#if !BUILDFLAG(IS_CHROMEOS)
+  // We need to check if CEC is enabled.
+  if (scope_ == PolicyInvalidationScope::kUser) {
+    const em::PolicyData* policy = store_->policy();
+    if (!policy) {
+      LOG_POLICY(WARNING, REMOTE_COMMANDS) << "Policy is not available.";
+      return false;
+    }
+
+    if (base::FeatureList::IsEnabled(features::kUseCECFlagInPolicyData)) {
+      if (!policy->cec_enabled()) {
+        LOG_POLICY(WARNING, REMOTE_COMMANDS) << "CEC is not enabled.";
+        return false;
+      }
+    } else {
+      if (!policy->has_command_invalidation_topic() ||
+          policy->command_invalidation_topic().empty()) {
+        return false;
+      }
+    }
+  }
+#endif  // !BUILDFLAG(IS_CHROMEOS)
+
+  if (command_fetch_in_progress_) {
+    has_enqueued_fetch_request_ = true;
+    return false;
+  }
+  return true;
 }
 
 void RemoteCommandsService::OnJobStarted(RemoteCommandJob* command) {}
@@ -391,9 +425,9 @@ void RemoteCommandsService::OnJobFinished(RemoteCommandJob* command) {
       result.set_payload(std::move(*result_payload));
     }
 
-    SYSLOG(INFO) << "Remote command " << command->unique_id()
-                 << " finished with result " << ToString(result.result())
-                 << " (" << result.result() << ")";
+    LOG_POLICY(INFO, REMOTE_COMMANDS)
+        << "Remote command " << command->unique_id() << " finished with result "
+        << ToString(result.result()) << " (" << result.result() << ")";
 
     unsent_results_.push_back(result);
   }

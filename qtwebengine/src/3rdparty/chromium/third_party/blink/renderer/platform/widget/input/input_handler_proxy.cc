@@ -322,8 +322,17 @@ void InputHandlerProxy::HandleInputEventWithLatencyInfo(
                     ChromeLatencyInfo2::Step::STEP_HANDLE_INPUT_EVENT_IMPL);
               });
 
+  bool is_fling =
+      (WebInputEvent::Type::kGestureScrollUpdate == event->Event().GetType() &&
+       static_cast<const WebGestureEvent&>(event->Event())
+               .data.scroll_update.inertial_phase ==
+           WebGestureEvent::InertialPhaseState::kMomentum) ||
+      (WebInputEvent::Type::kGestureScrollEnd == event->Event().GetType() &&
+       static_cast<const WebGestureEvent&>(event->Event())
+               .data.scroll_end.inertial_phase ==
+           WebGestureEvent::InertialPhaseState::kMomentum);
   DCHECK(input_handler_);
-  input_handler_->NotifyInputEvent();
+  input_handler_->NotifyInputEvent(is_fling);
 
   // Prevent the events to be counted into INP metrics if there is an active
   // scroll.
@@ -1199,23 +1208,23 @@ InputHandlerProxy::HandleGestureScrollUpdate(
   cc::InputHandlerScrollResult scroll_result =
       input_handler_->ScrollUpdate(cc::ScrollState(scroll_state_data), delay);
 
-  // TRACE_EVENT(
-  //     "input,input.scrolling",
-  //     "InputHandlerProxy::HandleGestureScrollUpdate_Result",
-  //     [&](perfetto::EventContext& ctx) {
-  //       auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
-  //       auto* scroll_data = event->set_scroll_deltas();
-  //       scroll_data->set_trace_id(trace_id);
-  //       scroll_data->set_provided_to_compositor_delta_x(provided_delta_x);
-  //       scroll_data->set_provided_to_compositor_delta_y(provided_delta_y);
-  //       scroll_data->set_visual_offset_x(
-  //           scroll_result.current_visual_offset.x());
-  //       scroll_data->set_visual_offset_y(
-  //           scroll_result.current_visual_offset.y());
-  //       scroll_data->set_did_overscroll_root(scroll_result.did_overscroll_root);
-  //       scroll_data->set_unused_delta_x(scroll_result.unused_scroll_delta.x());
-  //       scroll_data->set_unused_delta_y(scroll_result.unused_scroll_delta.y());
-  //     });
+  TRACE_EVENT(
+      "input,input.scrolling",
+      "InputHandlerProxy::HandleGestureScrollUpdate_Result",
+      [&](perfetto::EventContext& ctx) {
+        auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
+        auto* scroll_data = event->set_scroll_deltas();
+        scroll_data->set_trace_id(trace_id);
+        scroll_data->set_provided_to_compositor_delta_x(provided_delta_x);
+        scroll_data->set_provided_to_compositor_delta_y(provided_delta_y);
+        scroll_data->set_visual_offset_x(
+            scroll_result.current_visual_offset.x());
+        scroll_data->set_visual_offset_y(
+            scroll_result.current_visual_offset.y());
+        scroll_data->set_did_overscroll_root(scroll_result.did_overscroll_root);
+        scroll_data->set_unused_delta_x(scroll_result.unused_scroll_delta.x());
+        scroll_data->set_unused_delta_y(scroll_result.unused_scroll_delta.y());
+      });
 
   HandleOverscroll(gesture_event.PositionInWidget(), scroll_result);
 

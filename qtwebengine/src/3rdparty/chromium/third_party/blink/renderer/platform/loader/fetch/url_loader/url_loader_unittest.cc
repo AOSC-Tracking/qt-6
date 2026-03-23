@@ -9,6 +9,7 @@
 
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/command_line.h"
@@ -17,11 +18,13 @@
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/system/data_pipe.h"
+#include "net/base/features.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -40,7 +43,6 @@
 #include "services/network/public/mojom/url_loader_completion_status.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/blink/public/platform/resource_load_info_notifier_wrapper.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/blink/public/platform/web_data.h"
@@ -236,7 +238,7 @@ class TestURLLoaderClient : public URLLoaderClient {
 
   void DidReceiveResponse(
       const WebURLResponse& response,
-      absl::variant<mojo::ScopedDataPipeConsumerHandle, SegmentedBuffer> body,
+      std::variant<mojo::ScopedDataPipeConsumerHandle, SegmentedBuffer> body,
       std::optional<mojo_base::BigBuffer> cached_metadata) override {
     EXPECT_TRUE(loader_);
     EXPECT_FALSE(did_receive_response_);
@@ -249,9 +251,9 @@ class TestURLLoaderClient : public URLLoaderClient {
     }
     DCHECK(!response_body_);
     // SegmentedBuffer is used only for BackgroundUrlLoader.
-    CHECK(absl::holds_alternative<mojo::ScopedDataPipeConsumerHandle>(body));
+    CHECK(std::holds_alternative<mojo::ScopedDataPipeConsumerHandle>(body));
     mojo::ScopedDataPipeConsumerHandle body_handle =
-        std::move(absl::get<mojo::ScopedDataPipeConsumerHandle>(body));
+        std::move(std::get<mojo::ScopedDataPipeConsumerHandle>(body));
     if (body_handle) {
       response_body_ = std::move(body_handle);
     }
@@ -515,11 +517,11 @@ TEST_F(URLLoaderTest, ResponseAddressSpace) {
   KURL url("http://foo.example");
 
   network::mojom::URLResponseHead head;
-  head.response_address_space = network::mojom::IPAddressSpace::kPrivate;
+  head.response_address_space = network::mojom::IPAddressSpace::kLocal;
 
   WebURLResponse response = WebURLResponse::Create(url, head, true, -1);
 
-  EXPECT_EQ(network::mojom::IPAddressSpace::kPrivate, response.AddressSpace());
+  EXPECT_EQ(network::mojom::IPAddressSpace::kLocal, response.AddressSpace());
 }
 
 TEST_F(URLLoaderTest, ClientAddressSpace) {
@@ -623,6 +625,89 @@ TEST_F(URLLoaderTest, AuthChallengeInfo) {
   EXPECT_TRUE(response.AuthChallengeInfo()->is_proxy);
   EXPECT_EQ("foobar", response.AuthChallengeInfo()->challenge);
 }
+
+struct IPProtectionTestParams {
+  std::string test_name;
+  bool enable_ipp_feature_param;
+  bool cached;
+  bool expected_result;
+};
+
+class URLLoaderTest_IPProtection
+    : public URLLoaderTest,
+      public testing::WithParamInterface<IPProtectionTestParams> {
+ public:
+  URLLoaderTest_IPProtection() {
+    scoped_feature_list_.InitAndEnableFeatureWithParameters(
+        net::features::kEnableIpProtectionProxy,
+        {{"IpPrivacyEnableIppInDevTools",
+          GetParam().enable_ipp_feature_param ? "true" : "false"}});
+  }
+
+  ~URLLoaderTest_IPProtection() override = default;
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+// Verifies that WebURLResponse::Create() creates a response with
+// IsIpProtectionUsed to the response.
+TEST_P(URLLoaderTest_IPProtection, IsIPProtectionUsedSetCorrectly) {
+  network::mojom::URLResponseHead head;
+
+  head.proxy_chain =
+      net::ProxyChain().ForIpProtection(std::vector<net::ProxyServer>());
+
+  if (GetParam().cached) {
+    head.load_timing.request_start_time = base::Time::Now();
+  }
+
+  blink::WebURLResponse response =
+      WebURLResponse::Create(KURL(), head, true, -1);
+
+  EXPECT_EQ(response.IsIpProtectionUsed(), GetParam().expected_result);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    URLLoaderTest_IPProtectionTestStates,
+    URLLoaderTest_IPProtection,
+    testing::Values(
+        // IsIpProtectionUsed should be set to true if
+        // the feature is enabled and the response was not
+        // cached.
+        IPProtectionTestParams{
+            .test_name = "FeatureEnabledNotCached",
+            .enable_ipp_feature_param = true,
+            .cached = false,
+            .expected_result = true,
+        },
+        // Cached responses should not set
+        // IsIpProtectionUsed to true even if the feature
+        // is enabled.
+        IPProtectionTestParams{
+            .test_name = "FeatureEnabledCached",
+            .enable_ipp_feature_param = true,
+            .cached = true,
+            .expected_result = false,
+        },
+        // IsIpProtectionUsed should not be set if the
+        // feature is disabled, regardless of whether the
+        // response is cached or not.
+        IPProtectionTestParams{
+            .test_name = "FeatureDisabledCached",
+            .enable_ipp_feature_param = false,
+            .cached = true,
+            .expected_result = false,
+        },
+        IPProtectionTestParams{
+            .test_name = "FeatureDisabledNotCached",
+            .enable_ipp_feature_param = false,
+            .cached = false,
+            .expected_result = false,
+        }),
+    [](const testing::TestParamInfo<IPProtectionTestParams>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace blink

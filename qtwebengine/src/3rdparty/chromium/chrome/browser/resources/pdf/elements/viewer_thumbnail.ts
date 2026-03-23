@@ -57,9 +57,9 @@ export class ViewerThumbnailElement extends CrLitElement {
     };
   }
 
-  clockwiseRotations: number = 0;
-  isActive: boolean = true;
-  pageNumber: number = 0;
+  accessor clockwiseRotations: number = 0;
+  accessor isActive: boolean = true;
+  accessor pageNumber: number = 0;
 
   override updated(changedProperties: PropertyValues<this>) {
     super.updated(changedProperties);
@@ -78,7 +78,13 @@ export class ViewerThumbnailElement extends CrLitElement {
     }
 
     if (changedProperties.has('isActive') && this.isActive) {
-      this.scrollIntoView({block: 'nearest'});
+      const scrollIntoViewOptions: ScrollIntoViewOptions = {
+        block: 'nearest',
+      };
+      if (document.documentElement.hasAttribute('pdfOopifEnabled')) {
+        scrollIntoViewOptions.container = 'nearest';
+      }
+      this.scrollIntoView(scrollIntoViewOptions);
     }
   }
 
@@ -154,12 +160,12 @@ export class ViewerThumbnailElement extends CrLitElement {
   }
 
   private getCanvas_(): HTMLCanvasElement|null {
-    return this.shadowRoot!.querySelector('#' + PDF_CANVAS_ID);
+    return this.shadowRoot.querySelector('#' + PDF_CANVAS_ID);
   }
 
   // <if expr="enable_pdf_ink2">
   private getInk2Canvas_(): HTMLCanvasElement|null {
-    return this.shadowRoot!.querySelector('#' + INK2_CANVAS_ID);
+    return this.shadowRoot.querySelector('#' + INK2_CANVAS_ID);
   }
   // </if>
 
@@ -219,7 +225,7 @@ export class ViewerThumbnailElement extends CrLitElement {
   private styleCanvas_(canvas: HTMLCanvasElement) {
     assert(this.clockwiseRotations >= 0 && this.clockwiseRotations < 4);
 
-    const div = this.shadowRoot!.querySelector<HTMLElement>('#thumbnail')!;
+    const div = this.shadowRoot.querySelector<HTMLElement>('#thumbnail')!;
 
     const degreesRotated = this.clockwiseRotations * 90;
     canvas.style.transform = `rotate(${degreesRotated}deg)`;

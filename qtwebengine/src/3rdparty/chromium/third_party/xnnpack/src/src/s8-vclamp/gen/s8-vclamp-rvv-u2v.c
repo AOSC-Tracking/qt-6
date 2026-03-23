@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/s8-vclamp/rvv.c.in
 //   Generator: tools/xngen
@@ -12,16 +13,16 @@
 
 #include <riscv_vector.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/intrinsics-polyfill.h"
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/vunary.h"
 
 
 void xnn_s8_vclamp_ukernel__rvv_u2v(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const struct xnn_s8_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_s8_minmax_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);

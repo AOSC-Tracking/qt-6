@@ -47,7 +47,8 @@ namespace blink {
 
 namespace {
 
-String GenerateCounterText(const CounterStyle* counter_style, int value) {
+String CounterTextFromStyleAndValue(const CounterStyle* counter_style,
+                                    int value) {
   if (!counter_style) {
     return g_empty_string;
   }
@@ -78,20 +79,28 @@ void LayoutCounter::WillBeDestroyed() {
   LayoutText::WillBeDestroyed();
 }
 
-void LayoutCounter::UpdateCounter(Vector<int> counter_values) {
-  NOT_DESTROYED();
-  const CounterStyle* counter_style = NullableCounterStyle();
-  String text = GenerateCounterText(counter_style, counter_values.front());
-  if (!counter_->Separator().IsNull()) {
+String LayoutCounter::GenerateCounterText(Vector<int> counter_values,
+                                          const CounterStyle* counter_style,
+                                          const AtomicString& separator) {
+  String text =
+      CounterTextFromStyleAndValue(counter_style, counter_values.front());
+  if (!separator.IsNull()) {
     for (wtf_size_t i = 1u; i < counter_values.size(); ++i) {
-      text = GenerateCounterText(counter_style, counter_values[i]) +
-             counter_->Separator() + text;
+      text = CounterTextFromStyleAndValue(counter_style, counter_values[i]) +
+             separator + text;
     }
   }
-  SetTextIfNeeded(text);
+  return text;
+}
+
+void LayoutCounter::UpdateCounter(Vector<int> counter_values) {
+  NOT_DESTROYED();
+  SetTextIfNeeded(
+      GenerateCounterText(counter_values, NullableCounterStyle(), Separator()));
 }
 
 const CounterStyle* LayoutCounter::NullableCounterStyle() const {
+  NOT_DESTROYED();
   // Note: CSS3 spec doesn't allow 'none' but CSS2.1 allows it. We currently
   // allow it for backward compatibility.
   // See https://github.com/w3c/csswg-drafts/issues/5795 for details.
@@ -103,6 +112,7 @@ const CounterStyle* LayoutCounter::NullableCounterStyle() const {
 }
 
 bool LayoutCounter::IsDirectionalSymbolMarker() const {
+  NOT_DESTROYED();
   const auto* counter_style = NullableCounterStyle();
   if (!counter_style || !counter_style->IsPredefinedSymbolMarker()) {
     return false;
@@ -113,6 +123,7 @@ bool LayoutCounter::IsDirectionalSymbolMarker() const {
 }
 
 const AtomicString& LayoutCounter::Separator() const {
+  NOT_DESTROYED();
   return counter_->Separator();
 }
 

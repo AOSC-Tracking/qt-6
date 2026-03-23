@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "qqmlfile.h"
 
@@ -22,16 +23,6 @@ QT_BEGIN_NAMESPACE
     and file names the way \l{QQmlEngine} does when loading content from them.
 */
 
-/*!
-    \internal
-
-    \enum QQmlFile::Status
-    \value Null
-    \value Ready
-    \value Error
-    \value Loading
- */
-
 static char qrc_string[] = "qrc";
 static char file_string[] = "file";
 
@@ -42,6 +33,21 @@ static char authority_externalstorage[] = "com.android.externalstorage.documents
 static char authority_downloads_documents[] = "com.android.providers.downloads.documents";
 static char authority_media_documents[] = "com.android.providers.media.documents";
 #endif
+
+#if QT_DEPRECATED_SINCE(6, 11)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+
+/*!
+    \internal
+    \deprecated [6.11]
+
+    \enum QQmlFile::Status
+    \value Null
+    \value Ready
+    \value Error
+    \value Loading
+ */
 
 class QQmlFilePrivate;
 
@@ -88,7 +94,7 @@ public:
     QByteArray data;
 
     enum Error {
-        None, NotFound, CaseMismatch, Network
+        None, NotFound, Network
     };
 
     Error error;
@@ -272,6 +278,7 @@ QQmlFile::Status QQmlFile::status() const
 
 /*!
     \internal
+    \deprecated [6.11]
  */
 QString QQmlFile::error() const
 {
@@ -281,13 +288,12 @@ QString QQmlFile::error() const
         return QString();
     case QQmlFilePrivate::NotFound:
         return QLatin1String("File not found");
-    case QQmlFilePrivate::CaseMismatch:
-        return QLatin1String("File name case mismatch");
     }
 }
 
 /*!
     \internal
+    \deprecated [6.11]
  */
 qint64 QQmlFile::size() const
 {
@@ -296,6 +302,7 @@ qint64 QQmlFile::size() const
 
 /*!
     \internal
+    \deprecated [6.11]
  */
 const char *QQmlFile::data() const
 {
@@ -304,6 +311,7 @@ const char *QQmlFile::data() const
 
 /*!
     \internal
+    \deprecated [6.11]
  */
 QByteArray QQmlFile::dataByteArray() const
 {
@@ -312,6 +320,8 @@ QByteArray QQmlFile::dataByteArray() const
 
 /*!
     \internal
+    \deprecated [6.11]
+
     Loads content at \a url using \a engine.
  */
 void QQmlFile::load(QQmlEngine *engine, const QUrl &url)
@@ -322,10 +332,9 @@ void QQmlFile::load(QQmlEngine *engine, const QUrl &url)
     d->url = url;
 
     if (isLocalFile(url)) {
-        QString lf = urlToLocalFileOrQrc(url);
-
-        if (!QQml_isFileCaseCorrect(lf)) {
-            d->error = QQmlFilePrivate::CaseMismatch;
+        const QString lf = urlToLocalFileOrQrc(url);
+        if (!QQmlTypeLoader::get(engine)->fileExists(lf)) {
+            d->error = QQmlFilePrivate::NotFound;
             return;
         }
 
@@ -346,6 +355,8 @@ void QQmlFile::load(QQmlEngine *engine, const QUrl &url)
 
 /*!
     \internal
+    \deprecated [6.11]
+
     Loads content at \a url using \a engine.
  */
 void QQmlFile::load(QQmlEngine *engine, const QString &url)
@@ -357,10 +368,9 @@ void QQmlFile::load(QQmlEngine *engine, const QString &url)
     d->urlString = url;
 
     if (isLocalFile(url)) {
-        QString lf = urlToLocalFileOrQrc(url);
-
-        if (!QQml_isFileCaseCorrect(lf)) {
-            d->error = QQmlFilePrivate::CaseMismatch;
+        const QString lf = urlToLocalFileOrQrc(url);
+        if (!QQmlTypeLoader::get(engine)->fileExists(lf)) {
+            d->error = QQmlFilePrivate::NotFound;
             return;
         }
 
@@ -384,6 +394,7 @@ void QQmlFile::load(QQmlEngine *engine, const QString &url)
 
 /*!
     \internal
+    \deprecated [6.11]
  */
 void QQmlFile::clear()
 {
@@ -395,6 +406,8 @@ void QQmlFile::clear()
 
 /*!
     \internal
+    \deprecated [6.11]
+
     Redirects to the other clear() overload, ignoring \a object.
  */
 void QQmlFile::clear(QObject *object)
@@ -421,6 +434,8 @@ bool QQmlFile::connectFinished(QObject *object, const char *method)
 
 /*!
     \internal
+    \deprecated [6.11]
+
     Connects \a method of \a object to the internal \c{finished} signal.
  */
 bool QQmlFile::connectFinished(QObject *object, int method)
@@ -436,6 +451,8 @@ bool QQmlFile::connectFinished(QObject *object, int method)
 
 /*!
     \internal
+    \deprecated [6.11]
+
     Connects \a method of \a object to the internal \c{downloadProgress} signal.
  */
 bool QQmlFile::connectDownloadProgress(QObject *object, const char *method)
@@ -451,6 +468,8 @@ bool QQmlFile::connectDownloadProgress(QObject *object, const char *method)
 
 /*!
     \internal
+    \deprecated [6.11]
+
     Connects \a method of \a object to the internal \c{downloadProgress} signal.
  */
 bool QQmlFile::connectDownloadProgress(QObject *object, int method)
@@ -464,6 +483,9 @@ bool QQmlFile::connectDownloadProgress(QObject *object, int method)
                                 object, method);
 }
 #endif
+
+QT_WARNING_POP
+#endif // QT_DEPRECATED_SINCE(6, 11)
 
 /*!
     \internal

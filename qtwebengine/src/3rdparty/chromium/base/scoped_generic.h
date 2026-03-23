@@ -135,7 +135,7 @@ class ScopedGeneric {
   }
 
   // Frees the currently owned object, if any. Then takes ownership of a new
-  // object, if given. Self-resets are not allowd as on unique_ptr. See
+  // object, if given. Self-resets are not allowed as on unique_ptr. See
   // http://crbug.com/162971
   void reset(const element_type& value = traits_type::InvalidValue()) {
     if (data_.generic != traits_type::InvalidValue() &&
@@ -248,9 +248,6 @@ class ScopedGeneric {
 
   bool operator==(const element_type& value) const {
     return data_.generic == value;
-  }
-  bool operator!=(const element_type& value) const {
-    return data_.generic != value;
   }
 
   Traits& get_traits() LIFETIME_BOUND { return data_; }

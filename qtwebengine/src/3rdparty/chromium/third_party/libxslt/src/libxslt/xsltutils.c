@@ -1964,11 +1964,13 @@ xsltSetSourceNodeFlags(xsltTransformContextPtr ctxt, xmlNodePtr node,
     switch (node->type) {
         case XML_DOCUMENT_NODE:
         case XML_HTML_DOCUMENT_NODE:
-            ((xmlDocPtr) node)->extra |= ((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
+            ((xmlDocPtr) node)->extra |=
+                ((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         case XML_ATTRIBUTE_NODE:
-            ((xmlAttrPtr) node)->extra |= ((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
+            ((xmlAttrPtr) node)->extra |=
+                ((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         case XML_ELEMENT_NODE:
@@ -1998,11 +2000,13 @@ xsltClearSourceNodeFlags(xmlNodePtr node, int flags) {
     switch (node->type) {
         case XML_DOCUMENT_NODE:
         case XML_HTML_DOCUMENT_NODE:
-            ((xmlDocPtr) node)->extra &= ~((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
+            ((xmlDocPtr) node)->extra &=
+                ~((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         case XML_ATTRIBUTE_NODE:
-            ((xmlAttrPtr) node)->extra &= ~((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
+            ((xmlAttrPtr) node)->extra &=
+                ~((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         case XML_ELEMENT_NODE:
@@ -2076,13 +2080,14 @@ xsltSetSourceNodeValue(xmlNodePtr node, int value) {
             node->extra &= ~XSLT_SOURCE_NODE_VALUE_MASK;
             node->extra |= (value & XSLT_SOURCE_NODE_VALUE_MASK);
             return 0;
+
         default:
             return -1;
     }
 }
 
 /**
- * xsltClearSourceNodeExtraData:
+ * xsltClearSourceNodeFlags:
  * @node:  Node from source document
  *
  * Clears all associated extra data for a node.
@@ -2109,7 +2114,7 @@ xsltClearSourceNodeExtraData(xmlNodePtr node) {
             node->extra = 0;
             return 0;
 
-         default:
+        default:
             return -1;
     }
 }
@@ -2818,4 +2823,3 @@ xslDropCall(void)
 }
 
 #endif /* WITH_DEBUGGER */
-

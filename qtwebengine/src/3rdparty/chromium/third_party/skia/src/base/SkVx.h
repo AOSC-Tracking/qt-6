@@ -48,6 +48,7 @@
     #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE2
         #include <emmintrin.h>
     #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
+        #include <emmintrin.h>
         #include <xmmintrin.h>
     #elif defined(SK_ARM_HAS_NEON)
         #include <arm_neon.h>

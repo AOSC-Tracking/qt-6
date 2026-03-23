@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <QtVirtualKeyboard/private/virtualkeyboard_p.h>
 #include <QtVirtualKeyboard/private/virtualkeyboardattachedtype_p.h>
@@ -13,7 +14,7 @@ namespace QtVirtualKeyboard {
     \ingroup qmlclass
     \ingroup qtvirtualkeyboard-qml
     \brief Provides attached properties for customizing the virtual keyboard.
-    \since QtQuick.VirtualKeyboard 6.1
+    \since 6.1
 
     The VirtualKeyboard type provides attached properties which allow
     customizing the virtual keyboard, such as attaching custom dictionaries.

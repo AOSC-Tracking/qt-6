@@ -869,7 +869,7 @@ std::ostream& operator<<(std::ostream& os, TruncateKind kind) {
   V(Float64InsertHighWord32, Operator::kNoProperties, 2, 0, 1)             \
   V(LoadStackCheckOffset, Operator::kNoProperties, 0, 0, 1)                \
   V(LoadFramePointer, Operator::kNoProperties, 0, 0, 1)                    \
-  V(LoadRootRegister, Operator::kNoProperties, 0, 0, 1)                    \
+  V(LoadRootRegister, Operator::kPure, 0, 0, 1)                            \
   V(LoadParentFramePointer, Operator::kNoProperties, 0, 0, 1)              \
   V(Int32PairAdd, Operator::kNoProperties, 4, 0, 2)                        \
   V(Int32PairSub, Operator::kNoProperties, 4, 0, 2)                        \
@@ -1870,6 +1870,7 @@ const Operator* MachineOperatorBuilder::UnalignedStore(
     case MachineRepresentation::kProtectedPointer:
     case MachineRepresentation::kIndirectPointer:
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kFloat16RawBits:
       UNREACHABLE();
   }
 }
@@ -2153,6 +2154,7 @@ const Operator* MachineOperatorBuilder::Store(StoreRepresentation store_rep) {
     case MachineRepresentation::kProtectedPointer:
     case MachineRepresentation::kIndirectPointer:
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kFloat16RawBits:
       UNREACHABLE();
   }
 }
@@ -2201,6 +2203,7 @@ const Operator* MachineOperatorBuilder::ProtectedStore(
     case MachineRepresentation::kProtectedPointer:
     case MachineRepresentation::kIndirectPointer:
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kFloat16RawBits:
       UNREACHABLE();
   }
 }
@@ -2221,6 +2224,7 @@ const Operator* MachineOperatorBuilder::StoreTrapOnNull(
     case MachineRepresentation::kProtectedPointer:
     case MachineRepresentation::kIndirectPointer:
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kFloat16RawBits:
       UNREACHABLE();
   }
 }

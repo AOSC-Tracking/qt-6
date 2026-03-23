@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef PINYINDECODERSERVICE_P_H
 #define PINYINDECODERSERVICE_P_H
@@ -43,7 +44,7 @@ public:
     QList<int> spellingStartPositions();
     QString candidateAt(int index);
     QList<QString> fetchCandidates(int index, int count, int sentFixedLen);
-    int chooceCandidate(int index);
+    int chooseCandidate(int index);
     int cancelLastChoice();
     int fixedLength();
     void flushCache();

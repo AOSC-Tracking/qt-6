@@ -11,6 +11,7 @@
 #include <tuple>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "base/cancelable_callback.h"
 #include "base/containers/flat_set.h"
@@ -27,10 +28,10 @@
 #include "components/commerce/core/commerce_types.h"
 #include "components/commerce/core/compare/cluster_manager.h"
 #include "components/commerce/core/product_specifications/product_specifications_cache.h"
-#include "components/commerce/core/product_specifications/product_specifications_service.h"
 #include "components/commerce/core/product_specifications/product_specifications_set.h"
 #include "components/commerce/core/proto/cart_db_content.pb.h"
 #include "components/commerce/core/proto/commerce_subscription_db_content.pb.h"
+#include "components/commerce/core/proto/discount_infos_db_content.pb.h"
 #include "components/commerce/core/proto/discounts_db_content.pb.h"
 #include "components/commerce/core/proto/parcel_tracking_db_content.pb.h"
 #include "components/commerce/core/subscriptions/commerce_subscription.h"
@@ -38,7 +39,7 @@
 #include "components/history/core/browser/history_service.h"
 #include "components/history/core/browser/history_service_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/optimization_guide/core/optimization_guide_decision.h"
+#include "components/optimization_guide/core/hints/optimization_guide_decision.h"
 #include "components/unified_consent/consent_throttle.h"
 #include "services/data_decoder/public/cpp/data_decoder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
@@ -116,8 +117,7 @@ class ScheduledMetricsManager;
 }  // namespace metrics
 
 class BookmarkUpdateManager;
-class DiscountsStorage;
-class ParcelsManager;
+class DiscountInfosStorage;
 class ProductSpecificationsServerProxy;
 class ProductSpecificationsService;
 class ShoppingPowerBookmarkDataProvider;
@@ -221,6 +221,8 @@ class ShoppingService : public KeyedService,
       SessionProtoStorage<discounts_db::DiscountsContentProto>*
           discounts_proto_db,
       SessionProtoStorage<cart_db::ChromeCartContentProto>* cart_proto_db,
+      SessionProtoStorage<discount_infos_db::DiscountInfosContentProto>*
+          discount_infos_db,
       SessionProtoStorage<parcel_tracking_db::ParcelTrackingContent>*
           parcel_tracking_proto_db,
       history::HistoryService* history_service,
@@ -240,6 +242,14 @@ class ShoppingService : public KeyedService,
   // that doesn't include information from the page on-device.
   virtual void GetProductInfoForUrl(const GURL& url,
                                     ProductInfoCallback callback);
+
+  // Attempts to retrieve product info for all of the URLs provided in |urls|.
+  // This API behaves the same as |GetProductInfoForUrl| with the exception of
+  // how on-demand requests are handled - rather than fetching individually,
+  // they are batched. The entire set of info is provided to the callback once
+  // complete.
+  virtual void GetProductInfoForUrls(const std::vector<GURL>& urls,
+                                     ProductInfoBatchCallback callback);
 
   // This API returns whatever product information is currently available for
   // the specified |url|. This method is less reliable than GetProductInfoForUrl
@@ -280,6 +290,12 @@ class ShoppingService : public KeyedService,
   // the fetch is completed.
   virtual void GetDiscountInfoForUrl(const GURL& url,
                                      DiscountInfoCallback callback);
+
+  // This API fetches available valid discounts information on the provided
+  // |url| and passes the payload back to the caller via |callback|.
+  // Call will run after the fetch is completed.
+  virtual void GetAvailableDiscountInfoForUrl(const GURL& url,
+                                          DiscountInfoCallback callback);
 
   virtual void GetProductSpecificationsForUrls(
       const std::vector<GURL>& urls,
@@ -344,9 +360,7 @@ class ShoppingService : public KeyedService,
   // locale is enabled. This method is a proxy for the utility method by the
   // same name in commerce_feature_list but provides the country and locale as
   // determined by this service at startup.
-  bool IsRegionLockedFeatureEnabled(
-      const base::Feature& feature,
-      const base::Feature& region_specific_feature);
+  bool IsRegionLockedFeatureEnabled(const base::Feature& feature);
 
   // This is a feature check for the "shopping list". This will only return true
   // if the user has the feature flag enabled, is signed-in, has MSBB enabled,
@@ -378,30 +392,6 @@ class ShoppingService : public KeyedService,
   // user (ordered by most recent first). This generally aligns with recently
   // viewed tabs.
   virtual const std::vector<UrlInfo> GetUrlInfosForRecentlyViewedWebWrappers();
-
-  // Starts tracking a list of parcels from a given page.
-  void StartTrackingParcels(
-      const std::vector<std::pair<ParcelIdentifier::Carrier, std::string>>&
-          parcel_identifiers,
-      const std::string& source_page_domain,
-      GetParcelStatusCallback callback);
-
-  // Gets the status of all parcel status stored in the db.
-  virtual void GetAllParcelStatuses(GetParcelStatusCallback callback);
-
-  // Called to stop tracking a given parcel.
-  // DEPRECATED: use StopTrackingParcels() below()
-  virtual void StopTrackingParcel(const std::string& tracking_id,
-                                  base::OnceCallback<void(bool)> callback);
-
-  // Called to stop tracking multiple parcels.
-  void StopTrackingParcels(
-      const std::vector<std::pair<ParcelIdentifier::Carrier, std::string>>&
-          parcel_identifiers,
-      base::OnceCallback<void(bool)> callback);
-
-  // Called to stop tracking all parcels.
-  virtual void StopTrackingAllParcels(base::OnceCallback<void(bool)> callback);
 
   virtual ProductSpecificationsService* GetProductSpecificationsService();
 
@@ -492,10 +482,17 @@ class ShoppingService : public KeyedService,
       const optimization_guide::OptimizationMetadata& metadata,
       const GURL& url);
 
+  // The internal impl that supports the different variations of the public
+  // ProductInfo APIs.
+  void GetProductInfoForUrlInternal(const GURL& url,
+                                    ProductInfoCallback callback,
+                                    bool attempt_on_demand_fetch);
+
   void HandleOptGuideProductInfoResponse(
       const GURL& url,
       WebWrapper* web,
       ProductInfoCallback callback,
+      bool attempt_on_demand,
       optimization_guide::OptimizationGuideDecision decision,
       const optimization_guide::OptimizationMetadata& metadata);
 
@@ -520,12 +517,21 @@ class ShoppingService : public KeyedService,
           optimization_guide::OptimizationGuideDecisionWithMetadata>&
           decisions);
 
-  // Produce a ProductInfo object given OptimizationGuideMeta. The returned
-  // unique_ptr is owned by the caller and will be empty if conversion failed
-  // or there was no info. The value returned here can change during runtime so
-  // it should not be used when deciding to build infrastructure.
-  std::unique_ptr<ProductInfo> OptGuideResultToProductInfo(
-      const optimization_guide::OptimizationMetadata& metadata);
+  // Handles the on-demand part of |GetProductInfoForUrls|, waiting for all
+  // fetches to complete before executing the callback.
+  void DoOnDemandFetchForProductInfoUrlBatch(
+      std::vector<GURL> urls,
+      std::map<GURL, std::optional<ProductInfo>> info_map,
+      ProductInfoBatchCallback callback);
+
+  // Process the result of an on-demand request for product info and handle any
+  // related cache maintenance.
+  std::optional<ProductInfo> HandleAndStoreProductInfoFromOnDemand(
+      const GURL& url,
+      const base::flat_map<
+          optimization_guide::proto::OptimizationType,
+          optimization_guide::OptimizationGuideDecisionWithMetadata>&
+          decisions);
 
   // Handle the result of running the local extraction fallback for product
   // info.
@@ -592,8 +598,6 @@ class ShoppingService : public KeyedService,
                                      DiscountInfoCallback callback,
                                      const std::vector<DiscountsPair>& results);
 
-  void SetDiscountsStorageForTesting(std::unique_ptr<DiscountsStorage> storage);
-
   void GetProductIdentifierForUrl(const GURL& url,
                                   UrlProductIdentifierTupleCallback callback);
 
@@ -639,6 +643,9 @@ class ShoppingService : public KeyedService,
   std::unique_ptr<ShoppingPowerBookmarkDataProvider>
       shopping_power_bookmark_data_provider_;
 
+  // The object handling discounts storage.
+  std::unique_ptr<DiscountInfosStorage> discount_infos_storage_;
+
   // A cache that retains commerce information for a URL as long as at least one
   // instance of the URL is open in a tab or mainteined by some other subsystem.
   CommerceInfoCache commerce_info_cache_;
@@ -652,12 +659,6 @@ class ShoppingService : public KeyedService,
   // The object tracking metrics that are recorded at specific intervals.
   std::unique_ptr<commerce::metrics::ScheduledMetricsManager>
       scheduled_metrics_manager_;
-
-  // The object handling discounts storage.
-  std::unique_ptr<DiscountsStorage> discounts_storage_;
-
-  // Object for tracking parcel status.
-  std::unique_ptr<ParcelsManager> parcels_manager_;
 
   // A consent throttle that will hold callbacks until the specific consent is
   // obtained.

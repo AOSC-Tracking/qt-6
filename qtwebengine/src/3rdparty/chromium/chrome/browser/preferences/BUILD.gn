@@ -55,6 +55,7 @@ java_cpp_strings("java_pref_names_srcjar") {
     "//chrome/browser/ui/safety_hub/safety_hub_prefs.h",
     "//chrome/common/pref_names.h",
     "//components/autofill/core/common/autofill_prefs.h",
+    "//components/bookmarks/common/bookmark_pref_names.h",
     "//components/commerce/core/pref_names.h",
     "//components/dom_distiller/core/pref_names.h",
     "//components/embedder_support/pref_names.h",
@@ -74,7 +75,7 @@ java_cpp_strings("java_pref_names_srcjar") {
     "//components/translate/core/browser/translate_pref_names.h",
   ]
 
-  template = "android/java_templates/Pref.java.tmpl"
+  class_name = "org.chromium.chrome.browser.preferences.Pref"
 }
 
 generate_jni("jni_headers") {
@@ -102,7 +103,7 @@ robolectric_library("preferences_junit_tests") {
     "//base/test:test_support_java",
     "//third_party/android_deps:guava_android_java",
     "//third_party/androidx:androidx_test_runner_java",
-    "//third_party/junit:junit",
+    "//third_party/junit",
     "//third_party/mockito:mockito_java",
   ]
 }

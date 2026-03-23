@@ -120,6 +120,11 @@ class PasskeyModel : public KeyedService {
   virtual bool DeletePasskey(const std::string& credential_id,
                              const base::Location& location) = 0;
 
+  // Sets the `hidden` property for the passkey with the given `credential_id`.
+  // Returns true if a passkey was found and updated, false otherwise.
+  virtual bool SetPasskeyHidden(const std::string& credential_id,
+                                bool hidden) = 0;
+
   // Deletes all passkeys.
   virtual void DeleteAllPasskeys() = 0;
 
@@ -138,6 +143,13 @@ class PasskeyModel : public KeyedService {
   // found and updated, false otherwise.
   virtual bool UpdatePasskeyTimestamp(const std::string& credential_id,
                                       base::Time last_used_time) = 0;
+
+  // Replaces the `encrypted` blob of an existing passkey.
+  // Used when the enclave rotates ciphertext after a large blob
+  // write. Returns false if the credential isn’t found.
+  virtual bool UpdatePasskeyEncryptedBlob(
+      const std::string& credential_id,
+      const std::string& new_encrypted_blob) = 0;
 
   // Creates a passkey for the given RP and user and returns the new entity
   // specifics.

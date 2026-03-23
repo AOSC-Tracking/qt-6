@@ -55,7 +55,7 @@ class RtcEventAudioPlayout final : public RtcEvent {
 
   uint32_t ssrc() const { return ssrc_; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> batch) {
+  static std::string Encode(ArrayView<const RtcEvent*> batch) {
 #if !defined(WEBRTC_WIN)
     return RtcEventAudioPlayout::definition_.EncodeBatch(batch);
 #else
